@@ -7,6 +7,7 @@ import { calibrationEnd } from '../../shared/calibration.ts'
 import { CALIBRATION_AMENDED_ON } from '../../shared/law/messev.ts'
 import { hasKnownUnits, knownUnit, meterUnitOptions, unitKey, unitLabel, unitProblem } from '../../shared/meterUnits.ts'
 import { METER_TYPE_LABELS } from '../../shared/wording.ts'
+import type { Problem } from './formProblems'
 
 // Die Auswahl der Einheit (#342): bekannte Einheiten der Sparte und eine gespeicherte unbekannte.
 export { hasKnownUnits, meterUnitOptions }
@@ -168,40 +169,47 @@ export const REMOTE_RULE_TEXT =
 // die gewählte. Ohne Rolle gehört der Zähler zu keiner.
 // Die Felder des Zählerformulars, an denen eine Meldung stehen kann (#346, Schritt 3).
 export type MeterField = 'name' | 'unitId' | 'unit' | 'heatingPlantId' | 'calibratedUntil'
-type MeterError = { error: string; field?: MeterField; short?: string }
+// `problems` nennt alle Angaben auf einmal (#346, Schritt 3); `error`, `field` und `short` sind die erste davon.
+type MeterError = { error: string; field?: MeterField; short?: string; problems: Problem<MeterField>[] }
+const failed = (problems: Problem<MeterField>[]): MeterError => {
+  const first = problems[0] ?? { text: '' }
+  return { error: first.text, ...(first.field ? { field: first.field } : {}), ...(first.short ? { short: first.short } : {}), problems }
+}
 
 export function meterPlantId(form: Pick<MeterForm, 'unitId' | 'heatingRole' | 'heatingPlantId'>, plants: readonly { id: string }[]): { plantId: string | null } | MeterError {
   if (form.unitId || form.heatingRole === '') return { plantId: null }
   if (plants.length === 1) return { plantId: plants[0]?.id ?? null }
   if (plants.some((p) => p.id === form.heatingPlantId)) return { plantId: form.heatingPlantId }
-  return plants.length === 0 ? { plantId: null } : { error: 'Bitte wählen Sie die Heizanlage, zu der der Zähler gehört.', field: 'heatingPlantId', short: 'Heizanlage fehlt' }
+  return plants.length === 0 ? { plantId: null } : failed([{ text: 'Bitte wählen Sie die Heizanlage, zu der der Zähler gehört.', field: 'heatingPlantId', short: 'Heizanlage fehlt' }])
 }
 
 export function meterBody(form: MeterForm, plantId: string | null): { body: MeterBody } | MeterError {
-  if (!form.name.trim()) return { error: 'Bitte einen Namen für den Zähler angeben.', field: 'name', short: 'Name fehlt' }
+  const problems: Problem<MeterField>[] = []
+  if (!form.name.trim()) problems.push({ text: 'Bitte einen Namen für den Zähler angeben.', field: 'name', short: 'Name fehlt' })
   if (form.type === 'hkv' && !form.unitId) {
-    return { error: 'Ein Heizkostenverteiler sitzt an einem Heizkörper einer Wohnung. Bitte wählen Sie die Wohnung.', field: 'unitId', short: 'Wohnung fehlt' }
+    problems.push({ text: 'Ein Heizkostenverteiler sitzt an einem Heizkörper einer Wohnung. Bitte wählen Sie die Wohnung.', field: 'unitId', short: 'Wohnung fehlt' })
   }
   const role = form.heatingRole !== '' && heatingRoleOptions(form, plantId !== null).includes(form.heatingRole) ? form.heatingRole : null
   const asks = asksRemote({ ...form, heatingRole: role ?? '' }, plantId !== null)
   const number = form.meterNumber.trim()
   const hca = hcaFieldsBody(form.type, form.hca)
-  if ('error' in hca) return { error: hca.error }
+  if ('error' in hca) problems.push({ text: hca.error })
   // #342: Eine neue oder geänderte Einheit muss die Sparte kennen; eine gespeicherte, die unverändert bleibt, nicht.
   const entered = form.unit.trim()
   // Bei Sparten mit Auswahl wird nur gespeichert, was gewählt ist (Durchsicht S2, S6). Ohne Wahl darf nur ein schon
   // leer gespeicherter Zähler bleiben, wie er ist; ohne Auswahl gilt wie bisher die Vorgabe der Sparte.
   if (entered === '' && hasKnownUnits(form.type) && (!form.id || form.keptUnit.trim() !== '' || form.unitDropped !== '' || form.type !== form.keptType)) {
-    return { error: 'Bitte wählen Sie die Einheit, die der Zähler zeigt.', field: 'unit', short: 'Einheit fehlt' }
+    problems.push({ text: 'Bitte wählen Sie die Einheit, die der Zähler zeigt.', field: 'unit', short: 'Einheit fehlt' })
   }
   const unitText = entered || (hasKnownUnits(form.type) ? '' : defaultMeterUnit(form.type))
   const unitKept = form.keptUnit !== '' && unitKey(form.type, unitText) === unitKey(form.type, form.keptUnit)
   const unitRefused = unitKept || unitText === '' ? null : unitProblem(form.type, unitText)
-  if (unitRefused !== null) return { error: unitRefused, field: 'unit', short: 'Einheit passt nicht zur Sparte' }
+  if (unitRefused !== null) problems.push({ text: unitRefused, field: 'unit', short: 'Einheit passt nicht zur Sparte' })
   const until = form.calibratedUntil.trim()
   if (asksCalibration(form) && until !== '' && !/^[1-9]\d{3}$/.test(until)) {
-    return { error: 'Bitte tragen Sie das Eichjahr vierstellig ein, so wie es der Messdienst oder der Eichschein nennt, oder lassen Sie das Feld leer.', field: 'calibratedUntil', short: 'Vierstellige Jahreszahl' }
+    problems.push({ text: 'Bitte tragen Sie das Eichjahr vierstellig ein, so wie es der Messdienst oder der Eichschein nennt, oder lassen Sie das Feld leer.', field: 'calibratedUntil', short: 'Vierstellige Jahreszahl' })
   }
+  if (problems.length > 0 || 'error' in hca) return failed(problems)
   return {
     body: {
       name: form.name.trim(),

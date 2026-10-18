@@ -268,6 +268,21 @@ test('Mietkonto: ein abgelehntes Löschen ist eine Mitteilung, kein Kasten oben 
   expect(document.querySelector('.error:not(.toast)')).toBeNull()
 })
 
+// Durchsicht zu #346 Schritt 3, S1: Ein Betrag, der keine Zahl ist, stand ohne Feld in der Sammelmeldung.
+test('Kosten: ein ungültiger Betrag steht am Feld, mit Link aus der Sammelmeldung', async () => {
+  shell(<Kosten units={UNITS} settings={null} />)
+  fireEvent.click(await screen.findByRole('button', { name: /Kostenposition manuell erfassen/i }))
+  fireEvent.change(screen.getByLabelText(/Beschreibung/i), { target: { value: 'Wasser' } })
+  const amount = screen.getByLabelText(/^Betrag/i)
+  fireEvent.change(amount, { target: { value: 'abc' } })
+  fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
+  const alert = await screen.findByRole('alert')
+  expect(amount.getAttribute('aria-invalid')).toBe('true')
+  fireEvent.click(within(alert).getByRole('link', { name: /^Betrag/ }))
+  expect(document.activeElement).toBe(amount)
+  expect(sent).toEqual([])
+})
+
 test('Kosten: ein Fehler im Formular steht nach „Abbrechen“ nicht oben auf der Seite', async () => {
   shell(<Kosten units={UNITS} settings={null} />)
   fireEvent.click(await screen.findByRole('button', { name: /Kostenposition manuell erfassen/i }))

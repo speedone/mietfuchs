@@ -3201,13 +3201,19 @@ Tippfläche von `--target` über `::after`, und printCss.test.ts verlangt den du
   Fehler-API: `useFormError<F>()` mit `<ErrorSummary errors>`
   ([client/src/components/ErrorSummary.tsx](client/src/components/ErrorSummary.tsx)) und `<Field>`
   ([client/src/components/Field.tsx](client/src/components/Field.tsx)); `FormError` aus #343 ist darin
-  aufgegangen. Die Prüfungen der Formulare (paymentForm.ts, readingForm.ts, unitForm.ts, tenancyModel.ts …)
-  liefern `Problem`e ([client/src/formProblems.ts](client/src/formProblems.ts)): Feld, kurze Fassung für
-  das Feld („Datum fehlt“) und Satz mit Ort für die Sammelmeldung, **alle auf einmal und je mit Feld**, kein
-  Sammelsatz für mehrere Felder (M5). `report(problems)` meldet, `show(text)` eine Meldung ohne Feld (die
+  aufgegangen. Die Prüfungen der umgestellten Formulare liefern `Problem`e
+  ([client/src/formProblems.ts](client/src/formProblems.ts)): Feld, kurze Fassung für das Feld („Datum
+  fehlt“) und Satz mit Ort für die Sammelmeldung, **alle auf einmal und je mit Feld**, kein Sammelsatz für
+  mehrere Felder (M5). So arbeiten `paymentBody`, `buildReadingBody`, `buildUnitBody`, `tenancyRequired`,
+  `meterBody`/`meterPlantId`, `propertyBody` und `selfSetupBody` (die letzten drei nennen zusätzlich die
+  erste Meldung als `error`, für ältere Aufrufer). Die Kostenposition meldet ihre Felder (Beschreibung,
+  Betrag, §35a-Lohn, Ziel) zusammen über `costFieldProblems` in costForm.ts; die übrigen Regeln der
+  gemeinsamen Prüfung in shared/costItem.ts geben weiter die erste Meldung, als Satz mit Ort und ohne Feld.
+  Die Staffeln des Mietverhältnisses ebenso. `report(problems)` meldet, `show(text)` eine Meldung ohne Feld (die
   Ablehnung durch den Server), `set(text)` ersetzt das frühere `setError`. Jedes Melden setzt den Fokus auf
   die Sammelmeldung und rollt sie ins Bild, auch beim selben Text (`seq`); ein Ladefehler nimmt mit
-  `{ focus: false }` keinen Fokus. `role="alert"` sitzt **innen**, der Fokus außen. Ihre Zeilen sind Links
+  `{ focus: false }` keinen Fokus. `role="alert"` sitzt **innen**, der Fokus außen; ein `aria-labelledby`
+  trägt das äußere `<div>` nicht (ohne Rolle untersagt, axe `aria-prohibited-attr`). Ihre Zeilen sind Links
   aufs Feld (`idFor`), die einen zugeklappten `<details>` aufklappen. **`<Field label hint optional width>`**
   ist ein `<label class="field">` wie bisher (Raster und Seitenfenster setzen es unverändert) und vergibt
   `id`, `aria-labelledby` (nur die Beschriftung, sonst gehörten Hinweis und Fehler zum Namen),

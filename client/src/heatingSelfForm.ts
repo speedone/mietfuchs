@@ -109,17 +109,20 @@ export function itemsFromConflict(data: Record<string, unknown>): SelfItemRow[] 
 
 // Die Felder der Einrichtung, an denen eine Meldung stehen kann (#346, Schritt 3); je Heizposition Teil und Ziel.
 export type SelfSetupField = 'capture' | 'hotWater' | 'insulation' | 'share' | 'waterShare' | `part:${string}` | `target:${string}`
-type SelfSetupError = { error: string; field: SelfSetupField; short: string }
+// `problems` nennt alle Angaben auf einmal (#346, Schritt 3); `error`, `field` und `short` sind die erste davon.
+type SelfSetupProblem = { text: string; field: SelfSetupField; short: string }
+type SelfSetupError = { error: string; field: SelfSetupField; short: string; problems: SelfSetupProblem[] }
 
 export function selfSetupBody(form: SelfSetupForm, energy: HeatingEnergy): { body: SelfSetupBody } | SelfSetupError {
   const { min, max } = shareBounds()
+  const problems: SelfSetupProblem[] = []
   if (CAPTURE_SELF_OPTIONS.find((o) => o.value === form.capture)?.later) {
-    return { error: 'Heizkostenverteiler und Werte eines Ablesedienstes kommen mit einer späteren Version. Bis dahin rechnet Mietfuchs mit Wärmezählern und Warmwasserzählern.', field: 'capture', short: 'Noch nicht möglich' }
+    problems.push({ text: 'Heizkostenverteiler und Werte eines Ablesedienstes kommen mit einer späteren Version. Bis dahin rechnet Mietfuchs mit Wärmezählern und Warmwasserzählern.', field: 'capture', short: 'Noch nicht möglich' })
   }
-  if (form.hotWater === '') return { error: 'Bitte beantworten Sie, ob die Heizung auch das Warmwasser bereitet.', field: 'hotWater', short: 'Antwort fehlt' }
+  if (form.hotWater === '') problems.push({ text: 'Bitte beantworten Sie, ob die Heizung auch das Warmwasser bereitet.', field: 'hotWater', short: 'Antwort fehlt' })
   // Die Frage zum Wärmeschutz nur bei Öl- oder Gasheizung (Durchsicht von #239, M1); sonst gilt § 7 Abs. 1 Satz 2 nicht.
   const asked = ['oil', 'gas', 'lpg'].includes(energy)
-  if (asked && form.insulation === '') return { error: 'Bitte beantworten Sie die Frage zum Wärmeschutz; „Weiß ich nicht“ ist eine Antwort.', field: 'insulation', short: 'Antwort fehlt' }
+  if (asked && form.insulation === '') problems.push({ text: 'Bitte beantworten Sie die Frage zum Wärmeschutz; „Weiß ich nicht“ ist eine Antwort.', field: 'insulation', short: 'Antwort fehlt' })
   const insulationRule: InsulationRule = asked && form.insulation !== '' ? form.insulation : 'notApplies'
   // Vorgeschrieben (§ 7 Abs. 1 Satz 2): das Feld zeigt den Pflichtanteil und ist gesperrt; gesendet
   // wird, was angezeigt ist.
@@ -132,25 +135,35 @@ export function selfSetupBody(form: SelfSetupForm, energy: HeatingEnergy): { bod
   // Ein vereinbarter höherer Anteil geht dem Pflichtanteil vor (§ 10 HeizkostenV), nie ein niedrigerer.
   const typed = percent(form.share)
   const share = forced !== null && !(form.above70Agreed && typed !== null && typed > forced) ? forced : typed
-  if (share === null || !Number.isFinite(share)) return { error: `Bitte geben Sie den Anteil nach Verbrauch an, zwischen ${min} und ${max} %, mit höchstens zwei Nachkommastellen.`, field: 'share', short: 'Anteil fehlt' }
-  // § 8 Abs. 1: beim Warmwasser eine eigene Wahl; ohne zentrales Warmwasser keine (Abweichung 14).
+  if (share === null || !Number.isFinite(share)) problems.push({ text: `Bitte geben Sie den Anteil nach Verbrauch an, zwischen ${min} und ${max} %, mit höchstens zwei Nachkommastellen.`, field: 'share', short: 'Anteil fehlt' })
+  // § 8 Abs. 1: beim Warmwasser eine eigene Wahl; ohne zentrales Warmwasser keine (Abweichung 14). Ist die
+  // Frage zum Warmwasser noch offen, steht dort schon eine Meldung.
   const water = form.hotWater === 'none' ? null : percent(form.waterShare)
-  if (form.hotWater !== 'none' && (water === null || !Number.isFinite(water))) {
-    return { error: `Bitte geben Sie auch den Anteil nach Verbrauch beim Warmwasser an, zwischen ${min} und ${max} % (§ 8 Abs. 1 HeizkostenV); er darf von dem der Heizung abweichen.`, field: 'waterShare', short: 'Anteil fehlt' }
+  if (form.hotWater !== 'none' && form.hotWater !== '' && (water === null || !Number.isFinite(water))) {
+    problems.push({ text: `Bitte geben Sie auch den Anteil nach Verbrauch beim Warmwasser an, zwischen ${min} und ${max} % (§ 8 Abs. 1 HeizkostenV); er darf von dem der Heizung abweichen.`, field: 'waterShare', short: 'Anteil fehlt' })
   }
-  for (const [field, v] of water === null ? [['share', share] as const] : [['share', share] as const, ['waterShare', water] as const]) {
-    if (v < min) return { error: `Die Heizkostenverordnung verlangt mindestens ${min} % nach Verbrauch (§ 7 Abs. 1, § 8 Abs. 1).`, field, short: `Mindestens ${min} %` }
-    if (v > 100) return { error: 'Nach Verbrauch verteilt werden höchstens 100 % der Kosten.', field, short: 'Höchstens 100 %' }
-    if (v > max && !form.above70Agreed) return { error: `Mehr als ${max} % nach Verbrauch gehen nur, wenn es mit den Mietern vereinbart ist (§ 10 HeizkostenV). Ist es vereinbart, setzen Sie das Häkchen „vereinbart“.`, field, short: `Über ${max} % nur vereinbart` }
+  const shares: (readonly ['share' | 'waterShare', number | null])[] = [['share', share], ['waterShare', form.hotWater === 'none' || form.hotWater === '' ? null : water]]
+  for (const [field, v] of shares) {
+    if (v === null || !Number.isFinite(v)) continue
+    if (v < min) problems.push({ text: `Die Heizkostenverordnung verlangt mindestens ${min} % nach Verbrauch (§ 7 Abs. 1, § 8 Abs. 1).`, field, short: `Mindestens ${min} %` })
+    else if (v > 100) problems.push({ text: 'Nach Verbrauch verteilt werden höchstens 100 % der Kosten.', field, short: 'Höchstens 100 %' })
+    else if (v > max && !form.above70Agreed) problems.push({ text: `Mehr als ${max} % nach Verbrauch gehen nur, wenn es mit den Mietern vereinbart ist (§ 10 HeizkostenV). Ist es vereinbart, setzen Sie das Häkchen „vereinbart“.`, field, short: `Über ${max} % nur vereinbart` })
   }
   const items: SelfSetupBody['items'] = []
   for (const row of form.items) {
-    if (row.heatingPart === '') return { error: `„${row.description}“: Bitte wählen Sie den Teil (Brennstoff, Betrieb oder Erfassung).`, field: `part:${row.id}`, short: 'Teil fehlt' }
+    if (row.heatingPart === '') {
+      problems.push({ text: `„${row.description}“: Bitte wählen Sie den Teil (Brennstoff, Betrieb oder Erfassung).`, field: `part:${row.id}`, short: 'Teil fehlt' })
+      continue
+    }
     if (row.heatingTarget === '' || !targetOptions(form.hotWater, row.heatingPart).some((o) => o.value === row.heatingTarget)) {
-      return { error: `„${row.description}“: Bitte wählen Sie das Ziel (Heizung und Warmwasser, nur Heizung oder nur Warmwasser).`, field: `target:${row.id}`, short: 'Ziel fehlt' }
+      problems.push({ text: `„${row.description}“: Bitte wählen Sie das Ziel (Heizung und Warmwasser, nur Heizung oder nur Warmwasser).`, field: `target:${row.id}`, short: 'Ziel fehlt' })
+      continue
     }
     items.push({ id: row.id, heatingPart: row.heatingPart, heatingTarget: row.heatingTarget })
   }
+  const first = problems[0]
+  if (first) return { error: first.text, field: first.field, short: first.short, problems }
+  if (share === null || form.hotWater === '') return { error: '', field: 'share', short: '', problems }
   return {
     body: {
       period: form.period, heatConsumptionPct: share, waterConsumptionPct: water, insulationRule, above70Agreed: form.above70Agreed, hotWater: form.hotWater, capture: form.capture,

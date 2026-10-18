@@ -70,10 +70,11 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
   async function saveMeter() {
     if (!meterForm) return
     // Die Heizanlage des Zählers (Heizung PR 9): bei einer die des Objekts, ab zwei die gewählte.
+    // Alle Angaben auf einmal (#346, Schritt 3): die Anlage und der übrige Rumpf.
     const plant = meterPlantId(meterForm, plants)
-    const result = 'error' in plant ? plant : meterBody(meterForm, plant.plantId)
-    if ('error' in result) {
-      meterErrors.report([{ text: result.error, ...(result.field ? { field: result.field } : {}), ...(result.short ? { short: result.short } : {}) }])
+    const result = meterBody(meterForm, 'error' in plant ? null : plant.plantId)
+    if ('error' in plant || 'error' in result) {
+      meterErrors.report([...('error' in plant ? plant.problems : []), ...('error' in result ? result.problems : [])])
       return
     }
     meterErrors.clear()
@@ -261,7 +262,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
               <input value={meterForm.meterNumber} onChange={(e) => setMeterForm({ ...meterForm, meterNumber: e.target.value })} />
             </Field>
             {/* #342: bei Wasser, Wärme und Strom eine Auswahl, denn Mietfuchs rechnet diese Einheiten ineinander um. */}
-            <Field label={<Term id="meterUnit">Einheit</Term>} className="grow" hint={meterUnitHint(meterForm) || undefined} {...meterErrors.field('unit')}>
+            <Field label={<Term id="meterUnit">Einheit</Term>} optional={!hasKnownUnits(meterForm.type)} className="grow" hint={meterUnitHint(meterForm) || undefined} {...meterErrors.field('unit')}>
               {hasKnownUnits(meterForm.type)
                 ? (
                   <select value={meterForm.unit} onChange={(e) => setMeterForm({ ...meterForm, unit: e.target.value, unitDropped: '' })}>
@@ -436,7 +437,7 @@ function FragmentRow(props: {
                 </span>
               </label>
               {readingForm.replacement && (
-                <Field label="Endstand alter Zähler" {...readingErrors.field('oldEndValue')}>
+                <Field label="Endstand alter Zähler" optional hint="Leer lassen, wenn er fehlt." {...readingErrors.field('oldEndValue')}>
                   <input value={readingForm.oldEndValue} onChange={(e) => setReadingForm({ ...readingForm, oldEndValue: e.target.value })} className="input-num" />
                 </Field>
               )}

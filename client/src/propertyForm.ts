@@ -1,6 +1,7 @@
 import type { FederalState, Property, PropertyKind } from './types'
 import { ibanForSave, ibanToInput } from './ibanField'
 import { IBAN_LABELS } from '../../shared/iban.ts'
+import type { Problem } from './formProblems'
 import { isFederalState, localHolidaysOf, STATES, stateName } from '../../shared/holidays.ts'
 
 // Die Entscheidungslogik der Karte „Objekt“ (#92), ohne DOM prüfbar wie costForm.ts und
@@ -64,8 +65,16 @@ export function stateNote(state: FederalState | '', year: number): string | null
 
 export type PropertyBody = Pick<Property, 'name' | 'address' | 'kind' | 'landlordName' | 'iban' | 'paymentDeadlineDays' | 'cableBuiltBeforeDec2021' | 'tightMarket' | 'tightMarketFrom' | 'tightMarketTo' | 'state'>
 
+// Die Vorbelegung der Bezeichnung, wenn das Objekt noch keine hat (Durchsicht zu #346, Schritt 3). Eine frische
+// Installation legt ihr erstes Objekt ohne Namen an (Migration 0001 übernimmt `house_name`, und der ist dort leer).
+// Seit die Bezeichnung Pflicht ist (M12), verlangte schon das erste Speichern der Karte, etwa nur der Adresse,
+// einen Namen. Vorbelegt wird in der Karte und nicht in der Datenbank: Ein Migrationsschritt änderte vorhandene
+// Bestände, und ein Name, den der Vermieter nie gesehen hat, stünde dann still auf jeder Abrechnung. So steht er
+// im Feld, lässt sich überschreiben und wird mit dem ersten Speichern übernommen.
+export const PROPERTY_NAME_DEFAULT = 'Mein Objekt'
+
 export const propertyToForm = (p: Property): PropertyForm => ({
-  name: p.name,
+  name: p.name.trim() === '' ? PROPERTY_NAME_DEFAULT : p.name,
   address: p.address,
   kind: p.kind,
   own: p.landlordName !== null || p.iban !== null || p.paymentDeadlineDays !== null,
@@ -89,22 +98,30 @@ export const propertyToForm = (p: Property): PropertyForm => ({
 // (`storedIban`) geht unverändert mit, damit die übrigen Angaben trotzdem gespeichert werden.
 // Die Felder der Karte mit Meldung (#346, Schritt 3).
 export type PropertyField = 'name' | 'iban' | 'paymentDeadlineDays'
-export function propertyBody(form: PropertyForm, storedIban: string | null = null): PropertyBody | { error: string; field?: PropertyField; short?: string } {
+// `problems` nennt alle Angaben auf einmal (#346, Schritt 3); `error`, `field` und `short` sind die erste davon.
+export type PropertyBodyError = { error: string; field?: PropertyField; short?: string; problems: Problem<PropertyField>[] }
+export function propertyBody(form: PropertyForm, storedIban: string | null = null): PropertyBody | PropertyBodyError {
+  const problems: Problem<PropertyField>[] = []
   // Die Bezeichnung ist Pflicht (UI-Durchsicht M12): Leer gespeichert hieß das Objekt in der Seitenleiste „Ohne Namen“.
-  if (!form.name.trim()) return { error: 'Bezeichnung: Geben Sie dem Objekt einen Namen, etwa „Mehrfamilienhaus Musterstraße“.', field: 'name', short: 'Bezeichnung fehlt' }
+  if (!form.name.trim()) problems.push({ text: 'Bezeichnung: Geben Sie dem Objekt einen Namen, etwa „Mehrfamilienhaus Musterstraße“.', field: 'name', short: 'Bezeichnung fehlt' })
   const override = (value: string): string | null => (form.own && value.trim() !== '' ? value.trim() : null)
   const iban = ibanForSave(override(form.iban) ?? '', storedIban, IBAN_LABELS.property)
-  if ('error' in iban) return { error: iban.error, field: 'iban', short: 'IBAN ungültig' }
+  if ('error' in iban) problems.push({ text: iban.error, field: 'iban', short: 'IBAN ungültig' })
   const deadlineText = override(form.paymentDeadlineDays)
   const deadline = deadlineText === null ? null : Number(deadlineText)
   if (deadline !== null && (!Number.isInteger(deadline) || deadline < 0)) {
-    return { error: 'Die Zahlungsfrist ist eine ganze Zahl von Tagen, 0 oder mehr.', field: 'paymentDeadlineDays', short: 'Ganze Zahl von Tagen' }
+    problems.push({ text: 'Die Zahlungsfrist ist eine ganze Zahl von Tagen, 0 oder mehr.', field: 'paymentDeadlineDays', short: 'Ganze Zahl von Tagen' })
   }
   // Die Geltung der Verordnung nur bei „ja“ (Abweichung 4 des Plans zu Heizung PR 18).
   const yes = form.tightMarket === 'ja'
   const tightFrom = yes && form.tightMarketFrom !== '' ? form.tightMarketFrom : null
   const tightTo = yes && form.tightMarketTo !== '' ? form.tightMarketTo : null
-  if (tightFrom !== null && tightTo !== null && tightFrom > tightTo) return { error: 'Der Beginn der Verordnung liegt nach dem Ende. Bitte prüfen Sie beide Tage.' }
+  if (tightFrom !== null && tightTo !== null && tightFrom > tightTo) problems.push({ text: 'Der Beginn der Verordnung liegt nach dem Ende. Bitte prüfen Sie beide Tage.' })
+  const first = problems[0]
+  if (first || 'error' in iban) {
+    const head = first ?? { text: '' }
+    return { error: head.text, ...(head.field ? { field: head.field } : {}), ...(head.short ? { short: head.short } : {}), problems }
+  }
   return {
     name: form.name.trim(),
     address: form.address,

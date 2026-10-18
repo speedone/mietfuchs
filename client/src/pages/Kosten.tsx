@@ -47,6 +47,7 @@ import {
   type ItemForm,
   type KeyContext,
   costMeterTypes,
+  costFieldProblems,
 } from '../costForm'
 import CostPeriodFields from '../components/CostPeriodFields'
 import OperatingPowerFields from '../components/OperatingPowerFields'
@@ -89,7 +90,9 @@ type Evaluated = { serverFile: string; assessment: AssessmentView }
 const NOT_SAVED = 'Die Auswertung ließ sich nicht speichern. Bitte versuchen Sie es noch einmal; gebucht wurde nichts.'
 
 // Durchsicht von #241, Runde 2, H1: Das gespeicherte Ziel passt nicht zur Warmwasserbereitung der Heizperiode.
-const TARGET_INVALID = 'Das gespeicherte Ziel passt nicht dazu, wie die Anlage in dieser Heizperiode das Warmwasser bereitet. Wählen Sie das Ziel neu.'
+const TARGET_INVALID = 'Ziel: Das gespeicherte Ziel passt nicht dazu, wie die Anlage in dieser Heizperiode das Warmwasser bereitet. Wählen Sie das Ziel neu.'
+const TARGET_SHORT = 'Ziel neu wählen'
+
 
 export default function Kosten({ units, settings, tenancies = [], focus, onFocusDone }: Props) {
   // Wohin die Belege zur Auswertung gehen (siehe aiForm.ts)
@@ -111,7 +114,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   useEffect(() => { if (!form) setNeedsTaxYear(false) }, [form])
   const [error, setError] = useState('')
   // Die Fehler des Seitenfensters, im Fuß des Fensters (#346, Schritt 3)
-  const formErrors = useFormError<'description' | 'amount'>()
+  const formErrors = useFormError<'description' | 'amount' | 'labor35a' | 'target'>()
   // Heizung PR 5: Heizpositionen einer Anlage mit eigener Heizperiode tragen deren Schlüssel.
   const [plants, setPlants] = useState<HeatingPlant[]>([])
   const [heatingPeriod, setHeatingPeriod] = useState('')
@@ -366,11 +369,9 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     if (!form) return
     // Alles, was hier schiefgeht, gehört zum offenen Fenster und steht in seiner Sammelmeldung.
     const setError = formErrors.set
-    // Die beiden Pflichtangaben je mit Feld (#346, Schritt 3); die übrigen Prüfungen nennen ihren Ort im Satz.
-    const missing = [
-      ...(!form.description.trim() ? [{ field: 'description' as const, short: 'Beschreibung fehlt', text: 'Beschreibung: Geben Sie an, wofür die Rechnung ist, etwa „Grundsteuer 2025“.' }] : []),
-      ...(!form.amount.trim() ? [{ field: 'amount' as const, short: 'Betrag fehlt', text: 'Betrag: Geben Sie den Rechnungsbetrag ein, etwa 480,00 (eine Gutschrift mit Minus).' }] : []),
-    ]
+    // Die Angaben mit eigenem Feld, alle auf einmal (#346, Schritt 3): Beschreibung, Betrag, Lohnanteil und Ziel.
+    // Die übrigen Regeln der gemeinsamen Prüfung (shared/costItem.ts) melden danach ihren Satz mit Ort.
+    const missing = costFieldProblems(form, targetInvalid ? { text: TARGET_INVALID, short: TARGET_SHORT } : null)
     if (missing.length > 0) {
       formErrors.report(missing)
       return
@@ -379,10 +380,6 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     const built = buildCostItemBody(form, units, period, tenancies, plantOfForm ? billingEnergy(plantOfForm) : undefined)
     if ('error' in built) {
       setError(built.error)
-      return
-    }
-    if (targetInvalid) {
-      setError(TARGET_INVALID)
       return
     }
     setError('')
@@ -900,18 +897,17 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             <Field label="Betrag €" className="grow" hint="Eine Gutschrift mit Minus eintragen, z. B. -54,00." {...formErrors.field('amount')}>
               <input value={form.amount} inputMode="decimal" onChange={(e) => setForm({ ...form, amount: e.target.value })} placeholder="z. B. 480,00" />
             </Field>
-            {/* Laienprobe B19: Welcher Betrag der Messdienstabrechnung gemeint ist, steht dort, wo er eingetragen wird. */}
+            {/* Laienprobe B19: Welcher Betrag der Messdienstabrechnung gemeint ist, steht dort, wo er eingetragen wird; über die volle Breite. */}
             {form.category === HEATING_CATEGORY && form.key === 'amounts' && plants.some((p) => p.method === 'service') && (
-              <p className="notice">
+              <p className="notice basis-full">
                 Abrechnung des Messdienstes: Tragen Sie die Kosten vor „Abzüglich CO₂-Kosten Vermieter“ ein, also die Summe der Kosten aller Nutzer plus
                 den CO₂-Anteil des Vermieters, nicht die Summe nach dem Abzug. Danach füllen Sie auf der Seite Heizkosten die Karte „CO₂-Kosten“ aus;
                 ihre Probe prüft diesen Betrag.
               </p>
             )}
-            <label className="field grow" title="Lohn-/Arbeitskostenanteil nach §35a EStG — kann der Mieter steuerlich absetzen">
-              <span>davon <Term id="labor35a">§35a-Lohn</Term> €</span>
-              <input value={form.labor35a} onChange={(e) => setForm({ ...form, labor35a: e.target.value })} placeholder="optional" />
-            </label>
+            <Field label={<>davon <Term id="labor35a">§35a-Lohn</Term> €</>} optional className="grow" hint="Lohn- und Arbeitskosten nach § 35a EStG; der Mieter kann sie steuerlich absetzen." {...formErrors.field('labor35a')}>
+              <input value={form.labor35a} inputMode="decimal" onChange={(e) => setForm({ ...form, labor35a: e.target.value })} />
+            </Field>
             {/* Betriebsstrom (Heizung PR 15): sichtbar ohne Aufklappen, wer ihn braucht. */}
             <OperatingPowerFields form={form} items={items} periodKey={key} plantEnergy={plantOfForm ? billingEnergy(plantOfForm) : undefined} service={serviceReceivesOperatingPower(plants, period)} onChange={setForm} />
             <details className="extra-details" open={!!(selfPlant || form.serviceFrom || form.serviceTo || form.taxYear || form.paidOn || form.heatingPart !== '' || (heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear)))}>
@@ -972,8 +968,9 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
               <Field
                 label={`Ziel${selfPlant ? '' : ' (beim Mieterwechsel)'}`}
                 className="grow"
-                announce
-                error={targetInvalid ? TARGET_INVALID : undefined}
+                // Am Feld die kurze Fassung, schon vor dem Speichern; der Satz steht beim Speichern in der Sammelmeldung, mit Link.
+                {...formErrors.field('target')}
+                error={formErrors.field('target').error ?? (targetInvalid ? TARGET_SHORT : undefined)}
                 hint={selfPlant
                   ? 'Bereitet die Anlage auch das Warmwasser, gehört der Brennstoff zu Heizung und Warmwasser; Mietfuchs teilt ihn nach dem gemessenen Warmwasseranteil. Den Teil der Heizkosten wählen Sie unter „Weitere Angaben“.'
                   : '„nur Heizung“: Beim Mieterwechsel teilen sich diese Kosten nach Gradtagen statt nach Tagen (§ 9b Abs. 2 HeizkostenV), wenn die Heizanlage so eingestellt ist.'}

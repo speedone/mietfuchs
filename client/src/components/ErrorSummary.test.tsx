@@ -103,6 +103,43 @@ test('ein Fehler beim Laden steht da, nimmt aber keinen Fokus', () => {
   expect(document.activeElement).toBe(button)
 })
 
+// Durchsicht, Kann 11 und 12: Ein Link auf ein Feld in einem zugeklappten Bereich klappt ihn auf; zwei gleiche
+// Meldungen ohne Feld ergeben keine doppelten Schlüssel; die Sammelmeldung trägt kein aria-labelledby (S6).
+function Zugeklappt() {
+  const errors = useFormError<'deposit'>()
+  return (
+    <div className="card">
+      <ErrorSummary errors={errors} />
+      <details>
+        <summary>Weitere Angaben</summary>
+        <Field label="Kaution €" optional {...errors.field('deposit')}><input /></Field>
+      </details>
+      <button type="button" onClick={() => errors.report([{ field: 'deposit', short: 'Kein Betrag', text: 'Kaution: Geben Sie einen Betrag ein.' }, { text: 'Gleich.' }, { text: 'Gleich.' }])}>Speichern</button>
+    </div>
+  )
+}
+
+test('ein Link auf ein Feld in einem zugeklappten Bereich klappt ihn auf; gleiche Meldungen ohne Warnung', () => {
+  const warned: unknown[] = []
+  const original = console.error
+  console.error = (...args: unknown[]) => { warned.push(args) }
+  try {
+    render(<Zugeklappt />)
+    fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+    const alert = screen.getByRole('alert')
+    expect(alert.parentElement?.hasAttribute('aria-labelledby')).toBe(false)
+    const details = document.querySelector('details')
+    expect(details?.open).toBe(false)
+    fireEvent.click(within(alert).getByRole('link', { name: /Kaution/ }))
+    expect(details?.open).toBe(true)
+    expect(document.activeElement).toBe(screen.getByLabelText('Kaution € (freiwillig)'))
+    expect(within(alert).getAllByText('Gleich.')).toHaveLength(2)
+    expect(warned.filter((w) => String(w).includes('same key'))).toEqual([])
+  } finally {
+    console.error = original
+  }
+})
+
 function Fenster() {
   const [form, setForm] = useState<{ date: string; amount: string } | null>({ date: '', amount: '' })
   const errors = useFormError<F>()

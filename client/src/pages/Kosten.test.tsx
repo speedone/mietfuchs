@@ -390,10 +390,17 @@ test('Durchsicht #241 Runde 2, H1: Eine Position 2025 behält ihr Ziel, auch wen
   plants = [anlage([{ from: '2025-01', until: null, capture: 'heatMeter', hotWater: 'none' }])]
   render(<PeriodProvider><PropertyProvider><Kosten units={UNITS} settings={null} /></PropertyProvider></PeriodProvider>)
   fireEvent.click(await screen.findByRole('button', { name: 'Kostenposition bearbeiten' }))
-  await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/gespeicherte Ziel passt nicht/))
+  // Am Feld schon vor dem Speichern die kurze Fassung (#346, Schritt 3); der Satz steht einmal, in der
+  // Sammelmeldung beim Speichern, mit Link aufs Feld (Durchsicht, Kann 9: nicht zweimal angesagt).
+  await waitFor(() => expect(select(/^Ziel(?: \(beim Mieterwechsel\))?$/).getAttribute('aria-invalid')).toBe('true'))
+  expect(screen.getByText('Ziel neu wählen')).toBeTruthy()
+  expect(screen.queryByRole('alert')).toBeNull()
   expect(select(/^Ziel(?: \(beim Mieterwechsel\))?$/).value).toBe('')
   expect([...select(/^Ziel(?: \(beim Mieterwechsel\))?$/).options].map((o) => o.value)).toEqual(['', 'heating'])
   fireEvent.click(screen.getByRole('button', { name: /^Übernehmen$/ }))
+  const alert = await screen.findByRole('alert')
+  expect(within(alert).getByRole('link', { name: /gespeicherte Ziel passt nicht/ })).toBeTruthy()
+  expect(screen.getAllByRole('alert')).toHaveLength(1)
   await new Promise((r) => setTimeout(r, 50))
   expect(sent).toEqual([])
   fireEvent.change(select(/^Ziel(?: \(beim Mieterwechsel\))?$/), { target: { value: 'heating' } })
