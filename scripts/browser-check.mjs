@@ -36,6 +36,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { navFor } from '../client/src/nav.ts'
 import { loadPlaywright, startDemo, textPdf } from './demo-stock.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -258,7 +259,7 @@ async function checkCombination(browser, base, combo, AxeBuilder, navLabels) {
     await page.screenshot({ path: shot, fullPage: true }).catch(() => page.screenshot({ path: shot }))
   }
 
-  // Die Bedienproben einmal je Engine und Ansicht, im hellen Design
+  // Die Bedienproben einmal je Engine und Ansicht, im ersten Design des Laufs (Vorgabe: hell)
   if (theme === themes[0]) {
     for (const [name, probe] of /** @type {const} */ ([
       ['seitenfenster', probeDrawer], ['monatsfeld', probeMonth], ['begriff', probeTerm], ['fehler-nach-speichern', probeError],
@@ -510,10 +511,14 @@ async function main() {
 
   console.log('Beispielbestand anlegen …')
   const demo = await startDemo({ pdf: textPdf, prefix: 'mietfuchs-browserlauf-' })
+  // Bericht und Zusammenfassung entstehen auch, wenn die Prüfung selbst scheitert: Der Fehler wird ein Befund.
   try {
     // Eine Heizanlage mit freien Schlüsseln, damit die Seite Heizkosten in der Navigation steht. Sie ändert
     // keine Zahl (CLAUDE.md, Heizanlage) und kommt nicht in den Bestand der Bildschirmfotos.
     await demo.api.post(`/api/heating-plants?property=${demo.ids.haus}`, { energy: 'gas', method: 'manual', assignItemIds: [] })
+    // Welche Seiten die Navigation zeigen muss: alle aus nav.ts, die Heizkosten, weil der Bestand eine Anlage hat.
+    // Fehlt eine, prüfte der Lauf sonst still eine Seite weniger.
+    const expected = navFor(true).flatMap((g) => g.items.map((i) => i.label))
     /** @type {string[] | null} */
     let navLabels = null
     for (const engine of engines) {
@@ -533,7 +538,11 @@ async function main() {
           for (const theme of themes) {
             const before = findings.length
             const labels = await checkCombination(browser, demo.base, { engine, view, theme }, AxeBuilder, navLabels)
-            navLabels ??= labels
+            if (!navLabels) {
+              navLabels = labels
+              for (const l of expected) if (!labels.includes(l)) findings.push({ engine, view, theme, page: slug(l), kind: 'Navigation', text: `„${l}“ steht in nav.ts, fehlt aber in der Navigation.` })
+              for (const l of labels) if (!expected.includes(l)) findings.push({ engine, view, theme, page: slug(l), kind: 'Navigation', text: `„${l}“ steht in der Navigation, aber nicht in nav.ts.` })
+            }
             console.log(`  ${view} ${theme}: ${findings.length - before ? `${findings.length - before} Befunde` : 'ohne Befund'}`)
             const down = demo.problem()
             if (down) throw new Error(down)
@@ -544,21 +553,34 @@ async function main() {
       }
       runtimes[engine] = (Date.now() - started) / 1000
     }
+
+    // Ein Tippfehler in --pages prüfte sonst keine Seite und meldete grün
+    if (PAGES) {
+      for (const id of PAGES) {
+        if (!(navLabels ?? []).some((l) => slug(l) === id)) findings.push({ engine: 'alle', view: '–', theme: '–', page: id, kind: 'Aufruf', text: `--pages nennt „${id}“, die Navigation hat keine solche Seite (möglich: ${(navLabels ?? expected).map(slug).join(', ')}).` })
+      }
+    }
+    if (checkedPages === 0 && (PAGES === null || PAGES.length > 0)) {
+      findings.push({ engine: 'alle', view: '–', theme: '–', page: '–', kind: 'Aufruf', text: 'Keine Seite geprüft.' })
+    }
+
+    // Was dieser Lauf je Ausnahme gemessen hat; in GitHub Actions läuft jede Engine für sich, und erst `--merge`
+    // über alle Läufe weiß, ob eine Ausnahme sinken kann. Eine Engine, die nicht startete, deckt nichts ab.
+    const ran = engines.filter((e) => runtimes[e] !== undefined)
+    const measured = { engines: ran, views, themes, allPages: PAGES === null, seen: Object.fromEntries(axeExceptions.map((ex) => [exceptionKey(ex), axeSeen.get(ex) ?? 0])) }
+    fs.writeFileSync(path.join(OUT, 'axe-gemessen.json'), `${JSON.stringify(measured, null, 2)}\n`)
+    if (FULL && ran.length === ENGINES.length) findings.push(...staleExceptions(measured.seen))
+  } catch (err) {
+    findings.push({ engine: '–', view: '–', theme: '–', page: '–', kind: 'Abbruch', text: err instanceof Error ? err.message.split('\n').slice(0, 3).join(' ') : String(err) })
+    console.error(err)
   } finally {
     await demo.stop()
+    const text = report()
+    fs.writeFileSync(path.join(OUT, 'bericht.md'), `${text}\n`)
+    if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${text}\n`)
+    console.log(`\n${text}`)
+    if (findings.length) process.exitCode = 1
   }
-
-  // Was dieser Lauf je Ausnahme gemessen hat; in GitHub Actions läuft jede Engine für sich, und erst `--merge`
-  // über alle Läufe weiß, ob eine Ausnahme sinken kann.
-  const measured = { engines, views, themes, allPages: PAGES === null, seen: Object.fromEntries(axeExceptions.map((ex) => [exceptionKey(ex), axeSeen.get(ex) ?? 0])) }
-  fs.writeFileSync(path.join(OUT, 'axe-gemessen.json'), `${JSON.stringify(measured, null, 2)}\n`)
-  if (FULL) findings.push(...staleExceptions(measured.seen))
-
-  const text = report()
-  fs.writeFileSync(path.join(OUT, 'bericht.md'), `${text}\n`)
-  if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${text}\n`)
-  console.log(`\n${text}`)
-  if (findings.length) process.exitCode = 1
 }
 
 // `--merge <Ordner>`: die Messungen aller Läufe unter dem Ordner (je Engine ein Artefakt) zusammen. Decken sie

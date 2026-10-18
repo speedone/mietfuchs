@@ -29,6 +29,20 @@ test('ein breiterer Bereich ist per Tastatur erreichbar und benannt', () => {
   expect(region?.getAttribute('aria-label')).toMatch(/seitlich/)
 })
 
+// Mehrere rollende Tabellen auf einer Seite (Kostenvergleich) heißen nicht alle gleich: Der Name kommt aus der
+// Beschriftung der Tabelle, sonst aus der Überschrift ihrer Karte, und erst dann „Tabelle“.
+test('der Bereich trägt den Namen der Tabelle oder ihrer Überschrift', () => {
+  widths = { scroll: 700, client: 358 }
+  const { container } = render(
+    <>
+      <Table aria-label="Kosten je Jahr"><tbody><tr><td>1</td></tr></tbody></Table>
+      <div className="card"><h2>Verbrauch</h2><Table><tbody><tr><td>2</td></tr></tbody></Table></div>
+    </>,
+  )
+  const names = [...container.querySelectorAll('.table-scroll')].map((r) => r.getAttribute('aria-label'))
+  expect(names).toEqual(['Kosten je Jahr, seitlich scrollbar', 'Verbrauch, seitlich scrollbar'])
+})
+
 test('ein Bereich, in den die Tabelle passt, ist kein Halt beim Tabben', () => {
   widths = { scroll: 358, client: 358 }
   const { container } = render(table())

@@ -62,7 +62,9 @@ Zeile im Bericht (`<out>/bericht.md`, in Actions die Zusammenfassung); die Fotos
 [scripts/browser-check-axe.json](scripts/browser-check-axe.json) und dürfen nur sinken: Mehr ist
 ein Befund, weniger nach einem Lauf über alle drei Engines ebenfalls, bis die Zahl gesenkt ist
 (`--merge` fasst die Läufe der CI zusammen). Heute ist die Liste leer. Zum Nachprüfen grenzen
-`--engines`, `--views`, `--themes` und `--pages` ein (`--pages -` nur die Bedienproben). WebKit
+`--engines`, `--views`, `--themes` und `--pages` ein (`--pages -` nur die Bedienproben); eine
+unbekannte Seite in `--pages` oder ein Lauf ohne geprüfte Seite ist ein Befund, ebenso eine Seite aus
+[client/src/nav.ts](client/src/nav.ts), die in der Navigation fehlt. WebKit
 braucht unter Linux GTK4; fehlt es, läuft er im Container `mcr.microsoft.com/playwright:v<Fassung
 aus package-lock.json>-noble` (Befehl im Kopf des Skripts). In release.yml läuft er je Engine als
 Job „Browserlauf“ im vollen Prüfumfang, nicht an jedem PR, und „Ans Release anhängen“ wartet auf
@@ -243,7 +245,8 @@ laufen die Tests und der Build aus
 die Untergrenze glibc 2.17 und `ubuntu:26.04` für das neueste Ende, dazu je ein Paket, nämlich
 das `.deb` auf Ubuntu 24.04 (dort auch der Startmenü-Eintrag) und das `.rpm` auf Fedora. Beim
 Tag läuft alles: 22 Distributionen, sieben Pakete, die lange KI-Antwort unter Node und dieselbe
-lange Wartezeit auf Linux x64, Windows x64 und Apple Silicon. Denselben vollen Umfang fährt
+lange Wartezeit auf Linux x64, Windows x64 und Apple Silicon, dazu der Browserlauf in drei Engines
+(siehe Browserlauf). Denselben vollen Umfang fährt
 mittwochs um 4:23 UTC ein Zeitplan auf `main`, damit niemand auf ein Label angewiesen ist: Er
 ist das Netz für die Prüfungen, die im PR fehlen, vor allem gegen eine fehlerhafte Bun-Fassung,
 denn Bun wird mit `latest` gebaut. Veröffentlicht wird dabei nichts, „Ans Release anhängen“

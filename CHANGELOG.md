@@ -56,6 +56,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   der Zahlungseingänge unter „Art“ auf „Abrechnung“ um. Ein mit der Miete verrechnetes Guthaben
   tragen Sie als volle Miete und das Guthaben mit Minus als Abrechnung ein
   ([#280](https://github.com/speedone/mietfuchs/issues/280)).
+- Vor jedem Release und einmal die Woche prüft ein Browserlauf jede Seite in Chromium, Firefox und
+  WebKit (Safari), am Rechner und am Handy, hell und dunkel: keine Fehler in der Konsole, keine Seite
+  breiter als der Bildschirm, Barrierefreiheit mit axe-core, dazu Seitenfenster, Monatsfeld,
+  Begriffserklärung, Fehlermeldungen und die Navigation am Handy per Tastatur. Ohne ihn wird beim Tag
+  nichts ans Release gehängt ([#340](https://github.com/speedone/mietfuchs/issues/340)).
 
 ### Geändert
 
@@ -268,14 +273,6 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Schnellerfassung hat einen Namen, Links mitten im Text sind unterstrichen, und eine Tabelle oder ein
   Befehl, die am Handy seitlich rollen, sind mit der Tastatur erreichbar
   ([#340](https://github.com/speedone/mietfuchs/issues/340)).
-
-### Intern
-
-- Vor jedem Release und einmal die Woche prüft ein Browserlauf jede Seite in Chromium, Firefox und
-  WebKit (Safari), am Rechner und am Handy, hell und dunkel: keine Fehler in der Konsole, keine Seite
-  breiter als der Bildschirm, Barrierefreiheit mit axe-core, dazu Seitenfenster, Monatsfeld,
-  Begriffserklärung, Fehlermeldungen und die Navigation am Handy per Tastatur. Ohne ihn wird beim Tag
-  nichts ans Release gehängt ([#340](https://github.com/speedone/mietfuchs/issues/340)).
 
 ## [0.11.3] – 2026-10-17
 
