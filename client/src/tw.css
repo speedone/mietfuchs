@@ -15,7 +15,8 @@
    Listen und Formularfelder zurück, und das ganze bisherige Aussehen beruht auf den Vorgaben des
    Browsers. Er kommt erst, wenn index.css verschwunden ist.
 
-   Farben: Die Tokens in index.css (`:root` und `[data-theme='dark']`) bleiben die einzige Quelle.
+   Farben: Die Tokens in index.css (`:root`, dazu `[data-theme='dark']` nur am Bildschirm in
+   `@media not print`, gedruckt wird mit den hellen) bleiben die einzige Quelle.
    `@theme inline` macht sie nur unter Tailwind-Namen benutzbar (`text-muted`, `bg-card`,
    `border-line` …); `inline` heißt, die Utility schreibt `var(--muted)` hinein, also wechselt sie
    mit dem dunklen Design von selbst. `--color-*: initial` entfernt die Standardpalette, damit
@@ -44,8 +45,8 @@
    Theme (spin, ping, pulse, bounce), schreibt Tailwind dessen `@keyframes` ungeschichtet ans Ende,
    und sie gilt statt der eigenen. Deshalb heißt die des Ladekreises `spinner-spin` (S20). */
 
-/* `dark:` gilt nur am Bildschirm. Der Druck ist immer hell (index.css setzt dort die Tokens auf
-   hell), und eine `dark:`-Klasse mit einem Wert außerhalb der Tokens druckte sonst dunkel. */
+/* `dark:` gilt nur am Bildschirm. Der Druck ist immer hell (die dunklen Tokens in index.css stehen in
+   `@media not print`), und eine `dark:`-Klasse mit einem Wert außerhalb der Tokens druckte sonst dunkel. */
 @custom-variant dark {
   @media not print {
     &:where([data-theme=dark], [data-theme=dark] *) {
@@ -78,4 +79,60 @@
   --color-error-border: var(--error-border);
   --color-ok-border: var(--ok-border);
   --color-overlay: var(--overlay);
+  --color-accent-strong: var(--accent-strong);
+  --color-hover: var(--hover);
+  --color-control-border: var(--control-border);
+  --color-primary: var(--primary);
+  --color-primary-text: var(--primary-text);
+  --color-primary-hover: var(--primary-hover);
+  --color-danger: var(--danger);
+  --color-danger-hover: var(--danger-hover);
+  --color-sidebar-text: var(--sidebar-text);
+  --color-signal-amber: var(--signal-amber);
+  --color-ring: var(--ring);
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-brand-text: var(--brand-text);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-border: var(--brand-border);
+}
+
+/* Abstand, Schrift, Gewicht und Radius (#346, Schritt 4). Die Tokens heißen in index.css schon wie
+   die Namensräume von Tailwind (`--text-*`, `--radius-*`), das Gewicht als `--weight-*` und der
+   Abstand als `--space-N` = N × `--space-1`. Hier werden die Standardwerte von Tailwind entfernt
+   (`initial`) und jeder Name auf unser Token gesetzt. `reference` heißt, Tailwind schreibt diese
+   Variablen nicht selbst an `:root` (sonst stünde dort `--text-s: var(--text-s)`), `inline`, die
+   Utility schreibt `var(--text-s)` hinein. So ergibt `text-s` 13 px, `rounded-l` 12 px, `p-4`
+   16 px und `font-strong` 600, und es gibt kein `text-sm` oder `rounded-xl` aus der
+   Standardskala daneben. */
+@theme inline reference {
+  --spacing: var(--space-1);
+  --text-*: initial;
+  --text-xs: var(--text-xs);
+  --text-s: var(--text-s);
+  --text-m: var(--text-m);
+  --text-base: var(--text-base);
+  --text-l: var(--text-l);
+  --text-xl: var(--text-xl);
+  --text-2xl: var(--text-2xl);
+  --font-weight-*: initial;
+  --font-weight-normal: var(--weight-normal);
+  --font-weight-medium: var(--weight-medium);
+  --font-weight-strong: var(--weight-strong);
+  --font-weight-bold: var(--weight-bold);
+  --radius-*: initial;
+  --radius-s: var(--radius-s);
+  --radius-m: var(--radius-m);
+  --radius-l: var(--radius-l);
+  --radius-xl: var(--radius-xl);
+  /* Schatten: Tailwinds Stufen tragen feste Farben (`rgb(0 0 0 / 0.1)`) und wechselten nicht mit dem
+     dunklen Design; es gibt nur unsere drei (S17). Zeilenhöhe und Laufweite bleiben aus der
+     Standardskala, sie sind reine Zahlen ohne Farbe und hängen an keinem Design. */
+  --shadow-*: initial;
+  --inset-shadow-*: initial;
+  --drop-shadow-*: initial;
+  --text-shadow-*: initial;
+  --shadow-1: var(--shadow-1);
+  --shadow-2: var(--shadow-2);
+  --shadow-pop: var(--shadow-pop);
 }

@@ -49,20 +49,56 @@ Tailwind v4 ist gesetzt. Es ersetzt keine Bausteine, sondern das Schreiben von C
 
 ## 1. Gestaltungsgrundlagen (Tokens)
 
-Die Farben bleiben, wie sie in `index.css` stehen (`--bg`, `--card`, `--text`, `--muted`, `--line`, `--accent`, `--accent-text`, `--green`, `--red`, `--amber` …, je hell und `[data-theme='dark']`). `uiRules.test.ts` S6 prüft schon den Kontrast. Neu kommen die Tokens hinzu, die heute als feste Pixelwerte verstreut sind:
+**Gewählte Gestaltung: „Mittelweg“.** Verglichen wurden die bisherige Gestaltung, eine behutsame Auffrischung (A), eine an shadcn/ui angelehnte neutrale Gestaltung (B) und der Mittelweg aus beiden, je hell, dunkel und am Handy. Der Mittelweg nimmt von B die neutralen zinc-Flächen, weiße Karten mit 1-px-Linie und kaum Schatten und die helle Seitenleiste, von A die Feldbeschriftung und behält das Indigo von Mietfuchs für das, was handeln lässt: Primärknopf, Links, Fortschritt, Fokusring, aktiver Menüpunkt (hell getönte Fläche) und Objekt-Marke. Das dunkle Design ist fast schwarz mit zinc-Tönen. Umgesetzt mit Schritt 4 (#346).
+
+Farben stehen nur in den Token-Blöcken von `index.css` (`:root`, `[data-theme='dark']` nur am Bildschirm, der Druck nimmt immer die hellen); Wächter S17 verbietet Hex- und rgba-Werte außerhalb. Neue Farben nur als Token-Paar.
+
+| Token | hell | dunkel | wofür |
+|---|---|---|---|
+| `--bg` | `#fafafa` (zinc-50) | `#09090b` (zinc-950) | Seitengrund |
+| `--card` | `#ffffff` | `#111113` | Karten, Seitenfenster |
+| `--text` | `#09090b` | `#fafafa` | Text, Feldbeschriftung |
+| `--muted` | `#63636b` | `#a1a1aa` | Nebentext |
+| `--line` | `#e4e4e7` | `#27272a` | Linien, Kartenrand |
+| `--input-border` / `--control-border` | `#8e8e96` / `#d4d4d8` | `#63636b` / `#3f3f46` | Feldrand (auch Auswahlfelder der Seitenleiste) / Rand sekundärer Knöpfe, Linien in Tabellen |
+| `--hover` | `#f4f4f5` | `#1f1f23` | Überfahren, Summen-, Gruppen- und Rechenwegzeilen |
+| `--chip` | `#f4f4f5` | `#27272a` | Segmente, gesperrte Felder, Hover sekundärer Knöpfe |
+| `--sidebar` / `--sidebar-text` | `#fafafa` / `#3f3f46` | `#09090b` / `#d4d4d8` | Seitenleiste |
+| `--accent` / `--accent-text` | `#4f46e5` / `#4f46e5` | `#5558e3` / `#a5b4fc` | Fortschritt, Fokus / Links |
+| `--accent-soft` / `--accent-strong` | `#eef0ff` / `#4338ca` | `#1e1d3d` / `#a5b4fc` | aktiver Menüpunkt, Objekt-Marke |
+| `--primary` / `--primary-hover` / `--primary-text` | `#4f46e5` / `#4338ca` / `#ffffff` | `#5558e3` / `#4a4dd6` / `#ffffff` | Primärknopf |
+| `--danger` / `--danger-hover` | `#b91c1c` / `#991b1b` | wie hell | Gefahrknopf |
+| `--red`, `--amber`, `--green` (je mit `-soft`) | `#b91c1c`, `#92400e`, `#15803d` | `#f87171`, `#fbbf24`, `#4ade80` | Fehler, Warnung, Erfolg |
+| `--brand` | `#ef6f2e` | wie hell | nur Update-Hinweis (Orange des Fuchses) |
+
+**Kontraste** (WCAG 2.1 AA verlangt 4,5:1 für Fließtext; S6 in `uiRules.test.ts` rechnet jedes Paar nach):
+
+| Paar | hell | dunkel |
+|---|---|---|
+| Text auf Karte | 19,9 | 18,1 |
+| Nebentext auf Karte / Seitengrund / Hover-Fläche | 5,95 / 5,70 / 5,42 | 7,36 / 7,76 / 6,41 |
+| Link auf Karte / Seitengrund | 6,29 / 6,02 | 9,46 / 9,98 |
+| Weiß auf Primärknopf / beim Überfahren | 6,29 / 7,90 | 5,40 / 6,32 |
+| Weiß auf Gefahrknopf | 6,47 | 6,47 |
+| aktiver Menüpunkt (Schrift auf getönter Fläche) | 6,98 | 8,11 |
+| Menüpunkt auf Seitenleiste | 10,0 | 13,5 |
+| Fehler / Warnung / Erfolg auf ihrer Fläche | 5,91 / 6,84 / 4,79 | 6,48 / 10,4 / 9,82 |
+| Feldrand auf Karte / Seitengrund (WCAG 1.4.11 verlangt 3:1) | 3,25 / 3,11 | 3,17 / 3,34 |
+
+Dazu die Tokens, die vorher als feste Pixelwerte verstreut waren. Die Namen von Schrift und Radius sind die Namensräume von Tailwind; `tw.css` bildet sie mit `@theme inline reference` ab, sodass `text-s`, `rounded-l`, `p-4`, `font-strong` und `shadow-1` genau diese Werte nehmen. Auf Tokens gelegt sind Farbe, Abstand, Schrift, Gewicht, Radius und Schatten; deren Standardskalen entfallen (die Schatten von Tailwind tragen feste Farben). Zeilenhöhe, Laufweite, Containerbreiten und Breakpoints bleiben aus der Standardskala, sie haben keine Farbe:
 
 | Gruppe | Tokens | Werte | Regel |
 |---|---|---|---|
-| Abstand | `--space-1 … --space-12` | 4, 8, 12, 16, 20, 24, 32, 48 px | 4er-Raster, angelehnt an Atlassian (Basis 8, Halbstufen 4/12/20). Kein `margin: 13px`. |
-| Schrift | `--text-xs/s/m/l/xl/2xl` | 12, 13, 15, 17, 20, 24 px | Grundschrift 15 px wie heute; Feldbeschriftung 13 px **fett in `--text`** (heute `--muted`, schwach auf hellem Grund). |
-| Gewicht | `--weight-normal/strong/bold` | 400/600/700 | |
+| Abstand | `--space-1 … --space-12` | 4, 8, 12, 16, 20, 24, 32, 48 px | 4er-Raster, angelehnt an Atlassian (Basis 8, Halbstufen 4/12/20); `--space-N` = N × 4 px wie `p-N`. Kein `margin: 13px`. |
+| Schrift | `--text-xs/s/m/base/l/xl/2xl` | 12, 13, 14, 15, 17, 20, 24 px | Grundschrift 15 px; Felder, Knöpfe, Tabellen und Navigation 14 px; Feldbeschriftung 13 px **fett in `--text`** (vorher `--muted`, schwach auf hellem Grund). |
+| Gewicht | `--weight-normal/medium/strong/bold` | 400/500/600/700 | |
 | Radius | `--radius-s/m/l/xl` | 6, 8, 12, 16 px | Feld/Knopf `m`, Karte `l`, Dialog/Blatt `xl`. |
-| Ebenen | `--shadow-1/2/pop`, `--overlay` | wie heute | Top-Layer (Dialog, Popover) ersetzt z-index-Stapel weitgehend. |
-| Ziel | `--target` | 36 px (Maus), **44 px** bei `pointer: coarse` oder < 640 px | WCAG 2.2 verlangt mindestens 24 px (2.5.8); 44 px am Handy behebt MOB2 und N11 (Mülleimer 20 px). |
-| Fokus | `--focus-ring` | 2 px Kartenfarbe + 2 px Akzent | ein Fokusrahmen für alles (`:focus-visible`). |
-| Breite | `--page-max` 1080, `--drawer-width` 480 | | Tabellenseiten dürfen `--page-max-wide` (1320) nehmen (M10). |
+| Ebenen | `--shadow-1/2/pop`, `--overlay` | Karten kaum Schatten, im Dunkeln keiner | Top-Layer (Dialog, Popover) ersetzt z-index-Stapel weitgehend. |
+| Ziel | `--target` | 36 px (Maus), **44 px** bei `pointer: coarse` oder bis 640 px Breite | WCAG 2.2 verlangt mindestens 24 px (2.5.8); 44 px am Handy behebt MOB2 und N11 (Mülleimer 20 px). Kleine Knöpfe (`.btn.small`, Schließen ✕, „Hier beheben“) behalten ihr Aussehen, ihre Tippfläche wächst über `::after`; die Navigation am Handy folgt mit Schritt 9. |
+| Fokus | `--focus-ring` | 2 px Kartenfarbe + 2 px Akzent | ein Fokusrahmen für alles (`:focus-visible`); Felder zeigen Akzentrand und Ring `--ring`. |
+| Breite | `--page-max` 1120 | | Tabellenseiten dürfen später `--page-max-wide` (1320) nehmen (M10). |
 
-**Hell/Dunkel:** wie heute über `data-theme`. Neue Farben nur als Token-Paar. **Druck:** `@media print` setzt die Tokens auf Hell, blendet Bedienung, Begriffsauslöser und Navigation aus (N5) und setzt `break-after: avoid` für Überschriften und `break-inside: avoid` für Karten.
+**Hell/Dunkel:** über `data-theme`. **Druck:** Die dunklen Tokens gelten nur `@media not print`, gedruckt wird also immer mit den hellen; `@media print` setzt den Grund auf Weiß, hält Überschriften bei ihrem Inhalt (`break-after: avoid`) und teilt kleine Blöcke nicht (`break-inside: avoid` für Kennzahlen, Hinweise und Tabellenzeilen; Karten dürfen umbrechen, weil eine Abrechnung oft länger als eine Seite ist), und blendet Bedienung, Begriffsauslöser und Navigation aus (N5).
 
 ## 2. Layout und Navigation
 
@@ -87,7 +123,7 @@ Sofortspeichern ohne Knopf entfällt. Wo es heute steht (Zahlungsart), kommt der
 
 **Feste Verben** (N3): Anlegen · Speichern · Abbrechen · Verwerfen · Löschen … (mit Auslassungspunkten, wenn eine Rückfrage folgt). Kein OK, Übernehmen, Umstellen oder Hinzufügen als Primärknopf. Ein „+ … anlegen“ öffnet das Fenster.
 
-**Knopfarten, nur drei:** primär (gefüllt Akzent, höchstens einer je Formular), sekundär (Rahmen, auch „Abbrechen“), Gefahr (rote Schrift und roter Rahmen, mit Abstand zu „Speichern“, M19). Textknöpfe gibt es nur für Links im Fließtext.
+**Knopfarten, nur drei:** primär (gefüllt Indigo, höchstens einer je Formular), sekundär (weiß mit sichtbarem Rahmen und grauer Fläche beim Überfahren, auch „Abbrechen“), Gefahr (rot gefüllt; als Knopf, der nur beim Überfahren rot wird, `danger-ghost`; mit Abstand zu „Speichern“, M19). Textknöpfe gibt es nur für Links im Fließtext.
 
 ### Feld (`Field`)
 
@@ -153,7 +189,7 @@ Nach GOV.UK ([Error summary](https://design-system.service.gov.uk/components/err
 ## 5. Tabellen und Listen, auch mobil
 
 - **Breit:**
-  - Kopf in Versalien, klein und grau; Zahlen rechtsbündig mit gleich breiten Ziffern.
+  - Kopf klein und grau (seit der Gestaltung „Mittelweg“ ohne Versalien); Zahlen rechtsbündig mit gleich breiten Ziffern.
   - Aktionen als Knopf „Bearbeiten“ mit `aria-label` „Anna Beispiel bearbeiten“ am rechten Rand, Mülleimer erst im Seitenfenster.
   - Die Tabelle scrollt in ihrer Karte (`Table.tsx` heute), die Seite nie (Breitentest „keine Seite breiter als 390 px“, siehe 9c).
 - **Schmal (< 640 px): Karten statt Seitwärtsscrollen**, für Listen mit Datensätzen:
@@ -248,7 +284,7 @@ Zusätzlich gilt: Eine **Musterseite** (als `?muster` in der App oder in den Tes
 
 ## 10. Einführungsplan (auslieferbare Schritte)
 
-Jeder Schritt ist ein PR mit `Refs #346` (und, wo er einen Befund der Checkliste behebt, `Refs #341`), wirkt für sich und lässt die App in jedem Zwischenstand einheitlich. Reihenfolge: zuerst die Fehler, die Daten kosten (Rückfrage, Seitenfenster), dann Fehlermeldungen, dann die Formularmuster, zuletzt Mobil und Gestaltung.
+Jeder Schritt ist ein PR mit `Refs #346` (und, wo er einen Befund der Checkliste behebt, `Refs #341`), wirkt für sich und lässt die App in jedem Zwischenstand einheitlich. Reihenfolge der Umsetzung: 0 (Tailwind), 4 (Tokens und Gestaltung „Mittelweg“), dann 9 (Mobil), dann 1, 2, 3, 5, 6, 7, 8, 10, 11. Die Gestaltung kommt vor den Bausteinen, damit jeder Baustein gleich in ihr entsteht, und Mobil direkt danach, weil die neue Seitenleiste dort die meiste Wirkung hat. Die Nummern bleiben, damit Verweise in Issues und PRs gültig sind.
 
 | # | Schritt | Befunde | Aufwand | Wächter neu |
 |---|---|---|---|---|
@@ -256,7 +292,7 @@ Jeder Schritt ist ein PR mit `Refs #346` (und, wo er einen Befund der Checkliste
 | 1 | **Rückfrage auf `<dialog>`**: Enter-Abfänger raus, Startfokus „Abbrechen“ bei Gefahr, `alertdialog`. *Teile schon mit PR #343 erledigt: Enter wirkt auf den Knopf mit Fokus, Startfokus bei Gefahr, Fokusfalle.* Offen bleibt die Umstellung auf `<dialog>` | H1 | ½ Tag | S13 |
 | 2 | **`Drawer` auf `<dialog>.showModal()`**, Rückfrage beim Schließen mit Änderungen, Fokus zurück, `target`-Prüfung. Alle 9 Seitenfenster profitieren auf einmal | M4, MOB4 | 1 Tag | S12 |
 | 3 | **`Field` + `ErrorSummary`** im Fensterfuß und in Karten, Feldfehler mit Ort; zuerst Zähler/Ablesung, Vorauszahlung, Mietkonto, HeatingSelfSetup, Heizkosten-Karten. *Teile schon mit PR #343 erledigt: `FormError` an der Ablesung auf der Zähler-Seite.* Offen bleiben `Field`, `ErrorSummary` und die übrigen Stellen | H3, H4, M5, M12 | 2–3 Tage | S15 |
-| 4 | **Tokens** in `index.css` (Abstand, Schrift, Radius, Ziel, Fokus), Feldbeschriftung in `--text` | Grundlage | 1 Tag | S17 |
+| 4 | **Tokens** in `index.css` (Abstand, Schrift, Radius, Ziel, Fokus) und Gestaltung „Mittelweg“ (Abschnitt 1), Feldbeschriftung in `--text` | Grundlage | 1 Tag | S17 (Farben) |
 | 5 | **`MonthField`** statt `MonthPicker`, Personenstaffel einheitlich | #287, M11 | 1–2 Tage | S14 |
 | 6 | **`Term` als Popover**, eigener Begriff `tightMarket` | M1, M2, MOB3 | 1 Tag | – |
 | 7 | **Formularmuster zurückführen**: Ablesung, Lieferung, Mieterwechsel und Zeitraumwechsel ins Seitenfenster; Heizkosten auf ein Speichern je Karte; Sofortspeichern → Entwurf am Feld; feste Verben | M18, N3, N8, N16, M19 | 3–4 Tage | S16, S19 |
