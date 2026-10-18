@@ -18,6 +18,8 @@ import { attentionDetail, attentionLevel, attentionLines } from '../notices'
 import { missingAreaCheck, zeroAreaUnits } from '../unitForm'
 import { UpdateConsent } from '../components/Update'
 import PageHeader from '../components/PageHeader'
+import EmptyState from '../components/EmptyState'
+import { startStep } from '../emptyStock'
 import { ibanHintTitle, invalidIbans } from '../ibanCheck'
 
 type Props = {
@@ -284,7 +286,10 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
   const pct = relevant.length ? Math.round((greenCount / relevant.length) * 100) : 0
   // Nächster Schritt: erst rote, dann gelbe offene Punkte
   const next = checks.find((c) => c.level === 'rot' && c.tab) ?? checks.find((c) => c.level === 'gelb' && c.tab)
-  const openCount = relevant.length - greenCount
+  // Die offenen Punkte beim Namen, für die Zeile nach dem Abschluss (M9). Nach dem Versand ist der Versand
+  // selbst kein offener Punkt mehr, auch wenn die Frist überschritten war: Das steht in seiner Zeile.
+  const sentAt = settlement?.closed?.sentAt ?? null
+  const openTitles = relevant.filter((c) => c.level !== 'gruen' && !(sentAt && c.title === 'Abgeschlossen & versendet')).map((c) => c.title)
 
   const statusBadge = settlement?.closed?.sentAt
     ? <span className="badge green">versendet</span>
@@ -297,22 +302,27 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
 
   const distributed = settlement ? settlement.totalCostsCents - settlement.landlord.totalCents : 0
   const fresh = settlement && settlement.statements.length === 0 && yearItems.length === 0
+  // Im leeren Bestand der erste Schritt, der fehlt (#346, Schritt 10, N12): Text und Knopf führen dorthin.
+  const start = startStep(units, tenancies, label, calendar)
 
   return (
     <>
       {/* Sichtprüfung S11/E56: Titel wie in der Navigation, mit dem Objekt darüber wie auf jeder Seite */}
       <PageHeader
         title={`Cockpit · Abrechnung ${label}`}
-        subtitle={cockpitSubtitle({ loaded: !!settlement, fresh: !!fresh, openCount })}
+        subtitle={cockpitSubtitle({ loaded: !!settlement, fresh: !!fresh, open: openTitles, sentAt, closed: !!settlement?.closed, start: start.text })}
         actions={
-          <>
-            {statusBadge}
-            {settlement && !settlement.closed && (
-              <span className={`badge ${daysLeft < 0 ? 'red' : 'gray'}`}>
-                {daysLeft >= 0 ? `Frist in ${daysLeft} Tagen` : 'Frist abgelaufen'}
-              </span>
-            )}
-          </>
+          // Ohne Daten gibt es weder einen Entwurf noch eine Frist, die zu nennen wäre (N12).
+          !fresh && (
+            <>
+              {statusBadge}
+              {settlement && !settlement.closed && (
+                <span className={`badge ${daysLeft < 0 ? 'red' : 'gray'}`}>
+                  {daysLeft >= 0 ? `Frist in ${daysLeft} Tagen` : 'Frist abgelaufen'}
+                </span>
+              )}
+            </>
+          )
         }
       />
 
@@ -322,13 +332,9 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
 
       {fresh ? (
         <div className="card">
-          <div className="empty">
-            <p>Noch nichts für {label} erfasst. So fangen Sie an:</p>
-            <div className="row centered">
-              <button className="btn secondary" onClick={() => onNavigate('stammdaten')}>🏠 Stammdaten anlegen</button>
-              <button className="btn" onClick={() => onNavigate('schnellerfassung')}>📥 Belege zur Schnellerfassung</button>
-            </div>
-          </div>
+          <EmptyState action={{ label: start.label, onClick: () => onNavigate(start.tab) }}>
+            Noch nichts für {label} erfasst.
+          </EmptyState>
         </div>
       ) : settlement && (
         <>
@@ -393,7 +399,8 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
           {/* Ergebnis je Mieter */}
           {settlement.statements.length > 0 && (
             <div className="card">
-              <h2>Voraussichtliches Ergebnis je Mieter</h2>
+              {/* Nach dem Abschluss steht das Ergebnis fest (M9). */}
+              <h2>{settlement.closed ? 'Ergebnis je Mieter' : 'Voraussichtliches Ergebnis je Mieter'}</h2>
               {/* Ohne Kosten im Jahr erstattete die Berechnung jedem die volle Vorauszahlung (#142);
                   das ist kein voraussichtliches Guthaben, sondern ein noch leeres Jahr. */}
               {yearItems.length === 0 ? (

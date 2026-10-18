@@ -146,7 +146,8 @@ test('Vermieteranteil: die Spalte „Grund“ nennt die tatsächlichen Gründe d
 test('Kopfzeile ohne Adresse endet nicht mit einem Trenner', async () => {
   show()
   await screen.findByText(/manuell angepasst/, {}, SLOW)
-  const kopf = document.querySelector('.card.statement > .muted')
+  // Seit N5 (#341) steht das Datum rechts daneben; die Kopfzeile selbst ist der erste Teil.
+  const kopf = document.querySelector('.card.statement > .muted > span')
   expect(kopf?.textContent?.trim()).toBe('A')
 })
 

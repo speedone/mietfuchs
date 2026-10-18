@@ -523,9 +523,12 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
           className="btn secondary"
           onClick={() => { tenErrors.clear(); setTenForm({ unitId: defaultTenancyUnitId(units, tenancies, localToday()), tenantName: '', personHistory: [{ from: '', persons: '2' }], start: '', end: '', baseRents: [{ from: '', amount: '' }], prepayments: [{ from: '', amount: '' }], ...EMPTY_TENANCY_EXTRA }) }}
           disabled={units.length === 0}
+          aria-describedby={units.length === 0 ? 'tenancy-needs-unit' : undefined}
         >
           + Mietverhältnis hinzufügen
         </button>
+        {/* Ein gesperrter Knopf nennt seinen Grund (#346, Schritt 10, M14). */}
+        {units.length === 0 && <span id="tenancy-needs-unit" className="muted self-center">Legen Sie zuerst eine Wohnung an.</span>}
         </div>
       </div>
 

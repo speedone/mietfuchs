@@ -830,3 +830,12 @@ test('S14: Monat nur im Monatsfeld, kein type="month" und kein type="number"', (
   expect(Object.keys(twSources).filter((f) => !allowed.has(f) && !f.startsWith('./testing/') && monthInputUses(twSources[f] ?? '').length > 0)
     .map((f) => `${f}: ${monthInputUses(twSources[f] ?? '').join(', ')}`)).toEqual([])
 })
+
+// S26 (#346, Schritt 10, M8): Hinweise stehen in einer Gestalt, Stufe als Zeichen und Wort, Titel, ein Satz und
+// „Mehr dazu“. Die Bausteine dafür (Stufenklasse, Stufenwort) nutzt nur components/Notice.tsx; eine Seite, die einen
+// Hinweis selbst zusammensetzt, liefe wieder in die Textwand oder die Stufe allein in der Farbe.
+test('S26: Hinweise nur über den Baustein Notice', () => {
+  expect(sources['./components/Notice.tsx']).toMatch(/noticeClass\(/)
+  const own = files.filter((f) => f !== './components/Notice.tsx' && /noticeClass\(|NOTICE_LEVEL_LABELS|notice-level/.test(sources[f] ?? ''))
+  expect(own).toEqual([])
+})

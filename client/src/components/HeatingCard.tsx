@@ -286,7 +286,11 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
     <div className="card" ref={cardRef}>
       <h2><Term id="heatingSystem">Heizung</Term></h2>
       {!form && !swap && <ErrorSummary errors={errors} />}
-      {plants.length === 0 && (
+      {/* Leerer Bestand (#346, Schritt 10, M14): Die Einrichtung fragt nach den versorgten Wohnungen. */}
+      {plants.length === 0 && units.length === 0 && (
+        <p className="muted">Optional. Die Heizung richten Sie ein, sobald Sie die Wohnungen angelegt haben.</p>
+      )}
+      {plants.length === 0 && units.length > 0 && (
         <>
           <p className="muted">
             Optional. Wenn Sie hier angeben, womit geheizt wird und wer abrechnet, sagt die Abrechnung, ob Mieter wegen nicht

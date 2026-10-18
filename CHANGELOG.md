@@ -180,6 +180,20 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Fensterhöhe verdeckte er „Einstellungen“ und „Hilfe & Begriffe“ (Befunde M13, M15, N1 aus
   [#341](https://github.com/speedone/mietfuchs/issues/341);
   [#346](https://github.com/speedone/mietfuchs/issues/346)).
+- Hinweise sind kürzer: Jeder Hinweis der Abrechnung und der Steuerübersicht zeigt seine Stufe als
+  Zeichen und Wort (Fehler, Warnung, Hinweis), einen fetten Titel, den einen Satz, was zu tun ist, und
+  „Hier beheben →“. Begründung, Paragraphen und Urteile stehen unter „Mehr dazu“ und werden immer
+  mitgedruckt. Der Wortlaut der Hinweise ist derselbe wie bisher, auch bei abgeschlossenen
+  Abrechnungen. In der Steuerübersicht steht die Beschreibung einer Position vorn, Gruppe und
+  Kostenart klein darunter. Das Cockpit sagt nach dem Versand „Versendet am …; noch offen: …“ statt
+  „dann ist die Abrechnung versandfertig“ und nennt das Ergebnis dann nicht mehr „voraussichtlich“.
+  Ohne Daten nennen Cockpit und Abrechnung den ersten fehlenden Schritt mit einem Knopf dorthin
+  („Wohnung anlegen“, „Mietverhältnis anlegen“), ohne „Entwurf“ und ohne Frist; „+ Mietverhältnis
+  hinzufügen“ sagt, warum es gesperrt ist. Die gedruckte Abrechnung nennt das Objekt nicht mehr
+  doppelt („Lindenweg 12 · Lindenweg 12, …“), trägt das Datum (Versand, sonst Tag des Drucks) und die
+  Anschrift des Mieters; „Was heißt das?“ erscheint nicht mehr im Druck der Steuerübersicht (Befunde
+  M8, M9, M14, N5, N12 aus [#341](https://github.com/speedone/mietfuchs/issues/341);
+  [#346](https://github.com/speedone/mietfuchs/issues/346)).
 
 ### Behoben
 
