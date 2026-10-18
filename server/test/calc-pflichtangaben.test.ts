@@ -532,3 +532,60 @@ test('Durchsicht Runde 3, N2-H1 und N2-H2: „nach Wohnfläche“ – Mieterwech
   const ohneSteps = ohne.statements.find((st) => st.tenancyId === 'B1')?.rows.find((r) => r.costItemId === 'gas')?.steps ?? []
   assert.doesNotMatch(ohneSteps.map((x) => x.value).join(' '), /sinngemäß/)
 })
+
+// ---------- #345: Vergleich nach § 6a, wenn die Wärmezähler in MWh oder GJ stehen ----------
+
+const WAERME = new Set(['wz-a', 'wz-b', 'wz-c'])
+// Dieselben Verbräuche wie Beispiel A, die Wärmezähler der Wohnungen aber in `unit` (`perKwh`: Wert je kWh).
+const inEinheit = (s: Snapshot, unit: string, perKwh: number): Snapshot => ({
+  ...s,
+  meters: s.meters.map((m) => (WAERME.has(m.id) ? { ...m, unit } : m)),
+  readings: s.readings.map((r) => (WAERME.has(r.meterId) ? { ...r, value: r.value * perKwh } : r)),
+})
+const vergleich = (s: ComputedSettlement) => infoOf(s).users.map((u) => ({ id: u.tenancyId, h: u.heating }))
+const gleichWieKwh = (s: ComputedSettlement, kwh: ComputedSettlement, what: string) => {
+  const soll = vergleich(kwh)
+  const ist = vergleich(s)
+  assert.deepEqual(ist.map((u) => u.id), soll.map((u) => u.id), `${what}: Mieter`)
+  for (const [k, u] of soll.entries()) {
+    const x = ist[k]?.h ?? assert.fail(`${what}: ${u.id} ohne Heizung`)
+    const y = u.h ?? assert.fail(`${what}: ${u.id} ohne Heizung im kWh-Fall`)
+    for (const f of ['now', 'referenceKwh', 'prev', 'nowAdjusted', 'prevAdjusted'] as const) {
+      const a = x[f]
+      const b = y[f]
+      if (b === null) assert.equal(a, null, `${what}: ${u.id} ${f}`)
+      else assert.ok(a !== null && Math.abs(a - b) < 1e-6, `${what}: ${u.id} ${f} ${a} statt ${b}`)
+    }
+  }
+}
+
+test('#345: Wärmezähler in MWh oder GJ: Nr. 4 wird gerechnet, Verbrauch und Durchschnittsnutzer in kWh wie im kWh-Fall', () => {
+  const kwh = computeSettlement(mitAngaben())
+  for (const [unit, perKwh] of [['MWh', 1 / 1000], ['GJ', 9 / 2500]] as const) {
+    const s = computeSettlement(inEinheit(mitAngaben(), unit, perKwh))
+    const info = infoOf(s)
+    assert.deepEqual([info.referenceComparable, info.units.heating, info.missing, info.uncertain.includes('4')], [true, 'kWh', [], false], unit)
+    assert.ok(!codes(s).includes('heating.info-incomplete'), `${unit}: ${codes(s).join(', ')}`)
+    gleichWieKwh(s, kwh, unit)
+    const a = info.users.find((u) => u.tenancyId === 'A') ?? assert.fail('A')
+    assert.ok(a.heating && Math.abs((a.heating.now ?? 0) - 12000) < 1e-6 && Math.abs((a.heating.referenceKwh ?? 0) - 9000) < 1e-6, unit)
+    // Die Verteilung bleibt dieselbe.
+    assert.equal(sumRows(s), sumRows(kwh), unit)
+  }
+})
+
+test('#345: kWh-Fall unverändert (Ausweis in kWh, dieselben Zahlen)', () => {
+  const info = infoOf(computeSettlement(mitAngaben()))
+  assert.deepEqual([info.referenceComparable, info.units.heating], [true, 'kWh'])
+  const a = info.users.find((u) => u.tenancyId === 'A') ?? assert.fail('A')
+  assert.deepEqual([a.heating?.now, a.heating?.prev, a.heating?.referenceKwh], [12000, 1000, 9000])
+})
+
+test('#345: Vorjahresvergleich (Nr. 5) bei Zählern in MWh steht in kWh wie im kWh-Fall', () => {
+  // Die Vorperiode rechnet mit denselben Zählern und Faktoren wie dieser Zeitraum (calc.ts, Plan der Vorperiode);
+  // beide Werte stehen deshalb in derselben Einheit und werden gemeinsam in kWh umgerechnet.
+  // Bleiben die Zähler in MWh über beide Jahre, ist das Vorjahr in kWh wie im kWh-Fall (A: 1.000 kWh).
+  const mwh = infoOf(computeSettlement(inEinheit(mitAngaben(), 'MWh', 1 / 1000)))
+  const a = mwh.users.find((u) => u.tenancyId === 'A') ?? assert.fail('A')
+  assert.ok(a.heating && Math.abs((a.heating.prev ?? 0) - 1000) < 1e-9 && Math.abs((a.heating.prevAdjusted ?? 0) - 1150) < 1e-6, JSON.stringify(a.heating))
+})

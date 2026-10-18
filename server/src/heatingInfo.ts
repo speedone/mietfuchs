@@ -22,6 +22,7 @@ import type {
 } from '../../shared/types.ts'
 import { CONSUMER_CONTRACT_NONE } from '../../shared/heatingInfo.ts'
 import { lineRoot } from '../../shared/heatingPeriod.ts'
+import { knownUnit } from '../../shared/meterUnits.ts'
 import type { SelfPlan, SelfUnitPlan } from './heating.ts'
 
 // ---------- Angaben je Heizperiode, geerbt über die Linie ----------
@@ -165,11 +166,17 @@ export function heatingInfoOf(i: InfoInput): HeatingInfoStatement {
   if (dispute.kind === 'unknown') uncertain.push('3')
   const comparisonSource = row && filled(row.infoComparisonSource) ? row.infoComparisonSource.trim() : null
   const heatExempt = !i.pots.includes('heating')
+  // Der Vergleich nach § 6a steht in kWh (#345): Der Vergleichswert wird in kWh je m² eingetragen, und Wärmezähler, die
+  // einheitlich in MWh oder GJ stehen, rechnet Mietfuchs exakt um (shared/meterUnits.ts). Heizkostenverteiler
+  // (Einheiten) und eine unbekannte Einheit lassen sich nicht umrechnen; dann bleibt die Einheit des Topfs.
+  const heatUnit = knownUnit('waerme', i.units.heating)
+  const toKwh = heatUnit ? heatUnit.num / heatUnit.den : null
+  const kwh = (v: number | null): number | null => (v === null || toKwh === null ? v : v * toKwh)
   const base = {
     contacts: [...i.contacts],
     contactsChecked: i.contactsChecked,
     dispute,
-    units: i.units,
+    units: toKwh === null ? i.units : { ...i.units, heating: 'kWh' },
     heatExempt,
   }
   if (!i.byConsumption) {
@@ -225,9 +232,9 @@ export function heatingInfoOf(i: InfoInput): HeatingInfoStatement {
     return { ...out, referenceComparable: false, users: [], missing, missingCommon: common, uncertain, comparisons: false }
   }
   const inPots = (p: SelfPot): boolean => i.pots.includes(p) && plan.pots.includes(p)
-  // Verglichen wird der Wärmeverbrauch in kWh (Festlegung). Misst der Topf in Einheiten (Heizkostenverteiler)
-  // oder ist die Wärme nach § 11 ausgenommen, kann Mietfuchs nicht vergleichen.
-  const referenceComparable = inPots('heating') && i.units.heating === 'kWh'
+  // Verglichen wird der Wärmeverbrauch in kWh (Festlegung), bei Zählern in MWh oder GJ umgerechnet (#345). Misst der
+  // Topf in Einheiten (Heizkostenverteiler) oder ist die Wärme nach § 11 ausgenommen, kann Mietfuchs nicht vergleichen.
+  const referenceComparable = inPots('heating') && toKwh !== null
   // Nr. 4 für alle: ohne Vergleichswert mit Quelle, und wo Mietfuchs nicht vergleichen kann, ohne beigelegten
   // Vergleich (dann offen, R-W1). Ein selbst errechneter Hausdurchschnitt ersetzt ihn nicht.
   const ref4: 'ok' | 'missing' | 'open' = comparisonSource !== null ? 'ok' : !referenceComparable ? 'open' : reference === null ? 'missing' : 'ok'
@@ -239,8 +246,11 @@ export function heatingInfoOf(i: InfoInput): HeatingInfoStatement {
   const users: InfoComparison[] = tenancyIds.map((id) => {
     const unit = unitOf(plan, id)
     const label = unit?.users.find((x) => x.tenancyId === id)?.label ?? id
-    const now = { heating: sumFor(plan, id, 'heating'), water: sumFor(plan, id, 'water') }
-    const before = { heating: sumFor(i.prev, id, 'heating'), water: sumFor(i.prev, id, 'water') }
+    // Die Wärme in kWh (#345). Die Vorperiode rechnet mit denselben Zählern und den Faktoren dieses Zeitraums, steht also
+    // in derselben Einheit; ein Zähler, der nur die Vorperiode misst, sperrt die eigene Abrechnung (`heating.self-incomplete`).
+    const inKwh = (x: ReturnType<typeof sumFor>) => ({ ...x, value: kwh(x.value) })
+    const now = { heating: inKwh(sumFor(plan, id, 'heating')), water: sumFor(plan, id, 'water') }
+    const before = { heating: inKwh(sumFor(i.prev, id, 'heating')), water: sumFor(i.prev, id, 'water') }
     // Wohnte der Mieter im vorhergehenden Zeitraum schon dort? Sonst ist es sein erstes Jahr; wohnte er dort,
     // fehlt aber ein vergleichbarer Wert, kennt Mietfuchs den Verbrauch nur nicht.
     const t = i.tenancies.find((x) => x.id === id)
