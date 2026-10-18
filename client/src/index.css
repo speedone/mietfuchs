@@ -11,6 +11,7 @@
   --text: #09090b;
   --muted: #63636b;
   --line: #e4e4e7;
+  --chart-prev: #8e8e96; /* Vorjahresbalken, mindestens 3:1 gegen die Karte (S6) */
   /* --accent für Flächen, Rahmen und Fokus; --accent-text für Schrift in Akzentfarbe (S6). Beide
      müssen auf --card und --accent-soft mindestens 4,5:1 erreichen (uiRules.test.ts rechnet nach).
      --accent-soft ist die getönte Fläche (aktiver Menüpunkt, Objekt-Marke), --accent-strong die
@@ -85,6 +86,7 @@
     --text: #fafafa;
     --muted: #a1a1aa;
     --line: #27272a;
+    --chart-prev: #71717a;
     --accent: #5558e3;
     --accent-text: #a5b4fc;
     --accent-soft: #1e1d3d;
@@ -345,7 +347,7 @@ label.checkline:has(.term-pop) { flex-wrap: wrap; }
 .rent-month.paid { background: var(--green-soft); border-color: var(--green-soft); color: var(--green); }
 .rent-month.partial { background: var(--amber-soft); border-color: var(--amber-soft); color: var(--amber); cursor: pointer; }
 .rent-month.open { background: var(--red-soft); border-color: var(--red-soft); color: var(--red); cursor: pointer; }
-.rent-month.none { color: var(--muted); opacity: 0.5; }
+.rent-month.none { color: var(--muted); }
 /* noch nicht fällig (#133): neutral, aber buchbar (Vorauszahlung) */
 .rent-month.notDue { color: var(--muted); border-style: dashed; cursor: pointer; }
 .rent-month:is(.notDue, .partial, .open):hover { outline: 2px solid var(--accent); }
@@ -369,12 +371,11 @@ label.checkline:has(.term-pop) { flex-wrap: wrap; }
 
 /* ---------- Übersicht: einfache Balken-Charts ---------- */
 .chart-table .bar { height: 13px; background: var(--accent); border-radius: var(--radius-s); min-width: 2px; margin: 2px 0; }
-.chart-table .bar.prev { background: var(--line); }
+.bar.prev, .bar-key.prev { background: var(--chart-prev); }
 /* Legende der Balken (E49) */
 .chart-legend { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .bar-key { display: inline-block; width: 18px; height: 10px; border-radius: 3px; background: var(--accent); margin-left: 6px; }
 .bar-key:first-child { margin-left: 0; }
-.bar-key.prev { background: var(--line); }
 
 /* ---------- Mieterwechsel-Assistent ---------- */
 .wizard-step { border-left: 3px solid var(--accent-soft); padding: 6px 0 10px 14px; margin-bottom: var(--space-3); }
