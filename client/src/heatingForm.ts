@@ -130,7 +130,7 @@ export const asksFuelContract = (form: Pick<HeatingForm, 'energy' | 'contracting
 export const editFuelContractNote = (form: Pick<HeatingForm, 'energy' | 'contracting'>, editingId: string | null): string | null =>
   editingId !== null && form.energy !== '' && form.energy !== 'perUnit' && SELF_SUPPLY_FUELS.includes(billingEnergy({ energy: form.energy, contracting: form.contracting }))
     ? 'Hat ein Mieter den Liefervertrag für den Brennstoff dieser Heizung, legen Sie dafür keine Heizanlage an: Klicken Sie unter der Anlage auf ' +
-      '„Entfernen“ (die Heizpositionen bleiben, nur ohne Anlage), dann auf „Heizung einrichten“, und wählen Sie bei „Wer hat den Liefervertrag für den Brennstoff?“ ' +
+      '„Entfernen …“ (die Heizpositionen bleiben, nur ohne Anlage), dann auf „Heizung einrichten“, und wählen Sie bei „Wer hat den Liefervertrag für den Brennstoff?“ ' +
       '„Der Mieter, der alle angeschlossenen Wohnungen gemietet hat“.'
     : null
 

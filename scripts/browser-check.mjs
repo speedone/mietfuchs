@@ -303,7 +303,7 @@ const focusedText = (page) => page.evaluate(() => {
 // Fenster offen, Esc und „Verwerfen“ schließen es, der Fokus geht an den Auslöser zurück.
 async function probeDrawer(page, view, snap) {
   await go(page, view, 'Stammdaten')
-  const opener = page.getByRole('button', { name: '+ Wohnung hinzufügen' })
+  const opener = page.getByRole('button', { name: '+ Wohnung anlegen' })
   await opener.click()
   const drawer = page.getByRole('dialog', { name: 'Neue Wohnung' })
   await drawer.waitFor({ state: 'visible' })
@@ -326,7 +326,7 @@ async function probeDrawer(page, view, snap) {
   await ask.getByRole('button', { name: 'Verwerfen' }).click()
   await drawer.waitFor({ state: 'hidden', timeout: 3000 }).catch(() => fail('Seitenfenster: „Verwerfen“ schließt das Fenster nicht.'))
   const back = await opener.evaluate((b) => b === (/** @type {any} */ (globalThis)).document.activeElement)
-  if (!back) fail('Seitenfenster: Nach dem Schließen steht der Fokus nicht auf „+ Wohnung hinzufügen“.')
+  if (!back) fail('Seitenfenster: Nach dem Schließen steht der Fokus nicht auf „+ Wohnung anlegen“.')
 }
 
 // Schließt ein Seitenfenster mit Änderungen über die Rückfrage.
@@ -341,7 +341,7 @@ async function discardDrawer(page, drawer) {
 // „März 2025“; das Raster öffnet mit dem Fokus auf März, → und Enter wählen April, Esc schließt nur das Raster.
 async function probeMonth(page, view, snap) {
   await go(page, view, 'Stammdaten')
-  await page.getByRole('button', { name: '+ Mietverhältnis hinzufügen' }).click()
+  await page.getByRole('button', { name: '+ Mietverhältnis anlegen' }).click()
   const drawer = page.getByRole('dialog', { name: 'Neues Mietverhältnis' })
   await drawer.waitFor({ state: 'visible' })
   const field = drawer.locator('.month-field').first()
