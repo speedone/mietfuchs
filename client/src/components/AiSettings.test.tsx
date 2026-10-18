@@ -109,7 +109,7 @@ test('Anbieter: ein Wechsel setzt die Adresse der Vorlage, Speichern schickt das
   const reload = show(settings())
   const group = await standard()
   fireEvent.change(await selectIn(group, /^Anbieter/), { target: { value: 'openai' } })
-  expect((within(group).getByRole('textbox', { name: /Adresse/ }) as HTMLInputElement).value).toBe('https://api.openai.com/v1')
+  expect(((await within(group).findByRole('textbox', { name: /Adresse/ })) as HTMLInputElement).value).toBe('https://api.openai.com/v1')
   fireEvent.change(within(group).getByRole('textbox', { name: /^Modell/ }), { target: { value: 'gpt-5.4-nano' } })
   fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
   await waitFor(() => expect(saved()?.text).toEqual({ provider: 'openai', preset: 'openai', url: 'https://api.openai.com/v1', model: 'gpt-5.4-nano', vision: null }))
@@ -139,7 +139,7 @@ test('Ollama: eine gefundene Adresse lässt sich übernehmen', async () => {
 test('Schlüssel: fehlt er, gibt es ein Feld und einen Link, gespeichert wird über die eigene Route', async () => {
   const reload = show(settings({ ai: ai({ text: OPENAI }) }))
   const group = await standard()
-  expect(within(group).getByRole('link', { name: /Schlüssel bekommen/ }).getAttribute('href')).toBe('https://platform.openai.com/api-keys')
+  expect((await within(group).findByRole('link', { name: /Schlüssel bekommen/ })).getAttribute('href')).toBe('https://platform.openai.com/api-keys')
   const input = within(group).getByLabelText(/API-Schlüssel/) as HTMLInputElement
   expect(input.type).toBe('password')
   fireEvent.change(input, { target: { value: 'sk-test-1234567890abcd' } })
@@ -153,7 +153,7 @@ test('Schlüssel: fehlt er, gibt es ein Feld und einen Link, gespeichert wird ü
 test('Schlüssel: ein gespeicherter zeigt nur den Hinweis und lässt sich löschen', async () => {
   show(settings({ ai: ai({ text: OPENAI }), aiKeys: { ...NO_KEYS, text: { set: true, hint: '…abcd', fromEnv: null } } }))
   const group = await standard()
-  expect(within(group).getByText(/Schlüssel gespeichert \(…abcd\)/)).toBeTruthy()
+  expect((await within(group).findByText(/Schlüssel gespeichert \(…abcd\)/))).toBeTruthy()
   fireEvent.click(within(group).getByRole('button', { name: 'Schlüssel löschen' }))
   await waitFor(() => expect(sent.find((r) => r.url === '/api/ai/key/text')?.method).toBe('DELETE'))
 })
@@ -161,7 +161,7 @@ test('Schlüssel: ein gespeicherter zeigt nur den Hinweis und lässt sich lösch
 test('Schlüssel: aus der Umgebung nur als Hinweis, ohne Feld', async () => {
   show(settings({ ai: ai({ text: OPENAI }), aiKeys: { ...NO_KEYS, text: { set: true, hint: '…abcd', fromEnv: 'NKA_AI_API_KEY_FILE' } } }))
   const group = await standard()
-  expect(within(group).getByText(/NKA_AI_API_KEY_FILE/)).toBeTruthy()
+  expect((await within(group).findByText(/NKA_AI_API_KEY_FILE/))).toBeTruthy()
   expect(within(group).queryByLabelText(/API-Schlüssel/)).toBe(null)
 })
 
@@ -170,7 +170,7 @@ test('Schlüssel: aus der Umgebung nur als Hinweis, ohne Feld', async () => {
 test('Bestätigung: vor der ersten Auswertung bei einem externen Dienst, mit Link zu den Bedingungen', async () => {
   const reload = show(settings({ ai: ai({ text: OPENAI }), aiExternal: { text: true, images: false } }))
   const group = await standard()
-  expect(within(group).getByText(/Belege gehen an api\.openai\.com/)).toBeTruthy()
+  expect((await within(group).findByText(/Belege gehen an api\.openai\.com/))).toBeTruthy()
   expect(within(group).getByRole('link', { name: /Bedingungen des Anbieters/ }).getAttribute('href')).toBe('https://openai.com/policies/data-processing-addendum/')
   fireEvent.click(within(group).getByRole('button', { name: 'Übermittlung bestätigen' }))
   await waitFor(() => expect(sent.find((r) => r.url === '/api/ai/consent')?.body).toEqual({ slot: 'text' }))
@@ -181,14 +181,14 @@ test('Bestätigung: eine erteilte steht mit Datum da und lässt sich widerrufen'
   const consent = { url: 'https://api.openai.com/v1', model: 'gpt-5.4-nano', date: '2026-09-19' }
   show(settings({ ai: ai({ text: OPENAI, consent: { text: consent } }), aiExternal: { text: true, images: false } }))
   const group = await standard()
-  expect(within(group).getByText(/Übermittlung an api\.openai\.com bestätigt am 19\.09\.2026/)).toBeTruthy()
+  expect((await within(group).findByText(/Übermittlung an api\.openai\.com bestätigt am 19\.09\.2026/))).toBeTruthy()
   fireEvent.click(within(group).getByRole('button', { name: 'Widerrufen' }))
   await waitFor(() => expect(sent.find((r) => r.url === '/api/ai/consent/text')?.method).toBe('DELETE'))
 })
 
 test('Bestätigung: der Hinweis einer Vorlage steht dabei', async () => {
   show(settings({ ai: ai({ text: { ...OPENAI, preset: 'mistral', url: 'https://api.mistral.ai/v1' } }), aiExternal: { text: true, images: false } }))
-  expect(within(await standard()).getByText(/zum Training verwenden/)).toBeTruthy()
+  expect(await within(await standard()).findByText(/zum Training verwenden/)).toBeTruthy()
 })
 
 // ---------- Erweitert ----------
@@ -224,7 +224,7 @@ test('Erweitert: ein eigener Anbieter für Fotos und Scans lässt sich einschalt
 test('Umgebung: festgelegte Felder sind gesperrt und nennen die Variable', async () => {
   show(settings({ fixedByEnv: ['ai.text.url', 'ai.timeoutSeconds'] }))
   const group = await standard()
-  expect((within(group).getByRole('textbox', { name: /Adresse/ }) as HTMLInputElement).disabled).toBe(true)
+  expect(((await within(group).findByRole('textbox', { name: /Adresse/ })) as HTMLInputElement).disabled).toBe(true)
   expect(within(group).getByText(/NKA_AI_URL oder NKA_OLLAMA_URL/)).toBeTruthy()
   expect((screen.getByLabelText(/Zeitlimit/) as HTMLInputElement).disabled).toBe(true)
   expect(screen.getByText(/NKA_AI_TIMEOUT/)).toBeTruthy()
@@ -245,7 +245,7 @@ test('Empfehlungen: Vorschläge mit Größe und Hinweis, „Übernehmen“ setzt
   show(settings({ ai: ai({ text: { ...LOCAL, model: 'text:8b' } }) }))
   const group = await standard()
   expect(await within(group).findByText(/Besser bei Fotos/)).toBeTruthy()
-  expect(within(group).getByText(/9,2 GB/)).toBeTruthy()
+  expect((await within(group).findByText(/9,2 GB/))).toBeTruthy()
   // Schon installiert: qwen3.5:4b steht nicht in der Modellliste des nachgebauten Servers
   fireEvent.click(within(group).getAllByRole('button', { name: 'Übernehmen' })[1])
   fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))

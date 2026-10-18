@@ -57,3 +57,20 @@ test('Die Ausnahmen sind noch nötig', () => {
     assert.ok(all.some(([f, s]) => f === file && s.includes(quote ?? '')), `Ausnahme ohne Zitat: ${key}`)
   }
 })
+
+// Die Prüfung oben verlangt das Zitat nur als Teil des Quelltexts; ein umbenannter Knopf, dessen altes Wort noch anderswo
+// steht („Übernehmen“ bei den KI-Modellen), fiele ihr durch. Deshalb dürfen die Beschriftungen, die #346 Schritt 7
+// abgelöst hat, in keiner Meldung und keiner Anleitung mehr zitiert werden (Durchsicht K4). Eine ganze Beschriftung statt
+// eines Teilstrings zu verlangen ist nicht robust: Viele Zitate nennen den Anfang einer Option („Mieter heizt selbst“).
+const RETIRED = [
+  'Übernehmen', 'Hinzufügen', 'Umstellen', 'Tausch speichern', '+ Wohnung hinzufügen', '+ Mietverhältnis hinzufügen', '+ Zähler hinzufügen',
+  '+ Kostenposition manuell erfassen', '+ Zahlung erfassen', '+ weitere Heizanlage',
+]
+test('Meldungen und Anleitungen zitieren keine abgelöste Beschriftung (#346 Schritt 7)', () => {
+  const found: string[] = []
+  for (const [file, text] of [...sources('server/src'), ...sources('shared')]) {
+    const code = text.split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n')
+    for (const label of RETIRED) if (code.includes(`„${label}“`)) found.push(`${file}: „${label}“`)
+  }
+  assert.deepEqual(found, [])
+})

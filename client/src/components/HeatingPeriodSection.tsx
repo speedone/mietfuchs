@@ -106,7 +106,7 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
     // Laienprobe B11: Bei „ja“ ist die getrennte Abrechnung erst nach dem Aufteilen der Vorauszahlung
     // eingeschaltet. Die Vorschau dazu öffnet sich gleich, und die Meldung sagt, dass noch etwas fehlt.
     if (form.choice === 'own' && form.separate === 'yes' && !openSpan) {
-      notify('Zeitraum der Heizung gespeichert. Noch nicht eingeschaltet ist die getrennte Heizkostenabrechnung: Prüfen Sie unten die Aufteilung der Vorauszahlung und klicken Sie „Übernehmen“.')
+      notify('Zeitraum der Heizung gespeichert. Noch nicht eingeschaltet ist die getrennte Heizkostenabrechnung: Prüfen Sie unten die Aufteilung der Vorauszahlung und klicken Sie „Speichern“.')
       setOpen('separate')
       setSecondStep(true)
       await loadSeparatePreview(true)

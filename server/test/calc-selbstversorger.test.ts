@@ -133,7 +133,7 @@ test('Abdeckung V27: zentrale Heizung als Anlage angelegt, Brennstoff beim Miete
   const zentral = computeSettlement(snapshotFor({ ...s, tenancies }, 'objekt-1', P))
   const n = zentral.notices.find((x) => x.code === 'co2.self-supply-mixed') ?? assert.fail(codes(zentral).join(', '))
   assert.match(n.text, /Bezieht er den Brennstoff dieser zentralen Heizung über einen eigenen Vertrag, legen Sie dafür keine Heizanlage an:/)
-  assert.match(n.text, /„Entfernen“/)
+  assert.match(n.text, /mit „Entfernen …“ \(die Heizpositionen bleiben/)
   assert.match(n.text, /„Wer hat den Liefervertrag für den Brennstoff\?“ „Der Mieter, der alle angeschlossenen Wohnungen gemietet hat“/)
   assert.doesNotMatch(n.text, /nehmen Sie seine Wohnung aus der Heizanlage/)
   // Etagenheizung auf Vertrag des Vermieters: Dort bleibt der Weg, die Wohnung aus der Anlage zu nehmen.

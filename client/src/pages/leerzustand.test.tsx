@@ -91,7 +91,7 @@ test('Cockpit abgeschlossen ohne Versand: Frist als Plakette und in der Unterzei
 
 test('Stammdaten ohne Wohnung: der gesperrte Knopf nennt seinen Grund, die Heizung wartet auf die Wohnungen', async () => {
   wrap(<Stammdaten units={[]} tenancies={[]} settings={null} reload={async () => {}} />)
-  const add = await screen.findByRole('button', { name: '+ Mietverhältnis hinzufügen' }, SLOW)
+  const add = await screen.findByRole('button', { name: '+ Mietverhältnis anlegen' }, SLOW)
   expect((add as HTMLButtonElement).disabled).toBe(true)
   const reason = document.getElementById(add.getAttribute('aria-describedby') ?? '')
   expect(reason?.textContent).toBe('Legen Sie zuerst eine Wohnung an.')
