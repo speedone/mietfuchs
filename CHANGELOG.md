@@ -194,6 +194,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Umlageschlüsseln der Kostenpositionen, ohne eigene Heizkostenabrechnung“. Der Knopf heißt „Eigene
   Heizkostenabrechnung einrichten“, und Einrichtung wie Mitteilung nach „Später“ sagen, dass die
   Abrechnung erst mit „Umstellen“ wechselt (Befund M6 aus [#341](https://github.com/speedone/mietfuchs/issues/341)).
+- Cockpit: Die grüne Zeile „Mietverhältnisse & Flächen“ nannte Einheiten wie Garage und Stellplatz nur
+  mit „0 m² und 0 Personen: …“. Sie sagt jetzt, warum das in Ordnung ist: Einheiten ohne Wohnfläche und
+  ohne Bewohner zählen bei Fläche und Personen nicht mit; verteilt eine Position nach Einheiten, steht
+  dabei, dass sie dort je als eine Einheit zählen (Befund N2 aus
+  [#341](https://github.com/speedone/mietfuchs/issues/341)).
 - Die Karte „Objekt“ verlangt eine Bezeichnung: Leer ließ sie sich speichern, und die Seitenleiste
   zeigte danach „Ohne Namen“. Hat das Objekt noch keinen Namen, etwa nach einer frischen Installation,
   steht im Feld „Mein Objekt“; Sie können es überschreiben, und mit dem ersten Speichern der Karte wird

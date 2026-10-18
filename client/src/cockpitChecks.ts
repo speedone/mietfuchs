@@ -22,10 +22,24 @@ export function usesUnitBasis(items: CostItem[]): boolean {
 
 // Die grünen Zeilen „Mietverhältnisse & Flächen“ und „Belege erfasst“, mit Ein- und Mehrzahl statt
 // „Mietverhältnis(se)“ oder „Position(en)“ (#180).
-export function tenanciesDetail(tenancies: number, notSettled: number, participating: number, zeroArea: string[]): string {
+//
+// Einheiten ohne Wohnfläche und ohne Bewohner (`zeroArea`, Garage-artig nach `isGarageLike` in calc.ts, #135)
+// sind eine Angabe und kein Fehler, die Zeile bleibt grün. Sie sagt aber, warum (Befund N2 aus #341): Bei
+// Fläche und Personen tragen sie nichts; beim Schlüssel nach Einheiten zählt jede als eine Einheit
+// (`basisUnits` in calc.ts), das nennt die Zeile nur, wenn eine Position im Zeitraum so verteilt (`unitsKey`).
+export function tenanciesDetail(tenancies: number, notSettled: number, participating: number, zeroArea: string[], unitsKey = false): string {
+  const one = zeroArea.length === 1
+  const zero = `${andList(zeroArea)} ohne Wohnfläche und ohne Bewohner (etwa Garage oder Stellplatz): ` +
+    `Bei Fläche und Personen ${one ? 'zählt sie' : 'zählen sie'} nicht mit` +
+    (unitsKey ? `, nach Einheiten ${one ? 'als' : 'je als'} eine Einheit` : '')
   return `${countOf(tenancies, 'Mietverhältnis', 'Mietverhältnisse')}${notSettled > 0 ? `, davon ${notSettled} ohne Abrechnung` : ''}` +
     ` · ${countOf(participating, 'beteiligte Wohnung', 'beteiligte Wohnungen')} · ` +
-    (zeroArea.length > 0 ? `0 m² und 0 Personen: ${andList(zeroArea)}` : 'vollständig')
+    (zeroArea.length > 0 ? zero : 'vollständig')
+}
+
+// Verteilt eine umlagefähige Position im Zeitraum nach Einheiten? (für `tenanciesDetail`)
+export function usesUnitsKey(items: CostItem[]): boolean {
+  return allocable(items).some((c) => c.key === 'units')
 }
 
 export function itemsDetail(items: number, sumCents: number, files: number): string {
