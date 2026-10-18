@@ -2312,8 +2312,10 @@ die ganze fachliche Komplexität:
   (`unitDropped`, `meterUnitHint`); gespeichert wird bei Sparten mit Auswahl nur eine gewählte Einheit, eine schon
   leer gespeicherte darf leer bleiben. Der Server prüft nur eine neue oder geänderte Einheit (`acceptMeterUnit` in
   repository.ts, Muster der IBAN), nimmt bei Sparten mit Auswahl keine neue leere an und speichert die bekannte
-  Schreibweise. Offen: Die Angaben nach § 6a vergleichen den Verbrauch eines einheitlich in MWh geführten Topfs
-  weiter wie vor #342 mit kWh je m².
+  Schreibweise. Die Angaben nach § 6a (`heatingInfoOf`) stehen in kWh (#345): Steht der Topf Wärme in MWh oder GJ,
+  rechnet heatingInfo.ts Verbrauch, Vorjahr und bereinigte Werte mit dem Faktor aus shared/meterUnits.ts um und
+  vergleicht mit dem Vergleichswert in kWh je m²; der Ausweis nennt dann kWh. Vorperiode und Zeitraum rechnen mit
+  denselben Zählern und Faktoren, stehen also in derselben Einheit. Heizkostenverteiler bleiben unvergleichbar.
   **Die Eichfrist** (#98, Heizung PR 21) ist eine Warnung und keine Sperre: `meters.calibrated_until`
   (Jahr, mit dessen Ende die Frist endet, § 34 Abs. 2 MessEV; Migrationen 0046/0047, Bedingungen
   `meters_calibrated_until_valid` mit `typeof`, weil die INTEGER-Affinität eine Kommazahl als REAL behält,
