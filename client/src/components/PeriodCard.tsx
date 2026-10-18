@@ -205,6 +205,8 @@ export default function PeriodCard({ onChanged }: { onChanged?: () => Promise<vo
   const errors = useFormError<'from'>()
   const setError = errors.set
   const [busy, setBusy] = useState(false)
+  // Eine Vorschau ist nach einer Änderung des Formulars verfallen (M2): Das Fenster sagt dann, dass sie neu nötig ist.
+  const [stale, setStale] = useState(false)
   if (!property) return null
   const rules = rulesOf(property)
 
@@ -213,9 +215,21 @@ export default function PeriodCard({ onChanged }: { onChanged?: () => Promise<vo
     setPreview(null)
     setAnswers(null)
     setUnderstood(false)
+    setStale(false)
     errors.clear()
     setOpen(next)
     if (next.kind === 'remove') void ask(withoutChange(rules, next.from))
+  }
+
+  // Durchsicht M2 (vorbestehend): Gespeichert werden die Regeln der Vorschau. Ändert sich danach das Formular, gälte die
+  // Vorschau für einen anderen Monat als den im Feld; sie verfällt deshalb samt Antworten und Bestätigung, und „Speichern“
+  // ist bis zur nächsten Vorschau gesperrt.
+  function changeForm(next: RhythmForm) {
+    setForm(next)
+    if (preview !== null) setStale(true)
+    setPreview(null)
+    setAnswers(null)
+    setUnderstood(false)
   }
 
   function close() {
@@ -236,6 +250,7 @@ export default function PeriodCard({ onChanged }: { onChanged?: () => Promise<vo
       setPreview(p)
       setAnswers(initialAnswers(p))
       setUnderstood(false)
+      setStale(false)
     } catch (e) {
       setError(errorText(e))
     } finally {
@@ -309,13 +324,25 @@ export default function PeriodCard({ onChanged }: { onChanged?: () => Promise<vo
         >
           {open.kind === 'change' && (
             <>
-              <RhythmFields form={form} onChange={setForm} fromField={errors.field('from')} />
+              <RhythmFields form={form} onChange={changeForm} fromField={errors.field('from')} />
               <div className="row">
                 <button className="btn secondary" disabled={busy} onClick={() => void ask(nextRules(rules, form))}>Vorschau</button>
               </div>
             </>
           )}
-          {!preview && <p className="muted">{open.kind === 'change' ? 'Die Vorschau zeigt, was sich ändert; gespeichert wird erst danach.' : 'Die Vorschau wird geladen …'}</p>}
+          {!preview && (
+            <p className="muted">
+              {open.kind === 'change'
+                ? (stale ? 'Sie haben die Angaben geändert. Fordern Sie die Vorschau erneut an; gespeichert wird erst danach.' : 'Die Vorschau zeigt, was sich ändert; gespeichert wird erst danach.')
+                : busy ? 'Die Vorschau wird geladen …' : 'Die Vorschau ließ sich nicht laden.'}
+            </p>
+          )}
+          {/* Durchsicht K2: Scheitert die Vorschau zum Entfernen, lässt sie sich erneut anfordern. */}
+          {open.kind === 'remove' && !preview && !busy && (
+            <div className="row">
+              <button className="btn secondary" onClick={() => void ask(withoutChange(rules, open.from))}>Vorschau erneut laden</button>
+            </div>
+          )}
           {preview && answers && (
             <div className="stack">
               <h3>Nach dem Wechsel</h3>

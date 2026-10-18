@@ -11,6 +11,7 @@ import { usePeriod } from '../period'
 import { useProperty, withProperty } from '../property'
 import Drawer from '../components/Drawer'
 import { CalcNotice } from '../components/Notice'
+import { useSaving } from '../useSaving'
 import PageHeader from '../components/PageHeader'
 import Term from '../components/Term'
 import { useToast, useConfirm } from '../components/feedback'
@@ -29,6 +30,8 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
   const { property } = useProperty()
   const propertyId = property?.id
   const toast = useToast()
+  // Kein doppeltes Speichern (Durchsicht S1): `busy` an Fenster und Knopf, ein zweiter Aufruf fällt weg.
+  const saving = useSaving()
   const confirm = useConfirm()
   const [meters, setMeters] = useState<Meter[]>([])
   const [plants, setPlants] = useState<HeatingPlant[]>([])
@@ -233,16 +236,17 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
           title="Neue Ablesung"
           subtitle={`${readingMeter.name}${readingMeter.meterNumber ? `, Nr. ${readingMeter.meterNumber}` : ''}`}
           onClose={() => { readingError.clear(); setReadingFor(null) }}
-          onSubmit={() => void saveReading(readingMeter.id)}
+          onSubmit={() => void saving.run(() => saveReading(readingMeter.id))}
+          busy={saving.busy}
           value={readingForm}
           errors={readingError}
-          actions={<button className="btn" onClick={() => void saveReading(readingMeter.id)}>Anlegen</button>}
+          actions={<button className="btn" disabled={saving.busy} onClick={() => void saving.run(() => saveReading(readingMeter.id))}>Anlegen</button>}
         >
           <div className="field-grid">
             <Field label="Datum" required {...readingError.field('date')}>
               <input type="date" value={readingForm.date} onChange={(e) => setReadingForm({ ...readingForm, date: e.target.value })} />
             </Field>
-            <Field label={`${readingForm.replacement ? 'Startstand neuer Zähler' : 'Zählerstand'}${readingMeter.unit ? ` (${readingMeter.unit})` : ''}`} required {...readingError.field('value')}>
+            <Field label={`${readingForm.replacement ? 'Startstand neuer Zähler' : 'Zählerstand'}${readingMeter.unit ? ` (${readingMeter.unit})` : ''}`} required hint={lastReadingText(readingMeter, readings)} {...readingError.field('value')}>
               <input value={readingForm.value} inputMode="decimal" onChange={(e) => setReadingForm({ ...readingForm, value: e.target.value })} className="input-num" />
             </Field>
           </div>
@@ -273,10 +277,11 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
           title={meterForm.id ? 'Zähler bearbeiten' : 'Neuer Zähler'}
           subtitle={meterForm.id ? meterForm.name : undefined}
           onClose={() => { meterErrors.clear(); setMeterForm(null) }}
-          onSubmit={saveMeter}
+          onSubmit={() => void saving.run(saveMeter)}
+          busy={saving.busy}
           value={meterForm}
           errors={meterErrors}
-          actions={<button className="btn" onClick={saveMeter}>{meterForm.id ? 'Speichern' : 'Anlegen'}</button>}
+          actions={<button className="btn" disabled={saving.busy} onClick={() => void saving.run(saveMeter)}>{meterForm.id ? 'Speichern' : 'Anlegen'}</button>}
         >
           <div className="row">
             <Field label="Name" required className="grow" {...meterErrors.field('name')}>
@@ -390,6 +395,13 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
       )}
     </>
   )
+}
+
+// Der letzte Stand des Zählers als Anhalt im Fenster „Neue Ablesung“ (Durchsicht K1): Die Liste dahinter ist verdeckt.
+export function lastReadingText(meter: Pick<Meter, 'id' | 'unit'>, readings: readonly Reading[]): string | undefined {
+  const last = readings.filter((r) => r.meterId === meter.id).reduce<Reading | null>((a, r) => (a === null || r.date >= a.date ? r : a), null)
+  if (!last) return undefined
+  return `Letzter Stand: ${last.value.toLocaleString('de-DE')}${meter.unit ? ` ${meter.unit}` : ''} am ${fmtDate(last.date)}`
 }
 
 function FragmentRow(props: {

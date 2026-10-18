@@ -5,6 +5,7 @@ import { useProperty, withProperty } from '../property'
 import { periodContaining, periodLabel, periodOfKey, rulesOf } from '../../../shared/period.ts'
 import { useConfirm, useToast } from './feedback'
 import Drawer from './Drawer'
+import { useSaving } from '../useSaving'
 import Term from './Term'
 import HeatingPeriodSection from './HeatingPeriodSection'
 import { setupDoneText } from '../hcaForm'
@@ -35,6 +36,8 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
   const { property } = useProperty()
   const propertyId = property?.id
   const toast = useToast()
+  // Kein doppeltes Speichern (Durchsicht S1): `busy` an Fenster und Knopf, ein zweiter Aufruf fällt weg.
+  const saving = useSaving()
   const confirm = useConfirm()
   const [plants, setPlants] = useState<HeatingPlant[]>([])
   const [form, setForm] = useState<HeatingForm | null>(null)
@@ -328,10 +331,11 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
           open
           title={editingId ? 'Heizung ändern' : 'Heizung einrichten'}
           onClose={close}
-          onSubmit={save}
+          onSubmit={() => void saving.run(save)}
+          busy={saving.busy}
           value={form}
           errors={errors}
-          actions={<button className="btn" onClick={save}>{editingId ? 'Speichern' : 'Anlegen'}</button>}
+          actions={<button className="btn" disabled={saving.busy} onClick={() => void saving.run(save)}>{editingId ? 'Speichern' : 'Anlegen'}</button>}
         >
           {plants.length > (editingId ? 1 : 0) && (
             <label className="field grow">
@@ -560,11 +564,12 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
           open
           title="Heizung erneuert (Kessel getauscht)"
           onClose={() => { setError(''); setSwap(null) }}
-          onSubmit={saveSwap}
+          onSubmit={() => void saving.run(saveSwap)}
+          busy={saving.busy}
           // Nur, was der Vermieter eingibt; die Zähler lädt das Fenster nach dem Öffnen nach (Durchsicht S4)
           value={swap.form}
           errors={errors}
-          actions={<button className="btn" onClick={saveSwap}>Speichern</button>}
+          actions={<button className="btn" disabled={saving.busy} onClick={() => void saving.run(saveSwap)}>Speichern</button>}
         >
           <p className="muted">
             Die bisherige Heizung endet am Tag vor dem Tausch; eine neue Heizanlage beginnt mit denselben Wohnungen. Lieferungen, Positionen und

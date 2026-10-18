@@ -483,3 +483,32 @@ test('Lieferung einer Etagenheizung: ohne Wohnung Meldung am Feld, mit Wohnung d
     },
   }])
 })
+
+// Durchsicht S1: Ein Doppelklick legte die Lieferung zweimal an; die Abgrenzung verteilte das Geld dann doppelt.
+test('Lieferung: Doppelklick und Strg+S legen genau eine an', async () => {
+  const onSaved = vi.fn()
+  render(<FuelCard plant={{ id: 'hp', method: 'manual', energy: 'gas' }} view={view} deliveries={[]} onSaved={onSaved} />)
+  const box = await openDelivery()
+  fireEvent.change(within(box).getByLabelText('Rechnungszeitraum von'), { target: { value: '2026-01-01' } })
+  fireEvent.change(within(box).getByLabelText('bis'), { target: { value: '2026-12-31' } })
+  const knopf = within(box).getByRole('button', { name: 'Anlegen' })
+  fireEvent.click(knopf)
+  fireEvent.click(knopf)
+  fireEvent.keyDown(box, { key: 's', ctrlKey: true })
+  await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1))
+  expect(sent.filter((s) => s.method === 'POST')).toHaveLength(1)
+})
+
+// Durchsicht S2: Ein mit der KI vorbelegtes Fenster schloss mit Esc, ✕ oder Klick daneben ohne Rückfrage; die gelesene
+// Rechnung war weg. Die Vorbelegung zählt jetzt als Änderung gegenüber dem leeren Formular.
+test('S2: Esc in einer mit der KI vorbelegten Lieferung fragt „Änderungen verwerfen?“', async () => {
+  withExtraction(extraction)
+  render(<UIProvider><FuelCard plant={{ id: 'hp', method: 'manual', energy: 'gas' }} view={view} deliveries={[]} onSaved={() => {}} /></UIProvider>)
+  choose()
+  const box = await screen.findByRole('dialog', { name: 'Neue Lieferung' })
+  fireEvent.keyDown(box, { key: 'Escape' })
+  const ask = await screen.findByRole('alertdialog', { name: 'Änderungen verwerfen?' })
+  fireEvent.click(within(ask).getByRole('button', { name: 'Abbrechen' }))
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+  expect(screen.getByRole('dialog', { name: 'Neue Lieferung' })).toBeTruthy()
+})

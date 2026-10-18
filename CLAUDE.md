@@ -3361,7 +3361,7 @@ Tippfläche von `--target` über `::after`, und printCss.test.ts verlangt den du
   S12b in uiRules.test.ts: jedes `<Drawer>` hat `value` (kein fester Wert, auch kein `{}`), kein `footer`,
   und in `actions` keinen eigenen Weg zum Schließen (die Wörter des Bausteins, der Schließer des Aufrufers,
   kein `set…(null)`). Grenze: Ob `value` den ganzen Zustand umfasst, sieht der Wächter nicht; das prüft die
-  Durchsicht. `busy` reichen die Formulare beim Speichern noch nicht durch (Esc während der Anfrage fragt). Tests: `<dialog>` hat die Rolle `dialog`, die Rückfrage `alertdialog`;
+  Durchsicht. **Gespeichert wird über `useSaving`** ([client/src/useSaving.ts](client/src/useSaving.ts), Durchsicht S1 zu Schritt 7): `run(save)` lässt einen zweiten Aufruf fallen, solange der erste läuft (Sperre über eine Referenz), `busy` geht an den Drawer (dann sperrt er alle Wege zum Schließen und ruft bei Strg+S kein `onSubmit`) und an den Knopf; vorher legte ein Doppelklick die Ablesung zweimal an (doubleSave.test.tsx und je Aufrufer). **`changedFrom`** gibt einen Vergleichsstand von Anfang an vor: Ein vorbelegt geöffnetes Fenster (Lieferung mit KI-Vorschlag) gilt sofort als geändert und fragt auch bei Esc. Tests: `<dialog>` hat die Rolle `dialog`, die Rückfrage `alertdialog`;
   wer in einem Test mit Eingabe „Abbrechen“ klickt, bestätigt danach „Verwerfen“.
 - **Feste Verben auf Knöpfen** (#346 Schritt 7, #341 N3 und M19). Im Seitenfenster heißt der Primärknopf
   „Anlegen“ (neu) oder „Speichern“ (bearbeiten), „Abbrechen“ kommt aus dem Baustein und ist nie primär. Kein
@@ -3386,7 +3386,8 @@ Tippfläche von `--target` über `::after`, und printCss.test.ts verlangt den du
   je Feld, danach baut `buildTenantChange` unverändert den Rumpf für `POST /api/tenancies/:id/change`; der Einzug folgt
   dem Auszug, bis er selbst geändert wird. Scheitert nach dem Speichern nur das Neuladen, ist das Fenster zu und die
   Karte „Mietverhältnisse“ sagt es. Beim Zeitraumwechsel bleibt die Vorschau mit `token` unverändert; „Speichern“ ist bis
-  zur Vorschau gesperrt (mit Satz), bei abgelaufener Frist bis zur Bestätigung. Die Lieferung prüft zuerst die
+  zur Vorschau gesperrt (mit Satz), bei abgelaufener Frist bis zur Bestätigung, und **jede Änderung des Formulars nach der
+  Vorschau verwirft sie** samt Antworten und Bestätigung (Durchsicht M2: vorher wurde die alte Vorschau gespeichert). Die Lieferung prüft zuerst die
   Pflichtangaben je Feld (`fuelRequiredProblems` in fuelForm.ts), dann wie bisher `fuelBody`/`stockFuelBody`; eine mit der
   KI gelesene Rechnung meldet sich schon beim Öffnen bei `useOpenForm` an, ein von Hand geöffnetes Fenster erst mit der
   ersten Eingabe.

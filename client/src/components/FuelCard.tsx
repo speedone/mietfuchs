@@ -7,7 +7,6 @@ import { useConfirm, useToast } from './feedback'
 import Term from './Term'
 import DraftActions from './DraftActions'
 import { useDraft } from '../useDraft'
-import { useOpenForm } from '../property'
 import { asksCo2Facts, fuelRequiredProblems, STOCK_BIO_ONLY_ZERO, GAS_BASIS_LABEL, GAS_BASIS_MISSING, gasBasisMissing, defaultGrade, deliveryLine, deliveryOptions, deliveryUnitId, emptyFuelForm, fuelBody, fuelToForm, GAS_BASIS_OPTIONS, gradeOptions, METERED_QUANTITY_OPTIONS, STOCK_QUANTITY_OPTIONS, stockFuelBody, unitWordFor, type FuelField, type FuelForm, type FuelPartForm } from '../fuelForm'
 import { aiRequest, progressText, type AiProgress } from '../aiRequest'
 import { heatingUpload } from '../aiUpload'
@@ -19,6 +18,7 @@ import { startYearOf } from '../../../shared/period.ts'
 import type { FuelDelivery, FuelExtractResult, HeatingEnergy, HeatingMethod, HeatingPeriodView, HeatingPlant, Unit } from '../types'
 import { ErrorSummary, useFormError } from './ErrorSummary'
 import Drawer from './Drawer'
+import { useSaving } from '../useSaving'
 import Field from './Field'
 
 type TextKey = Exclude<keyof FuelForm, 'usedByService' | 'quantityUnit' | 'unitId' | 'gasBasis' | 'grade' | 'parts'>
@@ -47,11 +47,10 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
 }) {
   // Die Lieferung im Seitenfenster (#346 Schritt 7): 'neu' oder die Kennung der Lieferung, `null` ohne Fenster.
   const [editing, setEditing] = useState<string | null>(null)
-  // Ein Formular mit dem Vorschlag der KI ist schon beim Öffnen ein offenes Formular (#346, 7a): Ein Wechsel der
-  // Seite fragt dann, bevor die gelesene Rechnung verloren geht. Ein von Hand geöffnetes meldet das Fenster selbst
-  // an, sobald etwas eingetragen ist.
+  // Ein Formular mit dem Vorschlag der KI gilt schon beim Öffnen als geändert gegenüber dem leeren Formular
+  // (`changedFrom`, Durchsicht S2): Seiten-, Objekt- und Zeitraumwechsel wie Esc, ✕ und Klick daneben fragen, bevor die
+  // gelesene Rechnung verloren geht. Ein von Hand geöffnetes zählt erst mit der ersten Eingabe.
   const [fromAi, setFromAi] = useState(false)
-  useOpenForm(editing !== null && fromAi)
   const [form, setForm] = useState<FuelForm>(emptyFuelForm)
   // Fehler der Karte (Entfernen, Gutschrift, Auslesen) als Sammelmeldung oben in der Karte (#346, Schritt 3)
   const errors = useFormError()
@@ -65,6 +64,8 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
   const [credit, setCredit] = useState<{ id: string; answer: CreditAnswer } | null>(null)
   const [reassign, setReassign] = useState<ReassignForm>(emptyReassignForm)
   const toast = useToast()
+  // Kein doppeltes Speichern (Durchsicht S1): `busy` an Fenster und Knopf, ein zweiter Aufruf fällt weg.
+  const saving = useSaving()
   const confirm = useConfirm()
   const service = plant.method === 'service'
   // Heizöl, Flüssiggas, Pellets, Holz und Kohle (Heizung PR 8): Lieferdatum und Menge für den Vorrat.
@@ -327,10 +328,12 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
           subtitle={`Heizperiode ${view.label}`}
           width={560}
           onClose={close}
-          onSubmit={() => void save()}
+          onSubmit={() => void saving.run(save)}
+          busy={saving.busy}
           value={form}
+          changedFrom={fromAi ? { value: { ...emptyFuelForm(), grade: energy ? defaultGrade(energy) : '' } } : undefined}
           errors={formErrors}
-          actions={<button className="btn" onClick={() => void save()}>{editing === 'neu' ? 'Anlegen' : 'Speichern'}</button>}
+          actions={<button className="btn" disabled={saving.busy} onClick={() => void saving.run(save)}>{editing === 'neu' ? 'Anlegen' : 'Speichern'}</button>}
         >
           {checks.length > 0 && <ul className="notice">{checks.map((c) => <li key={c}>{c}</li>)}</ul>}
           {plant.supply === 'perUnit' && (

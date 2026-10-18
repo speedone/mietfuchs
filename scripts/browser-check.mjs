@@ -408,16 +408,20 @@ async function probeTerm(page, view, snap) {
 }
 
 // Eine Fehlermeldung nach dem Speichern liegt im sichtbaren Bereich, nicht unter Kopf oder unterer Leiste,
-// und hat den Fokus: „Ablesung speichern“ ohne Angaben auf der Seite Zähler.
+// und hat den Fokus: im Seitenfenster „Neue Ablesung“ (#346 Schritt 7) „Anlegen“ ohne Angaben; die Sammelmeldung steht
+// im Fuß des Fensters über den Knöpfen.
 async function probeError(page, view, snap) {
   await go(page, view, 'Zähler & Stände')
-  // Die Ablesung steht im aufgeklappten Zähler
+  // „+ Ablesung anlegen“ steht im aufgeklappten Zähler
   await page.getByRole('button', { name: /^Ablesungen \(/ }).first().click()
-  const button = page.getByRole('button', { name: 'Ablesung speichern' }).first()
-  await button.waitFor({ state: 'visible', timeout: 5000 }).catch(() => fail('Fehler nach Speichern: Auf der Seite Zähler steht kein Knopf „Ablesung speichern“.'))
-  await button.scrollIntoViewIfNeeded()
-  await button.click()
-  const summary = page.locator('[data-error-summary]').first()
+  const opener = page.getByRole('button', { name: '+ Ablesung anlegen' }).first()
+  await opener.waitFor({ state: 'visible', timeout: 5000 }).catch(() => fail('Fehler nach Speichern: Auf der Seite Zähler steht kein Knopf „+ Ablesung anlegen“.'))
+  await opener.scrollIntoViewIfNeeded()
+  await opener.click()
+  const dialog = page.getByRole('dialog', { name: 'Neue Ablesung' })
+  await dialog.waitFor({ state: 'visible', timeout: 5000 }).catch(() => fail('Fehler nach Speichern: Das Fenster „Neue Ablesung“ öffnet nicht.'))
+  await dialog.getByRole('button', { name: 'Anlegen' }).click()
+  const summary = dialog.locator('[data-error-summary]').first()
   await summary.waitFor({ state: 'visible', timeout: 3000 }).catch(() => fail('Fehler nach Speichern: Es erscheint keine Sammelmeldung.'))
   await page.waitForTimeout(300)
   const where = await summary.evaluate((el) => {

@@ -79,7 +79,7 @@ export function meterProblem(meters: Pick<Meter, 'id' | 'name'>[], values: Recor
 }
 
 // Eigene Heizkostenabrechnung (Heizung PR 10, Entwurf 3.5): Fehlt ein Stand eines Wärme- oder
-// Warmwasserzählers, sagt der Vermieter warum, und zwar vor „Weiter“; „nicht möglich“ nur mit Grund
+// Warmwasserzählers, sagt der Vermieter warum, und zwar vor dem Speichern; „nicht möglich“ nur mit Grund
 // (Durchsicht von #239, I3).
 export function gapProblem(heatIds: readonly string[], meterValues: Record<string, string>, gap: { status: InterimGapStatus | ''; reason: string } | null | undefined): string | null {
   const missingHeat = heatIds.some((id) => parseMeterValue(meterValues[id] ?? '') === null)

@@ -255,3 +255,44 @@ test('Ablesung mit Zählerwechsel: Endstand alt und Startstand neu wie bisher', 
   await waitFor(() => expect(calls).toHaveLength(1))
   expect(calls[0]).toEqual({ url: '/api/readings', method: 'POST', body: { meterId: 'm1', date: '2025-06-30', value: 5, replacement: true, oldEndValue: 980 } })
 })
+
+// Durchsicht S1: Ein Doppelklick auf „Anlegen“ legte die Ablesung zweimal an (zwei gleiche Stände am selben Tag, #69).
+test('Ablesung: Doppelklick und Strg+S legen genau eine an', async () => {
+  stubWithUrls()
+  const box = await openReadingForm()
+  fireEvent.change(within(box).getByLabelText(/^Datum/), { target: { value: '2025-06-30' } })
+  fireEvent.change(within(box).getByLabelText(/^Zählerstand/), { target: { value: '12' } })
+  const knopf = within(box).getByRole('button', { name: 'Anlegen' })
+  fireEvent.click(knopf)
+  fireEvent.click(knopf)
+  fireEvent.keyDown(box, { key: 's', ctrlKey: true })
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expect(calls.filter((c) => c.method === 'POST')).toHaveLength(1)
+})
+
+test('Zähler: Doppelklick auf „Anlegen“ legt genau einen an', async () => {
+  stubWithUrls()
+  renderPage()
+  fireEvent.click(await screen.findByRole('button', { name: /Zähler anlegen/ }, { timeout: 5000 }))
+  const box = screen.getByRole('dialog')
+  fireEvent.change(within(box).getByLabelText(/^Name/), { target: { value: 'Kaltwasser Haus' } })
+  const knopf = within(box).getByRole('button', { name: /^Anlegen$/ })
+  fireEvent.click(knopf)
+  fireEvent.click(knopf)
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expect(calls.filter((c) => c.method === 'POST')).toHaveLength(1)
+})
+
+// Durchsicht K1: Im Fenster „Neue Ablesung“ steht der letzte Stand als Anhalt, denn die Liste dahinter ist verdeckt.
+test('Ablesung: das Fenster nennt den letzten Stand des Zählers', async () => {
+  readings = [
+    { id: 'r1', meterId: 'm1', date: '2024-12-31', value: 1234.5 },
+    { id: 'r0', meterId: 'm1', date: '2023-12-31', value: 1000 },
+  ] as Reading[]
+  stubWithUrls()
+  renderPage()
+  fireEvent.click(await screen.findByRole('button', { name: /Ablesungen \(2\)/ }, { timeout: 5000 }))
+  fireEvent.click(screen.getByRole('button', { name: '+ Ablesung anlegen' }))
+  const box = screen.getByRole('dialog', { name: /Neue Ablesung/ })
+  expect(within(box).getByText('Letzter Stand: 1.234,5 m³ am 31.12.2024')).toBeTruthy()
+})

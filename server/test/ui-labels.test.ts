@@ -65,6 +65,7 @@ test('Die Ausnahmen sind noch nötig', () => {
 const RETIRED = [
   'Übernehmen', 'Hinzufügen', 'Umstellen', 'Tausch speichern', '+ Wohnung hinzufügen', '+ Mietverhältnis hinzufügen', '+ Zähler hinzufügen',
   '+ Kostenposition manuell erfassen', '+ Zahlung erfassen', '+ weitere Heizanlage',
+  'Ablesung speichern', 'Lieferung speichern', 'Lieferung eintragen', 'Mieterwechsel durchführen', 'Zeitraum wechseln',
 ]
 test('Meldungen und Anleitungen zitieren keine abgelöste Beschriftung (#346 Schritt 7)', () => {
   const found: string[] = []
