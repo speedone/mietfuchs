@@ -2,12 +2,13 @@
 // Seite „Heizkosten“ bei einer Anlage, die niemand abrechnet (Review der Laienprobe, Runde 2, Punkt 8):
 // Der Rat lässt die Heizposition stehen und bucht den CO₂-Anteil als Gutschrift plus „Nicht umlagefähig“.
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { noInfoView } from '../testing/heatingView'
 import { periodKey } from '../../../shared/period.ts'
 import type { HeatingPeriodView } from '../types'
 import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
+import { UIProvider } from '../components/feedback'
 import Heizkosten from './Heizkosten'
 
 const PLANT = {
@@ -105,4 +106,32 @@ test('ein Entwurf der Ausnahmen übersteht das Speichern einer anderen Karte', a
   await new Promise((r) => setTimeout(r, 50))
   expect((screen.getByLabelText(/monatliche Verbrauchsinformation anders/) as HTMLInputElement).checked).toBe(true)
   expect(screen.getByRole('button', { name: 'Speichern (Ausnahmen 2025)' })).toBeTruthy()
+})
+
+// Nachprüfung B5: Das Blatt „CO₂-Angaben für den Messdienst“ ersetzt die Seite. Mit offener Eingabe fragt
+// das Öffnen vorher, sonst wäre sie still weg.
+test('das Blatt für den Messdienst fragt bei einer offenen Eingabe vorher', async () => {
+  const periodView: HeatingPeriodView = {
+    plantId: 'hp1', period: periodKey('2025-01'), label: '2025', from: '2025-01-01', to: '2025-12-31', short: false, closed: false,
+    ...noInfoView(), hotWater: { dhwMethod: null, dhwUnmeasurable: null, dhwHeatKwh: null, totalHeatKwh: null, dhwVolumeM3: null, dhwTempC: null },
+    hotWaterBasis: { volumeFromMetersM3: null, volumeMissing: null, running: null, suppliedAreaM2: 0 }, co2: null, stock: null, items: [],
+  }
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    const path = url.split('?')[0]
+    const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
+    if ((init?.method ?? 'GET') !== 'GET') return json({})
+    if (path === '/api/properties') return json([{ id: 'objekt-1', name: 'Haus', kind: 'zfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }])
+    if (path === '/api/heating-plants') return json([{ ...PLANT, method: 'service' }])
+    if (path === '/api/heating-plants/hp1/periods') return json([periodView])
+    if (path === '/api/heating-plants/hp1/deliveries') return json([{ id: 'd', plantId: 'hp1', label: 'Gas', invoiceDate: null, deliveredAt: null, invoiceFrom: '2025-01-01', invoiceTo: '2025-12-31', unitId: null, amountCents: null, quantity: null, quantityUnit: null, energyKwh: null, gasBasis: null, heatingValue: null, fuelGrade: null, emissionsKg: null, co2CostCents: null, emissionFactor: null, gridFeeCents: null, bioCostCents: null, sharePermille: null, fixedCents: null, estimated: false, usedByService: true, parts: [], creditNoteKind: null }])
+    return json([])
+  })
+  render(<PeriodProvider><PropertyProvider><UIProvider><Heizkosten units={[]} tenancies={[]} /></UIProvider></PropertyProvider></PeriodProvider>)
+  const blatt = await screen.findByRole('button', { name: /Blatt „CO₂-Angaben für den Messdienst“ öffnen/ }, { timeout: 5000 })
+  fireEvent.click(await screen.findByLabelText(/monatliche Verbrauchsinformation anders/))
+  fireEvent.click(blatt)
+  const frage = await screen.findByText('Ungespeicherte Änderungen verwerfen?')
+  fireEvent.click(within(frage.closest('.dialog') as HTMLElement).getByRole('button', { name: 'Abbrechen' }))
+  await waitFor(() => expect(screen.queryByText('Ungespeicherte Änderungen verwerfen?')).toBeNull())
+  expect((screen.getByLabelText(/monatliche Verbrauchsinformation anders/) as HTMLInputElement).checked).toBe(true)
 })

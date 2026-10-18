@@ -13,7 +13,7 @@ import AiKeyCell from './AiKeyCell'
 import Table from './Table'
 import { useConfirm } from './feedback'
 import DraftActions from './DraftActions'
-import { useDraft } from '../useDraft'
+import { useDraft, useOpenWhenDiffers } from '../useDraft'
 
 type Props = {
   assessment: AssessmentView
@@ -69,6 +69,9 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
     if (row) shown[line.idx] = shownRow(line, row)
   }
   const decisions = decisionsOf(a, shown)
+  // Gewählte Aktionen und Korrekturen je Zeile zählen als offenes Formular (#346, 7a): Die Auswertung bleibt
+  // auf dem Server, die Eingaben dieser Karte nicht. Verglichen wird mit dem Vorschlag, wie die Karte beginnt.
+  useOpenWhenDiffers(rows, initialRows(a))
 
   const patch = (idx: number, p: Partial<RowDraft>) => {
     setRows((r) => {

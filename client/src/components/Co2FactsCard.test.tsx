@@ -4,6 +4,7 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import Co2FactsCard from './Co2FactsCard'
+import { OpenFormScope, hasOpenForm } from '../testing/openForm'
 import { periodKey } from '../../../shared/period.ts'
 import type { HeatingPeriodView } from '../types'
 import { noInfoView } from '../testing/heatingView'
@@ -58,4 +59,20 @@ test('Durchsicht: Die Angaben zum Gebäude gelten für alle Heizperioden und ble
   expect(box.disabled).toBe(false)
   expect(screen.getByText('Angaben speichern')).toBeTruthy()
   expect(screen.getByText(/wirken auf Heizperioden, die noch nicht abgeschlossen sind/)).toBeTruthy()
+})
+
+// #346, Schritt 7a: Angaben und Fläche speichern getrennt; jede nimmt ihre Marke weg.
+test('7a: Ändern meldet die Karte an, das Speichern beider Teile nimmt die Marke weg', async () => {
+  const saved = vi.fn()
+  render(<OpenFormScope><Co2FactsCard plant={facts} view={view} servedAreaM2={600} onSaved={saved} /></OpenFormScope>)
+  expect(hasOpenForm()).toBe(false)
+  fireEvent.click(screen.getByLabelText('Das Gebäude dient überwiegend nicht dem Wohnen (§ 8 CO2KostAufG)'))
+  fireEvent.change(screen.getByLabelText('Fläche der Einstufung (m²)'), { target: { value: '612,5' } })
+  expect(hasOpenForm()).toBe(true)
+  fireEvent.click(screen.getByText('Angaben speichern'))
+  await waitFor(() => expect(saved).toHaveBeenCalledTimes(1))
+  expect(hasOpenForm()).toBe(true)
+  fireEvent.click(screen.getByText('Fläche speichern'))
+  await waitFor(() => expect(saved).toHaveBeenCalledTimes(2))
+  expect(hasOpenForm()).toBe(false)
 })

@@ -7,7 +7,7 @@ import { useState } from 'react'
 import { api, errorText, fmtDate } from '../api'
 import { useToast } from './feedback'
 import Term from './Term'
-import { useOpenWhenChanged } from '../useDraft'
+import { useOpenWhenDiffers } from '../useDraft'
 import {
   HOT_WATER_OPTIONS, SELF_HOT_WATER_OPTIONS, formulaFormOf, hotWaterBody, isFormula, numberText, selfFormulaBody, unconfirmedConsequence, unmeasurableLabel, volumeLabel,
   type FormulaForm, type HotWaterChoice,
@@ -21,7 +21,11 @@ export default function HotWaterCard({ view, plant, onSaved }: { view: HeatingPe
   const [formula, setFormula] = useState<FormulaForm>(formulaFormOf(view.hotWater))
   const [error, setError] = useState('')
   // Eine ungespeicherte Eingabe zählt als offenes Formular: Seiten-, Objekt- und Zeitraumwechsel fragen (#346, 7a).
-  useOpenWhenChanged({ choice, unmeasurable, formula })
+  // Gezählt wird nur, was die Karte zeigt: die Bestätigung nur zu einer Formel, Volumen und Temperatur nur
+  // bei der Volumenformel der eigenen Abrechnung.
+  const shown = (c: HotWaterChoice, u: boolean, f: FormulaForm) => ({ choice: c, unmeasurable: isFormula(c) ? u : null, formula: self && c === 'volumeFormula' ? f : null })
+  const markSaved = useOpenWhenDiffers(shown(choice, unmeasurable, formula),
+    shown(view.hotWater.dhwMethod ?? (self ? 'heatMeter' : ''), view.hotWater.dhwUnmeasurable === true, formulaFormOf(view.hotWater)))
   const toast = useToast()
   const options = self ? SELF_HOT_WATER_OPTIONS : HOT_WATER_OPTIONS
 
@@ -34,6 +38,7 @@ export default function HotWaterCard({ view, plant, onSaved }: { view: HeatingPe
     try {
       await api(`/api/heating-plants/${view.plantId}/periods/${view.period}/hot-water`, { method: 'PUT', body: JSON.stringify({ ...hotWaterBody(choice, unmeasurable), ...extra.body }) })
       setError('')
+      markSaved()
       toast('Angabe zum Warmwasser gespeichert.')
       onSaved()
     } catch (e) {

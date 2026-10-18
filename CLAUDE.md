@@ -3228,13 +3228,23 @@ Tippfläche von `--target` über `::after`, und printCss.test.ts verlangt den du
   dem Knopf steht (WCAG 2.5.3), auch bei „Speichert …“. Ein anderer `scope` verwirft den Entwurf;
   wechselt die Seite ihn selbst (der Reiter zwischen Betriebs- und Heizkostenabrechnung), fragt sie
   vorher mit `useConfirmDiscard` („Ungespeicherte Änderung verwerfen?“, Startfokus „Abbrechen“).
-  **Auch der Seitenwechsel fragt** (#346, Schritt 7a): Seitenleiste, Menüblatt und untere Leiste gehen
-  über `navigate` in App.tsx, das bei offenem Formular „Ungespeicherte Änderungen verwerfen?“ fragt
-  (Startfokus „Abbrechen“; das Menüblatt schließt vorher), und mit offenem Formular fragt der Browser
-  beim Schließen oder Neuladen des Tabs (`beforeunload`). Karten mit eigenem Formularzustand und
-  eigenem Speichern melden sich mit `useOpenWhenChanged(zustand)` an (für Karten, die die Seite nach
-  dem Speichern neu einhängt) oder mit `useOpenForm(offen)`. Sprünge aus einer Seite (etwa „Hier
-  beheben →“) fragen nicht. **Ein Auswahlfeld
+  **Auch der Seitenwechsel fragt** (#346, Schritt 7a): Jeder Wechsel der Seite geht über `navigate` in
+  App.tsx, aus der Navigation (Seitenleiste, Menüblatt, untere Leiste) wie aus einer Seite („Hier
+  beheben →“, „Position öffnen“, „Weiter prüfen“, Anleitung zum Update). Bei offenem Formular fragt es
+  „Ungespeicherte Änderungen verwerfen?“ (Startfokus „Abbrechen“; das Menüblatt schließt vorher);
+  wechselt dabei auch das Objekt, fragt nur dessen Rückfrage (`goViaProperty`). Mit offenem Formular
+  fragt der Browser beim Schließen oder Neuladen des Tabs (`beforeunload`), und das Blatt „CO₂-Angaben
+  für den Messdienst“, das die Seite Heizkosten ersetzt, fragt vor dem Öffnen. **Karten mit eigenem
+  Formularzustand melden sich an**: mit `useOpenWhenDiffers(gezeigt, gespeichert)`, verglichen mit dem
+  aus Props oder dem geladenen Stand abgeleiteten Wert in derselben Gestalt und ohne verborgene Felder;
+  das zurückgegebene `markSaved()` nach dem Speichern aufrufen, dann fällt die Marke auch, wenn die Seite
+  die Karte nicht neu einhängt oder der Server die Zahl anders schreibt. Ein Formular, das nur offen
+  oder zu ist, nimmt `useOpenForm(offen)` und muss beim Abbrechen und Speichern wirklich zugehen. Schließt
+  ein Knopf ein Formular und springt zugleich weg, schließt er es mit `flushSync` vorher (Belege, „Betrag
+  prüfen“), sonst fände der Sprung die Marke noch. Der Wächter
+  [openFormGuard.test.ts](client/src/openFormGuard.test.ts) findet Karten mit Eingaben und `api(` ohne
+  Anmeldung (Ausnahmen mit Grund); Karten prüfen ihre Anmeldung mit `OpenFormScope` und `hasOpenForm`
+  aus client/src/testing/openForm.tsx (Ändern, Speichern, Abbrechen). **Ein Auswahlfeld
   gibt `isValid` mit** (`useDraft(saved, { isValid })`): Fällt der Wert eines Entwurfs aus den
   Optionen (die Liste folgt einem anderen Feld, eine Position ist weg), ist der Entwurf verworfen;
   sonst zeigte der Browser den ersten Eintrag, und „Speichern“ schickte einen unsichtbaren Wert. Für

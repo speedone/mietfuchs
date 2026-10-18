@@ -524,3 +524,28 @@ test('Posteingang: mit ungespeichertem Objekt oder Jahr ist „Per KI auswerten�
   expect(knopf.disabled).toBe(false)
   expect(screen.queryByText(PLACEMENT_FIRST)).toBeNull()
 })
+
+// #346, Schritt 7a: „Betrag prüfen“ zählt als offenes Formular, bis es beantwortet ist; die Frage zum
+// Schätzbetrag käme nach einem Seitenwechsel nie wieder.
+test('„Betrag prüfen“ zählt als offenes Formular, „Stimmt so“ nimmt die Marke weg (#346)', async () => {
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <Belege renderThumb={() => Promise.resolve('')} />
+        <Offen />
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  await screen.findByText('Wasser/Abwasser')
+  const frage = () => {
+    fireEvent.click(screen.getByRole('button', { name: /^offen\?/ }))
+    return screen.getByRole('button', { name: /^offen\?/ }).textContent
+  }
+  fireEvent.change(screen.getByLabelText('lose.pdf einer Position zuordnen'), { target: { value: 'w2' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern (Position für lose.pdf)' }))
+  const check = await screen.findByRole('status', { name: 'Betrag prüfen' })
+  await waitFor(() => expect(screen.queryByRole('button', { name: /Position für lose\.pdf\)$/ })).toBeNull())
+  expect(frage()).toBe('offen? true')
+  fireEvent.click(within(check).getByRole('button', { name: 'Stimmt so' }))
+  expect(frage()).toBe('offen? false')
+})

@@ -5,12 +5,15 @@ import { useState } from 'react'
 import { api, errorText } from '../api'
 import { useToast } from './feedback'
 import Term from './Term'
+import { useOpenWhenDiffers } from '../useDraft'
 import { degreeDaysBody, degreeDaysToForm } from '../fuelForm'
 import type { DegreeDayValue } from '../types'
 
 export default function DegreeDaysCard({ propertyId, months, values, onSaved }: { propertyId: string; months: string[]; values: DegreeDayValue[]; onSaved: () => void }) {
   const [form, setForm] = useState<Record<string, string>>(() => degreeDaysToForm(values, months))
   const [error, setError] = useState('')
+  // Eine ungespeicherte Eingabe zählt als offenes Formular (#346, 7a).
+  const markSaved = useOpenWhenDiffers(form, degreeDaysToForm(values, months))
   const toast = useToast()
 
   async function save() {
@@ -22,6 +25,7 @@ export default function DegreeDaysCard({ propertyId, months, values, onSaved }: 
     try {
       await api(`/api/properties/${propertyId}/degree-days`, { method: 'PUT', body: JSON.stringify(r.body) })
       setError('')
+      markSaved()
       toast('Gradtagzahlen gespeichert.')
       onSaved()
     } catch (e) {

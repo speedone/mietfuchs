@@ -2,6 +2,7 @@
 import { afterEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import SelfHeatingCards from './SelfHeatingCards'
+import { OpenFormScope, hasOpenForm } from '../testing/openForm'
 import type { HeatingDistribution, HeatingPeriodView, HeatingPlant, SelfHeatingStatement } from '../types'
 
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
@@ -96,4 +97,20 @@ test('Durchsicht #241 Runde 2, H1: Die Verteilung 2025 fragt das Warmwasser nach
   fireEvent.change(screen.getByLabelText(/Heizung in %/), { target: { value: '70' } })
   fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
   await waitFor(() => expect(sent).toEqual([{ heatConsumptionPct: 70, waterConsumptionPct: null, insulationRule: 'notApplies', above70Agreed: false }]))
+})
+
+// #346, Schritt 7a: ein angefangener Anteil und eine offene Begründung zählen als offenes Formular.
+test('7a: Anteil und Begründung melden die Karte an, Speichern nimmt die Marke weg', async () => {
+  vi.stubGlobal('fetch', async () => new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }))
+  const onChanged = vi.fn()
+  const c = { ...unit('c', 'C', 1000), interimGaps: [{ date: '2025-09-30', status: null, reason: null, events: [] }] } as SelfHeatingStatement['units'][number]
+  render(<OpenFormScope><SelfHeatingCards plant={{ id: 'hp', method: 'self', energy: 'districtHeating', hotWater: 'none' } as HeatingPlant} view={{ period: '2025-01', label: '2025', distribution: null } as HeatingPeriodView} self={statement([c])} onChanged={onChanged} /></OpenFormScope>)
+  expect(hasOpenForm()).toBe(false)
+  const anteil = screen.getByLabelText(/Heizung in %/)
+  fireEvent.change(anteil, { target: { value: '60' } })
+  expect(hasOpenForm()).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+  await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1))
+  expect(hasOpenForm()).toBe(false)
+  vi.unstubAllGlobals()
 })

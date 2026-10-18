@@ -216,6 +216,10 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
     return next
   }), [])
   const greenOf = (v: AssessmentView) => (yearDrafts.has(v.id) ? [] : greenDecisions(v))
+  // Die laufende Übernahme fragt je Beleg neu nach (Nachprüfung A2): Wer währenddessen an einem späteren
+  // Beleg das Jahr ändert, dessen Beleg bleibt außen vor.
+  const yearDraftsNow = useRef(yearDrafts)
+  yearDraftsNow.current = yearDrafts
   const heldBack = assessments.filter((v) => yearDrafts.has(v.id) && greenDecisions(v).length > 0).length
   const greenReady = assessments.reduce((n, v) => n + greenOf(v).length, 0) + queue.filter(readingReady).length
 
@@ -285,7 +289,7 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
     const left: string[] = []
     const named = (v: AssessmentView, idx: number) => `„${v.lines.find((l) => l.idx === idx)?.description ?? ''}“`
     for (const v of assessments) {
-      const decisions = greenOf(v)
+      const decisions = yearDraftsNow.current.has(v.id) ? [] : greenDecisions(v)
       if (decisions.length === 0) continue
       try {
         const preview = await planDecisions(v.id, decisions)
@@ -361,12 +365,14 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
           />
         </div>
 
-        {greenReady > 0 && (
+        {/* Die Leiste steht auch, wenn nur zurückgehaltene Belege da sind, damit der Satz erklärt, warum
+            nichts angeboten wird (Nachprüfung A1). */}
+        {(greenReady > 0 || heldBack > 0) && (
           <div className="sticky-bar">
-            <strong>{greenReady}</strong> {plural(greenReady, 'grüner Vorschlag', 'grüne Vorschläge')} bereit.
+            {greenReady > 0 && <><strong>{greenReady}</strong> {plural(greenReady, 'grüner Vorschlag', 'grüne Vorschläge')} bereit.</>}
             {heldBack > 0 && <span className="muted"> {heldBack === 1 ? '1 Beleg mit ungespeichertem Jahr bleibt außen vor.' : `${heldBack} Belege mit ungespeichertem Jahr bleiben außen vor.`}</span>}
             <div className="grow" />
-            <button className="btn" disabled={adopting} onClick={() => void adoptAllGreen()}>✓ Alle grünen übernehmen</button>
+            {greenReady > 0 && <button className="btn" disabled={adopting} onClick={() => void adoptAllGreen()}>✓ Alle grünen übernehmen</button>}
           </div>
         )}
       </div>

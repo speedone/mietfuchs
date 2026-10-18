@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import Co2Card from './Co2Card'
+import { OpenFormScope, hasOpenForm } from '../testing/openForm'
 import { UIProvider } from './feedback'
 import { CO2_NOT_A_SIGN, CO2_QUESTION } from '../co2Form'
 import { periodKey } from '../../../shared/period.ts'
@@ -112,4 +113,25 @@ test('Abdeckung V14: Eigentumswohnung fragt nach den Heizkosten der eigenen Wohn
   // Durchsicht #297 S-B: beizulegen ist die Einzelabrechnung Heizung der Wohnung, nicht die Hausgeldabrechnung.
   expect(document.body.textContent ?? '').toMatch(/legen Sie deshalb die Einzelabrechnung \(Heizung\) Ihrer Wohnung bei\./)
   expect(document.body.textContent ?? '').not.toMatch(/Abrechnung der Gemeinschaft bei/)
+})
+
+// #346, Schritt 7a: verglichen mit dem gespeicherten Stand, also auch nach dem Speichern ohne Neueinhängen frei.
+test('7a: Ändern meldet die Karte an, Zurückstellen und Speichern nehmen die Marke weg', async () => {
+  const saved = vi.fn()
+  render(<OpenFormScope><UIProvider><Co2Card view={view(shown)} tenancies={TENANCIES} unitsCount={1} onSaved={saved} /></UIProvider></OpenFormScope>)
+  expect(hasOpenForm()).toBe(false)
+  fireEvent.change(frage(), { target: { value: '' } })
+  expect(hasOpenForm()).toBe(true)
+  fireEvent.change(frage(), { target: { value: 'shown' } })
+  expect(hasOpenForm()).toBe(false)
+  const betrag = screen.getAllByRole('textbox')[0]
+  if (!betrag) throw new Error('kein Feld')
+  const before = (betrag as HTMLInputElement).value
+  fireEvent.change(betrag, { target: { value: `${before}1` } })
+  expect(hasOpenForm()).toBe(true)
+  fireEvent.click(screen.getByText('CO₂-Angaben speichern'))
+  const trotzdem = await screen.findByRole('button', { name: 'Trotzdem speichern' }).catch(() => null)
+  if (trotzdem) fireEvent.click(trotzdem)
+  await waitFor(() => expect(saved).toHaveBeenCalled())
+  expect(hasOpenForm()).toBe(false)
 })

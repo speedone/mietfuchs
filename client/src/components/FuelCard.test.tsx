@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import FuelCard from './FuelCard'
+import { OpenFormScope, hasOpenForm } from '../testing/openForm'
 import { periodKey } from '../../../shared/period.ts'
 import type { FuelDelivery, FuelExtractResult, HeatingPeriodView } from '../types'
 import { noInfoView } from '../testing/heatingView'
@@ -371,4 +372,14 @@ test('Durchsicht zu #309, MUSS 2: verschwindet die gewählte Lieferung, ist der 
   rerender(<FuelCard plant={{ id: 'hp', method: 'manual' }} view={view} deliveries={[gas]} onSaved={() => {}} />)
   expect(auswahl('Lieferung zu „Wartung“').value).toBe('')
   expect(screen.queryByRole('button', { name: 'Speichern (Lieferung zu „Wartung“)' })).toBeNull()
+})
+
+// #346, Schritt 7a: Das Formular einer Lieferung zählt als offenes Formular, solange es offen ist.
+test('7a: das Formular einer Lieferung meldet die Karte an, Abbrechen nimmt die Marke weg', () => {
+  render(<OpenFormScope><FuelCard plant={{ id: 'hp', method: 'manual' }} view={view} deliveries={[gas]} onSaved={() => {}} /></OpenFormScope>)
+  expect(hasOpenForm()).toBe(false)
+  fireEvent.click(screen.getByText('Lieferung eintragen'))
+  expect(hasOpenForm()).toBe(true)
+  fireEvent.click(screen.getByText('Abbrechen'))
+  expect(hasOpenForm()).toBe(false)
 })

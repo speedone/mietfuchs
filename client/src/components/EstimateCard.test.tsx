@@ -2,6 +2,7 @@
 import { afterEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import EstimateCard from './EstimateCard'
+import { OpenFormScope, hasOpenForm } from '../testing/openForm'
 import { UIProvider } from './feedback'
 import type { HeatingPeriodView, HeatingPlant, SelfEstimateOption, SelfHeatingStatement } from '../types'
 
@@ -195,4 +196,24 @@ test('N-M3/N2-M1: beim Ablesedienst ohne Werte ist die Einheit eine Pflichtauswa
   fireEvent.click(screen.getByRole('button', { name: 'C schätzen' }))
   expect(screen.queryByLabelText('Einheit der Schätzung')).toBeNull()
   expect(screen.getByLabelText(/Geschätzter Verbrauch in kWh, wie der Ablesedienst die Heizung nennt/)).toBeTruthy()
+})
+
+// #346, Schritt 7a, Nachprüfung B1: Nach „Abbrechen“ und nach dem Speichern blieb die Marke stehen, weil das
+// Formular gefüllt blieb; offen ist es nur, solange es zu sehen ist.
+test('7a: das offene Formular meldet die Karte an, Abbrechen und Speichern nehmen die Marke weg', async () => {
+  mockFetch()
+  const onChanged = vi.fn()
+  render(<OpenFormScope><EstimateCard plant={plant} view={view} self={self} onChanged={onChanged} /></OpenFormScope>)
+  expect(hasOpenForm()).toBe(false)
+  fireEvent.click(screen.getByRole('button', { name: 'C schätzen' }))
+  expect(hasOpenForm()).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }))
+  expect(hasOpenForm()).toBe(false)
+  fireEvent.click(screen.getByRole('button', { name: 'C schätzen' }))
+  fireEvent.change(screen.getByLabelText(/Geschätzter Verbrauch in kWh/), { target: { value: '11000' } })
+  const reason = screen.queryByPlaceholderText(/Wärmezähler defekt/)
+  if (reason) fireEvent.change(reason, { target: { value: 'Zähler defekt' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Schätzung speichern' }))
+  await waitFor(() => expect(onChanged).toHaveBeenCalled())
+  expect(hasOpenForm()).toBe(false)
 })

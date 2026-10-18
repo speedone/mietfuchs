@@ -161,7 +161,7 @@ Nach GOV.UK ([Error summary](https://design-system.service.gov.uk/components/err
 ### Entwurf, Speichern, Verwerfen (#309, #333)
 
 - **Seitenfenster:** Mit Änderungen fragen Esc, ✕, Klick daneben und „Abbrechen“ nach „Änderungen verwerfen?“. Startfokus liegt auf **„Abbrechen“**, weil Verwerfen gefährlich ist. Ohne Änderungen schließt das Fenster sofort.
-- **Karte:** Der Hinweis „Ungespeicherte Änderungen“ steht neben „Speichern“. Beim Verlassen der Seite wird gefragt (`useOpenForm` wie beim Objektwechsel, `beforeunload` wie bei Primer). *Umgesetzt mit Schritt 7a: Seitenleiste, Menüblatt und untere Leiste fragen „Ungespeicherte Änderungen verwerfen?“, Startfokus „Abbrechen“; Karten mit eigenem Formular melden sich über `useOpenWhenChanged` an.*
+- **Karte:** Der Hinweis „Ungespeicherte Änderungen“ steht neben „Speichern“. Beim Verlassen der Seite wird gefragt (`useOpenForm` wie beim Objektwechsel, `beforeunload` wie bei Primer). *Umgesetzt mit Schritt 7a: Seitenleiste, Menüblatt und untere Leiste fragen „Ungespeicherte Änderungen verwerfen?“, Startfokus „Abbrechen“; Karten mit eigenem Formular melden sich über `useOpenWhenDiffers` (Vergleich mit dem gespeicherten Stand) bzw. `useOpenForm` an, Sprünge aus einer Seite und das Blatt für den Messdienst fragen ebenso.*
 - **Entwurf am Feld:** `DraftActions` bleibt der Baustein.
 
 ### Datum, Monat, Geld
