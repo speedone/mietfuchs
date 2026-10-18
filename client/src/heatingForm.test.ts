@@ -94,6 +94,11 @@ describe('Einrichtung Heizung', () => {
     expect(heatingSummary({ ...PLANT, units: null }, UNITS.slice(0, 2))[2]).toBe('Angeschlossen: alle Wohnungen')
     expect(UNITS.map(connectionNote)).toEqual([null, null, 'ohne Wärmeanschluss laut Wohnungsdaten'])
     expect(heatingSummary({ ...PLANT, units: [] }, UNITS)[2]).toBe('Angeschlossen: keine Wohnung')
+    // Befund M6 aus #341: Bei `manual` stand „Abrechnung: Niemand …“, auch nach „Ich selbst“ und „Später“,
+    // denn bis zum Umstellen ist die Anlage so gespeichert. Die Zeile beschreibt jetzt, wie gerechnet wird.
+    const manual = heatingSummary({ ...PLANT, method: 'manual' }, UNITS)[1]
+    expect(manual).toBe('Abrechnung: nach den Umlageschlüsseln der Kostenpositionen, ohne eigene Heizkostenabrechnung')
+    expect(manual).not.toMatch(/Niemand/)
   })
 
   test('Frage nach dem Einbau: nur, wenn nicht fernablesbare Geräte nach dem Stichtag dazukamen (Nachprüfung von #230)', () => {

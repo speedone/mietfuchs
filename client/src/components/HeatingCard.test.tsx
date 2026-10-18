@@ -242,6 +242,30 @@ test('„Ich selbst“: die Anlage entsteht bei „Niemand“, danach öffnet Sc
   expect(sent[0]?.body).toMatchObject({ method: 'manual' })
 })
 
+// Befund M6 aus #341: Nach „Ich selbst“ und „Anlegen“ stand „Abrechnung: Niemand …“, mit „Später“ im
+// Widerspruch zur Wahl. Gespeichert ist die Anlage bis zum Umstellen bewusst mit freien Schlüsseln
+// (Abweichung 21); die Karte sagt das jetzt so, und Schritt 7 wie „Später“ sagen, wann die Abrechnung wechselt.
+test('„Ich selbst“ und „Später“: Karte und Mitteilung sagen, dass bis zum Umstellen nach Umlageschlüsseln verteilt wird (#341, M6)', async () => {
+  render(<UIProvider><PropertyProvider><HeatingCard units={UNITS} /></PropertyProvider></UIProvider>)
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Heizung einrichten' })).toBeTruthy())
+  fireEvent.click(screen.getByRole('button', { name: 'Heizung einrichten' }))
+  await waitFor(() => expect(screen.getByText(/Diese Heizposition kommt zur Anlage/)).toBeTruthy())
+  fireEvent.change(screen.getByLabelText(/Womit wird geheizt/), { target: { value: 'gas' } })
+  fireEvent.change(screen.getByLabelText(/Wer erstellt Ihre Heizkostenabrechnung/), { target: { value: 'self' } })
+  plants = [PLANT]
+  fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }))
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Umstellen' })).toBeTruthy())
+  expect(screen.queryByText(/Abrechnung: Niemand/)).toBeNull()
+  expect(screen.getByText('Abrechnung: nach den Umlageschlüsseln der Kostenpositionen, ohne eigene Heizkostenabrechnung')).toBeTruthy()
+  const until = /Die Abrechnung wechselt erst mit „Umstellen“; bis dahin verteilt Mietfuchs die Heizkosten nach den Umlageschlüsseln der Kostenpositionen\./
+  expect(screen.getAllByText(until).length).toBeGreaterThan(0)
+  fireEvent.click(screen.getByRole('button', { name: 'Später' }))
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Umstellen' })).toBeNull())
+  // Die Mitteilung nach „Später“ sagt es noch einmal, und die Karte bietet die Einrichtung an.
+  await waitFor(() => expect(screen.getAllByText(until).length).toBeGreaterThan(0))
+  expect(screen.getByRole('button', { name: 'Eigene Heizkostenabrechnung einrichten' })).toBeTruthy()
+})
+
 // Heizung PR 16: Der angezeigte Wert der Auswahl „Wer versorgte vorher?“ ist der gespeicherte, und das Häkchen steht.
 test('Wärmelieferung: die Auswahl „Wer versorgte vorher?“ zeigt den gespeicherten Wert', async () => {
   plants = [{ ...PLANT, energy: 'gas', contracting: true, heatDeliverySince: '2025-10-01', previousSupply: 'tenant' }]
