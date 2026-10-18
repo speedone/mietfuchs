@@ -6,7 +6,10 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
-import type { HeatingPlant, Meter, Tenancy, Unit } from '../types'
+import type { HeatingPeriodView, HeatingPlant, Meter, Tenancy, Unit } from '../types'
+import FuelCard from '../components/FuelCard'
+import { noInfoView } from '../testing/heatingView'
+import { periodKey } from '../../../shared/period.ts'
 import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
 import { UIProvider } from '../components/feedback'
@@ -119,9 +122,9 @@ test('Zähler: Name und Einheit (Kaltwasser)', async () => {
 test('Ablesung: Datum und Zählerstand, mit Legende', async () => {
   shell(<Zaehler units={UNITS} />)
   fireEvent.click(await screen.findByRole('button', { name: /Ablesungen \(0\)/i }))
-  const panel = document.querySelector('.reading-panel') as HTMLElement
-  expect(panel.textContent).toContain('* Pflichtangabe')
-  await requiredMatchesMissing(panel, () => fireEvent.click(screen.getByRole('button', { name: /Ablesung speichern/ })), ['Datum', 'Zählerstand'])
+  fireEvent.click(screen.getByRole('button', { name: '+ Ablesung anlegen' }))
+  expect(dialog().textContent).toContain('* Pflichtangabe')
+  await requiredMatchesMissing(dialog(), () => fireEvent.click(within(dialog()).getByRole('button', { name: /^Anlegen$/ })), ['Datum', 'Zählerstand (m³)'])
 })
 
 test('eigene Heizkostenabrechnung: Warmwasser, Wärmeschutz, beide Anteile', async () => {
@@ -129,4 +132,31 @@ test('eigene Heizkostenabrechnung: Warmwasser, Wärmeschutz, beide Anteile', asy
   render(<UIProvider><HeatingSelfSetup plant={plant} period="2025-01" onDone={() => {}} onCancel={() => {}} /></UIProvider>)
   await requiredMatchesMissing(dialog(), () => fireEvent.click(screen.getByRole('button', { name: 'Speichern' })),
     ['Bereitet diese Heizung auch das Warmwasser?', `${INSULATION_QUESTION} (Pflichtanteil)`, 'Heizung in %', 'Warmwasser in %'])
+})
+
+// #346 Schritt 7: die Formulare, die aus Karten und Zeilen ins Seitenfenster gewandert sind.
+test('Mieterwechsel: Auszugsdatum, Mieter, Einzug und Personen', async () => {
+  shell(<Stammdaten units={UNITS} tenancies={TENANCIES} settings={null} reload={async () => {}} />)
+  fireEvent.click(await screen.findByRole('button', { name: /^Mieterwechsel$/ }))
+  await screen.findByRole('dialog', { name: /^Mieterwechsel/ })
+  expect(dialog().textContent).toContain('* Pflichtangabe')
+  await requiredMatchesMissing(dialog(), () => fireEvent.click(within(dialog()).getByRole('button', { name: 'Speichern' })), ['Auszugsdatum (letzter Miettag)', 'Mieter', 'Einzug', 'Personen'])
+})
+
+const fuelView: HeatingPeriodView = {
+  plantId: 'hp', period: periodKey('2025-05'), label: '2025/2026', from: '2025-05-01', to: '2026-04-30', short: false, closed: false,
+  ...noInfoView(), hotWater: { dhwMethod: null, dhwUnmeasurable: null, dhwHeatKwh: null, totalHeatKwh: null, dhwVolumeM3: null, dhwTempC: null }, hotWaterBasis: { volumeFromMetersM3: null, volumeMissing: null, running: null, suppliedAreaM2: 0 }, co2: null, stock: null,
+  items: [],
+}
+
+test('Lieferung (Rechnung): Beginn und Ende des Rechnungszeitraums', async () => {
+  render(<UIProvider><FuelCard plant={{ id: 'hp', method: 'manual', energy: 'gas' }} view={fuelView} deliveries={[]} onSaved={() => {}} /></UIProvider>)
+  fireEvent.click(screen.getByRole('button', { name: '+ Lieferung anlegen' }))
+  await requiredMatchesMissing(dialog(), () => fireEvent.click(within(dialog()).getByRole('button', { name: 'Anlegen' })), ['Rechnungszeitraum von', 'bis'])
+})
+
+test('Lieferung (Vorrat): Lieferdatum, Menge und Einheit', async () => {
+  render(<UIProvider><FuelCard plant={{ id: 'hp', method: 'manual', energy: 'oil' }} view={fuelView} deliveries={[]} onSaved={() => {}} /></UIProvider>)
+  fireEvent.click(screen.getByRole('button', { name: '+ Lieferung anlegen' }))
+  await requiredMatchesMissing(dialog(), () => fireEvent.click(within(dialog()).getByRole('button', { name: 'Anlegen' })), ['Lieferdatum', 'Menge', 'Einheit der Menge'])
 })

@@ -9,6 +9,7 @@ import { parseQuantity } from './costForm'
 import { parseEuro } from './api'
 import { PERSONS_HINT, parsePersons, SELF_SUPPLY_KIND_OPTIONS } from './tenancyModel'
 import type { InterimGapStatus, Meter, SelfSupplyKind, Tenancy } from './types'
+import type { Problem } from './formProblems'
 
 // `heatingPrepayment` nur bei getrennter Heizkostenabrechnung (Heizung PR 5): dann ist `prepayment`
 // die übrige Vorauszahlung.
@@ -88,6 +89,52 @@ export function gapProblem(heatIds: readonly string[], meterValues: Record<strin
   }
   if (gap.status === 'impossible' && gap.reason.trim() === '') return 'Bitte nennen Sie den Grund für die Teilung nach § 9b Abs. 3 HeizkostenV, also warum die Zwischenablesung nicht möglich war; er steht in der Abrechnung.'
   return null
+}
+
+export type TenantChangeInput = Parameters<typeof buildTenantChange>[0]
+export type TenantChangeField = 'end' | 'name' | 'start' | 'persons' | 'baseRent' | 'prepayment' | 'heatingPrepayment' | 'gapStatus' | 'gapReason' | `meter:${string}` | `meterDate:${string}`
+
+// Der Mieterwechsel im Seitenfenster (#346 Schritt 7): alle Angaben auf einmal, je mit Feld, kurze Fassung am Feld und
+// Satz mit Ort für die Sammelmeldung. Dieselben Regeln wie buildTenantChange, das danach den Rumpf baut; ist die
+// Liste leer, gelingt es.
+export function tenantChangeProblems(input: TenantChangeInput): Problem<TenantChangeField>[] {
+  const { tenancy, endDate, meters, meterValues, vacancy, newTenant } = input
+  const problems: Problem<TenantChangeField>[] = []
+  const endOk = ISO_DATE.test(endDate) && endDate >= tenancy.start
+  if (!endOk) {
+    const short = endDate === '' ? 'Auszugsdatum fehlt' : ISO_DATE.test(endDate) ? 'Vor dem Einzug' : 'Kein Datum'
+    problems.push({ field: 'end', short, text: 'Auszug: Bitte ein gültiges Auszugsdatum nach dem Einzug angeben.' })
+  }
+  for (const m of meters) {
+    const v = meterValues[m.id]
+    if (v?.trim() && parseMeterValue(v) === null) problems.push({ field: `meter:${m.id}`, short: 'Keine Zahl', text: `Zählerstand für „${m.name}“ ist keine gültige Zahl.` })
+  }
+  for (const m of meters) {
+    const date = input.meterDates?.[m.id] ?? ''
+    if (date !== '' && !ISO_DATE.test(date)) problems.push({ field: `meterDate:${m.id}`, short: 'Kein Datum', text: `Das Ablesedatum für „${m.name}“ ist kein Datum.` })
+  }
+  const heatIds = input.heatMeterIds ?? []
+  if (gapProblem(heatIds, meterValues, input.interimGap) !== null) {
+    const gap = input.interimGap
+    if (!gap || gap.status === '') problems.push({ field: 'gapStatus', short: 'Antwort fehlt', text: 'Zwischenablesung: Für die Heizkostenabrechnung fehlt ein Zählerstand. Bitte tragen Sie ihn ein oder geben Sie an, ob die Zwischenablesung nicht möglich war oder nicht durchgeführt wurde.' })
+    else problems.push({ field: 'gapReason', short: 'Grund fehlt', text: 'Zwischenablesung: Bitte nennen Sie den Grund für die Teilung nach § 9b Abs. 3 HeizkostenV, also warum die Zwischenablesung nicht möglich war; er steht in der Abrechnung.' })
+  }
+  if (vacancy) return problems
+  if (!newTenant.name.trim()) problems.push({ field: 'name', short: 'Name fehlt', text: 'Neuer Mieter: Bitte den Namen angeben.' })
+  if (!ISO_DATE.test(newTenant.start)) problems.push({ field: 'start', short: newTenant.start === '' ? 'Einzug fehlt' : 'Kein Datum', text: 'Neuer Mieter: Bitte das Einzugsdatum angeben.' })
+  else if (endOk && newTenant.start <= endDate) problems.push({ field: 'start', short: 'Nicht nach dem Auszug', text: 'Neuer Mieter: Der Einzug muss nach dem Auszug liegen.' })
+  if (parsePersons(newTenant.persons) === null) {
+    problems.push({ field: 'persons', short: newTenant.persons.trim() === '' ? 'Personenzahl fehlt' : 'Keine Personenzahl', text: `Neuer Mieter: Bitte die Personenzahl angeben. ${PERSONS_HINT}` })
+  }
+  if (newTenant.baseRent.trim() && parseEuro(newTenant.baseRent) === null) problems.push({ field: 'baseRent', short: 'Kein Betrag', text: 'Neuer Mieter: Die Kaltmiete bitte als Betrag angeben, z. B. 800,00.' })
+  if (newTenant.prepayment.trim() && parseEuro(newTenant.prepayment) === null) problems.push({ field: 'prepayment', short: 'Kein Betrag', text: 'Neuer Mieter: Die Vorauszahlung bitte als Betrag angeben, z. B. 150,00.' })
+  if (input.askHeating) {
+    const text = (newTenant.heatingPrepayment ?? '').trim()
+    const cents = text ? parseEuro(text) : null
+    if (text === '') problems.push({ field: 'heatingPrepayment', short: 'Heizvorauszahlung fehlt', text: 'Neuer Mieter: Bitte die Heizvorauszahlung angeben (0,00, wenn er keine zahlt).' })
+    else if (cents === null || cents < 0) problems.push({ field: 'heatingPrepayment', short: 'Kein Betrag', text: 'Neuer Mieter: Die Heizvorauszahlung bitte als Betrag angeben (0,00, wenn er keine zahlt).' })
+  }
+  return problems
 }
 
 // Schritt 3: der ganze Wechsel als ein Rumpf, oder die Meldung, warum nicht.

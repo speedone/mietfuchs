@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, endProblem, gapProblem, INTERIM_FEE_HINT, meterProblem, parseMeterValue, successorHeatingNote, type NewTenantForm } from './tenantChange'
+import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, endProblem, gapProblem, INTERIM_FEE_HINT, meterProblem, parseMeterValue, successorHeatingNote, tenantChangeProblems, type NewTenantForm } from './tenantChange'
 
 const meters = [{ id: 'm1', name: 'KW EG' }, { id: 'm2', name: 'Haupt' }]
 const input = (patch: Partial<Parameters<typeof buildTenantChange>[0]> = {}, tenant: Partial<NewTenantForm> = {}) => ({
@@ -136,5 +136,47 @@ describe('Nachmieter heizt ebenfalls selbst', () => {
     expect(successorHeatingNote({ heatingModel: 'selfSupply' })).toBe('Der neue Mieter heizt ebenfalls selbst („Mieter heizt selbst“). Ändern lässt sich das danach in den Stammdaten.')
     expect(successorHeatingNote({ heatingModel: 'settlement' })).toBeNull()
     expect(successorHeatingNote({})).toBeNull()
+  })
+})
+
+// #346 Schritt 7: Der Mieterwechsel steht im Seitenfenster; alles, was fehlt oder nicht passt, steht auf einmal am Feld
+// und in der Sammelmeldung. Was durchgeht, ergibt mit buildTenantChange denselben Rumpf wie vorher.
+describe('Mieterwechsel im Seitenfenster: Angaben je Feld', () => {
+  const tenancy = { start: '2020-01-01' }
+  const meters = [{ id: 'm1', name: 'Wasser EG' }, { id: 'w1', name: 'Wärme EG' }]
+  const base = { tenancy, endDate: '2025-06-30', meters, meterValues: {}, vacancy: false, newTenant: { ...EMPTY_NEW_TENANT, name: 'Schmidt', start: '2025-07-01' } }
+  const fields = (input: Parameters<typeof tenantChangeProblems>[0]) => tenantChangeProblems(input).map((p) => [p.field, p.short])
+
+  test('vollständig: keine Angabe, und buildTenantChange baut den Rumpf', () => {
+    expect(tenantChangeProblems(base)).toEqual([])
+    expect('body' in buildTenantChange(base)).toBe(true)
+  })
+  test('alles fehlt: Auszug, Name, Einzug und Personen, je mit „… fehlt“', () => {
+    expect(fields({ ...base, endDate: '', newTenant: { ...EMPTY_NEW_TENANT, persons: '' } })).toEqual([
+      ['end', 'Auszugsdatum fehlt'], ['name', 'Name fehlt'], ['start', 'Einzug fehlt'], ['persons', 'Personenzahl fehlt'],
+    ])
+  })
+  test('Leerstand: ohne neuen Mieter nur der Auszug', () => {
+    expect(fields({ ...base, endDate: '', vacancy: true, newTenant: EMPTY_NEW_TENANT })).toEqual([['end', 'Auszugsdatum fehlt']])
+  })
+  test('Unlesbares steht an seinem Feld: Zählerstand, Ablesedatum, Beträge, Einzug vor dem Auszug', () => {
+    expect(fields({
+      ...base, endDate: '2019-12-31', meterValues: { m1: 'viel' }, meterDates: { w1: '30.6.' },
+      newTenant: { ...base.newTenant, start: '2019-12-31', baseRent: 'acht', prepayment: 'x' },
+    })).toEqual([
+      ['end', 'Vor dem Einzug'], ['meter:m1', 'Keine Zahl'], ['meterDate:w1', 'Kein Datum'], ['baseRent', 'Kein Betrag'], ['prepayment', 'Kein Betrag'],
+    ])
+    expect(fields({ ...base, newTenant: { ...base.newTenant, start: '2025-06-30' } })).toEqual([['start', 'Nicht nach dem Auszug']])
+  })
+  test('getrennte Heizkostenabrechnung: die Heizvorauszahlung ist Pflicht', () => {
+    expect(fields({ ...base, askHeating: true })).toEqual([['heatingPrepayment', 'Heizvorauszahlung fehlt']])
+    expect(fields({ ...base, askHeating: true, newTenant: { ...base.newTenant, heatingPrepayment: '0' } })).toEqual([])
+  })
+  test('eigene Heizkostenabrechnung: ohne Stand die Antwort, bei „nicht möglich“ der Grund', () => {
+    const heat = { ...base, heatMeterIds: ['w1'] }
+    expect(fields({ ...heat, interimGap: { status: '', reason: '' } })).toEqual([['gapStatus', 'Antwort fehlt']])
+    expect(fields({ ...heat, interimGap: { status: 'impossible', reason: ' ' } })).toEqual([['gapReason', 'Grund fehlt']])
+    expect(fields({ ...heat, interimGap: { status: 'missed', reason: '' } })).toEqual([])
+    expect(fields({ ...heat, meterValues: { w1: '12' } })).toEqual([])
   })
 })

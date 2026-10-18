@@ -8,7 +8,7 @@ import Term from './Term'
 import DraftActions from './DraftActions'
 import { useDraft } from '../useDraft'
 import { useOpenForm } from '../property'
-import { asksCo2Facts, STOCK_BIO_ONLY_ZERO, GAS_BASIS_LABEL, GAS_BASIS_MISSING, gasBasisMissing, defaultGrade, deliveryLine, deliveryOptions, deliveryUnitId, emptyFuelForm, fuelBody, fuelToForm, GAS_BASIS_OPTIONS, gradeOptions, METERED_QUANTITY_OPTIONS, STOCK_QUANTITY_OPTIONS, stockFuelBody, unitWordFor, type FuelForm, type FuelPartForm } from '../fuelForm'
+import { asksCo2Facts, fuelRequiredProblems, STOCK_BIO_ONLY_ZERO, GAS_BASIS_LABEL, GAS_BASIS_MISSING, gasBasisMissing, defaultGrade, deliveryLine, deliveryOptions, deliveryUnitId, emptyFuelForm, fuelBody, fuelToForm, GAS_BASIS_OPTIONS, gradeOptions, METERED_QUANTITY_OPTIONS, STOCK_QUANTITY_OPTIONS, stockFuelBody, unitWordFor, type FuelField, type FuelForm, type FuelPartForm } from '../fuelForm'
 import { aiRequest, progressText, type AiProgress } from '../aiRequest'
 import { heatingUpload } from '../aiUpload'
 import { fuelChecks, fuelFormFromExtraction } from '../fuelImport'
@@ -18,6 +18,8 @@ import { billingEnergy } from '../../../shared/heatDelivery.ts'
 import { startYearOf } from '../../../shared/period.ts'
 import type { FuelDelivery, FuelExtractResult, HeatingEnergy, HeatingMethod, HeatingPeriodView, HeatingPlant, Unit } from '../types'
 import { ErrorSummary, useFormError } from './ErrorSummary'
+import Drawer from './Drawer'
+import Field from './Field'
 
 type TextKey = Exclude<keyof FuelForm, 'usedByService' | 'quantityUnit' | 'unitId' | 'gasBasis' | 'grade' | 'parts'>
 
@@ -43,13 +45,19 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
   findings?: Readonly<Record<string, readonly string[]>>
   onSaved: () => void
 }) {
+  // Die Lieferung im Seitenfenster (#346 Schritt 7): 'neu' oder die Kennung der Lieferung, `null` ohne Fenster.
   const [editing, setEditing] = useState<string | null>(null)
-  // Das Formular einer Lieferung (auch mit dem Vorschlag der KI) zählt als offenes Formular (#346, 7a).
-  useOpenForm(editing !== null)
+  // Ein Formular mit dem Vorschlag der KI ist schon beim Öffnen ein offenes Formular (#346, 7a): Ein Wechsel der
+  // Seite fragt dann, bevor die gelesene Rechnung verloren geht. Ein von Hand geöffnetes meldet das Fenster selbst
+  // an, sobald etwas eingetragen ist.
+  const [fromAi, setFromAi] = useState(false)
+  useOpenForm(editing !== null && fromAi)
   const [form, setForm] = useState<FuelForm>(emptyFuelForm)
-  // Fehler als Sammelmeldung oben in der Karte (#346, Schritt 3)
+  // Fehler der Karte (Entfernen, Gutschrift, Auslesen) als Sammelmeldung oben in der Karte (#346, Schritt 3)
   const errors = useFormError()
   const setError = errors.set
+  // Fehler des Formulars im Fuß des Seitenfensters, je mit Feld (#346, Schritt 7)
+  const formErrors = useFormError<FuelField>()
   // Heizung PR 20: die Prüfungen einer mit der KI gelesenen Rechnung und der Fortschritt beim Lesen.
   const [checks, setChecks] = useState<string[]>([])
   const [reading, setReading] = useState<AiProgress | null | 'start'>(null)
@@ -79,12 +87,20 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
     // Heizung PR 11: Die Zeile der Heizwerttabelle ist nur vorbelegt, wo es genau eine gibt.
     setForm(d ? fuelToForm(d) : { ...emptyFuelForm(), grade: energy ? defaultGrade(energy) : '' })
     setEditing(d ? d.id : 'neu')
+    setFromAi(false)
     setChecks([])
     setError('')
+    formErrors.clear()
+  }
+
+  function close() {
+    setEditing(null)
+    setFromAi(false)
+    formErrors.clear()
   }
 
   // Heizung PR 20 (#103): Die KI liest die Rechnung, das Formular einer neuen Lieferung ist damit vorbelegt;
-  // gespeichert wird erst mit „Lieferung speichern“. Der Beleg liegt mit Objekt und Jahr im Belegordner.
+  // gespeichert wird erst mit „Anlegen“. Der Beleg liegt mit Objekt und Jahr im Belegordner.
   async function readInvoice(file: File) {
     setReading('start')
     setError('')
@@ -96,7 +112,9 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
       const place = { method: plant.method, stock, halfSplit, co2, gas: !stock && energy === 'gas' }
       setForm(fuelFormFromExtraction(r.extraction, { ...emptyFuelForm(), grade: energy ? defaultGrade(energy) : '' }, place))
       setChecks(fuelChecks(r.extraction, place))
+      formErrors.clear()
       setEditing('neu')
+      setFromAi(true)
     } catch (e) {
       setError(errorText(e))
     } finally {
@@ -105,14 +123,20 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
   }
 
   async function save() {
+    // Erst die Pflichtangaben, alle auf einmal am Feld (#346 Schritt 7); danach die Prüfung des Rumpfs wie bisher.
+    const missing = fuelRequiredProblems(form, { stock, perUnit: plant.supply === 'perUnit' })
+    if (missing.length > 0) {
+      formErrors.report(missing)
+      return
+    }
     const unit = deliveryUnitId(form, { supply: plant.supply ?? 'central' })
     if ('error' in unit) {
-      setError(unit.error)
+      formErrors.show(unit.error)
       return
     }
     const r = stock ? stockFuelBody(form, plant.method, { halfSplit }) : fuelBody(form, plant.method, { halfSplit })
     if ('error' in r) {
-      setError(r.error)
+      formErrors.show(r.error)
       return
     }
     // Die Wohnung nur bei einer Etagenheizung; sonst bleibt der Rumpf, wie er war.
@@ -120,12 +144,14 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
     try {
       if (editing === 'neu') await api(`/api/heating-plants/${plant.id}/deliveries`, { method: 'POST', body: JSON.stringify(body) })
       else await api(`/api/fuel-deliveries/${editing}`, { method: 'PUT', body: JSON.stringify(body) })
-      setEditing(null)
+      const created = editing === 'neu'
+      close()
       setError('')
-      toast('Lieferung gespeichert.')
+      toast(created ? 'Lieferung angelegt.' : 'Lieferung gespeichert.')
       onSaved()
     } catch (e) {
-      setError(errorText(e))
+      // Lehnt der Server ab, bleibt das Fenster offen und zeigt seinen Satz (#146).
+      formErrors.show(errorText(e))
     }
   }
 
@@ -236,11 +262,12 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
     )
   }
 
+  // Ein Feld des Formulars; die Pflichtfelder mit Sternchen und Meldung am Feld (#346 Schritt 7).
+  const isRequired = (key: TextKey): key is TextKey & FuelField => (stock ? key === 'deliveredAt' || key === 'quantity' : key === 'invoiceFrom' || key === 'invoiceTo')
   const text = (key: TextKey, label: string, mode: 'decimal' | 'text' = 'decimal') => (
-    <label className="field">
-      {label}
-      <input aria-label={label} value={form[key]} inputMode={mode === 'decimal' ? 'decimal' : undefined} type={key === 'invoiceFrom' || key === 'invoiceTo' || key === 'deliveredAt' || key === 'invoiceDate' ? 'date' : 'text'} onChange={(e) => set(key, e.target.value)} />
-    </label>
+    <Field label={label} required={isRequired(key)} {...(isRequired(key) ? formErrors.field(key) : {})}>
+      <input value={form[key]} inputMode={mode === 'decimal' ? 'decimal' : undefined} type={key === 'invoiceFrom' || key === 'invoiceTo' || key === 'deliveredAt' || key === 'invoiceDate' ? 'date' : 'text'} onChange={(e) => set(key, e.target.value)} />
+    </Field>
   )
 
   return (
@@ -276,7 +303,7 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
             {!view.closed && !service && credits.has(d.id) && creditBlock(d, credits.get(d.id) ?? 0)}
             {!view.closed && (
               <span className="row">
-                <button className="btn secondary" onClick={() => open(d)}>Ändern</button>
+                <button className="btn secondary" aria-label={`Lieferung „${d.label || 'Lieferung'}“ ändern`} onClick={() => open(d)}>Ändern</button>
                 <button className="btn ghost danger-ghost" onClick={() => void remove(d)}>Entfernen …</button>
               </span>
             )}
@@ -292,16 +319,27 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
         </div>
       )}
       {editing !== null && (
-        <div className="field-group">
+        <Drawer
+          // Eine andere Lieferung im offenen Fenster ist ein neues Formular (Durchsicht S3)
+          key={editing}
+          open
+          title={editing === 'neu' ? 'Neue Lieferung' : 'Lieferung bearbeiten'}
+          subtitle={`Heizperiode ${view.label}`}
+          width={560}
+          onClose={close}
+          onSubmit={() => void save()}
+          value={form}
+          errors={formErrors}
+          actions={<button className="btn" onClick={() => void save()}>{editing === 'neu' ? 'Anlegen' : 'Speichern'}</button>}
+        >
           {checks.length > 0 && <ul className="notice">{checks.map((c) => <li key={c}>{c}</li>)}</ul>}
           {plant.supply === 'perUnit' && (
-            <label className="field grow">
-              Wohnung
+            <Field label="Wohnung" required className="grow" {...formErrors.field('unitId')}>
               <select value={form.unitId} onChange={(e) => set('unitId', e.target.value)}>
                 <option value="">— bitte wählen —</option>
                 {units.filter((u) => !plant.units || plant.units.some((x) => x.unitId === u.id)).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
-            </label>
+            </Field>
           )}
           {text('label', 'Bezeichnung', 'text')}
           {stock ? (<>
@@ -311,12 +349,11 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
             </div>
             <div className="row">
               {text('quantity', 'Menge')}
-              <label className="field">
-                Einheit
-                <select aria-label="Einheit der Menge" value={form.quantityUnit} onChange={(e) => set('quantityUnit', STOCK_QUANTITY_OPTIONS.find((o) => o.value === e.target.value)?.value ?? '')}>
+              <Field label="Einheit der Menge" required {...formErrors.field('quantityUnit')}>
+                <select value={form.quantityUnit} onChange={(e) => set('quantityUnit', STOCK_QUANTITY_OPTIONS.find((o) => o.value === e.target.value)?.value ?? '')}>
                   {STOCK_QUANTITY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
-              </label>
+              </Field>
               {service && text('amount', 'Rechnungsbetrag')}
             </div>
             {/* Heizung PR 11: für den Warmwasseranteil der Heizwert laut Rechnung, sonst die Zeile der Tabelle (§ 9 Abs. 3 HeizkostenV). */}
@@ -413,15 +450,11 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
               vom Messdienst angesetzt
             </label>
           )}
-          <div className="row">
-            <button className="btn" onClick={() => void save()}>Lieferung speichern</button>
-            <button className="btn secondary" onClick={() => setEditing(null)}>Abbrechen</button>
-          </div>
-        </div>
+        </Drawer>
       )}
       {!view.closed && editing === null && (
         <div className="row">
-          <button className="btn" onClick={() => open(null)}>Lieferung eintragen</button>
+          <button className="btn" onClick={() => open(null)}>+ Lieferung anlegen</button>
           {reading === null ? (
             <label className="btn secondary">
               Rechnung mit KI auslesen

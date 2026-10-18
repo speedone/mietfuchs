@@ -130,15 +130,16 @@ test('ohne offenen Dialog wechselt das Objekt ohne Rückfrage', async () => {
 })
 
 test('Ablesung: ein angefangener Zählerstand zählt als offenes Formular', async () => {
-  // Die Ablesung steht nicht in einem Drawer, sondern in der Zeile des Zählers; sie hängt am
-  // Zähler in A und meldet sich deshalb selbst an.
+  // Die Ablesung steht im Seitenfenster (#346 Schritt 7); es hängt am Zähler in A und meldet sich mit der
+  // ersten Eingabe an.
   render(<App />)
   fireEvent.click(await screen.findByRole('button', { name: /Zähler & Stände/ }))
   fireEvent.click(await screen.findByRole('button', { name: /Ablesungen \(0\)/ }))
+  fireEvent.click(screen.getByRole('button', { name: '+ Ablesung anlegen' }))
   fireEvent.change(screen.getByLabelText(/^Zählerstand/), { target: { value: '123' } })
   switchTo('objekt-2')
   fireEvent.click(await screen.findByRole('button', { name: /Objekt wechseln/ }))
-  await waitFor(() => expect(screen.queryByRole('button', { name: /Ablesung speichern/ })).toBeNull())
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: /Neue Ablesung/ })).toBeNull())
   expect(sent).toEqual([])
 })
 
