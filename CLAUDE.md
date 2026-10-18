@@ -3150,7 +3150,7 @@ einer Klasse aus index.css zusammenfällt (`sr-only`, `grow`, `grow-2`), nimmt t
 selbst fragen: S4 nimmt Utilities als Regel an, S17 verbietet beliebige Werte (`p-[13px]`) und
 die Standardpalette in jedem Wort, das Tailwinds Scanner in .ts und .tsx findet (nicht nur in
 `className`), S20 verbietet eine neue Klasse oder Animation in index.css mit
-einem Namen aus Tailwind und hält die Zeilenzahl von index.css als Obergrenze (nur kleiner).
+einem Namen aus Tailwind und hält die Zahl der Regelzeilen von index.css als Obergrenze (nur kleiner; Token-Deklarationen zählen nicht, neue Farben gehören als Token-Paar dorthin).
 Schritt 0 hat nichts sichtbar geändert: Pixelvergleich alt gegen neu in Chromium, Firefox und
 WebKit, hell und dunkel, 1440 und 390 Bildpunkte und im Druck.
 

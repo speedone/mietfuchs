@@ -241,7 +241,7 @@ test('kleine Knöpfe haben am Handy die volle Tippfläche', () => {
 // Die heutigen Namensgleichheiten bleiben, weil tw.css sie aus der Suche nimmt (`@source not
 // inline`); jede von ihnen steht deshalb auch dort.
 const LEGACY_UTILITY_NAMES = new Set(['sr-only', 'grow', 'grow-2'])
-const INDEX_CSS_MAX_LINES = 955
+const INDEX_CSS_MAX_LINES = 867
 test('S20: keine neue Klasse und keine Animation in index.css mit einem Namen aus Tailwind, und index.css wächst nicht', () => {
   expect(definedClasses.size).toBeGreaterThan(100)
   const clashes = tailwindUtilities(definedClasses)
@@ -258,7 +258,10 @@ test('S20: keine neue Klasse und keine Animation in index.css mit einem Namen au
   const ownKeyframes = [...css.matchAll(/@keyframes\s+([\w-]+)/g)].map((m) => m[1] ?? '')
   expect(ownKeyframes.length).toBeGreaterThan(0)
   expect(ownKeyframes.filter((k) => themeKeyframes.has(k))).toEqual([])
-  expect(css.trimEnd().split('\n').length, 'index.css wird nur kleiner; nach dem Kürzen die Obergrenze senken').toBeLessThanOrEqual(INDEX_CSS_MAX_LINES)
+  // Gezählt werden die Regeln, nicht die Tokens: Neue Farben gehören als Token-Paar in die Token-Blöcke
+  // (S6, S17), und das soll nicht dazu verleiten, sie in eine bestehende Zeile zu quetschen.
+  const ruleLines = css.trimEnd().split('\n').filter((l) => !/^\s*--[\w-]+\s*:/.test(l))
+  expect(ruleLines.length, 'index.css wird nur kleiner; nach dem Kürzen die Obergrenze senken').toBeLessThanOrEqual(INDEX_CSS_MAX_LINES)
 })
 
 // S5: <Term id="…" /> ohne Text gibt den Titel des Begriffs aus. Hinter einem eigenen Wort
