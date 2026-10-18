@@ -3112,6 +3112,29 @@ legacy-Fassung (`pdfjs-dist/legacy/build`): Die moderne setzt die allerneuesten 
 Ein Test mit echtem pdf.js ([pdfIntake.pdfjs.test.ts](client/src/pdfIntake.pdfjs.test.ts))
 schlägt fehl, wenn jemand auf die moderne Fassung zurückwechselt.
 
+**Stile: Tailwind v4 neben index.css** (#346): Einstieg ist [client/src/tw.css](client/src/tw.css),
+eingebunden in main.tsx über `@tailwindcss/vite` (nur Bauzeit, das native `@tailwindcss/oxide`
+läuft unter Node beim `vite build`; die Programmdatei bettet fertiges CSS ein). index.css steht
+dort vollständig in der Schicht `legacy`, Utilities liegen darüber und gewinnen gegen jede alte
+Regel. Weiteres CSS kommt nur über tw.css in eine Schicht; ungeschichtet gewönne es gegen alle.
+`!important` in `legacy` gewinnt dagegen gegen jede Utility, auch gegen `!flex` oder `print:`
+(bei wichtigen Deklarationen kehrt sich die Reihenfolge der Schichten um); das ist für
+`.no-print` und die Ausblendungen im Druck gewollt. `dark:` gilt nur am Bildschirm, denn der
+Druck ist immer hell. **Die Tokens in index.css bleiben die einzige Quelle**: `@theme inline` macht sie als
+`bg-card`, `text-muted`, `border-line` … benutzbar und wechselt so mit `data-theme` von selbst;
+die Standardpalette ist abgeschaltet (`--color-*: initial`). **Kein Preflight**, solange index.css
+lebt, denn das bisherige Aussehen beruht auf den Vorgaben des Browsers. Tailwind erzeugt eine
+Utility für jedes passende Wort in client/src (Tests ausgenommen), auch in Kommentaren; wo das mit
+einer Klasse aus index.css zusammenfällt (`sr-only`, `grow`, `grow-2`), nimmt tw.css sie mit
+`@source not inline` heraus, und Animationen in index.css heißen nicht wie eine aus dem Theme
+(deshalb `spinner-spin`). Wächter in [uiRules.test.ts](client/src/uiRules.test.ts), die Tailwind
+selbst fragen: S4 nimmt Utilities als Regel an, S17 verbietet beliebige Werte (`p-[13px]`) und
+die Standardpalette in jedem Wort, das Tailwinds Scanner in .ts und .tsx findet (nicht nur in
+`className`), S20 verbietet eine neue Klasse oder Animation in index.css mit
+einem Namen aus Tailwind und hält die Zeilenzahl von index.css als Obergrenze (nur kleiner).
+Schritt 0 hat nichts sichtbar geändert: Pixelvergleich alt gegen neu in Chromium, Firefox und
+WebKit, hell und dunkel, 1440 und 390 Bildpunkte und im Druck.
+
 ## Konventionen & Fallstricke
 
 - **Sprache im Code.** Bezeichner sind englisch: Variablen, Funktionen, Typen, Datei- und

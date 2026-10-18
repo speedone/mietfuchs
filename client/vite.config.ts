@@ -3,11 +3,15 @@
 // dass der Produktionsbuild vitest auflösen müsste.
 import { defineConfig, searchForWorkspaceRoot } from 'vite'
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 import { viteStaticCopy } from 'vite-plugin-static-copy'
 
 export default defineConfig({
   plugins: [
     react(),
+    // Tailwind v4 (#346): erzeugt Utilities aus den Klassennamen im Quelltext, Einstiegspunkt
+    // ist src/tw.css. Nur Bauzeit, im Ergebnis steht fertiges CSS.
+    tailwindcss(),
     // pdf.js dekodiert JBIG2/JPEG2000 (typisch für Behörden-Scans) und Farbprofile
     // per WebAssembly — diese Dateien müssen mit ausgeliefert werden.
     viteStaticCopy({
