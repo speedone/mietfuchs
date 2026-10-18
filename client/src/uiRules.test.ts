@@ -241,7 +241,7 @@ test('kleine Knöpfe haben am Handy die volle Tippfläche', () => {
 // Die heutigen Namensgleichheiten bleiben, weil tw.css sie aus der Suche nimmt (`@source not
 // inline`); jede von ihnen steht deshalb auch dort.
 const LEGACY_UTILITY_NAMES = new Set(['sr-only', 'grow', 'grow-2'])
-const INDEX_CSS_MAX_LINES = 955
+const INDEX_CSS_MAX_LINES = 867
 test('S20: keine neue Klasse und keine Animation in index.css mit einem Namen aus Tailwind, und index.css wächst nicht', () => {
   expect(definedClasses.size).toBeGreaterThan(100)
   const clashes = tailwindUtilities(definedClasses)
@@ -258,7 +258,10 @@ test('S20: keine neue Klasse und keine Animation in index.css mit einem Namen au
   const ownKeyframes = [...css.matchAll(/@keyframes\s+([\w-]+)/g)].map((m) => m[1] ?? '')
   expect(ownKeyframes.length).toBeGreaterThan(0)
   expect(ownKeyframes.filter((k) => themeKeyframes.has(k))).toEqual([])
-  expect(css.trimEnd().split('\n').length, 'index.css wird nur kleiner; nach dem Kürzen die Obergrenze senken').toBeLessThanOrEqual(INDEX_CSS_MAX_LINES)
+  // Gezählt werden die Regeln, nicht die Tokens: Neue Farben gehören als Token-Paar in die Token-Blöcke
+  // (S6, S17), und das soll nicht dazu verleiten, sie in eine bestehende Zeile zu quetschen.
+  const ruleLines = css.trimEnd().split('\n').filter((l) => !/^\s*--[\w-]+\s*:/.test(l))
+  expect(ruleLines.length, 'index.css wird nur kleiner; nach dem Kürzen die Obergrenze senken').toBeLessThanOrEqual(INDEX_CSS_MAX_LINES)
 })
 
 // S5: <Term id="…" /> ohne Text gibt den Titel des Begriffs aus. Hinter einem eigenen Wort
@@ -325,6 +328,15 @@ describe('S6: Kontrast der Farbtöne', () => {
       expect(ratio(t('amber'), t('amber-soft')), 'Warnung').toBeGreaterThanOrEqual(4.5)
       expect(ratio(t('green'), t('green-soft')), 'Erfolg').toBeGreaterThanOrEqual(4.5)
       expect(ratio(t('brand-text'), t('brand')), 'Update-Knopf').toBeGreaterThanOrEqual(4.5)
+    })
+    // #341 N11/N13: leere Monatskachel im Mietkonto (Schrift, ohne Abdunkeln) und Vorjahresbalken im
+    // Kostenvergleich (grafisches Objekt, WCAG 1.4.11) gegen die Karte.
+    test(`${name}: leere Monatskachel und Vorjahresbalken`, () => {
+      const t = (n: string) => tokenOr(body, n)
+      expect(ratio(t('muted'), t('card')), 'Schrift der leeren Kachel').toBeGreaterThanOrEqual(4.5)
+      expect(ratio(t('chart-prev'), t('card')), 'Vorjahresbalken und Legende').toBeGreaterThanOrEqual(3)
+      expect(css).toMatch(/\.rent-month\.none \{ color: var\(--muted\); \}/)
+      expect(css).toMatch(/\.bar\.prev, \.bar-key\.prev \{ background: var\(--chart-prev\); \}/)
     })
     // K6 der Durchsicht: Die Kontur eines Eingabefelds erreicht 3:1 (WCAG 1.4.11) gegen Karte,
     // Seitengrund und Feldgrund.

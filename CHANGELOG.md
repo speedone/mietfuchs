@@ -59,6 +59,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Geändert
 
+- Kontraste: Leere Monatskacheln im Mietkonto sind nicht mehr abgedunkelt (Schrift jetzt über 4,5:1), und
+  die Vorjahresbalken samt Legende im Kostenvergleich heben sich im hellen wie im dunklen Design
+  mindestens 3:1 von der Karte ab ([#341](https://github.com/speedone/mietfuchs/issues/341)).
 - Neue, ruhigere Gestaltung: neutrale graue Flächen, weiße Karten mit feiner Linie und eine helle
   Seitenleiste, in der der gewählte Menüpunkt hell getönt hervorsteht. Indigo bleibt für das, womit
   Sie etwas tun: den Hauptknopf, Links, den Fortschritt und den Fokusrahmen. Es gibt nur noch drei

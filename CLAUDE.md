@@ -138,9 +138,7 @@ ohnehin darüber. Beim Anheben alle Stellen mitziehen: `engines` (plus
 `package-lock.json`), README-Badge, Dockerfile, `ci.yml`, `release.yml`. Actions und npm-Pakete
 hält Dependabot aktuell ([.github/dependabot.yml](.github/dependabot.yml), monatlich: Actions
 in einem PR, kleine npm-Updates gebündelt je Ordner, Hauptversionen einzeln). Sicherheitswarnungen
-und automatische Sicherheits-PRs sind im Repo eingeschaltet. Den `overrides`-Eintrag für `shell-quote` in der
-Wurzel-`package.json` gibt es, weil `concurrently` (nur Entwicklung, `npm run dev`) es auf 1.9.0
-festnagelt, das eine Sicherheitslücke hat; er kann weg, sobald `concurrently` selbst ≥ 1.11.0 verlangt. Bei Hauptversionen die
+und automatische Sicherheits-PRs sind im Repo eingeschaltet. Bei Hauptversionen die
 Changelogs gegen unsere Nutzung prüfen; Express 5 etwa ruft den `listen`-Callback auch bei
 Startfehlern auf, und `res.sendFile` braucht `root`, wenn der Installationspfad Punkt-Ordner hat.
 
@@ -3152,7 +3150,7 @@ einer Klasse aus index.css zusammenfällt (`sr-only`, `grow`, `grow-2`), nimmt t
 selbst fragen: S4 nimmt Utilities als Regel an, S17 verbietet beliebige Werte (`p-[13px]`) und
 die Standardpalette in jedem Wort, das Tailwinds Scanner in .ts und .tsx findet (nicht nur in
 `className`), S20 verbietet eine neue Klasse oder Animation in index.css mit
-einem Namen aus Tailwind und hält die Zeilenzahl von index.css als Obergrenze (nur kleiner).
+einem Namen aus Tailwind und hält die Zahl der Regelzeilen von index.css als Obergrenze (nur kleiner; Token-Deklarationen zählen nicht, neue Farben gehören als Token-Paar dorthin).
 Schritt 0 hat nichts sichtbar geändert: Pixelvergleich alt gegen neu in Chromium, Firefox und
 WebKit, hell und dunkel, 1440 und 390 Bildpunkte und im Druck.
 

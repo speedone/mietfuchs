@@ -264,7 +264,7 @@ Drei Ebenen, wie die Tests von Mietfuchs ohnehin aufgebaut sind.
 | S17 Tokens | keine Hex-Farben und keine px-Abstände außerhalb der Token-Blöcke in `index.css`/`tw.css`; in Klassen keine beliebigen Werte (`[#…]`, `[13px]`), keine Standardpalette | Gestaltung driftet |
 | S18 Jahr/Objekt | kein `<select>` mit Jahr/Objekt in `pages/` außer über `AppShell` | M13 |
 | S19 Formularmuster | eine Seite hat entweder `Drawer` oder Karten-Speichern je Formular; kein zweites `type="submit"` in derselben Karte | M18, N8 |
-| S20 Tailwind | keine neue Klasse in `index.css` mit dem Namen einer Utility (heute `grow`, `grow-2`, `sr-only`); `index.css` wird nur kleiner (Zeilenzahl als Obergrenze im Test) | Kollision, Rückfall ins alte CSS |
+| S20 Tailwind | keine neue Klasse in `index.css` mit dem Namen einer Utility (heute `grow`, `grow-2`, `sr-only`); `index.css` wird nur kleiner (Regelzeilen ohne Token-Deklarationen als Obergrenze im Test) | Kollision, Rückfall ins alte CSS |
 | S22 Navigation | Einträge mit Kennung und Beschriftung nur in `nav.ts`; Seitenleiste, Menüblatt und untere Leiste lesen `navFor`/`bottomNav` (seit Schritt 9) | zweite Liste |
 | S23 Karten | die Tabellen mit Datensätzen tragen `stacked`, jede Zelle `data-label` (außer Aktionen und Zeilen mit `colSpan`) (seit Schritt 9) | Wert ohne Spalte am Handy |
 | S24 Sicherheitsränder | was fest oder angeheftet am Fensterrand steht (Regel in index.css oder Utility `fixed`/`sticky top-0`), nimmt `env(safe-area-inset-*)`; `viewport-fit=cover` in index.html (seit Schritt 9) | Bedienbares unter Kerbe oder Home-Indikator |
