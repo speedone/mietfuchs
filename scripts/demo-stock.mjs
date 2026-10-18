@@ -338,8 +338,13 @@ function pdfString(text) {
 
 /** @param {string} html */
 export function textPdf(html) {
-  const lines = html
-    .replace(/<style[\s\S]*?<\/style>/g, '')
+  // Bis nichts mehr zu entfernen ist: Ein Rest wie „<sty<style>…</style>le>“ ergäbe sonst wieder ein Tag.
+  let text = html
+  for (let before = ''; before !== text; ) {
+    before = text
+    text = text.replace(/<style[\s\S]*?<\/style>/gi, '')
+  }
+  const lines = text
     .replace(/<(br|\/div|\/tr|\/h1)[^>]*>/g, '\n')
     .replace(/<[^>]+>/g, ' ')
     .replace(/&amp;/g, '&')
