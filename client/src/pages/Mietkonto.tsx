@@ -209,7 +209,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
         >
           {(ledger?.rows.length ?? 0) === 0 && <div className="info">{noRentYearText(year)}</div>}
           <div className="row">
-            <label className="field grow">
+            <label className="field">
               Art
               <select value={form.kind} onChange={(e) => {
                 const kind = PAYMENT_KIND_OPTIONS.find((o) => o.value === e.target.value)?.value
@@ -218,7 +218,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
                 {PAYMENT_KIND_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </label>
-            <Field label="Mietverhältnis" required className="grow" {...formErrors.field('tenancyId')}>
+            <Field label="Mietverhältnis" required {...formErrors.field('tenancyId')}>
               <select value={form.tenancyId} onChange={(e) => setForm({ ...form, tenancyId: e.target.value })}>
                 <option value="">— wählen —</option>
                 {paymentTenancyOptions(form.kind, ledger, tenancies, (id) => units.find((u) => u.id === id)?.name ?? '—', form.tenancyId).map((o) => (
@@ -226,13 +226,13 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
                 ))}
               </select>
             </Field>
-            <Field label="Datum" required className="grow" {...formErrors.field('date')}>
+            <Field label="Datum" required {...formErrors.field('date')}>
               <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
             </Field>
-            <Field label="Betrag €" required className="grow" {...formErrors.field('amount')}>
+            <Field label="Betrag €" required {...formErrors.field('amount')}>
               <input value={form.amount} inputMode="decimal" placeholder="z. B. 1.000,00" onChange={(e) => setForm({ ...form, amount: e.target.value })} />
             </Field>
-            <Field label="Notiz" className="grow">
+            <Field label="Notiz">
               <input value={form.note} placeholder="z. B. Überweisung, Abrechnung 2025" onChange={(e) => setForm({ ...form, note: e.target.value })} />
             </Field>
           </div>

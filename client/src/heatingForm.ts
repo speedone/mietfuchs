@@ -181,7 +181,8 @@ export function whoOptions(kind: PropertyKind, form?: Pick<HeatingForm, 'energy'
   const options: { value: Exclude<WhoSettles, ''>; label: string }[] = [
     { value: 'service', label: 'Ein Messdienst oder die Hausverwaltung' },
     { value: 'self', label: 'Ich selbst, mit Zählern oder Heizkostenverteilern' },
-    { value: 'manual', label: 'Niemand, die Heizkosten werden nach Fläche oder fest verteilt' },
+    // Kurz (#346 Schritt 7b): Was „Niemand“ heißt, sagt der Hinweis zur gewählten Antwort (`whoHint`).
+    { value: 'manual', label: 'Niemand' },
     ...(delivery ? [{ value: 'supplier' as const, label: SUPPLIER_BILLS_LABEL }] : []),
   ]
   // Bei einer vermieteten Eigentumswohnung liefert die Gemeinschaft die Abrechnung (Entwurf 11.2, D-F2).
@@ -301,7 +302,7 @@ export function whoHint(who: WhoSettles, kind: PropertyKind): string {
   if (who === 'service') return 'Die Abrechnung des Messdienstes übernehmen Sie wie bisher als Position „Heizung und Warmwasser“ mit dem Schlüssel „Einzelbeträge“.'
   if (who === 'homeowners') return 'Die Abrechnung der Gemeinschaft übernehmen Sie wie die eines Messdienstes: als Position „Heizung und Warmwasser“ mit dem Schlüssel „Einzelbeträge“, mit den Beträgen der Hausgeldabrechnung.'
   if (who === 'manual') {
-    const rule = `Die Heizkostenverordnung verlangt, ${SHARE.min} bis ${SHARE.max} % der Heizkosten nach Verbrauch zu verteilen; sonst darf jeder Mieter seinen Anteil um ${CUT} % kürzen. Mietfuchs rechnet wie bisher und sagt es in der Abrechnung.`
+    const rule = `Die Heizkosten werden nach Fläche oder fest verteilt, ohne Heizkostenabrechnung. Die Heizkostenverordnung verlangt, ${SHARE.min} bis ${SHARE.max} % der Heizkosten nach Verbrauch zu verteilen; sonst darf jeder Mieter seinen Anteil um ${CUT} % kürzen. Mietfuchs rechnet wie bisher und sagt es in der Abrechnung.`
     return kind === 'zfh'
       ? `${rule} Im Haus mit höchstens zwei Wohnungen, von denen Sie eine selbst bewohnen, dürfen Sie mit dem Mieter etwas anderes vereinbaren (§ 2 HeizkostenV).`
       : rule

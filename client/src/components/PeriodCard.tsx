@@ -5,6 +5,7 @@ import { useProperty } from '../property'
 import { useToast } from './feedback'
 import Term from './Term'
 import MonthField from './MonthField'
+import Field from './Field'
 import {
   answersAfterConflict, answersOf, changeLabel, conflictPreview, earliestOpenChange, initialAnswers, localToday, MONTH_OPTIONS, nextRules, periodChangedText, rhythmText, withoutChange,
   type AnswerForm, type RhythmForm,
@@ -21,27 +22,31 @@ import Drawer from './Drawer'
 export function RhythmFields({ form, onChange, fromField }: { form: RhythmForm; onChange: (next: RhythmForm) => void; fromField?: { id: string; error?: string; onFix: () => void } }) {
   return (
     <>
-    <div className="row">
-      <label className="field">
-        Was möchten Sie ändern?
+    {/* Raster mit Breitenstufen (#346 Schritt 7b): die Auswahl so breit wie ihr längster Eintrag, der Monat kurz
+        mit dem Rasterknopf direkt am Feld; vorher nahm das Monatsfeld fast die ganze Breite. */}
+    <div className="field-grid">
+      <Field label="Was möchten Sie ändern?" hint="Beim Wechsel bleiben frühere Zeiträume, wie sie sind; „Beginnmonat von Anfang an“ ändert auch alle früheren.">
         <select value={form.mode} onChange={(e) => onChange({ ...form, mode: e.target.value === 'change' ? 'change' : 'start' })}>
-          <option value="change">Wechsel ab einem Monat (frühere Zeiträume bleiben)</option>
-          <option value="start">Beginnmonat von Anfang an (auch alle früheren Zeiträume)</option>
+          <option value="change">Wechsel ab einem Monat</option>
+          <option value="start">Beginnmonat von Anfang an</option>
         </select>
-      </label>
+      </Field>
       {form.mode === 'start' ? (
-        <label className="field">
-          Abrechnungszeitraum beginnt im
+        <Field label="Abrechnungszeitraum beginnt im">
           <select value={form.month} onChange={(e) => onChange({ ...form, month: Number(e.target.value) })}>
             {MONTH_OPTIONS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
           </select>
-        </label>
+        </Field>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {/* Das Monatsfeld: `type="month"` kennen Safari und Firefox nicht (#287, #346 Schritt 5). */}
-          <MonthField label="Neuer Zeitraum beginnt ab Monat" value={form.from} today={localToday()} onChange={(from) => onChange({ ...form, from })} {...fromField} />
-          <span className="muted">Danach läuft jeder Zeitraum von diesem Monat bis zum Vormonat im Folgejahr; davor entsteht ein kürzerer Rumpfzeitraum.</span>
-        </div>
+        // Das Monatsfeld: `type="month"` kennen Safari und Firefox nicht (#287, #346 Schritt 5).
+        <MonthField
+          label="Neuer Zeitraum beginnt ab Monat"
+          hint="Danach läuft jeder Zeitraum von diesem Monat bis zum Vormonat im Folgejahr; davor entsteht ein kürzerer Rumpfzeitraum."
+          value={form.from}
+          today={localToday()}
+          onChange={(from) => onChange({ ...form, from })}
+          {...fromField}
+        />
       )}
     </div>
     {/* Laienprobe B4: „von Anfang an“ deutet die Vergangenheit um, auch schon verschickte Abrechnungen. */}

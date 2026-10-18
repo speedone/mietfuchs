@@ -129,7 +129,7 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
         {d ? distributionLines(d).map((l) => <p key={l}>{l}</p>) : <p className="muted">Noch kein Anteil festgelegt.</p>}
         {insulationAsked(energy) && (
           <div className="no-print">
-            <label className="field grow">
+            <label className="field">
               <span>{INSULATION_QUESTION} (<Term id="forcedConsumptionShare">Pflichtanteil</Term>)</span>
               <select value={insulation} disabled={draft.saving} onChange={(e) => edit({ insulation: e.target.value as InsulationRule | '' })}>
                 {insulation === '' && <option value="">— bitte wählen —</option>}
@@ -259,7 +259,7 @@ function GapReason({ saved, scope, onSave, onCancel }: { saved: string; scope: s
   }
   return (
     <div className="row">
-      <label className="field grow">
+      <label className="field">
         Warum war die Zwischenablesung nicht möglich? (steht in der Abrechnung)
         <input value={draft.value} disabled={draft.saving} onChange={(e) => draft.set(e.target.value)} />
       </label>

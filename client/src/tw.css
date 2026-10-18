@@ -24,6 +24,9 @@
 @layer theme, base, legacy, components, utilities;
 @import "tailwindcss/theme.css" layer(theme);
 @import "./index.css" layer(legacy);
+/* Die Regeln der Felder (Breitenstufen, #346 Schritt 7b) in der Schicht `components`: über index.css, unter den
+   Utilities, die die Stufen setzen. Eine eigene Datei, weil sie keine Utilities sind. */
+@import "./fields.css" layer(components);
 /* Gesucht wird nur in client/src (source("./")): sonst läse Tailwind auch index.html,
    vite.config.ts und alles andere unter client/. */
 @import "tailwindcss/utilities.css" layer(utilities) source("./");
@@ -137,21 +140,46 @@
   --shadow-pop: var(--shadow-pop);
 }
 
-/* Formularbausteine (#346, Schritt 3): Breiten nach Inhalt für `<Field width>` und ein Raster für Felder.
-   Das Raster setzt so viele Spalten von mindestens 220 px, wie hineinpassen (`auto-fit`), statt fester
-   Spalten, die Felder abschneiden (UI-Durchsicht M11, N15, N16); am Handy ist es eine Spalte. Die
-   Sammelmeldung im Fuß des Seitenfensters ist auf 40 % der Fensterhöhe begrenzt und scrollt darin. */
+/* Felder im Raster mit Breitenstufen (#346, Schritt 7b; Spezifikation Abschnitt 3 „Breiten nach Inhalt“).
+   Die Breite gehört dem Eingabefeld, nicht der Spalte: kurz (`s`, `--field-s`) für Betrag, Datum, Monat,
+   Postleitzahl, Fläche, Personen, Zählerstand; mittel (`m`) für kurze Freitexte; lang (`l`) für Adresse,
+   Name, Bezeichnung; voll (`full`) für Textfelder. Ein Auswahlfeld ist so breit wie sein längster Eintrag,
+   höchstens die volle Breite; eine Stufe ist für es nur die Mindestbreite. Ohne Angabe gilt die Vorgabe
+   nach Feldart (Regeln unten, dieselbe wie `widthOf` in components/Field.tsx), für `<Field>` wie für ein
+   `label.field` von Hand. Die Hülle ist so breit wie Beschriftung und Eingabefeld (`fit-content`); Hinweis
+   und Meldung brechen in dieser Breite um und weiten sie nicht (`contain: inline-size`), außer bis zur
+   Lesebreite `--field-hint`, sonst würde ein Satz unter einem kurzen Feld zur Säule. Die Stufen setzen nur
+   Variablen, die Regeln in fields.css (Schicht `components`) wenden sie an; so schlagen sie die alten Regeln aus
+   index.css (`.row > label.field`, `.grow`) und bleiben am Handy (bis 640 px) volle Breite. */
 @utility width-s {
-  max-width: --spacing(40);
+  --field-w: var(--field-s);
+  --select-min: var(--field-s);
 }
 @utility width-m {
-  max-width: --spacing(64);
+  --field-w: var(--field-m);
+  --select-min: var(--field-m);
 }
+@utility width-l {
+  --field-w: var(--field-l);
+  --select-min: var(--field-l);
+}
+@utility width-full {
+  --field-w: 100%;
+  --select-min: 100%;
+  width: 100%;
+}
+/* Ein langer Hinweis (eine Frage samt Erklärung) bricht in Lesebreite um statt in der Breite des Felds. */
+@utility hint-wide {
+  --field-hint: 36rem;
+}
+/* Das Raster: Felder nebeneinander, so viele, wie in ihrer eigenen Breite passen, und keines gestreckt
+   (vorher teilte `auto-fit, minmax(…, 1fr)` die Zeile in gleiche Spalten, die Adresse und Kabelanlage
+   abschnitten). Die Eingabefelder stehen auf einer Linie, auch wenn eine Beschriftung umbricht. */
 @utility field-grid {
-  display: grid;
-  gap: --spacing(4);
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, --spacing(55)), 1fr));
-  align-items: start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: --spacing(4) --spacing(5);
+  align-items: flex-end;
 }
 @utility summary-cap {
   max-height: 40dvh;

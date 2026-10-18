@@ -68,6 +68,7 @@
   --radius-s: 6px; --radius-m: 8px; --radius-l: 12px; --radius-xl: 16px;
   /* Zielgröße für Knöpfe und Felder; am Handy und mit Finger 44 px (WCAG 2.5.8, siehe unten) */
   --target: 36px;
+  --field-s: 8.5rem; --field-m: 13rem; --field-l: 21rem; --field-hint: 15rem; /* Breitenstufen der Felder (#346 Schritt 7b, tw.css); in rem, denn `ch` fiel in Firefox um ein Viertel schmaler aus */
   /* Am Handy (< 900 px, #346 Schritt 9): Höhe des Kopfs und der unteren Leiste ohne Sicherheitsrand */
   --head-h: 56px; --bar-h: 52px;
   /* Ein Fokusrahmen für alles: 2 px Kartenfarbe, dann 2 px Akzent */
@@ -454,7 +455,7 @@ dialog.menu-sheet > .sidebar button:not(.sheet-close) { min-height: var(--target
 
 /* ---------- Seitenkopf (Titel + Primäraktion) ---------- */
 .page-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-4); flex-wrap: wrap; margin-bottom: var(--space-8); }
-.page-head-text { min-width: 0; }
+.page-head-text { flex: 1 1 20rem; min-width: 0; }
 .page-head-text h1 { margin-bottom: var(--space-1); }
 .page-head-text .sub { margin: 0; }
 .page-head-actions { display: flex; gap: 10px; align-items: center; flex-shrink: 0; }
@@ -482,8 +483,6 @@ dialog.drawer {
 .drawer-x:hover { background: var(--hover); color: var(--text); }
 .drawer-body { flex: 1; overflow-y: auto; padding: var(--space-6); }
 /* Im schmalen Drawer stapeln sich Formularfelder zu einer Spalte. */
-.drawer-body .row > label.field,
-.drawer-body .row > .field { flex: 1 1 100%; }
 .drawer-foot { flex-shrink: 0; display: flex; align-items: center; gap: var(--space-2); padding: var(--space-4) var(--space-6); border-top: 1px solid var(--line); background: var(--card); }
 .drawer-foot .spacer { flex: 1; }
 .drawer-hint { color: var(--muted); font-size: var(--text-xs); }
@@ -660,8 +659,6 @@ label.field :is(small, .muted, p, ul, ol) { font-weight: var(--weight-normal); }
 :is(input:not([type='checkbox'], [type='radio'], [type='file'], [type='range']), select) { height: var(--target); }
 td :is(input, select) { height: auto; }
 /* In Karten und Panels werden Felder nicht so breit wie die ganze Karte (E6, E39) */
-:is(.card, .panel, .preview, details) > label.field { max-width: 640px; }
-.preview label.field input[inputmode='decimal'] { max-width: 180px; }
 
 /* S3 – Eine Schreibweise für Kontrollkästchen und Optionsfelder: das Feld links, der Text daneben,
    normal gesetzt. `label.field` mit einem Kästchen als erstem Kind ist verboten (uiRules.test.ts):
@@ -699,20 +696,10 @@ input:is([type='checkbox'], [type='radio']):focus-visible { box-shadow: var(--fo
 .property-notice-text { min-width: 0; }
 ul.plain { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 
-/* Feste Breiten kurzer Eingaben statt style={{ width }} */
-input.input-xs { width: 80px; }
-input.input-s { width: 140px; }
-input.input-m { width: 120px; }
-input.input-num { width: 100px; text-align: right; }
-input.input-wide { width: 100%; min-width: 200px; }
-input.input-cell { display: block; width: 170px; margin-top: 4px; }
-/* Ein Auswahlfeld ist so breit wie seine längste Option und schob auf dem Handy die Seite breiter
-   als den Bildschirm (Abrechnungszeitraum, 390 px). In einer Zeile darf es schmaler werden. */
-.row > label.field { min-width: min(100%, 160px); max-width: 100%; }
-label.field > select { max-width: 100%; }
-/* Quellen und Bestätigungen (Heizung PR 14, Durchsicht von #243, R-K11): breit genug für den Platzhalter. */
-.row > label.field.wide { flex: 2 1 18rem; min-width: min(100%, 18rem); }
-:is(.card, .panel, .preview, details) > label.field.wide { max-width: 100%; }
+/* Eingaben in Tabellenzellen (außerhalb von label.field, dort gelten die Breitenstufen aus tw.css) */
+input.input-num { width: var(--field-s); text-align: right; }
+input.input-wide { width: 100%; min-width: var(--field-m); }
+input.input-cell { display: block; width: var(--field-m); margin-top: var(--space-1); }
 .row.center { align-items: center; }
 .row.start { align-items: flex-start; }
 .row.baseline { align-items: baseline; }
@@ -725,8 +712,8 @@ td.reading-panel { background: var(--bg); }
 /* Überschrift eines Abschnitts aus mehreren Karten (Heizkosten je Heizperiode) */
 .section-title { font-size: var(--text-l); margin: var(--space-8) 0 var(--space-3); }
 /* Die Auswertung einer Rechnung passt in ihre Karte (E29) */
-.assessment-table select { max-width: 220px; }
-.assessment-table input.input-wide { min-width: 140px; }
+.assessment-table select { max-width: var(--field-l); }
+.assessment-table input.input-wide { min-width: var(--field-m); }
 .big-number { font-size: var(--text-2xl); font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; }
 /* Beschriftung mit Kennzeichen in einer Zeile (label.field ist eine Spalte) */
 .label-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -841,11 +828,6 @@ td.reading-panel { background: var(--bg); }
 @media print {
   body.print-reading main .card:not(.reading-result), body.print-reading main h2, body.print-reading .page-head, body.print-reading .error, body.print-reading .notice { display: none !important; }
 }
-/* Ein Auswahlfeld ist so breit wie seine längste Option. „laut Gemeinschaftsabrechnung
-   (Eigentumswohnung)“ (#94) zog den Umlageschlüssel im Seitenfenster über den Rand, samt
-   waagerechtem Scrollbalken. Im Formular darf es schmaler werden als sein Inhalt. */
-.drawer-body .field { min-width: 0; }
-.drawer-body .field select { max-width: 100%; }
 
 /* Rechenweg auf Klick (#114, E43): ein kleiner Textverweis statt eines Knopfes, der jede Zeile höher
    macht; die Schritte als nummerierte Liste auf abgesetzter Fläche */
@@ -899,7 +881,7 @@ fieldset.no-connection { border: 0; padding: 0; margin-inline: 0; min-width: 0; 
 .receipt-inbox-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
 .receipt-inbox-head h2 { margin: 0; }
 .receipt-inbox-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.receipt-inbox-controls select { flex: 1 1 10rem; min-width: 0; max-width: 100%; }
+.receipt-inbox-controls select { flex: 0 1 auto; min-width: 0; max-width: 100%; }
 .receipt-packs details { margin-top: 12px; }
 .receipt-packs summary { cursor: pointer; font-weight: 600; }
 

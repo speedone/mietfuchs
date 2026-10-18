@@ -68,20 +68,20 @@ export default function HeatingSelfSetup({ plant, period, periodLabel, onDone, o
         Mietfuchs verteilt die Kosten dieser Heizanlage dann nach der <Term id="heatingSystem">Heizkostenverordnung</Term>: einen Teil nach dem
         gemessenen Verbrauch, den Rest nach der Fläche. Fehlende Wärme- und Warmwasserzähler legt Mietfuchs an; die Stände tragen Sie auf der Seite Zähler ein. {SELF_UNTIL_SWITCH}
       </p>
-      <Field label="Bereitet diese Heizung auch das Warmwasser?" required className="grow" {...errors.field('hotWater')}>
+      <Field label="Bereitet diese Heizung auch das Warmwasser?" required {...errors.field('hotWater')}>
         <select value={form.hotWater} onChange={(e) => setForm({ ...form, hotWater: e.target.value as HotWater | '', items: form.items.map((x) => ({ ...x, heatingTarget: '' })) })}>
           {form.hotWater === '' && <option value="">— bitte wählen —</option>}
           {HOT_WATER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
       </Field>
-      <Field label="Womit wird der Verbrauch erfasst?" className="grow" hint={captureHint(form.capture)} {...errors.field('capture')}>
+      <Field label="Womit wird der Verbrauch erfasst?" hint={captureHint(form.capture)} {...errors.field('capture')}>
         <select value={form.capture} onChange={(e) => setForm({ ...form, capture: e.target.value as CaptureMethod })}>
           {CAPTURE_SELF_OPTIONS.map((o) => <option key={o.value} value={o.value} disabled={o.later}>{o.label}</option>)}
         </select>
       </Field>
       {insulationAsked(energy) && (
         <>
-          <Field label={<>{INSULATION_QUESTION} (<Term id="forcedConsumptionShare">Pflichtanteil</Term>)</>} required className="grow" {...errors.field('insulation')}>
+          <Field label={<>{INSULATION_QUESTION} (<Term id="forcedConsumptionShare">Pflichtanteil</Term>)</>} required {...errors.field('insulation')}>
             <select value={form.insulation} onChange={(e) => setForm({ ...form, insulation: e.target.value as InsulationRule | '' })}>
               <option value="">— bitte wählen —</option>
               {INSULATION_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -115,7 +115,7 @@ export default function HeatingSelfSetup({ plant, period, periodLabel, onDone, o
       <p className="muted">Nur ankreuzen, wenn es im Mietvertrag oder einer Vereinbarung mit den Mietern steht; mehr als 100 % gibt es nicht.</p>
       {forced !== null && <p className="muted">Bei einer Öl- oder Gasheizung in diesem Fall sind es bei der Heizung {forced} % (§ 7 Abs. 1 Satz 2 HeizkostenV); mehr nur mit einer Vereinbarung (§ 10 HeizkostenV).</p>}
       {hint && <div className="notice">{hint}</div>}
-      <label className="field grow">
+      <label className="field">
         <span><Term id="baseCosts">Grundkosten</Term> der Heizung verteilen nach</span>
         <select value={form.areaBasisHeat} onChange={(e) => setForm({ ...form, areaBasisHeat: e.target.value as AreaBasisHeat })}>
           <option value="area">Wohnfläche</option>

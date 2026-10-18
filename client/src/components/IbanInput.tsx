@@ -27,7 +27,6 @@ export default function IbanInput({ label, value, stored, onChange, placeholder,
   return (
     <Field
       label={label}
-      className="grow"
       id={id}
       onFix={onFix}
       error={error}

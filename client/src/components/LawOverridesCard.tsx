@@ -76,7 +76,7 @@ function SlotGroup({ slot: s, onSave, onRemove }: { slot: LawOverrideSlot; onSav
               {fieldLabel(s)}
               <input inputMode="decimal" value={d.value} placeholder="z. B. 64,20" disabled={draft.saving} onChange={(e) => draft.set({ ...d, value: e.target.value })} />
             </label>
-            <label className="field grow">
+            <label className="field">
               Quelle
               <input value={d.source} placeholder="UBA, Bekanntmachung vom …" disabled={draft.saving} onChange={(e) => draft.set({ ...d, source: e.target.value })} />
             </label>

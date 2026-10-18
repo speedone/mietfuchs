@@ -238,6 +238,21 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   einer eigenen Zeile, und „Nicht möglich“ und „Nicht durchgeführt“ bei einer fehlenden Zwischenablesung
   sehen aus wie Knöpfe (Befunde N8, M18 aus [#341](https://github.com/speedone/mietfuchs/issues/341);
   [#346](https://github.com/speedone/mietfuchs/issues/346)).
+- Felder in ihrer eigenen Breite und Neues anlegen immer oben rechts: Ein Betrag, ein Datum, ein Monat (mit
+  dem Raster ▦ direkt am Feld), eine Postleitzahl oder ein Zählerstand ist ein kurzes Feld, Adresse, Name und
+  Bezeichnung sind lang, und ein Auswahlfeld ist so breit wie sein längster Eintrag; am Handy ist jedes Feld voll
+  breit. In der Karte „Objekt“ schneiden Adresse und Kabelanlage nichts mehr ab, der angespannte Wohnungsmarkt
+  steht ohne eigenen Kasten, und beim Ändern des Abrechnungszeitraums sind „Was möchten Sie ändern?“ und
+  „Neuer Zeitraum beginnt ab Monat“ nicht mehr so breit wie das ganze Fenster. „+ Zähler anlegen“ steht jetzt
+  wie „+ Kostenposition anlegen“ oben im Seitenkopf, „+ Wohnung anlegen“, „+ Mietverhältnis anlegen“,
+  „+ Heizanlage anlegen“, „+ Lieferung anlegen“ und „+ Ablesung anlegen“ oben rechts in ihrer Karte, und aus
+  „Weiteres Objekt anlegen“ neben „Speichern“ wird „+ Weiteres Objekt anlegen“ oben rechts in der Karte
+  „Objekt“; im Fuß einer Karte stehen nur „Speichern“ und rechts die Gefahrknöpfe. Damit am Handy nichts
+  abgeschnitten ist, heißen einige Einträge kürzer, und was sie bedeuten, steht als Hinweis am Feld: beim
+  Bundesland „unbekannt“, bei der Frage, wer abrechnet, „Niemand“, beim Abrechnungszeitraum „Wechsel ab einem
+  Monat“ und „Beginnmonat von Anfang an“. Die Suche im Belegordner steht in voller Breite und nennt als Hinweis,
+  was sie findet
+  ([#346](https://github.com/speedone/mietfuchs/issues/346)).
 
 ### Behoben
 

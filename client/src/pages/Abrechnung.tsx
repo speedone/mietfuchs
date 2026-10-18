@@ -707,7 +707,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                                   if (e.key === 'Escape') { e.preventDefault(); setPpEdit(null) }
                                   else if (e.key === 'Enter') { e.preventDefault(); submitPpEdit(st.tenancyId) }
                                 }}
-                                style={{ width: 100, textAlign: 'right', padding: '3px 6px' }}
+                                className="input-num"
                                 autoFocus
                               />{' '}
                               <button className="btn small" onClick={() => submitPpEdit(st.tenancyId)}>Speichern</button>{' '}

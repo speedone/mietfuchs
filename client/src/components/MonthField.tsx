@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
-import Field from './Field'
+import Field, { type FieldWidth } from './Field'
 import { usePopover } from './popover'
 import { MONTH_NAMES, MONTH_SHORT, YEAR_MAX, YEAR_MIN, gridMove, monthLabel, parseMonthText, type GridPos } from '../monthText'
 import { localToday } from '../periodForm'
@@ -34,7 +34,7 @@ type Props = {
   error?: string
   id?: string
   onFix?: () => void
-  width?: 's' | 'm'
+  width?: FieldWidth
   className?: string
 }
 
@@ -114,7 +114,7 @@ export default function MonthField({ label, value, onChange, placeholder, start,
 
   const shown = error ?? ownError
   return (
-    <Field label={label} required={required} hint={hint} error={shown} announce={!error && !!ownError} id={id} onFix={onFix} width={width} className={className}>
+    <Field label={label} required={required} hint={hint} error={shown} announce={!error && !!ownError} id={id} onFix={onFix} width={width ?? 's'} className={className}>
       {(control) => (
         <span className="month-field">
           <input

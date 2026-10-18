@@ -426,7 +426,7 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
                     </label>
                     <label className="field">
                       Stand
-                      <input value={entry.data.reading.value} onChange={(e) => updateReading(entry.id, { value: e.target.value })} className="input-num" />
+                      <input inputMode="decimal" value={entry.data.reading.value} onChange={(e) => updateReading(entry.id, { value: e.target.value })} className="input-num" />
                     </label>
                     <label className="field">
                       Datum
@@ -441,7 +441,7 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
                     {entry.data.reading.replacement && (
                       <label className="field">
                         Endstand alt
-                        <input value={entry.data.reading.oldEndValue} onChange={(e) => updateReading(entry.id, { oldEndValue: e.target.value })} className="input-num" />
+                        <input inputMode="decimal" value={entry.data.reading.oldEndValue} onChange={(e) => updateReading(entry.id, { oldEndValue: e.target.value })} className="input-num" />
                       </label>
                     )}
                   </div>

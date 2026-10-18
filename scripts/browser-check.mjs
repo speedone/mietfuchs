@@ -18,6 +18,8 @@
 //   - keine Meldung in der Konsole der Stufe „error“ und kein Fehler in der Seite (`pageerror`),
 //   - keine sichtbare Fehlermeldung der Oberfläche,
 //   - die Seite ist nicht breiter als das Fenster (`scrollWidth` ≤ `clientWidth`, MOB1),
+//   - kein Feld schneidet Wert, Platzhalter oder gewählten Eintrag ab, auch in den Seitenfenstern der Seite
+//     (#346 Schritt 7b; ein voll breites Feld als eigene Art, Ausnahmen in browser-check-fields.json),
 //   - axe-core ohne Verstöße der Stufen „serious“ und „critical“, außer den Ausnahmen in
 //     browser-check-axe.json, deren Anzahl nur sinken darf.
 // Dazu je Engine und Ansicht die Bedienproben: Seitenfenster (Esc fragt, Enter auf „Abbrechen“ lässt es
@@ -142,6 +144,127 @@ async function overflow(page) {
   })
 }
 
+// Felder, die ihren Inhalt abschneiden (#346 Schritt 7b): ein Eingabefeld, dessen Wert oder, wenn es leer ist, dessen
+// Platzhalter breiter ist als das Feld (ein Platzhalter ist meist ein Beispiel und gehört zum Inhalt; Durchsicht von
+// #243, R-K11), oder ein Auswahlfeld, das seinen gewählten Eintrag nicht ganz zeigt. Der Wert misst über `scrollWidth`
+// (> `clientWidth` + 1), der Platzhalter über die Textbreite in der Schrift des Felds gegen die Innenbreite; für das
+// Auswahlfeld misst ein Klon mit nur dem gewählten Eintrag und `width: auto` an derselben Stelle, wie breit es sein
+// müsste (`scrollWidth` sagt bei `<select>` in keiner Engine etwas). Geprüft wird, was sichtbar ist, in `scope` (die
+// Seite oder das offene Seitenfenster); unsichtbare Auswahlfelder (der Umschalter der Seitenleiste liegt mit Deckkraft
+// 0 über seinem Text) zählen nicht.
+//
+// Ein Feld, das schon die ganze verfügbare Breite nimmt (am Handy jedes, im Seitenfenster die breiten), kann nicht
+// breiter werden. Schneidet es trotzdem ab, ist das ein eigener Befund („voll breit, Inhalt passt nicht“): Abhilfe ist
+// ein kürzerer Eintrag oder Platzhalter, die Erklärung als Hinweis am Feld. Was so bleiben soll, steht mit Grund in
+// browser-check-fields.json und wird nur weniger.
+/** @typedef {{ kind: 'cut' | 'full', name: string, text: string }} Clipped */
+/** @returns {Promise<Clipped[]>} */
+async function clippedFields(page, scope) {
+  return page.evaluate((sel) => {
+    const win = /** @type {any} */ (globalThis)
+    const doc = win.document
+    const root = doc.querySelector(sel) ?? doc.body
+    /** @type {{ kind: 'cut' | 'full', name: string, text: string }[]} */
+    const out = []
+    const nameOf = (el) => {
+      const by = el.getAttribute('aria-labelledby')
+      const label = (by ? by.split(/\s+/).map((id) => doc.getElementById(id)?.textContent ?? '').join(' ') : '')
+        || el.getAttribute('aria-label') || el.closest('label')?.textContent || el.name || el.tagName.toLowerCase()
+      return label.replace(/\s+/g, ' ').trim().slice(0, 50)
+    }
+    const visible = (el) => {
+      const r = el.getBoundingClientRect()
+      const style = win.getComputedStyle(el)
+      return r.width > 0 && r.height > 0 && style.visibility !== 'hidden' && Number(style.opacity) > 0 && !el.closest('[hidden], .no-print[aria-hidden="true"]')
+    }
+    // Voll breit: das Feld nimmt die Breite seines Behälters (eines Felds bzw. eines Auswahlfelds außerhalb eines
+    // Felds); Eingabefelder in Tabellenzellen werden immer als abgeschnitten gemeldet.
+    const atFullWidth = (el) => {
+      const field = el.closest('label.field, div.field')
+      const box = field ? field.parentElement : el.tagName === 'SELECT' ? el.parentElement : null
+      if (!box) return false
+      const st = win.getComputedStyle(box)
+      const avail = box.clientWidth - parseFloat(st.paddingLeft) - parseFloat(st.paddingRight)
+      return el.getBoundingClientRect().width >= avail - 2
+    }
+    const ctx = doc.createElement('canvas').getContext('2d')
+    const textWidth = (el, text) => {
+      const st = win.getComputedStyle(el)
+      ctx.font = `${st.fontStyle} ${st.fontWeight} ${st.fontSize} ${st.fontFamily}`
+      return ctx.measureText(text).width
+    }
+    const push = (el, what) => out.push({ kind: atFullWidth(el) ? 'full' : 'cut', name: nameOf(el), text: what })
+    for (const el of root.querySelectorAll('input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=hidden]), select')) {
+      if (!visible(el)) continue
+      if (el.tagName === 'SELECT') {
+        const opt = el.options[el.selectedIndex]
+        if (!opt || !opt.text.trim()) continue
+        const clone = el.cloneNode(false)
+        clone.removeAttribute('id')
+        clone.setAttribute('aria-hidden', 'true')
+        clone.tabIndex = -1
+        clone.appendChild(opt.cloneNode(true))
+        clone.style.cssText = 'position:absolute;visibility:hidden;width:auto;min-width:0;max-width:none;flex:none'
+        el.parentElement.appendChild(clone)
+        const need = clone.getBoundingClientRect().width
+        clone.remove()
+        const have = el.getBoundingClientRect().width
+        if (need > have + 1) push(el, `Auswahl zeigt „${opt.text.trim().slice(0, 70)}“ nicht ganz (${Math.round(have)} px, braucht ${Math.round(need)} px)`)
+      } else if (el.value) {
+        if (el.scrollWidth > el.clientWidth + 1) push(el, `Wert „${String(el.value).slice(0, 70)}“ abgeschnitten (${el.clientWidth} px, braucht ${el.scrollWidth} px)`)
+      } else if (el.placeholder && !/^(date|time)$/.test(el.type)) {
+        const st = win.getComputedStyle(el)
+        const inner = el.clientWidth - parseFloat(st.paddingLeft) - parseFloat(st.paddingRight)
+        const need = textWidth(el, el.placeholder)
+        if (need > inner + 1) push(el, `Platzhalter „${el.placeholder.slice(0, 70)}“ abgeschnitten (${Math.round(inner)} px, braucht ${Math.round(need)} px)`)
+      }
+    }
+    return out
+  }, scope)
+}
+
+// Selbstprobe der Messung (Mutationsprobe, läuft bei jedem Aufruf): ein zu schmales Feld mit langem Wert, ein zu schmales
+// Auswahlfeld und ein zu schmales Feld mit langem Platzhalter müssen als abgeschnitten erscheinen, ein voll breites Feld
+// in einem schmalen Behälter als „voll breit“; sonst misst die Prüfung nichts.
+async function clippedSelfTest(page) {
+  await page.evaluate(() => {
+    const doc = /** @type {any} */ (globalThis).document
+    const box = doc.createElement('div')
+    box.id = 'cut-selftest'
+    box.innerHTML = '<label class="field"><span>Probe Adresse</span><input value="Lindenweg 12, 12345 Musterstadt" style="width:6ch"></label>'
+      + '<label class="field"><span>Probe Auswahl</span><select style="width:6ch;min-width:0"><option>vor dem 01.12.2021 errichtet</option></select></label>'
+      + '<label class="field"><span>Probe Platzhalter</span><input placeholder="z. B. Verbrauchsvergleich des Ablesedienstes" style="width:8ch"></label>'
+      + '<div style="width:120px"><label class="field" style="width:100%"><span>Probe voll</span><select style="width:100%;min-width:0"><option>unbekannt – es gelten nur bundesweite Feiertage</option></select></label></div>'
+    doc.querySelector('main')?.appendChild(box)
+  })
+  const found = await clippedFields(page, '#cut-selftest')
+  await page.evaluate(() => /** @type {any} */ (globalThis).document.getElementById('cut-selftest')?.remove())
+  const cut = found.filter((f) => f.kind === 'cut').length
+  const full = found.filter((f) => f.kind === 'full').length
+  return cut === 3 && full === 1 ? null : `Die Messung abgeschnittener Felder findet ${cut} statt 3 zu schmale und ${full} statt 1 voll breites Probefeld.`
+}
+
+// ---------- Ausnahmen „voll breit“ ----------
+// Je Eintrag Seite (Kennung wie im Bericht, für Seitenfenster mit „:fenster“), der Anfang des Feldnamens und der
+// Grund; optional `ansicht`. Ein Eintrag, den ein vollständiger Lauf nicht mehr sieht, ist ein Befund, bis er aus der
+// Datei gestrichen ist.
+const FIELDS_FILE = path.join(root, 'scripts', 'browser-check-fields.json')
+/** @typedef {{ seite: string, feld: string, grund: string, ansicht?: string }} FieldException */
+/** @type {FieldException[]} */
+const fieldExceptions = JSON.parse(fs.readFileSync(FIELDS_FILE, 'utf8')).ausnahmen
+for (const ex of fieldExceptions) {
+  if (!ex.seite || !ex.feld || !ex.grund?.trim()) throw new Error(`browser-check-fields.json: Eintrag ohne Seite, Feld oder Grund: ${JSON.stringify(ex)}`)
+}
+const fieldSeen = new Set()
+const fieldExceptionFor = (pageId, name, view) => fieldExceptions.find((ex) => ex.seite === pageId && name.startsWith(ex.feld) && (!ex.ansicht || ex.ansicht === view))
+// Die Mindestzahl geöffneter Seitenfenster je Engine und Ansicht, wenn alle Seiten geprüft werden (Stammdaten 11,
+// Kosten 2, Zähler 2, Mietkonto 1, Heizkosten 1); weniger heißt, ein Knopf ist umbenannt oder ein Fenster öffnet nicht.
+const MIN_DRAWERS = 17
+
+// Seitenfenster einer Seite zum Messen: jedes „+ … anlegen“ und je Art das erste ✎ („… bearbeiten“), dazu die
+// Knöpfe, die ein Fenster zum Ändern öffnen. Geschlossen wird mit Esc (ohne Eingabe fragt es nicht).
+const DRAWER_OPENERS = /^(\+ .+ anlegen|Abrechnungszeitraum ändern|Ändern|Mieterwechsel|Eigene Heizkostenabrechnung einrichten|Heizung erneuert \(Kessel getauscht\)|.+ bearbeiten)$/
+
 // Sichtbare Fehlermeldungen der Oberfläche: die Sammelmeldung, Meldungen am Feld und `.error`.
 async function visibleErrors(page) {
   return page.evaluate(() => {
@@ -217,6 +340,18 @@ async function checkCombination(browser, base, combo, AxeBuilder, navLabels) {
   await settle(page)
   const labels = navLabels ?? await readNav(page, view)
   if (!labels?.length) throw new Error('Die Navigation hat keine Einträge.')
+  const selfTest = await clippedSelfTest(page)
+  if (selfTest) add('start', 'Messung', selfTest)
+  /** @param {string} pageId @param {Clipped[]} list @param {string} [prefix] */
+  const reportClipped = (pageId, list, prefix = '') => {
+    for (const f of list) {
+      if (f.kind === 'cut') { add(pageId, 'Abgeschnitten', `${prefix}„${f.name}“: ${f.text}`); continue }
+      const ex = fieldExceptionFor(pageId, f.name, view)
+      if (ex) { fieldSeen.add(ex); continue }
+      add(pageId, 'Voll breit, Inhalt passt nicht', `${prefix}„${f.name}“: ${f.text}`)
+    }
+  }
+  let drawersOpened = 0
 
   // axe auf dem jetzigen Stand der Seite; die Bedienproben rufen es auch mit offenem Fenster, Raster oder Blatt
   const runAxe = async (id) => {
@@ -259,11 +394,19 @@ async function checkCombination(browser, base, combo, AxeBuilder, navLabels) {
     const wide = await overflow(page)
     if (wide) add(id, 'Breite', `Seite ${wide.scroll} px breit bei ${wide.width} px Fenster${wide.elements.length ? `: ${wide.elements.join('; ')}` : ''}`)
     for (const text of await visibleErrors(page)) add(id, 'Fehlermeldung', text)
+    reportClipped(id, await clippedFields(page, 'main'))
     await runAxe(id)
     // Die ganze Seite; was dafür zu hoch ist (Firefox nimmt höchstens 32767 px, die Hilfe am Handy ist
     // höher), nur das Fenster
     const shot = path.join(dir, `${id}.png`)
     await page.screenshot({ path: shot, fullPage: true }).catch(() => page.screenshot({ path: shot }))
+    // Die Seitenfenster der Seite öffnen und ihre Felder messen, im ersten Design des Laufs (die Breite hängt nicht
+    // am Design)
+    if (theme === themes[0]) drawersOpened += await checkDrawers(page, id, dir, add, reportClipped)
+  }
+
+  if (theme === themes[0] && PAGES === null && drawersOpened < MIN_DRAWERS) {
+    add('fenster', 'Seitenfenster', `Nur ${drawersOpened} statt mindestens ${MIN_DRAWERS} Seitenfenster geöffnet und gemessen; ist ein Knopf umbenannt oder öffnet ein Fenster nicht?`)
   }
 
   // Die Bedienproben einmal je Engine und Ansicht, im ersten Design des Laufs (Vorgabe: hell)
@@ -290,6 +433,53 @@ async function checkCombination(browser, base, combo, AxeBuilder, navLabels) {
   }
   await context.close()
   return labels
+}
+
+// Öffnet nacheinander die Seitenfenster einer Seite (DRAWER_OPENERS), misst ihre Felder, fotografiert sie und schließt
+// sie ohne Änderung. Ein Knopf, der kein Seitenfenster öffnet, wird übergangen.
+async function checkDrawers(page, id, dir, add, reportClipped) {
+  const names = await page.locator('main button:visible').evaluateAll((buttons, re) => {
+    const pattern = new RegExp(re)
+    const seen = new Set()
+    const out = []
+    for (const b of buttons) {
+      if (b.disabled) continue
+      const name = (b.getAttribute('aria-label') || b.textContent || '').replace(/\s+/g, ' ').trim()
+      if (!pattern.test(name) || seen.has(name)) continue
+      seen.add(name)
+      out.push(name)
+    }
+    return out
+  }, DRAWER_OPENERS.source)
+  let n = 0
+  for (const name of names) {
+    const button = page.locator('main').getByRole('button', { name, exact: true }).first()
+    if (!(await button.count())) continue
+    await button.scrollIntoViewIfNeeded().catch(() => {})
+    await button.click().catch(() => {})
+    const drawer = page.locator('dialog.drawer[open]').first()
+    if (!(await drawer.waitFor({ state: 'visible', timeout: 1500 }).then(() => true, () => false))) {
+      // Kein Seitenfenster (etwa ein Formular in der Karte): neu laden, damit nichts offen bleibt
+      await page.reload().catch(() => {})
+      await settle(page)
+      continue
+    }
+    await page.waitForTimeout(250)
+    n++
+    reportClipped(`${id}:fenster`, await clippedFields(page, 'dialog.drawer[open]'), `„${name}“, `)
+    await drawer.screenshot({ path: path.join(dir, `${id}-fenster-${n}.png`) }).catch(() => {})
+    await page.keyboard.press('Escape')
+    const ask = page.getByRole('alertdialog')
+    if (await ask.waitFor({ state: 'visible', timeout: 600 }).then(() => true, () => false)) await ask.getByRole('button', { name: 'Verwerfen' }).click()
+    const closed = await drawer.waitFor({ state: 'hidden', timeout: 3000 }).then(() => true, () => false)
+    // Bleibt ein Fenster offen, ist das ein Befund; die Seite lädt neu, damit die nächste Prüfung frei ist
+    if (!closed) {
+      add(`${id}:fenster`, 'Seitenfenster', `„${name}“ schließt mit Esc (und „Verwerfen“) nicht.`)
+      await page.reload().catch(() => {})
+      await settle(page)
+    }
+  }
+  return n
 }
 
 // ---------- Bedienproben ----------
@@ -581,6 +771,11 @@ async function main() {
     const measured = { engines: ran, views, themes, allPages: PAGES === null, seen: Object.fromEntries(axeExceptions.map((ex) => [exceptionKey(ex), axeSeen.get(ex) ?? 0])) }
     fs.writeFileSync(path.join(OUT, 'axe-gemessen.json'), `${JSON.stringify(measured, null, 2)}\n`)
     if (FULL && ran.length === ENGINES.length) findings.push(...staleExceptions(measured.seen))
+    if (FULL && ran.length === ENGINES.length) {
+      for (const ex of fieldExceptions) {
+        if (!fieldSeen.has(ex)) findings.push({ engine: 'alle', view: '–', theme: '–', page: ex.seite, kind: 'Feld-Ausnahme', text: `Ausnahme „${ex.feld}“ tritt nicht mehr auf: bitte aus browser-check-fields.json streichen.` })
+      }
+    }
   } catch (err) {
     findings.push({ engine: '–', view: '–', theme: '–', page: '–', kind: 'Abbruch', text: err instanceof Error ? err.message.split('\n').slice(0, 3).join(' ') : String(err) })
     console.error(err)
