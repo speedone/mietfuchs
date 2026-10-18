@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { PeriodChangePreview, PeriodEffect, Property } from '../types'
 import { api, errorText, fmtDate, fmtEuro } from '../api'
-import { useOpenForm, useProperty } from '../property'
+import { useProperty } from '../property'
 import { useToast } from './feedback'
 import Term from './Term'
 import MonthField from './MonthField'
@@ -10,11 +10,12 @@ import {
   type AnswerForm, type RhythmForm,
 } from '../periodForm'
 import { rulesOf } from '../../../shared/period.ts'
-import { ErrorSummary, useFormError } from './ErrorSummary'
+import { useFormError } from './ErrorSummary'
+import Drawer from './Drawer'
 
 // Die Karte „Abrechnungszeitraum“ in den Stammdaten (#208, Entwurf 3.6, 11.4). Jede Änderung geht
-// über die Vorschau des Servers; gespeichert wird erst mit „Zeitraum wechseln“, in einer
-// Transaktion. Wer im Kalenderjahr abrechnet, sieht hier eine Zeile und muss nichts tun.
+// über die Vorschau des Servers, im Seitenfenster (#346 Schritt 7); gespeichert wird erst mit „Speichern“ nach
+// der Vorschau, in einer Transaktion. Wer im Kalenderjahr abrechnet, sieht hier eine Zeile und muss nichts tun.
 
 // `fromField`: die Angaben der Fehler-API für das Monatsfeld (`errors.field('from')`).
 export function RhythmFields({ form, onChange, fromField }: { form: RhythmForm; onChange: (next: RhythmForm) => void; fromField?: { id: string; error?: string; onFix: () => void } }) {
@@ -193,19 +194,51 @@ export function PreviewAnswers({ preview, answers, onChange }: { preview: Period
 export default function PeriodCard({ onChanged }: { onChanged?: () => Promise<void> } = {}) {
   const { property, reload } = useProperty()
   const toast = useToast()
+  // Das Seitenfenster (#346 Schritt 7, M18): `change` für einen neuen Rhythmus, oder der Wechsel, der entfernt wird.
+  const [open, setOpen] = useState<{ kind: 'change' } | { kind: 'remove'; from: string } | null>(null)
   // Laienprobe B4: Vorgabe ist der Wechsel ab dem laufenden Monat; frühere Zeiträume bleiben, wie sie sind.
   const [form, setForm] = useState<RhythmForm>({ mode: 'change', month: 1, from: localToday().slice(0, 7) })
   const [understood, setUnderstood] = useState(false)
   const [preview, setPreview] = useState<PeriodChangePreview | null>(null)
   const [answers, setAnswers] = useState<AnswerForm | null>(null)
-  // Fehler als Sammelmeldung oben in der Karte (#346, Schritt 3)
+  // Fehler als Sammelmeldung im Fuß des Seitenfensters (#346, Schritt 3 und 7)
   const errors = useFormError<'from'>()
   const setError = errors.set
   const [busy, setBusy] = useState(false)
-  // Eine offene Vorschau gehört zu diesem Objekt (#145); ein Wechsel des Objekts fragt dann.
-  useOpenForm(preview !== null)
+  // Eine Vorschau ist nach einer Änderung des Formulars verfallen (M2): Das Fenster sagt dann, dass sie neu nötig ist.
+  const [stale, setStale] = useState(false)
   if (!property) return null
   const rules = rulesOf(property)
+
+  function start(next: { kind: 'change' } | { kind: 'remove'; from: string }) {
+    setForm({ mode: 'change', month: 1, from: localToday().slice(0, 7) })
+    setPreview(null)
+    setAnswers(null)
+    setUnderstood(false)
+    setStale(false)
+    errors.clear()
+    setOpen(next)
+    if (next.kind === 'remove') void ask(withoutChange(rules, next.from))
+  }
+
+  // Durchsicht M2 (vorbestehend): Gespeichert werden die Regeln der Vorschau. Ändert sich danach das Formular, gälte die
+  // Vorschau für einen anderen Monat als den im Feld; sie verfällt deshalb samt Antworten und Bestätigung, und „Speichern“
+  // ist bis zur nächsten Vorschau gesperrt.
+  function changeForm(next: RhythmForm) {
+    setForm(next)
+    if (preview !== null) setStale(true)
+    setPreview(null)
+    setAnswers(null)
+    setUnderstood(false)
+  }
+
+  function close() {
+    setOpen(null)
+    setPreview(null)
+    setAnswers(null)
+    setUnderstood(false)
+    errors.clear()
+  }
 
   async function ask(next: ReturnType<typeof nextRules>) {
     if (!property) return
@@ -217,6 +250,7 @@ export default function PeriodCard({ onChanged }: { onChanged?: () => Promise<vo
       setPreview(p)
       setAnswers(initialAnswers(p))
       setUnderstood(false)
+      setStale(false)
     } catch (e) {
       setError(errorText(e))
     } finally {
@@ -232,9 +266,7 @@ export default function PeriodCard({ onChanged }: { onChanged?: () => Promise<vo
     try {
       await api<Property>(`/api/properties/${property.id}/period`, { method: 'PUT', body: JSON.stringify({ rules: preview.rules, answers: { ...given, understood } }) })
       const done = preview
-      setPreview(null)
-      setAnswers(null)
-      setError('')
+      close()
       await reload()
       await onChanged?.()
       // Laienprobe B7: was jetzt gilt und bis wann der Rumpf zugehen muss.
@@ -255,6 +287,11 @@ export default function PeriodCard({ onChanged }: { onChanged?: () => Promise<vo
     }
   }
 
+  // Gespeichert wird erst nach der Vorschau, ohne Sperre der Vorschau und, bei abgelaufener Frist, mit der Bestätigung.
+  const passed = preview?.effects.some((e) => e.passed) ?? false
+  const canSave = preview !== null && answers !== null && preview.blocked.length === 0 && (!passed || understood)
+  const title = open?.kind === 'remove' ? `Wechsel ab ${changeLabel(open.from)} entfernen` : 'Abrechnungszeitraum ändern'
+
   return (
     <div className="card">
       <h2><Term id="billingPeriod">Abrechnungszeitraum</Term></h2>
@@ -264,42 +301,74 @@ export default function PeriodCard({ onChanged }: { onChanged?: () => Promise<vo
         Wählen Sie einen anderen Beginn nur, wenn Ihr Mietvertrag oder Ihr Messdienst ihn vorgibt. Weicht nur die Heizung ab,
         stellen Sie das in der Karte „Heizung“ ein; der Zeitraum der übrigen Kosten bleibt dann, wie er ist.
       </small>
-      {rules.changes.map((c) => (
-        <button key={c} className="btn secondary" disabled={busy} onClick={() => void ask(withoutChange(rules, c))}>Wechsel ab {changeLabel(c)} entfernen …</button>
-      ))}
-      <RhythmFields form={form} onChange={setForm} fromField={errors.field('from')} />
       <div className="row">
-        <button className="btn secondary" disabled={busy} onClick={() => void ask(nextRules(rules, form))}>Vorschau</button>
+        <button className="btn secondary" onClick={() => start({ kind: 'change' })}>Abrechnungszeitraum ändern</button>
+        {rules.changes.map((c) => (
+          <button key={c} className="btn secondary" onClick={() => start({ kind: 'remove', from: c })}>Wechsel ab {changeLabel(c)} entfernen …</button>
+        ))}
       </div>
-      <ErrorSummary errors={errors} />
-      {preview && answers && (
-        <div className="card inset">
-          <h3>Nach dem Wechsel</h3>
-          <p>{preview.periods.map((p) => (p.short ? `${p.label} (Rumpf)` : p.label)).join(' · ')}</p>
-          {preview.newShort.length > 0 && (
-            <div className="warn">
-              <Term id="shortPeriod">Rumpfzeitraum</Term> {preview.newShort.map((p) => p.label).join(', ')}. Eine Verkürzung braucht einen sachlichen Grund,
-              etwa die Angleichung an den Messdienst. Legt Ihr Mietvertrag den Zeitraum fest, braucht die Umstellung die Zustimmung der Mieter.
+      {open && (
+        <Drawer
+          key={open.kind === 'remove' ? `entfernen-${open.from}` : 'wechsel'}
+          open
+          title={title}
+          subtitle={`Bisher: ${rhythmText(rules)}`}
+          width={560}
+          onClose={close}
+          onSubmit={() => { if (canSave && !busy) void apply() }}
+          // Was der Vermieter eingibt; die Vorschau selbst lädt das Fenster nach.
+          value={{ form, answers, understood }}
+          busy={busy}
+          errors={errors}
+          actions={<button className="btn" disabled={busy || !canSave} onClick={() => void apply()}>Speichern</button>}
+        >
+          {open.kind === 'change' && (
+            <>
+              <RhythmFields form={form} onChange={changeForm} fromField={errors.field('from')} />
+              <div className="row">
+                <button className="btn secondary" disabled={busy} onClick={() => void ask(nextRules(rules, form))}>Vorschau</button>
+              </div>
+            </>
+          )}
+          {!preview && (
+            <p className="muted">
+              {open.kind === 'change'
+                ? (stale ? 'Sie haben die Angaben geändert. Fordern Sie die Vorschau erneut an; gespeichert wird erst danach.' : 'Die Vorschau zeigt, was sich ändert; gespeichert wird erst danach.')
+                : busy ? 'Die Vorschau wird geladen …' : 'Die Vorschau ließ sich nicht laden.'}
+            </p>
+          )}
+          {/* Durchsicht K2: Scheitert die Vorschau zum Entfernen, lässt sie sich erneut anfordern. */}
+          {open.kind === 'remove' && !preview && !busy && (
+            <div className="row">
+              <button className="btn secondary" onClick={() => void ask(withoutChange(rules, open.from))}>Vorschau erneut laden</button>
             </div>
           )}
-          {preview.blocked.map((b) => <div key={b} className="error">{b}</div>)}
-          {preview.moves.map((m) => (
-            <p key={m.costItemId}>„{m.description}“ ({fmtEuro(m.amountCents)}) wird nach Tagen aufgeteilt: {m.parts.map((p) => `${p.label}: ${fmtEuro(p.amountCents)}`).join(', ')}.</p>
-          ))}
-          {preview.assessments.map((a) => <p key={a.assessmentId} className="muted">Belegauswertung „{a.file}“: künftig {a.toLabel}.</p>)}
-          <PreviewAnswers preview={preview} answers={answers} onChange={setAnswers} />
-          <EffectsList effects={preview.effects} earliest={earliestOpenChange(localToday())} />
-          {preview.effects.some((e) => e.passed) && (
-            <label className="checkline">
-              <input type="checkbox" checked={understood} onChange={(e) => setUnderstood(e.target.checked)} />
-              <span>Ich habe verstanden, dass ich aus einem Zeitraum mit abgelaufener Frist keine Nachzahlung mehr verlangen kann.</span>
-            </label>
+          {preview && answers && (
+            <div className="stack">
+              <h3>Nach dem Wechsel</h3>
+              <p>{preview.periods.map((p) => (p.short ? `${p.label} (Rumpf)` : p.label)).join(' · ')}</p>
+              {preview.newShort.length > 0 && (
+                <div className="warn">
+                  <Term id="shortPeriod">Rumpfzeitraum</Term> {preview.newShort.map((p) => p.label).join(', ')}. Eine Verkürzung braucht einen sachlichen Grund,
+                  etwa die Angleichung an den Messdienst. Legt Ihr Mietvertrag den Zeitraum fest, braucht die Umstellung die Zustimmung der Mieter.
+                </div>
+              )}
+              {preview.blocked.map((b) => <div key={b} className="error">{b}</div>)}
+              {preview.moves.map((m) => (
+                <p key={m.costItemId}>„{m.description}“ ({fmtEuro(m.amountCents)}) wird nach Tagen aufgeteilt: {m.parts.map((p) => `${p.label}: ${fmtEuro(p.amountCents)}`).join(', ')}.</p>
+              ))}
+              {preview.assessments.map((a) => <p key={a.assessmentId} className="muted">Belegauswertung „{a.file}“: künftig {a.toLabel}.</p>)}
+              <PreviewAnswers preview={preview} answers={answers} onChange={setAnswers} />
+              <EffectsList effects={preview.effects} earliest={earliestOpenChange(localToday())} />
+              {passed && (
+                <label className="checkline">
+                  <input type="checkbox" checked={understood} onChange={(e) => setUnderstood(e.target.checked)} />
+                  <span>Ich habe verstanden, dass ich aus einem Zeitraum mit abgelaufener Frist keine Nachzahlung mehr verlangen kann.</span>
+                </label>
+              )}
+            </div>
           )}
-          <div className="row">
-            <button className="btn" disabled={busy || preview.blocked.length > 0 || (preview.effects.some((e) => e.passed) && !understood)} onClick={() => void apply()}>Zeitraum wechseln</button>
-            <button className="btn secondary" disabled={busy} onClick={() => { setPreview(null); setAnswers(null); setError('') }}>Abbrechen</button>
-          </div>
-        </div>
+        </Drawer>
       )}
     </div>
   )

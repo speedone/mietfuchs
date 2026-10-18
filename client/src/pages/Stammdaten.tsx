@@ -6,6 +6,7 @@ import { EMPTY_UNIT_FORM, buildUnitBody, connectionSummary, connectionTypes, set
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { separateHeatingFor, separateHeatingPlant } from '../heatingSettlementView'
 import Drawer from '../components/Drawer'
+import { useSaving } from '../useSaving'
 import PropertyCard from '../components/PropertyCard'
 import IbanInput from '../components/IbanInput'
 import Field from '../components/Field'
@@ -14,7 +15,7 @@ import { ibanForSave, ibanToInput, storedIbanInvalid } from '../ibanField'
 import { IBAN_LABELS, normalizeIban } from '../../../shared/iban.ts'
 import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_KIND_OPTIONS, SELF_SUPPLY_TENANCY_HINT, buildPersonHistory, costModelBadge, costModelBody, buildSchedule, defaultTenancyUnitId, overlapQuestion, prepaymentColumn, tenancyRequired, type TenancyField, scheduleField, scheduleLabel, scheduleMonthText, showsFlatRates, startsSchedule } from '../tenancyModel'
 import { useOpenForm, useProperty, withProperty } from '../property'
-import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, endProblem, gapProblem, INTERIM_FEE_HINT, INTERIM_GAP_OPTIONS, meterProblem, parseMeterValue, successorHeatingNote, type NewTenantForm } from '../tenantChange'
+import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, INTERIM_FEE_HINT, INTERIM_GAP_OPTIONS, parseMeterValue, successorHeatingNote, tenantChangeProblems, type NewTenantForm, type TenantChangeField } from '../tenantChange'
 import { gapConsequence } from '../heatingSelfView'
 import PeriodCard from '../components/PeriodCard'
 import PageHeader from '../components/PageHeader'
@@ -126,12 +127,16 @@ function tenancyToForm(t: Tenancy): TenancyForm {
 
 export default function Stammdaten({ units, tenancies, settings, reload, focus, onFocusDone }: Props) {
   const toast = useToast()
+  // Kein doppeltes Speichern (Durchsicht S1): `busy` an Fenster und Knopf, ein zweiter Aufruf fällt weg.
+  const saving = useSaving()
   const confirm = useConfirm()
   const { property } = useProperty()
   const propertyId = property?.id
   const [unitForm, setUnitForm] = useState<UnitForm | null>(null)
   const [tenForm, setTenForm] = useState<TenancyForm | null>(null)
   const [wizardFor, setWizardFor] = useState<Tenancy | null>(null)
+  // Der Mieterwechsel ist gespeichert, aber die Ansicht ließ sich nicht neu laden (#150).
+  const [staleAfterChange, setStaleAfterChange] = useState(false)
   // Die Fehler der beiden Seitenfenster, im Fuß des Fensters (#346, Schritt 3)
   const unitErrors = useFormError<UnitField>()
   const tenErrors = useFormError<TenancyField>()
@@ -408,6 +413,9 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
 
       <div className="card">
         <h2>Mietverhältnisse</h2>
+        {staleAfterChange && (
+          <div className="notice" role="status">Der Mieterwechsel ist gespeichert; die Ansicht ließ sich nicht neu laden, bitte Seite neu laden.</div>
+        )}
         <p className="muted">
           Personenzahl und Vorauszahlung werden als Staffel erfasst („ab X gilt Y“) — Änderungen
           wie Geburt, Auszug einzelner Personen oder Vorauszahlungs-Erhöhungen brauchen kein
@@ -507,7 +515,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                     <button className="icon-btn danger" title="Löschen" aria-label="Mietverhältnis löschen" onClick={() => deleteTenancy(t)}>🗑</button>
                     </span>
                     {!t.end && (
-                      <button className="btn small secondary" title="Geführter Ablauf: Auszug, Zwischenablesung, neuer Mieter" onClick={() => setWizardFor(t)}>
+                      <button className="btn small secondary" title="Auszug, Zwischenablesung und neuer Mieter in einem Fenster" onClick={() => setWizardFor(t)}>
                         Mieterwechsel
                       </button>
                     )}
@@ -540,12 +548,13 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
           title={tenForm.id ? 'Mietverhältnis bearbeiten' : 'Neues Mietverhältnis'}
           subtitle={tenForm.id ? tenForm.tenantName : undefined}
           onClose={() => { tenErrors.clear(); setTenForm(null) }}
-          onSubmit={saveTenancy}
+          onSubmit={() => void saving.run(saveTenancy)}
+          busy={saving.busy}
           width={480}
           // Die IBAN schreibt das Feld beim Verlassen in Vierergruppen um; das ist keine Änderung (Durchsicht K5)
           value={{ ...tenForm, iban: normalizeIban(tenForm.iban) }}
           errors={tenErrors}
-          actions={<button className="btn" onClick={saveTenancy}>{tenForm.id ? 'Speichern' : 'Anlegen'}</button>}
+          actions={<button className="btn" disabled={saving.busy} onClick={() => void saving.run(saveTenancy)}>{tenForm.id ? 'Speichern' : 'Anlegen'}</button>}
         >
           <div className="row">
             <Field label="Mieter" required className="grow" {...tenErrors.field('tenantName')}>
@@ -754,10 +763,11 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
           title={unitForm.id ? 'Wohnung bearbeiten' : 'Neue Wohnung'}
           subtitle={unitForm.id ? unitForm.name : undefined}
           onClose={() => { unitErrors.clear(); setUnitForm(null) }}
-          onSubmit={saveUnit}
+          onSubmit={() => void saving.run(saveUnit)}
+          busy={saving.busy}
           value={unitForm}
           errors={unitErrors}
-          actions={<button className="btn" onClick={saveUnit}>{unitForm.id ? 'Speichern' : 'Anlegen'}</button>}
+          actions={<button className="btn" disabled={saving.busy} onClick={() => void saving.run(saveUnit)}>{unitForm.id ? 'Speichern' : 'Anlegen'}</button>}
         >
           <div className="row">
             <Field label="Name" required className="grow" {...unitErrors.field('name')}>
@@ -828,37 +838,52 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       )}
 
       {wizardFor && (
-        <TenantChangeWizard
+        <TenantChangeDrawer
+          // Ein anderes Mietverhältnis im offenen Fenster ist ein neues Formular (Durchsicht S3)
+          key={wizardFor.id}
           tenancy={wizardFor}
           unit={units.find((u) => u.id === wizardFor.unitId)}
           plants={plants}
           onClose={() => setWizardFor(null)}
-          onDone={async () => { await reload(); setWizardFor(null) }}
+          onDone={async () => {
+            setWizardFor(null)
+            // Gespeichert ist der Wechsel; scheitert nur das Neuladen, sagt die Seite es, statt ihn noch einmal anzubieten (#150).
+            try {
+              await reload()
+              setStaleAfterChange(false)
+            } catch {
+              setStaleAfterChange(true)
+            }
+          }}
         />
       )}
     </>
   )
 }
 
-// ---------- Mieterwechsel-Assistent ----------
-// Geführter Ablauf: Auszugsdatum → Zwischenablesung der Zähler → neuer Mieter (oder Leerstand).
-// Alle Schritte werden erst beim Abschluss gespeichert, und zwar in einer Anfrage, die der Server
-// ganz oder gar nicht ausführt (#150). Abbrechen ändert nichts; scheitert das Speichern, auch nicht.
-// Die Regeln stehen in tenantChange.ts.
+// ---------- Mieterwechsel im Seitenfenster ----------
+// Auszugsdatum, Zwischenablesung der Zähler und neuer Mieter (oder Leerstand) in einem Seitenfenster (#346 Schritt 7,
+// UI-Durchsicht N16). Gespeichert wird erst mit „Speichern“, in einer Anfrage, die der Server ganz oder gar nicht
+// ausführt (#150). Abbrechen ändert nichts; scheitert das Speichern, auch nicht. Die Regeln stehen in tenantChange.ts:
+// `tenantChangeProblems` meldet alles auf einmal am Feld, `buildTenantChange` baut denselben Rumpf wie vorher.
 
-function TenantChangeWizard({ tenancy, unit, plants, onClose, onDone }: {
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/
+
+function TenantChangeDrawer({ tenancy, unit, plants, onClose, onDone }: {
   tenancy: Tenancy
   unit: Unit | undefined
   plants: HeatingPlant[]
   onClose: () => void
+  // Nach dem Speichern: Die Seite schließt das Fenster und lädt neu.
   onDone: () => Promise<void>
 }) {
-  const [step, setStep] = useState(1)
   const [meters, setMeters] = useState<Meter[]>([])
   const [endDate, setEndDate] = useState('')
   const [meterValues, setMeterValues] = useState<Record<string, string>>({})
   const [vacancy, setVacancy] = useState(false)
   const [newTenant, setNewTenant] = useState<NewTenantForm>(EMPTY_NEW_TENANT)
+  // Der Einzug folgt dem Auszug (Tag danach), bis er selbst geändert wird.
+  const [startTouched, setStartTouched] = useState(false)
   // Getrennte Heizkostenabrechnung an der Wohnung (Durchsicht von #231): der Nachmieter bekommt seine Heizvorauszahlung.
   const askHeating = unit ? separateHeatingFor(unit, plants) : false
   // Eigene Heizkostenabrechnung an der Wohnung (Heizung PR 10, Entwurf 3.5): Ablesedatum je Zähler und, wenn
@@ -866,19 +891,8 @@ function TenantChangeWizard({ tenancy, unit, plants, onClose, onDone }: {
   const selfHeating = unit ? plants.some((p) => p.method === 'self' && p.endsOn === null && servesUnit(p, unit)) : false
   const [meterDates, setMeterDates] = useState<Record<string, string>>({})
   const [gap, setGap] = useState<{ status: InterimGapStatus | ''; reason: string }>({ status: '', reason: '' })
-  const [error, setError] = useState('')
+  const errors = useFormError<TenantChangeField>()
   const [busy, setBusy] = useState(false)
-  const [saved, setSaved] = useState(false)
-  // Der Mieterwechsel hängt an einem Mietverhältnis dieses Objekts (#145).
-  useOpenForm(true)
-  // Sichtprüfung E18: Der Assistent steht am Seitenende. Beim Öffnen holt er sich ins Bild und setzt
-  // den Cursor ins Auszugsdatum, sonst sah man nach dem Klick nichts passieren.
-  const rootRef = useRef<HTMLDivElement>(null)
-  const endRef = useRef<HTMLInputElement>(null)
-  useEffect(() => {
-    rootRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
-    endRef.current?.focus({ preventScroll: true })
-  }, [])
 
   // Zähler der Wohnung + Hauptzähler (Dokumentation) laden, aus dem Objekt der Wohnung (#92)
   const { property } = useProperty()
@@ -890,52 +904,12 @@ function TenantChangeWizard({ tenancy, unit, plants, onClose, onDone }: {
       .catch(() => setMeters([]))
   }, [tenancy.unitId, propertyId])
 
-  function goToStep2() {
-    const problem = endProblem(endDate, tenancy)
-    if (problem) {
-      setError(problem)
-      return
-    }
-    setError('')
-    setNewTenant((n) => ({ ...n, start: n.start || defaultStart(endDate) }))
-    setStep(2)
-  }
-
-  function goToStep3() {
-    const problem = meterProblem(meters, meterValues) ?? gapProblem(heatMeters.map((m) => m.id), meterValues, gap)
-    if (problem) {
-      setError(problem)
-      return
-    }
-    setError('')
-    setStep(3)
-  }
-
-  async function commit() {
-    const heatMeterIds = selfHeating ? meters.filter((m) => m.unitId === tenancy.unitId && (m.type === 'waerme' || m.type === 'warmwasser')).map((m) => m.id) : []
-    const change = buildTenantChange({ tenancy, endDate, meters, meterValues, vacancy, newTenant, askHeating, meterDates, heatMeterIds, interimGap: gap })
-    if ('error' in change) {
-      setError(change.error)
-      return
-    }
-    setError('')
-    setBusy(true)
-    try {
-      await api(withProperty(`/api/tenancies/${tenancy.id}/change`, propertyId), { method: 'POST', body: JSON.stringify(change.body) })
-    } catch (e) {
-      // Gespeichert ist dann nichts; die Meldung bleibt im Assistenten stehen (#146).
-      setError(errorText(e))
-      setBusy(false)
-      return
-    }
-    // Gespeichert ist der Wechsel jetzt. Scheitert nur das Neuladen der Ansicht, darf der Fehler
-    // nicht verloren gehen, und der Wechsel darf nicht noch einmal angeboten werden.
-    try {
-      await onDone()
-    } catch {
-      setSaved(true)
-      setBusy(false)
-    }
+  function changeEnd(value: string) {
+    setEndDate(value)
+    if (startTouched) return
+    setNewTenant((n) => ({ ...n, start: ISO_DAY.test(value) ? defaultStart(value) : '' }))
+    // Der Einzug ist damit gesetzt; eine Meldung „Einzug fehlt“ von vorher gilt nicht mehr (Probe im Browser).
+    if (ISO_DAY.test(value)) errors.clearField('start')
   }
 
   const unitMeters = meters.filter((m) => m.unitId !== null)
@@ -943,157 +917,144 @@ function TenantChangeWizard({ tenancy, unit, plants, onClose, onDone }: {
   const heatMissing = heatMeters.some((m) => parseMeterValue(meterValues[m.id] ?? '') === null)
   const readCount = meters.filter((m) => parseMeterValue(meterValues[m.id] ?? '') !== null).length
 
+  async function commit() {
+    if (busy) return
+    const heatMeterIds = selfHeating ? meters.filter((m) => m.unitId === tenancy.unitId && (m.type === 'waerme' || m.type === 'warmwasser')).map((m) => m.id) : []
+    const input = { tenancy, endDate, meters, meterValues, vacancy, newTenant, askHeating, meterDates, heatMeterIds, interimGap: gap }
+    const problems = tenantChangeProblems(input)
+    if (problems.length > 0) {
+      errors.report(problems)
+      return
+    }
+    const change = buildTenantChange(input)
+    if ('error' in change) {
+      errors.show(change.error)
+      return
+    }
+    errors.clear()
+    setBusy(true)
+    try {
+      await api(withProperty(`/api/tenancies/${tenancy.id}/change`, propertyId), { method: 'POST', body: JSON.stringify(change.body) })
+    } catch (e) {
+      // Gespeichert ist dann nichts; die Meldung bleibt im Seitenfenster stehen (#146).
+      errors.show(errorText(e))
+      setBusy(false)
+      return
+    }
+    // Gespeichert ist der Wechsel jetzt; Schließen und Neuladen übernimmt die Seite, auch wenn das Neuladen scheitert.
+    await onDone()
+  }
+
+  const endText = ISO_DAY.test(endDate) ? fmtDate(endDate) : 'Auszugstag'
   return (
-    <div ref={rootRef} className="card wizard">
-      <h2>Mieterwechsel: {tenancy.tenantName} ({unit?.name ?? '—'})</h2>
-      {error && <div className="error">{error}</div>}
-      {saved && (
-        <div className="notice">
-          Der Mieterwechsel ist gespeichert; die Ansicht ließ sich nicht neu laden, bitte Seite neu laden.{' '}
-          <button className="btn ghost" onClick={onClose}>Schließen</button>
-        </div>
-      )}
+    <Drawer
+      open
+      title={`Mieterwechsel: ${tenancy.tenantName} (${unit?.name ?? '—'})`}
+      subtitle="Auszug, Zwischenablesung und neuer Mieter; gespeichert wird alles auf einmal."
+      width={560}
+      onClose={onClose}
+      onSubmit={() => void commit()}
+      value={{ endDate, meterValues, meterDates, vacancy, newTenant, gap }}
+      busy={busy}
+      errors={errors}
+      actions={<button className="btn" disabled={busy} onClick={() => void commit()}>{busy && <span className="spinner" />}Speichern</button>}
+    >
+      <section className="stack">
+        <h3>1. Auszug</h3>
+        <Field label="Auszugsdatum (letzter Miettag)" required width="m" {...errors.field('end')}>
+          <input type="date" value={endDate} onChange={(e) => changeEnd(e.target.value)} />
+        </Field>
+      </section>
 
-      {!saved && <>
-      <div className="wizard-step">
-        <strong>1. Auszug</strong>
-        <div className="row">
-          <label className="field">
-            Auszugsdatum (letzter Miettag)
-            <input ref={endRef} type="date" value={endDate} disabled={step > 1} onChange={(e) => setEndDate(e.target.value)} />
-          </label>
-          {step === 1 && <button className="btn" onClick={goToStep2}>Weiter</button>}
-        </div>
-      </div>
-
-      {step >= 2 && (
-        <div className="wizard-step">
-          <strong>2. Zwischenablesung der Zähler</strong>
-          {meters.length === 0 ? (
+      <section className="stack">
+        <h3>2. Zwischenablesung der Zähler</h3>
+        {meters.length === 0 ? (
+          <p className="muted">Keine Zähler erfasst — nichts abzulesen. (Wasser nach Personen braucht keine Ablesung.)</p>
+        ) : (
+          <>
             <p className="muted">
-              Keine Zähler erfasst — nichts abzulesen. (Wasser nach Personen braucht keine Ablesung.)
+              Stände zum {endText} erfassen — dann wird der Verbrauch nach den Ständen statt
+              tagesanteilig aufgeteilt.{heatMeters.length > 0 && ' Bei der Heizkostenabrechnung trägt jeder Mieter seinen abgelesenen Verbrauch; die Grundkosten der Heizung teilen sich nach Gradtagen, die des Warmwassers nach Tagen.'}
+              {' '}{unitMeters.length === 0 && 'Der Hauptzähler dient nur der Dokumentation.'}
+              {' '}Leere Felder werden übersprungen.
             </p>
-          ) : (
-            <>
-              <p className="muted">
-                Stände zum {fmtDate(endDate)} erfassen — dann wird der Verbrauch nach den Ständen statt
-                tagesanteilig aufgeteilt.{heatMeters.length > 0 && ' Bei der Heizkostenabrechnung trägt jeder Mieter seinen abgelesenen Verbrauch; die Grundkosten der Heizung teilen sich nach Gradtagen, die des Warmwassers nach Tagen.'}
-                {' '}{unitMeters.length === 0 && 'Der Hauptzähler dient nur der Dokumentation.'}
-                {' '}Leere Felder werden übersprungen.
-              </p>
-              <div className="row">
-                {meters.map((m) => (
-                  <label className="field" key={m.id}>
-                    {m.name} ({m.unitId === null ? 'Hauptzähler' : METER_TYPE_LABELS[m.type] ?? m.type}{m.unit ? `, ${m.unit}` : ''})
-                    <input
-                      value={meterValues[m.id] ?? ''}
-                      disabled={step > 2}
-                      placeholder="Stand"
-                      className="input-s"
-                      onChange={(e) => setMeterValues({ ...meterValues, [m.id]: e.target.value })}
-                    />
-                    {heatMeters.includes(m) && (
-                      <input
-                        type="date"
-                        aria-label={`Ablesedatum ${m.name}`}
-                        title="Abgelesen an einem anderen Tag als dem Auszug? Leer heißt am Auszugstag."
-                        value={meterDates[m.id] ?? ''}
-                        disabled={step > 2}
-                        onChange={(e) => setMeterDates({ ...meterDates, [m.id]: e.target.value })}
-                      />
-                    )}
-                  </label>
-                ))}
-              </div>
-              {heatMeters.length > 0 && (
-                <>
-                  <p className="muted">Bei den Wärme- und Warmwasserzählern tragen Sie das Ablesedatum ein, wenn nicht am Auszugstag abgelesen wurde; gerechnet wird mit dem Stand, wie er abgelesen ist. {INTERIM_FEE_HINT}</p>
-                  {heatMissing && (
-                    <div className="row">
-                      <label className="field grow">
-                        Warum gibt es keine Zwischenablesung?
-                        <select value={gap.status} disabled={step > 2} onChange={(e) => setGap({ ...gap, status: INTERIM_GAP_OPTIONS.find((o) => o.value === e.target.value)?.value ?? '' })}>
-                          <option value="">— bitte wählen —</option>
-                          {INTERIM_GAP_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                        </select>
-                      </label>
-                      {gap.status === 'impossible' && (
-                        <label className="field grow">
-                          Grund (steht in der Abrechnung)
-                          <input value={gap.reason} disabled={step > 2} onChange={(e) => setGap({ ...gap, reason: e.target.value })} />
-                        </label>
-                      )}
-                    </div>
-                  )}
-                  {heatMissing && gap.status !== '' && <p className="muted">{gapConsequence(gap.status === 'impossible' ? 'impossible' : 'missed')}</p>}
-                </>
-              )}
-              {step === 2 && <div className="row"><button className="btn" onClick={goToStep3}>Weiter</button></div>}
-            </>
-          )}
-          {step === 2 && meters.length === 0 && <button className="btn" onClick={goToStep3}>Weiter</button>}
-        </div>
-      )}
-
-      {step >= 3 && (
-        <div className="wizard-step">
-          <strong>3. Neuer Mieter</strong>
-          <label className="checkline">
-            <input type="checkbox" checked={vacancy} onChange={(e) => setVacancy(e.target.checked)} />
-            Wohnung bleibt vorerst leer (Leerstand)
-          </label>
-          {!vacancy && (
-            <div className="row">
-              <label className="field grow">
-                Mieter
-                <input value={newTenant.name} onChange={(e) => setNewTenant({ ...newTenant, name: e.target.value })} placeholder="z. B. Familie Müller" />
-              </label>
-              <label className="field">
-                Einzug
-                <input type="date" value={newTenant.start} onChange={(e) => setNewTenant({ ...newTenant, start: e.target.value })} />
-              </label>
-              <label className="field">
-                Personen
-                <input value={newTenant.persons} className="input-xs" onChange={(e) => setNewTenant({ ...newTenant, persons: e.target.value })} />
-              </label>
-              <label className="field">
-                Kaltmiete €/Monat
-                <input value={newTenant.baseRent} className="input-m" placeholder="z. B. 800,00" onChange={(e) => setNewTenant({ ...newTenant, baseRent: e.target.value })} />
-              </label>
-              <label className="field">
-                {askHeating ? 'Übrige Vorauszahlung €/Monat' : 'Vorauszahlung €/Monat'}
-                <input value={newTenant.prepayment} className="input-m" placeholder="z. B. 150,00" onChange={(e) => setNewTenant({ ...newTenant, prepayment: e.target.value })} />
-              </label>
-              {askHeating && (
-                <label className="field">
-                  Heizvorauszahlung €/Monat
-                  <input value={newTenant.heatingPrepayment ?? ''} className="input-m" placeholder="z. B. 120,00" onChange={(e) => setNewTenant({ ...newTenant, heatingPrepayment: e.target.value })} />
-                </label>
-              )}
+            <div className="field-grid">
+              {meters.map((m) => (
+                <Field key={m.id} label={`${m.name} (${m.unitId === null ? 'Hauptzähler' : METER_TYPE_LABELS[m.type] ?? m.type}${m.unit ? `, ${m.unit}` : ''})`} {...errors.field(`meter:${m.id}`)}>
+                  <input value={meterValues[m.id] ?? ''} inputMode="decimal" placeholder="Stand" onChange={(e) => setMeterValues({ ...meterValues, [m.id]: e.target.value })} />
+                </Field>
+              ))}
+              {heatMeters.map((m) => (
+                <Field key={`datum-${m.id}`} label={`Ablesedatum ${m.name}`} hint="Leer heißt am Auszugstag." {...errors.field(`meterDate:${m.id}`)}>
+                  <input type="date" value={meterDates[m.id] ?? ''} onChange={(e) => setMeterDates({ ...meterDates, [m.id]: e.target.value })} />
+                </Field>
+              ))}
             </div>
-          )}
-          <div className="notice">
-            Beim Abschluss passiert: Mietverhältnis „{tenancy.tenantName}“ endet am {fmtDate(endDate)}
-            {readCount > 0 && <> · {readCount} Zwischenablesung{readCount > 1 ? 'en werden' : ' wird'} gespeichert</>}
-            {vacancy
-              ? ' · die Wohnung bleibt ohne Mieter (Leerstandskosten trägt der Vermieter).'
-              : newTenant.name.trim() ? <> · neues Mietverhältnis „{newTenant.name}“ ab {newTenant.start ? fmtDate(newTenant.start) : '—'}.</> : ' · neues Mietverhältnis wird angelegt.'}
-            {!vacancy && successorHeatingNote(tenancy) && <> {successorHeatingNote(tenancy)}</>}
+            {heatMeters.length > 0 && (
+              <>
+                <p className="muted">Bei den Wärme- und Warmwasserzählern tragen Sie das Ablesedatum ein, wenn nicht am Auszugstag abgelesen wurde; gerechnet wird mit dem Stand, wie er abgelesen ist. {INTERIM_FEE_HINT}</p>
+                {heatMissing && (
+                  <div className="field-grid">
+                    <Field label="Warum gibt es keine Zwischenablesung?" required {...errors.field('gapStatus')}>
+                      <select value={gap.status} onChange={(e) => setGap({ ...gap, status: INTERIM_GAP_OPTIONS.find((o) => o.value === e.target.value)?.value ?? '' })}>
+                        <option value="">— bitte wählen —</option>
+                        {INTERIM_GAP_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      </select>
+                    </Field>
+                    {gap.status === 'impossible' && (
+                      <Field label="Grund (steht in der Abrechnung)" required {...errors.field('gapReason')}>
+                        <input value={gap.reason} onChange={(e) => setGap({ ...gap, reason: e.target.value })} />
+                      </Field>
+                    )}
+                  </div>
+                )}
+                {heatMissing && gap.status !== '' && <p className="muted">{gapConsequence(gap.status === 'impossible' ? 'impossible' : 'missed')}</p>}
+              </>
+            )}
+          </>
+        )}
+      </section>
+
+      <section className="stack">
+        <h3>3. Neuer Mieter</h3>
+        <label className="checkline">
+          <input type="checkbox" checked={vacancy} onChange={(e) => setVacancy(e.target.checked)} />
+          <span>Wohnung bleibt vorerst leer (Leerstand)</span>
+        </label>
+        {!vacancy && (
+          <div className="field-grid">
+            <Field label="Mieter" required {...errors.field('name')}>
+              <input value={newTenant.name} onChange={(e) => setNewTenant({ ...newTenant, name: e.target.value })} placeholder="z. B. Familie Müller" />
+            </Field>
+            <Field label="Einzug" required hint="Vorgabe: der Tag nach dem Auszug." {...errors.field('start')}>
+              <input type="date" value={newTenant.start} onChange={(e) => { setStartTouched(true); setNewTenant({ ...newTenant, start: e.target.value }) }} />
+            </Field>
+            <Field label="Personen" required width="s" {...errors.field('persons')}>
+              <input value={newTenant.persons} inputMode="numeric" onChange={(e) => setNewTenant({ ...newTenant, persons: e.target.value })} />
+            </Field>
+            <Field label="Kaltmiete €/Monat" width="s" {...errors.field('baseRent')}>
+              <input value={newTenant.baseRent} inputMode="decimal" placeholder="z. B. 800,00" onChange={(e) => setNewTenant({ ...newTenant, baseRent: e.target.value })} />
+            </Field>
+            <Field label={askHeating ? 'Übrige Vorauszahlung €/Monat' : 'Vorauszahlung €/Monat'} width="s" {...errors.field('prepayment')}>
+              <input value={newTenant.prepayment} inputMode="decimal" placeholder="z. B. 150,00" onChange={(e) => setNewTenant({ ...newTenant, prepayment: e.target.value })} />
+            </Field>
+            {askHeating && (
+              <Field label="Heizvorauszahlung €/Monat" required width="s" {...errors.field('heatingPrepayment')}>
+                <input value={newTenant.heatingPrepayment ?? ''} inputMode="decimal" placeholder="z. B. 120,00" onChange={(e) => setNewTenant({ ...newTenant, heatingPrepayment: e.target.value })} />
+              </Field>
+            )}
           </div>
-          <div className="row">
-            <button className="btn" disabled={busy} onClick={() => void commit()}>
-              {busy && <span className="spinner" />}Mieterwechsel durchführen
-            </button>
-            <button className="btn ghost" disabled={busy} onClick={onClose}>Abbrechen</button>
-          </div>
-        </div>
-      )}
-      {step < 3 && (
-        <div className="row">
-          <button className="btn ghost" onClick={onClose}>Abbrechen</button>
-        </div>
-      )}
-      </>}
-    </div>
+        )}
+      </section>
+
+      <div className="notice">
+        Beim Speichern passiert: Mietverhältnis „{tenancy.tenantName}“ endet am {ISO_DAY.test(endDate) ? fmtDate(endDate) : '—'}
+        {readCount > 0 && <> · {readCount} Zwischenablesung{readCount > 1 ? 'en werden' : ' wird'} gespeichert</>}
+        {vacancy
+          ? ' · die Wohnung bleibt ohne Mieter (Leerstandskosten trägt der Vermieter).'
+          : newTenant.name.trim() ? <> · neues Mietverhältnis „{newTenant.name}“ ab {newTenant.start ? fmtDate(newTenant.start) : '—'}.</> : ' · neues Mietverhältnis wird angelegt.'}
+        {!vacancy && successorHeatingNote(tenancy) && <> {successorHeatingNote(tenancy)}</>}
+      </div>
+    </Drawer>
   )
 }

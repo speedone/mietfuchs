@@ -47,6 +47,7 @@ async function openReadings() {
     </PeriodProvider>,
   )
   fireEvent.click(await screen.findByRole('button', { name: /Ablesungen \(0\)/ }, { timeout: 5000 }))
+  fireEvent.click(screen.getByRole('button', { name: '+ Ablesung anlegen' }))
   fireEvent.change(screen.getByLabelText(/^Datum/), { target: { value: '2025-06-30' } })
 }
 
@@ -54,36 +55,38 @@ test('Zählerwechsel ohne Endstand: gespeichert wird null, nicht 0', async () =>
   await openReadings()
   fireEvent.click(screen.getByLabelText(/Zählerwechsel/))
   fireEvent.change(screen.getByLabelText(/Startstand neuer Zähler/), { target: { value: '5' } })
-  fireEvent.click(screen.getByRole('button', { name: /Ablesung speichern/ }))
+  fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/ }))
   await waitFor(() => expect(sent).toHaveLength(1))
   expect(sent[0]).toMatchObject({ meterId: 'm1', value: 5, replacement: true, oldEndValue: null })
 })
 
 test('leerer Zählerstand: Meldung statt einer gespeicherten 0', async () => {
   await openReadings()
-  fireEvent.click(screen.getByRole('button', { name: /Ablesung speichern/ }))
+  fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/ }))
   await waitFor(() => expect(screen.getByText('Bitte den Zählerstand eintragen.')).toBeTruthy())
   expect(sent).toEqual([])
 })
 
 // UI-Durchsicht H3: Die Meldung stand oben auf der Seite, beim Klick 407 px über dem sichtbaren
-// Bereich; es wirkte, als passiere nichts. Jetzt steht sie am Feld und in der Sammelmeldung beim Knopf
-// (#346, Schritt 3), als Alarm und ins Bild gerollt; der Fokus geht auf die Sammelmeldung, ihr Link aufs Feld.
-test('Ablesung ohne Datum: Meldung am Feld und in der Sammelmeldung beim Knopf, die den Fokus bekommt', async () => {
+// Bereich; es wirkte, als passiere nichts. Jetzt steht sie am Feld und in der Sammelmeldung im Fuß des
+// Seitenfensters über „Anlegen“ (#346, Schritt 3 und 7), als Alarm und ins Bild gerollt; der Fokus geht auf die
+// Sammelmeldung, ihr Link aufs Feld.
+test('Ablesung ohne Datum: Meldung am Feld und in der Sammelmeldung über „Anlegen“, die den Fokus bekommt', async () => {
   const scrolled: unknown[] = []
   const original = Element.prototype.scrollIntoView
   Element.prototype.scrollIntoView = function (this: Element, arg?: boolean | ScrollIntoViewOptions) { scrolled.push([this.textContent, arg]) }
   try {
     renderPage()
     fireEvent.click(await screen.findByRole('button', { name: /Ablesungen \(0\)/ }, { timeout: 5000 }))
+    fireEvent.click(screen.getByRole('button', { name: '+ Ablesung anlegen' }))
     fireEvent.change(screen.getByLabelText(/Zählerstand/), { target: { value: '5' } })
-    const button = screen.getByRole('button', { name: /Ablesung speichern/ })
+    const button = screen.getByRole('button', { name: /^Anlegen$/ })
     fireEvent.click(button)
     const alert = await screen.findByRole('alert')
     expect(alert.textContent).toMatch(/Bitte prüfen Sie 1 Angabe/)
     expect(alert.textContent).toMatch(/Datum der Ablesung/)
     const summary = alert.parentElement
-    expect(summary?.closest('.reading-panel')).toBe(button.closest('.reading-panel'))
+    expect(summary?.closest('.drawer-foot')).toBe(button.closest('.drawer-foot'))
     expect(scrolled).toEqual([[summary?.textContent, { block: 'nearest' }]])
     expect(document.activeElement).toBe(summary)
     expect(sent).toEqual([])
@@ -199,4 +202,97 @@ test('Eichfrist: das Jahr steht in der Liste, die abgelaufene Frist als Warnung 
   } finally {
     METERS = [{ id: 'm1', propertyId: 'objekt-1', name: 'Wasser EG', unitId: 'u1', type: 'kaltwasser', unit: 'm³' }]
   }
+})
+
+// ---------- #346 Schritt 7: die Ablesung im Seitenfenster, mit derselben Anfrage ----------
+// Die Rümpfe sind die, die die Ablesezeile vor dem Seitenfenster schickte.
+let calls: { url: string; method: string; body: unknown }[] = []
+const stubWithUrls = () => {
+  calls = []
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
+    const method = init?.method ?? 'GET'
+    if (method !== 'GET') {
+      calls.push({ url, method, body: JSON.parse(String(init?.body ?? '{}')) })
+      return json({ id: 'r1' })
+    }
+    const path = url.split('?')[0]
+    if (path === '/api/properties') return json([{ id: 'objekt-1', name: 'A', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }])
+    if (path === '/api/meters') return json(METERS)
+    if (path === '/api/readings') return json(readings)
+    return json([])
+  })
+}
+/** Klappt die Ablesungen des Zählers auf und öffnet das Formular einer neuen Ablesung. */
+const openReadingForm = async (): Promise<HTMLElement> => {
+  renderPage()
+  fireEvent.click(await screen.findByRole('button', { name: /Ablesungen \(0\)/ }, { timeout: 5000 }))
+  fireEvent.click(screen.getByRole('button', { name: '+ Ablesung anlegen' }))
+  return screen.getByRole('dialog', { name: /Neue Ablesung/ })
+}
+const saveReadingIn = (box: HTMLElement) => fireEvent.click(within(box).getByRole('button', { name: 'Anlegen' }))
+
+test('Ablesung anlegen: POST /api/readings mit dem Rumpf wie bisher, danach ist das Formular zu', async () => {
+  stubWithUrls()
+  const box = await openReadingForm()
+  fireEvent.change(within(box).getByLabelText(/^Datum/), { target: { value: '2025-06-30' } })
+  fireEvent.change(within(box).getByLabelText(/^Zählerstand/), { target: { value: '1.234,5' } })
+  fireEvent.change(within(box).getByLabelText(/^Hinweis/), { target: { value: ' Zwischenablesung Auszug ' } })
+  saveReadingIn(box)
+  await waitFor(() => expect(calls).toHaveLength(1))
+  expect(calls[0]).toEqual({ url: '/api/readings', method: 'POST', body: { meterId: 'm1', date: '2025-06-30', value: 1234.5, note: 'Zwischenablesung Auszug' } })
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+})
+
+test('Ablesung mit Zählerwechsel: Endstand alt und Startstand neu wie bisher', async () => {
+  stubWithUrls()
+  const box = await openReadingForm()
+  fireEvent.change(within(box).getByLabelText(/^Datum/), { target: { value: '2025-06-30' } })
+  fireEvent.click(within(box).getByLabelText(/Zählerwechsel/))
+  fireEvent.change(within(box).getByLabelText(/^Startstand neuer Zähler/), { target: { value: '5' } })
+  fireEvent.change(within(box).getByLabelText(/^Endstand alter Zähler/), { target: { value: '980' } })
+  saveReadingIn(box)
+  await waitFor(() => expect(calls).toHaveLength(1))
+  expect(calls[0]).toEqual({ url: '/api/readings', method: 'POST', body: { meterId: 'm1', date: '2025-06-30', value: 5, replacement: true, oldEndValue: 980 } })
+})
+
+// Durchsicht S1: Ein Doppelklick auf „Anlegen“ legte die Ablesung zweimal an (zwei gleiche Stände am selben Tag, #69).
+test('Ablesung: Doppelklick und Strg+S legen genau eine an', async () => {
+  stubWithUrls()
+  const box = await openReadingForm()
+  fireEvent.change(within(box).getByLabelText(/^Datum/), { target: { value: '2025-06-30' } })
+  fireEvent.change(within(box).getByLabelText(/^Zählerstand/), { target: { value: '12' } })
+  const knopf = within(box).getByRole('button', { name: 'Anlegen' })
+  fireEvent.click(knopf)
+  fireEvent.click(knopf)
+  fireEvent.keyDown(box, { key: 's', ctrlKey: true })
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expect(calls.filter((c) => c.method === 'POST')).toHaveLength(1)
+})
+
+test('Zähler: Doppelklick auf „Anlegen“ legt genau einen an', async () => {
+  stubWithUrls()
+  renderPage()
+  fireEvent.click(await screen.findByRole('button', { name: /Zähler anlegen/ }, { timeout: 5000 }))
+  const box = screen.getByRole('dialog')
+  fireEvent.change(within(box).getByLabelText(/^Name/), { target: { value: 'Kaltwasser Haus' } })
+  const knopf = within(box).getByRole('button', { name: /^Anlegen$/ })
+  fireEvent.click(knopf)
+  fireEvent.click(knopf)
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expect(calls.filter((c) => c.method === 'POST')).toHaveLength(1)
+})
+
+// Durchsicht K1: Im Fenster „Neue Ablesung“ steht der letzte Stand als Anhalt, denn die Liste dahinter ist verdeckt.
+test('Ablesung: das Fenster nennt den letzten Stand des Zählers', async () => {
+  readings = [
+    { id: 'r1', meterId: 'm1', date: '2024-12-31', value: 1234.5 },
+    { id: 'r0', meterId: 'm1', date: '2023-12-31', value: 1000 },
+  ] as Reading[]
+  stubWithUrls()
+  renderPage()
+  fireEvent.click(await screen.findByRole('button', { name: /Ablesungen \(2\)/ }, { timeout: 5000 }))
+  fireEvent.click(screen.getByRole('button', { name: '+ Ablesung anlegen' }))
+  const box = screen.getByRole('dialog', { name: /Neue Ablesung/ })
+  expect(within(box).getByText('Letzter Stand: 1.234,5 m³ am 31.12.2024')).toBeTruthy()
 })

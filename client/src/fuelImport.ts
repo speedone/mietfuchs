@@ -1,5 +1,5 @@
 // Eine ausgelesene Lieferantenrechnung ins Formular der Lieferung (Heizung PR 20, #103), ohne DOM. Gespeichert
-// wird mit „Lieferung speichern“ wie jede Lieferung. Mietfuchs rechnet nichts vor (Entwurf 16); die Prüfungen
+// wird mit „Anlegen“ im Seitenfenster wie jede Lieferung. Mietfuchs rechnet nichts vor (Entwurf 16); die Prüfungen
 // vergleichen nur Angaben derselben Rechnung miteinander und sagen, was das Formular nicht übernimmt.
 import { fmtEuro } from './api'
 import type { FuelForm } from './fuelForm'

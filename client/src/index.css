@@ -372,7 +372,6 @@ label.checkline span.term { display: inline; }
 .bar-key:first-child { margin-left: 0; }
 
 /* ---------- Mieterwechsel-Assistent ---------- */
-.wizard-step { border-left: 3px solid var(--accent-soft); padding: 6px 0 10px 14px; margin-bottom: var(--space-3); }
 
 /* Nur für Screenreader sichtbar (z. B. Kopfzellen reiner Aktionsspalten) */
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
@@ -631,8 +630,8 @@ td.actions { white-space: nowrap; text-align: right; }
    Vorher entstand Abstand nur zufällig über `.row { gap }` oder den Standardrand von <p>, und
    alles andere klebte Kante an Kante. Abstände gehören hierher, nicht als style={{ marginTop }}
    in die Seiten. */
-:is(.card, .drawer-body, .panel, .preview, .field-group, .stack, details, fieldset, .wizard-step, .co2-block, .notice-item, .notice, .error, .warn, .hint, .info, .ok) > * { margin-block: 0; }
-:is(.card, .drawer-body, .panel, .preview, .field-group, .stack, details, fieldset, .wizard-step, .co2-block, .notice-item, .notice, .error, .warn, .hint, .info, .ok) > * + * { margin-top: 12px; }
+:is(.card, .drawer-body, .panel, .preview, .field-group, .stack, details, fieldset, .co2-block, .notice-item, .notice, .error, .warn, .hint, .info, .ok) > * { margin-block: 0; }
+:is(.card, .drawer-body, .panel, .preview, .field-group, .stack, details, fieldset, .co2-block, .notice-item, .notice, .error, .warn, .hint, .info, .ok) > * + * { margin-top: 12px; }
 /* Ein Hilfetext gehört zum Feld darüber und rückt an es heran */
 :is(.card, .drawer-body, .panel, .preview, .field-group, .stack, details, fieldset) > :is(label.field, fieldset, .row, .checks) + small.muted { margin-top: 4px; }
 :is(.card, .drawer-body, .panel, .preview, .field-group, .stack, details, fieldset, label.field) > small.muted { display: block; font-size: var(--text-s); line-height: 1.45; }
@@ -740,7 +739,6 @@ td.reading-panel { background: var(--bg); }
 .cell-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
 .badge-next { margin-left: 6px; }
 /* Der Mieterwechsel ist ein laufender Vorgang: Akzentrahmen */
-.card.wizard { border-color: var(--accent); }
 
 /* S7 – Umschalter wie „Betriebskosten / Heizkosten“: ein Segment statt loser Knöpfe */
 .segmented { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; border-radius: var(--radius-m); background: var(--chip); width: fit-content; max-width: 100%; }

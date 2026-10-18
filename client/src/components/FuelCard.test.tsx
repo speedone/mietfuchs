@@ -3,9 +3,11 @@
 // der Lieferung an einer Position zeigt die gespeicherte Verknüpfung (CLAUDE.md, Kosten.test.tsx), und
 // eine Änderung schickt sie an die Position.
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { GAS_BASIS_LABEL } from '../fuelForm'
 import FuelCard from './FuelCard'
 import { OpenFormScope, hasOpenForm } from '../testing/openForm'
+import { UIProvider } from './feedback'
 import { periodKey } from '../../../shared/period.ts'
 import type { FuelDelivery, FuelExtractResult, HeatingPeriodView } from '../types'
 import { noInfoView } from '../testing/heatingView'
@@ -92,7 +94,7 @@ test('Scheitert das Verknüpfen, steht der Grund an der Zeile und der Entwurf bl
 test('Beim Messdienst gibt es keine Verknüpfung, aber den Betrag und „vom Messdienst angesetzt“', () => {
   render(<FuelCard plant={{ id: 'hp', method: 'service' }} view={view} deliveries={[{ ...gas, amountCents: 311747 }]} onSaved={() => {}} />)
   expect(screen.queryByLabelText('Lieferung zu „Wartung“')).toBeNull()
-  fireEvent.click(screen.getByText('Lieferung eintragen'))
+  fireEvent.click(screen.getByText('+ Lieferung anlegen'))
   expect(screen.getByLabelText('Rechnungsbetrag')).toBeTruthy()
   expect(screen.getByLabelText('vom Messdienst angesetzt')).toBeTruthy()
 })
@@ -100,7 +102,7 @@ test('Beim Messdienst gibt es keine Verknüpfung, aber den Betrag und „vom Mes
 test('Durchsicht: Die Karte sagt, dass ohne Verknüpfung nichts abgegrenzt wird; bei einer Wärmepumpe keine CO₂-Felder', () => {
   render(<FuelCard plant={{ id: 'hp', method: 'manual', energy: 'heatPump' }} view={view} deliveries={[gas]} onSaved={() => {}} />)
   expect(screen.getByText(/Ohne Verknüpfung grenzt Mietfuchs nichts ab/)).toBeTruthy()
-  fireEvent.click(screen.getByText('Lieferung eintragen'))
+  fireEvent.click(screen.getByText('+ Lieferung anlegen'))
   expect(screen.queryByLabelText('CO₂-Ausstoß laut Rechnung (kg)')).toBeNull()
   expect(screen.queryByLabelText('CO₂-Kosten laut Rechnung')).toBeNull()
 })
@@ -118,7 +120,7 @@ test('Heizöl (Heizung PR 8): Lieferdatum, Menge und Einheit statt Rechnungszeit
   expect(screen.getByLabelText('Rechnungsdatum (leer: Lieferdatum)')).toBeTruthy()
   expect(auswahl('Einheit der Menge').value).toBe('l')
   fireEvent.change(screen.getByLabelText('Menge'), { target: { value: '2600' } })
-  fireEvent.click(screen.getByText('Lieferung speichern'))
+  fireEvent.click(screen.getByText('Speichern'))
   await waitFor(() => expect(sent.at(-1)?.body).toMatchObject({ deliveredAt: '2025-10-10', quantity: 2600, quantityUnit: 'l' }))
 })
 
@@ -131,7 +133,7 @@ test('Heizöl (Durchsicht von #237, M5): Die Zeile nennt den Betrag aus der verk
 
 test('Heizung PR 11: beim Vorrat Heizwert laut Rechnung, ohne ihn die Zeile der Tabelle; bei Gas Brennwert oder Heizwert', async () => {
   render(<FuelCard plant={{ id: 'hp', method: 'self', energy: 'pellets' }} view={view} deliveries={[]} onSaved={() => {}} />)
-  fireEvent.click(screen.getByText('Lieferung eintragen'))
+  fireEvent.click(screen.getByText('+ Lieferung anlegen'))
   // Pellets haben genau eine Zeile; sie ist vorbelegt.
   expect(auswahl('Steht kein Heizwert auf der Rechnung: Brennstoff laut Heizkostenverordnung').value).toBe('woodPellets')
   fireEvent.change(screen.getByLabelText('Lieferdatum'), { target: { value: '2025-10-12' } })
@@ -139,11 +141,11 @@ test('Heizung PR 11: beim Vorrat Heizwert laut Rechnung, ohne ihn die Zeile der 
   fireEvent.change(auswahl('Einheit der Menge'), { target: { value: 'kg' } })
   fireEvent.change(screen.getByLabelText('Heizwert laut Rechnung (kWh je Kilogramm)'), { target: { value: '4,9' } })
   expect(screen.queryByLabelText('Steht kein Heizwert auf der Rechnung: Brennstoff laut Heizkostenverordnung')).toBeNull()
-  fireEvent.click(screen.getByText('Lieferung speichern'))
+  fireEvent.click(screen.getByText('Anlegen'))
   await waitFor(() => expect(sent.at(-1)).toMatchObject({ url: '/api/heating-plants/hp/deliveries', method: 'POST', body: { heatingValue: 4.9, fuelGrade: null, quantityUnit: 'kg' } }))
   cleanup()
   render(<FuelCard plant={{ id: 'hp', method: 'self', energy: 'gas' }} view={view} deliveries={[gas]} onSaved={() => {}} />)
-  fireEvent.click(screen.getByText('Lieferung eintragen'))
+  fireEvent.click(screen.getByText('+ Lieferung anlegen'))
   expect(screen.queryByLabelText(/Heizwert laut Rechnung/)).toBeNull()
   expect(auswahl('Kilowattstunden der Rechnung berechnet nach').value).toBe('')
   // Ohne Formel für das Warmwasser kein Hinweis; die Angabe ist nicht vorbelegt.
@@ -153,7 +155,7 @@ test('Heizung PR 11: beim Vorrat Heizwert laut Rechnung, ohne ihn die Zeile der 
 test('Durchsicht #240, Recht-I3: bei Formel für das Warmwasser sagt die Gasrechnung schon an der Lieferung, dass Brennwert/Heizwert fehlt', () => {
   const formel = { ...view, hotWater: { ...view.hotWater, dhwMethod: 'volumeFormula' as const } }
   render(<FuelCard plant={{ id: 'hp', method: 'self', energy: 'gas' }} view={formel} deliveries={[gas]} onSaved={() => {}} />)
-  fireEvent.click(screen.getByText('Lieferung eintragen'))
+  fireEvent.click(screen.getByText('+ Lieferung anlegen'))
   expect(screen.getByText(/ohne sie rechnet die Formel nicht/)).toBeTruthy()
   fireEvent.change(auswahl('Kilowattstunden der Rechnung berechnet nach'), { target: { value: 'hs' } })
   expect(screen.queryByText(/ohne sie rechnet die Formel nicht/)).toBeNull()
@@ -169,12 +171,12 @@ test('Ein Befund der CO₂-Prüfung steht an der Zeile der Lieferung', () => {
 // aufzuteilen; die Karte muss die Felder dafür zeigen, sonst bliebe co2.missing ohne Ausweg. Die reine Wärmepumpe nicht.
 test('Contracting mit Wärmepumpe und Gasspitzenkessel: die Lieferung hat die CO₂-Felder; reine Wärmepumpe nicht', () => {
   const { unmount } = render(<FuelCard plant={{ id: 'hp', method: 'manual', energy: 'heatPump', contracting: true, heatGeneration: 'mixed' }} view={view} deliveries={[gas]} onSaved={() => {}} />)
-  fireEvent.click(screen.getByText('Lieferung eintragen'))
+  fireEvent.click(screen.getByText('+ Lieferung anlegen'))
   expect(screen.getByLabelText('CO₂-Ausstoß laut Rechnung (kg)')).toBeTruthy()
   expect(screen.getByLabelText('CO₂-Kosten laut Rechnung')).toBeTruthy()
   unmount()
   render(<FuelCard plant={{ id: 'hp', method: 'manual', energy: 'heatPump', contracting: true, heatGeneration: 'single' }} view={view} deliveries={[gas]} onSaved={() => {}} />)
-  fireEvent.click(screen.getByText('Lieferung eintragen'))
+  fireEvent.click(screen.getByText('+ Lieferung anlegen'))
   expect(screen.queryByLabelText('CO₂-Ausstoß laut Rechnung (kg)')).toBeNull()
 })
 
@@ -194,14 +196,14 @@ test('Heizung nach § 43: Gas mit Netzentgelten und Biobrennstoff; ohne Merkmal 
 test('Ölheizung nach § 43: das Feld Biobrennstoff erscheint beim Vorrat und sendet 0 (Prüfung M11)', async () => {
   const stockView: HeatingPeriodView = { ...view, items: [] }
   render(<FuelCard plant={{ id: 'oel', method: 'manual', energy: 'oil', gmodg43InstalledOn: '2027-03-01' }} view={stockView} deliveries={[]} onSaved={() => {}} />)
-  fireEvent.click(screen.getByText('Lieferung eintragen'))
+  fireEvent.click(screen.getByText('+ Lieferung anlegen'))
   expect(screen.queryByLabelText(/Netzentgelte laut Rechnung/)).toBeNull()
   expect(screen.getByText(/Bei Brennstoff aus dem Tank nur 0/)).toBeTruthy()
   fireEvent.change(screen.getByLabelText('Lieferdatum'), { target: { value: '2029-02-01' } })
   fireEvent.change(screen.getByLabelText('Menge'), { target: { value: '3000' } })
   fireEvent.change(screen.getByLabelText('Einheit der Menge'), { target: { value: 'l' } })
   fireEvent.change(screen.getByLabelText(/Biobrennstoff, Preisbestandteil/), { target: { value: '0' } })
-  fireEvent.click(screen.getByText('Lieferung speichern'))
+  fireEvent.click(screen.getByText('Anlegen'))
   await waitFor(() => expect(sent.at(-1)).toMatchObject({ url: '/api/heating-plants/oel/deliveries', method: 'POST', body: { bioCostCents: 0, quantity: 3000 } }))
 })
 
@@ -247,12 +249,12 @@ test('Neue Auswahlfelder zeigen den gespeicherten Wert: Einheit der Menge und Be
   // Beim Vorrat gibt es die Auswahl für Gas nicht, und „Einheit der Menge“ nur einmal.
   cleanup()
   render(<FuelCard plant={{ id: 'hp', method: 'manual', energy: 'oil' }} view={view} deliveries={[]} onSaved={() => {}} />)
-  fireEvent.click(screen.getByText('Lieferung eintragen'))
+  fireEvent.click(screen.getByText('+ Lieferung anlegen'))
   expect(screen.queryByLabelText('Einheit der Menge laut Rechnung')).toBeNull()
   expect(screen.getAllByLabelText('Einheit der Menge')).toHaveLength(1)
 })
 
-test('Rechnung mit KI auslesen: das Formular ist vorbelegt, Teilmengen inklusive, gespeichert erst mit „Lieferung speichern“', async () => {
+test('Rechnung mit KI auslesen: das Formular ist vorbelegt, Teilmengen inklusive, gespeichert erst mit „Anlegen“', async () => {
   const fields = withExtraction(extraction)
   render(<FuelCard plant={{ id: 'hp', method: 'service', energy: 'gas', propertyId: 'objekt-1' }} view={view} deliveries={[]} onSaved={() => {}} />)
   choose()
@@ -262,7 +264,7 @@ test('Rechnung mit KI auslesen: das Formular ist vorbelegt, Teilmengen inklusive
   expect(auswahl('Einheit der Menge laut Rechnung').value).toBe('m3')
   expect(auswahl('Kilowattstunden der Rechnung berechnet nach').value).toBe('hs')
   expect(screen.getByDisplayValue('2.885,77')).toBeTruthy()
-  fireEvent.click(screen.getByText('Lieferung speichern'))
+  fireEvent.click(screen.getByText('Anlegen'))
   await waitFor(() => expect(sent.find((x) => x.method === 'POST')).toMatchObject({
     url: '/api/heating-plants/hp/deliveries',
     body: { amountCents: 406780, quantity: 2890, quantityUnit: 'm3', emissionFactor: 0.20088, gasBasis: 'hs', parts: [{ from: '2025-03-15', amountCents: 288577 }, { from: '2026-01-01', amountCents: 118203 }] },
@@ -278,7 +280,7 @@ test('Rechnung mit KI auslesen bei freien Schlüsseln: der Betrag steht als Satz
   expect(screen.queryByLabelText('Rechnungsbetrag')).toBeNull()
   // Eine Teilmenge lässt sich entfernen; danach fehlt sie im Rumpf.
   fireEvent.click(screen.getAllByText('Teilmenge entfernen')[1] ?? assert.fail())
-  fireEvent.click(screen.getByText('Lieferung speichern'))
+  fireEvent.click(screen.getByText('Anlegen'))
   await waitFor(() => expect(sent.find((x) => x.method === 'POST')?.body.parts).toEqual([
     { from: '2025-03-15', to: '2025-12-31', energyKwh: 22410, amountCents: 288577, fixedCents: 16565, emissionsKg: 4065, co2CostCents: 26605 },
   ]))
@@ -300,16 +302,16 @@ test('Gasheizung ohne Einbau nach § 43: der gelesene Biobrennstoff wird genannt
   choose()
   expect(await screen.findByText(/kein Einbau nach § 43 Abs\. 1 GModG eingetragen/)).toBeTruthy()
   expect(screen.queryByLabelText(/Biobrennstoff, Preisbestandteil/)).toBeNull()
-  fireEvent.click(screen.getByText('Lieferung speichern'))
+  fireEvent.click(screen.getByText('Anlegen'))
   await waitFor(() => expect(sent.find((x) => x.method === 'POST')?.body).not.toHaveProperty('bioCostCents'))
-  fireEvent.click(screen.getByText('Lieferung eintragen'))
+  fireEvent.click(screen.getByText('+ Lieferung anlegen'))
   expect(screen.queryByText(/kein Einbau nach § 43 Abs\. 1 GModG eingetragen/)).toBeNull()
 })
 
 test('Rechnung mit KI auslesen gibt es nur, solange nichts bearbeitet wird und die Heizperiode offen ist', () => {
   render(<FuelCard plant={{ id: 'hp', method: 'manual' }} view={view} deliveries={[]} onSaved={() => {}} />)
   expect(screen.getByLabelText('Rechnung mit KI auslesen')).toBeTruthy()
-  fireEvent.click(screen.getByText('Lieferung eintragen'))
+  fireEvent.click(screen.getByText('+ Lieferung anlegen'))
   expect(screen.queryByLabelText('Rechnung mit KI auslesen')).toBeNull()
   cleanup()
   render(<FuelCard plant={{ id: 'hp', method: 'manual' }} view={{ ...view, closed: true }} deliveries={[]} onSaved={() => {}} />)
@@ -326,7 +328,7 @@ test('Durchsicht S1: bei Wärmepumpe und Contracting ohne CO₂-Brennstoff geht 
     render(<FuelCard plant={plant} view={view} deliveries={[]} onSaved={() => {}} />)
     choose()
     expect(await screen.findByText(/fragt Mietfuchs sie nicht ab und hat sie nicht übernommen/)).toBeTruthy()
-    fireEvent.click(screen.getByText('Lieferung speichern'))
+    fireEvent.click(screen.getByText('Anlegen'))
     await waitFor(() => expect(sent.some((x) => x.method === 'POST')).toBe(true))
     const body = sent.find((x) => x.method === 'POST')?.body ?? assert.fail()
     expect([body.co2CostCents, body.emissionsKg, body.emissionFactor, body.gasBasis]).toEqual([null, null, null, null])
@@ -374,12 +376,139 @@ test('Durchsicht zu #309, MUSS 2: verschwindet die gewählte Lieferung, ist der 
   expect(screen.queryByRole('button', { name: 'Speichern (Lieferung zu „Wartung“)' })).toBeNull()
 })
 
-// #346, Schritt 7a: Das Formular einer Lieferung zählt als offenes Formular, solange es offen ist.
-test('7a: das Formular einer Lieferung meldet die Karte an, Abbrechen nimmt die Marke weg', () => {
-  render(<OpenFormScope><FuelCard plant={{ id: 'hp', method: 'manual' }} view={view} deliveries={[gas]} onSaved={() => {}} /></OpenFormScope>)
+// #346, Schritt 7a und 7: Das Seitenfenster einer Lieferung meldet sich an, sobald etwas eingetragen ist; „Abbrechen“
+// fragt dann, und nach „Verwerfen“ ist die Marke weg. Ein Formular mit dem Vorschlag der KI zählt schon beim Öffnen.
+test('7a: das Formular einer Lieferung meldet sich mit der ersten Eingabe an, Verwerfen nimmt die Marke weg', async () => {
+  render(<UIProvider><OpenFormScope><FuelCard plant={{ id: 'hp', method: 'manual' }} view={view} deliveries={[gas]} onSaved={() => {}} /></OpenFormScope></UIProvider>)
   expect(hasOpenForm()).toBe(false)
-  fireEvent.click(screen.getByText('Lieferung eintragen'))
+  fireEvent.click(screen.getByText('+ Lieferung anlegen'))
+  expect(hasOpenForm()).toBe(false)
+  fireEvent.change(within(screen.getByRole('dialog')).getByLabelText('Bezeichnung'), { target: { value: 'Gas' } })
   expect(hasOpenForm()).toBe(true)
-  fireEvent.click(screen.getByText('Abbrechen'))
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Abbrechen' }))
+  fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Verwerfen' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   expect(hasOpenForm()).toBe(false)
+  expect(sent).toEqual([])
+})
+
+test('7a: eine mit der KI gelesene Rechnung ist schon beim Öffnen ein offenes Formular', async () => {
+  withExtraction(extraction)
+  render(<OpenFormScope><FuelCard plant={{ id: 'hp', method: 'manual', energy: 'gas' }} view={view} deliveries={[]} onSaved={() => {}} /></OpenFormScope>)
+  choose()
+  await screen.findByRole('dialog', { name: 'Neue Lieferung' })
+  expect(hasOpenForm()).toBe(true)
+})
+
+// ---------- #346 Schritt 7: die Lieferung im Seitenfenster, mit denselben Anfragen ----------
+// Die Rümpfe hier sind die, die das Formular in der Karte vor dem Seitenfenster schickte, Feld für Feld.
+
+/** Öffnet das Formular einer neuen Lieferung bzw. das der Lieferung `label`; gibt den Bereich des Formulars zurück. */
+const openDelivery = async (label?: string): Promise<HTMLElement> => {
+  if (label === undefined) fireEvent.click(screen.getByRole('button', { name: NEW_DELIVERY }))
+  else fireEvent.click(screen.getByRole('button', { name: `Lieferung „${label}“ ändern` }))
+  return deliveryForm()
+}
+const NEW_DELIVERY = '+ Lieferung anlegen'
+const deliveryForm = (): HTMLElement => screen.getByRole('dialog')
+const saveDelivery = (box: HTMLElement, name: 'Anlegen' | 'Speichern') => fireEvent.click(within(box).getByRole('button', { name }))
+
+test('Lieferung anlegen: genau eine Anfrage mit dem Rumpf wie bisher, danach ist das Formular zu', async () => {
+  const onSaved = vi.fn()
+  render(<FuelCard plant={{ id: 'hp', method: 'manual', energy: 'gas' }} view={view} deliveries={[gas]} onSaved={onSaved} />)
+  const box = await openDelivery()
+  const set = (label: string, value: string) => fireEvent.change(within(box).getByLabelText(label), { target: { value } })
+  set('Bezeichnung', 'Gas 2026')
+  set('Rechnungszeitraum von', '2026-03-15')
+  set('bis', '2027-03-14')
+  set('davon fester Preisbestandteil (Grund-, Mess-, Verrechnungspreis)', '207,06')
+  set('Energie (kWh)', '31.285')
+  set('Menge', '2.890')
+  set('Einheit der Menge laut Rechnung', 'm3')
+  set(GAS_BASIS_LABEL, 'hs')
+  set('CO₂-Ausstoß laut Rechnung (kg)', '5.674,8')
+  set('CO₂-Kosten laut Rechnung', '380,99')
+  set('Emissionsfaktor laut Rechnung (kg CO₂ je kWh)', '0,20088')
+  fireEvent.click(within(box).getByRole('button', { name: '+ weitere Teilmenge' }))
+  set('Teilmenge 1: von', '2026-03-15')
+  set('Teilmenge 1: bis', '2026-12-31')
+  set('Teilmenge 1: Betrag', '2.885,77')
+  saveDelivery(box, 'Anlegen')
+  await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1))
+  expect(sent).toEqual([{
+    url: '/api/heating-plants/hp/deliveries', method: 'POST',
+    body: {
+      label: 'Gas 2026', invoiceFrom: '2026-03-15', invoiceTo: '2027-03-14', fixedCents: 20706, sharePermille: null, emissionsKg: 5674.8, co2CostCents: 38099,
+      energyKwh: 31285, gasBasis: 'hs', quantity: 2890, quantityUnit: 'm3', emissionFactor: 0.20088,
+      parts: [{ from: '2026-03-15', to: '2026-12-31', energyKwh: null, amountCents: 288577, fixedCents: null, emissionsKg: null, co2CostCents: null }],
+    },
+  }])
+  expect(screen.queryByRole('dialog')).toBeNull()
+})
+
+test('Lieferung ändern: PUT an die Lieferung mit dem ganzen Rumpf wie bisher', async () => {
+  const onSaved = vi.fn()
+  render(<FuelCard plant={{ id: 'hp', method: 'service', energy: 'gas' }} view={view} deliveries={[{ ...gas, amountCents: 406780, fixedCents: 20706 }]} onSaved={onSaved} />)
+  const box = await openDelivery('Gas 2025/2026')
+  fireEvent.change(within(box).getByLabelText('Rechnungsbetrag'), { target: { value: '4.100,00' } })
+  saveDelivery(box, 'Speichern')
+  await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1))
+  expect(sent).toEqual([{
+    url: '/api/fuel-deliveries/d', method: 'PUT',
+    body: {
+      label: 'Gas 2025/2026', invoiceFrom: '2025-03-15', invoiceTo: '2026-03-14', amountCents: 410000, fixedCents: 20706, sharePermille: null, emissionsKg: null, co2CostCents: null,
+      energyKwh: null, gasBasis: null, usedByService: true, quantity: null, quantityUnit: null, emissionFactor: null, parts: [],
+    },
+  }])
+})
+
+test('Lieferung einer Etagenheizung: ohne Wohnung Meldung am Feld, mit Wohnung der Rumpf wie bisher', async () => {
+  const onSaved = vi.fn()
+  const units = [{ id: 'u1', name: 'EG' }, { id: 'u2', name: 'OG' }]
+  render(<FuelCard plant={{ id: 'hp', method: 'manual', energy: 'gas', supply: 'perUnit', units: [{ unitId: 'u2' }] as never }} view={view} deliveries={[]} units={units} onSaved={onSaved} />)
+  const box = await openDelivery()
+  fireEvent.change(within(box).getByLabelText('Rechnungszeitraum von'), { target: { value: '2026-01-01' } })
+  fireEvent.change(within(box).getByLabelText('bis'), { target: { value: '2026-12-31' } })
+  saveDelivery(box, 'Anlegen')
+  expect(await within(box).findByText(/Bitte wählen Sie die Wohnung, deren Heizung die Rechnung betrifft\./)).toBeTruthy()
+  expect(sent).toEqual([])
+  fireEvent.change(within(box).getByLabelText(/^Wohnung/), { target: { value: 'u2' } })
+  saveDelivery(box, 'Anlegen')
+  await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1))
+  expect(sent).toEqual([{
+    url: '/api/heating-plants/hp/deliveries', method: 'POST',
+    body: {
+      label: '', invoiceFrom: '2026-01-01', invoiceTo: '2026-12-31', fixedCents: null, sharePermille: null, emissionsKg: null, co2CostCents: null,
+      energyKwh: null, gasBasis: null, quantity: null, quantityUnit: null, emissionFactor: null, parts: [], unitId: 'u2',
+    },
+  }])
+})
+
+// Durchsicht S1: Ein Doppelklick legte die Lieferung zweimal an; die Abgrenzung verteilte das Geld dann doppelt.
+test('Lieferung: Doppelklick und Strg+S legen genau eine an', async () => {
+  const onSaved = vi.fn()
+  render(<FuelCard plant={{ id: 'hp', method: 'manual', energy: 'gas' }} view={view} deliveries={[]} onSaved={onSaved} />)
+  const box = await openDelivery()
+  fireEvent.change(within(box).getByLabelText('Rechnungszeitraum von'), { target: { value: '2026-01-01' } })
+  fireEvent.change(within(box).getByLabelText('bis'), { target: { value: '2026-12-31' } })
+  const knopf = within(box).getByRole('button', { name: 'Anlegen' })
+  fireEvent.click(knopf)
+  fireEvent.click(knopf)
+  fireEvent.keyDown(box, { key: 's', ctrlKey: true })
+  await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1))
+  expect(sent.filter((s) => s.method === 'POST')).toHaveLength(1)
+})
+
+// Durchsicht S2: Ein mit der KI vorbelegtes Fenster schloss mit Esc, ✕ oder Klick daneben ohne Rückfrage; die gelesene
+// Rechnung war weg. Die Vorbelegung zählt jetzt als Änderung gegenüber dem leeren Formular.
+test('S2: Esc in einer mit der KI vorbelegten Lieferung fragt „Änderungen verwerfen?“', async () => {
+  withExtraction(extraction)
+  render(<UIProvider><FuelCard plant={{ id: 'hp', method: 'manual', energy: 'gas' }} view={view} deliveries={[]} onSaved={() => {}} /></UIProvider>)
+  choose()
+  const box = await screen.findByRole('dialog', { name: 'Neue Lieferung' })
+  fireEvent.keyDown(box, { key: 'Escape' })
+  const ask = await screen.findByRole('alertdialog', { name: 'Änderungen verwerfen?' })
+  fireEvent.click(within(ask).getByRole('button', { name: 'Abbrechen' }))
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+  expect(screen.getByRole('dialog', { name: 'Neue Lieferung' })).toBeTruthy()
 })
