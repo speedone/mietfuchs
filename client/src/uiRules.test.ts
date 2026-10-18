@@ -1,7 +1,8 @@
-// Wächter zur Sichtprüfung der Oberfläche (S1–S12): Die Gestaltung hängt an wenigen zentralen Regeln
+// Wächter zur Sichtprüfung der Oberfläche (S1–S12, S17 und S20 zu Tailwind): Die Gestaltung hängt an wenigen zentralen Regeln
 // in index.css. Jede der Ursachen, die die Sichtprüfung gefunden hat, kam dadurch zustande, dass eine
 // Seite an diesen Regeln vorbei etwas Eigenes tat. Geprüft wird der Quelltext, denn jsdom rechnet
 // kein Layout und keine Farben.
+import { compile } from 'tailwindcss'
 import { describe, expect, test } from 'vitest'
 import { NAV } from './nav'
 
@@ -14,6 +15,28 @@ const sources = import.meta.glob<string>(['./**/*.tsx', '!./**/*.test.tsx', '!./
 const fsModule = 'node:fs'
 const fs = (await import(/* @vite-ignore */ fsModule)) as { readFileSync: (path: URL, encoding: 'utf8') => string }
 const css = fs.readFileSync(new URL('./index.css', import.meta.url), 'utf8')
+const twCss = fs.readFileSync(new URL('./tw.css', import.meta.url), 'utf8')
+
+// Tailwind (#346) mit dem Theme aus tw.css, ohne index.css und ohne die Einschränkungen der Suche
+// (`@source`): Gefragt wird, welche Klassennamen Tailwind als Utility kennt.
+const tailwind = await compile(
+  twCss.replace(/@import "\.\/index\.css"[^;]*;/, '').replace(/@source[^;]*;/g, ''),
+  {
+    base: '.',
+    loadStylesheet: async (id) => ({
+      path: id,
+      base: '.',
+      content: fs.readFileSync(new URL(`../node_modules/${id}`, import.meta.url), 'utf8'),
+    }),
+  },
+)
+/** Die Namen unter `names`, für die Tailwind eine Utility erzeugt. */
+const tailwindUtilities = (names: Iterable<string>): Set<string> => {
+  const wanted = [...new Set(names)]
+  const out = tailwind.build(wanted)
+  const produced = new Set([...out.matchAll(/\.((?:\\.|[\w-])+)/g)].map((m) => (m[1] ?? '').replace(/\\(.)/g, '$1')))
+  return new Set(wanted.filter((n) => produced.has(n)))
+}
 
 const files = Object.keys(sources)
 const offenders = (pattern: RegExp) =>
@@ -50,14 +73,15 @@ test('Dateifelder bleiben per Tastatur erreichbar', () => {
 // Klassen, die nur als Haken für Tests oder Skripte dienen und bewusst keine Gestaltung haben.
 const HOOK_CLASSES = new Set(['assessment-review'])
 
-test('S4: jede verwendete Klasse hat eine Regel in index.css', () => {
-  // Nur Selektoren zählen: ohne Kommentare und ohne den Inhalt der Regeln (Werte wie url(x.png)).
-  const selectors = [...css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{/g)].map((m) => m[1] ?? '').join(' ')
-  const defined = new Set([...selectors.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)].map((m) => m[1]))
-  for (const hook of HOOK_CLASSES) expect(defined.has(hook), `${hook} hat eine Regel; dann gehört es nicht in die Ausnahmeliste`).toBe(false)
+// Nur Selektoren zählen: ohne Kommentare und ohne den Inhalt der Regeln (Werte wie url(x.png)).
+const cssSelectors = [...css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{/g)].map((m) => m[1] ?? '').join(' ')
+const definedClasses = new Set([...cssSelectors.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)].map((m) => m[1] ?? ''))
+
+/** Jedes Wort, das eine Seite oder ein Baustein als Klasse setzt, mit der ersten Datei. */
+const classWords = (() => {
   const used = new Map<string, string>()
   const add = (text: string, file: string) => {
-    for (const word of text.split(/\s+/)) if (/^[a-z][\w-]*$/.test(word) && !used.has(word)) used.set(word, file)
+    for (const word of text.split(/\s+/)) if (word !== '' && !used.has(word)) used.set(word, file)
   }
   for (const file of files) {
     const src = sources[file] ?? ''
@@ -73,9 +97,59 @@ test('S4: jede verwendete Klasse hat eine Regel in index.css', () => {
       for (const t of expr.matchAll(/`([^`]*)`/g)) add((t[1] ?? '').replace(/\$\{[^}]*\}/g, ' '), file)
     }
   }
-  expect(used.size).toBeGreaterThan(100)
-  const missing = [...used].filter(([c]) => !defined.has(c) && !HOOK_CLASSES.has(c)).map(([c, file]) => `${c} (${file})`)
+  return used
+})()
+
+test('S4: jede verwendete Klasse hat eine Regel in index.css oder ist eine Utility', () => {
+  for (const hook of HOOK_CLASSES) expect(definedClasses.has(hook), `${hook} hat eine Regel; dann gehört es nicht in die Ausnahmeliste`).toBe(false)
+  const used = [...classWords].filter(([c]) => /^[a-z][\w-]*$/.test(c))
+  expect(used.length).toBeGreaterThan(100)
+  const unknown = used.filter(([c]) => !definedClasses.has(c) && !HOOK_CLASSES.has(c))
+  // Seit #346 hat eine Klasse auch dann eine Regel, wenn Tailwind sie als Utility erzeugt.
+  const utilities = tailwindUtilities(unknown.map(([c]) => c))
+  const missing = unknown.filter(([c]) => !utilities.has(c)).map(([c, file]) => `${c} (${file})`)
   expect(missing).toEqual([])
+})
+
+// S17 (Teil Tailwind, #346): Werte kommen aus den Tokens. Eine Klasse mit beliebigem Wert
+// (`p-[13px]`, `bg-[#fff]`, `w-(--x)`) oder aus der Standardpalette (`bg-blue-500`, `text-white`)
+// ginge an index.css vorbei und wechselte nicht mit dem dunklen Design. Die Palette ist in tw.css
+// abgeschaltet; ohne diesen Test fiele eine solche Klasse nur dadurch auf, dass sie nichts bewirkt.
+const PALETTE = 'slate|gray|zinc|neutral|stone|orange|yellow|lime|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|red|green|amber'
+test('S17: keine beliebigen Werte und keine Standardpalette in Klassen', () => {
+  expect(classWords.size).toBeGreaterThan(100)
+  const arbitrary = [...classWords].filter(([c]) => /[[\]()]/.test(c)).map(([c, file]) => `${c} (${file})`)
+  expect(arbitrary).toEqual([])
+  // Unsere Tokens heißen teils wie Farben der Palette (`text-red`, `bg-green-soft`); verboten sind
+  // die Stufen (`-500`) und Weiß/Schwarz.
+  const palette = new RegExp(`(?:^|:)!?-?[a-z-]+-(?:(?:${PALETTE})-\\d{2,3}|white|black)(?:/\\d+)?!?$`)
+  const fromPalette = [...classWords].filter(([c]) => palette.test(c)).map(([c, file]) => `${c} (${file})`)
+  expect(fromPalette).toEqual([])
+})
+
+// S20 (#346): index.css wird nur kleiner. Eine neue Klasse dort mit dem Namen einer Utility stünde
+// zweimal da, in der Schicht legacy und darüber in utilities, und die Utility gewönne still.
+// Die heutigen Namensgleichheiten bleiben, weil tw.css sie aus der Suche nimmt (`@source not
+// inline`); jede von ihnen steht deshalb auch dort.
+const LEGACY_UTILITY_NAMES = new Set(['sr-only', 'grow', 'grow-2'])
+const INDEX_CSS_MAX_LINES = 1114
+test('S20: keine neue Klasse und keine Animation in index.css mit einem Namen aus Tailwind, und index.css wächst nicht', () => {
+  expect(definedClasses.size).toBeGreaterThan(100)
+  const clashes = tailwindUtilities(definedClasses)
+  expect([...clashes].filter((c) => !LEGACY_UTILITY_NAMES.has(c))).toEqual([])
+  for (const name of LEGACY_UTILITY_NAMES) {
+    expect(clashes.has(name), `${name} ist keine Utility mehr und gehört nicht in die Ausnahmeliste`).toBe(true)
+    expect(twCss, `${name} muss in tw.css von der Suche ausgenommen sein`).toMatch(new RegExp(`@source not inline\\("[^"]*\\b${name}(?![\\w-])`))
+  }
+  // Animationen aus index.css dürfen nicht heißen wie eine aus dem Theme: Tailwind schriebe dessen
+  // @keyframes sonst ungeschichtet dazu, und sie gälten statt der eigenen (siehe tw.css).
+  const themeCss = fs.readFileSync(new URL('../node_modules/tailwindcss/theme.css', import.meta.url), 'utf8')
+  const themeKeyframes = new Set([...themeCss.matchAll(/@keyframes\s+([\w-]+)/g)].map((m) => m[1]))
+  expect(themeKeyframes.size).toBeGreaterThan(0)
+  const ownKeyframes = [...css.matchAll(/@keyframes\s+([\w-]+)/g)].map((m) => m[1] ?? '')
+  expect(ownKeyframes.length).toBeGreaterThan(0)
+  expect(ownKeyframes.filter((k) => themeKeyframes.has(k))).toEqual([])
+  expect(css.trimEnd().split('\n').length, 'index.css wird nur kleiner; nach dem Kürzen die Obergrenze senken').toBeLessThanOrEqual(INDEX_CSS_MAX_LINES)
 })
 
 // S5: <Term id="…" /> ohne Text gibt den Titel des Begriffs aus. Hinter einem eigenen Wort

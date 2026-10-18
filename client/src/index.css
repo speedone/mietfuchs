@@ -392,10 +392,10 @@ button.btn.calc-toggle:hover { text-decoration: underline; filter: none; }
 
 .spinner {
   display: inline-block; width: 16px; height: 16px; border: 2px solid var(--accent-soft);
-  border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite;
+  border-top-color: var(--accent); border-radius: 50%; animation: spinner-spin 0.8s linear infinite;
   vertical-align: -3px; margin-right: 8px;
 }
-@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes spinner-spin { to { transform: rotate(360deg); } }
 
 /* ---------- Sidebar: Jahres-Umschalter & Navigationsgruppen ----------
    Vor dem Block für das Handy, denn der überschreibt diese Regeln bei gleicher Spezifität. Stand
