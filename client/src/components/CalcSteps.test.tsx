@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 // Der Rechenweg auf Klick (#114): aufklappbar und nie auf dem Ausdruck für den Mieter.
 import { afterEach, expect, test } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { press } from '../testing/keys'
 import CalcSteps from './CalcSteps'
 
 afterEach(cleanup)
@@ -25,8 +26,9 @@ test('Rechenweg klappt auf und zu, und alles davon ist vom Druck ausgenommen', (
 })
 
 // #142: Mit aufgeklapptem Begriff stand die Erklärung mitten in der Zeile, zwischen Beschriftung
-// und Wert, und der Rest („: 40 von 180“) rutschte darunter. Jetzt steht sie unter der ganzen Zeile.
-test('der aufgeklappte Begriff steht unter der Zeile, Beschriftung und Wert bleiben zusammen', () => {
+// und Wert, und der Rest („: 40 von 180“) rutschte darunter. Seit #346 Schritt 6 ist sie ein Popover und
+// steht gar nicht in der Zeile.
+test('der geöffnete Begriff schiebt die Zeile nicht auseinander, Beschriftung und Wert bleiben zusammen', async () => {
   render(
     <table><tbody><CalcSteps colSpan={4} row={{
       costItemId: 'k', category: 'Grundsteuer', description: 'Grundsteuer', totalCents: 90000, keyLabel: 'Wohnfläche', shareCents: 20000,
@@ -35,15 +37,16 @@ test('der aufgeklappte Begriff steht unter der Zeile, Beschriftung und Wert blei
   )
   fireEvent.click(screen.getByRole('button', { name: /Rechenweg/ }))
   const begriff = screen.getByRole('button', { name: 'Anteil an der Verteilbasis' })
+  begriff.focus()
   fireEvent.click(begriff)
-  const note = screen.getByRole('note')
-  const zeile = note.closest('li')
-  if (!zeile) return expect.fail('die Erklärung steht nicht in der Zeile ihres Schritts')
-  const text = zeile.textContent ?? ''
-  expect(text.startsWith('Anteil an der Verteilbasis: 40 von 180 m²')).toBe(true)
-  expect(text.endsWith(note.textContent ?? '')).toBe(true)
-  expect(begriff.getAttribute('aria-controls')).toBe(note.id)
+  const pop = screen.getByRole('dialog', { name: 'Verteilbasis' })
+  const zeile = begriff.closest('li')
+  if (!zeile) return expect.fail('der Begriff steht nicht in der Zeile seines Schritts')
+  expect(zeile.contains(pop)).toBe(false)
+  expect(zeile.textContent).toBe('Anteil an der Verteilbasis: 40 von 180 m²')
+  expect(begriff.getAttribute('aria-controls')).toBe(pop.id)
   // Esc schließt die Erklärung weiterhin.
-  fireEvent.keyDown(begriff, { key: 'Escape' })
-  expect(screen.queryByRole('note')).toBeNull()
+  press('Escape')
+  expect(pop.matches(':popover-open')).toBe(false)
+  await waitFor(() => expect(document.activeElement).toBe(begriff))
 })

@@ -21,7 +21,7 @@ test('Die Auswahl zeigt den gespeicherten Wert; Geltung nur bei „ja“', () =>
 test('der Begriff erklärt den angespannten Wohnungsmarkt, nicht die hälftige Teilung', () => {
   render(<TightMarketField value="unbekannt" from="" to="" onChange={() => {}} />)
   fireEvent.click(screen.getByRole('button', { name: 'Angespannter Wohnungsmarkt' }))
-  const note = screen.getByRole('note')
+  const note = screen.getByRole('dialog', { name: 'Angespannter Wohnungsmarkt' })
   expect(note.textContent).toContain('Kündigungssperrfrist (§ 577a Abs. 2 BGB)')
   expect(note.textContent).not.toContain('Hälftige Teilung ab')
 })

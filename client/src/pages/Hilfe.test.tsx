@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // Die Seite „Hilfe & Begriffe“ mit Anleitungen (#164): aufklappen, springen, gemeinsam suchen.
 import { afterEach, expect, test, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import Hilfe from './Hilfe'
 import { GUIDES } from '../../../shared/guides.ts'
 import { GLOSSARY } from '../../../shared/glossary.ts'
@@ -25,7 +25,7 @@ test('Anleitungen stehen über den Begriffen, jede aufklappbar mit den fünf Abs
   expect(within(guide).getByRole('link', { name: '#218' }).getAttribute('href')).toBe('https://github.com/speedone/mietfuchs/issues/218')
   // Begriffe zum Aufklappen
   fireEvent.click(within(guide).getByRole('button', { name: 'Einliegerwohnung' }))
-  expect(within(guide).getByText(/Ihre Wohnung hat 120 m², die Einliegerwohnung 45 m²/)).toBeTruthy()
+  expect(within(screen.getByRole('dialog', { name: 'Einliegerwohnung' })).getByText(/Ihre Wohnung hat 120 m², die Einliegerwohnung 45 m²/)).toBeTruthy()
 })
 
 test('ein Sprung führt auf die Seite des Schritts und an den Anfang der Seite', () => {
@@ -55,4 +55,14 @@ test('die Suche durchsucht Anleitungen und Begriffe gemeinsam', () => {
   expect(screen.getByText(/Keine Anleitung passt/)).toBeTruthy()
   // Passt kein Begriff, sagt die Seite das, die Anleitungen stehen trotzdem da.
   expect(screen.getByText(/Kein Begriff passt/)).toBeTruthy()
+})
+
+// #346 Schritt 6: „Mehr in ‚Hilfe & Begriffe‘ →“ aus einer Erklärung führt zum Begriff, auch bei laufender Suche.
+test('ein Sprung aus einer Begriffserklärung leert die Suche und setzt den Fokus auf den Begriff', async () => {
+  const { rerender } = render(<Hilfe onNavigate={() => {}} />)
+  fireEvent.change(screen.getByLabelText('Suchen in Anleitungen und Begriffen'), { target: { value: 'Garage' } })
+  expect(document.getElementById('begriff-mea')).toBeNull()
+  rerender(<Hilfe onNavigate={() => {}} focusTerm={{ id: 'mea', seq: 1 }} />)
+  await waitFor(() => expect(document.activeElement?.id).toBe('begriff-mea'))
+  expect((screen.getByLabelText('Suchen in Anleitungen und Begriffen') as HTMLInputElement).value).toBe('')
 })

@@ -44,7 +44,7 @@ export type Popover = {
     'aria-expanded': boolean
     'aria-controls': string
   }
-  /** Das Popover selbst, im Portal; `children` ist sein Inhalt. */
+  /** Das Popover selbst, im Portal; `children` ist sein Inhalt und steht nur im Dokument, solange es offen ist. */
   render: (props: { className: string; label?: string; labelledBy?: string; children: ReactNode }) => ReactNode
 }
 
@@ -208,7 +208,7 @@ export function usePopover({ beforeOpen, onOpen }: { beforeOpen?: () => void; on
         onKeyDown={onKeyDown}
         onBlur={onBlur}
       >
-        {children}
+        {open ? children : null}
       </span>,
       host,
     )

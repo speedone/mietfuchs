@@ -1978,9 +1978,16 @@ Verbrauchsanteil dasteht. Das Cockpit wendet die Regel nicht selbst an, sondern 
 `heating.not-by-consumption` der Abrechnung (client/src/meterCheck.ts). Jeder Hinweis-Code in
 `noticeKinds` trägt mindestens einen Begriff (`terms`, als nicht leeres Tupel getippt, dazu
 [glossary.test.ts](server/test/glossary.test.ts)). In der Oberfläche zeigt
-[Term.tsx](client/src/components/Term.tsx) die Erklärung zum Aufklappen, und zwar als `span`
+[Term.tsx](client/src/components/Term.tsx) die Erklärung, und zwar über einen Auslöser als `span`
 mit `role="button"`: In einem `<label>` wäre ein `<button>` das erste bedienbare Element und
-nähme dem Eingabefeld die Beschriftung. Die Seite „Hilfe & Begriffe“ listet alle. Rechtsaussagen
+nähme dem Eingabefeld die Beschriftung. Seit #346 Schritt 6 ist die Erklärung ein Popover
+(`usePopover`, siehe „Ein Monat ist ein Monatsfeld“): hinter dem Begriff ein „?“ (gezeichnet von CSS,
+Utility `term-q`, inline und für Vorleser ausgeblendet, damit der Name des Felds seine Beschriftung
+bleibt; Tippfläche `--target` über `::after`), die Erklärung im Top-Layer, nicht im Label, am Handy als
+Blatt unten (höchstens 60 % der Höhe). Sie zeigt Erklärung und Beispiel; Rechtsgrundlage und „Brauche ich
+das?“ stehen in der Hilfe, dorthin führt „Mehr in ‚Hilfe & Begriffe‘ →“ (ein Link, über `TermHelp` aus
+App.tsx mit `navigate`, also mit Rückfrage bei offenem Formular; die Hilfe springt mit `focusTerm` zum
+Begriff). Esc schließt nur die Erklärung, auch im Seitenfenster. Die Seite „Hilfe & Begriffe“ listet alle. Rechtsaussagen
 nur, wo sie im Gesetz stehen; Beispiele werden nachgerechnet. Lexikon und Anleitungen nehmen ihre
 Rechtszahlen aus dem Rechtsregister.
 
@@ -3310,8 +3317,10 @@ Tippfläche von `--target` über `::after`, und printCss.test.ts verlangt den du
   `<dialog>` bzw. in `body` und nicht im `<label>`, positioniert sich am Auslöser und gibt den Fokus selbst zurück.
   **Die Personenstaffel bleibt ein Datum**, denn `personDaysInPeriod` rechnet tagesgenau. Wächter S14 (kein
   `type="month"`, kein `type="number"`, kein zweites Monatsfeld, Monatsnamen nur in monthText.ts) und S12 (Popover nur
-  in popover.tsx und den Mitteilungen). In jsdom bildet testing/dialog.ts `beforetoggle`/`toggle` nach und macht ein
-  offenes Popover sichtbar, damit Abfragen nach Rolle es finden. **Bekannte Grenze:** Ohne `showPopover` (Safari vor 17, Firefox
+  in popover.tsx und den Mitteilungen; `usePopover` nehmen nur MonthField und Term). Den Inhalt zeichnet das Popover
+  nur, solange es offen ist; sonst fände eine Abfrage nach Beschriftung auch die geschlossene Erklärung. In jsdom
+  bildet testing/dialog.ts `beforetoggle`/`toggle` nach und macht ein offenes Popover sichtbar, damit Abfragen nach
+  Rolle es finden. **Bekannte Grenze:** Ohne `showPopover` (Safari vor 17, Firefox
   vor 125) steht das Popover `position: fixed` über `hidden`; ist der umgebende `<dialog>` transformiert (Einfahren
   des Seitenfensters), bezieht sich `fixed` auf ihn, und die Lage aus `getBoundingClientRect` stimmt dann nicht. Nicht
   geprüft, kein alter Browser zur Hand (Durchsicht K6).
