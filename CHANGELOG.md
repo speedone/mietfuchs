@@ -174,6 +174,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   häufige Ursache: Das Mietkonto verteilt Zahlungen der Reihe nach ab Januar, ein Fehlbetrag aus
   einem früheren Monat steht deshalb im Dezember (Befund M3 aus
   [#341](https://github.com/speedone/mietfuchs/issues/341)).
+- Heizung in den Stammdaten: Nach „Ich selbst“ und „Anlegen“ stand auf der Karte „Abrechnung: Niemand
+  …“, auch nach „Später“. Bis zum „Umstellen“ verteilt Mietfuchs die Heizkosten weiter nach den
+  Umlageschlüsseln der Kostenpositionen, und genau das sagt die Karte jetzt: „Abrechnung: nach den
+  Umlageschlüsseln der Kostenpositionen, ohne eigene Heizkostenabrechnung“. Der Knopf heißt „Eigene
+  Heizkostenabrechnung einrichten“, und Einrichtung wie Mitteilung nach „Später“ sagen, dass die
+  Abrechnung erst mit „Umstellen“ wechselt (Befund M6 aus [#341](https://github.com/speedone/mietfuchs/issues/341)).
 - Die Karte „Objekt“ verlangt eine Bezeichnung: Leer ließ sie sich speichern, und die Seitenleiste
   zeigte danach „Ohne Namen“. Hat das Objekt noch keinen Namen, etwa nach einer frischen Installation,
   steht im Feld „Mein Objekt“; Sie können es überschreiben, und mit dem ersten Speichern der Karte wird
