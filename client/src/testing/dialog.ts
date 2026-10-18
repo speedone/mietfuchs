@@ -7,8 +7,8 @@
 // - `close()` nimmt `open` weg und sendet `close`, wie der Browser als eigene Aufgabe danach (`setTimeout`):
 //   Ein Baustein, der auf ein verspätetes `close` eines inzwischen wieder geöffneten Dialogs hereinfällt
 //   (StrictMode baut Effekte einmal ab und wieder auf), fällt so auch im Test auf (Durchsicht M1);
-// - Popover öffnen und schließen sich, `:popover-open` trifft die offenen, und Esc schließt zuerst ein offenes
-//   Popover (`auto`) statt des Dialogs;
+// - Popover öffnen und schließen sich (mit `beforetoggle` und `toggle`), `:popover-open` trifft die offenen, und
+//   Esc schließt zuerst ein offenes Popover (`auto`) statt des Dialogs;
 // - `:modal` trifft die mit `showModal()` geöffneten Dialoge (jsdom kennt die Pseudoklasse nicht);
 // - Esc sendet dem obersten modalen Dialog `cancel` (abbrechbar) und schließt ihn danach, aber nur, wenn
 //   das `keydown` nicht verhindert wurde. So hält es der Browser auch (eine „close request“ folgt erst auf
@@ -64,10 +64,39 @@ export function installDialogPolyfill(): void {
     if (at >= 0) modals.splice(at, 1)
     setTimeout(() => this.dispatchEvent(new Event('close')), 0)
   }
-  // Popover (`popover="auto"`/`"manual"`): nur Öffnen, Schließen und `:popover-open`, ohne Top-Layer.
+  // Popover (`popover="auto"`/`"manual"`): Öffnen, Schließen und `:popover-open`, ohne Top-Layer. Wie der
+  // Browser sendet es `beforetoggle` sofort und `toggle` danach (als Mikroaufgabe, damit kein Zeitgeber stehen bleibt), je mit `newState`, und ein
+  // neues `auto` schließt die offenen `auto`, in denen es nicht steht (#346, Schritt 5 und 6).
   const html = window.HTMLElement.prototype
-  html.showPopover = function (this: HTMLElement) { if (!popovers.includes(this)) popovers.push(this) }
-  html.hidePopover = function (this: HTMLElement) { const at = popovers.indexOf(this); if (at >= 0) popovers.splice(at, 1) }
+  // jsdom blendet jedes Popover über sein Stylesheet aus (`:popover-open` trifft dort nie); ein offenes zeigt
+  // diese Regel, damit Abfragen nach Rolle es finden.
+  const shown = document.createElement('style')
+  shown.textContent = '[popover][data-test-popover-open] { display: block !important; }'
+  document.head.append(shown)
+  const toggled = (el: HTMLElement, type: 'beforetoggle' | 'toggle', newState: 'open' | 'closed') => {
+    const e = new Event(type) as Event & { newState: string; oldState: string }
+    e.newState = newState
+    e.oldState = newState === 'open' ? 'closed' : 'open'
+    el.dispatchEvent(e)
+  }
+  html.showPopover = function (this: HTMLElement) {
+    if (popovers.includes(this)) return
+    if (this.getAttribute('popover') !== 'manual') {
+      for (const other of [...popovers]) if (other.getAttribute('popover') !== 'manual' && !other.contains(this)) other.hidePopover()
+    }
+    toggled(this, 'beforetoggle', 'open')
+    popovers.push(this)
+    this.setAttribute('data-test-popover-open', '')
+    queueMicrotask(() => toggled(this, 'toggle', 'open'))
+  }
+  html.hidePopover = function (this: HTMLElement) {
+    const at = popovers.indexOf(this)
+    if (at < 0) return
+    toggled(this, 'beforetoggle', 'closed')
+    popovers.splice(popovers.indexOf(this), 1)
+    this.removeAttribute('data-test-popover-open')
+    queueMicrotask(() => toggled(this, 'toggle', 'closed'))
+  }
   html.togglePopover = function (this: HTMLElement) {
     if (popovers.includes(this)) { this.hidePopover(); return false }
     this.showPopover()

@@ -59,7 +59,8 @@ describe('Rhythmus ändern (#208)', () => {
   test('neue Regeln aus dem Formular', () => {
     expect(nextRules(CALENDAR_RULES, { mode: 'start', month: 5, from: '' })).toEqual({ startMonth: 5, changes: [] })
     expect(nextRules(CALENDAR_RULES, { mode: 'change', month: 1, from: '2025-05' })).toEqual({ startMonth: 1, changes: ['2025-05'] })
-    expect(nextRules(CALENDAR_RULES, { mode: 'change', month: 1, from: '' })).toEqual({ error: 'Bitte geben Sie an, ab welchem Monat der neue Zeitraum beginnt.' })
+    expect(nextRules(CALENDAR_RULES, { mode: 'change', month: 1, from: '' })).toEqual({ error: 'Bitte geben Sie an, ab welchem Monat der neue Zeitraum beginnt.', field: 'from', short: 'Monat fehlt' })
+    expect(nextRules(CALENDAR_RULES, { mode: 'change', month: 1, from: '13.2026' })).toEqual({ error: 'Neuer Zeitraum: Den Monat 13 gibt es nicht. Geben Sie den Monat als Zahl von 1 bis 12 ein, etwa „3.2025“.', field: 'from', short: 'Monat 13 gibt es nicht' })
     expect(withoutChange(WECHSEL, '2025-05')).toEqual({ startMonth: 1, changes: [] })
   })
   const vorschau: PeriodChangePreview = {

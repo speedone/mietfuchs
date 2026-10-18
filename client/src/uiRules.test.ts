@@ -241,7 +241,7 @@ test('kleine Knöpfe haben am Handy die volle Tippfläche', () => {
 // Die heutigen Namensgleichheiten bleiben, weil tw.css sie aus der Suche nimmt (`@source not
 // inline`); jede von ihnen steht deshalb auch dort.
 const LEGACY_UTILITY_NAMES = new Set(['sr-only', 'grow', 'grow-2'])
-const INDEX_CSS_MAX_LINES = 867
+const INDEX_CSS_MAX_LINES = 866
 test('S20: keine neue Klasse und keine Animation in index.css mit einem Namen aus Tailwind, und index.css wächst nicht', () => {
   expect(definedClasses.size).toBeGreaterThan(100)
   const clashes = tailwindUtilities(definedClasses)
@@ -394,14 +394,28 @@ test('dark: gilt nicht im Druck', () => {
 // und `role="alertdialog"`) nur in den Bausteinen, die dafür vorgesehen sind. Ein eigenes Overlay je Seite
 // brächte je eigene Regeln für Esc, Fokus und Klick daneben. Heute: das Menüblatt am Handy, das
 // Seitenfenster und die Rückfrage (seit Schritt 1 ein `<dialog role="alertdialog">`).
+// Popover (`popover`, `showPopover()` …) seit Schritt 5 nur im Baustein popover.tsx (Monatsraster, ab Schritt 6
+// auch die Begriffserklärung) und in den Mitteilungen (feedback.tsx, `popover="manual"`); das Popover ist dort
+// ein nicht modaler Dialog (`role="dialog"`). popover.tsx nehmen nur die Bausteine, die es brauchen.
 const DIALOG_FILES = new Set(['./components/MobileNav.tsx', './components/Drawer.tsx', './components/feedback.tsx'])
+const POPOVER_FILES = new Set(['./components/popover.tsx', './components/feedback.tsx'])
+const POPOVER_USERS = new Set(['./components/MonthField.tsx'])
 const dialogUses = (src: string) => [...src.matchAll(/<dialog\b|\bshowModal\s*\(|role=["'{`]+(?:alert)?dialog\b/g)].map((m) => m[0])
-test('S12: Dialoge nur in den erlaubten Bausteinen', () => {
+const popoverUses = (src: string) => [...src.matchAll(/\bpopover(?:=|:\s*['"])|\b(?:show|hide|toggle)Popover\s*\(/g)].map((m) => m[0])
+test('S12: Dialoge und Popover nur in den erlaubten Bausteinen', () => {
   // Probe des Prüfers: Er findet alle Schreibweisen.
   expect(dialogUses('<dialog open>…</dialog>; ref.current.showModal(); <div role="dialog"> <div role={"alertdialog"}>'))
     .toEqual(['<dialog', 'showModal(', 'role="dialog', 'role={"alertdialog'])
+  expect(popoverUses('<div popover="auto" /> el.showPopover(); el.hidePopover() x.togglePopover() { popover: \'auto\' } :popover-open'))
+    .toEqual(['popover=', 'showPopover(', 'hidePopover(', 'togglePopover(', "popover: '"])
   for (const file of DIALOG_FILES) expect(dialogUses(sources[file] ?? ''), `${file} nutzt keinen <dialog> mehr; aus der Liste streichen`).not.toEqual([])
-  expect(files.filter((file) => !DIALOG_FILES.has(file) && dialogUses(sources[file] ?? '').length > 0)).toEqual([])
+  const dialogAllowed = (file: string) => DIALOG_FILES.has(file) || file === './components/popover.tsx'
+  expect(files.filter((file) => !dialogAllowed(file) && dialogUses(sources[file] ?? '').length > 0)).toEqual([])
+  for (const file of POPOVER_FILES) expect(popoverUses(twSources[file] ?? ''), `${file} nutzt kein Popover mehr; aus der Liste streichen`).not.toEqual([])
+  // Die Nachbildung für jsdom (testing/dialog.ts) baut Popover nach und gehört nicht zur Oberfläche.
+  expect(Object.keys(twSources).filter((file) => !POPOVER_FILES.has(file) && !file.startsWith('./testing/') && popoverUses(twSources[file] ?? '').length > 0)).toEqual([])
+  const users = Object.keys(twSources).filter((file) => /\busePopover\b/.test(twSources[file] ?? '') && file !== './components/popover.tsx')
+  expect(users.sort()).toEqual([...POPOVER_USERS].sort())
 })
 
 // S12b (#346 Schritt 2): Jedes Seitenfenster fragt beim Schließen mit Änderungen nach. Dafür nennt jedes
@@ -677,7 +691,7 @@ const openingTags = (src: string, name: string): { at: number; tag: string }[] =
 /** Pflichtfelder außerhalb eines `<Drawer>…</Drawer>`. */
 const requiredOutsideDrawer = (src: string): string[] => {
   const ranges = [...src.matchAll(/<Drawer\b/g)].map((m) => [m.index ?? 0, src.indexOf('</Drawer>', m.index ?? 0)] as const)
-  return openingTags(src, 'Field')
+  return [...openingTags(src, 'Field'), ...openingTags(src, 'MonthField')]
     .filter(({ tag }) => /\srequired(?:\s|>|=\{(?!false\}))/.test(tag))
     .filter(({ at }) => !ranges.some(([a, b]) => at > a && (b < 0 || at < b)))
     .map(({ tag }) => tag.slice(0, 60))
@@ -689,7 +703,7 @@ test('S25: Pflichtfelder mit Legende, jedes <form> mit noValidate, keine Gestalt
   // Probe des Prüfers
   expect(requiredOutsideDrawer('<Drawer open value={x}><Field label="A" required><input /></Field></Drawer><Field label="B" required={isNew}><input /></Field><Field label="C" required={false}><input /></Field>'))
     .toEqual(['<Field label="B" required={isNew}>'])
-  const missingLegend = files.filter((f) => f !== './components/Field.tsx' && requiredOutsideDrawer(sources[f] ?? '').length > 0 && !/<RequiredLegend\b/.test(sources[f] ?? ''))
+  const missingLegend = files.filter((f) => f !== './components/Field.tsx' && f !== './components/MonthField.tsx' && requiredOutsideDrawer(sources[f] ?? '').length > 0 && !/<RequiredLegend\b/.test(sources[f] ?? ''))
   expect(missingLegend).toEqual([])
   // Die Seiten, die heute ein Pflichtfeld außerhalb eines Fensters haben, findet der Prüfer auch.
   expect(requiredOutsideDrawer(sources['./components/PropertyCard.tsx'] ?? '').length).toBeGreaterThan(0)
@@ -701,4 +715,25 @@ test('S25: Pflichtfelder mit Legende, jedes <form> mit noValidate, keine Gestalt
   expect(pseudo.test(css.replace(/\/\*[\s\S]*?\*\//g, ''))).toBe(false)
   expect(pseudo.test(twCss.replace(/\/\*[\s\S]*?\*\//g, ''))).toBe(false)
   expect([...twCandidates.keys()].filter((c) => /(?:^|:)(?:invalid|required|user-invalid):/.test(c))).toEqual([])
+})
+
+// S14 (#287, #346 Schritt 5): Ein Monat wird nur im Monatsfeld eingegeben (MonthField.tsx, Regel in monthText.ts).
+// `<input type="month">` kennen Safari auf dem Mac und Firefox nicht; ein zweites Monatsfeld (etwa wieder zwei
+// Auswahllisten für Monat und Jahr) läse dieselbe Eingabe anders. Kein `type="number"`: Es liest „650,00“ je nach
+// Browser anders; Geld ist ein Textfeld, gelesen mit `parseEuro`. Die Monatsnamen (ausgeschrieben und kurz, in jeder Art von
+// Anführungszeichen) stehen im Client einmal, in
+// monthText.ts. Geprüft wird der Quelltext ohne Kommentare.
+const withoutComments = (src: string) => src.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '')
+const monthInputUses = (src: string) => [...withoutComments(src).matchAll(/type=["'{`]+(?:month|number)\b|type:\s*['"](?:month|number)['"]|['"`>]–\s*Jahr\s*–|:\s*Jahr`|\bfunction\s+Month(?:Picker|Select|Input)\b|["'`](?:Januar|Jan)["'`]\s*,\s*["'`](?:Februar|Feb)["'`]/g)].map((m) => m[0])
+test('S14: Monat nur im Monatsfeld, kein type="month" und kein type="number"', () => {
+  // Probe des Prüfers
+  expect(monthInputUses(`<input type="month" /> <input type="number" /> <input type={'month'} /> { type: 'number' } <option>– Jahr –</option> aria-label={\`\${label}: Jahr\`} function MonthPicker() {} ['Januar', 'Februar']`)).toHaveLength(8)
+  // Durchsicht K5: auch doppelte Anführungszeichen und die Kurzformen
+  expect(monthInputUses(`["Januar", "Februar"] ['Jan', 'Feb', 'Mär'] ["Jan","Feb"] [\`Januar\`, \`Februar\`]`)).toHaveLength(4)
+  expect(monthInputUses("'Jan' 'Januar' { name: 'Februar' }")).toEqual([])
+  expect(monthInputUses('// <input type="month"> kennt Safari nicht\nfunction MonthField() {} <input type="date" />')).toEqual([])
+  expect(twSources['./components/MonthField.tsx']).toBeTruthy()
+  const allowed = new Set(['./monthText.ts'])
+  expect(Object.keys(twSources).filter((f) => !allowed.has(f) && !f.startsWith('./testing/') && monthInputUses(twSources[f] ?? '').length > 0)
+    .map((f) => `${f}: ${monthInputUses(twSources[f] ?? '').join(', ')}`)).toEqual([])
 })

@@ -143,12 +143,11 @@ describe('Monatsauswahl der Heizung (#287)', () => {
     render(<HeatingPeriodSection plant={plant()} objectRules={CALENDAR_RULES} hasCalendarData onChanged={async () => {}} notify={() => {}} />)
     fireEvent.click(screen.getByRole('button', { name: 'Zeitraum der Heizung ändern' }))
     fireEvent.click(screen.getByRole('radio', { name: 'Ab einem Monat' }))
-    const monat = screen.getByRole('combobox', { name: 'Neue Heizperiode beginnt ab (Monat/Jahr): Monat' }) as HTMLSelectElement
-    const jahr = screen.getByRole('combobox', { name: 'Neue Heizperiode beginnt ab (Monat/Jahr): Jahr' }) as HTMLSelectElement
+    const monat = screen.getByRole('textbox', { name: 'Neue Heizperiode beginnt ab Monat' }) as HTMLInputElement
     const year = String(new Date().getFullYear() + 1)
-    fireEvent.change(monat, { target: { value: '10' } })
-    fireEvent.change(jahr, { target: { value: year } })
-    expect([monat.value, monat.selectedOptions[0]?.textContent, jahr.value]).toEqual(['10', 'Oktober', year])
+    fireEvent.change(monat, { target: { value: `10.${year}` } })
+    fireEvent.blur(monat)
+    expect(monat.value).toBe(`Oktober ${year}`)
     fireEvent.click(screen.getByRole('button', { name: 'Vorschau' }))
     await waitFor(() => expect(JSON.stringify(bodies.at(-1))).toContain(`"${year}-10"`))
   })
@@ -164,12 +163,11 @@ describe('Monatsauswahl der Heizung (#287)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Getrennte Heizkostenabrechnung einschalten' }))
     fireEvent.click(screen.getByRole('button', { name: 'Vorschau' }))
     const label = 'Ab welchem Monat zahlen die Mieter eine eigene Heizkostenvorauszahlung?'
-    const monat = await screen.findByRole('combobox', { name: `${label}: Monat` }) as HTMLSelectElement
-    await waitFor(() => expect(monat.value).toBe('05'))
-    expect((screen.getByRole('combobox', { name: `${label}: Jahr` }) as HTMLSelectElement).value).toBe('2025')
+    const monat = await screen.findByRole('textbox', { name: label }) as HTMLInputElement
+    await waitFor(() => expect(monat.value).toBe('Mai 2025'))
   })
 
-  test('getrennte Heizkostenabrechnung: nur ein Monat ohne Jahr wird nicht an den Server geschickt', async () => {
+  test('getrennte Heizkostenabrechnung: ein Monat ohne Jahr wird nicht an den Server geschickt, sondern am Feld gemeldet', async () => {
     const calls: string[] = []
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       calls.push(url)
@@ -177,9 +175,11 @@ describe('Monatsauswahl der Heizung (#287)', () => {
     }))
     render(<HeatingPeriodSection plant={plant()} objectRules={CALENDAR_RULES} hasCalendarData onChanged={async () => {}} notify={() => {}} />)
     fireEvent.click(screen.getByRole('button', { name: 'Getrennte Heizkostenabrechnung einschalten' }))
-    fireEvent.change(screen.getByRole('combobox', { name: 'Ab welchem Monat zahlen die Mieter eine eigene Heizkostenvorauszahlung?: Monat' }), { target: { value: '03' } })
+    const monat = screen.getByRole('textbox', { name: 'Ab welchem Monat zahlen die Mieter eine eigene Heizkostenvorauszahlung?' })
+    fireEvent.change(monat, { target: { value: '03' } })
     fireEvent.click(screen.getByRole('button', { name: 'Vorschau' }))
-    expect(await screen.findByText('Bitte wählen Sie zum Monat auch das Jahr.')).toBeTruthy()
+    expect(await screen.findByText('Monat: Geben Sie zum Monat auch das Jahr ein, etwa „3.2025“.')).toBeTruthy()
+    expect(monat.getAttribute('aria-invalid')).toBe('true')
     expect(calls.some((u) => u.endsWith('/separate/preview'))).toBe(false)
   })
 })

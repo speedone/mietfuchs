@@ -3297,6 +3297,24 @@ Tippfläche von `--target` über `::after`, und printCss.test.ts verlangt den du
   kein `set…(null)`). Grenze: Ob `value` den ganzen Zustand umfasst, sieht der Wächter nicht; das prüft die
   Durchsicht. `busy` reichen die Formulare beim Speichern noch nicht durch (Esc während der Anfrage fragt). Tests: `<dialog>` hat die Rolle `dialog`, die Rückfrage `alertdialog`;
   wer in einem Test mit Eingabe „Abbrechen“ klickt, bestätigt danach „Verwerfen“.
+- **Ein Monat ist ein Monatsfeld** (`MonthField`, [client/src/components/MonthField.tsx](client/src/components/MonthField.tsx),
+  #287, #346 Schritt 5): ein Textfeld in `Field`, das „3.2025“, „03/25“, „2025-03“, „März 2025“ und „Mrz 27“ liest
+  (`parseMonthText` in [client/src/monthText.ts](client/src/monthText.ts), ohne DOM: ein Tag nur als Erster,
+  zweistellige Jahre wie POSIX, Jahre 1900 bis 2100, ein Punkt am Ende zählt nicht; „1.10“ oder „01.12“ sind mehrdeutig,
+  Tag.Monat ohne Jahr oder Monat.Jahr, und ergeben eine Meldung statt Januar 2010), dazu ▦ mit einem Raster als Popover (APG-Grid: Pfeile, Pos1/Ende,
+  Bild auf/ab fürs Jahr, die Zellen sind Knöpfe mit `role="gridcell"`, Esc schließt nur das Raster, der Fokus geht an
+  ▦ zurück; am Handy ein Blatt unten). Der Wert ist 'JJJJ-MM', ist der Text kein Monat, der Text selbst: Er wird nie
+  verworfen, beim Verlassen steht die Meldung am Feld, und die Prüfung des Formulars meldet sie mit Ort (Staffeln je
+  Zeile und Feld, `buildSchedule` mit `scheduleField`). Das Popover (`usePopover`,
+  [client/src/components/popover.tsx](client/src/components/popover.tsx)) hängt über ein Portal im nächsten
+  `<dialog>` bzw. in `body` und nicht im `<label>`, positioniert sich am Auslöser und gibt den Fokus selbst zurück.
+  **Die Personenstaffel bleibt ein Datum**, denn `personDaysInPeriod` rechnet tagesgenau. Wächter S14 (kein
+  `type="month"`, kein `type="number"`, kein zweites Monatsfeld, Monatsnamen nur in monthText.ts) und S12 (Popover nur
+  in popover.tsx und den Mitteilungen). In jsdom bildet testing/dialog.ts `beforetoggle`/`toggle` nach und macht ein
+  offenes Popover sichtbar, damit Abfragen nach Rolle es finden. **Bekannte Grenze:** Ohne `showPopover` (Safari vor 17, Firefox
+  vor 125) steht das Popover `position: fixed` über `hidden`; ist der umgebende `<dialog>` transformiert (Einfahren
+  des Seitenfensters), bezieht sich `fixed` auf ihn, und die Lage aus `getBoundingClientRect` stimmt dann nicht. Nicht
+  geprüft, kein alter Browser zur Hand (Durchsicht K6).
 - **Auswahlfelder und Häkchen speichern nicht beim Anklicken** (#309). Sofort gespeichert wird nur,
   was keine Daten ändert: der Wechsel von Zeitraum, Objekt oder Design und die Antwort auf die
   Frage nach der Update-Prüfung im Cockpit. Alles andere ist zuerst ein Entwurf: `useDraft(saved,

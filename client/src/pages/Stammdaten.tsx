@@ -12,7 +12,7 @@ import Field from '../components/Field'
 import { useFormError } from '../components/ErrorSummary'
 import { ibanForSave, ibanToInput, storedIbanInvalid } from '../ibanField'
 import { IBAN_LABELS, normalizeIban } from '../../../shared/iban.ts'
-import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_KIND_OPTIONS, SELF_SUPPLY_TENANCY_HINT, buildPersonHistory, costModelBadge, costModelBody, buildSchedule, defaultTenancyUnitId, overlapQuestion, prepaymentColumn, tenancyRequired, type TenancyField, scheduleLabel, scheduleMonthText, showsFlatRates, startsSchedule } from '../tenancyModel'
+import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_KIND_OPTIONS, SELF_SUPPLY_TENANCY_HINT, buildPersonHistory, costModelBadge, costModelBody, buildSchedule, defaultTenancyUnitId, overlapQuestion, prepaymentColumn, tenancyRequired, type TenancyField, scheduleField, scheduleLabel, scheduleMonthText, showsFlatRates, startsSchedule } from '../tenancyModel'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, endProblem, gapProblem, INTERIM_FEE_HINT, INTERIM_GAP_OPTIONS, meterProblem, parseMeterValue, successorHeatingNote, type NewTenantForm } from '../tenantChange'
 import { gapConsequence } from '../heatingSelfView'
@@ -21,7 +21,7 @@ import PageHeader from '../components/PageHeader'
 import { emptyUnitsText } from '../propertyView'
 import Term from '../components/Term'
 import { useToast, useConfirm } from '../components/feedback'
-import MonthPicker from '../components/MonthPicker'
+import MonthField from '../components/MonthField'
 import Table from '../components/Table'
 import HeatingCard from '../components/HeatingCard'
 import { useFocusTarget, type FocusProps } from '../focus'
@@ -234,18 +234,20 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
     }
     const { personHistory } = persons
     // Nur die erste Zeile einer Staffel gilt ohne Monat ab Einzug (Durchsicht von #287, tenancyModel.ts).
+    // Die Angaben aller Staffeln auf einmal, je an ihrem Feld (#346, Schritt 5).
     const rents = buildSchedule(tenForm.baseRents, tenForm.start, 'baseRent')
-    if ('error' in rents) return setError(rents.error)
-    const baseRents = [...rents.schedule].sort((a, b) => a.from.localeCompare(b.from))
     const pre = buildSchedule(tenForm.prepayments, tenForm.start, 'prepayment')
-    if ('error' in pre) return setError(pre.error)
-    const prepayments = pre.schedule
     const flat = buildSchedule(showsFlatRates(tenForm.costModel, tenForm.heatingModel) ? tenForm.flatRates : [], tenForm.start, 'flatRate')
-    if ('error' in flat) return setError(flat.error)
-    const flatRates = flat.schedule
     // Heizung PR 5: die Heizstaffel neben der übrigen Vorauszahlung (nach dem Aufteilen, Entwurf 3.1).
     const heat = buildSchedule(tenForm.heatingPrepayments, tenForm.start, 'heatingPrepayment')
-    if ('error' in heat) return setError(heat.error)
+    const scheduleProblems = [rents, pre, heat, flat].flatMap((r) => ('problems' in r ? r.problems : []))
+    if ('problems' in rents || 'problems' in pre || 'problems' in flat || 'problems' in heat) {
+      tenErrors.report(scheduleProblems)
+      return
+    }
+    const baseRents = [...rents.schedule].sort((a, b) => a.from.localeCompare(b.from))
+    const prepayments = pre.schedule
+    const flatRates = flat.schedule
     const heating = heat.schedule
     let depositCents: number | null = null
     if (tenForm.deposit.trim()) {
@@ -574,7 +576,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                     <input value={p.persons} inputMode="numeric" onChange={(e) => setTenForm({ ...tenForm, personHistory: tenForm.personHistory.map((x, k) => (k === i ? { ...x, persons: e.target.value } : x)) })} />
                   </label>
                   {tenForm.personHistory.length > 1
-                    ? <button className="icon-btn danger" title="Zeile entfernen" aria-label="Zeile entfernen" onClick={() => setTenForm({ ...tenForm, personHistory: tenForm.personHistory.filter((_, k) => k !== i) })}>🗑</button>
+                    ? <button className="icon-btn danger" title="Zeile entfernen" aria-label="Zeile entfernen" onClick={() => { tenErrors.clear(); setTenForm({ ...tenForm, personHistory: tenForm.personHistory.filter((_, k) => k !== i) }) }}>🗑</button>
                     : <span />}
                 </div>
               ))}
@@ -586,13 +588,12 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
               <div className="field-group-label">Kaltmiete je Monat — Staffel (leer = nur NK)</div>
               {tenForm.baseRents.map((p, i) => (
                 <div className="staffel-row" key={i}>
-                  <MonthPicker label={scheduleLabel('baseRent')} emptyLabel={startsSchedule(tenForm.baseRents, i) ? 'ab Einzug' : undefined} value={p.from} start={tenForm.start} today={localToday()} onChange={(from) => setTenForm({ ...tenForm, baseRents: tenForm.baseRents.map((x, k) => (k === i ? { ...x, from } : x)) })} />
-                  <label className="field">
-                    Betrag €/Monat
+                  <MonthField label={scheduleLabel('baseRent')} placeholder={startsSchedule(tenForm.baseRents, i) ? 'ab Einzug' : undefined} value={p.from} start={tenForm.start} today={localToday()} {...tenErrors.field(scheduleField('baseRent', i, 'from'))} onChange={(from) => setTenForm({ ...tenForm, baseRents: tenForm.baseRents.map((x, k) => (k === i ? { ...x, from } : x)) })} />
+                  <Field label="Betrag €/Monat" {...tenErrors.field(scheduleField('baseRent', i, 'amount'))}>
                     <input value={p.amount} placeholder="z. B. 800,00" onChange={(e) => setTenForm({ ...tenForm, baseRents: tenForm.baseRents.map((x, k) => (k === i ? { ...x, amount: e.target.value } : x)) })} />
-                  </label>
+                  </Field>
                   {tenForm.baseRents.length > 1
-                    ? <button className="icon-btn danger" title="Zeile entfernen" aria-label="Zeile entfernen" onClick={() => setTenForm({ ...tenForm, baseRents: tenForm.baseRents.filter((_, k) => k !== i) })}>🗑</button>
+                    ? <button className="icon-btn danger" title="Zeile entfernen" aria-label="Zeile entfernen" onClick={() => { tenErrors.clear(); setTenForm({ ...tenForm, baseRents: tenForm.baseRents.filter((_, k) => k !== i) }) }}>🗑</button>
                     : <span />}
                 </div>
               ))}
@@ -603,13 +604,12 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
               <div className="field-group-label">NK-<Term id="prepayment">Vorauszahlung</Term> je Monat — Staffel</div>
               {tenForm.prepayments.map((p, i) => (
                 <div className="staffel-row" key={i}>
-                  <MonthPicker label={scheduleLabel('prepayment')} emptyLabel={startsSchedule(tenForm.prepayments, i) ? 'ab Einzug' : undefined} value={p.from} start={tenForm.start} today={localToday()} onChange={(from) => setTenForm({ ...tenForm, prepayments: tenForm.prepayments.map((x, k) => (k === i ? { ...x, from } : x)) })} />
-                  <label className="field">
-                    Betrag €/Monat
+                  <MonthField label={scheduleLabel('prepayment')} placeholder={startsSchedule(tenForm.prepayments, i) ? 'ab Einzug' : undefined} value={p.from} start={tenForm.start} today={localToday()} {...tenErrors.field(scheduleField('prepayment', i, 'from'))} onChange={(from) => setTenForm({ ...tenForm, prepayments: tenForm.prepayments.map((x, k) => (k === i ? { ...x, from } : x)) })} />
+                  <Field label="Betrag €/Monat" {...tenErrors.field(scheduleField('prepayment', i, 'amount'))}>
                     <input value={p.amount} placeholder="z. B. 150,00" onChange={(e) => setTenForm({ ...tenForm, prepayments: tenForm.prepayments.map((x, k) => (k === i ? { ...x, amount: e.target.value } : x)) })} />
-                  </label>
+                  </Field>
                   {tenForm.prepayments.length > 1
-                    ? <button className="icon-btn danger" title="Zeile entfernen" aria-label="Zeile entfernen" onClick={() => setTenForm({ ...tenForm, prepayments: tenForm.prepayments.filter((_, k) => k !== i) })}>🗑</button>
+                    ? <button className="icon-btn danger" title="Zeile entfernen" aria-label="Zeile entfernen" onClick={() => { tenErrors.clear(); setTenForm({ ...tenForm, prepayments: tenForm.prepayments.filter((_, k) => k !== i) }) }}>🗑</button>
                     : <span />}
                 </div>
               ))}
@@ -635,12 +635,12 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                   </p>
                   {rows.map((p, i) => (
                     <div key={i} className="staffel-row">
-                      <MonthPicker label={scheduleLabel('heatingPrepayment')} emptyLabel={startsSchedule(rows, i) ? 'ab Einzug' : undefined} value={p.from} start={tenForm.start} today={localToday()} onChange={(from) => setTenForm({ ...tenForm, heatingPrepayments: rows.map((x, k) => (k === i ? { ...x, from } : x)) })} />
-                      <label className="field">Betrag €/Monat
+                      <MonthField label={scheduleLabel('heatingPrepayment')} placeholder={startsSchedule(rows, i) ? 'ab Einzug' : undefined} value={p.from} start={tenForm.start} today={localToday()} {...tenErrors.field(scheduleField('heatingPrepayment', i, 'from'))} onChange={(from) => setTenForm({ ...tenForm, heatingPrepayments: rows.map((x, k) => (k === i ? { ...x, from } : x)) })} />
+                      <Field label="Betrag €/Monat" {...tenErrors.field(scheduleField('heatingPrepayment', i, 'amount'))}>
                         <input value={p.amount} placeholder="z. B. 120,00" onChange={(e) => setTenForm({ ...tenForm, heatingPrepayments: rows.map((x, k) => (k === i ? { ...x, amount: e.target.value } : x)) })} />
-                      </label>
+                      </Field>
                       {rows.length > 1
-                        ? <button className="icon-btn danger" title="Zeile entfernen" aria-label="Zeile entfernen" onClick={() => setTenForm({ ...tenForm, heatingPrepayments: rows.filter((_, k) => k !== i) })}>🗑</button>
+                        ? <button className="icon-btn danger" title="Zeile entfernen" aria-label="Zeile entfernen" onClick={() => { tenErrors.clear(); setTenForm({ ...tenForm, heatingPrepayments: rows.filter((_, k) => k !== i) }) }}>🗑</button>
                         : <span />}
                     </div>
                   ))}
@@ -687,13 +687,12 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                   </div>
                   {(tenForm.flatRates.length > 0 ? tenForm.flatRates : [{ from: '', amount: '' }]).map((p, i, alle) => (
                     <div className="staffel-row" key={i}>
-                      <MonthPicker label={scheduleLabel('flatRate')} emptyLabel={startsSchedule(alle, i) ? 'ab Einzug' : undefined} value={p.from} start={tenForm.start} today={localToday()} onChange={(from) => setTenForm({ ...tenForm, flatRates: alle.map((x, k) => (k === i ? { ...x, from } : x)) })} />
-                      <label className="field">
-                        Betrag €/Monat
+                      <MonthField label={scheduleLabel('flatRate')} placeholder={startsSchedule(alle, i) ? 'ab Einzug' : undefined} value={p.from} start={tenForm.start} today={localToday()} {...tenErrors.field(scheduleField('flatRate', i, 'from'))} onChange={(from) => setTenForm({ ...tenForm, flatRates: alle.map((x, k) => (k === i ? { ...x, from } : x)) })} />
+                      <Field label="Betrag €/Monat" {...tenErrors.field(scheduleField('flatRate', i, 'amount'))}>
                         <input value={p.amount} placeholder="z. B. 90,00" onChange={(e) => setTenForm({ ...tenForm, flatRates: alle.map((x, k) => (k === i ? { ...x, amount: e.target.value } : x)) })} />
-                      </label>
+                      </Field>
                       {alle.length > 1
-                        ? <button className="icon-btn danger" title="Zeile entfernen" aria-label="Zeile entfernen" onClick={() => setTenForm({ ...tenForm, flatRates: alle.filter((_, k) => k !== i) })}>🗑</button>
+                        ? <button className="icon-btn danger" title="Zeile entfernen" aria-label="Zeile entfernen" onClick={() => { tenErrors.clear(); setTenForm({ ...tenForm, flatRates: alle.filter((_, k) => k !== i) }) }}>🗑</button>
                         : <span />}
                     </div>
                   ))}

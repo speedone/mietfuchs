@@ -5,7 +5,8 @@ import { earliestOpenChange, localToday, MONTH_OPTIONS } from '../periodForm'
 import { EffectsList } from './PeriodCard'
 import Term from './Term'
 import { useOpenForm } from '../property'
-import MonthPicker from './MonthPicker'
+import MonthField from './MonthField'
+import { parseMonthText } from '../monthText'
 import { hasOwnRhythm } from '../../../shared/heatingPeriod.ts'
 import {
   PERIOD_CHOICE_OPTIONS, SEPARATE_OPTIONS, heatingPeriodAnswersOf, heatingPeriodForm, heatingPeriodSummary, heatingRulesBody, initialHeatingPeriodAnswers,
@@ -68,7 +69,7 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
 
   async function loadPeriodPreview() {
     const body = heatingRulesBody(form, plant, objectRules)
-    if ('error' in body) return setError(body.error)
+    if ('error' in body) return errors.report([{ field: body.field, short: body.short, text: body.error }])
     try {
       const p = await api<HeatingPeriodChangePreview>(`/api/heating-plants/${plant.id}/period/preview`, { method: 'POST', body: JSON.stringify(body) })
       setPeriodPreview(p)
@@ -115,9 +116,10 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
   }
 
   async function loadSeparatePreview(switchOn = false) {
-    // Aus der Monatsauswahl kommt bei nur einer gewählten Hälfte ein unvollständiger Wert (#287).
-    if (month !== '' && !/^\d{4}-\d{2}$/.test(month)) {
-      setError(month.startsWith('.') ? 'Bitte wählen Sie zum Jahr auch den Monat.' : 'Bitte wählen Sie zum Monat auch das Jahr.')
+    // Aus dem Monatsfeld kommt ein Text, der kein Monat ist, unverändert (#287, #346 Schritt 5); er wird gemeldet.
+    const parsed = parseMonthText(month)
+    if (parsed.kind === 'invalid') {
+      errors.report([{ field: 'month', short: parsed.short, text: `Monat: ${parsed.text}` }])
       return
     }
     const body = separateOn && !switchOn ? { separate: false, ...(month ? { until: month } : {}) } : { separate: true, ...(month ? { month } : {}) }
@@ -226,8 +228,8 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
                   </select>
                 </label>
               ) : (
-                // Monat und Jahr als Auswahl: `type="month"` kennen Safari und Firefox nicht (#287).
-                <MonthPicker iso label="Neue Heizperiode beginnt ab (Monat/Jahr)" value={form.from} today={localToday()} onChange={(from) => setForm({ ...form, from })} />
+                // Das Monatsfeld: `type="month"` kennen Safari und Firefox nicht (#287, #346 Schritt 5).
+                <MonthField label="Neue Heizperiode beginnt ab Monat" value={form.from} today={localToday()} onChange={(from) => setForm({ ...form, from })} {...errors.field('from')} />
               )}
               <label className="field grow">
                 <span>Rechnen Sie die Heizkosten <Term id="separateHeatingSettlement">getrennt ab</Term>, mit eigener Heizkostenvorauszahlung?</span>
@@ -307,7 +309,7 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
         <div className="panel">
           <h3>{intro.title}</h3>
           <p className="muted">{intro.text}</p>
-          <MonthPicker iso label={intro.monthLabel} value={month} today={localToday()} onChange={setMonth} />
+          <MonthField label={intro.monthLabel} value={month} today={localToday()} onChange={setMonth} {...errors.field('month')} />
           <div className="row">
             <button className="btn secondary" onClick={() => void loadSeparatePreview()}>Vorschau</button>
             <button className="btn ghost" onClick={close}>Abbrechen</button>
