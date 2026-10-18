@@ -3,6 +3,7 @@
 // Abrechnung die Kürzung. Seit Heizung PR 11 auch bei eigener Abrechnung mit verbundenem Warmwasser: wie
 // Mietfuchs die Wärme bestimmt, bei der Volumenformel mit Volumen (Vorschlag aus den Warmwasserzählern)
 // und Temperatur, und ob die Anlage die Wärme allein erzeugt.
+import Card from '../components/Card'
 import { useState } from 'react'
 import { api, errorText, fmtDate } from '../api'
 import { useToast } from './feedback'
@@ -51,8 +52,7 @@ export default function HotWaterCard({ view, plant, onSaved }: { view: HeatingPe
 
   const fromMeters = view.hotWaterBasis.volumeFromMetersM3
   return (
-    <div className="card">
-      <h2><Term id="hotWaterShare">Warmwasser</Term></h2>
+    <Card title={<Term id="hotWaterShare">Warmwasser</Term>} level={3}>
       <ErrorSummary errors={errors} />
       <label className="field">
         {self ? 'Wie wird die Wärme für das Warmwasser bestimmt?' : 'Wie hat der Messdienst die Wärme für das Warmwasser ermittelt?'}
@@ -106,6 +106,6 @@ export default function HotWaterCard({ view, plant, onSaved }: { view: HeatingPe
         </>
       )}
       {!view.closed && <div className="row"><button className="btn" onClick={() => void save()}>Angabe speichern</button></div>}
-    </div>
+    </Card>
   )
 }

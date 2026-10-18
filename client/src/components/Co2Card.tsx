@@ -1,5 +1,6 @@
 // Die Karte „CO₂-Kosten“ einer Heizperiode (Heizung PR 6, Entwurf 11.3). Die Logik steht in
 // co2Form.ts; hier wird nur gezeigt und gespeichert.
+import Card from '../components/Card'
 import { useState, type ReactNode } from 'react'
 import { api, errorText } from '../api'
 import { useConfirm, useToast } from './feedback'
@@ -88,8 +89,7 @@ export default function Co2Card({ view, tenancies, unitsCount, hasSelfUsed = fal
   )
 
   return (
-    <div className="card">
-      <h2><Term id="co2Split">CO₂-Kosten</Term></h2>
+    <Card title={<Term id="co2Split">CO₂-Kosten</Term>} level={3}>
       <ErrorSummary errors={errors} />
       {view.closed && <p className="muted">Diese Heizperiode ist abgeschlossen; die Angaben lassen sich nicht mehr ändern.</p>}
       <label className="field">
@@ -190,6 +190,6 @@ export default function Co2Card({ view, tenancies, unitsCount, hasSelfUsed = fal
           {view.co2 && <button className="btn ghost danger-ghost ml-auto" onClick={() => void remove()}>CO₂-Angaben entfernen …</button>}
         </div>
       )}
-    </div>
+    </Card>
   )
 }

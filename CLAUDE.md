@@ -3391,6 +3391,19 @@ Tippfläche von `--target` über `::after`, und printCss.test.ts verlangt den du
   Pflichtangaben je Feld (`fuelRequiredProblems` in fuelForm.ts), dann wie bisher `fuelBody`/`stockFuelBody`; eine mit der
   KI gelesene Rechnung meldet sich schon beim Öffnen bei `useOpenForm` an, ein von Hand geöffnetes Fenster erst mit der
   ersten Eingabe.
+- **Eine Karte, ein Speichern; der Kopf ist der Baustein `Card`** (#346 Schritt 7, #341 N8, M18;
+  [client/src/components/Card.tsx](client/src/components/Card.tsx)). `Card` setzt `section.card` mit `CardHeader`
+  (Titel samt Begriff, höchstens eine Aktion rechts); Karten unter einem Abschnittstitel wie „Heizanlage, Heizperiode
+  2025“ sind `level={3}` und sehen trotzdem aus wie jede Karte, ohne die Heizperiode im Titel zu wiederholen. Trägt eine
+  Karte ein Formular, ist es ein Entwurf (`useDraft`) mit **einem** `<DraftActions layout="card">` am Fuß; die Prüfung
+  meldet über die Sammelmeldung oben in der Karte und gibt `keepDraft` zurück (Co2FactsCard, HalfSplitCard, der Anteil
+  in SelfHeatingCards). Was je Zeile einer Liste gespeichert wird, ist ein Entwurf am Feld in einer eigenen kleinen
+  Komponente (`NoticeRow`, `MonthRow`, `TempField`, `GapReason`, `SlotGroup` in LawOverridesCard): `DraftActions` ohne
+  `layout`, eine Meldung der Prüfung als geworfener Fehler, der am Feld steht. Wächter S19 in uiRules.test.ts: je Karte
+  (`className="card…"` oder `<Card>`, verschachtelte Karten und Seitenfenster für sich) höchstens ein Speichern (ein
+  Knopf „… speichern“, `type="submit"`, `layout="card"`); ein Knopf in einer Schleife zählt mehrfach. Und eine Karte,
+  die ein Seitenfenster öffnet, speichert ihr Formular dort (Ausnahme mit Grund: PropertyCard). **Grenze**: Der Wächter
+  liest den Quelltext; ein Speichern, das eine Unterkomponente in derselben Karte zeichnet, sieht er nicht.
 - **Ein Monat ist ein Monatsfeld** (`MonthField`, [client/src/components/MonthField.tsx](client/src/components/MonthField.tsx),
   #287, #346 Schritt 5): ein Textfeld in `Field`, das „3.2025“, „03/25“, „2025-03“, „März 2025“ und „Mrz 27“ liest
   (`parseMonthText` in [client/src/monthText.ts](client/src/monthText.ts), ohne DOM: ein Tag nur als Erster,

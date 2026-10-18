@@ -1,4 +1,5 @@
 import type { AgreedOtherwise, ExemptionScope, HeatingExemption, HeatingPeriodView, HeatingPeriodData, HeatingPlant } from '../types'
+import Card from '../components/Card'
 import { api } from '../api'
 import { useConfirm, useToast } from './feedback'
 import Term from './Term'
@@ -68,8 +69,7 @@ export default function HeatingRulesCard({ plant, view, onChanged }: { plant: He
   // Feste Anteile kann die eigene Heizkostenabrechnung nicht abbilden (Durchsicht von #243, G-W3).
   const agreedOptions = AGREED_OPTIONS.filter((o) => o.value !== 'fixedPercent' || plant.method !== 'self' || saved.agreedOtherwise === 'fixedPercent')
   return (
-    <div className="card no-print">
-      <h3><Term id="heatingCostOrdinance">Ausnahmen und Vereinbarungen</Term> · {view.label}</h3>
+    <Card title={<Term id="heatingCostOrdinance">Ausnahmen und Vereinbarungen</Term>} level={3} className="no-print">
       <p className="muted">Jede Antwort gilt ab dieser Heizperiode, bis Sie bei einer späteren etwas anderes angeben. Frühere Heizperioden bleiben, wie sie sind.</p>
       <label className="field grow">
         <span>Ausnahme nach § 11 HeizkostenV</span>
@@ -134,6 +134,6 @@ export default function HeatingRulesCard({ plant, view, onChanged }: { plant: He
         Information erst, wenn sie den Mieter erreicht.{fromMonthly ? ` ${fromMonthly}` : ''}
       </p>
       <DraftActions draft={draft} onSave={save} layout="card" what={`Ausnahmen ${view.label}`} />
-    </div>
+    </Card>
   )
 }

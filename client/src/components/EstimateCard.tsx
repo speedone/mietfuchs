@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import Card from '../components/Card'
 import type { EstimateCause, EstimateMethod, HeatingPeriodView, HeatingPlant, SelfEstimateOption, SelfEstimateView, SelfHeatingStatement } from '../types'
 import { api, errorText, fmtDate } from '../api'
 import { useToast } from './feedback'
@@ -91,8 +92,7 @@ export default function EstimateCard({ plant, view, self, onChanged }: {
     return u === 'Einheiten' ? 'bewerteten Einheiten (Ablesewert × Bewertungsfaktor)' : u
   }
   return (
-    <div className="card">
-      <h3><Term id="heatingEstimate">Schätzung (§ 9a)</Term></h3>
+    <Card title={<Term id="heatingEstimate">Schätzung (§ 9a)</Term>} level={3}>
       <ErrorSummary errors={errors} />
       {/* Durchsicht von #242: R-I1 (Wortlaut des § 9a Abs. 1), R-M11 (eine Pflicht), G-M6 (die ganze Heizperiode). */}
       <p className="muted no-print">
@@ -190,6 +190,6 @@ export default function EstimateCard({ plant, view, self, onChanged }: {
           </div>
         </div>
       )}
-    </div>
+    </Card>
   )
 }

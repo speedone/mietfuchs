@@ -24,6 +24,8 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+const SAVE = 'Speichern (Heizung nach § 43 GModG)'
+const NOTICE_SAVE = 'Speichern (Mitteilung an Mieter A)'
 const PFLICHT = 'War die ausgefallene Heizung eine Gas-, Öl- oder Flüssiggasheizung, die nach dem 29.07.2026 in das bestehende Gebäude eingebaut wurde?'
 const ANTRAG = 'Bauantrag, Antrag auf Zustimmung oder Bauanzeige vor dem 13.05.2026?'
 
@@ -41,20 +43,24 @@ test('Die Auswahlfelder zeigen die gespeicherten Werte', () => {
   expect(screen.getByText(/von denen Sie eine selbst bewohnen und die beide an dieser Heizung hängen/)).toBeTruthy()
 })
 
-test('Speichern schickt die Merkmale an die Anlage', async () => {
+test('Speichern schickt die Merkmale an die Anlage; ein Speichern für die Karte, erst nach einer Änderung (#346 Schritt 7)', async () => {
   render(<HalfSplitCard plant={{ ...plant, emergencyInstall: null, emergencyPriorDuty: null, newBuildingFirstUse: null, buildingApplicationBefore20260513: null }} tenancies={tenancies} onSaved={() => {}} />)
-  fireEvent.click(screen.getByText('Angaben speichern'))
-  await waitFor(() => expect(sent.at(-1)).toEqual({
+  expect(screen.queryByRole('button', { name: SAVE })).toBeNull()
+  fireEvent.change(screen.getByLabelText('Tag des Einbaus'), { target: { value: '2028-03-02' } })
+  expect(screen.getAllByRole('button', { name: /^Speichern/ })).toHaveLength(1)
+  fireEvent.click(screen.getByRole('button', { name: SAVE }))
+  await waitFor(() => expect(sent).toEqual([{
     url: '/api/heating-plants/hp', method: 'PUT',
-    body: { gmodg43InstalledOn: '2028-03-01', emergencyInstall: false, emergencyPriorDuty: null, newBuildingFirstUse: null, buildingApplicationBefore20260513: null },
-  }))
+    body: { gmodg43InstalledOn: '2028-03-02', emergencyInstall: false, emergencyPriorDuty: null, newBuildingFirstUse: null, buildingApplicationBefore20260513: null },
+  }]))
 })
 
 test('Die Mitteilung nach § 5d Abs. 4 geht an das Mietverhältnis (Abweichung 3)', async () => {
   render(<HalfSplitCard plant={plant} tenancies={tenancies} onSaved={() => {}} />)
   fireEvent.change(screen.getByLabelText('Mitteilung an Mieter A nach § 5d Abs. 4 in Textform am'), { target: { value: '2028-03-15' } })
-  fireEvent.click(screen.getByText('Mitteilung speichern'))
-  await waitFor(() => expect(sent.at(-1)).toEqual({ url: '/api/tenancies/ta', method: 'PUT', body: { halfSplitNoticeOn: '2028-03-15' } }))
+  // Ein Entwurf an der Zeile (#346 Schritt 7): „Speichern“ steht hinter dem Feld, nicht am Fuß der Karte.
+  fireEvent.click(screen.getByRole('button', { name: NOTICE_SAVE }))
+  await waitFor(() => expect(sent).toEqual([{ url: '/api/tenancies/ta', method: 'PUT', body: { halfSplitNoticeOn: '2028-03-15' } }]))
 })
 
 // Durchsicht K1, K3: Stichtage, Netzentgelte nur bei Gas und die Grenze beim Biobrennstoff aus dem Register; die
@@ -75,12 +81,12 @@ test('7a: Mitteilung und Angaben melden die Karte an, ihr Speichern nimmt die Ma
   expect(hasOpenForm()).toBe(false)
   fireEvent.change(screen.getByLabelText('Mitteilung an Mieter A nach § 5d Abs. 4 in Textform am'), { target: { value: '2028-03-15' } })
   expect(hasOpenForm()).toBe(true)
-  fireEvent.click(screen.getByText('Mitteilung speichern'))
+  fireEvent.click(screen.getByRole('button', { name: NOTICE_SAVE }))
   await waitFor(() => expect(noticeSaved).toHaveBeenCalled())
   expect(hasOpenForm()).toBe(false)
   fireEvent.change(screen.getByLabelText('Tag des Einbaus'), { target: { value: '2027-01-02' } })
   expect(hasOpenForm()).toBe(true)
-  fireEvent.click(screen.getByText('Angaben speichern'))
+  fireEvent.click(screen.getByRole('button', { name: SAVE }))
   await waitFor(() => expect(saved).toHaveBeenCalled())
   expect(hasOpenForm()).toBe(false)
 })

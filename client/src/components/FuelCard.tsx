@@ -1,6 +1,7 @@
 // Die Karte „Lieferungen“ einer Heizperiode (Heizung PR 7, Entwurf 3.2, 5.4, 11.4): die Rechnungen des
 // Versorgers, die in dieser Heizperiode enden, und bei freien Schlüsseln die Verknüpfung der Positionen.
 // Mietfuchs teilt jede Rechnung auf die Heizperioden auf; die Abrechnung zeigt, wie.
+import Card from '../components/Card'
 import { useState } from 'react'
 import { api, errorText, fmtEuro } from '../api'
 import { useConfirm, useToast } from './feedback'
@@ -272,8 +273,7 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
   )
 
   return (
-    <div className="card">
-      <h2><Term id="accrualPrinciple">Lieferungen</Term></h2>
+    <Card title={<Term id="accrualPrinciple">Lieferungen</Term>} level={3}>
       <ErrorSummary errors={errors} />
       {stock ? (
         <p className="muted">
@@ -466,7 +466,7 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
           ) : <span className="muted">{progressText(reading === 'start' ? null : reading)}</span>}
         </div>
       )}
-    </div>
+    </Card>
   )
 }
 

@@ -4,6 +4,7 @@
 // „Gradtagzahlen Ihres Orts“. Seit Heizung PR 17 je Heizperiode mit Rechnungen der Ausdruck „CO₂-Angaben
 // für den Messdienst“ (#210), der die Seite ersetzt, bis man zurückgeht. Sie steht erst ab einer
 // Heizanlage in der Navigation (`navFor`). Seit #266 je Anlage die Karte „Betriebsstrom der Heizung“.
+import Card from '../components/Card'
 import { useCallback, useEffect, useState } from 'react'
 import type { Co2Sheet, CostItem, DegreeDayValue, FuelDelivery, HeatingPeriodView, HeatingPlant, HeatingStatement, Tenancy, Unit } from '../types'
 import { api, errorText } from '../api'
@@ -163,8 +164,7 @@ export default function Heizkosten({ units, tenancies, onTenanciesChanged }: { u
                 {v.from >= first && asksCo2Facts(plant) && <Co2FactsCard plant={plant} view={v} servedAreaM2={servedArea(plant)} onSaved={() => void load()} />}
                 {/* Heizung PR 17 (#210): die CO₂-Angaben der Rechnungen zum Weitergeben, sobald es Rechnungen gibt. */}
                 {asksCo2Facts(plant) && hasSheet(data?.deliveries[plant.id] ?? [], v) && (
-                  <div className="card no-print">
-                    <h2>CO₂-Angaben für den Messdienst</h2>
+                  <Card title="CO₂-Angaben für den Messdienst" level={3} className="no-print">
                     <p className="muted">
                       Ein Blatt mit den CO₂-Angaben Ihrer Rechnungen dieser Heizperiode (kg CO₂, CO₂-Kosten, Energiegehalt, Menge) und den Angaben zum
                       Gebäude, zum Ausdrucken oder Weitergeben an den Messdienst, die Gemeinschaft oder Ihr Steuerbüro.
@@ -172,7 +172,7 @@ export default function Heizkosten({ units, tenancies, onTenanciesChanged }: { u
                     <div className="row">
                       <button className="btn secondary" type="button" onClick={() => void openSheet(plant.id, String(v.period))}>Blatt „CO₂-Angaben für den Messdienst“ öffnen</button>
                     </div>
-                  </div>
+                  </Card>
                 )}
                 {/* Heizung PR 12: die Werte des Ablesedienstes, wenn diese Heizperiode so erfasst wird. */}
                 {v.capture === 'serviceValues' && (
