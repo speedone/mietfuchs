@@ -62,7 +62,7 @@ const question = () => screen.queryByText('Ungespeicherte Änderungen verwerfen?
 async function startPayment(go: (name: RegExp) => void) {
   render(<App />)
   go(/Mietkonto/)
-  const add = await screen.findByRole('button', { name: /Zahlung erfassen/ }, { timeout: 5000 })
+  const add = await screen.findByRole('button', { name: /Zahlung anlegen/ }, { timeout: 5000 })
   await waitFor(() => expect((add as HTMLButtonElement).disabled).toBe(false))
   fireEvent.click(add)
   fireEvent.change(screen.getByLabelText(/^Betrag/), { target: { value: '11,11' } })

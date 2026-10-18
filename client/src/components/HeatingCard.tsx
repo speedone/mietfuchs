@@ -314,12 +314,12 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
               {canSwap(p) && <button className="btn secondary" onClick={() => openSwap(p)}>Heizung erneuert (Kessel getauscht)</button>}
               {p.method === 'manual' && p.supply === 'central' && p.endsOn === null && <button className="btn secondary" onClick={() => { setError(''); setSelfFor(p) }}>Eigene Heizkostenabrechnung einrichten</button>}
             </>}
-            dangerAction={<button className="btn ghost danger-ghost" onClick={() => remove(p)}>Entfernen</button>}
+            dangerAction={<button className="btn ghost danger-ghost" onClick={() => remove(p)}>Entfernen …</button>}
           />
         </div>
       ))}
       {plants.length > 0 && (
-        <button className="btn secondary" onClick={openNew}>+ weitere Heizanlage</button>
+        <button className="btn secondary" onClick={openNew}>+ Heizanlage anlegen</button>
       )}
       {form && (
         <Drawer
@@ -331,7 +331,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
           onSubmit={save}
           value={form}
           errors={errors}
-          actions={<button className="btn" onClick={save}>{editingId ? 'Übernehmen' : 'Anlegen'}</button>}
+          actions={<button className="btn" onClick={save}>{editingId ? 'Speichern' : 'Anlegen'}</button>}
         >
           {plants.length > (editingId ? 1 : 0) && (
             <label className="field grow">
@@ -564,7 +564,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
           // Nur, was der Vermieter eingibt; die Zähler lädt das Fenster nach dem Öffnen nach (Durchsicht S4)
           value={swap.form}
           errors={errors}
-          actions={<button className="btn" onClick={saveSwap}>Tausch speichern</button>}
+          actions={<button className="btn" onClick={saveSwap}>Speichern</button>}
         >
           <p className="muted">
             Die bisherige Heizung endet am Tag vor dem Tausch; eine neue Heizanlage beginnt mit denselben Wohnungen. Lieferungen, Positionen und

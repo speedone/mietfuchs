@@ -148,7 +148,7 @@ export default function StockCard({ view, onSaved, co2Fields = true, energy }: {
       {!view.closed && (
         <div className="row">
           <button className="btn" disabled={busy} onClick={() => void save()}>Vorrat speichern</button>
-          {!locked && (stock.row.stockUnit !== null || stock.row.closingQuantity !== null) && <button className="btn secondary" onClick={() => void remove()}>Vorrat entfernen</button>}
+          {!locked && (stock.row.stockUnit !== null || stock.row.closingQuantity !== null) && <button className="btn ghost danger-ghost ml-auto" onClick={() => void remove()}>Vorrat entfernen …</button>}
         </div>
       )}
     </div>

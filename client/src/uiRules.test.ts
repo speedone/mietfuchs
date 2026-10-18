@@ -1,4 +1,4 @@
-// Wächter zur Sichtprüfung der Oberfläche (S1–S12, S17 und S20 zu Tailwind): Die Gestaltung hängt an wenigen zentralen Regeln
+// Wächter zur Sichtprüfung der Oberfläche (S1–S12, S16 zu den Verben, S17 und S20 zu Tailwind): Die Gestaltung hängt an wenigen zentralen Regeln
 // in index.css. Jede der Ursachen, die die Sichtprüfung gefunden hat, kam dadurch zustande, dass eine
 // Seite an diesen Regeln vorbei etwas Eigenes tat. Geprüft wird der Quelltext, denn jsdom rechnet
 // kein Layout und keine Farben.
@@ -6,6 +6,7 @@ import { Scanner } from '@tailwindcss/oxide'
 import { compile } from 'tailwindcss'
 import { describe, expect, test } from 'vitest'
 import { NAV } from './nav'
+import { createButtonLabel } from './propertyView'
 
 const sources = import.meta.glob<string>(['./**/*.tsx', '!./**/*.test.tsx', '!./testing/**'], {
   query: '?raw',
@@ -520,6 +521,102 @@ test('S12b: jedes Seitenfenster nennt seinen Stand und schließt nur über den B
   // Die Seitenfenster heute: Zähler, Zahlung, Kosten, Mietverhältnis, Wohnung, Objekt, Heizung, Kesseltausch, eigene Heizkostenabrechnung
   expect(tags.length).toBeGreaterThanOrEqual(9)
   expect(tags.flatMap(({ file, tag }) => drawerProblems(tag).map((p) => `${file}: ${p}`))).toEqual([])
+})
+
+// S16 (#346 Schritt 7, UI-Durchsicht N3, M19): feste Verben. Im Seitenfenster heißt der Primärknopf „Anlegen“ (neu)
+// oder „Speichern“ (bearbeiten); „Abbrechen“ kommt aus dem Baustein und ist nie primär. Kein „OK“, „Übernehmen“,
+// „Hinzufügen“ oder „Umstellen“ als Primärknopf, nirgends „… hinzufügen“; ein Knopf mit „+“ öffnet ein Fenster
+// („+ … anlegen“) oder fügt eine Zeile an („+ weitere …“, „+ … ab Monat …“). Ein Gefahrknopf (rot beim Überfahren)
+// trägt „…“, wenn eine Rückfrage folgt, und steht mit Abstand (`ml-auto`) hinter einem „Speichern“ derselben Zeile.
+type ButtonUse = { file: string; at: number; className: string; texts: string[]; tag: string }
+/** Die Knöpfe einer Quelle mit Klasse und sichtbarem Text (JSX-Text und Zeichenketten in `{…}`, ohne Kommentare). */
+const buttonsIn = (file: string, raw: string): ButtonUse[] => {
+  const src = raw.replace(/\{\/\*[\s\S]*?\*\/\}/g, (m) => ' '.repeat(m.length))
+  return [...src.matchAll(/<button\b/g)].flatMap((m) => {
+    const at = m.index ?? 0
+    const open = openingTags(src.slice(at), 'button')[0]
+    const end = src.indexOf('</button>', at)
+    if (!open || end < 0) return []
+    const inner = src.slice(at + open.tag.length, end)
+    const cls = /className=(?:"([^"]*)"|\{`([^`]*)`\}|\{'([^']*)'\}|\{([^}]*)\})/.exec(open.tag)
+    const className = cls ? (cls[1] ?? cls[2] ?? cls[3] ?? cls[4] ?? '') : ''
+    const jsxText = inner.replace(/\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g, ' ').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+    const literals = [...inner.matchAll(/\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}/g)].flatMap((e) => [...(e[1] ?? '').matchAll(/'([^']*)'|`([^`$]*)`/g)].map((l) => (l[1] ?? l[2] ?? '').trim()))
+    return [{ file, at, className, texts: [jsxText, ...literals].filter((t) => t !== '' && t !== '{\' \'}'), tag: open.tag }]
+  })
+}
+const isPrimary = (b: ButtonUse) => /(^|\s)btn(\s|$)/.test(b.className) && !/secondary|ghost|danger|\?|\$\{/.test(b.className)
+const isDangerGhost = (b: ButtonUse) => /danger-ghost/.test(b.className)
+const DRAWER_VERBS = /^(?:Anlegen|Speichern)$/
+// Primärknöpfe im Seitenfenster, die ihren Text aus einem Ausdruck nehmen, mit Grund.
+const DRAWER_LABEL_EXCEPTIONS = new Map<string, string>([
+  ['./components/PropertyCard.tsx', 'createButtonLabel: „Anlegen und zu … wechseln“ nennt die Folge, den Wechsel des Objekts; geprüft unten'],
+])
+// Gefahrknöpfe ohne Rückfrage (deshalb ohne „…“), mit Grund.
+const DANGER_WITHOUT_QUESTION = new Map<string, string>([
+  ['./components/LawOverridesCard.tsx|Eintrag entfernen', 'ein selbst eingetragener Wert, sofort neu einzutragen'],
+  ['./components/EstimateCard.tsx|Entfernen', 'Schätzung nach § 9a, mit „Schätzen“ sofort neu einzutragen'],
+  ['./components/AiSettings.tsx|Schlüssel löschen', 'der Schlüssel des Dienstes, beim Anbieter jederzeit neu zu holen'],
+])
+const BANNED_PRIMARY = /^(?:OK|Ok|Übernehmen|Hinzufügen|Umstellen|Abbrechen)$/
+const verbProblems = (uses: ButtonUse[], src: string): string[] => {
+  const problems: string[] = []
+  for (const b of uses) {
+    const where = `${b.file}: ${b.texts.join(' | ').slice(0, 60)}`
+    if (isPrimary(b) && b.texts.some((t) => BANNED_PRIMARY.test(t))) problems.push(`${where}: verbotenes Verb als Primärknopf`)
+    if (b.texts.some((t) => /hinzufügen/i.test(t))) problems.push(`${where}: „hinzufügen“ statt „anlegen“ bzw. „+ weitere …“`)
+    for (const t of b.texts.filter((x) => x.startsWith('+ '))) {
+      if (!/ anlegen$|…$|^\+ weiter(?:e|es|er) /.test(t)) problems.push(`${where}: „+ …“ öffnet ein Fenster („+ … anlegen“) oder fügt eine Zeile an („+ weitere …“)`)
+    }
+    if (isDangerGhost(b)) {
+      const label = b.texts[0] ?? ''
+      if (!label.endsWith(' …') && !DANGER_WITHOUT_QUESTION.has(`${b.file}|${label}`)) problems.push(`${where}: Gefahrknopf ohne „…“, obwohl er nicht ohne Rückfrage gelistet ist`)
+      // Abstand: Steht davor in derselben Zeile ein „Speichern“, schiebt `ml-auto` den Gefahrknopf ab.
+      const before = src.slice(Math.max(0, b.at - 400), b.at)
+      const lastRow = before.lastIndexOf('className="row')
+      if (/Speichern/.test(before.slice(lastRow < 0 ? 0 : lastRow)) && !/\bml-auto\b/.test(b.className)) problems.push(`${where}: Gefahrknopf ohne Abstand zu „Speichern“`)
+    }
+  }
+  for (const { tag } of openingTags(src, 'Drawer')) {
+    const actions = propExpr(tag, 'actions') ?? ''
+    for (const b of buttonsIn('actions', actions).filter(isPrimary)) {
+      if (b.texts.length === 0) problems.push(`Drawer ohne Text am Primärknopf: ${b.tag.slice(0, 60)}`)
+      for (const t of b.texts.filter((x) => !/^(?:Speichert|Wird angelegt) …$/.test(x))) {
+        if (!DRAWER_VERBS.test(t)) problems.push(`Primärknopf im Seitenfenster „${t}“ statt „Anlegen“/„Speichern“`)
+      }
+    }
+  }
+  return problems
+}
+test('S16: feste Verben, „Abbrechen“ nie primär, Gefahr mit „…“ und Abstand', () => {
+  // Probe des Prüfers
+  const probe = (s: string) => verbProblems(buttonsIn('probe', s), s)
+  expect(probe('<Drawer open value={f} onClose={c} actions={<button className="btn" onClick={save}>{f.id ? \'Speichern\' : \'Anlegen\'}</button>}>')).toEqual([])
+  expect(probe('<Drawer open value={f} onClose={c} actions={<button className="btn" onClick={save}>{f.id ? \'Übernehmen\' : \'Hinzufügen\'}</button>}>')).toHaveLength(4)
+  expect(probe('<Drawer open value={f} onClose={c} actions={<button className="btn" onClick={save}>Tausch speichern</button>}>')).toHaveLength(1)
+  expect(probe('<button className="btn" onClick={x}>OK</button><button className="btn small" onClick={y}>Abbrechen</button>')).toHaveLength(2)
+  expect(probe('<button className="btn secondary" onClick={x}>+ Zähler hinzufügen</button>')).toHaveLength(2)
+  expect(probe('<button className="btn secondary" onClick={x}>+ Gerät</button><button className="btn secondary">+ weitere Zeile</button><button className="btn">+ Zähler anlegen</button><button className="btn small">+ Erhöhung ab Monat …</button>')).toHaveLength(1)
+  expect(probe('<div className="row"><button className="btn">Speichern</button><button className="btn ghost danger-ghost" onClick={r}>Objekt löschen</button></div>')).toHaveLength(2)
+  expect(probe('<div className="row"><button className="btn">Speichern</button><button className="btn ghost danger-ghost ml-auto" onClick={r}>Objekt löschen …</button></div>')).toEqual([])
+  expect(probe('<button className="btn secondary">Übernehmen</button>')).toEqual([])
+  // Der eine Primärknopf mit Ausdruck: Er beginnt immer mit „Anlegen“.
+  expect(createButtonLabel('')).toMatch(/^Anlegen /)
+  expect(createButtonLabel('Haus B')).toMatch(/^Anlegen /)
+  for (const file of DRAWER_LABEL_EXCEPTIONS.keys()) expect(sources[file], `${file} fehlt`).toBeTruthy()
+  for (const key of DANGER_WITHOUT_QUESTION.keys()) {
+    const [file, label] = key.split('|')
+    expect(buttonsIn(file ?? '', sources[file ?? ''] ?? '').some((b) => isDangerGhost(b) && b.texts[0] === label), `${key}: Ausnahme ohne Knopf; streichen`).toBe(true)
+  }
+  const all = files.filter((f) => f !== './components/feedback.tsx').flatMap((file) => {
+    const src = sources[file] ?? ''
+    const problems = verbProblems(buttonsIn(file, src), src)
+    return DRAWER_LABEL_EXCEPTIONS.has(file) ? problems.filter((p) => !p.startsWith('Drawer ohne Text')) : problems.map((p) => (p.startsWith('Primärknopf') || p.startsWith('Drawer') ? `${file}: ${p}` : p))
+  })
+  expect(all).toEqual([])
+  // Der Prüfer sieht die Seitenfenster und die Gefahrknöpfe von heute.
+  expect(files.flatMap((f) => openingTags(sources[f] ?? '', 'Drawer')).length).toBeGreaterThanOrEqual(9)
+  expect(files.flatMap((f) => buttonsIn(f, sources[f] ?? '')).filter(isDangerGhost).length).toBeGreaterThanOrEqual(8)
 })
 
 // S13 (Spezifikation Abschnitt 9, #346 Schritt 1): Kein Dialogbaustein fängt Enter ab. Enter wirkt auf den

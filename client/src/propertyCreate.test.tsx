@@ -146,11 +146,11 @@ test('hatte das vorige Objekt keine Wohnungen, verspricht der Hinweis keine Date
 
 test('„Wohnungen anlegen“ führt in die Stammdaten und fehlt dort; „Schließen“ gilt auch nach dem Neuladen', async () => {
   await createViaDialog('Gartenweg 3')
-  // In den Stammdaten steht „+ Wohnung hinzufügen“ ohnehin vor Augen.
+  // In den Stammdaten steht „+ Wohnung anlegen“ ohnehin vor Augen.
   expect(within(await notice()).queryByRole('button', { name: /Wohnungen anlegen/ })).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: /Cockpit/ }))
   fireEvent.click(within(await notice()).getByRole('button', { name: /Wohnungen anlegen/ }))
-  expect(await screen.findByRole('button', { name: /Wohnung hinzufügen/ })).toBeTruthy()
+  expect(await screen.findByRole('button', { name: /Wohnung anlegen/ })).toBeTruthy()
   fireEvent.click(within(await notice()).getByRole('button', { name: /Hinweis schließen/ }))
   await waitFor(() => expect(screen.queryByRole('region', { name: /Neues Objekt/ })).toBeNull())
   // Neu geladen bleibt er geschlossen.

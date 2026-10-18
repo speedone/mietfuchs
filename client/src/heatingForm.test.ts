@@ -402,7 +402,7 @@ describe('Wer hat den Liefervertrag für den Brennstoff? (Heizung PR 19)', () =>
     for (const energy of ['gas', 'oil', 'lpg', 'coal'] as const) {
       expect(editFuelContractNote(ausgefuellt({ energy }), 'hp1')).toBe(
         'Hat ein Mieter den Liefervertrag für den Brennstoff dieser Heizung, legen Sie dafür keine Heizanlage an: Klicken Sie unter der Anlage auf ' +
-          '„Entfernen“ (die Heizpositionen bleiben, nur ohne Anlage), dann auf „Heizung einrichten“, und wählen Sie bei „Wer hat den Liefervertrag für den Brennstoff?“ ' +
+          '„Entfernen …“ (die Heizpositionen bleiben, nur ohne Anlage), dann auf „Heizung einrichten“, und wählen Sie bei „Wer hat den Liefervertrag für den Brennstoff?“ ' +
           '„Der Mieter, der alle angeschlossenen Wohnungen gemietet hat“.',
       )
     }

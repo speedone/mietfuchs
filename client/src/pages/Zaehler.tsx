@@ -91,7 +91,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
     const name = meterForm.name.trim()
     setMeterForm(null)
     await load()
-    toast(editing ? `„${name}“ übernommen.` : `Zähler „${name}“ angelegt.`)
+    toast(editing ? `Zähler „${name}“ gespeichert.` : `Zähler „${name}“ angelegt.`)
   }
 
   async function deleteMeter(m: Meter) {
@@ -213,7 +213,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
 
         <div className="row">
           <button className="btn secondary" onClick={() => { meterErrors.clear(); setMarkedYear(''); setMeterForm(emptyMeterForm()) }}>
-            + Zähler hinzufügen
+            + Zähler anlegen
           </button>
         </div>
       </div>
@@ -229,7 +229,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
           onSubmit={saveMeter}
           value={meterForm}
           errors={meterErrors}
-          actions={<button className="btn" onClick={saveMeter}>{meterForm.id ? 'Übernehmen' : 'Anlegen'}</button>}
+          actions={<button className="btn" onClick={saveMeter}>{meterForm.id ? 'Speichern' : 'Anlegen'}</button>}
         >
           <div className="row">
             <Field label="Name" required className="grow" {...meterErrors.field('name')}>

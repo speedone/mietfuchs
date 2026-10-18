@@ -450,7 +450,8 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                   />
                 </label>
                 <DraftActions draft={sentAt} onSave={saveSentAt} what="Versanddatum" />
-                <button className="btn ghost" onClick={() => void reopenSettlement()}>Wieder öffnen</button>
+                {/* Mit Abstand zu „Speichern“ des Versanddatums, rot beim Überfahren und „…“, weil eine Rückfrage folgt (#346 Schritt 7, M19). */}
+                <button className="btn ghost danger-ghost ml-auto" onClick={() => void reopenSettlement()}>Wieder öffnen …</button>
               </>
             ) : (
               <>
@@ -695,7 +696,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                           {' '}
                           {ppEdit?.tenancyId === st.tenancyId ? (
                             <>
-                              {/* Esc verwirft, Enter übernimmt (#142), wie im Drawer. */}
+                              {/* Esc verwirft, Enter speichert (#142); „Speichern“ und „Verwerfen“ wie jeder Entwurf am Feld (#346 Schritt 7, N3). */}
                               <input
                                 aria-label="Gezahlte Vorauszahlung €"
                                 value={ppEdit.value}
@@ -709,8 +710,8 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                                 style={{ width: 100, textAlign: 'right', padding: '3px 6px' }}
                                 autoFocus
                               />{' '}
-                              <button className="btn small" onClick={() => submitPpEdit(st.tenancyId)}>OK</button>{' '}
-                              <button className="btn small ghost" onClick={() => setPpEdit(null)}>Abbrechen</button>
+                              <button className="btn small" onClick={() => submitPpEdit(st.tenancyId)}>Speichern</button>{' '}
+                              <button className="btn small secondary" onClick={() => setPpEdit(null)}>Verwerfen</button>
                               {ppEdit.error && <FieldMessage id={ppErrorId} error={ppEdit.error} announce className="inline-message" />}
                             </>
                           ) : (

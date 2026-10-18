@@ -130,7 +130,7 @@ export const asksFuelContract = (form: Pick<HeatingForm, 'energy' | 'contracting
 export const editFuelContractNote = (form: Pick<HeatingForm, 'energy' | 'contracting'>, editingId: string | null): string | null =>
   editingId !== null && form.energy !== '' && form.energy !== 'perUnit' && SELF_SUPPLY_FUELS.includes(billingEnergy({ energy: form.energy, contracting: form.contracting }))
     ? 'Hat ein Mieter den Liefervertrag für den Brennstoff dieser Heizung, legen Sie dafür keine Heizanlage an: Klicken Sie unter der Anlage auf ' +
-      '„Entfernen“ (die Heizpositionen bleiben, nur ohne Anlage), dann auf „Heizung einrichten“, und wählen Sie bei „Wer hat den Liefervertrag für den Brennstoff?“ ' +
+      '„Entfernen …“ (die Heizpositionen bleiben, nur ohne Anlage), dann auf „Heizung einrichten“, und wählen Sie bei „Wer hat den Liefervertrag für den Brennstoff?“ ' +
       '„Der Mieter, der alle angeschlossenen Wohnungen gemietet hat“.'
     : null
 
@@ -573,11 +573,11 @@ export const connectionNote = (u: Pick<Unit, 'noConnection'>): string | null =>
 // Befund M6 aus #341: Die Zeile „Abrechnung“ beschreibt bei `manual` den gespeicherten Stand, wie gerechnet wird,
 // statt die Antwort „Niemand“ zu wiederholen. „Niemand“ bleibt die Antwort auf die Frage, wer die
 // Heizkostenabrechnung erstellt (die Anleitungen zitieren sie); auf der Karte widerspräche sie aber einer Anlage,
-// für die gerade „Ich selbst“ gewählt ist: Bis „Umstellen“ in Schritt 7 ist sie bewusst mit freien Schlüsseln
+// für die gerade „Ich selbst“ gewählt ist: Bis „Speichern“ in Schritt 7 ist sie bewusst mit freien Schlüsseln
 // gespeichert (Abweichung 21).
 export const MANUAL_SUMMARY = 'nach den Umlageschlüsseln der Kostenpositionen, ohne eigene Heizkostenabrechnung'
 // Derselbe Satz in Schritt 7 und in der Mitteilung nach „Später“.
-export const SELF_UNTIL_SWITCH = 'Die Abrechnung wechselt erst mit „Umstellen“; bis dahin verteilt Mietfuchs die Heizkosten nach den Umlageschlüsseln der Kostenpositionen.'
+export const SELF_UNTIL_SWITCH = 'Die Abrechnung wechselt erst, wenn Sie das Fenster „Heizkosten selbst abrechnen“ speichern; bis dahin verteilt Mietfuchs die Heizkosten nach den Umlageschlüsseln der Kostenpositionen.'
 
 // Die Zeilen der Karte, wenn eine Anlage eingerichtet ist. Ohne Liste versorgt die Anlage jede
 // Einheit mit Wärmeanschluss (`servesUnit`); die übrigen nennt die Zeile, sonst hieße es „alle“.
