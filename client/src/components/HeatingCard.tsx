@@ -21,6 +21,7 @@ import {
   asksContracting, asksSwitch, CONTRACTING_LABEL, contractingSwap,
   asksFuelContract, editFuelContractNote, FUEL_CONTRACT_OPTIONS, FUEL_CONTRACT_QUESTION, selfSupplyOffer,
   asksGeneration, GENERATION_QUESTION, HEAT_GENERATION_OPTIONS, MAJORITY_EXPLAINED, MAJORITY_OPTIONS, MAJORITY_QUESTION,
+  SELF_UNTIL_SWITCH,
 } from '../heatingForm'
 import { ErrorSummary, useFormError } from './ErrorSummary'
 
@@ -307,7 +308,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
             actions={<>
               <button className="btn secondary" onClick={() => openEdit(p)}>Ändern</button>
               {canSwap(p) && <button className="btn secondary" onClick={() => openSwap(p)}>Heizung erneuert (Kessel getauscht)</button>}
-              {p.method === 'manual' && p.supply === 'central' && p.endsOn === null && <button className="btn secondary" onClick={() => { setError(''); setSelfFor(p) }}>Selbst abrechnen</button>}
+              {p.method === 'manual' && p.supply === 'central' && p.endsOn === null && <button className="btn secondary" onClick={() => { setError(''); setSelfFor(p) }}>Eigene Heizkostenabrechnung einrichten</button>}
             </>}
             dangerAction={<button className="btn ghost danger-ghost" onClick={() => remove(p)}>Entfernen</button>}
           />
@@ -541,7 +542,8 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
           plant={selfFor}
           period={heatingKeyOf(selfFor)}
           periodLabel={periodLabel(periodContaining(plantRules(selfFor, rulesOf(property)), period?.period.to ?? localToday()))}
-          onCancel={() => setSelfFor(null)}
+          // Befund M6 aus #341: Nach „Später“ sagt die Mitteilung, dass bis zum Umstellen nach Umlageschlüsseln verteilt wird.
+          onCancel={() => { setSelfFor(null); toast(SELF_UNTIL_SWITCH) }}
           onDone={async (p) => {
             setSelfFor(null)
             await loadAll()

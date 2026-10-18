@@ -7,6 +7,7 @@ import Field from './Field'
 import { useFormError } from './ErrorSummary'
 import { useToast } from './feedback'
 import Term from './Term'
+import { SELF_UNTIL_SWITCH } from '../heatingForm'
 import {
   CAPTURE_SELF_OPTIONS, captureHint, HOT_WATER_OPTIONS, PART_OPTIONS, emptySelfSetup, forcedShare, itemsFromConflict, selfSetupBody, shareBounds, targetOptions, type SelfSetupField,
 } from '../heatingSelfForm'
@@ -65,7 +66,7 @@ export default function HeatingSelfSetup({ plant, period, periodLabel, onDone, o
     >
       <p className="muted">
         Mietfuchs verteilt die Kosten dieser Heizanlage dann nach der <Term id="heatingSystem">Heizkostenverordnung</Term>: einen Teil nach dem
-        gemessenen Verbrauch, den Rest nach der Fläche. Fehlende Wärme- und Warmwasserzähler legt Mietfuchs an; die Stände tragen Sie auf der Seite Zähler ein.
+        gemessenen Verbrauch, den Rest nach der Fläche. Fehlende Wärme- und Warmwasserzähler legt Mietfuchs an; die Stände tragen Sie auf der Seite Zähler ein. {SELF_UNTIL_SWITCH}
       </p>
       <Field label="Bereitet diese Heizung auch das Warmwasser?" required className="grow" {...errors.field('hotWater')}>
         <select value={form.hotWater} onChange={(e) => setForm({ ...form, hotWater: e.target.value as HotWater | '', items: form.items.map((x) => ({ ...x, heatingTarget: '' })) })}>
