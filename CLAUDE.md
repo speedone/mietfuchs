@@ -1987,7 +1987,7 @@ bleibt; Tippfläche `--target` über `::after`), die Erklärung im Top-Layer, ni
 Blatt unten (höchstens 60 % der Höhe). Sie zeigt Erklärung und Beispiel; Rechtsgrundlage und „Brauche ich
 das?“ stehen in der Hilfe, dorthin führt „Mehr in ‚Hilfe & Begriffe‘ →“ (ein Link, über `TermHelp` aus
 App.tsx mit `navigate`, also mit Rückfrage bei offenem Formular; die Hilfe springt mit `focusTerm` zum
-Begriff). Esc schließt nur die Erklärung, auch im Seitenfenster. Die Seite „Hilfe & Begriffe“ listet alle. Rechtsaussagen
+Begriff, einmal: danach meldet sie `onFocusTermDone`, und die App vergisst den Sprung). Esc schließt nur die Erklärung, auch im Seitenfenster. Die Seite „Hilfe & Begriffe“ listet alle. Rechtsaussagen
 nur, wo sie im Gesetz stehen; Beispiele werden nachgerechnet. Lexikon und Anleitungen nehmen ihre
 Rechtszahlen aus dem Rechtsregister.
 
