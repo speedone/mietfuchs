@@ -78,8 +78,12 @@ test('Unterzeile nach Abschluss und Versand nennt den Stand und die offenen Punk
   expect(cockpitSubtitle({ loaded: true, fresh: false, open: ['Belege vollständig'], closed: true, sentAt: '2026-03-02' }))
     .toBe('Versendet am 02.03.2026; noch offen: „Belege vollständig“.')
   expect(cockpitSubtitle({ loaded: true, fresh: false, open: [], closed: true, sentAt: '2026-03-02' })).toBe('Versendet am 02.03.2026; nichts mehr offen.')
-  expect(cockpitSubtitle({ loaded: true, fresh: false, open: ['Abgeschlossen & versendet'], closed: true }))
-    .toBe('Abgeschlossen, noch nicht versendet; noch offen: „Abgeschlossen & versendet“.')
+  // Durchsicht S2: keine Doppelung der Zeile, und die Frist läuft weiter
+  expect(cockpitSubtitle({ loaded: true, fresh: false, open: ['Abgeschlossen & versendet'], closed: true, deadline: '2026-12-31' }))
+    .toBe('Abgeschlossen, Versanddatum fehlt (Frist am 31.12.2026).')
+  // Nach Ablauf der Frist versendet: das steht da, statt still „nichts mehr offen“
+  expect(cockpitSubtitle({ loaded: true, fresh: false, open: ['Abgeschlossen & versendet'], closed: true, sentAt: '2027-01-05', deadline: '2026-12-31' }))
+    .toBe('Versendet am 05.01.2027, nach Ablauf der Frist (31.12.2026).')
   for (const text of [cockpitSubtitle({ loaded: true, fresh: false, open: ['x'], closed: true }), cockpitSubtitle({ loaded: true, fresh: false, open: ['x'], closed: true, sentAt: '2026-03-02' })]) {
     expect(text).not.toMatch(/versandfertig/)
   }

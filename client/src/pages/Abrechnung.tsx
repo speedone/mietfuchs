@@ -13,7 +13,7 @@ import { useOpenForm, useProperty, withProperty } from '../property'
 import { useConfirmDiscard, useDraft } from '../useDraft'
 import DraftActions from '../components/DraftActions'
 import { FieldMessage } from '../components/Field'
-import { effectiveLandlord, letterhead, recipientLines } from '../landlord'
+import { effectiveLandlord, letterhead, printsFormerAddress, recipientLines } from '../landlord'
 import { localToday } from '../periodForm'
 import { landlordReasonText } from '../landlordReasons'
 import { notSettledText } from '../tenancyModel'
@@ -21,7 +21,7 @@ import { deviationView } from '../deviation'
 import { deadlineView, historyView, type HistoryEntry } from '../settlementHistory'
 import { costBasisText, personsText } from '../statementView'
 import { legalBasisLines, noticesOf, noticeTarget, type NoticeTab } from '../notices'
-import { CalcNotice } from '../components/Notice'
+import { CalcNotice, NoticeBox } from '../components/Notice'
 import PageHeader from '../components/PageHeader'
 import EmptyState from '../components/EmptyState'
 import { emptySettlement, startStep } from '../emptyStock'
@@ -367,7 +367,8 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
 
   const distributed = data ? data.totalCostsCents - data.landlord.totalCents : 0
   // Ein Zeitraum ohne Abrechnung, Pauschale und Kosten: kein Entwurf, keine Kennzahlen, nur der erste Schritt (N12).
-  const empty = data ? emptySettlement(data) : false
+  // Abgeschlossen bleibt die Karte zum Wiederöffnen (Durchsicht K1).
+  const empty = data ? emptySettlement(data) && !data.closed : false
   const start = startStep(units, tenancies, label, calendar)
 
   // §556 Abs. 3 BGB: Die Abrechnung muss dem Mieter binnen 12 Monaten nach Ende des
@@ -599,6 +600,15 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                 <span>{letterhead(landlord?.landlordName, property)}</span>
                 <span>{fmtDate(data?.closed?.sentAt ?? localToday())}</span>
               </div>
+              {printsFormerAddress(tenancies.find((t) => t.id === st.tenancyId), localToday()) && (
+                <NoticeBox
+                  level="warning"
+                  className="no-print"
+                  title="Anschrift nach dem Auszug fehlt"
+                  action={`${st.tenantName} ist ausgezogen; gedruckt würde die Anschrift der Wohnung ${st.unitName}. Tragen Sie beim Mietverhältnis eine Anschrift für den Schriftverkehr ein: Die Frist nach § 556 Abs. 3 BGB läuft auch gegenüber dem Vormieter.`}
+                  fix={onNavigate ? { label: 'Hier beheben → Stammdaten', onClick: () => onNavigate('stammdaten', { kind: 'tenancy', id: st.tenancyId }) } : null}
+                />
+              )}
               <address className="print-only not-italic">
                 {recipientLines(st.tenantName, st.unitName, tenancies.find((t) => t.id === st.tenancyId), property).map((l, i) => <div key={i}>{l}</div>)}
               </address>

@@ -66,6 +66,29 @@ for (const [lage, units, tenancies, button] of [
   })
 }
 
+// Durchsicht S2: Abgeschlossen, aber nicht versendet, läuft die Frist weiter; Plakette und Zeile nennen sie.
+test('Cockpit abgeschlossen ohne Versand: Frist als Plakette und in der Unterzeile, keine doppelte Zeile', async () => {
+  const closed: Settlement = {
+    ...EMPTY, totalCostsCents: 50000, closed: { closedAt: `${YEAR + 1}-02-01T10:00:00Z`, sentAt: null },
+    statements: [{
+      tenancyId: 't1', unitId: 'u1', tenantName: 'A', unitName: 'EG', persons: 1, days: 365, personDays: 365, periodStart: `${YEAR}-01-01`, periodEnd: `${YEAR}-12-31`,
+      rows: [], totalShareCents: 0, prepaymentCents: 0, prepaymentOverridden: false, suggestedMonthlyCents: 0, balanceCents: 0, total35aCents: 0,
+    }],
+  }
+  vi.stubGlobal('fetch', async (url: string) => {
+    const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
+    const path = url.split('?')[0] ?? url
+    if (path === '/api/properties') return json([{ id: 'objekt-1', name: 'Lindenweg 12', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }])
+    if (path === `/api/settlement/${YEAR}`) return json(closed)
+    return json([])
+  })
+  wrap(<Cockpit units={[UNIT]} tenancies={[]} settings={null} reload={async () => {}} onNavigate={() => {}} />)
+  expect(await screen.findByText(/^Abgeschlossen, Versanddatum fehlt \(Frist am 31\.12\./, {}, SLOW)).toBeTruthy()
+  expect(screen.getByText(/Frist in \d+ Tagen|Frist abgelaufen/)).toBeTruthy()
+  expect(screen.queryByText(/noch offen: .*Abgeschlossen & versendet/)).toBeNull()
+  expect(screen.getByText(/Abgeschlossen, aber Versanddatum fehlt .*Frist am 31\.12\./)).toBeTruthy()
+})
+
 test('Stammdaten ohne Wohnung: der gesperrte Knopf nennt seinen Grund, die Heizung wartet auf die Wohnungen', async () => {
   wrap(<Stammdaten units={[]} tenancies={[]} settings={null} reload={async () => {}} />)
   const add = await screen.findByRole('button', { name: '+ Mietverhältnis hinzufügen' }, SLOW)

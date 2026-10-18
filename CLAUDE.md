@@ -1916,22 +1916,31 @@ Vermerk „Entwurf, nicht versenden“ (`print-only`), auch bei Strg+P; eine abg
 „Trotzdem abschließen“ muss sie sich ohne ihn drucken lassen.
 **Dargestellt wird jeder Hinweis über den Baustein `Notice`** (#346, Schritt 10, M8;
 [client/src/components/Notice.tsx](client/src/components/Notice.tsx)): Stufe als Zeichen und Wort, fetter
-Titel, **ein** Satz „was tun“, „Hier beheben →“, der Rest unter „Mehr dazu“ (eingeklappt, im Druck immer
-da). Für Hinweise der Berechnung (`CalcNotice`) wird der Text des Servers nur in Sätze zerlegt
-([client/src/noticeText.ts](client/src/noticeText.ts)): sichtbar der erste Satz, der etwas verlangt
-(„Tragen Sie …“, „Bitte …“; ein Bedingungssatz wie „Haben Sie …, ist …“ zählt nicht), sonst der erste,
-dazu eine Ortsangabe „Heizanlage …:“ des ersten Satzes. Kein Feld `action` am Server: Es wären rund 180
-zweite Texte, die vom ersten wegliefen, und eingefrorene Abrechnungen hätten es nicht. Abkürzungen
-(„Abs.“, „S.“, „z. B.“), Daten und „am 6. April“ beenden keinen Satz; nachgemessen an rund 9.800 Texten
-aus den Tests des Servers, verlustfrei. Seitentexte nehmen `NoticeBox` (Titel, Satz, Rest von Hand
-gesetzt) oder `TextNotice` für einen fertigen Text. Wächter S26: Stufenklasse und -wort nur im Baustein.
+Titel, der Text, „Hier beheben →“, und unter „Mehr dazu“ (eingeklappt, im Druck immer da) **nur
+Begründungen aus Fundstellen**. Für Hinweise der Berechnung (`CalcNotice`) wird der Text des Servers nur in
+Sätze zerlegt ([client/src/noticeText.ts](client/src/noticeText.ts)). **Sichtbar bleibt grundsätzlich
+alles**: Ein Satz, der zuerst „ein Satz was tun“ zeigte, verlor bei allen Kürzungs-Codes Prozentzahl und
+Beträge und ließ Pronomen ohne Bezug stehen (Durchsicht M1, M2). Eingeklappt wird nur ein Satz, der nach
+Abzug seiner Fundstellen (Normen, Urteile mit Aktenzeichen, Drucksachen, Randnummern) weder eine
+Prozentzahl, einen Betrag, ein Datum, eine Kürzung, eine Aufforderung noch eine Folge für Geld oder
+Pflichten trägt und überwiegend aus Fundstellen besteht oder ein Urteil oder eine Drucksache als Beleg
+nennt (`isCitationSentence`); verweist ein sichtbarer Satz danach mit einem Pronomen auf ihn, bleibt er
+sichtbar. Ein Fehler (Stufe `error`) steht ganz offen (#236). Geprüft über echte Texte je Code
+(`client/src/testing/noticeSamples.json`, je Code der längste Text aus den Server-Tests; neu erzeugen, wenn
+calc.ts Texte ändert). Kein Feld `action` am Server: Es wären rund 180 zweite Texte, die vom ersten
+wegliefen, und eingefrorene Abrechnungen hätten es nicht. Abkürzungen („Abs.“, „S.“, „z. B.“), Daten und
+„am 6. April“ beenden keinen Satz. Seitentexte nehmen `NoticeBox` (Titel, Text, Rest von Hand gesetzt) oder
+`TextNotice` für einen fertigen Text. Wächter S26: Stufenklasse und -wort nur im Baustein, und freie Kästen
+`className="notice|error|hint"` nur noch nach Ausnahmeliste mit Anzahl, die nur sinkt.
 **Leerzustände** (`EmptyState`, [client/src/emptyStock.ts](client/src/emptyStock.ts)): Im leeren Zeitraum
 nennen Cockpit und Abrechnung den ersten fehlenden Schritt mit Knopf (Wohnung, Mietverhältnis, Belege),
 ohne „Entwurf“, Frist, Kennzahlen, Druckeinstellungen und Rechtsstand; ein gesperrter Knopf nennt seinen
 Grund daneben (`aria-describedby`). Nach dem Abschluss nennt die Unterzeile des Cockpits den Stand und die
-offenen Punkte beim Namen (`cockpitSubtitle`, M9). Die Kopfzeile im Druck lässt einen Objektnamen weg, der
-schon am Anfang der Adresse steht (`letterhead`), und die Abrechnung trägt Datum und Anschrift des Mieters
-(`recipientLines`, N5).
+offenen Punkte beim Namen (`cockpitSubtitle`, M9); abgeschlossen ohne Versanddatum zeigt sie die Frist, die
+weiterläuft, und ein Versand nach Ablauf der Frist steht ausdrücklich da. Die Kopfzeile im Druck lässt einen
+Objektnamen weg, der schon am Anfang der Adresse steht (`letterhead`), und die Abrechnung trägt Datum und
+Anschrift des Mieters (`recipientLines`, N5); ist der Mieter ausgezogen und fehlt die Anschrift für den
+Schriftverkehr, warnt die Seite vor dem Druck (`printsFormerAddress`, #229).
 
 **Rechtsregister** (Heizung PR 1, Entwurf `2026-10-05-heizung-gesamt-design.md` Abschnitt 4):
 Jede Rechtszahl steht nur in [shared/law/](shared/law/), mit Gültigkeit, Fundstelle, Prüfstand und

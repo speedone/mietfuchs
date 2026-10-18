@@ -22,13 +22,15 @@ const TENANCIES: Tenancy[] = [
 const COSTS: CostItem[] = [
   { id: 'k1', propertyId: 'objekt-1', period: calendarPeriod(YEAR), category: 'Grundsteuer', description: 'Grundsteuer A', amountCents: 50000, key: 'area' },
 ]
+// Eine Begründung aus einer Fundstelle, die bei Warnung und Hinweis eingeklappt wird
+const GROUND = 'Heizkosten gehören in die Heizperiode, in der sie verbraucht wurden (BGH VIII ZR 156/11).'
 const SETTLEMENT: Settlement = {
   year: YEAR, daysInYear: 365, period: settlementPeriod(calendarYearPeriod(YEAR)), deadline: `${YEAR + 1}-12-31`, statements: [], landlord: { rows: [], totalCents: 0 }, selfUsedShareCents: 0, totalCostsCents: 50000,
   warnings: ['Text Fehler', 'Text Warnung', 'Text Hinweis'],
   notices: [
-    { code: 'a', level: 'error', title: 'Titel Fehler', text: 'Begründung Fehler. Tragen Sie Fehler ein.' },
-    { code: 'b', level: 'warning', title: 'Titel Warnung', text: 'Begründung Warnung. Tragen Sie Warnung ein.' },
-    { code: 'c', level: 'hint', title: 'Titel Hinweis', text: 'Begründung Hinweis. Tragen Sie Hinweis ein.' },
+    { code: 'a', level: 'error', title: 'Titel Fehler', text: `Befund Fehler: 3 % weniger. ${GROUND} Tragen Sie Fehler ein.` },
+    { code: 'b', level: 'warning', title: 'Titel Warnung', text: `Befund Warnung: 3 % weniger. ${GROUND} Tragen Sie Warnung ein.` },
+    { code: 'c', level: 'hint', title: 'Titel Hinweis', text: `Befund Hinweis: 3 % weniger. ${GROUND} Tragen Sie Hinweis ein.` },
   ],
   closed: null,
 }
@@ -54,9 +56,9 @@ const wrap = (node: ReactNode) => render(
   <PeriodProvider><PropertyProvider><UIProvider>{node}</UIProvider></PropertyProvider></PeriodProvider>,
 )
 
-// #346, Schritt 10 (M8): Statt den ganzen Text je Stufe auf- oder zuzuklappen, steht bei jeder Stufe der
-// Satz „was tun“ offen da und die Begründung eingeklappt darunter.
-test('jeder Hinweis zeigt Stufe, Titel und den Satz „was tun“, der Rest liegt unter „Mehr dazu“', async () => {
+// #346, Schritt 10 (M8, Durchsicht M1, S1): Befund, Kürzung und Aufforderung stehen offen da; nur die
+// Begründung aus einem Urteil liegt bei Warnung und Hinweis unter „Mehr dazu“. Ein Fehler steht ganz offen (#236).
+test('jeder Hinweis zeigt Stufe, Titel und Text; nur die Fundstelle liegt unter „Mehr dazu“, ein Fehler ganz offen', async () => {
   wrap(<Abrechnung settings={null} units={UNITS} tenancies={TENANCIES} reload={async () => {}} onNavigate={() => {}} />)
   await screen.findByText('Titel Fehler', {}, SLOW)
   for (const [title, level] of [['Titel Fehler', 'Fehler'], ['Titel Warnung', 'Warnung'], ['Titel Hinweis', 'Hinweis']] as const) {
@@ -65,14 +67,20 @@ test('jeder Hinweis zeigt Stufe, Titel und den Satz „was tun“, der Rest lieg
     // Die Stufe steht als Wort und als Zeichen da, nicht nur in der Farbe.
     expect(within(box).getByText(level)).toBeTruthy()
     expect(box.querySelector('[aria-hidden="true"]')?.textContent).toMatch(/[✖⚠ℹ]/)
-    // Sichtbar ist der Satz, der sagt, was zu tun ist; die Begründung liegt eingeklappt darunter.
-    expect(within(box).getByText(`Tragen Sie ${level} ein.`).closest('[hidden]')).toBeNull()
-    expect(within(box).getByText(`Begründung ${level}.`).closest('[hidden]')).toBeTruthy()
+    const shown = within(box).getByText(new RegExp(`Befund ${level}: 3 % weniger\\.`))
+    expect(shown.closest('[hidden]')).toBeNull()
+    expect(shown.textContent).toContain(`Tragen Sie ${level} ein.`)
+    if (level === 'Fehler') {
+      expect(shown.textContent).toContain('BGH VIII ZR 156/11')
+      expect(within(box).queryByRole('button', { name: 'Mehr dazu' })).toBeNull()
+      continue
+    }
+    expect(within(box).getByText(GROUND).closest('[hidden]')).toBeTruthy()
     const toggle = within(box).getByRole('button', { name: 'Mehr dazu' })
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
     fireEvent.click(toggle)
     expect(toggle.getAttribute('aria-expanded')).toBe('true')
-    expect(within(box).getByText(`Begründung ${level}.`).closest('[hidden]')).toBeNull()
+    expect(within(box).getByText(GROUND).closest('[hidden]')).toBeNull()
   }
 })
 
