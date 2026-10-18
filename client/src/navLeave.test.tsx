@@ -3,12 +3,11 @@
 // fragen wie der Wechsel von Objekt und Zeitraum nach, wenn ein Formular offen ist. Vorher ging eine
 // angefangene Eingabe beim Seitenwechsel still verloren. Dazu fragt der Browser beim Schließen des Tabs.
 import { useState } from 'react'
-import { afterEach, beforeAll, beforeEach, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { Property, Tenancy, Unit } from './types'
 import App from './App'
 import { MOBILE_QUERY } from './components/MobileNav'
-import { installDialogPolyfill } from './testing/dialog'
 import { PropertyProvider, useHasOpenForm } from './property'
 import { UIProvider } from './components/feedback'
 import HeatingInfoCard from './components/HeatingInfoCard'
@@ -23,7 +22,6 @@ const ledger = { year: 2025, rows: [{ tenancyId: 't-a', tenantName: 'Müller', u
 
 let mobile = false
 let posted: string[] = []
-beforeAll(() => installDialogPolyfill())
 beforeEach(() => {
   mobile = false
   posted = []
@@ -112,7 +110,7 @@ test('untere Leiste: mit offenem Formular fragt der Wechsel; Abbrechen behält d
   await waitFor(() => expect(within(bar()).getByRole('button', { name: /Cockpit/ }).getAttribute('aria-current')).toBe('page'))
 })
 
-test('Menüblatt: das Blatt schließt vor der Rückfrage; Verwerfen wechselt die Seite', async () => {
+test('Menüblatt: die Rückfrage liegt über dem Blatt; Abbrechen lässt es offen, Verwerfen wechselt und schließt es', async () => {
   mobile = true
   await startPayment(async (name) => {
     fireEvent.click(within(await screen.findByRole('navigation', { name: 'Schnellzugriff' })).getByRole('button', { name: 'Mehr' }))
@@ -121,18 +119,21 @@ test('Menüblatt: das Blatt schließt vor der Rückfrage; Verwerfen wechselt die
   })
   fireEvent.click(within(bar()).getByRole('button', { name: 'Mehr' }))
   await waitFor(() => expect(sheet().open).toBe(true))
-  fireEvent.click(within(sheet()).getByRole('button', { name: /Stammdaten/ }))
-  // Sonst stünde die Rückfrage hinter dem modalen Blatt
-  await waitFor(() => expect(sheet().open).toBe(false))
+  const entry = within(sheet()).getByRole('button', { name: /Stammdaten/ })
+  entry.focus()
+  fireEvent.click(entry)
+  // Die Rückfrage ist selbst ein modaler Dialog im Top-Layer (#346, Schritt 1); das Blatt bleibt darunter offen
   const dialog = (await screen.findByText('Ungespeicherte Änderungen verwerfen?')).closest('.dialog') as HTMLElement
+  expect(sheet().open).toBe(true)
   fireEvent.click(within(dialog).getByRole('button', { name: 'Abbrechen' }))
   await waitFor(() => expect(question()).toBeNull())
+  expect(sheet().open).toBe(true)
+  expect(document.activeElement).toBe(entry)
   expect((screen.getByLabelText(/^Betrag/) as HTMLInputElement).value).toBe('11,11')
-  fireEvent.click(within(bar()).getByRole('button', { name: 'Mehr' }))
-  await waitFor(() => expect(sheet().open).toBe(true))
-  fireEvent.click(within(sheet()).getByRole('button', { name: /Stammdaten/ }))
+  fireEvent.click(entry)
   fireEvent.click(within((await screen.findByText('Ungespeicherte Änderungen verwerfen?')).closest('.dialog') as HTMLElement).getByRole('button', { name: 'Verwerfen' }))
   await waitFor(() => expect(within(bar()).getByRole('button', { name: /Stammdaten/ }).getAttribute('aria-current')).toBe('page'))
+  await waitFor(() => expect(sheet().open).toBe(false))
 })
 
 test('Tab schließen oder neu laden: mit offenem Formular fragt der Browser, sonst nicht', async () => {

@@ -3,12 +3,11 @@
 // Leiste. Unter 900 px Breite zeichnet App.tsx sie statt der Seitenleiste; hier sagt das der
 // nachgestellte Media Query. Was jsdom nicht rechnet (Top-Layer, inerter Hintergrund, Breite der
 // Seite), prüft der Browserlauf.
-import { afterEach, beforeAll, beforeEach, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { Property, Tenancy, Unit } from './types'
 import App from './App'
 import { MOBILE_QUERY } from './components/MobileNav'
-import { installDialogPolyfill } from './testing/dialog'
 
 const objekt = (id: string, name: string): Property => ({
   id, name, kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null,
@@ -37,7 +36,6 @@ const setMobile = (value: boolean) => act(() => {
   mobile = value
   for (const listener of [...mediaListeners]) listener()
 })
-beforeAll(() => installDialogPolyfill())
 beforeEach(() => {
   mobile = true
   mode = 'npm'
@@ -174,17 +172,18 @@ test('⇅ öffnet das Blatt auf der Objektwahl; bei offenem Formular fragt der W
   const select = within(sheet()).getByLabelText('Objekt wählen')
   expect(document.activeElement).toBe(select)
   fireEvent.change(select, { target: { value: 'objekt-2' } })
-  // Das Blatt schließt vor der Rückfrage, sonst stünde sie hinter dem modalen Blatt
-  await waitFor(() => expect(sheet().open).toBe(false))
+  // Die Rückfrage liegt im Top-Layer über dem Blatt (#346, Schritt 1); das Blatt bleibt offen
   const ask = (await screen.findByRole('button', { name: /Objekt wechseln/ })).closest('.dialog') as HTMLElement
+  expect(sheet().open).toBe(true)
   fireEvent.click(within(ask).getByRole('button', { name: /^Abbrechen$/ }))
   await waitFor(() => expect(screen.queryByRole('button', { name: /Objekt wechseln/ })).toBeNull())
+  // Nach Abbrechen steht man, wo man war: im Blatt, auf der Objektwahl
+  expect(sheet().open).toBe(true)
+  expect(document.activeElement).toBe(select)
   expect(screen.getByTestId('mobile-context').textContent).toMatch(/^Lindenweg 12 · /)
   expect((screen.getByLabelText(/^Betrag/) as HTMLInputElement).value).toBe('11,11')
 
   // Zweiter Versuch, diesmal bestätigt
-  fireEvent.click(swap)
-  await waitFor(() => expect(sheet().open).toBe(true))
   fireEvent.change(within(sheet()).getByLabelText('Objekt wählen'), { target: { value: 'objekt-2' } })
   fireEvent.click(await screen.findByRole('button', { name: /Objekt wechseln/ }))
   await waitFor(() => expect(screen.getByTestId('mobile-context').textContent).toMatch(/^Haus B · \d{4}$/))
@@ -241,15 +240,14 @@ test('Zeitraum im Blatt bei offenem Formular: Rückfrage vor dem Wechsel, Abbrec
   const period = within(sheet()).getByLabelText('Abrechnungsjahr') as HTMLSelectElement
   const other = [...period.options].map((o) => o.value).find((v) => v !== period.value) ?? ''
   fireEvent.change(period, { target: { value: other } })
-  await waitFor(() => expect(sheet().open).toBe(false))
   const ask = (await screen.findByRole('button', { name: /Jahr wechseln/ })).closest('.dialog') as HTMLElement
+  expect(sheet().open).toBe(true)
   fireEvent.click(within(ask).getByRole('button', { name: /^Abbrechen$/ }))
   await waitFor(() => expect(screen.queryByRole('button', { name: /Jahr wechseln/ })).toBeNull())
+  expect(sheet().open).toBe(true)
   expect(screen.getByTestId('mobile-context').textContent).toBe(before)
   expect((screen.getByLabelText(/^Betrag/) as HTMLInputElement).value).toBe('11,11')
 
-  fireEvent.click(screen.getByRole('button', { name: /^Objekt und Zeitraum wechseln/ }))
-  await waitFor(() => expect(sheet().open).toBe(true))
   fireEvent.change(within(sheet()).getByLabelText('Abrechnungsjahr'), { target: { value: other } })
   fireEvent.click(await screen.findByRole('button', { name: /Jahr wechseln/ }))
   await waitFor(() => expect(screen.getByTestId('mobile-context').textContent).toBe(`Lindenweg 12 · ${other}`))
@@ -264,19 +262,23 @@ test('Esc im Blatt schließt nur das Blatt, nicht das Formular darunter', async 
   expect((screen.getByLabelText(/^Betrag/) as HTMLInputElement).value).toBe('11,11')
 })
 
-test('Beenden im Blatt: das Blatt schließt vor der Rückfrage, Abbrechen beendet nichts', async () => {
+test('Beenden im Blatt: die Rückfrage liegt über dem Blatt, Abbrechen beendet nichts', async () => {
   mode = 'binary'
   render(<App />)
   const dialog = await openMenu()
-  fireEvent.click(await within(dialog).findByRole('button', { name: /Mietfuchs beenden/ }))
-  await waitFor(() => expect(sheet().open).toBe(false))
+  const quit = await within(dialog).findByRole('button', { name: /Mietfuchs beenden/ })
+  quit.focus()
+  fireEvent.click(quit)
   const ask = (await screen.findByRole('heading', { name: 'Mietfuchs beenden?' })).closest('.dialog') as HTMLElement
+  expect(sheet().open).toBe(true)
   fireEvent.click(within(ask).getByRole('button', { name: /^Abbrechen$/ }))
   await waitFor(() => expect(screen.queryByRole('heading', { name: 'Mietfuchs beenden?' })).toBeNull())
+  expect(sheet().open).toBe(true)
+  expect(document.activeElement).toBe(quit)
   expect(posted).toEqual([])
   expect(screen.queryByText('Mietfuchs ist beendet')).toBeNull()
 
-  fireEvent.click(within(await openMenu()).getByRole('button', { name: /Mietfuchs beenden/ }))
+  fireEvent.click(quit)
   const ask2 = (await screen.findByRole('heading', { name: 'Mietfuchs beenden?' })).closest('.dialog') as HTMLElement
   fireEvent.click(within(ask2).getByRole('button', { name: 'Beenden' }))
   expect(await screen.findByText('Mietfuchs ist beendet')).toBeTruthy()

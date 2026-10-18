@@ -5,24 +5,35 @@
 // - `showModal()` setzt `open` und fokussiert das erste Element mit `autofocus`, sonst das erste
 //   bedienbare im Dialog;
 // - `close()` nimmt `open` weg und sendet `close`;
-// - Esc im offenen Dialog sendet `cancel` (abbrechbar) und schließt danach.
+// - Esc sendet dem obersten modalen Dialog `cancel` (abbrechbar) und schließt ihn danach, aber nur, wenn
+//   das `keydown` nicht verhindert wurde. So hält es der Browser auch (eine „close request“ folgt erst auf
+//   ein nicht verhindertes `keydown`); deshalb wird erst nach dem Ereignis entschieden, als Mikroaufgabe.
+//   Wer prüft, wartet also einen Augenblick (`waitFor`, `await act(async () => {})`).
 //
 // Was jsdom nicht rechnet, bleibt aus: kein Top-Layer, kein inerter Hintergrund, kein `::backdrop`.
-// Das prüft der Browserlauf.
+// Das prüft der Browserlauf. Installiert wird in vitestSetup.ts für jede Datei mit jsdom.
 const FOCUSABLE = 'button, a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+
+// Die offenen modalen Dialoge, der zuletzt geöffnete zuletzt (das ist der oberste im Top-Layer).
+const modals: HTMLDialogElement[] = []
 
 export function installDialogPolyfill(): void {
   const proto = window.HTMLDialogElement.prototype
   if (typeof proto.showModal === 'function') return
-  const onKey = function (this: HTMLDialogElement, e: KeyboardEvent) {
-    if (e.key !== 'Escape' || !this.open) return
-    const cancel = new Event('cancel', { cancelable: true })
-    if (this.dispatchEvent(cancel)) this.close()
-  }
+  window.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return
+    queueMicrotask(() => {
+      if (e.defaultPrevented) return
+      const top = [...modals].reverse().find((d) => d.open && d.isConnected)
+      if (!top) return
+      const cancel = new Event('cancel', { cancelable: true })
+      if (top.dispatchEvent(cancel)) top.close()
+    })
+  }, true)
   proto.showModal = function (this: HTMLDialogElement) {
     if (this.open) return
     this.setAttribute('open', '')
-    this.addEventListener('keydown', onKey)
+    modals.push(this)
     const target = this.querySelector<HTMLElement>('[autofocus]') ?? this.querySelector<HTMLElement>(FOCUSABLE)
     target?.focus()
   }
@@ -33,7 +44,8 @@ export function installDialogPolyfill(): void {
     if (!this.open) return
     if (returnValue !== undefined) this.returnValue = returnValue
     this.removeAttribute('open')
-    this.removeEventListener('keydown', onKey)
+    const at = modals.indexOf(this)
+    if (at >= 0) modals.splice(at, 1)
     this.dispatchEvent(new Event('close'))
   }
 }

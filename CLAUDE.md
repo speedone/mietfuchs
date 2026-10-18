@@ -3107,9 +3107,9 @@ angehefteten Kopf (☰, Seitentitel, „Objekt · Zeitraum“, ⇅), ein Menübl
 `showModal()` und eine untere Leiste (`BOTTOM_TABS` in nav.ts, kurze Beschriftung `short`). Das Blatt
 zeigt **denselben Inhalt wie die Seitenleiste** (`sidebar(close)` in App.tsx), ⇅ öffnet es mit dem Fokus
 auf der Objektwahl. Die Wahl einer Seite schließt es; Objekt und Zeitraum wechseln darin **ohne** zu
-schließen, wie in der Seitenleiste, denn ein Auswahlfeld sendet bei jeder Pfeiltaste `change`. Nur wenn
-eine Rückfrage kommt (offenes Formular, Beenden), schließt es **vorher** (`onBeforeChange` an
-`PeriodSelect`, `onAsk` am Beenden-Knopf), sonst stünde sie hinter dem modalen Blatt. Esc im Blatt
+schließen, wie in der Seitenleiste, denn ein Auswahlfeld sendet bei jeder Pfeiltaste `change`. Eine
+Rückfrage (offenes Formular, Beenden) liegt seit Schritt 1 im Top-Layer über dem Blatt; es bleibt dafür
+offen, und eine Seite schließt es erst, wenn der Wechsel feststeht. Esc im Blatt
 erreicht kein offenes Seitenfenster darunter. Der Fokus geht an den Knopf zurück, der es geöffnet hat,
 und nach einem Wechsel über die Grenze an die aktuelle Seite bzw. ☰. Gezeichnet wird nach
 `matchMedia` und nicht nur per CSS, damit kein Eintrag doppelt im Baum steht; Tests stellen den Query
@@ -3206,12 +3206,23 @@ Tippfläche von `--target` über `::after`, und printCss.test.ts verlangt den du
   Zähler-Seite; die übrigen Stellen aus #341 folgen. Die Meldung oben auf der Seite bleibt für
   Ladefehler.
 - **Rückfragen** (`useConfirm`, [client/src/components/feedback.tsx](client/src/components/feedback.tsx),
-  #341): Enter wirkt auf den Knopf mit dem Fokus und nicht immer auf die Bestätigung; auf einem
-  anderen Element (etwa einem Begriff) erreicht es dieses. Bei `danger` steht der Startfokus auf
-  „Abbrechen“, `defaultChoice: 'confirm'` überstimmt das, `cancel` setzt ihn auch sonst dorthin. Tab
-  bleibt im Dialog (Fokusfalle), Esc bricht ab, und beim Schließen geht der Fokus an den Auslöser
-  zurück. Safari fokussiert einen Knopf beim Mausklick nicht; dort greift die Rückgabe nur über die
-  Tastatur.
+  #341, #346 Schritt 1): ein `<dialog role="alertdialog">` mit `showModal()`, benannt durch den Titel
+  (`aria-labelledby`) und beschrieben durch die Nachricht (`aria-describedby`). Er liegt im Top-Layer, auch
+  über dem Menüblatt am Handy oder einem Seitenfenster; das Blatt muss deshalb vor einer Rückfrage nicht
+  mehr schließen und bleibt nach „Abbrechen“ offen. **Es gibt keinen Abfänger für Enter** (Wächter S13):
+  Enter wirkt auf den Knopf mit dem Fokus, das tut der Browser; auf einem anderen Element (etwa einem
+  Begriff) erreicht es dieses. Bei `danger` steht der Startfokus auf „Abbrechen“, `defaultChoice:
+  'confirm'` überstimmt das, `cancel` setzt ihn auch sonst dorthin; gesetzt wird er nach `showModal()`
+  selbst, denn `autoFocus` griffe vor dem Öffnen. Tab bleibt im Dialog (`keepTabInside` in
+  [dialogKeys.ts](client/src/components/dialogKeys.ts)), Esc bricht ab, schon am `keydown` (verhindert,
+  damit Chrome ein zweites `cancel` ohne Nutzeraktion nicht durchlässt), ein Klick daneben auch, wenn er
+  dort begann. Beim Schließen geht der Fokus an den Auslöser zurück; ist der ausgehängt und lag er in der
+  Navigation, an die aktuelle Seite bzw. ☰. Eine zweite Rückfrage beantwortet eine offene mit „nein“.
+  Safari fokussiert einen Knopf beim Mausklick nicht; dort greift die Rückgabe nur über die Tastatur. In
+  jsdom bildet [testing/dialog.ts](client/src/testing/dialog.ts) `showModal()` nach (für jede Datei mit
+  jsdom in vitestSetup.ts installiert, Esc erst nach einem nicht verhinderten `keydown`), und
+  [testing/keys.ts](client/src/testing/keys.ts) (`press`) drückt eine Taste wie der Browser, Enter auf
+  einem Knopf also als Klick. Tests suchen die Rückfrage mit `getByRole('alertdialog')`.
 - **Auswahlfelder und Häkchen speichern nicht beim Anklicken** (#309). Sofort gespeichert wird nur,
   was keine Daten ändert: der Wechsel von Zeitraum, Objekt oder Design und die Antwort auf die
   Frage nach der Update-Prüfung im Cockpit. Alles andere ist zuerst ein Entwurf: `useDraft(saved,

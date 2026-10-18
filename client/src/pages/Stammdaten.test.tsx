@@ -115,7 +115,7 @@ test('Wohnung löschen: die Frage nennt, was mitgelöscht wird, mit Anzahl', asy
   const [first] = await screen.findAllByRole('button', { name: /Wohnung löschen/i }, SLOW)
   if (!first) throw new Error('kein Löschknopf')
   fireEvent.click(first)
-  const dialog = await screen.findByRole('dialog', undefined, SLOW)
+  const dialog = await screen.findByRole('alertdialog', undefined, SLOW)
   expect(within(dialog).getByText(/2 Mietverhältnisse, 1 Zähler, 4 Ablesungen und 12 Zahlungen/)).toBeTruthy()
 })
 
