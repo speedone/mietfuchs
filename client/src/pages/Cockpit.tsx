@@ -4,7 +4,7 @@ import { cockpitHeatingRows } from '../heatingSettlementView'
 import { heatingRowTarget, itemsOfSettlement } from '../costPeriods'
 import { localToday } from '../periodForm'
 import { isNotAllocable, usageOf } from '../types'
-import { cockpitSubtitle, itemsDetail, meterTypesInUse, tenanciesDetail, usesUnitBasis } from '../cockpitChecks'
+import { cockpitSubtitle, itemsDetail, meterTypesInUse, tenanciesDetail, usesUnitBasis, usesUnitsKey } from '../cockpitChecks'
 import { coverageCheck, filesByItem } from '../receipts'
 import { api, fmtEuro, fmtDate } from '../api'
 import { andList } from '../../../shared/wording.ts'
@@ -146,7 +146,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
       list.push({ title: 'Mietverhältnisse & Flächen', level: 'gelb', tab: 'stammdaten', ...missingAreaCheck(noArea, tenancies, period, yearItems) })
     } else {
       list.push({ title: 'Mietverhältnisse & Flächen', level: 'gruen',
-        detail: tenanciesDetail(mietverhaeltnisse, ohneAbrechnung.length, participating.length, zeroArea.map((u) => u.name)) })
+        detail: tenanciesDetail(mietverhaeltnisse, ohneAbrechnung.length, participating.length, zeroArea.map((u) => u.name), usesUnitsKey(yearItems)) })
     }
 
     // 2. Belege & Kosten erfasst

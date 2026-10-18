@@ -3,7 +3,7 @@
 import { calendarPeriod } from '../../shared/period.ts'
 import { expect, test } from 'vitest'
 import type { CostItem } from './types'
-import { cockpitSubtitle, itemsDetail, meterTypesInUse, tenanciesDetail, usesUnitBasis } from './cockpitChecks'
+import { cockpitSubtitle, itemsDetail, meterTypesInUse, tenanciesDetail, usesUnitBasis, usesUnitsKey } from './cockpitChecks'
 
 const item = (category: string, patch: Partial<CostItem>): CostItem => ({
   id: category, propertyId: 'p', period: calendarPeriod(2025), category, description: category, amountCents: 100, key: 'area', ...patch,
@@ -21,12 +21,21 @@ test('Verteilbasis: nur umlagefähige Positionen nach Fläche, Einheiten, Person
   expect(usesUnitBasis([item('Grundsteuer', { key: 'area' })])).toBe(true)
   expect(usesUnitBasis([item('Hauswart', { key: 'direct' })])).toBe(false)
   expect(usesUnitBasis([item('Nicht umlagefähig', { key: 'area' }), item('Zuführung Erhaltungsrücklage', { key: 'persons' })])).toBe(false)
+  expect(usesUnitsKey([item('Grundsteuer', { key: 'units' })])).toBe(true)
+  expect(usesUnitsKey([item('Nicht umlagefähig', { key: 'units' }), item('Grundsteuer', { key: 'area' })])).toBe(false)
 })
 
 // Ein- und Mehrzahl statt „Mietverhältnis(se)“, „Wohnung(en)“, „Position(en)“ und „Belegdatei(en)“ (#180).
 test('Zeile „Mietverhältnisse & Flächen“: Ein- und Mehrzahl, Aufzählung mit „und“', () => {
   expect(tenanciesDetail(1, 0, 1, [])).toBe('1 Mietverhältnis · 1 beteiligte Wohnung · vollständig')
-  expect(tenanciesDetail(3, 1, 2, ['G1', 'G2'])).toBe('3 Mietverhältnisse, davon 1 ohne Abrechnung · 2 beteiligte Wohnungen · 0 m² und 0 Personen: G1 und G2')
+  // Befund N2 aus #341: „0 m² und 0 Personen: G1 und G2“ stand ohne Kontext da. Die Zeile sagt jetzt,
+  // warum das in Ordnung ist: Einheiten ohne Wohnfläche und ohne Bewohner tragen bei Fläche und Personen nichts;
+  // beim Schlüssel nach Einheiten zählen sie je als eine Einheit mit (calc.ts, `basisUnits`).
+  expect(tenanciesDetail(3, 1, 2, ['G1', 'G2'])).toBe('3 Mietverhältnisse, davon 1 ohne Abrechnung · 2 beteiligte Wohnungen · '
+    + 'G1 und G2 ohne Wohnfläche und ohne Bewohner (etwa Garage oder Stellplatz): Bei Fläche und Personen zählen sie nicht mit')
+  expect(tenanciesDetail(3, 0, 3, ['Garage 1'], true)).toBe('3 Mietverhältnisse · 3 beteiligte Wohnungen · '
+    + 'Garage 1 ohne Wohnfläche und ohne Bewohner (etwa Garage oder Stellplatz): Bei Fläche und Personen zählt sie nicht mit, nach Einheiten als eine Einheit')
+  expect(tenanciesDetail(3, 0, 3, ['G1', 'G2'], true)).toMatch(/zählen sie nicht mit, nach Einheiten je als eine Einheit$/)
 })
 
 // fmtEuro setzt ein geschütztes Leerzeichen vor das Eurozeichen.
