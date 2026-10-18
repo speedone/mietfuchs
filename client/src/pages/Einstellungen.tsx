@@ -95,7 +95,7 @@ export default function Einstellungen({ settings, reload, update }: Props) {
 
   return (
     <>
-      <PageHeader title="Einstellungen" subtitle="Vermieterdaten für das Anschreiben, KI-Belegauswertung und Updates." />
+      <PageHeader context="none" title="Einstellungen" subtitle="Vermieterdaten für das Anschreiben, KI-Belegauswertung und Updates." />
 
       <div className="card">
         <h2>Vermieter &amp; Zahlung</h2>

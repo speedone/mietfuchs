@@ -9,6 +9,8 @@ import type { NoticeTab } from '../notices'
 import { PropertyProvider } from '../property'
 import { UIProvider } from '../components/feedback'
 import Abrechnung, { PRINT_DRAFT_NOTE } from './Abrechnung'
+// Die Auswahl der Seitenleiste (App.tsx): Die Seite selbst wählt das Jahr nicht mehr (#346 Schritt 8).
+import { PeriodSelect } from '../components/PeriodSelect'
 import type { HistoryEntry } from '../settlementHistory'
 import { calendarPeriod, calendarYearPeriod, settlementPeriod } from '../../../shared/period.ts'
 
@@ -61,7 +63,7 @@ afterEach(() => {
 const show = () => render(
   <PeriodProvider>
     <PropertyProvider>
-      <UIProvider><Abrechnung settings={null} units={[]} tenancies={TENANCIES} reload={async () => {}} /></UIProvider>
+      <UIProvider><PeriodSelect /><Abrechnung settings={null} units={[]} tenancies={TENANCIES} reload={async () => {}} /></UIProvider>
     </PropertyProvider>
   </PeriodProvider>,
 )
@@ -483,7 +485,7 @@ const SETTINGS: Settings = { houseName: '', address: '', landlordName: '', iban:
 const showWithSettings = (s: Settings, reload: () => Promise<void>) => render(
   <PeriodProvider>
     <PropertyProvider>
-      <UIProvider><Abrechnung settings={s} units={[]} tenancies={TENANCIES} reload={reload} /></UIProvider>
+      <UIProvider><PeriodSelect /><Abrechnung settings={s} units={[]} tenancies={TENANCIES} reload={reload} /></UIProvider>
     </PropertyProvider>
   </PeriodProvider>,
 )

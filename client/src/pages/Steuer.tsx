@@ -64,13 +64,13 @@ export default function Steuer({ settings }: Props) {
   return (
     <>
       <div className="no-print">
-        <PageHeader title="Steuer (Anlage V)" subtitle={'Jahresübersicht für die Einkünfte aus Vermietung — Einnahmen, Werbungskosten und Überschuss. Als PDF speichern über „Drucken“.'} />
+        <PageHeader context="calendar" title="Steuer (Anlage V)" subtitle={'Jahresübersicht für die Einkünfte aus Vermietung — Einnahmen, Werbungskosten und Überschuss. Als PDF speichern über „Drucken“.'} />
       </div>
       {error && <div className="error">{error}</div>}
 
       <div className="card no-print">
         <div className="row" style={{ alignItems: 'flex-end' }}>
-          <CalendarYearSelect />
+          <CalendarYearSelect className="width-s" />
           <label className="field">
             Einnahmen ansetzen als
             <select value={basis} onChange={(e) => setBasis(e.target.value as Basis)}>

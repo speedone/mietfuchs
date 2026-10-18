@@ -3,7 +3,6 @@ import type { CostItem, HeatingPlant, Settlement } from '../types'
 import { api, fmtEuro } from '../api'
 import { usePeriod } from '../period'
 import { periodCosts } from '../costPeriods'
-import { PeriodSelect } from '../components/PeriodSelect'
 import { useProperty, withProperty } from '../property'
 import PageHeader from '../components/PageHeader'
 import Table from '../components/Table'
@@ -80,23 +79,16 @@ export default function Uebersicht({ onNavigate }: Props) {
 
   return (
     <>
-      <PageHeader title="Kostenvergleich" subtitle="Kosten im Blick: Jahresvergleich, Auffälligkeiten und der Stand der Abrechnung." />
+      {/* Der Zeitraum steht in der Kontextzeile und wird in der Seitenleiste gewählt (#346 Schritt 8); hier
+          bleibt nur der Stand der Abrechnung. */}
+      <PageHeader
+        title="Kostenvergleich"
+        subtitle="Kosten im Blick: Jahresvergleich, Auffälligkeiten und der Stand der Abrechnung."
+        actions={settlement?.closed
+          ? <span className="badge green">Abrechnung abgeschlossen</span>
+          : <span className="badge gray">Abrechnung im Entwurf</span>}
+      />
       {error && <div className="error">{error}</div>}
-
-      <div className="card">
-        <div className="row">
-          <PeriodSelect />
-          {settlement?.closed ? (
-            <div className="field" style={{ justifyContent: 'flex-end', paddingBottom: 8 }}>
-              <span><span className="badge green">Abrechnung abgeschlossen</span></span>
-            </div>
-          ) : (
-            <div className="field" style={{ justifyContent: 'flex-end', paddingBottom: 8 }}>
-              <span><span className="badge gray">Abrechnung im Entwurf</span></span>
-            </div>
-          )}
-        </div>
-      </div>
 
       {notable.length > 0 && (
         <div className="notice">

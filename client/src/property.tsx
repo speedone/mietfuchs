@@ -1,8 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { api } from './api'
 import { useConfirm } from './components/feedback'
+import Switcher from './components/Switcher'
 import type { Property } from './types'
-import { propertyHeading } from './propertyView'
 
 // Das gewählte Objekt (#92), nach dem Muster des Abrechnungszeitraums (period.tsx): Die ganze
 // Oberfläche ist immer „in“ einem Objekt, und der Umschalter in der Seitenleiste verstellt
@@ -139,13 +139,6 @@ export function useProperty(): PropertyCtx {
   return c
 }
 
-// Der Name des gewählten Objekts für den Seitenkopf, ab zwei Objekten (#157). Außerhalb des
-// Providers (Tests einzelner Seiten) ohne Namen, statt zu werfen wie useProperty.
-export function usePropertyHeading(): string | null {
-  const c = useContext(Ctx)
-  return c ? propertyHeading(c.properties, c.property) : null
-}
-
 // Das gewählte Objekt ohne Zwang zum Provider (#208): Der Zeitraumumschalter liest daraus die Regeln
 // und gilt in Tests einzelner Teile ohne Provider als Kalenderjahr.
 export function useOptionalProperty(): PropertyCtx | null {
@@ -185,25 +178,16 @@ export function useSwitchProperty(): (id: string, name?: string) => Promise<bool
 
 // Der Umschalter in der Seitenleiste. Bei höchstens einem Objekt gibt es nichts zu wählen und
 // deshalb auch nichts zu sehen.
-export function PropertySwitcher({ properties, value, onChange }: {
+// Derselbe Baustein wie für den Zeitraum (#346 Schritt 8, N1); lange Namen brechen darin um (#180).
+export function PropertySwitcher({ properties, value, onChange, className }: {
   properties: Property[]
   value: string | undefined
   onChange: (id: string) => void
+  className?: string
 }) {
   if (properties.length <= 1) return null
-  const current = properties.find((p) => p.id === value)
-  // Ein Auswahlfeld bricht seinen Text nicht um und schnitt lange Namen ab (#180). Der Name steht
-  // deshalb ganz als Text da, der umbrechen darf, und das Auswahlfeld liegt unsichtbar darüber:
-  // Klick, Tastatur und Vorleser bedienen weiter das echte Feld.
   return (
-    <label className="year-switcher property-switcher no-print">
-      <span>Objekt</span>
-      <div className="property-select">
-        <span className="property-current" aria-hidden="true">{current ? current.name || 'Ohne Namen' : ''}</span>
-        <select aria-label="Objekt wählen" title={current?.name} value={value} onChange={(e) => onChange(e.target.value)}>
-          {properties.map((p) => <option key={p.id} value={p.id}>{p.name || 'Ohne Namen'}</option>)}
-        </select>
-      </div>
-    </label>
+    <Switcher label="Objekt" ariaLabel="Objekt wählen" value={value ?? ''} className={className}
+      options={properties.map((p) => ({ value: p.id, label: p.name || 'Ohne Namen' }))} onChange={onChange} />
   )
 }

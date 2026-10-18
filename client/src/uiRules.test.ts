@@ -241,7 +241,7 @@ test('kleine Knöpfe haben am Handy die volle Tippfläche', () => {
 // Die heutigen Namensgleichheiten bleiben, weil tw.css sie aus der Suche nimmt (`@source not
 // inline`); jede von ihnen steht deshalb auch dort.
 const LEGACY_UTILITY_NAMES = new Set(['sr-only', 'grow', 'grow-2'])
-const INDEX_CSS_MAX_LINES = 859
+const INDEX_CSS_MAX_LINES = 841
 test('S20: keine neue Klasse und keine Animation in index.css mit einem Namen aus Tailwind, und index.css wächst nicht', () => {
   expect(definedClasses.size).toBeGreaterThan(100)
   const clashes = tailwindUtilities(definedClasses)
@@ -526,6 +526,49 @@ test('S22: Navigationseinträge stehen nur in nav.ts', () => {
   // Die Bausteine der Navigation holen ihre Einträge aus nav.ts
   expect(sources['./App.tsx']).toMatch(/navFor\(/)
   expect(sources['./components/MobileNav.tsx']).toMatch(/bottomNav\(\)/)
+})
+
+// S18 (#346 Schritt 8, UI-Durchsicht #341 M13): Objekt und Abrechnungszeitraum wählt nur die Seitenleiste (am
+// Handy das Menüblatt, beide aus App.tsx); die Seiten zeigen beides in der Kontextzeile des Seitenkopfs an. Vorher
+// hatten fünf Seiten eine eigene Jahresauswahl und der Belegordner eine eigene für Objekt und Jahr. Verboten sind
+// deshalb außerhalb von App.tsx die Bausteine der Seitenleiste und jedes `<select>`, das Objekte oder Jahre bzw.
+// Zeiträume anbietet oder damit umschaltet. Erlaubt sind andere Größen, jede mit Grund in der Liste:
+// - das Kalenderjahr von Mietkonto und Steuer bei abweichendem Zeitraum, nur über `CalendarYearSelect`;
+// - die Heizperiode (HeatingPeriodSelect), eine Eigenschaft der Heizanlage und keine Wahl des Zeitraums;
+// - die Eigenschaften eines Belegs bzw. einer Position, die unten mit Beschriftung stehen.
+const SIDEBAR_SWITCHERS: Array<[RegExp, Set<string>]> = [
+  [/<(?:PeriodSelect|PeriodSelectView|PropertySwitcher)\b/, new Set(['./App.tsx', './components/PeriodSelect.tsx'])],
+  [/<Switcher\b/, new Set(['./components/PeriodSelect.tsx', './property.tsx'])],
+  [/<CalendarYearSelect\b/, new Set(['./pages/Mietkonto.tsx', './pages/Steuer.tsx'])],
+]
+const PERIOD_OR_PROPERTY = /\bproperties\.map\b|\bswitch(?:Period|Property|Year)\b|\bcalendarYearOptions\b|\byearOptions\b|\byears\.map\b|\b(?:view|period)\.options\b/
+const S18_EXCEPTIONS: Array<[file: string, label: string, reason: string]> = [
+  ['./pages/Belege.tsx', 'Objekt für', 'Objekt eines Belegs im Posteingang, eine Eigenschaft des Belegs (Entwurf mit Speichern)'],
+  ['./pages/Belege.tsx', 'Jahr für', 'Jahr eines Belegs im Posteingang, eine Eigenschaft des Belegs (Entwurf mit Speichern)'],
+  ['./components/AssessmentReview.tsx', 'Jahr der Buchung', 'In welches Jahr eine Auswertung bucht, eine Eigenschaft des Belegs, kein Filter (Spezifikation Abschnitt 2)'],
+  ['./components/TaxYearSelect.tsx', 'aria-label={label}', 'Jahr der Zahlung (Steuer) einer Kostenposition'],
+  ['./components/CostPeriodFields.tsx', 'value={form.taxYear}', 'Jahr der Zahlung (Steuer) einer Kostenposition im Formular'],
+]
+const periodSelects = (src: string): string[] => [...src.matchAll(/<select\b[\s\S]*?<\/select>/g)].map((m) => m[0]).filter((s) => PERIOD_OR_PROPERTY.test(s))
+test('S18: Objekt und Abrechnungszeitraum nur in der Seitenleiste', () => {
+  // Probe des Prüfers: die frühere Auswahl im Belegordner und die Jahresauswahl, nicht aber ein anderes Feld
+  expect(periodSelects('<select value={a} onChange={(e) => setA(e.target.value)}>{properties.map((p) => <option key={p.id} />)}</select>')).toHaveLength(1)
+  expect(periodSelects('<select value={view.param} onChange={(e) => void switchPeriod(e.target.value)}>{x}</select>')).toHaveLength(1)
+  expect(periodSelects('<select value={form.unitId} onChange={(e) => setForm(e.target.value)}>{units.map((u) => <option key={u.id} />)}</select>')).toEqual([])
+  for (const [pattern, allowed] of SIDEBAR_SWITCHERS) {
+    const users = files.filter((f) => pattern.test(sources[f] ?? ''))
+    expect(users.length, String(pattern)).toBeGreaterThan(0)
+    expect(users.filter((f) => !allowed.has(f)), `${pattern}: nur ${[...allowed].join(', ')}`).toEqual([])
+  }
+  expect(sources['./App.tsx']).toMatch(/<PropertySwitcher\b/)
+  expect(sources['./App.tsx']).toMatch(/<PeriodSelect\b/)
+  const found = files.filter((f) => f.startsWith('./pages/') || f.startsWith('./components/'))
+    .flatMap((f) => periodSelects(sources[f] ?? '').map((s) => ({ f, s })))
+  const unexpected = found.filter(({ f, s }) => !S18_EXCEPTIONS.some(([file, label]) => file === f && s.includes(label)))
+  expect(unexpected.map(({ f, s }) => `${f}: ${s.slice(0, 120)}`)).toEqual([])
+  for (const [file, label] of S18_EXCEPTIONS) {
+    expect(found.some(({ f, s }) => f === file && s.includes(label)), `${file} „${label}“ kommt nicht mehr vor; aus der Liste streichen`).toBe(true)
+  }
 })
 
 // S23 (#346 Schritt 9, Spezifikation Abschnitt 5): Tabellen mit Datensätzen werden am Handy zu Karten

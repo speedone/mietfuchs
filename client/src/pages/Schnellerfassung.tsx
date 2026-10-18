@@ -9,7 +9,6 @@ import { bookDecisions, greenDecisions, loadOpenAssessments, planDecisions } fro
 import { useEvaluationQueue, type QueueEntry as BaseEntry, type QueuePatch } from '../evaluationQueue'
 import AssessmentReview from '../components/AssessmentReview'
 import { usePeriod } from '../period'
-import { PeriodSelect } from '../components/PeriodSelect'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import { AiProgressBadge } from '../components/AiProgress'
 import { plural } from '../../../shared/wording.ts'
@@ -337,7 +336,6 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
 
       <div className="card no-print">
         <div className="row center">
-          <PeriodSelect />
           <div className="grow" />
           {totalRecognized > 0 && (
             <div className="muted align-right">

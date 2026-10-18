@@ -205,16 +205,20 @@ test('Anlegen klappt, Neuladen scheitert: Meldung im Dialog und kein zweites Obj
   expect(sent.filter((r) => r.method === 'POST')).toHaveLength(1)
 })
 
-test('der Seitenkopf nennt das Objekt ab zwei Objekten, bei einem nicht', async () => {
+// Seit #346 Schritt 8 nennt der Seitenkopf das Objekt immer (Kontextzeile), denn keine Seite hat mehr eine eigene
+// Auswahl, die es nennen würde; der Umschalter in der Seitenleiste erscheint weiter erst ab dem zweiten.
+test('der Seitenkopf nennt das Objekt, den Umschalter gibt es erst ab zwei Objekten', async () => {
   render(<App />)
   fireEvent.click(await screen.findByRole('button', { name: /Stammdaten/ }))
   await screen.findByRole('heading', { name: 'Stammdaten' })
-  expect(screen.queryByTestId('page-property')).toBeNull()
+  expect(screen.getByTestId('page-context').textContent).toBe('Haus A')
+  expect(screen.queryByLabelText('Objekt wählen')).toBeNull()
   cleanup()
 
   properties = [...properties, objekt('objekt-2', 'Gartenweg 3')]
   units['objekt-2'] = []
   render(<App />)
   fireEvent.click(await screen.findByRole('button', { name: /Mietkonto/ }))
-  expect((await screen.findByTestId('page-property')).textContent).toMatch(/Haus A/)
+  expect((await screen.findByTestId('page-context')).textContent).toMatch(/^Haus A · Abrechnungsjahr \d{4}$/)
+  expect(screen.getByLabelText('Objekt wählen')).toBeTruthy()
 })
