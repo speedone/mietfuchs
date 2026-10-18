@@ -12,6 +12,8 @@ import { aiPositionDefaults, type KeyContext } from '../costForm'
 import AiKeyCell from './AiKeyCell'
 import Table from './Table'
 import { useConfirm } from './feedback'
+import DraftActions from './DraftActions'
+import { useDraft } from '../useDraft'
 
 type Props = {
   assessment: AssessmentView
@@ -125,18 +127,12 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
     }
   }
 
-  async function changeYear(year: number) {
-    if (busy) return
-    setBusy(true)
+  // Das Jahr der Buchung ist ein Entwurf am Feld (#309): Erst „Speichern“ schickt es. Solange er offen
+  // ist, gibt es weder Vorschau noch Buchung, denn beide gälten noch für das bisherige Jahr.
+  const year = useDraft(a.year, { scope: a.id })
+  async function saveYear(next: number) {
     setError('')
-    try {
-      setPreview(null)
-      onChange(await changeAssessmentYear(a.id, year))
-    } catch (e) {
-      setError(errorText(e))
-    } finally {
-      setBusy(false)
-    }
+    onChange(await changeAssessmentYear(a.id, next))
   }
 
   const years = [a.year - 2, a.year - 1, a.year, a.year + 1]
@@ -145,10 +141,11 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
       <div className="row center">
         <label className="field">
           Jahr der Buchung
-          <select aria-label="Jahr der Buchung" value={a.year} disabled={busy} onChange={(e) => void changeYear(Number(e.target.value))}>
+          <select aria-label="Jahr der Buchung" value={year.value} disabled={busy || year.saving} onChange={(e) => { year.set(Number(e.target.value)); setPreview(null) }}>
             {years.map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
         </label>
+        <DraftActions draft={year} onSave={saveYear} what="Jahr der Buchung" />
       </div>
       {a.propertyId === null && (
         <div className="warn">Zu welchem Objekt gehört dieser Beleg? Wählen Sie es bitte im Posteingang; gebucht wird nur innerhalb eines Objekts.</div>
@@ -273,10 +270,11 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
         <a href={`/uploads/${encodeURIComponent(a.file)}`} target="_blank" rel="noreferrer">📎 Beleg ansehen</a>
         <div className="grow" />
         {/* Sichtprüfung E30: Was fehlt, steht neben den gesperrten Knöpfen */}
-        {!busy && decisions.length === 0 && <span className="muted">Wählen Sie zuerst je Zeile, was geschieht.</span>}
-        {!busy && decisions.length > 0 && !preview && <span className="muted">Erst die Vorschau, dann buchen.</span>}
-        <button className="btn secondary" disabled={busy || decisions.length === 0} onClick={() => void showPreview()}>Vorschau</button>
-        <button className="btn" disabled={busy || !preview || preview.errors.length > 0} onClick={() => void book()}>Buchen</button>
+        {!busy && year.dirty && <span className="muted">Erst das Jahr speichern oder verwerfen.</span>}
+        {!busy && !year.dirty && decisions.length === 0 && <span className="muted">Wählen Sie zuerst je Zeile, was geschieht.</span>}
+        {!busy && !year.dirty && decisions.length > 0 && !preview && <span className="muted">Erst die Vorschau, dann buchen.</span>}
+        <button className="btn secondary" disabled={busy || year.dirty || year.saving || decisions.length === 0} onClick={() => void showPreview()}>Vorschau</button>
+        <button className="btn" disabled={busy || year.dirty || year.saving || !preview || preview.errors.length > 0} onClick={() => void book()}>Buchen</button>
       </div>
     </div>
   )

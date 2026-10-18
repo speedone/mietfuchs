@@ -3241,9 +3241,13 @@ Tippfläche von `--target` über `::after`, und printCss.test.ts verlangt den du
   [saveOnChange.test.ts](client/src/saveOnChange.test.ts) liest den Quelltext: Ein `<select>` oder
   ein `<input>` vom Typ checkbox, radio oder date, dessen `onChange` speichert (`api(`, eine
   Methode PUT/POST/PATCH/DELETE, ein Name mit save/persist/submit, auch über Funktionen derselben
-  Datei und relativ importierte Helfer), ist verboten. Was heute noch so speichert, steht dort in
-  der Ausnahmeliste mit Grund und Anzahl; jede Umstellung (je Seite ein PR) streicht ihren Eintrag.
-  Rückrufe aus den Props mit anderem Namen sieht er nicht.
+  Datei und relativ importierte Helfer), ist verboten. Die Ausnahmeliste dort nennt Grund und
+  Anzahl und enthält nur noch die Art einer Zahlung im Mietkonto (`changeKind`), deren Umstellung
+  mit #281 kommt; Neues kommt nicht hinzu. Rückrufe aus den Props mit anderem Namen sieht er nicht.
+  Eine Auswahl, die eine Aktion auslöst (Beleg einer Position zuordnen), ist ebenso ein Entwurf mit
+  leerem gespeichertem Wert (`AttachPicker` in Belege.tsx). Im Posteingang sind Objekt und Jahr ein
+  Entwurf mit einem „Speichern“; die Positionen zum Zuordnen folgen schon dem Entwurf. Das Jahr der
+  Buchung einer Auswertung sperrt, solange es ungespeichert ist, Vorschau und Buchen.
 - **Wer nach Plattform unterscheidet, bekommt sie hineingereicht**, wie `systemLocation` und
   `chooseDataDir` in paths.ts und store.ts und `networkLocation` in db/open.ts. Dazu gehört, mit
   `path.win32` beziehungsweise `path.posix` zu rechnen statt mit der Voreinstellung, und ebenso

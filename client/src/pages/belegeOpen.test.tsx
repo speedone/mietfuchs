@@ -55,7 +55,10 @@ test('„Position öffnen“ bei einer Position eines anderen Objekts schaltet e
   if (!filter) throw new Error('kein Objektfilter im Belegordner')
   fireEvent.change(filter, { target: { value: 'all' } })
   fireEvent.change(await screen.findByLabelText('hausgeld.pdf einer Position zuordnen', {}, SLOW), { target: { value: 'hg' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern (Position für hausgeld.pdf)' }))
   const check = await screen.findByRole('status', { name: 'Betrag prüfen' }, SLOW)
+  // Bis das Speichern fertig ist, zählt die Wahl als offener Entwurf (#309).
+  await waitFor(() => expect(screen.queryByRole('button', { name: /^Speich.*\(Position für hausgeld\.pdf\)$/ })).toBeNull(), SLOW)
   fireEvent.click(within(check).getByRole('button', { name: 'Position öffnen' }))
   await waitFor(() => expect((screen.getByLabelText('Objekt wählen') as HTMLSelectElement).value).toBe('objekt-2'), SLOW)
   await waitFor(() => expect((screen.getByLabelText(/Beschreibung/) as HTMLInputElement).value).toBe('Hauswart laut Hausgeld'), SLOW)

@@ -27,9 +27,6 @@ type Exception = {
 }
 
 const EXCEPTIONS: Exception[] = [
-  { file: './components/AssessmentReview.tsx', via: 'changeYear', count: 1, reason: 'Wird mit #309 umgestellt: Jahr der Buchung in der Auswertung eines Belegs.' },
-  { file: './pages/Belege.tsx', via: 'place', count: 2, reason: 'Wird mit #309 umgestellt: Objekt und Jahr eines Belegs im Posteingang.' },
-  { file: './pages/Belege.tsx', via: 'attachExisting', count: 2, reason: 'Wird mit #309 umgestellt: Beleg einer Position zuordnen.' },
   { file: './pages/Mietkonto.tsx', via: 'changeKind', count: 1, reason: 'Wird mit #309 umgestellt: Art einer Zahlung (fragt vorher schon nach).' },
 ]
 

@@ -90,8 +90,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Abrechnung (Vorschlag zur Vorauszahlung, Belegkopien) und der Schalter für die Update-Prüfung in
   den Einstellungen erst mit „Speichern“, ebenso auf der Seite Heizkosten die Karten „Ausnahmen und
   Vereinbarungen“ (ein „Speichern“ für die ganze Karte) und „Betriebsstrom der Heizung“ sowie die
-  Verknüpfung einer Position mit ihrer Lieferung. Die Schaltflächen nennen für Vorleser zuerst ihren
-  sichtbaren Text, also auch „Speichert …“ ([#309](https://github.com/speedone/mietfuchs/issues/309)).
+  Verknüpfung einer Position mit ihrer Lieferung, im Belegordner Objekt und Jahr eines Belegs im
+  Posteingang und das Zuordnen eines Belegs zu einer Position, und in der Auswertung eines Belegs das
+  Jahr der Buchung (bis es gespeichert ist, gibt es dort weder Vorschau noch Buchung). Die
+  Schaltflächen nennen für Vorleser zuerst ihren sichtbaren Text, also auch „Speichert …“
+  ([#309](https://github.com/speedone/mietfuchs/issues/309)).
 
 ### Behoben
 
