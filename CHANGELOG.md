@@ -85,9 +85,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - Das Versanddatum einer abgeschlossenen Abrechnung wird erst mit „Speichern“ übernommen; vorher
   stand schon ein verklicktes Datum im Kalender fest, und an ihm hängt die Frist nach § 556 Abs. 3
   BGB. „Verwerfen“ stellt das gespeicherte Datum wieder her, und wer mit einem ungespeicherten
-  Datum Jahr oder Objekt wechselt, wird vorher gefragt. Weitere Auswahlfelder und Häkchen, die
-  noch beim Anklicken speichern, folgen nach demselben Muster
-  ([#309](https://github.com/speedone/mietfuchs/issues/309)).
+  Datum Jahr oder Objekt wechselt, wird vorher gefragt, ebenso beim Wechsel zwischen Betriebs- und
+  Heizkostenabrechnung. Nach demselben Muster speichern die beiden Druckeinstellungen auf der
+  Abrechnung (Vorschlag zur Vorauszahlung, Belegkopien) und der Schalter für die Update-Prüfung in
+  den Einstellungen erst mit „Speichern“. Die Schaltflächen nennen für Vorleser zuerst ihren
+  sichtbaren Text, also auch „Speichert …“ ([#309](https://github.com/speedone/mietfuchs/issues/309)).
 
 ### Behoben
 

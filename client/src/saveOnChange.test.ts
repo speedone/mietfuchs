@@ -31,8 +31,6 @@ const EXCEPTIONS: Exception[] = [
   { file: './components/FuelCard.tsx', via: 'link', count: 1, reason: 'Wird mit #309 umgestellt: Lieferung einer Brennstoff-Position verknüpfen.' },
   { file: './components/HeatingRulesCard.tsx', via: 'save', count: 5, reason: 'Wird mit #309 umgestellt: Regeln der Heizkostenabrechnung.' },
   { file: './components/OperatingPowerHandlingCard.tsx', via: 'save', count: 1, reason: 'Wird mit #309 umgestellt: Umgang mit dem Betriebsstrom.' },
-  { file: './components/Update.tsx', via: 'toggle', count: 1, reason: 'Wird mit #309 umgestellt: Schalter für die Update-Prüfung in den Einstellungen (die Frage im Cockpit hat Knöpfe und bleibt sofort).' },
-  { file: './pages/Abrechnung.tsx', via: 'saveSetting', count: 2, reason: 'Wird mit #309 umgestellt: Druckeinstellungen (Anpassungsvorschlag, Belegkopien).' },
   { file: './pages/Belege.tsx', via: 'place', count: 2, reason: 'Wird mit #309 umgestellt: Objekt und Jahr eines Belegs im Posteingang.' },
   { file: './pages/Belege.tsx', via: 'attachExisting', count: 2, reason: 'Wird mit #309 umgestellt: Beleg einer Position zuordnen.' },
   { file: './pages/Mietkonto.tsx', via: 'changeKind', count: 1, reason: 'Wird mit #309 umgestellt: Art einer Zahlung (fragt vorher schon nach).' },
