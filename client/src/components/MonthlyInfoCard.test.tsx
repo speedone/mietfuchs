@@ -38,7 +38,10 @@ test('Monat mit Status; Speichern schickt Vergleichswert, Quelle und Tag an die 
   expect(await screen.findByText('November 2025')).toBeTruthy()
   expect(sent[0]?.url).toBe('/api/heating-plants/hp/periods/2025-01/monthly-info')
   expect(screen.getByText(/unvollständig: Vergleich mit einem Durchschnittsnutzer fehlt/)).toBeTruthy()
+  // Ein Entwurf je Zeile (#346 Schritt 7): „Speichern“ erst bei einer Änderung, und nur an dieser Zeile.
+  expect(screen.queryByRole('button', { name: /^Speichern/ })).toBeNull()
   fireEvent.change(screen.getByLabelText('Vergleichswert November 2025 (kWh je m²)'), { target: { value: '10' } })
+  expect(screen.getAllByRole('button', { name: /^Speichern/ }).map((b) => b.textContent)).toEqual(['Speichern (November 2025)'])
   fireEvent.change(screen.getByLabelText('Quelle November 2025'), { target: { value: 'Ablesedienst' } })
   fireEvent.change(screen.getByLabelText('Mitgeteilt am November 2025'), { target: { value: '2025-12-05' } })
   fireEvent.click(screen.getByText('Speichern', { selector: 'button' }))
@@ -88,7 +91,7 @@ test('Getrenntes Warmwasser: die Temperatur für die Umrechnung wird hier einget
   served = view({ dhwTemp: { tempC: null, here: true } })
   wrap(<MonthlyInfoCard plantId="hp" period="2025-01" />)
   fireEvent.change(await screen.findByLabelText('Mittlere Warmwassertemperatur (°C)'), { target: { value: '55,5' } })
-  fireEvent.click(screen.getByText('Temperatur speichern', { selector: 'button' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern (Warmwassertemperatur)' }))
   await waitFor(() => expect(sent.find((x) => x.method === 'PUT')).toEqual({
     url: '/api/heating-plants/hp/periods/2025-01/dhw-temperature', method: 'PUT', body: { dhwTempC: 55.5 },
   }))

@@ -1,4 +1,5 @@
 import type { HeatingPlant, OperatingPowerHandling } from '../types'
+import Card from '../components/Card'
 import { api } from '../api'
 import { useToast } from './feedback'
 import Term from './Term'
@@ -19,8 +20,7 @@ export default function OperatingPowerHandlingCard({ plant, onSaved }: { plant: 
     onSaved()
   }
   return (
-    <div className="card no-print">
-      <h2><Term id="operatingPower">Betriebsstrom der Heizung</Term>{plant.name ? ` „${plant.name}“` : ''}</h2>
+    <Card title={<><Term id="operatingPower">Betriebsstrom der Heizung</Term>{plant.name ? ` „${plant.name}“` : ''}</>} className="no-print">
       <label className="field grow">
         <span>{OPERATING_POWER_HANDLING_QUESTION}</span>
         <select value={draft.value} disabled={draft.saving} onChange={(e) => draft.set(e.target.value as '' | OperatingPowerHandling)}>
@@ -37,6 +37,6 @@ export default function OperatingPowerHandlingCard({ plant, onSaved }: { plant: 
         ist beim Allgemeinstrom abzuziehen; der Zwischenzähler erspart Ihnen nur das Schätzen (BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07,
         Rn. 32; vgl. BGH, Urteil vom 03.06.2016, V ZR 166/15, Leitsatz).
       </p>
-    </div>
+    </Card>
   )
 }

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import Card from '../components/Card'
 import type { HeatingPeriodView, HeatingPlant } from '../types'
 import { api, errorText } from '../api'
 import { useToast } from './feedback'
@@ -47,8 +48,7 @@ export default function HeatingInfoCard({ plant, view, onChanged }: { plant: Hea
   }
   const fromContract = inheritedText(view.rules.fromPeriod.consumerContract, view.period)
   return (
-    <div className="card no-print">
-      <h3><Term id="billingInfo">Angaben zur Abrechnung (§ 6a)</Term> · {view.label}</h3>
+    <Card title={<Term id="billingInfo">Angaben zur Abrechnung (§ 6a)</Term>} level={3} className="no-print">
       <ErrorSummary errors={errors} />
       <p className="muted">
         Mietfuchs druckt die Informationen nach § 6a HeizkostenV mit der Abrechnung. Energieträger und Kontaktadressen kennt es selbst, die Entgelte der
@@ -144,6 +144,6 @@ export default function HeatingInfoCard({ plant, view, onChanged }: { plant: Hea
           <button className="btn secondary" onClick={() => void save()}>Angaben speichern</button>
         </div>
       )}
-    </div>
+    </Card>
   )
 }

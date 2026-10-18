@@ -226,6 +226,19 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   in derselben Anfrage (Befunde M18, N16, N16a aus [#341](https://github.com/speedone/mietfuchs/issues/341);
   [#346](https://github.com/speedone/mietfuchs/issues/346)).
 
+- Ein Speichern je Karte: Auf der Seite Heizkosten tragen „CO₂: Angaben zum Gebäude“ (Angaben und Fläche
+  der Einstufung), „Heizung nach § 43 GModG“ und „Anteil nach Verbrauch“ (vorher „Speichern“ bzw.
+  „Pflichtanteil eintragen“ und daneben „Antwort speichern“) ein „Speichern“ am Fuß der Karte, das erst
+  erscheint, wenn Sie etwas geändert haben, mit dem Hinweis „Ungespeicherte Änderungen“ und „Verwerfen“.
+  Was je Zeile gespeichert wird (die Mitteilung nach § 5d Abs. 4 je Mieter, die Monate der monatlichen
+  Verbrauchsinformation, die Warmwassertemperatur, der Grund einer fehlenden Zwischenablesung und in den
+  Einstellungen die noch nicht veröffentlichten Rechtswerte), hat sein „Speichern“ direkt am Feld, ebenfalls
+  erst nach einer Änderung. Die Karten der Seite Heizkosten haben einen einheitlichen Kopf, ohne die
+  wiederholte Heizperiode im Titel (außer beim Ableseergebnis, das sie für den Ausdruck nennt); die Frage „Wie bestimmen Sie den Betriebsstrom?“ zeigt jede Antwort in
+  einer eigenen Zeile, und „Nicht möglich“ und „Nicht durchgeführt“ bei einer fehlenden Zwischenablesung
+  sehen aus wie Knöpfe (Befunde N8, M18 aus [#341](https://github.com/speedone/mietfuchs/issues/341);
+  [#346](https://github.com/speedone/mietfuchs/issues/346)).
+
 ### Behoben
 
 - Wechsel des Abrechnungszeitraums: Wer nach der Vorschau den Monat oder die Art der Änderung noch einmal
