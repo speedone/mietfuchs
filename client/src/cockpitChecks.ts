@@ -22,10 +22,31 @@ export function usesUnitBasis(items: CostItem[]): boolean {
 
 // Die grünen Zeilen „Mietverhältnisse & Flächen“ und „Belege erfasst“, mit Ein- und Mehrzahl statt
 // „Mietverhältnis(se)“ oder „Position(en)“ (#180).
-export function tenanciesDetail(tenancies: number, notSettled: number, participating: number, zeroArea: string[]): string {
+//
+// Einheiten ohne Wohnfläche und ohne Bewohner (`zeroArea`, Garage-artig nach `isGarageLike` in calc.ts, #135)
+// sind eine Angabe und kein Fehler, die Zeile bleibt grün. Sie sagt aber, warum (Befund N2 aus #341): Bei
+// Fläche und Personen tragen sie nichts; beim Schlüssel nach Einheiten zählt jede als eine Einheit
+// (`basisUnits` in calc.ts). Das nennt die Zeile nur für die Einheiten in `byUnits`, also die, die an einer
+// Position nach Einheiten im Zeitraum teilnehmen (`countsByUnits`).
+export function tenanciesDetail(tenancies: number, notSettled: number, participating: number, zeroArea: string[], byUnits: string[] = []): string {
+  const one = zeroArea.length === 1
+  const all = byUnits.length === zeroArea.length && zeroArea.every((n) => byUnits.includes(n))
+  const units = byUnits.length === 0
+    ? ''
+    : all
+      ? `, nach Einheiten ${one ? 'als' : 'je als'} eine Einheit`
+      : `, nach Einheiten ${byUnits.length === 1 ? `zählt ${byUnits[0]} als` : `zählen ${andList(byUnits)} je als`} eine Einheit`
+  const zero = `${andList(zeroArea)} ohne Wohnfläche und ohne Bewohner (etwa Garage oder Stellplatz): ` +
+    `Bei Fläche und Personen ${one ? 'zählt sie' : 'zählen sie'} nicht mit${units}`
   return `${countOf(tenancies, 'Mietverhältnis', 'Mietverhältnisse')}${notSettled > 0 ? `, davon ${notSettled} ohne Abrechnung` : ''}` +
     ` · ${countOf(participating, 'beteiligte Wohnung', 'beteiligte Wohnungen')} · ` +
-    (zeroArea.length > 0 ? `0 m² und 0 Personen: ${andList(zeroArea)}` : 'vollständig')
+    (zeroArea.length > 0 ? zero : 'vollständig')
+}
+
+// Zählt die Einheit bei einer umlagefähigen Position nach Einheiten im Zeitraum mit? Ohne Teilnehmerliste
+// nehmen alle Einheiten teil, mit Liste nur die genannten (#94).
+export function countsByUnits(items: CostItem[], unitId: string): boolean {
+  return allocable(items).some((c) => c.key === 'units' && (c.participantUnitIds == null || c.participantUnitIds.includes(unitId)))
 }
 
 export function itemsDetail(items: number, sumCents: number, files: number): string {
