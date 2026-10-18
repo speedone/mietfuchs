@@ -3,7 +3,7 @@
 import { calendarPeriod } from '../../shared/period.ts'
 import { expect, test } from 'vitest'
 import type { CostItem } from './types'
-import { cockpitSubtitle, itemsDetail, meterTypesInUse, tenanciesDetail, usesUnitBasis, usesUnitsKey } from './cockpitChecks'
+import { cockpitSubtitle, itemsDetail, meterTypesInUse, tenanciesDetail, usesUnitBasis, countsByUnits } from './cockpitChecks'
 
 const item = (category: string, patch: Partial<CostItem>): CostItem => ({
   id: category, propertyId: 'p', period: calendarPeriod(2025), category, description: category, amountCents: 100, key: 'area', ...patch,
@@ -21,8 +21,13 @@ test('Verteilbasis: nur umlagefähige Positionen nach Fläche, Einheiten, Person
   expect(usesUnitBasis([item('Grundsteuer', { key: 'area' })])).toBe(true)
   expect(usesUnitBasis([item('Hauswart', { key: 'direct' })])).toBe(false)
   expect(usesUnitBasis([item('Nicht umlagefähig', { key: 'area' }), item('Zuführung Erhaltungsrücklage', { key: 'persons' })])).toBe(false)
-  expect(usesUnitsKey([item('Grundsteuer', { key: 'units' })])).toBe(true)
-  expect(usesUnitsKey([item('Nicht umlagefähig', { key: 'units' }), item('Grundsteuer', { key: 'area' })])).toBe(false)
+  // Befund N2 aus #341 (Durchsicht): Zählt eine Einheit bei einer Position nach Einheiten mit? Nur ohne
+  // Teilnehmerliste oder als Teilnehmer, und nur bei umlagefähigen Positionen.
+  expect(countsByUnits([item('Grundsteuer', { key: 'units' })], 'g1')).toBe(true)
+  expect(countsByUnits([item('Grundsteuer', { key: 'units', participantUnitIds: null })], 'g1')).toBe(true)
+  expect(countsByUnits([item('Nicht umlagefähig', { key: 'units' }), item('Grundsteuer', { key: 'area' })], 'g1')).toBe(false)
+  expect(countsByUnits([item('Müllabfuhr', { key: 'units', participantUnitIds: ['eg', 'og'] })], 'g1')).toBe(false)
+  expect(countsByUnits([item('Müllabfuhr', { key: 'units', participantUnitIds: ['eg', 'g1'] })], 'g1')).toBe(true)
 })
 
 // Ein- und Mehrzahl statt „Mietverhältnis(se)“, „Wohnung(en)“, „Position(en)“ und „Belegdatei(en)“ (#180).
@@ -33,9 +38,12 @@ test('Zeile „Mietverhältnisse & Flächen“: Ein- und Mehrzahl, Aufzählung m
   // beim Schlüssel nach Einheiten zählen sie je als eine Einheit mit (calc.ts, `basisUnits`).
   expect(tenanciesDetail(3, 1, 2, ['G1', 'G2'])).toBe('3 Mietverhältnisse, davon 1 ohne Abrechnung · 2 beteiligte Wohnungen · '
     + 'G1 und G2 ohne Wohnfläche und ohne Bewohner (etwa Garage oder Stellplatz): Bei Fläche und Personen zählen sie nicht mit')
-  expect(tenanciesDetail(3, 0, 3, ['Garage 1'], true)).toBe('3 Mietverhältnisse · 3 beteiligte Wohnungen · '
+  expect(tenanciesDetail(3, 0, 3, ['Garage 1'], ['Garage 1'])).toBe('3 Mietverhältnisse · 3 beteiligte Wohnungen · '
     + 'Garage 1 ohne Wohnfläche und ohne Bewohner (etwa Garage oder Stellplatz): Bei Fläche und Personen zählt sie nicht mit, nach Einheiten als eine Einheit')
-  expect(tenanciesDetail(3, 0, 3, ['G1', 'G2'], true)).toMatch(/zählen sie nicht mit, nach Einheiten je als eine Einheit$/)
+  expect(tenanciesDetail(3, 0, 3, ['G1', 'G2'], ['G1', 'G2'])).toMatch(/zählen sie nicht mit, nach Einheiten je als eine Einheit$/)
+  // Nur G1 nimmt an der Position nach Einheiten teil: Der Zusatz nennt nur G1.
+  expect(tenanciesDetail(3, 0, 3, ['G1', 'G2'], ['G1'])).toMatch(/zählen sie nicht mit, nach Einheiten zählt G1 als eine Einheit$/)
+  expect(tenanciesDetail(3, 0, 3, ['G1', 'G2', 'G3'], ['G1', 'G3'])).toMatch(/nach Einheiten zählen G1 und G3 je als eine Einheit$/)
 })
 
 // fmtEuro setzt ein geschütztes Leerzeichen vor das Eurozeichen.
