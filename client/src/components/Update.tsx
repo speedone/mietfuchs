@@ -283,7 +283,7 @@ function Commands({ lines, status }: { lines: string[]; status: UpdateStatus }) 
           : 'Im Mietfuchs-Ordner nacheinander ausführen und Mietfuchs danach neu starten:'}
       </p>
       <div className="command-box">
-        <pre>{lines.map((l) => <code key={l}>{l}</code>)}</pre>
+        <pre tabIndex={0}>{lines.map((l) => <code key={l}>{l}</code>)}</pre>
         <button className="btn secondary small" onClick={() => void copy()}>Befehle kopieren</button>
       </div>
       {status.mode === 'docker' && (

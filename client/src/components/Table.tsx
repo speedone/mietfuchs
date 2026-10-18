@@ -13,10 +13,18 @@ import { useEffect, useRef, useState, type ComponentProps } from 'react'
 export default function Table(props: ComponentProps<'table'>) {
   const ref = useRef<HTMLDivElement>(null)
   const [wider, setWider] = useState(false)
+  // Der Name des rollenden Bereichs: die Beschriftung der Tabelle, sonst ihre <caption>, sonst die Überschrift
+  // ihrer Karte, sonst „Tabelle“. Mehrere Tabellen einer Seite heißen so nicht alle gleich.
+  const [name, setName] = useState('Tabelle')
   useEffect(() => {
     const el = ref.current
     if (!el || typeof ResizeObserver === 'undefined') return
-    const measure = () => setWider(el.scrollWidth > el.clientWidth + 1)
+    const measure = () => {
+      setWider(el.scrollWidth > el.clientWidth + 1)
+      const table = el.querySelector('table')
+      const heading = el.closest('.card, section, details, .panel')?.querySelector('h1, h2, h3, h4, summary')
+      setName(table?.getAttribute('aria-label')?.trim() || table?.querySelector('caption')?.textContent?.trim() || heading?.textContent?.trim() || 'Tabelle')
+    }
     measure()
     const observer = new ResizeObserver(measure)
     observer.observe(el)
@@ -27,7 +35,9 @@ export default function Table(props: ComponentProps<'table'>) {
   return (
     <>
       {wider && <div className="table-scroll-hint" aria-hidden="true">Weitere Spalten rechts: seitlich scrollen oder wischen →</div>}
-      <div className="table-scroll" ref={ref}>
+      {/* Browserlauf (#340, axe „scrollable-region-focusable“): Rollt der Bereich, ist er per Tab erreichbar und
+          mit den Pfeiltasten zu rollen, auch wenn in der Tabelle nichts Bedienbares steht. */}
+      <div className="table-scroll" ref={ref} {...(wider ? { tabIndex: 0, role: 'region', 'aria-label': `${name}, seitlich scrollbar` } : {})}>
         <table {...props} />
       </div>
     </>

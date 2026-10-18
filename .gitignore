@@ -8,6 +8,8 @@ dist-bin/
 
 # Artefakte der Browser-Automatisierung (Screenshots, Snapshots)
 .playwright-mcp/
+# Fotos und Bericht des Browserlaufs (scripts/browser-check.mjs), wenn --out ins Repo zeigt
+.browserlauf/
 
 # Ist-Ergebnisse des Prüfkatalogs (GOLDEN=diff npm --prefix server test)
 expected.actual.json

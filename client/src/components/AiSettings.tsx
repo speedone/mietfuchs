@@ -617,7 +617,7 @@ function PullHint({ model, url, onPull, busy }: { model: string; url: string; on
         <span className="muted">oder {text.replace(/^Zum Laden im/, 'im')}</span>
       </div>
       <div className="command-box">
-        <pre><code>{command}</code></pre>
+        <pre tabIndex={0}><code>{command}</code></pre>
         <button className="btn secondary small" onClick={() => void copy()}>Befehl kopieren</button>
       </div>
     </>

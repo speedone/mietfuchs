@@ -27,13 +27,15 @@ npm start          # Produktivbetrieb: Server liefert App + API auf Port 3001
 npm run package    # baut eigenständige Binaries nach dist-bin/ (braucht Bun)
 npm run package:linux # baut daraus .deb/.rpm/Arch-Pakete (braucht nFPM oder Docker)
 npm run screenshots # Bildschirmfotos fürs README nach docs/screenshots (braucht Playwright-Chromium)
+npm run browser-check # Browserlauf: jede Seite in Chromium, Firefox, WebKit mit axe (braucht die drei Browser)
 ```
 
 **Bildschirmfotos fürs README**: [scripts/screenshots.mjs](scripts/screenshots.mjs) (`npm run
 screenshots`) erzeugt die Bilder in `docs/screenshots/` neu und gehört zu jedem Release. Es baut
 die Oberfläche (`--skip-build` lässt das aus), startet den Server wie `npm start` mit den drei
 Angaben jedes Prüfstarts (siehe unten) und das nachgebaute Ollama aus
-[scripts/fake-ollama.mjs](scripts/fake-ollama.mjs), legt per API einen Beispielbestand an und
+[scripts/fake-ollama.mjs](scripts/fake-ollama.mjs), legt per API einen Beispielbestand an
+([scripts/demo-stock.mjs](scripts/demo-stock.mjs), denselben nimmt der Browserlauf) und
 fotografiert mit Playwright bei 1440 × 900 im hellen Design. **Der Bestand ist erfunden**: ein
 Mehrfamilienhaus „Lindenweg 12, 12345 Musterstadt“ mit selbstgenutzter Dachwohnung, Garage,
 Mieterwechsel mit Leerstand, Zählern, Zahlungen und Belegen (vom selben Browser als PDF gedruckt),
@@ -44,6 +46,30 @@ Vorjahr, wie es die Oberfläche voreinstellt. Playwright ist devDependency im Wu
 Browser lädt einmalig `npx playwright install chromium`. Meldet die Oberfläche einen Fehler oder
 steht eine Fehlermeldung im Bild, bricht das Skript ab; die Bilder trotzdem vor dem Commit
 ansehen. Bestehende Dateinamen beibehalten, das README verlinkt sie.
+
+**Browserlauf** (#340, Schritt 11 von #346): [scripts/browser-check.mjs](scripts/browser-check.mjs)
+(`npm run browser-check`) legt denselben Beispielbestand an, dazu eine Heizanlage für die Seite
+Heizkosten, und geht jede Seite der Navigation in Chromium, Firefox und WebKit (die Engine von
+Safari) durch, bei 1440 × 900 und 390 × 844, hell und dunkel. Je Seite: keine Konsolenfehler, keine
+sichtbare Fehlermeldung, `scrollWidth` nicht größer als das Fenster, und axe-core
+(`@axe-core/playwright`, MPL-2.0) ohne Verstöße der Stufen serious und critical. Dazu je Engine
+und Ansicht Bedienproben per Tastatur: Seitenfenster (Esc fragt, Fokus auf „Abbrechen“, Enter
+lässt offen, „Verwerfen“ schließt), Monatsfeld (Text und Raster), Begriffserklärung, die
+Sammelmeldung nach „Ablesung speichern“ (sichtbar, mit Fokus) und am Handy Menüblatt und untere
+Leiste; axe läuft auch auf diesen offenen Zuständen. Jeder Befund ergibt Exit-Code 1 und eine
+Zeile im Bericht (`<out>/bericht.md`, in Actions die Zusammenfassung); die Fotos landen in `--out`
+(Vorgabe im Temp-Ordner, nie im Repo). Ausnahmen für axe stehen mit Grund und Anzahl in
+[scripts/browser-check-axe.json](scripts/browser-check-axe.json) und dürfen nur sinken: Mehr ist
+ein Befund, weniger nach einem Lauf über alle drei Engines ebenfalls, bis die Zahl gesenkt ist
+(`--merge` fasst die Läufe der CI zusammen). Heute ist die Liste leer. Zum Nachprüfen grenzen
+`--engines`, `--views`, `--themes` und `--pages` ein (`--pages -` nur die Bedienproben); eine
+unbekannte Seite in `--pages` oder ein Lauf ohne geprüfte Seite ist ein Befund, ebenso eine Seite aus
+[client/src/nav.ts](client/src/nav.ts), die in der Navigation fehlt. WebKit
+braucht unter Linux GTK4; fehlt es, läuft er im Container `mcr.microsoft.com/playwright:v<Fassung
+aus package-lock.json>-noble` (Befehl im Kopf des Skripts). In release.yml läuft er je Engine als
+Job „Browserlauf“ im vollen Prüfumfang, nicht an jedem PR, und „Ans Release anhängen“ wartet auf
+ihn. **Probe von Hand bleibt** „Als PDF sichern“ in Safari auf dem Mac (#286): WebKit unter Linux
+druckt in Playwright nicht, und echtes Safari gibt es nur auf Apple-Geräten.
 
 **Eigenständige Binaries** (für Endanwender ohne Node): [scripts/package-binaries.mjs](scripts/package-binaries.mjs)
 kompiliert Server + eingebettetes Frontend per **Bun `--compile`** zu je einer Datei pro
@@ -219,7 +245,8 @@ laufen die Tests und der Build aus
 die Untergrenze glibc 2.17 und `ubuntu:26.04` für das neueste Ende, dazu je ein Paket, nämlich
 das `.deb` auf Ubuntu 24.04 (dort auch der Startmenü-Eintrag) und das `.rpm` auf Fedora. Beim
 Tag läuft alles: 22 Distributionen, sieben Pakete, die lange KI-Antwort unter Node und dieselbe
-lange Wartezeit auf Linux x64, Windows x64 und Apple Silicon. Denselben vollen Umfang fährt
+lange Wartezeit auf Linux x64, Windows x64 und Apple Silicon, dazu der Browserlauf in drei Engines
+(siehe Browserlauf). Denselben vollen Umfang fährt
 mittwochs um 4:23 UTC ein Zeitplan auf `main`, damit niemand auf ein Label angewiesen ist: Er
 ist das Netz für die Prüfungen, die im PR fehlen, vor allem gegen eine fehlerhafte Bun-Fassung,
 denn Bun wird mit `latest` gebaut. Veröffentlicht wird dabei nichts, „Ans Release anhängen“
@@ -239,8 +266,8 @@ alles zwischen den beiden Enden, also Debian 11 bis 13, Ubuntu 20.04 und 22.04, 
 Rocky, openSUSE und Arch, dazu jeder Container auf ARM64, das Arch-Paket und die Pakete auf
 ARM64. Ein Fehler, der nur dort auftritt, zeigt sich spätestens im Lauf der folgenden Woche,
 immer aber vor dem Anhängen ans Release. Die ARM64-Programmdatei selbst prüft weiterhin jeder PR
-auf einem ARM-Runner. Am selben Umfang hängt die lange KI-Antwort, damit Zeitplan und Label
-alles abdecken, was ein PR auslässt. Eine leere Liste wäre die gefährlichste Lücke, weil eine
+auf einem ARM-Runner. Am selben Umfang hängen die lange KI-Antwort und der Browserlauf, damit
+Zeitplan und Label alles abdecken, was ein PR auslässt. Eine leere Liste wäre die gefährlichste Lücke, weil eine
 Matrix ohne Einträge keinen Job erzeugt und GitHub das nicht als Fehler meldet, sondern
 überspringt; der Job
 „Prüfumfang festlegen“ bricht deshalb ab, wenn eine der beiden Listen leer ist.
