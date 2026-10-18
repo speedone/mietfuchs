@@ -2,7 +2,7 @@
 // abrechnet, ob die Heizkosten getrennt abgerechnet werden, welcher Weg vorgeschlagen wird (3.1), und
 // die Antworten zu den beiden Vorschauen (Zeitraum der Heizung, getrennte Abrechnung). Ohne DOM prüfbar.
 import { parseEuro } from './api'
-import { rhythmText } from './periodForm'
+import { monthFieldError, rhythmText, type MonthFieldError } from './periodForm'
 import { hasOwnRhythm, monthSpanText, plantRules } from '../../shared/heatingPeriod.ts'
 import { isCalendarRules, parsePeriodKey } from '../../shared/period.ts'
 import type { HeatingPeriodChangeAnswers, HeatingPeriodChangePreview, HeatingPlant, PeriodRules, SeparateAnswers, SeparatePreview } from './types'
@@ -34,11 +34,11 @@ export function heatingPeriodForm(plant: HeatingPlant): HeatingPeriodForm {
 
 // Die Regeln für die Vorschau: `null` heißt „wie das Objekt“; „ab einem Monat“ fügt einen Wechsel an
 // den bisherigen Rhythmus der Heizung an (oder an den des Objekts, wenn sie ihm bisher folgt).
-export function heatingRulesBody(form: HeatingPeriodForm, plant: HeatingPlant, objectRules: PeriodRules): { rules: PeriodRules | null } | { error: string } {
+export function heatingRulesBody(form: HeatingPeriodForm, plant: HeatingPlant, objectRules: PeriodRules): { rules: PeriodRules | null } | MonthFieldError {
   if (form.choice === 'object') return { rules: null }
   if (form.mode === 'start') return { rules: { startMonth: form.month, changes: [] } }
   const from = parsePeriodKey(form.from)
-  if (from === null) return { error: 'Bitte geben Sie den Monat an, ab dem die Heizung im neuen Zeitraum abrechnet.' }
+  if (from === null) return monthFieldError(form.from, 'Bitte geben Sie den Monat an, ab dem die Heizung im neuen Zeitraum abrechnet.', 'Neue Heizperiode')
   const current = plantRules(plant, objectRules)
   return { rules: { startMonth: current.startMonth, changes: [...current.changes, from] } }
 }

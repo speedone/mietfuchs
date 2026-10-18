@@ -15,6 +15,7 @@
 import { contextOf, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodOfKey, periodsBetween, previousPeriod, settlementDeadline, startYearOf, type PeriodContext } from '../../shared/period.ts'
 import type { BillingPeriod, PeriodChangeAnswers, PeriodChangePreview, PeriodKey, PeriodRules } from './types'
 import { ApiError, parseEuro } from './api'
+import { MONTH_NAMES, parseMonthText } from './monthText'
 
 export type PeriodChoice = { anchor: string | null; calendarYear: number | null }
 export type PeriodOption = { value: string; label: string }
@@ -37,7 +38,6 @@ export type PeriodView = {
 }
 
 const OPTION_YEARS = 8
-const MONTH_NAMES = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']
 
 // Der heutige Tag auf dem Rechner des Nutzers, wie bisher `new Date().getFullYear()`.
 export function localToday(): string {
@@ -117,9 +117,18 @@ export function rhythmText(rules: PeriodRules): string {
 // ein Wechsel ab einem Monat (ab dort beginnt jeder Zeitraum in diesem Monat, davor ein Rumpf).
 export type RhythmForm = { mode: 'start' | 'change'; month: number; from: string }
 
-export function nextRules(current: PeriodRules, form: RhythmForm): PeriodRules | { error: string } {
+// Ein fehlender oder unlesbarer Monat ist eine Meldung am Feld `from` (#346, Schritt 5): kurz am Monatsfeld,
+// mit Ort in der Sammelmeldung.
+export type MonthFieldError = { error: string; field: 'from'; short: string }
+export function monthFieldError(text: string, missing: string, where: string): MonthFieldError {
+  const r = parseMonthText(text)
+  if (r.kind === 'invalid') return { error: `${where}: ${r.text}`, field: 'from', short: r.short }
+  return { error: missing, field: 'from', short: 'Monat fehlt' }
+}
+
+export function nextRules(current: PeriodRules, form: RhythmForm): PeriodRules | MonthFieldError {
   if (form.mode === 'start') return { startMonth: form.month, changes: [...current.changes] }
-  if (parsePeriodKey(form.from) === null) return { error: 'Bitte geben Sie an, ab welchem Monat der neue Zeitraum beginnt.' }
+  if (parsePeriodKey(form.from) === null) return monthFieldError(form.from, 'Bitte geben Sie an, ab welchem Monat der neue Zeitraum beginnt.', 'Neuer Zeitraum')
   return { startMonth: current.startMonth, changes: [...current.changes, form.from].sort() }
 }
 
