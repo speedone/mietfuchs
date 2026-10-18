@@ -4,6 +4,7 @@ import { ApiError, api, errorText, fmtDate, fmtEuro } from '../api'
 import { earliestOpenChange, localToday, MONTH_OPTIONS } from '../periodForm'
 import { EffectsList } from './PeriodCard'
 import Term from './Term'
+import { useOpenForm } from '../property'
 import MonthPicker from './MonthPicker'
 import { hasOwnRhythm } from '../../../shared/heatingPeriod.ts'
 import {
@@ -38,6 +39,8 @@ function freshPreview<T>(e: unknown): T | null {
 export default function HeatingPeriodSection({ plant, objectRules, hasCalendarData, onChanged, notify, actions, dangerAction }: Props) {
   const [open, setOpen] = useState<'none' | 'period' | 'separate'>('none')
   const [form, setForm] = useState<HeatingPeriodForm>(heatingPeriodForm(plant))
+  // Eine ungespeicherte Eingabe zählt als offenes Formular: Seiten-, Objekt- und Zeitraumwechsel fragen (#346, 7a).
+  useOpenForm(open !== 'none')
   const [periodPreview, setPeriodPreview] = useState<HeatingPeriodChangePreview | null>(null)
   const [periodAnswers, setPeriodAnswers] = useState<HeatingPeriodAnswerForm | null>(null)
   const [separatePreview, setSeparatePreview] = useState<SeparatePreview | null>(null)

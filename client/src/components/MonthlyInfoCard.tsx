@@ -7,6 +7,7 @@ import { api, errorText } from '../api'
 import { useToast } from './feedback'
 import Table from './Table'
 import Term from './Term'
+import { useOpenWhenDiffers } from '../useDraft'
 import MonthlyInfoSheet from './MonthlyInfoSheet'
 import { EMPTY_ROW_FORM, monthStatus, periodReferenceText, rowBody, rowToForm, tempBody, type MonthlyRowForm } from '../monthlyInfoForm'
 import { monthName } from '../../../shared/monthlyInfo.ts'
@@ -22,13 +23,17 @@ export default function MonthlyInfoCard({ plantId, period, propertyName = '' }: 
   const [error, setError] = useState('')
   const [temp, setTemp] = useState('')
   const toast = useToast()
+  // Ungespeicherte Werte zählen als offenes Formular (#346, 7a), verglichen mit dem geladenen Stand; nach dem
+  // Speichern lädt die Karte neu und setzt die Felder darauf.
+  const tempText = (v: MonthlyInfoView) => (v.dhwTemp.tempC === null ? '' : v.dhwTemp.tempC.toLocaleString('de-DE', { maximumFractionDigits: 2 }))
+  useOpenWhenDiffers({ forms, temp }, view ? { forms: Object.fromEntries(view.months.map((m) => [m.month, rowToForm(m.row)])), temp: tempText(view) } : { forms, temp })
 
   async function load() {
     try {
       const v = await api<MonthlyInfoView>(`/api/heating-plants/${plantId}/periods/${period}/monthly-info`)
       setView(v)
       setForms(Object.fromEntries(v.months.map((m) => [m.month, rowToForm(m.row)])))
-      setTemp(v.dhwTemp.tempC === null ? '' : v.dhwTemp.tempC.toLocaleString('de-DE', { maximumFractionDigits: 2 }))
+      setTemp(tempText(v))
       setError('')
     } catch (e) {
       setError(errorText(e))

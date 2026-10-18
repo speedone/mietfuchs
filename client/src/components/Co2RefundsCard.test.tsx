@@ -4,6 +4,7 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import Co2RefundsCard from './Co2RefundsCard'
+import { OpenFormScope, hasOpenForm } from '../testing/openForm'
 import { UIProvider } from './feedback'
 import { periodKey } from '../../../shared/period.ts'
 
@@ -60,4 +61,17 @@ test('Erfassen: vorbelegt mit dem einzigen Mieter, der selbst heizt, und seiner 
   fireEvent.click(screen.getByText('Erstattung speichern'))
   await waitFor(() => expect(sent.at(-1)?.method).toBe('POST'))
   expect(sent.at(-1)?.body).toMatchObject({ tenancyId: 't', amountCents: 24000, areaM2: 80, settlePeriod: null })
+})
+
+// #346, Schritt 7a
+test('7a: das offene Formular meldet die Karte an, Abbrechen und Speichern nehmen die Marke weg', async () => {
+  render(<OpenFormScope><UIProvider><Co2RefundsCard propertyId="objekt-1" period={{ key: periodKey('2025-01'), label: '2025' }} tenancies={TENANCIES} units={UNITS} /></UIProvider></OpenFormScope>)
+  fireEvent.click(await screen.findByText('Bearbeiten'))
+  expect(hasOpenForm()).toBe(true)
+  fireEvent.click(screen.getByText('Abbrechen'))
+  expect(hasOpenForm()).toBe(false)
+  fireEvent.click(screen.getByText('Bearbeiten'))
+  fireEvent.click(screen.getByText('Erstattung speichern'))
+  await waitFor(() => expect(screen.queryByText('Erstattung speichern')).toBeNull())
+  expect(hasOpenForm()).toBe(false)
 })

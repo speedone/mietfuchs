@@ -8,7 +8,8 @@ import { useCallback, useEffect, useState } from 'react'
 import type { Co2Sheet, CostItem, DegreeDayValue, FuelDelivery, HeatingPeriodView, HeatingPlant, HeatingStatement, Tenancy, Unit } from '../types'
 import { api, errorText } from '../api'
 import { usePeriod } from '../period'
-import { useProperty, withProperty } from '../property'
+import { useHasOpenForm, useProperty, withProperty } from '../property'
+import { useConfirm } from '../components/feedback'
 import PageHeader from '../components/PageHeader'
 import Co2Card from '../components/Co2Card'
 import Co2FactsCard from '../components/Co2FactsCard'
@@ -42,13 +43,30 @@ import { germanDate } from '../../../shared/law/register.ts'
 // `items`: alle Positionen des Objekts aus allen Zeiträumen, für die Karte „Betriebsstrom“ (Heizung PR 15).
 type Loaded = { items: CostItem[]; plants: HeatingPlant[]; views: Record<string, HeatingPeriodView[]>; deliveries: Record<string, FuelDelivery[]>; degreeDays: DegreeDayValue[]; heating: HeatingStatement[]; findings: Record<string, Record<string, string[]>> }
 
-export default function Heizkosten({ units, tenancies }: { units: Unit[]; tenancies: Tenancy[] }) {
+export default function Heizkosten({ units, tenancies, onTenanciesChanged }: { units: Unit[]; tenancies: Tenancy[]; onTenanciesChanged?: () => Promise<void> | void }) {
   const { property } = useProperty()
   const period = usePeriod()
   const [data, setData] = useState<Loaded | null>(null)
   const [error, setError] = useState('')
   // Der Ausdruck für den Messdienst (Heizung PR 17): Anlage und Heizperiode, oder keiner.
   const [sheetFor, setSheetFor] = useState<{ plantId: string; period: string } | null>(null)
+  // Das Blatt ersetzt die Seite, alle Karten werden ausgehängt; offene Eingaben gingen still verloren
+  // (Nachprüfung zu #346, B5). Deshalb fragt das Öffnen vorher wie ein Seitenwechsel.
+  const hasOpenForm = useHasOpenForm()
+  const confirm = useConfirm()
+  async function openSheet(plantId: string, period: string) {
+    if (hasOpenForm()) {
+      const ok = await confirm({
+        title: 'Ungespeicherte Änderungen verwerfen?',
+        message: 'Auf dieser Seite ist ein Formular offen oder eine Änderung noch nicht gespeichert. Beim Öffnen des Blatts geht sie verloren.',
+        confirmLabel: 'Verwerfen',
+        cancelLabel: 'Abbrechen',
+        danger: true,
+      })
+      if (!ok) return
+    }
+    setSheetFor({ plantId, period })
+  }
   const load = useCallback(async () => {
     try {
       const plants = await api<HeatingPlant[]>(withProperty('/api/heating-plants', property?.id))
@@ -118,8 +136,9 @@ export default function Heizkosten({ units, tenancies }: { units: Unit[]; tenanc
                 Brennstoff des Lieferanten (`plant.energy`). */}
             {halfSplitAvailable(plant.energy) && (
               <HalfSplitCard
-                key={`half:${plant.id}:${JSON.stringify([plant.gmodg43InstalledOn, plant.emergencyInstall, plant.emergencyPriorDuty, plant.newBuildingFirstUse, plant.buildingApplicationBefore20260513])}:${tenancies.map((t) => t.halfSplitNoticeOn ?? '').join(',')}`}
+                key={`half:${plant.id}:${JSON.stringify([plant.gmodg43InstalledOn, plant.emergencyInstall, plant.emergencyPriorDuty, plant.newBuildingFirstUse, plant.buildingApplicationBefore20260513])}`}
                 plant={plant} tenancies={tenancies} onSaved={() => void load()}
+                onNoticeSaved={() => { void load(); void onTenanciesChanged?.() }}
               />
             )}
             {(data?.views[plant.id] ?? []).map((v) => (
@@ -151,7 +170,7 @@ export default function Heizkosten({ units, tenancies }: { units: Unit[]; tenanc
                       Gebäude, zum Ausdrucken oder Weitergeben an den Messdienst, die Gemeinschaft oder Ihr Steuerbüro.
                     </p>
                     <div className="row">
-                      <button className="btn secondary" type="button" onClick={() => setSheetFor({ plantId: plant.id, period: String(v.period) })}>Blatt „CO₂-Angaben für den Messdienst“ öffnen</button>
+                      <button className="btn secondary" type="button" onClick={() => void openSheet(plant.id, String(v.period))}>Blatt „CO₂-Angaben für den Messdienst“ öffnen</button>
                     </div>
                   </div>
                 )}

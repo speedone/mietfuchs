@@ -7,6 +7,7 @@ import { api, errorText } from '../api'
 import { parseDecimal } from '../co2Form'
 import { useToast } from './feedback'
 import Term from './Term'
+import { useOpenWhenDiffers } from '../useDraft'
 import { RESTRICTION_OPTIONS } from '../fuelForm'
 import { co2DistrictEtsNew } from '../../../shared/law/co2kostaufg.ts'
 import { germanDate, onlyVersion } from '../../../shared/law/register.ts'
@@ -18,8 +19,12 @@ export default function Co2FactsCard({ plant, view, servedAreaM2, onSaved }: { p
   const [nonResidential, setNonResidential] = useState(plant.nonResidential)
   const [restriction, setRestriction] = useState<Co2Restriction>(plant.restriction)
   const [districtEtsNew, setDistrictEtsNew] = useState(plant.districtEtsNew)
-  const [area, setArea] = useState(view.co2?.areaM2 == null ? '' : view.co2.areaM2.toLocaleString('de-DE', { useGrouping: false }))
+  const savedArea = view.co2?.areaM2 == null ? '' : view.co2.areaM2.toLocaleString('de-DE', { useGrouping: false })
+  const [area, setArea] = useState(savedArea)
   const [error, setError] = useState('')
+  // Ungespeicherte Angaben zählen als offenes Formular (#346, 7a); die beiden Teile speichern getrennt.
+  const factsSaved = useOpenWhenDiffers({ nonResidential, restriction, districtEtsNew }, { nonResidential: plant.nonResidential, restriction: plant.restriction, districtEtsNew: plant.districtEtsNew })
+  const areaSaved = useOpenWhenDiffers(area, savedArea)
   const toast = useToast()
   const stichtag = germanDate(onlyVersion(co2DistrictEtsNew).value.connectedAfter)
 
@@ -27,6 +32,7 @@ export default function Co2FactsCard({ plant, view, servedAreaM2, onSaved }: { p
     try {
       await api(`/api/heating-plants/${plant.id}`, { method: 'PUT', body: JSON.stringify({ nonResidential, restriction, districtEtsNew }) })
       setError('')
+      factsSaved()
       toast('Angaben zum Gebäude gespeichert.')
       onSaved()
     } catch (e) {
@@ -45,6 +51,7 @@ export default function Co2FactsCard({ plant, view, servedAreaM2, onSaved }: { p
       if (value === null) await api(url, { method: 'DELETE' })
       else await api(url, { method: 'PUT', body: JSON.stringify({ method: 'self', areaM2: value }) })
       setError('')
+      areaSaved()
       toast('Fläche gespeichert.')
       onSaved()
     } catch (e) {

@@ -3,6 +3,7 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import CutoffReadingForm from './CutoffReadingForm'
+import { OpenFormScope, hasOpenForm } from '../testing/openForm'
 
 let sent: { url: string; method: string; body: Record<string, unknown> }[]
 beforeEach(() => {
@@ -34,4 +35,17 @@ test('Mehrdeutiger Wert: nachgefragt, nichts gesendet', () => {
   fireEvent.click(screen.getByRole('button', { name: 'Stichtagswert speichern' }))
   expect(screen.getByText(/Meinen Sie 1,250 oder 1250\?/)).toBeTruthy()
   expect(sent).toEqual([])
+})
+
+// #346, Schritt 7a: ein angefangener Stichtagswert zählt als offenes Formular, nach dem Speichern nicht mehr.
+test('7a: Eingabe meldet das Formular an, Speichern nimmt die Marke weg', async () => {
+  const saved = vi.fn()
+  render(<OpenFormScope><CutoffReadingForm meterId="h1" onSaved={saved} /></OpenFormScope>)
+  expect(hasOpenForm()).toBe(false)
+  fireEvent.change(screen.getByLabelText(/Stichtag des Geräts/), { target: { value: '2025-12-31' } })
+  expect(hasOpenForm()).toBe(true)
+  fireEvent.change(screen.getByLabelText(/Stichtagswert laut Anzeige/), { target: { value: '842' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Stichtagswert speichern' }))
+  await waitFor(() => expect(saved).toHaveBeenCalled())
+  expect(hasOpenForm()).toBe(false)
 })

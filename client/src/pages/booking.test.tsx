@@ -7,7 +7,7 @@ import { afterEach, assert, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { AssessmentView, CostItem, Extraction, LineFields, LineSuggestion, Unit } from '../types'
 import { PeriodProvider } from '../period'
-import { PropertyProvider } from '../property'
+import { PropertyProvider, useHasOpenForm } from '../property'
 import { UIProvider } from '../components/feedback'
 import Schnellerfassung from './Schnellerfassung'
 import Kosten from './Kosten'
@@ -546,8 +546,9 @@ test('#309: „Alle grünen übernehmen“ bucht keine Auswertung mit ungespeich
   await actionOf('Grundsteuer B')
   expect(await screen.findByRole('button', { name: /Alle grünen übernehmen/ }, SLOW)).toBeTruthy()
   fireEvent.change(yearBox(), { target: { value: String(YEAR - 1) } })
-  // Der Beleg zählt nicht mehr als bereit; die Leiste sagt, warum.
+  // Der Beleg zählt nicht mehr als bereit; die Leiste sagt, warum, auch beim einzigen Beleg (Nachprüfung A1).
   await waitFor(() => expect(screen.queryByRole('button', { name: /Alle grünen übernehmen/ })).toBeNull(), SLOW)
+  expect(screen.getByText(/1 Beleg mit ungespeichertem Jahr bleibt außen vor/)).toBeTruthy()
   expect(fake.items).toEqual([])
   // Mit „Speichern“ ist das Jahr fest, und die Zeile wird wie auf main nicht mehr grün angeboten,
   // oder eben im gespeicherten Jahr; verworfen kommt das Angebot zurück.
@@ -573,4 +574,25 @@ test('#309: mit einem zweiten Beleg ohne Entwurf bucht „Alle grünen“ nur di
   await new Promise((r) => setTimeout(r, 300))
   expect(fake.items).toHaveLength(1)
   expect(fake.items[0]?.period).toBe(calendarPeriod(YEAR))
+})
+
+// #346, Schritt 7a: Gewählte Aktionen je Zeile zählen als offenes Formular; der Vorschlag, wie die Karte
+// beginnt, nicht.
+test('7a: eine geänderte Aktion an einer Zeile meldet die Karte an, zurück zum Vorschlag nicht', async () => {
+  fake = fakeBooking({ items: [], units: UNITS })
+  extraction = invoice([{ description: 'Grundsteuer B', category: 'Grundsteuer', amountEur: 612.4 }], 'Stadt')
+  const probe = { open: () => false }
+  function Offen() {
+    probe.open = useHasOpenForm()
+    return null
+  }
+  const { container } = render(<PeriodProvider><PropertyProvider><UIProvider><Schnellerfassung units={UNITS} settings={null} onNavigate={() => {}} /><Offen /></UIProvider></PropertyProvider></PeriodProvider>)
+  await upload(container)
+  const action = await actionOf('Grundsteuer B')
+  const vorher = action.value
+  expect(probe.open()).toBe(false)
+  fireEvent.change(action, { target: { value: 'dismiss' } })
+  expect(probe.open()).toBe(true)
+  fireEvent.change(await actionOf('Grundsteuer B'), { target: { value: vorher } })
+  expect(probe.open()).toBe(false)
 })

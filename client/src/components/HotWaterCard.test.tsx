@@ -8,6 +8,7 @@ import HotWaterCard from './HotWaterCard'
 import { periodKey } from '../../../shared/period.ts'
 import type { HeatingPeriodView, HeatingPlant } from '../types'
 import { noInfoView } from '../testing/heatingView'
+import { OpenFormScope, hasOpenForm } from '../testing/openForm'
 
 const view = (over: Partial<HeatingPeriodView> = {}): HeatingPeriodView => ({
   plantId: 'hp', period: periodKey('2025-01'), label: '2025', from: '2025-01-01', to: '2025-12-31', short: false, closed: false,
@@ -71,4 +72,21 @@ test('Durchsicht #240, Geld-I1 und M5: beim Kesseltausch heißt das Volumen das 
   cleanup()
   render(<HotWaterCard view={view({ hotWaterBasis: { volumeFromMetersM3: 0, volumeMissing: null, running: null, suppliedAreaM2: 200 } })} plant={plant()} onSaved={() => {}} />)
   expect(screen.queryByRole('button', { name: /übernehmen/ })).toBe(null)
+})
+
+// #346, Schritt 7a: Eine ungespeicherte Eingabe zählt als offenes Formular, nach dem Speichern nicht mehr,
+// auch wenn die Seite die Karte nicht neu einhängt; eine verborgene Angabe zählt nicht.
+test('7a: Ändern meldet die Karte an, Speichern und Zurückstellen nehmen die Marke weg', async () => {
+  const saved = vi.fn()
+  render(<OpenFormScope><HotWaterCard view={view()} plant={plant({ heatGeneration: 'single' })} onSaved={saved} /></OpenFormScope>)
+  expect(hasOpenForm()).toBe(false)
+  const temp = screen.getByLabelText(/Mittlere Temperatur des Warmwassers/)
+  fireEvent.change(temp, { target: { value: '60' } })
+  expect(hasOpenForm()).toBe(true)
+  fireEvent.change(temp, { target: { value: '55' } })
+  expect(hasOpenForm()).toBe(false)
+  fireEvent.change(temp, { target: { value: '60' } })
+  fireEvent.click(screen.getByText('Angabe speichern'))
+  await waitFor(() => expect(saved).toHaveBeenCalled())
+  expect(hasOpenForm()).toBe(false)
 })

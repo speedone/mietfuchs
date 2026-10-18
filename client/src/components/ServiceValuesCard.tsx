@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { api, errorText } from '../api'
 import { useToast } from './feedback'
 import Term from './Term'
+import { useOpenWhenDiffers } from '../useDraft'
 import { emptyServiceRow, SERVICE_UNIT_OPTIONS, serviceRowsOf, serviceUnitOfOption, serviceValuesBody, SERVICE_VALUES_HINTS, type ServiceRowForm } from '../hcaForm'
 import type { HeatingServiceValue, PeriodKey } from '../types'
 
@@ -22,8 +23,11 @@ type Props = {
 }
 
 export default function ServiceValuesCard({ plantId, period, from, to, closed, units, values, remoteUnknown = false, onSaved }: Props) {
-  const [rows, setRows] = useState<ServiceRowForm[]>(() => (values.length > 0 ? serviceRowsOf(values) : units.map((u) => ({ ...emptyServiceRow(from, to), unitId: u.id }))))
+  const savedRows = (): ServiceRowForm[] => (values.length > 0 ? serviceRowsOf(values) : units.map((u) => ({ ...emptyServiceRow(from, to), unitId: u.id })))
+  const [rows, setRows] = useState<ServiceRowForm[]>(savedRows)
   const [error, setError] = useState('')
+  // Eine ungespeicherte Eingabe zählt als offenes Formular: Seiten-, Objekt- und Zeitraumwechsel fragen (#346, 7a).
+  const markSaved = useOpenWhenDiffers(rows, savedRows())
   const toast = useToast()
   const set = (i: number, patch: Partial<ServiceRowForm>) => setRows(rows.map((r, k) => (k === i ? { ...r, ...patch } : r)))
 
@@ -36,6 +40,7 @@ export default function ServiceValuesCard({ plantId, period, from, to, closed, u
     try {
       await api(`/api/heating-plants/${plantId}/periods/${period}/service-values`, { method: 'PUT', body: JSON.stringify(b.body) })
       setError('')
+      markSaved()
       toast('Werte des Ablesedienstes gespeichert.')
       onSaved()
     } catch (e) {
