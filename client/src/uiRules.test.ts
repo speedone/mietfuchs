@@ -536,6 +536,9 @@ test('S22: Navigationseinträge stehen nur in nav.ts', () => {
 // - das Kalenderjahr von Mietkonto und Steuer bei abweichendem Zeitraum, nur über `CalendarYearSelect`;
 // - die Heizperiode (HeatingPeriodSelect), eine Eigenschaft der Heizanlage und keine Wahl des Zeitraums;
 // - die Eigenschaften eines Belegs bzw. einer Position, die unten mit Beschriftung stehen.
+// Grenze: Erkannt wird am Quelltext, also an den üblichen Namen; ein `<select>` mit umbenannten Variablen ginge
+// hier durch. Das fängt pageContext.test.tsx am Verhalten: Dort darf kein Auswahlfeld im Inhalt einer Seite
+// Jahreszahlen, Zeiträume oder Objektnamen anbieten (außer „Kalenderjahr“).
 const SIDEBAR_SWITCHERS: Array<[RegExp, Set<string>]> = [
   [/<(?:PeriodSelect|PeriodSelectView|PropertySwitcher)\b/, new Set(['./App.tsx', './components/PeriodSelect.tsx'])],
   [/<Switcher\b/, new Set(['./components/PeriodSelect.tsx', './property.tsx'])],
@@ -550,6 +553,24 @@ const S18_EXCEPTIONS: Array<[file: string, label: string, reason: string]> = [
   ['./components/CostPeriodFields.tsx', 'value={form.taxYear}', 'Jahr der Zahlung (Steuer) einer Kostenposition im Formular'],
 ]
 const periodSelects = (src: string): string[] => [...src.matchAll(/<select\b[\s\S]*?<\/select>/g)].map((m) => m[0]).filter((s) => PERIOD_OR_PROPERTY.test(s))
+// Durchsicht zu Schritt 8, S2: Im Modus erzwungener Farben (Windows-Kontrast) entfernt der Browser `box-shadow` und
+// setzt die Randfarben; der Fokus des unsichtbaren Auswahlfelds am Text wäre dann nicht zu sehen. Ein Umriss in
+// `transparent` zeichnet der Browser dort in der Systemfarbe.
+test('der Switcher zeigt seinen Fokus auch bei erzwungenen Farben', () => {
+  const block = twCss.match(/@utility switcher \{([\s\S]*?)\n\}/)?.[1] ?? ''
+  const focus = block.match(/:focus-within[^{]*\{([^}]*)\}/)?.[1] ?? ''
+  expect(focus).toMatch(/box-shadow/)
+  expect(focus).toMatch(/outline:\s*2px solid transparent/)
+})
+
+// M15 (#341, Spezifikation Abschnitt 2): Der Fuß der Seitenleiste ist Teil der Scrollfläche. Angeheftet lag er bei
+// 900 px Höhe über „Einstellungen“, und „Hilfe & Begriffe“ war hinter ihm.
+test('M15: der Fuß der Seitenleiste ist nicht angeheftet', () => {
+  const foot = cssRules(css).find((r) => r.selector === '.sidebar .foot')
+  expect(foot, '.sidebar .foot fehlt').toBeDefined()
+  expect(foot?.body).not.toMatch(/position:\s*sticky/)
+})
+
 test('S18: Objekt und Abrechnungszeitraum nur in der Seitenleiste', () => {
   // Probe des Prüfers: die frühere Auswahl im Belegordner und die Jahresauswahl, nicht aber ein anderes Feld
   expect(periodSelects('<select value={a} onChange={(e) => setA(e.target.value)}>{properties.map((p) => <option key={p.id} />)}</select>')).toHaveLength(1)

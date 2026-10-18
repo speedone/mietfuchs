@@ -75,6 +75,34 @@ test('jede Seite zeigt Objekt und Abrechnungsjahr an und wählt sie nicht noch e
   }
 })
 
+// Durchsicht K7: Erkannt am Inhalt, nicht am Namen der Variablen. Kein Auswahlfeld im Inhalt einer Seite bietet
+// Jahreszahlen, Zeiträume oder die Objekte an, außer dem Kalenderjahr von Mietkonto und Steuer.
+test('kein Auswahlfeld im Inhalt bietet Jahre, Zeiträume oder Objekte an', async () => {
+  properties = [...properties, objekt('objekt-3', 'Haus C')]
+  render(<App />)
+  await screen.findByLabelText('Objekt wählen', {}, SLOW)
+  const names = properties.map((p) => p.name)
+  for (const [nav, heading] of PAGES) {
+    await go(nav, heading)
+    const main = screen.getByRole('main')
+    const offending = within(main).queryAllByRole('combobox').filter((s) => {
+      const texts = [...(s as HTMLSelectElement).options].map((o) => o.text.trim()).filter((t) => t !== '')
+      const yearsOrNames = texts.filter((t) => /^\d{4}(?:\/\d{4})?$/.test(t) || names.includes(t))
+      return yearsOrNames.length >= 2 && s.getAttribute('aria-label') !== 'Kalenderjahr'
+    })
+    expect(offending.map((s) => s.getAttribute('aria-label') ?? s.closest('label')?.textContent), String(nav)).toEqual([])
+  }
+})
+
+// Durchsicht S1: Gedruckt nennt der Seitenkopf weiter, für welches Objekt und welches Jahr die Seite gilt.
+test('die Kontextzeile wird mitgedruckt', async () => {
+  render(<App />)
+  await screen.findByLabelText('Objekt wählen', {}, SLOW)
+  await go(/Kostenvergleich/, /^Kostenvergleich/)
+  const line = screen.getByTestId('page-context')
+  expect(line.closest('.no-print')).toBeNull()
+})
+
 test('ein Wechsel in der Seitenleiste stellt die Seite auf Objekt und Jahr um', async () => {
   render(<App />)
   await screen.findByLabelText('Objekt wählen', {}, SLOW)

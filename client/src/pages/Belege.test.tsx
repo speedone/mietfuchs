@@ -141,6 +141,14 @@ test('„aller Jahre“ zeigt auch die Positionen eines früheren Jahres', async
   expect((await screen.findAllByText(/Gartenpflege/)).length).toBeGreaterThan(0)
 })
 
+// Durchsicht zu Schritt 8, K3: Der Posteingang sagt, wo die übrigen Belege zu sehen sind.
+test('Posteingang: Belege eines anderen Objekts verweisen auf die Häkchen', async () => {
+  extraUploads = [{ ...up('9_anderswo.pdf'), propertyId: 'p2', year: YEAR }]
+  renderPage()
+  await screen.findByText('Wasser/Abwasser')
+  expect(screen.getByText(/1 weitere ist einem anderen Objekt oder Jahr zugedacht; Sie sehen ihn mit „Belege aller Objekte zeigen“ oder „Belege aller Jahre zeigen“\./)).toBeTruthy()
+})
+
 test('die Suche nach einem Betrag findet die Position ohne Beleg', async () => {
   renderPage()
   await screen.findByText('Wasser/Abwasser')

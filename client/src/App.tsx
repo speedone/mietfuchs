@@ -10,7 +10,7 @@ import FoxLogo from './components/Logo'
 import { UpdateHint, useUpdateStatus } from './components/Update'
 import DatabaseNotice from './components/Database'
 import PropertyNotice from './components/PropertyNotice'
-import { emptyPropertyNotice } from './propertyView'
+import { emptyPropertyNotice, propertyName } from './propertyView'
 import { canQuit, hintVisible } from './update'
 import Cockpit from './pages/Cockpit'
 import Uebersicht from './pages/Uebersicht'
@@ -264,7 +264,7 @@ function Shell() {
     return () => { current = false }
   }, [propertyId, tab])
 
-  const contextLine = [property ? property.name || 'Ohne Namen' : null, periodLabelNow].filter(Boolean).join(' · ')
+  const contextLine = [property ? propertyName(property) : null, periodLabelNow].filter(Boolean).join(' · ')
 
   const clearNoticeFocus = useCallback(() => setFocusNoticeFor(null), [setFocusNoticeFor])
 

@@ -139,13 +139,12 @@ body {
 /* ---------- Sidebar ---------- */
 /* Die Leiste steht am Fenster und wächst nicht mit der Seite (#142): Sonst lag ihr Fuß (Design,
    Beenden) auf langen Seiten erst nach langem Scrollen im Bild. Bei kleiner Fensterhöhe scrollt
-   sie selbst; die eigene Scrollleiste ist schmal, damit sie die Leiste nicht zerschneidet. Ein per
-   Tab fokussierter Eintrag rollt nicht unter den stehenden Fuß (gut 90 px hoch). */
+   sie selbst; die eigene Scrollleiste ist schmal, damit sie die Leiste nicht zerschneidet. */
 .sidebar {
   width: 230px; flex-shrink: 0; background: var(--sidebar); color: var(--sidebar-text);
   border-right: 1px solid var(--line); padding: max(var(--space-5), env(safe-area-inset-top)) var(--space-3) var(--space-5) max(var(--space-3), env(safe-area-inset-left));
   display: flex; flex-direction: column; gap: 2px; position: sticky; top: 0; height: 100vh; overflow-y: auto;
-  scrollbar-width: thin; scrollbar-color: var(--control-border) transparent; scroll-padding-bottom: 100px;
+  scrollbar-width: thin; scrollbar-color: var(--control-border) transparent;
 }
 .sidebar .logo {
   display: flex; align-items: center; gap: 10px; color: var(--text); font-weight: var(--weight-strong);
@@ -160,13 +159,11 @@ body {
 }
 .sidebar button:hover { background: var(--hover); color: var(--text); }
 .sidebar button.active, .sidebar button.active:hover { background: var(--accent-soft); color: var(--accent-strong); font-weight: var(--weight-strong); }
-/* Der Fuß bleibt unten in der Leiste stehen (#142): Ist das Fenster niedriger als die Navigation,
-   scrollt nur sie darüber hinweg. Er reicht über das Polster der Leiste bis an ihre Ränder, damit
-   keine Navigation unter ihm durchscheint. */
+/* Der Fuß steht unten in der Leiste (#142) und ist Teil der Scrollfläche (#341 M15): Angeheftet lag er bei 900 px
+   Höhe über „Einstellungen“ und „Hilfe & Begriffe“. Er reicht über das Polster der Leiste bis an ihre Ränder. */
 .sidebar .foot {
   margin: auto calc(-1 * var(--space-3)) calc(-1 * var(--space-5)); padding: var(--space-3) 22px calc(var(--space-4) + env(safe-area-inset-bottom));
-  font-size: var(--text-xs); color: var(--muted); position: sticky; bottom: calc(-1 * var(--space-5));
-  background: var(--sidebar); border-top: 1px solid var(--line);
+  font-size: var(--text-xs); color: var(--muted); background: var(--sidebar); border-top: 1px solid var(--line);
 }
 .sidebar .foot .theme-toggle {
   all: unset; cursor: pointer; display: block; margin-bottom: var(--space-2); color: var(--muted); font-size: var(--text-s);
@@ -463,7 +460,7 @@ dialog.menu-sheet > .sidebar button:not(.sheet-close) { min-height: var(--target
 .page-head-text .sub { margin: 0; }
 .page-head-actions { display: flex; gap: 10px; align-items: center; flex-shrink: 0; }
 /* Das gewählte Objekt über dem Titel, ab zwei Objekten (#157): kleine Marke in Indigo */
-/* Kontextzeile (PageHeader.tsx): Objekt und Zeitraum, nur Anzeige; am Handy nennt sie der angeheftete Kopf (siehe unten) */
+/* Kontextzeile (PageHeader.tsx): Objekt und Zeitraum, nur Anzeige, auch gedruckt; am Bildschirm des Handys nennt sie der angeheftete Kopf (siehe unten) */
 .page-context { margin: 0 0 var(--space-1); color: var(--muted); font-size: var(--text-s); font-weight: var(--weight-medium); overflow-wrap: anywhere; }
 /* Hinweis nach dem Wechsel in ein leeres Objekt (#157) */
 .property-notice { display: flex; flex-direction: column; gap: 10px; margin: 0 0 18px; font-size: var(--text-m); }

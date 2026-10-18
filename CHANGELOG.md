@@ -170,7 +170,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Auswahl des Kalenderjahres, wenn der Abrechnungszeitraum vom Kalenderjahr abweicht, jetzt mit der
   Beschriftung „Kalenderjahr“; beim Kalenderjahr als Abrechnungszeitraum entfällt sie dort, denn dann ist
   es dasselbe Jahr. Die Auswahl von Objekt und Jahr in der Seitenleiste sieht jetzt gleich aus, mit
-  demselben Pfeil, derselben Höhe und Schrift (Befunde M13, N1 aus
+  demselben Pfeil, derselben Höhe und Schrift, und zeigt ihren Fokus auch im Kontrastmodus von Windows.
+  Der Fuß der Seitenleiste (Design, Hinweis) steht nicht mehr fest über der Navigation: Bei kleiner
+  Fensterhöhe verdeckte er „Einstellungen“ und „Hilfe & Begriffe“ (Befunde M13, M15, N1 aus
   [#341](https://github.com/speedone/mietfuchs/issues/341);
   [#346](https://github.com/speedone/mietfuchs/issues/346)).
 
