@@ -246,7 +246,8 @@ export function heatingInfoOf(i: InfoInput): HeatingInfoStatement {
   const users: InfoComparison[] = tenancyIds.map((id) => {
     const unit = unitOf(plan, id)
     const label = unit?.users.find((x) => x.tenancyId === id)?.label ?? id
-    // Die Wärme in kWh (#345); Vorperiode und dieser Zeitraum rechnen mit denselben Zählern, stehen also in derselben Einheit.
+    // Die Wärme in kWh (#345). Die Vorperiode rechnet mit denselben Zählern und den Faktoren dieses Zeitraums, steht also
+    // in derselben Einheit; ein Zähler, der nur die Vorperiode misst, sperrt die eigene Abrechnung (`heating.self-incomplete`).
     const inKwh = (x: ReturnType<typeof sumFor>) => ({ ...x, value: kwh(x.value) })
     const now = { heating: inKwh(sumFor(plan, id, 'heating')), water: sumFor(plan, id, 'water') }
     const before = { heating: inKwh(sumFor(i.prev, id, 'heating')), water: sumFor(i.prev, id, 'water') }

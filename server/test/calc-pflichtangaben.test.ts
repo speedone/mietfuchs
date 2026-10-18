@@ -581,20 +581,9 @@ test('#345: kWh-Fall unverändert (Ausweis in kWh, dieselben Zahlen)', () => {
   assert.deepEqual([a.heating?.now, a.heating?.prev, a.heating?.referenceKwh], [12000, 1000, 9000])
 })
 
-test('#345: Wechsel von kWh auf MWh zwischen den Jahren: kein Vorjahresvergleich über zwei Einheiten', () => {
-  // Vorperiode und dieser Zeitraum rechnen mit denselben Zählern und Faktoren; beide Werte stehen deshalb in derselben
-  // Einheit und werden gemeinsam in kWh umgerechnet. Ein Gerätewechsel auf neue Zähler in MWh mit den alten in kWh
-  // daneben sperrt die eigene Abrechnung (der alte Zähler hat keinen Stand am Ende), einen Vergleich gibt es dann nicht.
-  const base = mitAngaben()
-  // Bis 31.12.2024 die alten Zähler in kWh, ab dann neue in MWh (Stand 0 beim Einbau).
-  const alt = base.meters.filter((m) => WAERME.has(m.id)).map((m) => ({ ...m, id: `${m.id}-alt`, name: `${m.name} alt` }))
-  const neu = base.meters.map((m) => (WAERME.has(m.id) ? { ...m, unit: 'MWh' } : m))
-  const altStaende = base.readings.filter((r) => WAERME.has(r.meterId) && r.date <= '2024-12-31').map((r) => ({ ...r, meterId: `${r.meterId}-alt` }))
-  const startOf = (id: string) => base.readings.find((r) => r.meterId === id && r.date === '2024-12-31')?.value ?? assert.fail(`kein Stand ${id}`)
-  const neuStaende = base.readings.filter((r) => WAERME.has(r.meterId) && r.date >= '2024-12-31').map((r) => ({ ...r, value: (r.value - startOf(r.meterId)) / 1000 }))
-  const s = computeSettlement({ ...base, meters: [...neu, ...alt], readings: [...base.readings.filter((r) => !WAERME.has(r.meterId)), ...altStaende, ...neuStaende] })
-  assert.ok(codes(s).includes('heating.self-incomplete'), codes(s).join(', '))
-  assert.equal(s.heating?.find((h) => h.info), undefined)
+test('#345: Vorjahresvergleich (Nr. 5) bei Zählern in MWh steht in kWh wie im kWh-Fall', () => {
+  // Die Vorperiode rechnet mit denselben Zählern und Faktoren wie dieser Zeitraum (calc.ts, Plan der Vorperiode);
+  // beide Werte stehen deshalb in derselben Einheit und werden gemeinsam in kWh umgerechnet.
   // Bleiben die Zähler in MWh über beide Jahre, ist das Vorjahr in kWh wie im kWh-Fall (A: 1.000 kWh).
   const mwh = infoOf(computeSettlement(inEinheit(mitAngaben(), 'MWh', 1 / 1000)))
   const a = mwh.users.find((u) => u.tenancyId === 'A') ?? assert.fail('A')

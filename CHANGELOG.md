@@ -77,7 +77,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - Angaben zur Heizkostenabrechnung (§ 6a HeizkostenV): Stehen alle Wärmezähler in MWh oder GJ, rechnet
   Mietfuchs den Vergleich mit dem Durchschnittsnutzer jetzt aus. Vorher galt er als offen, und der
   Hinweis nannte eine mögliche Kürzung um bis zu 3 %, obwohl ein Vergleichswert eingetragen war. Der
-  Verbrauch steht im Vergleich in kWh, wie der Vergleichswert
+  Verbrauch steht im Vergleich in kWh, wie der Vergleichswert, ebenso der Vergleich mit dem Vorjahr
   ([#345](https://github.com/speedone/mietfuchs/issues/345)).
 - Zähler mit verschiedenen Einheiten werden umgerechnet: Stand ein Wärmezähler in MWh neben solchen
   in kWh oder ein Wasserzähler in Litern neben solchen in m³, zählte Mietfuchs die Werte zusammen,
