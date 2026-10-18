@@ -11,7 +11,7 @@ import { cloneElement, createContext, isValidElement, useContext, useId, useLayo
 // gehörten Hinweis und Fehler zu seinem Namen und würden doppelt vorgelesen.
 //
 // Das Kind ist ein Eingabefeld (`<input>`, `<select>`, `<textarea>`), dem die Angaben angehängt werden, oder
-// eine Funktion, die sie bekommt und selbst weiterreicht (für Bausteine wie MonthPicker). Mit `onFix` (aus
+// eine Funktion, die sie bekommt und selbst weiterreicht (für Bausteine wie MonthField). Mit `onFix` (aus
 // `useFormError().field(…)`) verschwindet die Meldung, sobald der Nutzer das Feld ändert.
 //
 // Pflichtfelder (`required`) tragen ein Sternchen hinter der Beschriftung: Das ist das Muster, das Vermieter aus

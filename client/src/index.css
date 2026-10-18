@@ -221,7 +221,7 @@ tr.focus-target > td { background: var(--accent-soft); }
 
 /* ---------- Formulare ---------- */
 /* Beschriftung 13 px fett in Textfarbe (Spezifikation Abschnitt 1): gedämpft las sie sich zu schwach. */
-label.field, div.field[role="group"] { display: flex; flex-direction: column; gap: 6px; font-size: var(--text-s); color: var(--text); font-weight: var(--weight-strong); }
+label.field { display: flex; flex-direction: column; gap: 6px; font-size: var(--text-s); color: var(--text); font-weight: var(--weight-strong); }
 input, select, textarea {
   font: inherit; font-size: var(--text-m); padding: 6px var(--space-3); border: 1px solid var(--input-border);
   border-radius: var(--radius-m); background: var(--input-bg); color: var(--text); min-width: 0;
@@ -519,17 +519,16 @@ dialog.drawer {
   .drawer-foot { flex-wrap: wrap; padding: var(--space-3) var(--space-4); }
   .drawer-foot :is(.drawer-hint, .spacer) { display: none; }
   .drawer-foot > .btn { flex: 1 1 auto; }
+  .staffel-row { grid-template-columns: minmax(0, 1fr) auto; } .staffel-row > .field:first-child { grid-column: 1 / -1; }
 }
 
 /* Wiederholbarer Staffel-Block im Drawer (Personen / Kaltmiete / Vorauszahlung) */
 .field-group { border: 1px solid var(--line); border-radius: var(--radius-m); padding: 14px var(--space-4); width: 100%; }
 .field-group > .field-group-label { font-size: var(--text-xs); font-weight: var(--weight-strong); color: var(--muted); margin-bottom: 10px; }
-/* Eine Staffel-Zeile: „gültig ab" + Betrag + Entfernen, bleibt 2-spaltig auch im Drawer. Die Felder
-   stehen unten bündig: Bricht eine Beschriftung am Handy zweizeilig um, rückt nur sie nach oben. */
-.staffel-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: var(--space-2); align-items: stretch; margin-bottom: var(--space-2); }
+/* Staffel-Zeile: „gültig ab" (breiter, daneben ▦; am Handy darüber, sonst schnitte „September 2026“ ab, M11) +
+   Betrag + Entfernen. Unten bündig: Bricht eine Beschriftung zweizeilig um, rückt nur sie nach oben. */
+.staffel-row { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr) auto; gap: var(--space-2); align-items: stretch; margin-bottom: var(--space-2); }
 .staffel-row > :is(label.field, div.field) { flex: none; justify-content: flex-end; }
-.month-picker { display: flex; gap: 6px; }
-.month-picker select { flex: 1; min-width: 0; }
 .staffel-row > .icon-btn { align-self: end; margin-bottom: 2px; }
 .field-group .field-add { margin-top: 10px; }
 

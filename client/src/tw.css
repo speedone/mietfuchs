@@ -157,3 +157,128 @@
   max-height: 40dvh;
   overflow-y: auto;
 }
+
+/* Popover am Auslöser (#346, Schritt 5 und 6; components/popover.tsx): Monatsraster und Begriffserklärung. Es
+   liegt im Top-Layer und steht unter dem Auslöser (`--pop-top`, `--pop-left` setzt der Baustein, so weit es ins
+   Fenster passt). Am Handy (bis 640 px) steht es als Blatt am unteren Rand, höchstens 60 % der Höhe, und hält
+   den Rand für den Home-Indikator ein (S24). Gedruckt wird es nie. */
+@utility anchored-pop {
+  position: fixed;
+  inset: auto;
+  top: var(--pop-top, var(--space-2));
+  left: var(--pop-left, var(--space-2));
+  margin: 0;
+  box-sizing: border-box;
+  max-width: calc(100vw - --spacing(4));
+  max-height: calc(100dvh - --spacing(4));
+  overflow: auto;
+  padding: --spacing(3);
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-l);
+  box-shadow: var(--shadow-pop);
+  font-size: var(--text-s);
+  font-weight: var(--weight-normal);
+  line-height: 1.45;
+  text-align: left;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  @media (max-width: 640px) {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    max-width: none;
+    max-height: 60dvh;
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+    padding: --spacing(4) --spacing(4) calc(--spacing(4) + env(safe-area-inset-bottom));
+  }
+  @media print {
+    display: none;
+  }
+}
+
+/* Das Monatsfeld (components/MonthField.tsx): Textfeld und Knopf ▦ nebeneinander, das Raster mit 12 Monaten in
+   3 Spalten und dem Jahr darüber. Die Zellen sind Knöpfe; der Fokusrahmen kommt aus index.css. */
+@utility month-field {
+  display: flex;
+  gap: --spacing(1);
+  align-items: stretch;
+  font-weight: var(--weight-normal);
+  & > input {
+    flex: 1;
+    min-width: 0;
+  }
+  & > button {
+    flex: none;
+    width: var(--target);
+    min-height: var(--target);
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--card);
+    color: var(--text);
+    border: 1px solid var(--input-border);
+    border-radius: var(--radius-m);
+    font: inherit;
+    font-size: var(--text-l);
+    cursor: pointer;
+  }
+  & > button:hover {
+    background: var(--hover);
+  }
+}
+@utility month-pop {
+  width: --spacing(64);
+  & > span:first-child {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: --spacing(2);
+  }
+  & [aria-live] {
+    font-size: var(--text-m);
+    font-weight: var(--weight-strong);
+  }
+  & [role='grid'] {
+    display: grid;
+    gap: --spacing(1);
+  }
+  & [role='row'] {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: --spacing(1);
+  }
+  & button {
+    min-height: var(--target);
+    min-width: var(--target);
+    padding: 0 --spacing(2);
+    background: transparent;
+    color: var(--text);
+    border: 1px solid transparent;
+    border-radius: var(--radius-m);
+    font: inherit;
+    font-size: var(--text-m);
+    cursor: pointer;
+  }
+  & button:hover:not(:disabled) {
+    background: var(--hover);
+  }
+  & button:disabled {
+    color: var(--muted);
+    cursor: default;
+  }
+  & button[aria-selected='true'] {
+    background: var(--primary);
+    color: var(--primary-text);
+    font-weight: var(--weight-strong);
+  }
+  @media (max-width: 640px) {
+    width: 100%;
+  }
+}

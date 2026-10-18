@@ -18,22 +18,28 @@ describe('Karte „Abrechnungszeitraum“ (#208)', () => {
     const monat = screen.getByRole('combobox', { name: 'Abrechnungszeitraum beginnt im' }) as HTMLSelectElement
     expect([monat.value, monat.selectedOptions[0]?.textContent]).toEqual(['5', 'Mai'])
   })
-  test('Wechsel: der Monat des Beginns, kein Beginnmonat', () => {
+  test('Wechsel: der Monat des Beginns im Monatsfeld, kein Beginnmonat', () => {
     render(<RhythmFields form={{ mode: 'change', month: 1, from: '2025-05' }} onChange={() => {}} />)
-    // Monat und Jahr als Auswahl statt `type="month"`, das Safari und Firefox nicht kennen (#287)
-    const monat = screen.getByRole('combobox', { name: 'Neuer Zeitraum beginnt ab (Monat/Jahr): Monat' }) as HTMLSelectElement
-    const jahr = screen.getByRole('combobox', { name: 'Neuer Zeitraum beginnt ab (Monat/Jahr): Jahr' }) as HTMLSelectElement
-    expect([monat.value, monat.selectedOptions[0]?.textContent, jahr.value, jahr.selectedOptions[0]?.textContent]).toEqual(['05', 'Mai', '2025', '2025'])
+    // Das Monatsfeld statt `type="month"`, das Safari und Firefox nicht kennen (#287, #346 Schritt 5)
+    const monat = screen.getByRole('textbox', { name: 'Neuer Zeitraum beginnt ab Monat' }) as HTMLInputElement
+    expect(monat.value).toBe('Mai 2025')
     expect(screen.queryByRole('combobox', { name: 'Abrechnungszeitraum beginnt im' })).toBeNull()
   })
-  test('Wechsel: Monat und Jahr ergeben JJJJ-MM, auch in der Zukunft', () => {
+  test('Wechsel: getippt ergibt JJJJ-MM, auch in der Zukunft; ein ungültiger Text geht unverändert weiter', () => {
     const next: string[] = []
     render(<RhythmFields form={{ mode: 'change', month: 1, from: '2025-05' }} onChange={(f) => next.push(f.from)} />)
-    const jahr = screen.getByRole('combobox', { name: 'Neuer Zeitraum beginnt ab (Monat/Jahr): Jahr' }) as HTMLSelectElement
-    const future = String(new Date().getFullYear() + 2)
-    expect([...jahr.options].map((o) => o.value)).toContain(future)
-    fireEvent.change(jahr, { target: { value: future } })
-    expect(next).toEqual([`${future}-05`])
+    const monat = screen.getByRole('textbox', { name: 'Neuer Zeitraum beginnt ab Monat' })
+    const future = new Date().getFullYear() + 2
+    fireEvent.change(monat, { target: { value: `5/${future}` } })
+    fireEvent.change(monat, { target: { value: '13.2026' } })
+    expect(next).toEqual([`${future}-05`, '13.2026'])
+  })
+  test('Wechsel: die Meldung der Prüfung steht am Monatsfeld', () => {
+    render(<RhythmFields form={{ mode: 'change', month: 1, from: '13.2026' }} onChange={() => {}} fromField={{ id: 'f', error: 'Monat 13 gibt es nicht', onFix: () => {} }} />)
+    const monat = screen.getByRole('textbox', { name: 'Neuer Zeitraum beginnt ab Monat' })
+    expect(monat.getAttribute('aria-invalid')).toBe('true')
+    expect(monat.id).toBe('f')
+    expect(screen.getByText('Monat 13 gibt es nicht')).toBeTruthy()
   })
   test('Zuordnung einer Gruppe: der vorgeschlagene Zeitraum steht im Feld', () => {
     const preview: PeriodChangePreview = {

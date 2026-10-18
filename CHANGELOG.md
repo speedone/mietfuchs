@@ -138,6 +138,20 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   [#341](https://github.com/speedone/mietfuchs/issues/341);
   [#346](https://github.com/speedone/mietfuchs/issues/346)).
 
+- Monate tippen Sie jetzt in ein Textfeld, wie Sie sie kennen: „3.2025“, „03/25“, „2025-03“, „März
+  2025“ oder „Mrz 27“; beim Verlassen steht dort „März 2025“. Daneben öffnet ▦ ein Raster mit den
+  zwölf Monaten und dem Jahr, das sich auch per Tastatur bedienen lässt (Pfeile, Pos1/Ende, Bild auf
+  und ab für das Jahr, Enter wählt, Esc schließt nur das Raster); am Handy erscheint es als Blatt am
+  unteren Rand. Das gilt für die Staffeln am Mietverhältnis (Kaltmiete, Vorauszahlung,
+  Heizvorauszahlung, Pauschale), den Wechsel des Abrechnungszeitraums und die Heizperiode. Vorher waren
+  es zwei Auswahllisten für Monat und Jahr, deren Monat im Mietverhältnis zu „ab Einz“ abgeschnitten
+  war. Ein Text, der kein Monat ist („13.2025“), wird nicht verworfen: Das Feld sagt, was nicht
+  stimmt (auch bei Mehrdeutigem wie „1.10“, das ein Tag mit Monat sein kann), und die Staffeln melden jede Zeile an ihrem Feld („Kaltmiete, Zeile 2: Geben Sie den Monat
+  ein, ab dem der Betrag gilt.“). Die Personenzahl bleibt bewusst ein Datum, denn sie wird tagesgenau
+  gerechnet (Befund M11 aus [#341](https://github.com/speedone/mietfuchs/issues/341);
+  [#287](https://github.com/speedone/mietfuchs/issues/287),
+  [#346](https://github.com/speedone/mietfuchs/issues/346)).
+
 ### Behoben
 
 - Die Karte „Objekt“ verlangt eine Bezeichnung: Leer ließ sie sich speichern, und die Seitenleiste

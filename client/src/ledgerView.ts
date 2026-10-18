@@ -8,6 +8,7 @@
 import type { FederalState, RentLedgerRow, RentMonth } from './types'
 import { rentDueDate, rentDueRuleText } from '../../shared/deadlines.ts'
 import { isHoliday, localHolidaysOf, stateName, weekdayOf } from '../../shared/holidays.ts'
+import { MONTH_NAMES } from './monthText'
 
 // **Der überraschende Dezember.** Eine Zahlung zählt zu dem Jahr, in dem sie eingegangen ist.
 // Geht die Dezembermiete erst im Januar ein, bleibt der Dezember im Mietkonto offen, obwohl der
@@ -82,7 +83,6 @@ export function shareText(mo: Pick<RentMonth, 'share'>): string | null {
 // beiden Einschränkungen (Vertrag, Überweisungsauftrag). Über den Rückstand sagt die Auskunft nichts:
 // Das Mietkonto zählt den laufenden Monat noch pauschal erst ab dem nächsten (#133); den Fälligkeitstag
 // dort einzusetzen ist ein eigener Schritt. Nur im laufenden Jahr, örtlich wie showDecemberNote.
-const MONTH_NAMES = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']
 const WEEKDAYS = ['So.', 'Mo.', 'Di.', 'Mi.', 'Do.', 'Fr.', 'Sa.']
 
 export type RentDueNote = { text: string; details: string }

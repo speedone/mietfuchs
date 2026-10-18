@@ -419,25 +419,22 @@ test('IBAN: ist die gespeicherte ungültig, sind die „Weiteren Angaben“ aufg
   expect(details().open).toBe(false)
 })
 
-// Safari auf dem Mac und Firefox kennen <input type="month"> nicht; in die Staffeln ließ sich dort
-// nichts Brauchbares eingeben. Monat und Jahr sind deshalb zwei Auswahllisten.
-const pickers = (dialog: HTMLElement) => ({
-  months: ['Kaltmiete', 'Vorauszahlung'].flatMap((s) => within(dialog).queryAllByLabelText(`${s} gültig ab: Monat`)) as HTMLSelectElement[],
-  years: ['Kaltmiete', 'Vorauszahlung'].flatMap((s) => within(dialog).queryAllByLabelText(`${s} gültig ab: Jahr`)) as HTMLSelectElement[],
-})
+// Safari auf dem Mac und Firefox kennen <input type="month"> nicht; in die Staffeln ließ sich dort nichts
+// Brauchbares eingeben (#287). Seit #346 Schritt 5 ist es das Monatsfeld: ein Textfeld mit Raster.
+const monthFields = (root: HTMLElement, label: string) => within(root).getAllByRole('textbox', { name: label }) as HTMLInputElement[]
 
-test('Staffeln: Monat und Jahr als Auswahl, der gespeicherte Monat ist gewählt und wird so gespeichert', async () => {
+test('Staffeln: das Monatsfeld zeigt den gespeicherten Monat, getippt wird gespeichert, was dasteht', async () => {
   page([tenancy('t1', 'Müller', { baseRents: [{ from: '2025-01', monthlyCents: 80000 }], prepayments: [{ from: '2025-01', monthlyCents: 15000 }] })])
   const [edit] = await screen.findAllByRole('button', { name: /Mietverhältnis bearbeiten/i }, SLOW)
   if (!edit) throw new Error('kein Bearbeiten-Knopf')
   fireEvent.click(edit)
   const dialog = await screen.findByRole('dialog', undefined, SLOW)
-  const { months, years } = pickers(dialog)
-  expect(months.map((m) => m.value)).toEqual(['01', '01'])
-  expect(years.map((y) => y.value)).toEqual(['2025', '2025'])
-  expect(months.every((m) => m.tagName === 'SELECT')).toBe(true)
-  fireEvent.change(months[0] as HTMLSelectElement, { target: { value: '03' } })
-  fireEvent.change(months[1] as HTMLSelectElement, { target: { value: '04' } })
+  const [rent] = monthFields(dialog, 'Kaltmiete gültig ab')
+  const [pre] = monthFields(dialog, 'Vorauszahlung gültig ab')
+  if (!rent || !pre) throw new Error('Monatsfelder fehlen')
+  expect([rent.value, pre.value]).toEqual(['Januar 2025', 'Januar 2025'])
+  fireEvent.change(rent, { target: { value: '3.2025' } })
+  fireEvent.change(pre, { target: { value: 'Apr 25' } })
   fireEvent.click(screen.getByRole('button', { name: 'Übernehmen' }))
   await vi.waitFor(() => expect(sent.some((s) => s.url.startsWith('/api/tenancies'))).toBe(true))
   const body = sent.find((s) => s.url.startsWith('/api/tenancies'))?.body
@@ -445,23 +442,27 @@ test('Staffeln: Monat und Jahr als Auswahl, der gespeicherte Monat ist gewählt 
   expect(body?.prepayments).toEqual([{ from: '2025-04', monthlyCents: 15000 }])
 })
 
-test('Staffeln: beides leer gilt ab Einzug, nur Monat ohne Jahr wird mit Hinweis abgelehnt', async () => {
+test('Staffeln: leer gilt ab Einzug, ein Monat ohne Jahr wird am Feld und in der Sammelmeldung gemeldet', async () => {
   page([tenancy('t1', 'Müller', { start: '2025-02-01', baseRents: [{ from: '2025-02', monthlyCents: 80000 }] })])
   const [edit] = await screen.findAllByRole('button', { name: /Mietverhältnis bearbeiten/i }, SLOW)
   if (!edit) throw new Error('kein Bearbeiten-Knopf')
   fireEvent.click(edit)
   const dialog = await screen.findByRole('dialog', undefined, SLOW)
-  const { months, years } = pickers(dialog)
-  const [month] = months
-  const [year] = years
-  if (!month || !year) throw new Error('Monatsauswahl fehlt')
+  const [month] = monthFields(dialog, 'Kaltmiete gültig ab')
+  if (!month) throw new Error('Monatsfeld fehlt')
 
-  fireEvent.change(year, { target: { value: '' } })
+  fireEvent.change(month, { target: { value: 'März' } })
   fireEvent.click(screen.getByRole('button', { name: 'Übernehmen' }))
-  expect(await within(dialog).findByText(/Bitte noch das Jahr wählen/, undefined, SLOW)).toBeTruthy()
+  // am Feld die kurze Fassung, in der Sammelmeldung mit Ort, der Text bleibt stehen
+  expect(await within(dialog).findByText('Kaltmiete, Zeile 1: Geben Sie zum Monat auch das Jahr ein, etwa „3.2025“.', undefined, SLOW)).toBeTruthy()
+  expect(month.getAttribute('aria-invalid')).toBe('true')
+  expect(within(dialog).getByText('Jahr fehlt')).toBeTruthy()
+  expect(month.value).toBe('März')
   expect(sent.some((s) => s.url.startsWith('/api/tenancies'))).toBe(false)
 
   fireEvent.change(month, { target: { value: '' } })
+  expect(month.getAttribute('aria-invalid')).toBeNull()
+  expect(month.placeholder).toBe('ab Einzug')
   fireEvent.click(screen.getByRole('button', { name: 'Übernehmen' }))
   await vi.waitFor(() => expect(sent.some((s) => s.url.startsWith('/api/tenancies'))).toBe(true))
   expect(sent.find((s) => s.url.startsWith('/api/tenancies'))?.body.baseRents).toEqual([{ from: '2025-02', monthlyCents: 80000 }])
@@ -479,29 +480,54 @@ test('Staffeln: eine Mieterhöhung ohne Monat wird nicht gespeichert, „ab Einz
   fireEvent.click(add)
   const group = add.parentElement
   if (!group) throw new Error('keine Feldgruppe der Kaltmiete')
-  const months = within(group).getAllByLabelText('Kaltmiete gültig ab: Monat') as HTMLSelectElement[]
-  const amounts = within(group).getAllByLabelText('Betrag €/Monat') as HTMLInputElement[]
-  const [first, second] = months
+  const [first, second] = monthFields(group, 'Kaltmiete gültig ab')
+  const amounts = within(group).getAllByRole('textbox', { name: 'Betrag €/Monat' }) as HTMLInputElement[]
   const amount = amounts[1]
   if (!first || !second || !amount) throw new Error('zweite Zeile fehlt')
   // nur die erste Zeile darf leer „ab Einzug“ heißen
-  expect(first.value).toBe('02')
-  expect([...second.options].map((o) => o.text)).not.toContain('ab Einzug')
+  expect(first.value).toBe('Februar 2025')
+  expect(second.placeholder).not.toBe('ab Einzug')
   fireEvent.change(amount, { target: { value: '900,00' } })
   fireEvent.click(screen.getByRole('button', { name: 'Übernehmen' }))
-  expect(await within(dialog).findByText(/Bitte wählen Sie für die Mieterhöhung den Monat, ab dem sie gilt\./, undefined, SLOW)).toBeTruthy()
+  expect(await within(dialog).findByText('Kaltmiete, Zeile 2: Geben Sie den Monat ein, ab dem der Betrag gilt.', undefined, SLOW)).toBeTruthy()
+  expect(second.getAttribute('aria-invalid')).toBe('true')
   expect(sent.some((s) => s.url.startsWith('/api/tenancies'))).toBe(false)
 })
 
-// #287: Auch die Staffel der Heizvorauszahlung war ein `type="month"`. Die Auswahl zeigt den
-// gespeicherten Monat, und gespeichert wird, was sie zeigt.
-test('Heizvorauszahlung: Monat und Jahr als Auswahl, gespeichert wie gezeigt', async () => {
+// #287: Auch die Staffel der Heizvorauszahlung war ein `type="month"`. Das Feld zeigt den gespeicherten
+// Monat, und gespeichert wird, was es zeigt; das Raster wählt ebenso.
+// Durchsicht K3: Die Meldungen hängen am Index der Zeile. Wird danach eine Zeile entfernt, rückte die Meldung an
+// die nachgerückte Zeile; das Entfernen nimmt die Meldungen deshalb weg (das Speichern prüft neu).
+test('Staffeln: nach dem Entfernen einer Zeile steht keine Meldung an der nachgerückten', async () => {
+  page([tenancy('t1', 'Müller', { start: '2025-02-01', baseRents: [{ from: '2025-02', monthlyCents: 80000 }] })])
+  await openTenancy('Müller')
+  const dialog = await screen.findByRole('dialog', undefined, SLOW)
+  const add = within(dialog).getByRole('button', { name: '+ Mieterhöhung ab Monat …' })
+  fireEvent.click(add)
+  const group = add.parentElement
+  if (!group) throw new Error('keine Feldgruppe der Kaltmiete')
+  const amounts = within(group).getAllByRole('textbox', { name: 'Betrag €/Monat' }) as HTMLInputElement[]
+  const amount = amounts[1]
+  if (!amount) throw new Error('zweite Zeile fehlt')
+  fireEvent.change(amount, { target: { value: '900,00' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Übernehmen' }))
+  expect(await within(dialog).findByText('Kaltmiete, Zeile 2: Geben Sie den Monat ein, ab dem der Betrag gilt.', undefined, SLOW)).toBeTruthy()
+  fireEvent.click(within(group).getAllByRole('button', { name: 'Zeile entfernen' })[0] as HTMLElement)
+  const [left] = monthFields(group, 'Kaltmiete gültig ab')
+  expect(left?.getAttribute('aria-invalid')).toBeNull()
+  expect(within(dialog).queryByText(/Kaltmiete, Zeile 2/)).toBeNull()
+})
+
+test('Heizvorauszahlung: Monatsfeld und Raster, gespeichert wie gezeigt', async () => {
   page([tenancy('t1', 'Müller', { prepayments: [{ from: '2025-01', monthlyCents: 16500 }], heatingPrepayments: [{ from: '2025-05', monthlyCents: 11500 }] })])
   await openTenancy('Müller')
-  const monat = screen.getByRole('combobox', { name: 'Heizvorauszahlung gültig ab: Monat' }) as HTMLSelectElement
-  const jahr = screen.getByRole('combobox', { name: 'Heizvorauszahlung gültig ab: Jahr' }) as HTMLSelectElement
-  expect([monat.value, monat.selectedOptions[0]?.textContent, jahr.value]).toEqual(['05', 'Mai', '2025'])
-  fireEvent.change(monat, { target: { value: '06' } })
+  const monat = screen.getByRole('textbox', { name: 'Heizvorauszahlung gültig ab' }) as HTMLInputElement
+  expect(monat.value).toBe('Mai 2025')
+  const raster = monat.parentElement?.querySelector('button')
+  if (!raster) throw new Error('kein Knopf für das Raster')
+  fireEvent.click(raster)
+  fireEvent.click(screen.getByRole('gridcell', { name: 'Juni 2025' }))
+  expect(monat.value).toBe('Juni 2025')
   fireEvent.click(screen.getByRole('button', { name: 'Übernehmen' }))
   await vi.waitFor(() => expect(sent.some((s) => s.url.startsWith('/api/tenancies'))).toBe(true))
   expect(sent.find((s) => s.url.startsWith('/api/tenancies'))?.body.heatingPrepayments).toEqual([{ from: '2025-06', monthlyCents: 11500 }])
@@ -513,14 +539,15 @@ test('Personen-Staffel: die Beschriftung nennt die Staffel', async () => {
   expect((screen.getByLabelText('Personenzahl gültig ab') as HTMLInputElement).value).toBe('2025-01-01')
 })
 
-// Durchsicht von fix/monatsauswahl, Kann 3: Ein gespeicherter Wert mit Tag zeigte „ab Einzug“.
-test('Staffeln: ein gespeicherter Wert, der kein Monat ist, steht benannt in der Auswahl und wird nicht still gespeichert', async () => {
+// Durchsicht von fix/monatsauswahl, Kann 3: Ein gespeicherter Wert mit Tag zeigte „ab Einzug“. Das Monatsfeld
+// zeigt ihn, wie er gespeichert ist, und das Speichern meldet ihn, statt ihn als Februar zu deuten.
+test('Staffeln: ein gespeicherter Wert, der kein Monat ist, steht im Feld und wird nicht still gespeichert', async () => {
   page([tenancy('t1', 'Müller', { baseRents: [{ from: '2024-02-15', monthlyCents: 80000 }] })])
   await openTenancy('Müller')
-  const monat = screen.getByRole('combobox', { name: 'Kaltmiete gültig ab: Monat' }) as HTMLSelectElement
-  expect(monat.selectedOptions[0]?.textContent).toBe('gespeichert: 2024-02-15')
+  const monat = screen.getByRole('textbox', { name: 'Kaltmiete gültig ab' }) as HTMLInputElement
+  expect(monat.value).toBe('2024-02-15')
   fireEvent.click(screen.getByRole('button', { name: 'Übernehmen' }))
-  expect(await screen.findByText(/Der gespeicherte Monat „2024-02-15“ ist ungültig/, undefined, SLOW)).toBeTruthy()
+  expect(await screen.findByText(/Kaltmiete, Zeile 1: Hier zählt nur der Monat ab dem Ersten/, undefined, SLOW)).toBeTruthy()
   expect(sent.some((s) => s.url.startsWith('/api/tenancies'))).toBe(false)
 })
 

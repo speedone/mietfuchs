@@ -18,6 +18,9 @@ export function tabbables(root: ParentNode = topModalInTest() ?? document.body):
   return [...root.querySelectorAll<HTMLElement>(TABBABLE)].filter((el) => {
     if (el.getAttribute('tabindex') === '-1' || (el as HTMLButtonElement).disabled) return false
     if (el.closest('[hidden], [inert]')) return false
+    // Ein geschlossenes Popover ist nicht zu sehen (der Browser setzt es auf display: none)
+    const pop = el.closest('[popover]')
+    if (pop && !pop.matches(':popover-open')) return false
     const closed = el.closest('details:not([open])')
     if (closed && !(el.tagName === 'SUMMARY' && el.parentElement === closed)) return false
     // Ein `<summary>` in einem geschlossenen äußeren `<details>` ist ebenso verborgen
