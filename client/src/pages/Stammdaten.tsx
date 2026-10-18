@@ -337,7 +337,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
 
   return (
     <>
-      <PageHeader title="Stammdaten" subtitle="Objekt, Wohnungen und Mietverhältnisse — die Grundlage jeder Abrechnung." />
+      <PageHeader context="property" title="Stammdaten" subtitle="Objekt, Wohnungen und Mietverhältnisse — die Grundlage jeder Abrechnung." />
 
       {/* Fehler beim Löschen (#146); die der Formulare stehen in ihrem Dialog. */}
 

@@ -826,8 +826,8 @@ Kostenposition (#94), nicht in weitere Ebenen.
   auf 0000 schreiben, dann die Kette.
 - **Oberfläche**: `PropertyProvider` (client/src/property.tsx) nach dem Muster des
   `YearProvider`; der Umschalter erscheint erst ab dem zweiten Objekt. Seiten hängen das Objekt
-  mit `withProperty` an ihre Abrufe. Ab zwei Objekten nennt `PageHeader` das gewählte Objekt,
-  und nach dem Wechsel in ein Objekt ohne Wohnungen steht oben ein Hinweis mit „Zurück zu …“
+  mit `withProperty` an ihre Abrufe. `PageHeader` nennt das gewählte Objekt in der Kontextzeile
+  (seit #346 Schritt 8 auch bei einem einzigen, siehe Seitenkopf unter Konventionen), und nach dem Wechsel in ein Objekt ohne Wohnungen steht oben ein Hinweis mit „Zurück zu …“
   (#157, Logik in client/src/propertyView.ts, das vorige Objekt merkt der Provider): Ein leeres
   neues Objekt sah sonst aus wie ein verlorener Bestand.
 
@@ -896,7 +896,9 @@ keinen Schlüssel ([client/src/period.tsx](client/src/period.tsx), Logik in
 [client/src/periodForm.ts](client/src/periodForm.ts)): Der Zeitraum ist der, der ihn enthält, so
 passt ein Objektwechsel ihn von selbst an. Beim Kalenderobjekt heißt der Umschalter weiter
 „Abrechnungsjahr“, seine Werte sind Jahreszahlen und die Routen bekommen die Jahreszahl; Mietkonto
-und Steuer haben bei abweichendem Zeitraum einen eigenen Kalenderjahr-Umschalter. Die Belegbuchung
+und Steuer haben bei abweichendem Zeitraum einen eigenen Umschalter „Kalenderjahr“ auf der Seite
+(`CalendarYearSelect`, beim Kalenderobjekt gibt es ihn nicht, dort ist das Kalenderjahr der Zeitraum
+der Seitenleiste). Gewählt wird der Zeitraum sonst nur in der Seitenleiste (#346 Schritt 8). Die Belegbuchung
 bucht in `bookingPeriod` (shared/assessment.ts): den gewählten Zeitraum, wenn er das Jahr des Belegs
 berührt, sonst den mit der größten Überschneidung. Der gewählte Zeitraum einer Auswertung entsteht
 aus dem gewählten Jahr nach den Regeln des Objekts (`periodForYear`) und nie als festes `JJJJ-01`:
@@ -956,6 +958,9 @@ Maßgeblich ist das Land des Objekts (`properties.state`, eine der 16 Kennungen 
 [client/src/receipts.ts](client/src/receipts.ts)): Objekt → Jahr → Kostenart als Register, Suche,
 Belegabdeckung, Posteingang und zwei Mappen. Entscheidungen und Quellen in
 [docs/superpowers/specs/2026-10-02-belegordner-design.md](docs/superpowers/specs/2026-10-02-belegordner-design.md).
+Objekt und Jahr kommen aus der Seitenleiste (#346 Schritt 8); der Ordner hat dafür keine eigene Auswahl
+mehr, nur die Häkchen „Belege aller Objekte zeigen“ und „Belege aller Jahre zeigen“. Objekt und Jahr
+eines Belegs im Posteingang sind Eigenschaften des Belegs und bleiben Auswahlfelder.
 
 - **Die Datei ist der Beleg, die Tabelle `uploads` nur eine Beschreibung dazu**
   ([server/src/db/uploads.ts](server/src/db/uploads.ts), Migration 0012): Originalname, Art,
@@ -3324,6 +3329,20 @@ Tippfläche von `--target` über `::after`, und printCss.test.ts verlangt den du
   vor 125) steht das Popover `position: fixed` über `hidden`; ist der umgebende `<dialog>` transformiert (Einfahren
   des Seitenfensters), bezieht sich `fixed` auf ihn, und die Lage aus `getBoundingClientRect` stimmt dann nicht. Nicht
   geprüft, kein alter Browser zur Hand (Durchsicht K6).
+- **Objekt und Abrechnungszeitraum wählt nur die Seitenleiste** (#346 Schritt 8, #341 M13 und N1), am Handy
+  das Menüblatt mit demselben Inhalt. Beide sind ein Baustein, `Switcher`
+  ([client/src/components/Switcher.tsx](client/src/components/Switcher.tsx), Utility `switcher` in tw.css): der
+  gewählte Eintrag als umbrechender Text mit ▾, das echte Auswahlfeld unsichtbar darüber, gleiche Höhe und Schrift.
+  Jede Seite zeigt beides im Seitenkopf als **Kontextzeile** an („Lindenweg 12 · Abrechnungsjahr 2025“,
+  `pageContextLine` in client/src/propertyView.ts; `PageHeader` mit `context`: `period` als Vorgabe, `calendar` für
+  Mietkonto und Steuer, `property` für Stammdaten, `none` für Einstellungen und Hilfe). Am Bildschirm des Handys entfällt die
+  Zeile, dort steht dieselbe Angabe im angehefteten Kopf; gedruckt wird sie immer. Der Fuß der Seitenleiste ist
+  Teil der Scrollfläche und nicht angeheftet (#341 M15). Auf einer Seite bleiben nur andere Größen: das Kalenderjahr von
+  Mietkonto und Steuer bei abweichendem Zeitraum (`CalendarYearSelect`), die Heizperiode, das „Jahr der Buchung“
+  einer Auswertung, Objekt und Jahr eines Belegs im Posteingang und das Jahr der Zahlung einer Position. Der Wächter
+  S18 (uiRules.test.ts) lässt die Bausteine der Seitenleiste nur in App.tsx zu und kein `<select>` in `pages/` oder
+  `components/`, das Objekte, Jahre oder Zeiträume anbietet, außer den benannten Ausnahmen; Tests einer Seite, die
+  den Zeitraum wechseln, stellen dafür `<PeriodSelect />` daneben wie die Seitenleiste.
 - **Auswahlfelder und Häkchen speichern nicht beim Anklicken** (#309). Sofort gespeichert wird nur,
   was keine Daten ändert: der Wechsel von Zeitraum, Objekt oder Design und die Antwort auf die
   Frage nach der Update-Prüfung im Cockpit. Alles andere ist zuerst ein Entwurf: `useDraft(saved,

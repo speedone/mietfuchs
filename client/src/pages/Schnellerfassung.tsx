@@ -9,7 +9,6 @@ import { bookDecisions, greenDecisions, loadOpenAssessments, planDecisions } fro
 import { useEvaluationQueue, type QueueEntry as BaseEntry, type QueuePatch } from '../evaluationQueue'
 import AssessmentReview from '../components/AssessmentReview'
 import { usePeriod } from '../period'
-import { PeriodSelect } from '../components/PeriodSelect'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import { AiProgressBadge } from '../components/AiProgress'
 import { plural } from '../../../shared/wording.ts'
@@ -336,15 +335,14 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
       {pending && <div className="warn">{pending}</div>}
 
       <div className="card no-print">
-        <div className="row center">
-          <PeriodSelect />
-          <div className="grow" />
-          {totalRecognized > 0 && (
+        {totalRecognized > 0 && (
+          <div className="row center">
+            <div className="grow" />
             <div className="muted align-right">
               {totalRecognized} erkannt — <span className="ampel gruen" /> {tally.gruen} · <span className="ampel gelb" /> {tally.gelb} · <span className="ampel rot" /> {tally.rot}
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         <div
           className={`dropzone ${dragOver ? 'over' : ''}`}

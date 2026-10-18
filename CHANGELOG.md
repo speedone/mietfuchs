@@ -162,6 +162,20 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   M1, MOB3 aus [#341](https://github.com/speedone/mietfuchs/issues/341);
   [#346](https://github.com/speedone/mietfuchs/issues/346)).
 
+- Objekt und Abrechnungsjahr wählen Sie nur noch in der Seitenleiste (am Handy im Menü). Jede Seite
+  nennt beides oben über dem Titel, etwa „Lindenweg 12 · Abrechnungsjahr 2025“; die zweite
+  Jahresauswahl auf Abrechnung, Kosten, Schnellerfassung, Kostenvergleich und Zähler entfällt. Der
+  Belegordner zeigt Objekt und Jahr der Seitenleiste und hat statt eigener Auswahlfelder die Häkchen
+  „Belege aller Objekte zeigen“ und „Belege aller Jahre zeigen“. Mietkonto und Steuer behalten ihre
+  Auswahl des Kalenderjahres, wenn der Abrechnungszeitraum vom Kalenderjahr abweicht, jetzt mit der
+  Beschriftung „Kalenderjahr“; beim Kalenderjahr als Abrechnungszeitraum entfällt sie dort, denn dann ist
+  es dasselbe Jahr. Die Auswahl von Objekt und Jahr in der Seitenleiste sieht jetzt gleich aus, mit
+  demselben Pfeil, derselben Höhe und Schrift, und zeigt ihren Fokus auch im Kontrastmodus von Windows.
+  Der Fuß der Seitenleiste (Design, Hinweis) steht nicht mehr fest über der Navigation: Bei kleiner
+  Fensterhöhe verdeckte er „Einstellungen“ und „Hilfe & Begriffe“ (Befunde M13, M15, N1 aus
+  [#341](https://github.com/speedone/mietfuchs/issues/341);
+  [#346](https://github.com/speedone/mietfuchs/issues/346)).
+
 ### Behoben
 
 - Heizkosten, Ablesungen: Fehlt an einer Grenze der Heizperiode ein Stand, nennt die Liste jetzt den

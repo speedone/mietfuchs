@@ -288,7 +288,7 @@ function InboxPlacement({ upload, properties, yearOptions, onSave, children }: {
 export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onContinue, onOpenItem, makeTenantFolder = downloadTenantFolder }: Props) {
   const toast = useToast()
   const confirm = useConfirm()
-  const { year: currentYear, calendarYearOptions } = usePeriod()
+  const { year: currentYear, calendarYearOptions, calendar } = usePeriod()
   const { property, properties } = useProperty()
   const [uploads, setUploads] = useState<UploadEntry[]>([])
   const [loadedItems, setLoadedItems] = useState<CostItem[]>([])
@@ -305,14 +305,13 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
   // Wer aus dem Kasten weiterspringt, schließt ihn vorher wirklich: Sonst fände der Sprung die Marke noch
   // gesetzt und fragte nach dem Kasten, den er gerade schließt.
   const leaveCheck = (go: () => void) => { flushSync(() => setAmountCheck(null)); go() }
-  // Voreinstellung: das gewählte Objekt und das Abrechnungsjahr (#170). Umschalten wirkt nur
-  // hier; das Objekt der übrigen Seiten bleibt, wie es ist.
-  const [filterProperty, setFilterProperty] = useState<string>(property?.id ?? 'all')
-  const [filterYear, setFilterYear] = useState<string>(String(currentYear))
+  // Der Ordner zeigt das Objekt und das Jahr der Seitenleiste (#170); gewählt werden beide nur dort (#346
+  // Schritt 8, M13: vorher gab es hier eine zweite Auswahl für beide). Was der Ordner darüber hinaus kann, ist
+  // ein Umfang und keine Wahl: Belege aller Objekte bzw. aller Jahre zeigen. Das Jahr ist das Kalenderjahr, in
+  // dem der gewählte Zeitraum beginnt; darunter stehen seine Positionen (receipts.ts).
+  const [allProperties, setAllProperties] = useState(false)
+  const [allYears, setAllYears] = useState(false)
   const [query, setQuery] = useState('')
-
-  useEffect(() => { if (property) setFilterProperty(property.id) }, [property?.id])
-  useEffect(() => { setFilterYear(String(currentYear)) }, [currentYear])
 
   const load = useCallback(() => {
     // Der Belegordner gilt für die ganze Installation (#92). Welche Belege an einer Kostenposition
@@ -344,13 +343,11 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
     [loadedItems, properties, plantsBy],
   )
 
-  // Ein Objekt, das es nicht (mehr) gibt, gilt als „alle“, damit das Auswahlfeld nie etwas
-  // anderes zeigt, als gefiltert wird.
-  const shownProperty = filterProperty === 'all' || properties.some((p) => p.id === filterProperty) ? filterProperty : 'all'
+  // Ohne gewähltes Objekt (oder mit nur einem) gilt „alle“: Bei einem Objekt ist das dasselbe.
   const filter: FolderFilter = useMemo(() => ({
-    propertyId: properties.length > 1 ? shownProperty : 'all',
-    year: filterYear === 'all' ? 'all' : Number(filterYear),
-  }), [shownProperty, filterYear, properties.length])
+    propertyId: properties.length > 1 && !allProperties && property ? property.id : 'all',
+    year: allYears ? 'all' : currentYear,
+  }), [allProperties, allYears, property, currentYear, properties.length])
   const folder = useMemo(() => buildFolder(uploads, costItems, filter, query), [uploads, costItems, filter, query])
   const allCards = useMemo(() => receiptCards(uploads, costItems), [uploads, costItems])
   const hints = useMemo(() => duplicateHints(allCards), [allCards])
@@ -635,20 +632,18 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
       <div className="card no-print">
         <div className="row receipt-filters">
           {properties.length > 1 && (
-            <label className="field">
-              Objekt
-              <select value={shownProperty} onChange={(e) => setFilterProperty(e.target.value)}>
-                {properties.map((p) => <option key={p.id} value={p.id}>{p.name || 'Ohne Namen'}</option>)}
-                <option value="all">alle Objekte</option>
-              </select>
+            <label className="field checkline">
+              <span>
+                <input type="checkbox" checked={allProperties} onChange={(e) => setAllProperties(e.target.checked)} />
+                Belege aller Objekte zeigen
+              </span>
             </label>
           )}
-          <label className="field">
-            Jahr
-            <select value={filterYear} onChange={(e) => setFilterYear(e.target.value)}>
-              {yearOptions.map((y) => <option key={y} value={String(y)}>{y}</option>)}
-              <option value="all">alle Jahre</option>
-            </select>
+          <label className="field checkline">
+            <span>
+              <input type="checkbox" checked={allYears} onChange={(e) => setAllYears(e.target.checked)} />
+              Belege aller Jahre zeigen
+            </span>
           </label>
           <label className="field grow">
             Suche
@@ -660,6 +655,10 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
             />
           </label>
         </div>
+        {/* Durchsicht zu Schritt 8, K2: Der Ordner ordnet nach dem Jahr, in dem der Zeitraum einer Position beginnt
+            (receipts.ts, ebenso Register und Belegabdeckung). Bei einem anderen Rhythmus sagt der Satz das, denn
+            die Kontextzeile nennt den Zeitraum; vor einem Wechsel des Rhythmus können zwei Zeiträume im selben Jahr beginnen. */}
+        {!calendar && !allYears && <p className="muted">Gezeigt sind die Positionen der Abrechnungszeiträume, die {currentYear} beginnen.</p>}
       </div>
 
       <div
@@ -686,7 +685,7 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
         <p className="muted">
           Belege, die an keiner Kostenposition hängen. Ziehen Sie neue Belege hierher oder laden Sie mehrere auf einmal hoch;
           danach ordnen Sie jeden einer Position zu oder lassen ihn per KI auswerten.
-          {inbox.elsewhere > 0 && ` ${inbox.elsewhere} weitere ${inbox.elsewhere === 1 ? 'ist' : 'sind'} einem anderen Objekt oder Jahr zugedacht.`}
+          {inbox.elsewhere > 0 && ` ${inbox.elsewhere} weitere ${inbox.elsewhere === 1 ? 'ist' : 'sind'} einem anderen Objekt oder Jahr zugedacht; Sie sehen ${inbox.elsewhere === 1 ? 'ihn' : 'sie'} mit ${properties.length > 1 ? '„Belege aller Objekte zeigen“ oder ' : ''}„Belege aller Jahre zeigen“.`}
         </p>
         {inbox.here.length > 0 && <ul className="receipt-list">{inbox.here.map(renderCard)}</ul>}
       </div>

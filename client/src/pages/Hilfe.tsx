@@ -44,6 +44,7 @@ export default function Hilfe({ onNavigate, focusTerm, onFocusTermDone }: { onNa
   return (
     <>
       <PageHeader
+        context="none"
         title="Hilfe & Begriffe"
         subtitle="Anleitungen je Vermietungsart und die Fachbegriffe der Nebenkostenabrechnung in einfachen Worten, mit Beispiel und Rechtsgrundlage. Dieselben Erklärungen erscheinen in den Formularen, wenn Sie einen gestrichelt unterstrichenen Begriff oder das „?“ dahinter antippen."
       />
