@@ -7,7 +7,7 @@ import { propertyName } from '../propertyView'
 // Umschalter in der Seitenleiste verriet, dass bloß gewechselt wurde. Ob er erscheint, entscheidet
 // `emptyPropertyNotice` in propertyView.ts.
 //
-// `onSetUp` fehlt in den Stammdaten: Dort steht „+ Wohnung hinzufügen“ ohnehin vor Augen.
+// `onSetUp` fehlt in den Stammdaten: Dort steht „+ Wohnung anlegen“ ohnehin vor Augen.
 // `focus` setzt den Fokus auf die Überschrift, nach dem Anlegen über den Dialog.
 export default function PropertyNotice({ current, previous, previousHadUnits, focus, onFocused, onBack, onSetUp, onDismiss }: {
   current: string

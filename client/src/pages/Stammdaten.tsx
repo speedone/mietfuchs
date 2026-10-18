@@ -188,7 +188,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
     }
     setUnitForm(null)
     await reload()
-    toast(editing ? `„${unitForm.name.trim()}“ übernommen.` : `Wohnung „${unitForm.name.trim()}“ angelegt.`)
+    toast(editing ? `Wohnung „${unitForm.name.trim()}“ gespeichert.` : `Wohnung „${unitForm.name.trim()}“ angelegt.`)
   }
 
   async function deleteUnit(u: Unit) {
@@ -310,7 +310,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
     const name = tenForm.tenantName.trim()
     setTenForm(null)
     await reload()
-    toast(editing ? `„${name}“ übernommen.` : `Mietverhältnis „${name}“ angelegt.`)
+    toast(editing ? `Mietverhältnis „${name}“ gespeichert.` : `Mietverhältnis „${name}“ angelegt.`)
   }
 
   async function deleteTenancy(t: Tenancy) {
@@ -396,7 +396,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
           </Table>
         )}
         <div className="row">
-          <button className="btn secondary" onClick={() => { unitErrors.clear(); setUnitForm({ ...EMPTY_UNIT }) }}>+ Wohnung hinzufügen</button>
+          <button className="btn secondary" onClick={() => { unitErrors.clear(); setUnitForm({ ...EMPTY_UNIT }) }}>+ Wohnung anlegen</button>
         </div>
         {units.length > 0 && participating.length === 0 && (
           <div className="notice">Keine Wohnung ist an der Kostenverteilung beteiligt — die Abrechnung wäre leer.</div>
@@ -525,7 +525,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
           disabled={units.length === 0}
           aria-describedby={units.length === 0 ? 'tenancy-needs-unit' : undefined}
         >
-          + Mietverhältnis hinzufügen
+          + Mietverhältnis anlegen
         </button>
         {/* Ein gesperrter Knopf nennt seinen Grund (#346, Schritt 10, M14). */}
         {units.length === 0 && <span id="tenancy-needs-unit" className="muted self-center">Legen Sie zuerst eine Wohnung an.</span>}
@@ -545,7 +545,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
           // Die IBAN schreibt das Feld beim Verlassen in Vierergruppen um; das ist keine Änderung (Durchsicht K5)
           value={{ ...tenForm, iban: normalizeIban(tenForm.iban) }}
           errors={tenErrors}
-          actions={<button className="btn" onClick={saveTenancy}>{tenForm.id ? 'Übernehmen' : 'Anlegen'}</button>}
+          actions={<button className="btn" onClick={saveTenancy}>{tenForm.id ? 'Speichern' : 'Anlegen'}</button>}
         >
           <div className="row">
             <Field label="Mieter" required className="grow" {...tenErrors.field('tenantName')}>
@@ -757,7 +757,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
           onSubmit={saveUnit}
           value={unitForm}
           errors={unitErrors}
-          actions={<button className="btn" onClick={saveUnit}>{unitForm.id ? 'Übernehmen' : 'Anlegen'}</button>}
+          actions={<button className="btn" onClick={saveUnit}>{unitForm.id ? 'Speichern' : 'Anlegen'}</button>}
         >
           <div className="row">
             <Field label="Name" required className="grow" {...unitErrors.field('name')}>

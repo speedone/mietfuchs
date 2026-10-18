@@ -62,7 +62,7 @@ export default function HeatingSelfSetup({ plant, period, periodLabel, onDone, o
       cancelLabel="Später"
       busy={busy}
       errors={errors}
-      actions={<button className="btn" onClick={submit} disabled={busy}>Umstellen</button>}
+      actions={<button className="btn" onClick={submit} disabled={busy}>Speichern</button>}
     >
       <p className="muted">
         Mietfuchs verteilt die Kosten dieser Heizanlage dann nach der <Term id="heatingSystem">Heizkostenverordnung</Term>: einen Teil nach dem

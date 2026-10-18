@@ -43,7 +43,7 @@ describe('Abschnitt „Zeitraum der Heizung“', () => {
     fireEvent.change(screen.getByRole('combobox', { name: 'Für welchen Zeitraum rechnet die Heizung ab?' }), { target: { value: 'object' } })
     fireEvent.click(screen.getByRole('button', { name: 'Vorschau' }))
     await screen.findByRole('combobox', { name: /Heizperiode für „Messdienst 2025\/2026“ \(1\.000,00.€, bisher 01\.05\.2025–30\.04\.2026\)/ })
-    fireEvent.click(screen.getByRole('button', { name: 'Übernehmen' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
     await waitFor(() => expect(changed).toHaveBeenCalled())
     expect(calls.map((c) => [c.method, c.url, c.body])).toEqual([
       ['POST', '/api/heating-plants/hp1/period/preview', { rules: null }],
@@ -90,11 +90,11 @@ describe('Laienprobe B11, B3a', () => {
     fireEvent.change(screen.getByRole('combobox', { name: 'Für welchen Zeitraum rechnet die Heizung ab?' }), { target: { value: 'own' } })
     fireEvent.change(screen.getByRole('combobox', { name: 'Rechnen Sie die Heizkosten getrennt ab, mit eigener Heizkostenvorauszahlung?' }), { target: { value: 'yes' } })
     fireEvent.click(screen.getByRole('button', { name: 'Vorschau' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Übernehmen' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Speichern' }))
     await screen.findByText(/Familie Beispiel: vorher Guthaben 178,46 €, nachher Nachzahlung 251,54 €/)
     expect(calls).toContain('POST /api/heating-plants/hp1/separate/preview')
     expect(notes.at(-1)).toMatch(/Noch nicht eingeschaltet ist die getrennte Heizkostenabrechnung/)
-    const uebernehmen = screen.getByRole('button', { name: 'Übernehmen' }) as HTMLButtonElement
+    const uebernehmen = screen.getByRole('button', { name: 'Speichern' }) as HTMLButtonElement
     expect(uebernehmen.disabled).toBe(true)
     fireEvent.click(screen.getByRole('checkbox', { name: /Ich habe verstanden/ }))
     expect(uebernehmen.disabled).toBe(false)
@@ -102,7 +102,7 @@ describe('Laienprobe B11, B3a', () => {
     conflict = true
     fireEvent.click(uebernehmen)
     await waitFor(() => expect(puts.at(-1)).toMatchObject({ answers: { understood: true } }))
-    await waitFor(() => expect((screen.getByRole('button', { name: 'Übernehmen' }) as HTMLButtonElement).disabled).toBe(true))
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Speichern' }) as HTMLButtonElement).disabled).toBe(true))
   })
 })
 
@@ -123,7 +123,7 @@ test('Review Runde 2: Wechsel der Heizperiode mit abgelaufener Frist erst nach B
   await screen.findByText(/Müller: vorher Guthaben 2\.600,00.€, nachher Guthaben 3\.600,00.€/)
   // Review Runde 3 (N4): auch hier der früheste Wechsel mit offener Frist.
   expect(screen.getByText(/wechseln Sie frühestens ab/)).toBeTruthy()
-  const uebernehmen = screen.getByRole('button', { name: 'Übernehmen' }) as HTMLButtonElement
+  const uebernehmen = screen.getByRole('button', { name: 'Speichern' }) as HTMLButtonElement
   expect(uebernehmen.disabled).toBe(true)
   fireEvent.click(screen.getByRole('checkbox', { name: /Ich habe verstanden/ }))
   fireEvent.click(uebernehmen)

@@ -78,12 +78,12 @@ test('Kosten: ist die Abrechnung des Jahres abgeschlossen, steht das oben, und B
   wrap(<Kosten units={UNITS} settings={null} tenancies={TENANCIES} />)
   await screen.findByText(new RegExp(`Die Abrechnung ${YEAR} ist abgeschlossen`), {}, SLOW)
   expect(screen.getByText(/als Abweichung/)).toBeTruthy()
-  expect((screen.getByRole('button', { name: /Kostenposition manuell erfassen/ }) as HTMLButtonElement).disabled).toBe(false)
+  expect((screen.getByRole('button', { name: /Kostenposition anlegen/ }) as HTMLButtonElement).disabled).toBe(false)
 })
 
 test('Kosten: im Entwurf kein solcher Hinweis', async () => {
   wrap(<Kosten units={UNITS} settings={null} tenancies={TENANCIES} />)
-  await screen.findByRole('button', { name: /Kostenposition manuell erfassen/ }, SLOW)
+  await screen.findByRole('button', { name: /Kostenposition anlegen/ }, SLOW)
   // Die Abfrage der Abrechnung ist durch, bevor geprüft wird.
   await new Promise((r) => setTimeout(r, 100))
   expect(screen.queryByText(/ist abgeschlossen/)).toBeNull()
@@ -91,7 +91,7 @@ test('Kosten: im Entwurf kein solcher Hinweis', async () => {
 
 test('Kosten: Wasser/Abwasser bei Kaltwasserzählern schlägt „nach Verbrauch“ vor, und gespeichert wird, was zu sehen ist', async () => {
   wrap(<Kosten units={UNITS} settings={null} tenancies={TENANCIES} />)
-  fireEvent.click(await screen.findByRole('button', { name: /Kostenposition manuell erfassen/ }, SLOW))
+  fireEvent.click(await screen.findByRole('button', { name: /Kostenposition anlegen/ }, SLOW))
   // Die Zähler kommen nach der Seite; erst mit ihnen gibt es den Verbrauchsschlüssel.
   await waitFor(() => expect([...(screen.getByLabelText(/Umlageschlüssel/) as HTMLSelectElement).options].some((o) => o.value === 'meter')).toBe(true), SLOW)
   fireEvent.change(screen.getByLabelText(/Kostenart/), { target: { value: 'Wasser/Abwasser' } })
@@ -102,14 +102,14 @@ test('Kosten: Wasser/Abwasser bei Kaltwasserzählern schlägt „nach Verbrauch�
   expect(type.selectedOptions[0]?.value).toBe('kaltwasser')
   fireEvent.change(screen.getByLabelText(/Beschreibung/), { target: { value: 'Wasser' } })
   fireEvent.change(screen.getByLabelText(/Betrag/), { target: { value: '100,00' } })
-  fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/ }))
+  fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/ }))
   await waitFor(() => expect(sent).toHaveLength(1), SLOW)
   expect(sent[0]?.body).toMatchObject({ key: 'meter', meterType: 'kaltwasser' })
 })
 
 test('Mietkonto: eine neue Zahlung im früheren Jahr steht nicht auf heute, sondern im gewählten Jahr', async () => {
   wrap(<Mietkonto />)
-  const knopf = await screen.findByRole('button', { name: /Zahlung erfassen/ }, SLOW)
+  const knopf = await screen.findByRole('button', { name: /Zahlung anlegen/ }, SLOW)
   await waitFor(() => expect((knopf as HTMLButtonElement).disabled).toBe(false), SLOW)
   fireEvent.click(knopf)
   const datum = screen.getByLabelText(/Datum/) as HTMLInputElement
@@ -118,7 +118,7 @@ test('Mietkonto: eine neue Zahlung im früheren Jahr steht nicht auf heute, sond
 
 test('Stammdaten: ein neues Mietverhältnis wählt die erste freie vermietbare Wohnung vor, nicht die selbstgenutzte', async () => {
   wrap(<Stammdaten units={UNITS} tenancies={TENANCIES} settings={null} reload={async () => {}} />)
-  fireEvent.click(await screen.findByRole('button', { name: /Mietverhältnis hinzufügen/ }, SLOW))
+  fireEvent.click(await screen.findByRole('button', { name: /Mietverhältnis anlegen/ }, SLOW))
   const wohnung = screen.getByRole('combobox', { name: /^Wohnung/ }) as HTMLSelectElement
   expect(wohnung.value).toBe('frei')
 })

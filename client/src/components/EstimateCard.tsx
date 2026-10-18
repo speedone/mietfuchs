@@ -116,12 +116,12 @@ export default function EstimateCard({ plant, view, self, onChanged }: {
             {!view.closed && (e?.stale
               ? <>
                 <button className="btn ghost" onClick={() => start(o)}>Schätzung neu eintragen</button>
-                <button className="btn ghost" onClick={() => remove(o)} aria-label={`Schätzung von ${o.unitName} entfernen`}>Entfernen</button>
+                <button className="btn ghost danger-ghost" onClick={() => remove(o)} aria-label={`Schätzung von ${o.unitName} entfernen`}>Entfernen</button>
               </>
               : e
               ? <>
                 <button className="btn ghost" onClick={() => start(o)} aria-label={`Schätzung von ${o.unitName} ändern`}>Ändern</button>
-                <button className="btn ghost" onClick={() => remove(o)} aria-label={`Schätzung von ${o.unitName} entfernen`}>Entfernen</button>
+                <button className="btn ghost danger-ghost" onClick={() => remove(o)} aria-label={`Schätzung von ${o.unitName} entfernen`}>Entfernen</button>
               </>
               : <button className="btn ghost" onClick={() => start(o)} aria-label={`${o.unitName} schätzen`}>Schätzen</button>)}
           </div>

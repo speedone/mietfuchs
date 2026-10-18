@@ -39,7 +39,7 @@ test('beim Abbauen läuft kein Zeitgeber eines Toasts weiter', () => {
 
 function Ask() {
   const confirm = useConfirm()
-  return <button onClick={() => void confirm({ title: 'Rechnung aufteilen?', message: 'Zwei Teile.' })}>Fragen</button>
+  return <button onClick={() => void confirm({ confirmLabel: 'Weiter', title: 'Rechnung aufteilen?', message: 'Zwei Teile.' })}>Fragen</button>
 }
 
 test('Laienprobe (Kleinigkeit): die Rückfrage ist ein Dialog mit Namen', async () => {
@@ -70,7 +70,7 @@ test('Vorgabe Abbrechen: Fokus auf Abwarten, Enter bestätigt nicht', async () =
 function MitBegriff({ onKey }: { onKey: () => void }) {
   const confirm = useConfirm()
   const message = <span role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter') onKey() }}>Begriff</span>
-  return <button onClick={() => void confirm({ title: 'Mit Begriff', message })}>Fragen</button>
+  return <button onClick={() => void confirm({ confirmLabel: 'Weiter', title: 'Mit Begriff', message })}>Fragen</button>
 }
 
 test('Enter auf einem Begriff in der Rückfrage erreicht den Begriff', async () => {
@@ -184,8 +184,8 @@ test('Schritt 1: Esc in der Rückfrage über einem modalen Dialog schließt nur 
 function Zweimal({ onAnswer }: { onAnswer: (which: string, ok: boolean) => void }) {
   const confirm = useConfirm()
   return <button onClick={() => {
-    void confirm({ title: 'Erste' }).then((ok) => onAnswer('erste', ok))
-    void confirm({ title: 'Zweite' }).then((ok) => onAnswer('zweite', ok))
+    void confirm({ confirmLabel: 'Weiter', title: 'Erste' }).then((ok) => onAnswer('erste', ok))
+    void confirm({ confirmLabel: 'Weiter', title: 'Zweite' }).then((ok) => onAnswer('zweite', ok))
   }}>Fragen</button>
 }
 
@@ -194,7 +194,7 @@ test('Schritt 1: eine neue Rückfrage beantwortet die offene mit nein', async ()
   render(<UIProvider><Zweimal onAnswer={(w, ok) => answers.push(`${w}:${ok}`)} /></UIProvider>)
   fireEvent.click(screen.getByRole('button', { name: 'Fragen' }))
   const ask = await screen.findByRole('alertdialog', { name: 'Zweite' })
-  fireEvent.click(within(ask).getByRole('button', { name: 'OK' }))
+  fireEvent.click(within(ask).getByRole('button', { name: 'Weiter' }))
   await act(async () => {})
   expect(answers).toEqual(['erste:false', 'zweite:true'])
 })
@@ -204,7 +204,7 @@ test('Schritt 1: eine neue Rückfrage beantwortet die offene mit nein', async ()
 // das verspätete `close` des Browsers (der Polyfill sendet es wie er als eigene Aufgabe) traf sie ebenso.
 function Alternative({ onAnswer }: { onAnswer: (which: string, ok: boolean) => void }) {
   const confirm = useConfirm()
-  return <button onClick={() => void confirm({
+  return <button onClick={() => void confirm({ confirmLabel: 'Weiter',
     title: 'Erste', alternativeLabel: 'Stattdessen fragen',
     onAlternative: () => { void confirm({ title: 'Zweite', confirmLabel: 'Ja' }).then((ok) => onAnswer('zweite', ok)) },
   }).then((ok) => onAnswer('erste', ok))}>Fragen</button>
@@ -236,7 +236,7 @@ test('ein Element in der Rückfrage, das Esc für sich nimmt (offener Begriff), 
   function MitEsc() {
     const confirm = useConfirm()
     const message = <span role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Escape') e.preventDefault() }}>Begriff</span>
-    return <button onClick={() => void confirm({ title: 'Mit Begriff', message })}>Fragen</button>
+    return <button onClick={() => void confirm({ confirmLabel: 'Weiter', title: 'Mit Begriff', message })}>Fragen</button>
   }
   render(<UIProvider><MitEsc /></UIProvider>)
   fireEvent.click(screen.getByRole('button', { name: 'Fragen' }))
@@ -252,7 +252,7 @@ test('ein Element in der Rückfrage, das Esc für sich nimmt (offener Begriff), 
 function MeldenInRueckfrage() {
   const confirm = useConfirm()
   const toast = useToast()
-  return <button onClick={() => void confirm({ title: 'Frage', message: (dismiss) => <button onClick={() => toast('Gespeichert.', 'ok')} data-dismiss={String(Boolean(dismiss))}>Melden</button> })}>Fragen</button>
+  return <button onClick={() => void confirm({ confirmLabel: 'Weiter', title: 'Frage', message: (dismiss) => <button onClick={() => toast('Gespeichert.', 'ok')} data-dismiss={String(Boolean(dismiss))}>Melden</button> })}>Fragen</button>
 }
 
 test('S7: eine Mitteilung bei offenem modalem Dialog wird im Dialog angesagt', async () => {

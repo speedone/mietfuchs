@@ -67,11 +67,11 @@ const kostenPage = () => render(
 )
 
 async function fillNewGrundsteuer() {
-  fireEvent.click(await screen.findByRole('button', { name: /Kostenposition manuell erfassen/ }, SLOW))
+  fireEvent.click(await screen.findByRole('button', { name: /Kostenposition anlegen/ }, SLOW))
   fireEvent.change(screen.getByLabelText(/Kostenart/), { target: { value: 'Grundsteuer' } })
   fireEvent.change(screen.getByLabelText(/Beschreibung/), { target: { value: 'Grundsteuerbescheid' } })
   fireEvent.change(screen.getByLabelText(/Betrag/), { target: { value: '612,40' } })
-  fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/ }))
+  fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/ }))
 }
 
 test('Kostenformular: eine neue Position derselben Kostenart fragt nach; „Stattdessen bearbeiten“ öffnet die vorhandene', async () => {

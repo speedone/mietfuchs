@@ -115,7 +115,7 @@ export default function OperatingPowerCard({ plant, view, rules, items, onBooked
               <label className="field"><span>Tage (leer: Heiztage)</span><input inputMode="numeric" value={d.days} disabled={view.closed} onChange={(e) => setDevice(i, 'days', e.target.value)} /></label>
             </div>
           ))}
-          <button type="button" className="btn" disabled={view.closed} onClick={() => setForm({ ...form, devices: [...form.devices, { label: '', watts: '', hours: '', days: '' }] })}>+ Gerät</button>
+          <button type="button" className="btn secondary" disabled={view.closed} onClick={() => setForm({ ...form, devices: [...form.devices, { label: '', watts: '', hours: '', days: '' }] })}>+ weiteres Gerät</button>
           <label className="field"><span>Heiztage</span><input inputMode="numeric" value={form.heatingDays} disabled={view.closed} onChange={(e) => setForm({ ...form, heatingDays: e.target.value })} /></label>
           <p className="hint">
             Die Leistung steht auf dem Typenschild. Die Umwälzpumpe der Heizung läuft nur in der Heizzeit; eine Pumpe für das Warmwasser läuft auch im Sommer.

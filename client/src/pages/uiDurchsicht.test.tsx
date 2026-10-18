@@ -86,7 +86,7 @@ test('jeder Hinweis zeigt Stufe, Titel und Text; nur die Fundstelle liegt unter 
 
 test('„Beleg hochladen …“: das Dateifeld ist nur visuell versteckt und lässt sich fokussieren', async () => {
   wrap(<Kosten units={UNITS} settings={null} tenancies={TENANCIES} />)
-  fireEvent.click(await screen.findByRole('button', { name: /Kostenposition manuell erfassen/i }, SLOW))
+  fireEvent.click(await screen.findByRole('button', { name: /Kostenposition anlegen/i }, SLOW))
   const label = await screen.findByText(/Beleg hochladen …/, {}, SLOW)
   const input = label.querySelector('input[type="file"]')
   if (!(input instanceof HTMLInputElement)) return expect.fail('Kein Dateifeld im Knopf „Beleg hochladen …“')

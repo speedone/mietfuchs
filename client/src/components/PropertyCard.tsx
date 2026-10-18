@@ -202,7 +202,8 @@ export default function PropertyCard() {
       <div className="row">
         <button className="btn" onClick={save}>Speichern</button>
         <button className="btn ghost" onClick={openDraft}>Weiteres Objekt anlegen</button>
-        {properties.length > 1 && <button className="btn ghost danger-ghost" onClick={remove}>Objekt löschen</button>}
+        {/* Gefahr mit Abstand zu „Speichern“, „…“ weil eine Rückfrage folgt (#346 Schritt 7, M19). */}
+        {properties.length > 1 && <button className="btn ghost danger-ghost ml-auto" onClick={remove}>Objekt löschen …</button>}
       </div>
       <Drawer
         open={draft !== null}

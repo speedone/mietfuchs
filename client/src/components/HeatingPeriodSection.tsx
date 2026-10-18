@@ -17,7 +17,7 @@ import { ErrorSummary, useFormError } from './ErrorSummary'
 
 // Der Abschnitt „Zeitraum der Heizung“ einer Anlage in der Karte „Heizung“ (Heizung PR 5, Entwurf 11.2
 // Schritt 3): Zeitraum wechseln mit Vorschau, getrennte Heizkostenabrechnung ein- und ausschalten mit
-// Vorschau. Geschrieben wird erst mit „Übernehmen“; lehnt der Server ab (409), steht seine Meldung da
+// Vorschau. Geschrieben wird erst mit „Speichern“; lehnt der Server ab (409), steht seine Meldung da
 // und die neue Vorschau.
 type Props = {
   plant: HeatingPlant
@@ -106,7 +106,7 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
     // Laienprobe B11: Bei „ja“ ist die getrennte Abrechnung erst nach dem Aufteilen der Vorauszahlung
     // eingeschaltet. Die Vorschau dazu öffnet sich gleich, und die Meldung sagt, dass noch etwas fehlt.
     if (form.choice === 'own' && form.separate === 'yes' && !openSpan) {
-      notify('Zeitraum der Heizung gespeichert. Noch nicht eingeschaltet ist die getrennte Heizkostenabrechnung: Prüfen Sie unten die Aufteilung der Vorauszahlung und klicken Sie „Übernehmen“.')
+      notify('Zeitraum der Heizung gespeichert. Noch nicht eingeschaltet ist die getrennte Heizkostenabrechnung: Prüfen Sie unten die Aufteilung der Vorauszahlung und klicken Sie „Speichern“.')
       setOpen('separate')
       setSecondStep(true)
       await loadSeparatePreview(true)
@@ -176,7 +176,8 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
             {separateOn ? 'Getrennte Heizkostenabrechnung ausschalten' : own ? 'Getrennte Heizkostenabrechnung einschalten' : 'Vorauszahlung aufteilen'}
           </button>
         )}
-        {dangerAction}
+        {/* Gefahr mit Abstand zu den übrigen Knöpfen (#346 Schritt 7, M19) */}
+        {dangerAction && <span className="ml-auto">{dangerAction}</span>}
       </div>
       <ErrorSummary errors={errors} />
 
@@ -297,7 +298,7 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
                   <input type="checkbox" checked={periodUnderstood} onChange={(e) => setPeriodUnderstood(e.target.checked)} /> Ich habe verstanden, dass ich aus einer Abrechnung mit abgelaufener Frist keine Nachzahlung mehr verlangen kann.
                 </label>
               )}
-              <button className="btn" disabled={periodPreview.blocked.length > 0 || (periodPreview.effects.some((e) => e.passed) && !periodUnderstood)} onClick={() => void savePeriod()}>Übernehmen</button>
+              <button className="btn" disabled={periodPreview.blocked.length > 0 || (periodPreview.effects.some((e) => e.passed) && !periodUnderstood)} onClick={() => void savePeriod()}>Speichern</button>
             </div>
           )}
         </div>
@@ -369,7 +370,7 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
                   <input type="checkbox" checked={separateAnswers.merge} onChange={(e) => setSeparateAnswers({ ...separateAnswers, merge: e.target.checked })} /> Heizvorauszahlung und übrige Vorauszahlung wieder zu einer zusammenführen
                 </label>
               )}
-              <button className="btn" disabled={separatePreview.blocked.length > 0 || (separatePreview.effects.some((e) => e.passed) && !understood)} onClick={() => void saveSeparate()}>Übernehmen</button>
+              <button className="btn" disabled={separatePreview.blocked.length > 0 || (separatePreview.effects.some((e) => e.passed) && !understood)} onClick={() => void saveSeparate()}>Speichern</button>
             </div>
           )}
         </div>
