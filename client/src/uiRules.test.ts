@@ -73,6 +73,29 @@ test('Dateifelder bleiben per Tastatur erreichbar', () => {
   expect(offenders(/<input(?=[^>]*type="file")[^>]*(?:\shidden[\s/>]|display: 'none')[^>]*>/g)).toEqual([])
 })
 
+// Browserlauf (#340, axe „label“): Ein Dateifeld hinter einer Ablagefläche ist per Tab erreichbar, braucht
+// dann aber einen Namen, sonst sagt der Vorleser nur „Datei auswählen“. Es steht in einem <label> oder trägt
+// `aria-label`.
+test('Dateifelder haben einen Namen', () => {
+  const unnamed = files.flatMap((file) => {
+    const src = sources[file] ?? ''
+    return [...src.matchAll(/<input\b/g)].flatMap((m) => {
+      const at = m.index ?? 0
+      const tag = src.slice(at, src.indexOf('/>', at) + 2)
+      if (!/type="file"/.test(tag) || /aria-label(?:ledby)?=/.test(tag)) return []
+      const before = src.slice(0, at)
+      return before.lastIndexOf('<label') > before.lastIndexOf('</label>') ? [] : [`${file}: ${tag.replace(/\s+/g, ' ').slice(0, 100)}`]
+    })
+  })
+  expect(unnamed).toEqual([])
+})
+
+// Browserlauf (#340, axe „scrollable-region-focusable“): Ein Befehl in <pre> rollt am Handy seitlich und enthält
+// nichts Bedienbares; ohne tabIndex erreicht ihn die Tastatur nicht. Tabellen regelt Table.tsx.
+test('Befehle in <pre> sind per Tastatur zu rollen', () => {
+  expect(offenders(/<pre(?![^>]*tabIndex=\{0\})[^>]*>/g)).toEqual([])
+})
+
 // S4: Jede Klasse, die eine Seite oder ein Baustein setzt, hat eine Regel im Stylesheet. Vorher
 // setzten neue Bausteine 15 Klassen ohne Regel, und ihre Bereiche standen ungestaltet da.
 // Klassen, die nur als Haken für Tests oder Skripte dienen und bewusst keine Gestaltung haben.
@@ -363,6 +386,12 @@ test('S7: nur ein Löschknopf wird beim Überfahren rot', () => {
 // S9: Links in Akzentschrift statt Browserblau
 test('S9: Links haben eine Regel', () => {
   expect(css).toMatch(/(^|\n)a \{[^}]*color: var\(--accent-text\)/)
+})
+
+// Browserlauf (#340, axe „link-in-text-block“, WCAG 1.4.1): Ein Link mitten im Satz unterscheidet sich nicht nur
+// durch die Farbe, er ist unterstrichen. Links für sich (Navigation, „Hier beheben →“) bleiben ohne Strich.
+test('S9: Links im Fließtext sind unterstrichen', () => {
+  expect(css).toMatch(/(^|\n|, ):is\(p, li\) a(:not\(\.btn\))? (, [^{]*)?\{[^}]*text-decoration: underline/)
 })
 
 // S11: Der Titel einer Seite heißt wie ihr Eintrag in der Navigation.

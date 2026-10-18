@@ -181,7 +181,7 @@ h3 { font-size: var(--text-s); font-weight: var(--weight-strong); margin: 0 0 va
 
 /* Ein Fokusrahmen für alles, was sich bedienen lässt (Spezifikation Abschnitt 1, `--focus-ring`).
    Felder zeigen den Fokus mit Rahmen und Ring (siehe Formulare). */
-:is(button, a, summary, [role="button"], .icon-btn, .tenant-card, .segmented > button, .term, .property-notice-title):focus-visible { outline: none; box-shadow: var(--focus-ring); }
+:is(button, a, summary, [role="button"], [tabindex="0"], .icon-btn, .tenant-card, .segmented > button, .term, .property-notice-title):focus-visible { outline: none; box-shadow: var(--focus-ring); }
 :is(a, summary, .term, .property-notice-title):focus-visible { border-radius: var(--radius-s); }
 /* Dateiauswahl: Das Feld ist nur visuell versteckt (sr-only), damit es per Tab erreichbar bleibt;
    der Fokus zeigt sich am sichtbaren Knopf bzw. an der Ablagefläche. */
@@ -194,9 +194,9 @@ details > summary:hover { text-decoration: underline; text-underline-offset: 3px
 /* „Weitere Angaben“ in einem Formular: dazu eine gestrichelte Linie darüber */
 .extra-details { border-top: 1px dashed var(--line); padding-top: 10px; }
 
-/* Links (S9): Akzentschrift statt Browserblau, im Dunkelmodus lesbar */
+/* Links (S9): Akzentschrift statt Browserblau, im Dunkelmodus lesbar; im Fließtext unterstrichen (WCAG 1.4.1) */
 a { color: var(--accent-text); text-decoration: none; }
-a:hover { text-decoration: underline; text-underline-offset: 3px; }
+a:hover, :is(p, li) a:not(.btn) { text-decoration: underline; text-underline-offset: 3px; }
 
 /* Karten: weiße Fläche, feine Linie, kaum Schatten */
 .card {

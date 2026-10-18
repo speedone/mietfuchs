@@ -696,6 +696,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             type="file"
             accept="application/pdf,image/*"
             multiple
+            aria-label="Belege auswählen"
             className="sr-only"
             onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = '' }}
           />

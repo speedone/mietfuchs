@@ -554,12 +554,71 @@ jobs:
           trap 'kill $pid 2>/dev/null; echo "--- Ausgabe des Servers"; cat server.log' EXIT
           node scripts/smoke-test.mjs --url http://127.0.0.1:3001 --mode npm --slow-ai 320
 
+  # Der Browserlauf (#340, Schritt 11 von #346): jede Seite der Navigation in Chromium, Firefox und
+  # WebKit (Safari), am Rechner und am Handy, hell und dunkel, mit axe-core und den Bedienproben
+  # (scripts/browser-check.mjs). Er läuft im vollen Umfang wie die lange KI-Antwort, also beim Tag,
+  # im wöchentlichen Lauf, von Hand und mit dem Label „full-check“, und nicht an jedem PR. Je Engine
+  # ein Job, damit ein Befund in einer Engine die anderen nicht verdeckt; die Browser samt
+  # Systembibliotheken holt `playwright install --with-deps` in der Fassung aus package-lock.json.
+  # Fotos und Bericht hängen als Artefakt am Lauf, auch wenn er rot ist.
+  browserlauf:
+    name: Browserlauf (${{ matrix.engine }})
+    needs: umfang
+    if: needs.umfang.outputs.vollstaendig == 'true'
+    runs-on: ubuntu-24.04
+    # Lokal drei bis vier Minuten je Engine; ein hängender Browser hält das Anhängen sonst sechs Stunden auf
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, firefox, webkit]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: '**/package-lock.json'
+      - run: npm install
+      - run: npx playwright install --with-deps ${{ matrix.engine }}
+      - name: Seiten und Bedienproben prüfen
+        run: npm run browser-check -- --engines ${{ matrix.engine }} --out "$RUNNER_TEMP/browserlauf"
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: browserlauf-${{ matrix.engine }}
+          path: ${{ runner.temp }}/browserlauf
+          if-no-files-found: error
+          # Rund 60 ganzseitige Fotos je Engine und Woche; zum Nachsehen reichen zwei Wochen
+          retention-days: 14
+
+  # Die Ausnahmen für axe (scripts/browser-check-axe.json) dürfen nur sinken. Ob eine sinken kann,
+  # weiß erst, wer alle drei Engines gesehen hat; deshalb ein eigener Job über die Artefakte.
+  browserlauf-ausnahmen:
+    name: Browserlauf (axe-Ausnahmen)
+    needs: browserlauf
+    # Auch nach einem roten Browserlauf, denn seine Artefakte liegen trotzdem vor; nicht, wenn er gar
+    # nicht lief (Pull Request ohne „full-check“)
+    if: ${{ !cancelled() && needs.browserlauf.result != 'skipped' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: browserlauf-*
+          path: browserlauf
+      - run: node scripts/browser-check.mjs --merge browserlauf
+
   # Nur bei einem echten Tag-Push, und nur wenn alle Prüfungen bestanden sind. Beim Tag läuft
-  # auch die lange KI-Antwort, sie gehört deshalb in die Liste: Was hier nicht grün ist, wird
-  # nicht ans Release gehängt.
+  # auch die lange KI-Antwort, sie gehört deshalb in die Liste, ebenso der Browserlauf: Was hier
+  # nicht grün ist, wird nicht ans Release gehängt.
   veroeffentlichen:
     name: Ans Release anhängen
-    needs: [pruefen, distributionen, pakete, slow-ai-answer]
+    needs: [pruefen, distributionen, pakete, slow-ai-answer, browserlauf, browserlauf-ausnahmen]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-24.04
     permissions:
