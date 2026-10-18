@@ -14,6 +14,7 @@ import {
 import { spansTwoYears } from '../../../shared/period.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { CATEGORIES, type HeatingPeriodView, type ServiceStatementExtraction } from '../types'
+import { ErrorSummary, useFormError } from './ErrorSummary'
 
 export default function ServiceImportReview({ x, file, ctx, view, co2 = true, onDone }: {
   x: ServiceStatementExtraction
@@ -29,7 +30,9 @@ export default function ServiceImportReview({ x, file, ctx, view, co2 = true, on
   // Die eben angelegte Heizposition, mit der die CO₂-Angaben verknüpft werden (Prüfung S5).
   const [heatingItemId, setHeatingItemId] = useState<string | undefined>(undefined)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  // Fehler als Sammelmeldung oben in der Karte (#346, Schritt 3)
+  const errors = useFormError()
+  const setError = errors.set
   const toast = useToast()
   const confirm = useConfirm()
   const options = targetOptions(ctx)
@@ -204,7 +207,7 @@ export default function ServiceImportReview({ x, file, ctx, view, co2 = true, on
           <div className="row"><button className="btn secondary" onClick={() => void saveHotWater()}>Ermittlung übernehmen</button></div>
         </>
       )}
-      {error && <div className="error">{error}</div>}
+      <ErrorSummary errors={errors} />
     </div>
   )
 }

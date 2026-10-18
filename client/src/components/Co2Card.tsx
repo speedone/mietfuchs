@@ -7,6 +7,7 @@ import Term from './Term'
 import { useOpenWhenDiffers } from '../useDraft'
 import { CO2_ANSWER_OPTIONS, CO2_EXAMPLE, CO2_NOT_A_SIGN, CO2_QUESTION, co2Body, co2Labels, co2ToForm, probeLine, type Co2Form } from '../co2Form'
 import type { HeatingPeriodView, Tenancy } from '../types'
+import { ErrorSummary, useFormError } from './ErrorSummary'
 
 type TextKey = 'usersTotal' | 'vacancyTotal' | 'kgPerM2' | 'emissionsKg' | 'serviceArea' | 'landlordPercent' | 'totalCo2' | 'landlordCo2' | 'selfLandlord' | 'unitsCount' | 'fuelGross' | 'fuelNet'
 
@@ -17,7 +18,9 @@ export default function Co2Card({ view, tenancies, unitsCount, hasSelfUsed = fal
   const ctx = { items: view.items, unitsCount, homeowners }
   const labels = co2Labels(homeowners)
   const [form, setForm] = useState<Co2Form>(() => co2ToForm(view.co2, ctx))
-  const [error, setError] = useState('')
+  // Fehler als Sammelmeldung oben in der Karte (#346, Schritt 3)
+  const errors = useFormError()
+  const setError = errors.set
   const [busy, setBusy] = useState(false)
   // Eine ungespeicherte Eingabe zählt als offenes Formular (#346, 7a), verglichen mit dem gespeicherten Stand.
   const markSaved = useOpenWhenDiffers(form, co2ToForm(view.co2, ctx))
@@ -87,6 +90,7 @@ export default function Co2Card({ view, tenancies, unitsCount, hasSelfUsed = fal
   return (
     <div className="card">
       <h2><Term id="co2Split">CO₂-Kosten</Term></h2>
+      <ErrorSummary errors={errors} />
       {view.closed && <p className="muted">Diese Heizperiode ist abgeschlossen; die Angaben lassen sich nicht mehr ändern.</p>}
       <label className="field">
         {CO2_QUESTION}
@@ -180,7 +184,6 @@ export default function Co2Card({ view, tenancies, unitsCount, hasSelfUsed = fal
           {probe && <div className={probe.ok ? 'hint' : 'error'}>Probe: {probe.text}</div>}
         </>
       )}
-      {error && <div className="error">{error}</div>}
       {!view.closed && (
         <div className="row">
           <button className="btn" disabled={busy} onClick={() => void save()}>CO₂-Angaben speichern</button>

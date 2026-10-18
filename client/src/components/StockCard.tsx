@@ -8,6 +8,7 @@ import { useOpenWhenDiffers } from '../useDraft'
 import { ALREADY_SETTLED_OPTIONS, BEFORE_2023_OPTIONS, STOCK_UNIT_OPTIONS, stockBody, stockSummary, stockToForm, type StockForm } from '../stockForm'
 import { STOCK_UNIT_TEXT } from '../../../shared/fuelStock.ts'
 import type { HeatingEnergy, HeatingPeriodView } from '../types'
+import { ErrorSummary, useFormError } from './ErrorSummary'
 
 type TextKey = 'openingQuantity' | 'openingCost' | 'openingKg' | 'openingCo2' | 'closingQuantity'
 
@@ -25,7 +26,9 @@ const HOW_TO_MEASURE: Partial<Record<HeatingEnergy, string>> = {
 export default function StockCard({ view, onSaved, co2Fields = true, energy }: { view: HeatingPeriodView; onSaved: () => void; co2Fields?: boolean; energy?: HeatingEnergy }) {
   const stock = view.stock
   const [form, setForm] = useState<StockForm | null>(() => (stock ? stockToForm(stock) : null))
-  const [error, setError] = useState('')
+  // Fehler als Sammelmeldung oben in der Karte (#346, Schritt 3)
+  const errors = useFormError()
+  const setError = errors.set
   // Eine ungespeicherte Eingabe zählt als offenes Formular: Seiten-, Objekt- und Zeitraumwechsel fragen (#346, 7a).
   const markSaved = useOpenWhenDiffers(form, stock ? stockToForm(stock) : null)
   const [busy, setBusy] = useState(false)
@@ -85,6 +88,7 @@ export default function StockCard({ view, onSaved, co2Fields = true, energy }: {
   return (
     <div className="card">
       <h2><Term id="fuelStock">Vorrat</Term></h2>
+      <ErrorSummary errors={errors} />
       <p className="muted">
         Tragen Sie den Bestand im Tank oder Lager ein, den Anfangsbestand nur in der ersten Heizperiode; danach übernimmt Mietfuchs den
         Endbestand der Vorperiode. Verbraucht ist Anfangsbestand plus Lieferungen minus Endbestand.
@@ -141,7 +145,6 @@ export default function StockCard({ view, onSaved, co2Fields = true, energy }: {
       </div>
       {summary.length > 0 && <ul>{summary.map((l) => <li key={l}>{l}</li>)}</ul>}
       {stock.problem && !(view.closed && stock.frozen) && <div className="notice">{stock.problem}</div>}
-      {error && <div className="error">{error}</div>}
       {!view.closed && (
         <div className="row">
           <button className="btn" disabled={busy} onClick={() => void save()}>Vorrat speichern</button>

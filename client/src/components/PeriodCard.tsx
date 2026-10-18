@@ -10,6 +10,7 @@ import {
   type AnswerForm, type RhythmForm,
 } from '../periodForm'
 import { rulesOf } from '../../../shared/period.ts'
+import { ErrorSummary, useFormError } from './ErrorSummary'
 
 // Die Karte „Abrechnungszeitraum“ in den Stammdaten (#208, Entwurf 3.6, 11.4). Jede Änderung geht
 // über die Vorschau des Servers; gespeichert wird erst mit „Zeitraum wechseln“, in einer
@@ -196,7 +197,9 @@ export default function PeriodCard({ onChanged }: { onChanged?: () => Promise<vo
   const [understood, setUnderstood] = useState(false)
   const [preview, setPreview] = useState<PeriodChangePreview | null>(null)
   const [answers, setAnswers] = useState<AnswerForm | null>(null)
-  const [error, setError] = useState('')
+  // Fehler als Sammelmeldung oben in der Karte (#346, Schritt 3)
+  const errors = useFormError()
+  const setError = errors.set
   const [busy, setBusy] = useState(false)
   // Eine offene Vorschau gehört zu diesem Objekt (#145); ein Wechsel des Objekts fragt dann.
   useOpenForm(preview !== null)
@@ -267,7 +270,7 @@ export default function PeriodCard({ onChanged }: { onChanged?: () => Promise<vo
       <div className="row">
         <button className="btn secondary" disabled={busy} onClick={() => void ask(nextRules(rules, form))}>Vorschau</button>
       </div>
-      {error && <div className="error">{error}</div>}
+      <ErrorSummary errors={errors} />
       {preview && answers && (
         <div className="card inset">
           <h3>Nach dem Wechsel</h3>

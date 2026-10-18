@@ -2,6 +2,7 @@ import type { CostModel, HeatingModel, NotSettled, SelfSupplyKind, Tenancy, Unit
 import { fmtDate, fmtEuro, parseEuro } from './api'
 import { overlapsOf } from '../../shared/tenancyOverlap.ts'
 import { andList } from '../../shared/wording.ts'
+import type { Problem } from './formProblems'
 import { co2SelfSupply, halfSplitEnactedOn } from '../../shared/law/co2kostaufg.ts'
 import { germanDate, LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
 
@@ -314,4 +315,15 @@ export function prepaymentColumn(t: Pick<Tenancy, 'prepayments' | 'heatingPrepay
     ...t.prepayments.map((p) => ({ label: t.prepayments.length > 1 ? `ab ${month(p.from)}:` : null, amount: fmtEuro(p.monthlyCents) })),
     ...heating.map((p) => ({ label: withFrom ? `+ Heizung ab ${month(p.from)}:` : '+ Heizung:', amount: fmtEuro(p.monthlyCents) })),
   ]
+}
+
+// Die Pflichtangaben eines Mietverhältnisses (#346, Schritt 3), je mit Feld. Vorher stand für alle drei ein
+// Satz „Bitte Mieter, Wohnung und Einzugsdatum prüfen.“, der nicht sagte, welches Feld fehlt (UI-Durchsicht M5).
+export type TenancyField = 'tenantName' | 'unitId' | 'start' | 'deposit' | 'contractDate' | 'iban'
+export function tenancyRequired(form: { tenantName: string; unitId: string; start: string }): Problem<TenancyField>[] {
+  const problems: Problem<TenancyField>[] = []
+  if (!form.tenantName.trim()) problems.push({ field: 'tenantName', short: 'Mieter fehlt', text: 'Mieter: Geben Sie den Namen des Mieters ein, etwa „Familie Müller“.' })
+  if (!form.unitId) problems.push({ field: 'unitId', short: 'Wohnung fehlt', text: 'Wohnung: Wählen Sie die Wohnung, die vermietet ist.' })
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(form.start)) problems.push({ field: 'start', short: 'Einzug fehlt', text: 'Einzug: Geben Sie das Datum des Einzugs ein.' })
+  return problems
 }

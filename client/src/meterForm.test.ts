@@ -24,7 +24,7 @@ test('#342: Sparte wechseln bei einem neuen Zähler: die Vorgabe wandert mit; ei
   const ww = withMeterType(form, 'warmwasser')
   expect(ww).toMatchObject({ type: 'warmwasser', unit: '', unitDropped: 'MWh' })
   expect(meterUnitHint(ww)).toBe('„MWh“ ist für Warmwasser keine Einheit. Bitte wählen Sie die Einheit, die der Zähler zeigt.')
-  expect(meterBody({ ...ww, unitId: 'eg' }, null)).toEqual({ error: 'Bitte wählen Sie die Einheit, die der Zähler zeigt.' })
+  expect(meterBody({ ...ww, unitId: 'eg' }, null)).toMatchObject({ error: 'Bitte wählen Sie die Einheit, die der Zähler zeigt.' })
   expect(withMeterType({ ...form, type: 'kaltwasser', unit: 'l' }, 'warmwasser')).toMatchObject({ unit: 'l' })
   // Die Vorgabe der bisherigen Sparte wandert mit (#142).
   expect(withMeterType(emptyMeterForm(), 'waerme')).toMatchObject({ unit: 'kWh', unitDropped: '' })
@@ -35,7 +35,7 @@ test('#342 S6: Sparte wechseln bei einem bestehenden Zähler: eine unmögliche E
   const w = withMeterType(bad, 'waerme')
   expect(w).toMatchObject({ type: 'waerme', unit: '', unitDropped: 'l' })
   expect(meterUnitHint(w)).toBe('„l“ ist für Wärme keine Einheit. Bitte wählen Sie die Einheit, die der Zähler zeigt.')
-  expect(meterBody(w, null)).toEqual({ error: 'Bitte wählen Sie die Einheit, die der Zähler zeigt.' })
+  expect(meterBody(w, null)).toMatchObject({ error: 'Bitte wählen Sie die Einheit, die der Zähler zeigt.' })
   expect(meterBody({ ...w, unit: 'kWh' }, null)).toMatchObject({ body: { type: 'waerme', unit: 'kWh' } })
   // Eine Einheit, die die neue Sparte kennt, bleibt.
   expect(withMeterType(meterToForm({ id: 'm2', propertyId: 'p', name: 'Strom', unitId: 'eg', type: 'strom', unit: 'MWh' }), 'waerme')).toMatchObject({ unit: 'MWh', unitDropped: '' })
@@ -49,10 +49,10 @@ test('#342 S2: ein gespeicherter Zähler ohne Einheit bekommt keine Vorgabe; ges
   expect(meterBody({ ...leer, name: 'Wärme Keller' }, null)).toMatchObject({ body: { name: 'Wärme Keller', unit: '' } })
   expect(meterBody({ ...leer, unit: 'MWh' }, null)).toMatchObject({ body: { unit: 'MWh' } })
   // S-N1: nach einem Spartenwechsel nur mit gewählter Einheit.
-  expect(meterBody(withMeterType(leer, 'strom'), null)).toEqual({ error: 'Bitte wählen Sie die Einheit, die der Zähler zeigt.' })
+  expect(meterBody(withMeterType(leer, 'strom'), null)).toMatchObject({ error: 'Bitte wählen Sie die Einheit, die der Zähler zeigt.' })
   // Ein neuer Zähler bekommt weiter die Vorgabe der Sparte, und ohne Einheit lässt er sich nicht speichern.
   expect(emptyMeterForm().unit).toBe('m³')
-  expect(meterBody({ ...emptyMeterForm(), name: 'Neu', unitId: 'eg', type: 'waerme', unit: '' }, null)).toEqual({ error: 'Bitte wählen Sie die Einheit, die der Zähler zeigt.' })
+  expect(meterBody({ ...emptyMeterForm(), name: 'Neu', unitId: 'eg', type: 'waerme', unit: '' }, null)).toMatchObject({ error: 'Bitte wählen Sie die Einheit, die der Zähler zeigt.' })
   expect(meterUnitHint({ ...emptyMeterForm(), type: 'waerme', unit: 'kWh' })).toBeNull()
 })
 
@@ -71,7 +71,7 @@ test('#342: die Einheit ist bei bekannten Sparten eine Auswahl; die Auswahl zeig
 
 test('#342: beim Speichern wird eine neue oder geänderte unbekannte Einheit abgelehnt, eine gespeicherte unveränderte nicht', () => {
   const neu = { ...emptyMeterForm(), name: 'Wärme EG', unitId: 'eg', type: 'waerme' as const, unit: 'm³' }
-  expect(meterBody(neu, null)).toEqual({ error: expect.stringMatching(/Die Einheit „m³“ kennt Mietfuchs für diese Sparte nicht/) })
+  expect(meterBody(neu, null)).toMatchObject({ error: expect.stringMatching(/Die Einheit „m³“ kennt Mietfuchs für diese Sparte nicht/) })
   expect(meterBody({ ...neu, unit: 'MWh' }, null)).toMatchObject({ body: { unit: 'MWh' } })
   // Gespeichert vor #342 und unverändert mitgeschickt: hindert das Speichern einer anderen Angabe nicht.
   const alt = meterToForm({ id: 'm1', propertyId: 'p', name: 'Wärme EG', unitId: 'eg', type: 'waerme', unit: 'm³' })
@@ -121,8 +121,8 @@ test('Zähler der Heizanlage: nur ohne Wohnung und mit Anlage; Fernablesbarkeit 
   expect(meterBody({ ...emptyMeterForm(), name: 'Küche', unitId: 'eg', remote: 'yes' }, 'hp1')).toMatchObject({ body: { unitId: 'eg', heatingPlantId: null, remoteReadable: null } })
   const hkv = { ...emptyMeterForm(), name: 'HKV Bad', unitId: 'eg', type: 'hkv' as const, unit: 'Einheiten', remote: 'yes' as const }
   expect(meterBody(hkv, 'hp1')).toMatchObject({ body: { remoteReadable: true, heatingPlantId: null } })
-  expect(meterBody({ ...hkv, unitId: '' }, 'hp1')).toEqual({ error: expect.stringMatching(/Heizkörper/) })
-  expect(meterBody({ ...hkv, name: ' ' }, 'hp1')).toEqual({ error: 'Bitte einen Namen für den Zähler angeben.' })
+  expect(meterBody({ ...hkv, unitId: '' }, 'hp1')).toMatchObject({ error: expect.stringMatching(/Heizkörper/) })
+  expect(meterBody({ ...hkv, name: ' ' }, 'hp1')).toMatchObject({ error: 'Bitte einen Namen für den Zähler angeben.' })
 })
 
 test('Bearbeiten: was gespeichert ist, steht wieder im Formular', () => {
@@ -174,7 +174,7 @@ describe('Zähler an einer von mehreren Heizanlagen (Heizung PR 9)', () => {
   test('eine Anlage: diese', () => expect(meterPlantId(form, [A])).toEqual({ plantId: 'hp1' }))
   test('zwei Anlagen: die gewählte, ohne Wahl ein Satz', () => {
     expect(meterPlantId({ ...form, heatingPlantId: 'hp2' }, [A, B])).toEqual({ plantId: 'hp2' })
-    expect(meterPlantId(form, [A, B])).toEqual({ error: 'Bitte wählen Sie die Heizanlage, zu der der Zähler gehört.' })
+    expect(meterPlantId(form, [A, B])).toMatchObject({ error: 'Bitte wählen Sie die Heizanlage, zu der der Zähler gehört.' })
     expect(meterPlantId({ ...form, heatingRole: '' }, [A, B])).toEqual({ plantId: null })
   })
   test('ein gespeicherter Zähler bringt seine Anlage mit', () => {
@@ -185,7 +185,7 @@ describe('Zähler an einer von mehreren Heizanlagen (Heizung PR 9)', () => {
 test('Heizkostenverteiler (Heizung PR 12): Skala und Faktor im Rumpf, beim Bearbeiten wieder im Formular, bei anderer Sparte leer', () => {
   const hkv = { ...emptyMeterForm(), name: 'Wohnzimmer', unitId: 'eg', type: 'hkv' as const, unit: 'Einheiten', hca: { scale: 'unit' as const, factor: '1,25' } }
   expect(meterBody(hkv, null)).toMatchObject({ body: { hcaScale: 'unit', ratingFactor: 1.25 } })
-  expect(meterBody({ ...hkv, hca: { scale: 'unit', factor: '0' } }, null)).toEqual({ error: 'Der Bewertungsfaktor ist eine Zahl über 0, etwa 0,8 oder 1,25.' })
+  expect(meterBody({ ...hkv, hca: { scale: 'unit', factor: '0' } }, null)).toMatchObject({ error: 'Der Bewertungsfaktor ist eine Zahl über 0, etwa 0,8 oder 1,25.' })
   // Wechselt die Sparte, gehen Skala und Faktor als leer mit, sonst lehnte der Server ab.
   expect(meterBody({ ...hkv, type: 'waerme', unit: 'kWh' }, null)).toMatchObject({ body: { hcaScale: null, ratingFactor: null } })
   expect(meterToForm({ id: 'h1', propertyId: 'objekt-1', name: 'Wohnzimmer', unitId: 'eg', type: 'hkv', unit: 'Einheiten', hcaScale: 'unit', ratingFactor: 0.875 }).hca).toEqual({ scale: 'unit', factor: '0,875' })
@@ -216,7 +216,7 @@ describe('Eichfrist (Heizung PR 21, #98)', () => {
 
   test('Eichjahr, das keine vierstellige Jahreszahl ist, ergibt einen Satz', () => {
     for (const bad of ['28', '2028,5', '0999', 'M22', '20280']) {
-      expect(meterBody({ ...emptyMeterForm(), name: 'K', calibratedUntil: bad }, null)).toEqual({ error: vierstellig })
+      expect(meterBody({ ...emptyMeterForm(), name: 'K', calibratedUntil: bad }, null)).toMatchObject({ error: vierstellig })
     }
   })
 
@@ -250,4 +250,13 @@ describe('Eichfrist (Heizung PR 21, #98)', () => {
     expect('reason' in calibrationSuggestion('sonstig', '2024')).toBe(true)
     expect(calibrationSuggestion('waerme', '22')).toEqual({ reason: 'Bitte nennen Sie die Jahreszahl vierstellig, wie auf dem Zähler.' })
   })
+})
+
+// #346, Schritt 3: Jede Meldung nennt ihr Feld, damit sie am Feld steht und die Sammelmeldung dorthin führt.
+test('Meldungen des Zählerformulars nennen ihr Feld und eine kurze Fassung', () => {
+  expect(meterBody({ ...emptyMeterForm(), name: ' ' }, null)).toMatchObject({ field: 'name', short: 'Name fehlt' })
+  expect(meterBody({ ...emptyMeterForm(), name: 'HKV', type: 'hkv', unitId: '' }, null)).toMatchObject({ field: 'unitId' })
+  expect(meterBody({ ...emptyMeterForm(), name: 'W', unitId: 'eg', type: 'waerme', unit: '' }, null)).toMatchObject({ field: 'unit', short: 'Einheit fehlt' })
+  expect(meterBody({ ...emptyMeterForm(), name: 'K', calibratedUntil: '22' }, null)).toMatchObject({ field: 'calibratedUntil' })
+  expect(meterPlantId({ unitId: '', heatingRole: 'supply', heatingPlantId: '' }, [{ id: 'a' }, { id: 'b' }])).toMatchObject({ field: 'heatingPlantId' })
 })

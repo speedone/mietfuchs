@@ -13,13 +13,13 @@ describe('Einrichtung Schritt 7 (Heizung PR 10)', () => {
   it('Anteil: Grenzen aus dem Register, mit Satz', () => {
     const { min, max } = shareBounds()
     expect([min, max]).toEqual([50, 70])
-    expect(selfSetupBody(filled({ share: '' }), 'gas')).toEqual({ error: expect.stringMatching(/zwischen 50 und 70 %/) })
-    expect(selfSetupBody(filled({ share: '45' }), 'gas')).toEqual({ error: expect.stringMatching(/mindestens 50 %/) })
-    expect(selfSetupBody(filled({ share: '80' }), 'gas')).toEqual({ error: expect.stringMatching(/§ 10 HeizkostenV.*vereinbart/) })
+    expect(selfSetupBody(filled({ share: '' }), 'gas')).toMatchObject({ error: expect.stringMatching(/zwischen 50 und 70 %/) })
+    expect(selfSetupBody(filled({ share: '45' }), 'gas')).toMatchObject({ error: expect.stringMatching(/mindestens 50 %/) })
+    expect(selfSetupBody(filled({ share: '80' }), 'gas')).toMatchObject({ error: expect.stringMatching(/§ 10 HeizkostenV.*vereinbart/) })
     // Heizung PR 14: mit Vereinbarung über 70 %, nie über 100 %.
     const vereinbart = selfSetupBody(filled({ share: '80', waterShare: '80', above70Agreed: true }), 'gas')
     expect('body' in vereinbart && [vereinbart.body.heatConsumptionPct, vereinbart.body.above70Agreed]).toEqual([80, true])
-    expect(selfSetupBody(filled({ share: '101', waterShare: '70', above70Agreed: true }), 'gas')).toEqual({ error: expect.stringMatching(/höchstens 100 %/) })
+    expect(selfSetupBody(filled({ share: '101', waterShare: '70', above70Agreed: true }), 'gas')).toMatchObject({ error: expect.stringMatching(/höchstens 100 %/) })
   })
   it('§ 7 Abs. 1 Satz 2: bei Öl oder Gas und Wärmeschutz vor 1994 sind es 70 %, sonst gilt die Wahl', () => {
     expect(forcedShare('gas', 'applies')).toBe(70)
@@ -31,7 +31,7 @@ describe('Einrichtung Schritt 7 (Heizung PR 10)', () => {
     expect('body' in pflicht && pflicht.body.heatConsumptionPct).toBe(70)
   })
   it('§ 8 Abs. 1: der Anteil beim Warmwasser ist eine eigene Angabe (Abweichung 14)', () => {
-    expect(selfSetupBody(filled({ waterShare: '' }), 'gas')).toEqual({ error: expect.stringMatching(/Warmwasser.*§ 8 Abs\. 1/) })
+    expect(selfSetupBody(filled({ waterShare: '' }), 'gas')).toMatchObject({ error: expect.stringMatching(/Warmwasser.*§ 8 Abs\. 1/) })
     const anders = selfSetupBody(filled({ waterShare: '50' }), 'gas')
     expect('body' in anders && [anders.body.heatConsumptionPct, anders.body.waterConsumptionPct]).toEqual([70, 50])
     const ohne = selfSetupBody(filled({ hotWater: 'none', waterShare: '' }), 'gas')
@@ -63,7 +63,7 @@ describe('Einrichtung Schritt 7 (Heizung PR 10)', () => {
     ])
     expect(itemsFromConflict({ error: 'x' })).toBeNull()
     const form = filled({ items: items ?? [] })
-    expect(selfSetupBody(form, 'gas')).toEqual({ error: expect.stringMatching(/„Gas“.*Ziel/) })
+    expect(selfSetupBody(form, 'gas')).toMatchObject({ error: expect.stringMatching(/„Gas“.*Ziel/) })
     const [gas, wartung] = form.items
     if (!gas || !wartung) throw new Error('zwei Positionen erwartet')
     const done = selfSetupBody({ ...form, items: [{ ...gas, heatingTarget: 'both' }, { ...wartung, heatingPart: 'operating', heatingTarget: 'both' }] }, 'gas')
@@ -80,7 +80,7 @@ describe('Durchsicht von #239', () => {
     const fern = { ...plant, energy: 'districtHeating' } as typeof plant
     const r = selfSetupBody({ ...emptySelfSetup(fern, '2025-01'), share: '70', waterShare: '70', insulation: '' }, 'districtHeating')
     expect('body' in r && r.body.insulationRule).toBe('notApplies')
-    expect(selfSetupBody(filled({ insulation: '' }), 'gas')).toEqual({ error: 'Bitte beantworten Sie die Frage zum Wärmeschutz; „Weiß ich nicht“ ist eine Antwort.' })
+    expect(selfSetupBody(filled({ insulation: '' }), 'gas')).toMatchObject({ error: 'Bitte beantworten Sie die Frage zum Wärmeschutz; „Weiß ich nicht“ ist eine Antwort.' })
   })
   it('M9: Anteil mit höchstens zwei Nachkommastellen', () => {
     expect('error' in selfSetupBody(filled({ share: '65,125' }), 'gas')).toBe(true)

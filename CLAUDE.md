@@ -3197,14 +3197,47 @@ Tippfläche von `--target` über `::after`, und printCss.test.ts verlangt den du
   Quelltext, denn auf einem einzelnen Rechner sagen beide Ordnungen dasselbe. Wer eine weitere
   Stelle anfasst, die eine Staffel oder Ablesungen sortiert, nimmt `compareText` von hier und
   schreibt den Vergleich nicht noch einmal hin.
-- **Eine Meldung steht beim Knopf, der sie auslöst** (#341). Baustein `useFormError()` mit
-  `<FormError error id>` ([client/src/components/FormError.tsx](client/src/components/FormError.tsx)):
-  `role="alert"`, rollt mit `scrollIntoView({ block: 'nearest' })` ins Bild, auch beim selben Text
-  ein zweites Mal (`seq`). Nennt `show(text, field)` ein Feld, markiert `invalidProps` es mit
-  `aria-invalid` und `aria-describedby`, `useFocusOnError` setzt den Fokus darauf, und `clearField`
-  nimmt die Meldung beim Ändern des Felds weg. Eingesetzt ist er bisher an der Ablesung auf der
-  Zähler-Seite; die übrigen Stellen aus #341 folgen. Die Meldung oben auf der Seite bleibt für
-  Ladefehler.
+- **Eine Meldung steht am Feld und in der Sammelmeldung** (#341, #346 Schritt 3, nach GOV.UK). Eine
+  Fehler-API: `useFormError<F>()` mit `<ErrorSummary errors>`
+  ([client/src/components/ErrorSummary.tsx](client/src/components/ErrorSummary.tsx)) und `<Field>`
+  ([client/src/components/Field.tsx](client/src/components/Field.tsx)); `FormError` aus #343 ist darin
+  aufgegangen. Die Prüfungen der umgestellten Formulare liefern `Problem`e
+  ([client/src/formProblems.ts](client/src/formProblems.ts)): Feld, kurze Fassung für das Feld („Datum
+  fehlt“) und Satz mit Ort für die Sammelmeldung, **alle auf einmal und je mit Feld**, kein Sammelsatz für
+  mehrere Felder (M5). So arbeiten `paymentBody`, `buildReadingBody`, `buildUnitBody`, `tenancyRequired`,
+  `meterBody`/`meterPlantId`, `propertyBody` und `selfSetupBody` (die letzten drei nennen zusätzlich die
+  erste Meldung als `error`, für ältere Aufrufer). Die Kostenposition meldet ihre Felder (Beschreibung,
+  Betrag, §35a-Lohn, Ziel) zusammen über `costFieldProblems` in costForm.ts; die übrigen Regeln der
+  gemeinsamen Prüfung in shared/costItem.ts geben weiter die erste Meldung, als Satz mit Ort und ohne Feld.
+  Die Staffeln des Mietverhältnisses ebenso. `report(problems)` meldet, `show(text)` eine Meldung ohne Feld (die
+  Ablehnung durch den Server), `set(text)` ersetzt das frühere `setError`. Jedes Melden setzt den Fokus auf
+  die Sammelmeldung und rollt sie ins Bild, auch beim selben Text (`seq`); ein Ladefehler nimmt mit
+  `{ focus: false }` keinen Fokus. `role="alert"` sitzt **innen**, der Fokus außen; ein `aria-labelledby`
+  trägt das äußere `<div>` nicht (ohne Rolle untersagt, axe `aria-prohibited-attr`). Ihre Zeilen sind Links
+  aufs Feld (`idFor`), die einen zugeklappten `<details>` aufklappen. **`<Field label hint optional width>`**
+  ist ein `<label class="field">` wie bisher (Raster und Seitenfenster setzen es unverändert) und vergibt
+  `id`, `aria-labelledby` (nur die Beschriftung, sonst gehörten Hinweis und Fehler zum Namen),
+  `aria-describedby` (Hinweis, Fehler) und `aria-invalid` selbst; `{...errors.field('date')}` reicht `id`,
+  Meldung und `onFix` hinein, und `onFix` nimmt die Meldung beim Ändern des Felds an beiden Stellen weg.
+  **Pflichtfelder tragen `required`**: ein Sternchen hinter der Beschriftung (für Vorleser ausgeblendet,
+  außerhalb des Namens) und das HTML-Attribut `required` am Eingabefeld (Semantik für Vorleser, Browser,
+  Autofill). Das Sternchen ist das bekannte Muster für die Zielgruppe; erklärt wird es durch die Legende
+  „* Pflichtangabe“ (WCAG 3.3.2). Pflicht sind genau die Felder, deren Fehlen die Prüfung meldet
+  (pages/requiredFields.test.tsx: „… fehlt“ ⇔ `required`); wo ein Feld als optional erklärt wird, heißt es
+  „optional“. Die Legende zeigt der Drawer von selbst, sobald ein `<Field required>` darin steht
+  (`RequiredScope`); außerhalb eines Seitenfensters setzt die Datei `<RequiredLegend />` (Wächter S25). Die
+  Prüfung des Browsers greift nie vor: Ein `<form>` trägt immer `noValidate` (S25), ohne `<form>` prüft er
+  nicht; gestaltet wird nie über `:invalid`/`:required` (S25), markiert nur über `aria-invalid`.
+  `width="s"`/`"m"` und das Raster `field-grid`
+  sind Utilities in tw.css. Die Fehlermeldung am Feld trägt ⚠ (für Vorleser ausgeblendet) und „Fehler:“
+  (nur für Vorleser). **Im Seitenfenster** bekommt der Drawer die API (`errors`) und zeigt die
+  Sammelmeldung im festen Fuß über den Knöpfen, höchstens 40 % der Höhe; **in einer Karte** steht sie oben
+  in der Karte. Ein Eingabefeld mitten im Text (Entwurf am Feld, „✎ anpassen“) nimmt `FieldMessage`.
+  **Aktionen ohne Formular** (Löschen) melden einen Fehler als Mitteilung (`toast(text, 'error')`, 8 s
+  statt 3,2 s). Die Meldung oben auf der Seite bleibt für Ladefehler. Wächter S15 (uiRules.test.ts):
+  `className="error"` und `role="alert"` nur in Field, ErrorSummary, feedback.tsx (Mitteilung, Ansage der
+  Rückfrage) und DraftActions; was heute noch so steht (Ladefehler, Befunde einer Vorschau, die Ergebnisse
+  der Belegauswertung), steht dort mit Anzahl und Grund und darf nur weniger werden.
 - **Rückfragen** (`useConfirm`, [client/src/components/feedback.tsx](client/src/components/feedback.tsx),
   #341, #346 Schritt 1): ein `<dialog role="alertdialog">` mit `showModal()`, benannt durch den Titel
   (`aria-labelledby`) und beschrieben durch die Nachricht (`aria-describedby`). Er liegt im Top-Layer, auch

@@ -17,6 +17,7 @@ import { isStockEnergy } from '../../../shared/fuelStock.ts'
 import { billingEnergy } from '../../../shared/heatDelivery.ts'
 import { startYearOf } from '../../../shared/period.ts'
 import type { FuelDelivery, FuelExtractResult, HeatingEnergy, HeatingMethod, HeatingPeriodView, HeatingPlant, Unit } from '../types'
+import { ErrorSummary, useFormError } from './ErrorSummary'
 
 type TextKey = Exclude<keyof FuelForm, 'usedByService' | 'quantityUnit' | 'unitId' | 'gasBasis' | 'grade' | 'parts'>
 
@@ -46,7 +47,9 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
   // Das Formular einer Lieferung (auch mit dem Vorschlag der KI) zählt als offenes Formular (#346, 7a).
   useOpenForm(editing !== null)
   const [form, setForm] = useState<FuelForm>(emptyFuelForm)
-  const [error, setError] = useState('')
+  // Fehler als Sammelmeldung oben in der Karte (#346, Schritt 3)
+  const errors = useFormError()
+  const setError = errors.set
   // Heizung PR 20: die Prüfungen einer mit der KI gelesenen Rechnung und der Fortschritt beim Lesen.
   const [checks, setChecks] = useState<string[]>([])
   const [reading, setReading] = useState<AiProgress | null | 'start'>(null)
@@ -243,6 +246,7 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
   return (
     <div className="card">
       <h2><Term id="accrualPrinciple">Lieferungen</Term></h2>
+      <ErrorSummary errors={errors} />
       {stock ? (
         <p className="muted">
           Tragen Sie jede Lieferung mit Lieferdatum und Menge ein, wie auf der Rechnung. Was davon in dieser Heizperiode verbraucht wurde,
@@ -415,7 +419,6 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
           </div>
         </div>
       )}
-      {error && <div className="error">{error}</div>}
       {!view.closed && editing === null && (
         <div className="row">
           <button className="btn" onClick={() => open(null)}>Lieferung eintragen</button>

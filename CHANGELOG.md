@@ -123,8 +123,27 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Seite dahinter, und nach dem Schließen steht der Fokus wieder auf dem Knopf, der es geöffnet hat (Befund M4 aus [#341](https://github.com/speedone/mietfuchs/issues/341);
   [#346](https://github.com/speedone/mietfuchs/issues/346)).
 
+- Fehler beim Speichern stehen jetzt an dem Feld, das sie betreffen, und zusätzlich in einer
+  Sammelmeldung „Bitte prüfen Sie N Angaben“, deren Zeilen zum Feld führen. Im Seitenfenster steht sie
+  im festen Fuß über den Knöpfen und ist damit immer zu sehen, auch wenn das Fenster nach unten gerollt
+  ist; in einer Karte oben in der Karte. Statt eines Satzes für mehrere Felder („Bitte Mieter, Wohnung
+  und Einzugsdatum prüfen.“) nennt jede Zeile ihr Feld. Vorleser hören die Meldung sofort, das Feld ist
+  als fehlerhaft markiert, und beim Ändern des Felds verschwindet die Meldung. Pflichtfelder tragen ein
+  Sternchen, erklärt durch „* Pflichtangabe“ über den Feldern; beim Öffnen ist kein leeres Feld rot.
+  Umgestellt sind die Seitenfenster für Wohnung, Mietverhältnis,
+  Zähler, Kostenposition, Zahlung, Heizung und eigene Heizkostenabrechnung, die Ablesung auf der Seite
+  Zähler, die Karten auf der Seite Heizkosten, die Karte „Objekt“ und „Vermieter & Zahlung“. Schlägt
+  das Löschen fehl, steht der Grund als Mitteilung da, die acht Sekunden stehen bleibt, statt oben auf
+  der Seite außerhalb des Bildes (Befunde H3 und M5 aus
+  [#341](https://github.com/speedone/mietfuchs/issues/341);
+  [#346](https://github.com/speedone/mietfuchs/issues/346)).
+
 ### Behoben
 
+- Die Karte „Objekt“ verlangt eine Bezeichnung: Leer ließ sie sich speichern, und die Seitenleiste
+  zeigte danach „Ohne Namen“. Hat das Objekt noch keinen Namen, etwa nach einer frischen Installation,
+  steht im Feld „Mein Objekt“; Sie können es überschreiben, und mit dem ersten Speichern der Karte wird
+  es übernommen (Befund M12 aus [#341](https://github.com/speedone/mietfuchs/issues/341)).
 - Angaben zur Heizkostenabrechnung (§ 6a HeizkostenV): Stehen alle Wärmezähler in MWh oder GJ, rechnet
   Mietfuchs den Vergleich mit dem Durchschnittsnutzer jetzt aus. Vorher galt er als offen, und der
   Hinweis nannte eine mögliche Kürzung um bis zu 3 %, obwohl ein Vergleichswert eingetragen war. Der
@@ -178,8 +197,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - Rückfragen: Enter wählt den Knopf mit dem Fokus und bestätigt nicht mehr immer; vor dem Löschen
   steht der Fokus auf „Abbrechen“, Tab bleibt im Dialog, und danach steht der Fokus wieder auf dem
   Knopf, der die Rückfrage geöffnet hat ([#341](https://github.com/speedone/mietfuchs/issues/341)).
-- Zähler: Eine Meldung zu „Ablesung speichern“ steht jetzt beim Knopf statt oben auf der Seite, wo
-  sie beim Klick nicht zu sehen war, und der Fokus geht auf das betroffene Feld ([#341](https://github.com/speedone/mietfuchs/issues/341)).
+- Zähler: Eine Meldung zu „Ablesung speichern“ steht jetzt am Feld und in einer Sammelmeldung beim
+  Knopf statt oben auf der Seite, wo sie beim Klick nicht zu sehen war; der Fokus geht auf die
+  Sammelmeldung, und ihr Link führt zum betroffenen Feld ([#341](https://github.com/speedone/mietfuchs/issues/341)).
 - Abrechnung: Ein ungültiger Betrag bei „✎ anpassen“ wird nicht mehr stumm verworfen, sondern am
   Feld gemeldet ([#341](https://github.com/speedone/mietfuchs/issues/341)).
 - Ableseergebnis für den Mieter: Es nennt die Einheit des Zählers und seine Nachkommastellen, ein

@@ -2,6 +2,7 @@
 // (paymentForm.test.ts). Die Seite rendert nur.
 
 import type { Payment, PaymentKind, RentLedgerRow, Tenancy } from './types'
+import type { Checked, Problem } from './formProblems'
 import { fmtEuro, parseEuro } from './api'
 
 export type PaymentForm = { tenancyId: string; date: string; amount: string; note: string; kind: PaymentKind }
@@ -110,12 +111,19 @@ export function paymentTenancyOptions(
 
 export type PaymentBody = Pick<Payment, 'tenancyId' | 'date' | 'amountCents' | 'kind'> & { note?: string }
 
-// Der Rumpf für POST /api/payments, oder der Satz, warum es keinen gibt.
-export function paymentBody(form: PaymentForm): { body: PaymentBody } | { error: string } {
+// Der Rumpf für POST /api/payments, oder die Angaben, die fehlen, je mit Feld (#346, Schritt 3). Vorher
+// stand dort ein Sammelsatz „Bitte Mietverhältnis, Datum und einen Betrag angeben.“, der nicht sagte, welches
+// Feld gemeint ist (UI-Durchsicht M5).
+export type PaymentField = 'tenancyId' | 'date' | 'amount'
+export function paymentBody(form: PaymentForm): Checked<PaymentBody, PaymentField> {
   const cents = parseEuro(form.amount)
-  if (!form.tenancyId || !/^\d{4}-\d{2}-\d{2}$/.test(form.date) || cents === null || cents === 0) {
-    return { error: 'Bitte Mietverhältnis, Datum und einen Betrag angeben.' }
-  }
+  const problems: Problem<PaymentField>[] = []
+  if (!form.tenancyId) problems.push({ field: 'tenancyId', short: 'Mietverhältnis fehlt', text: 'Mietverhältnis: Wählen Sie, von wem die Zahlung kommt.' })
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(form.date)) problems.push({ field: 'date', short: 'Datum fehlt', text: 'Datum: Geben Sie den Tag ein, an dem das Geld eingegangen ist.' })
+  if (!form.amount.trim()) problems.push({ field: 'amount', short: 'Betrag fehlt', text: 'Betrag: Geben Sie den eingegangenen Betrag ein, etwa 1.000,00.' })
+  else if (cents === null) problems.push({ field: 'amount', short: 'Kein Betrag', text: 'Betrag: Geben Sie den Betrag als Zahl ein, etwa 1.000,00.' })
+  else if (cents === 0) problems.push({ field: 'amount', short: 'Betrag ist 0', text: 'Betrag: Eine Zahlung über 0,00 € gibt es nicht; geben Sie den eingegangenen Betrag ein.' })
+  if (problems.length > 0 || cents === null) return { problems }
   return { body: { tenancyId: form.tenancyId, date: form.date, amountCents: cents, kind: form.kind, note: form.note.trim() || undefined } }
 }
 

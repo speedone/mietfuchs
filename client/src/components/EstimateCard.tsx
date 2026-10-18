@@ -7,6 +7,7 @@ import { useOpenForm } from '../property'
 import { CAUSE_OPTIONS, chooseMethod, emptyEstimate, estimateBody, METHOD_OPTIONS, NO_PROPOSAL_TEXT, thresholdLines, WHY_TEXT, type EstimateForm } from '../estimateForm'
 import { hkvEstimateThreshold } from '../../../shared/law/heizkostenv.ts'
 import { valueAt } from '../../../shared/law/register.ts'
+import { ErrorSummary, useFormError } from './ErrorSummary'
 
 const POT_TEXT = { heat: 'Heizung', water: 'Warmwasser' } as const
 const POT_OF = { heat: 'heating', water: 'water' } as const
@@ -21,7 +22,9 @@ export default function EstimateCard({ plant, view, self, onChanged }: {
   const toast = useToast()
   const [open, setOpen] = useState<SelfEstimateOption | null>(null)
   const [form, setForm] = useState<EstimateForm | null>(null)
-  const [error, setError] = useState('')
+  // Fehler als Sammelmeldung oben in der Karte (#346, Schritt 3)
+  const errors = useFormError()
+  const setError = errors.set
   // Eine ungespeicherte Eingabe zählt als offenes Formular: Seiten-, Objekt- und Zeitraumwechsel fragen (#346, 7a).
   // Offen ist das Formular nur, solange es zu sehen ist; nach Abbrechen und Speichern bleibt `form` gefüllt (Nachprüfung B1).
   useOpenForm(open !== null && form !== null)
@@ -90,13 +93,13 @@ export default function EstimateCard({ plant, view, self, onChanged }: {
   return (
     <div className="card">
       <h3><Term id="heatingEstimate">Schätzung (§ 9a)</Term></h3>
+      <ErrorSummary errors={errors} />
       {/* Durchsicht von #242: R-I1 (Wortlaut des § 9a Abs. 1), R-M11 (eine Pflicht), G-M6 (die ganze Heizperiode). */}
       <p className="muted no-print">
         Kann der Verbrauch einer Wohnung nicht ordnungsgemäß erfasst werden, weil das Gerät ausgefallen ist, falsch anzeigt oder ein anderer zwingender Grund vorliegt,
         ist er nach § 9a HeizkostenV zu ermitteln; ohne Schätzung verteilt Mietfuchs die Anlage nicht. Liegt eine Ablesung einige Tage neben dem Stichtag, gilt sie, wie sie ist.
         Der geschätzte Verbrauch gilt für die ganze Heizperiode der Wohnung, auch für Zeiten, die abgelesen sind; nur wer bis zu einem Mieterwechsel gültig abgelesen ist, behält seinen Wert.
       </p>
-      {error && <div className="error">{error}</div>}
       {needs.length === 0 && <p>Für keine Wohnung fehlt ein Wert.</p>}
       {needs.map((o) => {
         const e = existingOf(o)

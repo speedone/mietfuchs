@@ -2,15 +2,17 @@ import { useEffect, useRef, useState } from 'react'
 import type { CostModel, HeatingModel, SelfSupplyKind, DepositStatus, HeatingPlant, InterimGapStatus, Meter, MeterType, Settings, Tenancy, Unit, UnitDependents, UnitUsage } from '../types'
 import { servesUnit } from '../../../shared/heatingPeriod.ts'
 import { DEPOSIT_STATUS_LABELS, METER_TYPE_LABELS, UNIT_USAGE_LABELS, usageOf } from '../types'
-import { EMPTY_UNIT_FORM, buildUnitBody, connectionSummary, connectionTypes, setConnected, unitDeleteBlocked, unitDeleteMessage, unitToForm, type UnitForm } from '../unitForm'
+import { EMPTY_UNIT_FORM, buildUnitBody, connectionSummary, connectionTypes, setConnected, unitDeleteBlocked, unitDeleteMessage, unitToForm, type UnitField, type UnitForm } from '../unitForm'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { separateHeatingFor, separateHeatingPlant } from '../heatingSettlementView'
 import Drawer from '../components/Drawer'
 import PropertyCard from '../components/PropertyCard'
 import IbanInput from '../components/IbanInput'
+import Field from '../components/Field'
+import { useFormError } from '../components/ErrorSummary'
 import { ibanForSave, ibanToInput, storedIbanInvalid } from '../ibanField'
 import { IBAN_LABELS, normalizeIban } from '../../../shared/iban.ts'
-import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_KIND_OPTIONS, SELF_SUPPLY_TENANCY_HINT, buildPersonHistory, costModelBadge, costModelBody, buildSchedule, defaultTenancyUnitId, overlapQuestion, prepaymentColumn, scheduleLabel, scheduleMonthText, showsFlatRates, startsSchedule } from '../tenancyModel'
+import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_KIND_OPTIONS, SELF_SUPPLY_TENANCY_HINT, buildPersonHistory, costModelBadge, costModelBody, buildSchedule, defaultTenancyUnitId, overlapQuestion, prepaymentColumn, tenancyRequired, type TenancyField, scheduleLabel, scheduleMonthText, showsFlatRates, startsSchedule } from '../tenancyModel'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, endProblem, gapProblem, INTERIM_FEE_HINT, INTERIM_GAP_OPTIONS, meterProblem, parseMeterValue, successorHeatingNote, type NewTenantForm } from '../tenantChange'
 import { gapConsequence } from '../heatingSelfView'
@@ -130,7 +132,9 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
   const [unitForm, setUnitForm] = useState<UnitForm | null>(null)
   const [tenForm, setTenForm] = useState<TenancyForm | null>(null)
   const [wizardFor, setWizardFor] = useState<Tenancy | null>(null)
-  const [error, setError] = useState('')
+  // Die Fehler der beiden Seitenfenster, im Fuß des Fensters (#346, Schritt 3)
+  const unitErrors = useFormError<UnitField>()
+  const tenErrors = useFormError<TenancyField>()
   // Die Zählerarten des Objekts, für die Frage nach den Anschlüssen einer Einheit (#142).
   const [objectMeters, setObjectMeters] = useState<Meter[]>([])
   useEffect(() => {
@@ -161,17 +165,17 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
     await reload()
   }
   // „Hier beheben →“ aus der Abrechnung (#142): die betroffene Wohnung oder das Mietverhältnis öffnen.
-  useFocusTarget(focus, 'unit', units, (u) => u.id, (u) => { setError(''); setUnitForm(unitToForm(u)) }, onFocusDone)
-  useFocusTarget(focus, 'tenancy', tenancies, (t) => t.id, (t) => { setError(''); setTenForm(tenancyToForm(t)) }, onFocusDone)
+  useFocusTarget(focus, 'unit', units, (u) => u.id, (u) => { unitErrors.clear(); setUnitForm(unitToForm(u)) }, onFocusDone)
+  useFocusTarget(focus, 'tenancy', tenancies, (t) => t.id, (t) => { tenErrors.clear(); setTenForm(tenancyToForm(t)) }, onFocusDone)
 
   async function saveUnit() {
     if (!unitForm) return
     const built = buildUnitBody(unitForm)
-    if ('error' in built) {
-      setError(built.error)
+    if ('problems' in built) {
+      unitErrors.report(built.problems)
       return
     }
-    setError('')
+    unitErrors.clear()
     const body = JSON.stringify(built.body)
     const editing = !!unitForm.id
     // Lehnt der Server ab (#146), bleibt der Dialog offen und zeigt seinen Satz.
@@ -179,7 +183,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       if (editing) await api(`/api/units/${unitForm.id}`, { method: 'PUT', body })
       else await api(withProperty('/api/units', propertyId), { method: 'POST', body })
     } catch (e) {
-      setError(errorText(e))
+      unitErrors.show(errorText(e))
       return
     }
     setUnitForm(null)
@@ -192,7 +196,8 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
     const deps = await api<UnitDependents>(`/api/units/${u.id}/dependents`).catch(() => null)
     const blocked = unitDeleteBlocked(deps)
     if (blocked) {
-      setError(blocked)
+      // Eine Aktion ohne Formular meldet ihren Fehler als Mitteilung, nicht oben auf der Seite (H3).
+      toast(blocked, 'error')
       return
     }
     const ok = await confirm({
@@ -205,20 +210,23 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
     try {
       await api(`/api/units/${u.id}`, { method: 'DELETE' })
     } catch (e) {
-      setError(errorText(e))
+      toast(errorText(e), 'error')
       return
     }
-    setError('')
     await reload()
     toast(`Wohnung „${u.name}“ gelöscht.`)
   }
 
   async function saveTenancy() {
     if (!tenForm) return
-    if (!tenForm.tenantName.trim() || !tenForm.unitId || !tenForm.start) {
-      setError('Bitte Mieter, Wohnung und Einzugsdatum prüfen.')
+    // Jede fehlende Pflichtangabe mit ihrem Feld (#346, Schritt 3); vorher „Bitte Mieter, Wohnung und
+    // Einzugsdatum prüfen.“ für alle drei zusammen (UI-Durchsicht M5).
+    const missing = tenancyRequired(tenForm)
+    if (missing.length > 0) {
+      tenErrors.report(missing)
       return
     }
+    const setError = tenErrors.set
     const persons = buildPersonHistory(tenForm.personHistory, tenForm.start)
     if ('error' in persons) {
       setError(persons.error)
@@ -243,12 +251,12 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
     if (tenForm.deposit.trim()) {
       depositCents = parseEuro(tenForm.deposit)
       if (depositCents === null) {
-        setError('Kaution bitte als Betrag angeben (oder leer lassen).')
+        tenErrors.report([{ field: 'deposit', short: 'Kein Betrag', text: 'Kaution bitte als Betrag angeben (oder leer lassen).' }])
         return
       }
     }
     if (tenForm.contractDate && !/^\d{4}-\d{2}-\d{2}$/.test(tenForm.contractDate)) {
-      setError('Vertragsdatum bitte als gültiges Datum angeben.')
+      tenErrors.report([{ field: 'contractDate', short: 'Kein Datum', text: 'Vertragsdatum bitte als gültiges Datum angeben.' }])
       return
     }
     // Eine neue ungültige IBAN wird nicht gespeichert (#279); eine gespeicherte ungültige geht
@@ -256,10 +264,10 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
     const storedIban = tenancies.find((t) => t.id === tenForm.id)?.iban
     const iban = ibanForSave(tenForm.iban, storedIban, IBAN_LABELS.tenancy)
     if ('error' in iban) {
-      setError(iban.error)
+      tenErrors.report([{ field: 'iban', short: 'IBAN ungültig', text: iban.error }])
       return
     }
-    setError('')
+    tenErrors.clear()
     // null statt undefined, damit geleerte Felder über die generische PUT-Route zurückgesetzt werden
     const body = JSON.stringify({
       unitId: tenForm.unitId,
@@ -294,7 +302,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       if (editing) await api(`/api/tenancies/${tenForm.id}`, { method: 'PUT', body })
       else await api('/api/tenancies', { method: 'POST', body })
     } catch (e) {
-      setError(errorText(e))
+      tenErrors.show(errorText(e))
       return
     }
     const name = tenForm.tenantName.trim()
@@ -314,10 +322,9 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
     try {
       await api(`/api/tenancies/${t.id}`, { method: 'DELETE' })
     } catch (e) {
-      setError(errorText(e))
+      toast(errorText(e), 'error')
       return
     }
-    setError('')
     await reload()
     toast(`Mietverhältnis „${t.tenantName}“ gelöscht.`)
   }
@@ -331,7 +338,6 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       <PageHeader title="Stammdaten" subtitle="Objekt, Wohnungen und Mietverhältnisse — die Grundlage jeder Abrechnung." />
 
       {/* Fehler beim Löschen (#146); die der Formulare stehen in ihrem Dialog. */}
-      {error && !unitForm && !tenForm && <div className="error">{error}</div>}
 
       <PropertyCard />
       <PeriodCard onChanged={afterHeatingOrPeriodChange} />
@@ -379,7 +385,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                     )}
                   </td>
                   <td className="actions no-print">
-                    <button className="icon-btn" title="Bearbeiten" aria-label="Wohnung bearbeiten" onClick={() => { setError(''); setUnitForm(unitToForm(u)) }}>✎</button>
+                    <button className="icon-btn" title="Bearbeiten" aria-label="Wohnung bearbeiten" onClick={() => { unitErrors.clear(); setUnitForm(unitToForm(u)) }}>✎</button>
                     <button className="icon-btn danger" title="Löschen" aria-label="Wohnung löschen" onClick={() => deleteUnit(u)}>🗑</button>
                   </td>
                 </tr>
@@ -388,7 +394,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
           </Table>
         )}
         <div className="row">
-          <button className="btn secondary" onClick={() => { setError(''); setUnitForm({ ...EMPTY_UNIT }) }}>+ Wohnung hinzufügen</button>
+          <button className="btn secondary" onClick={() => { unitErrors.clear(); setUnitForm({ ...EMPTY_UNIT }) }}>+ Wohnung hinzufügen</button>
         </div>
         {units.length > 0 && participating.length === 0 && (
           <div className="notice">Keine Wohnung ist an der Kostenverteilung beteiligt — die Abrechnung wäre leer.</div>
@@ -490,7 +496,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                       title="Bearbeiten"
                       aria-label="Mietverhältnis bearbeiten"
                       onClick={() => {
-                        setError('')
+                        tenErrors.clear()
                         setTenForm(tenancyToForm(t))
                       }}
                     >
@@ -513,7 +519,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
         <div className="row">
         <button
           className="btn secondary"
-          onClick={() => { setError(''); setTenForm({ unitId: defaultTenancyUnitId(units, tenancies, localToday()), tenantName: '', personHistory: [{ from: '', persons: '2' }], start: '', end: '', baseRents: [{ from: '', amount: '' }], prepayments: [{ from: '', amount: '' }], ...EMPTY_TENANCY_EXTRA }) }}
+          onClick={() => { tenErrors.clear(); setTenForm({ unitId: defaultTenancyUnitId(units, tenancies, localToday()), tenantName: '', personHistory: [{ from: '', persons: '2' }], start: '', end: '', baseRents: [{ from: '', amount: '' }], prepayments: [{ from: '', amount: '' }], ...EMPTY_TENANCY_EXTRA }) }}
           disabled={units.length === 0}
         >
           + Mietverhältnis hinzufügen
@@ -528,36 +534,32 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
           open
           title={tenForm.id ? 'Mietverhältnis bearbeiten' : 'Neues Mietverhältnis'}
           subtitle={tenForm.id ? tenForm.tenantName : undefined}
-          onClose={() => { setError(''); setTenForm(null) }}
+          onClose={() => { tenErrors.clear(); setTenForm(null) }}
           onSubmit={saveTenancy}
           width={480}
           // Die IBAN schreibt das Feld beim Verlassen in Vierergruppen um; das ist keine Änderung (Durchsicht K5)
           value={{ ...tenForm, iban: normalizeIban(tenForm.iban) }}
+          errors={tenErrors}
           actions={<button className="btn" onClick={saveTenancy}>{tenForm.id ? 'Übernehmen' : 'Anlegen'}</button>}
         >
-          {error && <div className="error">{error}</div>}
           <div className="row">
-            <label className="field grow">
-              Mieter
+            <Field label="Mieter" required className="grow" {...tenErrors.field('tenantName')}>
               <input value={tenForm.tenantName} onChange={(e) => setTenForm({ ...tenForm, tenantName: e.target.value })} placeholder="z. B. Familie Müller" />
-            </label>
-            <label className="field grow">
-              Wohnung
+            </Field>
+            <Field label="Wohnung" required className="grow" {...tenErrors.field('unitId')}>
               <select value={tenForm.unitId} onChange={(e) => setTenForm({ ...tenForm, unitId: e.target.value })}>
                 <option value="">— wählen —</option>
                 {units.map((u) => (
                   <option key={u.id} value={u.id}>{u.name}</option>
                 ))}
               </select>
-            </label>
-            <label className="field grow">
-              Einzug
+            </Field>
+            <Field label="Einzug" required className="grow" {...tenErrors.field('start')}>
               <input type="date" value={tenForm.start} onChange={(e) => setTenForm({ ...tenForm, start: e.target.value })} />
-            </label>
-            <label className="field grow">
-              Auszug (leer = laufend)
+            </Field>
+            <Field label="Auszug" className="grow" hint="Leer lassen, solange das Mietverhältnis läuft.">
               <input type="date" value={tenForm.end} onChange={(e) => setTenForm({ ...tenForm, end: e.target.value })} />
-            </label>
+            </Field>
 
             <div className="field-group">
               <div className="field-group-label">Personenzahl — Staffel</div>
@@ -699,18 +701,15 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                 </div>
               )}
               <div className="row">
-                <label className="field grow">
-                  E-Mail
+                <Field label="E-Mail" className="grow">
                   <input type="email" value={tenForm.email} onChange={(e) => setTenForm({ ...tenForm, email: e.target.value })} placeholder="mieter@example.de" />
-                </label>
-                <label className="field grow">
-                  Telefon
+                </Field>
+                <Field label="Telefon" className="grow">
                   <input value={tenForm.phone} onChange={(e) => setTenForm({ ...tenForm, phone: e.target.value })} placeholder="0123 456789" />
-                </label>
-                <label className="field grow">
-                  Abweichende Anschrift (Schriftverkehr)
+                </Field>
+                <Field label="Abweichende Anschrift (Schriftverkehr)" className="grow">
                   <input value={tenForm.correspondenceAddress} onChange={(e) => setTenForm({ ...tenForm, correspondenceAddress: e.target.value })} placeholder="z. B. neue Adresse nach Auszug" />
-                </label>
+                </Field>
                 {/* Je Mietverhältnis neu (Durchsicht zu #279): Der Dialog bleibt offen, wenn „Hier beheben →“
                     oder ein Klick in der Liste ein anderes öffnet, und das Feld wüsste sonst noch,
                     dass es schon verlassen wurde. */}
@@ -721,27 +720,24 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                   stored={tenancies.find((t) => t.id === tenForm.id)?.iban}
                   onChange={(iban) => setTenForm({ ...tenForm, iban })}
                   placeholder="DE.."
+                  {...tenErrors.field('iban')}
                 />
-                <label className="field grow">
-                  Vertragsdatum
+                <Field label="Vertragsdatum" className="grow" {...tenErrors.field('contractDate')}>
                   <input type="date" value={tenForm.contractDate} onChange={(e) => setTenForm({ ...tenForm, contractDate: e.target.value })} />
-                </label>
-                <label className="field grow">
-                  Kaution €
-                  <input value={tenForm.deposit} placeholder="z. B. 2.400,00" onChange={(e) => setTenForm({ ...tenForm, deposit: e.target.value })} />
-                </label>
-                <label className="field grow">
-                  Kautionsstatus
+                </Field>
+                <Field label="Kaution €" className="grow" {...tenErrors.field('deposit')}>
+                  <input value={tenForm.deposit} inputMode="decimal" placeholder="z. B. 2.400,00" onChange={(e) => setTenForm({ ...tenForm, deposit: e.target.value })} />
+                </Field>
+                <Field label="Kautionsstatus" className="grow">
                   <select value={tenForm.depositStatus} disabled={!tenForm.deposit.trim()} onChange={(e) => setTenForm({ ...tenForm, depositStatus: e.target.value as DepositStatus })}>
                     {(Object.keys(DEPOSIT_STATUS_LABELS) as DepositStatus[]).map((s) => (
                       <option key={s} value={s}>{DEPOSIT_STATUS_LABELS[s]}</option>
                     ))}
                   </select>
-                </label>
-                <label className="field grow">
-                  Notiz
+                </Field>
+                <Field label="Notiz" className="grow">
                   <input value={tenForm.notes} onChange={(e) => setTenForm({ ...tenForm, notes: e.target.value })} placeholder="freie Notiz zum Mietverhältnis" />
-                </label>
+                </Field>
               </div>
             </details>
           </div>
@@ -755,36 +751,30 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
           open
           title={unitForm.id ? 'Wohnung bearbeiten' : 'Neue Wohnung'}
           subtitle={unitForm.id ? unitForm.name : undefined}
-          onClose={() => { setError(''); setUnitForm(null) }}
+          onClose={() => { unitErrors.clear(); setUnitForm(null) }}
           onSubmit={saveUnit}
           value={unitForm}
+          errors={unitErrors}
           actions={<button className="btn" onClick={saveUnit}>{unitForm.id ? 'Übernehmen' : 'Anlegen'}</button>}
         >
-          {error && <div className="error">{error}</div>}
           <div className="row">
-            <label className="field grow">
-              Name
+            <Field label="Name" required className="grow" {...unitErrors.field('name')}>
               <input value={unitForm.name} onChange={(e) => setUnitForm({ ...unitForm, name: e.target.value })} placeholder="z. B. OG links" />
-            </label>
-            <label className="field grow">
-              Wohnfläche (m²)
-              <input value={unitForm.areaM2} onChange={(e) => setUnitForm({ ...unitForm, areaM2: e.target.value })} placeholder="z. B. 85,5" />
-              <small className="muted">0 für Garage, Stellplatz oder Lager; sie zählt dann beim Flächenschlüssel nicht mit.</small>
-            </label>
-            <label className="field grow">
-              Zimmer
+            </Field>
+            <Field label="Wohnfläche (m²)" required className="grow" hint="0 für Garage, Stellplatz oder Lager; sie zählt dann beim Flächenschlüssel nicht mit." {...unitErrors.field('areaM2')}>
+              <input value={unitForm.areaM2} inputMode="decimal" onChange={(e) => setUnitForm({ ...unitForm, areaM2: e.target.value })} placeholder="z. B. 85,5" />
+            </Field>
+            <Field label="Zimmer" className="grow" {...unitErrors.field('rooms')}>
               <input value={unitForm.rooms} onChange={(e) => setUnitForm({ ...unitForm, rooms: e.target.value })} placeholder="z. B. 3" />
-            </label>
+            </Field>
             {(property?.kind === 'etw' || unitForm.mea.trim() !== '') && (
-              <label className="field grow" title="Aus der Teilungserklärung oder der Hausgeldabrechnung; für den Umlageschlüssel „laut Gemeinschaftsabrechnung“">
-                <Term id="mea">Miteigentumsanteile</Term>
+              <Field label={<Term id="mea">Miteigentumsanteile</Term>} className="grow" hint="Aus der Teilungserklärung oder der Hausgeldabrechnung; für den Umlageschlüssel „laut Gemeinschaftsabrechnung“." {...unitErrors.field('mea')}>
                 <input value={unitForm.mea} onChange={(e) => setUnitForm({ ...unitForm, mea: e.target.value })} placeholder="z. B. 124" inputMode="decimal" />
-              </label>
+              </Field>
             )}
-            <label className="field grow">
-              Etage
+            <Field label="Etage" className="grow">
               <input value={unitForm.floor} onChange={(e) => setUnitForm({ ...unitForm, floor: e.target.value })} placeholder="z. B. 1. OG" />
-            </label>
+            </Field>
             <label className="field grow">
               Nutzung
               <select value={unitForm.usage} onChange={(e) => setUnitForm({ ...unitForm, usage: e.target.value as UnitUsage })}>
@@ -799,15 +789,13 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
               </small>
             </label>
             {unitForm.usage === 'eigen' && (
-              <label className="field grow" title="Nur für den Personenschlüssel — ohne Angabe bleibt die eigene Wohnung dort unberücksichtigt">
-                Personen im eigenen Haushalt
+              <Field label="Personen im eigenen Haushalt" className="grow" hint="Nur für den Personenschlüssel; ohne Angabe bleibt die eigene Wohnung dort unberücksichtigt." {...unitErrors.field('selfPersons')}>
                 <input value={unitForm.selfPersons} onChange={(e) => setUnitForm({ ...unitForm, selfPersons: e.target.value })} placeholder="z. B. 2" />
-              </label>
+              </Field>
             )}
-            <label className="field grow">
-              Notiz (optional)
+            <Field label="Notiz" className="grow">
               <input value={unitForm.notes} onChange={(e) => setUnitForm({ ...unitForm, notes: e.target.value })} placeholder="z. B. Balkon, Stellplatz Nr. 2" />
-            </label>
+            </Field>
             {/* Anschlüsse (#117, #142): positiv gefragt, gespeichert wird nur die Ausnahme. Nur
                 Zählerarten des Objekts und schon gesetzte Ausnahmen; sonst gibt es nichts zu fragen. */}
             {connectionTypes(objectMeters, unitForm.noConnection).length > 0 && (
