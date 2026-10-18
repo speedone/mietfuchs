@@ -655,3 +655,50 @@ test('S15: Fehlerkästen und role="alert" nur in den Bausteinen für Fehler', ()
   }
   expect([...counts].filter(([file]) => !ERROR_EXCEPTIONS.has(file)).map(([file, n]) => `${file}: ${n}`)).toEqual([])
 })
+
+// S25 (#346 Schritt 3): Pflichtfelder tragen ein Sternchen, erklärt durch die Legende „* Pflichtangabe“ (WCAG
+// 3.3.2). Im Seitenfenster zeigt der Drawer sie von selbst, sobald ein `<Field required>` darin steht; ein
+// Pflichtfeld außerhalb eines Seitenfensters (Karte, Ablesung) braucht `<RequiredLegend />` in derselben Datei.
+// Dazu: Jedes `<form>` hat `noValidate`, damit die Sprechblase des Browsers unserer Prüfung nicht zuvorkommt, und
+// gestaltet wird nie über `:invalid`/`:required` (leere Pflichtfelder dürfen beim Öffnen nicht rot sein).
+/** Die öffnenden Tags `<Name …>` einer Datei, mit Props (geschweifte Klammern mitgezählt). */
+const openingTags = (src: string, name: string): { at: number; tag: string }[] =>
+  [...src.matchAll(new RegExp(`<${name}\\b`, 'g'))].map((m) => {
+    let depth = 0
+    let i = m.index ?? 0
+    for (; i < src.length; i++) {
+      const c = src[i]
+      if (c === '{') depth++
+      else if (c === '}') depth--
+      else if (c === '>' && depth === 0 && src[i - 1] !== '=') break
+    }
+    return { at: m.index ?? 0, tag: src.slice(m.index, i + 1) }
+  })
+/** Pflichtfelder außerhalb eines `<Drawer>…</Drawer>`. */
+const requiredOutsideDrawer = (src: string): string[] => {
+  const ranges = [...src.matchAll(/<Drawer\b/g)].map((m) => [m.index ?? 0, src.indexOf('</Drawer>', m.index ?? 0)] as const)
+  return openingTags(src, 'Field')
+    .filter(({ tag }) => /\srequired(?:\s|>|=\{(?!false\}))/.test(tag))
+    .filter(({ at }) => !ranges.some(([a, b]) => at > a && (b < 0 || at < b)))
+    .map(({ tag }) => tag.slice(0, 60))
+}
+const FORM_EXCEPTIONS = new Map<string, string>([
+  // heute keine
+])
+test('S25: Pflichtfelder mit Legende, jedes <form> mit noValidate, keine Gestaltung über :invalid', () => {
+  // Probe des Prüfers
+  expect(requiredOutsideDrawer('<Drawer open value={x}><Field label="A" required><input /></Field></Drawer><Field label="B" required={isNew}><input /></Field><Field label="C" required={false}><input /></Field>'))
+    .toEqual(['<Field label="B" required={isNew}>'])
+  const missingLegend = files.filter((f) => f !== './components/Field.tsx' && requiredOutsideDrawer(sources[f] ?? '').length > 0 && !/<RequiredLegend\b/.test(sources[f] ?? ''))
+  expect(missingLegend).toEqual([])
+  // Die Seiten, die heute ein Pflichtfeld außerhalb eines Fensters haben, findet der Prüfer auch.
+  expect(requiredOutsideDrawer(sources['./components/PropertyCard.tsx'] ?? '').length).toBeGreaterThan(0)
+  expect(requiredOutsideDrawer(sources['./pages/Zaehler.tsx'] ?? '').length).toBeGreaterThan(0)
+  const forms = files.flatMap((f) => openingTags((sources[f] ?? '').replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, ''), 'form').filter(({ tag }) => !/\bnoValidate\b/.test(tag)).map(() => f))
+  expect(forms.filter((f) => !FORM_EXCEPTIONS.has(f))).toEqual([])
+  expect(openingTags('<form onSubmit={x}><form noValidate>', 'form').filter(({ tag }) => !/\bnoValidate\b/.test(tag))).toHaveLength(1)
+  const pseudo = /:(?:invalid|required|user-invalid|-moz-ui-invalid)\b/
+  expect(pseudo.test(css.replace(/\/\*[\s\S]*?\*\//g, ''))).toBe(false)
+  expect(pseudo.test(twCss.replace(/\/\*[\s\S]*?\*\//g, ''))).toBe(false)
+  expect([...twCandidates.keys()].filter((c) => /(?:^|:)(?:invalid|required|user-invalid):/.test(c))).toEqual([])
+})

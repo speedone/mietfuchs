@@ -67,7 +67,7 @@ export default function HeatingSelfSetup({ plant, period, periodLabel, onDone, o
         Mietfuchs verteilt die Kosten dieser Heizanlage dann nach der <Term id="heatingSystem">Heizkostenverordnung</Term>: einen Teil nach dem
         gemessenen Verbrauch, den Rest nach der Fläche. Fehlende Wärme- und Warmwasserzähler legt Mietfuchs an; die Stände tragen Sie auf der Seite Zähler ein.
       </p>
-      <Field label="Bereitet diese Heizung auch das Warmwasser?" className="grow" {...errors.field('hotWater')}>
+      <Field label="Bereitet diese Heizung auch das Warmwasser?" required className="grow" {...errors.field('hotWater')}>
         <select value={form.hotWater} onChange={(e) => setForm({ ...form, hotWater: e.target.value as HotWater | '', items: form.items.map((x) => ({ ...x, heatingTarget: '' })) })}>
           {form.hotWater === '' && <option value="">— bitte wählen —</option>}
           {HOT_WATER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -80,7 +80,7 @@ export default function HeatingSelfSetup({ plant, period, periodLabel, onDone, o
       </Field>
       {insulationAsked(energy) && (
         <>
-          <Field label={<>{INSULATION_QUESTION} (<Term id="forcedConsumptionShare">Pflichtanteil</Term>)</>} className="grow" {...errors.field('insulation')}>
+          <Field label={<>{INSULATION_QUESTION} (<Term id="forcedConsumptionShare">Pflichtanteil</Term>)</>} required className="grow" {...errors.field('insulation')}>
             <select value={form.insulation} onChange={(e) => setForm({ ...form, insulation: e.target.value as InsulationRule | '' })}>
               <option value="">— bitte wählen —</option>
               {INSULATION_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -96,12 +96,12 @@ export default function HeatingSelfSetup({ plant, period, periodLabel, onDone, o
         künftige und durch Erklärung gegenüber den Mietern (§ 6 Abs. 4 HeizkostenV).
       </p>
       <div className="row">
-        <Field label="Heizung in %" width="s" {...errors.field('share')}>
+        <Field label="Heizung in %" required width="s" {...errors.field('share')}>
           <input inputMode="decimal" value={forced !== null && !form.above70Agreed ? String(forced) : form.share} disabled={forced !== null && !form.above70Agreed}
             onChange={(e) => setForm({ ...form, share: e.target.value, waterShare: form.waterShare === '' || form.waterShare === form.share ? e.target.value : form.waterShare })} />
         </Field>
         {form.hotWater !== 'none' && (
-          <Field label="Warmwasser in %" width="s" {...errors.field('waterShare')}>
+          <Field label="Warmwasser in %" required width="s" {...errors.field('waterShare')}>
             <input inputMode="decimal" value={form.waterShare} onChange={(e) => setForm({ ...form, waterShare: e.target.value })} />
           </Field>
         )}
@@ -140,13 +140,13 @@ export default function HeatingSelfSetup({ plant, period, periodLabel, onDone, o
             return (
               <div className="row" key={row.id}>
                 <span className="grow">„{row.description}“ · {fmtEuro(row.amountCents)}</span>
-                <Field label={<>Teil für „{row.description}“</>} {...errors.field(`part:${row.id}`)}>
+                <Field label={<>Teil für „{row.description}“</>} required {...errors.field(`part:${row.id}`)}>
                   <select value={row.heatingPart} onChange={(e) => set({ heatingPart: e.target.value as HeatingPart | '', heatingTarget: '' })}>
                     <option value="">— bitte wählen —</option>
                     {PART_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
                 </Field>
-                <Field label={<>Ziel für „{row.description}“</>} {...errors.field(`target:${row.id}`)}>
+                <Field label={<>Ziel für „{row.description}“</>} required {...errors.field(`target:${row.id}`)}>
                   <select value={targets.some((o) => o.value === row.heatingTarget) ? row.heatingTarget : ''} onChange={(e) => set({ heatingTarget: e.target.value as HeatingTarget | '' })}>
                     <option value="">— bitte wählen —</option>
                     {targets.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}

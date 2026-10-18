@@ -132,7 +132,7 @@ Sofortspeichern ohne Knopf entfällt. Wo es heute steht (Zahlungsart), kommt der
 ### Feld (`Field`)
 
 Reihenfolge von oben nach unten, wie bei GOV.UK:
-1. **Beschriftung** in `--text`, fett, mit dem Zusatz „(freiwillig)“ statt Sternchen bei Pflichtfeldern;
+1. **Beschriftung** in `--text`, fett, bei Pflichtfeldern mit Sternchen (in Fehlerfarbe, für Vorleser ausgeblendet; am Eingabefeld das HTML-Attribut `required`) und einmal je Formular der Legende „* Pflichtangabe“. *Geändert in Schritt 3:* Vorgesehen war „(freiwillig)“ statt Sternchen; das Sternchen ist aber das bekannte Muster für die Zielgruppe, und die Legende erklärt es (WCAG 3.3.2). Damit die Prüfung des Browsers nicht vor unserer greift, trägt jedes `<form>` `noValidate`, und nichts wird über `:invalid`/`:required` gestaltet (Wächter S25);
 2. optional der Begriffsknopf „?“;
 3. **Hinweis** (grau, ein Satz);
 4. **Fehler** (rot, mit ⚠ und für Vorleser „Fehler:“);
@@ -273,6 +273,7 @@ Drei Ebenen, wie die Tests von Mietfuchs ohnehin aufgebaut sind.
 | S22 Navigation | Einträge mit Kennung und Beschriftung nur in `nav.ts`; Seitenleiste, Menüblatt und untere Leiste lesen `navFor`/`bottomNav` (seit Schritt 9) | zweite Liste |
 | S23 Karten | die Tabellen mit Datensätzen tragen `stacked`, jede Zelle `data-label` (außer Aktionen und Zeilen mit `colSpan`) (seit Schritt 9) | Wert ohne Spalte am Handy |
 | S24 Sicherheitsränder | was fest oder angeheftet am Fensterrand steht (Regel in index.css oder Utility `fixed`/`sticky top-0`), nimmt `env(safe-area-inset-*)`; `viewport-fit=cover` in index.html (seit Schritt 9) | Bedienbares unter Kerbe oder Home-Indikator |
+| S25 Pflichtangabe | ein `<Field required>` außerhalb eines Seitenfensters braucht `<RequiredLegend />` in derselben Datei (im Seitenfenster zeigt der Drawer sie selbst); jedes `<form>` hat `noValidate`; keine Gestaltung über `:invalid`/`:required` (seit Schritt 3) | Sternchen ohne Erklärung, Browserblase vor der Sammelmeldung, rote Felder beim Öffnen |
 | S21 Klassenketten | lange Klassenketten nur in `components/`; Seiten setzen Bausteine zusammen und tragen höchstens Abstände und Raster | jede Seite ihr eigener Knopf |
 
 **b) Verhaltenstests in jsdom** je Baustein:
