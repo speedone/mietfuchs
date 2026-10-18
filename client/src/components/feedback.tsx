@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
-import { keepTabInside } from './dialogKeys'
+import { focusBack, topModalDialog } from './dialogKeys'
 
 // Zentrale Rückmeldungs-Schicht: kurze Toasts (Speichern/Löschen bestätigt) und ein gestylter
 // Bestätigungsdialog (`<dialog role="alertdialog">`) als Ersatz für das native confirm(). Beides wird über die Hooks useToast()
@@ -48,15 +48,41 @@ export function UIProvider({ children }: { children: ReactNode }) {
       pending.clear()
     }
   }, [])
+  const later = useCallback((fn: () => void, ms: number) => {
+    const timer = setTimeout(() => {
+      timers.current.delete(timer)
+      fn()
+    }, ms)
+    timers.current.add(timer)
+  }, [])
+  // Mitteilungen über einem offenen modalen Dialog (Rückfrage, Seitenfenster, Menüblatt; #346): Die Leiste
+  // ist ein `popover="manual"` und wird bei jeder neuen Mitteilung neu gezeigt, damit sie im Top-Layer über
+  // dem zuletzt geöffneten Dialog liegt; ein `z-index` reicht dort nicht hinauf. Ohne `showPopover`
+  // (ältere Browser, jsdom) bleibt sie die feste Leiste.
+  const toastRef = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const el = toastRef.current
+    if (!el || typeof el.showPopover !== 'function') return
+    if (el.matches(':popover-open')) el.hidePopover()
+    if (toasts.length > 0) el.showPopover()
+  }, [toasts])
   const toast = useCallback((msg: string, kind: ToastKind = 'ok') => {
     const id = idRef.current++
     setToasts((t) => [...t, { id, msg, kind }])
-    const timer = setTimeout(() => {
-      timers.current.delete(timer)
-      setToasts((t) => t.filter((x) => x.id !== id))
-    }, 3200)
-    timers.current.add(timer)
-  }, [])
+    later(() => setToasts((t) => t.filter((x) => x.id !== id)), 3200)
+    // Angesagt wird sie dann aber nicht: Außerhalb des modalen Dialogs ist alles inert, auch die Leiste mit
+    // ihrem `aria-live`. Deshalb steht dieselbe Mitteilung für Vorleser zusätzlich in einer eigenen, nur für
+    // sie sichtbaren Ansage im obersten Dialog, solange einer offen ist (Durchsicht S7). Erst eingehängt,
+    // dann befüllt: Eine Region, die mit ihrem Text erscheint, sagen manche Vorleser nicht an.
+    const host = topModalDialog()
+    if (!host) return
+    const say = document.createElement('div')
+    say.className = 'sr-only'
+    say.setAttribute('role', kind === 'error' ? 'alert' : 'status')
+    host.append(say)
+    later(() => { say.textContent = msg }, 100)
+    later(() => say.remove(), 3200)
+  }, [later])
 
   // Die Rückfrage (#346, Schritt 1) ist ein `<dialog role="alertdialog">` mit `showModal()`: Sie liegt im
   // Top-Layer, auch über einem offenen Menüblatt oder Seitenfenster, und der Hintergrund ist inert.
@@ -82,14 +108,8 @@ export function UIProvider({ children }: { children: ReactNode }) {
     d.resolve(v)
     const back = opener.current
     opener.current = null
-    if (back?.isConnected) back.focus()
-    // Kam die Rückfrage aus der Navigation (Kopf und untere Leiste am Handy, Menüblatt, Seitenleiste; #346
-    // Schritt 9) und ist die inzwischen ausgehängt, weil das Fenster über 900 px breit wurde (oder umgekehrt),
-    // geht der Fokus an die aktuelle Seite in der Navigation, die jetzt steht, statt auf BODY. `closest`
-    // findet die Navigation auch am ausgehängten Knopf oder Auswahlfeld, denn ausgehängt wird der ganze Zweig.
-    else if (back?.closest('.mobile-head, .bottom-bar, .sidebar')) {
-      document.querySelector<HTMLElement>('nav [aria-current="page"], button.menu-toggle')?.focus()
-    }
+    // Ausgehängt und aus der Navigation: an die aktuelle Seite (K-A aus #352), siehe dialogKeys.ts.
+    focusBack(back)
   }, [])
   const confirm = useCallback(
     (opts: ConfirmOpts) => new Promise<boolean>((resolve) => {
@@ -117,11 +137,12 @@ export function UIProvider({ children }: { children: ReactNode }) {
   // Esc bricht ab, über das Ereignis `cancel` des Browsers und schon am Tastendruck: Ein verhindertes
   // `keydown` löst kein `cancel` aus, und Chrome ließe ein zweites `cancel` ohne Nutzeraktion dazwischen
   // nicht mehr abbrechen. Angehalten wird, damit kein Horcher am Dokument (ein Seitenfenster darunter)
-  // mitschließt. Strg+S speichert nichts hinter der Rückfrage (#145). Kein Abfänger für Enter: Enter wirkt
-  // auf den Knopf mit dem Fokus, das tut der Browser selbst (UI-Durchsicht H1, Wächter S13).
+  // mitschließt. Hat ein Element in der Rückfrage Esc schon für sich genommen (ein offener Begriff), bleibt
+  // sie. Strg+S speichert nichts hinter der Rückfrage (#145). Kein Abfänger für Enter: Enter wirkt auf den
+  // Knopf mit dem Fokus, das tut der Browser selbst (UI-Durchsicht H1, Wächter S13). Tab lenkt der Browser
+  // (dialogKeys.ts).
   const onDialogKey = (e: ReactKeyboardEvent<HTMLDialogElement>) => {
-    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(false) }
-    else if (e.key === 'Tab') keepTabInside(e, e.currentTarget)
+    if (e.key === 'Escape') { if (e.defaultPrevented) return; e.preventDefault(); e.stopPropagation(); close(false) }
     else if (e.key === 's' && (e.ctrlKey || e.metaKey)) { e.stopPropagation(); e.preventDefault() }
   }
   // Ein Klick daneben trifft den `<dialog>` selbst (seinen Hintergrund). Gezählt wird er nur, wenn er dort
@@ -132,7 +153,7 @@ export function UIProvider({ children }: { children: ReactNode }) {
     <ToastCtx.Provider value={toast}>
       <ConfirmCtx.Provider value={confirm}>
         {children}
-        <div className="toast-wrap no-print" aria-live="polite">
+        <div ref={toastRef} className="toast-wrap no-print" aria-live="polite" popover="manual">
           {toasts.map((t) => (
             <div key={t.id} className={`toast ${t.kind}`}>
               <span className="toast-ic">{t.kind === 'error' ? '⚠' : t.kind === 'info' ? 'ℹ' : '✓'}</span>
@@ -150,7 +171,9 @@ export function UIProvider({ children }: { children: ReactNode }) {
             onKeyDown={onDialogKey}
             // Nur Ereignisse dieses Dialogs; React reicht `cancel` und `close` eines verschachtelten weiter.
             onCancel={(e) => { if (e.target === e.currentTarget) { e.preventDefault(); close(false) } }}
-            onClose={(e) => { if (e.target === e.currentTarget) close(false) }}
+            // `close` kommt als eigene Aufgabe nach dem Schließen. Ist der Dialog bis dahin schon wieder offen
+            // (eine neue Rückfrage gleich nach der alten, React hängt ihn nicht aus), gilt es der alten.
+            onClose={(e) => { if (e.target === e.currentTarget && !e.currentTarget.open) close(false) }}
             onMouseDown={(e) => { downOnBackdrop.current = e.target === e.currentTarget }}
             onClick={(e) => { if (e.target === e.currentTarget && downOnBackdrop.current) close(false) }}
           >
@@ -160,7 +183,9 @@ export function UIProvider({ children }: { children: ReactNode }) {
               <div className="dialog-actions">
                 <button ref={cancelRef} type="button" className="btn ghost" onClick={() => close(false)}>{dialog.cancelLabel ?? 'Abbrechen'}</button>
                 {dialog.alternativeLabel && (
-                  <button type="button" className="btn secondary" onClick={() => { dialog.onAlternative?.(); close(false) }}>{dialog.alternativeLabel}</button>
+                  // Erst schließen, dann die Wahl ausführen: Öffnet sie selbst eine Rückfrage, beantwortete
+                  // das spätere `close(false)` sonst die neue mit „nein“ (Durchsicht R1).
+                  <button type="button" className="btn secondary" onClick={() => { const alternative = dialog.onAlternative; close(false); alternative?.() }}>{dialog.alternativeLabel}</button>
                 )}
                 <button ref={confirmRef} type="button" className={`btn ${dialog.danger ? 'danger' : ''}`} onClick={() => close(true)}>
                   {dialog.confirmLabel ?? 'OK'}

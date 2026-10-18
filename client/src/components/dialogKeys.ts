@@ -1,21 +1,34 @@
-// Tab bleibt im Dialog (#346, Schritt 1 und 2): vom letzten bedienbaren Element zum ersten und mit
-// Umschalt+Tab umgekehrt. Ein modaler `<dialog>` macht den Hintergrund zwar inert, nach dem letzten
-// Element ginge der Fokus aber in die Bedienleiste des Browsers; ein Ring im Dialog ist für die Tastatur
-// verlässlicher und in jsdom prüfbar. Gelenkt wird jeder Schritt hier, damit die Reihenfolge nicht davon
-// abhängt, was der Browser für bedienbar hält. Enter fasst diese Stelle bewusst nicht an (Wächter S13):
-// Enter wirkt auf den Knopf mit dem Fokus, und das tut der Browser selbst.
-const FOCUSABLE = 'button, a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+// Gemeinsames der Dialogbausteine (#346, Schritt 1 und 2).
+//
+// Tab lenkt hier niemand: `showModal()` macht den Rest der Seite inert, und der Browser hält Tab im Dialog
+// bzw. lässt es nach dem letzten Element in die Bedienleiste und von dort zurück gehen (Spezifikation
+// Abschnitt 4). Ein eigener Ring lenkte früher jeden Tab selbst und sperrte die Tastatur ein, sobald ein
+// Feld in einem geschlossenen `<details>` lag (Durchsicht M2). Enter fasst diese Datei ebenso wenig an
+// (Wächter S13): Enter wirkt auf den Knopf mit dem Fokus, das tut der Browser.
 
-type TabKey = { key: string; shiftKey: boolean; preventDefault: () => void; stopPropagation: () => void }
+// Den Fokus an den Auslöser eines Dialogs zurückgeben (Rückfrage, Seitenfenster). Ist der inzwischen
+// ausgehängt und lag er in der Navigation (Kopf und untere Leiste am Handy, Menüblatt, Seitenleiste; #346
+// Schritt 9), etwa weil das Fenster über 900 px breit wurde, geht der Fokus an die aktuelle Seite in der
+// Navigation, die jetzt steht, bzw. an ☰, statt auf BODY. `closest` findet die Navigation auch am
+// ausgehängten Knopf oder Auswahlfeld, denn ausgehängt wird der ganze Zweig.
+export function focusBack(el: HTMLElement | null): void {
+  if (!el) return
+  if (el.isConnected) el.focus()
+  else if (el.closest('.mobile-head, .bottom-bar, .sidebar')) {
+    document.querySelector<HTMLElement>('nav [aria-current="page"], button.menu-toggle')?.focus()
+  }
+}
 
-export function keepTabInside(e: TabKey, box: HTMLElement): void {
-  if (e.key !== 'Tab') return
-  const focusable = [...box.querySelectorAll<HTMLElement>(FOCUSABLE)]
-    .filter((el) => !el.hasAttribute('disabled') && !el.closest('[hidden], [inert]'))
-  e.preventDefault()
-  e.stopPropagation()
-  if (focusable.length === 0) return
-  const at = focusable.indexOf(document.activeElement as HTMLElement)
-  const next = e.shiftKey ? (at <= 0 ? focusable.length - 1 : at - 1) : (at < 0 || at === focusable.length - 1 ? 0 : at + 1)
-  focusable[next]?.focus()
+// Der oberste offene modale Dialog, in Reihenfolge des Dokuments (die Rückfrage hängt hinter allem, was die
+// Seite zeichnet). Ohne `:modal` (jsdom) gilt jeder offene Dialog.
+export function topModalDialog(): HTMLDialogElement | null {
+  const open = [...document.querySelectorAll('dialog')].filter((d) => {
+    if (!d.open) return false
+    try {
+      return d.matches(':modal')
+    } catch {
+      return true
+    }
+  })
+  return open[open.length - 1] ?? null
 }

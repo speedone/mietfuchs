@@ -183,6 +183,8 @@ Nach GOV.UK ([Error summary](https://design-system.service.gov.uk/components/err
   - `<dialog class="confirm" role="alertdialog">`, Titel als Frage, ein Satz Folge.
   - Knöpfe „Abbrechen“ und Verb, bei Gefahr ist das Verb rot und **der Startfokus liegt auf „Abbrechen“** (H1).
   - **Kein globaler Enter-Abfänger**: Enter wirkt auf den Knopf mit Fokus. In der Probe gemessen: Enter auf „Abbrechen“ lässt das Fenster offen, in allen drei Engines.
+  - *Umgesetzt (Schritt 1):* Esc wird am `keydown` verhindert und vom Baustein behandelt (Chrome ließe ein zweites `cancel` ohne Nutzeraktion sonst nicht abbrechen), außer ein Element darin hat Esc schon genommen. Den Fokus gibt der Baustein zurück, denn er hängt den Dialog aus, statt ihn mit `close()` zu schließen. Tab lenkt der Browser.
+  - Mitteilungen über einem modalen Dialog: `popover="manual"` für die Sicht, eine Ansage im obersten Dialog für Vorleser.
 - **Mitteilung (Toast):**
   - Erfolg mit `role="status"` (höflich), Fehler mit `role="alert"` und 8 s Anzeigedauer.
   - Am Handy über der unteren Leiste.

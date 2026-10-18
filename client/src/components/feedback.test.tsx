@@ -198,3 +198,74 @@ test('Schritt 1: eine neue Rückfrage beantwortet die offene mit nein', async ()
   await act(async () => {})
   expect(answers).toEqual(['erste:false', 'zweite:true'])
 })
+
+// Durchsicht R1: Öffnet die dritte Wahl selbst eine Rückfrage, bleibt die neue offen und wird mit ihrer
+// eigenen Antwort beantwortet. Vorher schloss das `close(false)` nach `onAlternative` sie gleich wieder, und
+// das verspätete `close` des Browsers (der Polyfill sendet es wie er als eigene Aufgabe) traf sie ebenso.
+function Alternative({ onAnswer }: { onAnswer: (which: string, ok: boolean) => void }) {
+  const confirm = useConfirm()
+  return <button onClick={() => void confirm({
+    title: 'Erste', alternativeLabel: 'Stattdessen fragen',
+    onAlternative: () => { void confirm({ title: 'Zweite', confirmLabel: 'Ja' }).then((ok) => onAnswer('zweite', ok)) },
+  }).then((ok) => onAnswer('erste', ok))}>Fragen</button>
+}
+
+test('R1: eine Rückfrage aus der dritten Wahl bleibt offen und bekommt ihre eigene Antwort', async () => {
+  const answers: string[] = []
+  render(<UIProvider><Alternative onAnswer={(w, ok) => answers.push(`${w}:${ok}`)} /></UIProvider>)
+  fireEvent.click(screen.getByRole('button', { name: 'Fragen' }))
+  fireEvent.click(within(await screen.findByRole('alertdialog', { name: 'Erste' })).getByRole('button', { name: 'Stattdessen fragen' }))
+  const second = await screen.findByRole('alertdialog', { name: 'Zweite' })
+  // Das verspätete `close` der ersten kommt an
+  await new Promise((r) => setTimeout(r, 20))
+  expect((second as HTMLDialogElement).open).toBe(true)
+  expect(answers).toEqual(['erste:false'])
+  fireEvent.click(within(second).getByRole('button', { name: 'Ja' }))
+  await act(async () => {})
+  expect(answers).toEqual(['erste:false', 'zweite:true'])
+})
+
+test('Durchsicht M2: die Rückfrage lenkt Tab nicht selbst, der Browser tut es', async () => {
+  render(<UIProvider><Loeschen onAnswer={() => {}} /></UIProvider>)
+  fireEvent.click(screen.getByRole('button', { name: 'Löschen …' }))
+  await screen.findByRole('alertdialog')
+  expect(fireEvent.keyDown(document.activeElement as Element, { key: 'Tab' })).toBe(true)
+})
+
+test('ein Element in der Rückfrage, das Esc für sich nimmt (offener Begriff), lässt sie offen', async () => {
+  function MitEsc() {
+    const confirm = useConfirm()
+    const message = <span role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Escape') e.preventDefault() }}>Begriff</span>
+    return <button onClick={() => void confirm({ title: 'Mit Begriff', message })}>Fragen</button>
+  }
+  render(<UIProvider><MitEsc /></UIProvider>)
+  fireEvent.click(screen.getByRole('button', { name: 'Fragen' }))
+  const term = await screen.findByRole('button', { name: 'Begriff' })
+  term.focus()
+  press('Escape')
+  await act(async () => {})
+  expect(screen.getByRole('alertdialog')).toBeTruthy()
+})
+
+// Durchsicht S7: Über einem modalen Dialog ist die Leiste der Mitteilungen inert und wird nicht angesagt.
+// Dieselbe Mitteilung steht deshalb für Vorleser in einer Ansage im obersten Dialog.
+function MeldenInRueckfrage() {
+  const confirm = useConfirm()
+  const toast = useToast()
+  return <button onClick={() => void confirm({ title: 'Frage', message: (dismiss) => <button onClick={() => toast('Gespeichert.', 'ok')} data-dismiss={String(Boolean(dismiss))}>Melden</button> })}>Fragen</button>
+}
+
+test('S7: eine Mitteilung bei offenem modalem Dialog wird im Dialog angesagt', async () => {
+  render(<UIProvider><MeldenInRueckfrage /></UIProvider>)
+  fireEvent.click(screen.getByRole('button', { name: 'Fragen' }))
+  const ask = await screen.findByRole('alertdialog')
+  fireEvent.click(within(ask).getByRole('button', { name: 'Melden' }))
+  await waitFor(() => expect(within(ask).getByRole('status').textContent).toBe('Gespeichert.'))
+})
+
+test('S7: ohne offenen Dialog gibt es keine zusätzliche Ansage', async () => {
+  render(<UIProvider><Trigger /></UIProvider>)
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+  await new Promise((r) => setTimeout(r, 150))
+  expect(screen.queryByRole('status')).toBeNull()
+})

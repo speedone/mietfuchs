@@ -3213,16 +3213,25 @@ Tippfläche von `--target` über `::after`, und printCss.test.ts verlangt den du
   Enter wirkt auf den Knopf mit dem Fokus, das tut der Browser; auf einem anderen Element (etwa einem
   Begriff) erreicht es dieses. Bei `danger` steht der Startfokus auf „Abbrechen“, `defaultChoice:
   'confirm'` überstimmt das, `cancel` setzt ihn auch sonst dorthin; gesetzt wird er nach `showModal()`
-  selbst, denn `autoFocus` griffe vor dem Öffnen. Tab bleibt im Dialog (`keepTabInside` in
-  [dialogKeys.ts](client/src/components/dialogKeys.ts)), Esc bricht ab, schon am `keydown` (verhindert,
-  damit Chrome ein zweites `cancel` ohne Nutzeraktion nicht durchlässt), ein Klick daneben auch, wenn er
-  dort begann. Beim Schließen geht der Fokus an den Auslöser zurück; ist der ausgehängt und lag er in der
-  Navigation, an die aktuelle Seite bzw. ☰. Eine zweite Rückfrage beantwortet eine offene mit „nein“.
+  selbst, denn `autoFocus` griffe vor dem Öffnen. **Tab lenkt kein Baustein selbst**: `showModal()` macht
+  den Rest inert, der Browser hält Tab im Dialog (nach dem letzten Element über die Bedienleiste zurück); ein
+  eigener Ring sperrte einmal die Tastatur vor einem geschlossenen `<details>` ein. Esc bricht ab, schon am
+  `keydown` (verhindert, damit Chrome ein zweites `cancel` ohne Nutzeraktion nicht durchlässt), außer ein
+  Element darin hat Esc schon verhindert; ein Klick daneben auch, wenn er dort begann. Ein `close`, das
+  ankommt, wenn der Dialog schon wieder offen ist, zählt nicht (der Browser sendet es als eigene Aufgabe).
+  Beim Schließen geht der Fokus an den Auslöser zurück (`focusBack` in
+  [dialogKeys.ts](client/src/components/dialogKeys.ts)); ist der ausgehängt und lag er in der Navigation,
+  an die aktuelle Seite bzw. ☰. Eine zweite Rückfrage beantwortet eine offene mit „nein“; die dritte Wahl
+  (`onAlternative`) läuft erst nach dem Schließen, damit eine Rückfrage daraus offen bleibt. **Mitteilungen**
+  (`useToast`) sind ein `popover="manual"` und liegen damit über offenen Dialogen; weil alles außerhalb des
+  obersten modalen Dialogs inert ist und nicht angesagt würde, steht jede Mitteilung dann zusätzlich in einer
+  Ansage (`role="status"`, bei Fehlern `alert`, `sr-only`) in diesem Dialog.
   Safari fokussiert einen Knopf beim Mausklick nicht; dort greift die Rückgabe nur über die Tastatur. In
   jsdom bildet [testing/dialog.ts](client/src/testing/dialog.ts) `showModal()` nach (für jede Datei mit
-  jsdom in vitestSetup.ts installiert, Esc erst nach einem nicht verhinderten `keydown`), und
-  [testing/keys.ts](client/src/testing/keys.ts) (`press`) drückt eine Taste wie der Browser, Enter auf
-  einem Knopf also als Klick. Tests suchen die Rückfrage mit `getByRole('alertdialog')`.
+  jsdom in vitestSetup.ts installiert, Esc erst nach einem nicht verhinderten `keydown`, `close` wie der
+  Browser als eigene Aufgabe, `:modal`), und [testing/keys.ts](client/src/testing/keys.ts) (`press`) drückt
+  eine Taste wie der Browser: Enter auf einem Knopf als Klick, Tab zum nächsten bedienbaren Element im
+  obersten modalen Dialog (ohne Felder in geschlossenem `<details>`, mit `<summary>`). Tests suchen die Rückfrage mit `getByRole('alertdialog')`.
 - **Auswahlfelder und Häkchen speichern nicht beim Anklicken** (#309). Sofort gespeichert wird nur,
   was keine Daten ändert: der Wechsel von Zeitraum, Objekt oder Design und die Antwort auf die
   Frage nach der Update-Prüfung im Cockpit. Alles andere ist zuerst ein Entwurf: `useDraft(saved,

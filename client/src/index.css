@@ -534,7 +534,7 @@ dialog.menu-sheet > .sidebar button:not(.sheet-close) { min-height: var(--target
 .field-group .field-add { margin-top: 10px; }
 
 /* ---------- Toasts ---------- */
-.toast-wrap { position: fixed; left: max(var(--space-5), env(safe-area-inset-left)); bottom: max(var(--space-5), env(safe-area-inset-bottom)); z-index: 60; display: flex; flex-direction: column; gap: var(--space-2); }
+.toast-wrap { inset: auto; margin: 0; padding: 0; border: none; background: none; overflow: visible; color: inherit; position: fixed; left: max(var(--space-5), env(safe-area-inset-left)); bottom: max(var(--space-5), env(safe-area-inset-bottom)); z-index: 60; display: flex; flex-direction: column; gap: var(--space-2); }
 .toast { display: flex; align-items: center; gap: 9px; background: var(--card); border: 1px solid var(--line); border-left: 3px solid var(--muted); border-radius: var(--radius-m); padding: 10px var(--space-4) 10px 13px; font-size: var(--text-m); box-shadow: var(--shadow-2); animation: toast-in 0.2s ease; max-width: 360px; }
 .toast .toast-ic { font-size: var(--text-m); }
 .toast.ok { border-left-color: var(--green); }
