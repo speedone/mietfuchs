@@ -78,4 +78,39 @@
   --color-error-border: var(--error-border);
   --color-ok-border: var(--ok-border);
   --color-overlay: var(--overlay);
+  --color-accent-strong: var(--accent-strong);
+  --color-hover: var(--hover);
+  --color-control-border: var(--control-border);
+  --color-primary: var(--primary);
+  --color-primary-text: var(--primary-text);
+}
+
+/* Abstand, Schrift, Gewicht und Radius (#346, Schritt 4). Die Tokens heißen in index.css schon wie
+   die Namensräume von Tailwind (`--text-*`, `--radius-*`), das Gewicht als `--weight-*` und der
+   Abstand als `--space-N` = N × `--space-1`. Hier werden die Standardwerte von Tailwind entfernt
+   (`initial`) und jeder Name auf unser Token gesetzt. `reference` heißt, Tailwind schreibt diese
+   Variablen nicht selbst an `:root` (sonst stünde dort `--text-s: var(--text-s)`), `inline`, die
+   Utility schreibt `var(--text-s)` hinein. So ergibt `text-s` 13 px, `rounded-l` 12 px, `p-4`
+   16 px und `font-strong` 600, und es gibt kein `text-sm` oder `rounded-xl` aus der
+   Standardskala daneben. */
+@theme inline reference {
+  --spacing: var(--space-1);
+  --text-*: initial;
+  --text-xs: var(--text-xs);
+  --text-s: var(--text-s);
+  --text-m: var(--text-m);
+  --text-base: var(--text-base);
+  --text-l: var(--text-l);
+  --text-xl: var(--text-xl);
+  --text-2xl: var(--text-2xl);
+  --font-weight-*: initial;
+  --font-weight-normal: var(--weight-normal);
+  --font-weight-medium: var(--weight-medium);
+  --font-weight-strong: var(--weight-strong);
+  --font-weight-bold: var(--weight-bold);
+  --radius-*: initial;
+  --radius-s: var(--radius-s);
+  --radius-m: var(--radius-m);
+  --radius-l: var(--radius-l);
+  --radius-xl: var(--radius-xl);
 }
