@@ -11,6 +11,7 @@ import { useCallback, useRef, useState } from 'react'
 import { errorText } from './api'
 import { afterSave, discarded, initialDraft, isDirty, shownValue, withEdit, withSaved, type DraftState } from './draft'
 import { useOpenForm } from './property'
+import { useConfirm } from './components/feedback'
 
 export type Draft<T> = {
   // Was das Feld zeigt: der Entwurf, sonst der gespeicherte Wert.
@@ -28,7 +29,8 @@ export type Draft<T> = {
 
 export type DraftOptions = {
   // Wozu der Wert gehört (etwa die Adresse der Abrechnung). Ändert er sich, ist ein offener
-  // Entwurf erledigt, denn er gehörte zu etwas anderem.
+  // Entwurf erledigt, denn er gehörte zu etwas anderem. Wer den scope selbst wechselt, fragt vorher
+  // mit `useConfirmDiscard` (unten); Objekt und Zeitraum fragen über `useOpenForm` von selbst.
   // Eine Zeichenkette, denn verglichen wird mit `Object.is`: Ein Objekt oder eine Liste wäre bei
   // jedem Zeichnen neu und verwürfe den Entwurf.
   scope?: string
@@ -85,4 +87,23 @@ export function useDraft<T>(saved: T, options: DraftOptions = {}): Draft<T> {
   }, [])
 
   return { value: shownValue(state), set, dirty, saving, error, discard, save }
+}
+
+// Die Rückfrage für einen Wechsel, den die Seite selbst auslöst und der den `scope` eines Entwurfs
+// ändert (etwa der Reiter zwischen Betriebs- und Heizkostenabrechnung; Durchsicht zu #333). Objekt
+// und Zeitraum fragen schon über `useOpenForm`; ein Wechsel innerhalb der Seite ging daran vorbei und
+// verwarf den Entwurf still. Ergibt, ob gewechselt werden darf: ohne offenen Entwurf sofort, sonst
+// nach „Verwerfen“. Wer abbricht, behält den Entwurf und bleibt, wo er ist.
+export function useConfirmDiscard(): (drafts: readonly { dirty: boolean }[]) => Promise<boolean> {
+  const confirm = useConfirm()
+  return useCallback(async (drafts) => {
+    if (!drafts.some((d) => d.dirty)) return true
+    return confirm({
+      title: 'Ungespeicherte Änderung verwerfen?',
+      message: 'Sie haben hier etwas geändert und noch nicht gespeichert. Beim Wechsel geht die Änderung verloren.',
+      confirmLabel: 'Verwerfen',
+      cancelLabel: 'Abbrechen',
+      danger: true,
+    })
+  }, [confirm])
 }

@@ -11,7 +11,7 @@ import { useFocusTarget } from '../focus'
 import { settledInvoiceFiles, type PlantPeriods } from '../costPeriods'
 import { PeriodSelect } from '../components/PeriodSelect'
 import { useOpenForm, useProperty, withProperty } from '../property'
-import { useDraft } from '../useDraft'
+import { useConfirmDiscard, useDraft } from '../useDraft'
 import DraftActions from '../components/DraftActions'
 import { effectiveLandlord, letterhead } from '../landlord'
 import { landlordReasonText } from '../landlordReasons'
@@ -93,8 +93,19 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
   // Das Ziel aus dem Cockpit, sobald die Liste da ist und es darin steht (E45).
   useFocusTarget(focus, 'heatingSettlement', heatingList, (h) => `${h.plantId}|${h.period.key}`, (h) => setTarget({ plantId: h.plantId, period: h.period.key }), onFocusDone)
 
-  const printAdjust = settings?.printAdjustSuggestion !== false // Standard: an
-  const printAttachments = settings?.printAttachments === true // Standard: aus
+  // Die beiden Häkchen zum Druck sind Einstellungen und deshalb ein Entwurf mit einem „Speichern“ für
+  // beide (#309). Die Seite zeigt den Entwurf schon an, Vorschau und Druck folgen dem Häkchen; gemerkt
+  // für das nächste Öffnen wird er erst mit „Speichern“.
+  const printDraft = useDraft({
+    printAdjustSuggestion: settings?.printAdjustSuggestion !== false, // Standard: an
+    printAttachments: settings?.printAttachments === true, // Standard: aus
+  })
+  const printAdjust = printDraft.value.printAdjustSuggestion
+  const printAttachments = printDraft.value.printAttachments
+  async function savePrint(value: typeof printDraft.value) {
+    await api('/api/settings', { method: 'PUT', body: JSON.stringify(value) })
+    await reload()
+  }
 
   const load = useCallback(() => {
     return Promise.all([
@@ -114,7 +125,6 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
 
   useEffect(() => { void load() }, [load])
 
-  // Druckoptionen direkt in den Einstellungen merken
   // Ein Speichern, das der Server ablehnt (#146), meldet sich oben auf der Seite, statt nur in
   // der Konsole zu stehen. Ergibt true, wenn es geklappt hat.
   async function attempt(request: () => Promise<unknown>): Promise<boolean> {
@@ -126,11 +136,6 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
       setError(errorText(e))
       return false
     }
-  }
-
-  async function saveSetting(patch: Partial<Settings>) {
-    if (!(await attempt(() => api('/api/settings', { method: 'PUT', body: JSON.stringify(patch) })))) return
-    await reload()
   }
 
   // Beleg-Dateien der gezeigten Abrechnung (in Erfassungsreihenfolge, ohne Duplikate), auch die der
@@ -281,6 +286,13 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
     await load()
   }
   const isClosed = !!data?.closed
+  // Der Reiter zwischen Betriebs- und Heizkostenabrechnung wechselt den scope des Versanddatums; ein
+  // ungespeichertes Datum fragt deshalb vorher nach (Durchsicht zu #333).
+  const confirmDiscard = useConfirmDiscard()
+  async function switchTarget(next: typeof target) {
+    if (next?.plantId === target?.plantId && next?.period === target?.period) return
+    if (await confirmDiscard([sentAt])) setTarget(next)
+  }
 
   // Die Eingabe aus „✎ anpassen“: gültig gespeichert, ungültig mit Meldung am Feld und ohne Speichern.
   function submitPpEdit(tenancyId: string) {
@@ -360,7 +372,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
               <input
                 type="checkbox"
                 checked={printAdjust}
-                onChange={(e) => void saveSetting({ printAdjustSuggestion: e.target.checked })}
+                onChange={(e) => printDraft.set({ ...printDraft.value, printAdjustSuggestion: e.target.checked })}
               />{' '}
               Neue <Term id="prepayment">Vorauszahlung</Term> vorschlagen (§ 560 BGB)
             </span>
@@ -370,19 +382,20 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
               <input
                 type="checkbox"
                 checked={printAttachments}
-                onChange={(e) => void saveSetting({ printAttachments: e.target.checked })}
+                onChange={(e) => printDraft.set({ ...printDraft.value, printAttachments: e.target.checked })}
               />{' '}
               Belegkopien als Anlage mitdrucken
               {printAttachments && attachmentsLoading && <span className="muted"> (werden vorbereitet …)</span>}
             </span>
           </label>
+          <DraftActions draft={printDraft} onSave={savePrint} what="Druckeinstellungen" />
         </div>
         {choices.length > 0 && (
           // Sichtprüfung S7/E44: ein Umschalter, dessen gewählter Teil hervorgehoben ist
           <div className="segmented no-print" role="group" aria-label="Welche Abrechnung?">
-            <button type="button" aria-pressed={target === null} onClick={() => setTarget(null)}>{`Betriebskosten ${label}`}</button>
+            <button type="button" aria-pressed={target === null} onClick={() => void switchTarget(null)}>{`Betriebskosten ${label}`}</button>
             {choices.map((h) => (
-              <button type="button" key={`${h.plantId}|${h.period.key}`} aria-pressed={target?.period === h.period.key} onClick={() => setTarget({ plantId: h.plantId, period: h.period.key })}>
+              <button type="button" key={`${h.plantId}|${h.period.key}`} aria-pressed={target?.period === h.period.key} onClick={() => void switchTarget({ plantId: h.plantId, period: h.period.key })}>
                 {`Heizkosten ${h.period.label} (eigene Abrechnung, Frist ${fmtDate(h.deadline)})`}
               </button>
             ))}
