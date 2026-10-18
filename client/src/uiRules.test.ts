@@ -2,6 +2,7 @@
 // in index.css. Jede der Ursachen, die die Sichtprüfung gefunden hat, kam dadurch zustande, dass eine
 // Seite an diesen Regeln vorbei etwas Eigenes tat. Geprüft wird der Quelltext, denn jsdom rechnet
 // kein Layout und keine Farben.
+import { Scanner } from '@tailwindcss/oxide'
 import { compile } from 'tailwindcss'
 import { describe, expect, test } from 'vitest'
 import { NAV } from './nav'
@@ -19,8 +20,8 @@ const twCss = fs.readFileSync(new URL('./tw.css', import.meta.url), 'utf8')
 
 // Tailwind (#346) mit dem Theme aus tw.css, ohne index.css und ohne die Einschränkungen der Suche
 // (`@source`): Gefragt wird, welche Klassennamen Tailwind als Utility kennt.
-const tailwind = await compile(
-  twCss.replace(/@import "\.\/index\.css"[^;]*;/, '').replace(/@source[^;]*;/g, ''),
+const compileTw = (source: string) => compile(
+  source.replace(/@import "\.\/index\.css"[^;]*;/, '').replace(/@source[^;]*;/g, ''),
   {
     base: '.',
     loadStylesheet: async (id) => ({
@@ -30,10 +31,14 @@ const tailwind = await compile(
     }),
   },
 )
+const tailwind = await compileTw(twCss)
+// Derselbe Compiler mit der Standardpalette (ohne `--color-*: initial`): Nur so lässt sich fragen,
+// ob ein Wort eine Farbe der Palette wäre; im echten Theme erzeugt `bg-blue-500` nichts.
+const tailwindWithPalette = await compileTw(twCss.replace(/--color-\*:\s*initial;/, ''))
 /** Die Namen unter `names`, für die Tailwind eine Utility erzeugt. */
-const tailwindUtilities = (names: Iterable<string>): Set<string> => {
+const tailwindUtilities = (names: Iterable<string>, compiler = tailwind): Set<string> => {
   const wanted = [...new Set(names)]
-  const out = tailwind.build(wanted)
+  const out = compiler.build(wanted)
   const produced = new Set([...out.matchAll(/\.((?:\\.|[\w-])+)/g)].map((m) => (m[1] ?? '').replace(/\\(.)/g, '$1')))
   return new Set(wanted.filter((n) => produced.has(n)))
 }
@@ -116,15 +121,37 @@ test('S4: jede verwendete Klasse hat eine Regel in index.css oder ist eine Utili
 // ginge an index.css vorbei und wechselte nicht mit dem dunklen Design. Die Palette ist in tw.css
 // abgeschaltet; ohne diesen Test fiele eine solche Klasse nur dadurch auf, dass sie nichts bewirkt.
 const PALETTE = 'slate|gray|zinc|neutral|stone|orange|yellow|lime|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|red|green|amber'
+// Geprüft wird, was Tailwind selbst findet: jedes Wort in jeder .ts- und .tsx-Datei unter src außer
+// Tests (dieselben Quellen wie in tw.css), gelesen mit dem Scanner von Tailwind, nicht nur
+// `className=`. Klassen stehen auch in Konstanten und Helfern (Ampel, Variantentabellen).
+const twSources = import.meta.glob<string>(['./**/*.{ts,tsx}', '!./**/*.test.{ts,tsx}'], {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+})
+const twCandidates = (() => {
+  const scanner = new Scanner({})
+  const found = new Map<string, string>()
+  for (const [file, content] of Object.entries(twSources)) {
+    const extension = file.endsWith('.tsx') ? 'tsx' : 'ts'
+    for (const { candidate } of scanner.getCandidatesWithPositions({ content, extension })) {
+      if (!found.has(candidate)) found.set(candidate, file)
+    }
+  }
+  return found
+})()
 test('S17: keine beliebigen Werte und keine Standardpalette in Klassen', () => {
-  expect(classWords.size).toBeGreaterThan(100)
-  const arbitrary = [...classWords].filter(([c]) => /[[\]()]/.test(c)).map(([c, file]) => `${c} (${file})`)
-  expect(arbitrary).toEqual([])
-  // Unsere Tokens heißen teils wie Farben der Palette (`text-red`, `bg-green-soft`); verboten sind
-  // die Stufen (`-500`) und Weiß/Schwarz.
+  expect(Object.keys(twSources)).toContain('./notices.ts')
+  expect(twCandidates.size).toBeGreaterThan(1000)
+  const withFile = (names: Set<string>) => [...names].map((c) => `${c} (${twCandidates.get(c)})`)
+  // Erzeugt Tailwind aus einem Wort eine Utility mit beliebigem Wert, steht sie im gebauten CSS.
+  const produced = tailwindUtilities(twCandidates.keys())
+  expect(withFile(new Set([...produced].filter((c) => /[[\]()]/.test(c))))).toEqual([])
+  // Palette: Unsere Tokens heißen teils wie Farben der Palette (`text-red`, `bg-green-soft`);
+  // verboten sind die Stufen (`-500`) und Weiß/Schwarz, und nur, wo Tailwind daraus eine Farbe machte.
   const palette = new RegExp(`(?:^|:)!?-?[a-z-]+-(?:(?:${PALETTE})-\\d{2,3}|white|black)(?:/\\d+)?!?$`)
-  const fromPalette = [...classWords].filter(([c]) => palette.test(c)).map(([c, file]) => `${c} (${file})`)
-  expect(fromPalette).toEqual([])
+  const paletteWords = [...twCandidates.keys()].filter((c) => palette.test(c))
+  expect(withFile(tailwindUtilities(paletteWords, tailwindWithPalette))).toEqual([])
 })
 
 // S20 (#346): index.css wird nur kleiner. Eine neue Klasse dort mit dem Namen einer Utility stünde
@@ -230,4 +257,13 @@ test('S11: Seitentitel beginnt mit dem Namen in der Navigation', () => {
     return title.startsWith(item.label) ? [] : [`${item.id}: „${title}“ statt „${item.label}“`]
   })
   expect(wrong).toEqual([])
+})
+
+// #346: Der Druck ist immer hell (index.css setzt die Tokens im Druck auf hell). `dark:` gilt
+// deshalb nur am Bildschirm, sonst druckte eine `dark:`-Klasse mit eigenem Wert dunkel.
+test('dark: gilt nicht im Druck', () => {
+  const out = tailwind.build(['dark:bg-card'])
+  const rule = out.slice(out.indexOf('@layer utilities'))
+  expect(rule).toContain('[data-theme=dark]')
+  expect(rule).toMatch(/@media not print\s*\{\s*\.dark\\:bg-card/)
 })

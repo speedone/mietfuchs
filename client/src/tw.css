@@ -6,6 +6,10 @@
    Client (main.tsx importiert nur sie), und Inline-Styles (`style={…}`) gehen wie bisher allem vor.
    index.css hat weder `@import` noch `@font-face`, und ihre `@media print`-Blöcke wirken in der
    Schicht wie vorher, weil keine andere Schicht dieselben Eigenschaften setzt.
+   Ausnahme `!important`: Bei wichtigen Deklarationen kehrt sich die Reihenfolge der Schichten um,
+   eine wichtige Regel in `legacy` gewinnt also gegen jede Utility, auch gegen eine mit `!`
+   (`!flex`) oder `print:`. Das ist für `.no-print` und die Ausblendungen im Druck (`print-*`)
+   gewollt: Was im Druck fehlen soll, holt keine Utility zurück.
 
    Kein Preflight (`tailwindcss/preflight.css`, Schicht `base`): Er setzt Ränder, Überschriften,
    Listen und Formularfelder zurück, und das ganze bisherige Aussehen beruht auf den Vorgaben des
@@ -40,7 +44,15 @@
    Theme (spin, ping, pulse, bounce), schreibt Tailwind dessen `@keyframes` ungeschichtet ans Ende,
    und sie gilt statt der eigenen. Deshalb heißt die des Ladekreises `spinner-spin` (S20). */
 
-@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+/* `dark:` gilt nur am Bildschirm. Der Druck ist immer hell (index.css setzt dort die Tokens auf
+   hell), und eine `dark:`-Klasse mit einem Wert außerhalb der Tokens druckte sonst dunkel. */
+@custom-variant dark {
+  @media not print {
+    &:where([data-theme=dark], [data-theme=dark] *) {
+      @slot;
+    }
+  }
+}
 
 @theme inline {
   --color-*: initial;
