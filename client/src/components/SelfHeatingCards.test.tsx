@@ -16,6 +16,8 @@ const statement = (units: SelfHeatingStatement['units']) => ({
   ok: true, heatPump: null, changeSplit: 'degreeDays', areaBasisHeat: 'area', hotWater: 'none', alpha: null, shares: { heating: 70, water: 70, forced: false, previous: null }, pots: [], units,
 } as SelfHeatingStatement)
 
+const SHARE_SAVE = 'Speichern (Anteil nach Verbrauch)'
+
 test('fehlende Zwischenablesung: „nicht möglich“ erst mit Grund; beide Folgen stehen vor der Wahl (Durchsicht von #239, I3)', async () => {
   const sent: { url: string; method?: string; body: unknown }[] = []
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
@@ -30,10 +32,10 @@ test('fehlende Zwischenablesung: „nicht möglich“ erst mit Grund; beide Folg
   expect(screen.getByText(/Nicht möglich: .* Nennen Sie den Grund/)).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Nicht möglich' }))
   expect(sent).toEqual([])
-  const speichern = screen.getByRole('button', { name: 'Grund speichern' }) as HTMLButtonElement
-  expect(speichern.disabled).toBe(true)
+  // Ein Entwurf am Feld (#346 Schritt 7): „Speichern“ erst mit einem Grund.
+  expect(screen.queryByRole('button', { name: 'Speichern (Grund)' })).toBeNull()
   fireEvent.change(screen.getByLabelText(/Warum war die Zwischenablesung nicht möglich/), { target: { value: 'Wohnung nicht zugänglich' } })
-  fireEvent.click(speichern)
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern (Grund)' }))
   await waitFor(() => expect(onChanged).toHaveBeenCalled())
   expect(sent).toEqual([{ url: '/api/units/c/interim-gaps/2025-09-30', method: 'PUT', body: { status: 'impossible', reason: 'Wohnung nicht zugänglich' } }])
 })
@@ -61,9 +63,11 @@ test('Pflichtanteil in begonnener Heizperiode nachtragen; „Weiß ich nicht“ 
   const onChanged = vi.fn()
   render(<SelfHeatingCards plant={{ id: 'hp', method: 'self', energy: 'oil', hotWater: 'none' } as HeatingPlant} view={{ period: '2025-01', label: '2025', distribution: d } as HeatingPeriodView} self={null} onChanged={onChanged} />)
   expect(screen.getByText(/Mit 70 % liegen Sie in jedem Fall richtig/)).toBeTruthy()
-  expect(screen.queryByRole('button', { name: 'Pflichtanteil eintragen' })).toBeNull()
+  expect(screen.queryByRole('button', { name: SHARE_SAVE })).toBeNull()
   fireEvent.change(screen.getByLabelText(/Liegt der Wärmeschutz Ihres Hauses unter dem Anforderungsniveau/), { target: { value: 'applies' } })
-  fireEvent.click(screen.getByRole('button', { name: 'Pflichtanteil eintragen' }))
+  // Ein „Speichern“ am Fuß der Karte statt „Pflichtanteil eintragen“ (#346 Schritt 7); der Satz darüber sagt, was es tut.
+  expect(screen.getByText('Mit „Speichern“ tragen Sie den Pflichtanteil ein.')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: SHARE_SAVE }))
   await waitFor(() => expect(onChanged).toHaveBeenCalled())
   expect(sent).toEqual([{ heatConsumptionPct: 70, waterConsumptionPct: null, insulationRule: 'applies', above70Agreed: false }])
 })
@@ -85,7 +89,7 @@ test('Durchsicht #241 Runde 2, H1: Die Verteilung 2025 fragt das Warmwasser nach
     view={{ period: '2025-01', label: '2025', distribution: null, selfHotWater: 'combined' } as HeatingPeriodView} self={null} onChanged={onChanged} />)
   fireEvent.change(screen.getByLabelText(/Heizung in %/), { target: { value: '70' } })
   fireEvent.change(screen.getByLabelText(/Warmwasser in %/), { target: { value: '60' } })
-  fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+  fireEvent.click(screen.getByRole('button', { name: SHARE_SAVE }))
   await waitFor(() => expect(onChanged).toHaveBeenCalled())
   expect(sent).toEqual([{ heatConsumptionPct: 70, waterConsumptionPct: 60, insulationRule: 'notApplies', above70Agreed: false }])
   cleanup()
@@ -95,7 +99,7 @@ test('Durchsicht #241 Runde 2, H1: Die Verteilung 2025 fragt das Warmwasser nach
     view={{ period: '2025-01', label: '2025', distribution: null, selfHotWater: 'none' } as HeatingPeriodView} self={null} onChanged={onChanged} />)
   expect(screen.queryByLabelText(/Warmwasser in %/)).toBeNull()
   fireEvent.change(screen.getByLabelText(/Heizung in %/), { target: { value: '70' } })
-  fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+  fireEvent.click(screen.getByRole('button', { name: SHARE_SAVE }))
   await waitFor(() => expect(sent).toEqual([{ heatConsumptionPct: 70, waterConsumptionPct: null, insulationRule: 'notApplies', above70Agreed: false }]))
 })
 
@@ -109,8 +113,27 @@ test('7a: Anteil und Begründung melden die Karte an, Speichern nimmt die Marke 
   const anteil = screen.getByLabelText(/Heizung in %/)
   fireEvent.change(anteil, { target: { value: '60' } })
   expect(hasOpenForm()).toBe(true)
-  fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+  fireEvent.click(screen.getByRole('button', { name: SHARE_SAVE }))
   await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1))
   expect(hasOpenForm()).toBe(false)
+  vi.unstubAllGlobals()
+})
+
+// Durchsicht K5: Nach „Nicht möglich“ fragte jeder Seitenwechsel nach, auch ohne Eingabe, und das Feld ließ sich nicht
+// schließen. Jetzt meldet sich der Grund erst mit einer Eingabe an, „Abbrechen“ schließt das Feld, und ein Fehler steht
+// nur am Feld.
+test('K5: Nicht möglich ohne Eingabe ist kein offenes Formular; Abbrechen schließt; ein Fehler steht einmal', async () => {
+  vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ error: 'Der Grund ist zu lang.' }), { status: 400, headers: { 'content-type': 'application/json' } }))
+  const c = { ...unit('c', 'C', 0), readings: [], boundaries: [{ date: '2025-09-30', kind: 'change' as const, status: 'missing' as const, offDays: 0, far: false, gap: null }] }
+  render(<OpenFormScope><SelfHeatingCards plant={{ id: 'hp', method: 'self', energy: 'districtHeating', hotWater: 'none' } as HeatingPlant} view={{ period: '2025-01', label: '2025', distribution: null } as HeatingPeriodView} self={statement([c])} onChanged={() => {}} /></OpenFormScope>)
+  fireEvent.click(screen.getByRole('button', { name: 'Nicht möglich' }))
+  expect(hasOpenForm()).toBe(false)
+  fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }))
+  expect(screen.queryByLabelText(/Warum war die Zwischenablesung nicht möglich/)).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Nicht möglich' }))
+  fireEvent.change(screen.getByLabelText(/Warum war die Zwischenablesung nicht möglich/), { target: { value: 'x' } })
+  expect(hasOpenForm()).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern (Grund)' }))
+  await waitFor(() => expect(screen.getAllByText(/Der Grund ist zu lang\./)).toHaveLength(1))
   vi.unstubAllGlobals()
 })

@@ -1,5 +1,6 @@
 // Karte „Betriebsstrom“ auf der Seite Heizkosten (Heizung PR 15, #212): Schätzung nach Leistung und
 // Heiztagen, gemessen oder selbst geschätzt, Vorschau, und Betriebsstrom samt Abzug mit einem Klick.
+import Card from '../components/Card'
 import { useEffect, useState } from 'react'
 import { api, ApiError, errorText, fmtEuro } from '../api'
 import { bookedOperatingPower, emptyOperatingPowerForm, generalItemOptions, operatingPowerPreview, operatingPowerRequest } from '../operatingPowerForm'
@@ -30,10 +31,9 @@ export default function OperatingPowerCard({ plant, view, rules, items, onBooked
   const refusal = operatingPowerRefusal(energy)
   if (refusal) {
     return (
-      <section className="card">
-        <h2><Term id="operatingPower">Betriebsstrom</Term></h2>
+      <Card title={<Term id="operatingPower">Betriebsstrom</Term>} level={3}>
         <p>{refusal}</p>
-      </section>
+      </Card>
     )
   }
   const preview = operatingPowerPreview(form, items)
@@ -63,8 +63,7 @@ export default function OperatingPowerCard({ plant, view, rules, items, onBooked
   const what = service ? 'Abzug' : 'Betriebsstrom und Abzug'
   const booked = bookedOperatingPower(items, plant.id, { period: String(view.period), from: view.from, to: view.to }, rules)
   return (
-    <section className="card">
-      <h2><Term id="operatingPower">Betriebsstrom</Term></h2>
+    <Card title={<Term id="operatingPower">Betriebsstrom</Term>} level={3}>
       {/* P-K1: Rechtsaussage mit Norm; P-K5: selbst tragen ist zulässig. */}
       {/* R-K5 (Durchsicht von #252): Fernwärme hat keinen Brenner; die Hausanlage steht in § 7 Abs. 4, § 8 Abs. 4. */}
       <p>
@@ -97,12 +96,13 @@ export default function OperatingPowerCard({ plant, view, rules, items, onBooked
       {form.mode !== 'own' && (
         <label className="field"><span>kWh laut Stromrechnung</span><input inputMode="decimal" value={form.billKwh} disabled={view.closed} onChange={(e) => setForm({ ...form, billKwh: e.target.value })} /></label>
       )}
-      <fieldset>
+      {/* UI-Durchsicht N8: je Möglichkeit eine Zeile statt dreier Optionsfelder in einer gedrängten Zeile (#346 Schritt 7). */}
+      <fieldset className="grid gap-2">
         <legend>Wie bestimmen Sie den Betriebsstrom?</legend>
-        <label><input type="radio" checked={form.mode === 'estimate'} disabled={view.closed} onChange={() => setForm({ ...form, mode: 'estimate' })} /> geschätzt nach Leistung und Heiztagen</label>
-        <label><input type="radio" checked={form.mode === 'measured'} disabled={view.closed} onChange={() => setForm({ ...form, mode: 'measured' })} /> gemessen mit Zwischenzähler</label>
+        <label className="checkline"><input type="radio" name={`op-mode-${plant.id}-${view.period}`} checked={form.mode === 'estimate'} disabled={view.closed} onChange={() => setForm({ ...form, mode: 'estimate' })} /> geschätzt nach Leistung und Heiztagen</label>
+        <label className="checkline"><input type="radio" name={`op-mode-${plant.id}-${view.period}`} checked={form.mode === 'measured'} disabled={view.closed} onChange={() => setForm({ ...form, mode: 'measured' })} /> gemessen mit Zwischenzähler</label>
         {/* P-W2: dritter Weg, ohne vorgegebenen Prozentsatz. */}
-        <label><input type="radio" checked={form.mode === 'own'} disabled={view.closed} onChange={() => setForm({ ...form, mode: 'own' })} /> Betrag selbst geschätzt</label>
+        <label className="checkline"><input type="radio" name={`op-mode-${plant.id}-${view.period}`} checked={form.mode === 'own'} disabled={view.closed} onChange={() => setForm({ ...form, mode: 'own' })} /> Betrag selbst geschätzt</label>
       </fieldset>
       {form.mode === 'estimate' && (
         <>
@@ -152,6 +152,6 @@ export default function OperatingPowerCard({ plant, view, rules, items, onBooked
       <button type="button" className="btn" disabled={view.closed || busy || !preview.ok} onClick={() => void book()}>
         {preview.ok ? `${fmtEuro(preview.cents)} als ${what} anlegen` : `${what} anlegen`}
       </button>
-    </section>
+    </Card>
   )
 }

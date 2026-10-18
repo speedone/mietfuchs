@@ -1,5 +1,6 @@
 // Die Karte „Messdienstabrechnung auslesen“ der Seite Heizkosten (Heizung PR 20, #103): Beleg wählen, KI
 // lesen lassen, Ergebnis prüfen und übernehmen. Gespeichert wird erst in der Prüfansicht.
+import Card from '../components/Card'
 import { useRef, useState } from 'react'
 import { useOpenForm } from '../property'
 import { errorText } from '../api'
@@ -61,8 +62,7 @@ export default function ServiceImportCard({ plant, view, object, tenancies, unit
     existingAmountCategories: items.filter((i) => i.key === 'amounts' && String(i.period) === String(object.key)).map((i) => i.category),
   }
   return (
-    <div className="card">
-      <h2>Messdienstabrechnung auslesen</h2>
+    <Card title="Messdienstabrechnung auslesen" level={3}>
       <ErrorSummary errors={errors} />
       <p className="muted">
         Laden Sie die Heiz- und Warmwasserkostenabrechnung Ihres Messdienstes hoch. Mietfuchs liest Nutzerbeträge, Summen, CO₂-Angaben und
@@ -86,6 +86,6 @@ export default function ServiceImportCard({ plant, view, object, tenancies, unit
           <button type="button" className="btn secondary" onClick={() => setResult(null)}>Schließen</button>
         </div>
       )}
-    </div>
+    </Card>
   )
 }

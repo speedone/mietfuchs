@@ -1,5 +1,6 @@
 // Die Karte „Vorrat“ einer Heizperiode (Heizung PR 8, Entwurf 8.2, 11.4). Die Logik steht in
 // stockForm.ts; hier wird nur gezeigt und gespeichert.
+import Card from '../components/Card'
 import { useState } from 'react'
 import { api, errorText, fmtEuro } from '../api'
 import { useConfirm, useToast } from './feedback'
@@ -86,8 +87,7 @@ export default function StockCard({ view, onSaved, co2Fields = true, energy }: {
   const summary = stockSummary(shown, co2Fields)
 
   return (
-    <div className="card">
-      <h2><Term id="fuelStock">Vorrat</Term></h2>
+    <Card title={<Term id="fuelStock">Vorrat</Term>} level={3}>
       <ErrorSummary errors={errors} />
       <p className="muted">
         Tragen Sie den Bestand im Tank oder Lager ein, den Anfangsbestand nur in der ersten Heizperiode; danach übernimmt Mietfuchs den
@@ -151,6 +151,6 @@ export default function StockCard({ view, onSaved, co2Fields = true, energy }: {
           {!locked && (stock.row.stockUnit !== null || stock.row.closingQuantity !== null) && <button className="btn ghost danger-ghost ml-auto" onClick={() => void remove()}>Vorrat entfernen …</button>}
         </div>
       )}
-    </div>
+    </Card>
   )
 }
