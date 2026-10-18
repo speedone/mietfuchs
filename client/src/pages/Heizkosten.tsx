@@ -112,7 +112,7 @@ export default function Heizkosten({ units, tenancies }: { units: Unit[]; tenanc
             )}
             {/* #266: wie der Betriebsstrom erfasst ist, je Anlage über den Heizperioden. */}
             {showsHandlingCard(plant) && (
-              <OperatingPowerHandlingCard key={`ophandling:${plant.operatingPowerHandling ?? ''}`} plant={plant} onSaved={() => void load()} />
+              <OperatingPowerHandlingCard key={`ophandling:${plant.id}`} plant={plant} onSaved={() => void load()} />
             )}
             {/* Heizung PR 18 (#215): Heizung nach § 43 GModG, je Anlage über den Heizperioden. Bei Contracting zählt der
                 Brennstoff des Lieferanten (`plant.energy`). */}
@@ -169,8 +169,10 @@ export default function Heizkosten({ units, tenancies }: { units: Unit[]; tenanc
                 )}
                 {/* Heizung PR 14: Ausnahme, Vereinbarung und monatliche Information je Heizperiode; die Angaben nach
                     § 6a bei eigener Abrechnung und freien Schlüsseln. Für Etagenheizungen gilt die Verordnung nicht. */}
+                {/* Ohne den Stand im Schlüssel: Speichert eine andere Karte, bliebe sonst ein Entwurf hier nicht stehen
+                    (Durchsicht zu #309, SOLLTE 5). Neue gespeicherte Werte übernimmt useDraft selbst. */}
                 {(plant.supply ?? 'central') === 'central' && (
-                  <HeatingRulesCard key={`rules:${v.period}:${JSON.stringify(v.rules)}`} plant={plant} view={v} onChanged={() => void load()} />
+                  <HeatingRulesCard key={`rules:${plant.id}:${v.period}`} plant={plant} view={v} onChanged={() => void load()} />
                 )}
                 {(plant.supply ?? 'central') === 'central' && plant.method !== 'service' && v.rules.exemptionScope !== 'both' && (
                   <HeatingInfoCard key={`info:${v.period}:${JSON.stringify(v.info)}:${v.rules.consumerContract ?? ''}`} plant={plant} view={v} onChanged={() => void load()} />

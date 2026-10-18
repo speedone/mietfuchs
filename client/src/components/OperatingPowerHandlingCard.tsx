@@ -1,36 +1,33 @@
-import { useState } from 'react'
 import type { HeatingPlant, OperatingPowerHandling } from '../types'
-import { api, errorText } from '../api'
+import { api } from '../api'
 import { useToast } from './feedback'
 import Term from './Term'
+import DraftActions from './DraftActions'
+import { useDraft } from '../useDraft'
 import { handlingBody, handlingOptions, handlingValue } from '../operatingPowerHandling'
 import { OPERATING_POWER_HANDLING_QUESTION } from '../../../shared/operatingPower.ts'
 
 // Karte „Betriebsstrom der Heizung“ der Seite Heizkosten (#266): je Anlage, über den Heizperioden. Die Angabe ändert keine
-// Zahl, nur den Hinweis „Betriebsstrom fehlt“; gespeichert wird sofort, danach lädt die Seite neu.
+// Zahl, nur den Hinweis „Betriebsstrom fehlt“. Die Auswahl ist ein Entwurf am Feld (#309); erst „Speichern“
+// schickt sie, danach lädt die Seite neu.
 export default function OperatingPowerHandlingCard({ plant, onSaved }: { plant: HeatingPlant; onSaved: () => void }) {
   const toast = useToast()
-  const [error, setError] = useState('')
+  const draft = useDraft<'' | OperatingPowerHandling>(handlingValue(plant), { scope: plant.id })
   async function save(value: '' | OperatingPowerHandling) {
-    try {
-      await api(`/api/heating-plants/${plant.id}`, { method: 'PUT', body: JSON.stringify(handlingBody(value)) })
-      setError('')
-      toast('Die Angabe ist gespeichert.')
-      onSaved()
-    } catch (e) {
-      setError(errorText(e))
-    }
+    await api(`/api/heating-plants/${plant.id}`, { method: 'PUT', body: JSON.stringify(handlingBody(value)) })
+    toast('Die Angabe ist gespeichert.')
+    onSaved()
   }
   return (
     <div className="card no-print">
       <h2><Term id="operatingPower">Betriebsstrom der Heizung</Term>{plant.name ? ` „${plant.name}“` : ''}</h2>
-      {error && <div className="error">{error}</div>}
       <label className="field grow">
         <span>{OPERATING_POWER_HANDLING_QUESTION}</span>
-        <select value={handlingValue(plant)} onChange={(e) => void save(e.target.value as '' | OperatingPowerHandling)}>
+        <select value={draft.value} disabled={draft.saving} onChange={(e) => draft.set(e.target.value as '' | OperatingPowerHandling)}>
           {handlingOptions().map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
       </label>
+      <DraftActions draft={draft} onSave={save} what="Betriebsstrom" />
       <p className="muted">
         Brenner, Umwälzpumpen und Regelung verbrauchen Strom. Mit dieser Angabe weist Mietfuchs gezielt darauf hin, wenn der Abzug beim
         Allgemeinstrom oder die Rechnung des eigenen Stromvertrags fehlt. Die Angabe ändert keine Zahl der Abrechnung.

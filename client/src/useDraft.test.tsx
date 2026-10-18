@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { afterEach, expect, test, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { PropertyProvider, useProperty } from './property'
-import { useConfirmDiscard, useDraft } from './useDraft'
+import { keepDraft, useConfirmDiscard, useDraft } from './useDraft'
 import DraftActions from './components/DraftActions'
 import { UIProvider } from './components/feedback'
 
@@ -171,6 +171,45 @@ test('ein Wechsel des scope mit offenem Entwurf fragt nach; Abbrechen behält de
   fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Verwerfen' }))
   await screen.findByText('scope b')
   expect((screen.getByLabelText('Datum') as HTMLInputElement).value).toBe('2025-02-01')
+})
+
+// Heizung, Karte „Ausnahmen und Vereinbarungen“: Vor dem Speichern kann eine Rückfrage kommen. Wer dort
+// abbricht, hat nichts gespeichert; der Entwurf bleibt ohne Fehlermeldung stehen.
+test('ergibt `onSave` keepDraft, bleibt der Entwurf ohne Meldung stehen', async () => {
+  const onSave = vi.fn(async () => keepDraft)
+  render(<Feld saved="2025-01-12" onSave={onSave} />)
+  fireEvent.change(screen.getByLabelText('Datum'), { target: { value: '2025-01-15' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+  await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1))
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Speichern' })).toHaveProperty('disabled', false))
+  expect((screen.getByLabelText('Datum') as HTMLInputElement).value).toBe('2025-01-15')
+  expect(screen.queryByRole('alert')).toBeNull()
+})
+
+// Karte mit einem Speichern (Spezifikation #346, Abschnitt 3): am Fuß der Karte, „Speichern“ primär,
+// daneben „Ungespeicherte Änderungen“.
+function Karte({ onSave }: { onSave: (v: string) => Promise<unknown> }) {
+  const d = useDraft('a')
+  return (
+    <>
+      <label>Wahl<select value={d.value} onChange={(e) => d.set(e.target.value)}><option value="a">a</option><option value="b">b</option></select></label>
+      <DraftActions draft={d} onSave={onSave} layout="card" />
+    </>
+  )
+}
+
+test('layout="card": Fuß der Karte mit „Speichern“, „Verwerfen“ und dem Hinweis auf ungespeicherte Änderungen', async () => {
+  const onSave = vi.fn(async () => {})
+  const { container } = render(<Karte onSave={onSave} />)
+  expect(container.querySelector('.draft-actions.border-t')).toBeNull()
+  fireEvent.change(screen.getByLabelText('Wahl'), { target: { value: 'b' } })
+  const foot = container.querySelector('.draft-actions.border-t')
+  expect(foot).not.toBeNull()
+  expect(foot?.textContent).toMatch(/Ungespeicherte Änderungen/)
+  expect(screen.getByRole('button', { name: 'Speichern' }).className).not.toMatch(/secondary/)
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+  await waitFor(() => expect(container.querySelector('.draft-actions.border-t')).toBeNull())
+  expect(onSave.mock.calls).toEqual([['b']])
 })
 
 test('ohne Entwurf wechselt der scope ohne Rückfrage', async () => {

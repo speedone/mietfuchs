@@ -5,6 +5,8 @@ import { useState } from 'react'
 import { api, errorText, fmtEuro } from '../api'
 import { useConfirm, useToast } from './feedback'
 import Term from './Term'
+import DraftActions from './DraftActions'
+import { useDraft } from '../useDraft'
 import { asksCo2Facts, STOCK_BIO_ONLY_ZERO, GAS_BASIS_LABEL, GAS_BASIS_MISSING, gasBasisMissing, defaultGrade, deliveryLine, deliveryOptions, deliveryUnitId, emptyFuelForm, fuelBody, fuelToForm, GAS_BASIS_OPTIONS, gradeOptions, METERED_QUANTITY_OPTIONS, STOCK_QUANTITY_OPTIONS, stockFuelBody, unitWordFor, type FuelForm, type FuelPartForm } from '../fuelForm'
 import { aiRequest, progressText, type AiProgress } from '../aiRequest'
 import { heatingUpload } from '../aiUpload'
@@ -138,15 +140,6 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
     }
   }
 
-  async function link(itemId: string, deliveryId: string) {
-    try {
-      await api(`/api/costItems/${itemId}`, { method: 'PUT', body: JSON.stringify({ fuelDeliveryId: deliveryId === '' ? null : deliveryId }) })
-      setError('')
-      onSaved()
-    } catch (e) {
-      setError(errorText(e))
-    }
-  }
 
   const itemsForCredit = allItems ?? view.items
   const credits = new Map(creditOnlyOf(deliveries, itemsForCredit).map((c) => [c.delivery.id, c.cents]))
@@ -287,12 +280,7 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
         <div className="field-group">
           <div className="field-group-label">Welche Position gehört zu welcher Rechnung? Abschläge, Schlussrechnung und Gutschrift einer Rechnung gehören zur selben Lieferung. Ohne Verknüpfung grenzt Mietfuchs nichts ab und verteilt die Position ganz in ihrem Zeitraum.</div>
           {view.items.map((i) => (
-            <label className="field" key={i.id}>
-              {i.description}
-              <select aria-label={`Lieferung zu „${i.description}“`} value={i.fuelDeliveryId ?? ''} disabled={view.closed} onChange={(e) => void link(i.id, options.find((o) => o.value === e.target.value)?.value ?? '')}>
-                {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            </label>
+            <LinkRow key={i.id} item={i} options={options} closed={view.closed} onSaved={onSaved} />
           ))}
         </div>
       )}
@@ -436,6 +424,34 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
           ) : <span className="muted">{progressText(reading === 'start' ? null : reading)}</span>}
         </div>
       )}
+    </div>
+  )
+}
+
+// Die Verknüpfung einer Position mit ihrer Lieferung (#309): ein Entwurf an der Zeile, erst „Speichern“ schickt
+// ihn an die Position, danach lädt die Seite neu. Ein Fehler steht an der Zeile.
+function LinkRow({ item, options, closed, onSaved }: {
+  item: { id: string; description: string; fuelDeliveryId?: string | null }
+  options: readonly { value: string; label: string }[]
+  closed: boolean
+  onSaved: () => void
+}) {
+  // Verschwindet die gewählte Lieferung aus der Liste, ist der Entwurf verworfen (Durchsicht zu #309, MUSS 2).
+  const draft = useDraft(item.fuelDeliveryId ?? '', { scope: item.id, isValid: (v) => options.some((o) => o.value === v) })
+  const what = `Lieferung zu „${item.description}“`
+  async function link(deliveryId: string) {
+    await api(`/api/costItems/${item.id}`, { method: 'PUT', body: JSON.stringify({ fuelDeliveryId: deliveryId === '' ? null : deliveryId }) })
+    onSaved()
+  }
+  return (
+    <div className="row center">
+      <label className="field">
+        {item.description}
+        <select aria-label={what} value={draft.value} disabled={closed || draft.saving} onChange={(e) => draft.set(options.find((o) => o.value === e.target.value)?.value ?? '')}>
+          {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+      </label>
+      <DraftActions draft={draft} onSave={link} what={what} />
     </div>
   )
 }

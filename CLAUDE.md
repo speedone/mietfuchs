@@ -3231,7 +3231,13 @@ Tippfläche von `--target` über `::after`, und printCss.test.ts verlangt den du
   Ein Wechsel der Seite in der Navigation fragt bisher bei keinem Formular nach. **Ein Auswahlfeld
   gibt `isValid` mit** (`useDraft(saved, { isValid })`): Fällt der Wert eines Entwurfs aus den
   Optionen (die Liste folgt einem anderen Feld, eine Position ist weg), ist der Entwurf verworfen;
-  sonst zeigte der Browser den ersten Eintrag, und „Speichern“ schickte einen unsichtbaren Wert. Der Wächter
+  sonst zeigte der Browser den ersten Eintrag, und „Speichern“ schickte einen unsichtbaren Wert. Für
+  eine Karte mit mehreren solchen Feldern gibt es **ein** „Speichern“ am Fuß (`<DraftActions
+  layout="card">`, mit „Ungespeicherte Änderungen“; Muster „Karte mit einem Speichern“ der
+  Spezifikation zu #346); der Entwurf ist dann ein Objekt, und gesendet wird nur, was sich geändert
+  hat, damit eine geerbte Angabe nicht als eigene gespeichert wird (HeatingRulesCard, `rulesBody`).
+  Kommt vor dem Speichern eine Rückfrage, ergibt `onSave` bei „Abbrechen“ `keepDraft`: Der Entwurf
+  bleibt ohne Fehlermeldung stehen. Der Wächter
   [saveOnChange.test.ts](client/src/saveOnChange.test.ts) liest den Quelltext: Ein `<select>` oder
   ein `<input>` vom Typ checkbox, radio oder date, dessen `onChange` speichert (`api(`, eine
   Methode PUT/POST/PATCH/DELETE, ein Name mit save/persist/submit, auch über Funktionen derselben

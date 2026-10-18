@@ -9,6 +9,8 @@ import HeatingRulesCard from './HeatingRulesCard'
 import HeatingInfoCard from './HeatingInfoCard'
 import { UIProvider } from './feedback'
 import { noInfoView } from '../testing/heatingView'
+import { useState } from 'react'
+import { PropertyProvider, useHasOpenForm } from '../property'
 
 const PLANT = { id: 'hp', propertyId: 'objekt-1', name: '', energy: 'gas', supply: 'central', method: 'self' } as HeatingPlant
 const view = (over: Partial<HeatingPeriodView> = {}): HeatingPeriodView => ({
@@ -48,6 +50,10 @@ test('ohne Ausnahme keine Frage nach dem Umfang; eine Änderung geht an die Heiz
   expect(screen.queryByLabelText(/auch das Warmwasser/)).toBeNull()
   expect((screen.getByLabelText(/Vereinbarung nach § 2/) as HTMLSelectElement).value).toBe('none')
   fireEvent.change(screen.getByLabelText(/Ausnahme nach § 11/), { target: { value: 'lowDemand' } })
+  // #309: Die Auswahl allein sendet nichts; die Frage nach dem Umfang erscheint schon mit dem Entwurf.
+  expect(sent).toEqual([])
+  expect(screen.getByLabelText(/auch das Warmwasser/)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern (Ausnahmen 2025)' }))
   // Erst nachgerechnet (Durchsicht von #243, G-K1), dann gespeichert.
   await waitFor(() => expect(sent).toEqual([
     { url: '/api/heating-plants/hp/periods/2025-01/rules', body: { exemption: 'lowDemand', dryRun: true } },
@@ -97,10 +103,72 @@ test('Durchsicht von #243, G-K1: Wirkt die Angabe an einer abgeschlossenen Heizp
   })
   wrap(<HeatingRulesCard plant={PLANT} view={view()} onChanged={() => {}} />)
   fireEvent.change(screen.getByLabelText(/Ausnahme nach § 11/), { target: { value: 'lowDemand' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern (Ausnahmen 2025)' }))
   expect(await screen.findByText(/Die Heizperiode 2026 ist abgeschlossen/)).toBeTruthy()
   fireEvent.click(screen.getByText('Abbrechen'))
   await waitFor(() => expect(screen.queryByText(/Die Heizperiode 2026 ist abgeschlossen/)).toBeNull())
   expect(sent.map((x) => x.body)).toEqual([{ exemption: 'lowDemand', dryRun: true }])
+  // #309: Abbrechen lässt den Entwurf ohne Fehlermeldung stehen.
+  expect((screen.getByLabelText(/Ausnahme nach § 11/) as HTMLSelectElement).value).toBe('lowDemand')
+  expect(screen.getByRole('button', { name: 'Speichern (Ausnahmen 2025)' })).toBeTruthy()
+  expect(screen.queryByRole('alert')).toBeNull()
+})
+
+// #309: Die Karte speichert nicht mehr beim Anklicken, sondern mit einem „Speichern“ für alle Felder.
+test('#309: mehrere Änderungen gehen mit einem „Speichern“ genau einmal, nur die geänderten Felder', async () => {
+  const onChanged = vi.fn()
+  wrap(<HeatingRulesCard plant={{ ...PLANT, method: 'manual' }} view={view({ agreeable: true })} onChanged={onChanged} />)
+  fireEvent.change(screen.getByLabelText(/Vereinbarung nach § 2/), { target: { value: 'area' } })
+  fireEvent.click(screen.getByLabelText(/monatliche Verbrauchsinformation anders/))
+  expect(sent).toEqual([])
+  const speichern = screen.getByRole('button', { name: 'Speichern (Ausnahmen 2025)' })
+  fireEvent.click(speichern)
+  fireEvent.click(speichern)
+  await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1))
+  expect(sent.map((x) => x.body)).toEqual([
+    { agreedOtherwise: 'area', monthlyInfoElsewhere: true, dryRun: true },
+    { agreedOtherwise: 'area', monthlyInfoElsewhere: true },
+  ])
+})
+
+test('#309: „Verwerfen“ stellt alle Felder her, ohne zu senden', () => {
+  wrap(<HeatingRulesCard plant={PLANT} view={view({ agreeable: true })} onChanged={() => {}} />)
+  fireEvent.change(screen.getByLabelText(/Ausnahme nach § 11/), { target: { value: 'lowDemand' } })
+  fireEvent.click(screen.getByLabelText(/monatliche Verbrauchsinformation anders/))
+  expect(screen.getByText('Ungespeicherte Änderungen')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Verwerfen (Ausnahmen 2025)' }))
+  expect((screen.getByLabelText(/Ausnahme nach § 11/) as HTMLSelectElement).value).toBe('none')
+  expect((screen.getByLabelText(/monatliche Verbrauchsinformation anders/) as HTMLInputElement).checked).toBe(false)
+  expect(screen.queryByLabelText(/auch das Warmwasser/)).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Speichern (Ausnahmen 2025)' })).toBeNull()
+  expect(sent).toEqual([])
+})
+
+test('#309: wird die Ausnahme im Entwurf wieder „keine“, gehen Umfang und vereinbarte Abrechnung nicht mit', async () => {
+  const rules = { ...noInfoView().rules, exemption: 'pre1981' as const }
+  wrap(<HeatingRulesCard plant={PLANT} view={view({ rules })} onChanged={() => {}} />)
+  fireEvent.change(screen.getByLabelText(/auch das Warmwasser/), { target: { value: 'both' } })
+  fireEvent.click(screen.getByLabelText(/Abrechnung der Heiz- und Warmwasserkosten vereinbart/))
+  fireEvent.change(screen.getByLabelText(/Ausnahme nach § 11/), { target: { value: 'none' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern (Ausnahmen 2025)' }))
+  await waitFor(() => expect(sent.length).toBe(2))
+  expect(sent[1]?.body).toEqual({ exemption: 'none' })
+})
+
+test('#309: ein Fehler des Servers steht am Knopf, der Entwurf bleibt', async () => {
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    sent.push({ url, body: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown> })
+    return new Response(JSON.stringify({ error: 'Die Heizperiode ist abgeschlossen.' }), { status: 409, headers: { 'content-type': 'application/json' } })
+  })
+  const onChanged = vi.fn()
+  wrap(<HeatingRulesCard plant={PLANT} view={view()} onChanged={onChanged} />)
+  fireEvent.click(screen.getByLabelText(/monatliche Verbrauchsinformation anders/))
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern (Ausnahmen 2025)' }))
+  const alert = await screen.findByRole('alert')
+  expect(alert.textContent).toMatch(/^Nicht gespeichert: .*abgeschlossen/)
+  expect(alert.closest('.draft-actions.border-t')).not.toBeNull()
+  expect((screen.getByLabelText(/monatliche Verbrauchsinformation anders/) as HTMLInputElement).checked).toBe(true)
+  expect(onChanged).not.toHaveBeenCalled()
 })
 
 test('Durchsicht von #243, R-W1: Bestätigung des beigelegten Vergleichs bei Heizkostenverteilern, nicht bei Wärmezählern', async () => {
@@ -117,4 +185,48 @@ test('Durchsicht von #243, R-W1: Bestätigung des beigelegten Vergleichs bei Hei
 test('Durchsicht von #243, Runde 2, R2-N-W1: bei Werten des Ablesedienstes deckt die Bestätigung Nr. 4 und Nr. 5', () => {
   wrap(<HeatingInfoCard plant={PLANT} view={view({ capture: 'serviceValues' })} onChanged={() => {}} />)
   expect(screen.getByText(/Mit Werten des Ablesedienstes rechnet Mietfuchs die Vergleiche mit einem Durchschnittsnutzer \(Nr\. 4\) und mit dem vorhergehenden Abrechnungszeitraum \(Nr\. 5\) nicht/)).toBeTruthy()
+})
+
+// #309: Ein offener Entwurf zählt als offenes Formular; der Wechsel von Objekt oder Zeitraum fragt dann nach.
+function Offen() {
+  const hasOpenForm = useHasOpenForm()
+  const [seen, setSeen] = useState<boolean | null>(null)
+  return <button type="button" onClick={() => setSeen(hasOpenForm())}>offen? {String(seen)}</button>
+}
+
+test('#309: ein ungespeicherter Entwurf der Karte zählt als offenes Formular', async () => {
+  vi.stubGlobal('fetch', async () => new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } }))
+  render(<PropertyProvider><UIProvider><HeatingRulesCard plant={PLANT} view={view()} onChanged={() => {}} /><Offen /></UIProvider></PropertyProvider>)
+  const frage = () => {
+    fireEvent.click(screen.getByRole('button', { name: /^offen\?/ }))
+    return screen.getByRole('button', { name: /^offen\?/ }).textContent
+  }
+  fireEvent.click(await screen.findByLabelText(/monatliche Verbrauchsinformation anders/))
+  expect(frage()).toBe('offen? true')
+  fireEvent.click(screen.getByRole('button', { name: 'Verwerfen (Ausnahmen 2025)' }))
+  expect(frage()).toBe('offen? false')
+})
+
+// Durchsicht zu #309, SOLLTE 5: Speichert eine andere Karte (etwa § 6a), kommt die Karte mit neuen Regeln wieder.
+// Ein Entwurf bleibt dabei stehen und vergleicht danach gegen den neuen Stand.
+test('#309: neue Regeln von außen lassen einen Entwurf stehen', async () => {
+  const { rerender } = wrap(<HeatingRulesCard plant={PLANT} view={view({ agreeable: true })} onChanged={() => {}} />)
+  fireEvent.click(screen.getByLabelText(/monatliche Verbrauchsinformation anders/))
+  const neu = view({ agreeable: true, rules: { ...noInfoView().rules, consumerContract: 'none' } })
+  rerender(<UIProvider><HeatingRulesCard plant={PLANT} view={neu} onChanged={() => {}} /></UIProvider>)
+  expect((screen.getByLabelText(/monatliche Verbrauchsinformation anders/) as HTMLInputElement).checked).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern (Ausnahmen 2025)' }))
+  await waitFor(() => expect(sent.length).toBe(2))
+  expect(sent[1]?.body).toEqual({ monthlyInfoElsewhere: true })
+})
+
+// Durchsicht zu #309, KANN 6: Wer die Ausnahme wählt, den Umfang ändert und die Ausnahme wieder auf „keine“
+// stellt, hat nichts Sichtbares geändert und keinen Entwurf mehr.
+test('#309: zurück auf „keine“ nimmt verborgene Änderungen mit', () => {
+  wrap(<HeatingRulesCard plant={PLANT} view={view()} onChanged={() => {}} />)
+  fireEvent.change(screen.getByLabelText(/Ausnahme nach § 11/), { target: { value: 'lowDemand' } })
+  fireEvent.change(screen.getByLabelText(/auch das Warmwasser/), { target: { value: 'both' } })
+  fireEvent.change(screen.getByLabelText(/Ausnahme nach § 11/), { target: { value: 'none' } })
+  expect(screen.queryByText('Ungespeicherte Änderungen')).toBeNull()
+  expect(screen.queryByRole('button', { name: /^Speichern/ })).toBeNull()
 })
