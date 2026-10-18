@@ -535,3 +535,42 @@ test('H1: eine erneut ausgewertete Zeile an eine schon aus diesem Beleg gebuchte
   await screen.findByLabelText('Gebucht', {}, SLOW)
   expect(fake.items.find((i) => i.id === frisch.id)?.amountCents).toBe(145000)
 })
+
+// Durchsicht zu #309, MUSS 1: „Alle grünen übernehmen“ buchte eine Auswertung im gespeicherten Jahr, während
+// ihre Karte ein anderes, ungespeichertes Jahr zeigte. Eine solche Auswertung bleibt jetzt außen vor.
+test('#309: „Alle grünen übernehmen“ bucht keine Auswertung mit ungespeichertem Jahr', async () => {
+  fake = fakeBooking({ items: [], units: UNITS })
+  extraction = invoice([{ description: 'Grundsteuer B', category: 'Grundsteuer', amountEur: 612.4 }], 'Stadt')
+  const { container } = intake()
+  await upload(container)
+  await actionOf('Grundsteuer B')
+  expect(await screen.findByRole('button', { name: /Alle grünen übernehmen/ }, SLOW)).toBeTruthy()
+  fireEvent.change(yearBox(), { target: { value: String(YEAR - 1) } })
+  // Der Beleg zählt nicht mehr als bereit; die Leiste sagt, warum.
+  await waitFor(() => expect(screen.queryByRole('button', { name: /Alle grünen übernehmen/ })).toBeNull(), SLOW)
+  expect(fake.items).toEqual([])
+  // Mit „Speichern“ ist das Jahr fest, und die Zeile wird wie auf main nicht mehr grün angeboten,
+  // oder eben im gespeicherten Jahr; verworfen kommt das Angebot zurück.
+  fireEvent.click(screen.getByRole('button', { name: 'Verwerfen (Jahr der Buchung)' }))
+  expect(await screen.findByRole('button', { name: /Alle grünen übernehmen/ }, SLOW)).toBeTruthy()
+})
+
+test('#309: mit einem zweiten Beleg ohne Entwurf bucht „Alle grünen“ nur diesen und nennt den anderen', async () => {
+  fake = fakeBooking({ items: [], units: UNITS })
+  extraction = invoice([{ description: 'Grundsteuer B', category: 'Grundsteuer', amountEur: 612.4 }], 'Stadt')
+  const { container } = intake()
+  await upload(container, 2)
+  const karten = await waitFor(() => {
+    const found = screen.getAllByRole('combobox', { name: 'Jahr der Buchung' })
+    expect(found).toHaveLength(2)
+    return found
+  }, SLOW)
+  fireEvent.change(karten[0] ?? assert.fail('Karte fehlt'), { target: { value: String(YEAR - 1) } })
+  expect(await screen.findByText(/1 Beleg mit ungespeichertem Jahr bleibt außen vor/, {}, SLOW)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: /Alle grünen übernehmen/ }))
+  await waitFor(() => expect(fake.items).toHaveLength(1), SLOW)
+  // Die Übernahme läuft der Reihe nach; auch danach bleibt es bei einer Position.
+  await new Promise((r) => setTimeout(r, 300))
+  expect(fake.items).toHaveLength(1)
+  expect(fake.items[0]?.period).toBe(calendarPeriod(YEAR))
+})

@@ -3246,8 +3246,14 @@ Tippfläche von `--target` über `::after`, und printCss.test.ts verlangt den du
   mit #281 kommt; Neues kommt nicht hinzu. Rückrufe aus den Props mit anderem Namen sieht er nicht.
   Eine Auswahl, die eine Aktion auslöst (Beleg einer Position zuordnen), ist ebenso ein Entwurf mit
   leerem gespeichertem Wert (`AttachPicker` in Belege.tsx). Im Posteingang sind Objekt und Jahr ein
-  Entwurf mit einem „Speichern“; die Positionen zum Zuordnen folgen schon dem Entwurf. Das Jahr der
-  Buchung einer Auswertung sperrt, solange es ungespeichert ist, Vorschau und Buchen.
+  Entwurf mit einem „Speichern“; die Positionen zum Zuordnen folgen schon dem Entwurf, und eine
+  gewählte Position, die dabei aus der Liste fällt, ist verworfen (`isValid`). **Was an einem
+  gespeicherten Wert vorbei handelt, wartet auf den Entwurf daneben**: Das Jahr der Buchung einer
+  Auswertung sperrt, solange es ungespeichert ist, Vorschau und Buchen der Karte, und „Alle grünen
+  übernehmen“ lässt diese Auswertung aus (die Leiste nennt sie; `onYearDraft`), denn gebucht würde
+  im gespeicherten Jahr, während die Karte das neue zeigt. Ebenso sind „Per KI auswerten“ und
+  „Weiter prüfen“ im Posteingang gesperrt, solange Objekt oder Jahr des Belegs einen Entwurf haben
+  („Erst Objekt und Jahr speichern oder verwerfen.“).
 - **Wer nach Plattform unterscheidet, bekommt sie hineingereicht**, wie `systemLocation` und
   `chooseDataDir` in paths.ts und store.ts und `networkLocation` in db/open.ts. Dazu gehört, mit
   `path.win32` beziehungsweise `path.posix` zu rechnen statt mit der Voreinstellung, und ebenso

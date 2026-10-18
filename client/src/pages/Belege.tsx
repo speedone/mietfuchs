@@ -215,15 +215,18 @@ type Props = {
 
 // Eine Auswahl, die erst mit „Speichern“ wirkt (#309): Beleg und Position einander zuordnen. Die leere
 // Wahl ist der gespeicherte Wert; wer etwas wählt, hat einen Entwurf, und erst „Speichern“ hängt den Beleg an.
-function AttachPicker({ label, what, placeholder, scope, onSave, children }: {
+// Steht die gewählte Position oder der gewählte Beleg nicht mehr unter `values` (die Liste folgt Objekt und
+// Jahr, ein Beleg wurde anderswo zugeordnet), ist die Wahl verworfen (Durchsicht zu #309, MUSS 2).
+function AttachPicker({ label, what, placeholder, scope, values, onSave, children }: {
   label: string
   what: string
   placeholder: string
   scope: string
+  values: readonly string[]
   onSave: (value: string) => Promise<unknown>
   children: React.ReactNode
 }) {
-  const draft = useDraft('', { scope })
+  const draft = useDraft('', { scope, isValid: (v) => v === '' || values.includes(v) })
   return (
     <>
       <select aria-label={label} value={draft.value} disabled={draft.saving} onChange={(e) => draft.set(e.target.value)}>
@@ -235,6 +238,8 @@ function AttachPicker({ label, what, placeholder, scope, onSave, children }: {
   )
 }
 
+export const PLACEMENT_FIRST = 'Erst Objekt und Jahr speichern oder verwerfen.'
+
 // Objekt und Jahr eines Belegs im Posteingang (#309): ein Entwurf für beide Felder mit einem „Speichern“.
 // Gesendet wird nur, was sich geändert hat; der Server zieht die Auswertung desselben Belegs nach, solange
 // aus ihr nichts gebucht ist (Belegbuchung).
@@ -244,7 +249,8 @@ function InboxPlacement({ upload, properties, yearOptions, onSave, children }: {
   properties: readonly Property[]
   yearOptions: readonly number[]
   onSave: (changes: { propertyId?: string | null; year?: number | null }) => Promise<unknown>
-  children: (placement: { propertyId: string | null; year: number | null }) => React.ReactNode
+  // `dirty`: Objekt oder Jahr sind geändert und nicht gespeichert.
+  children: (placement: { propertyId: string | null; year: number | null; dirty: boolean }) => React.ReactNode
 }) {
   const saved: Placement = {
     propertyId: upload.propertyId && properties.some((p) => p.id === upload.propertyId) ? upload.propertyId : '',
@@ -273,7 +279,7 @@ function InboxPlacement({ upload, properties, yearOptions, onSave, children }: {
         {[...new Set([...yearOptions, ...(upload.year === null ? [] : [upload.year])])].sort((a, b) => b - a).map((y) => <option key={y} value={String(y)}>{y}</option>)}
       </select>
       <DraftActions draft={draft} onSave={save} what={properties.length > 1 ? `Objekt und Jahr für ${name}` : `Jahr für ${name}`} />
-      {children({ propertyId: draft.value.propertyId || null, year: draft.value.year ? Number(draft.value.year) : null })}
+      {children({ propertyId: draft.value.propertyId || null, year: draft.value.year ? Number(draft.value.year) : null, dirty: draft.dirty || draft.saving })}
     </>
   )
 }
@@ -530,29 +536,37 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
           ) : (
             <div className="receipt-inbox-controls">
               <InboxPlacement upload={upload} properties={properties} yearOptions={yearOptions} onSave={(changes) => place(upload, changes)}>
-                {(placement) => candidatesFor(placement).length > 0 && (() => {
-                  // Passt die Kostenart, die der Name des Belegs nennt, stehen diese Positionen oben
-                  // (shared/duplicates.ts); sonst die Liste wie gehabt.
-                  const choices = attachChoices(upload, candidatesFor(placement))
-                  const option = (c: CostItem) => <option key={c.id} value={c.id}>{startYearOf(c.period)} · {c.category} · {c.description} · {fmtEuro(c.amountCents)}</option>
-                  return (
-                    <AttachPicker label={`${receiptName(upload)} einer Position zuordnen`} what={`Position für ${receiptName(upload)}`}
-                      placeholder="einer Position zuordnen …" scope={upload.file} onSave={(id) => attachById(id, upload.file)}>
-                      {choices.likely.length > 0 ? (
-                        <>
-                          <optgroup label={`Passend zu „${choices.category}“`}>{choices.likely.map(option)}</optgroup>
-                          {choices.rest.length > 0 && <optgroup label="Weitere Positionen ohne Beleg">{choices.rest.map(option)}</optgroup>}
-                        </>
-                      ) : choices.rest.map(option)}
-                    </AttachPicker>
-                  )
-                })()}
+                {(placement) => (
+                  <>
+                    {candidatesFor(placement).length > 0 && (() => {
+                      // Passt die Kostenart, die der Name des Belegs nennt, stehen diese Positionen oben
+                      // (shared/duplicates.ts); sonst die Liste wie gehabt.
+                      const choices = attachChoices(upload, candidatesFor(placement))
+                      const option = (c: CostItem) => <option key={c.id} value={c.id}>{startYearOf(c.period)} · {c.category} · {c.description} · {fmtEuro(c.amountCents)}</option>
+                      return (
+                        <AttachPicker label={`${receiptName(upload)} einer Position zuordnen`} what={`Position für ${receiptName(upload)}`}
+                          placeholder="einer Position zuordnen …" scope={upload.file} values={candidatesFor(placement).map((c) => c.id)}
+                          onSave={(id) => attachById(id, upload.file)}>
+                          {choices.likely.length > 0 ? (
+                            <>
+                              <optgroup label={`Passend zu „${choices.category}“`}>{choices.likely.map(option)}</optgroup>
+                              {choices.rest.length > 0 && <optgroup label="Weitere Positionen ohne Beleg">{choices.rest.map(option)}</optgroup>}
+                            </>
+                          ) : choices.rest.map(option)}
+                        </AttachPicker>
+                      )
+                    })()}
+                    {/* Auswerten nimmt Objekt und Jahr, wie sie gespeichert sind; mit einem Entwurf daran vorbei landete
+                        die Auswertung in einem anderen Objekt (Durchsicht zu #309, SOLLTE 3). */}
+                    {upload.assessment?.open && onContinue ? (
+                      <button className="btn small" aria-label={`${receiptName(upload)} weiter prüfen`} disabled={placement.dirty} onClick={() => void continueChecking(upload)}>Weiter prüfen</button>
+                    ) : onEvaluate && (
+                      <button className="btn small" aria-label={`${receiptName(upload)} per KI auswerten`} disabled={placement.dirty} onClick={() => onEvaluate([upload])}>Per KI auswerten</button>
+                    )}
+                    {placement.dirty && (upload.assessment?.open ? onContinue : onEvaluate) && <span className="muted">{PLACEMENT_FIRST}</span>}
+                  </>
+                )}
               </InboxPlacement>
-              {upload.assessment?.open && onContinue ? (
-                <button className="btn small" aria-label={`${receiptName(upload)} weiter prüfen`} onClick={() => void continueChecking(upload)}>Weiter prüfen</button>
-              ) : onEvaluate && (
-                <button className="btn small" aria-label={`${receiptName(upload)} per KI auswerten`} onClick={() => onEvaluate([upload])}>Per KI auswerten</button>
-              )}
             </div>
           )}
           {upload.invoiceDate && <div className="muted">Rechnungsdatum {fmtDate(upload.invoiceDate)}</div>}
@@ -731,7 +745,8 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
                         </label>
                         {inboxFor(allCards, c).length > 0 && (
                           <AttachPicker label={`Vorhandenen Beleg für ${c.description} zuordnen`} what={`Beleg für ${c.description}`}
-                            placeholder="oder aus dem Posteingang …" scope={c.id} onSave={(file) => attachExisting(c, file)}>
+                            placeholder="oder aus dem Posteingang …" scope={c.id} values={inboxFor(allCards, c).map((u) => u.upload.file)}
+                            onSave={(file) => attachExisting(c, file)}>
                             {inboxFor(allCards, c).map((u) => <option key={u.upload.file} value={u.upload.file}>{receiptName(u.upload)}</option>)}
                           </AttachPicker>
                         )}
