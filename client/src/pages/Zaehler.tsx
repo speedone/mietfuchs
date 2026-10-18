@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useId, useRef, useState } from 'react'
-import { FormError, invalidProps, useFocusOnError, useFormError, type FormErrorState } from '../components/FormError'
+import { useCallback, useEffect, useState } from 'react'
+import { ErrorSummary, useFormError, type FormErrors } from '../components/ErrorSummary'
+import Field from '../components/Field'
 import type { HeatingPlant, HeatingRole, Meter, MeterType, Notice, Reading, Unit } from '../types'
 import { METER_TYPE_LABELS } from '../types'
 import { buildReadingBody, EMPTY_READING, type ReadingField, type ReadingForm } from '../readingForm'
-import { asksCalibration, asksRemote, CALIBRATION_MARK_HELP, calibrationSuggestion, emptyMeterForm, hasKnownUnits, HEATING_ROLE_HELP, heatingRoleLabel, heatingRoleOptions, meterBody, meterPlantId, meterToForm, meterUnitHint, meterUnitOptions, oldEndText, REMOTE_RULE_TEXT, withMeterType, type MeterForm, type RemoteAnswer } from '../meterForm'
+import { asksCalibration, asksRemote, CALIBRATION_MARK_HELP, calibrationSuggestion, emptyMeterForm, hasKnownUnits, HEATING_ROLE_HELP, heatingRoleLabel, heatingRoleOptions, meterBody, meterPlantId, meterToForm, meterUnitHint, meterUnitOptions, oldEndText, REMOTE_RULE_TEXT, withMeterType, type MeterField, type MeterForm, type RemoteAnswer } from '../meterForm'
 import { plantOptions } from '../heatingForm'
 import { api, errorText, fmtDate } from '../api'
 import { usePeriod } from '../period'
@@ -40,6 +41,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
   const [readingForm, setReadingForm] = useState<ReadingForm>({ ...EMPTY_READING })
   const [error, setError] = useState('')
   const readingError = useFormError<ReadingField>()
+  const meterErrors = useFormError<MeterField>()
   // „Hier beheben →“ aus der Abrechnung (#142): die Ablesungen des betroffenen Zählers aufklappen,
   // denn dort liegt, was ein Hinweis zu einem Zähler meint.
   const [focusedId, setFocusedId] = useState<string | null>(null)
@@ -69,16 +71,12 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
     if (!meterForm) return
     // Die Heizanlage des Zählers (Heizung PR 9): bei einer die des Objekts, ab zwei die gewählte.
     const plant = meterPlantId(meterForm, plants)
-    if ('error' in plant) {
-      setError(plant.error)
-      return
-    }
-    const result = meterBody(meterForm, plant.plantId)
+    const result = 'error' in plant ? plant : meterBody(meterForm, plant.plantId)
     if ('error' in result) {
-      setError(result.error)
+      meterErrors.report([{ text: result.error, ...(result.field ? { field: result.field } : {}), ...(result.short ? { short: result.short } : {}) }])
       return
     }
-    setError('')
+    meterErrors.clear()
     const body = JSON.stringify(result.body)
     const editing = !!meterForm.id
     // Lehnt der Server ab (#146), bleibt der Dialog offen und zeigt seinen Satz.
@@ -86,7 +84,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
       if (editing) await api(`/api/meters/${meterForm.id}`, { method: 'PUT', body })
       else await api(withProperty('/api/meters', propertyId), { method: 'POST', body })
     } catch (e) {
-      setError(errorText(e))
+      meterErrors.show(errorText(e))
       return
     }
     const name = meterForm.name.trim()
@@ -106,10 +104,10 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
     try {
       await api(`/api/meters/${m.id}`, { method: 'DELETE' })
     } catch (e) {
-      setError(errorText(e))
+      // Eine Aktion ohne Formular meldet ihren Fehler als Mitteilung, nicht oben auf der Seite (H3).
+      toast(errorText(e), 'error')
       return
     }
-    setError('')
     await load()
     toast(`Zähler „${m.name}“ gelöscht.`)
   }
@@ -117,12 +115,11 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
   // Die Meldung zur Ablesung steht beim Knopf „Ablesung speichern“ (UI-Durchsicht H3), nicht oben.
   async function saveReading(meterId: string) {
     const built = buildReadingBody(readingForm, meterId)
-    if ('error' in built) {
-      readingError.show(built.error, built.field)
+    if ('problems' in built) {
+      readingError.report(built.problems)
       return
     }
     readingError.clear()
-    setError('')
     try {
       await api('/api/readings', { method: 'POST', body: JSON.stringify(built.body) })
     } catch (e) {
@@ -145,10 +142,9 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
     try {
       await api(`/api/readings/${r.id}`, { method: 'DELETE' })
     } catch (e) {
-      setError(errorText(e))
+      toast(errorText(e), 'error')
       return
     }
-    setError('')
     await load()
     toast('Ablesung gelöscht.')
   }
@@ -161,7 +157,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
         title="Zähler & Stände"
         subtitle={'Zählerstände dokumentieren — Jahresablesung, Zwischenablesung beim Mieterwechsel, Zählerwechsel. Wohnungszähler ermöglichen den Umlageschlüssel „nach Verbrauch“.'}
       />
-      {error && !meterForm && <div className="error">{error}</div>}
+      {error && <div className="error">{error}</div>}
 
       <div className="card">
         <div className="row">
@@ -201,14 +197,13 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
                     readings={mReadings}
                     unitName={unitName(m.unitId)}
                     consumptionLabel={label}
-                    onToggle={() => { setError(''); readingError.clear(); setOpenMeterId(openMeterId === m.id ? null : m.id); setReadingForm({ ...EMPTY_READING }) }}
-                    onEdit={() => { setError(''); setMarkedYear(''); setMeterForm(meterToForm(m)) }}
+                    onToggle={() => { readingError.clear(); setOpenMeterId(openMeterId === m.id ? null : m.id); setReadingForm({ ...EMPTY_READING }) }}
+                    onEdit={() => { meterErrors.clear(); setMarkedYear(''); setMeterForm(meterToForm(m)) }}
                     onDelete={() => deleteMeter(m)}
                     readingForm={readingForm}
                     setReadingForm={setReadingForm}
                     onSaveReading={() => saveReading(m.id)}
-                    readingError={readingError.error}
-                    onReadingFieldChange={readingError.clearField}
+                    readingErrors={readingError}
                     onDeleteReading={deleteReading}
                     onSaved={() => { void load(); toast('Stichtagswert gespeichert.') }}
                   />
@@ -219,7 +214,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
         )}
 
         <div className="row">
-          <button className="btn secondary" onClick={() => { setError(''); setMarkedYear(''); setMeterForm(emptyMeterForm()) }}>
+          <button className="btn secondary" onClick={() => { meterErrors.clear(); setMarkedYear(''); setMeterForm(emptyMeterForm()) }}>
             + Zähler hinzufügen
           </button>
         </div>
@@ -232,26 +227,28 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
           open
           title={meterForm.id ? 'Zähler bearbeiten' : 'Neuer Zähler'}
           subtitle={meterForm.id ? meterForm.name : undefined}
-          onClose={() => { setError(''); setMeterForm(null) }}
+          onClose={() => { meterErrors.clear(); setMeterForm(null) }}
           onSubmit={saveMeter}
           value={meterForm}
+          errors={meterErrors}
           actions={<button className="btn" onClick={saveMeter}>{meterForm.id ? 'Übernehmen' : 'Anlegen'}</button>}
         >
-          {error && <div className="error">{error}</div>}
           <div className="row">
-            <label className="field grow">
-              Name
+            <Field label="Name" className="grow" {...meterErrors.field('name')}>
               <input value={meterForm.name} onChange={(e) => setMeterForm({ ...meterForm, name: e.target.value })} placeholder={meterForm.type === 'hkv' ? 'z. B. Wohnzimmer' : 'z. B. Hauptwasserzähler'} />
-            </label>
-            <label className="field grow">
-              <span>Zuordnung (<Term id="mainMeter">Haupt- oder Zwischenzähler</Term>)</span>
+            </Field>
+            <Field
+              label={<>Zuordnung (<Term id="mainMeter">Haupt- oder Zwischenzähler</Term>)</>}
+              className="grow"
+              hint={meterForm.type !== 'hkv' ? <>Bei einer <Term id="granny">Einliegerwohnung</Term> mit eigenem Zwischenzähler: den Zähler des Hauses als Hauptzähler anlegen, den Zwischenzähler an der Wohnung.</> : undefined}
+              {...meterErrors.field('unitId')}
+            >
               <select value={meterForm.unitId} onChange={(e) => setMeterForm({ ...meterForm, unitId: e.target.value })}>
                 {/* Ein Heizkostenverteiler sitzt an einem Heizkörper einer Wohnung (Durchsicht von #241, Minor 11). */}
                 <option value="">{meterForm.type === 'hkv' ? '— bitte Wohnung wählen —' : 'Haus (Hauptzähler)'}</option>
                 {units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
-              {meterForm.type !== 'hkv' && <small className="muted">Bei einer <Term id="granny">Einliegerwohnung</Term> mit eigenem Zwischenzähler: den Zähler des Hauses als Hauptzähler anlegen, den Zwischenzähler an der Wohnung.</small>}
-            </label>
+            </Field>
             <label className="field grow">
               Sparte
               <select value={meterForm.type} onChange={(e) => setMeterForm(withMeterType(meterForm, e.target.value as MeterType))}>
@@ -260,13 +257,11 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
                 ))}
               </select>
             </label>
-            <label className="field grow">
-              Zählernummer
-              <input value={meterForm.meterNumber} onChange={(e) => setMeterForm({ ...meterForm, meterNumber: e.target.value })} placeholder="optional" />
-            </label>
-            <label className="field grow">
-              {/* #342: bei Wasser, Wärme und Strom eine Auswahl, denn Mietfuchs rechnet diese Einheiten ineinander um. */}
-              <Term id="meterUnit">Einheit</Term>
+            <Field label="Zählernummer" optional className="grow">
+              <input value={meterForm.meterNumber} onChange={(e) => setMeterForm({ ...meterForm, meterNumber: e.target.value })} />
+            </Field>
+            {/* #342: bei Wasser, Wärme und Strom eine Auswahl, denn Mietfuchs rechnet diese Einheiten ineinander um. */}
+            <Field label={<Term id="meterUnit">Einheit</Term>} className="grow" hint={meterUnitHint(meterForm) || undefined} {...meterErrors.field('unit')}>
               {hasKnownUnits(meterForm.type)
                 ? (
                   <select value={meterForm.unit} onChange={(e) => setMeterForm({ ...meterForm, unit: e.target.value, unitDropped: '' })}>
@@ -276,8 +271,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
                   </select>
                 )
                 : <input value={meterForm.unit} onChange={(e) => setMeterForm({ ...meterForm, unit: e.target.value })} />}
-              {meterUnitHint(meterForm) && <small className="muted">{meterUnitHint(meterForm)}</small>}
-            </label>
+            </Field>
             {/* Heizung PR 12: Skala und Bewertungsfaktor des Heizkostenverteilers. */}
             {meterForm.type === 'hkv' && <HcaFields form={meterForm.hca} onChange={(hca) => setMeterForm({ ...meterForm, hca })} />}
             {heatingRoleOptions(meterForm, plants.length > 0).length > 0 && (
@@ -291,13 +285,12 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
               </label>
             )}
             {!meterForm.unitId && meterForm.heatingRole !== '' && plantOptions(plants).length > 0 && (
-              <label className="field grow">
-                Heizanlage
+              <Field label="Heizanlage" className="grow" {...meterErrors.field('heatingPlantId')}>
                 <select value={meterForm.heatingPlantId} onChange={(e) => setMeterForm({ ...meterForm, heatingPlantId: e.target.value })}>
                   <option value="">— bitte wählen —</option>
                   {plantOptions(plants).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
-              </label>
+              </Field>
             )}
             {asksRemote(meterForm, plants.length > 0) && (
               <>
@@ -318,13 +311,15 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
             )}
             {asksCalibration(meterForm) && (
               <>
-                <label className="field grow">
-                  Geeicht bis Ende (Jahr)
-                  <input inputMode="numeric" value={meterForm.calibratedUntil} onChange={(e) => setMeterForm({ ...meterForm, calibratedUntil: e.target.value })} placeholder="optional" />
-                  <small className="muted">
-                    Die <Term id="meterCalibration">Eichfrist</Term> endet mit dem Ende dieses Jahres. Hat der Messdienst sie im Stichprobenverfahren verlängern lassen (§ 35 MessEV), tragen Sie das verlängerte Jahr ein.
-                  </small>
-                </label>
+                <Field
+                  label="Geeicht bis Ende (Jahr)"
+                  optional
+                  className="grow"
+                  hint={<>Die <Term id="meterCalibration">Eichfrist</Term> endet mit dem Ende dieses Jahres. Hat der Messdienst sie im Stichprobenverfahren verlängern lassen (§ 35 MessEV), tragen Sie das verlängerte Jahr ein.</>}
+                  {...meterErrors.field('calibratedUntil')}
+                >
+                  <input inputMode="numeric" value={meterForm.calibratedUntil} onChange={(e) => setMeterForm({ ...meterForm, calibratedUntil: e.target.value })} />
+                </Field>
                 <label className="field grow">
                   Jahreszahl auf dem Zähler (etwa „M22“ oder die Jahresangabe der Eichmarke)
                   <input inputMode="numeric" value={markedYear} onChange={(e) => setMarkedYear(e.target.value)} placeholder="für einen Vorschlag" />
@@ -366,19 +361,11 @@ function FragmentRow(props: {
   readingForm: ReadingForm
   setReadingForm: (f: ReadingForm) => void
   onSaveReading: () => void
-  readingError: FormErrorState<ReadingField>
-  onReadingFieldChange: (field: ReadingField) => void
+  readingErrors: FormErrors<ReadingField>
   onDeleteReading: (r: Reading) => void
   onSaved: () => void
 }) {
-  const { meter: m, focused, cons, open, readings, unitName, consumptionLabel, onToggle, onEdit, onDelete, readingForm, setReadingForm, onSaveReading, readingError, onReadingFieldChange, onDeleteReading, onSaved } = props
-  // Fehler zur Ablesung: das Feld markieren und fokussieren (Durchsicht S1 zu #341).
-  const readingErrorId = useId()
-  const dateRef = useRef<HTMLInputElement>(null)
-  const valueRef = useRef<HTMLInputElement>(null)
-  const oldEndRef = useRef<HTMLInputElement>(null)
-  useFocusOnError(readingError, { date: dateRef, value: valueRef, oldEndValue: oldEndRef })
-  const edit = (field: ReadingField, next: ReadingForm) => { onReadingFieldChange(field); setReadingForm(next) }
+  const { meter: m, focused, cons, open, readings, unitName, consumptionLabel, onToggle, onEdit, onDelete, readingForm, setReadingForm, onSaveReading, readingErrors, onDeleteReading, onSaved } = props
   return (
     <>
       <tr className={focused ? 'focus-target' : undefined}>
@@ -436,14 +423,12 @@ function FragmentRow(props: {
               </Table>
             )}
             <div className="row">
-              <label className="field">
-                Datum
-                <input ref={dateRef} type="date" value={readingForm.date} {...invalidProps(readingError, 'date', readingErrorId)} onChange={(e) => edit('date', { ...readingForm, date: e.target.value })} />
-              </label>
-              <label className="field">
-                {readingForm.replacement ? 'Startstand neuer Zähler' : 'Zählerstand'}
-                <input ref={valueRef} value={readingForm.value} {...invalidProps(readingError, 'value', readingErrorId)} onChange={(e) => edit('value', { ...readingForm, value: e.target.value })} className="input-num" />
-              </label>
+              <Field label="Datum" {...readingErrors.field('date')}>
+                <input type="date" value={readingForm.date} onChange={(e) => setReadingForm({ ...readingForm, date: e.target.value })} />
+              </Field>
+              <Field label={readingForm.replacement ? 'Startstand neuer Zähler' : 'Zählerstand'} {...readingErrors.field('value')}>
+                <input value={readingForm.value} onChange={(e) => setReadingForm({ ...readingForm, value: e.target.value })} className="input-num" />
+              </Field>
               <label className="field checkline">
                 <span>
                   <input type="checkbox" checked={readingForm.replacement} onChange={(e) => setReadingForm({ ...readingForm, replacement: e.target.checked })} />
@@ -451,18 +436,16 @@ function FragmentRow(props: {
                 </span>
               </label>
               {readingForm.replacement && (
-                <label className="field">
-                  Endstand alter Zähler
-                  <input ref={oldEndRef} value={readingForm.oldEndValue} {...invalidProps(readingError, 'oldEndValue', readingErrorId)} onChange={(e) => edit('oldEndValue', { ...readingForm, oldEndValue: e.target.value })} className="input-num" />
-                </label>
+                <Field label="Endstand alter Zähler" {...readingErrors.field('oldEndValue')}>
+                  <input value={readingForm.oldEndValue} onChange={(e) => setReadingForm({ ...readingForm, oldEndValue: e.target.value })} className="input-num" />
+                </Field>
               )}
-              <label className="field grow">
-                Hinweis
+              <Field label="Hinweis" optional className="grow">
                 <input value={readingForm.note} onChange={(e) => setReadingForm({ ...readingForm, note: e.target.value })} placeholder="z. B. Zwischenablesung Auszug Müller" />
-              </label>
+              </Field>
               <button className="btn" onClick={onSaveReading}>Ablesung speichern</button>
             </div>
-            <FormError error={readingError} id={readingErrorId} />
+            <ErrorSummary errors={readingErrors} />
             <p className="muted">
               Tipp: Beim Mieterwechsel am Auszugstag eine Zwischenablesung erfassen — dann wird der
               Verbrauch exakt statt tagesanteilig geschätzt aufgeteilt.

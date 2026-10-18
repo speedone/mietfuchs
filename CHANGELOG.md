@@ -123,8 +123,24 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Seite dahinter, und nach dem Schließen steht der Fokus wieder auf dem Knopf, der es geöffnet hat (Befund M4 aus [#341](https://github.com/speedone/mietfuchs/issues/341);
   [#346](https://github.com/speedone/mietfuchs/issues/346)).
 
+- Fehler beim Speichern stehen jetzt an dem Feld, das sie betreffen, und zusätzlich in einer
+  Sammelmeldung „Bitte prüfen Sie N Angaben“, deren Zeilen zum Feld führen. Im Seitenfenster steht sie
+  im festen Fuß über den Knöpfen und ist damit immer zu sehen, auch wenn das Fenster nach unten gerollt
+  ist; in einer Karte oben in der Karte. Statt eines Satzes für mehrere Felder („Bitte Mieter, Wohnung
+  und Einzugsdatum prüfen.“) nennt jede Zeile ihr Feld. Vorleser hören die Meldung sofort, das Feld ist
+  als fehlerhaft markiert, und beim Ändern des Felds verschwindet die Meldung. Freiwillige Angaben sind
+  mit „(freiwillig)“ beschriftet. Umgestellt sind die Seitenfenster für Wohnung, Mietverhältnis,
+  Zähler, Kostenposition, Zahlung, Heizung und eigene Heizkostenabrechnung, die Ablesung auf der Seite
+  Zähler, die Karten auf der Seite Heizkosten, die Karte „Objekt“ und „Vermieter & Zahlung“. Schlägt
+  das Löschen fehl, steht der Grund als Mitteilung da, die acht Sekunden stehen bleibt, statt oben auf
+  der Seite außerhalb des Bildes (Befunde H3 und M5 aus
+  [#341](https://github.com/speedone/mietfuchs/issues/341);
+  [#346](https://github.com/speedone/mietfuchs/issues/346)).
+
 ### Behoben
 
+- Die Bezeichnung eines Objekts ist Pflicht: Leer ließ sie sich speichern, und die Seitenleiste zeigte
+  danach „Ohne Namen“ (Befund M12 aus [#341](https://github.com/speedone/mietfuchs/issues/341)).
 - Angaben zur Heizkostenabrechnung (§ 6a HeizkostenV): Stehen alle Wärmezähler in MWh oder GJ, rechnet
   Mietfuchs den Vergleich mit dem Durchschnittsnutzer jetzt aus. Vorher galt er als offen, und der
   Hinweis nannte eine mögliche Kürzung um bis zu 3 %, obwohl ein Vergleichswert eingetragen war. Der

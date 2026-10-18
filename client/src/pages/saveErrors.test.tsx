@@ -171,7 +171,8 @@ test('Stammdaten: ein Löschfehler oben erscheint nicht im danach geöffneten Fo
   await waitFor(() => expect(screen.getByText(MSG)).toBeTruthy())
   fireEvent.click(screen.getByRole('button', { name: /Wohnung bearbeiten/i }))
   await screen.findByRole('button', { name: /^Übernehmen$/i })
-  expect(screen.queryByText(MSG)).toBeNull()
+  // Der Löschfehler ist eine Mitteilung (H3) und steht nicht im Fenster.
+  expect(within(screen.getByRole('dialog')).queryByText(MSG)).toBeNull()
 })
 
 test('Stammdaten: ein Fehler im Formular steht nach „Abbrechen“ nicht oben auf der Seite', async () => {
@@ -195,7 +196,8 @@ test('Zähler: ein Löschfehler oben erscheint nicht im danach geöffneten Formu
   await waitFor(() => expect(screen.getByText(MSG)).toBeTruthy())
   fireEvent.click(screen.getByRole('button', { name: /Zähler bearbeiten/i }))
   await screen.findByRole('button', { name: /^Übernehmen$/i })
-  expect(screen.queryByText(MSG)).toBeNull()
+  // Der Löschfehler ist eine Mitteilung (H3) und steht nicht im Fenster.
+  expect(within(screen.getByRole('dialog')).queryByText(MSG)).toBeNull()
 })
 
 test('Mietkonto: ein Fehler im Formular steht nach „Abbrechen“ nicht oben auf der Seite', async () => {
@@ -211,6 +213,59 @@ test('Mietkonto: ein Fehler im Formular steht nach „Abbrechen“ nicht oben au
   fireEvent.click(within(await screen.findByRole('alertdialog', { name: 'Änderungen verwerfen?' })).getByRole('button', { name: 'Verwerfen' }))
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   expect(screen.queryByText(MSG)).toBeNull()
+})
+
+// #346, Schritt 3 (UI-Durchsicht M5): Statt „Bitte Mieter, Wohnung und Einzugsdatum prüfen.“ steht jede fehlende
+// Angabe an ihrem Feld und als Zeile der Sammelmeldung im Fuß des Fensters; ihr Link führt zum Feld.
+test('Stammdaten: ein leeres Mietverhältnis nennt Mieter und Einzug je am Feld und in der Sammelmeldung', async () => {
+  shell(<Stammdaten units={UNITS} tenancies={TENANCIES} settings={null} reload={async () => {}} />)
+  fireEvent.click(await screen.findByRole('button', { name: /Mietverhältnis hinzufügen/i }))
+  fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/i }))
+  const alert = await screen.findByRole('alert')
+  expect(alert.closest('footer')).not.toBeNull()
+  expect(alert.textContent).toMatch(/Bitte prüfen Sie 2 Angaben/)
+  expect(within(alert).getAllByRole('link').map((l) => l.textContent?.split(':')[0])).toEqual(['Mieter', 'Einzug'])
+  expect(screen.getByLabelText('Mieter').getAttribute('aria-invalid')).toBe('true')
+  expect(screen.getByLabelText('Einzug').getAttribute('aria-invalid')).toBe('true')
+  fireEvent.click(within(alert).getByRole('link', { name: /^Einzug/ }))
+  expect(document.activeElement).toBe(screen.getByLabelText('Einzug'))
+  expect(sent).toEqual([])
+})
+
+test('Mietkonto: eine leere Zahlung nennt jedes fehlende Feld, nicht einen Sammelsatz', async () => {
+  shell(<Mietkonto />)
+  const add = await screen.findByRole('button', { name: /Zahlung erfassen/i })
+  await waitFor(() => expect((add as HTMLButtonElement).disabled).toBe(false))
+  fireEvent.click(add)
+  fireEvent.change(screen.getByLabelText('Datum'), { target: { value: '' } })
+  fireEvent.change(screen.getByLabelText(/^Betrag/i), { target: { value: '' } })
+  fireEvent.click(screen.getByRole('button', { name: /^Speichern$/i }))
+  const alert = await screen.findByRole('alert')
+  expect(alert.textContent).toMatch(/Bitte prüfen Sie 2 Angaben/)
+  expect(screen.getByLabelText('Datum').getAttribute('aria-invalid')).toBe('true')
+  expect(screen.getByLabelText(/^Betrag/i).getAttribute('aria-invalid')).toBe('true')
+  expect(screen.queryByText('Bitte Mietverhältnis, Datum und einen Betrag angeben.')).toBeNull()
+  expect(sent).toEqual([])
+})
+
+// H3: Eine Aktion ohne Formular meldet ihren Fehler als Mitteilung, nicht oben auf der Seite.
+test('Mietkonto: ein abgelehntes Löschen ist eine Mitteilung, kein Kasten oben auf der Seite', async () => {
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    const method = init?.method ?? 'GET'
+    if (method !== 'GET') return new Response(JSON.stringify({ error: MSG }), { status: 400, headers: { 'content-type': 'application/json' } })
+    const path = url.split('?')[0] ?? url
+    const body = path.startsWith('/api/rentledger/') ? LEDGER
+      : path === '/api/tenancies' ? TENANCIES
+        : path === '/api/payments' ? [{ id: 'p1', tenancyId: 't1', date: `${new Date().getFullYear() - 1}-03-01`, amountCents: 50000, kind: 'rent' }]
+          : path === '/api/properties' ? [{ id: 'objekt-1', name: 'A', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }] : []
+    return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
+  })
+  shell(<Mietkonto />)
+  fireEvent.click(await screen.findByRole('button', { name: /Zahlung löschen/i }))
+  fireEvent.click(await screen.findByRole('button', { name: /^Löschen$/i }))
+  const toast = await screen.findByText(MSG)
+  expect(toast.closest('.toast')).not.toBeNull()
+  expect(document.querySelector('.error:not(.toast)')).toBeNull()
 })
 
 test('Kosten: ein Fehler im Formular steht nach „Abbrechen“ nicht oben auf der Seite', async () => {

@@ -65,6 +65,8 @@ import { usePeriod } from '../period'
 import { PeriodSelect } from '../components/PeriodSelect'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import Drawer from '../components/Drawer'
+import Field from '../components/Field'
+import { useFormError } from '../components/ErrorSummary'
 import PageHeader from '../components/PageHeader'
 import Term from '../components/Term'
 import { AiProgressBadge } from '../components/AiProgress'
@@ -108,6 +110,8 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   const [needsTaxYear, setNeedsTaxYear] = useState(false)
   useEffect(() => { if (!form) setNeedsTaxYear(false) }, [form])
   const [error, setError] = useState('')
+  // Die Fehler des Seitenfensters, im Fuß des Fensters (#346, Schritt 3)
+  const formErrors = useFormError<'description' | 'amount'>()
   // Heizung PR 5: Heizpositionen einer Anlage mit eigener Heizperiode tragen deren Schlüssel.
   const [plants, setPlants] = useState<HeatingPlant[]>([])
   const [heatingPeriod, setHeatingPeriod] = useState('')
@@ -237,7 +241,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
       const res = await api<{ file: string }>('/api/upload', { method: 'POST', body: fd })
       setForm((prev) => (prev ? { ...prev, invoiceFile: res.file } : prev))
     } catch (e) {
-      setError(`Der Beleg wurde nicht hochgeladen: ${errorText(e)}`)
+      formErrors.show(`Der Beleg wurde nicht hochgeladen: ${errorText(e)}`)
     }
   }
 
@@ -360,6 +364,17 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
 
   async function saveItem() {
     if (!form) return
+    // Alles, was hier schiefgeht, gehört zum offenen Fenster und steht in seiner Sammelmeldung.
+    const setError = formErrors.set
+    // Die beiden Pflichtangaben je mit Feld (#346, Schritt 3); die übrigen Prüfungen nennen ihren Ort im Satz.
+    const missing = [
+      ...(!form.description.trim() ? [{ field: 'description' as const, short: 'Beschreibung fehlt', text: 'Beschreibung: Geben Sie an, wofür die Rechnung ist, etwa „Grundsteuer 2025“.' }] : []),
+      ...(!form.amount.trim() ? [{ field: 'amount' as const, short: 'Betrag fehlt', text: 'Betrag: Geben Sie den Rechnungsbetrag ein, etwa 480,00 (eine Gutschrift mit Minus).' }] : []),
+    ]
+    if (missing.length > 0) {
+      formErrors.report(missing)
+      return
+    }
     // Heizung PR 16: nach der Energie der Abrechnung (bei Contracting bezahlt in der Regel der Lieferant den Strom des Kessels).
     const built = buildCostItemBody(form, units, period, tenancies, plantOfForm ? billingEnergy(plantOfForm) : undefined)
     if ('error' in built) {
@@ -505,10 +520,10 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     try {
       await api(`/api/costItems/${i.id}`, { method: 'DELETE' })
     } catch (e) {
-      setError(errorText(e))
+      // Eine Aktion ohne Formular meldet ihren Fehler als Mitteilung, nicht oben auf der Seite (H3).
+      toast(errorText(e), 'error')
       return
     }
-    setError('')
     await load()
     toast(`„${i.description}“ gelöscht.`)
   }
@@ -538,7 +553,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
         subtitle="Alle Rechnungen des Abrechnungsjahres erfassen — manuell oder per KI-Belegauswertung."
         actions={<button className="btn" onClick={() => { setError(''); setForm(newItemForm(units, meters, keyCtx)) }}>+ Kostenposition</button>}
       />
-      {error && !form && <div className="error">{error}</div>}
+      {error && <div className="error">{error}</div>}
       {closedAt && (
         <div className="notice">
           Die Abrechnung {label} ist abgeschlossen (am {fmtDate(closedAt.slice(0, 10))}). Änderungen an den Kosten
@@ -838,13 +853,13 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
           open
           title={form.id ? 'Kostenposition bearbeiten' : 'Neue Kostenposition'}
           subtitle={form.id ? form.description : undefined}
-          onClose={() => { setError(''); setForm(null) }}
+          onClose={() => { formErrors.clear(); setForm(null) }}
           onSubmit={saveItem}
           // Heizanlage und Heizperiode bearbeitet das Fenster neben dem Formular (Durchsicht M3)
           value={{ form, heatingPlantId, heatingPeriod }}
+          errors={formErrors}
           actions={<button className="btn" onClick={saveItem}>{form.id ? 'Übernehmen' : 'Hinzufügen'}</button>}
         >
-          {error && <div className="error">{error}</div>}
           {categoryNotice(form.category, year, property?.cableBuiltBeforeDec2021 ?? null) && <div className="notice">{categoryNotice(form.category, year, property?.cableBuiltBeforeDec2021 ?? null)}</div>}
           <div className="row">
             <label className="field grow">
@@ -875,28 +890,24 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             {form.category === HEATING_CATEGORY && ownPlant && ownPlant.options.length > 0 && (
               <HeatingPeriodSelect options={ownPlant.options} value={heatingPeriod || (ownPlant.options[0]?.value ?? '')} onChange={setHeatingPeriod} />
             )}
-            <label className="field grow">
-              Beschreibung
+            <Field label="Beschreibung" className="grow" {...formErrors.field('description')}>
               <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="z. B. Grundsteuer 2025" />
-            </label>
-            <label className="field grow">
-              Rechnungssteller
-              <input value={form.vendor} onChange={(e) => setForm({ ...form, vendor: e.target.value })} placeholder="optional" />
-            </label>
-            <label className="field grow">
-              Betrag €
-              <input value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} placeholder="z. B. 480,00" />
-              {/* #139: Eine Gutschrift senkt die Kosten des Jahres und wird verteilt wie eine Rechnung. */}
-              <small className="muted">Eine Gutschrift mit Minus eintragen, z. B. -54,00.</small>
-              {/* Laienprobe B19: Welcher Betrag der Messdienstabrechnung gemeint ist, steht dort, wo er eingetragen wird. */}
-              {form.category === HEATING_CATEGORY && form.key === 'amounts' && plants.some((p) => p.method === 'service') && (
-                <small className="notice">
-                  Abrechnung des Messdienstes: Tragen Sie die Kosten vor „Abzüglich CO₂-Kosten Vermieter“ ein, also die Summe der Kosten aller Nutzer plus
-                  den CO₂-Anteil des Vermieters, nicht die Summe nach dem Abzug. Danach füllen Sie auf der Seite Heizkosten die Karte „CO₂-Kosten“ aus;
-                  ihre Probe prüft diesen Betrag.
-                </small>
-              )}
-            </label>
+            </Field>
+            <Field label="Rechnungssteller" optional className="grow">
+              <input value={form.vendor} onChange={(e) => setForm({ ...form, vendor: e.target.value })} />
+            </Field>
+            {/* #139: Eine Gutschrift senkt die Kosten des Jahres und wird verteilt wie eine Rechnung. */}
+            <Field label="Betrag €" className="grow" hint="Eine Gutschrift mit Minus eintragen, z. B. -54,00." {...formErrors.field('amount')}>
+              <input value={form.amount} inputMode="decimal" onChange={(e) => setForm({ ...form, amount: e.target.value })} placeholder="z. B. 480,00" />
+            </Field>
+            {/* Laienprobe B19: Welcher Betrag der Messdienstabrechnung gemeint ist, steht dort, wo er eingetragen wird. */}
+            {form.category === HEATING_CATEGORY && form.key === 'amounts' && plants.some((p) => p.method === 'service') && (
+              <p className="notice">
+                Abrechnung des Messdienstes: Tragen Sie die Kosten vor „Abzüglich CO₂-Kosten Vermieter“ ein, also die Summe der Kosten aller Nutzer plus
+                den CO₂-Anteil des Vermieters, nicht die Summe nach dem Abzug. Danach füllen Sie auf der Seite Heizkosten die Karte „CO₂-Kosten“ aus;
+                ihre Probe prüft diesen Betrag.
+              </p>
+            )}
             <label className="field grow" title="Lohn-/Arbeitskostenanteil nach §35a EStG — kann der Mieter steuerlich absetzen">
               <span>davon <Term id="labor35a">§35a-Lohn</Term> €</span>
               <input value={form.labor35a} onChange={(e) => setForm({ ...form, labor35a: e.target.value })} placeholder="optional" />
@@ -958,17 +969,20 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             {/* Heizung PR 10: Ziel der Heizposition. Bei eigener Abrechnung Pflicht (Teil steht unter „Weitere
                 Angaben“); bei freien Schlüsseln teilt „nur Heizung“ beim Mieterwechsel nach Gradtagen. */}
             {form.category === HEATING_CATEGORY && plantOfForm && (
-              <label className="field grow">
-                <span>Ziel{selfPlant ? '' : ' (beim Mieterwechsel)'}</span>
-                <select aria-label="Ziel" value={targetChoices.some((o) => o.value === form.heatingTarget) ? form.heatingTarget : ''} onChange={(e) => setForm({ ...form, heatingTarget: targetChoices.find((o) => o.value === e.target.value)?.value ?? '' })}>
+              <Field
+                label={`Ziel${selfPlant ? '' : ' (beim Mieterwechsel)'}`}
+                className="grow"
+                announce
+                error={targetInvalid ? TARGET_INVALID : undefined}
+                hint={selfPlant
+                  ? 'Bereitet die Anlage auch das Warmwasser, gehört der Brennstoff zu Heizung und Warmwasser; Mietfuchs teilt ihn nach dem gemessenen Warmwasseranteil. Den Teil der Heizkosten wählen Sie unter „Weitere Angaben“.'
+                  : '„nur Heizung“: Beim Mieterwechsel teilen sich diese Kosten nach Gradtagen statt nach Tagen (§ 9b Abs. 2 HeizkostenV), wenn die Heizanlage so eingestellt ist.'}
+              >
+                <select value={targetChoices.some((o) => o.value === form.heatingTarget) ? form.heatingTarget : ''} onChange={(e) => setForm({ ...form, heatingTarget: targetChoices.find((o) => o.value === e.target.value)?.value ?? '' })}>
                   {selfPlant && (targetChoices.length !== 1 || targetInvalid) && <option value="">— bitte wählen —</option>}
                   {targetChoices.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
-                <small className="muted">{selfPlant
-                  ? 'Bereitet die Anlage auch das Warmwasser, gehört der Brennstoff zu Heizung und Warmwasser; Mietfuchs teilt ihn nach dem gemessenen Warmwasseranteil. Den Teil der Heizkosten wählen Sie unter „Weitere Angaben“.'
-                  : '„nur Heizung“: Beim Mieterwechsel teilen sich diese Kosten nach Gradtagen statt nach Tagen (§ 9b Abs. 2 HeizkostenV), wenn die Heizanlage so eingestellt ist.'}</small>
-                {targetInvalid && <div className="error" role="alert">{TARGET_INVALID}</div>}
-              </label>
+              </Field>
             )}
             {/* #141: anders als dieselbe Kostenart im Vorjahr? Dasselbe sagt die Abrechnung. */}
             {keyChangeNotice(form, units, keyCtx) && (

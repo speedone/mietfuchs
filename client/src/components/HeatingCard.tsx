@@ -22,6 +22,7 @@ import {
   asksFuelContract, editFuelContractNote, FUEL_CONTRACT_OPTIONS, FUEL_CONTRACT_QUESTION, selfSupplyOffer,
   asksGeneration, GENERATION_QUESTION, HEAT_GENERATION_OPTIONS, MAJORITY_EXPLAINED, MAJORITY_OPTIONS, MAJORITY_QUESTION,
 } from '../heatingForm'
+import { ErrorSummary, useFormError } from './ErrorSummary'
 
 // Die Karte „Heizung“ in den Stammdaten (Heizung PR 4, Entwurf 11.2). Ohne Anlage ein Satz und der
 // Knopf „Heizung einrichten“; nichts davon ist Pflicht, und an keiner Zahl ändert sich etwas (11.1).
@@ -38,7 +39,9 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
   const [form, setForm] = useState<HeatingForm | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [assignable, setAssignable] = useState<AssignableHeatingItem[]>([])
-  const [error, setError] = useState('')
+  // Fehler als Sammelmeldung oben in der Karte (#346, Schritt 3)
+  const errors = useFormError()
+  const setError = errors.set
   // Kessel getauscht (Heizung PR 9): die Anlage, die endet, und die Angaben zur neuen.
   const [swap, setSwap] = useState<{ plant: HeatingPlant; form: SwapForm; meters: Meter[] } | null>(null)
   // Einrichtung Schritt 7 (Heizung PR 10): die Anlage, die selbst abrechnen soll.
@@ -60,8 +63,8 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
   }, [load, onChanged])
 
   useEffect(() => {
-    load().catch((e) => setError(errorText(e)))
-  }, [load])
+    load().catch((e) => setError(errorText(e), { focus: false }))
+  }, [load, setError])
 
   async function openNew() {
     setError('')
@@ -281,7 +284,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
   return (
     <div className="card" ref={cardRef}>
       <h2><Term id="heatingSystem">Heizung</Term></h2>
-      {error && !form && !swap && <div className="error">{error}</div>}
+      {!form && !swap && <ErrorSummary errors={errors} />}
       {plants.length === 0 && (
         <>
           <p className="muted">
@@ -322,9 +325,9 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
           onClose={close}
           onSubmit={save}
           value={form}
+          errors={errors}
           actions={<button className="btn" onClick={save}>{editingId ? 'Übernehmen' : 'Anlegen'}</button>}
         >
-          {error && <div className="error">{error}</div>}
           {plants.length > (editingId ? 1 : 0) && (
             <label className="field grow">
               {editingId ? 'Name der Heizanlage' : 'Name der neuen Heizanlage'}
@@ -554,9 +557,9 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
           onSubmit={saveSwap}
           // Nur, was der Vermieter eingibt; die Zähler lädt das Fenster nach dem Öffnen nach (Durchsicht S4)
           value={swap.form}
+          errors={errors}
           actions={<button className="btn" onClick={saveSwap}>Tausch speichern</button>}
         >
-          {error && <div className="error">{error}</div>}
           <p className="muted">
             Die bisherige Heizung endet am Tag vor dem Tausch; eine neue Heizanlage beginnt mit denselben Wohnungen. Lieferungen, Positionen und
             Vorrat bleiben bei der bisherigen. Ist noch Brennstoff im Tank, tragen Sie ihn als Endbestand zum letzten Betriebstag ein. Heizt die

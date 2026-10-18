@@ -166,17 +166,21 @@ export const REMOTE_RULE_TEXT =
 // fehlt im Rumpf, wenn das Feld leer ist, wie bisher.
 // Die Anlage eines Zählers mit Rolle an der Heizanlage (Heizung PR 9): bei einer Anlage diese, ab zwei
 // die gewählte. Ohne Rolle gehört der Zähler zu keiner.
-export function meterPlantId(form: Pick<MeterForm, 'unitId' | 'heatingRole' | 'heatingPlantId'>, plants: readonly { id: string }[]): { plantId: string | null } | { error: string } {
+// Die Felder des Zählerformulars, an denen eine Meldung stehen kann (#346, Schritt 3).
+export type MeterField = 'name' | 'unitId' | 'unit' | 'heatingPlantId' | 'calibratedUntil'
+type MeterError = { error: string; field?: MeterField; short?: string }
+
+export function meterPlantId(form: Pick<MeterForm, 'unitId' | 'heatingRole' | 'heatingPlantId'>, plants: readonly { id: string }[]): { plantId: string | null } | MeterError {
   if (form.unitId || form.heatingRole === '') return { plantId: null }
   if (plants.length === 1) return { plantId: plants[0]?.id ?? null }
   if (plants.some((p) => p.id === form.heatingPlantId)) return { plantId: form.heatingPlantId }
-  return plants.length === 0 ? { plantId: null } : { error: 'Bitte wählen Sie die Heizanlage, zu der der Zähler gehört.' }
+  return plants.length === 0 ? { plantId: null } : { error: 'Bitte wählen Sie die Heizanlage, zu der der Zähler gehört.', field: 'heatingPlantId', short: 'Heizanlage fehlt' }
 }
 
-export function meterBody(form: MeterForm, plantId: string | null): { body: MeterBody } | { error: string } {
-  if (!form.name.trim()) return { error: 'Bitte einen Namen für den Zähler angeben.' }
+export function meterBody(form: MeterForm, plantId: string | null): { body: MeterBody } | MeterError {
+  if (!form.name.trim()) return { error: 'Bitte einen Namen für den Zähler angeben.', field: 'name', short: 'Name fehlt' }
   if (form.type === 'hkv' && !form.unitId) {
-    return { error: 'Ein Heizkostenverteiler sitzt an einem Heizkörper einer Wohnung. Bitte wählen Sie die Wohnung.' }
+    return { error: 'Ein Heizkostenverteiler sitzt an einem Heizkörper einer Wohnung. Bitte wählen Sie die Wohnung.', field: 'unitId', short: 'Wohnung fehlt' }
   }
   const role = form.heatingRole !== '' && heatingRoleOptions(form, plantId !== null).includes(form.heatingRole) ? form.heatingRole : null
   const asks = asksRemote({ ...form, heatingRole: role ?? '' }, plantId !== null)
@@ -188,15 +192,15 @@ export function meterBody(form: MeterForm, plantId: string | null): { body: Mete
   // Bei Sparten mit Auswahl wird nur gespeichert, was gewählt ist (Durchsicht S2, S6). Ohne Wahl darf nur ein schon
   // leer gespeicherter Zähler bleiben, wie er ist; ohne Auswahl gilt wie bisher die Vorgabe der Sparte.
   if (entered === '' && hasKnownUnits(form.type) && (!form.id || form.keptUnit.trim() !== '' || form.unitDropped !== '' || form.type !== form.keptType)) {
-    return { error: 'Bitte wählen Sie die Einheit, die der Zähler zeigt.' }
+    return { error: 'Bitte wählen Sie die Einheit, die der Zähler zeigt.', field: 'unit', short: 'Einheit fehlt' }
   }
   const unitText = entered || (hasKnownUnits(form.type) ? '' : defaultMeterUnit(form.type))
   const unitKept = form.keptUnit !== '' && unitKey(form.type, unitText) === unitKey(form.type, form.keptUnit)
   const unitRefused = unitKept || unitText === '' ? null : unitProblem(form.type, unitText)
-  if (unitRefused !== null) return { error: unitRefused }
+  if (unitRefused !== null) return { error: unitRefused, field: 'unit', short: 'Einheit passt nicht zur Sparte' }
   const until = form.calibratedUntil.trim()
   if (asksCalibration(form) && until !== '' && !/^[1-9]\d{3}$/.test(until)) {
-    return { error: 'Bitte tragen Sie das Eichjahr vierstellig ein, so wie es der Messdienst oder der Eichschein nennt, oder lassen Sie das Feld leer.' }
+    return { error: 'Bitte tragen Sie das Eichjahr vierstellig ein, so wie es der Messdienst oder der Eichschein nennt, oder lassen Sie das Feld leer.', field: 'calibratedUntil', short: 'Vierstellige Jahreszahl' }
   }
   return {
     body: {

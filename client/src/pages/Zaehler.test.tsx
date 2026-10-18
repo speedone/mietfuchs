@@ -2,7 +2,7 @@
 // Leere Felder der Ablesung (#149): Sie wurden als 0 gespeichert. Beim Zählerwechsel entfiel so die
 // Warnung „Endstand fehlt“ (#83), und ein falsches Segment verschob Geld zwischen Mietern.
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { Meter, Reading, Unit } from '../types'
 import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
@@ -67,8 +67,9 @@ test('leerer Zählerstand: Meldung statt einer gespeicherten 0', async () => {
 })
 
 // UI-Durchsicht H3: Die Meldung stand oben auf der Seite, beim Klick 407 px über dem sichtbaren
-// Bereich; es wirkte, als passiere nichts. Jetzt steht sie beim Knopf, als Alarm und ins Bild gerollt.
-test('Ablesung ohne Datum: die Meldung steht beim Knopf, mit role="alert", und rollt ins Bild', async () => {
+// Bereich; es wirkte, als passiere nichts. Jetzt steht sie am Feld und in der Sammelmeldung beim Knopf
+// (#346, Schritt 3), als Alarm und ins Bild gerollt; der Fokus geht auf die Sammelmeldung, ihr Link aufs Feld.
+test('Ablesung ohne Datum: Meldung am Feld und in der Sammelmeldung beim Knopf, die den Fokus bekommt', async () => {
   const scrolled: unknown[] = []
   const original = Element.prototype.scrollIntoView
   Element.prototype.scrollIntoView = function (this: Element, arg?: boolean | ScrollIntoViewOptions) { scrolled.push([this.textContent, arg]) }
@@ -79,19 +80,26 @@ test('Ablesung ohne Datum: die Meldung steht beim Knopf, mit role="alert", und r
     const button = screen.getByRole('button', { name: /Ablesung speichern/ })
     fireEvent.click(button)
     const alert = await screen.findByRole('alert')
-    expect(alert.textContent).toMatch(/Datum/)
-    expect(alert.closest('.reading-panel')).toBe(button.closest('.reading-panel'))
-    expect(scrolled).toEqual([[alert.textContent, { block: 'nearest' }]])
+    expect(alert.textContent).toMatch(/Bitte prüfen Sie 1 Angabe/)
+    expect(alert.textContent).toMatch(/Datum der Ablesung/)
+    const summary = alert.parentElement
+    expect(summary?.closest('.reading-panel')).toBe(button.closest('.reading-panel'))
+    expect(scrolled).toEqual([[summary?.textContent, { block: 'nearest' }]])
+    expect(document.activeElement).toBe(summary)
     expect(sent).toEqual([])
-    // Durchsicht S1 (#341): Der Fokus geht auf das Feld „Datum“, das als ungültig markiert ist.
+    // Am Feld: die kurze Fassung, ungültig markiert und über aria-describedby verbunden.
     const date = screen.getByLabelText(/^Datum/)
-    expect(document.activeElement).toBe(date)
     expect(date.getAttribute('aria-invalid')).toBe('true')
-    expect(date.getAttribute('aria-describedby')).toBe(alert.id)
+    const described = (date.getAttribute('aria-describedby') ?? '').split(' ').map((id) => document.getElementById(id)?.textContent)
+    expect(described).toEqual(['⚠ Fehler: Datum fehlt'])
     expect(screen.getByLabelText(/Zählerstand/).getAttribute('aria-invalid')).toBeNull()
-    // Mit Datum ist die Markierung weg.
+    // Der Link der Sammelmeldung führt aufs Feld.
+    fireEvent.click(within(alert).getByRole('link', { name: /Datum der Ablesung/ }))
+    expect(document.activeElement).toBe(date)
+    // Mit Datum ist die Meldung an beiden Stellen weg.
     fireEvent.change(date, { target: { value: '2025-06-30' } })
     expect(date.getAttribute('aria-invalid')).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
   } finally {
     Element.prototype.scrollIntoView = original
   }

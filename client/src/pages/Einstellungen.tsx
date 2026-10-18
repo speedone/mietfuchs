@@ -8,6 +8,7 @@ import { AiSettings } from '../components/AiSettings'
 import LawOverridesCard from '../components/LawOverridesCard'
 import { useOpenForm, useProperty } from '../property'
 import IbanInput from '../components/IbanInput'
+import { ErrorSummary, useFormError } from '../components/ErrorSummary'
 import { ibanChanged, ibanForSave, ibanToInput } from '../ibanField'
 import { IBAN_LABELS } from '../../../shared/iban.ts'
 
@@ -31,7 +32,8 @@ export default function Einstellungen({ settings, reload, update }: Props) {
   )
   const [restoring, setRestoring] = useState(false)
   const [restoreMsg, setRestoreMsg] = useState('')
-  const [saveError, setSaveError] = useState('')
+  // Die Fehler der Karte „Vermieter & Zahlung“, oben in der Karte (#346, Schritt 3)
+  const saveErrors = useFormError<'iban'>()
 
   async function restore(file: File) {
     const ok = await confirm({
@@ -69,7 +71,7 @@ export default function Einstellungen({ settings, reload, update }: Props) {
     // unverändert mit, damit die übrigen Angaben trotzdem gespeichert werden.
     const iban = ibanForSave(form.iban, settings.iban, IBAN_LABELS.settings)
     if ('error' in iban) {
-      setSaveError(iban.error)
+      saveErrors.report([{ field: 'iban', short: 'IBAN ungültig', text: iban.error }])
       return
     }
     // Lehnt der Server ab (#146), steht sein Satz unter den Feldern.
@@ -83,10 +85,10 @@ export default function Einstellungen({ settings, reload, update }: Props) {
         }),
       })
     } catch (e) {
-      setSaveError(errorText(e))
+      saveErrors.show(errorText(e))
       return
     }
-    setSaveError('')
+    saveErrors.clear()
     await reload()
     toast('Einstellungen gespeichert.')
   }
@@ -97,6 +99,7 @@ export default function Einstellungen({ settings, reload, update }: Props) {
 
       <div className="card">
         <h2>Vermieter &amp; Zahlung</h2>
+        <ErrorSummary errors={saveErrors} />
         <p className="muted">
           Erscheint im Kopf und in der Zahlungsaufforderung der gedruckten Abrechnung.
           {properties.length > 1 && ' Die Angaben gelten als Vorgabe für alle Objekte; in den Stammdaten kann ein Objekt abweichen.'}
@@ -106,7 +109,7 @@ export default function Einstellungen({ settings, reload, update }: Props) {
             Name des Vermieters
             <input value={form.landlordName} onChange={(e) => setForm({ ...form, landlordName: e.target.value })} placeholder="Vor- und Nachname" />
           </label>
-          <IbanInput label="IBAN für Nachzahlungen" value={form.iban} stored={settings.iban} onChange={(iban) => setForm({ ...form, iban })} placeholder="DE.." />
+          <IbanInput label="IBAN für Nachzahlungen" value={form.iban} stored={settings.iban} onChange={(iban) => setForm({ ...form, iban })} placeholder="DE.." {...saveErrors.field('iban')} />
           <label className="field">
             Zahlungsfrist (Tage)
             <input value={form.paymentDeadlineDays} onChange={(e) => setForm({ ...form, paymentDeadlineDays: e.target.value })} className="input-xs" />
@@ -116,7 +119,6 @@ export default function Einstellungen({ settings, reload, update }: Props) {
         <div className="row">
           <button className="btn" onClick={save}>Speichern</button>
         </div>
-        {saveError && <div className="error">{saveError}</div>}
       </div>
 
       <AiSettings settings={settings} reload={reload} />

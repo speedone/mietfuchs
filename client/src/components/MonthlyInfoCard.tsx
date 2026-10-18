@@ -12,6 +12,7 @@ import MonthlyInfoSheet from './MonthlyInfoSheet'
 import { EMPTY_ROW_FORM, monthStatus, periodReferenceText, rowBody, rowToForm, tempBody, type MonthlyRowForm } from '../monthlyInfoForm'
 import { monthName } from '../../../shared/monthlyInfo.ts'
 import type { MonthlyInfoRow, MonthlyInfoView } from '../types'
+import { ErrorSummary, useFormError } from './ErrorSummary'
 
 // Die Farbe des Stands: grün mitgeteilt, gelb offen, rot unvollständig, grau ohne Pflicht in diesem Monat.
 const TONE_CHIP = { ok: 'gruen', open: 'gelb', warn: 'rot', none: '' } as const
@@ -20,7 +21,9 @@ export default function MonthlyInfoCard({ plantId, period, propertyName = '' }: 
   const [view, setView] = useState<MonthlyInfoView | null>(null)
   const [forms, setForms] = useState<Record<string, MonthlyRowForm>>({})
   const [printing, setPrinting] = useState<string | null>(null)
-  const [error, setError] = useState('')
+  // Fehler als Sammelmeldung oben in der Karte (#346, Schritt 3)
+  const errors = useFormError()
+  const setError = errors.set
   const [temp, setTemp] = useState('')
   const toast = useToast()
   // Ungespeicherte Werte zählen als offenes Formular (#346, 7a), verglichen mit dem geladenen Stand; nach dem
@@ -36,7 +39,7 @@ export default function MonthlyInfoCard({ plantId, period, propertyName = '' }: 
       setTemp(tempText(v))
       setError('')
     } catch (e) {
-      setError(errorText(e))
+      setError(errorText(e), { focus: false })
     }
   }
   useEffect(() => {
@@ -93,7 +96,7 @@ export default function MonthlyInfoCard({ plantId, period, propertyName = '' }: 
     }
   }
 
-  if (!view || !view.managed || view.elsewhere || view.months.length === 0) return error ? <div className="error">{error}</div> : null
+  if (!view || !view.managed || view.elsewhere || view.months.length === 0) return errors.state.problems.length > 0 ? <ErrorSummary errors={errors} /> : null
   const set = (month: string, key: keyof MonthlyRowForm, value: string) =>
     setForms((f) => ({ ...f, [month]: { ...(f[month] ?? EMPTY_ROW_FORM), [key]: value } }))
   const toPrint = view.months.find((m) => m.month === printing)
@@ -103,6 +106,7 @@ export default function MonthlyInfoCard({ plantId, period, propertyName = '' }: 
   return (
     <div className="card">
       <h2><Term id="monthlyConsumptionInfo">Monatliche Verbrauchsinformation</Term></h2>
+      <ErrorSummary errors={errors} />
       <p className="muted">
         Zähler Ihrer Mieter sind aus der Ferne ablesbar. Dann steht jedem Mieter jeden Monat seine Verbrauchsinformation zu. Mietfuchs erstellt sie aus
         den Zählerständen genau am Monatsende; zukommen lassen müssen Sie sie selbst, als Brief oder E-Mail, und hier vermerken Sie, wann. Den
@@ -121,7 +125,6 @@ export default function MonthlyInfoCard({ plantId, period, propertyName = '' }: 
       ) : gaps.has('dhwTemp') && (
         <p className="muted">Die mittlere Warmwassertemperatur für die Umrechnung tragen Sie in der Karte „Warmwasser“ dieser Heizperiode ein; auch eine geschätzte genügt.</p>
       )}
-      {error && <div className="error">{error}</div>}
       <Table>
         <thead><tr><th>Monat</th><th>Stand</th><th>Vergleichswert (kWh je m²)</th><th>Quelle</th><th>Mitgeteilt am</th><th /></tr></thead>
         <tbody>

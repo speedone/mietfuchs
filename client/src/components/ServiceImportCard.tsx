@@ -9,6 +9,7 @@ import ServiceImportReview from './ServiceImportReview'
 import type { ImportContext } from '../serviceImport'
 import { startYearOf } from '../../../shared/period.ts'
 import type { BillingPeriod, CostItem, HeatingPeriodView, HeatingPlant, ServiceExtractResult, Tenancy, Unit } from '../types'
+import { ErrorSummary, useFormError } from './ErrorSummary'
 
 export default function ServiceImportCard({ plant, view, object, tenancies, units, items = [], co2 = true, onSaved }: {
   plant: Pick<HeatingPlant, 'id' | 'propertyId'>
@@ -26,7 +27,9 @@ export default function ServiceImportCard({ plant, view, object, tenancies, unit
   const [result, setResult] = useState<ServiceExtractResult | null>(null)
   const [progress, setProgress] = useState<AiProgress | null>(null)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  // Fehler als Sammelmeldung oben in der Karte (#346, Schritt 3)
+  const errors = useFormError()
+  const setError = errors.set
   // Das Auslesen und der Vorschlag zählen als offenes Formular (#346, 7a): Gespeichert ist nur der Beleg, ein
   // Seitenwechsel verlöre den Vorschlag, und ihn neu zu holen kostet einen weiteren Lauf der KI. „Schließen“
   // legt ihn weg, wenn alles übernommen ist.
@@ -60,6 +63,7 @@ export default function ServiceImportCard({ plant, view, object, tenancies, unit
   return (
     <div className="card">
       <h2>Messdienstabrechnung auslesen</h2>
+      <ErrorSummary errors={errors} />
       <p className="muted">
         Laden Sie die Heiz- und Warmwasserkostenabrechnung Ihres Messdienstes hoch. Mietfuchs liest Nutzerbeträge, Summen, CO₂-Angaben und
         die Ermittlung des Warmwassers und schlägt sie vor; gespeichert wird erst, wenn Sie übernehmen. Bei gescannten Abrechnungen liest
@@ -76,7 +80,6 @@ export default function ServiceImportCard({ plant, view, object, tenancies, unit
           {progressText(progress)} <button className="btn secondary" onClick={() => abort.current?.abort()}>Abbrechen</button>
         </p>
       )}
-      {error && <div className="error">{error}</div>}
       {result && <ServiceImportReview key={result.file} x={result.extraction} file={result.file} ctx={ctx} view={view} co2={co2} onDone={onSaved} />}
       {result && (
         <div className="row">

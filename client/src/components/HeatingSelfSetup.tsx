@@ -3,10 +3,12 @@ import type { AreaBasisHeat, CaptureMethod, HeatingPart, HeatingPlant, HeatingTa
 import { billingEnergy } from '../../../shared/heatDelivery.ts'
 import { api, ApiError, errorText, fmtEuro } from '../api'
 import Drawer from './Drawer'
+import Field from './Field'
+import { useFormError } from './ErrorSummary'
 import { useToast } from './feedback'
 import Term from './Term'
 import {
-  CAPTURE_SELF_OPTIONS, captureHint, HOT_WATER_OPTIONS, PART_OPTIONS, emptySelfSetup, forcedShare, itemsFromConflict, selfSetupBody, shareBounds, targetOptions,
+  CAPTURE_SELF_OPTIONS, captureHint, HOT_WATER_OPTIONS, PART_OPTIONS, emptySelfSetup, forcedShare, itemsFromConflict, selfSetupBody, shareBounds, targetOptions, type SelfSetupField,
 } from '../heatingSelfForm'
 import { INSULATION_OPTIONS, INSULATION_QUESTION, insulationAsked, insulationExplained, percentOf, unsureShareHint } from '../heatingSelfView'
 
@@ -18,7 +20,7 @@ export default function HeatingSelfSetup({ plant, period, periodLabel, onDone, o
   plant: HeatingPlant; period: string; periodLabel?: string; onDone: (p: HeatingPlant) => void; onCancel: () => void
 }) {
   const [form, setForm] = useState(() => emptySelfSetup(plant, period))
-  const [error, setError] = useState('')
+  const errors = useFormError<SelfSetupField>()
   const toast = useToast()
   const [busy, setBusy] = useState(false)
   const { min, max } = shareBounds()
@@ -30,20 +32,20 @@ export default function HeatingSelfSetup({ plant, period, periodLabel, onDone, o
   async function submit() {
     const result = selfSetupBody(form, energy)
     if ('error' in result) {
-      setError(result.error)
+      errors.report([{ field: result.field, short: result.short, text: result.error }])
       return
     }
     setBusy(true)
     try {
       const done = await api<{ plant: HeatingPlant; created: unknown[]; converted: number; estimatesNotice?: string | null }>(`/api/heating-plants/${plant.id}/self`, { method: 'PUT', body: JSON.stringify(result.body) })
-      setError('')
+      errors.clear()
       // Durchsicht von #242, G-I1: Schätzungen, die nach dem Wechsel der Erfassung nicht mehr rechnen.
       if (done.estimatesNotice) toast(done.estimatesNotice, 'error')
       onDone(done.plant)
     } catch (e) {
       const items = e instanceof ApiError && e.status === 409 ? itemsFromConflict(e.data) : null
       if (items) setForm({ ...form, items: items.map((x) => form.items.find((y) => y.id === x.id) ?? x) })
-      setError(errorText(e))
+      errors.show(errorText(e))
     } finally {
       setBusy(false)
     }
@@ -58,36 +60,32 @@ export default function HeatingSelfSetup({ plant, period, periodLabel, onDone, o
       value={form}
       cancelLabel="Später"
       busy={busy}
+      errors={errors}
       actions={<button className="btn" onClick={submit} disabled={busy}>Umstellen</button>}
     >
-      {error && <div className="error">{error}</div>}
       <p className="muted">
         Mietfuchs verteilt die Kosten dieser Heizanlage dann nach der <Term id="heatingSystem">Heizkostenverordnung</Term>: einen Teil nach dem
         gemessenen Verbrauch, den Rest nach der Fläche. Fehlende Wärme- und Warmwasserzähler legt Mietfuchs an; die Stände tragen Sie auf der Seite Zähler ein.
       </p>
-      <label className="field grow">
-        Bereitet diese Heizung auch das Warmwasser?
+      <Field label="Bereitet diese Heizung auch das Warmwasser?" className="grow" {...errors.field('hotWater')}>
         <select value={form.hotWater} onChange={(e) => setForm({ ...form, hotWater: e.target.value as HotWater | '', items: form.items.map((x) => ({ ...x, heatingTarget: '' })) })}>
           {form.hotWater === '' && <option value="">— bitte wählen —</option>}
           {HOT_WATER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
-      </label>
-      <label className="field grow">
-        Womit wird der Verbrauch erfasst?
+      </Field>
+      <Field label="Womit wird der Verbrauch erfasst?" className="grow" hint={captureHint(form.capture)} {...errors.field('capture')}>
         <select value={form.capture} onChange={(e) => setForm({ ...form, capture: e.target.value as CaptureMethod })}>
           {CAPTURE_SELF_OPTIONS.map((o) => <option key={o.value} value={o.value} disabled={o.later}>{o.label}</option>)}
         </select>
-        <small className="muted">{captureHint(form.capture)}</small>
-      </label>
+      </Field>
       {insulationAsked(energy) && (
         <>
-          <label className="field grow">
-            <span>{INSULATION_QUESTION} (<Term id="forcedConsumptionShare">Pflichtanteil</Term>)</span>
+          <Field label={<>{INSULATION_QUESTION} (<Term id="forcedConsumptionShare">Pflichtanteil</Term>)</>} className="grow" {...errors.field('insulation')}>
             <select value={form.insulation} onChange={(e) => setForm({ ...form, insulation: e.target.value as InsulationRule | '' })}>
               <option value="">— bitte wählen —</option>
               {INSULATION_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
-          </label>
+          </Field>
           <p className="muted">{insulationExplained()}</p>
         </>
       )}
@@ -98,16 +96,14 @@ export default function HeatingSelfSetup({ plant, period, periodLabel, onDone, o
         künftige und durch Erklärung gegenüber den Mietern (§ 6 Abs. 4 HeizkostenV).
       </p>
       <div className="row">
-        <label className="field">
-          Heizung in %
+        <Field label="Heizung in %" width="s" {...errors.field('share')}>
           <input inputMode="decimal" value={forced !== null && !form.above70Agreed ? String(forced) : form.share} disabled={forced !== null && !form.above70Agreed}
             onChange={(e) => setForm({ ...form, share: e.target.value, waterShare: form.waterShare === '' || form.waterShare === form.share ? e.target.value : form.waterShare })} />
-        </label>
+        </Field>
         {form.hotWater !== 'none' && (
-          <label className="field">
-            Warmwasser in %
+          <Field label="Warmwasser in %" width="s" {...errors.field('waterShare')}>
             <input inputMode="decimal" value={form.waterShare} onChange={(e) => setForm({ ...form, waterShare: e.target.value })} />
-          </label>
+          </Field>
         )}
       </div>
       {/* § 10 HeizkostenV (Heizung PR 14): Höhere Sätze als 70 % aus einer Vereinbarung bleiben unberührt. */}
@@ -144,20 +140,18 @@ export default function HeatingSelfSetup({ plant, period, periodLabel, onDone, o
             return (
               <div className="row" key={row.id}>
                 <span className="grow">„{row.description}“ · {fmtEuro(row.amountCents)}</span>
-                <label className="field">
-                  Teil für „{row.description}“
+                <Field label={<>Teil für „{row.description}“</>} {...errors.field(`part:${row.id}`)}>
                   <select value={row.heatingPart} onChange={(e) => set({ heatingPart: e.target.value as HeatingPart | '', heatingTarget: '' })}>
                     <option value="">— bitte wählen —</option>
                     {PART_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
-                </label>
-                <label className="field">
-                  Ziel für „{row.description}“
+                </Field>
+                <Field label={<>Ziel für „{row.description}“</>} {...errors.field(`target:${row.id}`)}>
                   <select value={targets.some((o) => o.value === row.heatingTarget) ? row.heatingTarget : ''} onChange={(e) => set({ heatingTarget: e.target.value as HeatingTarget | '' })}>
                     <option value="">— bitte wählen —</option>
                     {targets.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
-                </label>
+                </Field>
               </div>
             )
           })}

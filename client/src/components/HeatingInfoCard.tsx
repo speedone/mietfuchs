@@ -6,6 +6,7 @@ import Term from './Term'
 import { useOpenWhenDiffers } from '../useDraft'
 import { CONTRACT_HELP, CONTRACT_OPTIONS, contractBody, contractToForm, dwdHint, infoBody, infoToForm, type ContractForm, type InfoForm } from '../heatingInfoForm'
 import { inheritedText } from '../heatingRulesForm'
+import { ErrorSummary, useFormError } from './ErrorSummary'
 
 // Karte „Angaben zur Abrechnung (§ 6a)“ (Heizung PR 14): was Mietfuchs für die Informationen nach § 6a Abs. 3
 // HeizkostenV nicht selbst kennt. Die Vergleiche (Nr. 4, 5) rechnet Mietfuchs nur bei eigener Abrechnung; dort
@@ -14,7 +15,9 @@ export default function HeatingInfoCard({ plant, view, onChanged }: { plant: Hea
   const toast = useToast()
   const [form, setForm] = useState<InfoForm>(() => infoToForm(view.info))
   const [contract, setContract] = useState<ContractForm>(() => contractToForm(view.rules.consumerContract))
-  const [error, setError] = useState('')
+  // Fehler als Sammelmeldung oben in der Karte (#346, Schritt 3)
+  const errors = useFormError()
+  const setError = errors.set
   // Eine ungespeicherte Eingabe zählt als offenes Formular: Seiten-, Objekt- und Zeitraumwechsel fragen (#346, 7a).
   const markSaved = useOpenWhenDiffers({ form, contract }, { form: infoToForm(view.info), contract: contractToForm(view.rules.consumerContract) })
   const self = plant.method === 'self'
@@ -46,12 +49,12 @@ export default function HeatingInfoCard({ plant, view, onChanged }: { plant: Hea
   return (
     <div className="card no-print">
       <h3><Term id="billingInfo">Angaben zur Abrechnung (§ 6a)</Term> · {view.label}</h3>
+      <ErrorSummary errors={errors} />
       <p className="muted">
         Mietfuchs druckt die Informationen nach § 6a HeizkostenV mit der Abrechnung. Energieträger und Kontaktadressen kennt es selbst, die Entgelte der
         Erfassung aus den Positionen mit dem Teil „Messdienst, Ablesung, Geräte“; was hier fehlt, nennt die Abrechnung mit der Kürzung, die die Mieter dann
         erklären dürfen.
       </p>
-      {error && <div className="error">{error}</div>}
       <label className="field grow">
         <span>Steuern, Abgaben und Zölle laut Rechnung des Versorgers</span>
         <input value={form.taxes} disabled={view.closed} onChange={set('taxes')} placeholder="z. B. Energiesteuer 312,00 €, Umsatzsteuer 19 %" />

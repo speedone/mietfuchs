@@ -5,10 +5,13 @@ import { useState } from 'react'
 import { api, errorText } from '../api'
 import { cutoffReadingBody, type CutoffForm } from '../hcaForm'
 import { useOpenWhenDiffers } from '../useDraft'
+import { ErrorSummary, useFormError } from './ErrorSummary'
 
 export default function CutoffReadingForm({ meterId, onSaved }: { meterId: string; onSaved: () => void }) {
   const [form, setForm] = useState<CutoffForm>({ date: '', value: '' })
-  const [error, setError] = useState('')
+  // Fehler als Sammelmeldung oben in der Karte (#346, Schritt 3)
+  const errors = useFormError()
+  const setError = errors.set
   // Ein angefangener Stichtagswert zählt als offenes Formular (#346, 7a); nach dem Speichern ist das Formular leer.
   useOpenWhenDiffers(form, { date: '', value: '' })
   async function save() {
@@ -40,7 +43,7 @@ export default function CutoffReadingForm({ meterId, onSaved }: { meterId: strin
         </label>
         <button className="btn secondary" onClick={() => void save()}>Stichtagswert speichern</button>
       </div>
-      {error && <div className="error">{error}</div>}
+      <ErrorSummary errors={errors} />
     </div>
   )
 }

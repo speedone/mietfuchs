@@ -596,3 +596,62 @@ test('S24: was am Fensterrand steht, hält die Sicherheitsränder ein', () => {
   expect(fixedElements.length).toBeGreaterThan(0)
   expect(fixedElements.filter(({ cls }) => !cls.some((c) => safeClasses.has(c))).map(({ file, cls }) => `${file}: ${cls.join(' ')}`)).toEqual([])
 })
+
+// S15 (#346 Schritt 3, Spezifikation Abschnitt 9): Fehler stehen am Feld und in der Sammelmeldung, nicht in einem
+// eigenen roten Kasten je Seite. `className="error"` und `role="alert"` gibt es deshalb nur in den Bausteinen dafür:
+// Feld (Field.tsx), Sammelmeldung (ErrorSummary.tsx), Mitteilung und Ansage der Rückfrage (feedback.tsx) und der
+// Entwurf am Feld (DraftActions.tsx). Gezählt werden die Stellen je Datei; die Liste darunter nennt, was heute noch
+// so steht, mit Anzahl, und darf nur kleiner werden (UI-Durchsicht H3, M5).
+const ERROR_FILES = new Set(['./components/Field.tsx', './components/ErrorSummary.tsx', './components/feedback.tsx', './components/DraftActions.tsx'])
+const ERROR_EXCEPTIONS = new Map<string, number>([
+  // Fehler beim Laden der Seite, oben auf der Seite (CLAUDE.md: „Die Meldung oben auf der Seite bleibt für Ladefehler“)
+  ['./pages/Abrechnung.tsx', 1], // dazu Abschließen und Wiederöffnen (`attempt`), Aktionen ohne Formular; Schritt 10
+  ['./pages/Cockpit.tsx', 1],
+  ['./pages/Heizkosten.tsx', 1],
+  ['./pages/Mietkonto.tsx', 1],
+  ['./pages/Steuer.tsx', 1],
+  ['./pages/Uebersicht.tsx', 1],
+  ['./components/Co2SheetView.tsx', 1],
+  // Ladefehler und je Zähler die Meldungen der Ablesungen als Hinweis in der Tabelle (Inhalt, kein Formularfehler)
+  ['./pages/Zaehler.tsx', 2],
+  // Ladefehler und der Mieterwechsel, der mit Schritt 7 ins Seitenfenster kommt
+  ['./pages/Stammdaten.tsx', 2],
+  // Ladefehler und das Ergebnis je Beleg in der Warteschlange der Auswertung (Inhalt der Liste)
+  ['./pages/Kosten.tsx', 2],
+  ['./pages/Schnellerfassung.tsx', 2],
+  // Was die Vorschau der Buchung ablehnt, je Zeile mit „Position öffnen“ (Befund der Vorschau)
+  ['./components/AssessmentReview.tsx', 1],
+  // Ladefehler, die Belegmappe und „Betrag prüfen“ im Posteingang (Entwurf am Feld mit „Position öffnen“)
+  ['./pages/Belege.tsx', 3],
+  // Ergebnis einer Vorschau oder Probe als Befund, kein Formularfehler: gesperrte Zeiträume, abgelaufene Fristen, die Probe
+  ['./components/PeriodCard.tsx', 2],
+  ['./components/HeatingPeriodSection.tsx', 3],
+  ['./components/Co2Card.tsx', 1],
+  // Das Ergebnis des Wiederherstellens (Fehler oder ok) unter dem Knopf
+  ['./pages/Einstellungen.tsx', 1],
+])
+/** Die Stellen einer Datei mit der Klasse `error` oder der Rolle `alert`. */
+const errorUses = (src: string): string[] => {
+  const out: string[] = []
+  for (const m of src.matchAll(/className=(?:"([^"]*)"|'([^']*)'|\{((?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*)\})/g)) {
+    const value = m[1] ?? m[2] ?? m[3] ?? ''
+    if (/(?:^|[\s'"`])error(?=[\s'"`]|$)/.test(value)) out.push(m[0])
+  }
+  for (const m of src.matchAll(/role=(?:["']alert["']|\{(?:[^{}]|\{[^{}]*\})*['"`]alert['"`](?:[^{}]|\{[^{}]*\})*\})/g)) out.push(m[0])
+  for (const m of src.matchAll(/setAttribute\(\s*['"]role['"][^)]*['"]alert['"]/g)) out.push(m[0])
+  return out
+}
+test('S15: Fehlerkästen und role="alert" nur in den Bausteinen für Fehler', () => {
+  // Probe des Prüfers: alle Schreibweisen, und nichts, was nur ähnlich heißt
+  expect(errorUses(`<div className="error">x</div> <span className="field-message error small">y</span> <p className={'error'} /> <b className={\`error \${x}\`} />`)).toHaveLength(4)
+  expect(errorUses(`<p role="alert" /> <p role={bad ? 'alert' : undefined} /> el.setAttribute('role', kind === 'error' ? 'alert' : 'status')`)).toHaveLength(3)
+  expect(errorUses(`<div role="alertdialog" className="error-summary is-error" /> <i className="field-message is-error" /> <u className={ok ? 'ok' : 'warn'} />`)).toEqual([])
+  for (const file of ERROR_FILES) expect(sources[file], `${file} fehlt`).toBeTruthy()
+  const counts = new Map(files.filter((f) => !ERROR_FILES.has(f)).map((f) => [f, errorUses(sources[f] ?? '').length] as const).filter(([, n]) => n > 0))
+  for (const [file, allowed] of ERROR_EXCEPTIONS) {
+    const n = counts.get(file) ?? 0
+    expect(n, `${file}: mehr Stellen als erlaubt; ein Fehler gehört an <Field> und in die <ErrorSummary>`).toBeLessThanOrEqual(allowed)
+    expect(n, `${file}: weniger Stellen als in der Ausnahmeliste; die Zahl dort senken oder den Eintrag streichen`).toBe(allowed)
+  }
+  expect([...counts].filter(([file]) => !ERROR_EXCEPTIONS.has(file)).map(([file, n]) => `${file}: ${n}`)).toEqual([])
+})

@@ -14,6 +14,7 @@ import Table from './Table'
 import { useConfirm } from './feedback'
 import DraftActions from './DraftActions'
 import { useDraft, useOpenWhenDiffers } from '../useDraft'
+import { ErrorSummary, useFormError } from './ErrorSummary'
 
 type Props = {
   assessment: AssessmentView
@@ -37,7 +38,9 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
   // Die Erfolgsmeldung samt der Gestalt der Zeilen, die die Buchung hinterlassen hat
   const [booked, setBooked] = useState<{ lines: string[]; shape: string } | null>(null)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  // Fehler als Sammelmeldung oben in der Karte (#346, Schritt 3)
+  const errors = useFormError()
+  const setError = errors.set
   // Die Eingaben beginnen von vorn, wenn sich Zustand oder Nummern der Zeilen ändern, also nach
   // einer Buchung dieses Belegs. Nicht bei jeder neuen Antwort: Bucht der Nutzer einen anderen
   // Beleg, lädt die Seite alle Auswertungen neu, und was er hier gerade eingibt, bliebe sonst
@@ -278,7 +281,7 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
           })}
         </div>
       )}
-      {error && <div className="error">{error}</div>}
+      <ErrorSummary errors={errors} />
       {booked && <div className="notice" aria-label="Gebucht">✓ Gebucht: {booked.lines.join(' · ')}</div>}
       <div className="row center">
         <a href={`/uploads/${encodeURIComponent(a.file)}`} target="_blank" rel="noreferrer">📎 Beleg ansehen</a>
