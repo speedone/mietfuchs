@@ -450,7 +450,7 @@ const drawerProblems = (tag: string): string[] => {
   // Formularzustands (`setForm(null)`), gleich mit welcher Beschriftung.
   const onClose = (propExpr(tag, 'onClose') ?? '').trim()
   const closer = /^[A-Za-z_$][\w$.]*$/.test(onClose) ? onClose : null
-  const callsCloser = closer !== null && new RegExp(`(?:\\b|\\{)${closer.replace(/[.$]/g, '\\$&')}\\s*(?:\\(|\\})`).test(actions)
+  const callsCloser = closer !== null && new RegExp(`(?:\\b|\\{)${closer.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*(?:\\(|\\})`).test(actions)
   if (/Abbrechen|Später|drawer-hint|\bonClose\b|btn ghost/.test(actions) || /\bset[A-Z]\w*\(\s*null\s*\)/.test(actions) || callsCloser) {
     problems.push('eigener Weg zum Schließen in actions')
   }
