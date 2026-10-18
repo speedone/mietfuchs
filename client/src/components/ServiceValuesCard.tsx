@@ -8,6 +8,7 @@ import Term from './Term'
 import { useOpenWhenDiffers } from '../useDraft'
 import { emptyServiceRow, SERVICE_UNIT_OPTIONS, serviceRowsOf, serviceUnitOfOption, serviceValuesBody, SERVICE_VALUES_HINTS, type ServiceRowForm } from '../hcaForm'
 import type { HeatingServiceValue, PeriodKey } from '../types'
+import { ErrorSummary, useFormError } from './ErrorSummary'
 
 type Props = {
   plantId: string
@@ -25,7 +26,9 @@ type Props = {
 export default function ServiceValuesCard({ plantId, period, from, to, closed, units, values, remoteUnknown = false, onSaved }: Props) {
   const savedRows = (): ServiceRowForm[] => (values.length > 0 ? serviceRowsOf(values) : units.map((u) => ({ ...emptyServiceRow(from, to), unitId: u.id })))
   const [rows, setRows] = useState<ServiceRowForm[]>(savedRows)
-  const [error, setError] = useState('')
+  // Fehler als Sammelmeldung oben in der Karte (#346, Schritt 3)
+  const errors = useFormError()
+  const setError = errors.set
   // Eine ungespeicherte Eingabe zählt als offenes Formular: Seiten-, Objekt- und Zeitraumwechsel fragen (#346, 7a).
   const markSaved = useOpenWhenDiffers(rows, savedRows())
   const toast = useToast()
@@ -51,6 +54,7 @@ export default function ServiceValuesCard({ plantId, period, from, to, closed, u
   return (
     <div className="card">
       <h2>Werte des <Term id="serviceReading">Ablesedienstes</Term></h2>
+      <ErrorSummary errors={errors} />
       {SERVICE_VALUES_HINTS.map((h) => <p className="muted" key={h}>{h}</p>)}
       {remoteUnknown && <p className="muted">Ob die Geräte aus der Ferne ablesbar sind, tragen Sie in den Stammdaten bei der Heizanlage unter „Ändern“ ein; Mietfuchs kennt die Geräte des Ablesedienstes nicht und braucht die Angabe für die Kürzung nach § 12 Abs. 1 Satz 2 HeizkostenV.</p>}
       {rows.map((r, i) => (
@@ -75,7 +79,6 @@ export default function ServiceValuesCard({ plantId, period, from, to, closed, u
           {!closed && <button type="button" className="btn ghost" onClick={() => setRows(rows.filter((_, k) => k !== i))}>Zeile entfernen</button>}
         </div>
       ))}
-      {error && <div className="error">{error}</div>}
       {!closed && (
         <div className="row">
           <button type="button" className="btn ghost" onClick={() => setRows([...rows, emptyServiceRow(from, to, rows[rows.length - 1]?.heatUnit ?? 'units')])}>+ weitere Zeile</button>

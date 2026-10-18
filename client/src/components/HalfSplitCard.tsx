@@ -8,6 +8,7 @@ import { useOpenWhenDiffers } from '../useDraft'
 import { APPLICATION_FROM, FIRST_USE_UNTIL, HALF_SPLIT_WHAT, HALF_SPLIT_YEAR, halfSplitBody, halfSplitToForm, INSTALLED_AFTER, noticeBody, noticeTenancies, PRIOR_DUTY_EXPLAINED, PRIOR_DUTY_QUESTION, TRI_OPTIONS, type HalfSplitBody, type NoticeTenancy, type TriState } from '../halfSplitForm'
 import { halfSplitFirstDay } from '../../../shared/law/co2kostaufg.ts'
 import type { HeatingEnergy, HeatingPlant } from '../types'
+import { ErrorSummary, useFormError } from './ErrorSummary'
 
 export default function HalfSplitCard({ plant, tenancies, onSaved, onNoticeSaved }: {
   plant: HalfSplitBody & Pick<HeatingPlant, 'units'> & { id: string; energy: HeatingEnergy }
@@ -19,7 +20,9 @@ export default function HalfSplitCard({ plant, tenancies, onSaved, onNoticeSaved
 }) {
   const [form, setForm] = useState(halfSplitToForm(plant))
   const [notices, setNotices] = useState<Record<string, string>>(() => Object.fromEntries(tenancies.map((t) => [t.id, t.halfSplitNoticeOn ?? ''])))
-  const [error, setError] = useState('')
+  // Fehler als Sammelmeldung oben in der Karte (#346, Schritt 3)
+  const errors = useFormError()
+  const setError = errors.set
   // Eine ungespeicherte Eingabe zählt als offenes Formular: Seiten-, Objekt- und Zeitraumwechsel fragen (#346, 7a).
   // Gezählt wird, was die Karte zeigt (ohne Einbau keine weiteren Fragen), und je Mitteilung gegen ihren
   // gespeicherten Stand; eine gespeicherte Mitteilung gilt sofort als gespeichert, auch bevor die
@@ -70,6 +73,7 @@ export default function HalfSplitCard({ plant, tenancies, onSaved, onNoticeSaved
   return (
     <div className="card">
       <h2>Heizung nach <Term id="co2HalfSplit">§ 43 GModG</Term> {`(ab ${HALF_SPLIT_YEAR})`}</h2>
+      <ErrorSummary errors={errors} />
       <p className="muted">{`Nur für eine Gas-, Öl- oder Flüssiggasheizung, die nach dem ${INSTALLED_AFTER} in ein bestehendes Gebäude eingebaut wurde, oder eine solche Heizung in einem Neubau. ${HALF_SPLIT_WHAT}`}</p>
       <label className="field">
         Tag des Einbaus
@@ -128,7 +132,6 @@ export default function HalfSplitCard({ plant, tenancies, onSaved, onNoticeSaved
           ))}
         </div>
       )}
-      {error && <div className="error">{error}</div>}
     </div>
   )
 }

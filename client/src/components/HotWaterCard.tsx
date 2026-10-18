@@ -13,13 +13,16 @@ import {
   type FormulaForm, type HotWaterChoice,
 } from '../heatingForm'
 import type { HeatingPeriodView, HeatingPlant } from '../types'
+import { ErrorSummary, useFormError } from './ErrorSummary'
 
 export default function HotWaterCard({ view, plant, onSaved }: { view: HeatingPeriodView; plant: Pick<HeatingPlant, 'method' | 'heatGeneration'>; onSaved: () => void }) {
   const self = plant.method === 'self'
   const [choice, setChoice] = useState<HotWaterChoice>(view.hotWater.dhwMethod ?? (self ? 'heatMeter' : ''))
   const [unmeasurable, setUnmeasurable] = useState(view.hotWater.dhwUnmeasurable === true)
   const [formula, setFormula] = useState<FormulaForm>(formulaFormOf(view.hotWater))
-  const [error, setError] = useState('')
+  // Fehler als Sammelmeldung oben in der Karte (#346, Schritt 3)
+  const errors = useFormError()
+  const setError = errors.set
   // Eine ungespeicherte Eingabe zählt als offenes Formular: Seiten-, Objekt- und Zeitraumwechsel fragen (#346, 7a).
   // Gezählt wird nur, was die Karte zeigt: die Bestätigung nur zu einer Formel, Volumen und Temperatur nur
   // bei der Volumenformel der eigenen Abrechnung.
@@ -50,6 +53,7 @@ export default function HotWaterCard({ view, plant, onSaved }: { view: HeatingPe
   return (
     <div className="card">
       <h2><Term id="hotWaterShare">Warmwasser</Term></h2>
+      <ErrorSummary errors={errors} />
       <label className="field">
         {self ? 'Wie wird die Wärme für das Warmwasser bestimmt?' : 'Wie hat der Messdienst die Wärme für das Warmwasser ermittelt?'}
         <select value={choice} disabled={view.closed} onChange={(e) => setChoice(options.find((o) => o.value === e.target.value)?.value ?? (self ? 'heatMeter' : ''))}>
@@ -101,7 +105,6 @@ export default function HotWaterCard({ view, plant, onSaved }: { view: HeatingPe
           )}
         </>
       )}
-      {error && <div className="error">{error}</div>}
       {!view.closed && <div className="row"><button className="btn" onClick={() => void save()}>Angabe speichern</button></div>}
     </div>
   )

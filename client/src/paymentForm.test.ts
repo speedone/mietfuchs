@@ -24,9 +24,15 @@ describe('Zahlung erfassen: die Art (#280)', () => {
   })
 
   test('ohne Betrag, Datum oder Mietverhältnis kein Rumpf', () => {
-    expect(paymentBody({ ...emptyPaymentForm('t1', '2025-06-15'), amount: '0' })).toHaveProperty('error')
-    expect(paymentBody({ ...emptyPaymentForm('', '2025-06-15'), amount: '1' })).toHaveProperty('error')
-    expect(paymentBody({ ...emptyPaymentForm('t1', '15.06.2025'), amount: '1' })).toHaveProperty('error')
+    const fields = (form: Parameters<typeof paymentBody>[0]) => {
+      const r = paymentBody(form)
+      return 'problems' in r ? r.problems.map((p) => p.field) : []
+    }
+    expect(fields({ ...emptyPaymentForm('t1', '2025-06-15'), amount: '0' })).toEqual(['amount'])
+    expect(fields({ ...emptyPaymentForm('', '2025-06-15'), amount: '1' })).toEqual(['tenancyId'])
+    expect(fields({ ...emptyPaymentForm('t1', '15.06.2025'), amount: '1' })).toEqual(['date'])
+    // #346, Schritt 3 (UI-Durchsicht M5): jede fehlende Angabe mit ihrem Feld, kein Sammelsatz.
+    expect(fields({ ...emptyPaymentForm('', ''), amount: '' })).toEqual(['tenancyId', 'date', 'amount'])
   })
 
   test('Miete bietet die Zeilen des Mietkontos an, die Abrechnung auch ausgezogene Mieter', () => {

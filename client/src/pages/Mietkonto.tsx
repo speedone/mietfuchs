@@ -6,8 +6,10 @@ import { periodSpanText } from '../periodForm'
 import { CalendarYearSelect } from '../components/PeriodSelect'
 import { useProperty, withProperty } from '../property'
 import { bookingDate, newPaymentDate, rentDueApplies, rentDueNote, rowStanding, shareText, showDecemberNote } from '../ledgerView'
-import { emptyPaymentForm, hasSettlementPayments, kindChangeQuestion, newPaymentForm, noRentYearText, PAYMENT_KIND_LABELS, PAYMENT_KIND_OPTIONS, paymentBody, paymentFormHints, paymentTenancyOptions, rentWithoutRow, rentWithoutRowQuestion, savedText, type PaymentForm } from '../paymentForm'
+import { emptyPaymentForm, hasSettlementPayments, kindChangeQuestion, newPaymentForm, noRentYearText, PAYMENT_KIND_LABELS, PAYMENT_KIND_OPTIONS, paymentBody, paymentFormHints, paymentTenancyOptions, rentWithoutRow, rentWithoutRowQuestion, savedText, type PaymentField, type PaymentForm } from '../paymentForm'
 import Drawer from '../components/Drawer'
+import Field from '../components/Field'
+import { useFormError } from '../components/ErrorSummary'
 import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
@@ -28,6 +30,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
   const [payments, setPayments] = useState<Payment[]>([])
   const [form, setForm] = useState<PaymentForm | null>(null)
   const [error, setError] = useState('')
+  const formErrors = useFormError<PaymentField>()
   // „Hier beheben →“ aus der Abrechnung (#142): die Zeile des Mietverhältnisses hervorheben.
   const [focusedId, setFocusedId] = useState<string | null>(null)
   const scrollToFocus = useScrollToFocus()
@@ -49,11 +52,11 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
   async function savePayment() {
     if (!form) return
     const built = paymentBody(form)
-    if ('error' in built) {
-      setError(built.error)
+    if ('problems' in built) {
+      formErrors.report(built.problems)
       return
     }
-    setError('')
+    formErrors.clear()
     if (rentWithoutRow(form, ledger)) {
       const ok = await confirm({
         title: 'Miete ohne Mietverhältnis im Jahr?',
@@ -69,7 +72,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
         body: JSON.stringify(built.body),
       })
     } catch (e) {
-      setError(errorText(e))
+      formErrors.show(errorText(e))
       return
     }
     setForm(null)
@@ -87,10 +90,10 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
     try {
       await api(`/api/payments/${p.id}`, { method: 'PUT', body: JSON.stringify({ kind }) })
     } catch (e) {
-      setError(errorText(e))
+      // Eine Aktion ohne Formular meldet ihren Fehler als Mitteilung, nicht oben auf der Seite (H3).
+      toast(errorText(e), 'error')
       return
     }
-    setError('')
     await load()
     toast(`Zahlung vom ${fmtDate(p.date)} ist jetzt „${PAYMENT_KIND_OPTIONS.find((o) => o.value === kind)?.label ?? kind}“.`)
   }
@@ -106,10 +109,9 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
     try {
       await api(`/api/payments/${p.id}`, { method: 'DELETE' })
     } catch (e) {
-      setError(errorText(e))
+      toast(errorText(e), 'error')
       return
     }
-    setError('')
     await load()
     toast('Zahlung gelöscht.')
   }
@@ -118,7 +120,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
   function bookMonth(tenancyId: string, mo: RentMonth) {
     const open = mo.sollCents - mo.paidCents
     if (open <= 0) return
-    setError('')
+    formErrors.clear()
     setForm({
       ...emptyPaymentForm(tenancyId, bookingDate(year, mo, new Date())),
       amount: (open / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }),
@@ -144,14 +146,14 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
         actions={
           <button
             className="btn"
-            onClick={() => { setError(''); setForm(newPaymentForm(ledger, newPaymentDate(year, new Date()))) }}
+            onClick={() => { formErrors.clear(); setForm(newPaymentForm(ledger, newPaymentDate(year, new Date()))) }}
             disabled={tenancies.length === 0}
           >
             + Zahlung erfassen
           </button>
         }
       />
-      {error && !form && <div className="error">{error}</div>}
+      {error && <div className="error">{error}</div>}
 
       <div className="card">
         <div className="row">
@@ -189,12 +191,12 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
         <Drawer
           open
           title="Zahlung erfassen"
-          onClose={() => { setError(''); setForm(null) }}
+          onClose={() => { formErrors.clear(); setForm(null) }}
           onSubmit={savePayment}
           value={form}
+          errors={formErrors}
           actions={<button className="btn" onClick={savePayment}>Speichern</button>}
         >
-          {error && <div className="error">{error}</div>}
           {(ledger?.rows.length ?? 0) === 0 && <div className="info">{noRentYearText(year)}</div>}
           <div className="row">
             <label className="field grow">
@@ -206,27 +208,23 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
                 {PAYMENT_KIND_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </label>
-            <label className="field grow">
-              Mietverhältnis
+            <Field label="Mietverhältnis" className="grow" {...formErrors.field('tenancyId')}>
               <select value={form.tenancyId} onChange={(e) => setForm({ ...form, tenancyId: e.target.value })}>
                 <option value="">— wählen —</option>
                 {paymentTenancyOptions(form.kind, ledger, tenancies, (id) => units.find((u) => u.id === id)?.name ?? '—', form.tenancyId).map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
               </select>
-            </label>
-            <label className="field grow">
-              Datum
+            </Field>
+            <Field label="Datum" className="grow" {...formErrors.field('date')}>
               <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
-            </label>
-            <label className="field grow">
-              Betrag €
-              <input value={form.amount} placeholder="z. B. 1.000,00" onChange={(e) => setForm({ ...form, amount: e.target.value })} />
-            </label>
-            <label className="field grow">
-              Notiz (optional)
+            </Field>
+            <Field label="Betrag €" className="grow" {...formErrors.field('amount')}>
+              <input value={form.amount} inputMode="decimal" placeholder="z. B. 1.000,00" onChange={(e) => setForm({ ...form, amount: e.target.value })} />
+            </Field>
+            <Field label="Notiz" optional className="grow">
               <input value={form.note} placeholder="z. B. Überweisung, Abrechnung 2025" onChange={(e) => setForm({ ...form, note: e.target.value })} />
-            </label>
+            </Field>
           </div>
           {paymentFormHints(form).map((h) => <p className="hint" key={h}>{h}</p>)}
         </Drawer>

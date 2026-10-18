@@ -2,7 +2,7 @@
 // Karten „Ausnahmen und Vereinbarungen“ und „Angaben zur Abrechnung (§ 6a)“ (Heizung PR 14): Der angezeigte Wert
 // jedes Auswahlfelds ist der geltende, eine Änderung geht an die Heizperiode, und geerbte Angaben sagen, woher.
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { HeatingPeriodView, HeatingPlant } from '../types'
 import { periodKey } from '../../../shared/period.ts'
 import HeatingRulesCard from './HeatingRulesCard'
@@ -73,7 +73,7 @@ test('Angaben nach § 6a: Verbrauchervertrag zeigt den geltenden Wert, Speichern
   fireEvent.change(screen.getByLabelText(/Vergleichswert eines Durchschnittsnutzers/), { target: { value: '120' } })
   fireEvent.click(screen.getByText('Angaben speichern'))
   // Ohne Quelle des Vergleichswerts wird nichts gesendet.
-  expect(await screen.findByText(/Quelle des Vergleichswerts/, { selector: '.error' })).toBeTruthy()
+  expect(within(await screen.findByRole('alert')).getByText(/Quelle des Vergleichswerts/)).toBeTruthy()
   expect(sent).toEqual([])
   fireEvent.change(screen.getByLabelText(/Quelle des Vergleichswerts/), { target: { value: 'Ablesedienst 2025' } })
   fireEvent.click(screen.getByText('Angaben speichern'))

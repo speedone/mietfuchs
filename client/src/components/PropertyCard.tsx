@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { flushSync } from 'react-dom'
 import type { Property, PropertyKind } from '../types'
-import { propertyBody, propertyToForm, type PropertyForm, CABLE_LABELS, type CableAnswer } from '../propertyForm'
+import { propertyBody, propertyToForm, type PropertyField, type PropertyForm, CABLE_LABELS, type CableAnswer } from '../propertyForm'
 import { PROPERTY_KIND_LABELS } from '../types'
 import Term from './Term'
 import TightMarketField from './TightMarketField'
@@ -11,6 +11,8 @@ import { useOpenForm, useProperty, useSwitchProperty } from '../property'
 import { useConfirm, useToast } from './feedback'
 import Drawer from './Drawer'
 import IbanInput from './IbanInput'
+import Field from './Field'
+import { ErrorSummary, useFormError } from './ErrorSummary'
 import { createButtonLabel, EMPTY_NEW_PROPERTY, newPropertyBody, type NewPropertyForm } from '../propertyView'
 
 // Die Karte „Objekt“ in den Stammdaten (#92): Name, Adresse und Art des gewählten Objekts,
@@ -30,13 +32,16 @@ export default function PropertyCard() {
   const [form, setForm] = useState<PropertyForm | null>(null)
   // Der Dialog „Weiteres Objekt anlegen“: `null` heißt zu.
   const [draft, setDraft] = useState<NewPropertyForm | null>(null)
-  const [draftError, setDraftError] = useState('')
+  // Die Fehler des Fensters „Weiteres Objekt anlegen“, im Fuß des Fensters (#346, Schritt 3)
+  const draftErrors = useFormError<'name'>()
+  const setDraftError = draftErrors.set
   const [creating, setCreating] = useState(false)
   // Angelegt, aber die Liste fehlt (#157): Ein zweiter Klick legte es doppelt an. Gesperrt bleibt,
   // bis das angelegte Objekt in der Liste steht, auch über Schließen und neu Öffnen hinweg.
   const [stuckId, setStuckId] = useState<string | null>(null)
   const stuck = stuckId !== null && !properties.some((p) => p.id === stuckId)
-  const [error, setError] = useState('')
+  // Die Fehler der Karte, oben in der Karte (#346, Schritt 3)
+  const errors = useFormError<PropertyField>()
 
   // Nur beim Wechsel des Objekts neu füllen (#105): Hinge es am Objekt selbst, verwürfe jedes
   // Neuladen der Liste ungespeicherte Eingaben.
@@ -56,16 +61,16 @@ export default function PropertyCard() {
     if (!property || !form) return
     const body = propertyBody(form, property.iban)
     if ('error' in body) {
-      setError(body.error)
+      errors.report([{ text: body.error, ...(body.field ? { field: body.field } : {}), ...(body.short ? { short: body.short } : {}) }])
       return
     }
-    setError('')
+    errors.clear()
     try {
       await api(`/api/properties/${property.id}`, { method: 'PUT', body: JSON.stringify(body) })
       await reload()
       toast('Objekt gespeichert.')
     } catch (e) {
-      setError(String((e as Error).message))
+      errors.show(errorText(e))
     }
   }
 
@@ -78,7 +83,7 @@ export default function PropertyCard() {
     if (!draft || creating || stuck) return
     const body = newPropertyBody(draft)
     if ('error' in body) {
-      setDraftError(body.error)
+      draftErrors.report([{ field: 'name', short: 'Name fehlt', text: body.error }])
       return
     }
     setDraftError('')
@@ -129,10 +134,10 @@ export default function PropertyCard() {
     try {
       await api(`/api/properties/${property.id}`, { method: 'DELETE' })
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      // Eine Aktion ohne Formular meldet ihren Fehler als Mitteilung, nicht oben auf der Seite (H3).
+      toast(errorText(err), 'error')
       return
     }
-    setError('')
     await reload()
     toast('Objekt gelöscht.')
   }
@@ -140,12 +145,13 @@ export default function PropertyCard() {
   return (
     <div className="card">
       <h2>Objekt</h2>
-      <div className="row">
-        <label className="field grow">
-          Bezeichnung
+      <ErrorSummary errors={errors} />
+      {/* Raster statt Zeile (#346, Schritt 3): so viele Spalten, wie passen, keine abgeschnittenen Felder. */}
+      <div className="field-grid">
+        <Field label="Bezeichnung" {...errors.field('name')}>
           <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="z. B. Mehrfamilienhaus Musterstraße" />
-        </label>
-        <label className="field grow-2">
+        </Field>
+        <label className="field">
           Adresse
           <input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Straße Nr., PLZ Ort" />
         </label>
@@ -185,15 +191,13 @@ export default function PropertyCard() {
               Vermieter
               <input value={form.landlordName} onChange={(e) => setForm({ ...form, landlordName: e.target.value })} />
             </label>
-            <IbanInput key={property.id} label="IBAN" value={form.iban} stored={property.iban} onChange={(iban) => setForm({ ...form, iban })} />
-            <label className="field">
-              Zahlungsfrist (Tage)
+            <IbanInput key={property.id} label="IBAN" value={form.iban} stored={property.iban} onChange={(iban) => setForm({ ...form, iban })} {...errors.field('iban')} />
+            <Field label="Zahlungsfrist (Tage)" optional width="s" {...errors.field('paymentDeadlineDays')}>
               <input inputMode="numeric" value={form.paymentDeadlineDays} onChange={(e) => setForm({ ...form, paymentDeadlineDays: e.target.value })} />
-            </label>
+            </Field>
           </div>
         )}
       </details>
-      {error && <div className="error">{error}</div>}
       <div className="row">
         <button className="btn" onClick={save}>Speichern</button>
         <button className="btn ghost" onClick={openDraft}>Weiteres Objekt anlegen</button>
@@ -207,6 +211,7 @@ export default function PropertyCard() {
         value={draft}
         hint="Strg+S legt an · Esc schließt"
         busy={creating}
+        errors={draftErrors}
         actions={draft && <button className="btn" onClick={() => void create()} disabled={creating || stuck}>{createButtonLabel(draft.name)}</button>}
       >
         {draft && (
@@ -217,10 +222,9 @@ export default function PropertyCard() {
               bleibt unverändert. Nach dem Anlegen arbeiten Sie im neuen Objekt; zurück geht es
               jederzeit über „Objekt“ in der Seitenleiste.
             </p>
-            <label className="field">
-              Name (Pflicht)
+            <Field label="Name" {...draftErrors.field('name')}>
               <input required aria-required="true" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="z. B. Eigentumswohnung Gartenweg" />
-            </label>
+            </Field>
             <label className="field">
               Art
               <select value={draft.kind} onChange={(e) => setDraft({ ...draft, kind: e.target.value as PropertyKind })}>
@@ -231,7 +235,6 @@ export default function PropertyCard() {
               Adresse
               <input value={draft.address} onChange={(e) => setDraft({ ...draft, address: e.target.value })} placeholder="Straße Nr., PLZ Ort" />
             </label>
-            {draftError && <div className="error" role="alert">{draftError}</div>}
           </>
         )}
       </Drawer>

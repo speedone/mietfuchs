@@ -13,6 +13,7 @@ import {
   heatUnitOf, percentOf, potLines, READING_RESULT_HINT, readingResult, shareEditable, unsureShareHint, userLine, type Light,
 } from '../heatingSelfView'
 import { forcedShare, shareBounds } from '../heatingSelfForm'
+import { ErrorSummary, useFormError } from './ErrorSummary'
 
 // Die Farbe der Ampel, wie im Cockpit.
 const AMPEL: Record<Light, string> = { green: 'gruen', yellow: 'gelb', red: 'rot' }
@@ -25,7 +26,9 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
   plant: HeatingPlant; view: HeatingPeriodView; self: SelfHeatingStatement | null; onChanged: () => void
 }) {
   const toast = useToast()
-  const [error, setError] = useState('')
+  // Fehler als Sammelmeldung oben in der Karte (#346, Schritt 3)
+  const errors = useFormError()
+  const setError = errors.set
   const [share, setShare] = useState('')
   const [waterShare, setWaterShare] = useState('')
   const { min, max } = shareBounds()
@@ -114,7 +117,8 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
 
   return (
     <>
-      {error && <div className="error">{error}</div>}
+      {/* Eine Sammelmeldung für alle Karten der eigenen Abrechnung, über der ersten (#346, Schritt 3). */}
+      <ErrorSummary errors={errors} />
       <div className="card">
         <h3>Anteil nach Verbrauch · {view.label}</h3>
         <p className="muted">

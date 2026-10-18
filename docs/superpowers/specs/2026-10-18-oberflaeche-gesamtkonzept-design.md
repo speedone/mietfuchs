@@ -157,6 +157,7 @@ Nach GOV.UK ([Error summary](https://design-system.service.gov.uk/components/err
 - **Wortlaut:** Am Feld steht die kurze Fassung („Monat fehlt“), in der Sammelmeldung die Fassung mit Ort („Kaltmiete, Zeile 2: Geben Sie den Monat ein, ab dem der Betrag gilt.“). Keine Sammelsätze wie „Mieter, Wohnung und Einzugsdatum prüfen“.
 - **Aktionen ohne Formular** (Löschen, Monatsklick) melden einen Fehler als Mitteilung `role="alert"` mit längerer Anzeigedauer, nicht oben auf der Seite (H3, betrifft elf Seiten).
 - **Nie still verwerfen** (H4), **Pflichtfelder prüfen** (M12).
+- *Umgesetzt (Schritt 3):* Der Fokus geht nur bei einem Melden nach einer Handlung auf die Sammelmeldung; ein Fehler beim Laden steht da, ohne den Fokus zu nehmen. Ein Link aufs Feld klappt einen zugeklappten Bereich (`<details>`) auf. `Field` bleibt ein `<label class="field">`, damit Zeilen, Raster und Seitenfenster es wie jedes Feld setzen; benannt wird das Eingabefeld über `aria-labelledby` nur durch die Beschriftung.
 
 ### Entwurf, Speichern, Verwerfen (#309, #333)
 
@@ -234,7 +235,7 @@ Ziel ist WCAG 2.2 AA.
 | `Card` + `CardHeader` (Titel, Begriff, Aktion) | eigen | uneinheitliche Kartenköpfe (N8) | S |
 | `Button` (primär/sekundär/Gefahr, feste Verben) | eigen, CSS + Typ für Verben | N3, M19 | S |
 | `Field` | eigen | M5, M11, Fehler am Feld | M |
-| `ErrorSummary` / `FormError` | eigen | H3, H4, M5, 58 `className="error"`-Stellen | M |
+| `ErrorSummary` (mit `useFormError`, `FormError` ist darin aufgegangen) | eigen | H3, H4, M5, 58 `className="error"`-Stellen | M |
 | `Term` (Popover) | eigen, `popover` | M1, M2, MOB3, H2 | S |
 | `MoneyInput`, `NumberWithUnit` | eigen | N4, H5 | S |
 | `DateField` | **nativ** `type="date"` | – | – |
@@ -263,7 +264,7 @@ Drei Ebenen, wie die Tests von Mietfuchs ohnehin aufgebaut sind.
 | S12b Seitenfenster | jedes `<Drawer>` nennt seinen Stand (`value`, kein fester Wert), kein `footer`, in `actions` kein eigener Weg zum Schließen (seit Schritt 2) | ein Fenster ohne Rückfrage beim Schließen |
 | S13 Enter | kein `'Enter'` in einem `keydown`-Handler eines Dialogbausteins (seit Schritt 1: die Bausteine aus S12 und `dialogKeys.ts`, ohne Kommentare) | Wiederkehr von H1 |
 | S14 Monat/Datum | kein `type="month"`, `type="number"` für Geld, kein zweites Monatsfeld | #287 |
-| S15 Fehler | kein `className="error"`/`role="alert"` außerhalb `Field`, `ErrorSummary`, `Toast`, `DraftActions` | M5, H3 |
+| S15 Fehler | kein `className="error"`/`role="alert"` außerhalb `Field`, `ErrorSummary`, `Toast` und Ansage der Rückfrage (`feedback.tsx`), `DraftActions`; die übrigen Stellen als Ausnahmeliste mit Anzahl, die nur sinken darf (seit Schritt 3) | M5, H3 |
 | S16 Verben | Primärknopf in `Drawer footer` nur `Anlegen`/`Speichern`; „Abbrechen“ nie primär | N3 |
 | S17 Tokens | keine Hex-Farben und keine px-Abstände außerhalb der Token-Blöcke in `index.css`/`tw.css`; in Klassen keine beliebigen Werte (`[#…]`, `[13px]`), keine Standardpalette | Gestaltung driftet |
 | S18 Jahr/Objekt | kein `<select>` mit Jahr/Objekt in `pages/` außer über `AppShell` | M13 |
@@ -302,7 +303,7 @@ Jeder Schritt ist ein PR mit `Refs #346` (und, wo er einen Befund der Checkliste
 | 0 | **Tailwind einführen**: `tw.css` mit `index.css` als Schicht `legacy`, Tokens in `@theme`, `dark`- und `print`-Variante; Pixelvergleich alt gegen neu in drei Engines | Grundlage | 1 Tag | S17, S20 |
 | 1 | **Rückfrage auf `<dialog>`**: Enter-Abfänger raus, Startfokus „Abbrechen“ bei Gefahr, `alertdialog`. *Umgesetzt: `<dialog role="alertdialog">` mit `showModal()`, `aria-labelledby`/`aria-describedby`, kein Abfänger für Enter, Esc und Klick daneben brechen ab, Fokus zurück an den Auslöser. Die Rückfrage liegt im Top-Layer über Menüblatt und Seitenfenster; das Blatt schließt vor ihr nicht mehr.* | H1 | ½ Tag | S13 |
 | 2 | **`Drawer` auf `<dialog>.showModal()`**, Rückfrage beim Schließen mit Änderungen, Fokus zurück, `target`-Prüfung. Alle 9 Seitenfenster profitieren auf einmal. *Umgesetzt: „Abbrechen“ und Hinweis kommen aus dem Baustein, die Formulare reichen ihren Stand als Pflicht-Prop `value` (Vergleich gegen den Stand vor der ersten Eingabe); nur ein geändertes Fenster meldet sich bei `useOpenForm` an; Tab lenkt der Browser (inerter Hintergrund, kein eigener Ring); Mitteilungen liegen als `popover="manual"` darüber. Wächter S12b.* | M4, MOB4 | 1 Tag | S12, S12b |
-| 3 | **`Field` + `ErrorSummary`** im Fensterfuß und in Karten, Feldfehler mit Ort; zuerst Zähler/Ablesung, Vorauszahlung, Mietkonto, HeatingSelfSetup, Heizkosten-Karten. *Teile schon mit PR #343 erledigt: `FormError` an der Ablesung auf der Zähler-Seite.* Offen bleiben `Field`, `ErrorSummary` und die übrigen Stellen | H3, H4, M5, M12 | 2–3 Tage | S15 |
+| 3 | **`Field` + `ErrorSummary`** im Fensterfuß und in Karten, Feldfehler mit Ort; zuerst Zähler/Ablesung, Vorauszahlung, Mietkonto, HeatingSelfSetup, Heizkosten-Karten. *Umgesetzt: eine Fehler-API `useFormError` mit `Field` und `ErrorSummary` (`FormError` aus #343 ist darin aufgegangen); die Prüfungen liefern alle Angaben auf einmal, je mit Feld, kurzer Fassung und Satz mit Ort. Umgestellt sind die Ablesung, die Seitenfenster für Zähler, Zahlung, Wohnung, Mietverhältnis, Kostenposition, Heizung, Kesseltausch, eigene Heizkostenabrechnung und „Weiteres Objekt anlegen“, die Karten der Seite Heizkosten, „Objekt“ (Bezeichnung als Pflicht, M12) und „Vermieter & Zahlung“; Löschen meldet als Mitteilung (8 s). Die Vorauszahlung („✎ anpassen“) bleibt Entwurf am Feld mit `FieldMessage`, auch für die Ablehnung durch den Server. Offen: Ladefehler, Befunde von Vorschauen und die Ergebnisse der Belegauswertung (Ausnahmeliste S15), feste Verben (Schritt 7).* | H3, H4, M5, M12 | 2–3 Tage | S15 |
 | 4 | **Tokens** in `index.css` (Abstand, Schrift, Radius, Ziel, Fokus) und Gestaltung „Mittelweg“ (Abschnitt 1), Feldbeschriftung in `--text` | Grundlage | 1 Tag | S17 (Farben) |
 | 5 | **`MonthField`** statt `MonthPicker`, Personenstaffel einheitlich | #287, M11 | 1–2 Tage | S14 |
 | 6 | **`Term` als Popover**, eigener Begriff `tightMarket` | M1, M2, MOB3 | 1 Tag | – |

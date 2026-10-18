@@ -12,6 +12,7 @@ import {
   heatingWays, initialSeparateAnswers, isCalendarObject, separateAnswersOf, separatePanelIntro, suggestedWay, type HeatingPeriodAnswerForm, type HeatingPeriodForm, type PeriodChoice, type SeparateAnswerForm,
   type SeparateChoice,
 } from '../heatingPeriodForm'
+import { ErrorSummary, useFormError } from './ErrorSummary'
 
 // Der Abschnitt „Zeitraum der Heizung“ einer Anlage in der Karte „Heizung“ (Heizung PR 5, Entwurf 11.2
 // Schritt 3): Zeitraum wechseln mit Vorschau, getrennte Heizkostenabrechnung ein- und ausschalten mit
@@ -50,7 +51,9 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
   const [periodUnderstood, setPeriodUnderstood] = useState(false)
   // Der Bereich „getrennt“ als zweiter Schritt nach dem Zeitraum (E7)
   const [secondStep, setSecondStep] = useState(false)
-  const [error, setError] = useState('')
+  // Fehler als Sammelmeldung oben in der Karte (#346, Schritt 3)
+  const errors = useFormError()
+  const setError = errors.set
   const own = hasOwnRhythm(plant)
   const openSpan = plant.separateSpans.some((s) => s.until === null)
   const separateOn = openSpan || (!own && plant.separateSettlement === true)
@@ -173,7 +176,7 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
         )}
         {dangerAction}
       </div>
-      {error && <div className="error">{error}</div>}
+      <ErrorSummary errors={errors} />
 
       {open === 'period' && (
         <div className="panel">

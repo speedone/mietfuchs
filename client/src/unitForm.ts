@@ -5,6 +5,7 @@ import { parseNumberDe } from './numbers'
 import type { BillingPeriod, CostItem, Meter, MeterType, Tenancy, Unit, UnitDependents, UnitUsage } from './types'
 import { isNotAllocable, usageOf } from './types'
 import { calendarYearPeriod } from '../../shared/period.ts'
+import type { Problem } from './formProblems'
 
 export type UnitForm = {
   id?: string
@@ -42,29 +43,34 @@ export function unitToForm(u: Unit): UnitForm {
   }
 }
 
-export type UnitBuildResult = { error: string } | { body: Record<string, unknown> }
+// Die Felder des Wohnungsformulars mit Meldung (#346, Schritt 3).
+export type UnitField = 'name' | 'areaM2' | 'rooms' | 'selfPersons' | 'mea'
+export type UnitBuildResult = { problems: Problem<UnitField>[] } | { body: Record<string, unknown> }
 
 // null statt undefined, damit geleerte Felder über die generische PUT-Route auch
 // zurückgesetzt werden.
 export function buildUnitBody(form: UnitForm): UnitBuildResult {
   // 0 m² ist erlaubt (#135): Eine Garage, ein Stellplatz oder ein Lager zählt beim
   // Flächenschlüssel dann nicht mit. Ein leeres Feld ist keine Angabe und bleibt ein Fehler.
+  // Alle Angaben auf einmal, je mit Feld (#346, Schritt 3); vorher ein Sammelsatz für Name und Fläche.
+  const problems: Problem<UnitField>[] = []
+  if (!form.name.trim()) problems.push({ field: 'name', short: 'Name fehlt', text: 'Wohnung: Geben Sie einen Namen ein, etwa „OG links“.' })
   const area = parseNumberDe(form.areaM2) ?? NaN
-  if (!form.name.trim() || !Number.isFinite(area) || area < 0) {
-    return { error: 'Bitte Name und gültige Wohnfläche angeben (0 m² für Garage, Stellplatz oder Lager).' }
-  }
+  if (!form.areaM2.trim()) problems.push({ field: 'areaM2', short: 'Wohnfläche fehlt', text: 'Wohnfläche: Geben Sie die Fläche in m² ein, 0 für Garage, Stellplatz oder Lager.' })
+  else if (!Number.isFinite(area) || area < 0) problems.push({ field: 'areaM2', short: 'Keine Fläche', text: 'Wohnfläche: Geben Sie die Fläche als Zahl ein, etwa 85,5; 0 für Garage, Stellplatz oder Lager.' })
   const rooms = form.rooms.trim() ? (parseNumberDe(form.rooms) ?? NaN) : null
   if (rooms !== null && (!Number.isFinite(rooms) || rooms <= 0)) {
-    return { error: 'Zimmerzahl bitte als Zahl angeben (oder leer lassen).' }
+    problems.push({ field: 'rooms', short: 'Keine Zahl', text: 'Zimmerzahl bitte als Zahl angeben (oder leer lassen).' })
   }
   const selfPersons = form.selfPersons.trim() ? (parseNumberDe(form.selfPersons) ?? NaN) : null
   if (form.usage === 'eigen' && selfPersons !== null && (!Number.isFinite(selfPersons) || selfPersons < 0)) {
-    return { error: 'Personen im eigenen Haushalt bitte als Zahl angeben (oder leer lassen).' }
+    problems.push({ field: 'selfPersons', short: 'Keine Zahl', text: 'Personen im eigenen Haushalt bitte als Zahl angeben (oder leer lassen).' })
   }
   const mea = form.mea.trim() ? (parseNumberDe(form.mea) ?? NaN) : null
   if (mea !== null && (!Number.isFinite(mea) || mea < 0)) {
-    return { error: 'Miteigentumsanteile bitte als Zahl angeben (oder leer lassen).' }
+    problems.push({ field: 'mea', short: 'Keine Zahl', text: 'Miteigentumsanteile bitte als Zahl angeben (oder leer lassen).' })
   }
+  if (problems.length > 0) return { problems }
   return {
     body: {
       name: form.name.trim(),

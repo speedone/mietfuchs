@@ -10,6 +10,7 @@ import { RESTRICTION_OPTIONS } from '../fuelForm'
 import { localToday } from '../periodForm'
 import { emptyRefundForm, refundAreaOf, refundBody, refundStatus, refundTenancies, refundToForm, SETTLE_OPTIONS, type Co2RefundForm, type RefundRow } from '../co2RefundForm'
 import type { PeriodKey } from '../types'
+import { ErrorSummary, useFormError } from './ErrorSummary'
 
 type View = RefundRow & { tenantName: string; unitName: string; claimDeadline: string | null; proposalCents: number | null; proposalExcluded: string | null }
 type TenancyInfo = { id: string; unitId: string; tenantName: string; start: string; end: string | null; heatingModel?: string }
@@ -23,7 +24,9 @@ export default function Co2RefundsCard({ propertyId, period, tenancies, units }:
 }) {
   const [rows, setRows] = useState<View[]>([])
   const [editing, setEditing] = useState<{ id: string | null; form: Co2RefundForm } | null>(null)
-  const [error, setError] = useState('')
+  // Fehler als Sammelmeldung oben in der Karte (#346, Schritt 3)
+  const errors = useFormError()
+  const setError = errors.set
   // Eine ungespeicherte Eingabe zählt als offenes Formular: Seiten-, Objekt- und Zeitraumwechsel fragen (#346, 7a).
   useOpenForm(editing !== null)
   const toast = useToast()
@@ -35,9 +38,9 @@ export default function Co2RefundsCard({ propertyId, period, tenancies, units }:
     try {
       setRows(await api<View[]>(withProperty('/api/co2-refunds', propertyId)))
     } catch (e) {
-      setError(errorText(e))
+      setError(errorText(e), { focus: false })
     }
-  }, [propertyId])
+  }, [propertyId, setError])
   useEffect(() => { void load() }, [load])
 
   async function save() {
@@ -76,6 +79,7 @@ export default function Co2RefundsCard({ propertyId, period, tenancies, units }:
   return (
     <div className="card no-print">
       <h2><Term id="co2Refund">CO₂-Erstattung</Term> an Mieter, die selbst heizen</h2>
+      <ErrorSummary errors={errors} />
       <p className="muted">
         Bezieht ein Mieter Brennstoff oder Wärme über einen eigenen Vertrag, etwa für eine Gastherme oder eine zentrale Heizung, kann er den Anteil seiner
         CO₂-Kosten, den nach dem Stufenmodell Sie tragen, von Ihnen verlangen. Erfassen Sie hier seine Anzeige; verrechnet wird in der Abrechnung, die Sie
@@ -155,7 +159,6 @@ export default function Co2RefundsCard({ propertyId, period, tenancies, units }:
           {' '}<button className="btn secondary" onClick={() => setEditing(null)}>Abbrechen</button>
         </div>
       )}
-      {error && <div className="error">{error}</div>}
     </div>
   )
 }

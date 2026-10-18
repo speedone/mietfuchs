@@ -7,13 +7,16 @@ import { draftOf, earlyHint, fieldLabel, overrideBody, statusText, type Override
 import { useToast } from './feedback'
 import { useOpenWhenDiffers } from '../useDraft'
 import type { LawOverrideSlot } from '../types'
+import { ErrorSummary, useFormError } from './ErrorSummary'
 
 const keyOf = (s: LawOverrideSlot) => `${s.paramId}|${s.year}`
 
 export default function LawOverridesCard() {
   const [slots, setSlots] = useState<LawOverrideSlot[]>([])
   const [drafts, setDrafts] = useState<Record<string, OverrideDraft>>({})
-  const [error, setError] = useState('')
+  // Fehler als Sammelmeldung oben in der Karte (#346, Schritt 3)
+  const errors = useFormError()
+  const setError = errors.set
   const toast = useToast()
   // Ein ungespeicherter Wert zählt als offenes Formular (#346, 7a), verglichen mit dem geladenen Stand.
   useOpenWhenDiffers(drafts, Object.fromEntries(slots.map((s) => [keyOf(s), draftOf(s)])))
@@ -22,7 +25,7 @@ export default function LawOverridesCard() {
     setSlots(list)
     setDrafts(Object.fromEntries(list.map((s) => [keyOf(s), draftOf(s)])))
   }
-  useEffect(() => { load().catch((e: unknown) => setError(errorText(e))) }, [])
+  useEffect(() => { load().catch((e: unknown) => setError(errorText(e), { focus: false })) }, [setError])
   async function save(s: LawOverrideSlot) {
     const r = overrideBody(drafts[keyOf(s)] ?? { value: '', source: '' })
     if ('error' in r) return setError(r.error)
@@ -41,11 +44,12 @@ export default function LawOverridesCard() {
       toast('Eintrag entfernt')
     } catch (e) { setError(errorText(e)) }
   }
-  if (slots.length === 0 && !error) return null
+  if (slots.length === 0 && errors.state.problems.length === 0) return null
   const entered = slots.filter((s) => s.override !== null).length
   return (
     <div className="card">
       <h2>Rechtswerte, die noch nicht veröffentlicht sind</h2>
+      <ErrorSummary errors={errors} />
       <p className="muted">
         Einige Werte veröffentlicht das Umweltbundesamt erst kurz vor oder nach Jahresbeginn, etwa den CO₂-Preis des neuen Jahres.
         Mietfuchs braucht sie nur, um die CO₂-Angaben Ihrer Rechnungen zu prüfen; keine Zahl Ihrer Abrechnung hängt daran.
@@ -85,7 +89,6 @@ export default function LawOverridesCard() {
           )
         })}
       </details>
-      {error && <div className="error">{error}</div>}
     </div>
   )
 }
