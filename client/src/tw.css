@@ -1,0 +1,81 @@
+/* Einstieg aller Stile (#346, Schritt 0): Tailwind v4 neben dem bisherigen index.css.
+
+   Schichten: index.css steht vollständig in der Schicht `legacy`, die Utilities darüber. Eine
+   Utility gewinnt so immer gegen eine alte Regel, gleich wie spezifisch die ist; was ungeschichtet
+   bliebe, gewönne dagegen gegen jede Schicht. Deshalb gibt es außer dieser Datei kein CSS im
+   Client (main.tsx importiert nur sie), und Inline-Styles (`style={…}`) gehen wie bisher allem vor.
+   index.css hat weder `@import` noch `@font-face`, und ihre `@media print`-Blöcke wirken in der
+   Schicht wie vorher, weil keine andere Schicht dieselben Eigenschaften setzt.
+   Ausnahme `!important`: Bei wichtigen Deklarationen kehrt sich die Reihenfolge der Schichten um,
+   eine wichtige Regel in `legacy` gewinnt also gegen jede Utility, auch gegen eine mit `!`
+   (`!flex`) oder `print:`. Das ist für `.no-print` und die Ausblendungen im Druck (`print-*`)
+   gewollt: Was im Druck fehlen soll, holt keine Utility zurück.
+
+   Kein Preflight (`tailwindcss/preflight.css`, Schicht `base`): Er setzt Ränder, Überschriften,
+   Listen und Formularfelder zurück, und das ganze bisherige Aussehen beruht auf den Vorgaben des
+   Browsers. Er kommt erst, wenn index.css verschwunden ist.
+
+   Farben: Die Tokens in index.css (`:root` und `[data-theme='dark']`) bleiben die einzige Quelle.
+   `@theme inline` macht sie nur unter Tailwind-Namen benutzbar (`text-muted`, `bg-card`,
+   `border-line` …); `inline` heißt, die Utility schreibt `var(--muted)` hinein, also wechselt sie
+   mit dem dunklen Design von selbst. `--color-*: initial` entfernt die Standardpalette, damit
+   niemand `bg-blue-500` schreibt (Wächter S17 in uiRules.test.ts). */
+@layer theme, base, legacy, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "./index.css" layer(legacy);
+/* Gesucht wird nur in client/src (source("./")): sonst läse Tailwind auch index.html,
+   vite.config.ts und alles andere unter client/. */
+@import "tailwindcss/utilities.css" layer(utilities) source("./");
+/* Tests stehen nicht im Markup; die Wächter nennen dort absichtlich verbotene Klassen. */
+@source not "./**/*.test.{ts,tsx}";
+
+/* Namensgleichheit mit index.css. Tailwind erzeugt eine Utility für jedes Wort im Quelltext, das
+   wie eine aussieht, auch in Kommentaren und Zeichenketten. Bei drei Klassen, die index.css selbst
+   definiert und die im Markup stehen, entstünde so eine zweite Regel in der höheren Schicht:
+   `.sr-only` (Tailwind blendet mit `clip-path` statt `clip` aus) und `.grow`, `.grow-2`
+   (`flex-grow` statt der Kurzform `flex`). Sie werden hier ausgeschlossen, es gilt die Regel aus
+   index.css. Alle übrigen Utilities, die aus Wörtern im Quelltext entstehen (heute etwa `block`,
+   `table`, `hidden`, `fixed`), treffen kein Element, weil keines eine solche Klasse trägt; sie
+   bleiben, denn die späteren Schritte von #346 brauchen genau sie. Eine neue Klasse in index.css
+   mit dem Namen einer Utility verbietet Wächter S20. */
+@source not inline("sr-only grow grow-2");
+
+/* Dasselbe bei Animationen: Benutzt index.css eine Animation, die so heißt wie eine aus dem
+   Theme (spin, ping, pulse, bounce), schreibt Tailwind dessen `@keyframes` ungeschichtet ans Ende,
+   und sie gilt statt der eigenen. Deshalb heißt die des Ladekreises `spinner-spin` (S20). */
+
+/* `dark:` gilt nur am Bildschirm. Der Druck ist immer hell (index.css setzt dort die Tokens auf
+   hell), und eine `dark:`-Klasse mit einem Wert außerhalb der Tokens druckte sonst dunkel. */
+@custom-variant dark {
+  @media not print {
+    &:where([data-theme=dark], [data-theme=dark] *) {
+      @slot;
+    }
+  }
+}
+
+@theme inline {
+  --color-*: initial;
+  --color-bg: var(--bg);
+  --color-card: var(--card);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-text: var(--accent-text);
+  --color-accent-soft: var(--accent-soft);
+  --color-green: var(--green);
+  --color-green-soft: var(--green-soft);
+  --color-red: var(--red);
+  --color-red-soft: var(--red-soft);
+  --color-amber: var(--amber);
+  --color-amber-soft: var(--amber-soft);
+  --color-sidebar: var(--sidebar);
+  --color-input-bg: var(--input-bg);
+  --color-input-border: var(--input-border);
+  --color-chip: var(--chip);
+  --color-notice-border: var(--notice-border);
+  --color-error-border: var(--error-border);
+  --color-ok-border: var(--ok-border);
+  --color-overlay: var(--overlay);
+}

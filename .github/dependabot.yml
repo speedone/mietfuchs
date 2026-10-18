@@ -25,6 +25,12 @@ updates:
     schedule:
       interval: monthly
     groups:
+      # Tailwind (nur im Client, #346) kommt immer zusammen, auch bei Hauptversionen:
+      # @tailwindcss/vite verlangt genau die eigene Fassung von tailwindcss, und einzeln läge
+      # sonst ein zweites tailwindcss verschachtelt daneben. Steht vor `kleine-updates`, weil
+      # Dependabot ein Paket der ersten passenden Gruppe zuordnet.
+      tailwind:
+        patterns: ['tailwindcss', '@tailwindcss/*']
       kleine-updates:
         patterns: ['*']
         update-types: [minor, patch]
