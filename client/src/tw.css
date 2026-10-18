@@ -186,6 +186,10 @@
   text-transform: none;
   white-space: normal;
   overflow-wrap: anywhere;
+  /* Den Fokus nimmt das Popover nur, damit Vorleser die Erklärung hören; ein Rahmen darum wäre doppelt. */
+  &:focus {
+    outline: none;
+  }
   @media (max-width: 640px) {
     top: auto;
     left: 0;
@@ -276,6 +280,62 @@
   & button[aria-selected='true'] {
     background: var(--primary);
     color: var(--primary-text);
+    font-weight: var(--weight-strong);
+  }
+  @media (max-width: 640px) {
+    width: 100%;
+  }
+}
+
+/* Die Begriffserklärung (components/Term.tsx, #346 Schritt 6): hinter dem Begriff ein kleines „?“, dessen
+   Tippfläche über `::after` auf `--target` wächst (WCAG 2.5.8, am Handy 44 px), und die Erklärung als Popover
+   mit höchstens zwei Absätzen und dem Verweis in die Hilfe. */
+@utility term-q {
+  /* Das Element selbst bleibt inline: Ein Kasten (inline-flex) fügte in Chromium dem Namen des Felds ein
+     Leerzeichen hinzu („Nebenkosten (Pauschale , …)“), obwohl es für Vorleser ausgeblendet ist. Den Kreis
+     zeichnet `::before`, die Tippfläche `::after`. Das Zeichen steht im CSS und nicht im Text: So bleibt der
+     Text des Labels die Beschriftung, auch für Abfragen nach Beschriftung in Tests. */
+  position: relative;
+  display: inline;
+  text-decoration: none;
+  &::before {
+    content: '?';
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.15em;
+    height: 1.15em;
+    margin-left: 0.25em;
+    border: 1px solid currentColor;
+    border-radius: 50%;
+    font-size: 0.75em;
+    font-weight: var(--weight-strong);
+    line-height: 1;
+    vertical-align: 0.15em;
+    color: var(--accent-text);
+  }
+  &::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 50%;
+    width: var(--target);
+    height: var(--target);
+    transform: translate(25%, -50%);
+  }
+}
+@utility term-pop {
+  width: --spacing(90);
+  & > * {
+    display: block;
+  }
+  & > * + * {
+    margin-top: --spacing(2);
+  }
+  & > strong {
+    font-size: var(--text-m);
+  }
+  & > a {
     font-weight: var(--weight-strong);
   }
   @media (max-width: 640px) {

@@ -155,13 +155,17 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
       setForm({ ...form, ...(selfPlant ? { key: 'heatingSystem' as const, participants: null } : {}), heatingTarget: target })
     }
   }, [form, selfPlant, targetChoices])
-  // Beim Öffnen einer bestehenden Position ihre Heizperiode und Anlage, sonst die Vorgabe der Auswahl.
+  // Beim Öffnen einer bestehenden Position ihre Heizperiode und Anlage, sonst die Vorgabe der Auswahl. Nur beim
+  // Öffnen (neue `formId`), nicht bei jeder neu geladenen Liste: Kam die Liste erst nach der Wahl an (etwa das
+  // zweite Laden, sobald das Objekt bekannt ist), setzte sie die gewählte Anlage still auf „automatisch“ zurück.
   const formId = form?.id
+  const itemsRef = useRef(items)
+  itemsRef.current = items
   useEffect(() => {
-    const item = formId ? items.find((i) => i.id === formId) : undefined
+    const item = formId ? itemsRef.current.find((i) => i.id === formId) : undefined
     setHeatingPeriod(item?.period ?? '')
     setHeatingPlantId(item?.heatingPlantId ?? '')
-  }, [formId, items])
+  }, [formId])
   // Das Jahr der Zahlung einer Heizposition richtet sich nach ihrer Heizperiode (Durchsicht von #231):
   // Pflicht und vorbelegt, wenn sie über zwei Jahre reicht, sonst kein Feld. Vorbelegt mit dem Jahr
   // des Rechnungsdatums des angehängten Belegs, wenn der Belegordner eines kennt, sonst mit dem Jahr
