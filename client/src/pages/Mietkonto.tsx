@@ -5,7 +5,7 @@ import { usePeriod } from '../period'
 import { periodSpanText } from '../periodForm'
 import { CalendarYearSelect } from '../components/PeriodSelect'
 import { useProperty, withProperty } from '../property'
-import { bookingDate, newPaymentDate, rentDueApplies, rentDueNote, rowStanding, shareText, showDecemberNote } from '../ledgerView'
+import { bookingDate, newPaymentDate, rentDueApplies, rentDueNote, rowStanding, shareText, decemberNote } from '../ledgerView'
 import { emptyPaymentForm, hasSettlementPayments, kindChangeQuestion, newPaymentForm, noRentYearText, PAYMENT_KIND_LABELS, PAYMENT_KIND_OPTIONS, paymentBody, paymentFormHints, paymentTenancyOptions, rentWithoutRow, rentWithoutRowQuestion, savedText, type PaymentField, type PaymentForm } from '../paymentForm'
 import Drawer from '../components/Drawer'
 import Field from '../components/Field'
@@ -294,12 +294,8 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
                 {/* **Der überraschende Dezember** (#70). Die Bedingung steht in ledgerView.ts,
                     damit sie einen Test hat: Der erste Entwurf stand hier und war zweimal falsch,
                     einmal im laufenden Jahr und einmal in der Aussage, wo das Geld auftaucht. */}
-                {showDecemberNote(r, year, new Date()) && (
-                  <p className="muted">
-                    Der Dezember steht offen. Das kann daran liegen, dass die Dezembermiete erst im
-                    Januar eingegangen ist: Zahlungen zählen zu dem Jahr, in dem sie eingegangen sind,
-                    und erscheinen dann unter den Zahlungseingängen {year + 1}.
-                  </p>
+                {decemberNote(r, year, new Date()) !== null && (
+                  <p className="muted">{decemberNote(r, year, new Date())}</p>
                 )}
                 <Table>
                   <tbody>

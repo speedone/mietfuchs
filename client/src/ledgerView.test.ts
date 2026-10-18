@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { RentLedgerRow, RentMonth, RentMonthStatus } from './types'
-import { bookingDate, newPaymentDate, rentDueApplies, rentDueNote, rowStanding, shareText, showDecemberNote } from './ledgerView'
+import { bookingDate, newPaymentDate, rentDueApplies, rentDueNote, rowStanding, shareText, showDecemberNote, decemberNote } from './ledgerView'
 
 const month = (m: number, sollCents: number, status: RentMonthStatus): RentMonth => ({
   month: m, baseRentCents: sollCents, prepaymentCents: 0, flatRateCents: 0, sollCents, paidCents: status === 'paid' ? sollCents : 0, status,
@@ -38,6 +38,43 @@ describe('Mietkonto: der Hinweis zum offenen Dezember (#70)', () => {
     // Kein Soll heißt, das Mietverhältnis lief im Dezember nicht mehr; `rentLedger` setzt den
     // Monat dann auf „paid", aber auch mit offenem Status gäbe es nichts zu erklären.
     expect(showDecemberNote(row(month(12, 0, 'open')), 2025, heute)).toBe(false)
+  })
+
+  // **Befund M3 aus #341.** Der Hinweis stand auch bei zwölf offenen Monaten: Dann ist nicht die
+  // Dezembermiete spät gekommen, sondern es fehlt das ganze Jahr. Er hilft nur, wenn allein der
+  // Dezember offen ist.
+  it('erscheint nicht, wenn auch frühere Monate offen sind', () => {
+    const alleOffen: RentLedgerRow = {
+      ...row(month(12, 100000, 'open')),
+      months: Array.from({ length: 12 }, (_, i) => month(i + 1, 100000, 'open')),
+    }
+    expect(showDecemberNote(alleOffen, 2025, heute)).toBe(false)
+    expect(decemberNote(alleOffen, 2025, heute)).toBe(null)
+    const novemberTeilweise: RentLedgerRow = {
+      ...row(month(12, 100000, 'open')),
+      months: [...Array.from({ length: 10 }, (_, i) => month(i + 1, 100000, 'paid')), month(11, 100000, 'partial'), month(12, 100000, 'open')],
+    }
+    expect(showDecemberNote(novemberTeilweise, 2025, heute)).toBe(false)
+  })
+
+  it('zählt Monate ohne Soll nicht als offen', () => {
+    // Einzug im Mai: Januar bis April tragen kein Soll und stehen nicht im Weg.
+    const abMai: RentLedgerRow = {
+      ...row(month(12, 100000, 'open')),
+      months: [...Array.from({ length: 4 }, (_, i) => month(i + 1, 0, 'paid')), ...Array.from({ length: 7 }, (_, i) => month(i + 5, 100000, 'paid')), month(12, 100000, 'open')],
+    }
+    expect(showDecemberNote(abMai, 2025, heute)).toBe(true)
+  })
+
+  it('erklärt die Verteilung der Zahlungen der Reihe nach', () => {
+    // Ein zu niedriger November erscheint nach der Verteilung ab Januar als Lücke im Dezember:
+    // Der Satz nennt beide Ursachen und den fehlenden Betrag.
+    const teil: RentMonth = { ...month(12, 100000, 'partial'), paidCents: 40000 }
+    const text = decemberNote(row(teil), 2025, heute)?.replace(/\s/g, ' ')
+    expect(text).toContain('Im Dezember fehlen 600,00 €')
+    expect(text).toContain('der Reihe nach ab Januar')
+    expect(text).toContain('Zahlungseingängen 2026')
+    expect(decemberNote(row(month(12, 100000, 'open')), 2025, heute)?.replace(/\s/g, ' ')).toContain('Im Dezember fehlen 1.000,00 €')
   })
 
   it('kommt ohne Dezember-Eintrag nicht ins Straucheln', () => {
