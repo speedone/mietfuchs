@@ -14,3 +14,23 @@ test('im Druck kein Schatten der Karten und jede weitere Abrechnung auf einer ne
   expect(printBlocks).toMatch(/\.card \{[^}]*box-shadow: none/)
   expect(printBlocks).toMatch(/body:not\(\.print-one\) \.card\.statement ~ \.card\.statement \{[^}]*break-before: page/)
 })
+
+// S1 der Durchsicht (#346, Schritt 4): Der Druck ist immer hell, weil die dunklen Tokens nur am
+// Bildschirm gelten. Zöge jemand den Block aus `@media not print` heraus, druckte das dunkle Design
+// dunkel; S6 fände den Block trotzdem.
+test('die dunklen Tokens gelten nur am Bildschirm', () => {
+  const plain = css.replace(/\/\*[\s\S]*?\*\//g, '')
+  expect([...plain.matchAll(/data-theme='dark'\]\s*\{/g)].length).toBe(1)
+  const notPrint = plain.match(/@media not print \{\s*:root\[data-theme='dark'\] \{([^}]*)\}\s*\}/)
+  expect(notPrint, 'der dunkle Token-Block steht nicht allein in @media not print').not.toBeNull()
+  expect(notPrint?.[1]).toContain('color-scheme: dark')
+  expect([...plain.matchAll(/color-scheme:\s*dark/g)].length).toBe(1)
+})
+
+// S2 der Durchsicht: Überschriften bleiben im Druck bei ihrem Inhalt, kleine Blöcke werden nicht
+// geteilt. Karten selbst dürfen umbrechen, eine Abrechnung ist oft länger als eine Seite.
+test('im Druck keine Überschrift allein am Seitenende und keine geteilten kleinen Blöcke', () => {
+  expect(printBlocks).toMatch(/h1, h2, h3, h4[^{]*\{[^}]*break-after: avoid/)
+  expect(printBlocks).toMatch(/\.kpi[^{]*\{[^}]*break-inside: avoid/)
+  expect(printBlocks).not.toMatch(/(^|[\s,(])\.card(?![\w.-])[^{]*\{[^}]*break-inside: avoid/)
+})

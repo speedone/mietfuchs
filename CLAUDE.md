@@ -3143,11 +3143,13 @@ Primärknopf, Links, Fortschritt, Fokus, aktiven Menüpunkt und Objekt-Marke. Dr
 den Farben stehen in `:root` Abstand (`--space-N` = N × 4 px), Schrift (`--text-xs … --text-2xl`),
 Gewicht (`--weight-*`), Radius (`--radius-s/m/l/xl`), `--target` (36 px, 44 px bei Finger oder
 < 640 px) und `--focus-ring`; tw.css bildet sie mit `@theme inline reference` auf `p-N`, `text-s`,
-`font-strong`, `rounded-l` ab und entfernt die Standardskalen. Die dunklen Tokens stehen in
+`font-strong`, `rounded-l`, `shadow-1` ab und entfernt die Standardskalen (auch die Schatten, die feste Farben tragen). Die dunklen Tokens stehen in
 `@media not print`, gedruckt wird also immer mit den hellen. **Farben nur in Blöcken mit dem
 Selektor `:root`**: S17 verbietet Hex- und rgba-Werte in jeder anderen Regel von index.css und
 tw.css, eine neue Farbe kommt als Token-Paar hell/dunkel, und S6 rechnet die Kontraste der
-Paare nach (Text, Nebentext, Links, Knöpfe, aktiver Menüpunkt, Hover-Fläche, Hinweise).
+Paare nach (Text, Nebentext, Links, Knöpfe, aktiver Menüpunkt, Hover-Fläche, Hinweise, Feldrand mit 3:1).
+Kästchen und Optionsfelder haben eine eigene Fokusregel (Wächter), kleine Knöpfe am Handy eine
+Tippfläche von `--target` über `::after`, und printCss.test.ts verlangt den dunklen Block in `@media not print`.
 
 ## Konventionen & Fallstricke
 

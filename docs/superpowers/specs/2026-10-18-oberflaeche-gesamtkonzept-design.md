@@ -60,7 +60,7 @@ Farben stehen nur in den Token-Blöcken von `index.css` (`:root`, `[data-theme='
 | `--text` | `#09090b` | `#fafafa` | Text, Feldbeschriftung |
 | `--muted` | `#63636b` | `#a1a1aa` | Nebentext |
 | `--line` | `#e4e4e7` | `#27272a` | Linien, Kartenrand |
-| `--input-border` / `--control-border` | `#e4e4e7` / `#d4d4d8` | `#3f3f46` / `#3f3f46` | Feldrand / Rand sekundärer Knöpfe und Auswahlfelder der Seitenleiste |
+| `--input-border` / `--control-border` | `#8e8e96` / `#d4d4d8` | `#63636b` / `#3f3f46` | Feldrand (auch Auswahlfelder der Seitenleiste) / Rand sekundärer Knöpfe, Linien in Tabellen |
 | `--hover` | `#f4f4f5` | `#1f1f23` | Überfahren, Summen-, Gruppen- und Rechenwegzeilen |
 | `--chip` | `#f4f4f5` | `#27272a` | Segmente, gesperrte Felder, Hover sekundärer Knöpfe |
 | `--sidebar` / `--sidebar-text` | `#fafafa` / `#3f3f46` | `#09090b` / `#d4d4d8` | Seitenleiste |
@@ -83,8 +83,9 @@ Farben stehen nur in den Token-Blöcken von `index.css` (`:root`, `[data-theme='
 | aktiver Menüpunkt (Schrift auf getönter Fläche) | 6,98 | 8,11 |
 | Menüpunkt auf Seitenleiste | 10,0 | 13,5 |
 | Fehler / Warnung / Erfolg auf ihrer Fläche | 5,91 / 6,84 / 4,79 | 6,48 / 10,4 / 9,82 |
+| Feldrand auf Karte / Seitengrund (WCAG 1.4.11 verlangt 3:1) | 3,25 / 3,11 | 3,17 / 3,34 |
 
-Dazu die Tokens, die vorher als feste Pixelwerte verstreut waren. Die Namen von Schrift und Radius sind die Namensräume von Tailwind; `tw.css` bildet sie mit `@theme inline reference` ab, sodass `text-s`, `rounded-l`, `p-4` und `font-strong` genau diese Werte nehmen und die Standardskala von Tailwind entfällt:
+Dazu die Tokens, die vorher als feste Pixelwerte verstreut waren. Die Namen von Schrift und Radius sind die Namensräume von Tailwind; `tw.css` bildet sie mit `@theme inline reference` ab, sodass `text-s`, `rounded-l`, `p-4`, `font-strong` und `shadow-1` genau diese Werte nehmen. Auf Tokens gelegt sind Farbe, Abstand, Schrift, Gewicht, Radius und Schatten; deren Standardskalen entfallen (die Schatten von Tailwind tragen feste Farben). Zeilenhöhe, Laufweite, Containerbreiten und Breakpoints bleiben aus der Standardskala, sie haben keine Farbe:
 
 | Gruppe | Tokens | Werte | Regel |
 |---|---|---|---|
@@ -93,11 +94,11 @@ Dazu die Tokens, die vorher als feste Pixelwerte verstreut waren. Die Namen von 
 | Gewicht | `--weight-normal/medium/strong/bold` | 400/500/600/700 | |
 | Radius | `--radius-s/m/l/xl` | 6, 8, 12, 16 px | Feld/Knopf `m`, Karte `l`, Dialog/Blatt `xl`. |
 | Ebenen | `--shadow-1/2/pop`, `--overlay` | Karten kaum Schatten, im Dunkeln keiner | Top-Layer (Dialog, Popover) ersetzt z-index-Stapel weitgehend. |
-| Ziel | `--target` | 36 px (Maus), **44 px** bei `pointer: coarse` oder < 640 px | WCAG 2.2 verlangt mindestens 24 px (2.5.8); 44 px am Handy behebt MOB2 und N11 (Mülleimer 20 px). |
+| Ziel | `--target` | 36 px (Maus), **44 px** bei `pointer: coarse` oder bis 640 px Breite | WCAG 2.2 verlangt mindestens 24 px (2.5.8); 44 px am Handy behebt MOB2 und N11 (Mülleimer 20 px). Kleine Knöpfe (`.btn.small`, Schließen ✕, „Hier beheben“) behalten ihr Aussehen, ihre Tippfläche wächst über `::after`; die Navigation am Handy folgt mit Schritt 9. |
 | Fokus | `--focus-ring` | 2 px Kartenfarbe + 2 px Akzent | ein Fokusrahmen für alles (`:focus-visible`); Felder zeigen Akzentrand und Ring `--ring`. |
 | Breite | `--page-max` 1120 | | Tabellenseiten dürfen später `--page-max-wide` (1320) nehmen (M10). |
 
-**Hell/Dunkel:** über `data-theme`. **Druck:** Die dunklen Tokens gelten nur `@media not print`, gedruckt wird also immer mit den hellen; `@media print` setzt den Grund auf Weiß, blendet Bedienung, Begriffsauslöser und Navigation aus (N5) und setzt `break-after: avoid` für Überschriften und `break-inside: avoid` für Karten.
+**Hell/Dunkel:** über `data-theme`. **Druck:** Die dunklen Tokens gelten nur `@media not print`, gedruckt wird also immer mit den hellen; `@media print` setzt den Grund auf Weiß, hält Überschriften bei ihrem Inhalt (`break-after: avoid`) und teilt kleine Blöcke nicht (`break-inside: avoid` für Kennzahlen, Hinweise und Tabellenzeilen; Karten dürfen umbrechen, weil eine Abrechnung oft länger als eine Seite ist), und blendet Bedienung, Begriffsauslöser und Navigation aus (N5).
 
 ## 2. Layout und Navigation
 
