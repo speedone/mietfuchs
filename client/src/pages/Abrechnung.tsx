@@ -13,14 +13,18 @@ import { useOpenForm, useProperty, withProperty } from '../property'
 import { useConfirmDiscard, useDraft } from '../useDraft'
 import DraftActions from '../components/DraftActions'
 import { FieldMessage } from '../components/Field'
-import { effectiveLandlord, letterhead } from '../landlord'
+import { effectiveLandlord, letterhead, printsFormerAddress, recipientLines } from '../landlord'
+import { localToday } from '../periodForm'
 import { landlordReasonText } from '../landlordReasons'
 import { notSettledText } from '../tenancyModel'
 import { deviationView } from '../deviation'
 import { deadlineView, historyView, type HistoryEntry } from '../settlementHistory'
 import { costBasisText, personsText } from '../statementView'
-import { legalBasisLines, noticeClass, noticesOf, noticeTarget, NOTICE_LEVEL_LABELS, type NoticeTab } from '../notices'
+import { legalBasisLines, noticesOf, noticeTarget, type NoticeTab } from '../notices'
+import { CalcNotice, NoticeBox } from '../components/Notice'
 import PageHeader from '../components/PageHeader'
+import EmptyState from '../components/EmptyState'
+import { emptySettlement, startStep } from '../emptyStock'
 import { closeSettlementTitle } from '../propertyView'
 import Term from '../components/Term'
 import CalcSteps from '../components/CalcSteps'
@@ -56,7 +60,7 @@ type Props = {
 // Der Satz neben einem geänderten Druck-Häkchen (Durchsicht zu #309, KANN 9).
 export const PRINT_DRAFT_NOTE = 'Gilt schon für diese Vorschau und den Druck; mit „Speichern“ für künftige Abrechnungen gemerkt.'
 
-export default function Abrechnung({ settings, tenancies, reload, onNavigate, focus, onFocusDone }: Props) {
+export default function Abrechnung({ settings, units, tenancies, reload, onNavigate, focus, onFocusDone }: Props) {
   const { key, label, param, calendar, period, rules } = usePeriod()
   const { properties, property } = useProperty()
   const propertyId = property?.id
@@ -362,6 +366,10 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
   }, [printId])
 
   const distributed = data ? data.totalCostsCents - data.landlord.totalCents : 0
+  // Ein Zeitraum ohne Abrechnung, Pauschale und Kosten: kein Entwurf, keine Kennzahlen, nur der erste Schritt (N12).
+  // Abgeschlossen bleibt die Karte zum Wiederöffnen (Durchsicht K1).
+  const empty = data ? emptySettlement(data) && !data.closed : false
+  const start = startStep(units, tenancies, label, calendar)
 
   // §556 Abs. 3 BGB: Die Abrechnung muss dem Mieter binnen 12 Monaten nach Ende des
   // Abrechnungszeitraums zugehen, sonst sind Nachforderungen ausgeschlossen. Nach dem
@@ -376,6 +384,8 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
       </div>
       {error && <div className="error">{error}</div>}
 
+      {/* Im leeren Zeitraum gibt es nichts zu drucken (N12) */}
+      {!(empty && choices.length === 0) && (
       <div className="card no-print">
         <div className="row">
           <label className="field checkline" title="Absatz mit dem Vorschlag zur Anpassung der monatlichen Vorauszahlung (§560 Abs. 4 BGB) andrucken">
@@ -417,8 +427,9 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
           <div className="info no-print">{`Die Heizkosten ${data.separateHeating.map((h) => h.period.label).join(', ')} rechnen Sie getrennt ab; sie stehen nicht in dieser Abrechnung.`}</div>
         )}
       </div>
+      )}
 
-      {data && (
+      {data && !empty && (
         <div className="card no-print">
           <div className="row center">
             {isClosed ? (
@@ -484,38 +495,18 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
           </div>
         )
       })()}
-      {/* Sichtprüfung S12/E40: Stufe und Titel je Hinweis als eine Zeile, der Text zum Aufklappen und
-          „Hier beheben →“ immer sichtbar. Ein Widerspruch (Stufe Fehler) steht offen da. Der Wortlaut
-          bleibt unverändert; ein Hinweis ohne Titel (abgeschlossen vor #112) steht wie bisher als Text. */}
+      {/* Hinweise der Berechnung (#346, Schritt 10, M8): Stufe und Titel, ein Satz „was tun“, „Hier beheben →“
+          und der Rest unter „Mehr dazu“ (CalcNotice). Der Wortlaut bleibt unverändert; ein Hinweis ohne Titel
+          (abgeschlossen vor #112) trägt nur die Stufe als Kopf. */}
       {data && noticesOf(data).length > 0 && (
         <div className="notice-list no-print">
           {noticesOf(data).map((n, i) => {
             const target = noticeTarget(n.subject)
-            const body = (
-              <>
-                <div>{n.text}</div>
-                {n.terms && n.terms.length > 0 && (
-                  <div className="notice-terms">Begriffe: {n.terms.map((t, k) => <Fragment key={t}>{k > 0 && ', '}<Term id={t} /></Fragment>)}</div>
-                )}
-              </>
-            )
-            return (
-              <div key={i} className={`${noticeClass(n.level)} notice-item`}>
-                {n.title ? (
-                  <details open={n.level !== 'hint'}>
-                    <summary><span className="notice-level">{NOTICE_LEVEL_LABELS[n.level]}</span> <strong>{n.title}</strong></summary>
-                    {body}
-                  </details>
-                ) : body}
-                {target && onNavigate && (
-                  <div><button type="button" className="btn secondary notice-action" onClick={() => onNavigate(target.tab, target.focus)}>{target.label}</button></div>
-                )}
-              </div>
-            )
+            return <CalcNotice key={i} notice={n} fix={target && onNavigate ? { label: target.label, onClick: () => onNavigate(target.tab, target.focus) } : null} />
           })}
         </div>
       )}
-      {data && (() => {
+      {data && !empty && (() => {
         const basis = legalBasisLines(data.legalBasis)
         return (
           <details className="legal-basis no-print">
@@ -538,23 +529,34 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
 
       {data && (
         <>
-          <div className="kpis no-print">
-            <div className="kpi">
-              <div className="v">{fmtEuro(data.totalCostsCents)}</div>
-              <div className="l">Gesamtkosten {data.period.label}</div>
+          {!empty && (
+            <div className="kpis no-print">
+              <div className="kpi">
+                <div className="v">{fmtEuro(data.totalCostsCents)}</div>
+                <div className="l">Gesamtkosten {data.period.label}</div>
+              </div>
+              <div className="kpi">
+                <div className="v">{fmtEuro(distributed)}</div>
+                <div className="l">auf Mieter umgelegt</div>
+              </div>
+              <div className="kpi">
+                <div className="v">{fmtEuro(data.landlord.totalCents)}</div>
+                <div className="l">Vermieteranteil</div>
+              </div>
             </div>
-            <div className="kpi">
-              <div className="v">{fmtEuro(distributed)}</div>
-              <div className="l">auf Mieter umgelegt</div>
-            </div>
-            <div className="kpi">
-              <div className="v">{fmtEuro(data.landlord.totalCents)}</div>
-              <div className="l">Vermieteranteil</div>
-            </div>
-          </div>
+          )}
 
+          {/* Leerzustand (#346, Schritt 10, N12): die fehlende Voraussetzung mit dem Knopf dorthin. */}
           {data.statements.length === 0 && (data.notSettled ?? []).length === 0 && (
-            <div className="card"><div className="empty">Keine Mietverhältnisse im {calendar ? 'Jahr' : 'Zeitraum'} {label} — bitte Stammdaten prüfen.</div></div>
+            <div className="card no-print">
+              {empty ? (
+                <EmptyState action={onNavigate ? { label: start.label, onClick: () => onNavigate(start.tab) } : null}>{start.text}</EmptyState>
+              ) : (
+                <EmptyState action={onNavigate ? { label: 'Mietverhältnis anlegen', onClick: () => onNavigate('stammdaten') } : null}>
+                  {`Für ${calendar ? 'das Jahr' : 'den Zeitraum'} ${label} sind Kosten erfasst, aber es gibt kein Mietverhältnis, auf das sie verteilt werden. Legen Sie eines an, oder prüfen Sie Beginn und Ende der Mietverhältnisse.`}
+                </EmptyState>
+              )}
+            </div>
           )}
 
           {/* Mietverhältnisse mit Pauschale oder Inklusivmiete bekommen keine Abrechnung (#93);
@@ -592,9 +594,24 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
             <div key={st.tenancyId} className={`card statement ${printId === st.tenancyId ? 'print-target' : ''}`}>
               {/* Nur im Druck, solange Fehler offen sind; deckt auch Strg+P ab (Durchsicht S2 zu #341). */}
               {data && showsDraftMark(noticesOf(data), !!data.closed) && <div className="print-only draft-mark">{DRAFT_MARK}</div>}
-              <div className="muted">
-                {letterhead(landlord?.landlordName, property)}
+              {/* Briefkopf (N5, #341): Absender und Datum in einer Zeile, darunter im Druck die Anschrift des Mieters.
+                  Datum ist der Versand, sonst der Tag des Drucks. */}
+              <div className="muted flex flex-wrap justify-between gap-x-4">
+                <span>{letterhead(landlord?.landlordName, property)}</span>
+                <span>{fmtDate(data?.closed?.sentAt ?? localToday())}</span>
               </div>
+              {printsFormerAddress(tenancies.find((t) => t.id === st.tenancyId), localToday()) && (
+                <NoticeBox
+                  level="warning"
+                  className="no-print"
+                  title="Anschrift nach dem Auszug fehlt"
+                  action={`${st.tenantName} ist ausgezogen; gedruckt würde die Anschrift der Wohnung ${st.unitName}. Tragen Sie beim Mietverhältnis eine Anschrift für den Schriftverkehr ein: Die Frist nach § 556 Abs. 3 BGB läuft auch gegenüber dem Vormieter.`}
+                  fix={onNavigate ? { label: 'Hier beheben → Stammdaten', onClick: () => onNavigate('stammdaten', { kind: 'tenancy', id: st.tenancyId }) } : null}
+                />
+              )}
+              <address className="print-only not-italic">
+                {recipientLines(st.tenantName, st.unitName, tenancies.find((t) => t.id === st.tenancyId), property).map((l, i) => <div key={i}>{l}</div>)}
+              </address>
               <div className="statement-head">
                 <div className="stack tight">
                   <h2>{data ? settlementTitle(data) : `Nebenkostenabrechnung ${label}`}</h2>

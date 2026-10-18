@@ -1,0 +1,662 @@
+[
+ {
+  "code": "amounts.exceed",
+  "text": "„Heizung laut Messdienst“: die Einzelbeträge ergeben zusammen 3.600,00 € und übersteigen den Rechnungsbetrag 3.000,00 € — es wird nichts verteilt, der Betrag geht an den Vermieter."
+ },
+ {
+  "code": "amounts.forfeited",
+  "text": "„Probe“: 2 Einzelbeträge über 15,00 € gehören zu keinem Mietverhältnis dieses Jahres in der Abrechnungseinheit und entfallen — dieser Teil geht an den Vermieter."
+ },
+ {
+  "code": "amounts.missing",
+  "text": "„Heizung und Warmwasser laut Messdienst“: für tb (b) ist kein Einzelbetrag eingetragen — bitte prüfen, sonst tragen sie diese Position nicht."
+ },
+ {
+  "code": "amounts.self-forfeited",
+  "text": "„Heizung laut Messdienst“: ein Eigenbetrag ist für Hauptwohnung eingetragen, die an dieser Position nicht teilnimmt — er zählt nicht als Eigenanteil und bleibt beim Vermieter. Nehmen Sie die Wohnung als Teilnehmerin auf, wenn die Position sie betrifft."
+ },
+ {
+  "code": "amounts.self-hidden",
+  "text": "„Heizung laut Messdienst“: der Anteil der selbstgenutzten Wohnung Hauptwohnung ist bei Einzelbeträgen nicht eingetragen — er steckt im Vermieteranteil, und die Steuerübersicht nennt den privaten Anteil entsprechend zu niedrig."
+ },
+ {
+  "code": "basis.self-no-area",
+  "text": "Für die selbstgenutzte Wohnung EG (Eigennutzung) ist keine Wohnfläche hinterlegt — der Flächenschlüssel verteilt nur auf die Mieter."
+ },
+ {
+  "code": "basis.self-no-persons",
+  "text": "Für die selbstgenutzte Wohnung EG (Eigennutzung) ist keine Personenzahl hinterlegt — der Personenschlüssel verteilt nur auf die Mieter."
+ },
+ {
+  "code": "basis.tenancy-no-persons",
+  "text": "Für Familie B (OG rechts) ist keine Personenzahl hinterlegt — der Personenschlüssel verteilt deren Anteil auf die übrigen Wohnungen."
+ },
+ {
+  "code": "basis.tenancy-zero",
+  "text": "Für M1 (W1) und M2 (W2) sind 0 Personen und 0 m² eingetragen; bei „P1“ tragen die Mietverhältnisse nichts, ihr Anteil verteilt sich auf die übrigen. Ist das nicht gewollt (keine Garage, kein Stellplatz, kein Lager), tragen Sie die Personenzahl ein."
+ },
+ {
+  "code": "basis.unit-no-area",
+  "text": "Für die Einheiten OG links und OG rechts ist keine Wohnfläche hinterlegt — der Flächenschlüssel verteilt ihren Anteil auf die übrigen Wohnungen."
+ },
+ {
+  "code": "basis.unit-zero",
+  "text": "Für G1 und G2 sind 0 m² und 0 Personen eingetragen; bei „Grundsteuer“ und „Versicherung“ tragen sie nichts, ihr Anteil verteilt sich auf die übrigen Wohnungen. Ist das nicht gewollt (keine Garage, kein Stellplatz, kein Lager), tragen Sie die Wohnfläche ein."
+ },
+ {
+  "code": "basis.vacancy-no-area",
+  "text": "Stellplatz 1, Stellplatz 2, Stellplatz 3 und Stellplatz 4 haben 0 m² und keine Bewohner und werden beim Personenschlüssel nicht als Leerstand angesetzt. Ist eine davon eine Wohnung, tragen Sie dort die Wohnfläche ein."
+ },
+ {
+  "code": "basis.vacancy-persons",
+  "text": "Bei „P1“ (nach Personen) standen W0 (365 Tage), W1 (105 Tage), W2 (337 Tage), W3 (113 Tage) und Leer (365 Tage) leer. An den Kosten leerstehender Wohnungen ist der Vermieter zu beteiligen; sie gehen nicht still an die übrigen Mieter (Grundsatz nach BGH, Urteil vom 31.05.2006, VIII ZR 159/05, dort zum Flächenschlüssel). Wie das beim Personenschlüssel geschieht, regelt kein Gesetz, und es ist nicht abschließend geklärt: Nach BGH, Beschluss vom 08.01.2013, VIII ZR 180/12, kommt es auf den Einzelfall an, und es kann in Betracht kommen, für die Zeit des Leerstands eine fiktive Person anzusetzen. Mietfuchs setzt jeden Tag ohne Mietverhältnis mit 1 Person an; das ist eine Auslegung von Mietfuchs. Der Anteil steht in Ihrem Vermieteranteil als Leerstand. Bei Kosten, die von der Personenzahl abhängen (etwa Wasser nach Personen), kann eine andere Aufteilung angemessener sein, zum Beispiel in Grund- und Verbrauchskosten."
+ },
+ {
+  "code": "co2.building-joint",
+  "text": "Heizanlage „Haus C“, Heizperiode 2025: Nach Ihrer Angabe steht die Anlage im selben Gebäude wie „Gas alt“ und „Gas“. Mietfuchs stuft das Gebäude deshalb über den Ausstoß aller seiner Anlagen und die Wohnfläche aller versorgten Wohnungen ein (15.000 kg CO₂ auf 300 m²; je Anlage zählt die eingetragene Fläche, sonst die ihrer Wohnungen, jede Wohnung einmal), denn maßgeblich sind der Ausstoß des Gebäudes und die Gesamtwohnfläche seiner Wohnungen mit gesonderter oder zentraler Versorgung (§ 5 Abs. 1 Satz 1 und 2 CO2KostAufG). Das ist eine Auslegung: Wie mehrere Heizanlagen in einem Gebäude einzustufen sind, ist höchstrichterlich nicht geklärt."
+ },
+ {
+  "code": "co2.classification-incomplete",
+  "text": "Heizanlage „Ölkessel“, Heizperiode 2025: In dieser Heizperiode heizt auch „Neuer Kessel“ als Vorgängerin oder Nachfolgerin dieser Anlage, aber deren CO₂-Ausstoß kennt Mietfuchs nicht. Eingestuft wird deshalb ohne sie; die Stufe kann zu niedrig liegen, und dann tragen die Mieter einen zu großen Teil der CO₂-Kosten (§ 5 Abs. 1 CO2KostAufG). Tragen Sie dort die Rechnungen mit CO₂-Angaben oder die CO₂-Angaben des Messdienstes ein."
+ },
+ {
+  "code": "co2.cost-implausible",
+  "text": "„Gasrechnung“: 10.000 kg CO₂ passen nicht zu 100.000 kWh nach Brennwert. Mit den Standardwerten der Emissionsberichterstattungsverordnung 2030 (EBeV 2030) wären es 18.139,46 kg. Weniger kg können richtig sein, wenn der Lieferant für einen anerkannten Biomasseanteil (etwa Bio-Erdgas oder Bioheizöl) keine Emissionen ansetzt; dann sollte die Rechnung den Anteil nennen. Bitte prüfen Sie die Angaben der Rechnung, auch ob Brennwert oder Heizwert gemeint ist (§ 3 Abs. 1 und 2 CO2KostAufG). Mietfuchs rechnet mit den kg der Rechnung."
+ },
+ {
+  "code": "co2.district-ets-exempt",
+  "text": "Heizanlage „Gas“, Heizperiode 2025/2026: Die Wärme stammt nach Ihrer Angabe aus einer Anlage im Europäischen Emissionshandel, und das Gebäude wurde erstmals nach dem 01.01.2023 an das Wärmenetz angeschlossen. Die CO₂-Kosten werden deshalb nicht aufgeteilt (§ 2 Abs. 4 Satz 2 CO2KostAufG)."
+ },
+ {
+  "code": "co2.exceeds-heating",
+  "text": "Heizanlage „Gas“, Heizperiode 2025/2026: Die CO₂-Kosten der Lieferungen (9.500,00 €) sind höher als die Brennstoffkosten, die verteilt werden (9.000,00 €). Das passt nicht zusammen; Mietfuchs bucht keine CO₂-Aufteilung. Ohne Aufteilung darf jeder Mieter seinen Anteil an den Heizkosten um 3 % kürzen (§ 7 Abs. 4 CO2KostAufG), hier: Mieter A (A) 145,00 €, Mieter B (B) 91,00 € und Mieter C (C) 64,00 €. Prüfen Sie die CO₂-Kosten und die Beträge der Lieferungen und Positionen."
+ },
+ {
+  "code": "co2.exempt-deducted",
+  "text": "Heizanlage „Gas“, Heizperiode 2025: Sie haben eine Ausnahme nach § 11 HeizkostenV für Wärme und Warmwasser angegeben und keine Abrechnung der Heiz- und Warmwasserkosten mit den Mietern vereinbart; dann ist das CO2KostAufG nicht anzuwenden (§ 2 Abs. 7 CO2KostAufG). Ihr Messdienst hat trotzdem CO₂-Kosten des Vermieters von 100,00 € abgezogen. Mietfuchs übernimmt seine Beträge, wie sie dastehen; die Mieter tragen damit weniger, als ohne Aufteilung auf sie entfiele. Den Teil, der auf Ihre selbstgenutzte Wohnung entfällt, rechnet Mietfuchs zum Eigenanteil; in der Steuerübersicht ist er privat. Klären Sie mit dem Messdienst, ob die Ausnahme gilt."
+ },
+ {
+  "code": "co2.fuel-unknown",
+  "text": "Mietfuchs weiß nicht, womit das Haus geheizt wird. Heizen Sie mit Gas, Heizöl, Flüssiggas oder Kohle oder weist Ihr Wärmelieferant CO₂-Kosten aus, sind die CO₂-Kosten zwischen Ihnen und den Mietern aufzuteilen (§ 5 CO2KostAufG), und die Heizkostenabrechnung muss den Anteil der Mieter, die Einstufung des Gebäudes und die Berechnungsgrundlagen ausweisen (§ 7 Abs. 3 CO2KostAufG). Fehlt das, darf jeder Mieter seinen Anteil an den Heizkosten um 3 % kürzen (§ 7 Abs. 4 CO2KostAufG), hier: Xaver (Wohnung A) 9,00 €, Yvonne (Wohnung A) 6,00 € und Zora (Wohnung B) 15,00 €. Richten Sie unter Stammdaten die Heizung ein; dann sagt Mietfuchs, was zu tun ist. Bezieht der Mieter Brennstoff oder Wärme über einen eigenen Vertrag, etwa für eine Gastherme in der Wohnung, stellen Sie sein Mietverhältnis unter Heizung auf „Mieter heizt selbst“; dann entfällt die Kürzung."
+ },
+ {
+  "code": "co2.half-split",
+  "text": "Heizanlage „Gas“, Heizperiode 2027/2028: Die Heizung wurde am 01.03.2027 nach § 43 Abs. 1 GModG eingebaut. Ab dem 01.01.2028 tragen Sie die Hälfte der Gasnetzentgelte und der CO₂-Kosten, ab dem 01.01.2029 auch die Hälfte der Kosten des Pflichtanteils an Biobrennstoff, höchstens für 30 % des verbrauchten Brennstoffs (§ 5a Abs. 3 CO2KostAufG). In dieser Heizperiode fallen nach Gradtagen 53 % der CO₂-Kosten in die Teilung. § 5a Abs. 3 Nr. 2 nennt für die CO₂-Kosten nur den Stichtag. Mietfuchs teilt sie wie die Netzentgelte nach § 5a Abs. 1 nach Anfall. Das ist eine Auslegung: Die Gesetzesbegründung spricht von Abrechnungszeiträumen „ab dem 01. Januar 2028“ (BT-Drs. 21/6278, S. 124), was auch so verstanden werden kann, dass erst ein Zeitraum zählt, der an oder nach diesem Tag beginnt. Die Hälfte der Netzentgelte und der Kosten des Biobrennstoffs müssen Sie von den Heizkosten abziehen, bevor verteilt wird (§ 7 Abs. 5 CO2KostAufG); rechnet ein Messdienst für Sie ab, prüfen Sie das in seiner Abrechnung. Fehlt es, darf jeder Mieter seinen Anteil an den Heizkosten um 3 % kürzen (§ 7 Abs. 5 Satz 3, Abs. 4 CO2KostAufG), hier: Mieter A (A) 135,00 €, Mieter B (B) 81,00 € und Mieter C (C) 54,00 €. Für Mietverhältnisse über Räume, die keine Wohnräume sind, gilt die Teilung nicht (§ 5a Abs. 1: Wohnraummietverhältnisse); Mietfuchs behandelt alle Mietverhältnisse als Wohnraum. Bei einer Hybridheizung mit Gas-, Öl- oder Flüssiggaskessel gilt die Pflicht nach § 43 Abs. 1 GModG durch die Wärmepumpe oder die feste Biomasse als erfüllt (§ 43 Abs. 5, § 45 Abs. 2 GModG). Weil die Anlage trotzdem mit Gas, Öl oder Flüssiggas beschickt wird, wendet Mietfuchs § 5a CO2KostAufG an. Das ist eine Auslegung; ausdrücklich regeln Gesetz und Begründung diesen Fall nicht. Einen Härtefall nach § 5d Abs. 1 CO2KostAufG rechnet Mietfuchs nicht."
+ },
+ {
+  "code": "co2.half-split",
+  "text": "Heizanlage „Gas“, Heizperiode 2027/2028: Die Heizung wurde am 01.01.2027 nach § 43 Abs. 1 GModG eingebaut. Ab dem 01.01.2028 tragen Sie die Hälfte der Gasnetzentgelte und der CO₂-Kosten, ab dem 01.01.2029 auch die Hälfte der Kosten des Pflichtanteils an Biobrennstoff, höchstens für 30 % des verbrauchten Brennstoffs (§ 5a Abs. 3 CO2KostAufG). In dieser Heizperiode fallen nach Gradtagen 53 % der CO₂-Kosten in die Teilung. § 5a Abs. 3 Nr. 2 nennt für die CO₂-Kosten nur den Stichtag. Mietfuchs teilt sie wie die Netzentgelte nach § 5a Abs. 1 nach Anfall. Das ist eine Auslegung: Die Gesetzesbegründung spricht von Abrechnungszeiträumen „ab dem 01. Januar 2028“ (BT-Drs. 21/6278, S. 124), was auch so verstanden werden kann, dass erst ein Zeitraum zählt, der an oder nach diesem Tag beginnt. Die Heizung wurde genau zwölf Monate vor dem 01.01.2028 eingebaut. § 5a Abs. 4 Satz 1 erfasst nach dem Wortlaut nur einen Einbau „weniger als zwölf Monate“ davor, die Gesetzesbegründung spricht von einer „Havarie im Verlauf des Jahres 2027“ (BT-Drs. 21/7009, S. 154). Mietfuchs teilt deshalb ab dem 01.01.2028 hälftig; das ist eine Auslegung. Für Mietverhältnisse über Räume, die keine Wohnräume sind, gilt die Teilung nicht (§ 5a Abs. 1: Wohnraummietverhältnisse); Mietfuchs behandelt alle Mietverhältnisse als Wohnraum. Bei einer Hybridheizung mit Gas-, Öl- oder Flüssiggaskessel gilt die Pflicht nach § 43 Abs. 1 GModG durch die Wärmepumpe oder die feste Biomasse als erfüllt (§ 43 Abs. 5, § 45 Abs. 2 GModG). Weil die Anlage trotzdem mit Gas, Öl oder Flüssiggas beschickt wird, wendet Mietfuchs § 5a CO2KostAufG an. Das ist eine Auslegung; ausdrücklich regeln Gesetz und Begründung diesen Fall nicht. Einen Härtefall nach § 5d Abs. 1 CO2KostAufG rechnet Mietfuchs nicht."
+ },
+ {
+  "code": "co2.half-split-missing",
+  "text": "Heizanlage „Gas“, Heizperiode 2028/2029: Ab dem 01.01.2029 tragen Sie die Hälfte der Kosten des Pflichtanteils an Biobrennstoff, höchstens für 30 % des verbrauchten Brennstoffs (§ 5a Abs. 1 Nr. 2, Abs. 3 Nr. 3 CO2KostAufG). Für Brennstoff aus dem Vorrat rechnet Mietfuchs diesen Anteil mit einer späteren Version. Ermitteln Sie ihn bis dahin selbst und ziehen Sie ihn in der Abrechnung ab; sonst darf jeder Mieter seinen Anteil an den Heizkosten um 3 % kürzen (§ 7 Abs. 5 Satz 3, Abs. 4 CO2KostAufG), hier: Mieter A (A) 135,00 €, Mieter B (B) 81,00 € und Mieter C (C) 54,00 €. Enthält die Lieferung keinen Pflichtanteil an Biobrennstoff, etwa weil die Pflicht ganz anders erfüllt ist (§ 43 Abs. 3 bis 5, § 45 Abs. 2 GModG) oder noch nicht gilt (§ 43 Abs. 1 und 7 GModG), tragen Sie 0 ein. Wurde Biobrennstoff geliefert und fehlt der Preisbestandteil auf der Rechnung, fordern Sie ihn beim Lieferanten an; er muss ihn ausweisen (§ 3 Abs. 1 Nr. 6 CO2KostAufG). Tragen Sie die 0 dann an jeder Lieferung ab dem 01.01.2029 beim Biobrennstoff ein; früher gelieferter Brennstoff enthält keinen Pflichtanteil."
+ },
+ {
+  "code": "co2.half-split-two-family",
+  "text": "Heizanlage „Gas“, Heizperiode 2027/2028: Sie bewohnen das Gebäude selbst, es hat höchstens zwei Wohnungen, und beide hängen an dieser Heizung. Das Gebäude liegt nach Ihrer Angabe in dieser Heizperiode in keinem Gebiet, das eine Verordnung nach § 556d Abs. 2 Satz 1, § 558 Abs. 3 Satz 3 oder § 577a Abs. 2 Satz 2 BGB als angespannten Wohnungsmarkt bestimmt, und Sie haben das Mieter A am 15.06.2028 in Textform mitgeteilt (dass die Mitteilung auch für Abs. 3 nötig ist, ist eine Auslegung; Mietfuchs verlangt sie, damit Sie sicher gehen). Bei Mieter A bestand der Mietvertrag schon, bevor die Voraussetzungen eintraten; dann reicht die Mitteilung bei der ersten Geltendmachung (§ 5d Abs. 4 Satz 2 CO2KostAufG); dafür genügt nach der Begründung in der Regel die Mitteilung mit dieser Abrechnung (BT-Drs. 21/7009, S. 156). Ist sie noch nicht zugegangen, legen Sie sie der Abrechnung in Textform bei. Dann tragen Sie nur die CO₂-Kosten nach dem Stufenmodell und keine Netzentgelte und keinen Biobrennstoff (§ 5d Abs. 3, 4 CO2KostAufG). Jeder neue Mieter muss die Mitteilung bei Abschluss seines Mietvertrags bekommen (§ 5d Abs. 4 Satz 1)."
+ },
+ {
+  "code": "co2.incomplete",
+  "text": "Heizanlage „Gas“, Heizperiode 2025: Für den Ausweis der CO₂-Aufteilung fehlen der CO₂-Ausstoß je Quadratmeter (oder Ausstoß und Fläche), der Anteil des Vermieters in Prozent und die CO₂-Kosten insgesamt. Die Heizkostenabrechnung muss den Anteil der Mieter, die Einstufung des Gebäudes und die Berechnungsgrundlagen ausweisen (§ 7 Abs. 3 CO2KostAufG); fehlen sie auch in der Abrechnung des Messdienstes, darf jeder Mieter seinen Anteil an den Heizkosten um 3 % kürzen (§ 7 Abs. 4 CO2KostAufG), hier: t0 (u0) 27,07 €, t1 (u1) 38,44 €, t2 (u2) 14,65 € und t3 (u3) 32,82 €. Stehen sie in der Abrechnung des Messdienstes, legen Sie diese den Mietern bei; tragen Sie die Angaben außerdem auf der Seite Heizkosten nach."
+ },
+ {
+  "code": "co2.item-spans-plants",
+  "text": "„Wartung“ gehört zur Heizanlage „Zentralheizung“, wird aber auch auf Wohnungen verteilt, die an „Haus B“ hängen (DG). Mietfuchs teilt die CO₂-Kosten je Heizanlage auf; eine Position über zwei Anlagen gehört zu keiner, deshalb mindert sie keinen CO₂-Abzug, und die Mieter tragen den CO₂-Anteil darin mit. Ihren Anteil an den CO₂-Kosten dürfen Sie auch dann nicht auf die Mieter umlegen (§ 5 Abs. 2, § 6 Abs. 1 CO2KostAufG). Fehlt die Aufteilung, darf jeder Mieter seinen Anteil an den Heizkosten um 3 % kürzen (§ 7 Abs. 4 CO2KostAufG), hier: Mieter tb (OG) 4,50 € und Mieter tc (DG) 4,50 €. Wählen Sie an der Position unter „Weitere Optionen: nur bestimmte Wohnungen beteiligen“ die Wohnungen von „Zentralheizung“ (EG, OG), und erfassen Sie den Teil der übrigen Wohnungen als eigene Position ihrer Anlage."
+ },
+ {
+  "code": "co2.missing",
+  "text": "Heizanlage, Heizperiode 2025: Weist Ihr Wärmelieferant CO₂-Kosten aus, sind sie zwischen Ihnen und den Mietern aufzuteilen (§ 5 CO2KostAufG), und die Heizkostenabrechnung muss den Anteil der Mieter, die Einstufung des Gebäudes und die Berechnungsgrundlagen ausweisen (§ 7 Abs. 3 CO2KostAufG). Für diese Heizperiode kennt Mietfuchs keine CO₂-Angaben. Fehlen sie auch in der Heizkostenabrechnung, darf jeder Mieter seinen Anteil an den Heizkosten um 3 % kürzen (§ 7 Abs. 4 CO2KostAufG), hier: Mieter A (A) 58,86 €, Mieter B (B) 78,48 €, Mieter C1 (C) 39,95 € und Mieter C2 (C) 22,52 €. Ihren Anteil an den CO₂-Kosten dürfen Sie auch dann nicht auf die Mieter umlegen (§ 5 Abs. 2, § 6 Abs. 1 CO2KostAufG). Tragen Sie auf der Seite Heizkosten die Rechnungen Ihres Versorgers als Lieferungen ein; dann teilt Mietfuchs die CO₂-Kosten selbst auf."
+ },
+ {
+  "code": "co2.missing-first-year",
+  "text": "Für Abrechnungszeiträume, die am oder nach dem 01.01.2023 beginnen, sind die CO₂-Kosten der Heizung aufzuteilen (§ 11 Abs. 2 Satz 1 CO2KostAufG); dieser Zeitraum ist der erste. Mietfuchs weiß nicht, womit das Haus geheizt wird. Heizen Sie mit Gas, Heizöl, Flüssiggas oder Kohle oder weist Ihr Wärmelieferant CO₂-Kosten aus, sind die CO₂-Kosten zwischen Ihnen und den Mietern aufzuteilen (§ 5 CO2KostAufG), und die Heizkostenabrechnung muss den Anteil der Mieter, die Einstufung des Gebäudes und die Berechnungsgrundlagen ausweisen (§ 7 Abs. 3 CO2KostAufG). Fehlt das, darf jeder Mieter seinen Anteil an den Heizkosten um 3 % kürzen (§ 7 Abs. 4 CO2KostAufG), hier: A (w1) 18,00 € und B (w2) 18,00 €. Richten Sie unter Stammdaten die Heizung ein; dann sagt Mietfuchs, was zu tun ist. Bezieht der Mieter Brennstoff oder Wärme über einen eigenen Vertrag, etwa für eine Gastherme in der Wohnung, stellen Sie sein Mietverhältnis unter Heizung auf „Mieter heizt selbst“; dann entfällt die Kürzung."
+ },
+ {
+  "code": "co2.non-residential",
+  "text": "Heizanlage „Gas“, Heizperiode 2025/2026: Das Gebäude dient nach Ihrer Angabe überwiegend nicht dem Wohnen. Dann tragen Sie mindestens 50 % der CO₂-Kosten (§ 8 Abs. 1 CO2KostAufG); Mietfuchs rechnet mit diesem Anteil statt mit der Stufentabelle."
+ },
+ {
+  "code": "co2.plant-replaced",
+  "text": "Heizanlage „Neuer Kessel“, Heizperiode 2025: In dieser Heizperiode hat „Neuer Kessel“ die Heizanlage „Ölkessel“ ersetzt. Eingestuft wird das Gebäude über den Ausstoß beider Heizanlagen (3.211,56 kg und 12.043,35 kg, zusammen 15.254,91 kg CO₂), denn maßgeblich ist der Kohlendioxidausstoß des Gebäudes pro Quadratmeter Wohnfläche und Jahr (§ 5 Abs. 1 Satz 1 CO2KostAufG). Die CO₂-Kosten jeder Anlage werden mit dem Anteil dieser Stufe aufgeteilt."
+ },
+ {
+  "code": "co2.pool-foreign-item",
+  "text": "Heizanlage „Gas“, Heizperiode 2025: „Gutschrift Versorger“ gehört zur Heizanlage, ist aber keine Position mit Einzelbeträgen des Messdienstes. Die Probe der CO₂-Angaben zählt sie nicht mit; verteilt wird sie wie bisher nach ihrem Schlüssel. Eine Gutschrift des Versorgers oder eine Wartung darf so daneben stehen. Gehört sie zu den Kosten, die der Messdienst verteilt hat, übernehmen Sie sie als Einzelbeträge."
+ },
+ {
+  "code": "co2.probably-deducted",
+  "text": "Heizanlage „Gas“, Heizperiode 2025: Sie haben angegeben, dass die Abrechnung die CO₂-Kosten nur ausweist. Die Brennstoffkosten der Abrechnung (3.540,00 €) liegen aber genau um den CO₂-Anteil des Vermieters (87,50 €) über den verteilten Brennstoffkosten (3.452,50 €); das spricht für einen Vorwegabzug. Dann würden die Mieter doppelt entlastet: einmal in der Kostenaufstellung und einmal mit der eigenen Zeile. Prüfen Sie, ob die Kostenaufstellung eine Zeile „Abzüglich CO₂-Kosten Vermieter“ enthält."
+ },
+ {
+  "code": "co2.refund-differs",
+  "text": "Die eingetragene CO₂-Erstattung an Mieter (50,00 €) weicht von der Nachrechnung nach den eingetragenen Grundlagen ab (240,00 €). Zu erstatten ist der Anteil, den Sie nach § 6 Abs. 2 Satz 1 CO2KostAufG zu tragen haben; gebucht ist der eingetragene Betrag. Prüfen Sie die Anzeige des Mieters und die Grundlagen."
+ },
+ {
+  "code": "co2.refund-due",
+  "text": "Mieter hat am 10.02.2024 eine CO₂-Erstattung von 50,00 € geltend gemacht. Wird sie nicht verrechnet, war sie spätestens am 10.02.2025 zu erstatten (§ 6 Abs. 2 Satz 5 CO2KostAufG); bei vereinbarter Vorauszahlung wird sie mit Ablauf der Frist der Abrechnung fällig, in der sie zu verrechnen ist (BT-Drs. 20/3172, S. 35). Verrechnen Sie sie in dieser Abrechnung oder zahlen Sie sie aus; dann tragen Sie den Tag der Auszahlung an der Erstattung ein; die Steuerübersicht führt sie dann im Jahr der Auszahlung als Werbungskosten. Als Zahlung im Mietkonto erfassen Sie sie nicht, sonst stünde dort ein Rückstand. Ob diese Frist auch im Nichtwohngebäude gilt, ist nach dem Wortlaut nicht sicher: § 8 Abs. 2 verweist auf § 6 Abs. 2 Satz 2 bis 4, und seit dem 29.07.2026 steht die Frist in Satz 5. Nach der Begründung des Gesetzes sollen dieselben Fristen gelten (BT-Drs. 20/3172, S. 37); Mietfuchs warnt deshalb."
+ },
+ {
+  "code": "co2.refund-late",
+  "text": "Mieter hat die CO₂-Erstattung am 01.03.2025 geltend gemacht; die Abrechnung des Lieferanten stammt vom 01.11.2023. Die Frist von 12 Monaten (§ 6 Abs. 2 Satz 3 CO2KostAufG) endete am 01.11.2024. Die Frist ist nach der Begründung des Gesetzes eine Ausschlussfrist (BT-Drs. 20/3172, S. 34, damals noch mit sechs Monaten); den Anspruch müssen Sie dann voraussichtlich nicht erfüllen. Mietfuchs verrechnet ihn, weil Sie ihn eingetragen haben."
+ },
+ {
+  "code": "co2.refund-not-next",
+  "text": "Mit Mieter ist für diesen Zeitraum keine Vorauszahlung auf Betriebskosten vereinbart (keine Staffel mit Vorauszahlung, oder Pauschale bzw. Inklusivmiete). Verrechnen dürfen Sie die CO₂-Erstattung nach § 6 Abs. 2 Satz 4 CO2KostAufG nur bei vereinbarter Vorauszahlung; zahlen Sie sie spätestens am 01.03.2026 aus (Satz 5) und tragen Sie die Auszahlung ein."
+ },
+ {
+  "code": "co2.refund-not-self",
+  "text": "Für Mieter ist eine CO₂-Erstattung von 50,00 € eingetragen, das Mietverhältnis steht unter Heizung aber nicht auf „Mieter heizt selbst“. Eine Erstattung nach § 6 Abs. 2 CO2KostAufG steht nur einem Mieter zu, der sich selbst mit Wärme versorgt; Mietfuchs verrechnet sie deshalb nicht. Stellen Sie das Mietverhältnis um, wenn das zutrifft, oder löschen Sie die Erstattung."
+ },
+ {
+  "code": "co2.reliefs-invalid",
+  "text": "Heizanlage „Gas“, Heizperiode 2025: Die eingetragenen Beträge „vom Vermieter übernommen“ ergeben zusammen 90,00 € und damit mehr als den CO₂-Anteil des Vermieters von 87,50 €. Mietfuchs rechnet deshalb für alle Mieter nach ihrem Anteil an den Heizkosten (87,50 € × Betrag des Mieters ÷ 3.933,01 €). Bitte prüfen Sie die Beträge auf der Seite Heizkosten."
+ },
+ {
+  "code": "co2.reliefs-missing",
+  "text": "Heizanlage „Gas“, Heizperiode 2025: Für t0 (u0), t1 (u1), t2 (u2) und t3 (u3) fehlt der Betrag „vom Vermieter übernommen“. Mietfuchs ergänzt ihn nach dem Anteil an den Heizkosten (t0 (u0) 103,36 €, t1 (u1) 129,03 €, t2 (u2) 141,53 € und t3 (u3) 112,19 €); steht er in der Abrechnung, tragen Sie ihn auf der Seite Heizkosten ein."
+ },
+ {
+  "code": "co2.restriction",
+  "text": "Heizanlage „Gas“, Heizperiode 2027/2028: Nach Ihrer Angabe stehen öffentlich-rechtliche Vorgaben einer wesentlichen energetischen Verbesserung des Gebäudes entgegen. Ihr Anteil an den CO₂-Kosten wird deshalb um 50 % gekürzt (§ 9 Abs. 1 CO2KostAufG). Darauf können Sie sich nur berufen, wenn Sie den Mietern die Umstände nachweisen (§ 9 Abs. 3 CO2KostAufG); legen Sie den Nachweis der Abrechnung bei. Bei einer Heizung nach § 43 GModG kürzt Mietfuchs nur den Anteil nach Stufen, nicht die Hälfte nach § 5a, weil § 9 Abs. 1 CO2KostAufG den Anteil ‚nach § 5, 6, 7 oder 8‘ nennt und § 5a nicht. Das ist eine Auslegung zu Ihren Lasten. Ebenso vertretbar ist, dass § 9 auch diese Hälfte kürzt: Sie gilt ‚in Abweichung von § 5 Absatz 2‘ (§ 5a Abs. 3 Nr. 2), und § 6 Abs. 1 Satz 2 und Abs. 2 Satz 1 beziehen die Kosten nach § 5a Abs. 3 ausdrücklich ein."
+ },
+ {
+  "code": "co2.self-supply-items",
+  "text": "„Wartung der Heizung“ und „Betriebsstrom eigen“ betreffen eine Heizung, deren Brennstoff oder Wärme der Mieter selbst bezieht. Darin stecken keine CO₂-Kosten, die Sie aufteilen müssten; eine Kürzung nach § 7 Abs. 4 CO2KostAufG kommt dafür nicht in Betracht. Ihren Anteil an den CO₂-Kosten des Mieters erstatten Sie ihm, wenn er ihn nach § 6 Abs. 2 CO2KostAufG in Textform verlangt; erfassen Sie seine Anzeige auf der Seite Kosten unter „CO₂-Erstattung“."
+ },
+ {
+  "code": "co2.self-supply-mixed",
+  "text": "Mieter A (A) ist in den Stammdaten auf „Mieter heizt selbst“ gestellt, trägt aber einen Anteil an „Gas“ einer Heizanlage, deren Brennstoff oder Wärme Sie beziehen. Beides zugleich deckt Mietfuchs nicht ab; gerechnet wird wie erfasst, ohne CO₂-Kürzung für diesen Mieter. Heizt der Mieter über Ihre Heizanlage, stellen Sie sein Mietverhältnis unter Heizung auf „Abrechnung“. Bezieht er den Brennstoff dieser zentralen Heizung über einen eigenen Vertrag, legen Sie dafür keine Heizanlage an: Entfernen Sie die Heizanlage in den Stammdaten in der Karte „Heizung“ mit „Entfernen“ (die Heizpositionen bleiben, nur ohne Anlage), klicken Sie dann auf „Heizung einrichten“ und wählen Sie bei „Wer hat den Liefervertrag für den Brennstoff?“ „Der Mieter, der alle angeschlossenen Wohnungen gemietet hat“."
+ },
+ {
+  "code": "co2.service-fuel-mismatch",
+  "text": "Heizanlage „Gas“, Heizperiode 2025/2026: Der Messdienst hat Brennstoffkosten von 3.200,00 € angesetzt, die Rechnungen, die Sie als angesetzt gekennzeichnet haben, ergeben 3.117,47 €. Der Messdienst hat andere Brennstoffkosten angesetzt; prüfen Sie, welche Rechnungen er verwendet hat."
+ },
+ {
+  "code": "co2.service-unsplit",
+  "text": "Heizanlage „Gas“, Heizperiode 2025/2026: Der Messdienst hat die CO₂-Kosten nicht zwischen Ihnen und den Mietern aufgeteilt. Das Gesetz verlangt die Aufteilung und ihren Ausweis in der Heizkostenabrechnung (§§ 5, 7 Abs. 3 CO2KostAufG); ohne sie darf jeder Mieter seinen Anteil an den Heizkosten um 3 % kürzen (§ 7 Abs. 4 CO2KostAufG), hier: Mieter A (A) 72,00 € und Mieter B (B) 48,00 €. Ihren Anteil an den CO₂-Kosten dürfen Sie auch dann nicht auf die Mieter umlegen (§ 5 Abs. 2, § 6 Abs. 1 CO2KostAufG). Bitten Sie den Messdienst um eine Abrechnung mit CO₂-Aufteilung; dafür braucht er die CO₂-Angaben Ihrer Brennstoffrechnung. Oder tragen Sie die Rechnung des Versorgers auf der Seite Heizkosten als Lieferung ein; dann teilt Mietfuchs selbst auf."
+ },
+ {
+  "code": "co2.service-unsplit-healed",
+  "text": "Heizanlage „Gas“, Heizperiode 2025/2026: Der Messdienst hat die CO₂-Kosten nicht aufgeteilt. Mietfuchs teilt sie aus den Rechnungen auf, die er angesetzt hat (CO₂-Kosten 600,00 €), und zieht den Anteil des Vermieters von 240,00 € je Mieter als eigene Zeile ab. Ob das die Kürzung vermeidet, ist nicht entschieden: § 7 Abs. 3 CO2KostAufG verlangt den Ausweis „in der Heizkostenabrechnung“. Jeder Mieter könnte bis zu 3 % kürzen, hier: Mieter A (A) 67,68 € und Mieter B (B) 45,12 €. Geben Sie die Aufstellung von Mietfuchs zusammen mit der Abrechnung des Messdienstes heraus."
+ },
+ {
+  "code": "co2.share-approximated",
+  "text": "Heizanlage „Gas“, Heizperiode 2025/2026: Keine Position der Heizanlage ist als Brennstoff gekennzeichnet oder mit einer Lieferung verknüpft. Mietfuchs verteilt den CO₂-Anteil des Vermieters deshalb nach dem Anteil an allen Heizkosten. Das ist eine Näherung, denn die CO₂-Kosten folgen dem Schlüssel des Brennstoffs (§ 7 Abs. 1 Satz 2 CO2KostAufG). Verknüpfen Sie die Positionen der Versorgerrechnung mit ihrer Lieferung."
+ },
+ {
+  "code": "co2.share-capped",
+  "text": "„Heizung“: Der Rest dieser Position nach den Einzelbeträgen reicht nicht für den CO₂-Anteil des Vermieters von 100,00 €; 100,00 € fehlen. Vermutlich steckt der Abzug in einer anderen Position des Messdienstes. Wählen Sie auf der Seite Heizkosten unter „Position mit dem CO₂-Anteil“ die Position, die die Zeile „Abzüglich CO₂-Kosten Vermieter“ enthält."
+ },
+ {
+  "code": "co2.short-period-agreed",
+  "text": "Heizanlage „Gas“, Heizperiode 01.01.–30.04.2028: Die Heizperiode ist kürzer als ein Jahr. Mietfuchs kürzt die Grenzen der Stufentabelle im Verhältnis der Tage (§ 5 Abs. 1 Satz 4 CO2KostAufG). Das Gesetz kürzt bei einem „vereinbarten“ Abrechnungszeitraum unter einem Jahr; ob ein Rumpf, den Sie selbst gesetzt haben, vereinbart ist, ist nicht geklärt. Prüfen Sie Ihren Mietvertrag."
+ },
+ {
+  "code": "co2.stage-mismatch",
+  "text": "Heizanlage „Gas“, Heizperiode 2027/2028: Laut Abrechnung liegt der Ausstoß bei 40,2 kg CO₂ je m² und der Anteil des Vermieters bei 50 %. Nach der Stufentabelle des CO2KostAufG gehört dieser Wert zu 60 %. Ab dem 01.01.2028 wird bei dieser Heizung hälftig geteilt (§ 5a CO2KostAufG), für 53 % der Heizperiode nach Gradtagen; erwartet ist deshalb ein Anteil des Vermieters von 54,7 %. Eine Abweichung kann berechtigt sein, etwa bei einem Gebäude, das überwiegend nicht zum Wohnen dient (§ 8 CO2KostAufG), oder bei Einschränkungen nach § 9 CO2KostAufG; auf diese kann sich der Vermieter nur berufen, wenn er dem Mieter die Umstände nachweist (§ 9 Abs. 3 CO2KostAufG). Bitte prüfen Sie die Angaben."
+ },
+ {
+  "code": "co2.sum-check",
+  "text": "Heizanlage „Gas“, Heizperiode 2025: Die Probe der CO₂-Angaben geht nicht auf. Ihre Position „Heizung und Warmwasser laut Messdienst“ hat 3.933,01 €. Mit Abzugszeile muss der Betrag die Summe der Kosten aller Nutzer (3.845,51 €) plus den CO₂-Anteil des Vermieters (87,50 €) sein, also 3.933,01 €; ohne Abzugszeile genau die Summe der Kosten aller Nutzer, 3.845,51 €. Bis das geklärt ist, bucht Mietfuchs keine CO₂-Aufteilung, und die Mieter tragen ihre Einzelbeträge wie eingetragen. Stimmt Ihre Antwort, dass die Abrechnung die CO₂-Kosten nur ausweist, tragen die Mieter auch den CO₂-Anteil des Vermieters von 87,50 € mit; den dürfen Sie nicht auf sie umlegen, eine Vereinbarung, nach der der Mieter mehr als seinen Anteil trägt, ist unwirksam (§ 5 Abs. 2, § 6 Abs. 1 CO2KostAufG). Fehlt die Aufteilung auch in der Abrechnung des Messdienstes, die die Mieter bekommen, darf jeder Mieter seinen Anteil an den Heizkosten um 3 % kürzen (§ 7 Abs. 4 CO2KostAufG), hier: ta (a) 33,10 €, tb (b) 28,76 €, tc (c) 30,45 € und td (d) 23,06 €. Prüfen Sie den Betrag der Position (bezahlt, also vor „Abzüglich CO₂-Kosten Vermieter“) und Ihre Antwort auf die Frage nach der Abzugszeile."
+ },
+ {
+  "code": "co2.sum-check-approx",
+  "text": "Heizanlage „Gas“, Heizperiode 2025: Die Summe der Kosten aller Nutzer ist geschätzt als Summe der Einzelbeträge aller Nutzeinheiten; dafür gilt der Rundungsspielraum auch für den Betrag. Die Probe geht in diesem Spielraum auf, und Mietfuchs bucht die CO₂-Aufteilung. Bitte prüfen Sie die Beträge der leeren oder nicht eingetragenen Einheiten."
+ },
+ {
+  "code": "cost.possible-duplicate",
+  "text": "„Abzug 2026-01-0“ (-70,86 €, ohne Beleg) und „Abzug 2026-01-1“ (-35,26 €, ohne Beleg) stehen beide 01.01.–30.04.2026 unter „Beleuchtung/Allgemeinstrom“. Ist das dieselbe Rechnung, etwa einmal aus dem Vorjahr übernommen und einmal aus dem Beleg erfasst, wird sie zweimal verteilt. Dann bitte eine der beiden Positionen löschen, in der Regel die ohne Beleg. Soll die ohne Beleg bleiben, setzen Sie ihren Betrag auf den der Rechnung und löschen die andere. Nur den Beleg zuzuordnen genügt nicht: Die Rechnung stünde weiter zweimal in der Summe. Sind es verschiedene Rechnungen, ist nichts zu tun."
+ },
+ {
+  "code": "custom.forfeited",
+  "text": "„Vereinbart“: der vereinbarte Anteil für EG (Eigennutzung) entfällt — die Wohnung gehört nicht zur Abrechnungseinheit. Dieser Teil geht an den Vermieter."
+ },
+ {
+  "code": "custom.none",
+  "text": "„Ohne Anteile“: keine vereinbarten Anteile hinterlegt — Betrag geht an den Vermieter."
+ },
+ {
+  "code": "custom.over-100",
+  "text": "„prozent“: die vereinbarten Anteile ergeben 120 % — über 100 % wird nicht verteilt, der Betrag geht an den Vermieter."
+ },
+ {
+  "code": "direct.unit-gone",
+  "text": "„Gas: Anteil 2024/2025 aus der Rechnung 15.03.2025–14.03.2026 (Rechnung des nächsten Zeitraums)“: die direkt zugeordnete Wohnung gibt es nicht mehr — Betrag geht an den Vermieter."
+ },
+ {
+  "code": "external.amount-mismatch",
+  "text": "„Hausmeister“: der Betrag 204,96 € passt nicht zum rechnerischen Anteil 512,40 € (85,4 von 1.000 MEA aus 6.000,00 €) — bitte die Angaben aus der Gemeinschaftsabrechnung prüfen. Verteilt wird der eingetragene Betrag."
+ },
+ {
+  "code": "external.value-missing",
+  "text": "„P1“: für Leer und Klein sind keine Miteigentumsanteile hinterlegt — ihr Anteil verteilt sich auf die übrigen Wohnungen."
+ },
+ {
+  "code": "fuel.before-2023",
+  "text": "Heizanlage „Ölkessel“, Heizperiode 2025: 5.352,6 kg CO₂ des verbrauchten Brennstoffs stammen aus Brennstoff, der vor dem 01.01.2023 in Rechnung gestellt wurde. Diese kg zählen für die Einstufung des Gebäudes, denn sie sind im Abrechnungszeitraum ausgestoßen (§ 7 Abs. 1 Satz 1, § 5 Abs. 1 CO2KostAufG); CO₂-Kosten trägt dieser Brennstoff nicht (§ 11 Abs. 2 Satz 2 CO2KostAufG). Die Stufe kann deshalb höher liegen, als die CO₂-Kosten allein vermuten lassen."
+ },
+ {
+  "code": "fuel.cancelled-after-close",
+  "text": "Heizanlage „Gas“, Heizperiode 2024/2025: Die Rechnung „Gas 2025/2026“ ist storniert oder auf 0 € gesetzt. Die abgeschlossene Abrechnung 2025/2026, in der sie steht, hat 983,39 € als Anteil dieser Heizperiode hinausgebucht; hier wird davon nichts mehr verteilt, und die Mieter jener Abrechnung haben ihren Teil der Rechnung zu viel getragen. Öffnen Sie sie wieder und schließen Sie neu ab; § 556 Abs. 3 Satz 3 BGB schließt nach Ablauf der Frist nur eine Nachforderung durch den Vermieter aus, eine Berichtigung zugunsten der Mieter hindert er nicht."
+ },
+ {
+  "code": "fuel.closed-period-part",
+  "text": "Heizanlage „Gas“, Heizperiode 2025/2026: Als die Abrechnung 2024/2025 abgeschlossen wurde, ergaben die Positionen der Rechnung „Gas 2025/2026“ zusammen 0 € (storniert). Ihr Teil für 2024/2025 (983,39 €) ist dort deshalb nicht verteilt; bis Sie ihn nachfordern, steht er bei Ihnen. Solange die Frist dieser Abrechnung läuft (Zugang bis 30.04.2026), können Sie sie wieder öffnen und berichtigen. Danach dürfen Sie nur nachfordern, wenn Sie die Verspätung nicht zu vertreten haben (§ 556 Abs. 3 Satz 3 BGB, BGH VIII ZR 264/12), und dann alsbald, in der Regel binnen drei Monaten nach Wegfall des Hindernisses (BGH VIII ZR 220/05); lag die Rechnung schon vor Ablauf der Frist vor, ist die Verspätung in der Regel zu vertreten."
+ },
+ {
+  "code": "fuel.credit-only",
+  "text": "Heizanlage „Gas“, Heizperiode 2025/2026: Die Positionen der Lieferung „Gas 2025/2026“ (15.03.2025–14.03.2026) ergeben zusammen -500,00 €. Brennstoff kann nicht weniger als nichts kosten; eine solche Lieferung ist eine Gutschrift oder Stornorechnung ohne die Rechnung, die sie berichtigt. Mietfuchs rechnet ihren Zeitraum deshalb als nicht abgedeckt, nimmt sie nicht als Vorlage für Schätzungen und zählt keinen CO₂-Ausstoß für sie. Den Betrag verteilt Mietfuchs nach dem Verbrauch auf die Heizperioden ihres Zeitraums, damit die Gutschrift bei den Mietern ankommt (Auslegung nach dem Verbrauchsprinzip, § 7 Abs. 2 HeizkostenV). Gehört die Gutschrift zu einer anderen Lieferung, ordnen Sie sie auf der Seite Heizkosten dort zu; steht dort der Zahlbetrag nach Abzug der Abschläge, tragen Sie stattdessen die Kosten des Abrechnungszeitraums ein."
+ },
+ {
+  "code": "fuel.estimate-overcharged",
+  "text": "Heizanlage „Gas“, Heizperiode 2025/2026: Für 2024/2025 war 2.569,08 € geschätzt; tatsächlich entfallen nur 983,39 €. Die Mieter dieser Heizperiode haben 1.585,69 € zu viel getragen, hier: Mieter A (A) 951,41 €, Mieter B1 (B) 528,28 € und Mieter B2 (B) 106,00 €. Die Rechnung ist nach einem anderen Umlageschlüssel verteilt als die Schätzung; die Beträge je Mieter sind nach dem Schlüssel der Schätzung aufgeteilt und nur eine Näherung. Bitte prüfen Sie sie. Eine Gutschrift ist jederzeit zulässig und wird empfohlen. Öffnen Sie die Abrechnung 2024/2025 wieder oder erfassen Sie die Gutschrift; bis dahin steht der Betrag bei Ihnen als Abweichung von der Schätzung."
+ },
+ {
+  "code": "fuel.estimate-settled",
+  "text": "Heizanlage „Gas“, Heizperiode 2025/2026: Die Rechnung „Gas 2025/2026“ ist da. Für 2024/2025 war 907,74 € geschätzt; tatsächlich entfallen 983,39 €. Die Differenz von 75,65 € steht bei Ihnen. Die Frist der Abrechnung 2024/2025 ist am 30.04.2026 abgelaufen. Nachfordern dürfen Sie nur, wenn Sie die Verspätung nicht zu vertreten haben (§ 556 Abs. 3 Satz 3 BGB, BGH VIII ZR 264/12), und dann alsbald, in der Regel binnen drei Monaten nach Wegfall des Hindernisses (BGH VIII ZR 220/05). Lag die Rechnung schon vor Ablauf der Frist vor, ist die Verspätung in der Regel zu vertreten."
+ },
+ {
+  "code": "fuel.estimate-undistributed",
+  "text": "Heizanlage „Gas“, Heizperiode 2024/2025: Die Schätzung „Schätzung“ (907,74 €) verteilt Mietfuchs nicht: Es gibt keine Rechnung mit Positionen über mehr als 0 €, deren Umlageschlüssel sie übernehmen könnte. Verknüpfen Sie eine Rechnung dieser Heizanlage mit ihrer Position oder entfernen Sie die Schätzung auf der Seite Heizkosten."
+ },
+ {
+  "code": "fuel.estimated",
+  "text": "Heizanlage „Gas“, Heizperiode 2024/2025: Die Brennstoffkosten vom 15.03.2025 bis 30.04.2025 sind geschätzt (907,74 €), weil die Rechnung des Versorgers noch nicht vorliegt. Eine Nachberechnung bleibt vorbehalten. Grundlage: Schätzung 15.03.–30.04.2025: 151,29 ‰ der Rechnung „Gas 2024/2025“ nach Gradtagen. Ob eine noch fehlende Versorgerrechnung so geschätzt werden darf, ist höchstrichterlich nicht entschieden; die Abrechnung nennt die Grundlage der Schätzung im Block „Brennstoff“."
+ },
+ {
+  "code": "fuel.fixed-unknown",
+  "text": "Heizanlage „Gas“, Heizperiode 2025/2026: Für „Gas 2025/2026“ (15.03.2025–14.03.2026) ist kein fester Preisbestandteil eingetragen. Grund-, Leistungs-, Mess- und Verrechnungspreise hängen an der Zeit und werden nach Tagen geteilt; ohne Angabe teilt Mietfuchs die ganze Rechnung nach dem Verbrauch. Weist die Rechnung feste Bestandteile aus, tragen Sie ihre Summe bei der Lieferung ein."
+ },
+ {
+  "code": "fuel.loose-item",
+  "text": "Heizanlage „Gas“, Heizperiode 2025/2026: Neben der Lücke steht eine Heizposition dieser Anlage ohne Lieferung und ohne Leistungszeitraum. Ist die Rechnung schon als Position erfasst? Verknüpfen Sie sie auf der Seite Heizkosten mit ihrer Lieferung oder tragen Sie bei der Position den Leistungszeitraum ein. Bis dahin schlägt Mietfuchs keine Schätzung vor, damit dieselbe Rechnung nicht zweimal verteilt wird."
+ },
+ {
+  "code": "fuel.manual-beyond-period",
+  "text": "„Gas alt“: Die Rechnung reicht über die Heizperiode 2024/2025 hinaus (Leistungszeitraum 15.03.2024–14.03.2025) und wird ganz verteilt. Heizkosten gehören in die Heizperiode, in der sie verbraucht wurden (BGH VIII ZR 156/11). Tragen Sie die Rechnung auf der Seite Heizkosten als Lieferung ein und verknüpfen Sie die Position mit ihr; dann grenzt Mietfuchs sie ab."
+ },
+ {
+  "code": "fuel.manual-by-delivery",
+  "text": "Heizanlage „Öl neu“, Heizperiode 2026: Für den Verbrauch aus dem Vorrat gibt es keinen Schlüssel: In dieser Heizperiode und der vorigen steht keine Brennstoffposition dieser Heizanlage, die nach einem Umlageschlüssel verteilt wird. Der Endbestand geht deshalb mit 0 € in die nächste Heizperiode, denn die Mieter haben ihn mit den Rechnungen schon bezahlt. Mietfuchs verteilt die Brennstoffrechnungen deshalb, wie sie sind, nach ihrem Schlüssel. Umzulegen sind aber die Kosten der verbrauchten Brennstoffe und ihrer Lieferung (§ 7 Abs. 2 HeizkostenV). Eine Abrechnung nach Lieferungen statt nach dem verbrauchten Brennstoff ist nach BGH VIII ZR 156/11 nicht zulässig; die Abrechnung ist insoweit falsch, und das lässt sich nicht durch eine Kürzung um 15 % ausgleichen. Auch die CO₂-Einstufung beruht dann auf den gelieferten statt den verbrauchten kg (§ 5 Abs. 1 CO2KostAufG). Tragen Sie Anfangs- und Endbestand auf der Seite Heizkosten in der Karte „Vorrat“ ein."
+ },
+ {
+  "code": "fuel.owner-closed-unlinked",
+  "text": "Heizanlage „Gas“, Heizperiode 2024/2025: Zur Rechnung „Gas 2025/2026“ gehörten heute 983,39 € in diese Heizperiode. Die Abrechnung 2025/2026, in der die Rechnung steht, ist abgeschlossen; beim Abschluss ergaben ihre Positionen zusammen 0 € (storniert), deshalb ist dort nichts von ihr verteilt und hier kommt nichts dazu. Solange jene Abrechnung abgeschlossen bleibt, verteilt Mietfuchs die Rechnung nirgends. Soll dieser Teil hierher, öffnen Sie jene Abrechnung wieder und schließen sie neu ab."
+ },
+ {
+  "code": "fuel.reduced-after-close",
+  "text": "Heizanlage „Gas“, Heizperiode 2026/2027: Die Rechnung „Rechnung d1“ ergibt heute 2.695,49 €. Die abgeschlossene Abrechnung 2025/2026 enthält dafür 5.556,25 €; heute entfielen auf sie 2.424,99 €. Ihre Mieter haben damit 3.131,26 € zu viel getragen. Öffnen Sie die Abrechnung 2025/2026 wieder und schließen Sie sie neu ab. § 556 Abs. 3 Satz 3 BGB schließt nach Ablauf der Abrechnungsfrist nur Nachforderungen des Vermieters aus; eine Berichtigung zugunsten der Mieter verbietet er nicht (Umkehrschluss). Bis dahin steht der Betrag bei Ihnen."
+ },
+ {
+  "code": "fuel.share-by-degree-days",
+  "text": "Heizanlage „Gas“, Heizperiode 2025/2026: „Gas 2025/2026“ (15.03.2025–14.03.2026) reicht über die Heizperiode hinaus. Den Teil für 2025/2026 (848,71 ‰ des Verbrauchs) bestimmt Mietfuchs nach der Gradtagszahlentabelle. Umzulegen sind die Kosten des im Zeitraum verbrauchten Brennstoffs, nicht der bezahlten Rechnungen; eine Abrechnung nach diesem Leistungsprinzip darf auf einer sachgerechten Schätzung beruhen (BGH VIII ZR 156/11, Rn. 14). Für Gas in der Grundversorgung schreibt § 12 Abs. 2 GasGVV bei einer Preisänderung eine ähnliche Aufteilung nach Erfahrungswerten vor. Genauer sind ein Zählerstand des Versorgungszählers zum 30.04.2025 oder eine Zwischenrechnung des Versorgers."
+ },
+ {
+  "code": "fuel.stock-date-differs",
+  "text": "Heizanlage „Öl“, Heizperiode 2025: Der Tank wurde am 05.01.2026 gepeilt, die Heizperiode endete am 31.12.2025: 5 Tage, 27,4 ‰ der Gradtage dazwischen. Mietfuchs rechnet mit dem Wert wie gepeilt. „Lieferung vom 02.01.2026“ ist im gepeilten Endbestand schon enthalten, obwohl sie zur nächsten Heizperiode gehört; ziehen Sie ihre Menge vom gepeilten Wert ab."
+ },
+ {
+  "code": "fuel.stock-invalid",
+  "text": "Heizanlage „Öl“, Heizperiode 2025: Die Bestandsrechnung (Heizperiode 2025) geht nicht auf: der Endbestand von 9.000 l ist größer als Anfangsbestand und Lieferungen zusammen (7.500 l). Bis das geklärt ist, verteilt Mietfuchs die Brennstoffrechnungen, wie sie sind, nach ihrem Schlüssel; umzulegen sind aber die Kosten des verbrauchten Brennstoffs (§ 7 Abs. 2 HeizkostenV). Auch die CO₂-Einstufung beruht dann auf den gelieferten statt den verbrauchten kg (§ 5 Abs. 1 CO2KostAufG). Bitte prüfen Sie den Vorrat und die Lieferungen auf der Seite Heizkosten."
+ },
+ {
+  "code": "fuel.stock-missing",
+  "text": "Heizanlage „Öl“, Heizperiode 2025: Für die Bestandsrechnung (Heizperiode 2025) fehlt: der Endbestand. Ohne Bestandsrechnung teilt Mietfuchs die CO₂-Kosten nicht selbst auf, denn aufzuteilen sind die Kosten des im Abrechnungszeitraum verursachten Ausstoßes (§ 7 Abs. 1 CO2KostAufG), also des verbrauchten und nicht des gelieferten Brennstoffs. Ohne Aufteilung darf jeder Mieter seinen Anteil an den Heizkosten um 3 % kürzen (§ 7 Abs. 4 CO2KostAufG), hier: ta (a) 69,00 €, tb (b) 51,75 € und tc (c) 51,75 €. Tragen Sie Anfangs- und Endbestand auf der Seite Heizkosten in der Karte „Vorrat“ ein; die Abrechnung des Messdienstes nennt beide."
+ },
+ {
+  "code": "fuel.stock-not-taken-over",
+  "text": "Heizanlage „Kessel“, Heizperiode 2024/2025: Den Endbestand der Heizperiode 2023/2024 im Wert von 657,40 € übernimmt diese Heizperiode nicht, weil die Bestandsrechnung hier fehlt oder nicht aufgeht. Die Mieter der Heizperiode 2023/2024 haben ihn gutgeschrieben bekommen; bis er hier übernommen wird, tragen Sie ihn selbst."
+ },
+ {
+  "code": "fuel.stock-remaining",
+  "text": "Heizanlage „Ölkessel“, Heizperiode 2025: Die Heizanlage „Ölkessel“ ist seit dem 01.07.2025 außer Betrieb. Ihren Restbestand von 500 l im Wert von 525,00 € tragen die Mieter nicht, denn umzulegen sind nur die Kosten der verbrauchten Brennstoffe (§ 7 Abs. 2 HeizkostenV). Der Restbestand gehört Ihnen und steht mit seinem Wert bei Ihrem Anteil. Verkaufen Sie ihn oder lassen Sie ihn abholen, betrifft das die Abrechnung der Mieter nicht."
+ },
+ {
+  "code": "fuel.stock-unlinked",
+  "text": "Heizanlage „Kessel“, Heizperiode 2023/2024: „Gas 2023-05“ und „Gutschrift Heizung 2023-05“ sind als Brennstoff gekennzeichnet, aber mit keiner Lieferung verknüpft. Die Bestandsrechnung kennt diese Rechnungen nicht: Weder ihre Mengen noch ihr CO₂-Ausstoß zählen, und der Endbestand ist ohne sie bewertet. Verknüpfen Sie jede auf der Seite Heizkosten als Lieferung mit Lieferdatum und Menge."
+ },
+ {
+  "code": "fuel.uncovered",
+  "text": "Heizanlage „Gas“, Heizperiode 2025/2026: Für 03.07.2025–30.04.2026 (302 Tage, 946,1 ‰ der Gradtage) liegt keine Rechnung vor; diesen Teil verteilt Mietfuchs nicht. Einen Schätzvorschlag gibt es nicht: Die Rechnung „Nachlieferung“ deckt weniger als 100 ‰ der Gradtage dieses Zeitraums ab, hochgerechnet ergäbe sie keinen belastbaren Betrag. Tragen Sie die Folgerechnung auf der Seite Heizkosten als Lieferung ein, sobald sie da ist. Ein Zählerstand allein schließt die Lücke nicht, er macht die Aufteilung der Folgerechnung genauer: Lesen Sie den Gaszähler zum 30.04.2026 ab und tragen Sie den Stand auf der Seite Zähler ein; nach Zählerstand teilt Mietfuchs, wenn auch Stände am Tag vor Beginn und am letzten Tag der Rechnung eingetragen sind."
+ },
+ {
+  "code": "fuel.zero-invoice",
+  "text": "Heizanlage „Gas“, Heizperiode 2025/2026: Die Positionen der Rechnung „Gas 2025/2026“ ergeben zusammen 0 €. Mietfuchs behandelt sie als storniert und rechnet ihren Zeitraum als nicht abgedeckt. Ist es eine echte Rechnung über 0 € (etwa Kosten und eine gleich hohe Gutschrift), ist für diesen Zeitraum nichts zu verteilen: Schätzen Sie ihn dann nicht, sondern wählen Sie beim Abschließen „Ohne Schätzung abschließen“. Ist sie storniert, tragen Sie die neue Rechnung als Lieferung ein, sobald sie da ist."
+ },
+ {
+  "code": "heating.change-fee",
+  "text": "„Zwischenablesung Mieterwechsel“: Kosten der Verbrauchserfassung, die wegen des Auszugs eines Mieters vor Ablauf des Abrechnungszeitraums entstehen, sind keine umlagefähigen Betriebskosten; sie trägt der Vermieter, soweit im Mietvertrag nichts anderes vereinbart ist (BGH VIII ZR 19/07). Ob eine Klausel im Formularmietvertrag genügt, hat der BGH nicht entschieden; ein Amtsgericht hält sie für unwirksam (AG Berlin-Hohenschönhausen; das Aktenzeichen steht im Lexikon unter „Zwischenablesung“). Eine wirksame Vereinbarung gibt einen Anspruch gegen den ausziehenden Mieter, keine Position für alle. Gehört die Position dazu, erfassen Sie sie unter „Nicht umlagefähig“."
+ },
+ {
+  "code": "heating.change-split-time",
+  "text": "Heizanlage, Heizperiode 2025: Beim Mieterwechsel teilen Sie die übrigen Heizkosten zeitanteilig. Die Heizkostenverordnung lässt auch die Gradtagszahlen zu, nach denen ein Wintermonat mehr wiegt als ein Sommermonat (§ 9b Abs. 2 HeizkostenV); beides ist zulässig. Mieter C1 (C): zeitanteilig 1.386,21 €, nach Gradtagen 1.331,53 € und Mieter C2 (C): zeitanteilig 696,07 €, nach Gradtagen 750,75 €."
+ },
+ {
+  "code": "heating.consumption-share",
+  "text": "Heizung und Warmwasser („Grundkosten“ und „Verbrauchskosten“): nach Zählern verteilt werden 30 % der Heizkosten. Die Heizkostenverordnung verlangt mindestens 50 und höchstens 70 % nach dem erfassten Verbrauch (§ 7 Abs. 1, § 8 Abs. 1 HeizkostenV). Bitte die Aufteilung zwischen Verbrauchs- und Grundkosten prüfen."
+ },
+ {
+  "code": "heating.contracting",
+  "text": "Für Meier lief der Mietvertrag schon vor der Umstellung auf Wärmelieferung am 01.10.2025 (maßgeblich ist, ob der Mietvertrag vor der Umstellung geschlossen wurde; ohne eingetragenes Vertragsdatum nimmt Mietfuchs den Mietbeginn). Die Kosten der Wärmelieferung tragen sie als Betriebskosten nur, wenn die Wärme mit verbesserter Effizienz aus einer vom Lieferanten neu errichteten Anlage oder aus einem Wärmenetz kommt (hatte die bisherige Anlage einen Jahresnutzungsgrad von mindestens 80 %, genügt eine verbesserte Betriebsführung) und die Kosten der Wärmelieferung die Betriebskosten der bisherigen Eigenversorgung mit Wärme oder Warmwasser nicht übersteigen (Kostenvergleich nach §§ 8 bis 10 WärmeLV; § 556c Abs. 1 BGB). Außerdem müssen Sie die Umstellung spätestens 3 Monate vorher in Textform und mit den Angaben nach § 11 Abs. 2 WärmeLV ankündigen (§ 556c Abs. 2 BGB, § 11 Abs. 1 WärmeLV). Fehlt eine der beiden Voraussetzungen nach § 556c Abs. 1 BGB, tragen diese Mieter die Kosten der Wärmelieferung nicht als Betriebskosten. Die Wärmelieferverordnung geht davon aus, dass Sie dann die Bestandteile umlegen, die den Kosten bei eigener Versorgung nach § 7 Abs. 2 und § 8 Abs. 2 HeizkostenV entsprechen; dafür können Sie vom Lieferanten verlangen, diese Bestandteile seines Preises gesondert auszuweisen (§ 5 WärmeLV). Die Umstellungsankündigung ging am 01.07.2025 zu und damit nicht spätestens 3 Monate vor der Umstellung (Mietfuchs rechnet vorsichtig: Bei einer Umstellung am 01.10.2025 muss sie bis zum 30.06.2025 zugehen; das ist eine Auslegung). Ohne ordnungsgemäße Ankündigung beginnt die Frist für Einwendungen gegen die Abrechnung der Wärmelieferkosten (§ 556 Abs. 3 Satz 5 BGB) frühestens, wenn der Mieter eine Mitteilung erhalten hat, die § 11 Abs. 1 und 2 WärmeLV entspricht (§ 11 Abs. 3 WärmeLV)."
+ },
+ {
+  "code": "heating.device-cutoff",
+  "text": "Heizanlage, Heizperiode 2025: Der Heizkostenverteiler „Wärme A“ (A) hat am 30.06.2025 auf null zurückgesetzt; die Heizperiode beginnt aber am 01.01.2025. Mietfuchs rechnet mit den abgelesenen Werten, wie sie sind, und schätzt nichts dazwischen; für den Verbrauch der Heizperiode braucht es deshalb Werte zu ihrem Beginn und Ende. Setzt ein Gerät am Tag vor dem Beginn der Heizperiode zurück (bei einer Heizperiode im Kalenderjahr am 31.12.), passt sein Stichtag. Lassen Sie den Stichtag der Geräte so stellen, oder tragen Sie zu Beginn und Ende die Werte laut Gerätespeicher ein."
+ },
+ {
+  "code": "heating.dhw-not-metered",
+  "text": "Heizanlage, Heizperiode 2025: Die Wärme für das Warmwasser ist mit einer Formel bestimmt und nicht mit einem Wärmezähler gemessen. Die Heizkostenverordnung verlangt den Wärmezähler (§ 9 Abs. 2 Satz 1 HeizkostenV); die Formel nach dem Warmwasserverbrauch ist nur erlaubt, wenn die Wärmemenge nur mit unzumutbar hohem Aufwand gemessen werden könnte (§ 9 Abs. 2 Satz 2 HeizkostenV). Sonst darf jeder Mieter seinen Anteil kürzen (§ 9 Abs. 2 Satz 1, § 12 Abs. 1 Satz 1 HeizkostenV). Der BGH hat dafür im Fall ohne Ausnahme die Kosten für Wärme und Warmwasser insgesamt um 15 % gekürzt (BGH, Urteil vom 12.01.2022, VIII ZR 151/20). Weil die Wärme nach Ihrer Angabe nach § 11 HeizkostenV ausgenommen ist, nennt Mietfuchs nur 15 % des Anteils am Warmwasser, hier: Mieter A (A) 67,59 €, Mieter B (B) 90,12 €, Mieter C1 (C) 73,71 € und Mieter C2 (C) 23,64 €: Gekürzt werden darf nur, „soweit“ entgegen den Vorschriften der Verordnung abgerechnet wird (§ 12 Abs. 1 Satz 1), und für die ausgenommene Wärme gelten sie nicht (§ 11 Abs. 1). Das ist eine Auslegung von Mietfuchs, entschieden ist es nicht; bis zum Betrag auf Wärme und Warmwasser insgesamt ist eine Kürzung deshalb nicht ausgeschlossen, das wären Mieter A (A) 265,19 €, Mieter B (B) 353,58 €, Mieter C1 (C) 194,63 € und Mieter C2 (C) 100,31 €. Trifft die Voraussetzung bei Ihnen zu, bestätigen Sie das auf der Seite Heizkosten und bewahren einen Nachweis auf."
+ },
+ {
+  "code": "heating.dhw-share-estimated",
+  "text": "Heizanlage, Heizperiode 2025: Der Warmwasseranteil von 15 % beruht auf der geschätzten Energie der fehlenden Rechnung, die Sie beim Abschluss eingetragen haben. Mit der Folgerechnung kann er sich ändern; die abgeschlossene Abrechnung bleibt, wie sie ist."
+ },
+ {
+  "code": "heating.dhw-share-implausible",
+  "text": "Heizanlage, Heizperiode 2025: Der Warmwasseranteil liegt bei 0,46 %. Üblich sind Werte zwischen 5,00 % und 50,00 %; das ist keine Grenze des Gesetzes, sondern nur ein Anlass, die Angaben zu prüfen: die Wärme oder das Warmwasser und seine Temperatur, die Wohnflächen und die Energie der Rechnungen."
+ },
+ {
+  "code": "heating.dhw-share-invalid",
+  "text": "Heizanlage, Heizperiode 2025: Mietfuchs kann den Warmwasseranteil nicht bestimmen, denn bei Contracting mit einer Wärmepumpe regelt die Heizkostenverordnung nicht, ob der Formelwert durch 1,15 zu dividieren (Wärmelieferung) oder bei einer monovalenten Wärmepumpe mit 0,30 zu multiplizieren ist (§ 9 Abs. 2 Satz 6 Nr. 2 und 3 HeizkostenV); Mietfuchs rät keine der beiden Zahlen; bitte messen Sie die Wärme für das Warmwasser mit einem Wärmezähler (§ 9 Abs. 2 Satz 1) (§ 9 HeizkostenV). Bis dahin verteilt Mietfuchs die Heizkosten dieser Anlage nicht; sie stehen beim Vermieter."
+ },
+ {
+  "code": "heating.estimate-complete",
+  "text": "Heizanlage, Heizperiode 2025: Der Verbrauch für die Heizung von A ist nach § 9a HeizkostenV geschätzt: 1.200 Einheiten für die ganze Heizperiode nach dem Durchschnitt des Gebäudes je m². Die Ablesungen von A sind vollständig; Mietfuchs ersetzt sie durch die Schätzung, weil Sie sie als unbrauchbar markiert haben (Gerät ausgefallen; Begründung: „Wechsel des Geräts zum 30.06., kein Stand des neuen Geräts zu Beginn“). Das ist nur zulässig, wenn das Gerät den Verbrauch nicht ordnungsgemäß erfasst hat (§ 9a Abs. 1 HeizkostenV); bewahren Sie den Nachweis auf, etwa einen Prüfbericht."
+ },
+ {
+  "code": "heating.estimate-over-25",
+  "text": "Heizanlage „alt“, Heizperiode 2025: Geschätzt ist der Verbrauch für die Heizung für 60 von 200 m² (30 %). Das überschreitet 25 % der für die Verteilung maßgeblichen Fläche; die Kosten der Heizung werden deshalb ausschließlich nach Fläche verteilt (§ 9a Abs. 2 HeizkostenV). Mietfuchs zählt dabei die ganze Fläche der Wohnung, auch wenn nur ein Teil der Heizperiode geschätzt ist, und prüft Heizung und Warmwasser getrennt; die Verordnung sagt dazu nichts Ausdrückliches, das ist eine Auslegung von Mietfuchs. Einen Kürzungsbetrag nach § 12 HeizkostenV nennt Mietfuchs nicht: Die Verteilung nach Fläche schreibt hier die Verordnung selbst vor, und § 12 Abs. 1 Satz 1 betrifft eine Abrechnung „entgegen den Vorschriften dieser Verordnung“. Für eine Abrechnung mit einem nach § 9a Abs. 1 ermittelten Verbrauch hat der BGH die Kürzung um 15 % verneint (BGH VIII ZR 373/04); für die Verteilung nach Abs. 2 ist das nicht ausdrücklich entschieden."
+ },
+ {
+  "code": "heating.estimate-unconfirmed",
+  "text": "Heizanlage, Heizperiode 2025: Der Verbrauch für die Heizung von C ist nach § 9a HeizkostenV geschätzt: 12.000 kWh für die ganze Heizperiode nach dem Durchschnitt des Gebäudes je m² (Gerät ausgefallen; Begründung: „Wärmezähler defekt“). Mieter C1 behält den abgelesenen Verbrauch: § 9a Abs. 1 Satz 1 HeizkostenV erfasst nur den Verbrauch von Nutzern, der nicht ordnungsgemäß erfasst werden kann; für Mieter C2 gilt der Anteil der Schätzung nach Gradtagen: 4.320 kWh. Wie ein für die Wohnung geschätzter Verbrauch auf die übrigen Nutzer geht, regelt die Verordnung nicht (Festlegung von Mietfuchs, wie § 9b Abs. 3). Die Schätzung ist noch nicht bestätigt. Geschätzt werden darf nur, wenn der Verbrauch wegen Geräteausfalls oder aus einem anderen zwingenden Grund nicht ordnungsgemäß erfasst werden kann (§ 9a Abs. 1 HeizkostenV). Auch ein Ablesefehler ist ein solcher Grund, wenn sich der Wert nicht mehr ermitteln lässt; im entschiedenen Fall war die Ablesung nicht nachholbar (BGH VIII ZR 373/04). Lässt sich ein Wert noch ablesen, ist er abzulesen. Bestätigen Sie die Schätzung auf der Seite Heizkosten, oder tragen Sie die Ablesung nach und entfernen die Schätzung."
+ },
+ {
+  "code": "heating.estimated",
+  "text": "Heizanlage, Heizperiode 2025: Der Verbrauch für die Heizung von C ist nach § 9a HeizkostenV geschätzt: 12.000 kWh für die ganze Heizperiode nach dem Durchschnitt des Gebäudes je m² (Gerät ausgefallen; Begründung: „Wärmezähler defekt“). Mieter C1 behält den abgelesenen Verbrauch: § 9a Abs. 1 Satz 1 HeizkostenV erfasst nur den Verbrauch von Nutzern, der nicht ordnungsgemäß erfasst werden kann; für Leerstand (Vermieter) gilt der Anteil der Schätzung nach Gradtagen: 4.320 kWh. Wie ein für die Wohnung geschätzter Verbrauch auf die übrigen Nutzer geht, regelt die Verordnung nicht (Festlegung von Mietfuchs, wie § 9b Abs. 3). Lässt sich der Wert doch noch ablesen, ist er abzulesen; entfernen Sie dann die Schätzung."
+ },
+ {
+  "code": "heating.exemption",
+  "text": "Heizanlage „Kessel“, Heizperiode 2025: Sie haben angegeben, dass die Heizkostenverordnung für diese Anlage nach § 11 HeizkostenV nicht gilt: eine Befreiung durch die nach Landesrecht zuständige Stelle wegen besonderer Umstände, um einen unangemessenen Aufwand oder sonstige unbillige Härten zu vermeiden (§ 11 Abs. 1 Nr. 5 HeizkostenV). Soweit die Ausnahme reicht, gelten ihre Vorschriften zur Erfassung, zur Verteilung und zu den Informationen nach § 6a nicht, und Mietfuchs nennt dafür keine Kürzung nach § 12 HeizkostenV. Verteilt wird dann nach dem Mietvertrag; ist dort nichts anderes vereinbart, nach der Wohnfläche, und Kosten, die von einem erfassten Verbrauch abhängen, nach einem Maßstab, der dem Verbrauch Rechnung trägt (§ 556a Abs. 1 BGB). Mietfuchs verteilt, wie Sie die Positionen erfasst haben. Bewahren Sie den Nachweis für die Ausnahme auf. Die Ausnahme betrifft nach Ihrer Angabe nur die Wärme. Für das Warmwasser gilt § 11 nur „entsprechend“ (Abs. 2), also mit eigener Prüfung; Mietfuchs rechnet das Warmwasser deshalb weiter nach der Verordnung ab, mit den Angaben nach § 6a und den Kürzungsrechten, und beziffert Kürzungen nur auf den Anteil Warmwasser. Die CO₂-Kosten teilt Mietfuchs weiter auf: Das CO2KostAufG gilt nach der Begründung nicht für Räume im Sinne von § 11 HeizkostenV, „in denen keine Heizkostenabrechnung durchgeführt wird“ (BT-Drs. 20/3172, S. 28, zu § 2 Abs. 6 des Entwurfs, heute § 2 Abs. 7 CO2KostAufG), und hier wird das Warmwasser nach der Verordnung abgerechnet. Dass das schon genügt, ist eine Auslegung von Mietfuchs. Betrifft die Ausnahme auch das Warmwasser, geben Sie das auf der Seite Heizkosten an. Die Verordnung stellt auf Räume ab; Mietfuchs wendet die Ausnahme auf die ganze Anlage an (Vereinfachung)."
+ },
+ {
+  "code": "heating.flat-rate",
+  "text": "Für t-u0 (u0) ist für Heizung und Warmwasser eine Pauschale oder Warmmiete vereinbart. Die Heizkostenverordnung geht der Vereinbarung vor (§ 2 HeizkostenV); zulässig ist das nur im Gebäude mit höchstens zwei Wohnungen, von denen Sie eine selbst bewohnen. Sonst wird der Heizanteil als Vorauszahlung behandelt, über die Sie nach Verbrauch abrechnen müssen (BGH VIII ZR 212/05). Rechnen Sie trotzdem nicht nach Verbrauch ab, darf der Mieter seinen Anteil um 15 % kürzen (§ 12 Abs. 1 HeizkostenV). Wohnen Sie selbst im Haus und hat es nur diese beiden Wohnungen, legen Sie Ihre eigene Wohnung unter Stammdaten als selbstgenutzt an; dann gilt die Ausnahme, und die Warnung entfällt."
+ },
+ {
+  "code": "heating.generation-power-missing",
+  "text": "Für die Heizanlage „Kessel“ (Elektrokessel) ist für 2025 keine Rechnung über den Strom erfasst, den sie zur Wärmeerzeugung verbraucht (keine Heizposition mit dem Teil „Brennstoff/Energie“), und beim Allgemeinstrom „Hausstrom“ steht kein Abzug dafür. Diesen Strom zählt § 2 Nr. 4 Buchst. a BetrKV seit dem 01.01.2024 zu den Heizkosten, ebenso § 7 Abs. 2 HeizkostenV seit dem 01.10.2024, soweit die Heizkostenverordnung für die Anlage gilt (§ 8 Abs. 2 HeizkostenV verweist darauf). Läuft er über den Stromzähler des Hauses, steckt er in dieser Stromrechnung und wird mit dem Schlüssel des Allgemeinstroms verteilt statt mit den Heizkosten. Dass er dann aus dem Allgemeinstrom herauszurechnen ist, ist eine Auslegung von Mietfuchs: Entschieden hat der Bundesgerichtshof das für den Betriebsstrom (BGH, Urteil vom 03.06.2016, V ZR 166/15, Rn. 13 f.). Erfassen Sie den Strom des Elektrokessels in diesem Fall als Heizposition mit dem Teil „Brennstoff/Energie“, beantworten Sie dort „Läuft dieser Strom über den Stromzähler des Hauses?“ mit Ja und erfassen Sie beim Allgemeinstrom einen Abzug in derselben Höhe, verknüpft mit dieser Position. Ohne eigenen Zähler müssten Sie den Anteil schätzen; für den Betriebsstrom ist das zulässig (BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07, Leitsatz c), für den Strom einer Wärmepumpe oder eines Elektrokessels ist es eine Auslegung von Mietfuchs, und bei einem so großen Anteil ist ein eigener Zähler der sichere Weg. Halten Sie die Grundlage der Schätzung im Kostenformular fest. Hat das Gerät einen eigenen Zähler, erfassen Sie dessen Rechnung als Heizposition mit dem Teil „Brennstoff/Energie“; dann entfällt dieser Hinweis. Tragen Sie den Strom eines eigenen Zählers selbst, ist nichts falsch; der Hinweis bleibt dann stehen. Gilt für einen Mieter beim Allgemeinstrom eine Pauschale oder Inklusivmiete, folgt daraus für ihn nichts."
+ },
+ {
+  "code": "heating.hca-factor-missing",
+  "text": "Heizanlage, Heizperiode 2025: Bei diesen Heizkostenverteilern fehlt „Wärme A“ (A): der Bewertungsfaktor, „Wärme B“ (B): der Bewertungsfaktor und „Wärme C“ (C): der Bewertungsfaktor. Bei der Einheitsskala wird der Ablesewert mit dem Bewertungsfaktor des Heizkörpers malgenommen; die Abrechnung nennt den Faktor, damit der Mieter sie nachprüfen kann, so machen es die Messdienste. Bei der Produktskala ist er eingerechnet. Skala und Faktor stehen in der Geräteliste des Messdienstes oder in den Unterlagen des Herstellers; tragen Sie sie auf der Seite Zähler ein. Ein Gerät mit anderem Faktor, etwa nach einem Tausch, legen Sie als neuen Zähler an. Bis dahin verteilt Mietfuchs die Heizkosten dieser Anlage nicht; sie stehen beim Vermieter."
+ },
+ {
+  "code": "heating.heat-pump-capture",
+  "text": "Heizanlage, Heizperiode 2023: Bei dieser Wärmepumpe wurde der Verbrauch am 01.10.2024 noch nicht erfasst. Die Heizkostenverordnung gilt für sie erst ab dem Abrechnungszeitraum, der nach dem Einbau der Erfassung beginnt (§ 12 Abs. 3 HeizkostenV), also ab dem Abrechnungszeitraum, der nach dem 01.03.2026 beginnt. Bis dahin gilt die Verteilung laut Mietvertrag, und Kürzungen nach § 12 Abs. 1 HeizkostenV entfallen. Mietfuchs verteilt nach den erfassten Werten, wie Sie es eingerichtet haben; prüfen Sie, ob der Mietvertrag das deckt."
+ },
+ {
+  "code": "heating.heat-pump-dhw-basis",
+  "text": "Heizanlage, Heizperiode 2025: Der Wärmezähler misst die Wärme für das Warmwasser, aber die gesamte Wärme der Wärmepumpe kennt Mietfuchs nicht. Geteilt durch den Strom ergäbe das einen etwa dreimal zu großen Warmwasseranteil, denn die Wärmepumpe macht aus einer Kilowattstunde Strom mehrere Kilowattstunden Wärme; bei Wärmepumpen richtet sich die Aufteilung nach dem Wärmeverbrauch (§ 9 Abs. 1 Satz 2 HeizkostenV). Legen Sie einen Gesamtwärmezähler an (Rolle „Gesamtwärme“) oder tragen Sie die gemessene Gesamtwärme der Heizperiode auf der Seite Heizkosten ein, oder wählen Sie eine Formel nach § 9 Abs. 2 HeizkostenV. Bis dahin verteilt Mietfuchs die Heizkosten dieser Anlage nicht; sie stehen beim Vermieter."
+ },
+ {
+  "code": "heating.heat-pump-majority-open",
+  "text": "Heizanlage, Heizperiode 2024: Für diesen Abrechnungszeitraum galten die Vorschriften der Heizkostenverordnung zur Verteilung nicht für Gebäude, die überwiegend mit Wärme aus Wärmerückgewinnung, Wärmepumpen oder Solaranlagen (§ 11 Abs. 1 Nr. 3 Buchst. a HeizkostenV in der Fassung bis 30.09.2024) versorgt werden. Ob Ihr Gebäude dazu gehört, hängt davon ab, ob die Wärmepumpe mehr als die Hälfte der Wärme liefert; beantworten Sie die Frage bei der Heizanlage. Bis dahin rechnet Mietfuchs, als liefere sie mehr als die Hälfte (Festlegung von Mietfuchs); die Ausnahme muss im Streit der Vermieter belegen. Galt die Verordnung doch, darf jeder Mieter seinen Anteil um 15 % kürzen, soweit nicht nach Verbrauch verteilt ist (§ 12 Abs. 1 Satz 1 HeizkostenV), hier: Mieter A (A) 299,39 €, Mieter B (B) 399,18 €, Mieter C1 (C) 184,37 € und Mieter C2 (C) 116,07 €. Mietfuchs zieht nichts ab."
+ },
+ {
+  "code": "heating.heat-pump-old-exemption",
+  "text": "Heizanlage, Heizperiode 2023: Für diesen Abrechnungszeitraum galten die Vorschriften der Heizkostenverordnung zur Erfassung und Verteilung nicht für Räume in Gebäuden, die überwiegend mit Wärme aus Wärmerückgewinnung, Wärmepumpen oder Solaranlagen (§ 11 Abs. 1 Nr. 3 Buchst. a HeizkostenV in der Fassung bis 30.09.2024) versorgt werden. Mietfuchs wendet die Fassung an, die zu Beginn des Abrechnungszeitraums galt (Festlegung von Mietfuchs). Sie haben angegeben, dass die Wärmepumpe mehr als die Hälfte der Wärme liefert. Dann gilt die Verteilung laut Mietvertrag, und Kürzungen nach § 12 HeizkostenV entfallen. Mietfuchs verteilt nach den erfassten Werten, wie Sie es eingerichtet haben; einen Warmwasseranteil nach § 9 HeizkostenV verlangt die Verordnung dann nicht, und die Kosten von Heizung und Warmwasser verteilt Mietfuchs gemeinsam wie die Heizkosten (Festlegung von Mietfuchs)."
+ },
+ {
+  "code": "heating.heating-value-from-table",
+  "text": "Heizanlage, Heizperiode 2025: Die Rechnung „Gas 2025 in m³“ nennt keinen Heizwert. Mietfuchs rechnet deshalb mit dem Wert der Heizkostenverordnung für Erdgas H: 10 kWh je Kubikmeter (§ 9 Abs. 3 HeizkostenV, hilfsweise). Steht ein Heizwert auf der Rechnung, tragen Sie ihn an der Lieferung ein; er geht vor."
+ },
+ {
+  "code": "heating.info-incomplete",
+  "text": "Heizanlage „neu“, Heizperiode 2025: Zur Heizkostenabrechnung gehören die Informationen nach § 6a Abs. 3 HeizkostenV. Es fehlen: die erhobenen Steuern, Abgaben und Zölle (Nr. 1 b), der Vergleich mit einem normierten oder durch Vergleichstests ermittelten Durchschnittsnutzer (Nr. 4) und der witterungsbereinigte Vergleich mit dem vorhergehenden Abrechnungszeitraum in grafischer Form (Nr. 5), und zwar für Mieter A (A), Mieter B (B) und Mieter C1 (C). Fehlt eine dieser Angaben, darf der Mieter, dem sie fehlt, seinen Anteil an den Heizkosten um 3 % kürzen (§ 12 Abs. 1 Satz 3 HeizkostenV), hier: Mieter A (A) 43,00 €, Mieter B (B) 57,33 € und Mieter C1 (C) 30,13 €. Das ist ein Kürzungsrecht, auch wenn mehrere Angaben fehlen und auch wenn die monatliche Verbrauchsinformation fehlt: § 12 Abs. 1 Satz 3 HeizkostenV erfasst alle Informationen nach § 6a, und es summieren sich nur Kürzungsrechte aus verschiedenen Sätzen des § 12 Abs. 1 (BR-Drs. 643/21, S. 24 f.). Keine Position dieser Heizanlage trägt den Teil „Messdienst, Ablesung, Geräte“; die Entgelte für Erfassung, Ablesung und Abrechnung (Nr. 1 c) druckt Mietfuchs deshalb nicht. Sind solche Kosten angefallen, etwa Gerätemiete, Eichung oder Ablesung, ordnen Sie die Position auf der Seite Kosten diesem Teil zu; sind keine angefallen, ist nichts zu tun. Für den Vergleich mit einem Durchschnittsnutzer (Nr. 4) tragen Sie einen Vergleichswert in kWh je m² Wohnfläche mit seiner Quelle ein, etwa aus den Vergleichsdaten Ihres Ablesedienstes. Ein Durchschnitt aus Ihrem eigenen Haus ist kein zulässiger Vergleich: Gemeint sind nach der Begründung der Verordnung anonymisierte Verbraucher aus den Beständen der Ablesedienste (BR-Drs. 643/21, S. 19 und 21). Den Verbrauch von Mieter A (A), Mieter B (B) und Mieter C1 (C) im vorhergehenden Abrechnungszeitraum kennt Mietfuchs nicht, weil er dort nicht vollständig oder anders erfasst ist. Legen Sie den Vergleich nach Nr. 5 der Abrechnung bei. Der Verbrauch von Mieter C2 (C) ist nach § 9a HeizkostenV geschätzt. Abrechnungen in den Fällen des § 9a nimmt die Begründung der Verordnung von § 6a Abs. 3 aus: „Nicht darunter fallen also die Fälle des § 9a und Fälle, in denen eine Ausnahme gemäß § 11 greift“; für sie gelten mindestens die Angaben nach Abs. 5, also Nr. 2 und 3 (BR-Drs. 643/21, S. 19 und 22). Mietfuchs verlangt sie für ihn deshalb nur in diesem Umfang und nennt für ihn keine Kürzung wegen der Nr. 1, 4 und 5; den Vergleich druckt es mit dem geschätzten Wert gekennzeichnet. Dass das je Mieter gilt und nicht für die ganze Abrechnung, ist eine Auslegung von Mietfuchs; der Wortlaut der Verordnung nennt § 9a nicht ausdrücklich. Ist Ihr Mietvertrag ein Verbrauchervertrag (§ 310 Abs. 3 BGB: Sie vermieten als Unternehmer im Sinne des § 14 BGB, und der Mieter ist Verbraucher im Sinne des § 13 BGB), gehört die Information zur Streitbeilegung dazu; geben Sie an, ob das zutrifft. Fehlt sie, bis zu 3 %. Tragen Sie die Angaben auf der Seite Heizkosten in der Karte „Angaben zur Abrechnung (§ 6a)“ ein. Mietfuchs zieht nichts ab; die Kürzung muss der Mieter erklären."
+ },
+ {
+  "code": "heating.info-open",
+  "text": "Heizanlage, Heizperiode 2025: Zur Heizkostenabrechnung gehören die Informationen nach § 6a Abs. 3 HeizkostenV. Den Vergleich mit einem Durchschnittsnutzer (Nr. 4) rechnet Mietfuchs mit dem Wärmeverbrauch in kWh; für das Warmwasser allein kann es ihn nicht erstellen. Legt Ihr Ablesedienst einen solchen Vergleich bei, bestätigen Sie das mit seiner Quelle in der Karte „Angaben zur Abrechnung (§ 6a)“; sonst darf jeder übrige Mieter um bis zu 3 % kürzen. Der Verbrauch von Mieter A (A) ist nach § 9a HeizkostenV geschätzt. Abrechnungen in den Fällen des § 9a nimmt die Begründung der Verordnung von § 6a Abs. 3 aus: „Nicht darunter fallen also die Fälle des § 9a und Fälle, in denen eine Ausnahme gemäß § 11 greift“; für sie gelten mindestens die Angaben nach Abs. 5, also Nr. 2 und 3 (BR-Drs. 643/21, S. 19 und 22). Mietfuchs verlangt sie für ihn deshalb nur in diesem Umfang und nennt für ihn keine Kürzung wegen der Nr. 1, 4 und 5; den Vergleich druckt es mit dem geschätzten Wert gekennzeichnet. Dass das je Mieter gilt und nicht für die ganze Abrechnung, ist eine Auslegung von Mietfuchs; der Wortlaut der Verordnung nennt § 9a nicht ausdrücklich. Mieter C2 (C) wohnte im vorhergehenden Abrechnungszeitraum noch nicht in der Wohnung; der Vergleich nach Nr. 5 ist für ihn nicht möglich. Eine Ausnahme dafür nennt die Verordnung nicht; Mietfuchs nennt deshalb bis zu 3 % (Auslegung von Mietfuchs): Mieter C2 (C) 2,70 €. Das ist dasselbe Kürzungsrecht wie bei den übrigen Angaben und der monatlichen Verbrauchsinformation, nicht ein zusätzliches. Tragen Sie die Angaben auf der Seite Heizkosten in der Karte „Angaben zur Abrechnung (§ 6a)“ ein. Mietfuchs zieht nichts ab; die Kürzung muss der Mieter erklären."
+ },
+ {
+  "code": "heating.interim-reading-off",
+  "text": "Heizanlage, Heizperiode 2025: Beim Wechsel in C zum 30.09.2025 wurde am 03.10.2025 abgelesen (3 Tage daneben, 7,7 ‰ der Gradtage). Der Verbrauch dazwischen zählt zum Vormieter; zurückgerechnet wird nicht."
+ },
+ {
+  "code": "heating.key-change",
+  "text": "Heizanlage, Heizperiode 2025: Der Anteil nach Verbrauch war in der vorigen Heizperiode 50 % bei der Heizung und 50 % beim Warmwasser, jetzt 70 % und 70 %. Den Abrechnungsmaßstab ändern Sie nach der ersten Festlegung nur bei Einführung einer Vorerfassung nach Nutzergruppen, nach baulichen Maßnahmen, die nachhaltig Heizenergie einsparen, oder aus anderen sachgerechten Gründen, durch Erklärung gegenüber den Mietern und nur mit Wirkung zum Beginn eines Abrechnungszeitraums (§ 6 Abs. 4 HeizkostenV). Ist das so geschehen, ist nichts zu tun."
+ },
+ {
+  "code": "heating.may-agree-otherwise",
+  "text": "„Messdienst 2025/2026“: Heizung und Warmwasser werden hier nicht nach Verbrauch verteilt. Im Gebäude mit höchstens zwei Wohnungen, von denen Sie eine selbst bewohnen, darf anderes vereinbart werden (§ 2 HeizkostenV). Die Heizkostenverordnung gilt hier, sofern im Mietvertrag nichts anderes vereinbart ist; dann sind 50 bis 70 % nach Verbrauch zu verteilen, und sonst darf der Mieter seinen Anteil um 15 % kürzen (§ 12 Abs. 1 HeizkostenV)."
+ },
+ {
+  "code": "heating.mixed-capture",
+  "text": "Heizanlage, Heizperiode 2025: Eingestellt ist die Erfassung mit Heizkostenverteilern, an den Wohnungen hängen aber Wärmezähler bei A und Heizkostenverteiler bei B und C. Bei A wechselt das Gerät innerhalb der Heizperiode: Wärmezähler und Heizkostenverteiler haben Ablesungen nur für einen Teil davon. Mietfuchs lässt den Verbrauch des einen Geräts deshalb nicht weg. Liegt der Wechsel am Tag vor dem Beginn der Heizperiode (bei einer Heizperiode im Kalenderjahr am 31.12.), braucht es nur den Stand des neuen Geräts an diesem Tag. Sonst ist der Verbrauch der Zeit mit dem anderen Gerät in der Einheit der eingestellten Erfassung zu ermitteln, und wenn das nicht ordnungsgemäß geht, nach § 9a HeizkostenV zu schätzen: Tragen Sie dann auf der Seite Heizkosten unter „Schätzung (§ 9a)“ den Verbrauch der ganzen Heizperiode für diese Wohnung in Einheiten ein. Lassen Sie diese Heizkosten von einem Messdienst abrechnen und übernehmen Sie dessen Beträge als Einzelbeträge. Ein ausgebautes Gerät zählt nicht mehr mit, sobald seine letzte Ablesung am Tag vor der Heizperiode oder früher liegt; löschen Sie es nicht, seine Ablesungen gehören zu früheren Abrechnungen. Bis dahin verteilt Mietfuchs die Heizkosten dieser Anlage nicht; sie stehen beim Vermieter."
+ },
+ {
+  "code": "heating.monthly-info",
+  "text": "Heizanlage, Heizperiode 2025: Nach Ihren Angaben sind Zähler oder Heizkostenverteiler fernablesbar. Dann steht den Mietern seit dem 01.01.2022 jeden Monat eine Verbrauchsinformation zu (§ 6a Abs. 1 und 2 HeizkostenV): der Verbrauch des Monats in Kilowattstunden, der Vergleich mit dem Vormonat und dem entsprechenden Monat des Vorjahres, soweit diese Daten erhoben worden sind, und der Vergleich mit einem Durchschnittsnutzer derselben Nutzerkategorie. Mietfuchs verlangt sie für jeden Monat, auch außerhalb der Heizperiode: Die Verordnung sagt nur „monatlich“, das Vorblatt der Begründung nennt „während der Heizperiode“ (BR-Drs. 643/21); das ist eine vorsichtige Auslegung zu Ihren Lasten. Nicht als mitgeteilt vermerkt: Januar bis Dezember 2025. Unvollständig: Januar bis Dezember 2025 (Zählerstand genau am Monatsende fehlt, auch bei einem ausgefallenen Gerät; Vergleich mit einem Durchschnittsnutzer fehlt). Fehlt die Information oder ist sie unvollständig, darf ein Mieter, dessen Wohnung fernablesbar ausgestattet ist, seinen Anteil an den Heizkosten um 3 % kürzen (§ 12 Abs. 1 Satz 3 HeizkostenV), hier: Mieter A (A) 53,83 €. Bei Mieter B (B), Mieter C1 (C) und Mieter C2 (C) ist die Wohnung nicht oder nur zum Teil fernablesbar ausgestattet; auch dort ist eine Kürzung um 3 % möglich, hier: Mieter B (B) 71,77 € und Mieter C1 (C) 36,54 €. Sind im Haus nur einige Geräte fernablesbar, ist nach der Verordnungsbegründung im Einzelfall zu prüfen, ob die monatliche Information möglich und zumutbar ist (BR-Drs. 643/21, S. 18); dass Mietfuchs die Kürzung trotzdem nennt, ist eine Auslegung zu Ihren Lasten. Ob schon ein einzelner fehlender Monat die volle Kürzung erlaubt, ist nicht höchstrichterlich geklärt; Mietfuchs rechnet vorsorglich mit den vollen 3 % (Auslegung). Für Mieter C2 (C) stehen die Beträge beim Hinweis zu den Angaben zur Heizkostenabrechnung. Das ist dasselbe Kürzungsrecht wie bei fehlenden Angaben zur Heizkostenabrechnung und kommt nicht hinzu: Satz 3 erfasst alle Informationen nach § 6a, und es summieren sich nur Kürzungsrechte aus verschiedenen Sätzen des § 12 Abs. 1 (BR-Drs. 643/21, S. 24 f.). Mietfuchs erstellt die Information aus den Zählerständen am Monatsende auf der Seite Heizkosten in der Karte „Monatliche Verbrauchsinformation“; zukommen lassen müssen Sie sie den Mietern selbst, als Brief oder E-Mail, und dort vermerken, wann. Bekommen Ihre Mieter sie anders, etwa vom Messdienst als Brief oder E-Mail oder in einem Portal mit einer Nachricht jeden Monat, dass sie dort steht, bestätigen Sie das auf der Seite Heizkosten in der Karte „Ausnahmen und Vereinbarungen“. Ein Portal ohne diese Nachricht genügt nach der Begründung der Verordnung nicht: Mitgeteilt ist die Information erst, wenn sie den Mieter erreicht (BR-Drs. 643/21, S. 18 f.)."
+ },
+ {
+  "code": "heating.no-consumption",
+  "text": "Heizanlage, Heizperiode 2025: Für Heizung ist kein Verbrauch erfasst; Mietfuchs verteilt diesen Teil nur nach Fläche. Die Heizkostenverordnung verlangt, 50 bis 70 % nach dem erfassten Verbrauch zu verteilen; sonst darf jeder Mieter seinen Anteil um 15 % kürzen (§ 12 Abs. 1 Satz 1 HeizkostenV), hier vom Topf Heizung nach CO₂-Abzug laut Ausweis: Mieter A (A) 231,51 €, Mieter B (B) 308,68 €, Mieter C1 (C) 148,17 € und Mieter C2 (C) 83,34 €."
+ },
+ {
+  "code": "heating.no-interim-reading",
+  "text": "Heizanlage, Heizperiode 2025: Für den Wechsel in C zum 30.09.2025 gibt es keine Zwischenablesung (nicht möglich: Wohnung nicht zugänglich). Die gesamten Kosten der Wohnung werden deshalb aufgeteilt, die Heizkosten nach Gradtagen bzw. Tagen, die Warmwasserkosten nach Tagen (§ 9b Abs. 3 HeizkostenV)."
+ },
+ {
+  "code": "heating.no-interim-reading-missed",
+  "text": "Heizanlage, Heizperiode 2025: Für den Wechsel in B zum 30.06.2025 gibt es keine Zwischenablesung; bitte geben Sie auf der Seite Heizkosten an, ob sie nicht möglich war oder nicht durchgeführt wurde. Gerechnet wird nach § 9b Abs. 3 HeizkostenV, denn eine andere Rechnung gibt es nicht. Die Zwischenablesung war Pflicht (§ 9b Abs. 1). Bis zu 15 % der Heizkosten von Mieter B1 (B) 297,34 € und Mieter B2 (B) 224,77 € können gekürzt werden (LG Hamburg, 11 S 202/87); nach AG Schöneberg, 104a C 226/05, ist die Umlage des Verbrauchsanteils angreifbar. Mietfuchs zieht nichts ab; die Kürzung muss der Mieter erklären."
+ },
+ {
+  "code": "heating.not-by-consumption",
+  "text": "„Immissionsmessung“: Heizung und Warmwasser werden hier nicht nach Verbrauch verteilt. Die Heizkostenverordnung verlangt, mindestens 50 und höchstens 70 % nach dem erfassten Verbrauch zu verteilen, den Rest nach Fläche (§ 7 Abs. 1, § 8 Abs. 1 HeizkostenV). Die Ausnahme nach § 11 HeizkostenV betrifft nach Ihrer Angabe nur die Wärme. Sonst darf jeder Mieter deshalb nur den Anteil Warmwasser an seinem Anteil um 15 % kürzen (§ 12 Abs. 1 HeizkostenV); diesen Anteil kennt Mietfuchs bei diesem Schlüssel nicht und nennt keinen Betrag. Verteilen Sie 50 bis 70 % nach Verbrauch (eine Position nach Verbrauch mit Wärmezählern, den Rest als eigene Position nach Fläche) oder übernehmen Sie die Abrechnung des Messdienstes als Einzelbeträge."
+ },
+ {
+  "code": "heating.operating-power-bill-missing",
+  "text": "Für die Heizanlage „Kessel“ haben Sie angegeben, dass die Heizung einen eigenen Stromvertrag mit eigener Rechnung hat und Sie diese Rechnung als Heizposition erfassen. Für 2025 ist aber keine Heizposition mit dem Teil „Betrieb“ erfasst. Steht die Rechnung dieses Zählers auch nicht beim Allgemeinstrom, schadet das den Mietern nicht: Rechnen Sie den Betriebsstrom nicht ab, tragen Sie ihn selbst (BGH, Beschluss vom 13.09.2011, VIII ZR 45/11, Rn. 3; vgl. BGH, Urteil vom 03.06.2016, V ZR 166/15, Rn. 15). Beim Allgemeinstrom darf der Betriebsstrom nicht stehen (BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07, Rn. 32). Erfassen Sie die Rechnung des Zählers als Position „Heizung und Warmwasser“ mit dem Teil „Betrieb“; hängen an diesem Zähler auch andere Verbraucher, gehört nur der Anteil der Heizung dorthin. Wollen Sie den Strom nicht umlegen, wählen Sie auf der Seite Heizkosten „Eigener Stromvertrag (eigener Zähler mit eigener Rechnung), die Kosten trägt der Vermieter selbst“; dann entfällt dieser Hinweis."
+ },
+ {
+  "code": "heating.operating-power-deduction-missing",
+  "text": "Für die Heizanlage „Kessel“ haben Sie angegeben, dass der Betriebsstrom über die Stromrechnung des Hauses läuft und beim Allgemeinstrom abgezogen wird. Für 2025 steht beim Allgemeinstrom „Hausstrom“ aber kein Abzug dafür. Eine Heizposition mit dem Teil „Betrieb“ ersetzt diesen Abzug nicht: Die Kosten der Wartung sind andere als die des Betriebsstroms; § 7 Abs. 2 HeizkostenV nennt beide getrennt als Bestandteile derselben Kostenart. Steht dort schon der Betriebsstrom selbst, legen Sie ihn nicht ein zweites Mal an, auch nicht mit der Karte „Betriebsstrom“: Wählen Sie an dieser Position im Kostenformular bei „Läuft dieser Betriebsstrom über den Stromzähler des Hauses?“ die Antwort „Ja, er läuft über den Stromzähler des Hauses“ und erfassen Sie dann beim Allgemeinstrom einen Abzug in derselben Höhe, verknüpft mit dieser Position. Ist sie die Wartung, nehmen Sie die Karte wie unten beschrieben. Steht der Betriebsstrom ungekürzt in dieser Stromrechnung, wird er mit dem Schlüssel des Allgemeinstroms verteilt; dort darf er nicht stehen (BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07, Rn. 32; ebenso BGH, Urteil vom 03.06.2016, V ZR 166/15, Rn. 13). Er gehört zu den Heiz- und Warmwasserkosten (§ 2 Nr. 4 Buchst. a, Nr. 5 Buchst. a BetrKV; § 7 Abs. 2, § 8 Abs. 2 HeizkostenV, soweit sie für die Anlage gilt). Ist er noch nirgends erfasst, nehmen Sie die Karte „Betriebsstrom“ auf der Seite Heizkosten; sie legt Betriebsstrom und Abzug gemeinsam an. Ohne Zwischenzähler dürfen Sie ihn schätzen; bestreitet ein Mieter den Betrag, müssen Sie die Grundlagen darlegen (BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07, Leitsatz c). Wollen Sie ihn nicht umlegen, ziehen Sie ihn trotzdem beim Allgemeinstrom ab; dann tragen Sie ihn selbst (BGH, Beschluss vom 13.09.2011, VIII ZR 45/11, Rn. 3; vgl. V ZR 166/15, Rn. 15). Den Abzug erfassen Sie dann im Kostenformular beim Allgemeinstrom mit der Antwort „Ja, ich lege ihn nicht um und trage ihn selbst“. Haben Sie beim Allgemeinstrom schon den um den Betriebsstrom geminderten Betrag eingetragen, ist die Abrechnung deshalb nicht formell unwirksam (BGH, Urteil vom 20.01.2016, VIII ZR 93/15, Leitsatz und Rn. 19); materiell muss der Abzug stimmen (VIII ZR 27/07, Leitsatz c). Tragen Sie dort trotzdem den Rechnungsbetrag ein und erfassen Sie den Abzug gesondert; dann erkennt Mietfuchs den Abzug. Hat die Heizung einen eigenen Stromvertrag mit eigener Rechnung (nicht nur einen Zwischenzähler), ändern Sie die Angabe auf der Seite Heizkosten. Gilt für einen Mieter beim Allgemeinstrom eine Pauschale oder Inklusivmiete, folgt daraus für ihn nichts."
+ },
+ {
+  "code": "heating.operating-power-double",
+  "text": "„Strom der Wärmepumpe“: Dieser Strom zur Wärmeerzeugung steckt nach Ihrer Angabe auch in der Stromrechnung des Allgemeinstroms. Der Abzug dafür steht in einer abgeschlossenen Abrechnung. Der Abzug „Abzug Betriebsstrom Heizung“ (300,00 €) gehört zur abgeschlossenen Abrechnung 2024, steht aber nicht in ihrem eingefrorenen Stand. Den Mietern ist er dort nicht gutgeschrieben, sie zahlen diesen Strom also zweimal. Öffnen Sie die Abrechnung 2024 wieder und stellen Sie sie neu zu. Legen Sie keinen zweiten Abzug in einem anderen Jahr an, denn er käme bei anderen Abrechnungen an. Eine Gutschrift dürfen Sie auch nach Ablauf der Abrechnungsfrist noch nachholen, denn § 556 Abs. 3 Satz 3 BGB schließt nur Nachforderungen aus. Ist die Abrechnungsfrist abgelaufen, darf die neue Abrechnung den Mieter nicht schlechter stellen als die zugestellte: keine höhere Nachforderung, kein geringeres Guthaben und auch bei keiner einzelnen Position mehr als zuvor, es sei denn, Sie haben die Verspätung nicht zu vertreten (§ 556 Abs. 3 Satz 3 BGB; BGH, Urteile vom 17.11.2004, VIII ZR 115/04, und vom 12.12.2007, VIII ZR 190/06). Außerdem fehlen 300,00 €. Erfassen Sie dafür im Kostenformular beim Allgemeinstrom einen Abzug und verknüpfen Sie ihn mit dieser Position. Dass dieser Strom nicht im Allgemeinstrom stehen darf, hat der Bundesgerichtshof für den Betriebsstrom entschieden (BGH, Urteil vom 03.06.2016, V ZR 166/15, Rn. 13 f. und 15); dass es für den Strom zur Wärmeerzeugung ebenso gilt, ist eine Auslegung von Mietfuchs (§ 7 Abs. 2, § 8 Abs. 2 HeizkostenV)."
+ },
+ {
+  "code": "heating.operating-power-exceeds",
+  "text": "Aus der Stromrechnung „Hausstrom“ (1.000,00 €) sind 1.200,00 € abgezogen, 200,00 € mehr als die Rechnung. Der Allgemeinstrom ist damit netto negativ; meist ist ein Betriebsstrom doppelt gebucht. Prüfen Sie die Abzüge im Kostenformular."
+ },
+ {
+  "code": "heating.operating-power-key",
+  "text": "„Abzug Betriebsstrom Heizung“ (147,84 €) ist anders verteilt als die Stromrechnung „Hausstrom“, aus der er gerechnet wurde: beide nach „Wohnfläche“, aber mit anderen Angaben (Teilnehmer, Anteile, Zähler oder Wohnung). Damit verschieben sich die Anteile der Mieter am Allgemeinstrom. Verteilen Sie den Abzug im Kostenformular wie die Rechnung."
+ },
+ {
+  "code": "heating.operating-power-missing",
+  "text": "Für die Heizanlage „Kessel“ ist für 01.05.–31.12.2026 kein Betriebsstrom erfasst (keine Heizposition mit dem Teil „Betrieb“), und beim Allgemeinstrom „Hausstrom 2026-05“ steht kein Abzug dafür. Brenner, Umwälzpumpen und Regelung einer Zentralheizung verbrauchen Strom. Dieser Betriebsstrom gehört zu den Heiz- und Warmwasserkosten (§ 7 Abs. 2, § 8 Abs. 2 HeizkostenV; § 2 Nr. 4 Buchst. a, Nr. 5 Buchst. a BetrKV). Läuft er über den Stromzähler des Hauses, steckt er in dieser Stromrechnung und wird mit ihrem Schlüssel verteilt; dort darf er nicht stehen (BGH, Urteil vom 03.06.2016, V ZR 166/15, Rn. 13). Erfassen Sie ihn dann mit der Karte „Betriebsstrom“ auf der Seite Heizkosten. Ohne Zwischenzähler dürfen Sie ihn schätzen; bestreitet ein Mieter den Betrag, müssen Sie die Grundlagen darlegen (BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07, Leitsatz c). Wollen Sie ihn nicht umlegen, ziehen Sie ihn trotzdem beim Allgemeinstrom ab; dann tragen Sie ihn selbst (V ZR 166/15, Rn. 15). Den Abzug erfassen Sie dann im Kostenformular beim Allgemeinstrom mit der Antwort „Ja, ich lege ihn nicht um und trage ihn selbst“. Hat die Heizung einen eigenen Stromvertrag mit eigener Rechnung, erfassen Sie diese Rechnung als Heizposition mit dem Teil „Betrieb“; dann entfällt dieser Hinweis. Hat die Heizung einen eigenen Stromvertrag mit eigenem Zähler und eigener Rechnung und tragen Sie diese Kosten selbst, ist nichts falsch; ein Zwischenzähler hinter dem Zähler des Hauses gehört nicht dazu. Geben Sie auf der Seite Heizkosten bei „Wie ist der Betriebsstrom dieser Heizung erfasst?“ an, wie er erfasst ist; dann weist Mietfuchs gezielt darauf hin oder schweigt. Gilt für einen Mieter beim Allgemeinstrom eine Pauschale oder Inklusivmiete, folgt daraus für ihn nichts."
+ },
+ {
+  "code": "heating.per-unit-basis",
+  "text": "Heizanlage „Gasthermen“, Heizperiode 2025: Für Etagenheizungen gilt die Heizkostenverordnung nicht; sie regelt nur zentrale Anlagen und die Wärmelieferung (§ 1 Abs. 1 HeizkostenV). Die Betriebskostenverordnung nennt bei Etagenheizungen nur die Kosten der Reinigung und Wartung (§ 2 Nr. 4 Buchstabe d BetrKV). Ob Sie die Gaskosten selbst umlegen dürfen, wenn der Gasvertrag auf Sie läuft, ist nicht geklärt; umgelegt werden dürfen Betriebskosten nur, wenn der Mietvertrag es vereinbart (§ 556 Abs. 1 Satz 1 BGB). Prüfen Sie Ihren Mietvertrag, im Zweifel mit Ihrem Haus- und Grundbesitzerverein."
+ },
+ {
+  "code": "heating.pipe-heat",
+  "text": "Heizanlage, Heizperiode 2025: Sind in Ihrem Haus die freiliegenden Leitungen der Wärmeverteilung überwiegend ungedämmt und erfassen die Heizkostenverteiler deswegen einen wesentlichen Anteil des Wärmeverbrauchs nicht, kann der Verbrauch der Nutzer nach anerkannten Regeln der Technik bestimmt werden (§ 7 Abs. 1 Satz 3 HeizkostenV); ein Verfahren beschreibt die Richtlinie VDI 2077 Blatt 3.5. Freiliegend sind nur Leitungen, die sichtbar auf der Wand verlaufen; für Leitungen unter Putz oder im Estrich gilt die Regel nicht (BGH VIII ZR 5/16). Diese Bestimmung rechnet Mietfuchs nicht; verteilt wird nach den erfassten Einheiten. Lassen Sie den Verbrauch von einem Messdienst bestimmen, tragen Sie dessen Werte als „Werte eines Ablesedienstes“ ein; sie gelten dann als erfasster Verbrauch."
+ },
+ {
+  "code": "heating.pre-capture",
+  "text": "Heizanlage, Heizperiode 2025: Sie haben angegeben, dass das Gebäude überwiegend nicht dem Wohnen dient. Nutzen die Einheiten an dieser Anlage die Wärme verschieden, etwa ein Laden neben Wohnungen, kann der Gebäudeeigentümer bei unterschiedlichen Nutzungs- oder Gebäudearten oder aus anderen sachgerechten Gründen eine Vorerfassung nach Nutzergruppen durchführen (§ 5 Abs. 7 Satz 2 HeizkostenV). Vorgeschrieben ist sie, wenn der Verbrauch nicht mit gleichen Ausstattungen erfasst wird (Satz 1). Eine Vorerfassung rechnet Mietfuchs nicht; verteilt wird über alle Einheiten der Anlage zusammen. Soll vorerfasst werden, lassen Sie diese Heizkosten vom Messdienst abrechnen und übernehmen Sie dessen Beträge als Einzelbeträge."
+ },
+ {
+  "code": "heating.reading-dates-differ",
+  "text": "Heizanlage, Heizperiode 2025: Die Zähler wurden nicht genau zum 31.12.2024 abgelesen; die größte Abweichung hat B mit 5 Tagen (Ablesung am 05.01.2025, 27,4 ‰ der Gradtage dazwischen). Mietfuchs rechnet mit den Werten, wie sie abgelesen sind, ohne Rückrechnung; das ist unschädlich, wenn in der Zwischenzeit wenig verbraucht wird."
+ },
+ {
+  "code": "heating.reading-dates-far",
+  "text": "Heizanlage, Heizperiode 2025: Die Zähler wurden nicht genau zum 31.12.2024 abgelesen; die größte Abweichung hat A mit 181 Tagen (Ablesung am 30.06.2025, 583 ‰ der Gradtage dazwischen). Mietfuchs rechnet mit den Werten, wie sie abgelesen sind, ohne Rückrechnung; das ist unschädlich, wenn in der Zwischenzeit wenig verbraucht wird. Liegt im Winter ein Monat oder mehr dazwischen, gilt eine solche Abweichung nach der Kommentarliteratur grundsätzlich als nicht zulässig; lesen Sie künftig zum Stichtag ab oder nutzen Sie den Stichtagswert des Geräts (⟨Norm offen: VDI 2077⟩)."
+ },
+ {
+  "code": "heating.remote-reading",
+  "text": "Nicht fernablesbar sind „Wärme A“ (A), „Warmwasser A“ (A), „Wärme B“ (B), „Warmwasser B“ (B), „Wärme C“ (C), „Warmwasser C“ (C) und „Wärmezähler Warmwasserspeicher“. Geräte, die nach dem 01.12.2021 eingebaut wurden, müssen ab ihrem Einbau fernablesbar sein (§ 5 Abs. 2 HeizkostenV), alle übrigen ab dem 01.01.2027 (§ 5 Abs. 3). Ob das in diesem Zeitraum schon für diese Geräte gilt, hängt an ihrem Einbaudatum und daran, ob ein einzelnes Gerät in einem System ersetzt oder ergänzt wurde, dessen übrige Geräte nicht fernablesbar sind; dann gilt die Frist für die übrigen (§ 5 Abs. 2 Satz 4). Wenn ja, darf jeder Mieter seinen Anteil an den Heizkosten um bis zu 3 % kürzen (§ 12 Abs. 1 Satz 2 HeizkostenV), hier bis zu: Mieter A (A) 53,83 €, Mieter B (B) 71,77 €, Mieter C1 (C) 36,54 € und Mieter C2 (C) 20,60 €. Sagen Sie Mietfuchs an der Heizanlage, ob die nicht fernablesbaren Geräte, die nach dem 01.12.2021 eingebaut wurden, einzeln als Ersatz oder Ergänzung in ein bestehendes, nicht fernablesbares System kamen oder ob das System als Ganzes neu installiert wurde; dann rechnet Mietfuchs es genau."
+ },
+ {
+  "code": "heating.remote-reading-missing",
+  "text": "Laut Ihrer Angabe an der Heizanlage sind nicht alle Zähler und Heizkostenverteiler fernablesbar. Geräte, die nach dem 01.12.2021 eingebaut wurden, müssen ab ihrem Einbau fernablesbar sein (§ 5 Abs. 2 HeizkostenV), alle übrigen ab dem 01.01.2027 (§ 5 Abs. 3). In diesem Zeitraum gilt das für diese Geräte. Jeder Mieter darf seinen Anteil an den Heizkosten deshalb um 3 % kürzen (§ 12 Abs. 1 Satz 2 HeizkostenV), hier: Mieter A (A) 7,67 €, Mieter B (B) 10,22 €, Mieter C1 (C) 8,36 € und Mieter C2 (C) 2,68 €. Bei einer Anlage, deren Wärme nach § 11 HeizkostenV ausgenommen ist, zählt nur der Anteil Warmwasser. Mietfuchs zieht nichts ab; die Kürzung muss der Mieter erklären. Ausgenommen sind ein einzelnes Gerät, das in einem nicht fernablesbaren System ersetzt oder ergänzt wurde (§ 5 Abs. 2 Satz 4), und Fälle, in denen die Nachrüstung technisch nicht möglich ist oder eine unbillige Härte wäre (§ 5 Abs. 3 Satz 2); bewahren Sie dafür einen Nachweis auf."
+ },
+ {
+  "code": "heating.self-incomplete",
+  "text": "Heizanlage, Heizperiode 2025: Für „WZ a“ (A) fehlt ein Stand zum 31.12.2025. Tragen Sie die Ablesung ein; liegt sie einige Tage daneben, gilt sie, wie sie ist. Lässt sich der Verbrauch nicht ordnungsgemäß erfassen, weil das Gerät ausgefallen ist oder ein anderer zwingender Grund vorliegt, schätzen Sie den Verbrauch auf der Seite Heizkosten unter „Schätzung (§ 9a)“. An A hängt in dieser Heizperiode außerdem der Heizkostenverteiler „HKV a“: Das Gerät wurde gewechselt (siehe den Hinweis zu den Geräten). Bis dahin verteilt Mietfuchs die Heizkosten dieser Anlage nicht; sie stehen beim Vermieter."
+ },
+ {
+  "code": "heating.self-supply-operating-power",
+  "text": "Die Wohnung a von ta wird über eine zentrale Heizung versorgt, deren Brennstoff oder Wärme der Mieter selbst bezieht. Läuft ihr Betriebsstrom (Brenner, Umwälzpumpen, Regelung) über den Stromzähler des Hauses, steckt er in „Hausstrom“ und wird mit dessen Schlüssel auch auf andere Mieter verteilt; dort darf er nicht stehen (BGH, Urteil vom 03.06.2016, V ZR 166/15, Rn. 13). Er gehört zu den Kosten der Heizung (§ 2 Nr. 4 Buchst. a BetrKV). Ziehen Sie ihn beim Allgemeinstrom ab: Erfassen Sie ihn als Position „Heizung und Warmwasser“ mit dem Teil „Betrieb“ für die Wohnung dieses Mieters, wählen Sie dort bei „Läuft dieser Betriebsstrom über den Stromzähler des Hauses?“ die Antwort „Ja, er läuft über den Stromzähler des Hauses“ und erfassen Sie beim Allgemeinstrom einen Abzug in derselben Höhe, verknüpft mit dieser Position. Ohne Zwischenzähler dürfen Sie ihn schätzen; bestreitet ein Mieter den Betrag, müssen Sie die Grundlagen darlegen (BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07, Leitsatz c). Wollen Sie ihn nicht umlegen, ziehen Sie ihn trotzdem beim Allgemeinstrom ab; dann tragen Sie ihn selbst. Den Abzug erfassen Sie dann im Kostenformular beim Allgemeinstrom mit der Antwort „Ja, ich lege ihn nicht um und trage ihn selbst“. Hat die Heizung einen eigenen Stromvertrag mit eigenem Zähler und eigener Rechnung, oder läuft ihr Strom über den Zähler des Mieters, ist nichts falsch. Ist der Abzug beim Allgemeinstrom erfasst, entfällt dieser Hinweis."
+ },
+ {
+  "code": "heating.target-invalid",
+  "text": "„Erdgas“: Bereitet die Anlage auch das Warmwasser, gehört der Brennstoff zu beidem und wird nach dem Warmwasseranteil aufgeteilt (§ 9 Abs. 1 HeizkostenV) — Betrag geht an den Vermieter."
+ },
+ {
+  "code": "item.no-basis",
+  "text": "„Hausgeld“: die Angaben aus der Abrechnung der Gemeinschaft fehlen (Maßstab, Summe in der Anlage, Gesamtkosten) — Betrag geht an den Vermieter."
+ },
+ {
+  "code": "key.changed-from-previous-year",
+  "text": "„Versicherung 2026-05“ wird 2026/2027 nach Wohneinheiten verteilt, die Kostenart „Sach- und Haftpflichtversicherung“ 01.01.–30.04.2026 nach Personenzahl. Ein vereinbarter Umlageschlüssel gilt weiter, bis er geändert wird: mit Zustimmung der Mieter, oder durch Ihre Erklärung in Textform, nur vor Beginn eines Abrechnungszeitraums und nur hin zu einer Verteilung nach erfasstem Verbrauch oder erfasster Verursachung (§ 556a Abs. 2 BGB). Bei einer vermieteten Eigentumswohnung gilt, soweit nichts anderes vereinbart ist, der jeweils geltende Maßstab der Gemeinschaft; widerspricht er billigem Ermessen, wird nach Absatz 1 umgelegt, also in der Regel nach Wohnfläche (§ 556a Abs. 3 BGB). Ist die Änderung so vereinbart, ist nichts zu tun."
+ },
+ {
+  "code": "labor35a.invalid",
+  "text": "„an einer Gutschrift“: der §35a-Lohnanteil muss zwischen 0 und dem Rechnungsbetrag liegen — es wird kein Lohnanteil bescheinigt."
+ },
+ {
+  "code": "law.value-overridden",
+  "text": "Durchschnittspreis des EU-Emissionshandels (Plausibilität) für Rechnungen aus 2027 (Durchschnitt der Versteigerungen 2026): 70,90 €/t (Durchschnitt des Vorjahres der Rechnung), von Ihnen eingetragen (Quelle: DEHSt), weil der amtliche Wert noch nicht im Programm steht. Bringt ein Update den amtlichen Wert, gilt dieser; bei einer abgeschlossenen Abrechnung nennt die Seite Abrechnung die Änderung dann als „Prüfwert geändert“."
+ },
+ {
+  "code": "meter.change-fee",
+  "text": "„Nutzerwechselgebühr Wasserzähler“: Kosten der Verbrauchserfassung und Abrechnung, die wegen des Auszugs eines Mieters vor Ablauf des Abrechnungszeitraums entstehen, etwa für die Zwischenablesung der Wasserzähler, sind keine umlagefähigen Betriebskosten, sondern Verwaltungskosten; sie trägt der Vermieter, soweit im Mietvertrag nichts anderes vereinbart ist (BGH VIII ZR 19/07). Eine wirksame Vereinbarung gibt einen Anspruch gegen den ausziehenden Mieter, keine Position für alle. Gehört die Position dazu, erfassen Sie sie unter „Nicht umlagefähig“."
+ },
+ {
+  "code": "meter.main-gap",
+  "text": "„Wasser“: die Wohnungszähler erfassen zusammen nur 162 von 293 des Hauptzählers. Gehört der Rest zu einer Wohnung, die nicht angelegt ist (etwa Ihrer eigenen), legen Sie sie unter Stammdaten an; dann gilt für sie der Rest des Hauptzählers. Verteilt wird nach den Wohnungszählern."
+ },
+ {
+  "code": "meter.main-partial",
+  "text": "„Wasser“: der Hauptzähler deckt 2025 nur 288 von 365 Tagen ab — bitte Ablesungen zum 31.12.2024 und zum Jahresende (31.12.2025) nachtragen. Bis dahin wird nach den Wohnungszählern verteilt."
+ },
+ {
+  "code": "meter.negative",
+  "text": "Negativer Verbrauch zwischen dem 31.12.2024 und dem 30.06.2025 (-947) — Ablesung prüfen oder Zählerwechsel markieren."
+ },
+ {
+  "code": "meter.no-consumption",
+  "text": "„Wasser 2025 (anteilig 01.01.–30.04.2025)“: kein Verbrauch für Zählertyp „Kaltwasser“ erfasst — Betrag geht an den Vermieter."
+ },
+ {
+  "code": "meter.replacement-without-end",
+  "text": "Zählerwechsel am 30.06.2025 ohne Endstand des alten Geräts — der Verbrauch bis zum Wechsel lässt sich nicht bestimmen und wird nicht verteilt. Bitte den Endstand nachtragen."
+ },
+ {
+  "code": "meter.same-day",
+  "text": "Mehrere Ablesungen am 30.06.2025: Die Stände unterscheiden sich um 0,004, und diese Menge wird nicht verteilt, weil zwischen ihnen kein Tag liegt. Bitte eine der Ablesungen prüfen."
+ },
+ {
+  "code": "meter.sub-exceeds-main",
+  "text": "„Wasser“: die Wohnungszähler zeigen zusammen 152, mehr als der Hauptzähler (108) — bitte die Ablesungen prüfen. Verteilt wird nach den Wohnungszählern."
+ },
+ {
+  "code": "meter.unit-partial",
+  "text": "„Wasser“: der Zähler von el (184 von 365 Tagen) deckt nicht die ganze Zeit ab, in der dort gewohnt wurde — der Verbrauch der Lücke steckt im Rest des Hauptzählers, der deshalb beim Vermieter bleibt und nicht als Eigenanteil gilt. Bitte die fehlenden Ablesungen nachtragen."
+ },
+ {
+  "code": "meter.unit-without-meter",
+  "text": "„Wasser“: für W0, W1, W2 und W3 gibt es keinen abgelesenen Zähler „Kaltwasser“ — der Rest des Hauptzählers geht an den Vermieter, weil sich nicht bestimmen lässt, wie viel davon auf sie entfällt. Einen Eigenanteil weist Mietfuchs für diesen Rest deshalb nicht aus. Hat eine dieser Einheiten keinen eigenen Anschluss (etwa eine Garage), entfernen Sie in den Stammdaten der Einheit unter „Weitere Angaben — Anschlüsse“ das Häkchen dieser Zählerart."
+ },
+ {
+  "code": "model.prepayment-unsettled",
+  "text": "Für t-u1 (u1) gibt es 2025 keine Kosten der abgerechneten Art, die Vorauszahlung von 1.200,00 € wird deshalb vollständig erstattet. Ist die eingetragene Vorauszahlung in Wahrheit die Pauschale, tragen Sie sie unter „Pauschale“ ein und leeren die Vorauszahlung."
+ },
+ {
+  "code": "period.heating-differs",
+  "text": "Die Heiz- und Warmwasserkosten dieser Abrechnung gelten für die Heizperiode 2025/2026, die übrigen Kosten für 01.01.–30.04.2026. Das ist zulässig, wenn Heizkosten und übrige Betriebskosten nicht getrennt abgerechnet werden, also bei einer gemeinsamen Vorauszahlung (BGH, Urteil vom 30.04.2008, VIII ZR 240/07)."
+ },
+ {
+  "code": "period.heating-mismatch",
+  "text": "„Wartung“: Heizkosten gehören in den Abrechnungszeitraum, in dem sie verbraucht wurden (BGH VIII ZR 156/11). Der Leistungszeitraum 01.05.2025–30.04.2026 reicht über 01.05.–31.08.2025 hinaus, und Heizkosten teilt Mietfuchs nicht nach Tagen auf. Lassen Sie die Rechnung zum Stichtag abgrenzen (Zählerstand oder Zwischenrechnung des Versorgers), oder rechnen Sie im Zeitraum Ihres Messdienstes ab."
+ },
+ {
+  "code": "period.heating-only-statement",
+  "text": "Ob eine Abrechnung nur der Heizkosten für ein Jahr, in dem M nicht mehr gewohnt hat, die Frist bis 31.12.2027 hat, ist nicht entschieden. Stellen Sie sie bis 31.12.2026 zu. Fordern Sie dafür die Abrechnung des Messdienstes für 2025/2026 bis spätestens Oktober 2026 an."
+ },
+ {
+  "code": "period.item-outside",
+  "text": "„Versicherung 2024“: Der Leistungszeitraum 01.01.–31.12.2024 liegt außerhalb des Abrechnungszeitraums 01.01.–30.04.2025. Gehört die Rechnung in einen anderen Zeitraum, ordnen Sie sie dort zu."
+ },
+ {
+  "code": "period.no-heating-period",
+  "text": "In der Abrechnung 01.05.–31.12.2026 endet keine Heizperiode der Heizanlage „Kessel“. Ihre Heizkosten stehen in der Abrechnung, in der ihre Heizperiode endet; prüfen Sie den Zeitraum der Heizung unter Stammdaten."
+ },
+ {
+  "code": "period.short",
+  "text": "Die Heizperiode 01.05.–31.12.2025 ist ein Rumpfzeitraum wegen der Umstellung der Heizung. Eine Verkürzung braucht einen sachlichen Grund, etwa die Angleichung an den Messdienst. Legt Ihr Mietvertrag den Zeitraum fest, braucht die Umstellung die Zustimmung der Mieter."
+ },
+ {
+  "code": "period.short-heating-whole",
+  "text": "„Betriebsstrom 2026-01“ (284,51 €) steht ohne Leistungszeitraum ganz im Rumpfzeitraum 01.01.–30.04.2026. Heizkosten gehören in den Zeitraum, in dem die Wärme verbraucht wurde (BGH VIII ZR 156/11); ist es eine Jahresrechnung, zahlen die Mieter hier die Heizkosten eines ganzen Jahres gegen die Vorauszahlungen weniger Monate. Tragen Sie unter „Weitere Angaben“ den Leistungszeitraum der Rechnung ein. Reicht er über den Rumpf hinaus, lassen Sie die Rechnung zum Stichtag abgrenzen (Zählerstand oder Zwischenrechnung des Versorgers)."
+ },
+ {
+  "code": "period.split-by-days-meter",
+  "text": "„Wasser 2025 (anteilig 01.01.–30.04.2025)“ ist nach Tagen auf die Abrechnungszeiträume aufgeteilt. Mit dem Zählerstand zum 30.04.2025 wäre die Aufteilung genauer."
+ },
+ {
+  "code": "prepayment.annual-assumed",
+  "text": "„Gutschrift Wasser 2026-01“ hat keinen Leistungszeitraum. Für den Vorschlag der Vorauszahlung im Rumpfzeitraum 01.01.–30.04.2026 nimmt Mietfuchs den Betrag als Kosten eines ganzen Jahres und rechnet ihn nicht hoch. Deckt die Rechnung nur einen Teil des Jahres ab, tragen Sie ihren Leistungszeitraum unter „Weitere Angaben“ ein."
+ },
+ {
+  "code": "prepayment.arrears",
+  "text": "Im Mietkonto 01.01.–30.04.2026 von u3 (W3) sind 2.331,96 € offen. Die Abrechnung rechnet die Vorauszahlung laut Vertrag an (1.046,32 €); maßgeblich ist aber, was tatsächlich gezahlt wurde. Zahlungen zählen nach ihrem Datum; eine im Dezember vorab gezahlte Januarmiete steht im Vorjahr. Ob die Vorauszahlung betroffen ist, sehen Sie im Mietkonto: Im Soll steht auch die Kaltmiete, der Rückstand kann ebenso sie betreffen. Fehlt nur eine Buchung, tragen Sie die Zahlung im Mietkonto nach; hat der Mieter wirklich weniger Vorauszahlung geleistet, tragen Sie den gezahlten Betrag in der Abrechnung bei „abzüglich geleisteter Vorauszahlungen“ mit „✎ anpassen“ ein."
+ },
+ {
+  "code": "prepayment.heating-override-pending",
+  "text": "A (EG): Für Mai bis Dezember 2026 gilt vorläufig 876,00 €, der Rest der Korrektur der Abrechnung 2026. Erfassen Sie beim Abrechnen die tatsächlich gezahlten Heizvorauszahlungen für die ganze Heizperiode 2026/2027 („✎ anpassen“); bis dahin bleibt diese Warnung."
+ },
+ {
+  "code": "prepayment.heating-share-missing",
+  "text": "u0 (W0): Die Heizkosten Oktober 2024 bis September 2025 werden getrennt abgerechnet, für diese Monate ist aber keine Heizvorauszahlung erfasst; die Heizkostenabrechnung weist dafür 0 € aus, und die ganze Vorauszahlung steht in dieser Abrechnung. Tragen Sie die Heizvorauszahlung im Mietverhältnis ein (Stammdaten); die übrige Vorauszahlung verringert sich um denselben Betrag."
+ },
+ {
+  "code": "prepayment.heating-share-unchanged",
+  "text": "A (EG): Die Vorauszahlung ändert sich ab März 2026 auf 197,00 €, die Heizvorauszahlung nicht. Gehört die Änderung ganz zu den übrigen Kosten? Sonst tragen Sie ab diesem Monat auch die Heizvorauszahlung neu ein."
+ },
+ {
+  "code": "prepayment.no-suggestion",
+  "text": "Für die Abrechnung 2025 schlägt Mietfuchs keine neue Vorauszahlung vor: Die Heizperiode 01.05.–31.12.2025 ist ein Rumpf, und keine Position der Heizkosten ist als Brennstoff gekennzeichnet. Kennzeichnen Sie die Brennstoffrechnung (Gas, Öl, Fernwärme, Strom der Wärmepumpe) unter „Weitere Angaben“ mit „Brennstoff/Energie“ und tragen Sie ihren Leistungszeitraum ein; dann rechnet Mietfuchs den Vorschlag nach Gradtagen hoch."
+ },
+ {
+  "code": "prepayment.partial-month",
+  "text": "M0 (EG): Einzug am 09.02.2025, Auszug am 28.09.2025. Für Februar 2025 und September 2025 setzt Mietfuchs die Vorauszahlung anteilig nach Kalendertagen an: Februar 2025 20 von 28 Tagen, 107,14 € statt 150,00 €; September 2025 28 von 30 Tagen, 140,00 € statt 150,00 €. Das ist eine Auslegung: Ihr Mietvertrag kann anderes vorsehen, und maßgeblich ist, was der Mieter für den Zeitraum tatsächlich gezahlt hat. Weicht das ab, tragen Sie die gezahlte Summe bei „abzüglich geleisteter Vorauszahlungen“ mit „✎ anpassen“ ein. Zum Beispiel, wenn alle übrigen Monate voll gezahlt sind: mit vollen Monaten 1.200,00 €, ohne diese Monate 900,00 €."
+ },
+ {
+  "code": "property.kind-mismatch",
+  "text": "Das Objekt ist als Zweifamilienhaus eingetragen, nach den angelegten Wohnungen gilt die Ausnahme des § 2 HeizkostenV aber nicht: Dafür darf das Gebäude höchstens zwei Wohnungen haben, von denen Sie eine selbst bewohnen. Mietfuchs richtet sich nach den Wohnungen; die Heizkostenverordnung gilt hier ohne diese Ausnahme. Prüfen Sie die Art des Objekts in den Stammdaten oder ob Ihre eigene Wohnung als „Eigennutzung“ angelegt ist."
+ },
+ {
+  "code": "tenancy.overlap",
+  "text": "Die Mietverhältnisse von Xaver (01.01.2023 bis 30.09.2025) und Yvonne (ab 01.09.2025) in Wohnung A überschneiden sich vom 01.09.2025 bis 30.09.2025 (30 Tage). Für diese Zeit wird beiden der volle Anteil berechnet. Wie viel zu viel, hängt davon ab, welches Datum falsch ist: Ist bei Xaver ein Datum falsch, tragen die Mieter dieser Wohnung 2025 bei den betroffenen Positionen zusammen 19,95 € mehr, als auf die Wohnung entfällt; ist es bei Yvonne falsch, tragen die Mieter dieser Wohnung dadurch 2025 nicht zu viel. Meist ist ein Datum vertippt: Bitte Auszug und Einzug prüfen und das falsche Datum berichtigen. Bis dahin rechnet Mietfuchs wie erfasst."
+ },
+ {
+  "code": "tv-signal.ended",
+  "text": "„Kabelanschluss“: Die Gebühren für das Kabelfernsehen (TV-Signal) sind seit dem 01.07.2024 nicht mehr umlagefähig (Wegfall des Nebenkostenprivilegs). Auf die Mieter umgelegt sind in dieser Abrechnung 120,00 €. Umlegen dürfen Sie nur noch den Betriebsstrom, und das nur bei einer Anlage, die vor dem 01.12.2021 errichtet wurde (bei einer Gemeinschaftsantenne des Hauses auch Prüfung und Einstellung durch eine Fachkraft); buchen Sie das TV-Signal bitte als „Nicht umlagefähig“."
+ },
+ {
+  "code": "tv-signal.new-system",
+  "text": "„Kabelanschluss“: Die Kabel- oder Antennenanlage wurde ab dem 01.12.2021 errichtet; für sie waren die Gebühren für das TV-Signal nie umlagefähig, auch Betriebsstrom und Wartung nicht (§ 2 Satz 2 BetrKV). Auf die Mieter umgelegt sind in dieser Abrechnung 120,00 €. Umlagefähig sind allenfalls Betriebsstrom und Bereitstellungsentgelt einer reinen Glasfaser-Verteilanlage, bei der der Mieter seinen Anbieter frei wählen kann (§ 2 Nr. 15 Buchst. c BetrKV); buchen Sie den Rest bitte als „Nicht umlagefähig“. Für 2021/2022 gilt das für die Kosten ab der Errichtung; was davor auf eine ältere Anlage entfiel, war umlagefähig."
+ },
+ {
+  "code": "tv-signal.partial-year",
+  "text": "„Kabelanschluss“: Die Gebühren für das Kabelfernsehen (TV-Signal) sind nur bis zum 30.06.2024 umlagefähig, danach nicht mehr (Wegfall des Nebenkostenprivilegs). Umlegen dürfen Sie für 2024/2025 höchstens die Zeit bis zum 30.06.2024, und das nur bei einer Anlage, die vor dem 01.12.2021 errichtet wurde; danach nur noch den Betriebsstrom (bei einer Gemeinschaftsantenne des Hauses auch Prüfung und Einstellung durch eine Fachkraft). Bitte teilen Sie die Position entsprechend auf und buchen Sie den Rest als „Nicht umlagefähig“."
+ }
+]

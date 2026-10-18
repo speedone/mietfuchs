@@ -180,6 +180,25 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Fensterhöhe verdeckte er „Einstellungen“ und „Hilfe & Begriffe“ (Befunde M13, M15, N1 aus
   [#341](https://github.com/speedone/mietfuchs/issues/341);
   [#346](https://github.com/speedone/mietfuchs/issues/346)).
+- Hinweise sind übersichtlicher: Jeder Hinweis der Abrechnung, der Steuerübersicht und der Zähler-Seite
+  zeigt seine Stufe als Zeichen und Wort (Fehler, Warnung, Hinweis) und einen fetten Titel. Begründungen,
+  die vor allem aus Paragraphen, Urteilen und Drucksachen bestehen, stehen unter „Mehr dazu“ und werden
+  immer mitgedruckt; Kürzungen, Beträge, Daten und was zu tun ist bleiben immer sichtbar, ein Fehler
+  ganz. Der Wortlaut der Hinweise ist derselbe wie bisher, auch bei abgeschlossenen Abrechnungen. In
+  der Steuerübersicht steht die Beschreibung einer Position vorn, Gruppe und Kostenart klein darunter.
+  Das Cockpit sagt nach dem Versand „Versendet am …; noch offen: …“ statt „dann ist die Abrechnung
+  versandfertig“ und nennt das Ergebnis dann nicht mehr „voraussichtlich“; abgeschlossen, aber noch
+  nicht versendet, zeigt es die Frist, die weiterläuft, und ein verspäteter Versand steht als solcher
+  da.
+  Ohne Daten nennen Cockpit und Abrechnung den ersten fehlenden Schritt mit einem Knopf dorthin
+  („Wohnung anlegen“, „Mietverhältnis anlegen“), ohne „Entwurf“ und ohne Frist; „+ Mietverhältnis
+  hinzufügen“ sagt, warum es gesperrt ist. Die gedruckte Abrechnung nennt das Objekt nicht mehr
+  doppelt („Lindenweg 12 · Lindenweg 12, …“), trägt das Datum (Versand, sonst Tag des Drucks) und die
+  Anschrift des Mieters; ist er ausgezogen und fehlt eine Anschrift für den Schriftverkehr, warnt die
+  Seite vor dem Druck ([#229](https://github.com/speedone/mietfuchs/issues/229)). „Was heißt das?“
+  erscheint nicht mehr im Druck der Steuerübersicht (Befunde M8, M9, M14, N5, N12 aus
+  [#341](https://github.com/speedone/mietfuchs/issues/341);
+  [#346](https://github.com/speedone/mietfuchs/issues/346)).
 
 ### Behoben
 

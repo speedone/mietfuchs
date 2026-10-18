@@ -58,15 +58,33 @@ test('Zeile „Belege erfasst“: Ein- und Mehrzahl', () => {
 // #180: Beim Erststart zeigt das Cockpit keine Checkliste, sondern zwei Knöpfe zum Anfangen.
 // Eine Zahl offener Punkte, die nirgends aufgezählt sind, ließe den Vermieter ratlos zurück.
 test('Unterzeile beim Erststart nennt keine Zahl offener Punkte, sondern den ersten Schritt', () => {
-  const text = cockpitSubtitle({ loaded: true, fresh: true, openCount: 4 })
+  const text = cockpitSubtitle({ loaded: true, fresh: true, open: ['a', 'b', 'c', 'd'] })
   expect(text).not.toMatch(/\d/)
   expect(text).not.toMatch(/offen/)
   expect(text).toMatch(/Stammdaten/)
+  // Mit dem ersten Schritt aus emptyStock.ts nennt die Zeile genau diesen (#346, N12).
+  expect(cockpitSubtitle({ loaded: true, fresh: true, open: [], start: 'Legen Sie zuerst eine Wohnung an.' })).toBe('Legen Sie zuerst eine Wohnung an.')
 })
 
 test('Unterzeile mit Checkliste: Zahl offener Punkte in Ein- und Mehrzahl, sonst bereit', () => {
-  expect(cockpitSubtitle({ loaded: false, fresh: false, openCount: 0 })).toBe('Lade Abrechnungsstand …')
-  expect(cockpitSubtitle({ loaded: true, fresh: false, openCount: 0 })).toBe('Alles bereit — die Abrechnung ist vollständig.')
-  expect(cockpitSubtitle({ loaded: true, fresh: false, openCount: 1 })).toBe('Noch 1 Punkt offen, dann ist die Abrechnung versandfertig.')
-  expect(cockpitSubtitle({ loaded: true, fresh: false, openCount: 3 })).toBe('Noch 3 Punkte offen, dann ist die Abrechnung versandfertig.')
+  expect(cockpitSubtitle({ loaded: false, fresh: false, open: [] })).toBe('Lade Abrechnungsstand …')
+  expect(cockpitSubtitle({ loaded: true, fresh: false, open: [] })).toBe('Alles bereit — die Abrechnung ist vollständig.')
+  expect(cockpitSubtitle({ loaded: true, fresh: false, open: ['Belege erfasst'] })).toBe('Noch 1 Punkt offen, dann ist die Abrechnung versandfertig.')
+  expect(cockpitSubtitle({ loaded: true, fresh: false, open: ['a', 'b', 'c'] })).toBe('Noch 3 Punkte offen, dann ist die Abrechnung versandfertig.')
+})
+
+// UI-Durchsicht M9 (#341): Nach dem Versand ist nichts mehr „versandfertig“ zu machen.
+test('Unterzeile nach Abschluss und Versand nennt den Stand und die offenen Punkte beim Namen', () => {
+  expect(cockpitSubtitle({ loaded: true, fresh: false, open: ['Belege vollständig'], closed: true, sentAt: '2026-03-02' }))
+    .toBe('Versendet am 02.03.2026; noch offen: „Belege vollständig“.')
+  expect(cockpitSubtitle({ loaded: true, fresh: false, open: [], closed: true, sentAt: '2026-03-02' })).toBe('Versendet am 02.03.2026; nichts mehr offen.')
+  // Durchsicht S2: keine Doppelung der Zeile, und die Frist läuft weiter
+  expect(cockpitSubtitle({ loaded: true, fresh: false, open: ['Abgeschlossen & versendet'], closed: true, deadline: '2026-12-31' }))
+    .toBe('Abgeschlossen, Versanddatum fehlt (Frist am 31.12.2026).')
+  // Nach Ablauf der Frist versendet: das steht da, statt still „nichts mehr offen“
+  expect(cockpitSubtitle({ loaded: true, fresh: false, open: ['Abgeschlossen & versendet'], closed: true, sentAt: '2027-01-05', deadline: '2026-12-31' }))
+    .toBe('Versendet am 05.01.2027, nach Ablauf der Frist (31.12.2026).')
+  for (const text of [cockpitSubtitle({ loaded: true, fresh: false, open: ['x'], closed: true }), cockpitSubtitle({ loaded: true, fresh: false, open: ['x'], closed: true, sentAt: '2026-03-02' })]) {
+    expect(text).not.toMatch(/versandfertig/)
+  }
 })
