@@ -151,7 +151,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
             onClick={() => { formErrors.clear(); setForm(newPaymentForm(ledger, newPaymentDate(year, new Date()))) }}
             disabled={tenancies.length === 0}
           >
-            + Zahlung erfassen
+            + Zahlung anlegen
           </button>
         }
       />

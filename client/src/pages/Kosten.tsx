@@ -506,7 +506,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     if (!editing && formCarryId) removeCarried(new Set([formCarryId]))
     setForm(null)
     await load()
-    toast(editing ? `„${desc}“ übernommen.` : `„${desc}“ hinzugefügt.`)
+    toast(editing ? `„${desc}“ gespeichert.` : `„${desc}“ angelegt.`)
   }
 
   async function deleteItem(i: CostItem) {
@@ -551,7 +551,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
       <PageHeader
         title="Kosten"
         subtitle="Alle Rechnungen des Abrechnungsjahres erfassen — manuell oder per KI-Belegauswertung."
-        actions={<button className="btn" onClick={() => { setError(''); setForm(newItemForm(units, meters, keyCtx)) }}>+ Kostenposition</button>}
+        actions={<button className="btn" onClick={() => { setError(''); setForm(newItemForm(units, meters, keyCtx)) }}>+ Kostenposition anlegen</button>}
       />
       {error && <div className="error">{error}</div>}
       {closedAt && (
@@ -833,11 +833,6 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
           </Table>
         )}
 
-        <div className="row no-print">
-          <button className="btn secondary" onClick={() => { setError(''); setForm(newItemForm(units, meters, keyCtx)) }}>
-            + Kostenposition manuell erfassen
-          </button>
-        </div>
       </div>
 
       {/* Heizung PR 19 (#97): CO₂-Erstattung an Mieter, die selbst heizen; nur, wenn es einen gibt. */}
@@ -858,7 +853,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
           // Heizanlage und Heizperiode bearbeitet das Fenster neben dem Formular (Durchsicht M3)
           value={{ form, heatingPlantId, heatingPeriod }}
           errors={formErrors}
-          actions={<button className="btn" onClick={saveItem}>{form.id ? 'Übernehmen' : 'Hinzufügen'}</button>}
+          actions={<button className="btn" onClick={saveItem}>{form.id ? 'Speichern' : 'Anlegen'}</button>}
         >
           {categoryNotice(form.category, year, property?.cableBuiltBeforeDec2021 ?? null) && <div className="notice">{categoryNotice(form.category, year, property?.cableBuiltBeforeDec2021 ?? null)}</div>}
           <div className="row">

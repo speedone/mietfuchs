@@ -3363,6 +3363,19 @@ Tippfläche von `--target` über `::after`, und printCss.test.ts verlangt den du
   kein `set…(null)`). Grenze: Ob `value` den ganzen Zustand umfasst, sieht der Wächter nicht; das prüft die
   Durchsicht. `busy` reichen die Formulare beim Speichern noch nicht durch (Esc während der Anfrage fragt). Tests: `<dialog>` hat die Rolle `dialog`, die Rückfrage `alertdialog`;
   wer in einem Test mit Eingabe „Abbrechen“ klickt, bestätigt danach „Verwerfen“.
+- **Feste Verben auf Knöpfen** (#346 Schritt 7, #341 N3 und M19). Im Seitenfenster heißt der Primärknopf
+  „Anlegen“ (neu) oder „Speichern“ (bearbeiten), „Abbrechen“ kommt aus dem Baustein und ist nie primär. Kein
+  „OK“, „Übernehmen“, „Hinzufügen“ oder „Umstellen“ als Primärknopf; eine Rückfrage nennt immer ihr Verb
+  (`confirmLabel` ist Pflicht). Ein Knopf mit „+“ öffnet ein Fenster („+ Zähler anlegen“) oder fügt eine Zeile an
+  („+ weitere Teilmenge“, „+ Erhöhung ab Monat …“); „… hinzufügen“ gibt es nicht. Ein Entwurf am Feld hat
+  „Speichern“ und „Verwerfen“. Fachliche Verben bleiben, wo sie eine Handlung mit Folgen benennen und kein
+  Seitenfenster speichern: „… abschließen“, „Buchen“, „Positionen anlegen“, „Zuordnen“, in Rückfragen auch
+  „Umstellen“. Die eine Ausnahme im Seitenfenster ist „Anlegen und zu … wechseln“ (`createButtonLabel`): Es
+  beginnt mit dem Verb und nennt die Folge. **Gefahrknöpfe** (`btn ghost danger-ghost`, rot beim Überfahren)
+  tragen „…“, wenn eine Rückfrage folgt („Objekt löschen …“, „Wieder öffnen …“), und stehen mit `ml-auto` von
+  einem „Speichern“ derselben Zeile ab. Wächter S16 in uiRules.test.ts; die Gefahrknöpfe ohne Rückfrage stehen
+  dort mit Grund. Wer einen Knopf umbenennt, zieht die Anleitungen (shared/guides.ts, geprüft von
+  guides.test.ts) und die Meldungen des Servers (ui-labels.test.ts) mit.
 - **Ein Monat ist ein Monatsfeld** (`MonthField`, [client/src/components/MonthField.tsx](client/src/components/MonthField.tsx),
   #287, #346 Schritt 5): ein Textfeld in `Field`, das „3.2025“, „03/25“, „2025-03“, „März 2025“ und „Mrz 27“ liest
   (`parseMonthText` in [client/src/monthText.ts](client/src/monthText.ts), ohne DOM: ein Tag nur als Erster,

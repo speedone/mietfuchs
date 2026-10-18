@@ -200,6 +200,20 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   [#341](https://github.com/speedone/mietfuchs/issues/341);
   [#346](https://github.com/speedone/mietfuchs/issues/346)).
 
+- Feste Wörter auf den Knöpfen: Im Seitenfenster heißt der Knopf, der speichert, „Anlegen“, wenn
+  etwas neu entsteht, und „Speichern“, wenn Sie etwas ändern; „Übernehmen“, „Hinzufügen“, „OK“ und
+  „Umstellen“ gibt es dort nicht mehr. Knöpfe, die ein Fenster öffnen, heißen „+ … anlegen“ („+ Wohnung
+  anlegen“, „+ Mietverhältnis anlegen“, „+ Zähler anlegen“, „+ Zahlung anlegen“, „+ Heizanlage
+  anlegen“); auf der Seite Kosten gibt es dafür nur noch „+ Kostenposition anlegen“ oben rechts statt
+  zwei verschieden beschrifteter Knöpfe. Die gezahlte Vorauszahlung („✎ anpassen“) speichern und
+  verwerfen Sie wie jeden anderen Entwurf am Feld mit „Speichern“ und „Verwerfen“. Knöpfe, die etwas
+  entfernen oder eine abgeschlossene Abrechnung wieder öffnen („Objekt löschen …“, „Entfernen …“ an der
+  Heizanlage und an Lieferungen, „Wieder öffnen …“, „CO₂-Angaben entfernen …“, „Vorrat entfernen …“),
+  tragen „…“, wenn eine Rückfrage folgt, werden beim Überfahren rot und stehen mit Abstand zu
+  „Speichern“. Jede Rückfrage nennt ihr Verb statt „OK“. Die Anleitungen nennen die neuen Wörter
+  (Befunde N3, M19 aus [#341](https://github.com/speedone/mietfuchs/issues/341);
+  [#346](https://github.com/speedone/mietfuchs/issues/346)).
+
 ### Behoben
 
 - Heizkosten, Ablesungen: Fehlt an einer Grenze der Heizperiode ein Stand, nennt die Liste jetzt den

@@ -573,11 +573,11 @@ export const connectionNote = (u: Pick<Unit, 'noConnection'>): string | null =>
 // Befund M6 aus #341: Die Zeile „Abrechnung“ beschreibt bei `manual` den gespeicherten Stand, wie gerechnet wird,
 // statt die Antwort „Niemand“ zu wiederholen. „Niemand“ bleibt die Antwort auf die Frage, wer die
 // Heizkostenabrechnung erstellt (die Anleitungen zitieren sie); auf der Karte widerspräche sie aber einer Anlage,
-// für die gerade „Ich selbst“ gewählt ist: Bis „Umstellen“ in Schritt 7 ist sie bewusst mit freien Schlüsseln
+// für die gerade „Ich selbst“ gewählt ist: Bis „Speichern“ in Schritt 7 ist sie bewusst mit freien Schlüsseln
 // gespeichert (Abweichung 21).
 export const MANUAL_SUMMARY = 'nach den Umlageschlüsseln der Kostenpositionen, ohne eigene Heizkostenabrechnung'
 // Derselbe Satz in Schritt 7 und in der Mitteilung nach „Später“.
-export const SELF_UNTIL_SWITCH = 'Die Abrechnung wechselt erst mit „Umstellen“; bis dahin verteilt Mietfuchs die Heizkosten nach den Umlageschlüsseln der Kostenpositionen.'
+export const SELF_UNTIL_SWITCH = 'Die Abrechnung wechselt erst, wenn Sie das Fenster „Heizkosten selbst abrechnen“ speichern; bis dahin verteilt Mietfuchs die Heizkosten nach den Umlageschlüsseln der Kostenpositionen.'
 
 // Die Zeilen der Karte, wenn eine Anlage eingerichtet ist. Ohne Liste versorgt die Anlage jede
 // Einheit mit Wärmeanschluss (`servesUnit`); die übrigen nennt die Zeile, sonst hieße es „alle“.

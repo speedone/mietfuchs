@@ -74,17 +74,17 @@ const expectShownInDialog = async () => {
 
 test('Kosten: die Ablehnung des Servers steht im Dialog', async () => {
   shell(<Kosten units={UNITS} settings={null} />)
-  fireEvent.click(await screen.findByRole('button', { name: /Kostenposition manuell erfassen/i }))
+  fireEvent.click(await screen.findByRole('button', { name: /Kostenposition anlegen/i }))
   fireEvent.change(screen.getByLabelText(/Beschreibung/i), { target: { value: 'Wasser' } })
   fireEvent.change(screen.getByLabelText(/^Betrag/i), { target: { value: '100,00' } })
-  fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
+  fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/i }))
   await waitFor(() => expect(sent).toHaveLength(1))
   await expectShownInDialog()
 })
 
 test('Zähler: die Ablehnung des Servers steht im Dialog', async () => {
   shell(<Zaehler units={UNITS} />)
-  fireEvent.click(await screen.findByRole('button', { name: /Zähler hinzufügen/i }))
+  fireEvent.click(await screen.findByRole('button', { name: /Zähler anlegen/i }))
   fireEvent.change(screen.getByLabelText(/^Name/i), { target: { value: 'Hauptwasser' } })
   fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/i }))
   await waitFor(() => expect(sent).toHaveLength(1))
@@ -103,7 +103,7 @@ test('Zähler: die Ablehnung einer Ablesung ist zu sehen', async () => {
 
 test('Mietkonto: die Ablehnung einer Zahlung steht im Dialog', async () => {
   shell(<Mietkonto />)
-  const add = await screen.findByRole('button', { name: /Zahlung erfassen/i })
+  const add = await screen.findByRole('button', { name: /Zahlung anlegen/i })
   await waitFor(() => expect((add as HTMLButtonElement).disabled).toBe(false))
   fireEvent.click(add)
   fireEvent.change(screen.getByLabelText(/^Betrag/i), { target: { value: '11,11' } })
@@ -114,7 +114,7 @@ test('Mietkonto: die Ablehnung einer Zahlung steht im Dialog', async () => {
 
 test('Stammdaten: die Ablehnung einer Wohnung steht im Dialog', async () => {
   shell(<Stammdaten units={UNITS} tenancies={TENANCIES} settings={null} reload={async () => {}} />)
-  fireEvent.click(await screen.findByRole('button', { name: /Wohnung hinzufügen/i }))
+  fireEvent.click(await screen.findByRole('button', { name: /Wohnung anlegen/i }))
   fireEvent.change(screen.getByLabelText(/^Name/i), { target: { value: 'DG' } })
   fireEvent.change(screen.getByLabelText(/^Wohnfläche/i), { target: { value: '50' } })
   fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/i }))
@@ -124,7 +124,7 @@ test('Stammdaten: die Ablehnung einer Wohnung steht im Dialog', async () => {
 
 test('Stammdaten: die Ablehnung eines Mietverhältnisses steht im Dialog', async () => {
   shell(<Stammdaten units={UNITS} tenancies={TENANCIES} settings={null} reload={async () => {}} />)
-  fireEvent.click(await screen.findByRole('button', { name: /Mietverhältnis hinzufügen/i }))
+  fireEvent.click(await screen.findByRole('button', { name: /Mietverhältnis anlegen/i }))
   fireEvent.change(screen.getByLabelText('Mieter'), { target: { value: 'Schmidt' } })
   fireEvent.change(screen.getByLabelText(/^Einzug/i), { target: { value: '2025-01-01' } })
   fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/i }))
@@ -136,7 +136,7 @@ test('Stammdaten: die Ablehnung eines Mietverhältnisses steht im Dialog', async
 
 test('Stammdaten: überschneidet sich das neue Mietverhältnis, fragt die Seite nach; „Abbrechen“ speichert nichts (#204)', async () => {
   shell(<Stammdaten units={UNITS} tenancies={TENANCIES} settings={null} reload={async () => {}} />)
-  fireEvent.click(await screen.findByRole('button', { name: /Mietverhältnis hinzufügen/i }))
+  fireEvent.click(await screen.findByRole('button', { name: /Mietverhältnis anlegen/i }))
   fireEvent.change(screen.getByLabelText('Mieter'), { target: { value: 'Schmidt' } })
   fireEvent.change(screen.getByLabelText(/^Einzug/i), { target: { value: '2025-01-01' } })
   fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/i }))
@@ -170,14 +170,14 @@ test('Stammdaten: ein Löschfehler oben erscheint nicht im danach geöffneten Fo
   fireEvent.click(await screen.findByRole('button', { name: /^Löschen$/i }))
   await waitFor(() => expect(screen.getByText(MSG)).toBeTruthy())
   fireEvent.click(screen.getByRole('button', { name: /Wohnung bearbeiten/i }))
-  await screen.findByRole('button', { name: /^Übernehmen$/i })
+  await within(await screen.findByRole('dialog')).findByRole('button', { name: /^Speichern$/i })
   // Der Löschfehler ist eine Mitteilung (H3) und steht nicht im Fenster.
   expect(within(screen.getByRole('dialog')).queryByText(MSG)).toBeNull()
 })
 
 test('Stammdaten: ein Fehler im Formular steht nach „Abbrechen“ nicht oben auf der Seite', async () => {
   shell(<Stammdaten units={UNITS} tenancies={TENANCIES} settings={null} reload={async () => {}} />)
-  fireEvent.click(await screen.findByRole('button', { name: /Wohnung hinzufügen/i }))
+  fireEvent.click(await screen.findByRole('button', { name: /Wohnung anlegen/i }))
   fireEvent.change(screen.getByLabelText(/^Name/i), { target: { value: 'DG' } })
   fireEvent.change(screen.getByLabelText(/^Wohnfläche/i), { target: { value: '50' } })
   fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/i }))
@@ -195,14 +195,14 @@ test('Zähler: ein Löschfehler oben erscheint nicht im danach geöffneten Formu
   fireEvent.click(await screen.findByRole('button', { name: /^Löschen$/i }))
   await waitFor(() => expect(screen.getByText(MSG)).toBeTruthy())
   fireEvent.click(screen.getByRole('button', { name: /Zähler bearbeiten/i }))
-  await screen.findByRole('button', { name: /^Übernehmen$/i })
+  await within(await screen.findByRole('dialog')).findByRole('button', { name: /^Speichern$/i })
   // Der Löschfehler ist eine Mitteilung (H3) und steht nicht im Fenster.
   expect(within(screen.getByRole('dialog')).queryByText(MSG)).toBeNull()
 })
 
 test('Mietkonto: ein Fehler im Formular steht nach „Abbrechen“ nicht oben auf der Seite', async () => {
   shell(<Mietkonto />)
-  const add = await screen.findByRole('button', { name: /Zahlung erfassen/i })
+  const add = await screen.findByRole('button', { name: /Zahlung anlegen/i })
   await waitFor(() => expect((add as HTMLButtonElement).disabled).toBe(false))
   fireEvent.click(add)
   fireEvent.change(screen.getByLabelText(/^Betrag/i), { target: { value: '11,11' } })
@@ -219,7 +219,7 @@ test('Mietkonto: ein Fehler im Formular steht nach „Abbrechen“ nicht oben au
 // Angabe an ihrem Feld und als Zeile der Sammelmeldung im Fuß des Fensters; ihr Link führt zum Feld.
 test('Stammdaten: ein leeres Mietverhältnis nennt Mieter und Einzug je am Feld und in der Sammelmeldung', async () => {
   shell(<Stammdaten units={UNITS} tenancies={TENANCIES} settings={null} reload={async () => {}} />)
-  fireEvent.click(await screen.findByRole('button', { name: /Mietverhältnis hinzufügen/i }))
+  fireEvent.click(await screen.findByRole('button', { name: /Mietverhältnis anlegen/i }))
   fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/i }))
   const alert = await screen.findByRole('alert')
   expect(alert.closest('footer')).not.toBeNull()
@@ -234,7 +234,7 @@ test('Stammdaten: ein leeres Mietverhältnis nennt Mieter und Einzug je am Feld 
 
 test('Mietkonto: eine leere Zahlung nennt jedes fehlende Feld, nicht einen Sammelsatz', async () => {
   shell(<Mietkonto />)
-  const add = await screen.findByRole('button', { name: /Zahlung erfassen/i })
+  const add = await screen.findByRole('button', { name: /Zahlung anlegen/i })
   await waitFor(() => expect((add as HTMLButtonElement).disabled).toBe(false))
   fireEvent.click(add)
   fireEvent.change(screen.getByLabelText('Datum'), { target: { value: '' } })
@@ -271,11 +271,11 @@ test('Mietkonto: ein abgelehntes Löschen ist eine Mitteilung, kein Kasten oben 
 // Durchsicht zu #346 Schritt 3, S1: Ein Betrag, der keine Zahl ist, stand ohne Feld in der Sammelmeldung.
 test('Kosten: ein ungültiger Betrag steht am Feld, mit Link aus der Sammelmeldung', async () => {
   shell(<Kosten units={UNITS} settings={null} />)
-  fireEvent.click(await screen.findByRole('button', { name: /Kostenposition manuell erfassen/i }))
+  fireEvent.click(await screen.findByRole('button', { name: /Kostenposition anlegen/i }))
   fireEvent.change(screen.getByLabelText(/Beschreibung/i), { target: { value: 'Wasser' } })
   const amount = screen.getByLabelText(/^Betrag/i)
   fireEvent.change(amount, { target: { value: 'abc' } })
-  fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
+  fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/i }))
   const alert = await screen.findByRole('alert')
   expect(amount.getAttribute('aria-invalid')).toBe('true')
   fireEvent.click(within(alert).getByRole('link', { name: /^Betrag/ }))
@@ -285,10 +285,10 @@ test('Kosten: ein ungültiger Betrag steht am Feld, mit Link aus der Sammelmeldu
 
 test('Kosten: ein Fehler im Formular steht nach „Abbrechen“ nicht oben auf der Seite', async () => {
   shell(<Kosten units={UNITS} settings={null} />)
-  fireEvent.click(await screen.findByRole('button', { name: /Kostenposition manuell erfassen/i }))
+  fireEvent.click(await screen.findByRole('button', { name: /Kostenposition anlegen/i }))
   fireEvent.change(screen.getByLabelText(/Beschreibung/i), { target: { value: 'Wasser' } })
   fireEvent.change(screen.getByLabelText(/^Betrag/i), { target: { value: '100,00' } })
-  fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
+  fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/i }))
   await expectShownInDialog()
   fireEvent.click(screen.getByRole('button', { name: /^Abbrechen$/i }))
   // Mit Eingaben fragt das Seitenfenster (#346, Schritt 2)

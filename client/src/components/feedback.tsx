@@ -15,7 +15,8 @@ type ConfirmOpts = {
   // Als Funktion bekommt die Nachricht `dismiss`, das die Rückfrage wie Abbrechen schließt; so kann ein
   // Knopf darin (etwa „Hier beheben →“, #319) wegführen, ohne dass die Rückfrage darüber stehen bleibt.
   message?: ReactNode | ((dismiss: () => void) => ReactNode)
-  confirmLabel?: string
+  // Das Verb der Bestätigung, Pflicht (#346 Schritt 7, N3): Ein „OK“ sagt nicht, was geschieht.
+  confirmLabel: string
   cancelLabel?: string
   danger?: boolean
   // Eine dritte Wahl neben Abbrechen und Bestätigen, etwa „Stattdessen … bearbeiten“. Sie schließt
@@ -191,7 +192,7 @@ export function UIProvider({ children }: { children: ReactNode }) {
                   <button type="button" className="btn secondary" onClick={() => { const alternative = dialog.onAlternative; close(false); alternative?.() }}>{dialog.alternativeLabel}</button>
                 )}
                 <button ref={confirmRef} type="button" className={`btn ${dialog.danger ? 'danger' : ''}`} onClick={() => close(true)}>
-                  {dialog.confirmLabel ?? 'OK'}
+                  {dialog.confirmLabel}
                 </button>
               </div>
             </div>

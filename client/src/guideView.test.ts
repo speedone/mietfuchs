@@ -24,7 +24,7 @@ describe('Anleitungen (#164)', () => {
     const ids = (q: string) => filterGuides(allGuides(), q).map((g) => g.id)
     expect(ids('EINLIEGER')).toContain('granny')
     expect(ids('§ 9b')).toEqual(['meteringService', 'heatingSelf', 'tenantChange'])
-    expect(ids('+ Zähler hinzufügen')).toContain('granny')
+    expect(ids('+ Zähler anlegen')).toContain('granny')
     expect(ids('#96')).toEqual(['properties'])
     expect(ids('  ')).toHaveLength(allGuides().length)
     expect(ids('gibt es nicht')).toEqual([])

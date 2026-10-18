@@ -83,7 +83,7 @@ export default function LawOverridesCard() {
               )}
               <div className="row">
                 {s.status !== 'superseded' && <button className="btn" type="button" onClick={() => void save(s)}>Speichern</button>}
-                {s.override && <button className="btn secondary" type="button" onClick={() => void remove(s)}>Eintrag entfernen</button>}
+                {s.override && <button className="btn ghost danger-ghost ml-auto" type="button" onClick={() => void remove(s)}>Eintrag entfernen</button>}
               </div>
             </div>
           )

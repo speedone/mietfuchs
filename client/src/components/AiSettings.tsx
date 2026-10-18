@@ -430,7 +430,7 @@ function SlotEditor(props: SlotProps) {
             <>
               <p className="muted">Schlüssel gespeichert ({settings.aiKeys?.[name]?.hint || 'ohne Hinweis'}).</p>
               <button className="btn secondary small" onClick={() => setReplacingKey(true)}>Ersetzen</button>
-              <button className="btn secondary small" onClick={props.onDeleteKey}>Schlüssel löschen</button>
+              <button className="btn ghost small danger-ghost" onClick={props.onDeleteKey}>Schlüssel löschen</button>
             </>
           ) : (
             <>
