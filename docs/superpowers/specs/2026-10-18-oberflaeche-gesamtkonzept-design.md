@@ -104,10 +104,13 @@ Dazu die Tokens, die vorher als feste Pixelwerte verstreut waren. Die Namen von 
 
 - **Desktop (≥ 900 px):** Die Seitenleiste bleibt und ist **der einzige Ort für Objekt und Abrechnungsjahr** (M13). Beide stehen oben und sehen gleich aus (N1, eigenes `appearance: none` mit gleichem Pfeil). Der Fuß ist Teil der Scrollfläche (M15). Die Navigation folgt den Arbeitsphasen wie heute.
 - **Seitenkopf:** Kontextzeile „Lindenweg 12 · Abrechnungsjahr 2025“ (nur Anzeige), `h1`, ein Satz Untertitel, **höchstens eine** Primäraktion rechts. Seiten zeigen Jahr und Objekt nur an und wählen sie nicht noch einmal. Ausnahme: „Jahr der Buchung“ in der Schnellerfassung ist eine Eigenschaft des Belegs, kein Filter, und bekommt eine andere Beschriftung.
-- **Handy (< 900 px):** ersetzt den 477 px hohen Block (MOB2) durch:
-  - einen **angehefteten Kopf** von 56 px mit ☰-Menü (`aria-expanded`), Seitentitel und „Lindenweg 12 · 2025“ darunter sowie ⇅ für Objekt und Jahr;
-  - ein **Menüblatt** als `<dialog>` von links mit derselben Navigation samt Objekt und Jahr;
-  - eine **untere Leiste** mit Cockpit, Erfassen, Zähler, Stammdaten und „Mehr“ (52 px hoch, `safe-area-inset-bottom`). Das sind die Wege, die man vor Ort mit dem Handy geht (Zähler ablesen, Beleg fotografieren).
+- **Handy (< 900 px):** ersetzt den 477 px hohen Block (MOB2) durch (umgesetzt mit Schritt 9, `components/MobileNav.tsx`):
+  - einen **angehefteten Kopf** von 56 px mit ☰-Menü (`aria-expanded`, `aria-controls`), Seitentitel und „Lindenweg 12 · 2025“ darunter sowie ⇅ für Objekt und Jahr;
+  - ein **Menüblatt** als `<dialog>` mit `showModal()` von links. Es zeigt **denselben Inhalt wie die Seitenleiste** (App.tsx reicht ihn herein): Objekt und Jahr oben, die Navigation aus `nav.ts`, unten Design und, nur in der Programmdatei, „Mietfuchs beenden“; den Update-Hinweis nicht, aktualisiert wird am Rechner. Es schließt bei Auswahl, Esc, ✕ und Klick daneben (nur `e.target === e.currentTarget`), der Fokus geht an den Knopf zurück, der es geöffnet hat;
+  - **⇅ öffnet dasselbe Blatt** mit dem Fokus auf der Objektwahl (bei einem Objekt auf dem Zeitraum), statt eines zweiten, kleinen Blatts: Objekt und Jahr bleiben an einem Ort (M13), und die Rückfrage bei offenem Formular ist dieselbe (`useSwitchProperty`, `useSwitchPeriod`). Jede Auswahl schließt das Blatt **vor** dem Wechsel, denn eine Rückfrage stünde sonst hinter dem modalen Blatt;
+  - eine **untere Leiste** mit Cockpit, Erfassen, Zähler, Stammdaten und „Mehr“ (52 px hoch, `safe-area-inset-bottom`; die Auswahl steht als `BOTTOM_TABS` in `nav.ts`, die kurzen Beschriftungen als `short` am Eintrag). Das sind die Wege, die man vor Ort mit dem Handy geht (Zähler ablesen, Beleg fotografieren). Die aktuelle Seite trägt `aria-current="page"`; liegt sie nicht in der Leiste, ist „Mehr“ getönt, aber nicht „aktuelle Seite“;
+  - der Inhalt hält unten Abstand zur Leiste, Toasts stehen darüber, Sprungziele (`scroll-padding`) unter dem Kopf frei.
+  - Am Handy zeichnet App.tsx die Seitenleiste gar nicht (und am Rechner Kopf und Leiste nicht), entschieden mit `matchMedia` an derselben Grenze wie im CSS: Sonst stünden die Einträge doppelt im Baum. Am Rechner ändert sich kein Pixel (nachgemessen bei 1440 px, hell und dunkel).
 
 ## 3. Formularmuster: eines statt vier
 
@@ -194,8 +197,8 @@ Nach GOV.UK ([Error summary](https://design-system.service.gov.uk/components/err
   - Die Tabelle scrollt in ihrer Karte (`Table.tsx` heute), die Seite nie (Breitentest „keine Seite breiter als 390 px“, siehe 9c).
 - **Schmal (< 640 px): Karten statt Seitwärtsscrollen**, für Listen mit Datensätzen:
   - Die Zeile wird zum Block: erste Spalte fett als Titel, die übrigen mit ihrer Spaltenbeschriftung („Wohnung: EG links“), Aktion rechts.
-  - Umgesetzt mit `.table.stack` und `data-label` am `td`, ohne zweites Markup und ohne JS. Für Vorleser bleibt es eine Tabelle.
-- **Ausnahme Zahlenraster** (Mietkonto mit 12 Monaten, Abrechnungstabellen, Kostenvergleich): Dort trägt der Vergleich über Spalten die Bedeutung. Sie bleiben Tabellen mit Scrollen in der Karte, mit **erster Spalte angeheftet** (`position: sticky; left: 0`) und dem Hinweis „Weitere Spalten rechts“ nur, wenn wirklich gescrollt werden kann (N6).
+  - Umgesetzt mit `<Table className="stacked">` und `data-label` am `td`, ohne zweites Markup und ohne JS (`.table` und `.stack` hießen wie eine Utility bzw. eine vorhandene Klasse). Seit Schritt 9 in den Stammdaten (Wohnungen, Mietverhältnisse), auf der Zähler-Seite, bei den Kosten und den Zahlungen im Mietkonto; Wächter S23. Die Aktionen stehen rechts neben dem Titel (höchstens 45 % der Breite), Zeilen mit einer Zelle über mehrere Spalten (Summen, Belegkopf, Ablesungen) füllen den Block. Das Markup bleibt eine Tabelle; ob Safari mit VoiceOver sie bei `display: block` noch als Tabelle ansagt, gehört in die Probe je Release (Abschnitt 7).
+- **Ausnahme Zahlenraster** (Mietkonto mit 12 Monaten, Abrechnungstabellen, Kostenvergleich): Dort trägt der Vergleich über Spalten die Bedeutung. Sie bleiben Tabellen mit Scrollen in der Karte, mit **erster Spalte angeheftet** (`position: sticky; left: 0`, Klasse `sticky-first`, unter 900 px; das Mietkonto ist ein Raster aus Kacheln und scrollt nicht) und dem Hinweis „Weitere Spalten rechts“ nur, wenn wirklich gescrollt werden kann (N6, so schon in `Table.tsx`).
 - **Leere Liste:** ein Satz, was hier stehen wird, und der Knopf, mit dem man anfängt (siehe 6).
 
 ## 6. Hinweise, Ampel, Leerzustände
@@ -252,7 +255,7 @@ Drei Ebenen, wie die Tests von Mietfuchs ohnehin aufgebaut sind.
 
 | Regel | prüft | gegen |
 |---|---|---|
-| S12 Dialoge | `<dialog`, `role="dialog"`, `showModal` nur in `Drawer`, `ConfirmDialog`, `AppShell`; `popover` nur in `Term`, `MonthField` | eigene Overlays je Seite |
+| S12 Dialoge | `<dialog`, `role="dialog"`, `showModal` nur in `Drawer`, `ConfirmDialog`, `AppShell`; `popover` nur in `Term`, `MonthField`. Seit Schritt 9 für `<dialog` und `showModal` (Liste mit `MobileNav.tsx` begonnen) | eigene Overlays je Seite |
 | S13 Enter | kein `'Enter'` in einem `keydown`-Handler eines Dialogbausteins | Wiederkehr von H1 |
 | S14 Monat/Datum | kein `type="month"`, `type="number"` für Geld, kein zweites Monatsfeld | #287 |
 | S15 Fehler | kein `className="error"`/`role="alert"` außerhalb `Field`, `ErrorSummary`, `Toast`, `DraftActions` | M5, H3 |
@@ -261,6 +264,8 @@ Drei Ebenen, wie die Tests von Mietfuchs ohnehin aufgebaut sind.
 | S18 Jahr/Objekt | kein `<select>` mit Jahr/Objekt in `pages/` außer über `AppShell` | M13 |
 | S19 Formularmuster | eine Seite hat entweder `Drawer` oder Karten-Speichern je Formular; kein zweites `type="submit"` in derselben Karte | M18, N8 |
 | S20 Tailwind | keine neue Klasse in `index.css` mit dem Namen einer Utility (heute `grow`, `grow-2`, `sr-only`); `index.css` wird nur kleiner (Zeilenzahl als Obergrenze im Test) | Kollision, Rückfall ins alte CSS |
+| S22 Navigation | Einträge mit Kennung und Beschriftung nur in `nav.ts`; Seitenleiste, Menüblatt und untere Leiste lesen `navFor`/`bottomNav` (seit Schritt 9) | zweite Liste |
+| S23 Karten | die Tabellen mit Datensätzen tragen `stacked`, jede Zelle `data-label` (außer Aktionen und Zeilen mit `colSpan`) (seit Schritt 9) | Wert ohne Spalte am Handy |
 | S21 Klassenketten | lange Klassenketten nur in `components/`; Seiten setzen Bausteine zusammen und tragen höchstens Abstände und Raster | jede Seite ihr eigener Knopf |
 
 **b) Verhaltenstests in jsdom** je Baustein:
@@ -297,7 +302,7 @@ Jeder Schritt ist ein PR mit `Refs #346` (und, wo er einen Befund der Checkliste
 | 6 | **`Term` als Popover**, eigener Begriff `tightMarket` | M1, M2, MOB3 | 1 Tag | – |
 | 7 | **Formularmuster zurückführen**: Ablesung, Lieferung, Mieterwechsel und Zeitraumwechsel ins Seitenfenster; Heizkosten auf ein Speichern je Karte; Sofortspeichern → Entwurf am Feld; feste Verben | M18, N3, N8, N16, M19 | 3–4 Tage | S16, S19 |
 | 8 | **Jahr/Objekt nur in der Seitenleiste**, Seiten zeigen an | M13, N1 | 1 Tag | S18 |
-| 9 | **Mobil**: angehefteter Kopf, Menüblatt, untere Leiste, Tabellen → Karten, `guide-norm` umbrechen | MOB1, MOB2, M10, M15 | 2–3 Tage | Breitentest |
+| 9 | **Mobil**: angehefteter Kopf, Menüblatt, untere Leiste, Tabellen → Karten, `guide-norm` umbrechen. *Umgesetzt bis auf `guide-norm`; Breitentest als Skript außerhalb des Repos in drei Engines gelaufen, ins Repo kommt er mit Schritt 11* | MOB1, MOB2, M10, M15 | 2–3 Tage | Breitentest, S12, S22, S23 |
 | 10 | **Hinweise/Leerzustände/Druck**: „Was tun“ + „Mehr dazu“, Cockpit nach Versand, Druck-Rückfrage bei Fehlern, Druckkopf | M8, M9, M14, H6, N5, N12 | 2 Tage | – |
 | 11 | **Browserlauf + axe** als Skript, Musterseite in `npm run screenshots` | alle | 1 Tag | c) |
 
