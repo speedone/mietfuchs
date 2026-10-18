@@ -2,7 +2,7 @@
 // Vorschlag und Kandidaten, die Vorschau des Servers und das Buchen genau dieser Vorschau.
 // Schnellerfassung und KI auf der Kostenseite benutzen sie; der Posteingang führt mit „Weiter
 // prüfen“ in die Schnellerfassung. Die Entscheidungslogik steht in client/src/assessment.ts.
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import type { AssessmentView, BookingPreview, Unit } from '../types'
 import { errorText, fmtEuro } from '../api'
 import {
@@ -22,12 +22,15 @@ type Props = {
   keyContext?: KeyContext
   onChange: (next: AssessmentView) => void
   onOpenItem?: (costItemId: string) => void
+  // Ob das Jahr der Buchung einen ungespeicherten Entwurf hat (Durchsicht zu #309, MUSS 1): „Alle grünen
+  // übernehmen“ der Schnellerfassung bucht eine solche Auswertung nicht.
+  onYearDraft?: (assessmentId: string, dirty: boolean) => void
 }
 
 const ACTIONS: readonly string[] = ['', 'create', 'dismiss', 'release']
 const isAction = (v: string): v is RowAction => ACTIONS.includes(v) || v.startsWith('link:')
 
-export default function AssessmentReview({ assessment: a, units, keyContext, onChange, onOpenItem }: Props) {
+export default function AssessmentReview({ assessment: a, units, keyContext, onChange, onOpenItem, onYearDraft }: Props) {
   const confirm = useConfirm()
   const [rows, setRows] = useState<Record<number, RowDraft>>(() => initialRows(a))
   const [preview, setPreview] = useState<BookingPreview | null>(null)
@@ -129,13 +132,21 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
 
   // Das Jahr der Buchung ist ein Entwurf am Feld (#309): Erst „Speichern“ schickt es. Solange er offen
   // ist, gibt es weder Vorschau noch Buchung, denn beide gälten noch für das bisherige Jahr.
-  const year = useDraft(a.year, { scope: a.id })
+  // Die Liste der Jahre hängt am gespeicherten Jahr; zieht es sich von außen nach, verfällt ein Entwurf
+  // außerhalb der neuen Liste (MUSS 2).
+  const years = [a.year - 2, a.year - 1, a.year, a.year + 1]
+  const year = useDraft(a.year, { scope: a.id, isValid: (y) => years.includes(y) })
+  const reportYear = useRef(onYearDraft)
+  reportYear.current = onYearDraft
+  useEffect(() => {
+    reportYear.current?.(a.id, year.dirty)
+    return () => reportYear.current?.(a.id, false)
+  }, [a.id, year.dirty])
   async function saveYear(next: number) {
     setError('')
     onChange(await changeAssessmentYear(a.id, next))
   }
 
-  const years = [a.year - 2, a.year - 1, a.year, a.year + 1]
   return (
     <div className="stack assessment-review">
       <div className="row center">

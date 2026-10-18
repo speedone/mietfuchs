@@ -10,7 +10,7 @@ import { PeriodProvider } from '../period'
 import { PropertyProvider, useHasOpenForm } from '../property'
 import { useState } from 'react'
 import type { ReceiptUpload } from '../receipts'
-import Belege from './Belege'
+import Belege, { PLACEMENT_FIRST } from './Belege'
 
 const PROPS: Property[] = [
   { id: 'p1', name: 'Lindenstraße', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null },
@@ -235,7 +235,7 @@ test('Posteingang: scheitert das Speichern, steht der Grund am Knopf und der Ent
   const inner = globalThis.fetch
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     if (url === '/api/uploads/4_lose.pdf' && init?.method === 'PUT') {
-      return new Response(JSON.stringify({ error: 'Aus diesem Beleg ist schon etwas gebucht.' }), { status: 409, headers: { 'content-type': 'application/json' } })
+      return new Response(JSON.stringify({ error: 'Der Datenordner ist schreibgeschützt.' }), { status: 503, headers: { 'content-type': 'application/json' } })
     }
     return inner(url, init)
   })
@@ -245,7 +245,7 @@ test('Posteingang: scheitert das Speichern, steht der Grund am Knopf und der Ent
   fireEvent.change(jahr, { target: { value: String(YEAR) } })
   fireEvent.click(screen.getByRole('button', { name: 'Speichern (Objekt und Jahr für lose.pdf)' }))
   const alert = await screen.findByRole('alert')
-  expect(alert.textContent).toMatch(/^Nicht gespeichert: .*schon etwas gebucht/)
+  expect(alert.textContent).toMatch(/^Nicht gespeichert: .*schreibgeschützt/)
   expect(alert.closest('.draft-actions')).not.toBeNull()
   expect(jahr.value).toBe(String(YEAR))
 })
@@ -484,4 +484,43 @@ test('Posteingang: ein ungespeichertes Jahr zählt als offenes Formular (#309)',
   expect(frage()).toBe('offen? true')
   fireEvent.click(screen.getByRole('button', { name: 'Verwerfen (Objekt und Jahr für lose.pdf)' }))
   expect(frage()).toBe('offen? false')
+})
+
+// Durchsicht zu #309, MUSS 2: Die Positionen zum Zuordnen folgen dem Entwurf von Objekt und Jahr. Eine schon
+// gewählte Position, die danach nicht mehr zur Wahl steht, darf „Speichern“ nicht trotzdem anhängen.
+test('Posteingang: fällt die gewählte Position aus der Liste, ist die Wahl verworfen (#309)', async () => {
+  extraItems = [{ id: 'alt', propertyId: 'p1', period: calendarPeriod(YEAR - 1), category: 'Wasser/Abwasser', description: 'Abwasser alt', amountCents: 25000, key: 'area' }]
+  renderPage()
+  await screen.findByText('Wasser/Abwasser')
+  const jahr = screen.getByLabelText('Jahr für lose.pdf') as HTMLSelectElement
+  fireEvent.change(jahr, { target: { value: String(YEAR) } })
+  const zuordnen = screen.getByLabelText('lose.pdf einer Position zuordnen') as HTMLSelectElement
+  fireEvent.change(zuordnen, { target: { value: 'w2' } })
+  expect(screen.getByRole('button', { name: 'Speichern (Position für lose.pdf)' })).toBeTruthy()
+  fireEvent.change(jahr, { target: { value: String(YEAR - 1) } })
+  expect([...(screen.getByLabelText('lose.pdf einer Position zuordnen') as HTMLSelectElement).options].map((o) => o.value)).toEqual(['', 'alt'])
+  expect(screen.queryByRole('button', { name: 'Speichern (Position für lose.pdf)' })).toBeNull()
+  expect(sent).toEqual([])
+})
+
+// Durchsicht zu #309, SOLLTE 3: „Per KI auswerten“ nähme Objekt und Jahr, wie sie gespeichert sind.
+test('Posteingang: mit ungespeichertem Objekt oder Jahr ist „Per KI auswerten“ gesperrt, mit Grund (#309)', async () => {
+  const onEvaluate = vi.fn()
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <Belege renderThumb={() => Promise.resolve('')} onEvaluate={onEvaluate} />
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  await screen.findByText('Wasser/Abwasser')
+  fireEvent.change(screen.getByLabelText('Objekt für lose.pdf'), { target: { value: 'p2' } })
+  const knopf = screen.getByRole('button', { name: 'lose.pdf per KI auswerten' }) as HTMLButtonElement
+  expect(knopf.disabled).toBe(true)
+  expect(screen.getByText(PLACEMENT_FIRST)).toBeTruthy()
+  fireEvent.click(knopf)
+  expect(onEvaluate).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: 'Verwerfen (Objekt und Jahr für lose.pdf)' }))
+  expect(knopf.disabled).toBe(false)
+  expect(screen.queryByText(PLACEMENT_FIRST)).toBeNull()
 })

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AssessmentView, CostItem, IntakeResult, Meter, NoticeSubject, Reading, Settings, Unit, UploadInfo } from '../types'
 import { calendarPeriod, periodContext, periodOfKey } from '../../../shared/period.ts'
 import { api, errorText } from '../api'
@@ -204,7 +204,20 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
   // Übernahme, damit nie mehr angeboten wird, als gebucht würde.
   const readingReady = (entry: QueueEntry): boolean =>
     entry.status === 'fertig' && entry.data.kind === 'zaehler' && !!entry.data.reading?.checked && readingScores.get(entry.id)?.level === 'gruen'
-  const greenReady = assessments.reduce((n, v) => n + greenDecisions(v).length, 0) + queue.filter(readingReady).length
+  // Auswertungen, deren Jahr der Buchung einen ungespeicherten Entwurf hat (Durchsicht zu #309, MUSS 1). Ihre Karte
+  // zeigt ein anderes Jahr, als gebucht würde; „Alle grünen übernehmen“ lässt sie deshalb aus, bis das Jahr
+  // gespeichert oder verworfen ist. Gesperrt wird nicht der ganze Knopf, damit die übrigen Belege weiterlaufen.
+  const [yearDrafts, setYearDrafts] = useState<ReadonlySet<string>>(new Set())
+  const onYearDraft = useCallback((id: string, dirty: boolean) => setYearDrafts((s) => {
+    if (s.has(id) === dirty) return s
+    const next = new Set(s)
+    if (dirty) next.add(id)
+    else next.delete(id)
+    return next
+  }), [])
+  const greenOf = (v: AssessmentView) => (yearDrafts.has(v.id) ? [] : greenDecisions(v))
+  const heldBack = assessments.filter((v) => yearDrafts.has(v.id) && greenDecisions(v).length > 0).length
+  const greenReady = assessments.reduce((n, v) => n + greenOf(v).length, 0) + queue.filter(readingReady).length
 
   // Während eine Übernahme läuft, startet keine zweite: Ein Doppelklick legte sonst eine Ablesung
   // zweimal an (Rechnungen schützt zusätzlich der Server). Der Verweis gilt sofort, der Zustand
@@ -272,7 +285,7 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
     const left: string[] = []
     const named = (v: AssessmentView, idx: number) => `„${v.lines.find((l) => l.idx === idx)?.description ?? ''}“`
     for (const v of assessments) {
-      const decisions = greenDecisions(v)
+      const decisions = greenOf(v)
       if (decisions.length === 0) continue
       try {
         const preview = await planDecisions(v.id, decisions)
@@ -351,6 +364,7 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
         {greenReady > 0 && (
           <div className="sticky-bar">
             <strong>{greenReady}</strong> {plural(greenReady, 'grüner Vorschlag', 'grüne Vorschläge')} bereit.
+            {heldBack > 0 && <span className="muted"> {heldBack === 1 ? '1 Beleg mit ungespeichertem Jahr bleibt außen vor.' : `${heldBack} Belege mit ungespeichertem Jahr bleiben außen vor.`}</span>}
             <div className="grow" />
             <button className="btn" disabled={adopting} onClick={() => void adoptAllGreen()}>✓ Alle grünen übernehmen</button>
           </div>
@@ -457,7 +471,7 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
           </div>
           <AssessmentReview assessment={v} units={units} keyContext={keyCtx(v)}
             onChange={(next) => { upsert(next); void loadData() }}
-            onOpenItem={(id) => onNavigate('kosten', { kind: 'costItem', id })} />
+            onOpenItem={(id) => onNavigate('kosten', { kind: 'costItem', id })} onYearDraft={onYearDraft} />
         </div>
       ))}
 
