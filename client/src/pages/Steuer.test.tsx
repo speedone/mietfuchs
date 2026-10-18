@@ -170,7 +170,7 @@ const LAGEN: Record<TaxHint, Lage> = {
   },
   reserveSuspected: {
     report: REPORT({ reserveSuspects: [{ costItemId: 'v', description: 'Instandhaltungsrücklage 2025', amountCents: 90000 }] }),
-    text: /sieht nach einer Zuführung zur Erhaltungsrücklage aus/i,
+    text: /Vielleicht eine Zuführung zur Erhaltungsrücklage/,
   },
   etwHousingMoney: {
     report: REPORT(),
@@ -206,7 +206,7 @@ const LAGEN: Record<TaxHint, Lage> = {
   },
   unmarkedPowerCredits: {
     report: REPORT({ unmarkedPowerCredits: [{ costItemId: 'gut', description: 'Abzug alt', amountCents: -20000 }] }),
-    text: /ein negativer Betrag ohne Kennzeichnung/,
+    text: /Negativer Betrag beim Allgemeinstrom ohne Kennzeichnung/,
   },
   // #255, PR 4: was zwischen den Jahren verschoben ist.
   movedIn: { report: MIXED([GS_IN]), text: new RegExp(`In ${JAHR} bezahlt, aus einer anderen Abrechnung`) },
@@ -241,7 +241,7 @@ test('Die gemischte Nutzung nennt Quadratmeter, nicht nur einen Anteil (#68)', a
   // Die Quadratmeter sind die Angabe, die in die Anlage V wandert. Ein bloßer Prozentsatz lädt
   // außerdem dazu ein, den Rest für den abziehbaren Anteil zu halten.
   await zeige(REPORT({ selfOccupiedExists: true, selfUsedAreaM2: 50, totalAreaM2: 200 }))
-  const kasten = screen.getByText(/Gemischt genutztes Gebäude/i).closest('div')
+  const kasten = screen.getByText(/Gemischt genutztes Gebäude/i).closest('.notice-item')
   expect(kasten?.textContent).toMatch(/50 m²/)
   expect(kasten?.textContent).toMatch(/200 m²/)
   expect(kasten?.textContent).toMatch(/25 %/)
@@ -250,7 +250,7 @@ test('Die gemischte Nutzung nennt Quadratmeter, nicht nur einen Anteil (#68)', a
 test('Ohne erfasste Fläche steht kein Prozentsatz da (#68)', async () => {
   // Ein Anteil von 0 wäre eine Aussage über etwas, das niemand eingetragen hat.
   await zeige(REPORT({ selfOccupiedExists: true, selfUsedAreaM2: 0, totalAreaM2: 0 }))
-  const kasten = screen.getByText(/Gemischt genutztes Gebäude/i).closest('div')
+  const kasten = screen.getByText(/Gemischt genutztes Gebäude/i).closest('.notice-item')
   expect(kasten?.textContent).not.toMatch(/%/)
 })
 
@@ -281,7 +281,7 @@ test('Der Vorbehalt zum Flächenanteil erscheint nur, wenn es auch einen Anteil 
 
 test('Die Rücklage nennt ihren Betrag und bleibt aus den Werbungskosten (#143)', async () => {
   await zeige(REPORT({ reserveContributionCents: 90000 }))
-  const kasten = screen.getByText(/Zuführung zur Erhaltungsrücklage/i).closest('div')
+  const kasten = screen.getByText(/Zuführung zur Erhaltungsrücklage/i).closest('.notice-item')
   expect(kasten?.textContent).toMatch(/900,00/)
   expect(kasten?.textContent).toMatch(/IX R 19\/24/)
   cleanup()
@@ -384,7 +384,7 @@ test('Einheiten außerhalb: der Abstand zur Abrechnung nennt die richtige Richtu
 
 test('Einheiten außerhalb: der Kasten sagt, dass die Aufteilung über das ganze Gebäude rechnet (#163, Durchsicht)', async () => {
   await zeige(MIXED([POS()], { excludedExists: true }))
-  const kasten = screen.getByText(/Wohnungen außerhalb der Abrechnungseinheit/i).closest('div')
+  const kasten = screen.getByText(/Wohnungen außerhalb der Abrechnungseinheit/i).closest('.notice-item')
   expect(kasten?.textContent).toMatch(/ganzen Gebäudes/)
   expect(kasten?.textContent).not.toMatch(/zählen sie bei der Aufteilung als\s+vermietet/)
 })
@@ -473,7 +473,7 @@ test('Nur eine Nachzahlung aus der Abrechnung erfasst: der Hinweis sagt „keine
 
 test('Fall 1: Abrechnung des Vorjahres, in diesem Jahr bezahlt. Block und Zeile nennen Herkunft und Datum', async () => {
   await zeige(MIXED([GS_IN]))
-  const block = screen.getByText(new RegExp(`In ${JAHR} bezahlt, aus einer anderen Abrechnung`)).closest('div')
+  const block = screen.getByText(new RegExp(`In ${JAHR} bezahlt, aus einer anderen Abrechnung`)).closest('.notice-item')
   expect(block?.textContent).toContain(`„Grundsteuer ${JAHR - 1}“ (${fmtEuro(60000)}), aus Abrechnung ${JAHR - 1}, bezahlt am 20.02.${JAHR}`)
   expect(block?.textContent).toContain('§ 11 Abs. 2 Satz 1 EStG')
   // Durchsicht von PR 4, K2: „Nicht umlagefähig“ teilt nach Fläche und nicht nach der Abrechnung.
@@ -485,7 +485,7 @@ test('Fall 1: Abrechnung des Vorjahres, in diesem Jahr bezahlt. Block und Zeile 
 
 test('Fall 2: vor Beginn bezahlt. Die Übersicht dieses Jahres nennt die Position, zählt sie aber nicht', async () => {
   await zeige(REPORT({ movedOut: [GS_OUT] }))
-  const block = screen.getByText(new RegExp(`In der Abrechnung ${JAHR}, aber in einem anderen Jahr bezahlt`)).closest('div')
+  const block = screen.getByText(new RegExp(`In der Abrechnung ${JAHR}, aber in einem anderen Jahr bezahlt`)).closest('.notice-item')
   expect(block?.textContent).toContain(`„Versicherung ${JAHR}“ (${fmtEuro(125000)}), Abrechnung ${JAHR}, bezahlt am 01.12.${JAHR - 1}: steht in der Steuerübersicht ${JAHR - 1}`)
   expect(block?.textContent).toMatch(new RegExp(`zählen nicht zu den Werbungskosten ${JAHR}`))
   expect(screen.queryByText(/aus einer anderen Abrechnung/)).toBeNull()

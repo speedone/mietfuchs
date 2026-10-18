@@ -3,7 +3,7 @@
 // „Beleg hochladen …“ bleibt per Tastatur erreichbar.
 import { calendarPeriod, calendarYearPeriod, settlementPeriod } from '../../../shared/period.ts'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import type { CostItem, Settlement, Tenancy, Unit } from '../types'
 import { PeriodProvider } from '../period'
@@ -26,9 +26,9 @@ const SETTLEMENT: Settlement = {
   year: YEAR, daysInYear: 365, period: settlementPeriod(calendarYearPeriod(YEAR)), deadline: `${YEAR + 1}-12-31`, statements: [], landlord: { rows: [], totalCents: 0 }, selfUsedShareCents: 0, totalCostsCents: 50000,
   warnings: ['Text Fehler', 'Text Warnung', 'Text Hinweis'],
   notices: [
-    { code: 'a', level: 'error', title: 'Titel Fehler', text: 'Text Fehler' },
-    { code: 'b', level: 'warning', title: 'Titel Warnung', text: 'Text Warnung' },
-    { code: 'c', level: 'hint', title: 'Titel Hinweis', text: 'Text Hinweis' },
+    { code: 'a', level: 'error', title: 'Titel Fehler', text: 'Begründung Fehler. Tragen Sie Fehler ein.' },
+    { code: 'b', level: 'warning', title: 'Titel Warnung', text: 'Begründung Warnung. Tragen Sie Warnung ein.' },
+    { code: 'c', level: 'hint', title: 'Titel Hinweis', text: 'Begründung Hinweis. Tragen Sie Hinweis ein.' },
   ],
   closed: null,
 }
@@ -54,13 +54,26 @@ const wrap = (node: ReactNode) => render(
   <PeriodProvider><PropertyProvider><UIProvider>{node}</UIProvider></PropertyProvider></PeriodProvider>,
 )
 
-test('Fehler und Warnungen stehen aufgeklappt da, Hinweise zugeklappt', async () => {
+// #346, Schritt 10 (M8): Statt den ganzen Text je Stufe auf- oder zuzuklappen, steht bei jeder Stufe der
+// Satz „was tun“ offen da und die Begründung eingeklappt darunter.
+test('jeder Hinweis zeigt Stufe, Titel und den Satz „was tun“, der Rest liegt unter „Mehr dazu“', async () => {
   wrap(<Abrechnung settings={null} units={UNITS} tenancies={TENANCIES} reload={async () => {}} onNavigate={() => {}} />)
-  const details = (title: string) => screen.getByText(title).closest('details')
   await screen.findByText('Titel Fehler', {}, SLOW)
-  expect(details('Titel Fehler')?.open).toBe(true)
-  expect(details('Titel Warnung')?.open).toBe(true)
-  expect(details('Titel Hinweis')?.open).toBe(false)
+  for (const [title, level] of [['Titel Fehler', 'Fehler'], ['Titel Warnung', 'Warnung'], ['Titel Hinweis', 'Hinweis']] as const) {
+    const box = screen.getByText(title).closest('.notice-item')
+    if (!(box instanceof HTMLElement)) return expect.fail(`Kein Hinweis „${title}“`)
+    // Die Stufe steht als Wort und als Zeichen da, nicht nur in der Farbe.
+    expect(within(box).getByText(level)).toBeTruthy()
+    expect(box.querySelector('[aria-hidden="true"]')?.textContent).toMatch(/[✖⚠ℹ]/)
+    // Sichtbar ist der Satz, der sagt, was zu tun ist; die Begründung liegt eingeklappt darunter.
+    expect(within(box).getByText(`Tragen Sie ${level} ein.`).closest('[hidden]')).toBeNull()
+    expect(within(box).getByText(`Begründung ${level}.`).closest('[hidden]')).toBeTruthy()
+    const toggle = within(box).getByRole('button', { name: 'Mehr dazu' })
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(within(box).getByText(`Begründung ${level}.`).closest('[hidden]')).toBeNull()
+  }
 })
 
 test('„Beleg hochladen …“: das Dateifeld ist nur visuell versteckt und lässt sich fokussieren', async () => {

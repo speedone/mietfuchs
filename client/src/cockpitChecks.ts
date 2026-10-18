@@ -1,7 +1,7 @@
 // Prüfungen des Cockpits, ohne DOM prüfbar (cockpitChecks.test.ts).
 import type { CostItem, MeterType } from './types'
 import { isNotAllocable } from './types'
-import { fmtEuro } from './api'
+import { fmtDate, fmtEuro } from './api'
 import { andList, countOf } from '../../shared/wording.ts'
 
 // Nicht umlagefähige Positionen werden nie verteilt (calc.ts, `isNotAllocable`), ihr gespeicherter
@@ -57,9 +57,24 @@ export function itemsDetail(items: number, sumCents: number, files: number): str
 // Checkliste, sondern zwei Knöpfe zum Anfangen; eine Zahl offener Punkte, die nirgends
 // aufgezählt sind, sagte einem Vermieter ohne Vorkenntnisse nichts. Die Zeile nennt deshalb den
 // ersten Schritt, die Punkte kommen mit der Checkliste, sobald etwas erfasst ist.
-export function cockpitSubtitle({ loaded, fresh, openCount }: { loaded: boolean; fresh: boolean; openCount: number }): string {
+//
+// Nach dem Abschluss ist „dann ist die Abrechnung versandfertig“ falsch (UI-Durchsicht M9, #341): Die
+// Zeile sagt dann, was geschehen ist, und nennt die offenen Punkte beim Namen (`open`, die Titel der
+// Zeilen der Checkliste), denn eine versendete Abrechnung wird nicht mehr fertig, nur noch nachgearbeitet.
+export function cockpitSubtitle({ loaded, fresh, open, sentAt = null, closed = false, start = null }: {
+  loaded: boolean
+  fresh: boolean
+  open: readonly string[]
+  sentAt?: string | null
+  closed?: boolean
+  // Der erste Schritt im leeren Bestand (emptyStock.ts)
+  start?: string | null
+}): string {
   if (!loaded) return 'Lade Abrechnungsstand …'
-  if (fresh) return 'Legen Sie zuerst Ihre Stammdaten an und erfassen Sie dann die Belege des Jahres.'
-  if (openCount === 0) return 'Alles bereit — die Abrechnung ist vollständig.'
-  return `Noch ${countOf(openCount, 'Punkt', 'Punkte')} offen, dann ist die Abrechnung versandfertig.`
+  if (fresh) return start ?? 'Legen Sie zuerst Ihre Stammdaten an und erfassen Sie dann die Belege des Jahres.'
+  const rest = open.length > 0 ? `noch offen: ${andList(open.map((t) => `„${t}“`))}.` : 'nichts mehr offen.'
+  if (sentAt) return `Versendet am ${fmtDate(sentAt)}; ${rest}`
+  if (closed) return `Abgeschlossen, noch nicht versendet; ${rest}`
+  if (open.length === 0) return 'Alles bereit — die Abrechnung ist vollständig.'
+  return `Noch ${countOf(open.length, 'Punkt', 'Punkte')} offen, dann ist die Abrechnung versandfertig.`
 }
