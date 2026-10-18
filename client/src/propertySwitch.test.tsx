@@ -8,6 +8,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { Property, Tenancy, Unit } from './types'
 import App from './App'
+import { press } from './testing/keys'
 
 const objekt = (id: string, name: string): Property => ({
   id, name, kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null,
@@ -145,7 +146,7 @@ test('Esc in der Rückfrage bricht nur den Wechsel ab, der Dialog darunter bleib
   await openPaymentInA()
   switchTo('objekt-2')
   await screen.findByRole('button', { name: /Objekt wechseln/ })
-  fireEvent.keyDown(document, { key: 'Escape' })
+  press('Escape')
   await waitFor(() => expect(screen.queryByRole('button', { name: /Objekt wechseln/ })).toBeNull())
   expect((screen.getByLabelText('Objekt wählen') as HTMLSelectElement).value).toBe('objekt-1')
   expect((screen.getByLabelText(/^Betrag/) as HTMLInputElement).value).toBe('11,11')

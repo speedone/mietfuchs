@@ -209,10 +209,10 @@ test('Zurück von „Nein“ auf „Ja“: erst eine Rückfrage, dass der eigene
   expect(valueOf(/Verheizt der neue Kessel/)).toBe('no')
   fireEvent.change(screen.getByLabelText(/Verheizt der neue Kessel/), { target: { value: 'yes' } })
   fireEvent.click(screen.getByRole('button', { name: 'Übernehmen' }))
-  const dialog = await screen.findByRole('dialog', { name: 'Brennstoff doch weiter verheizen?' })
+  const dialog = await screen.findByRole('alertdialog', { name: 'Brennstoff doch weiter verheizen?' })
   expect(dialog.textContent).toMatch(/eigene Anfangsbestand der neuen Heizanlage in ihrer ersten Heizperiode wird dabei entfernt/)
   fireEvent.click(within(dialog).getByRole('button', { name: 'Abbrechen' }))
-  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Brennstoff doch weiter verheizen?' })).toBeNull())
+  await waitFor(() => expect(screen.queryByRole('alertdialog', { name: 'Brennstoff doch weiter verheizen?' })).toBeNull())
   expect(sent).toHaveLength(0)
   fireEvent.click(screen.getByRole('button', { name: 'Übernehmen' }))
   fireEvent.click(await screen.findByRole('button', { name: 'Umstellen' }))
@@ -277,7 +277,7 @@ test('Zentrale Heizung, Brennstoffvertrag beim Mieter: keine Anlage, nach Rückf
   expect(valueOf(/Wer hat den Liefervertrag für den Brennstoff/)).toBe('tenantAll')
   expect(screen.queryByLabelText(/Wer erstellt Ihre Heizkostenabrechnung/)).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }))
-  const dialog = await screen.findByRole('dialog')
+  const dialog = await screen.findByRole('alertdialog')
   expect(within(dialog).getByText(/Die laufenden Mietverhältnisse von Mieter A werden unter Heizung auf „Mieter heizt selbst“ gestellt/)).toBeTruthy()
   fireEvent.click(within(dialog).getByRole('button', { name: 'Umstellen' }))
   await waitFor(() => expect(sent).toHaveLength(2))
@@ -310,7 +310,7 @@ test('N-3: schon „Mieter heizt selbst“ ohne Art: die Einrichtung trägt „z
   fireEvent.change(screen.getByLabelText(/Wer hat den Liefervertrag für den Brennstoff/), { target: { value: 'tenantAll' } })
   fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }))
   await waitFor(() => expect(sent).toHaveLength(2))
-  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(screen.queryByRole('alertdialog')).toBeNull()
   expect(sent.map((s) => [s.method, s.url, s.body])).toEqual([
     ['PUT', '/api/tenancies/ta', { selfSupplyKind: 'central' }],
     ['PUT', '/api/tenancies/tb', { selfSupplyKind: 'central' }],

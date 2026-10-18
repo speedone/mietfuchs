@@ -155,7 +155,7 @@ test('Durchsicht (1): schon erfasst wird nicht angehakt, und angehakt wird vor d
   expect(box.checked).toBe(false)
   fireEvent.click(box)
   fireEvent.click(anlegenButton())
-  await waitFor(() => expect(within(screen.getByRole('dialog')).getAllByText(/schon erfasst/i).length).toBeGreaterThan(0))
+  await waitFor(() => expect(within(screen.getByRole('alertdialog')).getAllByText(/schon erfasst/i).length).toBeGreaterThan(0))
   fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }))
   await new Promise((r) => setTimeout(r, 50))
   expect(sent).toHaveLength(0)

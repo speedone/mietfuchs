@@ -10,6 +10,7 @@ import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
 import { UIProvider } from '../components/feedback'
 import Mietkonto from './Mietkonto'
+import { press } from '../testing/keys'
 
 const YEAR = new Date().getFullYear() - 1
 const UNITS: Unit[] = [{ id: 'u1', propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true }]
@@ -57,17 +58,14 @@ afterEach(() => {
 
 const shell = () => render(<PeriodProvider><PropertyProvider><UIProvider><Mietkonto /></UIProvider></PropertyProvider></PeriodProvider>)
 const focusedText = () => document.activeElement?.textContent ?? ''
-const key = (k: string, shiftKey = false) => {
-  const target = document.activeElement ?? document.body
-  fireEvent.keyDown(target, { key: k, shiftKey })
-}
+const key = (k: string, shiftKey = false) => press(k, { shiftKey })
 
 test('Zahlung löschen: Startfokus auf Abbrechen, Tab bleibt im Dialog, Enter auf Abbrechen löscht nicht', async () => {
   shell()
   const trash = await screen.findByRole('button', { name: 'Zahlung löschen' })
   trash.focus()
   fireEvent.click(trash)
-  await screen.findByRole('dialog', { name: 'Zahlung löschen?' })
+  await screen.findByRole('alertdialog', { name: 'Zahlung löschen?' })
   expect(focusedText()).toBe('Abbrechen')
   key('Tab')
   expect(focusedText()).toBe('Löschen')
@@ -79,7 +77,7 @@ test('Zahlung löschen: Startfokus auf Abbrechen, Tab bleibt im Dialog, Enter au
   expect(focusedText()).toBe('Abbrechen')
   key('Enter')
   await act(async () => {})
-  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(screen.queryByRole('alertdialog')).toBeNull()
   expect(sent).toEqual([])
   expect(document.activeElement).toBe(trash)
 })
@@ -88,13 +86,13 @@ test('Zahlung löschen: Esc bricht ab, Enter auf „Löschen“ löscht', async 
   shell()
   const trash = await screen.findByRole('button', { name: 'Zahlung löschen' })
   fireEvent.click(trash)
-  await screen.findByRole('dialog')
+  await screen.findByRole('alertdialog')
   key('Escape')
   await act(async () => {})
-  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(screen.queryByRole('alertdialog')).toBeNull()
   expect(sent).toEqual([])
   fireEvent.click(trash)
-  await screen.findByRole('dialog')
+  await screen.findByRole('alertdialog')
   key('Tab')
   expect(focusedText()).toBe('Löschen')
   key('Enter')

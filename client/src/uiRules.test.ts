@@ -393,7 +393,7 @@ test('dark: gilt nicht im Druck', () => {
 // S12 (Spezifikation Abschnitt 9, #346 Schritt 9): Dialoge (`<dialog>`, `showModal()`, `role="dialog"`
 // und `role="alertdialog"`) nur in den Bausteinen, die dafür vorgesehen sind. Ein eigenes Overlay je Seite
 // brächte je eigene Regeln für Esc, Fokus und Klick daneben. Heute: das Menüblatt am Handy, das
-// Seitenfenster und die Rückfrage (die beiden ziehen mit Schritt 1 und 2 auf `<dialog>` um).
+// Seitenfenster und die Rückfrage (seit Schritt 1 ein `<dialog role="alertdialog">`).
 const DIALOG_FILES = new Set(['./components/MobileNav.tsx', './components/Drawer.tsx', './components/feedback.tsx'])
 const dialogUses = (src: string) => [...src.matchAll(/<dialog\b|\bshowModal\s*\(|role=["'{`]+(?:alert)?dialog\b/g)].map((m) => m[0])
 test('S12: Dialoge nur in den erlaubten Bausteinen', () => {
@@ -402,6 +402,21 @@ test('S12: Dialoge nur in den erlaubten Bausteinen', () => {
     .toEqual(['<dialog', 'showModal(', 'role="dialog', 'role={"alertdialog'])
   for (const file of DIALOG_FILES) expect(dialogUses(sources[file] ?? ''), `${file} nutzt keinen <dialog> mehr; aus der Liste streichen`).not.toEqual([])
   expect(files.filter((file) => !DIALOG_FILES.has(file) && dialogUses(sources[file] ?? '').length > 0)).toEqual([])
+})
+
+// S13 (Spezifikation Abschnitt 9, #346 Schritt 1): Kein Dialogbaustein fängt Enter ab. Enter wirkt auf den
+// Knopf mit dem Fokus, das tut der Browser selbst; ein eigener Abfänger bestätigte früher auch mit dem
+// Fokus auf „Abbrechen“ (UI-Durchsicht H1). Geprüft werden die Bausteine aus S12 und der Tastaturhelfer
+// dialogKeys.ts, und zwar ohne Kommentare: Dort steht „Enter“ in deutschen Anführungszeichen.
+const DIALOG_KEY_FILES = [...DIALOG_FILES, './components/dialogKeys.ts']
+const handlesEnter = (src: string) => /['"`]Enter['"`]|\bkeyCode\s*===?\s*13\b/.test(src.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, ''))
+test('S13: kein Dialogbaustein fängt Enter ab', () => {
+  // Probe des Prüfers
+  expect(handlesEnter("if (e.key === 'Enter') confirm()")).toBe(true)
+  expect(handlesEnter('if (e.keyCode == 13) ok()')).toBe(true)
+  expect(handlesEnter("// Enter wirkt auf den Knopf: kein 'Enter' hier\nconst x = 1")).toBe(false)
+  for (const file of DIALOG_KEY_FILES) expect(twSources[file], `${file} fehlt`).toBeTruthy()
+  expect(DIALOG_KEY_FILES.filter((file) => handlesEnter(twSources[file] ?? ''))).toEqual([])
 })
 
 // S22 (#346 Schritt 9): Die Navigation steht einmal, in nav.ts. Seitenleiste, Menüblatt und untere

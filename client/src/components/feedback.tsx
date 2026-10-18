@@ -1,7 +1,8 @@
-import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { keepTabInside } from './dialogKeys'
 
 // Zentrale Rückmeldungs-Schicht: kurze Toasts (Speichern/Löschen bestätigt) und ein gestylter
-// Bestätigungsdialog als Ersatz für das native confirm(). Beides wird über die Hooks useToast()
+// Bestätigungsdialog (`<dialog role="alertdialog">`) als Ersatz für das native confirm(). Beides wird über die Hooks useToast()
 // und useConfirm() in den Seiten genutzt.
 
 type ToastKind = 'ok' | 'error' | 'info'
@@ -57,63 +58,75 @@ export function UIProvider({ children }: { children: ReactNode }) {
     timers.current.add(timer)
   }, [])
 
+  // Die Rückfrage (#346, Schritt 1) ist ein `<dialog role="alertdialog">` mit `showModal()`: Sie liegt im
+  // Top-Layer, auch über einem offenen Menüblatt oder Seitenfenster, und der Hintergrund ist inert.
   const [dialog, setDialog] = useState<(ConfirmOpts & { resolve: (v: boolean) => void }) | null>(null)
-  const dialogRef = useRef<HTMLDivElement>(null)
+  // Die offene Rückfrage, damit sie genau einmal beantwortet wird, gleich auf welchem Weg sie schließt.
+  const pending = useRef<(ConfirmOpts & { resolve: (v: boolean) => void }) | null>(null)
+  const dialogRef = useRef<HTMLDialogElement>(null)
+  const cancelRef = useRef<HTMLButtonElement>(null)
+  const confirmRef = useRef<HTMLButtonElement>(null)
+  const messageId = useId()
   // Der Auslöser der Rückfrage bekommt den Fokus zurück, sonst landete er beim Schließen auf BODY
-  // (UI-Durchsicht H1), und wer mit der Tastatur arbeitet, finge oben auf der Seite neu an.
+  // (UI-Durchsicht H1), und wer mit der Tastatur arbeitet, finge oben auf der Seite neu an. Das tut der
+  // Baustein selbst: Der Browser gäbe ihn nur beim Schließen mit `close()` zurück, nicht beim Aushängen.
   const opener = useRef<HTMLElement | null>(null)
-  const confirm = useCallback(
-    (opts: ConfirmOpts) => new Promise<boolean>((resolve) => {
-      opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
-      setDialog({ ...opts, resolve })
-    }),
-    [],
-  )
   const close = useCallback((v: boolean) => {
-    setDialog((d) => { d?.resolve(v); return null })
+    const d = pending.current
+    if (!d) return
+    pending.current = null
+    // Zuerst den Dialog schließen: Solange er modal offen ist, ist der Auslöser inert und nimmt keinen Fokus.
+    const box = dialogRef.current
+    if (box?.open) box.close()
+    setDialog(null)
+    d.resolve(v)
     const back = opener.current
     opener.current = null
     if (back?.isConnected) back.focus()
-    // Kam die Rückfrage aus der Navigation am Handy (☰, ⇅, untere Leiste, #346 Schritt 9) und ist die
-    // inzwischen ausgehängt, weil das Fenster über 900 px breit wurde (oder umgekehrt), geht der Fokus
-    // an die aktuelle Seite in der Navigation, die jetzt steht, statt auf BODY.
-    else if (back && back.matches('.menu-toggle, .context-toggle, .bottom-bar button, .sidebar button')) {
+    // Kam die Rückfrage aus der Navigation (Kopf und untere Leiste am Handy, Menüblatt, Seitenleiste; #346
+    // Schritt 9) und ist die inzwischen ausgehängt, weil das Fenster über 900 px breit wurde (oder umgekehrt),
+    // geht der Fokus an die aktuelle Seite in der Navigation, die jetzt steht, statt auf BODY. `closest`
+    // findet die Navigation auch am ausgehängten Knopf oder Auswahlfeld, denn ausgehängt wird der ganze Zweig.
+    else if (back?.closest('.mobile-head, .bottom-bar, .sidebar')) {
       document.querySelector<HTMLElement>('nav [aria-current="page"], button.menu-toggle')?.focus()
     }
   }, [])
+  const confirm = useCallback(
+    (opts: ConfirmOpts) => new Promise<boolean>((resolve) => {
+      // Eine noch offene Rückfrage gilt als abgebrochen, statt nie beantwortet zu werden.
+      const earlier = pending.current
+      if (earlier) earlier.resolve(false)
+      else opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      const next = { ...opts, resolve }
+      pending.current = next
+      setDialog(next)
+    }),
+    [],
+  )
   const startOnCancel = dialog?.defaultChoice === 'cancel' || (dialog?.danger === true && dialog.defaultChoice !== 'confirm')
 
-  useEffect(() => {
-    if (!dialog) return
-    // Am Fenster in der Einfangphase und ohne Weitergabe (#145): Ein Drawer darunter lauscht am
-    // Dokument und schlösse sonst bei Esc mit, samt den Eingaben, die die Rückfrage gerade
-    // schützen soll; Strg+S speicherte ihn hinter der Rückfrage.
-    // Enter wirkt auf den Knopf mit dem Fokus (UI-Durchsicht H1): Vorher bestätigte Enter immer, auch mit
-    // dem Fokus auf „Abbrechen“. Ausgelöst wird hier selbst und nicht über den Browser, damit Enter nicht
-    // zum Drawer darunter durchdringt. Tab bleibt im Dialog (Fokusfalle), vom letzten zum ersten Knopf.
-    const onKey = (e: KeyboardEvent) => {
-      const box = dialogRef.current
-      if (e.key === 'Escape') { e.stopPropagation(); close(false) }
-      else if (e.key === 'Enter') {
-        // Nur ein Knopf der Rückfrage wird hier ausgelöst; ein anderes Element (etwa ein Begriff,
-        // `span role="button"`) bekommt Enter selbst (Durchsicht K1 zu #341).
-        const active = document.activeElement
-        if (active instanceof HTMLButtonElement && box?.contains(active)) { e.stopPropagation(); e.preventDefault(); active.click() }
-      } else if (e.key === 'Tab' && box) {
-        e.stopPropagation()
-        e.preventDefault()
-        const focusable = [...box.querySelectorAll<HTMLElement>('button, a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])')]
-          .filter((el) => !el.hasAttribute('disabled'))
-        if (focusable.length === 0) return
-        const at = focusable.indexOf(document.activeElement as HTMLElement)
-        const next = e.shiftKey ? (at <= 0 ? focusable.length - 1 : at - 1) : (at < 0 || at === focusable.length - 1 ? 0 : at + 1)
-        focusable[next]?.focus()
-      }
-      else if (e.key === 's' && (e.ctrlKey || e.metaKey)) { e.stopPropagation(); e.preventDefault() }
-    }
-    window.addEventListener('keydown', onKey, true)
-    return () => window.removeEventListener('keydown', onKey, true)
-  }, [dialog, close])
+  // Öffnen, sobald der Inhalt steht, und den Startfokus selbst setzen: React setzt `autoFocus` beim
+  // Einhängen, solange der `<dialog>` noch geschlossen ist, und `showModal()` nähme dann den ersten Knopf.
+  useLayoutEffect(() => {
+    const box = dialogRef.current
+    if (!dialog || !box) return
+    if (!box.open) box.showModal()
+    ;(startOnCancel ? cancelRef : confirmRef).current?.focus()
+  }, [dialog, startOnCancel])
+
+  // Esc bricht ab, über das Ereignis `cancel` des Browsers und schon am Tastendruck: Ein verhindertes
+  // `keydown` löst kein `cancel` aus, und Chrome ließe ein zweites `cancel` ohne Nutzeraktion dazwischen
+  // nicht mehr abbrechen. Angehalten wird, damit kein Horcher am Dokument (ein Seitenfenster darunter)
+  // mitschließt. Strg+S speichert nichts hinter der Rückfrage (#145). Kein Abfänger für Enter: Enter wirkt
+  // auf den Knopf mit dem Fokus, das tut der Browser selbst (UI-Durchsicht H1, Wächter S13).
+  const onDialogKey = (e: ReactKeyboardEvent<HTMLDialogElement>) => {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(false) }
+    else if (e.key === 'Tab') keepTabInside(e, e.currentTarget)
+    else if (e.key === 's' && (e.ctrlKey || e.metaKey)) { e.stopPropagation(); e.preventDefault() }
+  }
+  // Ein Klick daneben trifft den `<dialog>` selbst (seinen Hintergrund). Gezählt wird er nur, wenn er dort
+  // auch begann: Wer Text in der Rückfrage markiert und die Maus daneben loslässt, bricht nichts ab.
+  const downOnBackdrop = useRef(false)
 
   return (
     <ToastCtx.Provider value={toast}>
@@ -128,21 +141,33 @@ export function UIProvider({ children }: { children: ReactNode }) {
           ))}
         </div>
         {dialog && (
-          <div className="dialog-backdrop no-print" onMouseDown={() => close(false)}>
-            <div ref={dialogRef} className="dialog" role="dialog" aria-modal="true" aria-labelledby={titleId} onMouseDown={(e) => e.stopPropagation()}>
+          <dialog
+            ref={dialogRef}
+            className="confirm no-print"
+            role="alertdialog"
+            aria-labelledby={titleId}
+            aria-describedby={dialog.message ? messageId : undefined}
+            onKeyDown={onDialogKey}
+            // Nur Ereignisse dieses Dialogs; React reicht `cancel` und `close` eines verschachtelten weiter.
+            onCancel={(e) => { if (e.target === e.currentTarget) { e.preventDefault(); close(false) } }}
+            onClose={(e) => { if (e.target === e.currentTarget) close(false) }}
+            onMouseDown={(e) => { downOnBackdrop.current = e.target === e.currentTarget }}
+            onClick={(e) => { if (e.target === e.currentTarget && downOnBackdrop.current) close(false) }}
+          >
+            <div className="dialog">
               <h2 id={titleId}>{dialog.title}</h2>
-              {dialog.message && <div className="dialog-msg">{typeof dialog.message === 'function' ? dialog.message(() => close(false)) : dialog.message}</div>}
+              {dialog.message && <div className="dialog-msg" id={messageId}>{typeof dialog.message === 'function' ? dialog.message(() => close(false)) : dialog.message}</div>}
               <div className="dialog-actions">
-                <button className="btn ghost" onClick={() => close(false)} autoFocus={startOnCancel}>{dialog.cancelLabel ?? 'Abbrechen'}</button>
+                <button ref={cancelRef} type="button" className="btn ghost" onClick={() => close(false)}>{dialog.cancelLabel ?? 'Abbrechen'}</button>
                 {dialog.alternativeLabel && (
-                  <button className="btn secondary" onClick={() => { dialog.onAlternative?.(); close(false) }}>{dialog.alternativeLabel}</button>
+                  <button type="button" className="btn secondary" onClick={() => { dialog.onAlternative?.(); close(false) }}>{dialog.alternativeLabel}</button>
                 )}
-                <button className={`btn ${dialog.danger ? 'danger' : ''}`} onClick={() => close(true)} autoFocus={!startOnCancel}>
+                <button ref={confirmRef} type="button" className={`btn ${dialog.danger ? 'danger' : ''}`} onClick={() => close(true)}>
                   {dialog.confirmLabel ?? 'OK'}
                 </button>
               </div>
             </div>
-          </div>
+          </dialog>
         )}
       </ConfirmCtx.Provider>
     </ToastCtx.Provider>
