@@ -14,8 +14,9 @@ import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
 import { useFocusTarget, useScrollToFocus, type FocusProps } from '../focus'
+import { MONTH_SHORT } from '../monthText'
 
-const MONTHS = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez']
+const MONTHS = MONTH_SHORT
 
 export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
   // Das Mietkonto rechnet im Kalenderjahr (#208, Entwurf 3.11).

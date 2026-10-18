@@ -106,16 +106,9 @@ export function buildPersonHistory(
   return { personHistory }
 }
 
-// Monat einer Staffel (Kaltmiete, Vorauszahlung, Pauschale) aus dem Formular, als 'JJJJ-MM'.
-// Das Feld war ein `<input type="month">`, das Safari auf dem Mac und Firefox nicht kennen, danach zwei
-// Auswahllisten (#287). Seit #346 Schritt 5 ist es das Monatsfeld (MonthField), ein Textfeld mit Raster;
-// gelesen wird mit `parseMonthText` (monthText.ts), der einen Stelle, die einen Monat liest: „3.2025“,
-// „03/25“, „2025-03“, „März 2025“ … Ein Tag nur als Erster: Eine Staffel gilt ab Monatsanfang, und
-// „15.10.2026“ still als Oktober zu lesen, hieße raten. `null`: nicht lesbar oder leer.
-export function parseScheduleMonth(text: string): string | null {
-  const r = parseMonthText(text)
-  return r.kind === 'month' ? r.key : null
-}
+// Der Monat einer Staffel (Kaltmiete, Vorauszahlung, Pauschale) kommt aus dem Monatsfeld (MonthField, #287, #346
+// Schritt 5) und wird nur mit `parseMonthText` (monthText.ts) gelesen, der einen Stelle, die einen Monat liest; ein
+// Tag nur als Erster, denn eine Staffel gilt ab Monatsanfang.
 
 // Die Staffeln am Mietverhältnis, die nach Monat gelten. Der Ort für Meldungen („Kaltmiete, Zeile 2“) und die
 // Beschriftung des Felds, je Staffel eindeutig (Screenreader, Tests).

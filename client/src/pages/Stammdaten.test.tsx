@@ -496,6 +496,28 @@ test('Staffeln: eine Mieterhöhung ohne Monat wird nicht gespeichert, „ab Einz
 
 // #287: Auch die Staffel der Heizvorauszahlung war ein `type="month"`. Das Feld zeigt den gespeicherten
 // Monat, und gespeichert wird, was es zeigt; das Raster wählt ebenso.
+// Durchsicht K3: Die Meldungen hängen am Index der Zeile. Wird danach eine Zeile entfernt, rückte die Meldung an
+// die nachgerückte Zeile; das Entfernen nimmt die Meldungen deshalb weg (das Speichern prüft neu).
+test('Staffeln: nach dem Entfernen einer Zeile steht keine Meldung an der nachgerückten', async () => {
+  page([tenancy('t1', 'Müller', { start: '2025-02-01', baseRents: [{ from: '2025-02', monthlyCents: 80000 }] })])
+  await openTenancy('Müller')
+  const dialog = await screen.findByRole('dialog', undefined, SLOW)
+  const add = within(dialog).getByRole('button', { name: '+ Mieterhöhung ab Monat …' })
+  fireEvent.click(add)
+  const group = add.parentElement
+  if (!group) throw new Error('keine Feldgruppe der Kaltmiete')
+  const amounts = within(group).getAllByRole('textbox', { name: 'Betrag €/Monat' }) as HTMLInputElement[]
+  const amount = amounts[1]
+  if (!amount) throw new Error('zweite Zeile fehlt')
+  fireEvent.change(amount, { target: { value: '900,00' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Übernehmen' }))
+  expect(await within(dialog).findByText('Kaltmiete, Zeile 2: Geben Sie den Monat ein, ab dem der Betrag gilt.', undefined, SLOW)).toBeTruthy()
+  fireEvent.click(within(group).getAllByRole('button', { name: 'Zeile entfernen' })[0] as HTMLElement)
+  const [left] = monthFields(group, 'Kaltmiete gültig ab')
+  expect(left?.getAttribute('aria-invalid')).toBeNull()
+  expect(within(dialog).queryByText(/Kaltmiete, Zeile 2/)).toBeNull()
+})
+
 test('Heizvorauszahlung: Monatsfeld und Raster, gespeichert wie gezeigt', async () => {
   page([tenancy('t1', 'Müller', { prepayments: [{ from: '2025-01', monthlyCents: 16500 }], heatingPrepayments: [{ from: '2025-05', monthlyCents: 11500 }] })])
   await openTenancy('Müller')

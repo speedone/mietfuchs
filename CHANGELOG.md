@@ -146,7 +146,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Heizvorauszahlung, Pauschale), den Wechsel des Abrechnungszeitraums und die Heizperiode. Vorher waren
   es zwei Auswahllisten für Monat und Jahr, deren Monat im Mietverhältnis zu „ab Einz“ abgeschnitten
   war. Ein Text, der kein Monat ist („13.2025“), wird nicht verworfen: Das Feld sagt, was nicht
-  stimmt, und die Staffeln melden jede Zeile an ihrem Feld („Kaltmiete, Zeile 2: Geben Sie den Monat
+  stimmt (auch bei Mehrdeutigem wie „1.10“, das ein Tag mit Monat sein kann), und die Staffeln melden jede Zeile an ihrem Feld („Kaltmiete, Zeile 2: Geben Sie den Monat
   ein, ab dem der Betrag gilt.“). Die Personenzahl bleibt bewusst ein Datum, denn sie wird tagesgenau
   gerechnet (Befund M11 aus [#341](https://github.com/speedone/mietfuchs/issues/341);
   [#287](https://github.com/speedone/mietfuchs/issues/287),

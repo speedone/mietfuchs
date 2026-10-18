@@ -576,7 +576,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                     <input value={p.persons} inputMode="numeric" onChange={(e) => setTenForm({ ...tenForm, personHistory: tenForm.personHistory.map((x, k) => (k === i ? { ...x, persons: e.target.value } : x)) })} />
                   </label>
                   {tenForm.personHistory.length > 1
-                    ? <button className="icon-btn danger" title="Zeile entfernen" aria-label="Zeile entfernen" onClick={() => setTenForm({ ...tenForm, personHistory: tenForm.personHistory.filter((_, k) => k !== i) })}>🗑</button>
+                    ? <button className="icon-btn danger" title="Zeile entfernen" aria-label="Zeile entfernen" onClick={() => { tenErrors.clear(); setTenForm({ ...tenForm, personHistory: tenForm.personHistory.filter((_, k) => k !== i) }) }}>🗑</button>
                     : <span />}
                 </div>
               ))}
@@ -593,7 +593,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                     <input value={p.amount} placeholder="z. B. 800,00" onChange={(e) => setTenForm({ ...tenForm, baseRents: tenForm.baseRents.map((x, k) => (k === i ? { ...x, amount: e.target.value } : x)) })} />
                   </Field>
                   {tenForm.baseRents.length > 1
-                    ? <button className="icon-btn danger" title="Zeile entfernen" aria-label="Zeile entfernen" onClick={() => setTenForm({ ...tenForm, baseRents: tenForm.baseRents.filter((_, k) => k !== i) })}>🗑</button>
+                    ? <button className="icon-btn danger" title="Zeile entfernen" aria-label="Zeile entfernen" onClick={() => { tenErrors.clear(); setTenForm({ ...tenForm, baseRents: tenForm.baseRents.filter((_, k) => k !== i) }) }}>🗑</button>
                     : <span />}
                 </div>
               ))}
@@ -609,7 +609,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                     <input value={p.amount} placeholder="z. B. 150,00" onChange={(e) => setTenForm({ ...tenForm, prepayments: tenForm.prepayments.map((x, k) => (k === i ? { ...x, amount: e.target.value } : x)) })} />
                   </Field>
                   {tenForm.prepayments.length > 1
-                    ? <button className="icon-btn danger" title="Zeile entfernen" aria-label="Zeile entfernen" onClick={() => setTenForm({ ...tenForm, prepayments: tenForm.prepayments.filter((_, k) => k !== i) })}>🗑</button>
+                    ? <button className="icon-btn danger" title="Zeile entfernen" aria-label="Zeile entfernen" onClick={() => { tenErrors.clear(); setTenForm({ ...tenForm, prepayments: tenForm.prepayments.filter((_, k) => k !== i) }) }}>🗑</button>
                     : <span />}
                 </div>
               ))}
@@ -640,7 +640,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                         <input value={p.amount} placeholder="z. B. 120,00" onChange={(e) => setTenForm({ ...tenForm, heatingPrepayments: rows.map((x, k) => (k === i ? { ...x, amount: e.target.value } : x)) })} />
                       </Field>
                       {rows.length > 1
-                        ? <button className="icon-btn danger" title="Zeile entfernen" aria-label="Zeile entfernen" onClick={() => setTenForm({ ...tenForm, heatingPrepayments: rows.filter((_, k) => k !== i) })}>🗑</button>
+                        ? <button className="icon-btn danger" title="Zeile entfernen" aria-label="Zeile entfernen" onClick={() => { tenErrors.clear(); setTenForm({ ...tenForm, heatingPrepayments: rows.filter((_, k) => k !== i) }) }}>🗑</button>
                         : <span />}
                     </div>
                   ))}
@@ -692,7 +692,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                         <input value={p.amount} placeholder="z. B. 90,00" onChange={(e) => setTenForm({ ...tenForm, flatRates: alle.map((x, k) => (k === i ? { ...x, amount: e.target.value } : x)) })} />
                       </Field>
                       {alle.length > 1
-                        ? <button className="icon-btn danger" title="Zeile entfernen" aria-label="Zeile entfernen" onClick={() => setTenForm({ ...tenForm, flatRates: alle.filter((_, k) => k !== i) })}>🗑</button>
+                        ? <button className="icon-btn danger" title="Zeile entfernen" aria-label="Zeile entfernen" onClick={() => { tenErrors.clear(); setTenForm({ ...tenForm, flatRates: alle.filter((_, k) => k !== i) }) }}>🗑</button>
                         : <span />}
                     </div>
                   ))}
