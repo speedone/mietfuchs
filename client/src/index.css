@@ -194,9 +194,9 @@ details > summary:hover { text-decoration: underline; text-underline-offset: 3px
 /* „Weitere Angaben“ in einem Formular: dazu eine gestrichelte Linie darüber */
 .extra-details { border-top: 1px dashed var(--line); padding-top: 10px; }
 
-/* Links (S9): Akzentschrift statt Browserblau, im Dunkelmodus lesbar */
+/* Links (S9): Akzentschrift statt Browserblau, im Dunkelmodus lesbar; im Fließtext unterstrichen (WCAG 1.4.1) */
 a { color: var(--accent-text); text-decoration: none; }
-a:hover { text-decoration: underline; text-underline-offset: 3px; }
+a:hover, :is(p, li) a:not(.btn) { text-decoration: underline; text-underline-offset: 3px; }
 
 /* Karten: weiße Fläche, feine Linie, kaum Schatten */
 .card {
