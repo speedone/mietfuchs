@@ -26,7 +26,7 @@ const NOT_UI: Record<string, string> = {
 }
 // Beschriftungen, die es seit #346 Schritt 7 nicht mehr gibt (oder nur noch anderswo, etwa „Übernehmen“ bei den
 // KI-Modellen): Sie darf kein Text mehr als Bedienung zitieren, auch nicht, wenn das Wort noch irgendwo steht.
-const RETIRED = ['Übernehmen', 'Hinzufügen', 'Umstellen', 'Tausch speichern', 'OK']
+const RETIRED = ['Übernehmen', 'Hinzufügen', 'Umstellen', 'Tausch speichern', 'OK', 'Ablesung speichern', 'Lieferung speichern', 'Lieferung eintragen', 'Mieterwechsel durchführen', 'Zeitraum wechseln', 'Weiter']
 
 test('zitierte Beschriftungen im Client stehen als ganze Beschriftung in der Oberfläche', () => {
   const all = [...Object.values(own), ...Object.values(shared)].map(withoutComments).join('\n')

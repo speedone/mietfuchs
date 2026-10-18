@@ -6,6 +6,7 @@ import { EMPTY_UNIT_FORM, buildUnitBody, connectionSummary, connectionTypes, set
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { separateHeatingFor, separateHeatingPlant } from '../heatingSettlementView'
 import Drawer from '../components/Drawer'
+import { useSaving } from '../useSaving'
 import PropertyCard from '../components/PropertyCard'
 import IbanInput from '../components/IbanInput'
 import Field from '../components/Field'
@@ -126,6 +127,8 @@ function tenancyToForm(t: Tenancy): TenancyForm {
 
 export default function Stammdaten({ units, tenancies, settings, reload, focus, onFocusDone }: Props) {
   const toast = useToast()
+  // Kein doppeltes Speichern (Durchsicht S1): `busy` an Fenster und Knopf, ein zweiter Aufruf fällt weg.
+  const saving = useSaving()
   const confirm = useConfirm()
   const { property } = useProperty()
   const propertyId = property?.id
@@ -545,12 +548,13 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
           title={tenForm.id ? 'Mietverhältnis bearbeiten' : 'Neues Mietverhältnis'}
           subtitle={tenForm.id ? tenForm.tenantName : undefined}
           onClose={() => { tenErrors.clear(); setTenForm(null) }}
-          onSubmit={saveTenancy}
+          onSubmit={() => void saving.run(saveTenancy)}
+          busy={saving.busy}
           width={480}
           // Die IBAN schreibt das Feld beim Verlassen in Vierergruppen um; das ist keine Änderung (Durchsicht K5)
           value={{ ...tenForm, iban: normalizeIban(tenForm.iban) }}
           errors={tenErrors}
-          actions={<button className="btn" onClick={saveTenancy}>{tenForm.id ? 'Speichern' : 'Anlegen'}</button>}
+          actions={<button className="btn" disabled={saving.busy} onClick={() => void saving.run(saveTenancy)}>{tenForm.id ? 'Speichern' : 'Anlegen'}</button>}
         >
           <div className="row">
             <Field label="Mieter" required className="grow" {...tenErrors.field('tenantName')}>
@@ -759,10 +763,11 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
           title={unitForm.id ? 'Wohnung bearbeiten' : 'Neue Wohnung'}
           subtitle={unitForm.id ? unitForm.name : undefined}
           onClose={() => { unitErrors.clear(); setUnitForm(null) }}
-          onSubmit={saveUnit}
+          onSubmit={() => void saving.run(saveUnit)}
+          busy={saving.busy}
           value={unitForm}
           errors={unitErrors}
-          actions={<button className="btn" onClick={saveUnit}>{unitForm.id ? 'Speichern' : 'Anlegen'}</button>}
+          actions={<button className="btn" disabled={saving.busy} onClick={() => void saving.run(saveUnit)}>{unitForm.id ? 'Speichern' : 'Anlegen'}</button>}
         >
           <div className="row">
             <Field label="Name" required className="grow" {...unitErrors.field('name')}>

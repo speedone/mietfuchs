@@ -65,6 +65,7 @@ import Co2RefundsCard from '../components/Co2RefundsCard'
 import { usePeriod } from '../period'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import Drawer from '../components/Drawer'
+import { useSaving } from '../useSaving'
 import Field from '../components/Field'
 import { useFormError } from '../components/ErrorSummary'
 import PageHeader from '../components/PageHeader'
@@ -103,6 +104,8 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   const { property } = useProperty()
   const propertyId = property?.id
   const toast = useToast()
+  // Kein doppeltes Speichern (Durchsicht S1): `busy` an Fenster und Knopf, ein zweiter Aufruf fällt weg.
+  const saving = useSaving()
   const confirm = useConfirm()
   const [items, setItems] = useState<CostItem[]>([])
   const [meters, setMeters] = useState<Meter[]>([])
@@ -849,11 +852,12 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
           title={form.id ? 'Kostenposition bearbeiten' : 'Neue Kostenposition'}
           subtitle={form.id ? form.description : undefined}
           onClose={() => { formErrors.clear(); setForm(null) }}
-          onSubmit={saveItem}
+          onSubmit={() => void saving.run(saveItem)}
+          busy={saving.busy}
           // Heizanlage und Heizperiode bearbeitet das Fenster neben dem Formular (Durchsicht M3)
           value={{ form, heatingPlantId, heatingPeriod }}
           errors={formErrors}
-          actions={<button className="btn" onClick={saveItem}>{form.id ? 'Speichern' : 'Anlegen'}</button>}
+          actions={<button className="btn" disabled={saving.busy} onClick={() => void saving.run(saveItem)}>{form.id ? 'Speichern' : 'Anlegen'}</button>}
         >
           {categoryNotice(form.category, year, property?.cableBuiltBeforeDec2021 ?? null) && <div className="notice">{categoryNotice(form.category, year, property?.cableBuiltBeforeDec2021 ?? null)}</div>}
           <div className="row">

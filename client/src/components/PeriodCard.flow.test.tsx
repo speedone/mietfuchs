@@ -174,3 +174,51 @@ test('Vor der Vorschau ist Speichern gesperrt, und das Fenster sagt warum', asyn
   expect(within(box).getByText('Die Vorschau zeigt, was sich ändert; gespeichert wird erst danach.')).toBeTruthy()
   expect(sent).toEqual([])
 })
+
+// Durchsicht M2: Nach der Vorschau für Mai wurde das Feld auf September geändert, „Speichern“ blieb frei und schickte die
+// Regeln der Vorschau für Mai. Jede Änderung im Formular verwirft jetzt Vorschau, Antworten und Bestätigung.
+test('M2: eine Änderung nach der Vorschau sperrt Speichern bis zur neuen Vorschau; gesendet wird nie die alte', async () => {
+  const SEPT = { startMonth: 1, changes: ['2027-09'] }
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    const method = init?.method ?? 'GET'
+    const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
+    if (method === 'GET') return json(url.startsWith('/api/properties') ? [PROPERTY] : [])
+    const body = JSON.parse(String(init?.body ?? '{}')) as { rules?: unknown }
+    sent.push({ url, method, body })
+    if (url.endsWith('/period/preview')) return json(preview(JSON.stringify(body.rules), { rules: body.rules as typeof SEPT, overrides: [], taxYears: [], groups: [] }))
+    return json({ ...PROPERTY, periodRules: body.rules })
+  })
+  await show()
+  const box = await askPreview()
+  const knopf = within(box).getByRole('button', { name: 'Speichern' }) as HTMLButtonElement
+  expect(knopf.disabled).toBe(false)
+  fireEvent.change(within(box).getByRole('textbox', { name: 'Neuer Zeitraum beginnt ab Monat' }), { target: { value: '09.2027' } })
+  expect(within(box).queryByText(/Nach dem Wechsel/)).toBeNull()
+  expect(knopf.disabled).toBe(true)
+  expect(within(box).getByText(/Fordern Sie die Vorschau erneut an/)).toBeTruthy()
+  // Auch Strg+S speichert nicht.
+  fireEvent.keyDown(box, { key: 's', ctrlKey: true })
+  fireEvent.click(within(box).getByRole('button', { name: 'Vorschau' }))
+  await within(box).findByText(/Nach dem Wechsel/, {}, SLOW)
+  save(box)
+  await waitFor(() => expect(sent).toHaveLength(3), SLOW)
+  expect(sent.map((s) => [s.method, (s.body as { rules: unknown }).rules])).toEqual([['POST', RULES_MAY], ['POST', SEPT], ['PUT', SEPT]])
+})
+
+test('K2: scheitert die Vorschau zum Entfernen eines Wechsels, lässt sie sich erneut laden', async () => {
+  let fails = 1
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    const method = init?.method ?? 'GET'
+    const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+    if (method === 'GET') return json(url.startsWith('/api/properties') ? [{ ...PROPERTY, periodRules: RULES_MAY }] : [])
+    sent.push({ url, method, body: JSON.parse(String(init?.body ?? '{}')) })
+    if (fails-- > 0) return json({ error: 'Server nicht erreichbar.' }, 503)
+    return json(preview('marke-4', { rules: { startMonth: 1, changes: [] }, overrides: [], taxYears: [], groups: [] }))
+  })
+  render(<UIProvider><PropertyProvider><PeriodCard /></PropertyProvider></UIProvider>)
+  fireEvent.click(await screen.findByRole('button', { name: 'Wechsel ab Mai 2027 entfernen …' }, SLOW))
+  const box = await screen.findByRole('dialog', { name: 'Wechsel ab Mai 2027 entfernen' }, SLOW)
+  fireEvent.click(await within(box).findByRole('button', { name: 'Vorschau erneut laden' }, SLOW))
+  await within(box).findByText(/Nach dem Wechsel/, {}, SLOW)
+  expect(sent).toHaveLength(2)
+})

@@ -124,9 +124,6 @@ export const METERED_QUANTITY_OPTIONS: readonly { value: FuelQuantityUnit | ''; 
 ]
 const isStockUnit = (u: FuelQuantityUnit | ''): u is StockUnit => u === 'l' || u === 'kg' || u === 'srm'
 
-// Der Rumpf einer Lieferung von Heizöl, Flüssiggas, Pellets, Holz oder Kohle (Heizung PR 8): Lieferdatum
-// und Menge statt Rechnungszeitraum; abgegrenzt wird über Anfangs- und Endbestand. Den Betrag gibt es
-// nur beim Messdienst (bei freien Schlüsseln steht er in den verknüpften Positionen).
 // Die Pflichtangaben einer Lieferung (#346 Schritt 7), alle auf einmal und je mit Feld, für `useFormError`. Erst wenn
 // sie da sind, prüfen `fuelBody` bzw. `stockFuelBody` den Rest; deren Rumpf ändert sich dadurch nicht.
 export type FuelField = 'unitId' | 'invoiceFrom' | 'invoiceTo' | 'deliveredAt' | 'quantity' | 'quantityUnit'
@@ -144,6 +141,9 @@ export function fuelRequiredProblems(form: FuelForm, place: { stock: boolean; pe
   return problems
 }
 
+// Der Rumpf einer Lieferung von Heizöl, Flüssiggas, Pellets, Holz oder Kohle (Heizung PR 8): Lieferdatum
+// und Menge statt Rechnungszeitraum; abgegrenzt wird über Anfangs- und Endbestand. Den Betrag gibt es
+// nur beim Messdienst (bei freien Schlüsseln steht er in den verknüpften Positionen).
 export function stockFuelBody(form: FuelForm, method: HeatingMethod, opts: HalfSplitOptions = NO_HALF_SPLIT): { body: Record<string, unknown> } | { error: string } {
   if (form.deliveredAt === '') return { error: 'Bitte geben Sie das Lieferdatum an. Beim Vorrat zählt eine Lieferung zur Heizperiode, in der sie geliefert wurde.' }
   const quantity = form.quantity.trim() === '' ? null : parseDecimal(form.quantity)

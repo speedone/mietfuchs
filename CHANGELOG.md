@@ -228,6 +228,16 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- Wechsel des Abrechnungszeitraums: Wer nach der Vorschau den Monat oder die Art der Änderung noch einmal
+  änderte, speicherte mit „Speichern“ (vorher „Zeitraum wechseln“) trotzdem den Wechsel der alten Vorschau,
+  etwa ab Mai, obwohl im Feld September stand. Jetzt verfällt die Vorschau samt Antworten und Bestätigung
+  mit jeder Änderung, und gespeichert wird erst nach einer neuen Vorschau
+  ([#346](https://github.com/speedone/mietfuchs/issues/346)).
+- Ein Doppelklick auf „Anlegen“ oder „Speichern“ in einem Seitenfenster (oder Strg+S während des
+  Speicherns) legte etwa eine Ablesung oder eine Lieferung zweimal an. Solange gespeichert wird, ist der
+  Knopf jetzt gesperrt, und ein zweiter Aufruf entfällt
+  ([#346](https://github.com/speedone/mietfuchs/issues/346)).
+
 - Heizkosten, Ablesungen: Fehlt an einer Grenze der Heizperiode ein Stand, nennt die Liste jetzt den
   Zähler mit Zählernummer, etwa „EG links, Beginn der Heizperiode am 31.12.2024: keine Ablesung am
   Zähler „Warmwasser neu“ (Nr. WW-4711)“. Vorher stand dort nur die Wohnung, und bei mehreren Zählern
