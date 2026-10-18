@@ -51,12 +51,41 @@ test('Die Auswahl an jeder Position zeigt die gespeicherte Lieferung', () => {
   expect(screen.getByText(/15\.03\.2025–14\.03\.2026/)).toBeTruthy()
 })
 
-test('Eine Verknüpfung ändern schickt sie an die Position', async () => {
-  render(<FuelCard plant={{ id: 'hp', method: 'manual' }} view={view} deliveries={[gas]} onSaved={() => {}} />)
+// #309: Die Verknüpfung ist ein Entwurf an ihrer Zeile; erst „Speichern“ schickt sie.
+test('Eine Verknüpfung ändern sendet erst mit „Speichern“, genau einmal, und nur für ihre Position', async () => {
+  const onSaved = vi.fn()
+  render(<FuelCard plant={{ id: 'hp', method: 'manual' }} view={view} deliveries={[gas]} onSaved={onSaved} />)
   fireEvent.change(auswahl('Lieferung zu „Wartung“'), { target: { value: 'd' } })
-  await waitFor(() => expect(sent.at(-1)).toEqual({ url: '/api/costItems/wart', method: 'PUT', body: { fuelDeliveryId: 'd' } }))
+  expect(sent).toEqual([])
+  const knopf = screen.getByRole('button', { name: 'Speichern (Lieferung zu „Wartung“)' })
+  fireEvent.click(knopf)
+  fireEvent.click(knopf)
+  await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1))
+  expect(sent).toEqual([{ url: '/api/costItems/wart', method: 'PUT', body: { fuelDeliveryId: 'd' } }])
   fireEvent.change(auswahl('Lieferung zu „Gas Abschlussrechnung“'), { target: { value: '' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern (Lieferung zu „Gas Abschlussrechnung“)' }))
   await waitFor(() => expect(sent.at(-1)).toEqual({ url: '/api/costItems/gas', method: 'PUT', body: { fuelDeliveryId: null } }))
+})
+
+test('Eine Verknüpfung verwerfen stellt die gespeicherte her, ohne zu senden (#309)', () => {
+  render(<FuelCard plant={{ id: 'hp', method: 'manual' }} view={view} deliveries={[gas]} onSaved={() => {}} />)
+  fireEvent.change(auswahl('Lieferung zu „Gas Abschlussrechnung“'), { target: { value: '' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Verwerfen (Lieferung zu „Gas Abschlussrechnung“)' }))
+  expect(auswahl('Lieferung zu „Gas Abschlussrechnung“').value).toBe('d')
+  expect(screen.queryByRole('button', { name: /^Speichern/ })).toBeNull()
+  expect(sent).toEqual([])
+})
+
+test('Scheitert das Verknüpfen, steht der Grund an der Zeile und der Entwurf bleibt (#309)', async () => {
+  vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ error: 'Die Heizperiode ist abgeschlossen.' }), { status: 409, headers: { 'content-type': 'application/json' } }))
+  const onSaved = vi.fn()
+  render(<FuelCard plant={{ id: 'hp', method: 'manual' }} view={view} deliveries={[gas]} onSaved={onSaved} />)
+  fireEvent.change(auswahl('Lieferung zu „Wartung“'), { target: { value: 'd' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern (Lieferung zu „Wartung“)' }))
+  const alert = await screen.findByRole('alert')
+  expect(alert.textContent).toMatch(/^Nicht gespeichert: .*abgeschlossen/)
+  expect(auswahl('Lieferung zu „Wartung“').value).toBe('d')
+  expect(onSaved).not.toHaveBeenCalled()
 })
 
 test('Beim Messdienst gibt es keine Verknüpfung, aber den Betrag und „vom Messdienst angesetzt“', () => {
