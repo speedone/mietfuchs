@@ -10,6 +10,7 @@ import { api, errorText } from '../api'
 import { useOpenForm, useProperty, useSwitchProperty } from '../property'
 import { useConfirm, useToast } from './feedback'
 import Drawer from './Drawer'
+import Card from './Card'
 import IbanInput from './IbanInput'
 import Field, { RequiredLegend } from './Field'
 import { ErrorSummary, useFormError } from './ErrorSummary'
@@ -22,7 +23,8 @@ import { createButtonLabel, EMPTY_NEW_PROPERTY, newPropertyBody, type NewPropert
 // gewechselt wird.
 //
 // Wer ein Haus vermietet, sieht hier dieselbe Karte wie früher die Karte „Haus“, nur mit der
-// Art als drittem Feld. Die Knöpfe für weitere Objekte stehen klein darunter.
+// Art als drittem Feld. „+ Weiteres Objekt anlegen“ steht oben rechts im Kartenkopf (#346 Schritt 7b), im Fuß
+// nur „Speichern“ und rechts „Objekt löschen …“.
 
 export default function PropertyCard() {
   const { properties, property, reload, setFocusNoticeFor } = useProperty()
@@ -143,39 +145,35 @@ export default function PropertyCard() {
   }
 
   return (
-    <div className="card">
-      <h2>Objekt</h2>
+    // Neues anlegen steht oben rechts im Kartenkopf, im Fuß nur „Speichern“ und rechts die Gefahr (#346 Schritt 7b).
+    <Card title="Objekt" aside={<button className="btn secondary" onClick={openDraft}>+ Weiteres Objekt anlegen</button>}>
       <ErrorSummary errors={errors} />
       <RequiredLegend />
-      {/* Raster statt Zeile (#346, Schritt 3): so viele Spalten, wie passen, keine abgeschnittenen Felder. */}
+      {/* Raster mit Breitenstufen (#346, Schritt 7b): Bezeichnung und Adresse lang, die Auswahlfelder so breit wie
+          ihr längster Eintrag. Vorher teilten vier gleiche Spalten die Zeile und schnitten Adresse und Kabelanlage ab. */}
       <div className="field-grid">
-        <Field label="Bezeichnung" required {...errors.field('name')}>
+        <Field label="Bezeichnung" required width="l" {...errors.field('name')}>
           <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="z. B. Mehrfamilienhaus Musterstraße" />
         </Field>
-        <label className="field">
-          Adresse
+        <Field label="Adresse" width="l">
           <input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Straße Nr., PLZ Ort" />
-        </label>
-        <label className="field">
-          Art
+        </Field>
+        <Field label="Art">
           <select value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value as PropertyKind })}>
             {(Object.keys(PROPERTY_KIND_LABELS) as PropertyKind[]).map((k) => <option key={k} value={k}>{PROPERTY_KIND_LABELS[k]}</option>)}
           </select>
-        </label>
+        </Field>
         {/* #121: Bei einer Anlage ab dem 01.12.2021 war das TV-Signal nie umlagefähig. */}
-        <label className="field">
-          <span>Kabel- oder <Term id="cableTv">Antennenanlage</Term></span>
+        <Field label={<>Kabel- oder <Term id="cableTv">Antennenanlage</Term></>}>
           <select value={form.cable} onChange={(e) => setForm({ ...form, cable: e.target.value as CableAnswer })}>
             {(Object.keys(CABLE_LABELS) as CableAnswer[]).map((k) => <option key={k} value={k}>{CABLE_LABELS[k]}</option>)}
           </select>
-        </label>
-      </div>
-      {/* Fristen nach Werktagen hängen an den Feiertagen am Ort (shared/deadlines.ts). */}
-      <div className="row">
+        </Field>
+        {/* Fristen nach Werktagen hängen an den Feiertagen am Ort (shared/deadlines.ts). */}
         <FederalStateField value={form.state} year={new Date().getFullYear()} onChange={(state) => setForm({ ...form, state })} />
+        {/* Heizung PR 18: § 5d CO2KostAufG, mit der Geltung der Verordnung. */}
+        <TightMarketField value={form.tightMarket} from={form.tightMarketFrom} to={form.tightMarketTo} onChange={(c) => setForm({ ...form, ...c })} />
       </div>
-      {/* Heizung PR 18: § 5d CO2KostAufG, mit der Geltung der Verordnung. */}
-      <TightMarketField value={form.tightMarket} from={form.tightMarketFrom} to={form.tightMarketTo} onChange={(c) => setForm({ ...form, ...c })} />
       <details className="extra-details" open={form.own}>
         <summary>Abweichender Vermieter oder Bankverbindung</summary>
         <p className="muted">
@@ -187,11 +185,10 @@ export default function PropertyCard() {
           Für dieses Objekt abweichend
         </label>
         {form.own && (
-          <div className="row">
-            <label className="field grow">
-              Vermieter
+          <div className="field-grid">
+            <Field label="Vermieter" width="l">
               <input value={form.landlordName} onChange={(e) => setForm({ ...form, landlordName: e.target.value })} />
-            </label>
+            </Field>
             <IbanInput key={property.id} label="IBAN" value={form.iban} stored={property.iban} onChange={(iban) => setForm({ ...form, iban })} {...errors.field('iban')} />
             <Field label="Zahlungsfrist (Tage)" width="s" {...errors.field('paymentDeadlineDays')}>
               <input inputMode="numeric" value={form.paymentDeadlineDays} onChange={(e) => setForm({ ...form, paymentDeadlineDays: e.target.value })} />
@@ -201,7 +198,6 @@ export default function PropertyCard() {
       </details>
       <div className="row">
         <button className="btn" onClick={save}>Speichern</button>
-        <button className="btn ghost" onClick={openDraft}>Weiteres Objekt anlegen</button>
         {/* Gefahr mit Abstand zu „Speichern“, „…“ weil eine Rückfrage folgt (#346 Schritt 7, M19). */}
         {properties.length > 1 && <button className="btn ghost danger-ghost ml-auto" onClick={remove}>Objekt löschen …</button>}
       </div>
@@ -224,22 +220,20 @@ export default function PropertyCard() {
               bleibt unverändert. Nach dem Anlegen arbeiten Sie im neuen Objekt; zurück geht es
               jederzeit über „Objekt“ in der Seitenleiste.
             </p>
-            <Field label="Name" required {...draftErrors.field('name')}>
+            <Field label="Name" required width="l" {...draftErrors.field('name')}>
               <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="z. B. Eigentumswohnung Gartenweg" />
             </Field>
-            <label className="field">
-              Art
+            <Field label="Art">
               <select value={draft.kind} onChange={(e) => setDraft({ ...draft, kind: e.target.value as PropertyKind })}>
                 {(Object.keys(PROPERTY_KIND_LABELS) as PropertyKind[]).map((k) => <option key={k} value={k}>{PROPERTY_KIND_LABELS[k]}</option>)}
               </select>
-            </label>
-            <label className="field">
-              Adresse
+            </Field>
+            <Field label="Adresse" width="l">
               <input value={draft.address} onChange={(e) => setDraft({ ...draft, address: e.target.value })} placeholder="Straße Nr., PLZ Ort" />
-            </label>
+            </Field>
           </>
         )}
       </Drawer>
-    </div>
+    </Card>
   )
 }

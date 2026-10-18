@@ -6,7 +6,7 @@ import { asksFactorConfirm, HCA_SCALE_OPTIONS, scaleOfOption, type HcaFieldsForm
 export default function HcaFields({ form, onChange }: { form: HcaFieldsForm; onChange: (f: HcaFieldsForm) => void }) {
   return (
     <>
-      <label className="field grow">
+      <label className="field">
         <span>Skala des <Term id="heatCostAllocator">Heizkostenverteilers</Term></span>
         <select value={form.scale} onChange={(e) => onChange({ ...form, scale: scaleOfOption(e.target.value) })}>
           {HCA_SCALE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -14,7 +14,7 @@ export default function HcaFields({ form, onChange }: { form: HcaFieldsForm; onC
         <small className="muted">Skala und Faktor stehen in der Geräteliste des Messdienstes oder in den Unterlagen des Herstellers, bei manchen Geräten auch auf dem Gerät. Ein Gerät mit anderem Faktor, etwa nach einem Tausch, legen Sie als neuen Zähler an.</small>
       </label>
       {form.scale === 'unit' && (
-        <label className="field grow">
+        <label className="field">
           Bewertungsfaktor des Heizkörpers
           <input inputMode="decimal" value={form.factor} onChange={(e) => onChange({ ...form, factor: e.target.value, confirmed: false })} placeholder="z. B. 1,25" className="input-num" />
           <small className="muted">Nachkommastellen mit Komma, etwa 0,875.</small>

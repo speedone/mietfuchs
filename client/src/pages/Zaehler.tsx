@@ -12,6 +12,7 @@ import { useProperty, withProperty } from '../property'
 import Drawer from '../components/Drawer'
 import { CalcNotice } from '../components/Notice'
 import { useSaving } from '../useSaving'
+import { CardHeader } from '../components/Card'
 import PageHeader from '../components/PageHeader'
 import Term from '../components/Term'
 import { useToast, useConfirm } from '../components/feedback'
@@ -170,6 +171,8 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
       <PageHeader
         title="Zähler & Stände"
         subtitle={'Zählerstände dokumentieren — Jahresablesung, Zwischenablesung beim Mieterwechsel, Zählerwechsel. Wohnungszähler ermöglichen den Umlageschlüssel „nach Verbrauch“.'}
+        // Die Seitenaktion steht im Seitenkopf wie „+ Kostenposition anlegen“ (#346 Schritt 7b); vorher unten in der Karte.
+        actions={<button className="btn" onClick={() => { meterErrors.clear(); setMarkedYear(''); setMeterForm(emptyMeterForm()) }}>+ Zähler anlegen</button>}
       />
       {error && <div className="error">{error}</div>}
 
@@ -220,12 +223,6 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
             </tbody>
           </Table>
         )}
-
-        <div className="row">
-          <button className="btn secondary" onClick={() => { meterErrors.clear(); setMarkedYear(''); setMeterForm(emptyMeterForm()) }}>
-            + Zähler anlegen
-          </button>
-        </div>
       </div>
 
       {readingMeter && (
@@ -284,12 +281,11 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
           actions={<button className="btn" disabled={saving.busy} onClick={() => void saving.run(saveMeter)}>{meterForm.id ? 'Speichern' : 'Anlegen'}</button>}
         >
           <div className="row">
-            <Field label="Name" required className="grow" {...meterErrors.field('name')}>
+            <Field label="Name" required {...meterErrors.field('name')}>
               <input value={meterForm.name} onChange={(e) => setMeterForm({ ...meterForm, name: e.target.value })} placeholder={meterForm.type === 'hkv' ? 'z. B. Wohnzimmer' : 'z. B. Hauptwasserzähler'} />
             </Field>
             <Field
               label={<>Zuordnung (<Term id="mainMeter">Haupt- oder Zwischenzähler</Term>)</>}
-              className="grow"
               required={meterForm.type === 'hkv'}
               hint={meterForm.type !== 'hkv' ? <>Bei einer <Term id="granny">Einliegerwohnung</Term> mit eigenem Zwischenzähler: den Zähler des Hauses als Hauptzähler anlegen, den Zwischenzähler an der Wohnung.</> : undefined}
               {...meterErrors.field('unitId')}
@@ -300,7 +296,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
                 {units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
             </Field>
-            <label className="field grow">
+            <label className="field">
               Sparte
               <select value={meterForm.type} onChange={(e) => setMeterForm(withMeterType(meterForm, e.target.value as MeterType))}>
                 {(Object.keys(METER_TYPE_LABELS) as MeterType[]).map((t) => (
@@ -308,11 +304,11 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
                 ))}
               </select>
             </label>
-            <Field label="Zählernummer" className="grow">
+            <Field label="Zählernummer" width="m">
               <input value={meterForm.meterNumber} onChange={(e) => setMeterForm({ ...meterForm, meterNumber: e.target.value })} />
             </Field>
             {/* #342: bei Wasser, Wärme und Strom eine Auswahl, denn Mietfuchs rechnet diese Einheiten ineinander um. */}
-            <Field label={<Term id="meterUnit">Einheit</Term>} required={hasKnownUnits(meterForm.type)} className="grow" hint={meterUnitHint(meterForm) || undefined} {...meterErrors.field('unit')}>
+            <Field label={<Term id="meterUnit">Einheit</Term>} required={hasKnownUnits(meterForm.type)} hint={meterUnitHint(meterForm) || undefined} {...meterErrors.field('unit')}>
               {hasKnownUnits(meterForm.type)
                 ? (
                   <select value={meterForm.unit} onChange={(e) => setMeterForm({ ...meterForm, unit: e.target.value, unitDropped: '' })}>
@@ -326,7 +322,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
             {/* Heizung PR 12: Skala und Bewertungsfaktor des Heizkostenverteilers. */}
             {meterForm.type === 'hkv' && <HcaFields form={meterForm.hca} onChange={(hca) => setMeterForm({ ...meterForm, hca })} />}
             {heatingRoleOptions(meterForm, plants.length > 0).length > 0 && (
-              <label className="field grow">
+              <label className="field">
                 Gehört zur Heizanlage?
                 <select value={heatingRoleOptions(meterForm, true).includes(meterForm.heatingRole as HeatingRole) ? meterForm.heatingRole : ''} onChange={(e) => setMeterForm({ ...meterForm, heatingRole: e.target.value as HeatingRole | '' })}>
                   <option value="">Nein</option>
@@ -336,7 +332,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
               </label>
             )}
             {!meterForm.unitId && meterForm.heatingRole !== '' && plantOptions(plants).length > 0 && (
-              <Field label="Heizanlage" required className="grow" {...meterErrors.field('heatingPlantId')}>
+              <Field label="Heizanlage" required {...meterErrors.field('heatingPlantId')}>
                 <select value={meterForm.heatingPlantId} onChange={(e) => setMeterForm({ ...meterForm, heatingPlantId: e.target.value })}>
                   <option value="">— bitte wählen —</option>
                   {plantOptions(plants).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -345,7 +341,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
             )}
             {asksRemote(meterForm, plants.length > 0) && (
               <>
-                <label className="field grow">
+                <label className="field">
                   Aus der Ferne ablesbar?
                   <select value={meterForm.remote} onChange={(e) => setMeterForm({ ...meterForm, remote: e.target.value as RemoteAnswer })}>
                     <option value="">Weiß ich nicht</option>
@@ -353,7 +349,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
                     <option value="no">Nein</option>
                   </select>
                 </label>
-                <label className="field grow">
+                <label className="field">
                   Eingebaut am
                   <input type="date" value={meterForm.installedOn} onChange={(e) => setMeterForm({ ...meterForm, installedOn: e.target.value })} />
                   <small className="muted">{REMOTE_RULE_TEXT}</small>
@@ -364,14 +360,12 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
               <>
                 <Field
                   label="Geeicht bis Ende (Jahr)"
-                 
-                  className="grow"
                   hint={<>Die <Term id="meterCalibration">Eichfrist</Term> endet mit dem Ende dieses Jahres. Hat der Messdienst sie im Stichprobenverfahren verlängern lassen (§ 35 MessEV), tragen Sie das verlängerte Jahr ein.</>}
                   {...meterErrors.field('calibratedUntil')}
                 >
                   <input inputMode="numeric" value={meterForm.calibratedUntil} onChange={(e) => setMeterForm({ ...meterForm, calibratedUntil: e.target.value })} />
                 </Field>
-                <label className="field grow">
+                <label className="field">
                   Jahreszahl auf dem Zähler (etwa „M22“ oder die Jahresangabe der Eichmarke)
                   <input inputMode="numeric" value={markedYear} onChange={(e) => setMarkedYear(e.target.value)} placeholder="für einen Vorschlag" />
                   {markedYear.trim() !== '' && (() => {
@@ -454,6 +448,8 @@ function FragmentRow(props: {
       {open && (
         <tr>
           <td colSpan={5} className="stack reading-panel">
+            {/* Die Listenaktion steht oben rechts im Kopf der Liste (#346 Schritt 7b), vorher unter ihr. */}
+            <CardHeader level={3} title={`Ablesungen ${m.name}`} aside={<button className="btn secondary" onClick={onNewReading}>+ Ablesung anlegen</button>} />
             {readings.length > 0 && (
               <Table>
                 <thead>
@@ -482,9 +478,6 @@ function FragmentRow(props: {
               </Table>
             )}
             {readings.length === 0 && <p className="muted">Noch keine Ablesung für diesen Zähler.</p>}
-            <div className="row">
-              <button className="btn secondary" onClick={onNewReading}>+ Ablesung anlegen</button>
-            </div>
             {m.type === 'hkv' && <CutoffReadingForm meterId={m.id} onSaved={onSaved} />}
           </td>
         </tr>

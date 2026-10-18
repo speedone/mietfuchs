@@ -142,6 +142,87 @@ async function overflow(page) {
   })
 }
 
+// Felder, die ihren Inhalt abschneiden (#346 Schritt 7b): ein Eingabefeld, dessen Wert breiter ist als das Feld
+// (`scrollWidth` > `clientWidth` + 1), oder ein Auswahlfeld, das seinen gewählten Eintrag nicht ganz zeigt. Für das
+// Auswahlfeld misst ein Klon mit nur diesem Eintrag und `width: auto` an derselben Stelle, wie breit es sein müsste;
+// `scrollWidth` sagt bei `<select>` in keiner Engine etwas. Geprüft wird, was sichtbar ist, in `scope` (die Seite
+// oder das offene Seitenfenster), nur mit gesetztem Wert; unsichtbare Auswahlfelder (der Umschalter der
+// Seitenleiste liegt mit Deckkraft 0 über seinem Text) zählen nicht.
+async function clippedFields(page, scope) {
+  return page.evaluate((sel) => {
+    const win = /** @type {any} */ (globalThis)
+    const doc = win.document
+    const root = doc.querySelector(sel) ?? doc.body
+    const out = []
+    const nameOf = (el) => {
+      const by = el.getAttribute('aria-labelledby')
+      const label = (by ? by.split(/\s+/).map((id) => doc.getElementById(id)?.textContent ?? '').join(' ') : '')
+        || el.getAttribute('aria-label') || el.closest('label')?.textContent || el.name || el.tagName.toLowerCase()
+      return label.replace(/\s+/g, ' ').trim().slice(0, 50)
+    }
+    const visible = (el) => {
+      const r = el.getBoundingClientRect()
+      const style = win.getComputedStyle(el)
+      return r.width > 0 && r.height > 0 && style.visibility !== 'hidden' && Number(style.opacity) > 0 && !el.closest('[hidden], .no-print[aria-hidden="true"]')
+    }
+    // Ein Feld, das schon die ganze verfügbare Breite nimmt (am Handy, im Seitenfenster), kann nicht breiter werden:
+    // Dort darf ein langer Eintrag abgeschnitten sein (die Auswahlliste des Systems zeigt ihn ganz), das ist die
+    // Obergrenze „höchstens volle Breite“ der Spezifikation. Das gilt für Felder (`.field`) und Auswahlfelder, nicht
+    // für Eingabefelder in Tabellen.
+    const atFullWidth = (el) => {
+      const field = el.closest('label.field, div.field')
+      // Ein Auswahlfeld außerhalb eines Felds (Zuordnung im Posteingang) misst gegen seinen Behälter
+      const box = field ? field.parentElement : el.tagName === 'SELECT' ? el.parentElement : null
+      if (!box) return false
+      const st = win.getComputedStyle(box)
+      const avail = box.clientWidth - parseFloat(st.paddingLeft) - parseFloat(st.paddingRight)
+      return el.getBoundingClientRect().width >= avail - 2
+    }
+    for (const el of root.querySelectorAll('input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=hidden]), select')) {
+      if (!visible(el)) continue
+      if (el.tagName === 'SELECT') {
+        const opt = el.options[el.selectedIndex]
+        if (!opt || !opt.text.trim()) continue
+        const clone = el.cloneNode(false)
+        clone.removeAttribute('id')
+        clone.setAttribute('aria-hidden', 'true')
+        clone.tabIndex = -1
+        clone.appendChild(opt.cloneNode(true))
+        clone.style.cssText = 'position:absolute;visibility:hidden;width:auto;min-width:0;max-width:none;flex:none'
+        el.parentElement.appendChild(clone)
+        const need = clone.getBoundingClientRect().width
+        clone.remove()
+        const have = el.getBoundingClientRect().width
+        if (need > have + 1 && !atFullWidth(el)) out.push(`Auswahl „${nameOf(el)}“ zeigt „${opt.text.trim().slice(0, 60)}“ nicht ganz (${Math.round(have)} px, braucht ${Math.round(need)} px)`)
+      } else {
+        if (!el.value) continue
+        if (el.scrollWidth > el.clientWidth + 1 && !atFullWidth(el)) out.push(`Feld „${nameOf(el)}“ schneidet „${String(el.value).slice(0, 60)}“ ab (${el.clientWidth} px, braucht ${el.scrollWidth} px)`)
+      }
+    }
+    return out
+  }, scope)
+}
+
+// Selbstprobe der Messung (Mutationsprobe, läuft bei jedem Aufruf): Ein zu schmales Feld mit langem Wert und ein zu
+// schmales Auswahlfeld müssen als Befund erscheinen, sonst misst die Prüfung nichts.
+async function clippedSelfTest(page) {
+  await page.evaluate(() => {
+    const doc = /** @type {any} */ (globalThis).document
+    const box = doc.createElement('div')
+    box.id = 'cut-selftest'
+    box.innerHTML = '<label class="field"><span>Probe Adresse</span><input value="Lindenweg 12, 12345 Musterstadt" style="width:6ch"></label>'
+      + '<label class="field"><span>Probe Auswahl</span><select style="width:6ch;min-width:0"><option>vor dem 01.12.2021 errichtet</option></select></label>'
+    doc.querySelector('main')?.appendChild(box)
+  })
+  const found = await clippedFields(page, '#cut-selftest')
+  await page.evaluate(() => /** @type {any} */ (globalThis).document.getElementById('cut-selftest')?.remove())
+  return found.length === 2 ? null : `Die Messung abgeschnittener Felder findet ${found.length} statt 2 absichtlich zu schmale Felder.`
+}
+
+// Seitenfenster einer Seite zum Messen: jedes „+ … anlegen“ und je Art das erste ✎ („… bearbeiten“), dazu die
+// Knöpfe, die ein Fenster zum Ändern öffnen. Geschlossen wird mit Esc (ohne Eingabe fragt es nicht).
+const DRAWER_OPENERS = /^(\+ .+ anlegen|Abrechnungszeitraum ändern|Ändern|Mieterwechsel|Eigene Heizkostenabrechnung einrichten|Heizung erneuert \(Kessel getauscht\)|.+ bearbeiten)$/
+
 // Sichtbare Fehlermeldungen der Oberfläche: die Sammelmeldung, Meldungen am Feld und `.error`.
 async function visibleErrors(page) {
   return page.evaluate(() => {
@@ -217,6 +298,8 @@ async function checkCombination(browser, base, combo, AxeBuilder, navLabels) {
   await settle(page)
   const labels = navLabels ?? await readNav(page, view)
   if (!labels?.length) throw new Error('Die Navigation hat keine Einträge.')
+  const selfTest = await clippedSelfTest(page)
+  if (selfTest) add('start', 'Messung', selfTest)
 
   // axe auf dem jetzigen Stand der Seite; die Bedienproben rufen es auch mit offenem Fenster, Raster oder Blatt
   const runAxe = async (id) => {
@@ -259,11 +342,15 @@ async function checkCombination(browser, base, combo, AxeBuilder, navLabels) {
     const wide = await overflow(page)
     if (wide) add(id, 'Breite', `Seite ${wide.scroll} px breit bei ${wide.width} px Fenster${wide.elements.length ? `: ${wide.elements.join('; ')}` : ''}`)
     for (const text of await visibleErrors(page)) add(id, 'Fehlermeldung', text)
+    for (const text of await clippedFields(page, 'main')) add(id, 'Abgeschnitten', text)
     await runAxe(id)
     // Die ganze Seite; was dafür zu hoch ist (Firefox nimmt höchstens 32767 px, die Hilfe am Handy ist
     // höher), nur das Fenster
     const shot = path.join(dir, `${id}.png`)
     await page.screenshot({ path: shot, fullPage: true }).catch(() => page.screenshot({ path: shot }))
+    // Die Seitenfenster der Seite öffnen und ihre Felder messen, im ersten Design des Laufs (die Breite hängt nicht
+    // am Design)
+    if (theme === themes[0]) await checkDrawers(page, id, dir, add)
   }
 
   // Die Bedienproben einmal je Engine und Ansicht, im ersten Design des Laufs (Vorgabe: hell)
@@ -290,6 +377,52 @@ async function checkCombination(browser, base, combo, AxeBuilder, navLabels) {
   }
   await context.close()
   return labels
+}
+
+// Öffnet nacheinander die Seitenfenster einer Seite (DRAWER_OPENERS), misst ihre Felder, fotografiert sie und schließt
+// sie ohne Änderung. Ein Knopf, der kein Seitenfenster öffnet, wird übergangen.
+async function checkDrawers(page, id, dir, add) {
+  const names = await page.locator('main button:visible').evaluateAll((buttons, re) => {
+    const pattern = new RegExp(re)
+    const seen = new Set()
+    const out = []
+    for (const b of buttons) {
+      if (b.disabled) continue
+      const name = (b.getAttribute('aria-label') || b.textContent || '').replace(/\s+/g, ' ').trim()
+      if (!pattern.test(name) || seen.has(name)) continue
+      seen.add(name)
+      out.push(name)
+    }
+    return out
+  }, DRAWER_OPENERS.source)
+  let n = 0
+  for (const name of names) {
+    const button = page.locator('main').getByRole('button', { name, exact: true }).first()
+    if (!(await button.count())) continue
+    await button.scrollIntoViewIfNeeded().catch(() => {})
+    await button.click().catch(() => {})
+    const drawer = page.locator('dialog.drawer[open]').first()
+    if (!(await drawer.waitFor({ state: 'visible', timeout: 1500 }).then(() => true, () => false))) {
+      // Kein Seitenfenster (etwa ein Formular in der Karte): neu laden, damit nichts offen bleibt
+      await page.reload().catch(() => {})
+      await settle(page)
+      continue
+    }
+    await page.waitForTimeout(250)
+    n++
+    for (const text of await clippedFields(page, 'dialog.drawer[open]')) add(`${id}:fenster`, 'Abgeschnitten', `„${name}“: ${text}`)
+    await drawer.screenshot({ path: path.join(dir, `${id}-fenster-${n}.png`) }).catch(() => {})
+    await page.keyboard.press('Escape')
+    const ask = page.getByRole('alertdialog')
+    if (await ask.waitFor({ state: 'visible', timeout: 600 }).then(() => true, () => false)) await ask.getByRole('button', { name: 'Verwerfen' }).click()
+    const closed = await drawer.waitFor({ state: 'hidden', timeout: 3000 }).then(() => true, () => false)
+    // Bleibt ein Fenster offen (es lädt noch, oder es fragt anders), lädt die Seite neu, damit die nächste Prüfung frei ist
+    if (!closed) {
+      await page.reload().catch(() => {})
+      await settle(page)
+      return
+    }
+  }
 }
 
 // ---------- Bedienproben ----------

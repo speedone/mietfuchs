@@ -386,7 +386,7 @@ function SlotEditor(props: SlotProps) {
     <fieldset className="ai-slot">
       <legend>{SLOT_LABELS[name]}</legend>
       <div className="row">
-        <label className="field grow">
+        <label className="field">
           Anbieter
           <select
             value={slot.preset}
@@ -404,7 +404,7 @@ function SlotEditor(props: SlotProps) {
             ))}
           </select>
         </label>
-        <label className="field grow">
+        <label className="field">
           Adresse
           <input
             value={slot.url}
@@ -434,7 +434,7 @@ function SlotEditor(props: SlotProps) {
             </>
           ) : (
             <>
-              <label className="field grow">
+              <label className="field">
                 API-Schlüssel
                 <input type="password" value={keyInput} autoComplete="off" placeholder={key === 'optional' ? 'nur falls der Dienst einen verlangt' : ''} onChange={(e) => setKeyInput(e.target.value)} />
               </label>
@@ -458,7 +458,7 @@ function SlotEditor(props: SlotProps) {
       )}
 
       <div className="row">
-        <label className="field grow">
+        <label className="field">
           Modell
           {showModelSelect ? (
             <select

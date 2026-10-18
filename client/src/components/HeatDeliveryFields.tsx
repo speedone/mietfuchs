@@ -12,17 +12,17 @@ export default function HeatDeliveryFields({ values, onChange }: { values: HeatD
     <fieldset>
       <legend>Umstellung auf <Term id="heatDelivery">Wärmelieferung</Term> während laufender Mietverhältnisse</legend>
       <p className="muted">{SWITCH_HINT}</p>
-      <label className="field grow">
+      <label className="field">
         Tag der Umstellung
         <input type="date" value={values.deliverySince} onChange={(e) => onChange({ ...values, deliverySince: e.target.value })} />
       </label>
-      <label className="field grow">
+      <label className="field">
         Wer versorgte vorher?
         <select value={values.previousSupply} onChange={(e) => onChange({ ...values, previousSupply: PREVIOUS_SUPPLY_OPTIONS.find((o) => o.value === e.target.value)?.value ?? '' })}>
           {PREVIOUS_SUPPLY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
       </label>
-      <label className="field grow">
+      <label className="field">
         Umstellungsankündigung zugegangen am
         <input type="date" value={values.announcedOn} onChange={(e) => onChange({ ...values, announcedOn: e.target.value })} />
       </label>

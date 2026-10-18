@@ -51,7 +51,8 @@ ansehen. Bestehende Dateinamen beibehalten, das README verlinkt sie.
 (`npm run browser-check`) legt denselben Beispielbestand an, dazu eine Heizanlage für die Seite
 Heizkosten, und geht jede Seite der Navigation in Chromium, Firefox und WebKit (die Engine von
 Safari) durch, bei 1440 × 900 und 390 × 844, hell und dunkel. Je Seite: keine Konsolenfehler, keine
-sichtbare Fehlermeldung, `scrollWidth` nicht größer als das Fenster, und axe-core
+sichtbare Fehlermeldung, `scrollWidth` nicht größer als das Fenster, kein abgeschnittenes Feld (auch in
+den Seitenfenstern der Seite, siehe „Felder in Stufen“), und axe-core
 (`@axe-core/playwright`, MPL-2.0) ohne Verstöße der Stufen serious und critical. Dazu je Engine
 und Ansicht Bedienproben per Tastatur: Seitenfenster (Esc fragt, Fokus auf „Abbrechen“, Enter
 lässt offen, „Verwerfen“ schließt), Monatsfeld (Text und Raster), Begriffserklärung, die
@@ -3294,8 +3295,7 @@ Tippfläche von `--target` über `::after`, und printCss.test.ts verlangt den du
   (`RequiredScope`); außerhalb eines Seitenfensters setzt die Datei `<RequiredLegend />` (Wächter S25). Die
   Prüfung des Browsers greift nie vor: Ein `<form>` trägt immer `noValidate` (S25), ohne `<form>` prüft er
   nicht; gestaltet wird nie über `:invalid`/`:required` (S25), markiert nur über `aria-invalid`.
-  `width="s"`/`"m"` und das Raster `field-grid`
-  sind Utilities in tw.css. Die Fehlermeldung am Feld trägt ⚠ (für Vorleser ausgeblendet) und „Fehler:“
+  Die Breitenstufen (`width`) und das Raster `field-grid` stehen unter „Felder in Stufen“. Die Fehlermeldung am Feld trägt ⚠ (für Vorleser ausgeblendet) und „Fehler:“
   (nur für Vorleser). **Im Seitenfenster** bekommt der Drawer die API (`errors`) und zeigt die
   Sammelmeldung im festen Fuß über den Knöpfen, höchstens 40 % der Höhe; **in einer Karte** steht sie oben
   in der Karte. Ein Eingabefeld mitten im Text (Entwurf am Feld, „✎ anpassen“) nimmt `FieldMessage`.
@@ -3405,6 +3405,31 @@ Tippfläche von `--target` über `::after`, und printCss.test.ts verlangt den du
   Knopf „… speichern“, `type="submit"`, `layout="card"`); ein Knopf in einer Schleife zählt mehrfach. Und eine Karte,
   die ein Seitenfenster öffnet, speichert ihr Formular dort (Ausnahme mit Grund: PropertyCard). **Grenze**: Der Wächter
   liest den Quelltext; ein Speichern, das eine Unterkomponente in derselben Karte zeichnet, sieht er nicht.
+- **Felder in Stufen, Neues anlegen oben rechts** (#346 Schritt 7b, nach einer Rückmeldung zur Objekt-Karte und zur
+  Zähler-Seite). Die Breite gehört dem Eingabefeld: `<Field width>` mit `s` (`--field-s`, 15ch: Betrag, Datum, Monat
+  samt ▦, PLZ, Fläche, Personen, Zählerstand), `m` (24ch, kurze Freitexte), `l` (38ch: Adresse, Name, Bezeichnung,
+  IBAN) und `full` (Textfelder); ein Auswahlfeld ist so breit wie sein längster Eintrag, die Stufe ist dort nur
+  die Mindestbreite. **Ohne Angabe gilt die Vorgabe nach Feldart** (`widthOf` in Field.tsx): Datum, Uhrzeit,
+  `inputMode` decimal/numeric und Monat kurz, `<textarea>` voll, Auswahl nach Inhalt, sonst lang; dieselbe Regel steht
+  per `:has()` in [client/src/fields.css](client/src/fields.css) und gilt damit auch für ein `label.field` von Hand.
+  Ein Betrag oder eine Zahl braucht deshalb `inputMode`, sonst ist das Feld lang. fields.css hängt in tw.css als
+  Schicht `components` (über index.css, unter den Utilities `width-s` … `width-full`, die nur `--field-w` und
+  `--select-min` setzen); eine eigene Datei, weil Tailwind Regeln in tw.css für Utilities hielte (S20). Die Hülle
+  ist `fit-content`, Hinweis und Meldung brechen darin um (`contain: inline-size`, mindestens `--field-hint`, 30ch;
+  `hint-wide` 72ch für eine lange Frage). `field-grid` ist eine Zeile mit Umbruch, jedes Feld in seiner Breite, die
+  Eingabefelder auf einer Linie; die frühere Spaltenteilung (`auto-fit, minmax(220px, 1fr)`) streckte und schnitt
+  ab. Am Handy (bis 640 px) ist jedes Feld voll breit. `grow` und `wide` an Feldern und die px-Breiten `input-xs`
+  usw. sind entfallen. **Aktionen:** Neues anlegen steht oben rechts, für die ganze Seite im Seitenkopf
+  (`PageHeader actions`: Kosten, Zähler, Mietkonto), für eine Liste oder Karte im Kartenkopf (`Card`/`CardHeader
+  aside`: Objekt, Wohnungen, Mietverhältnisse, Heizung, Lieferungen, Ablesungen im aufgeklappten Zähler); im Fuß
+  einer Karte nur „Speichern“ links und Gefahrknöpfe rechts. Wächter S27 (jedes „+ … anlegen“ in einer dieser
+  Props) und S28 (`<Field>` mit Funktion nennt `width`, keine Breite als Inline-Stil an Feldern, keine px-Breite an
+  Eingabefeldern in index.css). **Der Browserlauf misst abgeschnittene Felder** je Seite und in jedem Seitenfenster
+  (`clippedFields` in browser-check.mjs: Eingabefeld `scrollWidth` > `clientWidth` + 1 beim gesetzten Wert,
+  Auswahlfeld gegen einen Klon mit nur dem gewählten Eintrag; die Fenster öffnet `checkDrawers` über „+ … anlegen“,
+  „… bearbeiten“ und die Knöpfe zum Ändern). Ein Feld, das schon die ganze verfügbare Breite nimmt (am Handy, im
+  Seitenfenster), zählt nicht: Ein langer Eintrag eines Auswahlfelds darf dort abgeschnitten sein, die Liste des
+  Systems zeigt ihn ganz. Eine Selbstprobe mit zwei absichtlich zu schmalen Feldern läuft bei jedem Aufruf mit.
 - **Ein Monat ist ein Monatsfeld** (`MonthField`, [client/src/components/MonthField.tsx](client/src/components/MonthField.tsx),
   #287, #346 Schritt 5): ein Textfeld in `Field`, das „3.2025“, „03/25“, „2025-03“, „März 2025“ und „Mrz 27“ liest
   (`parseMonthText` in [client/src/monthText.ts](client/src/monthText.ts), ohne DOM: ein Tag nur als Erster,

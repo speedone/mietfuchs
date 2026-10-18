@@ -18,11 +18,12 @@ const fsModule = 'node:fs'
 const fs = (await import(/* @vite-ignore */ fsModule)) as { readFileSync: (path: URL, encoding: 'utf8') => string }
 const css = fs.readFileSync(new URL('./index.css', import.meta.url), 'utf8')
 const twCss = fs.readFileSync(new URL('./tw.css', import.meta.url), 'utf8')
+const fieldsCss = fs.readFileSync(new URL('./fields.css', import.meta.url), 'utf8')
 
 // Tailwind (#346) mit dem Theme aus tw.css, ohne index.css und ohne die Einschränkungen der Suche
 // (`@source`): Gefragt wird, welche Klassennamen Tailwind als Utility kennt.
 const compileTw = (source: string) => compile(
-  source.replace(/@import "\.\/index\.css"[^;]*;/, '').replace(/@source[^;]*;/g, ''),
+  source.replace(/@import "\.\/(?:index|fields)\.css"[^;]*;/g, '').replace(/@source[^;]*;/g, ''),
   {
     base: '.',
     loadStylesheet: async (id) => ({
@@ -265,7 +266,7 @@ test('kleine Knöpfe haben am Handy die volle Tippfläche', () => {
 // Die heutigen Namensgleichheiten bleiben, weil tw.css sie aus der Suche nimmt (`@source not
 // inline`); jede von ihnen steht deshalb auch dort.
 const LEGACY_UTILITY_NAMES = new Set(['sr-only', 'grow', 'grow-2'])
-const INDEX_CSS_MAX_LINES = 841
+const INDEX_CSS_MAX_LINES = 817
 test('S20: keine neue Klasse und keine Animation in index.css mit einem Namen aus Tailwind, und index.css wächst nicht', () => {
   expect(definedClasses.size).toBeGreaterThan(100)
   const clashes = tailwindUtilities(definedClasses)
@@ -1098,4 +1099,68 @@ test('S26: freie Hinweiskästen nur noch, wo die Liste sie nennt, und nie mehr',
     expect(counts.get(file) ?? 0, `${file}: Hinweiskästen gehören in den Baustein Notice; sinkt die Zahl, die Liste senken`).toBe(allowed)
   }
   expect([...counts].filter(([file]) => !BOX_EXCEPTIONS.has(file)).map(([file, n]) => `${file}: ${n}`)).toEqual([])
+})
+
+// S27 (#346 Schritt 7b, Rückmeldung zur Objekt-Karte und zur Zähler-Seite): Neues anlegen steht oben rechts. Eine
+// Aktion für die ganze Seite im Seitenkopf (`PageHeader actions`), eine für eine Liste oder Karte im Kartenkopf
+// (`Card`/`CardHeader aside`); im Fuß einer Karte stehen nur „Speichern“ und die Gefahrknöpfe. Geprüft wird jeder
+// Knopf „+ … anlegen“: Er steht im Ausdruck einer dieser Props. Zeilen anfügen („+ weitere …“, „+ … ab Monat …“) ist
+// keine Aktion zum Anlegen und bleibt an seiner Staffel.
+const HEAD_SLOTS: readonly (readonly [string, string])[] = [['PageHeader', 'actions'], ['Card', 'aside'], ['CardHeader', 'aside']]
+/** Bereiche [Anfang, Ende) der Kopf-Aktionen einer Quelle. */
+const headSlots = (src: string): [number, number][] => HEAD_SLOTS.flatMap(([name, prop]) => openingTags(src, name).flatMap(({ at, tag }) => {
+  const m = new RegExp(`\\b${prop}=\\{`).exec(tag)
+  const expr = propExpr(tag, prop)
+  if (!m || expr === null) return []
+  const start = at + m.index + m[0].length
+  return [[start, start + expr.length] as [number, number]]
+}))
+const createOutsideHead = (file: string, src: string): string[] => {
+  const slots = headSlots(src)
+  return buttonsIn(file, src)
+    .filter((b) => b.texts.some((t) => /^\+ .+ anlegen$/.test(t)))
+    .filter((b) => !slots.some(([from, to]) => b.at >= from && b.at < to))
+    .map((b) => `${file}: ${b.texts.join(' | ')}`)
+}
+test('S27: „+ … anlegen“ steht oben rechts, im Seitenkopf oder im Kartenkopf', () => {
+  // Probe des Prüfers: unten in der Karte falsch, im Kopf richtig, ein Zeilen-Knopf zählt nicht
+  expect(createOutsideHead('probe', '<div className="card"><h2>Zähler</h2><div className="row"><button className="btn secondary" onClick={n}>+ Zähler anlegen</button></div></div>')).toHaveLength(1)
+  expect(createOutsideHead('probe', '<PageHeader title="Zähler" actions={<button className="btn" onClick={n}>+ Zähler anlegen</button>} />')).toEqual([])
+  expect(createOutsideHead('probe', '<Card title="Wohnungen" aside={<button className="btn secondary" onClick={() => { a(); b({ x: 1 }) }}>+ Wohnung anlegen</button>}><p /></Card>')).toEqual([])
+  expect(createOutsideHead('probe', '<CardHeader level={3} title="Ablesungen" aside={<button className="btn secondary" onClick={n}>+ Ablesung anlegen</button>} />')).toEqual([])
+  expect(createOutsideHead('probe', '<Drawer open value={f} onClose={c} actions={<button className="btn">+ Zähler anlegen</button>}>')).toHaveLength(1)
+  expect(createOutsideHead('probe', '<button className="btn small secondary">+ Erhöhung ab Monat …</button><button className="btn">+ weitere Teilmenge</button>')).toEqual([])
+  expect(files.flatMap((file) => createOutsideHead(file, sources[file] ?? ''))).toEqual([])
+  // Der Prüfer sieht die Knöpfe von heute: Kosten, Zähler, Ablesung, Zahlung, Wohnung, Mietverhältnis, Objekt, Heizanlage, Lieferung
+  expect(files.flatMap((f) => buttonsIn(f, sources[f] ?? '')).filter((b) => b.texts.some((t) => /^\+ .+ anlegen$/.test(t))).length).toBeGreaterThanOrEqual(9)
+})
+
+// S28 (#346 Schritt 7b): Felder haben eine Breitenstufe statt fester Breiten. `<Field>` leitet die Stufe aus dem
+// Eingabefeld ab (`widthOf`), ein Baustein als Funktion (`{(control) => …}`) nennt sie selbst; kein Eingabefeld,
+// keine Beschriftung und kein `<Field>` trägt eine Breite als Inline-Stil, und in index.css steht keine Breite in px
+// für Eingabefelder (außer dem Kästchen). Die Breiten stehen als Stufen in tw.css (`width-s` … `width-full`, die
+// Längen `--field-s` … in den Tokens von index.css).
+const fieldWidthProblems = (file: string, src: string): string[] => {
+  const problems: string[] = []
+  for (const { at, tag } of openingTags(src, 'Field')) {
+    if (/\/>$/.test(tag)) continue
+    const after = src.slice(at + tag.length).trimStart()
+    if (after.startsWith('{(') && !/\bwidth=/.test(tag)) problems.push(`${file}: <Field> mit Funktion ohne width: ${tag.slice(0, 60)}`)
+  }
+  for (const m of src.matchAll(/<(?:input|select|textarea|label|Field|MonthField)\b[^>]*?style=\{\{[^}]*\b(?:width|minWidth|maxWidth)\s*:/g)) problems.push(`${file}: feste Breite als Inline-Stil: ${m[0].slice(0, 80)}`)
+  return problems
+}
+test('S28: Felder mit Breitenstufe, keine festen Breiten', () => {
+  expect(fieldWidthProblems('probe', '<Field label="Monat">{(c) => <input {...c} />}</Field>')).toHaveLength(1)
+  expect(fieldWidthProblems('probe', '<Field label="Monat" width="s">{(c) => <input {...c} />}</Field>')).toEqual([])
+  expect(fieldWidthProblems('probe', '<input value={v} style={{ width: 100, textAlign: \'right\' }} />')).toHaveLength(1)
+  expect(fieldWidthProblems('probe', '<div className="bar" style={{ width: `${p}%` }} />')).toEqual([])
+  expect(files.flatMap((f) => fieldWidthProblems(f, sources[f] ?? ''))).toEqual([])
+  // index.css: keine Breite in px an Eingabefeldern oder Feldern, außer Kästchen und Optionsfeld
+  const pxWidths = css.split('\n').filter((l) => /(?:input|select|textarea|\.field)\b[^{]*\{[^}]*\b(?:min-|max-)?width:\s*\d+px/.test(l) && !/checkbox|radio/.test(l))
+  expect(pxWidths).toEqual([])
+  // Die Stufen stehen in tw.css, ebenso die Vorgabe nach Feldart für Beschriftungen von Hand (wie `widthOf` in Field.tsx)
+  for (const stage of ['width-s', 'width-m', 'width-l', 'width-full']) expect(twCss).toMatch(new RegExp(`@utility ${stage} \\{`))
+  expect(fieldsCss).toMatch(/\.field:has\(> input:is\(\[type='date'\]/)
+  expect(fieldsCss).toMatch(/\.field:has\(> textarea\)/)
 })

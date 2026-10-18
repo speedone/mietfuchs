@@ -613,7 +613,7 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
           <div className="row">
             <label className="field">
               Betrag laut Beleg
-              <input value={amountCheck.amount} placeholder={fmtEuro(amountCheck.item.amountCents)} className="input-num"
+              <input inputMode="decimal" value={amountCheck.amount} placeholder={fmtEuro(amountCheck.item.amountCents)} className="input-num"
                 onChange={(e) => setAmountCheck({ ...amountCheck, amount: e.target.value, problem: '' })} />
             </label>
             <button className="btn small" onClick={() => void saveCheckedAmount()} disabled={!amountCheck.amount.trim()}>Betrag speichern</button>
@@ -645,7 +645,7 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
               Belege aller Jahre zeigen
             </span>
           </label>
-          <label className="field grow">
+          <label className="field">
             Suche
             <input
               type="search"

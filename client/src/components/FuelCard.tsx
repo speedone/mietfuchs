@@ -237,7 +237,7 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
         </span>
         {open === 'payment' && <p className="hint">{PAYMENT_GUIDE}</p>}
         {open === 'reassign' && (<>
-          <label className="field grow">
+          <label className="field">
             Lieferung, die die Gutschrift berichtigt
             <select aria-label={`Lieferung, die die Gutschrift ${name} berichtigt`} value={reassign.targetId} onChange={(e) => setReassign((f) => ({ ...f, targetId: targets.find((o) => o.value === e.target.value)?.value ?? '' }))}>
               {targets.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -273,7 +273,8 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
   )
 
   return (
-    <Card title={<Term id="accrualPrinciple">Lieferungen</Term>} level={3}>
+    // Neues anlegen oben rechts im Kartenkopf (#346 Schritt 7b); das Auslesen mit der KI bleibt unter der Liste.
+    <Card title={<Term id="accrualPrinciple">Lieferungen</Term>} level={3} aside={!view.closed && editing === null ? <button className="btn secondary" onClick={() => open(null)}>+ Lieferung anlegen</button> : undefined}>
       <ErrorSummary errors={errors} />
       {stock ? (
         <p className="muted">
@@ -337,7 +338,7 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
         >
           {checks.length > 0 && <ul className="notice">{checks.map((c) => <li key={c}>{c}</li>)}</ul>}
           {plant.supply === 'perUnit' && (
-            <Field label="Wohnung" required className="grow" {...formErrors.field('unitId')}>
+            <Field label="Wohnung" required {...formErrors.field('unitId')}>
               <select value={form.unitId} onChange={(e) => set('unitId', e.target.value)}>
                 <option value="">— bitte wählen —</option>
                 {units.filter((u) => !plant.units || plant.units.some((x) => x.unitId === u.id)).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
@@ -457,7 +458,6 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
       )}
       {!view.closed && editing === null && (
         <div className="row">
-          <button className="btn" onClick={() => open(null)}>+ Lieferung anlegen</button>
           {reading === null ? (
             <label className="btn secondary">
               Rechnung mit KI auslesen

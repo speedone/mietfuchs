@@ -55,7 +55,7 @@ export default function HeatingInfoCard({ plant, view, onChanged }: { plant: Hea
         Erfassung aus den Positionen mit dem Teil „Messdienst, Ablesung, Geräte“; was hier fehlt, nennt die Abrechnung mit der Kürzung, die die Mieter dann
         erklären dürfen.
       </p>
-      <label className="field grow">
+      <label className="field">
         <span>Steuern, Abgaben und Zölle laut Rechnung des Versorgers</span>
         <input value={form.taxes} disabled={view.closed} onChange={set('taxes')} placeholder="z. B. Energiesteuer 312,00 €, Umsatzsteuer 19 %" />
       </label>
@@ -82,7 +82,7 @@ export default function HeatingInfoCard({ plant, view, onChanged }: { plant: Hea
               <span>Vergleichswert eines Durchschnittsnutzers (kWh je m² Wohnfläche)</span>
               <input inputMode="decimal" value={form.reference} disabled={view.closed} onChange={set('reference')} />
             </label>
-            <label className="field grow wide">
+            <label className="field width-l">
               <span>Quelle des Vergleichswerts</span>
               <input value={form.referenceSource} disabled={view.closed} onChange={set('referenceSource')} placeholder="z. B. Vergleichswerte Ihres Ablesedienstes" />
             </label>
@@ -100,7 +100,7 @@ export default function HeatingInfoCard({ plant, view, onChanged }: { plant: Hea
               <span>Klimafaktor der vorigen Heizperiode</span>
               <input inputMode="decimal" value={form.climateFactorPrev} disabled={view.closed} onChange={set('climateFactorPrev')} />
             </label>
-            <label className="field grow wide">
+            <label className="field width-l">
               <span>Quelle der Klimafaktoren</span>
               <input value={form.climateSource} disabled={view.closed} onChange={set('climateSource')} placeholder="z. B. Deutscher Wetterdienst, Klimafaktoren" />
             </label>
@@ -110,7 +110,7 @@ export default function HeatingInfoCard({ plant, view, onChanged }: { plant: Hea
       )}
       {attaches && (
         <>
-          <label className="field grow wide">
+          <label className="field width-l">
             <span>Der Vergleich des Ablesedienstes liegt der Abrechnung bei: Quelle</span>
             <input value={form.comparisonSource} disabled={view.closed} onChange={set('comparisonSource')} placeholder="z. B. Verbrauchsvergleich des Ablesedienstes, Anlage zur Abrechnung" />
           </label>
@@ -124,14 +124,14 @@ export default function HeatingInfoCard({ plant, view, onChanged }: { plant: Hea
           </p>
         </>
       )}
-      <label className="field grow">
+      <label className="field">
         <span>Ist Ihr Mietvertrag ein Verbrauchervertrag?</span>
         <select value={contract.contract} disabled={view.closed} onChange={(e) => setContract({ ...contract, contract: e.target.value as ContractForm['contract'] })}>
           {CONTRACT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
       </label>
       {contract.contract === 'yes' && (
-        <label className="field grow">
+        <label className="field">
           <span>Information zur Streitbeilegung nach dem Verbraucherstreitbeilegungsgesetz</span>
           <input value={contract.disputeText} disabled={view.closed} onChange={(e) => setContract({ ...contract, disputeText: e.target.value })} />
         </label>

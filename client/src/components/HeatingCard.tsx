@@ -5,6 +5,7 @@ import { useProperty, withProperty } from '../property'
 import { periodContaining, periodLabel, periodOfKey, rulesOf } from '../../../shared/period.ts'
 import { useConfirm, useToast } from './feedback'
 import Drawer from './Drawer'
+import { CardHeader } from './Card'
 import { useSaving } from '../useSaving'
 import Term from './Term'
 import HeatingPeriodSection from './HeatingPeriodSection'
@@ -262,7 +263,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
   const shownWho: WhoSettles = form !== null && whoOptions(kind, form, editingId).some((o) => o.value === form.who) ? form.who : ''
   const selfSupplyForm = form !== null && ((form.energy === 'perUnit' && form.contract === 'tenant') || fuelByTenant)
   const unitChoice = form && (
-    <fieldset className="field grow no-connection">
+    <fieldset className="field no-connection">
       <legend className="field-legend">Welche Wohnungen hängen an dieser Heizung?</legend>
       <div className="checks">
         {units.map((u) => (
@@ -287,7 +288,8 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
 
   return (
     <div className="card" ref={cardRef}>
-      <h2><Term id="heatingSystem">Heizung</Term></h2>
+      {/* Eine weitere Anlage legt der Kopf an, oben rechts wie jede Listenaktion (#346 Schritt 7b). */}
+      <CardHeader title={<Term id="heatingSystem">Heizung</Term>} aside={plants.length > 0 ? <button className="btn secondary" onClick={openNew}>+ Heizanlage anlegen</button> : undefined} />
       {!form && !swap && <ErrorSummary errors={errors} />}
       {/* Leerer Bestand (#346, Schritt 10, M14): Die Einrichtung fragt nach den versorgten Wohnungen. */}
       {plants.length === 0 && units.length === 0 && (
@@ -321,9 +323,6 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
           />
         </div>
       ))}
-      {plants.length > 0 && (
-        <button className="btn secondary" onClick={openNew}>+ Heizanlage anlegen</button>
-      )}
       {form && (
         <Drawer
           // Ein anderer Datensatz im offenen Fenster ist ein neues Formular (Durchsicht S3)
@@ -338,7 +337,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
           actions={<button className="btn" disabled={saving.busy} onClick={() => void saving.run(save)}>{editingId ? 'Speichern' : 'Anlegen'}</button>}
         >
           {plants.length > (editingId ? 1 : 0) && (
-            <label className="field grow">
+            <label className="field">
               {editingId ? 'Name der Heizanlage' : 'Name der neuen Heizanlage'}
               <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="etwa „Haus B“ oder „Gastherme DG“" />
             </label>
@@ -350,7 +349,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
                 nicht für die neue anhaken.
               </p>
               {Object.entries(form.otherNames).map(([id, value]) => (
-                <label key={id} className="field grow">
+                <label key={id} className="field">
                   Name der bisherigen Heizanlage
                   <input value={value} onChange={(e) => setForm({ ...form, otherNames: { ...form.otherNames, [id]: e.target.value } })} placeholder="etwa „Zentralheizung“" />
                 </label>
@@ -358,7 +357,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
             </>
           )}
           {(editingId ? plants.find((p) => p.id === editingId)?.buildingWith != null : plants.some((p) => p.endsOn === null)) && (
-            <label className="field grow">
+            <label className="field">
               {editingId ? 'Steht diese Heizanlage im selben Gebäude wie eine andere?' : 'Steht die neue Heizanlage im selben Gebäude wie eine bisherige?'}
               <select value={form.building} onChange={(e) => setForm({ ...form, building: e.target.value })}>
                 {!editingId && <option value="">— bitte wählen —</option>}
@@ -368,7 +367,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
             </label>
           )}
           {editingId && form.takesOverStock !== '' && (
-            <label className="field grow">
+            <label className="field">
               {TAKES_OVER_QUESTION}
               <select value={form.takesOverStock} onChange={(e) => setForm({ ...form, takesOverStock: e.target.value === 'no' ? 'no' : 'yes' })}>
                 {TAKES_OVER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -376,7 +375,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
               <small className="muted">{TAKES_OVER_HINT}</small>
             </label>
           )}
-          <label className="field grow">
+          <label className="field">
             Womit wird geheizt?
             <select value={form.energy} onChange={(e) => setForm({ ...form, energy: e.target.value as EnergyAnswer | '' })}>
               <option value="">— bitte wählen —</option>
@@ -386,7 +385,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
           <small className="muted">{HOW_TO_TELL.energy}</small>
           {/* Heizung PR 16 (#213): Contracting bei einer zentralen Anlage außer Fernwärme, und die Umstellung. */}
           {asksContracting(form.energy) && (
-            <label className="field grow">
+            <label className="field">
               <span>
                 <input type="checkbox" checked={form.contracting} onChange={(e) => setForm({ ...form, contracting: e.target.checked })} />
                 {' '}{CONTRACTING_LABEL}
@@ -398,7 +397,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
           )}
           {form.energy === 'perUnit' ? (
             <>
-              <label className="field grow">
+              <label className="field">
                 Wer hat den Vertrag für die Heizung in der Wohnung?
                 <select value={form.contract} onChange={(e) => setForm({ ...form, contract: e.target.value as PerUnitContract })}>
                   <option value="">— bitte wählen —</option>
@@ -408,7 +407,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
               {form.contract === 'tenant' && unitChoice}
               {form.contract === 'landlord' && (
                 <>
-                  <label className="field grow">
+                  <label className="field">
                     Womit heizen die Etagenheizungen?
                     <select value={form.perUnitEnergy} onChange={(e) => setForm({ ...form, perUnitEnergy: e.target.value as HeatingEnergy | '' })}>
                       <option value="">— bitte wählen —</option>
@@ -432,7 +431,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
           ) : fuelByTenant ? (
             <>
               {/* Heizung PR 19: zentrale Heizung, Brennstoffvertrag beim Mieter; keine Anlage. */}
-              <label className="field grow">
+              <label className="field">
                 {FUEL_CONTRACT_QUESTION}
                 <select value={form.fuelContract} onChange={(e) => setForm({ ...form, fuelContract: FUEL_CONTRACT_OPTIONS.find((o) => o.value === e.target.value)?.value ?? 'landlord' })}>
                   {FUEL_CONTRACT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -444,7 +443,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
           ) : (
             <>
               {asksFuelContract(form, editingId) && (
-                <label className="field grow">
+                <label className="field">
                   {FUEL_CONTRACT_QUESTION}
                   <select value={form.fuelContract} onChange={(e) => setForm({ ...form, fuelContract: FUEL_CONTRACT_OPTIONS.find((o) => o.value === e.target.value)?.value ?? 'landlord' })}>
                     {FUEL_CONTRACT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -452,7 +451,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
                 </label>
               )}
               {editFuelContractNote(form, editingId) && <small className="muted">{editFuelContractNote(form, editingId)}</small>}
-              <label className="field grow">
+              <label className="field">
                 Wer erstellt Ihre Heizkostenabrechnung?
                 <select value={shownWho} onChange={(e) => setForm({ ...form, who: e.target.value as WhoSettles })}>
                   <option value="">— bitte wählen —</option>
@@ -463,21 +462,21 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
               {whoHint(shownWho, kind) && <p className="muted">{whoHint(shownWho, kind)}</p>}
               {unitChoice}
               {asksRemote(form.who) && (<>
-              <label className="field grow">
+              <label className="field">
                 Sind die Zähler und Heizkostenverteiler aus der Ferne ablesbar?
                 <select value={form.remote} onChange={(e) => setForm({ ...form, remote: e.target.value as DevicesRemote })}>
                   {REMOTE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </label>
               <small className="muted">Woran erkenne ich das? Fernablesbare Geräte liest der Messdienst per Funk ab, ohne die Wohnungen zu betreten. Im Zweifel fragen Sie Ihren Messdienst.</small>
-              <label className="field grow">
+              <label className="field">
                 {`Wurden sie nach dem ${NEW_DEVICES_AFTER} eingebaut?`}
                 <select value={form.installedAfter} onChange={(e) => setForm({ ...form, installedAfter: e.target.value as DevicesInstalledAfter })}>
                   {INSTALLED_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </label>
               {asksNewInstall(form) && (
-                <label className="field grow">
+                <label className="field">
                   {NEW_INSTALL_QUESTION}
                   <select value={form.newInstall} onChange={(e) => setForm({ ...form, newInstall: e.target.value as NewDevicesInstall | '' })}>
                     {NEW_INSTALL_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -490,25 +489,25 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
               </>)}
               {form.energy === 'heatPump' && (
                 <>
-                  <label className="field grow">
+                  <label className="field">
                     {`Wurde der Verbrauch der Wärmepumpe am ${NEWER_THAN} schon erfasst?`}
                     <select value={form.captured} onChange={(e) => setForm({ ...form, captured: e.target.value as CaptureAnswer })}>
                       {CAPTURE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
                   </label>
                   {form.captured === 'no' && (
-                    <label className="field grow">
+                    <label className="field">
                       Seit wann wird er erfasst?
                       <input type="date" value={form.captureInstalledOn} onChange={(e) => setForm({ ...form, captureInstalledOn: e.target.value })} />
                     </label>
                   )}
                   {form.captured === 'newer' && (
-                    <label className="field grow">
+                    <label className="field">
                       Einbaudatum der Wärmepumpe
                       <input type="date" value={form.heatPumpInstalledOn} onChange={(e) => setForm({ ...form, heatPumpInstalledOn: e.target.value })} />
                     </label>
                   )}
-                  <label className="field grow">
+                  <label className="field">
                     Nur bei Warmmiete ohne Abrechnung: durchschnittliche Heizkosten 2022 bis 2024 (€ im Jahr)
                     <input inputMode="decimal" value={form.warmRentAverage} onChange={(e) => setForm({ ...form, warmRentAverage: e.target.value })} />
                     <small className="muted">Bei einer Bruttowarmmiete bestimmt § 12 Abs. 3 HeizkostenV, wie diese Kosten zu ermitteln sind. Mietfuchs rechnet damit in einer späteren Version; tragen Sie den Betrag ein, sobald Sie ihn kennen.</small>
@@ -517,7 +516,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
               )}
               {/* Heizung PR 11 (Durchsicht von #240, Recht-I1/I2): Fragen an die Anlage, nicht an eine Heizperiode. */}
               {asksGeneration(form) && (
-                <label className="field grow">
+                <label className="field">
                   {GENERATION_QUESTION}
                   <select value={form.generation} onChange={(e) => setForm({ ...form, generation: HEAT_GENERATION_OPTIONS.find((o) => o.value === e.target.value)?.value ?? '' })}>
                     {HEAT_GENERATION_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -526,7 +525,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
                 </label>
               )}
               {form.energy === 'heatPump' && (
-                <label className="field grow">
+                <label className="field">
                   {MAJORITY_QUESTION}
                   <select value={form.majority} onChange={(e) => setForm({ ...form, majority: MAJORITY_OPTIONS.find((o) => o.value === e.target.value)?.value ?? '' })}>
                     {MAJORITY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -579,11 +578,11 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
             er über denselben Zähler, etwa Gas, brauchen Sie keinen Tausch. Stellen Sie während eines Abrechnungszeitraums auf
             Wärmelieferung durch einen Dritten (Contracting) um oder zurück, erfassen Sie das ebenfalls hier, auch beim selben Brennstoff.
           </p>
-          <label className="field grow">
+          <label className="field">
             Seit wann heizt die neue Heizung?
             <input type="date" value={swap.form.date} onChange={(e) => setSwap({ ...swap, form: { ...swap.form, date: e.target.value } })} />
           </label>
-          <label className="field grow">
+          <label className="field">
             Womit heizt die neue Heizung?
             <select value={swap.form.energy} onChange={(e) => setSwap({ ...swap, form: { ...swap.form, energy: e.target.value as HeatingEnergy | '' } })}>
               <option value="">— bitte wählen —</option>
@@ -592,7 +591,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
           </label>
           {/* Heizung PR 16 (Prüfung C-M1): Die Umstellung auf Wärmelieferung oder zurück in einem offenen Zeitraum. */}
           {asksContracting(swap.form.energy) && (
-            <label className="field grow">
+            <label className="field">
               <span>
                 <input type="checkbox" checked={swap.form.contracting ?? swap.plant.contracting} onChange={(e) => setSwap({ ...swap, form: contractingSwap(swap.form, e.target.checked, swap.plant) })} />
                 {' '}{CONTRACTING_LABEL}
@@ -606,7 +605,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
             />
           )}
           {asksTakeOver(swap.form, swap.plant) && (
-            <label className="field grow">
+            <label className="field">
               {TAKES_OVER_QUESTION}
               <select value={swap.form.takesOverStock} onChange={(e) => setSwap({ ...swap, form: { ...swap.form, takesOverStock: e.target.value === 'no' ? 'no' : 'yes' } })}>
                 {TAKES_OVER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -614,11 +613,11 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
               <small className="muted">{TAKES_OVER_HINT}</small>
             </label>
           )}
-          <label className="field grow">
+          <label className="field">
             Name der neuen Heizanlage
             <input value={swap.form.name} onChange={(e) => setSwap({ ...swap, form: { ...swap.form, name: e.target.value } })} placeholder="etwa „Gastherme“" />
           </label>
-          <label className="field grow">
+          <label className="field">
             Name der bisherigen Heizanlage
             <input value={swap.form.previousName} onChange={(e) => setSwap({ ...swap, form: { ...swap.form, previousName: e.target.value } })} placeholder="etwa „Ölkessel“" />
           </label>
@@ -629,7 +628,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
                 Heizkosten der Heizperiode nicht. Sie können sie auch später auf der Seite Zähler eintragen.
               </p>
               {swap.meters.map((m) => (
-                <label className="field grow" key={m.id}>
+                <label className="field" key={m.id}>
                   Stand „{m.name}“ am letzten Tag der bisherigen Heizung{m.unit ? ` (${m.unit})` : ''}
                   <input inputMode="decimal" value={swap.form.meterValues?.[m.id] ?? ''} onChange={(e) => setSwap({ ...swap, form: { ...swap.form, meterValues: { ...swap.form.meterValues, [m.id]: e.target.value } } })} />
                 </label>

@@ -36,6 +36,22 @@ export function RequiredLegend({ className }: { className?: string }) {
   return <p className={className ? `muted text-xs m-0 ${className}` : 'muted text-xs m-0'}><span aria-hidden="true" className="text-red">*</span> Pflichtangabe</p>
 }
 
+export type FieldWidth = 's' | 'm' | 'l' | 'full'
+
+// Die Vorgabe nach Feldart, dieselbe wie die Regeln in tw.css (`.field:has(…)`), die auch für ein `label.field` von
+// Hand gelten: Datum, Uhrzeit, Beträge und Zahlen kurz, ein Textfeld (`<textarea>`) voll, ein Auswahlfeld so breit
+// wie sein längster Eintrag (mindestens kurz), alles andere lang. Ein Baustein als Funktion (MonthField,
+// IbanInput) nennt seine Stufe selbst (Wächter in uiRules.test.ts).
+export function widthOf(width: FieldWidth | undefined, children: Props['children']): FieldWidth | 'select' {
+  if (width) return width
+  if (!isValidElement(children)) return 'l'
+  const props = children.props as { type?: unknown; inputMode?: unknown }
+  if (children.type === 'textarea') return 'full'
+  if (children.type === 'select') return 'select'
+  if (children.type === 'input' && (props.type === 'date' || props.type === 'time' || props.inputMode === 'decimal' || props.inputMode === 'numeric')) return 's'
+  return 'l'
+}
+
 type Props = {
   label: ReactNode
   /** Pflichtangabe: Sternchen hinter der Beschriftung und `required` am Eingabefeld; genau die Felder, die die Prüfung verlangt. */
@@ -48,8 +64,10 @@ type Props = {
   onFix?: () => void
   /** Liest der Bildschirmleser die Meldung sofort vor, auch ohne Sammelmeldung (Prüfung beim Verlassen). */
   announce?: boolean
-  /** Breite nach Inhalt: `s` für Betrag und Postleitzahl, `m` für Monat und Auswahl; ohne die volle Spalte. */
-  width?: 's' | 'm'
+  /** Breitenstufe (#346 Schritt 7b): `s` kurz (Betrag, Datum, Monat, PLZ, Fläche, Zählerstand), `m` mittel,
+   *  `l` lang (Adresse, Name, Bezeichnung), `full` volle Breite. Ohne Angabe die Vorgabe nach Feldart (`widthOf`);
+   *  bei einem Auswahlfeld ist die Stufe nur die Mindestbreite, es wird so breit wie sein längster Eintrag. */
+  width?: FieldWidth
   className?: string
   children: ReactElement<Record<string, unknown>> | ((props: FieldControlProps) => ReactNode)
 }
@@ -71,7 +89,8 @@ export default function Field({ label, required, hint, error, id, onFix, announc
   }
   const register = useContext(RequiredScope)
   useLayoutEffect(() => (required && register ? register() : undefined), [required, register])
-  const classes = ['field', width === 's' ? 'width-s' : width === 'm' ? 'width-m' : '', className ?? ''].filter(Boolean).join(' ')
+  const stage = widthOf(width, children)
+  const classes = ['field', stage === 'select' ? '' : `width-${stage}`, className ?? ''].filter(Boolean).join(' ')
   return (
     <label className={classes} onChange={onFix ? () => onFix() : undefined}>
       <span>
