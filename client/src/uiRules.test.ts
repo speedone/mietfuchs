@@ -404,6 +404,81 @@ test('S12: Dialoge nur in den erlaubten Bausteinen', () => {
   expect(files.filter((file) => !DIALOG_FILES.has(file) && dialogUses(sources[file] ?? '').length > 0)).toEqual([])
 })
 
+// S12b (#346 Schritt 2): Jedes Seitenfenster fragt beim Schließen mit Änderungen nach. Dafür nennt jedes
+// `<Drawer>` seinen Stand (`value`, im Typ Pflicht; hier zusätzlich: kein fester Wert wie `null` oder `{}`,
+// der jede Änderung verschwiege), und keines baut im Fuß einen eigenen Weg zum Schließen, der an der
+// Rückfrage vorbeiginge: „Abbrechen“ und der Hinweis auf die Tastenkürzel kommen aus dem Baustein, `footer`
+// gibt es nicht mehr, nur `actions`.
+/** Die öffnenden Tags `<Drawer …>` einer Datei, mit allen Props (geschweifte Klammern mitgezählt). */
+const drawerTags = (src: string): string[] => {
+  const out: string[] = []
+  for (const m of src.matchAll(/<Drawer\b/g)) {
+    let depth = 0
+    let i = m.index ?? 0
+    for (; i < src.length; i++) {
+      const c = src[i]
+      if (c === '{') depth++
+      else if (c === '}') depth--
+      else if (c === '>' && depth === 0 && src[i - 1] !== '=') break
+    }
+    out.push(src.slice(m.index, i + 1))
+  }
+  return out
+}
+/** Der Ausdruck einer Prop `name={…}` im Tag, mit Klammern gezählt; `null`, wenn es sie nicht gibt. */
+const propExpr = (tag: string, name: string): string | null => {
+  const m = new RegExp(`\\b${name}=\\{`).exec(tag)
+  if (!m) return null
+  let depth = 1
+  let i = m.index + m[0].length
+  const start = i
+  for (; i < tag.length && depth > 0; i++) {
+    if (tag[i] === '{') depth++
+    else if (tag[i] === '}') depth--
+  }
+  return tag.slice(start, i - 1)
+}
+const drawerProblems = (tag: string): string[] => {
+  const problems: string[] = []
+  const value = propExpr(tag, 'value')
+  if (value === null) problems.push('ohne value')
+  else if (/^\s*(?:null|undefined|true|false|\{\s*\}|\[\s*\]|['"`][\s\S]*|-?\d[\d.]*)\s*$/.test(value)) problems.push(`value fest: ${value.trim()}`)
+  if (/\bfooter=/.test(tag)) problems.push('footer statt actions')
+  const actions = propExpr(tag, 'actions') ?? ''
+  // Ein Schließen in `actions` ginge an der Rückfrage vorbei: die Wörter des Bausteins, der Schließer des
+  // Aufrufers (ein Name wie `close` oder `onCancel`, als Aufruf oder als Handler) und jedes Leeren eines
+  // Formularzustands (`setForm(null)`), gleich mit welcher Beschriftung.
+  const onClose = (propExpr(tag, 'onClose') ?? '').trim()
+  const closer = /^[A-Za-z_$][\w$.]*$/.test(onClose) ? onClose : null
+  const callsCloser = closer !== null && new RegExp(`(?:\\b|\\{)${closer.replace(/[.$]/g, '\\$&')}\\s*(?:\\(|\\})`).test(actions)
+  if (/Abbrechen|Später|drawer-hint|\bonClose\b|btn ghost/.test(actions) || /\bset[A-Z]\w*\(\s*null\s*\)/.test(actions) || callsCloser) {
+    problems.push('eigener Weg zum Schließen in actions')
+  }
+  return problems
+}
+test('S12b: jedes Seitenfenster nennt seinen Stand und schließt nur über den Baustein', () => {
+  // Probe des Prüfers
+  expect(drawerProblems(drawerTags('<Drawer open title="x" value={form} onClose={() => setForm(null)} actions={<button onClick={save}>Speichern</button>}>')[0] ?? '')).toEqual([])
+  expect(drawerProblems(drawerTags('<Drawer open title="x" onClose={close} footer={<><button className="btn ghost" onClick={close}>Abbrechen</button></>}>')[0] ?? ''))
+    .toEqual(['ohne value', 'footer statt actions'])
+  expect(drawerProblems(drawerTags('<Drawer open value={null} onClose={close} actions={<button onClick={close}>Abbrechen</button>}>')[0] ?? ''))
+    .toEqual(['value fest: null', 'eigener Weg zum Schließen in actions'])
+  // Durchsicht S1: ein leeres Objekt und Schließknöpfe ohne Stichwort
+  expect(drawerProblems(drawerTags('<Drawer open value={{}} onClose={() => setForm(null)}>')[0] ?? '')).toEqual(['value fest: {}'])
+  expect(drawerProblems(drawerTags('<Drawer open value={form} onClose={() => setForm(null)} actions={<><button className="btn secondary" onClick={() => setForm(null)}>Zurück</button><button onClick={save}>Speichern</button></>}>')[0] ?? ''))
+    .toEqual(['eigener Weg zum Schließen in actions'])
+  expect(drawerProblems(drawerTags('<Drawer open value={form} onClose={close} actions={<button className="btn secondary" onClick={close}>Zurück</button>}>')[0] ?? ''))
+    .toEqual(['eigener Weg zum Schließen in actions'])
+  expect(drawerProblems(drawerTags('<Drawer open value={form} onClose={close} actions={<button onClick={() => { void save(); close() }}>Fertig</button>}>')[0] ?? ''))
+    .toEqual(['eigener Weg zum Schließen in actions'])
+  // Ein Name, der nur mit dem Schließer beginnt, ist keiner
+  expect(drawerProblems(drawerTags('<Drawer open value={{ form, plant }} onClose={close} actions={<button onClick={closeWithFuel}>Speichern</button>}>')[0] ?? '')).toEqual([])
+  const tags = files.filter((file) => file !== './components/Drawer.tsx').flatMap((file) => drawerTags(sources[file] ?? '').map((tag) => ({ file, tag })))
+  // Die Seitenfenster heute: Zähler, Zahlung, Kosten, Mietverhältnis, Wohnung, Objekt, Heizung, Kesseltausch, eigene Heizkostenabrechnung
+  expect(tags.length).toBeGreaterThanOrEqual(9)
+  expect(tags.flatMap(({ file, tag }) => drawerProblems(tag).map((p) => `${file}: ${p}`))).toEqual([])
+})
+
 // S13 (Spezifikation Abschnitt 9, #346 Schritt 1): Kein Dialogbaustein fängt Enter ab. Enter wirkt auf den
 // Knopf mit dem Fokus, das tut der Browser selbst; ein eigener Abfänger bestätigte früher auch mit dem
 // Fokus auf „Abbrechen“ (UI-Durchsicht H1). Geprüft werden die Bausteine aus S12 und der Tastaturhelfer
@@ -491,8 +566,10 @@ test('S23: Tabellen mit Datensätzen werden am Handy zu Karten, jede Zelle mit i
 // S24 (#346 Schritt 9, Nachprüfung): Seit `viewport-fit=cover` (index.html) legt iOS die Seite unter
 // Kerbe, Statusleiste und Home-Indikator. Was am Fensterrand steht (fest oder angeheftet an oben/unten),
 // hält deshalb die Sicherheitsränder mit `env(safe-area-inset-*)` ein. Eine Fläche über allem (Hintergrund
-// eines Seitenfensters) braucht sie selbst nicht, wohl aber das, was darin am Rand steht.
-const OVERLAY_CONTENT = new Map([['.drawer-backdrop', '.drawer']])
+// eines Overlays) braucht sie selbst nicht, wohl aber das, was darin am Rand steht. Seitenfenster, Rückfrage
+// und Menüblatt sind seit #346 Schritt 1, 2 und 9 `<dialog>` im Top-Layer, ihren Hintergrund zeichnet
+// `::backdrop`; heute gibt es kein solches Paar mehr.
+const OVERLAY_CONTENT = new Map<string, string>()
 const cssRules = (source: string) =>
   [...source.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({ selector: (m[1] ?? '').trim().replace(/\s+/g, ' '), body: m[2] ?? '' }))
 const atEdge = (body: string) => /position:\s*fixed/.test(body) || (/position:\s*sticky/.test(body) && /(?:^|;)\s*(?:top|bottom):/.test(body))

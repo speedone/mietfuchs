@@ -55,14 +55,10 @@ export default function HeatingSelfSetup({ plant, period, periodLabel, onDone, o
       title="Heizkosten selbst abrechnen"
       onClose={onCancel}
       onSubmit={submit}
-      footer={
-        <>
-          <span className="drawer-hint">Strg+S speichert · Esc schließt</span>
-          <span className="spacer" />
-          <button className="btn ghost" onClick={onCancel} disabled={busy}>Später</button>
-          <button className="btn" onClick={submit} disabled={busy}>Umstellen</button>
-        </>
-      }
+      value={form}
+      cancelLabel="Später"
+      busy={busy}
+      actions={<button className="btn" onClick={submit} disabled={busy}>Umstellen</button>}
     >
       {error && <div className="error">{error}</div>}
       <p className="muted">

@@ -5,6 +5,7 @@
 import { calendarPeriod } from '../../../shared/period.ts'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { press } from '../testing/keys'
 import type { CostItem, Unit } from '../types'
 import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
@@ -98,4 +99,19 @@ test('Kostenformular: „Trotzdem anlegen“ legt an; beim Bearbeiten wird nicht
   await waitFor(() => expect(sent).toHaveLength(2), SLOW)
   expect(sent[1]).toMatchObject({ method: 'PUT', url: '/api/costItems/gs' })
   expect(screen.queryByRole('button', { name: 'Trotzdem anlegen' })).toBeNull()
+})
+
+// Durchsicht S3 (#346, Schritt 2): „Stattdessen … bearbeiten“ zeigt im offenen Fenster einen anderen
+// Datensatz. Das ist ein neues Formular: Ohne Eingabe darin schließt Esc ohne Rückfrage.
+test('„Stattdessen bearbeiten“: die vorhandene Position gilt im Fenster als unverändert', async () => {
+  items = [estimate(YEAR)]
+  kostenPage()
+  await screen.findByText(`Grundsteuer ${YEAR}`, {}, SLOW)
+  await fillNewGrundsteuer()
+  fireEvent.click(await screen.findByRole('button', { name: `Stattdessen „Grundsteuer ${YEAR}“ bearbeiten` }, SLOW))
+  await waitFor(() => expect((screen.getByLabelText(/Beschreibung/) as HTMLInputElement).value).toBe(`Grundsteuer ${YEAR}`), SLOW)
+  screen.getByLabelText(/Beschreibung/).focus()
+  press('Escape')
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull(), SLOW)
+  expect(screen.queryByRole('alertdialog')).toBeNull()
 })

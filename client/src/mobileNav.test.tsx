@@ -160,11 +160,8 @@ test('⇅ öffnet das Blatt auf der Objektwahl; bei offenem Formular fragt der W
   // Ein offenes Formular im Objekt Lindenweg 12
   fireEvent.click(within(bar()).getByRole('button', { name: 'Mehr' }))
   await waitFor(() => expect(sheet().open).toBe(true))
-  fireEvent.click(within(sheet()).getByRole('button', { name: /Mietkonto/ }))
-  const add = await screen.findByRole('button', { name: /Zahlung erfassen/ })
-  await waitFor(() => expect((add as HTMLButtonElement).disabled).toBe(false))
-  fireEvent.click(add)
-  fireEvent.change(screen.getByLabelText(/^Betrag/), { target: { value: '11,11' } })
+  fireEvent.click(within(sheet()).getByRole('button', { name: /Einstellungen/ }))
+  fireEvent.change(await screen.findByLabelText('Name des Vermieters'), { target: { value: 'Erika Muster' } })
 
   const swap = screen.getByRole('button', { name: /^Objekt und Zeitraum wechseln/ })
   fireEvent.click(swap)
@@ -181,7 +178,7 @@ test('⇅ öffnet das Blatt auf der Objektwahl; bei offenem Formular fragt der W
   expect(sheet().open).toBe(true)
   expect(document.activeElement).toBe(select)
   expect(screen.getByTestId('mobile-context').textContent).toMatch(/^Lindenweg 12 · /)
-  expect((screen.getByLabelText(/^Betrag/) as HTMLInputElement).value).toBe('11,11')
+  expect((screen.getByLabelText('Name des Vermieters') as HTMLInputElement).value).toBe('Erika Muster')
 
   // Zweiter Versuch, diesmal bestätigt
   fireEvent.change(within(sheet()).getByLabelText('Objekt wählen'), { target: { value: 'objekt-2' } })
@@ -220,16 +217,15 @@ test('Objektwahl im Blatt ohne offenes Formular: das Blatt bleibt offen, auch ü
   expect(sheet().open).toBe(true)
 })
 
+// Eine angefangene Eingabe auf einer Karte (Einstellungen). Ein Seitenfenster taugt dafür nicht mehr: Es ist
+// seit #346 Schritt 2 modal, Kopf und untere Leiste sind dahinter inert, das Blatt lässt sich also gar nicht öffnen.
 async function openPaymentForm() {
   render(<App />)
   await screen.findByTestId('mobile-context')
   fireEvent.click(within(bar()).getByRole('button', { name: 'Mehr' }))
   await waitFor(() => expect(sheet().open).toBe(true))
-  fireEvent.click(within(sheet()).getByRole('button', { name: /Mietkonto/ }))
-  const add = await screen.findByRole('button', { name: /Zahlung erfassen/ })
-  await waitFor(() => expect((add as HTMLButtonElement).disabled).toBe(false))
-  fireEvent.click(add)
-  fireEvent.change(screen.getByLabelText(/^Betrag/), { target: { value: '11,11' } })
+  fireEvent.click(within(sheet()).getByRole('button', { name: /Einstellungen/ }))
+  fireEvent.change(await screen.findByLabelText('Name des Vermieters'), { target: { value: 'Erika Muster' } })
 }
 
 test('Zeitraum im Blatt bei offenem Formular: Rückfrage vor dem Wechsel, Abbrechen lässt alles stehen', async () => {
@@ -246,20 +242,20 @@ test('Zeitraum im Blatt bei offenem Formular: Rückfrage vor dem Wechsel, Abbrec
   await waitFor(() => expect(screen.queryByRole('button', { name: /Jahr wechseln/ })).toBeNull())
   expect(sheet().open).toBe(true)
   expect(screen.getByTestId('mobile-context').textContent).toBe(before)
-  expect((screen.getByLabelText(/^Betrag/) as HTMLInputElement).value).toBe('11,11')
+  expect((screen.getByLabelText('Name des Vermieters') as HTMLInputElement).value).toBe('Erika Muster')
 
   fireEvent.change(within(sheet()).getByLabelText('Abrechnungsjahr'), { target: { value: other } })
   fireEvent.click(await screen.findByRole('button', { name: /Jahr wechseln/ }))
   await waitFor(() => expect(screen.getByTestId('mobile-context').textContent).toBe(`Lindenweg 12 · ${other}`))
 })
 
-test('Esc im Blatt schließt nur das Blatt, nicht das Formular darunter', async () => {
+test('Esc im Blatt schließt nur das Blatt, nicht die Eingabe darunter', async () => {
   await openPaymentForm()
   fireEvent.click(screen.getByRole('button', { name: 'Menü' }))
   await waitFor(() => expect(sheet().open).toBe(true))
   fireEvent.keyDown(document.activeElement as Element, { key: 'Escape' })
   await waitFor(() => expect(sheet().open).toBe(false))
-  expect((screen.getByLabelText(/^Betrag/) as HTMLInputElement).value).toBe('11,11')
+  expect((screen.getByLabelText('Name des Vermieters') as HTMLInputElement).value).toBe('Erika Muster')
 })
 
 test('Beenden im Blatt: die Rückfrage liegt über dem Blatt, Abbrechen beendet nichts', async () => {
@@ -294,9 +290,9 @@ test('über die Grenze von 900 px: Blatt weg, Seitenleiste da, Formular und Foku
   await waitFor(() => expect(document.querySelector('nav.sidebar')).not.toBeNull())
   expect(document.querySelector('dialog')).toBeNull()
   expect(screen.queryByRole('navigation', { name: 'Schnellzugriff' })).toBeNull()
-  expect((screen.getByLabelText(/^Betrag/) as HTMLInputElement).value).toBe('11,11')
+  expect((screen.getByLabelText('Name des Vermieters') as HTMLInputElement).value).toBe('Erika Muster')
   // Der Fokus lag im ausgehängten Blatt; er steht jetzt auf der aktuellen Seite in der Seitenleiste
-  expect(document.activeElement).toBe(within(screen.getByRole('navigation', { name: 'Hauptnavigation' })).getByRole('button', { name: /Mietkonto/ }))
+  expect(document.activeElement).toBe(within(screen.getByRole('navigation', { name: 'Hauptnavigation' })).getByRole('button', { name: /Einstellungen/ }))
   // Schmaler: wieder Kopf und Leiste, keine Seitenleiste
   ;(document.activeElement as HTMLElement).blur()
   setMobile(true)
@@ -318,5 +314,5 @@ test('Rückfrage aus dem Blatt, dann breiter: nach Abbrechen steht der Fokus in 
   await waitFor(() => expect(document.querySelector('nav.sidebar')).not.toBeNull())
   fireEvent.click(within(ask).getByRole('button', { name: /^Abbrechen$/ }))
   await waitFor(() => expect(screen.queryByRole('button', { name: /Objekt wechseln/ })).toBeNull())
-  expect(document.activeElement).toBe(within(screen.getByRole('navigation', { name: 'Hauptnavigation' })).getByRole('button', { name: /Mietkonto/ }))
+  expect(document.activeElement).toBe(within(screen.getByRole('navigation', { name: 'Hauptnavigation' })).getByRole('button', { name: /Einstellungen/ }))
 })

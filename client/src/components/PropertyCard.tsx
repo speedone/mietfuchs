@@ -204,14 +204,10 @@ export default function PropertyCard() {
         title="Weiteres Objekt anlegen"
         onClose={() => { if (!creating) setDraft(null) }}
         onSubmit={() => void create()}
-        footer={draft && (
-          <>
-            <span className="drawer-hint">Strg+S legt an · Esc schließt</span>
-            <span className="spacer" />
-            <button className="btn ghost" onClick={() => setDraft(null)} disabled={creating}>Abbrechen</button>
-            <button className="btn" onClick={() => void create()} disabled={creating || stuck}>{createButtonLabel(draft.name)}</button>
-          </>
-        )}
+        value={draft}
+        hint="Strg+S legt an · Esc schließt"
+        busy={creating}
+        actions={draft && <button className="btn" onClick={() => void create()} disabled={creating || stuck}>{createButtonLabel(draft.name)}</button>}
       >
         {draft && (
           <>

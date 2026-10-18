@@ -191,14 +191,8 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
           title="Zahlung erfassen"
           onClose={() => { setError(''); setForm(null) }}
           onSubmit={savePayment}
-          footer={
-            <>
-              <span className="drawer-hint">Strg+S speichert · Esc schließt</span>
-              <span className="spacer" />
-              <button className="btn ghost" onClick={() => { setError(''); setForm(null) }}>Abbrechen</button>
-              <button className="btn" onClick={savePayment}>Speichern</button>
-            </>
-          }
+          value={form}
+          actions={<button className="btn" onClick={savePayment}>Speichern</button>}
         >
           {error && <div className="error">{error}</div>}
           {(ledger?.rows.length ?? 0) === 0 && <div className="info">{noRentYearText(year)}</div>}
