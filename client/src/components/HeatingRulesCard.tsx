@@ -39,7 +39,12 @@ export default function HeatingRulesCard({ plant, view, onChanged }: { plant: He
   }
   const draft = useDraft(saved, { scope: `${plant.id}|${view.period}` })
   const r = draft.value
-  const edit = (patch: Partial<Shown>) => draft.set({ ...r, ...patch })
+  // Wird die Ausnahme wieder „keine“, verschwinden Umfang und vereinbarte Abrechnung; ihr Entwurf geht mit,
+  // sonst stünde „Ungespeicherte Änderungen“ da, obwohl alles Sichtbare gespeichert ist (Durchsicht KANN 6).
+  const edit = (patch: Partial<Shown>) => {
+    const next = { ...r, ...patch }
+    draft.set(next.exemption === 'none' ? { ...next, exemptionScope: saved.exemptionScope, exemptionBillingAgreed: saved.exemptionBillingAgreed } : next)
+  }
   const url = `/api/heating-plants/${plant.id}/periods/${view.period}/rules`
   async function save(value: Shown) {
     const body = rulesBody(saved, value)
@@ -128,7 +133,7 @@ export default function HeatingRulesCard({ plant, view, onChanged }: { plant: He
         Bei fernablesbaren Geräten stehen den Mietern monatliche Verbrauchsinformationen zu. Ein Portal ohne Nachricht genügt nicht: Mitgeteilt ist die
         Information erst, wenn sie den Mieter erreicht.{fromMonthly ? ` ${fromMonthly}` : ''}
       </p>
-      <DraftActions draft={draft} onSave={save} layout="card" />
+      <DraftActions draft={draft} onSave={save} layout="card" what={`Ausnahmen ${view.label}`} />
     </div>
   )
 }

@@ -362,3 +362,13 @@ test('#251: Antwort „Rechnung nicht in Mietfuchs“ speichert die Angabe an de
   fireEvent.click(screen.getByText('Sie ist eine Gutschrift, deren Rechnung nicht in Mietfuchs steht'))
   await waitFor(() => expect(sent.at(-1)).toEqual({ url: '/api/fuel-deliveries/d1', method: 'PUT', body: { creditNoteKind: 'standalone' } }))
 })
+
+test('Durchsicht zu #309, MUSS 2: verschwindet die gewählte Lieferung, ist der Entwurf verworfen', () => {
+  const zweite = { ...gas, id: 'd2', label: 'Gas 2026' }
+  const { rerender } = render(<FuelCard plant={{ id: 'hp', method: 'manual' }} view={view} deliveries={[gas, zweite]} onSaved={() => {}} />)
+  fireEvent.change(auswahl('Lieferung zu „Wartung“'), { target: { value: 'd2' } })
+  expect(screen.getByRole('button', { name: 'Speichern (Lieferung zu „Wartung“)' })).toBeTruthy()
+  rerender(<FuelCard plant={{ id: 'hp', method: 'manual' }} view={view} deliveries={[gas]} onSaved={() => {}} />)
+  expect(auswahl('Lieferung zu „Wartung“').value).toBe('')
+  expect(screen.queryByRole('button', { name: 'Speichern (Lieferung zu „Wartung“)' })).toBeNull()
+})

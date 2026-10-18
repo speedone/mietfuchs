@@ -436,7 +436,8 @@ function LinkRow({ item, options, closed, onSaved }: {
   closed: boolean
   onSaved: () => void
 }) {
-  const draft = useDraft(item.fuelDeliveryId ?? '', { scope: item.id })
+  // Verschwindet die gewählte Lieferung aus der Liste, ist der Entwurf verworfen (Durchsicht zu #309, MUSS 2).
+  const draft = useDraft(item.fuelDeliveryId ?? '', { scope: item.id, isValid: (v) => options.some((o) => o.value === v) })
   const what = `Lieferung zu „${item.description}“`
   async function link(deliveryId: string) {
     await api(`/api/costItems/${item.id}`, { method: 'PUT', body: JSON.stringify({ fuelDeliveryId: deliveryId === '' ? null : deliveryId }) })
