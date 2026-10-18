@@ -460,3 +460,35 @@ test('S23: Tabellen mit Datensätzen werden am Handy zu Karten, jede Zelle mit i
     expect(unlabeledCells(src), file).toEqual([])
   }
 })
+
+// S24 (#346 Schritt 9, Nachprüfung): Seit `viewport-fit=cover` (index.html) legt iOS die Seite unter
+// Kerbe, Statusleiste und Home-Indikator. Was am Fensterrand steht (fest oder angeheftet an oben/unten),
+// hält deshalb die Sicherheitsränder mit `env(safe-area-inset-*)` ein. Eine Fläche über allem (Hintergrund
+// eines Seitenfensters) braucht sie selbst nicht, wohl aber das, was darin am Rand steht.
+const OVERLAY_CONTENT = new Map([['.drawer-backdrop', '.drawer']])
+const cssRules = (source: string) =>
+  [...source.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({ selector: (m[1] ?? '').trim().replace(/\s+/g, ' '), body: m[2] ?? '' }))
+const atEdge = (body: string) => /position:\s*fixed/.test(body) || (/position:\s*sticky/.test(body) && /(?:^|;)\s*(?:top|bottom):/.test(body))
+const unsafeEdges = (source: string) => {
+  const rules = cssRules(source)
+  return rules.filter((r) => atEdge(r.body) && !/safe-area-inset/.test(r.body)).flatMap((r) => {
+    const content = OVERLAY_CONTENT.get(r.selector)
+    if (content && rules.some((c) => c.selector === content && /safe-area-inset/.test(c.body))) return []
+    return [r.selector]
+  })
+}
+test('S24: was am Fensterrand steht, hält die Sicherheitsränder ein', () => {
+  expect(fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8')).toMatch(/viewport-fit=cover/)
+  // Probe des Prüfers
+  expect(unsafeEdges('.a { position: fixed; bottom: 0; } .b { position: sticky; top: 0; padding-top: env(safe-area-inset-top); } .c { position: sticky; left: 0; }')).toEqual(['.a'])
+  expect(unsafeEdges(css)).toEqual([])
+  // Dasselbe für Utilities in den Bausteinen: Ein Element mit `fixed` oder `sticky top-0`/`bottom-0` trägt eine
+  // Klasse, deren Regel in index.css die Sicherheitsränder setzt.
+  const safeClasses = new Set(cssRules(css).filter((r) => /safe-area-inset/.test(r.body)).flatMap((r) => [...r.selector.matchAll(/\.([\w-]+)/g)].map((m) => m[1] ?? '')))
+  const fixedElements = files.flatMap((file) => [...(sources[file] ?? '').matchAll(/className="([^"]*)"/g)]
+    .map((m) => (m[1] ?? '').split(/\s+/))
+    .filter((cls) => cls.includes('fixed') || (cls.includes('sticky') && cls.some((c) => /^(?:top|bottom)-0$/.test(c))))
+    .map((cls) => ({ file, cls })))
+  expect(fixedElements.length).toBeGreaterThan(0)
+  expect(fixedElements.filter(({ cls }) => !cls.some((c) => safeClasses.has(c))).map(({ file, cls }) => `${file}: ${cls.join(' ')}`)).toEqual([])
+})

@@ -302,3 +302,19 @@ test('über die Grenze von 900 px: Blatt weg, Seitenleiste da, Formular und Foku
   expect(screen.getByRole('navigation', { name: 'Schnellzugriff' })).toBeTruthy()
   expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Menü' }))
 })
+
+// Nachprüfung K-A: Eine Rückfrage aus dem Blatt übersteht den Wechsel über die Grenze (sie hängt außerhalb
+// der Navigation), ihr Auslöser ⇅ nicht. Nach dem Schließen steht der Fokus auf der aktuellen Seite in der
+// Seitenleiste statt auf BODY.
+test('Rückfrage aus dem Blatt, dann breiter: nach Abbrechen steht der Fokus in der Seitenleiste', async () => {
+  await openPaymentForm()
+  fireEvent.click(screen.getByRole('button', { name: /^Objekt und Zeitraum wechseln/ }))
+  await waitFor(() => expect(sheet().open).toBe(true))
+  fireEvent.change(within(sheet()).getByLabelText('Objekt wählen'), { target: { value: 'objekt-2' } })
+  const ask = (await screen.findByRole('button', { name: /Objekt wechseln/ })).closest('.dialog') as HTMLElement
+  setMobile(false)
+  await waitFor(() => expect(document.querySelector('nav.sidebar')).not.toBeNull())
+  fireEvent.click(within(ask).getByRole('button', { name: /^Abbrechen$/ }))
+  await waitFor(() => expect(screen.queryByRole('button', { name: /Objekt wechseln/ })).toBeNull())
+  expect(document.activeElement).toBe(within(screen.getByRole('navigation', { name: 'Hauptnavigation' })).getByRole('button', { name: /Mietkonto/ }))
+})

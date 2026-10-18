@@ -3119,8 +3119,9 @@ samt `change` nach (mobileNav.test.tsx) und nehmen für `showModal` den Nachbau 
 [client/src/testing/dialog.ts](client/src/testing/dialog.ts). Tabellen mit Datensätzen werden unter
 640 px zu Karten (`<Table className="stacked">`, jede Zelle mit `data-label`), Zahlenraster heften die
 erste Spalte an (`sticky-first`), beides nur am Bildschirm. Sicherheitsränder (Kerbe, Home-Indikator) über
-`viewport-fit=cover` in index.html und `env(safe-area-inset-*)`. Wächter in uiRules.test.ts: S12 (Dialoge nur
-in erlaubten Bausteinen), S22 (Navigation nur aus nav.ts), S23 (Karten mit `data-label`).
+`viewport-fit=cover` in index.html und `env(safe-area-inset-*)`, auch an Seitenfenster, Rückfrage, Toasts und
+Fuß der Seitenleiste. Wächter in uiRules.test.ts: S24 (was am Fensterrand steht, nimmt die Sicherheitsränder),
+S12 (Dialoge nur in erlaubten Bausteinen), S22 (Navigation nur aus nav.ts), S23 (Karten mit `data-label`).
 
 Zentraler Fetch-Wrapper `api()` und Geld-/Datums-Helfer (`parseEuro`, `fmtEuro`, `fmtDate`) in
 [client/src/api.ts](client/src/api.ts). Druck/PDF läuft über die Browser-Druckfunktion;

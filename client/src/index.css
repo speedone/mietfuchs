@@ -162,7 +162,7 @@ body {
    scrollt nur sie darüber hinweg. Er reicht über das Polster der Leiste bis an ihre Ränder, damit
    keine Navigation unter ihm durchscheint. */
 .sidebar .foot {
-  margin: auto calc(-1 * var(--space-3)) calc(-1 * var(--space-5)); padding: var(--space-3) 22px var(--space-4);
+  margin: auto calc(-1 * var(--space-3)) calc(-1 * var(--space-5)); padding: var(--space-3) 22px calc(var(--space-4) + env(safe-area-inset-bottom));
   font-size: var(--text-xs); color: var(--muted); position: sticky; bottom: calc(-1 * var(--space-5));
   background: var(--sidebar); border-top: 1px solid var(--line);
 }
@@ -358,7 +358,7 @@ label.checkline:has(.term-pop) { flex-wrap: wrap; }
 .chip.gelb { background: var(--amber-soft); color: var(--amber); border: 1px solid var(--notice-border); }
 .chip.rot { background: var(--red-soft); color: var(--red); border: 1px solid var(--error-border); }
 
-.sticky-bar { position: sticky; top: 10px; z-index: 5; display: flex; align-items: center; gap: var(--space-3); margin-top: 14px; padding: var(--space-3) var(--space-4); background: var(--accent-soft); border: 1px solid var(--accent); border-radius: var(--radius-m); }
+.sticky-bar { position: sticky; top: calc(10px + env(safe-area-inset-top)); z-index: 5; display: flex; align-items: center; gap: var(--space-3); margin-top: 14px; padding: var(--space-3) var(--space-4); background: var(--accent-soft); border: 1px solid var(--accent); border-radius: var(--radius-m); }
 
 .empty { color: var(--muted); text-align: center; padding: 28px; font-size: var(--text-m); }
 
@@ -425,8 +425,8 @@ label.checkline:has(.term-pop) { flex-wrap: wrap; }
   main { padding: var(--space-5) max(var(--space-4), env(safe-area-inset-right)) calc(var(--bar-h) + env(safe-area-inset-bottom) + var(--space-12)) max(var(--space-4), env(safe-area-inset-left)); }
   h1 { font-size: var(--text-xl); }
   .card { padding: var(--space-4); }
-  .toast-wrap { left: var(--space-3); right: var(--space-3); bottom: calc(var(--bar-h) + env(safe-area-inset-bottom) + var(--space-3)); }
-  .sticky-bar { top: calc(var(--head-h) + var(--space-2)); }
+  body .toast-wrap { left: max(var(--space-3), env(safe-area-inset-left)); right: max(var(--space-3), env(safe-area-inset-right)); bottom: calc(var(--bar-h) + env(safe-area-inset-bottom) + var(--space-3)); }
+  .sticky-bar { top: calc(var(--head-h) + env(safe-area-inset-top) + var(--space-2)); }
   table.sticky-first > * > tr > :first-child { position: sticky; left: 0; z-index: 1; background: var(--card); }
   table.sticky-first > * > tr:is(.subtotal, .group-head, .calc-steps) > :first-child { background: var(--hover); }
 }
@@ -493,7 +493,7 @@ dialog.menu-sheet > .sidebar button:not(.sheet-close) { min-height: var(--target
 /* ---------- Editier-Drawer (von rechts) ---------- */
 .drawer-backdrop { position: fixed; inset: 0; background: var(--overlay); z-index: 40; display: flex; justify-content: flex-end; animation: drawer-fade 0.16s ease; }
 .drawer {
-  background: var(--card); max-width: 94vw; height: 100%; display: flex; flex-direction: column;
+  background: var(--card); max-width: 94vw; height: 100%; display: flex; flex-direction: column; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) 0;
   border-left: 1px solid var(--line); box-shadow: var(--shadow-pop); animation: drawer-slide 0.2s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .drawer-head {
@@ -533,7 +533,7 @@ dialog.menu-sheet > .sidebar button:not(.sheet-close) { min-height: var(--target
 .field-group .field-add { margin-top: 10px; }
 
 /* ---------- Toasts ---------- */
-.toast-wrap { position: fixed; left: var(--space-5); bottom: var(--space-5); z-index: 60; display: flex; flex-direction: column; gap: var(--space-2); }
+.toast-wrap { position: fixed; left: max(var(--space-5), env(safe-area-inset-left)); bottom: max(var(--space-5), env(safe-area-inset-bottom)); z-index: 60; display: flex; flex-direction: column; gap: var(--space-2); }
 .toast { display: flex; align-items: center; gap: 9px; background: var(--card); border: 1px solid var(--line); border-left: 3px solid var(--muted); border-radius: var(--radius-m); padding: 10px var(--space-4) 10px 13px; font-size: var(--text-m); box-shadow: var(--shadow-2); animation: toast-in 0.2s ease; max-width: 360px; }
 .toast .toast-ic { font-size: var(--text-m); }
 .toast.ok { border-left-color: var(--green); }
@@ -544,7 +544,7 @@ dialog.menu-sheet > .sidebar button:not(.sheet-close) { min-height: var(--target
 .toast.info .toast-ic { color: var(--accent-text); }
 
 /* ---------- Bestätigungsdialog ---------- */
-.dialog-backdrop { position: fixed; inset: 0; background: var(--overlay); z-index: 50; display: flex; align-items: center; justify-content: center; padding: var(--space-5); animation: drawer-fade 0.14s ease; }
+.dialog-backdrop { position: fixed; inset: 0; background: var(--overlay); z-index: 50; display: flex; align-items: center; justify-content: center; padding: max(var(--space-5), env(safe-area-inset-top)) max(var(--space-5), env(safe-area-inset-right)) max(var(--space-5), env(safe-area-inset-bottom)) max(var(--space-5), env(safe-area-inset-left)); animation: drawer-fade 0.14s ease; }
 .dialog { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-xl); padding: var(--space-6); width: 440px; max-width: 100%; box-shadow: var(--shadow-pop); animation: dialog-pop 0.16s ease; }
 .dialog h2 { font-size: var(--text-l); margin-bottom: var(--space-2); }
 .dialog-msg { color: var(--muted); font-size: var(--text-m); line-height: 1.55; white-space: pre-line; }
