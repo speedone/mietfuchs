@@ -265,7 +265,7 @@ Jeder Schritt ist ein PR mit `Refs #346` (und, wo er einen Befund der Checkliste
 | 10 | **Hinweise/Leerzustände/Druck**: „Was tun“ + „Mehr dazu“, Cockpit nach Versand, Druck-Rückfrage bei Fehlern, Druckkopf | M8, M9, M14, H6, N5, N12 | 2 Tage | – |
 | 11 | **Browserlauf + axe** als Skript, Musterseite in `npm run screenshots` | alle | 1 Tag | c) |
 
-**Zusammen etwa 16–21 Arbeitstage**; neue Abhängigkeit ist nur Tailwind (devDependency, MIT). Die Fachbefunde H5 (MWh), M3, M6, M7 und N2 sind keine Musterfragen und laufen getrennt. Schritt 1–3 decken alle hohen Befunde außer H5/H6 ab und sind in rund einer Woche zu haben.
+**Zusammen etwa 16–21 Arbeitstage**; neue Abhängigkeit ist nur Tailwind (devDependency, MIT). Die Fachbefunde H5 (MWh), M3, M6, M7 und N2 sind keine Musterfragen und laufen getrennt. Die hohen Befunde H1 bis H6 sind schon mit PR #343 und #344 behoben; Schritt 1 bis 3 führen sie in die Bausteine über und sind in rund einer Woche zu haben.
 
 **Was es nicht kostet:** keine Migration von 30 Seiten auf fremde Komponenten. Die Seiten werden Baustein für Baustein umgestellt, die Wächter verhindern Rückfälle, und jede Zwischenstufe ist auslieferbar.
 
