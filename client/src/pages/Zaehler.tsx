@@ -10,6 +10,7 @@ import { api, errorText, fmtDate } from '../api'
 import { usePeriod } from '../period'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import Drawer from '../components/Drawer'
+import { CalcNotice } from '../components/Notice'
 import PageHeader from '../components/PageHeader'
 import Term from '../components/Term'
 import { useToast, useConfirm } from '../components/feedback'
@@ -373,7 +374,11 @@ function FragmentRow(props: {
           {hcaSummary(m) && <div className="muted">{hcaSummary(m)}</div>}
           {m.calibratedUntil != null && <div className="muted">geeicht bis Ende {m.calibratedUntil}</div>}
           {/* Die abgelaufene Eichfrist ist eine Warnung und kein Fehler der Stände (Heizung PR 21). */}
-          {cons?.warnings.map((w, i) => <div key={i} className={cons.notices?.[i]?.code === 'meter.calibration-overdue' ? 'warn' : 'error'}>{w}</div>)}
+          {/* Über den Baustein Notice (Durchsicht K3, S26): Stufe als Zeichen und Wort; ein Fehler steht ganz offen. */}
+          {cons?.warnings.map((w, i) => {
+            const n = cons.notices?.[i]
+            return <CalcNotice key={i} notice={{ code: n?.code ?? 'legacy', level: n?.code === 'meter.calibration-overdue' ? 'warning' : 'error', title: n?.title ?? '', text: w }} />
+          })}
         </td>
         <td data-label="Zuordnung">{unitName}</td>
         <td data-label="Sparte">{METER_TYPE_LABELS[m.type] ?? m.type}</td>

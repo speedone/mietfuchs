@@ -185,7 +185,8 @@ test('„Hier beheben →“ mit ungespeicherter Änderung fragt; Abbrechen blei
   const year = new Date().getFullYear() - 1
   const settlement = {
     year, daysInYear: 365, period: settlementPeriod(calendarYearPeriod(year)), deadline: `${year + 1}-12-31`, statements: [], landlord: { rows: [], totalCents: 0 }, selfUsedShareCents: 0,
-    totalCostsCents: 0, warnings: ['EG: zugleich.'], closed: null,
+    // Mit Kosten: Ein ganz leerer Zeitraum zeigt keine Druckeinstellungen (#346, Schritt 10).
+    totalCostsCents: 100000, warnings: ['EG: zugleich.'], closed: null,
     notices: [{ code: 'tenancy.overlap', level: 'error', title: 'Mietverhältnisse überschneiden sich', text: 'EG: zugleich.', subject: { kind: 'tenancy', id: 't-a' } }],
   }
   const inner = globalThis.fetch
