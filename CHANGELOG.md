@@ -107,6 +107,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   einer Belegauswertung. Nach dem Speichern fragt nichts mehr nach
   ([#346](https://github.com/speedone/mietfuchs/issues/346)).
 
+- Rückfragen („Zahlung löschen?“, „Ungespeicherte Änderungen verwerfen?“) liegen jetzt als echtes
+  Dialogfenster über allem, auch über dem Menü am Handy: Das Menü bleibt dafür offen, und nach
+  „Abbrechen“ stehen Sie wieder dort, wo Sie waren. Enter wirkt auf den Knopf, auf dem der Fokus steht
+  (bei „Löschen“ und „Verwerfen“ zuerst „Abbrechen“), Esc und ein Klick daneben brechen ab, und
+  Vorleser nennen die Rückfrage mit ihrer Frage und ihrem Satz dazu (Befund H1 aus
+  [#341](https://github.com/speedone/mietfuchs/issues/341);
+  [#346](https://github.com/speedone/mietfuchs/issues/346)).
+
 ### Behoben
 
 - Angaben zur Heizkostenabrechnung (§ 6a HeizkostenV): Stehen alle Wärmezähler in MWh oder GJ, rechnet

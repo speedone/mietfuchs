@@ -158,17 +158,17 @@ test('ein Wechsel des scope mit offenem Entwurf fragt nach; Abbrechen behält de
   render(<UIProvider><MitReiter /></UIProvider>)
   fireEvent.change(screen.getByLabelText('Datum'), { target: { value: '2025-01-15' } })
   fireEvent.click(screen.getByRole('button', { name: 'Reiter b' }))
-  const dialog = await screen.findByRole('dialog')
+  const dialog = await screen.findByRole('alertdialog')
   expect(dialog.textContent).toMatch(/Ungespeicherte Änderung verwerfen\?/)
   // Verwerfen ist gefährlich: Der Startfokus liegt auf „Abbrechen“.
   expect(document.activeElement?.textContent).toBe('Abbrechen')
   fireEvent.click(within(dialog).getByRole('button', { name: 'Abbrechen' }))
-  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
   expect(screen.getByText('scope a')).toBeTruthy()
   expect((screen.getByLabelText('Datum') as HTMLInputElement).value).toBe('2025-01-15')
   // Verwerfen wechselt.
   fireEvent.click(screen.getByRole('button', { name: 'Reiter b' }))
-  fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Verwerfen' }))
+  fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Verwerfen' }))
   await screen.findByText('scope b')
   expect((screen.getByLabelText('Datum') as HTMLInputElement).value).toBe('2025-02-01')
 })
@@ -216,7 +216,7 @@ test('ohne Entwurf wechselt der scope ohne Rückfrage', async () => {
   render(<UIProvider><MitReiter /></UIProvider>)
   fireEvent.click(screen.getByRole('button', { name: 'Reiter b' }))
   await screen.findByText('scope b')
-  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(screen.queryByRole('alertdialog')).toBeNull()
 })
 
 // Durchsicht zu #309, MUSS 2: Fällt der gewählte Wert aus der Optionsliste, ist der Entwurf verworfen.

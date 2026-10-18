@@ -54,13 +54,12 @@ function useTheme() {
 
 // Beenden aus der Oberfläche (#45). Nur sichtbar, wenn Mietfuchs als Programmdatei läuft: Aus
 // einem Linux-Paket gibt es kein Konsolenfenster, dessen Schließen sonst der Weg dorthin ist.
-function QuitButton({ onQuit, onAsk }: { onQuit: () => void; onAsk?: () => void }) {
+function QuitButton({ onQuit }: { onQuit: () => void }) {
   const confirm = useConfirm()
   const toast = useToast()
   const [stopping, setStopping] = useState(false)
 
   async function stop() {
-    onAsk?.()
     const ok = await confirm({
       title: 'Mietfuchs beenden?',
       message: 'Die Oberfläche lässt sich danach nicht mehr bedienen, bis Sie Mietfuchs neu starten. Ihre Daten bleiben gespeichert.',
@@ -280,9 +279,9 @@ function Shell() {
   const sidebar = (close: (() => void) | null) => {
     // Objekt und Zeitraum wechseln im Blatt, ohne es zu schließen, wie in der Seitenleiste: Mit den
     // Pfeiltasten sendet ein Auswahlfeld bei jedem Schritt `change`, und ein Blatt, das sich dabei
-    // schlösse, ließe nur den nächsten Eintrag erreichen. Geschlossen wird nur, wenn eine Rückfrage
-    // kommt (offenes Formular), denn die stünde sonst hinter dem modalen Blatt.
-    const closeForQuestion = () => { if (close && hasOpenForm()) close() }
+    // schlösse, ließe nur den nächsten Eintrag erreichen. Eine Rückfrage (offenes Formular) liegt seit
+    // #346 Schritt 1 im Top-Layer über dem Blatt; es bleibt dafür offen, und nach Abbrechen steht man,
+    // wo man war. Eine Seite im Blatt schließt es, sobald der Wechsel feststeht.
     return (
     <>
       <div className="logo">
@@ -300,16 +299,16 @@ function Shell() {
         <UpdateHint status={update.status} onDismissed={reload} onShowGuide={() => void navigate('einstellungen')} />
       )}
 
-      <PropertySwitcher properties={properties} value={propertyId} onChange={(id) => { closeForQuestion(); void switchProperty(id) }} />
+      <PropertySwitcher properties={properties} value={propertyId} onChange={(id) => void switchProperty(id)} />
 
-      <PeriodSelect className="year-switcher no-print" onBeforeChange={closeForQuestion} />
+      <PeriodSelect className="year-switcher no-print" />
 
       {navFor(hasHeatingPlant).map((group, gi) => (
         <div key={gi} className="nav-group">
           {group.section && <div className="nav-section">{group.section}</div>}
           {group.items.map((it) => (
             <button key={it.id} className={tab === it.id ? 'active' : ''} aria-current={tab === it.id ? 'page' : undefined}
-              onClick={() => { close?.(); void navigate(it.id) }}>
+              onClick={() => { void navigate(it.id).then((done) => { if (done) close?.() }) }}>
               <span>{it.icon}</span> {it.label}
             </button>
           ))}
@@ -322,7 +321,7 @@ function Shell() {
         <button className="theme-toggle" onClick={cycle} title="Design wechseln (System / Hell / Dunkel)" aria-label={`Design: ${THEME_LABELS[choice]} – wechseln (System / Hell / Dunkel)`}>
           🌗 <span>Design: {THEME_LABELS[choice]}</span>
         </button>
-        {canQuit(update.status) && <QuitButton onAsk={close ?? undefined} onQuit={() => setStopped(true)} />}
+        {canQuit(update.status) && <QuitButton onQuit={() => setStopped(true)} />}
         <div>Alle Daten bleiben lokal auf diesem Rechner.</div>
       </div>
     </>
