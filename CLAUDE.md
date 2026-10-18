@@ -3228,7 +3228,10 @@ Tippfläche von `--target` über `::after`, und printCss.test.ts verlangt den du
   dem Knopf steht (WCAG 2.5.3), auch bei „Speichert …“. Ein anderer `scope` verwirft den Entwurf;
   wechselt die Seite ihn selbst (der Reiter zwischen Betriebs- und Heizkostenabrechnung), fragt sie
   vorher mit `useConfirmDiscard` („Ungespeicherte Änderung verwerfen?“, Startfokus „Abbrechen“).
-  Ein Wechsel der Seite in der Navigation fragt bisher bei keinem Formular nach. Der Wächter
+  Ein Wechsel der Seite in der Navigation fragt bisher bei keinem Formular nach. **Ein Auswahlfeld
+  gibt `isValid` mit** (`useDraft(saved, { isValid })`): Fällt der Wert eines Entwurfs aus den
+  Optionen (die Liste folgt einem anderen Feld, eine Position ist weg), ist der Entwurf verworfen;
+  sonst zeigte der Browser den ersten Eintrag, und „Speichern“ schickte einen unsichtbaren Wert. Der Wächter
   [saveOnChange.test.ts](client/src/saveOnChange.test.ts) liest den Quelltext: Ein `<select>` oder
   ein `<input>` vom Typ checkbox, radio oder date, dessen `onChange` speichert (`api(`, eine
   Methode PUT/POST/PATCH/DELETE, ein Name mit save/persist/submit, auch über Funktionen derselben
