@@ -382,6 +382,12 @@ test('S9: Links haben eine Regel', () => {
   expect(css).toMatch(/(^|\n)a \{[^}]*color: var\(--accent-text\)/)
 })
 
+// Browserlauf (#340, axe „link-in-text-block“, WCAG 1.4.1): Ein Link mitten im Satz unterscheidet sich nicht nur
+// durch die Farbe, er ist unterstrichen. Links für sich (Navigation, „Hier beheben →“) bleiben ohne Strich.
+test('S9: Links im Fließtext sind unterstrichen', () => {
+  expect(css).toMatch(/(^|\n|, ):is\(p, li\) a(:not\(\.btn\))? (, [^{]*)?\{[^}]*text-decoration: underline/)
+})
+
 // S11: Der Titel einer Seite heißt wie ihr Eintrag in der Navigation.
 test('S11: Seitentitel beginnt mit dem Namen in der Navigation', () => {
   const fileOf: Record<string, string> = {
