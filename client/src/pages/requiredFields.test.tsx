@@ -96,7 +96,7 @@ test('Objekt (Karte): Bezeichnung, mit Legende in der Karte', async () => {
   shell(<Stammdaten units={UNITS} tenancies={TENANCIES} settings={null} reload={async () => {}} />)
   const card = (await screen.findByRole('heading', { name: /^Objekt$/ })).closest('.card') as HTMLElement
   expect(card.textContent).toContain('* Pflichtangabe')
-  await requiredMatchesMissing(card, () => fireEvent.click(card.querySelector('button.btn') as HTMLButtonElement), ['Bezeichnung'])
+  await requiredMatchesMissing(card, () => fireEvent.click(within(card).getByRole('button', { name: 'Speichern' })), ['Bezeichnung'])
 })
 
 test('Zahlung: Mietverhältnis, Datum, Betrag', async () => {

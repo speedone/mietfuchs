@@ -21,7 +21,7 @@ export default function OperatingPowerHandlingCard({ plant, onSaved }: { plant: 
   }
   return (
     <Card title={<><Term id="operatingPower">Betriebsstrom der Heizung</Term>{plant.name ? ` „${plant.name}“` : ''}</>} className="no-print">
-      <label className="field grow">
+      <label className="field">
         <span>{OPERATING_POWER_HANDLING_QUESTION}</span>
         <select value={draft.value} disabled={draft.saving} onChange={(e) => draft.set(e.target.value as '' | OperatingPowerHandling)}>
           {handlingOptions().map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}

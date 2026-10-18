@@ -183,7 +183,7 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
 
       {open === 'period' && (
         <div className="panel">
-          <label className="field grow">
+          <label className="field">
             Für welchen Zeitraum rechnet die Heizung ab?
             <select value={form.choice} onChange={(e) => setForm({ ...form, choice: e.target.value as PeriodChoice })}>
               {PERIOD_CHOICE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -232,7 +232,7 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
                 // Das Monatsfeld: `type="month"` kennen Safari und Firefox nicht (#287, #346 Schritt 5).
                 <MonthField label="Neue Heizperiode beginnt ab Monat" value={form.from} today={localToday()} onChange={(from) => setForm({ ...form, from })} {...errors.field('from')} />
               )}
-              <label className="field grow">
+              <label className="field">
                 <span>Rechnen Sie die Heizkosten <Term id="separateHeatingSettlement">getrennt ab</Term>, mit eigener Heizkostenvorauszahlung?</span>
                 <select value={form.separate} onChange={(e) => setForm({ ...form, separate: e.target.value as SeparateChoice })}>
                   <option value="">— bitte wählen —</option>
@@ -253,7 +253,7 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
               {/* Laienprobe B12, B13: je Position die Heizperiode mit Tagen, vorbelegt mit der, die im bisherigen Zeitraum endet. */}
               {periodPreview.moves.map((m) => (
                 <div key={m.costItemId}>
-                  <label className="field grow">
+                  <label className="field">
                     {`Heizperiode für „${m.description}“ (${fmtEuro(m.amountCents)}, bisher ${m.fromRange})`}
                     <select value={periodAnswers.moves[m.costItemId] ?? m.to} onChange={(e) => setPeriodAnswers({ ...periodAnswers, moves: { ...periodAnswers.moves, [m.costItemId]: e.target.value } })}>
                       {m.options.map((o) => <option key={o.key} value={o.key}>{`Heizperiode ${o.range}${o.key === m.to ? ' (Vorgabe)' : ''}`}</option>)}
@@ -267,7 +267,7 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
                 </div>
               ))}
               {periodPreview.groups.map((g) => (
-                <label key={g.from} className="field grow">
+                <label key={g.from} className="field">
                   {`Heizperiode für ${g.items.map((i) => i.description).join(', ')}`}
                   <select value={periodAnswers.groups[g.from] ?? ''} onChange={(e) => setPeriodAnswers({ ...periodAnswers, groups: { ...periodAnswers.groups, [g.from]: e.target.value } })}>
                     {g.options.map((o) => <option key={o.key} value={o.key}>{`Heizperiode ${o.range}`}</option>)}
@@ -329,7 +329,7 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
                 )
               }))}
               {separatePreview.overrides.map((o) => (
-                <fieldset key={`${o.tenancyId}|${o.period}`} className="field grow">
+                <fieldset key={`${o.tenancyId}|${o.period}`} className="field">
                   <legend className="field-legend">{`${o.tenantName}: Jahreskorrektur ${o.label}${o.cents === null ? '' : ` (bisher ${fmtEuro(o.cents)})`}`}</legend>
                   {o.asks.map((a) => {
                     const key = `${o.tenancyId}|${a.kind}|${a.period}`

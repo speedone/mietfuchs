@@ -71,7 +71,7 @@ export default function HeatingRulesCard({ plant, view, onChanged }: { plant: He
   return (
     <Card title={<Term id="heatingCostOrdinance">Ausnahmen und Vereinbarungen</Term>} level={3} className="no-print">
       <p className="muted">Jede Antwort gilt ab dieser Heizperiode, bis Sie bei einer späteren etwas anderes angeben. Frühere Heizperioden bleiben, wie sie sind.</p>
-      <label className="field grow">
+      <label className="field">
         <span>Ausnahme nach § 11 HeizkostenV</span>
         <select value={r.exemption} disabled={view.closed || draft.saving} onChange={(e) => edit({ exemption: e.target.value as HeatingExemption })}>
           {EXEMPTION_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -84,7 +84,7 @@ export default function HeatingRulesCard({ plant, view, onChanged }: { plant: He
       </p>
       {asksScope(r, view.centralHotWater) && (
         <>
-          <label className="field grow">
+          <label className="field">
             <span>Betrifft die Ausnahme auch das Warmwasser?</span>
             <select value={r.exemptionScope} disabled={view.closed || draft.saving} onChange={(e) => edit({ exemptionScope: e.target.value as ExemptionScope })}>
               {EXEMPTION_SCOPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -108,7 +108,7 @@ export default function HeatingRulesCard({ plant, view, onChanged }: { plant: He
       )}
       {view.agreeable || saved.agreedOtherwise !== 'none' ? (
         <>
-          <label className="field grow">
+          <label className="field">
             <span>Vereinbarung nach § 2 HeizkostenV</span>
             <select value={r.agreedOtherwise} disabled={view.closed || draft.saving} onChange={(e) => edit({ agreedOtherwise: e.target.value as AgreedOtherwise })}>
               {agreedOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}

@@ -80,7 +80,7 @@ export default function Steuer({ settings }: Props) {
               <option value="soll">vereinbart (Soll) — nur zum Abgleich</option>
             </select>
           </label>
-          <div className="field grow" />
+          <div className="field" />
           <button className="btn secondary" onClick={print} disabled={!data}>🖨 Drucken / PDF</button>
         </div>
       </div>

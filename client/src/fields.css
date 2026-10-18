@@ -1,0 +1,63 @@
+/* Felder mit Breitenstufen (#346, Schritt 7b; Spezifikation Abschnitt 3 „Breiten nach Inhalt“). Eingebunden in
+   tw.css als Schicht `components`: Die Regeln schlagen damit die alten aus index.css (Schicht `legacy`, etwa
+   `.row > label.field`, `.grow`), und die Stufen (`width-s` … `width-full`, Utilities in tw.css) schlagen sie.
+   Die Stufen setzen nur `--field-w` und `--select-min`; hier werden sie angewandt. Die Vorgabe nach Feldart (ohne
+   Stufe) ist dieselbe wie `widthOf` in components/Field.tsx und gilt auch für ein `label.field` von Hand. */
+:is(label, div).field:not(.checkline) {
+  --field-w: var(--field-l);
+  --select-min: var(--field-s);
+  flex: 0 1 auto;
+  width: fit-content;
+  min-width: 0;
+  max-width: 100%;
+}
+.field:has(> input:is([type='date'], [type='time'], [inputmode='decimal'], [inputmode='numeric'])),
+.field:has(> .month-field) {
+  --field-w: var(--field-s);
+}
+.field:has(> textarea) {
+  --field-w: 100%;
+  width: 100%;
+}
+.field > :is(input:not([type='checkbox'], [type='radio'], [type='file']), textarea) {
+  box-sizing: border-box;
+  width: var(--field-w);
+  max-width: 100%;
+}
+.field > select {
+  /* Nicht auf die Breite der Hülle strecken (eine Spalte richtet ihre Kinder sonst auf volle Breite aus). */
+  align-self: flex-start;
+  box-sizing: border-box;
+  width: auto;
+  min-width: min(100%, var(--select-min));
+  max-width: 100%;
+}
+.field.width-full > select {
+  width: 100%;
+}
+.field > .month-field {
+  width: max-content;
+  max-width: 100%;
+  & > input {
+    flex: 0 1 auto;
+    width: var(--field-w);
+  }
+}
+.field > :is(small, .muted, .field-message, p, ul, ol) {
+  contain: inline-size;
+  min-width: var(--field-hint);
+}
+@media (max-width: 640px) {
+  :is(label, div).field:not(.checkline) {
+    width: 100%;
+  }
+  .field > :is(input:not([type='checkbox'], [type='radio'], [type='file']), textarea, select, .month-field) {
+    width: 100%;
+  }
+  .field > .month-field > input {
+    flex: 1;
+  }
+  .field > :is(small, .muted, .field-message, p, ul, ol) {
+    min-width: 0;
+  }
+}

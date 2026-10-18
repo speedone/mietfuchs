@@ -861,14 +861,14 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
         >
           {categoryNotice(form.category, year, property?.cableBuiltBeforeDec2021 ?? null) && <div className="notice">{categoryNotice(form.category, year, property?.cableBuiltBeforeDec2021 ?? null)}</div>}
           <div className="row">
-            <label className="field grow">
+            <label className="field">
               Kostenart
               <select value={form.category} onChange={(e) => setForm(withCategory(form, e.target.value, units, meters, keyCtx))}>
                 {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
               </select>
             </label>
             {form.category === HEATING_CATEGORY && plantChoices.length > 0 && (
-              <label className="field grow">
+              <label className="field">
                 Heizanlage
                 <select value={heatingPlantId} onChange={(e) => {
                   setHeatingPlantId(e.target.value)
@@ -889,14 +889,14 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             {form.category === HEATING_CATEGORY && ownPlant && ownPlant.options.length > 0 && (
               <HeatingPeriodSelect options={ownPlant.options} value={heatingPeriod || (ownPlant.options[0]?.value ?? '')} onChange={setHeatingPeriod} />
             )}
-            <Field label="Beschreibung" required className="grow" {...formErrors.field('description')}>
+            <Field label="Beschreibung" required {...formErrors.field('description')}>
               <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="z. B. Grundsteuer 2025" />
             </Field>
-            <Field label="Rechnungssteller" className="grow">
+            <Field label="Rechnungssteller">
               <input value={form.vendor} onChange={(e) => setForm({ ...form, vendor: e.target.value })} />
             </Field>
             {/* #139: Eine Gutschrift senkt die Kosten des Jahres und wird verteilt wie eine Rechnung. */}
-            <Field label="Betrag €" required className="grow" hint="Eine Gutschrift mit Minus eintragen, z. B. -54,00." {...formErrors.field('amount')}>
+            <Field label="Betrag €" required hint="Eine Gutschrift mit Minus eintragen, z. B. -54,00." {...formErrors.field('amount')}>
               <input value={form.amount} inputMode="decimal" onChange={(e) => setForm({ ...form, amount: e.target.value })} placeholder="z. B. 480,00" />
             </Field>
             {/* Laienprobe B19: Welcher Betrag der Messdienstabrechnung gemeint ist, steht dort, wo er eingetragen wird; über die volle Breite. */}
@@ -907,7 +907,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                 ihre Probe prüft diesen Betrag.
               </p>
             )}
-            <Field label={<>davon <Term id="labor35a">§35a-Lohn</Term> €</>} className="grow" hint="Lohn- und Arbeitskosten nach § 35a EStG; der Mieter kann sie steuerlich absetzen." {...formErrors.field('labor35a')}>
+            <Field label={<>davon <Term id="labor35a">§35a-Lohn</Term> €</>} hint="Lohn- und Arbeitskosten nach § 35a EStG; der Mieter kann sie steuerlich absetzen." {...formErrors.field('labor35a')}>
               <input value={form.labor35a} inputMode="decimal" onChange={(e) => setForm({ ...form, labor35a: e.target.value })} />
             </Field>
             {/* Betriebsstrom (Heizung PR 15): sichtbar ohne Aufklappen, wer ihn braucht. */}
@@ -918,13 +918,13 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             </details>
             {/* Nicht umlagefähig (#142): nichts zu verteilen, also keine Auswahl, die etwas anderes verspräche. */}
             {!showsKeyFields(form.category) && (
-              <div className="field grow muted">
+              <div className="field muted">
                 <span><Term id="notAllocable">Nicht umlagefähig</Term>: Diese Position trägt der Vermieter allein; ein Umlageschlüssel entfällt.</span>
               </div>
             )}
             {/* #163: Für die Steuer zählt, wen eine Reparatur betrifft. Die Abrechnung liest das nicht. */}
             {showsTaxUnitField(form.category) && (
-              <label className="field grow">
+              <label className="field">
                 <Term id="mixedUse">Betrifft (für die Steuer)</Term>
                 <select value={taxScopeOf(form)} onChange={(e) => setForm(withTaxUnit(form, e.target.value))}>
                   <option value="">das ganze Gebäude (nach Fläche)</option>
@@ -956,7 +956,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
               </div>
             )}
             {showsKeyFields(form.category) && <>
-            <label className="field grow">
+            <label className="field">
               <Term id="allocationKey">Umlageschlüssel</Term>
               <select value={form.key} onChange={(e) => setForm(withKey(form, e.target.value as CostKey, unitMeterTypes, keyCtx))}>
                 {costKeyOptions(unitMeterTypes, form.key, selfPlant).map((k) => (
@@ -970,7 +970,6 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
               <Field
                 required={!!selfPlant}
                 label={`Ziel${selfPlant ? '' : ' (beim Mieterwechsel)'}`}
-                className="grow"
                 // Am Feld die kurze Fassung, schon vor dem Speichern; der Satz steht beim Speichern in der Sammelmeldung, mit Link.
                 {...formErrors.field('target')}
                 error={formErrors.field('target').error ?? (targetInvalid ? TARGET_SHORT : undefined)}
@@ -991,7 +990,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
               </div>
             )}
             {form.key === 'meter' && (
-              <label className="field grow">
+              <label className="field">
                 Zählertyp
                 <select value={form.meterType} onChange={(e) => setForm({ ...form, meterType: e.target.value as MeterType | '' })}>
                   <option value="">— wählen —</option>
@@ -1010,7 +1009,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                 </div>
                 <div className="row">
                   {basisUnits.map((u) => (
-                    <label key={u.id} className="field grow">
+                    <label key={u.id} className="field">
                       {/* Name und Kennzeichen in einer Zeile — .field ist eine Flex-Spalte,
                           ein direktes Kind würde sich sonst über die ganze Breite ziehen. */}
                       <span className="label-line">
@@ -1037,17 +1036,17 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                   zu dieser Kostenart, meist nach <Term id="mea">Miteigentumsanteilen</Term>; sie erscheinen im Rechenweg der Abrechnung (§556a Abs. 3 BGB).
                 </div>
                 <div className="row">
-                  <label className="field grow">
+                  <label className="field">
                     Maßstab
                     <select value={form.externalMeasure} onChange={(e) => setForm({ ...form, externalMeasure: e.target.value as ExternalMeasure })}>
                       {EXTERNAL_MEASURE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
                   </label>
-                  <label className="field grow">
+                  <label className="field">
                     {externalTotalLabel(form.externalMeasure)}
                     <input value={form.externalTotal} onChange={(e) => setForm({ ...form, externalTotal: e.target.value })} inputMode="decimal" />
                   </label>
-                  <label className="field grow">
+                  <label className="field">
                     Kosten der Gemeinschaft (ganze Anlage) €
                     <input value={form.externalTotalAmount} onChange={(e) => setForm({ ...form, externalTotalAmount: e.target.value })} placeholder="z. B. 50.000,00" inputMode="decimal" />
                   </label>
@@ -1072,7 +1071,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                 ) : (
                   <div className="row">
                     {tenanciesForAmounts(tenancies, units, period, form.participants).map((t) => (
-                      <label key={t.id} className="field grow">
+                      <label key={t.id} className="field">
                         {t.tenantName} ({units.find((u) => u.id === t.unitId)?.name ?? '—'})
                         <input
                           value={form.tenancyAmounts[t.id] ?? ''}
@@ -1087,7 +1086,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                 {selfAmountUnits(units, form.participants).length > 0 && (
                   <div className="row">
                     {selfAmountUnits(units, form.participants).map((u) => (
-                      <label key={u.id} className="field grow">
+                      <label key={u.id} className="field">
                         <span>{u.name} (selbstgenutzt, Ihr <Term id="ownShare">Eigenanteil</Term>)</span>
                         <input
                           value={form.selfAmounts[u.id] ?? ''}
@@ -1133,7 +1132,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
               </details>
             )}
             {form.key === 'direct' && (
-              <label className="field grow">
+              <label className="field">
                 Wohnung
                 <select value={form.directUnitId} onChange={(e) => setForm({ ...form, directUnitId: e.target.value })}>
                   <option value="">— wählen —</option>
@@ -1164,7 +1163,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                     <span className="muted">PDF oder Foto</span>
                   </div>
                   {knownFiles.length > 0 && (
-                    <label className="field grow">
+                    <label className="field">
                       oder vorhandenen Beleg zuordnen
                       <select value="" onChange={(e) => { if (e.target.value) setForm({ ...form, invoiceFile: e.target.value }) }}>
                         <option value="">— wählen —</option>

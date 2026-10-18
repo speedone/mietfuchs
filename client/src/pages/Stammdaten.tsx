@@ -18,6 +18,7 @@ import { useOpenForm, useProperty, withProperty } from '../property'
 import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, INTERIM_FEE_HINT, INTERIM_GAP_OPTIONS, parseMeterValue, successorHeatingNote, tenantChangeProblems, type NewTenantForm, type TenantChangeField } from '../tenantChange'
 import { gapConsequence } from '../heatingSelfView'
 import PeriodCard from '../components/PeriodCard'
+import Card from '../components/Card'
 import PageHeader from '../components/PageHeader'
 import { emptyUnitsText } from '../propertyView'
 import Term from '../components/Term'
@@ -349,8 +350,8 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       <PropertyCard />
       <PeriodCard onChanged={afterHeatingOrPeriodChange} />
 
-      <div className="card">
-        <h2>Wohnungen</h2>
+      {/* Neues anlegen steht oben rechts im Kartenkopf (#346 Schritt 7b). */}
+      <Card title="Wohnungen" aside={<button className="btn secondary" onClick={() => { unitErrors.clear(); setUnitForm({ ...EMPTY_UNIT }) }}>+ Wohnung anlegen</button>}>
         {units.length === 0 && <div className="empty">{emptyUnitsText(property?.kind ?? 'mfh')}</div>}
         {units.length > 0 && (
           <Table className="stacked">
@@ -400,19 +401,31 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
             </tbody>
           </Table>
         )}
-        <div className="row">
-          <button className="btn secondary" onClick={() => { unitErrors.clear(); setUnitForm({ ...EMPTY_UNIT }) }}>+ Wohnung anlegen</button>
-        </div>
         {units.length > 0 && participating.length === 0 && (
           <div className="notice">Keine Wohnung ist an der Kostenverteilung beteiligt — die Abrechnung wäre leer.</div>
         )}
-      </div>
+      </Card>
 
       {/* Heizung PR 4: optional, nach den Wohnungen, weil Schritt 4 nach ihnen fragt. */}
       <HeatingCard units={units} focus={focus} onFocusDone={onFocusDone} onChanged={afterHeatingOrPeriodChange} />
 
-      <div className="card">
-        <h2>Mietverhältnisse</h2>
+      <Card
+        title="Mietverhältnisse"
+        aside={(
+          <span className="flex flex-wrap items-center justify-end gap-2">
+            {/* Ein gesperrter Knopf nennt seinen Grund (#346, Schritt 10, M14). */}
+            {units.length === 0 && <span id="tenancy-needs-unit" className="muted">Legen Sie zuerst eine Wohnung an.</span>}
+            <button
+              className="btn secondary"
+              onClick={() => { tenErrors.clear(); setTenForm({ unitId: defaultTenancyUnitId(units, tenancies, localToday()), tenantName: '', personHistory: [{ from: '', persons: '2' }], start: '', end: '', baseRents: [{ from: '', amount: '' }], prepayments: [{ from: '', amount: '' }], ...EMPTY_TENANCY_EXTRA }) }}
+              disabled={units.length === 0}
+              aria-describedby={units.length === 0 ? 'tenancy-needs-unit' : undefined}
+            >
+              + Mietverhältnis anlegen
+            </button>
+          </span>
+        )}
+      >
         {staleAfterChange && (
           <div className="notice" role="status">Der Mieterwechsel ist gespeichert; die Ansicht ließ sich nicht neu laden, bitte Seite neu laden.</div>
         )}
@@ -526,19 +539,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
             </tbody>
           </Table>
         )}
-        <div className="row">
-        <button
-          className="btn secondary"
-          onClick={() => { tenErrors.clear(); setTenForm({ unitId: defaultTenancyUnitId(units, tenancies, localToday()), tenantName: '', personHistory: [{ from: '', persons: '2' }], start: '', end: '', baseRents: [{ from: '', amount: '' }], prepayments: [{ from: '', amount: '' }], ...EMPTY_TENANCY_EXTRA }) }}
-          disabled={units.length === 0}
-          aria-describedby={units.length === 0 ? 'tenancy-needs-unit' : undefined}
-        >
-          + Mietverhältnis anlegen
-        </button>
-        {/* Ein gesperrter Knopf nennt seinen Grund (#346, Schritt 10, M14). */}
-        {units.length === 0 && <span id="tenancy-needs-unit" className="muted self-center">Legen Sie zuerst eine Wohnung an.</span>}
-        </div>
-      </div>
+      </Card>
 
       {tenForm && (
         <Drawer
@@ -557,10 +558,10 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
           actions={<button className="btn" disabled={saving.busy} onClick={() => void saving.run(saveTenancy)}>{tenForm.id ? 'Speichern' : 'Anlegen'}</button>}
         >
           <div className="row">
-            <Field label="Mieter" required className="grow" {...tenErrors.field('tenantName')}>
+            <Field label="Mieter" required {...tenErrors.field('tenantName')}>
               <input value={tenForm.tenantName} onChange={(e) => setTenForm({ ...tenForm, tenantName: e.target.value })} placeholder="z. B. Familie Müller" />
             </Field>
-            <Field label="Wohnung" required className="grow" {...tenErrors.field('unitId')}>
+            <Field label="Wohnung" required {...tenErrors.field('unitId')}>
               <select value={tenForm.unitId} onChange={(e) => setTenForm({ ...tenForm, unitId: e.target.value })}>
                 <option value="">— wählen —</option>
                 {units.map((u) => (
@@ -568,10 +569,10 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                 ))}
               </select>
             </Field>
-            <Field label="Einzug" required className="grow" {...tenErrors.field('start')}>
+            <Field label="Einzug" required {...tenErrors.field('start')}>
               <input type="date" value={tenForm.start} onChange={(e) => setTenForm({ ...tenForm, start: e.target.value })} />
             </Field>
-            <Field label="Auszug" className="grow" hint="Leer lassen, solange das Mietverhältnis läuft.">
+            <Field label="Auszug" hint="Leer lassen, solange das Mietverhältnis läuft.">
               <input type="date" value={tenForm.end} onChange={(e) => setTenForm({ ...tenForm, end: e.target.value })} />
             </Field>
 
@@ -602,7 +603,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                 <div className="staffel-row" key={i}>
                   <MonthField label={scheduleLabel('baseRent')} placeholder={startsSchedule(tenForm.baseRents, i) ? 'ab Einzug' : undefined} value={p.from} start={tenForm.start} today={localToday()} {...tenErrors.field(scheduleField('baseRent', i, 'from'))} onChange={(from) => setTenForm({ ...tenForm, baseRents: tenForm.baseRents.map((x, k) => (k === i ? { ...x, from } : x)) })} />
                   <Field label="Betrag €/Monat" {...tenErrors.field(scheduleField('baseRent', i, 'amount'))}>
-                    <input value={p.amount} placeholder="z. B. 800,00" onChange={(e) => setTenForm({ ...tenForm, baseRents: tenForm.baseRents.map((x, k) => (k === i ? { ...x, amount: e.target.value } : x)) })} />
+                    <input inputMode="decimal" value={p.amount} placeholder="z. B. 800,00" onChange={(e) => setTenForm({ ...tenForm, baseRents: tenForm.baseRents.map((x, k) => (k === i ? { ...x, amount: e.target.value } : x)) })} />
                   </Field>
                   {tenForm.baseRents.length > 1
                     ? <button className="icon-btn danger" title="Zeile entfernen" aria-label="Zeile entfernen" onClick={() => { tenErrors.clear(); setTenForm({ ...tenForm, baseRents: tenForm.baseRents.filter((_, k) => k !== i) }) }}>🗑</button>
@@ -618,7 +619,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                 <div className="staffel-row" key={i}>
                   <MonthField label={scheduleLabel('prepayment')} placeholder={startsSchedule(tenForm.prepayments, i) ? 'ab Einzug' : undefined} value={p.from} start={tenForm.start} today={localToday()} {...tenErrors.field(scheduleField('prepayment', i, 'from'))} onChange={(from) => setTenForm({ ...tenForm, prepayments: tenForm.prepayments.map((x, k) => (k === i ? { ...x, from } : x)) })} />
                   <Field label="Betrag €/Monat" {...tenErrors.field(scheduleField('prepayment', i, 'amount'))}>
-                    <input value={p.amount} placeholder="z. B. 150,00" onChange={(e) => setTenForm({ ...tenForm, prepayments: tenForm.prepayments.map((x, k) => (k === i ? { ...x, amount: e.target.value } : x)) })} />
+                    <input inputMode="decimal" value={p.amount} placeholder="z. B. 150,00" onChange={(e) => setTenForm({ ...tenForm, prepayments: tenForm.prepayments.map((x, k) => (k === i ? { ...x, amount: e.target.value } : x)) })} />
                   </Field>
                   {tenForm.prepayments.length > 1
                     ? <button className="icon-btn danger" title="Zeile entfernen" aria-label="Zeile entfernen" onClick={() => { tenErrors.clear(); setTenForm({ ...tenForm, prepayments: tenForm.prepayments.filter((_, k) => k !== i) }) }}>🗑</button>
@@ -649,7 +650,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                     <div key={i} className="staffel-row">
                       <MonthField label={scheduleLabel('heatingPrepayment')} placeholder={startsSchedule(rows, i) ? 'ab Einzug' : undefined} value={p.from} start={tenForm.start} today={localToday()} {...tenErrors.field(scheduleField('heatingPrepayment', i, 'from'))} onChange={(from) => setTenForm({ ...tenForm, heatingPrepayments: rows.map((x, k) => (k === i ? { ...x, from } : x)) })} />
                       <Field label="Betrag €/Monat" {...tenErrors.field(scheduleField('heatingPrepayment', i, 'amount'))}>
-                        <input value={p.amount} placeholder="z. B. 120,00" onChange={(e) => setTenForm({ ...tenForm, heatingPrepayments: rows.map((x, k) => (k === i ? { ...x, amount: e.target.value } : x)) })} />
+                        <input inputMode="decimal" value={p.amount} placeholder="z. B. 120,00" onChange={(e) => setTenForm({ ...tenForm, heatingPrepayments: rows.map((x, k) => (k === i ? { ...x, amount: e.target.value } : x)) })} />
                       </Field>
                       {rows.length > 1
                         ? <button className="icon-btn danger" title="Zeile entfernen" aria-label="Zeile entfernen" onClick={() => { tenErrors.clear(); setTenForm({ ...tenForm, heatingPrepayments: rows.filter((_, k) => k !== i) }) }}>🗑</button>
@@ -665,13 +666,13 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
             <details className="extra-details" style={{ width: '100%' }} open={storedIbanInvalid(tenancies.find((t) => t.id === tenForm.id)?.iban) || undefined}>
               <summary>Weitere Angaben — Nebenkosten-Modell, Kontakt, Kaution, Vertrag (optional)</summary>
               <div className="row">
-                <label className="field grow" title="Pauschale nach § 556 Abs. 2 BGB oder Inklusivmiete: dann gibt es keine Nebenkostenabrechnung">
+                <label className="field" title="Pauschale nach § 556 Abs. 2 BGB oder Inklusivmiete: dann gibt es keine Nebenkostenabrechnung">
                   <span>Nebenkosten (<Term id="flatRate">Pauschale</Term>, <Term id="inclusiveRent">Inklusivmiete</Term>)</span>
                   <select value={tenForm.costModel} onChange={(e) => setTenForm({ ...tenForm, costModel: e.target.value as CostModel })}>
                     {(Object.keys(COST_MODEL_LABELS) as CostModel[]).map((m) => <option key={m} value={m}>{COST_MODEL_LABELS[m]}</option>)}
                   </select>
                 </label>
-                <label className="field grow" title="Für die Kostenart Heizung und Warmwasser; eine Pauschale oder Warmmiete ist nur im selbstbewohnten Zweifamilienhaus zulässig (§ 2 HeizkostenV)">
+                <label className="field" title="Für die Kostenart Heizung und Warmwasser; eine Pauschale oder Warmmiete ist nur im selbstbewohnten Zweifamilienhaus zulässig (§ 2 HeizkostenV)">
                   <span>Heizung und Warmwasser (<Term id="heatingCostOrdinance">HeizkostenV</Term>)</span>
                   <select value={tenForm.heatingModel} onChange={(e) => setTenForm({ ...tenForm, heatingModel: (Object.keys(HEATING_MODEL_LABELS) as HeatingModel[]).find((m) => m === e.target.value) ?? 'settlement' })}>
                     {(Object.keys(HEATING_MODEL_LABELS) as HeatingModel[]).map((m) => <option key={m} value={m}>{HEATING_MODEL_LABELS[m]}</option>)}
@@ -681,7 +682,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
               {/* Heizung PR 19 (#97): die Hinweispflicht nach § 6 Abs. 2 Satz 6 CO2KostAufG. */}
               {tenForm.heatingModel === 'selfSupply' && (
                 <>
-                  <label className="field grow">
+                  <label className="field">
                     <span>Welche Heizung betreibt der Mieter selbst?</span>
                     <select value={tenForm.selfSupplyKind} onChange={(e) => setTenForm({ ...tenForm, selfSupplyKind: SELF_SUPPLY_KIND_OPTIONS.find((o) => o.value === e.target.value)?.value ?? '' })}>
                       {SELF_SUPPLY_KIND_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -701,7 +702,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                     <div className="staffel-row" key={i}>
                       <MonthField label={scheduleLabel('flatRate')} placeholder={startsSchedule(alle, i) ? 'ab Einzug' : undefined} value={p.from} start={tenForm.start} today={localToday()} {...tenErrors.field(scheduleField('flatRate', i, 'from'))} onChange={(from) => setTenForm({ ...tenForm, flatRates: alle.map((x, k) => (k === i ? { ...x, from } : x)) })} />
                       <Field label="Betrag €/Monat" {...tenErrors.field(scheduleField('flatRate', i, 'amount'))}>
-                        <input value={p.amount} placeholder="z. B. 90,00" onChange={(e) => setTenForm({ ...tenForm, flatRates: alle.map((x, k) => (k === i ? { ...x, amount: e.target.value } : x)) })} />
+                        <input inputMode="decimal" value={p.amount} placeholder="z. B. 90,00" onChange={(e) => setTenForm({ ...tenForm, flatRates: alle.map((x, k) => (k === i ? { ...x, amount: e.target.value } : x)) })} />
                       </Field>
                       {alle.length > 1
                         ? <button className="icon-btn danger" title="Zeile entfernen" aria-label="Zeile entfernen" onClick={() => { tenErrors.clear(); setTenForm({ ...tenForm, flatRates: alle.filter((_, k) => k !== i) }) }}>🗑</button>
@@ -712,13 +713,13 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                 </div>
               )}
               <div className="row">
-                <Field label="E-Mail" className="grow">
+                <Field label="E-Mail">
                   <input type="email" value={tenForm.email} onChange={(e) => setTenForm({ ...tenForm, email: e.target.value })} placeholder="mieter@example.de" />
                 </Field>
-                <Field label="Telefon" className="grow">
+                <Field label="Telefon">
                   <input value={tenForm.phone} onChange={(e) => setTenForm({ ...tenForm, phone: e.target.value })} placeholder="0123 456789" />
                 </Field>
-                <Field label="Abweichende Anschrift (Schriftverkehr)" className="grow">
+                <Field label="Abweichende Anschrift (Schriftverkehr)">
                   <input value={tenForm.correspondenceAddress} onChange={(e) => setTenForm({ ...tenForm, correspondenceAddress: e.target.value })} placeholder="z. B. neue Adresse nach Auszug" />
                 </Field>
                 {/* Je Mietverhältnis neu (Durchsicht zu #279): Der Dialog bleibt offen, wenn „Hier beheben →“
@@ -733,20 +734,20 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                   placeholder="DE.."
                   {...tenErrors.field('iban')}
                 />
-                <Field label="Vertragsdatum" className="grow" {...tenErrors.field('contractDate')}>
+                <Field label="Vertragsdatum" {...tenErrors.field('contractDate')}>
                   <input type="date" value={tenForm.contractDate} onChange={(e) => setTenForm({ ...tenForm, contractDate: e.target.value })} />
                 </Field>
-                <Field label="Kaution €" className="grow" {...tenErrors.field('deposit')}>
+                <Field label="Kaution €" {...tenErrors.field('deposit')}>
                   <input value={tenForm.deposit} inputMode="decimal" placeholder="z. B. 2.400,00" onChange={(e) => setTenForm({ ...tenForm, deposit: e.target.value })} />
                 </Field>
-                <Field label="Kautionsstatus" className="grow">
+                <Field label="Kautionsstatus">
                   <select value={tenForm.depositStatus} disabled={!tenForm.deposit.trim()} onChange={(e) => setTenForm({ ...tenForm, depositStatus: e.target.value as DepositStatus })}>
                     {(Object.keys(DEPOSIT_STATUS_LABELS) as DepositStatus[]).map((s) => (
                       <option key={s} value={s}>{DEPOSIT_STATUS_LABELS[s]}</option>
                     ))}
                   </select>
                 </Field>
-                <Field label="Notiz" className="grow">
+                <Field label="Notiz">
                   <input value={tenForm.notes} onChange={(e) => setTenForm({ ...tenForm, notes: e.target.value })} placeholder="freie Notiz zum Mietverhältnis" />
                 </Field>
               </div>
@@ -770,24 +771,24 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
           actions={<button className="btn" disabled={saving.busy} onClick={() => void saving.run(saveUnit)}>{unitForm.id ? 'Speichern' : 'Anlegen'}</button>}
         >
           <div className="row">
-            <Field label="Name" required className="grow" {...unitErrors.field('name')}>
+            <Field label="Name" required {...unitErrors.field('name')}>
               <input value={unitForm.name} onChange={(e) => setUnitForm({ ...unitForm, name: e.target.value })} placeholder="z. B. OG links" />
             </Field>
-            <Field label="Wohnfläche (m²)" required className="grow" hint="0 für Garage, Stellplatz oder Lager; sie zählt dann beim Flächenschlüssel nicht mit." {...unitErrors.field('areaM2')}>
+            <Field label="Wohnfläche (m²)" required hint="0 für Garage, Stellplatz oder Lager; sie zählt dann beim Flächenschlüssel nicht mit." {...unitErrors.field('areaM2')}>
               <input value={unitForm.areaM2} inputMode="decimal" onChange={(e) => setUnitForm({ ...unitForm, areaM2: e.target.value })} placeholder="z. B. 85,5" />
             </Field>
-            <Field label="Zimmer" className="grow" {...unitErrors.field('rooms')}>
-              <input value={unitForm.rooms} onChange={(e) => setUnitForm({ ...unitForm, rooms: e.target.value })} placeholder="z. B. 3" />
+            <Field label="Zimmer" {...unitErrors.field('rooms')}>
+              <input inputMode="decimal" value={unitForm.rooms} onChange={(e) => setUnitForm({ ...unitForm, rooms: e.target.value })} placeholder="z. B. 3" />
             </Field>
             {(property?.kind === 'etw' || unitForm.mea.trim() !== '') && (
-              <Field label={<Term id="mea">Miteigentumsanteile</Term>} className="grow" hint="Aus der Teilungserklärung oder der Hausgeldabrechnung; für den Umlageschlüssel „laut Gemeinschaftsabrechnung“." {...unitErrors.field('mea')}>
+              <Field label={<Term id="mea">Miteigentumsanteile</Term>} hint="Aus der Teilungserklärung oder der Hausgeldabrechnung; für den Umlageschlüssel „laut Gemeinschaftsabrechnung“." {...unitErrors.field('mea')}>
                 <input value={unitForm.mea} onChange={(e) => setUnitForm({ ...unitForm, mea: e.target.value })} placeholder="z. B. 124" inputMode="decimal" />
               </Field>
             )}
-            <Field label="Etage" className="grow">
+            <Field label="Etage" width="m">
               <input value={unitForm.floor} onChange={(e) => setUnitForm({ ...unitForm, floor: e.target.value })} placeholder="z. B. 1. OG" />
             </Field>
-            <label className="field grow">
+            <label className="field">
               Nutzung
               <select value={unitForm.usage} onChange={(e) => setUnitForm({ ...unitForm, usage: e.target.value as UnitUsage })}>
                 {(Object.keys(UNIT_USAGE_LABELS) as UnitUsage[]).map((k) => (
@@ -801,11 +802,11 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
               </small>
             </label>
             {unitForm.usage === 'eigen' && (
-              <Field label="Personen im eigenen Haushalt" className="grow" hint="Nur für den Personenschlüssel; ohne Angabe bleibt die eigene Wohnung dort unberücksichtigt." {...unitErrors.field('selfPersons')}>
-                <input value={unitForm.selfPersons} onChange={(e) => setUnitForm({ ...unitForm, selfPersons: e.target.value })} placeholder="z. B. 2" />
+              <Field label="Personen im eigenen Haushalt" hint="Nur für den Personenschlüssel; ohne Angabe bleibt die eigene Wohnung dort unberücksichtigt." {...unitErrors.field('selfPersons')}>
+                <input inputMode="numeric" value={unitForm.selfPersons} onChange={(e) => setUnitForm({ ...unitForm, selfPersons: e.target.value })} placeholder="z. B. 2" />
               </Field>
             )}
-            <Field label="Notiz" className="grow">
+            <Field label="Notiz">
               <input value={unitForm.notes} onChange={(e) => setUnitForm({ ...unitForm, notes: e.target.value })} placeholder="z. B. Balkon, Stellplatz Nr. 2" />
             </Field>
             {/* Anschlüsse (#117, #142): positiv gefragt, gespeichert wird nur die Ausnahme. Nur
@@ -815,7 +816,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                 <summary>
                   Weitere Angaben — Anschlüsse{connectionSummary(unitForm.noConnection) ? `: ${connectionSummary(unitForm.noConnection)}` : ''}
                 </summary>
-                <fieldset className="field grow no-connection">
+                <fieldset className="field no-connection">
                   <legend className="field-legend"><Term id="noConnection">Anschlüsse</Term> dieser Einheit:</legend>
                   <div className="checks">
                     {connectionTypes(objectMeters, unitForm.noConnection).map((t) => (

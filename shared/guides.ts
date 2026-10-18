@@ -141,7 +141,7 @@ const GUIDE_DATA = {
     title: 'Vermietete Eigentumswohnung mit Hausgeldabrechnung',
     applies: 'Sie vermieten eine Eigentumswohnung. Die Kosten des Hauses rechnet die Eigentümergemeinschaft ab, Sie bekommen jedes Jahr die Hausgeldabrechnung und geben die umlagefähigen Kosten an Ihre Mieter weiter.',
     steps: [
-      { page: 'stammdaten', text: 'Wählen Sie in der Karte „Objekt“ die Art „Eigentumswohnung“ und klicken Sie auf „Speichern“; für eine weitere Wohnung neben einem Haus legen Sie mit „Weiteres Objekt anlegen“ ein eigenes Objekt an.' },
+      { page: 'stammdaten', text: 'Wählen Sie in der Karte „Objekt“ die Art „Eigentumswohnung“ und klicken Sie auf „Speichern“; für eine weitere Wohnung neben einem Haus legen Sie mit „+ Weiteres Objekt anlegen“ ein eigenes Objekt an.' },
       { page: 'stammdaten', text: 'Legen Sie nur Ihre eigene Wohnung an, nicht die übrigen Wohnungen der Anlage, und tragen Sie bei „Miteigentumsanteile“ den Wert aus der Teilungserklärung oder der Hausgeldabrechnung ein. Danach das Mietverhältnis mit „+ Mietverhältnis anlegen“.' },
       { page: 'kosten', text: 'Übernehmen Sie aus der Hausgeldabrechnung jede umlagefähige Kostenart als eigene Position mit dem Umlageschlüssel „laut Gemeinschaftsabrechnung (Eigentumswohnung)“. Unter „Betrag €“ steht Ihr Anteil laut Hausgeldabrechnung, darunter „Maßstab“, die Summe der Anteile in der Anlage und „Kosten der Gemeinschaft (ganze Anlage) €“.' },
       { page: 'kosten', text: 'Verwaltervergütung, Kontoführung und Reparaturen erfassen Sie als „Nicht umlagefähig“, die Zuführung zur Rücklage als „Zuführung Erhaltungsrücklage“.' },
@@ -174,7 +174,7 @@ const GUIDE_DATA = {
     title: 'Mehrere Häuser oder Wohnungen (mehrere Objekte)',
     applies: 'Sie vermieten an mehr als einer Adresse, etwa zwei Häuser, ein Haus und eine Eigentumswohnung oder einen Garagenhof, und rechnen sie getrennt ab.',
     steps: [
-      { page: 'stammdaten', text: 'Klicken Sie in der Karte „Objekt“ auf „Weiteres Objekt anlegen“, geben Sie Name, Art und Adresse ein und legen Sie es an. Mietfuchs wechselt danach in das neue, noch leere Objekt; Ihre bisherigen Daten bleiben unverändert.' },
+      { page: 'stammdaten', text: 'Klicken Sie in der Karte „Objekt“ auf „+ Weiteres Objekt anlegen“, geben Sie Name, Art und Adresse ein und legen Sie es an. Mietfuchs wechselt danach in das neue, noch leere Objekt; Ihre bisherigen Daten bleiben unverändert.' },
       { text: 'Zwischen den Objekten wechseln Sie in der Seitenleiste unter „Objekt“. Der Umschalter erscheint ab dem zweiten Objekt; am Handy steht er im Menü. Der Seitenkopf nennt auf jeder Seite das gewählte Objekt und das Abrechnungsjahr.' },
       { page: 'stammdaten', text: 'Legen Sie in jedem Objekt seine Wohnungen und Mietverhältnisse an; Zähler und Kosten erfassen Sie ebenfalls im jeweiligen Objekt.' },
       { page: 'einstellungen', text: 'Vermieter, IBAN und Zahlungsfrist unter „Vermieter & Zahlung“ gelten für alle Objekte als Vorgabe.' },

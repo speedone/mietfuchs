@@ -105,14 +105,14 @@ export default function Einstellungen({ settings, reload, update }: Props) {
           {properties.length > 1 && ' Die Angaben gelten als Vorgabe für alle Objekte; in den Stammdaten kann ein Objekt abweichen.'}
         </p>
         <div className="row">
-          <label className="field grow">
+          <label className="field">
             Name des Vermieters
             <input value={form.landlordName} onChange={(e) => setForm({ ...form, landlordName: e.target.value })} placeholder="Vor- und Nachname" />
           </label>
           <IbanInput label="IBAN für Nachzahlungen" value={form.iban} stored={settings.iban} onChange={(iban) => setForm({ ...form, iban })} placeholder="DE.." {...saveErrors.field('iban')} />
           <label className="field">
             Zahlungsfrist (Tage)
-            <input value={form.paymentDeadlineDays} onChange={(e) => setForm({ ...form, paymentDeadlineDays: e.target.value })} className="input-xs" />
+            <input inputMode="numeric" value={form.paymentDeadlineDays} onChange={(e) => setForm({ ...form, paymentDeadlineDays: e.target.value })} />
           </label>
         </div>
         {/* Sichtprüfung E52: Speichern steht unter den Feldern wie in den anderen Karten */}
