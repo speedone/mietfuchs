@@ -367,7 +367,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
                 </Field>
                 <label className="field">
                   Jahreszahl auf dem Zähler (etwa „M22“ oder die Jahresangabe der Eichmarke)
-                  <input inputMode="numeric" value={markedYear} onChange={(e) => setMarkedYear(e.target.value)} placeholder="für einen Vorschlag" />
+                  <input inputMode="numeric" value={markedYear} onChange={(e) => setMarkedYear(e.target.value)} placeholder="z. B. M22" />
                   {markedYear.trim() !== '' && (() => {
                     const s = calibrationSuggestion(meterForm.type, markedYear)
                     return 'reason' in s

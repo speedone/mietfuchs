@@ -70,7 +70,7 @@ test('Bundesland: leer heißt unbekannt (null), ein Kürzel geht unverändert hi
 
 test('Bundesland: die Auswahl hat leer und die 16 Länder, und jeder gespeicherte Wert steht darin', () => {
   expect(STATE_OPTIONS).toHaveLength(17)
-  expect(STATE_OPTIONS[0]).toEqual({ value: '', label: 'unbekannt – es gelten nur bundesweite Feiertage' })
+  expect(STATE_OPTIONS[0]).toEqual({ value: '', label: 'unbekannt' })
   expect(STATE_UNKNOWN_LABEL).toBe(STATE_OPTIONS[0]?.label)
   expect(STATE_OPTIONS.find((o) => o.value === 'TH')?.label).toBe('Thüringen')
   expect(stateFromSelect('HB')).toBe('HB')

@@ -14,6 +14,7 @@ import { isCalendarRules, periodContaining, periodLabel, periodsBetween, rulesOf
 import { renderInvoicePages, renderThumbnail } from '../pdfPreview'
 import { buildTenantFolderPdf, isIndividualAmounts, planTenantFolder, type TenantFolderPlan } from '../tenantFolder'
 import { amountCheckBody, amountCheckMode, attachChoices, buildFolder, coverage, filesByItem, duplicateHints, inboxFor, inboxOf, matchesQuery, receiptCards, receiptName, type FolderFilter, type ReceiptCard, type ReceiptUpload } from '../receipts'
+import Field from '../components/Field'
 import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
 import DraftActions from '../components/DraftActions'
@@ -549,7 +550,7 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
                       const option = (c: CostItem) => <option key={c.id} value={c.id}>{startYearOf(c.period)} · {c.category} · {c.description} · {fmtEuro(c.amountCents)}</option>
                       return (
                         <AttachPicker label={`${receiptName(upload)} einer Position zuordnen`} what={`Position für ${receiptName(upload)}`}
-                          placeholder="einer Position zuordnen …" scope={upload.file} values={candidatesFor(placement).map((c) => c.id)}
+                          placeholder="Position wählen …" scope={upload.file} values={candidatesFor(placement).map((c) => c.id)}
                           onSave={(id) => attachById(id, upload.file)}>
                           {choices.likely.length > 0 ? (
                             <>
@@ -630,7 +631,12 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
       )}
 
       <div className="card no-print">
-        <div className="row receipt-filters">
+        {/* Suche in voller Breite, darunter die beiden Kästchen auf einer Linie (#346 Schritt 7b, Durchsicht M1 und K2):
+            Der lange Platzhalter schnitt ab; was die Suche findet, steht jetzt als Hinweis. */}
+        <Field label="Suche" width="full" hint="Findet Rechnungssteller, Beschreibung, Betrag (z. B. 128,40), Dateiname oder Jahr.">
+          <input type="search" value={query} placeholder="z. B. Stadtwerke oder 128,40" onChange={(e) => setQuery(e.target.value)} />
+        </Field>
+        <div className="checks">
           {properties.length > 1 && (
             <label className="field checkline">
               <span>
@@ -644,15 +650,6 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
               <input type="checkbox" checked={allYears} onChange={(e) => setAllYears(e.target.checked)} />
               Belege aller Jahre zeigen
             </span>
-          </label>
-          <label className="field">
-            Suche
-            <input
-              type="search"
-              value={query}
-              placeholder="Rechnungssteller, Beschreibung, Betrag (z. B. 128,40), Dateiname oder Jahr"
-              onChange={(e) => setQuery(e.target.value)}
-            />
           </label>
         </div>
         {/* Durchsicht zu Schritt 8, K2: Der Ordner ordnet nach dem Jahr, in dem der Zeitraum einer Position beginnt

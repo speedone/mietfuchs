@@ -38,12 +38,12 @@ export type SelfSetupBody = {
 }
 
 export const HOT_WATER_OPTIONS: { value: HotWater; label: string }[] = [
-  { value: 'combined', label: 'Ja, die Heizung bereitet auch das Warmwasser' },
+  { value: 'combined', label: 'Ja, auch das Warmwasser' },
   { value: 'separate', label: 'Nein, das Warmwasser hat eine eigene Anlage, deren Kosten getrennt erfasst sind' },
   { value: 'none', label: 'Es gibt kein zentrales Warmwasser' },
 ]
 export const CAPTURE_SELF_OPTIONS: { value: CaptureMethod; label: string; later: boolean }[] = [
-  { value: 'heatMeter', label: 'Wärmezähler und Warmwasserzähler je Wohnung', later: false },
+  { value: 'heatMeter', label: 'Wärme- und Warmwasserzähler je Wohnung', later: false },
   { value: 'hca', label: 'Heizkostenverteiler an den Heizkörpern, die ich selbst ablese', later: false },
   { value: 'serviceValues', label: 'Werte eines Ablesedienstes (auch Verdunster und Funk)', later: false },
 ]
