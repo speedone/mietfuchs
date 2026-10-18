@@ -203,7 +203,7 @@ const GUIDE_DATA = {
     title: 'Garage oder Stellplatz, mitvermietet oder separat',
     applies: 'Sie vermieten eine Garage oder einen Stellplatz, an einen Mieter im Haus oder an jemand anderen.',
     steps: [
-      { page: 'stammdaten', text: 'Gehört der Stellplatz zur Wohnung und trägt keine eigenen Nebenkosten, legen Sie ihn nicht als eigene Einheit an. Die Miete dafür steckt in der Kaltmiete der Wohnung, und die „Notiz (optional)“ der Wohnung kann ihn nennen.' },
+      { page: 'stammdaten', text: 'Gehört der Stellplatz zur Wohnung und trägt keine eigenen Nebenkosten, legen Sie ihn nicht als eigene Einheit an. Die Miete dafür steckt in der Kaltmiete der Wohnung, und die „Notiz“ der Wohnung kann ihn nennen.' },
       { page: 'stammdaten', text: 'Soll die Garage an Nebenkosten beteiligt sein, legen Sie sie mit „+ Wohnung hinzufügen“ als eigene Einheit mit 0 bei „Wohnfläche (m²)“ an und ihr Mietverhältnis mit 0 Personen. Mietet sie ein Wohnungsmieter, ist das ein zweites Mietverhältnis neben dem der Wohnung.' },
       { page: 'stammdaten', text: 'Hat die Garage keinen Wasseranschluss, entfernen Sie in ihrem Formular unter „Weitere Angaben — Anschlüsse“ das Häkchen bei „Kaltwasser“. Angeboten werden dort nur Zählerarten, die es im Objekt gibt.' },
       { page: 'kosten', text: 'Bei Positionen „nach Wohneinheiten“ zählt die Garage als eine Einheit mit. Soll sie dort nichts tragen, wählen Sie unter „Weitere Optionen: nur bestimmte Wohnungen beteiligen“ nur die Wohnungen.' },

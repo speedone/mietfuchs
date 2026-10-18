@@ -61,7 +61,7 @@ export default function PropertyCard() {
     if (!property || !form) return
     const body = propertyBody(form, property.iban)
     if ('error' in body) {
-      errors.report([{ text: body.error, ...(body.field ? { field: body.field } : {}), ...(body.short ? { short: body.short } : {}) }])
+      errors.report(body.problems)
       return
     }
     errors.clear()

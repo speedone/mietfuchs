@@ -331,6 +331,8 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
       else setPpEdit((p) => (p ? { ...p, error: errorText(e) } : p))
       return
     }
+    // Wie vorher über `attempt`: Ein Erfolg nimmt einen alten Fehler oben auf der Seite weg.
+    setError('')
     setPpEdit(null)
     await Promise.all([load(), reload()])
     toast(cents === null ? 'Vorauszahlung zurückgesetzt.' : 'Gezahlte Vorauszahlung übernommen.')

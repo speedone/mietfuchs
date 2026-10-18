@@ -139,8 +139,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
-- Die Bezeichnung eines Objekts ist Pflicht: Leer ließ sie sich speichern, und die Seitenleiste zeigte
-  danach „Ohne Namen“ (Befund M12 aus [#341](https://github.com/speedone/mietfuchs/issues/341)).
+- Die Karte „Objekt“ verlangt eine Bezeichnung: Leer ließ sie sich speichern, und die Seitenleiste
+  zeigte danach „Ohne Namen“. Hat das Objekt noch keinen Namen, etwa nach einer frischen Installation,
+  steht im Feld „Mein Objekt“; Sie können es überschreiben, und mit dem ersten Speichern der Karte wird
+  es übernommen (Befund M12 aus [#341](https://github.com/speedone/mietfuchs/issues/341)).
 - Angaben zur Heizkostenabrechnung (§ 6a HeizkostenV): Stehen alle Wärmezähler in MWh oder GJ, rechnet
   Mietfuchs den Vergleich mit dem Durchschnittsnutzer jetzt aus. Vorher galt er als offen, und der
   Hinweis nannte eine mögliche Kürzung um bis zu 3 %, obwohl ein Vergleichswert eingetragen war. Der
@@ -194,8 +196,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - Rückfragen: Enter wählt den Knopf mit dem Fokus und bestätigt nicht mehr immer; vor dem Löschen
   steht der Fokus auf „Abbrechen“, Tab bleibt im Dialog, und danach steht der Fokus wieder auf dem
   Knopf, der die Rückfrage geöffnet hat ([#341](https://github.com/speedone/mietfuchs/issues/341)).
-- Zähler: Eine Meldung zu „Ablesung speichern“ steht jetzt beim Knopf statt oben auf der Seite, wo
-  sie beim Klick nicht zu sehen war, und der Fokus geht auf das betroffene Feld ([#341](https://github.com/speedone/mietfuchs/issues/341)).
+- Zähler: Eine Meldung zu „Ablesung speichern“ steht jetzt am Feld und in einer Sammelmeldung beim
+  Knopf statt oben auf der Seite, wo sie beim Klick nicht zu sehen war; der Fokus geht auf die
+  Sammelmeldung, und ihr Link führt zum betroffenen Feld ([#341](https://github.com/speedone/mietfuchs/issues/341)).
 - Abrechnung: Ein ungültiger Betrag bei „✎ anpassen“ wird nicht mehr stumm verworfen, sondern am
   Feld gemeldet ([#341](https://github.com/speedone/mietfuchs/issues/341)).
 - Ableseergebnis für den Mieter: Es nennt die Einheit des Zählers und seine Nachkommastellen, ein

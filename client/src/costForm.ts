@@ -17,7 +17,9 @@ import { calendarContext, calendarPeriod, calendarYearPeriod, spansTwoYears } fr
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 // Seit der Belegbuchung (#170) in shared/, weil der Server dieselben Prüfungen und Vorschläge braucht.
 export { amountProblem, showsTaxUnitField, type BuildResult } from '../../shared/costItem.ts'
+import { amountProblem } from '../../shared/costItem.ts'
 import { allowsPaidOn, paidOnQuestions, statedOutflowYear, tenDayWindow, type YearSpan } from '../../shared/paidOn.ts'
+import type { Problem } from './formProblems'
 export { aiPositionDefaults, aiPositionPreselect, lastExternalBasis, type AiPositionKey, type KeyContext } from '../../shared/assessment.ts'
 
 export type ItemForm = {
@@ -703,3 +705,21 @@ export function paidOnChange(before: Pick<CostItem, 'paidOn' | 'taxYear' | 'peri
 
 // Der Hinweis zur Zehn-Tage-Regel (R-8), wenn das Datum zwischen dem 22.12. und dem 10.01. liegt; nie bei Grundsteuer.
 export const paidOnTenDayHint = (form: Pick<ItemForm, 'paidOn' | 'category'>): boolean => form.paidOn !== '' && tenDayWindow(form.paidOn, form.category)
+
+// Die Angaben der Kostenposition, die ein eigenes Feld haben, alle auf einmal (#346, Schritt 3, Durchsicht S1):
+// Beschreibung, Betrag (leer oder keine Zahl), Lohnanteil (dieselbe Regel wie in shared/costItem.ts) und Ziel.
+export type CostField = 'description' | 'amount' | 'labor35a' | 'target'
+export function costFieldProblems(form: { description: string; amount: string; labor35a: string; category: string }, target: { text: string; short: string } | null): Problem<CostField>[] {
+  const problems: Problem<CostField>[] = []
+  if (!form.description.trim()) problems.push({ field: 'description', short: 'Beschreibung fehlt', text: 'Beschreibung: Geben Sie an, wofür die Rechnung ist, etwa „Grundsteuer 2025“.' })
+  const amount = form.amount.trim() ? parseEuro(form.amount) : null
+  if (!form.amount.trim()) problems.push({ field: 'amount', short: 'Betrag fehlt', text: 'Betrag: Geben Sie den Rechnungsbetrag ein, etwa 480,00 (eine Gutschrift mit Minus).' })
+  else if (amount === null) problems.push({ field: 'amount', short: 'Kein Betrag', text: 'Betrag: Geben Sie den Betrag als Euro-Betrag ein, etwa 54,00 (eine Gutschrift mit Minus: -54,00).' })
+  else {
+    const labor = form.labor35a.trim() ? parseEuro(form.labor35a) : 0
+    const problem = amountProblem(amount, labor, form.category)
+    if (problem !== null) problems.push(amount === 0 ? { field: 'amount', short: 'Betrag ist 0', text: `Betrag: ${problem}` } : { field: 'labor35a', short: 'Lohnanteil prüfen', text: `§35a-Lohn: ${problem}` })
+  }
+  if (target !== null) problems.push({ field: 'target', ...target })
+  return problems
+}

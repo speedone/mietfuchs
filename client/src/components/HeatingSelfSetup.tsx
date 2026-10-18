@@ -32,7 +32,7 @@ export default function HeatingSelfSetup({ plant, period, periodLabel, onDone, o
   async function submit() {
     const result = selfSetupBody(form, energy)
     if ('error' in result) {
-      errors.report([{ field: result.field, short: result.short, text: result.error }])
+      errors.report(result.problems)
       return
     }
     setBusy(true)

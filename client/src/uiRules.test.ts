@@ -614,8 +614,8 @@ const ERROR_EXCEPTIONS = new Map<string, number>([
   ['./components/Co2SheetView.tsx', 1],
   // Ladefehler und je Zähler die Meldungen der Ablesungen als Hinweis in der Tabelle (Inhalt, kein Formularfehler)
   ['./pages/Zaehler.tsx', 2],
-  // Ladefehler und der Mieterwechsel, der mit Schritt 7 ins Seitenfenster kommt
-  ['./pages/Stammdaten.tsx', 2],
+  // Der Mieterwechsel, der mit Schritt 7 ins Seitenfenster kommt
+  ['./pages/Stammdaten.tsx', 1],
   // Ladefehler und das Ergebnis je Beleg in der Warteschlange der Auswertung (Inhalt der Liste)
   ['./pages/Kosten.tsx', 2],
   ['./pages/Schnellerfassung.tsx', 2],

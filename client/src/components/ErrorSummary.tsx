@@ -64,14 +64,14 @@ export function useFormError<F extends string = string>(): FormErrors<F> {
 // Der Titel nennt die Zahl der Angaben; „Angabe“ auch bei nur einer (GOV.UK zeigt die Sammelmeldung immer).
 export const summaryTitle = (count: number) => `Bitte prüfen Sie ${count} ${count === 1 ? 'Angabe' : 'Angaben'}`
 
-// Die Sammelmeldung. `role="alert"` sitzt innen, wie bei GOV.UK, weil JAWS es am äußeren Element mit dem
+// Die Sammelmeldung, ohne `aria-labelledby`: An einem `<div>` ohne Rolle ist es nach ARIA 1.2 untersagt (axe
+// `aria-prohibited-attr`), und GOV.UK setzt es auch nicht. `role="alert"` sitzt innen, wie bei GOV.UK, weil JAWS es am äußeren Element mit dem
 // Fokus doppelt oder gar nicht vorlas; das äußere Element nimmt den Fokus (`tabIndex={-1}`). In einer Karte
 // steht sie oben in der Karte, im Seitenfenster übergibt man die API dem Fenster (Prop `errors`), und
 // es zeigt sie im festen Fuß über den Knöpfen, damit sie nie aus dem Bild gerollt ist (UI-Durchsicht M5).
 export function ErrorSummary<F extends string>({ errors, className }: { errors: FormErrors<F>; className?: string }) {
   const { problems, seq, focus } = errors.state
   const ref = useRef<HTMLDivElement>(null)
-  const titleId = useId()
   useEffect(() => {
     if (problems.length === 0 || !focus) return
     const box = ref.current
@@ -91,14 +91,14 @@ export function ErrorSummary<F extends string>({ errors, className }: { errors: 
     el?.focus({ preventScroll: true })
   }
   return (
-    <div ref={ref} tabIndex={-1} data-error-summary="" className={className ? `error ${className}` : 'error'} aria-labelledby={withField.length ? titleId : undefined}>
+    <div ref={ref} tabIndex={-1} data-error-summary="" className={className ? `error ${className}` : 'error'}>
       <div role="alert">
         {withField.length > 0 && (
           <>
-            <strong id={titleId} className="block">{summaryTitle(withField.length)}</strong>
+            <strong className="block">{summaryTitle(withField.length)}</strong>
             <ul className="mt-1 mb-0 pl-5">
-              {withField.map((p) => (
-                <li key={`${p.field}:${p.text}`}>
+              {withField.map((p, i) => (
+                <li key={`${i}:${p.field}`}>
                   <a href={`#${errors.idFor(p.field as F)}`} className="text-red underline"
                     onClick={(e) => { e.preventDefault(); goTo(p.field as F) }}>
                     {p.text}
@@ -108,7 +108,7 @@ export function ErrorSummary<F extends string>({ errors, className }: { errors: 
             </ul>
           </>
         )}
-        {general.map((p) => <p key={p.text} className={withField.length ? 'mt-2 mb-0' : 'm-0'}>{p.text}</p>)}
+        {general.map((p, i) => <p key={i} className={withField.length ? 'mt-2 mb-0' : 'm-0'}>{p.text}</p>)}
       </div>
     </div>
   )
