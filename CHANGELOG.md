@@ -168,6 +168,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Zähler mit Zählernummer, etwa „EG links, Beginn der Heizperiode am 31.12.2024: keine Ablesung am
   Zähler „Warmwasser neu“ (Nr. WW-4711)“. Vorher stand dort nur die Wohnung, und bei mehreren Zählern
   blieb offen, welcher gemeint war (Befund M7 aus [#341](https://github.com/speedone/mietfuchs/issues/341)).
+- Mietkonto: Der Hinweis zum offenen Dezember erscheint nur noch, wenn allein der Dezember offen
+  ist. Vorher stand er auch bei zwölf offenen Monaten oder einem zu niedrigen November. Er nennt
+  jetzt den fehlenden Betrag und neben der erst im Januar eingegangenen Dezembermiete die zweite
+  häufige Ursache: Das Mietkonto verteilt Zahlungen der Reihe nach ab Januar, ein Fehlbetrag aus
+  einem früheren Monat steht deshalb im Dezember (Befund M3 aus
+  [#341](https://github.com/speedone/mietfuchs/issues/341)).
 - Die Karte „Objekt“ verlangt eine Bezeichnung: Leer ließ sie sich speichern, und die Seitenleiste
   zeigte danach „Ohne Namen“. Hat das Objekt noch keinen Namen, etwa nach einer frischen Installation,
   steht im Feld „Mein Objekt“; Sie können es überschreiben, und mit dem ersten Speichern der Karte wird

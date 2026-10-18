@@ -9,6 +9,7 @@ import type { FederalState, RentLedgerRow, RentMonth } from './types'
 import { rentDueDate, rentDueRuleText } from '../../shared/deadlines.ts'
 import { isHoliday, localHolidaysOf, stateName, weekdayOf } from '../../shared/holidays.ts'
 import { MONTH_NAMES } from './monthText'
+import { fmtEuro } from './api'
 
 // **Der überraschende Dezember.** Eine Zahlung zählt zu dem Jahr, in dem sie eingegangen ist.
 // Geht die Dezembermiete erst im Januar ein, bleibt der Dezember im Mietkonto offen, obwohl der
@@ -25,6 +26,16 @@ import { MONTH_NAMES } from './monthText'
 //   **Nur wenn der Dezember überhaupt ein Soll hat und nicht gedeckt ist.** Ohne Soll gibt es
 //   nichts zu erklären.
 //
+//   **Nur wenn allein der Dezember offen ist** (Befund M3 aus #341). Stehen auch frühere Monate
+//   offen, bis hin zu allen zwölf, fehlt Geld über das Jahr, und der Satz über eine spät
+//   eingegangene Dezembermiete führte in die Irre. Monate ohne Soll zählen dabei nicht.
+//
+// Der Satz nennt zwei Ursachen, weil das Mietkonto Zahlungen der Reihe nach ab Januar verteilt
+// (`rentLedger`): Ein zu niedriger November wird mit der Dezemberzahlung aufgefüllt, und die Lücke
+// steht dann im Dezember. Steuerlich bleibt es beim Jahr des Eingangs; die Zehn-Tage-Regel des
+// § 11 Abs. 1 Satz 2 EStG greift bei der Dezembermiete nicht, denn sie ist nach § 556b Abs. 1 BGB
+// Anfang Dezember fällig und nicht kurz vor dem Jahreswechsel (siehe Steuer.tsx).
+//
 // Das heutige Datum wird hineingereicht und nicht hier erfragt: Sonst hinge der Test an dem Tag,
 // an dem er läuft, und das ist dieselbe Regel, nach der auch die Plattform hineingereicht wird.
 //
@@ -36,7 +47,20 @@ export function showDecemberNote(row: RentLedgerRow, year: number, today: Date):
   if (year >= today.getFullYear()) return false
   const dezember = row.months[11]
   if (!dezember) return false
-  return dezember.sollCents > 0 && dezember.status !== 'paid'
+  if (!(dezember.sollCents > 0 && dezember.status !== 'paid')) return false
+  return row.months.slice(0, 11).every(m => m.sollCents === 0 || m.status === 'paid')
+}
+
+// Der Satz dazu, oder `null`, wenn er nicht erscheint.
+export function decemberNote(row: RentLedgerRow, year: number, today: Date): string | null {
+  if (!showDecemberNote(row, year, today)) return null
+  const dezember = row.months[11]
+  const missing = dezember.sollCents - dezember.paidCents
+  return `Im Dezember fehlen ${fmtEuro(missing)}. Das kann daran liegen, dass die Dezembermiete ` +
+    `erst im Januar eingegangen ist: Zahlungen zählen zu dem Jahr, in dem sie eingegangen sind, ` +
+    `und erscheinen dann unter den Zahlungseingängen ${year + 1}. Oder in einem früheren Monat ` +
+    `wurde zu wenig gezahlt: Das Mietkonto verteilt die Zahlungen der Reihe nach ab Januar auf ` +
+    `die Monate, ein Fehlbetrag rückt deshalb bis in den Dezember.`
 }
 
 // Der Stand einer Zeile, wie ihn die Karte nennt (#133, zweite Browserabnahme). Ein Rückstand ist
