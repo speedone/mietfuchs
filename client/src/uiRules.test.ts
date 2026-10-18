@@ -326,6 +326,15 @@ describe('S6: Kontrast der Farbtöne', () => {
       expect(ratio(t('green'), t('green-soft')), 'Erfolg').toBeGreaterThanOrEqual(4.5)
       expect(ratio(t('brand-text'), t('brand')), 'Update-Knopf').toBeGreaterThanOrEqual(4.5)
     })
+    // #341 N11/N13: leere Monatskachel im Mietkonto (Schrift, ohne Abdunkeln) und Vorjahresbalken im
+    // Kostenvergleich (grafisches Objekt, WCAG 1.4.11) gegen die Karte.
+    test(`${name}: leere Monatskachel und Vorjahresbalken`, () => {
+      const t = (n: string) => tokenOr(body, n)
+      expect(ratio(t('muted'), t('card')), 'Schrift der leeren Kachel').toBeGreaterThanOrEqual(4.5)
+      expect(ratio(t('chart-prev'), t('card')), 'Vorjahresbalken und Legende').toBeGreaterThanOrEqual(3)
+      expect(css).toMatch(/\.rent-month\.none \{ color: var\(--muted\); \}/)
+      expect(css).toMatch(/\.bar\.prev, \.bar-key\.prev \{ background: var\(--chart-prev\); \}/)
+    })
     // K6 der Durchsicht: Die Kontur eines Eingabefelds erreicht 3:1 (WCAG 1.4.11) gegen Karte,
     // Seitengrund und Feldgrund.
     test(`${name}: Feldrand gegen Karte, Seite und Feld`, () => {
