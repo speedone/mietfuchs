@@ -141,7 +141,7 @@ body {
    Tab fokussierter Eintrag rollt nicht unter den stehenden Fuß (gut 90 px hoch). */
 .sidebar {
   width: 230px; flex-shrink: 0; background: var(--sidebar); color: var(--sidebar-text);
-  border-right: 1px solid var(--line); padding: var(--space-5) var(--space-3);
+  border-right: 1px solid var(--line); padding: max(var(--space-5), env(safe-area-inset-top)) var(--space-3) var(--space-5) max(var(--space-3), env(safe-area-inset-left));
   display: flex; flex-direction: column; gap: 2px; position: sticky; top: 0; height: 100vh; overflow-y: auto;
   scrollbar-width: thin; scrollbar-color: var(--control-border) transparent; scroll-padding-bottom: 100px;
 }
@@ -174,7 +174,7 @@ body {
 /* ---------- Layout ---------- */
 /* min-width: 0, sonst ist main als Flex-Element mindestens so breit wie sein breitester Inhalt
    und schiebt die Seite über den Bildschirm hinaus (#137). */
-main { flex: 1; min-width: 0; padding: var(--space-8) var(--space-12) var(--space-12); max-width: var(--page-max); }
+main { flex: 1; min-width: 0; padding: var(--space-8) max(var(--space-12), env(safe-area-inset-right)) var(--space-12) var(--space-12); max-width: var(--page-max); }
 h1 { font-size: var(--text-2xl); font-weight: var(--weight-strong); letter-spacing: -0.02em; margin: 0 0 6px; }
 .sub { color: var(--muted); margin: 0 0 var(--space-6); }
 h2 { font-size: var(--text-l); font-weight: var(--weight-strong); letter-spacing: -0.01em; margin: 0 0 var(--space-3); }
@@ -417,11 +417,12 @@ label.checkline:has(.term-pop) { flex-wrap: wrap; }
 .sidebar .nav-section { font-size: var(--text-xs); font-weight: var(--weight-medium); color: var(--muted); padding: var(--space-4) 10px var(--space-1); }
 
 /* ---------- Mobil (< 900 px, #346 Schritt 9): Kopf, Menüblatt und untere Leiste (MobileNav.tsx) statt der Seitenleiste. Inhalt,
-   Sprungziele und Toasts bleiben frei von Kopf und Leiste samt Sicherheitsrand; in Zahlenrastern bleibt die erste Spalte stehen. */
-@media (max-width: 899px) {
+   Sprungziele und Toasts bleiben frei von Kopf und Leiste samt Sicherheitsrand (`env(safe-area-inset-*)`, wirksam durch viewport-fit=cover
+   in index.html: Kerbe oben und seitlich, Home-Indikator unten); in Zahlenrastern bleibt die erste Spalte stehen. */
+@media screen and (max-width: 899px) {
   #root { flex-direction: column; }
-  html { scroll-padding: calc(var(--head-h) + var(--space-2)) 0 calc(var(--bar-h) + env(safe-area-inset-bottom) + var(--space-2)); }
-  main { padding: var(--space-5) var(--space-4) calc(var(--bar-h) + env(safe-area-inset-bottom) + var(--space-12)); }
+  html { scroll-padding: calc(var(--head-h) + env(safe-area-inset-top) + var(--space-2)) 0 calc(var(--bar-h) + env(safe-area-inset-bottom) + var(--space-2)); }
+  main { padding: var(--space-5) max(var(--space-4), env(safe-area-inset-right)) calc(var(--bar-h) + env(safe-area-inset-bottom) + var(--space-12)) max(var(--space-4), env(safe-area-inset-left)); }
   h1 { font-size: var(--text-xl); }
   .card { padding: var(--space-4); }
   .toast-wrap { left: var(--space-3); right: var(--space-3); bottom: calc(var(--bar-h) + env(safe-area-inset-bottom) + var(--space-3)); }
@@ -432,14 +433,13 @@ label.checkline:has(.term-pop) { flex-wrap: wrap; }
 /* Knöpfe in Kopf, Blatt und Leiste; Größe und Anordnung setzen die Utilities in MobileNav.tsx */
 :is(.menu-toggle, .context-toggle, .sheet-close, .bottom-bar button) { all: unset; cursor: pointer; }
 .sidebar .sheet-close { margin-left: auto; padding: 0; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: var(--radius-m); color: var(--muted); font-size: var(--text-l); }
-dialog.menu-sheet { margin: 0; padding: 0; border: none; inset: 0 auto 0 0; width: min(300px, 86vw); height: 100dvh; max-width: none; max-height: none; background: var(--sidebar); box-shadow: var(--shadow-pop); animation: sheet-in 0.2s cubic-bezier(0.22, 1, 0.36, 1); }
-dialog.menu-sheet::backdrop { background: var(--overlay); }
+dialog.menu-sheet { margin: 0; padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom) env(safe-area-inset-left); border: none; inset: 0 auto 0 0; width: min(300px, 86vw); height: 100dvh; max-width: none; max-height: none; background: var(--sidebar); box-shadow: var(--shadow-pop); animation: sheet-in 0.2s cubic-bezier(0.22, 1, 0.36, 1); } dialog.menu-sheet::backdrop { background: var(--overlay); }
 dialog.menu-sheet > .sidebar { width: auto; height: 100%; position: static; border-right: none; }
 dialog.menu-sheet > .sidebar button:not(.sheet-close) { min-height: var(--target); box-sizing: border-box; }
-.bottom-bar { height: calc(var(--bar-h) + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom); }
+.bottom-bar { height: calc(var(--bar-h) + env(safe-area-inset-bottom)); padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); } .mobile-head { height: calc(var(--head-h) + env(safe-area-inset-top)); padding: env(safe-area-inset-top) max(var(--space-1), env(safe-area-inset-right)) 0 max(var(--space-1), env(safe-area-inset-left)); }
 @keyframes sheet-in { from { transform: translateX(-24px); opacity: 0.4; } to { transform: none; opacity: 1; } }
 /* Tabellen mit Datensätzen (`<Table className="stacked">`, Spezifikation Abschnitt 5): unter 640 px ist jede Zeile ein Block, die erste Zelle der Titel, Aktionen rechts daneben, jede weitere Zelle mit `data-label`. */
-@media (max-width: 640px) {
+@media screen and (max-width: 640px) {
   table.stacked > thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   table.stacked, table.stacked > :is(tbody, tfoot) { display: block; }
   table.stacked > :is(tbody, tfoot) > tr { display: grid; grid-template-columns: minmax(0, 1fr) fit-content(45%); column-gap: var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-m); margin-bottom: var(--space-2); }

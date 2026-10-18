@@ -4,7 +4,7 @@
 // nachgestellte Media Query. Was jsdom nicht rechnet (Top-Layer, inerter Hintergrund, Breite der
 // Seite), prüft der Browserlauf.
 import { afterEach, beforeAll, beforeEach, expect, test, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { Property, Tenancy, Unit } from './types'
 import App from './App'
 import { MOBILE_QUERY } from './components/MobileNav'
@@ -29,12 +29,28 @@ const ledger = (propertyId: string) => ({
 })
 
 let mobile = true
+let mode = 'npm'
+let posted: string[] = []
+// Die Horcher auf den Media Query, damit ein Test die Breite über die Grenze schieben kann
+const mediaListeners = new Set<() => void>()
+const setMobile = (value: boolean) => act(() => {
+  mobile = value
+  for (const listener of [...mediaListeners]) listener()
+})
 beforeAll(() => installDialogPolyfill())
 beforeEach(() => {
   mobile = true
+  mode = 'npm'
+  posted = []
+  mediaListeners.clear()
   try { localStorage.clear() } catch { /* ohne Speicher nichts zu räumen */ }
-  vi.stubGlobal('matchMedia', (query: string) => ({ matches: query === MOBILE_QUERY ? mobile : false, addEventListener: () => {}, removeEventListener: () => {} }))
-  vi.stubGlobal('fetch', async (url: string) => {
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    get matches() { return query === MOBILE_QUERY ? mobile : false },
+    addEventListener: (_: string, listener: () => void) => { if (query === MOBILE_QUERY) mediaListeners.add(listener) },
+    removeEventListener: (_: string, listener: () => void) => { mediaListeners.delete(listener) },
+  }))
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if ((init?.method ?? 'GET') !== 'GET') posted.push(url)
     const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
     const [path, query = ''] = url.split('?')
     const property = new URLSearchParams(query).get('property') ?? ''
@@ -46,7 +62,7 @@ beforeEach(() => {
     // Das Cockpit bekommt keine Antwort; für diese Tests zählt nur die Navigation.
     if (path?.startsWith('/api/settlement/')) return new Promise<Response>(() => {})
     if (path === '/healthz') return json({ ok: true })
-    if (path === '/api/update') return json({ current: '0.8.0' })
+    if (path === '/api/update') return json({ current: '0.8.0', mode })
     return json([])
   })
 })
@@ -182,4 +198,107 @@ test('am Rechner bleibt die Seitenleiste, ohne Kopf und Leiste', async () => {
   expect(screen.queryByRole('navigation', { name: 'Schnellzugriff' })).toBeNull()
   expect(document.querySelector('dialog')).toBeNull()
   expect(screen.getByRole('button', { name: /Cockpit/ }).getAttribute('aria-current')).toBe('page')
+})
+
+// Durchsicht S-1: Mit den Pfeiltasten sendet ein geschlossenes Auswahlfeld bei jedem Schritt `change`.
+// Schlösse das Blatt dabei, wäre nur der nächste Eintrag erreichbar. Ohne offenes Formular bleibt es
+// deshalb offen, wie die Seitenleiste am Rechner, und der Fokus bleibt auf der Auswahl.
+test('Objektwahl im Blatt ohne offenes Formular: das Blatt bleibt offen, auch über mehrere Schritte', async () => {
+  render(<App />)
+  fireEvent.click(await screen.findByRole('button', { name: /^Objekt und Zeitraum wechseln/ }))
+  await waitFor(() => expect(sheet().open).toBe(true))
+  const select = within(sheet()).getByLabelText('Objekt wählen') as HTMLSelectElement
+  // Was ArrowDown im Browser auslöst: der nächste Wert und `change`
+  fireEvent.keyDown(select, { key: 'ArrowDown' })
+  fireEvent.change(select, { target: { value: 'objekt-2' } })
+  await waitFor(() => expect(screen.getByTestId('mobile-context').textContent).toMatch(/^Haus B · /))
+  expect(sheet().open).toBe(true)
+  const again = within(sheet()).getByLabelText('Objekt wählen') as HTMLSelectElement
+  expect(again.value).toBe('objekt-2')
+  expect(document.activeElement).toBe(again)
+  fireEvent.change(again, { target: { value: 'objekt-1' } })
+  await waitFor(() => expect(screen.getByTestId('mobile-context').textContent).toMatch(/^Lindenweg 12 · /))
+  expect(sheet().open).toBe(true)
+})
+
+async function openPaymentForm() {
+  render(<App />)
+  await screen.findByTestId('mobile-context')
+  fireEvent.click(within(bar()).getByRole('button', { name: 'Mehr' }))
+  await waitFor(() => expect(sheet().open).toBe(true))
+  fireEvent.click(within(sheet()).getByRole('button', { name: /Mietkonto/ }))
+  const add = await screen.findByRole('button', { name: /Zahlung erfassen/ })
+  await waitFor(() => expect((add as HTMLButtonElement).disabled).toBe(false))
+  fireEvent.click(add)
+  fireEvent.change(screen.getByLabelText(/^Betrag/), { target: { value: '11,11' } })
+}
+
+test('Zeitraum im Blatt bei offenem Formular: Rückfrage vor dem Wechsel, Abbrechen lässt alles stehen', async () => {
+  await openPaymentForm()
+  const before = screen.getByTestId('mobile-context').textContent ?? ''
+  fireEvent.click(screen.getByRole('button', { name: /^Objekt und Zeitraum wechseln/ }))
+  await waitFor(() => expect(sheet().open).toBe(true))
+  const period = within(sheet()).getByLabelText('Abrechnungsjahr') as HTMLSelectElement
+  const other = [...period.options].map((o) => o.value).find((v) => v !== period.value) ?? ''
+  fireEvent.change(period, { target: { value: other } })
+  await waitFor(() => expect(sheet().open).toBe(false))
+  const ask = (await screen.findByRole('button', { name: /Jahr wechseln/ })).closest('.dialog') as HTMLElement
+  fireEvent.click(within(ask).getByRole('button', { name: /^Abbrechen$/ }))
+  await waitFor(() => expect(screen.queryByRole('button', { name: /Jahr wechseln/ })).toBeNull())
+  expect(screen.getByTestId('mobile-context').textContent).toBe(before)
+  expect((screen.getByLabelText(/^Betrag/) as HTMLInputElement).value).toBe('11,11')
+
+  fireEvent.click(screen.getByRole('button', { name: /^Objekt und Zeitraum wechseln/ }))
+  await waitFor(() => expect(sheet().open).toBe(true))
+  fireEvent.change(within(sheet()).getByLabelText('Abrechnungsjahr'), { target: { value: other } })
+  fireEvent.click(await screen.findByRole('button', { name: /Jahr wechseln/ }))
+  await waitFor(() => expect(screen.getByTestId('mobile-context').textContent).toBe(`Lindenweg 12 · ${other}`))
+})
+
+test('Esc im Blatt schließt nur das Blatt, nicht das Formular darunter', async () => {
+  await openPaymentForm()
+  fireEvent.click(screen.getByRole('button', { name: 'Menü' }))
+  await waitFor(() => expect(sheet().open).toBe(true))
+  fireEvent.keyDown(document.activeElement as Element, { key: 'Escape' })
+  await waitFor(() => expect(sheet().open).toBe(false))
+  expect((screen.getByLabelText(/^Betrag/) as HTMLInputElement).value).toBe('11,11')
+})
+
+test('Beenden im Blatt: das Blatt schließt vor der Rückfrage, Abbrechen beendet nichts', async () => {
+  mode = 'binary'
+  render(<App />)
+  const dialog = await openMenu()
+  fireEvent.click(await within(dialog).findByRole('button', { name: /Mietfuchs beenden/ }))
+  await waitFor(() => expect(sheet().open).toBe(false))
+  const ask = (await screen.findByRole('heading', { name: 'Mietfuchs beenden?' })).closest('.dialog') as HTMLElement
+  fireEvent.click(within(ask).getByRole('button', { name: /^Abbrechen$/ }))
+  await waitFor(() => expect(screen.queryByRole('heading', { name: 'Mietfuchs beenden?' })).toBeNull())
+  expect(posted).toEqual([])
+  expect(screen.queryByText('Mietfuchs ist beendet')).toBeNull()
+
+  fireEvent.click(within(await openMenu()).getByRole('button', { name: /Mietfuchs beenden/ }))
+  const ask2 = (await screen.findByRole('heading', { name: 'Mietfuchs beenden?' })).closest('.dialog') as HTMLElement
+  fireEvent.click(within(ask2).getByRole('button', { name: 'Beenden' }))
+  expect(await screen.findByText('Mietfuchs ist beendet')).toBeTruthy()
+  expect(posted).toEqual(['/api/quit'])
+})
+
+test('über die Grenze von 900 px: Blatt weg, Seitenleiste da, Formular und Fokus bleiben sinnvoll', async () => {
+  await openPaymentForm()
+  fireEvent.click(screen.getByRole('button', { name: 'Menü' }))
+  await waitFor(() => expect(sheet().open).toBe(true))
+  // Breiter: Kopf, Blatt und Leiste verschwinden, die Seitenleiste erscheint
+  setMobile(false)
+  await waitFor(() => expect(document.querySelector('nav.sidebar')).not.toBeNull())
+  expect(document.querySelector('dialog')).toBeNull()
+  expect(screen.queryByRole('navigation', { name: 'Schnellzugriff' })).toBeNull()
+  expect((screen.getByLabelText(/^Betrag/) as HTMLInputElement).value).toBe('11,11')
+  // Der Fokus lag im ausgehängten Blatt; er steht jetzt auf der aktuellen Seite in der Seitenleiste
+  expect(document.activeElement).toBe(within(screen.getByRole('navigation', { name: 'Hauptnavigation' })).getByRole('button', { name: /Mietkonto/ }))
+  // Schmaler: wieder Kopf und Leiste, keine Seitenleiste
+  ;(document.activeElement as HTMLElement).blur()
+  setMobile(true)
+  await waitFor(() => expect(document.querySelector('nav.sidebar')).toBeNull())
+  expect(screen.getByRole('navigation', { name: 'Schnellzugriff' })).toBeTruthy()
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Menü' }))
 })
