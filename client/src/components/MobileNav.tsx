@@ -68,7 +68,7 @@ export default function MobileNav({ tab, context, onNavigate, sheet }: {
     if (!dialog.open) dialog.showModal()
     if (opened === 'context') {
       // Das erste Auswahlfeld: das Objekt ab zwei Objekten, sonst der Zeitraum
-      dialog.querySelector<HTMLElement>('.year-switcher select')?.focus()
+      dialog.querySelector<HTMLElement>('.switcher select')?.focus()
     }
   }, [opened])
 

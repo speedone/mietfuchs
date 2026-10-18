@@ -8,7 +8,6 @@ import { asksCalibration, asksRemote, CALIBRATION_MARK_HELP, calibrationSuggesti
 import { plantOptions } from '../heatingForm'
 import { api, errorText, fmtDate } from '../api'
 import { usePeriod } from '../period'
-import { PeriodSelect } from '../components/PeriodSelect'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import Drawer from '../components/Drawer'
 import PageHeader from '../components/PageHeader'
@@ -25,7 +24,7 @@ type Props = { units: Unit[] } & FocusProps
 type Consumption = { meterId: string; consumption: number; readingCount: number; warnings: string[]; notices?: Notice[] }
 
 export default function Zaehler({ units, focus, onFocusDone }: Props) {
-  const { param, label, calendar } = usePeriod()
+  const { param, label } = usePeriod()
   const { property } = useProperty()
   const propertyId = property?.id
   const toast = useToast()
@@ -161,10 +160,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
       {error && <div className="error">{error}</div>}
 
       <div className="card">
-        <div className="row">
-          <h2 className="grow">Zähler</h2>
-          <PeriodSelect label={calendar ? 'Verbrauchsjahr' : undefined} />
-        </div>
+        <h2>Zähler</h2>
         {meters.length === 0 && (
           <div className="empty">
             Noch keine Zähler angelegt. Legen Sie z. B. den Hauptwasserzähler an, um die Jahresstände zu

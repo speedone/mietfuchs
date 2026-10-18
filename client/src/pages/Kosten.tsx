@@ -63,7 +63,6 @@ import { useEvaluationQueue } from '../evaluationQueue'
 import AssessmentReview from '../components/AssessmentReview'
 import Co2RefundsCard from '../components/Co2RefundsCard'
 import { usePeriod } from '../period'
-import { PeriodSelect } from '../components/PeriodSelect'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import Drawer from '../components/Drawer'
 import Field from '../components/Field'
@@ -565,7 +564,6 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
 
       <div className="card no-print">
         <div className="row">
-          <PeriodSelect />
           {previousCount > 0 && !carry && (
             <button className="btn secondary" onClick={() => { setError(''); setCarry(carryOverRows(items, at, period, { rules: view.rules, plants })) }}>
               Aus {at.previousLabel} übernehmen …
