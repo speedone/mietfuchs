@@ -377,3 +377,118 @@ test('dark: gilt nicht im Druck', () => {
   expect(rule).toContain('[data-theme=dark]')
   expect(rule).toMatch(/@media not print\s*\{\s*\.dark\\:bg-card/)
 })
+
+// S12 (Spezifikation Abschnitt 9, #346 Schritt 9): Dialoge (`<dialog>`, `showModal()`, `role="dialog"`
+// und `role="alertdialog"`) nur in den Bausteinen, die dafür vorgesehen sind. Ein eigenes Overlay je Seite
+// brächte je eigene Regeln für Esc, Fokus und Klick daneben. Heute: das Menüblatt am Handy, das
+// Seitenfenster und die Rückfrage (die beiden ziehen mit Schritt 1 und 2 auf `<dialog>` um).
+const DIALOG_FILES = new Set(['./components/MobileNav.tsx', './components/Drawer.tsx', './components/feedback.tsx'])
+const dialogUses = (src: string) => [...src.matchAll(/<dialog\b|\bshowModal\s*\(|role=["'{`]+(?:alert)?dialog\b/g)].map((m) => m[0])
+test('S12: Dialoge nur in den erlaubten Bausteinen', () => {
+  // Probe des Prüfers: Er findet alle Schreibweisen.
+  expect(dialogUses('<dialog open>…</dialog>; ref.current.showModal(); <div role="dialog"> <div role={"alertdialog"}>'))
+    .toEqual(['<dialog', 'showModal(', 'role="dialog', 'role={"alertdialog'])
+  for (const file of DIALOG_FILES) expect(dialogUses(sources[file] ?? ''), `${file} nutzt keinen <dialog> mehr; aus der Liste streichen`).not.toEqual([])
+  expect(files.filter((file) => !DIALOG_FILES.has(file) && dialogUses(sources[file] ?? '').length > 0)).toEqual([])
+})
+
+// S22 (#346 Schritt 9): Die Navigation steht einmal, in nav.ts. Seitenleiste, Menüblatt und untere
+// Leiste lesen sie von dort (navFor, bottomNav); eine zweite Liste mit Kennung und Beschriftung liefe
+// auseinander, sobald eine Seite dazukommt oder umbenannt wird.
+const TAB_IDS = NAV.flatMap((g) => g.items.map((i) => i.id))
+// Ein Objekt mit einer Seitenkennung als `id` und einer Beschriftung oder einem Symbol, in beliebiger Reihenfolge
+const navEntry = { test: (src: string) => [...src.matchAll(/\{[^{}]*\}/g)].some((m) =>
+  new RegExp(`\\bid:\\s*['"](?:${TAB_IDS.join('|')})['"]`).test(m[0]) && /\b(?:label|short|icon):/.test(m[0])) }
+test('S22: Navigationseinträge stehen nur in nav.ts', () => {
+  expect(TAB_IDS).toContain('stammdaten')
+  // Der Prüfer erkennt die Einträge in nav.ts selbst; sonst wäre er grün, ohne etwas zu finden.
+  expect(navEntry.test(twSources['./nav.ts'] ?? '')).toBe(true)
+  // Probe des Prüfers: auch mit der Beschriftung vorn
+  expect(navEntry.test("const X = [{ label: 'Cockpit', id: 'cockpit' }]")).toBe(true)
+  expect(navEntry.test("setTab({ id: 'cockpit' })")).toBe(false)
+  expect(Object.keys(twSources).filter((file) => file !== './nav.ts' && navEntry.test(twSources[file] ?? ''))).toEqual([])
+  // Die Bausteine der Navigation holen ihre Einträge aus nav.ts
+  expect(sources['./App.tsx']).toMatch(/navFor\(/)
+  expect(sources['./components/MobileNav.tsx']).toMatch(/bottomNav\(\)/)
+})
+
+// S23 (#346 Schritt 9, Spezifikation Abschnitt 5): Tabellen mit Datensätzen werden am Handy zu Karten
+// (`<Table className="stacked">`), und dort steht jede Spalte als Beschriftung an ihrer Zelle
+// (`data-label`). Ohne sie stünde ein Wert ohne seine Spalte da. Ausgenommen sind die Aktionen und Zeilen
+// mit einer Zelle über mehrere Spalten (Summen, Belegkopf, Ablesungen), die ihre Bedeutung selbst tragen.
+const STACKED_PAGES = ['./pages/Stammdaten.tsx', './pages/Zaehler.tsx', './pages/Kosten.tsx', './pages/Mietkonto.tsx']
+/** Der Quelltext ohne die Tabellen, die keine Karten werden (verschachtelte Ablesungen, Zahlenraster). */
+const withoutPlainTables = (src: string): string => {
+  let out = ''
+  let at = 0
+  for (;;) {
+    const start = src.indexOf('<Table', at)
+    if (start < 0) return out + src.slice(at)
+    const tag = src.slice(start, src.indexOf('>', start) + 1)
+    if (/\bstacked\b/.test(tag)) {
+      out += src.slice(at, start + tag.length)
+      at = start + tag.length
+      continue
+    }
+    let depth = 0
+    let i = start
+    for (;;) {
+      const open = src.indexOf('<Table', i + 1)
+      const close = src.indexOf('</Table>', i + 1)
+      if (close < 0) return out + src.slice(at, start)
+      if (open >= 0 && open < close) { depth++; i = open; continue }
+      if (depth === 0) { i = close + '</Table>'.length; break }
+      depth--
+      i = close
+    }
+    out += src.slice(at, start)
+    at = i
+  }
+}
+const unlabeledCells = (src: string) => [...withoutPlainTables(src).matchAll(/<tr\b[\s\S]*?<\/tr>/g)].flatMap((row) => {
+  const cells = [...row[0].matchAll(/<td\b[^>]*>/g)].map((m) => m[0])
+  if (cells.some((c) => /colSpan/.test(c))) return []
+  return cells.filter((c) => !/data-label=/.test(c) && !/className="[^"]*\bactions\b/.test(c)).map((c) => c.slice(0, 80))
+})
+test('S23: Tabellen mit Datensätzen werden am Handy zu Karten, jede Zelle mit ihrer Spalte', () => {
+  // Mutationsprobe: eine Zelle ohne Beschriftung fällt auf, eine verschachtelte Tabelle ohne Karten nicht
+  expect(unlabeledCells('<Table className="stacked"><tr><td data-label="A">x</td><td>y</td><td className="actions no-print" /></tr></Table>')).toEqual(['<td>'])
+  expect(unlabeledCells('<Table className="stacked"><tr><td colSpan={2}><Table><tr><td>z</td></tr></Table></td></tr></Table>')).toEqual([])
+  for (const file of STACKED_PAGES) {
+    const src = sources[file] ?? ''
+    expect(src, `${file} hat keine Tabelle mit Karten`).toMatch(/<Table className="[^"]*\bstacked\b/)
+    expect(unlabeledCells(src), file).toEqual([])
+  }
+})
+
+// S24 (#346 Schritt 9, Nachprüfung): Seit `viewport-fit=cover` (index.html) legt iOS die Seite unter
+// Kerbe, Statusleiste und Home-Indikator. Was am Fensterrand steht (fest oder angeheftet an oben/unten),
+// hält deshalb die Sicherheitsränder mit `env(safe-area-inset-*)` ein. Eine Fläche über allem (Hintergrund
+// eines Seitenfensters) braucht sie selbst nicht, wohl aber das, was darin am Rand steht.
+const OVERLAY_CONTENT = new Map([['.drawer-backdrop', '.drawer']])
+const cssRules = (source: string) =>
+  [...source.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({ selector: (m[1] ?? '').trim().replace(/\s+/g, ' '), body: m[2] ?? '' }))
+const atEdge = (body: string) => /position:\s*fixed/.test(body) || (/position:\s*sticky/.test(body) && /(?:^|;)\s*(?:top|bottom):/.test(body))
+const unsafeEdges = (source: string) => {
+  const rules = cssRules(source)
+  return rules.filter((r) => atEdge(r.body) && !/safe-area-inset/.test(r.body)).flatMap((r) => {
+    const content = OVERLAY_CONTENT.get(r.selector)
+    if (content && rules.some((c) => c.selector === content && /safe-area-inset/.test(c.body))) return []
+    return [r.selector]
+  })
+}
+test('S24: was am Fensterrand steht, hält die Sicherheitsränder ein', () => {
+  expect(fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8')).toMatch(/viewport-fit=cover/)
+  // Probe des Prüfers
+  expect(unsafeEdges('.a { position: fixed; bottom: 0; } .b { position: sticky; top: 0; padding-top: env(safe-area-inset-top); } .c { position: sticky; left: 0; }')).toEqual(['.a'])
+  expect(unsafeEdges(css)).toEqual([])
+  // Dasselbe für Utilities in den Bausteinen: Ein Element mit `fixed` oder `sticky top-0`/`bottom-0` trägt eine
+  // Klasse, deren Regel in index.css die Sicherheitsränder setzt.
+  const safeClasses = new Set(cssRules(css).filter((r) => /safe-area-inset/.test(r.body)).flatMap((r) => [...r.selector.matchAll(/\.([\w-]+)/g)].map((m) => m[1] ?? '')))
+  const fixedElements = files.flatMap((file) => [...(sources[file] ?? '').matchAll(/className="([^"]*)"/g)]
+    .map((m) => (m[1] ?? '').split(/\s+/))
+    .filter((cls) => cls.includes('fixed') || (cls.includes('sticky') && cls.some((c) => /^(?:top|bottom)-0$/.test(c))))
+    .map((cls) => ({ file, cls })))
+  expect(fixedElements.length).toBeGreaterThan(0)
+  expect(fixedElements.filter(({ cls }) => !cls.some((c) => safeClasses.has(c))).map(({ file, cls }) => `${file}: ${cls.join(' ')}`)).toEqual([])
+})

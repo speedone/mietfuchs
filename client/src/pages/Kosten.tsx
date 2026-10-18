@@ -726,7 +726,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
         <h2>Kostenpositionen {label}</h2>
         {yearItems.length === 0 && <div className="empty">Noch keine Kosten für {label} erfasst.</div>}
         {yearItems.length > 0 && (
-          <Table>
+          <Table className="stacked">
             <thead>
               <tr>
                 <th>Kostenart</th>
@@ -749,15 +749,15 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
               )}
               {g.items.map((i) => (
                 <tr key={i.id}>
-                  <td>
+                  <td data-label="Kostenart">
                     {i.category}
                     {isNotAllocable(i.category) && <span className="badge gray badge-next">Vermieter</span>}
                   </td>
-                  <td>
+                  <td data-label="Beschreibung">
                     {i.description}
                     {!i.invoiceFile && i.vendor && <div className="muted">{i.vendor}</div>}
                   </td>
-                  <td>
+                  <td data-label="Umlageschlüssel">
                     {/* Nicht umlagefähig (#142): kein Schlüssel, die Position trägt der Vermieter. */}
                     {keyListText(i, units)}
                     {showsKeyFields(i.category) && <>
@@ -776,7 +776,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                     )}
                     </>}
                   </td>
-                  <td className="num">
+                  <td className="num" data-label="Betrag">
                     {fmtEuro(i.amountCents)}
                     {!!i.labor35aCents && <div className="muted">§35a: {fmtEuro(i.labor35aCents)}</div>}
                     {/* #255 PR 3: das Zahlungsdatum für die Steuer, wenn eines eingetragen ist. */}

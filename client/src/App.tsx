@@ -25,6 +25,7 @@ import Hilfe from './pages/Hilfe'
 import Steuer from './pages/Steuer'
 import Einstellungen from './pages/Einstellungen'
 import { navFor, type Tab } from './nav'
+import MobileNav, { MOBILE_QUERY, useMediaQuery } from './components/MobileNav'
 import Heizkosten from './pages/Heizkosten'
 
 // ---------- Dark Mode ----------
@@ -53,12 +54,13 @@ function useTheme() {
 
 // Beenden aus der Oberfläche (#45). Nur sichtbar, wenn Mietfuchs als Programmdatei läuft: Aus
 // einem Linux-Paket gibt es kein Konsolenfenster, dessen Schließen sonst der Weg dorthin ist.
-function QuitButton({ onQuit }: { onQuit: () => void }) {
+function QuitButton({ onQuit, onAsk }: { onQuit: () => void; onAsk?: () => void }) {
   const confirm = useConfirm()
   const toast = useToast()
   const [stopping, setStopping] = useState(false)
 
   async function stop() {
+    onAsk?.()
     const ok = await confirm({
       title: 'Mietfuchs beenden?',
       message: 'Die Oberfläche lässt sich danach nicht mehr bedienen, bis Sie Mietfuchs neu starten. Ihre Daten bleiben gespeichert.',
@@ -77,7 +79,7 @@ function QuitButton({ onQuit }: { onQuit: () => void }) {
   }
 
   return (
-    <button className="theme-toggle quit" onClick={stop} disabled={stopping} title="Mietfuchs beenden">
+    <button className="theme-toggle" onClick={stop} disabled={stopping} title="Mietfuchs beenden">
       ⏻ {stopping ? 'Wird beendet …' : 'Mietfuchs beenden'}
     </button>
   )
@@ -140,8 +142,21 @@ function Shell() {
   const [settings, setSettings] = useState<Settings | null>(null)
   const { choice, cycle } = useTheme()
   // Der gewählte Abrechnungszeitraum (#208); die Seiten werden bei seinem Wechsel neu aufgestellt.
-  const { key: periodKeyNow } = usePeriod()
-  const { properties, property, previousId, focusNoticeFor, setFocusNoticeFor, reload: reloadProperties } = useProperty()
+  const { key: periodKeyNow, label: periodLabelNow } = usePeriod()
+  // Unter 900 px Kopf, Menüblatt und untere Leiste statt der Seitenleiste (#346, Schritt 9)
+  const mobile = useMediaQuery(MOBILE_QUERY)
+  const { properties, property, previousId, focusNoticeFor, setFocusNoticeFor, reload: reloadProperties, hasOpenForm } = useProperty()
+  // Wechselt die Breite über die Grenze, wird die eine Navigation ausgehängt und die andere gezeichnet;
+  // lag der Fokus in der ausgehängten (etwa im offenen Menüblatt), stünde er danach auf <body>. Er geht
+  // dann an die aktuelle Seite in der Seitenleiste bzw. an ☰.
+  const wasMobile = useRef(mobile)
+  useEffect(() => {
+    if (wasMobile.current === mobile) return
+    wasMobile.current = mobile
+    const active = document.activeElement
+    if (active && active !== document.body) return
+    document.querySelector<HTMLElement>(mobile ? 'button.menu-toggle' : 'nav.sidebar [aria-current="page"]')?.focus()
+  }, [mobile])
   const switchProperty = useSwitchProperty()
   // Ausgewertet wird im Objekt, dem der Beleg zugedacht ist; ohne Zuordnung im gewählten.
   const evaluateFromInbox = async (list: UploadInfo[]) => {
@@ -208,6 +223,8 @@ function Shell() {
     return () => { current = false }
   }, [propertyId, tab])
 
+  const contextLine = [property ? property.name || 'Ohne Namen' : null, periodLabelNow].filter(Boolean).join(' · ')
+
   const clearNoticeFocus = useCallback(() => setFocusNoticeFor(null), [setFocusNoticeFor])
 
   if (stopped) return <Stopped />
@@ -222,48 +239,69 @@ function Shell() {
     return next
   })
 
+  // Der Inhalt der Seitenleiste, am Rechner als Leiste, am Handy im Menüblatt (#346, Schritt 9):
+  // dieselbe Navigation aus nav.ts, dieselbe Auswahl von Objekt und Zeitraum. Im Blatt (`close`
+  // gesetzt) schließt die Wahl einer Seite es; der Hinweis auf ein Update fehlt dort, aktualisiert wird
+  // am Rechner.
+  const sidebar = (close: (() => void) | null) => {
+    // Objekt und Zeitraum wechseln im Blatt, ohne es zu schließen, wie in der Seitenleiste: Mit den
+    // Pfeiltasten sendet ein Auswahlfeld bei jedem Schritt `change`, und ein Blatt, das sich dabei
+    // schlösse, ließe nur den nächsten Eintrag erreichen. Geschlossen wird nur, wenn eine Rückfrage
+    // kommt (offenes Formular), denn die stünde sonst hinter dem modalen Blatt.
+    const closeForQuestion = () => { if (close && hasOpenForm()) close() }
+    return (
+    <>
+      <div className="logo">
+        <FoxLogo size={30} />
+        <div className="logo-text">
+          Mietfuchs
+          <small>{property?.name || 'Nebenkosten im Griff'}</small>
+        </div>
+        {close && <button type="button" className="sheet-close" aria-label="Menü schließen" onClick={close}>✕</button>}
+      </div>
+
+      {/* Oben statt im Fuß: Der Fuß liegt auf kleinen Bildschirmen und langen Seiten
+          außer Sicht. */}
+      {!close && update.status && hintVisible(update.status, settings) && (
+        <UpdateHint status={update.status} onDismissed={reload} onShowGuide={() => setTab('einstellungen')} />
+      )}
+
+      <PropertySwitcher properties={properties} value={propertyId} onChange={(id) => { closeForQuestion(); void switchProperty(id) }} />
+
+      <PeriodSelect className="year-switcher no-print" onBeforeChange={closeForQuestion} />
+
+      {navFor(hasHeatingPlant).map((group, gi) => (
+        <div key={gi} className="nav-group">
+          {group.section && <div className="nav-section">{group.section}</div>}
+          {group.items.map((it) => (
+            <button key={it.id} className={tab === it.id ? 'active' : ''} aria-current={tab === it.id ? 'page' : undefined}
+              onClick={() => { close?.(); setTab(it.id) }}>
+              <span>{it.icon}</span> {it.label}
+            </button>
+          ))}
+        </div>
+      ))}
+
+      <div className="foot">
+        {/* Der Name steht am Knopf selbst (#142). Er beginnt mit dem sichtbaren Text, damit
+            Sprachsteuerung den Knopf am Rechner findet. */}
+        <button className="theme-toggle" onClick={cycle} title="Design wechseln (System / Hell / Dunkel)" aria-label={`Design: ${THEME_LABELS[choice]} – wechseln (System / Hell / Dunkel)`}>
+          🌗 <span>Design: {THEME_LABELS[choice]}</span>
+        </button>
+        {canQuit(update.status) && <QuitButton onAsk={close ?? undefined} onQuit={() => setStopped(true)} />}
+        <div>Alle Daten bleiben lokal auf diesem Rechner.</div>
+      </div>
+    </>
+    )
+  }
+
   return (
     <>
-      <nav className="sidebar">
-        <div className="logo">
-          <FoxLogo size={30} />
-          <div className="logo-text">
-            Mietfuchs
-            <small>{property?.name || 'Nebenkosten im Griff'}</small>
-          </div>
-        </div>
-
-        {/* Oben statt im Fuß: Der Fuß liegt auf kleinen Bildschirmen und langen Seiten
-            außer Sicht. */}
-        {update.status && hintVisible(update.status, settings) && (
-          <UpdateHint status={update.status} onDismissed={reload} onShowGuide={() => setTab('einstellungen')} />
-        )}
-
-        <PropertySwitcher properties={properties} value={propertyId} onChange={(id) => void switchProperty(id)} />
-
-        <PeriodSelect className="year-switcher no-print" />
-
-        {navFor(hasHeatingPlant).map((group, gi) => (
-          <div key={gi} className="nav-group">
-            {group.section && <div className="nav-section">{group.section}</div>}
-            {group.items.map((it) => (
-              <button key={it.id} className={tab === it.id ? 'active' : ''} onClick={() => setTab(it.id)}>
-                <span>{it.icon}</span> {it.label}
-              </button>
-            ))}
-          </div>
-        ))}
-
-        <div className="foot">
-          {/* Der Name steht am Knopf selbst: Am Handy bleibt nur „🌗“ sichtbar (#142). Er beginnt
-              mit dem sichtbaren Text, damit Sprachsteuerung den Knopf am Rechner findet. */}
-          <button className="theme-toggle" onClick={cycle} title="Design wechseln (System / Hell / Dunkel)" aria-label={`Design: ${THEME_LABELS[choice]} – wechseln (System / Hell / Dunkel)`}>
-            🌗 <span className="theme-label">Design: {THEME_LABELS[choice]}</span>
-          </button>
-          {canQuit(update.status) && <QuitButton onQuit={() => setStopped(true)} />}
-          <div className="foot-note">Alle Daten bleiben lokal auf diesem Rechner.</div>
-        </div>
-      </nav>
+      {mobile ? (
+        <MobileNav tab={tab} context={contextLine} onNavigate={(t) => setTab(t)} sheet={(close) => <nav className="sidebar" aria-label="Hauptnavigation">{sidebar(close)}</nav>} />
+      ) : (
+        <nav className="sidebar" aria-label="Hauptnavigation">{sidebar(null)}</nav>
+      )}
       <main>
         {/* Was beim Start mit den Daten geschehen ist (#55). Auf jeder Seite, damit die Meldung
             nicht davon abhängt, wo der Nutzer gerade ist. */}
