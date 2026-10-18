@@ -8,7 +8,7 @@ import type { Notice, NoticeSubject, Settings, Settlement, Statement, Tenancy } 
 import type { NoticeTab } from '../notices'
 import { PropertyProvider } from '../property'
 import { UIProvider } from '../components/feedback'
-import Abrechnung from './Abrechnung'
+import Abrechnung, { PRINT_DRAFT_NOTE } from './Abrechnung'
 import type { HistoryEntry } from '../settlementHistory'
 import { calendarPeriod, calendarYearPeriod, settlementPeriod } from '../../../shared/period.ts'
 
@@ -500,6 +500,8 @@ test('Druckeinstellungen: Anklicken sendet nichts, „Speichern“ sendet beide 
   expect((await adjustBox()).checked).toBe(false)
   expect(attachBox().checked).toBe(true)
   expect(puts).toEqual([])
+  // Durchsicht KANN 9: Der Entwurf wirkt schon im Druck, gemerkt wird er erst mit „Speichern“.
+  expect(screen.getByText(PRINT_DRAFT_NOTE)).toBeTruthy()
   const speichern = screen.getByRole('button', { name: 'Speichern (Druckeinstellungen)' })
   fireEvent.click(speichern)
   fireEvent.click(speichern)

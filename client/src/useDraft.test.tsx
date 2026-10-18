@@ -179,3 +179,32 @@ test('ohne Entwurf wechselt der scope ohne Rückfrage', async () => {
   await screen.findByText('scope b')
   expect(screen.queryByRole('dialog')).toBeNull()
 })
+
+// Durchsicht zu #309, MUSS 2: Fällt der gewählte Wert aus der Optionsliste, ist der Entwurf verworfen.
+// Vorher zeigte das Feld „bitte wählen“, und „Speichern“ schickte den unsichtbaren Wert.
+function Auswahl({ options, onSave }: { options: string[]; onSave: (v: string) => Promise<unknown> }) {
+  const d = useDraft('', { isValid: (v) => v === '' || options.includes(v) })
+  return (
+    <>
+      <label>Position<select value={d.value} onChange={(e) => d.set(e.target.value)}>
+        <option value="">bitte wählen</option>
+        {options.map((o) => <option key={o} value={o}>{o}</option>)}
+      </select></label>
+      <DraftActions draft={d} onSave={onSave} />
+    </>
+  )
+}
+
+test('isValid: ein Entwurf, dessen Wert nicht mehr zur Wahl steht, ist verworfen und wird nicht gespeichert', () => {
+  const onSave = vi.fn(async () => {})
+  const { rerender } = render(<Auswahl options={['a', 'b']} onSave={onSave} />)
+  fireEvent.change(screen.getByLabelText('Position'), { target: { value: 'b' } })
+  expect(screen.getByRole('button', { name: 'Speichern' })).toBeTruthy()
+  rerender(<Auswahl options={['a']} onSave={onSave} />)
+  expect((screen.getByLabelText('Position') as HTMLSelectElement).value).toBe('')
+  expect(screen.queryByRole('button', { name: 'Speichern' })).toBeNull()
+  // Kommt der Wert zurück, lebt der alte Entwurf nicht wieder auf.
+  rerender(<Auswahl options={['a', 'b']} onSave={onSave} />)
+  expect(screen.queryByRole('button', { name: 'Speichern' })).toBeNull()
+  expect(onSave).not.toHaveBeenCalled()
+})

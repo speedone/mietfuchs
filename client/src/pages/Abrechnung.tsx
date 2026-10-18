@@ -53,6 +53,9 @@ type Props = {
   onFocusDone?: () => void
 }
 
+// Der Satz neben einem geänderten Druck-Häkchen (Durchsicht zu #309, KANN 9).
+export const PRINT_DRAFT_NOTE = 'Gilt schon für diese Vorschau und den Druck; mit „Speichern“ für künftige Abrechnungen gemerkt.'
+
 export default function Abrechnung({ settings, tenancies, reload, onNavigate, focus, onFocusDone }: Props) {
   const { key, label, param, calendar, period, rules } = usePeriod()
   const { properties, property } = useProperty()
@@ -389,6 +392,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
             </span>
           </label>
           <DraftActions draft={printDraft} onSave={savePrint} what="Druckeinstellungen" />
+          {printDraft.dirty && <span className="muted">{PRINT_DRAFT_NOTE}</span>}
         </div>
         {choices.length > 0 && (
           // Sichtprüfung S7/E44: ein Umschalter, dessen gewählter Teil hervorgehoben ist

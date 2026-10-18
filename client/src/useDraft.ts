@@ -27,20 +27,26 @@ export type Draft<T> = {
   save: (fn: (value: T) => Promise<unknown>) => Promise<boolean>
 }
 
-export type DraftOptions = {
+export type DraftOptions<T = unknown> = {
   // Wozu der Wert gehört (etwa die Adresse der Abrechnung). Ändert er sich, ist ein offener
   // Entwurf erledigt, denn er gehörte zu etwas anderem. Wer den scope selbst wechselt, fragt vorher
   // mit `useConfirmDiscard` (unten); Objekt und Zeitraum fragen über `useOpenForm` von selbst.
   // Eine Zeichenkette, denn verglichen wird mit `Object.is`: Ein Objekt oder eine Liste wäre bei
   // jedem Zeichnen neu und verwürfe den Entwurf.
   scope?: string
+  // Für Auswahlfelder: ob ein Wert noch unter den Optionen steht. Fällt der Wert eines Entwurfs heraus
+  // (die Liste folgt einem anderen Feld, eine Position oder Lieferung ist weg), ist der Entwurf
+  // verworfen. Sonst zeigte der Browser den ersten Eintrag, und „Speichern“ schickte einen Wert, den
+  // niemand mehr sieht (Durchsicht zu #309, MUSS 2; dieselbe Falle wie in Kosten.test.tsx).
+  isValid?: (value: T) => boolean
 }
 
-export function useDraft<T>(saved: T, options: DraftOptions = {}): Draft<T> {
+export function useDraft<T>(saved: T, options: DraftOptions<T> = {}): Draft<T> {
   const [stored, setStored] = useState<DraftState<T>>(() => initialDraft(saved, options.scope))
   // Ein neuer gespeicherter Wert von außen wird noch in diesem Durchlauf übernommen, nicht erst in
   // einem Effekt danach: Sonst zeigte das Feld einmal den alten Wert neben dem neuen Stand der Seite.
-  const state = withSaved(stored, saved, options.scope)
+  const synced = withSaved(stored, saved, options.scope)
+  const state = synced.edit && options.isValid && !options.isValid(synced.edit.value) ? discarded(synced) : synced
   if (state !== stored) setStored(state)
   const [saving, setSaving] = useState(false)
   // Der Grund gehört zum scope, in dem das Speichern scheiterte: Nach einem Wechsel stünde er
