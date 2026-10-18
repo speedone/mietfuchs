@@ -40,14 +40,23 @@ test('Überschrift, Frage und Hilfe; der Zwischenzähler ist kein eigener Stromv
   expect(screen.getByText(/Ein Zwischenzähler hinter dem Stromzähler des Hauses ist kein eigener Stromvertrag: Sein Strom steckt in der Stromrechnung des Hauses und ist beim Allgemeinstrom abzuziehen; der Zwischenzähler erspart Ihnen nur das Schätzen \(BGH, Versäumnisurteil vom 20\.02\.2008, VIII ZR 27\/07, Rn\. 32; vgl\. BGH, Urteil vom 03\.06\.2016, V ZR 166\/15, Leitsatz\)\./)).toBeTruthy()
 })
 
-test('eine Auswahl schickt genau einen PUT an die Anlage, leer als null, und lädt danach neu', async () => {
+// #309: Die Auswahl ist ein Entwurf am Feld; erst „Speichern“ schickt sie.
+const speichern = () => screen.getByRole('button', { name: /^Speichern/ })
+
+test('eine Auswahl sendet nichts; „Speichern“ schickt genau einen PUT an die Anlage, leer als null, und lädt danach neu', async () => {
   const onSaved = vi.fn()
   wrap(<OperatingPowerHandlingCard plant={{ ...PLANT, operatingPowerHandling: 'ownMeter' }} onSaved={onSaved} />)
   fireEvent.change(select(), { target: { value: 'deducted' } })
+  expect(sent).toEqual([])
+  const knopf = speichern()
+  fireEvent.click(knopf)
+  fireEvent.click(knopf)
   await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1))
   expect(sent).toEqual([{ url: '/api/heating-plants/hp', method: 'PUT', body: { operatingPowerHandling: 'deducted' } }])
   expect(await screen.findByText('Die Angabe ist gespeichert.')).toBeTruthy()
+  await waitFor(() => expect(screen.queryByRole('button', { name: /^Speichern/ })).toBeNull())
   fireEvent.change(select(), { target: { value: '' } })
+  fireEvent.click(speichern())
   await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(2))
   expect(sent[1]).toEqual({ url: '/api/heating-plants/hp', method: 'PUT', body: { operatingPowerHandling: null } })
 })
@@ -57,6 +66,19 @@ test('ein Fehler des Servers steht in der Karte, neu geladen wird nicht', async 
   const onSaved = vi.fn()
   wrap(<OperatingPowerHandlingCard plant={PLANT} onSaved={onSaved} />)
   fireEvent.change(select(), { target: { value: 'deducted' } })
-  expect(await screen.findByText(/kennt Mietfuchs so nicht/)).toBeTruthy()
+  fireEvent.click(speichern())
+  const alert = await screen.findByRole('alert')
+  expect(alert.textContent).toMatch(/^Nicht gespeichert: .*kennt Mietfuchs so nicht/)
+  expect(alert.closest('.draft-actions')).not.toBeNull()
+  expect(select().value).toBe('deducted')
   expect(onSaved).not.toHaveBeenCalled()
+})
+
+test('„Verwerfen“ stellt die gespeicherte Angabe her, ohne zu senden (#309)', () => {
+  wrap(<OperatingPowerHandlingCard plant={{ ...PLANT, operatingPowerHandling: 'ownMeter' }} onSaved={() => {}} />)
+  fireEvent.change(select(), { target: { value: 'landlordPays' } })
+  fireEvent.click(screen.getByRole('button', { name: /^Verwerfen/ }))
+  expect(select().value).toBe('ownMeter')
+  expect(screen.queryByRole('button', { name: /^Speichern/ })).toBeNull()
+  expect(sent).toEqual([])
 })
