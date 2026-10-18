@@ -223,6 +223,13 @@ async function checkCombination(browser, base, combo, AxeBuilder, navLabels) {
     // Erst wenn kein Übergang mehr läuft: Mitten im Einblenden einer Rückfrage misst axe sonst den Kontrast
     // halb durchsichtiger Knöpfe (einmal in Chromium am Handy gesehen)
     await page.waitForFunction(() => /** @type {any} */ (globalThis).document.getAnimations().every((a) => a.playState !== 'running'), undefined, { timeout: 5000 }).catch(() => {})
+    // Und zwei Frames: WebKit meldet beim ersten Öffnen eines Seitenfensters die Animation schon als beendet,
+    // während der berechnete Stil noch die Deckkraft eines Zwischenstands trägt (gemessen 0,66), bis ein
+    // Frame gerechnet ist; axe maß dann den Kontrast halb durchsichtiger Knöpfe (#346, Durchsicht S4).
+    await page.evaluate(() => new Promise((resolve) => {
+      const raf = /** @type {any} */ (globalThis).requestAnimationFrame
+      raf(() => raf(() => resolve(undefined)))
+    }))
     const axe = await new AxeBuilder({ page }).analyze()
     for (const v of axe.violations) {
       if (v.impact !== 'serious' && v.impact !== 'critical') continue

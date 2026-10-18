@@ -1,7 +1,8 @@
-// Hinweis (#346, Schritt 10; Spezifikation Abschnitt 6, UI-Durchsicht M8): fetter Titel, **ein** Satz,
-// was zu tun ist, „Hier beheben →“, und der Rest (Normketten, Urteile, Einzelheiten der Rechnung) unter
-// „Mehr dazu“. Die Stufe steht nicht nur in der Farbe, sondern auch als Zeichen und als Wort; das Wort
-// liest ein Vorleser mit („Warnung: …“).
+// Hinweis (#346, Schritt 10; Spezifikation Abschnitt 6, UI-Durchsicht M8): fetter Titel, der Text,
+// „Hier beheben →“, und nur die Begründungen aus Fundstellen (Normketten, Urteile, Drucksachen) unter
+// „Mehr dazu“. Folgen, Kürzungen, Beträge, Daten und Aufforderungen bleiben immer sichtbar (Durchsicht
+// M1, M2), ein Fehler ganz (#236). Die Stufe steht nicht nur in der Farbe, sondern auch als Zeichen und
+// als Wort; das Wort liest ein Vorleser mit („Warnung: …“).
 //
 // `NoticeBox` setzt die Teile zusammen, `CalcNotice` macht das aus einem Hinweis der Berechnung
 // (`Notice` aus shared/types.ts): dessen Text wird nur in Sätze zerlegt (noticeText.ts), der Wortlaut
@@ -69,21 +70,20 @@ export function NoticeBox({ level, title, context, action, children, more, fix, 
 
 // Ein fertiger Text einer Seite (etwa aus taxView.ts), zerlegt wie ein Hinweis der Berechnung.
 export function TextNotice({ level, title, text, className }: { level: NoticeLevel, title?: ReactNode, text: string, className?: string }) {
-  const { context, action, more } = splitNoticeText(text)
-  return <NoticeBox level={level} title={title} context={context || undefined} action={action} more={more || null} className={className} />
+  const { visible, more } = splitNoticeText(text, level)
+  return <NoticeBox level={level} title={title} action={visible} more={more || null} className={className} />
 }
 
-// Ein Hinweis der Berechnung. Ohne Titel (abgeschlossen vor #112) trägt die Stufe allein den Kopf.
+// Ein Hinweis der Berechnung. Ohne Titel (abgeschlossen vor #112) trägt die Stufe allein den Kopf. Die
+// Begriffe stehen offen darunter.
 export function CalcNotice({ notice, fix, className }: { notice: Notice, fix?: Fix | null, className?: string }) {
-  const { context, action, more } = splitNoticeText(notice.text)
+  const { visible, more } = splitNoticeText(notice.text, notice.level)
   const terms = notice.terms ?? []
-  const extra = (more || terms.length > 0) ? (
-    <>
-      {more && <div>{more}</div>}
+  return (
+    <NoticeBox level={notice.level} title={notice.title || undefined} action={visible} more={more || null} fix={fix} className={className}>
       {terms.length > 0 && (
         <div className="notice-terms">Begriffe: {terms.map((t, k) => <Fragment key={t}>{k > 0 && ', '}<Term id={t} /></Fragment>)}</div>
       )}
-    </>
-  ) : null
-  return <NoticeBox level={notice.level} title={notice.title || undefined} context={context || undefined} action={action} more={extra} fix={fix} className={className} />
+    </NoticeBox>
+  )
 }

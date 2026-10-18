@@ -249,8 +249,10 @@ export default function Steuer({ settings }: Props) {
                 title={data.income.tenanciesWithoutPayment === data.income.tenanciesWithSoll
                   ? `Für ${year} ist keine einzige Mietzahlung erfasst.`
                   : `Für ${data.income.tenanciesWithoutPayment} von ${data.income.tenanciesWithSoll} Mietverhältnissen ist ${year} keine einzige Mietzahlung erfasst.`}
-                action={<>Bitte im <em>Mietkonto</em> nachtragen, bevor diese Zahl in die Anlage V geht.</>}
-                more="Die angesetzten Einnahmen sind dann zu niedrig, und das sieht man der Summe nicht an."
+                action={<>
+                  Die angesetzten Einnahmen sind dann zu niedrig, und das sieht man der Summe nicht an. Bitte
+                  im <em>Mietkonto</em> nachtragen, bevor diese Zahl in die Anlage V geht.
+                </>}
               />
             )}
 

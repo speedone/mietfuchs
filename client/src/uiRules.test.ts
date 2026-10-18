@@ -719,8 +719,8 @@ const ERROR_EXCEPTIONS = new Map<string, number>([
   ['./pages/Steuer.tsx', 1],
   ['./pages/Uebersicht.tsx', 1],
   ['./components/Co2SheetView.tsx', 1],
-  // Ladefehler und je Zähler die Meldungen der Ablesungen als Hinweis in der Tabelle (Inhalt, kein Formularfehler)
-  ['./pages/Zaehler.tsx', 2],
+  // Ladefehler (die Meldungen der Ablesungen stehen seit Schritt 10 im Baustein Notice)
+  ['./pages/Zaehler.tsx', 1],
   // Der Mieterwechsel, der mit Schritt 7 ins Seitenfenster kommt
   ['./pages/Stammdaten.tsx', 1],
   // Ladefehler und das Ergebnis je Beleg in der Warteschlange der Auswertung (Inhalt der Liste)
@@ -838,4 +838,51 @@ test('S26: Hinweise nur über den Baustein Notice', () => {
   expect(sources['./components/Notice.tsx']).toMatch(/noticeClass\(/)
   const own = files.filter((f) => f !== './components/Notice.tsx' && /noticeClass\(|NOTICE_LEVEL_LABELS|notice-level/.test(sources[f] ?? ''))
   expect(own).toEqual([])
+})
+
+// S26, zweiter Teil (Durchsicht K3): freie Kästen `className="notice|error|hint"` mit eigenem Text. Was heute so
+// steht, nennt die Liste mit Anzahl; sie darf nur kleiner werden, jede Umstellung auf den Baustein streicht ihren
+// Teil. Die Bausteine für Fehler (S15) und Notice selbst sind ausgenommen.
+const BOX_EXCEPTIONS = new Map<string, number>([
+  ['./components/AiSettings.tsx', 4],
+  ['./components/AssessmentReview.tsx', 5],
+  ['./components/Co2Card.tsx', 3],
+  ['./components/Co2FactsCard.tsx', 1],
+  ['./components/Co2SheetView.tsx', 3],
+  ['./components/CostPeriodFields.tsx', 1],
+  ['./components/FuelCard.tsx', 4],
+  ['./components/HeatingPeriodSection.tsx', 3],
+  ['./components/HeatingSelfSetup.tsx', 1],
+  ['./components/LawOverridesCard.tsx', 1],
+  ['./components/OperatingPowerCard.tsx', 6],
+  ['./components/PeriodCard.tsx', 2],
+  ['./components/PropertyNotice.tsx', 1],
+  ['./components/SelfHeatingCards.tsx', 1],
+  ['./components/ServiceImportReview.tsx', 2],
+  ['./components/StockCard.tsx', 1],
+  ['./pages/Abrechnung.tsx', 2],
+  ['./pages/Belege.tsx', 5],
+  ['./pages/Cockpit.tsx', 2],
+  ['./pages/Einstellungen.tsx', 1],
+  ['./pages/Heizkosten.tsx', 1],
+  ['./pages/Hilfe.tsx', 2],
+  ['./pages/Kosten.tsx', 7],
+  ['./pages/Mietkonto.tsx', 3],
+  ['./pages/Schnellerfassung.tsx', 2],
+  ['./pages/Stammdaten.tsx', 4],
+  ['./pages/Steuer.tsx', 1],
+  ['./pages/Uebersicht.tsx', 2],
+  ['./pages/Zaehler.tsx', 1],
+])
+const boxUses = (src: string): string[] => [...src.matchAll(/className=(?:"([^"]*)"|'([^']*)'|\{((?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*)\})/g)]
+  .filter((m) => /(?:^|[\s'"`])(?:notice|error|hint)(?=[\s'"`]|$)/.test(m[1] ?? m[2] ?? m[3] ?? ''))
+  .map((m) => m[0])
+test('S26: freie Hinweiskästen nur noch, wo die Liste sie nennt, und nie mehr', () => {
+  expect(boxUses(`<div className="notice">x</div> <p className="muted hint" /> <b className={ok ? 'error' : ''} /> <i className="notice-item" />`)).toHaveLength(3)
+  const counts = new Map(files.filter((f) => !ERROR_FILES.has(f) && f !== './components/Notice.tsx')
+    .map((f) => [f, boxUses(sources[f] ?? '').length] as const).filter(([, n]) => n > 0))
+  for (const [file, allowed] of BOX_EXCEPTIONS) {
+    expect(counts.get(file) ?? 0, `${file}: Hinweiskästen gehören in den Baustein Notice; sinkt die Zahl, die Liste senken`).toBe(allowed)
+  }
+  expect([...counts].filter(([file]) => !BOX_EXCEPTIONS.has(file)).map(([file, n]) => `${file}: ${n}`)).toEqual([])
 })

@@ -192,7 +192,10 @@ test('Eichfrist: das Jahr steht in der Liste, die abgelaufene Frist als Warnung 
   try {
     renderPage()
     expect(await screen.findByText('geeicht bis Ende 2024', undefined, { timeout: 5000 })).toBeTruthy()
-    expect((await screen.findByText(notice.text)).className).toBe('warn')
+    // Seit Schritt 10 über den Baustein Notice: Warnung (gelb) mit Wort, kein Fehlerkasten
+    const box = (await screen.findByText(notice.text)).closest('.notice-item')
+    expect(box?.className).toMatch(/^notice /)
+    expect(box?.textContent).toContain('Warnung')
   } finally {
     METERS = [{ id: 'm1', propertyId: 'objekt-1', name: 'Wasser EG', unitId: 'u1', type: 'kaltwasser', unit: 'm³' }]
   }

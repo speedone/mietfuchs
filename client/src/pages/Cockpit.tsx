@@ -257,8 +257,12 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
       list.push({ title: 'Abgeschlossen & versendet', level: ok ? 'gruen' : 'rot',
         detail: `Versendet am ${fmtDate(closed.sentAt)} — Frist nach §556 BGB ${ok ? 'gewahrt' : 'überschritten'}.` })
     } else if (closed) {
-      list.push({ title: 'Abgeschlossen & versendet', level: 'gelb', tab: 'abrechnung', cta: 'Versanddatum eintragen',
-        detail: 'Abgeschlossen, aber Versanddatum fehlt — für die §556-Frist nachtragen.' })
+      // Die Frist läuft weiter, bis die Abrechnung zugegangen ist (Durchsicht S2).
+      const deadlineText = daysLeft >= 0
+        ? `Frist am ${fmtDate(settlement.deadline)} (noch ${daysLeft} Tage).`
+        : `Frist am ${fmtDate(settlement.deadline)} abgelaufen.`
+      list.push({ title: 'Abgeschlossen & versendet', level: daysLeft < 0 ? 'rot' : 'gelb', tab: 'abrechnung', cta: 'Versanddatum eintragen',
+        detail: `Abgeschlossen, aber Versanddatum fehlt — für die §556-Frist nachtragen. ${deadlineText}` })
     } else {
       const deadlineText = daysLeft >= 0
         ? `Noch ${daysLeft} Tage bis zur Frist (${fmtDate(settlement.deadline)}).`
@@ -286,10 +290,10 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
   const pct = relevant.length ? Math.round((greenCount / relevant.length) * 100) : 0
   // Nächster Schritt: erst rote, dann gelbe offene Punkte
   const next = checks.find((c) => c.level === 'rot' && c.tab) ?? checks.find((c) => c.level === 'gelb' && c.tab)
-  // Die offenen Punkte beim Namen, für die Zeile nach dem Abschluss (M9). Nach dem Versand ist der Versand
-  // selbst kein offener Punkt mehr, auch wenn die Frist überschritten war: Das steht in seiner Zeile.
+  // Die offenen Punkte beim Namen, für die Zeile nach dem Abschluss (M9). Die Zeile des Versands nennt
+  // cockpitSubtitle nicht noch einmal, sie sagt deren Stand selbst (Durchsicht S2).
   const sentAt = settlement?.closed?.sentAt ?? null
-  const openTitles = relevant.filter((c) => c.level !== 'gruen' && !(sentAt && c.title === 'Abgeschlossen & versendet')).map((c) => c.title)
+  const openTitles = relevant.filter((c) => c.level !== 'gruen').map((c) => c.title)
 
   const statusBadge = settlement?.closed?.sentAt
     ? <span className="badge green">versendet</span>
@@ -301,7 +305,8 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
   const ibanFindings = useMemo(() => invalidIbans(settings, property, tenancies, year), [settings, property, tenancies, year])
 
   const distributed = settlement ? settlement.totalCostsCents - settlement.landlord.totalCents : 0
-  const fresh = settlement && settlement.statements.length === 0 && yearItems.length === 0
+  // Mit Pauschal- oder Inklusivmietern ist der Zeitraum nicht leer (Durchsicht K2).
+  const fresh = settlement && settlement.statements.length === 0 && (settlement.notSettled ?? []).length === 0 && yearItems.length === 0
   // Im leeren Bestand der erste Schritt, der fehlt (#346, Schritt 10, N12): Text und Knopf führen dorthin.
   const start = startStep(units, tenancies, label, calendar)
 
@@ -310,13 +315,13 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
       {/* Sichtprüfung S11/E56: Titel wie in der Navigation, mit dem Objekt darüber wie auf jeder Seite */}
       <PageHeader
         title={`Cockpit · Abrechnung ${label}`}
-        subtitle={cockpitSubtitle({ loaded: !!settlement, fresh: !!fresh, open: openTitles, sentAt, closed: !!settlement?.closed, start: start.text })}
+        subtitle={cockpitSubtitle({ loaded: !!settlement, fresh: !!fresh, open: openTitles, sentAt, closed: !!settlement?.closed, deadline: settlement?.deadline ?? null, start: start.text })}
         actions={
           // Ohne Daten gibt es weder einen Entwurf noch eine Frist, die zu nennen wäre (N12).
           !fresh && (
             <>
               {statusBadge}
-              {settlement && !settlement.closed && (
+              {settlement && !settlement.closed?.sentAt && (
                 <span className={`badge ${daysLeft < 0 ? 'red' : 'gray'}`}>
                   {daysLeft >= 0 ? `Frist in ${daysLeft} Tagen` : 'Frist abgelaufen'}
                 </span>

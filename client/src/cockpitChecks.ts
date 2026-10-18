@@ -61,20 +61,32 @@ export function itemsDetail(items: number, sumCents: number, files: number): str
 // Nach dem Abschluss ist „dann ist die Abrechnung versandfertig“ falsch (UI-Durchsicht M9, #341): Die
 // Zeile sagt dann, was geschehen ist, und nennt die offenen Punkte beim Namen (`open`, die Titel der
 // Zeilen der Checkliste), denn eine versendete Abrechnung wird nicht mehr fertig, nur noch nachgearbeitet.
-export function cockpitSubtitle({ loaded, fresh, open, sentAt = null, closed = false, start = null }: {
+// Die Zeile „Abgeschlossen & versendet“ zählt dabei nicht mit, der Satz sagt ihren Stand selbst (Durchsicht S2):
+// abgeschlossen, aber nicht versendet, mit der Frist des § 556 Abs. 3 BGB, die weiterläuft; versendet nach
+// Ablauf der Frist ausdrücklich so.
+export const SENT_CHECK = 'Abgeschlossen & versendet'
+export function cockpitSubtitle({ loaded, fresh, open, sentAt = null, closed = false, deadline = null, start = null }: {
   loaded: boolean
   fresh: boolean
   open: readonly string[]
   sentAt?: string | null
   closed?: boolean
+  // Frist nach § 556 Abs. 3 BGB (ISO)
+  deadline?: string | null
   // Der erste Schritt im leeren Bestand (emptyStock.ts)
   start?: string | null
 }): string {
   if (!loaded) return 'Lade Abrechnungsstand …'
   if (fresh) return start ?? 'Legen Sie zuerst Ihre Stammdaten an und erfassen Sie dann die Belege des Jahres.'
-  const rest = open.length > 0 ? `noch offen: ${andList(open.map((t) => `„${t}“`))}.` : 'nichts mehr offen.'
-  if (sentAt) return `Versendet am ${fmtDate(sentAt)}; ${rest}`
-  if (closed) return `Abgeschlossen, noch nicht versendet; ${rest}`
+  const others = open.filter((t) => t !== SENT_CHECK)
+  const rest = others.length > 0 ? `noch offen: ${andList(others.map((t) => `„${t}“`))}.` : 'nichts mehr offen.'
+  // Ohne weitere offene Punkte endet der Satz, wo der Stand selbst noch etwas verlangt oder rot ist.
+  const tail = others.length > 0 ? `; ${rest}` : '.'
+  if (sentAt) {
+    if (deadline !== null && sentAt > deadline) return `Versendet am ${fmtDate(sentAt)}, nach Ablauf der Frist (${fmtDate(deadline)})${tail}`
+    return `Versendet am ${fmtDate(sentAt)}; ${rest}`
+  }
+  if (closed) return `Abgeschlossen, Versanddatum fehlt${deadline ? ` (Frist am ${fmtDate(deadline)})` : ''}${tail}`
   if (open.length === 0) return 'Alles bereit — die Abrechnung ist vollständig.'
   return `Noch ${countOf(open.length, 'Punkt', 'Punkte')} offen, dann ist die Abrechnung versandfertig.`
 }

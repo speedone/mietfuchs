@@ -2,7 +2,7 @@
 // `null` heißt „die Vorgabe aus den Einstellungen gilt“. Eine leere Angabe am Objekt ist dagegen
 // eine Angabe, etwa für ein Haus, dessen Miete bar gezahlt wird.
 import { expect, test } from 'vitest'
-import { effectiveLandlord, letterhead, recipientLines } from './landlord'
+import { effectiveLandlord, letterhead, printsFormerAddress, recipientLines } from './landlord'
 import type { Property } from './types'
 
 const vorgabe = { landlordName: 'Erika Muster', iban: 'DE01', paymentDeadlineDays: 30 }
@@ -40,4 +40,12 @@ test('Anschrift des Mieters (N5): abweichende Anschrift vor der Wohnung im Objek
   expect(recipientLines('Anna Beispiel', 'EG links', { correspondenceAddress: 'Birkenweg 3, 54321 Anderswo' }, { address: 'Lindenweg 12, 12345 Musterstadt' }))
     .toEqual(['Anna Beispiel', 'Birkenweg 3', '54321 Anderswo'])
   expect(recipientLines('Anna Beispiel', 'EG links', null, { address: '' })).toEqual(['Anna Beispiel', 'EG links'])
+})
+
+// #229, Durchsicht S3: Nach dem Auszug ohne eigene Anschrift ginge die Abrechnung an die alte Wohnung.
+test('ausgezogen ohne Anschrift für den Schriftverkehr: die Seite warnt', () => {
+  expect(printsFormerAddress({ end: '2025-06-30' }, '2026-03-01')).toBe(true)
+  expect(printsFormerAddress({ end: '2025-06-30', correspondenceAddress: 'Birkenweg 3, 54321 Anderswo' }, '2026-03-01')).toBe(false)
+  expect(printsFormerAddress({ end: null }, '2026-03-01')).toBe(false)
+  expect(printsFormerAddress({ end: '2026-12-31' }, '2026-03-01')).toBe(false)
 })

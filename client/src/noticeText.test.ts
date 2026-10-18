@@ -1,8 +1,13 @@
 // Ein Hinweis in Sätze zerlegt (#346, Schritt 10, M8): verlustfrei, ohne an Abkürzungen, Daten oder
-// Fundstellen zu brechen, und mit dem Satz „was tun“ vorn. Die Beispiele sind Texte der Berechnung
-// (calc.ts), wie sie die Tests des Servers erzeugen.
+// Fundstellen zu brechen; eingeklappt werden nur Begründungen aus Fundstellen (Durchsicht M1, M2, S1).
+// Die Beispiele sind Texte der Berechnung (calc.ts), wie sie die Tests des Servers erzeugen.
 import { describe, expect, test } from 'vitest'
-import { isAction, sentences, splitNoticeText } from './noticeText'
+import { isAction, isCitationSentence, sentences, splitNoticeText } from './noticeText'
+import samplesRaw from './testing/noticeSamples.json?raw'
+
+// Je Code der längste Text aus den Tests des Servers, dazu je Code einer mit eingeklapptem Teil (erzeugt
+// mit einem vorübergehenden Mitschnitt in makeNotice, nicht eingecheckt). Neu erzeugen, wenn calc.ts Texte ändert.
+const samples = JSON.parse(samplesRaw) as { code: string, text: string }[]
 
 const CO2_FUEL_UNKNOWN = 'Mietfuchs weiß nicht, womit das Haus geheizt wird. Heizen Sie mit Gas, Heizöl, Flüssiggas oder Kohle oder weist Ihr Wärmelieferant CO₂-Kosten aus, sind die CO₂-Kosten zwischen Ihnen und den Mietern aufzuteilen (§ 5 CO2KostAufG), und die Heizkostenabrechnung muss den Anteil der Mieter, die Einstufung des Gebäudes und die Berechnungsgrundlagen ausweisen (§ 7 Abs. 3 CO2KostAufG). Fehlt das, darf jeder Mieter seinen Anteil an den Heizkosten um 3 % kürzen (§ 7 Abs. 4 CO2KostAufG), hier: Xaver (Wohnung A) 9,00 € und Zora (Wohnung B) 15,00 €. Richten Sie unter Stammdaten die Heizung ein; dann sagt Mietfuchs, was zu tun ist. Bezieht der Mieter Brennstoff oder Wärme über einen eigenen Vertrag, stellen Sie sein Mietverhältnis unter Heizung auf „Mieter heizt selbst“; dann entfällt die Kürzung.'
 
@@ -43,30 +48,69 @@ describe('isAction', () => {
 })
 
 describe('splitNoticeText', () => {
-  test('zeigt die Aufforderung und lässt alles andere in der Reihenfolge des Texts', () => {
-    const { action, more } = splitNoticeText(CO2_FUEL_UNKNOWN)
-    expect(action).toBe('Richten Sie unter Stammdaten die Heizung ein; dann sagt Mietfuchs, was zu tun ist.')
-    expect(more.startsWith('Mietfuchs weiß nicht')).toBe(true)
-    expect(more).not.toContain('Richten Sie')
-    // Kein Wort geht verloren: Satz und Rest ergeben zusammen dieselben Sätze.
-    expect([...sentences(more), action].map((s) => s.trim()).sort()).toEqual(sentences(CO2_FUEL_UNKNOWN).map((s) => s.trim()).sort())
+  test('Kürzung, Beträge und Aufforderung bleiben sichtbar (Durchsicht M1)', () => {
+    const { visible, more } = splitNoticeText(CO2_FUEL_UNKNOWN, 'warning')
+    for (const part of ['3 %', '9,00 €', '15,00 €', 'Richten Sie unter Stammdaten']) expect(visible).toContain(part)
+    expect(more).toBe('')
   })
-  test('ohne Aufforderung den ersten Satz', () => {
-    expect(splitNoticeText('Die Position wird nicht verteilt. Der Betrag geht an den Vermieter.')).toEqual({
-      context: '', action: 'Die Position wird nicht verteilt.', more: 'Der Betrag geht an den Vermieter.',
+  test('eine Begründung aus einem Urteil kommt unter „Mehr dazu“', () => {
+    const text = 'Die Rechnung „Gas“ reicht über den Zeitraum hinaus. Heizkosten gehören in die Heizperiode, in der sie verbraucht wurden (BGH VIII ZR 156/11). Tragen Sie den Leistungszeitraum ein.'
+    expect(splitNoticeText(text, 'warning')).toEqual({
+      visible: 'Die Rechnung „Gas“ reicht über den Zeitraum hinaus. Tragen Sie den Leistungszeitraum ein.',
+      more: 'Heizkosten gehören in die Heizperiode, in der sie verbraucht wurden (BGH VIII ZR 156/11).',
     })
   })
-  test('ein Satz hat keinen Rest', () => {
-    expect(splitNoticeText('„Wasser“: kein Verbrauch erfasst — Betrag geht an den Vermieter.')).toEqual({
-      context: '', action: '„Wasser“: kein Verbrauch erfasst — Betrag geht an den Vermieter.', more: '',
-    })
+  test('ein Satz, der auf die Begründung verweist, holt sie zurück (Durchsicht M2)', () => {
+    const text = 'Die Rechnung „Gas“ reicht über den Zeitraum hinaus. Heizkosten gehören in die Heizperiode, in der sie verbraucht wurden (BGH VIII ZR 156/11). Das gilt auch hier.'
+    expect(splitNoticeText(text, 'warning').more).toBe('')
   })
-  test('die Ortsangabe des ersten Satzes steht vor einer späteren Aufforderung', () => {
-    const text = 'Heizanlage „Gas“, Heizperiode 2025: Für Mieter ta fehlt der Betrag. Tragen Sie ihn auf der Seite Heizkosten ein.'
-    expect(splitNoticeText(text)).toEqual({
-      context: 'Heizanlage „Gas“, Heizperiode 2025',
-      action: 'Tragen Sie ihn auf der Seite Heizkosten ein.',
-      more: 'Heizanlage „Gas“, Heizperiode 2025: Für Mieter ta fehlt der Betrag.',
-    })
+  test('ein Fehler steht ganz offen da (#236, Durchsicht S1)', () => {
+    const text = 'Die Rechnung „Gas“ reicht über den Zeitraum hinaus. Heizkosten gehören in die Heizperiode, in der sie verbraucht wurden (BGH VIII ZR 156/11). Tragen Sie den Leistungszeitraum ein.'
+    expect(splitNoticeText(text, 'error')).toEqual({ visible: text, more: '' })
+  })
+  test('nur Fundstellen allein werden nicht eingeklappt', () => {
+    expect(splitNoticeText('Heizkosten gehören in die Heizperiode, in der sie verbraucht wurden (BGH VIII ZR 156/11).', 'hint').more).toBe('')
   })
 })
+
+// Über echte Texte je Code: Was eingeklappt ist, ist eine Fundstelle; jede Prozentzahl, jeder Betrag, jedes
+// Datum und jede Aufforderung bleibt sichtbar, und kein sichtbarer Satz verweist auf einen eingeklappten.
+describe('Hinweistexte der Berechnung', () => {
+  const PERCENT = /\d+(?:,\d+)?\s*%/
+  const DATE = /\b\d{1,2}\.\d{1,2}\.\d{4}\b|\b\d{1,2}\.\s*(?:Januar|Februar|März|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember)\b/
+  const CITATION = /§|Art\.|\b(?:BGH|BFH|BVerfG|OLG|LG|AG)\b|\b(?:BT|BR)-Drs\.|\bRn\.|\b[IVX]+ [A-Z]{1,3} \d+\/\d+/
+  const POINTS_BACK = /^(?:[A-ZÄÖÜ][a-zäöüß]+ Sie (?:sie|ihn|es|das|dies\w*|diese\w*|dort|dann)\b|(?:Das|Dies\w*|Dort|Dann|Dafür|Damit|Deshalb|Daher)\b)|bis dahin/
+  test('die Stichprobe deckt die Codes ab', () => {
+    expect(new Set(samples.map((s) => s.code)).size).toBeGreaterThan(150)
+  })
+  for (const { code, text } of samples) {
+    test(code, () => {
+      for (const level of ['warning', 'hint'] as const) {
+        const { visible, more } = splitNoticeText(text, level)
+        const all = sentences(text).map((s) => s.trim())
+        const hidden = sentences(more).map((s) => s.trim()).filter(Boolean)
+        const shown = sentences(visible).map((s) => s.trim())
+        // Verlustfrei, in der Reihenfolge des Texts
+        expect([...shown, ...hidden].sort()).toEqual([...all].sort())
+        for (const s of hidden) {
+          expect(s, `${code}: ${s}`).toMatch(CITATION)
+          expect(isCitationSentence(s)).toBe(true)
+          expect(s).not.toMatch(PERCENT)
+          expect(s).not.toContain('€')
+          expect(s).not.toMatch(DATE)
+          expect(s).not.toMatch(/kürz|Kürz/)
+          expect(isAction(s)).toBe(false)
+        }
+        if (hidden.length > 0) expect(shown.join('')).not.toBe('')
+        all.forEach((s, i) => {
+          if (i > 0 && !hidden.includes(s) && POINTS_BACK.test(s)) expect(hidden, `${code}: ${s}`).not.toContain(all[i - 1])
+        })
+      }
+      expect(splitNoticeText(text, 'error').more).toBe('')
+    })
+  }
+  test('mindestens ein Text klappt eine Begründung ein', () => {
+    expect(samples.some(({ text }) => splitNoticeText(text, 'warning').more !== '')).toBe(true)
+  })
+})
+

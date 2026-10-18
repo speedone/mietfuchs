@@ -33,6 +33,12 @@ export function recipientLines(
   return [tenantName, unitName, ...address.split(/,\s*(?=\d{5}\b)/).filter((l) => l !== '')]
 }
 
+// Ist der Mieter schon ausgezogen und hat keine Anschrift für den Schriftverkehr, ginge die Abrechnung an
+// die alte Wohnung (#229, Durchsicht S3). Die Seite warnt dann vor dem Druck.
+export function printsFormerAddress(tenancy: { end?: string | null, correspondenceAddress?: string } | null | undefined, today: string): boolean {
+  return !!tenancy?.end && tenancy.end < today && !(tenancy.correspondenceAddress ?? '').trim()
+}
+
 // Heißt das Objekt wie der Anfang seiner Adresse („Lindenweg 12“ in „Lindenweg 12, 12345 Musterstadt“),
 // steht der Name nicht noch einmal davor (UI-Durchsicht N5, #341): Die Zeile lautete sonst
 // „Lindenweg 12 · Lindenweg 12, 12345 Musterstadt“.
