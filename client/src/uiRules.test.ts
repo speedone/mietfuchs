@@ -154,12 +154,37 @@ test('S17: keine beliebigen Werte und keine Standardpalette in Klassen', () => {
   expect(withFile(tailwindUtilities(paletteWords, tailwindWithPalette))).toEqual([])
 })
 
+// S17 (Teil Farben, #346 Schritt 4): Farben stehen nur in den Token-Blöcken. Eine Regel mit
+// eigenem Hex- oder rgba-Wert wechselt nicht mit dem dunklen Design und läuft an der Gestaltung
+// vorbei; sie nimmt ein Token (`var(--…)`), und eine neue Farbe kommt als Token-Paar hell/dunkel.
+// Token-Blöcke sind alle Regeln mit dem Selektor `:root…`. Ausnahmen stehen mit Grund in der Liste
+// und dürfen nur weniger werden (der Test verlangt, dass jede noch vorkommt).
+const COLOR_EXCEPTIONS = new Map<string, string>([
+  // heute keine
+])
+const colorOffenders = (source: string) =>
+  [...source.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)].flatMap((m) => {
+    const selector = (m[1] ?? '').trim()
+    if (selector.startsWith(':root')) return []
+    return [...(m[2] ?? '').matchAll(/#[0-9a-fA-F]{3,8}\b|rgba?\(/g)].map((h) => `${selector.replace(/\s+/g, ' ')}: ${h[0]}`)
+  })
+test('S17: keine Hex- oder rgba-Farben außerhalb der Token-Blöcke', () => {
+  // Mutationsprobe: Der Prüfer findet eine eingeschleuste Farbe, auch in einem @media-Block,
+  // und lässt einen Token-Block in Ruhe.
+  expect(colorOffenders('.x { color: #123456; }\n@media print { .y { background: rgba(0, 0, 0, 0.1); } }\n:root { --z: #fff; }'))
+    .toEqual(['.x: #123456', '.y: rgba('])
+  expect(css).toContain('--bg: #')
+  const found = [...colorOffenders(css), ...colorOffenders(twCss).map((o) => `tw.css ${o}`)]
+  expect(found.filter((o) => !COLOR_EXCEPTIONS.has(o))).toEqual([])
+  for (const exception of COLOR_EXCEPTIONS.keys()) expect(found, `${exception} kommt nicht mehr vor; aus der Liste streichen`).toContain(exception)
+})
+
 // S20 (#346): index.css wird nur kleiner. Eine neue Klasse dort mit dem Namen einer Utility stünde
 // zweimal da, in der Schicht legacy und darüber in utilities, und die Utility gewönne still.
 // Die heutigen Namensgleichheiten bleiben, weil tw.css sie aus der Suche nimmt (`@source not
 // inline`); jede von ihnen steht deshalb auch dort.
 const LEGACY_UTILITY_NAMES = new Set(['sr-only', 'grow', 'grow-2'])
-const INDEX_CSS_MAX_LINES = 1114
+const INDEX_CSS_MAX_LINES = 976
 test('S20: keine neue Klasse und keine Animation in index.css mit einem Namen aus Tailwind, und index.css wächst nicht', () => {
   expect(definedClasses.size).toBeGreaterThan(100)
   const clashes = tailwindUtilities(definedClasses)
@@ -213,6 +238,8 @@ describe('S6: Kontrast der Farbtöne', () => {
   }
   const light = block(':root')
   const dark = block(":root[data-theme='dark']")
+  // Was das dunkle Design nicht neu setzt, gilt wie hell (etwa --primary-text).
+  const tokenOr = (body: string, name: string) => (body.includes(`--${name}:`) ? token(body, name) : token(light, name))
   for (const [name, body] of [['hell', light], ['dunkel', dark]] as const) {
     test(`${name}: Akzentschrift auf Karte und Akzentfläche, Weiß auf Akzent, gedämpfte Schrift`, () => {
       expect(ratio(token(body, 'accent-text'), token(body, 'card'))).toBeGreaterThanOrEqual(4.5)
@@ -223,6 +250,24 @@ describe('S6: Kontrast der Farbtöne', () => {
       expect(ratio(token(body, 'muted'), token(body, 'chip'))).toBeGreaterThanOrEqual(4.5)
       expect(ratio(token(body, 'muted'), token(body, 'accent-soft'))).toBeGreaterThanOrEqual(4.5)
       expect(ratio(token(body, 'text'), token(body, 'accent-soft'))).toBeGreaterThanOrEqual(4.5)
+    })
+    // Gestaltung „Mittelweg“ (#346, Schritt 4): die Paare, die neu dazukamen.
+    test(`${name}: Knöpfe, Links auf der Seite, aktiver Menüpunkt, Schrift auf Hover-Fläche`, () => {
+      const t = (n: string) => tokenOr(body, n)
+      for (const fill of ['primary', 'primary-hover', 'danger', 'danger-hover']) {
+        expect(ratio(t('primary-text'), t(fill)), `Schrift auf --${fill}`).toBeGreaterThanOrEqual(4.5)
+      }
+      expect(ratio(t('accent-text'), t('bg')), 'Links auf dem Seitengrund').toBeGreaterThanOrEqual(4.5)
+      expect(ratio(t('accent-text'), t('hover')), 'Links auf Hover-Fläche').toBeGreaterThanOrEqual(4.5)
+      expect(ratio(t('accent-strong'), t('accent-soft')), 'aktiver Menüpunkt, Objekt-Marke').toBeGreaterThanOrEqual(4.5)
+      expect(ratio(t('sidebar-text'), t('sidebar')), 'Menüpunkte').toBeGreaterThanOrEqual(4.5)
+      expect(ratio(t('sidebar-text'), t('hover')), 'Menüpunkt beim Überfahren').toBeGreaterThanOrEqual(4.5)
+      expect(ratio(t('muted'), t('hover')), 'Nebentext auf Hover-Fläche').toBeGreaterThanOrEqual(4.5)
+      expect(ratio(t('text'), t('hover')), 'Text auf Summen- und Rechenwegzeilen').toBeGreaterThanOrEqual(4.5)
+      expect(ratio(t('red'), t('red-soft')), 'Fehlermeldung').toBeGreaterThanOrEqual(4.5)
+      expect(ratio(t('amber'), t('amber-soft')), 'Warnung').toBeGreaterThanOrEqual(4.5)
+      expect(ratio(t('green'), t('green-soft')), 'Erfolg').toBeGreaterThanOrEqual(4.5)
+      expect(ratio(t('brand-text'), t('brand')), 'Update-Knopf').toBeGreaterThanOrEqual(4.5)
     })
   }
   test('Schrift in Akzentfarbe nimmt --accent-text, nicht --accent', () => {

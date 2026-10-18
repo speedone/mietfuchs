@@ -59,6 +59,15 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Geändert
 
+- Neue, ruhigere Gestaltung: neutrale graue Flächen, weiße Karten mit feiner Linie und eine helle
+  Seitenleiste, in der der gewählte Menüpunkt hell getönt hervorsteht. Indigo bleibt für das, womit
+  Sie etwas tun: den Hauptknopf, Links, den Fortschritt und den Fokusrahmen. Es gibt nur noch drei
+  Arten von Knöpfen (Hauptknopf, Knopf mit Rahmen, roter Knopf zum Löschen), Feldbeschriftungen
+  stehen fett in Textfarbe, und das dunkle Design ist fast schwarz. Summen- und Rechenwegzeilen der
+  Abrechnung heben sich im Dunkeln deutlicher ab. Am Handy stehen in Staffeln (etwa „Personenzahl
+  gültig ab“) die Felder auf einer Höhe, auch wenn eine Beschriftung umbricht, und die Knöpfe unten
+  im Seitenfenster teilen sich die Breite ohne den Hinweis auf Tastenkürzel. Gedruckt wird wie
+  bisher hell ([#346](https://github.com/speedone/mietfuchs/issues/346)).
 - Mietfuchs steht ab dieser Version unter der GNU Affero General Public License, Version 3
   (AGPL-3.0), statt unter der MIT-Lizenz. Für Vermieter, die Mietfuchs auf dem eigenen Rechner
   nutzen, ändert sich nichts. Wer eine veränderte Fassung weitergibt oder als Online-Dienst
