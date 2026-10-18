@@ -113,3 +113,33 @@ test('Monatsraster: Pfeile, Pos1/Ende und Bild auf/ab nach dem APG-Grid-Muster',
   expect(gridMove({ year: 2100, month: 4 }, 'PageDown')).toEqual({ year: 2100, month: 4 })
   expect(gridMove({ year: 2025, month: 4 }, 'Tab')).toBeNull()
 })
+
+// Durchsicht K1: Zwei Teile, die beide als Monat lesbar wären („1.10“), sind mehrdeutig: Tag.Monat ohne Jahr
+// oder Monat.Jahr. Vorher wurde „1.10“ still Januar 2010; jetzt ist es ein Feldfehler.
+test('Monatsfeld: „1.10“, „01.12“, „3.04“ sind mehrdeutig und ergeben eine Meldung, eindeutige bleiben', () => {
+  for (const text of ['1.10', '01.12', '3.04', '12/01', '1 10', '7-05']) {
+    const r = parseMonthText(text)
+    expect(r.kind, text).toBe('invalid')
+    if (r.kind === 'invalid') {
+      expect(r.short).toBe('Monat und Jahr angeben')
+      expect(r.text).toBe(`„${text}“ kann ein Tag mit Monat oder ein Monat mit Jahr sein. Bitte Monat und Jahr angeben, etwa „10.2025“.`)
+    }
+  }
+  // die Grenze: ein zweistelliges Jahr über 12 oder 00 ist eindeutig, ebenso vierstellig und mit Tag
+  expect(key('3.25')).toBe('2025-03')
+  expect(key('03/27')).toBe('2027-03')
+  expect(key('3.13')).toBe('2013-03')
+  expect(key('3.00')).toBe('2000-03')
+  expect(key('10.2025')).toBe('2025-10')
+  expect(key('1.10.2025')).toBe('2025-10')
+  expect(key('Okt 10')).toBe('2010-10')
+})
+
+// Durchsicht K2: ein Punkt am Ende („3.2025.“) stört nicht.
+test('Monatsfeld: ein abschließender Punkt wird übergangen', () => {
+  expect(key('3.2025.')).toBe('2025-03')
+  expect(key('01.03.2025.')).toBe('2025-03')
+  expect(key('März 2025.')).toBe('2025-03')
+  const r = parseMonthText('03.')
+  expect(r.kind === 'invalid' && r.short).toBe('Jahr fehlt')
+})

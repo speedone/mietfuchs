@@ -1,6 +1,7 @@
 // Nebenkostenmodell am Mietverhältnis (#93), die Seite der Oberfläche.
 import { expect, test } from 'vitest'
-import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_TENANCY_HINT, buildPersonHistory, buildSchedule, costModelBadge, costModelBody, defaultTenancyUnitId, notSettledText, overlapQuestion, parsePersons, parseScheduleMonth, prepaymentColumn, scheduleField, scheduleMonthText, showsFlatRates, startsSchedule } from './tenancyModel'
+import { parseMonthText } from './monthText'
+import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_TENANCY_HINT, buildPersonHistory, buildSchedule, costModelBadge, costModelBody, defaultTenancyUnitId, notSettledText, overlapQuestion, parsePersons, prepaymentColumn, scheduleField, scheduleMonthText, showsFlatRates, startsSchedule } from './tenancyModel'
 import type { Tenancy, Unit } from './types'
 
 test('die Staffel der Pauschale erscheint nur bei einer Pauschale', () => {
@@ -135,37 +136,43 @@ test('Mieter heizt selbst (Heizung PR 19): nur bei der Heizung wählbar, gespeic
   expect(SELF_SUPPLY_TENANCY_HINT).toMatch(/12 Monaten/)
 })
 
+// Die eine Stelle, die einen Monat liest, ist parseMonthText (Durchsicht K4: parseScheduleMonth entfällt).
+const scheduleKey = (text: string): string | null => {
+  const r = parseMonthText(text)
+  return r.kind === 'month' ? r.key : null
+}
+
 test('Monat einer Staffel: auch in deutscher Schreibweise, wie sie Safari und Firefox ohne Monatsauswahl bekommen', () => {
   // Chrome liefert aus der Monatsauswahl immer JJJJ-MM
-  expect(parseScheduleMonth('2026-01')).toBe('2026-01')
+  expect(scheduleKey('2026-01')).toBe('2026-01')
   // Safari auf dem Mac und Firefox zeigen ein Textfeld; dort tippt man, was man kennt
-  expect(parseScheduleMonth('01.2026')).toBe('2026-01')
-  expect(parseScheduleMonth('1.2026')).toBe('2026-01')
-  expect(parseScheduleMonth('10/2026')).toBe('2026-10')
-  expect(parseScheduleMonth(' 01.01.2026 ')).toBe('2026-01')
-  expect(parseScheduleMonth('1.10.2026')).toBe('2026-10')
-  expect(parseScheduleMonth('2026-10-01')).toBe('2026-10')
+  expect(scheduleKey('01.2026')).toBe('2026-01')
+  expect(scheduleKey('1.2026')).toBe('2026-01')
+  expect(scheduleKey('10/2026')).toBe('2026-10')
+  expect(scheduleKey(' 01.01.2026 ')).toBe('2026-01')
+  expect(scheduleKey('1.10.2026')).toBe('2026-10')
+  expect(scheduleKey('2026-10-01')).toBe('2026-10')
 })
 
 test('Monat einer Staffel: ein Tag mitten im Monat und Unsinn werden nicht gedeutet', () => {
   // Eine Staffel gilt ab Monatsanfang; „15.10.2026“ still als Oktober zu lesen, hieße raten
-  expect(parseScheduleMonth('15.10.2026')).toBeNull()
-  expect(parseScheduleMonth('2026-10-15')).toBeNull()
-  expect(parseScheduleMonth('13.2026')).toBeNull()
-  expect(parseScheduleMonth('00.2026')).toBeNull()
+  expect(scheduleKey('15.10.2026')).toBeNull()
+  expect(scheduleKey('2026-10-15')).toBeNull()
+  expect(scheduleKey('13.2026')).toBeNull()
+  expect(scheduleKey('00.2026')).toBeNull()
   // seit dem Monatsfeld (#346, Schritt 5) auch mit Namen
-  expect(parseScheduleMonth('Januar 2026')).toBe('2026-01')
-  expect(parseScheduleMonth('26-01')).toBeNull()
-  expect(parseScheduleMonth('')).toBeNull()
+  expect(scheduleKey('Januar 2026')).toBe('2026-01')
+  expect(scheduleKey('26-01')).toBeNull()
+  expect(scheduleKey('')).toBeNull()
   // ein Jahr außerhalb von 1900 bis 2100 ist ein Tippfehler
-  expect(parseScheduleMonth('01.0026')).toBeNull()
-  expect(parseScheduleMonth('01.2206')).toBeNull()
-  expect(parseScheduleMonth('01.2100')).toBe('2100-01')
+  expect(scheduleKey('01.0026')).toBeNull()
+  expect(scheduleKey('01.2206')).toBeNull()
+  expect(scheduleKey('01.2100')).toBe('2100-01')
 })
 
 test('Monat einer Staffel zur Anzeige: JJJJ-MM wird MM.JJJJ und lässt sich wieder lesen', () => {
   expect(scheduleMonthText('2026-01')).toBe('01.2026')
-  expect(parseScheduleMonth(scheduleMonthText('2026-10'))).toBe('2026-10')
+  expect(scheduleKey(scheduleMonthText('2026-10'))).toBe('2026-10')
   expect(scheduleMonthText('')).toBe('')
 })
 

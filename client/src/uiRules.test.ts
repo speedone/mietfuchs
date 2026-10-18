@@ -720,13 +720,17 @@ test('S25: Pflichtfelder mit Legende, jedes <form> mit noValidate, keine Gestalt
 // S14 (#287, #346 Schritt 5): Ein Monat wird nur im Monatsfeld eingegeben (MonthField.tsx, Regel in monthText.ts).
 // `<input type="month">` kennen Safari auf dem Mac und Firefox nicht; ein zweites Monatsfeld (etwa wieder zwei
 // Auswahllisten für Monat und Jahr) läse dieselbe Eingabe anders. Kein `type="number"`: Es liest „650,00“ je nach
-// Browser anders; Geld ist ein Textfeld, gelesen mit `parseEuro`. Die Monatsnamen stehen im Client einmal, in
+// Browser anders; Geld ist ein Textfeld, gelesen mit `parseEuro`. Die Monatsnamen (ausgeschrieben und kurz, in jeder Art von
+// Anführungszeichen) stehen im Client einmal, in
 // monthText.ts. Geprüft wird der Quelltext ohne Kommentare.
 const withoutComments = (src: string) => src.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '')
-const monthInputUses = (src: string) => [...withoutComments(src).matchAll(/type=["'{`]+(?:month|number)\b|type:\s*['"](?:month|number)['"]|['"`>]–\s*Jahr\s*–|:\s*Jahr`|\bfunction\s+Month(?:Picker|Select|Input)\b|'Januar',\s*'Februar'/g)].map((m) => m[0])
+const monthInputUses = (src: string) => [...withoutComments(src).matchAll(/type=["'{`]+(?:month|number)\b|type:\s*['"](?:month|number)['"]|['"`>]–\s*Jahr\s*–|:\s*Jahr`|\bfunction\s+Month(?:Picker|Select|Input)\b|["'`](?:Januar|Jan)["'`]\s*,\s*["'`](?:Februar|Feb)["'`]/g)].map((m) => m[0])
 test('S14: Monat nur im Monatsfeld, kein type="month" und kein type="number"', () => {
   // Probe des Prüfers
   expect(monthInputUses(`<input type="month" /> <input type="number" /> <input type={'month'} /> { type: 'number' } <option>– Jahr –</option> aria-label={\`\${label}: Jahr\`} function MonthPicker() {} ['Januar', 'Februar']`)).toHaveLength(8)
+  // Durchsicht K5: auch doppelte Anführungszeichen und die Kurzformen
+  expect(monthInputUses(`["Januar", "Februar"] ['Jan', 'Feb', 'Mär'] ["Jan","Feb"] [\`Januar\`, \`Februar\`]`)).toHaveLength(4)
+  expect(monthInputUses("'Jan' 'Januar' { name: 'Februar' }")).toEqual([])
   expect(monthInputUses('// <input type="month"> kennt Safari nicht\nfunction MonthField() {} <input type="date" />')).toEqual([])
   expect(twSources['./components/MonthField.tsx']).toBeTruthy()
   const allowed = new Set(['./monthText.ts'])

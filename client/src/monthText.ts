@@ -5,7 +5,8 @@
 // Gelesen wird, was Vermieter tippen: „3.2025“, „03/25“, „2025-03“, „März 2025“, „Mrz 27“, dazu „3 2025“,
 // „3-2025“, „Sept. 2024“, „Jänner 2026“ und ein Tag, wenn er der Erste ist („01.03.2025“, „2025-03-01“): Eine
 // Staffel gilt ab Monatsanfang, und „15.10.2026“ still als Oktober zu lesen, hieße raten. Zweistellige Jahre
-// wie POSIX (`%y`): 00 bis 68 sind 20xx, 69 bis 99 sind 19xx. Jahre gelten von 1900 bis 2100; außerhalb ist es
+// wie POSIX (`%y`): 00 bis 68 sind 20xx, 69 bis 99 sind 19xx; ein zweistelliges Jahr von 01 bis 12 hinter einem Monat
+// („1.10“) ist mehrdeutig (Tag.Monat ohne Jahr) und ergibt eine Meldung. Jahre gelten von 1900 bis 2100; außerhalb ist es
 // ein Tippfehler („01.0026“), der als frühester Eintrag einer Staffel still ab Einzug gälte, als späterer nie.
 //
 // Was sich nicht lesen lässt, wird nicht verworfen, sondern benannt: `short` für die Meldung am Feld („Monat 13
@@ -58,7 +59,8 @@ const NO_YEAR: MonthParse = { kind: 'invalid', short: 'Jahr fehlt', text: `Geben
 const NO_MONTH: MonthParse = { kind: 'invalid', short: 'Monat fehlt', text: `Geben Sie zum Jahr auch den Monat ein, ${EXAMPLE}.` }
 
 export function parseMonthText(text: string): MonthParse {
-  const t = text.trim()
+  // Ein Punkt am Ende („3.2025.“) gehört nicht zur Angabe (Durchsicht K2).
+  const t = text.trim().replace(/\s*\.$/, '')
   if (t === '') return { kind: 'empty' }
   const y = '(\\d{4}|\\d{2})'
   // Jahr zuerst, vierstellig: 2025-03, 2025/3, 2025-03-01
@@ -69,7 +71,13 @@ export function parseMonthText(text: string): MonthParse {
   if (m) return Number(m[1]) !== 1 ? ONLY_MONTH : result(Number(m[2]), m[3] ?? '')
   // Monat und Jahr: 3.2025, 03/25, 3-2025, 3 2025
   m = new RegExp(`^(\\d{1,2})\\s*(?:[./-]|\\s)\\s*${y}$`).exec(t)
-  if (m) return result(Number(m[1]), m[2] ?? '')
+  if (m) {
+    // Mehrdeutig (Durchsicht K1): Ist auch der zweite Teil ein Monat („1.10“, „01.12“), kann es Tag.Monat ohne
+    // Jahr sein; still als Januar 2010 zu lesen, hieße raten.
+    const second = m[2] ?? ''
+    if (second.length === 2 && Number(second) >= 1 && Number(second) <= 12 && Number(m[1]) >= 1 && Number(m[1]) <= 12) return ambiguous(t)
+    return result(Number(m[1]), second)
+  }
   // Monatsname und Jahr: März 2025, Mrz 27, Sept. 2024, Mai2025
   m = new RegExp(`^(\\p{L}+)\\.?\\s*${y}$`, 'u').exec(t)
   if (m) {
@@ -83,6 +91,12 @@ export function parseMonthText(text: string): MonthParse {
   if (/^[./]?\s*\d{4}$/.test(t)) return NO_MONTH
   return unreadable(t)
 }
+
+const ambiguous = (t: string): MonthParse => ({
+  kind: 'invalid',
+  short: 'Monat und Jahr angeben',
+  text: `„${t}“ kann ein Tag mit Monat oder ein Monat mit Jahr sein. Bitte Monat und Jahr angeben, etwa „10.2025“.`,
+})
 
 const unreadable = (t: string): MonthParse => ({
   kind: 'invalid',
