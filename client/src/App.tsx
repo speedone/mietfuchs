@@ -27,6 +27,8 @@ import Einstellungen from './pages/Einstellungen'
 import { navFor, tabLabel, type Tab } from './nav'
 import MobileNav, { MOBILE_QUERY, useMediaQuery } from './components/MobileNav'
 import Heizkosten from './pages/Heizkosten'
+import { TermHelp } from './components/Term'
+import type { TermId } from '../../shared/glossary.ts'
 
 // ---------- Dark Mode ----------
 type ThemeChoice = 'system' | 'light' | 'dark'
@@ -177,6 +179,12 @@ function Shell() {
     setTab(t, f)
     return true
   }, [tab, hasOpenForm, confirmLeave, setTab])
+  // „Mehr in ‚Hilfe & Begriffe‘ →“ aus einer Begriffserklärung (#346, Schritt 6): über `navigate`, also mit der
+  // Rückfrage bei offenem Formular; die Hilfe rollt dann zum Begriff.
+  const [helpTerm, setHelpTerm] = useState<{ id: TermId; seq: number } | null>(null)
+  const openHelp = useCallback((id: TermId) => {
+    void navigate('hilfe').then((done) => { if (done) setHelpTerm((h) => ({ id, seq: (h?.seq ?? 0) + 1 })) })
+  }, [navigate])
   // Schließen oder Neuladen des Tabs mit offenem Formular: Der Browser fragt mit seinem eigenen Satz nach.
   useEffect(() => {
     const onLeave = (e: BeforeUnloadEvent) => {
@@ -329,7 +337,7 @@ function Shell() {
   }
 
   return (
-    <>
+    <TermHelp.Provider value={openHelp}>
       {mobile ? (
         <MobileNav tab={tab} context={contextLine} onNavigate={(t) => void navigate(t)} sheet={(close) => <nav className="sidebar" aria-label="Hauptnavigation">{sidebar(close)}</nav>} />
       ) : (
@@ -376,13 +384,13 @@ function Shell() {
         )}
         {tab === 'heizkosten' && <Heizkosten units={units} tenancies={tenancies} onTenanciesChanged={reload} />}
         {tab === 'steuer' && <Steuer settings={settings} />}
-        {tab === 'hilfe' && <Hilfe onNavigate={(t) => void navigate(t)} />}
+        {tab === 'hilfe' && <Hilfe onNavigate={(t) => void navigate(t)} focusTerm={helpTerm} onFocusTermDone={() => setHelpTerm(null)} />}
         {tab === 'einstellungen' && settings && (
           <Einstellungen settings={settings} reload={reload} update={update} />
         )}
         </Fragment>
       </main>
-    </>
+    </TermHelp.Provider>
   )
 }
 

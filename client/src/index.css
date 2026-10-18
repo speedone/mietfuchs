@@ -296,13 +296,10 @@ input[aria-invalid="true"] { border-color: var(--red); }
 
 label.field.checkline { justify-content: flex-end; padding-bottom: var(--space-2); }
 label.field.checkline span { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-weight: var(--weight-normal); color: var(--text); font-size: var(--text-m); }
-/* Ein Begriff (Term.tsx) in einem Häkchen-Label (mit und ohne .field): Die Regel darüber machte auch den Erklärungskasten und
-   seine Zeilen zu Flex-Zeilen, und der Kasten nahm nur die Breite des einen Worts an; er stand als
-   schmale, hohe Säule da. Ohne eigenen Rahmen bricht er auf eine eigene Zeile in voller Breite um. */
+/* Ein Begriff (Term.tsx) in einem Häkchen-Label: Die Regel darüber machte ihn zur Flex-Zeile. Seine Erklärung
+   ist ein Popover außerhalb des Labels (#346, Schritt 6) und wird hier nie zur Säule (H2). */
 label.checkline span.term-wrap { display: contents; }
 label.checkline span.term { display: inline; }
-label.checkline span.term-pop, label.checkline span.term-pop span.term-line { display: block; }
-label.checkline:has(.term-pop) { flex-wrap: wrap; }
 
 /* ---------- Badges & Hinweise ---------- */
 .badge { display: inline-block; padding: 2px var(--space-2); border-radius: var(--radius-s); border: 1px solid var(--line); font-size: var(--text-xs); font-weight: var(--weight-medium); background: var(--card); color: var(--text); }
@@ -846,13 +843,9 @@ td.reading-panel { background: var(--bg); }
   }
 }
 
-/* Begriffslexikon (#113): Begriff gestrichelt unterstrichen, Erklärung als Kasten darunter */
+/* Begriffslexikon (#113): Begriff gestrichelt unterstrichen, dahinter „?“; die Erklärung ist ein Popover (tw.css) */
 .term-wrap { display: inline; }
 .term { text-decoration: underline dotted; text-underline-offset: 3px; cursor: help; color: inherit; }
-.term-pop { display: block; margin: 6px 0; padding: 10px var(--space-3); background: var(--card); color: var(--text); border: 1px solid var(--control-border); border-radius: var(--radius-m); font-size: var(--text-s); font-weight: var(--weight-normal); line-height: 1.45; text-transform: none; letter-spacing: normal; box-sizing: border-box; width: 0; min-width: 100%; overflow-wrap: anywhere; }
-/* width 0 und min-width 100 %: Der Kasten füllt das Label, macht es aber nicht breiter. Sonst
-   zöge er in einem schmalen Formular das ganze Feld über den Rand. */
-.term-pop .term-line { display: block; margin-top: 4px; }
 .glossary-entry h3 { margin: 0 0 6px; font-size: var(--text-l); color: var(--text); text-transform: none; letter-spacing: normal; }
 .glossary-entry p { margin: 4px 0; }
 .help-section { margin: var(--space-6) 0 10px; font-size: var(--text-l); }
@@ -866,7 +859,7 @@ td.reading-panel { background: var(--bg); }
 .guide li { margin: 4px 0; line-height: 1.45; }
 .guide .guide-jump { margin-top: 2px; white-space: nowrap; }
 .guide .guide-terms { margin-top: 12px; }
-@media print { .term { text-decoration: none; } .term-pop { display: none; } }
+@media print { .term { text-decoration: none; } }
 /* Ableseergebnis je Wohnung (Durchsicht von #239, I2): gedruckt wird nur diese Karte. */
 @media print {
   body.print-reading main .card:not(.reading-result), body.print-reading main h2, body.print-reading .page-head, body.print-reading .error, body.print-reading .notice { display: none !important; }

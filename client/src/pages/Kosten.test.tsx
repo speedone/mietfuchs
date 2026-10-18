@@ -4,7 +4,7 @@
 // übereinstimmen. Genau diese Lücke war Issue #6 — das Feld zeigte „Sonstig", gespeichert
 // wurde „Kaltwasser".
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { Meter, Unit } from '../types'
 import { PeriodProvider } from '../period'
 import { calendarPeriod } from '../../../shared/period.ts'
@@ -585,4 +585,31 @@ test('Seitenfenster: Tab erreicht im Kostenformular Umlageschlüssel, Beleg, „
   expect(names.some((n) => /Weitere Angaben/.test(n))).toBe(true)
   expect([...reached].some((el) => el instanceof HTMLInputElement && el.type === 'file')).toBe(true)
   expect([...reached].every((el) => drawer.contains(el))).toBe(true)
+})
+
+// CI zu #364: Kam die Liste der Kostenpositionen erst nach der Wahl der Anlage an (das zweite Laden, sobald das
+// Objekt bekannt ist), setzte sie die Wahl still auf „automatisch“ zurück. Hier wird die Antwort festgehalten,
+// bis gewählt ist, statt auf den Zufall der Reihenfolge zu warten.
+test('Zwei Heizanlagen: eine spät ankommende Liste der Positionen setzt die gewählte Anlage nicht zurück', async () => {
+  const anlage = (id: string, name: string) => ({
+    id, propertyId: 'objekt-1', name, energy: 'gas', supply: 'central', method: 'manual', separateSettlement: null,
+    devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
+    warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, periodChanges: [], separateSpans: [], units: [{ unitId: 'u2', heatedAreaM2: null }, { unitId: 'u3', heatedAreaM2: null }], newDevicesInstall: null,
+    nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null,
+  })
+  plants = [anlage('hp1', 'Ölkessel'), anlage('hp2', 'Gastherme')]
+  const inner = fetch
+  const held: (() => void)[] = []
+  vi.stubGlobal('fetch', (url: string, init?: RequestInit) => {
+    if ((init?.method ?? 'GET') === 'GET' && url.startsWith('/api/costItems?')) return new Promise<Response>((resolve) => held.push(() => resolve(inner(url, init))))
+    return inner(url, init)
+  })
+  await openForm()
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Heizung und Warmwasser' } })
+  const wahl = await waitFor(() => select(/^Heizanlage(?!n)/))
+  fireEvent.change(wahl, { target: { value: 'hp2' } })
+  expect(held.length).toBeGreaterThan(0)
+  await act(async () => { for (const release of held) release() })
+  await act(async () => {})
+  expect(select(/^Heizanlage(?!n)/).value).toBe('hp2')
 })

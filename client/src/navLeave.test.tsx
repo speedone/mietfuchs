@@ -7,6 +7,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { Property, Tenancy, Unit } from './types'
 import App from './App'
+import { GUIDES } from '../../shared/guides.ts'
 import { MOBILE_QUERY } from './components/MobileNav'
 import { PropertyProvider, useHasOpenForm } from './property'
 import { UIProvider } from './components/feedback'
@@ -203,4 +204,24 @@ test('„Hier beheben →“ mit ungespeicherter Änderung fragt; Abbrechen blei
   await waitFor(() => expect(question()).toBeNull())
   expect(within(sidebar()).getByRole('button', { name: /Abrechnung/ }).getAttribute('aria-current')).toBe('page')
   expect((screen.getByLabelText(/Belegkopien als Anlage/) as HTMLInputElement).checked).toBe(true)
+})
+
+// Durchsicht S1 (#346, Schritt 6): „Mehr in ‚Hilfe & Begriffe‘ →“ springt einmal zum Begriff. Ein späterer gewöhnlicher
+// Wechsel zur Hilfe beginnt oben, ohne Fokus auf dem alten Begriff.
+test('Sprung aus einer Begriffserklärung gilt einmal; danach öffnet die Hilfe ohne Fokus auf dem Begriff', async () => {
+  render(<App />)
+  const nav = await screen.findByRole('navigation', { name: 'Hauptnavigation' })
+  fireEvent.click(within(nav).getByRole('button', { name: /Hilfe & Begriffe/ }))
+  const guide = (await screen.findByText(GUIDES.granny.title)).closest('details')
+  if (!guide) throw new Error('Anleitung fehlt')
+  guide.open = true
+  fireEvent.click(within(guide).getByRole('button', { name: 'Einliegerwohnung' }))
+  fireEvent.click(screen.getByRole('link', { name: 'Mehr in „Hilfe & Begriffe“ →' }))
+  await waitFor(() => expect(document.activeElement?.id).toBe('begriff-granny'))
+  fireEvent.click(within(sidebar()).getByRole('button', { name: /Cockpit/ }))
+  await waitFor(() => expect(within(sidebar()).getByRole('button', { name: /Cockpit/ }).getAttribute('aria-current')).toBe('page'))
+  fireEvent.click(within(sidebar()).getByRole('button', { name: /Hilfe & Begriffe/ }))
+  await screen.findByRole('heading', { name: 'Hilfe & Begriffe', level: 1 })
+  await new Promise((r) => setTimeout(r, 30))
+  expect(document.activeElement?.id).not.toBe('begriff-granny')
 })

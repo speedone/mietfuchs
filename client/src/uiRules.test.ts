@@ -241,7 +241,7 @@ test('kleine Knöpfe haben am Handy die volle Tippfläche', () => {
 // Die heutigen Namensgleichheiten bleiben, weil tw.css sie aus der Suche nimmt (`@source not
 // inline`); jede von ihnen steht deshalb auch dort.
 const LEGACY_UTILITY_NAMES = new Set(['sr-only', 'grow', 'grow-2'])
-const INDEX_CSS_MAX_LINES = 866
+const INDEX_CSS_MAX_LINES = 859
 test('S20: keine neue Klasse und keine Animation in index.css mit einem Namen aus Tailwind, und index.css wächst nicht', () => {
   expect(definedClasses.size).toBeGreaterThan(100)
   const clashes = tailwindUtilities(definedClasses)
@@ -399,7 +399,7 @@ test('dark: gilt nicht im Druck', () => {
 // ein nicht modaler Dialog (`role="dialog"`). popover.tsx nehmen nur die Bausteine, die es brauchen.
 const DIALOG_FILES = new Set(['./components/MobileNav.tsx', './components/Drawer.tsx', './components/feedback.tsx'])
 const POPOVER_FILES = new Set(['./components/popover.tsx', './components/feedback.tsx'])
-const POPOVER_USERS = new Set(['./components/MonthField.tsx'])
+const POPOVER_USERS = new Set(['./components/MonthField.tsx', './components/Term.tsx'])
 const dialogUses = (src: string) => [...src.matchAll(/<dialog\b|\bshowModal\s*\(|role=["'{`]+(?:alert)?dialog\b/g)].map((m) => m[0])
 const popoverUses = (src: string) => [...src.matchAll(/\bpopover(?:=|:\s*['"])|\b(?:show|hide|toggle)Popover\s*\(/g)].map((m) => m[0])
 test('S12: Dialoge und Popover nur in den erlaubten Bausteinen', () => {
