@@ -13,6 +13,10 @@ import { afterSave, discarded, initialDraft, isDirty, shownValue, withEdit, with
 import { useOpenForm } from './property'
 import { useConfirm } from './components/feedback'
 
+// Ergibt `fn` beim Speichern diesen Wert, ist nichts gespeichert und nichts gescheitert: Der Entwurf
+// bleibt ohne Meldung stehen. Für eine Rückfrage vor dem Speichern, die der Nutzer abbricht.
+export const keepDraft: unique symbol = Symbol('keepDraft')
+
 export type Draft<T> = {
   // Was das Feld zeigt: der Entwurf, sonst der gespeicherte Wert.
   value: T
@@ -80,7 +84,7 @@ export function useDraft<T>(saved: T, options: DraftOptions<T> = {}): Draft<T> {
     setSaving(true)
     setError('')
     try {
-      await fn(value)
+      if ((await fn(value)) === keepDraft) return false
       setStored((s) => (Object.is(s.scope, start.scope) ? afterSave(s, value, start.prop) : s))
       return true
     } catch (e) {
