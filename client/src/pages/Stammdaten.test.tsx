@@ -7,6 +7,7 @@ import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
 import { UIProvider } from '../components/feedback'
 import Stammdaten from './Stammdaten'
+import { press } from '../testing/keys'
 import { tenancyStamp } from '../../../shared/tenancyStamp.ts'
 
 vi.setConfig({ testTimeout: 20000 })
@@ -521,4 +522,21 @@ test('Staffeln: ein gespeicherter Wert, der kein Monat ist, steht benannt in der
   fireEvent.click(screen.getByRole('button', { name: 'Übernehmen' }))
   expect(await screen.findByText(/Der gespeicherte Monat „2024-02-15“ ist ungültig/, undefined, SLOW)).toBeTruthy()
   expect(sent.some((s) => s.url.startsWith('/api/tenancies'))).toBe(false)
+})
+
+// Durchsicht K5 (#346, Schritt 2): Das IBAN-Feld schreibt die IBAN beim Verlassen um (getrimmt, in
+// Vierergruppen). Das ist keine Änderung des Mietverhältnisses; Esc schließt danach ohne Rückfrage.
+test('Seitenfenster Mietverhältnis: Umschreiben der IBAN beim Verlassen ist keine Änderung', async () => {
+  page([tenancy('t1', 'Beispiel', { iban: ' de12 3 ' })])
+  fireEvent.click(await screen.findByRole('button', { name: 'Mietverhältnis bearbeiten' }, SLOW))
+  const dialog = await screen.findByRole('dialog', undefined, SLOW)
+  const iban = within(dialog).getByLabelText(/Mieter-IBAN/) as HTMLInputElement
+  fireEvent.click(iban)
+  iban.focus()
+  fireEvent.blur(iban)
+  await vi.waitFor(() => expect(iban.value).toBe('de12 3'))
+  within(dialog).getByLabelText(/Mieter-IBAN/).focus()
+  press('Escape')
+  await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expect(screen.queryByRole('alertdialog')).toBeNull()
 })

@@ -7,7 +7,10 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { Meter, Unit } from '../types'
 import { PeriodProvider } from '../period'
+import { calendarPeriod } from '../../../shared/period.ts'
 import { PropertyProvider } from '../property'
+import { UIProvider } from '../components/feedback'
+import { press, tabbables } from '../testing/keys'
 import Kosten from './Kosten'
 
 const UNITS: Unit[] = [
@@ -525,4 +528,54 @@ test('Bezahlt am: eine Rückfrage des Servers wird zur Rückfrage der Seite', as
   fireEvent.click(within(dialog).getByRole('button', { name: 'So speichern' }))
   await waitFor(() => expect(sent).toHaveLength(2))
   expect(sent[1]?.body).toMatchObject({ paidOn: `${year}-07-01`, confirmPaidOn: true })
+})
+
+// Durchsicht M3 (#346, Schritt 2): Heizanlage und Heizperiode bearbeitet das Seitenfenster neben dem
+// Formularobjekt. Wer nur die Heizperiode ändert, wird beim Schließen trotzdem gefragt.
+test('Seitenfenster: nur die Heizanlage geändert, Esc fragt „Änderungen verwerfen?“', async () => {
+  const anlage = (id: string, name: string) => ({
+    id, propertyId: 'objekt-1', name, energy: 'gas', supply: 'central', method: 'service', separateSettlement: null,
+    devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
+    warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null,
+  })
+  plants = [anlage('hp1', 'Gastherme'), anlage('hp2', 'Ofen')]
+  costItems = [{
+    id: 'c1', propertyId: 'objekt-1', period: calendarPeriod(new Date().getFullYear() - 1), category: 'Heizung und Warmwasser', description: 'Gas',
+    amountCents: 100000, key: 'area', heatingPlantId: 'hp1',
+  }]
+  render(<PeriodProvider><PropertyProvider><UIProvider><Kosten units={UNITS} settings={null} /></UIProvider></PropertyProvider></PeriodProvider>)
+  fireEvent.click(await screen.findByRole('button', { name: 'Kostenposition bearbeiten' }))
+  await waitFor(() => expect(select(/^Heizanlage/).value).toBe('hp1'))
+  // Ohne Änderung schließt Esc sofort
+  screen.getByLabelText(/Beschreibung/).focus()
+  press('Escape')
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  fireEvent.click(screen.getByRole('button', { name: 'Kostenposition bearbeiten' }))
+  await waitFor(() => expect(select(/^Heizanlage/).value).toBe('hp1'))
+  fireEvent.change(select(/^Heizanlage/), { target: { value: 'hp2' } })
+  screen.getByLabelText(/Beschreibung/).focus()
+  press('Escape')
+  expect(await screen.findByRole('alertdialog', { name: 'Änderungen verwerfen?' })).toBeTruthy()
+})
+
+// Durchsicht M2: Im Kostenformular erreicht Tab jedes Feld, auch hinter „Weitere Angaben“, und den Knopf
+// zum Anlegen. Ein eigener Tab-Ring sperrte die Tastatur vor dem geschlossenen <details> ein.
+test('Seitenfenster: Tab erreicht im Kostenformular Umlageschlüssel, Beleg, „Weitere Angaben“ und „Hinzufügen“', async () => {
+  render(<PeriodProvider><PropertyProvider><UIProvider><Kosten units={UNITS} settings={null} /></UIProvider></PropertyProvider></PeriodProvider>)
+  fireEvent.click(await screen.findByRole('button', { name: /Kostenposition manuell erfassen/i }))
+  const drawer = await screen.findByRole('dialog', { name: 'Neue Kostenposition' })
+  const reached = new Set<Element>()
+  for (let i = 0; i < tabbables().length + 2; i++) {
+    const before = document.activeElement
+    const prevented = !fireEvent.keyDown(before as Element, { key: 'Tab' })
+    expect(prevented, 'das Fenster lenkt Tab nicht selbst').toBe(false)
+    press('Tab')
+    if (document.activeElement) reached.add(document.activeElement)
+  }
+  const names = [...reached].map((el) => el.textContent?.trim() || el.getAttribute('aria-label') || (el.closest('label')?.textContent ?? '').trim().slice(0, 20))
+  expect(reached.has(select(/Umlageschlüssel/i))).toBe(true)
+  expect(names.some((n) => /^Hinzufügen$/.test(n))).toBe(true)
+  expect(names.some((n) => /Weitere Angaben/.test(n))).toBe(true)
+  expect([...reached].some((el) => el instanceof HTMLInputElement && el.type === 'file')).toBe(true)
+  expect([...reached].every((el) => drawer.contains(el))).toBe(true)
 })

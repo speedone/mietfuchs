@@ -227,19 +227,15 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
 
       {meterForm && (
         <Drawer
+          // Ein anderer Datensatz im offenen Fenster ist ein neues Formular (Durchsicht S3)
+          key={meterForm.id ?? 'neu'}
           open
           title={meterForm.id ? 'Zähler bearbeiten' : 'Neuer Zähler'}
           subtitle={meterForm.id ? meterForm.name : undefined}
           onClose={() => { setError(''); setMeterForm(null) }}
           onSubmit={saveMeter}
-          footer={
-            <>
-              <span className="drawer-hint">Strg+S speichert · Esc schließt</span>
-              <span className="spacer" />
-              <button className="btn ghost" onClick={() => { setError(''); setMeterForm(null) }}>Abbrechen</button>
-              <button className="btn" onClick={saveMeter}>{meterForm.id ? 'Übernehmen' : 'Anlegen'}</button>
-            </>
-          }
+          value={meterForm}
+          actions={<button className="btn" onClick={saveMeter}>{meterForm.id ? 'Übernehmen' : 'Anlegen'}</button>}
         >
           {error && <div className="error">{error}</div>}
           <div className="row">

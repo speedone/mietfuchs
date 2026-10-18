@@ -832,19 +832,17 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
 
       {form && (
         <Drawer
+          // Ein anderer Datensatz im offenen Fenster („Stattdessen … bearbeiten“) ist ein neues Formular,
+          // mit eigenem Stand vor der ersten Eingabe (Durchsicht S3).
+          key={form.id ?? 'neu'}
           open
           title={form.id ? 'Kostenposition bearbeiten' : 'Neue Kostenposition'}
           subtitle={form.id ? form.description : undefined}
           onClose={() => { setError(''); setForm(null) }}
           onSubmit={saveItem}
-          footer={
-            <>
-              <span className="drawer-hint">Strg+S speichert · Esc schließt</span>
-              <span className="spacer" />
-              <button className="btn ghost" onClick={() => { setError(''); setForm(null) }}>Abbrechen</button>
-              <button className="btn" onClick={saveItem}>{form.id ? 'Übernehmen' : 'Hinzufügen'}</button>
-            </>
-          }
+          // Heizanlage und Heizperiode bearbeitet das Fenster neben dem Formular (Durchsicht M3)
+          value={{ form, heatingPlantId, heatingPeriod }}
+          actions={<button className="btn" onClick={saveItem}>{form.id ? 'Übernehmen' : 'Hinzufügen'}</button>}
         >
           {error && <div className="error">{error}</div>}
           {categoryNotice(form.category, year, property?.cableBuiltBeforeDec2021 ?? null) && <div className="notice">{categoryNotice(form.category, year, property?.cableBuiltBeforeDec2021 ?? null)}</div>}
