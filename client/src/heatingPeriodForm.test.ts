@@ -21,7 +21,7 @@ describe('Zeitraum der Heizung (Entwurf 11.2 Schritt 3)', () => {
     expect(heatingRulesBody({ choice: 'object', mode: 'start', month: 5, from: '', separate: '' }, plant(), CALENDAR_RULES)).toEqual({ rules: null })
     expect(heatingRulesBody({ choice: 'own', mode: 'start', month: 5, from: '', separate: '' }, plant(), CALENDAR_RULES)).toEqual({ rules: { startMonth: 5, changes: [] } })
     expect(heatingRulesBody({ choice: 'own', mode: 'change', month: 5, from: '2026-01', separate: '' }, plant({ periodStartMonth: 5 }), CALENDAR_RULES)).toEqual({ rules: { startMonth: 5, changes: ['2026-01'] } })
-    expect(heatingRulesBody({ choice: 'own', mode: 'change', month: 5, from: '', separate: '' }, plant(), CALENDAR_RULES)).toEqual({ error: 'Bitte geben Sie den Monat an, ab dem die Heizung im neuen Zeitraum abrechnet.' })
+    expect(heatingRulesBody({ choice: 'own', mode: 'change', month: 5, from: '', separate: '' }, plant(), CALENDAR_RULES)).toEqual({ error: 'Bitte geben Sie den Monat an, ab dem die Heizung im neuen Zeitraum abrechnet.', field: 'from', short: 'Monat fehlt' })
   })
   test('Vorgeschlagener Weg: getrennt → d, sonst b bei vorhandenen Daten, sonst a; immer mit dem Mietvertrag', () => {
     expect(suggestedWay({ differs: false, separate: 'yes', hasCalendarData: true })).toBe(null)

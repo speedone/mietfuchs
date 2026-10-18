@@ -4,7 +4,7 @@ import { api, errorText, fmtDate, fmtEuro } from '../api'
 import { useOpenForm, useProperty } from '../property'
 import { useToast } from './feedback'
 import Term from './Term'
-import MonthPicker from './MonthPicker'
+import MonthField from './MonthField'
 import {
   answersAfterConflict, answersOf, changeLabel, conflictPreview, earliestOpenChange, initialAnswers, localToday, MONTH_OPTIONS, nextRules, periodChangedText, rhythmText, withoutChange,
   type AnswerForm, type RhythmForm,
@@ -16,7 +16,8 @@ import { ErrorSummary, useFormError } from './ErrorSummary'
 // über die Vorschau des Servers; gespeichert wird erst mit „Zeitraum wechseln“, in einer
 // Transaktion. Wer im Kalenderjahr abrechnet, sieht hier eine Zeile und muss nichts tun.
 
-export function RhythmFields({ form, onChange }: { form: RhythmForm; onChange: (next: RhythmForm) => void }) {
+// `fromField`: die Angaben der Fehler-API für das Monatsfeld (`errors.field('from')`).
+export function RhythmFields({ form, onChange, fromField }: { form: RhythmForm; onChange: (next: RhythmForm) => void; fromField?: { id: string; error?: string; onFix: () => void } }) {
   return (
     <>
     <div className="row">
@@ -36,8 +37,8 @@ export function RhythmFields({ form, onChange }: { form: RhythmForm; onChange: (
         </label>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {/* Monat und Jahr als Auswahl: `type="month"` kennen Safari und Firefox nicht (#287). */}
-          <MonthPicker iso label="Neuer Zeitraum beginnt ab (Monat/Jahr)" value={form.from} today={localToday()} onChange={(from) => onChange({ ...form, from })} />
+          {/* Das Monatsfeld: `type="month"` kennen Safari und Firefox nicht (#287, #346 Schritt 5). */}
+          <MonthField label="Neuer Zeitraum beginnt ab Monat" value={form.from} today={localToday()} onChange={(from) => onChange({ ...form, from })} {...fromField} />
           <span className="muted">Danach läuft jeder Zeitraum von diesem Monat bis zum Vormonat im Folgejahr; davor entsteht ein kürzerer Rumpfzeitraum.</span>
         </div>
       )}
@@ -198,7 +199,7 @@ export default function PeriodCard({ onChanged }: { onChanged?: () => Promise<vo
   const [preview, setPreview] = useState<PeriodChangePreview | null>(null)
   const [answers, setAnswers] = useState<AnswerForm | null>(null)
   // Fehler als Sammelmeldung oben in der Karte (#346, Schritt 3)
-  const errors = useFormError()
+  const errors = useFormError<'from'>()
   const setError = errors.set
   const [busy, setBusy] = useState(false)
   // Eine offene Vorschau gehört zu diesem Objekt (#145); ein Wechsel des Objekts fragt dann.
@@ -208,7 +209,7 @@ export default function PeriodCard({ onChanged }: { onChanged?: () => Promise<vo
 
   async function ask(next: ReturnType<typeof nextRules>) {
     if (!property) return
-    if ('error' in next) { setError(next.error); return }
+    if ('error' in next) { errors.report([{ field: next.field, short: next.short, text: next.error }]); return }
     setError('')
     setBusy(true)
     try {
@@ -266,7 +267,7 @@ export default function PeriodCard({ onChanged }: { onChanged?: () => Promise<vo
       {rules.changes.map((c) => (
         <button key={c} className="btn secondary" disabled={busy} onClick={() => void ask(withoutChange(rules, c))}>Wechsel ab {changeLabel(c)} entfernen …</button>
       ))}
-      <RhythmFields form={form} onChange={setForm} />
+      <RhythmFields form={form} onChange={setForm} fromField={errors.field('from')} />
       <div className="row">
         <button className="btn secondary" disabled={busy} onClick={() => void ask(nextRules(rules, form))}>Vorschau</button>
       </div>
