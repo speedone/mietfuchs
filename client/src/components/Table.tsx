@@ -27,7 +27,9 @@ export default function Table(props: ComponentProps<'table'>) {
   return (
     <>
       {wider && <div className="table-scroll-hint" aria-hidden="true">Weitere Spalten rechts: seitlich scrollen oder wischen →</div>}
-      <div className="table-scroll" ref={ref}>
+      {/* Browserlauf (#340, axe „scrollable-region-focusable“): Rollt der Bereich, ist er per Tab erreichbar und
+          mit den Pfeiltasten zu rollen, auch wenn in der Tabelle nichts Bedienbares steht. */}
+      <div className="table-scroll" ref={ref} {...(wider ? { tabIndex: 0, role: 'region', 'aria-label': 'Tabelle, seitlich scrollbar' } : {})}>
         <table {...props} />
       </div>
     </>

@@ -90,6 +90,12 @@ test('Dateifelder haben einen Namen', () => {
   expect(unnamed).toEqual([])
 })
 
+// Browserlauf (#340, axe „scrollable-region-focusable“): Ein Befehl in <pre> rollt am Handy seitlich und enthält
+// nichts Bedienbares; ohne tabIndex erreicht ihn die Tastatur nicht. Tabellen regelt Table.tsx.
+test('Befehle in <pre> sind per Tastatur zu rollen', () => {
+  expect(offenders(/<pre(?![^>]*tabIndex=\{0\})[^>]*>/g)).toEqual([])
+})
+
 // S4: Jede Klasse, die eine Seite oder ein Baustein setzt, hat eine Regel im Stylesheet. Vorher
 // setzten neue Bausteine 15 Klassen ohne Regel, und ihre Bereiche standen ungestaltet da.
 // Klassen, die nur als Haken für Tests oder Skripte dienen und bewusst keine Gestaltung haben.
