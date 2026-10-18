@@ -136,10 +136,10 @@ export function selfSetupBody(form: SelfSetupForm, energy: HeatingEnergy): { bod
   const typed = percent(form.share)
   const share = forced !== null && !(form.above70Agreed && typed !== null && typed > forced) ? forced : typed
   if (share === null || !Number.isFinite(share)) problems.push({ text: `Bitte geben Sie den Anteil nach Verbrauch an, zwischen ${min} und ${max} %, mit höchstens zwei Nachkommastellen.`, field: 'share', short: 'Anteil fehlt' })
-  // § 8 Abs. 1: beim Warmwasser eine eigene Wahl; ohne zentrales Warmwasser keine (Abweichung 14). Ist die
-  // Frage zum Warmwasser noch offen, steht dort schon eine Meldung.
+  // § 8 Abs. 1: beim Warmwasser eine eigene Wahl; ohne zentrales Warmwasser keine (Abweichung 14). Das Feld steht
+  // da, solange die Frage zum Warmwasser offen ist, und ist dann ebenso Pflicht.
   const water = form.hotWater === 'none' ? null : percent(form.waterShare)
-  if (form.hotWater !== 'none' && form.hotWater !== '' && (water === null || !Number.isFinite(water))) {
+  if (form.hotWater !== 'none' && (water === null || !Number.isFinite(water))) {
     problems.push({ text: `Bitte geben Sie auch den Anteil nach Verbrauch beim Warmwasser an, zwischen ${min} und ${max} % (§ 8 Abs. 1 HeizkostenV); er darf von dem der Heizung abweichen.`, field: 'waterShare', short: 'Anteil fehlt' })
   }
   const shares: (readonly ['share' | 'waterShare', number | null])[] = [['share', share], ['waterShare', form.hotWater === 'none' || form.hotWater === '' ? null : water]]

@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, type MouseEvent as ReactMouseEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { useOpenForm } from '../property'
 import { sameDraft } from '../draft'
 import { useConfirm } from './feedback'
 import { focusBack } from './dialogKeys'
 import { ErrorSummary, type FormErrors } from './ErrorSummary'
+import { RequiredLegend, RequiredScope } from './Field'
 
 type Props = {
   open: boolean
@@ -69,6 +70,13 @@ export default function Drawer({ open, title, subtitle, onClose, value, actions,
   // Der Titel benennt den Dialog für Screenreader (#157).
   const titleId = useId()
   const confirm = useConfirm()
+  // Die Pflichtfelder im Fenster melden sich an (#346, Schritt 3); steht eines darin, zeigt das Fenster die
+  // Legende „* Pflichtangabe“ über den Feldern. Von selbst statt per Prop, damit kein Fenster sie vergisst.
+  const [requiredCount, setRequiredCount] = useState(0)
+  const register = useCallback(() => {
+    setRequiredCount((n) => n + 1)
+    return () => setRequiredCount((n) => n - 1)
+  }, [])
 
   // Der Stand vor der ersten Eingabe, `null` bis dahin. Beim Schließen zurückgesetzt.
   const baseline = useRef<{ value: unknown } | null>(null)
@@ -204,7 +212,10 @@ export default function Drawer({ open, title, subtitle, onClose, value, actions,
         </div>
         <button type="button" className="drawer-x" onClick={() => void requestClose()} aria-label="Schließen" disabled={busy}>✕</button>
       </header>
-      <div className="drawer-body" ref={bodyRef}>{children}</div>
+      <div className="drawer-body" ref={bodyRef}>
+        {requiredCount > 0 && <RequiredLegend />}
+        <RequiredScope.Provider value={register}>{children}</RequiredScope.Provider>
+      </div>
       <footer className="drawer-foot flex-wrap">
         {errors && <ErrorSummary errors={errors} className="basis-full m-0 summary-cap" />}
         <span className="drawer-hint">{hint}</span>

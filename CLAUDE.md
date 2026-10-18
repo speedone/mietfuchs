@@ -3219,7 +3219,16 @@ Tippfläche von `--target` über `::after`, und printCss.test.ts verlangt den du
   `id`, `aria-labelledby` (nur die Beschriftung, sonst gehörten Hinweis und Fehler zum Namen),
   `aria-describedby` (Hinweis, Fehler) und `aria-invalid` selbst; `{...errors.field('date')}` reicht `id`,
   Meldung und `onFix` hinein, und `onFix` nimmt die Meldung beim Ändern des Felds an beiden Stellen weg.
-  Pflicht ist ohne Zusatz, freiwillig heißt „(freiwillig)“; `width="s"`/`"m"` und das Raster `field-grid`
+  **Pflichtfelder tragen `required`**: ein Sternchen hinter der Beschriftung (für Vorleser ausgeblendet,
+  außerhalb des Namens) und das HTML-Attribut `required` am Eingabefeld (Semantik für Vorleser, Browser,
+  Autofill). Das Sternchen ist das bekannte Muster für die Zielgruppe; erklärt wird es durch die Legende
+  „* Pflichtangabe“ (WCAG 3.3.2). Pflicht sind genau die Felder, deren Fehlen die Prüfung meldet
+  (pages/requiredFields.test.tsx: „… fehlt“ ⇔ `required`); wo ein Feld als optional erklärt wird, heißt es
+  „optional“. Die Legende zeigt der Drawer von selbst, sobald ein `<Field required>` darin steht
+  (`RequiredScope`); außerhalb eines Seitenfensters setzt die Datei `<RequiredLegend />` (Wächter S25). Die
+  Prüfung des Browsers greift nie vor: Ein `<form>` trägt immer `noValidate` (S25), ohne `<form>` prüft er
+  nicht; gestaltet wird nie über `:invalid`/`:required` (S25), markiert nur über `aria-invalid`.
+  `width="s"`/`"m"` und das Raster `field-grid`
   sind Utilities in tw.css. Die Fehlermeldung am Feld trägt ⚠ (für Vorleser ausgeblendet) und „Fehler:“
   (nur für Vorleser). **Im Seitenfenster** bekommt der Drawer die API (`errors`) und zeigt die
   Sammelmeldung im festen Fuß über den Knöpfen, höchstens 40 % der Höhe; **in einer Karte** steht sie oben

@@ -1,7 +1,7 @@
-import { cloneElement, isValidElement, useId, type ReactElement, type ReactNode } from 'react'
+import { cloneElement, createContext, isValidElement, useContext, useId, useLayoutEffect, type ReactElement, type ReactNode } from 'react'
 
 // Ein Feld (#346, Schritt 3; Spezifikation Abschnitt 3 „Feld“, nach GOV.UK). Von oben nach unten:
-// Beschriftung (fett, in Textfarbe, „(freiwillig)“ statt eines Sternchens am Pflichtfeld), Hinweis (grau,
+// Beschriftung (fett, in Textfarbe, am Pflichtfeld ein Sternchen), Hinweis (grau,
 // ein Satz), Fehler (rot, mit ⚠ und für Vorleser „Fehler:“), dann das Eingabefeld. Das Feld vergibt `id`,
 // `aria-labelledby`, `aria-describedby` (Hinweis und Fehler) und `aria-invalid` selbst, damit keine Seite
 // sie vergisst. Vorbild war das IBAN-Feld (IbanInput.tsx), das selbst darauf aufbaut.
@@ -13,17 +13,33 @@ import { cloneElement, isValidElement, useId, type ReactElement, type ReactNode 
 // Das Kind ist ein Eingabefeld (`<input>`, `<select>`, `<textarea>`), dem die Angaben angehängt werden, oder
 // eine Funktion, die sie bekommt und selbst weiterreicht (für Bausteine wie MonthPicker). Mit `onFix` (aus
 // `useFormError().field(…)`) verschwindet die Meldung, sobald der Nutzer das Feld ändert.
+//
+// Pflichtfelder (`required`) tragen ein Sternchen hinter der Beschriftung: Das ist das Muster, das Vermieter aus
+// Formularen kennen, und die Legende „* Pflichtangabe“ erklärt es (WCAG 3.3.2). Das Sternchen ist für Vorleser
+// ausgeblendet und steht außerhalb der Beschriftung, die das Feld benennt; ihnen sagt das HTML-Attribut
+// `required` am Eingabefeld, dass es Pflicht ist. Die Prüfung des Browsers greift dadurch nicht vor unserer:
+// Ein `<form>` trägt immer `noValidate` (Wächter in uiRules.test.ts), ohne `<form>` prüft der Browser nie.
+// Gestaltet wird nie über `:invalid` oder `:required`, sonst stünden leere Pflichtfelder beim Öffnen rot da;
+// markiert wird nur über `aria-invalid`.
 export type FieldControlProps = {
   id: string
   'aria-labelledby': string
   'aria-describedby'?: string
   'aria-invalid'?: true
+  required?: true
+}
+
+// Die Legende zum Sternchen. Ein Seitenfenster zeigt sie selbst, sobald darin ein Pflichtfeld steht (die Felder
+// melden sich über `RequiredScope` an); eine Karte mit Pflichtfeld setzt `<RequiredLegend />` über ihre Felder.
+export const RequiredScope = createContext<(() => () => void) | null>(null)
+export function RequiredLegend({ className }: { className?: string }) {
+  return <p className={className ? `muted text-xs m-0 ${className}` : 'muted text-xs m-0'}><span aria-hidden="true" className="text-red">*</span> Pflichtangabe</p>
 }
 
 type Props = {
   label: ReactNode
-  /** Freiwillige Angabe: „(freiwillig)“ hinter der Beschriftung. Ohne ist das Feld Pflicht. */
-  optional?: boolean
+  /** Pflichtangabe: Sternchen hinter der Beschriftung und `required` am Eingabefeld; genau die Felder, die die Prüfung verlangt. */
+  required?: boolean
   hint?: ReactNode
   /** Die kurze Meldung am Feld („Datum fehlt“), am besten aus `useFormError().field(…)`. */
   error?: string
@@ -38,7 +54,7 @@ type Props = {
   children: ReactElement<Record<string, unknown>> | ((props: FieldControlProps) => ReactNode)
 }
 
-export default function Field({ label, optional, hint, error, id, onFix, announce, width, className, children }: Props) {
+export default function Field({ label, required, hint, error, id, onFix, announce, width, className, children }: Props) {
   const own = useId()
   const inputId = id ?? `${own}-input`
   const labelId = `${own}-label`
@@ -51,13 +67,16 @@ export default function Field({ label, optional, hint, error, id, onFix, announc
     'aria-labelledby': labelId,
     ...(describedBy ? { 'aria-describedby': describedBy } : {}),
     ...(error ? { 'aria-invalid': true as const } : {}),
+    ...(required ? { required: true as const } : {}),
   }
+  const register = useContext(RequiredScope)
+  useLayoutEffect(() => (required && register ? register() : undefined), [required, register])
   const classes = ['field', width === 's' ? 'width-s' : width === 'm' ? 'width-m' : '', className ?? ''].filter(Boolean).join(' ')
   return (
     <label className={classes} onChange={onFix ? () => onFix() : undefined}>
-      <span id={labelId}>
-        {label}
-        {optional && <span className="font-normal text-muted"> (freiwillig)</span>}
+      <span>
+        <span id={labelId}>{label}</span>
+        {required && <span aria-hidden="true" className="text-red"> *</span>}
       </span>
       {hint && <small id={hintId} className="muted">{hint}</small>}
       {error && <FieldMessage id={errorId} error={error} announce={announce} />}

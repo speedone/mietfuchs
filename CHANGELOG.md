@@ -128,8 +128,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   im festen Fuß über den Knöpfen und ist damit immer zu sehen, auch wenn das Fenster nach unten gerollt
   ist; in einer Karte oben in der Karte. Statt eines Satzes für mehrere Felder („Bitte Mieter, Wohnung
   und Einzugsdatum prüfen.“) nennt jede Zeile ihr Feld. Vorleser hören die Meldung sofort, das Feld ist
-  als fehlerhaft markiert, und beim Ändern des Felds verschwindet die Meldung. Freiwillige Angaben sind
-  mit „(freiwillig)“ beschriftet. Umgestellt sind die Seitenfenster für Wohnung, Mietverhältnis,
+  als fehlerhaft markiert, und beim Ändern des Felds verschwindet die Meldung. Pflichtfelder tragen ein
+  Sternchen, erklärt durch „* Pflichtangabe“ über den Feldern; beim Öffnen ist kein leeres Feld rot.
+  Umgestellt sind die Seitenfenster für Wohnung, Mietverhältnis,
   Zähler, Kostenposition, Zahlung, Heizung und eigene Heizkostenabrechnung, die Ablesung auf der Seite
   Zähler, die Karten auf der Seite Heizkosten, die Karte „Objekt“ und „Vermieter & Zahlung“. Schlägt
   das Löschen fehl, steht der Grund als Mitteilung da, die acht Sekunden stehen bleibt, statt oben auf

@@ -27,5 +27,5 @@ test('Zähler: Name und Eichjahr zugleich', () => {
 test('eigene Heizkostenabrechnung: Warmwasser, Wärmeschutz und Anteil zugleich', () => {
   const plant: Pick<HeatingPlant, 'id' | 'energy' | 'hotWater' | 'capture' | 'areaBasisHeat'> = { id: 'hp1', energy: 'gas', hotWater: 'combined', capture: null, areaBasisHeat: 'area' }
   const form = { ...emptySelfSetup(plant, '2025-01'), hotWater: '' as const, insulation: '' as const, share: '' }
-  expect(fields(selfSetupBody(form, 'gas'))).toEqual(['hotWater', 'insulation', 'share'])
+  expect(fields(selfSetupBody(form, 'gas'))).toEqual(['hotWater', 'insulation', 'share', 'waterShare'])
 })

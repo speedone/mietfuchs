@@ -27,13 +27,13 @@ function Karte() {
     <div className="card">
       <h2>Zahlung</h2>
       <ErrorSummary errors={errors} />
-      <Field label="Datum" hint="Tag des Eingangs" {...errors.field('date')}>
+      <Field label="Datum" required hint="Tag des Eingangs" {...errors.field('date')}>
         <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
       </Field>
-      <Field label="Betrag €" width="s" {...errors.field('amount')}>
+      <Field label="Betrag €" required width="s" {...errors.field('amount')}>
         <input value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
       </Field>
-      <Field label="Notiz" optional>
+      <Field label="Notiz">
         <input />
       </Field>
       <button type="button" onClick={() => errors.report(check(form))}>Speichern</button>
@@ -44,13 +44,18 @@ function Karte() {
 
 const describedTexts = (el: HTMLElement) => (el.getAttribute('aria-describedby') ?? '').split(' ').filter(Boolean).map((id) => document.getElementById(id)?.textContent)
 
-test('das Feld: Beschriftung als Name, „(freiwillig)“ statt Sternchen, Hinweis über aria-describedby, Breite', () => {
+test('das Feld: Beschriftung als Name, Sternchen am Pflichtfeld mit required, Hinweis über aria-describedby, Breite', () => {
   render(<Karte />)
   const date = screen.getByLabelText('Datum')
   expect(date.getAttribute('aria-invalid')).toBeNull()
   // Der Name ist nur die Beschriftung, nicht Hinweis und Fehler (sonst würden sie doppelt vorgelesen).
   expect(describedTexts(date)).toEqual(['Tag des Eingangs'])
-  expect(screen.getByLabelText('Notiz (freiwillig)')).toBeTruthy()
+  // Pflicht: Sternchen für die Augen (für Vorleser ausgeblendet, nicht im Namen), `required` am Eingabefeld.
+  expect((date as HTMLInputElement).required).toBe(true)
+  expect(date.closest('label')?.querySelector('[aria-hidden="true"]')?.textContent).toBe(' *')
+  const note = screen.getByLabelText('Notiz') as HTMLInputElement
+  expect(note.required).toBe(false)
+  expect(note.closest('label')?.textContent).toBe('Notiz')
   expect(screen.getByLabelText('Betrag €').closest('label')?.className).toContain('width-s')
 })
 
@@ -112,7 +117,7 @@ function Zugeklappt() {
       <ErrorSummary errors={errors} />
       <details>
         <summary>Weitere Angaben</summary>
-        <Field label="Kaution €" optional {...errors.field('deposit')}><input /></Field>
+        <Field label="Kaution €" {...errors.field('deposit')}><input /></Field>
       </details>
       <button type="button" onClick={() => errors.report([{ field: 'deposit', short: 'Kein Betrag', text: 'Kaution: Geben Sie einen Betrag ein.' }, { text: 'Gleich.' }, { text: 'Gleich.' }])}>Speichern</button>
     </div>
@@ -132,7 +137,7 @@ test('ein Link auf ein Feld in einem zugeklappten Bereich klappt ihn auf; gleich
     expect(details?.open).toBe(false)
     fireEvent.click(within(alert).getByRole('link', { name: /Kaution/ }))
     expect(details?.open).toBe(true)
-    expect(document.activeElement).toBe(screen.getByLabelText('Kaution € (freiwillig)'))
+    expect(document.activeElement).toBe(screen.getByLabelText('Kaution €'))
     expect(within(alert).getAllByText('Gleich.')).toHaveLength(2)
     expect(warned.filter((w) => String(w).includes('same key'))).toEqual([])
   } finally {
@@ -172,4 +177,19 @@ test('im Seitenfenster steht die Sammelmeldung im festen Fuß über den Knöpfen
   expect(document.activeElement).toBe(summary)
   fireEvent.click(within(screen.getByRole('alert')).getByRole('link', { name: /Datum/ }))
   expect(document.activeElement).toBe(screen.getByLabelText('Datum'))
+})
+
+// Die Legende „* Pflichtangabe“ zeigt das Seitenfenster selbst, sobald darin ein Pflichtfeld steht, und nur dann.
+function Legende({ required }: { required: boolean }) {
+  return (
+    <Drawer open title="Fenster" value={{}} onClose={() => {}}>
+      <Field label="Name" required={required}><input /></Field>
+    </Drawer>
+  )
+}
+test('Seitenfenster: Legende „* Pflichtangabe“ genau dann, wenn ein Pflichtfeld darin steht', () => {
+  const { rerender } = render(<UIProvider><Legende required /></UIProvider>)
+  expect(screen.getByText(/Pflichtangabe/).textContent).toBe('* Pflichtangabe')
+  rerender(<UIProvider><Legende required={false} /></UIProvider>)
+  expect(screen.queryByText(/Pflichtangabe/)).toBeNull()
 })

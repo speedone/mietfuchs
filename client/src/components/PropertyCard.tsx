@@ -11,7 +11,7 @@ import { useOpenForm, useProperty, useSwitchProperty } from '../property'
 import { useConfirm, useToast } from './feedback'
 import Drawer from './Drawer'
 import IbanInput from './IbanInput'
-import Field from './Field'
+import Field, { RequiredLegend } from './Field'
 import { ErrorSummary, useFormError } from './ErrorSummary'
 import { createButtonLabel, EMPTY_NEW_PROPERTY, newPropertyBody, type NewPropertyForm } from '../propertyView'
 
@@ -146,9 +146,10 @@ export default function PropertyCard() {
     <div className="card">
       <h2>Objekt</h2>
       <ErrorSummary errors={errors} />
+      <RequiredLegend />
       {/* Raster statt Zeile (#346, Schritt 3): so viele Spalten, wie passen, keine abgeschnittenen Felder. */}
       <div className="field-grid">
-        <Field label="Bezeichnung" {...errors.field('name')}>
+        <Field label="Bezeichnung" required {...errors.field('name')}>
           <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="z. B. Mehrfamilienhaus Musterstraße" />
         </Field>
         <label className="field">
@@ -192,7 +193,7 @@ export default function PropertyCard() {
               <input value={form.landlordName} onChange={(e) => setForm({ ...form, landlordName: e.target.value })} />
             </label>
             <IbanInput key={property.id} label="IBAN" value={form.iban} stored={property.iban} onChange={(iban) => setForm({ ...form, iban })} {...errors.field('iban')} />
-            <Field label="Zahlungsfrist (Tage)" optional width="s" {...errors.field('paymentDeadlineDays')}>
+            <Field label="Zahlungsfrist (Tage)" width="s" {...errors.field('paymentDeadlineDays')}>
               <input inputMode="numeric" value={form.paymentDeadlineDays} onChange={(e) => setForm({ ...form, paymentDeadlineDays: e.target.value })} />
             </Field>
           </div>
@@ -222,8 +223,8 @@ export default function PropertyCard() {
               bleibt unverändert. Nach dem Anlegen arbeiten Sie im neuen Objekt; zurück geht es
               jederzeit über „Objekt“ in der Seitenleiste.
             </p>
-            <Field label="Name" {...draftErrors.field('name')}>
-              <input required aria-required="true" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="z. B. Eigentumswohnung Gartenweg" />
+            <Field label="Name" required {...draftErrors.field('name')}>
+              <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="z. B. Eigentumswohnung Gartenweg" />
             </Field>
             <label className="field">
               Art

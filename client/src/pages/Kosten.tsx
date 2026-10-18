@@ -887,14 +887,14 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             {form.category === HEATING_CATEGORY && ownPlant && ownPlant.options.length > 0 && (
               <HeatingPeriodSelect options={ownPlant.options} value={heatingPeriod || (ownPlant.options[0]?.value ?? '')} onChange={setHeatingPeriod} />
             )}
-            <Field label="Beschreibung" className="grow" {...formErrors.field('description')}>
+            <Field label="Beschreibung" required className="grow" {...formErrors.field('description')}>
               <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="z. B. Grundsteuer 2025" />
             </Field>
-            <Field label="Rechnungssteller" optional className="grow">
+            <Field label="Rechnungssteller" className="grow">
               <input value={form.vendor} onChange={(e) => setForm({ ...form, vendor: e.target.value })} />
             </Field>
             {/* #139: Eine Gutschrift senkt die Kosten des Jahres und wird verteilt wie eine Rechnung. */}
-            <Field label="Betrag €" className="grow" hint="Eine Gutschrift mit Minus eintragen, z. B. -54,00." {...formErrors.field('amount')}>
+            <Field label="Betrag €" required className="grow" hint="Eine Gutschrift mit Minus eintragen, z. B. -54,00." {...formErrors.field('amount')}>
               <input value={form.amount} inputMode="decimal" onChange={(e) => setForm({ ...form, amount: e.target.value })} placeholder="z. B. 480,00" />
             </Field>
             {/* Laienprobe B19: Welcher Betrag der Messdienstabrechnung gemeint ist, steht dort, wo er eingetragen wird; über die volle Breite. */}
@@ -905,7 +905,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                 ihre Probe prüft diesen Betrag.
               </p>
             )}
-            <Field label={<>davon <Term id="labor35a">§35a-Lohn</Term> €</>} optional className="grow" hint="Lohn- und Arbeitskosten nach § 35a EStG; der Mieter kann sie steuerlich absetzen." {...formErrors.field('labor35a')}>
+            <Field label={<>davon <Term id="labor35a">§35a-Lohn</Term> €</>} className="grow" hint="Lohn- und Arbeitskosten nach § 35a EStG; der Mieter kann sie steuerlich absetzen." {...formErrors.field('labor35a')}>
               <input value={form.labor35a} inputMode="decimal" onChange={(e) => setForm({ ...form, labor35a: e.target.value })} />
             </Field>
             {/* Betriebsstrom (Heizung PR 15): sichtbar ohne Aufklappen, wer ihn braucht. */}
@@ -966,6 +966,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                 Angaben“); bei freien Schlüsseln teilt „nur Heizung“ beim Mieterwechsel nach Gradtagen. */}
             {form.category === HEATING_CATEGORY && plantOfForm && (
               <Field
+                required={!!selfPlant}
                 label={`Ziel${selfPlant ? '' : ' (beim Mieterwechsel)'}`}
                 className="grow"
                 // Am Feld die kurze Fassung, schon vor dem Speichern; der Satz steht beim Speichern in der Sammelmeldung, mit Link.

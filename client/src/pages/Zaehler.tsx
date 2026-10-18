@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ErrorSummary, useFormError, type FormErrors } from '../components/ErrorSummary'
-import Field from '../components/Field'
+import Field, { RequiredLegend } from '../components/Field'
 import type { HeatingPlant, HeatingRole, Meter, MeterType, Notice, Reading, Unit } from '../types'
 import { METER_TYPE_LABELS } from '../types'
 import { buildReadingBody, EMPTY_READING, type ReadingField, type ReadingForm } from '../readingForm'
@@ -235,12 +235,13 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
           actions={<button className="btn" onClick={saveMeter}>{meterForm.id ? 'Übernehmen' : 'Anlegen'}</button>}
         >
           <div className="row">
-            <Field label="Name" className="grow" {...meterErrors.field('name')}>
+            <Field label="Name" required className="grow" {...meterErrors.field('name')}>
               <input value={meterForm.name} onChange={(e) => setMeterForm({ ...meterForm, name: e.target.value })} placeholder={meterForm.type === 'hkv' ? 'z. B. Wohnzimmer' : 'z. B. Hauptwasserzähler'} />
             </Field>
             <Field
               label={<>Zuordnung (<Term id="mainMeter">Haupt- oder Zwischenzähler</Term>)</>}
               className="grow"
+              required={meterForm.type === 'hkv'}
               hint={meterForm.type !== 'hkv' ? <>Bei einer <Term id="granny">Einliegerwohnung</Term> mit eigenem Zwischenzähler: den Zähler des Hauses als Hauptzähler anlegen, den Zwischenzähler an der Wohnung.</> : undefined}
               {...meterErrors.field('unitId')}
             >
@@ -258,11 +259,11 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
                 ))}
               </select>
             </label>
-            <Field label="Zählernummer" optional className="grow">
+            <Field label="Zählernummer" className="grow">
               <input value={meterForm.meterNumber} onChange={(e) => setMeterForm({ ...meterForm, meterNumber: e.target.value })} />
             </Field>
             {/* #342: bei Wasser, Wärme und Strom eine Auswahl, denn Mietfuchs rechnet diese Einheiten ineinander um. */}
-            <Field label={<Term id="meterUnit">Einheit</Term>} optional={!hasKnownUnits(meterForm.type)} className="grow" hint={meterUnitHint(meterForm) || undefined} {...meterErrors.field('unit')}>
+            <Field label={<Term id="meterUnit">Einheit</Term>} required={hasKnownUnits(meterForm.type)} className="grow" hint={meterUnitHint(meterForm) || undefined} {...meterErrors.field('unit')}>
               {hasKnownUnits(meterForm.type)
                 ? (
                   <select value={meterForm.unit} onChange={(e) => setMeterForm({ ...meterForm, unit: e.target.value, unitDropped: '' })}>
@@ -286,7 +287,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
               </label>
             )}
             {!meterForm.unitId && meterForm.heatingRole !== '' && plantOptions(plants).length > 0 && (
-              <Field label="Heizanlage" className="grow" {...meterErrors.field('heatingPlantId')}>
+              <Field label="Heizanlage" required className="grow" {...meterErrors.field('heatingPlantId')}>
                 <select value={meterForm.heatingPlantId} onChange={(e) => setMeterForm({ ...meterForm, heatingPlantId: e.target.value })}>
                   <option value="">— bitte wählen —</option>
                   {plantOptions(plants).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -314,7 +315,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
               <>
                 <Field
                   label="Geeicht bis Ende (Jahr)"
-                  optional
+                 
                   className="grow"
                   hint={<>Die <Term id="meterCalibration">Eichfrist</Term> endet mit dem Ende dieses Jahres. Hat der Messdienst sie im Stichprobenverfahren verlängern lassen (§ 35 MessEV), tragen Sie das verlängerte Jahr ein.</>}
                   {...meterErrors.field('calibratedUntil')}
@@ -423,11 +424,12 @@ function FragmentRow(props: {
                 </tbody>
               </Table>
             )}
+            <RequiredLegend />
             <div className="row">
-              <Field label="Datum" {...readingErrors.field('date')}>
+              <Field label="Datum" required {...readingErrors.field('date')}>
                 <input type="date" value={readingForm.date} onChange={(e) => setReadingForm({ ...readingForm, date: e.target.value })} />
               </Field>
-              <Field label={readingForm.replacement ? 'Startstand neuer Zähler' : 'Zählerstand'} {...readingErrors.field('value')}>
+              <Field label={readingForm.replacement ? 'Startstand neuer Zähler' : 'Zählerstand'} required {...readingErrors.field('value')}>
                 <input value={readingForm.value} onChange={(e) => setReadingForm({ ...readingForm, value: e.target.value })} className="input-num" />
               </Field>
               <label className="field checkline">
@@ -437,11 +439,11 @@ function FragmentRow(props: {
                 </span>
               </label>
               {readingForm.replacement && (
-                <Field label="Endstand alter Zähler" optional hint="Leer lassen, wenn er fehlt." {...readingErrors.field('oldEndValue')}>
+                <Field label="Endstand alter Zähler" hint="Leer lassen, wenn er fehlt." {...readingErrors.field('oldEndValue')}>
                   <input value={readingForm.oldEndValue} onChange={(e) => setReadingForm({ ...readingForm, oldEndValue: e.target.value })} className="input-num" />
                 </Field>
               )}
-              <Field label="Hinweis" optional className="grow">
+              <Field label="Hinweis" className="grow">
                 <input value={readingForm.note} onChange={(e) => setReadingForm({ ...readingForm, note: e.target.value })} placeholder="z. B. Zwischenablesung Auszug Müller" />
               </Field>
               <button className="btn" onClick={onSaveReading}>Ablesung speichern</button>
