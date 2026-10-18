@@ -3749,6 +3749,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       meters: [
         ...potMeters.map((m) => ({
           id: m.id, name: m.name ?? m.id, unitId: m.unitId, type: m.type, factor: meterFactor(m),
+          // Die Zählernummer nennt eine Grenze ohne Ablesung (Befund M7 aus #341).
+          ...(m.meterNumber?.trim() ? { number: m.meterNumber.trim() } : {}),
           // Die Einheit für das Ableseergebnis (UI-Durchsicht H5), in der bekannten Schreibweise (#342).
           ...(m.unit ? { unit: unitLabel(m.type, m.unit) } : {}),
           ...(m.type === 'hkv' ? {} : { scale: potScaleOf(m) }),
@@ -4213,7 +4215,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           const reason = b.gap === 'impossible' ? ((snapshot.interimGaps ?? []).find((g) => g.unitId === u.unit.id && g.date === b.date)?.reason ?? '') : ''
           return {
             ...(reason !== '' ? { gapReason: reason } : {}),
-            date: b.date, kind: b.kind, gap: b.gap, far: b.far,
+            date: b.date, kind: b.kind, gap: b.gap, far: b.far, missingMeters: b.missingMeters,
             status: dated.length < b.readingDates.length ? 'missing' : dated.some((d) => d !== b.date) ? 'off' : 'read',
             offDays: dated.reduce((m, d) => Math.max(m, offDays(d, b.date)), 0),
           }
