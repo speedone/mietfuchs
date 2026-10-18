@@ -481,7 +481,7 @@ function report() {
     lines.push('')
     lines.push('| Engine | Ansicht | Design | Seite | Art | Befund |')
     lines.push('|---|---|---|---|---|---|')
-    const cell = (s) => String(s).replace(/\|/g, '\\|').replace(/\n/g, ' ')
+    const cell = (s) => String(s).replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\n/g, ' ')
     for (const f of findings) lines.push(`| ${f.engine} | ${f.view} | ${f.theme} | ${cell(f.page)} | ${f.kind} | ${cell(f.text)} |`)
     lines.push('')
   }
