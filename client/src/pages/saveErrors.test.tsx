@@ -69,7 +69,7 @@ const shell = (page: ReactNode) =>
 
 const expectShownInDialog = async () => {
   await waitFor(() => expect(screen.getByText(MSG)).toBeTruthy())
-  expect(screen.getByText(MSG).closest('[role="dialog"]')).not.toBeNull()
+  expect(screen.getByText(MSG).closest('dialog')).not.toBeNull()
 }
 
 test('Kosten: die Ablehnung des Servers steht im Dialog', async () => {
@@ -182,6 +182,8 @@ test('Stammdaten: ein Fehler im Formular steht nach „Abbrechen“ nicht oben a
   fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/i }))
   await expectShownInDialog()
   fireEvent.click(screen.getByRole('button', { name: /^Abbrechen$/i }))
+  // Mit Eingaben fragt das Seitenfenster (#346, Schritt 2)
+  fireEvent.click(within(await screen.findByRole('alertdialog', { name: 'Änderungen verwerfen?' })).getByRole('button', { name: 'Verwerfen' }))
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   expect(screen.queryByText(MSG)).toBeNull()
 })
@@ -205,6 +207,8 @@ test('Mietkonto: ein Fehler im Formular steht nach „Abbrechen“ nicht oben au
   fireEvent.click(screen.getByRole('button', { name: /^Speichern$/i }))
   await expectShownInDialog()
   fireEvent.click(screen.getByRole('button', { name: /^Abbrechen$/i }))
+  // Mit Eingaben fragt das Seitenfenster (#346, Schritt 2)
+  fireEvent.click(within(await screen.findByRole('alertdialog', { name: 'Änderungen verwerfen?' })).getByRole('button', { name: 'Verwerfen' }))
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   expect(screen.queryByText(MSG)).toBeNull()
 })
@@ -217,6 +221,8 @@ test('Kosten: ein Fehler im Formular steht nach „Abbrechen“ nicht oben auf d
   fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
   await expectShownInDialog()
   fireEvent.click(screen.getByRole('button', { name: /^Abbrechen$/i }))
+  // Mit Eingaben fragt das Seitenfenster (#346, Schritt 2)
+  fireEvent.click(within(await screen.findByRole('alertdialog', { name: 'Änderungen verwerfen?' })).getByRole('button', { name: 'Verwerfen' }))
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   expect(screen.queryByText(MSG)).toBeNull()
 })

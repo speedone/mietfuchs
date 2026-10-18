@@ -115,6 +115,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   [#341](https://github.com/speedone/mietfuchs/issues/341);
   [#346](https://github.com/speedone/mietfuchs/issues/346)).
 
+- Seitenfenster (Wohnung, Mietverhältnis, Zähler, Kosten, Zahlung, Heizung und die übrigen) fragen
+  „Änderungen verwerfen?“, bevor sie Ihre Eingaben verwerfen: bei Esc, beim ✕, bei „Abbrechen“ und bei
+  einem Klick daneben. Ohne Änderung schließen sie sofort wie bisher, und ein Seitenwechsel fragt bei
+  einem unveränderten Fenster nicht mehr nach. Solange ein Seitenfenster offen ist, ist der Rest der
+  Seite gesperrt: Tab wandert durch das Fenster und die Leiste des Browsers, aber nicht mehr in die
+  Seite dahinter, und nach dem Schließen steht der Fokus wieder auf dem Knopf, der es geöffnet hat (Befund M4 aus [#341](https://github.com/speedone/mietfuchs/issues/341);
+  [#346](https://github.com/speedone/mietfuchs/issues/346)).
+
 ### Behoben
 
 - Angaben zur Heizkostenabrechnung (§ 6a HeizkostenV): Stehen alle Wärmezähler in MWh oder GJ, rechnet

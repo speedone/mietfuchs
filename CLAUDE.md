@@ -3109,8 +3109,8 @@ zeigt **denselben Inhalt wie die Seitenleiste** (`sidebar(close)` in App.tsx), �
 auf der Objektwahl. Die Wahl einer Seite schließt es; Objekt und Zeitraum wechseln darin **ohne** zu
 schließen, wie in der Seitenleiste, denn ein Auswahlfeld sendet bei jeder Pfeiltaste `change`. Eine
 Rückfrage (offenes Formular, Beenden) liegt seit Schritt 1 im Top-Layer über dem Blatt; es bleibt dafür
-offen, und eine Seite schließt es erst, wenn der Wechsel feststeht. Esc im Blatt
-erreicht kein offenes Seitenfenster darunter. Der Fokus geht an den Knopf zurück, der es geöffnet hat,
+offen, und eine Seite schließt es erst, wenn der Wechsel feststeht. Ein Seitenfenster ist
+modal; solange es offen ist, sind Kopf und untere Leiste inert, das Blatt lässt sich darüber nicht öffnen. Der Fokus geht an den Knopf zurück, der es geöffnet hat,
 und nach einem Wechsel über die Grenze an die aktuelle Seite bzw. ☰. Gezeichnet wird nach
 `matchMedia` und nicht nur per CSS, damit kein Eintrag doppelt im Baum steht; Tests stellen den Query
 samt `change` nach (mobileNav.test.tsx) und nehmen für `showModal` den Nachbau aus
@@ -3232,6 +3232,38 @@ Tippfläche von `--target` über `::after`, und printCss.test.ts verlangt den du
   Browser als eigene Aufgabe, `:modal`), und [testing/keys.ts](client/src/testing/keys.ts) (`press`) drückt
   eine Taste wie der Browser: Enter auf einem Knopf als Klick, Tab zum nächsten bedienbaren Element im
   obersten modalen Dialog (ohne Felder in geschlossenem `<details>`, mit `<summary>`). Tests suchen die Rückfrage mit `getByRole('alertdialog')`.
+- **Seitenfenster** (`Drawer`, [client/src/components/Drawer.tsx](client/src/components/Drawer.tsx), #346
+  Schritt 2): ein `<dialog>` mit `showModal()` von rechts, im Top-Layer, Hintergrund inert. Kopf mit Titel
+  (`h2`) und ✕, scrollender Körper, fester Fuß mit Hinweis (`hint`), **„Abbrechen“ aus dem Baustein**
+  (`cancelLabel`, `busy` sperrt alle Wege zum Schließen) und den Knöpfen des Formulars (`actions`).
+  **Schließen mit Änderungen** (Esc, ✕, Klick daneben, „Abbrechen“) fragt „Änderungen verwerfen?“ mit
+  Startfokus „Abbrechen“; ohne Änderungen schließt es sofort. Erkannt wird die Änderung am Pflicht-Prop
+  `value` (der Stand des Formulars): verglichen mit `sameDraft` gegen den Stand vor der ersten Eingabe oder
+  dem ersten Klick im Körper, gemerkt in der Einfangphase, also bevor React die Änderung verarbeitet. Nicht
+  beim Öffnen, sonst gälte ein Formular, das nach dem Öffnen Vorgaben nachträgt, als geändert;
+  zurückgesetzt gilt nicht als Änderung. **Nur ein geändertes Fenster meldet sich bei `useOpenForm` an**:
+  Seite, Objekt und Zeitraum fragen bei einem unveränderten nicht nach. **`value` umfasst jeden Zustand,
+  den das Fenster bearbeitet**, auch wenn er neben dem Formularobjekt liegt (Kosten: `{ form,
+  heatingPlantId, heatingPeriod }`), aber nichts, was das Fenster nachlädt (Kesseltausch: `swap.form`, nicht
+  die Zähler) und keine bloße Hilfe ohne Speicherwert (Zähler: die Jahreszahl für den Vorschlag der
+  Eichfrist); was ein Feld nur umschreibt, wird vorher normalisiert (IBAN). **Zeigt ein offenes Fenster einen
+  anderen Datensatz** („Stattdessen … bearbeiten“, „Hier beheben →“), ist das ein neues Formular: Die
+  Aufrufer setzen `key` auf die Kennung (`form.id ?? 'neu'`). Esc wird am `keydown` verhindert (sonst ließe
+  Chrome ein zweites `cancel` ohne Nutzeraktion nicht abbrechen), gilt aber nicht dem Fenster, wenn es zuerst
+  etwas darin schließt: ein Element, das Esc schon verhindert hat (ein offener Begriff), ein offenes Popover,
+  eine IME-Eingabe. `cancel` und `close` zählen nur am Fenster selbst (`e.target === e.currentTarget`), denn
+  React reicht sie aus verschachtelten Dialogen weiter, und ein `close`, das ankommt, wenn das Fenster schon
+  wieder offen ist, zählt nicht (StrictMode baut den Effekt ab und wieder auf, der Browser sendet `close` als
+  eigene Aufgabe; sonst schloss im Entwicklungsbetrieb jedes Fenster sofort). Schließt der Browser es doch
+  selbst, öffnet es mit Änderungen wieder und fragt. Tab lenkt der Browser (dialogKeys.ts). Das erste Feld bekommt den
+  Fokus nach `showModal()` und, falls der Inhalt nachlädt, nach 60 ms noch einmal, wenn er noch auf ✕ steht
+  (#352). Beim Aushängen geht der Fokus an den Auslöser zurück (`focusBack` in dialogKeys.ts). Mitteilungen
+  liegen als `popover="manual"` über offenen Dialogen und werden im obersten angesagt (siehe Rückfragen). Wächter
+  S12b in uiRules.test.ts: jedes `<Drawer>` hat `value` (kein fester Wert, auch kein `{}`), kein `footer`,
+  und in `actions` keinen eigenen Weg zum Schließen (die Wörter des Bausteins, der Schließer des Aufrufers,
+  kein `set…(null)`). Grenze: Ob `value` den ganzen Zustand umfasst, sieht der Wächter nicht; das prüft die
+  Durchsicht. `busy` reichen die Formulare beim Speichern noch nicht durch (Esc während der Anfrage fragt). Tests: `<dialog>` hat die Rolle `dialog`, die Rückfrage `alertdialog`;
+  wer in einem Test mit Eingabe „Abbrechen“ klickt, bestätigt danach „Verwerfen“.
 - **Auswahlfelder und Häkchen speichern nicht beim Anklicken** (#309). Sofort gespeichert wird nur,
   was keine Daten ändert: der Wechsel von Zeitraum, Objekt oder Design und die Antwort auf die
   Frage nach der Update-Prüfung im Cockpit. Alles andere ist zuerst ein Entwurf: `useDraft(saved,

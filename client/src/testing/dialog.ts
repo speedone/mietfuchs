@@ -7,6 +7,8 @@
 // - `close()` nimmt `open` weg und sendet `close`, wie der Browser als eigene Aufgabe danach (`setTimeout`):
 //   Ein Baustein, der auf ein verspätetes `close` eines inzwischen wieder geöffneten Dialogs hereinfällt
 //   (StrictMode baut Effekte einmal ab und wieder auf), fällt so auch im Test auf (Durchsicht M1);
+// - Popover öffnen und schließen sich, `:popover-open` trifft die offenen, und Esc schließt zuerst ein offenes
+//   Popover (`auto`) statt des Dialogs;
 // - `:modal` trifft die mit `showModal()` geöffneten Dialoge (jsdom kennt die Pseudoklasse nicht);
 // - Esc sendet dem obersten modalen Dialog `cancel` (abbrechbar) und schließt ihn danach, aber nur, wenn
 //   das `keydown` nicht verhindert wurde. So hält es der Browser auch (eine „close request“ folgt erst auf
@@ -19,6 +21,8 @@ const FOCUSABLE = 'button, a[href], input, select, textarea, [tabindex]:not([tab
 
 // Die offenen modalen Dialoge, der zuletzt geöffnete zuletzt (das ist der oberste im Top-Layer).
 const modals: HTMLDialogElement[] = []
+// Die offenen Popover, das zuletzt geöffnete zuletzt.
+const popovers: HTMLElement[] = []
 
 let topModal: () => HTMLDialogElement | null = () => null
 /** Der oberste mit `showModal()` geöffnete Dialog, sonst `null`. */
@@ -31,6 +35,9 @@ export function installDialogPolyfill(): void {
     if (e.key !== 'Escape') return
     queueMicrotask(() => {
       if (e.defaultPrevented) return
+      // Ein offenes Popover schließt zuerst, der Dialog bleibt (wie im Browser)
+      const popover = [...popovers].reverse().find((p) => p.isConnected && p.getAttribute('popover') !== 'manual')
+      if (popover) { popover.hidePopover(); return }
       const top = [...modals].reverse().find((d) => d.open && d.isConnected)
       if (!top) return
       const cancel = new Event('cancel', { cancelable: true })
@@ -57,8 +64,18 @@ export function installDialogPolyfill(): void {
     if (at >= 0) modals.splice(at, 1)
     setTimeout(() => this.dispatchEvent(new Event('close')), 0)
   }
+  // Popover (`popover="auto"`/`"manual"`): nur Öffnen, Schließen und `:popover-open`, ohne Top-Layer.
+  const html = window.HTMLElement.prototype
+  html.showPopover = function (this: HTMLElement) { if (!popovers.includes(this)) popovers.push(this) }
+  html.hidePopover = function (this: HTMLElement) { const at = popovers.indexOf(this); if (at >= 0) popovers.splice(at, 1) }
+  html.togglePopover = function (this: HTMLElement) {
+    if (popovers.includes(this)) { this.hidePopover(); return false }
+    this.showPopover()
+    return true
+  }
   const matches = window.Element.prototype.matches
   const patched = function (this: Element, selector: string): boolean {
+    if (selector === ':popover-open') return popovers.includes(this as HTMLElement)
     if (selector === ':modal') return this instanceof window.HTMLDialogElement && modals.includes(this)
     return matches.call(this, selector)
   }

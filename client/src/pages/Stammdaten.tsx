@@ -9,7 +9,7 @@ import Drawer from '../components/Drawer'
 import PropertyCard from '../components/PropertyCard'
 import IbanInput from '../components/IbanInput'
 import { ibanForSave, ibanToInput, storedIbanInvalid } from '../ibanField'
-import { IBAN_LABELS } from '../../../shared/iban.ts'
+import { IBAN_LABELS, normalizeIban } from '../../../shared/iban.ts'
 import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_KIND_OPTIONS, SELF_SUPPLY_TENANCY_HINT, buildPersonHistory, costModelBadge, costModelBody, buildSchedule, defaultTenancyUnitId, overlapQuestion, prepaymentColumn, scheduleLabel, scheduleMonthText, showsFlatRates, startsSchedule } from '../tenancyModel'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, endProblem, gapProblem, INTERIM_FEE_HINT, INTERIM_GAP_OPTIONS, meterProblem, parseMeterValue, successorHeatingNote, type NewTenantForm } from '../tenantChange'
@@ -523,20 +523,17 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
 
       {tenForm && (
         <Drawer
+          // Ein anderer Datensatz im offenen Fenster ist ein neues Formular (Durchsicht S3)
+          key={tenForm.id ?? 'neu'}
           open
           title={tenForm.id ? 'Mietverhältnis bearbeiten' : 'Neues Mietverhältnis'}
           subtitle={tenForm.id ? tenForm.tenantName : undefined}
           onClose={() => { setError(''); setTenForm(null) }}
           onSubmit={saveTenancy}
           width={480}
-          footer={
-            <>
-              <span className="drawer-hint">Strg+S speichert · Esc schließt</span>
-              <span className="spacer" />
-              <button className="btn ghost" onClick={() => { setError(''); setTenForm(null) }}>Abbrechen</button>
-              <button className="btn" onClick={saveTenancy}>{tenForm.id ? 'Übernehmen' : 'Anlegen'}</button>
-            </>
-          }
+          // Die IBAN schreibt das Feld beim Verlassen in Vierergruppen um; das ist keine Änderung (Durchsicht K5)
+          value={{ ...tenForm, iban: normalizeIban(tenForm.iban) }}
+          actions={<button className="btn" onClick={saveTenancy}>{tenForm.id ? 'Übernehmen' : 'Anlegen'}</button>}
         >
           {error && <div className="error">{error}</div>}
           <div className="row">
@@ -753,19 +750,15 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
 
       {unitForm && (
         <Drawer
+          // Ein anderer Datensatz im offenen Fenster ist ein neues Formular (Durchsicht S3)
+          key={unitForm.id ?? 'neu'}
           open
           title={unitForm.id ? 'Wohnung bearbeiten' : 'Neue Wohnung'}
           subtitle={unitForm.id ? unitForm.name : undefined}
           onClose={() => { setError(''); setUnitForm(null) }}
           onSubmit={saveUnit}
-          footer={
-            <>
-              <span className="drawer-hint">Strg+S speichert · Esc schließt</span>
-              <span className="spacer" />
-              <button className="btn ghost" onClick={() => { setError(''); setUnitForm(null) }}>Abbrechen</button>
-              <button className="btn" onClick={saveUnit}>{unitForm.id ? 'Übernehmen' : 'Anlegen'}</button>
-            </>
-          }
+          value={unitForm}
+          actions={<button className="btn" onClick={saveUnit}>{unitForm.id ? 'Übernehmen' : 'Anlegen'}</button>}
         >
           {error && <div className="error">{error}</div>}
           <div className="row">
