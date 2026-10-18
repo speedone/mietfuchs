@@ -217,6 +217,23 @@ test('Ausweis: Töpfe mit Preisen je Einheit, Warmwasseranteil, Nutzer mit Gradt
   })
 })
 
+// Befund M7 aus #341: „EG links, Beginn der Heizperiode am 31.12.2024: keine Ablesung“ nannte den Zähler
+// nicht, gemeint war der neue Warmwasserzähler. Die Grenze nennt jetzt die Zähler ohne Stand, mit Nummer.
+test('Grenze ohne Ablesung nennt den Zähler, dem der Stand fehlt, mit Zählernummer (#341, M7)', async () => {
+  await withDatabase(async (opened) => {
+    const snap = await beispielA(opened, { skip: ['xc@2024-12-31'] })
+    const water = snap.meters.find((m) => m.unitId === 'c' && m.type === 'warmwasser') ?? assert.fail('kein Warmwasserzähler C')
+    const meters = snap.meters.map((m) => (m.id === water.id ? { ...m, meterNumber: 'WW-4711' } : m))
+    const s = computeSettlement({ ...snap, meters })
+    const c = s.heating?.[0]?.self?.units.find((u) => u.unitId === 'c') ?? assert.fail('Wohnung C')
+    const start = c.boundaries.find((b) => b.kind === 'start') ?? assert.fail('keine Grenze am Beginn')
+    assert.equal(start.status, 'missing')
+    assert.deepEqual(start.missingMeters, [{ name: water.name ?? water.id, number: 'WW-4711' }])
+    // Eine abgelesene Grenze nennt keinen Zähler.
+    assert.deepEqual(c.boundaries.find((b) => b.kind === 'end')?.missingMeters, [])
+  })
+})
+
 test('Z-B2: Wechsel ohne Zwischenablesung, „nicht durchgeführt“: § 9b Abs. 3 und bis zu 15 % auf die Heizkosten nach Abzug', async () => {
   await withDatabase(async (opened) => {
     await beispielA(opened, { skip: ['wc@2025-09-30', 'xc@2025-09-30'] })

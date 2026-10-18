@@ -27,6 +27,15 @@ describe('Ampel der Ablesungen (Heizung PR 10, Entwurf 3.5)', () => {
     expect(boundaryText(b({ status: 'off', offDays: 36, far: true, gap: 'imprecise' }), 'C')).toBe('C, Mieterwechsel zum 30.09.2025: abgelesen 36 Tage daneben, über einen Wintermonat (geteilt nach § 9b Abs. 3)')
     expect(boundaryText(b({ status: 'missing', kind: 'end', date: '2025-12-31' }), 'B')).toBe('B, Ende der Heizperiode am 31.12.2025: keine Ablesung')
   })
+  // Befund M7 aus #341: gemeint war der neue Warmwasserzähler, der Satz nannte ihn nicht.
+  it('der Satz nennt den Zähler ohne Stand, mit Nummer', () => {
+    expect(boundaryText(b({ status: 'missing', kind: 'start', date: '2024-12-31', missingMeters: [{ name: 'Warmwasser neu', number: 'WW-4711' }] }), 'EG links'))
+      .toBe('EG links, Beginn der Heizperiode am 31.12.2024: keine Ablesung am Zähler „Warmwasser neu“ (Nr. WW-4711)')
+    expect(boundaryText(b({ status: 'missing', kind: 'end', date: '2025-12-31', missingMeters: [{ name: 'Wärme' }, { name: 'Warmwasser' }] }), 'B'))
+      .toBe('B, Ende der Heizperiode am 31.12.2025: keine Ablesung an den Zählern „Wärme“ und „Warmwasser“')
+    expect(boundaryText(b({ status: 'missing', gap: 'missed', missingMeters: [{ name: 'Wärme' }] }), 'C'))
+      .toBe('C, Mieterwechsel zum 30.09.2025: keine Ablesung am Zähler „Wärme“ (nicht durchgeführt)')
+  })
 })
 
 describe('Anteil nach Verbrauch (§ 6 Abs. 4)', () => {

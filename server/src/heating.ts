@@ -43,7 +43,8 @@ export type SelfTenancy = { id: string; unitId: string; tenantName: string; star
 // Heizkostenverteiler mit Einheitsskala der Bewertungsfaktor, sonst 1 (hca.ts `meterFactor`). Fehlt: 1.
 // `unit`: die Einheit des Zählers, nur für das Ableseergebnis (UI-Durchsicht H5). `scale` (#342): Umrechnung
 // der Einheit des Zählers in die gemeinsame Einheit des Topfs (shared/meterUnits.ts). Fehlt: 1.
-export type SelfMeter = { id: string; name: string; unitId: string; type: MeterType; factor?: number; scale?: number; unit?: string }
+// `number`: die Zählernummer, nur für den Ausweis (Befund M7 aus #341).
+export type SelfMeter = { id: string; name: string; unitId: string; type: MeterType; factor?: number; scale?: number; unit?: string; number?: string }
 // `boundFor`: Grenze einer Ablesung aus dem Mieterwechsel (`readings.interim_for`, Abweichung 9, 23).
 export type SelfReading = { meterId: string; date: string; value: number; replacement?: boolean; oldEndValue?: number | null; boundFor?: string | null }
 export type SelfInput = {
@@ -99,7 +100,8 @@ export type SelfUser = {
 // diesem Topf kommt aus einer Schätzung nach § 9a; fehlt, wenn er abgelesen ist.
 export type SelfUserPot = { base: number; consumption: number; value: number | null; group: boolean; estimated?: boolean }
 export type SelfUserPlan = SelfUser & { pots: Record<SelfPot, SelfUserPot> }
-export type SelfBoundary = { date: string; kind: 'start' | 'end' | 'change'; readingDates: (string | null)[]; gap: InterimGapStatus | null; far: boolean }
+// `missingMeters`: die Zähler aus `readingDates` ohne Stand an der Grenze (Befund M7 aus #341).
+export type SelfBoundary = { date: string; kind: 'start' | 'end' | 'change'; readingDates: (string | null)[]; missingMeters: { name: string; number?: string }[]; gap: InterimGapStatus | null; far: boolean }
 export type SelfUnitPlan = {
   unit: SelfUnit
   heatArea: number
@@ -514,10 +516,12 @@ export function planSelf(input: SelfInput): SelfPlan {
     const bounds: SelfBoundary[] = boundaries
       .filter((b) => b === startBoundary || b === h.to || isChange(b))
       .map((b) => {
-        const all = pots.flatMap((p) => liveMetersOf(unit.id, p)).map((m) => readingAt.get(m.id)?.get(b)?.date ?? null)
+        const live = pots.flatMap((p) => liveMetersOf(unit.id, p))
+        const all = live.map((m) => readingAt.get(m.id)?.get(b)?.date ?? null)
+        const missingMeters = live.filter((_, i) => all[i] === null).map((m) => (m.number ? { name: m.name, number: m.number } : { name: m.name }))
         const kind = b === startBoundary ? 'start' : b === h.to ? 'end' : 'change'
         const gap = kind === 'change' ? answerAt(b) : null
-        return { date: b, kind, readingDates: all, gap, far: offAt.get(b)?.far ?? false }
+        return { date: b, kind, readingDates: all, missingMeters, gap, far: offAt.get(b)?.far ?? false }
       })
     // Hinweise an den Wechseln: Ablesung daneben, oder keine (dann mit der Antwort des Vermieters).
     for (const bd of bounds.filter((x) => x.kind === 'change')) {
