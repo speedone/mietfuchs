@@ -492,16 +492,16 @@ dialog.menu-sheet > .sidebar button:not(.sheet-close) { min-height: var(--target
 .property-notice-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 
 /* ---------- Editier-Drawer (von rechts) ---------- */
-.drawer-backdrop { position: fixed; inset: 0; background: var(--overlay); z-index: 40; display: flex; justify-content: flex-end; animation: drawer-fade 0.16s ease; }
-.drawer {
-  background: var(--card); max-width: 94vw; height: 100%; display: flex; flex-direction: column; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) 0;
-  border-left: 1px solid var(--line); box-shadow: var(--shadow-pop); animation: drawer-slide 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+dialog.drawer::backdrop { background: var(--overlay); animation: drawer-fade 0.16s ease; }
+dialog.drawer {
+  margin: 0; inset: 0 0 0 auto; height: 100dvh; max-height: none; max-width: 94vw; box-sizing: border-box; color: inherit; border: none; background: var(--card); padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) 0;
+  border-left: 1px solid var(--line); box-shadow: var(--shadow-pop); animation: drawer-slide 0.2s cubic-bezier(0.22, 1, 0.36, 1); } dialog.drawer[open] { display: flex; flex-direction: column;
 }
 .drawer-head {
   display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3);
   padding: var(--space-5) var(--space-6) var(--space-4); border-bottom: 1px solid var(--line); flex-shrink: 0;
 }
-.drawer-title { font-size: var(--text-l); font-weight: var(--weight-strong); letter-spacing: -0.01em; }
+.drawer-title { font-size: var(--text-l); font-weight: var(--weight-strong); letter-spacing: -0.01em; margin: 0; }
 .drawer-sub { color: var(--muted); font-size: var(--text-m); margin-top: 2px; }
 .drawer-x { all: unset; cursor: pointer; color: var(--muted); font-size: 18px; line-height: 1; padding: var(--space-1) var(--space-2); border-radius: var(--radius-m); }
 .drawer-x:hover { background: var(--hover); color: var(--text); }
@@ -645,7 +645,7 @@ td.actions { white-space: nowrap; text-align: right; }
 @keyframes toast-in { from { transform: translateY(8px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 @keyframes dialog-pop { from { transform: scale(0.97); opacity: 0.5; } to { transform: scale(1); opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
-  .drawer, .drawer-backdrop, .toast, .dialog, dialog.confirm::backdrop, .sidebar .update-hint, dialog.menu-sheet { animation: none; }
+  dialog.drawer, dialog.drawer::backdrop, .toast, .dialog, dialog.confirm::backdrop, .sidebar .update-hint, dialog.menu-sheet { animation: none; }
 }
 /* ========== Gestaltungsregeln aus der Sichtprüfung (S1–S12) ==========
    Sie stehen gesammelt hier, nach den Regeln der Bausteine und vor dem Druck, damit sie bei gleicher

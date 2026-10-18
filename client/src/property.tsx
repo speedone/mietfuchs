@@ -69,7 +69,7 @@ export function withProperty(path: string, propertyId: string | null | undefined
 // Exportiert für Tests einzelner Karten (testing/openForm.tsx), die ohne PropertyProvider prüfen, ob sie sich anmelden.
 export const OpenFormsCtx = createContext<Set<symbol> | null>(null)
 
-// Meldet ein Formular an, solange `open` gilt. Der Drawer tut das von selbst; Formulare ohne
+// Meldet ein Formular an, solange `open` gilt. Der Drawer tut das von selbst, sobald er geändert ist; Formulare ohne
 // Drawer rufen es selbst auf. Außerhalb des Providers (Tests einzelner Teile) geschieht nichts.
 // Als Layout-Effekt, damit die Marke mit dem Gezeichneten übereinstimmt: Ein gewöhnlicher Effekt
 // läuft erst nach dem Zeichnen, und ein Wechsel in dieser Lücke fragte bei einem eben

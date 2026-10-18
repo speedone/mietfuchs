@@ -116,9 +116,6 @@ export default function MobileNav({ tab, context, onNavigate, sheet }: {
         onClose={(e) => { if (e.target === e.currentTarget) finish() }}
         onCancel={(e) => { if (e.target === e.currentTarget) finish() }}
         onClick={(e) => { if (e.target === e.currentTarget) close() }}
-        // Esc gehört dem Blatt: Ohne das Anhalten erreichte es auch den Horcher eines offenen
-        // Seitenfensters am Dokument (Drawer.tsx) und schlösse das Formular darunter mit.
-        onKeyDown={(e) => { if (e.key === 'Escape') e.stopPropagation() }}
       >
         {opened && sheet(close)}
       </dialog>

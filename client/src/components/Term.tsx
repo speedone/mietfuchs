@@ -49,7 +49,9 @@ export default function Term({ id, children, control }: { id: TermId; children?:
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault()
       setOpen(!open)
-    } else if (e.key === 'Escape') {
+    } else if (e.key === 'Escape' && open) {
+      // Esc schließt zuerst die Erklärung; verhindert, damit ein Dialog darum (Seitenfenster, Rückfrage) offen bleibt.
+      e.preventDefault()
       setOpen(false)
     }
   }

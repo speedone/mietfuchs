@@ -315,18 +315,14 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
       )}
       {form && (
         <Drawer
+          // Ein anderer Datensatz im offenen Fenster ist ein neues Formular (Durchsicht S3)
+          key={editingId ?? 'neu'}
           open
           title={editingId ? 'Heizung ändern' : 'Heizung einrichten'}
           onClose={close}
           onSubmit={save}
-          footer={
-            <>
-              <span className="drawer-hint">Strg+S speichert · Esc schließt</span>
-              <span className="spacer" />
-              <button className="btn ghost" onClick={close}>Abbrechen</button>
-              <button className="btn" onClick={save}>{editingId ? 'Übernehmen' : 'Anlegen'}</button>
-            </>
-          }
+          value={form}
+          actions={<button className="btn" onClick={save}>{editingId ? 'Übernehmen' : 'Anlegen'}</button>}
         >
           {error && <div className="error">{error}</div>}
           {plants.length > (editingId ? 1 : 0) && (
@@ -556,14 +552,9 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
           title="Heizung erneuert (Kessel getauscht)"
           onClose={() => { setError(''); setSwap(null) }}
           onSubmit={saveSwap}
-          footer={
-            <>
-              <span className="drawer-hint">Strg+S speichert · Esc schließt</span>
-              <span className="spacer" />
-              <button className="btn ghost" onClick={() => { setError(''); setSwap(null) }}>Abbrechen</button>
-              <button className="btn" onClick={saveSwap}>Tausch speichern</button>
-            </>
-          }
+          // Nur, was der Vermieter eingibt; die Zähler lädt das Fenster nach dem Öffnen nach (Durchsicht S4)
+          value={swap.form}
+          actions={<button className="btn" onClick={saveSwap}>Tausch speichern</button>}
         >
           {error && <div className="error">{error}</div>}
           <p className="muted">
