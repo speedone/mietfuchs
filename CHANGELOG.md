@@ -98,8 +98,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - Wer mit einer angefangenen Eingabe die Seite wechselt, über die Seitenleiste, das Menüblatt oder
   die untere Leiste am Handy, wird vorher gefragt („Ungespeicherte Änderungen verwerfen?“); vorher
   war die Eingabe still weg. Ebenso fragt der Browser, wenn Sie den Tab mit offener Eingabe
-  schließen oder neu laden. Das gilt für Seitenfenster, Eingaben auf der Seite wie die Ablesung und
-  die Karten auf der Seite Heizkosten ([#346](https://github.com/speedone/mietfuchs/issues/346)).
+  schließen oder neu laden. Das gilt auch für Sprünge aus einer Seite wie „Hier beheben →“ und für das
+  Blatt „CO₂-Angaben für den Messdienst“, und für Seitenfenster, Eingaben auf der Seite wie die
+  Ablesung, die Karten auf der Seite Heizkosten, „Betrag prüfen“ im Belegordner und die Entscheidungen in
+  einer Belegauswertung. Nach dem Speichern fragt nichts mehr nach
+  ([#346](https://github.com/speedone/mietfuchs/issues/346)).
 
 ### Behoben
 

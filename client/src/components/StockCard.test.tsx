@@ -2,6 +2,7 @@
 // Die Karte „Vorrat“ (Heizung PR 8): Die Auswahl zeigt den gespeicherten Wert, eine Folgeperiode zeigt
 // den Anfangsbestand aus der Vorperiode statt Eingabefeldern, und Speichern schickt die Felder.
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { OpenFormScope, hasOpenForm } from '../testing/openForm'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import StockCard from './StockCard'
 import { periodKey } from '../../../shared/period.ts'
@@ -90,4 +91,19 @@ test('Durchsicht von #237, M1: Eine abgeschlossene Heizperiode zeigt die eingefr
   render(<StockCard view={{ ...view({ ...STOCK, frozen }), closed: true }} onSaved={() => {}} co2Fields={false} />)
   expect(screen.getByText(/Verbraucht 600 kg/)).toBeTruthy()
   expect(screen.getByText(/wie sie abgerechnet ist/)).toBeTruthy()
+})
+
+// #346, Schritt 7a
+test('7a: Ändern meldet die Karte an, Speichern nimmt die Marke weg', async () => {
+  const saved = vi.fn()
+  render(<OpenFormScope><StockCard view={view(STOCK)} onSaved={saved} /></OpenFormScope>)
+  expect(hasOpenForm()).toBe(false)
+  fireEvent.change(einheit(), { target: { value: 'l' } })
+  expect(hasOpenForm()).toBe(true)
+  fireEvent.change(einheit(), { target: { value: 'kg' } })
+  expect(hasOpenForm()).toBe(false)
+  fireEvent.change(einheit(), { target: { value: 'l' } })
+  fireEvent.click(screen.getByText('Vorrat speichern'))
+  await waitFor(() => expect(saved).toHaveBeenCalled())
+  expect(hasOpenForm()).toBe(false)
 })

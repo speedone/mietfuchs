@@ -2,6 +2,7 @@
 // Die Karte „Heizung nach § 43 GModG“ (Heizung PR 18, #215): Auswahlfelder zeigen den gespeicherten Wert,
 // Speichern schickt die Merkmale an die Anlage, die Mitteilung an das Mietverhältnis.
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { OpenFormScope, hasOpenForm } from '../testing/openForm'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import HalfSplitCard from './HalfSplitCard'
 
@@ -62,4 +63,24 @@ test('Die Karte nennt Stichtage, Netzentgelte nur bei Gas und die Grenze beim Bi
   render(<HalfSplitCard plant={plant} tenancies={tenancies} onSaved={() => {}} />)
   expect(screen.getByText(/ab dem 01\.01\.2028 die Hälfte der CO₂-Kosten und, nur bei Gas, der Netzentgelte, ab dem 01\.01\.2029 auch die Hälfte der Kosten des Pflichtanteils an Biobrennstoff, höchstens für 30 % des verbrauchten Brennstoffs/)).toBeTruthy()
   expect(screen.getByText(/genügt nach der Begründung in der Regel die Mitteilung mit der Abrechnung/)).toBeTruthy()
+})
+
+// #346, Schritt 7a, Nachprüfung B2: Nach „Mitteilung speichern“ blieb die Marke stehen, weil die Seite die
+// Mietverhältnisse nicht neu lud. Die Mitteilung gilt jetzt sofort als gespeichert, und die Mietverhältnisse
+// werden neu geladen.
+test('7a: Mitteilung und Angaben melden die Karte an, ihr Speichern nimmt die Marke weg', async () => {
+  const saved = vi.fn()
+  const noticeSaved = vi.fn()
+  render(<OpenFormScope><HalfSplitCard plant={plant} tenancies={tenancies} onSaved={saved} onNoticeSaved={noticeSaved} /></OpenFormScope>)
+  expect(hasOpenForm()).toBe(false)
+  fireEvent.change(screen.getByLabelText('Mitteilung an Mieter A nach § 5d Abs. 4 in Textform am'), { target: { value: '2028-03-15' } })
+  expect(hasOpenForm()).toBe(true)
+  fireEvent.click(screen.getByText('Mitteilung speichern'))
+  await waitFor(() => expect(noticeSaved).toHaveBeenCalled())
+  expect(hasOpenForm()).toBe(false)
+  fireEvent.change(screen.getByLabelText('Tag des Einbaus'), { target: { value: '2027-01-02' } })
+  expect(hasOpenForm()).toBe(true)
+  fireEvent.click(screen.getByText('Angaben speichern'))
+  await waitFor(() => expect(saved).toHaveBeenCalled())
+  expect(hasOpenForm()).toBe(false)
 })

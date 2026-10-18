@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { BillingPeriod, CostItem, PeriodRules, UploadEntry, UploadInfo, Property, Settlement } from '../types'
-import { withProperty, useProperty } from '../property'
+import { useOpenForm, withProperty, useProperty } from '../property'
+import { flushSync } from 'react-dom'
 import { usePeriod } from '../period'
 import { labelOfKey } from '../periodForm'
 import { api, errorText, fmtEuro, fmtDate } from '../api'
@@ -298,6 +299,12 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
   // `closed`: Die Abrechnung des Jahres der Position ist abgeschlossen; eine Änderung erscheint dort
   // als Abweichung (Integrationsdurchsicht vor 0.10).
   const [amountCheck, setAmountCheck] = useState<{ item: CostItem; file: string; amount: string; problem: string; form?: boolean; closed?: boolean } | null>(null)
+  // „Betrag prüfen“ zählt als offenes Formular (#346, 7a): Die Frage zum Schätzbetrag kommt nach einem
+  // Seitenwechsel nie wieder, und die Schätzung bliebe still stehen.
+  useOpenForm(amountCheck !== null)
+  // Wer aus dem Kasten weiterspringt, schließt ihn vorher wirklich: Sonst fände der Sprung die Marke noch
+  // gesetzt und fragte nach dem Kasten, den er gerade schließt.
+  const leaveCheck = (go: () => void) => { flushSync(() => setAmountCheck(null)); go() }
   // Voreinstellung: das gewählte Objekt und das Abrechnungsjahr (#170). Umschalten wirkt nur
   // hier; das Objekt der übrigen Seiten bleibt, wie es ist.
   const [filterProperty, setFilterProperty] = useState<string>(property?.id ?? 'all')
@@ -596,13 +603,13 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
           {(amountCheck.item.labor35aCents ?? 0) > 0 && (
             <div>
               Lohnanteil der Position: <strong>{fmtEuro(amountCheck.item.labor35aCents ?? 0)}</strong> – stimmt er mit dem Beleg?{' '}
-              {onOpenItem && <button className="btn small ghost" onClick={() => { const it = amountCheck.item; setAmountCheck(null); onOpenItem(it) }}>Lohnanteil im Formular prüfen</button>}
+              {onOpenItem && <button className="btn small ghost" onClick={() => { const it = amountCheck.item; leaveCheck(() => onOpenItem(it)) }}>Lohnanteil im Formular prüfen</button>}
             </div>
           )}
           {amountCheckMode(amountCheck.item) === 'form' ? (
             <div className="row center">
               <span>Bei dieser Position prüfen Sie den Betrag im Formular: Er hängt an weiteren Angaben (Einzelbeträge oder Kosten der Gemeinschaft).</span>
-              {onOpenItem && <button className="btn small" onClick={() => { const it = amountCheck.item; setAmountCheck(null); onOpenItem(it) }}>Position öffnen</button>}
+              {onOpenItem && <button className="btn small" onClick={() => { const it = amountCheck.item; leaveCheck(() => onOpenItem(it)) }}>Position öffnen</button>}
               <button className="btn small ghost" onClick={() => setAmountCheck(null)}>Schließen</button>
             </div>
           ) : (
@@ -619,7 +626,7 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
           {amountCheck.problem && (
             <div className="error">
               {amountCheck.problem}
-              {amountCheck.form && onOpenItem && <> <button className="btn small" onClick={() => { const it = amountCheck.item; setAmountCheck(null); onOpenItem(it) }}>Position öffnen</button></>}
+              {amountCheck.form && onOpenItem && <> <button className="btn small" onClick={() => { const it = amountCheck.item; leaveCheck(() => onOpenItem(it)) }}>Position öffnen</button></>}
             </div>
           )}
         </div>

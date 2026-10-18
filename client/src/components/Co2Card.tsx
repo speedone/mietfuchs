@@ -4,6 +4,7 @@ import { useState, type ReactNode } from 'react'
 import { api, errorText } from '../api'
 import { useConfirm, useToast } from './feedback'
 import Term from './Term'
+import { useOpenWhenDiffers } from '../useDraft'
 import { CO2_ANSWER_OPTIONS, CO2_EXAMPLE, CO2_NOT_A_SIGN, CO2_QUESTION, co2Body, co2Labels, co2ToForm, probeLine, type Co2Form } from '../co2Form'
 import type { HeatingPeriodView, Tenancy } from '../types'
 
@@ -18,6 +19,8 @@ export default function Co2Card({ view, tenancies, unitsCount, hasSelfUsed = fal
   const [form, setForm] = useState<Co2Form>(() => co2ToForm(view.co2, ctx))
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  // Eine ungespeicherte Eingabe zählt als offenes Formular (#346, 7a), verglichen mit dem gespeicherten Stand.
+  const markSaved = useOpenWhenDiffers(form, co2ToForm(view.co2, ctx))
   const toast = useToast()
   const confirm = useConfirm()
   const set = <K extends keyof Co2Form>(key: K, value: Co2Form[K]) => setForm((f) => ({ ...f, [key]: value }))
@@ -46,6 +49,7 @@ export default function Co2Card({ view, tenancies, unitsCount, hasSelfUsed = fal
     try {
       await api(url, { method: 'PUT', body: JSON.stringify(r.body) })
       setError('')
+      markSaved()
       toast('CO₂-Angaben gespeichert.')
       onSaved()
     } catch (e) {

@@ -4,10 +4,13 @@
 import { useState } from 'react'
 import { api, errorText } from '../api'
 import { cutoffReadingBody, type CutoffForm } from '../hcaForm'
+import { useOpenWhenDiffers } from '../useDraft'
 
 export default function CutoffReadingForm({ meterId, onSaved }: { meterId: string; onSaved: () => void }) {
   const [form, setForm] = useState<CutoffForm>({ date: '', value: '' })
   const [error, setError] = useState('')
+  // Ein angefangener Stichtagswert zählt als offenes Formular (#346, 7a); nach dem Speichern ist das Formular leer.
+  useOpenWhenDiffers(form, { date: '', value: '' })
   async function save() {
     const r = cutoffReadingBody(meterId, form)
     if ('error' in r) {

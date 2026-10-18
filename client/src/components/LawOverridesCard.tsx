@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { api, errorText } from '../api'
 import { draftOf, earlyHint, fieldLabel, overrideBody, statusText, type OverrideDraft } from '../lawOverrideForm'
 import { useToast } from './feedback'
+import { useOpenWhenDiffers } from '../useDraft'
 import type { LawOverrideSlot } from '../types'
 
 const keyOf = (s: LawOverrideSlot) => `${s.paramId}|${s.year}`
@@ -14,6 +15,8 @@ export default function LawOverridesCard() {
   const [drafts, setDrafts] = useState<Record<string, OverrideDraft>>({})
   const [error, setError] = useState('')
   const toast = useToast()
+  // Ein ungespeicherter Wert zählt als offenes Formular (#346, 7a), verglichen mit dem geladenen Stand.
+  useOpenWhenDiffers(drafts, Object.fromEntries(slots.map((s) => [keyOf(s), draftOf(s)])))
   async function load() {
     const list = await api<LawOverrideSlot[]>('/api/law-overrides')
     setSlots(list)

@@ -4,6 +4,7 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import MonthlyInfoCard from './MonthlyInfoCard'
+import { OpenFormScope, hasOpenForm } from '../testing/openForm'
 import MonthlyInfoSheet from './MonthlyInfoSheet'
 import { UIProvider } from './feedback'
 import type { MonthlyInfoMonth, MonthlyInfoUser, MonthlyInfoView } from '../types'
@@ -98,4 +99,21 @@ test('Verbundenes Warmwasser: kein Feld hier, sondern der Verweis auf die Karte 
   wrap(<MonthlyInfoCard plantId="hp" period="2025-01" />)
   expect(await screen.findByText(/in der Karte „Warmwasser“ dieser Heizperiode ein/)).toBeTruthy()
   expect(screen.queryByLabelText('Mittlere Warmwassertemperatur (°C)')).toBeNull()
+})
+
+// #346, Schritt 7a: verglichen mit dem geladenen Stand; nach dem Speichern lädt die Karte neu.
+test('7a: Ändern meldet die Karte an, Zurückstellen und Speichern nehmen die Marke weg', async () => {
+  render(<OpenFormScope><UIProvider><MonthlyInfoCard plantId="hp" period="2025-01" /></UIProvider></OpenFormScope>)
+  expect(await screen.findByText('November 2025')).toBeTruthy()
+  expect(hasOpenForm()).toBe(false)
+  const wert = screen.getByLabelText('Vergleichswert November 2025 (kWh je m²)')
+  fireEvent.change(wert, { target: { value: '10' } })
+  expect(hasOpenForm()).toBe(true)
+  fireEvent.change(wert, { target: { value: '' } })
+  expect(hasOpenForm()).toBe(false)
+  fireEvent.change(screen.getByLabelText('Mitgeteilt am November 2025'), { target: { value: '2025-12-05' } })
+  expect(hasOpenForm()).toBe(true)
+  fireEvent.click(screen.getByText('Speichern', { selector: 'button' }))
+  await waitFor(() => expect(sent.some((x) => x.method === 'PUT')).toBe(true))
+  await waitFor(() => expect(hasOpenForm()).toBe(false))
 })

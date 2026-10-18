@@ -13,7 +13,7 @@ import { PropertyProvider, useHasOpenForm } from './property'
 import { UIProvider } from './components/feedback'
 import HeatingInfoCard from './components/HeatingInfoCard'
 import { noInfoView } from './testing/heatingView'
-import { periodKey } from '../../shared/period.ts'
+import { calendarYearPeriod, periodKey, settlementPeriod } from '../../shared/period.ts'
 import type { HeatingPeriodView, HeatingPlant } from './types'
 
 const PROPERTIES: Property[] = [{ id: 'objekt-1', name: 'Lindenweg 12', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }]
@@ -175,4 +175,31 @@ test('Karte „Angaben zur Abrechnung (§ 6a)“: eine ungespeicherte Eingabe z�
   expect(frage()).toBe('offen? true')
   fireEvent.change(feld, { target: { value: '' } })
   expect(frage()).toBe('offen? false')
+})
+
+// Nachprüfung B4: Auch ein Sprung aus einer Seite („Hier beheben →“) fragt, hier mit einem ungespeicherten
+// Druck-Häkchen auf der Abrechnung.
+test('„Hier beheben →“ mit ungespeicherter Änderung fragt; Abbrechen bleibt auf der Seite', async () => {
+  const year = new Date().getFullYear() - 1
+  const settlement = {
+    year, daysInYear: 365, period: settlementPeriod(calendarYearPeriod(year)), deadline: `${year + 1}-12-31`, statements: [], landlord: { rows: [], totalCents: 0 }, selfUsedShareCents: 0,
+    totalCostsCents: 0, warnings: ['EG: zugleich.'], closed: null,
+    notices: [{ code: 'tenancy.overlap', level: 'error', title: 'Mietverhältnisse überschneiden sich', text: 'EG: zugleich.', subject: { kind: 'tenancy', id: 't-a' } }],
+  }
+  const inner = globalThis.fetch
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    const path = url.split('?')[0] ?? ''
+    if (path === `/api/settlement/${year}`) return new Response(JSON.stringify(settlement), { status: 200, headers: { 'content-type': 'application/json' } })
+    if (path === `/api/settlement/${year}/history`) return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } })
+    return inner(url, init)
+  })
+  render(<App />)
+  fireEvent.click(within(await screen.findByRole('navigation', { name: 'Hauptnavigation' })).getByRole('button', { name: /Abrechnung/ }))
+  fireEvent.click(await screen.findByLabelText(/Belegkopien als Anlage/, {}, { timeout: 5000 }))
+  fireEvent.click((await screen.findAllByRole('button', { name: /^Hier beheben/ }, { timeout: 5000 }))[0] ?? (() => { throw new Error('kein Knopf') })())
+  const dialog = (await screen.findByText('Ungespeicherte Änderungen verwerfen?')).closest('.dialog') as HTMLElement
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Abbrechen' }))
+  await waitFor(() => expect(question()).toBeNull())
+  expect(within(sidebar()).getByRole('button', { name: /Abrechnung/ }).getAttribute('aria-current')).toBe('page')
+  expect((screen.getByLabelText(/Belegkopien als Anlage/) as HTMLInputElement).checked).toBe(true)
 })

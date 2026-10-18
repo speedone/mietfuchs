@@ -118,11 +118,18 @@ export function useConfirmDiscard(): (drafts: readonly { dirty: boolean }[]) => 
   }, [confirm])
 }
 
-// Für Karten mit eigenem Formularzustand und eigenem „Speichern“ (#346, Schritt 7a): Weicht der Zustand
-// vom Stand beim Einhängen ab, zählt die Karte als offenes Formular, und ein Wechsel von Seite, Objekt
-// oder Zeitraum fragt nach. Gedacht für Karten, die die Seite nach dem Speichern neu einhängt (ihr
-// Schlüssel enthält den gespeicherten Stand); sonst bliebe die Marke nach dem Speichern stehen.
-export function useOpenWhenChanged(value: unknown): void {
-  const [first] = useState(value)
-  useOpenForm(!sameDraft(value, first))
+// Für Karten mit eigenem Formularzustand und eigenem „Speichern“ (#346, Schritt 7a): Weicht das, was
+// die Karte zeigt (`current`), vom gespeicherten Stand ab (`saved`, aus Props oder dem geladenen Stand
+// abgeleitet, in derselben Gestalt), zählt die Karte als offenes Formular, und ein Wechsel von Seite,
+// Objekt oder Zeitraum fragt nach. Verborgene Felder gehören nicht in `current`: Was niemand sieht,
+// ist keine offene Eingabe.
+// Ergibt `markSaved`: nach einem gelungenen Speichern aufrufen. Solange die Karte danach genau den eben
+// gespeicherten Zustand zeigt, gilt er als gespeichert, auch wenn der Server ihn anders schreibt („1,10“
+// gegen „1,1“) oder die Seite den Stand nicht neu lädt.
+export function useOpenWhenDiffers<T>(current: T, saved: T): () => void {
+  const [stored, setStored] = useState<{ value: T } | null>(null)
+  useOpenForm(!sameDraft(current, saved) && !(stored !== null && sameDraft(current, stored.value)))
+  const latest = useRef(current)
+  latest.current = current
+  return useCallback(() => setStored({ value: latest.current }), [])
 }

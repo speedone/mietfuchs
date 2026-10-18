@@ -6,6 +6,7 @@ import { bookedOperatingPower, emptyOperatingPowerForm, generalItemOptions, oper
 import { operatingPowerRefusal } from '../../../shared/operatingPower.ts'
 import { useToast } from './feedback'
 import Term from './Term'
+import { useOpenWhenDiffers } from '../useDraft'
 import type { CostItem, HeatingPeriodView, HeatingPlant, PeriodRules } from '../types'
 import { billingEnergy } from '../../../shared/heatDelivery.ts'
 
@@ -15,6 +16,8 @@ export default function OperatingPowerCard({ plant, view, rules, items, onBooked
 }) {
   const [form, setForm] = useState(emptyOperatingPowerForm)
   const [busy, setBusy] = useState(false)
+  // Eine angefangene Schätzung zählt als offenes Formular (#346, 7a); nach dem Buchen ist das Formular leer.
+  useOpenWhenDiffers(form, emptyOperatingPowerForm())
   // Durchsicht von #252, G-W1: die Rückfrage des Servers bei einer zweiten Buchung.
   const [question, setQuestion] = useState<string | null>(null)
   // G2-H1: Ändert sich das Formular (etwa die Stromrechnung), gilt die Rückfrage nicht mehr.
