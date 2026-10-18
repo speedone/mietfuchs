@@ -15,12 +15,10 @@ export function PeriodSelectView({ view, onChange, label, className = 'field' }:
   )
 }
 
-// `onBeforeChange` läuft vor dem Wechsel: Im Menüblatt am Handy schließt es das Blatt, damit die
-// Rückfrage bei offenem Formular nicht hinter dem modalen Blatt steht (#346, Schritt 9).
-export function PeriodSelect({ label, className, onBeforeChange }: { label?: string; className?: string; onBeforeChange?: () => void }) {
+export function PeriodSelect({ label, className }: { label?: string; className?: string }) {
   const view = usePeriod()
   const switchPeriod = useSwitchPeriod()
-  return <PeriodSelectView view={view} label={label} className={className} onChange={(v) => { onBeforeChange?.(); void switchPeriod(v) }} />
+  return <PeriodSelectView view={view} label={label} className={className} onChange={(v) => void switchPeriod(v)} />
 }
 
 // Das Kalenderjahr für Mietkonto und Steuer (Entwurf 3.10, 3.11).

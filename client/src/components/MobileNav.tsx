@@ -45,8 +45,8 @@ export default function MobileNav({ tab, context, onNavigate, sheet }: {
   // „Lindenweg 12 · 2025“: Objekt und Zeitraum, nur angezeigt
   context: string
   onNavigate: (tab: Tab) => void
-  // Der Inhalt des Blatts; `close` schließt es (vor einem Seitenwechsel, einem Wechsel von Objekt
-  // oder Zeitraum und vor jeder Rückfrage, denn die stünde sonst hinter dem modalen Blatt).
+  // Der Inhalt des Blatts; `close` schließt es (nach einem Seitenwechsel). Eine Rückfrage braucht das
+  // nicht: Sie ist selbst ein modaler `<dialog>` und liegt im Top-Layer darüber (#346, Schritt 1).
   sheet: (close: () => void) => ReactNode
 }) {
   const sheetId = useId()

@@ -183,6 +183,8 @@ Nach GOV.UK ([Error summary](https://design-system.service.gov.uk/components/err
   - `<dialog class="confirm" role="alertdialog">`, Titel als Frage, ein Satz Folge.
   - Knöpfe „Abbrechen“ und Verb, bei Gefahr ist das Verb rot und **der Startfokus liegt auf „Abbrechen“** (H1).
   - **Kein globaler Enter-Abfänger**: Enter wirkt auf den Knopf mit Fokus. In der Probe gemessen: Enter auf „Abbrechen“ lässt das Fenster offen, in allen drei Engines.
+  - *Umgesetzt (Schritt 1):* Esc wird am `keydown` verhindert und vom Baustein behandelt (Chrome ließe ein zweites `cancel` ohne Nutzeraktion sonst nicht abbrechen), außer ein Element darin hat Esc schon genommen. Den Fokus gibt der Baustein zurück, denn er hängt den Dialog aus, statt ihn mit `close()` zu schließen. Tab lenkt der Browser.
+  - Mitteilungen über einem modalen Dialog: `popover="manual"` für die Sicht, eine Ansage im obersten Dialog für Vorleser.
 - **Mitteilung (Toast):**
   - Erfolg mit `role="status"` (höflich), Fehler mit `role="alert"` und 8 s Anzeigedauer.
   - Am Handy über der unteren Leiste.
@@ -257,7 +259,7 @@ Drei Ebenen, wie die Tests von Mietfuchs ohnehin aufgebaut sind.
 | Regel | prüft | gegen |
 |---|---|---|
 | S12 Dialoge | `<dialog`, `role="dialog"`, `showModal` nur in `Drawer`, `ConfirmDialog`, `AppShell`; `popover` nur in `Term`, `MonthField`. Seit Schritt 9 für `<dialog`, `showModal` und `role="(alert)dialog"` (heute `MobileNav.tsx`, `Drawer.tsx`, `feedback.tsx`; `popover` folgt mit Schritt 5 und 6) | eigene Overlays je Seite |
-| S13 Enter | kein `'Enter'` in einem `keydown`-Handler eines Dialogbausteins | Wiederkehr von H1 |
+| S13 Enter | kein `'Enter'` in einem `keydown`-Handler eines Dialogbausteins (seit Schritt 1: die Bausteine aus S12 und `dialogKeys.ts`, ohne Kommentare) | Wiederkehr von H1 |
 | S14 Monat/Datum | kein `type="month"`, `type="number"` für Geld, kein zweites Monatsfeld | #287 |
 | S15 Fehler | kein `className="error"`/`role="alert"` außerhalb `Field`, `ErrorSummary`, `Toast`, `DraftActions` | M5, H3 |
 | S16 Verben | Primärknopf in `Drawer footer` nur `Anlegen`/`Speichern`; „Abbrechen“ nie primär | N3 |
@@ -296,7 +298,7 @@ Jeder Schritt ist ein PR mit `Refs #346` (und, wo er einen Befund der Checkliste
 | # | Schritt | Befunde | Aufwand | Wächter neu |
 |---|---|---|---|---|
 | 0 | **Tailwind einführen**: `tw.css` mit `index.css` als Schicht `legacy`, Tokens in `@theme`, `dark`- und `print`-Variante; Pixelvergleich alt gegen neu in drei Engines | Grundlage | 1 Tag | S17, S20 |
-| 1 | **Rückfrage auf `<dialog>`**: Enter-Abfänger raus, Startfokus „Abbrechen“ bei Gefahr, `alertdialog`. *Teile schon mit PR #343 erledigt: Enter wirkt auf den Knopf mit Fokus, Startfokus bei Gefahr, Fokusfalle.* Offen bleibt die Umstellung auf `<dialog>` | H1 | ½ Tag | S13 |
+| 1 | **Rückfrage auf `<dialog>`**: Enter-Abfänger raus, Startfokus „Abbrechen“ bei Gefahr, `alertdialog`. *Umgesetzt: `<dialog role="alertdialog">` mit `showModal()`, `aria-labelledby`/`aria-describedby`, kein Abfänger für Enter, Esc und Klick daneben brechen ab, Fokus zurück an den Auslöser. Die Rückfrage liegt im Top-Layer über Menüblatt und Seitenfenster; das Blatt schließt vor ihr nicht mehr.* | H1 | ½ Tag | S13 |
 | 2 | **`Drawer` auf `<dialog>.showModal()`**, Rückfrage beim Schließen mit Änderungen, Fokus zurück, `target`-Prüfung. Alle 9 Seitenfenster profitieren auf einmal | M4, MOB4 | 1 Tag | S12 |
 | 3 | **`Field` + `ErrorSummary`** im Fensterfuß und in Karten, Feldfehler mit Ort; zuerst Zähler/Ablesung, Vorauszahlung, Mietkonto, HeatingSelfSetup, Heizkosten-Karten. *Teile schon mit PR #343 erledigt: `FormError` an der Ablesung auf der Zähler-Seite.* Offen bleiben `Field`, `ErrorSummary` und die übrigen Stellen | H3, H4, M5, M12 | 2–3 Tage | S15 |
 | 4 | **Tokens** in `index.css` (Abstand, Schrift, Radius, Ziel, Fokus) und Gestaltung „Mittelweg“ (Abschnitt 1), Feldbeschriftung in `--text` | Grundlage | 1 Tag | S17 (Farben) |
