@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
-// Der Mieterwechsel-Assistent auf der Seite (#150): Er speichert in genau einer Anfrage, eine
-// Ablehnung des Servers bleibt im Assistenten stehen, und scheitert nach dem Speichern nur das
-// Neuladen der Ansicht, sagt er das, statt den Wechsel noch einmal anzubieten.
+// Der Mieterwechsel auf der Seite (#150), seit #346 Schritt 7 im Seitenfenster: Er speichert in genau einer Anfrage
+// mit demselben Rumpf wie der Assistent davor, eine Ablehnung des Servers bleibt im Fenster stehen, und scheitert nach
+// dem Speichern nur das Neuladen der Ansicht, sagt die Seite das, statt den Wechsel noch einmal anzubieten.
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { Meter, Tenancy, Unit } from '../types'
 import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
@@ -54,6 +54,16 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+// Der Rumpf des Wechsels, wie ihn der Assistent vor #346 Schritt 7 schickte; das Seitenfenster schickt denselben.
+const BODY_SCHMIDT = {
+  end: '2025-06-30',
+  readings: [{ meterId: 'm1', value: 1234 }],
+  newTenancy: {
+    tenantName: 'Schmidt', persons: 2, personHistory: [{ from: '2025-07-01', persons: 2 }], start: '2025-07-01',
+    baseRents: [], prepayments: [{ from: '2025-07', monthlyCents: 15000 }], prepaymentOverrides: {},
+  },
+}
+
 const runWizard = async (reload: () => Promise<void>) => {
   render(
     <PeriodProvider>
@@ -62,14 +72,18 @@ const runWizard = async (reload: () => Promise<void>) => {
       </PropertyProvider>
     </PeriodProvider>,
   )
+  const box = await openChange()
+  fireEvent.change(within(box).getByLabelText(/Auszugsdatum/i), { target: { value: '2025-06-30' } })
+  fireEvent.change(await within(box).findByLabelText(/Wasser EG/i, {}, SLOW), { target: { value: '1.234' } })
+  fireEvent.change(within(box).getByLabelText(/^Mieter$/i), { target: { value: 'Schmidt' } })
+  fireEvent.change(within(box).getByLabelText(/Vorauszahlung/i), { target: { value: '150' } })
+  fireEvent.click(within(box).getByRole('button', { name: 'Speichern' }))
+}
+
+/** Öffnet das Seitenfenster des Mieterwechsels. */
+async function openChange(): Promise<HTMLElement> {
   fireEvent.click(await screen.findByRole('button', { name: /^Mieterwechsel$/i }, SLOW))
-  fireEvent.change(screen.getByLabelText(/Auszugsdatum/i), { target: { value: '2025-06-30' } })
-  fireEvent.click(screen.getByRole('button', { name: /^Weiter$/i }))
-  fireEvent.change(await screen.findByLabelText(/Wasser EG/i, {}, SLOW), { target: { value: '1.234' } })
-  fireEvent.click(screen.getByRole('button', { name: /^Weiter$/i }))
-  fireEvent.change(await screen.findByLabelText(/^Mieter$/i, {}, SLOW), { target: { value: 'Schmidt' } })
-  fireEvent.change(screen.getByLabelText(/Vorauszahlung/i), { target: { value: '150' } })
-  fireEvent.click(screen.getByRole('button', { name: /Mieterwechsel durchführen/i }))
+  return screen.findByRole('dialog', { name: /^Mieterwechsel: Müller/ }, SLOW)
 }
 
 test('Mieterwechsel: eine einzige Anfrage, und die Ablehnung bleibt im Assistenten stehen', async () => {
@@ -77,10 +91,11 @@ test('Mieterwechsel: eine einzige Anfrage, und die Ablehnung bleibt im Assistent
   await waitFor(() => expect(sent).toHaveLength(1), SLOW)
   expect(sent[0]?.method).toBe('POST')
   expect(sent[0]?.url).toBe('/api/tenancies/t1/change?property=objekt-1')
-  expect(sent[0]?.body).toMatchObject({ end: '2025-06-30', readings: [{ meterId: 'm1', value: 1234 }], newTenancy: { tenantName: 'Schmidt', start: '2025-07-01' } })
-  await waitFor(() => expect(screen.getByText(MSG)).toBeTruthy(), SLOW)
+  expect(sent[0]?.body).toEqual(BODY_SCHMIDT)
+  const box = screen.getByRole('dialog', { name: /^Mieterwechsel: Müller/ })
+  await waitFor(() => expect(within(box).getByText(MSG)).toBeTruthy(), SLOW)
   // busy ist zurückgesetzt: Der Knopf lässt sich nach dem Beheben wieder drücken.
-  const knopf = screen.getByRole('button', { name: /Mieterwechsel durchführen/i }) as HTMLButtonElement
+  const knopf = within(box).getByRole('button', { name: 'Speichern' }) as HTMLButtonElement
   expect(knopf.disabled).toBe(false)
   expect(sent).toHaveLength(1)
 })
@@ -89,7 +104,8 @@ test('Mieterwechsel: gespeichert, aber die Ansicht lädt nicht neu — Hinweis s
   changeStatus = 200
   await runWizard(async () => { throw new Error('Netzwerk weg') })
   await waitFor(() => expect(screen.getByText(/Der Mieterwechsel ist gespeichert; die Ansicht ließ sich nicht neu laden/)).toBeTruthy(), SLOW)
-  expect(screen.queryByRole('button', { name: /Mieterwechsel durchführen/i })).toBeNull()
+  // Das Fenster ist zu; ein zweites Speichern gibt es nicht.
+  expect(screen.queryByRole('dialog')).toBeNull()
   expect(sent).toHaveLength(1)
 })
 
@@ -106,24 +122,21 @@ test('Mieterwechsel unter getrennter Heizkostenabrechnung (Durchsicht von #231):
       </PropertyProvider>
     </PeriodProvider>,
   )
-  fireEvent.click(await screen.findByRole('button', { name: /^Mieterwechsel$/i }, SLOW))
-  fireEvent.change(screen.getByLabelText(/Auszugsdatum/i), { target: { value: '2025-06-30' } })
-  fireEvent.click(screen.getByRole('button', { name: /^Weiter$/i }))
-  fireEvent.change(await screen.findByLabelText(/Wasser EG/i, {}, SLOW), { target: { value: '1.234' } })
-  fireEvent.click(screen.getByRole('button', { name: /^Weiter$/i }))
-  fireEvent.change(await screen.findByLabelText(/^Mieter$/i, {}, SLOW), { target: { value: 'Schmidt' } })
-  fireEvent.change(screen.getByLabelText(/Übrige Vorauszahlung/i), { target: { value: '177' } })
-  fireEvent.change(screen.getByLabelText(/^Heizvorauszahlung/i), { target: { value: '123' } })
-  fireEvent.click(screen.getByRole('button', { name: /Mieterwechsel durchführen/i }))
+  const box = await openChange()
+  fireEvent.change(within(box).getByLabelText(/Auszugsdatum/i), { target: { value: '2025-06-30' } })
+  fireEvent.change(await within(box).findByLabelText(/Wasser EG/i, {}, SLOW), { target: { value: '1.234' } })
+  fireEvent.change(within(box).getByLabelText(/^Mieter$/i), { target: { value: 'Schmidt' } })
+  fireEvent.change(within(box).getByLabelText(/Übrige Vorauszahlung/i), { target: { value: '177' } })
+  fireEvent.change(within(box).getByLabelText(/^Heizvorauszahlung/i), { target: { value: '123' } })
+  fireEvent.click(within(box).getByRole('button', { name: 'Speichern' }))
   await waitFor(() => expect(sent).toHaveLength(1), SLOW)
-  expect(sent[0]?.body).toMatchObject({ newTenancy: { prepayments: [{ from: '2025-07', monthlyCents: 17700 }], heatingPrepayments: [{ from: '2025-07', monthlyCents: 12300 }] } })
+  // #346 Schritt 7: derselbe Rumpf wie vor dem Seitenfenster, Feld für Feld.
+  expect(sent[0]?.body).toEqual({ ...BODY_SCHMIDT, newTenancy: { ...BODY_SCHMIDT.newTenancy, prepayments: [{ from: '2025-07', monthlyCents: 17700 }], heatingPrepayments: [{ from: '2025-07', monthlyCents: 12300 }] } })
 })
 
-// Sichtprüfung E18: Der Assistent öffnet am Seitenende; ohne Sprung dorthin sah man nach dem Klick
-// nichts passieren.
-test('E18: der Assistent holt sich ins Bild', async () => {
-  const scroll = vi.fn()
-  Element.prototype.scrollIntoView = scroll
+// Sichtprüfung E18: Der Assistent öffnete am Seitenende; ohne Sprung dorthin sah man nach dem Klick nichts passieren.
+// Seit #346 Schritt 7 (N16) ist er ein Seitenfenster, das mit dem Fokus im Auszugsdatum öffnet.
+test('E18, N16: der Mieterwechsel öffnet als Seitenfenster mit dem Fokus im Auszugsdatum', async () => {
   render(
     <PeriodProvider>
       <PropertyProvider>
@@ -131,10 +144,9 @@ test('E18: der Assistent holt sich ins Bild', async () => {
       </PropertyProvider>
     </PeriodProvider>,
   )
-  fireEvent.click(await screen.findByRole('button', { name: /^Mieterwechsel$/i }, SLOW))
-  await waitFor(() => expect(scroll).toHaveBeenCalled())
-  expect(document.activeElement).toBe(screen.getByLabelText(/Auszugsdatum/i))
-  Reflect.deleteProperty(Element.prototype, 'scrollIntoView')
+  const box = await openChange()
+  await waitFor(() => expect(document.activeElement).toBe(within(box).getByLabelText(/Auszugsdatum/i)))
+  expect(document.querySelector('.wizard')).toBeNull()
 })
 
 test('Heizung PR 10: bei eigener Heizkostenabrechnung Ablesedatum je Wärmezähler und, ohne Stand, der Grund; angezeigt wie gespeichert', async () => {
@@ -154,24 +166,42 @@ test('Heizung PR 10: bei eigener Heizkostenabrechnung Ablesedatum je Wärmezähl
       </PropertyProvider>
     </PeriodProvider>,
   )
-  fireEvent.click(await screen.findByRole('button', { name: /^Mieterwechsel$/i }, SLOW))
-  fireEvent.change(screen.getByLabelText(/Auszugsdatum/i), { target: { value: '2025-06-30' } })
-  fireEvent.click(screen.getByRole('button', { name: /^Weiter$/i }))
-  await screen.findByLabelText(/Ablesedatum Wärme EG/i, {}, SLOW)
-  expect(screen.getByText(/VIII ZR 19\/07/)).toBeTruthy()
-  const grund = screen.getByLabelText(/Warum gibt es keine Zwischenablesung/i) as HTMLSelectElement
+  const box = await openChange()
+  fireEvent.change(within(box).getByLabelText(/Auszugsdatum/i), { target: { value: '2025-06-30' } })
+  await within(box).findByLabelText(/Ablesedatum Wärme EG/i, {}, SLOW)
+  expect(within(box).getByText(/VIII ZR 19\/07/)).toBeTruthy()
+  const grund = within(box).getByLabelText(/Warum gibt es keine Zwischenablesung/i) as HTMLSelectElement
   expect(grund.value).toBe('')
   fireEvent.change(grund, { target: { value: 'impossible' } })
-  expect((screen.getByLabelText(/Warum gibt es keine Zwischenablesung/i) as HTMLSelectElement).value).toBe('impossible')
-  // Durchsicht von #239, I3: die Folge der Wahl steht da, und ohne Grund geht es nicht weiter.
-  expect(screen.getByText(/Nicht möglich: Die Kosten der Wohnung werden nach Gradtagen und Tagen/)).toBeTruthy()
-  fireEvent.click(screen.getByRole('button', { name: /^Weiter$/i }))
-  expect(screen.getByText(/Bitte nennen Sie den Grund für die Teilung nach § 9b Abs\. 3/)).toBeTruthy()
-  expect(screen.queryByLabelText(/Leerstand/i)).toBeNull()
-  fireEvent.change(screen.getByLabelText(/Grund \(steht in der Abrechnung\)/i), { target: { value: 'nicht zugänglich' } })
-  fireEvent.click(screen.getByRole('button', { name: /^Weiter$/i }))
-  fireEvent.click(await screen.findByLabelText(/Leerstand/i, {}, SLOW))
-  fireEvent.click(screen.getByRole('button', { name: /Mieterwechsel durchführen/i }))
+  expect((within(box).getByLabelText(/Warum gibt es keine Zwischenablesung/i) as HTMLSelectElement).value).toBe('impossible')
+  // Durchsicht von #239, I3: die Folge der Wahl steht da, und ohne Grund wird nicht gespeichert.
+  expect(within(box).getByText(/Nicht möglich: Die Kosten der Wohnung werden nach Gradtagen und Tagen/)).toBeTruthy()
+  fireEvent.click(within(box).getByLabelText(/Leerstand/i))
+  fireEvent.click(within(box).getByRole('button', { name: 'Speichern' }))
+  expect(await within(box).findByText(/Bitte nennen Sie den Grund für die Teilung nach § 9b Abs\. 3/, {}, SLOW)).toBeTruthy()
+  expect(sent).toEqual([])
+  fireEvent.change(within(box).getByLabelText(/Grund \(steht in der Abrechnung\)/i), { target: { value: 'nicht zugänglich' } })
+  fireEvent.click(within(box).getByRole('button', { name: 'Speichern' }))
   await waitFor(() => expect(sent).toHaveLength(1), SLOW)
-  expect(sent[0]?.body).toMatchObject({ end: '2025-06-30', interimGap: { status: 'impossible', reason: 'nicht zugänglich' }, newTenancy: null })
+  expect(sent[0]?.body).toEqual({ end: '2025-06-30', readings: [], interimGap: { status: 'impossible', reason: 'nicht zugänglich' }, newTenancy: null })
+})
+
+// Browserprobe zu #346 Schritt 7: Erst „Speichern“ ohne Angaben, dann das Auszugsdatum: Der Einzug ist damit vorbelegt,
+// und die Meldung „Einzug fehlt“ von vorher steht nicht mehr am Feld.
+test('Mieterwechsel: das Auszugsdatum belegt den Einzug vor und nimmt dessen Meldung weg', async () => {
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <UIProvider><Stammdaten units={UNITS} tenancies={TENANCIES} settings={null} reload={async () => {}} /></UIProvider>
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  const box = await openChange()
+  fireEvent.click(within(box).getByRole('button', { name: 'Speichern' }))
+  const einzug = within(box).getByLabelText(/^Einzug/) as HTMLInputElement
+  await waitFor(() => expect(einzug.getAttribute('aria-invalid')).toBe('true'), SLOW)
+  fireEvent.change(within(box).getByLabelText(/Auszugsdatum/i), { target: { value: '2025-06-30' } })
+  expect(einzug.value).toBe('2025-07-01')
+  expect(einzug.getAttribute('aria-invalid')).toBeNull()
+  expect(sent).toEqual([])
 })

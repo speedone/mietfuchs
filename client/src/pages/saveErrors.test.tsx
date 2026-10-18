@@ -94,11 +94,13 @@ test('Zähler: die Ablehnung des Servers steht im Dialog', async () => {
 test('Zähler: die Ablehnung einer Ablesung ist zu sehen', async () => {
   shell(<Zaehler units={UNITS} />)
   fireEvent.click(await screen.findByRole('button', { name: /Ablesungen \(0\)/i }))
+  fireEvent.click(screen.getByRole('button', { name: '+ Ablesung anlegen' }))
   fireEvent.change(screen.getByLabelText(/^Datum/i), { target: { value: '2025-12-31' } })
   fireEvent.change(screen.getByLabelText(/^Zählerstand/i), { target: { value: '123' } })
-  fireEvent.click(screen.getByRole('button', { name: /Ablesung speichern/i }))
+  fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/i }))
   await waitFor(() => expect(sent).toHaveLength(1))
-  await waitFor(() => expect(screen.getByText(MSG)).toBeTruthy())
+  // Die Ablehnung steht im Seitenfenster, das offen bleibt (#146).
+  await waitFor(() => expect(within(screen.getByRole('dialog', { name: /Neue Ablesung/ })).getByText(MSG)).toBeTruthy())
 })
 
 test('Mietkonto: die Ablehnung einer Zahlung steht im Dialog', async () => {

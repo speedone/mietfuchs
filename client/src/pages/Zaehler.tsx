@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { ErrorSummary, useFormError, type FormErrors } from '../components/ErrorSummary'
-import Field, { RequiredLegend } from '../components/Field'
+import { useFormError } from '../components/ErrorSummary'
+import Field from '../components/Field'
 import type { HeatingPlant, HeatingRole, Meter, MeterType, Notice, Reading, Unit } from '../types'
 import { METER_TYPE_LABELS } from '../types'
 import { buildReadingBody, EMPTY_READING, type ReadingField, type ReadingForm } from '../readingForm'
@@ -8,7 +8,7 @@ import { asksCalibration, asksRemote, CALIBRATION_MARK_HELP, calibrationSuggesti
 import { plantOptions } from '../heatingForm'
 import { api, errorText, fmtDate } from '../api'
 import { usePeriod } from '../period'
-import { useOpenForm, useProperty, withProperty } from '../property'
+import { useProperty, withProperty } from '../property'
 import Drawer from '../components/Drawer'
 import { CalcNotice } from '../components/Notice'
 import PageHeader from '../components/PageHeader'
@@ -38,6 +38,8 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
   // Heizung PR 21: die Jahreszahl auf dem Zähler, nur für den Vorschlag; gespeichert wird „geeicht bis“.
   const [markedYear, setMarkedYear] = useState('')
   const [openMeterId, setOpenMeterId] = useState<string | null>(null)
+  // Die Ablesung im Seitenfenster (#346 Schritt 7, N16a): der Zähler, für den das Fenster offen ist.
+  const [readingFor, setReadingFor] = useState<string | null>(null)
   const [readingForm, setReadingForm] = useState<ReadingForm>({ ...EMPTY_READING })
   const [error, setError] = useState('')
   const readingError = useFormError<ReadingField>()
@@ -47,8 +49,8 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
   const [focusedId, setFocusedId] = useState<string | null>(null)
   const scrollToFocus = useScrollToFocus()
   useFocusTarget(focus, 'meter', meters, (m) => m.id, (m) => { setOpenMeterId(m.id); setFocusedId(m.id); scrollToFocus() }, onFocusDone)
-  // Eine angefangene Ablesung hängt am Zähler dieses Objekts (#145).
-  useOpenForm(openMeterId !== null && (readingForm.date !== '' || readingForm.value.trim() !== '' || readingForm.oldEndValue.trim() !== '' || readingForm.note.trim() !== ''))
+  // Eine angefangene Ablesung meldet das Seitenfenster selbst bei useOpenForm an, sobald etwas eingetragen ist
+  // (#145, #346 Schritt 7a); ein Wechsel von Seite, Objekt oder Zeitraum fragt dann nach.
 
   const load = useCallback(async () => {
     const [m, r, c, h] = await Promise.all([
@@ -113,7 +115,13 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
     toast(`Zähler „${m.name}“ gelöscht.`)
   }
 
-  // Die Meldung zur Ablesung steht beim Knopf „Ablesung speichern“ (UI-Durchsicht H3), nicht oben.
+  // Die Meldung zur Ablesung steht im Fuß des Seitenfensters über „Anlegen“ (UI-Durchsicht H3, #346 Schritt 7).
+  function openReading(meterId: string) {
+    readingError.clear()
+    setReadingForm({ ...EMPTY_READING })
+    setReadingFor(meterId)
+  }
+
   async function saveReading(meterId: string) {
     const built = buildReadingBody(readingForm, meterId)
     if ('problems' in built) {
@@ -127,9 +135,10 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
       readingError.show(errorText(e))
       return
     }
+    setReadingFor(null)
     setReadingForm({ ...EMPTY_READING })
     await load()
-    toast('Ablesung gespeichert.')
+    toast('Ablesung angelegt.')
   }
 
   async function deleteReading(r: Reading) {
@@ -150,6 +159,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
     toast('Ablesung gelöscht.')
   }
 
+  const readingMeter = readingFor === null ? null : meters.find((m) => m.id === readingFor) ?? null
   const unitName = (id: string | null) => (id ? units.find((u) => u.id === id)?.name ?? '?' : 'Haus (Hauptzähler)')
 
   return (
@@ -195,13 +205,10 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
                     readings={mReadings}
                     unitName={unitName(m.unitId)}
                     consumptionLabel={label}
-                    onToggle={() => { readingError.clear(); setOpenMeterId(openMeterId === m.id ? null : m.id); setReadingForm({ ...EMPTY_READING }) }}
+                    onToggle={() => setOpenMeterId(openMeterId === m.id ? null : m.id)}
                     onEdit={() => { meterErrors.clear(); setMarkedYear(''); setMeterForm(meterToForm(m)) }}
                     onDelete={() => deleteMeter(m)}
-                    readingForm={readingForm}
-                    setReadingForm={setReadingForm}
-                    onSaveReading={() => saveReading(m.id)}
-                    readingErrors={readingError}
+                    onNewReading={() => openReading(m.id)}
                     onDeleteReading={deleteReading}
                     onSaved={() => { void load(); toast('Stichtagswert gespeichert.') }}
                   />
@@ -217,6 +224,46 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
           </button>
         </div>
       </div>
+
+      {readingMeter && (
+        <Drawer
+          // Ein anderer Zähler im offenen Fenster ist ein neues Formular (Durchsicht S3)
+          key={readingMeter.id}
+          open
+          title="Neue Ablesung"
+          subtitle={`${readingMeter.name}${readingMeter.meterNumber ? `, Nr. ${readingMeter.meterNumber}` : ''}`}
+          onClose={() => { readingError.clear(); setReadingFor(null) }}
+          onSubmit={() => void saveReading(readingMeter.id)}
+          value={readingForm}
+          errors={readingError}
+          actions={<button className="btn" onClick={() => void saveReading(readingMeter.id)}>Anlegen</button>}
+        >
+          <div className="field-grid">
+            <Field label="Datum" required {...readingError.field('date')}>
+              <input type="date" value={readingForm.date} onChange={(e) => setReadingForm({ ...readingForm, date: e.target.value })} />
+            </Field>
+            <Field label={`${readingForm.replacement ? 'Startstand neuer Zähler' : 'Zählerstand'}${readingMeter.unit ? ` (${readingMeter.unit})` : ''}`} required {...readingError.field('value')}>
+              <input value={readingForm.value} inputMode="decimal" onChange={(e) => setReadingForm({ ...readingForm, value: e.target.value })} className="input-num" />
+            </Field>
+          </div>
+          <label className="checkline">
+            <input type="checkbox" checked={readingForm.replacement} onChange={(e) => setReadingForm({ ...readingForm, replacement: e.target.checked })} />
+            <span>Zählerwechsel (der alte Zähler wurde an diesem Tag ausgebaut)</span>
+          </label>
+          {readingForm.replacement && (
+            <Field label={`Endstand alter Zähler${readingMeter.unit ? ` (${readingMeter.unit})` : ''}`} hint="Leer lassen, wenn er fehlt." {...readingError.field('oldEndValue')}>
+              <input value={readingForm.oldEndValue} inputMode="decimal" onChange={(e) => setReadingForm({ ...readingForm, oldEndValue: e.target.value })} className="input-num" />
+            </Field>
+          )}
+          <Field label="Hinweis">
+            <input value={readingForm.note} onChange={(e) => setReadingForm({ ...readingForm, note: e.target.value })} placeholder="z. B. Zwischenablesung Auszug Müller" />
+          </Field>
+          <p className="muted">
+            Tipp: Beim Mieterwechsel am Auszugstag eine Zwischenablesung erfassen — dann wird der
+            Verbrauch exakt statt tagesanteilig geschätzt aufgeteilt.
+          </p>
+        </Drawer>
+      )}
 
       {meterForm && (
         <Drawer
@@ -357,14 +404,11 @@ function FragmentRow(props: {
   onToggle: () => void
   onEdit: () => void
   onDelete: () => void
-  readingForm: ReadingForm
-  setReadingForm: (f: ReadingForm) => void
-  onSaveReading: () => void
-  readingErrors: FormErrors<ReadingField>
+  onNewReading: () => void
   onDeleteReading: (r: Reading) => void
   onSaved: () => void
 }) {
-  const { meter: m, focused, cons, open, readings, unitName, consumptionLabel, onToggle, onEdit, onDelete, readingForm, setReadingForm, onSaveReading, readingErrors, onDeleteReading, onSaved } = props
+  const { meter: m, focused, cons, open, readings, unitName, consumptionLabel, onToggle, onEdit, onDelete, onNewReading, onDeleteReading, onSaved } = props
   return (
     <>
       <tr className={focused ? 'focus-target' : undefined}>
@@ -425,35 +469,10 @@ function FragmentRow(props: {
                 </tbody>
               </Table>
             )}
-            <RequiredLegend />
+            {readings.length === 0 && <p className="muted">Noch keine Ablesung für diesen Zähler.</p>}
             <div className="row">
-              <Field label="Datum" required {...readingErrors.field('date')}>
-                <input type="date" value={readingForm.date} onChange={(e) => setReadingForm({ ...readingForm, date: e.target.value })} />
-              </Field>
-              <Field label={readingForm.replacement ? 'Startstand neuer Zähler' : 'Zählerstand'} required {...readingErrors.field('value')}>
-                <input value={readingForm.value} onChange={(e) => setReadingForm({ ...readingForm, value: e.target.value })} className="input-num" />
-              </Field>
-              <label className="field checkline">
-                <span>
-                  <input type="checkbox" checked={readingForm.replacement} onChange={(e) => setReadingForm({ ...readingForm, replacement: e.target.checked })} />
-                  Zählerwechsel
-                </span>
-              </label>
-              {readingForm.replacement && (
-                <Field label="Endstand alter Zähler" hint="Leer lassen, wenn er fehlt." {...readingErrors.field('oldEndValue')}>
-                  <input value={readingForm.oldEndValue} onChange={(e) => setReadingForm({ ...readingForm, oldEndValue: e.target.value })} className="input-num" />
-                </Field>
-              )}
-              <Field label="Hinweis" className="grow">
-                <input value={readingForm.note} onChange={(e) => setReadingForm({ ...readingForm, note: e.target.value })} placeholder="z. B. Zwischenablesung Auszug Müller" />
-              </Field>
-              <button className="btn" onClick={onSaveReading}>Ablesung speichern</button>
+              <button className="btn secondary" onClick={onNewReading}>+ Ablesung anlegen</button>
             </div>
-            <ErrorSummary errors={readingErrors} />
-            <p className="muted">
-              Tipp: Beim Mieterwechsel am Auszugstag eine Zwischenablesung erfassen — dann wird der
-              Verbrauch exakt statt tagesanteilig geschätzt aufgeteilt.
-            </p>
             {m.type === 'hkv' && <CutoffReadingForm meterId={m.id} onSaved={onSaved} />}
           </td>
         </tr>

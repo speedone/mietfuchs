@@ -3376,6 +3376,20 @@ Tippfläche von `--target` über `::after`, und printCss.test.ts verlangt den du
   einem „Speichern“ derselben Zeile ab. Wächter S16 in uiRules.test.ts; die Gefahrknöpfe ohne Rückfrage stehen
   dort mit Grund. Wer einen Knopf umbenennt, zieht die Anleitungen (shared/guides.ts, geprüft von
   guides.test.ts) und die Meldungen des Servers (ui-labels.test.ts) mit.
+- **Etwas anlegen oder bearbeiten heißt Seitenfenster** (#346 Schritt 7, #341 M18, N16, N16a). Auch Ablesung
+  (Zähler-Seite, „+ Ablesung anlegen“ im aufgeklappten Zähler), Lieferung (FuelCard, „+ Lieferung anlegen“ und „Ändern“),
+  Mieterwechsel (`TenantChangeDrawer` in Stammdaten.tsx) und Zeitraumwechsel (PeriodCard, „Abrechnungszeitraum ändern“
+  und „Wechsel ab … entfernen …“) sind `<Drawer>` mit `Field`, Sammelmeldung im Fuß und `required`. **Die Anfragen und
+  Rümpfe sind dieselben wie vorher**, festgehalten mit `toEqual` in Zaehler.test.tsx, FuelCard.test.tsx,
+  tenantChange.test.tsx und PeriodCard.flow.test.tsx (vor dem Umbau gegen die alte Oberfläche gelaufen). Der
+  Mieterwechsel ist ein Formular statt dreier Schritte: `tenantChangeProblems` (tenantChange.ts) meldet alles auf einmal
+  je Feld, danach baut `buildTenantChange` unverändert den Rumpf für `POST /api/tenancies/:id/change`; der Einzug folgt
+  dem Auszug, bis er selbst geändert wird. Scheitert nach dem Speichern nur das Neuladen, ist das Fenster zu und die
+  Karte „Mietverhältnisse“ sagt es. Beim Zeitraumwechsel bleibt die Vorschau mit `token` unverändert; „Speichern“ ist bis
+  zur Vorschau gesperrt (mit Satz), bei abgelaufener Frist bis zur Bestätigung. Die Lieferung prüft zuerst die
+  Pflichtangaben je Feld (`fuelRequiredProblems` in fuelForm.ts), dann wie bisher `fuelBody`/`stockFuelBody`; eine mit der
+  KI gelesene Rechnung meldet sich schon beim Öffnen bei `useOpenForm` an, ein von Hand geöffnetes Fenster erst mit der
+  ersten Eingabe.
 - **Ein Monat ist ein Monatsfeld** (`MonthField`, [client/src/components/MonthField.tsx](client/src/components/MonthField.tsx),
   #287, #346 Schritt 5): ein Textfeld in `Field`, das „3.2025“, „03/25“, „2025-03“, „März 2025“ und „Mrz 27“ liest
   (`parseMonthText` in [client/src/monthText.ts](client/src/monthText.ts), ohne DOM: ein Tag nur als Erster,

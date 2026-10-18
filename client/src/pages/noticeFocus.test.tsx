@@ -111,7 +111,7 @@ test('Stammdaten: die betroffene Wohnung öffnet sich zum Bearbeiten', async () 
 test('Zähler: die Ablesungen des betroffenen Zählers klappen auf', async () => {
   const done = vi.fn()
   wrap(<Zaehler units={UNITS} focus={{ kind: 'meter', id: 'm2' }} onFocusDone={done} />)
-  await waitFor(() => expect(screen.getByRole('button', { name: /Ablesung speichern/ })).toBeTruthy(), SLOW)
+  await waitFor(() => expect(screen.getByRole('button', { name: '+ Ablesung anlegen' })).toBeTruthy(), SLOW)
   const row = document.querySelector('.focus-target')
   expect(row?.textContent).toContain('Wasser OG')
   expect(done).toHaveBeenCalled()
