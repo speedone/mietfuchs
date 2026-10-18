@@ -2,7 +2,7 @@
 // Vorschlag und Kandidaten, die Vorschau des Servers und das Buchen genau dieser Vorschau.
 // Schnellerfassung und KI auf der Kostenseite benutzen sie; der Posteingang führt mit „Weiter
 // prüfen“ in die Schnellerfassung. Die Entscheidungslogik steht in client/src/assessment.ts.
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import type { AssessmentView, BookingPreview, Unit } from '../types'
 import { errorText, fmtEuro } from '../api'
 import {
@@ -12,6 +12,8 @@ import { aiPositionDefaults, type KeyContext } from '../costForm'
 import AiKeyCell from './AiKeyCell'
 import Table from './Table'
 import { useConfirm } from './feedback'
+import DraftActions from './DraftActions'
+import { useDraft } from '../useDraft'
 
 type Props = {
   assessment: AssessmentView
@@ -20,12 +22,15 @@ type Props = {
   keyContext?: KeyContext
   onChange: (next: AssessmentView) => void
   onOpenItem?: (costItemId: string) => void
+  // Ob das Jahr der Buchung einen ungespeicherten Entwurf hat (Durchsicht zu #309, MUSS 1): „Alle grünen
+  // übernehmen“ der Schnellerfassung bucht eine solche Auswertung nicht.
+  onYearDraft?: (assessmentId: string, dirty: boolean) => void
 }
 
 const ACTIONS: readonly string[] = ['', 'create', 'dismiss', 'release']
 const isAction = (v: string): v is RowAction => ACTIONS.includes(v) || v.startsWith('link:')
 
-export default function AssessmentReview({ assessment: a, units, keyContext, onChange, onOpenItem }: Props) {
+export default function AssessmentReview({ assessment: a, units, keyContext, onChange, onOpenItem, onYearDraft }: Props) {
   const confirm = useConfirm()
   const [rows, setRows] = useState<Record<number, RowDraft>>(() => initialRows(a))
   const [preview, setPreview] = useState<BookingPreview | null>(null)
@@ -125,30 +130,33 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
     }
   }
 
-  async function changeYear(year: number) {
-    if (busy) return
-    setBusy(true)
+  // Das Jahr der Buchung ist ein Entwurf am Feld (#309): Erst „Speichern“ schickt es. Solange er offen
+  // ist, gibt es weder Vorschau noch Buchung, denn beide gälten noch für das bisherige Jahr.
+  // Die Liste der Jahre hängt am gespeicherten Jahr; zieht es sich von außen nach, verfällt ein Entwurf
+  // außerhalb der neuen Liste (MUSS 2).
+  const years = [a.year - 2, a.year - 1, a.year, a.year + 1]
+  const year = useDraft(a.year, { scope: a.id, isValid: (y) => years.includes(y) })
+  const reportYear = useRef(onYearDraft)
+  reportYear.current = onYearDraft
+  useEffect(() => {
+    reportYear.current?.(a.id, year.dirty)
+    return () => reportYear.current?.(a.id, false)
+  }, [a.id, year.dirty])
+  async function saveYear(next: number) {
     setError('')
-    try {
-      setPreview(null)
-      onChange(await changeAssessmentYear(a.id, year))
-    } catch (e) {
-      setError(errorText(e))
-    } finally {
-      setBusy(false)
-    }
+    onChange(await changeAssessmentYear(a.id, next))
   }
 
-  const years = [a.year - 2, a.year - 1, a.year, a.year + 1]
   return (
     <div className="stack assessment-review">
       <div className="row center">
         <label className="field">
           Jahr der Buchung
-          <select aria-label="Jahr der Buchung" value={a.year} disabled={busy} onChange={(e) => void changeYear(Number(e.target.value))}>
+          <select aria-label="Jahr der Buchung" value={year.value} disabled={busy || year.saving} onChange={(e) => { year.set(Number(e.target.value)); setPreview(null) }}>
             {years.map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
         </label>
+        <DraftActions draft={year} onSave={saveYear} what="Jahr der Buchung" />
       </div>
       {a.propertyId === null && (
         <div className="warn">Zu welchem Objekt gehört dieser Beleg? Wählen Sie es bitte im Posteingang; gebucht wird nur innerhalb eines Objekts.</div>
@@ -273,10 +281,11 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
         <a href={`/uploads/${encodeURIComponent(a.file)}`} target="_blank" rel="noreferrer">📎 Beleg ansehen</a>
         <div className="grow" />
         {/* Sichtprüfung E30: Was fehlt, steht neben den gesperrten Knöpfen */}
-        {!busy && decisions.length === 0 && <span className="muted">Wählen Sie zuerst je Zeile, was geschieht.</span>}
-        {!busy && decisions.length > 0 && !preview && <span className="muted">Erst die Vorschau, dann buchen.</span>}
-        <button className="btn secondary" disabled={busy || decisions.length === 0} onClick={() => void showPreview()}>Vorschau</button>
-        <button className="btn" disabled={busy || !preview || preview.errors.length > 0} onClick={() => void book()}>Buchen</button>
+        {!busy && year.dirty && <span className="muted">Erst das Jahr speichern oder verwerfen.</span>}
+        {!busy && !year.dirty && decisions.length === 0 && <span className="muted">Wählen Sie zuerst je Zeile, was geschieht.</span>}
+        {!busy && !year.dirty && decisions.length > 0 && !preview && <span className="muted">Erst die Vorschau, dann buchen.</span>}
+        <button className="btn secondary" disabled={busy || year.dirty || year.saving || decisions.length === 0} onClick={() => void showPreview()}>Vorschau</button>
+        <button className="btn" disabled={busy || year.dirty || year.saving || !preview || preview.errors.length > 0} onClick={() => void book()}>Buchen</button>
       </div>
     </div>
   )

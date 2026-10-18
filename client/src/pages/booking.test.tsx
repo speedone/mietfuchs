@@ -281,8 +281,77 @@ test('ein anderes Jahr an der Karte verwirft die sichtbare Vorschau', async () =
   fireEvent.click(screen.getByRole('button', { name: 'Vorschau' }))
   await screen.findByLabelText('Vorschau', {}, SLOW)
   fireEvent.change(screen.getByRole('combobox', { name: 'Jahr der Buchung' }), { target: { value: String(YEAR - 1) } })
-  await waitFor(() => expect(screen.getByRole('combobox', { name: 'Jahr der Buchung' })).toHaveProperty('value', String(YEAR - 1)), SLOW)
+  // #309: Schon der Entwurf nimmt die Vorschau weg; sie sah das bisherige Jahr.
   expect(screen.queryByLabelText('Vorschau')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern (Jahr der Buchung)' }))
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Speichern (Jahr der Buchung)' })).toBeNull(), SLOW)
+  expect(screen.getByRole('combobox', { name: 'Jahr der Buchung' })).toHaveProperty('value', String(YEAR - 1))
+  expect(screen.queryByLabelText('Vorschau')).toBeNull()
+})
+
+// #309: Das Jahr der Buchung speicherte beim Anklicken. Jetzt ist es ein Entwurf am Feld; solange er
+// offen ist, lässt sich weder eine Vorschau holen noch buchen.
+function yearPuts(): string[] {
+  const puts: string[] = []
+  const inner = globalThis.fetch
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (init?.method === 'PUT' && /^\/api\/assessments\/[^/?]+$/.test(url)) puts.push(String(init.body))
+    return inner(url, init)
+  })
+  return puts
+}
+const yearBox = () => screen.getByRole('combobox', { name: 'Jahr der Buchung' }) as HTMLSelectElement
+
+test('#309: das Jahr der Buchung sendet erst mit „Speichern“, genau einmal', async () => {
+  fake = fakeBooking({ items: [], units: UNITS })
+  extraction = invoice([{ description: 'Grundsteuer B', category: 'Grundsteuer', amountEur: 612.4 }], 'Stadt')
+  const puts = yearPuts()
+  const { container } = intake()
+  await upload(container)
+  await actionOf('Grundsteuer B')
+  fireEvent.change(yearBox(), { target: { value: String(YEAR - 1) } })
+  expect(puts).toEqual([])
+  expect(screen.getByRole('button', { name: 'Vorschau' })).toHaveProperty('disabled', true)
+  expect(screen.getByText(/Erst das Jahr speichern oder verwerfen/)).toBeTruthy()
+  const knopf = screen.getByRole('button', { name: 'Speichern (Jahr der Buchung)' })
+  fireEvent.click(knopf)
+  fireEvent.click(knopf)
+  await waitFor(() => expect(screen.queryByRole('button', { name: /Jahr der Buchung\)$/ })).toBeNull(), SLOW)
+  expect(puts).toEqual([JSON.stringify({ year: YEAR - 1 })])
+  expect(screen.getByRole('button', { name: 'Vorschau' })).toHaveProperty('disabled', false)
+})
+
+test('#309: „Verwerfen“ stellt das Jahr der Buchung her, ohne zu senden', async () => {
+  fake = fakeBooking({ items: [], units: UNITS })
+  extraction = invoice([{ description: 'Grundsteuer B', category: 'Grundsteuer', amountEur: 612.4 }], 'Stadt')
+  const puts = yearPuts()
+  const { container } = intake()
+  await upload(container)
+  await actionOf('Grundsteuer B')
+  fireEvent.change(yearBox(), { target: { value: String(YEAR + 1) } })
+  fireEvent.click(screen.getByRole('button', { name: 'Verwerfen (Jahr der Buchung)' }))
+  expect(yearBox().value).toBe(String(YEAR))
+  expect(puts).toEqual([])
+})
+
+test('#309: lehnt der Server das Jahr ab, steht der Grund am Knopf und der Entwurf bleibt', async () => {
+  fake = fakeBooking({ items: [], units: UNITS })
+  extraction = invoice([{ description: 'Grundsteuer B', category: 'Grundsteuer', amountEur: 612.4 }], 'Stadt')
+  const inner = globalThis.fetch
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (init?.method === 'PUT' && /^\/api\/assessments\/[^/?]+$/.test(url)) {
+      return new Response(JSON.stringify({ error: 'Aus diesem Beleg ist schon etwas gebucht.' }), { status: 409, headers: { 'content-type': 'application/json' } })
+    }
+    return inner(url, init)
+  })
+  const { container } = intake()
+  await upload(container)
+  await actionOf('Grundsteuer B')
+  fireEvent.change(yearBox(), { target: { value: String(YEAR - 1) } })
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern (Jahr der Buchung)' }))
+  const alert = await screen.findByText(/^Nicht gespeichert: .*schon etwas gebucht/, {}, SLOW)
+  expect(alert.closest('.draft-actions')).not.toBeNull()
+  expect(yearBox().value).toBe(String(YEAR - 1))
 })
 
 test('kommt eine neue Auswertung (eine andere Karte wird gebucht), verschwindet die Vorschau dieser Karte', async () => {
@@ -465,4 +534,43 @@ test('H1: eine erneut ausgewertete Zeile an eine schon aus diesem Beleg gebuchte
   fireEvent.click(button)
   await screen.findByLabelText('Gebucht', {}, SLOW)
   expect(fake.items.find((i) => i.id === frisch.id)?.amountCents).toBe(145000)
+})
+
+// Durchsicht zu #309, MUSS 1: „Alle grünen übernehmen“ buchte eine Auswertung im gespeicherten Jahr, während
+// ihre Karte ein anderes, ungespeichertes Jahr zeigte. Eine solche Auswertung bleibt jetzt außen vor.
+test('#309: „Alle grünen übernehmen“ bucht keine Auswertung mit ungespeichertem Jahr', async () => {
+  fake = fakeBooking({ items: [], units: UNITS })
+  extraction = invoice([{ description: 'Grundsteuer B', category: 'Grundsteuer', amountEur: 612.4 }], 'Stadt')
+  const { container } = intake()
+  await upload(container)
+  await actionOf('Grundsteuer B')
+  expect(await screen.findByRole('button', { name: /Alle grünen übernehmen/ }, SLOW)).toBeTruthy()
+  fireEvent.change(yearBox(), { target: { value: String(YEAR - 1) } })
+  // Der Beleg zählt nicht mehr als bereit; die Leiste sagt, warum.
+  await waitFor(() => expect(screen.queryByRole('button', { name: /Alle grünen übernehmen/ })).toBeNull(), SLOW)
+  expect(fake.items).toEqual([])
+  // Mit „Speichern“ ist das Jahr fest, und die Zeile wird wie auf main nicht mehr grün angeboten,
+  // oder eben im gespeicherten Jahr; verworfen kommt das Angebot zurück.
+  fireEvent.click(screen.getByRole('button', { name: 'Verwerfen (Jahr der Buchung)' }))
+  expect(await screen.findByRole('button', { name: /Alle grünen übernehmen/ }, SLOW)).toBeTruthy()
+})
+
+test('#309: mit einem zweiten Beleg ohne Entwurf bucht „Alle grünen“ nur diesen und nennt den anderen', async () => {
+  fake = fakeBooking({ items: [], units: UNITS })
+  extraction = invoice([{ description: 'Grundsteuer B', category: 'Grundsteuer', amountEur: 612.4 }], 'Stadt')
+  const { container } = intake()
+  await upload(container, 2)
+  const karten = await waitFor(() => {
+    const found = screen.getAllByRole('combobox', { name: 'Jahr der Buchung' })
+    expect(found).toHaveLength(2)
+    return found
+  }, SLOW)
+  fireEvent.change(karten[0] ?? assert.fail('Karte fehlt'), { target: { value: String(YEAR - 1) } })
+  expect(await screen.findByText(/1 Beleg mit ungespeichertem Jahr bleibt außen vor/, {}, SLOW)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: /Alle grünen übernehmen/ }))
+  await waitFor(() => expect(fake.items).toHaveLength(1), SLOW)
+  // Die Übernahme läuft der Reihe nach; auch danach bleibt es bei einer Position.
+  await new Promise((r) => setTimeout(r, 300))
+  expect(fake.items).toHaveLength(1)
+  expect(fake.items[0]?.period).toBe(calendarPeriod(YEAR))
 })

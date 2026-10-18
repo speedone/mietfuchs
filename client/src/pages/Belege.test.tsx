@@ -7,9 +7,10 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { CostItem, Property, UploadInfo } from '../types'
 import { PeriodProvider } from '../period'
-import { PropertyProvider } from '../property'
+import { PropertyProvider, useHasOpenForm } from '../property'
+import { useState } from 'react'
 import type { ReceiptUpload } from '../receipts'
-import Belege from './Belege'
+import Belege, { PLACEMENT_FIRST } from './Belege'
 
 const PROPS: Property[] = [
   { id: 'p1', name: 'Lindenstraße', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null },
@@ -170,7 +171,22 @@ test('„nachreichen“: ein vorhandener, nicht zugeordneter Beleg lässt sich a
   // Das Feld zeigt „— wählen —“ und speichert nichts, bis jemand wählt.
   expect(auswahl.value).toBe('')
   fireEvent.change(auswahl, { target: { value: '4_lose.pdf' } })
+  // #309: Die Wahl allein sendet nichts; erst „Speichern“ hängt den Beleg an, genau einmal.
+  expect(sent).toEqual([])
+  const knopf = screen.getByRole('button', { name: 'Speichern (Beleg für Abwasser)' })
+  fireEvent.click(knopf)
+  fireEvent.click(knopf)
   await waitFor(() => expect(sent).toEqual([{ url: '/api/costItems/w2', method: 'PUT', body: { invoiceFile: '4_lose.pdf' } }]))
+})
+
+test('„nachreichen“: „Verwerfen“ nimmt die Wahl zurück, ohne zu senden (#309)', async () => {
+  renderPage()
+  await screen.findByText('Wasser/Abwasser')
+  const auswahl = screen.getByLabelText('Vorhandenen Beleg für Abwasser zuordnen') as HTMLSelectElement
+  fireEvent.change(auswahl, { target: { value: '4_lose.pdf' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Verwerfen (Beleg für Abwasser)' }))
+  expect(auswahl.value).toBe('')
+  expect(sent).toEqual([])
 })
 
 test('Posteingang: mehrere Belege auf einmal hochladen, mit Objekt und Jahr der Auswahl', async () => {
@@ -195,10 +211,43 @@ test('Posteingang: Objekt und Jahr eines Belegs zeigen den gespeicherten Wert un
   expect(objekt.value).toBe('')
   expect(objekt.selectedOptions[0].textContent).toBe('ohne Objekt')
   expect(jahr.value).toBe('')
+  // #309: Beide Felder sind ein Entwurf; erst „Speichern“ schickt sie, in einem Rumpf und genau einmal.
   fireEvent.change(objekt, { target: { value: 'p2' } })
-  await waitFor(() => expect(sent).toEqual([{ url: '/api/uploads/4_lose.pdf', method: 'PUT', body: { propertyId: 'p2' } }]))
   fireEvent.change(jahr, { target: { value: String(YEAR) } })
-  await waitFor(() => expect(sent[1]).toEqual({ url: '/api/uploads/4_lose.pdf', method: 'PUT', body: { year: YEAR } }))
+  expect(sent).toEqual([])
+  const knopf = screen.getByRole('button', { name: 'Speichern (Objekt und Jahr für lose.pdf)' })
+  fireEvent.click(knopf)
+  fireEvent.click(knopf)
+  await waitFor(() => expect(sent).toEqual([{ url: '/api/uploads/4_lose.pdf', method: 'PUT', body: { propertyId: 'p2', year: YEAR } }]))
+})
+
+test('Posteingang: „Verwerfen“ stellt Objekt und Jahr her, ohne zu senden (#309)', async () => {
+  renderPage()
+  await screen.findByText('Wasser/Abwasser')
+  const jahr = screen.getByLabelText('Jahr für lose.pdf') as HTMLSelectElement
+  fireEvent.change(jahr, { target: { value: String(YEAR) } })
+  fireEvent.click(screen.getByRole('button', { name: 'Verwerfen (Objekt und Jahr für lose.pdf)' }))
+  expect(jahr.value).toBe('')
+  expect(sent).toEqual([])
+})
+
+test('Posteingang: scheitert das Speichern, steht der Grund am Knopf und der Entwurf bleibt (#309)', async () => {
+  const inner = globalThis.fetch
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (url === '/api/uploads/4_lose.pdf' && init?.method === 'PUT') {
+      return new Response(JSON.stringify({ error: 'Der Datenordner ist schreibgeschützt.' }), { status: 503, headers: { 'content-type': 'application/json' } })
+    }
+    return inner(url, init)
+  })
+  renderPage()
+  await screen.findByText('Wasser/Abwasser')
+  const jahr = screen.getByLabelText('Jahr für lose.pdf') as HTMLSelectElement
+  fireEvent.change(jahr, { target: { value: String(YEAR) } })
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern (Objekt und Jahr für lose.pdf)' }))
+  const alert = await screen.findByRole('alert')
+  expect(alert.textContent).toMatch(/^Nicht gespeichert: .*schreibgeschützt/)
+  expect(alert.closest('.draft-actions')).not.toBeNull()
+  expect(jahr.value).toBe(String(YEAR))
 })
 
 test('Posteingang: einer Position zuordnen und per KI auswerten', async () => {
@@ -216,6 +265,8 @@ test('Posteingang: einer Position zuordnen und per KI auswerten', async () => {
   // Nur Positionen ohne Beleg stehen zur Wahl
   expect([...zuordnen.options].map((o) => o.value)).toEqual(['', 'w2'])
   fireEvent.change(zuordnen, { target: { value: 'w2' } })
+  expect(sent).toEqual([])
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern (Position für lose.pdf)' }))
   await waitFor(() => expect(sent).toEqual([{ url: '/api/costItems/w2', method: 'PUT', body: { invoiceFile: '4_lose.pdf' } }]))
   fireEvent.click(screen.getByRole('button', { name: 'lose.pdf per KI auswerten' }))
   expect(onEvaluate).toHaveBeenCalledWith([expect.objectContaining({ file: '4_lose.pdf' })])
@@ -260,6 +311,7 @@ test('Posteingang: passende Kostenart oben, nach dem Zuordnen „Betrag prüfen�
   expect(groups.map((g) => g.label)).toEqual(['Passend zu „Grundsteuer“', 'Weitere Positionen ohne Beleg'])
   expect([...(groups[0]?.querySelectorAll('option') ?? [])].map((o) => o.value)).toEqual(['gs2'])
   fireEvent.change(zuordnen, { target: { value: 'gs2' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern (Position für Grundsteuerbescheid.pdf)' }))
   await waitFor(() => expect(sent).toEqual([{ url: '/api/costItems/gs2', method: 'PUT', body: { invoiceFile: '5_Grundsteuerbescheid.pdf' } }]))
   const check = await screen.findByRole('status', { name: 'Betrag prüfen' })
   expect(check.textContent).toMatch(/610,00/)
@@ -299,6 +351,7 @@ test('„Betrag prüfen“ bei einer Position laut Gemeinschaftsabrechnung: kein
   renderWithOpen(onOpenItem)
   await screen.findByText('Wasser/Abwasser')
   fireEvent.change(screen.getByLabelText('lose.pdf einer Position zuordnen'), { target: { value: 'hg' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern (Position für lose.pdf)' }))
   const check = await screen.findByRole('status', { name: 'Betrag prüfen' })
   expect(within(check).queryByLabelText('Betrag laut Beleg')).toBeNull()
   expect(check.textContent).toMatch(/Bei dieser Position prüfen Sie den Betrag im Formular/)
@@ -312,6 +365,7 @@ test('„Betrag prüfen“: liegt der Lohnanteil über dem neuen Betrag, ins For
   renderWithOpen(onOpenItem)
   await screen.findByText('Wasser/Abwasser')
   fireEvent.change(screen.getByLabelText('lose.pdf einer Position zuordnen'), { target: { value: 'gp' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern (Position für lose.pdf)' }))
   const check = await screen.findByRole('status', { name: 'Betrag prüfen' })
   fireEvent.change(within(check).getByLabelText('Betrag laut Beleg'), { target: { value: '500,00' } })
   fireEvent.click(within(check).getByRole('button', { name: 'Betrag speichern' }))
@@ -329,6 +383,7 @@ test('„Betrag prüfen“ nennt den Lohnanteil der Position und führt ins Form
   renderWithOpen(onOpenItem)
   await screen.findByText('Wasser/Abwasser')
   fireEvent.change(screen.getByLabelText('lose.pdf einer Position zuordnen'), { target: { value: 'gp' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern (Position für lose.pdf)' }))
   const check = await screen.findByRole('status', { name: 'Betrag prüfen' })
   expect(check.textContent).toMatch(/Lohnanteil der Position: 1\.000,00\s€ – stimmt er mit dem Beleg\?/)
   fireEvent.click(within(check).getByRole('button', { name: 'Lohnanteil im Formular prüfen' }))
@@ -386,6 +441,7 @@ test('„Betrag prüfen“ in einem Jahr mit abgeschlossener Abrechnung nennt di
   renderPage()
   await screen.findByText('Wasser/Abwasser')
   fireEvent.change(screen.getByLabelText('lose.pdf einer Position zuordnen'), { target: { value: 'gs2' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern (Position für lose.pdf)' }))
   const check = await screen.findByRole('status', { name: 'Betrag prüfen' })
   await within(check).findByText(`Die Abrechnung ${YEAR} ist abgeschlossen und bleibt, wie sie verschickt wurde; ändert sich dadurch der Saldo eines Mieters, zeigt die Abrechnungsseite das als Abweichung.`)
 })
@@ -395,7 +451,76 @@ test('„Betrag prüfen“ in einem offenen Jahr: kein Satz zur abgeschlossenen 
   renderPage()
   await screen.findByText('Wasser/Abwasser')
   fireEvent.change(screen.getByLabelText('lose.pdf einer Position zuordnen'), { target: { value: 'gs2' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern (Position für lose.pdf)' }))
   const check = await screen.findByRole('status', { name: 'Betrag prüfen' })
   await new Promise((r) => setTimeout(r, 20))
   expect(check.textContent).not.toMatch(/abgeschlossen/)
+})
+
+// #309: Ein ungespeicherter Entwurf im Posteingang zählt als offenes Formular; ein Wechsel von Objekt oder
+// Zeitraum fragt dann nach, statt ihn still zu verlieren.
+function Offen() {
+  const hasOpenForm = useHasOpenForm()
+  const [seen, setSeen] = useState<boolean | null>(null)
+  return <button type="button" onClick={() => setSeen(hasOpenForm())}>offen? {String(seen)}</button>
+}
+
+test('Posteingang: ein ungespeichertes Jahr zählt als offenes Formular (#309)', async () => {
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <Belege renderThumb={() => Promise.resolve('')} />
+        <Offen />
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  await screen.findByText('Wasser/Abwasser')
+  const frage = () => {
+    fireEvent.click(screen.getByRole('button', { name: /^offen\?/ }))
+    return screen.getByRole('button', { name: /^offen\?/ }).textContent
+  }
+  expect(frage()).toBe('offen? false')
+  fireEvent.change(screen.getByLabelText('Jahr für lose.pdf'), { target: { value: String(YEAR) } })
+  expect(frage()).toBe('offen? true')
+  fireEvent.click(screen.getByRole('button', { name: 'Verwerfen (Objekt und Jahr für lose.pdf)' }))
+  expect(frage()).toBe('offen? false')
+})
+
+// Durchsicht zu #309, MUSS 2: Die Positionen zum Zuordnen folgen dem Entwurf von Objekt und Jahr. Eine schon
+// gewählte Position, die danach nicht mehr zur Wahl steht, darf „Speichern“ nicht trotzdem anhängen.
+test('Posteingang: fällt die gewählte Position aus der Liste, ist die Wahl verworfen (#309)', async () => {
+  extraItems = [{ id: 'alt', propertyId: 'p1', period: calendarPeriod(YEAR - 1), category: 'Wasser/Abwasser', description: 'Abwasser alt', amountCents: 25000, key: 'area' }]
+  renderPage()
+  await screen.findByText('Wasser/Abwasser')
+  const jahr = screen.getByLabelText('Jahr für lose.pdf') as HTMLSelectElement
+  fireEvent.change(jahr, { target: { value: String(YEAR) } })
+  const zuordnen = screen.getByLabelText('lose.pdf einer Position zuordnen') as HTMLSelectElement
+  fireEvent.change(zuordnen, { target: { value: 'w2' } })
+  expect(screen.getByRole('button', { name: 'Speichern (Position für lose.pdf)' })).toBeTruthy()
+  fireEvent.change(jahr, { target: { value: String(YEAR - 1) } })
+  expect([...(screen.getByLabelText('lose.pdf einer Position zuordnen') as HTMLSelectElement).options].map((o) => o.value)).toEqual(['', 'alt'])
+  expect(screen.queryByRole('button', { name: 'Speichern (Position für lose.pdf)' })).toBeNull()
+  expect(sent).toEqual([])
+})
+
+// Durchsicht zu #309, SOLLTE 3: „Per KI auswerten“ nähme Objekt und Jahr, wie sie gespeichert sind.
+test('Posteingang: mit ungespeichertem Objekt oder Jahr ist „Per KI auswerten“ gesperrt, mit Grund (#309)', async () => {
+  const onEvaluate = vi.fn()
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <Belege renderThumb={() => Promise.resolve('')} onEvaluate={onEvaluate} />
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  await screen.findByText('Wasser/Abwasser')
+  fireEvent.change(screen.getByLabelText('Objekt für lose.pdf'), { target: { value: 'p2' } })
+  const knopf = screen.getByRole('button', { name: 'lose.pdf per KI auswerten' }) as HTMLButtonElement
+  expect(knopf.disabled).toBe(true)
+  expect(screen.getByText(PLACEMENT_FIRST)).toBeTruthy()
+  fireEvent.click(knopf)
+  expect(onEvaluate).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: 'Verwerfen (Objekt und Jahr für lose.pdf)' }))
+  expect(knopf.disabled).toBe(false)
+  expect(screen.queryByText(PLACEMENT_FIRST)).toBeNull()
 })

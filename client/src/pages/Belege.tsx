@@ -15,6 +15,8 @@ import { buildTenantFolderPdf, isIndividualAmounts, planTenantFolder, type Tenan
 import { amountCheckBody, amountCheckMode, attachChoices, buildFolder, coverage, filesByItem, duplicateHints, inboxFor, inboxOf, matchesQuery, receiptCards, receiptName, type FolderFilter, type ReceiptCard, type ReceiptUpload } from '../receipts'
 import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
+import DraftActions from '../components/DraftActions'
+import { useDraft } from '../useDraft'
 
 const fmtSize = (b: number) =>
   b >= 1024 * 1024 ? `${(b / 1024 / 1024).toLocaleString('de-DE', { maximumFractionDigits: 1 })} MB` : `${Math.max(1, Math.round(b / 1024))} kB`
@@ -211,6 +213,77 @@ type Props = {
   makeTenantFolder?: (plan: TenantFolderPlan, meta: FolderMeta) => Promise<string[] | void>
 }
 
+// Eine Auswahl, die erst mit „Speichern“ wirkt (#309): Beleg und Position einander zuordnen. Die leere
+// Wahl ist der gespeicherte Wert; wer etwas wählt, hat einen Entwurf, und erst „Speichern“ hängt den Beleg an.
+// Steht die gewählte Position oder der gewählte Beleg nicht mehr unter `values` (die Liste folgt Objekt und
+// Jahr, ein Beleg wurde anderswo zugeordnet), ist die Wahl verworfen (Durchsicht zu #309, MUSS 2).
+function AttachPicker({ label, what, placeholder, scope, values, onSave, children }: {
+  label: string
+  what: string
+  placeholder: string
+  scope: string
+  values: readonly string[]
+  onSave: (value: string) => Promise<unknown>
+  children: React.ReactNode
+}) {
+  const draft = useDraft('', { scope, isValid: (v) => v === '' || values.includes(v) })
+  return (
+    <>
+      <select aria-label={label} value={draft.value} disabled={draft.saving} onChange={(e) => draft.set(e.target.value)}>
+        <option value="">{placeholder}</option>
+        {children}
+      </select>
+      <DraftActions draft={draft} onSave={onSave} what={what} />
+    </>
+  )
+}
+
+export const PLACEMENT_FIRST = 'Erst Objekt und Jahr speichern oder verwerfen.'
+
+// Objekt und Jahr eines Belegs im Posteingang (#309): ein Entwurf für beide Felder mit einem „Speichern“.
+// Gesendet wird nur, was sich geändert hat; der Server zieht die Auswertung desselben Belegs nach, solange
+// aus ihr nichts gebucht ist (Belegbuchung).
+type Placement = { propertyId: string; year: string }
+function InboxPlacement({ upload, properties, yearOptions, onSave, children }: {
+  upload: UploadInfo
+  properties: readonly Property[]
+  yearOptions: readonly number[]
+  onSave: (changes: { propertyId?: string | null; year?: number | null }) => Promise<unknown>
+  // `dirty`: Objekt oder Jahr sind geändert und nicht gespeichert.
+  children: (placement: { propertyId: string | null; year: number | null; dirty: boolean }) => React.ReactNode
+}) {
+  const saved: Placement = {
+    propertyId: upload.propertyId && properties.some((p) => p.id === upload.propertyId) ? upload.propertyId : '',
+    year: upload.year === null ? '' : String(upload.year),
+  }
+  const draft = useDraft(saved, { scope: upload.file })
+  const name = receiptName(upload)
+  const save = (v: Placement) => {
+    const changes: { propertyId?: string | null; year?: number | null } = {}
+    if (v.propertyId !== saved.propertyId) changes.propertyId = v.propertyId || null
+    if (v.year !== saved.year) changes.year = v.year ? Number(v.year) : null
+    return onSave(changes)
+  }
+  return (
+    <>
+      {properties.length > 1 && (
+        <select aria-label={`Objekt für ${name}`} value={draft.value.propertyId} disabled={draft.saving}
+          onChange={(e) => draft.set({ ...draft.value, propertyId: e.target.value })}>
+          <option value="">ohne Objekt</option>
+          {properties.map((p) => <option key={p.id} value={p.id}>{p.name || 'Ohne Namen'}</option>)}
+        </select>
+      )}
+      <select aria-label={`Jahr für ${name}`} value={draft.value.year} disabled={draft.saving}
+        onChange={(e) => draft.set({ ...draft.value, year: e.target.value })}>
+        <option value="">ohne Jahr</option>
+        {[...new Set([...yearOptions, ...(upload.year === null ? [] : [upload.year])])].sort((a, b) => b - a).map((y) => <option key={y} value={String(y)}>{y}</option>)}
+      </select>
+      <DraftActions draft={draft} onSave={save} what={properties.length > 1 ? `Objekt und Jahr für ${name}` : `Jahr für ${name}`} />
+      {children({ propertyId: draft.value.propertyId || null, year: draft.value.year ? Number(draft.value.year) : null, dirty: draft.dirty || draft.saving })}
+    </>
+  )
+}
+
 export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onContinue, onOpenItem, makeTenantFolder = downloadTenantFolder }: Props) {
   const toast = useToast()
   const confirm = useConfirm()
@@ -306,14 +379,17 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
     await api(`/api/costItems/${encodeURIComponent(c.id)}`, { method: 'PUT', body: JSON.stringify({ invoiceFile }) })
     setAmountCheck({ item: c, file: invoiceFile, amount: '', problem: '' })
     // Ist die Abrechnung des Jahres abgeschlossen, sagt der Kasten es. Scheitert die Frage, fehlt
-    // nur der Satz; das Zuordnen ist schon gespeichert.
-    try {
-      // Die Abrechnung, zu der die Position gehört; nach Weg d ihre Heizkostenabrechnung (Durchsicht N2).
-      const raw = loadedItems.find((x) => x.id === c.id) ?? c
-      const path = closedCheckPath(raw, rulesOf(properties.find((p) => p.id === c.propertyId)), plantsBy.get(c.propertyId) ?? [])
-      const s = await api<Pick<Settlement, 'closed'>>(withProperty(path, c.propertyId))
-      if (s.closed) setAmountCheck((cur) => (cur && cur.item.id === c.id && cur.file === invoiceFile ? { ...cur, closed: true } : cur))
-    } catch { /* ohne Auskunft kein Satz */ }
+    // nur der Satz; das Zuordnen ist schon gespeichert. Abgewartet wird sie nicht: Das „Speichern“
+    // der Zuordnung (#309) ist mit dem PUT erledigt und soll nicht an dieser Auskunft hängen.
+    void (async () => {
+      try {
+        // Die Abrechnung, zu der die Position gehört; nach Weg d ihre Heizkostenabrechnung (Durchsicht N2).
+        const raw = loadedItems.find((x) => x.id === c.id) ?? c
+        const path = closedCheckPath(raw, rulesOf(properties.find((p) => p.id === c.propertyId)), plantsBy.get(c.propertyId) ?? [])
+        const s = await api<Pick<Settlement, 'closed'>>(withProperty(path, c.propertyId))
+        if (s.closed) setAmountCheck((cur) => (cur && cur.item.id === c.id && cur.file === invoiceFile ? { ...cur, closed: true } : cur))
+      } catch { /* ohne Auskunft kein Satz */ }
+    })()
   }
   async function saveCheckedAmount() {
     if (!amountCheck) return
@@ -342,14 +418,16 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
       setError(`Der Beleg wurde nicht angehängt: ${errorText(e)}`)
     }
   }
+  // Ein Fehler geht an den Aufrufer: Die Auswahl zeigt ihn am Knopf, und ihr Entwurf bleibt (#309).
   async function attachExisting(c: CostItem, file: string) {
-    try {
-      await attach(c, file)
-      await load()
-      toast(`Beleg an „${c.description}“ angehängt.`)
-    } catch (e) {
-      setError(`Der Beleg wurde nicht angehängt: ${errorText(e)}`)
-    }
+    await attach(c, file)
+    await load()
+    toast(`Beleg an „${c.description}“ angehängt.`)
+  }
+  async function attachById(itemId: string, file: string) {
+    const c = costItems.find((x) => x.id === itemId)
+    if (!c) throw new Error('Diese Position gibt es nicht mehr. Bitte laden Sie die Seite neu.')
+    await attachExisting(c, file)
   }
 
   // ---------- Posteingang (#170) ----------
@@ -399,17 +477,14 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
   }
 
   async function place(u: UploadInfo, changes: { propertyId?: string | null; year?: number | null }) {
-    try {
-      await api(`/api/uploads/${encodeURIComponent(u.file)}`, { method: 'PUT', body: JSON.stringify(changes) })
-      await load()
-    } catch (e) {
-      setError(`Die Zuordnung wurde nicht gespeichert: ${errorText(e)}`)
-    }
+    await api(`/api/uploads/${encodeURIComponent(u.file)}`, { method: 'PUT', body: JSON.stringify(changes) })
+    await load()
   }
 
   // Die Positionen, denen ein Beleg aus dem Posteingang zugeordnet werden kann: die ohne Beleg im
-  // Objekt und Jahr, denen er zugedacht ist, sonst in denen der Auswahl.
-  const candidatesFor = (u: UploadInfo): CostItem[] => {
+  // Objekt und Jahr, denen er zugedacht ist, sonst in denen der Auswahl. Zugedacht ist, was die Karte
+  // gerade zeigt, auch ein noch nicht gespeicherter Entwurf (#309).
+  const candidatesFor = (u: Pick<UploadInfo, 'propertyId' | 'year'>): CostItem[] => {
     const propertyId = u.propertyId ?? (filter.propertyId === 'all' ? null : filter.propertyId)
     const year = u.year ?? (filter.year === 'all' ? null : filter.year)
     return costItems
@@ -460,41 +535,38 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
             </ul>
           ) : (
             <div className="receipt-inbox-controls">
-              {properties.length > 1 && (
-                <select aria-label={`Objekt für ${receiptName(upload)}`} value={upload.propertyId && properties.some((p) => p.id === upload.propertyId) ? upload.propertyId : ''}
-                  onChange={(e) => void place(upload, { propertyId: e.target.value || null })}>
-                  <option value="">ohne Objekt</option>
-                  {properties.map((p) => <option key={p.id} value={p.id}>{p.name || 'Ohne Namen'}</option>)}
-                </select>
-              )}
-              <select aria-label={`Jahr für ${receiptName(upload)}`} value={upload.year === null ? '' : String(upload.year)}
-                onChange={(e) => void place(upload, { year: e.target.value ? Number(e.target.value) : null })}>
-                <option value="">ohne Jahr</option>
-                {[...new Set([...yearOptions, ...(upload.year === null ? [] : [upload.year])])].sort((a, b) => b - a).map((y) => <option key={y} value={String(y)}>{y}</option>)}
-              </select>
-              {candidatesFor(upload).length > 0 && (() => {
-                // Passt die Kostenart, die der Name des Belegs nennt, stehen diese Positionen oben
-                // (shared/duplicates.ts); sonst die Liste wie gehabt.
-                const choices = attachChoices(upload, candidatesFor(upload))
-                const option = (c: CostItem) => <option key={c.id} value={c.id}>{startYearOf(c.period)} · {c.category} · {c.description} · {fmtEuro(c.amountCents)}</option>
-                return (
-                  <select aria-label={`${receiptName(upload)} einer Position zuordnen`} value=""
-                    onChange={(e) => { const c = costItems.find((x) => x.id === e.target.value); if (c) void attachExisting(c, upload.file) }}>
-                    <option value="">einer Position zuordnen …</option>
-                    {choices.likely.length > 0 ? (
-                      <>
-                        <optgroup label={`Passend zu „${choices.category}“`}>{choices.likely.map(option)}</optgroup>
-                        {choices.rest.length > 0 && <optgroup label="Weitere Positionen ohne Beleg">{choices.rest.map(option)}</optgroup>}
-                      </>
-                    ) : choices.rest.map(option)}
-                  </select>
-                )
-              })()}
-              {upload.assessment?.open && onContinue ? (
-                <button className="btn small" aria-label={`${receiptName(upload)} weiter prüfen`} onClick={() => void continueChecking(upload)}>Weiter prüfen</button>
-              ) : onEvaluate && (
-                <button className="btn small" aria-label={`${receiptName(upload)} per KI auswerten`} onClick={() => onEvaluate([upload])}>Per KI auswerten</button>
-              )}
+              <InboxPlacement upload={upload} properties={properties} yearOptions={yearOptions} onSave={(changes) => place(upload, changes)}>
+                {(placement) => (
+                  <>
+                    {candidatesFor(placement).length > 0 && (() => {
+                      // Passt die Kostenart, die der Name des Belegs nennt, stehen diese Positionen oben
+                      // (shared/duplicates.ts); sonst die Liste wie gehabt.
+                      const choices = attachChoices(upload, candidatesFor(placement))
+                      const option = (c: CostItem) => <option key={c.id} value={c.id}>{startYearOf(c.period)} · {c.category} · {c.description} · {fmtEuro(c.amountCents)}</option>
+                      return (
+                        <AttachPicker label={`${receiptName(upload)} einer Position zuordnen`} what={`Position für ${receiptName(upload)}`}
+                          placeholder="einer Position zuordnen …" scope={upload.file} values={candidatesFor(placement).map((c) => c.id)}
+                          onSave={(id) => attachById(id, upload.file)}>
+                          {choices.likely.length > 0 ? (
+                            <>
+                              <optgroup label={`Passend zu „${choices.category}“`}>{choices.likely.map(option)}</optgroup>
+                              {choices.rest.length > 0 && <optgroup label="Weitere Positionen ohne Beleg">{choices.rest.map(option)}</optgroup>}
+                            </>
+                          ) : choices.rest.map(option)}
+                        </AttachPicker>
+                      )
+                    })()}
+                    {/* Auswerten nimmt Objekt und Jahr, wie sie gespeichert sind; mit einem Entwurf daran vorbei landete
+                        die Auswertung in einem anderen Objekt (Durchsicht zu #309, SOLLTE 3). */}
+                    {upload.assessment?.open && onContinue ? (
+                      <button className="btn small" aria-label={`${receiptName(upload)} weiter prüfen`} disabled={placement.dirty} onClick={() => void continueChecking(upload)}>Weiter prüfen</button>
+                    ) : onEvaluate && (
+                      <button className="btn small" aria-label={`${receiptName(upload)} per KI auswerten`} disabled={placement.dirty} onClick={() => onEvaluate([upload])}>Per KI auswerten</button>
+                    )}
+                    {placement.dirty && (upload.assessment?.open ? onContinue : onEvaluate) && <span className="muted">{PLACEMENT_FIRST}</span>}
+                  </>
+                )}
+              </InboxPlacement>
             </div>
           )}
           {upload.invoiceDate && <div className="muted">Rechnungsdatum {fmtDate(upload.invoiceDate)}</div>}
@@ -672,10 +744,11 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
                           />
                         </label>
                         {inboxFor(allCards, c).length > 0 && (
-                          <select aria-label={`Vorhandenen Beleg für ${c.description} zuordnen`} value="" onChange={(e) => { if (e.target.value) void attachExisting(c, e.target.value) }}>
-                            <option value="">oder aus dem Posteingang …</option>
+                          <AttachPicker label={`Vorhandenen Beleg für ${c.description} zuordnen`} what={`Beleg für ${c.description}`}
+                            placeholder="oder aus dem Posteingang …" scope={c.id} values={inboxFor(allCards, c).map((u) => u.upload.file)}
+                            onSave={(file) => attachExisting(c, file)}>
                             {inboxFor(allCards, c).map((u) => <option key={u.upload.file} value={u.upload.file}>{receiptName(u.upload)}</option>)}
-                          </select>
+                          </AttachPicker>
                         )}
                       </span>
                     </li>
