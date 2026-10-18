@@ -3102,6 +3102,27 @@ nach Arbeitsphase in der Sidebar (das Abrechnungsjahr liegt zentral im `YearProv
 [client/src/year.tsx](client/src/year.tsx)). Dark Mode über `data-theme` auf `<html>` + CSS-Variablen (Umschalter in der
 Sidebar, Druck ist immer hell); PWA-Manifest und Icons liegen in `client/public/` (Icons
 erzeugt `server/scripts/make-icons.mjs`).
+
+**Mobile Navigation** (#346, Schritt 9, [MobileNav.tsx](client/src/components/MobileNav.tsx)): Unter
+900 px (`MOBILE_QUERY`, dieselbe Grenze wie in index.css) zeichnet App.tsx statt der Seitenleiste einen
+angehefteten Kopf (☰, Seitentitel, „Objekt · Zeitraum“, ⇅), ein Menüblatt als `<dialog>` mit
+`showModal()` und eine untere Leiste (`BOTTOM_TABS` in nav.ts, kurze Beschriftung `short`). Das Blatt
+zeigt **denselben Inhalt wie die Seitenleiste** (`sidebar(close)` in App.tsx), ⇅ öffnet es mit dem Fokus
+auf der Objektwahl. Die Wahl einer Seite schließt es; Objekt und Zeitraum wechseln darin **ohne** zu
+schließen, wie in der Seitenleiste, denn ein Auswahlfeld sendet bei jeder Pfeiltaste `change`. Nur wenn
+eine Rückfrage kommt (offenes Formular, Beenden), schließt es **vorher** (`onBeforeChange` an
+`PeriodSelect`, `onAsk` am Beenden-Knopf), sonst stünde sie hinter dem modalen Blatt. Esc im Blatt
+erreicht kein offenes Seitenfenster darunter. Der Fokus geht an den Knopf zurück, der es geöffnet hat,
+und nach einem Wechsel über die Grenze an die aktuelle Seite bzw. ☰. Gezeichnet wird nach
+`matchMedia` und nicht nur per CSS, damit kein Eintrag doppelt im Baum steht; Tests stellen den Query
+samt `change` nach (mobileNav.test.tsx) und nehmen für `showModal` den Nachbau aus
+[client/src/testing/dialog.ts](client/src/testing/dialog.ts). Tabellen mit Datensätzen werden unter
+640 px zu Karten (`<Table className="stacked">`, jede Zelle mit `data-label`), Zahlenraster heften die
+erste Spalte an (`sticky-first`), beides nur am Bildschirm. Sicherheitsränder (Kerbe, Home-Indikator) über
+`viewport-fit=cover` in index.html und `env(safe-area-inset-*)`, auch an Seitenfenster, Rückfrage, Toasts und
+Fuß der Seitenleiste. Wächter in uiRules.test.ts: S24 (was am Fensterrand steht, nimmt die Sicherheitsränder),
+S12 (Dialoge nur in erlaubten Bausteinen), S22 (Navigation nur aus nav.ts), S23 (Karten mit `data-label`).
+
 Zentraler Fetch-Wrapper `api()` und Geld-/Datums-Helfer (`parseEuro`, `fmtEuro`, `fmtDate`) in
 [client/src/api.ts](client/src/api.ts). Druck/PDF läuft über die Browser-Druckfunktion;
 hochgeladene Belege werden für den Druck per **pdf.js** auf Canvas gerendert

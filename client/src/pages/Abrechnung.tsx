@@ -594,7 +594,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
               {st.rows.length === 0 ? (
                 <div className="empty">Keine Kostenpositionen für {label} erfasst.</div>
               ) : (
-                <Table>
+                <Table className="sticky-first">
                   <thead>
                     <tr>
                       <th>Kostenart</th>
@@ -798,7 +798,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
           {data.landlord.rows.length > 0 && (
             <div className="card no-print">
               <h2>Vermieteranteil (nicht umgelegt)</h2>
-              <Table>
+              <Table className="sticky-first">
                 <thead>
                   <tr>
                     <th>Kostenart</th>

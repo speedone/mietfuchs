@@ -68,6 +68,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   gültig ab“) die Felder auf einer Höhe, auch wenn eine Beschriftung umbricht, und die Knöpfe unten
   im Seitenfenster teilen sich die Breite ohne den Hinweis auf Tastenkürzel. Gedruckt wird wie
   bisher hell ([#346](https://github.com/speedone/mietfuchs/issues/346)).
+- Am Handy (schmaler als 900 Bildpunkte) steht die Navigation nicht mehr als hoher Block über jeder
+  Seite. Oben bleibt ein schmaler Kopf mit der Seite und „Objekt · Jahr“; ☰ öffnet das Menü von
+  links mit allen Seiten, Objekt, Jahr und Design, ⇅ springt dort direkt zur Wahl von Objekt und
+  Jahr. Unten liegt eine Leiste mit Cockpit, Erfassen, Zähler, Stammdaten und „Mehr“. Die Listen
+  der Wohnungen, Mietverhältnisse, Zähler, Kosten und Zahlungen erscheinen am Handy als Karten statt
+  als Tabelle zum seitlichen Wischen; in der Abrechnung und im Kostenvergleich bleibt beim Wischen
+  die erste Spalte stehen. Am Rechner ändert sich nichts
+  ([#346](https://github.com/speedone/mietfuchs/issues/346)).
 - Mietfuchs steht ab dieser Version unter der GNU Affero General Public License, Version 3
   (AGPL-3.0), statt unter der MIT-Lizenz. Für Vermieter, die Mietfuchs auf dem eigenen Rechner
   nutzen, ändert sich nichts. Wer eine veränderte Fassung weitergibt oder als Online-Dienst

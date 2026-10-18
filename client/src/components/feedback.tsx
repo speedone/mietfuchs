@@ -74,6 +74,12 @@ export function UIProvider({ children }: { children: ReactNode }) {
     const back = opener.current
     opener.current = null
     if (back?.isConnected) back.focus()
+    // Kam die Rückfrage aus der Navigation am Handy (☰, ⇅, untere Leiste, #346 Schritt 9) und ist die
+    // inzwischen ausgehängt, weil das Fenster über 900 px breit wurde (oder umgekehrt), geht der Fokus
+    // an die aktuelle Seite in der Navigation, die jetzt steht, statt auf BODY.
+    else if (back && back.matches('.menu-toggle, .context-toggle, .bottom-bar button, .sidebar button')) {
+      document.querySelector<HTMLElement>('nav [aria-current="page"], button.menu-toggle')?.focus()
+    }
   }, [])
   const startOnCancel = dialog?.defaultChoice === 'cancel' || (dialog?.danger === true && dialog.defaultChoice !== 'confirm')
 

@@ -67,6 +67,8 @@
   --radius-s: 6px; --radius-m: 8px; --radius-l: 12px; --radius-xl: 16px;
   /* Zielgröße für Knöpfe und Felder; am Handy und mit Finger 44 px (WCAG 2.5.8, siehe unten) */
   --target: 36px;
+  /* Am Handy (< 900 px, #346 Schritt 9): Höhe des Kopfs und der unteren Leiste ohne Sicherheitsrand */
+  --head-h: 56px; --bar-h: 52px;
   /* Ein Fokusrahmen für alles: 2 px Kartenfarbe, dann 2 px Akzent */
   --focus-ring: 0 0 0 2px var(--card), 0 0 0 4px var(--accent);
   --page-max: 1120px;
@@ -139,7 +141,7 @@ body {
    Tab fokussierter Eintrag rollt nicht unter den stehenden Fuß (gut 90 px hoch). */
 .sidebar {
   width: 230px; flex-shrink: 0; background: var(--sidebar); color: var(--sidebar-text);
-  border-right: 1px solid var(--line); padding: var(--space-5) var(--space-3);
+  border-right: 1px solid var(--line); padding: max(var(--space-5), env(safe-area-inset-top)) var(--space-3) var(--space-5) max(var(--space-3), env(safe-area-inset-left));
   display: flex; flex-direction: column; gap: 2px; position: sticky; top: 0; height: 100vh; overflow-y: auto;
   scrollbar-width: thin; scrollbar-color: var(--control-border) transparent; scroll-padding-bottom: 100px;
 }
@@ -160,7 +162,7 @@ body {
    scrollt nur sie darüber hinweg. Er reicht über das Polster der Leiste bis an ihre Ränder, damit
    keine Navigation unter ihm durchscheint. */
 .sidebar .foot {
-  margin: auto calc(-1 * var(--space-3)) calc(-1 * var(--space-5)); padding: var(--space-3) 22px var(--space-4);
+  margin: auto calc(-1 * var(--space-3)) calc(-1 * var(--space-5)); padding: var(--space-3) 22px calc(var(--space-4) + env(safe-area-inset-bottom));
   font-size: var(--text-xs); color: var(--muted); position: sticky; bottom: calc(-1 * var(--space-5));
   background: var(--sidebar); border-top: 1px solid var(--line);
 }
@@ -172,7 +174,7 @@ body {
 /* ---------- Layout ---------- */
 /* min-width: 0, sonst ist main als Flex-Element mindestens so breit wie sein breitester Inhalt
    und schiebt die Seite über den Bildschirm hinaus (#137). */
-main { flex: 1; min-width: 0; padding: var(--space-8) var(--space-12) var(--space-12); max-width: var(--page-max); }
+main { flex: 1; min-width: 0; padding: var(--space-8) max(var(--space-12), env(safe-area-inset-right)) var(--space-12) var(--space-12); max-width: var(--page-max); }
 h1 { font-size: var(--text-2xl); font-weight: var(--weight-strong); letter-spacing: -0.02em; margin: 0 0 6px; }
 .sub { color: var(--muted); margin: 0 0 var(--space-6); }
 h2 { font-size: var(--text-l); font-weight: var(--weight-strong); letter-spacing: -0.01em; margin: 0 0 var(--space-3); }
@@ -356,7 +358,7 @@ label.checkline:has(.term-pop) { flex-wrap: wrap; }
 .chip.gelb { background: var(--amber-soft); color: var(--amber); border: 1px solid var(--notice-border); }
 .chip.rot { background: var(--red-soft); color: var(--red); border: 1px solid var(--error-border); }
 
-.sticky-bar { position: sticky; top: 10px; z-index: 5; display: flex; align-items: center; gap: var(--space-3); margin-top: 14px; padding: var(--space-3) var(--space-4); background: var(--accent-soft); border: 1px solid var(--accent); border-radius: var(--radius-m); }
+.sticky-bar { position: sticky; top: calc(10px + env(safe-area-inset-top)); z-index: 5; display: flex; align-items: center; gap: var(--space-3); margin-top: 14px; padding: var(--space-3) var(--space-4); background: var(--accent-soft); border: 1px solid var(--accent); border-radius: var(--radius-m); }
 
 .empty { color: var(--muted); text-align: center; padding: 28px; font-size: var(--text-m); }
 
@@ -391,10 +393,7 @@ label.checkline:has(.term-pop) { flex-wrap: wrap; }
 .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--accent-soft); border-top-color: var(--accent); border-radius: 50%; animation: spinner-spin 0.8s linear infinite; vertical-align: -3px; margin-right: var(--space-2); }
 @keyframes spinner-spin { to { transform: rotate(360deg); } }
 
-/* ---------- Sidebar: Jahres-Umschalter & Navigationsgruppen ----------
-   Vor dem Block für das Handy, denn der überschreibt diese Regeln bei gleicher Spezifität. Stand
-   er dahinter, galt am Handy die Spalte des Rechners samt verborgener Gruppenüberschriften, und
-   die Knöpfe lagen ungeordnet nebeneinander (#137). */
+/* ---------- Sidebar: Jahres-Umschalter & Navigationsgruppen (am Handy im Menüblatt) ---------- */
 .sidebar .year-switcher { display: flex; flex-direction: column; gap: var(--space-1); padding: 0 10px var(--space-3); }
 .sidebar .year-switcher span { font-size: var(--text-xs); font-weight: var(--weight-medium); color: var(--muted); }
 .sidebar .year-switcher select,
@@ -417,38 +416,39 @@ label.checkline:has(.term-pop) { flex-wrap: wrap; }
 .sidebar .nav-group { display: flex; flex-direction: column; gap: 2px; }
 .sidebar .nav-section { font-size: var(--text-xs); font-weight: var(--weight-medium); color: var(--muted); padding: var(--space-4) 10px var(--space-1); }
 
-/* ---------- Mobil (Handy: Zählerstand erfassen, Beleg fotografieren) ---------- */
-@media (max-width: 760px) {
+/* ---------- Mobil (< 900 px, #346 Schritt 9): Kopf, Menüblatt und untere Leiste (MobileNav.tsx) statt der Seitenleiste. Inhalt,
+   Sprungziele und Toasts bleiben frei von Kopf und Leiste samt Sicherheitsrand (`env(safe-area-inset-*)`, wirksam durch viewport-fit=cover
+   in index.html: Kerbe oben und seitlich, Home-Indikator unten); in Zahlenrastern bleibt die erste Spalte stehen. */
+@media screen and (max-width: 899px) {
   #root { flex-direction: column; }
-  .sidebar {
-    width: auto; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 2px; padding: var(--space-3);
-    position: static; height: auto; overflow: visible; border-right: none; border-bottom: 1px solid var(--line);
-  }
-  .sidebar .logo { width: 100%; padding: 0 var(--space-1) var(--space-2); font-size: var(--text-base); }
-  .sidebar .logo small { display: inline; margin-left: var(--space-2); }
-  .sidebar button { padding: 6px 10px; font-size: var(--text-s); gap: 6px; }
-  /* Vom Fuß bleibt am Handy nur die Umschaltung des Designs, als kleiner Knopf (#142). Beendet
-     wird am Rechner, der Satz zur lokalen Ablage braucht dort keinen Platz. */
-  .sidebar .foot { margin: 0; padding: 0; position: static; border-top: none; background: none; }
-  .sidebar .foot .quit, .sidebar .foot .foot-note, .sidebar .foot .theme-label { display: none; }
-  .sidebar .foot .theme-toggle { margin: 0; padding: 7px 10px; font-size: var(--text-base); border-radius: var(--radius-m); }
-  /* Aktualisiert wird am Rechner, auf dem Mietfuchs läuft, nicht am Handy. */
-  .sidebar .update-hint { display: none; }
-  /* Dieselben Gruppen und Überschriften wie am Rechner, je Gruppe eine eigene Zeile (#137) */
-  .sidebar .nav-group { width: 100%; flex-direction: row; flex-wrap: wrap; gap: 2px; }
-  .sidebar .nav-section { width: 100%; padding: var(--space-2) var(--space-1) 2px; }
-  .sidebar .year-switcher { flex-direction: row; align-items: center; gap: var(--space-2); padding: var(--space-1); }
-  .sidebar .year-switcher span { display: none; }
-  /* Das Objekt behält seine Beschriftung (#157): Ohne sie ist der Name im Auswahlfeld nicht als
-     Umschalter zu erkennen. Das Jahr erklärt sich durch die Zahl. */
-  .sidebar .property-switcher span { display: inline; }
-  .sidebar .year-switcher select { height: var(--space-8); padding: 0 var(--space-2); font-size: var(--text-s); }
-  /* Der angezeigte Name (#180) bleibt ein Block und darf auch hier umbrechen, höchstens so breit
-     wie der Platz neben der Beschriftung */
-  .sidebar .property-switcher .property-current { display: block; max-width: 60vw; padding: 5px var(--space-6) 5px var(--space-2); font-size: var(--text-s); }
-  main { padding: var(--space-5) var(--space-4) var(--space-12); }
+  html { scroll-padding: calc(var(--head-h) + env(safe-area-inset-top) + var(--space-2)) 0 calc(var(--bar-h) + env(safe-area-inset-bottom) + var(--space-2)); }
+  main { padding: var(--space-5) max(var(--space-4), env(safe-area-inset-right)) calc(var(--bar-h) + env(safe-area-inset-bottom) + var(--space-12)) max(var(--space-4), env(safe-area-inset-left)); }
   h1 { font-size: var(--text-xl); }
   .card { padding: var(--space-4); }
+  body .toast-wrap { left: max(var(--space-3), env(safe-area-inset-left)); right: max(var(--space-3), env(safe-area-inset-right)); bottom: calc(var(--bar-h) + env(safe-area-inset-bottom) + var(--space-3)); }
+  .sticky-bar { top: calc(var(--head-h) + env(safe-area-inset-top) + var(--space-2)); }
+  table.sticky-first > * > tr > :first-child { position: sticky; left: 0; z-index: 1; background: var(--card); }
+  table.sticky-first > * > tr:is(.subtotal, .group-head, .calc-steps) > :first-child { background: var(--hover); }
+}
+/* Knöpfe in Kopf, Blatt und Leiste; Größe und Anordnung setzen die Utilities in MobileNav.tsx */
+:is(.menu-toggle, .context-toggle, .sheet-close, .bottom-bar button) { all: unset; cursor: pointer; }
+.sidebar .sheet-close { margin-left: auto; padding: 0; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: var(--radius-m); color: var(--muted); font-size: var(--text-l); }
+dialog.menu-sheet { margin: 0; padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom) env(safe-area-inset-left); border: none; inset: 0 auto 0 0; width: min(300px, 86vw); height: 100dvh; max-width: none; max-height: none; background: var(--sidebar); box-shadow: var(--shadow-pop); animation: sheet-in 0.2s cubic-bezier(0.22, 1, 0.36, 1); } dialog.menu-sheet::backdrop { background: var(--overlay); }
+dialog.menu-sheet > .sidebar { width: auto; height: 100%; position: static; border-right: none; }
+dialog.menu-sheet > .sidebar button:not(.sheet-close) { min-height: var(--target); box-sizing: border-box; }
+.bottom-bar { height: calc(var(--bar-h) + env(safe-area-inset-bottom)); padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); } .mobile-head { height: calc(var(--head-h) + env(safe-area-inset-top)); padding: env(safe-area-inset-top) max(var(--space-1), env(safe-area-inset-right)) 0 max(var(--space-1), env(safe-area-inset-left)); }
+@keyframes sheet-in { from { transform: translateX(-24px); opacity: 0.4; } to { transform: none; opacity: 1; } }
+/* Tabellen mit Datensätzen (`<Table className="stacked">`, Spezifikation Abschnitt 5): unter 640 px ist jede Zeile ein Block, die erste Zelle der Titel, Aktionen rechts daneben, jede weitere Zelle mit `data-label`. */
+@media screen and (max-width: 640px) {
+  table.stacked > thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  table.stacked, table.stacked > :is(tbody, tfoot) { display: block; }
+  table.stacked > :is(tbody, tfoot) > tr { display: grid; grid-template-columns: minmax(0, 1fr) fit-content(45%); column-gap: var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-m); margin-bottom: var(--space-2); }
+  table.stacked > * > tr > td { grid-column: 1 / -1; padding: 2px 0; border: none; text-align: left; white-space: normal; }
+  table.stacked > * > tr > td:first-child:not(:only-child) { grid-column: 1; grid-row: 1; font-weight: var(--weight-strong); overflow-wrap: anywhere; }
+  table.stacked > * > tr > td[data-label]:not([data-label='']):not(:first-child)::before { content: attr(data-label) ': '; color: var(--muted); font-weight: var(--weight-medium); }
+  table.stacked > * > tr > :is(td.actions, td.num:not([data-label])) { grid-column: 2; grid-row: 1; text-align: right; }
+  table.stacked > * > tr > td:empty { display: none; } table.stacked > * > tr > td :is(.muted, .cell-sub) { font-weight: var(--weight-normal); }
+  table.stacked > * > tr:is(.group-head, .subtotal) { background: var(--hover); } table.stacked > * > tr:is(.group-head, .subtotal) > td { background: none; }
 }
 
 /* ---------- Cockpit: Fortschritt, Checkliste, Mieterkarten ---------- */
@@ -493,7 +493,7 @@ label.checkline:has(.term-pop) { flex-wrap: wrap; }
 /* ---------- Editier-Drawer (von rechts) ---------- */
 .drawer-backdrop { position: fixed; inset: 0; background: var(--overlay); z-index: 40; display: flex; justify-content: flex-end; animation: drawer-fade 0.16s ease; }
 .drawer {
-  background: var(--card); max-width: 94vw; height: 100%; display: flex; flex-direction: column;
+  background: var(--card); max-width: 94vw; height: 100%; display: flex; flex-direction: column; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) 0;
   border-left: 1px solid var(--line); box-shadow: var(--shadow-pop); animation: drawer-slide 0.2s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .drawer-head {
@@ -533,7 +533,7 @@ label.checkline:has(.term-pop) { flex-wrap: wrap; }
 .field-group .field-add { margin-top: 10px; }
 
 /* ---------- Toasts ---------- */
-.toast-wrap { position: fixed; left: var(--space-5); bottom: var(--space-5); z-index: 60; display: flex; flex-direction: column; gap: var(--space-2); }
+.toast-wrap { position: fixed; left: max(var(--space-5), env(safe-area-inset-left)); bottom: max(var(--space-5), env(safe-area-inset-bottom)); z-index: 60; display: flex; flex-direction: column; gap: var(--space-2); }
 .toast { display: flex; align-items: center; gap: 9px; background: var(--card); border: 1px solid var(--line); border-left: 3px solid var(--muted); border-radius: var(--radius-m); padding: 10px var(--space-4) 10px 13px; font-size: var(--text-m); box-shadow: var(--shadow-2); animation: toast-in 0.2s ease; max-width: 360px; }
 .toast .toast-ic { font-size: var(--text-m); }
 .toast.ok { border-left-color: var(--green); }
@@ -544,7 +544,7 @@ label.checkline:has(.term-pop) { flex-wrap: wrap; }
 .toast.info .toast-ic { color: var(--accent-text); }
 
 /* ---------- Bestätigungsdialog ---------- */
-.dialog-backdrop { position: fixed; inset: 0; background: var(--overlay); z-index: 50; display: flex; align-items: center; justify-content: center; padding: var(--space-5); animation: drawer-fade 0.14s ease; }
+.dialog-backdrop { position: fixed; inset: 0; background: var(--overlay); z-index: 50; display: flex; align-items: center; justify-content: center; padding: max(var(--space-5), env(safe-area-inset-top)) max(var(--space-5), env(safe-area-inset-right)) max(var(--space-5), env(safe-area-inset-bottom)) max(var(--space-5), env(safe-area-inset-left)); animation: drawer-fade 0.14s ease; }
 .dialog { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-xl); padding: var(--space-6); width: 440px; max-width: 100%; box-shadow: var(--shadow-pop); animation: dialog-pop 0.16s ease; }
 .dialog h2 { font-size: var(--text-l); margin-bottom: var(--space-2); }
 .dialog-msg { color: var(--muted); font-size: var(--text-m); line-height: 1.55; white-space: pre-line; }
@@ -644,7 +644,7 @@ td.actions { white-space: nowrap; text-align: right; }
 @keyframes toast-in { from { transform: translateY(8px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 @keyframes dialog-pop { from { transform: scale(0.97); opacity: 0.5; } to { transform: scale(1); opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
-  .drawer, .drawer-backdrop, .toast, .dialog, .dialog-backdrop, .sidebar .update-hint { animation: none; }
+  .drawer, .drawer-backdrop, .toast, .dialog, .dialog-backdrop, .sidebar .update-hint, dialog.menu-sheet { animation: none; }
 }
 /* ========== Gestaltungsregeln aus der Sichtprüfung (S1–S12) ==========
    Sie stehen gesammelt hier, nach den Regeln der Bausteine und vor dem Druck, damit sie bei gleicher
