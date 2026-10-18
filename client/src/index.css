@@ -30,7 +30,9 @@
   --sidebar: #fafafa;
   --sidebar-text: #3f3f46;
   --input-bg: #ffffff;
-  --input-border: #e4e4e7;
+  /* Feldrand mindestens 3:1 gegen Karte, Seite und Feld (WCAG 1.4.11, S6); Knöpfe und Linien in
+     Tabellen nehmen den helleren --control-border, dort trägt die Schrift die Erkennbarkeit. */
+  --input-border: #8e8e96;
   --control-border: #d4d4d8;
   --chip: #f4f4f5;
   --notice-border: #fde68a;
@@ -96,7 +98,7 @@
     --sidebar: #09090b;
     --sidebar-text: #d4d4d8;
     --input-bg: #09090b;
-    --input-border: #3f3f46;
+    --input-border: #63636b;
     --control-border: #3f3f46;
     --chip: #27272a;
     --notice-border: #4a3b14;
@@ -225,7 +227,7 @@ input, select, textarea {
    In Tabellen richtet sich die Höhe nach dem Inhalt (siehe S2), dort bleibt es. */
 select { padding-block: 0; }
 td select { padding-block: 6px; }
-input:hover, select:hover, textarea:hover { border-color: var(--control-border); }
+input:hover, select:hover, textarea:hover { border-color: var(--muted); }
 input:disabled, select:disabled, textarea:disabled { background: var(--chip); color: var(--muted); border-color: var(--input-border); cursor: not-allowed; }
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring); }
 input[type='checkbox'] { width: 17px; height: 17px; accent-color: var(--accent); box-shadow: none; }
@@ -302,7 +304,7 @@ label.checkline:has(.term-pop) { flex-wrap: wrap; }
 .badge { display: inline-block; padding: 2px var(--space-2); border-radius: var(--radius-s); border: 1px solid var(--line); font-size: var(--text-xs); font-weight: var(--weight-medium); background: var(--card); color: var(--text); }
 .badge.green { background: var(--green-soft); color: var(--green); border-color: var(--ok-border); }
 .badge.red { background: var(--red-soft); color: var(--red); border-color: var(--error-border); }
-.badge.gray { background: var(--card); color: var(--text); }
+.badge.gray { background: var(--chip); color: var(--muted); border-color: transparent; }
 .badge.accent { background: var(--accent-soft); color: var(--accent-strong); border-color: transparent; }
 .badge.amber { background: var(--amber-soft); color: var(--amber); border-color: var(--notice-border); }
 
@@ -359,15 +361,12 @@ label.checkline:has(.term-pop) { flex-wrap: wrap; }
 .empty { color: var(--muted); text-align: center; padding: 28px; font-size: var(--text-m); }
 
 /* ---------- Beleg-Upload (Mehrfach-Dropzone) ---------- */
-.dropzone {
-  border: 2px dashed var(--control-border); border-radius: var(--radius-l); padding: 26px 18px; text-align: center;
-  cursor: pointer; color: var(--muted); transition: border-color 0.15s, background 0.15s;
-}
+.dropzone { border: 2px dashed var(--control-border); border-radius: var(--radius-l); padding: 26px 18px; text-align: center; cursor: pointer; color: var(--muted); transition: border-color 0.15s, background 0.15s; }
 .dropzone strong { color: var(--text); }
 .dropzone:is(:hover, .over) { border-color: var(--accent); background: var(--hover); }
 
 /* ---------- Übersicht: einfache Balken-Charts ---------- */
-.chart-table .bar { height: 13px; background: var(--accent); border-radius: var(--space-1); min-width: 2px; margin: 2px 0; }
+.chart-table .bar { height: 13px; background: var(--accent); border-radius: var(--radius-s); min-width: 2px; margin: 2px 0; }
 .chart-table .bar.prev { background: var(--line); }
 /* Legende der Balken (E49) */
 .chart-legend { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -379,10 +378,7 @@ label.checkline:has(.term-pop) { flex-wrap: wrap; }
 .wizard-step { border-left: 3px solid var(--accent-soft); padding: 6px 0 10px 14px; margin-bottom: var(--space-3); }
 
 /* Nur für Screenreader sichtbar (z. B. Kopfzellen reiner Aktionsspalten) */
-.sr-only {
-  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
-  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
-}
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
 /* ---------- Abrechnung / Statement ---------- */
 .statement-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-3); flex-wrap: wrap; }
@@ -392,11 +388,7 @@ label.checkline:has(.term-pop) { flex-wrap: wrap; }
 .kpi .v { font-size: var(--text-2xl); font-weight: var(--weight-strong); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 .kpi .l { color: var(--muted); font-size: var(--text-s); font-weight: var(--weight-medium); }
 
-.spinner {
-  display: inline-block; width: 16px; height: 16px; border: 2px solid var(--accent-soft);
-  border-top-color: var(--accent); border-radius: 50%; animation: spinner-spin 0.8s linear infinite;
-  vertical-align: -3px; margin-right: var(--space-2);
-}
+.spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--accent-soft); border-top-color: var(--accent); border-radius: 50%; animation: spinner-spin 0.8s linear infinite; vertical-align: -3px; margin-right: var(--space-2); }
 @keyframes spinner-spin { to { transform: rotate(360deg); } }
 
 /* ---------- Sidebar: Jahres-Umschalter & Navigationsgruppen ----------
@@ -408,7 +400,7 @@ label.checkline:has(.term-pop) { flex-wrap: wrap; }
 .sidebar .year-switcher select,
 .sidebar .property-switcher .property-current {
   font: inherit; font-size: var(--text-m); font-weight: var(--weight-medium); border-radius: var(--radius-m);
-  background: var(--input-bg); color: var(--text); border: 1px solid var(--control-border); box-shadow: var(--shadow-1);
+  background: var(--input-bg); color: var(--text); border: 1px solid var(--input-border); box-shadow: var(--shadow-1);
 }
 .sidebar .year-switcher select { height: var(--target); padding: 0 10px; cursor: pointer; }
 /* Objektnamen sind länger als Jahreszahlen (#157). Ein Auswahlfeld bricht nicht um und schnitt
@@ -419,12 +411,8 @@ label.checkline:has(.term-pop) { flex-wrap: wrap; }
   display: block; line-height: 1.3; letter-spacing: normal; text-transform: none;
   padding: 7px 22px 7px 10px; white-space: normal; overflow-wrap: break-word; hyphens: auto;
 }
-.sidebar .property-switcher .property-current::after {
-  content: "▾"; position: absolute; right: var(--space-2); top: 50%; transform: translateY(-50%); color: var(--muted);
-}
-.sidebar .property-switcher select {
-  position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; font-size: 13.5px;
-}
+.sidebar .property-switcher .property-current::after { content: "▾"; position: absolute; right: var(--space-2); top: 50%; transform: translateY(-50%); color: var(--muted); }
+.sidebar .property-switcher select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; font-size: 13.5px; }
 .sidebar .property-switcher .property-select:focus-within .property-current { border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring); }
 .sidebar .nav-group { display: flex; flex-direction: column; gap: 2px; }
 .sidebar .nav-section { font-size: var(--text-xs); font-weight: var(--weight-medium); color: var(--muted); padding: var(--space-4) 10px var(--space-1); }
@@ -495,12 +483,7 @@ label.checkline:has(.term-pop) { flex-wrap: wrap; }
 .page-head-text .sub { margin: 0; }
 .page-head-actions { display: flex; gap: 10px; align-items: center; flex-shrink: 0; }
 /* Das gewählte Objekt über dem Titel, ab zwei Objekten (#157): kleine Marke in Indigo */
-.page-property {
-  display: inline-flex; align-items: baseline; gap: 6px; max-width: 100%;
-  margin-bottom: 6px; padding: 2px 10px; border-radius: 99px;
-  background: var(--accent-soft); color: var(--accent-strong); font-size: var(--text-s); font-weight: var(--weight-strong);
-  overflow-wrap: anywhere;
-}
+.page-property { display: inline-flex; align-items: baseline; gap: 6px; max-width: 100%; margin-bottom: 6px; padding: 2px 10px; border-radius: 99px; background: var(--accent-soft); color: var(--accent-strong); font-size: var(--text-s); font-weight: var(--weight-strong); overflow-wrap: anywhere; }
 .page-property-label { font-size: 10.5px; letter-spacing: 0.5px; text-transform: uppercase; font-weight: var(--weight-medium); }
 /* Hinweis nach dem Wechsel in ein leeres Objekt (#157) */
 .property-notice { display: flex; flex-direction: column; gap: 10px; margin: 0 0 18px; font-size: var(--text-m); }
@@ -551,11 +534,7 @@ label.checkline:has(.term-pop) { flex-wrap: wrap; }
 
 /* ---------- Toasts ---------- */
 .toast-wrap { position: fixed; left: var(--space-5); bottom: var(--space-5); z-index: 60; display: flex; flex-direction: column; gap: var(--space-2); }
-.toast {
-  display: flex; align-items: center; gap: 9px; background: var(--card); border: 1px solid var(--line); border-left: 3px solid var(--muted);
-  border-radius: var(--radius-m); padding: 10px var(--space-4) 10px 13px; font-size: var(--text-m);
-  box-shadow: var(--shadow-2); animation: toast-in 0.2s ease; max-width: 360px;
-}
+.toast { display: flex; align-items: center; gap: 9px; background: var(--card); border: 1px solid var(--line); border-left: 3px solid var(--muted); border-radius: var(--radius-m); padding: 10px var(--space-4) 10px 13px; font-size: var(--text-m); box-shadow: var(--shadow-2); animation: toast-in 0.2s ease; max-width: 360px; }
 .toast .toast-ic { font-size: var(--text-m); }
 .toast.ok { border-left-color: var(--green); }
 .toast.ok .toast-ic { color: var(--green); }
@@ -565,14 +544,8 @@ label.checkline:has(.term-pop) { flex-wrap: wrap; }
 .toast.info .toast-ic { color: var(--accent-text); }
 
 /* ---------- Bestätigungsdialog ---------- */
-.dialog-backdrop {
-  position: fixed; inset: 0; background: var(--overlay); z-index: 50; display: flex; align-items: center;
-  justify-content: center; padding: var(--space-5); animation: drawer-fade 0.14s ease;
-}
-.dialog {
-  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-xl); padding: var(--space-6);
-  width: 440px; max-width: 100%; box-shadow: var(--shadow-pop); animation: dialog-pop 0.16s ease;
-}
+.dialog-backdrop { position: fixed; inset: 0; background: var(--overlay); z-index: 50; display: flex; align-items: center; justify-content: center; padding: var(--space-5); animation: drawer-fade 0.14s ease; }
+.dialog { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-xl); padding: var(--space-6); width: 440px; max-width: 100%; box-shadow: var(--shadow-pop); animation: dialog-pop 0.16s ease; }
 .dialog h2 { font-size: var(--text-l); margin-bottom: var(--space-2); }
 .dialog-msg { color: var(--muted); font-size: var(--text-m); line-height: 1.55; white-space: pre-line; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: var(--space-5); }
@@ -599,23 +572,25 @@ td.actions { white-space: nowrap; text-align: right; }
 }
 .icon-btn:hover { background: var(--hover); color: var(--text); }
 .icon-btn.danger:hover { background: var(--red-soft); color: var(--red); }
-@media (pointer: coarse), (max-width: 640px) { .icon-btn { width: var(--target); height: var(--target); } }
+/* Am Handy und mit Finger mindestens --target Tippfläche (WCAG 2.5.8, Spezifikation Abschnitt 1). Kleine
+   Knöpfe behalten ihr Aussehen, ihre Tippfläche wächst unsichtbar über ::after. */
+@media (pointer: coarse), (max-width: 640px) {
+  .icon-btn { width: var(--target); height: var(--target); }
+  :is(.btn.small, .drawer-x, .notice-action) { position: relative; }
+  :is(.btn.small, .drawer-x, .notice-action)::after {
+    content: ""; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    width: max(100%, var(--target)); height: max(100%, var(--target));
+  }
+}
 
 /* ---------- Update-Hinweis (Seitenleiste, Cockpit, Einstellungen) ---------- */
 /* Orange wie der Fuchs im Logo (--brand): Es hebt sich vom Indigo der Navigation ab, ohne nach
    Warnung auszusehen. */
-.sidebar .update-hint {
-  margin: 0 0 var(--space-4); padding: var(--space-3); border-radius: var(--radius-m);
-  background: var(--brand-soft); border: 1px solid var(--brand-border); animation: update-in 0.45s cubic-bezier(0.22, 1, 0.36, 1);
-}
+.sidebar .update-hint { margin: 0 0 var(--space-4); padding: var(--space-3); border-radius: var(--radius-m); background: var(--brand-soft); border: 1px solid var(--brand-border); animation: update-in 0.45s cubic-bezier(0.22, 1, 0.36, 1); }
 .update-hint-head { display: flex; align-items: center; gap: var(--space-2); color: var(--text); font-size: var(--text-m); font-weight: var(--weight-strong); }
 .update-hint-head svg { flex-shrink: 0; }
 .sidebar .update-hint p { margin: 2px 0 10px 26px; color: var(--muted); font-size: var(--text-xs); }
-.sidebar .update-hint .update-go {
-  display: block; box-sizing: border-box; width: 100%; padding: 7px 10px; border-radius: var(--radius-m);
-  background: var(--brand); color: var(--brand-text); font-size: var(--text-s); font-weight: var(--weight-bold);
-  text-align: center; text-decoration: none; cursor: pointer;
-}
+.sidebar .update-hint .update-go { display: block; box-sizing: border-box; width: 100%; padding: 7px 10px; border-radius: var(--radius-m); background: var(--brand); color: var(--brand-text); font-size: var(--text-s); font-weight: var(--weight-bold); text-align: center; text-decoration: none; cursor: pointer; }
 .sidebar .update-hint .update-go:hover { background: var(--brand-hover); color: var(--brand-text); }
 .update-hint-links { display: flex; justify-content: space-between; margin-top: var(--space-2); }
 .sidebar .update-hint-links a,
@@ -660,10 +635,7 @@ td.actions { white-space: nowrap; text-align: right; }
 .update-steps code, .update-guide p code { font-family: Consolas, 'Cascadia Mono', ui-monospace, monospace; font-size: 0.92em; }
 .update-steps li > code:last-child:not(:first-child) { display: block; width: fit-content; margin-top: 6px; padding: var(--space-1) 10px; border-radius: var(--radius-s); background: var(--chip); }
 .command-box { display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap; margin-bottom: 10px; }
-.command-box pre {
-  flex: 1; min-width: 0; margin: 0; padding: var(--space-2) var(--space-3); border-radius: var(--radius-m); background: var(--chip);
-  font-family: Consolas, 'Cascadia Mono', ui-monospace, monospace; font-size: 13.5px; line-height: 1.7; overflow-x: auto;
-}
+.command-box pre { flex: 1; min-width: 0; margin: 0; padding: var(--space-2) var(--space-3); border-radius: var(--radius-m); background: var(--chip); font-family: Consolas, 'Cascadia Mono', ui-monospace, monospace; font-size: 13.5px; line-height: 1.7; overflow-x: auto; }
 .command-box pre code { display: block; font: inherit; }
 
 @keyframes update-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
@@ -723,6 +695,9 @@ label.checkline { display: inline-flex; align-items: center; gap: var(--space-2)
 label.checkline > input { flex-shrink: 0; margin: 0; }
 label.field.checkline { display: flex; }
 input[type='radio'] { width: 16px; height: 16px; accent-color: var(--accent); box-shadow: none; }
+/* Fokus der Kästchen und Optionsfelder (M1 der Durchsicht): Die Regeln darüber nehmen den Schatten weg,
+   und die Fokusregel der Felder setzt `outline: none`; ohne diese Regel wäre ihr Fokus unsichtbar. */
+input:is([type='checkbox'], [type='radio']):focus-visible { box-shadow: var(--focus-ring); border-radius: var(--radius-s); }
 /* Mehrere Kästchen nebeneinander (Wohnungen, Teilnehmer, Optionen) */
 .checks { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; }
 .checks > label.field.checkline { padding-bottom: 0; }
@@ -730,7 +705,7 @@ input[type='radio'] { width: 16px; height: 16px; accent-color: var(--accent); bo
 
 /* S4 – Klassen, die die Bausteine verwenden, haben hier ihre Regel */
 .panel { border: 1px solid var(--line); border-radius: var(--radius-m); padding: 14px var(--space-4); background: var(--bg); }
-.preview { border-top: 1px dashed var(--input-border); padding-top: 14px; }
+.preview { border-top: 1px dashed var(--control-border); padding-top: 14px; }
 .card.inset { box-shadow: none; background: var(--bg); padding: 14px var(--space-4); margin-bottom: 0; }
 .heating-plant ul.facts { margin: 0; padding-left: 20px; }
 .heating-ways ol { margin: 0; padding-left: 0; list-style: none; display: grid; gap: 8px; }
@@ -834,6 +809,10 @@ td.reading-panel { background: var(--bg); }
      Bildschirm (`@media not print` oben), hier wird nur der Grund weiß. */
   :root { --bg: #ffffff; }
   body { background: var(--card); font-size: var(--text-s); }
+  /* Eine Überschrift bleibt bei ihrem Inhalt, kleine Blöcke werden nicht geteilt. Karten dürfen
+     umbrechen: Eine Abrechnung ist oft länger als eine Seite und würde sonst abgeschnitten. */
+  h1, h2, h3, h4, .statement-head { break-after: avoid; page-break-after: avoid; }
+  :is(.kpi, .notice, .hint, .info, .error, .warn, .ok, .stack.tight, tr) { break-inside: avoid; page-break-inside: avoid; }
   .sidebar, .no-print { display: none !important; }
   /* Im Druck kein Scrollbereich: Er schnitte ab, was nicht auf die Seite passt, und Chromium
      bricht einen solchen Bereich nicht sauber über Seitengrenzen um. */
@@ -929,7 +908,7 @@ fieldset.no-connection { border: 0; padding: 0; margin-inline: 0; min-width: 0; 
 .receipt-group-title { font-weight: 600; flex: 1 1 auto; min-width: 0; }
 .receipt-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 10px; }
 .receipt-card { display: flex; gap: 12px; align-items: flex-start; border: 1px solid var(--line); border-radius: var(--radius-m); padding: 10px; min-width: 0; }
-.receipt-thumb { flex: 0 0 64px; width: 64px; height: 84px; border: 1px solid var(--line); border-radius: var(--space-1); background: var(--chip); display: flex; align-items: center; justify-content: center; overflow: hidden; text-decoration: none; }
+.receipt-thumb { flex: 0 0 64px; width: 64px; height: 84px; border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--chip); display: flex; align-items: center; justify-content: center; overflow: hidden; text-decoration: none; }
 .receipt-thumb img { width: 100%; height: 100%; object-fit: cover; object-position: top; }
 .receipt-body { flex: 1 1 auto; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; overflow-wrap: anywhere; }
 .receipt-title strong { white-space: nowrap; }
