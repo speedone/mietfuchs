@@ -7,6 +7,7 @@ import { useState } from 'react'
 import { api, errorText, fmtDate } from '../api'
 import { useToast } from './feedback'
 import Term from './Term'
+import { useOpenWhenChanged } from '../useDraft'
 import {
   HOT_WATER_OPTIONS, SELF_HOT_WATER_OPTIONS, formulaFormOf, hotWaterBody, isFormula, numberText, selfFormulaBody, unconfirmedConsequence, unmeasurableLabel, volumeLabel,
   type FormulaForm, type HotWaterChoice,
@@ -19,6 +20,8 @@ export default function HotWaterCard({ view, plant, onSaved }: { view: HeatingPe
   const [unmeasurable, setUnmeasurable] = useState(view.hotWater.dhwUnmeasurable === true)
   const [formula, setFormula] = useState<FormulaForm>(formulaFormOf(view.hotWater))
   const [error, setError] = useState('')
+  // Eine ungespeicherte Eingabe zählt als offenes Formular: Seiten-, Objekt- und Zeitraumwechsel fragen (#346, 7a).
+  useOpenWhenChanged({ choice, unmeasurable, formula })
   const toast = useToast()
   const options = self ? SELF_HOT_WATER_OPTIONS : HOT_WATER_OPTIONS
 

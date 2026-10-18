@@ -95,6 +95,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Jahr der Buchung (bis es gespeichert ist, gibt es dort weder Vorschau noch Buchung). Die
   Schaltflächen nennen für Vorleser zuerst ihren sichtbaren Text, also auch „Speichert …“
   ([#309](https://github.com/speedone/mietfuchs/issues/309)).
+- Wer mit einer angefangenen Eingabe die Seite wechselt, über die Seitenleiste, das Menüblatt oder
+  die untere Leiste am Handy, wird vorher gefragt („Ungespeicherte Änderungen verwerfen?“); vorher
+  war die Eingabe still weg. Ebenso fragt der Browser, wenn Sie den Tab mit offener Eingabe
+  schließen oder neu laden. Das gilt für Seitenfenster, Eingaben auf der Seite wie die Ablesung und
+  die Karten auf der Seite Heizkosten ([#346](https://github.com/speedone/mietfuchs/issues/346)).
 
 ### Behoben
 

@@ -9,7 +9,7 @@
 // Zeitraum fragt dann nach, statt die Eingabe still zu verlieren.
 import { useCallback, useRef, useState } from 'react'
 import { errorText } from './api'
-import { afterSave, discarded, initialDraft, isDirty, shownValue, withEdit, withSaved, type DraftState } from './draft'
+import { afterSave, discarded, initialDraft, isDirty, sameDraft, shownValue, withEdit, withSaved, type DraftState } from './draft'
 import { useOpenForm } from './property'
 import { useConfirm } from './components/feedback'
 
@@ -116,4 +116,13 @@ export function useConfirmDiscard(): (drafts: readonly { dirty: boolean }[]) => 
       danger: true,
     })
   }, [confirm])
+}
+
+// Für Karten mit eigenem Formularzustand und eigenem „Speichern“ (#346, Schritt 7a): Weicht der Zustand
+// vom Stand beim Einhängen ab, zählt die Karte als offenes Formular, und ein Wechsel von Seite, Objekt
+// oder Zeitraum fragt nach. Gedacht für Karten, die die Seite nach dem Speichern neu einhängt (ihr
+// Schlüssel enthält den gespeicherten Stand); sonst bliebe die Marke nach dem Speichern stehen.
+export function useOpenWhenChanged(value: unknown): void {
+  const [first] = useState(value)
+  useOpenForm(!sameDraft(value, first))
 }

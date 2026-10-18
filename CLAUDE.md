@@ -3228,7 +3228,13 @@ Tippfläche von `--target` über `::after`, und printCss.test.ts verlangt den du
   dem Knopf steht (WCAG 2.5.3), auch bei „Speichert …“. Ein anderer `scope` verwirft den Entwurf;
   wechselt die Seite ihn selbst (der Reiter zwischen Betriebs- und Heizkostenabrechnung), fragt sie
   vorher mit `useConfirmDiscard` („Ungespeicherte Änderung verwerfen?“, Startfokus „Abbrechen“).
-  Ein Wechsel der Seite in der Navigation fragt bisher bei keinem Formular nach. **Ein Auswahlfeld
+  **Auch der Seitenwechsel fragt** (#346, Schritt 7a): Seitenleiste, Menüblatt und untere Leiste gehen
+  über `navigate` in App.tsx, das bei offenem Formular „Ungespeicherte Änderungen verwerfen?“ fragt
+  (Startfokus „Abbrechen“; das Menüblatt schließt vorher), und mit offenem Formular fragt der Browser
+  beim Schließen oder Neuladen des Tabs (`beforeunload`). Karten mit eigenem Formularzustand und
+  eigenem Speichern melden sich mit `useOpenWhenChanged(zustand)` an (für Karten, die die Seite nach
+  dem Speichern neu einhängt) oder mit `useOpenForm(offen)`. Sprünge aus einer Seite (etwa „Hier
+  beheben →“) fragen nicht. **Ein Auswahlfeld
   gibt `isValid` mit** (`useDraft(saved, { isValid })`): Fällt der Wert eines Entwurfs aus den
   Optionen (die Liste folgt einem anderen Feld, eine Position ist weg), ist der Entwurf verworfen;
   sonst zeigte der Browser den ersten Eintrag, und „Speichern“ schickte einen unsichtbaren Wert. Für
