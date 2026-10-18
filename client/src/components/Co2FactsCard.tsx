@@ -12,6 +12,7 @@ import { RESTRICTION_OPTIONS } from '../fuelForm'
 import { co2DistrictEtsNew } from '../../../shared/law/co2kostaufg.ts'
 import { germanDate, onlyVersion } from '../../../shared/law/register.ts'
 import type { Co2Restriction, HeatingEnergy, HeatingMethod, HeatingPeriodView } from '../types'
+import { ErrorSummary, useFormError } from './ErrorSummary'
 
 type Facts = { id: string; energy: HeatingEnergy; method: HeatingMethod; nonResidential: boolean; restriction: Co2Restriction; districtEtsNew: boolean }
 
@@ -21,7 +22,9 @@ export default function Co2FactsCard({ plant, view, servedAreaM2, onSaved }: { p
   const [districtEtsNew, setDistrictEtsNew] = useState(plant.districtEtsNew)
   const savedArea = view.co2?.areaM2 == null ? '' : view.co2.areaM2.toLocaleString('de-DE', { useGrouping: false })
   const [area, setArea] = useState(savedArea)
-  const [error, setError] = useState('')
+  // Fehler als Sammelmeldung oben in der Karte (#346, Schritt 3)
+  const errors = useFormError()
+  const setError = errors.set
   // Ungespeicherte Angaben zählen als offenes Formular (#346, 7a); die beiden Teile speichern getrennt.
   const factsSaved = useOpenWhenDiffers({ nonResidential, restriction, districtEtsNew }, { nonResidential: plant.nonResidential, restriction: plant.restriction, districtEtsNew: plant.districtEtsNew })
   const areaSaved = useOpenWhenDiffers(area, savedArea)
@@ -62,6 +65,7 @@ export default function Co2FactsCard({ plant, view, servedAreaM2, onSaved }: { p
   return (
     <div className="card">
       <h2>CO₂: Angaben zum Gebäude für die <Term id="co2Stage">Einstufung</Term></h2>
+      <ErrorSummary errors={errors} />
       <p className="muted">Gilt für alle Heizperioden dieser Anlage. Die Angaben wirken auf Heizperioden, die noch nicht abgeschlossen sind; eine abgeschlossene Abrechnung bleibt, wie sie ist.</p>
       <label className="checkline">
         <input type="checkbox" checked={nonResidential} onChange={(e) => setNonResidential(e.target.checked)} />
@@ -91,7 +95,6 @@ export default function Co2FactsCard({ plant, view, servedAreaM2, onSaved }: { p
           {!view.closed && <button className="btn secondary" onClick={() => void saveArea()}>Fläche speichern</button>}
         </div>
       )}
-      {error && <div className="error">{error}</div>}
     </div>
   )
 }

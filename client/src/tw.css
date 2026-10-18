@@ -136,3 +136,24 @@
   --shadow-2: var(--shadow-2);
   --shadow-pop: var(--shadow-pop);
 }
+
+/* Formularbausteine (#346, Schritt 3): Breiten nach Inhalt für `<Field width>` und ein Raster für Felder.
+   Das Raster setzt so viele Spalten von mindestens 220 px, wie hineinpassen (`auto-fit`), statt fester
+   Spalten, die Felder abschneiden (UI-Durchsicht M11, N15, N16); am Handy ist es eine Spalte. Die
+   Sammelmeldung im Fuß des Seitenfensters ist auf 40 % der Fensterhöhe begrenzt und scrollt darin. */
+@utility width-s {
+  max-width: --spacing(40);
+}
+@utility width-m {
+  max-width: --spacing(64);
+}
+@utility field-grid {
+  display: grid;
+  gap: --spacing(4);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, --spacing(55)), 1fr));
+  align-items: start;
+}
+@utility summary-cap {
+  max-height: 40dvh;
+  overflow-y: auto;
+}

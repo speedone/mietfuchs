@@ -596,3 +596,109 @@ test('S24: was am Fensterrand steht, hält die Sicherheitsränder ein', () => {
   expect(fixedElements.length).toBeGreaterThan(0)
   expect(fixedElements.filter(({ cls }) => !cls.some((c) => safeClasses.has(c))).map(({ file, cls }) => `${file}: ${cls.join(' ')}`)).toEqual([])
 })
+
+// S15 (#346 Schritt 3, Spezifikation Abschnitt 9): Fehler stehen am Feld und in der Sammelmeldung, nicht in einem
+// eigenen roten Kasten je Seite. `className="error"` und `role="alert"` gibt es deshalb nur in den Bausteinen dafür:
+// Feld (Field.tsx), Sammelmeldung (ErrorSummary.tsx), Mitteilung und Ansage der Rückfrage (feedback.tsx) und der
+// Entwurf am Feld (DraftActions.tsx). Gezählt werden die Stellen je Datei; die Liste darunter nennt, was heute noch
+// so steht, mit Anzahl, und darf nur kleiner werden (UI-Durchsicht H3, M5).
+const ERROR_FILES = new Set(['./components/Field.tsx', './components/ErrorSummary.tsx', './components/feedback.tsx', './components/DraftActions.tsx'])
+const ERROR_EXCEPTIONS = new Map<string, number>([
+  // Fehler beim Laden der Seite, oben auf der Seite (CLAUDE.md: „Die Meldung oben auf der Seite bleibt für Ladefehler“)
+  ['./pages/Abrechnung.tsx', 1], // dazu Abschließen und Wiederöffnen (`attempt`), Aktionen ohne Formular; Schritt 10
+  ['./pages/Cockpit.tsx', 1],
+  ['./pages/Heizkosten.tsx', 1],
+  ['./pages/Mietkonto.tsx', 1],
+  ['./pages/Steuer.tsx', 1],
+  ['./pages/Uebersicht.tsx', 1],
+  ['./components/Co2SheetView.tsx', 1],
+  // Ladefehler und je Zähler die Meldungen der Ablesungen als Hinweis in der Tabelle (Inhalt, kein Formularfehler)
+  ['./pages/Zaehler.tsx', 2],
+  // Der Mieterwechsel, der mit Schritt 7 ins Seitenfenster kommt
+  ['./pages/Stammdaten.tsx', 1],
+  // Ladefehler und das Ergebnis je Beleg in der Warteschlange der Auswertung (Inhalt der Liste)
+  ['./pages/Kosten.tsx', 2],
+  ['./pages/Schnellerfassung.tsx', 2],
+  // Was die Vorschau der Buchung ablehnt, je Zeile mit „Position öffnen“ (Befund der Vorschau)
+  ['./components/AssessmentReview.tsx', 1],
+  // Ladefehler, die Belegmappe und „Betrag prüfen“ im Posteingang (Entwurf am Feld mit „Position öffnen“)
+  ['./pages/Belege.tsx', 3],
+  // Ergebnis einer Vorschau oder Probe als Befund, kein Formularfehler: gesperrte Zeiträume, abgelaufene Fristen, die Probe
+  ['./components/PeriodCard.tsx', 2],
+  ['./components/HeatingPeriodSection.tsx', 3],
+  ['./components/Co2Card.tsx', 1],
+  // Das Ergebnis des Wiederherstellens (Fehler oder ok) unter dem Knopf
+  ['./pages/Einstellungen.tsx', 1],
+])
+/** Die Stellen einer Datei mit der Klasse `error` oder der Rolle `alert`. */
+const errorUses = (src: string): string[] => {
+  const out: string[] = []
+  for (const m of src.matchAll(/className=(?:"([^"]*)"|'([^']*)'|\{((?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*)\})/g)) {
+    const value = m[1] ?? m[2] ?? m[3] ?? ''
+    if (/(?:^|[\s'"`])error(?=[\s'"`]|$)/.test(value)) out.push(m[0])
+  }
+  for (const m of src.matchAll(/role=(?:["']alert["']|\{(?:[^{}]|\{[^{}]*\})*['"`]alert['"`](?:[^{}]|\{[^{}]*\})*\})/g)) out.push(m[0])
+  for (const m of src.matchAll(/setAttribute\(\s*['"]role['"][^)]*['"]alert['"]/g)) out.push(m[0])
+  return out
+}
+test('S15: Fehlerkästen und role="alert" nur in den Bausteinen für Fehler', () => {
+  // Probe des Prüfers: alle Schreibweisen, und nichts, was nur ähnlich heißt
+  expect(errorUses(`<div className="error">x</div> <span className="field-message error small">y</span> <p className={'error'} /> <b className={\`error \${x}\`} />`)).toHaveLength(4)
+  expect(errorUses(`<p role="alert" /> <p role={bad ? 'alert' : undefined} /> el.setAttribute('role', kind === 'error' ? 'alert' : 'status')`)).toHaveLength(3)
+  expect(errorUses(`<div role="alertdialog" className="error-summary is-error" /> <i className="field-message is-error" /> <u className={ok ? 'ok' : 'warn'} />`)).toEqual([])
+  for (const file of ERROR_FILES) expect(sources[file], `${file} fehlt`).toBeTruthy()
+  const counts = new Map(files.filter((f) => !ERROR_FILES.has(f)).map((f) => [f, errorUses(sources[f] ?? '').length] as const).filter(([, n]) => n > 0))
+  for (const [file, allowed] of ERROR_EXCEPTIONS) {
+    const n = counts.get(file) ?? 0
+    expect(n, `${file}: mehr Stellen als erlaubt; ein Fehler gehört an <Field> und in die <ErrorSummary>`).toBeLessThanOrEqual(allowed)
+    expect(n, `${file}: weniger Stellen als in der Ausnahmeliste; die Zahl dort senken oder den Eintrag streichen`).toBe(allowed)
+  }
+  expect([...counts].filter(([file]) => !ERROR_EXCEPTIONS.has(file)).map(([file, n]) => `${file}: ${n}`)).toEqual([])
+})
+
+// S25 (#346 Schritt 3): Pflichtfelder tragen ein Sternchen, erklärt durch die Legende „* Pflichtangabe“ (WCAG
+// 3.3.2). Im Seitenfenster zeigt der Drawer sie von selbst, sobald ein `<Field required>` darin steht; ein
+// Pflichtfeld außerhalb eines Seitenfensters (Karte, Ablesung) braucht `<RequiredLegend />` in derselben Datei.
+// Dazu: Jedes `<form>` hat `noValidate`, damit die Sprechblase des Browsers unserer Prüfung nicht zuvorkommt, und
+// gestaltet wird nie über `:invalid`/`:required` (leere Pflichtfelder dürfen beim Öffnen nicht rot sein).
+/** Die öffnenden Tags `<Name …>` einer Datei, mit Props (geschweifte Klammern mitgezählt). */
+const openingTags = (src: string, name: string): { at: number; tag: string }[] =>
+  [...src.matchAll(new RegExp(`<${name}\\b`, 'g'))].map((m) => {
+    let depth = 0
+    let i = m.index ?? 0
+    for (; i < src.length; i++) {
+      const c = src[i]
+      if (c === '{') depth++
+      else if (c === '}') depth--
+      else if (c === '>' && depth === 0 && src[i - 1] !== '=') break
+    }
+    return { at: m.index ?? 0, tag: src.slice(m.index, i + 1) }
+  })
+/** Pflichtfelder außerhalb eines `<Drawer>…</Drawer>`. */
+const requiredOutsideDrawer = (src: string): string[] => {
+  const ranges = [...src.matchAll(/<Drawer\b/g)].map((m) => [m.index ?? 0, src.indexOf('</Drawer>', m.index ?? 0)] as const)
+  return openingTags(src, 'Field')
+    .filter(({ tag }) => /\srequired(?:\s|>|=\{(?!false\}))/.test(tag))
+    .filter(({ at }) => !ranges.some(([a, b]) => at > a && (b < 0 || at < b)))
+    .map(({ tag }) => tag.slice(0, 60))
+}
+const FORM_EXCEPTIONS = new Map<string, string>([
+  // heute keine
+])
+test('S25: Pflichtfelder mit Legende, jedes <form> mit noValidate, keine Gestaltung über :invalid', () => {
+  // Probe des Prüfers
+  expect(requiredOutsideDrawer('<Drawer open value={x}><Field label="A" required><input /></Field></Drawer><Field label="B" required={isNew}><input /></Field><Field label="C" required={false}><input /></Field>'))
+    .toEqual(['<Field label="B" required={isNew}>'])
+  const missingLegend = files.filter((f) => f !== './components/Field.tsx' && requiredOutsideDrawer(sources[f] ?? '').length > 0 && !/<RequiredLegend\b/.test(sources[f] ?? ''))
+  expect(missingLegend).toEqual([])
+  // Die Seiten, die heute ein Pflichtfeld außerhalb eines Fensters haben, findet der Prüfer auch.
+  expect(requiredOutsideDrawer(sources['./components/PropertyCard.tsx'] ?? '').length).toBeGreaterThan(0)
+  expect(requiredOutsideDrawer(sources['./pages/Zaehler.tsx'] ?? '').length).toBeGreaterThan(0)
+  const forms = files.flatMap((f) => openingTags((sources[f] ?? '').replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, ''), 'form').filter(({ tag }) => !/\bnoValidate\b/.test(tag)).map(() => f))
+  expect(forms.filter((f) => !FORM_EXCEPTIONS.has(f))).toEqual([])
+  expect(openingTags('<form onSubmit={x}><form noValidate>', 'form').filter(({ tag }) => !/\bnoValidate\b/.test(tag))).toHaveLength(1)
+  const pseudo = /:(?:invalid|required|user-invalid|-moz-ui-invalid)\b/
+  expect(pseudo.test(css.replace(/\/\*[\s\S]*?\*\//g, ''))).toBe(false)
+  expect(pseudo.test(twCss.replace(/\/\*[\s\S]*?\*\//g, ''))).toBe(false)
+  expect([...twCandidates.keys()].filter((c) => /(?:^|:)(?:invalid|required|user-invalid):/.test(c))).toEqual([])
+})

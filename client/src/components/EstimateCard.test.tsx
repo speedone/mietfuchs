@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, test, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import EstimateCard from './EstimateCard'
 import { OpenFormScope, hasOpenForm } from '../testing/openForm'
 import { UIProvider } from './feedback'
@@ -66,7 +66,7 @@ test('fehlender Endstand: Dialog mit Vorschlag und Flächenanteil, Speichern geh
   expect(screen.getByText(/keinen vollständig abgelesenen Verbrauch dieser Wohnung.*selbst ein/)).toBeTruthy()
   fireEvent.change(screen.getByLabelText('Weg nach § 9a Abs. 1'), { target: { value: 'buildingAverage' } })
   fireEvent.click(screen.getByRole('button', { name: 'Schätzung speichern' }))
-  expect(screen.getByText(/Begründung/, { selector: '.error' })).toBeTruthy()
+  expect(within(screen.getByRole('alert')).getByText(/Begründung/)).toBeTruthy()
   expect(calls).toEqual([])
   fireEvent.change(screen.getByLabelText('Begründung'), { target: { value: 'Wärmezähler defekt' } })
   fireEvent.click(screen.getByLabelText(/Der Verbrauch ließ sich nicht ordnungsgemäß erfassen/))
@@ -184,7 +184,7 @@ test('N-M3/N2-M1: beim Ablesedienst ohne Werte ist die Einheit eine Pflichtauswa
   expect(einheit.value).toBe('')
   fireEvent.change(screen.getByLabelText('Begründung'), { target: { value: 'Werte fehlen' } })
   fireEvent.click(screen.getByRole('button', { name: 'Schätzung speichern' }))
-  expect(screen.getByText(/Einheit/, { selector: '.error' })).toBeTruthy()
+  expect(within(screen.getByRole('alert')).getByText(/Einheit/)).toBeTruthy()
   expect(calls).toEqual([])
   fireEvent.change(einheit, { target: { value: 'kWh' } })
   fireEvent.click(screen.getByRole('button', { name: 'Schätzung speichern' }))

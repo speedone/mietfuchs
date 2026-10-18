@@ -93,7 +93,8 @@ test('der Dialog erklärt, was ein weiteres Objekt ist, und beschriftet seine Fe
   expect(within(dialog).getByText(/bleibt unverändert/)).toBeTruthy()
   const name = within(dialog).getByLabelText(/^Name/) as HTMLInputElement
   expect(name.required).toBe(true)
-  expect(name.getAttribute('aria-required')).toBe('true')
+  expect(name.required).toBe(true)
+  expect(within(dialog).getByText(/Pflichtangabe/)).toBeTruthy()
   expect(within(dialog).getByLabelText(/^Art/)).toBeTruthy()
   expect(within(dialog).getByLabelText(/^Adresse/)).toBeTruthy()
   // Ohne Namen wird nichts angelegt, und der Dialog sagt warum.

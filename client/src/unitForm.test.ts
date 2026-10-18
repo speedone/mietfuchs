@@ -61,13 +61,15 @@ describe('Rundlauf mit dem Datenmodell', () => {
 
 describe('Validierung', () => {
   test('Name und Wohnfläche sind Pflicht', () => {
-    expect(buildUnitBody(form({ name: ' ' }))).toHaveProperty('error')
-    expect(buildUnitBody(form({ areaM2: '' }))).toHaveProperty('error') // 0 m² ist seit #135 erlaubt, leer nicht
-    expect(buildUnitBody(form({ areaM2: 'viel' }))).toHaveProperty('error')
+    expect(buildUnitBody(form({ name: ' ' }))).toHaveProperty('problems')
+    // #346, Schritt 3 (UI-Durchsicht M5): jede Angabe mit ihrem Feld, kein Sammelsatz für Name und Fläche.
+    expect(buildUnitBody(form({ name: '', areaM2: '' }))).toMatchObject({ problems: [{ field: 'name', short: 'Name fehlt' }, { field: 'areaM2', short: 'Wohnfläche fehlt' }] })
+    expect(buildUnitBody(form({ areaM2: '' }))).toHaveProperty('problems') // 0 m² ist seit #135 erlaubt, leer nicht
+    expect(buildUnitBody(form({ areaM2: 'viel' }))).toHaveProperty('problems')
   })
 
   test('negative Personenzahl wird abgelehnt', () => {
-    expect(buildUnitBody(form({ usage: 'eigen', selfPersons: '-2' }))).toHaveProperty('error')
+    expect(buildUnitBody(form({ usage: 'eigen', selfPersons: '-2' }))).toHaveProperty('problems')
   })
 
   test('leere Personenzahl ist erlaubt', () => {
@@ -80,7 +82,7 @@ describe('Miteigentumsanteile (#94)', () => {
     const base = { ...EMPTY_UNIT_FORM, name: 'ETW', areaM2: '62' }
     expect(buildUnitBody({ ...base, mea: '124' })).toMatchObject({ body: { mea: 124 } })
     expect(buildUnitBody({ ...base, mea: '' })).toMatchObject({ body: { mea: null } })
-    expect(buildUnitBody({ ...base, mea: 'viele' })).toHaveProperty('error')
+    expect(buildUnitBody({ ...base, mea: 'viele' })).toHaveProperty('problems')
     expect(unitToForm({ id: 'u', propertyId: 'objekt-1', name: 'ETW', areaM2: 62, participates: true, mea: 124.5 }).mea).toBe('124,5')
   })
 })
@@ -103,8 +105,8 @@ describe('Zahlen in deutscher und technischer Schreibweise (#105)', () => {
 describe('Zahlen: falsch gesetzte Punkte neben einem Komma sind kein Wert (Durchsicht zu #105)', () => {
   const base = { ...EMPTY_UNIT_FORM, name: 'ETW', areaM2: '62' }
   test('„78.43,5“ und „1,234.56“ werden abgelehnt statt still falsch gelesen', () => {
-    expect(buildUnitBody({ ...base, mea: '78.43,5' })).toHaveProperty('error')
-    expect(buildUnitBody({ ...base, mea: '1,234.56' })).toHaveProperty('error')
+    expect(buildUnitBody({ ...base, mea: '78.43,5' })).toHaveProperty('problems')
+    expect(buildUnitBody({ ...base, mea: '1,234.56' })).toHaveProperty('problems')
     expect(buildUnitBody({ ...base, mea: '1.234,56' })).toMatchObject({ body: { mea: 1234.56 } })
   })
 })
@@ -124,12 +126,12 @@ describe('Wohnfläche 0 m² für Garage, Stellplatz oder Lager (#135)', () => {
   })
 
   test('negative Fläche bleibt verboten', () => {
-    expect(buildUnitBody(form({ areaM2: '-5' }))).toHaveProperty('error')
+    expect(buildUnitBody(form({ areaM2: '-5' }))).toHaveProperty('problems')
   })
 
   test('eine leere Fläche bleibt verboten, sie ist keine Angabe von 0 m²', () => {
-    expect(buildUnitBody(form({ areaM2: '' }))).toHaveProperty('error')
-    expect(buildUnitBody(form({ areaM2: 'abc' }))).toHaveProperty('error')
+    expect(buildUnitBody(form({ areaM2: '' }))).toHaveProperty('problems')
+    expect(buildUnitBody(form({ areaM2: 'abc' }))).toHaveProperty('problems')
   })
 })
 

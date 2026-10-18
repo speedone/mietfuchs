@@ -69,7 +69,10 @@ export function UIProvider({ children }: { children: ReactNode }) {
   const toast = useCallback((msg: string, kind: ToastKind = 'ok') => {
     const id = idRef.current++
     setToasts((t) => [...t, { id, msg, kind }])
-    later(() => setToasts((t) => t.filter((x) => x.id !== id)), 3200)
+    // Ein Fehler bleibt länger stehen (8 s, Spezifikation #346 Abschnitt 4): Er ist oft die einzige Rückmeldung
+    // einer Aktion ohne Formular (Löschen), und wer ihn liest, braucht dafür mehr als drei Sekunden.
+    const shown = kind === 'error' ? 8000 : 3200
+    later(() => setToasts((t) => t.filter((x) => x.id !== id)), shown)
     // Angesagt wird sie dann aber nicht: Außerhalb des modalen Dialogs ist alles inert, auch die Leiste mit
     // ihrem `aria-live`. Deshalb steht dieselbe Mitteilung für Vorleser zusätzlich in einer eigenen, nur für
     // sie sichtbaren Ansage im obersten Dialog, solange einer offen ist (Durchsicht S7). Erst eingehängt,
@@ -81,7 +84,7 @@ export function UIProvider({ children }: { children: ReactNode }) {
     say.setAttribute('role', kind === 'error' ? 'alert' : 'status')
     host.append(say)
     later(() => { say.textContent = msg }, 100)
-    later(() => say.remove(), 3200)
+    later(() => say.remove(), shown)
   }, [later])
 
   // Die Rückfrage (#346, Schritt 1) ist ein `<dialog role="alertdialog">` mit `showModal()`: Sie liegt im

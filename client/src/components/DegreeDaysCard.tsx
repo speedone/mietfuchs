@@ -8,10 +8,13 @@ import Term from './Term'
 import { useOpenWhenDiffers } from '../useDraft'
 import { degreeDaysBody, degreeDaysToForm } from '../fuelForm'
 import type { DegreeDayValue } from '../types'
+import { ErrorSummary, useFormError } from './ErrorSummary'
 
 export default function DegreeDaysCard({ propertyId, months, values, onSaved }: { propertyId: string; months: string[]; values: DegreeDayValue[]; onSaved: () => void }) {
   const [form, setForm] = useState<Record<string, string>>(() => degreeDaysToForm(values, months))
-  const [error, setError] = useState('')
+  // Fehler als Sammelmeldung oben in der Karte (#346, Schritt 3)
+  const errors = useFormError()
+  const setError = errors.set
   // Eine ungespeicherte Eingabe zählt als offenes Formular (#346, 7a).
   const markSaved = useOpenWhenDiffers(form, degreeDaysToForm(values, months))
   const toast = useToast()
@@ -36,6 +39,7 @@ export default function DegreeDaysCard({ propertyId, months, values, onSaved }: 
   return (
     <div className="card">
       <h2><Term id="degreeDays">Gradtagzahlen</Term> Ihres Orts</h2>
+      <ErrorSummary errors={errors} />
       <p className="muted">
         Freiwillig. Mit den Monatswerten des Deutschen Wetterdienstes für Ihren Ort teilt Mietfuchs eine Rechnung genauer auf als mit der
         Gradtagszahlentabelle. Ein Zählerstand zum Stichtag ist noch genauer. Gemeint ist die Gradtagzahl G20/15 (Raumtemperatur 20 °C, Heizgrenze 15 °C, VDI 3807), die Monatssumme Ihrer nächsten Wetterstation; der Deutsche Wetterdienst veröffentlicht sie in seinem Open-Data-Angebot (Climate Data Center), viele Versorger nennen sie auch.
@@ -48,7 +52,6 @@ export default function DegreeDaysCard({ propertyId, months, values, onSaved }: 
           </label>
         ))}
       </div>
-      {error && <div className="error">{error}</div>}
       <div className="row"><button className="btn" onClick={() => void save()}>Gradtagzahlen speichern</button></div>
     </div>
   )

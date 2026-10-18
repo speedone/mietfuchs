@@ -13,6 +13,7 @@ import { PeriodSelect } from '../components/PeriodSelect'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import { useConfirmDiscard, useDraft } from '../useDraft'
 import DraftActions from '../components/DraftActions'
+import { FieldMessage } from '../components/Field'
 import { effectiveLandlord, letterhead } from '../landlord'
 import { landlordReasonText } from '../landlordReasons'
 import { notSettledText } from '../tenancyModel'
@@ -322,7 +323,16 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
     const body = target
       ? { heatingPrepaymentOverrides: heatingOverridesWith(ten ?? {}, target.plantId, target.period, cents) }
       : { prepaymentOverrides: overrides }
-    if (!(await attempt(() => api(`/api/tenancies/${tenancyId}`, { method: 'PUT', body: JSON.stringify(body) })))) return
+    // Lehnt der Server ab, steht sein Satz am Feld und nicht oben auf der Seite (#346, Schritt 3).
+    try {
+      await api(`/api/tenancies/${tenancyId}`, { method: 'PUT', body: JSON.stringify(body) })
+    } catch (e) {
+      if (cents === null) toast(errorText(e), 'error')
+      else setPpEdit((p) => (p ? { ...p, error: errorText(e) } : p))
+      return
+    }
+    // Wie vorher über `attempt`: Ein Erfolg nimmt einen alten Fehler oben auf der Seite weg.
+    setError('')
     setPpEdit(null)
     await Promise.all([load(), reload()])
     toast(cents === null ? 'Vorauszahlung zurückgesetzt.' : 'Gezahlte Vorauszahlung übernommen.')
@@ -686,7 +696,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
                               />{' '}
                               <button className="btn small" onClick={() => submitPpEdit(st.tenancyId)}>OK</button>{' '}
                               <button className="btn small ghost" onClick={() => setPpEdit(null)}>Abbrechen</button>
-                              {ppEdit.error && <span id={ppErrorId} className="field-message is-error inline-message" role="alert">{ppEdit.error}</span>}
+                              {ppEdit.error && <FieldMessage id={ppErrorId} error={ppEdit.error} announce className="inline-message" />}
                             </>
                           ) : (
                             <>
