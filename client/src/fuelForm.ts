@@ -9,6 +9,7 @@ import { STOCK_UNIT_LABELS, STOCK_UNIT_TEXT } from '../../shared/fuelStock.ts'
 import type { Co2Restriction, DegreeDayValue, FuelDelivery, FuelGrade, FuelQuantityUnit, GasBasis, HeatGeneration, HeatingEnergy, HeatingMethod, HeatingPlant, StockUnit } from './types'
 import { FUEL_GRADE_LABELS, GRADES_BY_ENERGY, HEATING_VALUE_UNIT_TEXT } from '../../shared/fuelGrades.ts'
 import { billingEnergy, NO_CO2_FUELS } from '../../shared/heatDelivery.ts'
+import type { Problem } from './formProblems'
 
 // Energieträger, bei denen CO₂-Kosten aufzuteilen sind: Brennstoffe mit Standardwerten nach § 7 Abs. 4
 // BEHG (§ 2 Abs. 1 CO2KostAufG) und Fernwärme, wenn der Lieferant CO₂-Kosten ausweist. Dieselbe Liste
@@ -122,6 +123,23 @@ export const METERED_QUANTITY_OPTIONS: readonly { value: FuelQuantityUnit | ''; 
   { value: 'kWh', label: 'kWh' },
 ]
 const isStockUnit = (u: FuelQuantityUnit | ''): u is StockUnit => u === 'l' || u === 'kg' || u === 'srm'
+
+// Die Pflichtangaben einer Lieferung (#346 Schritt 7), alle auf einmal und je mit Feld, für `useFormError`. Erst wenn
+// sie da sind, prüfen `fuelBody` bzw. `stockFuelBody` den Rest; deren Rumpf ändert sich dadurch nicht.
+export type FuelField = 'unitId' | 'invoiceFrom' | 'invoiceTo' | 'deliveredAt' | 'quantity' | 'quantityUnit'
+export function fuelRequiredProblems(form: FuelForm, place: { stock: boolean; perUnit: boolean }): Problem<FuelField>[] {
+  const problems: Problem<FuelField>[] = []
+  if (place.perUnit && form.unitId === '') problems.push({ field: 'unitId', short: 'Wohnung fehlt', text: 'Bitte wählen Sie die Wohnung, deren Heizung die Rechnung betrifft.' })
+  if (place.stock) {
+    if (form.deliveredAt === '') problems.push({ field: 'deliveredAt', short: 'Lieferdatum fehlt', text: 'Lieferung: Bitte geben Sie das Lieferdatum an. Beim Vorrat zählt eine Lieferung zur Heizperiode, in der sie geliefert wurde.' })
+    if (form.quantity.trim() === '') problems.push({ field: 'quantity', short: 'Menge fehlt', text: 'Lieferung: Bitte geben Sie die gelieferte Menge an, wie auf der Rechnung.' })
+    if (form.quantityUnit === '') problems.push({ field: 'quantityUnit', short: 'Einheit fehlt', text: 'Lieferung: Bitte wählen Sie die Einheit der Menge.' })
+  } else {
+    if (form.invoiceFrom === '') problems.push({ field: 'invoiceFrom', short: 'Beginn fehlt', text: 'Lieferung: Bitte geben Sie den Beginn des Rechnungszeitraums laut Rechnung an.' })
+    if (form.invoiceTo === '') problems.push({ field: 'invoiceTo', short: 'Ende fehlt', text: 'Lieferung: Bitte geben Sie das Ende des Rechnungszeitraums laut Rechnung an.' })
+  }
+  return problems
+}
 
 // Der Rumpf einer Lieferung von Heizöl, Flüssiggas, Pellets, Holz oder Kohle (Heizung PR 8): Lieferdatum
 // und Menge statt Rechnungszeitraum; abgegrenzt wird über Anfangs- und Endbestand. Den Betrag gibt es

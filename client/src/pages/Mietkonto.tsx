@@ -8,6 +8,7 @@ import { useProperty, withProperty } from '../property'
 import { bookingDate, newPaymentDate, rentDueApplies, rentDueNote, rowStanding, shareText, decemberNote } from '../ledgerView'
 import { emptyPaymentForm, hasSettlementPayments, kindChangeQuestion, newPaymentForm, noRentYearText, PAYMENT_KIND_LABELS, PAYMENT_KIND_OPTIONS, paymentBody, paymentFormHints, paymentTenancyOptions, rentWithoutRow, rentWithoutRowQuestion, savedText, type PaymentField, type PaymentForm } from '../paymentForm'
 import Drawer from '../components/Drawer'
+import { useSaving } from '../useSaving'
 import Field from '../components/Field'
 import { useFormError } from '../components/ErrorSummary'
 import PageHeader from '../components/PageHeader'
@@ -24,6 +25,8 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
   const { property } = useProperty()
   const propertyId = property?.id
   const toast = useToast()
+  // Kein doppeltes Speichern (Durchsicht S1): `busy` an Fenster und Knopf, ein zweiter Aufruf fällt weg.
+  const saving = useSaving()
   const confirm = useConfirm()
   const [ledger, setLedger] = useState<RentLedger | null>(null)
   const [tenancies, setTenancies] = useState<Tenancy[]>([])
@@ -198,10 +201,11 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
           open
           title="Zahlung erfassen"
           onClose={() => { formErrors.clear(); setForm(null) }}
-          onSubmit={savePayment}
+          onSubmit={() => void saving.run(savePayment)}
+          busy={saving.busy}
           value={form}
           errors={formErrors}
-          actions={<button className="btn" onClick={savePayment}>Speichern</button>}
+          actions={<button className="btn" disabled={saving.busy} onClick={() => void saving.run(savePayment)}>Speichern</button>}
         >
           {(ledger?.rows.length ?? 0) === 0 && <div className="info">{noRentYearText(year)}</div>}
           <div className="row">

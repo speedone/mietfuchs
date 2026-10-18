@@ -18,6 +18,12 @@ type Props = {
    * Rückfrage beim Schließen auskommt (#346, Schritt 2).
    */
   value: unknown
+  /**
+   * Der Stand, gegen den von Anfang an verglichen wird, statt des Stands vor der ersten Eingabe. Für ein Fenster, das
+   * vorbelegt öffnet (eine mit der KI gelesene Rechnung): Es gilt dann schon beim Öffnen als geändert, und Esc, ✕ und
+   * Klick daneben fragen, bevor die Vorbelegung verloren geht (#346 Schritt 7, Durchsicht S2).
+   */
+  changedFrom?: { value: unknown }
   /** Die Knöpfe im festen Fuß rechts neben „Abbrechen“, typischerweise „Anlegen“ bzw. „Speichern“. */
   actions?: ReactNode
   /** Beschriftung des Knopfs, der das Fenster schließt; vorgegeben „Abbrechen“. */
@@ -64,7 +70,7 @@ function hasOpenPopover(box: HTMLElement): boolean {
   })
 }
 
-export default function Drawer({ open, title, subtitle, onClose, value, actions, cancelLabel = 'Abbrechen', busy = false, hint = 'Strg+S speichert · Esc schließt', children, onSubmit, width = 460, errors }: Props) {
+export default function Drawer({ open, title, subtitle, onClose, value, changedFrom, actions, cancelLabel = 'Abbrechen', busy = false, hint = 'Strg+S speichert · Esc schließt', children, onSubmit, width = 460, errors }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
   // Der Titel benennt den Dialog für Screenreader (#157).
@@ -82,6 +88,8 @@ export default function Drawer({ open, title, subtitle, onClose, value, actions,
   const baseline = useRef<{ value: unknown } | null>(null)
   const current = useRef(value)
   current.current = value
+  // Vorbelegt geöffnet: Der Vergleichsstand steht schon fest (S2).
+  if (open && baseline.current === null && changedFrom) baseline.current = { value: changedFrom.value }
   const dirty = open && baseline.current !== null && !sameDraft(value, baseline.current.value)
   // Ein geändertes Fenster ist ein offenes Formular: Seite, Objekt und Zeitraum fragen dann nach (#145, #356).
   useOpenForm(dirty)
@@ -170,7 +178,8 @@ export default function Drawer({ open, title, subtitle, onClose, value, actions,
       if (e.defaultPrevented || e.nativeEvent.isComposing || hasOpenPopover(e.currentTarget)) return
       e.preventDefault()
       void requestClose()
-    } else if (e.key === 's' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); onSubmitRef.current?.() }
+    // Solange gespeichert wird (`busy`), löst Strg+S kein zweites Speichern aus (Durchsicht S1).
+    } else if (e.key === 's' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); if (!busyRef.current) onSubmitRef.current?.() }
   }
 
   // Ein Klick daneben trifft den `<dialog>` selbst, also seinen Hintergrund; gezählt wird er nur außerhalb

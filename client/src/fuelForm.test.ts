@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import { fmtEuro } from './api'
 import {
-  METERED_QUANTITY_OPTIONS, STOCK_QUANTITY_OPTIONS, asksCo2Facts, defaultGrade, degreeDaysBody, degreeDaysToForm, deliveryLine, deliveryOptions, deliveryUnitId, emptyFuelForm, fuelBody, fuelToForm, gradeOptions, monthsOf, ownedBy, RESTRICTION_OPTIONS, stockFuelBody, unitWordFor,
+  METERED_QUANTITY_OPTIONS, STOCK_QUANTITY_OPTIONS, asksCo2Facts, defaultGrade, degreeDaysBody, degreeDaysToForm, deliveryLine, deliveryOptions, deliveryUnitId, emptyFuelForm, fuelBody, fuelRequiredProblems, fuelToForm, gradeOptions, monthsOf, ownedBy, RESTRICTION_OPTIONS, stockFuelBody, unitWordFor,
 } from './fuelForm'
 import type { FuelDelivery } from './types'
 
@@ -213,4 +213,18 @@ test('Vorrat: eine Menge in m³ oder kWh lehnt das Formular mit Satz ab (Prüfun
   expect(stockFuelBody({ ...form, emissionFactor: '0,2664' }, 'manual')).toMatchObject({ body: { emissionFactor: 0.2664 } })
   // Eine gespeicherte Menge in m³ einer Gasrechnung bleibt im Formular stehen.
   expect(fuelToForm({ ...gas, quantity: 2890, quantityUnit: 'm3' }).quantityUnit).toBe('m3')
+})
+
+// #346 Schritt 7: Die Lieferung steht im Seitenfenster; was fehlt, steht am Feld und in der Sammelmeldung, alles auf einmal.
+describe('Pflichtangaben einer Lieferung', () => {
+  test('Rechnung: Beginn und Ende des Rechnungszeitraums, bei der Etagenheizung die Wohnung', () => {
+    expect(fuelRequiredProblems(emptyFuelForm(), { stock: false, perUnit: true }).map((p) => [p.field, p.short])).toEqual([
+      ['unitId', 'Wohnung fehlt'], ['invoiceFrom', 'Beginn fehlt'], ['invoiceTo', 'Ende fehlt'],
+    ])
+    expect(fuelRequiredProblems({ ...emptyFuelForm(), invoiceFrom: '2026-01-01', invoiceTo: '2026-12-31' }, { stock: false, perUnit: false })).toEqual([])
+  })
+  test('Vorrat: Lieferdatum, Menge und Einheit; eine unlesbare Menge meldet erst die Prüfung des Rumpfs', () => {
+    expect(fuelRequiredProblems(emptyFuelForm(), { stock: true, perUnit: false }).map((p) => p.field)).toEqual(['deliveredAt', 'quantity', 'quantityUnit'])
+    expect(fuelRequiredProblems({ ...emptyFuelForm(), deliveredAt: '2026-02-01', quantity: 'viel', quantityUnit: 'l' }, { stock: true, perUnit: false })).toEqual([])
+  })
 })

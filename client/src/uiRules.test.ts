@@ -541,7 +541,9 @@ const buttonsIn = (file: string, raw: string): ButtonUse[] => {
     const cls = /className=(?:"([^"]*)"|\{`([^`]*)`\}|\{'([^']*)'\}|\{([^}]*)\})/.exec(open.tag)
     const className = cls ? (cls[1] ?? cls[2] ?? cls[3] ?? cls[4] ?? '') : ''
     const jsxText = inner.replace(/\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g, ' ').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
-    const literals = [...inner.matchAll(/\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}/g)].flatMap((e) => [...(e[1] ?? '').matchAll(/'([^']*)'|`([^`$]*)`/g)].map((l) => (l[1] ?? l[2] ?? '').trim()))
+    // Zeichenketten in Ausdrücken, ohne die Seite eines Vergleichs (`editing === 'neu'`): Das ist kein Text.
+    const literals = [...inner.matchAll(/\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}/g)].flatMap((e) => [...(e[1] ?? '').matchAll(/(!==?|===?)?\s*(?:'([^']*)'|`([^`$]*)`)/g)]
+      .filter((l) => l[1] === undefined).map((l) => (l[2] ?? l[3] ?? '').trim()))
     return [{ file, at, className, texts: [jsxText, ...literals].filter((t) => t !== '' && t !== '{\' \'}'), tag: open.tag }]
   })
 }
@@ -816,10 +818,9 @@ const ERROR_EXCEPTIONS = new Map<string, number>([
   ['./pages/Steuer.tsx', 1],
   ['./pages/Uebersicht.tsx', 1],
   ['./components/Co2SheetView.tsx', 1],
-  // Ladefehler (die Meldungen der Ablesungen stehen seit Schritt 10 im Baustein Notice)
+  // Ladefehler (die Meldungen der Ablesungen stehen seit Schritt 10 im Baustein Notice); der Mieterwechsel steht seit
+  // Schritt 7 im Seitenfenster, Stammdaten hat deshalb keine Stelle mehr
   ['./pages/Zaehler.tsx', 1],
-  // Der Mieterwechsel, der mit Schritt 7 ins Seitenfenster kommt
-  ['./pages/Stammdaten.tsx', 1],
   // Ladefehler und das Ergebnis je Beleg in der Warteschlange der Auswertung (Inhalt der Liste)
   ['./pages/Kosten.tsx', 2],
   ['./pages/Schnellerfassung.tsx', 2],
@@ -886,6 +887,11 @@ const requiredOutsideDrawer = (src: string): string[] => {
     .filter(({ at }) => !ranges.some(([a, b]) => at > a && (b < 0 || at < b)))
     .map(({ tag }) => tag.slice(0, 60))
 }
+// Ein Helfer, der Felder zeichnet, steht außerhalb des `<Drawer>`-Tags, wird aber nur darin aufgerufen; die Legende
+// zeigt dann der Drawer. Mit Grund.
+const REQUIRED_HELPERS_IN_DRAWER = new Map<string, string>([
+  ['./components/FuelCard.tsx', 'text() zeichnet die Felder der Lieferung, aufgerufen nur im Seitenfenster (#346 Schritt 7)'],
+])
 const FORM_EXCEPTIONS = new Map<string, string>([
   // heute keine
 ])
@@ -893,11 +899,13 @@ test('S25: Pflichtfelder mit Legende, jedes <form> mit noValidate, keine Gestalt
   // Probe des Prüfers
   expect(requiredOutsideDrawer('<Drawer open value={x}><Field label="A" required><input /></Field></Drawer><Field label="B" required={isNew}><input /></Field><Field label="C" required={false}><input /></Field>'))
     .toEqual(['<Field label="B" required={isNew}>'])
-  const missingLegend = files.filter((f) => f !== './components/Field.tsx' && f !== './components/MonthField.tsx' && requiredOutsideDrawer(sources[f] ?? '').length > 0 && !/<RequiredLegend\b/.test(sources[f] ?? ''))
+  const missingLegend = files.filter((f) => f !== './components/Field.tsx' && f !== './components/MonthField.tsx' && !REQUIRED_HELPERS_IN_DRAWER.has(f) && requiredOutsideDrawer(sources[f] ?? '').length > 0 && !/<RequiredLegend\b/.test(sources[f] ?? ''))
+  for (const f of REQUIRED_HELPERS_IN_DRAWER.keys()) expect(requiredOutsideDrawer(sources[f] ?? ''), `${f}: Ausnahme ohne Pflichtfeld außerhalb; streichen`).not.toEqual([])
   expect(missingLegend).toEqual([])
   // Die Seiten, die heute ein Pflichtfeld außerhalb eines Fensters haben, findet der Prüfer auch.
   expect(requiredOutsideDrawer(sources['./components/PropertyCard.tsx'] ?? '').length).toBeGreaterThan(0)
-  expect(requiredOutsideDrawer(sources['./pages/Zaehler.tsx'] ?? '').length).toBeGreaterThan(0)
+  // Die Ablesung der Zähler-Seite steht seit #346 Schritt 7 im Seitenfenster; ihre Pflichtfelder liegen darin.
+  expect(requiredOutsideDrawer(sources['./pages/Zaehler.tsx'] ?? '')).toEqual([])
   const forms = files.flatMap((f) => openingTags((sources[f] ?? '').replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, ''), 'form').filter(({ tag }) => !/\bnoValidate\b/.test(tag)).map(() => f))
   expect(forms.filter((f) => !FORM_EXCEPTIONS.has(f))).toEqual([])
   expect(openingTags('<form onSubmit={x}><form noValidate>', 'form').filter(({ tag }) => !/\bnoValidate\b/.test(tag))).toHaveLength(1)
@@ -966,7 +974,7 @@ const BOX_EXCEPTIONS = new Map<string, number>([
   ['./pages/Kosten.tsx', 7],
   ['./pages/Mietkonto.tsx', 3],
   ['./pages/Schnellerfassung.tsx', 2],
-  ['./pages/Stammdaten.tsx', 4],
+  ['./pages/Stammdaten.tsx', 3], // seit #346 Schritt 7 ohne den Kasten des Assistenten
   ['./pages/Steuer.tsx', 1],
   ['./pages/Uebersicht.tsx', 2],
   ['./pages/Zaehler.tsx', 1],
