@@ -570,6 +570,15 @@ export function swapBody(form: SwapForm, previous: Pick<HeatingPlant, 'energy'>,
 export const connectionNote = (u: Pick<Unit, 'noConnection'>): string | null =>
   (u.noConnection ?? []).includes('waerme') ? 'ohne Wärmeanschluss laut Wohnungsdaten' : null
 
+// Befund M6 aus #341: Die Zeile „Abrechnung“ beschreibt bei `manual` den gespeicherten Stand, wie gerechnet wird,
+// statt die Antwort „Niemand“ zu wiederholen. „Niemand“ bleibt die Antwort auf die Frage, wer die
+// Heizkostenabrechnung erstellt (die Anleitungen zitieren sie); auf der Karte widerspräche sie aber einer Anlage,
+// für die gerade „Ich selbst“ gewählt ist: Bis „Umstellen“ in Schritt 7 ist sie bewusst mit freien Schlüsseln
+// gespeichert (Abweichung 21).
+export const MANUAL_SUMMARY = 'nach den Umlageschlüsseln der Kostenpositionen, ohne eigene Heizkostenabrechnung'
+// Derselbe Satz in Schritt 7 und in der Mitteilung nach „Später“.
+export const SELF_UNTIL_SWITCH = 'Die Abrechnung wechselt erst mit „Umstellen“; bis dahin verteilt Mietfuchs die Heizkosten nach den Umlageschlüsseln der Kostenpositionen.'
+
 // Die Zeilen der Karte, wenn eine Anlage eingerichtet ist. Ohne Liste versorgt die Anlage jede
 // Einheit mit Wärmeanschluss (`servesUnit`); die übrigen nennt die Zeile, sonst hieße es „alle“.
 export function heatingSummary(plant: HeatingPlant, units: readonly Pick<Unit, 'id' | 'name' | 'noConnection'>[], plants: readonly HeatingPlant[] = []): string[] {
@@ -581,7 +590,9 @@ export function heatingSummary(plant: HeatingPlant, units: readonly Pick<Unit, '
     ? 'Direktzuordnung der Rechnung jeder Wohnung'
     : plant.source === 'homeowners'
       ? 'Die Gemeinschaft (Hausverwaltung) rechnet ab'
-      : (whoOptions('mfh').find((o) => o.value === plant.method)?.label ?? plant.method)
+      : plant.method === 'manual'
+        ? MANUAL_SUMMARY
+        : (whoOptions('mfh').find((o) => o.value === plant.method)?.label ?? plant.method)
   const without = units.filter((u) => connectionNote(u) !== null).map((u) => u.name)
   const served = plant.units === null
     ? `alle Wohnungen${without.length > 0 ? ` außer ${without.join(', ')} (ohne Wärmeanschluss)` : ''}`
