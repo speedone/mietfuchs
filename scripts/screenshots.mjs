@@ -354,9 +354,10 @@ async function shoot(browser, base) {
     await page.waitForLoadState('networkidle')
     await page.waitForTimeout(400)
   }
-  const go = async (label) => {
+  const go = async (label, { discard = false } = {}) => {
     await page.setViewportSize(VIEWPORT)
     await page.locator('nav.sidebar').getByRole('button', { name: label, exact: false }).first().click()
+    if (discard) await page.getByRole('button', { name: 'Verwerfen', exact: true }).click()
     await settle()
     // Der Klick rollt die Seitenleiste mit, wenn der Eintrag unten steht; das Logo gehört ins Bild
     await page.evaluate(() => {
@@ -445,7 +446,9 @@ async function shoot(browser, base) {
   await save('auswertung-pruefen')
 
   // Eine Anleitung je Vermietungsart aufgeklappt
-  await go('Hilfe & Begriffe')
+  // Die gewählte Aktion der Auswertung ist ein offener Entwurf (#355): Der Seitenwechsel fragt seit #356
+  // nach, und die Aufnahme verwirft ihn ausdrücklich, statt dass die Rückfrage das Skript ausbremst.
+  await go('Hilfe & Begriffe', { discard: true })
   const guide = page.locator('summary', { hasText: 'Haus mit Einliegerwohnung' }).first()
   await guide.click()
   await settle()
