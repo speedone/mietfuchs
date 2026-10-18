@@ -16,7 +16,9 @@ const ISSUE_URL = 'https://github.com/speedone/mietfuchs/issues/'
 
 // `focusTerm`: der Begriff, zu dem „Mehr in ‚Hilfe & Begriffe‘ →“ aus einer Erklärung führt (#346, Schritt 6);
 // die Suche wird geleert, damit er sichtbar ist, und er bekommt den Fokus. `seq` zählt jeden Sprung.
-export default function Hilfe({ onNavigate, focusTerm }: { onNavigate: (page: GuidePage) => void; focusTerm?: { id: TermId; seq: number } | null }) {
+// Danach meldet sie `onFocusTermDone`, und die App vergisst den Sprung: Ein späterer gewöhnlicher Wechsel zur Hilfe
+// beginnt oben (Durchsicht S1).
+export default function Hilfe({ onNavigate, focusTerm, onFocusTermDone }: { onNavigate: (page: GuidePage) => void; focusTerm?: { id: TermId; seq: number } | null; onFocusTermDone?: () => void }) {
   const [query, setQuery] = useState('')
   useEffect(() => {
     if (!focusTerm) return
@@ -25,6 +27,7 @@ export default function Hilfe({ onNavigate, focusTerm }: { onNavigate: (page: Gu
       const entry = document.getElementById(`begriff-${focusTerm.id}`)
       entry?.scrollIntoView?.({ block: 'start' })
       entry?.focus({ preventScroll: true })
+      onFocusTermDone?.()
     }, 0)
     return () => clearTimeout(t)
   }, [focusTerm])

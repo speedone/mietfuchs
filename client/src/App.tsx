@@ -384,7 +384,7 @@ function Shell() {
         )}
         {tab === 'heizkosten' && <Heizkosten units={units} tenancies={tenancies} onTenanciesChanged={reload} />}
         {tab === 'steuer' && <Steuer settings={settings} />}
-        {tab === 'hilfe' && <Hilfe onNavigate={(t) => void navigate(t)} focusTerm={helpTerm} />}
+        {tab === 'hilfe' && <Hilfe onNavigate={(t) => void navigate(t)} focusTerm={helpTerm} onFocusTermDone={() => setHelpTerm(null)} />}
         {tab === 'einstellungen' && settings && (
           <Einstellungen settings={settings} reload={reload} update={update} />
         )}
