@@ -2435,6 +2435,9 @@ export type SelfBoundaryView = {
   gap: InterimGapStatus | null
   // Der Grund, wenn die Zwischenablesung nicht möglich war (Durchsicht von #239, I3).
   gapReason?: string
+  // Die Zähler ohne Stand an dieser Grenze, mit Zählernummer, wenn eingetragen (Befund M7 aus #341);
+  // fehlt in älteren Abrechnungen.
+  missingMeters?: { name: string; number?: string }[]
 }
 // Ein Nutzer einer Wohnung (Mieter, Leerstand, Eigennutzung, außerhalb) mit seinen Werten.
 export type SelfUserView = {

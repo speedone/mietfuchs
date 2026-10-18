@@ -164,6 +164,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- Heizkosten, Ablesungen: Fehlt an einer Grenze der Heizperiode ein Stand, nennt die Liste jetzt den
+  Zähler mit Zählernummer, etwa „EG links, Beginn der Heizperiode am 31.12.2024: keine Ablesung am
+  Zähler „Warmwasser neu“ (Nr. WW-4711)“. Vorher stand dort nur die Wohnung, und bei mehreren Zählern
+  blieb offen, welcher gemeint war (Befund M7 aus [#341](https://github.com/speedone/mietfuchs/issues/341)).
 - Die Karte „Objekt“ verlangt eine Bezeichnung: Leer ließ sie sich speichern, und die Seitenleiste
   zeigte danach „Ohne Namen“. Hat das Objekt noch keinen Namen, etwa nach einer frischen Installation,
   steht im Feld „Mein Objekt“; Sie können es überschreiben, und mit dem ersten Speichern der Karte wird
