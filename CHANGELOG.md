@@ -234,7 +234,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Verbrauchsinformation, die Warmwassertemperatur, der Grund einer fehlenden Zwischenablesung und in den
   Einstellungen die noch nicht veröffentlichten Rechtswerte), hat sein „Speichern“ direkt am Feld, ebenfalls
   erst nach einer Änderung. Die Karten der Seite Heizkosten haben einen einheitlichen Kopf, ohne die
-  wiederholte Heizperiode im Titel; die Frage „Wie bestimmen Sie den Betriebsstrom?“ zeigt jede Antwort in
+  wiederholte Heizperiode im Titel (außer beim Ableseergebnis, das sie für den Ausdruck nennt); die Frage „Wie bestimmen Sie den Betriebsstrom?“ zeigt jede Antwort in
   einer eigenen Zeile, und „Nicht möglich“ und „Nicht durchgeführt“ bei einer fehlenden Zwischenablesung
   sehen aus wie Knöpfe (Befunde N8, M18 aus [#341](https://github.com/speedone/mietfuchs/issues/341);
   [#346](https://github.com/speedone/mietfuchs/issues/346)).

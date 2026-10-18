@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { keepDraft, useDraft } from '../useDraft'
 import DraftActions from './DraftActions'
 import Card from './Card'
-import { useOpenForm } from '../property'
 import EstimateCard from './EstimateCard'
 import HcaBlock from './HcaBlock'
 import type { HeatingPeriodView, HeatingPlant, InsulationRule, InterimGapStatus, SelfHeatingStatement } from '../types'
@@ -42,9 +41,9 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
   const draft = useDraft({ share: '', waterShare: '', insulation: savedInsulation, agreed: savedAgreed }, { scope: `${plant.id}|${view.period}` })
   const { share, waterShare, insulation, agreed } = draft.value
   const edit = (patch: Partial<typeof draft.value>) => draft.set({ ...draft.value, ...patch })
-  // Eine Zwischenablesung, die „nicht möglich“ war, braucht einen Grund (I3); eine offene Begründung zählt als offenes Formular.
+  // Eine Zwischenablesung, die „nicht möglich“ war, braucht einen Grund (I3). Als offenes Formular zählt er erst mit einer
+  // Eingabe (GapReason über useDraft; Durchsicht K5).
   const [reasonFor, setReasonFor] = useState<string | null>(null)
-  useOpenForm(reasonFor !== null)
   const [printUnit, setPrintUnit] = useState<string>(self?.units[0]?.unitId ?? '')
   const [printing, setPrinting] = useState(false)
   const editable = !d || shareEditable(d)
@@ -110,8 +109,9 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
       setReasonFor(null)
       onChanged()
     } catch (e) {
-      setError(errorText(e))
+      // Der Grund meldet seinen Fehler am Feld (geworfen an GapReason), nicht noch einmal oben (Durchsicht K5).
       if (status === 'impossible') throw e
+      setError(errorText(e))
     }
   }
 
@@ -201,7 +201,7 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
                           <button className="btn secondary" onClick={() => answer(u.unitId, b.date, 'missed')}>Nicht durchgeführt</button>
                           {b.gap !== null && <button className="btn ghost" onClick={() => answer(u.unitId, b.date, null)}>Antwort zurücknehmen</button>}
                         </div>
-                        {reasonFor === key && <GapReason saved={b.gapReason ?? ''} scope={key} onSave={(reason) => answer(u.unitId, b.date, 'impossible', reason)} />}
+                        {reasonFor === key && <GapReason saved={b.gapReason ?? ''} scope={key} onSave={(reason) => answer(u.unitId, b.date, 'impossible', reason)} onCancel={() => setReasonFor(null)} />}
                       </div>
                     )}
                   </div>
@@ -251,7 +251,7 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
 
 // Der Grund, warum eine Zwischenablesung nicht möglich war (I3): ein Entwurf am Feld (#309, #346 Schritt 7); er steht
 // in der Abrechnung und ist deshalb Pflicht.
-function GapReason({ saved, scope, onSave }: { saved: string; scope: string; onSave: (reason: string) => Promise<void> }) {
+function GapReason({ saved, scope, onSave, onCancel }: { saved: string; scope: string; onSave: (reason: string) => Promise<void>; onCancel: () => void }) {
   const draft = useDraft(saved, { scope })
   async function save(value: string) {
     if (value.trim() === '') throw new Error('Bitte nennen Sie den Grund; er steht in der Abrechnung.')
@@ -264,6 +264,7 @@ function GapReason({ saved, scope, onSave }: { saved: string; scope: string; onS
         <input value={draft.value} disabled={draft.saving} onChange={(e) => draft.set(e.target.value)} />
       </label>
       <DraftActions draft={draft} onSave={save} what="Grund" />
+      {!draft.dirty && <button className="btn secondary" type="button" onClick={onCancel}>Abbrechen</button>}
     </div>
   )
 }
