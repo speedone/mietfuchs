@@ -1,6 +1,6 @@
 // Die Seiten der Oberfläche und ihre Navigation, gruppiert nach Arbeitsphase statt als flache
 // Tab-Liste: erst der Überblick, dann „Sammeln“ (übers Jahr laufend), „Abrechnen“ (Jahresende)
-// und „Einrichten“ (selten). Eigene Datei, damit die Anleitungen der Hilfe (#164) ihre Sprünge
+// und „Einrichten“ (Objekt, Einstellungen, Hilfe). Eigene Datei, damit die Anleitungen der Hilfe (#164) ihre Sprünge
 // gegen dieselben Kennungen prüfen können.
 
 import type { GuidePage } from '../../shared/guides.ts'
@@ -37,7 +37,7 @@ export const NAV: { section?: string; items: NavItem[] }[] = [
     ],
   },
   {
-    section: 'Einrichten · selten',
+    section: 'Einrichten',
     items: [
       { id: 'stammdaten', label: 'Stammdaten', icon: '🏠' },
       { id: 'einstellungen', label: 'Einstellungen', icon: '⚙️' },
