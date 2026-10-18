@@ -13,6 +13,7 @@ const view: HeatingPeriodView = {
   plantId: 'hp', period: periodKey('2025-05'), label: '2025/2026', from: '2025-05-01', to: '2026-04-30', short: false, closed: false,
   ...noInfoView(), hotWater: { dhwMethod: null, dhwUnmeasurable: null, dhwHeatKwh: null, totalHeatKwh: null, dhwVolumeM3: null, dhwTempC: null }, hotWaterBasis: { volumeFromMetersM3: null, volumeMissing: null, running: null, suppliedAreaM2: 0 }, co2: null, items: [], stock: null,
 }
+const SAVE = 'Speichern (Angaben zum Gebäude)'
 const facts = { id: 'hp', energy: 'gas', method: 'manual', nonResidential: false, restriction: 'supply', districtEtsNew: false } as const
 
 let sent: { url: string; method: string; body: Record<string, unknown> }[]
@@ -34,9 +35,11 @@ test('Die Auswahl zu § 9 zeigt den gespeicherten Wert; Speichern schickt die An
   if (!(el instanceof HTMLSelectElement)) throw new Error('keine Auswahl')
   expect(el.value).toBe('supply')
   expect(screen.queryByLabelText(/Emissionshandel/)).toBeNull()
+  // Ohne Änderung gibt es kein „Speichern“ (eine Karte, ein Speichern, nur bei einer Änderung; #346 Schritt 7).
+  expect(screen.queryByRole('button', { name: SAVE })).toBeNull()
   fireEvent.click(screen.getByLabelText('Das Gebäude dient überwiegend nicht dem Wohnen (§ 8 CO2KostAufG)'))
-  fireEvent.click(screen.getByText('Angaben speichern'))
-  await waitFor(() => expect(sent.at(-1)).toEqual({ url: '/api/heating-plants/hp', method: 'PUT', body: { nonResidential: true, restriction: 'supply', districtEtsNew: false } }))
+  fireEvent.click(screen.getByRole('button', { name: SAVE }))
+  await waitFor(() => expect(sent).toEqual([{ url: '/api/heating-plants/hp', method: 'PUT', body: { nonResidential: true, restriction: 'supply', districtEtsNew: false } }]))
 })
 
 test('Fernwärme: die Frage zum ersten Anschluss nach dem Stichtag aus dem Register', () => {
@@ -48,8 +51,9 @@ test('Bei freien Schlüsseln die Fläche der Einstufung; leer gilt die Wohnfläc
   render(<Co2FactsCard plant={facts} view={view} servedAreaM2={600} onSaved={() => {}} />)
   expect(screen.getByText(/Ohne Angabe: 600 m²/)).toBeTruthy()
   fireEvent.change(screen.getByLabelText('Fläche der Einstufung (m²)'), { target: { value: '612,5' } })
-  fireEvent.click(screen.getByText('Fläche speichern'))
-  await waitFor(() => expect(sent.at(-1)).toEqual({ url: '/api/heating-plants/hp/periods/2025-05/co2', method: 'PUT', body: { method: 'self', areaM2: 612.5 } }))
+  fireEvent.click(screen.getByRole('button', { name: SAVE }))
+  // Nur die Fläche hat sich geändert: nur ihre Anfrage, mit demselben Rumpf wie vorher „Fläche speichern“.
+  await waitFor(() => expect(sent).toEqual([{ url: '/api/heating-plants/hp/periods/2025-05/co2', method: 'PUT', body: { method: 'self', areaM2: 612.5 } }]))
 })
 
 test('Durchsicht: Die Angaben zum Gebäude gelten für alle Heizperioden und bleiben auch bei einer abgeschlossenen änderbar', () => {
@@ -57,22 +61,34 @@ test('Durchsicht: Die Angaben zum Gebäude gelten für alle Heizperioden und ble
   const box = screen.getByLabelText('Das Gebäude dient überwiegend nicht dem Wohnen (§ 8 CO2KostAufG)')
   if (!(box instanceof HTMLInputElement)) throw new Error('kein Kästchen')
   expect(box.disabled).toBe(false)
-  expect(screen.getByText('Angaben speichern')).toBeTruthy()
+  fireEvent.click(box)
+  expect(screen.getByRole('button', { name: SAVE })).toBeTruthy()
   expect(screen.getByText(/wirken auf Heizperioden, die noch nicht abgeschlossen sind/)).toBeTruthy()
 })
 
-// #346, Schritt 7a: Angaben und Fläche speichern getrennt; jede nimmt ihre Marke weg.
-test('7a: Ändern meldet die Karte an, das Speichern beider Teile nimmt die Marke weg', async () => {
+// #346, Schritt 7a und 7: Angaben und Fläche speichern zusammen mit einem „Speichern“; danach ist die Marke weg.
+test('7a: Ändern meldet die Karte an, ein Speichern schickt beide Teile wie vorher und nimmt die Marke weg', async () => {
   const saved = vi.fn()
   render(<OpenFormScope><Co2FactsCard plant={facts} view={view} servedAreaM2={600} onSaved={saved} /></OpenFormScope>)
   expect(hasOpenForm()).toBe(false)
   fireEvent.click(screen.getByLabelText('Das Gebäude dient überwiegend nicht dem Wohnen (§ 8 CO2KostAufG)'))
   fireEvent.change(screen.getByLabelText('Fläche der Einstufung (m²)'), { target: { value: '612,5' } })
   expect(hasOpenForm()).toBe(true)
-  fireEvent.click(screen.getByText('Angaben speichern'))
+  expect(screen.getAllByRole('button', { name: /^Speichern/ })).toHaveLength(1)
+  fireEvent.click(screen.getByRole('button', { name: SAVE }))
   await waitFor(() => expect(saved).toHaveBeenCalledTimes(1))
-  expect(hasOpenForm()).toBe(true)
-  fireEvent.click(screen.getByText('Fläche speichern'))
-  await waitFor(() => expect(saved).toHaveBeenCalledTimes(2))
+  expect(sent).toEqual([
+    { url: '/api/heating-plants/hp', method: 'PUT', body: { nonResidential: true, restriction: 'supply', districtEtsNew: false } },
+    { url: '/api/heating-plants/hp/periods/2025-05/co2', method: 'PUT', body: { method: 'self', areaM2: 612.5 } },
+  ])
   expect(hasOpenForm()).toBe(false)
+})
+
+test('Eine ungültige Fläche: Meldung oben in der Karte, nichts gesendet, der Entwurf bleibt', async () => {
+  render(<Co2FactsCard plant={facts} view={view} servedAreaM2={600} onSaved={() => {}} />)
+  fireEvent.change(screen.getByLabelText('Fläche der Einstufung (m²)'), { target: { value: '0' } })
+  fireEvent.click(screen.getByRole('button', { name: SAVE }))
+  expect(await screen.findByText('Die Fläche ist eine Zahl über 0.')).toBeTruthy()
+  expect(sent).toEqual([])
+  expect((screen.getByLabelText('Fläche der Einstufung (m²)') as HTMLInputElement).value).toBe('0')
 })

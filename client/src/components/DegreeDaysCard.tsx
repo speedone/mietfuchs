@@ -1,6 +1,7 @@
 // Die Karte „Gradtagzahlen Ihres Orts“ (Heizung PR 7, Stufe 4 in 3.2): die Monatswerte des Deutschen
 // Wetterdienstes für den Ort des Objekts. Fehlt ein Monat, rechnet Mietfuchs mit der
 // Gradtagszahlentabelle (nach den anerkannten Regeln der Technik, § 9b Abs. 2 HeizkostenV).
+import Card from '../components/Card'
 import { useState } from 'react'
 import { api, errorText } from '../api'
 import { useToast } from './feedback'
@@ -37,8 +38,7 @@ export default function DegreeDaysCard({ propertyId, months, values, onSaved }: 
   }
 
   return (
-    <div className="card">
-      <h2><Term id="degreeDays">Gradtagzahlen</Term> Ihres Orts</h2>
+    <Card title={<><Term id="degreeDays">Gradtagzahlen</Term> Ihres Orts</>}>
       <ErrorSummary errors={errors} />
       <p className="muted">
         Freiwillig. Mit den Monatswerten des Deutschen Wetterdienstes für Ihren Ort teilt Mietfuchs eine Rechnung genauer auf als mit der
@@ -53,6 +53,6 @@ export default function DegreeDaysCard({ propertyId, months, values, onSaved }: 
         ))}
       </div>
       <div className="row"><button className="btn" onClick={() => void save()}>Gradtagzahlen speichern</button></div>
-    </div>
+    </Card>
   )
 }

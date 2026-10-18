@@ -1,4 +1,4 @@
-// Wächter zur Sichtprüfung der Oberfläche (S1–S12, S16 zu den Verben, S17 und S20 zu Tailwind): Die Gestaltung hängt an wenigen zentralen Regeln
+// Wächter zur Sichtprüfung der Oberfläche (S1–S12, S16 zu den Verben, S19 zu Formularmustern, S17 und S20 zu Tailwind): Die Gestaltung hängt an wenigen zentralen Regeln
 // in index.css. Jede der Ursachen, die die Sichtprüfung gefunden hat, kam dadurch zustande, dass eine
 // Seite an diesen Regeln vorbei etwas Eigenes tat. Geprüft wird der Quelltext, denn jsdom rechnet
 // kein Layout und keine Farben.
@@ -619,6 +619,114 @@ test('S16: feste Verben, „Abbrechen“ nie primär, Gefahr mit „…“ und A
   // Der Prüfer sieht die Seitenfenster und die Gefahrknöpfe von heute.
   expect(files.flatMap((f) => openingTags(sources[f] ?? '', 'Drawer')).length).toBeGreaterThanOrEqual(9)
   expect(files.flatMap((f) => buttonsIn(f, sources[f] ?? '')).filter(isDangerGhost).length).toBeGreaterThanOrEqual(8)
+})
+
+// S19 (#346 Schritt 7, UI-Durchsicht M18, N8): ein Formular, ein Speichern. Eine Karte trägt höchstens ein Speichern
+// (ein Knopf „… speichern“, `type="submit"` oder `DraftActions layout="card"`); was je Zeile einer Liste gespeichert
+// wird, ist ein Entwurf am Feld (`DraftActions` ohne `layout="card"`) und zählt nicht. Ein Seitenfenster in der Karte
+// hat sein Speichern im eigenen Fuß und zählt nicht mit. Und eine Karte, die ein Seitenfenster öffnet, speichert ihr
+// Formular dort und nicht zusätzlich am Fuß der Karte (Ausnahmen mit Grund).
+/** Ende eines öffnenden Tags ab `at` (geschweifte Klammern mitgezählt) und ob es sich selbst schließt. */
+const tagEnd = (src: string, at: number): { end: number; selfClosing: boolean } => {
+  let depth = 0
+  for (let i = at; i < src.length; i++) {
+    const c = src[i]
+    if (c === '{') depth++
+    else if (c === '}') depth--
+    else if (c === '>' && depth === 0 && src[i - 1] !== '=') return { end: i + 1, selfClosing: src[i - 1] === '/' }
+  }
+  return { end: src.length, selfClosing: true }
+}
+/** Bereich [Anfang, Ende) des Elements, das bei `at` mit `<name` beginnt, samt verschachtelter Elemente gleichen Namens. */
+const elementRange = (src: string, at: number, name: string): [number, number] => {
+  const first = tagEnd(src, at)
+  if (first.selfClosing) return [at, first.end]
+  let depth = 1
+  const re = new RegExp(`<(/?)${name}\\b`, 'g')
+  re.lastIndex = first.end
+  for (let m = re.exec(src); m; m = re.exec(src)) {
+    if (m[1] === '/') {
+      depth--
+      if (depth === 0) return [at, src.indexOf('>', m.index) + 1]
+    } else if (!tagEnd(src, m.index).selfClosing) depth++
+  }
+  return [at, src.length]
+}
+const CARD_START = /<(div|section)\b(?=(?:[^>{]|\{[^}]*\})*\bclassName=(?:"|\{`|\{')(?:[^"`']*\s)?card(?=[\s"`']))|<(Card)\b/g
+const cardRanges = (src: string): { range: [number, number] }[] =>
+  [...src.matchAll(CARD_START)].map((m) => ({ range: elementRange(src, m.index ?? 0, m[1] ?? m[2] ?? 'div') }))
+/** Der Text einer Karte ohne verschachtelte Karten und ohne Seitenfenster. */
+const ownText = (src: string, [a, b]: [number, number], all: [number, number][]): string => {
+  const cut = [...all.filter(([x, y]) => x > a && y <= b), ...[...src.slice(a, b).matchAll(/<Drawer\b/g)].map((m) => elementRange(src, a + (m.index ?? 0), 'Drawer'))]
+    .sort((p, q) => p[0] - q[0])
+  let out = ''
+  let pos = a
+  for (const [x, y] of cut) {
+    if (x < pos) continue
+    out += src.slice(pos, x)
+    pos = y
+  }
+  return out + src.slice(pos, b)
+}
+const cardSaves = (text: string): string[] => [
+  ...[...text.matchAll(/layout="card"/g)].map(() => 'DraftActions layout="card"'),
+  ...[...text.matchAll(/type="submit"/g)].map(() => 'type="submit"'),
+  // Ein Knopf in einer Schleife (`.map(`) steht je Zeile da, also mehrfach: Das ist ein Entwurf am Feld.
+  ...buttonsIn('karte', text).flatMap((b) => (b.texts.some((t) => /(?:^|\s)speichern$/i.test(t))
+    ? (insideMap(text, b.at) ? [`Knopf „${b.texts[0] ?? ''}“ je Zeile`, 'je Zeile'] : [`Knopf „${b.texts[0] ?? ''}“`]) : [])),
+]
+// Ob `pos` im Ausdruck `{… .map(…) …}` einer Schleife liegt. Gezählt werden geschweifte Klammern, nicht runde: In
+// JSX-Text stehen oft runde ohne Gegenstück („(§ 9 …“ über zwei Zeilen), geschweifte nicht.
+const insideMap = (text: string, pos: number): boolean => [...text.slice(0, pos).matchAll(/\.map\(/g)].some((m) => {
+  let depth = 0
+  let start = -1
+  for (let i = (m.index ?? 0) - 1; i >= 0; i--) {
+    if (text[i] === '}') depth++
+    else if (text[i] === '{') { if (depth === 0) { start = i; break } depth-- }
+  }
+  if (start < 0) return false
+  depth = 0
+  for (let i = start; i < text.length; i++) {
+    if (text[i] === '{') depth++
+    else if (text[i] === '}' && --depth === 0) return pos < i
+  }
+  return true
+})
+const formPatternProblems = (file: string, src: string): string[] => {
+  const cards = cardRanges(src)
+  const ranges = cards.map((c) => c.range)
+  return cards.flatMap(({ range }) => {
+    const own = ownText(src, range, ranges)
+    const saves = cardSaves(own)
+    const where = `${file}: Karte ab Zeile ${src.slice(0, range[0]).split('\n').length}`
+    const problems: string[] = []
+    if (saves.length > 1) problems.push(`${where}: ${saves.length}× Speichern (${saves.join(', ')})`)
+    const opensDrawer = /<Drawer\b/.test(src.slice(range[0], range[1]))
+    if (opensDrawer && saves.length > 0 && !DRAWER_AND_CARD_SAVE.has(file)) problems.push(`${where}: Seitenfenster und Speichern am Fuß der Karte`)
+    return problems
+  })
+}
+// Karten, die ein Seitenfenster öffnen und daneben ein eigenes Formular mit Speichern haben, mit Grund.
+const DRAWER_AND_CARD_SAVE = new Map<string, string>([
+  ['./components/PropertyCard.tsx', 'die Karte speichert das gewählte Objekt; das Seitenfenster legt ein weiteres an, ein anderer Datensatz'],
+])
+test('S19: eine Karte, ein Speichern; was ein Seitenfenster bearbeitet, speichert dort', () => {
+  // Probe des Prüfers
+  const probe = (s: string) => formPatternProblems('probe', s)
+  expect(probe('<div className="card"><button className="btn">Angaben speichern</button><div className="row"><button className="btn secondary">Fläche speichern</button></div></div>')).toHaveLength(1)
+  expect(probe('<section className="card no-print"><DraftActions draft={d} onSave={s} layout="card" /><button className="btn">Speichern</button></section>')).toHaveLength(1)
+  expect(probe('<Card title="x"><DraftActions draft={d} onSave={s} layout="card" />{rows.map((r) => <Row key={r} />)}</Card>')).toEqual([])
+  // Verschachtelte Karte zählt für sich; ein Seitenfenster in der Karte zählt nicht mit, die Karte darf dann aber nicht selbst speichern.
+  expect(probe('<div className="card"><button className="btn">Speichern</button><div className="card inset"><button className="btn">Speichern</button></div></div>')).toEqual([])
+  expect(probe('<div className="card"><button className="btn" onClick={open}>+ Lieferung anlegen</button><Drawer open value={f} onClose={c} actions={<button className="btn" onClick={save}>Speichern</button>}><input /></Drawer></div>')).toEqual([])
+  expect(probe('<div className="card"><button className="btn">Werte speichern</button><Drawer open value={f} onClose={c} actions={<button className="btn">Anlegen</button>}><input /></Drawer></div>')).toHaveLength(1)
+  expect(probe('<div className={`card ${x}`}><button type="submit">Los</button><button className="btn">Speichern</button></div>')).toHaveLength(1)
+  expect(probe('<div className="card">{rows.map((r) => (<div key={r}><input /><button className="btn">Speichern</button></div>))}</div>')).toHaveLength(1)
+  expect(probe('<div className="card">{rows.map((r) => <Row key={r} />)}<button className="btn">Speichern</button></div>')).toEqual([])
+  for (const file of DRAWER_AND_CARD_SAVE.keys()) expect(sources[file], `${file} fehlt`).toBeTruthy()
+  // Der Prüfer sieht die Karten von heute.
+  expect(files.flatMap((f) => cardRanges(sources[f] ?? '')).length).toBeGreaterThanOrEqual(40)
+  expect(files.flatMap((f) => formPatternProblems(f, sources[f] ?? ''))).toEqual([])
 })
 
 // S13 (Spezifikation Abschnitt 9, #346 Schritt 1): Kein Dialogbaustein fängt Enter ab. Enter wirkt auf den

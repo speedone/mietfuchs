@@ -16,6 +16,8 @@ const statement = (units: SelfHeatingStatement['units']) => ({
   ok: true, heatPump: null, changeSplit: 'degreeDays', areaBasisHeat: 'area', hotWater: 'none', alpha: null, shares: { heating: 70, water: 70, forced: false, previous: null }, pots: [], units,
 } as SelfHeatingStatement)
 
+const SHARE_SAVE = 'Speichern (Anteil nach Verbrauch)'
+
 test('fehlende Zwischenablesung: „nicht möglich“ erst mit Grund; beide Folgen stehen vor der Wahl (Durchsicht von #239, I3)', async () => {
   const sent: { url: string; method?: string; body: unknown }[] = []
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
@@ -30,10 +32,10 @@ test('fehlende Zwischenablesung: „nicht möglich“ erst mit Grund; beide Folg
   expect(screen.getByText(/Nicht möglich: .* Nennen Sie den Grund/)).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Nicht möglich' }))
   expect(sent).toEqual([])
-  const speichern = screen.getByRole('button', { name: 'Grund speichern' }) as HTMLButtonElement
-  expect(speichern.disabled).toBe(true)
+  // Ein Entwurf am Feld (#346 Schritt 7): „Speichern“ erst mit einem Grund.
+  expect(screen.queryByRole('button', { name: 'Speichern (Grund)' })).toBeNull()
   fireEvent.change(screen.getByLabelText(/Warum war die Zwischenablesung nicht möglich/), { target: { value: 'Wohnung nicht zugänglich' } })
-  fireEvent.click(speichern)
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern (Grund)' }))
   await waitFor(() => expect(onChanged).toHaveBeenCalled())
   expect(sent).toEqual([{ url: '/api/units/c/interim-gaps/2025-09-30', method: 'PUT', body: { status: 'impossible', reason: 'Wohnung nicht zugänglich' } }])
 })
@@ -61,9 +63,11 @@ test('Pflichtanteil in begonnener Heizperiode nachtragen; „Weiß ich nicht“ 
   const onChanged = vi.fn()
   render(<SelfHeatingCards plant={{ id: 'hp', method: 'self', energy: 'oil', hotWater: 'none' } as HeatingPlant} view={{ period: '2025-01', label: '2025', distribution: d } as HeatingPeriodView} self={null} onChanged={onChanged} />)
   expect(screen.getByText(/Mit 70 % liegen Sie in jedem Fall richtig/)).toBeTruthy()
-  expect(screen.queryByRole('button', { name: 'Pflichtanteil eintragen' })).toBeNull()
+  expect(screen.queryByRole('button', { name: SHARE_SAVE })).toBeNull()
   fireEvent.change(screen.getByLabelText(/Liegt der Wärmeschutz Ihres Hauses unter dem Anforderungsniveau/), { target: { value: 'applies' } })
-  fireEvent.click(screen.getByRole('button', { name: 'Pflichtanteil eintragen' }))
+  // Ein „Speichern“ am Fuß der Karte statt „Pflichtanteil eintragen“ (#346 Schritt 7); der Satz darüber sagt, was es tut.
+  expect(screen.getByText('Mit „Speichern“ tragen Sie den Pflichtanteil ein.')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: SHARE_SAVE }))
   await waitFor(() => expect(onChanged).toHaveBeenCalled())
   expect(sent).toEqual([{ heatConsumptionPct: 70, waterConsumptionPct: null, insulationRule: 'applies', above70Agreed: false }])
 })
@@ -85,7 +89,7 @@ test('Durchsicht #241 Runde 2, H1: Die Verteilung 2025 fragt das Warmwasser nach
     view={{ period: '2025-01', label: '2025', distribution: null, selfHotWater: 'combined' } as HeatingPeriodView} self={null} onChanged={onChanged} />)
   fireEvent.change(screen.getByLabelText(/Heizung in %/), { target: { value: '70' } })
   fireEvent.change(screen.getByLabelText(/Warmwasser in %/), { target: { value: '60' } })
-  fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+  fireEvent.click(screen.getByRole('button', { name: SHARE_SAVE }))
   await waitFor(() => expect(onChanged).toHaveBeenCalled())
   expect(sent).toEqual([{ heatConsumptionPct: 70, waterConsumptionPct: 60, insulationRule: 'notApplies', above70Agreed: false }])
   cleanup()
@@ -95,7 +99,7 @@ test('Durchsicht #241 Runde 2, H1: Die Verteilung 2025 fragt das Warmwasser nach
     view={{ period: '2025-01', label: '2025', distribution: null, selfHotWater: 'none' } as HeatingPeriodView} self={null} onChanged={onChanged} />)
   expect(screen.queryByLabelText(/Warmwasser in %/)).toBeNull()
   fireEvent.change(screen.getByLabelText(/Heizung in %/), { target: { value: '70' } })
-  fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+  fireEvent.click(screen.getByRole('button', { name: SHARE_SAVE }))
   await waitFor(() => expect(sent).toEqual([{ heatConsumptionPct: 70, waterConsumptionPct: null, insulationRule: 'notApplies', above70Agreed: false }]))
 })
 
@@ -109,7 +113,7 @@ test('7a: Anteil und Begründung melden die Karte an, Speichern nimmt die Marke 
   const anteil = screen.getByLabelText(/Heizung in %/)
   fireEvent.change(anteil, { target: { value: '60' } })
   expect(hasOpenForm()).toBe(true)
-  fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+  fireEvent.click(screen.getByRole('button', { name: SHARE_SAVE }))
   await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1))
   expect(hasOpenForm()).toBe(false)
   vi.unstubAllGlobals()

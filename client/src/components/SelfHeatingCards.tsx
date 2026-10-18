@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
-import { useOpenWhenDiffers } from '../useDraft'
+import { keepDraft, useDraft } from '../useDraft'
+import DraftActions from './DraftActions'
+import Card from './Card'
 import { useOpenForm } from '../property'
 import EstimateCard from './EstimateCard'
 import HcaBlock from './HcaBlock'
@@ -29,20 +31,19 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
   // Fehler als Sammelmeldung oben in der Karte (#346, Schritt 3)
   const errors = useFormError()
   const setError = errors.set
-  const [share, setShare] = useState('')
-  const [waterShare, setWaterShare] = useState('')
   const { min, max } = shareBounds()
   const d = view.distribution ?? null
   const savedInsulation: InsulationRule | '' = d?.own.insulationRule ?? d?.effective?.insulationRule ?? ''
-  const [insulation, setInsulation] = useState<InsulationRule | ''>(savedInsulation)
   // § 10 HeizkostenV (Heizung PR 14): mehr als 70 % nach Vereinbarung, mit dem Anteil gespeichert.
-  const [agreed, setAgreed] = useState<boolean>(d?.own.above70Agreed ?? d?.effective?.above70Agreed ?? false)
-  // Eine Zwischenablesung, die „nicht möglich“ war, braucht einen Grund (I3).
-  const [reasonFor, setReasonFor] = useState<{ key: string; reason: string } | null>(null)
-  // Ungespeicherte Angaben zählen als offenes Formular (#346, 7a): der Anteil samt Wärmeschutz und § 10
-  // gegen den gespeicherten Stand, eine angefangene Begründung zur Zwischenablesung, solange sie offen ist.
   const savedAgreed = d?.own.above70Agreed ?? d?.effective?.above70Agreed ?? false
-  const shareSaved = useOpenWhenDiffers({ share, waterShare, insulation, agreed }, { share: '', waterShare: '', insulation: savedInsulation, agreed: savedAgreed })
+  // Anteil, Wärmeschutz und § 10 sind ein Entwurf mit einem „Speichern“ am Fuß der Karte (#346 Schritt 7, N8; vorher
+  // „Speichern“ bzw. „Pflichtanteil eintragen“ und daneben „Antwort speichern“). Eine Änderung meldet sich als offenes
+  // Formular an (#346, 7a).
+  const draft = useDraft({ share: '', waterShare: '', insulation: savedInsulation, agreed: savedAgreed }, { scope: `${plant.id}|${view.period}` })
+  const { share, waterShare, insulation, agreed } = draft.value
+  const edit = (patch: Partial<typeof draft.value>) => draft.set({ ...draft.value, ...patch })
+  // Eine Zwischenablesung, die „nicht möglich“ war, braucht einen Grund (I3); eine offene Begründung zählt als offenes Formular.
+  const [reasonFor, setReasonFor] = useState<string | null>(null)
   useOpenForm(reasonFor !== null)
   const [printUnit, setPrintUnit] = useState<string>(self?.units[0]?.unitId ?? '')
   const [printing, setPrinting] = useState(false)
@@ -79,7 +80,7 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
     const water = hotWater === 'none' ? null : (editable ? percentOf(waterShare) : (d?.effective?.water ?? null))
     if (heat === null || (hotWater !== 'none' && water === null)) {
       setError(`Bitte geben Sie den Anteil zwischen ${min} und ${max} % an, mit höchstens zwei Nachkommastellen.`)
-      return
+      return keepDraft
     }
     try {
       await api(`/api/heating-plants/${plant.id}/periods/${view.period}/distribution`, {
@@ -93,11 +94,11 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
         }),
       })
       setError('')
-      shareSaved()
       toast('Anteil gespeichert.')
       onChanged()
     } catch (e) {
       setError(errorText(e))
+      return keepDraft
     }
   }
   async function answer(unitId: string, date: string, status: InterimGapStatus | null, reason = '') {
@@ -110,6 +111,7 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
       onChanged()
     } catch (e) {
       setError(errorText(e))
+      if (status === 'impossible') throw e
     }
   }
 
@@ -119,8 +121,7 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
     <>
       {/* Eine Sammelmeldung für alle Karten der eigenen Abrechnung, über der ersten (#346, Schritt 3). */}
       <ErrorSummary errors={errors} />
-      <div className="card">
-        <h3>Anteil nach Verbrauch · {view.label}</h3>
+      <Card title="Anteil nach Verbrauch" level={3}>
         <p className="muted">
           Von den Kosten der Heizung und des Warmwassers verteilt Mietfuchs diesen Teil nach dem gemessenen Verbrauch
           (<Term id="consumptionCosts">Verbrauchskosten</Term>), den Rest nach der Fläche (<Term id="baseCosts">Grundkosten</Term>).
@@ -130,7 +131,7 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
           <div className="no-print">
             <label className="field grow">
               <span>{INSULATION_QUESTION} (<Term id="forcedConsumptionShare">Pflichtanteil</Term>)</span>
-              <select value={insulation} onChange={(e) => setInsulation(e.target.value as InsulationRule | '')}>
+              <select value={insulation} disabled={draft.saving} onChange={(e) => edit({ insulation: e.target.value as InsulationRule | '' })}>
                 {insulation === '' && <option value="">— bitte wählen —</option>}
                 {INSULATION_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
@@ -144,36 +145,33 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
             {/* Das Warmwasser übernimmt den Wert der Heizung sichtbar, bis der Vermieter ihn ändert. */}
             <label className="field">
               Heizung in % ({min} bis {max})
-              <input inputMode="decimal" value={forced !== null ? String(forced) : share} disabled={forced !== null}
-                onChange={(e) => { if (waterShare === '' || waterShare === share) setWaterShare(e.target.value); setShare(e.target.value) }} />
+              <input inputMode="decimal" value={forced !== null ? String(forced) : share} disabled={forced !== null || draft.saving}
+                onChange={(e) => edit({ share: e.target.value, ...(waterShare === '' || waterShare === share ? { waterShare: e.target.value } : {}) })} />
             </label>
             {hotWater !== 'none' && editable && (
               <label className="field">
                 Warmwasser in %
-                <input inputMode="decimal" value={waterShare} onChange={(e) => setWaterShare(e.target.value)} />
+                <input inputMode="decimal" value={waterShare} disabled={draft.saving} onChange={(e) => edit({ waterShare: e.target.value })} />
               </label>
             )}
-            <button className="btn secondary" onClick={saveShare}>{editable ? 'Speichern' : 'Pflichtanteil eintragen'}</button>
           </div>
         )}
         {editable && (
           <div className="no-print">
             <label className="checkline">
-              <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
+              <input type="checkbox" checked={agreed} disabled={draft.saving} onChange={(e) => edit({ agreed: e.target.checked })} />
               Mehr als {max} % nach Verbrauch sind mit den Mietern vereinbart (§ 10 HeizkostenV)
             </label>
             <p className="muted">Nur ankreuzen, wenn es im Mietvertrag oder einer Vereinbarung mit den Mietern steht; mehr als 100 % gibt es nicht. Die Angabe gilt mit dem Anteil.</p>
           </div>
         )}
-        {!editable && insulationAsked(energy) && !toForced && insulation !== savedInsulation && (
-          <div className="row no-print">
-            <button className="btn secondary" onClick={saveShare}>Antwort speichern</button>
-          </div>
-        )}
-      </div>
+        {!editable && toForced && <p className="muted no-print">Mit „Speichern“ tragen Sie den Pflichtanteil ein.</p>}
+        <div className="no-print">
+          <DraftActions draft={draft} onSave={saveShare} layout="card" what="Anteil nach Verbrauch" />
+        </div>
+      </Card>
       {self && (
-        <div className="card">
-          <h3>Ablesungen</h3>
+        <Card title="Ablesungen" level={3}>
           <p className="muted no-print">
             Je Wohnung die Ablesung zu Beginn und Ende der Heizperiode und bei jedem Mieterwechsel (<Term id="interimReading">Zwischenablesung</Term>).
             Fehlt eine Zwischenablesung, sagen Sie, warum.
@@ -199,19 +197,11 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
                         <p className="muted">{gapConsequence('impossible')}</p>
                         <p className="muted">{gapConsequence('missed')}</p>
                         <div className="row">
-                          <button className="btn ghost" onClick={() => setReasonFor({ key, reason: b.gapReason ?? '' })}>Nicht möglich</button>
-                          <button className="btn ghost" onClick={() => answer(u.unitId, b.date, 'missed')}>Nicht durchgeführt</button>
+                          <button className="btn secondary" onClick={() => setReasonFor(key)}>Nicht möglich</button>
+                          <button className="btn secondary" onClick={() => answer(u.unitId, b.date, 'missed')}>Nicht durchgeführt</button>
                           {b.gap !== null && <button className="btn ghost" onClick={() => answer(u.unitId, b.date, null)}>Antwort zurücknehmen</button>}
                         </div>
-                        {reasonFor?.key === key && (
-                          <div className="row">
-                            <label className="field grow">
-                              Warum war die Zwischenablesung nicht möglich? (steht in der Abrechnung)
-                              <input value={reasonFor.reason} onChange={(e) => setReasonFor({ key, reason: e.target.value })} />
-                            </label>
-                            <button className="btn secondary" disabled={reasonFor.reason.trim() === ''} onClick={() => answer(u.unitId, b.date, 'impossible', reasonFor.reason.trim())}>Grund speichern</button>
-                          </div>
-                        )}
+                        {reasonFor === key && <GapReason saved={b.gapReason ?? ''} scope={key} onSave={(reason) => answer(u.unitId, b.date, 'impossible', reason)} />}
                       </div>
                     )}
                   </div>
@@ -219,21 +209,19 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
               )
             }))}
           </div>
-        </div>
+        </Card>
       )}
       {/* Heizung PR 13: Schätzung nach § 9a, direkt hinter den Ablesungen. */}
       {self && <EstimateCard plant={plant} view={view} self={self} onChanged={onChanged} />}
       {self && self.ok && (
-        <div className="card">
-          <h3>Verteilung</h3>
+        <Card title="Verteilung" level={3}>
           {self.pots.flatMap(potLines).map((l) => <p key={l}>{l}</p>)}
           {self.units.flatMap((u) => u.users).map((u) => <p key={u.key}>{userLine(u, self)}</p>)}
           <HcaBlock self={self} unitName={(id) => self.units.find((u) => u.unitId === id)?.unitName ?? id} />
-        </div>
+        </Card>
       )}
       {self && (
-        <div className="card reading-result">
-          <h3>Ableseergebnis · {view.label}</h3>
+        <Card title={<>Ableseergebnis · {view.label}</>} level={3} className="reading-result">
           <p className="muted no-print">{READING_RESULT_HINT}</p>
           <div className="row no-print">
             <label className="field">
@@ -255,8 +243,27 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
               ))}
             </div>
           ))}
-        </div>
+        </Card>
       )}
     </>
+  )
+}
+
+// Der Grund, warum eine Zwischenablesung nicht möglich war (I3): ein Entwurf am Feld (#309, #346 Schritt 7); er steht
+// in der Abrechnung und ist deshalb Pflicht.
+function GapReason({ saved, scope, onSave }: { saved: string; scope: string; onSave: (reason: string) => Promise<void> }) {
+  const draft = useDraft(saved, { scope })
+  async function save(value: string) {
+    if (value.trim() === '') throw new Error('Bitte nennen Sie den Grund; er steht in der Abrechnung.')
+    await onSave(value.trim())
+  }
+  return (
+    <div className="row">
+      <label className="field grow">
+        Warum war die Zwischenablesung nicht möglich? (steht in der Abrechnung)
+        <input value={draft.value} disabled={draft.saving} onChange={(e) => draft.set(e.target.value)} />
+      </label>
+      <DraftActions draft={draft} onSave={save} what="Grund" />
+    </div>
   )
 }

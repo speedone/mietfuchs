@@ -1,6 +1,7 @@
 // Die Karte „Werte des Ablesedienstes“ (Heizung PR 12, Entwurf 5.6, 8.1): je Wohnung und
 // Nutzungszeitraum die bewerteten Einheiten (oder kWh) für die Heizung und, wenn der Dienst sie nennt, das
 // Warmwasser in m³. Gespeichert wird immer die ganze Liste der Heizperiode.
+import Card from '../components/Card'
 import { useState } from 'react'
 import { api, errorText } from '../api'
 import { useToast } from './feedback'
@@ -52,8 +53,7 @@ export default function ServiceValuesCard({ plantId, period, from, to, closed, u
   }
 
   return (
-    <div className="card">
-      <h2>Werte des <Term id="serviceReading">Ablesedienstes</Term></h2>
+    <Card title={<>Werte des <Term id="serviceReading">Ablesedienstes</Term></>} level={3}>
       <ErrorSummary errors={errors} />
       {SERVICE_VALUES_HINTS.map((h) => <p className="muted" key={h}>{h}</p>)}
       {remoteUnknown && <p className="muted">Ob die Geräte aus der Ferne ablesbar sind, tragen Sie in den Stammdaten bei der Heizanlage unter „Ändern“ ein; Mietfuchs kennt die Geräte des Ablesedienstes nicht und braucht die Angabe für die Kürzung nach § 12 Abs. 1 Satz 2 HeizkostenV.</p>}
@@ -85,6 +85,6 @@ export default function ServiceValuesCard({ plantId, period, from, to, closed, u
           <button className="btn" onClick={() => void save()}>Werte speichern</button>
         </div>
       )}
-    </div>
+    </Card>
   )
 }

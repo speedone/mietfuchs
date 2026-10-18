@@ -1,10 +1,11 @@
 // Die Karte „Heizung nach § 43 GModG“ (Heizung PR 18, #215; Entwurf 3.9, 5.3): Tag des Einbaus, Notfalleinbau,
 // Neubau, gespeichert an der Anlage, und die Mitteilung nach § 5d Abs. 4 je Mietverhältnis.
-import { useState } from 'react'
 import { api, errorText } from '../api'
 import { useToast } from './feedback'
 import Term from './Term'
-import { useOpenWhenDiffers } from '../useDraft'
+import { keepDraft, useDraft } from '../useDraft'
+import DraftActions from './DraftActions'
+import Card from './Card'
 import { APPLICATION_FROM, FIRST_USE_UNTIL, HALF_SPLIT_WHAT, HALF_SPLIT_YEAR, halfSplitBody, halfSplitToForm, INSTALLED_AFTER, noticeBody, noticeTenancies, PRIOR_DUTY_EXPLAINED, PRIOR_DUTY_QUESTION, TRI_OPTIONS, type HalfSplitBody, type NoticeTenancy, type TriState } from '../halfSplitForm'
 import { halfSplitFirstDay } from '../../../shared/law/co2kostaufg.ts'
 import type { HeatingEnergy, HeatingPlant } from '../types'
@@ -18,61 +19,39 @@ export default function HalfSplitCard({ plant, tenancies, onSaved, onNoticeSaved
   // Seitenwechsel wieder leer); ohne Angabe `onSaved`.
   onNoticeSaved?: () => void
 }) {
-  const [form, setForm] = useState(halfSplitToForm(plant))
-  const [notices, setNotices] = useState<Record<string, string>>(() => Object.fromEntries(tenancies.map((t) => [t.id, t.halfSplitNoticeOn ?? ''])))
+  // Die Merkmale der Anlage sind ein Entwurf mit einem „Speichern“ am Fuß der Karte (#346 Schritt 7, N8); die Mitteilung
+  // je Mietverhältnis ist ein Entwurf an ihrer Zeile (NoticeRow). Beide melden sich bei einer Änderung als offenes
+  // Formular an (#346, 7a), und ein gespeicherter Wert gilt sofort als gespeichert, auch bevor die Seite neu geladen hat.
+  const draft = useDraft(halfSplitToForm(plant), { scope: plant.id })
+  const form = draft.value
+  const setForm = draft.set
   // Fehler als Sammelmeldung oben in der Karte (#346, Schritt 3)
   const errors = useFormError()
   const setError = errors.set
-  // Eine ungespeicherte Eingabe zählt als offenes Formular: Seiten-, Objekt- und Zeitraumwechsel fragen (#346, 7a).
-  // Gezählt wird, was die Karte zeigt (ohne Einbau keine weiteren Fragen), und je Mitteilung gegen ihren
-  // gespeicherten Stand; eine gespeicherte Mitteilung gilt sofort als gespeichert, auch bevor die
-  // Mietverhältnisse neu geladen sind.
-  const shownForm = (f: typeof form) => (f.installedOn === '' ? { installedOn: '' } : f)
-  const markSaved = useOpenWhenDiffers(shownForm(form), shownForm(halfSplitToForm(plant)))
-  const [noticeSaved, setNoticeSaved] = useState<Record<string, string>>({})
-  useOpenWhenDiffers(notices, Object.fromEntries(tenancies.map((t) => [t.id, noticeSaved[t.id] ?? t.halfSplitNoticeOn ?? ''])))
   const toast = useToast()
   const asked = noticeTenancies(tenancies, plant, halfSplitFirstDay())
   const pick = (value: string): TriState => TRI_OPTIONS.find((o) => o.value === value)?.value ?? 'unknown'
   const applicationQuestion = `Bauantrag, Antrag auf Zustimmung oder Bauanzeige vor dem ${APPLICATION_FROM}?`
 
-  async function saveNotice(t: NoticeTenancy) {
-    const result = noticeBody(notices[t.id] ?? '')
+  async function save(value: typeof form) {
+    const result = halfSplitBody(value)
     if ('error' in result) {
       setError(result.error)
-      return
-    }
-    try {
-      await api(`/api/tenancies/${t.id}`, { method: 'PUT', body: JSON.stringify(result.body) })
-      setError('')
-      setNoticeSaved((s) => ({ ...s, [t.id]: notices[t.id] ?? '' }))
-      toast(`Mitteilung an ${t.tenantName} gespeichert.`)
-      ;(onNoticeSaved ?? onSaved)()
-    } catch (e) {
-      setError(errorText(e))
-    }
-  }
-
-  async function save() {
-    const result = halfSplitBody(form)
-    if ('error' in result) {
-      setError(result.error)
-      return
+      return keepDraft
     }
     try {
       await api(`/api/heating-plants/${plant.id}`, { method: 'PUT', body: JSON.stringify(result.body) })
-      setError('')
-      markSaved()
-      toast('Angaben zur Heizung gespeichert.')
-      onSaved()
     } catch (e) {
       setError(errorText(e))
+      return keepDraft
     }
+    setError('')
+    toast('Angaben zur Heizung gespeichert.')
+    onSaved()
   }
 
   return (
-    <div className="card">
-      <h2>Heizung nach <Term id="co2HalfSplit">§ 43 GModG</Term> {`(ab ${HALF_SPLIT_YEAR})`}</h2>
+    <Card title={<>Heizung nach <Term id="co2HalfSplit">§ 43 GModG</Term> {`(ab ${HALF_SPLIT_YEAR})`}</>}>
       <ErrorSummary errors={errors} />
       <p className="muted">{`Nur für eine Gas-, Öl- oder Flüssiggasheizung, die nach dem ${INSTALLED_AFTER} in ein bestehendes Gebäude eingebaut wurde, oder eine solche Heizung in einem Neubau. ${HALF_SPLIT_WHAT}`}</p>
       <label className="field">
@@ -117,21 +96,37 @@ export default function HalfSplitCard({ plant, tenancies, onSaved, onNoticeSaved
           <p className="muted">Im Gebäude mit höchstens zwei Wohnungen, von denen Sie eine selbst bewohnen und die beide an dieser Heizung hängen, bleibt es beim Stufenmodell, wenn Sie das jedem Mieter in Textform mitgeteilt haben und das Gebäude in keinem Gebiet liegt, das eine Verordnung zur Mietpreisbremse, Kappungsgrenze oder Kündigungssperrfrist bestimmt (Frage beim Objekt). Mitteilen müssen Sie es bei Abschluss des Mietvertrags; bestand der Vertrag schon, bevor die Voraussetzungen eintraten, genügt nach der Begründung in der Regel die Mitteilung mit der Abrechnung (§ 5d Abs. 3, 4 CO2KostAufG; BT-Drs. 21/7009, S. 156). Dass die Mitteilung auch für diese Ausnahme nötig ist, ist eine Auslegung; Mietfuchs verlangt sie, damit Sie sicher gehen.</p>
         </>
       )}
-      <div className="row"><button className="btn" onClick={() => void save()}>Angaben speichern</button></div>
+      <DraftActions draft={draft} onSave={save} layout="card" what="Heizung nach § 43 GModG" />
       {form.installedOn !== '' && asked.length > 0 && (
         <div className="field-group">
           <div className="field-group-label">Mitteilung nach § 5d Abs. 4 (nur Zweifamilienhaus mit Eigennutzung)</div>
           {asked.map((t) => (
-            <div key={t.id} className="row">
-              <label className="field">
-                {`Mitteilung an ${t.tenantName} in Textform am`}
-                <input type="date" aria-label={`Mitteilung an ${t.tenantName} nach § 5d Abs. 4 in Textform am`} value={notices[t.id] ?? ''} onChange={(e) => setNotices({ ...notices, [t.id]: e.target.value })} />
-              </label>
-              <button className="btn secondary" onClick={() => void saveNotice(t)}>Mitteilung speichern</button>
-            </div>
+            <NoticeRow key={t.id} tenancy={t} onSaved={() => { toast(`Mitteilung an ${t.tenantName} gespeichert.`); (onNoticeSaved ?? onSaved)() }} />
           ))}
         </div>
       )}
+    </Card>
+  )
+}
+
+// Die Mitteilung nach § 5d Abs. 4 an ein Mietverhältnis: ein Entwurf an der Zeile (#309, #346 Schritt 7), erst
+// „Speichern“ schickt ihn an das Mietverhältnis. Eine ungültige Eingabe steht an der Zeile, der Entwurf bleibt.
+function NoticeRow({ tenancy: t, onSaved }: { tenancy: NoticeTenancy; onSaved: () => void }) {
+  const draft = useDraft(t.halfSplitNoticeOn ?? '', { scope: t.id })
+  const what = `Mitteilung an ${t.tenantName}`
+  async function save(value: string) {
+    const result = noticeBody(value)
+    if ('error' in result) throw new Error(result.error)
+    await api(`/api/tenancies/${t.id}`, { method: 'PUT', body: JSON.stringify(result.body) })
+    onSaved()
+  }
+  return (
+    <div className="row">
+      <label className="field">
+        {`Mitteilung an ${t.tenantName} in Textform am`}
+        <input type="date" aria-label={`Mitteilung an ${t.tenantName} nach § 5d Abs. 4 in Textform am`} value={draft.value} disabled={draft.saving} onChange={(e) => draft.set(e.target.value)} />
+      </label>
+      <DraftActions draft={draft} onSave={save} what={what} />
     </div>
   )
 }

@@ -2,12 +2,13 @@
 // (Beschränkungen) und § 2 Abs. 4 Satz 2 CO2KostAufG (Wärme aus dem Emissionshandel), gespeichert an der
 // Anlage. Bei freien Schlüsseln dazu die Fläche der Einstufung je Heizperiode, wenn sie von der
 // Wohnfläche der versorgten Wohnungen abweicht.
-import { useState } from 'react'
 import { api, errorText } from '../api'
 import { parseDecimal } from '../co2Form'
 import { useToast } from './feedback'
 import Term from './Term'
-import { useOpenWhenDiffers } from '../useDraft'
+import { keepDraft, useDraft } from '../useDraft'
+import DraftActions from './DraftActions'
+import Card from './Card'
 import { RESTRICTION_OPTIONS } from '../fuelForm'
 import { co2DistrictEtsNew } from '../../../shared/law/co2kostaufg.ts'
 import { germanDate, onlyVersion } from '../../../shared/law/register.ts'
@@ -17,84 +18,76 @@ import { ErrorSummary, useFormError } from './ErrorSummary'
 type Facts = { id: string; energy: HeatingEnergy; method: HeatingMethod; nonResidential: boolean; restriction: Co2Restriction; districtEtsNew: boolean }
 
 export default function Co2FactsCard({ plant, view, servedAreaM2, onSaved }: { plant: Facts; view: HeatingPeriodView; servedAreaM2: number; onSaved: () => void }) {
-  const [nonResidential, setNonResidential] = useState(plant.nonResidential)
-  const [restriction, setRestriction] = useState<Co2Restriction>(plant.restriction)
-  const [districtEtsNew, setDistrictEtsNew] = useState(plant.districtEtsNew)
   const savedArea = view.co2?.areaM2 == null ? '' : view.co2.areaM2.toLocaleString('de-DE', { useGrouping: false })
-  const [area, setArea] = useState(savedArea)
+  // Eine Karte, ein Speichern (#346 Schritt 7, N8): Angaben zum Gebäude und Fläche der Einstufung sind ein Entwurf;
+  // gesendet wird nur, was sich geändert hat, an die Anlage bzw. an die Heizperiode, wie vorher die beiden Knöpfe.
+  const saved = { nonResidential: plant.nonResidential, restriction: plant.restriction, districtEtsNew: plant.districtEtsNew, area: savedArea }
+  const draft = useDraft(saved, { scope: `${plant.id}|${view.period}` })
+  const { nonResidential, restriction, districtEtsNew, area } = draft.value
+  const edit = (patch: Partial<typeof saved>) => draft.set({ ...draft.value, ...patch })
   // Fehler als Sammelmeldung oben in der Karte (#346, Schritt 3)
   const errors = useFormError()
   const setError = errors.set
-  // Ungespeicherte Angaben zählen als offenes Formular (#346, 7a); die beiden Teile speichern getrennt.
-  const factsSaved = useOpenWhenDiffers({ nonResidential, restriction, districtEtsNew }, { nonResidential: plant.nonResidential, restriction: plant.restriction, districtEtsNew: plant.districtEtsNew })
-  const areaSaved = useOpenWhenDiffers(area, savedArea)
   const toast = useToast()
   const stichtag = germanDate(onlyVersion(co2DistrictEtsNew).value.connectedAfter)
 
-  async function saveFacts() {
-    try {
-      await api(`/api/heating-plants/${plant.id}`, { method: 'PUT', body: JSON.stringify({ nonResidential, restriction, districtEtsNew }) })
-      setError('')
-      factsSaved()
-      toast('Angaben zum Gebäude gespeichert.')
-      onSaved()
-    } catch (e) {
-      setError(errorText(e))
-    }
-  }
-
-  async function saveArea() {
-    const url = `/api/heating-plants/${plant.id}/periods/${view.period}/co2`
-    const value = parseDecimal(area)
-    if (area.trim() !== '' && (value === null || value <= 0)) {
+  async function save(value: typeof saved) {
+    const factsChanged = value.nonResidential !== saved.nonResidential || value.restriction !== saved.restriction || value.districtEtsNew !== saved.districtEtsNew
+    const areaChanged = value.area !== saved.area
+    const areaValue = parseDecimal(value.area)
+    if (areaChanged && value.area.trim() !== '' && (areaValue === null || areaValue <= 0)) {
       setError('Die Fläche ist eine Zahl über 0.')
-      return
+      return keepDraft
     }
     try {
-      if (value === null) await api(url, { method: 'DELETE' })
-      else await api(url, { method: 'PUT', body: JSON.stringify({ method: 'self', areaM2: value }) })
-      setError('')
-      areaSaved()
-      toast('Fläche gespeichert.')
-      onSaved()
+      if (factsChanged) {
+        await api(`/api/heating-plants/${plant.id}`, { method: 'PUT', body: JSON.stringify({ nonResidential: value.nonResidential, restriction: value.restriction, districtEtsNew: value.districtEtsNew }) })
+      }
+      if (areaChanged) {
+        const url = `/api/heating-plants/${plant.id}/periods/${view.period}/co2`
+        if (areaValue === null) await api(url, { method: 'DELETE' })
+        else await api(url, { method: 'PUT', body: JSON.stringify({ method: 'self', areaM2: areaValue }) })
+      }
     } catch (e) {
       setError(errorText(e))
+      return keepDraft
     }
+    setError('')
+    toast('Angaben gespeichert.')
+    onSaved()
   }
 
   return (
-    <div className="card">
-      <h2>CO₂: Angaben zum Gebäude für die <Term id="co2Stage">Einstufung</Term></h2>
+    <Card title={<>CO₂: Angaben zum Gebäude für die <Term id="co2Stage">Einstufung</Term></>} level={3}>
       <ErrorSummary errors={errors} />
       <p className="muted">Gilt für alle Heizperioden dieser Anlage. Die Angaben wirken auf Heizperioden, die noch nicht abgeschlossen sind; eine abgeschlossene Abrechnung bleibt, wie sie ist.</p>
       <label className="checkline">
-        <input type="checkbox" checked={nonResidential} onChange={(e) => setNonResidential(e.target.checked)} />
+        <input type="checkbox" checked={nonResidential} disabled={draft.saving} onChange={(e) => edit({ nonResidential: e.target.checked })} />
         Das Gebäude dient überwiegend nicht dem Wohnen (§ 8 CO2KostAufG)
       </label>
       <label className="field">
         Beschränkungen (§ 9 CO2KostAufG)
-        <select aria-label="Beschränkungen (§ 9 CO2KostAufG)" value={restriction} onChange={(e) => setRestriction(RESTRICTION_OPTIONS.find((o) => o.value === e.target.value)?.value ?? 'none')}>
+        <select aria-label="Beschränkungen (§ 9 CO2KostAufG)" value={restriction} disabled={draft.saving} onChange={(e) => edit({ restriction: RESTRICTION_OPTIONS.find((o) => o.value === e.target.value)?.value ?? 'none' })}>
           {RESTRICTION_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
       </label>
       {restriction !== 'none' && <p className="notice">Darauf können Sie sich nur berufen, wenn Sie den Mietern die Umstände nachweisen (§ 9 Abs. 3 CO2KostAufG).</p>}
       {plant.energy === 'districtHeating' && (
         <label className="checkline">
-          <input type="checkbox" checked={districtEtsNew} onChange={(e) => setDistrictEtsNew(e.target.checked)} />
+          <input type="checkbox" checked={districtEtsNew} disabled={draft.saving} onChange={(e) => edit({ districtEtsNew: e.target.checked })} />
           {`Das Gebäude wurde erstmals nach dem ${stichtag} an ein Wärmenetz angeschlossen, dessen Wärme aus dem Emissionshandel stammt (§ 2 Abs. 4 Satz 2 CO2KostAufG)`}
         </label>
       )}
-      <div className="row"><button className="btn" onClick={() => void saveFacts()}>Angaben speichern</button></div>
       {plant.method !== 'service' && (
         <div className="field-group">
           <label className="field">
             Fläche der Einstufung (m²)
-            <input value={area} inputMode="decimal" disabled={view.closed} onChange={(e) => setArea(e.target.value)} />
+            <input value={area} inputMode="decimal" disabled={view.closed || draft.saving} onChange={(e) => edit({ area: e.target.value })} />
           </label>
           <p className="muted">{`Ohne Angabe: ${servedAreaM2.toLocaleString('de-DE')} m², die Wohnfläche der versorgten Wohnungen. Weist die Abrechnung eine andere Fläche aus, tragen Sie diese ein.`}</p>
-          {!view.closed && <button className="btn secondary" onClick={() => void saveArea()}>Fläche speichern</button>}
         </div>
       )}
-    </div>
+      <DraftActions draft={draft} onSave={save} layout="card" what="Angaben zum Gebäude" />
+    </Card>
   )
 }
