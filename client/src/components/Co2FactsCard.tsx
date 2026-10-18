@@ -43,14 +43,25 @@ export default function Co2FactsCard({ plant, view, servedAreaM2, onSaved }: { p
       if (factsChanged) {
         await api(`/api/heating-plants/${plant.id}`, { method: 'PUT', body: JSON.stringify({ nonResidential: value.nonResidential, restriction: value.restriction, districtEtsNew: value.districtEtsNew }) })
       }
-      if (areaChanged) {
-        const url = `/api/heating-plants/${plant.id}/periods/${view.period}/co2`
-        if (areaValue === null) await api(url, { method: 'DELETE' })
-        else await api(url, { method: 'PUT', body: JSON.stringify({ method: 'self', areaM2: areaValue }) })
-      }
     } catch (e) {
       setError(errorText(e))
       return keepDraft
+    }
+    if (areaChanged) {
+      const url = `/api/heating-plants/${plant.id}/periods/${view.period}/co2`
+      try {
+        if (areaValue === null) await api(url, { method: 'DELETE' })
+        else await api(url, { method: 'PUT', body: JSON.stringify({ method: 'self', areaM2: areaValue }) })
+      } catch (e) {
+        // Durchsicht S4: Zwei Ziele, zwei Anfragen. Scheitert nur die Fläche, sind die Angaben zum Gebäude gespeichert;
+        // die Karte sagt das, die Seite lädt neu, und der Entwurf behält nur, was noch offen ist. „Verwerfen“ zeigt dann den
+        // gespeicherten Stand.
+        if (factsChanged) {
+          setError(`Die Angaben zum Gebäude sind gespeichert, die Fläche nicht: ${errorText(e)}`)
+          onSaved()
+        } else setError(errorText(e))
+        return keepDraft
+      }
     }
     setError('')
     toast('Angaben gespeichert.')

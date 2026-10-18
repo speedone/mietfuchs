@@ -92,3 +92,26 @@ test('Eine ungültige Fläche: Meldung oben in der Karte, nichts gesendet, der E
   expect(sent).toEqual([])
   expect((screen.getByLabelText('Fläche der Einstufung (m²)') as HTMLInputElement).value).toBe('0')
 })
+
+// Durchsicht S4: Scheiterte nur die Fläche, waren die Angaben zum Gebäude schon gespeichert, die Seite zeigte aber den alten
+// Stand, und „Verwerfen“ stellte die alten Merkmale her. Jetzt sagt die Meldung, was gespeichert ist, die Seite lädt neu,
+// und „Verwerfen“ zeigt den gespeicherten Stand.
+test('S4: scheitert nur die Fläche, sagt die Karte, was gespeichert ist, und Verwerfen zeigt den echten Stand', async () => {
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    sent.push({ url, method: init?.method ?? 'GET', body: JSON.parse(String(init?.body ?? '{}')) })
+    const fail = url.endsWith('/co2')
+    return new Response(JSON.stringify(fail ? { error: 'Die Heizperiode ist abgeschlossen.' } : { ok: true }), { status: fail ? 409 : 200, headers: { 'content-type': 'application/json' } })
+  })
+  const onSaved = vi.fn()
+  const { rerender } = render(<Co2FactsCard plant={facts} view={view} servedAreaM2={600} onSaved={onSaved} />)
+  fireEvent.click(screen.getByLabelText('Das Gebäude dient überwiegend nicht dem Wohnen (§ 8 CO2KostAufG)'))
+  fireEvent.change(screen.getByLabelText('Fläche der Einstufung (m²)'), { target: { value: '612,5' } })
+  fireEvent.click(screen.getByRole('button', { name: SAVE }))
+  expect(await screen.findByText('Die Angaben zum Gebäude sind gespeichert, die Fläche nicht: Die Heizperiode ist abgeschlossen.')).toBeTruthy()
+  expect(onSaved).toHaveBeenCalledTimes(1)
+  // Die Seite lädt neu: die Anlage trägt jetzt § 8.
+  rerender(<Co2FactsCard plant={{ ...facts, nonResidential: true }} view={view} servedAreaM2={600} onSaved={onSaved} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Verwerfen (Angaben zum Gebäude)' }))
+  expect((screen.getByLabelText('Das Gebäude dient überwiegend nicht dem Wohnen (§ 8 CO2KostAufG)') as HTMLInputElement).checked).toBe(true)
+  expect((screen.getByLabelText('Fläche der Einstufung (m²)') as HTMLInputElement).value).toBe('')
+})

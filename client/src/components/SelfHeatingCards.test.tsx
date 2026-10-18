@@ -118,3 +118,22 @@ test('7a: Anteil und Begründung melden die Karte an, Speichern nimmt die Marke 
   expect(hasOpenForm()).toBe(false)
   vi.unstubAllGlobals()
 })
+
+// Durchsicht K5: Nach „Nicht möglich“ fragte jeder Seitenwechsel nach, auch ohne Eingabe, und das Feld ließ sich nicht
+// schließen. Jetzt meldet sich der Grund erst mit einer Eingabe an, „Abbrechen“ schließt das Feld, und ein Fehler steht
+// nur am Feld.
+test('K5: Nicht möglich ohne Eingabe ist kein offenes Formular; Abbrechen schließt; ein Fehler steht einmal', async () => {
+  vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ error: 'Der Grund ist zu lang.' }), { status: 400, headers: { 'content-type': 'application/json' } }))
+  const c = { ...unit('c', 'C', 0), readings: [], boundaries: [{ date: '2025-09-30', kind: 'change' as const, status: 'missing' as const, offDays: 0, far: false, gap: null }] }
+  render(<OpenFormScope><SelfHeatingCards plant={{ id: 'hp', method: 'self', energy: 'districtHeating', hotWater: 'none' } as HeatingPlant} view={{ period: '2025-01', label: '2025', distribution: null } as HeatingPeriodView} self={statement([c])} onChanged={() => {}} /></OpenFormScope>)
+  fireEvent.click(screen.getByRole('button', { name: 'Nicht möglich' }))
+  expect(hasOpenForm()).toBe(false)
+  fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }))
+  expect(screen.queryByLabelText(/Warum war die Zwischenablesung nicht möglich/)).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Nicht möglich' }))
+  fireEvent.change(screen.getByLabelText(/Warum war die Zwischenablesung nicht möglich/), { target: { value: 'x' } })
+  expect(hasOpenForm()).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern (Grund)' }))
+  await waitFor(() => expect(screen.getAllByText(/Der Grund ist zu lang\./)).toHaveLength(1))
+  vi.unstubAllGlobals()
+})

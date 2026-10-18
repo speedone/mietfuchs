@@ -3394,7 +3394,8 @@ Tippfläche von `--target` über `::after`, und printCss.test.ts verlangt den du
 - **Eine Karte, ein Speichern; der Kopf ist der Baustein `Card`** (#346 Schritt 7, #341 N8, M18;
   [client/src/components/Card.tsx](client/src/components/Card.tsx)). `Card` setzt `section.card` mit `CardHeader`
   (Titel samt Begriff, höchstens eine Aktion rechts); Karten unter einem Abschnittstitel wie „Heizanlage, Heizperiode
-  2025“ sind `level={3}` und sehen trotzdem aus wie jede Karte, ohne die Heizperiode im Titel zu wiederholen. Trägt eine
+  2025“ sind `level={3}` und sehen trotzdem aus wie jede Karte, ohne die Heizperiode im Titel zu wiederholen (außer
+  „Ableseergebnis · …“, das gedruckt wird und dort ohne Abschnittstitel steht). Trägt eine
   Karte ein Formular, ist es ein Entwurf (`useDraft`) mit **einem** `<DraftActions layout="card">` am Fuß; die Prüfung
   meldet über die Sammelmeldung oben in der Karte und gibt `keepDraft` zurück (Co2FactsCard, HalfSplitCard, der Anteil
   in SelfHeatingCards). Was je Zeile einer Liste gespeichert wird, ist ein Entwurf am Feld in einer eigenen kleinen
