@@ -566,6 +566,8 @@ jobs:
     needs: umfang
     if: needs.umfang.outputs.vollstaendig == 'true'
     runs-on: ubuntu-24.04
+    # Lokal drei bis vier Minuten je Engine; ein hängender Browser hält das Anhängen sonst sechs Stunden auf
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -587,6 +589,8 @@ jobs:
           name: browserlauf-${{ matrix.engine }}
           path: ${{ runner.temp }}/browserlauf
           if-no-files-found: error
+          # Rund 60 ganzseitige Fotos je Engine und Woche; zum Nachsehen reichen zwei Wochen
+          retention-days: 14
 
   # Die Ausnahmen für axe (scripts/browser-check-axe.json) dürfen nur sinken. Ob eine sinken kann,
   # weiß erst, wer alle drei Engines gesehen hat; deshalb ein eigener Job über die Artefakte.
@@ -597,6 +601,7 @@ jobs:
     # nicht lief (Pull Request ohne „full-check“)
     if: ${{ !cancelled() && needs.browserlauf.result != 'skipped' }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
