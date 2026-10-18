@@ -249,6 +249,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
       {ledger?.rows.map((r) => {
         const noRent = r.sollYearCents === 0
         const standing = rowStanding(r)
+        const december = decemberNote(r, year, new Date())
         // Sichtprüfung E35: Bei Inklusivmiete gibt es keine Vorauszahlung; „0,00 €“ sähe aus wie ein fehlender Betrag.
         const inclusive = tenancies.find((t) => t.id === r.tenancyId)?.costModel === 'inclusive' && r.prepaymentYearCents === 0
         return (
@@ -294,9 +295,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
                 {/* **Der überraschende Dezember** (#70). Die Bedingung steht in ledgerView.ts,
                     damit sie einen Test hat: Der erste Entwurf stand hier und war zweimal falsch,
                     einmal im laufenden Jahr und einmal in der Aussage, wo das Geld auftaucht. */}
-                {decemberNote(r, year, new Date()) !== null && (
-                  <p className="muted">{decemberNote(r, year, new Date())}</p>
-                )}
+                {december !== null && <p className="muted">{december}</p>}
                 <Table>
                   <tbody>
                     <tr>
