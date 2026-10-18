@@ -3,10 +3,10 @@
 // Schritten. Beides trägt `no-print`: Der Ausdruck ist das Dokument für den Mieter und bleibt,
 // wie er ist.
 
-import { useId, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { stepsOf } from '../calcSteps'
 import type { CalcStep, SettlementRow } from '../types'
-import Term, { TermExplanation } from './Term'
+import Term from './Term'
 
 export default function CalcSteps({ row, colSpan, children }: { row: SettlementRow; colSpan: number; children: (toggle: ReactNode) => ReactNode }) {
   const [open, setOpen] = useState(false)
@@ -45,18 +45,14 @@ export function StepList({ steps }: { steps: CalcStep[] }) {
   )
 }
 
-// Ein Schritt. Die Erklärung seines Begriffs steht unter der ganzen Zeile und nicht hinter dem
-// Begriff (#142): Dort stand sie zwischen Beschriftung und Wert, und der Rest der Zeile
-// („: 40 von 180“) rutschte unter den Kasten.
+// Ein Schritt. Die Erklärung seines Begriffs öffnet als Popover (#346, Schritt 6) und schiebt die Zeile nicht
+// auseinander; vorher stand sie zwischen Beschriftung und Wert, dann unter der ganzen Zeile (#142).
 function Step({ step }: { step: CalcStep }) {
-  const [open, setOpen] = useState(false)
-  const popId = useId()
   return (
     <li>
       <span className="calc-step-label">
-        {step.term ? <Term id={step.term} control={{ open, onOpenChange: setOpen, popId }}>{step.label}</Term> : step.label}:
+        {step.term ? <Term id={step.term}>{step.label}</Term> : step.label}:
       </span> {step.value}
-      {open && step.term && <TermExplanation id={step.term} popId={popId} />}
     </li>
   )
 }

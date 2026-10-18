@@ -152,6 +152,16 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   [#287](https://github.com/speedone/mietfuchs/issues/287),
   [#346](https://github.com/speedone/mietfuchs/issues/346)).
 
+- Begriffserklärungen öffnen jetzt als kleines Fenster über der Seite, statt sich in den Text zu
+  schieben: Hinter jedem gestrichelt unterstrichenen Begriff steht ein „?“, das sich am Handy auch mit
+  dem Finger gut treffen lässt. Die Erklärung schiebt keine Felder mehr weg, wird in schmalen Spalten und
+  neben Häkchen nicht mehr zur schmalen Säule und steht am Handy als Blatt am unteren Rand. Sie zeigt die
+  Erklärung und ein Beispiel; Rechtsgrundlage und „Brauche ich das?“ stehen unter „Mehr in ‚Hilfe &
+  Begriffe‘ →“, das direkt zum Begriff führt (bei ungespeicherter Eingabe mit Rückfrage). Esc, ein Klick
+  daneben oder erneutes Antippen schließen sie; im Seitenfenster schließt Esc nur die Erklärung (Befunde
+  M1, MOB3 aus [#341](https://github.com/speedone/mietfuchs/issues/341);
+  [#346](https://github.com/speedone/mietfuchs/issues/346)).
+
 ### Behoben
 
 - Die Karte „Objekt“ verlangt eine Bezeichnung: Leer ließ sie sich speichern, und die Seitenleiste

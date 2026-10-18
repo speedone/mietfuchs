@@ -3,18 +3,31 @@
 // den Formularen hinter den unterstrichenen Begriffen; die Anleitungen springen mit ihren Schritten
 // auf die Seite, auf der man es tut.
 
-import { Fragment, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import PageHeader from '../components/PageHeader'
 import Term from '../components/Term'
 import { filterTerms, sortedTerms } from '../glossaryView'
 import { allGuides, filterGuides, type GuideEntry } from '../guideView'
 import { pageLabel } from '../nav'
 import type { GuidePage } from '../../../shared/guides.ts'
+import type { TermId } from '../../../shared/glossary.ts'
 
 const ISSUE_URL = 'https://github.com/speedone/mietfuchs/issues/'
 
-export default function Hilfe({ onNavigate }: { onNavigate: (page: GuidePage) => void }) {
+// `focusTerm`: der Begriff, zu dem „Mehr in ‚Hilfe & Begriffe‘ →“ aus einer Erklärung führt (#346, Schritt 6);
+// die Suche wird geleert, damit er sichtbar ist, und er bekommt den Fokus. `seq` zählt jeden Sprung.
+export default function Hilfe({ onNavigate, focusTerm }: { onNavigate: (page: GuidePage) => void; focusTerm?: { id: TermId; seq: number } | null }) {
   const [query, setQuery] = useState('')
+  useEffect(() => {
+    if (!focusTerm) return
+    setQuery('')
+    const t = setTimeout(() => {
+      const entry = document.getElementById(`begriff-${focusTerm.id}`)
+      entry?.scrollIntoView?.({ block: 'start' })
+      entry?.focus({ preventScroll: true })
+    }, 0)
+    return () => clearTimeout(t)
+  }, [focusTerm])
   const terms = useMemo(sortedTerms, [])
   const guides = useMemo(allGuides, [])
   const shownTerms = filterTerms(terms, query)
@@ -29,7 +42,7 @@ export default function Hilfe({ onNavigate }: { onNavigate: (page: GuidePage) =>
     <>
       <PageHeader
         title="Hilfe & Begriffe"
-        subtitle="Anleitungen je Vermietungsart und die Fachbegriffe der Nebenkostenabrechnung in einfachen Worten, mit Beispiel und Rechtsgrundlage. Dieselben Erklärungen erscheinen in den Formularen, wenn Sie einen gestrichelt unterstrichenen Begriff antippen."
+        subtitle="Anleitungen je Vermietungsart und die Fachbegriffe der Nebenkostenabrechnung in einfachen Worten, mit Beispiel und Rechtsgrundlage. Dieselben Erklärungen erscheinen in den Formularen, wenn Sie einen gestrichelt unterstrichenen Begriff oder das „?“ dahinter antippen."
       />
       <div className="card">
         <label className="field">
@@ -46,7 +59,7 @@ export default function Hilfe({ onNavigate }: { onNavigate: (page: GuidePage) =>
       <h2 className="help-section">Begriffe</h2>
       {shownTerms.length === 0 && <div className="notice">Kein Begriff passt zu „{q}“.</div>}
       {shownTerms.map((t) => (
-        <div key={t.id} className="card glossary-entry" id={`begriff-${t.id}`}>
+        <div key={t.id} className="card glossary-entry" id={`begriff-${t.id}`} tabIndex={-1}>
           <h3>{t.title}</h3>
           <p>{t.short}</p>
           <p><em>Beispiel:</em> {t.example}</p>
