@@ -97,7 +97,7 @@ test('✕ und ein Klick daneben schließen das Blatt, ein Klick hinein nicht', a
   render(<App />)
   let dialog = await openMenu()
   // Ein Klick auf den Inhalt landet nicht am <dialog> selbst
-  fireEvent.click(within(dialog).getByText('Sammeln · laufend'))
+  fireEvent.click(within(dialog).getByText('Sammeln'))
   expect(sheet().open).toBe(true)
   // Der Hintergrund des modalen Blatts gehört zum <dialog>: Ein Klick dorthin trifft ihn selbst
   fireEvent.click(dialog)

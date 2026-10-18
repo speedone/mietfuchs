@@ -16,7 +16,7 @@ export type NavItem = { id: Tab; label: string; icon: string; short?: string }
 export const NAV: { section?: string; items: NavItem[] }[] = [
   { items: [{ id: 'cockpit', label: 'Cockpit', icon: '◎' }] },
   {
-    section: 'Sammeln · laufend',
+    section: 'Sammeln',
     items: [
       { id: 'schnellerfassung', label: 'Schnellerfassung', icon: '📥', short: 'Erfassen' },
       { id: 'zaehler', label: 'Zähler & Stände', icon: '🔢', short: 'Zähler' },
@@ -27,7 +27,7 @@ export const NAV: { section?: string; items: NavItem[] }[] = [
     ],
   },
   {
-    section: 'Abrechnen · Jahresende',
+    section: 'Abrechnen',
     items: [
       // Heizung PR 6 (Entwurf 11.4): erst ab einer Heizanlage sichtbar, siehe `navFor`.
       { id: 'heizkosten', label: 'Heizkosten', icon: '🔥' },
