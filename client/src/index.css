@@ -10,7 +10,8 @@
   --card: #ffffff;
   --text: #09090b;
   --muted: #63636b;
-  --line: #e4e4e7; --chart-prev: #8e8e96; /* Vorjahresbalken, mindestens 3:1 gegen die Karte (S6) */
+  --line: #e4e4e7;
+  --chart-prev: #8e8e96; /* Vorjahresbalken, mindestens 3:1 gegen die Karte (S6) */
   /* --accent für Flächen, Rahmen und Fokus; --accent-text für Schrift in Akzentfarbe (S6). Beide
      müssen auf --card und --accent-soft mindestens 4,5:1 erreichen (uiRules.test.ts rechnet nach).
      --accent-soft ist die getönte Fläche (aktiver Menüpunkt, Objekt-Marke), --accent-strong die
