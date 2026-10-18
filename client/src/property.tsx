@@ -66,7 +66,8 @@ export function withProperty(path: string, propertyId: string | null | undefined
 // nach dem Wechsel stellt die Oberfläche die Seiten neu auf (App.tsx), offene Formulare sind
 // dann zu. Eine Anmeldung ist eine Marke in einer Menge und kein Zustand: Sie soll nichts neu
 // zeichnen, gefragt wird erst im Augenblick des Wechsels.
-const OpenFormsCtx = createContext<Set<symbol> | null>(null)
+// Exportiert für Tests einzelner Karten (testing/openForm.tsx), die ohne PropertyProvider prüfen, ob sie sich anmelden.
+export const OpenFormsCtx = createContext<Set<symbol> | null>(null)
 
 // Meldet ein Formular an, solange `open` gilt. Der Drawer tut das von selbst; Formulare ohne
 // Drawer rufen es selbst auf. Außerhalb des Providers (Tests einzelner Teile) geschieht nichts.

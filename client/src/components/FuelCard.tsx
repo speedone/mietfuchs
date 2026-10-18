@@ -7,6 +7,7 @@ import { useConfirm, useToast } from './feedback'
 import Term from './Term'
 import DraftActions from './DraftActions'
 import { useDraft } from '../useDraft'
+import { useOpenForm } from '../property'
 import { asksCo2Facts, STOCK_BIO_ONLY_ZERO, GAS_BASIS_LABEL, GAS_BASIS_MISSING, gasBasisMissing, defaultGrade, deliveryLine, deliveryOptions, deliveryUnitId, emptyFuelForm, fuelBody, fuelToForm, GAS_BASIS_OPTIONS, gradeOptions, METERED_QUANTITY_OPTIONS, STOCK_QUANTITY_OPTIONS, stockFuelBody, unitWordFor, type FuelForm, type FuelPartForm } from '../fuelForm'
 import { aiRequest, progressText, type AiProgress } from '../aiRequest'
 import { heatingUpload } from '../aiUpload'
@@ -42,6 +43,8 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
   onSaved: () => void
 }) {
   const [editing, setEditing] = useState<string | null>(null)
+  // Das Formular einer Lieferung (auch mit dem Vorschlag der KI) zählt als offenes Formular (#346, 7a).
+  useOpenForm(editing !== null)
   const [form, setForm] = useState<FuelForm>(emptyFuelForm)
   const [error, setError] = useState('')
   // Heizung PR 20: die Prüfungen einer mit der KI gelesenen Rechnung und der Fortschritt beim Lesen.

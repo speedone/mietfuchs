@@ -24,7 +24,7 @@ import Abrechnung from './pages/Abrechnung'
 import Hilfe from './pages/Hilfe'
 import Steuer from './pages/Steuer'
 import Einstellungen from './pages/Einstellungen'
-import { navFor, type Tab } from './nav'
+import { navFor, tabLabel, type Tab } from './nav'
 import MobileNav, { MOBILE_QUERY, useMediaQuery } from './components/MobileNav'
 import Heizkosten from './pages/Heizkosten'
 
@@ -158,25 +158,59 @@ function Shell() {
     document.querySelector<HTMLElement>(mobile ? 'button.menu-toggle' : 'nav.sidebar [aria-current="page"]')?.focus()
   }, [mobile])
   const switchProperty = useSwitchProperty()
+  const confirmLeave = useConfirm()
+  // Jeder Seitenwechsel fragt wie der Wechsel von Objekt und Zeitraum, wenn ein Formular offen oder eine
+  // Änderung ungespeichert ist (#346, Schritt 7a): App.tsx stellt die Seite neu auf, und die Eingabe wäre
+  // still weg. Das gilt für die Navigation (Seitenleiste, Menüblatt, untere Leiste) wie für Sprünge aus
+  // einer Seite („Hier beheben →“, „Position öffnen“, „Weiter prüfen“, die Anleitung zum Update).
+  // Startfokus auf „Abbrechen“. Ergibt, ob gewechselt wurde.
+  const navigate = useCallback(async (t: Tab, f: NoticeSubject | null = null): Promise<boolean> => {
+    if (t !== tab && hasOpenForm()) {
+      const ok = await confirmLeave({
+        title: 'Ungespeicherte Änderungen verwerfen?',
+        message: `Auf dieser Seite ist ein Formular offen oder eine Änderung noch nicht gespeichert. Beim Wechsel zu „${tabLabel(t)}“ geht sie verloren.`,
+        confirmLabel: 'Verwerfen',
+        cancelLabel: 'Abbrechen',
+        danger: true,
+      })
+      if (!ok) return false
+    }
+    setTab(t, f)
+    return true
+  }, [tab, hasOpenForm, confirmLeave, setTab])
+  // Schließen oder Neuladen des Tabs mit offenem Formular: Der Browser fragt mit seinem eigenen Satz nach.
+  useEffect(() => {
+    const onLeave = (e: BeforeUnloadEvent) => {
+      if (!hasOpenForm()) return
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', onLeave)
+    return () => window.removeEventListener('beforeunload', onLeave)
+  }, [hasOpenForm])
   // Ausgewertet wird im Objekt, dem der Beleg zugedacht ist; ohne Zuordnung im gewählten.
+  // Wechselt dabei das Objekt, hat dessen Rückfrage schon gefragt (die Seite wird ohnehin neu aufgestellt);
+  // sonst fragt der Seitenwechsel.
+  const goViaProperty = async (target: string | null | undefined, t: Tab, f: NoticeSubject | null = null): Promise<boolean> => {
+    if (target && target !== property?.id) {
+      if (!(await switchProperty(target))) return false
+      setTab(t, f)
+      return true
+    }
+    return navigate(t, f)
+  }
   const evaluateFromInbox = async (list: UploadInfo[]) => {
-    const target = list.find((u) => u.propertyId)?.propertyId
-    if (target && target !== property?.id && !(await switchProperty(target))) return
-    setHandoff(list)
-    setTab('schnellerfassung')
+    if (await goViaProperty(list.find((u) => u.propertyId)?.propertyId, 'schnellerfassung')) setHandoff(list)
   }
   // „Weiter prüfen“ (#170): Die Schnellerfassung zeigt die offenen Auswertungen des Objekts; dazu
   // erst auf das Objekt der Auswertung umschalten, wie beim Auswerten.
   const continueAssessment = async (u: ReceiptUpload) => {
-    const target = u.assessment?.propertyId
-    if (target && target !== property?.id && !(await switchProperty(target))) return
-    setTab('schnellerfassung')
+    await goViaProperty(u.assessment?.propertyId, 'schnellerfassung')
   }
   // „Position öffnen“ aus dem Belegordner: Der zeigt alle Objekte, die Seite Kosten nur das
   // gewählte. Gehört die Position zu einem anderen, wird erst umgeschaltet, wie oben.
   const openCostItem = async (item: CostItem) => {
-    if (item.propertyId !== property?.id && !(await switchProperty(item.propertyId))) return
-    setTab('kosten', { kind: 'costItem', id: item.id })
+    await goViaProperty(item.propertyId, 'kosten', { kind: 'costItem', id: item.id })
   }
   const update = useUpdateStatus(settings)
   const propertyId = property?.id
@@ -263,7 +297,7 @@ function Shell() {
       {/* Oben statt im Fuß: Der Fuß liegt auf kleinen Bildschirmen und langen Seiten
           außer Sicht. */}
       {!close && update.status && hintVisible(update.status, settings) && (
-        <UpdateHint status={update.status} onDismissed={reload} onShowGuide={() => setTab('einstellungen')} />
+        <UpdateHint status={update.status} onDismissed={reload} onShowGuide={() => void navigate('einstellungen')} />
       )}
 
       <PropertySwitcher properties={properties} value={propertyId} onChange={(id) => { closeForQuestion(); void switchProperty(id) }} />
@@ -275,7 +309,7 @@ function Shell() {
           {group.section && <div className="nav-section">{group.section}</div>}
           {group.items.map((it) => (
             <button key={it.id} className={tab === it.id ? 'active' : ''} aria-current={tab === it.id ? 'page' : undefined}
-              onClick={() => { close?.(); setTab(it.id) }}>
+              onClick={() => { close?.(); void navigate(it.id) }}>
               <span>{it.icon}</span> {it.label}
             </button>
           ))}
@@ -298,7 +332,7 @@ function Shell() {
   return (
     <>
       {mobile ? (
-        <MobileNav tab={tab} context={contextLine} onNavigate={(t) => setTab(t)} sheet={(close) => <nav className="sidebar" aria-label="Hauptnavigation">{sidebar(close)}</nav>} />
+        <MobileNav tab={tab} context={contextLine} onNavigate={(t) => void navigate(t)} sheet={(close) => <nav className="sidebar" aria-label="Hauptnavigation">{sidebar(close)}</nav>} />
       ) : (
         <nav className="sidebar" aria-label="Hauptnavigation">{sidebar(null)}</nav>
       )}
@@ -316,7 +350,7 @@ function Shell() {
             focus={focusNoticeFor === propertyId}
             onFocused={clearNoticeFocus}
             onBack={() => void switchProperty(emptyNotice.previous.id)}
-            onSetUp={tab === 'stammdaten' ? undefined : () => setTab('stammdaten')}
+            onSetUp={tab === 'stammdaten' ? undefined : () => void navigate('stammdaten')}
             onDismiss={() => propertyId && dismissNotice(propertyId)}
           />
         )}
@@ -324,13 +358,13 @@ function Shell() {
             Zwischenstände einer Seite gehören zu dem Objekt und Jahr, in dem sie entstanden sind. */}
         <Fragment key={`${propertyId ?? ''}:${periodKeyNow}`}>
         {tab === 'cockpit' && (
-          <Cockpit units={units} tenancies={tenancies} settings={settings} reload={reload} onNavigate={(t, f) => setTab(t as Tab, f ?? null)} />
+          <Cockpit units={units} tenancies={tenancies} settings={settings} reload={reload} onNavigate={(t, f) => void navigate(t as Tab, f ?? null)} />
         )}
         {tab === 'schnellerfassung' && (
-          <Schnellerfassung units={units} settings={settings} onNavigate={(t, f) => setTab(t as Tab, f ?? null)}
+          <Schnellerfassung units={units} settings={settings} onNavigate={(t, f) => void navigate(t as Tab, f ?? null)}
             handoff={handoff ?? undefined} onHandoffTaken={() => setHandoff(null)} />
         )}
-        {tab === 'uebersicht' && <Uebersicht onNavigate={(t) => setTab(t as Tab)} />}
+        {tab === 'uebersicht' && <Uebersicht onNavigate={(t) => void navigate(t as Tab)} />}
         {tab === 'stammdaten' && (
           <Stammdaten units={units} tenancies={tenancies} settings={settings} reload={reload} focus={focus} onFocusDone={clearFocus} />
         )}
@@ -339,11 +373,11 @@ function Shell() {
         {tab === 'zaehler' && <Zaehler units={units} focus={focus} onFocusDone={clearFocus} />}
         {tab === 'belege' && <Belege onEvaluate={(list) => void evaluateFromInbox(list)} onContinue={(u) => void continueAssessment(u)} onOpenItem={(item) => void openCostItem(item)} />}
         {tab === 'abrechnung' && (
-          <Abrechnung settings={settings} units={units} tenancies={tenancies} reload={reload} onNavigate={(t, f) => setTab(t, f ?? null)} focus={focus} onFocusDone={clearFocus} />
+          <Abrechnung settings={settings} units={units} tenancies={tenancies} reload={reload} onNavigate={(t, f) => void navigate(t, f ?? null)} focus={focus} onFocusDone={clearFocus} />
         )}
-        {tab === 'heizkosten' && <Heizkosten units={units} tenancies={tenancies} />}
+        {tab === 'heizkosten' && <Heizkosten units={units} tenancies={tenancies} onTenanciesChanged={reload} />}
         {tab === 'steuer' && <Steuer settings={settings} />}
-        {tab === 'hilfe' && <Hilfe onNavigate={(t) => setTab(t)} />}
+        {tab === 'hilfe' && <Hilfe onNavigate={(t) => void navigate(t)} />}
         {tab === 'einstellungen' && settings && (
           <Einstellungen settings={settings} reload={reload} update={update} />
         )}

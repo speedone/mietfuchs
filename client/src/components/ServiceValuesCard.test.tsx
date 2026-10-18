@@ -2,6 +2,7 @@
 // Die Karte „Werte des Ablesedienstes“ (Heizung PR 12): Die Wohnung einer Zeile zeigt den gespeicherten
 // Wert (CLAUDE.md), Speichern schickt die ganze Liste.
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { OpenFormScope, hasOpenForm } from '../testing/openForm'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import ServiceValuesCard from './ServiceValuesCard'
 import { periodKey } from '../../../shared/period.ts'
@@ -44,4 +45,20 @@ test('Ohne Werte: je angeschlossene Wohnung eine Zeile über die Heizperiode; ab
   cleanup()
   render(<ServiceValuesCard plantId="hp" period={periodKey('2025-01')} from="2025-01-01" to="2025-12-31" closed units={UNITS} values={values} onSaved={() => {}} />)
   expect(screen.queryByRole('button', { name: 'Werte speichern' })).toBeNull()
+})
+
+// #346, Schritt 7a
+test('7a: Ändern meldet die Karte an, Speichern nimmt die Marke weg', async () => {
+  const saved = vi.fn()
+  render(<OpenFormScope><ServiceValuesCard plantId="hp" period={periodKey('2025-01')} from="2025-01-01" to="2025-12-31" closed={false} units={UNITS} values={values} onSaved={saved} /></OpenFormScope>)
+  expect(hasOpenForm()).toBe(false)
+  const heat = screen.getByLabelText(/Heizung \(bewertet\)/)
+  fireEvent.change(heat, { target: { value: '900' } })
+  expect(hasOpenForm()).toBe(true)
+  fireEvent.change(heat, { target: { value: '800,25' } })
+  expect(hasOpenForm()).toBe(false)
+  fireEvent.change(heat, { target: { value: '900' } })
+  fireEvent.click(screen.getByText('Werte speichern'))
+  await waitFor(() => expect(saved).toHaveBeenCalled())
+  expect(hasOpenForm()).toBe(false)
 })

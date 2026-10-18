@@ -4,18 +4,30 @@ import { useState } from 'react'
 import { api, errorText } from '../api'
 import { useToast } from './feedback'
 import Term from './Term'
+import { useOpenWhenDiffers } from '../useDraft'
 import { APPLICATION_FROM, FIRST_USE_UNTIL, HALF_SPLIT_WHAT, HALF_SPLIT_YEAR, halfSplitBody, halfSplitToForm, INSTALLED_AFTER, noticeBody, noticeTenancies, PRIOR_DUTY_EXPLAINED, PRIOR_DUTY_QUESTION, TRI_OPTIONS, type HalfSplitBody, type NoticeTenancy, type TriState } from '../halfSplitForm'
 import { halfSplitFirstDay } from '../../../shared/law/co2kostaufg.ts'
 import type { HeatingEnergy, HeatingPlant } from '../types'
 
-export default function HalfSplitCard({ plant, tenancies, onSaved }: {
+export default function HalfSplitCard({ plant, tenancies, onSaved, onNoticeSaved }: {
   plant: HalfSplitBody & Pick<HeatingPlant, 'units'> & { id: string; energy: HeatingEnergy }
   tenancies: readonly NoticeTenancy[]
   onSaved: () => void
+  // Lädt die Mietverhältnisse neu, an denen die Mitteilung steht (sonst zeigte die Karte sie nach einem
+  // Seitenwechsel wieder leer); ohne Angabe `onSaved`.
+  onNoticeSaved?: () => void
 }) {
   const [form, setForm] = useState(halfSplitToForm(plant))
   const [notices, setNotices] = useState<Record<string, string>>(() => Object.fromEntries(tenancies.map((t) => [t.id, t.halfSplitNoticeOn ?? ''])))
   const [error, setError] = useState('')
+  // Eine ungespeicherte Eingabe zählt als offenes Formular: Seiten-, Objekt- und Zeitraumwechsel fragen (#346, 7a).
+  // Gezählt wird, was die Karte zeigt (ohne Einbau keine weiteren Fragen), und je Mitteilung gegen ihren
+  // gespeicherten Stand; eine gespeicherte Mitteilung gilt sofort als gespeichert, auch bevor die
+  // Mietverhältnisse neu geladen sind.
+  const shownForm = (f: typeof form) => (f.installedOn === '' ? { installedOn: '' } : f)
+  const markSaved = useOpenWhenDiffers(shownForm(form), shownForm(halfSplitToForm(plant)))
+  const [noticeSaved, setNoticeSaved] = useState<Record<string, string>>({})
+  useOpenWhenDiffers(notices, Object.fromEntries(tenancies.map((t) => [t.id, noticeSaved[t.id] ?? t.halfSplitNoticeOn ?? ''])))
   const toast = useToast()
   const asked = noticeTenancies(tenancies, plant, halfSplitFirstDay())
   const pick = (value: string): TriState => TRI_OPTIONS.find((o) => o.value === value)?.value ?? 'unknown'
@@ -30,8 +42,9 @@ export default function HalfSplitCard({ plant, tenancies, onSaved }: {
     try {
       await api(`/api/tenancies/${t.id}`, { method: 'PUT', body: JSON.stringify(result.body) })
       setError('')
+      setNoticeSaved((s) => ({ ...s, [t.id]: notices[t.id] ?? '' }))
       toast(`Mitteilung an ${t.tenantName} gespeichert.`)
-      onSaved()
+      ;(onNoticeSaved ?? onSaved)()
     } catch (e) {
       setError(errorText(e))
     }
@@ -46,6 +59,7 @@ export default function HalfSplitCard({ plant, tenancies, onSaved }: {
     try {
       await api(`/api/heating-plants/${plant.id}`, { method: 'PUT', body: JSON.stringify(result.body) })
       setError('')
+      markSaved()
       toast('Angaben zur Heizung gespeichert.')
       onSaved()
     } catch (e) {

@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { useOpenWhenDiffers } from '../useDraft'
+import { useOpenForm } from '../property'
 import EstimateCard from './EstimateCard'
 import HcaBlock from './HcaBlock'
 import type { HeatingPeriodView, HeatingPlant, InsulationRule, InterimGapStatus, SelfHeatingStatement } from '../types'
@@ -34,6 +36,11 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
   const [agreed, setAgreed] = useState<boolean>(d?.own.above70Agreed ?? d?.effective?.above70Agreed ?? false)
   // Eine Zwischenablesung, die „nicht möglich“ war, braucht einen Grund (I3).
   const [reasonFor, setReasonFor] = useState<{ key: string; reason: string } | null>(null)
+  // Ungespeicherte Angaben zählen als offenes Formular (#346, 7a): der Anteil samt Wärmeschutz und § 10
+  // gegen den gespeicherten Stand, eine angefangene Begründung zur Zwischenablesung, solange sie offen ist.
+  const savedAgreed = d?.own.above70Agreed ?? d?.effective?.above70Agreed ?? false
+  const shareSaved = useOpenWhenDiffers({ share, waterShare, insulation, agreed }, { share: '', waterShare: '', insulation: savedInsulation, agreed: savedAgreed })
+  useOpenForm(reasonFor !== null)
   const [printUnit, setPrintUnit] = useState<string>(self?.units[0]?.unitId ?? '')
   const [printing, setPrinting] = useState(false)
   const editable = !d || shareEditable(d)
@@ -83,6 +90,7 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
         }),
       })
       setError('')
+      shareSaved()
       toast('Anteil gespeichert.')
       onChanged()
     } catch (e) {

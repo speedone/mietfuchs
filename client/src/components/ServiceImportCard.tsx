@@ -1,6 +1,7 @@
 // Die Karte „Messdienstabrechnung auslesen“ der Seite Heizkosten (Heizung PR 20, #103): Beleg wählen, KI
 // lesen lassen, Ergebnis prüfen und übernehmen. Gespeichert wird erst in der Prüfansicht.
 import { useRef, useState } from 'react'
+import { useOpenForm } from '../property'
 import { errorText } from '../api'
 import { aiRequest, progressText, type AiProgress } from '../aiRequest'
 import { heatingUpload } from '../aiUpload'
@@ -26,6 +27,10 @@ export default function ServiceImportCard({ plant, view, object, tenancies, unit
   const [progress, setProgress] = useState<AiProgress | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  // Das Auslesen und der Vorschlag zählen als offenes Formular (#346, 7a): Gespeichert ist nur der Beleg, ein
+  // Seitenwechsel verlöre den Vorschlag, und ihn neu zu holen kostet einen weiteren Lauf der KI. „Schließen“
+  // legt ihn weg, wenn alles übernommen ist.
+  useOpenForm(busy || result !== null)
   const abort = useRef<AbortController | null>(null)
 
   async function read(file: File) {
@@ -73,6 +78,11 @@ export default function ServiceImportCard({ plant, view, object, tenancies, unit
       )}
       {error && <div className="error">{error}</div>}
       {result && <ServiceImportReview key={result.file} x={result.extraction} file={result.file} ctx={ctx} view={view} co2={co2} onDone={onSaved} />}
+      {result && (
+        <div className="row">
+          <button type="button" className="btn secondary" onClick={() => setResult(null)}>Schließen</button>
+        </div>
+      )}
     </div>
   )
 }

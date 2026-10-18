@@ -3,6 +3,7 @@
 import { afterEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import OperatingPowerCard from './OperatingPowerCard'
+import { OpenFormScope, hasOpenForm } from '../testing/openForm'
 import { CALENDAR_RULES, periodKey } from '../../../shared/period.ts'
 import type { CostItem } from '../types'
 
@@ -151,4 +152,14 @@ test('Karte bei Contracting: der Lieferant bezahlt den Strom des Kessels in der 
     expect(screen.getByText(/Den Strom für Brenner und Kessel bezahlt bei Contracting in der Regel der Lieferant; er steckt dann im Wärmepreis\./)).toBeTruthy()
     unmount()
   }
+})
+
+// #346, Schritt 7a: Eine angefangene Schätzung zählt als offenes Formular; wer alles zurückstellt, nicht.
+test('7a: Ändern meldet die Karte an, Zurückstellen nimmt die Marke weg', () => {
+  render(<OpenFormScope><OperatingPowerCard plant={plant} view={view} rules={CALENDAR_RULES} items={[strom]} onBooked={vi.fn()} /></OpenFormScope>)
+  expect(hasOpenForm()).toBe(false)
+  fireEvent.click(screen.getByLabelText(/gemessen mit Zwischenzähler/))
+  expect(hasOpenForm()).toBe(true)
+  fireEvent.click(screen.getByLabelText(/geschätzt nach Leistung und Heiztagen/))
+  expect(hasOpenForm()).toBe(false)
 })

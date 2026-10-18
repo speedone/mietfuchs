@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { api, errorText, fmtEuro } from '../api'
 import { useConfirm, useToast } from './feedback'
 import Term from './Term'
+import { useOpenWhenDiffers } from '../useDraft'
 import { ALREADY_SETTLED_OPTIONS, BEFORE_2023_OPTIONS, STOCK_UNIT_OPTIONS, stockBody, stockSummary, stockToForm, type StockForm } from '../stockForm'
 import { STOCK_UNIT_TEXT } from '../../../shared/fuelStock.ts'
 import type { HeatingEnergy, HeatingPeriodView } from '../types'
@@ -25,6 +26,8 @@ export default function StockCard({ view, onSaved, co2Fields = true, energy }: {
   const stock = view.stock
   const [form, setForm] = useState<StockForm | null>(() => (stock ? stockToForm(stock) : null))
   const [error, setError] = useState('')
+  // Eine ungespeicherte Eingabe zählt als offenes Formular: Seiten-, Objekt- und Zeitraumwechsel fragen (#346, 7a).
+  const markSaved = useOpenWhenDiffers(form, stock ? stockToForm(stock) : null)
   const [busy, setBusy] = useState(false)
   const toast = useToast()
   const confirm = useConfirm()
@@ -43,6 +46,7 @@ export default function StockCard({ view, onSaved, co2Fields = true, energy }: {
     try {
       await api(url, { method: 'PUT', body: JSON.stringify(r.body) })
       setError('')
+      markSaved()
       toast('Vorrat gespeichert.')
       onSaved()
     } catch (e) {

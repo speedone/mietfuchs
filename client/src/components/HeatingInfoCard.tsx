@@ -3,6 +3,7 @@ import type { HeatingPeriodView, HeatingPlant } from '../types'
 import { api, errorText } from '../api'
 import { useToast } from './feedback'
 import Term from './Term'
+import { useOpenWhenDiffers } from '../useDraft'
 import { CONTRACT_HELP, CONTRACT_OPTIONS, contractBody, contractToForm, dwdHint, infoBody, infoToForm, type ContractForm, type InfoForm } from '../heatingInfoForm'
 import { inheritedText } from '../heatingRulesForm'
 
@@ -14,6 +15,8 @@ export default function HeatingInfoCard({ plant, view, onChanged }: { plant: Hea
   const [form, setForm] = useState<InfoForm>(() => infoToForm(view.info))
   const [contract, setContract] = useState<ContractForm>(() => contractToForm(view.rules.consumerContract))
   const [error, setError] = useState('')
+  // Eine ungespeicherte Eingabe zählt als offenes Formular: Seiten-, Objekt- und Zeitraumwechsel fragen (#346, 7a).
+  const markSaved = useOpenWhenDiffers({ form, contract }, { form: infoToForm(view.info), contract: contractToForm(view.rules.consumerContract) })
   const self = plant.method === 'self'
   // Wo Mietfuchs den Vergleich nach Nr. 4 (bei freien Schlüsseln auch Nr. 5) nicht rechnet: Heizkostenverteiler,
   // Werte des Ablesedienstes, freie Schlüssel oder ausgenommene Wärme (Durchsicht von #243, R-W1).
@@ -32,6 +35,7 @@ export default function HeatingInfoCard({ plant, view, onChanged }: { plant: Hea
         await api(`/api/heating-plants/${plant.id}/periods/${view.period}/rules`, { method: 'PUT', body: JSON.stringify(c.body) })
       }
       setError('')
+      markSaved()
       toast('Angaben gespeichert.')
       onChanged()
     } catch (e) {

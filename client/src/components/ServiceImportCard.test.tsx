@@ -4,6 +4,7 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import ServiceImportCard from './ServiceImportCard'
+import { OpenFormScope, hasOpenForm } from '../testing/openForm'
 import { periodKey } from '../../../shared/period.ts'
 import type { HeatingPeriodView, ServiceExtractResult, Tenancy, Unit } from '../types'
 import { noInfoView } from '../testing/heatingView'
@@ -69,4 +70,16 @@ test('Durchsicht S4: steht Kaltwasser mit Einzelbeträgen schon im Abrechnungsze
 test('In einer abgeschlossenen Heizperiode gibt es nichts auszulesen', () => {
   render(<ServiceImportCard plant={{ id: 'hp', propertyId: 'objekt-1' }} view={view(true)} object={{ key: periodKey('2025-01'), from: '2025-01-01', to: '2025-12-31' }} tenancies={TENANCIES} units={UNITS} onSaved={() => {}} />)
   expect(screen.queryByLabelText('Messdienstabrechnung wählen')).toBeNull()
+})
+
+// #346, Schritt 7a: Der Vorschlag der KI zählt als offenes Formular, bis er geschlossen wird; neu holen kostet
+// einen weiteren Lauf.
+test('7a: der Vorschlag meldet die Karte an, „Schließen“ nimmt die Marke weg', async () => {
+  render(<OpenFormScope><ServiceImportCard plant={{ id: 'hp', propertyId: 'objekt-1' }} view={view()} object={{ key: periodKey('2025-01'), from: '2025-01-01', to: '2025-12-31' }} tenancies={TENANCIES} units={UNITS} onSaved={() => {}} /></OpenFormScope>)
+  expect(hasOpenForm()).toBe(false)
+  fireEvent.change(screen.getByLabelText('Messdienstabrechnung wählen'), { target: { files: [new File(['x'], 'abrechnung.jpg', { type: 'image/jpeg' })] } })
+  await screen.findByLabelText('Zuordnung „Mustermann, Erika“')
+  expect(hasOpenForm()).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: 'Schließen' }))
+  expect(hasOpenForm()).toBe(false)
 })
