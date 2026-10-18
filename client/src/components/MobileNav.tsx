@@ -97,7 +97,7 @@ export default function MobileNav({ tab, context, onNavigate, sheet }: {
   const elsewhere = !BOTTOM_TABS.includes(tab)
   return (
     <>
-      <header className="no-print sticky top-0 z-30 flex h-14 items-center gap-1 border-b border-line bg-sidebar px-1">
+      <header className="mobile-head no-print sticky top-0 z-30 flex items-center gap-1 border-b border-line bg-sidebar">
         <button type="button" className="menu-toggle size-11 inline-flex shrink-0 items-center justify-center rounded-m text-xl leading-none text-text hover:bg-hover" aria-label="Menü" aria-haspopup="dialog" aria-expanded={opened !== null} aria-controls={sheetId}
           onClick={(e) => open(e.currentTarget, 'menu')}>☰</button>
         <div className="min-w-0 flex-1 leading-snug">
@@ -116,6 +116,9 @@ export default function MobileNav({ tab, context, onNavigate, sheet }: {
         onClose={(e) => { if (e.target === e.currentTarget) finish() }}
         onCancel={(e) => { if (e.target === e.currentTarget) finish() }}
         onClick={(e) => { if (e.target === e.currentTarget) close() }}
+        // Esc gehört dem Blatt: Ohne das Anhalten erreichte es auch den Horcher eines offenen
+        // Seitenfensters am Dokument (Drawer.tsx) und schlösse das Formular darunter mit.
+        onKeyDown={(e) => { if (e.key === 'Escape') e.stopPropagation() }}
       >
         {opened && sheet(close)}
       </dialog>

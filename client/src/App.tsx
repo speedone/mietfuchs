@@ -145,7 +145,18 @@ function Shell() {
   const { key: periodKeyNow, label: periodLabelNow } = usePeriod()
   // Unter 900 px Kopf, Menüblatt und untere Leiste statt der Seitenleiste (#346, Schritt 9)
   const mobile = useMediaQuery(MOBILE_QUERY)
-  const { properties, property, previousId, focusNoticeFor, setFocusNoticeFor, reload: reloadProperties } = useProperty()
+  const { properties, property, previousId, focusNoticeFor, setFocusNoticeFor, reload: reloadProperties, hasOpenForm } = useProperty()
+  // Wechselt die Breite über die Grenze, wird die eine Navigation ausgehängt und die andere gezeichnet;
+  // lag der Fokus in der ausgehängten (etwa im offenen Menüblatt), stünde er danach auf <body>. Er geht
+  // dann an die aktuelle Seite in der Seitenleiste bzw. an ☰.
+  const wasMobile = useRef(mobile)
+  useEffect(() => {
+    if (wasMobile.current === mobile) return
+    wasMobile.current = mobile
+    const active = document.activeElement
+    if (active && active !== document.body) return
+    document.querySelector<HTMLElement>(mobile ? 'button.menu-toggle' : 'nav.sidebar [aria-current="page"]')?.focus()
+  }, [mobile])
   const switchProperty = useSwitchProperty()
   // Ausgewertet wird im Objekt, dem der Beleg zugedacht ist; ohne Zuordnung im gewählten.
   const evaluateFromInbox = async (list: UploadInfo[]) => {
@@ -230,9 +241,15 @@ function Shell() {
 
   // Der Inhalt der Seitenleiste, am Rechner als Leiste, am Handy im Menüblatt (#346, Schritt 9):
   // dieselbe Navigation aus nav.ts, dieselbe Auswahl von Objekt und Zeitraum. Im Blatt (`close`
-  // gesetzt) schließt jede Auswahl es zuerst, denn eine Rückfrage bei offenem Formular stünde sonst
-  // hinter dem modalen Blatt; der Hinweis auf ein Update fehlt dort, aktualisiert wird am Rechner.
-  const sidebar = (close: (() => void) | null) => (
+  // gesetzt) schließt die Wahl einer Seite es; der Hinweis auf ein Update fehlt dort, aktualisiert wird
+  // am Rechner.
+  const sidebar = (close: (() => void) | null) => {
+    // Objekt und Zeitraum wechseln im Blatt, ohne es zu schließen, wie in der Seitenleiste: Mit den
+    // Pfeiltasten sendet ein Auswahlfeld bei jedem Schritt `change`, und ein Blatt, das sich dabei
+    // schlösse, ließe nur den nächsten Eintrag erreichen. Geschlossen wird nur, wenn eine Rückfrage
+    // kommt (offenes Formular), denn die stünde sonst hinter dem modalen Blatt.
+    const closeForQuestion = () => { if (close && hasOpenForm()) close() }
+    return (
     <>
       <div className="logo">
         <FoxLogo size={30} />
@@ -249,9 +266,9 @@ function Shell() {
         <UpdateHint status={update.status} onDismissed={reload} onShowGuide={() => setTab('einstellungen')} />
       )}
 
-      <PropertySwitcher properties={properties} value={propertyId} onChange={(id) => { close?.(); void switchProperty(id) }} />
+      <PropertySwitcher properties={properties} value={propertyId} onChange={(id) => { closeForQuestion(); void switchProperty(id) }} />
 
-      <PeriodSelect className="year-switcher no-print" onBeforeChange={close ?? undefined} />
+      <PeriodSelect className="year-switcher no-print" onBeforeChange={closeForQuestion} />
 
       {navFor(hasHeatingPlant).map((group, gi) => (
         <div key={gi} className="nav-group">
@@ -275,14 +292,15 @@ function Shell() {
         <div>Alle Daten bleiben lokal auf diesem Rechner.</div>
       </div>
     </>
-  )
+    )
+  }
 
   return (
     <>
       {mobile ? (
-        <MobileNav tab={tab} context={contextLine} onNavigate={(t) => setTab(t)} sheet={(close) => <nav className="sidebar">{sidebar(close)}</nav>} />
+        <MobileNav tab={tab} context={contextLine} onNavigate={(t) => setTab(t)} sheet={(close) => <nav className="sidebar" aria-label="Hauptnavigation">{sidebar(close)}</nav>} />
       ) : (
-        <nav className="sidebar">{sidebar(null)}</nav>
+        <nav className="sidebar" aria-label="Hauptnavigation">{sidebar(null)}</nav>
       )}
       <main>
         {/* Was beim Start mit den Daten geschehen ist (#55). Auf jeder Seite, damit die Meldung

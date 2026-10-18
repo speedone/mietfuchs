@@ -200,6 +200,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
                     focused={focusedId === m.id}
                     readings={mReadings}
                     unitName={unitName(m.unitId)}
+                    consumptionLabel={label}
                     onToggle={() => { setError(''); readingError.clear(); setOpenMeterId(openMeterId === m.id ? null : m.id); setReadingForm({ ...EMPTY_READING }) }}
                     onEdit={() => { setError(''); setMarkedYear(''); setMeterForm(meterToForm(m)) }}
                     onDelete={() => deleteMeter(m)}
@@ -361,6 +362,8 @@ function FragmentRow(props: {
   open: boolean
   readings: Reading[]
   unitName: string
+  // Der Zeitraum im Spaltenkopf „Verbrauch …“, am Handy an der Zelle (data-label)
+  consumptionLabel: string
   onToggle: () => void
   onEdit: () => void
   onDelete: () => void
@@ -372,7 +375,7 @@ function FragmentRow(props: {
   onDeleteReading: (r: Reading) => void
   onSaved: () => void
 }) {
-  const { meter: m, focused, cons, open, readings, unitName, onToggle, onEdit, onDelete, readingForm, setReadingForm, onSaveReading, readingError, onReadingFieldChange, onDeleteReading, onSaved } = props
+  const { meter: m, focused, cons, open, readings, unitName, consumptionLabel, onToggle, onEdit, onDelete, readingForm, setReadingForm, onSaveReading, readingError, onReadingFieldChange, onDeleteReading, onSaved } = props
   // Fehler zur Ablesung: das Feld markieren und fokussieren (Durchsicht S1 zu #341).
   const readingErrorId = useId()
   const dateRef = useRef<HTMLInputElement>(null)
@@ -393,7 +396,7 @@ function FragmentRow(props: {
         </td>
         <td data-label="Zuordnung">{unitName}</td>
         <td data-label="Sparte">{METER_TYPE_LABELS[m.type] ?? m.type}</td>
-        <td className="num" data-label="Verbrauch">
+        <td className="num" data-label={`Verbrauch ${consumptionLabel}`}>
           {cons && cons.readingCount >= 2
             ? `${cons.consumption.toLocaleString('de-DE')}${m.unit ? ` ${m.unit}` : ''}`
             : <span className="muted">zu wenig Ablesungen</span>}

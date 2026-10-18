@@ -37,7 +37,15 @@ export default function Drawer({ open, title, subtitle, onClose, footer, childre
     if (!open) return
     const prevOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
-    const t = setTimeout(() => bodyRef.current?.querySelector<HTMLElement>('input, select, textarea')?.focus(), 60)
+    // Den Fokus nimmt das erste Feld nur, wenn er inzwischen nicht woanders hingesetzt wurde: Wer in
+    // den 60 ms etwa das Menüblatt am Handy öffnet (#346, Schritt 9), behält seinen Fokus dort.
+    const before = document.activeElement
+    const t = setTimeout(() => {
+      const body = bodyRef.current
+      const now = document.activeElement
+      if (!body || (now && now !== before && now !== document.body && !body.contains(now))) return
+      body.querySelector<HTMLElement>('input, select, textarea')?.focus()
+    }, 60)
     return () => {
       document.body.style.overflow = prevOverflow
       clearTimeout(t)

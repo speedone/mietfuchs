@@ -378,15 +378,16 @@ test('dark: gilt nicht im Druck', () => {
   expect(rule).toMatch(/@media not print\s*\{\s*\.dark\\:bg-card/)
 })
 
-// S12 (Spezifikation Abschnitt 9, #346 Schritt 9): `<dialog>` und `showModal()` nur in den Bausteinen,
-// die dafür vorgesehen sind. Ein eigenes Overlay je Seite brächte je eigene Regeln für Esc, Fokus und
-// Klick daneben. Die Liste beginnt mit dem Menüblatt am Handy; Seitenfenster und Rückfrage kommen mit
-// den Schritten 1 und 2 dazu.
-const DIALOG_FILES = new Set(['./components/MobileNav.tsx'])
-const dialogUses = (src: string) => [...src.matchAll(/<dialog\b|\bshowModal\s*\(/g)].map((m) => m[0])
-test('S12: <dialog> und showModal nur in den erlaubten Bausteinen', () => {
-  // Mutationsprobe: Der Prüfer findet beide Schreibweisen.
-  expect(dialogUses('<dialog open>…</dialog>; ref.current.showModal()')).toEqual(['<dialog', 'showModal('])
+// S12 (Spezifikation Abschnitt 9, #346 Schritt 9): Dialoge (`<dialog>`, `showModal()`, `role="dialog"`
+// und `role="alertdialog"`) nur in den Bausteinen, die dafür vorgesehen sind. Ein eigenes Overlay je Seite
+// brächte je eigene Regeln für Esc, Fokus und Klick daneben. Heute: das Menüblatt am Handy, das
+// Seitenfenster und die Rückfrage (die beiden ziehen mit Schritt 1 und 2 auf `<dialog>` um).
+const DIALOG_FILES = new Set(['./components/MobileNav.tsx', './components/Drawer.tsx', './components/feedback.tsx'])
+const dialogUses = (src: string) => [...src.matchAll(/<dialog\b|\bshowModal\s*\(|role=["'{`]+(?:alert)?dialog\b/g)].map((m) => m[0])
+test('S12: Dialoge nur in den erlaubten Bausteinen', () => {
+  // Probe des Prüfers: Er findet alle Schreibweisen.
+  expect(dialogUses('<dialog open>…</dialog>; ref.current.showModal(); <div role="dialog"> <div role={"alertdialog"}>'))
+    .toEqual(['<dialog', 'showModal(', 'role="dialog', 'role={"alertdialog'])
   for (const file of DIALOG_FILES) expect(dialogUses(sources[file] ?? ''), `${file} nutzt keinen <dialog> mehr; aus der Liste streichen`).not.toEqual([])
   expect(files.filter((file) => !DIALOG_FILES.has(file) && dialogUses(sources[file] ?? '').length > 0)).toEqual([])
 })
@@ -395,11 +396,16 @@ test('S12: <dialog> und showModal nur in den erlaubten Bausteinen', () => {
 // Leiste lesen sie von dort (navFor, bottomNav); eine zweite Liste mit Kennung und Beschriftung liefe
 // auseinander, sobald eine Seite dazukommt oder umbenannt wird.
 const TAB_IDS = NAV.flatMap((g) => g.items.map((i) => i.id))
-const navEntry = new RegExp(`\\bid:\\s*['"](?:${TAB_IDS.join('|')})['"]\\s*,\\s*(?:label|short|icon):`)
+// Ein Objekt mit einer Seitenkennung als `id` und einer Beschriftung oder einem Symbol, in beliebiger Reihenfolge
+const navEntry = { test: (src: string) => [...src.matchAll(/\{[^{}]*\}/g)].some((m) =>
+  new RegExp(`\\bid:\\s*['"](?:${TAB_IDS.join('|')})['"]`).test(m[0]) && /\b(?:label|short|icon):/.test(m[0])) }
 test('S22: Navigationseinträge stehen nur in nav.ts', () => {
   expect(TAB_IDS).toContain('stammdaten')
   // Der Prüfer erkennt die Einträge in nav.ts selbst; sonst wäre er grün, ohne etwas zu finden.
-  expect(twSources['./nav.ts']).toMatch(navEntry)
+  expect(navEntry.test(twSources['./nav.ts'] ?? '')).toBe(true)
+  // Probe des Prüfers: auch mit der Beschriftung vorn
+  expect(navEntry.test("const X = [{ label: 'Cockpit', id: 'cockpit' }]")).toBe(true)
+  expect(navEntry.test("setTab({ id: 'cockpit' })")).toBe(false)
   expect(Object.keys(twSources).filter((file) => file !== './nav.ts' && navEntry.test(twSources[file] ?? ''))).toEqual([])
   // Die Bausteine der Navigation holen ihre Einträge aus nav.ts
   expect(sources['./App.tsx']).toMatch(/navFor\(/)
