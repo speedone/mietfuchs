@@ -593,7 +593,7 @@ const PLANT_GONE = 'Diese Heizanlage gibt es nicht (mehr). Bitte laden Sie die S
 // hätte sie nicht; rohe Einheiten verschiedener Heizkörper sind nicht vergleichbar.
 const HKV_KEY =
   'Nach Heizkostenverteilern verteilt Mietfuchs in der eigenen Heizkostenabrechnung, denn dort stehen Skala und Bewertungsfaktor jedes Geräts. ' +
-  'Richten Sie dafür unter Stammdaten bei der Heizung „Selbst abrechnen“ mit der Erfassung „Heizkostenverteiler“ ein, oder übernehmen Sie die Abrechnung des Messdienstes als Einzelbeträge (Schlüssel „Einzelbeträge“).'
+  'Richten Sie dafür unter Stammdaten bei der Heizung mit „Eigene Heizkostenabrechnung einrichten“ die Erfassung „Heizkostenverteiler“ ein, oder übernehmen Sie die Abrechnung des Messdienstes als Einzelbeträge (Schlüssel „Einzelbeträge“).'
 
 async function plantOf(db: Executor, plantId: string): Promise<{ propertyId: string; supply: HeatingPlant['supply']; name: string } | undefined> {
   return (await db.select({ propertyId: heatingPlants.propertyId, supply: heatingPlants.supply, name: heatingPlants.name }).from(heatingPlants).where(eq(heatingPlants.id, plantId)))[0]

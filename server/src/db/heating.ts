@@ -436,10 +436,10 @@ export const pinSelfSpans = (p: Pick<HeatingPlant, 'capture' | 'hotWater' | 'sel
   (p.selfSpans ?? []).map((s) => ({ ...s, capture: s.capture ?? p.capture ?? 'heatMeter', hotWater: s.hotWater ?? p.hotWater }))
 export const CAPTURE_VIA_SETUP =
   'Womit der Verbrauch erfasst wird, ändert sich nur zum Beginn einer Heizperiode, damit frühere Heizperioden nicht rückwirkend anders rechnen. ' +
-  'Beenden Sie dafür unter „Ändern“ die eigene Heizkostenabrechnung und richten Sie sie mit „Selbst abrechnen“ ab der Heizperiode neu ein, in der die neuen Geräte zählen.'
+  'Beenden Sie dafür unter „Ändern“ die eigene Heizkostenabrechnung und richten Sie sie mit „Eigene Heizkostenabrechnung einrichten“ ab der Heizperiode neu ein, in der die neuen Geräte zählen.'
 export const HOT_WATER_VIA_SETUP =
   'Wie das Warmwasser bereitet wird, ändert sich bei der eigenen Heizkostenabrechnung nur zum Beginn einer Heizperiode, damit frühere Heizperioden nicht rückwirkend anders rechnen. ' +
-  'Beenden Sie dafür unter „Ändern“ die eigene Heizkostenabrechnung und richten Sie sie mit „Selbst abrechnen“ ab der Heizperiode neu ein, ab der die Änderung gilt.'
+  'Beenden Sie dafür unter „Ändern“ die eigene Heizkostenabrechnung und richten Sie sie mit „Eigene Heizkostenabrechnung einrichten“ ab der Heizperiode neu ein, ab der die Änderung gilt.'
 
 // Die Zeiträume der eigenen Heizkostenabrechnung, ganz ersetzt wie die Liste der Wohnungen (Durchsicht von #239).
 export async function writeSelfSpans(tx: Executor, plantId: string, spans: readonly SelfSpanRange[]): Promise<void> {
