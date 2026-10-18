@@ -247,7 +247,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   wie „+ Kostenposition anlegen“ oben im Seitenkopf, „+ Wohnung anlegen“, „+ Mietverhältnis anlegen“,
   „+ Heizanlage anlegen“, „+ Lieferung anlegen“ und „+ Ablesung anlegen“ oben rechts in ihrer Karte, und aus
   „Weiteres Objekt anlegen“ neben „Speichern“ wird „+ Weiteres Objekt anlegen“ oben rechts in der Karte
-  „Objekt“; im Fuß einer Karte stehen nur „Speichern“ und rechts die Gefahrknöpfe
+  „Objekt“; im Fuß einer Karte stehen nur „Speichern“ und rechts die Gefahrknöpfe. Damit am Handy nichts
+  abgeschnitten ist, heißen einige Einträge kürzer, und was sie bedeuten, steht als Hinweis am Feld: beim
+  Bundesland „unbekannt“, bei der Frage, wer abrechnet, „Niemand“, beim Abrechnungszeitraum „Wechsel ab einem
+  Monat“ und „Beginnmonat von Anfang an“. Die Suche im Belegordner steht in voller Breite und nennt als Hinweis,
+  was sie findet
   ([#346](https://github.com/speedone/mietfuchs/issues/346)).
 
 ### Behoben

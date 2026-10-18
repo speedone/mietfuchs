@@ -25,10 +25,10 @@ export function RhythmFields({ form, onChange, fromField }: { form: RhythmForm; 
     {/* Raster mit Breitenstufen (#346 Schritt 7b): die Auswahl so breit wie ihr längster Eintrag, der Monat kurz
         mit dem Rasterknopf direkt am Feld; vorher nahm das Monatsfeld fast die ganze Breite. */}
     <div className="field-grid">
-      <Field label="Was möchten Sie ändern?">
+      <Field label="Was möchten Sie ändern?" hint="Beim Wechsel bleiben frühere Zeiträume, wie sie sind; „Beginnmonat von Anfang an“ ändert auch alle früheren.">
         <select value={form.mode} onChange={(e) => onChange({ ...form, mode: e.target.value === 'change' ? 'change' : 'start' })}>
-          <option value="change">Wechsel ab einem Monat (frühere Zeiträume bleiben)</option>
-          <option value="start">Beginnmonat von Anfang an (auch alle früheren Zeiträume)</option>
+          <option value="change">Wechsel ab einem Monat</option>
+          <option value="start">Beginnmonat von Anfang an</option>
         </select>
       </Field>
       {form.mode === 'start' ? (

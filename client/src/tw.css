@@ -170,7 +170,7 @@
 }
 /* Ein langer Hinweis (eine Frage samt Erklärung) bricht in Lesebreite um statt in der Breite des Felds. */
 @utility hint-wide {
-  --field-hint: 72ch;
+  --field-hint: 36rem;
 }
 /* Das Raster: Felder nebeneinander, so viele, wie in ihrer eigenen Breite passen, und keines gestreckt
    (vorher teilte `auto-fit, minmax(…, 1fr)` die Zeile in gleiche Spalten, die Adresse und Kabelanlage

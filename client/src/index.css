@@ -68,7 +68,7 @@
   --radius-s: 6px; --radius-m: 8px; --radius-l: 12px; --radius-xl: 16px;
   /* Zielgröße für Knöpfe und Felder; am Handy und mit Finger 44 px (WCAG 2.5.8, siehe unten) */
   --target: 36px;
-  --field-s: 15ch; --field-m: 24ch; --field-l: 38ch; --field-hint: 30ch; /* Breitenstufen der Felder, gerechnet in der Schrift des Felds (#346 Schritt 7b, tw.css) */
+  --field-s: 8.5rem; --field-m: 13rem; --field-l: 21rem; --field-hint: 15rem; /* Breitenstufen der Felder (#346 Schritt 7b, tw.css); in rem, denn `ch` fiel in Firefox um ein Viertel schmaler aus */
   /* Am Handy (< 900 px, #346 Schritt 9): Höhe des Kopfs und der unteren Leiste ohne Sicherheitsrand */
   --head-h: 56px; --bar-h: 52px;
   /* Ein Fokusrahmen für alles: 2 px Kartenfarbe, dann 2 px Akzent */

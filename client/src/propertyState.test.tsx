@@ -73,7 +73,7 @@ test('ohne Bundesland zeigt die Auswahl „unbekannt“, und Speichern schickt n
   properties = [objekt()]
   const el = await stateSelect()
   expect(el.value).toBe('')
-  expect(el.selectedOptions[0]?.textContent).toBe('unbekannt – es gelten nur bundesweite Feiertage')
+  expect(el.selectedOptions[0]?.textContent).toBe('unbekannt')
   fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
   await waitFor(() => expect(sent.some((r) => r.method === 'PUT')).toBe(true))
   expect(sent.find((r) => r.method === 'PUT')?.body.state).toBeNull()

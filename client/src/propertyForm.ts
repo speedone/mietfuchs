@@ -44,7 +44,9 @@ export const TIGHT_MARKET_LABELS: Record<TightMarketAnswer, string> = {
 
 // Das Bundesland (shared/holidays.ts). Leer steht vorn und sagt, was dann gilt; die Länder folgen in der
 // Reihenfolge der Liste, die Kürzel sind die Werte, damit Auswahl und gespeicherter Wert dieselben sind.
-export const STATE_UNKNOWN_LABEL = 'unbekannt – es gelten nur bundesweite Feiertage'
+// Kurz, damit der Eintrag am Handy ganz zu sehen ist (#346 Schritt 7b); was dann gilt, sagt der Hinweis am Feld.
+export const STATE_UNKNOWN_LABEL = 'unbekannt'
+export const STATE_UNKNOWN_HINT = 'Ohne Bundesland zählen nur die bundesweiten Feiertage.'
 export const STATE_OPTIONS: readonly { value: FederalState | ''; label: string }[] = [
   { value: '', label: STATE_UNKNOWN_LABEL },
   ...STATES.map((s) => ({ value: s.code, label: s.name })),

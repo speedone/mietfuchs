@@ -21,7 +21,7 @@ test('Die Auswahl zeigt den gespeicherten Wert', () => {
     cleanup()
   }
   render(<FederalStateField value="" year={2026} onChange={() => {}} />)
-  expect(select().selectedOptions[0]?.textContent).toBe('unbekannt – es gelten nur bundesweite Feiertage')
+  expect(select().selectedOptions[0]?.textContent).toBe('unbekannt')
 })
 
 test('Eine Wahl meldet das Kürzel; Bayern nennt die Feiertage einzelner Gemeinden', () => {
