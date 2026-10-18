@@ -154,12 +154,94 @@ test('S17: keine beliebigen Werte und keine Standardpalette in Klassen', () => {
   expect(withFile(tailwindUtilities(paletteWords, tailwindWithPalette))).toEqual([])
 })
 
+// S17 (Teil Farben, #346 Schritt 4): Farben stehen nur in den Token-Blöcken. Eine Regel mit
+// eigenem Farbwert wechselt nicht mit dem dunklen Design und läuft an der Gestaltung vorbei; sie
+// nimmt ein Token (`var(--…)`), und eine neue Farbe kommt als Token-Paar hell/dunkel. Token-Blöcke
+// sind genau die Regeln mit dem Selektor `:root` oder `:root[data-theme='dark']` (auch in @media);
+// `:root .x` ist keiner. Als Farbe gilt ein Hex-Wert, eine Farbfunktion (rgb, hsl, hwb, lab, lch,
+// oklab, oklch, color, color-mix) und ein benannter Farbwert; Namen von Variablen zählen nicht.
+// Ausnahmen stehen mit Grund in der Liste und dürfen nur weniger werden.
+const COLOR_EXCEPTIONS = new Map<string, string>([
+  // heute keine
+])
+const TOKEN_SELECTORS = new Set([':root', ":root[data-theme='dark']"])
+const NAMED_COLORS = new RegExp(`(?<![-\\w])(?:${'aliceblue antiquewhite aqua aquamarine azure beige bisque black blanchedalmond blue blueviolet brown burlywood cadetblue chartreuse chocolate coral cornflowerblue cornsilk crimson cyan darkblue darkcyan darkgoldenrod darkgray darkgreen darkgrey darkkhaki darkmagenta darkolivegreen darkorange darkorchid darkred darksalmon darkseagreen darkslateblue darkslategray darkslategrey darkturquoise darkviolet deeppink deepskyblue dimgray dimgrey dodgerblue firebrick floralwhite forestgreen fuchsia gainsboro ghostwhite gold goldenrod gray green greenyellow grey honeydew hotpink indianred indigo ivory khaki lavender lavenderblush lawngreen lemonchiffon lightblue lightcoral lightcyan lightgoldenrodyellow lightgray lightgreen lightgrey lightpink lightsalmon lightseagreen lightskyblue lightslategray lightslategrey lightsteelblue lightyellow lime limegreen linen magenta maroon mediumaquamarine mediumblue mediumorchid mediumpurple mediumseagreen mediumslateblue mediumspringgreen mediumturquoise mediumvioletred midnightblue mintcream mistyrose moccasin navajowhite navy oldlace olive olivedrab orange orangered orchid palegoldenrod palegreen paleturquoise palevioletred papayawhip peachpuff peru pink plum powderblue purple rebeccapurple red rosybrown royalblue saddlebrown salmon sandybrown seagreen seashell sienna silver skyblue slateblue slategray slategrey snow springgreen steelblue tan teal thistle tomato turquoise violet wheat white whitesmoke yellow yellowgreen'.split(' ').join('|')})(?![-\\w])`, 'i')
+const colorOffenders = (source: string) =>
+  [...source.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)].flatMap((m) => {
+    const selector = (m[1] ?? '').trim().replace(/\s+/g, ' ')
+    if (TOKEN_SELECTORS.has(selector)) return []
+    return (m[2] ?? '').split(';').flatMap((declaration) => {
+      const colon = declaration.indexOf(':')
+      if (colon < 0 || declaration.slice(0, colon).trim().startsWith('--')) return []
+      const value = declaration.slice(colon + 1).replace(/var\([^()]*\)/g, ' ').replace(/(['"]).*?\1/g, ' ')
+      const hit = value.match(/#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color|color-mix)\(/) ?? value.match(NAMED_COLORS)
+      return hit ? [`${selector}: ${hit[0]}`] : []
+    })
+  })
+test('S17: keine Farbwerte außerhalb der Token-Blöcke', () => {
+  // Mutationsprobe: Der Prüfer findet eingeschleuste Farben jeder Schreibweise, auch in einem
+  // @media-Block und hinter `:root …`, und lässt Token-Blöcke, Variablennamen und Schriftnamen in Ruhe.
+  expect(colorOffenders([
+    '.x { color: #123456; }',
+    '@media print { .y { background: rgba(0, 0, 0, 0.1); } }',
+    ':root .w { color: white; }',
+    '.v { border-color: color-mix(in srgb, var(--red) 50%, transparent); }',
+    '.u { box-shadow: 0 0 0 2px oklch(0.5 0.1 200); }',
+    '.t { color: var(--red); font-family: \'Segoe UI\', sans-serif; --black: 1; }',
+    ':root { --z: #fff; }',
+    "@media not print { :root[data-theme='dark'] { --z: black; } }",
+  ].join('\n'))).toEqual(['.x: #123456', '.y: rgba(', ':root .w: white', '.v: color-mix(', '.u: oklch('])
+  expect(css).toContain('--bg: #')
+  const found = [...colorOffenders(css), ...colorOffenders(twCss).map((o) => `tw.css ${o}`)]
+  expect(found.filter((o) => !COLOR_EXCEPTIONS.has(o))).toEqual([])
+  for (const exception of COLOR_EXCEPTIONS.keys()) expect(found, `${exception} kommt nicht mehr vor; aus der Liste streichen`).toContain(exception)
+})
+
+// S17 (Teil Schatten): Tailwinds Schatten tragen feste Farben (`rgb(0 0 0 / 0.1)`) und wechselten
+// nicht mit dem dunklen Design. tw.css entfernt sie; es gibt nur die Tokens `shadow-1`, `shadow-2`, `shadow-pop`.
+test('S17: keine Schatten aus der Standardskala, nur die Tokens', () => {
+  const standard = ['shadow', 'shadow-xs', 'shadow-sm', 'shadow-md', 'shadow-lg', 'shadow-xl', 'shadow-2xl', 'inset-shadow-sm', 'drop-shadow-md', 'text-shadow-md']
+  expect([...tailwindUtilities(standard)]).toEqual([])
+  for (const name of ['shadow-1', 'shadow-2', 'shadow-pop']) {
+    const out = tailwind.build([name])
+    // build() liefert alles bisher Erzeugte mit; geprüft wird nur die Regel dieser Klasse.
+    const rule = out.match(new RegExp(`\\.${name} \\{([^}]*)\\}`))?.[1] ?? ''
+    expect(rule, name).toContain(`var(--${name})`)
+    expect(rule, name).not.toMatch(/rgb\(|#[0-9a-f]{3,8}\b|oklch\(/i)
+  }
+})
+
+// M1 der Durchsicht (#346, Schritt 4): Kästchen und Optionsfelder bekamen `box-shadow: none`, und
+// die Fokusregel der Felder setzt `outline: none`; damit war ihr Fokus unsichtbar (WCAG 2.4.7).
+// Jede Regel, die bei ihnen Schatten oder Umriss auf none setzt, braucht danach eine Fokusregel,
+// die beide Arten mit dem Fokusrahmen zeigt.
+test('Kästchen und Optionsfelder zeigen den Fokus', () => {
+  const rules = [...css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({ selector: (m[1] ?? '').trim(), body: m[2] ?? '' }))
+  const box = (sel: string) => /checkbox|radio/.test(sel)
+  const hides = rules.flatMap((r, i) => (box(r.selector) && /(?:box-shadow|outline):\s*none/.test(r.body) ? [i] : []))
+  expect(hides.length).toBeGreaterThan(0)
+  const focus = rules.reduce((last, r, i) => (/checkbox/.test(r.selector) && /radio/.test(r.selector) && /:focus-visible/.test(r.selector) && /box-shadow:\s*var\(--focus-ring\)/.test(r.body) ? i : last), -1)
+  expect(focus, 'Fokusregel für Kästchen und Optionsfelder fehlt').toBeGreaterThan(-1)
+  expect(focus, 'die Fokusregel muss nach jeder Regel stehen, die den Schatten wegnimmt').toBeGreaterThan(Math.max(...hides))
+})
+
+// S5 der Durchsicht: Am Handy und mit Finger hat jedes Bedienelement mindestens --target (44 px)
+// Tippfläche. Kleine Knöpfe behalten ihr Aussehen; ihre Tippfläche wächst über ::after.
+test('kleine Knöpfe haben am Handy die volle Tippfläche', () => {
+  const coarse = [...css.matchAll(/@media \(pointer: coarse\), \(max-width: 640px\) \{([\s\S]*?)\n\}/g)].map((m) => m[1] ?? '').join('\n')
+  for (const sel of ['.btn.small', '.drawer-x', '.notice-action']) {
+    const rule = [...coarse.matchAll(/([^{}]+)::after\s*\{([^{}]*)\}/g)].find((m) => (m[1] ?? '').includes(sel))
+    expect(rule, `${sel}::after fehlt am Handy`).toBeDefined()
+    expect(rule?.[2]).toMatch(/var\(--target\)/)
+  }
+})
+
 // S20 (#346): index.css wird nur kleiner. Eine neue Klasse dort mit dem Namen einer Utility stünde
 // zweimal da, in der Schicht legacy und darüber in utilities, und die Utility gewönne still.
 // Die heutigen Namensgleichheiten bleiben, weil tw.css sie aus der Suche nimmt (`@source not
 // inline`); jede von ihnen steht deshalb auch dort.
 const LEGACY_UTILITY_NAMES = new Set(['sr-only', 'grow', 'grow-2'])
-const INDEX_CSS_MAX_LINES = 1114
+const INDEX_CSS_MAX_LINES = 955
 test('S20: keine neue Klasse und keine Animation in index.css mit einem Namen aus Tailwind, und index.css wächst nicht', () => {
   expect(definedClasses.size).toBeGreaterThan(100)
   const clashes = tailwindUtilities(definedClasses)
@@ -213,6 +295,8 @@ describe('S6: Kontrast der Farbtöne', () => {
   }
   const light = block(':root')
   const dark = block(":root[data-theme='dark']")
+  // Was das dunkle Design nicht neu setzt, gilt wie hell (etwa --primary-text).
+  const tokenOr = (body: string, name: string) => (body.includes(`--${name}:`) ? token(body, name) : token(light, name))
   for (const [name, body] of [['hell', light], ['dunkel', dark]] as const) {
     test(`${name}: Akzentschrift auf Karte und Akzentfläche, Weiß auf Akzent, gedämpfte Schrift`, () => {
       expect(ratio(token(body, 'accent-text'), token(body, 'card'))).toBeGreaterThanOrEqual(4.5)
@@ -223,6 +307,32 @@ describe('S6: Kontrast der Farbtöne', () => {
       expect(ratio(token(body, 'muted'), token(body, 'chip'))).toBeGreaterThanOrEqual(4.5)
       expect(ratio(token(body, 'muted'), token(body, 'accent-soft'))).toBeGreaterThanOrEqual(4.5)
       expect(ratio(token(body, 'text'), token(body, 'accent-soft'))).toBeGreaterThanOrEqual(4.5)
+    })
+    // Gestaltung „Mittelweg“ (#346, Schritt 4): die Paare, die neu dazukamen.
+    test(`${name}: Knöpfe, Links auf der Seite, aktiver Menüpunkt, Schrift auf Hover-Fläche`, () => {
+      const t = (n: string) => tokenOr(body, n)
+      for (const fill of ['primary', 'primary-hover', 'danger', 'danger-hover']) {
+        expect(ratio(t('primary-text'), t(fill)), `Schrift auf --${fill}`).toBeGreaterThanOrEqual(4.5)
+      }
+      expect(ratio(t('accent-text'), t('bg')), 'Links auf dem Seitengrund').toBeGreaterThanOrEqual(4.5)
+      expect(ratio(t('accent-text'), t('hover')), 'Links auf Hover-Fläche').toBeGreaterThanOrEqual(4.5)
+      expect(ratio(t('accent-strong'), t('accent-soft')), 'aktiver Menüpunkt, Objekt-Marke').toBeGreaterThanOrEqual(4.5)
+      expect(ratio(t('sidebar-text'), t('sidebar')), 'Menüpunkte').toBeGreaterThanOrEqual(4.5)
+      expect(ratio(t('sidebar-text'), t('hover')), 'Menüpunkt beim Überfahren').toBeGreaterThanOrEqual(4.5)
+      expect(ratio(t('muted'), t('hover')), 'Nebentext auf Hover-Fläche').toBeGreaterThanOrEqual(4.5)
+      expect(ratio(t('text'), t('hover')), 'Text auf Summen- und Rechenwegzeilen').toBeGreaterThanOrEqual(4.5)
+      expect(ratio(t('red'), t('red-soft')), 'Fehlermeldung').toBeGreaterThanOrEqual(4.5)
+      expect(ratio(t('amber'), t('amber-soft')), 'Warnung').toBeGreaterThanOrEqual(4.5)
+      expect(ratio(t('green'), t('green-soft')), 'Erfolg').toBeGreaterThanOrEqual(4.5)
+      expect(ratio(t('brand-text'), t('brand')), 'Update-Knopf').toBeGreaterThanOrEqual(4.5)
+    })
+    // K6 der Durchsicht: Die Kontur eines Eingabefelds erreicht 3:1 (WCAG 1.4.11) gegen Karte,
+    // Seitengrund und Feldgrund.
+    test(`${name}: Feldrand gegen Karte, Seite und Feld`, () => {
+      const t = (n: string) => tokenOr(body, n)
+      for (const ground of ['card', 'bg', 'input-bg']) {
+        expect(ratio(t('input-border'), t(ground)), `--input-border auf --${ground}`).toBeGreaterThanOrEqual(3)
+      }
     })
   }
   test('Schrift in Akzentfarbe nimmt --accent-text, nicht --accent', () => {
