@@ -6,7 +6,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import PageHeader from '../components/PageHeader'
 import Term from '../components/Term'
-import { filterTerms, sortedTerms } from '../glossaryView'
+import { filterTerms, sortedTerms, termLetters } from '../glossaryView'
 import { allGuides, filterGuides, type GuideEntry } from '../guideView'
 import { pageLabel } from '../nav'
 import type { GuidePage } from '../../../shared/guides.ts'
@@ -25,6 +25,8 @@ export default function Hilfe({ onNavigate, focusTerm, onFocusTermDone }: { onNa
     setQuery('')
     const t = setTimeout(() => {
       const entry = document.getElementById(`begriff-${focusTerm.id}`)
+      // Die Begriffe sind zugeklappt (N10 aus #341); der angesprungene geht auf
+      if (entry instanceof HTMLDetailsElement) entry.open = true
       entry?.scrollIntoView?.({ block: 'start' })
       entry?.focus({ preventScroll: true })
       onFocusTermDone?.()
@@ -36,6 +38,12 @@ export default function Hilfe({ onNavigate, focusTerm, onFocusTermDone }: { onNa
   const shownTerms = filterTerms(terms, query)
   const shownGuides = filterGuides(guides, query)
   const q = query.trim()
+  const letters = termLetters(shownTerms)
+  const jumpToLetter = (id: TermId) => {
+    const entry = document.getElementById(`begriff-${id}`)
+    entry?.scrollIntoView?.({ block: 'start' })
+    entry?.focus({ preventScroll: true })
+  }
   // Ein Sprung beginnt oben auf der Zielseite, nicht auf der Höhe, auf der die Anleitung stand.
   const jump = (page: GuidePage) => {
     window.scrollTo(0, 0)
@@ -62,14 +70,22 @@ export default function Hilfe({ onNavigate, focusTerm, onFocusTermDone }: { onNa
 
       <h2 className="help-section">Begriffe</h2>
       {shownTerms.length === 0 && <div className="notice">Kein Begriff passt zu „{q}“.</div>}
+      {/* Zugeklappt mit Buchstabenleiste (N10 aus #341): aufgeklappt war die Liste rund 29.000 px lang */}
+      {letters.length > 1 && (
+        <nav aria-label="Begriffe nach Anfangsbuchstabe" className="flex flex-wrap gap-1 mb-3">
+          {letters.map((l) => (
+            <button key={l.letter} type="button" className="btn ghost small" onClick={() => jumpToLetter(l.id)}>{l.letter}</button>
+          ))}
+        </nav>
+      )}
       {shownTerms.map((t) => (
-        <div key={t.id} className="card glossary-entry" id={`begriff-${t.id}`} tabIndex={-1}>
-          <h3>{t.title}</h3>
+        <details key={t.id} className="card guide glossary-entry" id={`begriff-${t.id}`} tabIndex={-1} open={q !== ''}>
+          <summary><h3 className="guide-title">{t.title}</h3></summary>
           <p>{t.short}</p>
           <p><em>Beispiel:</em> {t.example}</p>
           {t.norm && <p><em>Rechtsgrundlage:</em> {t.norm}</p>}
           <p><em>Brauche ich das?</em> {t.needed}</p>
-        </div>
+        </details>
       ))}
     </>
   )

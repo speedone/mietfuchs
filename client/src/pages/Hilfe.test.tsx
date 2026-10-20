@@ -66,3 +66,36 @@ test('ein Sprung aus einer Begriffserklärung leert die Suche und setzt den Foku
   await waitFor(() => expect(document.activeElement?.id).toBe('begriff-mea'))
   expect((screen.getByLabelText('Suchen in Anleitungen und Begriffen') as HTMLInputElement).value).toBe('')
 })
+
+// N10 aus #341: Die Begriffsliste war rund 29.000 px lang, alles aufgeklappt, ohne Buchstabenleiste.
+test('Begriffe sind zugeklappt, eine Suche klappt die Treffer auf', () => {
+  render(<Hilfe onNavigate={() => {}} />)
+  const entry = screen.getByRole('heading', { name: GLOSSARY.mea.title, level: 3 }).closest('details')
+  if (!entry) return expect.fail('Begriff nicht aufklappbar')
+  expect(entry.open).toBe(false)
+  expect(entry.querySelector('summary')?.textContent).toContain(GLOSSARY.mea.title)
+  fireEvent.change(screen.getByLabelText(/Suchen/), { target: { value: GLOSSARY.mea.title } })
+  expect(screen.getByRole('heading', { name: GLOSSARY.mea.title, level: 3 }).closest('details')?.open).toBe(true)
+})
+
+test('die Buchstabenleiste springt zum ersten Begriff des Buchstabens, Ü steht bei U', () => {
+  const scrolled: string[] = []
+  Element.prototype.scrollIntoView = function (this: Element) { scrolled.push(this.id) } as typeof Element.prototype.scrollIntoView
+  render(<Hilfe onNavigate={() => {}} />)
+  const bar = screen.getByRole('navigation', { name: 'Begriffe nach Anfangsbuchstabe' })
+  const letters = within(bar).getAllByRole('button').map((b) => b.textContent)
+  expect(letters).toContain('A')
+  expect(letters).not.toContain('Ü')
+  expect(letters).toEqual([...letters].sort((a, b) => (a ?? '').localeCompare(b ?? '', 'de')))
+  fireEvent.click(within(bar).getByRole('button', { name: 'M' }))
+  const first = Object.values(GLOSSARY).map((g) => g.title).filter((t) => t.startsWith('M')).sort((a, b) => a.localeCompare(b, 'de'))[0]
+  expect(document.activeElement?.querySelector('h3')?.textContent).toBe(first)
+  expect(scrolled.at(-1)).toBe(document.activeElement?.id)
+})
+
+test('ein Sprung zu einem Begriff klappt ihn auf', async () => {
+  const { rerender } = render(<Hilfe onNavigate={() => {}} />)
+  rerender(<Hilfe onNavigate={() => {}} focusTerm={{ id: 'mea', seq: 1 }} />)
+  await waitFor(() => expect(document.activeElement?.id).toBe('begriff-mea'))
+  expect((document.getElementById('begriff-mea') as HTMLDetailsElement).open).toBe(true)
+})
