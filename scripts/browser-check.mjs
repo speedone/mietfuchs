@@ -401,9 +401,13 @@ async function checkCombination(browser, base, combo, AxeBuilder, navLabels) {
       return list.length
     })
     if (opened > 0) {
+      // `toggle` kommt als eigene Aufgabe, und manches zeichnet React erst danach oder lädt es nach (Belegmappe im
+      // Belegordner); deshalb erst warten, dann messen, und nach dem Zuklappen noch einmal (Durchsicht des Zweigs, Befund 3)
+      await settle(page)
       const wideOpen = wide ? null : await overflow(page)
       if (wideOpen) add(id, 'Breite', `Aufgeklappt ${wideOpen.scroll} px breit bei ${wideOpen.width} px Fenster${wideOpen.elements.length ? `: ${wideOpen.elements.join('; ')}` : ''}`)
       await page.evaluate(() => { for (const d of (/** @type {any} */ (globalThis)).document.querySelectorAll('main details[data-bc-opened]')) { d.open = false; d.removeAttribute('data-bc-opened') } })
+      await settle(page)
     }
     for (const text of await visibleErrors(page)) add(id, 'Fehlermeldung', text)
     reportClipped(id, await clippedFields(page, 'main'))

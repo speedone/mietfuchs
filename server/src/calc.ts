@@ -2559,7 +2559,8 @@ type ConsumptionByTypeEntry = {
   // ist. `unitProblem`: eine unbekannte Einheit (Warnung, Faktor 1) oder verschiedene Größen (nicht verteilt).
   scaleOf: (meterId: string) => number
   unitProblem: UnitScale['problem']
-  // Die Einheit, in der `basis` steht (umgerechnet die Grundeinheit), für die Verteilbasis auf der Abrechnung (N4 aus #341)
+  // Die Einheit, in der `basis` steht (umgerechnet die Grundeinheit), für die Verteilbasis auf der Abrechnung (N4 aus #341);
+  // leer bei einer unbekannten Einheit, denn dann ist mit Faktor 1 über verschiedene Größen gezählt
   unit: string
 }
 
@@ -2977,7 +2978,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       byType[type] = {
         meters, basis, perUnit, selfConsumption, unmetered, limited: only !== null,
         hasMain: mainOfType.length > 0, main: mainBasis, mainPartial, mainBelowUnits, mainGap, partial,
-        scaleOf, unitProblem: scale.problem, unit: scale.unit,
+        scaleOf, unitProblem: scale.problem, unit: scale.problem ? '' : scale.unit,
       }
     }
     return byType

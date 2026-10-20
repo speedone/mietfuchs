@@ -291,8 +291,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   (gemessen 563 statt 390 Bildpunkte), weil lange Rechtsgrundlagen nicht umbrachen. Unter 640
   Bildpunkten brechen sie jetzt um. Der Browserlauf misst die Breite jeder Seite zusätzlich mit allem
   Aufklappbaren offen (Befund MOB1 aus [#341](https://github.com/speedone/mietfuchs/issues/341)).
-- Texte: Schnellerfassung und Kosten sprechen von „Mietfuchs“ und „der KI auf diesem Rechner“ statt
-  von „dem Tool“ und nennen den Namen des Modells nicht mehr, der steht in den Einstellungen. In der
+- Texte: Die Schnellerfassung spricht von „Mietfuchs“ statt von „dem Tool“, und Schnellerfassung und Kosten
+  nennen den Namen des Modells nicht mehr im Seitentext, der steht in den Einstellungen. In der
   Kostentabelle heißt der Lohnanteil „davon §35a-Lohn“ mit Begriffserklärung statt „§35a:“, und der
   Aufklapper zum Rechtsstand der Abrechnung sagt, was darin steht („Angewandte Regeln und
   Rechtswerte · Rechtsstand …“) (Befund N9 aus [#341](https://github.com/speedone/mietfuchs/issues/341)).

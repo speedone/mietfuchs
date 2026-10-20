@@ -682,8 +682,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
       <div className="card no-print">
         <h2>🤖 Beleg per KI auswerten <span className="badge gray">{ai.where}</span></h2>
         <p className="muted">
-          PDF oder Foto der Rechnung hochladen — {ai.notice ? 'die KI' : 'die KI auf diesem Rechner'} schlägt
-          Kostenpositionen vor, Sie prüfen und übernehmen sie. {ai.notice ?? 'Es verlässt nichts Ihren Rechner.'}
+          PDF oder Foto der Rechnung hochladen — die KI schlägt Kostenpositionen vor, Sie prüfen und übernehmen sie. {ai.notice ?? 'Es verlässt nichts Ihren Rechner.'}
         </p>
         <div
           className={`dropzone ${dragOver ? 'over' : ''}`}

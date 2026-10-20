@@ -266,3 +266,12 @@ test('Verbrauchsschlüssel: die Verteilbasis nennt die Einheit der Zähler', () 
   const { meters, readings } = rescale(selfMeters(), selfReadings(), 'xw-b', 'l', 1000)
   assert.match(basisOf(computeSettlement(selfSnapshot({ meters, readings, costItems: [waterItem()], plant: manual }))), / m³ \(gemessen\)$/)
 })
+
+// Durchsicht des Zweigs, Befund 1: Bei einer unbekannten Einheit rechnet Mietfuchs mit Faktor 1 über verschiedene
+// Größen; die Verteilbasis darf dann keine Einheit nennen (vorher die des ersten Zählers, je nach Reihenfolge).
+test('Verbrauchsschlüssel: bei unbekannter Einheit nennt die Verteilbasis keine Einheit', () => {
+  const meters = selfMeters().map((m) => (m.id === 'xw-b' ? { ...m, unit: 'kWh' } : m))
+  const s = computeSettlement(selfSnapshot({ meters, costItems: [waterItem()], plant: manual }))
+  const basis = s.statements.flatMap((st) => st.rows).find((r) => r.costItemId === 'wasser')?.basisText ?? ''
+  assert.match(basis, /\d \(gemessen\)$/)
+})

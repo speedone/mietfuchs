@@ -111,7 +111,8 @@ test('Kosten: die Karte zur KI-Auswertung nennt kein Modell', async () => {
   const card = (await screen.findByRole('heading', { name: /Beleg per KI auswerten/ }, SLOW)).closest('.card')
   if (!(card instanceof HTMLElement)) return expect.fail('Keine Karte zur KI-Auswertung')
   expect(card.textContent).not.toContain('qwen3.5:4b')
-  expect(card.textContent).toContain('die KI auf diesem Rechner')
+  // „auf diesem Rechner“ stimmt nicht für ein Ollama im Heimnetz (Durchsicht des Zweigs, Befund 2); den Ort nennt das Etikett
+  expect(card.textContent).toContain('hochladen — die KI schlägt Kostenpositionen vor')
 })
 
 test('Schnellerfassung: der Seitentext sagt „Mietfuchs“ und nennt kein Modell', async () => {
@@ -121,6 +122,7 @@ test('Schnellerfassung: der Seitentext sagt „Mietfuchs“ und nennt kein Model
   expect(header.textContent).not.toContain('Das Tool')
   expect(header.textContent).not.toContain('qwen3.5:4b')
   expect(header.textContent).toContain('Mietfuchs erkennt')
+  expect(header.textContent).toContain('Alles bleibt lokal.')
 })
 
 test('Kosten: der Lohnanteil in der Tabelle trägt seinen Begriff', async () => {
