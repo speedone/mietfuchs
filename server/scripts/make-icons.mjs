@@ -1,7 +1,7 @@
 // Einmal-Skript: erzeugt die App-Icons (PWA/Home-Screen) nach client/public/.
 // Nutzt @napi-rs/canvas. Das kam früher über pdf-to-img mit, ist seit dessen Wegfall (#21) aber
 // nicht mehr installiert und wird bewusst nicht als Abhängigkeit geführt (natives Modul, siehe
-// CLAUDE.md). Vor dem Aufruf deshalb einmal von Hand holen:
+// scripts/CLAUDE.md). Vor dem Aufruf deshalb einmal von Hand holen:
 //   npm install --no-save @napi-rs/canvas   (im server/-Ordner)
 // Aufruf:  node scripts/make-icons.mjs  (aus dem server/-Ordner)
 
