@@ -150,6 +150,31 @@ test('Dienst: nennt er das gewählte Modell nicht, steht das als Warnung mit der
   expect(within(group).queryByText(/stehen zur Wahl/)).toBeNull()
 })
 
+// Durchsicht von N14: „Modell laden“ gehört zur Warnung (vorher stand es während der Prüfung und unter den
+// Empfehlungen ohne Satz da); ein Dienst ohne Modellliste fragt nicht nach dem Namen; ein Ollama im Internet lädt nichts.
+test('Ollama: „Modell laden“ steht in der Warnung zum fehlenden Modell', async () => {
+  show(settings({ ai: ai({ text: { ...LOCAL, model: 'fehlt:4b' } }) }))
+  const group = await standard()
+  const warning = (await within(group).findByText(/ist dort aber nicht installiert/)).closest('.notice')
+  if (!(warning instanceof HTMLElement)) return expect.fail('Keine Warnung')
+  expect(within(warning).getByRole('button', { name: 'Modell laden' })).toBeTruthy()
+})
+
+test('Dienst ohne Modellliste: kein „Stimmt der Name?“', async () => {
+  statusBySlot.text = { ok: true, models: [] }
+  show(settings({ ai: ai({ text: { ...OPENAI, model: 'eigenes-modell' } }) }))
+  const group = await standard()
+  expect(await within(group).findByText(/Der Dienst antwortet, nennt aber kein Modell/)).toBeTruthy()
+  expect(within(group).queryByText(/Stimmt der Name/)).toBeNull()
+})
+
+test('Ollama im Internet: fehlt das Modell, gibt es nichts zu laden', async () => {
+  show(settings({ ai: ai({ text: { ...LOCAL, preset: 'ollama-remote', url: 'https://ollama.example.com', model: 'fehlt:4b' } }), aiExternal: { text: true, images: false } }))
+  const group = await standard()
+  expect(await within(group).findByText(/steht aber nicht in seiner Liste\. Stimmt der Name\?/)).toBeTruthy()
+  expect(within(group).queryByRole('button', { name: 'Modell laden' })).toBeNull()
+})
+
 test('Ollama: eine gefundene Adresse lässt sich übernehmen', async () => {
   statusBySlot.text = { ok: false, error: 'Ollama ist unter http://localhost:11434 nicht erreichbar.', found: 'http://127.0.0.1:11434' }
   show(settings())

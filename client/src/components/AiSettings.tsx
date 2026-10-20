@@ -382,6 +382,7 @@ function SlotEditor(props: SlotProps) {
   const consent = consentState(settings, name, models)
   const hint = status?.ok ? modelHint(models, slot.model, slot.provider) : null
   const localOllama = slot.provider === 'ollama' && !settings.aiExternal?.[name]
+  const missingText = hint === 'missing' && slot.model.trim() ? missingModelText(slot.model.trim(), localOllama, models.length) : null
 
   return (
     <fieldset className="ai-slot">
@@ -496,8 +497,20 @@ function SlotEditor(props: SlotProps) {
       {fixed('model') && <EnvHint path={fixedPath('model')} />}
 
       {checking && <p className="muted">Verbindung wird geprüft …</p>}
-      {!checking && status?.ok && (hint === 'missing' && slot.model.trim()
-        ? <NoticeBox level="warning" action={missingModelText(slot.model.trim(), localOllama)} />
+      {!checking && status?.ok && (missingText
+        ? (
+          <NoticeBox level="warning" action={missingText}>
+            {/* Wie man es lädt, steht in der Warnung selbst (Durchsicht von N14) */}
+            {localOllama && (
+              <PullHint
+                model={slot.model.trim()}
+                url={slot.url}
+                busy={Boolean(pull)}
+                onPull={() => onPull(slot.model.trim(), suggestions.find((r) => r.name === slot.model.trim())?.sizeGb)}
+              />
+            )}
+          </NoticeBox>
+        )
         : (
           <div className="ok">
             {modelsAvailableText(models.length)}
@@ -555,15 +568,6 @@ function SlotEditor(props: SlotProps) {
         </div>
       )}
 
-      {/* Dass das Modell fehlt, sagt der Status darüber; hier steht nur, wie man es lädt */}
-      {hint === 'missing' && slot.model.trim() && localOllama && (
-        <PullHint
-          model={slot.model.trim()}
-          url={slot.url}
-          busy={Boolean(pull)}
-          onPull={() => onPull(slot.model.trim(), suggestions.find((r) => r.name === slot.model.trim())?.sizeGb)}
-        />
-      )}
       {hint === 'noVision' && (
         <div className="notice">„{slot.model.trim()}“ versteht keine Bilder. PDFs mit Textebene wertet es aus, Fotos und gescannte PDFs nicht.</div>
       )}

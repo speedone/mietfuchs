@@ -408,7 +408,9 @@ async function checkCombination(browser, base, combo, AxeBuilder, navLabels) {
       await settle(page)
       const wideOpen = wide ? null : await overflow(page)
       if (wideOpen) add(id, 'Breite', `Aufgeklappt ${wideOpen.scroll} px breit bei ${wideOpen.width} px Fenster${wideOpen.elements.length ? `: ${wideOpen.elements.join('; ')}` : ''}`)
-      // Auch abgeschnittene Felder in zugeklappten Bereichen, etwa „Erweitert“ in den Einstellungen (N14 aus #341)
+      // Auch abgeschnittene Felder in zugeklappten Bereichen, etwa „Erweitert“ in den Einstellungen (N14 aus #341). Gemessen
+      // wird ganz `main`; „aufgeklappt:“ heißt also „nur mit offenen Details gefunden“, auch wenn das Feld außerhalb steht
+      // und erst durch die geänderte Breite abschneidet
       clippedOpen = await clippedFields(page, 'main')
       await page.evaluate(() => { for (const d of (/** @type {any} */ (globalThis)).document.querySelectorAll('main details[data-bc-opened]')) { d.open = false; d.removeAttribute('data-bc-opened') } })
       await settle(page)
