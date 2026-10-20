@@ -73,6 +73,15 @@ export function pullInstructions(name: string, ollamaUrl: string): { text: strin
     : { text: 'Zum Laden im Terminal ausführen:', command: pull }
 }
 
+// Antwortet der Dienst, kennt das gewählte Modell aber nicht, ist das kein grünes „steht zur Wahl“, sondern eine
+// Warnung in einem Satz (N14 aus #341: vorher grün „ein Modell steht zur Wahl“ über „… ist nicht installiert“).
+// Ein lokales Ollama kann das Modell laden, ein Dienst im Internet hat es unter diesem Namen nicht.
+export function missingModelText(model: string, localOllama: boolean): string {
+  return localOllama
+    ? `Der Dienst antwortet, „${model}“ ist dort aber nicht installiert.`
+    : `Der Dienst antwortet, „${model}“ steht aber nicht in seiner Liste. Stimmt der Name?`
+}
+
 // Was die Prüfung der Verbindung meldet, in Ein- und Mehrzahl (Abnahme B4: „ein Modell stehen“).
 export function modelsAvailableText(count: number): string {
   if (count === 0) return 'Der Dienst antwortet, nennt aber kein Modell.'

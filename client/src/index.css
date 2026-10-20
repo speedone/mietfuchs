@@ -591,7 +591,7 @@ td.actions { white-space: nowrap; text-align: right; }
 /* KI-Einstellungen (#18): je Anbieter-Platz ein eigener Block */
 /* min-width: 0, denn ein fieldset ist sonst mindestens so breit wie sein Inhalt (#137) */
 .ai-slot { border: 1px solid var(--line); border-radius: var(--radius-m); padding: 10px 14px 6px; margin: 0 0 14px; min-width: 0; }
-.ai-slot > legend { padding: 0 6px; font-size: var(--text-s); font-weight: var(--weight-strong); color: var(--text); }
+.ai-slot > legend { font-size: var(--text-s); font-weight: var(--weight-strong); color: var(--text); }
 .ai-slot .row { margin-bottom: 10px; }
 .recommendations { list-style: none; margin: var(--space-2) 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .recommendations li { border-left: 3px solid var(--line); padding-left: 10px; }

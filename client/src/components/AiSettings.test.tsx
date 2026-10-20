@@ -127,6 +127,29 @@ test('Ollama: ein nicht installiertes Modell bleibt sichtbar, mit Befehl zum Lad
   await waitFor(() => expect(copied).toHaveBeenCalledWith('ollama pull fehlt:4b'))
 })
 
+// N14 aus #341: Vorher stand grün „Der Dienst antwortet, ein Modell steht zur Wahl.“ direkt über „… ist nicht
+// installiert“. Fehlt das gewählte Modell, ist das eine Warnung in einem Satz, und die Knöpfe daneben sind gleich groß.
+test('Ollama: fehlt das gewählte Modell, sagt der Status es in einem Satz statt grün „steht zur Wahl“', async () => {
+  show(settings({ ai: ai({ text: { ...LOCAL, model: 'fehlt:4b' } }) }))
+  const group = await standard()
+  const warning = await within(group).findByText(/Der Dienst antwortet, „fehlt:4b“ ist dort aber nicht installiert\./)
+  expect(warning.closest('.notice')).toBeTruthy()
+  expect(within(group).queryByText(/steht zur Wahl|stehen zur Wahl/)).toBeNull()
+  expect(within(group).getAllByText(/ist dort aber nicht installiert|ist nicht installiert/)).toHaveLength(1)
+  const load = within(group).getByRole('button', { name: 'Modell laden' })
+  const copy = within(group).getByRole('button', { name: 'Befehl kopieren' })
+  expect(copy.classList.contains('small')).toBe(load.classList.contains('small'))
+})
+
+test('Dienst: nennt er das gewählte Modell nicht, steht das als Warnung mit der Frage nach dem Namen', async () => {
+  statusBySlot.text = { ok: true, models: OPENAI_MODELS }
+  show(settings({ ai: ai({ text: { ...OPENAI, model: 'gibtsnicht' } }) }))
+  const group = await standard()
+  const warning = await within(group).findByText(/Der Dienst antwortet, „gibtsnicht“ steht aber nicht in seiner Liste\. Stimmt der Name\?/)
+  expect(warning.closest('.notice')).toBeTruthy()
+  expect(within(group).queryByText(/stehen zur Wahl/)).toBeNull()
+})
+
 test('Ollama: eine gefundene Adresse lässt sich übernehmen', async () => {
   statusBySlot.text = { ok: false, error: 'Ollama ist unter http://localhost:11434 nicht erreichbar.', found: 'http://127.0.0.1:11434' }
   show(settings())
