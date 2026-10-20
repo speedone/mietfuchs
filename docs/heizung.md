@@ -712,3 +712,134 @@ Lieferdatum und Menge statt Rechnungszeitraum und laufen nicht durch die Abgrenz
   Gradtagsanteil und Lieferungen dazwischen.
 - `fuel.stock-missing` ist eine Warnung; den Fehler bei der eigenen Heizkostenabrechnung bringt PR 10
   mit eigenem Code, denn eine Stufe hängt am Code.
+
+## Blatt „CO₂-Angaben für den Messdienst“ und Plausibilität
+
+- **`co2.cost-implausible`** ([server/src/co2Plausibility.ts](../server/src/co2Plausibility.ts)) je
+  Rechnung, die die Heizperiode berührt, auch bei Vorrat: Spannen aus CO₂-Preis (`co2.price`,
+  `co2.price-ets`, überschreibbar, siehe Rechtsregister), EBeV-Werten und Steuersätzen
+  (`ustg.gas-heat-network-rate`, Mischsatz nach BMF vom 25.10.2022, Rz. 12; Flüssiggas Rz. 5).
+  Grenzen 1 €/3 %, bei den kg 1 % nach oben und 10 % nach unten wegen Biomasseanteilen
+  (Festlegung, `KG_TOLERANCE`, `COST_TOLERANCE`). Mietfuchs rechnet nie kg oder € aus kWh vor, es
+  vergleicht nur. Bei Wärme aus dem Emissionshandel mit Anschluss nach dem Stichtag wird nicht
+  geprüft (`etsExempt`, eine Stelle).
+- **Das Blatt** ([server/src/co2Sheet.ts](../server/src/co2Sheet.ts), #210, `Co2SheetView`) **rechnet
+  nichts, was die Abrechnung entscheidet**: Endbestand, Verbrauch, Teil je Rechnung, kg/m², Stufe
+  und Fläche kommen aus dem Ergebnis der Abrechnung (`billing`, über `co2SheetFor`); eine
+  Zufallsprüfung in co2-sheet-runde3.test.ts hält beides gleich. **Seine Summe zählt nur, was die
+  Abrechnung zählt** (Storno und abgedeckte Schätzung über `cancelledDeliveries`/`estimateFactors`,
+  Rechnung vor 2023 nur mit kg), jede nicht zählende Zeile trägt einen Vermerk, nummeriert unter der
+  Tabelle (`sheetNotes`). Dritte Person; „Bitte prüfen“ ist `no-print`.
+- Ob das CO2KostAufG gilt und die Befunde je Rechnung stehen in `heating[].co2Check`; die Regel zur
+  Ausnahme nach § 11 / § 2 Abs. 7 einmal in [server/src/co2Exemption.ts](../server/src/co2Exemption.ts)
+  (`co2OffByExemptionOf`, `exemptionText`). Steht eine Heizperiode in keiner Abrechnung, fragt das
+  Blatt `heatingRulesOf` selbst.
+
+## Betriebsstrom der Heizung (#212, #224, #252, #253, #266)
+
+- `cost_items.operating_power`: an einer Heizposition `included` (der Strom steckt im
+  Allgemeinstrom), an „Beleuchtung/Allgemeinstrom“ `deduction`. Der Abzug zeigt auf seinen
+  Betriebsstrom (`operating_power_item_id`, `RESTRICT`) und auf seine Stromrechnung
+  (`operating_power_general_id`: gleiches Objekt und gleicher Zeitraum, Rechnung solange gesperrt).
+  Verweisbedingungen vergleichen mit `IS`, weil `NULL = …` in SQLite kein Verstoß ist. `included`
+  nur mit positivem Betrag.
+- Die Abrechnung prüft jede Position gegen die Abzüge **aus allen Zeiträumen** (`deductionsOf`;
+  `heating.operating-power-double`, `-key`, `-exceeds`). Ein Abzug in einer abgeschlossenen
+  Abrechnung hat vier Zustände (gutgeschrieben, geändert, nicht darin, unlesbar), je ein Satz;
+  keiner rät zu einem neuen Abzug in einem anderen Jahr.
+- **Schätzhilfe** ([shared/operatingPower.ts](../shared/operatingPower.ts),
+  `POST /api/heating-plants/:id/operating-power`, [db/operatingPower.ts](../server/src/db/operatingPower.ts)):
+  kWh aus Leistung, Laufzeit und Tagen, Zwischenzähler oder eigene Schätzung mit Pflichtgrundlage,
+  Euro als Anteil an der Stromrechnung samt Grundpreis (Festlegung). Legt beide Positionen in einer
+  Transaktion an; 409, wenn etwas abgeschlossen ist, 409 `despiteExisting` bei schon gebuchtem
+  Betriebsstrom, 400 bei Abzügen über der Rechnung (dieselbe Summenregel im Kostenformular). Die
+  Grundlage steht in `operating_power_basis` und im Rechenweg, denn der Vermieter muss sie darlegen
+  können (VIII ZR 27/07, Leitsatz c). Prozentspannen der Literatur nur im Lexikon (V ZR 166/15 Rn. 14
+  legt keinen Wert fest). Kein Eintrag im Regelverzeichnis.
+- **Wärmepumpe und Stromheizung**: keine Hilfe, denn der Strom zur Wärmeerzeugung ist Heizkosten,
+  aber weder Brennstoff noch Betriebsstrom (§ 7 Abs. 2 HeizkostenV seit 01.10.2024). Die Heizposition
+  (Teil `fuel`) darf trotzdem `included` tragen (`POWER_GENERATED`, `guardOperatingPower`);
+  Herausrechnen ist Auslegung.
+- **Zeitraumwechsel**: Rechnung und Abzüge wandern als Einheit, geprüft am Endstand
+  (`settleOperatingPowerLinks`); der Abzug folgt seiner Rechnung, jeder Teil zeigt auf den Teil der
+  Rechnung im selben Zeitraum. Mehrere Abzüge werden **gemeinsam nach den Beträgen der Teile**
+  geteilt (`splitDeductionsAlike`), sonst würde aus einem Teil mehr abgezogen, als er beträgt. Kein
+  Jahr der Zahlung am Abzug (#267). Geprüft wird je Mieter gegen von Hand hergeleitete Beträge.
+- **Hinweise, wenn er fehlt** (`missingPowerFindings` in [operatingPower.ts](../server/src/operatingPower.ts),
+  alle reine Auskunft, keine Zahl ändert sich): `heating.operating-power-missing` (`hint`, färbt nicht)
+  bei zentraler Anlage mit Brenner, ohne Messdienst und ohne Gemeinschaft, wenn nichts gekennzeichnet
+  ist und keine Position „Betrieb“ oder ohne Teil besteht. **Die Angabe an der Anlage**
+  (`operating_power_handling`, Karte „Betriebsstrom der Heizung“) unterscheidet: `deducted` →
+  `heating.operating-power-deduction-missing` (gelb, auch wenn eine Position „Betrieb“ besteht),
+  `ownMeter` → `heating.operating-power-bill-missing` (färbt nicht), `landlordPays` schweigt. Die
+  Werte richten sich nach **Stromvertrag und Rechnung, nicht nach dem Zähler** (VIII ZR 27/07,
+  Rn. 32). Ob gefragt wird, entscheidet `asksOperatingPowerHandling`; Frage und Beschriftungen stehen
+  dort als Konstanten (wortgleich in Hinweis, Lexikon, Oberfläche). Der Kesseltausch übernimmt die
+  Angabe. `heating.generation-power-missing` (gelb) bei Wärmepumpe und Elektrokessel ohne eigene
+  Stromrechnung und ohne Abzug, nach den Fassungen `betrkv.generation-power` (2024) und
+  `hkv.generation-power` (01.10.2024), das Register erst gefragt, wenn der Hinweis sonst käme.
+
+## Wärmelieferung, Contracting (#213)
+
+[shared/heatDelivery.ts](../shared/heatDelivery.ts), [server/src/heatDelivery.ts](../server/src/heatDelivery.ts).
+
+- `heating_plants.contracting` an jeder zentralen Anlage außer Fernwärme, auch an der Wärmepumpe;
+  `energy` ist dann der Brennstoff des Kessels. Dazu `heat_delivery_since`, `previous_supply`,
+  `switch_announced_on`.
+- **Eine Naht**: `asBilledPlant` (idempotent) gibt der Berechnung bei Contracting
+  `energy = 'districtHeating'` und `fuelEnergy`; damit gelten die Regeln der Fernwärme (kein
+  Pflichtanteil, ÷ 1,15, kein Vorrat, Wärmerechnungen). Schreibwege und Oberfläche fragen
+  `billingEnergy`; [heat-delivery-guard.test.ts](../server/test/heat-delivery-guard.test.ts) verbietet
+  `plant.energy` in Entscheidungen. **Ausnahmen der Naht**: § 2 Abs. 4 Satz 2 CO2KostAufG (gespeicherte
+  Energie); `co2Required` nach dem Brennstoff des Lieferanten (`NO_CO2_FUELS`); § 6a nennt den
+  Brennstoff (`generatorEnergy`); § 11 Abs. 1 Nr. 3 a. F. und § 12 Abs. 3 am Wärmeerzeuger; bei
+  Contracting mit Wärmepumpe sperrt dhw.ts die Formeln. Nach Betriebsstrom wird nicht gefragt.
+- **Umschalten** an einer Anlage mit Lieferungen, Vorrat, CO₂-Angaben oder Positionen offener
+  Zeiträume: 409, Weg über den Kesseltausch (`SWAP_FIELDS`; Gas → Gas mit Contracting ist ein Tausch).
+- `heating.contracting` (`hint`) nennt für betroffene Mieter (Vertrag vor der Umstellung, keine
+  Inklusivmiete bei der Heizung) § 556c Abs. 1 und 2 BGB, § 11 Abs. 3 WärmeLV (`noticeMonths`, Frist
+  als vorsichtige Auslegung), § 5 WärmeLV; bei vorheriger Eigenversorgung VIII ZR 46/25 und 47/25,
+  vor dem 01.07.2013 VIII ZR 54/04. Werte aus `bgb.heat-delivery-switch`, kein Eintrag im
+  Regelverzeichnis. Nicht abgebildet: unmittelbare Abrechnung des Lieferanten, Contracting bei
+  Etagenheizungen.
+
+## Hälftige Teilung nach § 5a CO2KostAufG (#215)
+
+[server/src/halfSplit.ts](../server/src/halfSplit.ts), [shared/law/gmodg.ts](../shared/law/gmodg.ts).
+
+- Ab 2028 trägt der Vermieter bei einer Heizung nach § 43 Abs. 1 GModG die Hälfte der
+  Gasnetzentgelte und CO₂-Kosten, ab 2029 des Pflichtanteils Biobrennstoff. Merkmale an der Anlage
+  (`gmodg43_installed_on`, `emergency_install`, `emergency_prior_duty`, `new_building_first_use`,
+  `building_application_before_2026_05_13`), am Mietverhältnis `half_split_notice_on` (§ 5d Abs. 4),
+  am Objekt `tight_market` mit Geltung. Bedingungen an NULL-fähigen Merkmalen mit `IS 1`.
+- **Zeitregel `incurred`**: `law()` teilt den Zeitraum an den Fassungen von `co2.half-split` und
+  gewichtet nach Anfall (je Lieferung nach Stufen 1–5, sonst Gradtage; bei CO₂ Auslegung). Vor 2028
+  und ohne Merkmal fragt `halfSplitOf` das Register nicht. „Zwölf Monate ab“ rechnet `eventPeriodEnd`.
+- `selfSplit` mischt Stufen (mit § 8, § 9) und Hälfte; § 9 kürzt nur den Teil nach Stufen
+  (Auslegung). Nachstufung des Messdienstes über `adjust` von `restage`. Etagenheizung je Wohnung.
+  Ausnahme des § 5d Abs. 3 (selbst bewohnt, höchstens zwei Wohnungen) nur bei festgestellten
+  Voraussetzungen. Contracting eingeschlossen; ob Gas, entscheidet `generatorEnergy`.
+- Zeilen `gmodgRelief` unter `gmodg:<Anlage>:<Heizperiode>` (Grund `gmodgShare`); **jede Stelle, die
+  die CO₂-Abzugszeile an `reliefKey` erkennt, fragt `reliefKeysOf`**. Fehlende Netzentgelte oder
+  Biobrennstoff: `co2.half-split-missing` mit 3 %; Biobrennstoff aus dem Vorrat rechnet Mietfuchs nicht.
+
+## Mieter heizt selbst und CO₂-Erstattung (#97)
+
+[server/src/co2Refund.ts](../server/src/co2Refund.ts), [server/src/db/co2Refunds.ts](../server/src/db/co2Refunds.ts).
+
+- `heatingModel: 'selfSupply'`: eigener Vertrag des Mieters (Etagenheizung oder zentrale Heizung mit
+  Brennstoffvertrag beim Mieter). **Nie wie Pauschale oder Inklusivmiete lesen**: `allocationModel`
+  macht daraus `settlement`, denn Wartung und Betriebsstrom bleiben umlegbar. Für eine solche Anlage
+  entsteht keine Heizanlage. `selfSupplyKind` (`perUnit`/`central`); bei `central`
+  `heating.self-supply-operating-power`, wenn andere Mieter den Allgemeinstrom tragen und kein Abzug
+  erfasst ist.
+- Heizpositionen nur von Selbstversorgern: keine Kürzung nach § 7 Abs. 4 CO2KostAufG oder § 12
+  HeizkostenV, sondern `co2.self-supply-items`; gemischt mit Positionen einer Heizanlage
+  `co2.self-supply-mixed` (error).
+- **Erstattung** (`co2_refunds`) nur bei `selfSupply` (sonst 400 bzw. `co2.refund-not-self`),
+  verrechnet als Zeile `co2Refund` mit Gegenzeile beim Vermieter (Σ unverändert), nur in einem
+  Zeitraum, in dem der Mieter wohnte, nie in einem abgeschlossenen. Gebucht wird der angezeigte
+  Betrag; die Nachrechnung (`selfSplit`) steht im Rechenweg, Abweichung `co2.refund-differs`.
+  **Steuer**: verrechnet über Saldo; ausgezahlt (`paidOutOn`) als Werbungskosten im Jahr der
+  Auszahlung, **nie als negative Zahlung im Mietkonto** (die läse `rentLedger` als Rücklastschrift).
+  Der Vorschlag nach § 560 Abs. 4 BGB rechnet ohne Erstattungen (`recurringShareCents`).
