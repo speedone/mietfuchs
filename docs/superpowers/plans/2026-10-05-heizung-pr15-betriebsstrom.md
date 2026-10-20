@@ -29,10 +29,10 @@ drizzle-kit 0.31, `node:test`, React 19 + Vite, vitest mit jsdom.
 (#212), 16 („Prozentspanne als Rechenregel für den Betriebsstrom“ ist Nicht-Ziel).
 
 **Baut auf:** PR 1 bis PR 14 und PR 17, alle in `feat/heizung` gemergt. Gearbeitet wird auf
-`feat/heizung-pr15-betriebsstrom`, abgezweigt von `origin/feat/heizung` an `6571bdd` („Heizung PR 17:
+`feat/heizung-pr15-betriebsstrom`, abgezweigt von `origin/feat/heizung` an `6792777` („Heizung PR 17:
 Plausibilität der CO₂-Angaben und Ausdruck für den Messdienst“). Der PR geht gegen `feat/heizung`
 (CLAUDE.md, „Durchsicht vor jedem PR und vor jedem Merge“). Abgeglichen ist dieser Plan mit dem Code
-an `6571bdd`, siehe „Abgleich mit dem Code (Stand 6571bdd)“.
+an `6792777`, siehe „Abgleich mit dem Code (Stand 6792777)“.
 
 ## Durchsicht von PR #252 (10.10.2026)
 
@@ -165,7 +165,7 @@ gelesen) hat diesen Plan an diesen Stellen geändert:
   dem Betrag im Text.
 - **Migrationen:** nur `npm --prefix server run db:generate -- --name <name>`, nie von Hand, zwei
   Schritte in dieser Reihenfolge: `betriebsstrom` (drei neue Spalten) und `betriebsstrom_bedingungen`
-  (Bedingungen, Neubau von `cost_items`). drizzle-kit vergibt die Nummer. Die Kette endet an `6571bdd`
+  (Bedingungen, Neubau von `cost_items`). drizzle-kit vergibt die Nummer. Die Kette endet an `6792777`
   bei `0036_rechtswerte`; es entstehen `0037_betriebsstrom` und `0038_betriebsstrom_bedingungen`. Die
   Tests nennen die Schritte nur über ihre Kennung (`tag`), nicht über die Nummer. Keine Datenanweisung.
 - **Rechtswerte:** Dieser PR bringt keinen Rechtswert (keinen Satz, keinen Stichtag, keine Frist), also
@@ -278,7 +278,7 @@ gelesen) hat diesen Plan an diesen Stellen geändert:
 
 ## Schnittstellen der Vorgänger, auf die dieser Plan baut
 
-Namen genau so, nachgesehen im Code an `6571bdd` (Zeilennummern als Orientierung, sie wandern):
+Namen genau so, nachgesehen im Code an `6792777` (Zeilennummern als Orientierung, sie wandern):
 
 - `shared/heating.ts`: `HEATING_CATEGORY` (`'Heizung und Warmwasser'`).
 - `shared/categories.ts`: `CATEGORIES` mit `'Beleuchtung/Allgemeinstrom'`.
@@ -342,7 +342,7 @@ Namen genau so, nachgesehen im Code an `6571bdd` (Zeilennummern als Orientierung
   Karten bekommen `onSaved={() => void load()}`; Positionen lädt die Seite noch nicht; `FuelCard` je
   Anlage und Heizperiode.
 
-### Abgleich mit dem Code (Stand 6571bdd)
+### Abgleich mit dem Code (Stand 6792777)
 
 Gegenüber der ersten Fassung dieses Plans berichtigt:
 
@@ -891,7 +891,7 @@ Expected: `server/drizzle/0037_betriebsstrom.sql` mit drei Zeilen `ALTER TABLE \
 cost_items(id);` und `ALTER TABLE \`cost_items\` ADD \`operating_power_basis\` text;` **ohne** `__new_`.
 Steht ein Neubau darin, Datei, Journal-Eintrag und Momentaufnahme löschen und nur die Spalten erzeugen.
 Fragt drizzle-kit nach einer Umbenennung, ist die Antwort „create“. Heißt die Datei nicht `0037_…`, ist
-die Kette seit `6571bdd` gewachsen; dann gilt die Nummer, die drizzle-kit vergibt.
+die Kette seit `6792777` gewachsen; dann gilt die Nummer, die drizzle-kit vergibt.
 
 - [ ] **Step 5: Zweiter Schritt: Bedingungen**
 
@@ -2429,7 +2429,7 @@ Vergleich angleichen.) In `buildCostItemBody` das Ergebnis durchreichen:
   return 'body' in result ? { ...result, body: withOperatingPower(result.body, form) } : result
 ```
 
-(Stand `6571bdd`: `buildCostItemBody` gibt `costItemBody(draftOf(form, units, tenancies, p), units, p.key)`
+(Stand `6792777`: `buildCostItemBody` gibt `costItemBody(draftOf(form, units, tenancies, p), units, p.key)`
 unmittelbar zurück; nur die Zeile mit `withOperatingPower` ist neu. `BuildResult` ist dort
 `{ error } | { body: CostItemBody }` (shared/costItem.ts, Zeile 126), und `CostItemBody` ist eng getippt.
 Deshalb bekommt `CostItemBody` die drei Felder als optionale
