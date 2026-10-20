@@ -307,8 +307,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   [#341](https://github.com/speedone/mietfuchs/issues/341)).
 - Einstellungen, KI-Belegauswertung: Fehlt das gewählte Modell, stand grün „Der Dienst antwortet, ein Modell
   steht zur Wahl.“ direkt über „… ist nicht installiert“. Jetzt sagt eine Warnung beides in einem Satz („Der
-  Dienst antwortet, „qwen3.5:4b“ ist dort aber nicht installiert.“, bei einem Dienst im Internet mit der Frage
-  nach dem Namen). „Modell laden“ und „Befehl kopieren“ sind gleich groß, und „Standard-Anbieter“ steht bündig
+  Dienst antwortet, „qwen3.5:4b“ ist dort aber nicht installiert.“, darin „Modell laden“; bei einem anderen
+  Dienst als Ollama im Heimnetz mit der Frage nach dem Namen, außer der Dienst nennt gar keine Modelle).
+  „Modell laden“ und „Befehl kopieren“ sind gleich groß, und „Standard-Anbieter“ steht bündig
   über den Feldern. Der Browserlauf prüft abgeschnittene Felder auch in zugeklappten Bereichen (Befund N14 aus
   [#341](https://github.com/speedone/mietfuchs/issues/341)).
 - Die Karte „Objekt“ verlangt eine Bezeichnung: Leer ließ sie sich speichern, und die Seitenleiste
