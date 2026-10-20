@@ -5,12 +5,13 @@ import { calendarPeriod, calendarYearPeriod, settlementPeriod } from '../../../s
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
-import type { CostItem, Settlement, Tenancy, Unit } from '../types'
+import type { CostItem, Settings, Settlement, Tenancy, Unit } from '../types'
 import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
 import { UIProvider } from '../components/feedback'
 import Abrechnung from './Abrechnung'
 import Kosten from './Kosten'
+import Schnellerfassung from './Schnellerfassung'
 
 vi.setConfig({ testTimeout: 20000 })
 const SLOW = { timeout: 5000 }
@@ -21,6 +22,7 @@ const TENANCIES: Tenancy[] = [
 ]
 const COSTS: CostItem[] = [
   { id: 'k1', propertyId: 'objekt-1', period: calendarPeriod(YEAR), category: 'Grundsteuer', description: 'Grundsteuer A', amountCents: 50000, key: 'area' },
+  { id: 'k2', propertyId: 'objekt-1', period: calendarPeriod(YEAR), category: 'Gartenpflege', description: 'Gärtnerei Grün', amountCents: 300000, labor35aCents: 150000, key: 'area' },
 ]
 // Eine Begründung aus einer Fundstelle, die bei Warnung und Hinweis eingeklappt wird
 const GROUND = 'Heizkosten gehören in die Heizperiode, in der sie verbraucht wurden (BGH VIII ZR 156/11).'
@@ -95,4 +97,42 @@ test('„Beleg hochladen …“: das Dateifeld ist nur visuell versteckt und lä
   expect(input.classList.contains('sr-only')).toBe(true)
   input.focus()
   expect(document.activeElement).toBe(input)
+})
+
+// N9 aus #341: Der Seitentext spricht von Mietfuchs und der KI, nicht von „dem Tool“ und nicht vom Modellnamen;
+// welches Modell arbeitet, steht nur in den Einstellungen.
+const LOCAL_AI: Settings = {
+  houseName: '', address: '', landlordName: '', iban: '', paymentDeadlineDays: 30,
+  ollamaUrl: 'http://localhost:11434', ollamaModel: 'qwen3.5:4b',
+}
+
+test('Kosten: die Karte zur KI-Auswertung nennt kein Modell', async () => {
+  wrap(<Kosten units={UNITS} settings={LOCAL_AI} tenancies={TENANCIES} />)
+  const card = (await screen.findByRole('heading', { name: /Beleg per KI auswerten/ }, SLOW)).closest('.card')
+  if (!(card instanceof HTMLElement)) return expect.fail('Keine Karte zur KI-Auswertung')
+  expect(card.textContent).not.toContain('qwen3.5:4b')
+  expect(card.textContent).toContain('die KI auf diesem Rechner')
+})
+
+test('Schnellerfassung: der Seitentext sagt „Mietfuchs“ und nennt kein Modell', async () => {
+  wrap(<Schnellerfassung units={UNITS} settings={LOCAL_AI} onNavigate={() => {}} />)
+  const header = (await screen.findByRole('heading', { name: 'Schnellerfassung' }, SLOW)).closest('.page-head')
+  if (!(header instanceof HTMLElement)) return expect.fail('Kein Seitenkopf')
+  expect(header.textContent).not.toContain('Das Tool')
+  expect(header.textContent).not.toContain('qwen3.5:4b')
+  expect(header.textContent).toContain('Mietfuchs erkennt')
+})
+
+test('Kosten: der Lohnanteil in der Tabelle trägt seinen Begriff', async () => {
+  wrap(<Kosten units={UNITS} settings={null} tenancies={TENANCIES} />)
+  const row = (await screen.findByText('Gärtnerei Grün', {}, SLOW)).closest('tr')
+  if (!(row instanceof HTMLElement)) return expect.fail('Keine Zeile der Gartenpflege')
+  expect(row.textContent).toContain('davon §35a-Lohn: 1.500,00')
+  expect(row.textContent).not.toMatch(/§35a: /)
+})
+
+test('Abrechnung: der Aufklapper zum Rechtsstand sagt, was darin steht', async () => {
+  wrap(<Abrechnung settings={null} units={UNITS} tenancies={TENANCIES} reload={async () => {}} onNavigate={() => {}} />)
+  const summary = await screen.findByText(/^Angewandte Regeln und Rechtswerte · /, {}, SLOW)
+  expect(summary.tagName).toBe('SUMMARY')
 })

@@ -221,3 +221,13 @@ describe('Mietkonto: gestrichelte Monate heißen nicht „noch nicht fällig“'
     expect(page).toContain('gestrichelte Monate zählen noch nicht als Rückstand')
   })
 })
+
+// N6 aus #341: Die Farben der Monatskacheln haben eine Erklärung über den Karten.
+describe('Mietkonto: die Kachelfarben sind erklärt', () => {
+  it('Grün, Gelb und Rot stehen im Hinweis über den Karten', async () => {
+    const fsModule = 'node:fs'
+    const fs = (await import(/* @vite-ignore */ fsModule)) as { readFileSync: (path: URL, encoding: 'utf8') => string }
+    const page = fs.readFileSync(new URL('./pages/Mietkonto.tsx', import.meta.url), 'utf8')
+    expect(page).toContain('Grün heißt bezahlt, Gelb teilweise bezahlt, Rot offen')
+  })
+})

@@ -266,7 +266,7 @@ test('kleine Knöpfe haben am Handy die volle Tippfläche', () => {
 // Die heutigen Namensgleichheiten bleiben, weil tw.css sie aus der Suche nimmt (`@source not
 // inline`); jede von ihnen steht deshalb auch dort.
 const LEGACY_UTILITY_NAMES = new Set(['sr-only', 'grow', 'grow-2'])
-const INDEX_CSS_MAX_LINES = 817
+const INDEX_CSS_MAX_LINES = 816
 test('S20: keine neue Klasse und keine Animation in index.css mit einem Namen aus Tailwind, und index.css wächst nicht', () => {
   expect(definedClasses.size).toBeGreaterThan(100)
   const clashes = tailwindUtilities(definedClasses)
@@ -1163,4 +1163,27 @@ test('S28: Felder mit Breitenstufe, keine festen Breiten', () => {
   for (const stage of ['width-s', 'width-m', 'width-l', 'width-full']) expect(twCss).toMatch(new RegExp(`@utility ${stage} \\{`))
   expect(fieldsCss).toMatch(/\.field:has\(> input:is\(\[type='date'\]/)
   expect(fieldsCss).toMatch(/\.field:has\(> textarea\)/)
+})
+
+// S29 (N4 aus #341): Ein freistehender Paragraf hat ein Leerzeichen, „§ 556 BGB“, „nach § 35a EStG“; vorher standen
+// „§556 BGB“ und „§ 560 BGB“ auf derselben Seite. Zusammensetzungen bleiben, wie sie sind („§35a-Lohn“,
+// „§556-Frist“): Es sind Namen von Feldern, die Anleitungen und Meldungen wörtlich zitieren. Kommentare zählen nicht.
+const paragraphSpacingProblems = (file: string, source: string): string[] =>
+  source.split('\n').flatMap((line, i) => {
+    const code = line.replace(/^\s*(\/\/|\*|\/\*).*$/, '').replace(/\s\/\/\s.*$/, '')
+    return [...code.matchAll(/§\d+[a-z]?(?![\w-])/g)].map((m) => `${file}:${i + 1}: „${m[0]}“ ohne Leerzeichen`)
+  })
+const sharedSources = import.meta.glob<string>(['../../shared/**/*.ts', '!../../shared/**/*.test.ts'], {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+})
+test('S29: freistehende Paragrafen mit Leerzeichen', () => {
+  expect(paragraphSpacingProblems('probe', "text: 'Frist nach §556 BGB'")).toHaveLength(1)
+  expect(paragraphSpacingProblems('probe', '<th>§35a €</th>')).toHaveLength(1)
+  expect(paragraphSpacingProblems('probe', "label: '§35a-Lohn', text: 'nach § 556 BGB'")).toEqual([])
+  expect(paragraphSpacingProblems('probe', '  // nach §556 BGB')).toEqual([])
+  const all = { ...twSources, ...sharedSources }
+  expect(Object.keys(all).length).toBeGreaterThan(100)
+  expect(Object.entries(all).flatMap(([f, s]) => paragraphSpacingProblems(f, s))).toEqual([])
 })

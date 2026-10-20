@@ -597,7 +597,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                 {/* Betrag gleich hinter der Kostenart: Auf dem Handy scrollt die Tabelle waagerecht
                     (Table.tsx), und das Feld, das man ausfüllen muss, soll ohne Wischen dastehen. */}
                 <th className="num">Betrag {label} €</th>
-                <th className="num">§35a Lohn €</th>
+                <th className="num">§35a-Lohn €</th>
                 {spansTwoYears(period) && <th>Jahr der Zahlung (Steuer)</th>}
                 <th>Beschreibung</th>
                 <th>Umlageschlüssel</th>
@@ -682,8 +682,8 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
       <div className="card no-print">
         <h2>🤖 Beleg per KI auswerten <span className="badge gray">{ai.where}</span></h2>
         <p className="muted">
-          PDF oder Foto der Rechnung hochladen — das Modell ({ai.model}) schlägt Kostenpositionen
-          vor, Sie prüfen und übernehmen sie. {ai.notice ?? 'Es verlässt nichts Ihren Rechner.'}
+          PDF oder Foto der Rechnung hochladen — {ai.notice ? 'die KI' : 'die KI auf diesem Rechner'} schlägt
+          Kostenpositionen vor, Sie prüfen und übernehmen sie. {ai.notice ?? 'Es verlässt nichts Ihren Rechner.'}
         </p>
         <div
           className={`dropzone ${dragOver ? 'over' : ''}`}
@@ -796,7 +796,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                   </td>
                   <td className="num" data-label="Betrag">
                     {fmtEuro(i.amountCents)}
-                    {!!i.labor35aCents && <div className="muted">§35a: {fmtEuro(i.labor35aCents)}</div>}
+                    {!!i.labor35aCents && <div className="muted">davon <Term id="labor35a">§35a-Lohn</Term>: {fmtEuro(i.labor35aCents)}</div>}
                     {/* #255 PR 3: das Zahlungsdatum für die Steuer, wenn eines eingetragen ist. */}
                     {i.paidOn && <div className="muted">bezahlt am {fmtDate(i.paidOn)}</div>}
                   </td>
@@ -1004,7 +1004,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
               <div className="field-group">
                 <div className="field-group-label"><Term id="agreedShares">Vereinbarte Anteile</Term></div>
                 <div className="muted">
-                  Anteil je Wohnung in Prozent, wie im Mietvertrag vereinbart (§556a Abs. 1 BGB).
+                  Anteil je Wohnung in Prozent, wie im Mietvertrag vereinbart (§ 556a Abs. 1 BGB).
                   Was unter 100 % fehlt, trägt der Vermieter.
                 </div>
                 <div className="row">
@@ -1033,7 +1033,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                 <div className="field-group-label">Laut Gemeinschaftsabrechnung</div>
                 <div className="muted">
                   Betrag oben ist Ihr Anteil laut <Term id="homeownersStatement">Hausgeldabrechnung</Term>. Hier die Angaben der Gemeinschaft
-                  zu dieser Kostenart, meist nach <Term id="mea">Miteigentumsanteilen</Term>; sie erscheinen im Rechenweg der Abrechnung (§556a Abs. 3 BGB).
+                  zu dieser Kostenart, meist nach <Term id="mea">Miteigentumsanteilen</Term>; sie erscheinen im Rechenweg der Abrechnung (§ 556a Abs. 3 BGB).
                 </div>
                 <div className="row">
                   <label className="field">

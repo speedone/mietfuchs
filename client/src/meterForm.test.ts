@@ -1,7 +1,7 @@
 // Die Einheit eines Zählers folgt seiner Sparte (#142): Ein Wärmezähler, bei dem niemand die
 // Einheit geändert hat, zeigte „m³“.
 import { describe, expect, test } from 'vitest'
-import { asksCalibration, asksRemote, calibrationSuggestion, defaultMeterUnit, emptyMeterForm, heatingRoleLabel, heatingRoleOptions, meterBody, meterPlantId, meterToForm, meterUnitHint, meterUnitOptions, oldEndText, withMeterType } from './meterForm'
+import { asksCalibration, asksRemote, calibrationSuggestion, defaultMeterUnit, emptyMeterForm, heatingRoleLabel, heatingRoleOptions, meterBody, meterPlantId, meterToForm, meterUnitHint, meterUnitOptions, oldEndText, readingDigits, readingText, withMeterType } from './meterForm'
 
 test('Vorgabe der Einheit je Sparte: Wasser m³, Wärme und Strom kWh, Sonstiges leer', () => {
   expect(defaultMeterUnit('kaltwasser')).toBe('m³')
@@ -259,4 +259,17 @@ test('Meldungen des Zählerformulars nennen ihr Feld und eine kurze Fassung', ()
   expect(meterBody({ ...emptyMeterForm(), name: 'W', unitId: 'eg', type: 'waerme', unit: '' }, null)).toMatchObject({ field: 'unit', short: 'Einheit fehlt' })
   expect(meterBody({ ...emptyMeterForm(), name: 'K', calibratedUntil: '22' }, null)).toMatchObject({ field: 'calibratedUntil' })
   expect(meterPlantId({ unitId: '', heatingRole: 'supply', heatingPlantId: '' }, [{ id: 'a' }, { id: 'b' }])).toMatchObject({ field: 'heatingPlantId' })
+})
+
+// N4 aus #341: In der Liste eines Zählers haben alle Stände gleich viele Nachkommastellen, so viele wie der
+// genaueste (höchstens drei); vorher stand „316“ neben „332,7“.
+test('Ablesungen eines Zählers stehen mit gleich vielen Nachkommastellen', () => {
+  const digits = readingDigits([{ value: 316 }, { value: 332.7, oldEndValue: 12 }])
+  expect(digits).toBe(1)
+  expect(readingText(316, digits)).toBe('316,0')
+  expect(readingText(1387.25, 2)).toBe('1.387,25')
+  expect(oldEndText(12, digits)).toBe('12,0')
+  expect(oldEndText(null, digits)).toBe('fehlt')
+  expect(readingDigits([{ value: 316 }, { value: 1387 }])).toBe(0)
+  expect(readingDigits([{ value: 0.12345 }])).toBe(3)
 })

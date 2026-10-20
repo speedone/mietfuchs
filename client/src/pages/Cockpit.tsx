@@ -255,7 +255,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
     } else if (closed?.sentAt) {
       const ok = closed.sentAt <= settlement.deadline
       list.push({ title: 'Abgeschlossen & versendet', level: ok ? 'gruen' : 'rot',
-        detail: `Versendet am ${fmtDate(closed.sentAt)} — Frist nach §556 BGB ${ok ? 'gewahrt' : 'überschritten'}.` })
+        detail: `Versendet am ${fmtDate(closed.sentAt)} — Frist nach § 556 BGB ${ok ? 'gewahrt' : 'überschritten'}.` })
     } else if (closed) {
       // Die Frist läuft weiter, bis die Abrechnung zugegangen ist (Durchsicht S2).
       const deadlineText = daysLeft >= 0

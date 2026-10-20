@@ -4,7 +4,7 @@ import Field from '../components/Field'
 import type { HeatingPlant, HeatingRole, Meter, MeterType, Notice, Reading, Unit } from '../types'
 import { METER_TYPE_LABELS } from '../types'
 import { buildReadingBody, EMPTY_READING, type ReadingField, type ReadingForm } from '../readingForm'
-import { asksCalibration, asksRemote, CALIBRATION_MARK_HELP, calibrationSuggestion, emptyMeterForm, hasKnownUnits, HEATING_ROLE_HELP, heatingRoleLabel, heatingRoleOptions, meterBody, meterPlantId, meterToForm, meterUnitHint, meterUnitOptions, oldEndText, REMOTE_RULE_TEXT, withMeterType, type MeterField, type MeterForm, type RemoteAnswer } from '../meterForm'
+import { asksCalibration, asksRemote, CALIBRATION_MARK_HELP, calibrationSuggestion, emptyMeterForm, hasKnownUnits, HEATING_ROLE_HELP, heatingRoleLabel, heatingRoleOptions, meterBody, meterPlantId, meterToForm, meterUnitHint, meterUnitOptions, oldEndText, readingDigits, readingText, REMOTE_RULE_TEXT, withMeterType, type MeterField, type MeterForm, type RemoteAnswer } from '../meterForm'
 import { plantOptions } from '../heatingForm'
 import { api, errorText, fmtDate } from '../api'
 import { usePeriod } from '../period'
@@ -415,6 +415,7 @@ function FragmentRow(props: {
   onSaved: () => void
 }) {
   const { meter: m, focused, cons, open, readings, unitName, consumptionLabel, onToggle, onEdit, onDelete, onNewReading, onDeleteReading, onSaved } = props
+  const digits = readingDigits(readings)
   return (
     <>
       <tr className={focused ? 'focus-target' : undefined}>
@@ -465,8 +466,8 @@ function FragmentRow(props: {
                     <tr key={r.id}>
                       <td>{fmtDate(r.date)}</td>
                       <td className="num">
-                        {r.value.toLocaleString('de-DE')}
-                        {r.replacement && <div className="muted">{isCutoffReading(m.type, r) ? 'Stichtagswert' : 'Endstand alt'}: {oldEndText(r.oldEndValue)}</div>}
+                        {readingText(r.value, digits)}
+                        {r.replacement && <div className="muted">{isCutoffReading(m.type, r) ? 'Stichtagswert' : 'Endstand alt'}: {oldEndText(r.oldEndValue, digits)}</div>}
                       </td>
                       <td className="muted">
                         {r.replacement && <span className="badge gray">{isCutoffReading(m.type, r) ? 'Stichtag' : 'Zählerwechsel'}</span>} {r.note}

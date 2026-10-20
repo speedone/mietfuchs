@@ -690,7 +690,6 @@ input:is([type='checkbox'], [type='radio']):focus-visible { box-shadow: var(--fo
 .co2-block { margin-top: 16px; }
 .notice-terms { font-size: var(--text-s); }
 .guide-steps { margin: 0; }
-.guide-norm { white-space: nowrap; }
 .ai-elapsed { color: var(--muted); font-variant-numeric: tabular-nums; }
 .update-consent-body { flex: 1; min-width: 0; }
 .property-notice-text { min-width: 0; }

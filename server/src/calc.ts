@@ -2559,6 +2559,8 @@ type ConsumptionByTypeEntry = {
   // ist. `unitProblem`: eine unbekannte Einheit (Warnung, Faktor 1) oder verschiedene Größen (nicht verteilt).
   scaleOf: (meterId: string) => number
   unitProblem: UnitScale['problem']
+  // Die Einheit, in der `basis` steht (umgerechnet die Grundeinheit), für die Verteilbasis auf der Abrechnung (N4 aus #341)
+  unit: string
 }
 
 // Das tatsächliche Ergebnis von computeSettlement: wie Settlement aus shared/types.ts, aber ohne
@@ -2975,7 +2977,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       byType[type] = {
         meters, basis, perUnit, selfConsumption, unmetered, limited: only !== null,
         hasMain: mainOfType.length > 0, main: mainBasis, mainPartial, mainBelowUnits, mainGap, partial,
-        scaleOf, unitProblem: scale.problem,
+        scaleOf, unitProblem: scale.problem, unit: scale.unit,
       }
     }
     return byType
@@ -4836,7 +4838,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
             c += consumptionInPeriod(readings, pFrom, pTo) * data.scaleOf(m.id)
           }
           const raw = item.amountCents * (c / data.basis)
-          targets.push({ t, raw, basisText: `${fmtNum(Math.round(c * 100) / 100)} von ${fmtNum(Math.round(data.basis * 100) / 100)} (${data.main !== null ? 'Hauptzähler' : 'gemessen'})` })
+          targets.push({ t, raw, basisText: `${fmtNum(Math.round(c * 100) / 100)} von ${fmtNum(Math.round(data.basis * 100) / 100)}${data.unit ? ` ${data.unit}` : ''} (${data.main !== null ? 'Hauptzähler' : 'gemessen'})` })
         }
       }
     } else if (item.key === 'heatingSystem') {

@@ -259,3 +259,13 @@ test('Staffel: ein gespeicherter Wert, der kein Monat ist, wird gemeldet und nic
     { field: 'baseRent.0.from', short: 'Nur Monat und Jahr', text: 'Kaltmiete, Zeile 1: Hier zählt nur der Monat ab dem Ersten. Geben Sie Monat und Jahr ohne Tag ein, etwa „3.2025“.' },
   ] })
 })
+
+// N15 aus #341: Bei einer Pauschale stand in der Spalte nur „—“, obwohl monatlich ein Betrag gezahlt wird.
+test('die Spalte Vorauszahlung nennt eine Pauschale mit ihrem Betrag', () => {
+  expect(prepaymentColumn({ prepayments: [], flatRates: [{ from: '2024-01', monthlyCents: 6000 }] })).toEqual([{ label: 'Pauschale:', amount: '60,00 €' }])
+  expect(prepaymentColumn({ prepayments: [{ from: '2024-01', monthlyCents: 20000 }], flatRates: [{ from: '2024-01', monthlyCents: 5000 }, { from: '2025-07', monthlyCents: 5500 }] })).toEqual([
+    { label: null, amount: '200,00 €' },
+    { label: 'Pauschale ab 01/2024:', amount: '50,00 €' },
+    { label: 'Pauschale ab 07/2025:', amount: '55,00 €' },
+  ])
+})

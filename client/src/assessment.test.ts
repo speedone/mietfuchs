@@ -100,7 +100,7 @@ it('Vorschau in Sätzen: neu, geändert, unverändert, mit Lohnanteil', () => {
   const lines = previewLines(p)
   // Das Jahr der neuen Position steht dabei: Es kann vom gewählten abweichen (Schlussdurchsicht, I1).
   expect(lines[0]).toMatch(/^Neu für 2025: „Restmüll“ \(Müllabfuhr\) 700,00\s€$/)
-  expect(lines[1]).toMatch(/^„Gartenpflege 2025“: 1\.500,00\s€ → 1\.450,00\s€; §35a 1\.000,00\s€ → keiner$/)
+  expect(lines[1]).toMatch(/^„Gartenpflege 2025“: 1\.500,00\s€ → 1\.450,00\s€; §35a-Lohn 1\.000,00\s€ → keiner$/)
   expect(lines[2]).toMatch(/^„Wasser 2025“ bleibt bei 1\.500,00\s€$/)
 })
 

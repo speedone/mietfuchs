@@ -287,6 +287,24 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   ohne Bewohner zählen bei Fläche und Personen nicht mit; verteilt eine Position nach Einheiten, steht
   dabei, welche von ihnen dort je als eine Einheit zählen (Befund N2 aus
   [#341](https://github.com/speedone/mietfuchs/issues/341)).
+- Hilfe & Begriffe am Handy: Eine aufgeklappte Anleitung machte die Seite breiter als den Bildschirm
+  (gemessen 563 statt 390 Bildpunkte), weil lange Rechtsgrundlagen nicht umbrachen. Unter 640
+  Bildpunkten brechen sie jetzt um. Der Browserlauf misst die Breite jeder Seite zusätzlich mit allem
+  Aufklappbaren offen (Befund MOB1 aus [#341](https://github.com/speedone/mietfuchs/issues/341)).
+- Texte: Schnellerfassung und Kosten sprechen von „Mietfuchs“ und „der KI auf diesem Rechner“ statt
+  von „dem Tool“ und nennen den Namen des Modells nicht mehr, der steht in den Einstellungen. In der
+  Kostentabelle heißt der Lohnanteil „davon §35a-Lohn“ mit Begriffserklärung statt „§35a:“, und der
+  Aufklapper zum Rechtsstand der Abrechnung sagt, was darin steht („Angewandte Regeln und
+  Rechtswerte · Rechtsstand …“) (Befund N9 aus [#341](https://github.com/speedone/mietfuchs/issues/341)).
+- Schreibweisen: Paragrafen stehen einheitlich mit Leerzeichen („§ 556 BGB“, „nach § 35a EStG“), Feldnamen
+  wie „§35a-Lohn“ bleiben. Die Verteilbasis nach Verbrauch nennt die Einheit der Zähler („30 von 120 m³
+  (gemessen)“), und die Stände eines Zählers stehen mit gleich vielen Nachkommastellen da („316,0“ neben
+  „332,7“) (Befund N4 aus [#341](https://github.com/speedone/mietfuchs/issues/341)).
+- Stammdaten: Bei einer Pauschale stand in der Spalte „Vorauszahlung je Monat“ nur „—“; jetzt steht dort
+  „Pauschale:“ mit dem Betrag (Befund N15 aus [#341](https://github.com/speedone/mietfuchs/issues/341)).
+- Mietkonto: In der Zahlungstabelle stehen Datum, Name und Betrag auf einer Linie mit der Auswahl „Art“,
+  und der Satz über den Monatskacheln erklärt die Farben (Befund N6 aus
+  [#341](https://github.com/speedone/mietfuchs/issues/341)).
 - Die Karte „Objekt“ verlangt eine Bezeichnung: Leer ließ sie sich speichern, und die Seitenleiste
   zeigte danach „Ohne Namen“. Hat das Objekt noch keinen Namen, etwa nach einer frischen Installation,
   steht im Feld „Mein Objekt“; Sie können es überschreiben, und mit dem ersten Speichern der Karte wird

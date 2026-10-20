@@ -393,6 +393,18 @@ async function checkCombination(browser, base, combo, AxeBuilder, navLabels) {
     checkedPages++
     const wide = await overflow(page)
     if (wide) add(id, 'Breite', `Seite ${wide.scroll} px breit bei ${wide.width} px Fenster${wide.elements.length ? `: ${wide.elements.join('; ')}` : ''}`)
+    // Noch einmal mit allem Aufklappbaren offen: Eine zugeklappte Anleitung misst keine Breite, die Hilfe am Handy
+    // ragte aufgeklappt über den Rand (MOB1 aus #341). Danach wieder zu, damit Foto und axe die Seite wie geöffnet sehen.
+    const opened = await page.evaluate(() => {
+      const list = [...(/** @type {any} */ (globalThis)).document.querySelectorAll('main details:not([open])')]
+      for (const d of list) { d.setAttribute('data-bc-opened', ''); d.open = true }
+      return list.length
+    })
+    if (opened > 0) {
+      const wideOpen = wide ? null : await overflow(page)
+      if (wideOpen) add(id, 'Breite', `Aufgeklappt ${wideOpen.scroll} px breit bei ${wideOpen.width} px Fenster${wideOpen.elements.length ? `: ${wideOpen.elements.join('; ')}` : ''}`)
+      await page.evaluate(() => { for (const d of (/** @type {any} */ (globalThis)).document.querySelectorAll('main details[data-bc-opened]')) { d.open = false; d.removeAttribute('data-bc-opened') } })
+    }
     for (const text of await visibleErrors(page)) add(id, 'Fehlermeldung', text)
     reportClipped(id, await clippedFields(page, 'main'))
     await runAxe(id)

@@ -147,9 +147,9 @@ const laborText = (c: number | null): string => (c === null ? 'keiner' : fmtEuro
 export function previewLines(p: BookingPreview): string[] {
   return p.items.map((i) => {
     if (i.costItemId === null) {
-      return `Neu für ${i.year}: „${i.description}“ (${i.category}) ${fmtEuro(i.afterCents)}${i.afterLabor35aCents ? `, davon §35a ${fmtEuro(i.afterLabor35aCents)}` : ''}`
+      return `Neu für ${i.year}: „${i.description}“ (${i.category}) ${fmtEuro(i.afterCents)}${i.afterLabor35aCents ? `, davon §35a-Lohn ${fmtEuro(i.afterLabor35aCents)}` : ''}`
     }
-    const labor = i.beforeLabor35aCents !== i.afterLabor35aCents ? `; §35a ${laborText(i.beforeLabor35aCents)} → ${laborText(i.afterLabor35aCents)}` : ''
+    const labor = i.beforeLabor35aCents !== i.afterLabor35aCents ? `; §35a-Lohn ${laborText(i.beforeLabor35aCents)} → ${laborText(i.afterLabor35aCents)}` : ''
     if (i.beforeCents === i.afterCents) return `„${i.description}“ bleibt bei ${fmtEuro(i.afterCents)}${labor}`
     return `„${i.description}“: ${fmtEuro(i.beforeCents ?? 0)} → ${fmtEuro(i.afterCents)}${labor}`
   })

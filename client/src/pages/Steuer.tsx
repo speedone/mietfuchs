@@ -447,7 +447,7 @@ export default function Steuer({ settings }: Props) {
 
             {data.expenses.labor35aCents > 0 && (
               <p className="muted">
-                In den Werbungskosten enthaltene Arbeitskosten (§35a EStG, haushaltsnahe
+                In den Werbungskosten enthaltene Arbeitskosten (§ 35a EStG, haushaltsnahe
                 Dienstleistungen/Handwerker): <strong>{fmtEuro(data.expenses.labor35aCents)}</strong>.
                 Diese werden den Mietern in der Nebenkostenabrechnung bescheinigt.
               </p>

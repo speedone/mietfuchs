@@ -29,11 +29,11 @@ describe('Frist nach § 556 Abs. 3 BGB nach dem Wiederöffnen (#142)', () => {
   test('ohne Versand: die verbleibenden Tage wie bisher', () => {
     const v = deadlineView('2025', '2026-12-31', null, [], heute)
     expect(v.level).toBe('ok')
-    expect(v.text).toBe('Abrechnungsfrist (§556 BGB): Die Abrechnung 2025 muss dem Mieter bis zum 31.12.2026 zugehen — noch 91 Tage.')
+    expect(v.text).toBe('Abrechnungsfrist (§ 556 BGB): Die Abrechnung 2025 muss dem Mieter bis zum 31.12.2026 zugehen — noch 91 Tage.')
   })
 
   test('versandt: gewahrt', () => {
-    expect(deadlineView('2025', '2026-12-31', '2026-01-12', [], heute).text).toBe('Abrechnung 2025 am 12.01.2026 versendet — die Frist nach §556 BGB (31.12.2026) ist gewahrt.')
+    expect(deadlineView('2025', '2026-12-31', '2026-01-12', [], heute).text).toBe('Abrechnung 2025 am 12.01.2026 versendet — die Frist nach § 556 BGB (31.12.2026) ist gewahrt.')
   })
 
   test('nach dem Wiederöffnen bleibt der frühere Versand sichtbar, statt dass die Frist neu zu laufen scheint', () => {
@@ -70,6 +70,6 @@ describe('Frist nach § 556 Abs. 3 BGB nach dem Wiederöffnen (#142)', () => {
 
   test('Mai bis April: Bezeichnung und Frist kommen von der Abrechnung (#208)', () => {
     expect(deadlineView('2025/2026', '2027-04-30', null, [], heute).text)
-      .toBe('Abrechnungsfrist (§556 BGB): Die Abrechnung 2025/2026 muss dem Mieter bis zum 30.04.2027 zugehen — noch 211 Tage.')
+      .toBe('Abrechnungsfrist (§ 556 BGB): Die Abrechnung 2025/2026 muss dem Mieter bis zum 30.04.2027 zugehen — noch 211 Tage.')
   })
 })

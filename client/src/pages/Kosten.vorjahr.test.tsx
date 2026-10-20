@@ -193,7 +193,7 @@ test('Handy: der Betrag steht gleich hinter der Kostenart, nicht erst nach dem S
   const table = screen.getByRole('heading', { name: new RegExp(`aus ${PREV} für ${YEAR} übernehmen`) }).parentElement?.querySelector('table')
   if (!table) return expect.fail('Tabelle der Übernahme nicht gefunden')
   const heads = [...table.querySelectorAll('thead th')].map((th) => th.textContent?.trim())
-  expect(heads.slice(0, 4)).toEqual(['Übernehmen', 'Kostenart', `Betrag ${YEAR} €`, '§35a Lohn €'])
+  expect(heads.slice(0, 4)).toEqual(['Übernehmen', 'Kostenart', `Betrag ${YEAR} €`, '§35a-Lohn €'])
   // Die Zellen folgen den Köpfen: das Betragsfeld steht in der dritten Spalte jeder Zeile.
   const row = within(table).getByLabelText(`Betrag ${YEAR} für Müllabfuhr ${YEAR}`).closest('tr')
   const cells = [...(row?.children ?? [])]
