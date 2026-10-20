@@ -326,9 +326,9 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
       <PageHeader
         title="Schnellerfassung"
         subtitle={<>
-          Werfen Sie alles rein — Rechnungen <em>und</em> Zählerfotos. Das Tool erkennt automatisch, was es ist,
+          Werfen Sie alles rein — Rechnungen <em>und</em> Zählerfotos. Mietfuchs erkennt automatisch, was es ist,
           prüft es und sortiert nach Ampel. Grün übernehmen Sie mit einem Klick.{' '}
-          {ai.notice ?? `Alles bleibt lokal (${ai.model}).`}
+          {ai.notice ?? 'Alles bleibt lokal.'}
         </>}
       />
       {error && <div className="error">{error}</div>}

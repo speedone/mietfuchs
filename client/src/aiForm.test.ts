@@ -136,14 +136,13 @@ describe('Felder für Fortgeschrittene', () => {
 })
 
 describe('Zusammenfassung für die Seiten mit KI-Auswertung', () => {
-  test('nennt Modell und Ort, lokal ohne Hinweis', () => {
-    expect(aiSummary(settings())).toEqual({ model: 'qwen3.5:4b', where: 'lokal auf diesem Rechner', notice: null })
+  test('nennt den Ort, lokal ohne Hinweis', () => {
+    expect(aiSummary(settings())).toEqual({ where: 'lokal auf diesem Rechner', notice: null })
   })
 
   test('bei einem Dienst im Internet steht dort dessen Adresse', () => {
     const s = settings({ ai: ai({ text: OPENAI }), aiExternal: { text: true, images: false } })
     expect(aiSummary(s)).toEqual({
-      model: 'gpt-5.4-nano',
       where: 'über api.openai.com',
       notice: 'Die KI-Auswertung schickt Belege an api.openai.com.',
     })

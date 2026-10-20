@@ -176,7 +176,7 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
       )}
       {a.laborFromTotal && (
         <div className="notice">
-          Der Arbeitskostenanteil nach §35a stand nur als ein Betrag auf der Rechnung. Mietfuchs hat ihn nach Beträgen auf die Positionen verteilt; Fahrtkosten und Material gehören streng genommen nicht dazu.
+          Der Arbeitskostenanteil nach § 35a EStG stand nur als ein Betrag auf der Rechnung. Mietfuchs hat ihn nach Beträgen auf die Positionen verteilt; Fahrtkosten und Material gehören streng genommen nicht dazu.
         </div>
       )}
       <Table className="assessment-table">
@@ -188,7 +188,7 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
             <th>Kostenart</th>
             <th>Umlageschlüssel</th>
             <th className="num">Betrag €</th>
-            <th className="num">§35a €</th>
+            <th className="num">§35a-Lohn €</th>
           </tr>
         </thead>
         <tbody>
@@ -245,7 +245,7 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
                   </td>
                   <td><AiKeyCell position={row} units={units} onChange={(p) => patch(line.idx, p)} /></td>
                   <td className="num"><input aria-label="Betrag €" value={row.amount} onChange={(e) => patch(line.idx, { amount: e.target.value })} className="input-num" /></td>
-                  <td className="num"><input aria-label="§35a €" value={row.labor35a} onChange={(e) => patch(line.idx, { labor35a: e.target.value })} className="input-num" placeholder="—" /></td>
+                  <td className="num"><input aria-label="§35a-Lohn €" value={row.labor35a} onChange={(e) => patch(line.idx, { labor35a: e.target.value })} className="input-num" placeholder="—" /></td>
                 </tr>
               </Fragment>
             )

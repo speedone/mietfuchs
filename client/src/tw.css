@@ -431,3 +431,13 @@
     width: 100%;
   }
 }
+
+/* Rechtsgrundlage hinter einem Hinweis der Anleitungen (pages/Hilfe.tsx): am Bildschirm in einer Zeile, damit
+   „§ 556 Abs. 3 BGB“ nicht zerfällt; am Handy umbrechend, sonst dehnte eine lange Fundstelle die Seite über den
+   Rand (MOB1 aus #341, gemessen 563 px bei 390). */
+@utility guide-norm {
+  white-space: nowrap;
+  @media (max-width: 640px) {
+    white-space: normal;
+  }
+}

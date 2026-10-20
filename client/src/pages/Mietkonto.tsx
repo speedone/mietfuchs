@@ -246,7 +246,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
 
       {/* Sichtprüfung E34: einmal über den Karten statt in jeder */}
       {ledger && ledger.rows.some((r) => r.sollYearCents > 0) && (
-        <p className="muted">Klick auf einen roten oder gelben Monat bucht den offenen Restbetrag vor; gestrichelte Monate zählen noch nicht als Rückstand.</p>
+        <p className="muted">Grün heißt bezahlt, Gelb teilweise bezahlt, Rot offen; gestrichelte Monate zählen noch nicht als Rückstand. Klick auf einen roten oder gelben Monat bucht den offenen Restbetrag vor.</p>
       )}
       {/* Nur eine Auskunft: Die Rechnung des Mietkontos ändert sie nicht (#133). */}
       {dueNote && ledger && rentDueApplies(ledger.rows, year, new Date()) && (
@@ -390,7 +390,9 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
             </thead>
             <tbody>
               {yearPayments.map((p) => (
-                <tr key={p.id}>
+                // Mittig, weil die Auswahl „Art“ höher ist als eine Textzeile: oben ausgerichtet stand der Text
+                // über ihrer Mitte (N6 aus #341)
+                <tr key={p.id} className="*:align-middle">
                   <td data-label="Datum">{fmtDate(p.date)}</td>
                   <td data-label="Mietverhältnis">{tenancyName(p.tenancyId)}</td>
                   <td data-label="Art">

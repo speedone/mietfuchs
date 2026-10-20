@@ -257,3 +257,21 @@ test('Server: eine neue oder geänderte Einheit muss die Sparte kennen; eine ges
     fs.rmSync(dataDir, { recursive: true, force: true })
   }
 })
+
+// N4 aus #341: Die Verteilbasis nach Verbrauch nennt die Einheit, wie die nach Fläche ihre m²; umgerechnet die
+// Grundeinheit. Vorher stand „12,5 von 80 (gemessen)“.
+test('Verbrauchsschlüssel: die Verteilbasis nennt die Einheit der Zähler', () => {
+  const basisOf = (s: Settlement) => s.statements.flatMap((st) => st.rows).find((r) => r.costItemId === 'wasser')?.basisText ?? ''
+  assert.match(basisOf(computeSettlement(selfSnapshot({ costItems: [waterItem()], plant: manual }))), / m³ \(gemessen\)$/)
+  const { meters, readings } = rescale(selfMeters(), selfReadings(), 'xw-b', 'l', 1000)
+  assert.match(basisOf(computeSettlement(selfSnapshot({ meters, readings, costItems: [waterItem()], plant: manual }))), / m³ \(gemessen\)$/)
+})
+
+// Durchsicht des Zweigs, Befund 1: Bei einer unbekannten Einheit rechnet Mietfuchs mit Faktor 1 über verschiedene
+// Größen; die Verteilbasis darf dann keine Einheit nennen (vorher die des ersten Zählers, je nach Reihenfolge).
+test('Verbrauchsschlüssel: bei unbekannter Einheit nennt die Verteilbasis keine Einheit', () => {
+  const meters = selfMeters().map((m) => (m.id === 'xw-b' ? { ...m, unit: 'kWh' } : m))
+  const s = computeSettlement(selfSnapshot({ meters, costItems: [waterItem()], plant: manual }))
+  const basis = s.statements.flatMap((st) => st.rows).find((r) => r.costItemId === 'wasser')?.basisText ?? ''
+  assert.match(basis, /\d \(gemessen\)$/)
+})

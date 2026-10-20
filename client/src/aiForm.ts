@@ -99,12 +99,11 @@ export function externalNotice(settings: Settings): string | null {
   return null
 }
 
-// Kurzfassung für die Seiten mit KI-Auswertung: welches Modell arbeitet, wo es läuft und
-// gegebenenfalls, wohin die Belege gehen
-export function aiSummary(settings: Settings | null): { model: string; where: string; notice: string | null } {
+// Kurzfassung für die Seiten mit KI-Auswertung: wo die KI läuft und gegebenenfalls, wohin die Belege gehen.
+// Das Modell nennen nur die Einstellungen (N9 aus #341).
+export function aiSummary(settings: Settings | null): { where: string; notice: string | null } {
   const slot = settings?.ai?.text
   return {
-    model: slot?.model || settings?.ollamaModel || 'ohne Modell',
     where: settings?.aiExternal?.text && slot
       ? `über ${hostOf(slot.url)}`
       : settings?.aiExternal?.images

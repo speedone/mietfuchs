@@ -388,7 +388,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
       {!(empty && choices.length === 0) && (
       <div className="card no-print">
         <div className="row">
-          <label className="field checkline" title="Absatz mit dem Vorschlag zur Anpassung der monatlichen Vorauszahlung (§560 Abs. 4 BGB) andrucken">
+          <label className="field checkline" title="Absatz mit dem Vorschlag zur Anpassung der monatlichen Vorauszahlung (§ 560 Abs. 4 BGB) andrucken">
             <span>
               <input
                 type="checkbox"
@@ -511,7 +511,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
         const basis = legalBasisLines(data.legalBasis)
         return (
           <details className="legal-basis no-print">
-            <summary>{basis.head}</summary>
+            <summary>Angewandte Regeln und Rechtswerte · {basis.head}</summary>
             {basis.rules.length > 0 ? (
               <ul>{basis.rules.map((r) => <li key={r}>{r}</li>)}</ul>
             ) : (
@@ -779,13 +779,13 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                   {printAdjust && st.suggestedMonthlyCents > 0 && (
                     <p>
                       Auf Basis dieser Abrechnung wird die {adjustedPrepaymentLabel(st, separateHeating)} gemäß
-                      §560 Abs. 4 BGB ab dem übernächsten Monat auf <strong>{fmtEuro(st.suggestedMonthlyCents)}</strong> angepasst
+                      § 560 Abs. 4 BGB ab dem übernächsten Monat auf <strong>{fmtEuro(st.suggestedMonthlyCents)}</strong> angepasst
                       ({suggestionBasis(st, data.daysInYear)}).
                     </p>
                   )}
                   {st.total35aCents > 0 && (
                     <div className="stack tight">
-                      <strong>Bescheinigung nach §35a EStG</strong>
+                      <strong>Bescheinigung nach § 35a EStG</strong>
                       <p className="muted">
                         In Ihrem Kostenanteil sind folgende Arbeitskosten für haushaltsnahe
                         Dienstleistungen/Handwerkerleistungen enthalten, die Sie ggf. steuerlich

@@ -219,13 +219,16 @@ export function overlapQuestion(
 // Die Spalte „Vorauszahlung je Monat“ der Mietverhältnisse (Sichtprüfung E12): die Staffel und,
 // bei getrennter Heizkostenabrechnung, die Heizvorauszahlung daneben. Ohne sie sah die übrige
 // Vorauszahlung nach dem Aufteilen aus wie eine gesunkene.
-export function prepaymentColumn(t: Pick<Tenancy, 'prepayments' | 'heatingPrepayments'>): { label: string | null; amount: string }[] {
+export function prepaymentColumn(t: Pick<Tenancy, 'prepayments' | 'heatingPrepayments' | 'flatRates'>): { label: string | null; amount: string }[] {
   const heating = t.heatingPrepayments ?? []
+  // Die Pauschale steht dabei (N15 aus #341): Sie wird nie abgerechnet, aber monatlich gezahlt, und ohne sie stand „—“
+  const flat = t.flatRates ?? []
   const withFrom = t.prepayments.length > 1 || heating.length > 1
   const month = (from: string) => `${from.slice(5, 7)}/${from.slice(0, 4)}`
   return [
     ...t.prepayments.map((p) => ({ label: t.prepayments.length > 1 ? `ab ${month(p.from)}:` : null, amount: fmtEuro(p.monthlyCents) })),
     ...heating.map((p) => ({ label: withFrom ? `+ Heizung ab ${month(p.from)}:` : '+ Heizung:', amount: fmtEuro(p.monthlyCents) })),
+    ...flat.map((p) => ({ label: flat.length > 1 ? `Pauschale ab ${month(p.from)}:` : 'Pauschale:', amount: fmtEuro(p.monthlyCents) })),
   ]
 }
 

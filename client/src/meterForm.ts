@@ -233,8 +233,19 @@ export function meterBody(form: MeterForm, plantId: string | null): { body: Mete
 
 // Der Endstand des alten Geräts in der Tabelle der Ablesungen. Fehlt er, steht „fehlt“ da und kein
 // leerer Platz (#142); eine eingetragene 0 ist eine Angabe und bleibt stehen (#83).
-export function oldEndText(value: number | null | undefined): string {
-  return value == null ? 'fehlt' : value.toLocaleString('de-DE')
+export function oldEndText(value: number | null | undefined, digits?: number): string {
+  return value == null ? 'fehlt' : readingText(value, digits)
+}
+
+// Alle Stände eines Zählers mit gleich vielen Nachkommastellen, so vielen wie der genaueste, höchstens drei
+// (N4 aus #341: „316“ neben „332,7“). Die Endstände alter Geräte zählen mit, sie stehen in derselben Spalte.
+export function readingDigits(readings: readonly { value: number; oldEndValue?: number | null }[]): number {
+  const places = (n: number) => (String(n).split('.')[1] ?? '').length
+  return Math.min(3, Math.max(0, ...readings.flatMap((r) => [places(r.value), r.oldEndValue == null ? 0 : places(r.oldEndValue)])))
+}
+
+export function readingText(value: number, digits?: number): string {
+  return digits === undefined ? value.toLocaleString('de-DE') : value.toLocaleString('de-DE', { minimumFractionDigits: digits, maximumFractionDigits: Math.max(digits, 3) })
 }
 
 // ---------- Eichfrist (Heizung PR 21, #98) ----------
