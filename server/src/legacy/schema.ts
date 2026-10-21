@@ -122,7 +122,7 @@ export const tenancies = sqliteTable(
 )
 
 // Die drei Staffeln und die Jahreskorrektur bekommen eigene Tabellen statt einer Spalte mit
-// JSON. Der Grund steht in CLAUDE.md ausführlich; kurz: In einer Spalte kann nichts davon
+// JSON. Der Grund steht in server/src/db/CLAUDE.md ausführlich; kurz: In einer Spalte kann nichts davon
 // zugesichert werden, was hier selbstverständlich ist: kein negativer Betrag, kein zweiter
 // Eintrag zum selben Stichtag, kein Eintrag ohne Mietverhältnis.
 
