@@ -1562,7 +1562,7 @@ test('Steuer (Anlage V): der Flächenanteil misst das Private, nicht das Vermiet
 })
 
 test('Steuer (Anlage V): ein Bestand von vor der dreiwertigen Unterscheidung (#68)', () => {
-  // **Der Fall, der den naheliegenden Fix zur Verschlechterung machte.** CLAUDE.md sagt
+  // **Der Fall, der den naheliegenden Fix zur Verschlechterung machte.** server/src/CLAUDE.md sagt
   // ausdrücklich, dass die Migration in legacy/migrate.ts das Kennzeichen bewusst **nicht** setzt, weil ein
   // gesetztes Kennzeichen die Verteilung bereits abgerechneter Jahre veränderte. Wer seine eigene
   // Wohnung damals nur auf „nicht beteiligt“ gestellt hat, trägt also `participates: false` ohne

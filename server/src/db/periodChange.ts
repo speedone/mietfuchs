@@ -525,7 +525,7 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
   for (const { item, parts } of follows) for (const part of parts) ask(item, part.period)
   for (const g of groups.values()) for (const o of g.options) for (const item of g.items) ask(item, o)
   for (const { item, target } of regrows) ask(item, target)
-  // Geld H2, Variante (b) (Nachtrag nach Fixrunde 82d8a7a): Hier sagte die Vorschau, dass sich ein Teil eines folgenden
+  // Geld H2, Variante (b) (Nachtrag nach Fixrunde 87a418b): Hier sagte die Vorschau, dass sich ein Teil eines folgenden
   // Abzugs mit festem Steuerjahr in der Anlage V verschiebt, wenn der Betriebsstrom in ein anderes Jahr geht. Seit #268
   // gleicht die Steuerübersicht je Steuerjahr aus (Σ Abzüge − Σ Heizpositionen `included`): Jedes Jahr zeigt die in ihm
   // bezahlten Rechnungen, es verschiebt sich nichts, und der Satz entfällt.
