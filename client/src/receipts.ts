@@ -10,7 +10,8 @@
 // Posteingang (an keiner Position) trägt sie selbst.
 //
 // Der Belegordner gliedert nach Kalenderjahren, denn Belege tragen Kalenderjahre (#208, Entwurf 5.2:
-// `uploads.year` bleibt); das Jahr einer Position ist das Jahr, in dem ihr Zeitraum beginnt.
+// `uploads.year` bleibt); das Jahr einer Position ist das Jahr, in dem ihr Zeitraum beginnt. Für das Objekt der
+// Seitenleiste gilt bei einem anderen Rhythmus der gewählte Zeitraum (`FolderFilter.period`, #346 Schritt 12).
 import type { CostItem, PeriodKey, UploadInfo, UploadLinks } from './types'
 import { CATEGORIES, matchCategory } from './types'
 import { fmtEuro, parseEuro } from './api'

@@ -162,7 +162,7 @@ function FolderPacks({ propertyId, propertyName, year, chosen, rules, uploads, c
         <span className="muted">Alle Belege des Jahres nach den Gruppen der Anlage V, auch die nicht umlagefähigen, mit einer Übersicht.</span>
       </div>
       <details onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
-        <summary>📎 Belegmappe für Mieter (PDF)</summary>
+        <summary>📎 Belegmappe für Mieter · {label} (PDF)</summary>
         <p className="muted">
           Für die Belegeinsicht: die Belege der umgelegten Positionen in der Reihenfolge der Abrechnung, mit einem Deckblatt
           „Position → Beleg, Seite“. Seit 2025 dürfen Sie die Belege elektronisch bereitstellen (§ 556 Abs. 4 BGB).
@@ -291,7 +291,7 @@ function InboxPlacement({ upload, properties, yearOptions, onSave, children }: {
 export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onContinue, onOpenItem, makeTenantFolder = downloadTenantFolder }: Props) {
   const toast = useToast()
   const confirm = useConfirm()
-  const { year: currentYear, calendarYearOptions, calendar, key: periodKeyNow, period: periodNow } = usePeriod()
+  const { year: currentYear, calendarYearOptions, calendar, key: periodKeyNow, period: periodNow, label: periodLabelNow } = usePeriod()
   const { property, properties } = useProperty()
   const [uploads, setUploads] = useState<UploadEntry[]>([])
   const [loadedItems, setLoadedItems] = useState<CostItem[]>([])
@@ -656,10 +656,15 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
             </span>
           </label>
         </div>
-        {/* Durchsicht zu Schritt 8, K2: Der Ordner ordnet nach dem Jahr, in dem der Zeitraum einer Position beginnt
-            (receipts.ts, ebenso Register und Belegabdeckung). Bei einem anderen Rhythmus sagt der Satz das, denn
-            die Kontextzeile nennt den Zeitraum; vor einem Wechsel des Rhythmus können zwei Zeiträume im selben Jahr beginnen. */}
-        {!calendar && !allYears && <p className="muted">Gezeigt sind die Positionen der Abrechnungszeiträume, die {currentYear} beginnen.</p>}
+        {/* Durchsicht zu Schritt 8, K2, und #346 Schritt 12: Bei einem anderen Rhythmus zeigt der Ordner für das Objekt der
+            Seitenleiste den gewählten Zeitraum (receipts.ts, `period`); bei „alle Objekte“ für die übrigen die Zeiträume,
+            die im Jahr beginnen. Nach einem Wechsel des Rhythmus beginnen Rumpf und neuer Zeitraum im selben Jahr. */}
+        {!calendar && !allYears && (
+          <p className="muted">
+            Gezeigt sind die Positionen von {periodLabelNow}.
+            {filter.propertyId === 'all' && properties.length > 1 && ` Bei den übrigen Objekten die Zeiträume, die ${currentYear} beginnen.`}
+          </p>
+        )}
       </div>
 
       <div
@@ -697,7 +702,7 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
             const ohne = cov.positions - cov.covered
             return (
               <div key={id} className="receipt-coverage-row">
-                <span>Belegabdeckung {filter.year === 'all' ? '' : `${filter.year} `}{coverageRows.length > 1 || showProperty ? `· ${propertyName(id)}` : ''}</span>
+                <span>Belegabdeckung {filter.year === 'all' ? '' : `${filter.period?.propertyId === id ? periodLabelNow : filter.year} `}{coverageRows.length > 1 || showProperty ? `· ${propertyName(id)}` : ''}</span>
                 <span className="progress" aria-hidden="true"><span className="progress-fill" style={{ width: `${cov.percent}%`, display: 'block' }} /></span>
                 <strong>{cov.percent} %</strong>
                 <span className="muted">{ohne === 0 ? 'alle Positionen belegt' : `${ohne} Position${ohne > 1 ? 'en' : ''} ohne Beleg`}</span>
