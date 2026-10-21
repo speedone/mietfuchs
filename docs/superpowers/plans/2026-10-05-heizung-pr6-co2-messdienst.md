@@ -34,7 +34,7 @@ G-B3, G-B5, B8, F2/F3, `co2.test.ts`), 12.3 Nr. 1, 8, 9, 14, 12.4, 13 (PR 0, PR 
 **Baut auf:** PR 1 (Code auf `feat/heizung-pr1-rechtsregister`, Plan
 `docs/superpowers/plans/2026-10-05-heizung-pr1-rechtsregister.md`), PR 2 (Code teilweise auf
 `feat/heizung-pr2-zeitraum`, Plan `…-pr2-zeitraum-kern.md`), PR 3 (`…-pr3-zeitraum-bedienung.md`),
-PR 4 (`…-pr4-heizanlage.md`) und PR 5 (`…-pr5-heizperiode.md`, Commit `7a3d9b0`; seine Schnittstellen
+PR 4 (`…-pr4-heizanlage.md`) und PR 5 (`…-pr5-heizperiode.md`, Commit `30feafe`; seine Schnittstellen
 stehen unten). Gearbeitet wird auf `feat/heizung-pr6-co2`,
 abgezweigt von der Spitze von PR 5; der PR wird gestapelt auf PR 5 gestellt und nach dessen Merge
 auf `main` umgestellt.
@@ -183,7 +183,7 @@ bis PR 4; Namen genau so:
   `heatingPlant()`.
 
 **Aus dem Plan von PR 5** (`docs/superpowers/plans/2026-10-05-heizung-pr5-heizperiode.md`, Commit
-`7a3d9b0`); die früheren Annahmen A1–A6 dieses Plans sind damit ersetzt:
+`30feafe`); die früheren Annahmen A1–A6 dieses Plans sind damit ersetzt:
 
 - **Schnappschuss (statt A1, A5):** `snapshotFor` legt die Positionen einer Anlage **mit eigener
   Heizperiode** nicht in `costItems`, sondern je Heizperiode, die in P endet, in
