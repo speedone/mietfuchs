@@ -92,11 +92,10 @@ test('Wohnung: Name und Wohnfläche', async () => {
   await requiredMatchesMissing(dialog(), () => fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/ })), ['Name', 'Wohnfläche (m²)'])
 })
 
-test('Objekt (Karte): Bezeichnung, mit Legende in der Karte', async () => {
+test('Objekt (Seitenfenster „Objekt bearbeiten“): Bezeichnung', async () => {
   shell(<Stammdaten units={UNITS} tenancies={TENANCIES} settings={null} reload={async () => {}} />)
-  const card = (await screen.findByRole('heading', { name: /^Objekt$/ })).closest('.card') as HTMLElement
-  expect(card.textContent).toContain('* Pflichtangabe')
-  await requiredMatchesMissing(card, () => fireEvent.click(within(card).getByRole('button', { name: 'Speichern' })), ['Bezeichnung'])
+  fireEvent.click(await screen.findByRole('button', { name: 'Bearbeiten (Objekt)' }))
+  await requiredMatchesMissing(dialog(), () => fireEvent.click(within(dialog()).getByRole('button', { name: /^Speichern$/ })), ['Bezeichnung'])
 })
 
 test('Zahlung: Mietverhältnis, Datum, Betrag', async () => {

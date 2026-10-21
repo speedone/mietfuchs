@@ -74,6 +74,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Geändert
 
+- Die Karte „Objekt“ in den Stammdaten zeigt die Angaben nur noch an, übersichtlich in zwei Spalten,
+  auch was fehlt („nicht angegeben“) und ob Vermieter und Bankverbindung aus den Einstellungen kommen.
+  Bearbeitet wird über „Bearbeiten“ im Seitenfenster, wie bei Wohnungen und Mietverhältnissen;
+  „+ Weiteres Objekt anlegen“ steht jetzt oben rechts auf der Seite. Eine gespeicherte IBAN, die
+  vermutlich falsch eingetragen ist, nennt schon die Karte.
 - Kontraste: Leere Monatskacheln im Mietkonto sind nicht mehr abgedunkelt (Schrift jetzt über 4,5:1), und
   die Vorjahresbalken samt Legende im Kostenvergleich heben sich im hellen wie im dunklen Design
   mindestens 3:1 von der Karte ab ([#341](https://github.com/speedone/mietfuchs/issues/341)).

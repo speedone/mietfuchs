@@ -153,37 +153,19 @@ test('Esc in der Rückfrage bricht nur den Wechsel ab, der Dialog darunter bleib
   expect((screen.getByLabelText(/^Betrag/) as HTMLInputElement).value).toBe('11,11')
 })
 
-test('Objektkarte: eine ungespeicherte Änderung zählt als offenes Formular', async () => {
+test('Objektkarte: eine ungespeicherte Änderung im Seitenfenster zählt als offenes Formular', async () => {
   render(<App />)
   fireEvent.click(await screen.findByRole('button', { name: /Stammdaten/ }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Bearbeiten (Objekt)' }))
   fireEvent.click(await screen.findByLabelText(/Für dieses Objekt abweichend/))
   fireEvent.change(screen.getByLabelText(/^IBAN/), { target: { value: 'DE02120300000000202051' } })
   switchTo('objekt-2')
   expect(await screen.findByRole('button', { name: /Objekt wechseln/ })).toBeTruthy()
 })
 
-test('Objektkarte: ein neues Objekt anlegen geht über dieselbe Rückfrage', async () => {
-  render(<App />)
-  fireEvent.click(await screen.findByRole('button', { name: /Stammdaten/ }))
-  fireEvent.click(await screen.findByLabelText(/Für dieses Objekt abweichend/))
-  fireEvent.change(screen.getByLabelText(/^IBAN/), { target: { value: 'DE02120300000000202051' } })
-  fireEvent.click(screen.getByRole('button', { name: /Weiteres Objekt anlegen/ }))
-  // Der Dialog selbst (#157) zählt beim eigenen Wechsel nicht, die IBAN auf der Karte schon.
-  const dialog = screen.getByRole('dialog')
-  fireEvent.change(within(dialog).getByLabelText(/^Name/), { target: { value: 'Haus C' } })
-  PROPERTIES.push(objekt('objekt-3', 'Haus C'))
-  try {
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Anlegen und zu „Haus C“ wechseln' }))
-    const ask = (await screen.findByRole('button', { name: /Objekt wechseln/ })).closest('.dialog') as HTMLElement
-    fireEvent.click(within(ask).getByRole('button', { name: /^Abbrechen$/ }))
-    // Angelegt ist es, gewechselt wird nicht, und die IBAN steht noch da.
-    await waitFor(() => expect(screen.queryByRole('button', { name: /Objekt wechseln/ })).toBeNull())
-    expect((screen.getByLabelText('Objekt wählen') as HTMLSelectElement).value).toBe('objekt-1')
-    expect((screen.getByLabelText(/^IBAN/) as HTMLInputElement).value).toBe('DE02120300000000202051')
-  } finally {
-    PROPERTIES.pop()
-  }
-})
+// Ein neues Objekt anzulegen, während das Objekt ungespeichert bearbeitet wird, geht seit dem Umbau nicht mehr:
+// Beides sind Seitenfenster, und es ist immer nur eins offen. Dass das Fenster „Weiteres Objekt anlegen“ beim
+// eigenen Wechsel nicht fragt, prüft propertyCreate.test.tsx.
 
 test('Einstellungen: ungespeicherte Vermieterdaten zählen als offenes Formular', async () => {
   render(<App />)

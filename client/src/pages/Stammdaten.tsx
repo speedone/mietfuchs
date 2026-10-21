@@ -8,6 +8,7 @@ import { separateHeatingFor, separateHeatingPlant } from '../heatingSettlementVi
 import Drawer from '../components/Drawer'
 import { useSaving } from '../useSaving'
 import PropertyCard from '../components/PropertyCard'
+import NewPropertyDrawer from '../components/NewPropertyDrawer'
 import IbanInput from '../components/IbanInput'
 import Field from '../components/Field'
 import { useFormError } from '../components/ErrorSummary'
@@ -133,6 +134,8 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
   const saving = useSaving()
   const confirm = useConfirm()
   const { property } = useProperty()
+  // Das Seitenfenster „Weiteres Objekt anlegen“ (NewPropertyDrawer), geöffnet aus dem Seitenkopf.
+  const [newProperty, setNewProperty] = useState(false)
   const propertyId = property?.id
   const [unitForm, setUnitForm] = useState<UnitForm | null>(null)
   const [tenForm, setTenForm] = useState<TenancyForm | null>(null)
@@ -344,7 +347,13 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
 
   return (
     <>
-      <PageHeader context="property" title="Stammdaten" subtitle="Objekt, Wohnungen und Mietverhältnisse — die Grundlage jeder Abrechnung." />
+      <PageHeader
+        context="property"
+        title="Stammdaten"
+        subtitle="Objekt, Wohnungen und Mietverhältnisse — die Grundlage jeder Abrechnung."
+        actions={<button className="btn secondary" onClick={() => setNewProperty(true)}>+ Weiteres Objekt anlegen</button>}
+      />
+      <NewPropertyDrawer open={newProperty} onClose={() => setNewProperty(false)} />
 
       {/* Fehler beim Löschen (#146); die der Formulare stehen in ihrem Dialog. */}
 

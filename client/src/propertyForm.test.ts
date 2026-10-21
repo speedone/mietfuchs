@@ -1,6 +1,7 @@
 // Die Karte „Objekt“ (#92): Was aus dem Formular in den Rumpf von PUT /api/properties wird.
 import { expect, test } from 'vitest'
-import { propertyBody, propertyToForm, STATE_OPTIONS, STATE_UNKNOWN_LABEL, stateFromSelect, stateNote, type PropertyForm } from './propertyForm'
+import type { Property } from './types'
+import { propertyBody, propertySummary, propertyToForm, STATE_OPTIONS, STATE_UNKNOWN_LABEL, stateFromSelect, stateNote, type PropertyForm } from './propertyForm'
 
 const form = (over: Partial<PropertyForm>): PropertyForm => ({
   name: 'Haus', address: 'Weg 1', kind: 'mfh', own: false, landlordName: '', iban: '', paymentDeadlineDays: '', cable: 'unbekannt', tightMarket: 'unbekannt', tightMarketFrom: '', tightMarketTo: '', state: '', ...over,
@@ -101,4 +102,37 @@ test('alle Angaben auf einmal; ohne Namen ist „Mein Objekt“ vorbelegt', () =
   expect(propertyToForm(leer).name).toBe('Mein Objekt')
   expect(propertyBody(propertyToForm(leer))).toMatchObject({ name: 'Mein Objekt' })
   expect(propertyToForm({ ...leer, name: 'Haus A' }).name).toBe('Haus A')
+})
+
+const OBJEKT: Property = {
+  id: 'o1', name: 'Lindenweg 12', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null,
+  cableBuiltBeforeDec2021: null, tightMarket: null, tightMarketFrom: null, tightMarketTo: null, state: null,
+}
+
+test('Karte „Objekt“ zum Lesen: Fehlendes heißt „nicht angegeben“, ohne Abweichung gelten die Einstellungen', () => {
+  expect(propertySummary(OBJEKT)).toEqual([
+    { label: 'Bezeichnung', value: 'Lindenweg 12' },
+    { label: 'Adresse', value: 'nicht angegeben' },
+    { label: 'Art', value: 'Mehrfamilienhaus' },
+    { label: 'Bundesland', value: 'unbekannt' },
+    { label: 'Kabel- oder Antennenanlage', value: 'unbekannt oder keine Anlage' },
+    { label: 'Angespannter Wohnungsmarkt', value: 'unbekannt' },
+    { label: 'Vermieter und Bankverbindung', value: 'wie in den Einstellungen' },
+  ])
+})
+
+test('Karte „Objekt“ zum Lesen: Verordnung mit Geltung, abweichende Angaben einzeln, leere aus den Einstellungen', () => {
+  const rows = propertySummary({ ...OBJEKT, state: 'BY', tightMarket: true, tightMarketFrom: '2025-08-01', tightMarketTo: null, iban: 'DE89370400440532013000', paymentDeadlineDays: 14 })
+  expect(rows).toContainEqual({ label: 'Bundesland', value: 'Bayern' })
+  expect(rows).toContainEqual({ label: 'Angespannter Wohnungsmarkt', value: 'ja, Verordnung seit 01.08.2025' })
+  expect(rows).toContainEqual({ label: 'Vermieter', value: 'wie in den Einstellungen' })
+  expect(rows).toContainEqual({ label: 'IBAN', value: 'DE89 3704 0044 0532 0130 00' })
+  expect(rows).toContainEqual({ label: 'Zahlungsfrist', value: '14 Tage' })
+  expect(propertySummary({ ...OBJEKT, iban: 'DE00 3333' })).toContainEqual({ label: 'IBAN', value: 'DE00 3333 (vermutlich falsch eingetragen, bitte prüfen)' })
+})
+
+test('Karte „Objekt“ zum Lesen: ein leerer Text heißt „keine“, nicht „wie in den Einstellungen“', () => {
+  const rows = propertySummary({ ...OBJEKT, landlordName: '', iban: '' })
+  expect(rows).toContainEqual({ label: 'Vermieter', value: 'keine' })
+  expect(rows).toContainEqual({ label: 'IBAN', value: 'keine' })
 })

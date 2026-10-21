@@ -194,8 +194,12 @@ test('Anlegen klappt, Neuladen scheitert: Meldung im Dialog und kein zweites Obj
   expect(await within(dialog).findByText(/ist angelegt, die Liste der Objekte ließ sich aber nicht laden/)).toBeTruthy()
   // Schließen und wieder öffnen hebt die Sperre nicht auf, solange die Liste fehlt.
   fireEvent.click(within(dialog).getByRole('button', { name: /^Abbrechen$/ }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Verwerfen' }))
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Weiteres Objekt anlegen' })).toBeNull())
   fireEvent.click(screen.getByRole('button', { name: /Weiteres Objekt anlegen/ }))
-  const again = screen.getByRole('dialog')
+  const again = screen.getByRole('dialog', { name: 'Weiteres Objekt anlegen' })
+  // Neu geöffnet ist das Feld leer; die Sperre gilt trotzdem.
+  expect((within(again).getByLabelText(/^Name/) as HTMLInputElement).value).toBe('')
   fireEvent.change(within(again).getByLabelText(/^Name/), { target: { value: 'Gartenweg 3' } })
   const button = within(again).getByRole('button', { name: /Anlegen und zu/ }) as HTMLButtonElement
   expect(button.disabled).toBe(true)

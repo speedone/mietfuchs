@@ -371,24 +371,29 @@ test('IBAN: eine gespeicherte ungültige steht als Hinweis da und blockiert das 
 test('Objekt: eine gespeicherte ungültige IBAN steht als Hinweis da und blockiert das Speichern nicht', async () => {
   propertyIban = 'DE00 3333'
   page()
-  expect((await screen.findByText(/^Die gespeicherte IBAN ist vermutlich falsch eingetragen\./, undefined, SLOW))).toBeTruthy()
-  fireEvent.change(screen.getByLabelText('Adresse'), { target: { value: 'Weg 9' } })
-  fireEvent.click(screen.getByText('Speichern'))
+  // Schon die Karte sagt es, ohne das Fenster zu öffnen.
+  expect(await screen.findByText(/DE00 3333 \(vermutlich falsch eingetragen, bitte prüfen\)/, undefined, SLOW)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Bearbeiten (Objekt)' }))
+  const dialog = screen.getByRole('dialog', { name: 'Objekt bearbeiten' })
+  expect(within(dialog).getByText(/^Die gespeicherte IBAN ist vermutlich falsch eingetragen\./)).toBeTruthy()
+  fireEvent.change(within(dialog).getByLabelText('Adresse'), { target: { value: 'Weg 9' } })
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Speichern' }))
   await vi.waitFor(() => expect(sent.find((s) => s.method === 'PUT')?.body).toMatchObject({ iban: 'DE00 3333', address: 'Weg 9' }))
 })
 
 test('Objekt: eine neue ungültige IBAN wird nicht gespeichert, eine gültige normiert', async () => {
   propertyIban = 'DE89370400440532013000'
   page()
+  fireEvent.click(await screen.findByRole('button', { name: 'Bearbeiten (Objekt)' }, SLOW))
   const feld = await screen.findByDisplayValue('DE89 3704 0044 0532 0130 00', undefined, SLOW)
   fireEvent.change(feld, { target: { value: 'DE89 3704 0044 0532 0130 01' } })
   fireEvent.blur(feld)
   expect(screen.getByRole('alert').textContent).toMatch(/Prüfziffer/)
-  fireEvent.click(screen.getByText('Speichern'))
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Speichern' }))
   expect(await screen.findByText(/^Die abweichende IBAN des Objekts ist nicht gültig\./)).toBeTruthy()
   expect(sent).toEqual([])
   fireEvent.change(feld, { target: { value: 'gb82 west 1234 5698 7654 32' } })
-  fireEvent.click(screen.getByText('Speichern'))
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Speichern' }))
   await vi.waitFor(() => expect(sent.find((s) => s.method === 'PUT')?.body.iban).toBe('GB82WEST12345698765432'))
 })
 

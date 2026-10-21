@@ -1,5 +1,7 @@
 import type { FederalState, Property, PropertyKind } from './types'
-import { ibanForSave, ibanToInput } from './ibanField'
+import { PROPERTY_KIND_LABELS } from './types'
+import { ibanForSave, ibanToInput, storedIbanInvalid } from './ibanField'
+import { fmtDate } from './api'
 import { IBAN_LABELS } from '../../shared/iban.ts'
 import type { Problem } from './formProblems'
 import { isFederalState, localHolidaysOf, STATES, stateName } from '../../shared/holidays.ts'
@@ -137,4 +139,33 @@ export function propertyBody(form: PropertyForm, storedIban: string | null = nul
     tightMarketTo: tightTo,
     state: form.state === '' ? null : form.state,
   }
+}
+
+// Die Angaben der Karte „Objekt“ zum Lesen: Die Karte zeigt nur an, bearbeitet wird im Seitenfenster wie bei
+// Wohnungen und Mietverhältnissen (Spezifikation Abschnitt 4, „Anlegen oder Bearbeiten heißt Seitenfenster“).
+// Was fehlt, sagt es; Vermieter, IBAN und Zahlungsfrist stehen nur, wenn das Objekt abweicht, sonst ein Satz,
+// dass die Einstellungen gelten.
+export function propertySummary(p: Property): { label: string; value: string }[] {
+  const none = 'nicht angegeben'
+  const tight = p.tightMarket === true ? 'ja' : p.tightMarket === false ? 'nein' : 'unbekannt'
+  const span = [p.tightMarketFrom && `seit ${fmtDate(p.tightMarketFrom)}`, p.tightMarketTo && `bis ${fmtDate(p.tightMarketTo)}`].filter(Boolean).join(' ')
+  const rows = [
+    { label: 'Bezeichnung', value: p.name.trim() || none },
+    { label: 'Adresse', value: p.address.trim() || none },
+    { label: 'Art', value: PROPERTY_KIND_LABELS[p.kind] },
+    { label: 'Bundesland', value: p.state ? stateName(p.state) : STATE_UNKNOWN_LABEL },
+    { label: 'Kabel- oder Antennenanlage', value: CABLE_LABELS[p.cableBuiltBeforeDec2021 === true ? 'vor' : p.cableBuiltBeforeDec2021 === false ? 'nach' : 'unbekannt'] },
+    { label: 'Angespannter Wohnungsmarkt', value: tight === 'ja' && span ? `ja, Verordnung ${span}` : tight },
+  ]
+  if (p.landlordName === null && p.iban === null && p.paymentDeadlineDays === null) {
+    return [...rows, { label: 'Vermieter und Bankverbindung', value: 'wie in den Einstellungen' }]
+  }
+  // `null` heißt Vorgabe aus den Einstellungen, `''` bewusst keine (nur aus Altbestand oder Import, siehe propertyBody).
+  const shown = (v: string | null, show: (v: string) => string): string => (v === null ? 'wie in den Einstellungen' : v === '' ? 'keine' : show(v))
+  return [
+    ...rows,
+    { label: 'Vermieter', value: shown(p.landlordName, (v) => v) },
+    { label: 'IBAN', value: shown(p.iban, (v) => `${ibanToInput(v)}${storedIbanInvalid(v) ? ' (vermutlich falsch eingetragen, bitte prüfen)' : ''}`) },
+    { label: 'Zahlungsfrist', value: p.paymentDeadlineDays === null ? 'wie in den Einstellungen' : `${p.paymentDeadlineDays} Tage` },
+  ]
 }
