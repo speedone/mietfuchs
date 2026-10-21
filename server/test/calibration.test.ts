@@ -194,7 +194,7 @@ test('Durchsicht M1: Hinweis, Regel und Lexikon zitieren Leitsatz c wörtlich', 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 test('Durchsicht S1: Übergang als eigene Auslegung, ohne Zuschreibung an Eichbehörden oder Messdienste', () => {
   const satz = 'Die Änderungsverordnung vom 26.10.2021 enthält keine Übergangsregel. Mietfuchs wendet die Frist von 6 Jahren auch auf Fristen an, die am 03.11.2021 noch liefen; eine schon abgelaufene Frist lebt nicht wieder auf. Das ist eine Auslegung.'
-  for (const file of ['shared/calibration.ts', 'shared/law/messev.ts', 'client/src/meterForm.ts', 'CHANGELOG.md', 'CLAUDE.md']) {
+  for (const file of ['shared/calibration.ts', 'shared/law/messev.ts', 'client/src/meterForm.ts', 'CHANGELOG.md', 'server/src/CLAUDE.md']) {
     const text = fs.readFileSync(path.join(ROOT, file), 'utf8')
     assert.doesNotMatch(text, /(wie|ebenso|auch) die Eichbehörden|Auslegung wie Eichbehörden|Eichbehörden und (die )?Messdienste/, file)
     if (file.endsWith('.md') || file.startsWith('shared/')) assert.ok(text.replace(/\s*\n\s*(\/\/ )?/g, ' ').includes(satz), `${file}: der Satz zum Übergang fehlt`)

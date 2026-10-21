@@ -297,7 +297,7 @@ export type CostItem = {
   serviceFrom?: string
   serviceTo?: string
   // Das Jahr der Zahlung für die Steuer (#208, Entwurf 3.10). Fehlt es, liegt der Zeitraum der
-  // Position in einem Kalenderjahr, und es ist dieses. Ein Zahlungsdatum (`paidOn`) geht vor, siehe CLAUDE.md
+  // Position in einem Kalenderjahr, und es ist dieses. Ein Zahlungsdatum (`paidOn`) geht vor, siehe server/src/CLAUDE.md
   // („Dem Abflussprinzip folgen die Werbungskosten nur mit Zahlungsdatum“).
   taxYear?: number
   // Das Zahlungsdatum für die Steuer (#255, PR 3), 'JJJJ-MM-TT': der Tag, an dem die ganze Position bezahlt (bei

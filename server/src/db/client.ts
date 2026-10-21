@@ -64,7 +64,7 @@ export type Database = SqliteRemoteDatabase<typeof schema>
 // **Abgeleitet und nicht von Hand geschrieben.** Der Typ der Transaktion hängt an den
 // Gattungsparametern des Treibers, und eine eigene Fassung liefe beim Umstieg auf den eigenen
 // Treiber auseinander, ohne dass es jemandem auffiele (siehe die Begründung zur Wahl des
-// Treibers in CLAUDE.md). So folgt er ihm von selbst.
+// Treibers in server/src/db/CLAUDE.md). So folgt er ihm von selbst.
 export type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0]
 export type Executor = Database | Transaction
 

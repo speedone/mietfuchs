@@ -43,7 +43,7 @@ zur monatlichen Information, die Abrechnung den Druckblock mit Balken.
 amtliche Begründung BR-Drs. 643/21, S. 18 bis 21.
 
 **Baut auf:** PR 1 und PR 2 (Code auf `feat/heizung`), PR 3 bis PR 13 nach ihren Plänen
-`docs/superpowers/plans/2026-10-05-heizung-pr{3..13}-*.md`, maßgeblich PR 10 (Commit `81828af`), PR 11
+`docs/superpowers/plans/2026-10-05-heizung-pr{3..13}-*.md`, maßgeblich PR 10 (Commit `d74dae3`), PR 11
 (`hkv.exemption.renewable`, `heatGeneration`, Testhelfer `server/testing/selfHeating.ts`), PR 12
 (`potUnitOf`) und PR 13 (Vorperiode `SelfPlantPlan.prev`). Mit dem Plan PR 22
 (`docs/superpowers/plans/2026-10-05-heizung-pr22-verbrauchsinfo.md`) teilt er die Regel zum Vergleichswert
