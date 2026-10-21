@@ -3,7 +3,7 @@
 // dahinter. Die Ebene folgt der Seite: Karten unter einem Abschnittstitel (`h2`, etwa „Heizanlage, Heizperiode 2025“)
 // sind `h3`, alle anderen `h2`. Gespeichert wird, wenn die Karte ein Formular trägt, mit **einem** „Speichern“ am Fuß
 // (`DraftActions layout="card"`, Wächter S19).
-import type { ReactNode } from 'react'
+import type { ComponentProps, ReactNode } from 'react'
 
 type Level = 2 | 3
 
@@ -18,7 +18,7 @@ export function CardHeader({ title, level = 2, aside }: { title: ReactNode; leve
   )
 }
 
-export default function Card({ title, level, aside, className, children }: {
+export default function Card({ title, level, aside, className, children, ...rest }: {
   title?: ReactNode
   level?: Level
   /** Höchstens eine Aktion im Kopf, rechts. */
@@ -26,9 +26,10 @@ export default function Card({ title, level, aside, className, children }: {
   /** Weitere Klassen der Karte, etwa `no-print`. */
   className?: string
   children: ReactNode
-}) {
+  // Weitere Angaben an der Karte, etwa die Handler zum Hineinziehen im Posteingang des Belegordners
+} & Omit<ComponentProps<'section'>, 'title' | 'className' | 'children'>) {
   return (
-    <section className={className ? `card ${className}` : 'card'}>
+    <section className={className ? `card ${className}` : 'card'} {...rest}>
       {title !== undefined && <CardHeader title={title} level={level} aside={aside} />}
       {children}
     </section>

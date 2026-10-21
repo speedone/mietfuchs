@@ -876,8 +876,6 @@ fieldset.no-connection { border: 0; padding: 0; margin-inline: 0; min-width: 0; 
   .receipt-coverage-row .progress { grid-column: 1 / -1; }
 }
 .receipt-inbox.drag-over { outline: 2px dashed var(--accent); outline-offset: -6px; }
-.receipt-inbox-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
-.receipt-inbox-head h2 { margin: 0; }
 .receipt-inbox-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .receipt-inbox-controls select { flex: 0 1 auto; min-width: 0; max-width: 100%; }
 .receipt-packs details { margin-top: 12px; }
