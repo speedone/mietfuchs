@@ -1,7 +1,6 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import type { CostItem, CostKey, LegalBasis, Meter, MeterType, Payment, Reading, Settings, Tenancy, Unit } from '../../shared/types.ts'
 import type { ComputedSettlement } from './calc.ts'
@@ -180,9 +179,8 @@ export function save(): void {
   fs.renameSync(tmp, DB_FILE)
 }
 
-export function newId(): string {
-  return crypto.randomBytes(8).toString('hex')
-}
+// Kennungen neuer Datensätze, samt Testgriff NKA_TEST_IDS (ids.ts)
+export { newId } from './ids.ts'
 
 // Nach dem Wiederherstellen eines Backups die db.json neu von der Platte lesen
 export function reloadDb(): Db {

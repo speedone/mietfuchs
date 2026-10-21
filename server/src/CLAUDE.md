@@ -347,6 +347,11 @@ Nur für Tests, ein Nutzer setzt sie nie:
 - **`NKA_TEST_TODAY`** (JJJJ-MM-TT) fixiert die Uhr des Servers (`today()`, testToday.ts), damit
   Prüfbestände mit festen Jahren nicht an einem Datum kippen. Wirkt nicht auf den Browser; die
   Konsole nennt ihn beim Start, ein ungültiges Datum bricht den Start ab.
+- **`NKA_TEST_IDS=seq`** vergibt fortlaufende Kennungen im selben Format (16 Hexziffern, [ids.ts](ids.ts)),
+  damit der Beispielbestand für README-Bilder und Browserlauf in jedem Lauf gleich ist; bei Gleichstand
+  entscheidet die Kennung über den Rest-Cent. `startServer` in scripts/demo-stock.mjs setzt ihn. Der Zähler beginnt je
+  Prozess bei 1, also nur auf einem leeren, einmal gestarteten Datenordner; die Konsole nennt ihn beim Start. Unter
+  `seq` gewinnt bei Gleichstand immer der zuerst angelegte Datensatz, im Betrieb ein zufälliger.
 - `NKA_TEST_START_DELAY_MS`, `NKA_TEST_FREE_BYTES`: siehe scripts/CLAUDE.md bzw. db/CLAUDE.md.
 
 ## Berechnungs-Engine

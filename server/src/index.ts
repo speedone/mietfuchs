@@ -2991,6 +2991,7 @@ function databaseState(): DatabaseState {
   const url = `http://127.0.0.1:${typeof address === 'object' && address ? address.port : PORT}`
   console.log(`Mietfuchs-Server läuft auf ${url}`)
   if (TEST_TODAY.value !== null) console.log(`Testgriff NKA_TEST_TODAY aktiv: Der Server rechnet mit dem ${TEST_TODAY.value} als heute.`)
+  if (process.env.NKA_TEST_IDS === 'seq') console.log('Testgriff NKA_TEST_IDS aktiv: Kennungen werden fortlaufend ab 1 vergeben, nur für einen leeren Datenordner.')
   // Wo die Daten liegen, hängt an der Betriebsart (siehe chooseDataDir in store.ts): neben der
   // Programmdatei oder, aus einem Paket installiert, im Benutzerordner. Wer den Ordner sichern
   // oder umziehen will, soll ihn nicht suchen müssen.
