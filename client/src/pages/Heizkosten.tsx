@@ -124,11 +124,20 @@ export default function Heizkosten({ units, tenancies, onTenanciesChanged }: { u
       {(data?.plants ?? []).map((plant) => (
         <div key={plant.id}>
           <>
-            {plant.method !== 'service' && asksCo2Facts(plant) && (data?.deliveries[plant.id] ?? []).length === 0 && (
-              <div className="card">
-                <p>Verteilen Sie die Heizkosten selbst nach einem <Term id="allocationKey">Umlageschlüssel</Term> (bei der Frage, wer abrechnet: „Niemand“), teilt Mietfuchs die CO₂-Kosten selbst auf, sobald Sie die {invoiceName(plant)} unten als Lieferung eintragen; Gutschrift und Position „Nicht umlagefähig“ entfallen dann.</p>
-                <ManualCo2Advice plant={plant} />
-              </div>
+            {/* #341 M8: nur beim gewählten Modus „Niemand“ (Heizkosten nach Umlageschlüssel), ein Satz, was zu tun ist;
+                der Weg ohne Lieferung steht eingeklappt darunter. Bei der eigenen Heizkostenabrechnung („Ich selbst“) und
+                beim Messdienst gilt er nicht. */}
+            {plant.method === 'manual' && asksCo2Facts(plant) && (data?.deliveries[plant.id] ?? []).length === 0 && (
+              <NoticeBox
+                level="hint"
+                title="CO₂-Kosten aufteilen"
+                action={<>Tragen Sie die {invoiceName(plant)} unten als Lieferung ein; dann teilt Mietfuchs die CO₂-Kosten selbst auf (<Term id="co2Split">CO₂-Kosten aufteilen</Term>).</>}
+              >
+                <details className="extra-details">
+                  <summary>Ohne Lieferung: CO₂-Kosten von Hand aufteilen</summary>
+                  <ManualCo2Advice plant={plant} />
+                </details>
+              </NoticeBox>
             )}
             {/* #266: wie der Betriebsstrom erfasst ist, je Anlage über den Heizperioden. */}
             {showsHandlingCard(plant) && (
@@ -225,8 +234,8 @@ const invoiceName = (plant: Pick<HeatingPlant, 'energy'> & { contracting?: boole
 function ManualCo2Advice({ plant }: { plant: Pick<HeatingPlant, 'energy'> & { contracting?: boolean } }) {
   return (
     <p>
-      Bis dahin teilen Sie die CO₂-Kosten selbst auf: Der CO₂-Ausstoß laut {invoiceName(plant)}, geteilt durch die Wohnfläche, ergibt die
-      Stufe und damit Ihren Anteil an den CO₂-Kosten der Rechnung (<Term id="co2Split">CO₂-Kosten aufteilen</Term>). Lassen Sie die
+      Der CO₂-Ausstoß laut {invoiceName(plant)}, geteilt durch die Wohnfläche, ergibt die Stufe und damit Ihren Anteil an den
+      CO₂-Kosten der Rechnung. Lassen Sie die
       Heizposition, wie sie ist. Erfassen Sie Ihren Anteil als Gutschrift „CO₂-Anteil Vermieter“ in der Kostenart „Heizung und Warmwasser“
       mit demselben Umlageschlüssel (Betrag mit Minus) und denselben Betrag noch einmal als Position der Kostenart „Nicht umlagefähig“. So
       tragen ihn die Mieter nicht, und Ihre Werbungskosten bleiben vollständig. Verteilen Sie die Heizkosten mit Einzelbeträgen je Mieter,
