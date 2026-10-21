@@ -287,7 +287,8 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
         </div>
       )}
       <ErrorSummary errors={errors} />
-      {booked && <div aria-label="Gebucht"><NoticeBox level="warning">✓ Gebucht: {booked.lines.join(' · ')}</NoticeBox></div>}
+      {/* Ein Erfolg, kein Hinweis (Durchsicht der Hinweiskästen): grün, als Statusmeldung; das aria-label braucht die Rolle */}
+      {booked && <div className="ok" role="status" aria-label="Gebucht">✓ Gebucht: {booked.lines.join(' · ')}</div>}
       <div className="row center">
         <a href={`/uploads/${encodeURIComponent(a.file)}`} target="_blank" rel="noreferrer">📎 Beleg ansehen</a>
         <div className="grow" />

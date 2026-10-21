@@ -428,7 +428,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
         )}
       >
         {staleAfterChange && (
-          <div role="status"><NoticeBox level="warning">Der Mieterwechsel ist gespeichert; die Ansicht ließ sich nicht neu laden, bitte Seite neu laden.</NoticeBox></div>
+          <div role="status"><NoticeBox level="warning" action="Der Mieterwechsel ist gespeichert; die Ansicht ließ sich nicht neu laden, bitte Seite neu laden." /></div>
         )}
         <p className="muted">
           Personenzahl und Vorauszahlung werden als Staffel erfasst („ab X gilt Y“) — Änderungen
@@ -1049,7 +1049,7 @@ function TenantChangeDrawer({ tenancy, unit, plants, onClose, onDone }: {
         )}
       </section>
 
-      <NoticeBox level="warning">
+      <NoticeBox level="hint">
         Beim Speichern passiert: Mietverhältnis „{tenancy.tenantName}“ endet am {ISO_DAY.test(endDate) ? fmtDate(endDate) : '—'}
         {readCount > 0 && <> · {readCount} Zwischenablesung{readCount > 1 ? 'en werden' : ' wird'} gespeichert</>}
         {vacancy

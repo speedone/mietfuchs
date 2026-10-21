@@ -614,3 +614,17 @@ test('Auswertung: je Position ein eigenes tbody mit Wahl, Betrag und Feldern', a
   expect((await actionOf('Hausmeister')).closest('tbody')).not.toBe(group)
   expect(garten.classList.contains('select-wide')).toBe(true)
 })
+
+// Durchsicht der Hinweiskästen: „✓ Gebucht“ ist ein Erfolg, kein Hinweis mit „Warnung“; er steht in einer Statusmeldung.
+test('nach dem Buchen steht „Gebucht“ als Erfolg, nicht als Warnung', async () => {
+  fake = fakeBooking({ items: [estimate('wa', 'Wasser/Abwasser', 150000)], units: UNITS })
+  extraction = invoice([{ description: 'Frischwasser', category: 'Wasser/Abwasser', amountEur: 700 }])
+  const { container } = intake()
+  await upload(container)
+  fireEvent.change(await actionOf('Frischwasser'), { target: { value: 'link:wa' } })
+  await previewAndBook()
+  const done = await screen.findByLabelText('Gebucht', {}, SLOW)
+  expect(done.closest('.notice-item')).toBeNull()
+  expect(done.getAttribute('role')).toBe('status')
+  expect(done.classList.contains('ok')).toBe(true)
+})

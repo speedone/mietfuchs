@@ -83,8 +83,7 @@ export default function OperatingPowerCard({ plant, view, rules, items, onBooked
         den Betrag, müssen Sie die Grundlagen Ihrer Schätzung darlegen (BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07, Leitsatz c).
       </>} />
       {booked.length > 0 && (
-        <NoticeBox level="warning">
-          <strong>Schon gebucht in dieser Heizperiode:</strong>
+        <NoticeBox level="warning" title="Schon gebucht in dieser Heizperiode">
           <ul>{booked.map((c) => <li key={c.id}>{c.description} · {fmtEuro(c.amountCents)}</li>)}</ul>
         </NoticeBox>
       )}

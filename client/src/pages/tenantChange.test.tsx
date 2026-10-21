@@ -205,3 +205,17 @@ test('Mieterwechsel: das Auszugsdatum belegt den Einzug vor und nimmt dessen Mel
   expect(einzug.getAttribute('aria-invalid')).toBeNull()
   expect(sent).toEqual([])
 })
+
+// Durchsicht der Hinweiskästen: „Beim Speichern passiert: …“ ist eine neutrale Vorschau, kein „⚠ Warnung“.
+test('Mieterwechsel: die Vorschau „Beim Speichern passiert“ ist ein Hinweis, keine Warnung', async () => {
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <UIProvider><Stammdaten units={UNITS} tenancies={TENANCIES} settings={null} reload={async () => {}} /></UIProvider>
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  const box = await openChange()
+  const preview = within(box).getByText(/Beim Speichern passiert/).closest('.notice-item')
+  expect(preview?.classList.contains('hint')).toBe(true)
+})

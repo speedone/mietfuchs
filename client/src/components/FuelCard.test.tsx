@@ -164,7 +164,7 @@ test('Durchsicht #240, Recht-I3: bei Formel für das Warmwasser sagt die Gasrech
 // Durchsicht von #246, R-K7: Der Hinweis der Prüfung steht auch an der Lieferung, wo sie eingetragen wird.
 test('Ein Befund der CO₂-Prüfung steht an der Zeile der Lieferung', () => {
   render(<FuelCard plant={{ id: 'hp', method: 'manual' }} view={view} deliveries={[gas]} findings={{ [gas.id]: ['„Gas“: Die CO₂-Kosten passen nicht'] }} onSaved={() => {}} />)
-  expect(screen.getByText('„Gas“: Die CO₂-Kosten passen nicht').closest('.hint')).toBeTruthy()
+  expect(screen.getByText('„Gas“: Die CO₂-Kosten passen nicht').closest('.notice-item')?.classList.contains('hint')).toBe(true)
 })
 
 // Nachprüfung von #272, F1: Erzeugt der Lieferant die Wärme mit Wärmepumpe und Gasspitzenkessel (`mixed`), sind CO₂-Kosten

@@ -237,7 +237,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
               <input value={form.note} placeholder="z. B. Überweisung, Abrechnung 2025" onChange={(e) => setForm({ ...form, note: e.target.value })} />
             </Field>
           </div>
-          {paymentFormHints(form).map((h) => <NoticeBox key={h} level="hint">{h}</NoticeBox>)}
+          {paymentFormHints(form).map((h) => <NoticeBox key={h} level="hint" action={h} />)}
         </Drawer>
       )}
 
