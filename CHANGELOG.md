@@ -162,6 +162,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   [#341](https://github.com/speedone/mietfuchs/issues/341);
   [#346](https://github.com/speedone/mietfuchs/issues/346)).
 
+- Jahresfelder blättern: Neben „Geeicht bis Ende (Jahr)“ am Zähler und „Jahr der Zahlung (für die
+  Steuer)“ beim Auslesen einer Messdienstabrechnung stehen jetzt ‹ › zum Blättern um ein Jahr; im
+  leeren Feld beginnt es beim laufenden Jahr bzw. beim Ende des Zeitraums. Ein zweistelliges Jahr wie
+  „28“ wird nicht still ergänzt, sondern beim Verlassen am Feld gemeldet („Jahr vierstellig angeben“);
+  ein Eichjahr vor 1900 oder nach 2100 gilt als Tippfehler.
+
 - Monate tippen Sie jetzt in ein Textfeld, wie Sie sie kennen: „3.2025“, „03/25“, „2025-03“, „März
   2025“ oder „Mrz 27“; beim Verlassen steht dort „März 2025“. Daneben öffnet ▦ ein Raster mit den
   zwölf Monaten und dem Jahr, das sich auch per Tastatur bedienen lässt (Pfeile, Pos1/Ende, Bild auf

@@ -975,7 +975,7 @@ const openingTags = (src: string, name: string): { at: number; tag: string }[] =
 /** Pflichtfelder außerhalb eines `<Drawer>…</Drawer>`. */
 const requiredOutsideDrawer = (src: string): string[] => {
   const ranges = [...src.matchAll(/<Drawer\b/g)].map((m) => [m.index ?? 0, src.indexOf('</Drawer>', m.index ?? 0)] as const)
-  return [...openingTags(src, 'Field'), ...openingTags(src, 'MonthField')]
+  return [...openingTags(src, 'Field'), ...openingTags(src, 'MonthField'), ...openingTags(src, 'YearField')]
     .filter(({ tag }) => /\srequired(?:\s|>|=\{(?!false\}))/.test(tag))
     .filter(({ at }) => !ranges.some(([a, b]) => at > a && (b < 0 || at < b)))
     .map(({ tag }) => tag.slice(0, 60))
@@ -992,7 +992,7 @@ test('S25: Pflichtfelder mit Legende, jedes <form> mit noValidate, keine Gestalt
   // Probe des Prüfers
   expect(requiredOutsideDrawer('<Drawer open value={x}><Field label="A" required><input /></Field></Drawer><Field label="B" required={isNew}><input /></Field><Field label="C" required={false}><input /></Field>'))
     .toEqual(['<Field label="B" required={isNew}>'])
-  const missingLegend = files.filter((f) => f !== './components/Field.tsx' && f !== './components/MonthField.tsx' && !REQUIRED_HELPERS_IN_DRAWER.has(f) && requiredOutsideDrawer(sources[f] ?? '').length > 0 && !/<RequiredLegend\b/.test(sources[f] ?? ''))
+  const missingLegend = files.filter((f) => f !== './components/Field.tsx' && f !== './components/MonthField.tsx' && f !== './components/YearField.tsx' && !REQUIRED_HELPERS_IN_DRAWER.has(f) && requiredOutsideDrawer(sources[f] ?? '').length > 0 && !/<RequiredLegend\b/.test(sources[f] ?? ''))
   for (const f of REQUIRED_HELPERS_IN_DRAWER.keys()) expect(requiredOutsideDrawer(sources[f] ?? ''), `${f}: Ausnahme ohne Pflichtfeld außerhalb; streichen`).not.toEqual([])
   expect(missingLegend).toEqual([])
   // Die Karte „Objekt“ bearbeitet seit dem Umbau im Seitenfenster; ihre Pflichtfelder liegen darin.
@@ -1111,7 +1111,7 @@ const fieldWidthProblems = (file: string, src: string): string[] => {
     const after = src.slice(at + tag.length).trimStart()
     if (after.startsWith('{(') && !/\bwidth=/.test(tag)) problems.push(`${file}: <Field> mit Funktion ohne width: ${tag.slice(0, 60)}`)
   }
-  for (const m of src.matchAll(/<(?:input|select|textarea|label|Field|MonthField)\b[^>]*?style=\{\{[^}]*\b(?:width|minWidth|maxWidth)\s*:/g)) problems.push(`${file}: feste Breite als Inline-Stil: ${m[0].slice(0, 80)}`)
+  for (const m of src.matchAll(/<(?:input|select|textarea|label|Field|MonthField|YearField)\b[^>]*?style=\{\{[^}]*\b(?:width|minWidth|maxWidth)\s*:/g)) problems.push(`${file}: feste Breite als Inline-Stil: ${m[0].slice(0, 80)}`)
   return problems
 }
 test('S28: Felder mit Breitenstufe, keine festen Breiten', () => {

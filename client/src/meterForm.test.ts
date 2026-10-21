@@ -215,7 +215,7 @@ describe('Eichfrist (Heizung PR 21, #98)', () => {
   })
 
   test('Eichjahr, das keine vierstellige Jahreszahl ist, ergibt einen Satz', () => {
-    for (const bad of ['28', '2028,5', '0999', 'M22', '20280']) {
+    for (const bad of ['28', '2028,5', '0999', '1899', 'M22', '20280']) {
       expect(meterBody({ ...emptyMeterForm(), name: 'K', calibratedUntil: bad }, null)).toMatchObject({ error: vierstellig })
     }
   })

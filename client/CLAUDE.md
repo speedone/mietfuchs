@@ -143,6 +143,12 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   monthText.ts (S14). Popover nur über `usePopover` ([popover.tsx](src/components/popover.tsx), Portal
   im nächsten `<dialog>` bzw. `body`; S12). Bekannte Grenze: ohne `showPopover` (alte Safari/Firefox)
   stimmt die Lage im einfahrenden Seitenfenster nicht.
+- **Ein reines Jahr ist ein Jahresfeld** ([YearField.tsx](src/components/YearField.tsx)): Textfeld mit
+  `inputMode="numeric"` und ‹ › zum Blättern (leer ab dem Jahr von `today`, Grenzen `YEAR_MIN`/`YEAR_MAX`
+  aus monthText.ts), **kein Raster**. `parseYearText` ([yearText.ts](src/yearText.ts)) liest nur vierstellige
+  Jahre, ein zweistelliges ergibt eine Meldung. Wert ist der Text, wie beim Monatsfeld nie verworfen. Eine
+  Zeile, die mehrere Blöcke unterscheidet, setzt den Block als `sr-only` hinter die Beschriftung
+  (ServiceImportReview).
 
 ## Rückfragen, Seitenfenster, Mitteilungen
 

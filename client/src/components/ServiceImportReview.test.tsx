@@ -70,7 +70,7 @@ test('Nach der Zuordnung legt Übernehmen die Position an: Betrag S + Abzugszeil
   render(<ServiceImportReview x={x} file="beleg.pdf" ctx={ctx} view={view()} onDone={() => {}} />)
   fireEvent.change(select('Zuordnung „Herr Unbekannt“'), { target: { value: 'vacancy' } })
   expect(select('Zuordnung „Herr Unbekannt“').value).toBe('vacancy')
-  expect(screen.queryByLabelText('Jahr der Zahlung „Heizung und Warmwasser“ (für die Steuer)')).toBeNull()
+  expect(screen.queryByLabelText('Jahr der Zahlung (für die Steuer) „Heizung und Warmwasser“')).toBeNull()
   fireEvent.click(screen.getByText('Positionen anlegen'))
   await waitFor(() => expect(sent.find((s) => s.method === 'POST')).toEqual({
     url: '/api/costItems', method: 'POST',
@@ -98,7 +98,7 @@ test('Heizperiode über zwei Kalenderjahre: Feld „Jahr der Zahlung“ je Block
   fireEvent.change(select('Zuordnung „Herr Unbekannt“'), { target: { value: 'vacancy' } })
   fireEvent.click(screen.getByText('Positionen anlegen'))
   expect(await screen.findByText(/Bitte geben Sie das Jahr der Zahlung an/)).toBeTruthy()
-  const jahr = screen.getByLabelText('Jahr der Zahlung „Heizung und Warmwasser“ (für die Steuer)')
+  const jahr = screen.getByLabelText('Jahr der Zahlung (für die Steuer) „Heizung und Warmwasser“')
   if (!(jahr instanceof HTMLInputElement)) throw new Error('kein Eingabefeld')
   fireEvent.change(jahr, { target: { value: '2026' } })
   fireEvent.click(screen.getByText('Positionen anlegen'))
