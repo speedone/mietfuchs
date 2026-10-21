@@ -130,3 +130,9 @@ test('Karte „Objekt“ zum Lesen: Verordnung mit Geltung, abweichende Angaben 
   expect(rows).toContainEqual({ label: 'Zahlungsfrist', value: '14 Tage' })
   expect(propertySummary({ ...OBJEKT, iban: 'DE00 3333' })).toContainEqual({ label: 'IBAN', value: 'DE00 3333 (vermutlich falsch eingetragen, bitte prüfen)' })
 })
+
+test('Karte „Objekt“ zum Lesen: ein leerer Text heißt „keine“, nicht „wie in den Einstellungen“', () => {
+  const rows = propertySummary({ ...OBJEKT, landlordName: '', iban: '' })
+  expect(rows).toContainEqual({ label: 'Vermieter', value: 'keine' })
+  expect(rows).toContainEqual({ label: 'IBAN', value: 'keine' })
+})

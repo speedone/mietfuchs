@@ -75,7 +75,7 @@ export default function PropertyCard() {
   }
 
   return (
-    <Card title="Objekt" aside={<button className="btn secondary" onClick={open}>Bearbeiten</button>}>
+    <Card title="Objekt" aside={<button className="btn secondary" onClick={open}>Bearbeiten{' '}<span className="sr-only">(Objekt)</span></button>}>
       <dl className="m-0 grid gap-x-8 gap-y-3 sm:grid-cols-2">
         {propertySummary(property).map((r) => (
           <div key={r.label}>
@@ -92,7 +92,6 @@ export default function PropertyCard() {
       )}
       {form && (
         <Drawer
-          key={property.id}
           open
           title="Objekt bearbeiten"
           width={640}

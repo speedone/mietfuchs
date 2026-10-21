@@ -77,7 +77,7 @@ export default function NewPropertyDrawer({ open, onClose }: { open: boolean; on
 
   return (
     <Drawer
-      open={draft !== null}
+      open={open && draft !== null}
       title="Weiteres Objekt anlegen"
       onClose={() => { if (!creating) onClose() }}
       onSubmit={() => void create()}

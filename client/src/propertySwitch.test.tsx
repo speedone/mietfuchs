@@ -156,7 +156,7 @@ test('Esc in der Rückfrage bricht nur den Wechsel ab, der Dialog darunter bleib
 test('Objektkarte: eine ungespeicherte Änderung im Seitenfenster zählt als offenes Formular', async () => {
   render(<App />)
   fireEvent.click(await screen.findByRole('button', { name: /Stammdaten/ }))
-  fireEvent.click(await screen.findByRole('button', { name: 'Bearbeiten' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Bearbeiten (Objekt)' }))
   fireEvent.click(await screen.findByLabelText(/Für dieses Objekt abweichend/))
   fireEvent.change(screen.getByLabelText(/^IBAN/), { target: { value: 'DE02120300000000202051' } })
   switchTo('objekt-2')

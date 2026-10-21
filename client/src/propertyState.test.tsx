@@ -52,7 +52,7 @@ const objekt = (extra: Partial<Property> = {}): Property => ({
 async function stateSelect(): Promise<HTMLSelectElement> {
   render(<App />)
   fireEvent.click(await screen.findByRole('button', { name: /Stammdaten/ }))
-  fireEvent.click(await screen.findByRole('button', { name: 'Bearbeiten' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Bearbeiten (Objekt)' }))
   const el = await within(screen.getByRole('dialog', { name: 'Objekt bearbeiten' })).findByLabelText(/Bundesland \(für Fristen und Feiertage\)/)
   if (!(el instanceof HTMLSelectElement)) throw new Error('keine Auswahl')
   return el

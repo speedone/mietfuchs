@@ -373,7 +373,7 @@ test('Objekt: eine gespeicherte ungültige IBAN steht als Hinweis da und blockie
   page()
   // Schon die Karte sagt es, ohne das Fenster zu öffnen.
   expect(await screen.findByText(/DE00 3333 \(vermutlich falsch eingetragen, bitte prüfen\)/, undefined, SLOW)).toBeTruthy()
-  fireEvent.click(screen.getByRole('button', { name: 'Bearbeiten' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Bearbeiten (Objekt)' }))
   const dialog = screen.getByRole('dialog', { name: 'Objekt bearbeiten' })
   expect(within(dialog).getByText(/^Die gespeicherte IBAN ist vermutlich falsch eingetragen\./)).toBeTruthy()
   fireEvent.change(within(dialog).getByLabelText('Adresse'), { target: { value: 'Weg 9' } })
@@ -384,7 +384,7 @@ test('Objekt: eine gespeicherte ungültige IBAN steht als Hinweis da und blockie
 test('Objekt: eine neue ungültige IBAN wird nicht gespeichert, eine gültige normiert', async () => {
   propertyIban = 'DE89370400440532013000'
   page()
-  fireEvent.click(await screen.findByRole('button', { name: 'Bearbeiten' }, SLOW))
+  fireEvent.click(await screen.findByRole('button', { name: 'Bearbeiten (Objekt)' }, SLOW))
   const feld = await screen.findByDisplayValue('DE89 3704 0044 0532 0130 00', undefined, SLOW)
   fireEvent.change(feld, { target: { value: 'DE89 3704 0044 0532 0130 01' } })
   fireEvent.blur(feld)

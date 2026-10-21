@@ -160,11 +160,12 @@ export function propertySummary(p: Property): { label: string; value: string }[]
   if (p.landlordName === null && p.iban === null && p.paymentDeadlineDays === null) {
     return [...rows, { label: 'Vermieter und Bankverbindung', value: 'wie in den Einstellungen' }]
   }
-  const preset = 'wie in den Einstellungen'
+  // `null` heißt Vorgabe aus den Einstellungen, `''` bewusst keine (nur aus Altbestand oder Import, siehe propertyBody).
+  const shown = (v: string | null, show: (v: string) => string): string => (v === null ? 'wie in den Einstellungen' : v === '' ? 'keine' : show(v))
   return [
     ...rows,
-    { label: 'Vermieter', value: p.landlordName ?? preset },
-    { label: 'IBAN', value: p.iban ? `${ibanToInput(p.iban)}${storedIbanInvalid(p.iban) ? ' (vermutlich falsch eingetragen, bitte prüfen)' : ''}` : preset },
-    { label: 'Zahlungsfrist', value: p.paymentDeadlineDays === null ? preset : `${p.paymentDeadlineDays} Tage` },
+    { label: 'Vermieter', value: shown(p.landlordName, (v) => v) },
+    { label: 'IBAN', value: shown(p.iban, (v) => `${ibanToInput(v)}${storedIbanInvalid(v) ? ' (vermutlich falsch eingetragen, bitte prüfen)' : ''}`) },
+    { label: 'Zahlungsfrist', value: p.paymentDeadlineDays === null ? 'wie in den Einstellungen' : `${p.paymentDeadlineDays} Tage` },
   ]
 }

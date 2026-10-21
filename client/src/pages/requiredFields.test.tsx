@@ -94,7 +94,7 @@ test('Wohnung: Name und Wohnfläche', async () => {
 
 test('Objekt (Seitenfenster „Objekt bearbeiten“): Bezeichnung', async () => {
   shell(<Stammdaten units={UNITS} tenancies={TENANCIES} settings={null} reload={async () => {}} />)
-  fireEvent.click(await screen.findByRole('button', { name: 'Bearbeiten' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Bearbeiten (Objekt)' }))
   await requiredMatchesMissing(dialog(), () => fireEvent.click(within(dialog()).getByRole('button', { name: /^Speichern$/ })), ['Bezeichnung'])
 })
 
