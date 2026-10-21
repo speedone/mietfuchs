@@ -349,7 +349,7 @@ export function billMissingText(f: MissingPowerFinding, label: string): string {
 export function generationPowerText(f: MissingPowerFinding, label: string, betrkvSince: string, hkvSince: string | null): string {
   const device = f.energy === 'heatPump' ? 'Wärmepumpe' : 'Elektrokessel'
   const ofDevice = f.energy === 'heatPump' ? 'der Wärmepumpe' : 'des Elektrokessels'
-  // Recht H-1 (Nachprüfung fc20455): „soweit sie für die Anlage gilt“, denn bei freien Schlüsseln, § 2 und § 11
+  // Recht H-1 (Nachprüfung 10ee3c0): „soweit sie für die Anlage gilt“, denn bei freien Schlüsseln, § 2 und § 11
   // HeizkostenV gilt sie nicht immer; die Kernaussage trägt § 2 Nr. 4 Buchst. a BetrKV.
   const hkv = hkvSince === null ? '' : `, ebenso § 7 Abs. 2 HeizkostenV seit dem ${hkvSince}, soweit die Heizkostenverordnung für die Anlage gilt (§ 8 Abs. 2 HeizkostenV verweist darauf)`
   return `${plantText(f)} (${device}) ist für ${label} keine Rechnung über den Strom erfasst, den sie zur Wärmeerzeugung verbraucht (keine Heizposition mit dem Teil „Brennstoff/Energie“), und beim Allgemeinstrom ${generalsText(f)} steht kein Abzug dafür. ` +

@@ -157,7 +157,7 @@ test('B: Wärmepumpe, nur Wartung, Allgemeinstrom 2025: ein Hinweis (hint) mit b
   assert.equal(n.title, 'Strom zur Wärmeerzeugung womöglich im Allgemeinstrom')
   assert.deepEqual(n.subject, { kind: 'costItem', id: 'hs' })
   assert.match(n.text, /^Für die Heizanlage „Wärmepumpe“ \(Wärmepumpe\) ist für 2025 keine Rechnung über den Strom erfasst, den sie zur Wärmeerzeugung verbraucht/)
-  // Recht H-1 (Nachprüfung fc20455): „soweit die Heizkostenverordnung für die Anlage gilt“.
+  // Recht H-1 (Nachprüfung 10ee3c0): „soweit die Heizkostenverordnung für die Anlage gilt“.
   assert.match(n.text, /Diesen Strom zählt § 2 Nr\. 4 Buchst\. a BetrKV seit dem 01\.01\.2024 zu den Heizkosten, ebenso § 7 Abs\. 2 HeizkostenV seit dem 01\.10\.2024, soweit die Heizkostenverordnung für die Anlage gilt \(§ 8 Abs\. 2 HeizkostenV verweist darauf\)\./)
   assert.match(n.text, /Dass er dann aus dem Allgemeinstrom herauszurechnen ist, ist eine Auslegung von Mietfuchs: Entschieden hat der Bundesgerichtshof das für den Betriebsstrom/)
   // K-3: die Schätzung als Auslegung, mit dem eigenen Zähler als sicherem Weg.
