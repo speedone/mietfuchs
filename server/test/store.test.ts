@@ -15,6 +15,7 @@ import os from 'node:os'
 import path from 'node:path'
 import type { Tenancy } from '../../shared/types.ts'
 import type { Db } from '../src/store.ts'
+import { newId } from '../src/ids.ts'
 
 async function freshStore(dataDir: string): Promise<typeof import('../src/store.ts')> {
   const prevEnv = process.env.NKA_DATA_DIR
@@ -181,4 +182,25 @@ test('Ohne db.json entsteht ein leerer Bestand mit den Vorgabewerten', async () 
     assert.equal(db.settings.paymentDeadlineDays, 30)
     assert.equal(db.settings.ai?.text.provider, 'ollama')
   })
+})
+
+// Testgriff NKA_TEST_IDS (#346 Schritt 12): Mit `seq` vergibt der Server fortlaufende Kennungen, damit der Beispielbestand
+// für README-Bilder und Browserlauf in jedem Lauf dieselben Kennungen hat (bei Gleichstand entscheidet die Kennung über
+// den Rest-Cent). Ohne ihn zufällige; das Format (16 Hexziffern) ist in beiden Fällen dasselbe.
+test('NKA_TEST_IDS=seq: fortlaufende Kennungen im selben Format, ohne den Griff zufällige', () => {
+  const before = process.env.NKA_TEST_IDS
+  try {
+    process.env.NKA_TEST_IDS = 'seq'
+    const a = newId()
+    const b = newId()
+    assert.match(a, /^[0-9a-f]{16}$/)
+    assert.equal(BigInt(`0x${b}`) - BigInt(`0x${a}`), 1n)
+    delete process.env.NKA_TEST_IDS
+    const c = newId()
+    assert.match(c, /^[0-9a-f]{16}$/)
+    assert.notEqual(BigInt(`0x${c}`) - BigInt(`0x${b}`), 1n)
+  } finally {
+    if (before === undefined) delete process.env.NKA_TEST_IDS
+    else process.env.NKA_TEST_IDS = before
+  }
 })
