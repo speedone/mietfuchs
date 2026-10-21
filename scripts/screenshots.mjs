@@ -135,6 +135,12 @@ async function shoot(browser, base) {
   const link = await action.locator('option[value^="link:"]').first().getAttribute('value')
   if (!link) throw new Error('Die Auswertung bietet kein Verknüpfen an.')
   await action.selectOption(link)
+  // Die Tabelle passt bei 1440 px ohne seitliches Rollen (M10 aus #341)
+  const fits = await review.locator('.assessment-table').evaluate((table) => {
+    const wrap = table.parentElement
+    return wrap ? wrap.scrollWidth <= wrap.clientWidth + 1 : true
+  })
+  if (!fits) throw new Error('Auswertung prüfen: Die Tabelle muss bei 1440 px seitlich rollen (M10 aus #341).')
   await review.getByRole('button', { name: 'Vorschau' }).click()
   await review.locator('[aria-label="Vorschau"]').waitFor()
   await tall(1000)

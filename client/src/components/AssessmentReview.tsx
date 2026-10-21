@@ -2,7 +2,7 @@
 // Vorschlag und Kandidaten, die Vorschau des Servers und das Buchen genau dieser Vorschau.
 // Schnellerfassung und KI auf der Kostenseite benutzen sie; der Posteingang führt mit „Weiter
 // prüfen“ in die Schnellerfassung. Die Entscheidungslogik steht in client/src/assessment.ts.
-import { Fragment, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { AssessmentView, BookingPreview, Unit } from '../types'
 import { errorText, fmtEuro } from '../api'
 import {
@@ -179,28 +179,26 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
           Der Arbeitskostenanteil nach § 35a EStG stand nur als ein Betrag auf der Rechnung. Mietfuchs hat ihn nach Beträgen auf die Positionen verteilt; Fahrtkosten und Material gehören streng genommen nicht dazu.
         </div>
       )}
-      <Table className="assessment-table">
+      <Table className="assessment-table row-groups">
         <thead>
           <tr>
             <th><span className="sr-only">Ampel</span></th>
-            <th>Was geschieht?</th>
             <th>Beschreibung</th>
             <th>Kostenart</th>
             <th>Umlageschlüssel</th>
-            <th className="num">Betrag €</th>
-            <th className="num">§35a-Lohn €</th>
+            <th className="num">Betrag €<br />§35a-Lohn €</th>
           </tr>
         </thead>
-        <tbody>
           {a.lines.map((line) => {
             const row = shown[line.idx]
             if (!row) return null
             if (line.state === 'created' || line.state === 'linked') {
               return (
-                <tr key={line.idx}>
+                <tbody key={line.idx}><tr>
                   <td><span className="ampel gruen" /></td>
-                  <td>
-                    {line.state === 'created' ? `✓ angelegt als „${line.itemDescription ?? '?'}“` : `✓ verknüpft mit „${line.itemDescription ?? '?'}“`}
+                  <td colSpan={3}>
+                    {line.description} · {line.category}
+                    <div className="muted">{line.state === 'created' ? `✓ angelegt als „${line.itemDescription ?? '?'}“` : `✓ verknüpft mit „${line.itemDescription ?? '?'}“`}</div>
                     {line.state === 'linked' && (
                       <label className="checkline badge-next">
                         <input type="checkbox" aria-label={`„${line.description}“ lösen`} checked={row.action === 'release'}
@@ -208,21 +206,26 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
                       </label>
                     )}
                   </td>
-                  <td>{line.description}</td>
-                  <td>{line.category}</td>
-                  <td />
-                  <td className="num">{line.amountCents === null ? '—' : fmtEuro(line.amountCents)}</td>
-                  <td className="num">{line.labor35aCents === null ? '—' : fmtEuro(line.labor35aCents)}</td>
-                </tr>
+                  <td className="num">
+                    {line.amountCents === null ? '—' : fmtEuro(line.amountCents)}
+                    <div className="muted">{line.labor35aCents === null ? '—' : fmtEuro(line.labor35aCents)}</div>
+                  </td>
+                </tr></tbody>
               )
             }
             const s = line.suggestion
             return (
-              <Fragment key={line.idx}>
+              <tbody key={line.idx}>
+                {/* Zwei Zeilen je Position (M10 aus #341): „Was geschieht?“ mit den langen Einträgen zum Verknüpfen über drei
+                    Spalten, darunter die Felder der Position. In einer Zeile mit sieben Spalten musste die Tabelle bei
+                    1440 px seitlich scrollen. Ampel und Betrag stehen in der ersten Zeile wie vorher neben der Wahl, der Lohn darunter.
+                    Je Position ein <tbody>, damit die zwei Zeilen als Gruppe erkennbar sind (row-groups, Durchsicht von M10). */}
                 <tr>
-                  <td><span className={`ampel ${s?.level ?? 'gruen'}`} title={s?.reasons.join('\n')} /></td>
-                  <td>
-                    <select aria-label={`Was geschieht mit „${line.description}“?`} value={row.action}
+                  <td rowSpan={2}><span className={`ampel ${s?.level ?? 'gruen'}`} title={s?.reasons.join('\n')} /></td>
+                  <td colSpan={3}>
+                    {/* Der Name der Auswahl nennt die Position; die sichtbare Frage hören Vorleser nicht doppelt */}
+                    <span className="muted" aria-hidden="true">Was geschieht? </span>
+                    <select className="select-wide" aria-label={`Was geschieht mit „${line.description}“?`} value={row.action}
                       onChange={(e) => { if (isAction(e.target.value)) patch(line.idx, { action: e.target.value }) }}>
                       {/* Eine verworfene Zeile steht als verworfen da. Wieder öffnen kennt der Server
                           nicht; anlegen oder verknüpfen lässt sie sich weiterhin. */}
@@ -236,6 +239,9 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
                       {line.state !== 'dismissed' && <option value="dismiss">Verwerfen</option>}
                     </select>
                   </td>
+                  <td className="num"><input aria-label="Betrag €" value={row.amount} onChange={(e) => patch(line.idx, { amount: e.target.value })} className="input-num" /></td>
+                </tr>
+                <tr>
                   <td><input aria-label="Beschreibung" value={row.description} onChange={(e) => patch(line.idx, { description: e.target.value })} className="input-wide" /></td>
                   <td>
                     <select aria-label="Kostenart" value={row.category}
@@ -244,13 +250,11 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
                     </select>
                   </td>
                   <td><AiKeyCell position={row} units={units} onChange={(p) => patch(line.idx, p)} /></td>
-                  <td className="num"><input aria-label="Betrag €" value={row.amount} onChange={(e) => patch(line.idx, { amount: e.target.value })} className="input-num" /></td>
                   <td className="num"><input aria-label="§35a-Lohn €" value={row.labor35a} onChange={(e) => patch(line.idx, { labor35a: e.target.value })} className="input-num" placeholder="—" /></td>
                 </tr>
-              </Fragment>
+              </tbody>
             )
           })}
-        </tbody>
       </Table>
       {/* Begründungen und Positionen, die im Formular gepflegt werden, stehen unter der Tabelle:
           in einer Zeile scrollten sie auf dem Handy mit (Durchsicht zu #170). */}
