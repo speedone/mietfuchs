@@ -16,6 +16,7 @@ import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
 import { useFocusTarget, useScrollToFocus, type FocusProps } from '../focus'
 import { MONTH_SHORT } from '../monthText'
+import { NoticeBox } from '../components/Notice'
 
 const MONTHS = MONTH_SHORT
 
@@ -158,7 +159,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
           </button>
         }
       />
-      {error && <div className="error">{error}</div>}
+      {error && <NoticeBox level="error" action={error} />}
 
       {/* Das Abrechnungsjahr wählt die Seitenleiste (#346 Schritt 8). Weicht der Zeitraum vom Kalenderjahr ab, ist
           das Kalenderjahr des Mietkontos eine andere Größe und wird hier gewählt (#208). */}
@@ -236,7 +237,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
               <input value={form.note} placeholder="z. B. Überweisung, Abrechnung 2025" onChange={(e) => setForm({ ...form, note: e.target.value })} />
             </Field>
           </div>
-          {paymentFormHints(form).map((h) => <p className="hint" key={h}>{h}</p>)}
+          {paymentFormHints(form).map((h) => <NoticeBox key={h} level="hint" action={h} />)}
         </Drawer>
       )}
 
@@ -277,10 +278,10 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
             </div>
 
             {noRent ? (
-              <div className="notice">
+              <NoticeBox level="warning">
                 Keine Kaltmiete hinterlegt — unter <em>Stammdaten → Mietverhältnis bearbeiten</em> die Kaltmiete-Staffel
                 eintragen, dann erscheint hier das Soll. (Reine NK-Vorauszahlungen zählen ebenfalls ins Soll.)
-              </div>
+              </NoticeBox>
             ) : (
               <>
                 <div className="rent-grid">

@@ -15,6 +15,7 @@ import {
   type SeparateChoice,
 } from '../heatingPeriodForm'
 import { ErrorSummary, useFormError } from './ErrorSummary'
+import { NoticeBox } from './Notice'
 
 // Der Abschnitt „Zeitraum der Heizung“ einer Anlage in der Karte „Heizung“ (Heizung PR 5, Entwurf 11.2
 // Schritt 3): Zeitraum wechseln mit Vorschau, getrennte Heizkostenabrechnung ein- und ausschalten mit
@@ -310,7 +311,7 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
           )}
           {periodPreview && periodAnswers && (
             <div className="preview">
-              {periodPreview.blocked.map((b) => <div key={b} className="error">{b}</div>)}
+              {periodPreview.blocked.map((b) => <NoticeBox key={b} level="error" action={b} />)}
               {/* Laienprobe B12, B13: je Position die Heizperiode mit Tagen, vorbelegt mit der, die im bisherigen Zeitraum endet. */}
               {periodPreview.moves.map((m) => (
                 <div key={m.costItemId}>
@@ -391,7 +392,7 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
           )}
           {separatePreview && separateAnswers && (
             <div className="preview">
-              {separatePreview.blocked.map((b) => <div key={b} className="error">{b}</div>)}
+              {separatePreview.blocked.map((b) => <NoticeBox key={b} level="error" action={b} />)}
               {separatePreview.share && <p className="muted">{`Vorbelegt mit dem Anteil der Heizkosten: ${(separatePreview.share.permille / 10).toLocaleString('de-DE')} % (${separatePreview.share.source}).`}</p>}
               {separatePreview.steps.flatMap((s) => s.rows.map((r) => {
                 const key = `${s.tenancyId}|${r.from}`

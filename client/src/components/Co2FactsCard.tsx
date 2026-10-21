@@ -14,6 +14,7 @@ import { co2DistrictEtsNew } from '../../../shared/law/co2kostaufg.ts'
 import { germanDate, onlyVersion } from '../../../shared/law/register.ts'
 import type { Co2Restriction, HeatingEnergy, HeatingMethod, HeatingPeriodView } from '../types'
 import { ErrorSummary, useFormError } from './ErrorSummary'
+import { NoticeBox } from './Notice'
 
 type Facts = { id: string; energy: HeatingEnergy; method: HeatingMethod; nonResidential: boolean; restriction: Co2Restriction; districtEtsNew: boolean }
 
@@ -82,7 +83,7 @@ export default function Co2FactsCard({ plant, view, servedAreaM2, onSaved }: { p
           {RESTRICTION_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
       </label>
-      {restriction !== 'none' && <p className="notice">Darauf können Sie sich nur berufen, wenn Sie den Mietern die Umstände nachweisen (§ 9 Abs. 3 CO2KostAufG).</p>}
+      {restriction !== 'none' && <NoticeBox level="warning" action={<>Darauf können Sie sich nur berufen, wenn Sie den Mietern die Umstände nachweisen (§ 9 Abs. 3 CO2KostAufG).</>} />}
       {plant.energy === 'districtHeating' && (
         <label className="checkline">
           <input type="checkbox" checked={districtEtsNew} disabled={draft.saving} onChange={(e) => edit({ districtEtsNew: e.target.checked })} />

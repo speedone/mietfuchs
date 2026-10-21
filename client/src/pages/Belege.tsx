@@ -19,6 +19,7 @@ import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
 import DraftActions from '../components/DraftActions'
 import { useDraft } from '../useDraft'
+import { NoticeBox } from '../components/Notice'
 
 const fmtSize = (b: number) =>
   b >= 1024 * 1024 ? `${(b / 1024 / 1024).toLocaleString('de-DE', { maximumFractionDigits: 1 })} MB` : `${Math.max(1, Math.round(b / 1024))} kB`
@@ -167,7 +168,7 @@ function FolderPacks({ propertyId, propertyName, year, chosen, rules, uploads, c
           Für die Belegeinsicht: die Belege der umgelegten Positionen in der Reihenfolge der Abrechnung, mit einem Deckblatt
           „Position → Beleg, Seite“. Seit 2025 dürfen Sie die Belege elektronisch bereitstellen (§ 556 Abs. 4 BGB).
         </p>
-        {problem && <div className="error">{problem}</div>}
+        {problem && <NoticeBox level="error" action={problem} />}
         {!plan ? (
           !problem && <div className="muted">Lädt die Abrechnung …</div>
         ) : (
@@ -186,13 +187,13 @@ function FolderPacks({ propertyId, propertyName, year, chosen, rules, uploads, c
               </label>
             )}
             {individual > 0 && (
-              <p className="notice">
+              <NoticeBox level="warning" action={<>
                 Belege zu „Einzelbeträge je Mieter“ (etwa die Abrechnung eines Messdienstes), zu einer Direktzuordnung oder zu einer
                 Position mit Teilnehmern betreffen nur einzelne Mieter und nennen oft deren Namen und Verbrauchswerte. Ein Mieter darf
                 auch sie einsehen, ohne ein besonderes Interesse darzulegen (BGH, Urteil vom 07.02.2018, VIII ZR 189/17). Weil die Mappe
                 an alle Mieter des Objekts geht, legen Sie sie am besten nur dem bei, der danach fragt, und prüfen vorher, ob Namen darauf
                 stehen müssen. Ohne Haken stehen diese Positionen im Deckblatt mit „auf Anfrage“.
-              </p>
+              </>} />
             )}
             <button className="btn" onClick={() => void create()} disabled={busy || plan.entries.length === 0}>
               {busy ? 'Wird erstellt …' : 'PDF erstellen'}
@@ -594,9 +595,9 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
         title="Belegordner"
         subtitle="Ihre Belege wie im Ordner aus Papier: je Objekt und Jahr, mit einem Register je Kostenart. Neue Belege kommen in den Posteingang."
       />
-      {error && <div className="error">{error}</div>}
+      {error && <NoticeBox level="error" action={error} />}
       {amountCheck && (
-        <div className="notice stack no-print" role="status" aria-label="Betrag prüfen">
+        <div role="status" aria-label="Betrag prüfen"><NoticeBox level="warning" className="stack no-print">
           Beleg an „{amountCheck.item.description}“ angehängt. Betrag der Position: <strong>{fmtEuro(amountCheck.item.amountCents)}</strong>.
           {amountCheck.closed && <div>{closedPeriodNotice(labelOfKey(rulesOf(properties.find((p) => p.id === amountCheck.item.propertyId)), amountCheck.item.period))}</div>}
           {' '}Stimmt er mit dem Beleg überein? Eine aus dem Vorjahr übernommene Position trägt oft noch einen geschätzten Betrag.{' '}
@@ -626,12 +627,12 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
           </div>
           )}
           {amountCheck.problem && (
-            <div className="error">
+            <NoticeBox level="error">
               {amountCheck.problem}
               {amountCheck.form && onOpenItem && <> <button className="btn small" onClick={() => { const it = amountCheck.item; leaveCheck(() => onOpenItem(it)) }}>Position öffnen</button></>}
-            </div>
+            </NoticeBox>
           )}
-        </div>
+        </NoticeBox></div>
       )}
 
       <div className="card no-print">

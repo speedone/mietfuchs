@@ -382,7 +382,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
       <div className="no-print">
         <PageHeader title="Abrechnung" subtitle={'Die fertige Nebenkostenabrechnung pro Mieter — als PDF speichern über „Drucken“.'} />
       </div>
-      {error && <div className="error">{error}</div>}
+      {error && <NoticeBox level="error" action={error} />}
 
       {/* Im leeren Zeitraum gibt es nichts zu drucken (N12) */}
       {!(empty && choices.length === 0) && (
@@ -489,11 +489,10 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
         const view = deviationView(data.deviation)
         if (!view) return null
         return (
-          <div className="notice no-print notice-item">
-            <div className="notice-head"><strong>{view.title}</strong></div>
+          <NoticeBox level="warning" title={view.title} className="no-print">
             <div>{view.intro}</div>
             {view.lines.length > 0 && <ul className="deviation-list">{view.lines.map((l) => <li key={l.id}>{l.text}</li>)}</ul>}
-          </div>
+          </NoticeBox>
         )
       })()}
       {/* Hinweise der Berechnung (#346, Schritt 10, M8): Stufe und Titel, ein Satz „was tun“, „Hier beheben →“

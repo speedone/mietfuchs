@@ -104,3 +104,11 @@ test('ein Sprung zu einem Begriff klappt ihn auf', async () => {
   // Der Fokus liegt auf der Zeile zum Auf- und Zuklappen, nicht auf dem Kasten (Durchsicht von N10)
   expect(document.activeElement?.tagName).toBe('SUMMARY')
 })
+
+// Durchsicht der Hinweiskästen: Ein leeres Suchergebnis ist keine Warnung.
+test('passt nichts zur Suche, steht das als schlichter Satz, nicht als Warnung', () => {
+  render(<Hilfe onNavigate={() => {}} />)
+  fireEvent.change(screen.getByLabelText(/Suchen/), { target: { value: 'gibt es nicht' } })
+  expect(screen.getByText(/Keine Anleitung passt/).closest('.notice-item')).toBeNull()
+  expect(screen.getByText(/Kein Begriff passt/).closest('.notice-item')).toBeNull()
+})

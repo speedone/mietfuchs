@@ -38,6 +38,7 @@ import { billingEnergy } from '../../../shared/heatDelivery.ts'
 import { co2FirstPeriodStart } from '../../../shared/law/co2kostaufg.ts'
 import { servesUnit } from '../../../shared/heatingPeriod.ts'
 import { germanDate } from '../../../shared/law/register.ts'
+import { NoticeBox } from '../components/Notice'
 
 // `heating`: der Ausweis der Abrechnung des Zeitraums (Heizung PR 10), für die eigene Heizkostenabrechnung.
 // `findings`: die Befunde der CO₂-Prüfung je Anlage und Heizperiode, je Lieferung (Heizung PR 17, #246 R-K7).
@@ -116,7 +117,7 @@ export default function Heizkosten({ units, tenancies, onTenanciesChanged }: { u
         title={`Heizkosten ${period.label}`}
         subtitle="Je Heizperiode die Angaben aus der Heizkostenabrechnung: CO₂-Kosten, Warmwasser und Lieferungen."
       />
-      {error && <div className="error">{error}</div>}
+      {error && <NoticeBox level="error" action={error} />}
       {data !== null && data.plants.length === 0 && (
         <div className="card"><p>Legen Sie zuerst in den Stammdaten unter „Heizung“ eine Heizanlage an.</p></div>
       )}

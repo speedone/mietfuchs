@@ -10,7 +10,7 @@ import { api, errorText, fmtDate } from '../api'
 import { usePeriod } from '../period'
 import { useProperty, withProperty } from '../property'
 import Drawer from '../components/Drawer'
-import { CalcNotice } from '../components/Notice'
+import { CalcNotice, NoticeBox } from '../components/Notice'
 import { useSaving } from '../useSaving'
 import { CardHeader } from '../components/Card'
 import PageHeader from '../components/PageHeader'
@@ -174,7 +174,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
         // Die Seitenaktion steht im Seitenkopf wie „+ Kostenposition anlegen“ (#346 Schritt 7b); vorher unten in der Karte.
         actions={<button className="btn" onClick={() => { meterErrors.clear(); setMarkedYear(''); setMeterForm(emptyMeterForm()) }}>+ Zähler anlegen</button>}
       />
-      {error && <div className="error">{error}</div>}
+      {error && <NoticeBox level="error" action={error} />}
 
       <div className="card">
         <h2>Zähler</h2>

@@ -65,12 +65,12 @@ export default function Hilfe({ onNavigate, focusTerm, onFocusTermDone }: { onNa
       </div>
 
       <h2 className="help-section">Anleitungen</h2>
-      {shownGuides.length === 0 && <div className="notice">Keine Anleitung passt zu „{q}“.</div>}
+      {shownGuides.length === 0 && <p className="muted">Keine Anleitung passt zu „{q}“.</p>}
       {/* Bei einer Suche aufgeklappt: Sonst sähe man nicht, wo das gesuchte Wort steht. */}
       {shownGuides.map((g) => <GuideCard key={g.id} guide={g} open={q !== ''} onNavigate={jump} />)}
 
       <h2 className="help-section">Begriffe</h2>
-      {shownTerms.length === 0 && <div className="notice">Kein Begriff passt zu „{q}“.</div>}
+      {shownTerms.length === 0 && <p className="muted">Kein Begriff passt zu „{q}“.</p>}
       {/* Zugeklappt mit Buchstabenleiste (N10 aus #341): aufgeklappt war die Liste rund 29.000 px lang */}
       {letters.length > 1 && (
         <nav aria-label="Begriffe nach Anfangsbuchstabe" className="flex flex-wrap gap-2 mb-3">

@@ -21,6 +21,7 @@ import PageHeader from '../components/PageHeader'
 import EmptyState from '../components/EmptyState'
 import { startStep } from '../emptyStock'
 import { ibanHintTitle, invalidIbans } from '../ibanCheck'
+import { NoticeBox } from '../components/Notice'
 
 type Props = {
   units: Unit[]
@@ -331,7 +332,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
         }
       />
 
-      {error && <div className="error">{error}</div>}
+      {error && <NoticeBox level="error" action={error} />}
 
       {consentPending(settings) && <UpdateConsent onAnswered={reload} />}
 
@@ -439,8 +440,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
       )}
 
       {ibanFindings.length > 0 && (
-        <div className="hint notice-item">
-          <div className="notice-head"><strong>{ibanHintTitle(ibanFindings.length)}</strong></div>
+        <NoticeBox level="hint" title={ibanHintTitle(ibanFindings.length)}>
           <div>Prüfziffer, Länge oder Länderkennung passen nicht. Bitte vergleichen Sie sie mit dem Kontoauszug oder dem Mietvertrag; geändert wird nichts, bis Sie es tun.</div>
           <ul className="iban-hint-list">
             {ibanFindings.map((f) => (
@@ -450,7 +450,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
               </li>
             ))}
           </ul>
-        </div>
+        </NoticeBox>
       )}
     </>
   )

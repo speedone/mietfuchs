@@ -13,6 +13,7 @@ import { useOpenForm, useProperty, withProperty } from '../property'
 import { AiProgressBadge } from '../components/AiProgress'
 import { plural } from '../../../shared/wording.ts'
 import PageHeader from '../components/PageHeader'
+import { NoticeBox } from '../components/Notice'
 
 // Sichtprüfung E30: Die Kennzeichnung offener Zeilen trägt die Farbe der schlechtesten Ampel,
 // nicht Grün für „bitte prüfen“.
@@ -331,7 +332,7 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
           {ai.notice ?? 'Alles bleibt lokal.'}
         </>}
       />
-      {error && <div className="error">{error}</div>}
+      {error && <NoticeBox level="error" action={error} />}
       {pending && <div className="warn">{pending}</div>}
 
       <div className="card no-print">
@@ -402,7 +403,7 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
               )}
             </div>
 
-            {entry.status === 'fehler' && <div className="error">{entry.error}</div>}
+            {entry.status === 'fehler' && <NoticeBox level="error" action={entry.error} />}
 
             {/* ---------- Zählerstand ---------- */}
             {entry.status === 'fertig' && entry.data.kind === 'zaehler' && entry.data.reading && (

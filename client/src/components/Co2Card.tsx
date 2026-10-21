@@ -9,6 +9,7 @@ import { useOpenWhenDiffers } from '../useDraft'
 import { CO2_ANSWER_OPTIONS, CO2_EXAMPLE, CO2_NOT_A_SIGN, CO2_QUESTION, co2Body, co2Labels, co2ToForm, probeLine, type Co2Form } from '../co2Form'
 import type { HeatingPeriodView, Tenancy } from '../types'
 import { ErrorSummary, useFormError } from './ErrorSummary'
+import { NoticeBox } from './Notice'
 
 type TextKey = 'usersTotal' | 'vacancyTotal' | 'kgPerM2' | 'emissionsKg' | 'serviceArea' | 'landlordPercent' | 'totalCo2' | 'landlordCo2' | 'selfLandlord' | 'unitsCount' | 'fuelGross' | 'fuelNet'
 
@@ -106,7 +107,7 @@ export default function Co2Card({ view, tenancies, unitsCount, hasSelfUsed = fal
       <p className="muted">{CO2_EXAMPLE} · <Term id="co2Deducted">Was ist die Abzugszeile?</Term></p>
       <p className="muted">{CO2_NOT_A_SIGN}</p>
       {form.answer === 'unsplit' && (
-        <p className="notice">Ohne Aufteilung darf jeder Mieter seinen Anteil an den Heizkosten kürzen; die Abrechnung nennt die Beträge. Bitten Sie {homeowners ? 'die Verwaltung der Gemeinschaft' : 'den Messdienst'} um eine Abrechnung mit CO₂-Aufteilung.</p>
+        <NoticeBox level="warning" action={<>Ohne Aufteilung darf jeder Mieter seinen Anteil an den Heizkosten kürzen; die Abrechnung nennt die Beträge. Bitten Sie {homeowners ? 'die Verwaltung der Gemeinschaft' : 'den Messdienst'} um eine Abrechnung mit CO₂-Aufteilung.</>} />
       )}
       {service && (
         <>
@@ -141,12 +142,12 @@ export default function Co2Card({ view, tenancies, unitsCount, hasSelfUsed = fal
           </div>
           {/* Laienprobe B21: die Berechnungsgrundlagen der Einstufung (§ 7 Abs. 3 CO2KostAufG). */}
           {(form.emissionsKg.trim() === '' || form.serviceArea.trim() === '') && (
-            <p className="notice">
+            <NoticeBox level="warning" action={<>
               Für den Ausweis in der Abrechnung mindestens nötig: der CO₂-Ausstoß insgesamt (kg) und die Wohnfläche aus der CO₂-Seite der Abrechnung.
               Aus ihnen ist der Wert je m² berechnet; die Abrechnung muss neben der Einstufung auch ihre Berechnungsgrundlagen nennen,
               sonst darf jeder Mieter seinen Anteil an den Heizkosten kürzen (§ 7 Abs. 3 und 4 CO2KostAufG). Ob ein Gericht weitere Angaben
               verlangt, ist nicht entschieden; legen Sie deshalb {homeowners ? 'die Einzelabrechnung (Heizung) Ihrer Wohnung' : 'die Abrechnung des Messdienstes'} bei.
-            </p>
+            </>} />
           )}
           {serviceItems.length > 1 && (
             <label className="field">
