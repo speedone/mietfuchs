@@ -778,7 +778,8 @@ test('S22: Navigationseinträge stehen nur in nav.ts', () => {
 // Jahreszahlen, Zeiträume oder Objektnamen anbieten (außer „Kalenderjahr“).
 const SIDEBAR_SWITCHERS: Array<[RegExp, Set<string>]> = [
   [/<(?:PeriodSelect|PeriodSelectView|PropertySwitcher)\b/, new Set(['./App.tsx', './components/PeriodSelect.tsx'])],
-  [/<Switcher\b/, new Set(['./components/PeriodSelect.tsx', './property.tsx'])],
+  // Die Musterseite zeigt den Baustein mit festen Wohnungen; sie wählt weder Objekt noch Zeitraum
+  [/<Switcher\b/, new Set(['./components/PeriodSelect.tsx', './property.tsx', './pages/Muster.tsx'])],
   [/<CalendarYearSelect\b/, new Set(['./pages/Mietkonto.tsx', './pages/Steuer.tsx'])],
 ]
 const PERIOD_OR_PROPERTY = /\bproperties\.map\b|\bswitch(?:Period|Property|Year)\b|\bcalendarYearOptions\b|\byearOptions\b|\byears\.map\b|\b(?:view|period)\.options\b/
