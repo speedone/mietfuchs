@@ -56,28 +56,26 @@ test('Nachprüfung von 47f2373: Bei Fernwärme spricht der Rat von der Fernwärm
   expect(screen.queryByText(/Gas- oder Ölrechnung/)).toBeNull()
 })
 
-// #341 M8: Der Hinweis gilt nur beim gewählten Modus „Niemand“, nicht bei der eigenen Heizkostenabrechnung. Der Weg
-// von Hand steht eingeklappt unter einem Satz, was zu tun ist.
-test('CO₂-Hinweis: bei „Niemand“ ein Satz und der Weg von Hand eingeklappt, bei eigener Abrechnung nichts', async () => {
+// #341 M8: ein Satz, was zu tun ist. Der Weg von Hand steht eingeklappt darunter, aber nur bei „Niemand“: Bei der
+// eigenen Heizkostenabrechnung gibt es keine Gutschrift mit demselben Umlageschlüssel, die Lieferung braucht es trotzdem.
+test('CO₂-Hinweis: bei „Niemand“ mit eingeklapptem Weg von Hand, bei eigener Abrechnung nur der Satz', async () => {
   render(<PeriodProvider><PropertyProvider><Heizkosten units={[]} tenancies={[]} /></PropertyProvider></PeriodProvider>)
   const action = await screen.findByText(/Tragen Sie die Gas- oder Ölrechnung unten als Lieferung ein/, undefined, { timeout: 5000 })
   const details = screen.getByText('Ohne Lieferung: CO₂-Kosten von Hand aufteilen').closest('details') as HTMLDetailsElement
   expect(details.open).toBe(false)
   expect(action.closest('details')).toBeNull()
   cleanup()
-  const calls: string[] = []
   vi.stubGlobal('fetch', async (url: string) => {
     const path = url.split('?')[0] ?? ''
-    calls.push(path)
     const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
     if (path === '/api/properties') return json([{ id: 'objekt-1', name: 'Haus', kind: 'zfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }])
     if (path === '/api/heating-plants') return json([{ ...PLANT, method: 'self' }])
     return json([])
   })
   render(<PeriodProvider><PropertyProvider><Heizkosten units={[]} tenancies={[]} /></PropertyProvider></PeriodProvider>)
-  await waitFor(() => expect(calls).toContain('/api/properties/objekt-1/degree-days'), { timeout: 5000 })
-  await new Promise((r) => setTimeout(r, 50))
-  expect(screen.queryByText(/als Lieferung ein/)).toBeNull()
+  expect(await screen.findByText(/Tragen Sie die Gas- oder Ölrechnung unten als Lieferung ein/, undefined, { timeout: 5000 })).toBeTruthy()
+  expect(screen.queryByText('Ohne Lieferung: CO₂-Kosten von Hand aufteilen')).toBeNull()
+  expect(screen.queryByText(/Gutschrift „CO₂-Anteil Vermieter“/)).toBeNull()
 })
 
 // #266: Die Karte „Betriebsstrom der Heizung“ steht je Anlage über den Heizperioden, aber nur, wo Mietfuchs danach fragt.

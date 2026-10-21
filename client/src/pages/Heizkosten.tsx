@@ -124,19 +124,21 @@ export default function Heizkosten({ units, tenancies, onTenanciesChanged }: { u
       {(data?.plants ?? []).map((plant) => (
         <div key={plant.id}>
           <>
-            {/* #341 M8: nur beim gewählten Modus „Niemand“ (Heizkosten nach Umlageschlüssel), ein Satz, was zu tun ist;
-                der Weg ohne Lieferung steht eingeklappt darunter. Bei der eigenen Heizkostenabrechnung („Ich selbst“) und
-                beim Messdienst gilt er nicht. */}
-            {plant.method === 'manual' && asksCo2Facts(plant) && (data?.deliveries[plant.id] ?? []).length === 0 && (
+            {/* #341 M8: ein Satz, was zu tun ist. Ohne Lieferung teilt Mietfuchs die CO₂-Kosten nicht auf, auch nicht bei der
+                eigenen Heizkostenabrechnung (calc.ts, `ownSplit`). Den Weg von Hand (Gutschrift mit demselben
+                Umlageschlüssel) gibt es nur bei „Niemand“; er steht eingeklappt darunter. */}
+            {plant.method !== 'service' && asksCo2Facts(plant) && (data?.deliveries[plant.id] ?? []).length === 0 && (
               <NoticeBox
                 level="hint"
                 title="CO₂-Kosten aufteilen"
                 action={<>Tragen Sie die {invoiceName(plant)} unten als Lieferung ein; dann teilt Mietfuchs die CO₂-Kosten selbst auf (<Term id="co2Split">CO₂-Kosten aufteilen</Term>).</>}
               >
-                <details className="extra-details">
-                  <summary>Ohne Lieferung: CO₂-Kosten von Hand aufteilen</summary>
-                  <ManualCo2Advice plant={plant} />
-                </details>
+                {plant.method === 'manual' && (
+                  <details className="extra-details">
+                    <summary>Ohne Lieferung: CO₂-Kosten von Hand aufteilen</summary>
+                    <ManualCo2Advice plant={plant} />
+                  </details>
+                )}
               </NoticeBox>
             )}
             {/* #266: wie der Betriebsstrom erfasst ist, je Anlage über den Heizperioden. */}
