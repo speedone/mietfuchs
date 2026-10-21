@@ -156,6 +156,18 @@ async function shoot(browser, base) {
   await scrollTo(guide, 80)
   await save('hilfe')
 
+  // Die Musterseite (#346 Schritt 12): alle Bausteine, hell und dunkel, als ganze Seite. Nicht über `save`, denn eine
+  // Fehlermeldung gehört dort zum Muster. Das README verlinkt diese Bilder nicht; sie zeigen, was sich an einem
+  // Baustein geändert hat.
+  for (const [name, query] of [['muster-hell', ''], ['muster-dunkel', '=dunkel']]) {
+    await page.goto(`${base}/?muster${query}`)
+    await page.getByRole('heading', { name: 'Musterseite', level: 1 }).waitFor()
+    await settle()
+    const file = path.join(OUT, `${name}.png`)
+    await page.screenshot({ path: file, fullPage: true })
+    console.log(`  ✓ ${path.relative(root, file)} (${Math.round(fs.statSync(file).size / 1024)} KB)`)
+  }
+
   await context.close()
   if (problems.length) throw new Error(`Die Oberfläche hat Fehler gemeldet:\n${problems.join('\n')}`)
 }

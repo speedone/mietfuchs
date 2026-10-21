@@ -61,6 +61,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   breiter als der Bildschirm, Barrierefreiheit mit axe-core, dazu Seitenfenster, Monatsfeld,
   Begriffserklärung, Fehlermeldungen und die Navigation am Handy per Tastatur. Ohne ihn wird beim Tag
   nichts ans Release gehängt ([#340](https://github.com/speedone/mietfuchs/issues/340)).
+- Musterseite für die Entwicklung: Unter `?muster` (dunkel mit `?muster=dunkel`) zeigt Mietfuchs alle Bausteine der
+  Oberfläche mit festen Werten, ohne Bestand. Der Browserlauf prüft sie wie jede Seite, und `npm run screenshots`
+  fotografiert sie hell und dunkel ([#346](https://github.com/speedone/mietfuchs/issues/346)).
 
 ### Geändert
 

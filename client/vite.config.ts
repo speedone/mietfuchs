@@ -37,6 +37,11 @@ export default defineConfig({
     // und propertySwitch, ohne dass etwas falsch war. Ein Test, der wirklich hängt, fällt auch nach
     // 20 Sekunden auf.
     testTimeout: 20000,
+    // Kein Modul-Cache auf der Platte: Die Wächter (uiRules.test.ts u. a.) lesen alle Quellen über
+    // `import.meta.glob`, und welche Dateien es gibt, steht im zwischengespeicherten Modul. Der Cache verfällt
+    // nur, wenn sich die Testdatei ändert, nicht wenn eine neue Quelldatei dazukommt; ein Wächter blieb so
+    // lokal grün, der in der CI (ohne Cache) rot war (S18 und die Musterseite, #346 Schritt 12).
+    fsModuleCache: false,
   },
   server: {
     // Ohne `workspaces`-Feld in der package.json endet Vites Suche am Projektordner, und ein

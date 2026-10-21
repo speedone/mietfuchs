@@ -12,13 +12,21 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   Bestand ist erfunden** („Lindenweg 12, 12345 Musterstadt“, Beispiel-IBAN
   `DE02 1203 0000 0000 2020 51`); echte Namen, Adressen oder Belege gehören nie hinein. Steht ein
   Fehler im Bild, bricht das Skript ab; die Bilder trotzdem vor dem Commit ansehen. Dateinamen
-  beibehalten, das README verlinkt sie. Browser einmalig: `npx playwright install chromium`.
+  beibehalten, das README verlinkt sie. Browser einmalig: `npx playwright install chromium`. Dazu
+  `muster-hell.png` und `muster-dunkel.png` von der Musterseite (`?muster`, ganze Seite, vom README
+  nicht verlinkt), und das Skript bricht ab, wenn die Tabelle „Auswertung prüfen“ bei 1440 px seitlich
+  rollt. `startServer` (demo-stock.mjs) setzt `NKA_TEST_IDS=seq` (server/src/CLAUDE.md): dieselben
+  Kennungen in jedem Lauf.
 - **[browser-check.mjs](browser-check.mjs)** (`npm run browser-check`): derselbe Bestand plus
   Heizanlage, jede Seite der Navigation in Chromium, Firefox und WebKit, bei 1440 × 900 und
   390 × 844, hell und dunkel. Je Seite: keine Konsolenfehler, keine sichtbare Fehlermeldung, kein
   seitliches Scrollen, kein abgeschnittenes Feld (auch in Seitenfenstern, siehe client/CLAUDE.md),
   axe-core ohne serious/critical. Dazu Bedienproben per Tastatur (Seitenfenster, Monatsfeld,
-  Begriff, Sammelmeldung, Menüblatt am Handy), axe auch auf diesen Zuständen. Jeder Befund: Exit 1
+  Begriff, Sammelmeldung, Beleg zuordnen ohne springenden Knopf, Menüblatt am Handy), axe auch auf
+  diesen Zuständen und mit der Regel `target-size` (WCAG 2.5.8, in axe sonst aus). Jede Seite wird
+  ein zweites Mal mit allen `<details>` offen gemessen (Breite und abgeschnittene Felder, Befund
+  „aufgeklappt:“). Die Musterseite (`?muster`) prüft er in jeder Kombination wie eine Seite, mit
+  offenem Seitenfenster, Rückfrage und Begriff; `--pages muster` allein. Jeder Befund: Exit 1
   und eine Zeile in `<out>/bericht.md`; Fotos in `--out` (Temp, nie im Repo). Ausnahmen für axe in
   [browser-check-axe.json](browser-check-axe.json) mit Grund und Anzahl, nur sinkend (heute leer;
   `--merge` fasst CI-Läufe zusammen). Eingrenzen mit `--engines`, `--views`, `--themes`, `--pages`
