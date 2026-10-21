@@ -183,12 +183,10 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
         <thead>
           <tr>
             <th><span className="sr-only">Ampel</span></th>
-            <th>Was geschieht?</th>
             <th>Beschreibung</th>
             <th>Kostenart</th>
             <th>Umlageschlüssel</th>
-            <th className="num">Betrag €</th>
-            <th className="num">§35a-Lohn €</th>
+            <th className="num">Betrag €<br />§35a-Lohn €</th>
           </tr>
         </thead>
         <tbody>
@@ -199,8 +197,9 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
               return (
                 <tr key={line.idx}>
                   <td><span className="ampel gruen" /></td>
-                  <td>
-                    {line.state === 'created' ? `✓ angelegt als „${line.itemDescription ?? '?'}“` : `✓ verknüpft mit „${line.itemDescription ?? '?'}“`}
+                  <td colSpan={3}>
+                    {line.description} · {line.category}
+                    <div className="muted">{line.state === 'created' ? `✓ angelegt als „${line.itemDescription ?? '?'}“` : `✓ verknüpft mit „${line.itemDescription ?? '?'}“`}</div>
                     {line.state === 'linked' && (
                       <label className="checkline badge-next">
                         <input type="checkbox" aria-label={`„${line.description}“ lösen`} checked={row.action === 'release'}
@@ -208,21 +207,24 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
                       </label>
                     )}
                   </td>
-                  <td>{line.description}</td>
-                  <td>{line.category}</td>
-                  <td />
-                  <td className="num">{line.amountCents === null ? '—' : fmtEuro(line.amountCents)}</td>
-                  <td className="num">{line.labor35aCents === null ? '—' : fmtEuro(line.labor35aCents)}</td>
+                  <td className="num">
+                    {line.amountCents === null ? '—' : fmtEuro(line.amountCents)}
+                    <div className="muted">{line.labor35aCents === null ? '—' : fmtEuro(line.labor35aCents)}</div>
+                  </td>
                 </tr>
               )
             }
             const s = line.suggestion
             return (
               <Fragment key={line.idx}>
+                {/* Zwei Zeilen je Position (M10 aus #341): „Was geschieht?“ mit den langen Einträgen zum Verknüpfen über drei
+                    Spalten, darunter die Felder der Position. In einer Zeile mit sieben Spalten musste die Tabelle bei
+                    1440 px seitlich scrollen. Ampel und Betrag stehen in der ersten Zeile wie vorher neben der Wahl, der Lohn darunter. */}
                 <tr>
-                  <td><span className={`ampel ${s?.level ?? 'gruen'}`} title={s?.reasons.join('\n')} /></td>
-                  <td>
-                    <select aria-label={`Was geschieht mit „${line.description}“?`} value={row.action}
+                  <td rowSpan={2}><span className={`ampel ${s?.level ?? 'gruen'}`} title={s?.reasons.join('\n')} /></td>
+                  <td colSpan={3}>
+                    <span className="muted">Was geschieht? </span>
+                    <select className="max-w-none" aria-label={`Was geschieht mit „${line.description}“?`} value={row.action}
                       onChange={(e) => { if (isAction(e.target.value)) patch(line.idx, { action: e.target.value }) }}>
                       {/* Eine verworfene Zeile steht als verworfen da. Wieder öffnen kennt der Server
                           nicht; anlegen oder verknüpfen lässt sie sich weiterhin. */}
@@ -236,6 +238,9 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
                       {line.state !== 'dismissed' && <option value="dismiss">Verwerfen</option>}
                     </select>
                   </td>
+                  <td className="num"><input aria-label="Betrag €" value={row.amount} onChange={(e) => patch(line.idx, { amount: e.target.value })} className="input-num" /></td>
+                </tr>
+                <tr>
                   <td><input aria-label="Beschreibung" value={row.description} onChange={(e) => patch(line.idx, { description: e.target.value })} className="input-wide" /></td>
                   <td>
                     <select aria-label="Kostenart" value={row.category}
@@ -244,7 +249,6 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
                     </select>
                   </td>
                   <td><AiKeyCell position={row} units={units} onChange={(p) => patch(line.idx, p)} /></td>
-                  <td className="num"><input aria-label="Betrag €" value={row.amount} onChange={(e) => patch(line.idx, { amount: e.target.value })} className="input-num" /></td>
                   <td className="num"><input aria-label="§35a-Lohn €" value={row.labor35a} onChange={(e) => patch(line.idx, { labor35a: e.target.value })} className="input-num" placeholder="—" /></td>
                 </tr>
               </Fragment>

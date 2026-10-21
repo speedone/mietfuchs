@@ -323,6 +323,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   axe hat diese Regel von sich aus ausgeschaltet. Gefunden hat sie nichts, die zu kleinen Mülleimer-Knöpfe aus
   der Durchsicht gibt es seit dem Umbau der Oberfläche nicht mehr (Befund N11 aus
   [#341](https://github.com/speedone/mietfuchs/issues/341)).
+- Auswertung prüfen (Schnellerfassung und Kosten): Die Tabelle passt bei 1440 Bildpunkten ohne seitliches
+  Scrollen. Je Position stehen zwei Zeilen: oben „Was geschieht?“ über drei Spalten, sodass ein langer Eintrag
+  wie „Mit „Gartenpflege Saison“ (1.380,00 €, ohne Beleg) verknüpfen“ ganz zu lesen ist, daneben der Betrag;
+  darunter Beschreibung, Kostenart, Umlageschlüssel und der §35a-Lohn (Befund M10 aus
+  [#341](https://github.com/speedone/mietfuchs/issues/341)).
 - Die Karte „Objekt“ verlangt eine Bezeichnung: Leer ließ sie sich speichern, und die Seitenleiste
   zeigte danach „Ohne Namen“. Hat das Objekt noch keinen Namen, etwa nach einer frischen Installation,
   steht im Feld „Mein Objekt“; Sie können es überschreiben, und mit dem ersten Speichern der Karte wird
