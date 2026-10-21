@@ -258,6 +258,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Vorschau, „Betrag prüfen“ im Belegordner, die Hinweise der KI-Einstellungen und der Auswertung, Abweichungen
   einer abgeschlossenen Abrechnung und die ungültigen IBAN im Cockpit
   ([#346](https://github.com/speedone/mietfuchs/issues/346)).
+- Karten mit Überschrift haben überall denselben Kopf wie auf der Seite Heizkosten: Kosten, Mietkonto, Zähler,
+  Abrechnung, Kostenvergleich, Belegordner, Einstellungen, Abrechnungszeitraum und CO₂-Erstattung
+  ([#346](https://github.com/speedone/mietfuchs/issues/346)).
 
 ### Behoben
 

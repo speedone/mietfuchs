@@ -266,7 +266,7 @@ test('kleine Knöpfe haben am Handy die volle Tippfläche', () => {
 // Die heutigen Namensgleichheiten bleiben, weil tw.css sie aus der Suche nimmt (`@source not
 // inline`); jede von ihnen steht deshalb auch dort.
 const LEGACY_UTILITY_NAMES = new Set(['sr-only', 'grow', 'grow-2'])
-const INDEX_CSS_MAX_LINES = 815
+const INDEX_CSS_MAX_LINES = 813
 test('S20: keine neue Klasse und keine Animation in index.css mit einem Namen aus Tailwind, und index.css wächst nicht', () => {
   expect(definedClasses.size).toBeGreaterThan(100)
   const clashes = tailwindUtilities(definedClasses)
@@ -1161,4 +1161,24 @@ test('S30: der Umschalter auf einer Seite ist beschriftet wie ein Feld', () => {
   expect(twSources['./components/PeriodSelect.tsx']).toMatch(/<Switcher label="Kalenderjahr"[^>]*className=\{`switcher-field/)
   expect(twCss).toMatch(/@utility switcher-field \{[^}]*--switcher-label-weight: var\(--weight-strong\)/)
   expect(twCss).toMatch(/font-weight: var\(--switcher-label-weight, var\(--weight-medium\)\)/)
+})
+
+// S31 (#346 Schritt 12, aus den Durchsichten): Eine Karte mit Überschrift ist der Baustein `Card` (einheitlicher Kopf,
+// höchstens eine Aktion rechts). Vorher setzten rund 20 Karten außerhalb der Seite Heizkosten ihren Kopf selbst. Erkannt
+// wird die Klasse `card` auch als Ausdruck, ein JSX-Kommentar davor und ein eigener Kopf als `div` um die Überschrift
+// (Durchsicht: so blieben Cockpit, Mietkonto und Posteingang unbemerkt). Ausnahmen mit Grund in CARD_EXCEPTIONS.
+const CARD_CLASS = String.raw`(?:"card(?: [\w-]+)*"|\{\s*(?:\`card[^\`]*\`|[^{}]*\?\s*'card[^']*'[^{}]*)\})`
+const manualCardHeads = (src: string): string[] => [...src.matchAll(new RegExp(String.raw`<(?:div|section)\s+className=${CARD_CLASS}(?:\s+[a-zA-Z-]+=(?:"[^"]*"|\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\}))*\s*>(?:\s|\{\/\*[\s\S]*?\*\/\})*(?:<div className="[^"]*">\s*)?<h[23][\s>]`, 'g'))].map((m) => m[0])
+const CARD_EXCEPTIONS = new Map<string, string>([
+])
+test('S31: Karten mit Überschrift nur über den Baustein Card', () => {
+  expect(manualCardHeads('<div className="card no-print">\n  <h2>Titel</h2>')).toHaveLength(1)
+  expect(manualCardHeads('<section className="card"><h3 className="x">T</h3>')).toHaveLength(1)
+  expect(manualCardHeads('<div className="card">\n  {/* Kommentar */}\n  <h2>T</h2>')).toHaveLength(1)
+  expect(manualCardHeads("<div className={on ? 'card focus-target' : 'card'} key={id}>\n<div className=\"row baseline\">\n<h2 className=\"grow\">T</h2>")).toHaveLength(1)
+  expect(manualCardHeads('<div\n className={`card inbox${over ? \' x\' : \'\'}`}\n onDrop={(e) => { e.preventDefault() }}\n>\n<div className="head">\n<h2>T</h2>')).toHaveLength(1)
+  expect(manualCardHeads('<Card title="Titel">')).toEqual([])
+  expect(manualCardHeads('<div className="card">\n  <label className="field">')).toEqual([])
+  const found = files.filter((f) => f !== './components/Card.tsx').map((f) => [f, manualCardHeads(sources[f] ?? '').length] as const).filter(([, n]) => n > 0)
+  expect(found.filter(([f]) => !CARD_EXCEPTIONS.has(f)).map(([f, n]) => `${f}: ${n}`)).toEqual([])
 })

@@ -12,7 +12,7 @@ import { useProperty, withProperty } from '../property'
 import Drawer from '../components/Drawer'
 import { CalcNotice, NoticeBox } from '../components/Notice'
 import { useSaving } from '../useSaving'
-import { CardHeader } from '../components/Card'
+import Card, { CardHeader } from '../components/Card'
 import PageHeader from '../components/PageHeader'
 import Term from '../components/Term'
 import { useToast, useConfirm } from '../components/feedback'
@@ -176,8 +176,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
       />
       {error && <NoticeBox level="error" action={error} />}
 
-      <div className="card">
-        <h2>Zähler</h2>
+      <Card title="Zähler">
         {meters.length === 0 && (
           <div className="empty">
             Noch keine Zähler angelegt. Legen Sie z. B. den Hauptwasserzähler an, um die Jahresstände zu
@@ -223,7 +222,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
             </tbody>
           </Table>
         )}
-      </div>
+      </Card>
 
       {readingMeter && (
         <Drawer

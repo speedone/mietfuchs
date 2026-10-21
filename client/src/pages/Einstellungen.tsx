@@ -11,6 +11,7 @@ import IbanInput from '../components/IbanInput'
 import { ErrorSummary, useFormError } from '../components/ErrorSummary'
 import { ibanChanged, ibanForSave, ibanToInput } from '../ibanField'
 import { IBAN_LABELS } from '../../../shared/iban.ts'
+import Card from '../components/Card'
 
 type Props = { settings: Settings; reload: () => Promise<void>; update: UpdateState }
 
@@ -97,8 +98,7 @@ export default function Einstellungen({ settings, reload, update }: Props) {
     <>
       <PageHeader context="none" title="Einstellungen" subtitle="Vermieterdaten für das Anschreiben, KI-Belegauswertung und Updates." />
 
-      <div className="card">
-        <h2>Vermieter &amp; Zahlung</h2>
+      <Card title={<>Vermieter &amp; Zahlung</>}>
         <ErrorSummary errors={saveErrors} />
         <p className="muted">
           Erscheint im Kopf und in der Zahlungsaufforderung der gedruckten Abrechnung.
@@ -119,7 +119,7 @@ export default function Einstellungen({ settings, reload, update }: Props) {
         <div className="row">
           <button className="btn" onClick={save}>Speichern</button>
         </div>
-      </div>
+      </Card>
 
       <AiSettings settings={settings} reload={reload} />
 
@@ -127,8 +127,7 @@ export default function Einstellungen({ settings, reload, update }: Props) {
 
       <LawOverridesCard />
 
-      <div className="card">
-        <h2>Daten &amp; Sicherung</h2>
+      <Card title={<>Daten &amp; Sicherung</>}>
         <p className="muted">
           Alle Daten (Stammdaten, Kosten, Zähler, Belege) bleiben lokal auf diesem Rechner.
           Ein Backup enthält die komplette Datenbank samt aller hochgeladenen Belege als ZIP-Datei.
@@ -151,7 +150,7 @@ export default function Einstellungen({ settings, reload, update }: Props) {
           Sicherheitskopie des vorherigen Stands bleibt als{' '}
           <code>mietfuchs.sqlite.vor-restore</code> im Datenordner erhalten).
         </p>
-      </div>
+      </Card>
     </>
   )
 }

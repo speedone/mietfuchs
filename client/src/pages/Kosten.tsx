@@ -77,6 +77,7 @@ import { candidateText } from '../triage'
 import { countOf } from '../../../shared/wording.ts'
 import { useFocusTarget, type FocusProps } from '../focus'
 import { NoticeBox } from '../components/Notice'
+import Card from '../components/Card'
 
 // `tenancies` für die Einzelbeträge je Mietverhältnis (#94); ohne sie gibt es dort nur keine Felder.
 type Props = { units: Unit[]; settings: Settings | null; tenancies?: Tenancy[] } & FocusProps
@@ -583,8 +584,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
 
 
       {carry && (
-        <div className="card no-print">
-          <h2>Positionen aus {at.previousLabel} für {label} übernehmen</h2>
+        <Card title={<>Positionen aus {at.previousLabel} für {label} übernehmen</>} className="no-print">
           <p className="muted">
             Übernommen werden Kostenart, Beschreibung, Rechnungssteller und der Umlageschlüssel samt
             Angaben. Tragen Sie je Zeile den Betrag {label} ein; eine Zeile mit Betrag ist angehakt.
@@ -677,11 +677,10 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             </button>
             <button className="btn ghost" onClick={() => setCarry(null)}>Schließen</button>
           </div>
-        </div>
+        </Card>
       )}
 
-      <div className="card no-print">
-        <h2>🤖 Beleg per KI auswerten <span className="badge gray">{ai.where}</span></h2>
+      <Card title={<>🤖 Beleg per KI auswerten <span className="badge gray">{ai.where}</span></>} className="no-print">
         <p className="muted">
           PDF oder Foto der Rechnung hochladen — die KI schlägt Kostenpositionen vor, Sie prüfen und übernehmen sie. {ai.notice ?? 'Es verlässt nichts Ihren Rechner.'}
         </p>
@@ -738,10 +737,9 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             )}
           </div>
         ))}
-      </div>
+      </Card>
 
-      <div className="card">
-        <h2>Kostenpositionen {label}</h2>
+      <Card title={<>Kostenpositionen {label}</>}>
         {yearItems.length === 0 && <div className="empty">Noch keine Kosten für {label} erfasst.</div>}
         {yearItems.length > 0 && (
           <Table className="stacked">
@@ -836,7 +834,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
           </Table>
         )}
 
-      </div>
+      </Card>
 
       {/* Heizung PR 19 (#97): CO₂-Erstattung an Mieter, die selbst heizen; nur, wenn es einen gibt. */}
       {tenancies.some((t) => t.heatingModel === 'selfSupply') && (

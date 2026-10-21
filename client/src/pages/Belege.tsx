@@ -20,6 +20,7 @@ import { useToast, useConfirm } from '../components/feedback'
 import DraftActions from '../components/DraftActions'
 import { useDraft } from '../useDraft'
 import { NoticeBox } from '../components/Notice'
+import Card from '../components/Card'
 
 const fmtSize = (b: number) =>
   b >= 1024 * 1024 ? `${(b / 1024 / 1024).toLocaleString('de-DE', { maximumFractionDigits: 1 })} MB` : `${Math.max(1, Math.round(b / 1024))} kB`
@@ -156,8 +157,7 @@ function FolderPacks({ propertyId, propertyName, year, chosen, rules, uploads, c
   }
 
   return (
-    <div className="card no-print receipt-packs">
-      <h2>Mappen packen · {year}</h2>
+    <Card title={<>Mappen packen · {year}</>} className="no-print receipt-packs">
       <div className="row receipt-filters">
         <a className="btn" href={withProperty(`/api/receipts/tax/${year}`, propertyId)} download>🧾 Belege für die Steuer (ZIP)</a>
         <span className="muted">Alle Belege des Jahres nach den Gruppen der Anlage V, auch die nicht umlagefähigen, mit einer Übersicht.</span>
@@ -201,7 +201,7 @@ function FolderPacks({ propertyId, propertyName, year, chosen, rules, uploads, c
           </>
         )}
       </details>
-    </div>
+    </Card>
   )
 }
 
@@ -668,15 +668,10 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
         )}
       </div>
 
-      <div
-        className={`card receipt-inbox no-print${dragOver ? ' drag-over' : ''}`}
-        onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={(e) => { e.preventDefault(); setDragOver(false); void uploadToInbox([...e.dataTransfer.files]) }}
-      >
-        <div className="receipt-inbox-head">
-          <h2>📥 Posteingang ({inbox.here.length})</h2>
-          <label className="btn">
+      <Card
+        title={`📥 Posteingang (${inbox.here.length})`}
+        aside={(
+            <label className="btn">
             {uploading > 0 ? `Lädt hoch … (${uploading})` : 'Belege hochladen'}
             <input
               type="file"
@@ -688,14 +683,19 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
               onChange={(e) => { const files = [...(e.target.files ?? [])]; e.target.value = ''; if (files.length) void uploadToInbox(files) }}
             />
           </label>
-        </div>
+        )}
+        className={`receipt-inbox no-print${dragOver ? ' drag-over' : ''}`}
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => { e.preventDefault(); setDragOver(false); void uploadToInbox([...e.dataTransfer.files]) }}
+      >
         <p className="muted">
           Belege, die an keiner Kostenposition hängen. Ziehen Sie neue Belege hierher oder laden Sie mehrere auf einmal hoch;
           danach ordnen Sie jeden einer Position zu oder lassen ihn per KI auswerten.
           {inbox.elsewhere > 0 && ` ${inbox.elsewhere} weitere ${inbox.elsewhere === 1 ? 'ist' : 'sind'} einem anderen Objekt oder Jahr zugedacht; Sie sehen ${inbox.elsewhere === 1 ? 'ihn' : 'sie'} mit ${properties.length > 1 ? '„Belege aller Objekte zeigen“ oder ' : ''}„Belege aller Jahre zeigen“.`}
         </p>
         {inbox.here.length > 0 && <ul className="receipt-list">{inbox.here.map(renderCard)}</ul>}
-      </div>
+      </Card>
 
       {coverageRows.length > 0 && (
         <div className="card receipt-coverage">

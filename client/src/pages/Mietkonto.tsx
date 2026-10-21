@@ -17,6 +17,7 @@ import Table from '../components/Table'
 import { useFocusTarget, useScrollToFocus, type FocusProps } from '../focus'
 import { MONTH_SHORT } from '../monthText'
 import { NoticeBox } from '../components/Notice'
+import Card from '../components/Card'
 
 const MONTHS = MONTH_SHORT
 
@@ -263,19 +264,17 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
         // Sichtprüfung E35: Bei Inklusivmiete gibt es keine Vorauszahlung; „0,00 €“ sähe aus wie ein fehlender Betrag.
         const inclusive = tenancies.find((t) => t.id === r.tenancyId)?.costModel === 'inclusive' && r.prepaymentYearCents === 0
         return (
-          <div className={focusedId === r.tenancyId ? 'card focus-target' : 'card'} key={r.tenancyId}>
-            <div className="row baseline">
-              <h2 className="grow">{r.tenantName} <span className="muted normal">· {r.unitName}</span></h2>
-              {standing.kind === 'arrears' ? (
-                <span className="badge red">{fmtEuro(standing.cents)} offen</span>
-              ) : standing.kind === 'credit' ? (
-                <span className="badge green">{fmtEuro(standing.cents)} Guthaben</span>
-              ) : standing.kind === 'paidSoFar' ? (
-                <span className="badge green">bisher bezahlt</span>
-              ) : !noRent ? (
-                <span className="badge green">vollständig bezahlt</span>
-              ) : null}
-            </div>
+          <Card key={r.tenancyId} className={focusedId === r.tenancyId ? 'focus-target' : undefined}
+            title={<>{r.tenantName} <span className="muted normal">· {r.unitName}</span></>}
+            aside={standing.kind === 'arrears' ? (
+              <span className="badge red">{fmtEuro(standing.cents)} offen</span>
+            ) : standing.kind === 'credit' ? (
+              <span className="badge green">{fmtEuro(standing.cents)} Guthaben</span>
+            ) : standing.kind === 'paidSoFar' ? (
+              <span className="badge green">bisher bezahlt</span>
+            ) : !noRent ? (
+              <span className="badge green">vollständig bezahlt</span>
+            ) : null}>
 
             {noRent ? (
               <NoticeBox level="warning">
@@ -352,13 +351,12 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
                 </Table>
               </>
             )}
-          </div>
+          </Card>
         )
       })}
 
       {ledger && (ledger.settlementOnly?.length ?? 0) > 0 && (
-        <div className="card">
-          <h2>Abrechnung früherer Mietverhältnisse</h2>
+        <Card title="Abrechnung früherer Mietverhältnisse">
           <p className="muted">Nachzahlungen und Guthaben aus der Abrechnung, gezahlt im Jahr {year}, für Mietverhältnisse, die in diesem Jahr nicht mehr bestanden.</p>
           <Table>
             <tbody>
@@ -370,11 +368,10 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
               ))}
             </tbody>
           </Table>
-        </div>
+        </Card>
       )}
 
-      <div className="card">
-        <h2>Zahlungseingänge {year}</h2>
+      <Card title={<>Zahlungseingänge {year}</>}>
         {yearPayments.length === 0 ? (
           <div className="empty">Noch keine Zahlungen für {year} erfasst.</div>
         ) : (
@@ -421,7 +418,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
             </tbody>
           </Table>
         )}
-      </div>
+      </Card>
     </>
   )
 }
