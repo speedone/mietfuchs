@@ -598,3 +598,19 @@ test('7a: eine geänderte Aktion an einer Zeile meldet die Karte an, zurück zum
   fireEvent.change(await actionOf('Grundsteuer B'), { target: { value: vorher } })
   expect(probe.open()).toBe(false)
 })
+
+// Durchsicht von M10: Die zwei Zeilen einer Position bilden eine Gruppe (eigenes <tbody>), damit „Was geschieht?“
+// nicht zur Position darüber zu gehören scheint; die Auswahl hat eine großzügige Grenze statt keiner.
+test('Auswertung: je Position ein eigenes tbody mit Wahl, Betrag und Feldern', async () => {
+  fake = fakeBooking({ items: [], units: UNITS })
+  extraction = invoice([{ description: 'Gartenpflege', category: 'Gartenpflege', amountEur: 300 }, { description: 'Hausmeister', category: 'Hauswart', amountEur: 200 }], 'Grün')
+  const { container } = intake()
+  await upload(container)
+  const garten = await actionOf('Gartenpflege')
+  const group = garten.closest('tbody')
+  if (!group) return assert.fail('Keine Gruppe je Position')
+  expect(within(group).getAllByRole('textbox', { name: 'Beschreibung' }).map((i) => (i as HTMLInputElement).value)).toEqual(['Gartenpflege'])
+  expect(within(group).getByRole('textbox', { name: '§35a-Lohn €' })).toBeTruthy()
+  expect((await actionOf('Hausmeister')).closest('tbody')).not.toBe(group)
+  expect(garten.classList.contains('select-wide')).toBe(true)
+})
