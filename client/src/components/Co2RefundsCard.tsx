@@ -3,7 +3,7 @@
 // Heizanlage, und wer selbst heizt, hat keine; deshalb steht die Karte hier.
 import { useCallback, useEffect, useState } from 'react'
 import { api, errorText, fmtDate, fmtEuro } from '../api'
-import { useOpenForm, withProperty } from '../property'
+import { withProperty } from '../property'
 import { useConfirm, useToast } from './feedback'
 import Term from './Term'
 import { RESTRICTION_OPTIONS } from '../fuelForm'
@@ -12,6 +12,8 @@ import { emptyRefundForm, refundAreaOf, refundBody, refundStatus, refundTenancie
 import type { PeriodKey } from '../types'
 import { ErrorSummary, useFormError } from './ErrorSummary'
 import Card from './Card'
+import Drawer from './Drawer'
+import { useSaving } from '../useSaving'
 
 type View = RefundRow & { tenantName: string; unitName: string; claimDeadline: string | null; proposalCents: number | null; proposalExcluded: string | null }
 type TenancyInfo = { id: string; unitId: string; tenantName: string; start: string; end: string | null; heatingModel?: string }
@@ -28,8 +30,9 @@ export default function Co2RefundsCard({ propertyId, period, tenancies, units }:
   // Fehler als Sammelmeldung oben in der Karte (#346, Schritt 3)
   const errors = useFormError()
   const setError = errors.set
-  // Eine ungespeicherte Eingabe zählt als offenes Formular: Seiten-, Objekt- und Zeitraumwechsel fragen (#346, 7a).
-  useOpenForm(editing !== null)
+  // Erfassen und Bearbeiten im Seitenfenster (#346 Schritt 12): Es meldet sich bei einer Änderung selbst als offenes
+  // Formular an und fragt beim Schließen; useSaving sperrt einen zweiten Klick auf „Anlegen“/„Speichern“.
+  const saving = useSaving()
   const toast = useToast()
   const confirm = useConfirm()
   const choices = refundTenancies(tenancies)
@@ -78,8 +81,11 @@ export default function Co2RefundsCard({ propertyId, period, tenancies, units }:
   const first = choices[0]?.id ?? ''
 
   return (
-    <Card title={<><Term id="co2Refund">CO₂-Erstattung</Term> an Mieter, die selbst heizen</>} className="no-print">
-      <ErrorSummary errors={errors} />
+    <Card title={<><Term id="co2Refund">CO₂-Erstattung</Term> an Mieter, die selbst heizen</>} className="no-print"
+      aside={choices.length > 0 && (
+        <button className="btn secondary" onClick={() => { setError(''); setEditing({ id: null, form: emptyRefundForm(first, areaOf(first)) }) }}>+ Erstattung anlegen</button>
+      )}>
+      {!editing && <ErrorSummary errors={errors} />}
       <p className="muted">
         Bezieht ein Mieter Brennstoff oder Wärme über einen eigenen Vertrag, etwa für eine Gastherme oder eine zentrale Heizung, kann er den Anteil seiner
         CO₂-Kosten, den nach dem Stufenmodell Sie tragen, von Ihnen verlangen. Erfassen Sie hier seine Anzeige; verrechnet wird in der Abrechnung, die Sie
@@ -101,11 +107,12 @@ export default function Co2RefundsCard({ propertyId, period, tenancies, units }:
           ))}
         </ul>
       )}
-      {!editing && choices.length > 0 && (
-        <button className="btn secondary" onClick={() => { setError(''); setEditing({ id: null, form: emptyRefundForm(first, areaOf(first)) }) }}>Erstattung erfassen</button>
-      )}
       {choices.length === 0 && <p className="muted">Erstattungen gibt es nur für Mieter, die selbst heizen. Stellen Sie das Mietverhältnis in den Stammdaten unter Heizung auf „Mieter heizt selbst“, wenn das zutrifft.</p>}
-      {f && (
+      {editing && f && (
+        <Drawer key={editing.id ?? 'neu'} open title={editing.id ? 'Erstattung bearbeiten' : 'Erstattung anlegen'} width={560}
+          onClose={() => { setEditing(null); setError('') }} value={f} busy={saving.busy} errors={errors}
+          onSubmit={() => void saving.run(save)}
+          actions={<button className="btn" disabled={saving.busy} onClick={() => void saving.run(save)}>{editing.id ? 'Speichern' : 'Anlegen'}</button>}>
         <div className="field-group">
           <label className="field">
             Mieter
@@ -155,9 +162,8 @@ export default function Co2RefundsCard({ propertyId, period, tenancies, units }:
               </>
             )}
           </details>
-          <button className="btn" onClick={() => void save()}>Erstattung speichern</button>
-          {' '}<button className="btn secondary" onClick={() => setEditing(null)}>Abbrechen</button>
         </div>
+        </Drawer>
       )}
     </Card>
   )

@@ -420,7 +420,7 @@ test('CO₂-Erstattung: Karte nur bei einem Mieter, der selbst heizt', async () 
   unmount()
   render(<PeriodProvider><PropertyProvider><Kosten units={UNITS} settings={null} tenancies={mieter('selfSupply')} /></PropertyProvider></PeriodProvider>)
   expect(await screen.findByText(/an Mieter, die selbst heizen/)).toBeTruthy()
-  expect(screen.getByRole('button', { name: 'Erstattung erfassen' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: '+ Erstattung anlegen' })).toBeTruthy()
 })
 
 // #255 PR 3 (R-2): Ein Zahlungsdatum, das das Steuerjahr ändert, zeigt das Formular an und speichert es erst nach der

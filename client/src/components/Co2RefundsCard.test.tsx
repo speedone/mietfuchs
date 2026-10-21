@@ -2,7 +2,7 @@
 // Die Karte „CO₂-Erstattung“ (Heizung PR 19, #97): Auswahlfelder zeigen den gespeicherten Wert, Speichern schickt
 // die Erstattung an den Server.
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import Co2RefundsCard from './Co2RefundsCard'
 import { OpenFormScope, hasOpenForm } from '../testing/openForm'
 import { UIProvider } from './feedback'
@@ -46,7 +46,9 @@ test('Bearbeiten: Auswahl „Verrechnung“ und § 9 zeigen die gespeicherten We
   expect([settle.value, restriction.value, tenant.value]).toEqual(['here', 'building', 't'])
   // Prüfung M4: nur Mieter, die selbst heizen.
   expect([...tenant.options].map((o) => o.value)).toEqual(['t'])
-  fireEvent.click(screen.getByText('Erstattung speichern'))
+  // Bearbeiten öffnet ein Seitenfenster (#346 Schritt 12): Titel „Erstattung bearbeiten“, Primärknopf „Speichern“
+  const drawer = screen.getByRole('dialog', { name: 'Erstattung bearbeiten' })
+  fireEvent.click(within(drawer).getByRole('button', { name: 'Speichern' }))
   await waitFor(() => expect(sent.at(-1)?.url).toBe('/api/co2-refunds/e'))
   expect(sent.at(-1)?.method).toBe('PUT')
   expect(sent.at(-1)?.body).toMatchObject({ settlePeriod: '2025-01', restriction: 'building', amountCents: 24000 })
@@ -54,24 +56,31 @@ test('Bearbeiten: Auswahl „Verrechnung“ und § 9 zeigen die gespeicherten We
 
 test('Erfassen: vorbelegt mit dem einzigen Mieter, der selbst heizt, und seiner Wohnfläche; POST', async () => {
   card()
-  fireEvent.click(await screen.findByText('Erstattung erfassen'))
+  // „+ Erstattung anlegen“ oben rechts öffnet ein Seitenfenster mit „Anlegen“
+  fireEvent.click(await screen.findByRole('button', { name: '+ Erstattung anlegen' }))
+  expect(screen.getByRole('dialog', { name: 'Erstattung anlegen' })).toBeTruthy()
   fireEvent.change(screen.getByLabelText('Abrechnung des Lieferanten vom'), { target: { value: '2025-01-20' } })
   fireEvent.change(screen.getByLabelText('Verlangt in Textform am'), { target: { value: '2025-03-01' } })
   fireEvent.change(screen.getByLabelText('Betrag laut Anzeige (€)'), { target: { value: '240,00' } })
-  fireEvent.click(screen.getByText('Erstattung speichern'))
+  fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }))
   await waitFor(() => expect(sent.at(-1)?.method).toBe('POST'))
   expect(sent.at(-1)?.body).toMatchObject({ tenancyId: 't', amountCents: 24000, areaM2: 80, settlePeriod: null })
 })
 
-// #346, Schritt 7a
-test('7a: das offene Formular meldet die Karte an, Abbrechen und Speichern nehmen die Marke weg', async () => {
+// #346, Schritt 7a, seit Schritt 12 im Seitenfenster: Erst eine Änderung meldet das Fenster an; „Abbrechen“ fragt dann
+// nach, „Verwerfen“ und Speichern nehmen die Marke weg
+test('7a: das geänderte Seitenfenster meldet sich an, Verwerfen und Speichern nehmen die Marke weg', async () => {
   render(<OpenFormScope><UIProvider><Co2RefundsCard propertyId="objekt-1" period={{ key: periodKey('2025-01'), label: '2025' }} tenancies={TENANCIES} units={UNITS} /></UIProvider></OpenFormScope>)
   fireEvent.click(await screen.findByText('Bearbeiten'))
-  expect(hasOpenForm()).toBe(true)
-  fireEvent.click(screen.getByText('Abbrechen'))
   expect(hasOpenForm()).toBe(false)
+  fireEvent.change(screen.getByLabelText('Betrag laut Anzeige (€)'), { target: { value: '250,00' } })
+  expect(hasOpenForm()).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Verwerfen' }))
+  await waitFor(() => expect(hasOpenForm()).toBe(false))
   fireEvent.click(screen.getByText('Bearbeiten'))
-  fireEvent.click(screen.getByText('Erstattung speichern'))
-  await waitFor(() => expect(screen.queryByText('Erstattung speichern')).toBeNull())
+  fireEvent.change(screen.getByLabelText('Betrag laut Anzeige (€)'), { target: { value: '250,00' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Erstattung bearbeiten' })).toBeNull())
   expect(hasOpenForm()).toBe(false)
 })
