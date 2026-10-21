@@ -604,6 +604,8 @@ test('Rumpfzeitraum: Register, Satz und Belegabdeckung zeigen den gewählten Zei
     </PeriodProvider>,
   )
   const select = await screen.findByRole('combobox', { name: 'Abrechnungszeitraum' }) as HTMLSelectElement
+  // Erst wenn die Objekte geladen sind, gibt es die Zeiträume des neuen Rhythmus als Optionen
+  await waitFor(() => expect([...select.options].map((o) => o.value)).toContain('2025-05'))
   fireEvent.change(select, { target: { value: '2025-05' } })
   expect(await screen.findByText(`Gezeigt sind die Positionen von ${neu}.`)).toBeTruthy()
   // Nur die Register; die Auswahl im Posteingang bleibt beim Kalenderjahr des Belegs
