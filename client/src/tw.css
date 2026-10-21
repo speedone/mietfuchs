@@ -449,3 +449,21 @@
     white-space: normal;
   }
 }
+
+/* Tabellen mit Gruppen aus mehreren Zeilen, je Gruppe ein <tbody> (Auswertung prüfen, M10 aus #341): innen keine Linie,
+   zwischen den Gruppen eine. index.css nimmt der letzten Zeile jedes <tbody> die Linie, deshalb trägt die nächste
+   Gruppe sie oben. */
+@utility row-groups {
+  & > tbody > tr > td {
+    border-bottom: 0;
+  }
+  & > tbody + tbody > tr:first-child > td {
+    border-top: 1px solid var(--line);
+  }
+}
+
+/* Eine Auswahl mit langen Einträgen, die über mehrere Spalten steht: großzügig, aber begrenzt, damit ein sehr langer
+   Eintrag die Tabelle nicht wieder seitlich rollen lässt (Durchsicht von M10). */
+@utility select-wide {
+  max-width: calc(2 * var(--field-l));
+}
