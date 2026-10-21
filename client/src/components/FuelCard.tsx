@@ -302,7 +302,7 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
           <li key={d.id}>
             <strong>{d.label || 'Lieferung'}</strong> {deliveryLine(d)}
             {stock && !service && <span className="muted"> · {linkedText(d.id)}</span>}
-            {(findings[d.id] ?? []).map((f) => <p key={f} className="hint">{f}</p>)}
+            {(findings[d.id] ?? []).map((f) => <NoticeBox key={f} level="hint" action={f} />)}
             {!view.closed && !service && credits.has(d.id) && creditBlock(d, credits.get(d.id) ?? 0)}
             {!view.closed && (
               <span className="row">
@@ -337,7 +337,7 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
           errors={formErrors}
           actions={<button className="btn" disabled={saving.busy} onClick={() => void saving.run(save)}>{editing === 'neu' ? 'Anlegen' : 'Speichern'}</button>}
         >
-          {checks.length > 0 && <ul className="notice">{checks.map((c) => <li key={c}>{c}</li>)}</ul>}
+          {checks.length > 0 && <NoticeBox level="warning"><ul>{checks.map((c) => <li key={c}>{c}</li>)}</ul></NoticeBox>}
           {plant.supply === 'perUnit' && (
             <Field label="Wohnung" required {...formErrors.field('unitId')}>
               <select value={form.unitId} onChange={(e) => set('unitId', e.target.value)}>

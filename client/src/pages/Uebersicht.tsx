@@ -94,11 +94,11 @@ export default function Uebersicht({ onNavigate }: Props) {
       {error && <NoticeBox level="error" action={error} />}
 
       {notable.length > 0 && (
-        <div className="notice">
+        <NoticeBox level="warning">
           <strong>Auffällige Abweichung zum Vorjahr:</strong>{' '}
           {notable.map((c) => `${c} (${pctText(c)})`).join(', ')} — Belege prüfen, Mieter fragen
           bei großen Sprüngen erfahrungsgemäß nach.
-        </div>
+        </NoticeBox>
       )}
 
       {settlement && (

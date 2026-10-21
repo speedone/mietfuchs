@@ -64,17 +64,17 @@ export default function Co2SheetView({ plantId, period, onClose }: { plantId: st
       <ul>{sheetFacts(sheet).map((f) => <li key={f}>{f}</li>)}</ul>
       {sheet.opening?.adminNote && (
         // Die genauen Gründe einer unvollständigen Bestandsrechnung sind für den Vermieter (W-N4).
-        <div className="hint no-print">
+        <NoticeBox level="hint" className="no-print">
           <strong>Vorrat</strong>
           <p>{sheet.opening.adminNote}</p>
-        </div>
+        </NoticeBox>
       )}
       {findings.length > 0 && (
         // Für den Vermieter, nicht für den Empfänger des Blatts (Durchsicht von #246, R-W2).
-        <div className="hint no-print">
+        <NoticeBox level="hint" className="no-print">
           <strong>Bitte prüfen</strong>
           <ul>{findings.map((f) => <li key={f}>{f}</li>)}</ul>
-        </div>
+        </NoticeBox>
       )}
     </div>
   )

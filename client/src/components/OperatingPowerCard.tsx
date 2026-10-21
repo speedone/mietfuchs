@@ -78,15 +78,15 @@ export default function OperatingPowerCard({ plant, view, rules, items, onBooked
           : ' Mietfuchs rechnet den Anteil an der Stromrechnung und legt beide Positionen an.'}
       </p>
       {/* P-W1 */}
-      <p className="hint">
+      <NoticeBox level="hint" action={<>
         Mietfuchs speichert Ihre Angaben als Grundlage der Schätzung an {service ? 'der Position' : 'beiden Positionen'}. Bewahren Sie Typenschilder und Rechnungen auf: Bestreitet ein Mieter
         den Betrag, müssen Sie die Grundlagen Ihrer Schätzung darlegen (BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07, Leitsatz c).
-      </p>
+      </>} />
       {booked.length > 0 && (
-        <div className="notice">
+        <NoticeBox level="warning">
           <strong>Schon gebucht in dieser Heizperiode:</strong>
           <ul>{booked.map((c) => <li key={c.id}>{c.description} · {fmtEuro(c.amountCents)}</li>)}</ul>
-        </div>
+        </NoticeBox>
       )}
       <label className="field">
         <span>Stromrechnung des Hauses</span>
@@ -145,10 +145,10 @@ export default function OperatingPowerCard({ plant, view, rules, items, onBooked
         <NoticeBox level="hint" action={preview.text} />
       )}
       {question && (
-        <div className="notice">
+        <NoticeBox level="warning">
           <p>{question}</p>
           <button type="button" className="btn" disabled={busy} onClick={() => void book(true)}>Trotzdem anlegen</button>
-        </div>
+        </NoticeBox>
       )}
       <button type="button" className="btn" disabled={view.closed || busy || !preview.ok} onClick={() => void book()}>
         {preview.ok ? `${fmtEuro(preview.cents)} als ${what} anlegen` : `${what} anlegen`}

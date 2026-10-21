@@ -13,6 +13,7 @@ import {
 import { rulesOf } from '../../../shared/period.ts'
 import { useFormError } from './ErrorSummary'
 import Drawer from './Drawer'
+import { NoticeBox } from './Notice'
 
 // Die Karte „Abrechnungszeitraum“ in den Stammdaten (#208, Entwurf 3.6, 11.4). Jede Änderung geht
 // über die Vorschau des Servers, im Seitenfenster (#346 Schritt 7); gespeichert wird erst mit „Speichern“ nach
@@ -358,7 +359,7 @@ export default function PeriodCard({ onChanged }: { onChanged?: () => Promise<vo
                   etwa die Angleichung an den Messdienst. Legt Ihr Mietvertrag den Zeitraum fest, braucht die Umstellung die Zustimmung der Mieter.
                 </div>
               )}
-              {preview.blocked.map((b) => <div key={b} className="error">{b}</div>)}
+              {preview.blocked.map((b) => <NoticeBox key={b} level="error" action={b} />)}
               {preview.moves.map((m) => (
                 <p key={m.costItemId}>„{m.description}“ ({fmtEuro(m.amountCents)}) wird nach Tagen aufgeteilt: {m.parts.map((p) => `${p.label}: ${fmtEuro(p.amountCents)}`).join(', ')}.</p>
               ))}

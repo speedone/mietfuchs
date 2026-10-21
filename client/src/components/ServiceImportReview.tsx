@@ -131,7 +131,7 @@ export default function ServiceImportReview({ x, file, ctx, view, co2 = true, on
   return (
     <div className="field-group">
       <p className="muted">Die KI hat die Abrechnung gelesen. Bitte prüfen Sie jede Zahl am Beleg, bevor Sie etwas übernehmen.</p>
-      {checks.length > 0 && <ul className="notice">{checks.map((c) => <li key={c}>{c}</li>)}</ul>}
+      {checks.length > 0 && <NoticeBox level="warning"><ul>{checks.map((c) => <li key={c}>{c}</li>)}</ul></NoticeBox>}
       {x.blocks.map((b, i) => {
         const d = drafts[i]
         if (!d) return null

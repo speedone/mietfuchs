@@ -237,7 +237,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
               <input value={form.note} placeholder="z. B. Überweisung, Abrechnung 2025" onChange={(e) => setForm({ ...form, note: e.target.value })} />
             </Field>
           </div>
-          {paymentFormHints(form).map((h) => <p className="hint" key={h}>{h}</p>)}
+          {paymentFormHints(form).map((h) => <NoticeBox key={h} level="hint">{h}</NoticeBox>)}
         </Drawer>
       )}
 
@@ -278,10 +278,10 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
             </div>
 
             {noRent ? (
-              <div className="notice">
+              <NoticeBox level="warning">
                 Keine Kaltmiete hinterlegt — unter <em>Stammdaten → Mietverhältnis bearbeiten</em> die Kaltmiete-Staffel
                 eintragen, dann erscheint hier das Soll. (Reine NK-Vorauszahlungen zählen ebenfalls ins Soll.)
-              </div>
+              </NoticeBox>
             ) : (
               <>
                 <div className="rent-grid">

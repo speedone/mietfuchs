@@ -11,6 +11,7 @@ import { allGuides, filterGuides, type GuideEntry } from '../guideView'
 import { pageLabel } from '../nav'
 import type { GuidePage } from '../../../shared/guides.ts'
 import type { TermId } from '../../../shared/glossary.ts'
+import { NoticeBox } from '../components/Notice'
 
 const ISSUE_URL = 'https://github.com/speedone/mietfuchs/issues/'
 
@@ -65,12 +66,12 @@ export default function Hilfe({ onNavigate, focusTerm, onFocusTermDone }: { onNa
       </div>
 
       <h2 className="help-section">Anleitungen</h2>
-      {shownGuides.length === 0 && <div className="notice">Keine Anleitung passt zu „{q}“.</div>}
+      {shownGuides.length === 0 && <NoticeBox level="warning" action={<>Keine Anleitung passt zu „{q}“.</>} />}
       {/* Bei einer Suche aufgeklappt: Sonst sähe man nicht, wo das gesuchte Wort steht. */}
       {shownGuides.map((g) => <GuideCard key={g.id} guide={g} open={q !== ''} onNavigate={jump} />)}
 
       <h2 className="help-section">Begriffe</h2>
-      {shownTerms.length === 0 && <div className="notice">Kein Begriff passt zu „{q}“.</div>}
+      {shownTerms.length === 0 && <NoticeBox level="warning" action={<>Kein Begriff passt zu „{q}“.</>} />}
       {/* Zugeklappt mit Buchstabenleiste (N10 aus #341): aufgeklappt war die Liste rund 29.000 px lang */}
       {letters.length > 1 && (
         <nav aria-label="Begriffe nach Anfangsbuchstabe" className="flex flex-wrap gap-2 mb-3">

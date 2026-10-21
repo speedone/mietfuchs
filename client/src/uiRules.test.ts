@@ -919,14 +919,10 @@ test('S24: was am Fensterrand steht, hält die Sicherheitsränder ein', () => {
 // so steht, mit Anzahl, und darf nur kleiner werden (UI-Durchsicht H3, M5).
 const ERROR_FILES = new Set(['./components/Field.tsx', './components/ErrorSummary.tsx', './components/feedback.tsx', './components/DraftActions.tsx'])
 const ERROR_EXCEPTIONS = new Map<string, number>([
-  // Ladefehler oben auf der Seite stehen seit #346 Schritt 12 im Baustein Notice (Stufe Fehler), nicht mehr hier.
-  // Was die Vorschau der Buchung ablehnt, je Zeile mit „Position öffnen“ (Befund der Vorschau)
-  ['./components/AssessmentReview.tsx', 1],
-  // „Betrag prüfen“ im Posteingang (Entwurf am Feld mit „Position öffnen“)
-  ['./pages/Belege.tsx', 1],
-  // Ergebnis einer Vorschau oder Probe als Befund, kein Formularfehler: gesperrte Zeiträume, abgelaufene Fristen, die Probe
-  ['./components/PeriodCard.tsx', 2],
-  ['./components/HeatingPeriodSection.tsx', 3],
+  // Ladefehler und Befunde einer Vorschau stehen seit #346 Schritt 12 im Baustein Notice (Stufe Fehler). Übrig ist eine
+  // Zeile, die je nach Ergebnis rot oder grau steht: abgelaufene Frist, Probe
+  ['./components/PeriodCard.tsx', 1],
+  ['./components/HeatingPeriodSection.tsx', 1],
   ['./components/Co2Card.tsx', 1],
   // Das Ergebnis des Wiederherstellens (Fehler oder ok) unter dem Knopf
   ['./pages/Einstellungen.tsx', 1],
@@ -1044,27 +1040,16 @@ test('S26: Hinweise nur über den Baustein Notice', () => {
 // S26, zweiter Teil (Durchsicht K3): freie Kästen `className="notice|error|hint"` mit eigenem Text. Was heute so
 // steht, nennt die Liste mit Anzahl; sie darf nur kleiner werden, jede Umstellung auf den Baustein streicht ihren
 // Teil. Die Bausteine für Fehler (S15) und Notice selbst sind ausgenommen.
+// Seit #346 Schritt 12 nur noch Stellen, die kein Hinweis im Sinn des Bausteins sind: eine Zeile, die je nach Ergebnis rot
+// oder grau steht (Frist abgelaufen, Probe, Wiederherstellen), die Region „Neues Objekt“ mit Überschrift und Knöpfen und
+// der kleine Statustext unter dem Zahlungsdatum.
 const BOX_EXCEPTIONS = new Map<string, number>([
-  ['./components/AiSettings.tsx', 3],
-  ['./components/AssessmentReview.tsx', 3],
-  ['./components/Co2Card.tsx', 3],
-  ['./components/Co2SheetView.tsx', 2],
-  ['./components/CostPeriodFields.tsx', 1],
-  ['./components/FuelCard.tsx', 2],
-  ['./components/HeatingPeriodSection.tsx', 3],
-  ['./components/OperatingPowerCard.tsx', 3],
-  ['./components/PeriodCard.tsx', 2],
-  ['./components/PropertyNotice.tsx', 1],
-  ['./components/ServiceImportReview.tsx', 1],
-  ['./pages/Abrechnung.tsx', 1],
-  ['./pages/Belege.tsx', 2],
-  ['./pages/Cockpit.tsx', 1],
-  ['./pages/Einstellungen.tsx', 1],
-  ['./pages/Hilfe.tsx', 2],
-  ['./pages/Kosten.tsx', 4],
-  ['./pages/Mietkonto.tsx', 2],
-  ['./pages/Stammdaten.tsx', 2], // seit #346 Schritt 7 ohne den Kasten des Assistenten
-  ['./pages/Uebersicht.tsx', 1],
+  ['./components/Co2Card.tsx', 1], // Ergebnis der Probe, grün oder rot
+  ['./components/CostPeriodFields.tsx', 1], // <small role="status"> unter „Bezahlt am“
+  ['./components/HeatingPeriodSection.tsx', 1], // Frist je Heizkostenabrechnung, abgelaufen rot
+  ['./components/PeriodCard.tsx', 1], // Frist je Abrechnung, abgelaufen rot
+  ['./components/PropertyNotice.tsx', 1], // Region „Neues Objekt“
+  ['./pages/Einstellungen.tsx', 1], // Ergebnis des Wiederherstellens
 ])
 const boxUses = (src: string): string[] => [...src.matchAll(/className=(?:"([^"]*)"|'([^']*)'|\{((?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*)\})/g)]
   .filter((m) => /(?:^|[\s'"`])(?:notice|error|hint)(?=[\s'"`]|$)/.test(m[1] ?? m[2] ?? m[3] ?? ''))

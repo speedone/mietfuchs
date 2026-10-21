@@ -597,7 +597,7 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
       />
       {error && <NoticeBox level="error" action={error} />}
       {amountCheck && (
-        <div className="notice stack no-print" role="status" aria-label="Betrag prüfen">
+        <div role="status" aria-label="Betrag prüfen"><NoticeBox level="warning" className="stack no-print">
           Beleg an „{amountCheck.item.description}“ angehängt. Betrag der Position: <strong>{fmtEuro(amountCheck.item.amountCents)}</strong>.
           {amountCheck.closed && <div>{closedPeriodNotice(labelOfKey(rulesOf(properties.find((p) => p.id === amountCheck.item.propertyId)), amountCheck.item.period))}</div>}
           {' '}Stimmt er mit dem Beleg überein? Eine aus dem Vorjahr übernommene Position trägt oft noch einen geschätzten Betrag.{' '}
@@ -627,12 +627,12 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
           </div>
           )}
           {amountCheck.problem && (
-            <div className="error">
+            <NoticeBox level="error">
               {amountCheck.problem}
               {amountCheck.form && onOpenItem && <> <button className="btn small" onClick={() => { const it = amountCheck.item; leaveCheck(() => onOpenItem(it)) }}>Position öffnen</button></>}
-            </div>
+            </NoticeBox>
           )}
-        </div>
+        </NoticeBox></div>
       )}
 
       <div className="card no-print">

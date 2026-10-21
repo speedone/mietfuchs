@@ -274,20 +274,20 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
         <div className="card inset" aria-label="Vorschau">
           <strong>Vorschau</strong>
           <ul>{previewLines(preview).map((t) => <li key={t}>{t}</li>)}</ul>
-          {preview.notices.map((n) => <div key={n} className="notice">{n}</div>)}
+          {preview.notices.map((n) => <NoticeBox key={n} level="warning" action={n} />)}
           {preview.errors.map((e, i) => {
             const id = e.openItemId
             return (
-              <div key={i} className="error">
+              <NoticeBox key={i} level="error">
                 {e.message}{' '}
                 {id && onOpenItem && <button className="btn small" onClick={() => onOpenItem(id)}>Position öffnen</button>}
-              </div>
+              </NoticeBox>
             )
           })}
         </div>
       )}
       <ErrorSummary errors={errors} />
-      {booked && <div className="notice" aria-label="Gebucht">✓ Gebucht: {booked.lines.join(' · ')}</div>}
+      {booked && <div aria-label="Gebucht"><NoticeBox level="warning">✓ Gebucht: {booked.lines.join(' · ')}</NoticeBox></div>}
       <div className="row center">
         <a href={`/uploads/${encodeURIComponent(a.file)}`} target="_blank" rel="noreferrer">📎 Beleg ansehen</a>
         <div className="grow" />

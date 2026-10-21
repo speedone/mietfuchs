@@ -559,11 +559,11 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
       />
       {error && <NoticeBox level="error" action={error} />}
       {closedAt && (
-        <div className="notice">
+        <NoticeBox level="warning" action={<>
           Die Abrechnung {label} ist abgeschlossen (am {fmtDate(closedAt.slice(0, 10))}). Änderungen an den Kosten
           ändern die eingefrorene Abrechnung nicht; die Abrechnungsseite zeigt sie als Abweichung zur heutigen
           Berechnung. Bearbeiten bleibt möglich.
-        </div>
+        </>} />
       )}
 
       <div className="card no-print">
@@ -901,11 +901,11 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             </Field>
             {/* Laienprobe B19: Welcher Betrag der Messdienstabrechnung gemeint ist, steht dort, wo er eingetragen wird; über die volle Breite. */}
             {form.category === HEATING_CATEGORY && form.key === 'amounts' && plants.some((p) => p.method === 'service') && (
-              <p className="notice basis-full">
+              <NoticeBox level="warning" className="basis-full">
                 Abrechnung des Messdienstes: Tragen Sie die Kosten vor „Abzüglich CO₂-Kosten Vermieter“ ein, also die Summe der Kosten aller Nutzer plus
                 den CO₂-Anteil des Vermieters, nicht die Summe nach dem Abzug. Danach füllen Sie auf der Seite Heizkosten die Karte „CO₂-Kosten“ aus;
                 ihre Probe prüft diesen Betrag.
-              </p>
+              </NoticeBox>
             )}
             <Field label={<>davon <Term id="labor35a">§35a-Lohn</Term> €</>} hint="Lohn- und Arbeitskosten nach § 35a EStG; der Mieter kann sie steuerlich absetzen." {...formErrors.field('labor35a')}>
               <input value={form.labor35a} inputMode="decimal" onChange={(e) => setForm({ ...form, labor35a: e.target.value })} />
@@ -985,9 +985,9 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             )}
             {/* #141: anders als dieselbe Kostenart im Vorjahr? Dasselbe sagt die Abrechnung. */}
             {keyChangeNotice(form, units, keyCtx) && (
-              <div className="notice">
+              <NoticeBox level="warning">
                 {keyChangeNotice(form, units, keyCtx)} Mehr dazu: <Term id="keyChange" />.
-              </div>
+              </NoticeBox>
             )}
             {form.key === 'meter' && (
               <label className="field">
@@ -1054,7 +1054,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                 {/* #144: weicht der rechnerische Anteil vom Betrag ab, steht er markiert da */}
                 {externalHint(form, units) && (
                   externalMismatch(form, units)
-                    ? <div className="notice"><strong>{externalHint(form, units)}</strong></div>
+                    ? <NoticeBox level="warning"><strong>{externalHint(form, units)}</strong></NoticeBox>
                     : <div className="muted">{externalHint(form, units)}</div>
                 )}
               </div>

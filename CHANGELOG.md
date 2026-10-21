@@ -343,8 +343,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   braucht eine neue Vorschau, statt dass die alte für einen anderen Stand gespeichert wird
   ([#346](https://github.com/speedone/mietfuchs/issues/346)).
 - Hinweise und Fehlermeldungen auf den Seiten stehen einheitlich im Baustein für Hinweise: mit Zeichen und Stufe
-  („⚠ Warnung“, „✖ Fehler“) statt als farbiger Kasten ohne Wort, darunter Ladefehler oben auf den Seiten und die
-  einzeiligen Hinweise in Kosten, Belegordner, Heizkosten, Mietkonto und weiteren Karten
+  („⚠ Warnung“, „✖ Fehler“) statt als farbiger Kasten ohne Wort: Ladefehler oben auf den Seiten, Befunde einer
+  Vorschau, „Betrag prüfen“ im Belegordner, die Hinweise der KI-Einstellungen und der Auswertung, Abweichungen
+  einer abgeschlossenen Abrechnung und die ungültigen IBAN im Cockpit
   ([#346](https://github.com/speedone/mietfuchs/issues/346)).
 - Die Karte „Objekt“ verlangt eine Bezeichnung: Leer ließ sie sich speichern, und die Seitenleiste
   zeigte danach „Ohne Namen“. Hat das Objekt noch keinen Namen, etwa nach einer frischen Installation,
