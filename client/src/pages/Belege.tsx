@@ -735,9 +735,10 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
                   {g.missing.map((c) => (
                     <li key={c.id}>
                       <span>– {c.description}{showProperty ? ` (${propertyName(c.propertyId)})` : ''} · {fmtEuro(c.amountCents)} <span className="muted">ohne Beleg</span></span>
-                      {/* Der Knopf steht zuletzt: Die Gruppe ist rechtsbündig, und erscheinen hinter der Auswahl „Speichern“ und
-                          „Verwerfen“, wächst sie nach links, statt den Knopf zu verschieben (N7 aus #341) */}
-                      <span className="receipt-attach">
+                      {/* Der Knopf darf nicht springen, wenn hinter der Auswahl „Speichern“ und „Verwerfen“ erscheinen (N7 aus
+                          #341). Die Gruppe ist auch nach einem Umbruch rechtsbündig; am breiten Bildschirm steht der Knopf zuletzt,
+                          sodass sie nach links wächst, am Handy zuerst, sodass die Knöpfe darunter umbrechen (Durchsicht von N7) */}
+                      <span className="receipt-attach ml-auto justify-end">
                         {inboxFor(allCards, c).length > 0 && (
                           <AttachPicker label={`Vorhandenen Beleg für ${c.description} zuordnen`} what={`Beleg für ${c.description}`}
                             placeholder="Aus dem Posteingang …" scope={c.id} values={inboxFor(allCards, c).map((u) => u.upload.file)}
@@ -745,7 +746,7 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
                             {inboxFor(allCards, c).map((u) => <option key={u.upload.file} value={u.upload.file}>{receiptName(u.upload)}</option>)}
                           </AttachPicker>
                         )}
-                        <label className="btn secondary">
+                        <label className="btn secondary max-sm:order-first">
                           Beleg nachreichen
                           <input
                             type="file"

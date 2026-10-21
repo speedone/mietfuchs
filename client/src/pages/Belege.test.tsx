@@ -568,8 +568,8 @@ test('„Betrag prüfen“ zählt als offenes Formular, „Stimmt so“ nimmt di
 })
 
 // N7 aus #341: Im Posteingang sind die Knöpfe so hoch wie die Auswahlfelder daneben, und „Beleg nachreichen“
-// springt nicht: Er steht als letztes in seiner rechtsbündigen Gruppe, sodass „Speichern“ und „Verwerfen“ der
-// Auswahl davor die Gruppe nach links wachsen lassen statt den Knopf zu verschieben.
+// steht am breiten Bildschirm als letztes in seiner rechtsbündigen Gruppe. Ob er wirklich nicht springt (auch am
+// Handy, wo er zuerst steht), misst die Bedienprobe „beleg-zuordnen“ im Browserlauf; hier nur die Reihenfolge.
 test('Posteingang: Knöpfe in Höhe der Auswahl, „Beleg nachreichen“ steht hinter der Auswahl', async () => {
   extraUploads = [{ ...up('7_abwasser.pdf'), bookedItemIds: [], assessment: { id: 'a7', propertyId: null, open: true } }]
   renderContinue(() => {})
