@@ -218,11 +218,11 @@ test('Sprung aus einer Begriffserklärung gilt einmal; danach öffnet die Hilfe 
   guide.open = true
   fireEvent.click(within(guide).getByRole('button', { name: 'Einliegerwohnung' }))
   fireEvent.click(screen.getByRole('link', { name: 'Mehr in „Hilfe & Begriffe“ →' }))
-  await waitFor(() => expect(document.activeElement?.id).toBe('begriff-granny'))
+  await waitFor(() => expect(document.activeElement?.closest('details')?.id).toBe('begriff-granny'))
   fireEvent.click(within(sidebar()).getByRole('button', { name: /Cockpit/ }))
   await waitFor(() => expect(within(sidebar()).getByRole('button', { name: /Cockpit/ }).getAttribute('aria-current')).toBe('page'))
   fireEvent.click(within(sidebar()).getByRole('button', { name: /Hilfe & Begriffe/ }))
   await screen.findByRole('heading', { name: 'Hilfe & Begriffe', level: 1 })
   await new Promise((r) => setTimeout(r, 30))
-  expect(document.activeElement?.id).not.toBe('begriff-granny')
+  expect(document.activeElement?.closest('details')?.id).not.toBe('begriff-granny')
 })

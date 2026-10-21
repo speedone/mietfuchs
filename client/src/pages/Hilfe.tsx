@@ -28,7 +28,8 @@ export default function Hilfe({ onNavigate, focusTerm, onFocusTermDone }: { onNa
       // Die Begriffe sind zugeklappt (N10 aus #341); der angesprungene geht auf
       if (entry instanceof HTMLDetailsElement) entry.open = true
       entry?.scrollIntoView?.({ block: 'start' })
-      entry?.focus({ preventScroll: true })
+      // Der Fokus auf die Zeile zum Auf- und Zuklappen: Auf dem Kasten selbst klappte Enter nichts auf (Durchsicht von N10)
+      entry?.querySelector('summary')?.focus({ preventScroll: true })
       onFocusTermDone?.()
     }, 0)
     return () => clearTimeout(t)
@@ -42,7 +43,7 @@ export default function Hilfe({ onNavigate, focusTerm, onFocusTermDone }: { onNa
   const jumpToLetter = (id: TermId) => {
     const entry = document.getElementById(`begriff-${id}`)
     entry?.scrollIntoView?.({ block: 'start' })
-    entry?.focus({ preventScroll: true })
+    entry?.querySelector('summary')?.focus({ preventScroll: true })
   }
   // Ein Sprung beginnt oben auf der Zielseite, nicht auf der Höhe, auf der die Anleitung stand.
   const jump = (page: GuidePage) => {
@@ -72,14 +73,14 @@ export default function Hilfe({ onNavigate, focusTerm, onFocusTermDone }: { onNa
       {shownTerms.length === 0 && <div className="notice">Kein Begriff passt zu „{q}“.</div>}
       {/* Zugeklappt mit Buchstabenleiste (N10 aus #341): aufgeklappt war die Liste rund 29.000 px lang */}
       {letters.length > 1 && (
-        <nav aria-label="Begriffe nach Anfangsbuchstabe" className="flex flex-wrap gap-1 mb-3">
+        <nav aria-label="Begriffe nach Anfangsbuchstabe" className="flex flex-wrap gap-2 mb-3">
           {letters.map((l) => (
-            <button key={l.letter} type="button" className="btn ghost small" onClick={() => jumpToLetter(l.id)}>{l.letter}</button>
+            <button key={l.letter} type="button" className="btn ghost small" aria-label={`Begriffe mit ${l.letter}`} onClick={() => jumpToLetter(l.id)}>{l.letter}</button>
           ))}
         </nav>
       )}
       {shownTerms.map((t) => (
-        <details key={t.id} className="card guide glossary-entry" id={`begriff-${t.id}`} tabIndex={-1} open={q !== ''}>
+        <details key={t.id} className="card guide glossary-entry" id={`begriff-${t.id}`} open={q !== ''}>
           <summary><h3 className="guide-title">{t.title}</h3></summary>
           <p>{t.short}</p>
           <p><em>Beispiel:</em> {t.example}</p>
