@@ -6,6 +6,7 @@ import { api, errorText } from '../api'
 import { SHEET_COLUMNS, sheetFacts, sheetHead, sheetNotes, sheetRows } from '../co2Sheet'
 import Table from './Table'
 import type { Co2Sheet } from '../types'
+import { NoticeBox } from './Notice'
 
 export default function Co2SheetView({ plantId, period, onClose }: { plantId: string; period: string; onClose: () => void }) {
   const [sheet, setSheet] = useState<Co2Sheet | null>(null)
@@ -14,7 +15,7 @@ export default function Co2SheetView({ plantId, period, onClose }: { plantId: st
     api<Co2Sheet>(`/api/heating-plants/${encodeURIComponent(plantId)}/periods/${encodeURIComponent(period)}/co2-sheet`).then(setSheet).catch((e: unknown) => setError(errorText(e)))
   }, [plantId, period])
   const back = <button className="btn secondary" type="button" onClick={onClose}>Zurück zu den Heizkosten</button>
-  if (error) return <div className="card"><div className="error">{error}</div><div className="row no-print">{back}</div></div>
+  if (error) return <div className="card"><NoticeBox level="error" action={error} /><div className="row no-print">{back}</div></div>
   if (!sheet) return <div className="card"><p className="muted">Wird geladen …</p></div>
   const head = sheetHead(sheet)
   const findings = sheet.deliveries.flatMap((d) => d.findings)
@@ -63,17 +64,13 @@ export default function Co2SheetView({ plantId, period, onClose }: { plantId: st
       <ul>{sheetFacts(sheet).map((f) => <li key={f}>{f}</li>)}</ul>
       {sheet.opening?.adminNote && (
         // Die genauen Gründe einer unvollständigen Bestandsrechnung sind für den Vermieter (W-N4).
-        <div className="hint no-print">
-          <strong>Vorrat</strong>
-          <p>{sheet.opening.adminNote}</p>
-        </div>
+        <NoticeBox level="hint" className="no-print" title="Vorrat" action={sheet.opening.adminNote} />
       )}
       {findings.length > 0 && (
         // Für den Vermieter, nicht für den Empfänger des Blatts (Durchsicht von #246, R-W2).
-        <div className="hint no-print">
-          <strong>Bitte prüfen</strong>
+        <NoticeBox level="hint" className="no-print" title="Bitte prüfen">
           <ul>{findings.map((f) => <li key={f}>{f}</li>)}</ul>
-        </div>
+        </NoticeBox>
       )}
     </div>
   )

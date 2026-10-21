@@ -11,6 +11,7 @@ import { localToday } from '../periodForm'
 import { emptyRefundForm, refundAreaOf, refundBody, refundStatus, refundTenancies, refundToForm, SETTLE_OPTIONS, type Co2RefundForm, type RefundRow } from '../co2RefundForm'
 import type { PeriodKey } from '../types'
 import { ErrorSummary, useFormError } from './ErrorSummary'
+import Card from './Card'
 
 type View = RefundRow & { tenantName: string; unitName: string; claimDeadline: string | null; proposalCents: number | null; proposalExcluded: string | null }
 type TenancyInfo = { id: string; unitId: string; tenantName: string; start: string; end: string | null; heatingModel?: string }
@@ -77,8 +78,7 @@ export default function Co2RefundsCard({ propertyId, period, tenancies, units }:
   const first = choices[0]?.id ?? ''
 
   return (
-    <div className="card no-print">
-      <h2><Term id="co2Refund">CO₂-Erstattung</Term> an Mieter, die selbst heizen</h2>
+    <Card title={<><Term id="co2Refund">CO₂-Erstattung</Term> an Mieter, die selbst heizen</>} className="no-print">
       <ErrorSummary errors={errors} />
       <p className="muted">
         Bezieht ein Mieter Brennstoff oder Wärme über einen eigenen Vertrag, etwa für eine Gastherme oder eine zentrale Heizung, kann er den Anteil seiner
@@ -159,6 +159,6 @@ export default function Co2RefundsCard({ propertyId, period, tenancies, units }:
           {' '}<button className="btn secondary" onClick={() => setEditing(null)}>Abbrechen</button>
         </div>
       )}
-    </div>
+    </Card>
   )
 }

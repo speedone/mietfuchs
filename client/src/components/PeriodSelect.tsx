@@ -26,7 +26,7 @@ export function CalendarYearSelect({ className }: { className?: string }) {
   const switchYear = useSwitchCalendarYear()
   if (view.calendar) return null
   return (
-    <Switcher label="Kalenderjahr" value={String(view.calendarYear)} className={className}
+    <Switcher label="Kalenderjahr" value={String(view.calendarYear)} className={`switcher-field${className ? ` ${className}` : ''}`}
       options={view.calendarYearOptions.map((y) => ({ value: String(y), label: String(y) }))}
       onChange={(v) => void switchYear(Number(v))} />
   )

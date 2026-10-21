@@ -12,6 +12,7 @@ import {
   CAPTURE_SELF_OPTIONS, captureHint, HOT_WATER_OPTIONS, PART_OPTIONS, emptySelfSetup, forcedShare, itemsFromConflict, selfSetupBody, shareBounds, targetOptions, type SelfSetupField,
 } from '../heatingSelfForm'
 import { INSULATION_OPTIONS, INSULATION_QUESTION, insulationAsked, insulationExplained, percentOf, unsureShareHint } from '../heatingSelfView'
+import { NoticeBox } from './Notice'
 
 // Einrichtung Schritt 7 (Heizung PR 10, Entwurf 11.2): Heizkosten selbst abrechnen. Antwortet der
 // Server mit 409, nennt er die Heizpositionen offener Zeiträume, die Teil und Ziel brauchen; sie
@@ -114,7 +115,7 @@ export default function HeatingSelfSetup({ plant, period, periodLabel, onDone, o
       </label>
       <p className="muted">Nur ankreuzen, wenn es im Mietvertrag oder einer Vereinbarung mit den Mietern steht; mehr als 100 % gibt es nicht.</p>
       {forced !== null && <p className="muted">Bei einer Öl- oder Gasheizung in diesem Fall sind es bei der Heizung {forced} % (§ 7 Abs. 1 Satz 2 HeizkostenV); mehr nur mit einer Vereinbarung (§ 10 HeizkostenV).</p>}
-      {hint && <div className="notice">{hint}</div>}
+      {hint && <NoticeBox level="warning" action={hint} />}
       <label className="field">
         <span><Term id="baseCosts">Grundkosten</Term> der Heizung verteilen nach</span>
         <select value={form.areaBasisHeat} onChange={(e) => setForm({ ...form, areaBasisHeat: e.target.value as AreaBasisHeat })}>

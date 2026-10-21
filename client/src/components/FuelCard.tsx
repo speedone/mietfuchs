@@ -21,6 +21,7 @@ import { ErrorSummary, useFormError } from './ErrorSummary'
 import Drawer from './Drawer'
 import { useSaving } from '../useSaving'
 import Field from './Field'
+import { NoticeBox } from './Notice'
 
 type TextKey = Exclude<keyof FuelForm, 'usedByService' | 'quantityUnit' | 'unitId' | 'gasBasis' | 'grade' | 'parts'>
 
@@ -235,7 +236,7 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
             <button key={a.value} className={open === a.value ? 'btn' : 'btn secondary'} onClick={() => void answer(d, a.value)}>{a.label}</button>
           ))}
         </span>
-        {open === 'payment' && <p className="hint">{PAYMENT_GUIDE}</p>}
+        {open === 'payment' && <NoticeBox level="hint" action={PAYMENT_GUIDE} />}
         {open === 'reassign' && (<>
           <label className="field">
             Lieferung, die die Gutschrift berichtigt
@@ -301,7 +302,7 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
           <li key={d.id}>
             <strong>{d.label || 'Lieferung'}</strong> {deliveryLine(d)}
             {stock && !service && <span className="muted"> · {linkedText(d.id)}</span>}
-            {(findings[d.id] ?? []).map((f) => <p key={f} className="hint">{f}</p>)}
+            {(findings[d.id] ?? []).map((f) => <NoticeBox key={f} level="hint" action={f} />)}
             {!view.closed && !service && credits.has(d.id) && creditBlock(d, credits.get(d.id) ?? 0)}
             {!view.closed && (
               <span className="row">
@@ -336,7 +337,7 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
           errors={formErrors}
           actions={<button className="btn" disabled={saving.busy} onClick={() => void saving.run(save)}>{editing === 'neu' ? 'Anlegen' : 'Speichern'}</button>}
         >
-          {checks.length > 0 && <ul className="notice">{checks.map((c) => <li key={c}>{c}</li>)}</ul>}
+          {checks.length > 0 && <NoticeBox level="warning"><ul>{checks.map((c) => <li key={c}>{c}</li>)}</ul></NoticeBox>}
           {plant.supply === 'perUnit' && (
             <Field label="Wohnung" required {...formErrors.field('unitId')}>
               <select value={form.unitId} onChange={(e) => set('unitId', e.target.value)}>
@@ -400,7 +401,7 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
                 </select>
               </label>
               <small className="muted">Steht bei der Umrechnung von m³ in kWh „Brennwert“ auf der Rechnung, wählen Sie „nach Brennwert“. Für den <Term id="gasCalorificBasis">Warmwasseranteil nach einer Formel</Term> hängt der Faktor davon ab.</small>
-              {gasBasisMissing(form, view) && <div className="notice">{GAS_BASIS_MISSING}</div>}
+              {gasBasisMissing(form, view) && <NoticeBox level="warning" action={GAS_BASIS_MISSING} />}
             </>)}
           </>)}
           {/* Bei Strom einer Wärmepumpe gibt es keine CO₂-Kosten aufzuteilen (§ 2 Abs. 1 CO2KostAufG). */}

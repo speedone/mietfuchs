@@ -266,7 +266,7 @@ test('kleine Knöpfe haben am Handy die volle Tippfläche', () => {
 // Die heutigen Namensgleichheiten bleiben, weil tw.css sie aus der Suche nimmt (`@source not
 // inline`); jede von ihnen steht deshalb auch dort.
 const LEGACY_UTILITY_NAMES = new Set(['sr-only', 'grow', 'grow-2'])
-const INDEX_CSS_MAX_LINES = 816
+const INDEX_CSS_MAX_LINES = 813
 test('S20: keine neue Klasse und keine Animation in index.css mit einem Namen aus Tailwind, und index.css wächst nicht', () => {
   expect(definedClasses.size).toBeGreaterThan(100)
   const clashes = tailwindUtilities(definedClasses)
@@ -778,7 +778,8 @@ test('S22: Navigationseinträge stehen nur in nav.ts', () => {
 // Jahreszahlen, Zeiträume oder Objektnamen anbieten (außer „Kalenderjahr“).
 const SIDEBAR_SWITCHERS: Array<[RegExp, Set<string>]> = [
   [/<(?:PeriodSelect|PeriodSelectView|PropertySwitcher)\b/, new Set(['./App.tsx', './components/PeriodSelect.tsx'])],
-  [/<Switcher\b/, new Set(['./components/PeriodSelect.tsx', './property.tsx'])],
+  // Die Musterseite zeigt den Baustein mit festen Wohnungen; sie wählt weder Objekt noch Zeitraum
+  [/<Switcher\b/, new Set(['./components/PeriodSelect.tsx', './property.tsx', './pages/Muster.tsx'])],
   [/<CalendarYearSelect\b/, new Set(['./pages/Mietkonto.tsx', './pages/Steuer.tsx'])],
 ]
 const PERIOD_OR_PROPERTY = /\bproperties\.map\b|\bswitch(?:Period|Property|Year)\b|\bcalendarYearOptions\b|\byearOptions\b|\byears\.map\b|\b(?:view|period)\.options\b/
@@ -919,27 +920,10 @@ test('S24: was am Fensterrand steht, hält die Sicherheitsränder ein', () => {
 // so steht, mit Anzahl, und darf nur kleiner werden (UI-Durchsicht H3, M5).
 const ERROR_FILES = new Set(['./components/Field.tsx', './components/ErrorSummary.tsx', './components/feedback.tsx', './components/DraftActions.tsx'])
 const ERROR_EXCEPTIONS = new Map<string, number>([
-  // Fehler beim Laden der Seite, oben auf der Seite (client/CLAUDE.md: „Die Meldung oben auf der Seite bleibt für Ladefehler“)
-  ['./pages/Abrechnung.tsx', 1], // dazu Abschließen und Wiederöffnen (`attempt`), Aktionen ohne Formular; Schritt 10
-  ['./pages/Cockpit.tsx', 1],
-  ['./pages/Heizkosten.tsx', 1],
-  ['./pages/Mietkonto.tsx', 1],
-  ['./pages/Steuer.tsx', 1],
-  ['./pages/Uebersicht.tsx', 1],
-  ['./components/Co2SheetView.tsx', 1],
-  // Ladefehler (die Meldungen der Ablesungen stehen seit Schritt 10 im Baustein Notice); der Mieterwechsel steht seit
-  // Schritt 7 im Seitenfenster, Stammdaten hat deshalb keine Stelle mehr
-  ['./pages/Zaehler.tsx', 1],
-  // Ladefehler und das Ergebnis je Beleg in der Warteschlange der Auswertung (Inhalt der Liste)
-  ['./pages/Kosten.tsx', 2],
-  ['./pages/Schnellerfassung.tsx', 2],
-  // Was die Vorschau der Buchung ablehnt, je Zeile mit „Position öffnen“ (Befund der Vorschau)
-  ['./components/AssessmentReview.tsx', 1],
-  // Ladefehler, die Belegmappe und „Betrag prüfen“ im Posteingang (Entwurf am Feld mit „Position öffnen“)
-  ['./pages/Belege.tsx', 3],
-  // Ergebnis einer Vorschau oder Probe als Befund, kein Formularfehler: gesperrte Zeiträume, abgelaufene Fristen, die Probe
-  ['./components/PeriodCard.tsx', 2],
-  ['./components/HeatingPeriodSection.tsx', 3],
+  // Ladefehler und Befunde einer Vorschau stehen seit #346 Schritt 12 im Baustein Notice (Stufe Fehler). Übrig ist eine
+  // Zeile, die je nach Ergebnis rot oder grau steht: abgelaufene Frist, Probe
+  ['./components/PeriodCard.tsx', 1],
+  ['./components/HeatingPeriodSection.tsx', 1],
   ['./components/Co2Card.tsx', 1],
   // Das Ergebnis des Wiederherstellens (Fehler oder ok) unter dem Knopf
   ['./pages/Einstellungen.tsx', 1],
@@ -1057,36 +1041,16 @@ test('S26: Hinweise nur über den Baustein Notice', () => {
 // S26, zweiter Teil (Durchsicht K3): freie Kästen `className="notice|error|hint"` mit eigenem Text. Was heute so
 // steht, nennt die Liste mit Anzahl; sie darf nur kleiner werden, jede Umstellung auf den Baustein streicht ihren
 // Teil. Die Bausteine für Fehler (S15) und Notice selbst sind ausgenommen.
+// Seit #346 Schritt 12 nur noch Stellen, die kein Hinweis im Sinn des Bausteins sind: eine Zeile, die je nach Ergebnis rot
+// oder grau steht (Frist abgelaufen, Probe, Wiederherstellen), die Region „Neues Objekt“ mit Überschrift und Knöpfen und
+// der kleine Statustext unter dem Zahlungsdatum.
 const BOX_EXCEPTIONS = new Map<string, number>([
-  ['./components/AiSettings.tsx', 3],
-  ['./components/AssessmentReview.tsx', 5],
-  ['./components/Co2Card.tsx', 3],
-  ['./components/Co2FactsCard.tsx', 1],
-  ['./components/Co2SheetView.tsx', 3],
-  ['./components/CostPeriodFields.tsx', 1],
-  ['./components/FuelCard.tsx', 4],
-  ['./components/HeatingPeriodSection.tsx', 3],
-  ['./components/HeatingSelfSetup.tsx', 1],
-  ['./components/LawOverridesCard.tsx', 1],
-  ['./components/OperatingPowerCard.tsx', 6],
-  ['./components/PeriodCard.tsx', 2],
-  ['./components/PropertyNotice.tsx', 1],
-  ['./components/SelfHeatingCards.tsx', 1],
-  ['./components/ServiceImportReview.tsx', 2],
-  ['./components/StockCard.tsx', 1],
-  ['./pages/Abrechnung.tsx', 2],
-  ['./pages/Belege.tsx', 5],
-  ['./pages/Cockpit.tsx', 2],
-  ['./pages/Einstellungen.tsx', 1],
-  ['./pages/Heizkosten.tsx', 1],
-  ['./pages/Hilfe.tsx', 2],
-  ['./pages/Kosten.tsx', 7],
-  ['./pages/Mietkonto.tsx', 3],
-  ['./pages/Schnellerfassung.tsx', 2],
-  ['./pages/Stammdaten.tsx', 3], // seit #346 Schritt 7 ohne den Kasten des Assistenten
-  ['./pages/Steuer.tsx', 1],
-  ['./pages/Uebersicht.tsx', 2],
-  ['./pages/Zaehler.tsx', 1],
+  ['./components/Co2Card.tsx', 1], // Ergebnis der Probe, grün oder rot
+  ['./components/CostPeriodFields.tsx', 1], // <small role="status"> unter „Bezahlt am“
+  ['./components/HeatingPeriodSection.tsx', 1], // Frist je Heizkostenabrechnung, abgelaufen rot
+  ['./components/PeriodCard.tsx', 1], // Frist je Abrechnung, abgelaufen rot
+  ['./components/PropertyNotice.tsx', 1], // Region „Neues Objekt“
+  ['./pages/Einstellungen.tsx', 1], // Ergebnis des Wiederherstellens
 ])
 const boxUses = (src: string): string[] => [...src.matchAll(/className=(?:"([^"]*)"|'([^']*)'|\{((?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*)\})/g)]
   .filter((m) => /(?:^|[\s'"`])(?:notice|error|hint)(?=[\s'"`]|$)/.test(m[1] ?? m[2] ?? m[3] ?? ''))
@@ -1189,4 +1153,33 @@ test('S29: freistehende Paragrafen mit Leerzeichen', () => {
   const all = { ...twSources, ...sharedSources }
   expect(Object.keys(all).length).toBeGreaterThan(100)
   expect(Object.entries(all).flatMap(([f, s]) => paragraphSpacingProblems(f, s))).toEqual([])
+})
+
+// S30 (#346 Schritt 12, aus den Durchsichten): „Kalenderjahr“ auf Mietkonto und Steuer stand in der kleinen, grauen
+// Beschriftung der Seitenleiste neben fetten Feldbeschriftungen. Auf einer Seite trägt der Umschalter die Beschriftung
+// eines Felds: `switcher-field` setzt die Variablen, aus denen `switcher` seine Beschriftung liest.
+test('S30: der Umschalter auf einer Seite ist beschriftet wie ein Feld', () => {
+  expect(twSources['./components/PeriodSelect.tsx']).toMatch(/<Switcher label="Kalenderjahr"[^>]*className=\{`switcher-field/)
+  expect(twCss).toMatch(/@utility switcher-field \{[^}]*--switcher-label-weight: var\(--weight-strong\)/)
+  expect(twCss).toMatch(/font-weight: var\(--switcher-label-weight, var\(--weight-medium\)\)/)
+})
+
+// S31 (#346 Schritt 12, aus den Durchsichten): Eine Karte mit Überschrift ist der Baustein `Card` (einheitlicher Kopf,
+// höchstens eine Aktion rechts). Vorher setzten rund 20 Karten außerhalb der Seite Heizkosten ihren Kopf selbst. Erkannt
+// wird die Klasse `card` auch als Ausdruck, ein JSX-Kommentar davor und ein eigener Kopf als `div` um die Überschrift
+// (Durchsicht: so blieben Cockpit, Mietkonto und Posteingang unbemerkt). Ausnahmen mit Grund in CARD_EXCEPTIONS.
+const CARD_CLASS = String.raw`(?:"card(?: [\w-]+)*"|\{\s*(?:\`card[^\`]*\`|[^{}]*\?\s*'card[^']*'[^{}]*)\})`
+const manualCardHeads = (src: string): string[] => [...src.matchAll(new RegExp(String.raw`<(?:div|section)\s+className=${CARD_CLASS}(?:\s+[a-zA-Z-]+=(?:"[^"]*"|\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\}))*\s*>(?:\s|\{\/\*[\s\S]*?\*\/\})*(?:<div className="[^"]*">\s*)?<h[23][\s>]`, 'g'))].map((m) => m[0])
+const CARD_EXCEPTIONS = new Map<string, string>([
+])
+test('S31: Karten mit Überschrift nur über den Baustein Card', () => {
+  expect(manualCardHeads('<div className="card no-print">\n  <h2>Titel</h2>')).toHaveLength(1)
+  expect(manualCardHeads('<section className="card"><h3 className="x">T</h3>')).toHaveLength(1)
+  expect(manualCardHeads('<div className="card">\n  {/* Kommentar */}\n  <h2>T</h2>')).toHaveLength(1)
+  expect(manualCardHeads("<div className={on ? 'card focus-target' : 'card'} key={id}>\n<div className=\"row baseline\">\n<h2 className=\"grow\">T</h2>")).toHaveLength(1)
+  expect(manualCardHeads('<div\n className={`card inbox${over ? \' x\' : \'\'}`}\n onDrop={(e) => { e.preventDefault() }}\n>\n<div className="head">\n<h2>T</h2>')).toHaveLength(1)
+  expect(manualCardHeads('<Card title="Titel">')).toEqual([])
+  expect(manualCardHeads('<div className="card">\n  <label className="field">')).toEqual([])
+  const found = files.filter((f) => f !== './components/Card.tsx').map((f) => [f, manualCardHeads(sources[f] ?? '').length] as const).filter(([, n]) => n > 0)
+  expect(found.filter(([f]) => !CARD_EXCEPTIONS.has(f)).map(([f, n]) => `${f}: ${n}`)).toEqual([])
 })

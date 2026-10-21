@@ -598,3 +598,33 @@ test('7a: eine geänderte Aktion an einer Zeile meldet die Karte an, zurück zum
   fireEvent.change(await actionOf('Grundsteuer B'), { target: { value: vorher } })
   expect(probe.open()).toBe(false)
 })
+
+// Durchsicht von M10: Die zwei Zeilen einer Position bilden eine Gruppe (eigenes <tbody>), damit „Was geschieht?“
+// nicht zur Position darüber zu gehören scheint; die Auswahl hat eine großzügige Grenze statt keiner.
+test('Auswertung: je Position ein eigenes tbody mit Wahl, Betrag und Feldern', async () => {
+  fake = fakeBooking({ items: [], units: UNITS })
+  extraction = invoice([{ description: 'Gartenpflege', category: 'Gartenpflege', amountEur: 300 }, { description: 'Hausmeister', category: 'Hauswart', amountEur: 200 }], 'Grün')
+  const { container } = intake()
+  await upload(container)
+  const garten = await actionOf('Gartenpflege')
+  const group = garten.closest('tbody')
+  if (!group) return assert.fail('Keine Gruppe je Position')
+  expect(within(group).getAllByRole('textbox', { name: 'Beschreibung' }).map((i) => (i as HTMLInputElement).value)).toEqual(['Gartenpflege'])
+  expect(within(group).getByRole('textbox', { name: '§35a-Lohn €' })).toBeTruthy()
+  expect((await actionOf('Hausmeister')).closest('tbody')).not.toBe(group)
+  expect(garten.classList.contains('select-wide')).toBe(true)
+})
+
+// Durchsicht der Hinweiskästen: „✓ Gebucht“ ist ein Erfolg, kein Hinweis mit „Warnung“; er steht in einer Statusmeldung.
+test('nach dem Buchen steht „Gebucht“ als Erfolg, nicht als Warnung', async () => {
+  fake = fakeBooking({ items: [estimate('wa', 'Wasser/Abwasser', 150000)], units: UNITS })
+  extraction = invoice([{ description: 'Frischwasser', category: 'Wasser/Abwasser', amountEur: 700 }])
+  const { container } = intake()
+  await upload(container)
+  fireEvent.change(await actionOf('Frischwasser'), { target: { value: 'link:wa' } })
+  await previewAndBook()
+  const done = await screen.findByLabelText('Gebucht', {}, SLOW)
+  expect(done.closest('.notice-item')).toBeNull()
+  expect(done.getAttribute('role')).toBe('status')
+  expect(done.classList.contains('ok')).toBe(true)
+})

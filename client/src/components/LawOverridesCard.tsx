@@ -10,6 +10,7 @@ import DraftActions from './DraftActions'
 import Card from './Card'
 import type { LawOverrideSlot } from '../types'
 import { ErrorSummary, useFormError } from './ErrorSummary'
+import { NoticeBox } from './Notice'
 
 const keyOf = (s: LawOverrideSlot) => `${s.paramId}|${s.year}`
 
@@ -81,7 +82,7 @@ function SlotGroup({ slot: s, onSave, onRemove }: { slot: LawOverrideSlot; onSav
               <input value={d.source} placeholder="UBA, Bekanntmachung vom …" disabled={draft.saving} onChange={(e) => draft.set({ ...d, source: e.target.value })} />
             </label>
           </div>
-          {early && <p className="notice">{early}</p>}
+          {early && <NoticeBox level="warning" action={early} />}
         </>
       )}
       <div className="row">

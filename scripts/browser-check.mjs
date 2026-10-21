@@ -365,7 +365,9 @@ async function checkCombination(browser, base, combo, AxeBuilder, navLabels) {
       const raf = /** @type {any} */ (globalThis).requestAnimationFrame
       raf(() => raf(() => resolve(undefined)))
     }))
-    const axe = await new AxeBuilder({ page }).analyze()
+    // Die Zielgröße nach WCAG 2.5.8 (24 px oder Abstand) ist in axe ausgeschaltet; eingeschaltet, weil sie zur Stufe AA
+    // gehört und der Rest von N11 aus #341 („Mülleimer-Ziele von rund 20 px“) sonst ungeprüft bliebe
+    const axe = await new AxeBuilder({ page }).options({ rules: { 'target-size': { enabled: true } } }).analyze()
     for (const v of axe.violations) {
       if (v.impact !== 'serious' && v.impact !== 'critical') continue
       const ex = exceptionFor(v.id, id, combo)
@@ -429,6 +431,50 @@ async function checkCombination(browser, base, combo, AxeBuilder, navLabels) {
     if (theme === themes[0]) drawersOpened += await checkDrawers(page, id, dir, add, reportClipped)
   }
 
+  // Die Musterseite (`?muster`, #346 Schritt 12): alle Bausteine auf einer Seite, mit denselben Prüfungen wie jede Seite
+  // der Navigation. Sie kommt ohne Server aus und ist deshalb nicht in der Navigation; `--pages muster` prüft sie allein.
+  if (PAGES === null || PAGES.includes('muster')) {
+    current = 'muster'
+    try {
+      await page.goto(`${base}/?muster${theme === 'dark' ? '=dunkel' : ''}`)
+      await page.getByRole('heading', { name: 'Musterseite', level: 1 }).waitFor({ timeout: 15000 })
+      await settle(page)
+      checkedPages++
+      const wide = await overflow(page)
+      if (wide) add('muster', 'Breite', `Seite ${wide.scroll} px breit bei ${wide.width} px Fenster${wide.elements.length ? `: ${wide.elements.join('; ')}` : ''}`)
+      reportClipped('muster', await clippedFields(page, 'main'))
+      await runAxe('muster')
+      await page.screenshot({ path: path.join(dir, 'muster.png'), fullPage: true }).catch(() => {})
+      // Die Zustände, die erst nach einem Klick erscheinen, je mit axe und Foto (Durchsicht der Musterseite):
+      // Seitenfenster, Rückfrage, Begriffserklärung
+      const states = /** @type {const} */ ([
+        ['seitenfenster', '+ Muster anlegen', 'dialog'],
+        ['rueckfrage', 'Muster löschen …', 'alertdialog'],
+      ])
+      for (const [state, button, role] of states) {
+        await page.getByRole('button', { name: button }).click()
+        const box = page.getByRole(role).last()
+        await box.waitFor({ timeout: 3000 })
+        await runAxe(`muster:${state}`)
+        await page.screenshot({ path: path.join(dir, `muster-${state}.png`) }).catch(() => {})
+        await page.keyboard.press('Escape')
+        await box.waitFor({ state: 'hidden', timeout: 3000 }).catch(() => add('muster', 'Bedienprobe', `Esc schließt „${state}“ nicht.`))
+      }
+      const term = page.locator('main .term[role="button"]').first()
+      await term.click()
+      await page.locator('.term-pop:visible').first().waitFor({ timeout: 3000 })
+      await runAxe('muster:begriff')
+      await page.screenshot({ path: path.join(dir, 'muster-begriff.png') }).catch(() => {})
+      await page.keyboard.press('Escape')
+    } catch (err) {
+      add('muster', 'Aufruf', `Die Musterseite ließ sich nicht prüfen: ${err instanceof Error ? err.message.split('\n')[0] : err}`)
+    }
+    // Zurück in die App für die Bedienproben
+    await page.goto(base)
+    await page.locator(view === 'mobile' ? 'button.menu-toggle' : 'nav.sidebar').first().waitFor()
+    await settle(page)
+  }
+
   if (theme === themes[0] && PAGES === null && drawersOpened < MIN_DRAWERS) {
     add('fenster', 'Seitenfenster', `Nur ${drawersOpened} statt mindestens ${MIN_DRAWERS} Seitenfenster geöffnet und gemessen; ist ein Knopf umbenannt oder öffnet ein Fenster nicht?`)
   }
@@ -437,6 +483,7 @@ async function checkCombination(browser, base, combo, AxeBuilder, navLabels) {
   if (theme === themes[0]) {
     for (const [name, probe] of /** @type {const} */ ([
       ['seitenfenster', probeDrawer], ['monatsfeld', probeMonth], ['begriff', probeTerm], ['fehler-nach-speichern', probeError],
+      ['beleg-zuordnen', probeAttach],
       ...(view === 'mobile' ? /** @type {const} */ ([['navigation-handy', probeMobileNav]]) : []),
     ])) {
       current = `probe:${name}`
@@ -593,6 +640,29 @@ async function probeMonth(page, view, snap) {
   if (!(await drawer.isVisible())) fail('Monatsfeld: Esc im Raster hat das ganze Seitenfenster geschlossen.')
   if (await page.getByRole('alertdialog').isVisible()) fail('Monatsfeld: Esc im Raster hat die Rückfrage des Seitenfensters ausgelöst.')
   await discardDrawer(page, drawer)
+}
+
+// Belegordner, Position ohne Beleg (N7 aus #341): Wer in „Aus dem Posteingang …“ einen Beleg wählt, bekommt
+// „Speichern“ und „Verwerfen“ dazu; „Beleg nachreichen“ bleibt dabei, wo er war. Danach wird verworfen.
+async function probeAttach(page, view, snap) {
+  await go(page, view, 'Belegordner')
+  const picker = page.locator('main select[aria-label^="Vorhandenen Beleg für"]').first()
+  if (!(await picker.count())) fail('Beleg zuordnen: Im Beispielbestand gibt es keine Position ohne Beleg mit Belegen im Posteingang.')
+  await picker.evaluate((el) => { const d = el.closest('details'); if (d) d.open = true })
+  await picker.scrollIntoViewIfNeeded()
+  const group = picker.locator('xpath=ancestor::span[contains(@class, "receipt-attach")]')
+  const button = group.locator('label.btn')
+  const before = await button.boundingBox()
+  await picker.selectOption({ index: 1 })
+  const discard = group.getByRole('button', { name: /^Verwerfen/ })
+  await discard.waitFor({ state: 'visible', timeout: 3000 }).catch(() => fail('Beleg zuordnen: Nach der Wahl erscheint kein „Verwerfen“.'))
+  const after = await button.boundingBox()
+  await snap('gewaehlt')
+  if (!before || !after) fail('Beleg zuordnen: „Beleg nachreichen“ ist nicht sichtbar.')
+  else if (Math.abs(before.x - after.x) > 1 || Math.abs(before.y - after.y) > 1) {
+    fail(`Beleg zuordnen: „Beleg nachreichen“ springt von ${Math.round(before.x)}/${Math.round(before.y)} nach ${Math.round(after.x)}/${Math.round(after.y)}, sobald „Speichern“ und „Verwerfen“ erscheinen.`)
+  }
+  await discard.click()
 }
 
 // Die Begriffserklärung: der erste sichtbare Begriff auf Stammdaten, Kosten oder Abrechnung; Klick öffnet
@@ -782,7 +852,7 @@ async function main() {
     // Ein Tippfehler in --pages prüfte sonst keine Seite und meldete grün
     if (PAGES) {
       for (const id of PAGES) {
-        if (!(navLabels ?? []).some((l) => slug(l) === id)) findings.push({ engine: 'alle', view: '–', theme: '–', page: id, kind: 'Aufruf', text: `--pages nennt „${id}“, die Navigation hat keine solche Seite (möglich: ${(navLabels ?? expected).map(slug).join(', ')}).` })
+        if (id !== 'muster' && !(navLabels ?? []).some((l) => slug(l) === id)) findings.push({ engine: 'alle', view: '–', theme: '–', page: id, kind: 'Aufruf', text: `--pages nennt „${id}“, die Navigation hat keine solche Seite (möglich: ${(navLabels ?? expected).map(slug).join(', ')}).` })
       }
     }
     if (checkedPages === 0 && (PAGES === null || PAGES.length > 0)) {

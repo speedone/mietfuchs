@@ -19,6 +19,8 @@ import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
 import DraftActions from '../components/DraftActions'
 import { useDraft } from '../useDraft'
+import { NoticeBox } from '../components/Notice'
+import Card from '../components/Card'
 
 const fmtSize = (b: number) =>
   b >= 1024 * 1024 ? `${(b / 1024 / 1024).toLocaleString('de-DE', { maximumFractionDigits: 1 })} MB` : `${Math.max(1, Math.round(b / 1024))} kB`
@@ -96,10 +98,12 @@ function packPeriod(rules: PeriodRules, year: number): BillingPeriod {
   return periodsBetween(rules, `${year}-01-01`, `${year}-12-31`).find((p) => p.from.startsWith(`${year}-`)) ?? periodContaining(rules, `${year}-01-01`)
 }
 
-function FolderPacks({ propertyId, propertyName, year, rules, uploads, costItems, make }: {
+function FolderPacks({ propertyId, propertyName, year, chosen, rules, uploads, costItems, make }: {
   propertyId: string
   propertyName: string
   year: number
+  // Der in der Seitenleiste gewählte Zeitraum, wenn die Mappe dessen Objekt gilt; sonst der, der im Jahr beginnt
+  chosen: BillingPeriod | null
   rules: PeriodRules
   uploads: UploadInfo[]
   costItems: CostItem[]
@@ -111,7 +115,7 @@ function FolderPacks({ propertyId, propertyName, year, rules, uploads, costItems
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState('')
   const toast = useToast()
-  const period = packPeriod(rules, year)
+  const period = chosen ?? packPeriod(rules, year)
   const label = periodLabel(period)
   const param = isCalendarRules(rules) ? String(year) : period.key
 
@@ -153,19 +157,18 @@ function FolderPacks({ propertyId, propertyName, year, rules, uploads, costItems
   }
 
   return (
-    <div className="card no-print receipt-packs">
-      <h2>Mappen packen · {year}</h2>
+    <Card title={<>Mappen packen · {year}</>} className="no-print receipt-packs">
       <div className="row receipt-filters">
         <a className="btn" href={withProperty(`/api/receipts/tax/${year}`, propertyId)} download>🧾 Belege für die Steuer (ZIP)</a>
         <span className="muted">Alle Belege des Jahres nach den Gruppen der Anlage V, auch die nicht umlagefähigen, mit einer Übersicht.</span>
       </div>
       <details onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
-        <summary>📎 Belegmappe für Mieter (PDF)</summary>
+        <summary>📎 Belegmappe für Mieter · {label} (PDF)</summary>
         <p className="muted">
           Für die Belegeinsicht: die Belege der umgelegten Positionen in der Reihenfolge der Abrechnung, mit einem Deckblatt
           „Position → Beleg, Seite“. Seit 2025 dürfen Sie die Belege elektronisch bereitstellen (§ 556 Abs. 4 BGB).
         </p>
-        {problem && <div className="error">{problem}</div>}
+        {problem && <NoticeBox level="error" action={problem} />}
         {!plan ? (
           !problem && <div className="muted">Lädt die Abrechnung …</div>
         ) : (
@@ -184,13 +187,13 @@ function FolderPacks({ propertyId, propertyName, year, rules, uploads, costItems
               </label>
             )}
             {individual > 0 && (
-              <p className="notice">
+              <NoticeBox level="warning" action={<>
                 Belege zu „Einzelbeträge je Mieter“ (etwa die Abrechnung eines Messdienstes), zu einer Direktzuordnung oder zu einer
                 Position mit Teilnehmern betreffen nur einzelne Mieter und nennen oft deren Namen und Verbrauchswerte. Ein Mieter darf
                 auch sie einsehen, ohne ein besonderes Interesse darzulegen (BGH, Urteil vom 07.02.2018, VIII ZR 189/17). Weil die Mappe
                 an alle Mieter des Objekts geht, legen Sie sie am besten nur dem bei, der danach fragt, und prüfen vorher, ob Namen darauf
                 stehen müssen. Ohne Haken stehen diese Positionen im Deckblatt mit „auf Anfrage“.
-              </p>
+              </>} />
             )}
             <button className="btn" onClick={() => void create()} disabled={busy || plan.entries.length === 0}>
               {busy ? 'Wird erstellt …' : 'PDF erstellen'}
@@ -198,7 +201,7 @@ function FolderPacks({ propertyId, propertyName, year, rules, uploads, costItems
           </>
         )}
       </details>
-    </div>
+    </Card>
   )
 }
 
@@ -289,7 +292,7 @@ function InboxPlacement({ upload, properties, yearOptions, onSave, children }: {
 export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onContinue, onOpenItem, makeTenantFolder = downloadTenantFolder }: Props) {
   const toast = useToast()
   const confirm = useConfirm()
-  const { year: currentYear, calendarYearOptions, calendar } = usePeriod()
+  const { year: currentYear, calendarYearOptions, calendar, key: periodKeyNow, period: periodNow, label: periodLabelNow } = usePeriod()
   const { property, properties } = useProperty()
   const [uploads, setUploads] = useState<UploadEntry[]>([])
   const [loadedItems, setLoadedItems] = useState<CostItem[]>([])
@@ -348,7 +351,9 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
   const filter: FolderFilter = useMemo(() => ({
     propertyId: properties.length > 1 && !allProperties && property ? property.id : 'all',
     year: allYears ? 'all' : currentYear,
-  }), [allProperties, allYears, property, currentYear, properties.length])
+    // Der gewählte Zeitraum des Objekts der Seitenleiste: Rumpf und neuer Zeitraum beginnen im selben Jahr (#346 Schritt 12)
+    period: !allYears && !calendar && property ? { propertyId: property.id, key: periodKeyNow } : null,
+  }), [allProperties, allYears, property, currentYear, properties.length, calendar, periodKeyNow])
   const folder = useMemo(() => buildFolder(uploads, costItems, filter, query), [uploads, costItems, filter, query])
   const allCards = useMemo(() => receiptCards(uploads, costItems), [uploads, costItems])
   const hints = useMemo(() => duplicateHints(allCards), [allCards])
@@ -373,7 +378,7 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
   const coverageRows = useMemo(() => {
     const ids = filter.propertyId === 'all' ? (properties.length > 0 ? properties.map((p) => p.id) : [...new Set(costItems.map((c) => c.propertyId))]) : [filter.propertyId]
     return ids
-      .map((id) => ({ id, cov: coverage(costItems, { propertyId: properties.length > 1 ? id : 'all', year: filter.year }, present, booked) }))
+      .map((id) => ({ id, cov: coverage(costItems, { propertyId: properties.length > 1 ? id : 'all', year: filter.year, period: filter.period }, present, booked) }))
       .filter((r) => r.cov.positions > 0)
   }, [costItems, filter, present, booked, properties])
 
@@ -564,9 +569,9 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
                     {/* Auswerten nimmt Objekt und Jahr, wie sie gespeichert sind; mit einem Entwurf daran vorbei landete
                         die Auswertung in einem anderen Objekt (Durchsicht zu #309, SOLLTE 3). */}
                     {upload.assessment?.open && onContinue ? (
-                      <button className="btn small" aria-label={`${receiptName(upload)} weiter prüfen`} disabled={placement.dirty} onClick={() => void continueChecking(upload)}>Weiter prüfen</button>
+                      <button className="btn" aria-label={`${receiptName(upload)} weiter prüfen`} disabled={placement.dirty} onClick={() => void continueChecking(upload)}>Weiter prüfen</button>
                     ) : onEvaluate && (
-                      <button className="btn small" aria-label={`${receiptName(upload)} per KI auswerten`} disabled={placement.dirty} onClick={() => onEvaluate([upload])}>Per KI auswerten</button>
+                      <button className="btn" aria-label={`${receiptName(upload)} per KI auswerten`} disabled={placement.dirty} onClick={() => onEvaluate([upload])}>Per KI auswerten</button>
                     )}
                     {placement.dirty && (upload.assessment?.open ? onContinue : onEvaluate) && <span className="muted">{PLACEMENT_FIRST}</span>}
                   </>
@@ -590,9 +595,9 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
         title="Belegordner"
         subtitle="Ihre Belege wie im Ordner aus Papier: je Objekt und Jahr, mit einem Register je Kostenart. Neue Belege kommen in den Posteingang."
       />
-      {error && <div className="error">{error}</div>}
+      {error && <NoticeBox level="error" action={error} />}
       {amountCheck && (
-        <div className="notice stack no-print" role="status" aria-label="Betrag prüfen">
+        <div role="status" aria-label="Betrag prüfen"><NoticeBox level="warning" className="stack no-print">
           Beleg an „{amountCheck.item.description}“ angehängt. Betrag der Position: <strong>{fmtEuro(amountCheck.item.amountCents)}</strong>.
           {amountCheck.closed && <div>{closedPeriodNotice(labelOfKey(rulesOf(properties.find((p) => p.id === amountCheck.item.propertyId)), amountCheck.item.period))}</div>}
           {' '}Stimmt er mit dem Beleg überein? Eine aus dem Vorjahr übernommene Position trägt oft noch einen geschätzten Betrag.{' '}
@@ -622,12 +627,12 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
           </div>
           )}
           {amountCheck.problem && (
-            <div className="error">
+            <NoticeBox level="error">
               {amountCheck.problem}
               {amountCheck.form && onOpenItem && <> <button className="btn small" onClick={() => { const it = amountCheck.item; leaveCheck(() => onOpenItem(it)) }}>Position öffnen</button></>}
-            </div>
+            </NoticeBox>
           )}
-        </div>
+        </NoticeBox></div>
       )}
 
       <div className="card no-print">
@@ -652,21 +657,21 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
             </span>
           </label>
         </div>
-        {/* Durchsicht zu Schritt 8, K2: Der Ordner ordnet nach dem Jahr, in dem der Zeitraum einer Position beginnt
-            (receipts.ts, ebenso Register und Belegabdeckung). Bei einem anderen Rhythmus sagt der Satz das, denn
-            die Kontextzeile nennt den Zeitraum; vor einem Wechsel des Rhythmus können zwei Zeiträume im selben Jahr beginnen. */}
-        {!calendar && !allYears && <p className="muted">Gezeigt sind die Positionen der Abrechnungszeiträume, die {currentYear} beginnen.</p>}
+        {/* Durchsicht zu Schritt 8, K2, und #346 Schritt 12: Bei einem anderen Rhythmus zeigt der Ordner für das Objekt der
+            Seitenleiste den gewählten Zeitraum (receipts.ts, `period`); bei „alle Objekte“ für die übrigen die Zeiträume,
+            die im Jahr beginnen. Nach einem Wechsel des Rhythmus beginnen Rumpf und neuer Zeitraum im selben Jahr. */}
+        {!calendar && !allYears && (
+          <p className="muted">
+            Gezeigt sind die Positionen von {periodLabelNow}.
+            {filter.propertyId === 'all' && properties.length > 1 && ` Bei den übrigen Objekten die Zeiträume, die ${currentYear} beginnen.`}
+          </p>
+        )}
       </div>
 
-      <div
-        className={`card receipt-inbox no-print${dragOver ? ' drag-over' : ''}`}
-        onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={(e) => { e.preventDefault(); setDragOver(false); void uploadToInbox([...e.dataTransfer.files]) }}
-      >
-        <div className="receipt-inbox-head">
-          <h2>📥 Posteingang ({inbox.here.length})</h2>
-          <label className="btn">
+      <Card
+        title={`📥 Posteingang (${inbox.here.length})`}
+        aside={(
+            <label className="btn">
             {uploading > 0 ? `Lädt hoch … (${uploading})` : 'Belege hochladen'}
             <input
               type="file"
@@ -678,14 +683,19 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
               onChange={(e) => { const files = [...(e.target.files ?? [])]; e.target.value = ''; if (files.length) void uploadToInbox(files) }}
             />
           </label>
-        </div>
+        )}
+        className={`receipt-inbox no-print${dragOver ? ' drag-over' : ''}`}
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => { e.preventDefault(); setDragOver(false); void uploadToInbox([...e.dataTransfer.files]) }}
+      >
         <p className="muted">
           Belege, die an keiner Kostenposition hängen. Ziehen Sie neue Belege hierher oder laden Sie mehrere auf einmal hoch;
           danach ordnen Sie jeden einer Position zu oder lassen ihn per KI auswerten.
           {inbox.elsewhere > 0 && ` ${inbox.elsewhere} weitere ${inbox.elsewhere === 1 ? 'ist' : 'sind'} einem anderen Objekt oder Jahr zugedacht; Sie sehen ${inbox.elsewhere === 1 ? 'ihn' : 'sie'} mit ${properties.length > 1 ? '„Belege aller Objekte zeigen“ oder ' : ''}„Belege aller Jahre zeigen“.`}
         </p>
         {inbox.here.length > 0 && <ul className="receipt-list">{inbox.here.map(renderCard)}</ul>}
-      </div>
+      </Card>
 
       {coverageRows.length > 0 && (
         <div className="card receipt-coverage">
@@ -693,7 +703,7 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
             const ohne = cov.positions - cov.covered
             return (
               <div key={id} className="receipt-coverage-row">
-                <span>Belegabdeckung {filter.year === 'all' ? '' : `${filter.year} `}{coverageRows.length > 1 || showProperty ? `· ${propertyName(id)}` : ''}</span>
+                <span>Belegabdeckung {filter.year === 'all' ? '' : `${filter.period?.propertyId === id ? periodLabelNow : filter.year} `}{coverageRows.length > 1 || showProperty ? `· ${propertyName(id)}` : ''}</span>
                 <span className="progress" aria-hidden="true"><span className="progress-fill" style={{ width: `${cov.percent}%`, display: 'block' }} /></span>
                 <strong>{cov.percent} %</strong>
                 <span className="muted">{ohne === 0 ? 'alle Positionen belegt' : `${ohne} Position${ohne > 1 ? 'en' : ''} ohne Beleg`}</span>
@@ -708,6 +718,7 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
           propertyId={packProperty}
           propertyName={propertyName(packProperty)}
           year={filter.year}
+          chosen={filter.period?.propertyId === packProperty ? periodNow : null}
           rules={rulesOf(properties.find((p) => p.id === packProperty))}
           uploads={uploads}
           costItems={costItems}
@@ -735,8 +746,18 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
                   {g.missing.map((c) => (
                     <li key={c.id}>
                       <span>– {c.description}{showProperty ? ` (${propertyName(c.propertyId)})` : ''} · {fmtEuro(c.amountCents)} <span className="muted">ohne Beleg</span></span>
-                      <span className="receipt-attach">
-                        <label className="btn small">
+                      {/* Der Knopf darf nicht springen, wenn hinter der Auswahl „Speichern“ und „Verwerfen“ erscheinen (N7 aus
+                          #341). Die Gruppe ist auch nach einem Umbruch rechtsbündig; am breiten Bildschirm steht der Knopf zuletzt,
+                          sodass sie nach links wächst, am Handy zuerst, sodass die Knöpfe darunter umbrechen (Durchsicht von N7) */}
+                      <span className="receipt-attach ml-auto justify-end">
+                        {inboxFor(allCards, c).length > 0 && (
+                          <AttachPicker label={`Vorhandenen Beleg für ${c.description} zuordnen`} what={`Beleg für ${c.description}`}
+                            placeholder="Aus dem Posteingang …" scope={c.id} values={inboxFor(allCards, c).map((u) => u.upload.file)}
+                            onSave={(file) => attachExisting(c, file)}>
+                            {inboxFor(allCards, c).map((u) => <option key={u.upload.file} value={u.upload.file}>{receiptName(u.upload)}</option>)}
+                          </AttachPicker>
+                        )}
+                        <label className="btn secondary max-sm:order-first">
                           Beleg nachreichen
                           <input
                             type="file"
@@ -746,13 +767,6 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
                             onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void uploadFor(c, f) }}
                           />
                         </label>
-                        {inboxFor(allCards, c).length > 0 && (
-                          <AttachPicker label={`Vorhandenen Beleg für ${c.description} zuordnen`} what={`Beleg für ${c.description}`}
-                            placeholder="oder aus dem Posteingang …" scope={c.id} values={inboxFor(allCards, c).map((u) => u.upload.file)}
-                            onSave={(file) => attachExisting(c, file)}>
-                            {inboxFor(allCards, c).map((u) => <option key={u.upload.file} value={u.upload.file}>{receiptName(u.upload)}</option>)}
-                          </AttachPicker>
-                        )}
                       </span>
                     </li>
                   ))}

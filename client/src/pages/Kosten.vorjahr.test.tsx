@@ -190,7 +190,7 @@ test('Handy: der Betrag steht gleich hinter der Kostenart, nicht erst nach dem S
   await openCarry()
   // Bei 360 px ist die Tabelle breiter als der Bildschirm (Table.tsx scrollt nur sie). Der Betrag
   // ist das Feld, das man ausfüllen muss; er gehört deshalb in den ersten sichtbaren Bereich.
-  const table = screen.getByRole('heading', { name: new RegExp(`aus ${PREV} für ${YEAR} übernehmen`) }).parentElement?.querySelector('table')
+  const table = screen.getByRole('heading', { name: new RegExp(`aus ${PREV} für ${YEAR} übernehmen`) }).closest('.card')?.querySelector('table')
   if (!table) return expect.fail('Tabelle der Übernahme nicht gefunden')
   const heads = [...table.querySelectorAll('thead th')].map((th) => th.textContent?.trim())
   expect(heads.slice(0, 4)).toEqual(['Übernehmen', 'Kostenart', `Betrag ${YEAR} €`, '§35a-Lohn €'])

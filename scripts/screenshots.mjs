@@ -135,6 +135,12 @@ async function shoot(browser, base) {
   const link = await action.locator('option[value^="link:"]').first().getAttribute('value')
   if (!link) throw new Error('Die Auswertung bietet kein Verknüpfen an.')
   await action.selectOption(link)
+  // Die Tabelle passt bei 1440 px ohne seitliches Rollen (M10 aus #341)
+  const fits = await review.locator('.assessment-table').evaluate((table) => {
+    const wrap = table.parentElement
+    return wrap ? wrap.scrollWidth <= wrap.clientWidth + 1 : true
+  })
+  if (!fits) throw new Error('Auswertung prüfen: Die Tabelle muss bei 1440 px seitlich rollen (M10 aus #341).')
   await review.getByRole('button', { name: 'Vorschau' }).click()
   await review.locator('[aria-label="Vorschau"]').waitFor()
   await tall(1000)
@@ -149,6 +155,18 @@ async function shoot(browser, base) {
   await settle()
   await scrollTo(guide, 80)
   await save('hilfe')
+
+  // Die Musterseite (#346 Schritt 12): alle Bausteine, hell und dunkel, als ganze Seite. Nicht über `save`, denn eine
+  // Fehlermeldung gehört dort zum Muster. Das README verlinkt diese Bilder nicht; sie zeigen, was sich an einem
+  // Baustein geändert hat.
+  for (const [name, query] of [['muster-hell', ''], ['muster-dunkel', '=dunkel']]) {
+    await page.goto(`${base}/?muster${query}`)
+    await page.getByRole('heading', { name: 'Musterseite', level: 1 }).waitFor()
+    await settle()
+    const file = path.join(OUT, `${name}.png`)
+    await page.screenshot({ path: file, fullPage: true })
+    console.log(`  ✓ ${path.relative(root, file)} (${Math.round(fs.statSync(file).size / 1024)} KB)`)
+  }
 
   await context.close()
   if (problems.length) throw new Error(`Die Oberfläche hat Fehler gemeldet:\n${problems.join('\n')}`)

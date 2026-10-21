@@ -15,6 +15,7 @@ import { spansTwoYears } from '../../../shared/period.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { CATEGORIES, type HeatingPeriodView, type ServiceStatementExtraction } from '../types'
 import { ErrorSummary, useFormError } from './ErrorSummary'
+import { NoticeBox } from './Notice'
 
 export default function ServiceImportReview({ x, file, ctx, view, co2 = true, onDone }: {
   x: ServiceStatementExtraction
@@ -130,7 +131,7 @@ export default function ServiceImportReview({ x, file, ctx, view, co2 = true, on
   return (
     <div className="field-group">
       <p className="muted">Die KI hat die Abrechnung gelesen. Bitte prüfen Sie jede Zahl am Beleg, bevor Sie etwas übernehmen.</p>
-      {checks.length > 0 && <ul className="notice">{checks.map((c) => <li key={c}>{c}</li>)}</ul>}
+      {checks.length > 0 && <NoticeBox level="warning"><ul>{checks.map((c) => <li key={c}>{c}</li>)}</ul></NoticeBox>}
       {x.blocks.map((b, i) => {
         const d = drafts[i]
         if (!d) return null
@@ -196,7 +197,7 @@ export default function ServiceImportReview({ x, file, ctx, view, co2 = true, on
       </label>
       <small className="muted">{CO2_EXAMPLE}</small>
       {hint && <p>{hint}</p>}
-      {conflict && <p className="notice">{conflict}</p>}
+      {conflict && <NoticeBox level="warning" action={conflict} />}
       <div className="row"><button className="btn secondary" onClick={() => void saveCo2()}>CO₂-Angaben übernehmen</button></div>
       </>)}
 

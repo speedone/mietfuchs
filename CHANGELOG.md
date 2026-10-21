@@ -61,6 +61,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   breiter als der Bildschirm, Barrierefreiheit mit axe-core, dazu Seitenfenster, Monatsfeld,
   Begriffserklärung, Fehlermeldungen und die Navigation am Handy per Tastatur. Ohne ihn wird beim Tag
   nichts ans Release gehängt ([#340](https://github.com/speedone/mietfuchs/issues/340)).
+- Musterseite für die Entwicklung: Unter `?muster` (dunkel mit `?muster=dunkel`) zeigt Mietfuchs alle Bausteine der
+  Oberfläche mit festen Werten, ohne Bestand. Der Browserlauf prüft sie wie jede Seite, und `npm run screenshots`
+  fotografiert sie hell und dunkel ([#346](https://github.com/speedone/mietfuchs/issues/346)).
 
 ### Geändert
 
@@ -253,6 +256,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Monat“ und „Beginnmonat von Anfang an“. Die Suche im Belegordner steht in voller Breite und nennt als Hinweis,
   was sie findet
   ([#346](https://github.com/speedone/mietfuchs/issues/346)).
+- Hinweise und Fehlermeldungen auf den Seiten stehen einheitlich im Baustein für Hinweise: mit Zeichen und Stufe
+  („⚠ Warnung“, „✖ Fehler“) statt als farbiger Kasten ohne Wort: Ladefehler oben auf den Seiten, Befunde einer
+  Vorschau, „Betrag prüfen“ im Belegordner, die Hinweise der KI-Einstellungen und der Auswertung, Abweichungen
+  einer abgeschlossenen Abrechnung und die ungültigen IBAN im Cockpit
+  ([#346](https://github.com/speedone/mietfuchs/issues/346)).
+- Karten mit Überschrift haben überall denselben Kopf wie auf der Seite Heizkosten: Kosten, Mietkonto, Zähler,
+  Abrechnung, Kostenvergleich, Belegordner, Einstellungen, Abrechnungszeitraum und CO₂-Erstattung
+  ([#346](https://github.com/speedone/mietfuchs/issues/346)).
 
 ### Behoben
 
@@ -311,6 +322,32 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Dienst als Ollama im Heimnetz mit der Frage nach dem Namen, außer der Dienst nennt gar keine Modelle).
   „Modell laden“ und „Befehl kopieren“ sind gleich groß, und „Standard-Anbieter“ steht bündig
   über den Feldern (Befund N14 aus [#341](https://github.com/speedone/mietfuchs/issues/341)).
+- Hilfe & Begriffe: Die Begriffe sind zugeklappt wie die Anleitungen, und eine Buchstabenleiste springt zum
+  ersten Begriff eines Buchstabens (Umlaute beim Grundbuchstaben). Eine Suche klappt die Treffer auf, ein Sprung
+  aus einer Begriffserklärung den angesprungenen Begriff. Die Seite ist damit rund 9.700 statt 29.000
+  Bildpunkte lang (Befund N10 aus [#341](https://github.com/speedone/mietfuchs/issues/341)).
+- Belegordner: Im Posteingang sind „Weiter prüfen“ und „Per KI auswerten“ so hoch wie die Auswahlfelder daneben,
+  und „Beleg nachreichen“ springt nicht mehr zur Seite, wenn neben „Aus dem Posteingang …“ die Knöpfe zum
+  Speichern erscheinen (Befund N7 aus [#341](https://github.com/speedone/mietfuchs/issues/341)).
+- Auswertung prüfen (Schnellerfassung und Kosten): Die Tabelle passt bei 1440 Bildpunkten ohne seitliches
+  Scrollen. Je Position stehen zwei Zeilen: oben „Was geschieht?“ über drei Spalten, sodass ein langer Eintrag
+  wie „Mit „Gartenpflege Saison“ (1.380,00 €, ohne Beleg) verknüpfen“ ganz zu lesen ist, daneben der Betrag;
+  darunter Beschreibung, Kostenart, Umlageschlüssel und der §35a-Lohn (Befund M10 aus
+  [#341](https://github.com/speedone/mietfuchs/issues/341)).
+- Mietkonto und Steuer bei abweichendem Abrechnungszeitraum: „Kalenderjahr“ ist beschriftet wie die Felder daneben
+  und nicht mehr klein und grau wie in der Seitenleiste
+  ([#346](https://github.com/speedone/mietfuchs/issues/346)).
+- Belegordner nach einem Wechsel des Abrechnungszeitraums: Beginnen Rumpf und neuer Zeitraum im selben Jahr,
+  zeigen Register, Belegabdeckung und Belegmappe für Mieter den in der Seitenleiste gewählten Zeitraum. Vorher
+  standen die Positionen beider Zeiträume gemischt da, und die Belegmappe nahm immer den Rumpf
+  ([#346](https://github.com/speedone/mietfuchs/issues/346)).
+- Hinweise: Steht mitten in einem Satz ein Rückverweis wie „deshalb“ oder „daher“, bleibt der Satz mit der
+  Begründung davor sichtbar und liegt nicht mehr unter „Mehr dazu“
+  ([#346](https://github.com/speedone/mietfuchs/issues/346)).
+- „Zeitraum der Heizung ändern“ und die getrennte Heizkostenabrechnung öffnen im Seitenfenster wie der Wechsel des
+  Abrechnungszeitraums. „Speichern“ steht im Fuß und ist bis zur Vorschau gesperrt; wer danach noch etwas ändert,
+  braucht eine neue Vorschau, statt dass die alte für einen anderen Stand gespeichert wird
+  ([#346](https://github.com/speedone/mietfuchs/issues/346)).
 - Die Karte „Objekt“ verlangt eine Bezeichnung: Leer ließ sie sich speichern, und die Seitenleiste
   zeigte danach „Ohne Namen“. Hat das Objekt noch keinen Namen, etwa nach einer frischen Installation,
   steht im Feld „Mein Objekt“; Sie können es überschreiben, und mit dem ersten Speichern der Karte wird

@@ -44,6 +44,7 @@ import { co2Block } from '../co2View'
 import { countOf } from '../../../shared/wording.ts'
 import { calendarPeriod } from '../../../shared/period.ts'
 import { formatIban } from '../../../shared/iban.ts'
+import Card from '../components/Card'
 
 type Props = {
   settings: Settings | null
@@ -382,7 +383,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
       <div className="no-print">
         <PageHeader title="Abrechnung" subtitle={'Die fertige Nebenkostenabrechnung pro Mieter — als PDF speichern über „Drucken“.'} />
       </div>
-      {error && <div className="error">{error}</div>}
+      {error && <NoticeBox level="error" action={error} />}
 
       {/* Im leeren Zeitraum gibt es nichts zu drucken (N12) */}
       {!(empty && choices.length === 0) && (
@@ -489,11 +490,10 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
         const view = deviationView(data.deviation)
         if (!view) return null
         return (
-          <div className="notice no-print notice-item">
-            <div className="notice-head"><strong>{view.title}</strong></div>
+          <NoticeBox level="warning" title={view.title} className="no-print">
             <div>{view.intro}</div>
             {view.lines.length > 0 && <ul className="deviation-list">{view.lines.map((l) => <li key={l.id}>{l.text}</li>)}</ul>}
-          </div>
+          </NoticeBox>
         )
       })()}
       {/* Hinweise der Berechnung (#346, Schritt 10, M8): Stufe und Titel, ein Satz „was tun“, „Hier beheben →“
@@ -563,8 +563,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
           {/* Mietverhältnisse mit Pauschale oder Inklusivmiete bekommen keine Abrechnung (#93);
               sie werden genannt statt still zu fehlen. */}
           {(data.notSettled ?? []).length > 0 && (
-            <div className="card no-print">
-              <h2>Ohne Abrechnung</h2>
+            <Card title="Ohne Abrechnung" className="no-print">
               <p className="muted">
                 Für diese Mietverhältnisse ist eine Pauschale oder Inklusivmiete vereinbart. Ihr Anteil an den Kosten
                 bleibt beim Vermieter und zählt als Werbungskosten.
@@ -572,7 +571,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
               <ul>
                 {(data.notSettled ?? []).map((n) => <li key={n.tenancyId}>{notSettledText(n)}</li>)}
               </ul>
-            </div>
+            </Card>
           )}
 
           {data.statements.map((st) => {
@@ -839,8 +838,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
           })}
 
           {data.landlord.rows.length > 0 && (
-            <div className="card no-print">
-              <h2>Vermieteranteil (nicht umgelegt)</h2>
+            <Card title="Vermieteranteil (nicht umgelegt)" className="no-print">
               <Table className="sticky-first">
                 <thead>
                   <tr>
@@ -873,7 +871,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                   )}
                 </tfoot>
               </Table>
-            </div>
+            </Card>
           )}
         </>
       )}

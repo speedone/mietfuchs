@@ -76,6 +76,8 @@ import Table from '../components/Table'
 import { candidateText } from '../triage'
 import { countOf } from '../../../shared/wording.ts'
 import { useFocusTarget, type FocusProps } from '../focus'
+import { NoticeBox } from '../components/Notice'
+import Card from '../components/Card'
 
 // `tenancies` für die Einzelbeträge je Mietverhältnis (#94); ohne sie gibt es dort nur keine Felder.
 type Props = { units: Unit[]; settings: Settings | null; tenancies?: Tenancy[] } & FocusProps
@@ -556,13 +558,13 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
         subtitle="Alle Rechnungen des Abrechnungsjahres erfassen — manuell oder per KI-Belegauswertung."
         actions={<button className="btn" onClick={() => { setError(''); setForm(newItemForm(units, meters, keyCtx)) }}>+ Kostenposition anlegen</button>}
       />
-      {error && <div className="error">{error}</div>}
+      {error && <NoticeBox level="error" action={error} />}
       {closedAt && (
-        <div className="notice">
+        <NoticeBox level="warning" action={<>
           Die Abrechnung {label} ist abgeschlossen (am {fmtDate(closedAt.slice(0, 10))}). Änderungen an den Kosten
           ändern die eingefrorene Abrechnung nicht; die Abrechnungsseite zeigt sie als Abweichung zur heutigen
           Berechnung. Bearbeiten bleibt möglich.
-        </div>
+        </>} />
       )}
 
       <div className="card no-print">
@@ -582,8 +584,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
 
 
       {carry && (
-        <div className="card no-print">
-          <h2>Positionen aus {at.previousLabel} für {label} übernehmen</h2>
+        <Card title={<>Positionen aus {at.previousLabel} für {label} übernehmen</>} className="no-print">
           <p className="muted">
             Übernommen werden Kostenart, Beschreibung, Rechnungssteller und der Umlageschlüssel samt
             Angaben. Tragen Sie je Zeile den Betrag {label} ein; eine Zeile mit Betrag ist angehakt.
@@ -676,11 +677,10 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             </button>
             <button className="btn ghost" onClick={() => setCarry(null)}>Schließen</button>
           </div>
-        </div>
+        </Card>
       )}
 
-      <div className="card no-print">
-        <h2>🤖 Beleg per KI auswerten <span className="badge gray">{ai.where}</span></h2>
+      <Card title={<>🤖 Beleg per KI auswerten <span className="badge gray">{ai.where}</span></>} className="no-print">
         <p className="muted">
           PDF oder Foto der Rechnung hochladen — die KI schlägt Kostenpositionen vor, Sie prüfen und übernehmen sie. {ai.notice ?? 'Es verlässt nichts Ihren Rechner.'}
         </p>
@@ -729,7 +729,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                 </button>
               )}
             </div>
-            {entry.status === 'fehler' && <div className="error">{entry.error}</div>}
+            {entry.status === 'fehler' && <NoticeBox level="error" action={entry.error} />}
             {entry.data.assessment && (entry.status === 'fertig' || entry.status === 'übernommen') && (
               <AssessmentReview assessment={entry.data.assessment} units={units} keyContext={keyCtxOf(entry.data.assessment)}
                 onChange={(next) => { patchEntry(entry.id, { status: next.open ? 'fertig' : 'übernommen', data: { assessment: next } }); void load() }}
@@ -737,10 +737,9 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             )}
           </div>
         ))}
-      </div>
+      </Card>
 
-      <div className="card">
-        <h2>Kostenpositionen {label}</h2>
+      <Card title={<>Kostenpositionen {label}</>}>
         {yearItems.length === 0 && <div className="empty">Noch keine Kosten für {label} erfasst.</div>}
         {yearItems.length > 0 && (
           <Table className="stacked">
@@ -835,7 +834,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
           </Table>
         )}
 
-      </div>
+      </Card>
 
       {/* Heizung PR 19 (#97): CO₂-Erstattung an Mieter, die selbst heizen; nur, wenn es einen gibt. */}
       {tenancies.some((t) => t.heatingModel === 'selfSupply') && (
@@ -858,7 +857,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
           errors={formErrors}
           actions={<button className="btn" disabled={saving.busy} onClick={() => void saving.run(saveItem)}>{form.id ? 'Speichern' : 'Anlegen'}</button>}
         >
-          {categoryNotice(form.category, year, property?.cableBuiltBeforeDec2021 ?? null) && <div className="notice">{categoryNotice(form.category, year, property?.cableBuiltBeforeDec2021 ?? null)}</div>}
+          {categoryNotice(form.category, year, property?.cableBuiltBeforeDec2021 ?? null) && <NoticeBox level="warning" action={categoryNotice(form.category, year, property?.cableBuiltBeforeDec2021 ?? null)} />}
           <div className="row">
             <label className="field">
               Kostenart
@@ -900,11 +899,11 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             </Field>
             {/* Laienprobe B19: Welcher Betrag der Messdienstabrechnung gemeint ist, steht dort, wo er eingetragen wird; über die volle Breite. */}
             {form.category === HEATING_CATEGORY && form.key === 'amounts' && plants.some((p) => p.method === 'service') && (
-              <p className="notice basis-full">
+              <NoticeBox level="warning" className="basis-full">
                 Abrechnung des Messdienstes: Tragen Sie die Kosten vor „Abzüglich CO₂-Kosten Vermieter“ ein, also die Summe der Kosten aller Nutzer plus
                 den CO₂-Anteil des Vermieters, nicht die Summe nach dem Abzug. Danach füllen Sie auf der Seite Heizkosten die Karte „CO₂-Kosten“ aus;
                 ihre Probe prüft diesen Betrag.
-              </p>
+              </NoticeBox>
             )}
             <Field label={<>davon <Term id="labor35a">§35a-Lohn</Term> €</>} hint="Lohn- und Arbeitskosten nach § 35a EStG; der Mieter kann sie steuerlich absetzen." {...formErrors.field('labor35a')}>
               <input value={form.labor35a} inputMode="decimal" onChange={(e) => setForm({ ...form, labor35a: e.target.value })} />
@@ -984,9 +983,9 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             )}
             {/* #141: anders als dieselbe Kostenart im Vorjahr? Dasselbe sagt die Abrechnung. */}
             {keyChangeNotice(form, units, keyCtx) && (
-              <div className="notice">
+              <NoticeBox level="warning">
                 {keyChangeNotice(form, units, keyCtx)} Mehr dazu: <Term id="keyChange" />.
-              </div>
+              </NoticeBox>
             )}
             {form.key === 'meter' && (
               <label className="field">
@@ -1053,7 +1052,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                 {/* #144: weicht der rechnerische Anteil vom Betrag ab, steht er markiert da */}
                 {externalHint(form, units) && (
                   externalMismatch(form, units)
-                    ? <div className="notice"><strong>{externalHint(form, units)}</strong></div>
+                    ? <NoticeBox level="warning"><strong>{externalHint(form, units)}</strong></NoticeBox>
                     : <div className="muted">{externalHint(form, units)}</div>
                 )}
               </div>

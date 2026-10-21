@@ -28,7 +28,7 @@ afterEach(() => {
 test('Vermerk an der Zeile; „Bitte prüfen“ wird nicht gedruckt', async () => {
   render(<Co2SheetView plantId="hp" period="2025-01" onClose={() => {}} />)
   expect(await screen.findByText(/Vor dem 01\.01\.2023 in Rechnung gestellt …/)).toBeTruthy()
-  const box = screen.getByText('Bitte prüfen').closest('div')
+  const box = screen.getByText('Bitte prüfen').closest('.notice-item')
   expect(box?.className).toMatch(/no-print/)
 })
 

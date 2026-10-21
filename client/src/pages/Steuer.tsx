@@ -68,7 +68,7 @@ export default function Steuer({ settings }: Props) {
       <div className="no-print">
         <PageHeader context="calendar" title="Steuer (Anlage V)" subtitle={'Jahresübersicht für die Einkünfte aus Vermietung — Einnahmen, Werbungskosten und Überschuss. Als PDF speichern über „Drucken“.'} />
       </div>
-      {error && <div className="error">{error}</div>}
+      {error && <NoticeBox level="error" action={error} />}
 
       <div className="card no-print">
         <div className="row" style={{ alignItems: 'flex-end' }}>

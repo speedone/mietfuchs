@@ -86,7 +86,7 @@ test('G-W1: schon gebuchter Betriebsstrom und Abzug stehen auf der Karte; eine 4
   const onBooked = vi.fn()
   try {
     render(<OperatingPowerCard plant={plant} view={view} rules={CALENDAR_RULES} items={[strom, bs, ab, fremd]} onBooked={onBooked} />)
-    const gebucht = screen.getByText(/Schon gebucht/).closest('div') ?? assert_fail()
+    const gebucht = screen.getByText(/Schon gebucht/).closest('.notice-item') ?? assert_fail()
     expect(gebucht.textContent).toMatch(/Betriebsstrom Heizung \(geschätzt\)/)
     expect(gebucht.textContent).toMatch(/Abzug Betriebsstrom Heizung \(geschätzt\)/)
     expect(gebucht.textContent).not.toMatch(/andere Anlage/)

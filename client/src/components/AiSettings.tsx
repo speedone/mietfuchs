@@ -18,6 +18,7 @@ import { INTAKE_EDGE } from '../pdf'
 import { useToast, useConfirm } from './feedback'
 import { NoticeBox } from './Notice'
 import { useOpenForm } from '../property'
+import Card from './Card'
 
 const README = 'https://github.com/speedone/mietfuchs#ki-belegauswertung'
 const errorText = (e: unknown) => String((e as Error)?.message ?? e)
@@ -204,8 +205,7 @@ export function AiSettings({ settings, reload }: Props) {
   const usesOpenAi = [form.text, form.images].some((s) => s?.provider === 'openai')
 
   return (
-    <div className="card">
-      <h2>KI-Belegauswertung</h2>
+    <Card title="KI-Belegauswertung">
       <p className="muted">
         Optional. Ein Sprachmodell liest hochgeladene Belege und schlägt Beträge und Kostenarten
         vor. Übernommen wird erst, was Sie geprüft haben. Am einfachsten läuft das mit Ollama auf
@@ -341,7 +341,7 @@ export function AiSettings({ settings, reload }: Props) {
         <a href={README} target="_blank" rel="noreferrer">README</a>. API-Schlüssel liegen in einer
         eigenen Datei neben der Datenbank und sind nicht im Backup.
       </p>
-    </div>
+    </Card>
   )
 }
 
@@ -517,7 +517,7 @@ function SlotEditor(props: SlotProps) {
           </div>
         ))}
       {!checking && status && !status.ok && (
-        <div className="notice">
+        <NoticeBox level="warning">
           {status.error}
           {status.found && (
             <div className="row center">
@@ -525,7 +525,7 @@ function SlotEditor(props: SlotProps) {
               <button className="btn secondary small" onClick={() => onAdopt(status.found!)}>Diese Adresse verwenden</button>
             </div>
           )}
-        </div>
+        </NoticeBox>
       )}
 
       {suggestions.length > 0 && (
@@ -569,11 +569,11 @@ function SlotEditor(props: SlotProps) {
       )}
 
       {hint === 'noVision' && (
-        <div className="notice">„{slot.model.trim()}“ versteht keine Bilder. PDFs mit Textebene wertet es aus, Fotos und gescannte PDFs nicht.</div>
+        <NoticeBox level="warning" action={<>„{slot.model.trim()}“ versteht keine Bilder. PDFs mit Textebene wertet es aus, Fotos und gescannte PDFs nicht.</>} />
       )}
 
       {consent && !consent.given && (
-        <div className="notice">
+        <NoticeBox level="warning">
           {consent.kind === 'external'
             ? `Belege gehen an ${consent.target}, einen Dienst außerhalb dieses Rechners und des Heimnetzes.`
             : `Das Modell „${consent.target}“ läuft nicht auf diesem Rechner, Ollama reicht die Belege an einen Cloud-Dienst weiter.`}
@@ -587,7 +587,7 @@ function SlotEditor(props: SlotProps) {
               <a href={preset.privacyUrl} target="_blank" rel="noreferrer">Bedingungen des Anbieters</a>
             )}
           </div>
-        </div>
+        </NoticeBox>
       )}
       {consent?.given && (
         <div className="row center">

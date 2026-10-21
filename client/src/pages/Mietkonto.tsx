@@ -16,6 +16,8 @@ import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
 import { useFocusTarget, useScrollToFocus, type FocusProps } from '../focus'
 import { MONTH_SHORT } from '../monthText'
+import { NoticeBox } from '../components/Notice'
+import Card from '../components/Card'
 
 const MONTHS = MONTH_SHORT
 
@@ -158,7 +160,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
           </button>
         }
       />
-      {error && <div className="error">{error}</div>}
+      {error && <NoticeBox level="error" action={error} />}
 
       {/* Das Abrechnungsjahr wählt die Seitenleiste (#346 Schritt 8). Weicht der Zeitraum vom Kalenderjahr ab, ist
           das Kalenderjahr des Mietkontos eine andere Größe und wird hier gewählt (#208). */}
@@ -236,7 +238,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
               <input value={form.note} placeholder="z. B. Überweisung, Abrechnung 2025" onChange={(e) => setForm({ ...form, note: e.target.value })} />
             </Field>
           </div>
-          {paymentFormHints(form).map((h) => <p className="hint" key={h}>{h}</p>)}
+          {paymentFormHints(form).map((h) => <NoticeBox key={h} level="hint" action={h} />)}
         </Drawer>
       )}
 
@@ -262,25 +264,23 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
         // Sichtprüfung E35: Bei Inklusivmiete gibt es keine Vorauszahlung; „0,00 €“ sähe aus wie ein fehlender Betrag.
         const inclusive = tenancies.find((t) => t.id === r.tenancyId)?.costModel === 'inclusive' && r.prepaymentYearCents === 0
         return (
-          <div className={focusedId === r.tenancyId ? 'card focus-target' : 'card'} key={r.tenancyId}>
-            <div className="row baseline">
-              <h2 className="grow">{r.tenantName} <span className="muted normal">· {r.unitName}</span></h2>
-              {standing.kind === 'arrears' ? (
-                <span className="badge red">{fmtEuro(standing.cents)} offen</span>
-              ) : standing.kind === 'credit' ? (
-                <span className="badge green">{fmtEuro(standing.cents)} Guthaben</span>
-              ) : standing.kind === 'paidSoFar' ? (
-                <span className="badge green">bisher bezahlt</span>
-              ) : !noRent ? (
-                <span className="badge green">vollständig bezahlt</span>
-              ) : null}
-            </div>
+          <Card key={r.tenancyId} className={focusedId === r.tenancyId ? 'focus-target' : undefined}
+            title={<>{r.tenantName} <span className="muted normal">· {r.unitName}</span></>}
+            aside={standing.kind === 'arrears' ? (
+              <span className="badge red">{fmtEuro(standing.cents)} offen</span>
+            ) : standing.kind === 'credit' ? (
+              <span className="badge green">{fmtEuro(standing.cents)} Guthaben</span>
+            ) : standing.kind === 'paidSoFar' ? (
+              <span className="badge green">bisher bezahlt</span>
+            ) : !noRent ? (
+              <span className="badge green">vollständig bezahlt</span>
+            ) : null}>
 
             {noRent ? (
-              <div className="notice">
+              <NoticeBox level="warning">
                 Keine Kaltmiete hinterlegt — unter <em>Stammdaten → Mietverhältnis bearbeiten</em> die Kaltmiete-Staffel
                 eintragen, dann erscheint hier das Soll. (Reine NK-Vorauszahlungen zählen ebenfalls ins Soll.)
-              </div>
+              </NoticeBox>
             ) : (
               <>
                 <div className="rent-grid">
@@ -351,13 +351,12 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
                 </Table>
               </>
             )}
-          </div>
+          </Card>
         )
       })}
 
       {ledger && (ledger.settlementOnly?.length ?? 0) > 0 && (
-        <div className="card">
-          <h2>Abrechnung früherer Mietverhältnisse</h2>
+        <Card title="Abrechnung früherer Mietverhältnisse">
           <p className="muted">Nachzahlungen und Guthaben aus der Abrechnung, gezahlt im Jahr {year}, für Mietverhältnisse, die in diesem Jahr nicht mehr bestanden.</p>
           <Table>
             <tbody>
@@ -369,11 +368,10 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
               ))}
             </tbody>
           </Table>
-        </div>
+        </Card>
       )}
 
-      <div className="card">
-        <h2>Zahlungseingänge {year}</h2>
+      <Card title={<>Zahlungseingänge {year}</>}>
         {yearPayments.length === 0 ? (
           <div className="empty">Noch keine Zahlungen für {year} erfasst.</div>
         ) : (
@@ -420,7 +418,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
             </tbody>
           </Table>
         )}
-      </div>
+      </Card>
     </>
   )
 }

@@ -189,14 +189,22 @@
 /* Auswahl von Objekt und Zeitraum (components/Switcher.tsx, #346 Schritt 8, UI-Durchsicht N1): beide gleich, mit
    demselben Pfeil, derselben Höhe (`--target`) und derselben Schrift. Der gewählte Eintrag steht als Text da, der
    umbricht; das echte Auswahlfeld liegt unsichtbar darüber und zeigt seinen Fokus am Text. */
+/* Der Umschalter auf einer Seite (Kalenderjahr auf Mietkonto und Steuer) mit der Beschriftung von label.field, neben
+   den übrigen Feldern der Karte (#346 Schritt 12). Gesetzt werden nur Variablen, wie bei den Breitenstufen. */
+@utility switcher-field {
+  --switcher-label-size: var(--text-s);
+  --switcher-label-weight: var(--weight-strong);
+  --switcher-label-color: var(--text);
+}
 @utility switcher {
   display: flex;
   flex-direction: column;
   gap: --spacing(1);
+  /* Klein und grau wie in der Seitenleiste; auf einer Seite setzt `switcher-field` die Beschriftung eines Felds */
   & > span:first-child {
-    font-size: var(--text-xs);
-    font-weight: var(--weight-medium);
-    color: var(--muted);
+    font-size: var(--switcher-label-size, var(--text-xs));
+    font-weight: var(--switcher-label-weight, var(--weight-medium));
+    color: var(--switcher-label-color, var(--muted));
   }
   & > span:last-child {
     display: block;
@@ -440,4 +448,22 @@
   @media (max-width: 640px) {
     white-space: normal;
   }
+}
+
+/* Tabellen mit Gruppen aus mehreren Zeilen, je Gruppe ein <tbody> (Auswertung prüfen, M10 aus #341): innen keine Linie,
+   zwischen den Gruppen eine. index.css nimmt der letzten Zeile jedes <tbody> die Linie, deshalb trägt die nächste
+   Gruppe sie oben. */
+@utility row-groups {
+  & > tbody > tr > td {
+    border-bottom: 0;
+  }
+  & > tbody + tbody > tr:first-child > td {
+    border-top: 1px solid var(--line);
+  }
+}
+
+/* Eine Auswahl mit langen Einträgen, die über mehrere Spalten steht: großzügig, aber begrenzt, damit ein sehr langer
+   Eintrag die Tabelle nicht wieder seitlich rollen lässt (Durchsicht von M10). */
+@utility select-wide {
+  max-width: calc(2 * var(--field-l));
 }
