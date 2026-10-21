@@ -38,14 +38,14 @@ elektronische HKV, Skalen und Bewertungsfaktoren“, ⟨Norm offen: VDI 2077; DI
 (Nicht-Ziele: Verdunster selbst auswerten, Vorerfassung).
 
 **Baut auf:** PR 1 bis PR 11 (Pläne `docs/superpowers/plans/2026-10-05-heizung-pr{1..11}-*.md`),
-maßgeblich PR 10 in der Fassung von Commit `81828af` (abgeglichen, siehe „Abgleich mit PR 10“) und der
+maßgeblich PR 10 in der Fassung von Commit `d74dae3` (abgeglichen, siehe „Abgleich mit PR 10“) und der
 Testhelfer `server/testing/selfHeating.ts` aus PR 11. Gearbeitet wird auf `feat/heizung-pr12-hkv`,
 abgezweigt von der Spitze von PR 11; der PR wird gestapelt auf PR 11 gestellt und nach dessen Merge auf
 `main` umgestellt.
 
 ## Änderungen nach Prüfung vom 05.10.2026
 
-Der Prüfbericht vom 05.10.2026 (Teil B, Schnittstellen zu PR 10 in der Fassung von Commit `81828af`) hat
+Der Prüfbericht vom 05.10.2026 (Teil B, Schnittstellen zu PR 10 in der Fassung von Commit `d74dae3`) hat
 gezeigt, dass dieser Plan an PR 10 vorbeigeplant war: PR 10 hat kein Segmentmodell je Gerät
 (`heatDevicesOf`, `HeatSegment`), sondern das Grenzmodell in `planSelf`. Geändert ist:
 
@@ -196,7 +196,7 @@ Task 1 beginnt.
 - **PR 6** db/co2.ts `plantContext`, `heatingPeriodOf`, `heatingPeriodClosed`, `ensureHeatingPeriod`,
   `closedText`, `heatingPeriodViews`, `PlantContext`; `HeatingPeriodView`, `HeatingStatement`;
   `client/src/pages/Heizkosten.tsx`.
-- **PR 10** (Plan, Commit `81828af`): siehe „Abgleich mit PR 10“.
+- **PR 10** (Plan, Commit `d74dae3`): siehe „Abgleich mit PR 10“.
 - **PR 11** `server/testing/selfHeating.ts` (`selfSnapshot`, `SelfSnapshotOptions`, `PLANT`, feste
   Kennungen `wz-a`, `wz-b`, `wz-c`, `ww`, Anlage `hp`); `client/src/heatingForm.ts` `parseDecimal`,
   `numberText`. `andList` kommt aus `shared/wording.ts` (Bestand), nicht aus dhw.ts.
@@ -228,7 +228,7 @@ Task 4 Step 3) eine Funktion daraus; alles andere ist eine Umbenennung.
 
 ### Abgleich mit PR 10 (Prüfung vom 05.10.2026)
 
-Der Plan von PR 10 liegt vor (`2026-10-05-heizung-pr10-kernrechnung.md`, Commit `81828af`). Die Annahmen
+Der Plan von PR 10 liegt vor (`2026-10-05-heizung-pr10-kernrechnung.md`, Commit `d74dae3`). Die Annahmen
 C1 bis C8 sind damit aufgelöst; die Tasks benutzen die Namen der rechten Spalte. Wo die Tabelle oben
 einem Task widerspricht, gilt der Task.
 
@@ -785,7 +785,7 @@ Refs #99"
 ---
 ### Task 3: Die Rechnung (`server/src/hca.ts`)
 
-Neu gefasst nach der Prüfung vom 05.10.2026 (Abgleich mit PR 10, Commit `81828af`). PR 10 rechnet nicht
+Neu gefasst nach der Prüfung vom 05.10.2026 (Abgleich mit PR 10, Commit `d74dae3`). PR 10 rechnet nicht
 mit Segmenten je Gerät, sondern mit dem **Grenzmodell**: je Zähler eine Ablesung an jeder Grenze (Beginn,
 Wechsel, Ende, `boundaryReadingsOf`), Verbrauch ist die Differenz zweier wirklicher Ablesungen
 (`measuredBetween`), summiert je Wohnung in `planSelf`. Die neuen Erfassungen werden in diese Gestalt
@@ -1205,7 +1205,7 @@ erweitert. Der Ausweis je Gerät und die Werte des Ablesedienstes hängen an `se
 
 **Interfaces:**
 - Consumes: Task 3 `meterFactor`, `serviceMeters`, `mixedCapture`, `mixedCaptureText`, `missingRatings`, `missingRatingsText`, `deviceCutoffs`, `deviceCutoffText`, `deviceLines`, `HcaDeviceLine`; Task 2 `Snapshot.heatingServiceValues`, `SnapshotMeter.hcaScale`, `.ratingFactor`.
-  PR 10 (Plan, Commit `81828af`): heating.ts `SelfMeter`, `SelfInput`, `planSelf` mit `metersOf`, `POT_METER`, `measuredBetween`; calc.ts im Block des Plans `hotWater`, `potTypes`, `unitMeters`, `served`, `servedIds`, `input` (PR 10 Task 9 Step 4: `const input: SelfInput = { … }`), `plan`, `blocked`, `where`, `selfProblemText(p, areaBasisHeat)`, `type SelfBlock`, `type SelfPlantPlan`, `selfPlans.set(…)`, `POT_UNIT`, `selfSteps`, `selfStatementOf`; Testhelfer `input`, `r`, `userOf`, `near`, `UNITS`, `TENANCIES` (heating.test.ts).
+  PR 10 (Plan, Commit `d74dae3`): heating.ts `SelfMeter`, `SelfInput`, `planSelf` mit `metersOf`, `POT_METER`, `measuredBetween`; calc.ts im Block des Plans `hotWater`, `potTypes`, `unitMeters`, `served`, `servedIds`, `input` (PR 10 Task 9 Step 4: `const input: SelfInput = { … }`), `plan`, `blocked`, `where`, `selfProblemText(p, areaBasisHeat)`, `type SelfBlock`, `type SelfPlantPlan`, `selfPlans.set(…)`, `POT_UNIT`, `selfSteps`, `selfStatementOf`; Testhelfer `input`, `r`, `userOf`, `near`, `UNITS`, `TENANCIES` (heating.test.ts).
   PR 11: `server/testing/selfHeating.ts` (`selfSnapshot`, `SelfSnapshotOptions`), Kennungen `wz-a`, `wz-b`, `wz-c`, `ww`, Anlage `hp`.
 - Produces:
   - `heating.ts`: `SelfMeter.factor?: number` (fehlt: 1), `SelfInput.capture?: CaptureMethod` (fehlt: `heatMeter`); in `planSelf` `meterTypeOf(pot)`
@@ -2648,7 +2648,7 @@ Nicht in diesem Plan: Schätzung nach § 9a bei fehlenden Werten (PR 13; Lücken
 § 6a-Angaben (PR 14), monatliche Verbrauchsinformation aus Funkwerten (PR 22), Vorerfassung (#218).
 
 **2. Platzhalter.** Keine „TBD“, kein „wie Task N“. Die Namen von PR 10 sind abgeglichen (Abschnitt
-„Abgleich mit PR 10“, Commit `81828af`).
+„Abgleich mit PR 10“, Commit `d74dae3`).
 
 **3. Typen.** `HcaScale`, `hcaScale`, `ratingFactor`, `HeatingServiceValue` (`heatValue`,
 `waterValue`), `HcaDeviceLine` (`raw`, `rated`, `factor`, `scale`), `HcaMeter`, `DevicesInput`,

@@ -361,7 +361,7 @@ test('G-H3/#267: wachsender Zeitraum: Rechnung und Abzug bleiben zusammen, der A
   })
 })
 
-// Geld H1 (Nachprüfung fc20455): Fall des Prüfers. Nach „Mai ab 2025“ (aufgeteilt, Heizung 2025/26) folgt „Juli ab 2024“
+// Geld H1 (Nachprüfung 10ee3c0): Fall des Prüfers. Nach „Mai ab 2025“ (aufgeteilt, Heizung 2025/26) folgt „Juli ab 2024“
 // mit Heizung 2025-07. Der Betriebsstrom landet in 01.07.2025–30.06.2026 (möglich 2025 bis 2027), seine Abzugsteile in
 // 2024/2025 und 2025/2026. Bis #267 folgten die Abzugsteile dem Betriebsstrom, deshalb bot die Vorschau nur den Schnitt
 // der Spannen an (2025 und 2026). Seit #267 folgen sie ihrer Stromrechnung: Der Betriebsstrom hat seine ganze Spanne.
@@ -422,7 +422,7 @@ test('#267 (T6c): ein Ziel, an dem bis #267 kein Jahr passte, geht durch; die Te
   })
 })
 
-// Geld H2, Variante (b) (Nachtrag nach Fixrunde 82d8a7a): Fall P1 des Prüfers. „Mai ab 2025“, Hausstrom mit
+// Geld H2, Variante (b) (Nachtrag nach Fixrunde 87a418b): Fall P1 des Prüfers. „Mai ab 2025“, Hausstrom mit
 // Leistungszeitraum 2025, Heizung nach 2025/26. Der Teil des Abzugs im Rumpf (−32,88 €) liegt in einem Kalenderjahr,
 // sein Jahr ist fest 2025. Bis #268 verschob sich dieser Betrag in der Anlage V, wenn der Vermieter für den
 // Betriebsstrom 2026 oder 2027 wählte, und die Vorschau sagte das. Seit #268 gleicht die Steuerübersicht je Steuerjahr
