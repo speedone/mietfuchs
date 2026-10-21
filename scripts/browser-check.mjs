@@ -437,6 +437,7 @@ async function checkCombination(browser, base, combo, AxeBuilder, navLabels) {
   if (theme === themes[0]) {
     for (const [name, probe] of /** @type {const} */ ([
       ['seitenfenster', probeDrawer], ['monatsfeld', probeMonth], ['begriff', probeTerm], ['fehler-nach-speichern', probeError],
+      ['beleg-zuordnen', probeAttach],
       ...(view === 'mobile' ? /** @type {const} */ ([['navigation-handy', probeMobileNav]]) : []),
     ])) {
       current = `probe:${name}`
@@ -593,6 +594,29 @@ async function probeMonth(page, view, snap) {
   if (!(await drawer.isVisible())) fail('Monatsfeld: Esc im Raster hat das ganze Seitenfenster geschlossen.')
   if (await page.getByRole('alertdialog').isVisible()) fail('Monatsfeld: Esc im Raster hat die Rückfrage des Seitenfensters ausgelöst.')
   await discardDrawer(page, drawer)
+}
+
+// Belegordner, Position ohne Beleg (N7 aus #341): Wer in „Aus dem Posteingang …“ einen Beleg wählt, bekommt
+// „Speichern“ und „Verwerfen“ dazu; „Beleg nachreichen“ bleibt dabei, wo er war. Danach wird verworfen.
+async function probeAttach(page, view, snap) {
+  await go(page, view, 'Belegordner')
+  const picker = page.locator('main select[aria-label^="Vorhandenen Beleg für"]').first()
+  if (!(await picker.count())) fail('Beleg zuordnen: Im Beispielbestand gibt es keine Position ohne Beleg mit Belegen im Posteingang.')
+  await picker.evaluate((el) => { const d = el.closest('details'); if (d) d.open = true })
+  await picker.scrollIntoViewIfNeeded()
+  const group = picker.locator('xpath=ancestor::span[contains(@class, "receipt-attach")]')
+  const button = group.locator('label.btn')
+  const before = await button.boundingBox()
+  await picker.selectOption({ index: 1 })
+  const discard = group.getByRole('button', { name: /^Verwerfen/ })
+  await discard.waitFor({ state: 'visible', timeout: 3000 }).catch(() => fail('Beleg zuordnen: Nach der Wahl erscheint kein „Verwerfen“.'))
+  const after = await button.boundingBox()
+  await snap('gewaehlt')
+  if (!before || !after) fail('Beleg zuordnen: „Beleg nachreichen“ ist nicht sichtbar.')
+  else if (Math.abs(before.x - after.x) > 1 || Math.abs(before.y - after.y) > 1) {
+    fail(`Beleg zuordnen: „Beleg nachreichen“ springt von ${Math.round(before.x)}/${Math.round(before.y)} nach ${Math.round(after.x)}/${Math.round(after.y)}, sobald „Speichern“ und „Verwerfen“ erscheinen.`)
+  }
+  await discard.click()
 }
 
 // Die Begriffserklärung: der erste sichtbare Begriff auf Stammdaten, Kosten oder Abrechnung; Klick öffnet
