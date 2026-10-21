@@ -99,7 +99,7 @@ export function isCitationSentence(sentence: string): boolean {
 // Dasselbe mitten im Satz („Mietfuchs teilt sie deshalb …“, #346 Schritt 12): Folgerungen, die nur mit dem Grund im
 // Satz davor einen Sinn ergeben. Lieber einmal zu viel aufgedeckt als ein „deshalb“ ohne Grund.
 const REFERS_BACK_INSIDE = /\s(?:deshalb|daher|darum|dadurch|demnach|folglich|somit|insofern|insoweit)\b/
-const REFERS_BACK = /^(?:(?:[A-ZÄÖÜ][a-zäöüß]+ Sie (?:sie|ihn|es|ihr|ihm|ihnen|das|dies\w*|diese\w*|dort|dann|darauf|dafür|damit|davon|daran|dazu|hier|so)\b)|(?:Das|Dies\w*|Diese\w*|Sie|Er|Es|Ihr\w*|Sein\w*|Dort|Dann|Da(?:für|mit|von|ran|zu|nach|rauf|her|bei|gegen)|Deshalb|Daher|Somit|Dabei|Hier|Ebenso|Auch)\b)|bis dahin/
+const REFERS_BACK = /^(?:(?:[A-ZÄÖÜ][a-zäöüß]+ Sie (?:sie|ihn|es|ihr|ihm|ihnen|das|dies\w*|diese\w*|dort|dann|darauf|dafür|damit|davon|daran|dazu|hier|so)\b)|(?:Das|Dies\w*|Diese\w*|Sie|Er|Es|Ihr\w*|Sein\w*|Dort|Dann|Da(?:für|mit|von|ran|zu|nach|rauf|her|bei|gegen)|Deshalb|Daher|Darum|Dadurch|Demnach|Folglich|Insofern|Insoweit|Somit|Dabei|Hier|Ebenso|Auch)\b)|bis dahin/
 
 // Was sichtbar bleibt (#346, Schritt 10; Entscheidung nach der Durchsicht): grundsätzlich alles. Unter
 // „Mehr dazu“ kommen nur Sätze aus Fundstellen (`isCitationSentence`), und nur, wenn danach noch etwas
