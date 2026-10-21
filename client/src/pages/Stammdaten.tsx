@@ -13,7 +13,7 @@ import Field from '../components/Field'
 import { useFormError } from '../components/ErrorSummary'
 import { ibanForSave, ibanToInput, storedIbanInvalid } from '../ibanField'
 import { IBAN_LABELS, normalizeIban } from '../../../shared/iban.ts'
-import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_KIND_OPTIONS, SELF_SUPPLY_TENANCY_HINT, buildPersonHistory, costModelBadge, costModelBody, buildSchedule, defaultTenancyUnitId, overlapQuestion, prepaymentColumn, tenancyRequired, type TenancyField, scheduleField, scheduleLabel, scheduleMonthText, showsFlatRates, startsSchedule } from '../tenancyModel'
+import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_KIND_OPTIONS, SELF_SUPPLY_TENANCY_HINT, buildPersonHistory, costModelBadge, costModelBody, buildSchedule, defaultTenancyUnitId, overlapQuestion, partialMonthNote, prepaymentColumn, tenancyRequired, type ScheduleKind, type TenancyField, scheduleField, scheduleLabel, scheduleMonthText, showsFlatRates, startsSchedule } from '../tenancyModel'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, INTERIM_FEE_HINT, INTERIM_GAP_OPTIONS, parseMeterValue, successorHeatingNote, tenantChangeProblems, type NewTenantForm, type TenantChangeField } from '../tenantChange'
 import { gapConsequence } from '../heatingSelfView'
@@ -611,6 +611,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                     : <span />}
                 </div>
               ))}
+              <PartialMonthNote rows={tenForm.baseRents} start={tenForm.start} end={tenForm.end} kind={'baseRent'} />
               <button className="btn small secondary field-add" onClick={() => setTenForm({ ...tenForm, baseRents: [...tenForm.baseRents, { from: '', amount: '' }] })}>+ Mieterhöhung ab Monat …</button>
             </div>
 
@@ -627,6 +628,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                     : <span />}
                 </div>
               ))}
+              <PartialMonthNote rows={tenForm.prepayments} start={tenForm.start} end={tenForm.end} kind={'prepayment'} />
               <button className="btn small secondary field-add" onClick={() => setTenForm({ ...tenForm, prepayments: [...tenForm.prepayments, { from: '', amount: '' }] })}>+ Erhöhung ab Monat …</button>
             </div>
 
@@ -658,6 +660,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                         : <span />}
                     </div>
                   ))}
+                  <PartialMonthNote rows={rows} start={tenForm.start} end={tenForm.end} kind={'heatingPrepayment'} />
                   <button className="btn small secondary field-add" onClick={() => setTenForm({ ...tenForm, heatingPrepayments: [...rows, { from: '', amount: '' }] })}>+ Änderung ab Monat …</button>
                 </div>
               )
@@ -710,6 +713,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                         : <span />}
                     </div>
                   ))}
+                  <PartialMonthNote rows={tenForm.flatRates} start={tenForm.start} end={tenForm.end} kind={'flatRate'} />
                   <button className="btn small secondary field-add" onClick={() => setTenForm({ ...tenForm, flatRates: [...(tenForm.flatRates.length > 0 ? tenForm.flatRates : [{ from: '', amount: '' }]), { from: '', amount: '' }] })}>+ Änderung ab Monat …</button>
                 </div>
               )}
@@ -1059,4 +1063,10 @@ function TenantChangeDrawer({ tenancy, unit, plants, onClose, onDone }: {
       </NoticeBox>
     </Drawer>
   )
+}
+
+// Der Anteil im angebrochenen Ein- und Auszugsmonat unter einer Staffel (partialMonthNote).
+function PartialMonthNote({ rows, start, end, kind }: { rows: readonly { from: string; amount: string }[]; start: string; end: string; kind: ScheduleKind }) {
+  const note = partialMonthNote(rows, start, end, kind)
+  return note ? <small className="muted">{note}</small> : null
 }

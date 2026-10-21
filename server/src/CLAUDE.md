@@ -428,7 +428,7 @@ selbst) stehen in [docs/heizung.md](../../docs/heizung.md).
   Vorauszahlungen je Zeitraum (`prepaymentOverrides`) haben Vorrang, denn anzusetzen ist das
   Geleistete (VIII ZR 240/10, Rn. 16); ohne Eintrag rechnet Mietfuchs mit dem Soll, und
   `prepayment.arrears` weist darauf hin.
-- **Die Monatsregel steht an einer Stelle** (#311, `monthShare`, `rateInMonth`) für Abrechnung und
+- **Die Monatsregel steht an einer Stelle** (#311, `monthShare`, `rateInMonth` in shared/monthRate.ts) für Abrechnung und
   Mietkonto: Ein Monat zählt, sobald das Mietverhältnis an einem seiner Tage besteht; im
   angebrochenen Monat `round(Rate × Tage / Tage des Monats)`, bei getrennter Heizstaffel je Staffel
   gerundet. **Das ist eine Auslegung** (Kalendertage wie auf der Kostenseite; 1/30 wäre ebenso

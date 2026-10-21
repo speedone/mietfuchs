@@ -1,7 +1,7 @@
 // Nebenkostenmodell am Mietverhältnis (#93), die Seite der Oberfläche.
 import { expect, test } from 'vitest'
 import { parseMonthText } from './monthText'
-import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_TENANCY_HINT, buildPersonHistory, buildSchedule, costModelBadge, costModelBody, defaultTenancyUnitId, notSettledText, overlapQuestion, parsePersons, prepaymentColumn, scheduleField, scheduleMonthText, showsFlatRates, startsSchedule } from './tenancyModel'
+import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_TENANCY_HINT, buildPersonHistory, buildSchedule, costModelBadge, costModelBody, defaultTenancyUnitId, notSettledText, overlapQuestion, parsePersons, partialMonthNote, prepaymentColumn, scheduleField, scheduleMonthText, showsFlatRates, startsSchedule } from './tenancyModel'
 import type { Tenancy, Unit } from './types'
 
 test('die Staffel der Pauschale erscheint nur bei einer Pauschale', () => {
@@ -268,4 +268,25 @@ test('die Spalte Vorauszahlung nennt eine Pauschale mit ihrem Betrag', () => {
     { label: 'Pauschale ab 01/2024:', amount: '50,00 €' },
     { label: 'Pauschale ab 07/2025:', amount: '55,00 €' },
   ])
+})
+
+test('Anteil im angebrochenen Monat: Einzug am 15. zeigt Tage und Betrag wie die Abrechnung', () => {
+  const rows = [{ from: '', amount: '150,00' }]
+  expect(partialMonthNote(rows, '2026-10-15', '', 'prepayment')?.replace(/\s/g, ' '))
+    .toBe('Einzug am 15.10.2026: Im Oktober 2026 zählen 17 von 31 Tagen, also 82,26 € statt 150,00 €.')
+})
+
+test('Anteil im angebrochenen Monat: nichts bei vollen Monaten, Rate 0 oder unfertigen Angaben', () => {
+  expect(partialMonthNote([{ from: '', amount: '150,00' }], '2026-10-01', '2027-03-31', 'prepayment')).toBeNull()
+  expect(partialMonthNote([{ from: '', amount: '0' }], '2026-10-15', '', 'prepayment')).toBeNull()
+  expect(partialMonthNote([{ from: '', amount: '' }], '2026-10-15', '', 'prepayment')).toBeNull()
+  expect(partialMonthNote([{ from: '', amount: '150,00' }], '', '', 'prepayment')).toBeNull()
+})
+
+test('Anteil im angebrochenen Monat: Auszug mit der dann geltenden Staffelstufe, Ein- und Auszug im selben Monat', () => {
+  const rows = [{ from: '', amount: '150,00' }, { from: '01.2027', amount: '180,00' }]
+  expect(partialMonthNote(rows, '2026-10-15', '2027-03-10', 'prepayment')?.replace(/\s/g, ' '))
+    .toBe('Einzug am 15.10.2026: Im Oktober 2026 zählen 17 von 31 Tagen, also 82,26 € statt 150,00 €. Auszug am 10.03.2027: Im März 2027 zählen 10 von 31 Tagen, also 58,06 € statt 180,00 €.')
+  expect(partialMonthNote([{ from: '', amount: '310,00' }], '2026-10-05', '2026-10-14', 'baseRent')?.replace(/\s/g, ' '))
+    .toBe('Einzug am 05.10.2026, Auszug am 14.10.2026: Im Oktober 2026 zählen 10 von 31 Tagen, also 100,00 € statt 310,00 €.')
 })

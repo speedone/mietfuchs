@@ -468,6 +468,17 @@ test('Staffeln: leer gilt ab Einzug, ein Monat ohne Jahr wird am Feld und in der
   expect(sent.find((s) => s.url.startsWith('/api/tenancies'))?.body.baseRents).toEqual([{ from: '2025-02', monthlyCents: 80000 }])
 })
 
+test('Staffeln: bei Einzug am 15. steht unter der Kaltmiete der Anteil im Einzugsmonat, beim 1. nicht', async () => {
+  page([tenancy('t1', 'Müller', { start: '2026-10-15', baseRents: [{ from: '2026-10', monthlyCents: 80000 }] })])
+  const [edit] = await screen.findAllByRole('button', { name: /Mietverhältnis bearbeiten/i }, SLOW)
+  if (!edit) throw new Error('kein Bearbeiten-Knopf')
+  fireEvent.click(edit)
+  const dialog = await screen.findByRole('dialog', undefined, SLOW)
+  expect(within(dialog).getByText(/Einzug am 15\.10\.2026: Im Oktober 2026 zählen 17 von 31 Tagen, also 438,71\s€ statt 800,00\s€\./)).toBeTruthy()
+  fireEvent.change(within(dialog).getByLabelText(/^Einzug/), { target: { value: '2026-10-01' } })
+  expect(within(dialog).queryByText(/zählen \d+ von \d+ Tagen/)).toBeNull()
+})
+
 // Durchsicht von #287: Eine Mieterhöhung ohne Monat galt „ab Einzug“; gesendet wurden zwei Einträge
 // zum Einzugsmonat, und nach „es gilt der letzte“ galten 900 € rückwirkend ab Einzug.
 test('Staffeln: eine Mieterhöhung ohne Monat wird nicht gespeichert, „ab Einzug“ gibt es nur in der ersten Zeile', async () => {

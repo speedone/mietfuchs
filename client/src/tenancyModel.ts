@@ -6,6 +6,7 @@ import type { Problem } from './formProblems'
 import { monthLabel, parseMonthText } from './monthText'
 import { co2SelfSupply, halfSplitEnactedOn } from '../../shared/law/co2kostaufg.ts'
 import { germanDate, LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
+import { monthShare, rateAtMonth, rateInMonth } from '../../shared/monthRate.ts'
 
 // Das Nebenkostenmodell am Mietverhältnis (#93) in der Oberfläche: Beschriftungen und der Rumpf.
 // Die Regeln der Berechnung stehen in calc.ts; hier steht nur, wie sie heißen.
@@ -177,6 +178,32 @@ const isBlankRow = (row: { from: string; amount: string }): boolean => !row.from
 // Monat „ab Einzug“, beim Speichern wie im Feld.
 export function startsSchedule(rows: readonly { from: string; amount: string }[], i: number): boolean {
   return rows.slice(0, i).every(isBlankRow)
+}
+
+// Der Anteil im angebrochenen Ein- und Auszugsmonat als Satz unter der Staffel. Die Staffel nennt nur
+// Monate; ohne diesen Satz läse man „ab 10.2026“ bei Einzug am 15.10. als vollen Oktober. Gerechnet
+// mit derselben Monatsregel wie Abrechnung und Mietkonto (shared/monthRate.ts). `null`, solange ein
+// Datum oder die Staffel noch nicht stimmt (die Meldung dazu kommt beim Speichern), bei vollen Monaten
+// und bei einer Rate von 0.
+export function partialMonthNote(rows: readonly { from: string; amount: string }[], start: string, end: string, kind: ScheduleKind): string | null {
+  const iso = /^\d{4}-\d{2}-\d{2}$/
+  if (!iso.test(start)) return null
+  const t = { start, end: iso.test(end) && end >= start ? end : null }
+  const built = buildSchedule(rows, start, kind)
+  if ('problems' in built) return null
+  const months = [...new Set([start.slice(0, 7), ...(t.end ? [t.end.slice(0, 7)] : [])])]
+  const parts = months.flatMap((m) => {
+    const { days, of } = monthShare(t, m)
+    const full = rateAtMonth(built.schedule, m)
+    if (days >= of || full === 0) return []
+    const moves = [
+      ...(m === start.slice(0, 7) ? [`Einzug am ${fmtDate(start)}`] : []),
+      ...(t.end && m === t.end.slice(0, 7) ? [`Auszug am ${fmtDate(t.end)}`] : []),
+    ]
+    const when = moves.join(', ')
+    return [`${when}: Im ${monthLabel(m)} zählen ${days} von ${of} Tagen, also ${fmtEuro(rateInMonth(built.schedule, t, m))} statt ${fmtEuro(full)}.`]
+  })
+  return parts.length > 0 ? parts.join(' ') : null
 }
 
 // Gespeichertes 'JJJJ-MM' fürs Formular als 'MM.JJJJ'.
