@@ -564,9 +564,9 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
                     {/* Auswerten nimmt Objekt und Jahr, wie sie gespeichert sind; mit einem Entwurf daran vorbei landete
                         die Auswertung in einem anderen Objekt (Durchsicht zu #309, SOLLTE 3). */}
                     {upload.assessment?.open && onContinue ? (
-                      <button className="btn small" aria-label={`${receiptName(upload)} weiter prüfen`} disabled={placement.dirty} onClick={() => void continueChecking(upload)}>Weiter prüfen</button>
+                      <button className="btn" aria-label={`${receiptName(upload)} weiter prüfen`} disabled={placement.dirty} onClick={() => void continueChecking(upload)}>Weiter prüfen</button>
                     ) : onEvaluate && (
-                      <button className="btn small" aria-label={`${receiptName(upload)} per KI auswerten`} disabled={placement.dirty} onClick={() => onEvaluate([upload])}>Per KI auswerten</button>
+                      <button className="btn" aria-label={`${receiptName(upload)} per KI auswerten`} disabled={placement.dirty} onClick={() => onEvaluate([upload])}>Per KI auswerten</button>
                     )}
                     {placement.dirty && (upload.assessment?.open ? onContinue : onEvaluate) && <span className="muted">{PLACEMENT_FIRST}</span>}
                   </>
@@ -735,8 +735,17 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
                   {g.missing.map((c) => (
                     <li key={c.id}>
                       <span>– {c.description}{showProperty ? ` (${propertyName(c.propertyId)})` : ''} · {fmtEuro(c.amountCents)} <span className="muted">ohne Beleg</span></span>
+                      {/* Der Knopf steht zuletzt: Die Gruppe ist rechtsbündig, und erscheinen hinter der Auswahl „Speichern“ und
+                          „Verwerfen“, wächst sie nach links, statt den Knopf zu verschieben (N7 aus #341) */}
                       <span className="receipt-attach">
-                        <label className="btn small">
+                        {inboxFor(allCards, c).length > 0 && (
+                          <AttachPicker label={`Vorhandenen Beleg für ${c.description} zuordnen`} what={`Beleg für ${c.description}`}
+                            placeholder="Aus dem Posteingang …" scope={c.id} values={inboxFor(allCards, c).map((u) => u.upload.file)}
+                            onSave={(file) => attachExisting(c, file)}>
+                            {inboxFor(allCards, c).map((u) => <option key={u.upload.file} value={u.upload.file}>{receiptName(u.upload)}</option>)}
+                          </AttachPicker>
+                        )}
+                        <label className="btn secondary">
                           Beleg nachreichen
                           <input
                             type="file"
@@ -746,13 +755,6 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
                             onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void uploadFor(c, f) }}
                           />
                         </label>
-                        {inboxFor(allCards, c).length > 0 && (
-                          <AttachPicker label={`Vorhandenen Beleg für ${c.description} zuordnen`} what={`Beleg für ${c.description}`}
-                            placeholder="oder aus dem Posteingang …" scope={c.id} values={inboxFor(allCards, c).map((u) => u.upload.file)}
-                            onSave={(file) => attachExisting(c, file)}>
-                            {inboxFor(allCards, c).map((u) => <option key={u.upload.file} value={u.upload.file}>{receiptName(u.upload)}</option>)}
-                          </AttachPicker>
-                        )}
                       </span>
                     </li>
                   ))}
