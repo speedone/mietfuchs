@@ -50,6 +50,8 @@ export async function startServer(dataDir, ollamaUrl) {
       NKA_PORT: String(port),
       NKA_OLLAMA_URL: ollamaUrl,
       NKA_OLLAMA_MODEL: 'qwen3.5:4b',
+      // Fortlaufende Kennungen (server/src/ids.ts): derselbe Bestand in jedem Lauf, auch beim Rest-Cent
+      NKA_TEST_IDS: 'seq',
       // Nach dem `...env` des Aufrufers, damit nichts davon überschrieben wird (CLAUDE.md)
       CI: '1',
       NKA_UPDATE_URL: 'http://127.0.0.1:9/',
