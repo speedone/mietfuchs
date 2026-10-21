@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { filterTerms, sortedTerms } from './glossaryView'
+import { filterTerms, letterOf, sortedTerms } from './glossaryView'
 
 describe('Begriffslexikon (#113)', () => {
   test('alphabetisch nach deutscher Sortierung, Umlaute an ihrem Platz', () => {
@@ -16,4 +16,12 @@ describe('Begriffslexikon (#113)', () => {
     expect(ids('  ')).toHaveLength(sortedTerms().length)
     expect(ids('gibt es nicht')).toEqual([])
   })
+})
+
+// Durchsicht von N10: Ein Titel, der nicht mit einem Buchstaben beginnt, steht unter „#“, nicht unter „§“ oder „2“.
+test('Anfangsbuchstaben: Umlaut beim Grundbuchstaben, Ziffern und Zeichen unter #', () => {
+  expect(letterOf('Überschuss')).toBe('U')
+  expect(letterOf('§ 35a EStG')).toBe('#')
+  expect(letterOf('2-Personen-Haushalt')).toBe('#')
+  expect(letterOf('„Kalte“ Kosten')).toBe('#')
 })

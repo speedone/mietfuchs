@@ -809,7 +809,6 @@ td.reading-panel { background: var(--bg); }
 /* Begriffslexikon (#113): Begriff gestrichelt unterstrichen, dahinter „?“; die Erklärung ist ein Popover (tw.css) */
 .term-wrap { display: inline; }
 .term { text-decoration: underline dotted; text-underline-offset: 3px; cursor: help; color: inherit; }
-.glossary-entry h3 { margin: 0 0 6px; font-size: var(--text-l); color: var(--text); text-transform: none; letter-spacing: normal; }
 .glossary-entry p { margin: 4px 0; }
 .help-section { margin: var(--space-6) 0 10px; font-size: var(--text-l); }
 /* Anleitungen je Vermietungsart (#164): zugeklappt nur der Titel, aufgeklappt die fünf Abschnitte. */

@@ -17,3 +17,20 @@ export function filterTerms(entries: TermEntry[], query: string): TermEntry[] {
   if (!q) return entries
   return entries.filter((t) => [t.title, t.short, t.norm ?? ''].some((text) => text.toLocaleLowerCase('de').includes(q)))
 }
+
+// Die Buchstabenleiste der Begriffe (N10 aus #341): je Anfangsbuchstabe der erste Begriff. Umlaute stehen beim
+// Grundbuchstaben („Überschuss“ bei U), wie die deutsche Sortierung sie einordnet; was mit einer Ziffer oder einem
+// Zeichen beginnt, steht unter „#“.
+export const letterOf = (title: string): string => {
+  const first = title.normalize('NFD').replace(/\p{M}/gu, '').charAt(0).toUpperCase()
+  return /\p{L}/u.test(first) ? first : '#'
+}
+
+export function termLetters(entries: readonly TermEntry[]): { letter: string; id: TermId }[] {
+  const out: { letter: string; id: TermId }[] = []
+  for (const e of entries) {
+    const letter = letterOf(e.title)
+    if (!out.some((x) => x.letter === letter)) out.push({ letter, id: e.id })
+  }
+  return out
+}
