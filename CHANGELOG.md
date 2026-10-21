@@ -264,6 +264,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - Karten mit Überschrift haben überall denselben Kopf wie auf der Seite Heizkosten: Kosten, Mietkonto, Zähler,
   Abrechnung, Kostenvergleich, Belegordner, Einstellungen, Abrechnungszeitraum und CO₂-Erstattung
   ([#346](https://github.com/speedone/mietfuchs/issues/346)).
+- CO₂-Erstattung an Mieter, die selbst heizen: Erfassen und Bearbeiten öffnen ein Seitenfenster wie überall sonst,
+  mit „+ Erstattung anlegen“ oben rechts in der Karte; wer mit Eingaben schließt, wird gefragt
+  ([#346](https://github.com/speedone/mietfuchs/issues/346)).
 
 ### Behoben
 
