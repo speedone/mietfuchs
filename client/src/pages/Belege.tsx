@@ -668,15 +668,10 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
         )}
       </div>
 
-      <div
-        className={`card receipt-inbox no-print${dragOver ? ' drag-over' : ''}`}
-        onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={(e) => { e.preventDefault(); setDragOver(false); void uploadToInbox([...e.dataTransfer.files]) }}
-      >
-        <div className="receipt-inbox-head">
-          <h2>📥 Posteingang ({inbox.here.length})</h2>
-          <label className="btn">
+      <Card
+        title={`📥 Posteingang (${inbox.here.length})`}
+        aside={(
+            <label className="btn">
             {uploading > 0 ? `Lädt hoch … (${uploading})` : 'Belege hochladen'}
             <input
               type="file"
@@ -688,14 +683,19 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
               onChange={(e) => { const files = [...(e.target.files ?? [])]; e.target.value = ''; if (files.length) void uploadToInbox(files) }}
             />
           </label>
-        </div>
+        )}
+        className={`receipt-inbox no-print${dragOver ? ' drag-over' : ''}`}
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => { e.preventDefault(); setDragOver(false); void uploadToInbox([...e.dataTransfer.files]) }}
+      >
         <p className="muted">
           Belege, die an keiner Kostenposition hängen. Ziehen Sie neue Belege hierher oder laden Sie mehrere auf einmal hoch;
           danach ordnen Sie jeden einer Position zu oder lassen ihn per KI auswerten.
           {inbox.elsewhere > 0 && ` ${inbox.elsewhere} weitere ${inbox.elsewhere === 1 ? 'ist' : 'sind'} einem anderen Objekt oder Jahr zugedacht; Sie sehen ${inbox.elsewhere === 1 ? 'ihn' : 'sie'} mit ${properties.length > 1 ? '„Belege aller Objekte zeigen“ oder ' : ''}„Belege aller Jahre zeigen“.`}
         </p>
         {inbox.here.length > 0 && <ul className="receipt-list">{inbox.here.map(renderCard)}</ul>}
-      </div>
+      </Card>
 
       {coverageRows.length > 0 && (
         <div className="card receipt-coverage">

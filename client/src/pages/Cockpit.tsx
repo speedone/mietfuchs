@@ -22,6 +22,7 @@ import EmptyState from '../components/EmptyState'
 import { startStep } from '../emptyStock'
 import { ibanHintTitle, invalidIbans } from '../ibanCheck'
 import { NoticeBox } from '../components/Notice'
+import Card from '../components/Card'
 
 type Props = {
   units: Unit[]
@@ -404,9 +405,8 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
 
           {/* Ergebnis je Mieter */}
           {settlement.statements.length > 0 && (
-            <div className="card">
-              {/* Nach dem Abschluss steht das Ergebnis fest (M9). */}
-              <h2>{settlement.closed ? 'Ergebnis je Mieter' : 'Voraussichtliches Ergebnis je Mieter'}</h2>
+            // Nach dem Abschluss steht das Ergebnis fest (M9).
+            <Card title={settlement.closed ? 'Ergebnis je Mieter' : 'Voraussichtliches Ergebnis je Mieter'}>
               {/* Ohne Kosten im Jahr erstattete die Berechnung jedem die volle Vorauszahlung (#142);
                   das ist kein voraussichtliches Guthaben, sondern ein noch leeres Jahr. */}
               {yearItems.length === 0 ? (
@@ -434,7 +434,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
                 ))}
               </div>
               )}
-            </div>
+            </Card>
           )}
         </>
       )}
