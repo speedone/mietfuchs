@@ -365,7 +365,9 @@ async function checkCombination(browser, base, combo, AxeBuilder, navLabels) {
       const raf = /** @type {any} */ (globalThis).requestAnimationFrame
       raf(() => raf(() => resolve(undefined)))
     }))
-    const axe = await new AxeBuilder({ page }).analyze()
+    // Die Zielgröße nach WCAG 2.5.8 (24 px oder Abstand) ist in axe ausgeschaltet; eingeschaltet, weil sie zur Stufe AA
+    // gehört und der Rest von N11 aus #341 („Mülleimer-Ziele von rund 20 px“) sonst ungeprüft bliebe
+    const axe = await new AxeBuilder({ page }).options({ rules: { 'target-size': { enabled: true } } }).analyze()
     for (const v of axe.violations) {
       if (v.impact !== 'serious' && v.impact !== 'critical') continue
       const ex = exceptionFor(v.id, id, combo)
