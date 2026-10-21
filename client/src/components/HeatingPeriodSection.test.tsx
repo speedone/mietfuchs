@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import HeatingPeriodSection from './HeatingPeriodSection'
+import { UIProvider } from './feedback'
 import { CALENDAR_RULES } from '../../../shared/period.ts'
 import type { HeatingPlant } from '../types'
 
@@ -205,5 +206,44 @@ describe('Seitenfenster', () => {
     render(<HeatingPeriodSection plant={plant()} objectRules={CALENDAR_RULES} hasCalendarData onChanged={async () => {}} notify={() => {}} />)
     fireEvent.click(screen.getByRole('button', { name: 'Getrennte Heizkostenabrechnung einschalten' }))
     expect(screen.getByRole('dialog')).toBeTruthy()
+  })
+})
+
+// Durchsicht des Seitenfensters: Eine Vorschau, deren Antwort erst nach einer Änderung ankommt, gilt nicht (sonst
+// kehrte M2 zurück); ohne Vorschau sagt ein Satz, warum „Speichern“ gesperrt ist; das zweite Fenster nach dem
+// Speichern des Zeitraums ist vorbelegt und fragt beim Schließen.
+describe('Seitenfenster, Durchsicht', () => {
+  const preview = { rules: null, periods: [], newShort: [], blocked: [], groups: [], overrides: [], endsSeparate: [], effects: [], token: 'w1', moves: [] }
+  test('eine verspätete Vorschau nach einer Änderung gibt „Speichern“ nicht frei', async () => {
+    let answer: (r: Response) => void = () => {}
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((resolve) => { answer = resolve })))
+    render(<HeatingPeriodSection plant={plant()} objectRules={CALENDAR_RULES} hasCalendarData onChanged={async () => {}} notify={() => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Zeitraum der Heizung ändern' }))
+    const drawer = screen.getByRole('dialog', { name: 'Zeitraum der Heizung ändern' })
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Vorschau' }))
+    fireEvent.change(within(drawer).getByRole('combobox', { name: 'Heizperiode beginnt im' }), { target: { value: '6' } })
+    answer(json(preview))
+    await new Promise((r) => setTimeout(r, 20))
+    expect((within(drawer).getByRole('button', { name: 'Speichern' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(within(drawer).getByText(/Sie haben die Angaben geändert\. Fordern Sie die Vorschau erneut an/)).toBeTruthy()
+  })
+  test('nach dem Speichern des Zeitraums fragt das vorbelegte Fenster zur getrennten Abrechnung beim Schließen', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.endsWith('/period/preview')) return json(preview)
+      if (url.endsWith('/separate/preview')) return json({ separate: true, month: '2026-05', until: null, blocked: [], share: null, steps: [], overrides: [], deadlines: [], effects: [], keep: [], merge: [], token: 's1' })
+      return json({})
+    }))
+    render(<UIProvider><HeatingPeriodSection plant={plant({ periodStartMonth: null })} objectRules={CALENDAR_RULES} hasCalendarData onChanged={async () => {}} notify={() => {}} /></UIProvider>)
+    fireEvent.click(screen.getByRole('button', { name: 'Zeitraum der Heizung ändern' }))
+    const first = screen.getByRole('dialog', { name: 'Zeitraum der Heizung ändern' })
+    fireEvent.change(within(first).getByRole('combobox', { name: 'Für welchen Zeitraum rechnet die Heizung ab?' }), { target: { value: 'own' } })
+    fireEvent.change(within(first).getByRole('combobox', { name: /getrennt ab/ }), { target: { value: 'yes' } })
+    fireEvent.click(within(first).getByRole('button', { name: 'Vorschau' }))
+    await waitFor(() => expect((within(first).getByRole('button', { name: 'Speichern' }) as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.click(within(first).getByRole('button', { name: 'Speichern' }))
+    const second = await screen.findByRole('dialog', { name: /Vorauszahlung aufteilen|getrennte Heizkostenabrechnung/i })
+    await waitFor(() => expect((within(second).getByRole('button', { name: 'Speichern' }) as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.click(within(second).getByRole('button', { name: 'Abbrechen' }))
+    expect(await screen.findByRole('alertdialog')).toBeTruthy()
   })
 })

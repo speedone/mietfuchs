@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import type { HeatingPeriodChangePreview, HeatingPlant, PeriodRules, SeparatePreview } from '../types'
 import { ApiError, api, errorText, fmtDate, fmtEuro } from '../api'
 import { earliestOpenChange, localToday, MONTH_OPTIONS } from '../periodForm'
@@ -45,6 +45,10 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
   // Gespeichert wird im Seitenfenster (#346 Schritt 12, wie der Abrechnungszeitraum in Schritt 7); ein geändertes Fenster
   // meldet sich selbst bei useOpenForm an, und useSaving sperrt einen zweiten Klick auf „Speichern“.
   const saving = useSaving()
+  // Jede Anfrage einer Vorschau trägt eine Nummer; eine Antwort, die nach einer Änderung ankommt, gilt nicht mehr
+  // (Durchsicht des Seitenfensters, sonst kehrte M2 durch die Hintertür zurück). `stale` sagt im Fenster, warum.
+  const previewSeq = useRef(0)
+  const [stale, setStale] = useState(false)
   const [periodPreview, setPeriodPreview] = useState<HeatingPeriodChangePreview | null>(null)
   const [periodAnswers, setPeriodAnswers] = useState<HeatingPeriodAnswerForm | null>(null)
   const [separatePreview, setSeparatePreview] = useState<SeparatePreview | null>(null)
@@ -65,30 +69,46 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
   // (wie Durchsicht M2 beim Abrechnungszeitraum: sonst gälte die Vorschau für einen anderen Stand als im Formular).
   function changeForm(next: HeatingPeriodForm) {
     setForm(next)
+    if (periodPreview !== null || previewSeq.current > 0) setStale(true)
+    previewSeq.current += 1
     setPeriodPreview(null)
     setPeriodAnswers(null)
     setPeriodUnderstood(false)
   }
   function changeMonth(next: string) {
     setMonth(next)
+    if (separatePreview !== null || previewSeq.current > 0) setStale(true)
+    previewSeq.current += 1
     setSeparatePreview(null)
     setSeparateAnswers(null)
     setUnderstood(false)
   }
 
+  // Schließen setzt alles zurück, auch Monat, Antworten und Bestätigung (Durchsicht: sonst rechnete der zweite Schritt
+  // mit dem Monat eines früher abgebrochenen Fensters)
   function close() {
     setOpen('none')
     setSecondStep(false)
     setError('')
+    previewSeq.current = 0
+    setStale(false)
     setPeriodPreview(null)
+    setPeriodAnswers(null)
+    setPeriodUnderstood(false)
     setSeparatePreview(null)
+    setSeparateAnswers(null)
+    setUnderstood(false)
+    setMonth('')
   }
 
   async function loadPeriodPreview() {
     const body = heatingRulesBody(form, plant, objectRules)
     if ('error' in body) return errors.report([{ field: body.field, short: body.short, text: body.error }])
+    const seq = ++previewSeq.current
     try {
       const p = await api<HeatingPeriodChangePreview>(`/api/heating-plants/${plant.id}/period/preview`, { method: 'POST', body: JSON.stringify(body) })
+      if (seq !== previewSeq.current) return
+      setStale(false)
       setPeriodPreview(p)
       setPeriodAnswers(initialHeatingPeriodAnswers(p))
       setPeriodUnderstood(false)
@@ -98,11 +118,13 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
     }
   }
 
-  async function savePeriod() {
+  // Gibt zurück, ob danach der zweite Schritt (Vorschau zum Aufteilen) folgt; die lädt erst nach dem Speichern, damit das
+  // zweite Fenster währenddessen nicht gesperrt ist (Durchsicht)
+  async function savePeriod(): Promise<boolean> {
     const body = heatingRulesBody(form, plant, objectRules)
-    if ('error' in body || !periodPreview || !periodAnswers) return
+    if ('error' in body || !periodPreview || !periodAnswers) return false
     const answers = heatingPeriodAnswersOf(periodPreview, periodAnswers)
-    if ('error' in answers) return setError(answers.error)
+    if ('error' in answers) { setError(answers.error); return false }
     try {
       await api(`/api/heating-plants/${plant.id}/period`, { method: 'PUT', body: JSON.stringify({ rules: body.rules, answers: { ...answers, understood: periodUnderstood } }) })
     } catch (e) {
@@ -114,7 +136,7 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
       // Review Runde 2: Die Bestätigung galt der alten Vorschau.
       setPeriodUnderstood(false)
       setError(fresh ? `${errorText(e)} Bitte prüfen Sie die Vorschau erneut.` : errorText(e))
-      return
+      return false
     }
     // Die Antwort auf die Frage nach der getrennten Abrechnung (Schritt 3): bei „ja“ und eigener
     // Heizperiode geht es mit der Vorschau zum Aufteilen weiter (Weg d), sonst wird sie gespeichert.
@@ -123,25 +145,34 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
     // Laienprobe B11: Bei „ja“ ist die getrennte Abrechnung erst nach dem Aufteilen der Vorauszahlung
     // eingeschaltet. Die Vorschau dazu öffnet sich gleich, und die Meldung sagt, dass noch etwas fehlt.
     if (form.choice === 'own' && form.separate === 'yes' && !openSpan) {
-      notify('Zeitraum der Heizung gespeichert. Noch nicht eingeschaltet ist die getrennte Heizkostenabrechnung: Prüfen Sie unten die Aufteilung der Vorauszahlung und klicken Sie „Speichern“.')
+      notify('Zeitraum der Heizung gespeichert. Noch nicht eingeschaltet ist die getrennte Heizkostenabrechnung: Prüfen Sie im Fenster die Aufteilung der Vorauszahlung und klicken Sie „Speichern“.')
       setOpen('separate')
       setSecondStep(true)
-      await loadSeparatePreview(true)
-      return
+      return true
     }
     notify('Zeitraum der Heizung gespeichert.')
+    return false
   }
 
-  async function loadSeparatePreview(switchOn = false) {
+  async function savePeriodThen() {
+    let next = false
+    await saving.run(async () => { next = await savePeriod() })
+    if (next) void loadSeparatePreview(true, '')
+  }
+
+  async function loadSeparatePreview(switchOn = false, forMonth = month) {
     // Aus dem Monatsfeld kommt ein Text, der kein Monat ist, unverändert (#287, #346 Schritt 5); er wird gemeldet.
-    const parsed = parseMonthText(month)
+    const parsed = parseMonthText(forMonth)
     if (parsed.kind === 'invalid') {
       errors.report([{ field: 'month', short: parsed.short, text: `Monat: ${parsed.text}` }])
       return
     }
-    const body = separateOn && !switchOn ? { separate: false, ...(month ? { until: month } : {}) } : { separate: true, ...(month ? { month } : {}) }
+    const body = separateOn && !switchOn ? { separate: false, ...(forMonth ? { until: forMonth } : {}) } : { separate: true, ...(forMonth ? { month: forMonth } : {}) }
+    const seq = ++previewSeq.current
     try {
       const p = await api<SeparatePreview>(`/api/heating-plants/${plant.id}/separate/preview`, { method: 'POST', body: JSON.stringify(body) })
+      if (seq !== previewSeq.current) return
+      setStale(false)
       setSeparatePreview(p)
       setSeparateAnswers(initialSeparateAnswers(p))
       setUnderstood(false)
@@ -208,8 +239,8 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
           value={{ form, periodAnswers, periodUnderstood }}
           busy={saving.busy}
           errors={errors}
-          onSubmit={() => { if (periodPreview !== null && periodPreview.blocked.length === 0 && !(periodPreview.effects.some((e) => e.passed) && !periodUnderstood)) void saving.run(savePeriod) }}
-          actions={<button className="btn" disabled={saving.busy || !(periodPreview !== null && periodPreview.blocked.length === 0 && !(periodPreview.effects.some((e) => e.passed) && !periodUnderstood))} onClick={() => void saving.run(savePeriod)}>Speichern</button>}
+          onSubmit={() => { if (periodPreview !== null && periodPreview.blocked.length === 0 && !(periodPreview.effects.some((e) => e.passed) && !periodUnderstood)) void savePeriodThen() }}
+          actions={<button className="btn" disabled={saving.busy || !(periodPreview !== null && periodPreview.blocked.length === 0 && !(periodPreview.effects.some((e) => e.passed) && !periodUnderstood))} onClick={() => void savePeriodThen()}>Speichern</button>}
         >
           <label className="field">
             Für welchen Zeitraum rechnet die Heizung ab?
@@ -274,6 +305,9 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
           <div className="row">
             <button className="btn secondary" disabled={saving.busy} onClick={() => void loadPeriodPreview()}>Vorschau</button>
           </div>
+          {!periodPreview && (
+            <p className="muted">{stale ? 'Sie haben die Angaben geändert. Fordern Sie die Vorschau erneut an; gespeichert wird erst danach.' : 'Die Vorschau zeigt, was sich ändert; gespeichert wird erst danach.'}</p>
+          )}
           {periodPreview && periodAnswers && (
             <div className="preview">
               {periodPreview.blocked.map((b) => <div key={b} className="error">{b}</div>)}
@@ -340,6 +374,8 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
           width={560}
           onClose={close}
           value={{ month, separateAnswers, understood }}
+          // Nach dem Speichern des Zeitraums ist das Fenster vorbelegt und fragt beim Schließen (Durchsicht)
+          changedFrom={secondStep ? { value: { month: '', separateAnswers: null, understood: false } } : undefined}
           busy={saving.busy}
           errors={errors}
           onSubmit={() => { if (separatePreview !== null && separatePreview.blocked.length === 0 && !(separatePreview.effects.some((e) => e.passed) && !understood)) void saving.run(saveSeparate) }}
@@ -350,6 +386,9 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
           <div className="row">
             <button className="btn secondary" disabled={saving.busy} onClick={() => void loadSeparatePreview()}>Vorschau</button>
           </div>
+          {!separatePreview && (
+            <p className="muted">{stale ? 'Sie haben die Angaben geändert. Fordern Sie die Vorschau erneut an; gespeichert wird erst danach.' : 'Die Vorschau zeigt, was sich ändert; gespeichert wird erst danach.'}</p>
+          )}
           {separatePreview && separateAnswers && (
             <div className="preview">
               {separatePreview.blocked.map((b) => <div key={b} className="error">{b}</div>)}
