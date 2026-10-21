@@ -1190,3 +1190,12 @@ test('S29: freistehende Paragrafen mit Leerzeichen', () => {
   expect(Object.keys(all).length).toBeGreaterThan(100)
   expect(Object.entries(all).flatMap(([f, s]) => paragraphSpacingProblems(f, s))).toEqual([])
 })
+
+// S30 (#346 Schritt 12, aus den Durchsichten): „Kalenderjahr“ auf Mietkonto und Steuer stand in der kleinen, grauen
+// Beschriftung der Seitenleiste neben fetten Feldbeschriftungen. Auf einer Seite trägt der Umschalter die Beschriftung
+// eines Felds: `switcher-field` setzt die Variablen, aus denen `switcher` seine Beschriftung liest.
+test('S30: der Umschalter auf einer Seite ist beschriftet wie ein Feld', () => {
+  expect(twSources['./components/PeriodSelect.tsx']).toMatch(/<Switcher label="Kalenderjahr"[^>]*className=\{`switcher-field/)
+  expect(twCss).toMatch(/@utility switcher-field \{[^}]*--switcher-label-weight: var\(--weight-strong\)/)
+  expect(twCss).toMatch(/font-weight: var\(--switcher-label-weight, var\(--weight-medium\)\)/)
+})
