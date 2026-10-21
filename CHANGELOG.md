@@ -310,8 +310,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Dienst antwortet, „qwen3.5:4b“ ist dort aber nicht installiert.“, darin „Modell laden“; bei einem anderen
   Dienst als Ollama im Heimnetz mit der Frage nach dem Namen, außer der Dienst nennt gar keine Modelle).
   „Modell laden“ und „Befehl kopieren“ sind gleich groß, und „Standard-Anbieter“ steht bündig
-  über den Feldern. Der Browserlauf prüft abgeschnittene Felder auch in zugeklappten Bereichen (Befund N14 aus
-  [#341](https://github.com/speedone/mietfuchs/issues/341)).
+  über den Feldern (Befund N14 aus [#341](https://github.com/speedone/mietfuchs/issues/341)).
 - Hilfe & Begriffe: Die Begriffe sind zugeklappt wie die Anleitungen, und eine Buchstabenleiste springt zum
   ersten Begriff eines Buchstabens (Umlaute beim Grundbuchstaben). Eine Suche klappt die Treffer auf, ein Sprung
   aus einer Begriffserklärung den angesprungenen Begriff. Die Seite ist damit rund 9.700 statt 29.000
@@ -319,10 +318,6 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - Belegordner: Im Posteingang sind „Weiter prüfen“ und „Per KI auswerten“ so hoch wie die Auswahlfelder daneben,
   und „Beleg nachreichen“ springt nicht mehr zur Seite, wenn neben „Aus dem Posteingang …“ die Knöpfe zum
   Speichern erscheinen (Befund N7 aus [#341](https://github.com/speedone/mietfuchs/issues/341)).
-- Der Browserlauf prüft jetzt auch die Größe der Tippziele nach WCAG 2.5.8 (24 Bildpunkte oder genug Abstand);
-  axe hat diese Regel von sich aus ausgeschaltet. Gefunden hat sie nichts, die zu kleinen Mülleimer-Knöpfe aus
-  der Durchsicht gibt es seit dem Umbau der Oberfläche nicht mehr (Befund N11 aus
-  [#341](https://github.com/speedone/mietfuchs/issues/341)).
 - Die Karte „Objekt“ verlangt eine Bezeichnung: Leer ließ sie sich speichern, und die Seitenleiste
   zeigte danach „Ohne Namen“. Hat das Objekt noch keinen Namen, etwa nach einer frischen Installation,
   steht im Feld „Mein Objekt“; Sie können es überschreiben, und mit dem ersten Speichern der Karte wird
