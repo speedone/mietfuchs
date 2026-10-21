@@ -76,6 +76,7 @@ import Table from '../components/Table'
 import { candidateText } from '../triage'
 import { countOf } from '../../../shared/wording.ts'
 import { useFocusTarget, type FocusProps } from '../focus'
+import { NoticeBox } from '../components/Notice'
 
 // `tenancies` für die Einzelbeträge je Mietverhältnis (#94); ohne sie gibt es dort nur keine Felder.
 type Props = { units: Unit[]; settings: Settings | null; tenancies?: Tenancy[] } & FocusProps
@@ -556,7 +557,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
         subtitle="Alle Rechnungen des Abrechnungsjahres erfassen — manuell oder per KI-Belegauswertung."
         actions={<button className="btn" onClick={() => { setError(''); setForm(newItemForm(units, meters, keyCtx)) }}>+ Kostenposition anlegen</button>}
       />
-      {error && <div className="error">{error}</div>}
+      {error && <NoticeBox level="error" action={error} />}
       {closedAt && (
         <div className="notice">
           Die Abrechnung {label} ist abgeschlossen (am {fmtDate(closedAt.slice(0, 10))}). Änderungen an den Kosten
@@ -729,7 +730,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                 </button>
               )}
             </div>
-            {entry.status === 'fehler' && <div className="error">{entry.error}</div>}
+            {entry.status === 'fehler' && <NoticeBox level="error" action={entry.error} />}
             {entry.data.assessment && (entry.status === 'fertig' || entry.status === 'übernommen') && (
               <AssessmentReview assessment={entry.data.assessment} units={units} keyContext={keyCtxOf(entry.data.assessment)}
                 onChange={(next) => { patchEntry(entry.id, { status: next.open ? 'fertig' : 'übernommen', data: { assessment: next } }); void load() }}
@@ -858,7 +859,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
           errors={formErrors}
           actions={<button className="btn" disabled={saving.busy} onClick={() => void saving.run(saveItem)}>{form.id ? 'Speichern' : 'Anlegen'}</button>}
         >
-          {categoryNotice(form.category, year, property?.cableBuiltBeforeDec2021 ?? null) && <div className="notice">{categoryNotice(form.category, year, property?.cableBuiltBeforeDec2021 ?? null)}</div>}
+          {categoryNotice(form.category, year, property?.cableBuiltBeforeDec2021 ?? null) && <NoticeBox level="warning" action={categoryNotice(form.category, year, property?.cableBuiltBeforeDec2021 ?? null)} />}
           <div className="row">
             <label className="field">
               Kostenart

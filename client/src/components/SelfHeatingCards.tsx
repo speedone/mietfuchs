@@ -15,6 +15,7 @@ import {
 } from '../heatingSelfView'
 import { forcedShare, shareBounds } from '../heatingSelfForm'
 import { ErrorSummary, useFormError } from './ErrorSummary'
+import { NoticeBox } from './Notice'
 
 // Die Farbe der Ampel, wie im Cockpit.
 const AMPEL: Record<Light, string> = { green: 'gruen', yellow: 'gelb', red: 'rot' }
@@ -139,7 +140,7 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
             <p className="muted">{insulationExplained()}</p>
           </div>
         )}
-        {hint && <div className="notice">{hint}</div>}
+        {hint && <NoticeBox level="warning" action={hint} />}
         {(editable || toForced) && (
           <div className="row no-print">
             {/* Das Warmwasser übernimmt den Wert der Heizung sichtbar, bis der Vermieter ihn ändert. */}

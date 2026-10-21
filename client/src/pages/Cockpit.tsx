@@ -21,6 +21,7 @@ import PageHeader from '../components/PageHeader'
 import EmptyState from '../components/EmptyState'
 import { startStep } from '../emptyStock'
 import { ibanHintTitle, invalidIbans } from '../ibanCheck'
+import { NoticeBox } from '../components/Notice'
 
 type Props = {
   units: Unit[]
@@ -331,7 +332,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
         }
       />
 
-      {error && <div className="error">{error}</div>}
+      {error && <NoticeBox level="error" action={error} />}
 
       {consentPending(settings) && <UpdateConsent onAnswered={reload} />}
 

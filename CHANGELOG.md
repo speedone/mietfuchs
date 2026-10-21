@@ -342,6 +342,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Abrechnungszeitraums. „Speichern“ steht im Fuß und ist bis zur Vorschau gesperrt; wer danach noch etwas ändert,
   braucht eine neue Vorschau, statt dass die alte für einen anderen Stand gespeichert wird
   ([#346](https://github.com/speedone/mietfuchs/issues/346)).
+- Hinweise und Fehlermeldungen auf den Seiten stehen einheitlich im Baustein für Hinweise: mit Zeichen und Stufe
+  („⚠ Warnung“, „✖ Fehler“) statt als farbiger Kasten ohne Wort, darunter Ladefehler oben auf den Seiten und die
+  einzeiligen Hinweise in Kosten, Belegordner, Heizkosten, Mietkonto und weiteren Karten
+  ([#346](https://github.com/speedone/mietfuchs/issues/346)).
 - Die Karte „Objekt“ verlangt eine Bezeichnung: Leer ließ sie sich speichern, und die Seitenleiste
   zeigte danach „Ohne Namen“. Hat das Objekt noch keinen Namen, etwa nach einer frischen Installation,
   steht im Feld „Mein Objekt“; Sie können es überschreiben, und mit dem ersten Speichern der Karte wird

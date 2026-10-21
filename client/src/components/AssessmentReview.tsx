@@ -15,6 +15,7 @@ import { useConfirm } from './feedback'
 import DraftActions from './DraftActions'
 import { useDraft, useOpenWhenDiffers } from '../useDraft'
 import { ErrorSummary, useFormError } from './ErrorSummary'
+import { NoticeBox } from './Notice'
 
 type Props = {
   assessment: AssessmentView
@@ -170,14 +171,14 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
       {a.sumWarning && <div className="warn">⚠ {a.sumWarning}</div>}
       {/* Gerechnetes benennen, damit es geprüft werden kann (#34) */}
       {a.amountsAdjusted === 'netto' && (
-        <div className="notice">
+        <NoticeBox level="warning" action={<>
           Die Positionen standen ohne Umsatzsteuer auf der Rechnung. Mietfuchs hat sie auf den Rechnungsbetrag hochgerechnet. Bitte die Beträge kurz prüfen.
-        </div>
+        </>} />
       )}
       {a.laborFromTotal && (
-        <div className="notice">
+        <NoticeBox level="warning" action={<>
           Der Arbeitskostenanteil nach § 35a EStG stand nur als ein Betrag auf der Rechnung. Mietfuchs hat ihn nach Beträgen auf die Positionen verteilt; Fahrtkosten und Material gehören streng genommen nicht dazu.
-        </div>
+        </>} />
       )}
       <Table className="assessment-table row-groups">
         <thead>

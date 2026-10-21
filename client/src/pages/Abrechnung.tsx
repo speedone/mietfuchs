@@ -382,7 +382,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
       <div className="no-print">
         <PageHeader title="Abrechnung" subtitle={'Die fertige Nebenkostenabrechnung pro Mieter — als PDF speichern über „Drucken“.'} />
       </div>
-      {error && <div className="error">{error}</div>}
+      {error && <NoticeBox level="error" action={error} />}
 
       {/* Im leeren Zeitraum gibt es nichts zu drucken (N12) */}
       {!(empty && choices.length === 0) && (

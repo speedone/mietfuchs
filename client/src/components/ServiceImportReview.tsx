@@ -15,6 +15,7 @@ import { spansTwoYears } from '../../../shared/period.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { CATEGORIES, type HeatingPeriodView, type ServiceStatementExtraction } from '../types'
 import { ErrorSummary, useFormError } from './ErrorSummary'
+import { NoticeBox } from './Notice'
 
 export default function ServiceImportReview({ x, file, ctx, view, co2 = true, onDone }: {
   x: ServiceStatementExtraction
@@ -196,7 +197,7 @@ export default function ServiceImportReview({ x, file, ctx, view, co2 = true, on
       </label>
       <small className="muted">{CO2_EXAMPLE}</small>
       {hint && <p>{hint}</p>}
-      {conflict && <p className="notice">{conflict}</p>}
+      {conflict && <NoticeBox level="warning" action={conflict} />}
       <div className="row"><button className="btn secondary" onClick={() => void saveCo2()}>CO₂-Angaben übernehmen</button></div>
       </>)}
 

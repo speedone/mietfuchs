@@ -6,6 +6,7 @@ import { periodCosts } from '../costPeriods'
 import { useProperty, withProperty } from '../property'
 import PageHeader from '../components/PageHeader'
 import Table from '../components/Table'
+import { NoticeBox } from '../components/Notice'
 
 // Ab dieser Abweichung zum Vorjahr gilt eine Kostenart als auffällig.
 // Mieter dürfen Belege einsehen — größere Sprünge sollte man erklären können.
@@ -90,7 +91,7 @@ export default function Uebersicht({ onNavigate }: Props) {
             : <span className="badge gray">Abrechnung im Entwurf</span>}
         </>}
       />
-      {error && <div className="error">{error}</div>}
+      {error && <NoticeBox level="error" action={error} />}
 
       {notable.length > 0 && (
         <div className="notice">

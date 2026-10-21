@@ -28,6 +28,7 @@ import Table from '../components/Table'
 import HeatingCard from '../components/HeatingCard'
 import { useFocusTarget, type FocusProps } from '../focus'
 import { tenancyStamp } from '../../../shared/tenancyStamp.ts'
+import { NoticeBox } from '../components/Notice'
 
 type Props = {
   units: Unit[]
@@ -402,7 +403,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
           </Table>
         )}
         {units.length > 0 && participating.length === 0 && (
-          <div className="notice">Keine Wohnung ist an der Kostenverteilung beteiligt — die Abrechnung wäre leer.</div>
+          <NoticeBox level="warning" action={<>Keine Wohnung ist an der Kostenverteilung beteiligt — die Abrechnung wäre leer.</>} />
         )}
       </Card>
 

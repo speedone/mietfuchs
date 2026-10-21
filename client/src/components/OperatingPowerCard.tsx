@@ -10,6 +10,7 @@ import Term from './Term'
 import { useOpenWhenDiffers } from '../useDraft'
 import type { CostItem, HeatingPeriodView, HeatingPlant, PeriodRules } from '../types'
 import { billingEnergy } from '../../../shared/heatDelivery.ts'
+import { NoticeBox } from './Notice'
 
 // `rules`: der Rhythmus des Objekts, nach dem die Stromrechnungen ihren Zeitraum haben (G-K1).
 export default function OperatingPowerCard({ plant, view, rules, items, onBooked }: {
@@ -117,11 +118,11 @@ export default function OperatingPowerCard({ plant, view, rules, items, onBooked
           ))}
           <button type="button" className="btn secondary" disabled={view.closed} onClick={() => setForm({ ...form, devices: [...form.devices, { label: '', watts: '', hours: '', days: '' }] })}>+ weiteres Gerät</button>
           <label className="field"><span>Heiztage</span><input inputMode="numeric" value={form.heatingDays} disabled={view.closed} onChange={(e) => setForm({ ...form, heatingDays: e.target.value })} /></label>
-          <p className="hint">
+          <NoticeBox level="hint" action={<>
             Die Leistung steht auf dem Typenschild. Die Umwälzpumpe der Heizung läuft nur in der Heizzeit; eine Pumpe für das Warmwasser läuft auch im Sommer.
             Tragen Sie dann bei diesem Gerät eigene Tage ein. Wurde der Kessel im Jahr getauscht, legen Sie den Betriebsstrom zweimal an, je mit den Tagen des
             alten und des neuen Kessels, oder nehmen Sie den Zwischenzähler.
-          </p>
+          </>} />
         </>
       )}
       {form.mode === 'measured' && (
@@ -131,17 +132,17 @@ export default function OperatingPowerCard({ plant, view, rules, items, onBooked
         <>
           <label className="field"><span>geschätzter Betrag (€)</span><input inputMode="decimal" value={form.ownAmount} disabled={view.closed} onChange={(e) => setForm({ ...form, ownAmount: e.target.value })} /></label>
           <label className="field"><span>Grundlage der Schätzung</span><textarea rows={3} value={form.basis} disabled={view.closed} onChange={(e) => setForm({ ...form, basis: e.target.value })} /></label>
-          <p className="hint">
+          <NoticeBox level="hint" action={<>
             Für Wohnungseigentümer lässt der Bundesgerichtshof als Schätzgrundlage auch einen Bruchteil der Brennstoffkosten zu (BGH, Urteil vom 03.06.2016, V ZR 166/15, Rn. 14);
             dass das auch für Sie als Vermieter gilt, ist eine Auslegung von Mietfuchs. Gemeint sind die Brennstoffkosten, nicht der Allgemeinstrom. Mietfuchs gibt keinen
             Prozentsatz vor; nennen Sie, wie Sie geschätzt haben.
-          </p>
+          </>} />
         </>
       )}
       {preview.ok ? (
         <ul className="calc-steps">{preview.lines.map((l) => <li key={l}>{l}</li>)}</ul>
       ) : (
-        <p className="hint">{preview.text}</p>
+        <NoticeBox level="hint" action={preview.text} />
       )}
       {question && (
         <div className="notice">

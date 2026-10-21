@@ -16,6 +16,7 @@ import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
 import { useFocusTarget, useScrollToFocus, type FocusProps } from '../focus'
 import { MONTH_SHORT } from '../monthText'
+import { NoticeBox } from '../components/Notice'
 
 const MONTHS = MONTH_SHORT
 
@@ -158,7 +159,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
           </button>
         }
       />
-      {error && <div className="error">{error}</div>}
+      {error && <NoticeBox level="error" action={error} />}
 
       {/* Das Abrechnungsjahr wählt die Seitenleiste (#346 Schritt 8). Weicht der Zeitraum vom Kalenderjahr ab, ist
           das Kalenderjahr des Mietkontos eine andere Größe und wird hier gewählt (#208). */}

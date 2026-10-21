@@ -10,6 +10,7 @@ import { ALREADY_SETTLED_OPTIONS, BEFORE_2023_OPTIONS, STOCK_UNIT_OPTIONS, stock
 import { STOCK_UNIT_TEXT } from '../../../shared/fuelStock.ts'
 import type { HeatingEnergy, HeatingPeriodView } from '../types'
 import { ErrorSummary, useFormError } from './ErrorSummary'
+import { NoticeBox } from './Notice'
 
 type TextKey = 'openingQuantity' | 'openingCost' | 'openingKg' | 'openingCo2' | 'closingQuantity'
 
@@ -144,7 +145,7 @@ export default function StockCard({ view, onSaved, co2Fields = true, energy }: {
         </label>
       </div>
       {summary.length > 0 && <ul>{summary.map((l) => <li key={l}>{l}</li>)}</ul>}
-      {stock.problem && !(view.closed && stock.frozen) && <div className="notice">{stock.problem}</div>}
+      {stock.problem && !(view.closed && stock.frozen) && <NoticeBox level="warning" action={stock.problem} />}
       {!view.closed && (
         <div className="row">
           <button className="btn" disabled={busy} onClick={() => void save()}>Vorrat speichern</button>

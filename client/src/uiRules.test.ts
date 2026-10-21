@@ -919,24 +919,11 @@ test('S24: was am Fensterrand steht, hält die Sicherheitsränder ein', () => {
 // so steht, mit Anzahl, und darf nur kleiner werden (UI-Durchsicht H3, M5).
 const ERROR_FILES = new Set(['./components/Field.tsx', './components/ErrorSummary.tsx', './components/feedback.tsx', './components/DraftActions.tsx'])
 const ERROR_EXCEPTIONS = new Map<string, number>([
-  // Fehler beim Laden der Seite, oben auf der Seite (CLAUDE.md: „Die Meldung oben auf der Seite bleibt für Ladefehler“)
-  ['./pages/Abrechnung.tsx', 1], // dazu Abschließen und Wiederöffnen (`attempt`), Aktionen ohne Formular; Schritt 10
-  ['./pages/Cockpit.tsx', 1],
-  ['./pages/Heizkosten.tsx', 1],
-  ['./pages/Mietkonto.tsx', 1],
-  ['./pages/Steuer.tsx', 1],
-  ['./pages/Uebersicht.tsx', 1],
-  ['./components/Co2SheetView.tsx', 1],
-  // Ladefehler (die Meldungen der Ablesungen stehen seit Schritt 10 im Baustein Notice); der Mieterwechsel steht seit
-  // Schritt 7 im Seitenfenster, Stammdaten hat deshalb keine Stelle mehr
-  ['./pages/Zaehler.tsx', 1],
-  // Ladefehler und das Ergebnis je Beleg in der Warteschlange der Auswertung (Inhalt der Liste)
-  ['./pages/Kosten.tsx', 2],
-  ['./pages/Schnellerfassung.tsx', 2],
+  // Ladefehler oben auf der Seite stehen seit #346 Schritt 12 im Baustein Notice (Stufe Fehler), nicht mehr hier.
   // Was die Vorschau der Buchung ablehnt, je Zeile mit „Position öffnen“ (Befund der Vorschau)
   ['./components/AssessmentReview.tsx', 1],
-  // Ladefehler, die Belegmappe und „Betrag prüfen“ im Posteingang (Entwurf am Feld mit „Position öffnen“)
-  ['./pages/Belege.tsx', 3],
+  // „Betrag prüfen“ im Posteingang (Entwurf am Feld mit „Position öffnen“)
+  ['./pages/Belege.tsx', 1],
   // Ergebnis einer Vorschau oder Probe als Befund, kein Formularfehler: gesperrte Zeiträume, abgelaufene Fristen, die Probe
   ['./components/PeriodCard.tsx', 2],
   ['./components/HeatingPeriodSection.tsx', 3],
@@ -1059,34 +1046,25 @@ test('S26: Hinweise nur über den Baustein Notice', () => {
 // Teil. Die Bausteine für Fehler (S15) und Notice selbst sind ausgenommen.
 const BOX_EXCEPTIONS = new Map<string, number>([
   ['./components/AiSettings.tsx', 3],
-  ['./components/AssessmentReview.tsx', 5],
+  ['./components/AssessmentReview.tsx', 3],
   ['./components/Co2Card.tsx', 3],
-  ['./components/Co2FactsCard.tsx', 1],
-  ['./components/Co2SheetView.tsx', 3],
+  ['./components/Co2SheetView.tsx', 2],
   ['./components/CostPeriodFields.tsx', 1],
-  ['./components/FuelCard.tsx', 4],
+  ['./components/FuelCard.tsx', 2],
   ['./components/HeatingPeriodSection.tsx', 3],
-  ['./components/HeatingSelfSetup.tsx', 1],
-  ['./components/LawOverridesCard.tsx', 1],
-  ['./components/OperatingPowerCard.tsx', 6],
+  ['./components/OperatingPowerCard.tsx', 3],
   ['./components/PeriodCard.tsx', 2],
   ['./components/PropertyNotice.tsx', 1],
-  ['./components/SelfHeatingCards.tsx', 1],
-  ['./components/ServiceImportReview.tsx', 2],
-  ['./components/StockCard.tsx', 1],
-  ['./pages/Abrechnung.tsx', 2],
-  ['./pages/Belege.tsx', 5],
-  ['./pages/Cockpit.tsx', 2],
+  ['./components/ServiceImportReview.tsx', 1],
+  ['./pages/Abrechnung.tsx', 1],
+  ['./pages/Belege.tsx', 2],
+  ['./pages/Cockpit.tsx', 1],
   ['./pages/Einstellungen.tsx', 1],
-  ['./pages/Heizkosten.tsx', 1],
   ['./pages/Hilfe.tsx', 2],
-  ['./pages/Kosten.tsx', 7],
-  ['./pages/Mietkonto.tsx', 3],
-  ['./pages/Schnellerfassung.tsx', 2],
-  ['./pages/Stammdaten.tsx', 3], // seit #346 Schritt 7 ohne den Kasten des Assistenten
-  ['./pages/Steuer.tsx', 1],
-  ['./pages/Uebersicht.tsx', 2],
-  ['./pages/Zaehler.tsx', 1],
+  ['./pages/Kosten.tsx', 4],
+  ['./pages/Mietkonto.tsx', 2],
+  ['./pages/Stammdaten.tsx', 2], // seit #346 Schritt 7 ohne den Kasten des Assistenten
+  ['./pages/Uebersicht.tsx', 1],
 ])
 const boxUses = (src: string): string[] => [...src.matchAll(/className=(?:"([^"]*)"|'([^']*)'|\{((?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*)\})/g)]
   .filter((m) => /(?:^|[\s'"`])(?:notice|error|hint)(?=[\s'"`]|$)/.test(m[1] ?? m[2] ?? m[3] ?? ''))

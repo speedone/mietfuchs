@@ -6,6 +6,7 @@ import { api, errorText } from '../api'
 import { SHEET_COLUMNS, sheetFacts, sheetHead, sheetNotes, sheetRows } from '../co2Sheet'
 import Table from './Table'
 import type { Co2Sheet } from '../types'
+import { NoticeBox } from './Notice'
 
 export default function Co2SheetView({ plantId, period, onClose }: { plantId: string; period: string; onClose: () => void }) {
   const [sheet, setSheet] = useState<Co2Sheet | null>(null)
@@ -14,7 +15,7 @@ export default function Co2SheetView({ plantId, period, onClose }: { plantId: st
     api<Co2Sheet>(`/api/heating-plants/${encodeURIComponent(plantId)}/periods/${encodeURIComponent(period)}/co2-sheet`).then(setSheet).catch((e: unknown) => setError(errorText(e)))
   }, [plantId, period])
   const back = <button className="btn secondary" type="button" onClick={onClose}>Zurück zu den Heizkosten</button>
-  if (error) return <div className="card"><div className="error">{error}</div><div className="row no-print">{back}</div></div>
+  if (error) return <div className="card"><NoticeBox level="error" action={error} /><div className="row no-print">{back}</div></div>
   if (!sheet) return <div className="card"><p className="muted">Wird geladen …</p></div>
   const head = sheetHead(sheet)
   const findings = sheet.deliveries.flatMap((d) => d.findings)
