@@ -4,7 +4,7 @@
 //
 // Es liegt in shared/, weil beide Seiten es brauchen: Der Server hängt an jeden Hinweis die
 // passenden Begriffe (`noticeKinds` in calc.ts), der Client zeigt sie an. Es ist der erste
-// Laufzeitanteil hier; das Docker-Image übernimmt den Ordner (siehe CLAUDE.md).
+// Laufzeitanteil hier; das Docker-Image übernimmt den Ordner (siehe scripts/CLAUDE.md, Docker-Image).
 //
 // Maßstab für die Texte: einfache Worte, eine Rechtsaussage nur, wo sie im Gesetz steht, und
 // Rechtsprechung ohne Aktenzeichen, wenn das Aktenzeichen nicht sicher belegt ist. Wer einen

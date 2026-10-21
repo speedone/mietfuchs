@@ -1,5 +1,5 @@
 // Zählereinheiten, Durchsicht von #342: Bestände, die vor #342 richtig rechneten, ändern sich nicht. Die Fälle F1 bis
-// F8 und W aus der Durchsicht (heizung-notizen/einheiten-342-review.md), erwartet wie auf 65e82dc (vor #342) gemessen,
+// F8 und W aus der Durchsicht (heizung-notizen/einheiten-342-review.md), erwartet wie auf 423d690 (vor #342) gemessen,
 // außer wo eine Behebung gewollt ist (α bei einem Speicherzähler in MWh, gemischt bekannte Einheiten).
 
 import { test } from 'node:test'
@@ -32,9 +32,9 @@ const heatItem: CostItem = {
 }
 const waterItem: CostItem = { id: 'wasser', propertyId: P, period: periodKey('2025-01'), category: 'Wasserversorgung', description: 'Warmwasser', amountCents: 100000, key: 'meter', meterType: 'warmwasser' }
 
-// Gemessen auf 65e82dc (probe.ts der Durchsicht), Verbrauchsschlüssel Wärme 3.000 €.
+// Gemessen auf 423d690 (probe.ts der Durchsicht), Verbrauchsschlüssel Wärme 3.000 €.
 const F1_EXPECTED = { 'A:heiz': 90000, 'B:heiz': 120000, 'C1:heiz': 54000, 'C2:heiz': 36000 }
-// Gemessen auf 65e82dc, eigene Abrechnung Beispiel A, Gas.
+// Gemessen auf 423d690, eigene Abrechnung Beispiel A, Gas.
 const F2_GAS = { 'A:gas': 176850, 'B:gas': 235800, 'C1:gas': 119644, 'C2:gas': 67706 }
 const pick = (s: Record<string, number>, keys: string[]) => Object.fromEntries(keys.map((k) => [k, s[k]]))
 
@@ -187,7 +187,7 @@ test('S4: Zähler einer Wohnung außerhalb in Litern: Zerlegung des Vermieterant
 
 // ---------- S4: Abweichung einer abgeschlossenen Abrechnung ----------
 
-// Salden auf 65e82dc (probe3.ts): alle Wärmezähler einheitlich in MWh bzw. nur wz-b in MWh.
+// Salden auf 423d690 (probe3.ts): alle Wärmezähler einheitlich in MWh bzw. nur wz-b in MWh.
 const FROZEN_UNIFORM = [['A', -179428], ['B', -239236], ['C1', -121812], ['C2', -68658]] as const
 const FROZEN_MIXED = [['A', -251331], ['B', -95426], ['C1', -164956], ['C2', -97421]] as const
 const frozen = (rows: readonly (readonly [string, number])[]) => ({ statements: rows.map(([tenancyId, balanceCents]) => ({ tenancyId, balanceCents })) })

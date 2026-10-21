@@ -919,7 +919,7 @@ test('S24: was am Fensterrand steht, hält die Sicherheitsränder ein', () => {
 // so steht, mit Anzahl, und darf nur kleiner werden (UI-Durchsicht H3, M5).
 const ERROR_FILES = new Set(['./components/Field.tsx', './components/ErrorSummary.tsx', './components/feedback.tsx', './components/DraftActions.tsx'])
 const ERROR_EXCEPTIONS = new Map<string, number>([
-  // Fehler beim Laden der Seite, oben auf der Seite (CLAUDE.md: „Die Meldung oben auf der Seite bleibt für Ladefehler“)
+  // Fehler beim Laden der Seite, oben auf der Seite (client/CLAUDE.md: „Die Meldung oben auf der Seite bleibt für Ladefehler“)
   ['./pages/Abrechnung.tsx', 1], // dazu Abschließen und Wiederöffnen (`attempt`), Aktionen ohne Formular; Schritt 10
   ['./pages/Cockpit.tsx', 1],
   ['./pages/Heizkosten.tsx', 1],

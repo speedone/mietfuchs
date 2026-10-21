@@ -1,0 +1,560 @@
+# Server: Berechnung, Routen und Fachliches
+
+Die Heizung steht in [docs/heizung.md](../../docs/heizung.md), die KI-Belegauswertung in
+[ai/CLAUDE.md](ai/CLAUDE.md), die Datenbank in [db/CLAUDE.md](db/CLAUDE.md).
+
+## Objekte (#92)
+
+Eine Installation verwaltet mehrere Objekte (`properties`); **ein Objekt ist zugleich die
+Abrechnungseinheit**. Eine dritte Ebene (Wirtschaftseinheit) gibt es bewusst nicht: Mehrere
+Gebäude, die gemeinsam abrechnen, sind *ein* Objekt, eine Rechnung für mehrere Objekte wird
+vorverteilt (#95), die Flexibilität steckt in der Kostenposition (#94).
+
+- **Wurzeln tragen das Objekt, alles andere erbt es**: `property_id` an Wohnungen, Zählern (ein
+  Hauptzähler hat keine Wohnung), Kostenpositionen und Abschlüssen. Mietverhältnisse, Zahlungen
+  und Ablesungen erben; eine zweite Spalte wäre eine zweite Wahrheit. `ON DELETE RESTRICT`:
+  gelöscht wird nur ein leeres Objekt, nie das letzte (`removeProperty`).
+- **Eingegrenzt wird an genau einer Stelle**, `narrowToProperty` in snapshot.ts; ein fehlender
+  Filter ergäbe still eine Verteilung über zwei Häuser. Eine Invariante in calc.test.ts prüft, dass
+  jedes Objekt rechnet, als wäre es allein.
+- **Kein Verweis über Objektgrenzen** (Zähler, Direktzuordnung, Anteile, Teilnehmer,
+  Einzelbeträge), auch nicht beim Wechsel von Wohnung oder Objekt (`guardUnit`, `guardTenancy`,
+  `sameProperty`, `CrossPropertyError` → 400; beim Wiederherstellen `crossPropertyViolations`).
+  Keine zusammengesetzten Fremdschlüssel, weil `SET NULL` auf `direct_unit_id` sonst auch das
+  Pflichtfeld leerte.
+- **Abschlüsse sind eindeutig je (Objekt, Zeitraum).**
+- **Routen nehmen `?property=`**, beim Anlegen einer Wurzel `propertyId` im Rumpf (`propertyOf`).
+  **Fehlt die Angabe und gibt es genau ein Objekt, gilt dieses**; bei mehreren 400 statt still
+  alle. Belege und Backup sind installationsweit.
+- **Einstellungen**: Name und Adresse gehören zum Objekt (`settings.house_name`/`address` stehen
+  nur noch für den eingefrorenen Eingang da). Vermieter, IBAN und Zahlungsfrist sind in `settings`
+  die Vorgabe, am Objekt `null` = „Vorgabe gilt“ (`effectiveLandlord` in client/src/landlord.ts).
+- **Die db.json kennt keine Objekte** (`LegacyUnit`, `LegacyMeter`, `LegacyCostItem` in store.ts).
+  Tests, die einen Bestand in die Datenbank bringen, gehen über `openDatabaseWithStock`.
+- **Oberfläche**: `PropertyProvider` (client/src/property.tsx), Abrufe mit `withProperty`. Nach dem
+  Wechsel in ein Objekt ohne Wohnungen steht oben „Zurück zu …“ (#157, client/src/propertyView.ts).
+
+## Abrechnungszeitraum (#208)
+
+Ein Objekt rechnet im Kalenderjahr oder in eigenem Rhythmus ab. **Der Zeitraum ist ein eigener
+Schlüssel** `PeriodKey` (`'JJJJ-MM'`, Monat des Beginns, Markentyp), kein Jahr: `cost_items.period`,
+`closed_settlements.period`, `closed_settlement_history.period`, `prepayment_overrides.period`,
+`assessments.requested_period`. Kalenderjahre bleiben, was Tatsache über einen Beleg ist
+(`uploads.year`, `assessments.year`, `detected_year`, `requested_year`).
+
+- **Zeiträume werden berechnet, nie gespeichert** ([shared/period.ts](../../shared/period.ts)): aus
+  `period_start_month` und `period_changes` lückenlose Zeiträume bis zwölf Monate
+  (`bgb.max-period-months`), vor jedem Wechsel ein Rumpf. Aus Text wird ein Schlüssel nur dort
+  (Wächter in period.test.ts). `computeSettlement` rechnet über die Grenzen des Zeitraums; eine
+  Wache in calc-zeitraum.test.ts verbietet Kalenderdaten in seinem Rumpf.
+- **Mietkonto und Steuer bleiben Kalenderjahr**; Abrechnung und Mietkonto teilen `ledgerRows`.
+- **Die nackte Jahreszahl gilt nur beim reinen Kalenderobjekt**, sonst 404 mit Satz, damit ein
+  alter Tab nie still einen Rumpf bekommt. Ebenso beim Schreiben (`year` statt `period`,
+  vierstellige Jahreskorrektur → `PeriodError`). Schickt ein Tab Jahreszahlen, gilt sein Stand
+  vollständig. Ein ungültiger `period` ist 400; ein Schlüssel, den es für das Objekt nicht gibt,
+  wird abgelehnt, beim Wiederherstellen ebenso (`orphanPeriodKeys`).
+- Die Frist kommt vom Server (`Settlement.deadline`, `settlementDeadline`, `bgb.deadline-months`)
+  und friert mit ein.
+- **Wechsel des Rhythmus nur mit Vorschau** ([db/periodChange.ts](db/periodChange.ts),
+  `POST /api/properties/:id/period/preview`, `PUT …/period`), mit Marke (`token`; stimmt sie nicht
+  mehr: 409 mit neuer Vorschau). Ändert sich ein abgeschlossener Zeitraum: 409. Jahreskorrekturen
+  werden neu erfasst, wenn ein Mietverhältnis Monate in anders geschnittenen Zeiträumen bekommt
+  (eine gezahlte Summe lässt sich nicht verteilen). Das Jahr der Zahlung jeder Position, die in
+  einen Zeitraum über zwei Kalenderjahre gelangt, fragt die Vorschau, vorbelegt und geklemmt;
+  verschoben wird über dieselbe Schreibprüfung wie beim Speichern.
+- **Kalte Rechnungen mit Leistungszeitraum über zwei Zeiträume werden beim Speichern nach Tagen
+  aufgeteilt** ([serviceSplit.ts](serviceSplit.ts), Leistungsprinzip); jeder Teil trägt den ganzen
+  Leistungszeitraum, und ein Teil wird danach nur berichtigt (`isSplitPart`), bei einem weiteren
+  Wechsel nur über seinen eigenen Teil neu geteilt (`needsSplitCheck`). Heizkosten nie
+  (VIII ZR 156/11), dort warnt `period.heating-mismatch`.
+- **Jahr der Steuer**: `tax_year` ist das Jahr der Zahlung, Pflicht nur bei einem Zeitraum über zwei
+  Kalenderjahre. Welches Jahr eine Position für die Steuer hat, sagt allein `outflowShares`
+  ([outflow.ts](outflow.ts), siehe Steuer). Die Steuerübersicht schöpft aus allen Abrechnungen,
+  die das Jahr berühren (`taxPartsFor`), das Steuer-ZIP aus denselben (`taxArchiveItems`).
+  Referenz: Prüfsummen in `server/test/fixtures/tax-golden.json` ([outflow.test.ts](../test/outflow.test.ts)).
+- **Vorschlag nach § 560 im Rumpf** ([prepaymentSuggestion.ts](prepaymentSuggestion.ts)): Jahresfaktor
+  je Position, kalt nach Tagen ihres Leistungszeitraums (ohne einen: Jahresbetrag und
+  `prepayment.annual-assumed`), Brennstoff nach Gradtagen (`hkv.degree-days`), fehlt der Faktor,
+  kein Vorschlag.
+- **Oberfläche** hält einen **Tag**, keinen Schlüssel ([client/src/period.tsx](../../client/src/period.tsx),
+  [periodForm.ts](../../client/src/periodForm.ts)), so passt ein Objektwechsel den Zeitraum von
+  selbst an. Beim Kalenderobjekt heißt er „Abrechnungsjahr“ und die Routen bekommen die Jahreszahl;
+  bei abweichendem Zeitraum haben Mietkonto und Steuer `CalendarYearSelect`.
+- **Belegbuchung** bucht in `bookingPeriod` (shared/assessment.ts): den gewählten Zeitraum, wenn er
+  das Jahr des Belegs berührt, sonst den mit der größten Überschneidung. Der Zeitraum einer
+  Auswertung entsteht nach den Regeln des Objekts (`periodForYear`), nie als festes `JJJJ-01`
+  (verwaister Schlüssel, und jedes spätere Backup ließe sich nicht wiederherstellen).
+
+## Fristen und Feiertage
+
+[shared/holidays.ts](../../shared/holidays.ts), [shared/deadlines.ts](../../shared/deadlines.ts):
+reine Funktionen in UTC, ohne Uhr und Datenzugriff. Maßgeblich ist das Land des Objekts
+(`properties.state`, eine der 16 Kennungen oder `null`; ein fremdes Kürzel ist 400).
+
+- **Regeln und Feiertage stehen im Rechtsregister**: `bgb.rent-due-workday` (3, § 556b Abs. 1),
+  `bgb.rent-due-saturday` (Samstag zählt nicht, VIII ZR 129/09), `bgb.deadline-on-workday`
+  (§ 193 BGB), je Feiertag `holiday.*` in [shared/law/feiertagsgesetze.ts](../../shared/law/feiertagsgesetze.ts).
+  `checked` nur, wo der Wortlaut amtlich gelesen ist, sonst `adopted` mit Angabe. Gerechnet wird
+  mit Osterformel ohne Laufzeitbibliothek (date-holidays: Daten unter CC BY-SA 3.0, mit AGPL nicht
+  verträglich).
+- **Geprüft gegen zwei unabhängige Quellen**: feste Liste der Python-Bibliothek holidays
+  ([fixtures/holidays/](../test/fixtures/holidays/README.md), 1995–2100) und **date-holidays als
+  devDependency der Wurzel** (nur Tests dürfen es importieren; Dependabot hebt es, eine
+  Gesetzesänderung macht den Test rot und ergibt eine neue Fassung im Register). Vor 1995 wird
+  nicht gerechnet.
+- **Gemeindeweise Feiertage werden nie gezählt**, nur genannt (`localHolidaysOf`); das Mietkonto sagt,
+  wenn einer bis zum Fälligkeitstag fällt. **Ohne Land** zählen nur bundesweite Feiertage, und die
+  Oberfläche sagt, dass die Frist am Ort einen Tag später sein kann.
+- `isWorkday` verlangt die Angabe, ob der Samstag zählt (keine Voreinstellung). `rentDueDate`:
+  dritter Werktag ohne Samstag; `deadlineOnWorkday`: Fristende nach § 193 BGB.
+- **Nichts wird still ersetzt**: calc.ts nutzt die Bausteine nicht, `ledgerRows` und die Regel aus
+  #133 (laufender Monat nie fällig) bleiben. Einziger Einsatz ist die Auskunft „Miete … fällig am …“
+  im Mietkonto (`rentDueNote`, nur bei voller Monatsmiete, `rentDueApplies`). Jeder weitere Einsatz
+  ist eine eigene Entscheidung mit eigenem Test; rechnet calc.ts einmal damit, dann mit `law()`.
+- Bewusst nicht: Land aus der Postleitzahl, Sonntage in Hessen, ob § 193 BGB auf eine Frist
+  anzuwenden ist (entscheidet der Aufrufer).
+
+## Belegordner (#170)
+
+[client/src/pages/Belege.tsx](../../client/src/pages/Belege.tsx), Logik in
+[client/src/receipts.ts](../../client/src/receipts.ts), Entwurf in
+[docs/superpowers/specs/2026-10-02-belegordner-design.md](../../docs/superpowers/specs/2026-10-02-belegordner-design.md).
+Objekt und Jahr kommen aus der Seitenleiste; nur Objekt und Jahr eines Belegs im Posteingang sind
+Auswahlfelder.
+
+- **Die Datei ist der Beleg, `uploads` nur eine Beschreibung** ([db/uploads.ts](db/uploads.ts)).
+  **Eine fehlende Zeile ist kein Fehler**: Ältere Belege werden aus der Datei beschrieben
+  ([uploads.ts](uploads.ts), `describeFile`, Hochladezeit aus dem Namen). Deshalb kein Fremdschlüssel
+  von `cost_items.invoice_file`. `GET /api/uploads` geht auch ohne Datenbank (ohne Posteingang).
+  **Die Prüfsumme wird nie synchron gerechnet**, `backfillUploads` trägt sie gestreamt nach.
+- **`kind`**: `receipt` oder `meterPhoto` (ein Zählerfoto steht nicht im Posteingang).
+- **Objekt und Jahr nur für den Posteingang**; für verknüpfte Belege ergeben sie sich aus den
+  Positionen. Hochladen nimmt `propertyId`/`year`; ein unbekanntes Objekt oder Jahr wird abgelehnt
+  und die Datei entfernt, ein Fehler der Datenbank verhindert das Hochladen nicht.
+- **Ein Beleg aus dem Posteingang wird nicht erneut hochgeladen**: KI-Routen nehmen `existingFile`
+  (`path.basename`), ein Abbruch löscht ihn nicht.
+- **Zuordnen an eine bestehende Position** (`attachChoices`, `amountCheckBody`): passende Positionen
+  oben, danach „Betrag prüfen“ (eine übernommene Position trägt einen Schätzbetrag). Bei `amounts`,
+  `external` oder einem Lohnanteil über dem neuen Betrag nur „Position öffnen“; ein vorhandener
+  §35a-Anteil wird genannt. Dateinamen vor `matchCategory` mit NFC normalisieren.
+- **Löschen** gesperrt, solange irgendeine Position irgendeines Objekts auf den Beleg zeigt
+  (`invoiceFilesInUse`).
+- **Backup und Umstieg**: Die Tabelle kommt mit dem Schnappschuss der Datenbank; ein Archiv ohne
+  sie ergibt eine leere Tabelle (Praxislauf Fall 13).
+- **Belegabdeckung** am Betrag gemessen; die Cockpit-Zeile wird **höchstens gelb**.
+- **Belegmappe für Mieter** ([client/src/tenantFolder.ts](../../client/src/tenantFolder.ts)) im Browser
+  mit pdf-lib, Nicht-Kopierbares über pdf.js als Bild. Positionen der Mieterzeilen ohne nicht
+  Umlagefähiges; **Belege nur einzelner Mieter nur auf ausdrückliche Wahl**. Ein unbrauchbarer Beleg
+  bricht die Mappe nicht ab, das Deckblatt nennt ihn. Nur WinAnsi (`winAnsiSafe`).
+- **Belege für die Steuer** ([taxReceipts.ts](taxReceipts.ts)): ZIP aus dem Speicher, Ordner je
+  `ANLAGE_V_GROUP` in der Reihenfolge der Steuerübersicht, `Übersicht.csv` (BOM, Semikolon) mit jeder
+  Position; Textfelder mit = + - @ am Anfang bekommen einen Apostroph (Formel-Einschleusung).
+
+## API
+
+[index.ts](index.ts): generische CRUD-Routen in einer Schleife für `units, tenancies, costItems,
+meters, readings, payments`, durch [db/repository.ts](db/repository.ts); Kaskaden erledigen die
+Fremdschlüssel. Alle Datenrouten nehmen `?property=`. Die übrigen Routen stehen in index.ts, die
+Heizung betreffenden in docs/heizung.md. Was sich nicht aus dem Code erschließt:
+
+- `POST /api/tenancies/:id/change`: Mieterwechsel (Ende, Zwischenablesungen, Nachmieter) in einer
+  Transaktion, ganz oder gar nicht (`changeTenant`).
+- `/api/restore` setzt **keinen vorhandenen Stand voraus** (auf einem frischen Rechner wird am
+  häufigsten wiederhergestellt): Sicherheitskopien nur, wo es etwas zu sichern gab, den Belegordner
+  legt die Route selbst an. Geprüft wird vor jedem Überschreiben (siehe db/CLAUDE.md).
+- `/api/settlement/:period/close` (POST/PUT/DELETE) friert die Abrechnung samt `sentAt` ein; `GET`
+  liefert dann den eingefrorenen Stand und daneben in `deviation` je Mieter, was die heutige
+  Berechnung anders ergäbe ([settlementDiff.ts](settlementDiff.ts); unlesbar heißt „nicht
+  vergleichbar“, nicht „keine Abweichung“). DELETE verschiebt den Stand nach
+  `closed_settlement_history` (`…/history`, #56). `taxReport` nimmt den Eigenanteil aus dem
+  eingefrorenen Stand.
+
+## Der Schnappschuss (#55)
+
+[snapshot.ts](snapshot.ts): Die Berechnung liest den Speicher nicht selbst, sie bekommt einen
+`Snapshot` (`snapshotFor`). `computeSettlement`, `rentLedger`, `taxReport` und
+`consumptionOverview` nehmen nur ihn; er trägt den Zeitraum, damit er sich nicht mit einem anderen
+verrechnen lässt. Er führt nur, was die Berechnung liest (`Pick` aus shared/types.ts).
+
+- **Eingegrenzt wird nur, was seinen Zeitraum als Feld trägt** (Kostenpositionen, Abschluss).
+  Ablesungen, Mietverhältnisse, Zahlungen, Wohnungen und Zähler gehen vollständig hinein, denn
+  Anfangsstände und Staffeln „ab Datum“ können Jahre alt sein; wer dort filtert, bekommt still eine
+  Falschrechnung.
+- Er reicht die Datensätze durch, die Berechnung ändert nichts daran. Vom Objekt führt er nur, was
+  gebraucht wird (`property`); fehlt es (Umstieg, Regression), rechnet sie wie ohne die Angabe.
+- **Aufgefangen wird nichts**: Ist eine Sammlung `null` (#59), soll es krachen. Ein `?? []` ergäbe
+  eine stimmig aussehende, falsche Abrechnung, in der jeder Mieter alles erstattet bekommt.
+
+## Hinweise (#112)
+
+Die Berechnung erzeugt `notices` (`Notice` in shared/types.ts): Code, Stufe, Titel, Text, `subject`
+(daraus „Hier beheben →“), ggf. Regel. **Stufe, Titel und Regel hängen am Code** (`noticeKinds` in
+calc.ts); `warn` nimmt nur Codes aus der Tabelle. Stufen: `error` = Position wird wegen
+widersprüchlicher Angaben nicht verteilt, `warning` = Geld landet vermutlich anders als gewollt
+oder eine Rechtsregel ist verletzt, `hint` = prüfen ohne sicheren Fehler. Eine Stufe hängt am Code,
+deshalb bekommt ein anderer Fall einen eigenen Code.
+
+- **`warnings` bleibt als Liste der Texte, Wortlaut unverändert**: Cockpit, ältere Tabs und
+  eingefrorene Abrechnungen vor #112 lesen sie (`noticesOf` in client/src/notices.ts).
+- **Ein `error` sichert das Abschließen ab** (#319): 409 mit `errorNotices` und `errorToken`, bis
+  `despiteErrors` die Marke des einzufrierenden Stands trägt ([closeQuestion.ts](closeQuestion.ts));
+  ausgenommen `INFORMATIONAL` ([shared/notices.ts](../../shared/notices.ts), `blockingErrors`). Die
+  Oberfläche fragt bei denselben Fehlern vor dem Drucken einer offenen Abrechnung, und die gedruckte
+  trägt dann „Entwurf, nicht versenden“ (siehe client/CLAUDE.md).
+
+## Rechtsregister
+
+Jede Rechtszahl steht nur in [shared/law/](../../shared/law), mit Gültigkeit, Fundstelle,
+Prüfstand und **genau einer Zeitregel** (`periodStart`, `overlap`, `eventDate`, `incurred`; braucht
+ein Fall zwei, sind es zwei Parameter). Entwurf: `2026-10-05-heizung-gesamt-design.md`, Abschnitt 4.
+
+- **Abgefragt wird mit `law(param, ctx, log)`** ([shared/law/register.ts](../../shared/law/register.ts)):
+  je Abrechnung ein Protokoll (`createLawLog`, kein globaler Zustand), gefragt erst, wo ein Wert
+  gebraucht wird; die benutzten Werte stehen in `legalBasis.values` und frieren mit dem Abschluss
+  ein (`deviation` meldet spätere Änderungen in `valueChanges`). **Ein Wert, der im Zeitraum nicht
+  gilt, ist kein angewandter Wert**: `overlap` protokolliert bei `none` nichts; braucht ein Hinweis
+  die Fassung trotzdem, trägt calc.ts sie mit `recordVersionAt` ein. Texte außerhalb einer
+  Abrechnung (Lexikon, Anleitungen, Cockpit) lesen `valueAt(param, LAW_AS_OF)`. Das
+  Regelverzeichnis ([shared/law/rules.ts](../../shared/law/rules.ts)) nimmt Daten und Zahlen aus den
+  Parametern.
+- **Eine Fassung wird nie geändert, nur eine neue angelegt** (`law-history.test.ts`). Erlaubt sind
+  nur: das offene Ende schließen, wenn eine neue anschließt, und `null` eines überschreibbaren
+  Werts durch den amtlichen ersetzen.
+- **`law-literals.test.ts`** verbietet Prozentangaben einer Rechtsfolge außerhalb des Registers,
+  Datumsliterale in den Dateien der Berechnung und die Zahlen des Registers im Code von calc.ts,
+  snapshot.ts, shared/heating.ts und invoiceAmounts.ts; erlaubte Stellen stehen dort mit Grund.
+- **Release-Sperre**: Beim Tag bricht release.yml ab, solange ein Wert `checked: 'unchecked'` hat
+  (`law-release.test.ts`, mit Prüfung, dass der Sperrtest nicht übersprungen wurde).
+- **Ein Stichtag, `LAW_AS_OF`**: Wer eine Regel oder einen Wert prüft, setzt `retrieved` der
+  Parameter und `LAW_AS_OF` auf den Tag der Durchsicht (#110); es ist das jüngste `retrieved` und
+  steht als Rechtsstand in jeder Abrechnung. Die **jährliche Durchsicht** geht jeden Parameter an
+  seiner Fundstelle durch, legt bei Änderungen neue Fassungen an, trägt veröffentlichte Werte ein,
+  sieht das BGBl. (HeizkostenV, CO2KostAufG, GModG, BetrKV, MessEV) und neue Urteile des VIII.
+  Senats durch und setzt zuletzt `LAW_AS_OF`.
+- **Werte, die erst später veröffentlicht werden** (`co2.price` ab 2027, `co2.price-ets`) sind
+  `null` und `overridable`; nur `lawOverridable` fragt sie und liest einen Eintrag des Vermieters
+  aus `law_overrides` (je Kalenderjahr, mit Quelle, [db/lawOverrides.ts](db/lawOverrides.ts)),
+  protokolliert als `overridden` und genannt mit `law.value-overridden`. `law()` lehnt
+  überschreibbare Parameter ab. Ins Register kommt, was im BGBl. steht oder das UBA nach § 4
+  CO2KostAufG bekanntmacht, keine Drucksachen. Werte, die nur geprüft werden, tragen `checkOnly`.
+
+## IBAN (#279)
+
+Die Prüfung nach ISO 13616 steht einmal in [shared/iban.ts](../../shared/iban.ts). Geprüft wird nur
+beim Speichern über die Routen (`acceptIban` in [iban.ts](iban.ts)) und im Formular
+([client/src/ibanField.ts](../../client/src/ibanField.ts)), und **nur eine neu gesetzte oder
+geänderte**: Eine gespeicherte ungültige, die unverändert mitkommt, hindert das Speichern nicht.
+Backup, Wiederherstellen, Umstieg und Validator prüfen bewusst nicht (krumm, nicht kaputt). Leer
+ist erlaubt. Das Cockpit nennt ungültige IBANs des gewählten Objekts als ruhigen Hinweis
+([client/src/ibanCheck.ts](../../client/src/ibanCheck.ts)).
+
+## Rechenweg (#114)
+
+Jede Mieterzeile trägt `steps` (`CalcStep`), erzeugt dort, wo die Zeile entsteht, aus denselben
+Zahlen. Der Restcent aus `largestRemainder` wird an der Zeile benannt, die ihn bekommt. Angezeigt
+aufklappbar und `no-print` ([CalcSteps.tsx](../../client/src/components/CalcSteps.tsx)). Eine ältere
+abgeschlossene Abrechnung ohne Schritte wird nicht nachgerechnet (`stepsOf`). Die Regression des
+Umstiegs nimmt `steps` aus.
+
+## Schlüssel merken und Vorjahr übernehmen (#141)
+
+Entwurf: [docs/superpowers/specs/2026-10-02-schluessel-merken-design.md](../../docs/superpowers/specs/2026-10-02-schluessel-merken-design.md).
+
+- **Der gemerkte Schlüssel einer Kostenart ist der ihrer Positionen im Vorjahr desselben Objekts**,
+  abgeleitet, ohne eigene Tabelle. Was „derselbe Schlüssel“ heißt, steht einmal in
+  [shared/allocation.ts](../../shared/allocation.ts), weil Vorschlag (costForm.ts) und Hinweis
+  (`key.changed-from-previous-year`, `hint`) dasselbe meinen müssen. Widersprechen sich die
+  Vorjahrespositionen, kein Vorschlag. Bei breiten Kostenarten (`BROAD_CATEGORIES`) zählt nur die
+  Vorjahresposition mit derselben Beschreibung (`comparablePrevious`). Eine KI-Zeile mit gemerkten
+  Teilnehmern oder Direktzuordnung ist nie vorab angehakt. Bei Heizung nennt der Hinweis § 6 Abs. 4
+  HeizkostenV. Der Schnappschuss trägt `previousCostItems` (verteilt wird davon nichts).
+- **„Aus dem Vorjahr übernehmen“ lebt nur im Browser** ([client/src/carryOver.ts](../../client/src/carryOver.ts)):
+  keine Entwürfe in der Datenbank. Gespeichert wird über `buildCostItemBody`; Betrag, §35a-Anteil,
+  Kosten der Gemeinschaft und Beleg kommen nie mit. Die Summe der MEA kommt bis #102 von der zuletzt
+  erfassten Position „laut Gemeinschaftsabrechnung“ (`lastExternalBasis`).
+
+## Doppelte Kostenpositionen
+
+Ob eine Position dieselbe Rechnung sein könnte, steht **einmal** in
+[shared/duplicates.ts](../../shared/duplicates.ts) (`sameCostCandidates`): Objekt, Jahr, Kostenart;
+bei breiten Kostenarten (`LOOSE_CATEGORIES`) zusätzlich ähnliche Beschreibung oder gleicher
+Rechnungssteller. Die Regel findet nur Kandidaten, entscheiden tut der Vermieter. Sie fragen
+`alreadyCarried`, der Vorschlag jeder Zeile einer Auswertung (`describeAssessment`, nicht vorab
+angehakt), das Kostenformular beim Anlegen („Stattdessen … bearbeiten“) und der Hinweis
+`cost.possible-duplicate`. Dieser kommt nur, wenn eine Position der Gruppe keinen Beleg hat und
+(a) eine andere einen hat oder (b) schon das Vorjahr Positionen dieser Art hatte und das Jahr
+mehr davon hat. Gezählt wird
+im Jahr des Belegs (`detected_year`), nicht im gewählten.
+
+## Belegbuchung (#170)
+
+Entwurf: [docs/superpowers/specs/2026-10-02-belegbuchung-design.md](../../docs/superpowers/specs/2026-10-02-belegbuchung-design.md).
+Eine Rechnung landet genau einmal in den Kosten, weil **der Server bucht, nicht die Seite**.
+
+- **Eine Auswertung ist ein gespeicherter Gegenstand** (`assessments`, `assessment_lines`), eine je
+  Beleg, gespeichert nur nach Erfolg der KI (ein Abbruch speichert nichts). Der Zustand einer Zeile
+  wird **abgeleitet** (`lineState`): ohne `cost_item_id` offen oder verworfen, mit ihr angelegt oder
+  verknüpft; `ON DELETE SET NULL` macht Zeilen einer gelöschten Position wieder offen.
+- **Zeilennummern kommen aus einer Hochwassermarke** (`next_idx`) und werden nie wiederverwendet;
+  die Routen sprechen Zeilen über sie an. Erneutes Auswerten ersetzt nur offene und verworfene
+  Zeilen. Kommen dabei Zeilen **neben gebuchten** hinzu, tragen sie `reassessed`: Die aus diesem
+  Beleg gebuchten Positionen sind ihre Kandidaten, gleich welcher Kostenart, die Zeile ist rot, und
+  Anlegen wie Verknüpfen brauchen `despiteCandidates` (sonst Rückfrage bzw. 400). Für die erste
+  Auswertung gilt das nicht.
+- Weitere Spalten: `detected_year` (Ampel „Rechnungsjahr ≠ Zieljahr“), `requested_year` (weicht
+  `year` ab, ist die Zeile gelb, nicht vorab angehakt und nicht in „Alle grünen übernehmen“),
+  `amounts_adjusted`/`labor_from_total`, `category_guessed` (gelb).
+- **Planen ist eine reine Funktion** (`planBooking` in [bookingPlan.ts](bookingPlan.ts)), Buchen
+  führt die Schreibliste in einer Transaktion aus ([db/booking.ts](db/booking.ts)).
+- **Summenregel**: Der Betrag einer Position mit Zeilen ist die Summe **aller** ihrer Zeilen über
+  alle Belege; der §35a-Lohn die Summe der gelesenen, und nennt keine einen, wird ein vorhandener
+  entfernt. Schätzung, Handbetrag und ungelesener Beleg werden ersetzt, die Vorschau sagt es
+  vorher. Ziele nur im Objekt und Jahr der Auswertung; `amounts` und `external` sind keine Ziele
+  („Position öffnen“). **Gutschriften werden nie verrechnet**: Gutschrift-Positionen sind keine
+  Ziele, eine Gutschrift-Zeile hat nur Gutschriften als Kandidaten.
+- **Hängt der Beleg (oder einer gleicher Prüfsumme) schon von Hand an einer Position**, ist sie
+  Kandidat jeder seiner Zeilen, gleich welcher Kostenart (`lineCandidates`): rot, Anlegen nur mit
+  Bestätigung. Derselbe Beleg kann nicht zweimal an dieselbe Position.
+- Beim Lösen einer Zeile wechselt der Beleg der Position nur, wenn der gelöste ihr Beleg war.
+  Verwerfen ergibt einen Hinweis je Zeile.
+- **Eine Zeile wird nie zweimal gebucht**: „genau so gebucht“ ist Erfolg ohne Änderung
+  (Doppelklick, Wiederholung), **jede Abweichung 409 mit aktuellem Stand**. Die Vorschau trägt eine
+  Marke (`token`, SHA-256 über `tokenSource`); weicht der Stand ab, 409 mit neuer Vorschau. Gebucht
+  wird immer im Objekt der Auswertung. **Objekt und Jahr sind nach der ersten gebuchten Zeile fest**
+  (`placeAssessment` → 409); bis dahin ziehen sich Posteingang und Auswertung Jahr und Objekt
+  gegenseitig nach.
+- **Prüfungen in shared/**: `amountProblem`, `costItemBody` (shared/costItem.ts), Ampel und
+  Vorauswahl (shared/assessment.ts), Kostenarten (shared/categories.ts). `POST`/`PUT /api/costItems`
+  prüfen noch nicht damit.
+- **Routen**: `/api/extract` und `/api/intake` liefern `assessment`; `GET /api/assessments`,
+  `GET`/`PUT …/:id`, `POST …/plan`, `POST …/book`. `GET /api/uploads` nennt `bookedItemIds` und
+  `bookedCents`; ein nur über eine gebuchte Zeile verknüpfter Beleg zählt als verknüpft
+  (Posteingang, Abdeckung, Mappe, Steuer-ZIP, Löschsperre). Fehlt die Datei einer Auswertung, fehlt
+  sie in der Liste, und `plan`, `book`, `PUT` antworten 404.
+- **Oberfläche**: eine Komponente für Schnellerfassung und Kostenseite
+  ([AssessmentReview.tsx](../../client/src/components/AssessmentReview.tsx), Logik in
+  [client/src/assessment.ts](../../client/src/assessment.ts), Warteschlange `useEvaluationQueue`).
+  „Alle grünen übernehmen“ bucht je Auswertung nacheinander. jsdom-Tests rechnen mit dem echten
+  Planer ([client/src/testing/fakeBooking.ts](../../client/src/testing/fakeBooking.ts)); für Praxislauf
+  und Browserprobe gibt es [scripts/fake-ollama.mjs](../../scripts/fake-ollama.mjs).
+
+## Testgriffe
+
+Nur für Tests, ein Nutzer setzt sie nie:
+
+- **`NKA_TEST_ASSESSMENT_DELAY_MS`** verzögert das Speichern einer Auswertung (Abbruch zwischen
+  Antwort der KI und Speichern).
+- **`NKA_TEST_TODAY`** (JJJJ-MM-TT) fixiert die Uhr des Servers (`today()`, testToday.ts), damit
+  Prüfbestände mit festen Jahren nicht an einem Datum kippen. Wirkt nicht auf den Browser; die
+  Konsole nennt ihn beim Start, ein ungültiges Datum bricht den Start ab.
+- `NKA_TEST_START_DELAY_MS`, `NKA_TEST_FREE_BYTES`: siehe scripts/CLAUDE.md bzw. db/CLAUDE.md.
+
+## Berechnungs-Engine
+
+[calc.ts](calc.ts), das Herzstück. Heizungsregeln (Betriebsstrom, Contracting, § 5a, Mieter heizt
+selbst) stehen in [docs/heizung.md](../../docs/heizung.md).
+
+### Verteilen
+
+- **Alle Beträge in Cent (Integer)**, niemals Euro-Floats.
+- **Eine Rundungsregel für jede Verteilung** (#202, `distributeCents`): Jede Position wird genau
+  einmal nach Hare/largest-remainder verteilt, über alle Empfänger zugleich, also die Mieter **und
+  je Grund eine Zeile des Vermieters** (Eigennutzung, Pauschale, Inklusivmiete, außerhalb, Rest der
+  Vereinbarung, Rest des Hauptzählers, zuletzt Leerstand bzw. Rest der Einzelbeträge;
+  `landlordRecipients`). Jede Zeile ist ihr exakter Wert ab- oder aufgerundet, keine wechselt das
+  Vorzeichen, exakt 0 bekommt nie einen Cent. Gleichstand: erst der Vermieter, dann die Kennung per
+  `compareText`. Gutschriften spiegelbildlich. Der Eigenanteil ist genau die Zeile `selfUse`.
+- **§35a-Lohn wird innerhalb der Kostenanteile verteilt** (`distributeLaborCents`): je Zeile nie
+  über dem Kostenanteil, zusammen genau L. Nicht Lohn und Rest getrennt verteilen (zwei Rundungen
+  weichen bis fast 2 Cent ab). Zufallstest über `onAllocation`.
+- **Umlageschlüssel** (`item.key`): `area`, `persons` (personentagesgenau), `units`, `meter`
+  (Verbrauch nach Zählertyp), `direct`, `custom` (vereinbarte Prozente absolut, was unter 100 %
+  fehlt, trägt der Vermieter), `external` (laut Gemeinschaftsabrechnung) und `amounts`
+  (Einzelbeträge je Mietverhältnis).
+- **Verteilbasis je Position** (#94): `participantUnitIds` grenzt auf Teilnehmer ein; ohne
+  Teilnehmer ist sie **dasselbe Objekt** wie zuvor (`fullBasis`), damit keine Zahl wandert. Bei
+  `external` **trägt die Position den eigenen Anteil** laut Hausgeldabrechnung, nicht die Summe der
+  Anlage; `externalBasis` (Maßstab, Summe, Gesamtkosten) dient Rechenweg und Plausibilität,
+  verteilt wird nach `mea`, Fläche oder 1 je Wohnung. Bei `amounts` ist der Anteil genau der Betrag
+  ohne Tagesanteil, der Rest beim Vermieter; eine Summe über dem Rechnungsbetrag wird nicht
+  verteilt. Tests: calc-verteilbasis.test.ts.
+- **Beteiligung je Wohnung** (`UnitUsage`): `participates` = vermietet; `selfUsed` = selbstgenutzt,
+  zählt in die Basis von `area`/`units`/`persons` (mit `selfPersons`), Anteil beim Vermieter (als
+  `selfUsedShareCents` gesondert, für die Steuer privat); beides `false` = außerhalb, ganz außen
+  vor. Ein Datenschritt setzt das Kennzeichen nie automatisch, weil es abgerechnete Jahre änderte.
+- **Verbrauchsschlüssel**: Die Basis bilden **alle** Wohnungszähler, unabhängig vom Kennzeichen.
+  **Fehlt einer bewohnten Einheit der Verteilbasis ein Zähler, wird der Hauptzähler zur Basis**
+  (#116, Vorwegabzug): ihr Verbrauch ist der Rest; bei Eigennutzung als Eigenanteil, bei einer
+  vermieteten Wohnung beim Vermieter mit Warnung. Gefragt wird ohne Teilnehmer nach allen Einheiten
+  des Objekts (auch außerhalb), nur nach **bewohnten**; ein Zähler ohne Ablesung im Zeitraum zählt
+  nicht (`coveredDays`); ein Hauptzähler, der nicht den ganzen Zeitraum deckt, wird nicht zur Basis,
+  sondern ergibt eine Warnung. Mit Teilnehmern gilt der Hauptzähler nie. `noConnection` je Zählertyp
+  (#117, `unit_no_connection`): der Einheit fehlt dann kein Zähler.
+- **Leerstand beim Personenschlüssel** (#177): Jede vermietbare Wohnung der Basis zählt je Tag ohne
+  Mietverhältnis mit `VACANCY_PERSONS` (1) Personen; der Anteil bleibt als `vacancy` beim Vermieter.
+  **Das ist eine Auslegung an genau einer Stelle** (höchstrichterlich nicht geklärt; VIII ZR 159/05,
+  VIII ZR 180/12), Hinweis `basis.vacancy-persons` und Lexikon sagen das. `item.no-basis` hängt an
+  den Personentagen der Bewohner (`occupantPersonDays`). **Wohnung ist, was Fläche hat oder bewohnt
+  ist** (`isDwelling`, wie bei § 2 HeizkostenV): eine leere Garage ohne Fläche ist kein Leerstand
+  (eine ganz leere meldet `basis.vacancy-no-area`).
+- **Überschneidende Mietverhältnisse einer Wohnung** (#204): Die Regel (ein gemeinsamer Tag) steht
+  einmal in [shared/tenancyOverlap.ts](../../shared/tenancyOverlap.ts). Gerechnet wird wie erfasst,
+  mit `tenancy.overlap` (`error`) und beziffertem Mehrbetrag (`overlapExtra`): je Position, was die
+  Wohnung ohne die doppelten Tage **eines** der beiden weniger trüge, beide Lesarten, Kosten und
+  Gutschriften getrennt, je Position zur Seite „zu viel“ geklemmt. Beim Personenschlüssel wird neu
+  geteilt. Der Server lehnt nicht ab, Validator, Umstieg und Backup rücken nichts gerade; die
+  Stammdaten fragen beim Speichern nach.
+
+### Mietmodell und Staffeln
+
+- **Nebenkostenmodell am Mietverhältnis** (#93): `costModel` (kalt) und `heatingModel` (Kostenart
+  „Heizung und Warmwasser“, `HEATING_CATEGORY`), je `settlement | flatRate | inclusive`, fehlend
+  `settlement`; beim Heizmodell zusätzlich `selfSupply` (wird über `allocationModel` als
+  `settlement` gelesen). Pauschale und Inklusivmiete **bleiben in der Verteilbasis**; ihr Anteil
+  fällt dem Vermieter zu, **nicht als Eigenanteil** (abziehbar). Bleibt die Abrechnung leer und gibt
+  es keine Vorauszahlung, steht das Mietverhältnis in `notSettled`. **Die Pauschale hat eine eigene
+  Staffel** (`flat_rates`): das Mietkonto führt sie im Soll, die Abrechnung rechnet sie nie an.
+  Warnung nach § 2 HeizkostenV außerhalb des selbstbewohnten Zweifamilienhauses. Die drei Listen
+  der Kostenarten (Oberfläche, KI-Schema, Anlage V) hält categories.test.ts zusammen.
+- **Staffeln statt Neuanlage**: Personenzahl (`personHistory`, ab Datum; die erste gilt ab Einzug),
+  Vorauszahlung (`prepayments`, ab Monat), Kaltmiete (`baseRents`). Die tatsächlich gezahlten
+  Vorauszahlungen je Zeitraum (`prepaymentOverrides`) haben Vorrang, denn anzusetzen ist das
+  Geleistete (VIII ZR 240/10, Rn. 16); ohne Eintrag rechnet Mietfuchs mit dem Soll, und
+  `prepayment.arrears` weist darauf hin.
+- **Die Monatsregel steht an einer Stelle** (#311, `monthShare`, `rateInMonth`) für Abrechnung und
+  Mietkonto: Ein Monat zählt, sobald das Mietverhältnis an einem seiner Tage besteht; im
+  angebrochenen Monat `round(Rate × Tage / Tage des Monats)`, bei getrennter Heizstaffel je Staffel
+  gerundet. **Das ist eine Auslegung** (Kalendertage wie auf der Kostenseite; 1/30 wäre ebenso
+  vertretbar), `prepayment.partial-month` (`hint`) nennt sie. Eine Invariante hält Abrechnung und
+  Mietkonto je Mietverhältnis gleich.
+- **Zeiträume** sind ISO-Strings mit inklusiven Grenzen in UTC; `end: null` = offen.
+
+### Zähler
+
+- Ablesungen → Segmente (`meterSegments`), tagesanteilig interpoliert (`consumptionInPeriod`).
+  Zählerwechsel über `replacement: true` + `oldEndValue`. Warnungen bei negativem Verbrauch, bei
+  **Wechsel ohne `oldEndValue`** (#83; gefragt wird nach `null`, denn 0 ist eine Angabe; es entsteht
+  kein Segment) und bei **zwei Ablesungen am selben Tag** (#69; die Differenz wird nicht verteilt,
+  welche stimmt, weiß nur der Vermieter). In allen drei Fällen zahlt die Lücke nicht der Vermieter,
+  sondern ein anderer Mieter, weil Zähler und Nenner gemeinsam schrumpfen; die Warnung ist das
+  Einzige, was darauf stößt. Validator und Schema lehnen solche Bestände bewusst nicht ab.
+- **Diese Warnungen erscheinen nie auf der Abrechnung**, nur über `consumptionOverview` auf der
+  Zähler-Seite und im Cockpit (Ampel „Zählerstände“ rot): Die Abrechnung ist das Dokument für den
+  Mieter.
+- **Einheiten** (#342, [shared/meterUnits.ts](../../shared/meterUnits.ts)): Text am Zähler, beim Lesen
+  normiert (`unitKey`), keine Migration. Wärme kWh/MWh/GJ, Wasser m³/l, Strom kWh/MWh als exakte
+  Brüche; Heizkostenverteiler und „Sonstiges“ (auch Gas) ohne Umrechnung. **Leitsatz: Ein Bestand,
+  der vorher richtig rechnete, ändert sich nicht.** Wer Verbräuche mehrerer Zähler addiert, fragt
+  `unitScale`, **nur mit den Zählern, die im Zeitraum beitragen**. `relative` (Verbrauchsschlüssel,
+  eigene Heizkostenabrechnung): einheitlich heißt Faktor 1, auch bei MWh oder unbekannter Einheit;
+  nur gemischt bekannte Einheiten werden umgerechnet (dann `heating.estimate-base-unit` bei einer
+  Schätzung im Topf). `base` (absolute Vergleiche: α, Volumenvorschlag, monatliche Information, § 6a
+  in kWh) rechnet bekannte Einheiten immer um. Ohne Einheit gilt der Zähler wie die übrigen; eine
+  für die Sparte unbekannte sperrt nicht (`meter.unit-unknown`, warning); `meter.units-mixed`
+  (error) nur bei verschiedenen bekannten Größen ohne Umrechnung. Der Server prüft nur eine neue
+  oder geänderte Einheit (`acceptMeterUnit`, Muster der IBAN) und nimmt bei Sparten mit Auswahl keine
+  neue leere an.
+- **Eichfrist** (#98) ist eine Warnung, keine Sperre: `meters.calibrated_until` (Jahr, mit dessen
+  Ende die Frist endet, § 34 Abs. 2 MessEV) ergibt `meter.calibration-overdue` nur in
+  `consumptionOverview`, nie auf der Abrechnung (die Regel hat `scope: 'meters'`, `rulesFor` lässt
+  sie aus dem Rechtsstand). Geprüft wird die jüngste Ablesung, die der Zeitraum benutzt
+  (`readingsUsedFor` in calibration.ts); nach einem Wechsel am letzten Tag kein Hinweis. Cockpit:
+  eigene gelbe Zeile, nicht in der Ampel „Zählerstände“. Heizkostenverteiler haben kein Eichjahr
+  (gesendet: 400). Fristen im Register (`messev.calibration-years`): ab 2015 Kaltwasser 6,
+  Warmwasser und Wärme 5 Jahre, ab 03.11.2021 je 6. Die Änderungsverordnung vom 26.10.2021 enthält
+  keine Übergangsregel. Mietfuchs wendet die Frist von 6 Jahren auch auf Fristen an, die am
+  03.11.2021 noch liefen; eine schon abgelaufene Frist lebt nicht wieder auf. Das ist eine
+  Auslegung. Gerechnet wird sie in `calibrationEnd` (shared/calibration.ts). Keiner Behörde oder keinem Messdienst
+  zugeschrieben; Hinweis, Regel und Lexikon zitieren VIII ZR 112/10 nur mit dem Wortlaut von
+  Leitsatz c (calibration.test.ts hält beides fest). Gas- und Stromzähler: Feld ohne Vorschlag.
+
+### Mietkonto
+
+`rentLedger`: Kaltmiete + Vorauszahlung (+ Heizstaffel, Pauschale) ergeben das monatliche Soll;
+Mietzahlungen werden Jan→Dez FIFO auf die Monate verteilt. Im angebrochenen Monat anteilig
+(`rateInMonth`, die Zeile trägt `share`). #281 (Übertrag, Tilgung nach § 366 BGB) baut darauf auf.
+
+- **Nur die Miete** (#280): `payments.kind` ist `rent` oder `settlement` (fehlend: Miete,
+  `isRentPayment`). Nachzahlungen und Guthaben (negativ) aus der Abrechnung verteilt das Mietkonto
+  nicht, es führt sie in `settlementYearCents` bzw. `settlementOnly`. `prepayment.arrears` und
+  `tenanciesWithoutPayment` fragen nur Mietzahlungen. Ein mit der Miete verrechnetes Guthaben ist
+  volle Miete plus negative Abrechnung. Die Kaution gehört nicht dazu (#228).
+
+### Steuer (Anlage V)
+
+`taxReport`: Einnahmen (Soll aus `rentLedger`, Ist aus den Zahlungen), Werbungskosten nach
+`ANLAGE_V_GROUP`, §35a-Summe, Gesamt- und selbstgenutzte Fläche (#68: **das Private wird gemessen**,
+Grundmenge ist das ganze Gebäude), Überschuss. Beschreibende Gruppen statt fester Zeilennummern.
+
+- **Maßgeblich ist das Ist** (#70, § 11 Abs. 1 EStG); das Soll bleibt umschaltbar zum Abgleich
+  (Logik in [client/src/taxView.ts](../../client/src/taxView.ts)). Ein Soll als Vorgabe wäre unsichtbar
+  falsch, 0 € dagegen sichtbar. **Das Ist kommt nicht aus dem Mietkonto**, sondern zählt jede Zahlung
+  mit Datum im Jahr (sonst fielen die im Januar eingehende Dezembermiete nach Auszug und der
+  vorgezogene Dauerauftrag aus beiden Jahren). Beide Arten zählen; `settlementBackPaymentsCents`
+  und `settlementRefundsCents` stehen daneben. Die Zehn-Tage-Regel (§ 11 Abs. 1 Satz 2) ist nur ein
+  Hinweis, denn sie hängt an der vertraglichen Fälligkeit.
+- **Vorauszahlungen**: `taxReport` führt `prepaymentSollCents` und `prepaymentSettlementCents`
+  (aus der Abrechnung, bei Abschluss eingefroren, nie ein zweites Mal ausgelegt). Die Oberfläche
+  erklärt einen Abstand, **ohne ihm eine Ursache zuzuschreiben** (Jahreskorrektur und
+  unterschiedliche Grundmengen tragen beide bei).
+- **Zeilen**: Nummern nur, wo der amtliche Vordruck sie belegt (2025: 11, 12, 33/34, 87/88; Zeile 21
+  für 2023 bis 2025, Fundstellen an `settlementLine` in taxView.ts). Die Seite zeigt den Zufluss in
+  zwei Teilen, die zusammen den Zufluss ergeben (`paidWithoutSettlementCents`,
+  `settlementBalanceCents`), sonst zählte mancher den Saldo doppelt. Kopfzeilen am Mietmodell (#96):
+  `costModels` zählt ganz/teilweise inklusiv und Pauschale; die Pauschale bei Zeile 20 ist Auslegung.
+- **Teilweise Eigennutzung** (#163, `splitForTax`, Entwurf
+  [docs/superpowers/specs/2026-10-02-steuer-eigennutzung-design.md](../../docs/superpowers/specs/2026-10-02-steuer-eigennutzung-design.md)):
+  jede Position in privat und abziehbar. Direkt zugeordnet ganz zu ihrer Einheit; nicht umlagefähig
+  nach der Fläche der betroffenen Einheiten (BFH IX R 26/06); **umlagefähig mit dem Eigenanteil der
+  Abrechnung**, damit beide dasselbe sagen, **außer** eine betroffene Einheit liegt außerhalb der
+  Abrechnungseinheit: dann bei Schlüsseln über Wohnungen die Gebäudefläche, Hinweis mit Richtung des
+  Abstands (`excludedAreaDifference`, Auslegung; `areaPrivateCents` zum Vergleich). Leerstand
+  (`vacancy`) ist nicht privat. Nicht verteilt (`noBasis`): Fläche. Bei Abschluss kommen die
+  Eigenanteile aus dem eingefrorenen Stand, nur für Positionen mit unverändertem Betrag
+  (`closedItemsChanged`). `abziehbar = Betrag − privat`; **der Überschuss rechnet mit
+  `deductibleCents`**. Ohne Eigennutzung ändert sich keine Zahl (Invariante). „Nicht umlagefähig“
+  lässt sich für die Steuer Einheiten zuordnen (`key: 'direct'`, `participantUnitIds`); die
+  Abrechnung liest das nicht. AfA, Schuldzinsen, § 82b EStDV, verbilligte Vermietung und
+  Nutzungswechsel werden nur genannt.
+- **Jahr des Abflusses** (#255): Allein `outflowShares` ([outflow.ts](outflow.ts)) bestimmt es,
+  Rangfolge `paidOn` (Datum der ganzen Zahlung), dann `taxYear`, dann Beginn des Zeitraums
+  (`statedOutflowYear` in [shared/paidOn.ts](../../shared/paidOn.ts) für Formular und Schreibwege). Keine
+  andere Stelle leitet ein Steuerjahr ab. **Ohne Datum gilt das Abrechnungsjahr** (bewusst, damit
+  keine veröffentlichte Zahl wandert; Prüfsummen in outflow.test.ts). Ein Datum, das das wirksame
+  Jahr ändert, `taxYear` widerspricht oder außerhalb Beginn − 1 bis Ende + 3 liegt, braucht
+  `confirmPaidOn` (409 `question: 'paidOn'`), beim Aufteilen je Teil (`splitPaidOnQuestions`).
+  Datierte Positionen behalten beim Zeitraumwechsel ihr Jahr (`keepsTaxYear`). Kein Datum bei
+  `external` und am Abzug beim Betriebsstrom (er folgt seiner Stromrechnung, Quelle `bill`, #267).
+  Die Belegbuchung belegt es nie vor (Rechnungsdatum ≠ Zahlungsdatum). Teilzahlungen kommen mit
+  #292 über dieselbe Funktion. Über alle Jahre ändert ein Datum weder Summe noch privaten Teil
+  (invariant-steuer-summe-zahlungsdatum.test.ts).
+- **Verschiebung anzeigen** (`shiftNotes`, nur Auskunft): Jede Position trägt `outflow`; liegt das
+  Jahr außerhalb der Kalenderjahre ihres Zeitraums, heißt sie verschoben (`settlementPeriod`,
+  `movedOut`), und jede Verschiebung steht auf jeder Seite genau einmal. `unstatedCount` nur, wo das
+  Formular ein Datum anbietet (`allowsPaidOn`). Eine Heizposition unter eigener Heizperiode nimmt
+  ihren Zeitraum aus der Heizperiode (`plantRules`), nie aus dem Schlüssel.
+- **Betriebsstrom: die Stromrechnung zählt genau einmal** (#268): Heizposition `included` und Abzug
+  sind Ausschnitte derselben Rechnung. `operatingPowerBalance` rechnet je Steuerjahr **C = Σ Abzüge −
+  Σ Heizpositionen `included`**, mit Vorzeichen und ohne Klemme, als abgeleitete Zeile
+  `operating-power-balance:<Jahr>` beim Allgemeinstrom. Der Abzug steht im Jahr seiner Stromrechnung
+  (#267); ein verknüpfter Abzug nimmt den Heizanteil aus dem Teil seiner Heizposition
+  (`foreignHeatQuota`, dafür löst `taxReportFor` Verweise über alle Positionen des Objekts auf). Der
+  private Teil folgt dem Heizanteil, ohne zuordenbare Anlage der Gebäudefläche (Auslegung). Ein Abzug
+  ohne Verweis bei einer Anlage mit Messdienst gilt als dem Messdienst gemeldet
+  (`serviceReceivesOperatingPower`, bekannte Grenze); bei Kesseltausch mit beiden:
+  `operatingPowerAmbiguous`. Negativer Allgemeinstrom ohne Kennzeichnung bleibt
+  (`unmarkedPowerCredits`). Invariante S1: privater Teil über alle Jahre gleich, wo immer Rechnung,
+  Abzug und Heizposition stehen.
+
+## Update-Hinweis
+
+[update.ts](update.ts): **Nur mit Zustimmung** (`settings.updateCheck === 'on'`, im Cockpit gefragt)
+fragt der Server `releases/latest` bei GitHub, höchstens einmal am Tag; ohne Zustimmung geht keine
+Anfrage hinaus. Nach Fehler eine Stunde Pause, bei Rate-Limit bis `retry-after`/`x-ratelimit-reset`
+(höchstens ein Tag). „Jetzt prüfen“ höchstens einmal pro Minute, gleichzeitige Aufrufe teilen eine
+Anfrage; Links nur ins eigene Repo. Kein Selbst-Update (#20), sondern eine Anleitung je Betriebsart
+([client/src/update.ts](../../client/src/update.ts)). Version aus `server/package.json`
+([version.ts](version.ts)); Betriebsart aus `globalThis.Bun` (`binary`, an Systemort `package`),
+`NKA_RUNTIME=docker`, sonst `npm`. `NKA_UPDATE_URL` lenkt die Abfrage um. SemVer mit Vorabversionen
+(#166): ein Tag mit Vorabversion wird nie angeboten; läuft selbst ein Kandidat, ist die fertige
+Version gleicher Nummer ein Update.
