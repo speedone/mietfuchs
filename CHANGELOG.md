@@ -259,6 +259,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Vorschau, „Betrag prüfen“ im Belegordner, die Hinweise der KI-Einstellungen und der Auswertung, Abweichungen
   einer abgeschlossenen Abrechnung und die ungültigen IBAN im Cockpit
   ([#346](https://github.com/speedone/mietfuchs/issues/346)).
+- Karten mit Überschrift haben überall denselben Kopf wie auf der Seite Heizkosten: Kosten, Mietkonto, Zähler,
+  Abrechnung, Kostenvergleich, Belegordner, Einstellungen, Abrechnungszeitraum und CO₂-Erstattung
+  ([#346](https://github.com/speedone/mietfuchs/issues/346)).
 ### Behoben
 
 - Wechsel des Abrechnungszeitraums: Wer nach der Vorschau den Monat oder die Art der Änderung noch einmal
@@ -341,9 +344,6 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - „Zeitraum der Heizung ändern“ und die getrennte Heizkostenabrechnung öffnen im Seitenfenster wie der Wechsel des
   Abrechnungszeitraums. „Speichern“ steht im Fuß und ist bis zur Vorschau gesperrt; wer danach noch etwas ändert,
   braucht eine neue Vorschau, statt dass die alte für einen anderen Stand gespeichert wird
-  ([#346](https://github.com/speedone/mietfuchs/issues/346)).
-- Karten mit Überschrift haben überall denselben Kopf wie auf der Seite Heizkosten: Kosten, Mietkonto, Zähler,
-  Abrechnung, Kostenvergleich, Belegordner, Einstellungen, Abrechnungszeitraum und CO₂-Erstattung
   ([#346](https://github.com/speedone/mietfuchs/issues/346)).
 - Die Karte „Objekt“ verlangt eine Bezeichnung: Leer ließ sie sich speichern, und die Seitenleiste
   zeigte danach „Ohne Namen“. Hat das Objekt noch keinen Namen, etwa nach einer frischen Installation,
