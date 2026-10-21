@@ -62,6 +62,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Begriffserklärung, Fehlermeldungen und die Navigation am Handy per Tastatur. Ohne ihn wird beim Tag
   nichts ans Release gehängt ([#340](https://github.com/speedone/mietfuchs/issues/340)).
 
+- Musterseite für die Entwicklung: Unter `?muster` (dunkel mit `?muster=dunkel`) zeigt Mietfuchs alle Bausteine der
+  Oberfläche mit festen Werten, ohne Bestand. Der Browserlauf prüft sie wie jede Seite, und `npm run screenshots`
+  fotografiert sie hell und dunkel ([#346](https://github.com/speedone/mietfuchs/issues/346)).
 ### Geändert
 
 - Kontraste: Leere Monatskacheln im Mietkonto sind nicht mehr abgedunkelt (Schrift jetzt über 4,5:1), und
@@ -345,9 +348,6 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Abrechnungszeitraums. „Speichern“ steht im Fuß und ist bis zur Vorschau gesperrt; wer danach noch etwas ändert,
   braucht eine neue Vorschau, statt dass die alte für einen anderen Stand gespeichert wird
   ([#346](https://github.com/speedone/mietfuchs/issues/346)).
-- Musterseite für die Entwicklung: Unter `?muster` (dunkel mit `?muster=dunkel`) zeigt Mietfuchs alle Bausteine der
-  Oberfläche mit festen Werten, ohne Bestand. Der Browserlauf prüft sie wie jede Seite, und `npm run screenshots`
-  fotografiert sie hell und dunkel ([#346](https://github.com/speedone/mietfuchs/issues/346)).
 - Die Karte „Objekt“ verlangt eine Bezeichnung: Leer ließ sie sich speichern, und die Seitenleiste
   zeigte danach „Ohne Namen“. Hat das Objekt noch keinen Namen, etwa nach einer frischen Installation,
   steht im Feld „Mein Objekt“; Sie können es überschreiben, und mit dem ersten Speichern der Karte wird
