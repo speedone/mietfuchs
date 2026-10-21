@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, test, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import HeatingPeriodSection from './HeatingPeriodSection'
 import { CALENDAR_RULES } from '../../../shared/period.ts'
 import type { HeatingPlant } from '../types'
@@ -181,5 +181,29 @@ describe('Monatsauswahl der Heizung (#287)', () => {
     expect(await screen.findByText('Monat: Geben Sie zum Monat auch das Jahr ein, etwa „3.2025“.')).toBeTruthy()
     expect(monat.getAttribute('aria-invalid')).toBe('true')
     expect(calls.some((u) => u.endsWith('/separate/preview'))).toBe(false)
+  })
+})
+
+// #346 Schritt 12 (aus den Durchsichten): „Zeitraum der Heizung ändern“ und die getrennte Heizkostenabrechnung öffnen
+// im Seitenfenster wie der Wechsel des Abrechnungszeitraums (Schritt 7). „Speichern“ steht im Fuß und ist bis zur
+// Vorschau gesperrt; eine Änderung danach verwirft die Vorschau (wie Durchsicht M2 beim Abrechnungszeitraum).
+describe('Seitenfenster', () => {
+  const preview = { rules: null, periods: [], newShort: [], blocked: [], groups: [], overrides: [], endsSeparate: [], effects: [], token: 'w1', moves: [] }
+  test('Zeitraum der Heizung: Seitenfenster, Speichern erst nach der Vorschau, eine Änderung verwirft sie', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => json(preview)))
+    render(<HeatingPeriodSection plant={plant()} objectRules={CALENDAR_RULES} hasCalendarData onChanged={async () => {}} notify={() => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Zeitraum der Heizung ändern' }))
+    const drawer = screen.getByRole('dialog', { name: 'Zeitraum der Heizung ändern' })
+    const save = () => within(drawer).getByRole('button', { name: 'Speichern' }) as HTMLButtonElement
+    expect(save().disabled).toBe(true)
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Vorschau' }))
+    await waitFor(() => expect(save().disabled).toBe(false))
+    fireEvent.change(within(drawer).getByRole('combobox', { name: 'Heizperiode beginnt im' }), { target: { value: '6' } })
+    expect(save().disabled).toBe(true)
+  })
+  test('getrennte Heizkostenabrechnung: ebenfalls im Seitenfenster', () => {
+    render(<HeatingPeriodSection plant={plant()} objectRules={CALENDAR_RULES} hasCalendarData onChanged={async () => {}} notify={() => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Getrennte Heizkostenabrechnung einschalten' }))
+    expect(screen.getByRole('dialog')).toBeTruthy()
   })
 })

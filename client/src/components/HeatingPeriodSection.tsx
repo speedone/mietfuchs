@@ -4,7 +4,8 @@ import { ApiError, api, errorText, fmtDate, fmtEuro } from '../api'
 import { earliestOpenChange, localToday, MONTH_OPTIONS } from '../periodForm'
 import { EffectsList } from './PeriodCard'
 import Term from './Term'
-import { useOpenForm } from '../property'
+import Drawer from './Drawer'
+import { useSaving } from '../useSaving'
 import MonthField from './MonthField'
 import { parseMonthText } from '../monthText'
 import { hasOwnRhythm } from '../../../shared/heatingPeriod.ts'
@@ -41,8 +42,9 @@ function freshPreview<T>(e: unknown): T | null {
 export default function HeatingPeriodSection({ plant, objectRules, hasCalendarData, onChanged, notify, actions, dangerAction }: Props) {
   const [open, setOpen] = useState<'none' | 'period' | 'separate'>('none')
   const [form, setForm] = useState<HeatingPeriodForm>(heatingPeriodForm(plant))
-  // Eine ungespeicherte Eingabe zählt als offenes Formular: Seiten-, Objekt- und Zeitraumwechsel fragen (#346, 7a).
-  useOpenForm(open !== 'none')
+  // Gespeichert wird im Seitenfenster (#346 Schritt 12, wie der Abrechnungszeitraum in Schritt 7); ein geändertes Fenster
+  // meldet sich selbst bei useOpenForm an, und useSaving sperrt einen zweiten Klick auf „Speichern“.
+  const saving = useSaving()
   const [periodPreview, setPeriodPreview] = useState<HeatingPeriodChangePreview | null>(null)
   const [periodAnswers, setPeriodAnswers] = useState<HeatingPeriodAnswerForm | null>(null)
   const [separatePreview, setSeparatePreview] = useState<SeparatePreview | null>(null)
@@ -58,6 +60,21 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
   const own = hasOwnRhythm(plant)
   const openSpan = plant.separateSpans.some((s) => s.until === null)
   const separateOn = openSpan || (!own && plant.separateSettlement === true)
+
+  // Eine Änderung nach der Vorschau verwirft sie samt Antworten und Bestätigung; „Speichern“ wartet auf die nächste
+  // (wie Durchsicht M2 beim Abrechnungszeitraum: sonst gälte die Vorschau für einen anderen Stand als im Formular).
+  function changeForm(next: HeatingPeriodForm) {
+    setForm(next)
+    setPeriodPreview(null)
+    setPeriodAnswers(null)
+    setPeriodUnderstood(false)
+  }
+  function changeMonth(next: string) {
+    setMonth(next)
+    setSeparatePreview(null)
+    setSeparateAnswers(null)
+    setUnderstood(false)
+  }
 
   function close() {
     setOpen('none')
@@ -170,22 +187,33 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
       <ul className="facts">{heatingPeriodSummary(plant, objectRules).map((line) => <li key={line}>{line}</li>)}</ul>
       <div className="row">
         {actions}
-        <button className="btn secondary" aria-expanded={open === 'period'} onClick={() => { setForm(heatingPeriodForm(plant)); setOpen('period') }}>Zeitraum der Heizung ändern</button>
+        <button className="btn secondary" onClick={() => { setForm(heatingPeriodForm(plant)); setOpen('period') }}>Zeitraum der Heizung ändern</button>
         {(own || plant.separateSettlement === true) && (
-          <button className="btn secondary" aria-expanded={open === 'separate'} onClick={() => { setMonth(''); setOpen('separate') }}>
+          <button className="btn secondary" onClick={() => { setMonth(''); setOpen('separate') }}>
             {separateOn ? 'Getrennte Heizkostenabrechnung ausschalten' : own ? 'Getrennte Heizkostenabrechnung einschalten' : 'Vorauszahlung aufteilen'}
           </button>
         )}
         {/* Gefahr mit Abstand zu den übrigen Knöpfen (#346 Schritt 7, M19) */}
         {dangerAction && <span className="ml-auto">{dangerAction}</span>}
       </div>
-      <ErrorSummary errors={errors} />
+      {open === 'none' && <ErrorSummary errors={errors} />}
 
       {open === 'period' && (
-        <div className="panel">
+        <Drawer
+          key="zeitraum-heizung"
+          open
+          title="Zeitraum der Heizung ändern"
+          width={560}
+          onClose={close}
+          value={{ form, periodAnswers, periodUnderstood }}
+          busy={saving.busy}
+          errors={errors}
+          onSubmit={() => { if (periodPreview !== null && periodPreview.blocked.length === 0 && !(periodPreview.effects.some((e) => e.passed) && !periodUnderstood)) void saving.run(savePeriod) }}
+          actions={<button className="btn" disabled={saving.busy || !(periodPreview !== null && periodPreview.blocked.length === 0 && !(periodPreview.effects.some((e) => e.passed) && !periodUnderstood))} onClick={() => void saving.run(savePeriod)}>Speichern</button>}
+        >
           <label className="field">
             Für welchen Zeitraum rechnet die Heizung ab?
-            <select value={form.choice} onChange={(e) => setForm({ ...form, choice: e.target.value as PeriodChoice })}>
+            <select value={form.choice} onChange={(e) => changeForm({ ...form, choice: e.target.value as PeriodChoice })}>
               {PERIOD_CHOICE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </label>
@@ -216,25 +244,25 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
               <fieldset>
                 <legend className="field-legend">Gilt dieser Zeitraum schon immer oder erst ab einem Monat?</legend>
                 <div className="checks">
-                  <label className="checkline"><input type="radio" checked={form.mode === 'start'} onChange={() => setForm({ ...form, mode: 'start' })} /> Schon immer</label>
-                  <label className="checkline"><input type="radio" checked={form.mode === 'change'} onChange={() => setForm({ ...form, mode: 'change' })} /> Ab einem Monat</label>
+                  <label className="checkline"><input type="radio" checked={form.mode === 'start'} onChange={() => changeForm({ ...form, mode: 'start' })} /> Schon immer</label>
+                  <label className="checkline"><input type="radio" checked={form.mode === 'change'} onChange={() => changeForm({ ...form, mode: 'change' })} /> Ab einem Monat</label>
                 </div>
               </fieldset>
               {/* Laienprobe B14: „Ab Monat“ wurde als „seit wann“ gelesen; gemeint ist der Beginn jeder Heizperiode. */}
               {form.mode === 'start' ? (
                 <label className="field">
                   Heizperiode beginnt im
-                  <select value={String(form.month)} onChange={(e) => setForm({ ...form, month: Number(e.target.value) })}>
+                  <select value={String(form.month)} onChange={(e) => changeForm({ ...form, month: Number(e.target.value) })}>
                     {MONTH_OPTIONS.map((o) => <option key={o.value} value={String(o.value)}>{o.label}</option>)}
                   </select>
                 </label>
               ) : (
                 // Das Monatsfeld: `type="month"` kennen Safari und Firefox nicht (#287, #346 Schritt 5).
-                <MonthField label="Neue Heizperiode beginnt ab Monat" value={form.from} today={localToday()} onChange={(from) => setForm({ ...form, from })} {...errors.field('from')} />
+                <MonthField label="Neue Heizperiode beginnt ab Monat" value={form.from} today={localToday()} onChange={(from) => changeForm({ ...form, from })} {...errors.field('from')} />
               )}
               <label className="field">
                 <span>Rechnen Sie die Heizkosten <Term id="separateHeatingSettlement">getrennt ab</Term>, mit eigener Heizkostenvorauszahlung?</span>
-                <select value={form.separate} onChange={(e) => setForm({ ...form, separate: e.target.value as SeparateChoice })}>
+                <select value={form.separate} onChange={(e) => changeForm({ ...form, separate: e.target.value as SeparateChoice })}>
                   <option value="">— bitte wählen —</option>
                   {SEPARATE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
@@ -244,8 +272,7 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
             </>
           )}
           <div className="row">
-            <button className="btn secondary" onClick={() => void loadPeriodPreview()}>Vorschau</button>
-            <button className="btn ghost" onClick={close}>Abbrechen</button>
+            <button className="btn secondary" disabled={saving.busy} onClick={() => void loadPeriodPreview()}>Vorschau</button>
           </div>
           {periodPreview && periodAnswers && (
             <div className="preview">
@@ -298,22 +325,30 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
                   <input type="checkbox" checked={periodUnderstood} onChange={(e) => setPeriodUnderstood(e.target.checked)} /> Ich habe verstanden, dass ich aus einer Abrechnung mit abgelaufener Frist keine Nachzahlung mehr verlangen kann.
                 </label>
               )}
-              <button className="btn" disabled={periodPreview.blocked.length > 0 || (periodPreview.effects.some((e) => e.passed) && !periodUnderstood)} onClick={() => void savePeriod()}>Speichern</button>
             </div>
           )}
-        </div>
+        </Drawer>
       )}
 
       {open === 'separate' && (() => {
         const intro = separatePanelIntro({ separateOn, own, afterPeriodChange: secondStep })
         return (
-        <div className="panel">
-          <h3>{intro.title}</h3>
+        <Drawer
+          key="getrennt"
+          open
+          title={intro.title}
+          width={560}
+          onClose={close}
+          value={{ month, separateAnswers, understood }}
+          busy={saving.busy}
+          errors={errors}
+          onSubmit={() => { if (separatePreview !== null && separatePreview.blocked.length === 0 && !(separatePreview.effects.some((e) => e.passed) && !understood)) void saving.run(saveSeparate) }}
+          actions={<button className="btn" disabled={saving.busy || !(separatePreview !== null && separatePreview.blocked.length === 0 && !(separatePreview.effects.some((e) => e.passed) && !understood))} onClick={() => void saving.run(saveSeparate)}>Speichern</button>}
+        >
           <p className="muted">{intro.text}</p>
-          <MonthField label={intro.monthLabel} value={month} today={localToday()} onChange={setMonth} {...errors.field('month')} />
+          <MonthField label={intro.monthLabel} value={month} today={localToday()} onChange={changeMonth} {...errors.field('month')} />
           <div className="row">
-            <button className="btn secondary" onClick={() => void loadSeparatePreview()}>Vorschau</button>
-            <button className="btn ghost" onClick={close}>Abbrechen</button>
+            <button className="btn secondary" disabled={saving.busy} onClick={() => void loadSeparatePreview()}>Vorschau</button>
           </div>
           {separatePreview && separateAnswers && (
             <div className="preview">
@@ -370,10 +405,9 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
                   <input type="checkbox" checked={separateAnswers.merge} onChange={(e) => setSeparateAnswers({ ...separateAnswers, merge: e.target.checked })} /> Heizvorauszahlung und übrige Vorauszahlung wieder zu einer zusammenführen
                 </label>
               )}
-              <button className="btn" disabled={separatePreview.blocked.length > 0 || (separatePreview.effects.some((e) => e.passed) && !understood)} onClick={() => void saveSeparate()}>Speichern</button>
             </div>
           )}
-        </div>
+        </Drawer>
         )
       })()}
     </div>
