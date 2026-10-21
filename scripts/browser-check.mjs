@@ -431,6 +431,25 @@ async function checkCombination(browser, base, combo, AxeBuilder, navLabels) {
     if (theme === themes[0]) drawersOpened += await checkDrawers(page, id, dir, add, reportClipped)
   }
 
+  // Die Musterseite (`?muster`, #346 Schritt 12): alle Bausteine auf einer Seite, mit denselben Prüfungen wie jede Seite
+  // der Navigation. Sie kommt ohne Server aus und ist deshalb nicht in der Navigation; `--pages muster` prüft sie allein.
+  if (PAGES === null || PAGES.includes('muster')) {
+    current = 'muster'
+    await page.goto(`${base}/?muster${theme === 'dark' ? '=dunkel' : ''}`)
+    await page.getByRole('heading', { name: 'Musterseite', level: 1 }).waitFor()
+    await settle(page)
+    checkedPages++
+    const wide = await overflow(page)
+    if (wide) add('muster', 'Breite', `Seite ${wide.scroll} px breit bei ${wide.width} px Fenster${wide.elements.length ? `: ${wide.elements.join('; ')}` : ''}`)
+    reportClipped('muster', await clippedFields(page, 'main'))
+    await runAxe('muster')
+    await page.screenshot({ path: path.join(dir, 'muster.png'), fullPage: true }).catch(() => {})
+    // Zurück in die App für die Bedienproben
+    await page.goto(base)
+    await page.locator(view === 'mobile' ? 'button.menu-toggle' : 'nav.sidebar').first().waitFor()
+    await settle(page)
+  }
+
   if (theme === themes[0] && PAGES === null && drawersOpened < MIN_DRAWERS) {
     add('fenster', 'Seitenfenster', `Nur ${drawersOpened} statt mindestens ${MIN_DRAWERS} Seitenfenster geöffnet und gemessen; ist ein Knopf umbenannt oder öffnet ein Fenster nicht?`)
   }
@@ -808,7 +827,7 @@ async function main() {
     // Ein Tippfehler in --pages prüfte sonst keine Seite und meldete grün
     if (PAGES) {
       for (const id of PAGES) {
-        if (!(navLabels ?? []).some((l) => slug(l) === id)) findings.push({ engine: 'alle', view: '–', theme: '–', page: id, kind: 'Aufruf', text: `--pages nennt „${id}“, die Navigation hat keine solche Seite (möglich: ${(navLabels ?? expected).map(slug).join(', ')}).` })
+        if (id !== 'muster' && !(navLabels ?? []).some((l) => slug(l) === id)) findings.push({ engine: 'alle', view: '–', theme: '–', page: id, kind: 'Aufruf', text: `--pages nennt „${id}“, die Navigation hat keine solche Seite (möglich: ${(navLabels ?? expected).map(slug).join(', ')}).` })
       }
     }
     if (checkedPages === 0 && (PAGES === null || PAGES.length > 0)) {

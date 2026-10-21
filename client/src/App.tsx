@@ -29,6 +29,7 @@ import MobileNav, { MOBILE_QUERY, useMediaQuery } from './components/MobileNav'
 import Heizkosten from './pages/Heizkosten'
 import { TermHelp } from './components/Term'
 import type { TermId } from '../../shared/glossary.ts'
+import Muster from './pages/Muster'
 
 // ---------- Dark Mode ----------
 type ThemeChoice = 'system' | 'light' | 'dark'
@@ -394,12 +395,22 @@ function Shell() {
   )
 }
 
+// Die Musterseite (#346 Schritt 12) unter `?muster`, im dunklen Design mit `?muster=dunkel`: alle Bausteine ohne
+// Server, für Bildschirmfotos und Browserlauf; nicht in der Navigation.
+function musterTheme(): 'light' | 'dark' | null {
+  const params = new URLSearchParams(window.location.search)
+  if (!params.has('muster')) return null
+  return params.get('muster') === 'dunkel' ? 'dark' : 'light'
+}
+
 export default function App() {
+  const muster = musterTheme()
+  useEffect(() => { if (muster) document.documentElement.dataset.theme = muster }, [muster])
   return (
     <PeriodProvider>
       <PropertyProvider>
         <UIProvider>
-          <Shell />
+          {muster ? <main><Muster /></main> : <Shell />}
         </UIProvider>
       </PropertyProvider>
     </PeriodProvider>
