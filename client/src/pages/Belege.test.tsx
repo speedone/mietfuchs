@@ -2,7 +2,7 @@
 // Der Belegordner (#170): Filter nach Objekt und Jahr, Register je Kostenart, Suche. Die
 // Entscheidungslogik prüft receipts.test.ts; hier geht es um das, was nur die Seite zeigt,
 // vor allem darum, dass die Auswahlfelder den Wert anzeigen, nach dem tatsächlich gefiltert wird.
-import { calendarPeriod } from '../../../shared/period.ts'
+import { calendarPeriod, periodContaining, periodKey, periodLabel } from '../../../shared/period.ts'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { CostItem, Property, UploadInfo } from '../types'
@@ -11,6 +11,7 @@ import { PropertyProvider, useHasOpenForm } from '../property'
 import { useState } from 'react'
 import type { ReceiptUpload } from '../receipts'
 import Belege, { PLACEMENT_FIRST } from './Belege'
+import { PeriodSelect } from '../components/PeriodSelect'
 
 const PROPS: Property[] = [
   { id: 'p1', name: 'Lindenstraße', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null },
@@ -44,6 +45,8 @@ let failAssessmentPut = false
 let closed: { closedAt: string } | null = null
 // Die Heizanlagen des ersten Objekts (Sichtprüfung E32)
 let plantsP1: unknown[] = []
+// Für einzelne Tests: Objekte mit eigenem Rhythmus
+let propsOverride: Property[] | null = null
 
 // Die Abrechnung des Jahres, nur mit dem, was die Belegmappe liest: die Zeilen der Mieter
 const SETTLEMENT = {
@@ -59,6 +62,7 @@ beforeEach(() => {
   failAssessmentPut = false
   closed = null
   plantsP1 = []
+  propsOverride = null
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const u = new URL(url, 'http://x')
     const method = init?.method ?? 'GET'
@@ -70,7 +74,7 @@ beforeEach(() => {
       return new Response(JSON.stringify(answer), { status: 200, headers: { 'content-type': 'application/json' } })
     }
     let body: unknown = []
-    if (u.pathname === '/api/properties') body = PROPS
+    if (u.pathname === '/api/properties') body = propsOverride ?? PROPS
     else if (u.pathname === '/api/uploads') body = [up('1_gs.pdf'), up('2_wasser.pdf'), up('3_ahorn.pdf'), up('4_lose.pdf', '1_gs.pdf'), ...extraUploads]
     else if (u.pathname === '/api/costItems') body = [...(ITEMS[u.searchParams.get('property') ?? 'p1'] ?? []), ...(u.searchParams.get('property') === 'p2' ? [] : extraItems)]
     else if (u.pathname === '/api/heating-plants') body = u.searchParams.get('property') === 'p2' ? [] : plantsP1
@@ -580,4 +584,37 @@ test('Posteingang: Knöpfe in Höhe der Auswahl, „Beleg nachreichen“ steht h
   if (!upload) return expect.fail('Kein Knopf „Beleg nachreichen“')
   expect(upload.classList.contains('small')).toBe(false)
   expect(picker.compareDocumentPosition(upload) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+})
+
+// Durchsicht des Belegordners nach Zeitraum (#346 Schritt 12): Nach einem Wechsel auf Mai bis April beginnen Rumpf
+// (Januar bis April 2025) und neuer Zeitraum im selben Jahr. Register, Satz und Belegabdeckung folgen dem Zeitraum der
+// Seitenleiste; vorher stand „die 2025 beginnen“ da, gezeigt wurde aber nur einer von beiden.
+test('Rumpfzeitraum: Register, Satz und Belegabdeckung zeigen den gewählten Zeitraum', async () => {
+  const rules = { startMonth: 1, changes: [periodKey('2025-05')] }
+  propsOverride = [{ ...PROPS[0], periodRules: rules } as Property]
+  extraItems = [{ id: 'neu', propertyId: 'p1', period: periodKey('2025-05'), category: 'Grundsteuer', description: 'Grundsteuer neu', amountCents: 61000, key: 'area' }]
+  const rumpf = periodLabel(periodContaining(rules, '2025-02-01'))
+  const neu = periodLabel(periodContaining(rules, '2025-06-01'))
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <PeriodSelect />
+        <Belege renderThumb={() => Promise.resolve('data:image/gif;base64,R0lGODlhAQABAAAAACw=')} />
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  const select = await screen.findByRole('combobox', { name: 'Abrechnungszeitraum' }) as HTMLSelectElement
+  // Erst wenn die Objekte geladen sind, gibt es die Zeiträume des neuen Rhythmus als Optionen
+  await waitFor(() => expect([...select.options].map((o) => o.value)).toContain('2025-05'))
+  fireEvent.change(select, { target: { value: '2025-05' } })
+  expect(await screen.findByText(`Gezeigt sind die Positionen von ${neu}.`)).toBeTruthy()
+  // Nur die Register; die Auswahl im Posteingang bleibt beim Kalenderjahr des Belegs
+  const registers = () => [...document.querySelectorAll('details.receipt-group')].map((d) => d.textContent ?? '').join(' ')
+  expect(registers()).toContain('Grundsteuer neu')
+  expect(registers()).not.toContain('Grundsteuer B')
+  expect(screen.getByText(new RegExp(`^Belegabdeckung ${neu.replace('/', '\\/')}`))).toBeTruthy()
+  fireEvent.change(select, { target: { value: '2025-01' } })
+  expect(await screen.findByText(`Gezeigt sind die Positionen von ${rumpf}.`)).toBeTruthy()
+  expect(registers()).not.toContain('Grundsteuer neu')
+  expect(registers()).toContain('Grundsteuer B')
 })

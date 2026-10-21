@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { calendarPeriod } from '../../shared/period.ts'
+import { calendarPeriod, periodKey } from '../../shared/period.ts'
 import type { CostItem, UploadInfo } from './types'
 import { amountCheckBody, amountCheckMode, attachChoices, buildFolder, coverage, coverageCheck, duplicateHints, filesByItem, inboxFor, inboxOf, matchesQuery, receiptCards } from './receipts'
 
@@ -341,5 +341,25 @@ describe('Belegbuchung (#170): Belege, die über eine verknüpfte Zeile an einer
     expect(inboxOf(cards, { propertyId: 'all', year: 'all' }).here.map((c) => c.upload.file)).toEqual(['1_a.pdf'])
     expect(buildFolder([a, b], [position], { propertyId: 'all', year: 'all' }, '').groups[0]?.cards.map((c) => c.upload.file)).toEqual(['2_b.pdf'])
     expect(filesByItem([a, b]).get('st')).toEqual(['2_b.pdf'])
+  })
+})
+
+// #346 Schritt 12 (aus den Durchsichten): Nach einem Wechsel des Abrechnungszeitraums beginnen Rumpf und neuer
+// Zeitraum im selben Jahr. Der Ordner zeigt für das gewählte Objekt den gewählten Zeitraum, nicht beide.
+describe('Belegordner bei Rumpfzeiträumen', () => {
+  const rumpf = item('rumpf', { period: periodKey('2025-01'), description: 'Grundsteuer Rumpf' })
+  const neu = item('neu', { period: periodKey('2025-05'), description: 'Grundsteuer neu' })
+  const other = item('anders', { propertyId: 'p2', period: periodKey('2025-01'), description: 'Grundsteuer Ahornweg' })
+  const shown = (f: Parameters<typeof buildFolder>[2]) => buildFolder([], [rumpf, neu, other], f, '').groups.flatMap((g) => g.items.map((i) => i.id))
+  it('der gewählte Zeitraum des Objekts, nicht jeder, der im Jahr beginnt', () => {
+    expect(shown({ propertyId: 'p1', year: 2025, period: { propertyId: 'p1', key: periodKey('2025-05') } })).toEqual(['neu'])
+    expect(shown({ propertyId: 'p1', year: 2025, period: { propertyId: 'p1', key: periodKey('2025-01') } })).toEqual(['rumpf'])
+  })
+  it('bei allen Objekten gilt für die übrigen weiter das Jahr', () => {
+    expect(shown({ propertyId: 'all', year: 2025, period: { propertyId: 'p1', key: periodKey('2025-05') } }).sort()).toEqual(['anders', 'neu'])
+  })
+  it('die Belegabdeckung zählt dieselben Positionen', () => {
+    const cov = coverage([rumpf, neu], { propertyId: 'p1', year: 2025, period: { propertyId: 'p1', key: periodKey('2025-05') } }, null)
+    expect(cov.totalCents).toBe(neu.amountCents)
   })
 })

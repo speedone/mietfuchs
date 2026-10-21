@@ -10,8 +10,9 @@
 // Posteingang (an keiner Position) trägt sie selbst.
 //
 // Der Belegordner gliedert nach Kalenderjahren, denn Belege tragen Kalenderjahre (#208, Entwurf 5.2:
-// `uploads.year` bleibt); das Jahr einer Position ist das Jahr, in dem ihr Zeitraum beginnt.
-import type { CostItem, UploadInfo, UploadLinks } from './types'
+// `uploads.year` bleibt); das Jahr einer Position ist das Jahr, in dem ihr Zeitraum beginnt. Für das Objekt der
+// Seitenleiste gilt bei einem anderen Rhythmus der gewählte Zeitraum (`FolderFilter.period`, #346 Schritt 12).
+import type { CostItem, PeriodKey, UploadInfo, UploadLinks } from './types'
 import { CATEGORIES, matchCategory } from './types'
 import { fmtEuro, parseEuro } from './api'
 import { amountProblem } from './costForm'
@@ -23,7 +24,9 @@ import { startYearOf } from '../../shared/period.ts'
 // einem älteren Server und in Tests, die sie nicht brauchen.
 export type ReceiptUpload = UploadInfo & Partial<UploadLinks>
 
-export type FolderFilter = { propertyId: string | 'all'; year: number | 'all' }
+// `period`: der in der Seitenleiste gewählte Zeitraum eines Objekts. Nach einem Wechsel des Rhythmus beginnen Rumpf und
+// neuer Zeitraum im selben Jahr; für dieses Objekt gilt dann der Zeitraum, für die übrigen weiter das Jahr (#346 Schritt 12).
+export type FolderFilter = { propertyId: string | 'all'; year: number | 'all'; period?: { propertyId: string; key: PeriodKey } | null }
 
 export type ReceiptCard = {
   upload: ReceiptUpload
@@ -89,7 +92,8 @@ export function receiptCards(uploads: ReceiptUpload[], items: CostItem[]): Recei
 }
 
 const inScope = (c: CostItem, f: FolderFilter): boolean =>
-  (f.propertyId === 'all' || c.propertyId === f.propertyId) && (f.year === 'all' || startYearOf(c.period) === f.year)
+  (f.propertyId === 'all' || c.propertyId === f.propertyId) && (f.year === 'all'
+    || (f.period && c.propertyId === f.period.propertyId ? c.period === f.period.key : startYearOf(c.period) === f.year))
 
 // Die Reihenfolge der Register: wie die Kostenarten in der Oberfläche stehen, Unbekanntes danach.
 const categoryRank = (category: string): number => {
