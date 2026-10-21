@@ -53,7 +53,7 @@ Die rechtliche Prüfung der Pläne PR 15 bis 22 vom 05.10.2026 hat diesen Plan a
    Prüfbericht nannte S. 17 f., 18 und 20; das ist eine Seite zu früh. Die Angaben dieses Plans bleiben
    deshalb bei S. 18, 19 und 21.
 4. **Veralteter Befund gestrichen** (Abweichung 2): Der Absatz „Befund für PR 14“ samt der Frage nach einem
-   Issue ist erledigt; PR 14 nimmt seit Commit `1329a64` für § 6a Abs. 3 Nr. 4 den Vergleichswert mit Quelle.
+   Issue ist erledigt; PR 14 nimmt seit Commit `3ce97a0` für § 6a Abs. 3 Nr. 4 den Vergleichswert mit Quelle.
 5. **Herkunft von `dhwTempC`** (Schnittstellen, Annahme B2): Spalte `heating_periods.dhw_temp_c` und Feld
    `HeatingPeriodData.dhwTempC` legt PR 4 an, den `Pick` im Schnappschuss PR 11.
 6. **Heizkostenverteiler** (Abweichung 4, Task 4 `GAP_TEXT`): Der Text empfiehlt, die Information vom
@@ -212,7 +212,7 @@ Jede steht im Task an ihrer Stelle und kommt in die PR-Beschreibung.
    ein (etwa vom Ablesedienst). Ohne Wert ist der Monat unvollständig. Gerechnet wird Wert × Wohnfläche ×
    Nutzungstage / Tage des Monats (Festlegung: die Verordnung nennt keine Rechenart). ⟨Norm offen: DIN 94680⟩,
    die laut Inhaltsangabe Vergleichswerte enthält (Entwurf 0.2). Für § 6a Abs. 3 Nr. 4 hat PR 14 seit Commit
-   `1329a64` dieselbe Lösung (Vergleichswert mit Quelle statt Hausdurchschnitt).
+   `3ce97a0` dieselbe Lösung (Vergleichswert mit Quelle statt Hausdurchschnitt).
 3. **Warmwasser in kWh nach § 9 Abs. 2 Satz 2 HeizkostenV, getrennt ausgewiesen (Auslegung).** Abs. 2 Nr. 1
    verlangt Kilowattstunden, Warmwasserzähler messen m³. Die einzige Umrechnung, die die Verordnung kennt, ist
    die Zahlenwertgleichung 2,5 · V · (t_w − 10) mit der mittleren Warmwassertemperatur der Heizperiode
