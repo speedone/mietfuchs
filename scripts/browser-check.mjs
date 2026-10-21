@@ -739,7 +739,7 @@ async function main() {
   // Bericht und Zusammenfassung entstehen auch, wenn die Prüfung selbst scheitert: Der Fehler wird ein Befund.
   try {
     // Eine Heizanlage mit freien Schlüsseln, damit die Seite Heizkosten in der Navigation steht. Sie ändert
-    // keine Zahl (CLAUDE.md, Heizanlage) und kommt nicht in den Bestand der Bildschirmfotos.
+    // keine Zahl (docs/heizung.md, Heizanlage) und kommt nicht in den Bestand der Bildschirmfotos.
     await demo.api.post(`/api/heating-plants?property=${demo.ids.haus}`, { energy: 'gas', method: 'manual', assignItemIds: [] })
     // Welche Seiten die Navigation zeigen muss: alle aus nav.ts, die Heizkosten, weil der Bestand eine Anlage hat.
     // Fehlt eine, prüfte der Lauf sonst still eine Seite weniger.
