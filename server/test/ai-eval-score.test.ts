@@ -26,7 +26,7 @@ test('Jeder neue Fall hat seinen Beleg und seine Art', () => {
   }
 })
 
-test('Die Belege sind erfunden: Muster-IBAN, keine echten Namen (CLAUDE.md, KI-Prüflauf)', () => {
+test('Die Belege sind erfunden: Muster-IBAN, keine echten Namen (server/src/ai/CLAUDE.md, KI-Prüflauf)', () => {
   for (const name of ['metering-service', 'gas-supplier', 'heating-oil']) {
     const html = fs.readFileSync(path.join(root, 'scripts/ai-eval', byName(name).file), 'utf8')
     assert.match(html, /Erfundener Beispielbeleg/, name)
