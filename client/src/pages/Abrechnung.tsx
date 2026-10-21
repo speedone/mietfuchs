@@ -44,6 +44,7 @@ import { co2Block } from '../co2View'
 import { countOf } from '../../../shared/wording.ts'
 import { calendarPeriod } from '../../../shared/period.ts'
 import { formatIban } from '../../../shared/iban.ts'
+import Card from '../components/Card'
 
 type Props = {
   settings: Settings | null
@@ -562,8 +563,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
           {/* Mietverhältnisse mit Pauschale oder Inklusivmiete bekommen keine Abrechnung (#93);
               sie werden genannt statt still zu fehlen. */}
           {(data.notSettled ?? []).length > 0 && (
-            <div className="card no-print">
-              <h2>Ohne Abrechnung</h2>
+            <Card title="Ohne Abrechnung" className="no-print">
               <p className="muted">
                 Für diese Mietverhältnisse ist eine Pauschale oder Inklusivmiete vereinbart. Ihr Anteil an den Kosten
                 bleibt beim Vermieter und zählt als Werbungskosten.
@@ -571,7 +571,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
               <ul>
                 {(data.notSettled ?? []).map((n) => <li key={n.tenancyId}>{notSettledText(n)}</li>)}
               </ul>
-            </div>
+            </Card>
           )}
 
           {data.statements.map((st) => {
@@ -838,8 +838,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
           })}
 
           {data.landlord.rows.length > 0 && (
-            <div className="card no-print">
-              <h2>Vermieteranteil (nicht umgelegt)</h2>
+            <Card title="Vermieteranteil (nicht umgelegt)" className="no-print">
               <Table className="sticky-first">
                 <thead>
                   <tr>
@@ -872,7 +871,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                   )}
                 </tfoot>
               </Table>
-            </div>
+            </Card>
           )}
         </>
       )}

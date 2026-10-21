@@ -20,6 +20,7 @@ import { useToast, useConfirm } from '../components/feedback'
 import DraftActions from '../components/DraftActions'
 import { useDraft } from '../useDraft'
 import { NoticeBox } from '../components/Notice'
+import Card from '../components/Card'
 
 const fmtSize = (b: number) =>
   b >= 1024 * 1024 ? `${(b / 1024 / 1024).toLocaleString('de-DE', { maximumFractionDigits: 1 })} MB` : `${Math.max(1, Math.round(b / 1024))} kB`
@@ -156,8 +157,7 @@ function FolderPacks({ propertyId, propertyName, year, chosen, rules, uploads, c
   }
 
   return (
-    <div className="card no-print receipt-packs">
-      <h2>Mappen packen · {year}</h2>
+    <Card title={<>Mappen packen · {year}</>} className="no-print receipt-packs">
       <div className="row receipt-filters">
         <a className="btn" href={withProperty(`/api/receipts/tax/${year}`, propertyId)} download>🧾 Belege für die Steuer (ZIP)</a>
         <span className="muted">Alle Belege des Jahres nach den Gruppen der Anlage V, auch die nicht umlagefähigen, mit einer Übersicht.</span>
@@ -201,7 +201,7 @@ function FolderPacks({ propertyId, propertyName, year, chosen, rules, uploads, c
           </>
         )}
       </details>
-    </div>
+    </Card>
   )
 }
 

@@ -7,6 +7,7 @@ import { useProperty, withProperty } from '../property'
 import PageHeader from '../components/PageHeader'
 import Table from '../components/Table'
 import { NoticeBox } from '../components/Notice'
+import Card from '../components/Card'
 
 // Ab dieser Abweichung zum Vorjahr gilt eine Kostenart als auffällig.
 // Mieter dürfen Belege einsehen — größere Sprünge sollte man erklären können.
@@ -130,8 +131,7 @@ export default function Uebersicht({ onNavigate }: Props) {
         </p>
       )}
 
-      <div className="card">
-        <h2>Kostenarten {label}{hasCosts && hasPrev ? ` im Vergleich zu ${at.previousLabel}` : ''}</h2>
+      <Card title={<>Kostenarten {label}{hasCosts && hasPrev ? ` im Vergleich zu ${at.previousLabel}` : ''}</>}>
         {/* Sichtprüfung E49: was grau und was farbig ist */}
         {hasCosts && hasPrev && (
           <p className="muted chart-legend" aria-hidden="true">
@@ -186,11 +186,10 @@ export default function Uebersicht({ onNavigate }: Props) {
             </tfoot>
           </Table>
         )}
-      </div>
+      </Card>
 
       {periods.length > 1 && (
-        <div className="card">
-          <h2>Gesamtkosten im Verlauf</h2>
+        <Card title="Gesamtkosten im Verlauf">
           <Table className="chart-table sticky-first">
             <tbody>
               {periods.map((p) => (
@@ -204,7 +203,7 @@ export default function Uebersicht({ onNavigate }: Props) {
               ))}
             </tbody>
           </Table>
-        </div>
+        </Card>
       )}
     </>
   )

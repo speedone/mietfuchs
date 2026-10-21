@@ -14,6 +14,7 @@ import { rulesOf } from '../../../shared/period.ts'
 import { useFormError } from './ErrorSummary'
 import Drawer from './Drawer'
 import { NoticeBox } from './Notice'
+import Card from './Card'
 
 // Die Karte „Abrechnungszeitraum“ in den Stammdaten (#208, Entwurf 3.6, 11.4). Jede Änderung geht
 // über die Vorschau des Servers, im Seitenfenster (#346 Schritt 7); gespeichert wird erst mit „Speichern“ nach
@@ -299,8 +300,7 @@ export default function PeriodCard({ onChanged }: { onChanged?: () => Promise<vo
   const title = open?.kind === 'remove' ? `Wechsel ab ${changeLabel(open.from)} entfernen` : 'Abrechnungszeitraum ändern'
 
   return (
-    <div className="card">
-      <h2><Term id="billingPeriod">Abrechnungszeitraum</Term></h2>
+    <Card title={<><Term id="billingPeriod">Abrechnungszeitraum</Term></>}>
       {/* Sichtprüfung E4: der Stand als Satz, die Erklärung darunter statt in derselben Zeile */}
       <p>{rhythmText(rules)}.</p>
       <small className="muted">
@@ -376,6 +376,6 @@ export default function PeriodCard({ onChanged }: { onChanged?: () => Promise<vo
           )}
         </Drawer>
       )}
-    </div>
+    </Card>
   )
 }

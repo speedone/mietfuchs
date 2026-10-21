@@ -17,6 +17,7 @@ import Table from '../components/Table'
 import { useFocusTarget, useScrollToFocus, type FocusProps } from '../focus'
 import { MONTH_SHORT } from '../monthText'
 import { NoticeBox } from '../components/Notice'
+import Card from '../components/Card'
 
 const MONTHS = MONTH_SHORT
 
@@ -357,8 +358,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
       })}
 
       {ledger && (ledger.settlementOnly?.length ?? 0) > 0 && (
-        <div className="card">
-          <h2>Abrechnung früherer Mietverhältnisse</h2>
+        <Card title="Abrechnung früherer Mietverhältnisse">
           <p className="muted">Nachzahlungen und Guthaben aus der Abrechnung, gezahlt im Jahr {year}, für Mietverhältnisse, die in diesem Jahr nicht mehr bestanden.</p>
           <Table>
             <tbody>
@@ -370,11 +370,10 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
               ))}
             </tbody>
           </Table>
-        </div>
+        </Card>
       )}
 
-      <div className="card">
-        <h2>Zahlungseingänge {year}</h2>
+      <Card title={<>Zahlungseingänge {year}</>}>
         {yearPayments.length === 0 ? (
           <div className="empty">Noch keine Zahlungen für {year} erfasst.</div>
         ) : (
@@ -421,7 +420,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
             </tbody>
           </Table>
         )}
-      </div>
+      </Card>
     </>
   )
 }

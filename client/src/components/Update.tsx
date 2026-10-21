@@ -6,6 +6,7 @@ import { useToast } from './feedback'
 import DraftActions from './DraftActions'
 import { useDraft } from '../useDraft'
 import FoxLogo from './Logo'
+import Card from './Card'
 
 // Update-Hinweis in drei Teilen: die einmalige Frage im Cockpit, der Hinweis oben in der
 // Seitenleiste und die Karte in den Einstellungen. Nach GitHub fragt nur der Server, und nur
@@ -164,8 +165,7 @@ export function UpdateSettings({ settings, update, reload }: SettingsProps) {
   const guide = status?.enabled && status.available ? updateGuide(status) : null
 
   return (
-    <div className="card">
-      <h2>Updates</h2>
+    <Card title="Updates">
       <div className="row center">
         <label className="update-toggle">
           <input type="checkbox" checked={draft.value} disabled={draft.saving} onChange={(e) => draft.set(e.target.checked)} />
@@ -198,7 +198,7 @@ export function UpdateSettings({ settings, update, reload }: SettingsProps) {
           <p className="muted">Vorher ein Backup herunterzuladen (weiter unten) schadet nie.</p>
         </div>
       )}
-    </div>
+    </Card>
   )
 }
 

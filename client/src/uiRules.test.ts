@@ -1162,3 +1162,14 @@ test('S30: der Umschalter auf einer Seite ist beschriftet wie ein Feld', () => {
   expect(twCss).toMatch(/@utility switcher-field \{[^}]*--switcher-label-weight: var\(--weight-strong\)/)
   expect(twCss).toMatch(/font-weight: var\(--switcher-label-weight, var\(--weight-medium\)\)/)
 })
+
+// S31 (#346 Schritt 12, aus den Durchsichten): Eine Karte mit Überschrift ist der Baustein `Card` (einheitlicher Kopf,
+// höchstens eine Aktion rechts). Vorher setzten rund 20 Karten außerhalb der Seite Heizkosten ihren Kopf selbst.
+const manualCardHeads = (src: string): string[] => [...src.matchAll(/<(?:div|section) className="card(?: [\w-]+)*">\s*<h[23][\s>]/g)].map((m) => m[0])
+test('S31: Karten mit Überschrift nur über den Baustein Card', () => {
+  expect(manualCardHeads('<div className="card no-print">\n  <h2>Titel</h2>')).toHaveLength(1)
+  expect(manualCardHeads('<section className="card"><h3 className="x">T</h3>')).toHaveLength(1)
+  expect(manualCardHeads('<Card title="Titel">')).toEqual([])
+  expect(manualCardHeads('<div className="card">\n  <label className="field">')).toEqual([])
+  expect(files.filter((f) => f !== './components/Card.tsx').flatMap((f) => manualCardHeads(sources[f] ?? '').map((m) => `${f}: ${m.replace(/\s+/g, ' ')}`))).toEqual([])
+})
