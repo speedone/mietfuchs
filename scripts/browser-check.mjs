@@ -435,15 +435,40 @@ async function checkCombination(browser, base, combo, AxeBuilder, navLabels) {
   // der Navigation. Sie kommt ohne Server aus und ist deshalb nicht in der Navigation; `--pages muster` prüft sie allein.
   if (PAGES === null || PAGES.includes('muster')) {
     current = 'muster'
-    await page.goto(`${base}/?muster${theme === 'dark' ? '=dunkel' : ''}`)
-    await page.getByRole('heading', { name: 'Musterseite', level: 1 }).waitFor()
-    await settle(page)
-    checkedPages++
-    const wide = await overflow(page)
-    if (wide) add('muster', 'Breite', `Seite ${wide.scroll} px breit bei ${wide.width} px Fenster${wide.elements.length ? `: ${wide.elements.join('; ')}` : ''}`)
-    reportClipped('muster', await clippedFields(page, 'main'))
-    await runAxe('muster')
-    await page.screenshot({ path: path.join(dir, 'muster.png'), fullPage: true }).catch(() => {})
+    try {
+      await page.goto(`${base}/?muster${theme === 'dark' ? '=dunkel' : ''}`)
+      await page.getByRole('heading', { name: 'Musterseite', level: 1 }).waitFor({ timeout: 15000 })
+      await settle(page)
+      checkedPages++
+      const wide = await overflow(page)
+      if (wide) add('muster', 'Breite', `Seite ${wide.scroll} px breit bei ${wide.width} px Fenster${wide.elements.length ? `: ${wide.elements.join('; ')}` : ''}`)
+      reportClipped('muster', await clippedFields(page, 'main'))
+      await runAxe('muster')
+      await page.screenshot({ path: path.join(dir, 'muster.png'), fullPage: true }).catch(() => {})
+      // Die Zustände, die erst nach einem Klick erscheinen, je mit axe und Foto (Durchsicht der Musterseite):
+      // Seitenfenster, Rückfrage, Begriffserklärung
+      const states = /** @type {const} */ ([
+        ['seitenfenster', '+ Muster anlegen', 'dialog'],
+        ['rueckfrage', 'Muster löschen …', 'alertdialog'],
+      ])
+      for (const [state, button, role] of states) {
+        await page.getByRole('button', { name: button }).click()
+        const box = page.getByRole(role).last()
+        await box.waitFor({ timeout: 3000 })
+        await runAxe(`muster:${state}`)
+        await page.screenshot({ path: path.join(dir, `muster-${state}.png`) }).catch(() => {})
+        await page.keyboard.press('Escape')
+        await box.waitFor({ state: 'hidden', timeout: 3000 }).catch(() => add('muster', 'Bedienprobe', `Esc schließt „${state}“ nicht.`))
+      }
+      const term = page.locator('main .term[role="button"]').first()
+      await term.click()
+      await page.locator('.term-pop:visible').first().waitFor({ timeout: 3000 })
+      await runAxe('muster:begriff')
+      await page.screenshot({ path: path.join(dir, 'muster-begriff.png') }).catch(() => {})
+      await page.keyboard.press('Escape')
+    } catch (err) {
+      add('muster', 'Aufruf', `Die Musterseite ließ sich nicht prüfen: ${err instanceof Error ? err.message.split('\n')[0] : err}`)
+    }
     // Zurück in die App für die Bedienproben
     await page.goto(base)
     await page.locator(view === 'mobile' ? 'button.menu-toggle' : 'nav.sidebar').first().waitFor()

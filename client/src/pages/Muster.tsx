@@ -40,7 +40,7 @@ export default function Muster() {
         context="none"
         title="Musterseite"
         subtitle="Alle Bausteine der Oberfläche mit festen Werten. Nur zum Prüfen, nicht in der Navigation."
-        actions={<button className="btn" onClick={() => toast('Eine Mitteilung.')}>+ Mitteilung anlegen</button>}
+        actions={<button className="btn secondary" onClick={() => toast('Eine Mitteilung.')}>Mitteilung zeigen</button>}
       />
 
       <Card title="Knöpfe">

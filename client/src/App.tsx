@@ -406,11 +406,13 @@ function musterTheme(): 'light' | 'dark' | null {
 export default function App() {
   const muster = musterTheme()
   useEffect(() => { if (muster) document.documentElement.dataset.theme = muster }, [muster])
+  // Ohne Objekt- und Zeitraum-Provider: die fragen den Server, die Musterseite kommt ohne aus (Durchsicht)
+  if (muster) return <UIProvider><main><Muster /></main></UIProvider>
   return (
     <PeriodProvider>
       <PropertyProvider>
         <UIProvider>
-          {muster ? <main><Muster /></main> : <Shell />}
+          <Shell />
         </UIProvider>
       </PropertyProvider>
     </PeriodProvider>
