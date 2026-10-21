@@ -72,7 +72,7 @@ const GUIDE_DATA = {
     title: 'Haus mit Einliegerwohnung oder Zweifamilienhaus mit Eigennutzung',
     applies: 'Sie wohnen selbst im Haus und vermieten eine zweite Wohnung darin, etwa eine Einliegerwohnung. Mietfuchs rechnet dann nur mit Ihrer Mietpartei ab, Ihren eigenen Anteil tragen Sie selbst.',
     steps: [
-      { page: 'stammdaten', text: 'Tragen Sie in der Karte „Objekt“ Bezeichnung und Adresse ein und klicken Sie auf „Speichern“.' },
+      { page: 'stammdaten', text: 'Klicken Sie in der Karte „Objekt“ auf „Bearbeiten“, tragen Sie Bezeichnung und Adresse ein und klicken Sie auf „Speichern“.' },
       { page: 'stammdaten', text: 'Legen Sie mit „+ Wohnung anlegen“ Ihre eigene Wohnung an: Wohnfläche eintragen, bei „Nutzung“ die Auswahl „Eigennutzung — Anteil trägt der Vermieter“ wählen und unter „Personen im eigenen Haushalt“ die Zahl der Bewohner eintragen.' },
       { page: 'stammdaten', text: 'Legen Sie die Einliegerwohnung ebenso an, mit der Nutzung „vermietet — Anteil trägt der Mieter“, und danach mit „+ Mietverhältnis anlegen“ die Mieterin mit Einzug, Personenzahl, Kaltmiete und Vorauszahlung.' },
       { page: 'zaehler', text: 'Hat nur die Einliegerwohnung einen eigenen Wasserzähler, legen Sie mit „+ Zähler anlegen“ zwei Zähler an: den Zähler des Hauses mit der Zuordnung „Haus (Hauptzähler)“ und den Zwischenzähler mit der Zuordnung zur Einliegerwohnung. Für jedes Jahr braucht jeder Zähler zwei Stände: zu Jahresbeginn (31.12. des Vorjahres) und zum Jahresende (31.12.); tragen Sie sie mit „+ Ablesung anlegen“ ein.' },
@@ -105,7 +105,7 @@ const GUIDE_DATA = {
     title: 'Mehrfamilienhaus, ganz vermietet oder mit eigener Wohnung',
     applies: 'Ihr Haus hat drei oder mehr Wohnungen, die Sie vermieten; vielleicht wohnen Sie selbst in einer davon.',
     steps: [
-      { page: 'stammdaten', text: 'Tragen Sie in der Karte „Objekt“ Bezeichnung, Adresse und die Art „Mehrfamilienhaus“ ein.' },
+      { page: 'stammdaten', text: 'Klicken Sie in der Karte „Objekt“ auf „Bearbeiten“ und tragen Sie Bezeichnung, Adresse und die Art „Mehrfamilienhaus“ ein.' },
       { page: 'stammdaten', text: 'Legen Sie mit „+ Wohnung anlegen“ alle Wohnungen des Hauses an, auch eine selbstgenutzte („Eigennutzung — Anteil trägt der Vermieter“). Eine Einheit, die gesondert abgerechnet wird, etwa ein Laden, stellen Sie auf „nicht beteiligt — bleibt außen vor“.' },
       { page: 'stammdaten', text: 'Legen Sie je Mieter mit „+ Mietverhältnis anlegen“ ein Mietverhältnis an. Ändert sich später die Personenzahl oder die Vorauszahlung, ergänzen Sie die Staffel mit „+ Änderung ab Datum …“ oder „+ Erhöhung ab Monat …“, statt ein neues Mietverhältnis anzulegen.' },
       { page: 'zaehler', text: 'Legen Sie die Wohnungszähler mit ihrer Wohnung an und, wenn vorhanden, den Hauszähler als „Haus (Hauptzähler)“. Erfassen Sie für jeden Zähler den Stand zu Jahresbeginn (31.12. des Vorjahres) und zum Jahresende (31.12.) mit „+ Ablesung anlegen“. Mit Wohnungszählern steht bei den Kosten der Schlüssel „nach Verbrauch (Zähler)“ zur Wahl.' },
@@ -141,7 +141,7 @@ const GUIDE_DATA = {
     title: 'Vermietete Eigentumswohnung mit Hausgeldabrechnung',
     applies: 'Sie vermieten eine Eigentumswohnung. Die Kosten des Hauses rechnet die Eigentümergemeinschaft ab, Sie bekommen jedes Jahr die Hausgeldabrechnung und geben die umlagefähigen Kosten an Ihre Mieter weiter.',
     steps: [
-      { page: 'stammdaten', text: 'Wählen Sie in der Karte „Objekt“ die Art „Eigentumswohnung“ und klicken Sie auf „Speichern“; für eine weitere Wohnung neben einem Haus legen Sie mit „+ Weiteres Objekt anlegen“ ein eigenes Objekt an.' },
+      { page: 'stammdaten', text: 'Klicken Sie in der Karte „Objekt“ auf „Bearbeiten“, wählen Sie die Art „Eigentumswohnung“ und klicken Sie auf „Speichern“; für eine weitere Wohnung neben einem Haus legen Sie mit „+ Weiteres Objekt anlegen“ ein eigenes Objekt an.' },
       { page: 'stammdaten', text: 'Legen Sie nur Ihre eigene Wohnung an, nicht die übrigen Wohnungen der Anlage, und tragen Sie bei „Miteigentumsanteile“ den Wert aus der Teilungserklärung oder der Hausgeldabrechnung ein. Danach das Mietverhältnis mit „+ Mietverhältnis anlegen“.' },
       { page: 'kosten', text: 'Übernehmen Sie aus der Hausgeldabrechnung jede umlagefähige Kostenart als eigene Position mit dem Umlageschlüssel „laut Gemeinschaftsabrechnung (Eigentumswohnung)“. Unter „Betrag €“ steht Ihr Anteil laut Hausgeldabrechnung, darunter „Maßstab“, die Summe der Anteile in der Anlage und „Kosten der Gemeinschaft (ganze Anlage) €“.' },
       { page: 'kosten', text: 'Verwaltervergütung, Kontoführung und Reparaturen erfassen Sie als „Nicht umlagefähig“, die Zuführung zur Rücklage als „Zuführung Erhaltungsrücklage“.' },
@@ -174,11 +174,11 @@ const GUIDE_DATA = {
     title: 'Mehrere Häuser oder Wohnungen (mehrere Objekte)',
     applies: 'Sie vermieten an mehr als einer Adresse, etwa zwei Häuser, ein Haus und eine Eigentumswohnung oder einen Garagenhof, und rechnen sie getrennt ab.',
     steps: [
-      { page: 'stammdaten', text: 'Klicken Sie in der Karte „Objekt“ auf „+ Weiteres Objekt anlegen“, geben Sie Name, Art und Adresse ein und legen Sie es an. Mietfuchs wechselt danach in das neue, noch leere Objekt; Ihre bisherigen Daten bleiben unverändert.' },
+      { page: 'stammdaten', text: 'Klicken Sie oben rechts auf der Seite auf „+ Weiteres Objekt anlegen“, geben Sie Name, Art und Adresse ein und legen Sie es an. Mietfuchs wechselt danach in das neue, noch leere Objekt; Ihre bisherigen Daten bleiben unverändert.' },
       { text: 'Zwischen den Objekten wechseln Sie in der Seitenleiste unter „Objekt“. Der Umschalter erscheint ab dem zweiten Objekt; am Handy steht er im Menü. Der Seitenkopf nennt auf jeder Seite das gewählte Objekt und das Abrechnungsjahr.' },
       { page: 'stammdaten', text: 'Legen Sie in jedem Objekt seine Wohnungen und Mietverhältnisse an; Zähler und Kosten erfassen Sie ebenfalls im jeweiligen Objekt.' },
       { page: 'einstellungen', text: 'Vermieter, IBAN und Zahlungsfrist unter „Vermieter & Zahlung“ gelten für alle Objekte als Vorgabe.' },
-      { page: 'stammdaten', text: 'Gehört ein Objekt jemand anderem oder hat es ein eigenes Konto, etwa das Haus der Eltern, setzen Sie in der Karte „Objekt“ unter „Abweichender Vermieter oder Bankverbindung“ den Haken „Für dieses Objekt abweichend“.' },
+      { page: 'stammdaten', text: 'Gehört ein Objekt jemand anderem oder hat es ein eigenes Konto, etwa das Haus der Eltern, klicken Sie in der Karte „Objekt“ auf „Bearbeiten“ und setzen Sie unter „Abweichender Vermieter oder Bankverbindung“ den Haken „Für dieses Objekt abweichend“.' },
       { page: 'abrechnung', text: 'Abrechnung, Mietkonto und Steuerübersicht gelten jeweils für das gewählte Objekt.' },
     ],
     result: [

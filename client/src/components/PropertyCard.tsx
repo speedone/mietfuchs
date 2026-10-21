@@ -1,65 +1,42 @@
-import { useEffect, useState } from 'react'
-import { flushSync } from 'react-dom'
-import type { Property, PropertyKind } from '../types'
-import { propertyBody, propertyToForm, type PropertyField, type PropertyForm, CABLE_LABELS, type CableAnswer } from '../propertyForm'
+import { useState } from 'react'
+import type { PropertyKind } from '../types'
+import { propertyBody, propertySummary, propertyToForm, type PropertyField, type PropertyForm, CABLE_LABELS, type CableAnswer } from '../propertyForm'
 import { PROPERTY_KIND_LABELS } from '../types'
 import Term from './Term'
 import TightMarketField from './TightMarketField'
 import FederalStateField from './FederalStateField'
 import { api, errorText } from '../api'
-import { useOpenForm, useProperty, useSwitchProperty } from '../property'
+import { useProperty } from '../property'
 import { useConfirm, useToast } from './feedback'
 import Drawer from './Drawer'
 import Card from './Card'
 import IbanInput from './IbanInput'
-import Field, { RequiredLegend } from './Field'
-import { ErrorSummary, useFormError } from './ErrorSummary'
-import { createButtonLabel, EMPTY_NEW_PROPERTY, newPropertyBody, type NewPropertyForm } from '../propertyView'
+import Field from './Field'
+import { useFormError } from './ErrorSummary'
+import { useSaving } from '../useSaving'
 
-// Die Karte „Objekt“ in den Stammdaten (#92): Name, Adresse und Art des gewählten Objekts,
-// aufklappbar ein abweichender Vermieter mit Bankverbindung und Zahlungsfrist, dazu ein
-// weiteres Objekt anlegen oder ein leeres löschen. Das Anlegen geht über einen eigenen Dialog
-// (#157), der sagt, was ein Objekt ist, dass das bisherige unverändert bleibt und dass danach
-// gewechselt wird.
-//
-// Wer ein Haus vermietet, sieht hier dieselbe Karte wie früher die Karte „Haus“, nur mit der
-// Art als drittem Feld. „+ Weiteres Objekt anlegen“ steht oben rechts im Kartenkopf (#346 Schritt 7b), im Fuß
-// nur „Speichern“ und rechts „Objekt löschen …“.
-
+// Die Karte „Objekt“ in den Stammdaten (#92). Sie zeigt die Angaben des gewählten Objekts nur an; „Bearbeiten“
+// oben rechts öffnet ein Seitenfenster mit allen Feldern, wie bei Wohnungen und Mietverhältnissen. Vorher stand
+// hier als einzige Karte der Seite ein offenes Formular mit eigenem „Speichern“. Ein weiteres Objekt legt der
+// Seitenkopf an (NewPropertyDrawer), weil es die ganze Seite betrifft; im Fuß steht nur „Objekt löschen …“.
 export default function PropertyCard() {
-  const { properties, property, reload, setFocusNoticeFor } = useProperty()
-  const switchProperty = useSwitchProperty()
+  const { properties, property, reload } = useProperty()
   const toast = useToast()
   const confirm = useConfirm()
+  // Das Seitenfenster „Objekt bearbeiten“: `null` heißt zu.
   const [form, setForm] = useState<PropertyForm | null>(null)
-  // Der Dialog „Weiteres Objekt anlegen“: `null` heißt zu.
-  const [draft, setDraft] = useState<NewPropertyForm | null>(null)
-  // Die Fehler des Fensters „Weiteres Objekt anlegen“, im Fuß des Fensters (#346, Schritt 3)
-  const draftErrors = useFormError<'name'>()
-  const setDraftError = draftErrors.set
-  const [creating, setCreating] = useState(false)
-  // Angelegt, aber die Liste fehlt (#157): Ein zweiter Klick legte es doppelt an. Gesperrt bleibt,
-  // bis das angelegte Objekt in der Liste steht, auch über Schließen und neu Öffnen hinweg.
-  const [stuckId, setStuckId] = useState<string | null>(null)
-  const stuck = stuckId !== null && !properties.some((p) => p.id === stuckId)
-  // Die Fehler der Karte, oben in der Karte (#346, Schritt 3)
   const errors = useFormError<PropertyField>()
+  const saving = useSaving()
 
-  // Nur beim Wechsel des Objekts neu füllen (#105): Hinge es am Objekt selbst, verwürfe jedes
-  // Neuladen der Liste ungespeicherte Eingaben.
-  const propertyId = property?.id
-  useEffect(() => {
-    setForm(property ? propertyToForm(property) : null)
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- bewusst nur an der Kennung
-  }, [propertyId])
+  if (!property) return null
 
-  // Ungespeicherte Änderungen an der Karte gehören zu diesem Objekt (#145); ein Wechsel fragt dann.
-  const dirty = !!property && !!form && JSON.stringify(form) !== JSON.stringify(propertyToForm(property))
-  useOpenForm(dirty)
+  function open() {
+    if (!property) return
+    errors.clear()
+    setForm(propertyToForm(property))
+  }
 
-  if (!property || !form) return null
-
-  async function save() {
+  const save = () => saving.run(async () => {
     if (!property || !form) return
     const body = propertyBody(form, property.iban)
     if ('error' in body) {
@@ -70,59 +47,12 @@ export default function PropertyCard() {
     try {
       await api(`/api/properties/${property.id}`, { method: 'PUT', body: JSON.stringify(body) })
       await reload()
+      setForm(null)
       toast('Objekt gespeichert.')
     } catch (e) {
       errors.show(errorText(e))
     }
-  }
-
-  function openDraft() {
-    setDraft(EMPTY_NEW_PROPERTY)
-    setDraftError('')
-  }
-
-  async function create() {
-    if (!draft || creating || stuck) return
-    const body = newPropertyBody(draft)
-    if ('error' in body) {
-      draftErrors.report([{ field: 'name', short: 'Name fehlt', text: body.error }])
-      return
-    }
-    setDraftError('')
-    setCreating(true)
-    let created: Property
-    try {
-      // Name, Art und Adresse in einem Aufruf: Scheitert er, gibt es kein halbes Objekt.
-      created = await api<Property>('/api/properties', { method: 'POST', body: JSON.stringify(body) })
-    } catch (e) {
-      setDraftError(`Das Objekt wurde nicht angelegt. ${errorText(e)}`)
-      setCreating(false)
-      return
-    }
-    try {
-      await reload()
-    } catch (e) {
-      // Angelegt ist es, nur die Liste fehlt. Ein zweiter Klick legte es doppelt an, deshalb bleibt
-      // der Knopf gesperrt, und die Meldung sagt, wie es weitergeht.
-      setCreating(false)
-      setStuckId(created.id)
-      setDraftError(`„${created.name}“ ist angelegt, die Liste der Objekte ließ sich aber nicht laden. Bitte laden Sie die Seite neu; das Objekt steht dann im Umschalter. ${errorText(e)}`)
-      return
-    }
-    // Erst den Dialog schließen, und zwar sofort: Er ist selbst ein offenes Formular, und der
-    // Wechsel fragte sonst nach ihm. Andere offene Eingaben, etwa ungespeicherte Änderungen an
-    // dieser Karte, fragen weiterhin (#145).
-    flushSync(() => {
-      setDraft(null)
-      setCreating(false)
-    })
-    if (await switchProperty(created.id, created.name)) {
-      setFocusNoticeFor(created.id)
-      toast(`Objekt „${created.name}“ angelegt. Sie arbeiten jetzt darin; Ihre übrigen Objekte sind unverändert.`)
-    } else {
-      toast(`Objekt „${created.name}“ angelegt. Umschalten geht in der Seitenleiste unter „Objekt“.`)
-    }
-  }
+  })
 
   async function remove() {
     if (!property) return
@@ -145,95 +75,81 @@ export default function PropertyCard() {
   }
 
   return (
-    // Neues anlegen steht oben rechts im Kartenkopf, im Fuß nur „Speichern“ und rechts die Gefahr (#346 Schritt 7b).
-    <Card title="Objekt" aside={<button className="btn secondary" onClick={openDraft}>+ Weiteres Objekt anlegen</button>}>
-      <ErrorSummary errors={errors} />
-      <RequiredLegend />
-      {/* Raster mit Breitenstufen (#346, Schritt 7b): Bezeichnung und Adresse lang, die Auswahlfelder so breit wie
-          ihr längster Eintrag. Vorher teilten vier gleiche Spalten die Zeile und schnitten Adresse und Kabelanlage ab. */}
-      <div className="field-grid">
-        <Field label="Bezeichnung" required width="l" {...errors.field('name')}>
-          <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="z. B. Mehrfamilienhaus Musterstraße" />
-        </Field>
-        <Field label="Adresse" width="l">
-          <input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Straße Nr., PLZ Ort" />
-        </Field>
-        <Field label="Art">
-          <select value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value as PropertyKind })}>
-            {(Object.keys(PROPERTY_KIND_LABELS) as PropertyKind[]).map((k) => <option key={k} value={k}>{PROPERTY_KIND_LABELS[k]}</option>)}
-          </select>
-        </Field>
-        {/* #121: Bei einer Anlage ab dem 01.12.2021 war das TV-Signal nie umlagefähig. */}
-        <Field label={<>Kabel- oder <Term id="cableTv">Antennenanlage</Term></>}>
-          <select value={form.cable} onChange={(e) => setForm({ ...form, cable: e.target.value as CableAnswer })}>
-            {(Object.keys(CABLE_LABELS) as CableAnswer[]).map((k) => <option key={k} value={k}>{CABLE_LABELS[k]}</option>)}
-          </select>
-        </Field>
-        {/* Fristen nach Werktagen hängen an den Feiertagen am Ort (shared/deadlines.ts). */}
-        <FederalStateField value={form.state} year={new Date().getFullYear()} onChange={(state) => setForm({ ...form, state })} />
-        {/* Heizung PR 18: § 5d CO2KostAufG, mit der Geltung der Verordnung. */}
-        <TightMarketField value={form.tightMarket} from={form.tightMarketFrom} to={form.tightMarketTo} onChange={(c) => setForm({ ...form, ...c })} />
-      </div>
-      <details className="extra-details" open={form.own}>
-        <summary>Abweichender Vermieter oder Bankverbindung</summary>
-        <p className="muted">
-          Etwa beim Haus der Eltern oder einer Erbengemeinschaft. Ohne Haken, und für jedes leere Feld,
-          gelten Vermieter, IBAN und Zahlungsfrist aus den Einstellungen.
-        </p>
-        <label className="checkline">
-          <input type="checkbox" checked={form.own} onChange={(e) => setForm({ ...form, own: e.target.checked })} />
-          Für dieses Objekt abweichend
-        </label>
-        {form.own && (
-          <div className="field-grid">
-            <Field label="Vermieter" width="l">
-              <input value={form.landlordName} onChange={(e) => setForm({ ...form, landlordName: e.target.value })} />
-            </Field>
-            <IbanInput key={property.id} label="IBAN" value={form.iban} stored={property.iban} onChange={(iban) => setForm({ ...form, iban })} {...errors.field('iban')} />
-            <Field label="Zahlungsfrist (Tage)" width="s" {...errors.field('paymentDeadlineDays')}>
-              <input inputMode="numeric" value={form.paymentDeadlineDays} onChange={(e) => setForm({ ...form, paymentDeadlineDays: e.target.value })} />
-            </Field>
+    <Card title="Objekt" aside={<button className="btn secondary" onClick={open}>Bearbeiten</button>}>
+      <dl className="m-0 grid gap-x-8 gap-y-3 sm:grid-cols-2">
+        {propertySummary(property).map((r) => (
+          <div key={r.label}>
+            <dt className="text-xs text-muted">{r.label}</dt>
+            <dd className="m-0">{r.value}</dd>
           </div>
-        )}
-      </details>
-      <div className="row">
-        <button className="btn" onClick={save}>Speichern</button>
-        {/* Gefahr mit Abstand zu „Speichern“, „…“ weil eine Rückfrage folgt (#346 Schritt 7, M19). */}
-        {properties.length > 1 && <button className="btn ghost danger-ghost ml-auto" onClick={remove}>Objekt löschen …</button>}
-      </div>
-      <Drawer
-        open={draft !== null}
-        title="Weiteres Objekt anlegen"
-        onClose={() => { if (!creating) setDraft(null) }}
-        onSubmit={() => void create()}
-        value={draft}
-        hint="Strg+S legt an · Esc schließt"
-        busy={creating}
-        errors={draftErrors}
-        actions={draft && <button className="btn" onClick={() => void create()} disabled={creating || stuck}>{createButtonLabel(draft.name)}</button>}
-      >
-        {draft && (
-          <>
-            <p className="muted">
-              Ein Objekt ist ein weiteres Haus oder eine Eigentumswohnung mit eigenen Wohnungen,
-              Zählern, Kosten und Abrechnungen. Ihr bisheriges Objekt „{property.name || 'Ohne Namen'}“
-              bleibt unverändert. Nach dem Anlegen arbeiten Sie im neuen Objekt; zurück geht es
-              jederzeit über „Objekt“ in der Seitenleiste.
-            </p>
-            <Field label="Name" required width="l" {...draftErrors.field('name')}>
-              <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="z. B. Eigentumswohnung Gartenweg" />
+        ))}
+      </dl>
+      {properties.length > 1 && (
+        <div className="row">
+          {/* „…“ weil eine Rückfrage folgt (#346 Schritt 7, M19). */}
+          <button className="btn ghost danger-ghost ml-auto" onClick={remove}>Objekt löschen …</button>
+        </div>
+      )}
+      {form && (
+        <Drawer
+          key={property.id}
+          open
+          title="Objekt bearbeiten"
+          width={640}
+          onClose={() => setForm(null)}
+          onSubmit={() => void save()}
+          value={form}
+          busy={saving.busy}
+          errors={errors}
+          actions={<button className="btn" onClick={() => void save()}>Speichern</button>}
+        >
+          <div className="field-grid">
+            <Field label="Bezeichnung" required width="l" {...errors.field('name')}>
+              <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="z. B. Mehrfamilienhaus Musterstraße" />
+            </Field>
+            <Field label="Adresse" width="l">
+              <input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Straße Nr., PLZ Ort" />
             </Field>
             <Field label="Art">
-              <select value={draft.kind} onChange={(e) => setDraft({ ...draft, kind: e.target.value as PropertyKind })}>
+              <select value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value as PropertyKind })}>
                 {(Object.keys(PROPERTY_KIND_LABELS) as PropertyKind[]).map((k) => <option key={k} value={k}>{PROPERTY_KIND_LABELS[k]}</option>)}
               </select>
             </Field>
-            <Field label="Adresse" width="l">
-              <input value={draft.address} onChange={(e) => setDraft({ ...draft, address: e.target.value })} placeholder="Straße Nr., PLZ Ort" />
+            {/* Fristen nach Werktagen hängen an den Feiertagen am Ort (shared/deadlines.ts). */}
+            <FederalStateField value={form.state} year={new Date().getFullYear()} onChange={(state) => setForm({ ...form, state })} />
+            {/* #121: Bei einer Anlage ab dem 01.12.2021 war das TV-Signal nie umlagefähig. */}
+            <Field label={<>Kabel- oder <Term id="cableTv">Antennenanlage</Term></>}>
+              <select value={form.cable} onChange={(e) => setForm({ ...form, cable: e.target.value as CableAnswer })}>
+                {(Object.keys(CABLE_LABELS) as CableAnswer[]).map((k) => <option key={k} value={k}>{CABLE_LABELS[k]}</option>)}
+              </select>
             </Field>
-          </>
-        )}
-      </Drawer>
+            {/* Heizung PR 18: § 5d CO2KostAufG, mit der Geltung der Verordnung. */}
+            <TightMarketField value={form.tightMarket} from={form.tightMarketFrom} to={form.tightMarketTo} onChange={(c) => setForm({ ...form, ...c })} />
+          </div>
+          <details className="extra-details" open={form.own}>
+            <summary>Abweichender Vermieter oder Bankverbindung</summary>
+            <p className="muted">
+              Etwa beim Haus der Eltern oder einer Erbengemeinschaft. Ohne Haken, und für jedes leere Feld,
+              gelten Vermieter, IBAN und Zahlungsfrist aus den Einstellungen.
+            </p>
+            <label className="checkline">
+              <input type="checkbox" checked={form.own} onChange={(e) => setForm({ ...form, own: e.target.checked })} />
+              Für dieses Objekt abweichend
+            </label>
+            {form.own && (
+              <div className="field-grid">
+                <Field label="Vermieter" width="l">
+                  <input value={form.landlordName} onChange={(e) => setForm({ ...form, landlordName: e.target.value })} />
+                </Field>
+                <IbanInput label="IBAN" value={form.iban} stored={property.iban} onChange={(iban) => setForm({ ...form, iban })} {...errors.field('iban')} />
+                <Field label="Zahlungsfrist (Tage)" width="s" {...errors.field('paymentDeadlineDays')}>
+                  <input inputMode="numeric" value={form.paymentDeadlineDays} onChange={(e) => setForm({ ...form, paymentDeadlineDays: e.target.value })} />
+                </Field>
+              </div>
+            )}
+          </details>
+        </Drawer>
+      )}
     </Card>
   )
 }

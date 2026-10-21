@@ -3,7 +3,7 @@
 // Speichern schickt genau das Gewählte. Über die ganze App wie propertyCreate.test.tsx, damit die Karte
 // mit dem echten Objekt aus /api/properties gefüllt wird.
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { Property } from './types'
 import App from './App'
 
@@ -52,7 +52,8 @@ const objekt = (extra: Partial<Property> = {}): Property => ({
 async function stateSelect(): Promise<HTMLSelectElement> {
   render(<App />)
   fireEvent.click(await screen.findByRole('button', { name: /Stammdaten/ }))
-  const el = await screen.findByLabelText(/Bundesland \(für Fristen und Feiertage\)/)
+  fireEvent.click(await screen.findByRole('button', { name: 'Bearbeiten' }))
+  const el = await within(screen.getByRole('dialog', { name: 'Objekt bearbeiten' })).findByLabelText(/Bundesland \(für Fristen und Feiertage\)/)
   if (!(el instanceof HTMLSelectElement)) throw new Error('keine Auswahl')
   return el
 }
@@ -63,10 +64,11 @@ test('ein gespeichertes Bundesland steht in der Auswahl, und Speichern schickt d
   expect(el.value).toBe('SN')
   expect(el.selectedOptions[0]?.textContent).toBe('Sachsen')
   fireEvent.change(el, { target: { value: 'BY' } })
-  fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Speichern' }))
   await waitFor(() => expect(sent.some((r) => r.method === 'PUT')).toBe(true))
   expect(sent.find((r) => r.method === 'PUT')?.body.state).toBe('BY')
-  await waitFor(() => expect(el.value).toBe('BY'))
+  // Gespeichert schließt das Fenster, die Karte zeigt das neue Land.
+  expect(await screen.findByText('Bayern')).toBeTruthy()
 })
 
 test('ohne Bundesland zeigt die Auswahl „unbekannt“, und Speichern schickt null', async () => {
@@ -74,7 +76,7 @@ test('ohne Bundesland zeigt die Auswahl „unbekannt“, und Speichern schickt n
   const el = await stateSelect()
   expect(el.value).toBe('')
   expect(el.selectedOptions[0]?.textContent).toBe('unbekannt')
-  fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Speichern' }))
   await waitFor(() => expect(sent.some((r) => r.method === 'PUT')).toBe(true))
   expect(sent.find((r) => r.method === 'PUT')?.body.state).toBeNull()
 })

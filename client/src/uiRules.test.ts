@@ -553,7 +553,7 @@ const isDangerGhost = (b: ButtonUse) => /danger-ghost/.test(b.className)
 const DRAWER_VERBS = /^(?:Anlegen|Speichern)$/
 // Primärknöpfe im Seitenfenster, die ihren Text aus einem Ausdruck nehmen, mit Grund.
 const DRAWER_LABEL_EXCEPTIONS = new Map<string, string>([
-  ['./components/PropertyCard.tsx', 'createButtonLabel: „Anlegen und zu … wechseln“ nennt die Folge, den Wechsel des Objekts; geprüft unten'],
+  ['./components/NewPropertyDrawer.tsx', 'createButtonLabel: „Anlegen und zu … wechseln“ nennt die Folge, den Wechsel des Objekts; geprüft unten'],
 ])
 // Gefahrknöpfe ohne Rückfrage (deshalb ohne „…“), mit Grund.
 const DANGER_WITHOUT_QUESTION = new Map<string, string>([
@@ -709,7 +709,7 @@ const formPatternProblems = (file: string, src: string): string[] => {
 }
 // Karten, die ein Seitenfenster öffnen und daneben ein eigenes Formular mit Speichern haben, mit Grund.
 const DRAWER_AND_CARD_SAVE = new Map<string, string>([
-  ['./components/PropertyCard.tsx', 'die Karte speichert das gewählte Objekt; das Seitenfenster legt ein weiteres an, ein anderer Datensatz'],
+  // heute keine; die Karte „Objekt“ bearbeitet seit dem Umbau im Seitenfenster
 ])
 test('S19: eine Karte, ein Speichern; was ein Seitenfenster bearbeitet, speichert dort', () => {
   // Probe des Prüfers
@@ -995,8 +995,8 @@ test('S25: Pflichtfelder mit Legende, jedes <form> mit noValidate, keine Gestalt
   const missingLegend = files.filter((f) => f !== './components/Field.tsx' && f !== './components/MonthField.tsx' && !REQUIRED_HELPERS_IN_DRAWER.has(f) && requiredOutsideDrawer(sources[f] ?? '').length > 0 && !/<RequiredLegend\b/.test(sources[f] ?? ''))
   for (const f of REQUIRED_HELPERS_IN_DRAWER.keys()) expect(requiredOutsideDrawer(sources[f] ?? ''), `${f}: Ausnahme ohne Pflichtfeld außerhalb; streichen`).not.toEqual([])
   expect(missingLegend).toEqual([])
-  // Die Seiten, die heute ein Pflichtfeld außerhalb eines Fensters haben, findet der Prüfer auch.
-  expect(requiredOutsideDrawer(sources['./components/PropertyCard.tsx'] ?? '').length).toBeGreaterThan(0)
+  // Die Karte „Objekt“ bearbeitet seit dem Umbau im Seitenfenster; ihre Pflichtfelder liegen darin.
+  expect(requiredOutsideDrawer(sources['./components/PropertyCard.tsx'] ?? '')).toEqual([])
   // Die Ablesung der Zähler-Seite steht seit #346 Schritt 7 im Seitenfenster; ihre Pflichtfelder liegen darin.
   expect(requiredOutsideDrawer(sources['./pages/Zaehler.tsx'] ?? '')).toEqual([])
   const forms = files.flatMap((f) => openingTags((sources[f] ?? '').replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, ''), 'form').filter(({ tag }) => !/\bnoValidate\b/.test(tag)).map(() => f))
