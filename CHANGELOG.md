@@ -315,6 +315,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   ersten Begriff eines Buchstabens (Umlaute beim Grundbuchstaben). Eine Suche klappt die Treffer auf, ein Sprung
   aus einer Begriffserklärung den angesprungenen Begriff. Die Seite ist damit rund 9.700 statt 29.000
   Bildpunkte lang (Befund N10 aus [#341](https://github.com/speedone/mietfuchs/issues/341)).
+- Belegordner: Im Posteingang sind „Weiter prüfen“ und „Per KI auswerten“ so hoch wie die Auswahlfelder daneben,
+  und „Beleg nachreichen“ springt nicht mehr zur Seite, wenn neben „Aus dem Posteingang …“ die Knöpfe zum
+  Speichern erscheinen (Befund N7 aus [#341](https://github.com/speedone/mietfuchs/issues/341)).
 - Die Karte „Objekt“ verlangt eine Bezeichnung: Leer ließ sie sich speichern, und die Seitenleiste
   zeigte danach „Ohne Namen“. Hat das Objekt noch keinen Namen, etwa nach einer frischen Installation,
   steht im Feld „Mein Objekt“; Sie können es überschreiben, und mit dem ersten Speichern der Karte wird

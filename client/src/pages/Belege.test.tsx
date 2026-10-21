@@ -566,3 +566,18 @@ test('„Betrag prüfen“ zählt als offenes Formular, „Stimmt so“ nimmt di
   fireEvent.click(within(check).getByRole('button', { name: 'Stimmt so' }))
   expect(frage()).toBe('offen? false')
 })
+
+// N7 aus #341: Im Posteingang sind die Knöpfe so hoch wie die Auswahlfelder daneben, und „Beleg nachreichen“
+// steht am breiten Bildschirm als letztes in seiner rechtsbündigen Gruppe. Ob er wirklich nicht springt (auch am
+// Handy, wo er zuerst steht), misst die Bedienprobe „beleg-zuordnen“ im Browserlauf; hier nur die Reihenfolge.
+test('Posteingang: Knöpfe in Höhe der Auswahl, „Beleg nachreichen“ steht hinter der Auswahl', async () => {
+  extraUploads = [{ ...up('7_abwasser.pdf'), bookedItemIds: [], assessment: { id: 'a7', propertyId: null, open: true } }]
+  renderContinue(() => {})
+  const weiter = await screen.findByRole('button', { name: 'abwasser.pdf weiter prüfen' })
+  expect(weiter.classList.contains('small')).toBe(false)
+  const picker = await screen.findByLabelText('Vorhandenen Beleg für Abwasser zuordnen')
+  const upload = screen.getByLabelText('Beleg für Abwasser hochladen').closest('label')
+  if (!upload) return expect.fail('Kein Knopf „Beleg nachreichen“')
+  expect(upload.classList.contains('small')).toBe(false)
+  expect(picker.compareDocumentPosition(upload) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+})
