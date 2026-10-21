@@ -1,0 +1,220 @@
+# Oberfläche
+
+React 19 ohne Router: [App.tsx](src/App.tsx) schaltet per State zwischen den Seiten (`pages/`),
+gruppiert nach Arbeitsphase in der Seitenleiste; Objekt und Zeitraum liegen in `PropertyProvider`
+([src/property.tsx](src/property.tsx)) und `PeriodProvider` ([src/period.tsx](src/period.tsx)).
+`api()` und die Helfer `parseEuro`, `fmtEuro`, `fmtDate` stehen in [src/api.ts](src/api.ts). Dark
+Mode über `data-theme` auf `<html>`; **gedruckt wird immer hell**. PWA-Manifest und Icons in
+`public/` (erzeugt von `server/scripts/make-icons.mjs`). Druck und PDF laufen über die Druckfunktion
+des Browsers; Belege rendert pdf.js ([src/pdf.ts](src/pdf.ts)) **in der legacy-Fassung**
+(`pdfjs-dist/legacy/build`), sonst bräuchte es die neuesten Browser (pdfIntake.pdfjs.test.ts wacht
+darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
+
+## Stile und Tokens
+
+- **Tailwind v4 neben index.css**: Einstieg [src/tw.css](src/tw.css) (über `@tailwindcss/vite`, nur zur
+  Bauzeit). index.css liegt vollständig in der Schicht `legacy`, Utilities darüber gewinnen.
+  Weiteres CSS nur über tw.css in eine Schicht (ungeschichtet gewönne es gegen alles); eine eigene
+  Regeldatei wie [src/fields.css](src/fields.css) hängt als Schicht `components` dazwischen.
+  `!important` in `legacy` schlägt jede Utility (gewollt für `.no-print`). `dark:` gilt nur am
+  Bildschirm. **Kein Preflight**, solange index.css lebt.
+- **Tailwind erzeugt eine Utility für jedes passende Wort in `src/`**, auch in Kommentaren (Tests
+  ausgenommen). Deshalb **keine Markdown-Dateien unter `src/`**, und Namen, die mit index.css
+  kollidieren, nimmt tw.css mit `@source not inline` heraus (`sr-only`, `grow`, `grow-2`).
+  Animationen in index.css heißen nie wie eine aus dem Theme.
+- **Die Tokens in index.css sind die einzige Quelle**: `@theme inline` macht sie als `bg-card`,
+  `text-muted`, `border-line` … benutzbar; die Standardpalette und Standardskalen sind abgeschaltet.
+  Abstand `--space-N` (N × 4 px), Schrift `--text-*`, Gewicht `--weight-*`, Radius `--radius-*`,
+  `--target` (36 px, 44 px bei Finger oder < 640 px), `--focus-ring`. Dunkle Tokens in
+  `@media not print`.
+- **Farben nur in `:root`-Blöcken**, eine neue Farbe als Token-Paar hell/dunkel; S6 rechnet die
+  Kontraste nach. Gestaltung „Mittelweg“ (Werte in
+  [docs/superpowers/specs/2026-10-18-oberflaeche-gesamtkonzept-design.md](../docs/superpowers/specs/2026-10-18-oberflaeche-gesamtkonzept-design.md)):
+  zinc-Flächen, weiße Karten, Indigo nur für Primärknopf, Links, Fortschritt, Fokus, aktiven
+  Menüpunkt und Objekt-Marke. Knöpfe: `.btn`, `.btn.secondary`, `.btn.ghost`, `.btn.danger`.
+- **Wächter in [src/uiRules.test.ts](src/uiRules.test.ts)** (sie fragen Tailwind selbst): S17 keine
+  beliebigen Werte (`p-[13px]`), keine Standardpalette, keine Hex-/rgba-Werte außerhalb `:root`; S20
+  keine Klasse in index.css mit Tailwind-Namen, Zahl der Regelzeilen von index.css darf nur sinken.
+  Ausnahmelisten in den Wächtern nennen Grund und Anzahl und werden nur kürzer.
+
+## Navigation und Seitenkopf
+
+- **Objekt und Zeitraum wählt nur die Seitenleiste** (am Handy das Menüblatt mit demselben Inhalt),
+  über den Baustein `Switcher`. Jede Seite zeigt beides in der **Kontextzeile** des `PageHeader`
+  (`pageContextLine`; `context`: `period`, `calendar` für Mietkonto und Steuer, `property`, `none`).
+  Auf Seiten bleiben nur andere Größen wählbar (Kalenderjahr bei abweichendem Zeitraum über
+  `CalendarYearSelect`, Heizperiode, Jahr der Buchung, Objekt und Jahr eines Belegs im Posteingang,
+  Jahr der Zahlung). Wächter S18; Seitentests, die den Zeitraum wechseln, stellen `<PeriodSelect />`
+  daneben.
+- **Seitenwechsel nur über `navigate`** in App.tsx (Navigation wie Sprünge aus Seiten); bei offenem
+  Formular fragt er „Ungespeicherte Änderungen verwerfen?“. Navigation nur aus
+  [src/nav.ts](src/nav.ts) (`Tab`, `NAV`, `BOTTOM_TABS`; S22). Nach dem Wechsel in ein Objekt ohne
+  Wohnungen steht „Zurück zu …“.
+- **Handy** ([MobileNav.tsx](src/components/MobileNav.tsx)): unter 900 px (`MOBILE_QUERY`) statt der
+  Seitenleiste ein angehefteter Kopf (☰, Titel, „Objekt · Zeitraum“, ⇅), ein Menüblatt als
+  `<dialog>` mit `showModal()` und eine untere Leiste. Gezeichnet nach `matchMedia`, nicht nur per
+  CSS, damit nichts doppelt im Baum steht. Objekt und Zeitraum wechseln im Blatt **ohne** es zu
+  schließen (ein Auswahlfeld sendet bei jeder Pfeiltaste `change`). Ein offenes Seitenfenster macht
+  Kopf und Leiste inert. Unter 640 px werden Datentabellen zu Karten (`<Table className="stacked">`,
+  jede Zelle mit `data-label`, S23), Zahlenraster heften die erste Spalte an (`sticky-first`).
+  Sicherheitsränder über `env(safe-area-inset-*)` an allem, was am Fensterrand steht (S24).
+
+## Hinweise, Leerzustände, Druck
+
+- **Jeder Hinweis über den Baustein `Notice`** ([Notice.tsx](src/components/Notice.tsx)): Stufe als
+  Zeichen und Wort, Titel, Text, „Hier beheben →“; unter „Mehr dazu“ (eingeklappt, im Druck offen)
+  **nur Begründungen aus Fundstellen**. Der Text des Servers wird nur in Sätze zerlegt
+  ([noticeText.ts](src/noticeText.ts)), **sichtbar bleibt grundsätzlich alles**. Eingeklappt wird nur
+  ein Satz, der nach Abzug seiner Fundstellen weder Prozent, Betrag, Datum, Kürzung, Aufforderung
+  noch Folge trägt (`isCitationSentence`); ein `error` steht ganz offen. Geprüft gegen echte Texte
+  je Code (`src/testing/noticeSamples.json`, neu erzeugen, wenn calc.ts Texte ändert). Kein Feld
+  `action` am Server. Seitentexte nehmen `NoticeBox` oder `TextNotice`; Stufenklasse und -wort nur
+  im Baustein (S26).
+- **Fehler vor dem Druck**: Hat eine offene Abrechnung Fehler der Stufe `error`, fragt die Seite vor
+  dem Drucken ([despiteErrors.ts](src/despiteErrors.ts)), und jede Mieterabrechnung trägt im Druck
+  „Entwurf, nicht versenden“ (`print-only`, auch bei Strg+P). Eine abgeschlossene nie. Die erste
+  Rückfrage zum Abschließen zu denselben Fehlern gilt dann als beantwortet (`sameErrors`).
+- **Leerzustände** (`EmptyState`, [emptyStock.ts](src/emptyStock.ts)): im leeren Zeitraum der erste
+  fehlende Schritt mit Knopf, ohne Entwurf, Frist, Kennzahlen; ein gesperrter Knopf nennt seinen
+  Grund (`aria-describedby`). Nach dem Abschluss nennt die Unterzeile des Cockpits Stand und offene
+  Punkte (`cockpitSubtitle`).
+- **Druckkopf**: `letterhead` lässt einen Objektnamen weg, der schon in der Adresse steht; Datum und
+  Anschrift des Mieters (`recipientLines`); fehlt nach Auszug die neue Anschrift, warnt die Seite
+  (`printsFormerAddress`). Der Rechenweg ([CalcSteps.tsx](src/components/CalcSteps.tsx)) ist immer
+  `no-print`.
+
+## Lexikon und Anleitungen
+
+- **Begriffslexikon** ([shared/glossary.ts](../shared/glossary.ts)): Erklärung, Beispiel mit Zahlen,
+  Rechtsgrundlage, „Brauche ich das?“. Rechtsaussagen nur, wo sie im Gesetz stehen; Beispiele werden
+  nachgerechnet; Rechtszahlen aus dem Register. Jeder Hinweis-Code trägt mindestens einen Begriff
+  (`terms`, glossary.test.ts).
+- **[Term.tsx](src/components/Term.tsx)**: Auslöser ist ein `span` mit `role="button"` (ein `<button>`
+  im `<label>` nähme dem Feld die Beschriftung), dahinter ein „?“ aus CSS (`term-q`, für Vorleser
+  ausgeblendet). Die Erklärung ist ein Popover (am Handy Blatt unten) mit Erklärung und Beispiel und
+  „Mehr in ‚Hilfe & Begriffe‘ →“ (über `navigate`, springt mit `focusTerm` einmal zum Begriff). Esc
+  schließt nur die Erklärung.
+- **Anleitungen je Vermietungsart** ([shared/guides.ts](../shared/guides.ts)), angezeigt in „Hilfe &
+  Begriffe“; Sprungziele sind Kennungen aus nav.ts. [guides.test.ts](../server/test/guides.test.ts)
+  **rechnet jedes Beispiel nach** und verlangt die Beträge wörtlich, und **jede Beschriftung in „…“
+  muss wörtlich in der Oberfläche stehen**. Grenze: Es sucht im Quelltext, nicht in der gerenderten
+  Seite; Text, den JSX zerlegt (`<Term>` im Satz, `{year}` im Knopf), darf nicht zitiert werden.
+  Beschrieben wird nur, was Mietfuchs auf dem Stand des Zweigs kann; eigene Auslegungen werden als
+  solche genannt.
+
+## Formulare und Meldungen
+
+- **Eine Meldung steht am Feld und in der Sammelmeldung** (nach GOV.UK): `useFormError<F>()` mit
+  `<ErrorSummary errors>` und `<Field>`. Prüfungen liefern `Problem`e
+  ([formProblems.ts](src/formProblems.ts)): Feld, kurze Fassung fürs Feld, Satz mit Ort für die
+  Sammelmeldung, **alle auf einmal und je mit Feld**. `report(problems)`, `show(text)` (ohne Feld,
+  etwa die Ablehnung des Servers), `set(text)`. Jedes Melden fokussiert die Sammelmeldung (ein
+  Ladefehler mit `{ focus: false }` nicht); `role="alert"` sitzt innen, der Fokus außen. Ihre Zeilen
+  sind Links aufs Feld und klappen ein `<details>` auf. Im Seitenfenster steht sie im Fuß, in einer
+  Karte oben; ein Feld mitten im Text nimmt `FieldMessage`. Aktionen ohne Formular melden über
+  `toast(text, 'error')`; oben auf der Seite stehen nur Ladefehler. Wächter S15.
+- **`<Field label hint optional width required>`** ist ein `<label class="field">` und vergibt `id`,
+  `aria-labelledby` (nur die Beschriftung), `aria-describedby` und `aria-invalid`;
+  `{...errors.field('date')}` reicht Meldung und `onFix` hinein.
+- **Pflichtfelder tragen `required`**: Sternchen (für Vorleser ausgeblendet) und das HTML-Attribut;
+  erklärt durch die Legende „* Pflichtangabe“ (der Drawer zeigt sie selbst, sonst
+  `<RequiredLegend />`). Pflicht sind genau die Felder, deren Fehlen die Prüfung meldet
+  (requiredFields.test.tsx). **Der Browser prüft nie vor**: `<form noValidate>`, nie über
+  `:invalid`/`:required` gestalten (S25).
+- **Felder in Stufen**: Die Breite gehört dem Eingabefeld, `width` = `s` (8,5rem: Betrag, Datum,
+  Monat, PLZ, Fläche), `m` (13rem), `l` (21rem: Adresse, Name, IBAN), `full`. **Ohne Angabe nach
+  Feldart** (`widthOf`, dieselbe Regel per `:has()` in fields.css): Datum, Monat und `inputMode`
+  decimal/numeric kurz, `<textarea>` voll, Auswahl nach Inhalt, sonst lang; **ein Betrag braucht
+  deshalb `inputMode`**. `field-grid` ist eine umbrechende Zeile, am Handy ist jedes Feld voll breit.
+  Keine Breite als Inline-Stil, keine px-Breiten (S28).
+- **Der Browserlauf misst abgeschnittene Felder** je Seite und in jedem Seitenfenster
+  (`clippedFields` in scripts/browser-check.mjs, auch den Platzhalter). Abhilfe ist ein kürzerer
+  Eintrag mit der Erklärung als Hinweis am Feld. Ausnahmen in scripts/browser-check-fields.json
+  (heute leer). Grenze: nur der gewählte Eintrag eines Auswahlfelds im Beispielbestand wird gemessen.
+- **Ein Monat ist ein Monatsfeld** ([MonthField.tsx](src/components/MonthField.tsx)): Text, der
+  „3.2025“, „03/25“, „2025-03“, „März 2025“ liest (`parseMonthText` in [monthText.ts](src/monthText.ts);
+  Mehrdeutiges wie „1.10“ ergibt eine Meldung), dazu ▦ mit Raster als Popover. Der Wert ist
+  `'JJJJ-MM'` oder, wenn kein Monat, der Text selbst; er wird nie verworfen. **Die Personenstaffel
+  bleibt ein Datum** (tagesgenau). Kein `type="month"`, kein `type="number"`, Monatsnamen nur in
+  monthText.ts (S14). Popover nur über `usePopover` ([popover.tsx](src/components/popover.tsx), Portal
+  im nächsten `<dialog>` bzw. `body`; S12). Bekannte Grenze: ohne `showPopover` (alte Safari/Firefox)
+  stimmt die Lage im einfahrenden Seitenfenster nicht.
+
+## Rückfragen, Seitenfenster, Mitteilungen
+
+- **Rückfragen** (`useConfirm`, [feedback.tsx](src/components/feedback.tsx)): `<dialog
+  role="alertdialog">` mit `showModal()`, im Top-Layer auch über Menüblatt und Seitenfenster.
+  **Kein Abfänger für Enter** (S13): Enter wirkt auf den Knopf mit dem Fokus. Bei `danger` Startfokus
+  „Abbrechen“ (`defaultChoice` überstimmt), gesetzt nach `showModal()`. **Tab lenkt kein Baustein
+  selbst**, der Browser hält ihn im Dialog. Esc bricht schon am `keydown` ab, außer ein Element darin
+  hat es verhindert. Ein `close`, das ankommt, wenn der Dialog wieder offen ist, zählt nicht. Fokus
+  zurück an den Auslöser (`focusBack` in [dialogKeys.ts](src/components/dialogKeys.ts)). Eine zweite
+  Rückfrage beantwortet die offene mit „nein“; `onAlternative` läuft nach dem Schließen.
+  `confirmLabel` ist Pflicht.
+- **Mitteilungen** (`useToast`) sind `popover="manual"` über offenen Dialogen und werden zusätzlich im
+  obersten modalen Dialog angesagt (`role="status"`/`alert`, `sr-only`).
+- **Seitenfenster** (`Drawer`, [Drawer.tsx](src/components/Drawer.tsx)): `<dialog>` mit `showModal()`
+  von rechts; Kopf mit Titel und ✕, scrollender Körper, fester Fuß mit `hint`, **„Abbrechen“ aus dem
+  Baustein** und den Knöpfen des Formulars (`actions`). **Schließen mit Änderungen fragt**
+  „Änderungen verwerfen?“. Erkannt am Pflicht-Prop **`value`**, verglichen mit `sameDraft` gegen den
+  Stand vor der ersten Eingabe (in der Einfangphase gemerkt, nicht beim Öffnen). **`value` umfasst
+  jeden Zustand, den das Fenster bearbeitet**, aber nichts Nachgeladenes und keine bloße Hilfe;
+  Umgeschriebenes (IBAN) wird normalisiert. `changedFrom` gibt einen Vergleichsstand von Anfang an
+  (vorbelegt geöffnet gilt als geändert). Nur ein geändertes Fenster meldet sich bei `useOpenForm`.
+  Zeigt ein offenes Fenster einen anderen Datensatz, setzt der Aufrufer `key` auf dessen Kennung.
+  Esc gilt nicht dem Fenster, wenn es zuerst etwas darin schließt (Begriff, Popover, IME). `cancel`
+  und `close` zählen nur am Fenster selbst. Das erste Feld bekommt den Fokus, bei nachladendem Inhalt
+  nach 60 ms noch einmal. Wächter S12b: `value` immer (kein fester Wert), kein `footer`, kein eigener
+  Schließer in `actions`; ob `value` alles umfasst, prüft die Durchsicht.
+- **Gespeichert wird über `useSaving`** ([useSaving.ts](src/useSaving.ts)): `run(save)` lässt einen
+  zweiten Aufruf fallen, `busy` sperrt im Drawer alle Wege zum Schließen und Strg+S.
+- **Tests**: jsdom bekommt `showModal()`, Popover-Ereignisse und `:modal` aus
+  [src/testing/dialog.ts](src/testing/dialog.ts), Tastendrücke wie im Browser aus
+  [src/testing/keys.ts](src/testing/keys.ts) (`press`). `<dialog>` hat die Rolle `dialog`, die
+  Rückfrage `alertdialog`; wer nach einer Eingabe „Abbrechen“ klickt, bestätigt danach „Verwerfen“.
+
+## Knöpfe, Karten, Anlegen
+
+- **Feste Verben**: Im Seitenfenster heißt der Primärknopf „Anlegen“ oder „Speichern“, „Abbrechen“
+  ist nie primär; kein „OK“, „Übernehmen“, „Hinzufügen“, „Umstellen“ als Primärknopf. „+ … anlegen“
+  öffnet ein Fenster, „+ weitere …“ fügt eine Zeile an; „… hinzufügen“ gibt es nicht. Fachliche
+  Verben mit Folgen bleiben („… abschließen“, „Buchen“, „Zuordnen“). Ausnahme: „Anlegen und zu …
+  wechseln“. **Gefahrknöpfe** (`btn ghost danger-ghost`) tragen „…“, wenn eine Rückfrage folgt, und
+  stehen mit `ml-auto` rechts. Wächter S16. **Wer einen Knopf umbenennt, zieht die Anleitungen und
+  die Meldungen des Servers mit** (guides.test.ts, ui-labels.test.ts).
+- **Anlegen oder Bearbeiten heißt Seitenfenster**, auch Ablesung, Lieferung, Mieterwechsel und
+  Zeitraumwechsel. Beim Zeitraumwechsel verwirft **jede Änderung nach der Vorschau die Vorschau**.
+- **Neues anlegen steht oben rechts**: für die Seite in `PageHeader actions`, für eine Karte in
+  `CardHeader aside` (S27). Im Fuß einer Karte nur „Speichern“ links und Gefahrknöpfe rechts.
+- **Eine Karte, ein Speichern** ([Card.tsx](src/components/Card.tsx)): Trägt eine Karte ein Formular,
+  ist es ein Entwurf mit **einem** `<DraftActions layout="card">` am Fuß. Was je Zeile einer Liste
+  gespeichert wird, ist ein Entwurf am Feld in einer eigenen kleinen Komponente. Eine Karte, die ein
+  Seitenfenster öffnet, speichert dort. Wächter S19 (sieht keine Unterkomponenten).
+
+## Entwürfe: nichts speichert beim Anklicken
+
+- **Auswahlfelder und Häkchen speichern nicht beim Anklicken** (#309). Sofort gespeichert wird nur,
+  was keine Daten ändert (Zeitraum, Objekt, Design, Antwort zur Update-Prüfung). Alles andere ist
+  ein Entwurf: `useDraft(saved, { scope, isValid })` ([useDraft.ts](src/useDraft.ts), Logik in
+  [draft.ts](src/draft.ts)) mit `set`, `dirty`, `discard`, `save(fn)` (Doppelklick-Sperre, Fehler
+  lässt den Entwurf stehen); ein neuer gespeicherter Wert wird nur ohne offenen Entwurf übernommen.
+  `<DraftActions>` zeigt „Speichern“/„Verwerfen“ nur bei Änderung; `what` steht unsichtbar **hinter**
+  dem sichtbaren Text, nicht als `aria-label` (WCAG 2.5.3). Wechselt die Seite den `scope` selbst,
+  fragt sie vorher (`useConfirmDiscard`).
+- **`isValid`**: Fällt der Wert eines Entwurfs aus den Optionen, ist der Entwurf verworfen, sonst
+  zeigte der Browser den ersten Eintrag und „Speichern“ schickte einen unsichtbaren Wert. Bei einer
+  Karte mit mehreren Feldern wird nur gesendet, was sich geändert hat (sonst würde eine geerbte
+  Angabe als eigene gespeichert). Eine Rückfrage vor dem Speichern ergibt bei „Abbrechen“ `keepDraft`.
+- **Offene Formulare melden sich an**, damit Wechsel von Seite, Objekt und Zeitraum und das
+  Schließen des Tabs (`beforeunload`) fragen: Entwürfe von selbst, Karten mit eigenem Zustand über
+  `useOpenWhenDiffers(gezeigt, gespeichert)` (nach dem Speichern `markSaved()`), auf/zu-Formulare
+  über `useOpenForm(offen)`. Wer ein Formular schließt und zugleich wegspringt, schließt es mit
+  `flushSync` vorher. Wächter [openFormGuard.test.ts](src/openFormGuard.test.ts); Karten prüfen ihre
+  Anmeldung mit `OpenFormScope`/`hasOpenForm` aus src/testing/openForm.tsx.
+- **Wächter [saveOnChange.test.ts](src/saveOnChange.test.ts)**: Ein `<select>` oder ein `<input>` vom
+  Typ checkbox, radio oder date, dessen `onChange` speichert, ist verboten (einzige Ausnahme heute:
+  die Art einer Zahlung im Mietkonto bis #281). Rückrufe aus Props mit anderem Namen sieht er nicht.
+- **Was an einem gespeicherten Wert vorbei handelt, wartet auf den Entwurf daneben**: Ein
+  ungespeichertes Jahr der Buchung sperrt Vorschau und Buchen und nimmt die Auswertung aus „Alle
+  grünen übernehmen“; ein ungespeichertes Objekt oder Jahr im Posteingang sperrt „Per KI auswerten“
+  und „Weiter prüfen“.

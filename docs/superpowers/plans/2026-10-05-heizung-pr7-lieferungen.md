@@ -41,7 +41,7 @@ Fälle a–f; Einfrieren und Sperren), **9.1–9.5**, 10.1 (Codes mit PR 7), 10.
 
 **Baut auf:** PR 1 (Code auf `feat/heizung-pr1-rechtsregister`, Stand `b26fede`), PR 2 (Code auf
 `feat/heizung-pr2-zeitraum`, Stand `6a9d126`, Tasks 1–6), PR 3 bis PR 6 nach ihren Plänen
-`docs/superpowers/plans/2026-10-05-heizung-pr{3,4,5,6}-*.md` (PR 6: Commit `ee42c7b`). Gearbeitet wird
+`docs/superpowers/plans/2026-10-05-heizung-pr{3,4,5,6}-*.md` (PR 6: Commit `6a80010`). Gearbeitet wird
 auf `feat/heizung-pr7-lieferungen`, abgezweigt von der Spitze von PR 6; der PR wird gestapelt auf PR 6
 gestellt und nach dessen Merge auf `main` umgestellt (`git rebase --onto`).
 

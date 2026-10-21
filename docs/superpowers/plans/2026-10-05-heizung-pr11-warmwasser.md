@@ -43,7 +43,7 @@ von PR 10; der PR wird gestapelt auf PR 10 gestellt und nach dessen Merge auf `m
 ## Änderungen nach Prüfung vom 05.10.2026
 
 Der Prüfbericht vom 05.10.2026 (Rechtsrichtigkeit der Abweichungen und Schnittstellen zu PR 10 in der
-Fassung von Commit `81828af`) hat diesen Plan an sieben Stellen geändert. Jede Änderung steht im Task an
+Fassung von Commit `d74dae3`) hat diesen Plan an sieben Stellen geändert. Jede Änderung steht im Task an
 ihrer Stelle; diese Liste sagt, wo, damit die Durchsicht sie findet.
 
 1. **Abgleich mit PR 10 statt Annahmen.** Der Plan benutzt die Namen von PR 10 unmittelbar:
@@ -238,12 +238,12 @@ Task 1 beginnt.
   `fuelToForm`, `fuelBody`; `client/src/components/FuelCard.tsx`.
 - **PR 8** `HeatingStockStatement` (`unit`, `consumed.quantity`), `StockUnit`, `StockResult`; in
   `computeSettlement` `stockOfPlant`; `shared/fuelStock.ts` `STOCK_ENERGIES`, `isStockEnergy`.
-- **PR 10** (Plan, Commit `81828af`): siehe „Annahmen über PR 10“, Abschnitt „Auflösung“, und Task 4.
+- **PR 10** (Plan, Commit `d74dae3`): siehe „Annahmen über PR 10“, Abschnitt „Auflösung“, und Task 4.
 
 ## Annahmen über PR 10
 
 **Stand nach der Prüfung vom 05.10.2026: abgeglichen.** Die Tasks benutzen die Namen von PR 10 (Plan
-`2026-10-05-heizung-pr10-kernrechnung.md`, Commit `81828af`) unmittelbar. Die Tabelle B1–B10 und der
+`2026-10-05-heizung-pr10-kernrechnung.md`, Commit `d74dae3`) unmittelbar. Die Tabelle B1–B10 und der
 Vermerk bleiben als Herkunft stehen; wo sie einem Task widersprechen, gilt der Task. Die Auflösung je
 Annahme steht unter dem Vermerk.
 
@@ -1929,7 +1929,7 @@ Refs #211"
 ---
 ### Task 4: Naht zu PR 10: Testhelfer, α aus dhw.ts, Sperren, Hinweise, Ausweis
 
-Neu gefasst nach der Prüfung vom 05.10.2026 (Abgleich mit PR 10, Commit `81828af`). Die Stelle, an der
+Neu gefasst nach der Prüfung vom 05.10.2026 (Abgleich mit PR 10, Commit `d74dae3`). Die Stelle, an der
 PR 10 α bestimmt, ist `hotWaterShareOf(i: AlphaInput)` in heating.ts mit dem einen Aufruf `alphaResult`
 im Block des Plans von `computeSettlement` (PR 10 Task 8 Step 7). Sie bleibt die eine Stelle und ruft
 jetzt dhw.ts; Gestalt und Namen von PR 10 bleiben (`Alpha`, `AlphaProblem`, `self.alpha`), dazu kommt
@@ -1947,7 +1947,7 @@ einmal an.
 
 **Interfaces:**
 - Consumes: Task 1 `hkvRenewableExemption`; Task 3 `dhwShareOf`, `DhwInput`, `DhwOutcome`, `DhwProblem`, `EnergyDelivery`, `GeneratorInput`, `suppliedAreaOf`, `deliveriesInPeriod`, `latestBefore`, `DHW_PLAUSIBLE`, `fmtShare`; Task 1 `FUEL_GRADE_LABELS`, `HEATING_VALUE_UNIT_TEXT`; `andList` (`shared/wording.ts`).
-  PR 10 (Plan, Commit `81828af`): heating.ts `hotWaterShareOf`, `AlphaInput`, `AlphaProblem`, `Alpha`, `KWH_ENERGIES`; calc.ts im Block des Plans `plant`, `own`, `served`, `hotWater`, `plantMeterKwh`, `fuelOfPlant`, `alphaResult`, `ALPHA_TEXT`, `blocked`, `where`, `weights`, `selfPlans.set(…)`, `type SelfPlantPlan`, `stockOfPlant`; `selfStatementOf`; in der Hinweisschleife `const notYet = sp.verdict?.kind === 'notYet'`; db/heating.ts `LATER.dhwHeatingValue`, `guardHeatingPlant`; Test `server/test/calc-heizkosten.test.ts` mit `withDatabase`, `beispielA`, `ITEMS`, `shareOf`, `sumOf`; `server/test/db-heizkosten.test.ts` mit `haus`, `SETUP`, `setUpSelf`, `status`, `newId`.
+  PR 10 (Plan, Commit `d74dae3`): heating.ts `hotWaterShareOf`, `AlphaInput`, `AlphaProblem`, `Alpha`, `KWH_ENERGIES`; calc.ts im Block des Plans `plant`, `own`, `served`, `hotWater`, `plantMeterKwh`, `fuelOfPlant`, `alphaResult`, `ALPHA_TEXT`, `blocked`, `where`, `weights`, `selfPlans.set(…)`, `type SelfPlantPlan`, `stockOfPlant`; `selfStatementOf`; in der Hinweisschleife `const notYet = sp.verdict?.kind === 'notYet'`; db/heating.ts `LATER.dhwHeatingValue`, `guardHeatingPlant`; Test `server/test/calc-heizkosten.test.ts` mit `withDatabase`, `beispielA`, `ITEMS`, `shareOf`, `sumOf`; `server/test/db-heizkosten.test.ts` mit `haus`, `SETUP`, `setUpSelf`, `status`, `newId`.
   PR 6/7: CO₂-Block `pot`, `hw`, `FORMULA_METHODS`, `cutsOn`, `where`, `ids`, `hPeriod`, `lawLog`, `hkvCutNotByConsumption`; `snapshot.fuel?.deliveries` (`SnapshotFuel`, PR 7); `FuelResult.lines` (`deliveryId`, `sharePermille`, `estimated`), `FuelResult.coveragePermille`; PR 8 `stockOfPlant.get(id)?.result` (`StockResult`, `statement.unit`, `statement.consumed.quantity`).
 - Produces:
   - `server/testing/selfHeating.ts`: `SELF_ITEMS`, `type SelfSnapshotOptions = { year?: number; plant?: Partial<HeatingPlant>; row?: Partial<HeatingPeriodData>; rows?: HeatingPeriodData[]; units?: Unit[]; tenancies?: Tenancy[]; meters?: Meter[]; readings?: Reading[]; deliveries?: FuelDelivery[]; costItems?: CostItem[] }`, `selfRow(over?, year?): HeatingPeriodData`, `selfDelivery(over?, year?): FuelDelivery`, `selfSnapshot(o?: SelfSnapshotOptions): Snapshot`. Feste Kennungen: Objekt `objekt-1`, Wohnungen `a`, `b`, `c`; Mietverhältnisse `A`, `B`, `C1` (bis 30.09.), `C2`; Anlage `hp`; Wärmezähler `wz-a`, `wz-b`, `wz-c`; Warmwasserzähler `xw-a`, `xw-b`, `xw-c`; Wärmezähler am Speicher `ww` (Rolle `dhwHeat`); Lieferung `d1`; Positionen `gas`, `strom`, `wartung`, `imm`, `wz`, `wwz`.
@@ -3525,7 +3525,7 @@ PR 16 muss sein Merkmal an dieselbe Stelle in `formulaFactor` anschließen), War
 (PR 6, unverändert bis auf den gemeinsamen Hinweis).
 
 **2. Platzhalter.** Keine „TBD“, kein „wie Task N“. Die Namen von PR 10 sind nach der Prüfung vom
-05.10.2026 abgeglichen (Commit `81828af`); Tasks benutzen sie unmittelbar.
+05.10.2026 abgeglichen (Commit `d74dae3`); Tasks benutzen sie unmittelbar.
 
 **3. Typen.** `DhwStatement`, `DhwHeatingValue`, `EnergyDelivery`, `GeneratorInput`, `DhwInput`,
 `DhwOutcome`, `DhwProblem`, `DhwContext` werden in Task 3/4 definiert und in Task 4–6 mit denselben

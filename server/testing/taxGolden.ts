@@ -1,7 +1,7 @@
 // Eine vom Code unabhängige Referenz für die Steuerübersicht (#255, Durchsicht von PR 1, K3): je Startwert des
 // Generators (taxStock.ts) eine Prüfsumme über die Zahlen der Steuerübersicht und die Auswahl des Steuer-ZIP, für jedes
 // Objekt, jedes Steuerjahr und offen wie abgeschlossen. Die Prüfsummen stehen in test/fixtures/tax-golden.json und
-// entstanden mit dem Code von origin/main (e1630b5, nach #325). Die Invariante in outflow.test.ts vergleicht damit;
+// entstanden mit dem Code von origin/main (4516ca7, nach #325). Die Invariante in outflow.test.ts vergleicht damit;
 // die eingefrorene Auswahl daneben ruft den heutigen `taxReport` und prüft deshalb nur die Auswahl.
 //
 // **Mit einer bewussten Abweichung vom Bestand**: Erzeugt wurde auf den Beständen mit dem Abzug des Betriebsstroms im

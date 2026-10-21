@@ -37,7 +37,7 @@ vor dem Markieren“), 13 (PR 13), 14.1 (Zeile „Geräteausfall“), **15.1 Nr.
 
 **Baut auf:** PR 1 und PR 2 (Code auf `feat/heizung`), PR 3 bis PR 12 nach ihren Plänen
 `docs/superpowers/plans/2026-10-05-heizung-pr{3..12}-*.md`, maßgeblich PR 10 in der Fassung von
-Commit `81828af`. Gearbeitet wird auf `feat/heizung-pr13-schaetzung`, abgezweigt von der Spitze von
+Commit `d74dae3`. Gearbeitet wird auf `feat/heizung-pr13-schaetzung`, abgezweigt von der Spitze von
 PR 12; der PR wird gestapelt auf PR 12 gestellt und nach dessen Merge auf `main` umgestellt
 (`git rebase --onto`).
 
