@@ -1058,7 +1058,7 @@ test('S26: Hinweise nur über den Baustein Notice', () => {
 // steht, nennt die Liste mit Anzahl; sie darf nur kleiner werden, jede Umstellung auf den Baustein streicht ihren
 // Teil. Die Bausteine für Fehler (S15) und Notice selbst sind ausgenommen.
 const BOX_EXCEPTIONS = new Map<string, number>([
-  ['./components/AiSettings.tsx', 4],
+  ['./components/AiSettings.tsx', 3],
   ['./components/AssessmentReview.tsx', 5],
   ['./components/Co2Card.tsx', 3],
   ['./components/Co2FactsCard.tsx', 1],

@@ -305,6 +305,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - Mietkonto: In der Zahlungstabelle stehen Datum, Name und Betrag auf einer Linie mit der Auswahl „Art“,
   und der Satz über den Monatskacheln erklärt die Farben (Befund N6 aus
   [#341](https://github.com/speedone/mietfuchs/issues/341)).
+- Einstellungen, KI-Belegauswertung: Fehlt das gewählte Modell, stand grün „Der Dienst antwortet, ein Modell
+  steht zur Wahl.“ direkt über „… ist nicht installiert“. Jetzt sagt eine Warnung beides in einem Satz („Der
+  Dienst antwortet, „qwen3.5:4b“ ist dort aber nicht installiert.“, darin „Modell laden“; bei einem anderen
+  Dienst als Ollama im Heimnetz mit der Frage nach dem Namen, außer der Dienst nennt gar keine Modelle).
+  „Modell laden“ und „Befehl kopieren“ sind gleich groß, und „Standard-Anbieter“ steht bündig
+  über den Feldern (Befund N14 aus [#341](https://github.com/speedone/mietfuchs/issues/341)).
 - Die Karte „Objekt“ verlangt eine Bezeichnung: Leer ließ sie sich speichern, und die Seitenleiste
   zeigte danach „Ohne Namen“. Hat das Objekt noch keinen Namen, etwa nach einer frischen Installation,
   steht im Feld „Mein Objekt“; Sie können es überschreiben, und mit dem ersten Speichern der Karte wird

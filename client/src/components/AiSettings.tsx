@@ -9,13 +9,14 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AiPreset, AiRecommendations, AiSettings as AiSettingsValues, AiSlot, AiSlotName, AiStatus, Settings } from '../types'
 import { api, fmtDate } from '../api'
 import { pullModel, type PullProgress } from '../aiRequest'
-import { OTHER_MODEL, modelHint, modelOptions, modelsAvailableText, pullInstructions } from '../modelForm'
+import { OTHER_MODEL, missingModelText, modelHint, modelOptions, modelsAvailableText, pullInstructions } from '../modelForm'
 import {
   JSON_MODE_OPTIONS, SLOT_LABELS, VISION_OPTIONS, aiFormFrom, consentState, isFixed, keyState, pageEdgeHint,
   parseOptionalInt, presetGroups, pullText, recommendationsFor, switchPreset, visionFromValue, visionValue,
 } from '../aiForm'
 import { INTAKE_EDGE } from '../pdf'
 import { useToast, useConfirm } from './feedback'
+import { NoticeBox } from './Notice'
 import { useOpenForm } from '../property'
 
 const README = 'https://github.com/speedone/mietfuchs#ki-belegauswertung'
@@ -381,6 +382,7 @@ function SlotEditor(props: SlotProps) {
   const consent = consentState(settings, name, models)
   const hint = status?.ok ? modelHint(models, slot.model, slot.provider) : null
   const localOllama = slot.provider === 'ollama' && !settings.aiExternal?.[name]
+  const missingText = hint === 'missing' && slot.model.trim() ? missingModelText(slot.model.trim(), localOllama, models.length) : null
 
   return (
     <fieldset className="ai-slot">
@@ -495,11 +497,25 @@ function SlotEditor(props: SlotProps) {
       {fixed('model') && <EnvHint path={fixedPath('model')} />}
 
       {checking && <p className="muted">Verbindung wird geprüft …</p>}
-      {!checking && status?.ok && (
-        <div className="ok">
-          {modelsAvailableText(models.length)}
-        </div>
-      )}
+      {!checking && status?.ok && (missingText
+        ? (
+          <NoticeBox level="warning" action={missingText}>
+            {/* Wie man es lädt, steht in der Warnung selbst (Durchsicht von N14) */}
+            {localOllama && (
+              <PullHint
+                model={slot.model.trim()}
+                url={slot.url}
+                busy={Boolean(pull)}
+                onPull={() => onPull(slot.model.trim(), suggestions.find((r) => r.name === slot.model.trim())?.sizeGb)}
+              />
+            )}
+          </NoticeBox>
+        )
+        : (
+          <div className="ok">
+            {modelsAvailableText(models.length)}
+          </div>
+        ))}
       {!checking && status && !status.ok && (
         <div className="notice">
           {status.error}
@@ -552,18 +568,6 @@ function SlotEditor(props: SlotProps) {
         </div>
       )}
 
-      {hint === 'missing' && slot.model.trim() && (
-        localOllama
-          ? (
-            <PullHint
-              model={slot.model.trim()}
-              url={slot.url}
-              busy={Boolean(pull)}
-              onPull={() => onPull(slot.model.trim(), suggestions.find((r) => r.name === slot.model.trim())?.sizeGb)}
-            />
-          )
-          : <p className="notice">„{slot.model.trim()}“ steht nicht in der Liste des Dienstes. Stimmt der Name?</p>
-      )}
       {hint === 'noVision' && (
         <div className="notice">„{slot.model.trim()}“ versteht keine Bilder. PDFs mit Textebene wertet es aus, Fotos und gescannte PDFs nicht.</div>
       )}
@@ -611,14 +615,13 @@ function PullHint({ model, url, onPull, busy }: { model: string; url: string; on
   }
   return (
     <>
-      <p>„{model}“ ist nicht installiert.</p>
       <div className="row">
         <button className="btn secondary" onClick={onPull} disabled={busy}>Modell laden</button>
         <span className="muted">oder {text.replace(/^Zum Laden im/, 'im')}</span>
       </div>
       <div className="command-box">
         <pre tabIndex={0}><code>{command}</code></pre>
-        <button className="btn secondary small" onClick={() => void copy()}>Befehl kopieren</button>
+        <button className="btn secondary" onClick={() => void copy()}>Befehl kopieren</button>
       </div>
     </>
   )
