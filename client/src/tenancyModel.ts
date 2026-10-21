@@ -9,7 +9,8 @@ import { germanDate, LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
 import { monthShare, rateAtMonth, rateInMonth } from '../../shared/monthRate.ts'
 
 // Das Nebenkostenmodell am Mietverhältnis (#93) in der Oberfläche: Beschriftungen und der Rumpf.
-// Die Regeln der Berechnung stehen in calc.ts; hier steht nur, wie sie heißen.
+// Die Regeln der Berechnung stehen in calc.ts, die Monatsregel in shared/monthRate.ts; hier steht nur, wie
+// sie heißen.
 
 export const COST_MODEL_LABELS: Record<CostModel, string> = {
   settlement: 'Vorauszahlung mit Abrechnung',
@@ -187,8 +188,8 @@ export function startsSchedule(rows: readonly { from: string; amount: string }[]
 // und bei einer Rate von 0.
 export function partialMonthNote(rows: readonly { from: string; amount: string }[], start: string, end: string, kind: ScheduleKind): string | null {
   const iso = /^\d{4}-\d{2}-\d{2}$/
-  if (!iso.test(start)) return null
-  const t = { start, end: iso.test(end) && end >= start ? end : null }
+  if (!iso.test(start) || (iso.test(end) && end < start)) return null
+  const t = { start, end: iso.test(end) ? end : null }
   const built = buildSchedule(rows, start, kind)
   if ('problems' in built) return null
   const months = [...new Set([start.slice(0, 7), ...(t.end ? [t.end.slice(0, 7)] : [])])]

@@ -13,8 +13,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   wie viele Tage dieses Monats zählen und welcher Betrag daraus wird, etwa „Einzug am 15.10.2026: Im
   Oktober 2026 zählen 17 von 31 Tagen, also 82,26 € statt 150,00 €.“ Die Staffel nennt weiterhin nur
   Monate, denn Mieterhöhungen und Anpassungen der Vorauszahlung gelten ab einem Monatsbeginn; gerechnet
-  wurde der angebrochene Monat schon vorher anteilig. Formular, Abrechnung und Mietkonto rechnen jetzt
-  mit derselben Funktion.
+  wurde der angebrochene Monat schon vorher anteilig. Die Beträge sind dieselben wie in Abrechnung und
+  Mietkonto.
 - Bundesland am Objekt, für Fristen und Feiertage: In den Stammdaten tragen Sie unter „Bundesland (für
   Fristen und Feiertage)“ ein, in welchem Land das Objekt liegt. Ohne Angabe gelten nur die
   Feiertage, die in allen Ländern gelten. Feiertage, die nur in einzelnen Gemeinden gelten (Mariä

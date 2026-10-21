@@ -1882,7 +1882,8 @@ test('Sortieren: in calc.ts gibt es kein blankes localeCompare (#70)', () => {
   // Test wäre es unbemerkt geblieben: Bei ISO-Stichtagen sagen Kollator und Zeichenvergleich
   // dasselbe, ein Verhaltenstest kann den Unterschied also gar nicht zeigen.
   const verboten = [/\.localeCompare\s*\(/, /new Intl\.Collator\(\s*\)/]
-  for (const datei of ['calc.ts', 'schedule.ts', 'legacy/migrate.ts']) {
+  // ../../shared/monthRate.ts: die Monatsregel mit der Sortierung der Staffeln (rateAtMonth).
+  for (const datei of ['calc.ts', 'schedule.ts', 'legacy/migrate.ts', '../../shared/monthRate.ts']) {
     const quelle = fs.readFileSync(path.join(import.meta.dirname, '..', 'src', datei), 'utf8')
     const treffer = quelle
       .split('\n')

@@ -611,7 +611,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                     : <span />}
                 </div>
               ))}
-              <PartialMonthNote rows={tenForm.baseRents} start={tenForm.start} end={tenForm.end} kind={'baseRent'} />
+              <PartialMonthNote rows={tenForm.baseRents} start={tenForm.start} end={tenForm.end} kind="baseRent" />
               <button className="btn small secondary field-add" onClick={() => setTenForm({ ...tenForm, baseRents: [...tenForm.baseRents, { from: '', amount: '' }] })}>+ Mieterhöhung ab Monat …</button>
             </div>
 
@@ -628,7 +628,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                     : <span />}
                 </div>
               ))}
-              <PartialMonthNote rows={tenForm.prepayments} start={tenForm.start} end={tenForm.end} kind={'prepayment'} />
+              <PartialMonthNote rows={tenForm.prepayments} start={tenForm.start} end={tenForm.end} kind="prepayment" />
               <button className="btn small secondary field-add" onClick={() => setTenForm({ ...tenForm, prepayments: [...tenForm.prepayments, { from: '', amount: '' }] })}>+ Erhöhung ab Monat …</button>
             </div>
 
@@ -660,7 +660,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                         : <span />}
                     </div>
                   ))}
-                  <PartialMonthNote rows={rows} start={tenForm.start} end={tenForm.end} kind={'heatingPrepayment'} />
+                  <PartialMonthNote rows={rows} start={tenForm.start} end={tenForm.end} kind="heatingPrepayment" />
                   <button className="btn small secondary field-add" onClick={() => setTenForm({ ...tenForm, heatingPrepayments: [...rows, { from: '', amount: '' }] })}>+ Änderung ab Monat …</button>
                 </div>
               )
@@ -713,7 +713,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                         : <span />}
                     </div>
                   ))}
-                  <PartialMonthNote rows={tenForm.flatRates} start={tenForm.start} end={tenForm.end} kind={'flatRate'} />
+                  <PartialMonthNote rows={tenForm.flatRates} start={tenForm.start} end={tenForm.end} kind="flatRate" />
                   <button className="btn small secondary field-add" onClick={() => setTenForm({ ...tenForm, flatRates: [...(tenForm.flatRates.length > 0 ? tenForm.flatRates : [{ from: '', amount: '' }]), { from: '', amount: '' }] })}>+ Änderung ab Monat …</button>
                 </div>
               )}

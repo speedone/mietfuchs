@@ -63,7 +63,8 @@ import type {
 import { rulesFor } from '../../shared/law/rules.ts'
 import { co2ApplicableFrom, co2CostsBefore, co2CostsCountedFrom, co2CostsExcludedUntil, co2CutMissing, co2DistrictEtsNew, co2FirstPeriodStart, co2HalfSplit, co2HalfSplitEmergency, co2HalfSplitNewBuildings, co2HalfSplitTwoFamily, co2NonResidential, co2Restriction, co2RoundingDecimals, co2SelfSupply, co2StageTable, halfSplitBioFirstDay, halfSplitEnactedOn, halfSplitFirstDay } from '../../shared/law/co2kostaufg.ts'
 import { gmodgHeating43 } from '../../shared/law/gmodg.ts'
-import { monthShare, rateAtMonth, rateInMonth, type MonthlySchedule } from '../../shared/monthRate.ts'
+// rangeOverlapDays: Überlappung zweier Zeiträume in Tagen, eine Stelle mit der Monatsregel.
+import { monthShare, overlapDays as rangeOverlapDays, rateAtMonth, rateInMonth, type MonthlySchedule } from '../../shared/monthRate.ts'
 import { applicableRanges, blendedPermille, halfAmounts, halfSplitStatus, intersect as intersectRange, termsFromDeliveries, termsFromPieces, termsWeight, tightMarketIn, twoFamilyOf, type HalfDelivery, type HalfSplitStatus, type HalfSplitTerm, type Piece, type TwoFamily } from './halfSplit.ts'
 import { CO2_RELIEF_LABEL } from '../../shared/co2Probe.ts'
 import { ausweisGaps, CO2_FUELS, co2Assessment, co2Required, NO_CO2_FUELS, co2DeductionsOf, FORMULA_METHODS, co2PotsOf, itemBasisUnits, L_TOLERANCE_CENTS, perUnitClassification, perUnitExceeding, perUnitReliefs, gmodgKeyOf, HALF_SPLIT_TOLERANCE_PERMILLE, reliefKeysOf, reliefsByShare, spanningPlants, type PerUnitFuel, restage, selfSplit, SERVICE_FUEL_TOLERANCE_CENTS, shownReliefs, stageRanges, tableFactor, tenantLines as co2TenantLines, type Co2Pot, type ReliefShare } from './co2.ts'
@@ -134,14 +135,6 @@ function toUTC(iso: string): number {
 
 export function daysInYear(year: number): number {
   return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0 ? 366 : 365
-}
-
-// Überlappung zweier Zeiträume in Tagen (alle Grenzen inklusiv, ISO-Strings, end=null = offen)
-function rangeOverlapDays(aStart: string, aEnd: string | null, bStart: string, bEnd: string | null): number {
-  const s = Math.max(toUTC(aStart), toUTC(bStart))
-  const e = Math.min(aEnd ? toUTC(aEnd) : Infinity, bEnd ? toUTC(bEnd) : Infinity)
-  if (e < s) return 0
-  return Math.round((e - s) / MS_DAY) + 1
 }
 
 // Belegte Tage eines Mietverhältnisses innerhalb des Abrechnungsjahres

@@ -290,3 +290,13 @@ test('Anteil im angebrochenen Monat: Auszug mit der dann geltenden Staffelstufe,
   expect(partialMonthNote([{ from: '', amount: '310,00' }], '2026-10-05', '2026-10-14', 'baseRent')?.replace(/\s/g, ' '))
     .toBe('Einzug am 05.10.2026, Auszug am 14.10.2026: Im Oktober 2026 zählen 10 von 31 Tagen, also 100,00 € statt 310,00 €.')
 })
+
+test('Anteil im angebrochenen Monat: kein Satz bei Auszug vor Einzug, denn die Abrechnung rechnet dann 0 €', () => {
+  expect(partialMonthNote([{ from: '', amount: '150,00' }], '2026-10-15', '2026-09-30', 'prepayment')).toBeNull()
+})
+
+test('Anteil im angebrochenen Monat: eine Stufe ab dem Auszugsmonat gilt im Auszugsmonat', () => {
+  const rows = [{ from: '', amount: '150,00' }, { from: '03.2027', amount: '180,00' }]
+  expect(partialMonthNote(rows, '2026-10-01', '2027-03-10', 'prepayment')?.replace(/\s/g, ' '))
+    .toBe('Auszug am 10.03.2027: Im März 2027 zählen 10 von 31 Tagen, also 58,06 € statt 180,00 €.')
+})

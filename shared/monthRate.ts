@@ -4,9 +4,8 @@ export type MonthlySchedule = { from: string, monthlyCents: number }
 const MS_DAY = 86400000
 const toUTC = (iso: string): number => Date.UTC(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10)))
 
-// Überlappung zweier Zeiträume in Tagen (alle Grenzen inklusiv, ISO-Daten, end=null = offen), wie
-// `rangeOverlapDays` in server/src/calc.ts.
-function overlapDays(aStart: string, aEnd: string | null, bStart: string, bEnd: string | null): number {
+// Überlappung zweier Zeiträume in Tagen (alle Grenzen inklusiv, ISO-Daten, end=null = offen).
+export function overlapDays(aStart: string, aEnd: string | null, bStart: string, bEnd: string | null): number {
   const s = Math.max(toUTC(aStart), toUTC(bStart))
   const e = Math.min(aEnd ? toUTC(aEnd) : Infinity, bEnd ? toUTC(bEnd) : Infinity)
   if (e < s) return 0
