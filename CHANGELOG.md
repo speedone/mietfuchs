@@ -330,6 +330,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   zeigen Register, Belegabdeckung und Belegmappe für Mieter den in der Seitenleiste gewählten Zeitraum. Vorher
   standen die Positionen beider Zeiträume gemischt da, und die Belegmappe nahm immer den Rumpf
   ([#346](https://github.com/speedone/mietfuchs/issues/346)).
+- Hinweise: Steht mitten in einem Satz ein Rückverweis wie „deshalb“ oder „daher“, bleibt der Satz mit der
+  Begründung davor sichtbar und liegt nicht mehr unter „Mehr dazu“
+  ([#346](https://github.com/speedone/mietfuchs/issues/346)).
 - Die Karte „Objekt“ verlangt eine Bezeichnung: Leer ließ sie sich speichern, und die Seitenleiste
   zeigte danach „Ohne Namen“. Hat das Objekt noch keinen Namen, etwa nach einer frischen Installation,
   steht im Feld „Mein Objekt“; Sie können es überschreiben, und mit dem ersten Speichern der Karte wird

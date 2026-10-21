@@ -114,3 +114,23 @@ describe('Hinweistexte der Berechnung', () => {
   })
 })
 
+
+// #346 Schritt 12 (aus den Durchsichten): Ein Rückverweis mitten im Satz („rechnet deshalb …“) braucht den Satz davor
+// genauso wie einer am Anfang; sonst stünde „deshalb“ ohne Grund da, während der Grund unter „Mehr dazu“ liegt.
+test('ein Rückverweis im Satzinneren holt die eingeklappte Begründung davor hervor', () => {
+  const ground = 'Heizkosten gehören in die Heizperiode, in der sie verbraucht wurden (BGH VIII ZR 156/11).'
+  const inner = splitNoticeText(`Die Rechnung reicht über zwei Heizperioden. ${ground} Mietfuchs teilt sie deshalb nach Gradtagen auf.`, 'warning')
+  expect(inner.more).toBe('')
+  expect(inner.visible).toContain('BGH VIII ZR 156/11')
+  // Ohne Rückverweis bleibt die Begründung eingeklappt
+  const plain = splitNoticeText(`Die Rechnung reicht über zwei Heizperioden. ${ground} Mietfuchs teilt sie nach Gradtagen auf.`, 'warning')
+  expect(plain.more).toBe(ground)
+})
+
+// Durchsicht: Am Satzanfang greift REFERS_BACK; dort fehlten Darum, Dadurch, Demnach, Folglich, Insofern und Insoweit.
+test('dieselben Rückverweise am Satzanfang holen die Begründung ebenso hervor', () => {
+  const ground = 'Heizkosten gehören in die Heizperiode, in der sie verbraucht wurden (BGH VIII ZR 156/11).'
+  for (const word of ['Darum', 'Dadurch', 'Demnach', 'Folglich', 'Insofern', 'Insoweit']) {
+    expect(splitNoticeText(`Die Rechnung reicht über zwei Heizperioden. ${ground} ${word} teilt Mietfuchs sie auf.`, 'warning').more, word).toBe('')
+  }
+})
