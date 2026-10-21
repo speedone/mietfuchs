@@ -45,7 +45,7 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   Auf Seiten bleiben nur andere Größen wählbar (Kalenderjahr bei abweichendem Zeitraum über
   `CalendarYearSelect`, Heizperiode, Jahr der Buchung, Objekt und Jahr eines Belegs im Posteingang,
   Jahr der Zahlung). Wächter S18; Seitentests, die den Zeitraum wechseln, stellen `<PeriodSelect />`
-  daneben.
+  daneben. Auf einer Seite trägt der Umschalter die Beschriftung eines Felds (`switcher-field`, S30).
 - **Seitenwechsel nur über `navigate`** in App.tsx (Navigation wie Sprünge aus Seiten); bei offenem
   Formular fragt er „Ungespeicherte Änderungen verwerfen?“. Navigation nur aus
   [src/nav.ts](src/nav.ts) (`Tab`, `NAV`, `BOTTOM_TABS`; S22). Nach dem Wechsel in ein Objekt ohne
@@ -69,7 +69,11 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   noch Folge trägt (`isCitationSentence`); ein `error` steht ganz offen. Geprüft gegen echte Texte
   je Code (`src/testing/noticeSamples.json`, neu erzeugen, wenn calc.ts Texte ändert). Kein Feld
   `action` am Server. Seitentexte nehmen `NoticeBox` oder `TextNotice`; Stufenklasse und -wort nur
-  im Baustein (S26).
+  im Baustein (S26). Auch Ladefehler und Befunde einer Vorschau stehen als `NoticeBox level="error"`;
+  freie Kästen gibt es nur noch an sechs Stellen mit Grund (Zeilen, die je nach Ergebnis rot oder grau
+  stehen, die Region „Neues Objekt“, der Statustext unter „Bezahlt am“). Ein Erfolg ist kein Hinweis,
+  sondern `div.ok` mit `role="status"`. Ein Rückverweis am Satzanfang oder mitten im Satz („deshalb“,
+  „daher“, „folglich“ …) holt die eingeklappte Begründung davor wieder hervor.
 - **Fehler vor dem Druck**: Hat eine offene Abrechnung Fehler der Stufe `error`, fragt die Seite vor
   dem Drucken ([despiteErrors.ts](src/despiteErrors.ts)), und jede Mieterabrechnung trägt im Druck
   „Entwurf, nicht versenden“ (`print-only`, auch bei Strg+P). Eine abgeschlossene nie. Die erste
@@ -112,7 +116,7 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   Ladefehler mit `{ focus: false }` nicht); `role="alert"` sitzt innen, der Fokus außen. Ihre Zeilen
   sind Links aufs Feld und klappen ein `<details>` auf. Im Seitenfenster steht sie im Fuß, in einer
   Karte oben; ein Feld mitten im Text nimmt `FieldMessage`. Aktionen ohne Formular melden über
-  `toast(text, 'error')`; oben auf der Seite stehen nur Ladefehler. Wächter S15.
+  `toast(text, 'error')`; oben auf der Seite stehen nur Ladefehler, als `NoticeBox level="error"`. Wächter S15.
 - **`<Field label hint optional width required>`** ist ein `<label class="field">` und vergibt `id`,
   `aria-labelledby` (nur die Beschriftung), `aria-describedby` und `aria-invalid`;
   `{...errors.field('date')}` reicht Meldung und `onFix` hinein.
@@ -182,10 +186,15 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   wechseln“. **Gefahrknöpfe** (`btn ghost danger-ghost`) tragen „…“, wenn eine Rückfrage folgt, und
   stehen mit `ml-auto` rechts. Wächter S16. **Wer einen Knopf umbenennt, zieht die Anleitungen und
   die Meldungen des Servers mit** (guides.test.ts, ui-labels.test.ts).
-- **Anlegen oder Bearbeiten heißt Seitenfenster**, auch Ablesung, Lieferung, Mieterwechsel und
-  Zeitraumwechsel. Beim Zeitraumwechsel verwirft **jede Änderung nach der Vorschau die Vorschau**.
+- **Anlegen oder Bearbeiten heißt Seitenfenster**, auch Ablesung, Lieferung, Mieterwechsel,
+  Zeitraumwechsel, der Zeitraum der Heizung und die getrennte Heizkostenabrechnung. Mit Vorschau
+  verwirft **jede Änderung nach der Vorschau die Vorschau** (auch eine verspätete Antwort gilt dann
+  nicht, Folgenummer je Anfrage), und ein Satz sagt, dass sie neu nötig ist.
 - **Neues anlegen steht oben rechts**: für die Seite in `PageHeader actions`, für eine Karte in
   `CardHeader aside` (S27). Im Fuß einer Karte nur „Speichern“ links und Gefahrknöpfe rechts.
+- **Eine Karte mit Überschrift ist `Card`** (Titel, höchstens eine Aktion als `aside`, weitere Angaben
+  wie Drag-Handler gehen an die `section`). Wächter S31 erkennt auch `className` als Ausdruck, einen
+  Kommentar vor der Überschrift und einen eigenen Kopf als `div` um sie.
 - **Eine Karte, ein Speichern** ([Card.tsx](src/components/Card.tsx)): Trägt eine Karte ein Formular,
   ist es ein Entwurf mit **einem** `<DraftActions layout="card">` am Fuß. Was je Zeile einer Liste
   gespeichert wird, ist ein Entwurf am Feld in einer eigenen kleinen Komponente. Eine Karte, die ein
@@ -218,3 +227,10 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   ungespeichertes Jahr der Buchung sperrt Vorschau und Buchen und nimmt die Auswertung aus „Alle
   grünen übernehmen“; ein ungespeichertes Objekt oder Jahr im Posteingang sperrt „Per KI auswerten“
   und „Weiter prüfen“.
+
+## Musterseite und Schreibweisen
+
+- **Musterseite** ([pages/Muster.tsx](src/pages/Muster.tsx)) unter `?muster`, dunkel `?muster=dunkel`: alle
+  Bausteine mit festen Werten, ohne Server und ohne Navigation. Browserlauf und `npm run screenshots`
+  nehmen sie mit (scripts/CLAUDE.md). Wer einen Baustein ändert oder einen neuen baut, ergänzt ihn dort.
+- **Paragrafen** frei stehend mit Leerzeichen („§ 556 BGB“), Feldnamen wie „§35a-Lohn“ bleiben (S29).

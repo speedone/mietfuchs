@@ -120,7 +120,9 @@ reine Funktionen in UTC, ohne Uhr und Datenzugriff. Maßgeblich ist das Land des
 [client/src/receipts.ts](../../client/src/receipts.ts), Entwurf in
 [docs/superpowers/specs/2026-10-02-belegordner-design.md](../../docs/superpowers/specs/2026-10-02-belegordner-design.md).
 Objekt und Jahr kommen aus der Seitenleiste; nur Objekt und Jahr eines Belegs im Posteingang sind
-Auswahlfelder.
+Auswahlfelder. Bei abweichendem Rhythmus gilt für das Objekt der Seitenleiste der gewählte Zeitraum
+(`FolderFilter.period` in client/src/receipts.ts), denn Rumpf und neuer Zeitraum beginnen im selben Jahr;
+Register, Belegabdeckung und Belegmappe folgen ihm, der Posteingang bleibt beim Kalenderjahr des Belegs.
 
 - **Die Datei ist der Beleg, `uploads` nur eine Beschreibung** ([db/uploads.ts](db/uploads.ts)).
   **Eine fehlende Zeile ist kein Fehler**: Ältere Belege werden aus der Datei beschrieben
