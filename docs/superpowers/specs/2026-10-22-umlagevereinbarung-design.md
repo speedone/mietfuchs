@@ -1,152 +1,147 @@
-# Umlagevereinbarung je Mietverhältnis (#258)
+# Nicht vereinbarte Betriebskosten trägt der Vermieter (#258)
 
-## Ziel
+## Ziel und Warum
 
-Betriebskosten trägt der Mieter nur, soweit es vereinbart ist (§ 556 Abs. 1 Satz 1 BGB). Ältere
-Verträge legen oft nicht alle Kostenarten um. Mietfuchs weiß heute nicht, was im Vertrag steht; wer
-eine nicht vereinbarte Art abbilden will, nimmt den Mieter bei jeder Position aus den Teilnehmern
-(#94). Das ist umständlich, fällt nicht auf, wenn es vergessen wird, und **verschiebt den Anteil auf
-die übrigen Mieter**, weil die Wohnung dann aus der Gesamtmenge des Schlüssels fällt. Genau das ist
-falsch: Den Anteil an einer nicht vereinbarten Art trägt der Vermieter.
+Betriebskosten trägt ein Mieter nur, soweit sein Vertrag es vereinbart (§ 556 Abs. 1 Satz 1 BGB). Die
+meisten Verträge legen mit „Der Mieter trägt die Betriebskosten“ alles um; das genügt (BGH, Urteil vom
+10.02.2016, VIII ZR 137/15, Rn. 11–21). Zwei Fälle kommen bei privaten Vermietern trotzdem vor:
 
-**Wer nichts erfasst, merkt nichts**: Ohne Angabe gilt wie heute „alle Arten“, die Golden-Tests
-bleiben centgenau grün.
+1. **Ein Vertrag zählt nur einige Kostenarten auf** („Wasser, Müll, Grundsteuer, Heizung“). Dann gilt nur
+   die Liste (BGH, Urteil vom 10.10.2007, VIII ZR 279/06, Rn. 19 f.).
+2. **„Sonstige Betriebskosten“ (§ 2 Nr. 17 BetrKV) sind im Vertrag nicht ausdrücklich benannt.** Dann trägt
+   sie der Mieter nicht, auch nicht beim Pauschalverweis (BGH, Urteil vom 07.04.2004, VIII ZR 167/03,
+   Leitsatz b, Rn. 19 f.; VIII ZR 137/15, Rn. 12; BGH, Urteil vom 14.02.2007, VIII ZR 123/06).
 
-## Rechtslage
+Heute behilft man sich, indem man die Wohnung bei der Position aus den Teilnehmern nimmt (#94). Dann
+tragen **die übrigen Mieter** ihren Anteil, weil die Wohnung aus der Verteilbasis fällt. Das ist eine
+falsche Zahl: Den Anteil an einer nicht vereinbarten Art trägt der Vermieter. Dafür gibt es keine
+ausdrückliche Entscheidung; es folgt daraus, dass jeder Mieter nur aus seinem Vertrag schuldet, und aus
+der Leerstandsrechtsprechung, nach der der Schlüssel nicht so geändert werden darf, dass andere den Anteil
+tragen (BGH, Urteil vom 31.05.2006, VIII ZR 159/05, schon in `shared/law/practice.ts`). **Auslegung von
+Mietfuchs**, wird als solche genannt.
 
-Jede Aussage mit Fundstelle; Randnummern nach den gelesenen Volltexten.
+## Ziele, Nicht-Ziele, Anti-Ziele
 
-1. **Pauschalverweis genügt.** „Der Mieter trägt die Betriebskosten“ umfasst, auch im Formularvertrag,
-   alle Kosten des § 556 Abs. 1 Satz 2 BGB und der BetrKV; ein Katalog oder Verweis ist nicht nötig
-   (BGH, Urteil vom 10.02.2016, VIII ZR 137/15, Leitsatz, Rn. 11–21). Bei dynamischem Verweis sind
-   später neu aufgenommene Arten mit umfasst (ebd., Rn. 17; Folgerung, wahrscheinlich).
-2. **Eine Aufzählung gilt abschließend.** „Folgende Betriebskosten“ mit Liste erfasst nur die
-   genannten (BGH, Urteil vom 10.10.2007, VIII ZR 279/06, Rn. 19 f.).
-3. **„Sonstige Betriebskosten“ (§ 2 Nr. 17 BetrKV) nur bei konkreter Benennung**, auch beim
-   Pauschalverweis (BGH, Urteil vom 07.04.2004, VIII ZR 167/03, Leitsatz b, Rn. 19 f.; VIII ZR 137/15,
-   Rn. 12; BGH, Urteil vom 14.02.2007, VIII ZR 123/06, Leitsatz).
-4. **Keine stillschweigende Erweiterung durch bloßes Abrechnen und Zahlen** (VIII ZR 279/06,
-   Rn. 22 f.). Anders, wenn der Vermieter die neue Umlage ankündigt, entsprechend abrechnet und der
-   Mieter zahlt: dann Änderung **ab einem bestimmten Zeitpunkt** (BGH, Urteil vom 09.07.2014,
-   VIII ZR 36/14, Rn. 19 f.).
-5. **Eine vereinbarte Art, die erst später anfällt, darf umgelegt werden, sobald sie anfällt**
-   (VIII ZR 167/03, Rn. 21 f.: Hauswart), mit Mehrbelastungsklausel auch neu entstandene Kosten einer
-   genannten Art (BGH, Urteil vom 27.09.2006, VIII ZR 80/06), begrenzt durch die Wirtschaftlichkeit.
-6. **Einseitige Umstellung** auf Verbrauch oder Verursachung nach § 556a Abs. 2 BGB: in Textform,
-   „nur vor Beginn eines Abrechnungszeitraums“; war die Art in der Miete enthalten, ist die Miete
-   herabzusetzen.
-7. **Den Anteil an nicht vereinbarten Arten trägt der Vermieter.** Eine ausdrückliche Entscheidung
-   dazu gibt es nicht; es folgt daraus, dass jeder Mieter nur aus seinem Vertrag schuldet, und aus der
-   Leerstandsrechtsprechung: Den Schlüssel so zu ändern, dass andere Mieter den Anteil tragen, geht
-   nicht (BGH, Urteil vom 31.05.2006, VIII ZR 159/05, schon in `shared/law/practice.ts`).
-   **Auslegung von Mietfuchs**, wird als solche genannt.
-8. **Weglassen genügt formell.** Als Gesamtkosten reicht der auf die Mieter umgelegte Betrag, auch
-   wenn er um nicht umlagefähige Anteile bereinigt ist (BGH, Urteil vom 19.01.2016, VIII ZR 93/15,
-   Leitsätze 1 und 2, Rn. 8). Ein Vermerk „nicht vereinbart, trägt der Vermieter“ ist unschädlich.
-9. **Einwendungsfrist**: Wer eine nicht vereinbarte Art nicht binnen zwölf Monaten rügt, verliert den
-   Einwand; es ist ein inhaltlicher Fehler (VIII ZR 279/06, Leitsatz). Mietfuchs nennt das nie als
-   Freibrief.
-10. **Heizung und Warmwasser**: § 2 HeizkostenV geht vertraglichen Bestimmungen vor (außer im Haus mit
-    höchstens zwei Wohnungen, von denen der Vermieter eine bewohnt). Eine Warmmiete wird als
-    Kaltmiete mit verbrauchsabhängiger Abrechnung behandelt, der Heizanteil aus der Miete
-    herausgerechnet und als Vorauszahlung angesetzt (BGH, Urteil vom 19.07.2006, VIII ZR 212/05,
-    Leitsatz a, Rn. 13 f., 18, 25). Eine **zusätzliche** Zahlungspflicht neben unveränderter Miete
-    schafft die Verordnung nicht (Folgerung, wahrscheinlich; ausdrückliche Fundstelle fehlt, vor der
-    Umsetzung in der Kommentarliteratur zu § 2 HeizkostenV prüfen).
-
-**Folge für das Modell**: Eine Vereinbarung kann sich mitten im Mietverhältnis ändern (Nachtrag,
-Nr. 4, Nr. 6, Nr. 5). Eine **Staffel mit „gilt ab“** ist rechtlich begründet.
+- **Ziel:** In beiden Fällen rechnet Mietfuchs richtig, und der Anteil steht beim Vermieter mit eigenem Grund.
+- **Ziel:** Wer einen üblichen Vertrag hat, sieht **nichts Neues**. Gefragt wird nur, wo es um Geld geht, und
+  dort, wo man ohnehin arbeitet.
+- **Nicht-Ziel:** den Mietvertrag am Mietverhältnis vollständig erfassen (Liste je Kostenart, Staffel „gilt
+  ab“). Das wäre ein neuer Ort für alle, gebraucht von wenigen.
+- **Anti-Ziel:** Eine neue Pflichtfrage oder ein neues Formularfeld für jeden. Eine Änderung an bestehenden
+  Abrechnungen ohne Zutun (Golden-Tests bleiben centgenau grün).
 
 ## Entscheidungen
 
-### 1. Datenmodell: Staffel am Mietverhältnis
+### 1. Datenmodell: zwei Listen an der Kostenposition
 
 ```ts
-type AllocationAgreement = {
-  from: string                 // 'JJJJ-MM-TT', erste Stufe = Einzug
-  scope: 'all' | 'listed'      // „die Betriebskosten“ (Pauschalverweis) oder Aufzählung
-  categories: string[]         // nur bei 'listed': die umgelegten Arten aus CATEGORIES (ohne NOT_ALLOCABLE)
-  namedOther: string[]         // benannte „sonstige“ Kosten (Dachrinnenreinigung, Prüfung der Elektroanlage …)
-}
-Tenancy.allocationAgreements?: AllocationAgreement[]   // fehlt = nicht erfasst = wie heute
+CostItem.notAgreedTenancyIds?: string[] | null   // diese Mietverhältnisse tragen die Position nicht (Vertrag)
+CostItem.namedTenancyIds?: string[] | null       // nur bei „Sonstige“: im Vertrag ausdrücklich benannt (bestätigt)
 ```
 
-- **Fehlt die Staffel**, gilt wie bisher jede Art, auch „Sonstige“. Kein stiller Wechsel für
-  Bestandsdaten (siehe 6).
-- **„Sonstige Betriebskosten“ zählt nur mit Benennung**, bei `all` wie bei `listed` (Rechtslage 3).
-  Ohne Eintrag in `namedOther` ist die Art nicht vereinbart.
-- Die **gesetzliche** Umlagefähigkeit (Kabel bis 30.06.2024 und nur vor 01.12.2021, `NOT_ALLOCABLE`)
-  bleibt im Rechtsregister und wird mit der Vereinbarung geschnitten, nicht in ihr gepflegt.
-- Eigene Tabelle `allocation_agreements` (Mietverhältnis, ab, Umfang) mit Kindtabelle der Arten und
-  benannten sonstigen Kosten, Migrationsschritt mit Datenregel, Backup und Validator wie die übrigen
-  Staffeln. Gilt nur bei `costModel = 'settlement'`; bei Pauschale und Inklusivmiete trägt der
-  Vermieter ohnehin (`flatRate`, `inclusive`).
+- Fehlt beides, rechnet Mietfuchs wie heute.
+- Gespeichert wird an der Position, nicht am Mietverhältnis: So bleibt alles an einer Stelle, und „Aus dem
+  Vorjahr übernehmen“ (#141) nimmt beide Listen mit, denn die Mietverhältnisse sind im Folgejahr dieselben.
+  Ein Mietverhältnis, das im Zeitraum der neuen Position nicht besteht, fällt beim Übernehmen heraus.
+- **Mieterwechsel beim Übernehmen:** Hatte die Vorjahresposition einen Mieter in `notAgreedTenancyIds` oder
+  `namedTenancyIds` und hat dieselbe Wohnung im neuen Zeitraum ein anderes Mietverhältnis, fragt die Zeile der
+  Vorschau: „Neuer Mieter in EG links (Lea Schneider): Trägt sie diese Kosten laut Vertrag?“ mit „Ja“ / „Nein“
+  (bei „Sonstige“: „im Vertrag ausdrücklich genannt?“). Ohne Antwort wird übernommen, als trüge sie sie, und
+  bei „Sonstige“ greift der Hinweis aus 5. So wandert kein Geld still zum neuen Mieter. *Entscheidung von
+  Claude nach der Bauprüfung.*
+- Migration: zwei Spalten (JSON-Text wie `participant_unit_ids`) in der Tabelle der Kostenpositionen, ein
+  Migrationsschritt, Validator (nur Kennungen bestehender Mietverhältnisse derselben Wohnungen des Objekts),
+  Backup und Umstieg wie die übrigen Felder der Position.
+- Nicht erlaubt in den Kostenarten „Heizung und Warmwasser“, „Nicht umlagefähig“, „Zuführung
+  Erhaltungsrücklage“ (siehe 4); der Server lehnt sie dort mit Satz ab.
 
-### 2. Berechnung: der Mieteranteil geht an den Vermieter, nie an andere Mieter
+### 2. Berechnung
 
-- Die Wohnung **bleibt** in der Gesamtmenge des Schlüssels; verteilt wird wie heute. Danach wird der
-  Anteil des Mieters an einer Position, soweit die Art an den Tagen des Zeitraums nicht vereinbart ist,
-  dem Vermieter zugeschlagen: neuer `LandlordReason` **`notAgreed`**, im Rechenweg und in der
-  Vermieterübersicht mit eigenem Satz.
-- **Ändert sich die Vereinbarung im Zeitraum**, zählt der Anteil nach Tagen (vereinbarte Tage ÷ Tage
-  des Mietverhältnisses im Zeitraum), wie die Monatsregel und die Personenstaffel. Bei Zählern ist das
-  eine Näherung; ein Hinweis nennt sie, eine Zwischenablesung am Stichtag ist dafür nicht vorgesehen.
+- Die Wohnung **bleibt in der Verteilbasis**; verteilt wird wie heute. Danach geht der Anteil jedes
+  Mietverhältnisses aus `notAgreedTenancyIds` an den Vermieter: neuer `LandlordReason` **`notAgreed`**,
+  mit eigenem Satz im Rechenweg und in der Übersicht des Vermieters.
+- Das gilt für jeden Schlüssel, auch Einzelbeträge (`tenancyAmounts`) und Direktzuordnung: Der Betrag des
+  Mietverhältnisses wird nicht ihm, sondern dem Vermieter zugerechnet.
+- „Sonstige“ ohne Antwort (weder in `notAgreedTenancyIds` noch in `namedTenancyIds`): Rechnung wie heute,
+  dazu ein Hinweis (siehe 5).
 - **Invariante** im Zufallstest: Mieteranteile + Vermieteranteil = Gesamtkosten, und die Anteile der
-  übrigen Mieter ändern sich nicht, wenn bei einem Mieter eine Art abgewählt wird.
-- Steuer: unverändert Werbungskosten in voller Höhe; nur die Erstattung durch den Mieter entfällt.
+  übrigen Mieter ändern sich nicht, wenn ein Mietverhältnis in `notAgreedTenancyIds` aufgenommen wird.
+- Steuer unverändert: Die Kosten sind voll Werbungskosten; nur die Erstattung durch den Mieter entfällt.
+- Gedruckte Abrechnung des Mieters: Die Position fehlt bei ihm (formell genügt das, BGH, Urteil vom
+  19.01.2016, VIII ZR 93/15, Leitsätze 1 und 2, Rn. 8).
 
-### 3. Heizung und Warmwasser: nicht still abwählbar
+### 3. Oberfläche, Fall 1: beim Abwählen der Teilnehmer
 
-Die Art „Heizung und Warmwasser“ ist bei `listed` wählbar, aber:
+Im Seitenfenster der Kostenposition erscheint beim Abwählen einer Wohnung in den Teilnehmern direkt
+darunter eine kurze Frage (kein Dialog), nur für diese Wohnung:
 
-- Gilt der Vorrang des § 2 HeizkostenV (alles außer Zweifamilienhaus mit selbst bewohnter Wohnung),
-  wird sie **trotzdem** verbrauchsabhängig verteilt, und ein Hinweis der Stufe `warning` sagt: „Die
-  Heizkostenverordnung gilt auch ohne Vereinbarung. Rechnen Sie den Heizanteil aus der Miete heraus und
-  setzen Sie ihn als Vorauszahlung an (BGH VIII ZR 212/05).“ Das ist derselbe Weg wie beim
-  `heatingModel` `inclusive` (Regel `heating-flat-rate`); der Hinweis verweist dorthin, statt einen
-  zweiten Weg zu bauen.
-- Nur im Zweifamilienhaus mit selbst bewohnter Wohnung heißt „nicht vereinbart“: trägt der Vermieter.
+> Warum trägt EG links diese Kosten nicht?
+> ( ) Betrifft die Wohnung nicht, etwa Aufzug für das Erdgeschoss. Die übrigen Wohnungen tragen den Anteil.
+> ( ) Steht nicht im Mietvertrag von Anna Becker. Den Anteil trägt der Vermieter.
 
-### 4. Hinweise
+- Voreinstellung: keine Wahl; „Speichern“ meldet am Feld „Bitte wählen Sie, warum“ (wie jede Pflichtangabe).
+- Hat die Wohnung im Zeitraum mehrere Mietverhältnisse, steht je Mietverhältnis ein Häkchen unter der
+  zweiten Antwort („… im Mietvertrag von: [x] Anna Becker  [ ] Lea Schneider“).
+- Leerstehende Wohnung ohne Mietverhältnis im Zeitraum: keine Frage, wie heute.
+- In der Liste der Positionen steht wie heute „nur EG rechts, OG“ bzw. neu „trägt nicht: Anna Becker
+  (Vertrag)“.
+
+### 3a. Oberfläche, Fall 1 ohne Teilnehmerliste
+
+Die Teilnehmerliste gibt es nur bei mehreren Wohnungen und den Schlüsseln mit Verteilbasis. Für die übrigen
+Fälle (Objekt mit einer Wohnung, vermietete Eigentumswohnung, Direktzuordnung, vereinbarte Prozente) und
+als zweiter Weg für alle steht unten im Abschnitt Schlüssel ein **unauffälliger Textlink** „Ein Mieter trägt
+das laut Mietvertrag nicht …“. Er klappt die Mietverhältnisse auf, die im Zeitraum an der Position
+teilnehmen, je mit Häkchen („trägt nicht, steht nicht im Vertrag“). Ist schon eines angehakt, steht der
+Abschnitt offen. Nicht bei den Kostenarten aus Entscheidung 1 (Heizung, nicht umlagefähig, Rücklage).
+*Entscheidung von Claude nach der Bauprüfung.*
+
+### 4. Heizung und Warmwasser
+
+Bei „Heizung und Warmwasser“ gibt es die zweite Antwort nicht. Ein Satz darunter: „Die
+Heizkostenverordnung gilt auch, wenn der Mietvertrag die Heizkosten nicht nennt; der Heizanteil der Miete
+wird dann als Vorauszahlung angerechnet (BGH VIII ZR 212/05). Stellen Sie dafür beim Mietverhältnis die
+Heizkosten auf ‚in der Miete enthalten‘.“ Das ist der vorhandene Weg (`heatingModel` `inclusive`,
+Regel `heating-flat-rate`), kein zweiter.
+
+### 5. Oberfläche, Fall 2: „Sonstige Betriebskosten“
+
+Im Seitenfenster einer Position der Kostenart „Sonstige Betriebskosten“ steht ein Abschnitt:
+
+> Im Mietvertrag ausdrücklich genannt? Sonstige Betriebskosten trägt ein Mieter nur, wenn der Vertrag sie
+> beim Namen nennt, etwa „Dachrinnenreinigung“ (BGH VIII ZR 167/03).
+> Anna Becker   ( ) Ja  ( ) Nein
+> Jonas Hartmann ( ) Ja  ( ) Nein
+
+- Je Mietverhältnis, das an der Position teilnimmt und im Zeitraum besteht. „Ja“ → `namedTenancyIds`,
+  „Nein“ → `notAgreedTenancyIds`. Keine Pflicht: ohne Antwort wird gespeichert.
+- Gilt für jede **gebuchte** Position dieser Kostenart. „Sonstige“ ist auch die Auffangkategorie der
+  Belegbuchung, aber unklare Belege meldet der Posteingang schon vor dem Buchen („Kategorie unklar“); eine
+  gebuchte Position ist bewusst zugeordnet. Der Abschnitt beginnt deshalb mit dem Satz „Gehört die Position
+  eigentlich zu einer anderen Kostenart, wählen Sie diese oben.“ Kein neues Kennzeichen „unklar“.
+  *Entscheidung von Claude nach der Bauprüfung.*
+- Hinweis `allocation.other-unanswered` (Stufe `hint`) in der Abrechnung, solange eine Position „Sonstige“
+  Mietverhältnisse ohne Antwort hat, mit Betrag je Mieter und „Hier beheben →“ zur Position. Begriff
+  `namedOtherCosts` im Lexikon (Erklärung, Beispiel mit Zahlen, Rechtsgrundlage, „Brauche ich das?“).
+
+### 6. Hinweise
 
 | Code | Stufe | Wann |
 |---|---|---|
-| `allocation.not-agreed` | `hint` | Eine Position einer Art, die bei einem Mieter nicht vereinbart ist: „… trägt der Vermieter (§ 556 Abs. 1 BGB)“, mit Betrag. |
-| `allocation.other-unnamed` | `warning` | „Sonstige Betriebskosten“ gebucht, beim Mieter aber nichts benannt (Rechtslage 3); bei erfasster Vereinbarung trägt der Vermieter, bei nicht erfasster bleibt es wie bisher und der Hinweis rät, die Vereinbarung zu erfassen. |
-| `allocation.other-unmatched` | `hint` | Eine Position „Sonstige“, deren Bezeichnung zu keiner benannten Art des Mieters passt (Abgleich ohne Groß-/Kleinschreibung, Teilwort). Nur Hinweis, keine Rechnung. |
-| `allocation.heating-ordinance` | `warning` | Heizung abgewählt, § 2 HeizkostenV gilt (Entscheidung 3). |
-| `allocation.estimate-by-days` | `hint` | Vereinbarung ändert sich im Zeitraum bei verbrauchsabhängigem Schlüssel (Näherung nach Tagen). |
+| `allocation.not-agreed` | `hint` | Eine Position trägt ein Mieter nicht, weil sie nicht vereinbart ist: „… trägt der Vermieter (§ 556 Abs. 1 BGB)“, mit Betrag. Information, kein Fehler. |
+| `allocation.other-unanswered` | `hint` | Siehe 5. |
 
-Jeder Code trägt den Begriff `allocationAgreement` im Lexikon (Erklärung, Beispiel mit Zahlen,
-Rechtsgrundlage, „Brauche ich das?“).
+Mit Begriffen im Lexikon; der Satz zur Auslegung (Vermieter trägt) steht unter „Mehr dazu“ mit
+VIII ZR 159/05.
 
-### 5. Oberfläche
+## Was dem Bauenden bleibt
 
-Im Seitenfenster des Mietverhältnisses unter „Weitere Angaben“ ein Abschnitt **„Umgelegte
-Betriebskosten (laut Mietvertrag)“**:
+- Wortlaut der Sätze im Rahmen von client/CLAUDE.md (Hinweise, Verben, Schreibweise), Lage des Abschnitts
+  im Seitenfenster.
+- Spaltennamen und Schritt der Migration nach server/src/db/CLAUDE.md.
+- Wo in calc.ts die Zurechnung an den Vermieter geschieht, solange die Invariante gilt.
 
-- Auswahl „nicht erfasst (alle wie bisher)“ · „„Der Mieter trägt die Betriebskosten“ (Verweis auf die
-  Betriebskostenverordnung)“ · „Einzelne Kostenarten aufgezählt“.
-- Bei der Aufzählung Häkchen je umlagefähiger Art (15), vorbelegt mit allen.
-- Darunter „Benannte sonstige Kosten“ als Zeilen („+ weitere sonstige Kosten“), mit Beispielen im Hinweis.
-- „+ Änderung ab Datum …“ für eine weitere Stufe (Nachtrag, angekündigte Änderung, § 556a Abs. 2 BGB),
-  wie bei der Personenstaffel.
-- In der Liste der Mietverhältnisse ein knappes Kennzeichen, wenn nicht alle Arten umgelegt werden.
+## Prüfung
 
-### 6. Bestandsdaten und Umstieg
-
-- Kein Eintrag → Verhalten wie heute, Golden-Tests unverändert.
-- Einmaliger Hinweis im Cockpit, solange ein Mietverhältnis „Sonstige Betriebskosten“ abgerechnet
-  bekommt und keine Vereinbarung erfasst ist: die Vereinbarung zu erfassen.
-
-## Nicht dabei
-
-- Vereinbarung je Einzelposition innerhalb einer Art.
-- Automatische Ableitung der Vereinbarung aus einem hochgeladenen Mietvertrag.
-- Zwischenablesung am Stichtag einer Änderung.
-
-## Umsetzung
-
-Ein PR mit Migration, Berechnung, Hinweisen, Lexikon, Formular und Tests; Label `full-check`,
-Integrationsdurchsicht unter dem Blickwinkel Geld (Invariante, Golden-Tests, Steuer) und Daten
-(Migration, Backup, Umstieg).
+Ein PR, Label `full-check`, Durchsicht unter den Blickwinkeln Geld (Invariante, Golden-Tests, Steuer,
+Mietkonto unberührt) und Daten (Migration, Validator, Backup, Umstieg, „Aus dem Vorjahr übernehmen“).
