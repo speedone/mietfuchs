@@ -334,6 +334,12 @@ export type CostItem = {
   // Dazu die Beträge selbstgenutzter Wohnungen (#104): Wohnungs-ID → Betrag in Cent. Sie sind der
   // Eigenanteil des Vermieters und in der Steuer privat.
   selfAmounts?: Record<string, number> | null
+  // Die Umlagevereinbarung je Mietverhältnis (#258, Entwurf Entscheidung 1): Mietverhältnis-Kennungen derselben
+  // Position. `notAgreedTenancyIds`: Der Mietvertrag legt diese Position nicht um, ihr Anteil bleibt beim
+  // Vermieter. `namedTenancyIds`: Der Vertrag nennt die Position ausdrücklich (bestätigt, bei „Sonstige“).
+  // Fehlen beide, rechnet Mietfuchs wie ohne Angabe. Nicht bei Heizung, nicht umlagefähig und Rücklage.
+  notAgreedTenancyIds?: string[] | null
+  namedTenancyIds?: string[] | null
   labor35aCents?: number // Lohnanteil nach §35a EStG
   invoiceFile?: string
   // Die Heizanlage, zu der die Position gehört (Heizung PR 4), nur bei der Kostenart „Heizung und
@@ -762,11 +768,12 @@ export type SettlementRow = {
 //                   CO2KostAufG, Heizung PR 18): die Summe der Abzugszeilen `gmodgRelief`
 //   `co2Refund`     Erstattung an einen Mieter, der selbst heizt (§ 6 Abs. 2 CO2KostAufG, Heizung PR 19), mit
 //                   der Abrechnung verrechnet: die Gegenzeile zur Gutschrift beim Mieter, ohne Kostenposition
+//   `notAgreed`     der Mietvertrag legt diese Position nicht auf das Mietverhältnis um (#258)
 //   `rounding`      Rundungsrest (nur in Abrechnungen, die vor #202 abgeschlossen wurden)
 export type LandlordReason =
   | 'notAllocable' | 'noBasis' | 'selfUse' | 'vacancy' | 'flatRate' | 'inclusive'
   | 'outsideUnit' | 'amountsRest' | 'customRest' | 'mainMeterRest' | 'co2Share'
-  | 'fuelCarry' | 'fuelClosedPeriod' | 'fuelEstimateDiff' | 'stockRemaining' | 'gmodgShare' | 'co2Refund' | 'rounding'
+  | 'fuelCarry' | 'fuelClosedPeriod' | 'fuelEstimateDiff' | 'stockRemaining' | 'gmodgShare' | 'co2Refund' | 'notAgreed' | 'rounding'
 export type LandlordPart = { reason: LandlordReason; cents: number }
 
 // Ein Schritt des Rechenwegs: Beschriftung, Wert als fertiger Text, auf Wunsch mit dem Begriff

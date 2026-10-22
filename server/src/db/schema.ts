@@ -1256,6 +1256,24 @@ export const costItemAmounts = sqliteTable(
   ],
 )
 
+// Die Umlagevereinbarung je Mietverhältnis (#258): `in_contract` 0 heißt, der Mietvertrag legt die
+// Position nicht um (`notAgreedTenancyIds`), 1, der Vertrag nennt sie ausdrücklich (`namedTenancyIds`).
+// Eine Zeile je Paar, deshalb kann keine Kennung in beiden Listen stehen. Ein gelöschtes
+// Mietverhältnis nimmt seine Zeile mit, wie bei den Einzelbeträgen.
+export const costItemContract = sqliteTable(
+  'cost_item_contract',
+  {
+    costItemId: text('cost_item_id')
+      .notNull()
+      .references(() => costItems.id, { onDelete: 'cascade' }),
+    tenancyId: text('tenancy_id')
+      .notNull()
+      .references(() => tenancies.id, { onDelete: 'cascade' }),
+    inContract: integer('in_contract', { mode: 'boolean' }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.costItemId, t.tenancyId] })],
+)
+
 // Beträge selbstgenutzter Wohnungen (#104), etwa aus derselben Abrechnung des Messdienstes. Sie
 // sind der Eigenanteil des Vermieters. Eine gelöschte Wohnung nimmt ihren Betrag mit, wie bei den
 // Einzelbeträgen der Mietverhältnisse.

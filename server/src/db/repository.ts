@@ -42,6 +42,7 @@ import { hasKnownUnits, unitKey, unitLabel, unitProblem } from '../../../shared/
 import { CALENDAR_RULES, calendarPeriod, paymentYear, formatDayRange, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, spansTwoYears, startYearOf } from '../../../shared/period.ts'
 import { heatingPeriodsEndingIn, isObjectPeriod, plantRules, plantSpan, servesUnit, spanOf } from '../../../shared/heatingPeriod.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
+import { isNotAllocable } from '../../../shared/categories.ts'
 import { isFederalState } from '../../../shared/states.ts'
 import { euro as operatingPowerEuro, GENERAL_POWER_CATEGORY, POWER_GENERATED } from '../../../shared/operatingPower.ts'
 import { billingEnergy } from '../../../shared/heatDelivery.ts'
@@ -61,7 +62,7 @@ import {
   readUnits, type StoredClosedSettlement,
 } from './read.ts'
 import {
-  aiSlots, assessmentLines, assessments, baseRents, co2Refunds, co2Statements, co2TenantReliefs, heatingPeriods, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, HEATING_MODELS, SELF_SUPPLY_KINDS, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, DEPOSIT_STATUS, PAYMENT_KINDS, EXTERNAL_MEASURES,
+  aiSlots, assessmentLines, assessments, baseRents, co2Refunds, co2Statements, co2TenantReliefs, heatingPeriods, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, HEATING_MODELS, SELF_SUPPLY_KINDS, costItemAmounts, costItemContract, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, DEPOSIT_STATUS, PAYMENT_KINDS, EXTERNAL_MEASURES,
   HCA_SCALES, HEATING_PARTS, OPERATING_POWER, HEATING_ROLES, HEATING_TARGETS, INTERIM_GAP_STATUS, interimReadingGaps, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingSelfSpans, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans, heatingServiceValues, heatingEstimates,
   flatRates, METER_TYPES, meters, payments, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
   readings, settings, tenancies, unitNoConnection, units, fuelCarryFrozen, fuelDeliveries,
@@ -254,6 +255,12 @@ function readParticipants(value: unknown): string[] {
   return [...new Set(value.filter((v): v is string => typeof v === 'string' && v !== ''))]
 }
 
+// Die Umlagevereinbarung je Mietverhältnis (#258): eine Liste von Mietverhältnis-Kennungen, ohne Doppel.
+function readTenancyIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return [...new Set(value.filter((v): v is string => typeof v === 'string' && v !== ''))]
+}
+
 // Einzelbeträge je Mietverhältnis (#94). Ganze Cent; ein negativer bleibt stehen und wird von
 // der Datenbank abgewiesen, damit der Nutzer die Meldung dazu bekommt statt eines still
 // verschwundenen Betrags.
@@ -377,6 +384,8 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
   const external = merged(body, 'externalBasis', current.externalBasis, readExternalBasis)
   const amounts = merged(body, 'tenancyAmounts', current.tenancyAmounts, (v) => (v === null ? null : readAmounts(v)))
   const selfAmounts = merged(body, 'selfAmounts', current.selfAmounts, (v) => (v === null ? null : readAmounts(v)))
+  const notAgreed = merged(body, 'notAgreedTenancyIds', current.notAgreedTenancyIds, (v) => (v === null ? null : readTenancyIds(v)))
+  const named = merged(body, 'namedTenancyIds', current.namedTenancyIds, (v) => (v === null ? null : readTenancyIds(v)))
   const category = merged(body, 'category', current.category, (v) => asText(v, ''))
   const operatingPower = merged(body, 'operatingPower', current.operatingPower, (v) => oneOfOrUndefined(OPERATING_POWER, v))
   return {
@@ -399,6 +408,8 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
     ...(external === undefined ? {} : { externalBasis: external }),
     ...(amounts === undefined ? {} : { tenancyAmounts: amounts }),
     ...(selfAmounts === undefined ? {} : { selfAmounts }),
+    ...(notAgreed === undefined ? {} : { notAgreedTenancyIds: notAgreed }),
+    ...(named === undefined ? {} : { namedTenancyIds: named }),
     labor35aCents: merged(body, 'labor35aCents', current.labor35aCents, asOptionalNumber),
     invoiceFile: merged(body, 'invoiceFile', current.invoiceFile, asOptionalText),
     // `null` leert, wie bei den übrigen optionalen Feldern (#208).
@@ -524,6 +535,12 @@ function mergePayment(current: Payment, body: unknown): Payment {
 // Eine Zahlung mit einer Angabe, die es nicht gibt (#280). Die Meldung ist für den Nutzer
 // geschrieben; die Route gibt sie mit 400 weiter wie `CrossPropertyError`.
 export class PaymentError extends Error {
+  status = 400
+}
+
+// Eine Umlagevereinbarung je Mietverhältnis (#258), die nicht passt: verbotene Kostenart, unbekanntes
+// Mietverhältnis, dieselbe Kennung in beiden Listen. Die Route gibt sie mit 400 weiter wie `CrossPropertyError`.
+export class ContractError extends Error {
   status = 400
 }
 
@@ -1266,6 +1283,7 @@ async function guardCostItem(db: Executor, before: CostItem | null, after: CostI
   else await requirePeriods(db, after.propertyId, [after.period], has(body, 'year') && !has(body, 'period'), 'Die Kostenposition')
   await requireServiceAndTax(db, before, after, options)
   await requirePaidOn(db, before, after, body, options)
+  const vertragsWohnungen = await guardContract(db, after)
   // Die Wohnungen der Einzelbeträge über ihr Mietverhältnis (#94).
   const mietverhaeltnisse = Object.keys(after.tenancyAmounts ?? {})
   const ihreWohnungen = mietverhaeltnisse.length === 0
@@ -1277,11 +1295,44 @@ async function guardCostItem(db: Executor, before: CostItem | null, after: CostI
     ...(after.participantUnitIds ?? []),
     ...ihreWohnungen,
     ...Object.keys(after.selfAmounts ?? {}),
+    ...vertragsWohnungen,
   ]
   await sameProperty(db, after.propertyId, ziele, 'Die Kostenposition')
   await guardCostItemHeating(db, before, after)
   await guardFuelLink(db, before, after)
   await guardOperatingPower(db, before, after, options)
+}
+
+// Die Umlagevereinbarung je Mietverhältnis (#258, Entwurf Entscheidung 1). Leere Listen sind keine Angabe. Liefert
+// die Wohnungen der genannten Mietverhältnisse; ob sie zum Objekt der Position gehören, prüft `sameProperty`.
+async function guardContract(db: Executor, after: CostItem): Promise<string[]> {
+  const notAgreed = after.notAgreedTenancyIds ?? []
+  const named = after.namedTenancyIds ?? []
+  const ids = [...new Set([...notAgreed, ...named])]
+  if (ids.length === 0) return []
+  if (after.category === HEATING_CATEGORY) {
+    throw new ContractError(
+      `Bei der Kostenart „${HEATING_CATEGORY}“ gibt es keine Angabe je Mietverhältnis, ob der Mietvertrag die Kosten umlegt: ` +
+        'Die Heizkostenverordnung schreibt die Verteilung nach Verbrauch vor, sie gilt auch ohne Vereinbarung im Mietvertrag.',
+    )
+  }
+  if (isNotAllocable(after.category)) {
+    throw new ContractError(
+      `Bei der Kostenart „${after.category}“ gibt es keine Angabe je Mietverhältnis, ob der Mietvertrag die Kosten umlegt: ` +
+        'Diese Kosten trägt ohnehin der Vermieter.',
+    )
+  }
+  const rows = await db.select({ id: tenancies.id, unitId: tenancies.unitId, tenantName: tenancies.tenantName }).from(tenancies).where(inArray(tenancies.id, ids))
+  if (rows.length < ids.length) {
+    throw new ContractError('Ein Mietverhältnis bei der Umlagevereinbarung gibt es nicht (mehr). Bitte laden Sie die Seite neu; gespeichert wurde nichts.')
+  }
+  const both = rows.find((r) => notAgreed.includes(r.id) && named.includes(r.id))
+  if (both) {
+    throw new ContractError(
+      `Das Mietverhältnis „${both.tenantName}“ steht zugleich bei „nicht vereinbart“ und bei „im Vertrag benannt“. Bitte wählen Sie eines von beiden.`,
+    )
+  }
+  return [...new Set(rows.map((r) => r.unitId))]
 }
 
 // Betriebsstrom und Abzug (Heizung PR 15, #212). Ein Abzug gehört zu genau einer Betriebsstrom-Position
@@ -1989,8 +2040,8 @@ async function writeTenancyChildren(db: Executor, t: Tenancy): Promise<void> {
   if (korrekturen.length > 0) await db.insert(prepaymentOverrides).values(korrekturen)
 }
 
-// Die Untertabellen einer Kostenposition, ganz ersetzt: vereinbarte Anteile, Teilnehmer (#94)
-// und Einzelbeträge (#94).
+// Die Untertabellen einer Kostenposition, ganz ersetzt: vereinbarte Anteile, Teilnehmer (#94),
+// Einzelbeträge (#94), Eigenbeträge (#104) und die Umlagevereinbarung je Mietverhältnis (#258).
 async function writeCostItemShares(db: Executor, c: CostItem): Promise<void> {
   await db.delete(costItemShares).where(eq(costItemShares.costItemId, c.id))
   const anteile = Object.entries(c.customShares ?? {})
@@ -2012,6 +2063,12 @@ async function writeCostItemShares(db: Executor, c: CostItem): Promise<void> {
   if (eigen.length > 0) {
     await db.insert(costItemSelfAmounts).values(eigen.map(([unitId, amountCents]) => ({ costItemId: c.id, unitId, amountCents })))
   }
+  await db.delete(costItemContract).where(eq(costItemContract.costItemId, c.id))
+  const vertrag = [
+    ...(c.notAgreedTenancyIds ?? []).map((tenancyId) => ({ costItemId: c.id, tenancyId, inContract: false })),
+    ...(c.namedTenancyIds ?? []).map((tenancyId) => ({ costItemId: c.id, tenancyId, inContract: true })),
+  ]
+  if (vertrag.length > 0) await db.insert(costItemContract).values(vertrag)
 }
 
 // ---------- Ein Deskriptor je Sammlung ----------

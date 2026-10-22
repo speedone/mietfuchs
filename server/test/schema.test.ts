@@ -97,8 +97,8 @@ type _OverrideAmount = Assert<Equals<OverrideRow['amountCents'], Tenancy['prepay
 // Die drei Angaben aus #94 liegen woanders: Teilnehmer und Einzelbeträge in eigenen Tabellen,
 // die Angaben der Gemeinschaft als drei Spalten statt eines Objekts. An ihrer Stelle stehen
 // deshalb die drei Spalten im Vergleich. Die Eigenbeträge (#104) stehen ebenfalls in einer
-// eigenen Tabelle.
-type CostItemColumns = Omit<CostItem, 'customShares' | 'participantUnitIds' | 'tenancyAmounts' | 'selfAmounts' | 'externalBasis'> & {
+// eigenen Tabelle, ebenso die Umlagevereinbarung je Mietverhältnis (#258).
+type CostItemColumns = Omit<CostItem, 'customShares' | 'participantUnitIds' | 'tenancyAmounts' | 'selfAmounts' | 'externalBasis' | 'notAgreedTenancyIds' | 'namedTenancyIds'> & {
   externalMeasure?: ExternalBasis['measure']
   externalTotal?: ExternalBasis['total']
   externalTotalCents?: ExternalBasis['totalCents']
@@ -113,6 +113,10 @@ type AmountRow = typeof schema.costItemAmounts.$inferSelect
 type SelfAmountRow = typeof schema.costItemSelfAmounts.$inferSelect
 type _SelfAmountUnit = Assert<Equals<SelfAmountRow['unitId'], Unit['id']>>
 type _AmountCents = Assert<Equals<AmountRow['amountCents'], number>>
+// Die Umlagevereinbarung (#258): eine Zeile je Mietverhältnis, `inContract` trennt die beiden Listen.
+type ContractRow = typeof schema.costItemContract.$inferSelect
+type _ContractTenancy = Assert<Equals<ContractRow['tenancyId'], Tenancy['id']>>
+type _ContractFlag = Assert<Equals<ContractRow['inContract'], boolean>>
 
 // `customShares` ist `Record<Wohnungs-Kennung, Prozent>`. Auch hier prüft der Namensvergleich
 // nichts, wohl aber die Typen der beiden Spalten, die daraus geworden sind.
@@ -275,6 +279,7 @@ test('Migration lässt sich anwenden und legt alle Tabellen an', async () => {
       'co2_statements',
       'co2_tenant_reliefs',
       'cost_item_amounts',
+      'cost_item_contract',
       'cost_item_participants',
       'cost_item_self_amounts',
       'cost_item_shares',

@@ -24,6 +24,8 @@ const LABELS: Record<LandlordReason, string> = {
   gmodgShare: 'Netzentgelte und Biobrennstoff (§ 5a CO2KostAufG)',
   // Heizung PR 19: die Gegenzeile zur Gutschrift beim Mieter, der selbst heizt.
   co2Refund: 'CO₂-Erstattung an den Mieter (§ 6 Abs. 2 CO2KostAufG)',
+  // #258: Der Mietvertrag legt die Position nicht auf dieses Mietverhältnis um.
+  notAgreed: 'im Mietvertrag nicht vereinbart',
   rounding: 'Rundungsrest',
 }
 
