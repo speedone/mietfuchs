@@ -39,7 +39,7 @@ import { showsStock, stockBlock } from '../stockView'
 import FuelBlock from '../components/FuelBlock'
 import { fuelBlock } from '../fuelView'
 import { closeWithQuestions } from '../fuelClose'
-import { closeErrorsQuestion, DRAFT_MARK, printQuestion, sameErrors, showsDraftMark, type ErrorsQuestion } from '../despiteErrors'
+import { closeErrorsQuestion, closeMessage, completenessQuestion, DRAFT_MARK, printQuestion, sameErrors, showsDraftMark, type ErrorsQuestion } from '../despiteErrors'
 import { co2Block } from '../co2View'
 import { countOf } from '../../../shared/wording.ts'
 import { calendarPeriod } from '../../../shared/period.ts'
@@ -231,12 +231,15 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
   async function closeSettlement() {
     // Bei mehreren Objekten mit Objekt (#157): Eingefroren wird nur die Abrechnung dieses Objekts.
     const title = closeSettlementTitle(label, properties, property, docLabel)
+    // Der Zeitraum der Rückfrage (#409): bei der getrennten Heizkostenabrechnung ihre Heizperiode, wie in `docLabel`.
+    const heating = target !== null && data?.scope?.kind === 'heating'
+    const closeLabel = heating && data ? data.period.label : label
     // Zeigt die Seite schon Fehler, nennt die erste Rückfrage sie (Durchsicht S2 zu #341); die Rückfrage des
     // Servers zu denselben Fehlern ist dann schon beantwortet.
-    const withErrors = data ? closeErrorsQuestion(title, noticesOf(data)) : null
+    const withErrors = data ? closeErrorsQuestion(title, noticesOf(data), completenessQuestion(closeLabel, property?.kind, heating)) : null
     const ok = withErrors ? await askDespiteErrors(withErrors) : await confirm({
       title,
-      message: 'Der aktuelle Berechnungsstand wird eingefroren — spätere Änderungen an Kosten oder Stammdaten ändern diese Abrechnung nicht mehr. Sie lässt sich jederzeit wieder öffnen.',
+      message: closeMessage(closeLabel, property?.kind, heating),
       confirmLabel: 'Abschließen',
     })
     if (!ok) return

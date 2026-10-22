@@ -14,7 +14,7 @@
 // - Die erste Rückfrage zum Abschließen nennt die Fehler; bestätigt der Vermieter dort, wird die Rückfrage des
 //   Servers zu denselben Fehlern ohne zweiten Dialog beantwortet (`sameErrors`).
 import { blockingErrors } from '../../shared/notices.ts'
-import type { Notice } from './types'
+import type { Notice, PropertyKind } from './types'
 
 export type ErrorsQuestion = { title: string; message: string; cancelLabel: string; confirmLabel: string; errors: Notice[] }
 
@@ -42,14 +42,29 @@ export function printQuestion(notices: readonly Notice[], closed: boolean): Erro
   }
 }
 
+// Die Frage der ersten Rückfrage zum Abschließen (#409): Ob alle Rechnungen des Zeitraums vorliegen, weiß nur
+// der Vermieter; „Abschließen“ ist die Antwort darauf, ohne einen eigenen Schritt. `label` ist der Zeitraum,
+// `heating` die getrennte Heizkostenabrechnung. Hausgeld gibt es nur bei einer Eigentumswohnung.
+export function completenessQuestion(label: string, kind: PropertyKind | undefined, heating = false): string {
+  const later = heating
+    ? 'Brennstoff, Wartung, Messdienst'
+    : kind === 'etw' ? 'Hausgeld-, Heizkosten- und Versorgerabrechnungen' : 'Heizkosten- und Versorgerabrechnungen'
+  return `Liegen alle Rechnungen für ${label} vor, auch die, die erst später kommen (${later})? Mietfuchs kennt nur, was erfasst ist.`
+}
+
+export function closeMessage(label: string, kind: PropertyKind | undefined, heating = false): string {
+  return `${completenessQuestion(label, kind, heating)} Der aktuelle Berechnungsstand wird eingefroren — spätere Änderungen an Kosten `
+    + 'oder Stammdaten ändern diese Abrechnung nicht mehr. Sie lässt sich jederzeit wieder öffnen.'
+}
+
 // Die erste Rückfrage zum Abschließen, wenn die Seite schon Fehler zeigt; `title` ist der Titel der
-// gewöhnlichen Rückfrage (mit Objekt, #157).
-export function closeErrorsQuestion(title: string, notices: readonly Notice[]): ErrorsQuestion | null {
+// gewöhnlichen Rückfrage (mit Objekt, #157), `question` die nach allen Rechnungen (`completenessQuestion`).
+export function closeErrorsQuestion(title: string, notices: readonly Notice[], question: string): ErrorsQuestion | null {
   const errors = blockingErrors(notices)
   if (errors.length === 0) return null
   return {
     title,
-    message: `Die Abrechnung enthält ${countText(errors.length)}. ${INTRO} Abgeschlossen wird dieser Stand so eingefroren, wie er ist; spätere Änderungen an Kosten oder Stammdaten ändern ihn nicht mehr. Sie lässt sich wieder öffnen. Beheben Sie die Angaben besser vorher.`,
+    message: `${question} Die Abrechnung enthält außerdem ${countText(errors.length)}. ${INTRO} Abgeschlossen wird dieser Stand so eingefroren, wie er ist; spätere Änderungen an Kosten oder Stammdaten ändern ihn nicht mehr. Sie lässt sich wieder öffnen. Beheben Sie die Angaben besser vorher.`,
     cancelLabel: 'Nicht abschließen',
     confirmLabel: 'Trotzdem abschließen',
     errors,
