@@ -6,6 +6,7 @@ import { api, errorText } from '../api'
 import { useConfirm, useToast } from './feedback'
 import Table from './Table'
 import Term from './Term'
+import YearField from './YearField'
 import { CO2_ANSWER_OPTIONS, CO2_EXAMPLE, CO2_QUESTION, co2Body, co2ToForm, probeLine, type Co2Answer } from '../co2Form'
 import {
   answerConflict, blockBlocked, co2FormFromExtraction, deductionHint, DHW_LABELS, dhwNote, draftsOf, duplicateBlocks, itemBodies, serviceChecks, targetOptions,
@@ -160,10 +161,15 @@ export default function ServiceImportReview({ x, file, ctx, view, co2 = true, on
                 <input aria-label={`Betrag „${title}“`} inputMode="decimal" value={d.amount} onChange={(e) => setDraft(i, { amount: e.target.value })} />
               </label>
               {spansTwoYears(span) && (
-                <label className="field">
-                  Jahr der Zahlung (für die Steuer)
-                  <input aria-label={`Jahr der Zahlung „${title}“ (für die Steuer)`} inputMode="numeric" value={d.taxYear} onChange={(e) => setDraft(i, { taxYear: e.target.value })} />
-                </label>
+                // Der Block steht unsichtbar hinter der Beschriftung, nicht als `aria-label` davor (WCAG 2.5.3).
+                <YearField
+                  label={<>Jahr der Zahlung (für die Steuer)<span className="sr-only"> „{title}“</span></>}
+                  value={d.taxYear}
+                  onChange={(taxYear) => setDraft(i, { taxYear })}
+                  today={span.to}
+                  min={Number(span.from.slice(0, 4))}
+                  max={Number(span.to.slice(0, 4)) + 1}
+                />
               )}
             </div>
             <Table>

@@ -3,6 +3,7 @@ import PageHeader from '../components/PageHeader'
 import Card from '../components/Card'
 import Field, { RequiredLegend } from '../components/Field'
 import MonthField from '../components/MonthField'
+import YearField from '../components/YearField'
 import Term from '../components/Term'
 import Table from '../components/Table'
 import Drawer from '../components/Drawer'
@@ -27,6 +28,7 @@ export default function Muster() {
   const [open, setOpen] = useState(false)
   const [drawerForm, setDrawerForm] = useState({ name: '' })
   const [month, setMonth] = useState('2025-03')
+  const [year, setYear] = useState('2031')
   const [unit, setUnit] = useState('eg')
   const draft = useDraft('og')
   // Die Sammelmeldung mit einer Meldung am Feld, ohne den Fokus beim Laden zu nehmen
@@ -70,6 +72,7 @@ export default function Muster() {
             </select>
           </Field>
           <MonthField label="Ab Monat" value={month} onChange={setMonth} today="2026-10-21" width="s" />
+          <YearField label="Geeicht bis Ende (Jahr)" value={year} onChange={setYear} today="2026-10-21" />
           <Field label="Notiz" width="full"><textarea defaultValue="Ein Textfeld über die ganze Breite." /></Field>
         </div>
         <ErrorSummary errors={errors} />

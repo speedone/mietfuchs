@@ -215,9 +215,12 @@ describe('Eichfrist (Heizung PR 21, #98)', () => {
   })
 
   test('Eichjahr, das keine vierstellige Jahreszahl ist, ergibt einen Satz', () => {
-    for (const bad of ['28', '2028,5', '0999', 'M22', '20280']) {
+    for (const bad of ['28', '2028,5', 'M22', '20280']) {
       expect(meterBody({ ...emptyMeterForm(), name: 'K', calibratedUntil: bad }, null)).toMatchObject({ error: vierstellig })
     }
+    // Vierstellig, aber außerhalb der Grenzen: kein „vierstellig“ (Durchsicht von #404)
+    expect(meterBody({ ...emptyMeterForm(), name: 'K', calibratedUntil: '1899' }, null)).toMatchObject({ error: 'Das Eichjahr 1899 liegt außerhalb von 1900 bis 2100. Bitte prüfen Sie es am Eichschein, oder lassen Sie das Feld leer.' })
+    expect(meterBody({ ...emptyMeterForm(), name: 'K', calibratedUntil: '0999' }, null)).toMatchObject({ error: 'Das Eichjahr 0999 liegt außerhalb von 1900 bis 2100. Bitte prüfen Sie es am Eichschein, oder lassen Sie das Feld leer.' })
   })
 
   test('Vorschlag aus der Jahreszahl auf dem Zähler: Jahreszahl plus Frist aus dem Register', () => {

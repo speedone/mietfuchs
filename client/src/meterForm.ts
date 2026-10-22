@@ -8,6 +8,8 @@ import { CALIBRATION_AMENDED_ON } from '../../shared/law/messev.ts'
 import { hasKnownUnits, knownUnit, meterUnitOptions, unitKey, unitLabel, unitProblem } from '../../shared/meterUnits.ts'
 import { METER_TYPE_LABELS } from '../../shared/wording.ts'
 import type { Problem } from './formProblems'
+import { parseYearText } from './yearText'
+import { YEAR_MAX, YEAR_MIN } from './monthText'
 
 // Die Auswahl der Einheit (#342): bekannte Einheiten der Sparte und eine gespeicherte unbekannte.
 export { hasKnownUnits, meterUnitOptions }
@@ -205,9 +207,15 @@ export function meterBody(form: MeterForm, plantId: string | null): { body: Mete
   const unitKept = form.keptUnit !== '' && unitKey(form.type, unitText) === unitKey(form.type, form.keptUnit)
   const unitRefused = unitKept || unitText === '' ? null : unitProblem(form.type, unitText)
   if (unitRefused !== null) problems.push({ text: unitRefused, field: 'unit', short: 'Einheit passt nicht zur Sparte' })
-  const until = form.calibratedUntil.trim()
-  if (asksCalibration(form) && until !== '' && !/^[1-9]\d{3}$/.test(until)) {
-    problems.push({ text: 'Bitte tragen Sie das Eichjahr vierstellig ein, so wie es der Messdienst oder der Eichschein nennt, oder lassen Sie das Feld leer.', field: 'calibratedUntil', short: 'Vierstellige Jahreszahl' })
+  // Dieselbe Regel wie das Jahresfeld (yearText.ts); der Satz nennt, woher das Eichjahr kommt.
+  const until = parseYearText(form.calibratedUntil)
+  if (asksCalibration(form) && until.kind === 'invalid') {
+    // Vierstellig, aber außerhalb der Grenzen: Der Satz „vierstellig“ stimmte dann nicht (Durchsicht von #404).
+    const outside = /^\d{4}$/.test(form.calibratedUntil.trim().replace(/\s*\.$/, ''))
+    const text = outside
+      ? `Das Eichjahr ${form.calibratedUntil.trim().replace(/\s*\.$/, '')} liegt außerhalb von ${YEAR_MIN} bis ${YEAR_MAX}. Bitte prüfen Sie es am Eichschein, oder lassen Sie das Feld leer.`
+      : 'Bitte tragen Sie das Eichjahr vierstellig ein, so wie es der Messdienst oder der Eichschein nennt, oder lassen Sie das Feld leer.'
+    problems.push({ text, field: 'calibratedUntil', short: until.short })
   }
   if (problems.length > 0 || 'error' in hca) return failed(problems)
   return {
@@ -221,7 +229,7 @@ export function meterBody(form: MeterForm, plantId: string | null): { body: Mete
       heatingPlantId: role === null ? null : plantId,
       heatingRole: role,
       // Heizkostenverteiler sind nicht eichpflichtig (Entwurf 3.12): nie ein Eichjahr.
-      calibratedUntil: asksCalibration(form) && until !== '' ? Number(until) : null,
+      calibratedUntil: asksCalibration(form) && until.kind === 'year' ? until.year : null,
       ...(plantId === null ? {} : {
         remoteReadable: asks && form.remote !== '' ? form.remote === 'yes' : null,
         installedOn: asks && form.installedOn !== '' ? form.installedOn : null,

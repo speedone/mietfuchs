@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useFormError } from '../components/ErrorSummary'
 import Field from '../components/Field'
+import YearField from '../components/YearField'
 import type { HeatingPlant, HeatingRole, Meter, MeterType, Notice, Reading, Unit } from '../types'
 import { METER_TYPE_LABELS } from '../types'
 import { buildReadingBody, EMPTY_READING, type ReadingField, type ReadingForm } from '../readingForm'
@@ -357,13 +358,13 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
             )}
             {asksCalibration(meterForm) && (
               <>
-                <Field
+                <YearField
                   label="Geeicht bis Ende (Jahr)"
                   hint={<>Die <Term id="meterCalibration">Eichfrist</Term> endet mit dem Ende dieses Jahres. Hat der Messdienst sie im Stichprobenverfahren verlängern lassen (§ 35 MessEV), tragen Sie das verlängerte Jahr ein.</>}
+                  value={meterForm.calibratedUntil}
+                  onChange={(calibratedUntil) => setMeterForm({ ...meterForm, calibratedUntil })}
                   {...meterErrors.field('calibratedUntil')}
-                >
-                  <input inputMode="numeric" value={meterForm.calibratedUntil} onChange={(e) => setMeterForm({ ...meterForm, calibratedUntil: e.target.value })} />
-                </Field>
+                />
                 <label className="field">
                   Jahreszahl auf dem Zähler (etwa „M22“ oder die Jahresangabe der Eichmarke)
                   <input inputMode="numeric" value={markedYear} onChange={(e) => setMarkedYear(e.target.value)} placeholder="z. B. M22" />

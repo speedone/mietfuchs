@@ -12,7 +12,7 @@
   max-width: 100%;
 }
 .field:has(> input:is([type='date'], [type='time'], [inputmode='decimal'], [inputmode='numeric'])),
-.field:has(> .month-field) {
+.field:has(> :is(.month-field, .year-field)) {
   --field-w: var(--field-s);
 }
 .field:has(> textarea) {
@@ -35,7 +35,7 @@
 .field.width-full > select {
   width: 100%;
 }
-.field > .month-field {
+.field > :is(.month-field, .year-field) {
   width: max-content;
   max-width: 100%;
   & > input {
@@ -51,10 +51,10 @@
   :is(label, div).field:not(.checkline) {
     width: 100%;
   }
-  .field > :is(input:not([type='checkbox'], [type='radio'], [type='file']), textarea, select, .month-field) {
+  .field > :is(input:not([type='checkbox'], [type='radio'], [type='file']), textarea, select, .month-field, .year-field) {
     width: 100%;
   }
-  .field > .month-field > input {
+  .field > :is(.month-field, .year-field) > input {
     flex: 1;
   }
   .field > :is(small, .muted, .field-message, p, ul, ol) {

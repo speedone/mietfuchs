@@ -334,6 +334,16 @@
     background: var(--hover);
   }
 }
+/* Das Jahresfeld (components/YearField.tsx): Textfeld mit ‹ › daneben, gesetzt wie das Monatsfeld. An der Grenze
+   (1900, 2100) ist ein Knopf gesperrt. */
+@utility year-field {
+  @apply month-field;
+  & > button:disabled {
+    color: var(--muted);
+    background: var(--card);
+    cursor: default;
+  }
+}
 @utility month-pop {
   width: --spacing(64);
   & > span:first-child {
