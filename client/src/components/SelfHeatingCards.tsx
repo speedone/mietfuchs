@@ -35,7 +35,9 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
   const d = view.distribution ?? null
   const savedInsulation: InsulationRule | '' = d?.own.insulationRule ?? d?.effective?.insulationRule ?? ''
   // § 10 HeizkostenV (Heizung PR 14): mehr als 70 % nach Vereinbarung, mit dem Anteil gespeichert.
-  const savedAgreed = d?.own.above70Agreed ?? d?.effective?.above70Agreed ?? false
+  // Ohne eigene Zeile gilt die Vereinbarung der Vorperiode weiter (`own.above70Agreed` ist dann `false`, nicht leer); bei
+  // gesperrtem Anteil ist das Häkchen nicht zu sehen und ginge sonst still verloren (Durchsicht von #406).
+  const savedAgreed = d && d.own.heating !== null ? d.own.above70Agreed === true : (d?.effective?.above70Agreed ?? false)
   // Anteil, Wärmeschutz und § 10 sind ein Entwurf mit einem „Speichern“ am Fuß der Karte (#346 Schritt 7, N8; vorher
   // „Speichern“ bzw. „Pflichtanteil eintragen“ und daneben „Antwort speichern“). Eine Änderung meldet sich als offenes
   // Formular an (#346, 7a).
@@ -76,7 +78,9 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
   }, [printing])
 
   async function saveShare() {
-    const heat = forced ?? percentOf(share)
+    // Gesperrt und ohne Pflichtanteil gilt der Anteil weiter, wie beim Warmwasser; geändert wird dann nur die Antwort
+    // zum Wärmeschutz (#376). Der Server nimmt den unveränderten Anteil an (§ 6 Abs. 4).
+    const heat = forced ?? (editable ? percentOf(share) : (d?.effective?.heating ?? null))
     const water = hotWater === 'none' ? null : (editable ? percentOf(waterShare) : (d?.effective?.water ?? null))
     if (heat === null || (hotWater !== 'none' && water === null)) {
       setError(`Bitte geben Sie den Anteil zwischen ${min} und ${max} % an, mit höchstens zwei Nachkommastellen.`)
