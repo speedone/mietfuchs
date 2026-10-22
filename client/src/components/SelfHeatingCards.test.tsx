@@ -93,6 +93,27 @@ test('#376: in begonnener Heizperiode ohne Pflichtanteil speichert die Antwort z
   expect(sent).toEqual([{ heatConsumptionPct: 60, waterConsumptionPct: 60, insulationRule: 'notApplies', above70Agreed: false }])
 })
 
+// Durchsicht von #406: Ohne eigene Zeile (geerbt) gilt die Vereinbarung nach § 10 der Vorperiode weiter. Das Häkchen ist bei
+// gesperrtem Anteil nicht zu sehen; ging es als `false`, lehnte der Server 80 % ab oder die Vereinbarung fiel still weg.
+test('#376: geerbter Anteil über 70 % mit Vereinbarung bleibt beim Speichern der Antwort vereinbart', async () => {
+  const sent: unknown[] = []
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+    sent.push(init?.body ? JSON.parse(String(init.body)) : null)
+    return new Response('{}', { status: 200 })
+  })
+  const d: HeatingDistribution = {
+    own: { heating: null, water: null, insulationRule: null, above70Agreed: false },
+    effective: { heating: 80, water: null, insulationRule: 'unknown', above70Agreed: true },
+    inherited: true, begun: true, first: false, forcedPercent: null,
+  }
+  const onChanged = vi.fn()
+  render(<SelfHeatingCards plant={{ id: 'hp', method: 'self', energy: 'oil', hotWater: 'none' } as HeatingPlant} view={{ period: '2025-01', label: '2025', distribution: d } as HeatingPeriodView} self={null} onChanged={onChanged} />)
+  fireEvent.change(screen.getByLabelText(/Liegt der Wärmeschutz Ihres Hauses unter dem Anforderungsniveau/), { target: { value: 'notApplies' } })
+  fireEvent.click(screen.getByRole('button', { name: SHARE_SAVE }))
+  await waitFor(() => expect(onChanged).toHaveBeenCalled())
+  expect(sent).toEqual([{ heatConsumptionPct: 80, waterConsumptionPct: null, insulationRule: 'notApplies', above70Agreed: true }])
+})
+
 test('Fernwärme: keine Frage zum Wärmeschutz (Durchsicht von #239, M1)', () => {
   render(<SelfHeatingCards plant={{ id: 'hp', method: 'self', energy: 'districtHeating', hotWater: 'none' } as HeatingPlant} view={{ period: '2025-01', label: '2025', distribution: null } as HeatingPeriodView} self={null} onChanged={() => undefined} />)
   expect(screen.queryByText(/Wärmeschutzverordnung/)).toBeNull()
