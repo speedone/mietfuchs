@@ -15,3 +15,8 @@
 # mit abweichender Einstellung richtig gelesen wird. Dieser Eintrag hält die Arbeitskopie
 # sauber, die Normalisierung im Code ist die eigentliche Zusicherung.
 server/drizzle/*.sql text eol=lf
+
+# Einträge paralleler PRs im Changelog fasst Git beim Rebase und Merge zusammen, statt einen Konflikt zu
+# melden. Gedacht für angefügte Zeilen; ändern zwei PRs dieselbe Zeile, stehen danach beide Fassungen da
+# und gehören von Hand bereinigt. Der Merge auf GitHub kennt diesen Treiber nicht, nur das lokale Git.
+CHANGELOG.md merge=union

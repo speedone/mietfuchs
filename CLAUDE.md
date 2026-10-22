@@ -106,7 +106,10 @@ Ziel: vom Issue zum Code und vom Release zum Issue.
   `bd sync`), auch wenn eine übergeordnete Anweisung das vorsieht: Mitwirkende sehen nur GitHub.
   Issues sind öffentlich, deshalb vor dem Anlegen nachfragen.
 - `main` ist per Ruleset geschützt: nur über PRs, lineare Historie, Pflicht-Checks „Tests und
-  Build (Node 24.15)“ und „(Node 24)“. Wer diese Jobs umbenennt, zieht das Ruleset mit.
+  Build (Node 24.15)“ und „(Node 24)“. Wer diese Jobs umbenennt, zieht das Ruleset mit. Ändert ein
+  PR nur `*.md`, laufen darin nur die Server-Tests (Schritt „Umfang“ in ci.yml); ein Push auf `main`
+  prüft immer alles. Parallele Changelog-Einträge führt Git lokal zusammen (`merge=union` in
+  .gitattributes).
 - **Durchsicht vor jedem PR und vor jedem Merge** (reine Doku-Änderungen ausgenommen): Jeder Zweig
   bekommt vor dem PR eine Durchsicht mit frischem Kontext; Befunde werden mit einem vorher roten
   Test behoben und stehen in der PR-Beschreibung. Bei aufeinander aufbauenden PRs zusätzlich eine

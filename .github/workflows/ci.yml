@@ -26,6 +26,20 @@ jobs:
         node: ['24.15', '24']
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Für den Vergleich mit dem Ziel des PR (Schritt „Umfang“) die ganze Geschichte
+          fetch-depth: 0
+      # Ein PR, der nur Markdown ändert (Changelog, CLAUDE.md, Doku), braucht keinen Build: Es laufen nur die
+      # Server-Tests, denn einige lesen Changelog und READMEs (calibration.test.ts, migrations.test.ts, die
+      # Golden-Tests). Die Prüfung bleibt Pflicht und heißt gleich, damit die Regel „main schützen“ greift.
+      # Ein Push auf main prüft immer alles.
+      - name: Umfang
+        id: scope
+        run: |
+          if [ "${{ github.event_name }}" = pull_request ] && ! git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -qv '\.md$'; then
+            echo "Nur Markdown geändert: nur die Server-Tests."
+            echo "docs=true" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
@@ -36,14 +50,21 @@ jobs:
       # npm install (nicht ci): postinstall installiert Server + Client mit.
       - run: npm install
       - name: Typen prüfen
+        if: steps.scope.outputs.docs != 'true'
         run: npm run typecheck
-      # Tests der Berechnungs-Engine (node:test)
+      # Tests der Berechnungs-Engine (node:test) und der Oberfläche (vitest)
       - run: npm test
+        if: steps.scope.outputs.docs != 'true'
+      - name: Server-Tests (nur Markdown geändert)
+        if: steps.scope.outputs.docs == 'true'
+        run: npm run test:server
       # Typecheck (tsc --noEmit) + Vite-Build
       - run: npm run build
+        if: steps.scope.outputs.docs != 'true'
       # Derselbe Test von außen wie für Programmdateien und Docker-Image (#22), hier gegen den
       # Start aus dem Quellcode. So läuft das Prüfskript bei jedem PR mit.
       - name: Von außen prüfen (Start aus dem Quellcode)
+        if: steps.scope.outputs.docs != 'true'
         run: |
           NKA_DATA_DIR="$RUNNER_TEMP/daten" NKA_PORT=3001 NKA_UPDATE_URL=http://127.0.0.1:9/kein-internet-im-test \
             node server/src/index.ts > server.log 2>&1 &
