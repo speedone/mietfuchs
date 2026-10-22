@@ -1,5 +1,13 @@
 [
  {
+  "code": "allocation.not-agreed",
+  "text": "Mieter t1 (u1) trägt laut Mietvertrag die Positionen „Gartenpflege“ (0,34 €) und „Hauswart“ (100,00 €) nicht; diese Anteile trägt der Vermieter (§ 556 Abs. 1 BGB), nicht die übrigen Mieter. In der Abrechnung von Mieter t1 (u1) fehlen sie. Dass der Anteil nicht auf die übrigen Mieter übergeht, ist eine Auslegung von Mietfuchs nach dem Grundsatz zum Leerstand (BGH VIII ZR 159/05)."
+ },
+ {
+  "code": "allocation.other-unanswered",
+  "text": "„Dachrinnenreinigung“: Ob der Mietvertrag diese sonstigen Betriebskosten ausdrücklich nennt, ist für Mieter t1 (u1) mit 100,00 € und Mieter t2 (u2) mit 100,00 € nicht angegeben. Sonstige Betriebskosten trägt ein Mieter nur, wenn sein Vertrag sie beim Namen nennt; ein Verweis auf die Betriebskostenverordnung genügt dafür nicht (BGH VIII ZR 167/03). Bis zu Ihrer Angabe verteilt Mietfuchs die Position wie erfasst. Geben Sie bei der Position je Mieter an, ob sein Vertrag sie nennt; nennt er sie nicht, trägt der Vermieter seinen Anteil."
+ },
+ {
   "code": "amounts.exceed",
   "text": "„Heizung laut Messdienst“: die Einzelbeträge ergeben zusammen 3.600,00 € und übersteigen den Rechnungsbetrag 3.000,00 € — es wird nichts verteilt, der Betrag geht an den Vermieter."
  },

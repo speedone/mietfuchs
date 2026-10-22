@@ -474,6 +474,10 @@ const noticeKinds = {
   // #311: ein Hinweis, denn nichts ist falsch erfasst; die Monatsregel ist eine Auslegung und der
   // Vermieter prüft sie am tatsächlich Gezahlten (INFORMATIONAL, färbt die Ampel nicht).
   'prepayment.partial-month': { level: 'hint', title: 'Vorauszahlung im angebrochenen Monat', terms: ['prepayment', 'partialMonth'] },
+  // #258 (Entwurf Entscheidungen 5 und 6): eine Auskunft, kein Fehler. Der Mietvertrag legt eine Position nicht um,
+  // ihr Anteil bleibt beim Vermieter; bei „Sonstige Betriebskosten“ fehlt die Antwort, ob der Vertrag sie benennt.
+  'allocation.not-agreed': { level: 'hint', title: 'Im Mietvertrag nicht vereinbart', terms: ['notAgreedCosts', 'allocable'] },
+  'allocation.other-unanswered': { level: 'hint', title: 'Sonstige Betriebskosten im Mietvertrag benannt?', terms: ['namedOtherCosts', 'notAgreedCosts'] },
   // #141: ein Hinweis und kein Fehler, denn eine vereinbarte Änderung ist zulässig.
   'key.changed-from-previous-year': { level: 'hint', title: 'Umlageschlüssel anders als im Vorjahr', terms: ['keyChange', 'allocationKey'] },
   // Dieselbe Rechnung zweimal erfasst? (Zusammenspiel #141 und #170, shared/duplicates.ts) Ein
@@ -2601,11 +2605,25 @@ function landlordRecipients(
     ...(co2 === null ? [] : [{ key: 'co2Share', landlord: true, raw: co2 }]),
     { key: 'flatRate', landlord: true, raw: sum('flatRate') },
     { key: 'inclusive', landlord: true, raw: sum('inclusive') },
+    { key: 'notAgreed', landlord: true, raw: sum('notAgreed') },
     { key: 'outsideUnit', landlord: true, raw: sum('outsideUnit') + outside },
     { key: 'customRest', landlord: true, raw: custom },
     { key: 'mainMeterRest', landlord: true, raw: mainRest },
     { key: item.key === 'amounts' ? 'amountsRest' : 'vacancy', landlord: true, raw: rest },
   ]
+}
+
+// Die Umlagevereinbarung je Mietverhältnis (#258): die Kennungen einer der beiden Listen der Position. Nicht bei
+// „Heizung und Warmwasser“ (die Heizkostenverordnung gilt auch ohne Vereinbarung), nicht bei nicht Umlagefähigem
+// und nicht an den Übertragszeilen aus Lieferung und Vorrat. Der Server lehnt die Listen dort ab, das
+// Wiederherstellen eines Backups prüft es aber nicht; deshalb liest die Berechnung sie dort nicht.
+const NO_CONTRACT_IDS: ReadonlySet<string> = new Set()
+const OTHER_COSTS_CATEGORY = 'Sonstige Betriebskosten'
+function contractTenancyIds(item: SnapshotCostItem, list: 'notAgreedTenancyIds' | 'namedTenancyIds'): ReadonlySet<string> {
+  const ids = item[list]
+  if (!ids || ids.length === 0) return NO_CONTRACT_IDS
+  if (item.category === HEATING_CATEGORY || isNotAllocable(item.category) || item.id.startsWith('fuel:') || item.id.startsWith('stock:')) return NO_CONTRACT_IDS
+  return new Set(ids)
 }
 
 // Welches Modell für eine Kostenposition gilt: das für Heizung bei der Heizkostenart, sonst das
@@ -4461,13 +4479,18 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // „Nur Heizung“ zeitanteilig (Heizung PR 10) und der Betrag nach der Verordnung bei Pauschale (Entwurf 6.3).
   const manualSplitTime = new Map<string, Map<string, { now: number, alt: number }>>()
   const selfFlat = new Map<string, number>()
+  // #258: je Mietverhältnis die Positionen, die es laut Mietvertrag nicht trägt, mit Betrag (Hinweis nach der Schleife).
+  const notAgreedByTenancy = new Map<string, { t: TenancyWithUnit, items: string[] }>()
   for (const item of [...items, ...fuelSynthetic]) {
     const b = basisOf(item)
     // Eine Übertragszeile (Heizung PR 7) ist keine Position: Sie zählt nicht zu den Kosten des
     // Zeitraums, hat keinen Schlüsselwechsel und keine Überschneidung, und die Regeln aus #140
     // betreffen die Position, deren Teil sie ist.
     const carry = fuelCarryOf.get(item.id)
-    const bookable = (t: SnapshotTenancy) => statements.has(t.id) && modelFor(t, item) === 'settlement'
+    // #258: Wer die Position laut Mietvertrag nicht trägt, bleibt in der Verteilbasis, sein Anteil geht an den
+    // Vermieter (`notAgreed`), nicht an die übrigen Mieter.
+    const notAgreed = contractTenancyIds(item, 'notAgreedTenancyIds')
+    const bookable = (t: SnapshotTenancy) => statements.has(t.id) && !notAgreed.has(t.id) && modelFor(t, item) === 'settlement'
     if (!carry) totalCostsCents += item.amountCents
     // Anders als im Vorjahr (#141)? Nur ein Hinweis, verteilt wird wie erfasst.
     const keyChange = carry ? null : keyChangeText(item, snapshot.comparableCostItems ?? snapshot.previousCostItems ?? [], at, basisUnitIds)
@@ -4882,7 +4905,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       ...landlordRecipients(item, {
         selfRaw,
         co2ShareRaw,
-        notBooked: targets.flatMap((x, i) => booked[i] ? [] : [{ reason: statements.has(x.t.id) ? modelFor(x.t, item) : 'outsideUnit', raw: x.raw }]),
+        notBooked: targets.flatMap((x, i) => booked[i] ? [] : [{ reason: !statements.has(x.t.id) ? 'outsideUnit' : notAgreed.has(x.t.id) ? 'notAgreed' : modelFor(x.t, item), raw: x.raw }]),
         outsideRaw,
         customUnassignedRaw,
         mainRestRaw,
@@ -4897,6 +4920,48 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       targets.forEach((_, i) => { if (booked[i]) lineOf.set(i, k++) })
     }
     const shareOf = (i: number): number => { const k = lineOf.get(i); return k === undefined ? 0 : cents[k] }
+    // #258: der Anteil jedes nicht vereinbarten Mietverhältnisses für den Hinweis. Die Zeile `notAgreed` des
+    // Vermieters wird nach den exakten Anteilen auf sie aufgeteilt, damit die Beträge zusammen genau die Zeile ergeben.
+    if (notAgreed.size > 0) {
+      const k = recipients.findIndex((r) => r.key === 'notAgreed')
+      const raws = new Map<string, { t: TenancyWithUnit, raw: number }>()
+      targets.forEach((x, i) => {
+        if (booked[i] || !statements.has(x.t.id) || !notAgreed.has(x.t.id)) return
+        const e = raws.get(x.t.id) ?? { t: x.t, raw: 0 }
+        e.raw += x.raw
+        raws.set(x.t.id, e)
+      })
+      const list = [...raws.values()]
+      const sign = item.amountCents < 0 ? -1 : 1
+      const split = k < 0 ? [] : largestRemainder(cents[k] * sign, list.map((e) => Math.max(0, e.raw * sign)), list.map((e) => e.t.id))
+      list.forEach((e, j) => {
+        const c = (split[j] ?? 0) * sign
+        if (c === 0) return
+        const entry = notAgreedByTenancy.get(e.t.id) ?? { t: e.t, items: [] }
+        entry.items.push(`„${item.description}“ (${fmtCents(c)})`)
+        notAgreedByTenancy.set(e.t.id, entry)
+      })
+    }
+    // #258, Entwurf Entscheidung 5: „Sonstige Betriebskosten“ trägt ein Mieter nur, wenn sein Vertrag sie benennt.
+    // Gefragt wird nur, wo Geld fließt: bei Mietverhältnissen, die die Position tragen und noch keine Antwort haben.
+    if (item.category === OTHER_COSTS_CATEGORY && !carry) {
+      const named = contractTenancyIds(item, 'namedTenancyIds')
+      const open = new Map<string, { t: TenancyWithUnit, cents: number }>()
+      targets.forEach((x, i) => {
+        if (!booked[i] || named.has(x.t.id) || shareOf(i) === 0) return
+        const e = open.get(x.t.id) ?? { t: x.t, cents: 0 }
+        e.cents += shareOf(i)
+        open.set(x.t.id, e)
+      })
+      const unanswered = [...open.values()].filter((e) => e.cents !== 0).sort((a, b) => compareText(a.t.id, b.t.id))
+      if (unanswered.length > 0) {
+        warn('allocation.other-unanswered',
+          `„${item.description}“: Ob der Mietvertrag diese sonstigen Betriebskosten ausdrücklich nennt, ist für ${andList(unanswered.map((e) => `${e.t.tenantName} (${e.t.unit.name}) mit ${fmtCents(e.cents)}`))} nicht angegeben. ` +
+            'Sonstige Betriebskosten trägt ein Mieter nur, wenn sein Vertrag sie beim Namen nennt; ein Verweis auf die Betriebskostenverordnung genügt dafür nicht (BGH VIII ZR 167/03). ' +
+            'Bis zu Ihrer Angabe verteilt Mietfuchs die Position wie erfasst. Geben Sie bei der Position je Mieter an, ob sein Vertrag sie nennt; nennt er sie nicht, trägt der Vermieter seinen Anteil.',
+          itemSubject(item))
+      }
+    }
     // §35a-Lohnanteil, mitverteilt in denselben Zeilen (siehe `distributeLaborCents`): Wer 55/365
     // der Rechnung trägt, trägt 55/365 des Lohnanteils (#180), ab- oder aufgerundet, nie mehr als
     // seinen Kostenanteil, und alle Zeilen zusammen, die des Vermieters eingeschlossen, genau den
@@ -5118,6 +5183,17 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         landlordParts: forced ? [{ reason: forced, cents: landlordCents }] : parts,
       })
     }
+  }
+
+  // #258, Entwurf Entscheidung 6: eine Auskunft je Mietverhältnis. Die Auslegung, dass der Anteil beim Vermieter
+  // bleibt und nicht bei den übrigen Mietern, steht als Begründung aus der Fundstelle unter „Mehr dazu“.
+  for (const { t, items: list } of [...notAgreedByTenancy.values()].sort((a, b) => compareText(a.t.id, b.t.id))) {
+    const who = `${t.tenantName} (${t.unit.name})`
+    warn('allocation.not-agreed',
+      `${who} trägt laut Mietvertrag ${list.length === 1 ? 'die Position' : 'die Positionen'} ${andList(list)} nicht; ${list.length === 1 ? 'diesen Anteil' : 'diese Anteile'} trägt der Vermieter (§ 556 Abs. 1 BGB), nicht die übrigen Mieter. ` +
+        `In der Abrechnung von ${who} ${list.length === 1 ? 'fehlt sie' : 'fehlen sie'}. ` +
+        'Dass der Anteil nicht auf die übrigen Mieter übergeht, ist eine Auslegung von Mietfuchs nach dem Grundsatz zum Leerstand (BGH VIII ZR 159/05).',
+      { kind: 'tenancy', id: t.id })
   }
 
   // Die Gegenzeilen der Überträge beim Vermieter (Heizung PR 7).

@@ -972,7 +972,7 @@ test('§35a: ungültiger Lohnanteil (negativ oder über dem Rechnungsbetrag) wir
 
 test('§35a: eine Position ohne Lohnanteil löst keine §35a-Meldung aus, auch mit negativem Betrag', () => {
   const db = makeDb()
-  db.costItems.push({ id: 'c1', year: 2025, category: 'Sonstige Betriebskosten', description: 'Gutschrift', amountCents: -5000, key: 'units' })
+  db.costItems.push({ id: 'c1', year: 2025, category: 'Gartenpflege', description: 'Gutschrift', amountCents: -5000, key: 'units' })
   assert.deepEqual(computeSettlement(snapshotFromDb(db, 2025)).warnings, [])
 })
 
@@ -1286,7 +1286,7 @@ test('Prozentschlüssel über 100 %: Warnung, keine Verteilung', () => {
 test('Prozentschlüssel mit gelöschter Wohnung: Warnung, verfallener Anteil beim Vermieter', () => {
   const db = makeDb()
   db.costItems.push({
-    id: 'c1', year: 2025, category: 'Sonstige Betriebskosten', description: 'Verwaist',
+    id: 'c1', year: 2025, category: 'Gartenpflege', description: 'Verwaist',
     amountCents: 100000, key: 'custom', customShares: { u2: 50, weg: 30 },
   })
   const s = computeSettlement(snapshotFromDb(db, 2025))
@@ -1994,6 +1994,12 @@ function randomDb(rnd: Rng): Db {
       item.customShares = shares
     }
     if (rnd() < 0.3) item.labor35aCents = Math.floor(rnd() * item.amountCents * (rnd() < 0.1 ? 1.5 : 1))
+    // #258: Bei 20 % der umlagefähigen Positionen außer Heizung trägt ein Mietverhältnis sie laut Vertrag nicht. Ein
+    // eigener Zufallsstrom aus Betrag und Nummer, damit alle übrigen Zufallsfälle dieselben bleiben wie vor #258.
+    const side = makeRng(amount * 7 + i)
+    if (tenancies.length > 0 && !isNotAllocable(item.category) && item.category !== 'Heizung und Warmwasser' && side() < 0.2) {
+      item.notAgreedTenancyIds = [tenancies[Math.floor(side() * tenancies.length)].id]
+    }
     costItems.push(item)
   }
   return { ...emptyDb(), units, tenancies, meters, readings, payments, costItems }
@@ -2003,6 +2009,41 @@ function randomDb(rnd: Rng): Db {
 const rowsOfItem = (s: ComputedSettlement, id: string) => ({
   tenants: s.statements.flatMap((st) => st.rows.filter((r) => r.costItemId === id)),
   landlord: s.landlord.rows.filter((r) => r.costItemId === id).reduce((a, r) => a + r.shareCents, 0),
+})
+
+// #258 (Entwurf Entscheidung 2): Wer eine Position laut Vertrag nicht trägt, gibt seinen Anteil an den Vermieter ab, nicht
+// an die übrigen Mieter. Verglichen wird mit derselben Rechnung ohne den Eintrag: Die Summe der übrigen Mieter bleibt
+// gleich, der Anteil des Eingetragenen steht ganz beim Vermieter unter `notAgreed`.
+test('Invariante: nicht vereinbart ändert die Summe der übrigen Mieter nicht, der Anteil geht an den Vermieter (#258)', () => {
+  const rnd = makeRng(258)
+  let seen = 0
+  // Mehr Fälle als sonst: Nur ein Teil der Einträge trifft ein Mietverhältnis, das die Position sonst trüge.
+  for (let i = 0; i < 2000; i++) {
+    const db = randomDb(rnd)
+    const marked = db.costItems.filter((c) => (c.notAgreedTenancyIds ?? []).length > 0)
+    if (marked.length === 0) continue
+    const without: Db = { ...db, costItems: db.costItems.map((c) => ({ ...c, notAgreedTenancyIds: null })) }
+    const a = computeSettlement(snapshotFromDb(without, 2025))
+    const b = computeSettlement(snapshotFromDb(db, 2025))
+    for (const item of marked) {
+      const out = new Set(item.notAgreedTenancyIds)
+      const sum = (s: ComputedSettlement, keep: (id: string) => boolean) =>
+        s.statements.filter((st) => keep(st.tenancyId)).flatMap((st) => st.rows.filter((r) => r.costItemId === item.id)).reduce((x, r) => x + r.shareCents, 0)
+      const context = `Fall ${i}, ${item.id}\n${JSON.stringify(db)}`
+      assert.equal(sum(b, (id) => !out.has(id)), sum(a, (id) => !out.has(id)), `übrige Mieter: ${context}`)
+      assert.equal(sum(b, (id) => out.has(id)), 0, `nicht vereinbart trägt etwas: ${context}`)
+      const moved = sum(a, (id) => out.has(id))
+      assert.equal(rowsOfItem(b, item.id).landlord - rowsOfItem(a, item.id).landlord, moved, `Vermieter: ${context}`)
+      const parts = b.landlord.rows.find((r) => r.costItemId === item.id)?.landlordParts ?? []
+      // Unter `notAgreed` steht mindestens, was der Mieter vorher trug; bei Pauschale oder Inklusivmiete stand sein
+      // Anteil vorher schon beim Vermieter und wechselt nur den Grund.
+      const reasoned = parts.filter((p) => p.reason === 'notAgreed').reduce((x, p) => x + p.cents, 0)
+      assert.ok(Math.abs(reasoned) >= Math.abs(moved) && (reasoned === 0 || Math.sign(reasoned) === Math.sign(item.amountCents)), `Grund notAgreed ${reasoned} gegen ${moved}: ${context}`)
+      if (moved !== 0) seen++
+    }
+    assertLandlordParts(b, db.tenancies.length, `Fall ${i}\n${JSON.stringify(db)}`)
+  }
+  assert.ok(seen >= 20, `nur ${seen} Positionen mit einem verschobenen Anteil`)
 })
 
 test('Invariante: Mieteranteile + Vermieteranteil ergeben die Gesamtkosten, je Position und insgesamt', () => {

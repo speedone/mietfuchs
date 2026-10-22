@@ -112,6 +112,16 @@ describe('Hinweistexte der Berechnung', () => {
   test('mindestens ein Text klappt eine Begründung ein', () => {
     expect(samples.some(({ text }) => splitNoticeText(text, 'warning').more !== '')).toBe(true)
   })
+  // #258: Die Auslegung (der Anteil bleibt beim Vermieter) steht unter „Mehr dazu“, Betrag und Folge bleiben sichtbar.
+  test('allocation.not-agreed: die Auslegung nach VIII ZR 159/05 steht unter „Mehr dazu“', () => {
+    const sample = samples.find((s) => s.code === 'allocation.not-agreed')
+    expect(sample).toBeDefined()
+    const { visible, more } = splitNoticeText(sample?.text ?? '', 'hint')
+    expect(more).toContain('VIII ZR 159/05')
+    expect(more).toContain('Auslegung von Mietfuchs')
+    expect(visible).toContain('trägt der Vermieter (§ 556 Abs. 1 BGB)')
+    expect(visible).toContain('100,00 €')
+  })
 })
 
 
