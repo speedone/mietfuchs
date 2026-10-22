@@ -295,6 +295,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- Eigene Heizkostenabrechnung: Fehlt in einer begonnenen Heizperiode der Anteil nach Verbrauch fürs
+  Warmwasser, etwa weil die vorige Heizperiode kein zentrales Warmwasser hatte, lässt er sich jetzt
+  nachtragen. Bisher verlangte die Karte ihn, zeigte aber kein Feld dafür.
 - Eigene Heizkostenabrechnung: Die Antwort zum Wärmeschutz lässt sich wieder speichern, wenn die
   Heizperiode schon begonnen hat und kein Pflichtanteil gilt. Bisher meldete die Karte, der Anteil fehle, obwohl er in diesem Fall nicht änderbar ist; gespeichert wird jetzt mit dem
   geltenden Anteil, und eine aus der vorigen Heizperiode übernommene Vereinbarung über mehr als 70 % bleibt
