@@ -79,6 +79,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Bearbeitet wird über „Bearbeiten“ im Seitenfenster, wie bei Wohnungen und Mietverhältnissen;
   „+ Weiteres Objekt anlegen“ steht jetzt oben rechts auf der Seite. Eine gespeicherte IBAN, die
   vermutlich falsch eingetragen ist, nennt schon die Karte.
+- Heizkosten: Der Hinweis zu den CO₂-Kosten sagt in einem Satz, was zu tun ist (die Rechnung als
+  Lieferung eintragen). Der Weg von Hand steht eingeklappt darunter und nur noch, wenn niemand die
+  Heizkosten abrechnet („Niemand“); bei der eigenen Heizkostenabrechnung passt er nicht
+  ([#341](https://github.com/speedone/mietfuchs/issues/341)).
 - Kontraste: Leere Monatskacheln im Mietkonto sind nicht mehr abgedunkelt (Schrift jetzt über 4,5:1), und
   die Vorjahresbalken samt Legende im Kostenvergleich heben sich im hellen wie im dunklen Design
   mindestens 3:1 von der Karte ab ([#341](https://github.com/speedone/mietfuchs/issues/341)).
