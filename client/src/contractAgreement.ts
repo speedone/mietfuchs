@@ -6,6 +6,7 @@ import type { BillingPeriod, Tenancy, Unit } from './types'
 import type { ItemForm } from './costForm'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { isNotAllocable } from '../../shared/categories.ts'
+import { PARTICIPANT_KEYS } from '../../shared/allocation.ts'
 
 export type ContractTenancy = { tenancyId: string, tenantName: string, unitId: string, unitName: string }
 
@@ -19,7 +20,7 @@ function participatingUnitIds(form: ItemForm, units: Unit[]): Set<string> {
   const rented = units.filter((u) => u.participates)
   if (form.key === 'direct') return new Set(rented.filter((u) => u.id === form.directUnitId).map((u) => u.id))
   if (form.key === 'custom') return new Set(rented.filter((u) => (Number(form.customShares[u.id]?.trim().replace(',', '.') || '0') || 0) > 0).map((u) => u.id))
-  return new Set(rented.filter((u) => form.participants === null || form.participants.includes(u.id)).map((u) => u.id))
+  return new Set(rented.filter((u) => form.participants === null || !PARTICIPANT_KEYS.includes(form.key) || form.participants.includes(u.id)).map((u) => u.id))
 }
 
 // Die Mietverhältnisse, die im Zeitraum bestehen und an der Position teilnehmen; nur für sie kann das Formular

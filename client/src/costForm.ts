@@ -543,7 +543,7 @@ export function buildCostItemBody(form: ItemForm, units: Unit[], period: number 
   // Eine Jahreszahl ist das Kalenderjahr (Tests, Kalenderobjekt); sonst der gewählte Zeitraum (#208).
   const p = typeof period === 'number' ? calendarYearPeriod(period) : period
   // Eine abgewählte Wohnung ohne Antwort (#258): „Speichern“ meldet es am Feld, wie jede Pflichtangabe.
-  const open = form.pendingWhy.flatMap((id) => units.filter((u) => u.id === id))
+  const open = !allowsContractAnswer(form.category) ? [] : form.pendingWhy.flatMap((id) => units.filter((u) => u.id === id))
   if (open.length > 0) {
     const problems = open.map((u): Problem<'participants'> => ({ field: 'participants', short: 'Bitte wählen Sie, warum', text: `Teilnehmer: Bitte wählen Sie bei ${u.name}, warum sie diese Kosten nicht trägt.` }))
     return { error: problems.map((x) => x.text).join(' '), problems }

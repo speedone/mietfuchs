@@ -45,6 +45,16 @@ describe('contractTenancies', () => {
   })
 })
 
+describe('contractTenancies, Sonderfälle', () => {
+  test('veraltete Teilnehmer bei einem Schlüssel ohne Teilnehmer zählen nicht', () => {
+    expect(contractTenancies(form({ key: 'heatingSystem', participants: ['u2'] }), UNITS, TENANCIES, PERIOD).map((r) => r.tenancyId)).toEqual(['t1', 't2'])
+  })
+  test('Grenzen sind inklusive', () => {
+    const edge = [tenancy('e1', 'u1', 'A', '2024-01-01', '2025-01-01'), tenancy('e2', 'u2', 'B', '2025-12-31', null), tenancy('e3', 'u2', 'C', '2026-01-01', null)]
+    expect(contractTenancies(form(), UNITS, edge, PERIOD).map((r) => r.tenancyId)).toEqual(['e1', 'e2'])
+  })
+})
+
 describe('allowsContractAnswer', () => {
   test('nicht bei Heizung, nicht umlagefähig, Rücklage', () => {
     expect(allowsContractAnswer('Heizung und Warmwasser')).toBe(false)
@@ -96,6 +106,10 @@ describe('buildCostItemBody', () => {
     const r = buildCostItemBody(form({ participants: ['u1'], notAgreed: ['t1', 't2', 't3', 'fremd'], named: ['t2'] }), UNITS, PERIOD, TENANCIES)
     if (!('body' in r)) throw new Error('kein Rumpf')
     expect(r.body).toMatchObject({ notAgreedTenancyIds: ['t1'], namedTenancyIds: null })
+  })
+  test('Wechsel auf Heizung blockiert nicht mit einer offenen Frage', () => {
+    const r = buildCostItemBody(form({ category: 'Heizung und Warmwasser', participants: ['u2'], pendingWhy: ['u1'] }), UNITS, PERIOD, TENANCIES)
+    expect('body' in r).toBe(true)
   })
   test('Wechsel auf Heizung und Warmwasser sendet null für beide', () => {
     const r = buildCostItemBody(form({ category: 'Heizung und Warmwasser', key: 'area', notAgreed: ['t1'], named: ['t2'] }), UNITS, PERIOD, TENANCIES)
