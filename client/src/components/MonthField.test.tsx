@@ -79,8 +79,8 @@ test('Monatsraster: öffnet mit Fokus auf dem gewählten Monat, Jahr wird angesa
   expect(gridButton().getAttribute('aria-expanded')).toBe('true')
   const pop = popover()
   if (!pop) throw new Error('kein Popover')
-  expect(document.activeElement).toBe(within(pop).getByRole('gridcell', { name: 'März 2025' }))
-  expect(within(pop).getByRole('gridcell', { name: 'März 2025' }).getAttribute('aria-selected')).toBe('true')
+  expect(document.activeElement).toBe(within(pop).getByRole('gridcell', { name: 'Mär (März 2025)' }))
+  expect(within(pop).getByRole('gridcell', { name: 'Mär (März 2025)' }).getAttribute('aria-selected')).toBe('true')
   expect(within(pop).getAllByRole('gridcell')).toHaveLength(12)
   expect(within(pop).getAllByRole('row')).toHaveLength(4)
   expect(within(pop).getByText('2025').getAttribute('aria-live')).toBe('polite')
@@ -91,7 +91,7 @@ test('Monatsraster: öffnet mit Fokus auf dem gewählten Monat, Jahr wird angesa
 test('Monatsraster: ohne Wert das Jahr von heute, Fokus auf dem laufenden Monat', () => {
   render(<Probe />)
   fireEvent.click(gridButton())
-  expect((document.activeElement as HTMLElement | null)?.getAttribute('aria-label')).toBe('Oktober 2025')
+  expect((document.activeElement as HTMLElement | null)?.textContent).toBe('Okt (Oktober 2025)')
 })
 
 test('Monatsraster: Pfeile, Pos1/Ende, Bild auf/ab, Enter wählt und gibt den Fokus zurück', async () => {
@@ -99,19 +99,19 @@ test('Monatsraster: Pfeile, Pos1/Ende, Bild auf/ab, Enter wählt und gibt den Fo
   gridButton().focus()
   fireEvent.click(gridButton())
   press('ArrowRight')
-  expect((document.activeElement as HTMLElement | null)?.getAttribute('aria-label')).toBe('April 2025')
+  expect((document.activeElement as HTMLElement | null)?.textContent).toBe('Apr (April 2025)')
   press('ArrowDown')
-  expect((document.activeElement as HTMLElement | null)?.getAttribute('aria-label')).toBe('Juli 2025')
+  expect((document.activeElement as HTMLElement | null)?.textContent).toBe('Jul (Juli 2025)')
   press('End')
-  expect((document.activeElement as HTMLElement | null)?.getAttribute('aria-label')).toBe('September 2025')
+  expect((document.activeElement as HTMLElement | null)?.textContent).toBe('Sep (September 2025)')
   press('Home')
-  expect((document.activeElement as HTMLElement | null)?.getAttribute('aria-label')).toBe('Juli 2025')
+  expect((document.activeElement as HTMLElement | null)?.textContent).toBe('Jul (Juli 2025)')
   press('PageDown')
-  expect((document.activeElement as HTMLElement | null)?.getAttribute('aria-label')).toBe('Juli 2026')
+  expect((document.activeElement as HTMLElement | null)?.textContent).toBe('Jul (Juli 2026)')
   expect(screen.getByText('2026')).toBeTruthy()
   press('PageUp')
   press('PageUp')
-  expect((document.activeElement as HTMLElement | null)?.getAttribute('aria-label')).toBe('Juli 2024')
+  expect((document.activeElement as HTMLElement | null)?.textContent).toBe('Jul (Juli 2024)')
   press('Enter')
   await waitFor(() => expect(last).toBe('2024-07'))
   expect(field().value).toBe('Juli 2024')
@@ -124,7 +124,7 @@ test('Monatsraster: ‹ › wechseln das Jahr, ein Klick wählt', () => {
   render(<Probe initial="2025-03" />)
   fireEvent.click(gridButton())
   fireEvent.click(screen.getByRole('button', { name: 'Nächstes Jahr' }))
-  fireEvent.click(screen.getByRole('gridcell', { name: 'Mai 2026' }))
+  fireEvent.click(screen.getByRole('gridcell', { name: 'Mai (Mai 2026)' }))
   expect(last).toBe('2026-05')
   expect(isOpen()).toBe(false)
 })
@@ -145,7 +145,7 @@ test('Monatsraster: Esc schließt nur das Raster, Fokus zurück, das Seitenfenst
   // das Raster hängt im Seitenfenster, nicht im Label: sonst wäre es inert bzw. nähme dem Feld den Namen
   expect(drawer.contains(popover())).toBe(true)
   expect(field().closest('label')?.contains(popover())).toBe(false)
-  fireEvent.click(screen.getByRole('gridcell', { name: 'Oktober 2025' }))
+  fireEvent.click(screen.getByRole('gridcell', { name: 'Okt (Oktober 2025)' }))
   await waitFor(() => expect(document.activeElement).toBe(gridButton()))
   fireEvent.click(gridButton())
   press('Escape')
@@ -174,4 +174,17 @@ test('Monatsraster: ein zweiter Klick auf ▦ schließt', async () => {
   fireEvent.pointerDown(gridButton())
   fireEvent.click(gridButton())
   expect(isOpen()).toBe(false)
+})
+
+// WCAG 2.5.3 (axe label-content-name-mismatch, ab axe 4.14 geprüft): Der sichtbare Text eines Monats im Raster
+// steht am Anfang seines Namens, der volle Monat mit Jahr folgt unsichtbar, wie bei DraftActions.
+test('Monatsraster: der Name beginnt mit dem sichtbaren Kürzel', () => {
+  render(<Probe initial="2025-03" />)
+  fireEvent.click(screen.getByRole('button', { name: 'Monat im Raster wählen' }))
+  for (const cell of screen.getAllByRole('gridcell')) {
+    const visible = [...cell.childNodes].filter((n) => n.nodeType === Node.TEXT_NODE).map((n) => n.textContent).join('').trim()
+    expect(cell.getAttribute('aria-label')).toBeNull()
+    expect(cell.textContent?.startsWith(visible)).toBe(true)
+  }
+  expect(screen.getByRole('gridcell', { name: 'Mär (März 2025)' })).toBeTruthy()
 })

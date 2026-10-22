@@ -542,7 +542,7 @@ test('Heizvorauszahlung: Monatsfeld und Raster, gespeichert wie gezeigt', async 
   const raster = monat.parentElement?.querySelector('button')
   if (!raster) throw new Error('kein Knopf für das Raster')
   fireEvent.click(raster)
-  fireEvent.click(screen.getByRole('gridcell', { name: 'Juni 2025' }))
+  fireEvent.click(screen.getByRole('gridcell', { name: 'Jun (Juni 2025)' }))
   expect(monat.value).toBe('Juni 2025')
   fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Speichern' }))
   await vi.waitFor(() => expect(sent.some((s) => s.url.startsWith('/api/tenancies'))).toBe(true))

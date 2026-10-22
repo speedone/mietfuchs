@@ -157,11 +157,11 @@ export default function MonthField({ label, value, onChange, placeholder, start,
                             role="gridcell"
                             tabIndex={month === pos.month ? 0 : -1}
                             aria-selected={isSelected}
-                            aria-label={`${MONTH_NAMES[month]} ${pos.year}`}
-                           
                             onClick={() => choose({ year: pos.year, month })}
                           >
-                            {MONTH_SHORT[month]}
+                            {/* Der sichtbare Text steht am Anfang des Namens, der volle Monat mit Jahr folgt unsichtbar
+                                (WCAG 2.5.3; vorher ein aria-label „März 2025“ zum sichtbaren „Mär“). */}
+                            {MONTH_SHORT[month]}{' '}<span className="sr-only">({MONTH_NAMES[month]} {pos.year})</span>
                           </button>
                         )
                       })}
