@@ -32,7 +32,10 @@ export const INFORMATIONAL: ReadonlySet<string> = new Set(['basis.unit-zero', 'b
   // #218: Auskunft, dass eine Vorerfassung nach § 5 Abs. 7 Satz 2 möglich ist; sie ist dort keine Pflicht.
   'heating.pre-capture',
   // #311: Auskunft, wie Mietfuchs den angebrochenen Monat ansetzt; nichts ist falsch erfasst.
-  'prepayment.partial-month'])
+  'prepayment.partial-month',
+  // #258: Auskunft, dass eine Position laut Mietvertrag nicht umgelegt wird und ihr Anteil beim Vermieter bleibt; richtig
+  // erfasst, nichts zu beheben. `allocation.other-unanswered` steht bewusst nicht hier: Es fragt nach einer Angabe.
+  'allocation.not-agreed'])
 
 // Die Hinweise, die das Abschließen einer Abrechnung absichern (#319): Stufe `error`, also Angaben,
 // die sich widersprechen (eine Position wird nicht verteilt, Mietverhältnisse überschneiden sich).

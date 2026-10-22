@@ -247,3 +247,14 @@ test.each(['heating.pipe-heat', 'heating.pre-capture'])('%s ist Auskunft und fä
   expect(noticesNeedAttention(s)).toBe(false)
   expect(attentionLevel(s)).toBe('gruen')
 })
+
+// #258: Eine richtig erfasste nicht vereinbarte Position ist Auskunft, nichts zu beheben; die offene Frage zu „Sonstige
+// Betriebskosten“ verlangt dagegen eine Angabe und färbt.
+test('#258: allocation.not-agreed färbt nicht, allocation.other-unanswered schon', () => {
+  const info = { warnings: ['…'], notices: [n({ code: 'allocation.not-agreed', level: 'hint', title: 'Im Mietvertrag nicht vereinbart', text: '…' })] }
+  expect(noticesNeedAttention(info)).toBe(false)
+  expect(attentionLevel(info)).toBe('gruen')
+  const open = { warnings: ['…'], notices: [n({ code: 'allocation.other-unanswered', level: 'hint', title: 'Sonstige Betriebskosten im Mietvertrag benannt?', text: '…' })] }
+  expect(noticesNeedAttention(open)).toBe(true)
+  expect(attentionLevel(open)).toBe('gelb')
+})
