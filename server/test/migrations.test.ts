@@ -165,6 +165,9 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // und die Marken ersetzt.
   '0060_bundesland': '4553e45643c584947b7dc193ae4a216af5b3ac01049795243d818a3f6a4d76e8',
   '0061_bundesland_bedingung': '95f0407dab0f6a9421d80935f336b81f8f1c477a446873548833207e6a83c9d4',
+  // #258: die Umlagevereinbarung je Mietverhältnis (cost_item_contract). Wird vor dem Merge ein anderer PR davor
+  // eingereiht, wird der Schritt neu erzeugt und die Marke ersetzt.
+  '0062_kosten_vertrag': '5919ae32ddedf2e1a67268ba7f583d2b762d92dad7487289909ff96683a0bee6',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

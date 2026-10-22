@@ -1540,6 +1540,13 @@ async function guardUnit(db: Executor, before: Unit | null, after: Unit): Promis
     .innerJoin(tenancies, eq(costItemAmounts.tenancyId, tenancies.id))
     .where(eq(tenancies.unitId, after.id))
   if ((betraege[0]?.n ?? 0) > 0) haengt.push('Einzelbeträge ihrer Mietverhältnisse')
+  // Die Umlagevereinbarung je Mietverhältnis (#258) gehört ebenso zum Objekt der Position.
+  const vertrag = await db
+    .select({ n: count() })
+    .from(costItemContract)
+    .innerJoin(tenancies, eq(costItemContract.tenancyId, tenancies.id))
+    .where(eq(tenancies.unitId, after.id))
+  if ((vertrag[0]?.n ?? 0) > 0) haengt.push('Angaben zur Umlagevereinbarung ihrer Mietverhältnisse')
   // Schätzungen nach § 9a und Werte eines Ablesedienstes gehören zur Heizanlage des bisherigen Objekts
   // (Durchsicht von #242, G-I3); ohne Zähler griff keine der Prüfungen darüber, und das eigene Backup wurde
   // danach beim Wiederherstellen abgelehnt.
@@ -1577,7 +1584,7 @@ async function guardTenancy(db: Executor, before: Tenancy | null, after: Tenancy
 }
 
 // Ein Mietverhältnis erbt sein Objekt über die Wohnung. Wechselt es in eine Wohnung eines anderen
-// Objekts, bleiben seine Einzelbeträge (#94) beim alten zurück; dann lieber ablehnen.
+// Objekts, bleiben seine Einzelbeträge (#94) und seine Umlagevereinbarung (#258) beim alten zurück; dann lieber ablehnen.
 async function guardTenancyMove(db: Executor, before: Tenancy | null, after: Tenancy): Promise<void> {
   if (!before || before.unitId === after.unitId) return
   await guardHeatingMove(db, before, after)
@@ -1585,12 +1592,13 @@ async function guardTenancyMove(db: Executor, before: Tenancy | null, after: Ten
     (await db.select({ propertyId: units.propertyId }).from(units).where(eq(units.id, unitId)))[0]?.propertyId
   if ((await objektVon(before.unitId)) === (await objektVon(after.unitId))) return
   const betraege = await db.select({ n: count() }).from(costItemAmounts).where(eq(costItemAmounts.tenancyId, after.id))
+  const vertrag = await db.select({ n: count() }).from(costItemContract).where(eq(costItemContract.tenancyId, after.id))
   // CO₂-Beträge „vom Vermieter übernommen“ (Heizung PR 6) gehören ebenso zur Heizanlage des alten Objekts.
   const co2 = await db.select({ n: count() }).from(co2TenantReliefs).where(eq(co2TenantReliefs.tenancyId, after.id))
-  if ((betraege[0]?.n ?? 0) === 0 && (co2[0]?.n ?? 0) === 0) return
+  if ((betraege[0]?.n ?? 0) === 0 && (vertrag[0]?.n ?? 0) === 0 && (co2[0]?.n ?? 0) === 0) return
   throw new CrossPropertyError(
     `Das Mietverhältnis „${after.tenantName}“ kann nicht in eine Wohnung eines anderen Objekts wechseln, weil noch ` +
-      'Einzelbeträge von Kostenpositionen oder CO₂-Angaben des bisherigen Objekts an ihm hängen. Bitte lösen Sie diese Verweise zuerst.',
+      'Einzelbeträge oder Angaben zur Umlagevereinbarung von Kostenpositionen oder CO₂-Angaben des bisherigen Objekts an ihm hängen. Bitte lösen Sie diese Verweise zuerst.',
   )
 }
 
@@ -1702,6 +1710,14 @@ export async function crossPropertyViolations(db: Database): Promise<string[]> {
     .innerJoin(units, eq(tenancies.unitId, units.id))
     .where(ne(costItems.propertyId, units.propertyId))
   for (const c of betraege) befunde.push(`Die Kostenposition „${c.description}“ hat einen Einzelbetrag für ein Mietverhältnis eines anderen Objekts.`)
+  const vertrag = await db
+    .select({ description: costItems.description })
+    .from(costItemContract)
+    .innerJoin(costItems, eq(costItemContract.costItemId, costItems.id))
+    .innerJoin(tenancies, eq(costItemContract.tenancyId, tenancies.id))
+    .innerJoin(units, eq(tenancies.unitId, units.id))
+    .where(ne(costItems.propertyId, units.propertyId))
+  for (const c of vertrag) befunde.push(`Die Kostenposition „${c.description}“ hat eine Angabe zur Umlagevereinbarung für ein Mietverhältnis eines anderen Objekts.`)
   const eigen = await db
     .select({ description: costItems.description })
     .from(costItemSelfAmounts)
