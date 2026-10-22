@@ -76,7 +76,9 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
   }, [printing])
 
   async function saveShare() {
-    const heat = forced ?? percentOf(share)
+    // Gesperrt und ohne Pflichtanteil gilt der Anteil weiter, wie beim Warmwasser; geändert wird dann nur die Antwort
+    // zum Wärmeschutz oder zur Vereinbarung (#376). Der Server nimmt den unveränderten Anteil an (§ 6 Abs. 4).
+    const heat = forced ?? (editable ? percentOf(share) : (d?.effective?.heating ?? null))
     const water = hotWater === 'none' ? null : (editable ? percentOf(waterShare) : (d?.effective?.water ?? null))
     if (heat === null || (hotWater !== 'none' && water === null)) {
       setError(`Bitte geben Sie den Anteil zwischen ${min} und ${max} % an, mit höchstens zwei Nachkommastellen.`)

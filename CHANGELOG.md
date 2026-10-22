@@ -289,6 +289,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- Eigene Heizkostenabrechnung: Die Antwort zum Wärmeschutz (oder zu „mehr als 70 % vereinbart“) lässt sich
+  wieder speichern, wenn die Heizperiode schon begonnen hat und kein Pflichtanteil gilt. Bisher meldete die
+  Karte, der Anteil fehle, obwohl er in diesem Fall nicht änderbar ist; gespeichert wird jetzt mit dem
+  geltenden Anteil ([#376](https://github.com/speedone/mietfuchs/issues/376)).
 - Wechsel des Abrechnungszeitraums: Wer nach der Vorschau den Monat oder die Art der Änderung noch einmal
   änderte, speicherte mit „Speichern“ (vorher „Zeitraum wechseln“) trotzdem den Wechsel der alten Vorschau,
   etwa ab Mai, obwohl im Feld September stand. Jetzt verfällt die Vorschau samt Antworten und Bestätigung
