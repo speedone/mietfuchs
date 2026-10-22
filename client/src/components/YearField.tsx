@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import Field, { type FieldWidth } from './Field'
 import { YEAR_MAX, YEAR_MIN } from '../monthText'
 import { parseYearText } from '../yearText'
@@ -27,20 +27,34 @@ type Props = {
   onFix?: () => void
   width?: FieldWidth
   className?: string
+  /** Engere Grenzen fürs Blättern als die des Monatsfelds, etwa die Jahre, die eine Prüfung annimmt. */
+  min?: number
+  max?: number
 }
 
-export default function YearField({ label, value, onChange, today, placeholder, required, hint, error, id, onFix, width, className }: Props) {
+export default function YearField({ label, value, onChange, today, placeholder, required, hint, error, id, onFix, width, className, min = YEAR_MIN, max = YEAR_MAX }: Props) {
   const [ownError, setOwnError] = useState<string>()
+  // Was das Feld selbst gesendet hat. Kommt ein anderer Wert von außen (etwa ein übernommener Vorschlag), gilt die
+  // eigene Meldung nicht mehr, wie beim Monatsfeld (Durchsicht von #404).
+  const sent = useRef(value)
+  useEffect(() => {
+    if (value !== sent.current) setOwnError(undefined)
+    sent.current = value
+  }, [value])
+  const send = (next: string) => {
+    sent.current = next
+    onChange(next)
+  }
   // Was ‹ › gesetzt haben, sagt der Bildschirmleser an; der Fokus bleibt auf dem Knopf.
   const [stepped, setStepped] = useState('')
   const parsed = parseYearText(value)
   const current = parsed.kind === 'year' ? parsed.year : null
   const step = (delta: number) => {
     const start = current === null ? Number((today ?? localToday()).slice(0, 4)) : current + delta
-    const next = String(Math.min(YEAR_MAX, Math.max(YEAR_MIN, start)))
+    const next = String(Math.min(max, Math.max(min, start)))
     setOwnError(undefined)
     setStepped(next)
-    onChange(next)
+    send(next)
     onFix?.()
   }
   const onBlur = () => {
@@ -61,12 +75,12 @@ export default function YearField({ label, value, onChange, today, placeholder, 
             autoComplete="off"
             onChange={(e) => {
               setOwnError(undefined)
-              onChange(e.target.value)
+              send(e.target.value)
             }}
             onBlur={onBlur}
           />
-          <button type="button" aria-label="Voriges Jahr" aria-controls={control.id} disabled={current !== null && current <= YEAR_MIN} onClick={() => step(-1)}>‹</button>
-          <button type="button" aria-label="Nächstes Jahr" aria-controls={control.id} disabled={current !== null && current >= YEAR_MAX} onClick={() => step(1)}>›</button>
+          <button type="button" aria-label="Voriges Jahr" aria-controls={control.id} disabled={current !== null && current <= min} onClick={() => step(-1)}>‹</button>
+          <button type="button" aria-label="Nächstes Jahr" aria-controls={control.id} disabled={current !== null && current >= max} onClick={() => step(1)}>›</button>
           <span className="sr-only" aria-live="polite">{stepped}</span>
         </span>
       )}

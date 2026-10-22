@@ -167,6 +167,8 @@ export default function ServiceImportReview({ x, file, ctx, view, co2 = true, on
                   value={d.taxYear}
                   onChange={(taxYear) => setDraft(i, { taxYear })}
                   today={span.to}
+                  min={Number(span.from.slice(0, 4))}
+                  max={Number(span.to.slice(0, 4)) + 1}
                 />
               )}
             </div>

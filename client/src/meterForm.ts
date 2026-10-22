@@ -9,6 +9,7 @@ import { hasKnownUnits, knownUnit, meterUnitOptions, unitKey, unitLabel, unitPro
 import { METER_TYPE_LABELS } from '../../shared/wording.ts'
 import type { Problem } from './formProblems'
 import { parseYearText } from './yearText'
+import { YEAR_MAX, YEAR_MIN } from './monthText'
 
 // Die Auswahl der Einheit (#342): bekannte Einheiten der Sparte und eine gespeicherte unbekannte.
 export { hasKnownUnits, meterUnitOptions }
@@ -209,7 +210,12 @@ export function meterBody(form: MeterForm, plantId: string | null): { body: Mete
   // Dieselbe Regel wie das Jahresfeld (yearText.ts); der Satz nennt, woher das Eichjahr kommt.
   const until = parseYearText(form.calibratedUntil)
   if (asksCalibration(form) && until.kind === 'invalid') {
-    problems.push({ text: 'Bitte tragen Sie das Eichjahr vierstellig ein, so wie es der Messdienst oder der Eichschein nennt, oder lassen Sie das Feld leer.', field: 'calibratedUntil', short: until.short })
+    // Vierstellig, aber außerhalb der Grenzen: Der Satz „vierstellig“ stimmte dann nicht (Durchsicht von #404).
+    const outside = /^\d{4}$/.test(form.calibratedUntil.trim().replace(/\s*\.$/, ''))
+    const text = outside
+      ? `Das Eichjahr ${form.calibratedUntil.trim().replace(/\s*\.$/, '')} liegt außerhalb von ${YEAR_MIN} bis ${YEAR_MAX}. Bitte prüfen Sie es am Eichschein, oder lassen Sie das Feld leer.`
+      : 'Bitte tragen Sie das Eichjahr vierstellig ein, so wie es der Messdienst oder der Eichschein nennt, oder lassen Sie das Feld leer.'
+    problems.push({ text, field: 'calibratedUntil', short: until.short })
   }
   if (problems.length > 0 || 'error' in hca) return failed(problems)
   return {

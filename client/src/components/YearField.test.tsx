@@ -8,10 +8,15 @@ import YearField from './YearField'
 afterEach(cleanup)
 
 let last = ''
-function Probe({ initial = '', error, required }: { initial?: string; error?: string; required?: boolean }) {
+function Probe({ initial = '', error, required, min, max }: { initial?: string; error?: string; required?: boolean; min?: number; max?: number }) {
   const [value, setValue] = useState(initial)
   last = value
-  return <YearField label="Geeicht bis Ende (Jahr)" value={value} onChange={setValue} today="2026-10-21" error={error} required={required} />
+  return (
+    <>
+      <YearField label="Geeicht bis Ende (Jahr)" value={value} onChange={setValue} today="2026-10-21" error={error} required={required} min={min} max={max} />
+      <button type="button" onClick={() => setValue('2030')}>Vorschlag übernehmen</button>
+    </>
+  )
 }
 
 const field = () => screen.getByRole('textbox', { name: 'Geeicht bis Ende (Jahr)' }) as HTMLInputElement
@@ -76,4 +81,27 @@ test('Jahresfeld: die Meldung der Prüfung geht vor, Pflichtfeld trägt required
   expect(field().getAttribute('aria-invalid')).toBe('true')
   expect(field().required).toBe(true)
   expect(screen.getByText('Vierstellige Jahreszahl')).toBeTruthy()
+})
+
+// Durchsicht von #404: Ein Wert von außen (übernommener Vorschlag) nimmt die eigene Meldung weg, wie beim Monatsfeld.
+test('Jahresfeld: ein Wert von außen nimmt die Meldung vom Verlassen weg', () => {
+  render(<Probe />)
+  fireEvent.change(field(), { target: { value: '28' } })
+  fireEvent.blur(field())
+  expect(field().getAttribute('aria-invalid')).toBe('true')
+  fireEvent.click(screen.getByRole('button', { name: 'Vorschlag übernehmen' }))
+  expect(field().value).toBe('2030')
+  expect(field().getAttribute('aria-invalid')).toBeNull()
+  expect(screen.queryByText('Jahr vierstellig angeben')).toBeNull()
+})
+
+test('Jahresfeld: engere Grenzen gelten fürs Blättern', () => {
+  render(<Probe initial="2025" min={2024} max={2026} />)
+  fireEvent.click(next())
+  expect(last).toBe('2026')
+  expect(next().disabled).toBe(true)
+  fireEvent.click(prev())
+  fireEvent.click(prev())
+  expect(last).toBe('2024')
+  expect(prev().disabled).toBe(true)
 })
