@@ -295,6 +295,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- Monatsraster für Bildschirmleser: Jeder Monat heißt jetzt so, wie er sichtbar dasteht, mit dem vollen
+  Monat dahinter („Mär (März 2025)“), statt nur „März 2025“ zum sichtbaren „Mär“. Das verlangt WCAG 2.5.3;
+  die Prüfung mit axe meldet es seit Fassung 4.14.
 - Eigene Heizkostenabrechnung: Fehlt in einer begonnenen Heizperiode der Anteil nach Verbrauch fürs
   Warmwasser, etwa weil die vorige Heizperiode kein zentrales Warmwasser hatte, lässt er sich jetzt
   nachtragen, auch nach einem Kesseltausch. Bisher verlangte die Karte ihn, zeigte aber kein Feld dafür,
