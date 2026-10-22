@@ -481,7 +481,7 @@
  },
  {
   "code": "heating.operating-power-key",
-  "text": "„Abzug Betriebsstrom Heizung“ (147,84 €) ist anders verteilt als die Stromrechnung „Hausstrom“, aus der er gerechnet wurde: beide nach „Wohnfläche“, aber mit anderen Angaben (Teilnehmer, Anteile, Zähler oder Wohnung). Damit verschieben sich die Anteile der Mieter am Allgemeinstrom. Verteilen Sie den Abzug im Kostenformular wie die Rechnung."
+  "text": "„Abzug Betriebsstrom Heizung“ (147,84 €) ist anders verteilt als die Stromrechnung „Hausstrom“, aus der er gerechnet wurde: beide nach „Wohnfläche“, aber mit anderen Angaben (Teilnehmer, Anteile, Zähler, Wohnung oder nicht im Mietvertrag vereinbart). Damit verschieben sich die Anteile der Mieter am Allgemeinstrom. Verteilen Sie den Abzug im Kostenformular wie die Rechnung."
  },
  {
   "code": "heating.operating-power-missing",

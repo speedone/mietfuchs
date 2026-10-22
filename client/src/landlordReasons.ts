@@ -14,7 +14,7 @@ const LABELS: Record<LandlordReason, string> = {
   inclusive: 'Inklusivmiete',
   outsideUnit: 'Wohnung außerhalb der Abrechnungseinheit',
   amountsRest: 'Rest nach Einzelbeträgen',
-  customRest: 'nicht vereinbarter Anteil',
+  customRest: 'Rest unter 100 % der vereinbarten Anteile',
   mainMeterRest: 'Rest des Hauptzählers',
   co2Share: 'CO₂-Anteil des Vermieters',
   fuelCarry: 'Brennstoff einer anderen Heizperiode (Abgrenzung)',

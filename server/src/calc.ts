@@ -4480,7 +4480,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   const manualSplitTime = new Map<string, Map<string, { now: number, alt: number }>>()
   const selfFlat = new Map<string, number>()
   // #258: je Mietverhältnis die Positionen, die es laut Mietvertrag nicht trägt, mit Betrag (Hinweis nach der Schleife).
-  const notAgreedByTenancy = new Map<string, { t: TenancyWithUnit, items: string[] }>()
+  // `settled`: Wenigstens eine dieser Positionen rechnet das Mietverhältnis ab (weder Pauschale noch Inklusivmiete).
+  const notAgreedByTenancy = new Map<string, { t: TenancyWithUnit, items: string[], settled: boolean }>()
   for (const item of [...items, ...fuelSynthetic]) {
     const b = basisOf(item)
     // Eine Übertragszeile (Heizung PR 7) ist keine Position: Sie zählt nicht zu den Kosten des
@@ -4489,7 +4490,12 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const carry = fuelCarryOf.get(item.id)
     // #258: Wer die Position laut Mietvertrag nicht trägt, bleibt in der Verteilbasis, sein Anteil geht an den
     // Vermieter (`notAgreed`), nicht an die übrigen Mieter.
-    const notAgreed = contractTenancyIds(item, 'notAgreedTenancyIds')
+    // Ein Abzug beim Betriebsstrom ist ein Ausschnitt seiner Stromrechnung (Durchsicht des Endstands von #258): Er folgt
+    // ihrer Liste, sonst bekäme ein Mieter, der die Rechnung nicht trägt, aus dem Abzug eine Gutschrift.
+    const contractSource = (item.operatingPower === 'deduction' && item.operatingPowerGeneralId
+      ? items.find((g) => g.id === item.operatingPowerGeneralId)
+      : undefined) ?? item
+    const notAgreed = contractTenancyIds(contractSource, 'notAgreedTenancyIds')
     const bookable = (t: SnapshotTenancy) => statements.has(t.id) && !notAgreed.has(t.id) && modelFor(t, item) === 'settlement'
     if (!carry) totalCostsCents += item.amountCents
     // Anders als im Vorjahr (#141)? Nur ein Hinweis, verteilt wird wie erfasst.
@@ -4937,8 +4943,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       list.forEach((e, j) => {
         const c = (split[j] ?? 0) * sign
         if (c === 0) return
-        const entry = notAgreedByTenancy.get(e.t.id) ?? { t: e.t, items: [] }
+        const entry = notAgreedByTenancy.get(e.t.id) ?? { t: e.t, items: [], settled: false }
         entry.items.push(`„${item.description}“ (${fmtCents(c)})`)
+        entry.settled ||= modelFor(e.t, item) === 'settlement'
         notAgreedByTenancy.set(e.t.id, entry)
       })
     }
@@ -5187,11 +5194,12 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
 
   // #258, Entwurf Entscheidung 6: eine Auskunft je Mietverhältnis. Die Auslegung, dass der Anteil beim Vermieter
   // bleibt und nicht bei den übrigen Mietern, steht als Begründung aus der Fundstelle unter „Mehr dazu“.
-  for (const { t, items: list } of [...notAgreedByTenancy.values()].sort((a, b) => compareText(a.t.id, b.t.id))) {
+  // Pauschale und Inklusivmiete bekommen keine Abrechnung dieser Kosten; der Satz, dass die Position dort fehlt, entfällt.
+  for (const { t, items: list, settled } of [...notAgreedByTenancy.values()].sort((a, b) => compareText(a.t.id, b.t.id))) {
     const who = `${t.tenantName} (${t.unit.name})`
     warn('allocation.not-agreed',
       `${who} trägt laut Mietvertrag ${list.length === 1 ? 'die Position' : 'die Positionen'} ${andList(list)} nicht; ${list.length === 1 ? 'diesen Anteil' : 'diese Anteile'} trägt der Vermieter (§ 556 Abs. 1 BGB), nicht die übrigen Mieter. ` +
-        `In der Abrechnung von ${who} ${list.length === 1 ? 'fehlt sie' : 'fehlen sie'}. ` +
+        (settled ? `In der Abrechnung von ${who} ${list.length === 1 ? 'fehlt sie' : 'fehlen sie'}. ` : '') +
         'Dass der Anteil nicht auf die übrigen Mieter übergeht, ist eine Auslegung von Mietfuchs nach dem Grundsatz zum Leerstand (BGH VIII ZR 159/05).',
       { kind: 'tenancy', id: t.id })
   }
@@ -7939,7 +7947,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     warn('heating.operating-power-double', operatingPowerText(f, fmtCents), itemSubject({ id: f.itemId }))
   }
   // Durchsicht von #252, G-K3: Ein Abzug mindert seine Stromrechnung nur dann im Verhältnis, wenn er
-  // verteilt ist wie sie (Schlüssel, Zähler, Wohnung, Anteile, Teilnehmer; dieselbe Regel wie beim
+  // verteilt ist wie sie (Schlüssel, Zähler, Wohnung, Anteile, Teilnehmer, seit #258 auch „nicht vereinbart“; dieselbe Regel wie beim
   // gemerkten Schlüssel, shared/allocation.ts). Sonst verschieben sich die Anteile der Mieter.
   // Durchsicht von #252, G-K2 und N1: Betriebsstrom und Abzug in verschiedenen Steuerjahren standen bis #268 in beiden
   // Jahren der Anlage V falsch, und hier stand ein Hinweis. Seit #268 gleicht die Steuerübersicht je Steuerjahr aus
@@ -7959,8 +7967,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   for (const d of items) {
     if (d.operatingPower !== 'deduction' || !d.operatingPowerGeneralId) continue
     const g = items.find((c) => c.id === d.operatingPowerGeneralId)
-    if (!g || sameAllocation(allocationOf(d), allocationOf(g))) continue
-    const how = d.key === g.key ? `beide nach „${KEY_LABELS[d.key]}“, aber mit anderen Angaben (Teilnehmer, Anteile, Zähler oder Wohnung)` : `der Abzug nach „${KEY_LABELS[d.key]}“, die Rechnung nach „${KEY_LABELS[g.key]}“`
+    if (!g || sameAllocation(allocationOf(d, undefined, { contract: true }), allocationOf(g, undefined, { contract: true }))) continue
+    const how = d.key === g.key ? `beide nach „${KEY_LABELS[d.key]}“, aber mit anderen Angaben (Teilnehmer, Anteile, Zähler, Wohnung oder nicht im Mietvertrag vereinbart)` : `der Abzug nach „${KEY_LABELS[d.key]}“, die Rechnung nach „${KEY_LABELS[g.key]}“`
     warn('heating.operating-power-key',
       `„${d.description}“ (${fmtCents(-d.amountCents)}) ist anders verteilt als die Stromrechnung „${g.description}“, aus der er gerechnet wurde: ${how}. ` +
       'Damit verschieben sich die Anteile der Mieter am Allgemeinstrom. Verteilen Sie den Abzug im Kostenformular wie die Rechnung.',

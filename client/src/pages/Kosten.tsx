@@ -656,7 +656,8 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                     {showsKeyFields(r.source.category) && r.source.participantUnitIds && (
                       <div className="muted">nur {r.source.participantUnitIds.map((id) => units.find((u) => u.id === id)?.name ?? '?').join(', ')}</div>
                     )}
-                    {showsKeyFields(r.source.category) && notAgreedText(r.source.notAgreedTenancyIds, tenancies) && <div className="muted">{notAgreedText(r.source.notAgreedTenancyIds, tenancies)}</div>}
+                    {/* Was übernommen wird (`r.notAgreed`), ohne Mieter, die im neuen Zeitraum nicht mehr wohnen (#258). */}
+                    {showsKeyFields(r.source.category) && notAgreedText(r.notAgreed, tenancies) && <div className="muted">{notAgreedText(r.notAgreed, tenancies)}</div>}
                     {showsKeyFields(r.source.category) && r.source.key === 'meter' && r.source.meterType && <div className="muted">{METER_TYPE_LABELS[r.source.meterType]}</div>}
                     {/* Durchsicht: Anteile samt Summe, Wohnung der Direktzuordnung */}
                     {showsKeyFields(r.source.category) && (() => {

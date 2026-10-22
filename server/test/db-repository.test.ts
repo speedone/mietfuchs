@@ -21,7 +21,7 @@ import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import {
   closeSettlement, createEntity, createProperty, crossPropertyViolations, findClosedSettlement, findEntity,
   invoiceFilesInUse, listCollection, listProperties, removeEntity, removeProperty, reopenSettlement, setSentAt,
-  sharesForUnit, updateEntity, updateProperty, type CollectionName,
+  sharesForUnit, unitDependents, updateEntity, updateProperty, type CollectionName,
 } from '../src/db/repository.ts'
 import {
   baseRents, costItemAmounts, costItemContract, flatRates, costItemParticipants, costItemShares, costItems, meters, payments, personHistory, prepaymentOverrides,
@@ -804,6 +804,28 @@ test('Umlagevereinbarung: Mietverhältnis und Wohnung wechseln das Objekt nicht,
     await opened.write((db) => updateEntity(db, 'costItems', 'c1', { notAgreedTenancyIds: null }))
     await opened.write((db) => updateEntity(db, 'tenancies', 't1', { unitId: 'b' }))
     assert.equal(fieldOf(await opened.read((db) => findEntity(db, 'tenancies', 't1')), 'unitId'), 'b')
+  })
+})
+
+// Durchsicht des Endstands von #258: Die Löschfrage einer Wohnung zählt die Angaben zum Mietvertrag ihrer Mietverhältnisse
+// mit, wie die Einzelbeträge; sie fallen mit dem Mietverhältnis weg (`ON DELETE CASCADE`).
+test('Umlagevereinbarung: unitDependents zählt die Angaben der Mietverhältnisse der Wohnung in costItemLinks', async () => {
+  await withDatabase(async (opened) => {
+    await twoProperties(opened)
+    await opened.write(async (db) => {
+      await createEntity(db, 'units', 'a2', { propertyId: 'objekt-1', name: 'A-OG', areaM2: 50, participates: true })
+      await createEntity(db, 'tenancies', 't1', { unitId: 'a', tenantName: 'Meier', start: '2024-01-01' })
+      await createEntity(db, 'tenancies', 't2', { unitId: 'a2', tenantName: 'Weber', start: '2024-01-01' })
+      await createEntity(db, 'costItems', 'c1', {
+        propertyId: 'objekt-1', year: 2024, category: 'Gartenpflege', description: 'Garten', amountCents: 1000, key: 'area', notAgreedTenancyIds: ['t1', 't2'],
+      })
+      await createEntity(db, 'costItems', 'c2', {
+        propertyId: 'objekt-1', year: 2024, category: 'Sonstige Betriebskosten', description: 'Dachrinne', amountCents: 1000, key: 'area', namedTenancyIds: ['t1'],
+      })
+    })
+    const deps = await opened.read((db) => unitDependents(db, 'a'))
+    assert.equal(deps?.costItemLinks, 2)
+    assert.equal((await opened.read((db) => unitDependents(db, 'a2')))?.costItemLinks, 1)
   })
 })
 

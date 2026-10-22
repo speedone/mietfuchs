@@ -64,6 +64,7 @@ es eine Meldung, abgebrochen wird nie.
   die bleiben in `data/secrets.json`.
 - **Löschverhalten**: Eine Wohnung kaskadiert auf Mietverhältnisse, Zähler, Ablesungen, Zahlungen,
   Anteile, Teilnehmer, Einzel- und Eigenbeträge, Pauschalen, `unit_no_connection`.
+  `cost_item_contract` (#258) fällt mit der Kostenposition und mit dem Mietverhältnis weg.
   `cost_items.direct_unit_id` ist **`SET NULL`**: die Rechnung gehört weiter in ihre Abrechnung.
   Aufs Objekt verweisen Wurzeln mit `RESTRICT`. Eine Wohnung mit Rechnungen einer Etagenheizung
   löscht die Route nicht (409, `dependents.fuelDeliveries`).

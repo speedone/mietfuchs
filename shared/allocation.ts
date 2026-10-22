@@ -12,7 +12,7 @@ import type { PeriodContext } from './period.ts'
 
 // Der Zeitraum ist optional: `allocationOf` braucht ihn nicht, nur die Suche nach dem Vorzeitraum.
 export type AllocatedItem = Pick<CostItem, 'category' | 'key' | 'description'> &
-  Partial<Pick<CostItem, 'period' | 'meterType' | 'directUnitId' | 'customShares' | 'participantUnitIds' | 'externalBasis'>>
+  Partial<Pick<CostItem, 'period' | 'meterType' | 'directUnitId' | 'customShares' | 'participantUnitIds' | 'externalBasis' | 'notAgreedTenancyIds'>>
 
 // Der Schlüssel einer Position mit genau den Angaben, die zu ihm gehören. Ein Zählertyp, der an
 // einer Flächenposition stehengeblieben ist, gehört nicht dazu. Die Kosten der Gemeinschaft
@@ -25,6 +25,11 @@ export type Allocation = {
   customShares: Record<string, number> | null
   participantUnitIds: string[] | null
   externalBasis: { measure: ExternalMeasure, total: number } | null
+  // Wer die Position laut Mietvertrag nicht trägt (#258). Nur mit `contract` gesetzt, sonst fehlt das Feld: Der Vertrag ist
+  // kein Verteilungsmaßstab und gehört nicht zum gemerkten Schlüssel (#141); ein Mieterwechsel änderte sonst still
+  // den „Schlüssel“. Der Abzug beim Betriebsstrom ist dagegen ein Ausschnitt seiner Stromrechnung und muss auch
+  // hier übereinstimmen (`heating.operating-power-key`).
+  notAgreedTenancyIds?: string[] | null
 }
 
 // Bei diesen Schlüsseln wirken Teilnehmer (#94); das Formular (client/src/costForm.ts) nimmt die
@@ -36,7 +41,7 @@ export const PARTICIPANT_KEYS: readonly CostKey[] = ['area', 'units', 'persons',
 // „alle“, wie beim Speichern. Sonst hielte der Vergleich eine Position, die den Schlüssel des
 // Vorjahres übernommen hat, für geändert, nur weil eine Wohnung inzwischen gelöscht oder
 // herausgenommen ist (Befund der Durchsicht).
-export function allocationOf(item: AllocatedItem, basisUnitIds?: readonly string[]): Allocation {
+export function allocationOf(item: AllocatedItem, basisUnitIds?: readonly string[], { contract = false }: { contract?: boolean } = {}): Allocation {
   const k = item.key
   const inBasis = (id: string) => !basisUnitIds || basisUnitIds.includes(id)
   const raw = PARTICIPANT_KEYS.includes(k) ? item.participantUnitIds ?? null : null
@@ -50,6 +55,7 @@ export function allocationOf(item: AllocatedItem, basisUnitIds?: readonly string
     customShares: shares ? Object.fromEntries(Object.entries(shares).filter(([id]) => inBasis(id))) : null,
     participantUnitIds,
     externalBasis: k === 'external' && item.externalBasis ? { measure: item.externalBasis.measure, total: item.externalBasis.total } : null,
+    ...(contract ? { notAgreedTenancyIds: item.notAgreedTenancyIds && item.notAgreedTenancyIds.length > 0 ? item.notAgreedTenancyIds : null } : {}),
   }
 }
 
@@ -72,7 +78,8 @@ export function sameAllocation(a: Allocation, b: Allocation): boolean {
     a.directUnitId === b.directUnitId &&
     sameShares(a.customShares, b.customShares) &&
     sameUnits(a.participantUnitIds, b.participantUnitIds) &&
-    (a.externalBasis?.measure ?? null) === (b.externalBasis?.measure ?? null)
+    (a.externalBasis?.measure ?? null) === (b.externalBasis?.measure ?? null) &&
+    sameUnits(a.notAgreedTenancyIds ?? null, b.notAgreedTenancyIds ?? null)
 }
 
 // Die Positionen derselben Kostenart im Vorzeitraum (#208): der Zeitraum unmittelbar davor und kein

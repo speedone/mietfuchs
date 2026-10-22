@@ -1934,7 +1934,9 @@ export async function unitDependents(db: Executor, unitId: string): Promise<Unit
   const verweise = await n(db.select({ n: count() }).from(costItemShares).where(eq(costItemShares.unitId, unitId))) +
     await n(db.select({ n: count() }).from(costItemParticipants).where(eq(costItemParticipants.unitId, unitId))) +
     await n(db.select({ n: count() }).from(costItemSelfAmounts).where(eq(costItemSelfAmounts.unitId, unitId))) +
-    await n(db.select({ n: count() }).from(costItemAmounts).where(inArray(costItemAmounts.tenancyId, ihreMietverhaeltnisse)))
+    await n(db.select({ n: count() }).from(costItemAmounts).where(inArray(costItemAmounts.tenancyId, ihreMietverhaeltnisse))) +
+    // #258: die Angaben zum Mietvertrag ihrer Mietverhältnisse, die mit ihnen wegfallen.
+    await n(db.select({ n: count() }).from(costItemContract).where(inArray(costItemContract.tenancyId, ihreMietverhaeltnisse)))
   return {
     tenancies: await n(db.select({ n: count() }).from(tenancies).where(eq(tenancies.unitId, unitId))),
     meters: await n(db.select({ n: count() }).from(meters).where(eq(meters.unitId, unitId))),

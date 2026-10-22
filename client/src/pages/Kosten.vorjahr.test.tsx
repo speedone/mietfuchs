@@ -246,3 +246,20 @@ test('Mieterwechsel (#258): Sonstige fragt nach „im Vertrag ausdrücklich gena
     ITEMS.pop()
   }
 })
+
+test('Mieterwechsel (#258): die Zeile der Übernahme nennt nur, wer übernommen wird, nicht den ausgezogenen Mieter', async () => {
+  ITEMS.push({ id: 'g2', propertyId: 'objekt-1', period: calendarPeriod(PREV), category: 'Grundsteuer', description: 'Steuer Auszug', amountCents: 1000, key: 'area', notAgreedTenancyIds: ['t1', 't2'] })
+  try {
+    await renderPage([
+      { id: 't1', unitId: 'u1', tenantName: 'Max Muster', start: `${PREV - 5}-01-01`, end: `${PREV}-12-31` },
+      { id: 't2', unitId: 'u2', tenantName: 'Otto Oben', start: `${PREV - 5}-01-01`, end: null },
+    ] as Tenancy[])
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(`Aus ${PREV} übernehmen`) }))
+    const row = screen.getByLabelText(`Betrag ${YEAR} für Steuer Auszug`).closest('tr')
+    if (!row) return expect.fail('Zeile der Übernahme nicht gefunden')
+    expect(within(row as HTMLElement).getByText('trägt nicht: Otto Oben (Vertrag)')).toBeTruthy()
+    expect(within(row as HTMLElement).queryByText(/Max Muster/)).toBeNull()
+  } finally {
+    ITEMS.pop()
+  }
+})

@@ -304,3 +304,15 @@ test('R2-K-B: verkleinerter Abzug nennt den Fristsatz mit Ausnahme und beiden Ur
   assert.match(n.text, DEADLINE)
   assert.doesNotMatch(n.text, /Eine Korrektur zu Lasten der Mieter ist nach Ablauf der Abrechnungsfrist ausgeschlossen \(§ 556 Abs\. 3 Satz 3 BGB\)\./)
 })
+
+// Durchsicht des Endstands von #258: Ein Abzug, dessen Liste „nicht vereinbart“ von der seiner Stromrechnung
+// abweicht, ist anders verteilt; gleich → still.
+test('#258: Abzug ohne „nicht vereinbart“ der Stromrechnung → Hinweis „anders verteilt“; gleiche Liste → still', () => {
+  const strom: SnapshotCostItem = { ...hausstrom, notAgreedTenancyIds: ['t1'] }
+  const ab: SnapshotCostItem = { ...hausstrom, id: 'ab', description: 'Abzug Betriebsstrom Heizung', amountCents: -14784, operatingPower: 'deduction', operatingPowerItemId: 'bs', operatingPowerGeneralId: 'strom' }
+  const kind = (s: ReturnType<typeof settle>) => (s.notices ?? []).filter((x) => x.code === 'heating.operating-power-key')
+  const [n] = kind(settle([betriebsstrom, strom, ab], [abzug(14784)]))
+  if (!n) return assert.fail('kein Hinweis')
+  assert.match(n.text, /beide nach „Wohnfläche“, aber mit anderen Angaben \(Teilnehmer, Anteile, Zähler, Wohnung oder nicht im Mietvertrag vereinbart\)/)
+  assert.equal(kind(settle([betriebsstrom, strom, { ...ab, notAgreedTenancyIds: ['t1'] }], [abzug(14784)])).length, 0)
+})

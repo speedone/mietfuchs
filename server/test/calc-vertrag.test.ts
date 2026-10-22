@@ -187,3 +187,44 @@ test('Hinweis allocation.not-agreed: zwei Positionen desselben Mieters in einem 
   const cents = (t: string) => Number(/„Gartenpflege“ \(0,(\d\d) €\)/.exec(t)?.[1])
   assert.equal(cents(first.text) + cents(second.text), 67)
 })
+
+test('Abzug Betriebsstrom: übernimmt „nicht vereinbart“ seiner Stromrechnung, t1 bekommt keine Gutschrift', () => {
+  // Durchsicht des Endstands: Der Abzug (negativ, verknüpft über `operatingPowerGeneralId`) ist ein Ausschnitt der
+  // Stromrechnung. Trägt t1 die Rechnung laut Vertrag nicht, darf er auch aus dem Abzug nichts gutgeschrieben
+  // bekommen; sonst zahlte der Vermieter ihm einen Teil der Kosten aus, die er nie getragen hat.
+  const strom = garden({ id: 'strom', category: 'Beleuchtung/Allgemeinstrom', description: 'Hausstrom', amountCents: 100000, notAgreedTenancyIds: ['t1'] })
+  const abzug = garden({ id: 'ab', category: 'Beleuchtung/Allgemeinstrom', description: 'Abzug Betriebsstrom', amountCents: -20000, operatingPower: 'deduction', operatingPowerGeneralId: 'strom' })
+  const ohne = settle({ costItems: [{ ...strom, notAgreedTenancyIds: null }, abzug] })
+  const s = settle({ costItems: [strom, abzug] })
+  // Rechnung: 1.000 € × 50/100 = 500 € je Wohnung; Abzug: −200 € × 50/100 = −100 € je Wohnung.
+  assert.equal(shareOf(s, 't1', 'strom'), 0)
+  assert.equal(shareOf(s, 't1', 'ab'), 0)
+  // t2 trägt unverändert, was er ohne Eintrag trüge.
+  assert.equal(shareOf(s, 't2', 'strom'), shareOf(ohne, 't2', 'strom'))
+  assert.equal(shareOf(s, 't2', 'ab'), shareOf(ohne, 't2', 'ab'))
+  assert.equal(shareOf(s, 't2', 'strom'), 50000)
+  assert.equal(shareOf(s, 't2', 'ab'), -10000)
+  // Beim Vermieter: 500 € aus der Rechnung, −100 € aus dem Abzug, zusammen 400 € `notAgreed`.
+  assert.deepEqual(partsOf(s, 'strom'), [{ reason: 'notAgreed', cents: 50000 }])
+  assert.deepEqual(partsOf(s, 'ab'), [{ reason: 'notAgreed', cents: -10000 }])
+  // Der Hinweis zu t1 nennt beide Ausschnitte.
+  const [n] = noticesOf(s, 'allocation.not-agreed')
+  assert.ok(n, 'kein Hinweis allocation.not-agreed')
+  assert.match(n.text, /„Hausstrom“ \(500,00 €\) und „Abzug Betriebsstrom“ \(-100,00 €\)/)
+})
+
+test('Hinweis allocation.not-agreed bei Pauschale und Inklusivmiete: ohne den Satz zur Abrechnung, die es nicht gibt', () => {
+  // Durchsicht des Endstands: Ein Mieter mit Pauschale oder Inklusivmiete bekommt keine Abrechnung der kalten Kosten;
+  // „In der Abrechnung von … fehlt sie“ wäre falsch. Der Anteil steht trotzdem beim Vermieter als `notAgreed`.
+  for (const costModel of ['flatRate', 'inclusive'] as const) {
+    const s = settle({ tenancies: [tenancy('t1', 'u1', { costModel }), tenancy('t2', 'u2')], costItems: [garden({ notAgreedTenancyIds: ['t1'] })] })
+    const [n] = noticesOf(s, 'allocation.not-agreed')
+    assert.ok(n, `${costModel}: kein Hinweis allocation.not-agreed`)
+    assert.match(n.text, /Mieter t1 \(u1\) trägt laut Mietvertrag die Position „Gartenpflege“ \(500,00 €\) nicht/, costModel)
+    assert.doesNotMatch(n.text, /In der Abrechnung von/, costModel)
+    assert.deepEqual(partsOf(s), [{ reason: 'notAgreed', cents: 50000 }], costModel)
+  }
+  // Mit Abrechnung bleibt der Satz.
+  const [n] = noticesOf(settle({ costItems: [garden({ notAgreedTenancyIds: ['t1'] })] }), 'allocation.not-agreed')
+  assert.match(n?.text ?? '', /In der Abrechnung von Mieter t1 \(u1\) fehlt sie\./)
+})

@@ -97,6 +97,12 @@ describe('buildCostItemBody', () => {
     if (!('body' in r)) throw new Error('kein Rumpf')
     expect(r.body).toMatchObject({ notAgreedTenancyIds: ['t1'], namedTenancyIds: null, participantUnitIds: null })
   })
+  test('ohne Mietverhältnisse (noch nicht geladen) fehlen beide Felder, damit der Server die gespeicherten Listen stehen lässt', () => {
+    const r = buildCostItemBody(form({ notAgreed: ['t1'], named: ['t2'] }), UNITS, PERIOD, undefined)
+    if (!('body' in r)) throw new Error('kein Rumpf')
+    expect(Object.hasOwn(r.body, 'notAgreedTenancyIds')).toBe(false)
+    expect(Object.hasOwn(r.body, 'namedTenancyIds')).toBe(false)
+  })
   test('leer wird null', () => {
     const r = buildCostItemBody(form(), UNITS, PERIOD, TENANCIES)
     if (!('body' in r)) throw new Error('kein Rumpf')
@@ -115,11 +121,6 @@ describe('buildCostItemBody', () => {
     const r = buildCostItemBody(form({ category: 'Heizung und Warmwasser', key: 'area', notAgreed: ['t1'], named: ['t2'] }), UNITS, PERIOD, TENANCIES)
     if (!('body' in r)) throw new Error('kein Rumpf')
     expect(r.body).toMatchObject({ notAgreedTenancyIds: null, namedTenancyIds: null })
-  })
-  test('ohne Mietverhältnisse (Aufruf ohne Liste) keine Kennungen', () => {
-    const r = buildCostItemBody(form({ notAgreed: ['t1'] }), UNITS, PERIOD)
-    if (!('body' in r)) throw new Error('kein Rumpf')
-    expect(r.body).toMatchObject({ notAgreedTenancyIds: null })
   })
 })
 

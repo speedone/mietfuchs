@@ -554,9 +554,12 @@ export function buildCostItemBody(form: ItemForm, units: Unit[], period: number 
 
 // Die Kennungen der Mietverträge (#258): nur die Mietverhältnisse, die im Zeitraum bestehen und an der Position
 // teilnehmen, und nur bei Kostenarten, die es zulassen; sonst `null`, das eine alte Angabe leert (die Route lässt
-// ein fehlendes Feld stehen). Leer wird ebenfalls `null`.
-function withContractAgreement<B extends object>(body: B, form: ItemForm, units: Unit[], tenancies: Tenancy[] | undefined, period: BillingPeriod): B & { notAgreedTenancyIds: string[] | null, namedTenancyIds: string[] | null } {
-  const valid = new Set(tenancies && allowsContractAnswer(form.category) ? contractTenancies(form, units, tenancies, period).map((t) => t.tenancyId) : [])
+// ein fehlendes Feld stehen). Leer wird ebenfalls `null`. Ohne Mietverhältnisse (nicht übergeben oder noch nicht
+// geladen) fehlen beide Felder: Gefiltert gegen nichts, würde jede Kennung verworfen und die gespeicherten Listen
+// gelöscht.
+function withContractAgreement<B extends object>(body: B, form: ItemForm, units: Unit[], tenancies: Tenancy[] | undefined, period: BillingPeriod): B & { notAgreedTenancyIds?: string[] | null, namedTenancyIds?: string[] | null } {
+  if (!tenancies) return body
+  const valid = new Set(allowsContractAnswer(form.category) ? contractTenancies(form, units, tenancies, period).map((t) => t.tenancyId) : [])
   const only = (ids: string[]) => { const kept = ids.filter((id) => valid.has(id)); return kept.length > 0 ? kept : null }
   return { ...body, notAgreedTenancyIds: only(form.notAgreed), namedTenancyIds: only(form.named) }
 }
@@ -622,12 +625,13 @@ export function deductionTaxYear(form: Pick<ItemForm, 'operatingPower' | 'operat
 }
 
 // Mit der Stromrechnung übernimmt der Abzug ihre Verteilung (G-K3): Schlüssel, Zähler, Wohnung, Anteile,
-// Teilnehmer. So mindert er jeden Anteil im Verhältnis; die Abrechnung meldet eine Abweichung.
+// Teilnehmer und, wer sie laut Mietvertrag nicht trägt (#258). So mindert er jeden Anteil im Verhältnis; die
+// Abrechnung meldet eine Abweichung.
 export function withGeneralChoice(form: ItemForm, id: string, items: readonly CostItem[]): ItemForm {
   const g = items.find((c) => c.id === id)
   if (!g) return { ...form, operatingPowerGeneralId: '' }
   const f = itemToForm(g)
-  return { ...form, operatingPowerGeneralId: g.id, key: f.key, meterType: f.meterType, directUnitId: f.directUnitId, customShares: f.customShares, participants: f.participants }
+  return { ...form, operatingPowerGeneralId: g.id, key: f.key, meterType: f.meterType, directUnitId: f.directUnitId, customShares: f.customShares, participants: f.participants, notAgreed: f.notAgreed }
 }
 
 // Der Rumpf trägt die drei Felder bei Heizkosten und beim Allgemeinstrom (Review Focus 3): Das Formular

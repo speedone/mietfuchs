@@ -56,3 +56,7 @@ test('nicht vereinbart: der Mietvertrag legt die Position nicht um (#258)', () =
   expect(landlordReasonText(row({ landlordParts: [{ reason: 'notAgreed', cents: 30000 }, { reason: 'vacancy', cents: 20000 }] })))
     .toBe(`nicht vereinbart (Mietvertrag) ${fmtEuro(30000)} · Leerstand ${fmtEuro(20000)}`)
 })
+
+test('Rest der vereinbarten Anteile: deutlich anders als „nicht vereinbart (Mietvertrag)“ (Durchsicht #258)', () => {
+  expect(landlordReasonText(row({ landlordParts: [{ reason: 'customRest', cents: 20000 }] }))).toBe('Rest unter 100 % der vereinbarten Anteile')
+})
