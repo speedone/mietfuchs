@@ -361,6 +361,15 @@ Nur für Tests, ein Nutzer setzt sie nie:
 [calc.ts](calc.ts), das Herzstück. Heizungsregeln (Betriebsstrom, Contracting, § 5a, Mieter heizt
 selbst) stehen in [docs/heizung.md](../../docs/heizung.md).
 
+### Nicht vereinbart (#258)
+
+`CostItem.notAgreedTenancyIds` (Mieter, die die Kosten laut Vertrag nicht tragen) und `namedTenancyIds`
+(bei „Sonstige“: im Vertrag genannt) liegen in `cost_item_contract`. Der Anteil eines nicht
+vereinbarten Mietverhältnisses geht als `LandlordReason` `notAgreed` an den Vermieter; die Einheit
+bleibt im Verteilschlüssel, **der Anteil fällt nie auf die anderen Mieter** (Zufallsinvariante in
+calc.test.ts). Der Server lehnt beide Listen bei Heizung, Nicht umlagefähig und Rücklage ab.
+Hinweise: `allocation.not-agreed` (nur Info), `allocation.other-unanswered` (färbt das Cockpit).
+
 ### Verteilen
 
 - **Alle Beträge in Cent (Integer)**, niemals Euro-Floats.
