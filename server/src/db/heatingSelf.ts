@@ -146,6 +146,11 @@ function checkShares(body: unknown, plant: HeatingPlant, hotWater: HotWater, h: 
   return { heating, water, insulationRule, toForced, above70Agreed }
 }
 
+// Weicht ein Anteil von dem der Anlage vor dem Kesseltausch in derselben Heizperiode ab? Hatte jene kein
+// Warmwasser, ist der Warmwasser-Anteil eine erste Wahl (§ 8 Abs. 1), wie bei `waterChanged` (Durchsicht von #407).
+export const differsFromLine = (other: { heatConsumptionPct: number | null; waterConsumptionPct: number | null }, next: { heating: number; water: number | null }): boolean =>
+  other.heatConsumptionPct !== next.heating || (other.waterConsumptionPct !== null && other.waterConsumptionPct !== next.water)
+
 // Die Zeilen über die Linie der Anlage (Durchsicht von #239, I3).
 async function shareRows(db: Executor, plantId: string): Promise<ShareRow[]> {
   return (await lineRowsOf(db, plantId)).merged
@@ -169,7 +174,7 @@ export async function saveDistribution(db: Database, plantId: string, period: st
   // In derselben Heizperiode gilt in der Linie ein Anteil (§ 6 Abs. 4; Durchsicht von #239, I3).
   const ids = lineIdsOf(line.plants, plantId)
   const other = line.all.find((r) => r.plantId !== plantId && ids.has(r.plantId) && r.period === h.key && r.heatConsumptionPct !== null)
-  if (other && !next.toForced && (other.heatConsumptionPct !== next.heating || other.waterConsumptionPct !== next.water)) {
+  if (other && !next.toForced && differsFromLine(other, next)) {
     throw new HeatingError(400, `In derselben Heizperiode gilt der Anteil der Anlage vor dem Kesseltausch (${other.heatConsumptionPct} %${other.waterConsumptionPct !== null ? `, Warmwasser ${other.waterConsumptionPct} %` : ''}); ändern lässt er sich nur für künftige Abrechnungszeiträume (§ 6 Abs. 4 HeizkostenV).`)
   }
   await db.transaction(async (tx) => {

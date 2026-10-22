@@ -164,7 +164,7 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
             )}
           </div>
         )}
-        {editable && (
+        {(editable || waterMissing) && (
           <div className="no-print">
             <label className="checkline">
               <input type="checkbox" checked={agreed} disabled={draft.saving} onChange={(e) => edit({ agreed: e.target.checked })} />

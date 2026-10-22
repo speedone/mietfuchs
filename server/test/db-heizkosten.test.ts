@@ -13,7 +13,7 @@ import { changeTenant, closeSettlement, createEntity } from '../src/db/repositor
 import { selfClosedEndsOf, snapshotFor } from '../src/snapshot.ts'
 import { CALENDAR_RULES, periodKey, periodOfKey } from '../../shared/period.ts'
 import { createHeatingPlant, updateHeatingPlant } from '../src/db/heating.ts'
-import { removeInterimGap, saveDistribution, saveInterimGap, SelfItemsError, setUpSelf } from '../src/db/heatingSelf.ts'
+import { differsFromLine, removeInterimGap, saveDistribution, saveInterimGap, SelfItemsError, setUpSelf } from '../src/db/heatingSelf.ts'
 import { heatingPeriodViews } from '../src/db/co2.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 
@@ -220,4 +220,12 @@ test('Schnappschuss: der eingefrorene Endstand einer abgeschlossenen Heizperiode
     assert.deepEqual(selfClosedEndsOf({ heating: [{ plantId: 'hp' }] }), [])
     assert.deepEqual(selfClosedEndsOf(null), [])
   })
+})
+
+// Durchsicht von #407: Hatte die Anlage vor dem Kesseltausch kein Warmwasser, legt die neue ihren Warmwasser-Anteil in
+// derselben Heizperiode erstmals fest; der Anteil der Heizung bleibt der der Linie.
+test('Kesseltausch: erstmals ein Warmwasser-Anteil weicht nicht von der Linie ab, ein anderer Anteil der Heizung schon', () => {
+  assert.equal(differsFromLine({ heatConsumptionPct: 60, waterConsumptionPct: null }, { heating: 60, water: 50 }), false)
+  assert.equal(differsFromLine({ heatConsumptionPct: 60, waterConsumptionPct: 55 }, { heating: 60, water: 50 }), true)
+  assert.equal(differsFromLine({ heatConsumptionPct: 60, waterConsumptionPct: null }, { heating: 65, water: 50 }), true)
 })

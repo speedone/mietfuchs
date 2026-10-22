@@ -800,7 +800,8 @@ export function consumptionSharesOf(rows: readonly ShareRow[], key: string, ener
     forced: isForced,
     previous,
     own: ownHeat !== null,
-    changed: ownHeat !== null && previous !== null && (ownHeat !== previous.heating || water !== previous.water),
+    // Ein Warmwasser-Anteil, den es vorher nicht gab, ist eine erste Wahl, kein Wechsel (Durchsicht von #407).
+    changed: ownHeat !== null && previous !== null && (ownHeat !== previous.heating || (previous.water !== null && water !== previous.water)),
     insulation,
     above70Agreed: agreed,
   }
