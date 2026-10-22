@@ -1,5 +1,5 @@
 // Prüfungen des Cockpits, ohne DOM prüfbar (cockpitChecks.test.ts).
-import type { CostItem, MeterType } from './types'
+import type { CostItem, MeterType, PropertyKind } from './types'
 import { isNotAllocable } from './types'
 import { fmtDate, fmtEuro } from './api'
 import { andList, countOf } from '../../shared/wording.ts'
@@ -49,6 +49,21 @@ export function countsByUnits(items: CostItem[], unitId: string): boolean {
   return allocable(items).some((c) => c.key === 'units' && (c.participantUnitIds == null || c.participantUnitIds.includes(unitId)))
 }
 
+// Umlagefähige Kostenarten des Vorjahres, die im Jahr fehlen (#409), in der Reihenfolge des Vorjahres. Der
+// Vergleich der Beträge überspringt sie, denn ohne Betrag gibt es keine Abweichung in Prozent; eine Rechnung,
+// die noch aussteht, fiele dort nie auf.
+export function missingSincePrevious(items: CostItem[], previous: CostItem[]): string[] {
+  const now = new Set(items.map((c) => c.category))
+  return [...new Set(allocable(previous).map((c) => c.category))].filter((cat) => !now.has(cat))
+}
+
+// Eine Eigentumswohnung, bei der von den umlagefähigen Kosten nur die Grundsteuer erfasst ist (#409): Alle
+// übrigen stehen in der Hausgeldabrechnung der Gemeinschaft (shared/assessment.ts), die oft erst Monate
+// nach dem Jahr kommt. Ohne Kosten sagt schon „Belege erfasst“, dass nichts da ist.
+export function condoWithoutHousingMoney(kind: PropertyKind | undefined, items: CostItem[]): boolean {
+  return kind === 'etw' && items.length > 0 && allocable(items).every((c) => c.category === 'Grundsteuer')
+}
+
 export function itemsDetail(items: number, sumCents: number, files: number): string {
   return `${countOf(items, 'Position', 'Positionen')} · Summe ${fmtEuro(sumCents)}${files ? ` · ${countOf(files, 'Belegdatei', 'Belegdateien')}` : ''}`
 }
@@ -57,6 +72,10 @@ export function itemsDetail(items: number, sumCents: number, files: number): str
 // Checkliste, sondern zwei Knöpfe zum Anfangen; eine Zahl offener Punkte, die nirgends
 // aufgezählt sind, sagte einem Vermieter ohne Vorkenntnisse nichts. Die Zeile nennt deshalb den
 // ersten Schritt, die Punkte kommen mit der Checkliste, sobald etwas erfasst ist.
+//
+// Vor dem Abschluss verspricht die Zeile weder „vollständig“ noch „versandfertig“ (#409): Ob alle Rechnungen
+// des Jahres vorliegen, weiß nur der Vermieter, eine nie erfasste Rechnung sieht keine Prüfung. Gefragt wird
+// beim Abschließen (`closeMessage` in despiteErrors.ts).
 //
 // Nach dem Abschluss ist „dann ist die Abrechnung versandfertig“ falsch (UI-Durchsicht M9, #341): Die
 // Zeile sagt dann, was geschehen ist, und nennt die offenen Punkte beim Namen (`open`, die Titel der
@@ -87,6 +106,6 @@ export function cockpitSubtitle({ loaded, fresh, open, sentAt = null, closed = f
     return `Versendet am ${fmtDate(sentAt)}; ${rest}`
   }
   if (closed) return `Abgeschlossen, Versanddatum fehlt${deadline ? ` (Frist am ${fmtDate(deadline)})` : ''}${tail}`
-  if (open.length === 0) return 'Alles bereit — die Abrechnung ist vollständig.'
-  return `Noch ${countOf(open.length, 'Punkt', 'Punkte')} offen, dann ist die Abrechnung versandfertig.`
+  if (open.length === 0) return 'Nichts mehr offen.'
+  return `Noch ${countOf(open.length, 'Punkt', 'Punkte')} offen.`
 }

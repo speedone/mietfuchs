@@ -1,0 +1,75 @@
+// @vitest-environment jsdom
+// #409: Das Cockpit verspricht keine Vollständigkeit, die Mietfuchs nicht kennen kann. Bei einer
+// Eigentumswohnung mit nur der Grundsteuer fragt es nach der Hausgeldabrechnung, und eine Kostenart des
+// Vorjahres, die im Jahr fehlt, fällt in der Plausibilität auf.
+import { afterEach, expect, test, vi } from 'vitest'
+import { cleanup, render, screen } from '@testing-library/react'
+import type { CostItem, PropertyKind, Settings, Settlement, Unit } from '../types'
+import { PeriodProvider } from '../period'
+import { calendarPeriod, calendarYearPeriod, settlementPeriod } from '../../../shared/period.ts'
+import { PropertyProvider } from '../property'
+import { UIProvider } from '../components/feedback'
+import Cockpit from './Cockpit'
+
+vi.setConfig({ testTimeout: 20000 })
+const SLOW = { timeout: 5000 }
+
+const YEAR = new Date().getFullYear() - 1
+const UNITS: Unit[] = [{ id: 'u1', propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true }]
+const SETTLEMENT: Settlement = {
+  year: YEAR, daysInYear: 365, period: settlementPeriod(calendarYearPeriod(YEAR)), deadline: `${YEAR + 1}-12-31`, landlord: { rows: [], totalCents: 0 }, selfUsedShareCents: 0, totalCostsCents: 28000, warnings: [], notices: [], closed: null,
+  statements: [],
+}
+const item = (id: string, year: number, category: string, patch: Partial<CostItem> = {}): CostItem => ({
+  id, propertyId: 'objekt-1', period: calendarPeriod(year), category, description: category, amountCents: 28000, key: 'area', invoiceFile: `${id}.pdf`, ...patch,
+})
+
+function stub(kind: PropertyKind, items: CostItem[]) {
+  vi.stubGlobal('fetch', async (url: string) => {
+    const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
+    const path = url.split('?')[0] ?? url
+    if (path === '/api/properties') return json([{ id: 'objekt-1', name: 'Wohnung Lindenweg', kind, address: '', landlordName: null, iban: null, paymentDeadlineDays: null }])
+    if (path === `/api/settlement/${YEAR}`) return json(SETTLEMENT)
+    if (path === '/api/costItems') return json(items)
+    if (path === '/api/uploads') return json(items.map((c) => ({ file: c.invoiceFile, costItemIds: [c.id] })))
+    return json([])
+  })
+}
+
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+})
+
+const page = () => render(
+  <PeriodProvider>
+    <PropertyProvider>
+      <UIProvider>
+        <Cockpit units={UNITS} tenancies={[]} settings={{ landlordName: 'Erika', iban: '', paymentDeadlineDays: 30 } as Settings} reload={async () => {}} onNavigate={() => {}} />
+      </UIProvider>
+    </PropertyProvider>
+  </PeriodProvider>,
+)
+
+test('Eigentumswohnung mit nur der Grundsteuer: Zeile „Hausgeldabrechnung“, kein „versandfertig“ (#409)', async () => {
+  stub('etw', [item('g', YEAR, 'Grundsteuer')])
+  page()
+  const row = await screen.findByText('Hausgeldabrechnung', { selector: '.check-title' }, SLOW)
+  expect(row.closest('.check-row')?.textContent).toMatch(/Erfasst ist nur die Grundsteuer/)
+  expect(document.body.textContent).not.toMatch(/versandfertig|ist vollständig/)
+  expect(document.body.textContent).toContain(`Abschließen, sobald alle Rechnungen für ${YEAR} vorliegen`)
+})
+
+test('Mehrfamilienhaus mit nur der Grundsteuer: keine Zeile „Hausgeldabrechnung“ (#409)', async () => {
+  stub('mfh', [item('g', YEAR, 'Grundsteuer')])
+  page()
+  await screen.findByText('Belege erfasst', { selector: '.check-title' }, SLOW)
+  expect(screen.queryByText('Hausgeldabrechnung', { selector: '.check-title' })).toBeNull()
+})
+
+test('Kostenart des Vorjahres fehlt im Jahr: Plausibilität fragt nach der Rechnung (#409)', async () => {
+  stub('mfh', [item('g0', YEAR - 1, 'Grundsteuer'), item('w0', YEAR - 1, 'Wasser/Abwasser'), item('g', YEAR, 'Grundsteuer')])
+  page()
+  const row = await screen.findByText('Plausibilität zum Vorjahr', { selector: '.check-title' }, SLOW)
+  expect(row.closest('.check-row')?.textContent).toContain(`In ${YEAR - 1} erfasst, jetzt noch nicht: Wasser/Abwasser — fehlt noch eine Rechnung?`)
+})

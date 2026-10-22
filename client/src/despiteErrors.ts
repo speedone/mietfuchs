@@ -42,14 +42,22 @@ export function printQuestion(notices: readonly Notice[], closed: boolean): Erro
   }
 }
 
+// Der Text der ersten Rückfrage zum Abschließen (#409): Ob alle Rechnungen des Zeitraums vorliegen, weiß nur
+// der Vermieter; „Abschließen“ ist die Antwort darauf, ohne einen eigenen Schritt. `label` ist der Zeitraum.
+export function closeMessage(label: string): string {
+  return `Liegen alle Rechnungen für ${label} vor, auch die, die erst später kommen (Hausgeld-, Heizkosten- und Versorgerabrechnungen)? `
+    + 'Mietfuchs kennt nur, was erfasst ist. Der aktuelle Berechnungsstand wird eingefroren — spätere Änderungen an Kosten oder Stammdaten '
+    + 'ändern diese Abrechnung nicht mehr. Sie lässt sich jederzeit wieder öffnen.'
+}
+
 // Die erste Rückfrage zum Abschließen, wenn die Seite schon Fehler zeigt; `title` ist der Titel der
-// gewöhnlichen Rückfrage (mit Objekt, #157).
-export function closeErrorsQuestion(title: string, notices: readonly Notice[]): ErrorsQuestion | null {
+// gewöhnlichen Rückfrage (mit Objekt, #157), `label` der Zeitraum.
+export function closeErrorsQuestion(title: string, notices: readonly Notice[], label: string): ErrorsQuestion | null {
   const errors = blockingErrors(notices)
   if (errors.length === 0) return null
   return {
     title,
-    message: `Die Abrechnung enthält ${countText(errors.length)}. ${INTRO} Abgeschlossen wird dieser Stand so eingefroren, wie er ist; spätere Änderungen an Kosten oder Stammdaten ändern ihn nicht mehr. Sie lässt sich wieder öffnen. Beheben Sie die Angaben besser vorher.`,
+    message: `Liegen alle Rechnungen für ${label} vor? Die Abrechnung enthält außerdem ${countText(errors.length)}. ${INTRO} Abgeschlossen wird dieser Stand so eingefroren, wie er ist; spätere Änderungen an Kosten oder Stammdaten ändern ihn nicht mehr. Sie lässt sich wieder öffnen. Beheben Sie die Angaben besser vorher.`,
     cancelLabel: 'Nicht abschließen',
     confirmLabel: 'Trotzdem abschließen',
     errors,

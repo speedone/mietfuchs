@@ -4,7 +4,7 @@ import { cockpitHeatingRows } from '../heatingSettlementView'
 import { heatingRowTarget, itemsOfSettlement } from '../costPeriods'
 import { localToday } from '../periodForm'
 import { isNotAllocable, usageOf } from '../types'
-import { cockpitSubtitle, itemsDetail, meterTypesInUse, tenanciesDetail, usesUnitBasis, countsByUnits } from '../cockpitChecks'
+import { cockpitSubtitle, itemsDetail, meterTypesInUse, tenanciesDetail, usesUnitBasis, countsByUnits, missingSincePrevious, condoWithoutHousingMoney } from '../cockpitChecks'
 import { coverageCheck, filesByItem } from '../receipts'
 import { api, fmtEuro, fmtDate } from '../api'
 import { andList } from '../../../shared/wording.ts'
@@ -111,7 +111,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
     }
     const cur = sumByCat(key)
     const prev = sumByCat(at.previous)
-    if (prev.size === 0) return { hasPrev: false, list: [] as { cat: string; pct: number }[] }
+    if (prev.size === 0) return { hasPrev: false, list: [] as { cat: string; pct: number }[], missing: [] as string[] }
     const list: { cat: string; pct: number }[] = []
     for (const [cat, k] of cur) {
       const p = prev.get(cat) ?? 0
@@ -119,7 +119,10 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
       const pct = ((k - p) / p) * 100
       if (Math.abs(pct) >= NOTABLE_CHANGE_PCT) list.push({ cat, pct })
     }
-    return { hasPrev: true, list }
+    // Kostenarten des Vorjahres, die im Jahr fehlen (#409): Eine ausstehende Rechnung hat keinen Betrag und
+    // fiele im Vergleich oben nie auf.
+    const missing = missingSincePrevious(itemsOfSettlement(costItems, key, rules, plants), itemsOfSettlement(costItems, at.previous, rules, plants))
+    return { hasPrev: true, list, missing }
   }, [costItems, key, at.previous, rules, plants])
 
   // §556 Abs. 3 BGB: Zugang beim Mieter binnen 12 Monaten nach Ende des Abrechnungszeitraums. Die
@@ -166,6 +169,13 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
     const belege = coverageCheck(yearItems, uploadFiles, bookedFiles)
     list.push({ title: 'Belege vollständig', level: belege.level, detail: belege.detail,
       ...(belege.level === 'gelb' ? { tab: 'belege', cta: 'Belege nachreichen' } : {}) })
+
+    // 2c. Hausgeldabrechnung (#409): Bei einer Eigentumswohnung mit nur der Grundsteuer fehlt sie fast sicher.
+    // Höchstens gelb: Ob alle Rechnungen vorliegen, beantwortet der Vermieter beim Abschließen.
+    if (condoWithoutHousingMoney(property?.kind, yearItems)) {
+      list.push({ title: 'Hausgeldabrechnung', level: 'gelb', tab: 'kosten', cta: 'Kosten erfassen',
+        detail: `Erfasst ist nur die Grundsteuer. Die übrigen umlagefähigen Kosten stehen in der Hausgeldabrechnung der Gemeinschaft; übernehmen Sie sie, sobald sie vorliegt. Die Frist nach § 556 Abs. 3 BGB läuft auch, solange sie fehlt.` })
+    }
 
     // 3. Zählerstände — nur relevant, wenn verbrauchsabhängig umgelegt wird
     // Nicht umlagefähige Positionen zählen nicht mit (#142, cockpitChecks.ts).
@@ -231,12 +241,16 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
       list.push({ title: 'Plausibilität zum Vorjahr', level: 'leer', detail: 'Noch keine Kosten zum Vergleichen.' })
     } else if (!notable.hasPrev) {
       list.push({ title: 'Plausibilität zum Vorjahr', level: 'leer', detail: `Kein Vorjahr (${at.previousLabel}) zum Vergleichen erfasst.` })
-    } else if (notable.list.length > 0) {
+    } else if (notable.list.length > 0 || notable.missing.length > 0) {
       const txt = notable.list
         .map((a) => `${a.cat} (${a.pct > 0 ? '+' : ''}${Math.round(a.pct)} %)`)
         .join(', ')
-      list.push({ title: 'Plausibilität zum Vorjahr', level: 'gelb', tab: 'uebersicht', cta: 'Vergleich ansehen',
-        detail: `Auffällige Abweichung: ${txt} — Beleg prüfen, Mieter ggf. erklären.` })
+      const parts = [
+        ...(notable.missing.length > 0 ? [`In ${at.previousLabel} erfasst, jetzt noch nicht: ${andList(notable.missing)} — fehlt noch eine Rechnung?`] : []),
+        ...(notable.list.length > 0 ? [`Auffällige Abweichung: ${txt} — Beleg prüfen, Mieter ggf. erklären.`] : []),
+      ]
+      list.push({ title: 'Plausibilität zum Vorjahr', level: 'gelb', tab: notable.missing.length > 0 ? 'kosten' : 'uebersicht',
+        cta: notable.missing.length > 0 ? 'Kosten erfassen' : 'Vergleich ansehen', detail: parts.join(' ') })
     } else {
       list.push({ title: 'Plausibilität zum Vorjahr', level: 'gruen', detail: `Keine auffälligen Sprünge gegenüber ${at.previousLabel}.` })
     }
@@ -270,7 +284,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
         ? `Noch ${daysLeft} Tage bis zur Frist (${fmtDate(settlement.deadline)}).`
         : `Frist am ${fmtDate(settlement.deadline)} abgelaufen.`
       list.push({ title: 'Abgeschlossen & versendet', level: daysLeft < 0 ? 'rot' : 'gelb', tab: 'abrechnung', cta: 'Zur Abrechnung',
-        detail: `Noch im Entwurf. ${deadlineText}` })
+        detail: `Noch im Entwurf. Abschließen, sobald alle Rechnungen für ${label} vorliegen. ${deadlineText}` })
     }
     // Jede beendete Heizperiode nach Weg d mit ihrer eigenen Frist (Heizung PR 5, Entwurf 3.1, B3).
     // „Zur Abrechnung“ wechselt dabei in den Zeitraum, in dem die Heizperiode endet, und wählt dort
@@ -285,7 +299,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
     }
 
     return list
-  }, [heatingList, rules, switchPeriod, onNavigate, settlement, participating, units, yearItems, itemsSum, invoiceFileCount, meters, consumption, tenancies, notable, daysLeft, label, calendar, period, at.previousLabel, uploadFiles, bookedFiles])
+  }, [property?.kind, heatingList, rules, switchPeriod, onNavigate, settlement, participating, units, yearItems, itemsSum, invoiceFileCount, meters, consumption, tenancies, notable, daysLeft, label, calendar, period, at.previousLabel, uploadFiles, bookedFiles])
 
   const relevant = checks.filter((c) => c.level !== 'leer')
   const greenCount = relevant.filter((c) => c.level === 'gruen').length

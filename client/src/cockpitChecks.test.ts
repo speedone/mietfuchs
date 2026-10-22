@@ -3,7 +3,7 @@
 import { calendarPeriod } from '../../shared/period.ts'
 import { expect, test } from 'vitest'
 import type { CostItem } from './types'
-import { cockpitSubtitle, itemsDetail, meterTypesInUse, tenanciesDetail, usesUnitBasis, countsByUnits } from './cockpitChecks'
+import { cockpitSubtitle, itemsDetail, meterTypesInUse, tenanciesDetail, usesUnitBasis, countsByUnits, missingSincePrevious, condoWithoutHousingMoney } from './cockpitChecks'
 
 const item = (category: string, patch: Partial<CostItem>): CostItem => ({
   id: category, propertyId: 'p', period: calendarPeriod(2025), category, description: category, amountCents: 100, key: 'area', ...patch,
@@ -68,9 +68,42 @@ test('Unterzeile beim Erststart nennt keine Zahl offener Punkte, sondern den ers
 
 test('Unterzeile mit Checkliste: Zahl offener Punkte in Ein- und Mehrzahl, sonst bereit', () => {
   expect(cockpitSubtitle({ loaded: false, fresh: false, open: [] })).toBe('Lade Abrechnungsstand …')
-  expect(cockpitSubtitle({ loaded: true, fresh: false, open: [] })).toBe('Alles bereit — die Abrechnung ist vollständig.')
-  expect(cockpitSubtitle({ loaded: true, fresh: false, open: ['Belege erfasst'] })).toBe('Noch 1 Punkt offen, dann ist die Abrechnung versandfertig.')
-  expect(cockpitSubtitle({ loaded: true, fresh: false, open: ['a', 'b', 'c'] })).toBe('Noch 3 Punkte offen, dann ist die Abrechnung versandfertig.')
+  expect(cockpitSubtitle({ loaded: true, fresh: false, open: [] })).toBe('Nichts mehr offen.')
+  expect(cockpitSubtitle({ loaded: true, fresh: false, open: ['Belege erfasst'] })).toBe('Noch 1 Punkt offen.')
+  expect(cockpitSubtitle({ loaded: true, fresh: false, open: ['a', 'b', 'c'] })).toBe('Noch 3 Punkte offen.')
+})
+
+// #409: Ob alle Rechnungen des Jahres vorliegen, weiß nur der Vermieter. Eine Rechnung, die nie erfasst
+// wurde, sieht keine Prüfung; die Zeile darf deshalb weder „vollständig“ noch „versandfertig“ versprechen.
+test('Unterzeile verspricht keine Vollständigkeit, die Mietfuchs nicht kennen kann (#409)', () => {
+  for (const open of [[], ['Abgeschlossen & versendet'], ['a', 'b']]) {
+    expect(cockpitSubtitle({ loaded: true, fresh: false, open })).not.toMatch(/vollständig|versandfertig|bereit/)
+  }
+})
+
+// #409: Eine Kostenart, die es im Vorjahr gab und jetzt nicht, ist eine fehlende Rechnung oder eine
+// Antwort wert. Vorher übersprang der Vergleich sie, weil er nur über die Kostenarten des Jahres lief.
+test('Kostenarten des Vorjahres, die im Jahr fehlen (#409)', () => {
+  const prev = [item('Grundsteuer', {}), item('Wasser/Abwasser', {}), item('Heizung und Warmwasser', {}), item('Nicht umlagefähig', {})]
+  expect(missingSincePrevious([item('Grundsteuer', {})], prev)).toEqual(['Wasser/Abwasser', 'Heizung und Warmwasser'])
+  expect(missingSincePrevious(prev, prev)).toEqual([])
+  // Ohne Vorjahr fehlt nichts; nicht umlagefähige Positionen gehören nicht in die Abrechnung des Mieters.
+  expect(missingSincePrevious([item('Grundsteuer', {})], [])).toEqual([])
+  expect(missingSincePrevious([], [item('Nicht umlagefähig', {})])).toEqual([])
+  // Eine Kostenart mehrfach im Vorjahr: einmal genannt.
+  expect(missingSincePrevious([], [item('Heizung und Warmwasser', {}), item('Heizung und Warmwasser', { id: 'h2' })])).toEqual(['Heizung und Warmwasser'])
+})
+
+// #409: Bei einer Eigentumswohnung stehen alle umlagefähigen Kosten außer der Grundsteuer in der
+// Hausgeldabrechnung (shared/assessment.ts). Ist nur die Grundsteuer erfasst, fehlt sie noch.
+test('Eigentumswohnung ohne Positionen aus der Hausgeldabrechnung (#409)', () => {
+  expect(condoWithoutHousingMoney('etw', [item('Grundsteuer', {})])).toBe(true)
+  expect(condoWithoutHousingMoney('etw', [item('Grundsteuer', {}), item('Nicht umlagefähig', {})])).toBe(true)
+  expect(condoWithoutHousingMoney('etw', [item('Grundsteuer', {}), item('Beleuchtung/Allgemeinstrom', { key: 'external' })])).toBe(false)
+  // Ohne Kosten sagt schon „Belege erfasst“, dass nichts da ist.
+  expect(condoWithoutHousingMoney('etw', [])).toBe(false)
+  expect(condoWithoutHousingMoney('mfh', [item('Grundsteuer', {})])).toBe(false)
+  expect(condoWithoutHousingMoney(undefined, [item('Grundsteuer', {})])).toBe(false)
 })
 
 // UI-Durchsicht M9 (#341): Nach dem Versand ist nichts mehr „versandfertig“ zu machen.

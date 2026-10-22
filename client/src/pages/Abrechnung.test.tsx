@@ -279,6 +279,21 @@ test('Abschließen mit Fehlern (#319): „Hier beheben →“ schließt nicht ab
   expect(bodies).toEqual([{}])
 })
 
+// #409: Ob alle Rechnungen des Jahres vorliegen, weiß nur der Vermieter. Die Rückfrage zum Abschließen
+// fragt es deshalb; „Abschließen“ ist dann die Bestätigung, ohne einen Klick mehr.
+test('Abschließen fragt, ob alle Rechnungen des Jahres vorliegen (#409)', async () => {
+  const bodies: unknown[] = []
+  stubClose(bodies)
+  showWithNav(() => {})
+  fireEvent.click(await screen.findByRole('button', { name: `🔒 Abrechnung ${YEAR} abschließen` }, SLOW))
+  const dialog = await screen.findByRole('alertdialog', {}, SLOW)
+  expect(dialog.textContent).toContain(`Liegen alle Rechnungen für ${YEAR} vor`)
+  expect(dialog.textContent).toMatch(/Hausgeld/)
+  fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }))
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull(), SLOW)
+  expect(bodies).toEqual([])
+})
+
 // #309: Das Versanddatum setzt die Frist des § 556 Abs. 3 BGB. Ein verklicktes Datum im Kalender
 // stand vorher sofort fest; jetzt ist es ein Entwurf, bis „Speichern“ es schickt.
 function stubSentAt(puts: unknown[]) {
