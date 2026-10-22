@@ -283,6 +283,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - CO₂-Erstattung an Mieter, die selbst heizen: Erfassen und Bearbeiten öffnen ein Seitenfenster wie überall sonst,
   mit „+ Erstattung anlegen“ oben rechts in der Karte; wer mit Eingaben schließt, wird gefragt
   ([#346](https://github.com/speedone/mietfuchs/issues/346)).
+- Schätzung nach § 9a auf der Seite Heizkosten: „Schätzen“ und „Ändern“ öffnen ein Seitenfenster wie überall sonst,
+  statt das Formular in der Karte aufzuklappen; gespeichert wird mit „Anlegen“ bzw. „Speichern“, und wer mit Eingaben
+  schließt, wird gefragt (Befund M18 aus [#341](https://github.com/speedone/mietfuchs/issues/341)).
 
 ### Behoben
 

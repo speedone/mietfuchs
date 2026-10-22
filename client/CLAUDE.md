@@ -187,8 +187,9 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   stehen mit `ml-auto` rechts. Wächter S16. **Wer einen Knopf umbenennt, zieht die Anleitungen und
   die Meldungen des Servers mit** (guides.test.ts, ui-labels.test.ts).
 - **Anlegen oder Bearbeiten heißt Seitenfenster**, auch Ablesung, Lieferung, Mieterwechsel,
-  Zeitraumwechsel, der Zeitraum der Heizung, die getrennte Heizkostenabrechnung und das Objekt (die Karte
-  „Objekt“ zeigt nur an, `propertySummary`). Mit Vorschau
+  Zeitraumwechsel, der Zeitraum der Heizung, die getrennte Heizkostenabrechnung, die Schätzung nach § 9a
+  (geöffnet aus der Zeile der Wohnung, „Schätzen“/„Ändern“) und das Objekt (die Karte „Objekt“ zeigt nur an,
+  `propertySummary`). Mit Vorschau
   verwirft **jede Änderung nach der Vorschau die Vorschau** (auch eine verspätete Antwort gilt dann
   nicht, Folgenummer je Anfrage), und ein Satz sagt, dass sie neu nötig ist.
 - **Neues anlegen steht oben rechts**: für die Seite in `PageHeader actions`, für eine Karte in

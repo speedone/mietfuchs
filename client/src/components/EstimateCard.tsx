@@ -4,18 +4,19 @@ import type { EstimateCause, EstimateMethod, HeatingPeriodView, HeatingPlant, Se
 import { api, errorText, fmtDate } from '../api'
 import { useToast } from './feedback'
 import Term from './Term'
-import { useOpenForm } from '../property'
 import { CAUSE_OPTIONS, chooseMethod, emptyEstimate, estimateBody, METHOD_OPTIONS, NO_PROPOSAL_TEXT, thresholdLines, WHY_TEXT, type EstimateForm } from '../estimateForm'
 import { hkvEstimateThreshold } from '../../../shared/law/heizkostenv.ts'
 import { valueAt } from '../../../shared/law/register.ts'
 import { ErrorSummary, useFormError } from './ErrorSummary'
+import Drawer from './Drawer'
+import { useSaving } from '../useSaving'
 
 const POT_TEXT = { heat: 'Heizung', water: 'Warmwasser' } as const
 const POT_OF = { heat: 'heating', water: 'water' } as const
 const num = (n: number) => n.toLocaleString('de-DE', { maximumFractionDigits: 3 })
 
 // Schätzung nach § 9a (Heizung PR 13, Entwurf 8.7, 11.4): je Wohnung und Topf, was fehlt, die gespeicherten
-// Schätzungen und der Dialog mit den Vorschlägen der drei Wege und dem Flächenanteil vor dem Speichern (N5).
+// Schätzungen und das Seitenfenster mit den Vorschlägen der drei Wege und dem Flächenanteil vor dem Speichern (N5).
 // Eine abgeschlossene Heizperiode zeigt die Schätzungen nur an.
 export default function EstimateCard({ plant, view, self, onChanged }: {
   plant: HeatingPlant; view: HeatingPeriodView; self: SelfHeatingStatement; onChanged: () => void
@@ -23,12 +24,12 @@ export default function EstimateCard({ plant, view, self, onChanged }: {
   const toast = useToast()
   const [open, setOpen] = useState<SelfEstimateOption | null>(null)
   const [form, setForm] = useState<EstimateForm | null>(null)
-  // Fehler als Sammelmeldung oben in der Karte (#346, Schritt 3)
+  // Fehler als Sammelmeldung oben in der Karte, bei offenem Seitenfenster in dessen Fuß (#346, Schritt 3)
   const errors = useFormError()
   const setError = errors.set
-  // Eine ungespeicherte Eingabe zählt als offenes Formular: Seiten-, Objekt- und Zeitraumwechsel fragen (#346, 7a).
-  // Offen ist das Formular nur, solange es zu sehen ist; nach Abbrechen und Speichern bleibt `form` gefüllt (Nachprüfung B1).
-  useOpenForm(open !== null && form !== null)
+  // Schätzen und Ändern im Seitenfenster (#341 M18): Es meldet sich bei einer Änderung selbst als offenes Formular an
+  // und fragt beim Schließen; useSaving sperrt einen zweiten Klick auf „Anlegen“/„Speichern“.
+  const saving = useSaving()
   const options = self.estimateOptions ?? []
   const estimates = self.estimates ?? []
   if (options.length === 0 && estimates.length === 0) return null
@@ -93,7 +94,7 @@ export default function EstimateCard({ plant, view, self, onChanged }: {
   }
   return (
     <Card title={<Term id="heatingEstimate">Schätzung (§ 9a)</Term>} level={3}>
-      <ErrorSummary errors={errors} />
+      {!open && <ErrorSummary errors={errors} />}
       {/* Durchsicht von #242: R-I1 (Wortlaut des § 9a Abs. 1), R-M11 (eine Pflicht), G-M6 (die ganze Heizperiode). */}
       <p className="muted no-print">
         Kann der Verbrauch einer Wohnung nicht ordnungsgemäß erfasst werden, weil das Gerät ausgefallen ist, falsch anzeigt oder ein anderer zwingender Grund vorliegt,
@@ -140,8 +141,11 @@ export default function EstimateCard({ plant, view, self, onChanged }: {
         </details>
       )}
       {open && form && (
-        <div className="panel no-print">
-          <h4>{open.unitName}, {POT_TEXT[open.part]}</h4>
+        <Drawer key={`${open.unitId}:${open.part}`} open title={existingOf(open) ? 'Schätzung bearbeiten' : 'Schätzung anlegen'}
+          subtitle={`${open.unitName}, ${POT_TEXT[open.part]}`} width={560}
+          onClose={() => { setOpen(null); setError('') }} value={form} busy={saving.busy} errors={errors}
+          onSubmit={() => void saving.run(save)}
+          actions={<button className="btn" disabled={saving.busy} onClick={() => void saving.run(save)}>{existingOf(open) ? 'Speichern' : 'Anlegen'}</button>}>
           {pot && thresholdLines(pot, open, threshold).map((l) => <p key={l}>{l}</p>)}
           <label className="field">Weg nach § 9a Abs. 1
             <select value={form.method} onChange={(ev) => setForm(chooseMethod(form, open, ev.target.value as EstimateMethod, form.comparableUnitId))}>
@@ -184,11 +188,7 @@ export default function EstimateCard({ plant, view, self, onChanged }: {
             <input type="checkbox" checked={form.confirmed} onChange={(ev) => setForm({ ...form, confirmed: ev.target.checked })} />
             Der Verbrauch ließ sich nicht ordnungsgemäß erfassen, und der richtige Wert lässt sich nicht mehr ermitteln (§ 9a Abs. 1 HeizkostenV).
           </label>
-          <div className="row">
-            <button className="btn" onClick={save}>Schätzung speichern</button>
-            <button className="btn ghost" onClick={() => setOpen(null)}>Abbrechen</button>
-          </div>
-        </div>
+        </Drawer>
       )}
     </Card>
   )

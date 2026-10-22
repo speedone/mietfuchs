@@ -34,6 +34,8 @@ const mockFetch = () => {
   })
   return calls
 }
+// Nach einem abgelehnten Speichern gibt useSaving den Knopf erst nach dem laufenden Aufruf wieder frei.
+const saveReady = (name: string) => waitFor(() => expect((screen.getByRole('button', { name }) as HTMLButtonElement).disabled).toBe(false))
 
 test('die Auswahlfelder zeigen den gespeicherten Weg und die gewählte Wohnung', () => {
   render(<EstimateCard plant={plant} view={view} self={self} onChanged={() => {}} />)
@@ -65,12 +67,13 @@ test('fehlender Endstand: Dialog mit Vorschlag und Flächenanteil, Speichern geh
   expect((screen.getByLabelText(/Geschätzter Verbrauch/) as HTMLInputElement).value).toBe('12000')
   expect(screen.getByText(/keinen vollständig abgelesenen Verbrauch dieser Wohnung.*selbst ein/)).toBeTruthy()
   fireEvent.change(screen.getByLabelText('Weg nach § 9a Abs. 1'), { target: { value: 'buildingAverage' } })
-  fireEvent.click(screen.getByRole('button', { name: 'Schätzung speichern' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }))
   expect(within(screen.getByRole('alert')).getByText(/Begründung/)).toBeTruthy()
   expect(calls).toEqual([])
+  await saveReady('Anlegen')
   fireEvent.change(screen.getByLabelText('Begründung'), { target: { value: 'Wärmezähler defekt' } })
   fireEvent.click(screen.getByLabelText(/Der Verbrauch ließ sich nicht ordnungsgemäß erfassen/))
-  fireEvent.click(screen.getByRole('button', { name: 'Schätzung speichern' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }))
   await waitFor(() => expect(onChanged).toHaveBeenCalled())
   expect(calls).toEqual([['/api/heating-plants/hp/periods/2025-01/estimates/c/heat', 'PUT', JSON.stringify({ value: 12000, method: 'buildingAverage', reason: 'Wärmezähler defekt', confirmed: true, cause: 'deviceFailure' })]])
 })
@@ -132,7 +135,7 @@ test('R-M2: ohne Bestätigung gespeichert sagt die Meldung das', async () => {
   render(<UIProvider><EstimateCard plant={plant} view={view} self={self} onChanged={() => {}} /></UIProvider>)
   fireEvent.click(screen.getByRole('button', { name: 'C schätzen' }))
   fireEvent.change(screen.getByLabelText('Begründung'), { target: { value: 'Wärmezähler defekt' } })
-  fireEvent.click(screen.getByRole('button', { name: 'Schätzung speichern' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }))
   await waitFor(() => expect(screen.getByText(/Gespeichert, aber noch nicht bestätigt; die Abrechnung meldet das/)).toBeTruthy())
 })
 
@@ -183,11 +186,12 @@ test('N-M3/N2-M1: beim Ablesedienst ohne Werte ist die Einheit eine Pflichtauswa
   const einheit = screen.getByLabelText('Einheit der Schätzung') as HTMLSelectElement
   expect(einheit.value).toBe('')
   fireEvent.change(screen.getByLabelText('Begründung'), { target: { value: 'Werte fehlen' } })
-  fireEvent.click(screen.getByRole('button', { name: 'Schätzung speichern' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }))
   expect(within(screen.getByRole('alert')).getByText(/Einheit/)).toBeTruthy()
   expect(calls).toEqual([])
+  await saveReady('Anlegen')
   fireEvent.change(einheit, { target: { value: 'kWh' } })
-  fireEvent.click(screen.getByRole('button', { name: 'Schätzung speichern' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }))
   await waitFor(() => expect(calls.length).toBe(1))
   expect(JSON.parse(calls[0]?.[2] ?? '{}').valueUnit).toBe('kWh')
   cleanup()
@@ -198,22 +202,62 @@ test('N-M3/N2-M1: beim Ablesedienst ohne Werte ist die Einheit eine Pflichtauswa
   expect(screen.getByLabelText(/Geschätzter Verbrauch in kWh, wie der Ablesedienst die Heizung nennt/)).toBeTruthy()
 })
 
-// #346, Schritt 7a, Nachprüfung B1: Nach „Abbrechen“ und nach dem Speichern blieb die Marke stehen, weil das
-// Formular gefüllt blieb; offen ist es nur, solange es zu sehen ist.
-test('7a: das offene Formular meldet die Karte an, Abbrechen und Speichern nehmen die Marke weg', async () => {
+// #346, Schritt 7a, seit #341 M18 im Seitenfenster: Erst eine Änderung meldet das Fenster an; „Abbrechen“ fragt dann
+// nach, „Verwerfen“ und Speichern nehmen die Marke weg.
+test('7a: das geänderte Seitenfenster meldet sich an, Verwerfen und Speichern nehmen die Marke weg', async () => {
   mockFetch()
   const onChanged = vi.fn()
-  render(<OpenFormScope><EstimateCard plant={plant} view={view} self={self} onChanged={onChanged} /></OpenFormScope>)
-  expect(hasOpenForm()).toBe(false)
+  render(<OpenFormScope><UIProvider><EstimateCard plant={plant} view={view} self={self} onChanged={onChanged} /></UIProvider></OpenFormScope>)
   fireEvent.click(screen.getByRole('button', { name: 'C schätzen' }))
+  expect(hasOpenForm()).toBe(false)
+  fireEvent.change(screen.getByLabelText(/Geschätzter Verbrauch in kWh/), { target: { value: '11000' } })
   expect(hasOpenForm()).toBe(true)
   fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }))
-  expect(hasOpenForm()).toBe(false)
+  fireEvent.click(await screen.findByRole('button', { name: 'Verwerfen' }))
+  await waitFor(() => expect(hasOpenForm()).toBe(false))
+  expect(screen.queryByRole('dialog', { name: 'Schätzung anlegen' })).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'C schätzen' }))
   fireEvent.change(screen.getByLabelText(/Geschätzter Verbrauch in kWh/), { target: { value: '11000' } })
-  const reason = screen.queryByPlaceholderText(/Wärmezähler defekt/)
-  if (reason) fireEvent.change(reason, { target: { value: 'Zähler defekt' } })
-  fireEvent.click(screen.getByRole('button', { name: 'Schätzung speichern' }))
+  fireEvent.change(screen.getByLabelText('Begründung'), { target: { value: 'Zähler defekt' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }))
   await waitFor(() => expect(onChanged).toHaveBeenCalled())
+  expect(screen.queryByRole('dialog', { name: 'Schätzung anlegen' })).toBeNull()
   expect(hasOpenForm()).toBe(false)
+})
+
+// #341 M18: Schätzen und Ändern öffnen ein Seitenfenster mit „Anlegen“ bzw. „Speichern“ und „Abbrechen“ aus dem Baustein.
+test('M18: Schätzen öffnet „Schätzung anlegen“, Ändern „Schätzung bearbeiten“ mit „Speichern“ an die Anlage der Schätzung', async () => {
+  const calls = mockFetch()
+  const onChanged = vi.fn()
+  render(<UIProvider><EstimateCard plant={plant} view={view} self={self} onChanged={onChanged} /></UIProvider>)
+  fireEvent.click(screen.getByRole('button', { name: 'C schätzen' }))
+  const neu = screen.getByRole('dialog', { name: 'Schätzung anlegen' })
+  expect(within(neu).getByText('C, Heizung')).toBeTruthy()
+  expect(within(neu).getByRole('button', { name: 'Anlegen' })).toBeTruthy()
+  expect(within(neu).queryByRole('button', { name: 'Speichern' })).toBeNull()
+  // Ohne Änderung schließt „Abbrechen“ sofort, ohne Rückfrage.
+  fireEvent.click(within(neu).getByRole('button', { name: 'Abbrechen' }))
+  expect(screen.queryByRole('alertdialog')).toBeNull()
+  expect(screen.queryByRole('dialog', { name: 'Schätzung anlegen' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Schätzung von A ändern' }))
+  const edit = screen.getByRole('dialog', { name: 'Schätzung bearbeiten' })
+  expect(within(edit).getByText('A, Heizung')).toBeTruthy()
+  fireEvent.click(within(edit).getByRole('button', { name: 'Speichern' }))
+  await waitFor(() => expect(onChanged).toHaveBeenCalled())
+  expect(calls).toEqual([['/api/heating-plants/hp-alt/periods/2025-01/estimates/a/heat', 'PUT', JSON.stringify({ value: 9000, method: 'comparableUnit', reason: 'Zähler defekt', confirmed: true, cause: 'deviceFailure' })]])
+  expect(screen.queryByRole('dialog', { name: 'Schätzung bearbeiten' })).toBeNull()
+})
+
+// Ein Fehler beim Speichern steht im Fuß des Fensters, das offen bleibt; die Karte zeigt ihn nicht doppelt.
+test('M18: ein Fehler beim Speichern steht im Seitenfenster, die Eingaben bleiben', () => {
+  const calls = mockFetch()
+  render(<UIProvider><EstimateCard plant={plant} view={view} self={self} onChanged={() => {}} /></UIProvider>)
+  fireEvent.click(screen.getByRole('button', { name: 'C schätzen' }))
+  fireEvent.change(screen.getByLabelText(/Geschätzter Verbrauch in kWh/), { target: { value: '11000' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }))
+  const drawer = screen.getByRole('dialog', { name: 'Schätzung anlegen' })
+  expect(within(drawer).getByRole('alert').textContent).toMatch(/Begründung/)
+  expect(screen.getAllByRole('alert')).toHaveLength(1)
+  expect((screen.getByLabelText(/Geschätzter Verbrauch in kWh/) as HTMLInputElement).value).toBe('11000')
+  expect(calls).toEqual([])
 })
