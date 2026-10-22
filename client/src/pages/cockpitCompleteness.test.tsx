@@ -73,3 +73,21 @@ test('Kostenart des Vorjahres fehlt im Jahr: Plausibilität fragt nach der Rechn
   const row = await screen.findByText('Plausibilität zum Vorjahr', { selector: '.check-title' }, SLOW)
   expect(row.closest('.check-row')?.textContent).toContain(`In ${YEAR - 1} erfasst, jetzt noch nicht: Wasser/Abwasser — fehlt noch eine Rechnung?`)
 })
+
+// Durchsicht zu #409, Befund 1: Eine Kostenart fällt auch zu Recht weg (Kabel nach dem Ende des
+// Nebenkostenprivilegs, eine Prüfung alle drei Jahre). Die Frage ist deshalb eine Hilfe und kein offener
+// Punkt, sonst bliebe die Unterzeile ein Jahr lang bei einem Punkt, den der Vermieter nicht erledigen kann.
+test('fehlende Kostenart des Vorjahres zählt nicht als offener Punkt (#409)', async () => {
+  stub('mfh', [item('g0', YEAR - 1, 'Grundsteuer'), item('g', YEAR, 'Grundsteuer')])
+  page()
+  await screen.findByText('Plausibilität zum Vorjahr', { selector: '.check-title' }, SLOW)
+  const ohne = screen.getByText(/Punkte? offen\.$/).textContent
+  cleanup()
+  vi.unstubAllGlobals()
+  stub('mfh', [item('g0', YEAR - 1, 'Grundsteuer'), item('w0', YEAR - 1, 'Kabel/Antenne'), item('g', YEAR, 'Grundsteuer')])
+  page()
+  const row = await screen.findByText(/jetzt noch nicht: Kabel\/Antenne/, {}, SLOW)
+  expect(row.textContent).toMatch(/darf sie fehlen/)
+  expect(screen.getByText(/Punkte? offen\.$/).textContent).toBe(ohne)
+  expect(screen.queryByRole('button', { name: /Nächster Schritt: Kosten erfassen/ })).toBeNull()
+})

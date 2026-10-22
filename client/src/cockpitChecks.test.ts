@@ -100,6 +100,8 @@ test('Eigentumswohnung ohne Positionen aus der Hausgeldabrechnung (#409)', () =>
   expect(condoWithoutHousingMoney('etw', [item('Grundsteuer', {})])).toBe(true)
   expect(condoWithoutHousingMoney('etw', [item('Grundsteuer', {}), item('Nicht umlagefähig', {})])).toBe(true)
   expect(condoWithoutHousingMoney('etw', [item('Grundsteuer', {}), item('Beleuchtung/Allgemeinstrom', { key: 'external' })])).toBe(false)
+  // Durchsicht zu #409, Befund 2: ohne Grundsteuer ist „Erfasst ist nur die Grundsteuer“ falsch.
+  expect(condoWithoutHousingMoney('etw', [item('Nicht umlagefähig', {})])).toBe(false)
   // Ohne Kosten sagt schon „Belege erfasst“, dass nichts da ist.
   expect(condoWithoutHousingMoney('etw', [])).toBe(false)
   expect(condoWithoutHousingMoney('mfh', [item('Grundsteuer', {})])).toBe(false)

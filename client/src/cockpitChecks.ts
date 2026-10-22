@@ -59,9 +59,11 @@ export function missingSincePrevious(items: CostItem[], previous: CostItem[]): s
 
 // Eine Eigentumswohnung, bei der von den umlagefähigen Kosten nur die Grundsteuer erfasst ist (#409): Alle
 // übrigen stehen in der Hausgeldabrechnung der Gemeinschaft (shared/assessment.ts), die oft erst Monate
-// nach dem Jahr kommt. Ohne Kosten sagt schon „Belege erfasst“, dass nichts da ist.
+// nach dem Jahr kommt. Ohne Kosten sagt schon „Belege erfasst“, dass nichts da ist; ohne Grundsteuer stimmte
+// der Text der Zeile nicht.
 export function condoWithoutHousingMoney(kind: PropertyKind | undefined, items: CostItem[]): boolean {
-  return kind === 'etw' && items.length > 0 && allocable(items).every((c) => c.category === 'Grundsteuer')
+  const allocated = allocable(items)
+  return kind === 'etw' && allocated.length > 0 && allocated.every((c) => c.category === 'Grundsteuer')
 }
 
 export function itemsDetail(items: number, sumCents: number, files: number): string {

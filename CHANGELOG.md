@@ -312,10 +312,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   ([#409](https://github.com/speedone/mietfuchs/issues/409)): Ob alle Rechnungen eines Jahres
   vorliegen, weiß nur der Vermieter. Die Unterzeile sagt deshalb nicht mehr „dann ist die Abrechnung
   versandfertig“, und „Abrechnung abschließen“ fragt, ob alle Rechnungen vorliegen, auch die, die
-  erst später kommen (Hausgeld-, Heizkosten- und Versorgerabrechnungen). Bei einer vermieteten
+  erst später kommen (etwa Hausgeld-, Heizkosten- oder Versorgerabrechnung). Bei einer vermieteten
   Eigentumswohnung, für die nur die Grundsteuer erfasst ist, nennt das Cockpit die fehlende
   Hausgeldabrechnung. Die Plausibilität zum Vorjahr nennt jetzt auch Kostenarten, die im Vorjahr
-  erfasst waren und im Jahr noch fehlen; vorher fiel eine ausstehende Rechnung dort nie auf.
+  erfasst waren und im Jahr noch fehlen; vorher fiel eine ausstehende Rechnung dort nie auf. Weil
+  eine Kostenart auch zu Recht wegfallen kann, zählt dieser Hinweis allein nicht als offener Punkt.
 - Eigene Heizkostenabrechnung: Fehlt in einer begonnenen Heizperiode der Anteil nach Verbrauch fürs
   Warmwasser, etwa weil die vorige Heizperiode kein zentrales Warmwasser hatte, lässt er sich jetzt
   nachtragen, auch nach einem Kesseltausch. Bisher verlangte die Karte ihn, zeigte aber kein Feld dafür,

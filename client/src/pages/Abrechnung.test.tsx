@@ -288,7 +288,7 @@ test('Abschließen fragt, ob alle Rechnungen des Jahres vorliegen (#409)', async
   fireEvent.click(await screen.findByRole('button', { name: `🔒 Abrechnung ${YEAR} abschließen` }, SLOW))
   const dialog = await screen.findByRole('alertdialog', {}, SLOW)
   expect(dialog.textContent).toContain(`Liegen alle Rechnungen für ${YEAR} vor`)
-  expect(dialog.textContent).toMatch(/Hausgeld/)
+  expect(dialog.textContent).toMatch(/Versorgerabrechnungen/)
   fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }))
   await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull(), SLOW)
   expect(bodies).toEqual([])

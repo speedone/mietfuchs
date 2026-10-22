@@ -51,6 +51,9 @@ type Check = {
   cta?: string
   // Statt nur zur Seite zu wechseln (E45: erst in den Zeitraum der Heizkostenabrechnung)
   go?: () => void
+  // Eine Hilfe, kein offener Punkt (#409): gelb gezeigt, aber nicht im Fortschritt, in der Unterzeile und
+  // im nächsten Schritt, weil der Vermieter sie nicht erledigen kann, wenn sie zu Recht besteht.
+  hint?: true
 }
 
 // Ab dieser Abweichung zum Vorjahr gilt eine Kostenart als auffällig (wie in der Übersicht).
@@ -173,7 +176,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
     // 2c. Hausgeldabrechnung (#409): Bei einer Eigentumswohnung mit nur der Grundsteuer fehlt sie fast sicher.
     // Höchstens gelb: Ob alle Rechnungen vorliegen, beantwortet der Vermieter beim Abschließen.
     if (condoWithoutHousingMoney(property?.kind, yearItems)) {
-      list.push({ title: 'Hausgeldabrechnung', level: 'gelb', tab: 'kosten', cta: 'Kosten erfassen',
+      list.push({ title: 'Hausgeldabrechnung', level: 'gelb', tab: 'schnellerfassung', cta: 'Belege erfassen',
         detail: `Erfasst ist nur die Grundsteuer. Die übrigen umlagefähigen Kosten stehen in der Hausgeldabrechnung der Gemeinschaft; übernehmen Sie sie, sobald sie vorliegt. Die Frist nach § 556 Abs. 3 BGB läuft auch, solange sie fehlt.` })
     }
 
@@ -245,12 +248,15 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
       const txt = notable.list
         .map((a) => `${a.cat} (${a.pct > 0 ? '+' : ''}${Math.round(a.pct)} %)`)
         .join(', ')
+      // Eine Kostenart fällt auch zu Recht weg (Kabel nach dem Nebenkostenprivileg, eine Prüfung alle paar
+      // Jahre); allein ist die Frage deshalb eine Hilfe (Durchsicht zu #409, Befund 1).
       const parts = [
-        ...(notable.missing.length > 0 ? [`In ${at.previousLabel} erfasst, jetzt noch nicht: ${andList(notable.missing)} — fehlt noch eine Rechnung?`] : []),
+        ...(notable.missing.length > 0 ? [`In ${at.previousLabel} erfasst, jetzt noch nicht: ${andList(notable.missing)} — fehlt noch eine Rechnung? Fällt eine Kostenart weg, darf sie fehlen.`] : []),
         ...(notable.list.length > 0 ? [`Auffällige Abweichung: ${txt} — Beleg prüfen, Mieter ggf. erklären.`] : []),
       ]
       list.push({ title: 'Plausibilität zum Vorjahr', level: 'gelb', tab: notable.missing.length > 0 ? 'kosten' : 'uebersicht',
-        cta: notable.missing.length > 0 ? 'Kosten erfassen' : 'Vergleich ansehen', detail: parts.join(' ') })
+        cta: notable.missing.length > 0 ? 'Kosten erfassen' : 'Vergleich ansehen', detail: parts.join(' '),
+        ...(notable.list.length === 0 ? { hint: true as const } : {}) })
     } else {
       list.push({ title: 'Plausibilität zum Vorjahr', level: 'gruen', detail: `Keine auffälligen Sprünge gegenüber ${at.previousLabel}.` })
     }
@@ -301,11 +307,11 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
     return list
   }, [property?.kind, heatingList, rules, switchPeriod, onNavigate, settlement, participating, units, yearItems, itemsSum, invoiceFileCount, meters, consumption, tenancies, notable, daysLeft, label, calendar, period, at.previousLabel, uploadFiles, bookedFiles])
 
-  const relevant = checks.filter((c) => c.level !== 'leer')
+  const relevant = checks.filter((c) => c.level !== 'leer' && !c.hint)
   const greenCount = relevant.filter((c) => c.level === 'gruen').length
   const pct = relevant.length ? Math.round((greenCount / relevant.length) * 100) : 0
   // Nächster Schritt: erst rote, dann gelbe offene Punkte
-  const next = checks.find((c) => c.level === 'rot' && c.tab) ?? checks.find((c) => c.level === 'gelb' && c.tab)
+  const next = relevant.find((c) => c.level === 'rot' && c.tab) ?? relevant.find((c) => c.level === 'gelb' && c.tab)
   // Die offenen Punkte beim Namen, für die Zeile nach dem Abschluss (M9). Die Zeile des Versands nennt
   // cockpitSubtitle nicht noch einmal, sie sagt deren Stand selbst (Durchsicht S2).
   const sentAt = settlement?.closed?.sentAt ?? null
