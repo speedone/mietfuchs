@@ -340,4 +340,25 @@ describe('Mieterwechsel beim Übernehmen (#258)', () => {
     expect(row.newTenants).toEqual([])
     expect(carryOverForm(row).notAgreed).toEqual([])
   })
+
+  test('Wechsel mitten im Zeitraum: altes Mietverhältnis bleibt, das neue wird gefragt', () => {
+    const mid = [{ ...TENANCIES[0], end: '2026-06-30' }, { ...TENANCIES[1], start: '2026-07-01' }, TENANCIES[2]] as Tenancy[]
+    const [row] = carryOverRows([src()], 2026, calendarYearPeriod(2026), undefined, { units: UNITS, tenancies: mid })
+    expect(row.newTenants).toMatchObject([{ tenancyId: 't1b', ask: 'contract', answer: null }])
+    expect(carryOverForm(row).notAgreed).toEqual(['t1', 't2'])
+  })
+
+  test('noch nicht geladene Mietverhältnisse: die Kennungen bleiben', () => {
+    const [row] = carryOverRows([src()], 2026, calendarYearPeriod(2026), undefined, { units: UNITS, tenancies: [] })
+    expect(row.newTenants).toEqual([])
+    expect(carryOverForm(row).notAgreed).toEqual(['t1', 't2'])
+  })
+
+  test('dieselbe Kennung steht nie in beiden Listen', () => {
+    const [row] = rowsFor(src({ category: 'Sonstige Betriebskosten', notAgreedTenancyIds: ['t2'], namedTenancyIds: ['t1', 't2'] }))
+    const form = carryOverForm({ ...row, newTenants: row.newTenants.map((n) => ({ ...n, answer: true })) })
+    expect(form.notAgreed).toEqual(['t2'])
+    expect(form.named.filter((id) => form.notAgreed.includes(id))).toEqual([])
+    expect(form.named).toEqual(['t1b'])
+  })
 })

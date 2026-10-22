@@ -137,13 +137,13 @@ export function carryOverRows(items: readonly CostItem[], at: number | PeriodCon
     const newTenants: NewTenant[] = []
     const keep = (ids: string[], ask: NewTenant['ask']): string[] => ids.filter((id) => {
       const old = people.tenancies.find((t) => t.id === id)
-      if (!old) return false
-      if (inTarget(old)) return true
+      // Noch nicht geladene Mietverhältnisse: nichts still verwerfen (`buildCostItemBody` filtert ohnehin).
+      if (!old) return people.tenancies.length === 0
       for (const t of people.tenancies.filter((x) => x.unitId === old.unitId && x.id !== id && inTarget(x))) {
         if (lists.notAgreed.includes(t.id) || lists.named.includes(t.id) || newTenants.some((n) => n.tenancyId === t.id && n.ask === ask)) continue
         newTenants.push({ unitId: t.unitId, unitName: people.units.find((u) => u.id === t.unitId)?.name ?? '', tenancyId: t.id, tenantName: t.tenantName, ask, answer: null })
       }
-      return false
+      return inTarget(old)
     })
     return { notAgreed: keep(lists.notAgreed, 'contract'), named: keep(lists.named, 'named'), newTenants }
   }
@@ -221,10 +221,10 @@ export function carryKeyDetails(item: CostItem, units: Unit[]): { text: string, 
 // Die Listen „trägt nicht“ und „im Vertrag genannt“ der Zeile samt den Antworten zu neuen Mietern (#258).
 function withNewTenants(row: CarryRow): Pick<ItemForm, 'notAgreed' | 'named'> {
   const answered = row.newTenants.filter((n) => n.answer !== null)
-  return {
-    notAgreed: [...row.notAgreed, ...answered.filter((n) => n.answer === false).map((n) => n.tenancyId)],
-    named: [...row.named, ...answered.filter((n) => n.ask === 'named' && n.answer === true).map((n) => n.tenancyId)],
-  }
+  const notAgreed = [...new Set([...row.notAgreed, ...answered.filter((n) => n.answer === false).map((n) => n.tenancyId)])]
+  // Wer nicht trägt, ist nicht „genannt“: dieselbe Kennung steht nie in beiden Listen.
+  const named = [...new Set([...row.named, ...answered.filter((n) => n.ask === 'named' && n.answer === true).map((n) => n.tenancyId)])].filter((id) => !notAgreed.includes(id))
+  return { notAgreed, named }
 }
 
 // Das Formular einer Vorlage, auch für „Im Formular öffnen“: Schlüssel und Angaben des Vorjahres,

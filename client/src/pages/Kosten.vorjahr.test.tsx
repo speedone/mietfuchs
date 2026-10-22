@@ -227,3 +227,22 @@ test('Mieterwechsel (#258): die Zeile fragt nach dem neuen Mieter, die Antwort �
     ITEMS.pop()
   }
 })
+
+test('Mieterwechsel (#258): Sonstige fragt nach „im Vertrag ausdrücklich genannt“, Ja kommt in namedTenancyIds', async () => {
+  ITEMS.push({ id: 'h', propertyId: 'objekt-1', period: calendarPeriod(PREV), category: 'Sonstige Betriebskosten', description: 'Dachrinne', amountCents: 1000, key: 'area', namedTenancyIds: ['t1'] })
+  try {
+    await renderPage([
+      { id: 't1', unitId: 'u1', tenantName: 'Max Muster', start: `${PREV - 5}-01-01`, end: `${YEAR}-06-30` },
+      { id: 't1b', unitId: 'u1', tenantName: 'Lea Schneider', start: `${YEAR}-07-01`, end: null },
+    ] as Tenancy[])
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(`Aus ${PREV} übernehmen`) }))
+    expect(screen.getByText('Neuer Mieter in EG (Lea Schneider): im Vertrag ausdrücklich genannt?')).toBeTruthy()
+    fireEvent.click(within(screen.getByRole('group', { name: 'Neuer Mieter in EG (Lea Schneider)' })).getByLabelText('Ja'))
+    fireEvent.change(screen.getByLabelText(`Betrag ${YEAR} für Dachrinne`), { target: { value: '10,00' } })
+    fireEvent.click(anlegenButton())
+    await waitFor(() => expect(sent).toHaveLength(1))
+    expect(sent[0]?.body).toMatchObject({ namedTenancyIds: expect.arrayContaining(['t1', 't1b']) })
+  } finally {
+    ITEMS.pop()
+  }
+})
