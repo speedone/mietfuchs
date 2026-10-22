@@ -721,6 +721,29 @@ test('#258: zwei Mietverhältnisse in EG links: beide anhaken, beide tragen nich
   expect(sent[0].body).toMatchObject({ notAgreedTenancyIds: ['t1', 't3'] })
 })
 
+test('#258: Wahl ohne Häkchen, dann anderer Umlageschlüssel: „Anlegen“ speichert', async () => {
+  const y = new Date().getFullYear() - 1
+  const tenancies = [
+    { id: 't1', unitId: 'u1', tenantName: 'Anna Becker', persons: 1, personHistory: [], start: '2020-01-01', end: `${y}-06-30`, prepayments: [], prepaymentOverrides: {}, baseRents: [] },
+    { id: 't3', unitId: 'u1', tenantName: 'Lea Schneider', persons: 1, personHistory: [], start: `${y}-07-01`, end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [] },
+    ...mieter258(['u2']),
+  ]
+  render(<PeriodProvider><PropertyProvider><Kosten units={UNITS_258} settings={null} tenancies={tenancies} /></PropertyProvider></PeriodProvider>)
+  fireEvent.click(await screen.findByRole('button', { name: /Kostenposition anlegen/i }))
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Aufzug' } })
+  fireEvent.change(screen.getByLabelText(/Beschreibung/i), { target: { value: 'Aufzug' } })
+  fireEvent.change(screen.getByLabelText(/^Betrag/i), { target: { value: '100,00' } })
+  fireEvent.click(unitBox('EG links'))
+  fireEvent.click(screen.getByRole('radio', { name: /Steht nicht im Mietvertrag von:/ }))
+  fireEvent.change(select(/Umlageschlüssel/i), { target: { value: 'units' } })
+  fireEvent.change(select(/Umlageschlüssel/i), { target: { value: 'area' } })
+  // Auch nach dem Zurückwechseln steht keine alte Wahl mehr da.
+  expect(screen.queryByRole('radio', { name: /Steht nicht im Mietvertrag von:/ })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/i }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(screen.queryByText('Bitte haken Sie an, wer nicht trägt')).toBeNull()
+})
+
 test('#258: die Meldung bleibt am Feld, solange eine zweite Wohnung noch offen ist', async () => {
   const units: Unit[] = [...UNITS_258, { id: 'u4', propertyId: 'objekt-1', name: 'DG', areaM2: 40, participates: true }]
   const tenancies = [...mieter258(), { id: 't4', unitId: 'u4', tenantName: 'Ole Wagner', persons: 1, personHistory: [], start: '2020-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [] }]

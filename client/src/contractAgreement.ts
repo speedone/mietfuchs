@@ -108,9 +108,12 @@ export function chooseWhy(form: ItemForm, unitId: string, why: 'notConcerned' | 
 }
 
 // „Steht nicht im Mietvertrag von:“ gewählt (`chosen`), aber kein Mieter angehakt: „Speichern“ meldet es am Feld.
+// Nur, solange die Frage zu sehen ist: Kostenart mit dieser Antwort, Schlüssel mit Teilnehmerliste, Teilnehmer gewählt.
 export function untickedChoices(form: ItemForm, chosen: readonly string[], units: Unit[], tenancies: Tenancy[], period: Pick<BillingPeriod, 'from' | 'to'>): Problem<'participants'>[] {
+  const { participants } = form
+  if (!allowsContractAnswer(form.category) || !PARTICIPANT_KEYS.includes(form.key) || participants === null) return []
   return units
-    .filter((u) => chosen.includes(u.id) && (form.participants === null || form.participants.includes(u.id)))
+    .filter((u) => chosen.includes(u.id) && participants.includes(u.id))
     .filter((u) => !unitTenancies(u.id, units, tenancies, period).some((t) => form.notAgreed.includes(t.tenancyId)))
     .map((u) => ({ field: 'participants', short: 'Bitte haken Sie an, wer nicht trägt', text: `Teilnehmer: Bitte haken Sie bei ${u.name} an, in wessen Mietvertrag die Kosten nicht stehen.` }))
 }

@@ -188,3 +188,13 @@ describe('Fix-Runde 1: mehrere Mietverhältnisse einer Wohnung', () => {
     expect(untickedChoices(form({ participants: ['u2'] }), ['u1'], UNITS, TWO, PERIOD)).toEqual([])
   })
 })
+
+describe('Fix-Runde 2: keine Meldung zu einer verborgenen Wahl', () => {
+  const TWO = [tenancy('t1', 'u1', 'Anna Becker', '2020-01-01', '2025-06-30'), tenancy('t4', 'u1', 'Lea Schneider', '2025-07-01', null), TENANCIES[1]]
+  test('Teilnehmer zurückgesetzt, anderer Schlüssel oder Kostenart ohne Antwort: nichts zu melden', () => {
+    expect(untickedChoices(form({ participants: null }), ['u1'], UNITS, TWO, PERIOD)).toEqual([])
+    expect(untickedChoices(form({ key: 'direct', participants: ['u2', 'u1'] }), ['u1'], UNITS, TWO, PERIOD)).toEqual([])
+    expect(untickedChoices(form({ category: 'Heizung und Warmwasser', participants: ['u2', 'u1'] }), ['u1'], UNITS, TWO, PERIOD)).toEqual([])
+    expect(untickedChoices(form({ category: 'Nicht umlagefähig', participants: ['u2', 'u1'] }), ['u1'], UNITS, TWO, PERIOD)).toEqual([])
+  })
+})

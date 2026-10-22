@@ -376,10 +376,11 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   const [formCarryId, setFormCarryId] = useState<string | null>(null)
   useEffect(() => { if (!form) setFormCarryId(null) }, [form])
   // #258: Wohnungen, bei denen „Steht nicht im Mietvertrag von:“ gewählt ist (mehrere Mietverhältnisse). Bloße Hilfe der
-  // Anzeige, damit die Häkchen darunter stehen bleiben; die Antwort selbst steht im Formular. Je Fenster neu.
+  // Anzeige, damit die Häkchen darunter stehen bleiben; die Antwort selbst steht im Formular. Je Fenster neu, und neu nach
+  // einem Wechsel von Schlüssel oder Kostenart (beide setzen die Teilnehmer zurück oder blenden die Frage aus).
   const [whyChosen, setWhyChosen] = useState<string[]>([])
   const formOpen = form !== null
-  useEffect(() => setWhyChosen([]), [formOpen, form?.id])
+  useEffect(() => setWhyChosen([]), [formOpen, form?.id, form?.key, form?.category])
 
   async function saveItem() {
     if (!form) return
