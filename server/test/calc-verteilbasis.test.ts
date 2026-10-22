@@ -16,8 +16,10 @@ const tenancy = (id: string, unitId: string, start = '2025-01-01', end: string |
   prepayments: [], prepaymentOverrides: {}, baseRents: [],
 })
 const unit = (id: string, over: Partial<SnapshotUnit> = {}): SnapshotUnit => ({ id, name: id, areaM2: 50, participates: true, ...over })
+// Gartenpflege statt „Sonstige Betriebskosten“: Dort fragt seit #258 ein Hinweis, ob der Mietvertrag die Position nennt,
+// und die Tests hier zählen die Meldungen der Verteilbasis.
 const item = (over: Partial<SnapshotCostItem> & Pick<SnapshotCostItem, 'key'>): SnapshotCostItem => ({
-  id: 'k', period: calendarPeriod(2025), category: 'Sonstige Betriebskosten', description: 'Probe', amountCents: 100000, ...over,
+  id: 'k', period: calendarPeriod(2025), category: 'Gartenpflege', description: 'Probe', amountCents: 100000, ...over,
 })
 const source = (over: Partial<SnapshotSource>): SnapshotSource => ({
   units: [], tenancies: [], costItems: [], meters: [], readings: [], payments: [], closedSettlements: [], ...over,

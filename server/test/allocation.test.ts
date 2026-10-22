@@ -92,3 +92,18 @@ test('Vorzeitraum: gesucht wird nach Zeitraum und nicht nach Jahreszahl (#208)',
   ]
   assert.equal(previousAllocation(items, 'Müllabfuhr', at)?.key, 'persons')
 })
+
+test('Abzug und Stromrechnung (#258): mit `contract` zählt „nicht vereinbart“ mit, beim Vorjahresvergleich nicht', () => {
+  const at = calendarPeriod(2025)
+  const bill = item({ period: at, category: 'Beleuchtung/Allgemeinstrom', notAgreedTenancyIds: ['t1', 't2'] })
+  const same = item({ period: at, category: 'Beleuchtung/Allgemeinstrom', notAgreedTenancyIds: ['t2', 't1'] })
+  const without = item({ period: at, category: 'Beleuchtung/Allgemeinstrom' })
+  const empty = item({ period: at, category: 'Beleuchtung/Allgemeinstrom', notAgreedTenancyIds: [] })
+  const c = { contract: true }
+  assert.equal(sameAllocation(allocationOf(bill, undefined, c), allocationOf(same, undefined, c)), true)
+  assert.equal(sameAllocation(allocationOf(bill, undefined, c), allocationOf(without, undefined, c)), false)
+  // Leer und fehlend sind dasselbe: niemand ist ausgenommen.
+  assert.equal(sameAllocation(allocationOf(without, undefined, c), allocationOf(empty, undefined, c)), true)
+  // Ohne `contract` (Schlüssel wie im Vorjahr, #141) bleibt der Vertrag außen vor: Er ist kein Verteilungsmaßstab.
+  assert.equal(sameAllocation(allocationOf(bill), allocationOf(without)), true)
+})

@@ -8,6 +8,16 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Hinzugefügt
 
+- Nicht vereinbarte Betriebskosten trägt der Vermieter ([#258](https://github.com/speedone/mietfuchs/issues/258)):
+  Nehmen Sie im Kostenformular eine Wohnung aus der Verteilung, fragt Mietfuchs, warum sie die Kosten
+  nicht trägt. Steht eine Kostenart nicht im Mietvertrag, tragen Sie den Anteil dieses Mieters selbst;
+  die übrigen Mieter zahlen deshalb nie mehr. Hat eine Wohnung mehrere Mietverhältnisse, wählen Sie
+  das betroffene aus. Über „Ein Mieter trägt das laut Mietvertrag nicht …“ nennen Sie solche Mieter
+  auch ohne Umweg. Bei „Sonstige Betriebskosten“ fragt das Formular je Mieter, ob der Vertrag die Kosten
+  nennt. Bestehende Positionen „Sonstige Betriebskosten“ zeigen deshalb einen Hinweis, bis Sie je
+  Mieter beantwortet haben, ob der Mietvertrag ihn nennt; die Beträge ändern sich dadurch nicht. Für
+  die Heizung verweist das Formular auf die Inklusivmiete. Beim Übernehmen aus dem Vorjahr fragt die
+  Vorschau bei einem neuen Mieter nach dessen Vertrag.
 - Anteil im Ein- und Auszugsmonat im Formular des Mietverhältnisses: Unter Kaltmiete,
   Vorauszahlung, Heizvorauszahlung und Pauschale steht bei einem Einzug oder Auszug mitten im Monat,
   wie viele Tage dieses Monats zählen und welcher Betrag daraus wird, etwa „Einzug am 15.10.2026: Im

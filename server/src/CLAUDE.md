@@ -361,12 +361,21 @@ Nur für Tests, ein Nutzer setzt sie nie:
 [calc.ts](calc.ts), das Herzstück. Heizungsregeln (Betriebsstrom, Contracting, § 5a, Mieter heizt
 selbst) stehen in [docs/heizung.md](../../docs/heizung.md).
 
+### Nicht vereinbart (#258)
+
+`CostItem.notAgreedTenancyIds` (Mieter, die die Kosten laut Vertrag nicht tragen) und `namedTenancyIds`
+(bei „Sonstige“: im Vertrag genannt) liegen in `cost_item_contract`. Der Anteil eines nicht
+vereinbarten Mietverhältnisses geht als `LandlordReason` `notAgreed` an den Vermieter; die Einheit
+bleibt im Verteilschlüssel, **der Anteil fällt nie auf die anderen Mieter** (Zufallsinvariante in
+calc.test.ts). Der Server lehnt beide Listen bei Heizung, Nicht umlagefähig und Rücklage ab.
+Hinweise: `allocation.not-agreed` (nur Info), `allocation.other-unanswered` (färbt das Cockpit).
+
 ### Verteilen
 
 - **Alle Beträge in Cent (Integer)**, niemals Euro-Floats.
 - **Eine Rundungsregel für jede Verteilung** (#202, `distributeCents`): Jede Position wird genau
   einmal nach Hare/largest-remainder verteilt, über alle Empfänger zugleich, also die Mieter **und
-  je Grund eine Zeile des Vermieters** (Eigennutzung, Pauschale, Inklusivmiete, außerhalb, Rest der
+  je Grund eine Zeile des Vermieters** (Eigennutzung, Pauschale, Inklusivmiete, nicht vereinbart, außerhalb, Rest der
   Vereinbarung, Rest des Hauptzählers, zuletzt Leerstand bzw. Rest der Einzelbeträge;
   `landlordRecipients`). Jede Zeile ist ihr exakter Wert ab- oder aufgerundet, keine wechselt das
   Vorzeichen, exakt 0 bekommt nie einen Cent. Gleichstand: erst der Vermieter, dann die Kennung per
@@ -378,6 +387,11 @@ selbst) stehen in [docs/heizung.md](../../docs/heizung.md).
   (Verbrauch nach Zählertyp), `direct`, `custom` (vereinbarte Prozente absolut, was unter 100 %
   fehlt, trägt der Vermieter), `external` (laut Gemeinschaftsabrechnung) und `amounts`
   (Einzelbeträge je Mietverhältnis).
+- **Nicht vereinbart** (#258): Ein Mietverhältnis in `notAgreedTenancyIds` bleibt in der Verteilbasis, sein Anteil
+  geht als `notAgreed` an den Vermieter (`bookable`), bei jedem Schlüssel. Nicht bei Heizung, nicht Umlagefähigem und
+  an Übertragszeilen (`contractTenancyIds`; das Wiederherstellen prüft die Kostenart nicht). Hinweise
+  `allocation.not-agreed` je Mietverhältnis und `allocation.other-unanswered` bei „Sonstige Betriebskosten“ ohne
+  Antwort (`namedTenancyIds`). Invariante in calc.test.ts: Die Summe der übrigen Mieter ändert sich nicht.
 - **Verteilbasis je Position** (#94): `participantUnitIds` grenzt auf Teilnehmer ein; ohne
   Teilnehmer ist sie **dasselbe Objekt** wie zuvor (`fullBasis`), damit keine Zahl wandert. Bei
   `external` **trägt die Position den eigenen Anteil** laut Hausgeldabrechnung, nicht die Summe der

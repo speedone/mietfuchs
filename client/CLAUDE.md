@@ -120,6 +120,12 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
 - **`<Field label hint optional width required>`** ist ein `<label class="field">` und vergibt `id`,
   `aria-labelledby` (nur die Beschriftung), `aria-describedby` und `aria-invalid`;
   `{...errors.field('date')}` reicht Meldung und `onFix` hinein.
+- **Nicht vereinbarte Kosten im Kostenformular** (#258): Wer eine Wohnung aus den Teilnehmern nimmt,
+  beantwortet „Warum trägt <Wohnung> diese Kosten nicht?“ (leer, eigengenutzt, nicht im Mietvertrag
+  …); bei mehreren Mietverhältnissen je eines als Kontrollkästchen. Der stille Textlink „Ein Mieter
+  trägt das laut Mietvertrag nicht …“ öffnet dieselbe Frage ohne Umweg. Bei „Sonstige“ steht je Mieter
+  eine Ja/Nein-Frage (`namedTenancyIds`), bei Heizung nur ein Satz zur Inklusivmiete. Die Musterseite
+  zeigt alles.
 - **Pflichtfelder tragen `required`**: Sternchen (für Vorleser ausgeblendet) und das HTML-Attribut;
   erklärt durch die Legende „* Pflichtangabe“ (der Drawer zeigt sie selbst, sonst
   `<RequiredLegend />`). Pflicht sind genau die Felder, deren Fehlen die Prüfung meldet

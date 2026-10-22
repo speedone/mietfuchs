@@ -791,6 +791,15 @@ test('Betriebsstrom: Abzug wählt seine Stromrechnung desselben Zeitraums und ü
   expect(withGeneralChoice(mit, '', [strom]).operatingPowerGeneralId).toBe('')
 })
 
+// Durchsicht des Endstands von #258: Der Abzug ist ein Ausschnitt seiner Stromrechnung und übernimmt auch, wer sie laut
+// Mietvertrag nicht trägt; sonst bekäme dieser Mieter aus dem Abzug eine Gutschrift.
+test('Betriebsstrom: Abzug übernimmt „nicht vereinbart“ seiner Stromrechnung', () => {
+  const strom: CostItemOf = { id: 'strom', propertyId: 'o', period: periodKey('2025-01'), category: 'Beleuchtung/Allgemeinstrom', description: 'Hausstrom 2025', amountCents: 100000, key: 'area', notAgreedTenancyIds: ['t1'] }
+  const hand = withDeductionChoice({ ...EMPTY_ITEM_FORM, category: 'Beleuchtung/Allgemeinstrom', amount: '-300,00', key: 'area', notAgreed: ['t9'] }, 'service')
+  expect(withGeneralChoice(hand, 'strom', [strom]).notAgreed).toEqual(['t1'])
+  expect(withGeneralChoice(hand, 'strom', [{ ...strom, notAgreedTenancyIds: null }]).notAgreed).toEqual([])
+})
+
 // #267: Ein Abzug beim Betriebsstrom hat kein eigenes Jahr der Zahlung; das Formular nennt das seiner Stromrechnung und
 // schickt keines, auch wenn eines eingelesen wurde (aus der Zeit vor #267).
 test('Betriebsstrom: Abzug im Steuerjahr seiner Stromrechnung, kein eigenes Jahr im Rumpf', () => {

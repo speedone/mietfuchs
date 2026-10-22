@@ -100,6 +100,9 @@ export type SnapshotCostItem = Pick<
   | 'externalBasis'
   | 'tenancyAmounts'
   | 'selfAmounts'
+  // Die Umlagevereinbarung je Mietverhältnis (#258): wer die Position laut Vertrag nicht trägt.
+  | 'notAgreedTenancyIds'
+  | 'namedTenancyIds'
   | 'labor35aCents'
   // Nur für den Hinweis auf eine mögliche Doppelung (shared/duplicates.ts); verteilt wird nach
   // keinem der beiden.

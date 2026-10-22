@@ -173,7 +173,7 @@ test('Vermieteranteil, Hauptzähler: gemessener Verbrauch einer leeren Wohnung i
   assert.deepEqual(partsOf(s), [{ reason: 'mainMeterRest', cents: 50000 }, { reason: 'vacancy', cents: 20000 }])
 })
 
-test('Vermieteranteil, vereinbarte Anteile: der verfallene Anteil einer Wohnung außerhalb ist kein „nicht vereinbarter Anteil“', () => {
+test('Vermieteranteil, vereinbarte Anteile: der verfallene Anteil einer Wohnung außerhalb ist kein „Rest unter 100 % der vereinbarten Anteile“', () => {
   const s = settle({
     units: [unit('a'), unit('g', { participates: false })],
     tenancies: [tenancy('t-a', 'a')],

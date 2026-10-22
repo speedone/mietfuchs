@@ -48,7 +48,10 @@ import {
   type KeyContext,
   costMeterTypes,
   costFieldProblems,
+  type CostField,
 } from '../costForm'
+import { notAgreedText, openWhy, untickedChoices, withParticipant } from '../contractAgreement'
+import ContractAgreementFields, { WhyQuestion } from '../components/ContractAgreementFields'
 import CostPeriodFields from '../components/CostPeriodFields'
 import OperatingPowerFields from '../components/OperatingPowerFields'
 import TaxYearSelect from '../components/TaxYearSelect'
@@ -118,7 +121,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   useEffect(() => { if (!form) setNeedsTaxYear(false) }, [form])
   const [error, setError] = useState('')
   // Die Fehler des Seitenfensters, im Fuß des Fensters (#346, Schritt 3)
-  const formErrors = useFormError<'description' | 'amount' | 'labor35a' | 'target'>()
+  const formErrors = useFormError<CostField>()
   // Heizung PR 5: Heizpositionen einer Anlage mit eigener Heizperiode tragen deren Schlüssel.
   const [plants, setPlants] = useState<HeatingPlant[]>([])
   const [heatingPeriod, setHeatingPeriod] = useState('')
@@ -372,6 +375,12 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   // verschwindet sie aus der Liste, sonst legte der Knopf sie ein zweites Mal an (Durchsicht).
   const [formCarryId, setFormCarryId] = useState<string | null>(null)
   useEffect(() => { if (!form) setFormCarryId(null) }, [form])
+  // #258: Wohnungen, bei denen „Steht nicht im Mietvertrag von:“ gewählt ist (mehrere Mietverhältnisse). Bloße Hilfe der
+  // Anzeige, damit die Häkchen darunter stehen bleiben; die Antwort selbst steht im Formular. Je Fenster neu, und neu nach
+  // einem Wechsel von Schlüssel oder Kostenart (beide setzen die Teilnehmer zurück oder blenden die Frage aus).
+  const [whyChosen, setWhyChosen] = useState<string[]>([])
+  const formOpen = form !== null
+  useEffect(() => setWhyChosen([]), [formOpen, form?.id, form?.key, form?.category])
 
   async function saveItem() {
     if (!form) return
@@ -386,8 +395,15 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     }
     // Heizung PR 16: nach der Energie der Abrechnung (bei Contracting bezahlt in der Regel der Lieferant den Strom des Kessels).
     const built = buildCostItemBody(form, units, period, tenancies, plantOfForm ? billingEnergy(plantOfForm) : undefined)
-    if ('error' in built) {
+    // Die offene Warum-Frage und „Steht nicht im Mietvertrag von:“ ohne Häkchen (#258) stehen am Feld und in der
+    // Sammelmeldung, alles andere als Satz.
+    const unticked = untickedChoices(form, whyChosen, units, tenancies, period)
+    if ('error' in built && !('problems' in built)) {
       setError(built.error)
+      return
+    }
+    if ('problems' in built || unticked.length > 0) {
+      formErrors.report([...('problems' in built ? built.problems : []), ...unticked])
       return
     }
     setError('')
@@ -570,7 +586,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
       <div className="card no-print">
         <div className="row">
           {previousCount > 0 && !carry && (
-            <button className="btn secondary" onClick={() => { setError(''); setCarry(carryOverRows(items, at, period, { rules: view.rules, plants })) }}>
+            <button className="btn secondary" onClick={() => { setError(''); setCarry(carryOverRows(items, at, period, { rules: view.rules, plants }, { units, tenancies })) }}>
               Aus {at.previousLabel} übernehmen …
             </button>
           )}
@@ -640,6 +656,8 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                     {showsKeyFields(r.source.category) && r.source.participantUnitIds && (
                       <div className="muted">nur {r.source.participantUnitIds.map((id) => units.find((u) => u.id === id)?.name ?? '?').join(', ')}</div>
                     )}
+                    {/* Was übernommen wird (`r.notAgreed`), ohne Mieter, die im neuen Zeitraum nicht mehr wohnen (#258). */}
+                    {showsKeyFields(r.source.category) && notAgreedText(r.notAgreed, tenancies) && <div className="muted">{notAgreedText(r.notAgreed, tenancies)}</div>}
                     {showsKeyFields(r.source.category) && r.source.key === 'meter' && r.source.meterType && <div className="muted">{METER_TYPE_LABELS[r.source.meterType]}</div>}
                     {/* Durchsicht: Anteile samt Summe, Wohnung der Direktzuordnung */}
                     {showsKeyFields(r.source.category) && (() => {
@@ -661,6 +679,18 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                         className="input-cell"
                       />
                     )}
+                    {r.newTenants.map((n) => {
+                      const ask = n.ask === 'named' ? 'im Vertrag ausdrücklich genannt?' : 'Trägt sie diese Kosten laut Vertrag?'
+                      const name = `${n.unitId}-${n.tenancyId}-${r.source.id}`
+                      const set = (answer: boolean) => updateCarry(i, { newTenants: r.newTenants.map((x) => (x === n ? { ...x, answer } : x)) })
+                      return (
+                        <div key={n.tenancyId + n.ask} role="group" aria-label={`Neuer Mieter in ${n.unitName} (${n.tenantName})`}>
+                          <div>Neuer Mieter in {n.unitName} ({n.tenantName}): {ask}</div>
+                          <label><input type="radio" name={name} checked={n.answer === true} onChange={() => set(true)} /> Ja</label>{' '}
+                          <label><input type="radio" name={name} checked={n.answer === false} onChange={() => set(false)} /> Nein</label>
+                        </div>
+                      )
+                    })}
                     {!r.inline && <div className="muted">{r.formReason ?? 'Einzelbeträge je Mieter bitte im Formular eintragen.'}</div>}
                     {r.heatingNote && <div className="muted">{r.heatingNote}</div>}
                   </td>
@@ -781,6 +811,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                     {i.participantUnitIds && (
                       <div className="muted">nur {i.participantUnitIds.map((id) => units.find((u) => u.id === id)?.name ?? '?').join(', ') || 'keine Wohnung'}</div>
                     )}
+                    {notAgreedText(i.notAgreedTenancyIds, tenancies) && <div className="muted">{notAgreedText(i.notAgreedTenancyIds, tenancies)}</div>}
                     {i.key === 'direct' && <div className="muted">{units.find((u) => u.id === i.directUnitId)?.name}</div>}
                     {i.key === 'meter' && <div className="muted">{i.meterType ? METER_TYPE_LABELS[i.meterType] : '— kein Zählertyp'}</div>}
                     {i.key === 'custom' && (
@@ -1110,20 +1141,29 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                   {basisUnits.map((u) => {
                     const checked = form.participants === null || form.participants.includes(u.id)
                     return (
-                      <label key={u.id} className="field checkline">
+                      <Fragment key={u.id}>
+                      <label className="field checkline">
                         <span>
                           <input
                             type="checkbox"
                             checked={checked}
                             onChange={(e) => {
-                              const current = form.participants ?? basisUnits.map((x) => x.id)
-                              const next = e.target.checked ? [...current, u.id] : current.filter((id) => id !== u.id)
-                              setForm({ ...form, participants: next })
+                              const next = withParticipant(form, u.id, e.target.checked, basisUnits.map((x) => x.id), units, tenancies, period)
+                              if (openWhy(next).length === 0) formErrors.clearField('participants')
+                              setWhyChosen((x) => x.filter((id) => id !== u.id))
+                              setForm(next)
                             }}
                           />{' '}
                           {u.name}
                         </span>
                       </label>
+                      {/* #258: Warum trägt die gerade abgewählte Wohnung nicht? Direkt darunter, kein Dialog. */}
+                      {(openWhy(form).includes(u.id) || (checked && whyChosen.includes(u.id))) && (
+                        <WhyQuestion form={form} unit={u} units={units} tenancies={tenancies} period={period} onChange={setForm}
+                          field={formErrors.field('participants')} first={openWhy(form)[0] === u.id}
+                          chosen={whyChosen.includes(u.id)} onChoose={(contract) => setWhyChosen((x) => [...x.filter((id) => id !== u.id), ...(contract ? [u.id] : [])])} />
+                      )}
+                      </Fragment>
                     )
                   })}
                 </div>
@@ -1138,6 +1178,8 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                 </select>
               </label>
             )}
+            {/* #258: unten im Abschnitt Schlüssel; bei „Sonstige Betriebskosten“ die Frage je Mieter. */}
+            <ContractAgreementFields form={form} units={units} tenancies={tenancies} period={period} onChange={setForm} />
             </>}
             <div className="field-group">
               <div className="field-group-label">Beleg (Rechnungskopie)</div>

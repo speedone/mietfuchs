@@ -188,6 +188,22 @@ export const GLOSSARY = {
     norm: 'BGH, Urteil vom 31.05.2006, VIII ZR 159/05 (Grundsatz, am Flächenschlüssel); zum Personenschlüssel BGH, Beschluss vom 08.01.2013, VIII ZR 180/12',
     needed: 'Mietfuchs rechnet ihn von selbst heraus. Sie müssen nur Ein- und Auszug richtig eintragen. Wie eine leere Wohnung beim Personenschlüssel anzusetzen ist, regelt kein Gesetz und ist nicht abschließend geklärt; nach dem BGH kommt es auf den Einzelfall an, und eine fiktive Person für die Zeit des Leerstands kommt in Betracht; im Einzelfall hält er es auch für vertretbar, den Leerstand ganz außer Acht zu lassen. Mietfuchs setzt eine Person je Leerstandstag an; das ist eine Auslegung von Mietfuchs. Bei Kosten, die von der Personenzahl abhängen (etwa Wasser nach Personen), kann eine andere Aufteilung angemessener sein, zum Beispiel in Grund- und Verbrauchskosten.',
   },
+  // #258: Die Hinweise `allocation.not-agreed` und `allocation.other-unanswered` verweisen hierher. Das Beispiel ist
+  // das aus calc-vertrag.test.ts.
+  notAgreedCosts: {
+    title: 'Nicht vereinbarte Betriebskosten',
+    short: 'Betriebskosten trägt ein Mieter nur, soweit sein Mietvertrag es vereinbart. Legt der Vertrag eine Kostenart nicht um, trägt ihren Anteil der Vermieter und nicht die übrigen Mieter.',
+    example: 'Zwei Wohnungen mit je 50 m², Gartenpflege 1.000 € nach Fläche. Der Vertrag von Mieter A nennt die Gartenpflege nicht: A trägt 0 €, Mieter B wie bisher 1.000 € × 50/100 = 500 €, und die übrigen 500 € trägt der Vermieter. Nähme man die Wohnung von A aus den Teilnehmern der Position, trüge B die ganzen 1.000 €; das wäre zu viel.',
+    norm: '§ 556 Abs. 1 Satz 1 BGB; zur Aufzählung einzelner Kostenarten BGH, Urteil vom 10.10.2007, VIII ZR 279/06. Dass der Anteil beim Vermieter bleibt, ist eine Auslegung von Mietfuchs nach dem Grundsatz zum Leerstand (BGH, Urteil vom 31.05.2006, VIII ZR 159/05).',
+    needed: 'Nur wenn ein Mietvertrag einzelne Kostenarten aufzählt und eine davon fehlt, oder bei sonstigen Betriebskosten, die er nicht beim Namen nennt. Verweist der Vertrag allgemein auf die Betriebskosten, trägt der Mieter die Kostenarten der Betriebskostenverordnung außer den sonstigen (BGH, Urteil vom 10.02.2016, VIII ZR 137/15). Tragen Sie bei der Kostenposition ein, welches Mietverhältnis sie laut Vertrag nicht trägt; Mietfuchs rechnet den Anteil dann Ihnen zu und lässt die Position in der Abrechnung dieses Mieters weg.',
+  },
+  namedOtherCosts: {
+    title: 'Sonstige Betriebskosten im Mietvertrag benannt',
+    short: 'Sonstige Betriebskosten (§ 2 Nr. 17 BetrKV), etwa die Dachrinnenreinigung, trägt ein Mieter nur, wenn sein Mietvertrag sie ausdrücklich beim Namen nennt; ein Verweis auf die Betriebskostenverordnung genügt dafür nicht.',
+    example: 'Dachrinnenreinigung 200 € nach Fläche, zwei Wohnungen mit je 50 m². Nennt nur der Vertrag von Mieter B die Dachrinnenreinigung, trägt B 200 € × 50/100 = 100 €; den Anteil von Mieter A über 100 € trägt der Vermieter.',
+    norm: '§ 556 Abs. 1 BGB, § 2 Nr. 17 BetrKV; BGH, Urteil vom 07.04.2004, VIII ZR 167/03',
+    needed: 'Nur wenn Sie Kosten unter der Kostenart Sonstige Betriebskosten erfassen. Mietfuchs fragt dann je Mieter, ob sein Vertrag die Position nennt; ohne Antwort verteilt es wie erfasst und weist in der Abrechnung darauf hin. Gehört die Position eigentlich zu einer anderen Kostenart, wählen Sie diese.',
+  },
   // #204: Der Hinweis „Mietverhältnisse überschneiden sich“ verweist hierher. Keine Rechtsgrundlage:
   // Es geht um einen Fehler in den erfassten Daten, nicht um eine Regel.
   tenancyOverlap: {

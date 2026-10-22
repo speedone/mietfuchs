@@ -26,7 +26,7 @@ import { DEFAULT_SETTINGS } from '../defaults.ts'
 import { frozenSettlementOf, type FrozenItemSelfUse, type SnapshotSource } from '../snapshot.ts'
 import type { Executor } from './client.ts'
 import {
-  aiSlots, baseRents, closedHeatingSettlements, co2Refunds, co2Statements, co2TenantReliefs, degreeDayValues, fuelCarryFrozen, fuelDeliveries, fuelDeliveryParts, heatingPeriods, closedSettlements, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, unitNoConnection, meters, payments,
+  aiSlots, baseRents, closedHeatingSettlements, co2Refunds, co2Statements, co2TenantReliefs, degreeDayValues, fuelCarryFrozen, fuelDeliveries, fuelDeliveryParts, heatingPeriods, closedSettlements, costItemAmounts, costItemContract, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, unitNoConnection, meters, payments,
   flatRates, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingPrepayments, heatingSelfSpans, heatingSeparateSpans, heatingServiceValues, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, readings, settings, tenancies, units,
   interimReadingGaps, heatingEstimates, heatingMonthlyInfo,
 } from './schema.ts'
@@ -238,11 +238,14 @@ export async function readCostItems(db: Executor): Promise<CostItem[]> {
   const amounts = groupBy(amountRows, (r) => r.costItemId, (r): [string, number] => [r.tenancyId, r.amountCents])
   const selfAmountRows = await db.select().from(costItemSelfAmounts).orderBy(INSERTION_ORDER)
   const selfAmounts = groupBy(selfAmountRows, (r) => r.costItemId, (r): [string, number] => [r.unitId, r.amountCents])
+  const contractRows = await db.select().from(costItemContract).orderBy(INSERTION_ORDER)
+  const contract = groupBy(contractRows, (r) => r.costItemId, (r): [string, boolean] => [r.tenancyId, r.inContract])
   return rows.map((c) => {
     const own = shares.get(c.id)
     const teilnehmer = participants.get(c.id)
     const betraege = amounts.get(c.id)
     const eigen = selfAmounts.get(c.id)
+    const vertrag = contract.get(c.id)
     return {
       id: c.id,
       propertyId: c.propertyId,
@@ -261,6 +264,10 @@ export async function readCostItems(db: Executor): Promise<CostItem[]> {
       ...(c.participantsLimited ? { participantUnitIds: teilnehmer ?? [] } : {}),
       ...(betraege ? { tenancyAmounts: Object.fromEntries(betraege) } : {}),
       ...(eigen ? { selfAmounts: Object.fromEntries(eigen) } : {}),
+      // Die Umlagevereinbarung (#258): beide Listen, sobald es eine Zeile gibt; ohne Zeilen fehlen beide.
+      ...(vertrag
+        ? { notAgreedTenancyIds: vertrag.filter(([, im]) => !im).map(([id]) => id), namedTenancyIds: vertrag.filter(([, im]) => im).map(([id]) => id) }
+        : {}),
       ...(c.externalMeasure !== null && c.externalTotal !== null && c.externalTotalCents !== null
         ? { externalBasis: { measure: c.externalMeasure, total: c.externalTotal, totalCents: c.externalTotalCents } }
         : {}),
