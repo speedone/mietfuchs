@@ -2,8 +2,8 @@
 // Betrag und ohne Beleg. Gespeichert wird nur, was durch dieselbe Prüfung geht wie das Formular.
 import { CALENDAR_RULES, calendarPeriod, calendarYearPeriod, contextOf, periodKey, periodOfKey } from '../../shared/period.ts'
 import { describe, expect, test } from 'vitest'
-import type { CostItem, HeatingPlant, Unit } from './types'
-import { alreadyCarried, carryKeyDetails, carryOverBody, carryOverRows, replaceYear, withCarryAmount, type CarryRow } from './carryOver'
+import type { CostItem, HeatingPlant, Tenancy, Unit } from './types'
+import { alreadyCarried, carryKeyDetails, carryOverBody, carryOverForm, carryOverRows, replaceYear, withCarryAmount, type CarryRow } from './carryOver'
 
 const UNITS: Unit[] = [
   { id: 'u1', propertyId: 'p', name: 'EG', areaM2: 50, participates: true },
@@ -292,4 +292,52 @@ test('Die Übernahme aus dem Vorjahr nimmt kein Zahlungsdatum mit (#255 PR 3, T1
   const built = carryOverBody(withCarryAmount(row, '480,00'), UNITS, 2025)
   if ('error' in built) return expect.unreachable(built.error)
   expect(built.body.paidOn).toBeNull()
+})
+
+describe('Mieterwechsel beim Übernehmen (#258)', () => {
+  const TENANCIES = [
+    { id: 't1', unitId: 'u1', tenantName: 'Max Muster', start: '2020-01-01', end: '2025-12-31' },
+    { id: 't1b', unitId: 'u1', tenantName: 'Lea Schneider', start: '2026-01-01', end: null },
+    { id: 't2', unitId: 'u2', tenantName: 'Ida Roth', start: '2020-01-01', end: null },
+  ] as Tenancy[]
+  const people = { units: UNITS, tenancies: TENANCIES }
+  const src = (over: Partial<CostItem> = {}) => item({ period: calendarPeriod(2025), category: 'Grundsteuer', description: 'Grundsteuer 2025', notAgreedTenancyIds: ['t1', 't2'], ...over })
+  const rowsFor = (s: CostItem) => carryOverRows([s], 2026, calendarYearPeriod(2026), undefined, people)
+
+  test('neuer Mieter in derselben Wohnung wird gefragt, unverändertes Mietverhältnis bleibt', () => {
+    const [row] = rowsFor(src())
+    expect(row.newTenants).toEqual([{ unitId: 'u1', unitName: 'EG', tenancyId: 't1b', tenantName: 'Lea Schneider', ask: 'contract', answer: null }])
+    expect(carryOverForm(row).notAgreed).toEqual(['t2'])
+  })
+
+  test('Antwort Nein übernimmt den neuen Mieter in die Liste, Ja nicht', () => {
+    const [row] = rowsFor(src())
+    const no = { ...row, newTenants: row.newTenants.map((n) => ({ ...n, answer: false })) }
+    expect(carryOverForm(no).notAgreed).toEqual(['t2', 't1b'])
+    const yes = { ...row, newTenants: row.newTenants.map((n) => ({ ...n, answer: true })) }
+    expect(carryOverForm(yes).notAgreed).toEqual(['t2'])
+  })
+
+  test('Rumpf: ohne Antwort weder alter noch neuer Mieter, mit Nein der neue', () => {
+    const [row] = rowsFor(src())
+    const ready = { ...row, amount: '100' }
+    const none = carryOverBody(ready, UNITS, calendarYearPeriod(2026), TENANCIES)
+    expect(none).toMatchObject({ body: { notAgreedTenancyIds: ['t2'] } })
+    const no = carryOverBody({ ...ready, newTenants: ready.newTenants.map((n) => ({ ...n, answer: false })) }, UNITS, calendarYearPeriod(2026), TENANCIES)
+    expect(no).toMatchObject({ body: { notAgreedTenancyIds: expect.arrayContaining(['t2', 't1b']) } })
+  })
+
+  test('Sonstige: fragt nach „genannt“; Ja kommt in named, Nein in notAgreed', () => {
+    const [row] = rowsFor(src({ category: 'Sonstige Betriebskosten', notAgreedTenancyIds: undefined, namedTenancyIds: ['t1'] }))
+    expect(row.newTenants).toMatchObject([{ tenancyId: 't1b', ask: 'named', answer: null }])
+    expect(carryOverForm(row).named).toEqual([])
+    expect(carryOverForm({ ...row, newTenants: [{ ...row.newTenants[0], answer: true }] }).named).toEqual(['t1b'])
+    expect(carryOverForm({ ...row, newTenants: [{ ...row.newTenants[0], answer: false }] }).notAgreed).toEqual(['t1b'])
+  })
+
+  test('ein Mietverhältnis ohne Nachfolger fällt weg, ohne Frage', () => {
+    const [row] = carryOverRows([src({ notAgreedTenancyIds: ['t1'] })], 2026, calendarYearPeriod(2026), undefined, { units: UNITS, tenancies: TENANCIES.filter((t) => t.id !== 't1b') })
+    expect(row.newTenants).toEqual([])
+    expect(carryOverForm(row).notAgreed).toEqual([])
+  })
 })

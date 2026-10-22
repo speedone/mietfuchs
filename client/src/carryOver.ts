@@ -24,6 +24,10 @@ export type CarryHeating = { rules: PeriodRules; plants: readonly PlantPeriods[]
 // Die Jahreszahl ersetzt dieselbe Regel, mit der der gemerkte Schlüssel die Beschreibung vergleicht.
 export { replaceYear }
 
+export type NewTenant = { unitId: string, unitName: string, tenancyId: string, tenantName: string, ask: 'contract' | 'named', answer: boolean | null }
+
+export type CarryPeople = { units: Unit[], tenancies: Tenancy[] }
+
 export type CarryRow = {
   source: CostItem
   description: string
@@ -44,6 +48,11 @@ export type CarryRow = {
   // `null`: keine Heizposition dieser Art, oder es enden keine oder mehrere (dann im Formular, wie beim
   // Neuanlegen).
   heating: { plantId: string; period: PeriodKey } | null
+  // Mieterwechsel (#258): Die Kennungen der Vorjahresliste, die im neuen Zeitraum noch bestehen, und die
+  // Fragen zu neuen Mietverhältnissen derselben Wohnung. Ohne Antwort trägt der neue Mieter wie üblich.
+  notAgreed: string[]
+  named: string[]
+  newTenants: NewTenant[]
   // Warum die Zeile nur im Formular übernommen werden kann
   formReason?: string
   // Wohin eine Heizposition kommt: Heizperiode und Jahr der Zahlung, bei einer Vorlage ohne Anlage
@@ -80,7 +89,7 @@ export function alreadyCarried(items: readonly CostItem[], row: Pick<CarryRow, '
 // Zeile ein Jahr der Zahlung (Entwurf 3.10): das der Vorlage, um den Abstand der Zeiträume
 // verschoben und in die erlaubte Spanne geklemmt; trägt die Vorlage keines (etwa direkt nach einem
 // Wechsel), das Jahr, in dem das Ziel beginnt, wie beim Anlegen (Durchsicht von #226, I2).
-export function carryOverRows(items: readonly CostItem[], at: number | PeriodContext, target?: Pick<BillingPeriod, 'from' | 'to'>, heating?: CarryHeating): CarryRow[] {
+export function carryOverRows(items: readonly CostItem[], at: number | PeriodContext, target?: Pick<BillingPeriod, 'from' | 'to'>, heating?: CarryHeating, people?: CarryPeople): CarryRow[] {
   const ctx = typeof at === 'number' ? calendarContext(at) : at
   // „Schon erfasst“ vergleicht nach dem Zeitraum der Abrechnung, sonst sähe eine Heizposition unter
   // ihrer Heizperiode nie wie eine des Ziels aus.
@@ -119,6 +128,25 @@ export function carryOverRows(items: readonly CostItem[], at: number | PeriodCon
     const wanted = paid !== null ? paid + ctx.year - ctx.previousYear : start
     return String(Math.min(Math.max(wanted, start), end))
   }
+  // Mieterwechsel (#258): Ein Mietverhältnis der Vorjahresliste, das im Ziel nicht mehr besteht, fällt weg; hat
+  // seine Wohnung dort ein anderes, wird nach diesem gefragt. Ohne Ziel oder Mietverhältnisse bleibt die Liste.
+  const inTarget = (t: Tenancy) => target !== undefined && t.start <= target.to && (t.end === null || t.end >= target.from)
+  const contractLists = (source: CostItem): { notAgreed: string[], named: string[], newTenants: NewTenant[] } => {
+    const lists = { notAgreed: source.notAgreedTenancyIds ?? [], named: source.namedTenancyIds ?? [] }
+    if (!people || !target) return { ...lists, newTenants: [] }
+    const newTenants: NewTenant[] = []
+    const keep = (ids: string[], ask: NewTenant['ask']): string[] => ids.filter((id) => {
+      const old = people.tenancies.find((t) => t.id === id)
+      if (!old) return false
+      if (inTarget(old)) return true
+      for (const t of people.tenancies.filter((x) => x.unitId === old.unitId && x.id !== id && inTarget(x))) {
+        if (lists.notAgreed.includes(t.id) || lists.named.includes(t.id) || newTenants.some((n) => n.tenancyId === t.id && n.ask === ask)) continue
+        newTenants.push({ unitId: t.unitId, unitName: people.units.find((u) => u.id === t.unitId)?.name ?? '', tenancyId: t.id, tenantName: t.tenantName, ask, answer: null })
+      }
+      return false
+    })
+    return { notAgreed: keep(lists.notAgreed, 'contract'), named: keep(lists.named, 'named'), newTenants }
+  }
   return items.filter((i) => keyOf(i) === ctx.previous).map((source) => {
     const description = replaceYear(source.description, ctx.previousYear, ctx.year)
     const h = heatingOf(source)
@@ -142,6 +170,7 @@ export function carryOverRows(items: readonly CostItem[], at: number | PeriodCon
       labor35a: '',
       externalTotalAmount: '',
       checked: false,
+      ...contractLists(source),
       already: alreadyCarried(filed, { source, description, vendor: source.vendor ?? '' }, ctx),
       inline: source.key !== 'amounts' && formReason === undefined,
       taxYear: h && h !== 'ask' ? heatingTax ?? '' : taxYearOf(source),
@@ -189,11 +218,21 @@ export function carryKeyDetails(item: CostItem, units: Unit[]): { text: string, 
   return null
 }
 
+// Die Listen „trägt nicht“ und „im Vertrag genannt“ der Zeile samt den Antworten zu neuen Mietern (#258).
+function withNewTenants(row: CarryRow): Pick<ItemForm, 'notAgreed' | 'named'> {
+  const answered = row.newTenants.filter((n) => n.answer !== null)
+  return {
+    notAgreed: [...row.notAgreed, ...answered.filter((n) => n.answer === false).map((n) => n.tenancyId)],
+    named: [...row.named, ...answered.filter((n) => n.ask === 'named' && n.answer === true).map((n) => n.tenancyId)],
+  }
+}
+
 // Das Formular einer Vorlage, auch für „Im Formular öffnen“: Schlüssel und Angaben des Vorjahres,
 // alles, was eine Zahl des Jahres ist, aus der Zeile.
 export function carryOverForm(row: CarryRow): ItemForm {
   return {
     ...itemToForm(row.source),
+    ...withNewTenants(row),
     id: undefined,
     description: row.description,
     vendor: row.vendor,

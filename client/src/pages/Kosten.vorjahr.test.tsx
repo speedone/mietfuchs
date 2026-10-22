@@ -4,7 +4,7 @@
 import { calendarPeriod } from '../../../shared/period.ts'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import type { CostItem, Unit } from '../types'
+import type { CostItem, Tenancy, Unit } from '../types'
 import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
 import { UIProvider } from '../components/feedback'
@@ -54,13 +54,13 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-const renderPage = async () => {
+const renderPage = async (tenancies: Tenancy[] = []) => {
   render(
     <PeriodProvider>
       <PropertyProvider>
         <UIProvider>
           <PeriodSelect />
-          <Kosten units={UNITS} settings={null} />
+          <Kosten units={UNITS} settings={null} tenancies={tenancies} />
         </UIProvider>
       </PropertyProvider>
     </PeriodProvider>,
@@ -206,4 +206,24 @@ test('Nicht umlagefähig mit Einheit für die Steuer: die Übernahme nennt die E
   const row = screen.getByLabelText(`Betrag ${YEAR} für Therme OG`).closest('tr')
   if (!row) return expect.fail('Zeile der Übernahme nicht gefunden')
   expect(within(row as HTMLElement).getByText('— trägt der Vermieter · betrifft OG')).toBeTruthy()
+})
+
+test('Mieterwechsel (#258): die Zeile fragt nach dem neuen Mieter, die Antwort „Nein“ kommt in den Rumpf', async () => {
+  ITEMS.push({ id: 'g', propertyId: 'objekt-1', period: calendarPeriod(PREV), category: 'Grundsteuer', description: 'Steuer Sonderfall', amountCents: 1000, key: 'area', notAgreedTenancyIds: ['t1'] })
+  try {
+    await renderPage([
+      { id: 't1', unitId: 'u1', tenantName: 'Max Muster', start: `${PREV - 5}-01-01`, end: `${PREV}-12-31` },
+      { id: 't1b', unitId: 'u1', tenantName: 'Lea Schneider', start: `${YEAR}-01-01`, end: null },
+    ] as Tenancy[])
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(`Aus ${PREV} übernehmen`) }))
+    expect(screen.getByText('Neuer Mieter in EG (Lea Schneider): Trägt sie diese Kosten laut Vertrag?')).toBeTruthy()
+    const group = screen.getByRole('group', { name: 'Neuer Mieter in EG (Lea Schneider)' })
+    fireEvent.click(within(group).getByLabelText('Nein'))
+    fireEvent.change(screen.getByLabelText(`Betrag ${YEAR} für Steuer Sonderfall`), { target: { value: '10,00' } })
+    fireEvent.click(anlegenButton())
+    await waitFor(() => expect(sent).toHaveLength(1))
+    expect(sent[0]?.body).toMatchObject({ notAgreedTenancyIds: ['t1b'] })
+  } finally {
+    ITEMS.pop()
+  }
 })

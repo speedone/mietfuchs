@@ -586,7 +586,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
       <div className="card no-print">
         <div className="row">
           {previousCount > 0 && !carry && (
-            <button className="btn secondary" onClick={() => { setError(''); setCarry(carryOverRows(items, at, period, { rules: view.rules, plants })) }}>
+            <button className="btn secondary" onClick={() => { setError(''); setCarry(carryOverRows(items, at, period, { rules: view.rules, plants }, { units, tenancies })) }}>
               Aus {at.previousLabel} übernehmen …
             </button>
           )}
@@ -678,6 +678,18 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                         className="input-cell"
                       />
                     )}
+                    {r.newTenants.map((n) => {
+                      const ask = n.ask === 'named' ? 'im Vertrag ausdrücklich genannt?' : 'Trägt sie diese Kosten laut Vertrag?'
+                      const name = `${n.unitId}-${n.tenancyId}-${r.source.id}`
+                      const set = (answer: boolean) => updateCarry(i, { newTenants: r.newTenants.map((x) => (x === n ? { ...x, answer } : x)) })
+                      return (
+                        <div key={n.tenancyId + n.ask} role="group" aria-label={`Neuer Mieter in ${n.unitName} (${n.tenantName})`}>
+                          <div>Neuer Mieter in {n.unitName} ({n.tenantName}): {ask}</div>
+                          <label><input type="radio" name={name} checked={n.answer === true} onChange={() => set(true)} /> Ja</label>{' '}
+                          <label><input type="radio" name={name} checked={n.answer === false} onChange={() => set(false)} /> Nein</label>
+                        </div>
+                      )
+                    })}
                     {!r.inline && <div className="muted">{r.formReason ?? 'Einzelbeträge je Mieter bitte im Formular eintragen.'}</div>}
                     {r.heatingNote && <div className="muted">{r.heatingNote}</div>}
                   </td>
