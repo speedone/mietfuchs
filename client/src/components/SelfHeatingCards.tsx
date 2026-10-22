@@ -52,6 +52,9 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
   const editable = !d || shareEditable(d)
   // Die Warmwasserbereitung dieser Heizperiode, nicht die heutige der Anlage (Durchsicht von #241, Runde 2, H1).
   const hotWater = view.selfHotWater ?? plant.hotWater
+  // Fehlt der Anteil fürs Warmwasser (etwa weil die vorige Heizperiode kein zentrales Warmwasser hatte), lässt er sich
+  // auch in begonnener Heizperiode nachtragen: Der Server sieht darin keine Änderung nach § 6 Abs. 4 (Durchsicht von #406).
+  const waterMissing = !editable && hotWater !== 'none' && (d?.effective?.water ?? null) === null
   // Heizung PR 16: nach der Energie der Abrechnung; bei Contracting gilt der Pflichtanteil nicht (§ 7 Abs. 3).
   const energy = billingEnergy(plant)
   const forcedRaw = forcedShare(energy, insulation)
@@ -81,7 +84,7 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
     // Gesperrt und ohne Pflichtanteil gilt der Anteil weiter, wie beim Warmwasser; geändert wird dann nur die Antwort
     // zum Wärmeschutz (#376). Der Server nimmt den unveränderten Anteil an (§ 6 Abs. 4).
     const heat = forced ?? (editable ? percentOf(share) : (d?.effective?.heating ?? null))
-    const water = hotWater === 'none' ? null : (editable ? percentOf(waterShare) : (d?.effective?.water ?? null))
+    const water = hotWater === 'none' ? null : (editable || waterMissing ? percentOf(waterShare) : (d?.effective?.water ?? null))
     if (heat === null || (hotWater !== 'none' && water === null)) {
       setError(`Bitte geben Sie den Anteil zwischen ${min} und ${max} % an, mit höchstens zwei Nachkommastellen.`)
       return keepDraft
@@ -145,15 +148,15 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
           </div>
         )}
         {hint && <NoticeBox level="warning" action={hint} />}
-        {(editable || toForced) && (
+        {(editable || toForced || waterMissing) && (
           <div className="row no-print">
             {/* Das Warmwasser übernimmt den Wert der Heizung sichtbar, bis der Vermieter ihn ändert. */}
-            <label className="field">
+            {(editable || toForced) && <label className="field">
               Heizung in % ({min} bis {max})
               <input inputMode="decimal" value={forced !== null ? String(forced) : share} disabled={forced !== null || draft.saving}
                 onChange={(e) => edit({ share: e.target.value, ...(waterShare === '' || waterShare === share ? { waterShare: e.target.value } : {}) })} />
-            </label>
-            {hotWater !== 'none' && editable && (
+            </label>}
+            {hotWater !== 'none' && (editable || waterMissing) && (
               <label className="field">
                 Warmwasser in %
                 <input inputMode="decimal" value={waterShare} disabled={draft.saving} onChange={(e) => edit({ waterShare: e.target.value })} />
@@ -161,7 +164,7 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
             )}
           </div>
         )}
-        {editable && (
+        {(editable || waterMissing) && (
           <div className="no-print">
             <label className="checkline">
               <input type="checkbox" checked={agreed} disabled={draft.saving} onChange={(e) => edit({ agreed: e.target.checked })} />
@@ -171,6 +174,7 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
           </div>
         )}
         {!editable && toForced && <p className="muted no-print">Mit „Speichern“ tragen Sie den Pflichtanteil ein.</p>}
+        {waterMissing && <p className="muted no-print">Für das Warmwasser fehlt noch ein Anteil nach Verbrauch; tragen Sie ihn ein, er gilt für diese Heizperiode.</p>}
         <div className="no-print">
           <DraftActions draft={draft} onSave={saveShare} layout="card" what="Anteil nach Verbrauch" />
         </div>

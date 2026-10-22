@@ -727,3 +727,17 @@ test('Ableseergebnis: die Einheit des Zählers geht in die Ansicht der Wohnung',
   const water = views.find((v) => v.meterId === 'xa') ?? assert.fail('kein Warmwasser')
   assert.equal('meterUnit' in water, false)
 })
+
+// Durchsicht von #407: Ein Warmwasser-Anteil, den es in der Vorperiode nicht gab, ist eine erste Wahl (§ 8 Abs. 1),
+// kein Wechsel nach § 6 Abs. 4; die Abrechnung warnt deshalb nicht mit `heating.key-change`.
+test('erstmals ein Warmwasser-Anteil bei gleicher Heizung ist kein geänderter Anteil', () => {
+  const seventy = () => 70
+  const rows = [
+    { period: '2024-01', heatConsumptionPct: 60, waterConsumptionPct: null, insulationRule: 'notApplies' as const },
+    { period: '2025-01', heatConsumptionPct: 60, waterConsumptionPct: 50, insulationRule: 'notApplies' as const },
+  ]
+  const s = consumptionSharesOf(rows, '2025-01', 'oil', seventy) ?? assert.fail('kein Anteil')
+  assert.deepEqual([s.heating, s.water, s.changed], [60, 50, false])
+  const anders = consumptionSharesOf([rows[0]!, { ...rows[1]!, heatConsumptionPct: 65 }], '2025-01', 'oil', seventy) ?? assert.fail('kein Anteil')
+  assert.equal(anders.changed, true)
+})
