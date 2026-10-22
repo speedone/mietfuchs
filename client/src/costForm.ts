@@ -20,6 +20,7 @@ export { amountProblem, showsTaxUnitField, type BuildResult } from '../../shared
 import { amountProblem } from '../../shared/costItem.ts'
 import { allowsPaidOn, paidOnQuestions, statedOutflowYear, tenDayWindow, type YearSpan } from '../../shared/paidOn.ts'
 import type { Problem } from './formProblems'
+import { allowsContractAnswer, contractTenancies } from './contractAgreement'
 export { aiPositionDefaults, aiPositionPreselect, lastExternalBasis, type AiPositionKey, type KeyContext } from '../../shared/assessment.ts'
 
 export type ItemForm = {
@@ -66,6 +67,12 @@ export type ItemForm = {
   operatingPowerBasis: string
   // Die Stromrechnung eines Abzugs (Durchsicht von #252, G-K3), leer heißt noch nicht gewählt.
   operatingPowerGeneralId: string
+  // Nicht im Mietvertrag vereinbart (#258): Mietverhältnisse, deren Vertrag die Position nicht umlegt, und
+  // (bei „Sonstige Betriebskosten“) solche, deren Vertrag sie ausdrücklich nennt.
+  notAgreed: string[]
+  named: string[]
+  // Wohnungen, die in diesem Fenster abgewählt und noch nicht beantwortet sind; wird nicht gesendet.
+  pendingWhy: string[]
 }
 
 export const EMPTY_ITEM_FORM: ItemForm = {
@@ -94,6 +101,9 @@ export const EMPTY_ITEM_FORM: ItemForm = {
   operatingPowerItemId: '',
   operatingPowerBasis: '',
   operatingPowerGeneralId: '',
+  notAgreed: [],
+  named: [],
+  pendingWhy: [],
 }
 
 // Formular aus einer gespeicherten Position füllen
@@ -128,6 +138,9 @@ export function itemToForm(i: CostItem): ItemForm {
     operatingPowerItemId: i.operatingPowerItemId ?? '',
     operatingPowerBasis: i.operatingPowerBasis ?? '',
     operatingPowerGeneralId: i.operatingPowerGeneralId ?? '',
+    notAgreed: i.notAgreedTenancyIds ?? [],
+    named: i.namedTenancyIds ?? [],
+    pendingWhy: [],
   }
 }
 
@@ -526,11 +539,26 @@ function draftOf(form: ItemForm, units: Unit[], tenancies: Tenancy[] | undefined
 // Validiert das Formular und baut den API-Rumpf, mit derselben Prüfung wie der Server
 // (shared/costItem.ts).
 // `plantEnergy`: die Energie der Anlage der Heizposition, für die Kennzeichnung des Stroms zur Wärmeerzeugung (R-W2).
-export function buildCostItemBody(form: ItemForm, units: Unit[], period: number | BillingPeriod, tenancies?: Tenancy[], plantEnergy?: HeatingEnergy): BuildResult {
+export function buildCostItemBody(form: ItemForm, units: Unit[], period: number | BillingPeriod, tenancies?: Tenancy[], plantEnergy?: HeatingEnergy): BuildResult | { error: string, problems: Problem<'participants'>[] } {
   // Eine Jahreszahl ist das Kalenderjahr (Tests, Kalenderobjekt); sonst der gewählte Zeitraum (#208).
   const p = typeof period === 'number' ? calendarYearPeriod(period) : period
+  // Eine abgewählte Wohnung ohne Antwort (#258): „Speichern“ meldet es am Feld, wie jede Pflichtangabe.
+  const open = form.pendingWhy.flatMap((id) => units.filter((u) => u.id === id))
+  if (open.length > 0) {
+    const problems = open.map((u): Problem<'participants'> => ({ field: 'participants', short: 'Bitte wählen Sie, warum', text: `Teilnehmer: Bitte wählen Sie bei ${u.name}, warum sie diese Kosten nicht trägt.` }))
+    return { error: problems.map((x) => x.text).join(' '), problems }
+  }
   const result = costItemBody(draftOf(form, units, tenancies, p), units, p.key)
-  return 'body' in result ? { body: withOperatingPower(result.body, form, plantEnergy) } : result
+  return 'body' in result ? { body: withContractAgreement(withOperatingPower(result.body, form, plantEnergy), form, units, tenancies, p) } : result
+}
+
+// Die Kennungen der Mietverträge (#258): nur die Mietverhältnisse, die im Zeitraum bestehen und an der Position
+// teilnehmen, und nur bei Kostenarten, die es zulassen; sonst `null`, das eine alte Angabe leert (die Route lässt
+// ein fehlendes Feld stehen). Leer wird ebenfalls `null`.
+function withContractAgreement<B extends object>(body: B, form: ItemForm, units: Unit[], tenancies: Tenancy[] | undefined, period: BillingPeriod): B & { notAgreedTenancyIds: string[] | null, namedTenancyIds: string[] | null } {
+  const valid = new Set(tenancies && allowsContractAnswer(form.category) ? contractTenancies(form, units, tenancies, period).map((t) => t.tenancyId) : [])
+  const only = (ids: string[]) => { const kept = ids.filter((id) => valid.has(id)); return kept.length > 0 ? kept : null }
+  return { ...body, notAgreedTenancyIds: only(form.notAgreed), namedTenancyIds: only(form.named) }
 }
 
 // ---------- Betriebsstrom der Heizung (Heizung PR 15, #212) ----------
