@@ -8,7 +8,7 @@
 import { useEffect, useState } from 'react'
 import type { BillingPeriod, Tenancy, Unit } from '../types'
 import type { ItemForm } from '../costForm'
-import { allowsContractAnswer, answerWhy, contractTenancies, unitTenancies, withNamed, withNotAgreed } from '../contractAgreement'
+import { allowsContractAnswer, answerWhy, chooseWhy, contractTenancies, openWhy, unitTenancies, withNamed, withNotAgreed } from '../contractAgreement'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { FieldMessage } from './Field'
 import Term from './Term'
@@ -21,46 +21,58 @@ export const HEATING_CONTRACT_SENTENCE = 'Die Heizkostenverordnung gilt auch, we
 type Period = Pick<BillingPeriod, 'from' | 'to'>
 type Common = { form: ItemForm; units: Unit[]; tenancies: Tenancy[]; period: Period; onChange: (next: ItemForm) => void }
 
-// Die Frage zu einer abgewählten Wohnung (Entscheidung 3). Die Antwort nimmt die Wohnung aus `pendingWhy`; die Frage
-// verschwindet dann, und eine Antwort „steht nicht im Vertrag“ steht danach angehakt im Textlink darunter.
+// Die Frage zu einer abgewählten Wohnung (Entscheidung 3). Jede Antwort nimmt die Wohnung aus `pendingWhy`.
+// - „Betrifft die Wohnung nicht“: Die Wohnung bleibt abgewählt, die Frage verschwindet.
+// - Ein Mietverhältnis im Zeitraum: „Steht nicht im Mietvertrag von Anna Becker“ hakt die Wohnung wieder an und merkt den
+//   Mieter; die Frage verschwindet, der Mieter steht angehakt im Textlink darunter.
+// - Mehrere: „Steht nicht im Mietvertrag von:“ hakt die Wohnung wieder an; darunter je Mietverhältnis ein Häkchen, mehrere
+//   wählbar. Damit die Frage dann stehen bleibt, merkt sich die Seite die Wahl (`chosen`, `onChoose`); das ist bloße Hilfe
+//   der Anzeige, die Daten stehen im Formular. Ohne Häkchen meldet „Speichern“ (`untickedChoices`).
+// - Heizung und Warmwasser (Entscheidung 4): keine Frage, nur der Satz zur Heizkostenverordnung; nichts zu beantworten.
 // `field`: Kennung und Meldung aus `useFormError().field('participants')`; die Kennung trägt die erste Antwort, damit die
-// Sammelmeldung dorthin springt (bei mehreren offenen Fragen nur die erste, `first`).
-export function WhyQuestion({ form, unit, units, tenancies, period, onChange, field, first = true }: Common & { unit: Unit; field?: { id?: string; error?: string; onFix?: () => void }; first?: boolean }) {
+// Sammelmeldung dorthin springt (bei mehreren offenen Fragen nur die erste, `first`). Die Meldung geht erst weg, wenn
+// keine Frage mehr offen ist.
+type WhyProps = Common & { unit: Unit; field?: { id?: string; error?: string; onFix?: () => void }; first?: boolean; chosen?: boolean; onChoose?: (contract: boolean) => void }
+export function WhyQuestion({ form, unit, units, tenancies, period, onChange, field, first = true, chosen = false, onChoose }: WhyProps) {
+  if (form.category === HEATING_CATEGORY) return <small className="muted basis-full">{HEATING_CONTRACT_SENTENCE}</small>
   const own = unitTenancies(unit.id, units, tenancies, period)
-  const heating = form.category === HEATING_CATEGORY
   const name = `why-${unit.id}`
-  const answer = (why: 'notConcerned' | 'contract', ids: string[]) => { field?.onFix?.(); onChange(answerWhy(form, unit.id, why, ids)) }
+  const commit = (next: ItemForm) => { if (openWhy(next).length === 0) field?.onFix?.(); onChange(next) }
+  const choose = (why: 'notConcerned' | 'contract') => { onChoose?.(why === 'contract'); commit(chooseWhy(form, unit.id, why, units, tenancies, period)) }
   const errorId = field?.error ? `${name}-error` : undefined
   return (
     <fieldset className="basis-full grid gap-2" aria-describedby={errorId}>
       <legend className="font-strong">{`Warum trägt ${unit.name} diese Kosten nicht?`}</legend>
       {field?.error && <FieldMessage id={errorId} error={field.error} />}
       <label className="checkline">
-        <input type="radio" name={name} checked={false} id={first ? field?.id : undefined} aria-invalid={field?.error ? true : undefined} onChange={() => answer('notConcerned', [])} />
+        <input type="radio" name={name} checked={false} id={first ? field?.id : undefined} aria-invalid={field?.error ? true : undefined} onChange={() => choose('notConcerned')} />
         Betrifft die Wohnung nicht, etwa Aufzug für das Erdgeschoss. Die übrigen Wohnungen tragen den Anteil.
       </label>
-      {heating ? (
-        <small className="muted">{HEATING_CONTRACT_SENTENCE}</small>
-      ) : own.length === 1 ? (
+      {own.length === 1 ? (
         <label className="checkline">
-          <input type="radio" name={name} checked={false} onChange={() => answer('contract', [own[0].tenancyId])} />
+          <input type="radio" name={name} checked={false} onChange={() => commit(answerWhy(form, unit.id, 'contract', [own[0].tenancyId]))} />
           {`Steht nicht im Mietvertrag von ${own[0].tenantName}. Den Anteil trägt der Vermieter.`}
         </label>
       ) : (
-        // Mehrere Mietverhältnisse im Zeitraum: je eines ein Häkchen; das erste angehakte beantwortet die Frage, die
-        // übrigen stehen danach im Textlink.
-        <div className="grid gap-1">
-          <span>Steht nicht im Mietvertrag von:</span>
-          <div className="checks">
-            {own.map((t) => (
-              <label key={t.tenancyId} className="checkline">
-                <input type="checkbox" checked={false} onChange={() => answer('contract', [t.tenancyId])} />
-                {t.tenantName}
-              </label>
-            ))}
-          </div>
-          <small className="muted">Den Anteil trägt der Vermieter.</small>
-        </div>
+        <>
+          <label className="checkline">
+            <input type="radio" name={name} checked={chosen} onChange={() => choose('contract')} />
+            <span id={`${name}-contract`}>Steht nicht im Mietvertrag von:</span>
+          </label>
+          {chosen && (
+            <div role="group" aria-labelledby={`${name}-contract`} className="grid gap-1 pl-6">
+              <div className="checks">
+                {own.map((t) => (
+                  <label key={t.tenancyId} className="checkline">
+                    <input type="checkbox" checked={form.notAgreed.includes(t.tenancyId)} onChange={(e) => commit(withNotAgreed(form, t.tenancyId, e.target.checked))} />
+                    {t.tenantName}
+                  </label>
+                ))}
+              </div>
+              <small className="muted">Den Anteil der angehakten Mieter trägt der Vermieter.</small>
+            </div>
+          )}
+        </>
       )}
     </fieldset>
   )

@@ -31,6 +31,8 @@ const CONTRACT_UNITS: Unit[] = [
 const contractTenancy = (id: string, unitId: string, tenantName: string): Tenancy => ({ id, unitId, tenantName, persons: 1, personHistory: [], start: '2020-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [] })
 const CONTRACT_TENANCIES = [contractTenancy('t1', 'eg', 'Anna Becker'), contractTenancy('t2', 'og', 'Jonas Hartmann')]
 const CONTRACT_PERIOD = { from: '2025-01-01', to: '2025-12-31' }
+// Mieterwechsel in OG rechts: „Steht nicht im Mietvertrag von:“ mit je einem Häkchen
+const CHANGE_TENANCIES = [contractTenancy('t1', 'eg', 'Anna Becker'), { ...contractTenancy('t2', 'og', 'Jonas Hartmann'), end: '2025-06-30' }, { ...contractTenancy('t3', 'og', 'Lea Schneider'), start: '2025-07-01' }]
 
 export default function Muster() {
   const toast = useToast()
@@ -43,6 +45,8 @@ export default function Muster() {
   const [unit, setUnit] = useState('eg')
   const draft = useDraft('og')
   const [why, setWhy] = useState<ItemForm>({ ...EMPTY_ITEM_FORM, category: 'Aufzug', participants: ['og'], pendingWhy: ['eg'], notAgreed: ['t2'] })
+  const [change, setChange] = useState<ItemForm>({ ...EMPTY_ITEM_FORM, category: 'Aufzug', notAgreed: ['t3'] })
+  const [changeChosen, setChangeChosen] = useState(true)
   const [other, setOther] = useState<ItemForm>({ ...EMPTY_ITEM_FORM, category: 'Sonstige Betriebskosten', named: ['t1'] })
   // Die Sammelmeldung mit einer Meldung am Feld, ohne den Fokus beim Laden zu nehmen
   useEffect(() => {
@@ -116,6 +120,10 @@ export default function Muster() {
         <div className="checks">
           {why.pendingWhy.includes('eg') && (
             <WhyQuestion form={why} unit={CONTRACT_UNITS[0]} units={CONTRACT_UNITS} tenancies={CONTRACT_TENANCIES} period={CONTRACT_PERIOD} onChange={setWhy} />
+          )}
+          {changeChosen && (
+            <WhyQuestion form={change} unit={CONTRACT_UNITS[1]} units={CONTRACT_UNITS} tenancies={CHANGE_TENANCIES} period={CONTRACT_PERIOD} onChange={setChange}
+              chosen={changeChosen} onChoose={setChangeChosen} />
           )}
         </div>
         <ContractAgreementFields form={why} units={CONTRACT_UNITS} tenancies={CONTRACT_TENANCIES} period={CONTRACT_PERIOD} onChange={setWhy} />

@@ -50,7 +50,7 @@ import {
   costFieldProblems,
   type CostField,
 } from '../costForm'
-import { notAgreedText, openWhy, withParticipant } from '../contractAgreement'
+import { notAgreedText, openWhy, untickedChoices, withParticipant } from '../contractAgreement'
 import ContractAgreementFields, { WhyQuestion } from '../components/ContractAgreementFields'
 import CostPeriodFields from '../components/CostPeriodFields'
 import OperatingPowerFields from '../components/OperatingPowerFields'
@@ -375,6 +375,11 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   // verschwindet sie aus der Liste, sonst legte der Knopf sie ein zweites Mal an (Durchsicht).
   const [formCarryId, setFormCarryId] = useState<string | null>(null)
   useEffect(() => { if (!form) setFormCarryId(null) }, [form])
+  // #258: Wohnungen, bei denen „Steht nicht im Mietvertrag von:“ gewählt ist (mehrere Mietverhältnisse). Bloße Hilfe der
+  // Anzeige, damit die Häkchen darunter stehen bleiben; die Antwort selbst steht im Formular. Je Fenster neu.
+  const [whyChosen, setWhyChosen] = useState<string[]>([])
+  const formOpen = form !== null
+  useEffect(() => setWhyChosen([]), [formOpen, form?.id])
 
   async function saveItem() {
     if (!form) return
@@ -389,10 +394,15 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     }
     // Heizung PR 16: nach der Energie der Abrechnung (bei Contracting bezahlt in der Regel der Lieferant den Strom des Kessels).
     const built = buildCostItemBody(form, units, period, tenancies, plantOfForm ? billingEnergy(plantOfForm) : undefined)
-    if ('error' in built) {
-      // Die offene Warum-Frage (#258) steht am Feld und in der Sammelmeldung, alles andere als Satz.
-      if ('problems' in built) formErrors.report(built.problems)
-      else setError(built.error)
+    // Die offene Warum-Frage und „Steht nicht im Mietvertrag von:“ ohne Häkchen (#258) stehen am Feld und in der
+    // Sammelmeldung, alles andere als Satz.
+    const unticked = untickedChoices(form, whyChosen, units, tenancies, period)
+    if ('error' in built && !('problems' in built)) {
+      setError(built.error)
+      return
+    }
+    if ('problems' in built || unticked.length > 0) {
+      formErrors.report([...('problems' in built ? built.problems : []), ...unticked])
       return
     }
     setError('')
@@ -1124,17 +1134,20 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                             type="checkbox"
                             checked={checked}
                             onChange={(e) => {
-                              if (e.target.checked) formErrors.clearField('participants')
-                              setForm(withParticipant(form, u.id, e.target.checked, basisUnits.map((x) => x.id), units, tenancies, period))
+                              const next = withParticipant(form, u.id, e.target.checked, basisUnits.map((x) => x.id), units, tenancies, period)
+                              if (openWhy(next).length === 0) formErrors.clearField('participants')
+                              setWhyChosen((x) => x.filter((id) => id !== u.id))
+                              setForm(next)
                             }}
                           />{' '}
                           {u.name}
                         </span>
                       </label>
                       {/* #258: Warum trägt die gerade abgewählte Wohnung nicht? Direkt darunter, kein Dialog. */}
-                      {openWhy(form).includes(u.id) && (
+                      {(openWhy(form).includes(u.id) || (checked && whyChosen.includes(u.id))) && (
                         <WhyQuestion form={form} unit={u} units={units} tenancies={tenancies} period={period} onChange={setForm}
-                          field={formErrors.field('participants')} first={openWhy(form)[0] === u.id} />
+                          field={formErrors.field('participants')} first={openWhy(form)[0] === u.id}
+                          chosen={whyChosen.includes(u.id)} onChoose={(contract) => setWhyChosen((x) => [...x.filter((id) => id !== u.id), ...(contract ? [u.id] : [])])} />
                       )}
                       </Fragment>
                     )

@@ -22,12 +22,15 @@ afterEach(cleanup)
 let last: ItemForm
 function Harness({ initial, tenancies = TENANCIES, error }: { initial: ItemForm; tenancies?: Tenancy[]; error?: string }) {
   const [form, setForm] = useState(initial)
+  // Die Wohnungen, bei denen „Steht nicht im Mietvertrag von:“ gewählt ist (Hilfe der Seite, wie in Kosten.tsx)
+  const [chosen, setChosen] = useState<string[]>([])
   last = form
   const change = (f: ItemForm) => { last = f; setForm(f) }
   return (
     <>
-      {UNITS.filter((u) => form.pendingWhy.includes(u.id)).map((u) => (
-        <WhyQuestion key={u.id} form={form} unit={u} units={UNITS} tenancies={tenancies} period={PERIOD} onChange={change} field={{ id: 'feld-teilnehmer', error }} />
+      {UNITS.filter((u) => form.pendingWhy.includes(u.id) || chosen.includes(u.id)).map((u) => (
+        <WhyQuestion key={u.id} form={form} unit={u} units={UNITS} tenancies={tenancies} period={PERIOD} onChange={change} field={{ id: 'feld-teilnehmer', error }}
+          chosen={chosen.includes(u.id)} onChoose={(c) => setChosen((x) => (c ? [...x, u.id] : x.filter((id) => id !== u.id)))} />
       ))}
       <ContractAgreementFields form={form} units={UNITS} tenancies={tenancies} period={PERIOD} onChange={change} />
     </>
@@ -55,18 +58,31 @@ test('Warum-Frage: Meldung am Feld, die Sammelmeldung zeigt auf die erste Antwor
   expect(document.getElementById('feld-teilnehmer')?.getAttribute('type')).toBe('radio')
 })
 
-test('Warum-Frage bei zwei Mietverhältnissen im Zeitraum: je eines ein Häkchen unter der zweiten Antwort', () => {
+test('Warum-Frage bei zwei Mietverhältnissen: zweite Antwort ist ein Optionsfeld, darunter je Mietverhältnis ein Häkchen, mehrere wählbar', () => {
   const tenancies = [tenancy('t1', 'u1', 'Anna Becker', '2020-01-01', '2025-06-30'), tenancy('t3', 'u1', 'Lea Schneider', '2025-07-01', null), TENANCIES[1]]
   render(<Harness initial={base({ participants: ['u2'], pendingWhy: ['u1'] })} tenancies={tenancies} />)
-  expect(screen.getByText(/Steht nicht im Mietvertrag von:/)).toBeTruthy()
-  expect(screen.getByLabelText('Anna Becker')).toBeTruthy()
-  fireEvent.click(screen.getByLabelText('Lea Schneider'))
-  expect(last).toMatchObject({ participants: ['u2', 'u1'], notAgreed: ['t3'], pendingWhy: [] })
+  expect(screen.queryByLabelText('Anna Becker')).toBeNull()
+  fireEvent.click(screen.getByRole('radio', { name: /Steht nicht im Mietvertrag von:/ }))
+  expect(last).toMatchObject({ participants: ['u2', 'u1'], notAgreed: [], pendingWhy: [] })
+  const group = screen.getByRole('group', { name: /im Mietvertrag von/ })
+  expect((screen.getByRole('radio', { name: /Steht nicht im Mietvertrag von:/ }) as HTMLInputElement).checked).toBe(true)
+  fireEvent.click(within(group).getByLabelText('Anna Becker'))
+  fireEvent.click(within(group).getByLabelText('Lea Schneider'))
+  expect(last.notAgreed).toEqual(['t1', 't3'])
+  expect((within(group).getByLabelText('Anna Becker') as HTMLInputElement).checked).toBe(true)
+  fireEvent.click(within(group).getByLabelText('Anna Becker'))
+  expect(last.notAgreed).toEqual(['t3'])
+  // Umentschieden: „Betrifft die Wohnung nicht“ wählt sie wieder ab und nimmt die Mieter zurück.
+  fireEvent.click(screen.getByLabelText(/^Betrifft die Wohnung nicht/))
+  expect(last).toMatchObject({ participants: ['u2'], notAgreed: [], pendingWhy: [] })
+  expect(screen.queryByText(/Warum trägt EG links/)).toBeNull()
 })
 
 test('Heizung und Warmwasser: keine zweite Antwort, stattdessen der Satz zur Heizkostenverordnung, kein Textlink', () => {
   render(<Harness initial={base({ category: 'Heizung und Warmwasser', participants: ['u2'], pendingWhy: ['u1'] })} />)
   expect(screen.queryByLabelText(/Steht nicht im Mietvertrag/)).toBeNull()
+  // Keine einzelne Antwort ohne Wahl: nur der Satz, nichts zu beantworten.
+  expect(screen.queryByRole('radio')).toBeNull()
   expect(screen.getByText(/Die Heizkostenverordnung gilt auch, wenn der Mietvertrag die Heizkosten nicht nennt; der Heizanteil der Miete wird dann als Vorauszahlung angerechnet \(BGH VIII ZR 212\/05\)\. Stellen Sie dafür beim Mietverhältnis die Heizkosten auf ‚in der Miete enthalten‘\./)).toBeTruthy()
   expect(screen.queryByText(/Ein Mieter trägt das laut Mietvertrag nicht/)).toBeNull()
 })

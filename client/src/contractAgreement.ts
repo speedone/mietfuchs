@@ -4,6 +4,7 @@
 // costForm.ts importiert von hier.
 import type { BillingPeriod, Tenancy, Unit } from './types'
 import type { ItemForm } from './costForm'
+import type { Problem } from './formProblems'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { isNotAllocable } from '../../shared/categories.ts'
 import { PARTICIPANT_KEYS } from '../../shared/allocation.ts'
@@ -91,4 +92,25 @@ export function withNamed(form: ItemForm, tenancyId: string, named: boolean): It
 export function notAgreedText(ids: readonly string[] | null | undefined, tenancies: readonly Tenancy[]): string | null {
   if (!ids || ids.length === 0) return null
   return `trägt nicht: ${ids.map((id) => tenancies.find((t) => t.id === id)?.tenantName ?? '?').join(', ')} (Vertrag)`
+}
+
+// Die Antwort auf die Warum-Frage, auch nachträglich umentschieden. `contract` ohne Mieter: Bei mehreren
+// Mietverhältnissen hakt man darunter an, wer nicht trägt (vorbelegt wird niemand). `notConcerned` wählt die Wohnung
+// wieder ab und nimmt ihre Mieter aus „nicht vereinbart“.
+export function chooseWhy(form: ItemForm, unitId: string, why: 'notConcerned' | 'contract', units: Unit[], tenancies: Tenancy[], period: Pick<BillingPeriod, 'from' | 'to'>): ItemForm {
+  if (why === 'contract') return answerWhy(form, unitId, 'contract', [])
+  const own = new Set(unitTenancies(unitId, units, tenancies, period).map((t) => t.tenancyId))
+  return answerWhy({
+    ...form,
+    participants: form.participants === null ? null : form.participants.filter((id) => id !== unitId),
+    notAgreed: form.notAgreed.filter((id) => !own.has(id)),
+  }, unitId, 'notConcerned', [])
+}
+
+// „Steht nicht im Mietvertrag von:“ gewählt (`chosen`), aber kein Mieter angehakt: „Speichern“ meldet es am Feld.
+export function untickedChoices(form: ItemForm, chosen: readonly string[], units: Unit[], tenancies: Tenancy[], period: Pick<BillingPeriod, 'from' | 'to'>): Problem<'participants'>[] {
+  return units
+    .filter((u) => chosen.includes(u.id) && (form.participants === null || form.participants.includes(u.id)))
+    .filter((u) => !unitTenancies(u.id, units, tenancies, period).some((t) => form.notAgreed.includes(t.tenancyId)))
+    .map((u) => ({ field: 'participants', short: 'Bitte haken Sie an, wer nicht trägt', text: `Teilnehmer: Bitte haken Sie bei ${u.name} an, in wessen Mietvertrag die Kosten nicht stehen.` }))
 }

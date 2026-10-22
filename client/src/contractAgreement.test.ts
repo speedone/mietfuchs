@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import type { BillingPeriod, CostItem, Tenancy, Unit } from './types'
 import { EMPTY_ITEM_FORM, buildCostItemBody, itemToForm, type ItemForm } from './costForm'
-import { allowsContractAnswer, answerWhy, asksWhy, contractTenancies, notAgreedText, openWhy, unitTenancies, withNamed, withNotAgreed, withParticipant } from './contractAgreement'
+import { allowsContractAnswer, answerWhy, asksWhy, chooseWhy, untickedChoices, contractTenancies, notAgreedText, openWhy, unitTenancies, withNamed, withNotAgreed, withParticipant } from './contractAgreement'
 
 const unit = (id: string, name: string, extra: Partial<Unit> = {}): Unit => ({ propertyId: 'objekt-1', id, name, areaM2: 50, participates: true, ...extra })
 const UNITS = [unit('u1', 'EG links'), unit('u2', 'OG')]
@@ -170,5 +170,21 @@ describe('Seitenfenster (#258, Task 4)', () => {
     expect(notAgreedText(['t1', 't2'], TENANCIES)).toBe('trägt nicht: Anna Becker, Jonas Hartmann (Vertrag)')
     expect(notAgreedText([], TENANCIES)).toBeNull()
     expect(notAgreedText(null, TENANCIES)).toBeNull()
+  })
+})
+
+describe('Fix-Runde 1: mehrere Mietverhältnisse einer Wohnung', () => {
+  const TWO = [tenancy('t1', 'u1', 'Anna Becker', '2020-01-01', '2025-06-30'), tenancy('t4', 'u1', 'Lea Schneider', '2025-07-01', null), TENANCIES[1]]
+  test('chooseWhy contract nimmt die Wohnung zurück, ohne Mieter vorzubelegen; notConcerned macht das rückgängig', () => {
+    const c = chooseWhy(form({ participants: ['u2'], pendingWhy: ['u1'] }), 'u1', 'contract', UNITS, TWO, PERIOD)
+    expect(c).toMatchObject({ participants: ['u2', 'u1'], notAgreed: [], pendingWhy: [] })
+    const n = chooseWhy({ ...c, notAgreed: ['t1', 't2'] }, 'u1', 'notConcerned', UNITS, TWO, PERIOD)
+    expect(n).toMatchObject({ participants: ['u2'], notAgreed: ['t2'], pendingWhy: [] })
+  })
+  test('untickedChoices: gewählt, aber niemand angehakt', () => {
+    const f = form({ participants: ['u2', 'u1'] })
+    expect(untickedChoices(f, ['u1'], UNITS, TWO, PERIOD)).toEqual([{ field: 'participants', short: 'Bitte haken Sie an, wer nicht trägt', text: 'Teilnehmer: Bitte haken Sie bei EG links an, in wessen Mietvertrag die Kosten nicht stehen.' }])
+    expect(untickedChoices({ ...f, notAgreed: ['t4'] }, ['u1'], UNITS, TWO, PERIOD)).toEqual([])
+    expect(untickedChoices(form({ participants: ['u2'] }), ['u1'], UNITS, TWO, PERIOD)).toEqual([])
   })
 })
