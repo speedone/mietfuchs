@@ -23,12 +23,14 @@ function participatingUnitIds(form: ItemForm, units: Unit[]): Set<string> {
   return new Set(rented.filter((u) => form.participants === null || !PARTICIPANT_KEYS.includes(form.key) || form.participants.includes(u.id)).map((u) => u.id))
 }
 
+const inPeriod = (t: Tenancy, period: Pick<BillingPeriod, 'from' | 'to'>) => t.start <= period.to && (t.end === null || t.end >= period.from)
+
 // Die Mietverhältnisse, die im Zeitraum bestehen und an der Position teilnehmen; nur für sie kann das Formular
 // „nicht vereinbart“ oder „im Vertrag genannt“ speichern.
 export function contractTenancies(form: ItemForm, units: Unit[], tenancies: Tenancy[], period: Pick<BillingPeriod, 'from' | 'to'>): ContractTenancy[] {
   const ids = participatingUnitIds(form, units)
   return tenancies
-    .filter((t) => ids.has(t.unitId) && t.start <= period.to && (t.end === null || t.end >= period.from))
+    .filter((t) => ids.has(t.unitId) && inPeriod(t, period))
     .map((t) => ({ tenancyId: t.id, tenantName: t.tenantName, unitId: t.unitId, unitName: units.find((u) => u.id === t.unitId)?.name ?? '' }))
 }
 
@@ -45,4 +47,48 @@ export function answerWhy(form: ItemForm, unitId: string, why: 'notConcerned' | 
     named: form.named.filter((id) => !tenancyIds.includes(id)),
     pendingWhy,
   }
+}
+
+// Fragt das Abwählen einer Wohnung, warum? Wo die zweite Antwort erlaubt ist, und bei Heizung und Warmwasser, wo statt
+// ihrer der Satz zur Heizkostenverordnung steht. Nicht umlagefähig und Rücklage tragen die Mieter ohnehin nicht.
+export const asksWhy = (category: string): boolean => allowsContractAnswer(category) || category === HEATING_CATEGORY
+
+
+// Die Mietverhältnisse einer Wohnung im Zeitraum, auch wenn sie gerade abgewählt ist (für die Warum-Frage).
+export function unitTenancies(unitId: string, units: Unit[], tenancies: Tenancy[], period: Pick<BillingPeriod, 'from' | 'to'>): ContractTenancy[] {
+  const unitName = units.find((u) => u.id === unitId)?.name ?? ''
+  return tenancies.filter((t) => t.unitId === unitId && inPeriod(t, period)).map((t) => ({ tenancyId: t.id, tenantName: t.tenantName, unitId, unitName }))
+}
+
+// Eine Wohnung in der Teilnehmerliste an- oder abhaken. Abhaken einer Wohnung mit Mietverhältnis im Zeitraum stellt die
+// Warum-Frage; Anhaken nimmt sie zurück. `basisIds`: alle Wohnungen der Liste (Teilnehmer `null` heißt alle).
+export function withParticipant(form: ItemForm, unitId: string, checked: boolean, basisIds: string[], units: Unit[], tenancies: Tenancy[], period: Pick<BillingPeriod, 'from' | 'to'>): ItemForm {
+  const current = form.participants ?? basisIds
+  const participants = checked ? (current.includes(unitId) ? current : [...current, unitId]) : current.filter((id) => id !== unitId)
+  const others = form.pendingWhy.filter((id) => id !== unitId)
+  const asks = !checked && asksWhy(form.category) && unitTenancies(unitId, units, tenancies, period).length > 0
+  return { ...form, participants, pendingWhy: asks ? [...others, unitId] : others }
+}
+
+// Die Wohnungen, deren Frage das Formular zeigt: abgewählt in diesem Fenster, noch abgewählt und bei einem Schlüssel
+// mit Teilnehmerliste. Eine Frage, die nicht mehr zu sehen ist (Schlüssel gewechselt, wieder angehakt), zählt nicht.
+export const openWhy = (form: ItemForm): string[] =>
+  !PARTICIPANT_KEYS.includes(form.key) || form.participants === null ? [] : form.pendingWhy.filter((id) => !form.participants?.includes(id))
+
+// Häkchen „trägt nicht, steht nicht im Vertrag“ (Textlink, Warum-Frage): Wer nicht trägt, ist auch nicht „genannt“.
+export function withNotAgreed(form: ItemForm, tenancyId: string, on: boolean): ItemForm {
+  const notAgreed = form.notAgreed.filter((id) => id !== tenancyId)
+  return on ? { ...form, notAgreed: [...notAgreed, tenancyId], named: form.named.filter((id) => id !== tenancyId) } : { ...form, notAgreed }
+}
+
+// „Sonstige Betriebskosten“: „Ja“ (im Vertrag genannt) oder „Nein“ (trägt nicht), jeweils aus der anderen Liste.
+export function withNamed(form: ItemForm, tenancyId: string, named: boolean): ItemForm {
+  if (!named) return withNotAgreed(form, tenancyId, true)
+  return { ...form, named: [...form.named.filter((id) => id !== tenancyId), tenancyId], notAgreed: form.notAgreed.filter((id) => id !== tenancyId) }
+}
+
+// Die Zeile in der Liste der Positionen, neben „nur EG rechts, OG“; ohne Angabe nichts.
+export function notAgreedText(ids: readonly string[] | null | undefined, tenancies: readonly Tenancy[]): string | null {
+  if (!ids || ids.length === 0) return null
+  return `trägt nicht: ${ids.map((id) => tenancies.find((t) => t.id === id)?.tenantName ?? '?').join(', ')} (Vertrag)`
 }

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import type { BillingPeriod, CostItem, Tenancy, Unit } from './types'
 import { EMPTY_ITEM_FORM, buildCostItemBody, itemToForm, type ItemForm } from './costForm'
-import { allowsContractAnswer, answerWhy, contractTenancies } from './contractAgreement'
+import { allowsContractAnswer, answerWhy, asksWhy, contractTenancies, notAgreedText, openWhy, unitTenancies, withNamed, withNotAgreed, withParticipant } from './contractAgreement'
 
 const unit = (id: string, name: string, extra: Partial<Unit> = {}): Unit => ({ propertyId: 'objekt-1', id, name, areaM2: 50, participates: true, ...extra })
 const UNITS = [unit('u1', 'EG links'), unit('u2', 'OG')]
@@ -120,5 +120,55 @@ describe('buildCostItemBody', () => {
     const r = buildCostItemBody(form({ notAgreed: ['t1'] }), UNITS, PERIOD)
     if (!('body' in r)) throw new Error('kein Rumpf')
     expect(r.body).toMatchObject({ notAgreedTenancyIds: null })
+  })
+})
+
+describe('Seitenfenster (#258, Task 4)', () => {
+  const BASIS = ['u1', 'u2']
+  test('Abwählen einer vermieteten Wohnung fragt, Anhaken nimmt die Frage zurück', () => {
+    const off = withParticipant(form(), 'u1', false, BASIS, UNITS, TENANCIES, PERIOD)
+    expect(off.participants).toEqual(['u2'])
+    expect(off.pendingWhy).toEqual(['u1'])
+    const on = withParticipant(off, 'u1', true, BASIS, UNITS, TENANCIES, PERIOD)
+    expect(on.participants).toEqual(['u2', 'u1'])
+    expect(on.pendingWhy).toEqual([])
+  })
+  test('leerstehende Wohnung ohne Mietverhältnis im Zeitraum: keine Frage', () => {
+    const units = [...UNITS, unit('u3', 'DG')]
+    const off = withParticipant(form(), 'u3', false, ['u1', 'u2', 'u3'], units, TENANCIES, PERIOD)
+    expect(off.pendingWhy).toEqual([])
+  })
+  test('Heizung fragt (nur mit der ersten Antwort), nicht umlagefähig und Rücklage nicht', () => {
+    expect(withParticipant(form({ category: 'Heizung und Warmwasser' }), 'u1', false, BASIS, UNITS, TENANCIES, PERIOD).pendingWhy).toEqual(['u1'])
+    expect(asksWhy('Nicht umlagefähig')).toBe(false)
+    expect(asksWhy('Zuführung Erhaltungsrücklage')).toBe(false)
+  })
+  test('openWhy: nur Wohnungen, die noch abgewählt sind, und nur bei Teilnehmerschlüsseln', () => {
+    expect(openWhy(form({ participants: ['u2'], pendingWhy: ['u1'] }))).toEqual(['u1'])
+    expect(openWhy(form({ participants: ['u1', 'u2'], pendingWhy: ['u1'] }))).toEqual([])
+    expect(openWhy(form({ key: 'direct', participants: ['u2'], pendingWhy: ['u1'] }))).toEqual([])
+  })
+  test('buildCostItemBody meldet keine Frage, die das Formular nicht mehr zeigt', () => {
+    const built = buildCostItemBody(form({ key: 'direct', directUnitId: 'u2', participants: ['u2'], pendingWhy: ['u1'] }), UNITS, PERIOD, TENANCIES)
+    expect('body' in built).toBe(true)
+  })
+  test('unitTenancies: die Mietverhältnisse der Wohnung im Zeitraum, auch wenn sie abgewählt ist', () => {
+    expect(unitTenancies('u2', UNITS, TENANCIES, PERIOD).map((t) => t.tenancyId)).toEqual(['t2'])
+  })
+  test('withNotAgreed setzt und nimmt, und nimmt aus „genannt“', () => {
+    const on = withNotAgreed(form({ named: ['t1'] }), 't1', true)
+    expect(on.notAgreed).toEqual(['t1'])
+    expect(on.named).toEqual([])
+    expect(withNotAgreed(on, 't1', false).notAgreed).toEqual([])
+  })
+  test('withNamed: „Ja“ nach named, „Nein“ nach notAgreed, jeweils aus der anderen Liste', () => {
+    const yes = withNamed(form({ notAgreed: ['t1'] }), 't1', true)
+    expect(yes).toMatchObject({ named: ['t1'], notAgreed: [] })
+    expect(withNamed(yes, 't1', false)).toMatchObject({ named: [], notAgreed: ['t1'] })
+  })
+  test('notAgreedText für die Liste der Positionen', () => {
+    expect(notAgreedText(['t1', 't2'], TENANCIES)).toBe('trägt nicht: Anna Becker, Jonas Hartmann (Vertrag)')
+    expect(notAgreedText([], TENANCIES)).toBeNull()
+    expect(notAgreedText(null, TENANCIES)).toBeNull()
   })
 })

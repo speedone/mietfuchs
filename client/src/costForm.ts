@@ -20,7 +20,7 @@ export { amountProblem, showsTaxUnitField, type BuildResult } from '../../shared
 import { amountProblem } from '../../shared/costItem.ts'
 import { allowsPaidOn, paidOnQuestions, statedOutflowYear, tenDayWindow, type YearSpan } from '../../shared/paidOn.ts'
 import type { Problem } from './formProblems'
-import { allowsContractAnswer, contractTenancies } from './contractAgreement'
+import { allowsContractAnswer, contractTenancies, openWhy } from './contractAgreement'
 export { aiPositionDefaults, aiPositionPreselect, lastExternalBasis, type AiPositionKey, type KeyContext } from '../../shared/assessment.ts'
 
 export type ItemForm = {
@@ -543,7 +543,7 @@ export function buildCostItemBody(form: ItemForm, units: Unit[], period: number 
   // Eine Jahreszahl ist das Kalenderjahr (Tests, Kalenderobjekt); sonst der gewählte Zeitraum (#208).
   const p = typeof period === 'number' ? calendarYearPeriod(period) : period
   // Eine abgewählte Wohnung ohne Antwort (#258): „Speichern“ meldet es am Feld, wie jede Pflichtangabe.
-  const open = !allowsContractAnswer(form.category) ? [] : form.pendingWhy.flatMap((id) => units.filter((u) => u.id === id))
+  const open = !allowsContractAnswer(form.category) ? [] : openWhy(form).flatMap((id) => units.filter((u) => u.id === id))
   if (open.length > 0) {
     const problems = open.map((u): Problem<'participants'> => ({ field: 'participants', short: 'Bitte wählen Sie, warum', text: `Teilnehmer: Bitte wählen Sie bei ${u.name}, warum sie diese Kosten nicht trägt.` }))
     return { error: problems.map((x) => x.text).join(' '), problems }
@@ -736,7 +736,8 @@ export const paidOnTenDayHint = (form: Pick<ItemForm, 'paidOn' | 'category'>): b
 
 // Die Angaben der Kostenposition, die ein eigenes Feld haben, alle auf einmal (#346, Schritt 3, Durchsicht S1):
 // Beschreibung, Betrag (leer oder keine Zahl), Lohnanteil (dieselbe Regel wie in shared/costItem.ts) und Ziel.
-export type CostField = 'description' | 'amount' | 'labor35a' | 'target'
+// `participants`: die Warum-Frage unter einer abgewählten Wohnung (#258).
+export type CostField = 'description' | 'amount' | 'labor35a' | 'target' | 'participants'
 export function costFieldProblems(form: { description: string; amount: string; labor35a: string; category: string }, target: { text: string; short: string } | null): Problem<CostField>[] {
   const problems: Problem<CostField>[] = []
   if (!form.description.trim()) problems.push({ field: 'description', short: 'Beschreibung fehlt', text: 'Beschreibung: Geben Sie an, wofür die Rechnung ist, etwa „Grundsteuer 2025“.' })

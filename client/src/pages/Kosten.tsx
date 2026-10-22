@@ -48,7 +48,10 @@ import {
   type KeyContext,
   costMeterTypes,
   costFieldProblems,
+  type CostField,
 } from '../costForm'
+import { notAgreedText, openWhy, withParticipant } from '../contractAgreement'
+import ContractAgreementFields, { WhyQuestion } from '../components/ContractAgreementFields'
 import CostPeriodFields from '../components/CostPeriodFields'
 import OperatingPowerFields from '../components/OperatingPowerFields'
 import TaxYearSelect from '../components/TaxYearSelect'
@@ -118,7 +121,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   useEffect(() => { if (!form) setNeedsTaxYear(false) }, [form])
   const [error, setError] = useState('')
   // Die Fehler des Seitenfensters, im Fuß des Fensters (#346, Schritt 3)
-  const formErrors = useFormError<'description' | 'amount' | 'labor35a' | 'target'>()
+  const formErrors = useFormError<CostField>()
   // Heizung PR 5: Heizpositionen einer Anlage mit eigener Heizperiode tragen deren Schlüssel.
   const [plants, setPlants] = useState<HeatingPlant[]>([])
   const [heatingPeriod, setHeatingPeriod] = useState('')
@@ -387,7 +390,9 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     // Heizung PR 16: nach der Energie der Abrechnung (bei Contracting bezahlt in der Regel der Lieferant den Strom des Kessels).
     const built = buildCostItemBody(form, units, period, tenancies, plantOfForm ? billingEnergy(plantOfForm) : undefined)
     if ('error' in built) {
-      setError(built.error)
+      // Die offene Warum-Frage (#258) steht am Feld und in der Sammelmeldung, alles andere als Satz.
+      if ('problems' in built) formErrors.report(built.problems)
+      else setError(built.error)
       return
     }
     setError('')
@@ -640,6 +645,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                     {showsKeyFields(r.source.category) && r.source.participantUnitIds && (
                       <div className="muted">nur {r.source.participantUnitIds.map((id) => units.find((u) => u.id === id)?.name ?? '?').join(', ')}</div>
                     )}
+                    {showsKeyFields(r.source.category) && notAgreedText(r.source.notAgreedTenancyIds, tenancies) && <div className="muted">{notAgreedText(r.source.notAgreedTenancyIds, tenancies)}</div>}
                     {showsKeyFields(r.source.category) && r.source.key === 'meter' && r.source.meterType && <div className="muted">{METER_TYPE_LABELS[r.source.meterType]}</div>}
                     {/* Durchsicht: Anteile samt Summe, Wohnung der Direktzuordnung */}
                     {showsKeyFields(r.source.category) && (() => {
@@ -781,6 +787,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                     {i.participantUnitIds && (
                       <div className="muted">nur {i.participantUnitIds.map((id) => units.find((u) => u.id === id)?.name ?? '?').join(', ') || 'keine Wohnung'}</div>
                     )}
+                    {notAgreedText(i.notAgreedTenancyIds, tenancies) && <div className="muted">{notAgreedText(i.notAgreedTenancyIds, tenancies)}</div>}
                     {i.key === 'direct' && <div className="muted">{units.find((u) => u.id === i.directUnitId)?.name}</div>}
                     {i.key === 'meter' && <div className="muted">{i.meterType ? METER_TYPE_LABELS[i.meterType] : '— kein Zählertyp'}</div>}
                     {i.key === 'custom' && (
@@ -1110,20 +1117,26 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                   {basisUnits.map((u) => {
                     const checked = form.participants === null || form.participants.includes(u.id)
                     return (
-                      <label key={u.id} className="field checkline">
+                      <Fragment key={u.id}>
+                      <label className="field checkline">
                         <span>
                           <input
                             type="checkbox"
                             checked={checked}
                             onChange={(e) => {
-                              const current = form.participants ?? basisUnits.map((x) => x.id)
-                              const next = e.target.checked ? [...current, u.id] : current.filter((id) => id !== u.id)
-                              setForm({ ...form, participants: next })
+                              if (e.target.checked) formErrors.clearField('participants')
+                              setForm(withParticipant(form, u.id, e.target.checked, basisUnits.map((x) => x.id), units, tenancies, period))
                             }}
                           />{' '}
                           {u.name}
                         </span>
                       </label>
+                      {/* #258: Warum trägt die gerade abgewählte Wohnung nicht? Direkt darunter, kein Dialog. */}
+                      {openWhy(form).includes(u.id) && (
+                        <WhyQuestion form={form} unit={u} units={units} tenancies={tenancies} period={period} onChange={setForm}
+                          field={formErrors.field('participants')} first={openWhy(form)[0] === u.id} />
+                      )}
+                      </Fragment>
                     )
                   })}
                 </div>
@@ -1138,6 +1151,8 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                 </select>
               </label>
             )}
+            {/* #258: unten im Abschnitt Schlüssel; bei „Sonstige Betriebskosten“ die Frage je Mieter. */}
+            <ContractAgreementFields form={form} units={units} tenancies={tenancies} period={period} onChange={setForm} />
             </>}
             <div className="field-group">
               <div className="field-group-label">Beleg (Rechnungskopie)</div>

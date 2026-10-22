@@ -14,12 +14,23 @@ import { ErrorSummary, useFormError } from '../components/ErrorSummary'
 import { NoticeBox, TextNotice } from '../components/Notice'
 import { useConfirm, useToast } from '../components/feedback'
 import { useDraft } from '../useDraft'
+import ContractAgreementFields, { WhyQuestion } from '../components/ContractAgreementFields'
+import { EMPTY_ITEM_FORM, type ItemForm } from '../costForm'
+import type { Tenancy, Unit } from '../types'
 
 // Musterseite (#346 Schritt 12, Spezifikation Abschnitt 9): alle Bausteine der Oberfläche auf einer Seite, mit festen
 // Werten und ohne Anfrage an den Server. Aufgerufen mit `?muster`, nicht in der Navigation. `npm run screenshots`
 // fotografiert sie hell und dunkel, der Browserlauf prüft sie mit axe und der Messung abgeschnittener Felder wie jede
 // Seite. Wer einen Baustein ändert, sieht ihn hier.
 const UNITS = [{ value: 'eg', label: 'EG links' }, { value: 'og', label: 'OG rechts' }]
+// Feste Wohnungen und Mietverhältnisse für die Fragen zu „nicht im Mietvertrag vereinbart“ (#258)
+const CONTRACT_UNITS: Unit[] = [
+  { id: 'eg', propertyId: 'muster', name: 'EG links', areaM2: 60, participates: true },
+  { id: 'og', propertyId: 'muster', name: 'OG rechts', areaM2: 70, participates: true },
+]
+const contractTenancy = (id: string, unitId: string, tenantName: string): Tenancy => ({ id, unitId, tenantName, persons: 1, personHistory: [], start: '2020-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [] })
+const CONTRACT_TENANCIES = [contractTenancy('t1', 'eg', 'Anna Becker'), contractTenancy('t2', 'og', 'Jonas Hartmann')]
+const CONTRACT_PERIOD = { from: '2025-01-01', to: '2025-12-31' }
 
 export default function Muster() {
   const toast = useToast()
@@ -31,6 +42,8 @@ export default function Muster() {
   const [year, setYear] = useState('2031')
   const [unit, setUnit] = useState('eg')
   const draft = useDraft('og')
+  const [why, setWhy] = useState<ItemForm>({ ...EMPTY_ITEM_FORM, category: 'Aufzug', participants: ['og'], pendingWhy: ['eg'], notAgreed: ['t2'] })
+  const [other, setOther] = useState<ItemForm>({ ...EMPTY_ITEM_FORM, category: 'Sonstige Betriebskosten', named: ['t1'] })
   // Die Sammelmeldung mit einer Meldung am Feld, ohne den Fokus beim Laden zu nehmen
   useEffect(() => {
     errors.report([{ field: 'betrag', short: 'Betrag fehlt', text: 'Betrag: Bitte tragen Sie den Betrag laut Rechnung ein.' }], { focus: false })
@@ -97,6 +110,16 @@ export default function Muster() {
           </Field>
           <DraftActions draft={draft} what="Wohnung" onSave={async () => { toast('Gespeichert.') }} />
         </div>
+      </Card>
+
+      <Card title="Nicht im Mietvertrag vereinbart">
+        <div className="checks">
+          {why.pendingWhy.includes('eg') && (
+            <WhyQuestion form={why} unit={CONTRACT_UNITS[0]} units={CONTRACT_UNITS} tenancies={CONTRACT_TENANCIES} period={CONTRACT_PERIOD} onChange={setWhy} />
+          )}
+        </div>
+        <ContractAgreementFields form={why} units={CONTRACT_UNITS} tenancies={CONTRACT_TENANCIES} period={CONTRACT_PERIOD} onChange={setWhy} />
+        <ContractAgreementFields form={other} units={CONTRACT_UNITS} tenancies={CONTRACT_TENANCIES} period={CONTRACT_PERIOD} onChange={setOther} />
       </Card>
 
       <Card title="Hinweise">

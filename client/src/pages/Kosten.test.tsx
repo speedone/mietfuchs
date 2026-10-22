@@ -241,7 +241,7 @@ test('Einzelbeträge (#94): je Mieter ein Feld, gespeichert wird genau das Einge
   fireEvent.change(screen.getByLabelText(/^Betrag/i), { target: { value: '800,00' } })
   fireEvent.change(select(/Umlageschlüssel/i), { target: { value: 'amounts' } })
   expect(select(/Umlageschlüssel/i).value).toBe('amounts')
-  fireEvent.change(screen.getByLabelText(/Meier \(OG links\)/), { target: { value: '312,40' } })
+  fireEvent.change(screen.getByLabelText(/^Meier \(OG links\)$/), { target: { value: '312,40' } })
   expect(screen.getByText(/487,60 € trägt der Vermieter/)).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/i }))
   await waitFor(() => expect(sent).toHaveLength(1))
@@ -612,4 +612,97 @@ test('Zwei Heizanlagen: eine spät ankommende Liste der Positionen setzt die gew
   await act(async () => { for (const release of held) release() })
   await act(async () => {})
   expect(select(/^Heizanlage(?!n)/).value).toBe('hp2')
+})
+
+// ---------- Nicht im Mietvertrag vereinbart (#258) ----------
+
+const UNITS_258: Unit[] = [
+  { id: 'u1', propertyId: 'objekt-1', name: 'EG links', areaM2: 60, participates: true },
+  { id: 'u2', propertyId: 'objekt-1', name: 'OG rechts', areaM2: 60, participates: true },
+]
+const mieter258 = (unitIds = ['u1', 'u2']) => [
+  { id: 't1', unitId: 'u1', tenantName: 'Anna Becker', persons: 1, personHistory: [], start: '2020-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [] },
+  { id: 't2', unitId: 'u2', tenantName: 'Jonas Hartmann', persons: 1, personHistory: [], start: '2020-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [] },
+].filter((t) => unitIds.includes(t.unitId))
+const open258 = async (units = UNITS_258) => {
+  render(<PeriodProvider><PropertyProvider><Kosten units={units} settings={null} tenancies={mieter258(units.map((u) => u.id))} /></PropertyProvider></PeriodProvider>)
+  await waitFor(() => expect(screen.getByRole('button', { name: /Kostenposition anlegen/i })).toBeTruthy())
+  fireEvent.click(screen.getByRole('button', { name: /Kostenposition anlegen/i }))
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Aufzug' } })
+  fireEvent.change(screen.getByLabelText(/Beschreibung/i), { target: { value: 'Aufzug' } })
+  fireEvent.change(screen.getByLabelText(/^Betrag/i), { target: { value: '100,00' } })
+}
+const unitBox = (name: string) => screen.getByRole('checkbox', { name }) as HTMLInputElement
+
+test('#258: Abwählen von EG links fragt warum; „Steht nicht im Mietvertrag“ hakt sie wieder an und speichert den Mieter', async () => {
+  await open258()
+  expect(screen.queryByText(/Warum trägt/)).toBeNull()
+  fireEvent.click(unitBox('EG links'))
+  expect(screen.getByText('Warum trägt EG links diese Kosten nicht?')).toBeTruthy()
+  fireEvent.click(screen.getByLabelText('Steht nicht im Mietvertrag von Anna Becker. Den Anteil trägt der Vermieter.'))
+  expect(unitBox('EG links').checked).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/i }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0].body).toMatchObject({ notAgreedTenancyIds: ['t1'], namedTenancyIds: null })
+})
+
+test('#258: „Anlegen“ ohne Antwort meldet am Feld und in der Sammelmeldung', async () => {
+  await open258()
+  fireEvent.click(unitBox('EG links'))
+  fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/i }))
+  await waitFor(() => expect(screen.getByText('Bitte wählen Sie, warum')).toBeTruthy())
+  expect(screen.getByRole('link', { name: /Teilnehmer: Bitte wählen Sie bei EG links, warum sie diese Kosten nicht trägt\./ })).toBeTruthy()
+  expect(sent).toHaveLength(0)
+  // Die Antwort nimmt die Meldung am Feld weg.
+  fireEvent.click(screen.getByLabelText(/^Betrifft die Wohnung nicht/))
+  expect(screen.queryByText('Bitte wählen Sie, warum')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/i }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0].body).toMatchObject({ participantUnitIds: ['u2'], notAgreedTenancyIds: null })
+})
+
+test('#258: vermietete Eigentumswohnung ohne Teilnehmerliste: der Textlink setzt den Mieter', async () => {
+  await open258([UNITS_258[0]])
+  expect(screen.queryByText(/Weitere Optionen: nur bestimmte Wohnungen/)).toBeNull()
+  fireEvent.click(screen.getByText('Ein Mieter trägt das laut Mietvertrag nicht …'))
+  fireEvent.click(screen.getByLabelText(/Anna Becker \(EG links\)/))
+  fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/i }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0].body).toMatchObject({ notAgreedTenancyIds: ['t1'] })
+})
+
+test('#258: Sonstige Betriebskosten: je Mieter „Ja“/„Nein“, „Ja“ speichert „im Vertrag genannt“', async () => {
+  await open258()
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Sonstige Betriebskosten' } })
+  expect(screen.getByText('Gehört die Position eigentlich zu einer anderen Kostenart, wählen Sie diese oben.')).toBeTruthy()
+  fireEvent.click(within(screen.getByRole('group', { name: /Anna Becker/ })).getByLabelText('Ja'))
+  fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/i }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0].body).toMatchObject({ namedTenancyIds: ['t1'], notAgreedTenancyIds: null })
+})
+
+test('#258: Heizung und Warmwasser: kein Textlink, beim Abwählen der Satz zur Heizkostenverordnung', async () => {
+  await open258()
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Heizung und Warmwasser' } })
+  fireEvent.change(select(/Umlageschlüssel/i), { target: { value: 'area' } })
+  expect(screen.queryByText(/Ein Mieter trägt das laut Mietvertrag nicht/)).toBeNull()
+  fireEvent.click(unitBox('EG links'))
+  expect(screen.getByText(/Die Heizkostenverordnung gilt auch, wenn der Mietvertrag die Heizkosten nicht nennt/)).toBeTruthy()
+  expect(screen.queryByLabelText(/Steht nicht im Mietvertrag/)).toBeNull()
+})
+
+test('#258: das Seitenfenster merkt eine Antwort als Änderung (S12b)', async () => {
+  costItems = [{ id: 'c9', propertyId: 'objekt-1', period: calendarPeriod(new Date().getFullYear() - 1), category: 'Aufzug', description: 'Aufzug', amountCents: 10000, key: 'area' }]
+  render(<PeriodProvider><PropertyProvider><UIProvider><Kosten units={UNITS_258} settings={null} tenancies={mieter258()} /></UIProvider></PropertyProvider></PeriodProvider>)
+  fireEvent.click(await screen.findByRole('button', { name: 'Kostenposition bearbeiten' }))
+  fireEvent.click(screen.getByText('Ein Mieter trägt das laut Mietvertrag nicht …'))
+  fireEvent.click(screen.getByLabelText(/Anna Becker \(EG links\)/))
+  fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }))
+  expect(await screen.findByRole('alertdialog')).toBeTruthy()
+})
+
+test('#258: die Liste der Positionen nennt den Mieter, der nicht trägt', async () => {
+  costItems = [{ id: 'c8', propertyId: 'objekt-1', period: calendarPeriod(new Date().getFullYear() - 1), category: 'Aufzug', description: 'Aufzug', amountCents: 10000, key: 'area', notAgreedTenancyIds: ['t1'] }]
+  render(<PeriodProvider><PropertyProvider><Kosten units={UNITS_258} settings={null} tenancies={mieter258()} /></PropertyProvider></PeriodProvider>)
+  expect(await screen.findByText('trägt nicht: Anna Becker (Vertrag)')).toBeTruthy()
 })
