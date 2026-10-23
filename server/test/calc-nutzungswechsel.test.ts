@@ -200,6 +200,23 @@ test('Ein Mietverhältnis in der Zeit der Eigennutzung zählt erst ab der Vermie
   assert.equal(n.level, 'error')
   assert.match(n.text, /t-b/)
   assert.match(n.text, /an 91 Tagen/)
+  assert.doesNotMatch(n.text, /spätere vermietete Zeit/)
+})
+
+test('Ein Mietverhältnis über vermietet, Eigennutzung, vermietet zählt im ersten Abschnitt; der Hinweis trennt beide Teile', () => {
+  const s = settle(source({
+    units: [unit('a'), unit('b', { usageChanges: [{ from: '2025-04-01', usage: 'eigen' }, { from: '2025-07-01', usage: 'vermietet' }] })],
+    tenancies: [tenancy('t-a', 'a'), tenancy('t-b', 'b')],
+    costItems: [item({ key: 'area' })],
+  }))
+  // Januar bis März 90 Tage: 100.000 × 50/100 × 90/365 = 12.328,77.
+  assert.equal(shareOf(s, 't-b'), 12329)
+  // Eigennutzung April bis Juni 91 Tage: 12.465,75; Juli bis Dezember Leerstand, denn das Mietverhältnis zählt dort nicht.
+  assert.equal(s.selfUsedShareCents, 12466)
+  assert.equal(partOf(s, 'vacancy'), 25205)
+  const n = s.notices.find((x) => x.code === 'usage.tenancy-conflict') ?? assert.fail('Hinweis fehlt')
+  assert.match(n.text, /an 91 Tagen in einer Zeit/)
+  assert.match(n.text, /die übrigen 184 Tage nicht/)
 })
 
 // ---------- Steuerübersicht (Teil 1) ----------

@@ -73,7 +73,11 @@ Gewicht ist der Anteil dieser Tage am Zeitraum.
   Eintritt des Vermieters als Nutzer: Zwischenablesung an der Grenze (§ 9b Abs. 1), sonst Gradtage
   bzw. Zeitanteil (§ 9b Abs. 2), die Gruppe nach § 9b Abs. 3, der Hinweis zur fehlenden
   Zwischenablesung. Ein Mietverhältnis bleibt dort Nutzer, solange es läuft (wer dort wohnt, ist
-  Nutzer); der Widerspruch steht schon im Hinweis oben.
+  Nutzer); der Widerspruch steht schon im Hinweis oben, und der Hinweis sagt, dass er dort Nutzer bleibt.
+  Das ist eine bewusste Grenze (Durchsicht, Befund 1): Die Heizperiode und ihre Nachbarn bilden die
+  Nutzer über `usersOf` aus ganzen Mietverhältnissen; ein Beschneiden dort müsste die Zwischenablesungen
+  und die Gruppen nach § 9b Abs. 3 mitziehen. Die Summen stimmen auch so, nur trägt der Mieter dann die
+  Heizkosten der widersprüchlichen Tage, bis die Angaben berichtigt sind.
 - **Ja/Nein-Fragen im Zeitraum** (§ 2 HeizkostenV, § 5d Abs. 3 CO2KostAufG, Garage, Wohnung im Sinne
   von `isDwelling`): Eine Einheit mit Wechsel im Zeitraum gilt als vermietet, wenn sie an einem Tag
   vermietet ist, und nur dann als selbst bewohnt, wenn sie an keinem Tag vermietet ist. Die Ausnahmen

@@ -2879,7 +2879,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // beschnitten (`costTenancies`); die übrigen Tage bleiben beim Vermieter, nie bei anderen Mietern, und
   // `usage.tenancy-conflict` nennt sie. Abrechnung und Vorauszahlungen bleiben am ganzen Mietverhältnis
   // (`partTenancies`), denn gezahlt hat der Mieter. Ohne Wechsel ist beides dasselbe Objekt.
-  const usageConflicts: { t: TenancyWithUnit, days: number }[] = []
+  // `days`: Tage in einer Zeit ohne Vermietung; `later`: Tage in einem späteren vermieteten Abschnitt, den das
+  // Mietverhältnis über einen Wechsel hinweg erreicht (Durchsicht, Befund 2).
+  const usageConflicts: { t: TenancyWithUnit, days: number, later: number }[] = []
   const costTenancies: TenancyWithUnit[] = tenancies.flatMap((t) => {
     const x = usageIn(t.unit)
     if (!x.phased) return t.unit.participates ? [t] : []
@@ -2889,7 +2891,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       .map((sp) => ({ from: sp.from > from ? sp.from : from, to: sp.to < to ? sp.to : to }))
     const first = pieces[0]
     const days = first ? rangeOverlapDays(first.from, first.to, yFrom, yTo) : 0
-    if (t.days > days) usageConflicts.push({ t, days: t.days - days })
+    const rentedDays = pieces.reduce((a, p) => a + rangeOverlapDays(p.from, p.to, yFrom, yTo), 0)
+    if (t.days > days) usageConflicts.push({ t, days: t.days - rentedDays, later: rentedDays - days })
     if (!first) return []
     return [{ ...t, start: first.from > from ? first.from : t.start, end: first.to < to ? first.to : t.end, days }]
   })
@@ -4515,9 +4518,14 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         `${u.name}: Die Nutzung wechselt im Abrechnungszeitraum ${label} (${text}). Eigenanteil, Leerstand und Verteilbasis rechnet Mietfuchs für jeden Abschnitt nach seinen Tagen.`,
         unitSubject([u]))
     }
+    const tageText = (n: number) => `${fmtNum(n)} ${n === 1 ? 'Tag' : 'Tagen'}`
     for (const c of usageConflicts) {
+      const parts = [
+        ...(c.days > 0 ? [`Das Mietverhältnis läuft an ${tageText(c.days)} in einer Zeit, in der die Einheit laut ihrer Nutzung nicht vermietet ist.`] : []),
+        ...(c.later > 0 ? [`Es reicht über einen Wechsel der Nutzung hinweg in eine spätere vermietete Zeit; für die Kosten zählt nur der erste vermietete Abschnitt, die übrigen ${fmtNum(c.later)} ${c.later === 1 ? 'Tag' : 'Tage'} nicht.`] : []),
+      ]
       warn('usage.tenancy-conflict',
-        `${c.t.tenantName} (${c.t.unit.name}): Das Mietverhältnis läuft an ${fmtNum(c.days)} ${c.days === 1 ? 'Tag' : 'Tagen'} in einer Zeit, in der die Einheit laut ihrer Nutzung nicht vermietet ist. Für diese Tage trägt der Mieter keine Kosten; sie bleiben beim Vermieter. Bitte prüfen Sie Ein- und Auszug oder den Nutzungswechsel der Einheit in den Stammdaten.`,
+        `${c.t.tenantName} (${c.t.unit.name}): ${parts.join(' ')} Für diese Tage trägt der Mieter keine Betriebskosten; sie bleiben beim Vermieter. In einer eigenen Heizkostenabrechnung bleibt er dagegen Nutzer, solange das Mietverhältnis läuft. Bitte prüfen Sie Ein- und Auszug oder den Nutzungswechsel der Einheit in den Stammdaten.`,
         { kind: 'tenancy', id: c.t.id })
     }
   }
