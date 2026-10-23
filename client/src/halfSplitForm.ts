@@ -2,7 +2,7 @@
 // costForm.ts; die Komponente rendert nur.
 import type { HeatingEnergy, HeatingPlant, Tenancy } from './types'
 import { gmodgHeating43 } from '../../shared/law/gmodg.ts'
-import { co2HalfSplit, co2HalfSplitNewBuildings, halfSplitBioFirstDay, halfSplitFirstDay } from '../../shared/law/co2kostaufg.ts'
+import { co2HalfSplit, co2HalfSplitEmergency, co2HalfSplitNewBuildings, halfSplitBioFirstDay, halfSplitFirstDay } from '../../shared/law/co2kostaufg.ts'
 import { germanDate, LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
 
 export type TriState = 'unknown' | 'yes' | 'no'
@@ -24,7 +24,17 @@ export const HALF_SPLIT_YEAR = halfSplitFirstDay().slice(0, 4)
 const BIO_YEAR = halfSplitBioFirstDay().slice(0, 4)
 // Was geteilt wird, mit Stichtagen und der Grenze beim Biobrennstoff aus dem Register (Durchsicht K1).
 const BIO_CAP = (valueAt(co2HalfSplit, halfSplitBioFirstDay()).bioCapPermille ?? 0) / 10
+const EMERGENCY_MONTHS = valueAt(co2HalfSplitEmergency, LAW_AS_OF).windowMonths
 export const HALF_SPLIT_WHAT = `Dann tragen Sie ab dem ${germanDate(halfSplitFirstDay())} die Hälfte der CO₂-Kosten und, nur bei Gas, der Netzentgelte, ab dem ${germanDate(halfSplitBioFirstDay())} auch die Hälfte der Kosten des Pflichtanteils an Biobrennstoff, höchstens für ${BIO_CAP.toLocaleString('de-DE')} % des verbrauchten Brennstoffs (§ 5a Abs. 3 CO2KostAufG).`
+// Der Einleitungssatz der Karte: für wen die Teilung gilt, mit den Bedingungen des § 5b für den Neubau und der
+// Ausnahme nach einem Notfalleinbau (§ 5a Abs. 4). Vorher hieß es nur „oder eine solche Heizung in einem
+// Neubau“, und wer nur den Satz las, hielt jeden Neubau für erfasst. Alle Daten aus dem Register.
+export const HALF_SPLIT_SCOPE =
+  `Nur für eine Gas-, Öl- oder Flüssiggasheizung, die nach dem ${INSTALLED_AFTER} in ein bestehendes Gebäude eingebaut wurde, ` +
+  `oder eine solche Heizung in einem Neubau, der bis zum ${FIRST_USE_UNTIL} erstmals genutzt wird, außer bei Bauantrag, ` +
+  `Antrag auf Zustimmung oder Bauanzeige vor dem ${APPLICATION_FROM} (§ 5b CO2KostAufG). ${HALF_SPLIT_WHAT} ` +
+  `Wurde die Heizung eingebaut, weil die bisherige irreparabel ausgefallen war, entfällt die Teilung je nach Zeitpunkt ` +
+  `des Einbaus für ${EMERGENCY_MONTHS} Monate ab dem Einbau (§ 5a Abs. 4 CO2KostAufG).`
 
 // § 5a Abs. 4 Satz 2 und 3 hängen daran, ob für die ausgefallene Heizung beim Ausfall schon eine Pflicht nach
 // § 43 Abs. 1 GModG bestand. Gefragt wird danach, wann und was eingebaut war, nicht nach der Pflicht selbst
