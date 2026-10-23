@@ -2140,7 +2140,8 @@ function operatingPowerBalanceItem(
   // und Betriebsstrom im selben Steuerjahr verschieden hoch sind; ein Paar über zwei Steuerjahre ist richtig erfasst.
   for (const s of deductions) {
     // Nachprüfung N3: Ein Verweis auf eine Position, die kein Betriebsstrom in den Heizkosten ist, heißt so.
-    const how = s.situation === 'kept' ? 'ohne Verweis auf eine Heizposition und ohne Messdienst'
+    const how = s.situation === 'kept'
+      ? (s.notReported ? 'ohne Verweis auf eine Heizposition, nach Ihrer Angabe dem Messdienst nicht gemeldet' : 'ohne Verweis auf eine Heizposition und ohne Messdienst')
       : s.situation === 'brokenLink'
         ? (s.linkedDescription === null ? 'verknüpft mit einer Position, die Mietfuchs nicht findet; prüfen Sie den Verweis'
           : `verknüpft mit „${s.linkedDescription}“, die nicht als Betriebsstrom in den Heizkosten gekennzeichnet ist; prüfen Sie den Verweis`)
@@ -2151,7 +2152,9 @@ function operatingPowerBalanceItem(
     steps.push({ label: 'Betriebsstrom in den Heizkosten', value: `„${s.description}“ ${fmtCents(0 - s.cents)}, steckt auch in der Stromrechnung${s.situation === 'otherYear' ? '; ihr Abzug steht in einem anderen Steuerjahr' : ''}`, term: 'operatingPower' })
   }
   for (const r of balance.reported) {
-    steps.push({ label: 'Abzug, dem Messdienst gemeldet', value: `„${r.description}“ ${fmtCents(0 - r.amountCents)}, zählt hier nicht: Nach Ihrer Angabe steckt der Betrag in den Kosten des Messdienstes` })
+    // #270, Durchsicht K3: ohne Angabe gilt der Abzug als gemeldet; der Satz sagt es so.
+    const why = r.stated ? 'Nach Ihrer Angabe steckt der Betrag in den Kosten des Messdienstes' : 'Ohne Ihre Angabe gilt er als dem Messdienst gemeldet; dann steckt der Betrag in den Kosten des Messdienstes'
+    steps.push({ label: 'Abzug, dem Messdienst gemeldet', value: `„${r.description}“ ${fmtCents(0 - r.amountCents)}, zählt hier nicht: ${why}` })
   }
   const deducted = deductions.reduce((a, s) => a + s.cents, 0)
   // K1 der Durchsicht: `0 - …`, damit ohne Heizposition „0,00 €“ steht und nicht „-0,00 €“.

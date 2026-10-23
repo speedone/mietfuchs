@@ -65,7 +65,9 @@ test('Abzug ohne Verweis: ohne Messdienst „trage ihn selbst“ samt Hinweis zu
   cleanup()
   render(<OperatingPowerFields form={form} items={[bs]} periodKey={periodKey('2025-01')} service onChange={vi.fn()} />)
   const mit = screen.getByLabelText(/Abzug des Betriebsstroms/) as HTMLSelectElement
-  expect(mit.value).toBe('service')
+  // Durchsicht S1: ohne Angabe ein eigener Eintrag; „gemeldet“ zu wählen ist dann eine Änderung.
+  expect(mit.value).toBe('unanswered')
+  expect(mit.selectedOptions[0]?.textContent).toBe('Ohne Angabe (gilt als dem Messdienst gemeldet)')
   expect(mit.querySelector('option[value="service"]')?.textContent).toBe('Ja, der Betrag ist dem Messdienst als Betriebsstrom gemeldet')
   // #270: daneben „selbst getragen“, mit demselben Satz zur Steuer, wenn gewählt.
   expect(mit.querySelector('option[value="kept"]')?.textContent).toBe(OPERATING_POWER_KEPT)
@@ -77,8 +79,16 @@ test('Abzug ohne Verweis: ohne Messdienst „trage ihn selbst“ samt Hinweis zu
   expect(selbst.value).toBe('kept')
   expect(screen.getByText(/In der Steuerübersicht zählt Mietfuchs ihn trotzdem zu Ihren Werbungskosten/)).toBeTruthy()
   expect(screen.getByText(/nicht in der Abrechnung des Messdienstes/)).toBeTruthy()
+  // Mit Angabe gibt es den Eintrag „Ohne Angabe“ nicht.
+  expect(selbst.querySelector('option[value="unanswered"]')).toBeNull()
   fireEvent.change(selbst, { target: { value: 'service' } })
   expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ operatingPower: 'deduction', operatingPowerItemId: '', operatingPowerReported: true }))
+  cleanup()
+  // Ohne Angabe „gemeldet“ wählen sendet die Angabe.
+  const onAnswer = vi.fn()
+  render(<OperatingPowerFields form={form} items={[bs]} periodKey={periodKey('2025-01')} service onChange={onAnswer} />)
+  fireEvent.change(screen.getByLabelText(/Abzug des Betriebsstroms/), { target: { value: 'service' } })
+  expect(onAnswer).toHaveBeenCalledWith(expect.objectContaining({ operatingPowerReported: true }))
 })
 
 // Durchsicht S3: Der Satz zur Steuer gehört nur zur Antwort „trage ihn selbst“, nicht zum verknüpften Abzug und nicht zu „Nein“.

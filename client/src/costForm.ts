@@ -596,9 +596,13 @@ const periodText = (key: string): string => (key.slice(5, 7) === '01' ? key.slic
 // (`serviceReceivesOperatingPower`), wählt der Vermieter zwischen „dem Messdienst gemeldet“ (`service`) und „trage ihn
 // selbst“ (`kept`), gespeichert als `operatingPowerReported`; ohne Messdienst gibt es nur „trage ihn selbst“. Welche
 // Antwort gilt, entscheidet `deductionReported` (shared/operatingPower.ts), für Formular und Steuerübersicht dieselbe.
-export function deductionChoices(items: readonly CostItem[], { service }: { service: boolean }): { value: string; label: string }[] {
+// Durchsicht S1: Ein Abzug ohne Angabe (`unanswered`) zeigt bei Messdienst einen eigenen Eintrag, sonst stünde „gemeldet“
+// schon da, und es zu wählen sendete kein `change`; der Hinweis der Steuerseite ließe sich so nicht beantworten.
+export const DEDUCTION_UNANSWERED = 'Ohne Angabe (gilt als dem Messdienst gemeldet)'
+export function deductionChoices(items: readonly CostItem[], { service, unanswered = false }: { service: boolean; unanswered?: boolean }): { value: string; label: string }[] {
   return [
     { value: '', label: 'Nein, kein Abzug des Betriebsstroms' },
+    ...(service && unanswered ? [{ value: 'unanswered', label: DEDUCTION_UNANSWERED }] : []),
     ...(service ? [{ value: 'service', label: OPERATING_POWER_REPORTED }] : []),
     { value: 'kept', label: OPERATING_POWER_KEPT },
     ...items.filter((c) => c.operatingPower === 'included')
@@ -608,10 +612,12 @@ export function deductionChoices(items: readonly CostItem[], { service }: { serv
 export const deductionChoiceOf = (form: Pick<ItemForm, 'operatingPower' | 'operatingPowerItemId' | 'operatingPowerReported'>, { service }: { service: boolean }): string => {
   if (form.operatingPower !== 'deduction') return ''
   if (form.operatingPowerItemId) return form.operatingPowerItemId
+  if (service && form.operatingPowerReported == null) return 'unanswered'
   return deductionReported(form, service) ? 'service' : 'kept'
 }
 export function withDeductionChoice(form: ItemForm, value: string): ItemForm {
   if (value === '') return { ...form, operatingPower: '', operatingPowerItemId: '', operatingPowerGeneralId: '', operatingPowerBasis: '', operatingPowerReported: null }
+  if (value === 'unanswered') return { ...form, operatingPower: 'deduction', operatingPowerItemId: '', operatingPowerReported: null }
   if (value === 'service' || value === 'kept') return { ...form, operatingPower: 'deduction', operatingPowerItemId: '', operatingPowerReported: value === 'service' }
   return { ...form, operatingPower: 'deduction', operatingPowerItemId: value, operatingPowerReported: null }
 }

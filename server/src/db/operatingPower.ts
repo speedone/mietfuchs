@@ -177,6 +177,8 @@ export async function bookOperatingPower(db: Database, plantId: string, body: un
     description: `Abzug Betriebsstrom Heizung (${how})${plant.method === 'service' ? ', an Messdienst gemeldet' : ''}`,
     amountCents: -share.cents, ...distributionOf(general),
     operatingPower: 'deduction', operatingPowerBasis, operatingPowerGeneralId: general.id, ...(heatingId ? { operatingPowerItemId: heatingId } : {}),
+    // #270, Durchsicht K1: Die Beschreibung sagt „an Messdienst gemeldet“, die Angabe am Abzug ebenso.
+    ...(!heatingId && plant.method === 'service' ? { operatingPowerReported: true } : {}),
   }
   await db.transaction(async (tx) => {
     if (heatingBody && heatingId) await insertCostItemIn(tx, heatingId, heatingBody)

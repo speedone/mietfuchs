@@ -423,12 +423,16 @@ export type BalanceSource = {
   // nicht als Betriebsstrom in den Heizkosten gekennzeichnet ist oder die es im Objekt nicht gibt; ein Verweisfehler,
   // kein anderes Steuerjahr.
   situation: 'kept' | 'otherYear' | 'sameYear' | 'brokenLink'
+  // #270, Durchsicht S2: Abzug ohne Verweis, der neben einem Messdienst nach Angabe nicht gemeldet ist.
+  notReported?: true
 }
 // Die Lage der ganzen Zeile: `kept` nur Abzüge ohne Verweis; `otherYear` nur Paare über zwei Steuerjahre; `mixed`
 // beides; `mismatch`: Abzug und Betriebsstrom sind im selben Steuerjahr verschieden hoch, eine Heizposition hat gar
 // keinen Abzug, oder ein Abzug zeigt ins Leere (`brokenLink`). Nur dann ist etwas zu prüfen.
 export type BalanceKind = 'kept' | 'otherYear' | 'mixed' | 'mismatch'
 export type BalanceNote = { costItemId: string; description: string; amountCents: number }
+// #270, Durchsicht K3: Ein gemeldeter Abzug weiß, ob der Vermieter das angegeben hat oder es ohne Angabe gilt.
+export type ReportedNote = BalanceNote & { stated: boolean }
 export type OperatingPowerBalance = {
   cents: number
   kind: BalanceKind
@@ -437,7 +441,7 @@ export type OperatingPowerBalance = {
   keptCents: number
   sources: BalanceSource[]
   // Abzüge ohne Verweis bei Messdienst: zählen nicht (gemeldet).
-  reported: BalanceNote[]
+  reported: ReportedNote[]
   // Davon die, bei denen im Zeitraum zugleich eine Anlage ohne Messdienst heizt (R-6).
   ambiguous: BalanceNote[]
 }
@@ -455,7 +459,7 @@ export function operatingPowerBalance(parts: readonly BalancePart[], linkable: r
   const yearDeductionsOf = (id: string) => yearItems.filter((c) => c.operatingPower === 'deduction' && c.operatingPowerItemId === id)
   let mismatch = false
   const sources: BalanceSource[] = []
-  const reported: BalanceNote[] = []
+  const reported: ReportedNote[] = []
   const ambiguous: BalanceNote[] = []
   parts.forEach((p, part) => {
     const service = serviceReceivesOperatingPower(p.plants, p.period)
@@ -472,8 +476,9 @@ export function operatingPowerBalance(parts: readonly BalancePart[], linkable: r
       const note = { costItemId: c.id, description: c.description, amountCents: c.amountCents }
       // #270: Mit Angabe „nicht gemeldet“ zählt er wie selbst getragen; mit einer Angabe ist er nie mehrdeutig.
       if (deductionReported(c, service)) {
-        reported.push(note)
-        if (c.operatingPowerReported === undefined && nonServiceHeats(p.plants, p.period)) ambiguous.push(note)
+        const stated = c.operatingPowerReported != null
+        reported.push({ ...note, stated })
+        if (!stated && nonServiceHeats(p.plants, p.period)) ambiguous.push(note)
         continue
       }
       const linked = c.operatingPowerItemId ? lookup(c.operatingPowerItemId) : undefined
@@ -485,6 +490,7 @@ export function operatingPowerBalance(parts: readonly BalancePart[], linkable: r
         part, kind: 'deduction', costItemId: c.id, description: c.description, cents: -c.amountCents,
         plant: linked ? linked.heatingPlantId ?? null : undefined, linkedDescription: linked?.description ?? null, situation,
         ...(linked && situation !== 'brokenLink' ? { linkedId: linked.id } : {}),
+        ...(situation === 'kept' && service ? { notReported: true as const } : {}),
       })
     }
   })

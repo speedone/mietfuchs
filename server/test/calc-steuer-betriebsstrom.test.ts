@@ -135,6 +135,22 @@ test('#270: Messdienst, Abzug ohne Verweis „nicht gemeldet, selbst getragen“
   }
 })
 
+test('#270, Durchsicht S2 und K3: der Rechenweg nennt die Lage des Abzugs ohne Verweis', () => {
+  const steps = (r: TaxReport) => (line(r)?.steps ?? []).map((x) => `${x.label}: ${x.value}`).join('\n')
+  const service = [anlage({ method: 'service' })]
+  // Neben einem Messdienst „nicht gemeldet“: nicht „ohne Messdienst“.
+  const selbst = steps(tax(haus([messdienst(), hausstrom(), abzug('ab', 20000, undefined, { operatingPowerReported: false })], service)))
+  assert.ok(selbst.includes('„Abzug ab“ 200,00 €, ohne Verweis auf eine Heizposition, nach Ihrer Angabe dem Messdienst nicht gemeldet'), selbst)
+  assert.ok(!selbst.includes('ohne Messdienst'), selbst)
+  // Ohne Messdienst bleibt der Satz, wie er war.
+  assert.ok(steps(tax(haus([gas(), hausstrom(), abzug('ab', 20000)]))).includes('ohne Verweis auf eine Heizposition und ohne Messdienst'))
+  // Gemeldet ohne Angabe (eine Zeile entsteht hier nur durch den Betriebsstrom daneben): „ohne Ihre Angabe“.
+  const ohne = steps(tax(haus([messdienst(), betrieb('bs', 10000), hausstrom(), abzug('ab', 20000)], service)))
+  assert.ok(ohne.includes('Abzug, dem Messdienst gemeldet: „Abzug ab“ 200,00 €, zählt hier nicht: Ohne Ihre Angabe gilt er als dem Messdienst gemeldet; dann steckt der Betrag in den Kosten des Messdienstes'), ohne)
+  const mit = steps(tax(haus([messdienst(), betrieb('bs', 10000), hausstrom(), abzug('ab', 20000, undefined, { operatingPowerReported: true })], service)))
+  assert.ok(mit.includes('zählt hier nicht: Nach Ihrer Angabe steckt der Betrag in den Kosten des Messdienstes'), mit)
+})
+
 test('#270: „gemeldet“ ohne Messdienst im Zeitraum zählt wie selbst getragen (6.000)', () => {
   const r = tax(haus([gas(), hausstrom(), abzug('ab', 20000, undefined, { operatingPowerReported: true })]))
   assert.equal(r.expenses.totalCents, 600000)

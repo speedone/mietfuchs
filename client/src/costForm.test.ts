@@ -786,7 +786,16 @@ test('Betriebsstrom (#270): Abzug ohne Verweis zeigt „gemeldet“ oder „selb
   const nein = itemToFormOf({ ...ohneVerweis, operatingPowerReported: false })
   const ja = itemToFormOf({ ...ohneVerweis, operatingPowerReported: true })
   expect([keine.operatingPowerReported, nein.operatingPowerReported, ja.operatingPowerReported]).toEqual([null, false, true])
-  expect([keine, nein, ja].map((f) => deductionChoiceOf(f, { service: true }))).toEqual(['service', 'kept', 'service'])
+  // Durchsicht S1: Ohne Angabe zeigt die Auswahl einen eigenen Eintrag, damit „gemeldet“ eine echte Wahl ist.
+  expect([keine, nein, ja].map((f) => deductionChoiceOf(f, { service: true }))).toEqual(['unanswered', 'kept', 'service'])
+  expect(deductionChoices([], { service: true, unanswered: true })).toEqual([
+    { value: '', label: 'Nein, kein Abzug des Betriebsstroms' },
+    { value: 'unanswered', label: 'Ohne Angabe (gilt als dem Messdienst gemeldet)' },
+    { value: 'service', label: 'Ja, der Betrag ist dem Messdienst als Betriebsstrom gemeldet' },
+    { value: 'kept', label: OPERATING_POWER_KEPT },
+  ])
+  expect(deductionChoices([], { service: false, unanswered: true }).map((o) => o.value)).toEqual(['', 'kept'])
+  expect(withDeductionChoice(ja, 'unanswered').operatingPowerReported).toBe(null)
   expect([keine, nein, ja].map((f) => deductionChoiceOf(f, { service: false }))).toEqual(['kept', 'kept', 'kept'])
   // Unverändert gespeichert bleibt die Angabe, wie sie war.
   expect(withOperatingPower({}, keine).operatingPowerReported).toBe(null)

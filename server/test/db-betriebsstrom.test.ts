@@ -295,6 +295,8 @@ test('Schätzhilfe beim Messdienst: nur der Abzug, ohne Verweis, beschrieben als
     assert.equal(b?.heatingItem, null)
     assert.deepEqual([b?.deduction.amountCents, b?.deduction.operatingPowerItemId], [-14784, undefined])
     assert.equal(b?.deduction.description, 'Abzug Betriebsstrom Heizung (geschätzt), an Messdienst gemeldet')
+    // #270, Durchsicht K1: Die Beschreibung sagt „gemeldet“, die Angabe am Abzug ebenso.
+    assert.equal(b?.deduction.operatingPowerReported, true)
     assert.match(b?.deduction.operatingPowerBasis ?? '', /147,84 €/)
   })
 })

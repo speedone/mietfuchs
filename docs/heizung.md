@@ -495,7 +495,9 @@ nicht durch die Abgrenzung; ihr Betrag ist Σ der verknüpften Positionen.
   wo ein Messdienst heizt. Die Regel steht einmal in `deductionReported` (shared/operatingPower.ts):
   Formular, Steuerübersicht und Hinweis fragen sie. Die Auswahl im Kostenformular bietet bei Messdienst
   beide Antworten (`OPERATING_POWER_REPORTED`, `OPERATING_POWER_KEPT`), ohne Messdienst nur die zweite;
-  ohne Messdienst gilt der Abzug immer als selbst getragen, gleich was dasteht. Wird der Abzug verknüpft
+  ohne Messdienst gilt der Abzug immer als selbst getragen, gleich was dasteht. Ohne Angabe zeigt die Auswahl bei
+  Messdienst „Ohne Angabe (gilt als dem Messdienst gemeldet)“, damit „gemeldet“ eine echte Wahl ist; die Schätzhilfe
+  legt den Abzug beim Messdienst mit der Angabe „gemeldet“ an. Wird der Abzug verknüpft
   oder ist er keiner mehr, fällt die Angabe beim Speichern weg (`mergeCostItem`, geradegerückt). „Nicht
   gemeldet“ ergibt `heating.operating-power-not-reported` (`hint`, färbt nicht): Der Betriebsstrom steht
   dann in keiner Abrechnung an die Mieter; zulässig (VIII ZR 45/11, Rn. 3), der Text nennt den Weg über
