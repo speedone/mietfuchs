@@ -452,10 +452,11 @@ Hinweise: `allocation.not-agreed` (nur Info), `allocation.other-unanswered` (fä
   je Position); vereinbart, direkt, Verbrauch und Personen brauchen das nicht (Begründung im Entwurf). Für die
   Kosten zählt ein Mietverhältnis nur in seinem ersten vermieteten Abschnitt (`costTenancies`; Abrechnung und
   Vorauszahlungen am ganzen, `partTenancies`), sonst `usage.tenancy-conflict` (`error`). Der Rest des Hauptzählers
-  wird bei ganzjähriger Eigennutzung Eigenanteil, bei genau einer teils selbstgenutzten Einheit nach Tagen
-  (Auslegung). „Selbst bewohnt“ (§ 2 HeizkostenV, § 5d) nur an jedem Tag (`dwellerUnits`). In der eigenen
-  Heizkostenabrechnung teilt `usersOf` an den Grenzen der Staffel (§ 9b). Die Steuer rechnet tagesgenau über
-  `taxUsage` (Fläche × Tage der Eigennutzung, Kopf der Anlage V, Ausgleich beim Betriebsstrom). Hinweis
+  ist je Tag Eigenanteil, an dem alle Einheiten ohne Zähler selbstgenutzt sind (`daysAllSelf`, Auslegung). „Selbst bewohnt“ (§ 2 HeizkostenV, § 5d) nur an jedem Tag (`dwellerUnits`). In der eigenen
+  Heizkostenabrechnung teilt `usersOf` an den Grenzen der Staffel (§ 9b). Bei „nur Heizung“ nach Gradtagen werden
+  Eigenanteil und außerhalb nach demselben Maß gewichtet (`itemSelfShare`). Die Steuer rechnet tagesgenau über
+  `taxUsage`, und zwar über den **ganzen Zeitraum des Teils**, nicht nur seinen Schnitt mit dem Steuerjahr (Fläche ×
+  Tage der Eigennutzung, Kopf der Anlage V, Ausgleich beim Betriebsstrom, verbilligte Vermietung in cheapRent.ts). Hinweis
   `usage.changed` (`hint`) nennt die Abschnitte und dass gleichmäßiger Anfall eine Auslegung ist.
 - **Verbrauchsschlüssel**: Die Basis bilden **alle** Wohnungszähler, unabhängig vom Kennzeichen.
   **Fehlt einer bewohnten Einheit der Verteilbasis ein Zähler, wird der Hauptzähler zur Basis**

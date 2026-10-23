@@ -40,12 +40,13 @@
 // immer genau den Betrag ergeben (Invariante in invariant-steuer-verbilligt.test.ts).
 //
 // Rechtszahlen stehen hier nicht (law-literals.test.ts), sie kommen aus shared/law/estg.ts.
-import type { CalcStep, CheapRentReport, CheapRentTenancy, CheapRentUnit, CheapRentVerdict, CostKey, LocalRentEntry, RentLedgerRow, Statement } from '../../shared/types.ts'
+import type { CalcStep, CheapRentReport, CheapRentTenancy, CheapRentUnit, CheapRentVerdict, CostKey, LocalRentEntry, RentLedgerRow, Statement, Unit } from '../../shared/types.ts'
 import { estgCheapRent } from '../../shared/law/estg.ts'
 import { coversDate, createLawLog, law, yearStart } from '../../shared/law/register.ts'
 import { monthShare, overlapDays, rateInMonth } from '../../shared/monthRate.ts'
+import { selfUsedThroughout, usageDays } from '../../shared/unitUsage.ts'
 
-type CheapUnit = { id: string; name: string; areaM2: number; participates: boolean; selfUsed?: boolean; localRents?: LocalRentEntry[] }
+type CheapUnit = { id: string; name: string; areaM2: number; participates: boolean; selfUsed?: boolean; localRents?: LocalRentEntry[]; usageChanges?: Unit['usageChanges'] }
 type CheapTenancy = { id: string; unitId: string; tenantName: string; start: string; end: string | null; heatingModel?: string; directCharges?: readonly { from: string; monthlyCents: number }[] }
 type CheapItem = { id: string; description: string; key: CostKey; directUnitId?: string | null; participantUnitIds?: string[] | null; amountCents: number }
 
@@ -76,18 +77,18 @@ const roundHalfAway = (x: number): number => (Math.sign(x) * Math.round(Math.abs
 // Die Quote in Prozent auf zwei Stellen **abgeschnitten** (Durchsicht S3): 49,999 % ist unter 50 % und soll nicht als
 // „50 %“ dastehen. Die kleine Zugabe fängt Gleitkommareste wie 0,66 × 10.000 = 6.600,000…1 ab, nach unten wie oben.
 const floor2 = (q: number): number => Math.floor(q * 10000 + 1e-9) / 100
-const isSelf = (u: CheapUnit): boolean => !!u.selfUsed && !u.participates
 
 export function cheapRentOf(input: CheapRentInput): { report: CheapRentReport; cuts: Map<string, CheapRentCut> } | null {
   const { year } = input
   // Jede Wohnung, die nicht selbst genutzt wird, auch eine vermietete außerhalb der Abrechnungseinheit (Durchsicht K3):
   // Ob sie vermietet ist, sagen ihre Mietverhältnisse im Jahr, nicht das Kennzeichen der Abrechnung.
-  const checked = input.units.filter((u) => !isSelf(u) && (u.localRents ?? []).length > 0)
+  // Mit Nutzungswechsel (#259): ausgenommen ist nur eine Wohnung, die an jedem Tag des Jahres selbstgenutzt ist.
+  const from = yearStart(year)
+  const to = `${year}-12-31`
+  const checked = input.units.filter((u) => !selfUsedThroughout(u, from, to) && (u.localRents ?? []).length > 0)
   if (checked.length === 0) return null
   const cuts = new Map<string, CheapRentCut>()
   if (!coversDate(estgCheapRent, yearStart(year))) return { report: { law: null, units: [] }, cuts }
-  const from = yearStart(year)
-  const to = `${year}-12-31`
   const version = estgCheapRent.versions.find((v) => (v.validFrom ?? '') <= from && (v.validTo ?? '9999') >= from)
   const limits = law(estgCheapRent, { period: { from, to } }, createLawLog())
   const yearDays = overlapDays(from, to, from, to)
@@ -117,7 +118,10 @@ export function cheapRentOf(input: CheapRentInput): { report: CheapRentReport; c
       const chargesSource = statement ? 'settlement' as const : 'soll' as const
       const chargesCents = (statement ? (input.chargesOf ? input.chargesOf(statement) : statement.totalShareCents) : row.prepaymentYearCents + (row.heatingPrepaymentYearCents ?? 0)) + row.flatRateYearCents
       const entgeltCents = row.baseRentYearCents + chargesCents + directChargesCents
-      const days = overlapDays(t.start, t.end, from, to)
+      // Tage in einer Zeit der Eigennutzung zählen nicht (#259): Dort ist die Wohnung privat und nicht vermietet.
+      const tFrom = t.start > from ? t.start : from
+      const tTo = t.end !== null && t.end < to ? t.end : to
+      const days = overlapDays(t.start, t.end, from, to) - (tFrom <= tTo ? usageDays(u, tFrom, tTo).eigen : 0)
       const complete = missingMonths.length === 0 && comparisonCents > 0
       const quote = complete ? entgeltCents / comparisonCents : null
       // In ganzen Cent verglichen, nicht über die Gleitkommaquote: 594 € von 900 € sind genau die Grenze.

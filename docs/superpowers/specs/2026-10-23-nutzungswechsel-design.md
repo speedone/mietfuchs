@@ -49,6 +49,8 @@ außerhalb). Eine Einheit gehört zur Verteilbasis, wenn sie an einem Tag vermie
   einen Anteil, den es in der Zeit gar nicht gab (Probe P1: 33.515 statt 25.205 Cent). **Dass die
   Kosten gleichmäßig über den Zeitraum anfallen, ist eine Auslegung** und steht so im Hinweis
   `usage.changed`, im Lexikon und in der Anleitung; die Rechnung kennt keinen Anfall je Tag.
+- **Dasselbe Maß wie der Mieter** (Nachprüfung M-b): Bei „nur Heizung“ nach Gradtagen werden auch Eigenanteil und
+  die Zeit außerhalb nach Gradtagen gewichtet, sonst bliebe die Differenz als Schein-Leerstand beim Vermieter.
 - **Ohne Abschnitte**, weil dort keine Basis gemittelt wird:
   - Ein Wechsel nur zwischen vermietet und selbstgenutzt ändert die Basis nicht. Eigenanteil und
     Mieteranteil sind dann Fläche × Tage, und die Summe der Teile ist der Anteil der Einheit.
@@ -66,11 +68,11 @@ außerhalb). Eine Einheit gehört zur Verteilbasis, wenn sie an einem Tag vermie
   `VACANCY_PERSONS` je Tag (#177). Eine Zeit der Eigennutzung ist kein Leerstand, eine Zeit außerhalb
   auch nicht.
 - **Hauptzähler (#116)**: Der Rest wird Eigenanteil, wenn alle Einheiten ohne Zähler den ganzen
-  Zeitraum selbstgenutzt sind. Ist es genau eine Einheit, die nur einen Teil des Zeitraums selbstgenutzt
-  ist (Durchsicht S2), gilt der Rest nach Tagen der Eigennutzung als Eigenanteil, der übrige Teil bleibt
-  als `mainMeterRest` beim Vermieter; das nimmt gleichmäßigen Verbrauch an und ist eine Auslegung, die
-  Warnung `meter.unit-without-meter` sagt es. Bei mehreren solchen Einheiten lässt sich der Rest nicht
-  zuordnen und bleibt beim Vermieter.
+  Zeitraum selbstgenutzt sind. Sonst gilt er **je Tag** (Durchsicht S2, Nachprüfung S-b): Sind an einem Tag
+  alle Einheiten ohne Zähler selbstgenutzt, ist der Anteil dieses Tages Eigenanteil, sonst bleibt er als
+  `mainMeterRest` beim Vermieter; eine Einheit außerhalb ist dabei nie selbstgenutzt (ihr Verbrauch gehört
+  nicht in den Eigenanteil, #116). Das nimmt gleichmäßigen Verbrauch an und ist eine Auslegung, die Warnung
+  `meter.unit-without-meter` sagt es.
 - **Ein Mietverhältnis zählt nur in der vermieteten Zeit.** Das ist die Verallgemeinerung der
   bisherigen Regel (ein Mietverhältnis in einer selbstgenutzten Wohnung bekam nie einen Kostenanteil).
   Für die Kosten wird es auf seinen ersten vermieteten Abschnitt beschnitten (`costTenancies`); die
@@ -94,14 +96,20 @@ außerhalb). Eine Einheit gehört zur Verteilbasis, wenn sie an einem Tag vermie
 
 ## 3. Steuerübersicht
 
-- **Tagesgenau** (Durchsicht M1, damit ist der Kern von „Teil 2“ hier erledigt): `taxUsage` zählt je
-  Teil im Steuerjahr die Tage je Nutzung. Selbstgenutzt heißt Anteil der Tage der Eigennutzung
+- **Tagesgenau** (Durchsicht M1, damit ist der Kern von „Teil 2“ hier erledigt): `taxUsage` zählt die
+  Tage je Nutzung **über den ganzen Zeitraum des Teils** (Nachprüfung M-a), nicht nur über seinen Schnitt mit
+  dem Steuerjahr: Eine spät bezahlte Position hätte sonst einen leeren Schnitt, und bei Mai bis April hinge
+  der private Teil vom Jahr der Zahlung ab. So sagt die Steuer dasselbe wie der Eigenanteil der Abrechnung
+  desselben Zeitraums. Selbstgenutzt heißt Anteil der Tage der Eigennutzung
   (ohne Wechsel genau 1 oder 0), außerhalb heißt an einem Tag außerhalb.
   - Umlagefähige Positionen übernehmen den Eigenanteil der Abrechnung (#163), der tagesgenau ist.
   - Nach Fläche (nicht umlagefähig, nicht verteilt, Einheiten außerhalb): selbstgenutzte Fläche ×
     Tage der Eigennutzung / Tage des Teils, über die Fläche des Gebäudes (BFH IX R 26/06).
   - Direktzuordnung nicht umlagefähiger Kosten: Betrag × Tage der Eigennutzung / Tage.
-  - Ausgleich beim Betriebsstrom ohne zuordenbare Anlage (K1): dieselbe Regel über das Kalenderjahr.
+  - Ausgleich beim Betriebsstrom ohne zuordenbare Anlage (K1): dieselbe Regel über den Zeitraum des Teils,
+    aus dem der Abzug stammt.
+  - Verbilligte Vermietung (#257, cheapRent.ts): geprüft wird jede Wohnung, die nicht an jedem Tag des Jahres
+    selbstgenutzt ist; ein Mietverhältnis zählt nur seine Tage außerhalb der Eigennutzung.
   - Kopf der Anlage V: die selbstgenutzte Fläche nach Tagen, auf zwei Stellen gerundet. Die Anlage V
     fragt die eigengenutzte Fläche, ohne einen Wechsel im Jahr zu regeln; das ist eine Auslegung.
 - **Leerstand vor einer Vermietung und nach einer Selbstnutzung**: Aufwendungen für eine zunächst
