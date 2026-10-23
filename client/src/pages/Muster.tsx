@@ -10,13 +10,15 @@ import Drawer from '../components/Drawer'
 import DraftActions from '../components/DraftActions'
 import EmptyState from '../components/EmptyState'
 import Switcher from '../components/Switcher'
+import { OtherPropertiesView } from '../components/OtherPropertiesCard'
+import { PropertySwitcher } from '../property'
 import { ErrorSummary, useFormError } from '../components/ErrorSummary'
 import { NoticeBox, TextNotice } from '../components/Notice'
 import { useConfirm, useToast } from '../components/feedback'
 import { useDraft } from '../useDraft'
 import ContractAgreementFields, { WhyQuestion } from '../components/ContractAgreementFields'
 import { EMPTY_ITEM_FORM, type ItemForm } from '../costForm'
-import type { Tenancy, Unit } from '../types'
+import type { Property, Tenancy, Unit } from '../types'
 
 // Musterseite (#346 Schritt 12, Spezifikation Abschnitt 9): alle Bausteine der Oberfläche auf einer Seite, mit festen
 // Werten und ohne Anfrage an den Server. Aufgerufen mit `?muster`, nicht in der Navigation. `npm run screenshots`
@@ -29,6 +31,9 @@ const CONTRACT_UNITS: Unit[] = [
   { id: 'og', propertyId: 'muster', name: 'OG rechts', areaM2: 70, participates: true },
 ]
 const contractTenancy = (id: string, unitId: string, tenantName: string): Tenancy => ({ id, unitId, tenantName, persons: 1, personHistory: [], start: '2020-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [] })
+// Feste Objekte für die Karte „Weitere Objekte“ und den Umschalter mit „+“
+const muster = (id: string, name: string, kind: Property['kind'], address: string): Property => ({ id, name, kind, address, landlordName: null, iban: null, paymentDeadlineDays: null })
+const PROPERTIES = [muster('lw', 'Lindenweg 12', 'mfh', 'Lindenweg 12, 12345 Musterstadt'), muster('ka', 'Kastanienallee 5, WE 7', 'etw', 'Kastanienallee 5, 12345 Musterstadt')]
 const CONTRACT_TENANCIES = [contractTenancy('t1', 'eg', 'Anna Becker'), contractTenancy('t2', 'og', 'Jonas Hartmann')]
 const CONTRACT_PERIOD = { from: '2025-01-01', to: '2025-12-31' }
 // Mieterwechsel in OG rechts: „Steht nicht im Mietvertrag von:“ mit je einem Häkchen
@@ -43,6 +48,7 @@ export default function Muster() {
   const [month, setMonth] = useState('2025-03')
   const [year, setYear] = useState('2031')
   const [unit, setUnit] = useState('eg')
+  const [propertyId, setPropertyId] = useState('lw')
   const draft = useDraft('og')
   const [why, setWhy] = useState<ItemForm>({ ...EMPTY_ITEM_FORM, category: 'Aufzug', participants: ['og'], pendingWhy: ['eg'], notAgreed: ['t2'] })
   const [change, setChange] = useState<ItemForm>({ ...EMPTY_ITEM_FORM, category: 'Aufzug', notAgreed: ['t3'] })
@@ -148,8 +154,16 @@ export default function Muster() {
         </Table>
       </Card>
 
+      {/* Bei einem Objekt mit Erklärung, ab zwei mit der Liste der übrigen */}
+      <OtherPropertiesView current="Lindenweg 12" others={[]} onCreate={() => toast('Neues Objekt.')} onSwitch={() => {}} />
+      <OtherPropertiesView current="Lindenweg 12" others={PROPERTIES.slice(1)} onCreate={() => toast('Neues Objekt.')} onSwitch={(p) => toast(`Gewechselt zu „${p.name}“.`)} />
+
       <Card title="Umschalter und Leerzustand">
         <Switcher label="Wohnung" className="switcher-field width-s" value={unit} options={UNITS} onChange={setUnit} />
+        {/* Der Umschalter des Objekts mit „+“, so breit wie in der Seitenleiste */}
+        <div className="width-m">
+          <PropertySwitcher properties={PROPERTIES} value={propertyId} onChange={setPropertyId} onCreate={() => toast('Neues Objekt.')} />
+        </div>
         <EmptyState action={{ label: 'Wohnung anlegen', onClick: () => toast('Anlegen.') }}>Noch keine Wohnung erfasst.</EmptyState>
       </Card>
     </>

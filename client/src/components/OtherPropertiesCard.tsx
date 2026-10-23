@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import type { Property } from '../types'
 import { PROPERTY_KIND_LABELS } from '../types'
 import { useProperty, useSwitchProperty } from '../property'
 import { propertyName } from '../propertyView'
@@ -17,15 +18,32 @@ export default function OtherPropertiesCard() {
   const openShared = useOpenNewProperty()
   // Ohne NewPropertyProvider (die Seite allein im Test) ein eigenes Fenster.
   const [ownOpen, setOwnOpen] = useState(false)
-  const others = properties.filter((p) => p.id !== property?.id)
-
   return (
-    <Card title="Weitere Objekte" aside={<button className="btn secondary" onClick={() => (openShared ?? (() => setOwnOpen(true)))()}>+ Objekt anlegen</button>}>
+    <>
+      <OtherPropertiesView
+        current={property ? propertyName(property) : 'Ihr Objekt'}
+        others={properties.filter((p) => p.id !== property?.id)}
+        onCreate={openShared ?? (() => setOwnOpen(true))}
+        onSwitch={(p) => void switchProperty(p.id, propertyName(p))}
+      />
+      {!openShared && <NewPropertyDrawer open={ownOpen} onClose={() => setOwnOpen(false)} />}
+    </>
+  )
+}
+
+// Die Karte ohne Daten und Fenster, damit die Musterseite sie mit festen Werten zeigt.
+export function OtherPropertiesView({ current, others, onCreate, onSwitch }: {
+  current: string
+  others: Property[]
+  onCreate: () => void
+  onSwitch: (p: Property) => void
+}) {
+  return (
+    <Card title="Weitere Objekte" aside={<button className="btn secondary" onClick={onCreate}>+ Objekt anlegen</button>}>
       {others.length === 0 && (
         <p className="muted m-0">
           Vermieten Sie noch ein Haus oder eine Eigentumswohnung? Legen Sie es als eigenes Objekt an, mit eigenen
-          Wohnungen, Zählern, Kosten und Abrechnungen. „{property ? propertyName(property) : 'Ihr Objekt'}“ bleibt
-          dabei unverändert.
+          Wohnungen, Zählern, Kosten und Abrechnungen. „{current}“ bleibt dabei unverändert.
         </p>
       )}
       {others.length > 0 && (
@@ -46,7 +64,7 @@ export default function OtherPropertiesCard() {
                 <td data-label="Adresse">{p.address.trim() || '—'}</td>
                 <td className="actions no-print">
                   {/* Der Name beginnt mit dem sichtbaren Wort (WCAG 2.5.3). */}
-                  <button className="btn secondary small" onClick={() => void switchProperty(p.id, propertyName(p))}>
+                  <button className="btn secondary small" onClick={() => onSwitch(p)}>
                     Wechseln{' '}<span className="sr-only">zu „{propertyName(p)}“</span>
                   </button>
                 </td>
@@ -55,7 +73,6 @@ export default function OtherPropertiesCard() {
           </tbody>
         </Table>
       )}
-      {!openShared && <NewPropertyDrawer open={ownOpen} onClose={() => setOwnOpen(false)} />}
     </Card>
   )
 }
