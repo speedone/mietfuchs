@@ -60,7 +60,7 @@ export function restoreUploadPath(dataDir: string, name: string | undefined): st
 // (`restore-upload-<id>.zip`) und die Zwischenablage (`restore-<id>/`). Zusammen bis zur doppelten
 // Größe eines Backups, und ohne Aufräumen blieben sie für immer liegen. Beim Start läuft keine
 // Wiederherstellung, beides lässt sich dort gefahrlos entfernen. Ebenso der Schnappschuss eines abgebrochenen Backups
-// (`mietfuchs.sqlite.<id>.backup`, GET /api/backup; Integrationsdurchsicht 0.13.0): Beim Start läuft auch kein Backup.
+// (`mietfuchs.sqlite.<id>.backup` samt `-journal`, `-wal`, `-shm`, GET /api/backup; Integrationsdurchsicht 0.13.0): Beim Start läuft auch kein Backup.
 //
 // **Nicht** dazu gehört `mietfuchs.sqlite.restore-<id>`: Scheitert der Austausch der Datenbank,
 // kann sie die einzige Kopie der wiederhergestellten Daten sein (siehe runRestore).
@@ -76,7 +76,8 @@ export function cleanRestoreLeftovers(dataDir: string): void {
     // Nutzer „restore-alt“ genannt hat, ist seiner und bleibt.
     const upload = e.isFile() && RESTORE_UPLOAD_NAME.test(e.name)
     const staging = e.isDirectory() && /^restore-[0-9a-f]{16}$/.test(e.name)
-    const snapshot = e.isFile() && /^mietfuchs\.sqlite\.[0-9a-f]{16}\.backup$/.test(e.name)
+    // Samt Beidateien, falls SQLite beim Schreiben welche anlegt (Durchsicht von PR #426, K-4).
+    const snapshot = e.isFile() && /^mietfuchs\.sqlite\.[0-9a-f]{16}\.backup(?:-journal|-wal|-shm)?$/.test(e.name)
     if (!upload && !staging && !snapshot) continue
     try {
       fs.rmSync(path.join(dataDir, e.name), { recursive: true, force: true })

@@ -64,9 +64,11 @@ test('Aufräumen beim Start: nur hochgeladene Archive und Zwischenablagen eines 
     fs.writeFileSync(path.join(dir, 'restore-0123456789abcdef', 'beleg-0'), 'x')
     // Integrationsdurchsicht 0.13.0 (Daten), K2: der Schnappschuss eines abgebrochenen Backups.
     fs.writeFileSync(path.join(dir, 'mietfuchs.sqlite.0123456789abcdef.backup'), 'x')
+    // Durchsicht von PR #426, K-4: samt Beidateien, falls SQLite beim Schreiben welche anlegt.
+    for (const side of ['-journal', '-wal', '-shm']) fs.writeFileSync(path.join(dir, `mietfuchs.sqlite.0123456789abcdef.backup${side}`), 'x')
     // Was bleibt: die Datenbank aus einem gescheiterten Austausch (kann die einzige Kopie sein),
     // was nur ähnlich heißt, auch ein Ordner, den der Nutzer selbst angelegt hat, und alles andere.
-    const keep = ['mietfuchs.sqlite.restore-0123456789abcdef', 'mietfuchs.sqlite.alt.backup', 'mietfuchs.sqlite.0123456789abcdef.backup.txt', 'restore-notiz.txt', 'restore-alt', 'restore-upload-alt.zip', 'mietfuchs.sqlite', 'db.json.vor-restore', 'uploads']
+    const keep = ['mietfuchs.sqlite.restore-0123456789abcdef', 'mietfuchs.sqlite.alt.backup', 'mietfuchs.sqlite.0123456789abcdef.backup.txt', 'mietfuchs.sqlite.0123456789abcdef.backup-alt', 'restore-notiz.txt', 'restore-alt', 'restore-upload-alt.zip', 'mietfuchs.sqlite', 'db.json.vor-restore', 'uploads']
     for (const name of keep) {
       if (name === 'uploads' || name === 'restore-alt') fs.mkdirSync(path.join(dir, name))
       else fs.writeFileSync(path.join(dir, name), 'x')

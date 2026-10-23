@@ -72,7 +72,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Sie einziehen oder Ihre Wohnung zum ersten Mal vermieten. Die Abrechnung rechnet jeden Abschnitt nach
   seinen Tagen: Eigenanteil, Leerstand, Verteilbasis, Verbrauch und in der eigenen Heizkostenabrechnung
   der Nutzerwechsel nach § 9b HeizkostenV; ein Wechsel nur zwischen Leerstand, Eigennutzung und „nicht
-  beteiligt“ braucht dort keine Zwischenablesung. Ein Mietverhältnis in einer Zeit, in der die Wohnung nicht
+  beteiligt“ braucht dort keine Zwischenablesung; ist dort trotzdem weit daneben abgelesen, teilt Mietfuchs
+  diesen Verbrauch zwischen Ihren Zeiten nach § 9b Abs. 3, ohne Rückfrage. Ein Mietverhältnis in einer Zeit, in der die Wohnung nicht
   vermietet ist, meldet die Abrechnung; liegt es ganz in einer solchen Zeit, steht es unter „Ohne
   Abrechnung“, mit den Vorauszahlungen, die keine Abrechnung anrechnet. Liegt eine Einheit einen Teil des Jahres außerhalb der
   Abrechnungseinheit, verteilt Mietfuchs Fläche, Einheiten und Gemeinschaft je Abschnitt. Die
@@ -105,7 +106,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   erhalten: Eine vorhandene `db.json.vor-restore` wird mit Datum beiseitegelegt statt überschrieben, wie
   schon die Sicherung der Datenbank.
 - Wird das Herunterladen eines Backups abgebrochen, räumt Mietfuchs den liegengebliebenen Schnappschuss
-  der Datenbank (`mietfuchs.sqlite.<Kennung>.backup`) beim nächsten Start aus dem Datenordner.
+  der Datenbank (`mietfuchs.sqlite.<Kennung>.backup`, samt Beidateien) beim nächsten Start aus dem Datenordner.
 
 ## [0.12.0] – 2026-10-22
 

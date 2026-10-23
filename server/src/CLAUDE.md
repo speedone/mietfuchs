@@ -453,9 +453,13 @@ Hinweise: `allocation.not-agreed` (nur Info), `allocation.other-unanswered` (fä
   Kosten zählt ein Mietverhältnis nur in seinem ersten vermieteten Abschnitt (`costTenancies`; Abrechnung und
   Vorauszahlungen am ganzen, `partTenancies`), sonst `usage.tenancy-conflict` (`error`). Liegt ein Mietverhältnis ganz in
   einer Zeit ohne Vermietung, hat es keine Abrechnung; es steht dann in `notSettled` mit `usageConflict` (seine
-  Vorauszahlungen, die keine Abrechnung anrechnet), und der Hinweis nennt den Betrag. Der Vorschlag nach § 560 rechnet
-  auf die Tage hoch, an denen es Kosten trägt (`costDays`), nicht auf seine Tage, sonst halbierte er sich bei einem
-  Wechsel zur Jahresmitte. Der Rest des Hauptzählers
+  Vorauszahlungen, die keine Abrechnung anrechnet), und der Hinweis nennt den Betrag, auch in der
+  Heizkostenabrechnung nach Weg d (dort mit deren Anrechnung, `prepaymentOf`). Eine CO₂-Erstattung lässt sich dort nicht
+  verrechnen (eigener Satz in db/co2Refunds.ts). Der Vorschlag nach § 560 rechnet
+  bei einem Widerspruch je Zeile hoch: die Zeilen der eigenen Heizkostenabrechnung (Schlüssel `heatingSystem` samt
+  Abzugszeilen ihres Topfs, `wholeTime`) auf die Tage des Mietverhältnisses, denn dort bleibt es Nutzer für seine ganze
+  Zeit, die übrigen auf die Tage mit Kosten (`costDays`); sonst halbierte bzw. verdoppelte er sich bei einem Wechsel zur
+  Jahresmitte. Ohne Widerspruch rechnet er unverändert über die Summe. Der Rest des Hauptzählers
   ist je Tag Eigenanteil, an dem alle Einheiten ohne Zähler selbstgenutzt sind (`daysAllSelf`, Auslegung). „Selbst bewohnt“ (§ 2 HeizkostenV, § 5d) nur an jedem Tag (`dwellerUnits`). In der eigenen
   Heizkostenabrechnung teilt `usersOf` an den Grenzen der Staffel (§ 9b). Bei „nur Heizung“ nach Gradtagen werden
   Eigenanteil und außerhalb nach demselben Maß gewichtet (`itemSelfShare`). Die Steuer rechnet tagesgenau über

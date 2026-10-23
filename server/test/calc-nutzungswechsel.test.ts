@@ -14,7 +14,7 @@ import { snapshotOf, type SnapshotCostItem, type SnapshotSource, type SnapshotTe
 import { assertLandlordParts } from '../testing/landlordParts.ts'
 import { selfMeter, selfReading, selfSnapshot, selfTenancy, selfUnit } from '../testing/selfHeating.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
-import type { ChangeSplit, Unit } from '../../shared/types.ts'
+import type { ChangeSplit, CostItem, Unit } from '../../shared/types.ts'
 import { usageAt, usageSpans, unitAsOf } from '../../shared/unitUsage.ts'
 import type { CostKey, UnitUsage } from '../../shared/types.ts'
 
@@ -390,6 +390,27 @@ test('K2: der Vorschlag nach § 560 rechnet bei einem Widerspruch auf die Tage, 
   }
 })
 
+// Durchsicht von PR #426, S-1: In der eigenen Heizkostenabrechnung bleibt der Mieter im Widerspruch Nutzer für seine
+// ganze Zeit (S3 von #259), seine Heizzeilen decken also alle seine Tage. Hochgerechnet wird je Zeile: Heizzeilen nach
+// Heizkostenverordnung auf die Tage des Mietverhältnisses, nur die übrigen Kostenzeilen auf die Tage mit Kosten.
+test('S-1: der Vorschlag nach § 560 rechnet die Heizzeilen der eigenen Heizkostenabrechnung auf die ganze Zeit des Mieters', () => {
+  const units = [selfUnit('a', 60), selfUnit('b', 80), selfUnit('c', 60, { usageChanges: [{ from: '2025-07-01', usage: 'eigen' }] })]
+  const tenancies = [selfTenancy('A', 'a', '2020-01-01', null), selfTenancy('B', 'b', '2020-01-01', null), selfTenancy('C', 'c', '2020-01-01', null)]
+  const s = computeSettlement(selfSnapshot({ units, tenancies }))
+  const st = s.statements.find((x) => x.tenancyId === 'C') ?? assert.fail('C fehlt')
+  assert.ok(codes(s).includes('usage.tenancy-conflict'))
+  assert.ok(st.rows.length > 0 && st.rows.every((r) => r.costItemId.startsWith('co2:') || r.costItemId.startsWith('gmodg:') || ['gas', 'strom', 'wartung', 'imm', 'wz', 'wwz'].includes(r.costItemId)), 'nur Heizzeilen erwartet')
+  // Nur Heizzeilen über die ganze Zeit: ein Zwölftel davon, auf volle Euro.
+  assert.equal(st.suggestedMonthlyCents, Math.round(st.totalShareCents / 12 / 100) * 100)
+  // Mit einer kalten Position nach Fläche (nur bis 30.06. getragen) rechnet nur sie auf die 181 Tage hoch.
+  const cold: CostItem = { id: 'muell', propertyId: 'objekt-1', period: periodKey('2025-01'), category: 'Müllabfuhr', description: 'Müll', amountCents: 200000, key: 'area' }
+  const mit = computeSettlement(selfSnapshot({ units, tenancies, costItems: [...selfSnapshot({ units, tenancies }).costItems.map((c): CostItem => ({ ...c, propertyId: 'objekt-1' })), cold] }))
+  const c2 = mit.statements.find((x) => x.tenancyId === 'C') ?? assert.fail('C fehlt')
+  const coldShare = c2.rows.filter((r) => r.costItemId === 'muell').reduce((a, r) => a + r.shareCents, 0)
+  const heat = c2.rows.filter((r) => r.costItemId !== 'muell').reduce((a, r) => a + r.shareCents, 0)
+  assert.equal(c2.suggestedMonthlyCents, Math.round((heat + coldShare * 365 / 181) / 12 / 100) * 100)
+})
+
 // Integrationsdurchsicht 0.13.0 (#417 × #259): Wohnung A, Mieter A1 bis 31.05., A2 ab 01.09.; dazwischen eine Zeit des
 // Vermieters. Abgelesen wird zum Aus- und Einzug, nicht zwischen zwei Rollen des Vermieters.
 const gapRun = (split: ChangeSplit, a: Unit) => computeSettlement(selfSnapshot({
@@ -416,6 +437,38 @@ test('S2: ein Wechsel nur zwischen Rollen des Vermieters braucht keine Zwischena
       for (const t of ['A1', 'A2', 'B']) assert.equal(shareOf(s, t), shareOf(plain, t), `${split} ${t}`)
     }
   }
+})
+
+// Durchsicht von PR #426, S-2: An einer Grenze nur zwischen Rollen des Vermieters wird eine ferne Ablesung nicht still
+// verwendet, sondern automatisch nach § 9b Abs. 3 geteilt, als fehlte sie (Festlegung: kein Mieter ist betroffen, also
+// keine Frage und kein Befund). A1 bis 31.01., Februar Leerstand, März bis Oktober Eigennutzung, A2 ab 01.11.; die
+// Grenze 28.02. ist erst am 05.04. abgelesen.
+test('S-2: eine ferne Ablesung an einer Grenze nur des Vermieters teilt nach § 9b Abs. 3, ohne Frage', () => {
+  const run = (changes: Unit['usageChanges'], far: boolean) => computeSettlement(selfSnapshot({
+    plant: { changeSplit: 'degreeDays', hotWater: 'none' },
+    units: [selfUnit('a', 70, { usageChanges: changes }), selfUnit('b', 70)],
+    tenancies: [selfTenancy('A1', 'a', '2020-01-01', '2025-01-31'), selfTenancy('A2', 'a', '2025-11-01', null), selfTenancy('B', 'b', '2020-01-01', null)],
+    meters: [selfMeter('wz-a', 'a', 'Wärme A', 'waerme'), selfMeter('wz-b', 'b', 'Wärme B', 'waerme')],
+    readings: [
+      selfReading('wz-a', '2024-12-31', 0), selfReading('wz-a', '2025-01-31', 2000), ...(far ? [selfReading('wz-a', '2025-04-05', 4500)] : []),
+      selfReading('wz-a', '2025-10-31', 7000), selfReading('wz-a', '2025-12-31', 9000), selfReading('wz-b', '2024-12-31', 0), selfReading('wz-b', '2025-12-31', 10000),
+    ],
+    deliveries: [],
+    costItems: [{ id: 'k', propertyId: 'objekt-1', period: periodKey('2025-01'), category: HEATING_CATEGORY, description: 'Heizkosten', amountCents: 400000, key: 'heatingSystem', heatingPlantId: 'hp', heatingPart: 'operating', heatingTarget: 'heating' }],
+    row: { waterConsumptionPct: null, dhwMethod: null },
+  }))
+  const changes: Unit['usageChanges'] = [{ from: '2025-03-01', usage: 'eigen' }, { from: '2025-11-01', usage: 'vermietet' }]
+  const s = run(changes, true)
+  assert.ok(!codes(s).some((c) => c.includes('interim')), codes(s).join(', '))
+  assert.ok(s.statements.every((st) => st.rows.length > 0), 'die Heizkosten werden verteilt')
+  // Wie ohne die ferne Ablesung: Leerstand und Eigennutzung teilen den Verbrauch vom 31.01. bis 31.10. nach Gradtagen.
+  const ohne = run(changes, false)
+  for (const t of ['A1', 'A2', 'B']) assert.equal(shareOf(s, t), shareOf(ohne, t), t)
+  assert.deepEqual(parts(s), parts(ohne))
+  // Die Mieter tragen dasselbe wie ohne diese Grenze (Februar schon selbstgenutzt): Ihre Verbräuche begrenzen die
+  // Ablesungen zum 31.01. und 31.10., die Grenze dazwischen betrifft nur die Zeilen des Vermieters.
+  const ohneGrenze = run([{ from: '2025-02-01', usage: 'eigen' }, { from: '2025-11-01', usage: 'vermietet' }], true)
+  for (const t of ['A1', 'A2', 'B']) assert.equal(shareOf(s, t), shareOf(ohneGrenze, t), t)
 })
 
 test('K1: eine Zeit außerhalb der Abrechnungseinheit wird beim Vergleich nach § 9b Abs. 2 wie Leerstand und Eigennutzung genannt', () => {

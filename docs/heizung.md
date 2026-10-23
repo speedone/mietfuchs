@@ -245,8 +245,11 @@ Gewichten durch `distributeCents`. Tests bauen Beispiel A mit `selfSnapshot()`
   auf den gedruckten Zeilen); fehlende Zwischenablesungen beantwortet der Vermieter in
   `interim_reading_gaps` („Ablesung verwenden“ / „Nach § 9b Abs. 3“, `usableAt`). Ein Wechsel nur zwischen Rollen des
   Vermieters (Leerstand, Eigennutzung, außerhalb, #259) ist keine Grenze, an der abgelesen werden muss (`tenantChange`
-  in heating.ts): kein Befund, keine Frage, kein Eintrag im Ausweis; gerechnet wird dort wie über eine Grenze ohne
-  Ablesung, und das verschiebt nur Geld zwischen den Zeilen des Vermieters.
+  in heating.ts): kein Befund, keine Frage, kein Eintrag im Ausweis. Ohne Ablesung teilt § 9b Abs. 3 wie bisher, eine nahe
+  Ablesung gilt, und eine ferne gilt **von selbst als nicht hinreichend genau** (`landlordFar`, Festlegung): geteilt wird
+  nach § 9b Abs. 3, als fehlte sie; vorher sperrte sie als `farInterim` die Verteilung, bis der Vermieter wählte. Eine
+  dort gespeicherte Antwort wird nicht mehr gebraucht. Das alles verschiebt nur Geld zwischen den Zeilen des
+  Vermieters; die Verbräuche der Mieter begrenzen die Ablesungen an ihren eigenen Grenzen.
 - **Wärmepumpe**: Ob die Verordnung gilt, entscheidet `heatPumpVerdict` (§ 12 Abs. 3,
   `hkv.heat-pump.capture`). Vor dem 01.10.2024 fiel eine überwiegend versorgende Wärmepumpe nach § 11
   Abs. 1 Nr. 3 a a. F. nicht darunter (`heat_pump_majority`; „ja“ oder ohne Antwort: Hinweis, keine

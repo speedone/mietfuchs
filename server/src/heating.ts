@@ -390,7 +390,9 @@ export function planSelf(input: SelfInput): SelfPlan {
     const isChange = (b: string): boolean => users.some((u, i) => i < users.length - 1 && u.to === b && users[i + 1]?.from === dayAfter(b))
     // Integrationsdurchsicht 0.13.0, S2: Ein Wechsel nur zwischen Rollen des Vermieters (Leerstand, Eigennutzung,
     // außerhalb) betrifft keinen Mieter; § 9b Abs. 1 verlangt dort keine Zwischenablesung, und es gibt weder Befund noch
-    // Frage. Gerechnet wird wie bisher (ohne Ablesung nach § 9b Abs. 3), das verschiebt nur Geld beim Vermieter.
+    // Frage. Ohne Ablesung wird dort wie bisher nach § 9b Abs. 3 geteilt, mit einer nahen Ablesung nach ihr, und eine
+    // ferne gilt von selbst als nicht hinreichend genau (S-2 unten, `landlordFar`); das alles verschiebt nur Geld
+    // zwischen den Zeilen des Vermieters.
     const tenantChange = (b: string): boolean => isChange(b) && users.some((u) => (u.to === b || u.from === dayAfter(b)) && u.tenancyId !== null)
     // Wie weit die Ablesungen einer Grenze daneben liegen (die fernste über alle Zähler).
     const offAt = new Map<string, { date: string; days: number; permille: number; far: boolean }>()
@@ -433,8 +435,11 @@ export function planSelf(input: SelfInput): SelfPlan {
         if (potHasMeters[p] && areaOf(p, unit) > 0) problems.push({ kind: 'missing', pot: p, unitId: unit.id, unitName: unit.name, boundary: null, reason: 'noMeter', meterName: null })
         continue
       }
-      // „Nach § 9b Abs. 3“ gewählt: die Ablesung gilt als nicht hinreichend genau (Abweichung 22).
-      const has = (b: string): boolean => answerAt(b) !== 'imprecise' && meters.every((m) => (readingAt.get(m.id)?.get(b) ?? null) !== null)
+      // „Nach § 9b Abs. 3“ gewählt: die Ablesung gilt als nicht hinreichend genau (Abweichung 22). An einer Grenze nur
+      // zwischen Rollen des Vermieters gilt eine ferne Ablesung von selbst so (Durchsicht von PR #426, S-2; Festlegung):
+      // Kein Mieter ist betroffen, es gibt keine Frage, und eine dort gespeicherte Antwort wird nicht mehr gebraucht.
+      const landlordFar = (b: string): boolean => isChange(b) && !tenantChange(b) && (offAt.get(b)?.far ?? false)
+      const has = (b: string): boolean => answerAt(b) !== 'imprecise' && !landlordFar(b) && meters.every((m) => (readingAt.get(m.id)?.get(b) ?? null) !== null)
       // Ohne Schätzung fehlt ein Stand zu Beginn oder Ende (ein Fall des § 9a); mit Schätzung deckt sie ihn.
       if (estimated === undefined) {
         for (const b of [startBoundary, h.to]) {

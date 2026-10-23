@@ -167,3 +167,20 @@ test('Eine Wohnung, die die Anlage nicht versorgt, rechnet ihre Heizstaffel nur 
     assert.equal(st(p, 'B').heatingPrepaymentCents, 12 * 10000, 'P rechnet die ganze Heizstaffel von B an')
   }
 })
+
+// Durchsicht von PR #426, K-2: Ein Mietverhältnis ganz in einer Zeit, in der die Einheit nicht vermietet ist (#259),
+// steht auch in der Heizkostenabrechnung nach Weg d unter „Ohne Abrechnung“, mit den Heizvorauszahlungen, die sie nicht
+// anrechnet.
+test('K-2: ein Mietverhältnis ganz in einer Zeit ohne Vermietung steht auch bei Weg d ohne Abrechnung', () => {
+  const src = haus({
+    units: [{ id: 'u1', propertyId: 'objekt-1', name: 'EG', areaM2: 60, participates: true, usageChanges: [{ from: '2025-06-01', usage: 'eigen' }] }],
+    tenancies: [{ ...mieter('A', 'u1', [{ from: '2025-05', monthlyCents: 12300 }]), start: '2025-06-01', personHistory: [{ from: '2025-06-01', persons: 1 }] }],
+    costItems: [heizung('Messdienst', '2025-05', 150000, { taxYear: 2026 })],
+  })
+  const h = heizkosten(src, '2025-05')
+  assert.equal(h.statements.some((x) => x.tenancyId === 'A'), false)
+  const ns = h.notSettled.find((n) => n.tenancyId === 'A') ?? assert.fail('A fehlt unter „Ohne Abrechnung“')
+  // Juni 2025 bis April 2026: 11 × 123,00 €.
+  assert.deepEqual(ns.usageConflict, { prepaymentCents: 11 * 12300 })
+  assert.match(h.notices.find((n) => n.code === 'usage.tenancy-conflict')?.text ?? '', /1\.353,00 €/)
+})
