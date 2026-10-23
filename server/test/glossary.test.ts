@@ -118,6 +118,14 @@ test('Zeiträume (#208): Abrechnungszeitraum, Rumpf, Leistungsprinzip und Gradta
   assert.match(GLOSSARY.degreeDays.norm, /§ 9b Abs\. 2 HeizkostenV/)
 })
 
+test('#314: Lexikon Gradtage nennt den Leerstand als Auslegung und die abweichende Vereinbarung nach § 9b Abs. 4', () => {
+  const needed = GLOSSARY.degreeDays.needed
+  assert.match(needed, /leer steht.*Nutzerwechsel nach § 9b Abs\. 1 HeizkostenV.*Auslegung von Mietfuchs/s)
+  assert.match(needed, /abweichende Vereinbarung im Mietvertrag geht vor \(§ 9b Abs\. 4 HeizkostenV\)/)
+  assert.doesNotMatch(needed, /VIII ZR 9\/14/, 'nur über eine Sekundärquelle gelesen, kein Beleg für Gradtage')
+  assert.match(GLOSSARY.degreeDays.norm, /§ 9b Abs\. 1 und 4 HeizkostenV/)
+})
+
 test('CO₂ und Warmwasser (Heizung PR 6): Beispiele nachgerechnet, Rechtszahlen aus dem Register', () => {
   // 24.105,6 kg bei 600 m²: 40,176 kg, auf eine Nachkommastelle 40,2 (§ 5 Abs. 1 Satz 3) → 37 bis
   // unter 42 kg, Vermieter 60 % (Anlage). 600 € CO₂-Kosten: 360 € Vermieter, 240 € Mieter.

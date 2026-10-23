@@ -20,6 +20,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - Wer zweimal hintereinander ein Backup oder eine Vorversion einspielt, behält den Stand vor dem
   ersten Mal: Eine vorhandene `mietfuchs.sqlite.vor-restore` wird nicht mehr überschrieben, sondern
   mit Datum im Namen daneben gelegt.
+- Gradtage beim Leerstand ([#314](https://github.com/speedone/mietfuchs/issues/314)): Teilt Ihre eigene
+  Heizkostenabrechnung beim Wechsel nach Gradtagszahlen und steht eine Wohnung einen Teil der Heizperiode
+  leer, ist sie selbst genutzt oder wurde ohne Zwischenablesung gewechselt, nennt der Rechenweg der
+  Mieter dieser Wohnung den Betrag, der sich zeitanteilig ergäbe. Ein Hinweis nennt beide Beträge auch
+  für den Leerstand, den Sie tragen, und sagt, dass eine abweichende Vereinbarung im Mietvertrag vorgeht
+  (§ 9b Abs. 4 HeizkostenV). Dass der Leerstand wie ein Nutzerwechsel geteilt wird, ist eine Auslegung
+  und steht so im Hinweis und im Lexikon. Bei zeitanteiliger Teilung nennt der bisherige Hinweis jetzt
+  auch den Leerstand. Keine Zahl der Abrechnung ändert sich.
 
 ### Geändert
 

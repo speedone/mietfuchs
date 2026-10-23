@@ -9,6 +9,9 @@ import type { Notice } from './types.ts'
 export const INFORMATIONAL: ReadonlySet<string> = new Set(['basis.unit-zero', 'basis.tenancy-zero', 'basis.vacancy-persons', 'basis.vacancy-no-area', 'heating.remote-reading', 'period.short', 'period.heating-differs',
   // Heizung PR 10: Hinweise der eigenen Heizkostenabrechnung ohne Handlungsbedarf.
   'heating.interim-reading-off', 'heating.reading-dates-differ', 'heating.change-split-time', 'heating.heat-pump-capture',
+  // #314: die Gegenrichtung, nach Gradtagen bei Leerstand, Eigennutzung oder Wechsel ohne Zwischenablesung; beides ist
+  // nach § 9b Abs. 2 HeizkostenV zulässig, nichts zu beheben.
+  'heating.change-split-degree-days',
   // Heizung PR 13 (Entwurf 10.1: „hint (färbt nicht)“): eine bestätigte Schätzung nach § 9a, auch neben
   // vollständiger Ablesung, die der Vermieter damit als unbrauchbar markiert (Durchsicht von #242, R-I7).
   'heating.estimated', 'heating.estimate-complete',

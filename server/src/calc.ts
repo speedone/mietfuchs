@@ -106,7 +106,7 @@ import { claimDeadline, nextSettlement, prepaymentAgreed, refundDueDate, refundL
 import { annualFactors, type AnnualBasis } from './prepaymentSuggestion.ts'
 import {
   boundaryReadingsOf, consumptionSharesOf, estimateDeviceType, estimateKey, estimateProposals, heatPumpStatus, heatPumpWithoutMonthlyInfo, lineShareRows, OIL_OR_GAS, hotWaterShareOf, measuredBetween, planSelf, sortReadings, targetProblem, usersOf, weightsOf,
-  type Alpha, type ConsumptionShares, type HeatPumpVerdict, type SelfInput, type SelfPlan, type SelfProblem, type SelfReading, type SelfTenancy, type SelfUnit, type SelfUserPlan, type SelfWeights,
+  type Alpha, type ConsumptionShares, type HeatPumpVerdict, type SelfInput, type SelfPlan, type SelfProblem, type SelfReading, type SelfTenancy, type SelfUnit, type SelfUnitPlan, type SelfUserPlan, type SelfWeights,
 } from './heating.ts'
 import { DHW_PLAUSIBLE, dhwProblemText, fmtShare } from './dhw.ts'
 import { CAPTURE_TEXT, captureOf, coversPeriod, estimateFits, hotWaterOf, lineServiceRows, potUnitFor, serviceUnitsMixed, deviceCutoffs, isServiceMeter, deviceCutoffText, deviceLines, meterFactor, missingRatings, missingRatingsText, mixedCapture, mixedCaptureText, serviceMeters, withoutEstimatedSwitches } from './hca.ts'
@@ -411,6 +411,8 @@ const noticeKinds = {
   'heating.exemption': { level: 'hint', title: 'Ausnahme von der Heizkostenverordnung', rule: 'heating-exemption', terms: ['heatingCostOrdinance'] },
   'heating.key-change': { level: 'hint', title: 'Anteil nach Verbrauch geändert', rule: 'heating-key-change', terms: ['consumptionCosts', 'keyChange'] },
   'heating.change-split-time': { level: 'hint', title: 'Mieterwechsel zeitanteilig statt nach Gradtagen', rule: 'heating-tenant-change', terms: ['interimReading', 'degreeDays'] },
+  // #314: Auskunft (INFORMATIONAL), die Gegenrichtung zu `heating.change-split-time`.
+  'heating.change-split-degree-days': { level: 'hint', title: 'Leerstand oder Wechsel nach Gradtagen geteilt', rule: 'heating-tenant-change', terms: ['degreeDays', 'vacancy'] },
   'heating.change-fee': { level: 'hint', title: 'Kosten der Zwischenablesung', rule: 'heating-tenant-change', terms: ['interimReading'] },
   'meter.change-fee': { level: 'hint', title: 'Kosten der Zwischenablesung', terms: ['changeFee', 'meterReading'] },
   'heating.heat-pump-capture': { level: 'hint', title: 'Wärmepumpe: Heizkostenverordnung gilt noch nicht', rule: 'heating-own-settlement', terms: ['heatingSystem', 'heatMeter'] },
@@ -3611,6 +3613,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Die Einheit des Ausweises je Topf, wenn alle Zähler einheitlich in einer anderen bekannten als der Grundeinheit
     // stehen (alle MWh, alle Liter; Durchsicht von #342, E2). Fehlt: die der Erfassung.
     potUnits: Partial<Record<SelfPot, string>>
+    // #314: die Gewichte der anderen Teilung beim Wechsel (§ 9b Abs. 2) und die Wohnungen mit Leerstand, Eigennutzung
+    // oder Wechsel ohne Zwischenablesung, deren Rechenweg den Vergleichswert nennt. Nur zum Vergleich.
+    compare: { weights: Map<string, SelfWeights>; units: ReadonlySet<string> } | null
   }
   const POT_NAME: Record<SelfPot, string> = { heating: 'Heizung', water: 'Warmwasser' }
   // Die Einheit des Verbrauchs eines Topfs (Heizung PR 12, Abweichung 9): Heizkostenverteiler und Ablesedienst
@@ -4024,7 +4029,23 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const weights = blocked.length === 0 && shares !== null && (alphaResult.ok || oldHeatPumpExemption || agreedArea)
       ? weightsOf(plan, { heating: shares.heating, water: shares.water ?? 0 }, alpha?.value ?? null)
       : null
+    // #314: Die Gewichte der anderen Teilung nach § 9b Abs. 2 HeizkostenV, nur zum Vergleich in Rechenweg und
+    // Hinweis; verteilt wird nie damit. Gerechnet für die Wohnungen, in denen die Teilung beim Wechsel spürbar
+    // Geld bewegt (Leerstand, Eigennutzung, Wechsel ohne Zwischenablesung nach § 9b Abs. 3), und bei
+    // zeitanteiliger Teilung wie bisher für jeden Wechsel (`heating.change-split-time`). Ein gewöhnlicher
+    // Mieterwechsel mit Zwischenablesung bekommt bei Gradtagen nichts.
+    const changeSplit = plant.changeSplit ?? 'degreeDays'
+    const comparedUnits = new Set(plan.units
+      .filter((u) => u.users.length > 1 && u.users.some((x) => x.role === 'vacancy' || x.role === 'self' || x.pots.heating.group))
+      .map((u) => u.unit.id))
+    const compare = weights !== null && shares !== null && (comparedUnits.size > 0 || (changeSplit === 'time' && plan.units.some((u) => u.users.length > 1)))
+      ? {
+        weights: weightsOf(planSelf({ ...input, changeSplit: changeSplit === 'time' ? 'degreeDays' : 'time' }), { heating: shares.heating, water: shares.water ?? 0 }, alpha?.value ?? null),
+        units: comparedUnits,
+      }
+      : null
     selfPlans.set(plant.id, {
+      compare,
       potUnits,
       plant, plan, shares, alpha, weights, blocked, verdict, hotWater, input, oldHeatPumpExemption, majorityOpen, agreedArea,
       dhwUnmeasurable: own?.dhwUnmeasurable ?? lineOwn?.dhwUnmeasurable ?? null,
@@ -4046,7 +4067,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   }
   // Der Rechenweg einer Zeile nach Heizkostenverordnung (#114): Grund- und Verbrauchskosten je Topf,
   // Anteil nach Verbrauch, Warmwasseranteil und der Anteil des Nutzers, aus denselben Zahlen.
-  const selfSteps = (sp: SelfPlantPlan, key: string, target: HeatingTarget): CalcStep[] => {
+  const selfSteps = (sp: SelfPlantPlan, key: string, target: HeatingTarget, amountCents: number): CalcStep[] => {
     const u = sp.userByKey.get(key)
     const unit = u ? sp.plan.units.find((x) => x.unit.id === u.unitId) : undefined
     if (!u || !unit || !sp.shares || !sp.weights) return []
@@ -4090,6 +4111,16 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       steps.push({ label: 'Warmwasseranteil', value: `${fmtPercent(sp.alpha.value * 100)} % (${how})`, term: 'hotWaterShare' })
     }
     steps.push({ label: 'Ihr Anteil nach Heizkostenverordnung', value: `${fmtPercent((sp.weights.get(key)?.[target] ?? 0) * 100)} %`, term: 'heatingSystem' })
+    // #314: In einer Wohnung mit Leerstand, Eigennutzung oder Wechsel ohne Zwischenablesung der Wert der anderen
+    // Teilung nach § 9b Abs. 2, damit die Wirkung der Wahl zu sehen ist. Verteilt wird damit nicht.
+    const alt = sp.compare?.units.has(u.unitId) ? sp.compare.weights.get(key)?.[target] : undefined
+    if (alt !== undefined) {
+      steps.push({
+        label: sp.changeSplit === 'degreeDays' ? 'Zum Vergleich zeitanteilig' : 'Zum Vergleich nach Gradtagen',
+        value: `${fmtPercent(alt * 100)} %, ${fmtCents(Math.round(amountCents * alt))} (§ 9b Abs. 2 HeizkostenV)`,
+        term: 'degreeDays',
+      })
+    }
     return steps
   }
   const TARGET_TEXT: Record<HeatingTarget, string> = { both: 'Heizung und Warmwasser', heating: 'Heizung', water: 'Warmwasser' }
@@ -4840,7 +4871,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           const raw = item.amountCents * (sp.weights.get(u.key)?.[target] ?? 0)
           if (u.role === 'tenancy') {
             const t = tenancies.find((x) => x.id === u.tenancyId)
-            if (t) targets.push({ t, raw, basisText: selfBasisText(sp, u.key, target), heating: selfSteps(sp, u.key, target) })
+            if (t) targets.push({ t, raw, basisText: selfBasisText(sp, u.key, target), heating: selfSteps(sp, u.key, target, item.amountCents) })
             else outsideRaw += raw
           } else if (u.role === 'self') {
             selfRaw += raw
@@ -6916,17 +6947,46 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           'Bis dahin gilt die Verteilung laut Mietvertrag, und Kürzungen nach § 12 Abs. 1 HeizkostenV entfallen. Mietfuchs verteilt nach den erfassten Werten, wie Sie es eingerichtet haben; prüfen Sie, ob der Mietvertrag das deckt.',
         subject)
     }
-    // Zeitanteilig statt nach Gradtagen (§ 9b Abs. 2): beide Beträge.
-    if (sp.changeSplit === 'time' && sp.plan.units.some((u) => u.users.length > 1)) {
-      const alt = weightsOf(planSelf({ ...sp.input, changeSplit: 'degreeDays' }), { heating: sp.shares.heating, water: sp.shares.water ?? 0 }, sp.alpha?.value ?? null)
-      const own = (pot?.items ?? []).filter((c) => c.key === 'heatingSystem')
-      const sumFor = (w: Map<string, SelfWeights>, key: string): number => own.reduce((a, c) => a + c.amountCents * (w.get(key)?.[c.heatingTarget ?? 'both'] ?? 0), 0)
-      const list = sp.plan.units.filter((u) => u.users.length > 1).flatMap((u) => u.users).flatMap((u) => (u.role === 'tenancy' && u.tenancyId && sp.weights
-        ? [`${nameOf(u.tenancyId)}: zeitanteilig ${fmtCents(Math.round(sumFor(sp.weights, u.key)))}, nach Gradtagen ${fmtCents(Math.round(sumFor(alt, u.key)))}`]
-        : []))
+    // Zeitanteilig statt nach Gradtagen und umgekehrt (§ 9b Abs. 2): beide Beträge (#314: auch für Leerstand und
+    // Eigennutzung, deren Anteil der Vermieter trägt). Die Gewichte der anderen Teilung stehen in `sp.compare`.
+    const own = (pot?.items ?? []).filter((c) => c.key === 'heatingSystem')
+    const sumFor = (w: Map<string, SelfWeights>, key: string): number => own.reduce((a, c) => a + c.amountCents * (w.get(key)?.[c.heatingTarget ?? 'both'] ?? 0), 0)
+    const GAP_NAME: Partial<Record<SelfUserPlan['role'], string>> = { vacancy: 'Leerstand', self: 'Eigennutzung' }
+    // Je Nutzer der Wohnungen die Beträge: erst die eingestellte Teilung, dann die andere.
+    const splitList = (units: readonly SelfUnitPlan[], now: string, other: string): string[] => units.flatMap((unit) => unit.users).flatMap((u) => {
+      if (!sp.weights || !sp.compare) return []
+      const name = u.role === 'tenancy' && u.tenancyId ? nameOf(u.tenancyId) : GAP_NAME[u.role] ? `${GAP_NAME[u.role]} in ${sp.plan.units.find((x) => x.unit.id === u.unitId)?.unit.name ?? u.unitId} (${fmtDay(u.from)} bis ${fmtDay(u.to)})` : null
+      return name === null ? [] : [`${name}: ${now} ${fmtCents(Math.round(sumFor(sp.weights, u.key)))}, ${other} ${fmtCents(Math.round(sumFor(sp.compare.weights, u.key)))}`]
+    })
+    const vacancyIn = (units: readonly SelfUnitPlan[]): boolean => units.some((x) => x.users.some((u) => u.role === 'vacancy'))
+    const AGREEMENT = 'Eine abweichende Vereinbarung im Mietvertrag geht vor (§ 9b Abs. 4 HeizkostenV).'
+    if (sp.changeSplit === 'time' && sp.compare) {
+      const units = sp.plan.units.filter((u) => u.users.length > 1)
+      const list = splitList(units, 'zeitanteilig', 'nach Gradtagen')
       if (list.length > 0) {
         warn('heating.change-split-time',
-          `${where}: Beim Mieterwechsel teilen Sie die übrigen Heizkosten zeitanteilig. Die Heizkostenverordnung lässt auch die Gradtagszahlen zu, nach denen ein Wintermonat mehr wiegt als ein Sommermonat (§ 9b Abs. 2 HeizkostenV); beides ist zulässig. ${andList(list)}.`,
+          `${where}: Beim Mieterwechsel teilen Sie die übrigen Heizkosten zeitanteilig. Die Heizkostenverordnung lässt auch die Gradtagszahlen zu, nach denen ein Wintermonat mehr wiegt als ein Sommermonat (§ 9b Abs. 2 HeizkostenV); beides ist zulässig. ${list.join('; ')}.` +
+            `${vacancyIn(units) ? ' Den Leerstand teilt Mietfuchs wie einen Nutzerwechsel, denn für die leeren Räume sind Sie der Nutzer (Auslegung von Mietfuchs).' : ''} ${AGREEMENT}`,
+          subject)
+      }
+    }
+    // #314: nach Gradtagen bei Leerstand, Eigennutzung oder Wechsel ohne Zwischenablesung. Auskunft, nichts zu beheben
+    // (`INFORMATIONAL`); ein gewöhnlicher Mieterwechsel mit Zwischenablesung bekommt sie nicht. Unter einer Vereinbarung
+    // nach § 2 „nach Wohnfläche“ gilt § 9b nicht unmittelbar, dort schweigt sie (der Rechenweg nennt den Vergleich).
+    // Dass der Vermieter Nutzer der leeren Räume ist, steht im Entwurf (Abschnitt 3.5, R-A16); eine Entscheidung, die
+    // Gradtage für den Leerstand bejaht oder verneint, ist nicht bekannt, deshalb „Auslegung“.
+    if (sp.changeSplit === 'degreeDays' && sp.compare && sp.compare.units.size > 0 && !sp.agreedArea) {
+      const compared = sp.compare.units
+      const units = sp.plan.units.filter((u) => compared.has(u.unit.id))
+      const list = splitList(units, 'nach Gradtagen', 'zeitanteilig')
+      const vacancy = vacancyIn(units)
+      const group = units.some((x) => x.users.some((u) => u.pots.heating.group))
+      if (list.length > 0) {
+        warn('heating.change-split-degree-days',
+          `${where}: Mietfuchs teilt die übrigen Heizkosten beim Wechsel der Nutzer einer Wohnung${vacancy ? ' und für den Leerstand' : ''} nach Gradtagszahlen, nach denen ein Wintermonat mehr wiegt als ein Sommermonat; zeitanteilig zu teilen ist ebenso zulässig (§ 9b Abs. 2 HeizkostenV).` +
+            `${group ? ' Wo ohne Zwischenablesung gewechselt wurde, gilt das für die gesamten Kosten der Heizung (§ 9b Abs. 3 HeizkostenV).' : ''} ${list.join('; ')}.` +
+            `${vacancy ? ' Für die leeren Räume sind Sie der Nutzer; dass Mietfuchs den Leerstand deshalb wie einen Nutzerwechsel teilt, ist eine Auslegung von Mietfuchs, entschieden ist die Frage nicht.' : ''} ` +
+            `${AGREEMENT} Zeitanteilig teilen Sie, wenn Sie das an der Heizanlage einstellen; es gilt dann für alle Wohnungen.`,
           subject)
       }
     }
