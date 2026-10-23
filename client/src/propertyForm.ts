@@ -135,7 +135,7 @@ export function propertyBody(form: PropertyForm, storedIban: string | null = nul
   }
   return {
     name: form.name.trim(),
-    address: form.address,
+    address: form.address.trim(),
     kind: form.kind,
     landlordName: override(form.landlordName),
     iban: iban.value === '' ? null : iban.value,
