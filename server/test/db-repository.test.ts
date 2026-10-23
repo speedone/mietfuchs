@@ -916,7 +916,7 @@ test('Nutzungswechsel: geschrieben, nach Datum gelesen, krumm geradegerückt, mi
       propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: false, selfUsed: true,
       usageChanges: [
         { from: '2026-01-01', usage: 'ausgenommen' }, { from: '2025-07-01', usage: 'eigen' }, { from: '2025-07-01', usage: 'vermietet' },
-        { from: '2025-02-30', usage: 'vermietet' }, { from: '2025-03-01', usage: 'erfunden' }, 'Unsinn',
+        { from: '2025-02-30', usage: 'vermietet' }, { from: '2025-03-01', usage: 'erfunden' },
       ],
     }))
     assert.deepEqual(fieldOf(u, 'usageChanges'), [{ from: '2025-07-01', usage: 'vermietet' }, { from: '2026-01-01', usage: 'ausgenommen' }])
@@ -929,5 +929,16 @@ test('Nutzungswechsel: geschrieben, nach Datum gelesen, krumm geradegerückt, mi
     assert.equal(await opened.write((db) => removeEntity(db, 'units', 'u1')), true)
     const rest = await opened.read((db) => db.select().from(unitUsageChanges))
     assert.deepEqual(rest, [])
+  })
+})
+
+test('Nutzungswechsel: kein Array oder nur Unbrauchbares ist eine 400, nicht still leer (Durchsicht)', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createEntity(db, 'units', 'u1', { propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true, usageChanges: [{ from: '2025-07-01', usage: 'eigen' }] }))
+    for (const bad of ['Unsinn', [{ from: 'gestern', usage: 'eigen' }], [{ from: '2025-07-01', usage: 'erfunden' }], ['Unsinn']]) {
+      await assert.rejects(opened.write((db) => updateEntity(db, 'units', 'u1', { usageChanges: bad })), (e: unknown) => e instanceof Error && Reflect.get(e, 'status') === 400, JSON.stringify(bad))
+    }
+    const kept = await opened.read((db) => findEntity(db, 'units', 'u1'))
+    assert.deepEqual(fieldOf(kept, 'usageChanges'), [{ from: '2025-07-01', usage: 'eigen' }])
   })
 })

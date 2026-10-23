@@ -352,15 +352,21 @@ function readDirectCharges(value: unknown): PrepaymentEntry[] | undefined {
 
 // Nutzungswechsel aus einem Rumpf (#259): nur Einträge mit Tag und bekannter Nutzung, danach `usageChangesOf`
 // (gültige Tage, am selben Tag der letzte, nach Datum), dieselbe Regel wie beim Rechnen.
+// Ist der Inhalt kein Array oder fällt jeder Eintrag weg, ist das eine 400 (Durchsicht): Still geleert verlöre der
+// Vermieter seine Staffel. `null` leert ausdrücklich.
+const USAGE_CHANGES_TEXT = 'Die Nutzungswechsel brauchen je Zeile einen Tag (JJJJ-MM-TT) und eine Nutzung (vermietet, eigen oder ausgenommen). Bitte laden Sie die Seite neu und versuchen Sie es noch einmal.'
 function readUsageChanges(v: unknown): UsageChange[] | undefined {
-  if (!Array.isArray(v)) return undefined
+  if (v === null) return undefined
+  if (!Array.isArray(v)) throw new HeatingError(400, USAGE_CHANGES_TEXT)
   const raw = v.flatMap((x): UsageChange[] => {
     if (typeof x !== 'object' || x === null) return []
     const r = x as Record<string, unknown>
     const usage = oneOfOrUndefined(UNIT_USAGES, r.usage)
     return typeof r.from === 'string' && usage ? [{ from: r.from, usage }] : []
   })
-  return usageChangesOf({ usageChanges: raw })
+  const changes = usageChangesOf({ usageChanges: raw })
+  if (v.length > 0 && changes.length === 0) throw new HeatingError(400, USAGE_CHANGES_TEXT)
+  return changes
 }
 
 function mergeUnit(current: Unit, body: unknown): Unit {

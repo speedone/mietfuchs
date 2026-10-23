@@ -4,6 +4,7 @@ import { cockpitHeatingRows } from '../heatingSettlementView'
 import { heatingRowTarget, itemsOfSettlement } from '../costPeriods'
 import { localToday } from '../periodForm'
 import { isNotAllocable, usageOf } from '../types'
+import { rentedWithin, usageAt } from '../../../shared/unitUsage.ts'
 import { cockpitSubtitle, itemsDetail, meterTypesInUse, tenanciesDetail, usesUnitBasis, countsByUnits, missingSincePrevious, condoWithoutHousingMoney } from '../cockpitChecks'
 import { coverageCheck, filesByItem } from '../receipts'
 import { api, fmtEuro, fmtDate } from '../api'
@@ -445,11 +446,12 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
                     </button>
                   )
                 })}
-                {units.filter((u) => !u.participates).map((u) => (
+                {/* Nur Einheiten, die im Zeitraum an keinem Tag vermietet sind (#259); sonst stünden sie doppelt da. */}
+                {units.filter((u) => !rentedWithin(u, period.from, period.to)).map((u) => (
                   <div key={u.id} className="tenant-card muted-card">
                     <div className="muted">{u.name}</div>
                     <div className="tenant-bal" style={{ color: 'var(--muted)' }}>—</div>
-                    <div className="muted">{usageOf(u) === 'eigen' ? 'selbst bewohnt' : 'nicht beteiligt'}</div>
+                    <div className="muted">{usageAt(u, period.to) === 'eigen' ? 'selbst bewohnt' : 'nicht beteiligt'}</div>
                   </div>
                 ))}
               </div>

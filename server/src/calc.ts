@@ -88,7 +88,7 @@ import type { TermId } from '../../shared/glossary.ts'
 import { allocationOf, comparablePrevious, sameAllocation, sameUnits } from '../../shared/allocation.ts'
 import { possibleDuplicates } from '../../shared/duplicates.ts'
 import { commonPeriod, tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
-import { baseUsage, unitAsOf, usageChangesWithin, usageFlags, usageSpans, type UsageSpan } from '../../shared/unitUsage.ts'
+import { baseUsage, unitAsOf, usageChangesWithin, usageDays, usageFlags, usageSpans, type UsageSpan } from '../../shared/unitUsage.ts'
 import type { UnitUsage } from '../../shared/types.ts'
 import { knownUnit, metersByUnitText, unitLabel, unitScale, type UnitScale } from '../../shared/meterUnits.ts'
 import { CALENDAR_RULES, calendarYearPeriod, contextOf, formatDayRange, periodContaining, periodDays, periodLabel, periodMonths, periodOfKey, periodsBetween, previousPeriod, rulesOf, settlementDeadline, settlementPeriod, spansTwoYears, startYearOf, type PeriodContext } from '../../shared/period.ts'
@@ -1530,16 +1530,20 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
   // Rechnung" und lässt ausgenommene Wohnungen deshalb weg; hier lautet die Frage „wie viel
   // meines Gebäudes ist privat", und dafür gehört jeder Quadratmeter in den Nenner. Der
   // Unterschied steht in der Oberfläche, nicht nur hier.
-  // Die Nutzung am Jahresende (#259, Teil 1; ohne Wechsel die Angabe an der Einheit).
-  const allUnits = snapshot.units.map((u) => unitAsOf(u, calendar.to))
+  // Nutzungswechsel (#259): nach Tagen im Kalenderjahr (`taxUsage`); ohne Wechsel die Angabe an der Einheit.
+  const allUnits = snapshot.units
+  const yearUsage = taxUsage(allUnits, calendar.from, calendar.to)
   const totalArea = allUnits.reduce((a, u) => a + (u.areaM2 || 0), 0)
-  const selfUsedUnits = allUnits.filter((u) => u.selfUsed && !u.participates)
+  const selfUsedUnits = allUnits.filter((u) => yearUsage.selfShare(u) > 0)
   // **Ausgegeben werden die Flächen und nicht ihr Verhältnis.** Die Anlage V fragt im Kopf nach
   // der Gesamtwohnfläche und dem davon eigengenutzten Teil; das sind genau diese beiden Zahlen,
   // und sie sind nachprüfbar. Ein bloßer Prozentsatz lädt außerdem dazu ein, den Rest für den
   // abziehbaren Anteil zu halten, und das ist falsch, sobald es Wohnungen außerhalb der
   // Abrechnungseinheit gibt.
-  const selfUsedAreaM2 = selfUsedUnits.reduce((a, u) => a + (u.areaM2 || 0), 0)
+  // Mit Wechsel die Fläche nach Tagen der Eigennutzung, auf zwei Stellen gerundet (eine Auslegung: die Anlage V fragt
+  // die eigengenutzte Fläche, ohne einen Wechsel im Jahr zu regeln).
+  const selfUsedAreaRaw = selfUsedUnits.reduce((a, u) => a + (u.areaM2 || 0) * yearUsage.selfShare(u), 0)
+  const selfUsedAreaM2 = selfUsedUnits.some((u) => yearUsage.phased(u)) ? Math.round(selfUsedAreaRaw * 100) / 100 : selfUsedAreaRaw
   const selfOccupiedExists = selfUsedUnits.length > 0
   // **Wohnungen, die Mietfuchs nicht einordnen kann**, und deshalb ein eigener Hinweis statt
   // Schweigen. Zwei verschiedene Bestände fallen hier zusammen: die ausdrücklich ausgenommene
@@ -1557,7 +1561,7 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
   // Feld liefert ebenfalls `undefined`. „Nicht gesetzt heißt nie eingeordnet“ ist heute nirgends
   // zugesichert, und ohne Zusicherung samt Test ist es keine Grundlage. Wer das ändern will,
   // fängt bei der Zusicherung an, nicht hier.
-  const excludedExists = allUnits.some((u) => !u.participates && !u.selfUsed)
+  const excludedExists = allUnits.some((u) => yearUsage.outside(u))
   // Auf selbstgenutzte Wohnungen entfallender Teil der Kosten, aus der Verteilung des Jahres
   // übernommen: privat veranlasst und damit nicht als Werbungskosten abziehbar. Die
   // Werbungskosten oben bleiben ungekürzt — die Aufteilung nimmt diese Übersicht nicht vor.
@@ -1878,6 +1882,27 @@ const KEYS_NOT_AREA: readonly CostKey[] = ['persons', 'units', 'custom', 'extern
 type TaxSplit = { items: Map<string, TaxExpenseItem>, selfUseChangedInYear: boolean, usageChangedUnits: string[], closedSelfUseDiffers: boolean, closedItemsChanged: number }
 
 // `calendar`: das Steuerjahr. Ein Zeitraum wie Mai bis April reicht über zwei; seine Hinweise gelten nur für den Teil darin.
+// Die Nutzung der Einheiten in [from, to] für die Steuer (#259): Anteil der Tage selbstgenutzt, außerhalb an einem
+// Tag, Wechsel im Zeitraum. Ohne Wechsel ist der Anteil genau 1 oder 0, damit keine Zahl wandert. Ein leerer Zeitraum
+// (der Teil liegt nicht im Steuerjahr) liest die Angabe an der Einheit.
+function taxUsage(units: readonly SnapshotUnit[], from: string, to: string) {
+  const days = from <= to ? rangeOverlapDays(from, to, from, to) : 0
+  const byId = new Map(units.map((u) => [u.id, days > 0 ? usageDays(u, from, to) : null]))
+  const of = (u: SnapshotUnit) => byId.get(u.id) ?? usageDays(u, from, from <= to ? to : from)
+  const phased = (u: SnapshotUnit): boolean => { const d = of(u); return [d.vermietet, d.eigen, d.ausgenommen].filter((x) => x > 0).length > 1 }
+  return {
+    days,
+    phased,
+    selfDays: (u: SnapshotUnit): number => of(u).eigen,
+    selfShare: (u: SnapshotUnit): number => {
+      if (days === 0) return baseUsage(u) === 'eigen' ? 1 : 0
+      const d = of(u)
+      return phased(u) ? d.eigen / days : (d.eigen > 0 ? 1 : 0)
+    },
+    outside: (u: SnapshotUnit): boolean => (days === 0 ? baseUsage(u) === 'ausgenommen' : of(u).ausgenommen > 0),
+  }
+}
+
 function splitForTax(snapshot: Snapshot, items: SnapshotCostItem[], settlement: ComputedSettlement, calendar: Pick<BillingPeriod, 'from' | 'to'>): TaxSplit {
   // Gefragt wird nur der Teil des Zeitraums im Steuerjahr; sonst meldete Mai bis April eine Vermietung im Juni 2024
   // auch für 2025.
@@ -1886,10 +1911,14 @@ function splitForTax(snapshot: Snapshot, items: SnapshotCostItem[], settlement: 
   // **Nutzungswechsel (#259, Teil 1).** Umlagefähige Positionen folgen dem Eigenanteil der Abrechnung und sind damit
   // tagesgenau. Was hier nach Fläche geteilt wird, liest die Nutzung am letzten Tag dieses Teils im Steuerjahr
   // (`unitAsOf`); tagesgenau wird das mit Teil 2. Ohne Wechsel ist das die Angabe an der Einheit, dasselbe Objekt.
-  const units = snapshot.units.map((u) => unitAsOf(u, to))
+  const units = snapshot.units
+  // Tagesgenau (#259, Durchsicht M1): selbstgenutzt nach dem Anteil der Tage dieses Teils im Steuerjahr, außerhalb an
+  // mindestens einem Tag. Ohne Wechsel ist der Anteil genau 1 oder 0. Beschriftet wird nach der Nutzung am letzten Tag.
+  const usage = taxUsage(units, from, to)
+  const labelOf = (u: SnapshotUnit): SnapshotUnit => unitAsOf(u, to)
   const usageChangedIds = new Set(from <= to ? snapshot.units.filter((u) => usageChangesWithin(u, from, to)).map((u) => u.id) : [])
   const unitById = new Map(units.map((u) => [u.id, u]))
-  const isSelf = (u: SnapshotUnit) => !!u.selfUsed && !u.participates
+  const isSelf = (u: SnapshotUnit) => usage.selfShare(u) > 0
   const areaOf = (u: SnapshotUnit) => u.areaM2 || 0
 
   // Der Eigenanteil je Position, wie ihn die Abrechnung dieses Jahres ausweist.
@@ -1951,7 +1980,7 @@ function splitForTax(snapshot: Snapshot, items: SnapshotCostItem[], settlement: 
   // Abrechnung steht zum Vergleich daneben. Verbrauch und Einzelbeträge ordnen dagegen eindeutig
   // zu (der Verbrauch einer Einheit außerhalb steckt in der Verteilbasis), dort bleibt es bei der
   // Abrechnung. Gefragt wird nach den betroffenen Einheiten der Position.
-  const outside = (u: SnapshotUnit) => !u.participates && !u.selfUsed
+  const outside = (u: SnapshotUnit) => usage.outside(u)
   const BUILDING_KEYS: readonly CostKey[] = ['area', 'units', 'persons', 'custom', 'external']
   const outsideAffected = (item: SnapshotCostItem): boolean =>
     BUILDING_KEYS.includes(item.key) && units.some((u) => outside(u) && (!item.participantUnitIds || item.participantUnitIds.includes(u.id)))
@@ -1963,7 +1992,7 @@ function splitForTax(snapshot: Snapshot, items: SnapshotCostItem[], settlement: 
     const affected = only ? units.filter((u) => only.has(u.id)) : units
     const area = affected.reduce((a, u) => a + areaOf(u), 0)
     const selfAffected = affected.filter(isSelf)
-    const selfArea = selfAffected.reduce((a, u) => a + areaOf(u), 0)
+    const selfArea = selfAffected.reduce((a, u) => a + areaOf(u) * usage.selfShare(u), 0)
     const missing = selfAffected.filter((u) => !(areaOf(u) > 0))
     if (selfAffected.length > 0 && (missing.length > 0 || !(area > 0))) {
       return { ok: false as const, missing: missing.length > 0 ? missing : selfAffected, limited: only !== null }
@@ -1991,7 +2020,7 @@ function splitForTax(snapshot: Snapshot, items: SnapshotCostItem[], settlement: 
     // Eine leere Liste nennt keine Einheit; die Seite zeigte sonst eine leere Aufzählung (Durchsicht).
 
     const directLabel = (u: SnapshotUnit) =>
-      `direkt: ${u.name} (${isSelf(u) ? 'selbstgenutzt' : u.participates ? 'vermietete Einheit' : 'außerhalb der Abrechnungseinheit'})`
+      `direkt: ${u.name} (${usage.phased(u) ? `selbstgenutzt an ${fmtNum(usage.selfDays(u))} von ${fmtNum(usage.days)} Tagen` : isSelf(u) ? 'selbstgenutzt' : labelOf(u).participates ? 'vermietete Einheit' : 'außerhalb der Abrechnungseinheit'})`
     // Nach Fläche aufteilen; gibt die Zuordnung zurück, damit jeder Zweig unten sie selbst setzt.
     const applyArea = (why?: string): TaxAllocation => {
       const a = byArea(item)
@@ -2014,17 +2043,18 @@ function splitForTax(snapshot: Snapshot, items: SnapshotCostItem[], settlement: 
     if (!allocable) {
       if (direct && isSelf(direct)) {
         allocation = 'direct-self'
-        privateCents = amount
+        // Mit Wechsel nach den Tagen der Eigennutzung (#259); ohne Wechsel der ganze Betrag.
+        privateCents = usage.phased(direct) ? roundHalfAway(amount * usage.selfShare(direct)) : amount
         steps.push({ label: 'Zuordnung', value: directLabel(direct) })
         steps.push({ label: 'privat', value: fmtCents(privateCents), term: 'ownShare' })
       } else if (direct) {
-        allocation = direct.participates ? 'direct-rented' : 'direct-outside'
+        allocation = labelOf(direct).participates ? 'direct-rented' : 'direct-outside'
         steps.push({ label: 'Zuordnung', value: directLabel(direct) })
       } else {
         allocation = applyArea()
       }
     } else if (direct && !fromBill.noBasis) {
-      allocation = isSelf(direct) ? 'direct-self' : direct.participates ? 'direct-rented' : 'direct-outside'
+      allocation = isSelf(direct) ? 'direct-self' : labelOf(direct).participates ? 'direct-rented' : 'direct-outside'
       privateCents = fromBill.selfCents
       steps.push({ label: 'Zuordnung', value: directLabel(direct) })
       if (privateCents !== 0) steps.push({ label: 'Eigenanteil laut Abrechnung (privat)', value: fmtCents(privateCents), term: 'ownShare' })
@@ -2159,11 +2189,13 @@ function operatingPowerBalanceItem(
   allHeatSplit: (part: number) => TaxSplit | undefined = () => undefined,
 ): TaxExpenseItem {
   const cents = balance.cents
-  const isSelf = (u: SnapshotUnit) => !!u.selfUsed && !u.participates
+  // Nach Tagen der Eigennutzung im Steuerjahr (#259, K1), dieselbe Regel wie `splitForTax`.
+  const usage = taxUsage(units, `${year}-01-01`, `${year}-12-31`)
+  const isSelf = (u: SnapshotUnit) => usage.selfShare(u) > 0
   const areaOf = (u: SnapshotUnit) => u.areaM2 || 0
   const selfUnits = units.filter(isSelf)
   const totalArea = units.reduce((a, u) => a + areaOf(u), 0)
-  const selfArea = selfUnits.reduce((a, u) => a + areaOf(u), 0)
+  const selfArea = selfUnits.reduce((a, u) => a + areaOf(u) * usage.selfShare(u), 0)
   const missing = selfUnits.filter((u) => !(areaOf(u) > 0))
   const areaOk = selfUnits.length === 0 || (missing.length === 0 && totalArea > 0)
 
@@ -2560,6 +2592,8 @@ type ConsumptionByTypeEntry = {
   selfConsumption: number
   // Was die Zähler von Einheiten der Verteilbasis in ihren Tagen außerhalb der Abrechnungseinheit messen (#259).
   outsidePhased: number
+  // Der Rest des Hauptzählers ist nach Tagen teils Eigenanteil (#259, S2).
+  mainSelfByDays: boolean
   unmetered: SnapshotUnit[]
   limited: boolean
   hasMain: boolean
@@ -2840,6 +2874,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const x = usageIn(u)
     return x.phased ? x.outside / diy : (x.outside > 0 ? 1 : 0)
   }
+  // „Selbst bewohnt“ im Sinne von § 2 HeizkostenV und § 5d Abs. 3 CO2KostAufG (Durchsicht S4): nur eine Einheit,
+  // die an jedem Tag des Zeitraums selbstgenutzt ist. Eine mit Wechsel im Zeitraum zählt nicht, auch wenn sie an
+  // keinem Tag vermietet ist; die Ausnahmen greifen nur, wenn ihre Voraussetzung den ganzen Zeitraum besteht.
+  const dwellerUnits: SnapshotUnit[] = periodUnits.map((u) => (usageIn(u).phased && u.selfUsed ? { ...u, selfUsed: false } : u))
   // Ganz selbstgenutzt im Zeitraum: Nur dann wird der Rest des Hauptzählers Eigenanteil (#116).
   const wholeSelf = (u: { id: string }): boolean => usageIn(u).self >= diy
   const unitById = new Map(periodUnits.map((u) => [u.id, u]))
@@ -3069,6 +3107,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       let mainPartial: ConsumptionByTypeEntry['mainPartial'] = null
       let mainBelowUnits: ConsumptionByTypeEntry['mainBelowUnits'] = null
       let mainGap: ConsumptionByTypeEntry['mainGap'] = null
+      let mainSelfByDays = false
       if (mainOfType.length > 0 && unmetered.length > 0) {
         if (mainShort) {
           mainPartial = mainShort
@@ -3080,6 +3119,13 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           // Eigenanteil. Ist eine andere dabei, lässt er sich nicht aufteilen und bleibt beim
           // Vermieter, ohne Eigenanteil zu sein; das sagt eine Warnung.
           if (unmetered.every((u) => selfIds.has(u.id) && wholeSelf(u)) && partial.length === 0) selfConsumption += main - basis
+          // Durchsicht S2 (#259): Eine einzige Einheit ohne Zähler, die nur einen Teil des Zeitraums selbstgenutzt
+          // ist: Der Rest gilt für die Tage der Eigennutzung als Eigenanteil, für die übrigen bleibt er beim
+          // Vermieter. Nach Tagen geteilt, also unter der Annahme gleichmäßigen Verbrauchs; das ist eine Auslegung.
+          else if (unmetered.length === 1 && partial.length === 0 && selfIds.has((unmetered[0] as SnapshotUnit).id)) {
+            mainSelfByDays = true
+            selfConsumption += (main - basis) * (usageIn(unmetered[0] as SnapshotUnit).self / diy)
+          }
           basis = main
         }
       } else if (mainOfType.length > 0 && !mainShort && basis < main * 0.8) {
@@ -3090,7 +3136,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         mainGap = { main, units: basis }
       }
       byType[type] = {
-        meters, basis, perUnit, selfConsumption, outsidePhased, unmetered, limited: only !== null,
+        meters, basis, perUnit, selfConsumption, outsidePhased, mainSelfByDays, unmetered, limited: only !== null,
         hasMain: mainOfType.length > 0, main: mainBasis, mainPartial, mainBelowUnits, mainGap, partial,
         scaleOf, unitProblem: scale.problem, unit: scale.problem ? '' : scale.unit,
       }
@@ -3602,7 +3648,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         description: `Restbestand ${q(st.closing.quantity)} nach Stilllegung der Heizanlage (gehört Ihnen)`,
         totalCents: closing, keyLabel: 'Bestandsrechnung', shareCents: closing, landlordParts: [{ reason: 'stockRemaining', cents: closing }],
       })
-      const norm = mayAgreeOtherwise(periodUnits, isDwelling) ? '§ 2 Nr. 4a BetrKV' : '§ 7 Abs. 2 HeizkostenV'
+      const norm = mayAgreeOtherwise(dwellerUnits, isDwelling) ? '§ 2 Nr. 4a BetrKV' : '§ 7 Abs. 2 HeizkostenV'
       const plantName = entry.plant.name ? `„${entry.plant.name}“` : 'ohne Namen'
       // Ein Tausch mit demselben Brennstoff, dessen neue Anlage ihn nach Angabe des Vermieters nicht weiter verheizt.
       const refused = plants.find((p) => p.replacesPlantId === plantId && p.energy === entry.plant.energy && p.takesOverStock === false)
@@ -3656,7 +3702,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   }
   // ---------- Angaben je Heizperiode: Ausnahme nach § 11, Vereinbarung nach § 2 (Heizung PR 14) ----------
   // Wohnung im Sinne des § 2 ist, was Fläche hat oder bewohnt ist (Erläuterung bei `heatingCuts` unten).
-  const heatingAgreeable = mayAgreeOtherwise(periodUnits, isDwelling)
+  const heatingAgreeable = mayAgreeOtherwise(dwellerUnits, isDwelling)
   // Die Angaben stehen je Heizperiode und gelten ab ihr für die Linie (server/src/heatingInfo.ts). Zwei Fälle mit
   // verschiedenen Folgen:
   // - Ausnahme nach § 11: Die §§ 3 bis 7 gelten nicht, soweit sie die Wärme betreffen (Abs. 1); für das
@@ -4515,17 +4561,21 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     for (const u of periodUnits.filter((x) => usageIn(x).phased)) {
       const text = usageIn(u).spans.map((x) => `${formatDayRange(x.from, x.to)} ${usageWord[x.usage]}`).join(', ')
       warn('usage.changed',
-        `${u.name}: Die Nutzung wechselt im Abrechnungszeitraum ${label} (${text}). Eigenanteil, Leerstand und Verteilbasis rechnet Mietfuchs für jeden Abschnitt nach seinen Tagen.`,
+        `${u.name}: Die Nutzung wechselt im Abrechnungszeitraum ${label} (${text}). Eigenanteil, Leerstand und Verteilbasis rechnet Mietfuchs für jeden Abschnitt nach seinen Tagen; dass die Kosten gleichmäßig über den Zeitraum anfallen, ist eine Auslegung von Mietfuchs.`,
         unitSubject([u]))
     }
     const tageText = (n: number) => `${fmtNum(n)} ${n === 1 ? 'Tag' : 'Tagen'}`
+    // Nutzer der eigenen Heizkostenabrechnung bleibt nur ein Mietverhältnis mit Abrechnung (S3); eines ganz in einer
+    // Zeit ohne Vermietung zählt dort zur Nutzung der Einheit.
+    const heatingUser = (t: TenancyWithUnit): boolean => partTenancies.some((x) => x.id === t.id) &&
+      plants.some((p) => p.method === 'self' && servesUnit(p, t.unit))
     for (const c of usageConflicts) {
       const parts = [
         ...(c.days > 0 ? [`Das Mietverhältnis läuft an ${tageText(c.days)} in einer Zeit, in der die Einheit laut ihrer Nutzung nicht vermietet ist.`] : []),
         ...(c.later > 0 ? [`Es reicht über einen Wechsel der Nutzung hinweg in eine spätere vermietete Zeit; für die Kosten zählt nur der erste vermietete Abschnitt, die übrigen ${fmtNum(c.later)} ${c.later === 1 ? 'Tag' : 'Tage'} nicht.`] : []),
       ]
       warn('usage.tenancy-conflict',
-        `${c.t.tenantName} (${c.t.unit.name}): ${parts.join(' ')} Für diese Tage trägt der Mieter keine Betriebskosten; sie bleiben beim Vermieter. In einer eigenen Heizkostenabrechnung bleibt er dagegen Nutzer, solange das Mietverhältnis läuft. Bitte prüfen Sie Ein- und Auszug oder den Nutzungswechsel der Einheit in den Stammdaten.`,
+        `${c.t.tenantName} (${c.t.unit.name}): ${parts.join(' ')} Für diese Tage trägt der Mieter keine Betriebskosten; sie bleiben beim Vermieter.${heatingUser(c.t) ? ' In der eigenen Heizkostenabrechnung bleibt er dagegen Nutzer, solange das Mietverhältnis läuft.' : ''} Bitte prüfen Sie Ein- und Auszug oder den Nutzungswechsel der Einheit in den Stammdaten.`,
         { kind: 'tenancy', id: c.t.id })
     }
   }
@@ -4780,6 +4830,62 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const partOfYear = (t: TenancyWithUnit) => (t.days >= diy ? ''
       : degreeTable ? ` · ${fmtNum(Math.round(degreeOf(t, degreeTable) * 10) / 10)} von ${fmtNum(Math.round(fullDegree * 10) / 10)} ‰ Gradtage`
         : ` · ${t.days}/${diy} Tage`)
+    // **Je Abschnitt verteilen (#259, Durchsicht S1).** Wechselt eine Einheit zwischen „in der Abrechnungseinheit“
+    // (vermietet, selbstgenutzt) und „außerhalb“, ändert sich die Verteilbasis von Fläche, Einheiten und Gemeinschaft
+    // im Zeitraum. Dann wird der Betrag nach Tagen (bei „nur Heizung“ nach Gradtagen) auf die Abschnitte gleicher
+    // Basis geteilt und je Abschnitt verteilt; die exakten Anteile werden summiert und danach **einmal** gerundet
+    // (#202). So trägt kein Mieter für eine Zeit, in der eine andere Einheit außerhalb lag, den Anteil, den sie
+    // in der übrigen Zeit hat; eine ganzjährig außerhalb liegende Einheit belastet die übrigen ja ebenso voll.
+    // Dass die Kosten gleichmäßig über den Zeitraum anfallen, ist eine Auslegung (Hinweis `usage.changed`).
+    // Ein Wechsel nur zwischen vermietet und selbstgenutzt ändert die Basis nicht und braucht keine Abschnitte.
+    const segmentsOf = (units: SnapshotUnit[]): Period[] | null => {
+      const inside = (k: UnitUsage) => k !== 'ausgenommen'
+      const cuts = new Set<string>()
+      for (const u of units) {
+        const sp = usageIn(u).spans
+        for (let i = 1; i < sp.length; i++) if (inside((sp[i - 1] as UsageSpan).usage) !== inside((sp[i] as UsageSpan).usage)) cuts.add((sp[i] as UsageSpan).from)
+      }
+      if (cuts.size === 0) return null
+      const starts = [yFrom, ...[...cuts].sort()]
+      return starts.map((from, i) => ({ from, to: i + 1 < starts.length ? dayBefore(starts[i + 1] as string) : yTo }))
+    }
+    const segmented = (segs: Period[], units: SnapshotUnit[], weight: (u: SnapshotUnit) => number, byDegree: boolean) => {
+      const days = (r: Period) => rangeOverlapDays(r.from, r.to, r.from, r.to)
+      const measure = (r: Period): number => (byDegree && degreeTable && fullDegree > 0 ? degreeDayPermille([r], degreeTable) : days(r))
+      const full = byDegree && degreeTable && fullDegree > 0 ? fullDegree : diy
+      const cut = (r: Period, from: string, to: string): Period | null => {
+        const f = r.from > from ? r.from : from
+        const e = r.to < to ? r.to : to
+        return f <= e ? { from: f, to: e } : null
+      }
+      const tenants = new Map<string, { raw: number, parts: { from: string, to: string, w: number, total: number }[] }>()
+      let self = 0
+      for (const seg of segs) {
+        const members = units.filter((u) => usageIn(u).spans.some((x) => x.usage !== 'ausgenommen' && cut(seg, x.from, x.to) !== null))
+        const total = members.reduce((a, u) => a + weight(u), 0)
+        const segMeasure = measure(seg)
+        if (!(total > 0) || !(segMeasure > 0)) continue
+        const amount = item.amountCents * (segMeasure / full)
+        for (const t of b.partTenancies) {
+          if (!members.some((u) => u.id === t.unitId)) continue
+          const o = cut(seg, t.start > yFrom ? t.start : yFrom, t.end !== null && t.end < yTo ? t.end : yTo)
+          if (!o) continue
+          const e = tenants.get(t.id) ?? { raw: 0, parts: [] }
+          e.raw += amount * (weight(t.unit) / total) * (measure(o) / segMeasure)
+          e.parts.push({ ...o, w: weight(t.unit), total })
+          tenants.set(t.id, e)
+        }
+        for (const u of members) {
+          const selfMeasure = usageIn(u).spans.filter((x) => x.usage === 'eigen')
+            .reduce((a, x) => { const o = cut(seg, x.from, x.to); return a + (o ? measure(o) : 0) }, 0)
+          self += amount * (weight(u) / total) * (selfMeasure / segMeasure)
+        }
+      }
+      return { tenants, self }
+    }
+    const partsText = (parts: { from: string, to: string, w: number, total: number }[], unitText: string) =>
+      parts.map((x) => `${fmtNum(x.w)} von ${fmtNum(Math.round(x.total * 100) / 100)} ${unitText} ${formatDayRange(x.from, x.to)}`).join('; ')
+    const segs = ['area', 'units', 'external'].includes(item.key) ? segmentsOf(b.basisUnits) : null
     // Teilnehmer wirken bei den Schlüsseln, deren Basis aus Wohnungen entsteht (#94).
     const withParticipants = ['area', 'units', 'persons', 'meter', 'external', 'amounts'].includes(item.key)
     if (isNotAllocable(item.category)) {
@@ -4792,14 +4898,28 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       noBasis(b === fullBasis ? 'keine Wohnung gehört zur Abrechnungseinheit' : 'keine teilnehmende Wohnung gehört zur Abrechnungseinheit')
     } else if (item.key === 'persons' && !(b.occupantPersonDays > 0) && b.partTenancies.length > 0) {
       noBasis('für die vermieteten Wohnungen sind keine Personen hinterlegt')
+    } else if (item.key === 'area' && b.basisArea > 0 && segs) {
+      const r = segmented(segs, b.basisUnits, (u) => u.areaM2 || 0, true)
+      for (const t of b.partTenancies) {
+        const e = r.tenants.get(t.id)
+        if (e) targets.push({ t, raw: e.raw, basisText: partsText(e.parts, 'm²') })
+      }
+      selfRaw = r.self
     } else if (item.key === 'area' && b.basisArea > 0) {
       for (const t of b.partTenancies) {
         const raw = item.amountCents * ((t.unit.areaM2 || 0) / b.basisArea) * dayShare(t)
         targets.push({ t, raw, basisText: `${fmtNum(t.unit.areaM2 || 0)} von ${fmtNum(b.basisArea)} m²${partOfYear(t)}` })
       }
       selfRaw = item.amountCents * (b.selfArea / b.basisArea)
+    } else if (item.key === 'units' && b.basisUnits.length > 0 && segs) {
+      const r = segmented(segs, b.basisUnits, () => 1, true)
+      for (const t of b.partTenancies) {
+        const e = r.tenants.get(t.id)
+        if (e) targets.push({ t, raw: e.raw, basisText: partsText(e.parts, 'Einheiten') })
+      }
+      selfRaw = r.self
     } else if (item.key === 'units' && b.basisUnits.length > 0) {
-      // Ohne Wechsel ist `unitCount` die Zahl der Einheiten (#259).
+      // Ohne Wechsel zwischen drinnen und außerhalb ist `unitCount` die Zahl der Einheiten (#259).
       const count = Number.isInteger(b.unitCount) ? String(b.unitCount) : fmtNum(Math.round(b.unitCount * 100) / 100)
       for (const t of b.partTenancies) {
         const raw = (item.amountCents / b.unitCount) * dayShare(t)
@@ -4852,8 +4972,12 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           const applied = Math.abs(expected - item.amountCents) > 100 ? ' · angesetzt laut Hausgeldabrechnung' : ''
           const suffix = ` · Kosten der Gemeinschaft ${fmtCents(eb.totalCents)}${applied}`
           const label = MEASURE_LABELS[eb.measure]
+          // Je Abschnitt, wenn eine Einheit zwischen drinnen und außerhalb wechselt (#259, S1).
+          const r = segs ? segmented(segs, b.basisUnits, valueOf, false) : null
           for (const t of b.partTenancies) {
-            const raw = item.amountCents * (valueOf(t.unit) / ownIn) * (t.days / diy)
+            const e = r ? r.tenants.get(t.id) : undefined
+            if (r && !e) continue
+            const raw = e ? e.raw : item.amountCents * (valueOf(t.unit) / ownIn) * (t.days / diy)
             targets.push({
               t, raw,
               basisText: `${fmtNum(valueOf(t.unit))} von ${fmtNum(eb.total)} ${label}${suffix}${partOfYear(t)}`,
@@ -4866,7 +4990,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
               },
             })
           }
-          selfRaw = item.amountCents * (b.selfUnits.reduce((a, u) => a + valueOf(u) * selfShare(u), 0) / ownIn)
+          selfRaw = r ? r.self : item.amountCents * (b.selfUnits.reduce((a, u) => a + valueOf(u) * selfShare(u), 0) / ownIn)
         }
       }
     } else if (item.key === 'amounts') {
@@ -5022,7 +5146,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           // Ausweg, die Kennzeichnung an der Einheit (#117).
           const noConnection = ' Hat eine dieser Einheiten keinen eigenen Anschluss (etwa eine Garage), entfernen Sie in den Stammdaten der Einheit unter „Weitere Angaben — Anschlüsse“ das Häkchen dieser Zählerart.'
           const text = data.main !== null
-            ? `der Rest des Hauptzählers geht an den Vermieter, weil sich nicht bestimmen lässt, wie viel davon auf sie entfällt.${b.selfUnits.length > 0 ? ' Einen Eigenanteil weist Mietfuchs für diesen Rest deshalb nicht aus.' : ''}${noConnection}`
+            ? data.mainSelfByDays
+              ? `der Rest des Hauptzählers gilt für die Tage der Eigennutzung als Eigenanteil, für die übrigen Tage geht er an den Vermieter; Mietfuchs teilt ihn nach Tagen, nimmt also gleichmäßigen Verbrauch an (eine Auslegung). Ein Zwischenzähler macht das genau.${noConnection}`
+              : `der Rest des Hauptzählers geht an den Vermieter, weil sich nicht bestimmen lässt, wie viel davon auf sie entfällt.${b.selfUnits.length > 0 ? ' Einen Eigenanteil weist Mietfuchs für diesen Rest deshalb nicht aus.' : ''}${noConnection}`
             : data.hasMain
               ? 'ihr Verbrauch lässt sich nicht bestimmen und steckt in den Anteilen der übrigen Wohnungen, bis der Hauptzähler verwendbar ist (siehe den Hinweis zum Hauptzähler).'
               : data.limited
@@ -5068,7 +5194,17 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           const raw = item.amountCents * (sp.weights.get(u.key)?.[target] ?? 0)
           if (u.role === 'tenancy') {
             const t = tenancies.find((x) => x.id === u.tenancyId)
-            if (t) targets.push({ t, raw, basisText: selfBasisText(sp, u.key, target), heating: selfSteps(sp, u.key, target, item.amountCents) })
+            const x = t ? usageIn(t.unit) : null
+            if (t && x && x.phased && !statements.has(t.id)) {
+              // Durchsicht S3 (#259): Ein Mietverhältnis ganz in einer Zeit ohne Vermietung hat keine Abrechnung; sein
+              // Anteil gehört dann, wie die Nutzung des Tages sagt, zur Eigennutzung bzw. nach außerhalb.
+              const own = x.spans.filter((y) => y.from <= u.to && y.to >= u.from)
+                .map((y) => ({ usage: y.usage, days: rangeOverlapDays(y.from > u.from ? y.from : u.from, y.to < u.to ? y.to : u.to, yFrom, yTo) }))
+              const all = own.reduce((a, y) => a + y.days, 0)
+              const selfPart = all > 0 ? own.filter((y) => y.usage === 'eigen').reduce((a, y) => a + y.days, 0) / all : 0
+              selfRaw += raw * selfPart
+              outsideRaw += raw * (1 - selfPart)
+            } else if (t) targets.push({ t, raw, basisText: selfBasisText(sp, u.key, target), heating: selfSteps(sp, u.key, target, item.amountCents) })
             else outsideRaw += raw
           } else if (u.role === 'self') {
             selfRaw += raw
@@ -5974,7 +6110,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // § 5d Abs. 3 (Abweichung 15): höchstens zwei Wohnungen, eine selbst bewohnt, beide an dieser zentralen
     // Anlage („gemeinsame Wärmeversorgung“). § 5d Abs. 4 je Mietverhältnis mit Tagen in H (Abweichung 3); der
     // angespannte Markt nach seiner Geltung (Abweichung 4).
-    const dwellings = periodUnits.filter(isDwelling)
+    const dwellings = dwellerUnits.filter(isDwelling)
     const selfUsed = dwellings.some((u) => u.selfUsed === true && !u.participates)
     let two: TwoFamily = { kind: 'notApplicable' }
     let maxDwellings: number | null = null

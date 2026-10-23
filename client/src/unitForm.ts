@@ -54,6 +54,7 @@ export const usageChangeField = (row: number): UsageChangeField => `usageChange.
 // Ist die Einheit in irgendeiner Stufe selbstgenutzt? Dann gilt die Personenzahl des eigenen Haushalts.
 export const usesSelf = (form: Pick<UnitForm, 'usage' | 'usageChanges'>): boolean =>
   form.usage === 'eigen' || form.usageChanges.some((c) => c.usage === 'eigen')
+const USAGE_WORDS: Record<UnitUsage, string> = { vermietet: 'vermietet', eigen: 'selbstgenutzt', ausgenommen: 'nicht beteiligt' }
 const isDay = (d: string): boolean => /^\d{4}-\d{2}-\d{2}$/.test(d) && new Date(`${d}T00:00:00Z`).toISOString().slice(0, 10) === d
 export type UnitBuildResult = { problems: Problem<UnitField>[] } | { body: Record<string, unknown> }
 
@@ -89,6 +90,19 @@ export function buildUnitBody(form: UnitForm): UnitBuildResult {
     else if (seen.has(c.from)) problems.push({ field: usageChangeField(i), short: 'Tag doppelt', text: `${where}: Für diesen Tag steht schon ein Wechsel; je Tag gilt nur eine Nutzung.` })
     seen.add(c.from)
   })
+  // Ein Wechsel auf dieselbe Nutzung wie die Stufe davor ändert nichts und verwirrt nur (Durchsicht).
+  if (problems.length === 0) {
+    const order = form.usageChanges.map((c, i) => ({ c, i })).sort((a, b) => (a.c.from < b.c.from ? -1 : a.c.from > b.c.from ? 1 : 0))
+    let before: UnitUsage = form.usage
+    const same = new Set<number>()
+    for (const { c, i } of order) {
+      if (c.usage === before) same.add(i)
+      before = c.usage
+    }
+    form.usageChanges.forEach((c, i) => {
+      if (same.has(i)) problems.push({ field: usageChangeField(i), short: 'Keine Änderung', text: `Nutzungswechsel, Zeile ${i + 1}: Die Nutzung ist schon vorher „${USAGE_WORDS[c.usage]}“; entfernen Sie die Zeile oder wählen Sie eine andere Nutzung.` })
+    })
+  }
   if (problems.length > 0) return { problems }
   return {
     body: {

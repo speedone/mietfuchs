@@ -377,6 +377,7 @@ const GUIDE_DATA = {
       { page: 'zaehler', text: 'Eine Zwischenablesung können Sie auch später nachtragen: Ablesungen des Zählers aufklappen, „+ Ablesung anlegen“ klicken, Datum und Stand eintragen und „Anlegen“.' },
       { page: 'mietkonto', text: 'Prüfen Sie im Mietkonto, ob die Vorauszahlungen bis zum Auszug eingegangen sind.' },
       { page: 'abrechnung', text: 'Jedes Mietverhältnis bekommt seine eigene Abrechnung. Hat ein Mieter anders gezahlt als angesetzt, auch im Auszugs- oder Einzugsmonat, tragen Sie den gezahlten Betrag mit „✎ anpassen“ ein.' },
+      { page: 'stammdaten', text: 'Ziehen Sie nach dem Auszug selbst ein oder vermieten Sie Ihre bisher eigene Wohnung zum ersten Mal, öffnen Sie die Wohnung mit ✎ und tragen Sie unter „Nutzungswechsel“ mit „+ Wechsel ab Datum …“ den Tag und die neue Nutzung ein.' },
     ],
     result: [
       'Jeder Mieter trägt seinen Anteil für die Tage, an denen er gemietet hat. Den Anteil für die leeren Tage trägt der Vermieter, mit dem Grund „Leerstand“.',
@@ -384,6 +385,7 @@ const GUIDE_DATA = {
       'Beim Verbrauch teilt eine Zwischenablesung genau auf; ohne sie verteilt Mietfuchs den Verbrauch zwischen zwei Ablesungen tagesanteilig.',
       'Für ein Mietverhältnis, das im Jahr endet, schlägt die Abrechnung keine neue Vorauszahlung vor.',
       'Im Auszugs- und Einzugsmonat setzt Mietfuchs Miete und Vorauszahlung anteilig nach Kalendertagen an, im Mietkonto wie in der Abrechnung; das ist eine Auslegung von Mietfuchs, und ein Hinweis nennt den angesetzten Betrag.',
+      'Mit einem Nutzungswechsel rechnet Mietfuchs jeden Abschnitt nach seinen Tagen: In der Zeit der Eigennutzung ist der Anteil Ihr Eigenanteil, eine Zeit ohne Mieter in der vermieteten Zeit ist Leerstand. Dass die Kosten gleichmäßig über das Jahr anfallen, ist eine Auslegung von Mietfuchs.',
     ],
     example: 'Eine Wohnung mit 60 von 180 m², Grundsteuer 1.800 € nach Wohnfläche, auf die Wohnung entfallen 600 €. Der alte Mieter wohnt bis 31.03.2025, 90 Tage: 147,95 €. April und Mai steht die Wohnung leer, 61 Tage: 100,27 € trägt der Vermieter. Der neue Mieter zieht am 01.06.2025 ein, 214 Tage: 351,78 €.',
     caveats: [
@@ -395,7 +397,7 @@ const GUIDE_DATA = {
     gaps: [
       { text: 'Eine geschätzte Ablesung kennzeichnen, wenn die Zwischenablesung versäumt wurde.', issue: 98 },
     ],
-    terms: ['vacancy', 'personDays', 'meterReading', 'prepayment', 'partialMonth', 'settlementDeadline'],
+    terms: ['vacancy', 'personDays', 'meterReading', 'prepayment', 'partialMonth', 'settlementDeadline', 'usageChange'],
   },
   // #208: Abrechnungszeitraum, der vom Kalenderjahr abweicht (Entwurf 11.4).
   periodMayApril: {

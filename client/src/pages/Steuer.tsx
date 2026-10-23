@@ -694,12 +694,15 @@ export default function Steuer({ settings }: Props) {
               <NoticeBox
                 level="warning"
                 title={`Die Nutzung wechselt in diesem Jahr: ${(data.usageChangedUnits ?? []).join(', ')}.`}
-                action="Umlagefähige Kosten teilt die Übersicht tagesgenau nach dem Eigenanteil der Abrechnung. Was nach Fläche geteilt wird (nicht umlagefähige Kosten), gilt noch nach der Nutzung am 31.12.; bitte rechnen Sie diesen Teil anteilig nach."
+                action={<>
+                  Die Übersicht teilt nach den Tagen der Eigennutzung: umlagefähige Kosten nach dem Eigenanteil der Abrechnung, die
+                  übrigen nach Fläche und Tagen; auch die selbstgenutzte Fläche oben ist nach Tagen gerechnet. Steht die Wohnung nach
+                  Ihrer Eigennutzung leer, bevor Sie sie vermieten, zählt Mietfuchs den Leerstand als abziehbar; das gilt nur, wenn Sie
+                  ernsthafte und nachhaltige Vermietungsbemühungen belegen können.
+                </>}
                 more={<>
-                  Steht die Wohnung nach Ihrer Eigennutzung leer, bevor sie vermietet ist, sind ihre Kosten nur abziehbar, wenn Sie
-                  sich endgültig zur Vermietung entschlossen haben und das mit ernsthaften und nachhaltigen Vermietungsbemühungen
-                  belegen können (BFH, Urteil vom 28.10.2008, IX R 1/07). Mietfuchs kennt diese Bemühungen nicht und zählt den
-                  Leerstand als abziehbar.
+                  Aufwendungen für eine zunächst selbst bewohnte, danach leer stehende und noch nicht vermietete Wohnung sind nur
+                  abziehbar, wenn der endgültige Entschluss zu vermieten belegt ist (BFH, Urteil vom 28.10.2008, IX R 1/07).
                 </>}
               />
             )}

@@ -608,5 +608,5 @@ test('Nutzungswechsel: die Liste nennt den Tag und die neue Nutzung', async () =
       </PropertyProvider>
     </PeriodProvider>,
   )
-  expect(await screen.findByText('ab 01.07.2025 Eigennutzung', undefined, SLOW)).toBeTruthy()
+  expect(await screen.findByText('vermietet bis 30.06.2025 · ab 01.07.2025 Eigennutzung', undefined, SLOW)).toBeTruthy()
 })

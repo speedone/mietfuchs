@@ -9,6 +9,7 @@ import assert from 'node:assert/strict'
 import { computeSettlement, taxReport, type ComputedSettlement } from '../src/calc.ts'
 import { snapshotOf, type SnapshotCostItem, type SnapshotSource, type SnapshotTenancy, type SnapshotUnit } from '../src/snapshot.ts'
 import { assertLandlordParts } from '../testing/landlordParts.ts'
+import { selfSnapshot, selfTenancy, selfUnit } from '../testing/selfHeating.ts'
 import { usageAt, usageSpans, unitAsOf } from '../../shared/unitUsage.ts'
 import type { CostKey, UnitUsage } from '../../shared/types.ts'
 
@@ -30,6 +31,11 @@ const shareOf = (s: ComputedSettlement, tenancyId: string): number =>
 const partOf = (s: ComputedSettlement, reason: string): number =>
   s.landlord.rows.reduce((a, r) => a + (r.landlordParts ?? []).filter((p) => p.reason === reason).reduce((b, p) => b + p.cents, 0), 0)
 const codes = (s: ComputedSettlement): string[] => s.notices.map((n) => n.code)
+const parts = (s: ComputedSettlement): Record<string, number> => {
+  const m: Record<string, number> = {}
+  for (const r of s.landlord.rows) for (const p of r.landlordParts ?? []) m[p.reason] = (m[p.reason] ?? 0) + p.cents
+  return m
+}
 
 // ---------- Die Staffel selbst ----------
 
@@ -71,6 +77,39 @@ test('ein Wechsel vor dem Zeitraum rechnet wie die feste Angabe', () => {
   }
 })
 
+test('ein Wechsel genau am Beginn des Zeitraums rechnet wie die feste Angabe, bei jedem Schlüssel (S5)', () => {
+  const meters: SnapshotSource['meters'] = [{ id: 'ma', unitId: 'a', type: 'kaltwasser' }, { id: 'mb', unitId: 'b', type: 'kaltwasser' }]
+  const readings: SnapshotSource['readings'] = [
+    { meterId: 'ma', date: '2024-12-31', value: 0 }, { meterId: 'ma', date: '2025-12-31', value: 70 },
+    { meterId: 'mb', date: '2024-12-31', value: 0 }, { meterId: 'mb', date: '2025-12-31', value: 30 },
+  ]
+  for (const target of ['eigen', 'ausgenommen'] as const) {
+    for (const over of [{ key: 'area' }, { key: 'units' }, { key: 'persons' }, { key: 'meter', meterType: 'kaltwasser' }, { key: 'direct', directUnitId: 'b' }, { key: 'custom', customShares: { a: 50, b: 30 } }] as const) {
+      const run = (b: SnapshotUnit) => settle(source({ units: [unit('a'), b], tenancies: [tenancy('t-a', 'a')], meters, readings, costItems: [item({ ...over })] }))
+      const wechsel = run(unit('b', { selfPersons: 2, usageChanges: [{ from: '2025-01-01', usage: target }] }))
+      const fest = run(unit('b', { participates: false, selfUsed: target === 'eigen', selfPersons: 2 }))
+      const what = `${target} ${over.key}`
+      assert.equal(shareOf(wechsel, 't-a'), shareOf(fest, 't-a'), what)
+      assert.deepEqual(parts(wechsel), parts(fest), what)
+      assert.deepEqual(codes(wechsel), codes(fest), what)
+    }
+  }
+})
+
+test('Verbrauch: was der Zähler in der Zeit außerhalb misst, trägt der Vermieter als außerhalb', () => {
+  const s = settle(source({
+    units: [unit('a'), unit('b', { participates: false, selfUsed: false, usageChanges: [{ from: '2025-07-01', usage: 'vermietet' }] })],
+    tenancies: [tenancy('t-a', 'a'), tenancy('t-b', 'b', '2025-07-01')],
+    meters: [{ id: 'ma', unitId: 'a', type: 'kaltwasser' }, { id: 'mb', unitId: 'b', type: 'kaltwasser' }],
+    readings: [
+      { meterId: 'ma', date: '2024-12-31', value: 0 }, { meterId: 'ma', date: '2025-12-31', value: 100 },
+      { meterId: 'mb', date: '2024-12-31', value: 0 }, { meterId: 'mb', date: '2025-06-30', value: 40 }, { meterId: 'mb', date: '2025-12-31', value: 100 },
+    ],
+    costItems: [item({ key: 'meter', meterType: 'kaltwasser' })],
+  }))
+  assert.deepEqual([shareOf(s, 't-a'), shareOf(s, 't-b'), partOf(s, 'outsideUnit')], [50000, 30000, 20000])
+})
+
 // ---------- Handrechnungen ----------
 
 // Wohnung b: bis 30.06. selbstgenutzt, ab 01.07. vermietet an t-b. 181 und 184 Tage.
@@ -98,11 +137,58 @@ test('Fläche: eine Zeit außerhalb der Abrechnungseinheit zählt nicht zur Vert
     tenancies: [tenancy('t-a', 'a'), tenancy('t-b', 'b', '2025-07-01')],
     costItems: [item({ key: 'area' })],
   }))
-  // Basis 50 + 50 × 184/365 m²: t-a 100.000 × 365/549 = 66.484,52, t-b × 184/549 = 33.515,48.
-  assert.equal(shareOf(s, 't-a'), 66485)
-  assert.equal(shareOf(s, 't-b'), 33515)
+  // Je Abschnitt (Durchsicht S1): Januar bis Juni trägt t-a allein 100.000 × 181/365 = 49.589,04, ab Juli je die
+  // Hälfte von 50.410,96. t-a 74.794,52, t-b 25.205,48; vorher 66.485 und 33.515 (Basis über das Jahr gemittelt).
+  assert.equal(shareOf(s, 't-a'), 74795)
+  assert.equal(shareOf(s, 't-b'), 25205)
   assert.equal(s.landlord.totalCents, 0)
+  assert.match(s.statements.find((x) => x.tenancyId === 't-b')?.rows[0]?.basisText ?? '', /50 von 100 m² 01\.07\.–31\.12\.2025/)
 })
+
+test('Einheiten und Gemeinschaft: je Abschnitt verteilt, wenn eine Einheit zwischen drinnen und außerhalb wechselt', () => {
+  for (const key of ['units', 'external'] as const) {
+    const s = settle(source({
+      units: [unit('a', { mea: 100 }), unit('b', { mea: 100, participates: false, selfUsed: false, usageChanges: [{ from: '2025-07-01', usage: 'vermietet' }] })],
+      tenancies: [tenancy('t-a', 'a'), tenancy('t-b', 'b', '2025-07-01')],
+      costItems: [item({ key, ...(key === 'external' ? { externalBasis: { measure: 'mea' as const, total: 1000, totalCents: 500000 } } : {}) })],
+    }))
+    assert.deepEqual([shareOf(s, 't-a'), shareOf(s, 't-b')], [74795, 25205], key)
+    if (key === 'units') assert.doesNotMatch(s.statements.find((x) => x.tenancyId === 't-b')?.rows[0]?.basisText ?? '', /1,5/)
+  }
+})
+
+test('Hauptzähler: der Rest einer nur teilweise selbstgenutzten Einheit ohne Zähler wird nach Tagen geteilt (S2)', () => {
+  const s = settle(source({
+    units: [unit('a'), switching()],
+    tenancies: [tenancy('t-a', 'a'), tenancy('t-b', 'b', '2025-07-01')],
+    meters: [{ id: 'ma', unitId: 'a', type: 'kaltwasser' }, { id: 'mm', unitId: null, type: 'kaltwasser' }],
+    readings: [
+      { meterId: 'ma', date: '2024-12-31', value: 0 }, { meterId: 'ma', date: '2025-12-31', value: 100 },
+      { meterId: 'mm', date: '2024-12-31', value: 0 }, { meterId: 'mm', date: '2025-12-31', value: 200 },
+    ],
+    costItems: [item({ key: 'meter', meterType: 'kaltwasser' })],
+  }))
+  // Rest 50.000: 181/365 Eigenanteil (24.794,52), der übrige Teil beim Vermieter als Rest des Hauptzählers.
+  assert.equal(shareOf(s, 't-a'), 50000)
+  assert.equal(s.selfUsedShareCents, 24795)
+  assert.equal(partOf(s, 'mainMeterRest'), 25205)
+  const n = s.notices.find((x) => x.code === 'meter.unit-without-meter') ?? assert.fail('Hinweis fehlt')
+  assert.match(n.text, /nach Tagen/)
+})
+
+test('§ 2 HeizkostenV: selbst bewohnt nur, wenn die Einheit an jedem Tag selbstgenutzt ist (S4)', () => {
+  assert.ok(codes(computeSettlement({ ...snapshotOf(source({
+    units: [unit('a'), unit('b', { ...eigen, selfPersons: 1 })], tenancies: [tenancy('t-a', 'a')],
+    costItems: [item({ key: 'area', category: 'Heizung und Warmwasser' })],
+  }), 2025), property: { kind: 'zfh' } })).every((c) => c !== 'property.kind-mismatch'), 'ganzjährig selbst bewohnt: Ausnahme gilt')
+  const zfh = computeSettlement({ ...snapshotOf(source({
+    units: [unit('a'), unit('b', { ...eigen, selfPersons: 1, usageChanges: [{ from: '2025-07-01', usage: 'ausgenommen' }] })],
+    tenancies: [tenancy('t-a', 'a')],
+    costItems: [item({ key: 'area', category: 'Heizung und Warmwasser' })],
+  }), 2025), property: { kind: 'zfh' } })
+  assert.ok(codes(zfh).includes('property.kind-mismatch'), 'nur bis Juni selbst bewohnt: Ausnahme gilt nicht')
+})
+
 
 test('Fläche: Leerstand zwischen Eigennutzung und Einzug bleibt beim Vermieter', () => {
   const s = settle(source({
@@ -219,6 +305,19 @@ test('Ein Mietverhältnis über vermietet, Eigennutzung, vermietet zählt im ers
   assert.match(n.text, /die übrigen 184 Tage nicht/)
 })
 
+test('Eigene Heizkostenabrechnung: ein Mietverhältnis ganz in der Zeit der Eigennutzung ist Eigenanteil (S3)', () => {
+  const units = [selfUnit('a', 60), selfUnit('b', 80), selfUnit('c', 60, { selfPersons: 1, usageChanges: [{ from: '2025-10-01', usage: 'eigen' }] })]
+  const base = [selfTenancy('A', 'a', '2020-01-01', null), selfTenancy('B', 'b', '2020-01-01', null), selfTenancy('C1', 'c', '2020-01-01', '2025-09-30')]
+  const ohne = computeSettlement(selfSnapshot({ units, tenancies: base }))
+  const mit = computeSettlement(selfSnapshot({ units, tenancies: [...base, selfTenancy('C2', 'c', '2025-10-01', null)] }))
+  // Ohne C2 trägt die Eigennutzung ab Oktober; mit C2 (Widerspruch) ebenso, nicht „außerhalb“.
+  assert.equal(partOf(ohne, 'selfUse'), 75075)
+  assert.equal(partOf(mit, 'selfUse'), 75075)
+  assert.equal(partOf(mit, 'outsideUnit'), 0)
+  const n = mit.notices.find((x) => x.code === 'usage.tenancy-conflict') ?? assert.fail('Hinweis fehlt')
+  assert.doesNotMatch(n.text, /bleibt er dagegen Nutzer/)
+})
+
 // ---------- Steuerübersicht (Teil 1) ----------
 
 test('Steuer: umlagefähige Kosten folgen dem tagesgenauen Eigenanteil, der Wechsel wird genannt', () => {
@@ -231,8 +330,30 @@ test('Steuer: umlagefähige Kosten folgen dem tagesgenauen Eigenanteil, der Wech
   assert.equal(x.privateCents, 24795)
   assert.deepEqual(r.usageChangedUnits, ['b'])
   assert.equal(r.selfUseChangedInYear, false)
-  // Nach Fläche geteilt wird in Teil 1 nach der Nutzung am Jahresende: b ist dann vermietet, also nichts privat.
-  assert.equal(r.expenses.items.find((i) => i.costItemId === 'g')?.privateCents, 0)
+  // Nach Fläche tagesgenau (Durchsicht M1): 100.000 × 50 × 181/365 / 100 = 24.794,52; vorher nach dem Jahresende 0.
+  assert.equal(r.expenses.items.find((i) => i.costItemId === 'g')?.privateCents, 24795)
+})
+
+test('Steuer: nach Fläche tagesgenau, auch bei Einheiten außerhalb (M1, Probe P2 und P3)', () => {
+  // P2: x selbst bis 30.06., dann außerhalb. Die Abrechnung: 24.795 Eigenanteil; die Steuer teilt nach dem Gebäude, weil
+  // x an Tagen außerhalb liegt: 100.000 × (50 × 181/365) / 100 = 24.794,52.
+  const p2 = taxReport(snapshotOf(source({
+    units: [unit('a'), unit('x', { ...eigen, selfPersons: 1, usageChanges: [{ from: '2025-07-01', usage: 'ausgenommen' }] })],
+    tenancies: [tenancy('t-a', 'a')],
+    costItems: [item({ key: 'area' }), item({ id: 'g', key: 'area', category: 'Nicht umlagefähig', description: 'Dach' })],
+  }), 2025))
+  assert.deepEqual(p2.expenses.items.map((i) => [i.costItemId, i.privateCents]), [['k', 24795], ['g', 24795]])
+  assert.equal(p2.selfOccupiedExists, true)
+  // P3: x vermietet bis November, ab Dezember selbst, y ganz außerhalb: Gebäude 150 m², selbst 50 × 31/365.
+  const p3 = taxReport(snapshotOf(source({
+    units: [unit('a'), unit('x', { usageChanges: [{ from: '2025-12-01', usage: 'eigen' }], selfPersons: 1 }), unit('y', { participates: false, selfUsed: false })],
+    tenancies: [tenancy('t-a', 'a'), tenancy('t-x', 'x', '2025-01-01', '2025-11-30')],
+    costItems: [item({ key: 'area' })],
+  }), 2025))
+  const k = p3.expenses.items.find((i) => i.costItemId === 'k') ?? assert.fail('Position fehlt')
+  assert.deepEqual([k.privateCents, k.settlementPrivateCents], [2831, 4247])
+  // Die Fläche im Kopf der Anlage V nach Tagen (Auslegung): 50 × 31/365.
+  assert.equal(p3.selfUsedAreaM2, Math.round(50 * 31 / 365 * 100) / 100)
 })
 
 test('Steuer: ohne Wechsel keine Angabe zum Nutzungswechsel', () => {
@@ -250,6 +371,38 @@ function rng(seed: number): () => number {
   let s = seed >>> 0
   return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 2 ** 32 }
 }
+
+test('Invariante je Einheit bei gleichbleibender Basis: Eigenanteil nach Tagen, Leerstand nur aus vermieteten Tagen (S5)', () => {
+  // Nur vermietet und selbstgenutzt: Die Basis bleibt, und der Eigenanteil einer Position nach Fläche ist genau
+  // Σ Betrag × Fläche / Basis × Tage selbstgenutzt / Tage (bis auf die Rundung, ein Cent je Position).
+  for (let seed = 1; seed <= 200; seed++) {
+    const r = rng(seed * 31)
+    const day = () => `2025-${String(1 + Math.floor(r() * 12)).padStart(2, '0')}-${String(1 + Math.floor(r() * 28)).padStart(2, '0')}`
+    const units: SnapshotUnit[] = []
+    const tenancies: SnapshotTenancy[] = []
+    for (let i = 0; i < 2 + Math.floor(r() * 3); i++) {
+      const base = r() < 0.5 ? 'vermietet' : 'eigen'
+      const changes = Array.from({ length: Math.floor(r() * 3) }, () => ({ from: day(), usage: (r() < 0.5 ? 'vermietet' : 'eigen') as UnitUsage }))
+      const u = unit(`u${i}`, { areaM2: 20 + Math.floor(r() * 80), participates: base === 'vermietet', selfUsed: base === 'eigen', usageChanges: changes })
+      units.push(u)
+      // Ein Mietverhältnis in jedem vermieteten Abschnitt, mit Zufallslücke am Anfang (Leerstand).
+      for (const [k, sp] of usageSpans(u, '2025-01-01', '2025-12-31').entries()) {
+        if (sp.usage !== 'vermietet' || r() < 0.3) continue
+        const start = r() < 0.5 ? sp.from : sp.to
+        tenancies.push(tenancy(`t${i}-${k}`, u.id, start, sp.to))
+      }
+    }
+    const amount = 1000 + Math.floor(r() * 300000)
+    const s = settle(source({ units, tenancies, costItems: [item({ key: 'area', amountCents: amount })] }))
+    const basis = units.reduce((a, u) => a + u.areaM2, 0)
+    const share = (u: SnapshotUnit, k: UnitUsage) => usageSpans(u, '2025-01-01', '2025-12-31').filter((x) => x.usage === k).reduce((a, x) => a + x.days, 0) / 365
+    const expectedSelf = units.reduce((a, u) => a + amount * (u.areaM2 / basis) * share(u, 'eigen'), 0)
+    const rentedMax = units.reduce((a, u) => a + amount * (u.areaM2 / basis) * share(u, 'vermietet'), 0)
+    assert.ok(Math.abs(s.selfUsedShareCents - expectedSelf) <= 1, `Startwert ${seed}: Eigenanteil ${s.selfUsedShareCents} statt ${expectedSelf}`)
+    assert.ok((parts(s).vacancy ?? 0) <= rentedMax + 1, `Startwert ${seed}: Leerstand über den vermieteten Tagen`)
+    assert.equal(parts(s).outsideUnit ?? 0, 0, `Startwert ${seed}: nichts außerhalb`)
+  }
+})
 
 test('Invariante: Summen, keine negativen Anteile, Eigenanteil ≤ Vermieteranteil, auch mit Nutzungswechseln', () => {
   const usages: UnitUsage[] = ['vermietet', 'eigen', 'ausgenommen']

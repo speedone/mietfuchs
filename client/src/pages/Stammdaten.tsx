@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { CostModel, HeatingModel, SelfSupplyKind, DepositStatus, HeatingPlant, InterimGapStatus, Meter, MeterType, Settings, Tenancy, Unit, UnitDependents, UnitUsage } from '../types'
 import { servesUnit } from '../../../shared/heatingPeriod.ts'
 import { DEPOSIT_STATUS_LABELS, METER_TYPE_LABELS, UNIT_USAGE_LABELS, usageOf } from '../types'
+import { everRented } from '../../../shared/unitUsage.ts'
 import { EMPTY_UNIT_FORM, buildUnitBody, usageChangeField, usesSelf, connectionSummary, connectionTypes, setConnected, unitDeleteBlocked, unitDeleteMessage, unitToForm, type UnitField, type UnitForm } from '../unitForm'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { separateHeatingFor, separateHeatingPlant } from '../heatingSettlementView'
@@ -79,10 +80,12 @@ const EMPTY_TENANCY_EXTRA = {
   heatingPrepayments: [] as { from: string; amount: string }[],
 }
 
-// Heute als JJJJ-MM-TT, örtlich: „läuft noch“ ist eine Frage an den Kalender des Nutzers.
+// Der Tag davor, für „bis …“ in der Liste der Wohnungen (#259).
+const dayBeforeIso = (iso: string): string => (iso ? new Date(Date.parse(`${iso}T00:00:00Z`) - 86400000).toISOString().slice(0, 10) : '')
 // Kurz für die Liste der Wohnungen (#259).
 const USAGE_SHORT: Record<UnitUsage, string> = { vermietet: 'vermietet', eigen: 'Eigennutzung', ausgenommen: 'nicht beteiligt' }
 
+// Heute als JJJJ-MM-TT, örtlich: „läuft noch“ ist eine Frage an den Kalender des Nutzers.
 const localToday = (): string => {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -342,7 +345,8 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
     toast(`Mietverhältnis „${t.tenantName}“ gelöscht.`)
   }
 
-  const participating = units.filter((u) => u.participates)
+  // In irgendeiner Stufe der Staffel vermietet (#259); sonst wäre die Abrechnung leer.
+  const participating = units.filter(everRented)
   // Miteigentumsanteile (#142): bei einer Eigentumswohnung immer, sonst sobald eine Wohnung welche hat.
   const showsMea = property?.kind === 'etw' || units.some((u) => u.mea != null)
 
@@ -400,7 +404,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                     {/* Nutzungswechsel (#259) stehen unter der Angabe, mit dem Tag. */}
                     {(u.usageChanges ?? []).length > 0 && (
                       <div className="muted cell-sub">
-                        {(u.usageChanges ?? []).map((c) => `ab ${fmtDate(c.from)} ${USAGE_SHORT[c.usage]}`).join(' · ')}
+                        {[`${USAGE_SHORT[usageOf(u)]} bis ${fmtDate(dayBeforeIso((u.usageChanges ?? [])[0]?.from ?? ''))}`, ...(u.usageChanges ?? []).map((c) => `ab ${fmtDate(c.from)} ${USAGE_SHORT[c.usage]}`)].join(' · ')}
                       </div>
                     )}
                     {/* Eine Einheit ohne Anschluss (#117, #142) soll man in der Liste sehen. */}

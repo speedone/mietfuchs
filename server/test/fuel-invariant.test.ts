@@ -183,7 +183,7 @@ const SEEDS: number[] = process.env.INV_FROM !== undefined || process.env.INV_TO
   : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 16, 81, 607]
 const STEPS = Number(process.env.INV_STEPS ?? 30)
 
-type Variant = { name: string; lazy: boolean; estimate: boolean; change?: boolean; two?: boolean; swap?: boolean; self?: boolean; hw?: 'combined' | 'separate'; dhw?: 'volumeFormula' | 'areaFormula'; capture?: 'hca' | 'serviceValues'; offset?: boolean; failure?: boolean; rules?: boolean; einlieger?: boolean; credit?: boolean }
+type Variant = { name: string; lazy: boolean; estimate: boolean; change?: boolean; two?: boolean; swap?: boolean; self?: boolean; hw?: 'combined' | 'separate'; dhw?: 'volumeFormula' | 'areaFormula'; capture?: 'hca' | 'serviceValues'; offset?: boolean; failure?: boolean; rules?: boolean; einlieger?: boolean; credit?: boolean; usage?: boolean }
 const VARIANTS: Variant[] = [
   { name: 'Grundform', lazy: false, estimate: false },
   { name: 'Rechnung kommt später', lazy: true, estimate: false },
@@ -228,6 +228,10 @@ const VARIANTS: Variant[] = [
   // eine eigene Lieferung, die sich mit einer bestehenden überschneidet und nur eine negative Position hat
   // (`creditDelivery`), und das Zuordnen einer solchen zu der Lieferung, die sie berichtigt (`reassign`).
   { name: 'Gutschrift ohne Rechnung', lazy: true, estimate: true, change: true, credit: true },
+  // #259 (Durchsicht S5): Nutzungswechsel in B, Mieter bis 15.01.2025, dann Eigennutzung, ab 01.09.2025 wieder vermietet
+  // und leer. Die Gewichte müssen jeden Topf weiter ganz verteilen, auch über den Eintritt des Vermieters als Nutzer.
+  { name: 'Eigene Heizkostenabrechnung, Nutzungswechsel in B', lazy: false, estimate: false, self: true, usage: true },
+  { name: 'Freie Schlüssel, Nutzungswechsel in B', lazy: false, estimate: false, usage: true },
 ]
 
 // Heizung PR 14 (x): Unter einer Ausnahme nach § 11 für Wärme und Warmwasser keine Angaben nach § 6a, kein
@@ -661,9 +665,9 @@ for (const variant of VARIANTS) {
         await opened.write(async (db) => {
           await db.update(properties).set({ periodStartMonth: 5 }).where(eq(properties.id, 'objekt-1'))
           await createEntity(db, 'units', 'a', { propertyId: 'objekt-1', name: 'A', areaM2: 60, ...(variant.einlieger ? { participates: false, selfUsed: true, selfPersons: 1 } : { participates: true }) })
-          await createEntity(db, 'units', 'b', { propertyId: 'objekt-1', name: 'B', areaM2: 40, participates: true })
+          await createEntity(db, 'units', 'b', { propertyId: 'objekt-1', name: 'B', areaM2: 40, participates: true, selfPersons: 1, ...(variant.usage ? { usageChanges: [{ from: '2025-01-16', usage: 'eigen' }, { from: '2025-09-01', usage: 'vermietet' }] } : {}) })
           if (!variant.einlieger) await createEntity(db, 'tenancies', 'ta', { unitId: 'a', tenantName: 'Mieter A', persons: 1, start: '2020-01-01' })
-          await createEntity(db, 'tenancies', 'tb', { unitId: 'b', tenantName: 'Mieter B', persons: 1, start: '2020-01-01', ...(variant.capture || variant.failure || variant.change ? { end: CHANGE_END } : {}) })
+          await createEntity(db, 'tenancies', 'tb', { unitId: 'b', tenantName: 'Mieter B', persons: 1, start: '2020-01-01', ...(variant.capture || variant.failure || variant.change || variant.usage ? { end: CHANGE_END } : {}) })
           if (variant.change) await createEntity(db, 'tenancies', 'tb2', { unitId: 'b', tenantName: 'Mieter B2', persons: 1, start: '2025-01-16' })
           if (variant.capture || variant.failure) await createEntity(db, 'tenancies', 'tb2', { unitId: 'b', tenantName: 'Mieter B2', persons: 1, start: nextStart })
           // Heizung PR 13: zwei weitere Wohnungen, sodass A 30 %, B 20 %, C und D je genau 25 % der Fläche haben.

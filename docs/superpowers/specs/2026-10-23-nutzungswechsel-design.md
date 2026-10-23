@@ -35,96 +35,126 @@ sind der Beweis.
 
 ## 2. Abrechnung
 
-Je Einheit und Zeitraum zählt calc.ts die Tage je Nutzung: `rentedDays`, `selfDays`, `outsideDays`.
-Eine Einheit gehört zur Verteilbasis, wenn sie an einem Tag vermietet oder selbstgenutzt ist; ihr
-Gewicht ist der Anteil dieser Tage am Zeitraum.
+Je Einheit und Zeitraum zählt calc.ts die Tage je Nutzung (`usageIn`: vermietet, selbstgenutzt,
+außerhalb). Eine Einheit gehört zur Verteilbasis, wenn sie an einem Tag vermietet oder selbstgenutzt ist.
 
-| Schlüssel | Verteilbasis | Eigenanteil (`selfUse`) |
-| --- | --- | --- |
-| Fläche | Σ m² × Tage in der Einheit / Tage des Zeitraums | Σ m² × `selfDays` / Tage |
-| Einheiten | Σ Tage in der Einheit / Tage | Σ `selfDays` / Tage |
-| Personen | Personentage der Mieter + `selfPersons` × `selfDays` + Leerstand | `selfPersons` × `selfDays` |
-| Vereinbart | Anteil × Tage in der Einheit / Tage; außerhalb verfällt der Anteil anteilig (`outsideUnit`) | Anteil × `selfDays` / Tage |
-| Gemeinschaft | Wert × Tage in der Einheit / Tage | Wert × `selfDays` / Tage |
-| Verbrauch | alle Wohnungszähler wie bisher | Verbrauch der Zähler in den Tagen der Eigennutzung |
-| Direkt | (eine Einheit) | Betrag × `selfDays` / Tage; außerhalb: `outsideUnit` |
-
-- **Leerstand** sind die vermieteten Tage ohne Mietverhältnis; er bleibt wie bisher als Rest beim
-  Vermieter (`vacancy`), beim Personenschlüssel mit `VACANCY_PERSONS` je Tag (#177). Eine Zeit der
-  Eigennutzung ist kein Leerstand, eine Zeit außerhalb auch nicht.
-- **Verbrauch**: Was die Zähler einer Einheit in ihren Tagen außerhalb messen, geht als
-  `outsideUnit` an den Vermieter, wie bisher bei einer Einheit, die ganz außerhalb liegt. Der Rest des
-  Hauptzählers (#116) wird nur dann Eigenanteil, wenn alle Einheiten ohne Zähler den **ganzen**
-  Zeitraum selbstgenutzt sind; sonst bleibt er wie bei jeder vermieteten Wohnung ohne Zähler beim
-  Vermieter mit der bekannten Warnung. Der Zähler einer Einheit muss die Tage der Eigennutzung und
-  der Mietverhältnisse abdecken (`neededDays`).
+- **Je Abschnitt verteilen** (Durchsicht S1). Wechselt eine Einheit zwischen „in der
+  Abrechnungseinheit“ und „außerhalb“, ändert sich die Verteilbasis im Zeitraum. Bei Fläche, Einheiten
+  und Gemeinschaft wird der Betrag dann nach Tagen (bei „nur Heizung“ nach Gradtagen, § 9b Abs. 2) auf
+  die Abschnitte gleicher Basis geteilt, je Abschnitt nach Fläche, Einheiten oder Wert verteilt, und die
+  exakten Anteile werden summiert und **einmal** gerundet (#202). Das ist dasselbe Ergebnis, das eine
+  feste Angabe je Abschnitt ergäbe: Eine ganzjährig außerhalb liegende Einheit belastet die übrigen
+  voll, also auch in dem Abschnitt, in dem sie außerhalb liegt. Gemittelt über das Jahr (der erste
+  Stand von Teil 1) trug ein Mieter dagegen für die Zeit, in der eine andere Einheit außerhalb lag,
+  einen Anteil, den es in der Zeit gar nicht gab (Probe P1: 33.515 statt 25.205 Cent). **Dass die
+  Kosten gleichmäßig über den Zeitraum anfallen, ist eine Auslegung** und steht so im Hinweis
+  `usage.changed`, im Lexikon und in der Anleitung; die Rechnung kennt keinen Anfall je Tag.
+- **Ohne Abschnitte**, weil dort keine Basis gemittelt wird:
+  - Ein Wechsel nur zwischen vermietet und selbstgenutzt ändert die Basis nicht. Eigenanteil und
+    Mieteranteil sind dann Fläche × Tage, und die Summe der Teile ist der Anteil der Einheit.
+  - **Vereinbarte Anteile** gelten absolut je Wohnung; in Tagen außerhalb verfällt der Anteil dieser
+    Tage (`outsideUnit`), die übrigen Wohnungen tragen nichts davon. Das ist dieselbe Regel wie bei einer
+    ganz ausgenommenen Wohnung.
+  - **Direktzuordnung**: eine Einheit, nach Tagen auf Mieter, Eigennutzung und außerhalb.
+  - **Verbrauch**: gemessen; was ein Zähler in Tagen außerhalb misst, ist `outsideUnit`, in Tagen der
+    Eigennutzung Eigenanteil.
+  - **Personen**: Personentage sind schon eine Größe über die Zeit; die Basis schwankt auch ohne
+    Nutzungswechsel mit jedem Ein- und Auszug, ohne dass Mietfuchs (oder die übliche Praxis) dafür
+    Abschnitte bildet. Eine Zeit außerhalb hat keine Personentage, wie eine leere Wohnung ohne fiktive
+    Person.
+- **Leerstand** sind die vermieteten Tage ohne Mietverhältnis (`vacancy`), beim Personenschlüssel mit
+  `VACANCY_PERSONS` je Tag (#177). Eine Zeit der Eigennutzung ist kein Leerstand, eine Zeit außerhalb
+  auch nicht.
+- **Hauptzähler (#116)**: Der Rest wird Eigenanteil, wenn alle Einheiten ohne Zähler den ganzen
+  Zeitraum selbstgenutzt sind. Ist es genau eine Einheit, die nur einen Teil des Zeitraums selbstgenutzt
+  ist (Durchsicht S2), gilt der Rest nach Tagen der Eigennutzung als Eigenanteil, der übrige Teil bleibt
+  als `mainMeterRest` beim Vermieter; das nimmt gleichmäßigen Verbrauch an und ist eine Auslegung, die
+  Warnung `meter.unit-without-meter` sagt es. Bei mehreren solchen Einheiten lässt sich der Rest nicht
+  zuordnen und bleibt beim Vermieter.
 - **Ein Mietverhältnis zählt nur in der vermieteten Zeit.** Das ist die Verallgemeinerung der
-  bisherigen Regel: Ein Mietverhältnis in einer selbstgenutzten oder ausgenommenen Wohnung bekam nie
-  einen Kostenanteil (`partTenancies` filterte nach `participates`). Für die Kosten wird das
-  Mietverhältnis deshalb auf die vermieteten Tage beschnitten; überspannt es eine Zeit anderer
-  Nutzung, zählt sein erster vermieteter Abschnitt (die übrigen Tage bleiben beim Vermieter, nie bei
-  anderen Mietern). Die Vorauszahlungen bleiben unberührt, denn gezahlt hat der Mieter sie. Der
-  Widerspruch steht als Hinweis `usage.tenancy-conflict` (Stufe `error`, sichert das Abschließen ab),
-  mit den Tagen. Für Einheiten ohne Wechsel gibt es den Hinweis nicht; dort bleibt es beim bisherigen
-  Verhalten ohne Meldung.
-- **Eigene Heizkostenabrechnung, § 9b HeizkostenV.** Ein Wechsel der Nutzung ist ein Nutzerwechsel:
-  `usersOf` (server/src/heating.ts) teilt die Zeiten ohne Mietverhältnis an den Grenzen der Staffel in
-  Leerstand, Eigennutzung und außerhalb. Damit gilt alles, was beim Mieterwechsel gilt, auch für den
-  Eintritt des Vermieters als Nutzer: Zwischenablesung an der Grenze (§ 9b Abs. 1), sonst Gradtage
-  bzw. Zeitanteil (§ 9b Abs. 2), die Gruppe nach § 9b Abs. 3, der Hinweis zur fehlenden
-  Zwischenablesung. Ein Mietverhältnis bleibt dort Nutzer, solange es läuft (wer dort wohnt, ist
-  Nutzer); der Widerspruch steht schon im Hinweis oben, und der Hinweis sagt, dass er dort Nutzer bleibt.
-  Das ist eine bewusste Grenze (Durchsicht, Befund 1): Die Heizperiode und ihre Nachbarn bilden die
-  Nutzer über `usersOf` aus ganzen Mietverhältnissen; ein Beschneiden dort müsste die Zwischenablesungen
-  und die Gruppen nach § 9b Abs. 3 mitziehen. Die Summen stimmen auch so, nur trägt der Mieter dann die
-  Heizkosten der widersprüchlichen Tage, bis die Angaben berichtigt sind.
-- **Ja/Nein-Fragen im Zeitraum** (§ 2 HeizkostenV, § 5d Abs. 3 CO2KostAufG, Garage, Wohnung im Sinne
-  von `isDwelling`): Eine Einheit mit Wechsel im Zeitraum gilt als vermietet, wenn sie an einem Tag
-  vermietet ist, und nur dann als selbst bewohnt, wenn sie an keinem Tag vermietet ist. Die Ausnahmen
-  für das selbst bewohnte Zweifamilienhaus greifen damit nur, wenn ihre Voraussetzung den ganzen
-  Zeitraum besteht; das ist die vorsichtige Lesart (der Vermieter muss sonst nach der Verordnung
-  abrechnen, was immer zulässig ist).
-- Hinweis `usage.changed` (Stufe `hint`, färbt das Cockpit nicht): nennt je Einheit die Abschnitte
-  im Zeitraum, damit die Abrechnung erklärt, warum ein Eigenanteil nur für einen Teil gilt.
+  bisherigen Regel (ein Mietverhältnis in einer selbstgenutzten Wohnung bekam nie einen Kostenanteil).
+  Für die Kosten wird es auf seinen ersten vermieteten Abschnitt beschnitten (`costTenancies`); die
+  übrigen Tage bleiben beim Vermieter, nie bei anderen Mietern. Vorauszahlungen bleiben am ganzen
+  Mietverhältnis. Hinweis `usage.tenancy-conflict` (`error`), der Zeit ohne Vermietung und späteren
+  vermieteten Abschnitt getrennt nennt. Für Einheiten ohne Wechsel bleibt es beim bisherigen Verhalten
+  ohne Meldung.
+- **Eigene Heizkostenabrechnung, § 9b HeizkostenV.** Ein Wechsel ist ein Nutzerwechsel: `usersOf`
+  teilt die Zeiten ohne Mietverhältnis an den Grenzen der Staffel, auch in den Nachbarperioden
+  (`outerChanges`). Damit gelten Zwischenablesung (§ 9b Abs. 1), Gradtage bzw. Zeitanteil (Abs. 2) und
+  die Gruppe nach Abs. 3 auch für den Eintritt des Vermieters als Nutzer. Ein Mietverhältnis ganz in
+  einer Zeit ohne Vermietung hat keine Abrechnung; sein Gewicht geht nach der Nutzung seiner Tage an
+  `selfUse` bzw. `outsideUnit` (Durchsicht S3). Eines mit vermieteten Tagen bleibt Nutzer, solange es
+  läuft (siehe Bewusst offen), und der Hinweis sagt es dann.
+- **Ja/Nein-Fragen** (Durchsicht S4): „selbst bewohnt“ für § 2 HeizkostenV und § 5d Abs. 3
+  CO2KostAufG nur, wenn die Einheit an **jedem** Tag selbstgenutzt ist (`dwellerUnits`; in
+  `agreeableFor` je Heizperiode `flagsWithin`). Die Ausnahmen greifen damit nur, wenn ihre Voraussetzung
+  den ganzen Zeitraum besteht; abzurechnen nach der Verordnung ist immer zulässig. Für Garage und
+  Wohnung (`isDwelling`) gilt „an einem Tag“.
+- Hinweis `usage.changed` (`hint`, färbt das Cockpit nicht) nennt die Abschnitte und die Auslegung.
 
 ## 3. Steuerübersicht
 
-- **Umlagefähige Positionen** übernehmen schon heute den Eigenanteil der Abrechnung (#163,
-  `splitForTax`). Weil die Abrechnung tagesgenau rechnet, ist ihr privater Teil damit ebenfalls
-  tagesgenau, ohne eigene Regel.
-- **Teil 2 (eigener PR)**: Was nach Fläche geteilt wird (nicht umlagefähige Kosten, nicht verteilte
-  Positionen, Einheiten außerhalb, Direktzuordnung nicht umlagefähiger Kosten), die Flächen im Kopf
-  der Anlage V und die Grundsatzfrage, ob die Zeit nach einem Wechsel abziehbar ist. In Teil 1 liest
-  die Steuerübersicht dafür die **Nutzung am letzten Tag des Kalenderjahres** (`unitAsOf`), und der
-  Hinweis `usageChanges` der Übersicht nennt die Einheiten mit Wechsel und sagt, dass diese Teile
-  noch nicht tagesgenau sind. Ohne Wechsel ist die Nutzung am Jahresende die bisherige Angabe.
+- **Tagesgenau** (Durchsicht M1, damit ist der Kern von „Teil 2“ hier erledigt): `taxUsage` zählt je
+  Teil im Steuerjahr die Tage je Nutzung. Selbstgenutzt heißt Anteil der Tage der Eigennutzung
+  (ohne Wechsel genau 1 oder 0), außerhalb heißt an einem Tag außerhalb.
+  - Umlagefähige Positionen übernehmen den Eigenanteil der Abrechnung (#163), der tagesgenau ist.
+  - Nach Fläche (nicht umlagefähig, nicht verteilt, Einheiten außerhalb): selbstgenutzte Fläche ×
+    Tage der Eigennutzung / Tage des Teils, über die Fläche des Gebäudes (BFH IX R 26/06).
+  - Direktzuordnung nicht umlagefähiger Kosten: Betrag × Tage der Eigennutzung / Tage.
+  - Ausgleich beim Betriebsstrom ohne zuordenbare Anlage (K1): dieselbe Regel über das Kalenderjahr.
+  - Kopf der Anlage V: die selbstgenutzte Fläche nach Tagen, auf zwei Stellen gerundet. Die Anlage V
+    fragt die eigengenutzte Fläche, ohne einen Wechsel im Jahr zu regeln; das ist eine Auslegung.
 - **Leerstand vor einer Vermietung und nach einer Selbstnutzung**: Aufwendungen für eine zunächst
   selbst bewohnte, anschließend leer stehende und noch nicht vermietete Wohnung sind nur abziehbar,
   wenn der endgültige Entschluss zu vermieten durch ernsthafte und nachhaltige Vermietungsbemühungen
   belegt ist (BFH, Urteil vom 28.10.2008, IX R 1/07, Leitsatz 1, Rn. 12 f.; gelesen auf lexetius.com).
   Für eine Wohnung, die nach vorheriger, auf Dauer angelegter Vermietung leer steht, bleiben die
   Aufwendungen abziehbar, solange der Entschluss zu vermieten nicht endgültig aufgegeben ist (BFH,
-  Urteil vom 11.12.2012, IX R 14/12, BFHE 239, 453; **Volltext nicht gelesen**, Inhalt nach den
-  Zusammenfassungen und nach dem Zitat in späteren Urteilen, ungeprüft). Mietfuchs kennt die
-  Vermietungsbemühungen nicht. Es rechnet den Leerstand deshalb weiter als abziehbar (`vacancy` ist
-  nicht privat) und sagt im Hinweis `usage.vacancy-after-self` (Stufe `hint`), dass das nach einer
-  Eigennutzung nur mit belegten Vermietungsbemühungen gilt. Gerechnet wird nichts davon; das bleibt
-  ein Hinweis, weil die Antwort an Tatsachen hängt, die nur der Vermieter kennt.
+  Urteil vom 11.12.2012, IX R 14/12, BFHE 239, 453; **Volltext nicht gelesen**, ungeprüft). Mietfuchs
+  kennt die Vermietungsbemühungen nicht, rechnet den Leerstand als abziehbar (`vacancy` ist nicht
+  privat) und sagt es im Hinweis der Steuerseite (`usageChangedUnits`).
 
 ## 4. Oberfläche
 
-Im Seitenfenster der Einheit (Stammdaten) bleibt „Nutzung“ das Auswahlfeld, jetzt mit dem Hinweis „von
-Anfang an“. Darunter die Staffel „Nutzungswechsel“: je Zeile ein Datum (`type="date"`, tagesgenau
-wie die Personenstaffel) und die Nutzung ab diesem Tag, „+ Wechsel ab Datum“ fügt eine Zeile an. Die
-Prüfung meldet je Zeile und Feld (`Problem`), gespeichert wird mit dem Rumpf der Einheit. Die Liste
-der Einheiten zeigt die Nutzung heute und „ab …“ beim nächsten Wechsel.
+Im Seitenfenster der Einheit (Stammdaten) bleibt „Nutzung“ das Auswahlfeld (es gilt bis zum ersten
+Wechsel). Darunter die Staffel „Nutzungswechsel“: je Zeile ein Datum (`type="date"`, tagesgenau wie die
+Personenstaffel) und die Nutzung ab diesem Tag, „+ Wechsel ab Datum …“ fügt eine Zeile an. Die Prüfung
+meldet je Zeile: Datum fehlt, kein Datum, Tag doppelt, keine Änderung gegenüber der Stufe davor. Der
+Server nimmt einen Inhalt, der kein Array ist oder aus nur unbrauchbaren Einträgen besteht, mit 400 nicht
+an (statt die Staffel still zu leeren); die Tabelle prüft das Datum mit `GLOB`. Die Liste der Einheiten
+zeigt „vermietet bis …“ und „ab …“ je Stufe.
 
-## 5. Tests
+Wer „vermietet im Zeitraum“ oder „selbstgenutzt“ fragt, nimmt die Helfer aus shared/unitUsage.ts
+(`rentedWithin`, `selfUsedWithin`, `selfUsedThroughout`, `tenancyRentedWithin`, `everRented`,
+`flagsWithin`): Einzelbeträge und Umlagevereinbarung im Kostenformular, Vorschlag des Schlüssels,
+Vorwahl der Wohnung für ein neues Mietverhältnis, die Warnung „Keine Wohnung beteiligt“, die Kacheln im
+Cockpit, die Zuordnung der Messdienstzeilen und die Frage nach der Eigennutzung bei den CO₂-Angaben.
 
-- Handrechnungen je Schlüssel, Direktzuordnung, Verbrauch, Personen samt Leerstand, Widerspruch mit
-  einem Mietverhältnis (calc-nutzungswechsel.test.ts); `usersOf` mit Grenzen der Staffel.
-- **Ohne Wechsel keine Zahl**: alle bestehenden Goldens und `tax-golden.json`; dazu ein Test, dass ein
-  Wechsel vor oder nach dem Zeitraum dasselbe ergibt wie die entsprechende feste Angabe.
-- **Invariante über Zufallsbestände mit Nutzungswechseln**: Mieteranteile + Vermieteranteil =
-  Gesamtkosten, kein negativer Anteil, Eigenanteil ≤ Vermieteranteil.
-- Datenbank: Lesen und Schreiben über `PUT /api/units`, Kaskade beim Löschen, Migrationsmarke.
+## 5. Bewusst offen
+
+- **Mietverhältnis mit vermieteten Tagen in der eigenen Heizkostenabrechnung**: Es bleibt über seine
+  ganze Laufzeit Nutzer, auch in einer Zeit der Eigennutzung. Nutzer, Zwischenablesungen und Gruppen
+  nach § 9b Abs. 3 hängen an ganzen Mietverhältnissen, auch über die Nachbarperioden (`outerChanges`);
+  ein Beschneiden müsste das alles mitziehen. Die Summen stimmen, der Hinweis sagt es.
+- **Eigenbeträge laut Messdienst** (Schlüssel `amounts`, CO₂-Abzug `co2Units`): Sie sind Beträge, die der
+  Messdienst je Nutzer schon aufgeteilt hat; Mietfuchs teilt sie nicht nach Tagen. Eine Einheit, die im
+  Zeitraum selbstgenutzt ist, zählt mit ihrem Eigenbetrag als Eigenanteil.
+- **Personenschlüssel** ohne Abschnitte (siehe oben).
+- **Text der CO₂-Erstattung** (db/co2Refunds.ts) nennt „gehört nicht zur Abrechnungseinheit“ noch nach
+  der Angabe von Anfang an; die Entscheidung selbst fällt nach der Abrechnung und ist richtig.
+- Anzeigen, die nur beschreiben (etwa Cockpit `missingAreaCheck`), lesen teils noch die Angabe von
+  Anfang an.
+
+## 6. Tests
+
+- Handrechnungen je Schlüssel, je Abschnitt, Hauptzähler, Heizung, Steuer (calc-nutzungswechsel.test.ts);
+  `usersOf` mit Grenzen der Staffel (heating.test.ts).
+- **Ohne Wechsel keine Zahl**: alle Goldens und `tax-golden.json`; ein Wechsel vor dem Zeitraum und
+  genau an seinem Beginn ergibt bei jedem Schlüssel dasselbe wie die feste Angabe.
+- **Invarianten**: Summen, keine negativen Anteile, Eigenanteil ≤ Vermieteranteil über Zufallsbestände;
+  bei gleichbleibender Basis der Eigenanteil je Einheit nach Tagen und der Leerstand nur aus vermieteten
+  Tagen; fuel-invariant mit zwei Varianten „Nutzungswechsel in B“ (Gewichte verteilen den Topf ganz).
+  Mutationsproben: `outsidePhased = 0`, `wholeSelf` immer wahr, ohne Abschnitte und ohne
+  `dwellerUnits` machen je einen Test rot.
+- Datenbank: Lesen und Schreiben, Kaskade, 400 bei unbrauchbarem Inhalt, Migrationsmarke, dieselbe Liste
+  der Nutzungen in Schema und shared/.

@@ -66,6 +66,41 @@ export function usageSpans(u: UsageUnit, from: string, to: string): UsageSpan[] 
   return spans
 }
 
+// Die Tage je Nutzung in [from, to].
+export function usageDays(u: UsageUnit, from: string, to: string): Record<UnitUsage, number> {
+  const days: Record<UnitUsage, number> = { vermietet: 0, eigen: 0, ausgenommen: 0 }
+  if (from > to) return days
+  for (const sp of usageSpans(u, from, to)) days[sp.usage] += sp.days
+  return days
+}
+
+// Fragen für die Oberfläche und die Steuer (#259): an mindestens einem Tag in [from, to] vermietet bzw.
+// selbstgenutzt, und an jedem Tag selbstgenutzt (selbst bewohnt im Sinne von § 2 HeizkostenV).
+export const rentedWithin = (u: UsageUnit, from: string, to: string): boolean => usageDays(u, from, to).vermietet > 0
+export const selfUsedWithin = (u: UsageUnit, from: string, to: string): boolean => usageDays(u, from, to).eigen > 0
+export const selfUsedThroughout = (u: UsageUnit, from: string, to: string): boolean => {
+  const d = usageDays(u, from, to)
+  return d.eigen > 0 && d.vermietet === 0 && d.ausgenommen === 0
+}
+
+// Zählt ein Mietverhältnis in [from, to] für die Kosten? Nur, wenn seine Wohnung in seiner Zeit darin an einem Tag
+// vermietet ist (wie `costTenancies` in calc.ts).
+export function tenancyRentedWithin(u: UsageUnit, t: { start: string; end: string | null }, from: string, to: string): boolean {
+  const f = t.start > from ? t.start : from
+  const e = t.end !== null && t.end < to ? t.end : to
+  return f <= e && rentedWithin(u, f, e)
+}
+
+// Ist die Einheit in irgendeiner Stufe der Staffel vermietet? Für die Frage „ist überhaupt eine Wohnung beteiligt“.
+export const everRented = (u: UsageUnit): boolean => baseUsage(u) === 'vermietet' || usageChangesOf(u).some((c) => c.usage === 'vermietet')
+
+// Die Kennzeichen einer Einheit für die Ja/Nein-Fragen eines Zeitraums (§ 2 HeizkostenV): vermietet an einem Tag,
+// selbstgenutzt nur an jedem Tag (wie `dwellerUnits` in calc.ts).
+export function flagsWithin<U extends UsageUnit>(u: U, from: string, to: string): U {
+  if (!usageChangesWithin(u, from, to) && usageAt(u, from) === baseUsage(u)) return u
+  return { ...u, participates: rentedWithin(u, from, to), selfUsed: selfUsedThroughout(u, from, to), usageChanges: [] }
+}
+
 // Wechselt die Nutzung in [from, to]?
 export const usageChangesWithin = (u: UsageUnit, from: string, to: string): boolean => usageSpans(u, from, to).length > 1
 

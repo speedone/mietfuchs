@@ -11,6 +11,7 @@ import { sameCostCandidates, type DuplicateItem } from '../../shared/duplicates.
 import { parseNumberDe } from './numbers'
 import { targetOptions } from './heatingSelfForm'
 import { usageOf } from './types'
+import { rentedWithin, tenancyRentedWithin } from '../../shared/unitUsage.ts'
 import { CREDIT_WITH_AMOUNTS, costItemBody, euro, type CostItemBody, inBasis, pct, showsTaxUnitField, taxUnitOf, type BuildResult, type CostItemDraft } from '../../shared/costItem.ts'
 import { etwByStatement, lastExternalBasis, type KeyContext } from '../../shared/assessment.ts'
 import { calendarContext, calendarPeriod, calendarYearPeriod, spansTwoYears } from '../../shared/period.ts'
@@ -189,8 +190,9 @@ const parseAmountNumber = parseQuantity
 // Abrechnungszeitraum (#208).
 export function tenanciesForAmounts(tenancies: Tenancy[], units: Unit[], period: number | Pick<BillingPeriod, 'from' | 'to'>, participants: string[] | null = null): Tenancy[] {
   const span = typeof period === 'number' ? calendarYearPeriod(period) : period
-  const vermietet = new Set(units.filter((u) => u.participates && (participants === null || participants.includes(u.id))).map((u) => u.id))
-  return tenancies.filter((t) => vermietet.has(t.unitId) && t.start <= span.to && (t.end === null || t.end >= span.from))
+  // Nach der Nutzung im Zeitraum (#259): ein Mietverhältnis, dessen Wohnung in seiner Zeit vermietet ist.
+  const byId = new Map(units.filter((u) => participants === null || participants.includes(u.id)).map((u) => [u.id, u]))
+  return tenancies.filter((t) => { const u = byId.get(t.unitId); return u !== undefined && tenancyRentedWithin(u, t, span.from, span.to) })
 }
 
 // Der rechnerische Anteil laut Gemeinschaftsabrechnung, zum Vergleich mit dem eingetragenen
@@ -341,7 +343,7 @@ function proposal(previous: ItemForm, category: string, units: Unit[], meters: M
     const last = ctx ? lastExternalBasis(ctx.items) : null
     return { ...form, key: 'external', meterType: '', ...(last ? externalFields(last) : {}) }
   }
-  return { ...form, ...suggestedKey(category, units, meters) }
+  return { ...form, ...suggestedKey(category, units, meters, ctx ? calendarYearPeriod(ctx.year) : undefined) }
 }
 
 // Das Formular einer neuen Position, mit dem Vorschlag schon für die erste Kostenart.
@@ -457,10 +459,12 @@ export function heatingTargetOptions(selfPlant: boolean, hotWater: HotWater, par
 // einfachste sichere Regel ist deshalb, ihn nicht mitzuzählen. Der Vorschlag steht in beiden
 // Auswahllisten: Gibt es einen Kaltwasserzähler an einer Wohnung, bietet sie `meter` und
 // `kaltwasser` an.
-export function suggestedKey(category: string, units: Unit[], meters: Meter[]): { key: CostKey, meterType: MeterType | '' } {
+// `period`: Mit Nutzungswechsel (#259) zählt jede Wohnung, die im Zeitraum an einem Tag vermietet ist; ohne die Angabe
+// die Nutzung von Anfang an.
+export function suggestedKey(category: string, units: Unit[], meters: Meter[], period?: Pick<BillingPeriod, 'from' | 'to'>): { key: CostKey, meterType: MeterType | '' } {
   if (category === 'Wasser/Abwasser') {
     const metered = new Set(meters.filter((m) => m.type === 'kaltwasser' && m.unitId).map((m) => m.unitId))
-    const participating = units.filter((u) => u.participates)
+    const participating = units.filter((u) => (period ? rentedWithin(u, period.from, period.to) : u.participates))
     const covered = participating.every((u) => metered.has(u.id) || (u.noConnection ?? []).includes('kaltwasser'))
     if (participating.length > 0 && metered.size > 0 && covered) return { key: 'meter', meterType: 'kaltwasser' }
   }

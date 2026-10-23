@@ -7,6 +7,7 @@ import { CO2_ANSWER_OPTIONS, type Co2Answer, type Co2Form } from './co2Form'
 import { unconfirmedConsequence } from './heatingForm'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { formatDayRange, spansTwoYears } from '../../shared/period.ts'
+import { selfUsedWithin } from '../../shared/unitUsage.ts'
 import type { DhwMethod, ServiceBlock, ServiceStatementExtraction, ServiceUserLine, Tenancy, Unit } from './types'
 
 // `heating`: die Heizperiode der Anlage, in der die Heizposition steht; `object`: der Abrechnungszeitraum
@@ -18,7 +19,7 @@ export type ImportContext = {
   heating: { key: string; from: string; to: string }
   object: { key: string; from: string; to: string }
   tenancies: readonly Pick<Tenancy, 'id' | 'unitId' | 'tenantName' | 'start' | 'end'>[]
-  units: readonly Pick<Unit, 'id' | 'name' | 'selfUsed'>[]
+  units: readonly (Pick<Unit, 'id' | 'name' | 'selfUsed' | 'usageChanges'> & { participates?: boolean })[]
   existingAmountItems: number
   // Kostenarten, für die im Abrechnungszeitraum des Objekts schon eine Position mit Einzelbeträgen steht
   // (Durchsicht S4): Wird dieselbe Abrechnung erneut ausgelesen, stünden kalte Blöcke sonst doppelt da, und
@@ -64,7 +65,8 @@ export function matchLine(line: ServiceUserLine, ctx: ImportContext): string {
   const plain = words(line.label).join(' ')
   if (line.vacancy || VACANCY.test(plain)) return 'vacancy'
   if (OWNER.test(plain)) {
-    const own = ctx.units.filter((u) => u.selfUsed === true)
+    // In der Heizperiode selbstgenutzt (#259), nicht nach der Angabe von Anfang an.
+    const own = ctx.units.filter((u) => selfUsedWithin({ ...u, participates: u.participates ?? false }, ctx.heating.from, ctx.heating.to))
     const byLabel = line.unitLabel ? own.filter((u) => contains(line.unitLabel ?? '', u.name)) : []
     const pick = byLabel.length === 1 ? byLabel : own
     return pick.length === 1 && pick[0] ? `self:${pick[0].id}` : ''
@@ -87,7 +89,7 @@ export function targetOptions(ctx: ImportContext): { value: string; label: strin
     ...ctx.tenancies
       .filter((t) => overlaps({ from: t.start, to: t.end }, ctx.heating))
       .map((t) => ({ value: `tenancy:${t.id}`, label: `${t.tenantName} (${unitName(t.unitId)})` })),
-    ...ctx.units.filter((u) => u.selfUsed === true).map((u) => ({ value: `self:${u.id}`, label: `Eigene Wohnung ${u.name}` })),
+    ...ctx.units.filter((u) => selfUsedWithin({ ...u, participates: u.participates ?? false }, ctx.heating.from, ctx.heating.to)).map((u) => ({ value: `self:${u.id}`, label: `Eigene Wohnung ${u.name}` })),
   ]
 }
 
