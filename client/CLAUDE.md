@@ -157,8 +157,14 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   (110 Zeichen, nachgemessen) warnt die Seite (`returnLineTooLong`). Eine vor #415 abgeschlossene Abrechnung bekommt
   nichts davon.
 - **Druckkopf**: `letterhead` lässt einen Objektnamen weg, der schon in der Adresse steht, und ist die
-  Rücksendeangabe des Anschreibens; Anschrift des Mieters (`recipientLines`); fehlt nach Auszug die neue Anschrift,
-  warnt die Seite (`printsFormerAddress`). Der Rechenweg ([CalcSteps.tsx](src/components/CalcSteps.tsx)) ist immer
+  Rücksendeangabe des Anschreibens; Anschrift des Mieters (`recipientLines`: eine eigene Anschrift für den
+  Schriftverkehr geht vor, jedes Komma ist eine Zeile). **Anschrift vor dem Versand** (#229, `addressCheck` in
+  landlord.ts): `former`, wenn der Mieter ausgezogen ist und gedruckt die Wohnung im Anschriftfeld stünde; `outdated`,
+  wenn die eingefrorene Anschrift (`letters[…].recipient`) von der heutigen abweicht (dann hilft nur Wiederöffnen).
+  Nach dem Versand nichts. Die Seite Abrechnung nennt es je Mieter, das Cockpit in einer gelben Zeile „Anschrift für den
+  Versand“ (`addressFindings`). Bewusst kein Hinweis der Berechnung: Der Schnappschuss kennt keine Kontaktdaten. Der
+  Mieterwechsel fragt nach neuer Anschrift, E-Mail und Telefon (vorbelegt, freiwillig); gesendet wird nur, was sich
+  geändert hat (`contactChanges` in tenantChange.ts, Rumpf `contact`). Der Rechenweg ([CalcSteps.tsx](src/components/CalcSteps.tsx)) ist immer
   `no-print`.
 
 ## Lexikon und Anleitungen

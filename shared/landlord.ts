@@ -40,7 +40,9 @@ export function footerLine(landlord: Pick<EffectiveLandlord, 'landlordName' | 'l
 // sonst mit „Haus Birke ·“.
 // Die Anschrift des Mieters auf der gedruckten Abrechnung (N5): eine abweichende Anschrift für den
 // Schriftverkehr geht vor (etwa nach dem Auszug), sonst die Wohnung in der Adresse des Objekts. Ohne
-// Adresse steht nur, was es gibt.
+// Adresse steht nur, was es gibt. Die eigene Anschrift ist eine Zeile „Straße, PLZ Ort“ (#229); jedes Komma und jeder
+// Umbruch beginnt eine Zeile im Anschriftfeld, damit auch „c/o …“ oder ein Zusatz wie „Hinterhaus“ auf eigener Zeile
+// steht (DIN 5008). Die Adresse des Objekts trennt weiter nur vor der Postleitzahl.
 export function recipientLines(
   tenantName: string,
   unitName: string,
@@ -48,7 +50,7 @@ export function recipientLines(
   property: Pick<Property, 'address'> | null | undefined,
 ): string[] {
   const own = (tenancy?.correspondenceAddress ?? '').trim()
-  if (own) return [tenantName, ...own.split(/\s*\n\s*|,\s*(?=\d{5}\b)/).filter((l) => l !== '')]
+  if (own) return [tenantName, ...own.split(/\s*[\n,]\s*/).filter((l) => l !== '')]
   const address = (property?.address ?? '').trim()
   return [tenantName, unitName, ...address.split(/,\s*(?=\d{5}\b)/).filter((l) => l !== '')]
 }

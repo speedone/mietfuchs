@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, endProblem, gapProblem, INTERIM_FEE_HINT, meterProblem, parseMeterValue, successorHeatingNote, tenantChangeProblems, type NewTenantForm } from './tenantChange'
+import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, endProblem, gapProblem, INTERIM_FEE_HINT, meterProblem, parseMeterValue, successorHeatingNote, tenantChangeProblems, contactForm, type NewTenantForm } from './tenantChange'
 
 const meters = [{ id: 'm1', name: 'KW EG' }, { id: 'm2', name: 'Haupt' }]
 const input = (patch: Partial<Parameters<typeof buildTenantChange>[0]> = {}, tenant: Partial<NewTenantForm> = {}) => ({
@@ -178,5 +178,32 @@ describe('Mieterwechsel im Seitenfenster: Angaben je Feld', () => {
     expect(fields({ ...heat, interimGap: { status: 'impossible', reason: ' ' } })).toEqual([['gapReason', 'Grund fehlt']])
     expect(fields({ ...heat, interimGap: { status: 'missed', reason: '' } })).toEqual([])
     expect(fields({ ...heat, meterValues: { w1: '12' } })).toEqual([])
+  })
+})
+
+// #229: neue Anschrift, E-Mail und Telefon des ausziehenden Mieters, alles freiwillig. Gesendet wird nur, was sich
+// gegenüber dem Mietverhältnis geändert hat; ein geleertes Feld entfernt die Angabe.
+describe('Mieterwechsel: Erreichbarkeit des bisherigen Mieters (#229)', () => {
+  const tenancy = { start: '2024-01-01', email: 'alt@example.org', phone: '0301234' }
+  test('vorbelegt mit dem Mietverhältnis; unverändert kommt nichts in den Rumpf', () => {
+    expect(contactForm(tenancy)).toEqual({ correspondenceAddress: '', email: 'alt@example.org', phone: '0301234' })
+    const r = buildTenantChange(input({ tenancy, vacancy: true, contact: contactForm(tenancy) }))
+    expect(r).toEqual({ body: { end: '2025-06-30', readings: [{ meterId: 'm1', value: 123.5 }], newTenancy: null } })
+  })
+  test('nur die geänderten Felder, getrimmt; leer heißt entfernen', () => {
+    const contact = { correspondenceAddress: ' Birkenweg 3, 54321 Anderswo ', email: 'alt@example.org', phone: '' }
+    expect(buildTenantChange(input({ tenancy, vacancy: true, contact }))).toEqual({
+      body: { end: '2025-06-30', readings: [{ meterId: 'm1', value: 123.5 }], newTenancy: null, contact: { correspondenceAddress: 'Birkenweg 3, 54321 Anderswo', phone: null } },
+    })
+    const withSuccessor = buildTenantChange(input({ tenancy, contact }))
+    if (!('body' in withSuccessor)) throw new Error(withSuccessor.error)
+    expect(withSuccessor.body.contact).toEqual({ correspondenceAddress: 'Birkenweg 3, 54321 Anderswo', phone: null })
+  })
+  test('eine E-Mail ohne @ und eine zu lange Anschrift sind Meldungen am Feld', () => {
+    const contact = { correspondenceAddress: 'x'.repeat(201), email: 'alt-at-example.org', phone: '' }
+    expect(tenantChangeProblems(input({ tenancy, contact })).map((p) => [p.field, p.short])).toEqual([
+      ['correspondenceAddress', 'Höchstens 200 Zeichen'], ['email', 'Keine E-Mail-Adresse'],
+    ])
+    expect(buildTenantChange(input({ tenancy, contact }))).toEqual({ error: expect.stringMatching(/Anschrift/) })
   })
 })

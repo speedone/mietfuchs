@@ -35,6 +35,42 @@ export type TenantChangeBody = {
     heatingModel?: 'selfSupply'
     selfSupplyKind?: SelfSupplyKind
   } | null
+  // #229: neue Anschrift, E-Mail und Telefon des Vormieters, nur die geänderten Felder; `null` entfernt die Angabe.
+  contact?: Partial<Record<keyof ContactForm, string | null>>
+}
+
+// Erreichbarkeit des ausziehenden Mieters (#229), in den Feldern, die das Mietverhältnis schon hat. Alles freiwillig.
+export type ContactForm = { correspondenceAddress: string; email: string; phone: string }
+type ContactSource = Partial<Pick<Tenancy, 'correspondenceAddress' | 'email' | 'phone'>>
+const CONTACT_KEYS = ['correspondenceAddress', 'email', 'phone'] as const
+// Wie der Server (LETTER_LINE_MAX): eine Zeile, höchstens 200 Zeichen.
+export const CONTACT_LINE_MAX = 200
+
+export const contactForm = (t: ContactSource): ContactForm =>
+  ({ correspondenceAddress: t.correspondenceAddress ?? '', email: t.email ?? '', phone: t.phone ?? '' })
+
+// Nur, was sich gegenüber dem Mietverhältnis geändert hat; sonst überschriebe ein offenes Fenster eine Angabe, die
+// inzwischen anderswo geändert wurde, mit dem alten Stand.
+export function contactChanges(t: ContactSource, form: ContactForm | undefined): TenantChangeBody['contact'] | undefined {
+  if (!form) return undefined
+  const out: NonNullable<TenantChangeBody['contact']> = {}
+  for (const key of CONTACT_KEYS) {
+    const value = form[key].trim()
+    if (value !== (t[key] ?? '').trim()) out[key] = value === '' ? null : value
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+function contactProblems(form: ContactForm | undefined): Problem<TenantChangeField>[] {
+  if (!form) return []
+  const problems: Problem<TenantChangeField>[] = []
+  if (form.correspondenceAddress.trim().length > CONTACT_LINE_MAX) {
+    problems.push({ field: 'correspondenceAddress', short: `Höchstens ${CONTACT_LINE_MAX} Zeichen`, text: `Neue Anschrift: Bitte höchstens ${CONTACT_LINE_MAX} Zeichen.` })
+  }
+  const email = form.email.trim()
+  if (email !== '' && !EMAIL.test(email)) problems.push({ field: 'email', short: 'Keine E-Mail-Adresse', text: 'E-Mail-Adresse: Bitte in der Form name@beispiel.de angeben oder leer lassen.' })
+  return problems
 }
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
@@ -92,7 +128,7 @@ export function gapProblem(heatIds: readonly string[], meterValues: Record<strin
 }
 
 export type TenantChangeInput = Parameters<typeof buildTenantChange>[0]
-export type TenantChangeField = 'end' | 'name' | 'start' | 'persons' | 'baseRent' | 'prepayment' | 'heatingPrepayment' | 'gapStatus' | 'gapReason' | `meter:${string}` | `meterDate:${string}`
+export type TenantChangeField = 'end' | 'correspondenceAddress' | 'email' | 'phone' |'name' | 'start' | 'persons' | 'baseRent' | 'prepayment' | 'heatingPrepayment' | 'gapStatus' | 'gapReason' | `meter:${string}` | `meterDate:${string}`
 
 // Der Mieterwechsel im Seitenfenster (#346 Schritt 7): alle Angaben auf einmal, je mit Feld, kurze Fassung am Feld und
 // Satz mit Ort für die Sammelmeldung. Dieselben Regeln wie buildTenantChange, das danach den Rumpf baut; ist die
@@ -105,6 +141,7 @@ export function tenantChangeProblems(input: TenantChangeInput): Problem<TenantCh
     const short = endDate === '' ? 'Auszugsdatum fehlt' : ISO_DATE.test(endDate) ? 'Vor dem Einzug' : 'Kein Datum'
     problems.push({ field: 'end', short, text: 'Auszug: Bitte ein gültiges Auszugsdatum nach dem Einzug angeben.' })
   }
+  problems.push(...contactProblems(input.contact))
   for (const m of meters) {
     const v = meterValues[m.id]
     if (v?.trim() && parseMeterValue(v) === null) problems.push({ field: `meter:${m.id}`, short: 'Keine Zahl', text: `Zählerstand für „${m.name}“ ist keine gültige Zahl.` })
@@ -140,8 +177,10 @@ export function tenantChangeProblems(input: TenantChangeInput): Problem<TenantCh
 // Schritt 3: der ganze Wechsel als ein Rumpf, oder die Meldung, warum nicht.
 export function buildTenantChange(input: {
   // Heizung PR 19 (Durchsicht S-3): Heizt der Vormieter selbst, tut es der Nachmieter auch, mit derselben Art.
-  tenancy: Pick<Tenancy, 'start'> & Partial<Pick<Tenancy, 'heatingModel' | 'selfSupplyKind'>>
+  tenancy: Pick<Tenancy, 'start'> & Partial<Pick<Tenancy, 'heatingModel' | 'selfSupplyKind'>> & ContactSource
   endDate: string
+  // #229: neue Anschrift, E-Mail und Telefon des ausziehenden Mieters (vorbelegt mit `contactForm`).
+  contact?: ContactForm
   meters: Pick<Meter, 'id' | 'name'>[]
   meterValues: Record<string, string>
   vacancy: boolean
@@ -176,7 +215,10 @@ export function buildTenantChange(input: {
   if (gapError) return { error: gapError }
   const g = input.interimGap
   if (heatIds.length > 0 && missingHeat && g && g.status !== '') interimGap = { status: g.status, reason: g.reason.trim() }
-  const gap = interimGap ? { interimGap } : {}
+  const contactError = contactProblems(input.contact)[0]
+  if (contactError) return { error: contactError.text }
+  const changes = contactChanges(tenancy, input.contact)
+  const gap = { ...(interimGap ? { interimGap } : {}), ...(changes ? { contact: changes } : {}) }
   if (vacancy) return { body: { end: endDate, readings, ...gap, newTenancy: null } }
 
   const persons = parsePersons(newTenant.persons)

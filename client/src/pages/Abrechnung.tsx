@@ -13,7 +13,7 @@ import { useOpenForm, useProperty, withProperty } from '../property'
 import { useConfirmDiscard, useDraft } from '../useDraft'
 import DraftActions from '../components/DraftActions'
 import { FieldMessage } from '../components/Field'
-import { effectiveLandlord, footerLine, letterhead, printsFormerAddress, recipientLines, returnLine } from '../landlord'
+import { effectiveLandlord, footerLine, letterhead, addressCheck, addressNotice, recipientLines, returnLine } from '../landlord'
 import { localToday } from '../periodForm'
 import { landlordReasonText } from '../landlordReasons'
 import { notSettledText } from '../tenancyModel'
@@ -736,15 +736,18 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                 {footerText && <div>{footerText}</div>}
               </>
             ) : null
+            // #229: fehlt nach dem Auszug die neue Anschrift, oder hat sie sich nach dem Abschluss geändert? Verglichen wird
+            // mit dem, was gedruckt würde (abgeschlossen also eingefroren).
+            const addressState = addressCheck(st, tenancy, head?.recipient, property, localToday(), data.closed?.sentAt)
             return (
             <div key={st.tenancyId} className={`card statement ${printId === st.tenancyId ? 'print-target' : ''}`}>
-              {printsFormerAddress(tenancies.find((t) => t.id === st.tenancyId), localToday()) && (
+              {addressState && (
                 <NoticeBox
                   level="warning"
                   className="no-print"
-                  title="Anschrift nach dem Auszug fehlt"
-                  action={`${st.tenantName} ist ausgezogen; gedruckt würde die Anschrift der Wohnung ${st.unitName}. Tragen Sie beim Mietverhältnis eine Anschrift für den Schriftverkehr ein: Die Frist nach § 556 Abs. 3 BGB läuft auch gegenüber dem Vormieter.`}
-                  fix={onNavigate ? { label: 'Hier beheben → Stammdaten', onClick: () => onNavigate('stammdaten', { kind: 'tenancy', id: st.tenancyId }) } : null}
+                  title={addressNotice(addressState, st.tenantName, st.unitName).title}
+                  action={addressNotice(addressState, st.tenantName, st.unitName).text}
+                  fix={onNavigate && addressState === 'former' ? { label: 'Hier beheben → Stammdaten', onClick: () => onNavigate('stammdaten', { kind: 'tenancy', id: st.tenancyId }) } : null}
                 />
               )}
               {/* Seite 1: das Anschreiben (#415). Datum ist der Versand, sonst der Tag des Drucks. Absender und Anschrift

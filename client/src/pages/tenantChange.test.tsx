@@ -219,3 +219,27 @@ test('Mieterwechsel: die Vorschau „Beim Speichern passiert“ ist ein Hinweis,
   const preview = within(box).getByText(/Beim Speichern passiert/).closest('.notice-item')
   expect(preview?.classList.contains('hint')).toBe(true)
 })
+
+// #229: Das Fenster fragt nach neuer Anschrift, E-Mail und Telefon des ausziehenden Mieters, alles freiwillig. Bewusst
+// geändert gegenüber BODY_SCHMIDT: Mit Angaben kommt `contact` dazu, ohne bleibt der Rumpf, wie er war (Test oben).
+test('Mieterwechsel: neue Anschrift und E-Mail des bisherigen Mieters gehen in derselben Anfrage mit', async () => {
+  changeStatus = 200
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <UIProvider><Stammdaten units={UNITS} tenancies={TENANCIES} settings={null} reload={async () => {}} /></UIProvider>
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  const box = await openChange()
+  fireEvent.change(within(box).getByLabelText(/Auszugsdatum/i), { target: { value: '2025-06-30' } })
+  fireEvent.change(await within(box).findByLabelText(/Wasser EG/i, {}, SLOW), { target: { value: '1.234' } })
+  fireEvent.change(within(box).getByLabelText(/^Neue Anschrift/), { target: { value: 'Birkenweg 3, 54321 Anderswo' } })
+  fireEvent.change(within(box).getByLabelText(/^E-Mail/), { target: { value: 'mueller@example.org' } })
+  expect(within(box).getByLabelText(/^Telefon/)).toBeTruthy()
+  fireEvent.change(within(box).getByLabelText(/^Mieter$/i), { target: { value: 'Schmidt' } })
+  fireEvent.change(within(box).getByLabelText(/Vorauszahlung/i), { target: { value: '150' } })
+  fireEvent.click(within(box).getByRole('button', { name: 'Speichern' }))
+  await waitFor(() => expect(sent).toHaveLength(1), SLOW)
+  expect(sent[0]?.body).toEqual({ ...BODY_SCHMIDT, contact: { correspondenceAddress: 'Birkenweg 3, 54321 Anderswo', email: 'mueller@example.org' } })
+})

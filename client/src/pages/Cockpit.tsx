@@ -22,6 +22,7 @@ import PageHeader from '../components/PageHeader'
 import EmptyState from '../components/EmptyState'
 import { startStep } from '../emptyStock'
 import { ibanHintTitle, invalidIbans } from '../ibanCheck'
+import { addressCheckDetail, addressFindings } from '../landlord'
 import { NoticeBox } from '../components/Notice'
 import Card from '../components/Card'
 
@@ -269,6 +270,22 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
         detail: lines.length > 0 ? '' : attentionDetail(settlement), lines })
     }
 
+    // 6b. Anschrift vor dem Versand (#229): Ist ein Mieter ausgezogen und fehlt die neue Anschrift, ginge die Abrechnung
+    // an die Wohnung; die Frist nach § 556 Abs. 3 BGB läuft auch gegenüber dem bisherigen Mieter. Ein offener Punkt
+    // (gelb), denn erledigen lässt er sich mit einer Angabe am Mietverhältnis. Dieselbe Prüfung steht je Mieter auf der
+    // Seite Abrechnung (addressCheck); hier steht sie nur einmal, nicht als Hinweis der Berechnung, denn die kennt keine
+    // Kontaktdaten.
+    const addresses = addressFindings(settlement, tenancies, property, localToday())
+    if (addresses.length > 0) {
+      const only = addresses.length === 1 && addresses[0]?.check === 'former' ? addresses[0] : null
+      const allFormer = addresses.every((a) => a.check === 'former')
+      list.push({
+        title: 'Anschrift für den Versand', level: 'gelb', detail: addressCheckDetail(addresses),
+        tab: allFormer ? 'stammdaten' : 'abrechnung', cta: allFormer ? 'Anschrift eintragen' : 'Zur Abrechnung',
+        ...(only ? { go: () => onNavigate('stammdaten', { kind: 'tenancy', id: only.tenancyId }) } : {}),
+      })
+    }
+
     // 7. Abschluss & Versand
     const closed = settlement.closed
     if (settlement.statements.length === 0 && (settlement.notSettled ?? []).length > 0 && (settlement.notSettled ?? []).every((n) => !n.usageConflict)) {
@@ -306,7 +323,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
     }
 
     return list
-  }, [property?.kind, heatingList, rules, switchPeriod, onNavigate, settlement, participating, units, yearItems, itemsSum, invoiceFileCount, meters, consumption, tenancies, notable, daysLeft, label, calendar, period, at.previousLabel, uploadFiles, bookedFiles])
+  }, [property, heatingList, rules, switchPeriod, onNavigate, settlement, participating, units, yearItems, itemsSum, invoiceFileCount, meters, consumption, tenancies, notable, daysLeft, label, calendar, period, at.previousLabel, uploadFiles, bookedFiles])
 
   const relevant = checks.filter((c) => c.level !== 'leer' && !c.hint)
   const greenCount = relevant.filter((c) => c.level === 'gruen').length

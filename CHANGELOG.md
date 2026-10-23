@@ -17,6 +17,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Textfelder gegen Formeln und verweist bei Heizungsangaben auf das JSON. Bei einer abgeschlossenen Abrechnung
   ist es der eingefrorene Stand; eine offene mit Fehlern ist als Entwurf gekennzeichnet (`draft`), und die
   Seite fragt davor wie vor dem Drucken. Keine Anschrift, kein Konto, keine Texte des Anschreibens.
+- Anschrift nach dem Auszug ([#229](https://github.com/speedone/mietfuchs/issues/229)): Das Fenster
+  „Mieterwechsel“ fragt nach neuer Anschrift, E-Mail und Telefon des ausziehenden Mieters, alles
+  freiwillig und gespeichert am Mietverhältnis im selben Schritt wie der Wechsel. Die Abrechnung geht
+  an die neue Anschrift; jede Angabe zwischen Kommas steht im Anschriftfeld auf eigener Zeile (etwa
+  „c/o …“). Ist ein Mieter ausgezogen und fehlt die neue Anschrift, nennt ihn das Cockpit in der Zeile
+  „Anschrift für den Versand“ mit Sprung zum Mietverhältnis, denn die Frist nach § 556 Abs. 3 BGB läuft
+  auch gegenüber dem bisherigen Mieter. Die Anschrift friert mit dem Abschluss ein; wurde sie danach
+  geändert, sagt die Seite Abrechnung, dass die eingefrorene gedruckt wird.
 - Kontrollansicht auf der Seite Abrechnung ([#321](https://github.com/speedone/mietfuchs/issues/321)):
   Aufklappbar und nur am Bildschirm zeigt sie je Kostenposition alle Mieter und die Gründe des
   Vermieters nebeneinander, dazu eine Summe gegen den Rechnungsbetrag, die Kosten, Vorauszahlung und
