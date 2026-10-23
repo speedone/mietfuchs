@@ -64,14 +64,17 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   nur die Totalüberschussprognose, ab 66 % gilt die Vermietung als entgeltlich. Für 2012 bis 2020 gilt
   die frühere Grenze von 66 %. Was der Mieter unmittelbar an Dritte zahlt (eigener Gas- oder
   Wärmevertrag, Müll direkt an die Gemeinde), tragen Sie in derselben Karte am Mietverhältnis als Betrag
-  im Monat ein; es zählt zum Entgelt, nicht zu Ihren Werbungskosten. Ohne Eintrag ändert sich keine
-  Zahl. Neuer Begriff im Lexikon.
+  im Monat ein; es zählt zum Entgelt, nicht zu Ihren Werbungskosten. Ein Abzug des Betriebsstroms, der
+  dem Messdienst gemeldet ist, wird mitgekürzt. Ohne Eintrag ändert sich keine Zahl. Neuer Begriff im
+  Lexikon.
 - Nutzungswechsel einer Einheit im Jahr: Unter Stammdaten tragen Sie bei der Wohnung unter
   „Nutzungswechsel“ ein, ab welchem Tag sie vermietet, selbstgenutzt oder nicht beteiligt ist, etwa wenn
   Sie einziehen oder Ihre Wohnung zum ersten Mal vermieten. Die Abrechnung rechnet jeden Abschnitt nach
   seinen Tagen: Eigenanteil, Leerstand, Verteilbasis, Verbrauch und in der eigenen Heizkostenabrechnung
-  der Nutzerwechsel nach § 9b HeizkostenV. Ein Mietverhältnis in einer Zeit, in der die Wohnung nicht
-  vermietet ist, meldet die Abrechnung. Liegt eine Einheit einen Teil des Jahres außerhalb der
+  der Nutzerwechsel nach § 9b HeizkostenV; ein Wechsel nur zwischen Leerstand, Eigennutzung und „nicht
+  beteiligt“ braucht dort keine Zwischenablesung. Ein Mietverhältnis in einer Zeit, in der die Wohnung nicht
+  vermietet ist, meldet die Abrechnung; liegt es ganz in einer solchen Zeit, steht es unter „Ohne
+  Abrechnung“, mit den Vorauszahlungen, die keine Abrechnung anrechnet. Liegt eine Einheit einen Teil des Jahres außerhalb der
   Abrechnungseinheit, verteilt Mietfuchs Fläche, Einheiten und Gemeinschaft je Abschnitt. Die
   Steuerübersicht teilt privat und abziehbar nach den Tagen der Eigennutzung, auch die selbstgenutzte
   Fläche; ein Hinweis nennt, was beim Leerstand nach einer Eigennutzung zu belegen ist. Ohne
@@ -95,6 +98,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   genau auf, steht „ausgeglichen“ statt „Guthaben von 0,00 €“. Unter der
   Anschrift wiederholt die Kopfzeile Name und Wohnung nicht mehr
   ([#415](https://github.com/speedone/mietfuchs/issues/415)).
+
+### Behoben
+
+- Spielen Sie ein Backup mit einer db.json zweimal ein, bleibt die Sicherheitskopie vom ersten Mal
+  erhalten: Eine vorhandene `db.json.vor-restore` wird mit Datum beiseitegelegt statt überschrieben, wie
+  schon die Sicherung der Datenbank.
+- Wird das Herunterladen eines Backups abgebrochen, räumt Mietfuchs den liegengebliebenen Schnappschuss
+  der Datenbank (`mietfuchs.sqlite.<Kennung>.backup`) beim nächsten Start aus dem Datenordner.
 
 ## [0.12.0] – 2026-10-22
 

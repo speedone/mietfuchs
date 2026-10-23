@@ -20,6 +20,9 @@ test('der Hinweis „Ohne Abrechnung“ nennt das Modell in Worten', () => {
   expect(notSettledText({ tenancyId: 't', tenantName: 'A', unitName: 'EG', costModel: 'inclusive', heatingModel: 'inclusive' }))
     .toBe('A (EG): Nebenkosten in der Miete enthalten, Heizung in der Miete enthalten')
   expect(Object.keys(COST_MODEL_LABELS)).toEqual(['settlement', 'flatRate', 'inclusive'])
+  // Integrationsdurchsicht 0.13.0, S1: ganz in einer Zeit ohne Vermietung.
+  expect(notSettledText({ tenancyId: 't', tenantName: 'A', unitName: 'EG', costModel: 'settlement', heatingModel: 'settlement', usageConflict: { prepaymentCents: 100000 } }))
+    .toBe('A (EG): ganz in einer Zeit, in der die Einheit nicht vermietet ist; keine Abrechnung, Vorauszahlungen von 1.000,00\u00a0€ werden nicht angerechnet')
 })
 
 // #135: Eine vermietete Garage hat keine Bewohner. 0 Personen muss gehen, sonst steht sie mit einer

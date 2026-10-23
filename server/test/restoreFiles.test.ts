@@ -55,16 +55,18 @@ test('Belege an ihren Platz: ein kurz gesperrtes Umbenennen wird wiederholt', as
   }
 })
 
-test('Aufräumen beim Start: nur hochgeladene Archive und Zwischenablagen eines abgebrochenen Wiederherstellens', () => {
+test('Aufräumen beim Start: nur hochgeladene Archive und Zwischenablagen eines abgebrochenen Wiederherstellens und Schnappschüsse eines abgebrochenen Backups', () => {
   const dir = tempDir()
   try {
     // Die Namen, die die Route vergibt (newId: 16 Hexziffern).
     fs.writeFileSync(path.join(dir, 'restore-upload-0123456789abcdef.zip'), 'x')
     fs.mkdirSync(path.join(dir, 'restore-0123456789abcdef'))
     fs.writeFileSync(path.join(dir, 'restore-0123456789abcdef', 'beleg-0'), 'x')
+    // Integrationsdurchsicht 0.13.0 (Daten), K2: der Schnappschuss eines abgebrochenen Backups.
+    fs.writeFileSync(path.join(dir, 'mietfuchs.sqlite.0123456789abcdef.backup'), 'x')
     // Was bleibt: die Datenbank aus einem gescheiterten Austausch (kann die einzige Kopie sein),
     // was nur ähnlich heißt, auch ein Ordner, den der Nutzer selbst angelegt hat, und alles andere.
-    const keep = ['mietfuchs.sqlite.restore-0123456789abcdef', 'restore-notiz.txt', 'restore-alt', 'restore-upload-alt.zip', 'mietfuchs.sqlite', 'db.json.vor-restore', 'uploads']
+    const keep = ['mietfuchs.sqlite.restore-0123456789abcdef', 'mietfuchs.sqlite.alt.backup', 'mietfuchs.sqlite.0123456789abcdef.backup.txt', 'restore-notiz.txt', 'restore-alt', 'restore-upload-alt.zip', 'mietfuchs.sqlite', 'db.json.vor-restore', 'uploads']
     for (const name of keep) {
       if (name === 'uploads' || name === 'restore-alt') fs.mkdirSync(path.join(dir, name))
       else fs.writeFileSync(path.join(dir, name), 'x')

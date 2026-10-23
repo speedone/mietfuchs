@@ -12,7 +12,9 @@ import { periodKey } from '../../shared/period.ts'
 import type { PeriodRules } from '../../shared/types.ts'
 import { snapshotOf, type SnapshotCostItem, type SnapshotSource, type SnapshotTenancy, type SnapshotUnit } from '../src/snapshot.ts'
 import { assertLandlordParts } from '../testing/landlordParts.ts'
-import { selfSnapshot, selfTenancy, selfUnit } from '../testing/selfHeating.ts'
+import { selfMeter, selfReading, selfSnapshot, selfTenancy, selfUnit } from '../testing/selfHeating.ts'
+import { HEATING_CATEGORY } from '../../shared/heating.ts'
+import type { ChangeSplit, Unit } from '../../shared/types.ts'
 import { usageAt, usageSpans, unitAsOf } from '../../shared/unitUsage.ts'
 import type { CostKey, UnitUsage } from '../../shared/types.ts'
 
@@ -338,6 +340,25 @@ test('Ein Mietverhältnis über vermietet, Eigennutzung, vermietet zählt im ers
   assert.match(n.text, /die übrigen 184 Tage nicht/)
 })
 
+// Integrationsdurchsicht 0.13.0, S1: Ein Mietverhältnis ganz in einer Zeit ohne Vermietung bekommt keine Abrechnung.
+// Es verschwindet nicht still: Es steht unter „Ohne Abrechnung“, und der Hinweis nennt die Vorauszahlungen, die in
+// keiner Abrechnung angerechnet werden.
+test('S1: ein Mietverhältnis ganz in einer Zeit ohne Vermietung steht ohne Abrechnung, mit seinen Vorauszahlungen', () => {
+  for (const b of [unit('b', { usageChanges: [{ from: '2025-03-01', usage: 'eigen' }] }), unit('b', { usageChanges: [{ from: '2025-03-01', usage: 'ausgenommen' }] })]) {
+    const s = settle(source({
+      units: [unit('a'), b],
+      tenancies: [tenancy('t-a', 'a'), { ...tenancy('t-b', 'b', '2025-03-01'), prepayments: [{ from: '2025-03', monthlyCents: 10000 }] }],
+      costItems: [item({ key: 'area' })],
+    }))
+    assert.equal(s.statements.some((st) => st.tenancyId === 't-b'), false)
+    const ns = s.notSettled.find((n) => n.tenancyId === 't-b') ?? assert.fail('t-b fehlt unter „Ohne Abrechnung“')
+    assert.deepEqual(ns.usageConflict, { prepaymentCents: 100000 })
+    const n = s.notices.find((x) => x.code === 'usage.tenancy-conflict') ?? assert.fail('Hinweis fehlt')
+    assert.match(n.text, /keine Abrechnung/)
+    assert.match(n.text, /1\.000,00 €/)
+  }
+})
+
 test('Eigene Heizkostenabrechnung: ein Mietverhältnis ganz in der Zeit der Eigennutzung ist Eigenanteil (S3)', () => {
   const units = [selfUnit('a', 60), selfUnit('b', 80), selfUnit('c', 60, { selfPersons: 1, usageChanges: [{ from: '2025-10-01', usage: 'eigen' }] })]
   const base = [selfTenancy('A', 'a', '2020-01-01', null), selfTenancy('B', 'b', '2020-01-01', null), selfTenancy('C1', 'c', '2020-01-01', '2025-09-30')]
@@ -349,6 +370,66 @@ test('Eigene Heizkostenabrechnung: ein Mietverhältnis ganz in der Zeit der Eige
   assert.equal(partOf(mit, 'outsideUnit'), 0)
   const n = mit.notices.find((x) => x.code === 'usage.tenancy-conflict') ?? assert.fail('Hinweis fehlt')
   assert.doesNotMatch(n.text, /bleibt er dagegen Nutzer/)
+})
+
+// Integrationsdurchsicht 0.13.0, K2 (#421 × #259): Läuft ein Mietverhältnis über einen Wechsel in eine Zeit ohne
+// Vermietung, trägt es Kosten nur für die vermieteten Tage. Der Vorschlag nach § 560 rechnet deshalb auf diese Tage
+// hoch, nicht auf die Tage des Mietverhältnisses; sonst halbierte er sich bei einem Wechsel zur Jahresmitte.
+test('K2: der Vorschlag nach § 560 rechnet bei einem Widerspruch auf die Tage, an denen das Mietverhältnis Kosten trägt', () => {
+  const run = (b: SnapshotUnit) => settle(source({
+    units: [unit('a'), b],
+    tenancies: [tenancy('t-a', 'a'), { ...tenancy('t-b', 'b', '2020-01-01'), prepayments: [{ from: '2020-01', monthlyCents: 10000 }] }],
+    costItems: [item({ key: 'area', amountCents: 240000 })],
+  }))
+  const plain = run(unit('b'))
+  assert.equal(plain.statements.find((st) => st.tenancyId === 't-b')?.suggestedMonthlyCents, 10000)
+  for (const b of [unit('b', { usageChanges: [{ from: '2025-07-01', usage: 'eigen' }] }), unit('b', { ...eigen, usageChanges: [{ from: '2025-07-01', usage: 'vermietet' }] })]) {
+    const st = run(b).statements.find((x) => x.tenancyId === 't-b') ?? assert.fail('t-b fehlt')
+    // 1.200 € im Jahr für die Hälfte der Fläche: hochgerechnet auf die vermieteten Tage wieder 100 € im Monat.
+    assert.equal(st.suggestedMonthlyCents, 10000)
+  }
+})
+
+// Integrationsdurchsicht 0.13.0 (#417 × #259): Wohnung A, Mieter A1 bis 31.05., A2 ab 01.09.; dazwischen eine Zeit des
+// Vermieters. Abgelesen wird zum Aus- und Einzug, nicht zwischen zwei Rollen des Vermieters.
+const gapRun = (split: ChangeSplit, a: Unit) => computeSettlement(selfSnapshot({
+  plant: { changeSplit: split, hotWater: 'none' },
+  units: [a, selfUnit('b', 70)],
+  tenancies: [selfTenancy('A1', 'a', '2020-01-01', '2025-05-31'), selfTenancy('A2', 'a', '2025-09-01', null), selfTenancy('B', 'b', '2020-01-01', null)],
+  meters: [selfMeter('wz-a', 'a', 'Wärme A', 'waerme'), selfMeter('wz-b', 'b', 'Wärme B', 'waerme')],
+  readings: [selfReading('wz-a', '2024-12-31', 0), selfReading('wz-a', '2025-05-31', 5000), selfReading('wz-a', '2025-08-31', 5300), selfReading('wz-a', '2025-12-31', 9000), selfReading('wz-b', '2024-12-31', 0), selfReading('wz-b', '2025-12-31', 10000)],
+  deliveries: [],
+  costItems: [{ id: 'k', propertyId: 'objekt-1', period: periodKey('2025-01'), category: HEATING_CATEGORY, description: 'Heizkosten', amountCents: 400000, key: 'heatingSystem', heatingPlantId: 'hp', heatingPart: 'operating', heatingTarget: 'heating' }],
+  row: { waterConsumptionPct: null, dhwMethod: null },
+}))
+
+test('S2: ein Wechsel nur zwischen Rollen des Vermieters braucht keine Zwischenablesung', () => {
+  // Juni leer, Juli und August selbstgenutzt: Am 30.06. wechselt nur der Vermieter mit sich selbst.
+  for (const changes of [[{ from: '2025-07-01', usage: 'eigen' }, { from: '2025-09-01', usage: 'vermietet' }], [{ from: '2025-06-01', usage: 'eigen' }, { from: '2025-07-01', usage: 'ausgenommen' }, { from: '2025-09-01', usage: 'vermietet' }]] as const) {
+    for (const split of ['degreeDays', 'time'] as const) {
+      const s = gapRun(split, selfUnit('a', 70, { usageChanges: [...changes] }))
+      assert.ok(!codes(s).some((c) => c.startsWith('heating.no-interim-reading') || c.startsWith('heating.interim-reading')), `${split}: ${codes(s).join(', ')}`)
+      const bounds = (s.heating ?? []).flatMap((h) => h.self?.units ?? []).find((u) => u.unitId === 'a')?.boundaries ?? assert.fail('Wohnung A fehlt im Ausweis')
+      assert.deepEqual(bounds.filter((b) => b.kind === 'change').map((b) => b.date), ['2025-05-31', '2025-08-31'])
+      // Die Mieter tragen dasselbe wie mit einer Zeit des Vermieters ohne Wechsel darin.
+      const plain = gapRun(split, selfUnit('a', 70, { usageChanges: [{ from: '2025-06-01', usage: 'eigen' }, { from: '2025-09-01', usage: 'vermietet' }] }))
+      for (const t of ['A1', 'A2', 'B']) assert.equal(shareOf(s, t), shareOf(plain, t), `${split} ${t}`)
+    }
+  }
+})
+
+test('K1: eine Zeit außerhalb der Abrechnungseinheit wird beim Vergleich nach § 9b Abs. 2 wie Leerstand und Eigennutzung genannt', () => {
+  const a = selfUnit('a', 70, { usageChanges: [{ from: '2025-06-01', usage: 'ausgenommen' }, { from: '2025-09-01', usage: 'vermietet' }] })
+  const dd = gapRun('degreeDays', a)
+  const n = dd.notices.find((x) => x.code === 'heating.change-split-degree-days') ?? assert.fail('Hinweis zum Vergleich fehlt')
+  assert.match(n.text, /Außerhalb der Abrechnungseinheit in A \(01\.06\.2025 bis 31\.08\.2025\)/)
+  const steps = dd.statements.find((st) => st.tenancyId === 'A1')?.rows.flatMap((r) => r.steps ?? []) ?? []
+  assert.ok(steps.some((x) => x.label === 'Zum Vergleich zeitanteilig'), 'Rechenweg ohne Vergleich')
+  const time = gapRun('time', a)
+  const nt = time.notices.find((x) => x.code === 'heating.change-split-time') ?? assert.fail('Hinweis zum Vergleich fehlt')
+  assert.match(nt.text, /Außerhalb der Abrechnungseinheit in A/)
+  const stepsT = time.statements.find((st) => st.tenancyId === 'A1')?.rows.flatMap((r) => r.steps ?? []) ?? []
+  assert.ok(stepsT.some((x) => x.label === 'Zum Vergleich nach Gradtagen'), 'Rechenweg ohne Vergleich')
 })
 
 test('„Nur Heizung“ nach Gradtagen: Eigenanteil nach demselben Maß wie der Mieter, kein Schein-Leerstand (Nachprüfung M-b)', () => {

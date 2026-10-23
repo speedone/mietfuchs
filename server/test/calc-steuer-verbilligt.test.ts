@@ -8,10 +8,11 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { taxReport } from '../src/calc.ts'
+import { taxReport, taxReportFor } from '../src/calc.ts'
+import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { snapshotOf, type SnapshotCostItem, type SnapshotSource, type SnapshotTenancy, type SnapshotUnit } from '../src/snapshot.ts'
 import type { CheapRentTenancy, LocalRentEntry, TaxExpenseItem, TaxReport } from '../../shared/types.ts'
-import { calendarPeriod } from '../../shared/period.ts'
+import { CALENDAR_RULES, calendarPeriod } from '../../shared/period.ts'
 
 const tenancy = (id: string, unitId: string, monthlyCents: number, over: Partial<SnapshotTenancy> = {}): SnapshotTenancy => ({
   id, unitId, tenantName: id, persons: 1, personHistory: [{ from: '2010-01-01', persons: 1 }], start: '2010-01-01', end: null,
@@ -336,4 +337,41 @@ test('Nutzungswechsel: ein Mietverhältnis in einer Zeit der Eigennutzung zählt
   })
   // Bis 30.06. vermietet (181 Tage), danach selbstgenutzt: das Mietverhältnis zählt nur 181 Tage.
   assert.equal(tenancyOf(r, 'tochter').days, 181)
+})
+
+// Integrationsdurchsicht 0.13.0, M1 (#422 × #419): Ein Abzug des Betriebsstroms, der als dem Messdienst gemeldet gilt,
+// steht in der Steuer als eigene negative Position (er steckt im Betrag des Messdienstes). Er gehört zur Wohnung wie jede
+// andere Position und wird mitgekürzt; nur ein Abzug, der in der Ausgleichszeile steckt, bleibt außen vor.
+test('M1: ein dem Messdienst gemeldeter Abzug des Betriebsstroms wird bei verbilligter Vermietung mitgekürzt', () => {
+  type Source = Parameters<typeof taxReportFor>[0]
+  type Plant = NonNullable<Source['heatingPlants']>[number]
+  type Item = Source['costItems'][number]
+  const plant: Plant = {
+    id: 'hp1', propertyId: 'objekt-1', name: 'Kessel', method: 'service', source: 'building', supply: 'central',
+    energy: 'gas', devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', newDevicesInstall: null, units: null,
+    periodStartMonth: null, periodChanges: [], separateSpans: [], separateSettlement: false, endsOn: null, replacesPlantId: null,
+  }
+  const pos = (id: string, amountCents: number, over: Partial<Item> = {}): Item => ({ id, propertyId: 'objekt-1', period: calendarPeriod(2025), category: 'Grundsteuer', description: id, amountCents, key: 'area', ...over })
+  const house = (deduction: Partial<Item>): Source => ({
+    properties: [{ id: 'objekt-1', kind: 'mfh', cableBuiltBeforeDec2021: null, periodRules: CALENDAR_RULES }],
+    units: [{ ...rented('eg', 60, [local(150000)]), propertyId: 'objekt-1' }, { ...rented('og', 40), propertyId: 'objekt-1' }],
+    tenancies: [tenancy('tochter', 'eg', 20000), tenancy('fremd', 'og', 80000)],
+    costItems: [
+      pos('md', 300000, { category: HEATING_CATEGORY, heatingPlantId: 'hp1' }),
+      pos('hs', 100000, { category: 'Beleuchtung/Allgemeinstrom', key: 'units' }),
+      pos('ab', -20000, { category: 'Beleuchtung/Allgemeinstrom', key: 'units', operatingPower: 'deduction', operatingPowerGeneralId: 'hs', ...deduction }),
+    ],
+    meters: [], readings: [], payments: [], closedSettlements: [], heatingPlants: [plant],
+  })
+  // Ohne Angabe gilt der Abzug ohne Verweis beim Messdienst als gemeldet, ebenso mit „gemeldet“.
+  for (const over of [{}, { operatingPowerReported: true }] as Partial<Item>[]) {
+    const r = taxReportFor(house(over), 'objekt-1', 2025)
+    // Unentgeltlich 74,44 %. Die Tochter trägt 1.800 € Messdienst, 500 € Allgemeinstrom und −100 € Abzug:
+    // (1.800 + 500 − 100) × 74,44 % = 1.637,78 € statt 1.712,22 €, wenn der Abzug fehlte.
+    assert.equal(r.expenses.gratuitousCents, 163778)
+    assert.ok((itemOf(r, 'ab').gratuitousCents ?? 0) < 0, 'der Abzug wird mitgekürzt')
+  }
+  // „Nicht gemeldet, selbst getragen“: der Abzug steckt in der Ausgleichszeile und wird nicht gekürzt.
+  const kept = taxReportFor(house({ operatingPowerReported: false }), 'objekt-1', 2025)
+  assert.equal(itemOf(kept, 'ab').gratuitousCents ?? 0, 0)
 })
