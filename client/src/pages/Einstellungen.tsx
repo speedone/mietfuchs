@@ -124,7 +124,7 @@ export default function Einstellungen({ settings, reload, update }: Props) {
           </label>
         </div>
         <div className="row">
-          <Field label="Anschrift des Vermieters" width="l" hint="Für Rücksendeangabe und Fußzeile des Briefs. Ohne Angabe steht dort die Adresse des Objekts.">
+          <Field label="Anschrift des Vermieters" width="l" hint="Für Rücksendeangabe, Briefkopf und Fußzeile des Briefs. Ohne Angabe nennt die Rücksendeangabe die Adresse des Objekts; Briefkopf und Fußzeile bleiben ohne Anschrift.">
             <input value={form.landlordAddress} onChange={(e) => setForm({ ...form, landlordAddress: e.target.value })} placeholder="Straße Nr., PLZ Ort" />
           </Field>
           <Field label="Kontakt" width="l" hint="Optional: Telefon oder E-Mail für die Fußzeile mit Kontakt und Bank.">

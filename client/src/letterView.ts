@@ -33,6 +33,12 @@ export function letterParagraphs(letter: StatementLetter, balanceCents: number, 
   return chooseLetterBlocks(letter, balanceCents, print.attachments).map((block) => ({ block, text: renderLetterText(letter.texts[block], print) }))
 }
 
+// Die Rücksendeangabe steht im Druck in höchstens zwei Zeilen zu 7 pt über der Anschrift (letter.css). Rund 55 Zeichen je
+// Zeile bei Umbruch an Wortgrenzen; was länger ist, nennt die Seite vor dem Druck, statt es still abzuschneiden
+// (Durchsicht zu PR #427, K7, nachgemessen mit page.pdf).
+export const RETURN_LINE_MAX = 110
+export const returnLineTooLong = (line: string): boolean => line.trim().length > RETURN_LINE_MAX
+
 // Der Ergebniskasten oben in der Aufstellung: Zeitraum, Kosten, Vorauszahlungen, Ergebnis, Frist. Die
 // Nachzahlung steht neutral fett, nicht rot: In Rot las sie sich wie eine Mahnung.
 export type ResultRow = { label: string, value: string, strong?: boolean }

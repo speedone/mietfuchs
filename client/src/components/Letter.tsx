@@ -62,7 +62,8 @@ export default function Letter({ paragraphs, footer, ...head }: Props) {
   const greeting = text('greeting')
   const signature = text('signature')
   return (
-    <section className="letter" aria-label={`Anschreiben an ${head.recipient[0] ?? ''}`}>
+    // Mit Fußzeile hält der Brieftext unten Platz frei (Durchsicht zu PR #427, S1, letter.css).
+    <section className={footer ? 'letter letter-with-footer' : 'letter'} aria-label={`Anschreiben an ${head.recipient[0] ?? ''}`}>
       <LetterHead {...head} />
       <div className="letter-body">
         {subject && <p className="letter-subject">{subject}</p>}

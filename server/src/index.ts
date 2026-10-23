@@ -50,7 +50,7 @@ import {
   closeHeatingSettlement, findClosedHeatingSettlement, heatingSettlementHistory, reopenHeatingSettlement, separateHeatingSettlements, setHeatingSentAt,
 } from './db/heatingSettlements.ts'
 import {
-  changeTenant, closeSettlement, createEntity, createProperty, ContractError, CrossPropertyError, LocalRentError, findClosedSettlement, HeatingError, PaidOnQuestion, PaymentError, PeriodConflict, PeriodError, StaleTenancyError, invoiceFilesInUse, previewCostItemSplit, saveCostItemSplit,
+  changeTenant, closeSettlement, createEntity, createProperty, ContractError, CrossPropertyError, LocalRentError, LetterInputError, findClosedSettlement, HeatingError, PaidOnQuestion, PaymentError, PeriodConflict, PeriodError, StaleTenancyError, invoiceFilesInUse, previewCostItemSplit, saveCostItemSplit,
   listProperties, removeEntity, removeProperty, reopenSettlement, setSentAt, settlementHistory, updateEntity, updateProperty,
   TenantChangeError, unitDependents, writeSettings, writeSettingsIn, nullableBoolean, nullableLine, type CollectionName,
 } from './db/repository.ts'
@@ -293,7 +293,7 @@ app.put('/api/settings', async (req, res) => {
       if (Object.hasOwn(changes, key)) changes[key] = nullableLine(changes[key], label) ?? ''
     }
     for (const [key, label] of [['printLetter', '„Anschreiben mitdrucken“'], ['printFooter', '„Fußzeile mit Kontakt und Bank“']] as const) {
-      if (Object.hasOwn(changes, key) && changes[key] !== null && typeof changes[key] !== 'boolean') throw new HeatingError(400, `${label} ist ja oder nein.`)
+      if (Object.hasOwn(changes, key) && changes[key] !== null && typeof changes[key] !== 'boolean') throw new LetterInputError(`${label} ist ja oder nein.`)
     }
   } catch (err) {
     return res.status(statusOf(err)).json({ error: messageOf(err) })
@@ -2903,7 +2903,7 @@ app.use('/api', (err: unknown, req: Request, res: Response, next: NextFunction) 
   // Das Zahlungsdatum (#255 PR 3): die Rückfrage mit eigenem Kennzeichen, wie beim Betriebsstrom.
   if (err instanceof PaidOnQuestion) return res.status(409).json({ error: err.message, question: 'paidOn' })
   // Ablehnungen, deren Meldung schon für den Nutzer geschrieben ist (#92).
-  if (err instanceof RouteProblem || err instanceof CrossPropertyError || err instanceof PeriodError || err instanceof PeriodConflict || err instanceof TenantChangeError || err instanceof BookingRefusal || err instanceof HeatingError || err instanceof StaleTenancyError || err instanceof LawOverrideError || err instanceof IbanRefusal || err instanceof PaymentError || err instanceof ContractError || err instanceof LocalRentError) {
+  if (err instanceof RouteProblem || err instanceof CrossPropertyError || err instanceof PeriodError || err instanceof PeriodConflict || err instanceof TenantChangeError || err instanceof BookingRefusal || err instanceof HeatingError || err instanceof LetterInputError || err instanceof StaleTenancyError || err instanceof LawOverrideError || err instanceof IbanRefusal || err instanceof PaymentError || err instanceof ContractError || err instanceof LocalRentError) {
     return res.status(err.status).json({ error: err.message })
   }
   // **Fehler der Datenbank bekommen ihre eigene Meldung** (db/errors.ts). Ohne diese Zeile käme

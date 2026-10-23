@@ -150,8 +150,12 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   ihre eine Zeile umbrechen. Table.test.ts lässt genau diese Hülle zu. **„Seite x von y“** setzt `startPrint` mit
   `pageNumbers` nur beim Druck einer Abrechnung als Randfeld (`@bottom-right`, Chromium ab 131): Ein Zähler je Mieter
   lässt sich in Chromium nicht zurücksetzen, beim Druck aller zählte er also über alle. **Fußzeile mit Kontakt und
-  Bank** ist eine Druckeinstellung (`printFooter`), ihr Text (`sender.footer`) friert mit dem Anschreiben ein. Eine vor
-  #415 abgeschlossene Abrechnung bekommt nichts davon.
+  Bank** ist eine Druckeinstellung (`printFooter`), ihr Text (`sender.footer`) friert mit dem Anschreiben ein; ein
+  Abschluss ohne `sender.footer` druckt keine. Mit Fußzeile hält der Brieftext unten Platz frei (`.letter-with-footer`),
+  sonst überdruckte sie bei einem Brief über zwei Seiten die Unterschrift (letterCss.test.ts). Die Belegkopien liegen in
+  der Hülle und tragen den Fußvermerk. Die Rücksendeangabe bricht in höchstens zwei Zeilen um; über `RETURN_LINE_MAX`
+  (110 Zeichen, nachgemessen) warnt die Seite (`returnLineTooLong`). Eine vor #415 abgeschlossene Abrechnung bekommt
+  nichts davon.
 - **Druckkopf**: `letterhead` lässt einen Objektnamen weg, der schon in der Adresse steht, und ist die
   Rücksendeangabe des Anschreibens; Anschrift des Mieters (`recipientLines`); fehlt nach Auszug die neue Anschrift,
   warnt die Seite (`printsFormerAddress`). Der Rechenweg ([CalcSteps.tsx](src/components/CalcSteps.tsx)) ist immer

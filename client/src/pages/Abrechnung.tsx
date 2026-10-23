@@ -50,7 +50,7 @@ import { LegacyHead, legacyHeadLine, legacyReceiptsText, LegacyResult } from '..
 import { exceedsOnePage } from '../../../shared/letter.ts'
 import { suggestionWithoutHeating } from '../heatingSettlementView'
 import LetterDrawer, { type LetterSave } from '../components/LetterDrawer'
-import { asTemplates, letterOf, letterParagraphs, resultRows } from '../letterView'
+import { asTemplates, letterOf, letterParagraphs, RETURN_LINE_MAX, resultRows, returnLineTooLong } from '../letterView'
 
 type Props = {
   settings: Settings | null
@@ -674,10 +674,12 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
             const lockedId = `letter-locked-${st.tenancyId}`
             // Teil 2: mit oder ohne Anschreiben; Kopf, Fußzeile und Fußvermerk aus dem Anschreiben, abgeschlossen also
             // eingefroren. Ein Abschluss aus Teil 1 kennt Anschrift und Fußzeile des Vermieters nicht: keine Anschrift
-            // im Kopf (die Rücksendeangabe ist eingefroren), die Fußzeile nach heutigem Stand.
+            // im Kopf (die Rücksendeangabe ist eingefroren) und keine Fußzeile.
             const showLetter = letter !== null && withLetter
             const print = { date: letterDate, attachments: attachmentCount }
-            const footerText = printFooter && letter ? (letter.sender?.footer ?? (landlord ? footerLine(landlord) : '')) || null : null
+            // Ein Abschluss ohne eingefrorene Fußzeile (zwischen #421 und Teil 2) druckt keine, statt Kontakt und Bank von heute
+            // (Durchsicht zu PR #427, K3).
+            const footerText = printFooter && letter ? (letter.sender ? (letter.sender.footer ?? '') : (landlord ? footerLine(landlord) : '')) || null : null
             const head = letter ? {
               sender: letter.sender?.name ?? landlord?.landlordName ?? '',
               senderAddress: letter.sender ? (letter.sender.address ?? '') : (landlord?.landlordAddress ?? ''),
@@ -719,6 +721,9 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                 <StatementHead {...head} />
               ) : (
                 <LegacyHead sender={letterhead(landlord?.landlordName, property)} date={letterDate} recipient={recipientLines(st.tenantName, st.unitName, tenancy, property)} />
+              )}
+              {head && returnLineTooLong(head.returnLine) && (
+                <NoticeBox level="warning" className="no-print" title="Rücksendeangabe zu lang" action={`Die Rücksendeangabe über der Anschrift hat ${head.returnLine.trim().length} Zeichen; im Fensterfeld passen rund ${RETURN_LINE_MAX} in zwei kleine Zeilen, der Rest würde abgeschnitten. Kürzen Sie den Namen oder die Anschrift des Vermieters (Einstellungen bzw. beim Objekt).`} />
               )}
               <PrintPages footnote={footnote}>
               {/* Nur im Druck, solange Fehler offen sind; deckt auch Strg+P ab (Durchsicht S2 zu #341). Ohne Anschreiben
@@ -937,7 +942,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
               )}
               {/* Belegeinsicht und beigefügte Belege stehen seit #415 im Anschreiben. */}
               <p className="muted">{costBasisText(label, calendar)}{legacy ? legacyReceiptsText(attachmentCount) : ''}</p>
-              </PrintPages>
+              {/* Auch die Belegkopien tragen den Fußvermerk (Durchsicht zu PR #427, K2). */}
               {printAttachments && stFiles.length > 0 && (
                 <>
                   <div className="muted no-print">
@@ -957,6 +962,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                   </div>
                 </>
               )}
+              </PrintPages>
             </div>
             )
           })}

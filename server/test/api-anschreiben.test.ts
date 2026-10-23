@@ -271,6 +271,44 @@ test('Anschreiben (#415): ein Wechsel der Heizperiode entfernt die Anschreiben d
   }
 })
 
+// Durchsicht zu PR #427, K4: keine verwaisten Anschreiben, die später wieder auftauchen.
+test('Anschreiben (#415): Ausschalten der getrennten Heizkostenabrechnung entfernt ihre offenen Anschreiben', async () => {
+  const s = await startServer()
+  try {
+    const { tenancy } = await house(s)
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send(s, '/api/heating-plants', 'POST', { energy: 'gas', method: 'service' }))
+    const marke = async (url: string, body: unknown) => (await jsonOf<{ token: string }>(await send(s, url, 'POST', body))).token
+    const regeln = { startMonth: 5, changes: [] }
+    await send(s, `/api/heating-plants/${plant.id}/period`, 'PUT', { rules: regeln, answers: { understood: true, token: await marke(`/api/heating-plants/${plant.id}/period/preview`, { rules: regeln }) } })
+    const getrennt = { separate: true, month: '2025-05' }
+    const vorschau = await jsonOf<{ token: string; steps: { tenancyId: string; rows: { from: string }[] }[] }>(await send(s, `/api/heating-plants/${plant.id}/separate/preview`, 'POST', getrennt))
+    const stufen = Object.fromEntries(vorschau.steps.map((st) => [st.tenancyId, Object.fromEntries(st.rows.map((r) => [r.from, 2000]))]))
+    assert.equal((await send(s, `/api/heating-plants/${plant.id}/separate`, 'PUT', { ...getrennt, answers: { understood: true, steps: stufen, token: vorschau.token } })).status, 200)
+    assert.equal((await send(s, `/api/heating-settlement/${plant.id}/2025-05/letters/${tenancy.id}`, 'PUT', { texts: { greeting: 'Warme Grüße' } })).status, 200)
+    const aus = await jsonOf<{ token: string }>(await send(s, `/api/heating-plants/${plant.id}/separate/preview`, 'POST', { separate: false }))
+    const res = await send(s, `/api/heating-plants/${plant.id}/separate`, 'PUT', { separate: false, answers: { merge: false, token: aus.token, understood: true } })
+    assert.equal(res.status, 200, JSON.stringify(await res.clone().json()))
+    await inDatabase(s, async (db) => assert.deepEqual(await db.select().from(tenancyLetterTexts), []))
+  } finally {
+    s.stop()
+  }
+})
+
+test('Anschreiben (#415): eine Wohnung, die das Objekt wechselt, nimmt die offenen Anschreiben ihrer Mieter nicht mit', async () => {
+  const s = await startServer()
+  try {
+    const { unit, tenancy } = await house(s)
+    const first = (await s.api<{ id: string }[]>('/api/properties'))[0]?.id ?? assert.fail('kein Objekt')
+    assert.equal((await send(s, `/api/settlement/2025/letters/${tenancy.id}?property=${first}`, 'PUT', { texts: { greeting: 'Bis bald' } })).status, 200)
+    const other = await jsonOf<{ id: string }>(await send(s, '/api/properties', 'POST', { name: 'Haus am Hang', address: 'Am Hang 3, 01067 Dresden' }))
+    const moved = await send(s, `/api/units/${unit.id}`, 'PUT', { propertyId: other.id })
+    assert.equal(moved.status, 200, JSON.stringify(await moved.clone().json()))
+    await inDatabase(s, async (db) => assert.deepEqual(await db.select().from(tenancyLetterTexts), []))
+  } finally {
+    s.stop()
+  }
+})
+
 test('Anschreiben (#415): ein Mietverhältnis, das in ein anderes Objekt wechselt, nimmt seine offenen Anschreiben nicht mit', async () => {
   const s = await startServer()
   try {

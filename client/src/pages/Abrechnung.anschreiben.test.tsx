@@ -31,6 +31,7 @@ const TEMPLATES: LetterTemplates = { defaults: DEFAULT_LETTER_TEXTS, installatio
 
 let settlement: Settlement
 let templates: LetterTemplates
+let costItems: unknown[]
 let ownLetters: Record<string, unknown>
 let puts: { url: string, body: unknown }[]
 beforeEach(() => {
@@ -43,6 +44,7 @@ beforeEach(() => {
   puts = []
   ownLetters = {}
   templates = TEMPLATES
+  costItems = []
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
     const path = url.split('?')[0] ?? url
@@ -52,6 +54,7 @@ beforeEach(() => {
     }
     if (path === '/api/properties') return json([property])
     if (path === `/api/settlement/${YEAR}`) return json(settlement)
+    if (path === '/api/costItems') return json(costItems)
     if (path === '/api/letter-texts') return json(templates)
     if (path === `/api/settlement/${YEAR}/letters`) return json(ownLetters)
     return json([])
@@ -316,4 +319,44 @@ test('Teil 2: am Objekt „Anschreiben mitdrucken“ wie die Vorgabe, ja oder ne
   fireEvent.click(within(dialog).getByRole('button', { name: 'Speichern' }))
   await waitFor(() => expect(puts).toHaveLength(1), SLOW)
   expect(puts[0]).toEqual({ url: '/api/properties/objekt-1/letter-texts', body: { texts: {}, printLetter: false } })
+})
+
+// ---------- Durchsicht zu PR #427 ----------
+
+test('S1: mit Fußzeile hält der Brief unten Platz frei, damit sie die Unterschrift nicht überdruckt', async () => {
+  show({ ...SETTINGS, printFooter: true })
+  const letter = await screen.findByRole('region', { name: 'Anschreiben an Meier' }, SLOW)
+  await waitFor(() => expect(letter.querySelector('.letter-footer')).not.toBeNull(), SLOW)
+  expect(letter.classList.contains('letter-with-footer')).toBe(true)
+  cleanup()
+  show()
+  const without = await screen.findByRole('region', { name: 'Anschreiben an Meier' }, SLOW)
+  expect(without.classList.contains('letter-with-footer')).toBe(false)
+})
+
+test('K2: auch die Belegkopien tragen den Fußvermerk', async () => {
+  costItems = [{ id: 'k1', propertyId: 'objekt-1', period: `${YEAR}-01`, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 120000, key: 'area', invoiceFile: 'beleg.pdf' }]
+  show({ ...SETTINGS, printAttachments: true })
+  const card = await statementCard()
+  await waitFor(() => expect(card.querySelector('.attachments')).not.toBeNull(), SLOW)
+  expect(card.querySelector('table.print-pages > tbody .attachments')).not.toBeNull()
+})
+
+test('K3: ein Abschluss ohne eingefrorene Fußzeile druckt keine, statt Kontakt und Bank von heute zu nehmen', async () => {
+  const frozen = settlement.letters?.t1
+  if (!frozen) throw new Error('kein Anschreiben')
+  settlement = { ...settlement, closed: { closedAt: `${YEAR + 1}-02-01T10:00:00Z`, sentAt: null }, letters: { t1: { ...frozen, sender: { name: 'Max Vermieter', returnLine: 'Max Vermieter · Altweg 1' } } } }
+  show({ ...SETTINGS, printFooter: true })
+  const letter = await screen.findByRole('region', { name: 'Anschreiben an Meier' }, SLOW)
+  expect(letter.querySelector('.letter-footer')).toBeNull()
+  expect(plain(document.querySelector('table.print-pages > tfoot')?.textContent)).not.toContain('IBAN')
+})
+
+test('K7: eine Rücksendeangabe, die nicht in die Vermerkzone passt, wird vor dem Druck genannt', async () => {
+  const l = settlement.letters?.t1
+  if (!l) throw new Error('kein Anschreiben')
+  const long = `Max Vermieter · ${'Sehr lange Straße mit Hausnummer 1, '.repeat(4)}12345 Musterstadt`
+  settlement = { ...settlement, letters: { t1: { ...l, sender: { name: 'Max Vermieter', returnLine: long, address: '', footer: '' } } } }
+  show()
+  expect(await screen.findByText(/Rücksendeangabe zu lang/, {}, SLOW)).toBeTruthy()
 })

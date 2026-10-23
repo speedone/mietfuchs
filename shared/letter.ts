@@ -201,7 +201,7 @@ export type LetterFacts = {
 export function salutationOf(tenantName: string, own: string | null | undefined): string {
   const text = (own ?? '').trim()
   if (text === '') return `Guten Tag ${tenantName},`
-  return /[,.!:;]$/.test(text) ? text : `${text},`
+  return /[,.!?:;]$/.test(text) ? text : `${text},`
 }
 
 export function letterValues(f: LetterFacts, newCents: number | null): Omit<Record<LetterField, string>, 'Datum' | 'AnzahlBelege'> {

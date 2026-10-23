@@ -108,16 +108,20 @@ export const asNullableText = (value: unknown): string | null => (typeof value =
 // Eine Zeile für den Brief (#415, Teil 2): Anschrift, Kontakt, Anrede. Zeilenumbrüche werden zu „, “, außen
 // getrimmt, höchstens 200 Zeichen; `null` bleibt `null`. Eine Angabe anderer Art ist eine 400, kein stilles Leer.
 export const LETTER_LINE_MAX = 200
+// Eine Angabe für den Brief, die keine ist (Durchsicht zu PR #427, K8): ein eigener Fehler statt `HeatingError`.
+export class LetterInputError extends Error {
+  status = 400 as const
+}
 export function nullableLine(value: unknown, label: string): string | null {
   if (value === null || value === undefined) return null
-  if (typeof value !== 'string') throw new HeatingError(400, `${label} ist kein Text.`)
+  if (typeof value !== 'string') throw new LetterInputError(`${label} ist kein Text.`)
   const line = value.trim().replace(/\s*\n\s*/g, ', ')
-  if (line.length > LETTER_LINE_MAX) throw new HeatingError(400, `${label} ist zu lang (höchstens ${LETTER_LINE_MAX} Zeichen).`)
+  if (line.length > LETTER_LINE_MAX) throw new LetterInputError(`${label} ist zu lang (höchstens ${LETTER_LINE_MAX} Zeichen).`)
   return line
 }
 export function nullableBoolean(value: unknown, label: string): boolean | null {
   if (value === null || value === undefined) return null
-  if (typeof value !== 'boolean') throw new HeatingError(400, `${label} ist ja oder nein.`)
+  if (typeof value !== 'boolean') throw new LetterInputError(`${label} ist ja oder nein.`)
   return value
 }
 
@@ -1649,7 +1653,13 @@ async function guardUnit(db: Executor, before: Unit | null, after: Unit): Promis
   if ((schaetzungen[0]?.n ?? 0) > 0) haengt.push('Schätzungen nach § 9a HeizkostenV')
   const ablesedienst = await db.select({ n: count() }).from(heatingServiceValues).where(eq(heatingServiceValues.unitId, after.id))
   if ((ablesedienst[0]?.n ?? 0) > 0) haengt.push('Werte des Ablesedienstes')
-  if (haengt.length === 0) return
+  if (haengt.length === 0) {
+    // Durchsicht zu PR #427, K4: Die offenen Anschreiben ihrer Mieter gehören zum bisherigen Haus und entfallen im selben
+    // Vorgang; die abgeschlossener Abrechnungen bleiben.
+    const ihre = await db.select({ id: tenancies.id }).from(tenancies).where(eq(tenancies.unitId, after.id))
+    for (const t of ihre) await dropOpenTenancyLetters(db, t.id)
+    return
+  }
   throw new CrossPropertyError(
     `Die Wohnung „${after.name}“ kann nicht in ein anderes Objekt wechseln, weil noch ${haengt.join(', ')} ` +
       `an ihr hängen, die zum bisherigen Objekt gehören. Bitte lösen Sie diese Verweise zuerst.`,

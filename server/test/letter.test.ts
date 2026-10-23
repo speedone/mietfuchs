@@ -206,3 +206,14 @@ test('Teil 2: ohne Anschreiben stehen Ergebnis, Anpassung und Belegeinsicht unte
   assert.deepEqual(statementBlocks(letter(), -4000, 0), ['backPayment', 'adjustSuggestion', 'receipts'])
   assert.deepEqual(statementBlocks(letter({ balanceCents: 0 }, { mode: 'none', cents: null }), 0, 2), ['balanced', 'attachments'])
 })
+
+// Durchsicht zu PR #427, K8
+test('K8: ein Fragezeichen am Ende der Anrede bekommt kein Komma', () => {
+  assert.equal(letter({ salutation: 'Wie geht es Ihnen?' }).texts.salutation, 'Wie geht es Ihnen?')
+})
+
+test('K8: eine Zeile oder ein Ja/Nein falscher Art ist ein eigener Fehler mit 400', async () => {
+  const { LetterInputError, nullableBoolean, nullableLine } = await import('../src/db/repository.ts')
+  assert.throws(() => nullableLine(5, 'Die Anschrift'), (e: unknown) => e instanceof LetterInputError && e.status === 400 && /Die Anschrift ist kein Text/.test(e.message))
+  assert.throws(() => nullableBoolean('ja', '„Anschreiben mitdrucken“'), (e: unknown) => e instanceof LetterInputError && e.status === 400)
+})

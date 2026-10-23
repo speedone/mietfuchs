@@ -65,7 +65,9 @@
   .letter { --page: 12mm; min-height: calc(297mm - 2 * var(--page) - 1mm); box-sizing: border-box; max-width: none; margin: 0; padding: 0; border: none; border-radius: 0; background: none; font-size: 11pt; line-height: 1.4; color: var(--text); break-after: page; page-break-after: always; }
   .letter-head { position: absolute; top: calc(15mm - var(--page)); left: calc(25mm - var(--page)); right: calc(20mm - var(--page)); margin: 0; font-size: 12pt; }
   .letter-window { position: absolute; top: calc(45mm - var(--page)); left: calc(20mm - var(--page)); width: 85mm; height: 45mm; margin: 0; overflow: hidden; }
-  .letter-return { position: absolute; left: 5mm; right: 0; bottom: 27.3mm; display: block; margin: 0; padding-bottom: 0.5mm; font-size: 7pt; line-height: 1.2; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* Höchstens zwei Zeilen, nach oben wachsend und in der Vermerkzone (17,7 mm); was länger ist, nennt die Seite vor dem
+     Druck (`returnLineTooLong`, Durchsicht zu PR #427, K7), statt still zu kürzen. */
+  .letter-return { position: absolute; left: 5mm; right: 0; bottom: 27.3mm; display: block; margin: 0; padding-bottom: 0.5mm; font-size: 7pt; line-height: 1.2; color: var(--text); max-height: 2.4em; overflow: hidden; }
   .letter-address { position: absolute; top: 17.7mm; left: 5mm; right: 0; height: 27.3mm; font-size: 10pt; line-height: 1.25; }
   .letter-info { position: absolute; top: calc(50mm - var(--page)); left: calc(125mm - var(--page)); right: calc(20mm - var(--page)); margin: 0; font-size: 10pt; }
   .letter-info .muted { color: var(--text); }
@@ -82,6 +84,8 @@
   .result-box { break-inside: avoid; page-break-inside: avoid; }
   .letter-head-address { font-size: 9pt; }
   /* Die Fußzeile mit Kontakt und Bank unten auf der Briefseite */
+  /* Platz für die Fußzeile unter dem letzten Absatz, auch wenn der Brief über eine Seite läuft (Durchsicht zu PR #427, S1). */
+  .letter-with-footer .letter-body { padding-bottom: 14mm; }
   .letter-footer { position: absolute; bottom: 0; left: calc(25mm - var(--page)); right: calc(20mm - var(--page)); margin: 0; padding-top: 1mm; font-size: 7.5pt; color: var(--text); border-top: 0.2mm solid var(--line); }
 
   /* Ohne Anschreiben: derselbe Kopf, die Aufstellung beginnt auf der Höhe des Betreffs (98,46 mm). */

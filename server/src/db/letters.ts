@@ -107,6 +107,14 @@ export function droppedLettersText(names: readonly string[], label: string): str
     : `Die eigenen Anschreiben von ${andList([...names])} für ${label} entfallen, weil sich der Zeitraum ändert; danach gilt die Vorlage.`
 }
 
+// Die offenen Anschreiben einer getrennten Heizkostenabrechnung ab einer Heizperiode (Durchsicht zu PR #427, K4): beim
+// Ausschalten von Weg d und beim Entfernen der Anlage. Abgeschlossene bleiben eingefroren.
+export async function dropOpenHeatingLetters(db: Executor, plantId: string, from: string | null): Promise<void> {
+  const closed = new Set((await db.select({ period: closedHeatingSettlements.period }).from(closedHeatingSettlements).where(eq(closedHeatingSettlements.plantId, plantId))).map((c) => c.period as string))
+  const docs = (await letterDocsWithPrefix(db, `heating:${plantId}:`)).filter((d) => (from === null || d.period >= from) && !closed.has(d.period))
+  await dropLetterDocs(db, docs.map((d) => d.doc))
+}
+
 // Ein Mietverhältnis wechselt das Objekt: seine offenen Anschreiben entfallen, die abgeschlossener Abrechnungen bleiben.
 export async function dropOpenTenancyLetters(db: Executor, tenancyId: string): Promise<void> {
   const docs = new Set([

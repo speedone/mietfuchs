@@ -217,7 +217,10 @@ das Leerzeichen davor mit (`{Konto}` ohne IBAN ergibt den bisherigen Satz ohne K
   Abrechnungszeitraums (periodChange.ts) und der Heizperiode (heatingPeriodChange.ts) entfernen die Zeilen jedes
   Schlüssels, dessen Zeitraum sich ändert, und nennen sie in der Vorschau (`letters`, in der Marke); wechselt ein
   Mietverhältnis das Objekt, entfallen seine offenen Zeilen (`dropOpenTenancyLetters`, im Vorgang des Wechsels), die
-  abgeschlossener Abrechnungen bleiben.
+  abgeschlossener Abrechnungen bleiben; ebenso beim Objektwechsel einer Wohnung für alle ihre Mietverhältnisse. Das
+  Ausschalten der getrennten Heizkostenabrechnung und das Entfernen der Anlage entfernen die offenen Zeilen
+  `heating:<Anlage>:…` (`dropOpenHeatingLetters`). Falsche Angaben zu Anschrift, Kontakt, Anrede und „mitdrucken“ sind
+  ein `LetterInputError` (400).
 - Routen: `GET`/`PUT /api/letter-texts` (Installation, `adjustDefault`, `printLetter`), `PUT /api/properties/:id/letter-texts` (dazu `printLetter`, `null` = Vorgabe),
   `GET …/letters` und `PUT …/letters/:tenancyId` unter `/api/settlement/:period` und
   `/api/heating-settlement/:plant/:period`.

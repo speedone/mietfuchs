@@ -18,7 +18,8 @@ describe('Tabellen (#137)', () => {
     expect(files).toContain('./Table.tsx')
     // Ausnahme: die Hülle des Fußvermerks im Druck (#415, Teil 2, `PrintPages` in Letter.tsx). Am Bildschirm ist sie
     // `display: block` und schiebt nichts in die Breite; die Tabellen darin kommen weiter aus Table.tsx.
-    const bare = files.filter((file) => file !== './Table.tsx' && /<table(?! className="print-pages")[\s>]/.test(sources[file]))
+    const tableIn = (file: string): RegExp => (file === './Letter.tsx' ? /<table(?! className="print-pages")[\s>]/ : /<table[\s>]/)
+    const bare = files.filter((file) => file !== './Table.tsx' && tableIn(file).test(sources[file] ?? ''))
     expect(bare).toEqual([])
   })
 })

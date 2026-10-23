@@ -32,6 +32,8 @@ test('Anschrift und Kontakt des Vermieters werden mit den Vermieterdaten gespeic
   )
   const address = await screen.findByLabelText(/Anschrift des Vermieters/, {}, SLOW) as HTMLInputElement
   expect(address.value).toBe('Hauptstr. 1, 10115 Berlin')
+  // Durchsicht zu PR #427, K6: Die Adresse des Objekts ersetzt nur die Rücksendeangabe.
+  expect(document.getElementById(address.getAttribute('aria-describedby') ?? '')?.textContent).toBe('Für Rücksendeangabe, Briefkopf und Fußzeile des Briefs. Ohne Angabe nennt die Rücksendeangabe die Adresse des Objekts; Briefkopf und Fußzeile bleiben ohne Anschrift.')
   fireEvent.change(screen.getByLabelText(/Kontakt/), { target: { value: 'Tel. 030 123456' } })
   const card = address.closest('section') ?? document.body
   fireEvent.click(within(card as HTMLElement).getByRole('button', { name: 'Speichern' }))
