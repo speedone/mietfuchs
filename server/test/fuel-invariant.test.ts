@@ -148,8 +148,9 @@ function totals(s: unknown): { tenants: number; landlord: number; carry: number;
     // Heizung PR 12: Der Leerstand (der Vermieter ist Nutzer der leeren Räume) zählt ebenso; ihn gibt es nur in
     // den Varianten mit Mieterwechsel.
     // Durchsicht von #243, Runde 3 (N2-K1): ebenso der Eigenanteil einer selbst genutzten Wohnung (Einliegerhaus).
-    up: parts.reduce<number>((a, p) => a + (flaggedReason(reasonOf(p)) || reasonOf(p) === 'vacancy' || reasonOf(p) === 'selfUse' ? Math.max(0, centsOf(p)) : 0), 0),
-    down: parts.reduce<number>((a, p) => a + (flaggedReason(reasonOf(p)) || reasonOf(p) === 'vacancy' || reasonOf(p) === 'selfUse' ? Math.min(0, centsOf(p)) : 0), 0),
+    // #259: und der Teil einer Wohnung in ihrer Zeit außerhalb der Abrechnungseinheit.
+    up: parts.reduce<number>((a, p) => a + (flaggedReason(reasonOf(p)) || reasonOf(p) === 'vacancy' || reasonOf(p) === 'selfUse' || reasonOf(p) === 'outsideUnit' ? Math.max(0, centsOf(p)) : 0), 0),
+    down: parts.reduce<number>((a, p) => a + (flaggedReason(reasonOf(p)) || reasonOf(p) === 'vacancy' || reasonOf(p) === 'selfUse' || reasonOf(p) === 'outsideUnit' ? Math.min(0, centsOf(p)) : 0), 0),
     pairs,
   }
 }
@@ -157,7 +158,7 @@ function totals(s: unknown): { tenants: number; landlord: number; carry: number;
 // Durchsicht von #243, Runde 4 (R3-K1): Teile beim Vermieter, die nur aus einem erlaubten Grund dort stehen dürfen, wo die
 // Schranken (ii) und (vii) über den Lauf entfallen: Gegenbuchung, ausgewiesene Teile, Leerstand, Eigenanteil, Restvorrat.
 const ALLOWED_LANDLORD = new Set(['fuelCarry', 'fuelClosedPeriod', 'fuelEstimateDiff', 'vacancy', 'selfUse', 'stockRemaining'])
-function strayParts(s: unknown): string[] {
+function strayParts(s: unknown, extra: readonly string[] = []): string[] {
   const list = (o: unknown, key: string): unknown[] => {
     const v: unknown = o !== null && typeof o === 'object' ? Reflect.get(o, key) : undefined
     return Array.isArray(v) ? v : []
@@ -167,7 +168,7 @@ function strayParts(s: unknown): string[] {
     const reason: unknown = p !== null && typeof p === 'object' ? Reflect.get(p, 'reason') : undefined
     const cents: unknown = p !== null && typeof p === 'object' ? Reflect.get(p, 'cents') : undefined
     const id: unknown = r !== null && typeof r === 'object' ? Reflect.get(r, 'costItemId') : undefined
-    return typeof reason === 'string' && !ALLOWED_LANDLORD.has(reason) && cents !== 0 ? [`${String(id)} ${reason} ${String(cents)}`] : []
+    return typeof reason === 'string' && !ALLOWED_LANDLORD.has(reason) && !extra.includes(reason) && cents !== 0 ? [`${String(id)} ${reason} ${String(cents)}`] : []
   }))
 }
 
@@ -183,7 +184,7 @@ const SEEDS: number[] = process.env.INV_FROM !== undefined || process.env.INV_TO
   : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 16, 81, 607]
 const STEPS = Number(process.env.INV_STEPS ?? 30)
 
-type Variant = { name: string; lazy: boolean; estimate: boolean; change?: boolean; two?: boolean; swap?: boolean; self?: boolean; hw?: 'combined' | 'separate'; dhw?: 'volumeFormula' | 'areaFormula'; capture?: 'hca' | 'serviceValues'; offset?: boolean; failure?: boolean; rules?: boolean; einlieger?: boolean; credit?: boolean; usage?: boolean }
+type Variant = { name: string; lazy: boolean; estimate: boolean; change?: boolean; two?: boolean; swap?: boolean; self?: boolean; hw?: 'combined' | 'separate'; dhw?: 'volumeFormula' | 'areaFormula'; capture?: 'hca' | 'serviceValues'; offset?: boolean; failure?: boolean; rules?: boolean; einlieger?: boolean; credit?: boolean; usage?: boolean; usageOutside?: boolean }
 const VARIANTS: Variant[] = [
   { name: 'Grundform', lazy: false, estimate: false },
   { name: 'Rechnung kommt später', lazy: true, estimate: false },
@@ -232,6 +233,10 @@ const VARIANTS: Variant[] = [
   // und leer. Die Gewichte müssen jeden Topf weiter ganz verteilen, auch über den Eintritt des Vermieters als Nutzer.
   { name: 'Eigene Heizkostenabrechnung, Nutzungswechsel in B', lazy: false, estimate: false, self: true, usage: true },
   { name: 'Freie Schlüssel, Nutzungswechsel in B', lazy: false, estimate: false, usage: true },
+  // Nachprüfung von #423: B liegt vom 16.01. bis 31.08.2025 außerhalb der Abrechnungseinheit; Fläche und Einheiten
+  // verteilen dann je Abschnitt. Der Teil außerhalb darf nur als `outsideUnit` beim Vermieter stehen.
+  { name: 'Freie Schlüssel, B zeitweise außerhalb', lazy: false, estimate: false, usage: true, usageOutside: true },
+  { name: 'Eigene Heizkostenabrechnung, B zeitweise außerhalb', lazy: false, estimate: false, self: true, usage: true, usageOutside: true },
 ]
 
 // Heizung PR 14 (x): Unter einer Ausnahme nach § 11 für Wärme und Warmwasser keine Angaben nach § 6a, kein
@@ -665,7 +670,7 @@ for (const variant of VARIANTS) {
         await opened.write(async (db) => {
           await db.update(properties).set({ periodStartMonth: 5 }).where(eq(properties.id, 'objekt-1'))
           await createEntity(db, 'units', 'a', { propertyId: 'objekt-1', name: 'A', areaM2: 60, ...(variant.einlieger ? { participates: false, selfUsed: true, selfPersons: 1 } : { participates: true }) })
-          await createEntity(db, 'units', 'b', { propertyId: 'objekt-1', name: 'B', areaM2: 40, participates: true, selfPersons: 1, ...(variant.usage ? { usageChanges: [{ from: '2025-01-16', usage: 'eigen' }, { from: '2025-09-01', usage: 'vermietet' }] } : {}) })
+          await createEntity(db, 'units', 'b', { propertyId: 'objekt-1', name: 'B', areaM2: 40, participates: true, selfPersons: 1, ...(variant.usage ? { usageChanges: [{ from: '2025-01-16', usage: variant.usageOutside ? 'ausgenommen' : 'eigen' }, { from: '2025-09-01', usage: 'vermietet' }] } : {}) })
           if (!variant.einlieger) await createEntity(db, 'tenancies', 'ta', { unitId: 'a', tenantName: 'Mieter A', persons: 1, start: '2020-01-01' })
           await createEntity(db, 'tenancies', 'tb', { unitId: 'b', tenantName: 'Mieter B', persons: 1, start: '2020-01-01', ...(variant.capture || variant.failure || variant.change || variant.usage ? { end: CHANGE_END } : {}) })
           if (variant.change) await createEntity(db, 'tenancies', 'tb2', { unitId: 'b', tenantName: 'Mieter B2', persons: 1, start: '2025-01-16' })
@@ -1156,7 +1161,7 @@ for (const variant of VARIANTS) {
           }
           if (blockedHere) selfBlocked = true
           if (blockedHere) blockedKeys.add(key)
-          if (!blockedHere) stray.push(...strayParts(stored ? stored.settlement : r).map((x) => `${key}: ${x}`))
+          if (!blockedHere) stray.push(...strayParts(stored ? stored.settlement : r, variant.usageOutside ? ['outsideUnit'] : []).map((x) => `${key}: ${x}`))
           // Zeilen aus Lieferungen oder dem Vorrat anderer Heizperioden: Dann trägt eine Heizperiode Kosten einer anderen, und
           // die Schranken lassen sich nicht je Heizperiode trennen.
           if (/"costItemId":"(fuel|stock):/.test(JSON.stringify(stored ? stored.settlement : r))) crossing = true

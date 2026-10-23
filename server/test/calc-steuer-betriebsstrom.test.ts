@@ -677,3 +677,19 @@ test('M1: Gutschrift mit eigenem Schlüssel macht den Heizanteil unbrauchbar (87
   assert.match(t2, /Heizanteil der Anlage taugt hier nicht/, t2)
   assert.doesNotMatch(t2, /denn ein Abzug ohne Verweis/, t2)
 })
+
+// #259, Nachprüfung M-a: Der private Teil eines Abzugs ohne Verweis folgt der Nutzung im Zeitraum, aus dem er stammt,
+// nicht der im Kalenderjahr. Mai bis April, EG ab 01.01.2026 selbstgenutzt: 120 von 365 Tagen des Zeitraums 2025/2026.
+test('Nutzungswechsel: der Ausgleich ohne Verweis teilt nach den Tagen der Eigennutzung im Zeitraum des Abzugs', () => {
+  const MAI: PeriodRules = { startMonth: 5, changes: [] }
+  const src = haus([gas(500000, '2025-05', { taxYear: 2025 }), hausstrom(100000, '2025-05', { taxYear: 2025 }), abzug('ab', 20000, undefined, {}, '2025-05')], [anlage()], {
+    properties: [{ id: 'objekt-1', kind: 'mfh', cableBuiltBeforeDec2021: null, periodRules: MAI }],
+    units: [
+      { id: 'u1', propertyId: 'objekt-1', name: 'EG', areaM2: 60, participates: true, usageChanges: [{ from: '2026-01-01', usage: 'eigen' }] },
+      { id: 'u2', propertyId: 'objekt-1', name: 'OG', areaM2: 40, participates: true },
+    ],
+  } as Partial<Source>)
+  const z = line(tax(src)) ?? assert.fail('keine Zeile')
+  // 20.000 × (60 × 120/365) / 100 = 3.945,21.
+  assert.equal(z.privateCents, 3945)
+})

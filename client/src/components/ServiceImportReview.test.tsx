@@ -14,7 +14,7 @@ const ctx: ImportContext = {
   propertyId: 'objekt-1', plantId: 'hp',
   heating: { key: '2025-01', from: '2025-01-01', to: '2025-12-31' }, object: { key: '2025-01', from: '2025-01-01', to: '2025-12-31' },
   tenancies: [{ id: 't1', unitId: 'a', tenantName: 'Erika Mustermann', start: '2020-01-01', end: null }],
-  units: [{ id: 'a', name: 'EG links', selfUsed: false }, { id: 'b', name: 'EG rechts', selfUsed: false }],
+  units: [{ id: 'a', name: 'EG links', participates: true, selfUsed: false }, { id: 'b', name: 'EG rechts', participates: true, selfUsed: false }],
   existingAmountItems: 0,
 }
 const mai: ImportContext = { ...ctx, heating: { key: '2025-05', from: '2025-05-01', to: '2026-04-30' }, object: { key: '2025-05', from: '2025-05-01', to: '2026-04-30' } }

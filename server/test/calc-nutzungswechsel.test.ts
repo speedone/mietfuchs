@@ -6,7 +6,10 @@
 import { calendarPeriod } from '../../shared/period.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { computeSettlement, taxReport, type ComputedSettlement } from '../src/calc.ts'
+import { computeSettlement, taxReport, taxReportFor, type ComputedSettlement } from '../src/calc.ts'
+import { TAX_STOCK_PROPERTY, type TaxSource } from '../testing/taxStock.ts'
+import { periodKey } from '../../shared/period.ts'
+import type { PeriodRules } from '../../shared/types.ts'
 import { snapshotOf, type SnapshotCostItem, type SnapshotSource, type SnapshotTenancy, type SnapshotUnit } from '../src/snapshot.ts'
 import { assertLandlordParts } from '../testing/landlordParts.ts'
 import { selfSnapshot, selfTenancy, selfUnit } from '../testing/selfHeating.ts'
@@ -176,6 +179,36 @@ test('Hauptzähler: der Rest einer nur teilweise selbstgenutzten Einheit ohne Z�
   assert.match(n.text, /nach Tagen/)
 })
 
+test('Hauptzähler: mehrere Einheiten ohne Zähler, Eigenanteil nur an Tagen, an denen alle selbstgenutzt sind (Nachprüfung S-b)', () => {
+  const s = settle(source({
+    units: [unit('a'), unit('b', { ...eigen, selfPersons: 1 }), unit('c', { ...eigen, selfPersons: 1, usageChanges: [{ from: '2025-07-01', usage: 'ausgenommen' }] })],
+    tenancies: [tenancy('t-a', 'a')],
+    meters: [{ id: 'ma', unitId: 'a', type: 'kaltwasser' }, { id: 'mm', unitId: null, type: 'kaltwasser' }],
+    readings: [
+      { meterId: 'ma', date: '2024-12-31', value: 0 }, { meterId: 'ma', date: '2025-12-31', value: 100 },
+      { meterId: 'mm', date: '2024-12-31', value: 0 }, { meterId: 'mm', date: '2025-12-31', value: 200 },
+    ],
+    costItems: [item({ key: 'meter', meterType: 'kaltwasser' })],
+  }))
+  // Rest 50.000: Januar bis Juni sind b und c selbstgenutzt (181/365 = 24.794,52 Eigenanteil), ab Juli liegt c außerhalb,
+  // und ihr Verbrauch gehört nicht in den Eigenanteil (#116): der Rest bleibt beim Vermieter.
+  assert.equal(shareOf(s, 't-a'), 50000)
+  assert.equal(s.selfUsedShareCents, 24795)
+  assert.equal(partOf(s, 'mainMeterRest'), 25205)
+  // Ganzjährig beide selbstgenutzt: alles Eigenanteil, wie vor #259.
+  const fest = settle(source({
+    units: [unit('a'), unit('b', { ...eigen, selfPersons: 1 }), unit('c', { ...eigen, selfPersons: 1 })],
+    tenancies: [tenancy('t-a', 'a')],
+    meters: [{ id: 'ma', unitId: 'a', type: 'kaltwasser' }, { id: 'mm', unitId: null, type: 'kaltwasser' }],
+    readings: [
+      { meterId: 'ma', date: '2024-12-31', value: 0 }, { meterId: 'ma', date: '2025-12-31', value: 100 },
+      { meterId: 'mm', date: '2024-12-31', value: 0 }, { meterId: 'mm', date: '2025-12-31', value: 200 },
+    ],
+    costItems: [item({ key: 'meter', meterType: 'kaltwasser' })],
+  }))
+  assert.equal(fest.selfUsedShareCents, 50000)
+})
+
 test('§ 2 HeizkostenV: selbst bewohnt nur, wenn die Einheit an jedem Tag selbstgenutzt ist (S4)', () => {
   assert.ok(codes(computeSettlement({ ...snapshotOf(source({
     units: [unit('a'), unit('b', { ...eigen, selfPersons: 1 })], tenancies: [tenancy('t-a', 'a')],
@@ -318,6 +351,23 @@ test('Eigene Heizkostenabrechnung: ein Mietverhältnis ganz in der Zeit der Eige
   assert.doesNotMatch(n.text, /bleibt er dagegen Nutzer/)
 })
 
+test('„Nur Heizung“ nach Gradtagen: Eigenanteil nach demselben Maß wie der Mieter, kein Schein-Leerstand (Nachprüfung M-b)', () => {
+  for (const key of ['area', 'direct'] as const) {
+    const s = computeSettlement(selfSnapshot({
+      plant: { method: 'manual', changeSplit: 'degreeDays', hotWater: 'none' },
+      units: [selfUnit('a', 50), selfUnit('b', 50, { participates: false, selfUsed: true, usageChanges: [{ from: '2025-07-01', usage: 'vermietet' }] })],
+      tenancies: [selfTenancy('A', 'a', '2020-01-01', null), selfTenancy('B', 'b', '2025-07-01', null)],
+      meters: [], readings: [], deliveries: [],
+      costItems: [{ id: 'k', propertyId: 'objekt-1', period: calendarPeriod(2025), category: 'Heizung und Warmwasser', description: 'Heizung', amountCents: 100000, key, ...(key === 'direct' ? { directUnitId: 'b' } : {}), heatingPlantId: 'hp', heatingTarget: 'heating' }],
+    }))
+    // Vorher: B 20.848 nach Gradtagen, Eigenanteil 24.794 nach Tagen und 4.358 Schein-Leerstand.
+    const half = key === 'area' ? 50000 : 100000
+    assert.equal(partOf(s, 'vacancy'), 0, key)
+    assert.equal(shareOf(s, 'B') + s.selfUsedShareCents, half, key)
+    assert.equal(shareOf(s, 'B'), key === 'area' ? 20848 : 41696, key)
+  }
+})
+
 // ---------- Steuerübersicht (Teil 1) ----------
 
 test('Steuer: umlagefähige Kosten folgen dem tagesgenauen Eigenanteil, der Wechsel wird genannt', () => {
@@ -354,6 +404,41 @@ test('Steuer: nach Fläche tagesgenau, auch bei Einheiten außerhalb (M1, Probe 
   assert.deepEqual([k.privateCents, k.settlementPrivateCents], [2831, 4247])
   // Die Fläche im Kopf der Anlage V nach Tagen (Auslegung): 50 × 31/365.
   assert.equal(p3.selfUsedAreaM2, Math.round(50 * 31 / 365 * 100) / 100)
+})
+
+// Nachprüfung M-a und S-a: Die Nutzung gilt über den ganzen Zeitraum des Teils, nicht nur über seinen Schnitt mit dem
+// Steuerjahr (eine spät bezahlte Position hätte sonst die Angabe von Anfang an gelesen).
+const steuerHaus = (rules: PeriodRules, from: string, costItems: { id: string, period: string, key: 'area' | 'direct', category: string, paidOn?: string, taxYear?: number }[]): TaxSource => ({
+  properties: [{ id: TAX_STOCK_PROPERTY, kind: 'mfh', cableBuiltBeforeDec2021: null, periodRules: rules }],
+  units: [
+    { id: 'eg', propertyId: TAX_STOCK_PROPERTY, name: 'EG', areaM2: 50, participates: true, usageChanges: [{ from, usage: 'eigen' }] },
+    { id: 'og', propertyId: TAX_STOCK_PROPERTY, name: 'OG', areaM2: 50, participates: true },
+  ],
+  tenancies: [{ id: 't1', unitId: 'og', tenantName: 'A', persons: 1, personHistory: [{ from: '2020-01-01', persons: 1 }], start: '2020-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [] }],
+  costItems: costItems.map((c) => ({ ...c, period: periodKey(c.period), propertyId: TAX_STOCK_PROPERTY, description: c.id, amountCents: 100000, ...(c.key === 'direct' ? { directUnitId: 'eg' } : {}) })),
+  meters: [], readings: [], payments: [], closedSettlements: [],
+} as TaxSource)
+
+test('Steuer: eine spät bezahlte Position liest die Nutzung ihres Zeitraums (Nachprüfung M-a)', () => {
+  const src = steuerHaus({ startMonth: 1, changes: [] }, '2023-06-01', [
+    { id: 'dir', period: '2024-01', key: 'direct', category: 'Nicht umlagefähig', paidOn: '2025-02-10' },
+    { id: 'fl', period: '2024-01', key: 'area', category: 'Nicht umlagefähig', paidOn: '2025-02-10' },
+  ])
+  const r = taxReportFor(src, TAX_STOCK_PROPERTY, 2025)
+  assert.deepEqual(r.expenses.items.map((i) => [i.costItemId, i.privateCents]), [['dir', 100000], ['fl', 50000]])
+})
+
+test('Steuer: bei Mai bis April hängt der private Teil nicht vom Jahr der Zahlung ab (Nachprüfung S-a)', () => {
+  const MAI: PeriodRules = { startMonth: 5, changes: [] }
+  // EG ab 01.01.2026 selbst: 120 von 365 Tagen des Zeitraums 05/2025 bis 04/2026; 100.000 × 50/100 × 120/365 = 16.438,36.
+  for (const taxYear of [2025, 2026]) {
+    const src = steuerHaus(MAI, '2026-01-01', [
+      { id: 'um', period: '2025-05', key: 'area', category: 'Sach- und Haftpflichtversicherung', taxYear },
+      { id: 'nu', period: '2025-05', key: 'area', category: 'Nicht umlagefähig', taxYear },
+    ])
+    const r = taxReportFor(src, TAX_STOCK_PROPERTY, taxYear)
+    assert.deepEqual(r.expenses.items.map((i) => [i.costItemId, i.privateCents]), [['um', 16438], ['nu', 16438]], String(taxYear))
+  }
 })
 
 test('Steuer: ohne Wechsel keine Angabe zum Nutzungswechsel', () => {
