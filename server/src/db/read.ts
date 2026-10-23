@@ -132,6 +132,10 @@ export async function readProperties(db: Executor): Promise<Property[]> {
     landlordName: p.landlordName,
     iban: p.iban,
     paymentDeadlineDays: p.paymentDeadlineDays,
+    // Teil 2 von #415, wie die drei davor: `null` heißt „die Vorgabe gilt“.
+    landlordAddress: p.landlordAddress,
+    landlordContact: p.landlordContact,
+    printLetter: p.printLetter,
     cableBuiltBeforeDec2021: p.cableBuiltBeforeDec2021,
     // Angespannter Wohnungsmarkt (§ 5d CO2KostAufG, Heizung PR 18); `null` heißt unbekannt.
     tightMarket: p.tightMarket,
@@ -225,6 +229,8 @@ export async function readTenancies(db: Executor): Promise<Tenancy[]> {
     email: orUndefined(t.email),
     phone: orUndefined(t.phone),
     correspondenceAddress: orUndefined(t.correspondenceAddress),
+    // Nur mit Wert (#415, Teil 2): Die db.json kennt das Feld nicht.
+    ...(t.letterSalutation === null ? {} : { letterSalutation: t.letterSalutation }),
     iban: orUndefined(t.iban),
     contractDate: orUndefined(t.contractDate),
     // Mitteilung nach § 5d Abs. 4 CO2KostAufG (Heizung PR 18); nur mit Wert, die db.json kennt das Feld nicht.
@@ -643,6 +649,10 @@ export async function readSettings(db: Executor): Promise<MigratedSettings> {
     ...(row.printAdjustSuggestion == null ? {} : { printAdjustSuggestion: row.printAdjustSuggestion }),
     ...(row.printAttachments == null ? {} : { printAttachments: row.printAttachments }),
     ...(row.printFoldMarks == null ? {} : { printFoldMarks: row.printFoldMarks }),
+    ...(row.printLetter == null ? {} : { printLetter: row.printLetter }),
+    ...(row.printFooter == null ? {} : { printFooter: row.printFooter }),
+    ...(row.landlordAddress == null ? {} : { landlordAddress: row.landlordAddress }),
+    ...(row.landlordContact == null ? {} : { landlordContact: row.landlordContact }),
     ...(row.updateCheck == null ? {} : { updateCheck: row.updateCheck }),
     ...(row.updateDismissed == null ? {} : { updateDismissed: row.updateDismissed }),
     ai,

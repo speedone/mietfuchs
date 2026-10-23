@@ -204,7 +204,21 @@ das Leerzeichen davor mit (`{Konto}` ohne IBAN ergibt den bisherigen Satz ohne K
   Baustein nicht gibt, einzelne Klammern, Länge): 400 mit dem Baustein im Satz. Backup und Wiederherstellen nehmen
   die Tabellen mit dem Schnappschuss der Datenbank mit; ein Archiv ohne sie ergibt die Vorgaben, der eingefrorene
   Eingang kennt sie nicht. Validator und Umstieg berührt das nicht (die db.json kennt kein Anschreiben).
-- Routen: `GET`/`PUT /api/letter-texts` (Installation, `adjustDefault`), `PUT /api/properties/:id/letter-texts`,
+- **Teil 2**: Anschrift und Kontakt des Vermieters (`settings.landlord_address`/`landlord_contact`, am Objekt abweichend,
+  `null` heißt Vorgabe, `effectiveLandlord`) ergeben Rücksendeangabe (`returnLine`: mit Anschrift „Name · Anschrift“, sonst
+  wie bisher `letterhead`), Anschrift im Kopf und die Fußzeile (`footerLine`); alles steht in `sender` und friert ein.
+  Die Anrede je Mietverhältnis (`tenancies.letter_salutation`) setzt `{Anrede}` ein (`salutationOf`: ohne Angabe „Guten
+  Tag {Name},“, ohne Satzzeichen am Ende ein Komma); die Vorgabe des Bausteins ist jetzt `{Anrede}`, was ohne Anrede
+  denselben Satz ergibt. „Anschreiben mitdrucken“ (`settings.print_letter`, `properties.print_letter`) und die Fußzeile
+  (`settings.print_footer`) sind nur Druck: Eingefroren wird immer dasselbe Anschreiben. `PUT /api/settings` lehnt bei
+  diesen Feldern eine Angabe falscher Art mit 400 ab (`nullableLine`, höchstens 200 Zeichen, Umbrüche werden „, “).
+- **Der Schlüssel `doc` nennt das Objekt** (Integrationsdurchsicht): `<Objekt>:<Zeitraum>` bzw.
+  `heating:<Anlage>:<Heizperiode>` (`letterDoc`); Schritt 0068 schreibt vorhandene Zeilen um. Der Wechsel des
+  Abrechnungszeitraums (periodChange.ts) und der Heizperiode (heatingPeriodChange.ts) entfernen die Zeilen jedes
+  Schlüssels, dessen Zeitraum sich ändert, und nennen sie in der Vorschau (`letters`, in der Marke); wechselt ein
+  Mietverhältnis das Objekt, entfallen seine offenen Zeilen (`dropOpenTenancyLetters`, im Vorgang des Wechsels), die
+  abgeschlossener Abrechnungen bleiben.
+- Routen: `GET`/`PUT /api/letter-texts` (Installation, `adjustDefault`, `printLetter`), `PUT /api/properties/:id/letter-texts` (dazu `printLetter`, `null` = Vorgabe),
   `GET …/letters` und `PUT …/letters/:tenancyId` unter `/api/settlement/:period` und
   `/api/heating-settlement/:plant/:period`.
 

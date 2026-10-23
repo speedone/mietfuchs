@@ -19,7 +19,7 @@ export default function LetterTemplateCard({ reload }: { reload: () => Promise<v
   useEffect(() => { void load() }, [load])
 
   async function save(s: LetterSave) {
-    await api('/api/letter-texts', { method: 'PUT', body: JSON.stringify({ texts: s.texts, ...(s.adjust ? { adjustDefault: s.adjust.mode } : {}) }) })
+    await api('/api/letter-texts', { method: 'PUT', body: JSON.stringify({ texts: s.texts, ...(s.adjust ? { adjustDefault: s.adjust.mode } : {}), ...(typeof s.printLetter === 'boolean' ? { printLetter: s.printLetter } : {}) }) })
     setOpen(false)
     await Promise.all([load(), reload()])
     toast('Vorlage des Anschreibens gespeichert.')
@@ -39,6 +39,7 @@ export default function LetterTemplateCard({ reload }: { reload: () => Promise<v
         <p className="m-0">
           {own === 0 ? 'Es gelten die Vorgaben von Mietfuchs.' : `${own} von ${LETTER_BLOCK_IDS.length} Bausteinen mit eigenem Text.`}
           {' '}Vorgabe für die Vorauszahlung: {adjustLabel}.
+          {' '}{templates.printLetter === false ? 'Das Anschreiben wird nicht mitgedruckt.' : 'Das Anschreiben wird mitgedruckt.'}
         </p>
       )}
       {templates && (
@@ -51,6 +52,7 @@ export default function LetterTemplateCard({ reload }: { reload: () => Promise<v
           own={templates.installation}
           values={SAMPLE_LETTER_VALUES}
           adjust={{ mode: templates.adjustDefault, cents: null }}
+          printLetter={{ value: templates.printLetter ?? true }}
           onClose={() => setOpen(false)}
           onSave={save}
         />

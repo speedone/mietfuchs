@@ -18,6 +18,8 @@ export type LetterDraft = {
   // Mieter: Gilt eine eigene Wahl? `false` nach „Anpassung auf Vorgabe zurücksetzen“ (Durchsicht K6).
   adjustOwn: boolean
   customCents: string
+  // Teil 2: „Anschreiben mitdrucken“ der Ebene; `null` am Objekt heißt „wie die Vorgabe“.
+  printLetter?: boolean | null
 }
 
 export const ownOf = (texts: LetterTexts | null | undefined): OwnTexts =>

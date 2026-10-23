@@ -4,9 +4,9 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   adjustedCents, adjustmentHint, buildLetter, chooseLetterBlocks, DEFAULT_LETTER_TEXTS, LETTER_BLOCK_IDS, LETTER_FIELDS, mergeLetterTexts, parseLetterAdjustment,
-  exceedsOnePage, lettersOf, parseLetterTexts, renderLetterText, resolveTemplate, templateProblems, type LetterFacts,
+  exceedsOnePage, lettersOf, parseLetterTexts, printsLetter, renderLetterText, resolveTemplate, statementBlocks, templateProblems, type LetterFacts,
 } from '../../shared/letter.ts'
-import type { LetterAdjustment } from '../../shared/types.ts'
+import type { LetterAdjustment, Property, Settings, Tenancy } from '../../shared/types.ts'
 import { calendarYearPeriod, settlementPeriod } from '../../shared/period.ts'
 
 const facts = (over: Partial<LetterFacts> = {}): LetterFacts => ({
@@ -140,7 +140,7 @@ test('S2: Absender, Rücksendeangabe und Anschrift stehen im Anschreiben und fri
   })
   const l = out.t1
   if (!l) return assert.fail('kein Anschreiben')
-  assert.deepEqual(l.sender, { name: 'Max', returnLine: 'Max · Haus · Lindenweg 12, 12345 Musterstadt' })
+  assert.deepEqual(l.sender, { name: 'Max', returnLine: 'Max · Haus · Lindenweg 12, 12345 Musterstadt', address: '', footer: 'Max' })
   assert.deepEqual(l.recipient, ['Erika', 'EG', 'Lindenweg 12', '12345 Musterstadt'])
 })
 
@@ -148,4 +148,61 @@ test('S3: ein Anschreiben, das nicht auf eine Seite passt, wird erkannt', () => 
   assert.equal(exceedsOnePage(Object.values(DEFAULT_LETTER_TEXTS)), false)
   assert.equal(exceedsOnePage([...Object.values(DEFAULT_LETTER_TEXTS), 'Wort '.repeat(700)]), true)
   assert.equal(exceedsOnePage(Array.from({ length: 30 }, () => 'Kurzer Absatz.')), true)
+})
+
+// ---------- Teil 2 von #415 ----------
+
+test('Teil 2: {Anrede} nimmt die Anrede des Mietverhältnisses, sonst „Guten Tag {Name},“', () => {
+  assert.equal(DEFAULT_LETTER_TEXTS.salutation, '{Anrede}')
+  assert.deepEqual(templateProblems('salutation', '{Anrede}'), [])
+  assert.equal(letter().texts.salutation, 'Guten Tag Erika Mustermann,')
+  assert.equal(letter({ salutation: 'Sehr geehrte Frau Mustermann' }).texts.salutation, 'Sehr geehrte Frau Mustermann,')
+  // Ein eigenes Satzzeichen am Ende bleibt; Leerzeichen zählen nicht als Anrede.
+  assert.equal(letter({ salutation: 'Liebe Erika!' }).texts.salutation, 'Liebe Erika!')
+  assert.equal(letter({ salutation: 'Hallo Erika,' }).texts.salutation, 'Hallo Erika,')
+  assert.equal(letter({ salutation: '   ' }).texts.salutation, 'Guten Tag Erika Mustermann,')
+})
+
+const oneStatement = {
+  statements: [{ tenancyId: 't1', unitId: 'u1', tenantName: 'Erika', unitName: 'EG', persons: 1, days: 365, personDays: 365, periodStart: '2025-01-01', periodEnd: '2025-12-31', rows: [], totalShareCents: 1, total35aCents: 0, prepaymentCents: 0, prepaymentOverridden: false, suggestedMonthlyCents: 0, balanceCents: -1 }],
+  period: settlementPeriod(calendarYearPeriod(2025)),
+  daysInYear: 365,
+}
+const house: Property = { id: 'p', name: 'Haus', kind: 'mfh', address: 'Lindenweg 12, 12345 Musterstadt', landlordName: null, iban: null, paymentDeadlineDays: null }
+
+test('Teil 2: die Anschrift des Vermieters steht in Rücksendeangabe und Fußzeile, am Objekt abweichend', () => {
+  const src = (settings: Partial<Settings>, property: Partial<Property> = {}, tenancy: Partial<Tenancy> = {}) => lettersOf(oneStatement, {
+    settings: { landlordName: 'Max', iban: 'DE02120300000000202051', paymentDeadlineDays: 30, ...settings },
+    property: { ...house, ...property },
+    tenancies: [{ id: 't1', end: null, prepayments: [], correspondenceAddress: '', ...tenancy }],
+    installation: {}, propertyTexts: {}, own: {},
+  }).t1 ?? assert.fail('kein Anschreiben')
+  const withAddress = src({ landlordAddress: 'Hauptstr. 1, 10115 Berlin', landlordContact: 'Tel. 030 123456' })
+  assert.deepEqual(withAddress.sender, {
+    name: 'Max',
+    returnLine: 'Max · Hauptstr. 1, 10115 Berlin',
+    address: 'Hauptstr. 1, 10115 Berlin',
+    footer: 'Max · Hauptstr. 1, 10115 Berlin · Tel. 030 123456 · IBAN DE02 1203 0000 0000 2020 51',
+  })
+  // Ohne Anschrift wie bisher: Vermieter, Objekt und Adresse des Objekts.
+  assert.equal(src({}).sender?.returnLine, 'Max · Haus · Lindenweg 12, 12345 Musterstadt')
+  assert.equal(src({}).sender?.address, '')
+  // Am Objekt abweichend; eine leere Angabe am Objekt heißt „keine“, `null` „die Vorgabe gilt“.
+  assert.equal(src({ landlordAddress: 'Hauptstr. 1, 10115 Berlin' }, { landlordAddress: 'Am Hang 3, 01067 Dresden' }).sender?.returnLine, 'Max · Am Hang 3, 01067 Dresden')
+  assert.equal(src({ landlordAddress: 'Hauptstr. 1, 10115 Berlin' }, { landlordAddress: null }).sender?.returnLine, 'Max · Hauptstr. 1, 10115 Berlin')
+  assert.equal(src({ landlordAddress: 'Hauptstr. 1, 10115 Berlin' }, { landlordAddress: '' }).sender?.returnLine, 'Max · Haus · Lindenweg 12, 12345 Musterstadt')
+  // Die Anrede des Mietverhältnisses kommt ins Anschreiben.
+  assert.equal(src({}, {}, { letterSalutation: 'Sehr geehrte Frau Becker' }).texts.salutation, 'Sehr geehrte Frau Becker,')
+})
+
+test('Teil 2: Anschreiben mitdrucken: Objekt vor Einstellungen, ohne Angabe an', () => {
+  assert.equal(printsLetter(null, {}), true)
+  assert.equal(printsLetter({ printLetter: null }, { printLetter: false }), false)
+  assert.equal(printsLetter({ printLetter: true }, { printLetter: false }), true)
+  assert.equal(printsLetter({ printLetter: false }, {}), false)
+})
+
+test('Teil 2: ohne Anschreiben stehen Ergebnis, Anpassung und Belegeinsicht unter der Aufstellung', () => {
+  assert.deepEqual(statementBlocks(letter(), -4000, 0), ['backPayment', 'adjustSuggestion', 'receipts'])
+  assert.deepEqual(statementBlocks(letter({ balanceCents: 0 }, { mode: 'none', cents: null }), 0, 2), ['balanced', 'attachments'])
 })

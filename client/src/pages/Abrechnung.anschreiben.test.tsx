@@ -30,6 +30,7 @@ const SETTINGS: Settings = { houseName: '', address: '', landlordName: 'Max Verm
 const TEMPLATES: LetterTemplates = { defaults: DEFAULT_LETTER_TEXTS, installation: {}, property: {}, adjustDefault: 'suggestion' }
 
 let settlement: Settlement
+let templates: LetterTemplates
 let ownLetters: Record<string, unknown>
 let puts: { url: string, body: unknown }[]
 beforeEach(() => {
@@ -41,6 +42,7 @@ beforeEach(() => {
   settlement = { ...base, letters: lettersOf(base, { settings: SETTINGS, property, tenancies: TENANCIES, installation: {}, propertyTexts: {}, own: {} }) }
   puts = []
   ownLetters = {}
+  templates = TEMPLATES
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
     const path = url.split('?')[0] ?? url
@@ -50,7 +52,7 @@ beforeEach(() => {
     }
     if (path === '/api/properties') return json([property])
     if (path === `/api/settlement/${YEAR}`) return json(settlement)
-    if (path === '/api/letter-texts') return json(TEMPLATES)
+    if (path === '/api/letter-texts') return json(templates)
     if (path === `/api/settlement/${YEAR}/letters`) return json(ownLetters)
     return json([])
   })
@@ -60,10 +62,10 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-const show = () => render(
+const show = (settings: Settings = SETTINGS) => render(
   <PeriodProvider>
     <PropertyProvider>
-      <UIProvider><Abrechnung settings={SETTINGS} units={[]} tenancies={TENANCIES} reload={async () => {}} /></UIProvider>
+      <UIProvider><Abrechnung settings={settings} units={[]} tenancies={TENANCIES} reload={async () => {}} /></UIProvider>
     </PropertyProvider>
   </PeriodProvider>,
 )
@@ -215,4 +217,103 @@ test('S4 und K6: Vorschau mit dem neuen Betrag aus dem Entwurf, Anpassung auf Vo
   fireEvent.click(within(dialog).getByRole('button', { name: 'Speichern' }))
   await waitFor(() => expect(puts).toHaveLength(1), SLOW)
   expect(puts[0]).toEqual({ url: `/api/settlement/${YEAR}/letters/t1`, body: { texts: {}, adjustment: null } })
+})
+
+// ---------- Teil 2 von #415 ----------
+
+const statementCard = async (): Promise<HTMLElement> => {
+  await screen.findByRole('button', { name: /Drucken \/ PDF/ }, SLOW)
+  const card = document.querySelector<HTMLElement>('.card.statement')
+  if (!card) throw new Error('keine Mieterabrechnung')
+  return card
+}
+
+test('Teil 2: ohne Anschreiben beginnt die Aufstellung mit Anschrift, Datum und Betreff; die Sätze stehen unter der Tabelle', async () => {
+  templates = { ...TEMPLATES, printLetter: false, propertyPrintLetter: null }
+  show()
+  const card = await statementCard()
+  await waitFor(() => expect(screen.queryByRole('region', { name: 'Anschreiben an Meier' })).toBeNull(), SLOW)
+  const top = card.querySelector('.letter-top')
+  if (!top) throw new Error('kein Briefkopf')
+  expect(top.querySelector('.letter-return')?.textContent).toBe('Max Vermieter · Lindenweg 12, 12345 Musterstadt')
+  expect(top.querySelector('address')?.textContent).toBe('MeierEGLindenweg 1212345 Musterstadt')
+  expect(card.querySelector('h2')?.textContent).toBe(`Nebenkostenabrechnung ${YEAR}, Wohnung EG`)
+  const text = plain(card.textContent)
+  expect(text).not.toContain('Guten Tag')
+  expect(text).not.toContain('Mit freundlichen Grüßen')
+  // Ergebnis, Anpassung und Belegeinsicht unter der Tabelle, mit denselben Texten wie im Anschreiben.
+  const table = within(card).getByRole('table')
+  const after = [...card.querySelectorAll('p.statement-letter-text')]
+  expect(after.map((p) => plain(p.textContent))).toEqual([
+    'Es ergibt sich eine Nachzahlung von 120,00 €. Bitte überweisen Sie den Betrag innerhalb von 14 Tagen nach Zugang dieser Abrechnung auf das Konto DE02 1203 0000 0000 2020 51 (Max Vermieter).',
+    'Auf Basis dieser Abrechnung wird die monatliche Nebenkostenvorauszahlung gemäß § 560 Abs. 4 BGB ab dem übernächsten Monat auf 50,00 € angepasst (ein Zwölftel Ihrer Jahreskosten, gerundet).',
+    'Die zugrunde liegenden Belege können nach Terminvereinbarung eingesehen werden.',
+  ])
+  for (const p of after) expect(table.compareDocumentPosition(p) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+  // Für diesen Druck umschaltbar, ohne etwas zu speichern.
+  const box = screen.getByRole('checkbox', { name: /Anschreiben mitdrucken/ }) as HTMLInputElement
+  expect(box.checked).toBe(false)
+  fireEvent.click(box)
+  expect(await screen.findByRole('region', { name: 'Anschreiben an Meier' }, SLOW)).toBeTruthy()
+  expect(card.querySelector('.letter-top')).toBeNull()
+  expect(card.querySelectorAll('p.statement-letter-text')).toHaveLength(0)
+  expect(puts).toEqual([])
+})
+
+test('Teil 2: am Objekt abweichend; die Anschrift des Vermieters steht in der Rücksendeangabe', async () => {
+  templates = { ...TEMPLATES, printLetter: true, propertyPrintLetter: false }
+  const l = settlement.letters?.t1
+  if (!l) throw new Error('kein Anschreiben')
+  settlement = { ...settlement, letters: { t1: { ...l, sender: { name: 'Max Vermieter', returnLine: 'Max Vermieter · Hauptstr. 1, 10115 Berlin', address: 'Hauptstr. 1, 10115 Berlin', footer: 'Max Vermieter · Hauptstr. 1, 10115 Berlin · IBAN DE02 1203 0000 0000 2020 51' } } } }
+  show()
+  const card = await statementCard()
+  await waitFor(() => expect(card.querySelector('.letter-top .letter-return')?.textContent).toBe('Max Vermieter · Hauptstr. 1, 10115 Berlin'), SLOW)
+  expect(card.querySelector('.letter-top .letter-head')?.textContent).toBe('Max VermieterHauptstr. 1, 10115 Berlin')
+})
+
+test('Teil 2: jede Seite der Aufstellung trägt im Druck Mieter, Wohnung und Zeitraum, auf Wunsch Kontakt und Bank', async () => {
+  const l = settlement.letters?.t1
+  if (!l) throw new Error('kein Anschreiben')
+  settlement = { ...settlement, letters: { t1: { ...l, sender: { name: 'Max Vermieter', returnLine: 'x', address: '', footer: 'Max Vermieter · IBAN DE02 1203 0000 0000 2020 51' } } } }
+  show()
+  const card = await statementCard()
+  const foot = card.querySelector('table.print-pages > tfoot')
+  if (!foot) throw new Error('kein Fußvermerk')
+  expect(plain(foot.textContent)).toBe(`Meier · EG · Nebenkostenabrechnung ${YEAR} · 01.01.${YEAR} – 31.12.${YEAR}`)
+  // Die Aufstellung steht im Rumpf, das Anschreiben davor nicht.
+  expect(card.querySelector('table.print-pages > tbody table')).not.toBeNull()
+  expect(card.querySelector('table.print-pages .letter')).toBeNull()
+  // Die Fußzeile mit Kontakt und Bank nur mit dem Häkchen, dann auch auf dem Anschreiben.
+  expect(card.querySelector('.letter-footer')).toBeNull()
+  fireEvent.click(screen.getByRole('checkbox', { name: /Fußzeile mit Kontakt und Bank/ }))
+  await waitFor(() => expect(plain(card.querySelector('.letter-footer')?.textContent)).toBe('Max Vermieter · IBAN DE02 1203 0000 0000 2020 51'), SLOW)
+  expect(plain(foot.textContent)).toContain('Max Vermieter · IBAN DE02 1203 0000 0000 2020 51')
+  cleanup()
+  // Gespeichert wird die Vorgabe der Fußzeile mit den übrigen Druckeinstellungen.
+  show({ ...SETTINGS, printFooter: true })
+  const again = await statementCard()
+  await waitFor(() => expect(again.querySelector('.letter-footer')).not.toBeNull(), SLOW)
+})
+
+test('Teil 2: eine vor #415 abgeschlossene Abrechnung bekommt keinen Fußvermerk', async () => {
+  settlement = { ...settlement, closed: { closedAt: `${YEAR + 1}-02-01T10:00:00Z`, sentAt: null }, letters: undefined }
+  show()
+  const card = await statementCard()
+  expect(card.querySelector('table.print-pages')).toBeNull()
+  expect(card.querySelector('.letter-top')).toBeNull()
+})
+
+test('Teil 2: am Objekt „Anschreiben mitdrucken“ wie die Vorgabe, ja oder nein, mit den Texten gespeichert', async () => {
+  templates = { ...TEMPLATES, printLetter: true, propertyPrintLetter: null }
+  show()
+  fireEvent.click(await screen.findByRole('button', { name: 'Vorlage für dieses Objekt bearbeiten' }, SLOW))
+  const dialog = await screen.findByRole('dialog', {}, SLOW)
+  const select = within(dialog).getByRole('combobox', { name: /Anschreiben mitdrucken/ }) as HTMLSelectElement
+  expect([...select.options].map((o) => o.text)).toEqual(['Wie in den Einstellungen (ja)', 'Ja', 'Nein'])
+  expect(select.value).toBe('inherit')
+  fireEvent.change(select, { target: { value: 'no' } })
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Speichern' }))
+  await waitFor(() => expect(puts).toHaveLength(1), SLOW)
+  expect(puts[0]).toEqual({ url: '/api/properties/objekt-1/letter-texts', body: { texts: {}, printLetter: false } })
 })

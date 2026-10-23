@@ -4,9 +4,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { eq } from 'drizzle-orm'
-import type { HeatingPlant, LetterTemplates, Settlement, StatementLetter, TenancyLetter, Tenancy, Unit } from '../../shared/types.ts'
+import type { HeatingPlant, LetterTemplates, Property, Settings, Settlement, StatementLetter, TenancyLetter, Tenancy, Unit } from '../../shared/types.ts'
 import { DEFAULT_LETTER_TEXTS } from '../../shared/letter.ts'
-import { closedHeatingSettlements, closedSettlements } from '../src/db/schema.ts'
+import { closedHeatingSettlements, closedSettlements, tenancyLetterAdjustments, tenancyLetterTexts } from '../src/db/schema.ts'
 import { type Server, inDatabase, jsonOf, restore, startServer } from '../testing/api.ts'
 
 const plain = (s: string | undefined): string => (s ?? '').replace(/ /g, ' ')
@@ -201,6 +201,151 @@ test('Anschreiben (#415): getrennte Heizkostenabrechnung mit eigenem Anschreiben
       await db.update(closedHeatingSettlements).set({ settlement: { ...stand, letters: undefined } }).where(eq(closedHeatingSettlements.id, row.id))
     })
     assert.equal((await s.api<Settlement>(url)).letters, undefined)
+  } finally {
+    s.stop()
+  }
+})
+
+// Integrationsdurchsicht zu #415: Der Schlüssel der Anschreiben je Mieter nennt das Objekt; ein Wechsel des
+// Zeitraums und das Umhängen in ein anderes Objekt nehmen die offenen Anschreiben mit.
+type PeriodPreview = { token: string, letters?: string[], groups: { id: string, suggested: string }[], overrides: { tenancyId: string, ask: { period: string }[] }[] }
+const answersOf = (p: PeriodPreview) => ({
+  understood: true,
+  token: p.token,
+  groups: Object.fromEntries(p.groups.map((g) => [g.id, g.suggested || 'split'])),
+  overrides: Object.fromEntries(p.overrides.map((o) => [o.tenancyId, Object.fromEntries(o.ask.map((a) => [a.period, null]))])),
+})
+
+test('Anschreiben (#415): ein Wechsel des Abrechnungszeitraums entfernt die Anschreiben betroffener Zeiträume und sagt es vorher', async () => {
+  const s = await startServer()
+  try {
+    const { tenancy } = await house(s)
+    const propertyId = (await s.api<{ id: string }[]>('/api/properties'))[0]?.id ?? assert.fail('kein Objekt')
+    assert.equal((await send(s, `/api/settlement/2025/letters/${tenancy.id}`, 'PUT', { texts: { greeting: 'Bis bald' }, adjustment: { mode: 'custom', cents: 12300 } })).status, 200)
+    // Ein unberührter Zeitraum behält sein Anschreiben.
+    assert.equal((await send(s, `/api/settlement/2024/letters/${tenancy.id}`, 'PUT', { texts: { greeting: 'Alter Gruß' } })).status, 200)
+    const rules = { startMonth: 1, changes: ['2025-05'] }
+    const preview = await jsonOf<PeriodPreview>(await send(s, `/api/properties/${propertyId}/period/preview`, 'POST', { rules }))
+    assert.deepEqual(preview.letters, ['Das eigene Anschreiben von Erika Mustermann für 2025 entfällt, weil sich der Zeitraum ändert; danach gilt die Vorlage.'])
+    const changed = await send(s, `/api/properties/${propertyId}/period`, 'PUT', { rules, answers: answersOf(preview) })
+    assert.equal(changed.status, 200, JSON.stringify(await changed.clone().json()))
+    const rump = letterOf(await s.api<Settlement>('/api/settlement/2025-01'), tenancy.id)
+    assert.equal(rump.texts.greeting, 'Mit freundlichen Grüßen')
+    assert.equal(rump.adjustment.mode, 'suggestion')
+    assert.deepEqual(await s.api<Record<string, TenancyLetter>>('/api/settlement/2025-01/letters'), {})
+    assert.equal(letterOf(await s.api<Settlement>('/api/settlement/2024-01'), tenancy.id).texts.greeting, 'Alter Gruß')
+  } finally {
+    s.stop()
+  }
+})
+
+test('Anschreiben (#415): ein Wechsel der Heizperiode entfernt die Anschreiben der getrennten Heizkostenabrechnung und sagt es vorher', async () => {
+  const s = await startServer()
+  try {
+    const { tenancy } = await house(s)
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send(s, '/api/heating-plants', 'POST', { energy: 'gas', method: 'service' }))
+    const marke = async (url: string, body: unknown) => (await jsonOf<{ token: string }>(await send(s, url, 'POST', body))).token
+    const regeln = { startMonth: 5, changes: [] }
+    await send(s, `/api/heating-plants/${plant.id}/period`, 'PUT', { rules: regeln, answers: { understood: true, token: await marke(`/api/heating-plants/${plant.id}/period/preview`, { rules: regeln }) } })
+    const getrennt = { separate: true, month: '2025-05' }
+    const vorschau = await jsonOf<{ token: string; steps: { tenancyId: string; rows: { from: string }[] }[] }>(await send(s, `/api/heating-plants/${plant.id}/separate/preview`, 'POST', getrennt))
+    const stufen = Object.fromEntries(vorschau.steps.map((st) => [st.tenancyId, Object.fromEntries(st.rows.map((r) => [r.from, 2000]))]))
+    assert.equal((await send(s, `/api/heating-plants/${plant.id}/separate`, 'PUT', { ...getrennt, answers: { understood: true, steps: stufen, token: vorschau.token } })).status, 200)
+    const url = `/api/heating-settlement/${plant.id}/2025-05`
+    assert.equal((await send(s, `${url}/letters/${tenancy.id}`, 'PUT', { texts: { greeting: 'Warme Grüße' } })).status, 200)
+
+    const next = { startMonth: 5, changes: ['2025-11'] }
+    type HeatPreview = { token: string, letters?: string[], blocked: string[], groups: { from: string, suggested: string }[], overrides: { tenancyId: string, ask: { kind: string, period: string }[] }[] }
+    const preview = await jsonOf<HeatPreview>(await send(s, `/api/heating-plants/${plant.id}/period/preview`, 'POST', { rules: next }))
+    assert.deepEqual(preview.blocked, [])
+    assert.equal(preview.letters?.length, 1)
+    assert.match(preview.letters?.[0] ?? '', /^Das eigene Anschreiben von Erika Mustermann für die Heizkosten .* entfällt, weil sich der Zeitraum ändert; danach gilt die Vorlage\.$/)
+    const asks = (kind: string) => Object.fromEntries(preview.overrides.map((o) => [o.tenancyId, Object.fromEntries(o.ask.filter((a) => a.kind === kind).map((a) => [a.period, null]))]))
+    const answers = { understood: true, token: preview.token, groups: Object.fromEntries(preview.groups.map((g) => [g.from, g.suggested])), overrides: asks('heating'), totals: asks('total') }
+    const changed = await send(s, `/api/heating-plants/${plant.id}/period`, 'PUT', { rules: next, answers })
+    assert.equal(changed.status, 200, JSON.stringify(await changed.clone().json()))
+    assert.deepEqual(await s.api<Record<string, TenancyLetter>>(`${url}/letters`), {})
+    await inDatabase(s, async (db) => assert.deepEqual(await db.select().from(tenancyLetterTexts), []))
+  } finally {
+    s.stop()
+  }
+})
+
+test('Anschreiben (#415): ein Mietverhältnis, das in ein anderes Objekt wechselt, nimmt seine offenen Anschreiben nicht mit', async () => {
+  const s = await startServer()
+  try {
+    const { tenancy } = await house(s)
+    const first = (await s.api<{ id: string }[]>('/api/properties'))[0]?.id ?? assert.fail('kein Objekt')
+    assert.equal((await send(s, `/api/settlement/2025/letters/${tenancy.id}?property=${first}`, 'PUT', { texts: { greeting: 'Bis bald' }, adjustment: { mode: 'custom', cents: 12300 } })).status, 200)
+    const other = await jsonOf<{ id: string }>(await send(s, '/api/properties', 'POST', { name: 'Haus am Hang', address: 'Am Hang 3, 01067 Dresden' }))
+    const unit = await jsonOf<Unit>(await send(s, '/api/units', 'POST', { name: 'OG', areaM2: 50, participates: true, propertyId: other.id }))
+    await send(s, '/api/costItems', 'POST', { period: '2025-01', category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 30000, key: 'area', propertyId: other.id })
+    assert.equal((await send(s, `/api/tenancies/${tenancy.id}`, 'PUT', { unitId: unit.id })).status, 200)
+    const moved = letterOf(await s.api<Settlement>(`/api/settlement/2025?property=${other.id}`), tenancy.id)
+    assert.equal(moved.texts.greeting, 'Mit freundlichen Grüßen')
+    assert.equal(moved.adjustment.mode, 'suggestion')
+    assert.deepEqual(await s.api<Record<string, TenancyLetter>>(`/api/settlement/2025/letters?property=${other.id}`), {})
+    await inDatabase(s, async (db) => {
+      assert.deepEqual(await db.select().from(tenancyLetterTexts), [])
+      assert.deepEqual(await db.select().from(tenancyLetterAdjustments), [])
+    })
+  } finally {
+    s.stop()
+  }
+})
+
+// Teil 2 von #415: Anschrift und Kontakt des Vermieters, Anrede je Mietverhältnis, Anschreiben mitdrucken.
+test('Anschreiben (#415, Teil 2): Anschrift des Vermieters, Anrede und „mitdrucken“, auf jeder Ebene und eingefroren', async () => {
+  const s = await startServer()
+  try {
+    const { tenancy } = await house(s)
+    const propertyId = (await s.api<{ id: string }[]>('/api/properties'))[0]?.id ?? assert.fail('kein Objekt')
+    assert.equal((await send(s, '/api/settings', 'PUT', { landlordAddress: ' Hauptstr. 1, 10115 Berlin ', landlordContact: 'Tel. 030 123456', printFooter: true })).status, 200)
+    const settings = await s.api<Settings>('/api/settings')
+    assert.equal(settings.landlordAddress, 'Hauptstr. 1, 10115 Berlin')
+    assert.equal(settings.landlordContact, 'Tel. 030 123456')
+    assert.equal(settings.printFooter, true)
+    // Was keine Angabe der richtigen Art ist, wird abgelehnt und nicht still gespeichert.
+    assert.equal((await send(s, '/api/settings', 'PUT', { printLetter: 'ja' })).status, 400)
+    assert.equal((await send(s, '/api/settings', 'PUT', { landlordAddress: 5 })).status, 400)
+
+    let l = letterOf(await s.api<Settlement>('/api/settlement/2025'), tenancy.id)
+    assert.equal(l.sender?.returnLine, 'Max Vermieter · Hauptstr. 1, 10115 Berlin')
+    assert.equal(l.sender?.footer, 'Max Vermieter · Hauptstr. 1, 10115 Berlin · Tel. 030 123456 · IBAN DE02 1203 0000 0000 2020 51')
+
+    // Am Objekt abweichend; `null` heißt wieder „die Vorgabe gilt“.
+    assert.equal((await send(s, `/api/properties/${propertyId}`, 'PUT', { landlordAddress: 'Am Hang 3, 01067 Dresden' })).status, 200)
+    l = letterOf(await s.api<Settlement>('/api/settlement/2025'), tenancy.id)
+    assert.equal(l.sender?.returnLine, 'Max Vermieter · Am Hang 3, 01067 Dresden')
+    assert.equal((await s.api<Property[]>('/api/properties'))[0]?.landlordAddress, 'Am Hang 3, 01067 Dresden')
+
+    // Die Anrede beim Mietverhältnis.
+    assert.equal((await send(s, `/api/tenancies/${tenancy.id}`, 'PUT', { letterSalutation: 'Sehr geehrte Frau Mustermann' })).status, 200)
+    l = letterOf(await s.api<Settlement>('/api/settlement/2025'), tenancy.id)
+    assert.equal(l.texts.salutation, 'Sehr geehrte Frau Mustermann,')
+
+    // Anschreiben mitdrucken: Vorgabe der Installation und am Objekt, über die Routen des Anschreibens.
+    let templates = await s.api<LetterTemplates>(`/api/letter-texts?property=${propertyId}`)
+    assert.equal(templates.printLetter, true)
+    assert.equal(templates.propertyPrintLetter, null)
+    assert.equal((await send(s, '/api/letter-texts', 'PUT', { texts: {}, printLetter: false })).status, 200)
+    assert.equal((await send(s, `/api/properties/${propertyId}/letter-texts`, 'PUT', { texts: {}, printLetter: true })).status, 200)
+    templates = await s.api<LetterTemplates>(`/api/letter-texts?property=${propertyId}`)
+    assert.equal(templates.printLetter, false)
+    assert.equal(templates.propertyPrintLetter, true)
+    assert.equal((await s.api<Settings>('/api/settings')).printLetter, false)
+    assert.equal((await send(s, `/api/properties/${propertyId}/letter-texts`, 'PUT', { texts: {}, printLetter: null })).status, 200)
+    assert.equal((await s.api<LetterTemplates>(`/api/letter-texts?property=${propertyId}`)).propertyPrintLetter, null)
+    assert.equal((await send(s, `/api/properties/${propertyId}/letter-texts`, 'PUT', { texts: {}, printLetter: 'ja' })).status, 400)
+    assert.equal((await send(s, '/api/letter-texts', 'PUT', { texts: {}, printLetter: null })).status, 400)
+
+    // Mit dem Abschluss friert alles ein, auch Anschrift und Anrede.
+    assert.equal((await send(s, '/api/settlement/2025/close', 'POST', {})).status, 201)
+    await send(s, `/api/properties/${propertyId}`, 'PUT', { landlordAddress: null })
+    await send(s, `/api/tenancies/${tenancy.id}`, 'PUT', { letterSalutation: '' })
+    const closed = letterOf(await s.api<Settlement>('/api/settlement/2025'), tenancy.id)
+    assert.equal(closed.sender?.returnLine, 'Max Vermieter · Am Hang 3, 01067 Dresden')
+    assert.equal(closed.texts.salutation, 'Sehr geehrte Frau Mustermann,')
   } finally {
     s.stop()
   }

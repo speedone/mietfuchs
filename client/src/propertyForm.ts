@@ -18,6 +18,9 @@ export type PropertyForm = {
   landlordName: string
   iban: string
   paymentDeadlineDays: string
+  // Teil 2 von #415: Anschrift und Kontakt des Vermieters für Rücksendeangabe und Fußzeile des Briefs
+  landlordAddress: string
+  landlordContact: string
   // Kabelanlage vor oder ab dem 01.12.2021 errichtet (#121)
   cable: CableAnswer
   // Angespannter Wohnungsmarkt mit Geltung der Verordnung (§ 5d CO2KostAufG, Heizung PR 18)
@@ -67,7 +70,7 @@ export function stateNote(state: FederalState | '', year: number): string | null
   return `In ${stateName(state)} gelten einige Feiertage nur in einzelnen Gemeinden: ${names}. Mietfuchs zählt sie bei Fristen nicht mit.`
 }
 
-export type PropertyBody = Pick<Property, 'name' | 'address' | 'kind' | 'landlordName' | 'iban' | 'paymentDeadlineDays' | 'cableBuiltBeforeDec2021' | 'tightMarket' | 'tightMarketFrom' | 'tightMarketTo' | 'state'>
+export type PropertyBody = Pick<Property, 'name' | 'address' | 'kind' | 'landlordName' | 'iban' | 'paymentDeadlineDays' | 'landlordAddress' | 'landlordContact' | 'cableBuiltBeforeDec2021' | 'tightMarket' | 'tightMarketFrom' | 'tightMarketTo' | 'state'>
 
 // Die Vorbelegung der Bezeichnung, wenn das Objekt noch keine hat (Durchsicht zu #346, Schritt 3). Eine frische
 // Installation legt ihr erstes Objekt ohne Namen an (Migration 0001 übernimmt `house_name`, und der ist dort leer).
@@ -77,14 +80,20 @@ export type PropertyBody = Pick<Property, 'name' | 'address' | 'kind' | 'landlor
 // im Feld, lässt sich überschreiben und wird mit dem ersten Speichern übernommen.
 export const PROPERTY_NAME_DEFAULT = 'Mein Objekt'
 
+// Weicht das Objekt bei Vermieter, Bank, Frist, Anschrift oder Kontakt von den Einstellungen ab?
+const ownLandlord = (p: Property): boolean =>
+  p.landlordName !== null || p.iban !== null || p.paymentDeadlineDays !== null || (p.landlordAddress ?? null) !== null || (p.landlordContact ?? null) !== null
+
 export const propertyToForm = (p: Property): PropertyForm => ({
   name: p.name.trim() === '' ? PROPERTY_NAME_DEFAULT : p.name,
   address: p.address,
   kind: p.kind,
-  own: p.landlordName !== null || p.iban !== null || p.paymentDeadlineDays !== null,
+  own: ownLandlord(p),
   landlordName: p.landlordName ?? '',
   iban: ibanToInput(p.iban),
   paymentDeadlineDays: p.paymentDeadlineDays === null ? '' : String(p.paymentDeadlineDays),
+  landlordAddress: p.landlordAddress ?? '',
+  landlordContact: p.landlordContact ?? '',
   cable: p.cableBuiltBeforeDec2021 === true ? 'vor' : p.cableBuiltBeforeDec2021 === false ? 'nach' : 'unbekannt',
   tightMarket: p.tightMarket === true ? 'ja' : p.tightMarket === false ? 'nein' : 'unbekannt',
   tightMarketFrom: p.tightMarketFrom ?? '',
@@ -95,7 +104,7 @@ export const propertyToForm = (p: Property): PropertyForm => ({
 // Das leere Formular für ein neues Objekt: dieselben Felder wie beim Bearbeiten, jede Angabe auf ihrer
 // Voreinstellung (unbekannt, keine Abweichung), damit das neue Objekt rechnet wie eines, das man nie bearbeitet hat.
 export const EMPTY_PROPERTY_FORM: PropertyForm = {
-  name: '', address: '', kind: 'mfh', own: false, landlordName: '', iban: '', paymentDeadlineDays: '',
+  name: '', address: '', kind: 'mfh', own: false, landlordName: '', iban: '', paymentDeadlineDays: '', landlordAddress: '', landlordContact: '',
   cable: 'unbekannt', tightMarket: 'unbekannt', tightMarketFrom: '', tightMarketTo: '', state: '',
 }
 
@@ -140,6 +149,8 @@ export function propertyBody(form: PropertyForm, storedIban: string | null = nul
     landlordName: override(form.landlordName),
     iban: iban.value === '' ? null : iban.value,
     paymentDeadlineDays: deadline,
+    landlordAddress: override(form.landlordAddress),
+    landlordContact: override(form.landlordContact),
     cableBuiltBeforeDec2021: form.cable === 'vor' ? true : form.cable === 'nach' ? false : null,
     tightMarket: yes ? true : form.tightMarket === 'nein' ? false : null,
     tightMarketFrom: tightFrom,
@@ -164,7 +175,7 @@ export function propertySummary(p: Property): { label: string; value: string }[]
     { label: 'Kabel- oder Antennenanlage', value: CABLE_LABELS[p.cableBuiltBeforeDec2021 === true ? 'vor' : p.cableBuiltBeforeDec2021 === false ? 'nach' : 'unbekannt'] },
     { label: 'Angespannter Wohnungsmarkt', value: tight === 'ja' && span ? `ja, Verordnung ${span}` : tight },
   ]
-  if (p.landlordName === null && p.iban === null && p.paymentDeadlineDays === null) {
+  if (!ownLandlord(p)) {
     return [...rows, { label: 'Vermieter und Bankverbindung', value: 'wie in den Einstellungen' }]
   }
   // `null` heißt Vorgabe aus den Einstellungen, `''` bewusst keine (nur aus Altbestand oder Import, siehe propertyBody).
@@ -174,5 +185,7 @@ export function propertySummary(p: Property): { label: string; value: string }[]
     { label: 'Vermieter', value: shown(p.landlordName, (v) => v) },
     { label: 'IBAN', value: shown(p.iban, (v) => `${ibanToInput(v)}${storedIbanInvalid(v) ? ' (vermutlich falsch eingetragen, bitte prüfen)' : ''}`) },
     { label: 'Zahlungsfrist', value: p.paymentDeadlineDays === null ? 'wie in den Einstellungen' : `${p.paymentDeadlineDays} Tage` },
+    { label: 'Anschrift des Vermieters', value: shown(p.landlordAddress ?? null, (v) => v) },
+    { label: 'Kontakt', value: shown(p.landlordContact ?? null, (v) => v) },
   ]
 }

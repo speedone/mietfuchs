@@ -40,6 +40,7 @@ import { dryRun, earliestTenancyStart, lostClaims, outcomeOf } from './dryRun.ts
 import { HeatingError, PeriodConflict, PeriodError, rewriteCostItemFamily, settleOperatingPowerLinks, writeCostItemParts } from './repository.ts'
 import { assessmentLines, assessments, closedSettlementHistory, periodChanges, prepaymentOverrides, properties } from './schema.ts'
 import { GENERAL_POWER_CATEGORY } from '../../../shared/operatingPower.ts'
+import { droppedLettersText, dropLetterDocs, letterDocsWithPrefix } from './letters.ts'
 import { euro } from '../../../shared/costItem.ts'
 import { storedOutflowYear } from '../outflow.ts'
 
@@ -145,6 +146,8 @@ type Plan = {
   overrideRekeys: { tenancyId: string; from: PeriodKey; to: PeriodKey }[]
   overrideAsks: OverrideAsk[]
   assessmentMoves: { id: string; to: PeriodKey }[]
+  // Integrationsdurchsicht zu #415: die Schlüssel der Anschreiben je Mieter, deren Zeitraum sich ändert.
+  letterDocs: string[]
   // Positionen eines Zeitraums, der nur wächst und danach über zwei Kalenderjahre reicht (M4).
   regrows: { item: CostItem; target: BillingPeriod }[]
   // Abzüge des Betriebsstroms, deren Stromrechnung einen Leistungszeitraum hat (Folge-PR zu #252, Geld-K1): Sie
@@ -174,7 +177,7 @@ function taxEntry(item: CostItem, p: BillingPeriod): PeriodChangePreview['taxYea
 // Die Marke einer Vorschau (M2): alles, was der Wechsel schreibt oder fragt. Der Zeitraum der Liste
 // hängt am heutigen Tag und gehört nicht dazu.
 function tokenOf(p: Omit<PeriodChangePreview, 'token' | 'periods'>): string {
-  return crypto.createHash('sha256').update(JSON.stringify([p.rules, p.newShort, p.blocked, p.moves, p.groups, p.overrides, p.assessments, p.taxYears])).digest('hex')
+  return crypto.createHash('sha256').update(JSON.stringify([p.rules, p.newShort, p.blocked, p.moves, p.groups, p.overrides, p.assessments, p.taxYears, p.letters ?? []])).digest('hex')
 }
 
 // Eine Stromrechnung mit Leistungszeitraum, die der Wechsel nicht teilt, bleibt ganz in ihrem Zeitraum (K1).
@@ -438,6 +441,18 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
     assessmentPreview.push({ assessmentId: r.id, file: r.file, from: a.key, to: to.key, toLabel: periodLabel(to) })
   }
 
+  // Integrationsdurchsicht zu #415: Eigene Anschreiben eines Zeitraums, der sich ändert, gehörten zu einem anderen Brief;
+  // sie entfallen, und die Vorschau sagt es. Abgeschlossene ändert der Wechsel nie (blocked).
+  const letterDocs: string[] = []
+  const lettersPreview: string[] = []
+  for (const d of await letterDocsWithPrefix(db, `${propertyId}:`)) {
+    const key = parsePeriodKey(d.period)
+    const a = key === null ? null : changed(key)
+    if (a === null) continue
+    letterDocs.push(d.doc)
+    lettersPreview.push(droppedLettersText(d.tenancyIds.map((id) => tenancies.find((t) => t.id === id)?.tenantName ?? 'einem früheren Mieter'), periodLabel(a.old)))
+  }
+
   // Die Zeiträume im Umfeld des Wechsels, für die Liste der Vorschau.
   const years = [...[...memo.values()].flatMap((a) => (a ? [a.old.from] : [])), ...next.changes.map((c) => `${c}-01`), ...before.changes.map((c) => `${c}-01`), today].sort()
   const listFrom = `${Number((years[0] ?? today).slice(0, 4)) - 1}-01-01`
@@ -508,6 +523,7 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
       ask: [...o.ask.values()].map((x) => ({ period: x.period.key, label: periodLabel(x.period), months: monthsText(x.months) })),
     })),
     assessments: assessmentPreview,
+    letters: lettersPreview,
     taxYears: [],
     token: '',
   }
@@ -531,7 +547,7 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
   // bezahlten Rechnungen, es verschiebt sich nichts, und der Satz entfällt.
   preview.taxYears = [...taxEntries.values()]
   preview.token = tokenOf(preview)
-  return { preview, splits, groups, overrideRekeys, overrideAsks: [...asks.values()], assessmentMoves, regrows, follows, taxEntries, next, before }
+  return { preview, splits, groups, overrideRekeys, overrideAsks: [...asks.values()], assessmentMoves, letterDocs, regrows, follows, taxEntries, next, before }
 }
 
 // Warum das Aufteilen einer Gruppe nicht vorbelegt wird (Review der Laienprobe, Runde 1): Eine
@@ -800,6 +816,7 @@ async function writeChangeIn(
       if (rows.length > 0) await tx.insert(prepaymentOverrides).values(rows)
     }
     for (const m of plan.assessmentMoves) await tx.update(assessments).set({ requestedPeriod: m.to }).where(eq(assessments.id, m.id))
+    await dropLetterDocs(tx, plan.letterDocs)
     await settleOperatingPowerLinks(tx, propertyId, written)
   }
 }

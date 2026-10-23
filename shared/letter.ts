@@ -9,7 +9,7 @@
 import type { LetterAdjustment, LetterAdjustmentMode, LetterBlock, LetterField, LetterTexts, Property, Settings, Settlement, StatementLetter, Tenancy, TenancyLetter } from './types.ts'
 import { euro } from './costItem.ts'
 import { formatIban } from './iban.ts'
-import { effectiveLandlord, letterhead, recipientLines } from './landlord.ts'
+import { effectiveLandlord, footerLine, recipientLines, returnLine } from './landlord.ts'
 import { rateAtMonth } from './monthRate.ts'
 
 export type LetterBlockInfo = { id: LetterBlock; label: string; when: string; multiline: boolean }
@@ -51,6 +51,8 @@ export const LETTER_FIELDS: readonly LetterFieldInfo[] = [
   { id: 'IBAN', label: 'IBAN des Vermieters', example: 'DE02 1203 0000 0000 2020 51' },
   { id: 'Konto', label: '„auf das Konto …“ samt Kontoinhaber, leer ohne IBAN', example: 'auf das Konto DE02 1203 0000 0000 2020 51 (Max Vermieter)' },
   { id: 'Vermieter', label: 'Name des Vermieters', example: 'Max Vermieter' },
+  // Teil 2: die Anrede beim Mietverhältnis, ohne Angabe „Guten Tag {Name},“.
+  { id: 'Anrede', label: 'Anrede beim Mietverhältnis, sonst „Guten Tag {Name},“', example: 'Guten Tag Erika Mustermann,' },
   { id: 'Vorauszahlungsart', label: 'Art der Vorauszahlung', example: 'monatliche Nebenkostenvorauszahlung', only: ['adjustSuggestion', 'adjustCustom'] },
   { id: 'VorauszahlungBisher', label: 'monatliche Vorauszahlung bisher', example: '100,00 €' },
   { id: 'VorauszahlungNeu', label: 'monatliche Vorauszahlung neu', example: '105,00 €', only: ['adjustSuggestion', 'adjustCustom'] },
@@ -71,7 +73,8 @@ export const SAMPLE_LETTER_VALUES = Object.fromEntries(LETTER_FIELDS.map((f) => 
 // eine vorher abgeschlossene Abrechnung druckt sich so wie bisher (letter.test.ts).
 export const DEFAULT_LETTER_TEXTS: Record<LetterBlock, string> = {
   subject: '{Abrechnung}, Wohnung {Wohnung}',
-  salutation: 'Guten Tag {Name},',
+  // Seit Teil 2 über {Anrede}: ohne Anrede beim Mietverhältnis ergibt das wie vorher „Guten Tag {Name},“.
+  salutation: '{Anrede}',
   intro: 'mit diesem Schreiben erhalten Sie die Abrechnung für den Zeitraum {Zeitraum}. Die Aufstellung auf den folgenden Seiten zeigt die Kosten, wie sie verteilt sind, und Ihren Anteil.',
   credit: 'Es ergibt sich ein Guthaben von {Betrag}. Der Betrag wird Ihnen erstattet bzw. mit der nächsten Mietzahlung verrechnet.',
   backPayment: 'Es ergibt sich eine Nachzahlung von {Betrag}. Bitte überweisen Sie den Betrag innerhalb von {Zahlungsfrist} Tagen nach Zugang dieser Abrechnung {Konto}.',
@@ -189,6 +192,16 @@ export type LetterFacts = {
   prepaymentKind: string
   prepaymentBeforeCents: number | null
   basis: string
+  // Die Anrede beim Mietverhältnis (Teil 2); leer heißt „Guten Tag {Name},“.
+  salutation?: string
+}
+
+// Die Anrede im Brief (Teil 2): die beim Mietverhältnis eingetragene, sonst wie bisher „Guten Tag {Name},“.
+// Ohne Satzzeichen am Ende kommt ein Komma dazu; „Sehr geehrte Frau Becker“ wird so zu einer Briefanrede.
+export function salutationOf(tenantName: string, own: string | null | undefined): string {
+  const text = (own ?? '').trim()
+  if (text === '') return `Guten Tag ${tenantName},`
+  return /[,.!:;]$/.test(text) ? text : `${text},`
 }
 
 export function letterValues(f: LetterFacts, newCents: number | null): Omit<Record<LetterField, string>, 'Datum' | 'AnzahlBelege'> {
@@ -208,6 +221,7 @@ export function letterValues(f: LetterFacts, newCents: number | null): Omit<Reco
     IBAN: iban,
     Konto: iban === '' ? '' : `auf das Konto ${iban}${landlord ? ` (${landlord})` : ''}`,
     Vermieter: landlord,
+    Anrede: salutationOf(f.tenantName, f.salutation),
     Vorauszahlungsart: f.prepaymentKind,
     VorauszahlungBisher: f.prepaymentBeforeCents === null ? '' : euro(f.prepaymentBeforeCents),
     VorauszahlungNeu: newCents === null ? '' : euro(newCents),
@@ -247,6 +261,17 @@ export function chooseLetterBlocks(letter: Pick<StatementLetter, 'adjustment' | 
   const order: LetterBlock[] = ['subject', 'salutation', 'intro', result, ...adjust, attachments > 0 ? 'attachments' : 'receipts', 'closing', 'greeting', 'signature']
   return order.filter((b) => (letter.texts[b] ?? '').trim() !== '')
 }
+
+// Ohne Anschreiben (Teil 2) stehen diese Bausteine unter der Aufstellung, mit denselben Texten: Ergebnis mit
+// Zahlung, Frist und Konto, die Anpassung der Vorauszahlung und die Belegeinsicht.
+const STATEMENT_BLOCKS: readonly LetterBlock[] = ['credit', 'backPayment', 'balanced', 'adjustSuggestion', 'adjustCustom', 'receipts', 'attachments']
+export function statementBlocks(letter: Pick<StatementLetter, 'adjustment' | 'texts'>, balanceCents: number, attachments: number): LetterBlock[] {
+  return chooseLetterBlocks(letter, balanceCents, attachments).filter((b) => STATEMENT_BLOCKS.includes(b))
+}
+
+// Wird das Anschreiben mitgedruckt? Am Objekt abweichend, sonst die Einstellungen, ohne Angabe ja (Teil 2).
+export const printsLetter = (property: Pick<Property, 'printLetter'> | null | undefined, settings: Pick<Settings, 'printLetter'>): boolean =>
+  property?.printLetter ?? settings.printLetter ?? true
 
 // Die Werte, die erst der Druck kennt.
 export function renderLetterText(text: string, print: { date: string; attachments: number }): string {
@@ -313,9 +338,9 @@ export function parseLetterAdjustment(input: unknown): LetterAdjustment | null |
 }
 
 export type LetterSource = {
-  settings: Pick<Settings, 'landlordName' | 'iban' | 'paymentDeadlineDays' | 'printAdjustSuggestion'>
+  settings: Pick<Settings, 'landlordName' | 'iban' | 'paymentDeadlineDays' | 'printAdjustSuggestion' | 'landlordAddress' | 'landlordContact'>
   property: Property | null
-  tenancies: readonly (Pick<Tenancy, 'id' | 'end' | 'prepayments' | 'heatingPrepayments' | 'correspondenceAddress'>)[]
+  tenancies: readonly (Pick<Tenancy, 'id' | 'end' | 'prepayments' | 'heatingPrepayments' | 'correspondenceAddress' | 'letterSalutation'>)[]
   installation: LetterTexts
   propertyTexts: LetterTexts
   own: Record<string, TenancyLetter>
@@ -369,11 +394,12 @@ export function lettersOf(s: Pick<Settlement, 'statements' | 'period' | 'heating
         prepaymentKind: adjustedPrepaymentLabel(st, separate),
         prepaymentBeforeCents: prepaymentBefore(st, tenancy, separate),
         basis: suggestionBasis(st, s.daysInYear),
+        salutation: tenancy?.letterSalutation ?? '',
       },
     })
     out[st.tenancyId] = {
       ...built,
-      sender: { name: landlord.landlordName, returnLine: letterhead(landlord.landlordName, src.property) },
+      sender: { name: landlord.landlordName, returnLine: returnLine(landlord, src.property), address: landlord.landlordAddress, footer: footerLine(landlord) },
       recipient: recipientLines(st.tenantName, st.unitName, tenancy, src.property),
     }
   }

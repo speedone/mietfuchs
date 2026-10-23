@@ -42,3 +42,16 @@ test('Vorlage: Vorgabe der Anpassung, eigener Text, zurücksetzen und Vorschau m
   expect(puts[0]).toEqual({ url: '/api/letter-texts', body: { texts: { salutation: 'Hallo {Name},', closing: null }, adjustDefault: 'none' } })
   await waitFor(() => expect(reload).toHaveBeenCalled(), SLOW)
 })
+
+test('Teil 2: „Anschreiben mitdrucken“ als Vorgabe der Installation, gesendet nur, wenn geändert', async () => {
+  render(<UIProvider><LetterTemplateCard reload={async () => {}} /></UIProvider>)
+  expect(await screen.findByText(/Anschreiben wird mitgedruckt/, {}, SLOW)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Vorlage bearbeiten' }))
+  const dialog = await screen.findByRole('dialog', {}, SLOW)
+  const box = within(dialog).getByRole('checkbox', { name: /Anschreiben mitdrucken/ }) as HTMLInputElement
+  expect(box.checked).toBe(true)
+  fireEvent.click(box)
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Speichern' }))
+  await waitFor(() => expect(puts).toHaveLength(1), SLOW)
+  expect(puts[0]).toEqual({ url: '/api/letter-texts', body: { texts: {}, printLetter: false } })
+})

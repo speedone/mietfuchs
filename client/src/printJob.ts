@@ -10,17 +10,31 @@
 // auch das nächste `beforeprint` auf, synchron vor dem neuen Druck.
 export type PrintJob = { cancel: () => void }
 
+// „Seite x von y“ unten rechts im Seitenrand (#415, Teil 2). Nur beim Druck einer einzelnen Abrechnung: Beim Druck
+// aller zählte der Zähler über alle Mieter hinweg, und ein Zurücksetzen je Mieter kann Chromium nicht (nachgemessen).
+// Chromium kann Randfelder seit Version 131; ein Browser ohne sie druckt keine Seitenzahl, der Fußvermerk je Seite
+// nennt Mieter, Wohnung und Zeitraum trotzdem.
+export const PAGE_NUMBER_CSS = '@page { @bottom-right { content: "Seite " counter(page) " von " counter(pages); font-size: 7.5pt; } }'
+
 export function startPrint(options: {
   title: string
   // Wird einmal aufgerufen, wenn der Druck vorbei ist und der Nutzer wieder bedient
   onDone?: () => void
   delayMs?: number
   win?: Window
+  pageNumbers?: boolean
 }): PrintJob {
   const win = options.win ?? window
   const doc = win.document
   const previousTitle = doc.title
   doc.title = options.title.replace(/[\\/:*?"<>|]/g, '-')
+  // Wie der Titel erst bei der nächsten Bedienung entfernt (siehe oben).
+  const numbers = options.pageNumbers ? doc.createElement('style') : null
+  if (numbers) {
+    numbers.dataset.pageNumbers = ''
+    numbers.textContent = PAGE_NUMBER_CSS
+    doc.head.append(numbers)
+  }
   let finished = false
   const interactions = ['pointerdown', 'keydown', 'beforeprint'] as const
 
@@ -30,6 +44,7 @@ export function startPrint(options: {
     win.removeEventListener('afterprint', afterPrint)
     for (const type of interactions) win.removeEventListener(type, finish, true)
     doc.title = previousTitle
+    numbers?.remove()
     options.onDone?.()
   }
   const afterPrint = () => {
@@ -48,6 +63,7 @@ export function startPrint(options: {
       win.removeEventListener('afterprint', afterPrint)
       for (const type of interactions) win.removeEventListener(type, finish, true)
       doc.title = previousTitle
+      numbers?.remove()
     },
   }
 }

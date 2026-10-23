@@ -359,7 +359,9 @@ const NOT_IN_DB_JSON = new Set(['period', 'propertyId', 'mea', 'externalMeasure'
   'operatingPower', 'operatingPowerItemId', 'operatingPowerBasis', 'operatingPowerGeneralId', 'operatingPowerReported',
   // Die Art einer Zahlung (#280) kennt die db.json nicht; die Kette gibt jeder „rent“ (unten), ihre Rundreise
   // prüft db-repository.test.ts.
-  'kind'])
+  'kind',
+  // Die Anrede im Brief (#415, Teil 2) kennt die db.json nicht; ihre Rundreise prüft db-repository.test.ts.
+  'letterSalutation'])
 
 test('Rundreise: die Probe belegt jede Spalte des Schemas', () => {
   // Der Wächter über dem Wächter. Der Test darunter kann nur finden, was in der Probe steht;

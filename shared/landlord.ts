@@ -4,16 +4,35 @@
 // Angabe ist dagegen eine Angabe und bleibt stehen. Hier, weil auch der Server das Anschreiben
 // mit diesen Angaben füllt (#415).
 import type { Property, Settings } from './types.ts'
+import { formatIban } from './iban.ts'
+
+export type EffectiveLandlord = { landlordName: string, iban: string, paymentDeadlineDays: number, landlordAddress: string, landlordContact: string }
 
 export function effectiveLandlord(
-  property: Pick<Property, 'landlordName' | 'iban' | 'paymentDeadlineDays'> | null,
-  settings: Pick<Settings, 'landlordName' | 'iban' | 'paymentDeadlineDays'>,
-): { landlordName: string, iban: string, paymentDeadlineDays: number } {
+  property: Pick<Property, 'landlordName' | 'iban' | 'paymentDeadlineDays' | 'landlordAddress' | 'landlordContact'> | null,
+  settings: Pick<Settings, 'landlordName' | 'iban' | 'paymentDeadlineDays' | 'landlordAddress' | 'landlordContact'>,
+): EffectiveLandlord {
   return {
     landlordName: property?.landlordName ?? settings.landlordName,
     iban: property?.iban ?? settings.iban,
     paymentDeadlineDays: property?.paymentDeadlineDays ?? settings.paymentDeadlineDays,
+    // Teil 2 von #415: Anschrift und Kontakt des Vermieters, am Objekt wie die übrigen abweichend.
+    landlordAddress: (property?.landlordAddress ?? settings.landlordAddress ?? '').trim(),
+    landlordContact: (property?.landlordContact ?? settings.landlordContact ?? '').trim(),
   }
+}
+
+// Die Rücksendeangabe über der Anschrift (#415): mit eigener Anschrift des Vermieters „Name · Anschrift“,
+// sonst wie bisher die Kopfzeile mit Objekt und dessen Adresse.
+export function returnLine(landlord: Pick<EffectiveLandlord, 'landlordName' | 'landlordAddress'>, property: Pick<Property, 'name' | 'address'> | null | undefined): string {
+  if (landlord.landlordAddress === '') return letterhead(landlord.landlordName, property)
+  return [landlord.landlordName.trim(), landlord.landlordAddress].filter((x) => x !== '').join(' · ')
+}
+
+// Die Fußzeile des Briefs mit Kontakt und Bank (#415, Teil 2): nur, was es gibt, getrennt mit „·“.
+export function footerLine(landlord: Pick<EffectiveLandlord, 'landlordName' | 'landlordAddress' | 'landlordContact' | 'iban'>): string {
+  const iban = landlord.iban.trim() === '' ? '' : `IBAN ${formatIban(landlord.iban)}`
+  return [landlord.landlordName.trim(), landlord.landlordAddress, landlord.landlordContact, iban].filter((x) => x !== '').join(' · ')
 }
 
 // Die Kopfzeile über Abrechnung und Steuerübersicht: Vermieter, Objekt und Adresse, getrennt mit

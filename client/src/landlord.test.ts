@@ -11,13 +11,16 @@ const objekt = (abweichend: Partial<Property>): Property => ({
 })
 
 test('ohne Abweichung gilt die Vorgabe', () => {
-  expect(effectiveLandlord(objekt({}), vorgabe)).toEqual(vorgabe)
-  expect(effectiveLandlord(null, vorgabe)).toEqual(vorgabe)
+  // Anschrift und Kontakt (#415, Teil 2) fehlen in der Vorgabe und sind dann leer.
+  expect(effectiveLandlord(objekt({}), vorgabe)).toEqual({ ...vorgabe, landlordAddress: '', landlordContact: '' })
+  expect(effectiveLandlord(null, vorgabe)).toEqual({ ...vorgabe, landlordAddress: '', landlordContact: '' })
 })
 
 test('was am Objekt steht, geht vor, auch eine leere Angabe', () => {
   expect(effectiveLandlord(objekt({ landlordName: 'Erbengemeinschaft Muster', iban: '', paymentDeadlineDays: 14 }), vorgabe))
-    .toEqual({ landlordName: 'Erbengemeinschaft Muster', iban: '', paymentDeadlineDays: 14 })
+    .toEqual({ landlordName: 'Erbengemeinschaft Muster', iban: '', paymentDeadlineDays: 14, landlordAddress: '', landlordContact: '' })
+  expect(effectiveLandlord(objekt({ landlordAddress: 'Am Hang 3, 01067 Dresden' }), { ...vorgabe, landlordAddress: 'Hauptstr. 1', landlordContact: 'Tel. 1' }))
+    .toMatchObject({ landlordAddress: 'Am Hang 3, 01067 Dresden', landlordContact: 'Tel. 1' })
 })
 
 test('Kopfzeile (#142): Trenner nur zwischen vorhandenen Angaben', () => {

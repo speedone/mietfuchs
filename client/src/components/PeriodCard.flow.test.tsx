@@ -44,17 +44,19 @@ const preview = (token: string, extra: Partial<PeriodChangePreview> = {}): Perio
 
 let sent: { url: string; method: string; body: unknown }[]
 let putAnswers: { status: number; body: unknown }[]
+let previewExtra: Partial<PeriodChangePreview>
 
 beforeEach(() => {
   sent = []
   putAnswers = []
+  previewExtra = {}
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const method = init?.method ?? 'GET'
     const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
     if (method === 'GET') return json(url.startsWith('/api/properties') ? [PROPERTY] : [])
     const body: unknown = JSON.parse(String(init?.body ?? '{}'))
     sent.push({ url, method, body })
-    if (url.endsWith('/period/preview')) return json(preview('marke-1'))
+    if (url.endsWith('/period/preview')) return json(preview('marke-1', previewExtra))
     const next = putAnswers.shift()
     return next ? json(next.body, next.status) : json({ ...PROPERTY, periodRules: RULES_MAY })
   })
@@ -221,4 +223,11 @@ test('K2: scheitert die Vorschau zum Entfernen eines Wechsels, lässt sie sich e
   fireEvent.click(await within(box).findByRole('button', { name: 'Vorschau erneut laden' }, SLOW))
   await within(box).findByText(/Nach dem Wechsel/, {}, SLOW)
   expect(sent).toHaveLength(2)
+})
+
+test('Integrationsdurchsicht zu #415: die Vorschau nennt eigene Anschreiben, die mit dem Wechsel entfallen', async () => {
+  previewExtra = { letters: ['Das eigene Anschreiben von Müller für 2027 entfällt, weil sich der Zeitraum ändert; danach gilt die Vorlage.'] }
+  await show()
+  const box = await askPreview()
+  expect(within(box).getByText('Das eigene Anschreiben von Müller für 2027 entfällt, weil sich der Zeitraum ändert; danach gilt die Vorlage.')).toBeTruthy()
 })

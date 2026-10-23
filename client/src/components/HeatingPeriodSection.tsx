@@ -350,6 +350,7 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
                   </div>
                 )
               }))}
+              {(periodPreview.letters ?? []).map((t) => <p key={t} className="muted">{t}</p>)}
               {periodPreview.endsSeparate.length > 0 && (
                 <p className="muted">{`Danach in der Betriebskostenabrechnung statt getrennt: ${periodPreview.endsSeparate.map((e) => e.label).join(', ')}.`}</p>
               )}

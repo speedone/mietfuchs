@@ -38,6 +38,12 @@ export type Property = {
   landlordName: string | null
   iban: string | null
   paymentDeadlineDays: number | null
+  // Anschrift und Kontakt des Vermieters für Rücksendeangabe und Fußzeile des Briefs (#415, Teil 2), am
+  // Objekt abweichend wie Vermieter und IBAN: `null` oder fehlend heißt „die Vorgabe gilt“, leer „keine“.
+  landlordAddress?: string | null
+  landlordContact?: string | null
+  // Das Anschreiben mitdrucken (#415, Teil 2); `null` oder fehlend heißt „wie in den Einstellungen“.
+  printLetter?: boolean | null
   // Kabel- oder Antennenanlage vor dem 01.12.2021 errichtet (#121, § 2 Satz 2 BetrKV)? `null` heißt
   // unbekannt. Bei einer späteren Anlage war das TV-Signal nie umlagefähig.
   cableBuiltBeforeDec2021?: boolean | null
@@ -165,6 +171,8 @@ export type Tenancy = {
   email?: string
   phone?: string
   correspondenceAddress?: string // abweichende Anschrift für Schriftverkehr (z. B. nach Auszug)
+  // Die Anrede im Anschreiben (#415, Teil 2), etwa „Sehr geehrte Frau Becker“; ohne Angabe „Guten Tag {Name},“.
+  letterSalutation?: string
   iban?: string // Mieter-IBAN (für Lastschrift/Guthaben-Rückzahlung)
   contractDate?: string // 'YYYY-MM-DD' — Datum des Mietvertrags
   // Tag, an dem dem Mieter die Umstände nach § 5d CO2KostAufG in Textform mitgeteilt wurden (Heizung PR 18,
@@ -447,6 +455,9 @@ export type PeriodChangePreview = {
   effects: PeriodEffect[]
   overrides: { tenancyId: string; tenantName: string; from: { key: PeriodKey; label: string; cents: number }[]; ask: { period: PeriodKey; label: string; months: string }[] }[]
   assessments: { assessmentId: string; file: string; from: PeriodKey; to: PeriodKey; toLabel: string }[]
+  // Integrationsdurchsicht zu #415: je Zeitraum, dessen eigene Anschreiben je Mieter entfallen, ein Satz. Optional,
+  // weil ein älterer Server ihn nicht kennt.
+  letters?: string[]
   // Das Jahr der Zahlung (Entwurf 3.10) je Position und Zeitraum über zwei Kalenderjahre, in den sie
   // gelangt (Durchsicht von #226, I1, M4). `key` ist 'Kennung|Zeitraum'; vorbelegt mit dem bisherigen
   // Jahr, in die erlaubte Spanne geklemmt. Bei einer Gruppe steht je wählbarem Zeitraum ein Eintrag.
@@ -513,6 +524,8 @@ export type HeatingPeriodChangePreview = {
     ask: { kind: 'heating' | 'total'; period: PeriodKey; label: string; months: string }[]
   }[]
   endsSeparate: { key: PeriodKey; label: string }[]
+  // Integrationsdurchsicht zu #415: je Heizperiode, deren eigene Anschreiben je Mieter entfallen, ein Satz.
+  letters?: string[]
   // Fristen und Ergebnisse schon begonnener Abrechnungen vorher und nachher (Review Runde 2, wie beim
   // Wechsel des Abrechnungszeitraums und beim Aufteilen).
   effects: PeriodEffect[]
@@ -598,6 +611,12 @@ export type Settings = {
   printAdjustSuggestion?: boolean // Vorgabe des Anschreibens (#415): Anpassung nach § 560 Abs. 4 BGB ankündigen (Standard: ja)
   printAttachments?: boolean // Belegkopien als Anlage mit andrucken (Standard: nein)
   printFoldMarks?: boolean // Falz- und Lochmarken auf dem Anschreiben (#415, Standard: nein)
+  printLetter?: boolean // das Anschreiben mitdrucken (#415, Teil 2, Standard: ja); am Objekt abweichend
+  printFooter?: boolean // Fußzeile mit Kontakt und Bank (#415, Teil 2, Standard: nein)
+  // Anschrift („Straße, PLZ Ort“) und Kontakt (Telefon, E-Mail) des Vermieters (#415, Teil 2): Rücksendeangabe
+  // und Fußzeile des Briefs. Ohne Anschrift steht dort wie bisher die Adresse des Objekts.
+  landlordAddress?: string
+  landlordContact?: string
   // Update-Hinweis: ohne Wert wurde noch nicht gefragt, 'on' erlaubt die Abfrage bei GitHub
   updateCheck?: 'on' | 'off'
   updateDismissed?: string // Version, deren Hinweis mit „Später“ ausgeblendet wurde
@@ -991,7 +1010,7 @@ export type LetterBlock =
 export type LetterField =
   | 'Name' | 'Wohnung' | 'Objekt' | 'Abrechnung' | 'Zeitraum'
   | 'Kosten' | 'Vorauszahlungen' | 'Betrag' | 'Zahlungsfrist'
-  | 'IBAN' | 'Konto' | 'Vermieter'
+  | 'IBAN' | 'Konto' | 'Vermieter' | 'Anrede'
   | 'Vorauszahlungsart' | 'VorauszahlungBisher' | 'VorauszahlungNeu' | 'Grundlage'
   | 'AnzahlBelege' | 'Datum'
 // Eigene Texte einer Ebene: ein fehlender Baustein heißt „die Ebene darüber gilt“, ein leerer Text
@@ -1012,7 +1031,9 @@ export type StatementLetter = {
   values: Record<LetterField, string>
   // Absender, Rücksendeangabe und Anschrift, wie gedruckt; mit dem Abschluss eingefroren (Durchsicht S2).
   // Optional, weil Abschlüsse aus der ersten Fassung von #415 sie nicht kennen.
-  sender?: { name: string; returnLine: string }
+  // `address` und `footer` (Teil 2): Anschrift des Vermieters unter dem Namen im Kopf und die Fußzeile mit
+  // Kontakt und Bank; fehlen sie (Abschluss aus Teil 1), gilt der heutige Stand.
+  sender?: { name: string; returnLine: string; address?: string; footer?: string }
   recipient?: string[]
 }
 // Was ein Mieter beim Drucken einmalig abweichend festgelegt hat, für diese Abrechnung (#415).
@@ -1024,6 +1045,10 @@ export type LetterTemplates = {
   property: LetterTexts | null
   // Vorgabe für die Anpassung der Vorauszahlung (Einstellungen, früher `printAdjustSuggestion`)
   adjustDefault: 'none' | 'suggestion'
+  // Teil 2: „Anschreiben mitdrucken“ der Installation und am Objekt (`null`: wie die Vorgabe). Optional, weil ein
+  // älterer Server sie nicht kennt; dann wird mitgedruckt.
+  printLetter?: boolean
+  propertyPrintLetter?: boolean | null
 }
 
 // Abweichung eines Mietverhältnisses zwischen eingefrorenem und heutigem Saldo (#56). Salden wie

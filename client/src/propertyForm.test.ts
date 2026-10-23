@@ -4,7 +4,7 @@ import type { Property } from './types'
 import { EMPTY_PROPERTY_FORM, propertyBody, propertySummary, propertyToForm, STATE_OPTIONS, STATE_UNKNOWN_LABEL, stateFromSelect, stateNote, type PropertyForm } from './propertyForm'
 
 const form = (over: Partial<PropertyForm>): PropertyForm => ({
-  name: 'Haus', address: 'Weg 1', kind: 'mfh', own: false, landlordName: '', iban: '', paymentDeadlineDays: '', cable: 'unbekannt', tightMarket: 'unbekannt', tightMarketFrom: '', tightMarketTo: '', state: '', ...over,
+  name: 'Haus', address: 'Weg 1', kind: 'mfh', own: false, landlordName: '', iban: '', paymentDeadlineDays: '', landlordAddress: '', landlordContact: '', cable: 'unbekannt', tightMarket: 'unbekannt', tightMarketFrom: '', tightMarketTo: '', state: '', ...over,
 })
 
 test('ohne Haken gilt für alle drei die Vorgabe', () => {
@@ -16,7 +16,7 @@ test('mit Haken gilt nur, was eingetragen ist; ein leeres Feld heißt Vorgabe', 
   // Wer den Haken setzt, um nur eine andere IBAN einzutragen, soll den Vermieternamen auf der
   // Abrechnung nicht verlieren.
   expect(propertyBody(form({ own: true, iban: ' DE89 3704 0044 0532 0130 00 ' })))
-    .toEqual({ name: 'Haus', address: 'Weg 1', kind: 'mfh', landlordName: null, iban: 'DE89370400440532013000', paymentDeadlineDays: null, cableBuiltBeforeDec2021: null, tightMarket: null, tightMarketFrom: null, tightMarketTo: null, state: null })
+    .toEqual({ name: 'Haus', address: 'Weg 1', kind: 'mfh', landlordName: null, iban: 'DE89370400440532013000', paymentDeadlineDays: null, landlordAddress: null, landlordContact: null, cableBuiltBeforeDec2021: null, tightMarket: null, tightMarketFrom: null, tightMarketTo: null, state: null })
 })
 
 test('eine Frist, die keine ganze Zahl ab 0 ist, wird abgelehnt', () => {
@@ -145,7 +145,16 @@ test('neues Objekt: ohne Bezeichnung nichts, sonst jede weitere Angabe auf ihrer
   expect(empty.problems.map((p) => p.field)).toEqual(['name'])
   expect(propertyBody({ ...EMPTY_PROPERTY_FORM, name: ' Gartenweg 3 ', kind: 'etw', address: ' Gartenweg 3, 12345 Musterstadt ' })).toEqual({
     name: 'Gartenweg 3', address: 'Gartenweg 3, 12345 Musterstadt', kind: 'etw',
-    landlordName: null, iban: null, paymentDeadlineDays: null,
+    landlordName: null, iban: null, paymentDeadlineDays: null, landlordAddress: null, landlordContact: null,
     cableBuiltBeforeDec2021: null, tightMarket: null, tightMarketFrom: null, tightMarketTo: null, state: null,
   })
+})
+
+test('Teil 2 von #415: Anschrift und Kontakt des Vermieters am Objekt, wie die übrigen nur mit Haken', () => {
+  expect(propertyBody(form({ landlordAddress: 'Am Hang 3, 01067 Dresden' }))).toMatchObject({ landlordAddress: null, landlordContact: null })
+  expect(propertyBody(form({ own: true, landlordAddress: ' Am Hang 3, 01067 Dresden ', landlordContact: 'Tel. 0351 1' }))).toMatchObject({ landlordAddress: 'Am Hang 3, 01067 Dresden', landlordContact: 'Tel. 0351 1' })
+  const p: Property = { ...OBJEKT, landlordAddress: 'Am Hang 3, 01067 Dresden' }
+  expect(propertyToForm(p)).toMatchObject({ own: true, landlordAddress: 'Am Hang 3, 01067 Dresden', landlordContact: '' })
+  expect(propertySummary(p)).toContainEqual({ label: 'Anschrift des Vermieters', value: 'Am Hang 3, 01067 Dresden' })
+  expect(propertySummary(p)).toContainEqual({ label: 'Kontakt', value: 'wie in den Einstellungen' })
 })

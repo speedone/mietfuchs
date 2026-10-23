@@ -16,7 +16,9 @@ describe('Tabellen (#137)', () => {
     // Fände das Muster keine Dateien, wäre der Wächter grün, ohne etwas zu prüfen.
     expect(files).toContain('../pages/Abrechnung.tsx')
     expect(files).toContain('./Table.tsx')
-    const bare = files.filter((file) => file !== './Table.tsx' && /<table[\s>]/.test(sources[file]))
+    // Ausnahme: die Hülle des Fußvermerks im Druck (#415, Teil 2, `PrintPages` in Letter.tsx). Am Bildschirm ist sie
+    // `display: block` und schiebt nichts in die Breite; die Tabellen darin kommen weiter aus Table.tsx.
+    const bare = files.filter((file) => file !== './Table.tsx' && /<table(?! className="print-pages")[\s>]/.test(sources[file]))
     expect(bare).toEqual([])
   })
 })

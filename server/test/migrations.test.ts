@@ -182,6 +182,10 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // #259: die Nutzungswechsel einer Einheit (unit_usage_changes). Wird vor dem Merge ein anderer PR davor
   // eingereiht, wird der Schritt neu erzeugt und die Marke ersetzt.
   '0067_nutzungswechsel': '145af2eb7878a321169faa408498c418ce3f50679c6994525f236c2432bc7456',
+  // #415, Teil 2: Anschrift und Kontakt des Vermieters, „Anschreiben mitdrucken“, Fußzeile, Anrede je Mietverhältnis und
+  // das Objekt im Schlüssel der Anschreiben je Mieter (Datenanweisung). Wird vor dem Merge ein anderer PR davor eingereiht,
+  // wird der Schritt neu erzeugt, die Datenanweisung wieder angehängt und die Marke ersetzt.
+  '0068_anschreiben_teil2': 'ec6708b5449d1f9a31b4547b0a8b84adedd264e4b14101ae013df08ba1a119cd',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

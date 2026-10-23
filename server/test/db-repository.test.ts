@@ -393,7 +393,7 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
       coll: 'tenancies', table: tenancies,
       body: {
         unitId: 'u1', tenantName: 'Müller', persons: 2, start: '2024-01-01', end: '2024-12-31',
-        email: 'a@b.de', phone: '0123', correspondenceAddress: 'Weg 1', iban: 'DE89370400440532013000',
+        email: 'a@b.de', phone: '0123', correspondenceAddress: 'Weg 1', letterSalutation: 'Sehr geehrte Frau A', iban: 'DE89370400440532013000',
         contractDate: '2023-12-01', depositCents: 1000, depositStatus: 'erhalten', notes: 'Notiz',
         costModel: 'flatRate', heatingModel: 'selfSupply', selfSupplyKind: 'central', halfSplitNoticeOn: '2023-12-01',
       },
@@ -580,6 +580,8 @@ test('Objekt: anlegen, auflisten, ändern', async () => {
     assert.deepEqual(neu, {
       id: 'objekt-2', name: 'Gartenweg 3', kind: 'etw', address: '12345 Stadt',
       landlordName: null, iban: null, paymentDeadlineDays: null, cableBuiltBeforeDec2021: null,
+      // Anschrift, Kontakt und „Anschreiben mitdrucken“ (#415, Teil 2): wie in den Einstellungen.
+      landlordAddress: null, landlordContact: null, printLetter: null,
       // Angespannter Wohnungsmarkt (Heizung PR 18): unbekannt, ohne Geltung.
       tightMarket: null, tightMarketFrom: null, tightMarketTo: null,
       // Bundesland für Fristen und Feiertage: unbekannt.
