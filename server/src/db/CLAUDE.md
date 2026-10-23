@@ -168,6 +168,35 @@ es eine Meldung, abgebrochen wird nie.
   Der Kontoauszugsleser (`server/src/bank/read.ts`) liest noch mit adm-zip und eigenen Grenzen.
 - Wiederherstellen setzt **keinen vorhandenen Stand voraus** (siehe server/src/CLAUDE.md, API).
 
+## Automatische Vorversionen (#318, Schritt 1)
+
+[priorVersions.ts](priorVersions.ts): Gegen einen Bedienfehler im laufenden Betrieb (eine gelöschte
+Wohnung kaskadiert auf alles darunter) half bisher nichts von selbst. Deshalb legt der Server
+`vorversionen/vorversion-JJJJ-MM-TT-HHMMSS.sqlite` (UTC, sortiert als Text) im Datenordner an.
+
+- **Wann**: beim Start (vor `finishStartup`, also bevor wartende Anfragen laufen) und danach per
+  `setInterval` einmal am Tag (`unref`). Neu nur, wenn die jüngste älter als 7 Tage ist oder es keine
+  gibt, **und** die Datenbank einen Bestand trägt (`carriesStock`: Wohnungen, Mietverhältnisse, Zähler
+  oder Kostenpositionen; eine frische hat nur Objekt und Einstellungen), **und** `databaseUnavailable`
+  `null` sagt, **und** kein Wiederherstellen läuft. Behalten werden 4, die älteste fällt weg. Eine
+  jüngste „aus der Zukunft“ (Uhr zurückgestellt) gilt als frisch. Der Zeitpunkt kommt aus dem Namen,
+  nicht aus der Dateizeit; die Auswahl sind reine Funktionen (prior-versions.test.ts), daher kein
+  Testgriff für die Uhr: Die Integrationstests legen Dateien mit passend alten Namen hin.
+- **Wie**: `VACUUM INTO` durch die Schlange (`opened.write`), wie der Schnappschuss fürs Backup, erst
+  als `.entsteht-…`, dann `rename`; Reste davon räumt der nächste Versuch weg. `checkPriorVersion` in
+  index.ts **wirft nie**, ein Fehler steht nur auf der Konsole.
+- **Nicht** im Backup-ZIP (es packt nur `uploads/` und den Schnappschuss) und nicht in den `checks`
+  von `/healthz`.
+- **Einspielen** (`POST /api/prior-versions/:name/restore`, Liste `GET /api/prior-versions`, beide
+  ohne Datenbank 503 über `readData`): nur ein Name nach dem eigenen Muster (`priorVersionTime`, prüft
+  auch `path.basename`), sonst 400, fehlt die Datei 404. Dann derselbe Weg wie eine Datenbank aus dem
+  Backup: Kopie nach `mietfuchs.sqlite.restore-<id>`, `archiveDatabaseProblem` (Integrität,
+  `unknownSteps`, Migrationskette nachholen, Verweise), `restoreDatabase` (bisherige als
+  `mietfuchs.sqlite.vor-restore`, Hinweis nach dem Update weg), `refreshSettings`; gesperrt über
+  `restoreRunning` wie `/api/restore`. Die Vorversion selbst bleibt unverändert. Die `db.json` und die
+  Belege werden nicht angefasst; Belege, auf die der Stand verweist und die fehlen, nennt die Antwort
+  in `notes`.
+
 ## Der Umstieg aus der db.json
 
 [changeover.ts](changeover.ts): Beim ersten Start wandert die `db.json` ohne Zutun in die Datenbank:

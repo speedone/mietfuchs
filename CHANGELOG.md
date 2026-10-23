@@ -6,6 +6,17 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Hinzugefügt
+
+- Automatische Vorversionen der Datenbank ([#318](https://github.com/speedone/mietfuchs/issues/318)):
+  Mietfuchs prüft beim Start und danach einmal am Tag, ob die jüngste Kopie Ihrer Daten älter als
+  sieben Tage ist, und legt dann eine neue an, im Datenordner unter `vorversionen`. Behalten werden die
+  letzten vier. Haben Sie versehentlich etwas gelöscht, spielen Sie in den Einstellungen unter
+  „Automatische Vorversionen“ einen früheren Stand ein; geprüft wird dabei wie beim Wiederherstellen
+  eines Backups, und der bisherige Stand bleibt als `mietfuchs.sqlite.vor-restore` erhalten. Die Belege
+  bleiben, wie sie sind; fehlt ein Beleg, auf den der eingespielte Stand verweist, nennt Mietfuchs ihn.
+  Die Vorversionen kommen nicht ins Backup und ersetzen es nicht.
+
 ### Geändert
 
 - Objekte anlegen und bearbeiten sehen gleich aus: Das Fenster „Neues Objekt“ hat dieselben Felder,
