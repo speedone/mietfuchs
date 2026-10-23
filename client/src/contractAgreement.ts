@@ -7,6 +7,7 @@ import type { ItemForm } from './costForm'
 import type { Problem } from './formProblems'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { isNotAllocable } from '../../shared/categories.ts'
+import { rentedWithin, tenancyRentedWithin } from '../../shared/unitUsage.ts'
 import { PARTICIPANT_KEYS } from '../../shared/allocation.ts'
 
 export type ContractTenancy = { tenancyId: string, tenantName: string, unitId: string, unitName: string }
@@ -17,8 +18,9 @@ export const allowsContractAnswer = (category: string): boolean => category !== 
 
 // Die Wohnungen, die an der Position teilnehmen: bei Direktzuordnung die eine, bei vereinbarten Anteilen die mit
 // Anteil, sonst die Teilnehmer (leer heißt alle).
-function participatingUnitIds(form: ItemForm, units: Unit[]): Set<string> {
-  const rented = units.filter((u) => u.participates)
+// Vermietet heißt: im Zeitraum an einem Tag vermietet (#259).
+function participatingUnitIds(form: ItemForm, units: Unit[], period: Pick<BillingPeriod, 'from' | 'to'>): Set<string> {
+  const rented = units.filter((u) => rentedWithin(u, period.from, period.to))
   if (form.key === 'direct') return new Set(rented.filter((u) => u.id === form.directUnitId).map((u) => u.id))
   if (form.key === 'custom') return new Set(rented.filter((u) => (Number(form.customShares[u.id]?.trim().replace(',', '.') || '0') || 0) > 0).map((u) => u.id))
   return new Set(rented.filter((u) => form.participants === null || !PARTICIPANT_KEYS.includes(form.key) || form.participants.includes(u.id)).map((u) => u.id))
@@ -29,9 +31,10 @@ const inPeriod = (t: Tenancy, period: Pick<BillingPeriod, 'from' | 'to'>) => t.s
 // Die Mietverhältnisse, die im Zeitraum bestehen und an der Position teilnehmen; nur für sie kann das Formular
 // „nicht vereinbart“ oder „im Vertrag genannt“ speichern.
 export function contractTenancies(form: ItemForm, units: Unit[], tenancies: Tenancy[], period: Pick<BillingPeriod, 'from' | 'to'>): ContractTenancy[] {
-  const ids = participatingUnitIds(form, units)
+  const ids = participatingUnitIds(form, units, period)
+  const byId = new Map(units.map((u) => [u.id, u]))
   return tenancies
-    .filter((t) => ids.has(t.unitId) && inPeriod(t, period))
+    .filter((t) => { const u = byId.get(t.unitId); return ids.has(t.unitId) && inPeriod(t, period) && u !== undefined && tenancyRentedWithin(u, t, period.from, period.to) })
     .map((t) => ({ tenancyId: t.id, tenantName: t.tenantName, unitId: t.unitId, unitName: units.find((u) => u.id === t.unitId)?.name ?? '' }))
 }
 

@@ -690,15 +690,31 @@ export default function Steuer({ settings }: Props) {
                 </div>
               </NoticeBox>
             )}
+            {hints.includes('usageChangedInYear') && (
+              <NoticeBox
+                level="warning"
+                title={`Die Nutzung wechselt in diesem Jahr: ${(data.usageChangedUnits ?? []).join(', ')}.`}
+                action={<>
+                  Die Übersicht teilt nach den Tagen der Eigennutzung: umlagefähige Kosten nach dem Eigenanteil der Abrechnung, die
+                  übrigen nach Fläche und Tagen; auch die selbstgenutzte Fläche oben ist nach Tagen gerechnet. Steht die Wohnung nach
+                  Ihrer Eigennutzung leer, bevor Sie sie vermieten, zählt Mietfuchs den Leerstand als abziehbar; das gilt nur, wenn Sie
+                  ernsthafte und nachhaltige Vermietungsbemühungen belegen können.
+                </>}
+                more={<>
+                  Aufwendungen für eine zunächst selbst bewohnte, danach leer stehende und noch nicht vermietete Wohnung sind nur
+                  abziehbar, wenn der endgültige Entschluss zu vermieten belegt ist (BFH, Urteil vom 28.10.2008, IX R 1/07).
+                </>}
+              />
+            )}
             {hints.includes('mixedUseChangedInYear') && (
               <NoticeBox
                 level="warning"
                 title="Eine selbstgenutzte Einheit war in diesem Jahr auch vermietet."
                 action="Für die Zeit der Vermietung sind ihre Kosten abziehbar; bitte rechnen Sie diesen Teil anteilig nach."
                 more={<>
-                  Die Nutzung einer Einheit hat in
-                  Mietfuchs keinen Stichtag; die Aufteilung nach Fläche ist deshalb nicht nach Tagen gerechnet und zählt
-                  die Einheit das ganze Jahr als privat.
+                  Ohne eingetragenen Nutzungswechsel zählt die Aufteilung nach Fläche die Einheit das ganze Jahr als privat.
+                  Wohnen Sie dort nur einen Teil des Jahres, tragen Sie den Wechsel in den Stammdaten der Einheit unter
+                  „Nutzungswechsel“ ein.
                 </>}
               />
             )}

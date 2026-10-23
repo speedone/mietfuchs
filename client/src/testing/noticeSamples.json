@@ -670,5 +670,13 @@
  {
   "code": "tv-signal.partial-year",
   "text": "„Kabelanschluss“: Die Gebühren für das Kabelfernsehen (TV-Signal) sind nur bis zum 30.06.2024 umlagefähig, danach nicht mehr (Wegfall des Nebenkostenprivilegs). Umlegen dürfen Sie für 2024/2025 höchstens die Zeit bis zum 30.06.2024, und das nur bei einer Anlage, die vor dem 01.12.2021 errichtet wurde; danach nur noch den Betriebsstrom (bei einer Gemeinschaftsantenne des Hauses auch Prüfung und Einstellung durch eine Fachkraft). Bitte teilen Sie die Position entsprechend auf und buchen Sie den Rest als „Nicht umlagefähig“."
+ },
+ {
+  "code": "usage.changed",
+  "text": "OG: Die Nutzung wechselt im Abrechnungszeitraum 2025 (01.01.–31.03.2025 vermietet, 01.04.–30.06.2025 selbstgenutzt, 01.07.–31.12.2025 vermietet). Eigenanteil, Leerstand und Verteilbasis rechnet Mietfuchs für jeden Abschnitt nach seinen Tagen; dass die Kosten gleichmäßig über den Zeitraum anfallen, ist eine Auslegung von Mietfuchs."
+ },
+ {
+  "code": "usage.tenancy-conflict",
+  "text": "Schulz (OG): Das Mietverhältnis läuft an 91 Tagen in einer Zeit, in der die Einheit laut ihrer Nutzung nicht vermietet ist. Es reicht über einen Wechsel der Nutzung hinweg in eine spätere vermietete Zeit; für die Kosten zählt nur der erste vermietete Abschnitt, die übrigen 184 Tage nicht. Für diese Tage trägt der Mieter keine Betriebskosten; sie bleiben beim Vermieter. Bitte prüfen Sie Ein- und Auszug oder den Nutzungswechsel der Einheit in den Stammdaten."
  }
 ]

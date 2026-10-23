@@ -1,5 +1,6 @@
 import type { CostModel, HeatingModel, NotSettled, SelfSupplyKind, Tenancy, Unit } from './types'
 import { fmtDate, fmtEuro, parseEuro } from './api'
+import { usageAt } from '../../shared/unitUsage.ts'
 import { overlapsOf } from '../../shared/tenancyOverlap.ts'
 import { andList } from '../../shared/wording.ts'
 import type { Problem } from './formProblems'
@@ -217,7 +218,8 @@ export function scheduleMonthText(from: string): string {
 // überhaupt, oft die selbstgenutzte. Jetzt die erste vermietbare ohne laufendes Mietverhältnis,
 // sonst die erste vermietbare, und nur wenn es keine gibt, die erste Wohnung.
 export function defaultTenancyUnitId(units: Unit[], tenancies: Tenancy[], today: string): string {
-  const rentable = units.filter((u) => u.participates)
+  // Vermietbar heißt: heute vermietet (#259, Nutzung am Tag).
+  const rentable = units.filter((u) => usageAt(u, today) === 'vermietet')
   const occupied = new Set(tenancies.filter((t) => t.end === null || t.end >= today).map((t) => t.unitId))
   return (rentable.find((u) => !occupied.has(u.id)) ?? rentable[0] ?? units[0])?.id ?? ''
 }

@@ -440,6 +440,24 @@ Hinweise: `allocation.not-agreed` (nur Info), `allocation.other-unanswered` (fä
   zählt in die Basis von `area`/`units`/`persons` (mit `selfPersons`), Anteil beim Vermieter (als
   `selfUsedShareCents` gesondert, für die Steuer privat); beides `false` = außerhalb, ganz außen
   vor. Ein Datenschritt setzt das Kennzeichen nie automatisch, weil es abgerechnete Jahre änderte.
+- **Nutzungswechsel** (#259, Entwurf
+  [docs/superpowers/specs/2026-10-23-nutzungswechsel-design.md](../../docs/superpowers/specs/2026-10-23-nutzungswechsel-design.md)):
+  Die Nutzung ist eine Staffel „ab Tag“. Die erste Stufe ist die Angabe an der Einheit, jede Zeile in
+  `unit_usage_changes` (`Unit.usageChanges`) gilt ab ihrem Tag; dasselbe Muster wie `period_start_month` mit
+  `period_changes`, deshalb keine Datenanweisung. „Nutzung am Tag t“ steht nur in
+  [shared/unitUsage.ts](../../shared/unitUsage.ts), auch die Fragen der Oberfläche (`rentedWithin`, `selfUsedWithin`
+  …). computeSettlement zählt je Einheit die Tage je Nutzung (`usageIn`); **ohne Wechsel im Zeitraum ist jeder
+  Faktor genau 1 oder 0**, halte das ein, wenn du eine Formel anfasst. Wechselt eine Einheit zwischen drinnen und
+  außerhalb, verteilen Fläche, Einheiten und Gemeinschaft **je Abschnitt** (`segmentsOf`, `segmented`; eine Rundung
+  je Position); vereinbart, direkt, Verbrauch und Personen brauchen das nicht (Begründung im Entwurf). Für die
+  Kosten zählt ein Mietverhältnis nur in seinem ersten vermieteten Abschnitt (`costTenancies`; Abrechnung und
+  Vorauszahlungen am ganzen, `partTenancies`), sonst `usage.tenancy-conflict` (`error`). Der Rest des Hauptzählers
+  ist je Tag Eigenanteil, an dem alle Einheiten ohne Zähler selbstgenutzt sind (`daysAllSelf`, Auslegung). „Selbst bewohnt“ (§ 2 HeizkostenV, § 5d) nur an jedem Tag (`dwellerUnits`). In der eigenen
+  Heizkostenabrechnung teilt `usersOf` an den Grenzen der Staffel (§ 9b). Bei „nur Heizung“ nach Gradtagen werden
+  Eigenanteil und außerhalb nach demselben Maß gewichtet (`itemSelfShare`). Die Steuer rechnet tagesgenau über
+  `taxUsage`, und zwar über den **ganzen Zeitraum des Teils**, nicht nur seinen Schnitt mit dem Steuerjahr (Fläche ×
+  Tage der Eigennutzung, Kopf der Anlage V, Ausgleich beim Betriebsstrom, verbilligte Vermietung in cheapRent.ts). Hinweis
+  `usage.changed` (`hint`) nennt die Abschnitte und dass gleichmäßiger Anfall eine Auslegung ist.
 - **Verbrauchsschlüssel**: Die Basis bilden **alle** Wohnungszähler, unabhängig vom Kennzeichen.
   **Fehlt einer bewohnten Einheit der Verteilbasis ein Zähler, wird der Hauptzähler zur Basis**
   (#116, Vorwegabzug): ihr Verbrauch ist der Rest; bei Eigennutzung als Eigenanteil, bei einer
@@ -572,7 +590,8 @@ Grundmenge ist das ganze Gebäude), Überschuss. Beschreibende Gruppen statt fes
   (`closedItemsChanged`). `abziehbar = Betrag − privat`; **der Überschuss rechnet mit
   `deductibleCents`**. Ohne Eigennutzung ändert sich keine Zahl (Invariante). „Nicht umlagefähig“
   lässt sich für die Steuer Einheiten zuordnen (`key: 'direct'`, `participantUnitIds`); die
-  Abrechnung liest das nicht. AfA, Schuldzinsen, § 82b EStDV und Nutzungswechsel werden nur genannt.
+  Abrechnung liest das nicht. AfA, Schuldzinsen und § 82b EStDV werden nur genannt; einen Nutzungswechsel (#259)
+  rechnet die Übersicht nach Tagen (`taxUsage`, siehe Verteilen).
 - **Verbilligte Vermietung** (#257, [cheapRent.ts](cheapRent.ts), Grenzen in `estg.cheap-rent`,
   [shared/law/estg.ts](../../shared/law/estg.ts)): Die ortsübliche Warmmiete steht **an der Wohnung**
   (`Unit.localRents`, Tabelle `unit_local_rents`, Staffel ab Monat mit Quelle und Datum), weil sie an Wohnung und

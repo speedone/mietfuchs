@@ -12,6 +12,7 @@
 import { sql } from 'drizzle-orm'
 import { check, index, integer, primaryKey, real, sqliteTable, text, uniqueIndex, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core'
 import type {
+  UnitUsage,
   AgreedOtherwise,
   AiJsonMode,
   AiProviderKind,
@@ -95,6 +96,8 @@ export const COST_MODELS = exactly<CostModel>()(['settlement', 'flatRate', 'incl
 // Für die Heizung zusätzlich „Mieter heizt selbst“ (Heizung PR 19, #97).
 export const HEATING_MODELS = exactly<HeatingModel>()([...COST_MODELS, 'selfSupply'] as const)
 export const SELF_SUPPLY_KINDS = exactly<SelfSupplyKind>()(['perUnit', 'central'] as const)
+// Die Nutzung einer Einheit ab einem Tag (#259).
+export const UNIT_USAGES = exactly<UnitUsage>()(['vermietet', 'eigen', 'ausgenommen'] as const)
 export const METER_TYPES = exactly<MeterType>()(['kaltwasser', 'warmwasser', 'strom', 'waerme', 'hkv', 'sonstig'] as const)
 export const HEATING_PARTS = exactly<HeatingPart>()(['fuel', 'operating', 'metering'] as const)
 // Betriebsstrom der Heizung (Heizung PR 15, #212): an Heizkosten `included`, am Allgemeinstrom `deduction`.
@@ -1362,6 +1365,27 @@ export const unitLocalRents = sqliteTable(
     check('unit_local_rents_monthly_positive', sql.raw('"monthly_cents" > 0')),
     check('unit_local_rents_source_valid', sql.raw(`length(trim("source")) > 0`)),
     check('unit_local_rents_source_date_valid', sql.raw(`"source_date" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
+  ],
+)
+
+// Nutzungswechsel einer Einheit (#259): ab `from` ('JJJJ-MM-TT') gilt `usage`. Die erste Stufe der Staffel
+// ist die Angabe an der Wohnung (`participates`/`self_used`), wie `period_start_month` mit `period_changes`;
+// ohne Zeile ist der Bestand also unverändert, und es braucht keine Datenanweisung. Gelesen wird nur über
+// shared/unitUsage.ts. Eine gelöschte Wohnung nimmt ihre Wechsel mit.
+export const unitUsageChanges = sqliteTable(
+  'unit_usage_changes',
+  {
+    unitId: text('unit_id')
+      .notNull()
+      .references(() => units.id, { onDelete: 'cascade' }),
+    from: text('from').notNull(),
+    usage: text('usage', { enum: UNIT_USAGES }).notNull(),
+  },
+  (t) => [
+    // Zwei Wechsel am selben Tag: Welcher gilt, entschiede sonst der Zufall.
+    primaryKey({ columns: [t.unitId, t.from] }),
+    oneOf('unit_usage_changes_usage_known', 'usage', UNIT_USAGES),
+    check('unit_usage_changes_from_valid', sql.raw(`"from" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
   ],
 )
 

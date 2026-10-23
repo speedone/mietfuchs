@@ -179,6 +179,9 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // Mietverhältnis (tenancy_direct_charges). Wird vor dem Merge ein anderer PR davor eingereiht, wird der Schritt neu erzeugt
   // und die Marke ersetzt.
   '0066_ortsuebliche_miete': 'ce4bc86a16067fa26001e5f5c17fce3d07bda30a0e8879f0900ad05a29adfddf',
+  // #259: die Nutzungswechsel einer Einheit (unit_usage_changes). Wird vor dem Merge ein anderer PR davor
+  // eingereiht, wird der Schritt neu erzeugt und die Marke ersetzt.
+  '0067_nutzungswechsel': '145af2eb7878a321169faa408498c418ce3f50679c6994525f236c2432bc7456',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

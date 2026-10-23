@@ -11,6 +11,7 @@ import { and, eq } from 'drizzle-orm'
 import type { HeatingInfoInputs, HeatingPeriodData } from '../../../shared/types.ts'
 import { AGREED_FIXED_SELF_TEXT, CONSUMER_CONTRACT_NONE, postalCodeOf } from '../../../shared/heatingInfo.ts'
 import { mayAgreeOtherwise } from '../../../shared/heating.ts'
+import { flagsWithin } from '../../../shared/unitUsage.ts'
 import type { Database } from './client.ts'
 import { closedHeatingKeys, closedText, dropIfEmpty, ensureHeatingPeriod, heatingPeriodClosed, heatingPeriodOf, plantContext } from './heatingPeriodContext.ts'
 import { readProperties, readTenancies, readUnits } from './read.ts'
@@ -90,8 +91,10 @@ export async function saveHeatingInfo(db: Database, plantId: string, period: str
 // Vermieter eine selbst bewohnt. Wohnung ist hier, was Fläche hat, selbst genutzt wird oder ein
 // Mietverhältnis hat; die Berechnung prüft im Zeitraum erneut und wendet eine Vereinbarung nicht an, sobald
 // das Haus größer ist.
-export async function agreeableFor(db: Database, propertyId: string): Promise<boolean> {
-  const units = (await readUnits(db)).filter((u) => u.propertyId === propertyId)
+// `span`: die Heizperiode; mit Nutzungswechsel (#259) gilt dort eine Einheit nur als selbst bewohnt, wenn sie an jedem
+// Tag selbstgenutzt ist (wie calc.ts). Ohne Angabe die Nutzung von Anfang an.
+export async function agreeableFor(db: Database, propertyId: string, span?: { from: string; to: string }): Promise<boolean> {
+  const units = (await readUnits(db)).filter((u) => u.propertyId === propertyId).map((u) => (span ? flagsWithin(u, span.from, span.to) : u))
   const tenancies = await readTenancies(db)
   const dwelling = (u: (typeof units)[number]) => (u.areaM2 || 0) > 0 || u.selfUsed === true || tenancies.some((t) => t.unitId === u.id)
   return mayAgreeOtherwise(units, dwelling)
@@ -131,7 +134,7 @@ export async function saveHeatingRules(db: Database, plantId: string, period: st
     else throw new HeatingError(400, 'Bei einem Verbrauchervertrag tragen Sie die Information zur Streitbeilegung ein (§ 6a Abs. 3 Satz 1 Nr. 3 HeizkostenV); sonst wählen Sie „Nein“.')
   }
   if (next.agreedOtherwise !== undefined && next.agreedOtherwise !== null && next.agreedOtherwise !== 'none') {
-    if (!(await agreeableFor(db, ctx.plant.propertyId))) throw new HeatingError(400, AGREEMENT_TEXT)
+    if (!(await agreeableFor(db, ctx.plant.propertyId, h))) throw new HeatingError(400, AGREEMENT_TEXT)
     if (next.agreedOtherwise === 'fixedPercent' && ctx.plant.method === 'self') throw new HeatingError(400, AGREED_FIXED_SELF_TEXT)
   }
   // Mit `dryRun` wird nur gerechnet, nichts geschrieben: Die Oberfläche fragt nach, bevor eine Angabe an

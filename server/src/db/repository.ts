@@ -37,7 +37,8 @@ import { selfActive, selfFromOf } from '../heating.ts'
 import { captureOf, coversPeriod, hotWaterOf } from '../hca.ts'
 import { and, count, desc, eq, inArray, isNotNull, ne, or, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/sqlite-core'
-import type { BillingPeriod, CostItem, ExternalBasis, FederalState, HeatingPlant, HeatingPrepaymentOverride, InterimGapStatus, LocalRentEntry, Meter, MeterType, Payment, PeriodKey, PeriodRules, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, SplitPreviewPart, Tenancy, Unit, UnitDependents } from '../../../shared/types.ts'
+import type { BillingPeriod, CostItem, ExternalBasis, FederalState, HeatingPlant, HeatingPrepaymentOverride, InterimGapStatus, LocalRentEntry, Meter, MeterType, Payment, PeriodKey, PeriodRules, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, SplitPreviewPart, Tenancy, Unit, UnitDependents, UsageChange } from '../../../shared/types.ts'
+import { usageChangesOf } from '../../../shared/unitUsage.ts'
 import { hasKnownUnits, unitKey, unitLabel, unitProblem } from '../../../shared/meterUnits.ts'
 import { CALENDAR_RULES, calendarPeriod, paymentYear, formatDayRange, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, spansTwoYears, startYearOf } from '../../../shared/period.ts'
 import { heatingPeriodsEndingIn, isObjectPeriod, plantRules, plantSpan, servesUnit, spanOf } from '../../../shared/heatingPeriod.ts'
@@ -65,8 +66,8 @@ import {
 import {
   aiSlots, assessmentLines, assessments, baseRents, co2Refunds, co2Statements, co2TenantReliefs, heatingPeriods, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, HEATING_MODELS, SELF_SUPPLY_KINDS, costItemAmounts, costItemContract, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, DEPOSIT_STATUS, PAYMENT_KINDS, EXTERNAL_MEASURES,
   HCA_SCALES, HEATING_PARTS, OPERATING_POWER, HEATING_ROLES, HEATING_TARGETS, INTERIM_GAP_STATUS, interimReadingGaps, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingSelfSpans, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans, heatingServiceValues, heatingEstimates,
-  flatRates, tenancyDirectCharges, METER_TYPES, meters, payments, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
-  readings, settings, tenancies, unitLocalRents, unitNoConnection, units, fuelCarryFrozen, fuelDeliveries,
+  flatRates, tenancyDirectCharges, METER_TYPES, UNIT_USAGES, meters, payments, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
+  readings, settings, tenancies, unitLocalRents, unitNoConnection, unitUsageChanges, units, fuelCarryFrozen, fuelDeliveries,
 } from './schema.ts'
 import { aiSlotRows, settingsRow } from './write.ts'
 
@@ -349,6 +350,25 @@ function readDirectCharges(value: unknown): PrepaymentEntry[] | undefined {
   return kept.length > 0 ? kept : undefined
 }
 
+// Nutzungswechsel aus einem Rumpf (#259): nur Einträge mit Tag und bekannter Nutzung, danach `usageChangesOf`
+// (gültige Tage, am selben Tag der letzte, nach Datum), dieselbe Regel wie beim Rechnen.
+// Ist der Inhalt kein Array oder fällt jeder Eintrag weg, ist das eine 400 (Durchsicht): Still geleert verlöre der
+// Vermieter seine Staffel. `null` leert ausdrücklich.
+const USAGE_CHANGES_TEXT = 'Die Nutzungswechsel brauchen je Zeile einen Tag (JJJJ-MM-TT) und eine Nutzung (vermietet, eigen oder ausgenommen). Bitte laden Sie die Seite neu und versuchen Sie es noch einmal.'
+function readUsageChanges(v: unknown): UsageChange[] | undefined {
+  if (v === null) return undefined
+  if (!Array.isArray(v)) throw new HeatingError(400, USAGE_CHANGES_TEXT)
+  const raw = v.flatMap((x): UsageChange[] => {
+    if (typeof x !== 'object' || x === null) return []
+    const r = x as Record<string, unknown>
+    const usage = oneOfOrUndefined(UNIT_USAGES, r.usage)
+    return typeof r.from === 'string' && usage ? [{ from: r.from, usage }] : []
+  })
+  const changes = usageChangesOf({ usageChanges: raw })
+  if (v.length > 0 && changes.length === 0) throw new HeatingError(400, USAGE_CHANGES_TEXT)
+  return changes
+}
+
 function mergeUnit(current: Unit, body: unknown): Unit {
   return {
     id: current.id,
@@ -362,6 +382,9 @@ function mergeUnit(current: Unit, body: unknown): Unit {
     mea: merged(body, 'mea', current.mea, asOptionalNumber),
     // Nur bekannte Zählertypen, jeder einmal (#117).
     noConnection: merged(body, 'noConnection', current.noConnection, (v) => (Array.isArray(v) ? [...new Set(v.filter((x): x is MeterType => oneOfOrUndefined(METER_TYPES, x) !== undefined))] : undefined)),
+    // Nutzungswechsel (#259): gültige Tage und bekannte Nutzungen, am selben Tag der letzte, nach Datum
+    // (`usageChangesOf`, dieselbe Regel wie beim Rechnen). Krumm wird geradegerückt, nicht abgelehnt.
+    usageChanges: merged(body, 'usageChanges', current.usageChanges, readUsageChanges),
     rooms: merged(body, 'rooms', current.rooms, asOptionalNumber),
     floor: merged(body, 'floor', current.floor, asOptionalText),
     notes: merged(body, 'notes', current.notes, asOptionalText),
@@ -2176,6 +2199,9 @@ async function writeUnitChildren(db: Executor, u: Unit): Promise<void> {
   await db.delete(unitLocalRents).where(eq(unitLocalRents.unitId, u.id))
   const rents = u.localRents ?? []
   if (rents.length > 0) await db.insert(unitLocalRents).values(rents.map((e) => ({ unitId: u.id, from: e.from, monthlyCents: e.monthlyCents, source: e.source, sourceDate: e.sourceDate })))
+  await db.delete(unitUsageChanges).where(eq(unitUsageChanges.unitId, u.id))
+  const changes = u.usageChanges ?? []
+  if (changes.length > 0) await db.insert(unitUsageChanges).values(changes.map((c) => ({ unitId: u.id, from: c.from, usage: c.usage })))
 }
 
 const unitCollection: Collection<Unit> = {

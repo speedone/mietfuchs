@@ -310,3 +310,30 @@ test('K4: eine verrechnete CO₂-Erstattung mindert das Entgelt nicht (wie beim 
   })
   assert.equal(tenancyOf(r, 'tochter').chargesCents, 60000)
 })
+
+// #259: Die Prüfung liest die Nutzung nach Tagen. Wohnung a ist bis 30.06.2025 selbstgenutzt und ab 01.07. verbilligt an
+// die Tochter vermietet: geprüft wird sie trotzdem, und gekürzt nur für die 184 vermieteten Tage.
+test('Nutzungswechsel: eine erst ab Juli vermietete Wohnung wird geprüft und nach den vermieteten Tagen gekürzt', () => {
+  const s = family(2025, 20000)
+  const r = tax({
+    ...s,
+    units: [{ ...rented('a', 60, [local(90000)]), participates: false, selfUsed: true, selfPersons: 1, usageChanges: [{ from: '2025-07-01', usage: 'vermietet' }] }, rented('b', 40)],
+    tenancies: [tenancy('tochter', 'a', 20000, { start: '2025-07-01', personHistory: [{ from: '2025-07-01', persons: 1 }] }), tenancy('fremd', 'b', 80000)],
+  })
+  const t = tenancyOf(r, 'tochter')
+  assert.deepEqual([t.days, t.quotePercent, t.verdict], [184, 22.22, 'split'])
+  // Privat (selbstgenutzt Januar bis Juni) 1.000 € × 60 × 181/365 / 100 = 297,53 €; unentgeltlich 1.000 € × 0,6 × 7/9 × 184/365.
+  assert.equal(itemOf(r, 'dach').privateCents, Math.round(100000 * 0.6 * 181 / 365))
+  assert.equal(itemOf(r, 'dach').gratuitousCents, Math.round(100000 * 0.6 * (7 / 9) * (184 / 365)))
+})
+
+test('Nutzungswechsel: ein Mietverhältnis in einer Zeit der Eigennutzung zählt nicht als verbilligte Tage', () => {
+  const s = family(2025, 20000)
+  const r = tax({
+    ...s,
+    units: [{ ...rented('a', 60, [local(90000)]), usageChanges: [{ from: '2025-07-01', usage: 'eigen' }], selfPersons: 1 }, rented('b', 40)],
+    tenancies: [tenancy('tochter', 'a', 20000), tenancy('fremd', 'b', 80000)],
+  })
+  // Bis 30.06. vermietet (181 Tage), danach selbstgenutzt: das Mietverhältnis zählt nur 181 Tage.
+  assert.equal(tenancyOf(r, 'tochter').days, 181)
+})

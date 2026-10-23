@@ -2,6 +2,7 @@
 // „heating.test.ts“): Beispiel A centgenau, die Gegenproben, Ablesungen neben Stichtag und Wechsel,
 // § 9b Abs. 3, keine lineare Interpolation, Leerstand, Eigennutzung, beheizte Fläche.
 import { test } from 'node:test'
+import { usageSpans } from '../../shared/unitUsage.ts'
 import assert from 'node:assert/strict'
 import {
   boundaryReadingsOf, consumptionSharesOf, estimateDeviceType, estimateKey, estimateProposals, heatPumpVerdict, hotWaterShareOf, planSelf, readingOff, targetProblem, usersOf, weightsOf, type AlphaInput,
@@ -289,6 +290,16 @@ test('Nutzer einer Wohnung: Mieter, Lücken als Leerstand, Eigennutzung, außerh
   ])
   assert.deepEqual(usersOf(unit('self'), [], h).map((u) => [u.role, u.label]), [['self', 'Eigennutzung']])
   assert.deepEqual(usersOf(unit('outside'), [], h).map((u) => [u.role, u.label]), [['outside', 'außerhalb der Abrechnungseinheit']])
+})
+
+test('Nutzer einer Wohnung mit Nutzungswechsel (#259): jeder Abschnitt ohne Mietverhältnis ist ein eigener Nutzer (§ 9b)', () => {
+  const h = { from: '2025-01-01', to: '2025-12-31' }
+  const u = { participates: false, selfUsed: true, usageChanges: [{ from: '2025-07-01', usage: 'vermietet' as const }] }
+  const unit: SelfUnit = { id: 'u', name: 'U', areaM2: 50, heatedAreaM2: null, role: 'self', usageSpans: (from, to) => usageSpans(u, from, to) }
+  const t: SelfTenancy = { id: 'y', unitId: 'u', tenantName: 'y', start: '2025-10-01', end: null }
+  assert.deepEqual(usersOf(unit, [t], h).map((x) => [x.role, x.from, x.to]), [
+    ['self', '2025-01-01', '2025-06-30'], ['vacancy', '2025-07-01', '2025-09-30'], ['tenancy', '2025-10-01', '2025-12-31'],
+  ])
 })
 
 test('Ziel einer Position: passt zur Warmwasserbereitung, Brennstoff bei verbundener Anlage zu beidem', () => {

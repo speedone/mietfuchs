@@ -199,6 +199,15 @@ export const GLOSSARY = {
     norm: 'BGH, Urteil vom 31.05.2006, VIII ZR 159/05 (Grundsatz, am Flächenschlüssel); zum Personenschlüssel BGH, Beschluss vom 08.01.2013, VIII ZR 180/12',
     needed: 'Mietfuchs rechnet ihn von selbst heraus. Sie müssen nur Ein- und Auszug richtig eintragen. Wie eine leere Wohnung beim Personenschlüssel anzusetzen ist, regelt kein Gesetz und ist nicht abschließend geklärt; nach dem BGH kommt es auf den Einzelfall an, und eine fiktive Person für die Zeit des Leerstands kommt in Betracht; im Einzelfall hält er es auch für vertretbar, den Leerstand ganz außer Acht zu lassen. Mietfuchs setzt eine Person je Leerstandstag an; das ist eine Auslegung von Mietfuchs. Bei Kosten, die von der Personenzahl abhängen (etwa Wasser nach Personen), kann eine andere Aufteilung angemessener sein, zum Beispiel in Grund- und Verbrauchskosten.',
   },
+  // #259: Die Hinweise `usage.changed` und `usage.tenancy-conflict` verweisen hierher. Das Beispiel rechnet
+  // calc-nutzungswechsel.test.ts in derselben Gestalt nach (Fläche, 181 und 184 Tage).
+  usageChange: {
+    title: 'Nutzungswechsel',
+    short: 'Ziehen Sie in eine Wohnung ein, die vorher vermietet war, oder vermieten Sie Ihre bisher selbstgenutzte Wohnung, wechselt ihre Nutzung im Laufe des Jahres. Mietfuchs rechnet jeden Abschnitt nach seinen Tagen: in der Zeit der Eigennutzung ist der Anteil Ihr Eigenanteil, in der vermieteten Zeit trägt ihn der Mieter, und eine Zeit ohne Mieter ist Leerstand.',
+    example: 'Grundsteuer 1.000 € nach Fläche, Ihre Wohnung hat 80 von 200 m². Sie wohnen dort bis 30.06.2025 und vermieten ab 01.07.2025: Ihr Eigenanteil ist 1.000 € × 80/200 × 181/365 = 198,36 €, der Mieter trägt 1.000 € × 80/200 × 184/365 = 201,64 €.',
+    norm: '§ 556a Abs. 1 BGB (Verteilung nach dem Anteil der Wohnfläche); zum Leerstand BGH, Urteil vom 31.05.2006, VIII ZR 159/05. Steuerlich sind Aufwendungen für eine zunächst selbst bewohnte, danach leer stehende Wohnung nur abziehbar, wenn der Entschluss zu vermieten durch ernsthafte und nachhaltige Vermietungsbemühungen belegt ist (BFH, Urteil vom 28.10.2008, IX R 1/07).',
+    needed: 'Wenn eine Einheit im Jahr die Nutzung wechselt. Tragen Sie den Wechsel in den Stammdaten der Einheit unter „Nutzungswechsel“ mit dem Tag ein, ab dem die neue Nutzung gilt; die Angabe „Nutzung“ gilt dann bis zum ersten Wechsel. Ein Mietverhältnis zählt nur in der vermieteten Zeit. Mietfuchs nimmt an, dass die Kosten gleichmäßig über das Jahr anfallen, und teilt sie nach Tagen; das ist eine Auslegung von Mietfuchs.',
+  },
   // #258: Die Hinweise `allocation.not-agreed` und `allocation.other-unanswered` verweisen hierher. Das Beispiel ist
   // das aus calc-vertrag.test.ts.
   notAgreedCosts: {

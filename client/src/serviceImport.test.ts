@@ -20,8 +20,8 @@ const ctx: ImportContext = {
     { id: 't3', unitId: 'c', tenantName: 'Hans Vorher', start: '2019-01-01', end: '2024-05-31' },
   ],
   units: [
-    { id: 'a', name: 'EG links', selfUsed: false }, { id: 'b', name: 'EG rechts', selfUsed: false },
-    { id: 'c', name: 'OG links', selfUsed: false }, { id: 'd', name: 'OG rechts', selfUsed: true },
+    { id: 'a', name: 'EG links', participates: true, selfUsed: false }, { id: 'b', name: 'EG rechts', participates: true, selfUsed: false },
+    { id: 'c', name: 'OG links', participates: true, selfUsed: false }, { id: 'd', name: 'OG rechts', participates: false, selfUsed: true },
   ],
   existingAmountItems: 0,
 }
@@ -75,7 +75,7 @@ test('Zuordnung: Name, Leerstand, Eigentümer; nur bei genau einem Treffer', () 
 })
 
 test('Zuordnung: Eigentümer nur bei genau einer selbstgenutzten Wohnung oder passender Lage', () => {
-  const zwei: ImportContext = { ...ctx, units: [...ctx.units, { id: 'e', name: 'DG', selfUsed: true }] }
+  const zwei: ImportContext = { ...ctx, units: [...ctx.units, { id: 'e', name: 'DG', participates: false, selfUsed: true }] }
   expect(matchLine({ label: 'Eigentümer', unitLabel: null, from: null, to: null, vacancy: false }, zwei)).toBe('')
   expect(matchLine({ label: 'Eigentümer', unitLabel: 'OG rechts', from: null, to: null, vacancy: false }, zwei)).toBe('self:d')
   const keine: ImportContext = { ...ctx, units: ctx.units.map((u) => ({ ...u, selfUsed: false })) }

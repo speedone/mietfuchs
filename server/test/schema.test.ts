@@ -16,10 +16,11 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { AiSettings, AiSlot, Co2Refund, Co2Statement, DegreeDayValue, FrozenFuelCarry, FuelDelivery, FuelDeliveryPart, Co2TenantRelief, CostItem, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingPlantUnit, HeatingPrepaymentOverride, InterimGap, MonthlyInfoRow, SelfSpanRange, SeparateSpan, PeriodKey, PeriodRules, Meter, Payment, PersonEntry, PrepaymentEntry, Reading, RentEntry, Settings, Tenancy, Unit, ExternalBasis, UploadInfo, StoredAssessment, StoredAssessmentLine } from '../../shared/types.ts'
+import type { AiSettings, AiSlot, Co2Refund, Co2Statement, DegreeDayValue, FrozenFuelCarry, FuelDelivery, FuelDeliveryPart, Co2TenantRelief, CostItem, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingPlantUnit, HeatingPrepaymentOverride, InterimGap, MonthlyInfoRow, SelfSpanRange, SeparateSpan, PeriodKey, PeriodRules, Meter, Payment, PersonEntry, PrepaymentEntry, Reading, RentEntry, Settings, Tenancy, Unit, UsageChange, ExternalBasis, UploadInfo, StoredAssessment, StoredAssessmentLine } from '../../shared/types.ts'
 import type { ClosedSettlement } from '../src/store.ts'
 import { applyMigrations, connect, loadMigrations } from '../src/db/client.ts'
 import * as schema from '../src/db/schema.ts'
+import { UNIT_USAGES as SHARED_UNIT_USAGES } from '../../shared/unitUsage.ts'
 import type { SnapshotFuelDelivery, SnapshotHeatingPeriodRow, SnapshotHeatingPlant } from '../src/snapshot.ts'
 
 // ---------- Ebene 1: Schema und Datenmodell ----------
@@ -70,8 +71,11 @@ type Matches<Row, Domain> = Equals<keyof Row, keyof Domain> extends true
   : { spaltenFehlen: Exclude<keyof Domain, keyof Row>; spaltenZuViel: Exclude<keyof Row, keyof Domain> }
 
 // --- Wohnungen ---
-// Die Zählertypen ohne Anschluss (#117) und die ortsübliche Miete (#257) stehen in eigenen Tabellen.
-type _Units = Assert<Matches<typeof schema.units.$inferSelect, Omit<Unit, 'noConnection' | 'localRents'>>>
+// Die Zählertypen ohne Anschluss (#117), die ortsübliche Miete (#257) und die Nutzungswechsel (#259) stehen in eigenen Tabellen.
+type _Units = Assert<Matches<typeof schema.units.$inferSelect, Omit<Unit, 'noConnection' | 'localRents' | 'usageChanges'>>>
+// Die Liste der Nutzungen steht zweimal (schema.ts für die Prüfbedingung, shared/unitUsage.ts für die Oberfläche).
+type _UsageLists = Assert<Equals<(typeof schema.UNIT_USAGES)[number], (typeof SHARED_UNIT_USAGES)[number]>>
+type _UnitUsageChanges = Assert<Matches<Omit<typeof schema.unitUsageChanges.$inferSelect, 'unitId'>, UsageChange>>
 
 // --- Mietverhältnisse ---
 // Die fünf verschachtelten Listen stehen in eigenen Tabellen und haben deshalb keine Spalte.
@@ -320,6 +324,7 @@ test('Migration lässt sich anwenden und legt alle Tabellen an', async () => {
       'tenancy_letter_texts',
       'unit_local_rents',
       'unit_no_connection',
+      'unit_usage_changes',
       'units',
       'uploads',
     ])
@@ -1192,4 +1197,8 @@ test('Heizperiode: Vergleichswert (§ 6a Abs. 3 Nr. 4) und Klimafaktoren (Nr. 5)
   } finally {
     cleanup()
   }
+})
+
+test('Nutzungen: dieselbe Liste in Schema und shared/unitUsage.ts, in derselben Reihenfolge (#259)', () => {
+  assert.deepEqual([...schema.UNIT_USAGES], [...SHARED_UNIT_USAGES])
 })
