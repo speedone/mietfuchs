@@ -446,7 +446,7 @@ nicht durch die Abgrenzung; ihr Betrag ist Σ der verknüpften Positionen.
   (`co2OffByExemptionOf`, `exemptionText`). Steht eine Heizperiode in keiner Abrechnung, fragt das
   Blatt `heatingRulesOf` selbst.
 
-## Betriebsstrom der Heizung (#212, #224, #252, #253, #266)
+## Betriebsstrom der Heizung (#212, #224, #252, #253, #266, #270)
 
 - `cost_items.operating_power`: an einer Heizposition `included` (der Strom steckt im
   Allgemeinstrom), an „Beleuchtung/Allgemeinstrom“ `deduction`. Der Abzug zeigt auf seinen
@@ -489,6 +489,17 @@ nicht durch die Abgrenzung; ihr Betrag ist Σ der verknüpften Positionen.
   Angabe. `heating.generation-power-missing` (gelb) bei Wärmepumpe und Elektrokessel ohne eigene
   Stromrechnung und ohne Abzug, nach den Fassungen `betrkv.generation-power` (2024) und
   `hkv.generation-power` (01.10.2024), das Register erst gefragt, wenn der Hinweis sonst käme.
+- **Abzug ohne Verweis bei Messdienst** (#270): `cost_items.operating_power_reported` (Schritte 0063/0064,
+  nur am Abzug ohne Verweis, Bedingung `…_reported_valid`) sagt, ob der Betrag dem Messdienst gemeldet ist
+  (1) oder der Vermieter ihn selbst trägt (0); NULL heißt keine Angabe und gilt wie vor #270 als gemeldet,
+  wo ein Messdienst heizt. Die Regel steht einmal in `deductionReported` (shared/operatingPower.ts):
+  Formular, Steuerübersicht und Hinweis fragen sie. Die Auswahl im Kostenformular bietet bei Messdienst
+  beide Antworten (`OPERATING_POWER_REPORTED`, `OPERATING_POWER_KEPT`), ohne Messdienst nur die zweite;
+  ohne Messdienst gilt der Abzug immer als selbst getragen, gleich was dasteht. Wird der Abzug verknüpft
+  oder ist er keiner mehr, fällt die Angabe beim Speichern weg (`mergeCostItem`, geradegerückt). „Nicht
+  gemeldet“ ergibt `heating.operating-power-not-reported` (`hint`, färbt nicht): Der Betriebsstrom steht
+  dann in keiner Abrechnung an die Mieter; zulässig (VIII ZR 45/11, Rn. 3), der Text nennt den Weg über
+  die Meldung. Keine Zahl der Abrechnung ändert sich; ohne Angabe bleibt alles wie vorher.
 
 ## Wärmelieferung, Contracting (#213)
 

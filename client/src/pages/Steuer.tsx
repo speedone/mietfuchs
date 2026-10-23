@@ -14,6 +14,7 @@ import { StepList } from '../components/CalcSteps'
 import Term from '../components/Term'
 import { NoticeBox, TextNotice } from '../components/Notice'
 import { andList } from '../../../shared/wording.ts'
+import { OPERATING_POWER_KEPT, OPERATING_POWER_REPORTED } from '../../../shared/operatingPower.ts'
 
 type Props = { settings: Settings | null }
 
@@ -370,13 +371,15 @@ export default function Steuer({ settings }: Props) {
                 title="Betriebsstrom: dem Messdienst gemeldet?"
                 context={andList((data.operatingPowerAmbiguous ?? []).map((r) => `„${r.description}“ (${fmtEuro(r.amountCents)})`))}
                 action={<>
-                  Ist der Betrag dem Messdienst nicht gemeldet, tragen Sie diesen Betriebsstrom selbst, und er gehört zusätzlich zu
-                  Ihren Werbungskosten (§ 9 Abs. 1 Satz 1 EStG); die Übersicht zählt ihn dann nicht mit.
+                  Geben Sie es unter <em>Kosten</em> am Abzug an. Ist der Betrag dem Messdienst nicht gemeldet, wählen Sie
+                  „{OPERATING_POWER_KEPT}“: Dann tragen Sie diesen Betriebsstrom selbst, und die Übersicht zählt ihn zu Ihren
+                  Werbungskosten (§ 9 Abs. 1 Satz 1 EStG). Ist er gemeldet, wählen Sie „{OPERATING_POWER_REPORTED}“; dann entfällt
+                  dieser Hinweis.
                 </>}
                 more={<>
                   {(data.operatingPowerAmbiguous ?? []).length === 1 ? 'Er zählt' : 'Sie zählen'} als dem Messdienst gemeldet, denn im
                   Zeitraum heizt eine Anlage mit Messdienst. Zugleich heizt dort eine Anlage ohne Messdienst, etwa nach einem
-                  Kesseltausch. Ob der Betrag dem Messdienst gemeldet ist, kann Mietfuchs nicht erkennen.
+                  Kesseltausch. Ob der Betrag dem Messdienst gemeldet ist, kann Mietfuchs ohne Ihre Angabe nicht erkennen.
                 </>}
               />
             )}

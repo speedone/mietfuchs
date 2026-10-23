@@ -117,6 +117,8 @@ export type CostItemBody = {
   operatingPowerItemId?: string | null
   operatingPowerBasis?: string | null
   operatingPowerGeneralId?: string | null
+  // #270: am Abzug ohne Verweis, ob er dem Messdienst gemeldet ist.
+  operatingPowerReported?: boolean | null
 }
 
 // **Nicht umlagefähig, aber einer Einheit zuzuordnen** (#163): Für die Abrechnung bleibt es dabei,

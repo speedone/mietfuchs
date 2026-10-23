@@ -6,7 +6,7 @@ import { CATEGORIES, KEY_LABELS, defaultKeyFor, isNotAllocable } from './types'
 import { PARTICIPANT_KEYS as SHARED_PARTICIPANT_KEYS, allocationOf, comparablePrevious, previousAllocation, sameAllocation, type Allocation } from '../../shared/allocation.ts'
 import { fmtEuro, parseEuro } from './api'
 import { changeLabel } from './periodForm'
-import { GENERAL_POWER_CATEGORY, OPERATING_POWER_INCLUDED_YES, OPERATING_POWER_KEPT, POWER_GENERATED } from '../../shared/operatingPower.ts'
+import { deductionReported, GENERAL_POWER_CATEGORY, OPERATING_POWER_INCLUDED_YES, OPERATING_POWER_KEPT, OPERATING_POWER_REPORTED, POWER_GENERATED } from '../../shared/operatingPower.ts'
 import { sameCostCandidates, type DuplicateItem } from '../../shared/duplicates.ts'
 import { parseNumberDe } from './numbers'
 import { targetOptions } from './heatingSelfForm'
@@ -67,6 +67,8 @@ export type ItemForm = {
   operatingPowerBasis: string
   // Die Stromrechnung eines Abzugs (Durchsicht von #252, G-K3), leer heißt noch nicht gewählt.
   operatingPowerGeneralId: string
+  // #270: am Abzug ohne Verweis, ob er dem Messdienst gemeldet ist; `null` heißt keine Angabe.
+  operatingPowerReported: boolean | null
   // Nicht im Mietvertrag vereinbart (#258): Mietverhältnisse, deren Vertrag die Position nicht umlegt, und
   // (bei „Sonstige Betriebskosten“) solche, deren Vertrag sie ausdrücklich nennt.
   notAgreed: string[]
@@ -101,6 +103,7 @@ export const EMPTY_ITEM_FORM: ItemForm = {
   operatingPowerItemId: '',
   operatingPowerBasis: '',
   operatingPowerGeneralId: '',
+  operatingPowerReported: null,
   notAgreed: [],
   named: [],
   pendingWhy: [],
@@ -138,6 +141,7 @@ export function itemToForm(i: CostItem): ItemForm {
     operatingPowerItemId: i.operatingPowerItemId ?? '',
     operatingPowerBasis: i.operatingPowerBasis ?? '',
     operatingPowerGeneralId: i.operatingPowerGeneralId ?? '',
+    operatingPowerReported: i.operatingPowerReported ?? null,
     notAgreed: i.notAgreedTenancyIds ?? [],
     named: i.namedTenancyIds ?? [],
     pendingWhy: [],
@@ -588,22 +592,28 @@ export const showsDeductionLink = (form: Pick<ItemForm, 'category' | 'amount'>):
 // gibt es keine Beschriftung wie auf der Seite; ein Kalenderjahr heißt deshalb nach seinem Jahr, jeder
 // andere Zeitraum nach seinem Beginn („ab Mai 2025“).
 const periodText = (key: string): string => (key.slice(5, 7) === '01' ? key.slice(0, 4) : `ab ${changeLabel(key)}`)
-// #268: Der Abzug ohne Verweis heißt nach dem, was er ist. Heizt im Zeitraum eine Anlage mit Messdienst
-// (`serviceReceivesOperatingPower`), ist der Betrag dem Messdienst gemeldet; sonst trägt der Vermieter den
-// Betriebsstrom selbst. Gespeichert wird beides gleich (kein Verweis); die Steuerübersicht stellt dieselbe Frage.
+// #268, #270: Der Abzug ohne Verweis heißt nach dem, was er ist. Heizt im Zeitraum eine Anlage mit Messdienst
+// (`serviceReceivesOperatingPower`), wählt der Vermieter zwischen „dem Messdienst gemeldet“ (`service`) und „trage ihn
+// selbst“ (`kept`), gespeichert als `operatingPowerReported`; ohne Messdienst gibt es nur „trage ihn selbst“. Welche
+// Antwort gilt, entscheidet `deductionReported` (shared/operatingPower.ts), für Formular und Steuerübersicht dieselbe.
 export function deductionChoices(items: readonly CostItem[], { service }: { service: boolean }): { value: string; label: string }[] {
   return [
     { value: '', label: 'Nein, kein Abzug des Betriebsstroms' },
-    { value: 'service', label: service ? 'Ja, der Betrag ist dem Messdienst als Betriebsstrom gemeldet' : OPERATING_POWER_KEPT },
+    ...(service ? [{ value: 'service', label: OPERATING_POWER_REPORTED }] : []),
+    { value: 'kept', label: OPERATING_POWER_KEPT },
     ...items.filter((c) => c.operatingPower === 'included')
       .map((c) => ({ value: c.id, label: `Ja, zu „${c.description}“ (${periodText(c.period)}, ${fmtEuro(c.amountCents)})` })),
   ]
 }
-export const deductionChoiceOf = (form: Pick<ItemForm, 'operatingPower' | 'operatingPowerItemId'>): string =>
-  form.operatingPower !== 'deduction' ? '' : form.operatingPowerItemId || 'service'
+export const deductionChoiceOf = (form: Pick<ItemForm, 'operatingPower' | 'operatingPowerItemId' | 'operatingPowerReported'>, { service }: { service: boolean }): string => {
+  if (form.operatingPower !== 'deduction') return ''
+  if (form.operatingPowerItemId) return form.operatingPowerItemId
+  return deductionReported(form, service) ? 'service' : 'kept'
+}
 export function withDeductionChoice(form: ItemForm, value: string): ItemForm {
-  if (value === '') return { ...form, operatingPower: '', operatingPowerItemId: '', operatingPowerGeneralId: '', operatingPowerBasis: '' }
-  return { ...form, operatingPower: 'deduction', operatingPowerItemId: value === 'service' ? '' : value }
+  if (value === '') return { ...form, operatingPower: '', operatingPowerItemId: '', operatingPowerGeneralId: '', operatingPowerBasis: '', operatingPowerReported: null }
+  if (value === 'service' || value === 'kept') return { ...form, operatingPower: 'deduction', operatingPowerItemId: '', operatingPowerReported: value === 'service' }
+  return { ...form, operatingPower: 'deduction', operatingPowerItemId: value, operatingPowerReported: null }
 }
 
 // Die Stromrechnungen, aus denen ein Abzug gerechnet sein kann (G-K3): Allgemeinstrom mit positivem
@@ -637,22 +647,24 @@ export function withGeneralChoice(form: ItemForm, id: string, items: readonly Co
 // Der Rumpf trägt die drei Felder bei Heizkosten und beim Allgemeinstrom (Review Focus 3): Das Formular
 // hat sie eingelesen und schickt sie zurück, wie sie sind. Ohne Kennzeichnung keine Grundlage (Bedingung
 // `…_basis_valid`). Bei jeder anderen Kostenart kein Feld; der Server lässt dann stehen, was da ist.
-export type OperatingPowerBody = { operatingPower: 'included' | 'deduction' | null; operatingPowerItemId: string | null; operatingPowerGeneralId: string | null; operatingPowerBasis: string | null }
+export type OperatingPowerBody = { operatingPower: 'included' | 'deduction' | null; operatingPowerItemId: string | null; operatingPowerGeneralId: string | null; operatingPowerBasis: string | null; operatingPowerReported: boolean | null }
 export function withOperatingPower<B extends object>(
   body: B,
-  form: Pick<ItemForm, 'category' | 'heatingPart' | 'amount' | 'operatingPower' | 'operatingPowerItemId' | 'operatingPowerGeneralId' | 'operatingPowerBasis'>,
+  form: Pick<ItemForm, 'category' | 'heatingPart' | 'amount' | 'operatingPower' | 'operatingPowerItemId' | 'operatingPowerGeneralId' | 'operatingPowerBasis'> & Partial<Pick<ItemForm, 'operatingPowerReported'>>,
   plantEnergy?: HeatingEnergy,
 ): B & Partial<OperatingPowerBody> {
   const basis = (marked: boolean) => (marked && form.operatingPowerBasis.trim() !== '' ? form.operatingPowerBasis.trim() : null)
   if (form.category === HEATING_CATEGORY) {
     const included = showsOperatingPower(form, plantEnergy) && form.operatingPower === 'included'
-    return { ...body, operatingPower: included ? 'included' : null, operatingPowerItemId: null, operatingPowerGeneralId: null, operatingPowerBasis: basis(included) }
+    return { ...body, operatingPower: included ? 'included' : null, operatingPowerItemId: null, operatingPowerGeneralId: null, operatingPowerBasis: basis(included), operatingPowerReported: null }
   }
   if (form.category === GENERAL_POWER_CATEGORY) {
     const deduction = showsDeductionLink(form) && form.operatingPower === 'deduction'
     return {
       ...body, operatingPower: deduction ? 'deduction' : null, operatingPowerItemId: deduction && form.operatingPowerItemId ? form.operatingPowerItemId : null,
       operatingPowerGeneralId: deduction && form.operatingPowerGeneralId ? form.operatingPowerGeneralId : null, operatingPowerBasis: basis(deduction),
+      // #270: nur am Abzug ohne Verweis.
+      operatingPowerReported: deduction && !form.operatingPowerItemId ? form.operatingPowerReported ?? null : null,
     }
   }
   return body

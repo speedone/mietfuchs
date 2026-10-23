@@ -1125,6 +1125,10 @@ export const costItems = sqliteTable(
     // Die Stromrechnung, aus der ein Abzug gerechnet wurde (Durchsicht von #252, G-K3). `RESTRICT`: Eine
     // Rechnung mit Abzügen wird nicht still gelöscht, sonst bliebe der Allgemeinstrom netto negativ.
     operatingPowerGeneralId: text('operating_power_general_id').references((): AnySQLiteColumn => costItems.id, { onDelete: 'restrict' }),
+    // #270: Nur am Abzug ohne Verweis auf eine Heizposition, wenn eine Anlage mit Messdienst heizt: 1 = der Betrag ist dem
+    // Messdienst als Betriebsstrom gemeldet, 0 = nicht gemeldet, der Vermieter trägt ihn selbst. NULL = keine Angabe; dann
+    // gilt er wie vor #270 als gemeldet, wo ein Messdienst heizt (shared/operatingPower.ts, `deductionReported`).
+    operatingPowerReported: integer('operating_power_reported', { mode: 'boolean' }),
   },
   (t) => [
     // Der einzige Filter, den der Schnappschuss wirklich setzt: die Kostenpositionen eines
@@ -1175,6 +1179,8 @@ export const costItems = sqliteTable(
     // G-K4: Betriebsstrom ist keine Gutschrift.
     check('cost_items_operating_power_included_positive', sql.raw(`"operating_power" IS NOT 'included' OR "amount_cents" > 0`)),
     check('cost_items_operating_power_source_complete', sql.raw(`"operating_power" IS NOT 'deduction' OR "operating_power_general_id" IS NOT NULL`)),
+    // #270: Die Angabe „dem Messdienst gemeldet“ gibt es nur am Abzug ohne Verweis, und nur als 0 oder 1.
+    check('cost_items_operating_power_reported_valid', sql.raw(`"operating_power_reported" IS NULL OR ("operating_power_reported" IN (0, 1) AND "operating_power" IS 'deduction' AND "operating_power_item_id" IS NULL)`)),
     // Eine Summe der Anlage von null ergäbe eine Division durch null im Rechenweg.
     check('cost_items_external_total_positive', sql.raw('"external_total" > 0')),
     check(

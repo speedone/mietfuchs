@@ -160,6 +160,8 @@ const OWN_CHECK_MESSAGES: Readonly<Record<string, string>> = {
   cost_items_operating_power_general_valid: 'Nur ein Abzug des Betriebsstroms zeigt auf eine Stromrechnung. Bitte laden Sie die Seite neu.',
   cost_items_operating_power_included_positive: 'Betriebsstrom, der auch im Allgemeinstrom steckt, hat einen positiven Betrag; eine Gutschrift ist kein Betriebsstrom.',
   cost_items_operating_power_source_complete: 'Ein Abzug des Betriebsstroms braucht die Stromrechnung, aus der er gerechnet wurde.',
+  // #270
+  cost_items_operating_power_reported_valid: 'Ob ein Abzug dem Messdienst gemeldet ist, lässt sich nur bei einem Abzug des Betriebsstroms ohne Verweis auf eine Heizposition angeben. Bitte laden Sie die Seite neu.',
   // Eigene Heizkostenabrechnung (Heizung PR 10)
   heating_plants_self_capture_complete: 'Für die eigene Heizkostenabrechnung braucht die Heizanlage die Angabe, womit der Verbrauch erfasst wird.',
   heating_self_spans_from_valid: 'Der Beginn eines Zeitraums der eigenen Heizkostenabrechnung ist keine Heizperiode.',

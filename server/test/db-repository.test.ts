@@ -430,6 +430,14 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
         operatingPower: 'deduction', operatingPowerItemId: 'probe-betriebsstrom', operatingPowerGeneralId: 'probe-strom', operatingPowerBasis: 'Grundlage',
       },
     },
+    // #270: die Angabe „dem Messdienst gemeldet“ gibt es nur am Abzug ohne Verweis.
+    {
+      coll: 'costItems', table: costItems, id: 'probe-abzug-messdienst',
+      body: {
+        propertyId: 'objekt-1', period: '2024-01', category: 'Beleuchtung/Allgemeinstrom', description: 'Abzug ohne Verweis', amountCents: -1000, key: 'area',
+        operatingPower: 'deduction', operatingPowerGeneralId: 'probe-strom', operatingPowerReported: false,
+      },
+    },
     {
       coll: 'meters', table: meters,
       body: {

@@ -119,6 +119,8 @@ export type SnapshotCostItem = Pick<
   | 'operatingPowerBasis'
   // Die Stromrechnung eines Abzugs (Durchsicht von #252, G-K3): für die Hinweise zu Verteilung und Summe.
   | 'operatingPowerGeneralId'
+  // #270: ob ein Abzug ohne Verweis dem Messdienst gemeldet ist (Steuer und Hinweis; verteilt wird nicht danach).
+  | 'operatingPowerReported'
 >
 
 // Gelesen werden Kennung, Wohnung (null = Hauptzähler) und Zählertyp, dazu die Angaben zur

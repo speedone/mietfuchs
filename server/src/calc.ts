@@ -96,7 +96,7 @@ import { heatingSnapshotFor, selfAt, snapshotFor, wayOf } from './snapshot.ts'
 import { outflowShares, paidWhollyIn, storedOutflowYear } from './outflow.ts'
 import { deliveryShare, notInvoiceDeliveries, plantFuel, rangeOf, type FuelCarry, type FuelResult, type ShareContext } from './fuel.ts'
 import { co2Plausibility, etsExempt as etsExemptPlant, plausibilityText } from './co2Plausibility.ts'
-import { billMissingText, deductionMissingText, generationPowerText, selfSupplyPowerText, missingOperatingPowerText, missingPowerFindings, operatingPowerBalance, operatingPowerFindings, operatingPowerText, unmarkedPowerCredits, type OperatingPowerBalance } from './operatingPower.ts'
+import { billMissingText, deductionMissingText, generationPowerText, notReportedDeductions, notReportedText, selfSupplyPowerText, missingOperatingPowerText, missingPowerFindings, operatingPowerBalance, operatingPowerFindings, operatingPowerText, unmarkedPowerCredits, type OperatingPowerBalance } from './operatingPower.ts'
 import { GENERAL_POWER_CATEGORY } from '../../shared/operatingPower.ts'
 import { LAW_PARAMS } from '../../shared/law/params.ts'
 import { fuelFromDeliveries, fuelFromStock, isFuelMarked, looseCentsOf, measuredOffset, problemText, settledByDefault, stockKeysOf, stockOf, stockTemplateOfLine, stockTouched, valueOf as stockValueOf, type FuelFigures, type StockPeriodInput, type StockResult } from './fuelStock.ts'
@@ -469,6 +469,8 @@ const noticeKinds = {
   // Heizung PR 19, Durchsicht S-2: zentrale Heizung mit Brennstoff beim Mieter, ohne Heizanlage.
   'heating.self-supply-operating-power': { level: 'hint', title: 'Betriebsstrom der Heizung des Mieters im Allgemeinstrom?', terms: ['operatingPower', 'co2Refund'] },
   'heating.operating-power-bill-missing': { level: 'hint', title: 'Rechnung des Heizungsstromzählers fehlt', terms: ['operatingPower'] },
+  // #270: Abzug ohne Verweis, nach Angabe des Vermieters dem Messdienst nicht gemeldet; er trägt ihn selbst (INFORMATIONAL).
+  'heating.operating-power-not-reported': { level: 'hint', title: 'Betriebsstrom dem Messdienst nicht gemeldet', terms: ['operatingPower'] },
   // Heizung PR 17 (Entwurf 4.5, 10.1): ein Rechtswert, den der Vermieter eingetragen hat.
   'law.value-overridden': { level: 'hint', title: 'Selbst eingetragener Rechtswert', terms: ['legalBasis'] },
   'model.prepayment-unsettled': { level: 'warning', title: 'Vorauszahlung ohne Abrechnung', terms: ['prepayment', 'flatRate'] },
@@ -8065,6 +8067,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         }
       }
     }
+    // #270: Abzug ohne Verweis, dem Messdienst nach Angabe nicht gemeldet.
+    for (const d of notReportedDeductions(items, plants, period)) warn('heating.operating-power-not-reported', notReportedText(d), itemSubject(d))
     for (const f of missingPowerFindings({ period, plants, items, heatingParts: snapshot.heatingParts ?? [] })) {
       if (f.kind === 'operating') {
         warn('heating.operating-power-missing', missingOperatingPowerText(f, label), { kind: 'heatingCosts', id: f.plantId })

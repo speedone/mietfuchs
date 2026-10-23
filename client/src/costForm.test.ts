@@ -730,11 +730,11 @@ test('Betriebsstrom: Frage nur bei Heizkosten mit Teil Betrieb oder ohne Teil; d
   expect(showsOperatingPower(heiz)).toBe(true)
   expect(showsOperatingPower({ ...heiz, heatingPart: 'operating' })).toBe(true)
   expect(showsOperatingPower({ ...heiz, heatingPart: 'fuel' })).toBe(false)
-  expect(withOperatingPower({ a: 1 }, heiz)).toEqual({ a: 1, operatingPower: 'included', operatingPowerItemId: null, operatingPowerGeneralId: null, operatingPowerBasis: 'Pumpe 45 W' })
+  expect(withOperatingPower({ a: 1 }, heiz)).toEqual({ a: 1, operatingPower: 'included', operatingPowerItemId: null, operatingPowerGeneralId: null, operatingPowerBasis: 'Pumpe 45 W', operatingPowerReported: null })
   // Teil „Brennstoff“: keine Kennzeichnung, auch wenn das Formular sie noch hält.
-  expect(withOperatingPower({ a: 1 }, { ...heiz, heatingPart: 'fuel' })).toEqual({ a: 1, operatingPower: null, operatingPowerItemId: null, operatingPowerGeneralId: null, operatingPowerBasis: null })
+  expect(withOperatingPower({ a: 1 }, { ...heiz, heatingPart: 'fuel' })).toEqual({ a: 1, operatingPower: null, operatingPowerItemId: null, operatingPowerGeneralId: null, operatingPowerBasis: null, operatingPowerReported: null })
   // Ohne Kennzeichnung fällt auch die Grundlage weg (Bedingung …_basis_valid).
-  expect(withOperatingPower({ a: 1 }, { ...heiz, operatingPower: '' })).toEqual({ a: 1, operatingPower: null, operatingPowerItemId: null, operatingPowerGeneralId: null, operatingPowerBasis: null })
+  expect(withOperatingPower({ a: 1 }, { ...heiz, operatingPower: '' })).toEqual({ a: 1, operatingPower: null, operatingPowerItemId: null, operatingPowerGeneralId: null, operatingPowerBasis: null, operatingPowerReported: null })
   expect(withOperatingPower({ a: 1 }, { ...EMPTY_ITEM_FORM, category: 'Grundsteuer' })).toEqual({ a: 1 })
   expect(OPERATING_POWER_OPTIONS.map((o) => o.value)).toEqual(['', 'included'])
 })
@@ -746,7 +746,7 @@ test('Betriebsstrom: Abzug am Allgemeinstrom bleibt beim Bearbeiten erhalten und
   const ab: CostItemOf = { id: 'ab', propertyId: 'o', period: periodKey('2026-01'), category: 'Beleuchtung/Allgemeinstrom', description: 'Abzug', amountCents: -14784, key: 'area', operatingPower: 'deduction', operatingPowerItemId: 'bs', operatingPowerGeneralId: 'strom', operatingPowerBasis: 'Grundlage' }
   const form = itemToFormOf(ab)
   expect([form.operatingPower, form.operatingPowerItemId, form.operatingPowerGeneralId, form.operatingPowerBasis]).toEqual(['deduction', 'bs', 'strom', 'Grundlage'])
-  expect(withOperatingPower({ a: 1 }, form)).toEqual({ a: 1, operatingPower: 'deduction', operatingPowerItemId: 'bs', operatingPowerGeneralId: 'strom', operatingPowerBasis: 'Grundlage' })
+  expect(withOperatingPower({ a: 1 }, form)).toEqual({ a: 1, operatingPower: 'deduction', operatingPowerItemId: 'bs', operatingPowerGeneralId: 'strom', operatingPowerBasis: 'Grundlage', operatingPowerReported: null })
   // Über buildCostItemBody: der Rumpf, den das Formular wirklich schickt.
   const built = buildBody(form, [], 2026)
   if ('error' in built) throw new Error(built.error)
@@ -754,25 +754,46 @@ test('Betriebsstrom: Abzug am Allgemeinstrom bleibt beim Bearbeiten erhalten und
   // Die Auswahl bei einem Abzug (negativer Betrag am Allgemeinstrom): kein Abzug, Messdienst, jeder Betriebsstrom.
   expect(showsDeductionLink(form)).toBe(true)
   expect(showsDeductionLink({ ...form, amount: '10,00' })).toBe(false)
+  // #270: Mit Messdienst stehen beide Antworten zur Wahl, gemeldet oder selbst getragen.
   expect(deductionChoices([bs, ab], { service: true })).toEqual([
     { value: '', label: 'Nein, kein Abzug des Betriebsstroms' },
     { value: 'service', label: 'Ja, der Betrag ist dem Messdienst als Betriebsstrom gemeldet' },
+    { value: 'kept', label: OPERATING_POWER_KEPT },
     { value: 'bs', label: 'Ja, zu „Betriebsstrom Heizung (geschätzt)“ (2025, 147,84\u00a0€)' },
   ])
-  expect(deductionChoiceOf(form)).toBe('bs')
+  expect(deductionChoiceOf(form, { service: true })).toBe('bs')
   // #268: Ohne Messdienst im Zeitraum heißt der Abzug ohne Verweis „selbst getragen“; gespeichert wird dasselbe.
   expect(deductionChoices([bs], { service: false })).toEqual([
     { value: '', label: 'Nein, kein Abzug des Betriebsstroms' },
-    { value: 'service', label: OPERATING_POWER_KEPT },
+    { value: 'kept', label: OPERATING_POWER_KEPT },
     { value: 'bs', label: 'Ja, zu „Betriebsstrom Heizung (geschätzt)“ (2025, 147,84 €)' },
   ])
   expect(OPERATING_POWER_KEPT).toBe('Ja, ich lege ihn nicht um und trage ihn selbst')
   const hand ={ ...EMPTY_ITEM_FORM, category: 'Beleuchtung/Allgemeinstrom', amount: '-147,84' }
-  expect(deductionChoiceOf(hand)).toBe('')
-  const verknuepft = withDeductionChoice(hand, 'bs')
-  expect(withOperatingPower({}, verknuepft)).toEqual({ operatingPower: 'deduction', operatingPowerItemId: 'bs', operatingPowerGeneralId: null, operatingPowerBasis: null })
-  expect(withOperatingPower({}, withDeductionChoice(hand, 'service'))).toEqual({ operatingPower: 'deduction', operatingPowerItemId: null, operatingPowerGeneralId: null, operatingPowerBasis: null })
-  expect(withOperatingPower({}, withDeductionChoice({ ...verknuepft, operatingPowerGeneralId: 'strom' }, ''))).toEqual({ operatingPower: null, operatingPowerItemId: null, operatingPowerGeneralId: null, operatingPowerBasis: null })
+  expect(deductionChoiceOf(hand, { service: false })).toBe('')
+  const verknuepft = withDeductionChoice(withDeductionChoice(hand, 'kept'), 'bs')
+  expect(withOperatingPower({}, verknuepft)).toEqual({ operatingPower: 'deduction', operatingPowerItemId: 'bs', operatingPowerGeneralId: null, operatingPowerBasis: null, operatingPowerReported: null })
+  expect(withOperatingPower({}, withDeductionChoice(hand, 'service'))).toEqual({ operatingPower: 'deduction', operatingPowerItemId: null, operatingPowerGeneralId: null, operatingPowerBasis: null, operatingPowerReported: true })
+  expect(withOperatingPower({}, withDeductionChoice(hand, 'kept'))).toEqual({ operatingPower: 'deduction', operatingPowerItemId: null, operatingPowerGeneralId: null, operatingPowerBasis: null, operatingPowerReported: false })
+  expect(withOperatingPower({}, withDeductionChoice({ ...verknuepft, operatingPowerGeneralId: 'strom' }, ''))).toEqual({ operatingPower: null, operatingPowerItemId: null, operatingPowerGeneralId: null, operatingPowerBasis: null, operatingPowerReported: null })
+})
+
+// #270: Der angezeigte Wert entspricht dem gespeicherten. Ohne Angabe gilt der Abzug ohne Verweis bei Messdienst als
+// gemeldet, sonst als selbst getragen; ohne Messdienst gibt es nur „selbst getragen“.
+test('Betriebsstrom (#270): Abzug ohne Verweis zeigt „gemeldet“ oder „selbst getragen“ nach Angabe und Messdienst', () => {
+  const ohneVerweis: CostItemOf = { id: 'ab', propertyId: 'o', period: periodKey('2025-01'), category: 'Beleuchtung/Allgemeinstrom', description: 'Abzug', amountCents: -14784, key: 'area', operatingPower: 'deduction', operatingPowerGeneralId: 'strom' }
+  const keine = itemToFormOf(ohneVerweis)
+  const nein = itemToFormOf({ ...ohneVerweis, operatingPowerReported: false })
+  const ja = itemToFormOf({ ...ohneVerweis, operatingPowerReported: true })
+  expect([keine.operatingPowerReported, nein.operatingPowerReported, ja.operatingPowerReported]).toEqual([null, false, true])
+  expect([keine, nein, ja].map((f) => deductionChoiceOf(f, { service: true }))).toEqual(['service', 'kept', 'service'])
+  expect([keine, nein, ja].map((f) => deductionChoiceOf(f, { service: false }))).toEqual(['kept', 'kept', 'kept'])
+  // Unverändert gespeichert bleibt die Angabe, wie sie war.
+  expect(withOperatingPower({}, keine).operatingPowerReported).toBe(null)
+  expect(withOperatingPower({}, nein).operatingPowerReported).toBe(false)
+  const built = buildBody(nein, [], 2025)
+  if ('error' in built) throw new Error(built.error)
+  expect(built.body.operatingPowerReported).toBe(false)
 })
 
 // Durchsicht von #252, G-K3: Ein Abzug nennt seine Stromrechnung, und das Formular übernimmt deren Verteilung.

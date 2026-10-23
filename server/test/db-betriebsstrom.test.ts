@@ -712,3 +712,48 @@ test('G2-K3: Stromrechnung mit Abzug wechselt im Kostenformular nicht den Zeitra
     assert.equal(fieldOf(await opened.read((db) => findEntity(db, 'costItems', 'hausstrom')), 'period'), '2025-01')
   })
 })
+
+// #270: am Abzug ohne Verweis die Angabe, ob er dem Messdienst gemeldet ist.
+test('#270: „dem Messdienst gemeldet“ wird gespeichert und gelesen, ein alter Tab lässt sie stehen, ein Verweis nimmt sie weg', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createEntity(db, 'costItems', 'bs', heizung()))
+    const ab = await opened.write((db) => createEntity(db, 'costItems', 'ab', abzug(null, { operatingPowerReported: false })))
+    assert.equal(fieldOf(ab, 'operatingPowerReported'), false)
+    // Ein alter Tab ohne das Feld: Die Angabe bleibt.
+    await opened.write((db) => updateEntity(db, 'costItems', 'ab', { description: 'Abzug 2025' }))
+    assert.equal(fieldOf(await opened.read((db) => findEntity(db, 'costItems', 'ab')), 'operatingPowerReported'), false)
+    await opened.write((db) => updateEntity(db, 'costItems', 'ab', { operatingPowerReported: true }))
+    assert.equal(fieldOf(await opened.read((db) => findEntity(db, 'costItems', 'ab')), 'operatingPowerReported'), true)
+    await opened.write((db) => updateEntity(db, 'costItems', 'ab', { operatingPowerReported: null }))
+    assert.equal(Object.hasOwn(Object(await opened.read((db) => findEntity(db, 'costItems', 'ab'))), 'operatingPowerReported'), false)
+    // Wird der Abzug verknüpft, fällt die Angabe weg (geradegerückt, auch wenn der Tab sie mitschickt).
+    await opened.write((db) => updateEntity(db, 'costItems', 'ab', { operatingPowerReported: false }))
+    await opened.write((db) => updateEntity(db, 'costItems', 'ab', { operatingPowerItemId: 'bs', operatingPowerReported: false }))
+    const linked = await opened.read((db) => findEntity(db, 'costItems', 'ab'))
+    assert.deepEqual([fieldOf(linked, 'operatingPowerItemId'), Object.hasOwn(Object(linked), 'operatingPowerReported')], ['bs', false])
+    // An einer Position ohne Abzug ebenso.
+    const gs = await opened.write((db) => createEntity(db, 'costItems', 'gs', { propertyId: 'objekt-1', period: '2025-01', category: 'Grundsteuer', description: 'G', amountCents: 100, key: 'area', operatingPowerReported: false }))
+    assert.equal(Object.hasOwn(Object(gs), 'operatingPowerReported'), false)
+  })
+})
+
+test('#270: Prüfbedingung, die Angabe nur am Abzug ohne Verweis', async () => {
+  const dir = tempDir()
+  try {
+    const c = await connect(path.join(dir, 'db.sqlite'))
+    applyMigrations(c, await loadMigrations())
+    c.exec('PRAGMA foreign_keys = ON')
+    const insert = (id: string, category: string, amount: number, extra: string, values: string) =>
+      `INSERT INTO cost_items (id, property_id, period, category, description, amount_cents, key${extra}) VALUES ('${id}', 'objekt-1', '2025-01', '${category}', 'x', ${amount}, 'area'${values})`
+    assert.equal(rejects(c, insert('strom', 'Beleuchtung/Allgemeinstrom', 105000, '', '')), null)
+    assert.equal(rejects(c, insert('bs', 'Heizung und Warmwasser', 14784, ', heating_part, operating_power', ", 'operating', 'included'")), null)
+    assert.equal(rejects(c, insert('a', 'Beleuchtung/Allgemeinstrom', -100, ', operating_power, operating_power_general_id, operating_power_reported', ", 'deduction', 'strom', 0")), null)
+    assert.equal(rejects(c, insert('b', 'Beleuchtung/Allgemeinstrom', -100, ', operating_power, operating_power_general_id, operating_power_reported', ", 'deduction', 'strom', 1")), null)
+    assert.match(rejects(c, insert('c', 'Beleuchtung/Allgemeinstrom', -100, ', operating_power, operating_power_general_id, operating_power_item_id, operating_power_reported', ", 'deduction', 'strom', 'bs', 0")) ?? '', /cost_items_operating_power_reported_valid/)
+    assert.match(rejects(c, insert('d', 'Grundsteuer', 100, ', operating_power_reported', ', 0')) ?? '', /cost_items_operating_power_reported_valid/)
+    assert.match(rejects(c, insert('e', 'Beleuchtung/Allgemeinstrom', -100, ', operating_power, operating_power_general_id, operating_power_reported', ", 'deduction', 'strom', 2")) ?? '', /cost_items_operating_power_reported_valid/)
+    c.close()
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})

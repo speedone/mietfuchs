@@ -126,9 +126,17 @@ export const heatsIn = (plant: SpanPlant, plants: readonly SpanPlant[], period: 
 }
 export const serviceReceivesOperatingPower = (plants: readonly SpanPlant[], period: { from: string; to: string }): boolean =>
   plants.some((p) => p.method === 'service' && heatsIn(p, plants, period))
+// #270: Ob ein Abzug ohne Verweis als dem Messdienst gemeldet gilt. Heizt im Zeitraum ein Messdienst, hat der Vermieter die
+// Wahl: gemeldet (`true`) oder selbst getragen (`false`); ohne Angabe gilt er wie vor #270 als gemeldet. Ohne Messdienst im
+// Zeitraum gibt es niemanden, dem er gemeldet sein könnte, und er gilt als selbst getragen, gleich was dasteht. Eine
+// Quelle für Steuerübersicht, Hinweis der Abrechnung und Kostenformular.
+export const deductionReported = (item: { operatingPowerItemId?: string | null; operatingPowerReported?: boolean | null }, service: boolean): boolean =>
+  service && !item.operatingPowerItemId && item.operatingPowerReported !== false
 // Die Antwort am Abzug ohne Verweis, wenn kein Messdienst im Zeitraum heizt (#268). Die Hinweise „Betriebsstrom fehlt“
 // und „Abzug fehlt“ zitieren sie wörtlich; OperatingPowerFields.test.tsx hält die gerenderte Auswahl daran fest.
 export const OPERATING_POWER_KEPT = 'Ja, ich lege ihn nicht um und trage ihn selbst'
+// #270: die Antwort „gemeldet“, wenn ein Messdienst im Zeitraum heizt; daneben steht dann auch `OPERATING_POWER_KEPT`.
+export const OPERATING_POWER_REPORTED = 'Ja, der Betrag ist dem Messdienst als Betriebsstrom gemeldet'
 // R-6: Heizt im selben Zeitraum zugleich eine zentrale Anlage des Hauses ohne Messdienst, ist nicht eindeutig, ob der
 // Abzug gemeldet ist. Eine Etagenheizung oder eine Anlage der Gemeinschaft zählt nicht (Durchsicht T1, T1b): Ihr Strom
 // läuft nicht über den Zähler des Hauses. Dieselbe Bedingung wie bei `unmarkedPowerCredits`.

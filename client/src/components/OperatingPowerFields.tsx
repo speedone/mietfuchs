@@ -43,13 +43,13 @@ export default function OperatingPowerFields({ form, items, periodKey, plantEner
       {deduction && (
         <label className="field">
           <span>Abzug des <Term id="operatingPower">Betriebsstroms</Term> der Heizung?</span>
-          <select value={deductionChoiceOf(form)} onChange={(e) => onChange(withDeductionChoice(form, e.target.value))}>
+          <select value={deductionChoiceOf(form, { service })} onChange={(e) => onChange(withDeductionChoice(form, e.target.value))}>
             {deductionChoices(items, { service }).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
-          {/* Durchsicht S3: nur bei der Antwort „trage ihn selbst“, für die der Satz stimmt. */}
-          {!service && deductionChoiceOf(form) === 'service' && (
+          {/* Durchsicht S3: nur bei der Antwort „trage ihn selbst“, für die der Satz stimmt (#270: auch neben einem Messdienst). */}
+          {deductionChoiceOf(form, { service }) === 'kept' && (
             <small className="muted">
-              Die Mieter bekommen den Betrag beim Allgemeinstrom gutgeschrieben, und der Betriebsstrom steht nicht in den Heizkosten. In der
+              Die Mieter bekommen den Betrag beim Allgemeinstrom gutgeschrieben, und der Betriebsstrom steht {service ? 'nicht in der Abrechnung des Messdienstes' : 'nicht in den Heizkosten'}. In der
               Steuerübersicht zählt Mietfuchs ihn trotzdem zu Ihren Werbungskosten, denn Sie haben die ganze Stromrechnung bezahlt.
             </small>
           )}

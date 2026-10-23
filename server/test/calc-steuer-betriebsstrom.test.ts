@@ -117,6 +117,61 @@ test('V3: Messdienst, Abzug ohne Verweis gilt als gemeldet: neutral (3.800)', ()
   assert.equal(line(r), undefined)
 })
 
+// #270: Am Abzug ohne Verweis gibt der Vermieter bei Messdienst an, ob der Betrag dem Messdienst gemeldet wurde
+// (`operatingPowerReported`). Ohne Angabe bleibt es bei V3.
+const messdienst = () => heizung('md', 280000, { description: 'Messdienst ohne Betriebsstrom' })
+test('#270: Messdienst, Abzug ohne Verweis „nicht gemeldet, selbst getragen“: bezahlt 3.800, nicht 3.600', () => {
+  // Allgemeinstrom 1.000, Abzug 200, Messdienst 2.800 ohne Betriebsstrom: bezahlt 2.800 + 1.000 = 3.800.
+  const kept = tax(haus([messdienst(), hausstrom(), abzug('ab', 20000, undefined, { operatingPowerReported: false })], [anlage({ method: 'service' })]))
+  assert.equal(kept.expenses.totalCents, 380000)
+  assert.equal(line(kept)?.amountCents, 20000)
+  assert.equal(line(kept)?.description, 'Betriebsstrom der Heizung, selbst getragen')
+  assert.equal(kept.operatingPowerAmbiguous, undefined)
+  // Ausdrücklich gemeldet und ohne Angabe: wie V3, der Abzug bleibt abgezogen.
+  for (const over of [{ operatingPowerReported: true }, {}]) {
+    const r = tax(haus([messdienst(), hausstrom(), abzug('ab', 20000, undefined, over)], [anlage({ method: 'service' })]))
+    assert.equal(r.expenses.totalCents, 360000, JSON.stringify(over))
+    assert.equal(line(r), undefined)
+  }
+})
+
+test('#270: „gemeldet“ ohne Messdienst im Zeitraum zählt wie selbst getragen (6.000)', () => {
+  const r = tax(haus([gas(), hausstrom(), abzug('ab', 20000, undefined, { operatingPowerReported: true })]))
+  assert.equal(r.expenses.totalCents, 600000)
+  assert.equal(line(r)?.amountCents, 20000)
+})
+
+test('#270: Kesseltausch mit Messdienst und ohne: eine Angabe macht den Abzug eindeutig', () => {
+  const plants = [anlage({ id: 'alt', method: 'service', endsOn: '2025-06-30' }), anlage({ id: 'hp1', replacesPlantId: 'alt' })]
+  const gemeldet = tax(haus([gas(), hausstrom(), abzug('ab', 20000, undefined, { operatingPowerReported: true })], plants))
+  assert.equal(gemeldet.expenses.totalCents, 580000)
+  assert.equal(gemeldet.operatingPowerAmbiguous, undefined)
+  const selbst = tax(haus([gas(), hausstrom(), abzug('ab', 20000, undefined, { operatingPowerReported: false })], plants))
+  assert.equal(selbst.expenses.totalCents, 600000)
+  assert.equal(selbst.operatingPowerAmbiguous, undefined)
+})
+
+test('#270: Die Abrechnung an die Mieter bleibt mit jeder Angabe gleich; „nicht gemeldet“ ergibt einen Hinweis', () => {
+  const run = (over: Partial<Item>) => settle(haus([messdienst(), hausstrom(), abzug('ab', 20000, undefined, over)], [anlage({ method: 'service' })]))
+  const ohne = run({})
+  for (const over of [{ operatingPowerReported: true }, { operatingPowerReported: false }]) {
+    const s = run(over)
+    assert.deepEqual(s.statements.map((st) => [st.tenancyId, st.totalShareCents]), ohne.statements.map((st) => [st.tenancyId, st.totalShareCents]))
+    assert.equal(s.selfUsedShareCents, ohne.selfUsedShareCents)
+  }
+  const code = 'heating.operating-power-not-reported'
+  assert.equal(ohne.notices.some((n) => n.code === code), false)
+  assert.equal(run({ operatingPowerReported: true }).notices.some((n) => n.code === code), false)
+  const n = run({ operatingPowerReported: false }).notices.find((x) => x.code === code) ?? assert.fail('kein Hinweis')
+  assert.equal(n.level, 'hint')
+  assert.deepEqual(n.subject, { kind: 'costItem', id: 'ab' })
+  assert.ok(n.text.includes('„Abzug ab“ (200,00 €)'), n.text)
+  assert.ok(n.text.includes('V ZR 166/15'), n.text)
+  // Ohne Messdienst kein Hinweis: Dort heißt die Antwort ohnehin „ich trage ihn selbst“.
+  const manual = settle(haus([gas(), hausstrom(), abzug('ab', 20000, undefined, { operatingPowerReported: false })]))
+  assert.equal(manual.notices.some((x) => x.code === code), false)
+})
+
 test('V4: ohne Abzug 6.000, keine Zeile', () => {
   const r = tax(haus([gas(), hausstrom()]))
   assert.equal(r.expenses.totalCents, 600000)
