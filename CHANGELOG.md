@@ -8,6 +8,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Geändert
 
+- Die Karte „Heizung nach § 43 GModG“ nennt im ersten Satz, wann ein Neubau unter die hälftige Teilung
+  fällt (erstmals genutzt bis 31.12.2029, nicht bei Bauantrag, Antrag auf Zustimmung oder Bauanzeige vor
+  dem 13.05.2026) und dass sie nach einem Einbau wegen eines irreparablen Ausfalls der bisherigen Heizung
+  je nach Zeitpunkt zwölf Monate lang entfällt. Vorher las sich der Satz, als gälte sie für jeden Neubau.
 - Objekte anlegen und bearbeiten sehen gleich aus: Das Fenster „Neues Objekt“ hat dieselben Felder,
   dieselbe Reihenfolge und dieselbe Breite wie „Objekt bearbeiten“, also auch Bundesland, Kabel- oder
   Antennenanlage, angespannten Wohnungsmarkt und abweichenden Vermieter. Leer gelassen gilt wie bisher

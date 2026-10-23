@@ -6,7 +6,7 @@ import Term from './Term'
 import { keepDraft, useDraft } from '../useDraft'
 import DraftActions from './DraftActions'
 import Card from './Card'
-import { APPLICATION_FROM, FIRST_USE_UNTIL, HALF_SPLIT_WHAT, HALF_SPLIT_YEAR, halfSplitBody, halfSplitToForm, INSTALLED_AFTER, noticeBody, noticeTenancies, PRIOR_DUTY_EXPLAINED, PRIOR_DUTY_QUESTION, TRI_OPTIONS, type HalfSplitBody, type NoticeTenancy, type TriState } from '../halfSplitForm'
+import { APPLICATION_FROM, FIRST_USE_UNTIL, HALF_SPLIT_SCOPE, HALF_SPLIT_YEAR, halfSplitBody, halfSplitToForm, noticeBody, noticeTenancies, PRIOR_DUTY_EXPLAINED, PRIOR_DUTY_QUESTION, TRI_OPTIONS, type HalfSplitBody, type NoticeTenancy, type TriState } from '../halfSplitForm'
 import { halfSplitFirstDay } from '../../../shared/law/co2kostaufg.ts'
 import type { HeatingEnergy, HeatingPlant } from '../types'
 import { ErrorSummary, useFormError } from './ErrorSummary'
@@ -53,7 +53,7 @@ export default function HalfSplitCard({ plant, tenancies, onSaved, onNoticeSaved
   return (
     <Card title={<>Heizung nach <Term id="co2HalfSplit">§ 43 GModG</Term> {`(ab ${HALF_SPLIT_YEAR})`}</>}>
       <ErrorSummary errors={errors} />
-      <p className="muted">{`Nur für eine Gas-, Öl- oder Flüssiggasheizung, die nach dem ${INSTALLED_AFTER} in ein bestehendes Gebäude eingebaut wurde, oder eine solche Heizung in einem Neubau. ${HALF_SPLIT_WHAT}`}</p>
+      <p className="muted">{HALF_SPLIT_SCOPE}</p>
       <label className="field">
         Tag des Einbaus
         <input type="date" aria-label="Tag des Einbaus" value={form.installedOn} onChange={(e) => setForm({ ...form, installedOn: e.target.value })} />

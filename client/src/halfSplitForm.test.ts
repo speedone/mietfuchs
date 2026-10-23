@@ -1,7 +1,19 @@
 // Die Karte „Heizung nach § 43 GModG“ (Heizung PR 18, #215): Was aus dem Formular in den Rumpf der Anlage wird.
 import { expect, test } from 'vitest'
-import { halfSplitAvailable, halfSplitBody, halfSplitToForm, noticeBody, noticeTenancies, PRIOR_DUTY_QUESTION, type HalfSplitForm } from './halfSplitForm'
+import { HALF_SPLIT_SCOPE, halfSplitAvailable, halfSplitBody, halfSplitToForm, noticeBody, noticeTenancies, PRIOR_DUTY_QUESTION, type HalfSplitForm } from './halfSplitForm'
 import type { HeatingEnergy } from './types'
+import { co2HalfSplitEmergency, co2HalfSplitNewBuildings, halfSplitFirstDay } from '../../shared/law/co2kostaufg.ts'
+import { gmodgHeating43 } from '../../shared/law/gmodg.ts'
+import { germanDate, LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
+
+test('Der Erklärtext nennt die Bedingungen für den Neubau und den Notfalleinbau, mit Daten aus dem Register', () => {
+  const nb = valueAt(co2HalfSplitNewBuildings, LAW_AS_OF)
+  const em = valueAt(co2HalfSplitEmergency, LAW_AS_OF)
+  expect(HALF_SPLIT_SCOPE).toContain(`nach dem ${germanDate(valueAt(gmodgHeating43, LAW_AS_OF).installedAfter)} in ein bestehendes Gebäude`)
+  expect(HALF_SPLIT_SCOPE).toContain(`in einem Neubau, der bis zum ${germanDate(nb.firstUseUntil)} erstmals genutzt wird, außer bei Bauantrag, Antrag auf Zustimmung oder Bauanzeige vor dem ${germanDate(nb.applicationFrom)} (§ 5b CO2KostAufG)`)
+  expect(HALF_SPLIT_SCOPE).toContain(`ab dem ${germanDate(halfSplitFirstDay())} die Hälfte der CO₂-Kosten`)
+  expect(HALF_SPLIT_SCOPE).toContain(`für ${em.windowMonths} Monate ab dem Einbau (§ 5a Abs. 4 CO2KostAufG)`)
+})
 
 const leer = { gmodg43InstalledOn: null, emergencyInstall: null, emergencyPriorDuty: null, newBuildingFirstUse: null, buildingApplicationBefore20260513: null }
 const form = (over: Partial<HalfSplitForm>): HalfSplitForm => ({ ...halfSplitToForm(leer), ...over })
