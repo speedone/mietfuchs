@@ -31,15 +31,15 @@ export function taxGroupOf(category: string): string {
 // Doppelpunkte und keine Zeichen, die Windows ablehnt.
 const safeName = (name: string): string => name.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '-').replace(/\s+/g, ' ').trim()
 
-const euro = (cents: number): string => (cents / 100).toFixed(2).replace('.', ',')
+export const euro = (cents: number): string => (cents / 100).toFixed(2).replace('.', ',')
 
-const csvField = (value: string): string => (/[;"\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value)
+export const csvField = (value: string): string => (/[;"\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value)
 
 // Ein Textfeld, das mit = + - @ (oder Tab, Wagenrücklauf) beginnt, liest eine Tabellenkalkulation
 // als Formel. Rechnungssteller und Beschreibung können aus der KI-Auswertung eines fremden Belegs
 // stammen, deshalb wird entschärft: ein Apostroph davor, wie es die OWASP-Empfehlung zur
 // CSV-Einschleusung vorsieht. Beträge sind keine Textfelder; eine Gutschrift bleibt „-5,00“.
-const textField = (value: string): string => csvField(/^[=+\-@\t\r]/.test(value) ? `'${value}` : value)
+export const textField = (value: string): string => csvField(/^[=+\-@\t\r]/.test(value) ? `'${value}` : value)
 
 // Welche Positionen ins Archiv eines Steuerjahres gehören: **genau die der Steuerübersicht**, also die Positionen der
 // Teile aus `taxPartsFor` (das Jahr der Zahlung aus `outflowShares`, outflow.ts, #255), in der Reihenfolge des

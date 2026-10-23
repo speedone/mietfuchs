@@ -105,6 +105,25 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
   // Das Ziel aus dem Cockpit, sobald die Liste da ist und es darin steht (E45).
   useFocusTarget(focus, 'heatingSettlement', heatingList, (h) => `${h.plantId}|${h.period.key}`, (h) => setTarget({ plantId: h.plantId, period: h.period.key }), onFocusDone)
 
+  // Export der Abrechnung als Daten (#415, Teil 3): Der Server baut die Datei, hier wird sie nur gespeichert.
+  async function exportData(format: 'json' | 'csv') {
+    try {
+      const res = await fetch(withProperty(`${paths.load}/export?format=${format}`, propertyId))
+      if (!res.ok) throw new Error(((await res.json().catch(() => null)) as { error?: string } | null)?.error ?? `Der Export ist fehlgeschlagen (${res.status}).`)
+      const name = /filename\*=UTF-8''([^;]+)/.exec(res.headers.get('content-disposition') ?? '')?.[1]
+      const url = URL.createObjectURL(await res.blob())
+      const a = document.createElement('a')
+      a.href = url
+      a.download = name ? decodeURIComponent(name) : `abrechnung.${format}`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 10000)
+    } catch (e) {
+      toast(errorText(e), 'error')
+    }
+  }
+
   // Die beiden Häkchen zum Druck sind Einstellungen und deshalb ein Entwurf mit einem „Speichern“ für
   // beide (#309). Die Seite zeigt den Entwurf schon an, Vorschau und Druck folgen dem Häkchen; gemerkt
   // für das nächste Öffnen wird er erst mit „Speichern“. Den Vorschlag zur Vorauszahlung wählt seit #415
@@ -498,6 +517,16 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
             {isClosed ? ' Diese Abrechnung ist abgeschlossen; ihr Anschreiben ist eingefroren.' : ''}
           </p>
         </Card>
+      )}
+
+      {data && !empty && !target && (
+        <div className="card no-print">
+          <div className="row center">
+            <span className="muted grow">Die Zahlen dieser Abrechnung als Daten, etwa für ein eigenes Layout (Beträge in JSON in Cent).</span>
+            <button className="btn secondary" onClick={() => void exportData('json')}>Als JSON exportieren</button>
+            <button className="btn secondary" onClick={() => void exportData('csv')}>Als CSV exportieren</button>
+          </div>
+        </div>
       )}
 
       {data && !empty && (

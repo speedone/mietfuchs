@@ -225,6 +225,13 @@ das Leerzeichen davor mit (`{Konto}` ohne IBAN ergibt den bisherigen Satz ohne K
   `GET …/letters` und `PUT …/letters/:tenancyId` unter `/api/settlement/:period` und
   `/api/heating-settlement/:plant/:period`.
 
+- **Export als Daten** (#415 Teil 3, [settlementExport.ts](settlementExport.ts)): `GET /api/settlement/:period/export?format=json|csv`
+  (`?property=` und Zeitraum wie die Abrechnung). Eine Stelle baut die Form aus dem Ergebnis, bei Abschluss aus dem
+  eingefrorenen Stand (409, wenn der keine `statements` hat). JSON: `format: 'mietfuchs-abrechnung'`, `version: 1`,
+  Beträge in Cent; CSV mit den Helfern aus taxReceipts.ts (BOM, Semikolon, deutsche Euro, Apostroph vor = + - @).
+  Nur Zahlen und Namen wie auf der Abrechnung, keine Anschrift, Bank oder Anschreibentexte. Nicht für die
+  Heizkostenabrechnung nach Weg d. Ändert sich die Form, `version` anheben.
+
 ## Der Schnappschuss (#55)
 
 [snapshot.ts](snapshot.ts): Die Berechnung liest den Speicher nicht selbst, sie bekommt einen

@@ -8,6 +8,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Hinzugefügt
 
+- Export der Abrechnung als Daten ([#415](https://github.com/speedone/mietfuchs/issues/415)): Auf der Seite
+  Abrechnung speichern „Als JSON exportieren“ und „Als CSV exportieren“ die Zahlen, die auch gedruckt werden
+  (Zeitraum, Mieter, Wohnung, je Position Gesamtkosten, Schlüssel, Basis und Anteil, Summe, Vorauszahlungen,
+  Saldo). Bei einer abgeschlossenen Abrechnung ist es der eingefrorene Stand. Das JSON trägt eine
+  Versionsangabe und Beträge in Cent als ganze Zahlen; die CSV (BOM, Semikolon, Beträge wie die Übersicht.csv der
+  Steuer) schützt Textfelder gegen Formeln. Keine Anschrift, kein Konto, keine Texte des Anschreibens.
 - Kontrollansicht auf der Seite Abrechnung ([#321](https://github.com/speedone/mietfuchs/issues/321)):
   Aufklappbar und nur am Bildschirm zeigt sie je Kostenposition alle Mieter und die Gründe des
   Vermieters nebeneinander, dazu eine Summe gegen den Rechnungsbetrag, die Kosten, Vorauszahlung und
