@@ -2508,8 +2508,11 @@ app.post('/api/prior-versions/:name/restore', async (req, res) => {
   // Nur ein Name nach dem eigenen Muster, nie ein Pfad (priorVersionTime prüft auch basename).
   if (priorVersionTime(name) === null) return res.status(400).json({ error: 'Diese Vorversion gibt es nicht.' })
   if (priorVersionsRefusal(res)) return
-  const source = path.join(DATA_DIR, PRIOR_DIR, name)
-  if (!fs.existsSync(source)) return res.status(404).json({ error: 'Diese Vorversion gibt es nicht mehr. Bitte laden Sie die Seite neu.' })
+  // Der Pfad entsteht aus der eigenen Liste des Ordners, nie aus der Eingabe: Die Eingabe wählt nur
+  // einen Eintrag aus, den es dort gibt.
+  const found = listPriorVersions(DATA_DIR).find((entry) => entry.name === name)
+  if (!found) return res.status(404).json({ error: 'Diese Vorversion gibt es nicht mehr. Bitte laden Sie die Seite neu.' })
+  const source = path.join(DATA_DIR, PRIOR_DIR, found.name)
   if (restoreRunning) return res.status(409).json({ error: 'Es läuft gerade eine Wiederherstellung. Bitte warten Sie, bis sie fertig ist.' })
   restoreRunning = true
   const staged = `${databaseFile(DATA_DIR)}.restore-${newId()}`
