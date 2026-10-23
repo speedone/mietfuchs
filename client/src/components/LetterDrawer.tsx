@@ -20,6 +20,8 @@ export type LetterSave = {
   texts: Partial<Record<LetterBlock, string | null>>
   // nur, wenn sie sich geändert hat; `null` nimmt die eigene Wahl des Mieters weg (Durchsicht K6)
   adjust?: { mode: LetterAdjustmentMode, cents: number | null } | null
+  // Teil 2: „Anschreiben mitdrucken“, nur wenn es sich geändert hat; am Objekt heißt `null` „wie die Vorgabe“.
+  printLetter?: boolean | null
 }
 
 type Props = {
@@ -35,14 +37,19 @@ type Props = {
   adjust?: { mode: LetterAdjustmentMode, cents: number | null, suggestedCents?: number, own?: boolean, defaultMode?: LetterAdjustmentMode }
   // Mieter: welche Bausteine sein Anschreiben zeigt; die übrigen tragen „erscheint hier nicht“
   shown?: readonly LetterBlock[]
+  // Teil 2: „Anschreiben mitdrucken“. Installation: ja oder nein (`base` fehlt); Objekt: wie die Vorgabe (`null`,
+  // `base` ist die Vorgabe der Einstellungen), ja oder nein. Fehlt es, fragt das Fenster nicht (Mieter).
+  printLetter?: { value: boolean | null, base?: boolean }
   onClose: () => void
   onSave: (save: LetterSave) => Promise<void>
 }
 
 const centsText = (cents: number | null): string => (cents === null ? '' : (cents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }))
 
-export default function LetterDrawer({ open, level, title, intro, base, own, values, adjust, shown, onClose, onSave }: Props) {
-  const initial = (): LetterDraft => ({ own: ownOf(own), adjust: adjust?.mode ?? 'none', adjustOwn: adjust?.own ?? true, customCents: centsText(adjust?.cents ?? null) })
+const PRINT_CHOICES = [{ id: 'inherit', value: null }, { id: 'yes', value: true }, { id: 'no', value: false }] as const
+
+export default function LetterDrawer({ open, level, title, intro, base, own, values, adjust, shown, printLetter, onClose, onSave }: Props) {
+  const initial = (): LetterDraft => ({ own: ownOf(own), adjust: adjust?.mode ?? 'none', adjustOwn: adjust?.own ?? true, customCents: centsText(adjust?.cents ?? null), printLetter: printLetter?.value ?? null })
   const [draft, setDraft] = useState<LetterDraft>(initial)
   // Beim Öffnen der gespeicherte Stand; ein offenes Fenster behält seine Eingaben.
   useEffect(() => { if (open) setDraft(initial()) }, [open])
@@ -72,8 +79,9 @@ export default function LetterDrawer({ open, level, title, intro, base, own, val
         ? !savedOwn || draft.adjust !== adjust.mode || (draft.adjust === 'custom' && cents !== adjust.cents)
         : savedOwn)
       const adjustSave = draft.adjustOwn ? { mode: draft.adjust, cents } : null
+      const printChanged = printLetter !== undefined && (draft.printLetter ?? null) !== printLetter.value
       try {
-        await onSave({ texts: textChanges(ownOf(own), draft.own), ...(adjustChanged ? { adjust: adjustSave } : {}) })
+        await onSave({ texts: textChanges(ownOf(own), draft.own), ...(adjustChanged ? { adjust: adjustSave } : {}), ...(printChanged ? { printLetter: draft.printLetter ?? null } : {}) })
       } catch (e) {
         errors.set(`Nicht gespeichert: ${errorText(e)}`)
       }
@@ -110,6 +118,27 @@ export default function LetterDrawer({ open, level, title, intro, base, own, val
     >
       <p className="muted">{intro}</p>
       {longLetter && <NoticeBox level="warning" title="Anschreiben länger als eine Seite" action="Mit diesen Texten wird das Anschreiben voraussichtlich länger als eine Seite und druckt auf der nächsten weiter. Soll es auf eine Seite passen, kürzen Sie die Texte." />}
+      {printLetter && printLetter.base === undefined && (
+        <div className="letter-edit">
+          <label className="checkline">
+            <input type="checkbox" checked={draft.printLetter !== false} onChange={(e) => setDraft((d) => ({ ...d, printLetter: e.target.checked }))} />{' '}
+            Anschreiben mitdrucken
+          </label>
+          <p className="muted text-s m-0">Ohne Anschreiben beginnt die Aufstellung mit Anschrift, Datum und Betreff; Ergebnis, Anpassung und Belegeinsicht stehen dann unter der Tabelle. Ein Objekt kann abweichen, beim Drucken lässt es sich umschalten.</p>
+        </div>
+      )}
+      {printLetter && printLetter.base !== undefined && (
+        <Field label="Anschreiben mitdrucken" width="m" hint="Beim Drucken lässt es sich für den einen Druck umschalten.">
+          <select
+            value={PRINT_CHOICES.find((c) => c.value === (draft.printLetter ?? null))?.id ?? 'inherit'}
+            onChange={(e) => setDraft((d) => ({ ...d, printLetter: PRINT_CHOICES.find((c) => c.id === e.target.value)?.value ?? null }))}
+          >
+            <option value="inherit">{`Wie in den Einstellungen (${printLetter.base ? 'ja' : 'nein'})`}</option>
+            <option value="yes">Ja</option>
+            <option value="no">Nein</option>
+          </select>
+        </Field>
+      )}
       {adjust && <fieldset className="no-connection">
         <legend className="field-legend">Anpassung der Vorauszahlung (§ 560 Abs. 4 BGB)</legend>
         {modes.map((m) => (

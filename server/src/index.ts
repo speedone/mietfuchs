@@ -44,15 +44,15 @@ import type { Database, Executor } from './db/client.ts'
 import { databaseProblem } from './db/errors.ts'
 import { readHeatingPlants, readProperties, readSettings, readStock, readTenancies, readUnits, type Stock } from './db/read.ts'
 import { lettersFor, letterDoc } from './letter.ts'
-import { readInstallationLetterTexts, readPropertyLetterTexts, readTenancyLetters, saveInstallationLetterTexts, savePropertyLetterTexts, saveTenancyLetter } from './db/letters.ts'
+import { savePropertyPrintLetter, readInstallationLetterTexts, readPropertyLetterTexts, readTenancyLetters, saveInstallationLetterTexts, savePropertyLetterTexts, saveTenancyLetter } from './db/letters.ts'
 import { DEFAULT_LETTER_TEXTS, lettersOf, parseLetterAdjustment, parseLetterTexts } from '../../shared/letter.ts'
 import {
   closeHeatingSettlement, findClosedHeatingSettlement, heatingSettlementHistory, reopenHeatingSettlement, separateHeatingSettlements, setHeatingSentAt,
 } from './db/heatingSettlements.ts'
 import {
-  changeTenant, closeSettlement, createEntity, createProperty, ContractError, CrossPropertyError, LocalRentError, findClosedSettlement, HeatingError, PaidOnQuestion, PaymentError, PeriodConflict, PeriodError, StaleTenancyError, invoiceFilesInUse, previewCostItemSplit, saveCostItemSplit,
+  changeTenant, closeSettlement, createEntity, createProperty, ContractError, CrossPropertyError, LocalRentError, LetterInputError, findClosedSettlement, HeatingError, PaidOnQuestion, PaymentError, PeriodConflict, PeriodError, StaleTenancyError, invoiceFilesInUse, previewCostItemSplit, saveCostItemSplit,
   listProperties, removeEntity, removeProperty, reopenSettlement, setSentAt, settlementHistory, updateEntity, updateProperty,
-  TenantChangeError, unitDependents, writeSettings, writeSettingsIn, type CollectionName,
+  TenantChangeError, unitDependents, writeSettings, writeSettingsIn, nullableBoolean, nullableLine, type CollectionName,
 } from './db/repository.ts'
 import { removeInterimGap, saveDistribution, saveInterimGap, SelfItemsError, setUpSelf } from './db/heatingSelf.ts'
 import { saveHeatingInfo, saveHeatingRules } from './db/heatingInfo.ts'
@@ -287,6 +287,14 @@ app.put('/api/settings', async (req, res) => {
     applyAiChanges(next, body, AI_ENV)
     // Die IBAN des Vermieters nur, wenn sie neu gesetzt oder geändert wird (#279, siehe iban.ts).
     if (Object.hasOwn(changes, 'iban')) changes.iban = acceptIban(changes.iban, storedSettings.iban, IBAN_LABELS.settings) ?? ''
+    // Teil 2 von #415: Anschrift und Kontakt als Zeile, die Schalter des Drucks als ja/nein. Eine Angabe anderer Art
+    // ist eine 400, statt still in eine Spalte zu geraten.
+    for (const [key, label] of [['landlordAddress', 'Die Anschrift des Vermieters'], ['landlordContact', 'Der Kontakt des Vermieters']] as const) {
+      if (Object.hasOwn(changes, key)) changes[key] = nullableLine(changes[key], label) ?? ''
+    }
+    for (const [key, label] of [['printLetter', '„Anschreiben mitdrucken“'], ['printFooter', '„Fußzeile mit Kontakt und Bank“']] as const) {
+      if (Object.hasOwn(changes, key) && changes[key] !== null && typeof changes[key] !== 'boolean') throw new LetterInputError(`${label} ist ja oder nein.`)
+    }
   } catch (err) {
     return res.status(statusOf(err)).json({ error: messageOf(err) })
   }
@@ -890,7 +898,7 @@ app.get('/api/heating-settlement/:plant/:period', async (req, res) => {
     deadline: settlementDeadline(target.period),
     scope: { kind: 'heating' as const, plantId: target.plant.id, plantName: target.plant.name },
   }
-  const doc = letterDoc(target.period.key, target.plant.id)
+  const doc = letterDoc(target.period.key, { plantId: target.plant.id })
   if (closed) {
     const stand = closed.settlement !== null && typeof closed.settlement === 'object' ? closed.settlement : {}
     const deviation = compareWithFrozen(closed.settlement, () => computeHeating(stock, target.plant, target.period), frame.deadline, today())
@@ -920,7 +928,7 @@ app.post('/api/heating-settlement/:plant/:period/close', async (req, res) => {
       async (tx) => computeHeating(await readStock(tx), target.plant, target.period),
       async (tx, settlement) => closeHeatingSettlement(tx, {
         id: newId(), plantId: target.plant.id, period: target.period.key, closedAt: new Date().toISOString(), sentAt,
-        settlement: { ...settlement, letters: await openLetters(tx, settlement, target.plant.propertyId, letterDoc(target.period.key, target.plant.id)) },
+        settlement: { ...settlement, letters: await openLetters(tx, settlement, target.plant.propertyId, letterDoc(target.period.key, { plantId: target.plant.id })) },
       }),
     )
     return { schonDa: false, label, question }
@@ -1003,7 +1011,7 @@ app.get('/api/settlement/:period', async (req, res) => {
     return res.json({ selfUsedShareCents: 0, ...stand, ...frame, closed: { closedAt: closed.closedAt, sentAt: closed.sentAt }, deviation, letters })
   }
   const computed = computeSettlement(snapshotFor(stock, property, period), { asOf: today() })
-  res.json({ ...computed, closed: null, letters: await readData((db) => openLetters(db, computed, property, period.key)) })
+  res.json({ ...computed, closed: null, letters: await readData((db) => openLetters(db, computed, property, letterDoc(period.key, { propertyId: property }))) })
 })
 
 // ---------- Anschreiben (#415) ----------
@@ -1039,6 +1047,9 @@ app.get('/api/letter-texts', async (req, res) => {
       installation: await readInstallationLetterTexts(db),
       property: property === null ? null : await readPropertyLetterTexts(db, property),
       adjustDefault: storedSettings.printAdjustSuggestion === false ? 'none' : 'suggestion',
+      // Teil 2: „Anschreiben mitdrucken“ der Installation (ohne Angabe ja) und am Objekt (`null`: wie die Vorgabe).
+      printLetter: storedSettings.printLetter ?? true,
+      propertyPrintLetter: property === null ? null : (await listProperties(db)).find((p) => p.id === property)?.printLetter ?? null,
     }
   })
   res.json(result)
@@ -1050,8 +1061,15 @@ app.put('/api/letter-texts', async (req, res) => {
   const { body, texts } = lettersBody(req)
   const adjust: unknown = body.adjustDefault
   if (adjust !== undefined && adjust !== 'none' && adjust !== 'suggestion') return res.status(400).json({ error: 'Die Vorgabe für die Anpassung der Vorauszahlung ist „keine“ oder „Vorschlag“.' })
+  // Teil 2: „Anschreiben mitdrucken“ als Vorgabe der Installation; hier gibt es kein „wie die Vorgabe“.
+  const printLetter: unknown = body.printLetter
+  if (printLetter !== undefined && typeof printLetter !== 'boolean') return res.status(400).json({ error: '„Anschreiben mitdrucken“ ist ja oder nein.' })
   // Texte und Vorgabe in einer Transaktion: Scheitert eines, bleibt beides beim Alten (Durchsicht K7).
-  const next = adjust === undefined ? null : { ...structuredClone(storedSettings), printAdjustSuggestion: adjust === 'suggestion' }
+  const next = adjust === undefined && printLetter === undefined ? null : {
+    ...structuredClone(storedSettings),
+    ...(adjust === undefined ? {} : { printAdjustSuggestion: adjust === 'suggestion' }),
+    ...(printLetter === undefined ? {} : { printLetter }),
+  }
   await writeData((db) => db.transaction(async (tx) => {
     await saveInstallationLetterTexts(tx, texts)
     if (next) await writeSettingsIn(tx, next)
@@ -1061,11 +1079,14 @@ app.put('/api/letter-texts', async (req, res) => {
 })
 
 app.put('/api/properties/:id/letter-texts', async (req, res) => {
-  const { texts } = lettersBody(req)
-  await writeData(async (db) => {
-    if (!(await listProperties(db)).some((p) => p.id === req.params.id)) throw new RouteProblem(404, 'Dieses Objekt gibt es nicht (mehr). Bitte laden Sie die Seite neu.')
-    await savePropertyLetterTexts(db, req.params.id, texts)
-  })
+  const { body, texts } = lettersBody(req)
+  // Teil 2: „Anschreiben mitdrucken“ am Objekt, `null` heißt „wie die Vorgabe“; mit den Texten in einer Transaktion.
+  const printLetter = Object.hasOwn(body, 'printLetter') ? nullableBoolean(body.printLetter, '„Anschreiben mitdrucken“') : undefined
+  await writeData((db) => db.transaction(async (tx) => {
+    if (!(await listProperties(tx)).some((p) => p.id === req.params.id)) throw new RouteProblem(404, 'Dieses Objekt gibt es nicht (mehr). Bitte laden Sie die Seite neu.')
+    await savePropertyLetterTexts(tx, req.params.id, texts)
+    if (printLetter !== undefined) await savePropertyPrintLetter(tx, req.params.id, printLetter)
+  }))
   res.json({ ok: true })
 })
 
@@ -1081,12 +1102,12 @@ async function letterTarget(db: Database, req: Request): Promise<{ doc: string, 
   if (typeof plantId === 'string') {
     const target = await heatingTargetOf(db, req)
     const closed = !!(await findClosedHeatingSettlement(db, target.plant.id, target.period.key))
-    return { doc: letterDoc(target.period.key, target.plant.id), closed, tenancyIds: tenanciesOf(target.plant.propertyId) }
+    return { doc: letterDoc(target.period.key, { plantId: target.plant.id }), closed, tenancyIds: tenanciesOf(target.plant.propertyId) }
   }
   const propertyId = await propertyOf(db, req)
   const period = await periodOf(db, req, propertyId)
   const closed = !!(await findClosedSettlement(db, propertyId, period.key))
-  return { doc: period.key, closed, tenancyIds: tenanciesOf(propertyId) }
+  return { doc: letterDoc(period.key, { propertyId }), closed, tenancyIds: tenanciesOf(propertyId) }
 }
 
 const tenancyLettersRoute = async (req: Request, res: Response) => {
@@ -1216,7 +1237,7 @@ app.post('/api/settlement/:period/close', async (req, res) => {
       // Mit den Zahlen friert das Anschreiben ein (#415), wie die Seite es gerade zeigt.
       async (tx, settlement) => closeSettlement(tx, {
         id: newId(), propertyId: property, period: period.key, closedAt: new Date().toISOString(), sentAt,
-        settlement: { ...settlement, letters: await openLetters(tx, settlement, property, period.key) },
+        settlement: { ...settlement, letters: await openLetters(tx, settlement, property, letterDoc(period.key, { propertyId: property })) },
       }),
     )
     return { schonDa: false, label, question }
@@ -2890,7 +2911,7 @@ app.use('/api', (err: unknown, req: Request, res: Response, next: NextFunction) 
   // Das Zahlungsdatum (#255 PR 3): die Rückfrage mit eigenem Kennzeichen, wie beim Betriebsstrom.
   if (err instanceof PaidOnQuestion) return res.status(409).json({ error: err.message, question: 'paidOn' })
   // Ablehnungen, deren Meldung schon für den Nutzer geschrieben ist (#92).
-  if (err instanceof RouteProblem || err instanceof CrossPropertyError || err instanceof PeriodError || err instanceof PeriodConflict || err instanceof TenantChangeError || err instanceof BookingRefusal || err instanceof HeatingError || err instanceof StaleTenancyError || err instanceof LawOverrideError || err instanceof IbanRefusal || err instanceof PaymentError || err instanceof ContractError || err instanceof LocalRentError) {
+  if (err instanceof RouteProblem || err instanceof CrossPropertyError || err instanceof PeriodError || err instanceof PeriodConflict || err instanceof TenantChangeError || err instanceof BookingRefusal || err instanceof HeatingError || err instanceof LetterInputError || err instanceof StaleTenancyError || err instanceof LawOverrideError || err instanceof IbanRefusal || err instanceof PaymentError || err instanceof ContractError || err instanceof LocalRentError) {
     return res.status(err.status).json({ error: err.message })
   }
   // **Fehler der Datenbank bekommen ihre eigene Meldung** (db/errors.ts). Ohne diese Zeile käme

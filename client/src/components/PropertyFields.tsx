@@ -47,7 +47,7 @@ export default function PropertyFields({ form, setForm, errors, storedIban }: {
         <summary>Abweichender Vermieter oder Bankverbindung</summary>
         <p className="muted">
           Etwa beim Haus der Eltern oder einer Erbengemeinschaft. Ohne Haken, und für jedes leere Feld,
-          gelten Vermieter, IBAN und Zahlungsfrist aus den Einstellungen.
+          gelten Vermieter, IBAN, Zahlungsfrist, Anschrift und Kontakt aus den Einstellungen.
         </p>
         <label className="checkline">
           <input type="checkbox" checked={form.own} onChange={(e) => setForm({ ...form, own: e.target.checked })} />
@@ -61,6 +61,13 @@ export default function PropertyFields({ form, setForm, errors, storedIban }: {
             <IbanInput label="IBAN" value={form.iban} stored={storedIban} onChange={(iban) => setForm({ ...form, iban })} {...errors.field('iban')} />
             <Field label="Zahlungsfrist (Tage)" width="s" {...errors.field('paymentDeadlineDays')}>
               <input inputMode="numeric" value={form.paymentDeadlineDays} onChange={(e) => setForm({ ...form, paymentDeadlineDays: e.target.value })} />
+            </Field>
+            {/* Teil 2 von #415: Rücksendeangabe und Fußzeile des Briefs */}
+            <Field label="Anschrift des Vermieters" width="l">
+              <input value={form.landlordAddress} onChange={(e) => setForm({ ...form, landlordAddress: e.target.value })} placeholder="Straße Nr., PLZ Ort" />
+            </Field>
+            <Field label="Kontakt" width="l">
+              <input value={form.landlordContact} onChange={(e) => setForm({ ...form, landlordContact: e.target.value })} placeholder="Telefon oder E-Mail" />
             </Field>
           </div>
         )}

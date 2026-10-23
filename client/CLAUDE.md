@@ -137,6 +137,25 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   sicheres Merkmal „ausgebaut“, sie bleiben auf dem Blatt. **Entscheidung**: `value` des Fensters ist die Auswahl,
   wer ein Häkchen ändert und schließt, wird gefragt (wie bei jedem Fenster). Die Ausnahme vom Verb „Anlegen“/
   „Speichern“ („Drucken“, nur in ReadingSheetDrawer.tsx) steht in `DRAWER_VERB_EXCEPTIONS` (S16).
+- **Teil 2 von #415: ohne Anschreiben, Fußvermerk, Seitenzahl.** „Anschreiben mitdrucken“ hat eine Vorgabe in der
+  Vorlage der Installation (Häkchen im Seitenfenster) und am Objekt (Auswahl „wie in den Einstellungen“, ja, nein, im
+  Seitenfenster der Objektvorlage); beides liefert `/api/letter-texts` (`printLetter`, `propertyPrintLetter`), es gilt
+  `printsLetter` (shared/letter.ts). Das Häkchen auf der Seite Abrechnung gilt nur für diesen Druck und speichert nichts.
+  Ohne Anschreiben zeichnet `StatementHead` (Letter.tsx) denselben Kopf mit denselben Druckmaßen (`.letter.letter-top`,
+  danach beginnt die Aufstellung auf der Höhe des Betreffs), der Betreff ist die Überschrift, und `statementBlocks`
+  setzt Ergebnis, Anpassung und Belegeinsicht unter die Tabelle (`p.statement-letter-text`), aus den eingefrorenen
+  Texten. **Fußvermerk je Druckseite**: `PrintPages` legt eine echte `<table role="presentation">` um die Aufstellung,
+  denn nur den `tfoot` einer echten Tabelle wiederholen Browser auf jeder Seite (eine Tabelle aus CSS nicht, nachgemessen);
+  am Bildschirm ist die Hülle `display: block` und der Fuß weg, und weil index.css jede Tabellenzeile zusammenhält, darf
+  ihre eine Zeile umbrechen. Table.test.ts lässt genau diese Hülle zu. **„Seite x von y“** setzt `startPrint` mit
+  `pageNumbers` nur beim Druck einer Abrechnung als Randfeld (`@bottom-right`, Chromium ab 131): Ein Zähler je Mieter
+  lässt sich in Chromium nicht zurücksetzen, beim Druck aller zählte er also über alle. **Fußzeile mit Kontakt und
+  Bank** ist eine Druckeinstellung (`printFooter`), ihr Text (`sender.footer`) friert mit dem Anschreiben ein; ein
+  Abschluss ohne `sender.footer` druckt keine. Mit Fußzeile hält der Brieftext unten Platz frei (`.letter-with-footer`),
+  sonst überdruckte sie bei einem Brief über zwei Seiten die Unterschrift (letterCss.test.ts). Die Belegkopien liegen in
+  der Hülle und tragen den Fußvermerk. Die Rücksendeangabe bricht in höchstens zwei Zeilen um; über `RETURN_LINE_MAX`
+  (110 Zeichen, nachgemessen) warnt die Seite (`returnLineTooLong`). Eine vor #415 abgeschlossene Abrechnung bekommt
+  nichts davon.
 - **Druckkopf**: `letterhead` lässt einen Objektnamen weg, der schon in der Adresse steht, und ist die
   Rücksendeangabe des Anschreibens; Anschrift des Mieters (`recipientLines`); fehlt nach Auszug die neue Anschrift,
   warnt die Seite (`printsFormerAddress`). Der Rechenweg ([CalcSteps.tsx](src/components/CalcSteps.tsx)) ist immer

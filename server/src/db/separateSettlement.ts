@@ -39,6 +39,7 @@ import { monthsText, passedDeadlineText } from './periodChange.ts'
 import { readClosedSettlements, readCostItems, readHeatingPlants, readProperties, readStock, readTenancies, readUnits } from './read.ts'
 import { tenancyMonths } from '../calc.ts'
 import { PeriodError } from './repository.ts'
+import { dropOpenHeatingLetters } from './letters.ts'
 import { closedHeatingSettlements, heatingPlants, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans, prepaymentOverrides, prepayments } from './schema.ts'
 
 type Ctx = {
@@ -475,6 +476,9 @@ async function writeSeparateIn(tx: Transaction, plantId: string, p: Plan, { step
         if (p.span.keep) await tx.update(heatingSeparateSpans).set({ until: p.until }).where(and(eq(heatingSeparateSpans.plantId, plantId), eq(heatingSeparateSpans.from, p.span.from)))
         else await tx.delete(heatingSeparateSpans).where(and(eq(heatingSeparateSpans.plantId, plantId), eq(heatingSeparateSpans.from, p.span.from)))
         await tx.delete(heatingPrepaymentOverrides).where(and(eq(heatingPrepaymentOverrides.plantId, plantId), gte(heatingPrepaymentOverrides.period, p.until)))
+        // Durchsicht zu PR #427, K4: Die eigenen Anschreiben der Heizkostenabrechnungen ab hier gibt es nicht mehr; sie
+        // tauchten sonst beim nächsten Einschalten wieder auf.
+        await dropOpenHeatingLetters(tx, plantId, p.until)
       }
       for (const e of p.overrides) {
         const total = objectOr(totalAnswers[e.tenancy.id])[e.period.key]

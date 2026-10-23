@@ -477,6 +477,13 @@
       "when": 1792790711750,
       "tag": "0067_nutzungswechsel",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "6",
+      "when": 1792793842871,
+      "tag": "0068_anschreiben_teil2",
+      "breakpoints": true
     }
   ]
 }

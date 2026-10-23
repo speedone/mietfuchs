@@ -12,6 +12,7 @@ import { ErrorSummary, useFormError } from '../components/ErrorSummary'
 import { ibanChanged, ibanForSave, ibanToInput } from '../ibanField'
 import { IBAN_LABELS } from '../../../shared/iban.ts'
 import Card from '../components/Card'
+import Field from '../components/Field'
 import PriorVersionsCard from '../components/PriorVersionsCard'
 import LetterTemplateCard from '../components/LetterTemplateCard'
 
@@ -25,13 +26,18 @@ export default function Einstellungen({ settings, reload, update }: Props) {
     landlordName: settings.landlordName ?? '',
     iban: ibanToInput(settings.iban),
     paymentDeadlineDays: String(settings.paymentDeadlineDays ?? 30),
+    // Teil 2 von #415: Rücksendeangabe und Fußzeile des Briefs
+    landlordAddress: settings.landlordAddress ?? '',
+    landlordContact: settings.landlordContact ?? '',
   })
   // Ungespeicherte Vermieterdaten: Ein Objektwechsel stellt die Seiten neu auf und fragt deshalb
   // vorher (#145).
   useOpenForm(
     form.landlordName !== (settings.landlordName ?? '') ||
       ibanChanged(form.iban, settings.iban) ||
-      form.paymentDeadlineDays !== String(settings.paymentDeadlineDays ?? 30),
+      form.paymentDeadlineDays !== String(settings.paymentDeadlineDays ?? 30) ||
+      form.landlordAddress !== (settings.landlordAddress ?? '') ||
+      form.landlordContact !== (settings.landlordContact ?? ''),
   )
   const [restoring, setRestoring] = useState(false)
   const [restoreMsg, setRestoreMsg] = useState('')
@@ -116,6 +122,14 @@ export default function Einstellungen({ settings, reload, update }: Props) {
             Zahlungsfrist (Tage)
             <input inputMode="numeric" value={form.paymentDeadlineDays} onChange={(e) => setForm({ ...form, paymentDeadlineDays: e.target.value })} />
           </label>
+        </div>
+        <div className="row">
+          <Field label="Anschrift des Vermieters" width="l" hint="Für Rücksendeangabe, Briefkopf und Fußzeile des Briefs. Ohne Angabe nennt die Rücksendeangabe die Adresse des Objekts; Briefkopf und Fußzeile bleiben ohne Anschrift.">
+            <input value={form.landlordAddress} onChange={(e) => setForm({ ...form, landlordAddress: e.target.value })} placeholder="Straße Nr., PLZ Ort" />
+          </Field>
+          <Field label="Kontakt" width="l" hint="Optional: Telefon oder E-Mail für die Fußzeile mit Kontakt und Bank.">
+            <input value={form.landlordContact} onChange={(e) => setForm({ ...form, landlordContact: e.target.value })} placeholder="z. B. Tel. 0123 456789" />
+          </Field>
         </div>
         {/* Sichtprüfung E52: Speichern steht unter den Feldern wie in den anderen Karten */}
         <div className="row">

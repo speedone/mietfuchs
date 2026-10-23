@@ -534,7 +534,8 @@ test('Druckeinstellungen: Anklicken sendet nichts, „Speichern“ sendet beide 
   fireEvent.click(speichern)
   fireEvent.click(speichern)
   await waitFor(() => expect(screen.queryByRole('button', { name: 'Speichern (Druckeinstellungen)' })).toBeNull(), SLOW)
-  expect(puts).toEqual([{ printFoldMarks: true, printAttachments: true }])
+  // Die Fußzeile (#415, Teil 2) gehört zu denselben Druckeinstellungen und geht unverändert mit.
+  expect(puts).toEqual([{ printFoldMarks: true, printAttachments: true, printFooter: false }])
   expect(reload).toHaveBeenCalledTimes(1)
 })
 

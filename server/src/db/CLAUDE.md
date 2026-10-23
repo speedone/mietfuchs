@@ -80,7 +80,8 @@ es eine Meldung, abgebrochen wird nie.
   auch wenn spätere Versionen anders rechnen. Seit #415 trägt er auch das Anschreiben (`letters`).
 - **Texte des Anschreibens** (#415, [letters.ts](letters.ts)): eine Tabelle je Ebene, Zeilen je Baustein statt
   Spalten (alle Bausteine haben dieselbe Gestalt); die Datenbank sichert nur den Baustein, die Platzhalter prüft
-  shared/letter.ts vor dem Schreiben. Siehe server/src/CLAUDE.md.
+  shared/letter.ts vor dem Schreiben. Der Schlüssel `doc` je Mieter nennt seit Schritt 0068 das Objekt
+  (`<Objekt>:<Zeitraum>`, Datenanweisung im selben Schritt). Siehe server/src/CLAUDE.md.
 - **[schema.test.ts](../../test/schema.test.ts)** hält Schema und `shared/types.ts` zur
   Übersetzungszeit zusammen (die Typen bleiben von Hand geschrieben, der Browser kennt kein Drizzle).
 

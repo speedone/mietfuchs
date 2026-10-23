@@ -610,3 +610,16 @@ test('Nutzungswechsel: die Liste nennt den Tag und die neue Nutzung', async () =
   )
   expect(await screen.findByText('vermietet bis 30.06.2025 · ab 01.07.2025 Eigennutzung', undefined, SLOW)).toBeTruthy()
 })
+
+// ---------- Anrede im Brief (#415, Teil 2) ----------
+
+test('Anrede im Brief: Vorschlag aus dem Namen, gespeichert mit dem Mietverhältnis, leer als null', async () => {
+  page([tenancy('t1', 'Müller', { letterSalutation: 'Sehr geehrte Frau Müller' })])
+  await openTenancy('Müller')
+  const field = screen.getByLabelText<HTMLInputElement>(/Anrede im Brief/)
+  expect(field.value).toBe('Sehr geehrte Frau Müller')
+  expect(field.placeholder).toBe('Guten Tag Müller,')
+  fireEvent.change(field, { target: { value: '' } })
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Speichern' }))
+  await vi.waitFor(() => expect(sent.find((s) => s.method === 'PUT')?.body).toMatchObject({ letterSalutation: null }))
+})

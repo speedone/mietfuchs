@@ -32,6 +32,7 @@ import Table from '../components/Table'
 import HeatingCard from '../components/HeatingCard'
 import { useFocusTarget, type FocusProps } from '../focus'
 import { tenancyStamp } from '../../../shared/tenancyStamp.ts'
+import { salutationOf } from '../../../shared/letter.ts'
 import { NoticeBox } from '../components/Notice'
 
 type Props = {
@@ -58,6 +59,7 @@ type TenancyForm = {
   email: string
   phone: string
   correspondenceAddress: string
+  letterSalutation: string // Anrede im Brief (#415, Teil 2)
   iban: string
   contractDate: string
   deposit: string
@@ -76,7 +78,7 @@ const EMPTY_UNIT: UnitForm = EMPTY_UNIT_FORM
 
 // Leere erweiterte Mieter-Felder — bei „neu“ und (mit Werten) beim Bearbeiten verwendet
 const EMPTY_TENANCY_EXTRA = {
-  email: '', phone: '', correspondenceAddress: '', iban: '', contractDate: '', deposit: '', depositStatus: 'offen' as DepositStatus, notes: '',
+  email: '', phone: '', correspondenceAddress: '', letterSalutation: '', iban: '', contractDate: '', deposit: '', depositStatus: 'offen' as DepositStatus, notes: '',
   costModel: 'settlement' as CostModel, heatingModel: 'settlement' as HeatingModel, selfSupplyKind: '' as SelfSupplyKind | '',
   flatRates: [] as { from: string; amount: string }[],
   heatingPrepayments: [] as { from: string; amount: string }[],
@@ -116,6 +118,7 @@ function tenancyToForm(t: Tenancy): TenancyForm {
     email: t.email ?? '',
     phone: t.phone ?? '',
     correspondenceAddress: t.correspondenceAddress ?? '',
+    letterSalutation: t.letterSalutation ?? '',
     iban: ibanToInput(t.iban),
     contractDate: t.contractDate ?? '',
     deposit: t.depositCents != null ? (t.depositCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }) : '',
@@ -299,6 +302,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       email: tenForm.email.trim() || null,
       phone: tenForm.phone.trim() || null,
       correspondenceAddress: tenForm.correspondenceAddress.trim() || null,
+      letterSalutation: tenForm.letterSalutation.trim() || null,
       iban: iban.value || null,
       contractDate: tenForm.contractDate || null,
       depositCents,
@@ -747,6 +751,10 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                 </Field>
                 <Field label="Abweichende Anschrift (Schriftverkehr)">
                   <input value={tenForm.correspondenceAddress} onChange={(e) => setTenForm({ ...tenForm, correspondenceAddress: e.target.value })} placeholder="z. B. neue Adresse nach Auszug" />
+                </Field>
+                {/* #415, Teil 2: die Anrede im Anschreiben ({Anrede}); ohne Eintrag gilt der Vorschlag im Feld. */}
+                <Field label="Anrede im Brief" width="l" hint="Etwa „Sehr geehrte Frau Becker“; ein Komma am Ende ergänzt Mietfuchs. Ohne Eintrag steht im Brief, was im Feld vorgeschlagen ist.">
+                  <input value={tenForm.letterSalutation} onChange={(e) => setTenForm({ ...tenForm, letterSalutation: e.target.value })} placeholder={salutationOf(tenForm.tenantName.trim() || 'Name', '')} />
                 </Field>
                 {/* Je Mietverhältnis neu (Durchsicht zu #279): Der Dialog bleibt offen, wenn „Hier beheben →“
                     oder ein Klick in der Liste ein anderes öffnet, und das Feld wüsste sonst noch,

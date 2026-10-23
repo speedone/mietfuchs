@@ -364,6 +364,8 @@ export default function PeriodCard({ onChanged }: { onChanged?: () => Promise<vo
                 <p key={m.costItemId}>„{m.description}“ ({fmtEuro(m.amountCents)}) wird nach Tagen aufgeteilt: {m.parts.map((p) => `${p.label}: ${fmtEuro(p.amountCents)}`).join(', ')}.</p>
               ))}
               {preview.assessments.map((a) => <p key={a.assessmentId} className="muted">Belegauswertung „{a.file}“: künftig {a.toLabel}.</p>)}
+              {/* Integrationsdurchsicht zu #415: eigene Anschreiben je Mieter eines Zeitraums, der sich ändert, entfallen. */}
+              {(preview.letters ?? []).map((t) => <p key={t} className="muted">{t}</p>)}
               <PreviewAnswers preview={preview} answers={answers} onChange={setAnswers} />
               <EffectsList effects={preview.effects} earliest={earliestOpenChange(localToday())} />
               {passed && (

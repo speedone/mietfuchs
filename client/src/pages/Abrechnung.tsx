@@ -13,7 +13,7 @@ import { useOpenForm, useProperty, withProperty } from '../property'
 import { useConfirmDiscard, useDraft } from '../useDraft'
 import DraftActions from '../components/DraftActions'
 import { FieldMessage } from '../components/Field'
-import { effectiveLandlord, letterhead, printsFormerAddress, recipientLines } from '../landlord'
+import { effectiveLandlord, footerLine, letterhead, printsFormerAddress, recipientLines, returnLine } from '../landlord'
 import { localToday } from '../periodForm'
 import { landlordReasonText } from '../landlordReasons'
 import { notSettledText } from '../tenancyModel'
@@ -42,15 +42,15 @@ import { closeWithQuestions } from '../fuelClose'
 import { closeErrorsQuestion, closeMessage, completenessQuestion, DRAFT_MARK, printQuestion, sameErrors, showsDraftMark, type ErrorsQuestion } from '../despiteErrors'
 import { co2Block } from '../co2View'
 import { calendarPeriod } from '../../../shared/period.ts'
-import { mergeLetterTexts } from '../../../shared/letter.ts'
+import { mergeLetterTexts, printsLetter, renderLetterText, statementBlocks } from '../../../shared/letter.ts'
 import Card from '../components/Card'
 import ControlView from '../components/ControlView'
-import Letter from '../components/Letter'
+import Letter, { PrintPages, StatementHead } from '../components/Letter'
 import { LegacyHead, legacyHeadLine, legacyReceiptsText, LegacyResult } from '../components/LegacyStatement'
 import { exceedsOnePage } from '../../../shared/letter.ts'
 import { suggestionWithoutHeating } from '../heatingSettlementView'
 import LetterDrawer, { type LetterSave } from '../components/LetterDrawer'
-import { asTemplates, letterOf, letterParagraphs, resultRows } from '../letterView'
+import { asTemplates, letterOf, letterParagraphs, RETURN_LINE_MAX, resultRows, returnLineTooLong } from '../letterView'
 
 type Props = {
   settings: Settings | null
@@ -66,6 +66,8 @@ type Props = {
 
 // Der Satz neben einem geänderten Druck-Häkchen (Durchsicht zu #309, KANN 9).
 export const PRINT_DRAFT_NOTE = 'Gilt schon für diese Vorschau und den Druck; mit „Speichern“ für künftige Abrechnungen gemerkt.'
+// Teil 2 von #415: „Anschreiben mitdrucken“ gilt hier nur für diesen Druck.
+export const LETTER_CHOICE_NOTE = 'Anschreiben: gilt nur für diesen Druck. Die Vorgabe ändern Sie mit „Vorlage für dieses Objekt bearbeiten“ oder in den Einstellungen.'
 
 export default function Abrechnung({ settings, units, tenancies, reload, onNavigate, focus, onFocusDone }: Props) {
   const { key, label, param, calendar, period, rules } = usePeriod()
@@ -110,14 +112,22 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
   const printDraft = useDraft({
     printFoldMarks: settings?.printFoldMarks === true, // Standard: aus
     printAttachments: settings?.printAttachments === true, // Standard: aus
+    printFooter: settings?.printFooter === true, // Teil 2: Fußzeile mit Kontakt und Bank, Standard: aus
   })
   const printFoldMarks = printDraft.value.printFoldMarks
   const printAttachments = printDraft.value.printAttachments
+  const printFooter = printDraft.value.printFooter
   // Das Anschreiben (#415): die Vorlagen der Ebenen und die Anpassungen je Mieter, zum Bearbeiten. Was
   // gedruckt wird, liefert der Server mit der Abrechnung (`letters`).
   const [templates, setTemplates] = useState<LetterTemplates | null>(null)
   const [tenancyLetters, setTenancyLetters] = useState<Record<string, TenancyLetter>>({})
   const [letterEdit, setLetterEdit] = useState<{ kind: 'property' } | { kind: 'tenancy', tenancyId: string } | null>(null)
+  // Teil 2: Anschreiben mitdrucken. Die Vorgabe steht am Objekt bzw. in den Einstellungen (geladen mit den Vorlagen);
+  // hier lässt sie sich für diesen Druck umschalten, gespeichert wird dabei nichts. `null` heißt „die Vorgabe gilt“.
+  const letterDefault = printsLetter(templates ? { printLetter: templates.propertyPrintLetter ?? null } : null, { printLetter: templates?.printLetter })
+  const [letterChoice, setLetterChoice] = useState<boolean | null>(null)
+  useEffect(() => { setLetterChoice(null) }, [param, propertyId])
+  const withLetter = letterChoice ?? letterDefault
   async function savePrint(value: typeof printDraft.value) {
     await api('/api/settings', { method: 'PUT', body: JSON.stringify(value) })
     await reload()
@@ -126,7 +136,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
     if (!letterEdit) return
     if (letterEdit.kind === 'property') {
       if (!propertyId) return
-      await api(`/api/properties/${propertyId}/letter-texts`, { method: 'PUT', body: JSON.stringify({ texts: save.texts }) })
+      await api(`/api/properties/${propertyId}/letter-texts`, { method: 'PUT', body: JSON.stringify({ texts: save.texts, ...(save.printLetter !== undefined ? { printLetter: save.printLetter } : {}) }) })
     } else {
       await api(withProperty(`${paths.load}/letters/${letterEdit.tenancyId}`, propertyId), {
         method: 'PUT',
@@ -385,6 +395,8 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
     const st = data?.statements.find((s) => s.tenancyId === printId)
     const job = startPrint({
       title: st ? `${data ? settlementTitle(data) : `Nebenkostenabrechnung ${label}`} ${st.unitName} ${st.tenantName}` : document.title,
+      // „Seite x von y“ nur beim Druck dieser einen Abrechnung (#415, Teil 2).
+      pageNumbers: true,
       onDone: () => {
         document.body.classList.remove('print-one')
         setPrintId(null)
@@ -419,6 +431,13 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
       {!(empty && choices.length === 0) && (
       <div className="card no-print">
         <div className="row">
+          {/* Teil 2: nur für diesen Druck; die Vorgabe steht in der Vorlage des Objekts bzw. in den Einstellungen. */}
+          <label className="field checkline" title="Ein Brief an den Mieter als erste Seite; ohne ihn beginnt die Aufstellung mit Anschrift, Datum und Betreff">
+            <span>
+              <input type="checkbox" checked={withLetter} onChange={(e) => setLetterChoice(e.target.checked)} />{' '}
+              Anschreiben mitdrucken
+            </span>
+          </label>
           <label className="field checkline" title="Marken am linken Rand des Anschreibens zum Falten für einen Fensterumschlag (DIN 5008) und zum Lochen">
             <span>
               <input
@@ -440,8 +459,19 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
               {printAttachments && attachmentsLoading && <span className="muted"> (werden vorbereitet …)</span>}
             </span>
           </label>
+          <label className="field checkline" title="Vermieter, Anschrift, Kontakt und IBAN unten auf jeder Seite (Anschrift und Kontakt unter „Einstellungen“ bzw. beim Objekt)">
+            <span>
+              <input
+                type="checkbox"
+                checked={printFooter}
+                onChange={(e) => printDraft.set({ ...printDraft.value, printFooter: e.target.checked })}
+              />{' '}
+              Fußzeile mit Kontakt und Bank
+            </span>
+          </label>
           <DraftActions draft={printDraft} onSave={savePrint} what="Druckeinstellungen" />
           {printDraft.dirty && <span className="muted">{PRINT_DRAFT_NOTE}</span>}
+          {letterChoice !== null && letterChoice !== letterDefault && <span className="muted">{LETTER_CHOICE_NOTE}</span>}
         </div>
         {choices.length > 0 && (
           // Sichtprüfung S7/E44: ein Umschalter, dessen gewählter Teil hervorgehoben ist
@@ -463,7 +493,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
       {data && !empty && data.statements.length > 0 && (
         <Card title="Anschreiben" className="no-print" aside={propertyId && templates ? <button className="btn secondary" onClick={() => setLetterEdit({ kind: 'property' })}>Vorlage für dieses Objekt bearbeiten</button> : undefined}>
           <p className="muted m-0">
-            Jede Abrechnung beginnt mit einem Brief an den Mieter. Die Vorlage für alle Objekte steht unter
+            {withLetter ? 'Jede Abrechnung beginnt mit einem Brief an den Mieter.' : 'Ohne Anschreiben beginnt die Aufstellung mit Anschrift, Datum und Betreff; Ergebnis, Anpassung und Belegeinsicht stehen unter der Tabelle.'} Die Vorlage für alle Objekte steht unter
             „Einstellungen“; hier weichen Sie für dieses Objekt ab, bei einem Mieter mit „Anschreiben bearbeiten“.
             {isClosed ? ' Diese Abrechnung ist abgeschlossen; ihr Anschreiben ist eingefroren.' : ''}
           </p>
@@ -650,6 +680,31 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
             const frozenDays = Number(letter?.values.Zahlungsfrist)
             const paymentDays = data.closed && Number.isFinite(frozenDays) && frozenDays > 0 ? frozenDays : landlord?.paymentDeadlineDays
             const lockedId = `letter-locked-${st.tenancyId}`
+            // Teil 2: mit oder ohne Anschreiben; Kopf, Fußzeile und Fußvermerk aus dem Anschreiben, abgeschlossen also
+            // eingefroren. Ein Abschluss aus Teil 1 kennt Anschrift und Fußzeile des Vermieters nicht: keine Anschrift
+            // im Kopf (die Rücksendeangabe ist eingefroren) und keine Fußzeile.
+            const showLetter = letter !== null && withLetter
+            const print = { date: letterDate, attachments: attachmentCount }
+            // Ein Abschluss ohne eingefrorene Fußzeile (zwischen #421 und Teil 2) druckt keine, statt Kontakt und Bank von heute
+            // (Durchsicht zu PR #427, K3).
+            const footerText = printFooter && letter ? (letter.sender ? (letter.sender.footer ?? '') : (landlord ? footerLine(landlord) : '')) || null : null
+            const head = letter ? {
+              sender: letter.sender?.name ?? landlord?.landlordName ?? '',
+              senderAddress: letter.sender ? (letter.sender.address ?? '') : (landlord?.landlordAddress ?? ''),
+              returnLine: letter.sender?.returnLine ?? (landlord ? returnLine(landlord, property) : letterhead('', property)),
+              recipient: letter.recipient ?? recipientLines(st.tenantName, st.unitName, tenancy, property),
+              date: fmtDate(letterDate),
+              foldMarks: printFoldMarks,
+              draftMark: draftMark ? DRAFT_MARK : null,
+            } : null
+            const subject = letter && !showLetter ? renderLetterText(letter.texts.subject, print) : ''
+            const underTable = letter && !showLetter ? statementBlocks(letter, st.balanceCents, attachmentCount).map((b) => ({ block: b, text: renderLetterText(letter.texts[b], print) })) : []
+            const footnote = letter ? (
+              <>
+                <div>{[letter.values.Name, letter.values.Wohnung, letter.values.Abrechnung, letter.values.Zeitraum].filter((x) => x).join(' · ')}</div>
+                {footerText && <div>{footerText}</div>}
+              </>
+            ) : null
             return (
             <div key={st.tenancyId} className={`card statement ${printId === st.tenancyId ? 'print-target' : ''}`}>
               {printsFormerAddress(tenancies.find((t) => t.id === st.tenancyId), localToday()) && (
@@ -663,29 +718,29 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
               )}
               {/* Seite 1: das Anschreiben (#415). Datum ist der Versand, sonst der Tag des Drucks. Absender und Anschrift
                   aus dem Anschreiben, abgeschlossen also eingefroren (Durchsicht S2). */}
-              {letter ? (
+              {showLetter && head ? (
                 <>
-                  <Letter
-                    paragraphs={paragraphs}
-                    sender={letter.sender?.name ?? landlord?.landlordName ?? ''}
-                    returnLine={letter.sender?.returnLine ?? letterhead(landlord?.landlordName, property)}
-                    recipient={letter.recipient ?? recipientLines(st.tenantName, st.unitName, tenancy, property)}
-                    date={fmtDate(letterDate)}
-                    foldMarks={printFoldMarks}
-                    draftMark={draftMark ? DRAFT_MARK : null}
-                  />
+                  <Letter {...head} paragraphs={paragraphs} footer={footerText} />
                   {exceedsOnePage(paragraphs.map((p) => p.text)) && (
                     <NoticeBox level="warning" className="no-print" title="Anschreiben länger als eine Seite" action="Das Anschreiben ist voraussichtlich länger als eine Seite und druckt auf der nächsten weiter. Soll es auf eine Seite passen, kürzen Sie die Texte über „Anschreiben bearbeiten“." />
                   )}
                 </>
+              ) : head ? (
+                <StatementHead {...head} />
               ) : (
                 <LegacyHead sender={letterhead(landlord?.landlordName, property)} date={letterDate} recipient={recipientLines(st.tenantName, st.unitName, tenancy, property)} />
               )}
-              {/* Nur im Druck, solange Fehler offen sind; deckt auch Strg+P ab (Durchsicht S2 zu #341). */}
-              {draftMark && <div className="print-only draft-mark">{DRAFT_MARK}</div>}
+              {head && returnLineTooLong(head.returnLine) && (
+                <NoticeBox level="warning" className="no-print" title="Rücksendeangabe zu lang" action={`Die Rücksendeangabe über der Anschrift hat ${head.returnLine.trim().length} Zeichen; im Fensterfeld passen rund ${RETURN_LINE_MAX} in zwei kleine Zeilen, der Rest würde abgeschnitten. Kürzen Sie den Namen oder die Anschrift des Vermieters (Einstellungen bzw. beim Objekt).`} />
+              )}
+              <PrintPages footnote={footnote}>
+              {/* Nur im Druck, solange Fehler offen sind; deckt auch Strg+P ab (Durchsicht S2 zu #341). Ohne Anschreiben
+                  steht der Vermerk schon im Kopf. */}
+              {draftMark && (showLetter || !letter) && <div className="print-only draft-mark">{DRAFT_MARK}</div>}
               <div className="statement-head">
                 <div className="stack tight">
-                  <h2>{data ? settlementTitle(data) : `Nebenkostenabrechnung ${label}`}</h2>
+                  {/* Ohne Anschreiben ist der Betreff die Überschrift der Aufstellung (Teil 2). */}
+                  <h2>{subject || (data ? settlementTitle(data) : `Nebenkostenabrechnung ${label}`)}</h2>
                   {/* Name und Wohnung stehen im Druck schon in der Anschrift, Zeitraum und Tage im Ergebniskasten (#415). */}
                   {legacy ? (
                     <div className="muted">{legacyHeadLine(st, personsText(st, tenancy))}</div>
@@ -860,6 +915,8 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
               {(data?.heating ?? []).map((h) => <Co2Block key={`${h.plantId}:${h.period}`} view={co2Block(h, st.tenancyId)} />)}
               {(data?.heating ?? []).filter((h) => showsStock(h, st)).map((h) => <StockBlock key={`stock:${h.plantId}:${h.period}`} view={stockBlock(h)} />)}
               {(data?.heating ?? []).map((h) => <FuelBlock key={`fuel:${h.plantId}:${h.period}`} view={fuelBlock(h)} />)}
+              {/* Ohne Anschreiben: Ergebnis, Anpassung und Belegeinsicht mit den Texten des Anschreibens (Teil 2). */}
+              {underTable.map((p) => <p key={p.block} className="statement-letter-text">{p.text}</p>)}
               {st.rows.length > 0 && (
                 <>
                   {legacy && (
@@ -893,6 +950,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
               )}
               {/* Belegeinsicht und beigefügte Belege stehen seit #415 im Anschreiben. */}
               <p className="muted">{costBasisText(label, calendar)}{legacy ? legacyReceiptsText(attachmentCount) : ''}</p>
+              {/* Auch die Belegkopien tragen den Fußvermerk (Durchsicht zu PR #427, K2). */}
               {printAttachments && stFiles.length > 0 && (
                 <>
                   <div className="muted no-print">
@@ -912,6 +970,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                   </div>
                 </>
               )}
+              </PrintPages>
             </div>
             )
           })}
@@ -968,6 +1027,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
               intro="Gilt für alle Mieter dieses Objekts, solange Sie für einen Mieter nichts anderes festlegen. Ohne eigenen Text gilt die Vorlage aus den Einstellungen."
               base={mergeLetterTexts(templates.installation)}
               own={templates.property ?? {}}
+              printLetter={{ value: templates.propertyPrintLetter ?? null, base: templates.printLetter ?? true }}
               values={first ? letterOf(data, first, { settings, property, tenancies }).values : {}}
               onClose={() => setLetterEdit(null)}
               onSave={saveLetter}

@@ -10,9 +10,12 @@ import { lettersOf, type LetterSource } from '../../shared/letter.ts'
 import type { Executor } from './db/client.ts'
 import { readInstallationLetterTexts, readPropertyLetterTexts, readTenancyLetters } from './db/letters.ts'
 
-// Die Kennung einer Abrechnung für die Anpassungen je Mieter: der Zeitraum der
-// Betriebskostenabrechnung oder die Heizperiode einer getrennten Heizkostenabrechnung.
-export const letterDoc = (period: string, plantId?: string): string => (plantId ? `heating:${plantId}:${period}` : period)
+// Die Kennung einer Abrechnung für die Anpassungen je Mieter: Objekt und Zeitraum der Betriebskostenabrechnung oder
+// Anlage und Heizperiode einer getrennten Heizkostenabrechnung (die Anlage gehört zu einem Objekt). Das Objekt steht im
+// Schlüssel seit der Integrationsdurchsicht: Ein Mietverhältnis, das das Objekt wechselte, nahm sonst seine Texte in die
+// Abrechnung gleichen Zeitraums des anderen Hauses mit (db/letters.ts, `dropOpenTenancyLetters`).
+export const letterDoc = (period: string, owner: { propertyId: string } | { plantId: string }): string =>
+  ('plantId' in owner ? `heating:${owner.plantId}:${period}` : `${owner.propertyId}:${period}`)
 
 // Liest alles, was `lettersOf` braucht: die Texte aller Ebenen und die Anpassungen je Mieter.
 export async function lettersFor(

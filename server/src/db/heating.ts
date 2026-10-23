@@ -38,6 +38,7 @@ import { dayAfter, germanDate, LAW_AS_OF, valueAt } from '../../../shared/law/re
 import { gmodgHeating43 } from '../../../shared/law/gmodg.ts'
 import { co2HalfSplitNewBuildings } from '../../../shared/law/co2kostaufg.ts'
 import { asNullableFilled, asNullableText, asText, guardServedChange, has, heatingPeriodAt, heatingRulesOf, HeatingError, insertEntityIn, ISO_DATE, itemPeriodClosed, merged, oneOfOrUndefined, raw, sameProperty } from './repository.ts'
+import { dropOpenHeatingLetters } from './letters.ts'
 import { buildingCycle, lineRoot, sameLine, servesUnit } from '../../../shared/heatingPeriod.ts'
 import {
   AREA_BASES_HEAT, CAPTURE_METHODS, CHANGE_SPLITS, CO2_RESTRICTIONS, HEAT_GENERATIONS, HEAT_PUMP_MAJORITIES, HOT_WATER, fuelDeliveries, closedHeatingSettlementHistory, co2Statements, closedHeatingSettlements, closedSettlements, costItems, DEVICES_INSTALLED_AFTER, DEVICES_REMOTE, HEATING_ENERGIES, HEATING_METHODS,
@@ -907,6 +908,9 @@ export async function removeHeatingPlant(db: Database, id: string): Promise<Plan
       await tx.update(heatingPlants).set({ buildingWith: self?.buildingWith === id ? null : (self?.buildingWith ?? null) }).where(eq(heatingPlants.id, head))
       await tx.update(heatingPlants).set({ buildingWith: head }).where(eq(heatingPlants.buildingWith, id))
     }
+    // Durchsicht zu PR #427, K4: Anschreiben einer getrennten Heizkostenabrechnung dieser Anlage. Heute nicht erreichbar,
+    // denn eine Anlage mit Spannen nach Weg d wird nicht entfernt; aufgeräumt wird trotzdem, damit kein Schlüssel verwaist.
+    await dropOpenHeatingLetters(tx, id, null)
     await tx.delete(heatingPlants).where(eq(heatingPlants.id, id))
     const notice = successor && before?.endsOn
       ? `„${successor.name.trim() || 'Die nächste Heizanlage'}“ übernimmt den Zeitraum der entfernten Anlage und heizt jetzt ab dem ${germanDay(isoDayAfter(before.endsOn))}, im Anschluss an „${before.name.trim() || 'die vorige Heizanlage'}“.`

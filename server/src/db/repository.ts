@@ -49,6 +49,7 @@ import { euro as operatingPowerEuro, GENERAL_POWER_CATEGORY, POWER_GENERATED } f
 import { billingEnergy } from '../../../shared/heatDelivery.ts'
 import { targetProblem } from '../heating.ts'
 import { andList } from '../../../shared/wording.ts'
+import { dropOpenTenancyLetters } from './letters.ts'
 import type { MigratedSettings } from '../ai/settings.ts'
 import { acceptIban } from '../iban.ts'
 import { IBAN_LABELS } from '../../../shared/iban.ts'
@@ -103,6 +104,26 @@ const asOptionalBoolean = (value: unknown): boolean | undefined => (typeof value
 // Das offene Mietverhältnis und der Hauptzähler ohne Wohnung: Dort ist `null` ein ausdrücklicher
 // Wert und kein fehlendes Feld, deshalb eine eigene Lesart.
 export const asNullableText = (value: unknown): string | null => (typeof value === 'string' ? value : null)
+
+// Eine Zeile für den Brief (#415, Teil 2): Anschrift, Kontakt, Anrede. Zeilenumbrüche werden zu „, “, außen
+// getrimmt, höchstens 200 Zeichen; `null` bleibt `null`. Eine Angabe anderer Art ist eine 400, kein stilles Leer.
+export const LETTER_LINE_MAX = 200
+// Eine Angabe für den Brief, die keine ist (Durchsicht zu PR #427, K8): ein eigener Fehler statt `HeatingError`.
+export class LetterInputError extends Error {
+  status = 400 as const
+}
+export function nullableLine(value: unknown, label: string): string | null {
+  if (value === null || value === undefined) return null
+  if (typeof value !== 'string') throw new LetterInputError(`${label} ist kein Text.`)
+  const line = value.trim().replace(/\s*\n\s*/g, ', ')
+  if (line.length > LETTER_LINE_MAX) throw new LetterInputError(`${label} ist zu lang (höchstens ${LETTER_LINE_MAX} Zeichen).`)
+  return line
+}
+export function nullableBoolean(value: unknown, label: string): boolean | null {
+  if (value === null || value === undefined) return null
+  if (typeof value !== 'boolean') throw new LetterInputError(`${label} ist ja oder nein.`)
+  return value
+}
 
 // Wie `asNullableText`, aber ein leeres Feld ist keine Angabe (Kennungen, Daten aus einem Formular).
 export const asNullableFilled = (value: unknown): string | null => {
@@ -417,6 +438,8 @@ function mergeTenancy(current: Tenancy, body: unknown): Tenancy {
     email: merged(body, 'email', current.email, asOptionalText),
     phone: merged(body, 'phone', current.phone, asOptionalText),
     correspondenceAddress: merged(body, 'correspondenceAddress', current.correspondenceAddress, asOptionalText),
+    // Die Anrede im Anschreiben (#415, Teil 2); leer heißt „Guten Tag {Name},“.
+    letterSalutation: merged(body, 'letterSalutation', current.letterSalutation, (v) => (nullableLine(v, 'Die Anrede im Brief') ?? '') || undefined),
     // Geprüft nur, wenn sie neu gesetzt oder geändert wird (#279, siehe iban.ts).
     iban: merged(body, 'iban', current.iban, (v) => acceptIban(v, current.iban, IBAN_LABELS.tenancy) ?? undefined),
     contractDate: merged(body, 'contractDate', current.contractDate, asOptionalText),
@@ -1630,7 +1653,13 @@ async function guardUnit(db: Executor, before: Unit | null, after: Unit): Promis
   if ((schaetzungen[0]?.n ?? 0) > 0) haengt.push('Schätzungen nach § 9a HeizkostenV')
   const ablesedienst = await db.select({ n: count() }).from(heatingServiceValues).where(eq(heatingServiceValues.unitId, after.id))
   if ((ablesedienst[0]?.n ?? 0) > 0) haengt.push('Werte des Ablesedienstes')
-  if (haengt.length === 0) return
+  if (haengt.length === 0) {
+    // Durchsicht zu PR #427, K4: Die offenen Anschreiben ihrer Mieter gehören zum bisherigen Haus und entfallen im selben
+    // Vorgang; die abgeschlossener Abrechnungen bleiben.
+    const ihre = await db.select({ id: tenancies.id }).from(tenancies).where(eq(tenancies.unitId, after.id))
+    for (const t of ihre) await dropOpenTenancyLetters(db, t.id)
+    return
+  }
   throw new CrossPropertyError(
     `Die Wohnung „${after.name}“ kann nicht in ein anderes Objekt wechseln, weil noch ${haengt.join(', ')} ` +
       `an ihr hängen, die zum bisherigen Objekt gehören. Bitte lösen Sie diese Verweise zuerst.`,
@@ -1671,7 +1700,12 @@ async function guardTenancyMove(db: Executor, before: Tenancy | null, after: Ten
   const vertrag = await db.select({ n: count() }).from(costItemContract).where(eq(costItemContract.tenancyId, after.id))
   // CO₂-Beträge „vom Vermieter übernommen“ (Heizung PR 6) gehören ebenso zur Heizanlage des alten Objekts.
   const co2 = await db.select({ n: count() }).from(co2TenantReliefs).where(eq(co2TenantReliefs.tenancyId, after.id))
-  if ((betraege[0]?.n ?? 0) === 0 && (vertrag[0]?.n ?? 0) === 0 && (co2[0]?.n ?? 0) === 0) return
+  if ((betraege[0]?.n ?? 0) === 0 && (vertrag[0]?.n ?? 0) === 0 && (co2[0]?.n ?? 0) === 0) {
+    // Integrationsdurchsicht zu #415: Die offenen Anschreiben gehören zum bisherigen Haus und entfallen, im selben
+    // Vorgang wie der Wechsel; die abgeschlossener Abrechnungen sind eingefroren und bleiben.
+    await dropOpenTenancyLetters(db, after.id)
+    return
+  }
   throw new CrossPropertyError(
     `Das Mietverhältnis „${after.tenantName}“ kann nicht in eine Wohnung eines anderen Objekts wechseln, weil noch ` +
       'Einzelbeträge oder Angaben zur Umlagevereinbarung von Kostenpositionen oder CO₂-Angaben des bisherigen Objekts an ihm hängen. Bitte lösen Sie diese Verweise zuerst.',
@@ -1948,6 +1982,10 @@ function mergeProperty(current: Property, body: unknown): Property {
     landlordName: merged(body, 'landlordName', current.landlordName, asNullableText),
     iban: merged(body, 'iban', current.iban, (v) => acceptIban(v, current.iban, IBAN_LABELS.property)),
     paymentDeadlineDays: merged(body, 'paymentDeadlineDays', current.paymentDeadlineDays, nullableNumber),
+    // Teil 2 von #415: Anschrift und Kontakt des Vermieters, „Anschreiben mitdrucken“; `null` heißt „die Vorgabe gilt“.
+    landlordAddress: merged(body, 'landlordAddress', current.landlordAddress ?? null, (v) => nullableLine(v, 'Die Anschrift des Vermieters')),
+    landlordContact: merged(body, 'landlordContact', current.landlordContact ?? null, (v) => nullableLine(v, 'Der Kontakt des Vermieters')),
+    printLetter: merged(body, 'printLetter', current.printLetter ?? null, (v) => nullableBoolean(v, '„Anschreiben mitdrucken“')),
     // `null` heißt unbekannt und ist ein ausdrücklicher Wert (#121).
     cableBuiltBeforeDec2021: merged(body, 'cableBuiltBeforeDec2021', current.cableBuiltBeforeDec2021 ?? null, (v) => (typeof v === 'boolean' ? v : null)),
     // § 5d CO2KostAufG (Heizung PR 18); `null` heißt unbekannt, ein anderer Wert als true/false ebenso.
@@ -2065,6 +2103,7 @@ const unitRow = (u: Unit) => ({
 const tenancyRow = (t: Tenancy) => ({
   id: t.id, unitId: t.unitId, tenantName: t.tenantName, persons: t.persons, start: t.start, end: t.end,
   email: orNull(t.email), phone: orNull(t.phone), correspondenceAddress: orNull(t.correspondenceAddress),
+  letterSalutation: orNull(t.letterSalutation),
   iban: orNull(t.iban), contractDate: orNull(t.contractDate), depositCents: orNull(t.depositCents),
   depositStatus: orNull(t.depositStatus), notes: orNull(t.notes),
   costModel: orNull(t.costModel), heatingModel: orNull(t.heatingModel),

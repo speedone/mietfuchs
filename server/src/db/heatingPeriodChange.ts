@@ -32,6 +32,7 @@ import { checkRules, monthsText, passedDeadlineText } from './periodChange.ts'
 import { readClosedSettlements, readCostItems, readHeatingPlants, readProperties, readStock, readTenancies, readUnits } from './read.ts'
 import { tenancyMonths } from '../calc.ts'
 import { patchCostItemIn, PeriodError } from './repository.ts'
+import { droppedLettersText, dropLetterDocs, letterDocsWithPrefix } from './letters.ts'
 import {
   closedHeatingSettlementHistory, closedHeatingSettlements, costItems, heatingPeriodChanges, heatingPeriods, heatingPlants, heatingPrepaymentOverrides, prepaymentOverrides,
 } from './schema.ts'
@@ -89,6 +90,8 @@ type Plan = {
   before: PeriodRules
   next: PeriodRules
   closedKeys: ReadonlySet<string>
+  // Integrationsdurchsicht zu #415: die Schlüssel der Anschreiben der Heizkostenabrechnung, deren Heizperiode sich ändert.
+  letterDocs: string[]
 }
 
 async function planHeatingPeriodChange(db: Database, plantId: string, rawRules: unknown, today: string): Promise<Plan | null> {
@@ -237,6 +240,18 @@ async function planHeatingPeriodChange(db: Database, plantId: string, rawRules: 
     for (const p of options) if (overlapDays(p, old) > overlapDays(best, old)) best = p
     return best
   }
+  // Integrationsdurchsicht zu #415: Eigene Anschreiben der Heizkostenabrechnung (Weg d) einer Heizperiode, die sich
+  // ändert, entfallen; abgeschlossene ändert der Wechsel nie (blocked).
+  const letterDocs: string[] = []
+  const lettersPreview: string[] = []
+  const names = await readTenancies(db)
+  for (const d of await letterDocsWithPrefix(db, `heating:${plantId}:`)) {
+    const key = parsePeriodKey(d.period)
+    const a = key === null ? null : changed(key)
+    if (a === null) continue
+    letterDocs.push(d.doc)
+    lettersPreview.push(droppedLettersText(d.tenancyIds.map((id) => names.find((t) => t.id === id)?.tenantName ?? 'einem früheren Mieter'), `die Heizkosten ${periodLabel(a.old)}`))
+  }
   const preview: HeatingPeriodChangePreview = {
     token: '',
     rules: own,
@@ -271,12 +286,13 @@ async function planHeatingPeriodChange(db: Database, plantId: string, rawRules: 
       .filter((p) => !separateNow(p) && periodMonths(p).some((m) => separateOwner(plant, objectRules, m) !== null))
       .map((p) => ({ key: p.key, label: periodLabel(p) })),
     effects: [],
+    letters: lettersPreview,
   }
   // Die Marke über alles, was der Wechsel schreibt (wie `tokenOf` in periodChange.ts).
   preview.token = crypto.createHash('sha256')
-    .update(JSON.stringify([preview.rules, preview.blocked, preview.moves, preview.groups, preview.overrides, preview.endsSeparate, overrideRekeys]))
+    .update(JSON.stringify([preview.rules, preview.blocked, preview.moves, preview.groups, preview.overrides, preview.endsSeparate, overrideRekeys, lettersPreview]))
     .digest('hex')
-  return { preview, plant, own, moves, groups, overrideRekeys, overrideAsks: [...asks.values()], objectRules, before, next, closedKeys }
+  return { preview, plant, own, moves, groups, overrideRekeys, overrideAsks: [...asks.values()], objectRules, before, next, closedKeys, letterDocs }
 }
 
 export async function previewHeatingPeriodChange(db: Database, plantId: string, rawRules: unknown, today: string): Promise<HeatingPeriodChangePreview | null> {
@@ -406,6 +422,7 @@ async function writeHeatingChangeIn(tx: Transaction, plantId: string, plan: Plan
     await tx.update(heatingPlants).set({ periodStartMonth: plan.own?.startMonth ?? null }).where(eq(heatingPlants.id, plantId))
     await tx.delete(heatingPeriodChanges).where(eq(heatingPeriodChanges.plantId, plantId))
     if (plan.own && plan.own.changes.length > 0) await tx.insert(heatingPeriodChanges).values(plan.own.changes.map((fromMonth) => ({ plantId, fromMonth })))
+    await dropLetterDocs(tx, plan.letterDocs)
     for (const m of plan.moves) {
       const to = moveTarget(m) ?? m.to
       // Durch dieselbe Verschmelzung und Schreibprüfung wie beim Speichern, nicht am Wächter vorbei.

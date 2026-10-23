@@ -19,6 +19,18 @@
 .letter-body .letter-greeting { margin-bottom: 0; }
 .letter-body .letter-signature { margin-top: var(--space-8); }
 .letter-mark { display: none; }
+.letter-head-address { font-weight: var(--weight-normal); font-size: var(--text-s); }
+.letter-footer { margin-top: var(--space-4); padding-top: var(--space-2); border-top: 1px solid var(--line); font-size: var(--text-xs); color: var(--muted); }
+
+/* Teil 2: ohne Anschreiben der Kopf des Briefs über der Aufstellung, am Bildschirm ohne Abstand nach unten */
+.letter.letter-top { margin-bottom: var(--space-3); }
+.statement-letter-text { margin: 0 0 var(--space-3); }
+
+/* Teil 2: der Fußvermerk je Druckseite. Die Hülle ist eine echte Tabelle, denn nur deren Fuß wiederholt der
+   Browser auf jeder Seite (eine Tabelle aus CSS nicht, nachgemessen in Chromium). Am Bildschirm ist sie unsichtbar. */
+.print-pages, .print-pages > tbody, .print-pages > tbody > tr, .print-pages-cell { display: block; }
+.print-pages > tfoot { display: none; }
+.print-pages-cell { padding: 0; border: 0; background: none; }
 
 /* Bearbeiten im Seitenfenster: je Baustein Feld, Platzhalter als Chips, Vorschau */
 .letter-edit { margin-bottom: var(--space-4); }
@@ -33,6 +45,12 @@
 .result-box dt { color: var(--muted); }
 .result-box dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
 .result-box .result-strong { color: var(--text); font-weight: var(--weight-bold); }
+/* Am Handy (bis 640 px) steht die Beschriftung über dem Wert, ohne feste Spaltenbreite: Zwei Spalten in
+   Inhaltsbreite schoben die Seite auf 467 px (Browserlauf). Der Druck bleibt zweispaltig. */
+@media screen and (max-width: 640px) {
+  .result-box { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .result-box dd { text-align: left; margin-bottom: var(--space-2); overflow-wrap: anywhere; }
+}
 
 /* Seitenränder: Chromium legt den Text aller Seiten in einer Breite an. Hätte die Seite des Anschreibens andere
    Ränder als die übrigen, liefe die Aufstellung rechts aus dem Blatt (nachgemessen). Deshalb hat jede Seite
@@ -40,12 +58,16 @@
    So hat auch eine Folgeseite eines langen Briefs oben und unten ihren Rand (Durchsicht S3); die Seite warnt,
    wenn der Brief voraussichtlich nicht auf eine Seite passt (`exceedsOnePage`). */
 @page { size: A4; margin: 12mm; }
+/* „Seite x von y“ setzt printJob.ts nur beim Druck einer einzelnen Abrechnung in den Rand (Chromium, Teil 2); beim
+   Druck aller zählte er über alle Mieter hinweg. */
 
 @media print {
   .letter { --page: 12mm; min-height: calc(297mm - 2 * var(--page) - 1mm); box-sizing: border-box; max-width: none; margin: 0; padding: 0; border: none; border-radius: 0; background: none; font-size: 11pt; line-height: 1.4; color: var(--text); break-after: page; page-break-after: always; }
   .letter-head { position: absolute; top: calc(15mm - var(--page)); left: calc(25mm - var(--page)); right: calc(20mm - var(--page)); margin: 0; font-size: 12pt; }
   .letter-window { position: absolute; top: calc(45mm - var(--page)); left: calc(20mm - var(--page)); width: 85mm; height: 45mm; margin: 0; overflow: hidden; }
-  .letter-return { position: absolute; left: 5mm; right: 0; bottom: 27.3mm; display: block; margin: 0; padding-bottom: 0.5mm; font-size: 7pt; line-height: 1.2; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* Höchstens zwei Zeilen, nach oben wachsend und in der Vermerkzone (17,7 mm); was länger ist, nennt die Seite vor dem
+     Druck (`returnLineTooLong`, Durchsicht zu PR #427, K7), statt still zu kürzen. */
+  .letter-return { position: absolute; left: 5mm; right: 0; bottom: 27.3mm; display: block; margin: 0; padding-bottom: 0.5mm; font-size: 7pt; line-height: 1.2; color: var(--text); max-height: 2.4em; overflow: hidden; }
   .letter-address { position: absolute; top: 17.7mm; left: 5mm; right: 0; height: 27.3mm; font-size: 10pt; line-height: 1.25; }
   .letter-info { position: absolute; top: calc(50mm - var(--page)); left: calc(125mm - var(--page)); right: calc(20mm - var(--page)); margin: 0; font-size: 10pt; }
   .letter-info .muted { color: var(--text); }
@@ -60,4 +82,25 @@
   .letter-punch { top: calc(148.5mm - var(--page)); width: 8mm; }
   .letter-fold-2 { top: calc(210mm - var(--page)); }
   .result-box { break-inside: avoid; page-break-inside: avoid; }
+  .letter-head-address { font-size: 9pt; }
+  /* Die Fußzeile mit Kontakt und Bank unten auf der Briefseite */
+  /* Platz für die Fußzeile unter dem letzten Absatz, auch wenn der Brief über eine Seite läuft (Durchsicht zu PR #427, S1). */
+  .letter-with-footer .letter-body { padding-bottom: 14mm; }
+  .letter-footer { position: absolute; bottom: 0; left: calc(25mm - var(--page)); right: calc(20mm - var(--page)); margin: 0; padding-top: 1mm; font-size: 7.5pt; color: var(--text); border-top: 0.2mm solid var(--line); }
+
+  /* Ohne Anschreiben: derselbe Kopf, die Aufstellung beginnt auf der Höhe des Betreffs (98,46 mm). */
+  .letter.letter-top { min-height: 0; height: calc(98.46mm - var(--page) - 2mm); break-after: auto; page-break-after: auto; }
+
+  /* Der Fuß der Hülle wiederholt sich auf jeder Seite der Aufstellung; index.css setzt jeden anderen tfoot einmal ans
+     Tabellenende (table-row-group), hier gilt der Fuß der Hülle. */
+  .print-pages { display: table; width: 100%; border-collapse: collapse; }
+  .print-pages > tbody { display: table-row-group; }
+  .print-pages > tbody > tr, .print-pages > tfoot > tr { display: table-row; }
+  /* index.css hält jede Tabellenzeile beisammen; die eine Zeile der Hülle muss umbrechen dürfen, sonst begänne die
+     Aufstellung ohne Anschreiben erst auf Seite 2 (nachgemessen). */
+  .print-pages > tbody > tr { break-inside: auto; page-break-inside: auto; }
+  .print-pages-cell { display: table-cell; }
+  .print-pages > tfoot { display: table-footer-group; }
+  .print-pages > tfoot .print-pages-cell { font-weight: var(--weight-normal); border: 0; }
+  .statement-footnote { margin-top: 3mm; padding-top: 1mm; border-top: 0.2mm solid var(--line); font-size: 7.5pt; color: var(--text); }
 }

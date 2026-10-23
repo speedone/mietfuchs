@@ -169,6 +169,11 @@ export const properties = sqliteTable(
     landlordName: text('landlord_name'),
     iban: text('iban'),
     paymentDeadlineDays: integer('payment_deadline_days'),
+    // Anschrift und Kontakt des Vermieters und „Anschreiben mitdrucken“ (#415, Teil 2), abweichend von den
+    // Einstellungen wie Vermieter und IBAN: null heißt „die Vorgabe gilt“.
+    landlordAddress: text('landlord_address'),
+    landlordContact: text('landlord_contact'),
+    printLetter: integer('print_letter', { mode: 'boolean' }),
     // Kabelanlage vor dem 01.12.2021 errichtet (#121); null heißt unbekannt.
     cableBuiltBeforeDec2021: integer('cable_built_before_dec_2021', { mode: 'boolean' }),
     // Beginnmonat der Abrechnungszeiträume von Anfang an (#208): 1 heißt Kalenderjahr. Die Zeiträume
@@ -270,6 +275,8 @@ export const tenancies = sqliteTable(
     email: text('email'),
     phone: text('phone'),
     correspondenceAddress: text('correspondence_address'),
+    // Die Anrede im Anschreiben (#415, Teil 2); ohne Angabe „Guten Tag {Name},“.
+    letterSalutation: text('letter_salutation'),
     iban: text('iban'),
     contractDate: text('contract_date'),
     depositCents: integer('deposit_cents'),
@@ -1580,6 +1587,12 @@ export const settings = sqliteTable(
     printAttachments: integer('print_attachments', { mode: 'boolean' }),
     // Falz- und Lochmarken auf dem Anschreiben (#415); ohne Angabe aus.
     printFoldMarks: integer('print_fold_marks', { mode: 'boolean' }),
+    // Teil 2 von #415: das Anschreiben mitdrucken (ohne Angabe ja), die Fußzeile mit Kontakt und Bank (ohne
+    // Angabe nein), Anschrift und Kontakt des Vermieters für Rücksendeangabe und Fußzeile.
+    printLetter: integer('print_letter', { mode: 'boolean' }),
+    printFooter: integer('print_footer', { mode: 'boolean' }),
+    landlordAddress: text('landlord_address'),
+    landlordContact: text('landlord_contact'),
     // Ohne Wert wurde noch nicht gefragt; 'on' erlaubt die Abfrage bei GitHub.
     updateCheck: text('update_check', { enum: UPDATE_CHECK }),
     updateDismissed: text('update_dismissed'),

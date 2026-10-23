@@ -62,6 +62,29 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Mietfuchs oder einen eigenen Betrag; liegt er über dem Vorschlag, weist Mietfuchs auf die angemessene Höhe
   hin. Die Vorgabe steht in den Einstellungen und ersetzt das Häkchen „Neue Vorauszahlung vorschlagen“, dessen
   Stand übernommen wird ([#415](https://github.com/speedone/mietfuchs/issues/415)).
+- Das Anschreiben ist abschaltbar ([#415](https://github.com/speedone/mietfuchs/issues/415)): „Anschreiben
+  mitdrucken“ steht als Vorgabe in der Vorlage unter „Einstellungen“, weicht je Objekt in dessen Vorlage ab
+  und lässt sich beim Drucken für den einen Druck umschalten. Ohne Anschreiben beginnt die Aufstellung mit
+  Absender, Rücksendeangabe und Anschrift im Fensterfeld, Datum und dem Betreff als Überschrift; Ergebnis mit
+  Zahlungsfrist und Konto, die Anpassung der Vorauszahlung und die Belegeinsicht stehen dann unter der
+  Tabelle, mit denselben Texten wie im Anschreiben.
+- Anschrift und Kontakt des Vermieters ([#415](https://github.com/speedone/mietfuchs/issues/415)): In den
+  Einstellungen und abweichend je Objekt tragen Sie Ihre Anschrift und auf Wunsch Telefon oder E-Mail ein.
+  Rücksendeangabe und Briefkopf nennen dann Ihre Anschrift statt der Adresse des Objekts. Die neue
+  Druckeinstellung „Fußzeile mit Kontakt und Bank“ druckt Name, Anschrift, Kontakt und IBAN unten auf das
+  Anschreiben und auf jede Seite der Aufstellung. Mit dem Abschluss friert beides ein.
+- Anrede je Mietverhältnis ([#415](https://github.com/speedone/mietfuchs/issues/415)): „Anrede im Brief“ in
+  den weiteren Angaben eines Mietverhältnisses, etwa „Sehr geehrte Frau Becker“; das Komma ergänzt Mietfuchs.
+  Der neue Platzhalter {Anrede} setzt sie ein und ist die Vorgabe des Bausteins Anrede; ohne Eintrag bleibt
+  es bei „Guten Tag {Name},“.
+- Jede Seite der Aufstellung trägt im Druck unten Mieter, Wohnung, Abrechnung und Zeitraum, damit sich lose
+  Blätter zuordnen lassen; beim Druck einer einzelnen Abrechnung steht dazu „Seite x von y“ im Rand (in
+  Chrome und Edge; ein Browser ohne diese Druckfunktion lässt nur die Seitenzahl weg)
+  ([#415](https://github.com/speedone/mietfuchs/issues/415)).
+- Eigene Anschreiben je Mieter gehören jetzt fest zu Objekt und Zeitraum: Wechselt ein Mietverhältnis in ein
+  anderes Objekt oder ändert sich der Abrechnungszeitraum oder die Heizperiode, entfallen die offenen; die
+  Vorschau des Wechsels sagt das vorher. Abgeschlossene bleiben eingefroren
+  ([#415](https://github.com/speedone/mietfuchs/issues/415)).
 - Verbilligte Vermietung nach § 21 Abs. 2 EStG ([#257](https://github.com/speedone/mietfuchs/issues/257)):
   Vermieten Sie eine Wohnung günstiger als üblich, etwa an Angehörige, tragen Sie auf der Seite Steuer in
   der neuen Karte „Verbilligte Vermietung“ die ortsübliche Warmmiete der Wohnung ein, mit Quelle und

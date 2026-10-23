@@ -21,6 +21,23 @@ describe('startPrint', () => {
     vi.restoreAllMocks()
   })
 
+  it('Seitenzahlen (#415, Teil 2): nur auf Wunsch, bis zum Aufräumen, beim Abbrechen wieder weg', () => {
+    const numbers = () => document.head.querySelectorAll('style[data-page-numbers]')
+    start({ title: 'Ohne' })
+    expect(numbers()).toHaveLength(0)
+    start({ title: 'Abrechnung', pageNumbers: true })
+    expect(numbers()).toHaveLength(1)
+    expect(numbers()[0]?.textContent).toContain('counter(page)')
+    expect(numbers()[0]?.textContent).toContain('counter(pages)')
+    vi.advanceTimersByTime(100)
+    window.dispatchEvent(new Event('afterprint'))
+    expect(numbers()).toHaveLength(1)
+    window.dispatchEvent(new Event('pointerdown'))
+    expect(numbers()).toHaveLength(0)
+    start({ title: 'Noch einmal', pageNumbers: true }).cancel()
+    expect(numbers()).toHaveLength(0)
+  })
+
   it('setzt den Titel als Dateinamen und druckt nach der Verzögerung', () => {
     start({ title: 'Abrechnung 2025 EG/links', delayMs: 50 })
     expect(document.title).toBe('Abrechnung 2025 EG-links')
