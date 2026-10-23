@@ -42,6 +42,19 @@ export function printQuestion(notices: readonly Notice[], closed: boolean): Erro
   }
 }
 
+// Der Export als Daten (#415 Teil 3) fragt wie der Druck: Die Datei trägt dann `draft: true` und die Fehler.
+export function exportQuestion(notices: readonly Notice[], closed: boolean): ErrorsQuestion | null {
+  const errors = blockingErrors(notices)
+  if (closed || errors.length === 0) return null
+  return {
+    title: titleOf(errors.length),
+    message: `${INTRO} Die Datei kennzeichnet die Abrechnung dann als Entwurf (draft) und nennt die Fehler. Beheben Sie die Angaben besser, bevor Sie mit den Daten weiterarbeiten.`,
+    cancelLabel: 'Nicht exportieren',
+    confirmLabel: 'Trotzdem exportieren',
+    errors,
+  }
+}
+
 // Die Frage der ersten Rückfrage zum Abschließen (#409): Ob alle Rechnungen des Zeitraums vorliegen, weiß nur
 // der Vermieter; „Abschließen“ ist die Antwort darauf, ohne einen eigenen Schritt. `label` ist der Zeitraum,
 // `heating` die getrennte Heizkostenabrechnung. Hausgeld gibt es nur bei einer Eigentumswohnung.

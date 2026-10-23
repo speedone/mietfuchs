@@ -1,7 +1,7 @@
 // Rückfragen vor Druck und Abschluss (despiteErrors.ts).
 import { expect, test } from 'vitest'
 import type { Notice } from './types'
-import { closeErrorsQuestion, closeMessage, completenessQuestion } from './despiteErrors'
+import { closeErrorsQuestion, closeMessage, completenessQuestion, exportQuestion } from './despiteErrors'
 
 const FEHLER: Notice = { code: 'tenancy.overlap', level: 'error', title: 'Mietverhältnisse überschneiden sich', text: 'EG: zugleich.', subject: { kind: 'tenancy', id: 't1' } }
 
@@ -23,4 +23,15 @@ test('Rückfrage zum Abschließen nennt die Rechnungen, die zur Abrechnung passe
   expect(heating).toMatch(/^Liegen alle Rechnungen für 2024\/2025 vor/)
   expect(heating).toMatch(/Brennstoff/)
   expect(heating).not.toMatch(/Hausgeld|Heizkostenabrechnung/)
+})
+
+// #415 Teil 3: Der Export einer offenen Abrechnung mit Fehlern fragt wie der Druck; die Datei trägt dann `draft`.
+test('Rückfrage vor dem Export: nur bei einer offenen Abrechnung mit Fehlern', () => {
+  const q = exportQuestion([FEHLER], false)
+  expect(q?.cancelLabel).toBe('Nicht exportieren')
+  expect(q?.confirmLabel).toBe('Trotzdem exportieren')
+  expect(q?.message).toContain('Entwurf')
+  expect(q?.errors).toEqual([FEHLER])
+  expect(exportQuestion([FEHLER], true)).toBeNull()
+  expect(exportQuestion([], false)).toBeNull()
 })

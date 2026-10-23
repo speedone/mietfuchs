@@ -39,7 +39,7 @@ export const csvField = (value: string): string => (/[;"\r\n]/.test(value) ? `"$
 // als Formel. Rechnungssteller und Beschreibung können aus der KI-Auswertung eines fremden Belegs
 // stammen, deshalb wird entschärft: ein Apostroph davor, wie es die OWASP-Empfehlung zur
 // CSV-Einschleusung vorsieht. Beträge sind keine Textfelder; eine Gutschrift bleibt „-5,00“.
-export const textField = (value: string): string => csvField(/^[=+\-@\t\r]/.test(value) ? `'${value}` : value)
+export const textField = (value: string): string => csvField(/^[=+\-@]/.test(value.replace(/^[\s\u00a0\ufeff]+/, '')) || /^[\t\r]/.test(value) ? `'${value}` : value)
 
 // Welche Positionen ins Archiv eines Steuerjahres gehören: **genau die der Steuerübersicht**, also die Positionen der
 // Teile aus `taxPartsFor` (das Jahr der Zahlung aus `outflowShares`, outflow.ts, #255), in der Reihenfolge des

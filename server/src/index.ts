@@ -82,7 +82,7 @@ import { APP_VERSION, RUNTIME, STANDALONE } from './version.ts'
 import { describeFile, describeFolder, hashFile, mimeTypeOf, uploadedAtOf } from './uploads.ts'
 import { acceptIban, IbanRefusal } from './iban.ts'
 import { IBAN_LABELS } from '../../shared/iban.ts'
-import { exportFilename, settlementExportCsv, settlementExportJson, type ExportableSettlement } from './settlementExport.ts'
+import { exportFilename, frozenExportable, settlementExportCsv, settlementExportJson, type ExportableSettlement } from './settlementExport.ts'
 import { derivedTaxLines, planTaxArchive, taxArchiveItems } from './taxReceipts.ts'
 import { createPriorVersion, listPriorVersions, mayCreatePriorVersion, PRIOR_CHECK_INTERVAL_MS, PRIOR_DIR, priorVersionsBlocked, priorVersionTime } from './db/priorVersions.ts'
 import { costItems as costItemsTable } from './db/schema.ts'
@@ -1029,16 +1029,15 @@ app.get('/api/settlement/:period/export', async (req, res) => {
   const frame = { period: settlementPeriod(period), deadline: settlementDeadline(period) }
   let data: ExportableSettlement
   if (closed) {
-    const stand: unknown = closed.settlement
-    if (stand === null || typeof stand !== 'object' || !Array.isArray(Reflect.get(stand, 'statements'))) {
-      return res.status(409).json({ error: 'Der eingefrorene Stand dieser Abrechnung lässt sich nicht als Daten ausgeben. Öffnen Sie die Abrechnung wieder und schließen Sie sie neu ab.' })
-    }
-    data = { ...computeSettlement(snapshotFor(stock, property, period), { asOf: today() }), ...stand, ...frame, closed: { closedAt: closed.closedAt, sentAt: closed.sentAt } }
+    // Nur der eingefrorene Stand und der Rahmen, wie GET /api/settlement/:period; nichts wird neu gerechnet.
+    const stand = frozenExportable(closed.settlement)
+    if (!stand) return res.status(409).json({ error: 'Der eingefrorene Stand dieser Abrechnung lässt sich nicht als Daten ausgeben. Öffnen Sie die Abrechnung wieder und schließen Sie sie neu ab.' })
+    data = { ...stand, ...frame, closed: { closedAt: closed.closedAt, sentAt: closed.sentAt } }
   } else {
-    data = { ...computeSettlement(snapshotFor(stock, property, period), { asOf: today() }), closed: null }
+    const computed = computeSettlement(snapshotFor(stock, property, period), { asOf: today() })
+    data = { ...computed, closed: null, letters: await readData((db) => openLetters(db, computed, property, period.key)) }
   }
-  const name = exportFilename(propertyName, frame.period.label, format)
-  res.set('Content-Disposition', `attachment; filename="${name.replace(/[^\x20-\x7e]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(name)}`)
+  res.attachment(exportFilename(propertyName, frame.period.label, format))
   if (format === 'csv') return res.type('text/csv; charset=utf-8').send(settlementExportCsv(data))
   res.json(settlementExportJson(data, { id: property, name: propertyName }))
 })

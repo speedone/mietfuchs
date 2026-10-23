@@ -39,7 +39,7 @@ import { showsStock, stockBlock } from '../stockView'
 import FuelBlock from '../components/FuelBlock'
 import { fuelBlock } from '../fuelView'
 import { closeWithQuestions } from '../fuelClose'
-import { closeErrorsQuestion, closeMessage, completenessQuestion, DRAFT_MARK, printQuestion, sameErrors, showsDraftMark, type ErrorsQuestion } from '../despiteErrors'
+import { closeErrorsQuestion, closeMessage, completenessQuestion, DRAFT_MARK, exportQuestion, printQuestion, sameErrors, showsDraftMark, type ErrorsQuestion } from '../despiteErrors'
 import { co2Block } from '../co2View'
 import { calendarPeriod } from '../../../shared/period.ts'
 import { mergeLetterTexts, printsLetter, renderLetterText, statementBlocks } from '../../../shared/letter.ts'
@@ -107,6 +107,8 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
 
   // Export der Abrechnung als Daten (#415, Teil 3): Der Server baut die Datei, hier wird sie nur gespeichert.
   async function exportData(format: 'json' | 'csv') {
+    const q = data ? exportQuestion(noticesOf(data), !!data.closed) : null
+    if (q && !(await askDespiteErrors(q))) return
     try {
       const res = await fetch(withProperty(`${paths.load}/export?format=${format}`, propertyId))
       if (!res.ok) throw new Error(((await res.json().catch(() => null)) as { error?: string } | null)?.error ?? `Der Export ist fehlgeschlagen (${res.status}).`)

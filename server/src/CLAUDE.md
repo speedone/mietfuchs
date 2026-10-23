@@ -226,11 +226,16 @@ das Leerzeichen davor mit (`{Konto}` ohne IBAN ergibt den bisherigen Satz ohne K
   `/api/heating-settlement/:plant/:period`.
 
 - **Export als Daten** (#415 Teil 3, [settlementExport.ts](settlementExport.ts)): `GET /api/settlement/:period/export?format=json|csv`
-  (`?property=` und Zeitraum wie die Abrechnung). Eine Stelle baut die Form aus dem Ergebnis, bei Abschluss aus dem
-  eingefrorenen Stand (409, wenn der keine `statements` hat). JSON: `format: 'mietfuchs-abrechnung'`, `version: 1`,
-  Beträge in Cent; CSV mit den Helfern aus taxReceipts.ts (BOM, Semikolon, deutsche Euro, Apostroph vor = + - @).
+  (`?property=` und Zeitraum wie die Abrechnung). Eine Stelle baut die Form; bei Abschluss gilt nur der eingefrorene
+  Stand plus Rahmen (`frozenExportable`, nichts wird neu gerechnet; fehlen Pflichtfelder: 409). JSON: `format:
+  'mietfuchs-abrechnung'`, `version: 1`, Beträge in Cent, je Mieter alle gedruckten Angaben (auch `prepaymentNote`,
+  `heatingOnly`, `recommendedDeadline`, gewählte `adjustment`), je Zeile `kind`, dazu `heating` (die Blöcke wie die
+  API sie liefert) und `draft`/`errors` bei einer offenen Abrechnung mit Fehlern (`blockingErrors`). CSV: Zeilen und
+  Summen, die Art einer Sonderzeile statt „Position“, der Kopf „Gesamtkosten bzw. Anteil an der Gemeinschaft“ wie auf
+  der Seite, vorweg eine Hinweiszeile bei Entwurf und eine, dass die Angaben der Heizkostenabrechnung nur im JSON
+  stehen; Helfer aus taxReceipts.ts (BOM, Semikolon, deutsche Euro, Apostroph vor = + - @, auch nach Leerraum).
   Nur Zahlen und Namen wie auf der Abrechnung, keine Anschrift, Bank oder Anschreibentexte. Nicht für die
-  Heizkostenabrechnung nach Weg d. Ändert sich die Form, `version` anheben.
+  Heizkostenabrechnung nach Weg d. Ändert sich die Form nach der Veröffentlichung, `version` anheben.
 
 ## Der Schnappschuss (#55)
 
