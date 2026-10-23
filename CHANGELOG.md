@@ -61,6 +61,15 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Wärmevertrag, Müll direkt an die Gemeinde), tragen Sie in derselben Karte am Mietverhältnis als Betrag
   im Monat ein; es zählt zum Entgelt, nicht zu Ihren Werbungskosten. Ohne Eintrag ändert sich keine
   Zahl. Neuer Begriff im Lexikon.
+- Nutzungswechsel einer Einheit im Jahr: Unter Stammdaten tragen Sie bei der Wohnung unter
+  „Nutzungswechsel“ ein, ab welchem Tag sie vermietet, selbstgenutzt oder nicht beteiligt ist, etwa wenn
+  Sie einziehen oder Ihre Wohnung zum ersten Mal vermieten. Die Abrechnung rechnet jeden Abschnitt nach
+  seinen Tagen: Eigenanteil, Leerstand, Verteilbasis, Verbrauch und in der eigenen Heizkostenabrechnung
+  der Nutzerwechsel nach § 9b HeizkostenV. Ein Mietverhältnis in einer Zeit, in der die Wohnung nicht
+  vermietet ist, meldet die Abrechnung. Die Steuerübersicht übernimmt bei umlagefähigen Kosten den
+  tagesgenauen Eigenanteil; was nach Fläche geteilt wird, gilt dort noch nach der Nutzung am Jahresende,
+  und ein Hinweis sagt das. Ohne eingetragenen Wechsel ändert sich keine Zahl.
+  ([#259](https://github.com/speedone/mietfuchs/issues/259))
 
 ### Geändert
 

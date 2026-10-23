@@ -172,6 +172,11 @@ const LAGEN: Record<TaxHint, Lage> = {
     report: REPORT({ reserveSuspects: [{ costItemId: 'v', description: 'Instandhaltungsrücklage 2025', amountCents: 90000 }] }),
     text: /Vielleicht eine Zuführung zur Erhaltungsrücklage/,
   },
+  // #259: Nutzungswechsel im Jahr; das Leerstandsurteil steht unter „Mehr dazu“.
+  usageChangedInYear: {
+    report: REPORT({ usageChangedUnits: ['EG'] }),
+    text: /Die Nutzung wechselt in diesem Jahr: EG/,
+  },
   etwHousingMoney: {
     report: REPORT(),
     kind: 'etw',
@@ -185,7 +190,7 @@ const LAGEN: Record<TaxHint, Lage> = {
   },
   mixedUseAreaMissing: { report: MIXED([POS({ allocation: 'unsplittable', privateCents: 0, deductibleCents: 330000, deductiblePercent: null })]), text: /ließ sich nicht aufteilen/ },
   mixedUseDirectOutside: { report: MIXED([POS({ allocation: 'direct-outside', privateCents: 0, deductibleCents: 330000, deductiblePercent: null })]), text: /außerhalb der Abrechnungseinheit zugeordnet/ },
-  mixedUseChangedInYear: { report: MIXED([POS()], { selfUseChangedInYear: true }), text: /nicht nach Tagen/ },
+  mixedUseChangedInYear: { report: MIXED([POS()], { selfUseChangedInYear: true }), text: /Ohne eingetragenen Nutzungswechsel/ },
   mixedUseClosedChanged: { report: MIXED([POS()], { closedSelfUseDiffers: true }), text: /gilt der eingefrorene Stand/ },
   mixedUseLabor35a: { report: MIXED([POS({ labor35aCents: 50000 })]), text: /in Ihrer eigenen Steuererklärung/ },
   mixedUseNotCalculated: { report: MIXED(), text: /Nicht gerechnet werden/ },

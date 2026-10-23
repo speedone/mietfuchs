@@ -12,6 +12,11 @@ import type { Allocation } from './allocation.ts'
 //   'ausgenommen'→ beides false — gehört nicht zur Abrechnungseinheit, bleibt außen vor
 export type UnitUsage = 'vermietet' | 'eigen' | 'ausgenommen'
 
+// Ein Nutzungswechsel (#259): ab `from` ('JJJJ-MM-TT') gilt `usage`. Die erste Stufe der Staffel ist
+// die Angabe an der Einheit (`participates`/`selfUsed`), sie gilt vor dem ersten Wechsel. Gelesen wird
+// nur über shared/unitUsage.ts.
+export type UsageChange = { from: string; usage: UnitUsage }
+
 // Die Art eines Objekts (#92): Mehrfamilienhaus, vermietete Eigentumswohnung, Einfamilienhaus,
 // Zweifamilienhaus (#180, Heizung PR 4; nur Beschreibung, die Ausnahme des § 2 HeizkostenV hängt an
 // den Wohnungen), Sonstiges (etwa ein Garagenhof).
@@ -69,6 +74,8 @@ export type Unit = {
   // Zählertypen, für die die Einheit keinen Anschluss hat (#117), etwa eine Garage ohne Wasser.
   // Sie gilt dann beim Verbrauchsschlüssel nicht als Wohnung ohne Zähler.
   noConnection?: MeterType[]
+  // Nutzungswechsel nach Datum (#259); ohne Einträge gilt die Angabe oben für immer.
+  usageChanges?: UsageChange[]
   // Erweiterte Stammdaten (optional, ohne Einfluss auf die Berechnung)
   rooms?: number // Zimmerzahl
   floor?: string // Etage, z. B. „EG“, „1. OG“
@@ -1214,6 +1221,9 @@ export type TaxReport = {
   // Hatte eine selbstgenutzte Einheit im Jahr ein Mietverhältnis? Dann ist die Aufteilung nach
   // Fläche nicht nach Tagen gerechnet (#163).
   selfUseChangedInYear: boolean
+  // Einheiten, deren Nutzung im Jahr wechselt (#259). Umlagefähige Kosten folgen dem Eigenanteil der Abrechnung
+  // und sind tagesgenau; was nach Fläche geteilt wird, gilt noch nach der Nutzung am Jahresende. Fehlt ohne Wechsel.
+  usageChangedUnits?: string[]
   // Abgeschlossene Abrechnung, deren eingefrorene Eigenanteile von der heutigen Rechnung abweichen
   // oder je Position gar nicht vorliegen (Archivstück von vor #142).
   closedSelfUseDiffers: boolean

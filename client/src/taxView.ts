@@ -43,7 +43,7 @@ export const TAX_HINTS = [
   'reserveContribution', 'reserveSuspected', 'etwHousingMoney',
   'mixedUseSplit', 'mixedUseKeyNotArea', 'mixedUseAreaMissing', 'mixedUseDirectOutside', 'mixedUseChangedInYear',
   'mixedUseClosedChanged', 'mixedUseLabor35a', 'mixedUseNotCalculated', 'mixedUseExcludedArea', 'mixedUseClosedItemsChanged',
-  'mixedUseAssignedUnits',
+  'mixedUseAssignedUnits', 'usageChangedInYear',
   'operatingPowerBalance', 'operatingPowerAmbiguous', 'unmarkedPowerCredits',
   'movedIn', 'movedOut', 'unstated',
 ] as const
@@ -108,6 +108,8 @@ export type TaxHint = (typeof TAX_HINTS)[number]
 //   `mixedUseDirectOutside` Eine Position ist einer Einheit außerhalb der Abrechnungseinheit
 //                        zugeordnet; Mietfuchs zählt sie als abziehbar, kann sie aber nicht einordnen.
 //   `mixedUseChangedInYear` Eine selbstgenutzte Einheit hatte im Jahr ein Mietverhältnis.
+//   `usageChangedInYear` Die Nutzung einer Einheit wechselt im Jahr (#259); was nach Fläche geteilt
+//                        wird, gilt noch nach der Nutzung am Jahresende.
 //   `mixedUseClosedChanged` Die abgeschlossene Abrechnung sagt beim Eigenanteil etwas anderes als
 //                        die heutige Rechnung; es gilt der eingefrorene Stand.
 //   `mixedUseLabor35a`   Eine Position mit §35a-Lohnanteil hat einen privaten Teil.
@@ -159,6 +161,7 @@ export function taxHints(report: TaxReport, basis: Basis, propertyKind?: Propert
   if (tenancies > 0 && inclusive === tenancies) hints.push('inclusiveLine24')
   else if (inclusive > 0 || partlyInclusive > 0) hints.push('inclusiveLine24Mixed')
   if (flatRate > 0) hints.push('flatRateLine20')
+  if ((report.usageChangedUnits ?? []).length > 0) hints.push('usageChangedInYear')
   if (report.selfOccupiedExists) {
     const items = report.expenses.items
     hints.push('mixedUseSplit')

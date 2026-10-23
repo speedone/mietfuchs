@@ -33,11 +33,15 @@ import { dayAfter, dayBefore, law, shiftMonths, type LawLog, type Period } from 
 import { dhwInputOf, dhwShareOf, type DhwContext, type DhwProblem } from './dhw.ts'
 import { lineRoot } from '../../shared/heatingPeriod.ts'
 import type {
-  SelfSpanRange,
+  SelfSpanRange, UnitUsage,
   AreaBasisHeat, CaptureMethod, ChangeSplit, ComparableUnit, EstimatePart, EstimateProposal, DhwMethod, DhwStatement, HeatingEnergy, HeatingPart, HeatPumpMajority, HeatingTarget, HotWater, InsulationRule, InterimGap, InterimGapStatus, MeterType, SelfPot, SelfReadingView, SelfRole,
 } from '../../shared/types.ts'
 
-export type SelfUnit = { id: string; name: string; areaM2: number; heatedAreaM2: number | null; role: 'rented' | 'self' | 'outside' }
+export type SelfUnit = {
+  id: string; name: string; areaM2: number; heatedAreaM2: number | null; role: 'rented' | 'self' | 'outside'
+  // Nutzungswechsel (#259): die Abschnitte gleicher Nutzung (shared/unitUsage.ts). Fehlt es, gilt `role` immer.
+  usageSpans?: (from: string, to: string) => readonly { from: string; to: string; usage: UnitUsage }[]
+}
 export type SelfTenancy = { id: string; unitId: string; tenantName: string; start: string; end: string | null }
 // `factor` (Heizung PR 12): Die Differenz zweier Ablesungen zählt mal diesem Faktor; beim
 // Heizkostenverteiler mit Einheitsskala der Bewertungsfaktor, sonst 1 (hca.ts `meterFactor`). Fehlt: 1.
@@ -167,8 +171,15 @@ export function usersOf(unit: SelfUnit, tenancies: readonly SelfTenancy[], h: { 
     .slice()
     .sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : a.id < b.id ? -1 : 1))
   const users: SelfUser[] = []
+  const push = (role: Exclude<SelfRole, 'tenancy'>, from: string, to: string) => {
+    users.push({ key: `${role}:${unit.id}:${from}`, role, tenancyId: null, unitId: unit.id, label: GAP_LABEL[role], from, to, days: spanDays(from, to), degreeDayPermille: 0 })
+  }
+  // Eine Lücke ohne Mietverhältnis; wechselt darin die Nutzung (#259), ist jeder Abschnitt ein eigener Nutzer
+  // (§ 9b HeizkostenV: der Eintritt des Vermieters als Nutzer ist ein Nutzerwechsel).
+  const ROLE_OF: Record<UnitUsage, Exclude<SelfRole, 'tenancy'>> = { vermietet: 'vacancy', eigen: 'self', ausgenommen: 'outside' }
   const gap = (from: string, to: string) => {
-    users.push({ key: `${gapRole}:${unit.id}:${from}`, role: gapRole, tenancyId: null, unitId: unit.id, label: GAP_LABEL[gapRole], from, to, days: spanDays(from, to), degreeDayPermille: 0 })
+    if (!unit.usageSpans) return push(gapRole, from, to)
+    for (const sp of unit.usageSpans(from, to)) push(ROLE_OF[sp.usage], sp.from, sp.to)
   }
   let cursor = h.from
   for (const t of own) {

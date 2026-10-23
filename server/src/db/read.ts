@@ -26,7 +26,7 @@ import { DEFAULT_SETTINGS } from '../defaults.ts'
 import { frozenSettlementOf, type FrozenItemSelfUse, type SnapshotSource } from '../snapshot.ts'
 import type { Executor } from './client.ts'
 import {
-  aiSlots, baseRents, closedHeatingSettlements, co2Refunds, co2Statements, co2TenantReliefs, degreeDayValues, fuelCarryFrozen, fuelDeliveries, fuelDeliveryParts, heatingPeriods, closedSettlements, costItemAmounts, costItemContract, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, unitLocalRents, unitNoConnection, meters, payments,
+  aiSlots, baseRents, closedHeatingSettlements, co2Refunds, co2Statements, co2TenantReliefs, degreeDayValues, fuelCarryFrozen, fuelDeliveries, fuelDeliveryParts, heatingPeriods, closedSettlements, costItemAmounts, costItemContract, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, unitLocalRents, unitNoConnection, unitUsageChanges, meters, payments,
   flatRates, tenancyDirectCharges, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingPrepayments, heatingSelfSpans, heatingSeparateSpans, heatingServiceValues, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, readings, settings, tenancies, units,
   interimReadingGaps, heatingEstimates, heatingMonthlyInfo,
 } from './schema.ts'
@@ -151,6 +151,9 @@ export async function readUnits(db: Executor): Promise<Unit[]> {
   // Die ortsübliche Miete (#257), nach Monat; nur, wenn es Einträge gibt.
   const localRentRows = await db.select().from(unitLocalRents).orderBy(asc(unitLocalRents.unitId), asc(unitLocalRents.from))
   const localRents = groupBy(localRentRows, (r) => r.unitId, (r) => ({ from: r.from, monthlyCents: r.monthlyCents, source: r.source, sourceDate: r.sourceDate }))
+  // Die Nutzungswechsel (#259), nach Datum; nur, wenn es welche gibt, wie bei den Anschlüssen.
+  const usageRows = await db.select().from(unitUsageChanges).orderBy(unitUsageChanges.from)
+  const usageChanges = groupBy(usageRows, (r) => r.unitId, (r) => ({ from: r.from, usage: r.usage }))
   return rows.map((u) => ({
     id: u.id,
     propertyId: u.propertyId,
@@ -165,6 +168,7 @@ export async function readUnits(db: Executor): Promise<Unit[]> {
     // Ebenso nur, wenn es Einträge gibt (#117).
     ...(noConnection.has(u.id) ? { noConnection: noConnection.get(u.id) } : {}),
     ...(localRents.has(u.id) ? { localRents: localRents.get(u.id) } : {}),
+    ...(usageChanges.has(u.id) ? { usageChanges: usageChanges.get(u.id) } : {}),
     rooms: orUndefined(u.rooms),
     floor: orUndefined(u.floor),
     notes: orUndefined(u.notes),

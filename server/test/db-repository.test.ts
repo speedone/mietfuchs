@@ -25,7 +25,7 @@ import {
 } from '../src/db/repository.ts'
 import {
   baseRents, costItemAmounts, costItemContract, flatRates, costItemParticipants, costItemShares, costItems, meters, payments, personHistory, prepaymentOverrides,
-  prepayments, readings, tenancies, units,
+  prepayments, readings, tenancies, units, unitUsageChanges,
 } from '../src/db/schema.ts'
 import { calendarPeriod } from '../../shared/period.ts'
 import { createHeatingPlant } from '../src/db/heating.ts'
@@ -905,5 +905,29 @@ test('Nebenkostenmodell: die Staffel der Pauschale kommt zurück und wird beim �
     ])
     await opened.write((db) => updateEntity(db, 'tenancies', 't1', { flatRates: [{ from: '2024-01', monthlyCents: 7000 }] }))
     assert.deepEqual(fieldOf(await opened.read((db) => findEntity(db, 'tenancies', 't1')), 'flatRates'), [{ from: '2024-01', monthlyCents: 7000 }])
+  })
+})
+
+// ---------- Nutzungswechsel (#259) ----------
+
+test('Nutzungswechsel: geschrieben, nach Datum gelesen, krumm geradegerückt, mit der Wohnung gelöscht', async () => {
+  await withDatabase(async (opened) => {
+    const u = await opened.write((db) => createEntity(db, 'units', 'u1', {
+      propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: false, selfUsed: true,
+      usageChanges: [
+        { from: '2026-01-01', usage: 'ausgenommen' }, { from: '2025-07-01', usage: 'eigen' }, { from: '2025-07-01', usage: 'vermietet' },
+        { from: '2025-02-30', usage: 'vermietet' }, { from: '2025-03-01', usage: 'erfunden' }, 'Unsinn',
+      ],
+    }))
+    assert.deepEqual(fieldOf(u, 'usageChanges'), [{ from: '2025-07-01', usage: 'vermietet' }, { from: '2026-01-01', usage: 'ausgenommen' }])
+    const teil = await opened.write((db) => updateEntity(db, 'units', 'u1', { name: 'EG links' }))
+    const kept = fieldOf(teil, 'usageChanges')
+    assert.ok(Array.isArray(kept) && kept.length === 2, 'ein Teilrumpf lässt die Wechsel stehen')
+    const leer = await opened.write((db) => updateEntity(db, 'units', 'u1', { usageChanges: [] }))
+    assert.equal(fieldOf(leer, 'usageChanges'), undefined)
+    await opened.write((db) => updateEntity(db, 'units', 'u1', { usageChanges: [{ from: '2025-07-01', usage: 'vermietet' }] }))
+    assert.equal(await opened.write((db) => removeEntity(db, 'units', 'u1')), true)
+    const rest = await opened.read((db) => db.select().from(unitUsageChanges))
+    assert.deepEqual(rest, [])
   })
 })

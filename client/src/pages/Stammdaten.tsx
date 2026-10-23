@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { CostModel, HeatingModel, SelfSupplyKind, DepositStatus, HeatingPlant, InterimGapStatus, Meter, MeterType, Settings, Tenancy, Unit, UnitDependents, UnitUsage } from '../types'
 import { servesUnit } from '../../../shared/heatingPeriod.ts'
 import { DEPOSIT_STATUS_LABELS, METER_TYPE_LABELS, UNIT_USAGE_LABELS, usageOf } from '../types'
-import { EMPTY_UNIT_FORM, buildUnitBody, connectionSummary, connectionTypes, setConnected, unitDeleteBlocked, unitDeleteMessage, unitToForm, type UnitField, type UnitForm } from '../unitForm'
+import { EMPTY_UNIT_FORM, buildUnitBody, usageChangeField, usesSelf, connectionSummary, connectionTypes, setConnected, unitDeleteBlocked, unitDeleteMessage, unitToForm, type UnitField, type UnitForm } from '../unitForm'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { separateHeatingFor, separateHeatingPlant } from '../heatingSettlementView'
 import Drawer from '../components/Drawer'
@@ -80,6 +80,9 @@ const EMPTY_TENANCY_EXTRA = {
 }
 
 // Heute als JJJJ-MM-TT, örtlich: „läuft noch“ ist eine Frage an den Kalender des Nutzers.
+// Kurz für die Liste der Wohnungen (#259).
+const USAGE_SHORT: Record<UnitUsage, string> = { vermietet: 'vermietet', eigen: 'Eigennutzung', ausgenommen: 'nicht beteiligt' }
+
 const localToday = (): string => {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -393,6 +396,12 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                     )}
                     {usageOf(u) === 'ausgenommen' && (
                       <span className="badge gray" title="Bleibt vollständig außen vor">nicht beteiligt</span>
+                    )}
+                    {/* Nutzungswechsel (#259) stehen unter der Angabe, mit dem Tag. */}
+                    {(u.usageChanges ?? []).length > 0 && (
+                      <div className="muted cell-sub">
+                        {(u.usageChanges ?? []).map((c) => `ab ${fmtDate(c.from)} ${USAGE_SHORT[c.usage]}`).join(' · ')}
+                      </div>
                     )}
                     {/* Eine Einheit ohne Anschluss (#117, #142) soll man in der Liste sehen. */}
                     {connectionSummary(u.noConnection ?? []) && (
@@ -812,7 +821,28 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                 {unitForm.usage === 'ausgenommen' && <>Bleibt vollständig außen vor. Nur richtig, wenn die Wohnung nicht zur <Term id="billingUnit">Abrechnungseinheit</Term> gehört (z. B. separat abgerechnete Einheit) — sonst tragen die Mieter deren Anteil mit.</>}
               </small>
             </label>
-            {unitForm.usage === 'eigen' && (
+            {/* Nutzungswechsel (#259): eine Staffel „ab Tag“, die Nutzung oben gilt bis zum ersten Wechsel. */}
+            <div className="field-group">
+              <div className="field-group-label"><Term id="usageChange">Nutzungswechsel</Term></div>
+              {unitForm.usageChanges.map((c, i) => (
+                <div className="staffel-row" key={i}>
+                  <Field label="Neue Nutzung ab" required {...unitErrors.field(usageChangeField(i))}>
+                    <input type="date" value={c.from} onChange={(e) => setUnitForm({ ...unitForm, usageChanges: unitForm.usageChanges.map((x, k) => (k === i ? { ...x, from: e.target.value } : x)) })} />
+                  </Field>
+                  <Field label="Nutzung">
+                    <select value={c.usage} onChange={(e) => setUnitForm({ ...unitForm, usageChanges: unitForm.usageChanges.map((x, k) => (k === i ? { ...x, usage: e.target.value as UnitUsage } : x)) })}>
+                      {(Object.keys(UNIT_USAGE_LABELS) as UnitUsage[]).map((k) => (
+                        <option key={k} value={k}>{UNIT_USAGE_LABELS[k]}</option>
+                      ))}
+                    </select>
+                  </Field>
+                  <button className="icon-btn danger" title="Zeile entfernen" aria-label="Zeile entfernen" onClick={() => { unitErrors.clear(); setUnitForm({ ...unitForm, usageChanges: unitForm.usageChanges.filter((_, k) => k !== i) }) }}>🗑</button>
+                </div>
+              ))}
+              <small className="muted">Ziehen Sie ein oder vermieten Sie die Wohnung zum ersten Mal, tragen Sie den Tag hier ein. Die Nutzung oben gilt bis zum ersten Wechsel; ein Mietverhältnis zählt nur in der vermieteten Zeit.</small>
+              <button className="btn small secondary field-add" onClick={() => setUnitForm({ ...unitForm, usageChanges: [...unitForm.usageChanges, { from: '', usage: unitForm.usage === 'vermietet' ? 'eigen' : 'vermietet' }] })}>+ Wechsel ab Datum …</button>
+            </div>
+            {usesSelf(unitForm) && (
               <Field label="Personen im eigenen Haushalt" hint="Nur für den Personenschlüssel; ohne Angabe bleibt die eigene Wohnung dort unberücksichtigt." {...unitErrors.field('selfPersons')}>
                 <input inputMode="numeric" value={unitForm.selfPersons} onChange={(e) => setUnitForm({ ...unitForm, selfPersons: e.target.value })} placeholder="z. B. 2" />
               </Field>

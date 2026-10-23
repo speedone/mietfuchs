@@ -583,3 +583,30 @@ test('Seitenfenster Mietverhältnis: Umschreiben der IBAN beim Verlassen ist kei
   await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   expect(screen.queryByRole('alertdialog')).toBeNull()
 })
+
+// ---------- Nutzungswechsel (#259) ----------
+
+test('Nutzungswechsel: eine Zeile ohne Tag meldet sich, mit Tag geht die Staffel im Rumpf mit', async () => {
+  const dialog = await openUnit()
+  fireEvent.click(within(dialog).getByRole('button', { name: /Wechsel ab Datum/ }))
+  fireEvent.click(within(dialog).getByRole('button', { name: /^Speichern$/ }))
+  expect((await within(dialog).findAllByText(/Datum fehlt/, undefined, SLOW)).length).toBeGreaterThan(0)
+  expect(sent).toEqual([])
+  fireEvent.change(within(dialog).getByLabelText(/Neue Nutzung ab/), { target: { value: '2025-07-01' } })
+  fireEvent.click(within(dialog).getByRole('button', { name: /^Speichern$/ }))
+  await vi.waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]?.body).toMatchObject({ participates: true, usageChanges: [{ from: '2025-07-01', usage: 'eigen' }] })
+})
+
+test('Nutzungswechsel: die Liste nennt den Tag und die neue Nutzung', async () => {
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <UIProvider>
+          <Stammdaten units={[{ ...UNITS[0]!, usageChanges: [{ from: '2025-07-01', usage: 'eigen' }] }, UNITS[1]!]} tenancies={[]} settings={null} reload={async () => {}} />
+        </UIProvider>
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  expect(await screen.findByText('ab 01.07.2025 Eigennutzung', undefined, SLOW)).toBeTruthy()
+})

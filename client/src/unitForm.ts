@@ -17,13 +17,15 @@ export type UnitForm = {
   mea: string
   // Zählertypen ohne Anschluss (#117), etwa Wasser bei einer Garage
   noConnection: MeterType[]
+  // Nutzungswechsel (#259): ab Tag ('JJJJ-MM-TT') gilt die Nutzung; `usage` oben gilt bis zum ersten.
+  usageChanges: { from: string; usage: UnitUsage }[]
   rooms: string
   floor: string
   notes: string
 }
 
 export const EMPTY_UNIT_FORM: UnitForm = {
-  name: '', areaM2: '', usage: 'vermietet', selfPersons: '', mea: '', noConnection: [], rooms: '', floor: '', notes: '',
+  name: '', areaM2: '', usage: 'vermietet', selfPersons: '', mea: '', noConnection: [], usageChanges: [], rooms: '', floor: '', notes: '',
 }
 
 const numStr = (n: number | undefined | null) => (n != null ? String(n).replace('.', ',') : '')
@@ -37,6 +39,7 @@ export function unitToForm(u: Unit): UnitForm {
     selfPersons: numStr(u.selfPersons),
     mea: numStr(u.mea),
     noConnection: u.noConnection ?? [],
+    usageChanges: (u.usageChanges ?? []).map((c) => ({ from: c.from, usage: c.usage })),
     rooms: numStr(u.rooms),
     floor: u.floor ?? '',
     notes: u.notes ?? '',
@@ -44,7 +47,14 @@ export function unitToForm(u: Unit): UnitForm {
 }
 
 // Die Felder des Wohnungsformulars mit Meldung (#346, Schritt 3).
-export type UnitField = 'name' | 'areaM2' | 'rooms' | 'selfPersons' | 'mea'
+export type UnitField = 'name' | 'areaM2' | 'rooms' | 'selfPersons' | 'mea' | UsageChangeField
+// Das Datum einer Zeile der Nutzungswechsel (#259).
+export type UsageChangeField = `usageChange.${number}`
+export const usageChangeField = (row: number): UsageChangeField => `usageChange.${row}`
+// Ist die Einheit in irgendeiner Stufe selbstgenutzt? Dann gilt die Personenzahl des eigenen Haushalts.
+export const usesSelf = (form: Pick<UnitForm, 'usage' | 'usageChanges'>): boolean =>
+  form.usage === 'eigen' || form.usageChanges.some((c) => c.usage === 'eigen')
+const isDay = (d: string): boolean => /^\d{4}-\d{2}-\d{2}$/.test(d) && new Date(`${d}T00:00:00Z`).toISOString().slice(0, 10) === d
 export type UnitBuildResult = { problems: Problem<UnitField>[] } | { body: Record<string, unknown> }
 
 // null statt undefined, damit geleerte Felder über die generische PUT-Route auch
@@ -63,13 +73,22 @@ export function buildUnitBody(form: UnitForm): UnitBuildResult {
     problems.push({ field: 'rooms', short: 'Keine Zahl', text: 'Zimmerzahl bitte als Zahl angeben (oder leer lassen).' })
   }
   const selfPersons = form.selfPersons.trim() ? (parseNumberDe(form.selfPersons) ?? NaN) : null
-  if (form.usage === 'eigen' && selfPersons !== null && (!Number.isFinite(selfPersons) || selfPersons < 0)) {
+  if (usesSelf(form) && selfPersons !== null && (!Number.isFinite(selfPersons) || selfPersons < 0)) {
     problems.push({ field: 'selfPersons', short: 'Keine Zahl', text: 'Personen im eigenen Haushalt bitte als Zahl angeben (oder leer lassen).' })
   }
   const mea = form.mea.trim() ? (parseNumberDe(form.mea) ?? NaN) : null
   if (mea !== null && (!Number.isFinite(mea) || mea < 0)) {
     problems.push({ field: 'mea', short: 'Keine Zahl', text: 'Miteigentumsanteile bitte als Zahl angeben (oder leer lassen).' })
   }
+  // Nutzungswechsel (#259): jede Zeile braucht einen Tag, und zwei Wechsel am selben Tag widersprechen sich.
+  const seen = new Set<string>()
+  form.usageChanges.forEach((c, i) => {
+    const where = `Nutzungswechsel, Zeile ${i + 1}`
+    if (!c.from.trim()) problems.push({ field: usageChangeField(i), short: 'Datum fehlt', text: `${where}: Geben Sie den Tag ein, ab dem die neue Nutzung gilt.` })
+    else if (!isDay(c.from)) problems.push({ field: usageChangeField(i), short: 'Kein Datum', text: `${where}: Geben Sie ein gültiges Datum ein.` })
+    else if (seen.has(c.from)) problems.push({ field: usageChangeField(i), short: 'Tag doppelt', text: `${where}: Für diesen Tag steht schon ein Wechsel; je Tag gilt nur eine Nutzung.` })
+    seen.add(c.from)
+  })
   if (problems.length > 0) return { problems }
   return {
     body: {
@@ -77,9 +96,10 @@ export function buildUnitBody(form: UnitForm): UnitBuildResult {
       areaM2: area,
       participates: form.usage === 'vermietet',
       selfUsed: form.usage === 'eigen',
-      selfPersons: form.usage === 'eigen' ? selfPersons : null,
+      selfPersons: usesSelf(form) ? selfPersons : null,
       mea,
       noConnection: form.noConnection,
+      usageChanges: [...form.usageChanges].sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0)).map((c) => ({ from: c.from, usage: c.usage })),
       rooms,
       floor: form.floor.trim() || null,
       notes: form.notes.trim() || null,
