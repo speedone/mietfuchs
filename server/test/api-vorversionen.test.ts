@@ -12,6 +12,7 @@ import type { Unit } from '../../shared/types.ts'
 import { type ClientSettings, type HealthReport, databaseOfV080, errorFrom, jsonOf, postJson, startServerIn, uploadBelegFile, waitForExit } from '../testing/api.ts'
 import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { units } from '../src/db/schema.ts'
+import { connect } from '../src/db/client.ts'
 import { PRIOR_DIR, priorVersionName } from '../src/db/priorVersions.ts'
 
 type Listed = { name: string, createdAt: string, size: number }
@@ -184,14 +185,59 @@ test('Vorversionen: Nur eigene Namen, kein Pfad von außen', async () => {
   }
 })
 
-test('Vorversionen: Ohne Datenbank antworten die Routen mit 503', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-'))
-  // Eine Datei, die keine Datenbank ist: Das Öffnen scheitert, der Server startet ohne Daten.
+test('Durchsicht S1: Lässt sich die Datenbank nicht öffnen, gehen Liste und Einspielen trotzdem', async () => {
+  const dir = await dataDirWithStock()
+  const name = priorVersionName(new Date(Date.now() - DAY))
+  placeCopy(dir, name)
+  // Danach ist die Arbeitsdatei kaputt: genau der Fall, für den es die Vorversionen gibt.
   fs.writeFileSync(path.join(dir, 'mietfuchs.sqlite'), 'kaputt'.repeat(200))
+  const s = await startServerIn(dir)
+  try {
+    assert.deepEqual((await list(s.base)).map((v) => v.name), [name])
+    const res = await postJson(s, `/api/prior-versions/${name}/restore`, {})
+    assert.equal(res.status, 200, await res.clone().text())
+    assert.deepEqual((await s.api<Unit[]>('/api/units')).map((u) => u.name), ['EG'])
+    // Die kaputte Datei ist nicht weg, sie liegt als vor-restore daneben.
+    assert.ok(fs.existsSync(path.join(s.dataDir, 'mietfuchs.sqlite.vor-restore')))
+  } finally {
+    s.stop()
+  }
+})
+
+test('Durchsicht S1: Stehen die Daten noch in der db.json, antworten die Routen mit 503', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-'))
+  // Eine Datei, die keine Datenbank ist, und daneben eine db.json: Der Umstieg ist gescheitert.
+  fs.writeFileSync(path.join(dir, 'mietfuchs.sqlite'), 'kaputt'.repeat(200))
+  fs.writeFileSync(path.join(dir, 'db.json'), JSON.stringify({ units: [], tenancies: [], costItems: [], meters: [], readings: [], payments: [], settings: {} }))
   const s = await startServerIn(dir)
   try {
     assert.equal((await fetch(`${s.base}/api/prior-versions`)).status, 503)
     assert.equal((await postJson(s, `/api/prior-versions/${priorVersionName(new Date())}/restore`, {})).status, 503)
+  } finally {
+    s.stop()
+  }
+})
+
+const unitNamesIn = async (file: string): Promise<string[]> => {
+  const c = await connect(file)
+  try {
+    return c.rows('SELECT name FROM units ORDER BY name').map((r) => String(r[0]))
+  } finally {
+    c.close()
+  }
+}
+
+test('Durchsicht M1: Zweimal einspielen, und der Stand vor dem ersten liegt noch im Datenordner', async () => {
+  const s = await startServerIn(await dataDirWithStock())
+  try {
+    const [version] = await list(s.base)
+    await s.api('/api/units', { method: 'POST', body: JSON.stringify({ name: 'OG', areaM2: 50, participates: true }) })
+    assert.equal((await postJson(s, `/api/prior-versions/${version.name}/restore`, {})).status, 200)
+    assert.equal((await postJson(s, `/api/prior-versions/${version.name}/restore`, {})).status, 200)
+    const aside = fs.readdirSync(s.dataDir).filter((n) => n.startsWith('mietfuchs.sqlite.vor-restore.vom-'))
+    assert.equal(aside.length, 1, fs.readdirSync(s.dataDir).join(', '))
+    assert.deepEqual(await unitNamesIn(path.join(s.dataDir, aside[0])), ['EG', 'OG'])
+    assert.deepEqual(await unitNamesIn(path.join(s.dataDir, 'mietfuchs.sqlite.vor-restore')), ['EG'])
   } finally {
     s.stop()
   }

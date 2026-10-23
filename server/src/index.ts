@@ -37,7 +37,7 @@ import { PRESETS, presetById } from './ai/presets.ts'
 import { providerConfig } from './ai/index.ts'
 import { isProviderError } from './ai/errors.ts'
 import { databaseUnavailable, healthReport, NO_DATABASE, type DatabaseState } from './health.ts'
-import { databaseFile, openDatabase, type OpenedDatabase } from './db/open.ts'
+import { databaseFile, openDatabase, setAsideName, type OpenedDatabase } from './db/open.ts'
 import { changeoverWithoutDatabase, replaceFile, runChangeover, type ChangeoverResult } from './db/changeover.ts'
 import { acknowledgeNotice, clearNotice, NOTICE_NAME, noticeKey, readNotice, recordNotice, type MigrationNotice } from './db/migrationNotice.ts'
 import type { Database, Executor } from './db/client.ts'
@@ -80,7 +80,7 @@ import { describeFile, describeFolder, hashFile, mimeTypeOf, uploadedAtOf } from
 import { acceptIban, IbanRefusal } from './iban.ts'
 import { IBAN_LABELS } from '../../shared/iban.ts'
 import { derivedTaxLines, planTaxArchive, taxArchiveItems } from './taxReceipts.ts'
-import { createPriorVersion, listPriorVersions, PRIOR_CHECK_INTERVAL_MS, PRIOR_DIR, priorVersionTime } from './db/priorVersions.ts'
+import { createPriorVersion, listPriorVersions, mayCreatePriorVersion, PRIOR_CHECK_INTERVAL_MS, PRIOR_DIR, priorVersionsBlocked, priorVersionTime } from './db/priorVersions.ts'
 import { costItems as costItemsTable } from './db/schema.ts'
 import { forgetUpload, placeUpload, recordIfMissing, recordUpload, rowOf, uploadRows, type Placement, type UploadRow } from './db/uploads.ts'
 
@@ -2215,7 +2215,12 @@ async function restoreDatabase(staged: string | null): Promise<string[]> {
   // `renameSync` scheiterte dann an etwas, das von selbst vergeht, und zwar ausgerechnet in dem
   // Augenblick, in dem die einzige Kopie der wiederhergestellten Daten noch unter ihrem
   // Zwischennamen liegt.
-  if (fs.existsSync(target)) await replaceFile(target, path.join(DATA_DIR, DB_BEFORE_RESTORE))
+  // **Eine vorhandene Sicherung wird beiseitegelegt, nicht überschrieben** (Durchsicht zu #318, M1):
+  // Wer zweimal einspielt, verlöre sonst den Stand vor dem ersten Mal, und genau der kann der sein,
+  // den er sucht. Dasselbe Muster wie bei der Sicherung vor einem Update (`….vom-JJJJ-MM-TT-HHMM`).
+  const before = path.join(DATA_DIR, DB_BEFORE_RESTORE)
+  if (fs.existsSync(target) && fs.existsSync(before)) await replaceFile(before, setAsideName(before))
+  if (fs.existsSync(target)) await replaceFile(target, before)
   if (staged) await replaceFile(staged, target)
 
   // Die Sicherung vor einem früheren Update gehört nicht zum wiederhergestellten Stand; der
@@ -2470,17 +2475,25 @@ function restoreFailedNote(err: unknown, what: string, ifStaged: string): string
 // Vorversion einer leeren Datenbank eines gescheiterten Umstiegs wäre keine.
 async function checkPriorVersion(): Promise<void> {
   try {
-    if (restoreRunning || !database || databaseUnavailable(databaseState()) !== null) return
-    const name = await createPriorVersion(database, DATA_DIR, new Date())
+    if (!database || !mayCreatePriorVersion(databaseState(), restoreRunning)) return
+    const name = await createPriorVersion(database, DATA_DIR, new Date(), { skip: () => restoreRunning })
     if (name) console.log(`Vorversion der Datenbank angelegt: ${path.join(DATA_DIR, PRIOR_DIR, name)}`)
   } catch (err) {
     console.error(`Die Vorversion der Datenbank ließ sich nicht anlegen: ${messageOf(err)}`)
   }
 }
 
+// Gesperrt nur, wo die Daten noch in der db.json stehen (`priorVersionsBlocked`); ohne offene
+// Datenbank gehen Liste und Einspielen, denn das ist der Fall, für den es sie gibt.
+const priorVersionsRefusal = (res: Response): boolean => {
+  const reason = priorVersionsBlocked(databaseState())
+  if (reason) res.status(503).json({ error: reason })
+  return reason !== null
+}
+
 app.get('/api/prior-versions', async (_req, res) => {
-  // Durch readData, damit die Route ohne Datenbank wie jede Datenroute 503 antwortet.
-  res.json(await readData(async () => listPriorVersions(DATA_DIR)))
+  if (priorVersionsRefusal(res)) return
+  res.json(listPriorVersions(DATA_DIR))
 })
 
 // **Eingespielt wird über denselben Weg wie die Datenbank aus einem Backup**: prüfen
@@ -2494,7 +2507,7 @@ app.post('/api/prior-versions/:name/restore', async (req, res) => {
   const name = req.params.name
   // Nur ein Name nach dem eigenen Muster, nie ein Pfad (priorVersionTime prüft auch basename).
   if (priorVersionTime(name) === null) return res.status(400).json({ error: 'Diese Vorversion gibt es nicht.' })
-  await readData(async () => undefined) // ohne Datenbank 503, wie jede Datenroute
+  if (priorVersionsRefusal(res)) return
   const source = path.join(DATA_DIR, PRIOR_DIR, name)
   if (!fs.existsSync(source)) return res.status(404).json({ error: 'Diese Vorversion gibt es nicht mehr. Bitte laden Sie die Seite neu.' })
   if (restoreRunning) return res.status(409).json({ error: 'Es läuft gerade eine Wiederherstellung. Bitte warten Sie, bis sie fertig ist.' })
@@ -2507,10 +2520,10 @@ app.post('/api/prior-versions/:name/restore', async (req, res) => {
       fs.rmSync(staged, { force: true })
       return res.status(500).json({ error: `Die Vorversion ließ sich nicht kopieren: ${messageOf(err)} ${NOTHING_CHANGED}` })
     }
-    const problem = await archiveDatabaseProblem(staged)
+    const problem = await archiveDatabaseProblem(staged, 'priorVersion')
     if (problem) {
       fs.rmSync(staged, { force: true })
-      return res.status(400).json({ error: problem.replace('in diesem Archiv', 'in dieser Vorversion').replace('dieses Backup', 'diese Vorversion').replace('ein anderes Backup', 'eine andere Vorversion') })
+      return res.status(400).json({ error: problem })
     }
     let notes: string[]
     try {

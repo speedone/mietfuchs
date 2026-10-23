@@ -152,7 +152,8 @@ es eine Meldung, abgebrochen wird nie.
   nächste `PUT /api/settings` den alten Stand aus dem Zwischenspeicher zurück.
 - Eine mitgebrachte Datenbank wird **vor** dem Austausch geprüft (`unknownSteps`, wie beim Öffnen).
   Ersetzt wird wie beim Umstieg (Schlange leerlaufen, schließen, ersetzen, öffnen), die bisherige als
-  `mietfuchs.sqlite.vor-restore`, bewegt mit `replaceFile` samt Wiederholungen (Virenscanner unter
+  `mietfuchs.sqlite.vor-restore` (eine schon vorhandene wird wie bei `backupBeforeMigrating` als
+  `….vom-JJJJ-MM-TT-HHMM` beiseitegelegt, `setAsideName`, nie überschrieben), bewegt mit `replaceFile` samt Wiederholungen (Virenscanner unter
   Windows). Geprüft werden auch Verweise über Objekte, Zeiträume und Heizanlagen
   (`crossPropertyViolations`, `orphanPeriodKeys`, `heatingPlantViolations`).
 - **ZIP schreiben** mit yazl als Strom, Namen als UTF-8 mit Kennzeichen (ein Test liest das Backup mit
@@ -178,24 +179,31 @@ Wohnung kaskadiert auf alles darunter) half bisher nichts von selbst. Deshalb le
   `setInterval` einmal am Tag (`unref`). Neu nur, wenn die jüngste älter als 7 Tage ist oder es keine
   gibt, **und** die Datenbank einen Bestand trägt (`carriesStock`: Wohnungen, Mietverhältnisse, Zähler
   oder Kostenpositionen; eine frische hat nur Objekt und Einstellungen), **und** `databaseUnavailable`
-  `null` sagt, **und** kein Wiederherstellen läuft. Behalten werden 4, die älteste fällt weg. Eine
-  jüngste „aus der Zukunft“ (Uhr zurückgestellt) gilt als frisch. Der Zeitpunkt kommt aus dem Namen,
+  `null` sagt, **und** kein Wiederherstellen läuft (`mayCreatePriorVersion`, im Rumpf von
+  `opened.write` vor dem VACUUM noch einmal gefragt). Behalten werden 4, die älteste fällt weg. Eine
+  jüngste bis einen Tag „aus der Zukunft“ gilt als frisch, eine weiter voraus zählt nicht. Der Zeitpunkt kommt aus dem Namen,
   nicht aus der Dateizeit; die Auswahl sind reine Funktionen (prior-versions.test.ts), daher kein
   Testgriff für die Uhr: Die Integrationstests legen Dateien mit passend alten Namen hin.
 - **Wie**: `VACUUM INTO` durch die Schlange (`opened.write`), wie der Schnappschuss fürs Backup, erst
-  als `.entsteht-…`, dann `rename`; Reste davon räumt der nächste Versuch weg. `checkPriorVersion` in
+  als `.entsteht-…`, dann `PRAGMA integrity_check` und `replaceFile`; scheitert die Prüfung, wird sie
+  verworfen und **nichts rotiert**. Eine alte, die sich nicht löschen lässt, hält die übrigen nicht auf.
+  Reste des Zwischennamens räumt der nächste Versuch weg. `checkPriorVersion` in
   index.ts **wirft nie**, ein Fehler steht nur auf der Konsole.
 - **Nicht** im Backup-ZIP (es packt nur `uploads/` und den Schnappschuss) und nicht in den `checks`
   von `/healthz`.
-- **Einspielen** (`POST /api/prior-versions/:name/restore`, Liste `GET /api/prior-versions`, beide
-  ohne Datenbank 503 über `readData`): nur ein Name nach dem eigenen Muster (`priorVersionTime`, prüft
+- **Einspielen** (`POST /api/prior-versions/:name/restore`, Liste `GET /api/prior-versions`): 503 nur,
+  wo die Daten noch in der `db.json` stehen (gescheiterter Umstieg, `stale` mit `pending`;
+  `priorVersionsBlocked`). **Lässt sich die Datenbank nicht öffnen, gehen beide**, das ist der
+  Rettungsfall, und `restoreDatabase` kommt ohne offene Datenbank aus. Weiter: nur ein Name nach dem eigenen Muster (`priorVersionTime`, prüft
   auch `path.basename`), sonst 400, fehlt die Datei 404. Dann derselbe Weg wie eine Datenbank aus dem
-  Backup: Kopie nach `mietfuchs.sqlite.restore-<id>`, `archiveDatabaseProblem` (Integrität,
+  Backup: Kopie nach `mietfuchs.sqlite.restore-<id>`, `archiveDatabaseProblem(…, 'priorVersion')`
+  (die Meldungen sagen dann „Vorversion“ statt „Archiv“; ein Wächter liest den Rumpf; Integrität,
   `unknownSteps`, Migrationskette nachholen, Verweise), `restoreDatabase` (bisherige als
   `mietfuchs.sqlite.vor-restore`, Hinweis nach dem Update weg), `refreshSettings`; gesperrt über
   `restoreRunning` wie `/api/restore`. Die Vorversion selbst bleibt unverändert. Die `db.json` und die
   Belege werden nicht angefasst; Belege, auf die der Stand verweist und die fehlen, nennt die Antwort
-  in `notes`.
+  in `notes`. Die Oberfläche lädt danach **immer** neu (jede Seite hält sonst den alten Stand) und
+  zeigt die Hinweise einmal nach dem Neuladen (sessionStorage, mit try/catch).
 
 ## Der Umstieg aus der db.json
 

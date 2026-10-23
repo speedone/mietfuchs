@@ -453,8 +453,9 @@ export function backupBeforeMigrating(connection: Connection, file: string, migr
 }
 
 // Der Name, unter dem eine vorgefundene Sicherung beiseitegelegt wird. Gibt es ihn schon (zwei
-// Versuche in derselben Minute), wird hochgezählt statt überschrieben.
-function setAsideName(target: string): string {
+// Versuche in derselben Minute), wird hochgezählt statt überschrieben. Exportiert, weil das
+// Wiederherstellen eine vorhandene `mietfuchs.sqlite.vor-restore` genauso beiseitelegt (#318).
+export function setAsideName(target: string): string {
   const iso = fs.statSync(target).mtime.toISOString()
   const base = `${target}.vom-${iso.slice(0, 10)}-${iso.slice(11, 13)}${iso.slice(14, 16)}`
   let name = base

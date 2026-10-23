@@ -24,13 +24,44 @@ export const fileSize = (bytes: number): string =>
     ? `${(bytes / (1024 * 1024)).toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MB`
     : `${Math.max(1, Math.round(bytes / 1024))} KB`
 
-export default function PriorVersionsCard() {
+// Die Hinweise des Servers überstehen das Neuladen in sessionStorage (Durchsicht S2). Nach dem
+// Einspielen wird **immer** neu geladen, denn jede Seite hält noch Daten des alten Stands; ohne Neuladen
+// arbeitete der Vermieter mit ihnen weiter und schriebe sie womöglich zurück. Damit die Hinweise (etwa
+// fehlende Belege) trotzdem gelesen werden, stehen sie danach einmal in dieser Karte. Der Speicher kann
+// fehlen oder werfen (privates Fenster); dann bleibt es beim Neuladen ohne Hinweise.
+const NOTES_KEY = 'mietfuchs.vorversion.hinweise'
+function keepNotes(text: string): void {
+  try {
+    sessionStorage.setItem(NOTES_KEY, text)
+  } catch {
+    // siehe oben
+  }
+}
+// Gelesen beim Einhängen, entfernt erst im Effekt: React ruft den Anfangswert im StrictMode zweimal
+// auf, und ein Entfernen dort ließe den zweiten Aufruf leer ausgehen.
+function readNotes(): string {
+  try {
+    return sessionStorage.getItem(NOTES_KEY) ?? ''
+  } catch {
+    return ''
+  }
+}
+function dropNotes(): void {
+  try {
+    sessionStorage.removeItem(NOTES_KEY)
+  } catch {
+    // siehe oben
+  }
+}
+
+export default function PriorVersionsCard({ reloadPage = () => window.location.reload() }: { reloadPage?: () => void } = {}) {
   const confirm = useConfirm()
   const toast = useToast()
   const [versions, setVersions] = useState<PriorVersion[] | null>(null)
   const [loadError, setLoadError] = useState('')
   const [busy, setBusy] = useState(false)
-  const [done, setDone] = useState('')
+  const [done, setDone] = useState(readNotes)
+  useEffect(dropNotes, [])
 
   useEffect(() => {
     api<PriorVersion[]>('/api/prior-versions').then(setVersions, (e: unknown) => setLoadError(errorText(e)))
@@ -42,7 +73,7 @@ export default function PriorVersionsCard() {
       message:
         'Alle aktuellen Daten werden durch diesen Stand ersetzt; was Sie seither erfasst oder geändert haben, geht verloren. ' +
         'Die Belege bleiben, wie sie sind: Seither hochgeladene bleiben im Belegordner, seither gelöschte fehlen danach. ' +
-        'Der bisherige Stand bleibt als mietfuchs.sqlite.vor-restore im Datenordner.',
+        'Der bisherige Stand bleibt als mietfuchs.sqlite.vor-restore im Datenordner; eine frühere Sicherung dieses Namens wird nicht überschrieben, sondern mit Datum daneben gelegt.',
       confirmLabel: 'Einspielen',
       danger: true,
     })
@@ -52,14 +83,9 @@ export default function PriorVersionsCard() {
     try {
       const answer = await api<{ notes?: string[] }>(`/api/prior-versions/${encodeURIComponent(v.name)}/restore`, { method: 'POST' })
       const notes = answer?.notes ?? []
-      // Wie beim Backup: Mit Hinweisen wird nicht von selbst neu geladen, sonst verschwänden sie gleich wieder.
-      if (notes.length > 0) {
-        setDone(`Vorversion eingespielt. ${notes.join(' ')}`)
-        setBusy(false)
-        return
-      }
+      keepNotes(`Vorversion eingespielt.${notes.length > 0 ? ` ${notes.join(' ')}` : ''}`)
       setDone('Vorversion eingespielt, die Seite wird neu geladen …')
-      setTimeout(() => window.location.reload(), 1200)
+      reloadPage()
     } catch (e) {
       toast(errorText(e), 'error')
       setBusy(false)

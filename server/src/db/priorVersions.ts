@@ -22,8 +22,11 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { count, sql } from 'drizzle-orm'
-import type { Database } from './client.ts'
-import type { OpenedDatabase } from './open.ts'
+import { connect, type Database } from './client.ts'
+import { integrityProblem, messageOf, type OpenedDatabase } from './open.ts'
+import { replaceFile } from './changeover.ts'
+import { CHANGEOVER_NOT_TAKEN, CHANGEOVER_PENDING, databaseUnavailable } from '../health.ts'
+import type { DatabaseState } from '../../../shared/types.ts'
 import { costItems, meters, tenancies, units } from './schema.ts'
 
 export const PRIOR_DIR = 'vorversionen'
@@ -87,14 +90,35 @@ export function listPriorVersions(dataDir: string): PriorVersion[] {
 }
 
 // Fällig ist eine neue, wenn es keine gibt oder die jüngste älter als die Frist ist. Eine jüngste
-// „aus der Zukunft“ (die Uhr wurde zurückgestellt) gilt als frisch; sonst entstünde bei jeder
-// Prüfung eine neue und verdrängte die älteren.
+// „aus der Zukunft“ bis zu einem Tag gilt als frisch (eine Uhr, die etwas vorging, oder eine andere
+// Zeitzone beim Kopieren des Ordners). Liegt sie mehr als einen Tag voraus, zählt sie nicht als
+// jüngste (Durchsicht K3): Sonst hielte eine einzige Datei mit falschem Datum, etwa nach einem
+// Zurückstellen der Uhr um ein Jahr, jede neue Vorversion für Monate auf.
 export function priorVersionDue(list: readonly PriorVersion[], now: Date, maxAgeDays = PRIOR_MAX_AGE_DAYS): boolean {
   const newest = list.reduce<number | null>((max, v) => {
     const t = Date.parse(v.createdAt)
+    if (t - now.getTime() > DAY_MS) return max
     return max === null || t > max ? t : max
   }, null)
   return newest === null || now.getTime() - newest > maxAgeDays * DAY_MS
+}
+
+// Darf jetzt eine Vorversion entstehen? Nur, wenn die Datenbank offen ist und den Bestand trägt
+// (`databaseUnavailable`, health.ts) und kein Wiederherstellen läuft: Eine Vorversion der leeren
+// Datenbank eines gescheiterten Umstiegs wäre keine.
+export function mayCreatePriorVersion(state: DatabaseState, restoreRunning: boolean): boolean {
+  return !restoreRunning && state.open && databaseUnavailable(state) === null
+}
+
+// Sind Liste und Einspielen gesperrt? **Nicht, wenn sich die Datenbank nicht öffnen lässt**
+// (Durchsicht S1): Gerade dann ist eine Vorversion der Weg zurück, und `restoreDatabase` kommt ohne
+// offene Datenbank aus. Gesperrt bleibt, wo die Daten noch in der db.json stehen (gescheiterter
+// Umstieg, `stale` mit `pending`): Eine eingespielte Vorversion machte die Datenbank dann zum
+// maßgeblichen Bestand und hängte die db.json ab, wie es health.ts verhindern soll.
+export function priorVersionsBlocked(state: DatabaseState): string | null {
+  if (state.changeover.state === 'failed') return CHANGEOVER_PENDING
+  if (state.changeover.state === 'stale' && state.changeover.pending) return CHANGEOVER_NOT_TAKEN
+  return null
 }
 
 // Was nach dem Anlegen wegfällt: alles über die Zahl der behaltenen hinaus, die ältesten zuerst.
@@ -115,11 +139,20 @@ export async function carriesStock(db: Database): Promise<boolean> {
 
 const TEMP_PREFIX = '.entsteht-'
 
+export type PriorVersionOptions = {
+  // Noch einmal gefragt, wenn die Schlange den Vorgang dran nimmt (Durchsicht K1): Zwischen der Prüfung
+  // in index.ts und dem VACUUM kann ein Wiederherstellen begonnen haben.
+  skip?: () => boolean
+  // Nur für Tests: läuft mit der fertigen Zwischendatei, bevor sie geprüft wird.
+  afterSnapshot?: (file: string) => void
+}
+
 // Legt eine Vorversion an, wenn sie fällig ist und die Datenbank etwas trägt, und räumt danach die
 // überzähligen weg. Liefert den Namen der neuen oder null. **Wirft** bei einem Fehler; der Aufrufer
 // in index.ts fängt ihn und schreibt ihn auf die Konsole, denn eine fehlende Vorversion darf den
-// Betrieb nicht stören.
-export async function createPriorVersion(opened: OpenedDatabase, dataDir: string, now: Date): Promise<string | null> {
+// Betrieb nicht stören. **Scheitert die neue, wird nichts rotiert** (Durchsicht K4): Die alten sind
+// dann die einzigen.
+export async function createPriorVersion(opened: OpenedDatabase, dataDir: string, now: Date, options: PriorVersionOptions = {}): Promise<string | null> {
   const dir = path.join(dataDir, PRIOR_DIR)
   if (!priorVersionDue(listPriorVersions(dataDir), now)) return null
   if (!(await opened.read(carriesStock))) return null
@@ -134,11 +167,48 @@ export async function createPriorVersion(opened: OpenedDatabase, dataDir: string
   const temp = path.join(dir, `${TEMP_PREFIX}${name}`)
   try {
     // VACUUM verträgt keine offene Transaktion; in der Schlange läuft keine (siehe backup.ts).
-    await opened.write((db) => db.run(sql`VACUUM INTO ${temp}`))
-    fs.renameSync(temp, target)
+    const written = await opened.write(async (db) => {
+      if (options.skip?.()) return false
+      await db.run(sql`VACUUM INTO ${temp}`)
+      return true
+    })
+    if (!written) return null
+    options.afterSnapshot?.(temp)
+    const problem = await snapshotProblem(temp)
+    if (problem !== null) throw new Error(`Die neue Vorversion ist nicht unversehrt und wurde verworfen: ${problem}`)
+    await replaceFile(temp, target)
   } finally {
-    fs.rmSync(temp, { force: true })
+    // Das Aufräumen darf den eigentlichen Fehler nicht überdecken (Durchsicht K2).
+    try {
+      fs.rmSync(temp, { force: true })
+    } catch (err) {
+      console.error(`Der Zwischenstand der Vorversion ließ sich nicht entfernen: ${messageOf(err)}`)
+    }
   }
-  for (const old of priorVersionsToDrop(listPriorVersions(dataDir))) fs.rmSync(path.join(dir, old), { force: true })
+  // Eine, die sich nicht löschen lässt, hält die übrigen nicht auf (Durchsicht K2).
+  for (const old of priorVersionsToDrop(listPriorVersions(dataDir))) {
+    try {
+      fs.rmSync(path.join(dir, old), { force: true })
+    } catch (err) {
+      console.error(`Die alte Vorversion ${old} ließ sich nicht entfernen: ${messageOf(err)}`)
+    }
+  }
   return name
+}
+
+// `PRAGMA integrity_check` auf der eben geschriebenen Datei. `null` heißt unversehrt.
+async function snapshotProblem(file: string): Promise<string | null> {
+  let connection
+  try {
+    connection = await connect(file)
+  } catch (err) {
+    return messageOf(err)
+  }
+  try {
+    return integrityProblem(connection.rows('PRAGMA integrity_check'))
+  } catch (err) {
+    return messageOf(err)
+  } finally {
+    connection.close()
+  }
 }
