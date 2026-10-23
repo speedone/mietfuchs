@@ -100,6 +100,9 @@ test('der Dialog erklärt, was ein weiteres Objekt ist, und beschriftet seine Fe
   // Ohne Namen wird nichts angelegt, und der Dialog sagt warum.
   fireEvent.click(within(dialog).getByRole('button', { name: /^Anlegen und wechseln$/ }))
   expect((await within(dialog).findAllByText(/Geben Sie dem Objekt einen Namen/)).length).toBeGreaterThan(0)
+  // Die Meldung steht auch am Feld, nicht nur in der Sammelmeldung.
+  expect(name.getAttribute('aria-invalid')).toBe('true')
+  expect(within(dialog).getByText('Bezeichnung fehlt')).toBeTruthy()
   expect(sent).toEqual([])
 })
 

@@ -143,7 +143,7 @@ test('neues Objekt: ohne Bezeichnung nichts, sonst jede weitere Angabe auf ihrer
   const empty = propertyBody(EMPTY_PROPERTY_FORM)
   if (!('error' in empty)) return expect.fail('ein Objekt ohne Bezeichnung darf nicht angelegt werden')
   expect(empty.problems.map((p) => p.field)).toEqual(['name'])
-  expect(propertyBody({ ...EMPTY_PROPERTY_FORM, name: ' Gartenweg 3 ', kind: 'etw', address: 'Gartenweg 3, 12345 Musterstadt' })).toEqual({
+  expect(propertyBody({ ...EMPTY_PROPERTY_FORM, name: ' Gartenweg 3 ', kind: 'etw', address: ' Gartenweg 3, 12345 Musterstadt ' })).toEqual({
     name: 'Gartenweg 3', address: 'Gartenweg 3, 12345 Musterstadt', kind: 'etw',
     landlordName: null, iban: null, paymentDeadlineDays: null,
     cableBuiltBeforeDec2021: null, tightMarket: null, tightMarketFrom: null, tightMarketTo: null, state: null,
