@@ -631,6 +631,7 @@ export async function readSettings(db: Executor): Promise<MigratedSettings> {
     // das tut der Umstieg.
     ...(row.printAdjustSuggestion == null ? {} : { printAdjustSuggestion: row.printAdjustSuggestion }),
     ...(row.printAttachments == null ? {} : { printAttachments: row.printAttachments }),
+    ...(row.printFoldMarks == null ? {} : { printFoldMarks: row.printFoldMarks }),
     ...(row.updateCheck == null ? {} : { updateCheck: row.updateCheck }),
     ...(row.updateDismissed == null ? {} : { updateDismissed: row.updateDismissed }),
     ai,

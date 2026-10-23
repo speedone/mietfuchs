@@ -172,6 +172,9 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // vor dem Merge ein anderer PR davor eingereiht, werden beide Schritte neu erzeugt und die Marken ersetzt.
   '0063_betriebsstrom_gemeldet': '99f6d5daebf177094a79c6e3d1d07e56150c7660297cb1803dc883fbc1114871',
   '0064_betriebsstrom_gemeldet_bedingung': 'f9846e5c1a86612ef85758688cd84ee2816c7f30fd5a97220f0ad787df1d9495',
+  // #415: die Texte des Anschreibens je Ebene, die Anpassung der Vorauszahlung je Mieter und die Falzmarken. Wird vor dem
+  // Merge ein anderer PR davor eingereiht, wird der Schritt neu erzeugt und die Marke ersetzt.
+  '0065_anschreiben': '932fedc5b3c8bc712ccb56f73ea52dad6723fa2ea14a121cc3065684d54ec2ad',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

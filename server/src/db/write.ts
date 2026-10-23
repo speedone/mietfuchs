@@ -35,6 +35,7 @@ export function settingsRow(s: MigratedSettings) {
     ollamaModel: s.ollamaModel,
     printAdjustSuggestion: orNull(s.printAdjustSuggestion),
     printAttachments: orNull(s.printAttachments),
+    printFoldMarks: orNull(s.printFoldMarks),
     updateCheck: orNull(s.updateCheck),
     updateDismissed: orNull(s.updateDismissed),
     aiTimeoutSeconds: orNull(ai.timeoutSeconds),

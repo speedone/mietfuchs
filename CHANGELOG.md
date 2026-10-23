@@ -34,6 +34,21 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   selbst, zählt die Steuerübersicht die ganze bezahlte Stromrechnung zu den Werbungskosten; vorher fehlte
   der Abzug dort. Die Abrechnung nennt dann in einem Hinweis, dass der Betriebsstrom in keiner Abrechnung
   an die Mieter steht. Keine Zahl der Abrechnung ändert sich, und ohne Angabe bleibt alles wie bisher.
+- Die Abrechnung beginnt mit einem Anschreiben: Auf Seite 1 steht ein Brief nach DIN 5008 (Form B) mit
+  Anschrift im Fensterfeld samt Rücksendeangabe, Datum, Betreff, Anrede, Text, Gruß und Unterschrift; danach
+  folgt die Aufstellung. Falz- und Lochmarken lassen sich in den Druckeinstellungen dazuschalten.
+  Jeder Text ist ein Baustein mit Vorgabe (Betreff, Anrede, Einleitung, Guthaben, Nachzahlung, ausgeglichen,
+  Anpassung der Vorauszahlung, Belegeinsicht, Schluss, Gruß, Unterschrift) und lässt sich in einem
+  Seitenfenster anpassen: für alle Objekte in den Einstellungen, abweichend je Objekt und einmalig je Mieter
+  auf der Seite Abrechnung, mit Platzhaltern wie {Betrag} zum Anklicken, Vorschau und „Auf Vorgabe
+  zurücksetzen“. Welcher Baustein erscheint, entscheidet Mietfuchs. Ein unbekannter Platzhalter wird nicht
+  gespeichert. Die Vorgaben übernehmen die bisherigen Sätze wortgleich; eine schon abgeschlossene Abrechnung
+  druckt sich wie bisher, ohne Anschreiben. Mit dem Abschluss friert das Anschreiben ein, eine spätere Änderung der Vorlage
+  ändert nicht, was zugestellt wurde ([#415](https://github.com/speedone/mietfuchs/issues/415)).
+- Die Anpassung der Vorauszahlung nach § 560 Abs. 4 BGB wählen Sie je Mieter: keine, den Vorschlag von
+  Mietfuchs oder einen eigenen Betrag; liegt er über dem Vorschlag, weist Mietfuchs auf die angemessene Höhe
+  hin. Die Vorgabe steht in den Einstellungen und ersetzt das Häkchen „Neue Vorauszahlung vorschlagen“, dessen
+  Stand übernommen wird ([#415](https://github.com/speedone/mietfuchs/issues/415)).
 
 ### Geändert
 
@@ -47,6 +62,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   jeweils die Voreinstellung. Angelegt wird in den Stammdaten in der neuen Karte „Weitere Objekte“ mit
   „+ Objekt anlegen“, nicht mehr oben rechts auf der Seite; die Karte listet Ihre übrigen Objekte zum
   Wechseln. Ab zwei Objekten steht zusätzlich ein „+“ neben der Auswahl des Objekts in der Seitenleiste.
+- Oben in der Aufstellung steht ein Ergebniskasten mit Zeitraum, Ihren Kosten, Ihren Vorauszahlungen,
+  Nachzahlung oder Guthaben und Zahlungsfrist. Die Nachzahlung steht neutral fett statt rot; geht die Abrechnung
+  genau auf, steht „ausgeglichen“ statt „Guthaben von 0,00 €“. Unter der
+  Anschrift wiederholt die Kopfzeile Name und Wohnung nicht mehr
+  ([#415](https://github.com/speedone/mietfuchs/issues/415)).
 
 ## [0.12.0] – 2026-10-22
 

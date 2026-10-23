@@ -77,7 +77,10 @@ es eine Meldung, abgebrochen wird nie.
   `closed_settlements(property_id, period)` (je Objekt und Zeitraum höchstens ein Abschluss), dazu die
   Verläufe und Heizperioden.
 - **Der eingefrorene Berechnungsstand bleibt JSON**: ein Archivstück, das wortgleich bleiben soll,
-  auch wenn spätere Versionen anders rechnen.
+  auch wenn spätere Versionen anders rechnen. Seit #415 trägt er auch das Anschreiben (`letters`).
+- **Texte des Anschreibens** (#415, [letters.ts](letters.ts)): eine Tabelle je Ebene, Zeilen je Baustein statt
+  Spalten (alle Bausteine haben dieselbe Gestalt); die Datenbank sichert nur den Baustein, die Platzhalter prüft
+  shared/letter.ts vor dem Schreiben. Siehe server/src/CLAUDE.md.
 - **[schema.test.ts](../../test/schema.test.ts)** hält Schema und `shared/types.ts` zur
   Übersetzungszeit zusammen (die Typen bleiben von Hand geschrieben, der Browser kennt kein Drizzle).
 

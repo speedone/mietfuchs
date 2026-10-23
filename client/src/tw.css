@@ -27,6 +27,8 @@
 /* Die Regeln der Felder (Breitenstufen, #346 Schritt 7b) in der Schicht `components`: über index.css, unter den
    Utilities, die die Stufen setzen. Eine eigene Datei, weil sie keine Utilities sind. */
 @import "./fields.css" layer(components);
+/* Das Anschreiben zur Abrechnung samt Druckmaßen nach DIN 5008 (#415), ebenfalls in `components`. */
+@import "./letter.css" layer(components);
 /* Gesucht wird nur in client/src (source("./")): sonst läse Tailwind auch index.html,
    vite.config.ts und alles andere unter client/. */
 @import "tailwindcss/utilities.css" layer(utilities) source("./");
