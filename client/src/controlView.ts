@@ -49,6 +49,8 @@ export type ControlView = {
   landlordColumns: ControlColumn[]
   items: ControlLine[]
   extras: ControlExtra[]
+  /** Alle Sonderzeilen zusammen (Mieter und Vermieter); Übertrag und Gegenbuchung heben sich auf, also 0. */
+  extrasSumCents: number
   /** Mindestens eine Zeile des Vermieters ohne Zerlegung (Abrechnung von vor #142). */
   legacy: boolean
   hasDifference: boolean
@@ -56,8 +58,8 @@ export type ControlView = {
 
 const LEGACY_KEY = 'legacy'
 
-// Eine Zeile ohne eigene Kostenposition: `kind` gesetzt oder eine Pseudo-Kennung (`co2:`, `fuel:`, `gmodg:`, `stock:`, `co2refund:`).
-const isExtra = (r: SettlementRow): boolean => r.kind !== undefined || r.costItemId.includes(':')
+// Eine Zeile ohne eigene Kostenposition: allein die Pseudo-Kennung entscheidet (`kind` steht nicht an jeder Gegenzeile) (`co2:`, `fuel:`, `gmodg:`, `stock:`, `co2refund:`).
+const isExtra = (r: SettlementRow): boolean => r.costItemId.includes(':')
 
 export function controlView(data: Pick<Settlement, 'statements' | 'landlord'>): ControlView {
   const tenants: ControlTenant[] = data.statements.map((st) => {
@@ -120,8 +122,9 @@ export function controlView(data: Pick<Settlement, 'statements' | 'landlord'>): 
     return { id, category: acc.first.category, description: acc.first.description, tenantCents: acc.tenant, landlordCents, sumCents: sum(acc.tenant) + landlordCents }
   })
 
+  const extrasSumCents = sum(extraLines.map((x) => x.sumCents))
   return {
-    tenants, landlordColumns, items: lines, extras: extraLines, legacy,
-    hasDifference: lines.some((l) => l.differenceCents !== 0) || tenants.some((t) => t.rowsDifferenceCents !== 0),
+    tenants, landlordColumns, items: lines, extras: extraLines, extrasSumCents, legacy,
+    hasDifference: extrasSumCents !== 0 || lines.some((l) => l.differenceCents !== 0) || tenants.some((t) => t.rowsDifferenceCents !== 0),
   }
 }

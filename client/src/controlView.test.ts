@@ -92,3 +92,23 @@ test('weicht die Summe der Zeilen eines Mieters von seinen Gesamtkosten ab, steh
   expect(view.tenants[0]).toMatchObject({ rowsCents: 1000, costCents: 900, rowsDifferenceCents: 100 })
   expect(view.hasDifference).toBe(true)
 })
+
+test('die Sonderzeilen zusammen müssen 0 ergeben, sonst zählt das als Differenz', () => {
+  const ok = controlView(settle(
+    [statement('a', 'Anna', [row('k1', 1000), row('fuel:l1:h1:h2:k1', 80, { kind: 'fuelCarry' })])],
+    [landlordRow('fuel:l1:h1:h2', [{ reason: 'fuelCarry', cents: -80 }], { totalCents: 0 })],
+  ))
+  expect(ok.extrasSumCents).toBe(0)
+  expect(ok.hasDifference).toBe(false)
+  const bad = controlView(settle(
+    [statement('a', 'Anna', [row('k1', 1000), row('stock:p:h:in', 80)])],
+    [],
+  ))
+  expect(bad.extrasSumCents).toBe(80)
+  expect(bad.hasDifference).toBe(true)
+})
+
+test('die Kennung mit Doppelpunkt entscheidet allein, kind ist nicht nötig', () => {
+  const view = controlView(settle([statement('a', 'Anna', [row('k1', 1000), row('co2:p:h', 5)])], []))
+  expect(view.extras.map((e) => e.id)).toEqual(['co2:p:h'])
+})

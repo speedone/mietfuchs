@@ -26,7 +26,7 @@ import { computeSettlement, taxPartsFor, taxReportFor, type ComputedSettlement }
 import { frozenSettlementOf, snapshotFor } from '../src/snapshot.ts'
 import { derivedTaxLines, planTaxArchive } from '../src/taxReceipts.ts'
 import { compareWithFrozen } from '../src/settlementDiff.ts'
-import { assertLandlordParts } from '../testing/landlordParts.ts'
+import { assertControlSums, assertLandlordParts } from '../testing/landlordParts.ts'
 import { CALENDAR_RULES, periodKey, periodOfKey } from '../../shared/period.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import type { BillingPeriod, Co2Refund, CostItem, CostKey, FuelDelivery, HeatingEnergy, PeriodRules } from '../../shared/types.ts'
@@ -338,6 +338,7 @@ function checkSettlement(g: Gen, P: BillingPeriod, where: string, s: ComputedSet
   }
   try {
     assertLandlordParts(s, s.statements.length, where)
+    assertControlSums(s, where)
   } catch (e) {
     say(`S4 ${(e instanceof Error ? e.message : String(e)).split('\n')[0] ?? ''}`)
   }

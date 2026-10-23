@@ -117,7 +117,7 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   [controlView.ts](src/controlView.ts)): auf der Seite Abrechnung eine aufklappbare Karte, immer `no-print`. Je
   Position alle Mieter und die Gründe des Vermieters (`landlordParts`) nebeneinander, Summe gegen den Rechnungsbetrag,
   darunter Kosten, Vorauszahlung und Saldo je Mieter. Nur Anzeige aus `statements` und `landlord`; eine Differenz
-  ungleich 0 wird als Fehler benannt. Zeilen ohne Position (`kind` oder Pseudo-Kennung mit „:“) stehen gesondert und
+  ungleich 0 wird als Fehler benannt. Zeilen ohne Position (Pseudo-Kennung mit „:“, sie allein entscheidet) stehen gesondert, ihre Summe muss 0 sein, und
   zählen nicht in die Summenprüfung; ohne `landlordParts` (vor #142) steht eine pauschale Spalte. Die Tabelle ist
   `sticky-first` und scrollt seitlich.
 - **Druckkopf**: `letterhead` lässt einen Objektnamen weg, der schon in der Adresse steht, und ist die

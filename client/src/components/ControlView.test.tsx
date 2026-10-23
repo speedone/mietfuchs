@@ -16,6 +16,13 @@ const st = (id: string, name: string, share: number): Statement => ({
 })
 const landlord = (cents: number) => ({ rows: [row(cents, { landlordParts: [{ reason: 'selfUse' as const, cents }] })], totalCents: cents })
 
+function openIt(container: HTMLElement) {
+  const details = container.querySelector('details')
+  if (!details) return expect.fail('Kein <details> in der Kontrollansicht')
+  details.open = true
+  fireEvent(details, new Event('toggle'))
+}
+
 test('die Ansicht ist zugeklappt, nur am Bildschirm und zeigt aufgeklappt die Verteilung', () => {
   const { container } = render(<ControlView data={{ statements: [st('a', 'Anna', 600), st('b', 'Ben', 300)], landlord: landlord(100) }} />)
   expect(container.querySelector('.no-print')).toBeTruthy()
@@ -30,8 +37,24 @@ test('die Ansicht ist zugeklappt, nur am Bildschirm und zeigt aufgeklappt die Ve
 
 test('eine Differenz wird benannt', () => {
   const { container } = render(<ControlView data={{ statements: [st('a', 'Anna', 600)], landlord: landlord(100) }} />)
-  const details = container.querySelector('details')!
-  details.open = true
-  fireEvent(details, new Event('toggle'))
+  openIt(container)
   expect(screen.getByText('Die Verteilung geht nicht auf')).toBeTruthy()
+  expect(screen.getByText(/bevor Sie abschließen/)).toBeTruthy()
+})
+
+test('bei abgeschlossener Abrechnung verweist der Fehlertext auf Wieder öffnen statt auf das Abschließen', () => {
+  const { container } = render(<ControlView data={{ statements: [st('a', 'Anna', 600)], landlord: landlord(100), closed: { closedAt: '2026-01-01', sentAt: null } }} />)
+  openIt(container)
+  expect(screen.queryByText(/bevor Sie abschließen/)).toBeNull()
+  expect(screen.getByText(/Wieder öffnen/)).toBeTruthy()
+})
+
+test('Sonderzeilen zusammen stehen mit Satz und Probe da', () => {
+  const extra = (id: string, c: number): SettlementRow => ({ ...row(c), costItemId: id, kind: 'fuelCarry' })
+  const s1: Statement = { ...st('a', 'Anna', 1000), rows: [row(1000), extra('fuel:l:h:g:k1', 80)], totalShareCents: 1080, balanceCents: 980 }
+  const { container } = render(<ControlView data={{ statements: [s1], landlord: { rows: [{ ...extra('fuel:l:h:g', -80), landlordParts: [{ reason: 'fuelCarry', cents: -80 }] }], totalCents: -80 } }} />)
+  openIt(container)
+  expect(screen.getByText(/Sonderzeilen zusammen/)).toBeTruthy()
+  expect(screen.getByText(/Übertrag und Gegenbuchung heben sich auf/)).toBeTruthy()
+  expect(screen.queryByText('Die Verteilung geht nicht auf')).toBeNull()
 })
