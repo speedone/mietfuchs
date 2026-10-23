@@ -4036,7 +4036,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Mieterwechsel mit Zwischenablesung bekommt bei Gradtagen nichts.
     const changeSplit = plant.changeSplit ?? 'degreeDays'
     const comparedUnits = new Set(plan.units
-      .filter((u) => u.users.length > 1 && u.users.some((x) => x.role === 'vacancy' || x.role === 'self' || x.pots.heating.group))
+      // Eine Schätzung nach § 9a stellt die Nutzer ebenfalls in eine Gruppe (`assign` in heating.ts); das ist kein Wechsel
+      // ohne Zwischenablesung (Durchsicht von #417, S1).
+      .filter((u) => u.users.length > 1 && u.users.some((x) => x.role === 'vacancy' || x.role === 'self' || (x.pots.heating.group && !x.pots.heating.estimated)))
       .map((u) => u.unit.id))
     const compare = weights !== null && shares !== null && (comparedUnits.size > 0 || (changeSplit === 'time' && plan.units.some((u) => u.users.length > 1)))
       ? {
@@ -4113,8 +4115,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     steps.push({ label: 'Ihr Anteil nach Heizkostenverordnung', value: `${fmtPercent((sp.weights.get(key)?.[target] ?? 0) * 100)} %`, term: 'heatingSystem' })
     // #314: In einer Wohnung mit Leerstand, Eigennutzung oder Wechsel ohne Zwischenablesung der Wert der anderen
     // Teilung nach § 9b Abs. 2, damit die Wirkung der Wahl zu sehen ist. Verteilt wird damit nicht.
-    const alt = sp.compare?.units.has(u.unitId) ? sp.compare.weights.get(key)?.[target] : undefined
-    if (alt !== undefined) {
+    // Durchsicht von #417: nicht beim Ziel Warmwasser (immer nach Tagen, S2), nicht ohne Unterschied, und nicht unter
+    // einer Vereinbarung nach § 2, unter der § 9b nur sinngemäß gilt (K3).
+    const alt = sp.compare?.units.has(u.unitId) && target !== 'water' && !sp.agreedArea ? sp.compare.weights.get(key)?.[target] : undefined
+    if (alt !== undefined && Math.abs(alt - (sp.weights.get(key)?.[target] ?? 0)) > 1e-9) {
       steps.push({
         label: sp.changeSplit === 'degreeDays' ? 'Zum Vergleich zeitanteilig' : 'Zum Vergleich nach Gradtagen',
         value: `${fmtPercent(alt * 100)} %, ${fmtCents(Math.round(amountCents * alt))} (§ 9b Abs. 2 HeizkostenV)`,

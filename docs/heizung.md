@@ -251,7 +251,8 @@ Gewichten durch `distributeCents`. Tests bauen Beispiel A mit `selfSnapshot()`
 - **Vergleich der Teilung beim Wechsel** (#314): Die Gewichte der anderen Teilung nach § 9b Abs. 2 stehen in
   `compare` des Plans in calc.ts, nur zum Vergleich. Bei Gradtagen nennen Rechenweg („Zum Vergleich zeitanteilig“)
   und `heating.change-split-degree-days` (hint, `INFORMATIONAL`) sie nur für Wohnungen mit Leerstand, Eigennutzung
-  oder Wechsel ohne Zwischenablesung, nicht unter einer Vereinbarung „nach Wohnfläche“; bei zeitanteiliger Teilung
+  oder Wechsel ohne Zwischenablesung (eine Gruppe allein wegen einer Schätzung nach § 9a zählt nicht), nie beim Ziel
+  Warmwasser (immer nach Tagen) und nicht unter einer Vereinbarung „nach Wohnfläche“; bei zeitanteiliger Teilung
   nennt `heating.change-split-time` wie bisher jeden Wechsel, jetzt mit dem Leerstand. Der Leerstand als
   Nutzerwechsel ist Auslegung (Entwurf 3.5, R-A16); BGH VIII ZR 9/14 ist nur über eine Sekundärquelle gelesen und
   wird nicht zitiert.

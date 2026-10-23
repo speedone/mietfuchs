@@ -8,15 +8,15 @@ import { computeSettlement, type ComputedSettlement } from '../src/calc.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { INFORMATIONAL } from '../../shared/notices.ts'
 import { periodKey } from '../../shared/period.ts'
-import type { ChangeSplit, Reading, Tenancy, Unit } from '../../shared/types.ts'
-import { selfMeter, selfReading, selfSnapshot, selfTenancy, selfUnit } from '../testing/selfHeating.ts'
+import type { ChangeSplit, HeatingEstimate, HeatingPeriodData, Reading, Tenancy, Unit } from '../../shared/types.ts'
+import { selfMeter, selfReading, selfReadings, selfSnapshot, selfTenancy, selfUnit } from '../testing/selfHeating.ts'
 
 const NEW = 'heating.change-split-degree-days'
 const OLD = 'heating.change-split-time'
 
 // Zwei Wohnungen zu je 70 m², 4.000 € nur Heizung, 70 % nach Verbrauch. In A wohnt A1 bis Mai, Juni bis August steht
 // sie leer (300 kWh), ab September wohnt A2; abgelesen ist zu jedem Wechsel. B wohnt das ganze Jahr.
-function probe(split: ChangeSplit, o: { units?: Unit[]; tenancies?: Tenancy[]; readings?: Reading[] } = {}): ComputedSettlement {
+function probe(split: ChangeSplit, o: { units?: Unit[]; tenancies?: Tenancy[]; readings?: Reading[]; row?: Partial<HeatingPeriodData> } = {}): ComputedSettlement {
   const readings = o.readings ?? [
     selfReading('wz-a', '2024-12-31', 0), selfReading('wz-a', '2025-05-31', 5000), selfReading('wz-a', '2025-08-31', 5300), selfReading('wz-a', '2025-12-31', 9000),
     selfReading('wz-b', '2024-12-31', 0), selfReading('wz-b', '2025-12-31', 10000),
@@ -32,7 +32,7 @@ function probe(split: ChangeSplit, o: { units?: Unit[]; tenancies?: Tenancy[]; r
       id: 'k', propertyId: 'objekt-1', period: periodKey('2025-01'), category: HEATING_CATEGORY, description: 'Heizkosten', amountCents: 400000,
       key: 'heatingSystem', heatingPlantId: 'hp', heatingPart: 'operating', heatingTarget: 'heating',
     }],
-    row: { waterConsumptionPct: null, dhwMethod: null },
+    row: { waterConsumptionPct: null, dhwMethod: null, ...o.row },
   }))
 }
 
@@ -73,6 +73,7 @@ test('#314: zeitanteilig, der bisherige Hinweis nennt auch den Leerstand und § 
   assert.match(text, /Mieter A1 \(A\): zeitanteilig 985,06 €, nach Gradtagen 1\.078,84 €/)
   assert.match(text, /Leerstand in A \(01\.06\.2025 bis 31\.08\.2025\): zeitanteilig 195,44 €, nach Gradtagen 68,21 €/)
   assert.match(text, /§ 9b Abs\. 4 HeizkostenV/)
+  assert.match(text, /Den Leerstand teilt Mietfuchs wie einen Nutzerwechsel.*\(Auslegung von Mietfuchs\)/)
   assert.equal(noticeOf(t, NEW), undefined)
   assert.ok(stepsOf(t, 'A1').some((x) => x.label === 'Zum Vergleich nach Gradtagen' && /1\.078,84 €/.test(x.value)))
   assert.ok(!stepsOf(t, 'B').some((x) => x.label.startsWith('Zum Vergleich')))
@@ -106,4 +107,58 @@ test('#314: Eigennutzung nach einem Mietverhältnis nennt den Vergleichswert der
   const text = textOf(s, NEW)
   assert.match(text, /Eigennutzung in A \(01\.06\.2025 bis 31\.12\.2025\): nach Gradtagen [\d.,]+ €, zeitanteilig [\d.,]+ €/)
   assert.doesNotMatch(text, /Auslegung/, 'die Auslegung betrifft nur den Leerstand')
+})
+
+// Durchsicht von #417.
+const estimateC = (value: number): HeatingEstimate => ({
+  plantId: 'hp', period: periodKey('2025-01'), unitId: 'c', part: 'heat', value, method: 'buildingAverage', reason: 'Wärmezähler defekt', confirmed: true, cause: 'deviceFailure', capture: 'heatMeter', valueUnit: 'kWh',
+})
+
+test('Durchsicht S1: eine Schätzung nach § 9a allein ist kein Wechsel ohne Zwischenablesung', () => {
+  // Beispiel A: C1 und C2 mit Zwischenablesung, für C eine Schätzung der Heizung.
+  const s = computeSettlement(selfSnapshot({ estimates: [estimateC(10000)] }))
+  assert.equal(noticeOf(s, NEW), undefined, (s.notices ?? []).map((n) => n.code).join(', '))
+  for (const id of ['C1', 'C2']) assert.ok(!stepsOf(s, id).some((x) => x.label.startsWith('Zum Vergleich')), id)
+})
+
+// Beispiel A mit Leerstand in C im Oktober: C1 bis 30.09., C2 ab 01.11., abgelesen an beiden Grenzen.
+function leerstandC(split: ChangeSplit): ComputedSettlement {
+  return computeSettlement(selfSnapshot({
+    plant: { changeSplit: split },
+    tenancies: [selfTenancy('A', 'a', '2020-01-01', null), selfTenancy('B', 'b', '2020-01-01', null), selfTenancy('C1', 'c', '2020-01-01', '2025-09-30'), selfTenancy('C2', 'c', '2025-11-01', null)],
+    readings: [...selfReadings(), selfReading('wz-c', '2025-10-31', 8200), selfReading('xw-c', '2025-10-31', 44)],
+  }))
+}
+const rowSteps = (s: ComputedSettlement, id: string, item: string) => s.statements.find((x) => x.tenancyId === id)?.rows.find((r) => r.costItemId === item)?.steps ?? assert.fail(`keine Zeile ${item} für ${id}`)
+
+test('Durchsicht S2: Warmwasser wird immer nach Tagen geteilt, sein Rechenweg nennt keinen Vergleich', () => {
+  for (const split of ['degreeDays', 'time'] as const) {
+    const s = leerstandC(split)
+    assert.ok(rowSteps(s, 'C2', 'wz').some((x) => x.label.startsWith('Zum Vergleich')), `${split}: Heizung mit Vergleich`)
+    assert.ok(!rowSteps(s, 'C2', 'wwz').some((x) => x.label.startsWith('Zum Vergleich')), `${split}: Warmwasser ohne Vergleich`)
+  }
+})
+
+// Zweifamilienhaus: a selbst bewohnt, b vermietet mit Leerstand Juni bis August; wahlweise Vereinbarung nach § 2
+// „nach Wohnfläche“.
+function zfhLeerstand(agreed: boolean): ComputedSettlement {
+  return probe('degreeDays', {
+    units: [selfUnit('a', 70, { participates: false, selfUsed: true }), selfUnit('b', 70)],
+    tenancies: [selfTenancy('B1', 'b', '2020-01-01', '2025-05-31'), selfTenancy('B2', 'b', '2025-09-01', null)],
+    readings: [
+      selfReading('wz-a', '2024-12-31', 0), selfReading('wz-a', '2025-12-31', 9000),
+      selfReading('wz-b', '2024-12-31', 0), selfReading('wz-b', '2025-05-31', 5000), selfReading('wz-b', '2025-08-31', 5300), selfReading('wz-b', '2025-12-31', 10000),
+    ],
+    ...(agreed ? { row: { agreedOtherwise: 'area' } } : {}),
+  })
+}
+
+test('Durchsicht K1, K3: unter einer Vereinbarung „nach Wohnfläche“ kein Hinweis und kein Vergleich im Rechenweg', () => {
+  const ohne = zfhLeerstand(false)
+  assert.ok(noticeOf(ohne, NEW), 'ohne Vereinbarung kommt der Hinweis')
+  assert.ok(stepsOf(ohne, 'B1').some((x) => x.label.startsWith('Zum Vergleich')))
+  const mit = zfhLeerstand(true)
+  assert.ok(stepsOf(mit, 'B1').some((x) => /nur nach Wohnfläche verteilt/.test(x.value)), 'die Vereinbarung gilt')
+  assert.equal(noticeOf(mit, NEW), undefined)
+  assert.ok(!stepsOf(mit, 'B1').some((x) => x.label.startsWith('Zum Vergleich')), JSON.stringify(stepsOf(mit, 'B1')))
 })
