@@ -6,6 +6,21 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Hinzugefügt
+
+- Automatische Vorversionen der Datenbank ([#318](https://github.com/speedone/mietfuchs/issues/318)):
+  Mietfuchs prüft beim Start und danach einmal am Tag, ob die jüngste Kopie Ihrer Daten älter als
+  sieben Tage ist, und legt dann eine neue an, im Datenordner unter `vorversionen`. Behalten werden die
+  letzten vier. Haben Sie versehentlich etwas gelöscht, spielen Sie in den Einstellungen unter
+  „Automatische Vorversionen“ einen früheren Stand ein; geprüft wird dabei wie beim Wiederherstellen
+  eines Backups, und der bisherige Stand bleibt als `mietfuchs.sqlite.vor-restore` erhalten. Das
+  geht auch, wenn sich die Datenbank nicht mehr öffnen lässt. Die Belege
+  bleiben, wie sie sind; fehlt ein Beleg, auf den der eingespielte Stand verweist, nennt Mietfuchs ihn.
+  Die Vorversionen kommen nicht ins Backup und ersetzen es nicht.
+- Wer zweimal hintereinander ein Backup oder eine Vorversion einspielt, behält den Stand vor dem
+  ersten Mal: Eine vorhandene `mietfuchs.sqlite.vor-restore` wird nicht mehr überschrieben, sondern
+  mit Datum im Namen daneben gelegt.
+
 ### Geändert
 
 - Die Karte „Heizung nach § 43 GModG“ nennt im ersten Satz, wann ein Neubau unter die hälftige Teilung

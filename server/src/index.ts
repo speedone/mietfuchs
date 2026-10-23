@@ -37,7 +37,7 @@ import { PRESETS, presetById } from './ai/presets.ts'
 import { providerConfig } from './ai/index.ts'
 import { isProviderError } from './ai/errors.ts'
 import { databaseUnavailable, healthReport, NO_DATABASE, type DatabaseState } from './health.ts'
-import { databaseFile, openDatabase, type OpenedDatabase } from './db/open.ts'
+import { databaseFile, openDatabase, setAsideName, type OpenedDatabase } from './db/open.ts'
 import { changeoverWithoutDatabase, replaceFile, runChangeover, type ChangeoverResult } from './db/changeover.ts'
 import { acknowledgeNotice, clearNotice, NOTICE_NAME, noticeKey, readNotice, recordNotice, type MigrationNotice } from './db/migrationNotice.ts'
 import type { Database, Executor } from './db/client.ts'
@@ -80,6 +80,8 @@ import { describeFile, describeFolder, hashFile, mimeTypeOf, uploadedAtOf } from
 import { acceptIban, IbanRefusal } from './iban.ts'
 import { IBAN_LABELS } from '../../shared/iban.ts'
 import { derivedTaxLines, planTaxArchive, taxArchiveItems } from './taxReceipts.ts'
+import { createPriorVersion, listPriorVersions, mayCreatePriorVersion, PRIOR_CHECK_INTERVAL_MS, PRIOR_DIR, priorVersionsBlocked, priorVersionTime } from './db/priorVersions.ts'
+import { costItems as costItemsTable } from './db/schema.ts'
 import { forgetUpload, placeUpload, recordIfMissing, recordUpload, rowOf, uploadRows, type Placement, type UploadRow } from './db/uploads.ts'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -2213,7 +2215,12 @@ async function restoreDatabase(staged: string | null): Promise<string[]> {
   // `renameSync` scheiterte dann an etwas, das von selbst vergeht, und zwar ausgerechnet in dem
   // Augenblick, in dem die einzige Kopie der wiederhergestellten Daten noch unter ihrem
   // Zwischennamen liegt.
-  if (fs.existsSync(target)) await replaceFile(target, path.join(DATA_DIR, DB_BEFORE_RESTORE))
+  // **Eine vorhandene Sicherung wird beiseitegelegt, nicht überschrieben** (Durchsicht zu #318, M1):
+  // Wer zweimal einspielt, verlöre sonst den Stand vor dem ersten Mal, und genau der kann der sein,
+  // den er sucht. Dasselbe Muster wie bei der Sicherung vor einem Update (`….vom-JJJJ-MM-TT-HHMM`).
+  const before = path.join(DATA_DIR, DB_BEFORE_RESTORE)
+  if (fs.existsSync(target) && fs.existsSync(before)) await replaceFile(before, setAsideName(before))
+  if (fs.existsSync(target)) await replaceFile(target, before)
   if (staged) await replaceFile(staged, target)
 
   // Die Sicherung vor einem früheren Update gehört nicht zum wiederhergestellten Stand; der
@@ -2425,14 +2432,7 @@ async function runRestore(backup: ReadBackup, res: Response): Promise<void> {
     // Gesagt wird deshalb, was sicher stimmt: Nichts ist gelöscht, der Datenordner hat den
     // Stand, und dort liegt alles beieinander. Weggeräumt wird nichts, auch die Zwischendatei
     // nicht: Sie kann die einzige Kopie der wiederhergestellten Daten sein.
-    notes = [
-      `Ihre Daten sind aus dem Archiv geschrieben worden, die Datenbank ließ sich dabei aber ` +
-        `nicht erneuern: ${messageOf(err)}. Gelöscht ist nichts; im Datenordner ` +
-        `(${DATA_DIR}) liegen der vorherige Stand als „mietfuchs.sqlite.vor-restore“ und, falls ` +
-        'das Archiv eine mitgebracht hat, die neue Datenbank noch unter einem Namen, der mit ' +
-        '„mietfuchs.sqlite.restore-“ beginnt. Bitte melden Sie diesen Fehler, bevor Sie etwas ' +
-        'von Hand verschieben.',
-    ]
+    notes = [restoreFailedNote(err, 'Ihre Daten sind aus dem Archiv geschrieben worden', ', falls das Archiv eine mitgebracht hat,')]
   }
 
   // **Die Einstellungen neu einlesen.** Sie liegen als Kopie im Arbeitsspeicher (siehe die
@@ -2451,6 +2451,111 @@ async function runRestore(backup: ReadBackup, res: Response): Promise<void> {
   }
   res.json({ ok: true, notes })
 }
+
+// Die Meldung, wenn der Austausch der Datenbank mittendrin scheitert. Dieselbe für ein Backup und
+// eine Vorversion: Gesagt wird, was sicher stimmt (siehe die Begründung in runRestore).
+function restoreFailedNote(err: unknown, what: string, ifStaged: string): string {
+  return (
+    `${what}, die Datenbank ließ sich dabei aber ` +
+    `nicht erneuern: ${messageOf(err)}. Gelöscht ist nichts; im Datenordner ` +
+    `(${DATA_DIR}) liegen der vorherige Stand als „mietfuchs.sqlite.vor-restore“ und${ifStaged} ` +
+    'die neue Datenbank noch unter einem Namen, der mit ' +
+    '„mietfuchs.sqlite.restore-“ beginnt. Bitte melden Sie diesen Fehler, bevor Sie etwas ' +
+    'von Hand verschieben.'
+  )
+}
+
+// ---------- Automatische Vorversionen (#318) ----------
+//
+// Angelegt werden sie in db/priorVersions.ts; hier stehen der Zeitpunkt und das Einspielen.
+
+// Beim Start und danach einmal am Tag. **Wirft nie**: Eine fehlende Vorversion darf den Betrieb
+// nicht stören, deshalb steht ein Fehler auf der Konsole und nirgends sonst. Während eines
+// Wiederherstellens und ohne Datenbank, die den Bestand trägt, wird nichts angelegt: Eine
+// Vorversion einer leeren Datenbank eines gescheiterten Umstiegs wäre keine.
+async function checkPriorVersion(): Promise<void> {
+  try {
+    if (!database || !mayCreatePriorVersion(databaseState(), restoreRunning)) return
+    const name = await createPriorVersion(database, DATA_DIR, new Date(), { skip: () => restoreRunning })
+    if (name) console.log(`Vorversion der Datenbank angelegt: ${path.join(DATA_DIR, PRIOR_DIR, name)}`)
+  } catch (err) {
+    console.error(`Die Vorversion der Datenbank ließ sich nicht anlegen: ${messageOf(err)}`)
+  }
+}
+
+// Gesperrt nur, wo die Daten noch in der db.json stehen (`priorVersionsBlocked`); ohne offene
+// Datenbank gehen Liste und Einspielen, denn das ist der Fall, für den es sie gibt.
+const priorVersionsRefusal = (res: Response): boolean => {
+  const reason = priorVersionsBlocked(databaseState())
+  if (reason) res.status(503).json({ error: reason })
+  return reason !== null
+}
+
+app.get('/api/prior-versions', async (_req, res) => {
+  if (priorVersionsRefusal(res)) return
+  res.json(listPriorVersions(DATA_DIR))
+})
+
+// **Eingespielt wird über denselben Weg wie die Datenbank aus einem Backup**: prüfen
+// (`archiveDatabaseProblem`: Integrität, neuerer Aufbau, Migrationskette nachholen, Verweise über
+// Objekte, Zeiträume und Heizanlagen), dann `restoreDatabase` (bisherige als
+// mietfuchs.sqlite.vor-restore, Hinweis nach einem Update weg), dann die Einstellungen neu einlesen.
+// Geprüft und eingespielt wird eine Kopie; die Vorversion selbst bleibt, wie sie ist, und lässt sich
+// ein zweites Mal einspielen. Die Belege bleiben, wie sie sind: Was seither dazukam, bleibt im
+// Belegordner, was seither gelöscht wurde, fehlt, und die Antwort nennt es.
+app.post('/api/prior-versions/:name/restore', async (req, res) => {
+  const name = req.params.name
+  // Nur ein Name nach dem eigenen Muster, nie ein Pfad (priorVersionTime prüft auch basename).
+  if (priorVersionTime(name) === null) return res.status(400).json({ error: 'Diese Vorversion gibt es nicht.' })
+  if (priorVersionsRefusal(res)) return
+  // Der Pfad entsteht aus der eigenen Liste des Ordners, nie aus der Eingabe: Die Eingabe wählt nur
+  // einen Eintrag aus, den es dort gibt.
+  const found = listPriorVersions(DATA_DIR).find((entry) => entry.name === name)
+  if (!found) return res.status(404).json({ error: 'Diese Vorversion gibt es nicht mehr. Bitte laden Sie die Seite neu.' })
+  const source = path.join(DATA_DIR, PRIOR_DIR, found.name)
+  if (restoreRunning) return res.status(409).json({ error: 'Es läuft gerade eine Wiederherstellung. Bitte warten Sie, bis sie fertig ist.' })
+  restoreRunning = true
+  const staged = `${databaseFile(DATA_DIR)}.restore-${newId()}`
+  try {
+    try {
+      fs.copyFileSync(source, staged)
+    } catch (err) {
+      fs.rmSync(staged, { force: true })
+      return res.status(500).json({ error: `Die Vorversion ließ sich nicht kopieren: ${messageOf(err)} ${NOTHING_CHANGED}` })
+    }
+    const problem = await archiveDatabaseProblem(staged, 'priorVersion')
+    if (problem) {
+      fs.rmSync(staged, { force: true })
+      return res.status(400).json({ error: problem })
+    }
+    let notes: string[]
+    try {
+      notes = await restoreDatabase(staged)
+    } catch (err) {
+      notes = [restoreFailedNote(err, 'Die Vorversion wurde geprüft', '')]
+    }
+    try {
+      await refreshSettings()
+    } catch (err) {
+      notes = [...notes, `Die Einstellungen ließen sich nach dem Einspielen nicht lesen: ${messageOf(err)}`]
+    }
+    // Belege, auf die der eingespielte Stand verweist und die es nicht mehr gibt.
+    try {
+      const files = database
+        ? await database.read((db) => db.selectDistinct({ file: costItemsTable.invoiceFile }).from(costItemsTable))
+        : []
+      const missing = files.map((f) => f.file).filter((f): f is string => !!f && !fs.existsSync(path.join(UPLOAD_DIR, path.basename(f))))
+      if (missing.length > 0) {
+        notes = [...notes, `${missing.length === 1 ? 'Ein Beleg, auf den dieser Stand verweist, fehlt' : `${missing.length} Belege, auf die dieser Stand verweist, fehlen`} im Belegordner, weil ${missing.length === 1 ? 'er' : 'sie'} seither gelöscht ${missing.length === 1 ? 'wurde' : 'wurden'}: ${missing.slice(0, 5).join(', ')}${missing.length > 5 ? ' …' : ''}.`]
+      }
+    } catch {
+      // Nur eine Auskunft; das Einspielen ist gelungen.
+    }
+    res.json({ ok: true, notes })
+  } finally {
+    restoreRunning = false
+  }
+})
 
 // Adressen für die Suche, falls die eingestellte nicht erreichbar ist (siehe defaultCandidates).
 // Die Tests setzen NKA_OLLAMA_CANDIDATES, um die Suche gegen einen eigenen Server zu prüfen.
@@ -3031,5 +3136,9 @@ function databaseState(): DatabaseState {
     if (!process.env.CI) openBrowser(url)
   }
 }
+// Vorversion beim Start, bevor wartende Anfragen bedient werden (eine Kopie der Datenbank dauert
+// bei einem privaten Bestand Bruchteile einer Sekunde), danach einmal am Tag.
+await checkPriorVersion()
+setInterval(() => void checkPriorVersion(), PRIOR_CHECK_INTERVAL_MS).unref()
 startupDone = true
 finishStartup()

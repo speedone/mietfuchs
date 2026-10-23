@@ -12,6 +12,7 @@ import { ErrorSummary, useFormError } from '../components/ErrorSummary'
 import { ibanChanged, ibanForSave, ibanToInput } from '../ibanField'
 import { IBAN_LABELS } from '../../../shared/iban.ts'
 import Card from '../components/Card'
+import PriorVersionsCard from '../components/PriorVersionsCard'
 
 type Props = { settings: Settings; reload: () => Promise<void>; update: UpdateState }
 
@@ -151,6 +152,8 @@ export default function Einstellungen({ settings, reload, update }: Props) {
           <code>mietfuchs.sqlite.vor-restore</code> im Datenordner erhalten).
         </p>
       </Card>
+
+      <PriorVersionsCard />
     </>
   )
 }

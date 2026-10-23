@@ -83,12 +83,27 @@ export function originText(raw: unknown): string {
 // geht es um die eigene Arbeitsdatei, hier um ein Archiv, das mit der neueren Fassung
 // eingespielt gehört. Die Fremdschlüssel bleiben hier außen vor, denn sie hängen an der
 // Verbindung und nicht an der Datei; sie schaltet `connect` beim nächsten Öffnen ein.
-export async function archiveDatabaseProblem(file: string): Promise<string | null> {
+// Woher die Datei kommt, bestimmt die Worte der Meldung: ein hochgeladenes Backup oder eine
+// automatische Vorversion aus dem Datenordner (#318). Als Parameter und nicht als Textersetzung beim
+// Aufrufer, damit eine neue Meldung nicht still „Archiv“ zu einer Vorversion sagt (Durchsicht S3);
+// ein Wächter in prior-versions.test.ts liest dafür den Rumpf unten.
+export type DatabaseSource = 'archive' | 'priorVersion'
+const SOURCE_WORDS: Record<DatabaseSource, { inThis: string, this: string, another: string }> = {
+  archive: { inThis: 'in diesem Archiv', this: 'dieses Backup', another: 'ein anderes Backup' },
+  priorVersion: { inThis: 'in dieser Vorversion', this: 'diese Vorversion', another: 'eine andere Vorversion' },
+}
+
+export async function archiveDatabaseProblem(file: string, source: DatabaseSource = 'archive'): Promise<string | null> {
+  const w = SOURCE_WORDS[source]
+  const damaged = (befund: string): string =>
+    `Die Datenbank ${w.inThis} ist beschädigt, deshalb wurde nichts davon übernommen. Ihre ` +
+    `bisherigen Daten sind unverändert. Bitte nehmen Sie ${w.another}. ` +
+    `Technischer Befund: ${befund}`
   let connection
   try {
     connection = await connect(file)
   } catch (err) {
-    return damagedArchive(messageOf(err))
+    return damaged(messageOf(err))
   }
   try {
     // Eine schwer beschädigte Datei antwortet nicht, sondern bricht ab; beide Ausgänge führen
@@ -99,16 +114,16 @@ export async function archiveDatabaseProblem(file: string): Promise<string | nul
     } catch (err) {
       befund = messageOf(err)
     }
-    if (befund !== null) return damagedArchive(befund)
+    if (befund !== null) return damaged(befund)
 
     const fremd = unknownSteps(connection, await loadMigrations())
     if (fremd) {
       return (
-        `Die Datenbank in diesem Archiv stammt aus einer neueren Mietfuchs-Version. Sie enthält ` +
+        `Die Datenbank ${w.inThis} stammt aus einer neueren Mietfuchs-Version. Sie enthält ` +
         `${fremd.count === 1 ? 'eine Änderung' : `${fremd.count} Änderungen`} am Aufbau, die diese ` +
         `Version (${APP_VERSION}) nicht kennt, die jüngste vom ${germanDate(fremd.newestMillis)}. ` +
         `Deshalb wurde nichts übernommen; Ihre bisherigen Daten sind unverändert. Bitte spielen ` +
-        `Sie dieses Backup mit der neueren Fassung von Mietfuchs ein.`
+        `Sie ${w.this} mit der neueren Fassung von Mietfuchs ein.`
       )
     }
 
@@ -120,7 +135,7 @@ export async function archiveDatabaseProblem(file: string): Promise<string | nul
       applyMigrations(connection, await loadMigrations())
     } catch (err) {
       return (
-        `Die Datenbank in diesem Archiv ließ sich nicht auf den Stand dieser Version bringen, ` +
+        `Die Datenbank ${w.inThis} ließ sich nicht auf den Stand dieser Version bringen, ` +
         `deshalb wurde nichts davon übernommen. Ihre bisherigen Daten sind unverändert. ` +
         `Technischer Befund: ${messageOf(err)}`
       )
@@ -130,7 +145,7 @@ export async function archiveDatabaseProblem(file: string): Promise<string | nul
     const kreuz = await crossPropertyViolations(connection.db)
     if (kreuz.length > 0) {
       return (
-        `Die Datenbank in diesem Archiv enthält Verweise zwischen verschiedenen Objekten, die in ` +
+        `Die Datenbank ${w.inThis} enthält Verweise zwischen verschiedenen Objekten, die in ` +
         `keiner Abrechnung aufgingen, deshalb wurde nichts davon übernommen. Ihre bisherigen Daten ` +
         `sind unverändert. ${kreuz.slice(0, 3).join(' ')}`
       )
@@ -140,7 +155,7 @@ export async function archiveDatabaseProblem(file: string): Promise<string | nul
     const waisen = await orphanPeriodKeys(connection.db)
     if (waisen.length > 0) {
       return (
-        `Die Datenbank in diesem Archiv enthält Angaben unter Abrechnungszeiträumen, die es für ihr ` +
+        `Die Datenbank ${w.inThis} enthält Angaben unter Abrechnungszeiträumen, die es für ihr ` +
         `Objekt nicht gibt, deshalb wurde nichts davon übernommen. Ihre bisherigen Daten sind ` +
         `unverändert. ${waisen.slice(0, 3).join(' ')}`
       )
@@ -151,12 +166,12 @@ export async function archiveDatabaseProblem(file: string): Promise<string | nul
     // #238, C2); die Nachfolgerin gilt dann als Anlage ohne Vorgängerin.
     const geradegerueckt = await straightenHeatingPlants(connection.db)
     if (geradegerueckt.length > 0) {
-      console.warn(`Wiederherstellen: ${geradegerueckt.map((n) => `„${n}“`).join(', ')} verwies auf eine Heizanlage, die es im Archiv nicht mehr gibt (Vorgängerin oder Gebäude); der Verweis wurde entfernt.`)
+      console.warn(`Wiederherstellen: ${geradegerueckt.map((n) => `„${n}“`).join(', ')} verwies auf eine Heizanlage, die es ${w.inThis} nicht mehr gibt (Vorgängerin oder Gebäude); der Verweis wurde entfernt.`)
     }
     const heizung = await heatingPlantViolations(connection.db)
     if (heizung.length > 0) {
       return (
-        `Die Datenbank in diesem Archiv enthält Angaben zur Heizanlage, die in keiner Abrechnung ` +
+        `Die Datenbank ${w.inThis} enthält Angaben zur Heizanlage, die in keiner Abrechnung ` +
         `aufgingen, deshalb wurde nichts davon übernommen. Ihre bisherigen Daten sind unverändert. ` +
         `${heizung.slice(0, 3).join(' ')}`
       )
@@ -169,7 +184,4 @@ export async function archiveDatabaseProblem(file: string): Promise<string | nul
   }
 }
 
-const damagedArchive = (befund: string): string =>
-  'Die Datenbank in diesem Archiv ist beschädigt, deshalb wurde nichts davon übernommen. Ihre ' +
-  'bisherigen Daten sind unverändert. Bitte nehmen Sie ein anderes Backup. ' +
-  `Technischer Befund: ${befund}`
+// ---------- Ende der Prüfung ----------
