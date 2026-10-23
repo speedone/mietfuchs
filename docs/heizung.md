@@ -248,6 +248,14 @@ Gewichten durch `distributeCents`. Tests bauen Beispiel A mit `selfSnapshot()`
   `hkv.heat-pump.capture`). Vor dem 01.10.2024 fiel eine überwiegend versorgende Wärmepumpe nach § 11
   Abs. 1 Nr. 3 a a. F. nicht darunter (`heat_pump_majority`; „ja“ oder ohne Antwort: Hinweis, keine
   Kürzungen, Heizung und Warmwasser gemeinsam).
+- **Vergleich der Teilung beim Wechsel** (#314): Die Gewichte der anderen Teilung nach § 9b Abs. 2 stehen in
+  `compare` des Plans in calc.ts, nur zum Vergleich. Bei Gradtagen nennen Rechenweg („Zum Vergleich zeitanteilig“)
+  und `heating.change-split-degree-days` (hint, `INFORMATIONAL`) sie nur für Wohnungen mit Leerstand, Eigennutzung
+  oder Wechsel ohne Zwischenablesung (eine Gruppe allein wegen einer Schätzung nach § 9a zählt nicht), nie beim Ziel
+  Warmwasser (immer nach Tagen) und nicht unter einer Vereinbarung „nach Wohnfläche“; bei zeitanteiliger Teilung
+  nennt `heating.change-split-time` wie bisher jeden Wechsel, jetzt mit dem Leerstand. Der Leerstand als
+  Nutzerwechsel ist Auslegung (Entwurf 3.5, R-A16); BGH VIII ZR 9/14 ist nur über eine Sekundärquelle gelesen und
+  wird nicht zitiert.
 - **„Nur Heizung“ bei freien Schlüsseln** nimmt beim Mieterwechsel Gradtage statt Tage; kombinierte
   Positionen bleiben nach Tagen.
 - **Invarianten** (fuel-invariant.test.ts, fuel-stock-invariant.test.ts) mit Varianten für eigene
