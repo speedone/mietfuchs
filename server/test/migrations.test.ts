@@ -175,6 +175,10 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // #415: die Texte des Anschreibens je Ebene, die Anpassung der Vorauszahlung je Mieter und die Falzmarken. Wird vor dem
   // Merge ein anderer PR davor eingereiht, wird der Schritt neu erzeugt und die Marke ersetzt.
   '0065_anschreiben': '932fedc5b3c8bc712ccb56f73ea52dad6723fa2ea14a121cc3065684d54ec2ad',
+  // #257: die ortsübliche Warmmiete je Wohnung (unit_local_rents) und die direkt an Dritte gezahlten Kosten je
+  // Mietverhältnis (tenancy_direct_charges). Wird vor dem Merge ein anderer PR davor eingereiht, wird der Schritt neu erzeugt
+  // und die Marke ersetzt.
+  '0066_ortsuebliche_miete': 'ce4bc86a16067fa26001e5f5c17fce3d07bda30a0e8879f0900ad05a29adfddf',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

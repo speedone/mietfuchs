@@ -73,6 +73,21 @@ export type Unit = {
   rooms?: number // Zimmerzahl
   floor?: string // Etage, z. B. „EG“, „1. OG“
   notes?: string // freie Notiz zur Wohnung
+  // Ortsübliche Warmmiete für die Steuer (§ 21 Abs. 2 EStG, #257), als Staffel „ab Monat gilt Wert“. An der Wohnung
+  // und nicht am Mietverhältnis: Sie hängt an Art, Lage und Ausstattung der Wohnung und an der Zeit, nicht am Mieter,
+  // und gilt über einen Mieterwechsel hinweg weiter. Die vereinbarte Miete steht dagegen am Mietverhältnis. Ohne
+  // Eintrag prüft Mietfuchs nichts, und keine Zahl ändert sich.
+  localRents?: LocalRentEntry[]
+}
+
+// Ein Wert der ortsüblichen Warmmiete (#257): Kaltmiete laut Mietspiegel zuzüglich der nach der BetrKV umlagefähigen
+// Kosten, auch der, die der Mieter unmittelbar an Dritte zahlt (BFH, Urteil vom 22.02.2021, IX R 7/20, Rz. 12 bis 14
+// und 21). Monatlich in Cent, mit Quelle und Datum der Quelle, denn das Finanzamt fragt danach.
+export type LocalRentEntry = {
+  from: string // 'YYYY-MM': ab diesem Monat gilt der Wert
+  monthlyCents: number
+  source: string // etwa „Mietspiegel Musterstadt 2025, Spanne 7,10 bis 8,40 €/m²“
+  sourceDate: string // 'YYYY-MM-DD': Stand der Quelle
 }
 
 export type PrepaymentEntry = {
@@ -119,6 +134,11 @@ export type Tenancy = {
   // der Vorauszahlung, würde sie bei einem gemischten Modell gegen die abgerechneten Kosten
   // gutgeschrieben.
   flatRates?: PrepaymentEntry[]
+  // Umlagefähige Kosten, die der Mieter unmittelbar an Dritte zahlt (eigener Gas- oder Wärmevertrag, Müll direkt an die
+  // Gemeinde), je Monat als Staffel (#257). Nur für die Quote der verbilligten Vermietung (§ 21 Abs. 2 EStG): Sie gehören
+  // zum Entgelt (BFH, Urteil vom 22.02.2021, IX R 7/20, Rz. 21; OFD Frankfurt am Main, Rundverfügung vom 17.06.2025,
+  // Tz. 3), nie in die Werbungskosten, das Mietkonto oder die Abrechnung. Am Mietverhältnis, weil der Mieter sie zahlt.
+  directCharges?: PrepaymentEntry[]
   tenantName: string
   persons: number // aktuelle Personenzahl (abgeleitet aus personHistory)
   personHistory: PersonEntry[]
@@ -1037,13 +1057,16 @@ export type SettlementComparison = {
 // Bei teilweiser Eigennutzung (#163): `privateCents` entfällt auf selbstgenutzte Wohnungen und ist
 // nicht abziehbar, `deductibleCents` ist der Rest. Zusammen immer `amountCents`. Ohne
 // selbstgenutzte Wohnung ist `privateCents` 0.
-export type TaxExpenseCategory = { category: string; amountCents: number; labor35aCents: number; privateCents: number; deductibleCents: number }
+// `gratuitousCents` (#257): der unentgeltliche Teil bei verbilligter Vermietung nach § 21 Abs. 2 EStG, nicht abziehbar
+// und nicht privat. Fehlt das Feld, gibt es keinen. Abziehbar ist Betrag − privat − unentgeltlich.
+export type TaxExpenseCategory = { category: string; amountCents: number; labor35aCents: number; privateCents: number; deductibleCents: number; gratuitousCents?: number }
 export type TaxExpenseGroup = {
   group: string // Anlage-V-nahe Gruppierung (z. B. „Laufende Betriebskosten“)
   amountCents: number
   labor35aCents: number
   privateCents: number
   deductibleCents: number
+  gratuitousCents?: number // #257, wie bei TaxExpenseCategory
   categories: TaxExpenseCategory[]
 }
 
@@ -1103,6 +1126,9 @@ export type TaxExpenseItem = {
   // Das Zahlungsdatum liegt außerhalb von Beginn − 1 bis Ende + 3 des Zeitraums (R-4). Beim Eintragen fragt Mietfuchs
   // nach, ein späterer Wechsel des Zeitraums aber nicht (Durchsicht von #255 PR 3, K8); die Übersicht nennt es deshalb.
   outsideSpan?: true
+  // Der unentgeltliche Teil bei verbilligter Vermietung (§ 21 Abs. 2 EStG, #257), schon aus `deductibleCents`
+  // herausgenommen. Fehlt das Feld, gibt es keinen.
+  gratuitousCents?: number
 }
 export type TaxOutflowSource = 'paid' | 'stated' | 'period' | 'bill'
 export type TaxOutflow = { year: number; source: TaxOutflowSource; paidOn?: string }
@@ -1166,6 +1192,9 @@ export type TaxReport = {
     privateCents: number
     deductibleCents: number
     labor35aCents: number // Summe der §35a-Arbeitskosten (Lohnanteile)
+    // Der unentgeltliche Teil bei verbilligter Vermietung (#257). `deductibleCents` = Bruttosumme − privat − dieser
+    // Teil. Fehlt das Feld, gibt es keinen.
+    gratuitousCents?: number
     // Heizung PR 8: Eigenanteil am Übertrag aus dem Brennstoffvorrat in den Abrechnungen dieses Jahres.
     // Die Abrechnung zeigt den Verbrauch, die Steuerübersicht das Bezahlte (Entwurf 8.2, N8); um diesen
     // Betrag liegen beide beim Eigenanteil auseinander. Fehlt das Feld, gibt es keinen Übertrag.
@@ -1217,6 +1246,9 @@ export type TaxReport = {
   // der Anlage V).
   // `inclusive`: kalt und warm inklusiv; `partlyInclusive`: nur eines von beiden.
   costModels: { tenancies: number; inclusive: number; partlyInclusive: number; flatRate: number }
+  // Verbilligte Vermietung nach § 21 Abs. 2 EStG (#257), nur wenn an einer vermieteten Wohnung eine ortsübliche
+  // Warmmiete eingetragen ist. Regeln in server/src/cheapRent.ts.
+  cheapRent?: CheapRentReport
   // Ausgleich beim Betriebsstrom der Heizung (#268): Σ Abzüge beim Allgemeinstrom − Σ Heizpositionen, die auch in der
   // Stromrechnung stecken, im Steuerjahr, mit Vorzeichen. Steht als eigene Zeile beim Allgemeinstrom, damit der Strom
   // genau die bezahlte Stromrechnung ist. Nur ≠ 0.
@@ -1234,6 +1266,49 @@ export type TaxReport = {
   // Negativer Allgemeinstrom ohne Kennzeichnung neben einer zentralen Anlage ohne Messdienst (#268). Nur, wenn es
   // welche gibt.
   unmarkedPowerCredits?: { costItemId: string; description: string; amountCents: number }[]
+}
+
+// Verbilligte Vermietung (#257). `verdict` je Mietverhältnis:
+//   `split`        Quote unter der Grenze von § 21 Abs. 2 Satz 1 EStG: Mietfuchs kürzt die Werbungskosten der Wohnung
+//   `forecast`     zwischen den Grenzen (ab 2021: 50 bis unter 66 %): Totalüberschussprognose, Mietfuchs kürzt nicht
+//   `paid`         ab der Grenze von Satz 2: entgeltlich
+//   `lowerBound`   der Mieter heizt selbst, und am Mietverhältnis sind keine direkt an Dritte gezahlten Kosten
+//                  eingetragen; die Quote ist deshalb nur eine Untergrenze, und unter der Grenze von Satz 2 kürzt es nicht
+//   `incomplete`   für einen Monat des Mietverhältnisses im Jahr fehlt die ortsübliche Miete; nicht gerechnet
+export type CheapRentVerdict = 'split' | 'forecast' | 'paid' | 'lowerBound' | 'incomplete'
+export type CheapRentTenancy = {
+  tenancyId: string
+  tenantName: string
+  days: number // Tage des Mietverhältnisses im Jahr
+  baseRentCents: number // vereinbarte Kaltmiete im Jahr (Soll)
+  // Umlagen: laut Abrechnung des Kalenderjahres der Anteil des Mieters an den Kosten (`settlement`), sonst das Soll
+  // der Vorauszahlungen (`soll`); dazu immer die Pauschale.
+  chargesCents: number
+  chargesSource: 'settlement' | 'soll'
+  // Vom Mieter unmittelbar an Dritte gezahlte umlagefähige Kosten im Jahr (`Tenancy.directCharges`), 0 ohne Eintrag.
+  directChargesCents: number
+  entgeltCents: number // Kaltmiete + Umlagen + direkt an Dritte gezahlte Kosten
+  comparisonCents: number // ortsübliche Warmmiete für dieselben Monate, im angebrochenen Monat nach Tagen
+  quotePercent: number | null // auf zwei Stellen; null bei `incomplete`
+  verdict: CheapRentVerdict
+  missingMonths: number[] // Monate (1..12) ohne ortsübliche Miete
+}
+export type CheapRentUnit = {
+  unitId: string
+  unitName: string
+  // Der entgeltliche Anteil der Werbungskosten dieser Wohnung im Jahr (1 = ungekürzt): 1 − Σ (1 − Quote) × Tage /
+  // Tage des Jahres, nur über Mietverhältnisse mit `split`.
+  paidFactor: number
+  gratuitousCents: number
+  // Positionen, die Mietfuchs der Wohnung nicht zuordnen kann, weil eine Fläche fehlt; sie bleiben ungekürzt.
+  unallocated: { costItemId: string; description: string }[]
+  tenancies: CheapRentTenancy[]
+  sources: LocalRentEntry[] // die Einträge, die im Jahr gelten
+}
+export type CheapRentReport = {
+  // Die Grenzen des Jahres aus dem Rechtsregister; `null`, wenn das Register für das Jahr keine Fassung führt (vor 2012).
+  law: { split: number; paid: number; cite: string; text: string } | null
+  units: CheapRentUnit[]
 }
 
 // Ein Beleg im Belegordner (#170). `mtime` ist die Zeit der Datei und nur noch für ältere Tabs

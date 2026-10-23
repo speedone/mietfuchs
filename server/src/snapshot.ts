@@ -32,7 +32,7 @@ import type { Db } from './store.ts'
 // Gelesen werden Kennung, Name (für Abrechnung und Warnungen), Wohnfläche und die beiden
 // Kennzeichen der Beteiligung samt der Personenzahl des eigenen Haushalts. Zimmerzahl, Etage
 // und Notiz sind reine Stammdaten und haben auf die Verteilung keinen Einfluss.
-export type SnapshotUnit = Pick<Unit, 'id' | 'name' | 'areaM2' | 'participates' | 'selfUsed' | 'selfPersons' | 'mea' | 'noConnection'>
+export type SnapshotUnit = Pick<Unit, 'id' | 'name' | 'areaM2' | 'participates' | 'selfUsed' | 'selfPersons' | 'mea' | 'noConnection' | 'localRents'>
 
 // Gelesen werden Kennung, Wohnung, Mietername, Zeitraum und die drei Staffeln samt der
 // Jahreskorrektur der Vorauszahlung. `persons` bleibt dabei, weil es der Rückfall ist, wenn
@@ -54,6 +54,8 @@ export type SnapshotTenancy = Pick<
   // Durchsicht S-2: welche Heizung der Mieter selbst betreibt (Hinweis zum Betriebsstrom).
   | 'selfSupplyKind'
   | 'flatRates'
+  // Direkt an Dritte gezahlte Kosten, nur für die verbilligte Vermietung in der Steuerübersicht (#257).
+  | 'directCharges'
   // Datum des Mietvertrags, für den Hinweis zur Umstellung auf Wärmelieferung (Heizung PR 16, § 556c BGB) und für
   // § 5d Abs. 4 CO2KostAufG (Heizung PR 18), dazu der Tag der Mitteilung nach § 5d Abs. 4.
   | 'contractDate'

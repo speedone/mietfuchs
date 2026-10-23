@@ -225,3 +225,10 @@ test('Steuer-Belege (#255): „Jahr der Zahlung“ auch bei der Rücklage, und d
   assert.equal(last('Rücklage ohne'), '2025, Jahr der Abrechnung (ohne Angabe)')
   assert.equal(last('Grundsteuer spät'), '2030, bezahlt am 01.03.2030, aus Abrechnung 2025, außerhalb der üblichen Spanne, bitte prüfen')
 })
+
+test('Steuer-Belege: mit verbilligter Vermietung (#257) eine Spalte „unentgeltlich“, sonst nicht', () => {
+  const split = new Map([['d', { privateCents: 0, deductibleCents: 5333, gratuitousCents: 4667 }]])
+  const zeilen = planTaxArchive([item('d', { category: 'Nicht umlagefähig' })], names, new Map(), split).overviewCsv.replace(/^\uFEFF/, '').trim().split('\r\n')
+  assert.equal(zeilen[0], 'Gruppe;Kostenart;Beschreibung;Rechnungssteller;Betrag (EUR);privat (EUR);unentgeltlich § 21 Abs. 2 EStG (EUR);abziehbar (EUR);Lohnanteil § 35a (EUR);Beleg;Jahr der Zahlung')
+  assert.equal(zeilen[1], 'Verwaltung & Instandhaltung;Nicht umlagefähig;Position d;;100,00;0,00;46,67;53,33;;kein Beleg;')
+})

@@ -70,8 +70,8 @@ type Matches<Row, Domain> = Equals<keyof Row, keyof Domain> extends true
   : { spaltenFehlen: Exclude<keyof Domain, keyof Row>; spaltenZuViel: Exclude<keyof Row, keyof Domain> }
 
 // --- Wohnungen ---
-// Die Zählertypen ohne Anschluss (#117) stehen in einer eigenen Tabelle.
-type _Units = Assert<Matches<typeof schema.units.$inferSelect, Omit<Unit, 'noConnection'>>>
+// Die Zählertypen ohne Anschluss (#117) und die ortsübliche Miete (#257) stehen in eigenen Tabellen.
+type _Units = Assert<Matches<typeof schema.units.$inferSelect, Omit<Unit, 'noConnection' | 'localRents'>>>
 
 // --- Mietverhältnisse ---
 // Die fünf verschachtelten Listen stehen in eigenen Tabellen und haben deshalb keine Spalte.
@@ -79,7 +79,7 @@ type _Units = Assert<Matches<typeof schema.units.$inferSelect, Omit<Unit, 'noCon
 // weitere hinzufügt, muss diese Zeile anfassen und stolpert über die Entscheidung. Die fünfte ist
 // die Pauschale (#93).
 // Heizstaffel und Heizkorrektur (Heizung PR 5) stehen ebenfalls in eigenen Tabellen.
-type TenancyColumns = Omit<Tenancy, 'personHistory' | 'prepayments' | 'baseRents' | 'prepaymentOverrides' | 'flatRates' | 'heatingPrepayments' | 'heatingPrepaymentOverrides'>
+type TenancyColumns = Omit<Tenancy, 'personHistory' | 'prepayments' | 'baseRents' | 'prepaymentOverrides' | 'flatRates' | 'heatingPrepayments' | 'heatingPrepaymentOverrides' | 'directCharges'>
 type _Tenancies = Assert<Matches<typeof schema.tenancies.$inferSelect, TenancyColumns>>
 
 type _PersonHistory = Assert<Matches<Omit<typeof schema.personHistory.$inferSelect, 'tenancyId'>, PersonEntry>>
@@ -315,8 +315,10 @@ test('Migration lässt sich anwenden und legt alle Tabellen an', async () => {
       'settings',
       'sqlite_sequence',
       'tenancies',
+      'tenancy_direct_charges',
       'tenancy_letter_adjustments',
       'tenancy_letter_texts',
+      'unit_local_rents',
       'unit_no_connection',
       'units',
       'uploads',

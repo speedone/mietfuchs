@@ -17,7 +17,7 @@
 // zwar in aller Regel die rowid-Reihenfolge, zugesichert ist das aber nicht; sobald ein Index
 // die Abfrage bedient, kann es anders kommen.
 
-import { eq, sql } from 'drizzle-orm'
+import { asc, eq, sql } from 'drizzle-orm'
 import type { AiConsent, AiSettings, AiSlot, Co2Refund, Co2Statement, CostItem, DegreeDayValue, FrozenFuelCarry, FuelDelivery, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingServiceValue, InterimGap, LawOverride, Meter, MonthlyInfoRow, Payment, PeriodKey, Property, Reading, Settings, Tenancy, Unit } from '../../../shared/types.ts'
 import { readLawOverrides } from './lawOverrides.ts'
 import { periodKey } from '../../../shared/period.ts'
@@ -26,8 +26,8 @@ import { DEFAULT_SETTINGS } from '../defaults.ts'
 import { frozenSettlementOf, type FrozenItemSelfUse, type SnapshotSource } from '../snapshot.ts'
 import type { Executor } from './client.ts'
 import {
-  aiSlots, baseRents, closedHeatingSettlements, co2Refunds, co2Statements, co2TenantReliefs, degreeDayValues, fuelCarryFrozen, fuelDeliveries, fuelDeliveryParts, heatingPeriods, closedSettlements, costItemAmounts, costItemContract, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, unitNoConnection, meters, payments,
-  flatRates, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingPrepayments, heatingSelfSpans, heatingSeparateSpans, heatingServiceValues, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, readings, settings, tenancies, units,
+  aiSlots, baseRents, closedHeatingSettlements, co2Refunds, co2Statements, co2TenantReliefs, degreeDayValues, fuelCarryFrozen, fuelDeliveries, fuelDeliveryParts, heatingPeriods, closedSettlements, costItemAmounts, costItemContract, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, unitLocalRents, unitNoConnection, meters, payments,
+  flatRates, tenancyDirectCharges, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingPrepayments, heatingSelfSpans, heatingSeparateSpans, heatingServiceValues, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, readings, settings, tenancies, units,
   interimReadingGaps, heatingEstimates, heatingMonthlyInfo,
 } from './schema.ts'
 
@@ -148,6 +148,9 @@ export async function readUnits(db: Executor): Promise<Unit[]> {
   const rows = await db.select().from(units).orderBy(INSERTION_ORDER)
   const noConnectionRows = await db.select().from(unitNoConnection).orderBy(INSERTION_ORDER)
   const noConnection = groupBy(noConnectionRows, (r) => r.unitId, (r) => r.meterType)
+  // Die ortsübliche Miete (#257), nach Monat; nur, wenn es Einträge gibt.
+  const localRentRows = await db.select().from(unitLocalRents).orderBy(asc(unitLocalRents.unitId), asc(unitLocalRents.from))
+  const localRents = groupBy(localRentRows, (r) => r.unitId, (r) => ({ from: r.from, monthlyCents: r.monthlyCents, source: r.source, sourceDate: r.sourceDate }))
   return rows.map((u) => ({
     id: u.id,
     propertyId: u.propertyId,
@@ -161,6 +164,7 @@ export async function readUnits(db: Executor): Promise<Unit[]> {
     ...(u.mea === null ? {} : { mea: u.mea }),
     // Ebenso nur, wenn es Einträge gibt (#117).
     ...(noConnection.has(u.id) ? { noConnection: noConnection.get(u.id) } : {}),
+    ...(localRents.has(u.id) ? { localRents: localRents.get(u.id) } : {}),
     rooms: orUndefined(u.rooms),
     floor: orUndefined(u.floor),
     notes: orUndefined(u.notes),
@@ -181,6 +185,8 @@ export async function readTenancies(db: Executor): Promise<Tenancy[]> {
   const persons = groupBy(personRows, (r) => r.tenancyId, (r) => ({ from: r.from, persons: r.persons }))
   const prepaid = groupBy(prepaymentRows, (r) => r.tenancyId, (r) => ({ from: r.from, monthlyCents: r.monthlyCents }))
   const flat = groupBy(flatRateRows, (r) => r.tenancyId, (r) => ({ from: r.from, monthlyCents: r.monthlyCents }))
+  // Direkt an Dritte gezahlte Kosten (#257), nach Monat; nur mit Einträgen.
+  const direct = groupBy(await db.select().from(tenancyDirectCharges).orderBy(asc(tenancyDirectCharges.tenancyId), asc(tenancyDirectCharges.from)), (r) => r.tenancyId, (r) => ({ from: r.from, monthlyCents: r.monthlyCents }))
   const rents = groupBy(baseRentRows, (r) => r.tenancyId, (r) => ({ from: r.from, monthlyCents: r.monthlyCents }))
   // Die Jahreskorrektur wird gleich zu einem Objekt (`Object.fromEntries`), deshalb Paare,
   // geschlüsselt nach Zeitraum (#208). Der
@@ -207,6 +213,7 @@ export async function readTenancies(db: Executor): Promise<Tenancy[]> {
     prepayments: prepaid.get(t.id) ?? [],
     // Nur mit Einträgen, wie die übrigen Angaben aus #93: Die db.json kennt das Feld nicht.
     ...(flat.has(t.id) ? { flatRates: flat.get(t.id) } : {}),
+    ...(direct.has(t.id) ? { directCharges: direct.get(t.id) } : {}),
     ...(heizstaffel.has(t.id) ? { heatingPrepayments: heizstaffel.get(t.id) ?? [] } : {}),
     ...(heizkorrekturen.has(t.id) ? { heatingPrepaymentOverrides: heizkorrekturen.get(t.id) ?? [] } : {}),
     prepaymentOverrides: Object.fromEntries(overrides.get(t.id) ?? []),

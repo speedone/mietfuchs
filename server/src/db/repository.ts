@@ -37,7 +37,7 @@ import { selfActive, selfFromOf } from '../heating.ts'
 import { captureOf, coversPeriod, hotWaterOf } from '../hca.ts'
 import { and, count, desc, eq, inArray, isNotNull, ne, or, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/sqlite-core'
-import type { BillingPeriod, CostItem, ExternalBasis, FederalState, HeatingPlant, HeatingPrepaymentOverride, InterimGapStatus, Meter, MeterType, Payment, PeriodKey, PeriodRules, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, SplitPreviewPart, Tenancy, Unit, UnitDependents } from '../../../shared/types.ts'
+import type { BillingPeriod, CostItem, ExternalBasis, FederalState, HeatingPlant, HeatingPrepaymentOverride, InterimGapStatus, LocalRentEntry, Meter, MeterType, Payment, PeriodKey, PeriodRules, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, SplitPreviewPart, Tenancy, Unit, UnitDependents } from '../../../shared/types.ts'
 import { hasKnownUnits, unitKey, unitLabel, unitProblem } from '../../../shared/meterUnits.ts'
 import { CALENDAR_RULES, calendarPeriod, paymentYear, formatDayRange, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, spansTwoYears, startYearOf } from '../../../shared/period.ts'
 import { heatingPeriodsEndingIn, isObjectPeriod, plantRules, plantSpan, servesUnit, spanOf } from '../../../shared/heatingPeriod.ts'
@@ -52,6 +52,7 @@ import type { MigratedSettings } from '../ai/settings.ts'
 import { acceptIban } from '../iban.ts'
 import { IBAN_LABELS } from '../../../shared/iban.ts'
 import { lastPerFrom, straightenPersonHistory } from '../schedule.ts'
+import { compareText } from '../calc.ts'
 import { isSplitPart, splitByService } from '../serviceSplit.ts'
 import { tenancyStamp } from '../../../shared/tenancyStamp.ts'
 import { allowsPaidOn, isPaidOnDate, paidOnQuestions, splitPaidOnQuestions, type YearSpan } from '../../../shared/paidOn.ts'
@@ -64,8 +65,8 @@ import {
 import {
   aiSlots, assessmentLines, assessments, baseRents, co2Refunds, co2Statements, co2TenantReliefs, heatingPeriods, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, HEATING_MODELS, SELF_SUPPLY_KINDS, costItemAmounts, costItemContract, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, DEPOSIT_STATUS, PAYMENT_KINDS, EXTERNAL_MEASURES,
   HCA_SCALES, HEATING_PARTS, OPERATING_POWER, HEATING_ROLES, HEATING_TARGETS, INTERIM_GAP_STATUS, interimReadingGaps, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingSelfSpans, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans, heatingServiceValues, heatingEstimates,
-  flatRates, METER_TYPES, meters, payments, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
-  readings, settings, tenancies, unitNoConnection, units, fuelCarryFrozen, fuelDeliveries,
+  flatRates, tenancyDirectCharges, METER_TYPES, meters, payments, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
+  readings, settings, tenancies, unitLocalRents, unitNoConnection, units, fuelCarryFrozen, fuelDeliveries,
 } from './schema.ts'
 import { aiSlotRows, settingsRow } from './write.ts'
 
@@ -306,6 +307,48 @@ export const oneOfOrUndefined = <T extends string>(known: readonly T[], value: u
 // ist und ob ein Verweis dabei über die Objektgrenze zeigte, entscheidet `sameProperty` unten.
 const mergedProperty = (body: unknown, current: string): string => merged(body, 'propertyId', current, (v) => asText(v, current))
 
+// Die ortsübliche Warmmiete einer Wohnung (#257). Anders als bei den Staffeln des Mietverhältnisses wird ein
+// unvollständiger Eintrag abgelehnt und nicht geradegerückt: Ohne Quelle oder ohne Betrag wäre er kein Vergleichswert,
+// und ein still verworfener Eintrag änderte die Werbungskosten. `null` oder eine leere Liste entfernt alle Einträge;
+// zwei zum selben Monat: es gilt der letzte, wie bei jeder Staffel.
+export class LocalRentError extends Error {
+  status = 400
+}
+const MONTH_KEY = /^\d{4}-(0[1-9]|1[0-2])$/
+const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/
+const isRealDay = (v: string): boolean => DAY_KEY.test(v) && new Date(`${v}T00:00:00Z`).toISOString().slice(0, 10) === v
+function readLocalRents(value: unknown): LocalRentEntry[] | undefined {
+  if (value === null) return undefined
+  if (!Array.isArray(value)) throw new LocalRentError('Die ortsübliche Miete wird als Liste von Einträgen erwartet.')
+  const entries = value.map((row): LocalRentEntry => {
+    const from = raw(row, 'from')
+    const monthlyCents = raw(row, 'monthlyCents')
+    const source = raw(row, 'source')
+    const sourceDate = raw(row, 'sourceDate')
+    if (typeof from !== 'string' || !MONTH_KEY.test(from)) throw new LocalRentError('Ortsübliche Miete: Geben Sie den Monat an, ab dem der Wert gilt, etwa 01.2025.')
+    if (typeof monthlyCents !== 'number' || !Number.isInteger(monthlyCents) || monthlyCents <= 0) throw new LocalRentError('Ortsübliche Miete: Geben Sie die ortsübliche Warmmiete im Monat als Betrag über 0 € ein.')
+    if (typeof source !== 'string' || source.trim() === '') throw new LocalRentError('Ortsübliche Miete: Nennen Sie die Quelle, etwa den Mietspiegel mit Jahr und Spanne.')
+    if (typeof sourceDate !== 'string' || !isRealDay(sourceDate)) throw new LocalRentError('Ortsübliche Miete: Geben Sie das Datum der Quelle an.')
+    return { from, monthlyCents, source: source.trim(), sourceDate }
+  })
+  const kept = lastPerFrom(entries).sort((a, b) => compareText(a.from, b.from))
+  return kept.length > 0 ? kept : undefined
+}
+
+function readDirectCharges(value: unknown): PrepaymentEntry[] | undefined {
+  if (value === null) return undefined
+  if (!Array.isArray(value)) throw new LocalRentError('Die direkt gezahlten Kosten werden als Liste von Einträgen erwartet.')
+  const entries = value.map((row): PrepaymentEntry => {
+    const from = raw(row, 'from')
+    const monthlyCents = raw(row, 'monthlyCents')
+    if (typeof from !== 'string' || !MONTH_KEY.test(from)) throw new LocalRentError('Direkt gezahlte Kosten: Geben Sie den Monat an, ab dem der Betrag gilt, etwa 01.2025.')
+    if (typeof monthlyCents !== 'number' || !Number.isInteger(monthlyCents) || monthlyCents < 0) throw new LocalRentError('Direkt gezahlte Kosten: Geben Sie den Betrag im Monat ein, 0 € oder mehr.')
+    return { from, monthlyCents }
+  })
+  const kept = lastPerFrom(entries).sort((a, b) => compareText(a.from, b.from))
+  return kept.length > 0 ? kept : undefined
+}
+
 function mergeUnit(current: Unit, body: unknown): Unit {
   return {
     id: current.id,
@@ -322,6 +365,7 @@ function mergeUnit(current: Unit, body: unknown): Unit {
     rooms: merged(body, 'rooms', current.rooms, asOptionalNumber),
     floor: merged(body, 'floor', current.floor, asOptionalText),
     notes: merged(body, 'notes', current.notes, asOptionalText),
+    localRents: merged(body, 'localRents', current.localRents, readLocalRents),
   }
 }
 
@@ -339,6 +383,9 @@ function mergeTenancy(current: Tenancy, body: unknown): Tenancy {
     end: merged(body, 'end', current.end, asNullableText),
     prepayments: merged(body, 'prepayments', current.prepayments, (v) => readSchedule<PrepaymentEntry>(v, moneyEntry)),
     flatRates: merged(body, 'flatRates', current.flatRates, (v) => (v === null ? undefined : readSchedule<PrepaymentEntry>(v, moneyEntry))),
+    // #257: wie die Pauschale ganz ersetzt; `null` entfernt. Ein Monat, der keiner ist, oder ein negativer Betrag ist
+    // eine 400 mit eigenem Satz, denn sonst schlüge der Fremdschlüssel- oder Prüfbedingungsfehler durch.
+    directCharges: merged(body, 'directCharges', current.directCharges, readDirectCharges),
     // Heizstaffel und Heizkorrekturen (Heizung PR 5): wie die Pauschale ganz ersetzt.
     heatingPrepayments: merged(body, 'heatingPrepayments', current.heatingPrepayments, (v) => (v === null ? undefined : readSchedule<PrepaymentEntry>(v, moneyEntry))),
     heatingPrepaymentOverrides: merged(body, 'heatingPrepaymentOverrides', current.heatingPrepaymentOverrides, readHeatingOverrides),
@@ -2034,6 +2081,9 @@ const paymentRow = (p: Payment) => ({
 async function writeTenancyChildren(db: Executor, t: Tenancy): Promise<void> {
   await db.delete(personHistory).where(eq(personHistory.tenancyId, t.id))
   await db.delete(prepayments).where(eq(prepayments.tenancyId, t.id))
+  await db.delete(tenancyDirectCharges).where(eq(tenancyDirectCharges.tenancyId, t.id))
+  const direkt = t.directCharges ?? []
+  if (direkt.length > 0) await db.insert(tenancyDirectCharges).values(direkt.map((e) => ({ tenancyId: t.id, from: e.from, monthlyCents: e.monthlyCents })))
   await db.delete(flatRates).where(eq(flatRates.tenancyId, t.id))
   const pauschalen = t.flatRates ?? []
   if (pauschalen.length > 0) {
@@ -2123,6 +2173,9 @@ async function writeUnitChildren(db: Executor, u: Unit): Promise<void> {
   await db.delete(unitNoConnection).where(eq(unitNoConnection.unitId, u.id))
   const types = u.noConnection ?? []
   if (types.length > 0) await db.insert(unitNoConnection).values(types.map((meterType) => ({ unitId: u.id, meterType })))
+  await db.delete(unitLocalRents).where(eq(unitLocalRents.unitId, u.id))
+  const rents = u.localRents ?? []
+  if (rents.length > 0) await db.insert(unitLocalRents).values(rents.map((e) => ({ unitId: u.id, from: e.from, monthlyCents: e.monthlyCents, source: e.source, sourceDate: e.sourceDate })))
 }
 
 const unitCollection: Collection<Unit> = {

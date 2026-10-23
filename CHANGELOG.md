@@ -49,6 +49,18 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Mietfuchs oder einen eigenen Betrag; liegt er über dem Vorschlag, weist Mietfuchs auf die angemessene Höhe
   hin. Die Vorgabe steht in den Einstellungen und ersetzt das Häkchen „Neue Vorauszahlung vorschlagen“, dessen
   Stand übernommen wird ([#415](https://github.com/speedone/mietfuchs/issues/415)).
+- Verbilligte Vermietung nach § 21 Abs. 2 EStG ([#257](https://github.com/speedone/mietfuchs/issues/257)):
+  Vermieten Sie eine Wohnung günstiger als üblich, etwa an Angehörige, tragen Sie auf der Seite Steuer in
+  der neuen Karte „Verbilligte Vermietung“ die ortsübliche Warmmiete der Wohnung ein, mit Quelle und
+  Datum (Kaltmiete laut Mietspiegel zuzüglich der umlagefähigen Kosten, auch der, die der Mieter direkt
+  an Versorger zahlt). Die Steuerübersicht zeigt dann je Mietverhältnis die Quote aus vereinbarter
+  Kaltmiete und gezahlten Umlagen. Unter 50 % kürzt sie die Werbungskosten dieser Wohnung auf den
+  entgeltlichen Teil, mit Rechenweg und eigener Spalte „unentgeltlich“; von 50 bis unter 66 % nennt sie
+  nur die Totalüberschussprognose, ab 66 % gilt die Vermietung als entgeltlich. Für 2012 bis 2020 gilt
+  die frühere Grenze von 66 %. Was der Mieter unmittelbar an Dritte zahlt (eigener Gas- oder
+  Wärmevertrag, Müll direkt an die Gemeinde), tragen Sie in derselben Karte am Mietverhältnis als Betrag
+  im Monat ein; es zählt zum Entgelt, nicht zu Ihren Werbungskosten. Ohne Eintrag ändert sich keine
+  Zahl. Neuer Begriff im Lexikon.
 
 ### Geändert
 

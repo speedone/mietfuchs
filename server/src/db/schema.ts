@@ -356,6 +356,24 @@ export const flatRates = sqliteTable(
   ],
 )
 
+// Umlagefähige Kosten, die der Mieter unmittelbar an Dritte zahlt, ab einem Monat ('YYYY-MM', #257). Nur für die Quote
+// der verbilligten Vermietung nach § 21 Abs. 2 EStG; keine Abrechnung und kein Mietkonto liest sie.
+export const tenancyDirectCharges = sqliteTable(
+  'tenancy_direct_charges',
+  {
+    tenancyId: text('tenancy_id')
+      .notNull()
+      .references(() => tenancies.id, { onDelete: 'cascade' }),
+    from: text('from').notNull(),
+    monthlyCents: integer('monthly_cents').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.tenancyId, t.from] }),
+    periodKeyCheck('tenancy_direct_charges_from_valid', 'from'),
+    notNegative('tenancy_direct_charges_monthly_not_negative', 'monthly_cents'),
+  ],
+)
+
 // Kaltmiete ab einem Monat ('YYYY-MM'). Gleiche Mechanik wie die Vorauszahlung, aber bewusst
 // eine eigene Tabelle: Ein gemeinsamer Tisch mit einer Spalte „welche Art“ spart nichts und
 // zwänge jede Abfrage, die Art mitzufiltern.
@@ -1321,6 +1339,29 @@ export const unitNoConnection = sqliteTable(
   (t) => [
     primaryKey({ columns: [t.unitId, t.meterType] }),
     oneOf('unit_no_connection_meter_type_known', 'meter_type', METER_TYPES),
+  ],
+)
+
+// Ortsübliche Warmmiete einer Wohnung für die Steuer (§ 21 Abs. 2 EStG, #257), als Staffel ab einem Monat
+// ('YYYY-MM'). An der Wohnung und nicht am Mietverhältnis: Sie hängt an Wohnung und Zeit, nicht am Mieter. Fällt mit
+// der Wohnung weg. Ein Wert unter oder gleich 0 wäre kein Vergleichswert (die Quote teilte durch ihn).
+export const unitLocalRents = sqliteTable(
+  'unit_local_rents',
+  {
+    unitId: text('unit_id')
+      .notNull()
+      .references(() => units.id, { onDelete: 'cascade' }),
+    from: text('from').notNull(),
+    monthlyCents: integer('monthly_cents').notNull(),
+    source: text('source').notNull(),
+    sourceDate: text('source_date').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.unitId, t.from] }),
+    periodKeyCheck('unit_local_rents_from_valid', 'from'),
+    check('unit_local_rents_monthly_positive', sql.raw('"monthly_cents" > 0')),
+    check('unit_local_rents_source_valid', sql.raw(`length(trim("source")) > 0`)),
+    check('unit_local_rents_source_date_valid', sql.raw(`"source_date" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
   ],
 )
 

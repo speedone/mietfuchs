@@ -21,6 +21,7 @@ import { messevCalibrationYears } from './law/messev.ts'
 import { OPERATING_POWER_HANDLING_LABELS, OPERATING_POWER_HANDLING_QUESTION } from './operatingPower.ts'
 import { co2CutMissing, co2DistrictEtsNew, co2EbevFactors, co2FirstPeriodStart, co2HalfSplit, co2HalfSplitTwoFamily, co2NonResidential, co2Restriction, co2RoundingDecimals, co2SelfSupply, co2StageTable, halfSplitBioFirstDay, halfSplitEnactedOn, halfSplitFirstDay } from './law/co2kostaufg.ts'
 import { bioCapFrom, gmodgHeating43 } from './law/gmodg.ts'
+import { estgCheapRent } from './law/estg.ts'
 
 // Hälftige Teilung nach § 5a (Heizung PR 18): Stichtage, Grenze beim Biobrennstoff, Zweifamilienhaus und § 43 GModG.
 const HALF = valueAt(co2HalfSplit, halfSplitBioFirstDay())
@@ -28,6 +29,8 @@ const TWO = valueAt(co2HalfSplitTwoFamily, LAW_AS_OF)
 const HEATING43 = valueAt(gmodgHeating43, LAW_AS_OF)
 // Erstattung an Mieter, die selbst heizen (Heizung PR 19).
 const SELF = valueAt(co2SelfSupply, LAW_AS_OF)
+// Verbilligte Vermietung (#257): die Grenzen von § 21 Abs. 2 EStG.
+const CHEAP = valueAt(estgCheapRent, LAW_AS_OF)
 
 const SHARE = valueAt(hkvConsumptionShare, LAW_AS_OF)
 const CUT = valueAt(hkvCutNotByConsumption, LAW_AS_OF)
@@ -180,6 +183,14 @@ export const GLOSSARY = {
     example: 'Ihre Wohnung hat 120 m², die Einliegerwohnung 60 m², zusammen 180 m². Die Dachreparatur über 1.800 € ist zu 60/180 abziehbar, also 600 €; 1.200 € sind privat. Die Badrenovierung der Einliegerwohnung über 4.000 € ist ganz abziehbar, die in Ihrer Wohnung gar nicht.',
     norm: '§ 9 Abs. 1, § 12 Nr. 1 EStG; BFH, Urteil vom 24.06.2008, IX R 26/06',
     needed: 'Wenn Sie in einem Haus, in dem Sie vermieten, selbst wohnen oder eine Wohnung unentgeltlich überlassen. Legen Sie die eigene Wohnung als selbstgenutzt mit Fläche an; die Steuerübersicht teilt die Werbungskosten dann auf und zeigt den Rechenweg. Eine Reparatur, die nur eine Wohnung betrifft, ordnen Sie unter Kosten bei „Betrifft (für die Steuer)“ dieser Wohnung zu, eine Reparatur am Dach nur eines Gebäudeteils den betroffenen Einheiten. Wer zum ersten Mal verhältnismäßig aufteilt, erläutert dem Finanzamt den Maßstab in einer gesonderten Aufstellung; dafür taugt der Ausdruck der Steuerübersicht.',
+  },
+  // #257: verbilligte Vermietung, an der Wohnung und in der Steuerübersicht. Beispiel aus calc-steuer-verbilligt.test.ts.
+  cheapRent: {
+    title: 'Verbilligte Vermietung',
+    short: `Vermieten Sie eine Wohnung deutlich unter der ortsüblichen Miete, etwa an Angehörige, sind die Werbungskosten dieser Wohnung nur zum entgeltlichen Teil abziehbar: Liegt das Entgelt unter ${CHEAP.split} % der ortsüblichen Warmmiete, wird geteilt; ab ${CHEAP.paid} % gilt eine auf Dauer angelegte Vermietung als entgeltlich (§ 21 Abs. 2 Satz 2 EStG). Dazwischen prüft das Finanzamt mit einer Totalüberschussprognose, ob Sie auf Dauer einen Überschuss erzielen. Ortsüblich ist die Kaltmiete laut Mietspiegel, jeder Wert innerhalb der Spanne, zuzüglich der umlagefähigen Betriebskosten, auch der, die der Mieter unmittelbar an Versorger zahlt; das Entgelt ist die vereinbarte Kaltmiete zuzüglich der gezahlten Umlagen.`,
+    example: 'Die Tochter zahlt 200 € kalt ohne Vorauszahlung, ortsüblich wären 900 € warm: 2.400 € von 10.800 € im Jahr, also 22,22 %. Von einer Dachreparatur über 1.000 €, zu 60/100 nach Fläche dieser Wohnung zuzurechnen, sind 600 € × 2.400/10.800 = 133,33 € abziehbar und 466,67 € nicht.',
+    norm: '§ 21 Abs. 2 EStG; BFH, Urteil vom 22.02.2021, IX R 7/20 (ortsübliche Miete, Rz. 11 bis 14 und 21); BMF-Schreiben vom 08.10.2004, BStBl I S. 933, Rz. 11 und 13 (Entgelt, Totalüberschussprognose)',
+    needed: 'Nur wenn Sie eine Wohnung günstiger als üblich vermieten. Tragen Sie dann an der Wohnung die ortsübliche Warmmiete ein, mit Quelle (meist der Mietspiegel) und Datum; die Steuerübersicht zeigt die Quote, kürzt die Werbungskosten dieser Wohnung, wo das Gesetz es verlangt, und zeigt den Rechenweg. Zahlt der Mieter umlagefähige Kosten unmittelbar an Dritte, etwa Gas für die eigene Heizung oder die Müllabfuhr an die Gemeinde, gehören sie in die ortsübliche Warmmiete und ebenso zum Entgelt; tragen Sie sie in derselben Karte beim Mietverhältnis unter „Direkt gezahlte Kosten“ als Betrag im Monat ein. Sie zählen nur für die Quote, nicht zu Ihren Werbungskosten. Heizt der Mieter selbst und fehlt der Betrag, kürzt Mietfuchs nicht. Abschreibung und Schuldzinsen der Wohnung, die Mietfuchs nicht führt, sind nach derselben Quote zu kürzen. Umlagefähige Kosten rechnet Mietfuchs der Wohnung mit dem Anteil des Mieters laut Abrechnung zu, die übrigen nach Wohnfläche; Tage ohne verbilligtes Mietverhältnis, auch Leerstand, zählen als entgeltlich. Beides ist eine Auslegung von Mietfuchs. Zahlt der Mieter die vereinbarte Miete nicht wie vereinbart, prüft das Finanzamt außerdem, ob das Mietverhältnis einem Fremdvergleich standhält (OFD Frankfurt am Main, Rundverfügung vom 17.06.2025, Tz. 1.2); das rechnet Mietfuchs nicht.',
   },
   vacancy: {
     title: 'Leerstand',

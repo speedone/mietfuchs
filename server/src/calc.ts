@@ -73,6 +73,7 @@ import { ausweisGaps, CO2_FUELS, co2Assessment, co2Required, NO_CO2_FUELS, co2De
 import { coversDate, createLawLog, dayAfter, dayBefore, law, LAW_AS_OF, onlyVersion, recordVersionAt, VALUE_CHANGE_LABEL, valueAt, type Period } from '../../shared/law/register.ts'
 import { betrkvGenerationPower, betrkvTvSignal, bgbDeadlineMonths, bgbHeatDeliverySwitch, bgbMaxPeriodMonths } from '../../shared/law/bgb-betrkv.ts'
 import { switchFindings, switchText } from './heatDelivery.ts'
+import { cheapRentOf } from './cheapRent.ts'
 import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvEstimateThreshold, hkvExemptions, hkvGenerationPower, hkvInfoDistrict, hkvMonthlyInfo, hkvHeatPumpCapture, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo, type DegreeDayTable } from '../../shared/law/heizkostenv.ts'
 import { plantDevices, remoteReadingVerdict, servedUnitIds } from './remoteReading.ts'
 import { monthlyInfoMonths, openMonths } from './monthlyInfo.ts'
@@ -1359,6 +1360,41 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
   if (balanceItem) split.items.set(balanceItem.costItemId, balanceItem)
   const ambiguous = balance.ambiguous
   const unmarked = unmarkedPowerCredits(balanceParts)
+  // Verbilligte Vermietung (#257, Regeln in cheapRent.ts): der unentgeltliche Teil, aus dem abziehbaren Teil nach der
+  // Aufteilung bei Eigennutzung herausgenommen, nie aus dem privaten. Ohne eingetragene ortsübliche Miete gibt es
+  // nichts, und keine Zahl ändert sich. Die Umlagen kommen aus der Abrechnung des Kalenderjahres, heute gerechnet; der
+  // eingefrorene Stand führt die Mieterzeilen nicht je Mietverhältnis.
+  const cheap = cheapRentOf({
+    year,
+    units: snapshot.units,
+    tenancies: snapshot.tenancies,
+    ledgerRows: ledger.rows,
+    statements: same === undefined ? null : same.settlement.statements,
+    items: items.filter((c) => groupOf(c.category) !== null && c.operatingPower !== 'deduction' && c.operatingPower !== 'included'),
+    deductible: (id) => split.items.get(id)?.deductibleCents,
+    // Durchsicht von PR #422, S1: der Anteil laut Abrechnung des Kalenderjahres, nur für Positionen, die genau diese
+    // Abrechnung verteilt, und nur, wo sie ihn dem Mietverhältnis zubucht.
+    settledShare: (tenancyId, costItemId) => {
+      if (same === undefined || !same.part.items.some((c) => c.id === costItemId)) return null
+      const item = same.part.items.find((c) => c.id === costItemId)
+      const t = tenancyById.get(tenancyId)
+      if (!item || !t || isNotAllocable(item.category) || modelFor(t, item) !== 'settlement') return null
+      const st = same.settlement.statements.find((x) => x.tenancyId === tenancyId && x.scope !== 'heating')
+      return st ? st.rows.filter((r) => r.costItemId === costItemId).reduce((a, r) => a + r.shareCents, 0) : null
+    },
+    chargesOf: recurringShareCents,
+  })
+  for (const [id, cut] of cheap?.cuts ?? []) {
+    const entry = split.items.get(id)
+    if (!entry) continue
+    const deductibleCents = entry.deductibleCents - cut.cents
+    split.items.set(id, {
+      ...entry,
+      deductibleCents,
+      gratuitousCents: cut.cents,
+      steps: [...entry.steps, ...cut.steps, { label: 'abziehbar nach Kürzung', value: fmtCents(deductibleCents) }],
+    })
+  }
   const byGroup = new Map<string, Map<string, TaxExpenseCategory>>()
   // Zuführung zur Erhaltungsrücklage (#143): nicht unter den Werbungskosten, sondern daneben.
   let reserveContributionCents = 0
@@ -1378,6 +1414,7 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
     prev.amountCents += item.amountCents
     prev.privateCents += share?.privateCents ?? 0
     prev.deductibleCents += share?.deductibleCents ?? item.amountCents
+    if (share?.gratuitousCents) prev.gratuitousCents = (prev.gratuitousCents ?? 0) + share.gratuitousCents
     // Nur ein gültiger Lohnanteil, dieselbe Regel wie in der Abrechnung (#148).
     prev.labor35aCents += validLabor35aCents(item) ?? 0
     cats.set(item.category, prev)
@@ -1441,6 +1478,7 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
         labor35aCents: categories.reduce((a, c) => a + c.labor35aCents, 0),
         privateCents: categories.reduce((a, c) => a + c.privateCents, 0),
         deductibleCents: categories.reduce((a, c) => a + c.deductibleCents, 0),
+        ...(categories.some((c) => c.gratuitousCents) ? { gratuitousCents: categories.reduce((a, c) => a + (c.gratuitousCents ?? 0), 0) } : {}),
         categories,
       }
     })
@@ -1451,8 +1489,9 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
     })
   const totalCents = groups.reduce((a, g) => a + g.amountCents, 0)
   const privateCents = groups.reduce((a, g) => a + g.privateCents, 0)
-  // Als Differenz, damit privat und abziehbar zusammen immer die Bruttosumme ergeben.
-  const deductibleCents = totalCents - privateCents
+  // Als Differenz, damit privat, unentgeltlich (#257) und abziehbar zusammen immer die Bruttosumme ergeben.
+  const gratuitousCents = groups.reduce((a, g) => a + (g.gratuitousCents ?? 0), 0)
+  const deductibleCents = totalCents - privateCents - gratuitousCents
   const labor35aCents = groups.reduce((a, g) => a + g.labor35aCents, 0)
   // Positionen „Nicht umlagefähig“, die nach Rücklage aussehen (#143). Gerechnet wird wie
   // erfasst; die Steuerübersicht rät nur, die Kostenart zu ändern. Der Hinweis gehört hierher und
@@ -1550,7 +1589,7 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
       tenanciesWithSoll,
       tenanciesWithoutPayment,
     },
-    expenses: { groups, totalCents, privateCents, deductibleCents, labor35aCents, ...(stockCarrySelf !== 0 ? { stockCarrySelfCents: stockCarrySelf } : {}), items: [...split.items.values()], unstatedCount: shifts.unstatedCount },
+    expenses: { groups, totalCents, privateCents, deductibleCents, labor35aCents, ...(gratuitousCents !== 0 ? { gratuitousCents } : {}), ...(stockCarrySelf !== 0 ? { stockCarrySelfCents: stockCarrySelf } : {}), items: [...split.items.values()], unstatedCount: shifts.unstatedCount },
     movedOut: shifts.movedOut,
     settlementPeriods: used.map((p) => ({ key: p.snapshot.period.key, label: p.snapshot.scope?.kind === 'heating' ? `Heizkosten ${periodLabel(p.snapshot.period)}` : periodLabel(p.snapshot.period) })),
     selfUseChangedInYear: split.selfUseChangedInYear,
@@ -1563,6 +1602,7 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
     selfOccupiedExists,
     excludedExists,
     costModels,
+    ...(cheap ? { cheapRent: cheap.report } : {}),
     ...(balance.cents !== 0 ? { operatingPowerBalanceCents: balance.cents, operatingPowerBalanceKind: balance.kind } : {}),
     ...(balance.cents !== 0 && balance.keptCents !== 0 ? { operatingPowerKeptCents: balance.keptCents } : {}),
     ...(ambiguous.length > 0 ? { operatingPowerAmbiguous: ambiguous } : {}),

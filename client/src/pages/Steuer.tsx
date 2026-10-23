@@ -13,6 +13,8 @@ import { allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifferen
 import { StepList } from '../components/CalcSteps'
 import Term from '../components/Term'
 import { NoticeBox, TextNotice } from '../components/Notice'
+import CheapRentCard from '../components/CheapRentCard'
+import { percentText, verdictText } from '../cheapRent'
 import { andList } from '../../../shared/wording.ts'
 import { OPERATING_POWER_KEPT, OPERATING_POWER_REPORTED } from '../../../shared/operatingPower.ts'
 
@@ -98,9 +100,11 @@ export default function Steuer({ settings }: Props) {
             <div className="kpi">
               <div className="v">{fmtEuro(data.expenses.deductibleCents)}</div>
               <div className="l">{split ? 'Werbungskosten (abziehbar)' : 'Werbungskosten'}</div>
-              {split && data.expenses.privateCents !== 0 && (
+              {split && (data.expenses.privateCents !== 0 || data.expenses.gratuitousCents) && (
                 <div className="muted" style={{ fontSize: 12 }}>
-                  gesamt {fmtEuro(data.expenses.totalCents)} · davon privat {fmtEuro(data.expenses.privateCents)}
+                  gesamt {fmtEuro(data.expenses.totalCents)}
+                  {data.expenses.privateCents !== 0 && <> · davon privat {fmtEuro(data.expenses.privateCents)}</>}
+                  {data.expenses.gratuitousCents ? <> · unentgeltlich {fmtEuro(data.expenses.gratuitousCents)}</> : null}
                 </div>
               )}
             </div>
@@ -332,6 +336,28 @@ export default function Steuer({ settings }: Props) {
               </Table>
             )}
 
+            {/* #257: Auch im Druck, denn der Steuerberater braucht Quote und Vergleichsmiete; je Wohnung alle Urteile, auch
+                Prognose, Untergrenze und fehlende Vergleichsmiete (Durchsicht von PR #422, S2). */}
+            {(() => {
+              const law = data.cheapRent?.law
+              if (!law) return null
+              return (data.cheapRent?.units ?? []).filter((u) => u.tenancies.length > 0).map((u) => (
+                <NoticeBox key={u.unitId} level="hint"
+                  title={<>Verbilligte Vermietung: {u.unitName}</>}
+                  action={<>
+                    {u.tenancies.map((t) => <span key={t.tenancyId} className="block">{verdictText(t, law)}</span>)}
+                    {u.gratuitousCents !== 0 && (
+                      <span className="block">
+                        {fmtEuro(u.gratuitousCents)} der Werbungskosten dieser Wohnung sind als unentgeltlicher Teil nicht abziehbar
+                        (entgeltlich {percentText(u.paidFactor)}); die Spalte „abziehbar“ zeigt sie schon gekürzt, bitte nicht ein zweites Mal
+                        kürzen. Abschreibung und Schuldzinsen der Wohnung kürzen Sie nach derselben Quote.
+                      </span>
+                    )}
+                  </>}
+                  more={<>Ortsübliche Warmmiete laut {u.sources.map((e) => `${e.source}, Stand ${fmtDate(e.sourceDate)}`).join('; ')}. {law.cite}.</>}
+                />
+              ))
+            })()}
             {/* #143: Die Zuführung zur Erhaltungsrücklage steht neben den Werbungskosten. Auch im
                 Druck, damit der Betrag beim Steuerberater nicht als vergessen gilt. */}
             {hints.includes('reserveContribution') && (
@@ -694,13 +720,15 @@ export default function Steuer({ settings }: Props) {
               <NoticeBox
                 level="hint"
                 title="Was diese Übersicht nicht rechnet"
-                action="Abschreibung, Schuldzinsen, die Verteilung nach § 82b EStDV und die Kürzung bei verbilligter Vermietung tragen Sie selbst ein; diese Angaben kennt Mietfuchs nicht."
+                action="Abschreibung, Schuldzinsen und die Verteilung nach § 82b EStDV tragen Sie selbst ein; diese Angaben kennt Mietfuchs nicht. Die Kürzung bei verbilligter Vermietung rechnet Mietfuchs für die erfassten Kosten, wenn Sie unten die ortsübliche Miete eintragen."
                 more={<>
                   Nicht gerechnet werden: die Abschreibung (AfA) des Gebäudes, die ebenfalls nur anteilig abziehbar
                   ist (Zeilen 33 und 34); Schuldzinsen, die der Zuordnung des Darlehens folgen und nicht der Fläche; die
-                  Verteilung größeren Erhaltungsaufwands auf mehrere Jahre nach § 82b EStDV; und die Kürzung bei
-                  verbilligter Vermietung, für die die Aufwendungen voll eingetragen und nur in den Zeilen 87 und 88
-                  gekürzt werden.
+                  Verteilung größeren Erhaltungsaufwands auf mehrere Jahre nach § 82b EStDV; und bei verbilligter
+                  Vermietung die Kürzung von Abschreibung und Schuldzinsen. Wo der Vordruck die Kürzung bei verbilligter
+                  Vermietung abfragt (bisher in den Zeilen 87 und 88 genannt, am Vordruck noch nicht geprüft), sehen Sie bitte im
+                  Vordruck des Jahres nach; die Spalte „abziehbar“ dieser Übersicht ist schon gekürzt und darf nicht ein zweites
+                  Mal gekürzt werden.
                 </>}
               />
             )}
@@ -765,6 +793,8 @@ export default function Steuer({ settings }: Props) {
           </div>
         </>
       )}
+      {/* #257: die ortsübliche Warmmiete je Wohnung und die Quote; gekürzt wird in der Übersicht oben. */}
+      <CheapRentCard propertyId={propertyId} year={year} report={data?.cheapRent} onSaved={() => void load()} />
     </>
   )
 }
@@ -776,6 +806,8 @@ export default function Steuer({ settings }: Props) {
 function SplitTable({ report }: { report: TaxReport }) {
   const order = report.expenses.groups.map((g) => g.group)
   const items = [...report.expenses.items].sort((a, b) => order.indexOf(a.group) - order.indexOf(b.group))
+  // #257: die Spalte nur, wenn es einen unentgeltlichen Teil gibt.
+  const gratuitous = !!report.expenses.gratuitousCents
   return (
     <Table>
       <thead>
@@ -783,19 +815,21 @@ function SplitTable({ report }: { report: TaxReport }) {
           <th>Position</th>
           <th className="num">Gesamt</th>
           <th className="num">privat</th>
+          {gratuitous && <th className="num">unentgeltlich</th>}
           <th className="num">abziehbar</th>
           <th>Zuordnung</th>
           <th className="no-print" />
         </tr>
       </thead>
       <tbody>
-        {items.map((x) => <SplitRow key={x.costItemId} item={x} />)}
+        {items.map((x) => <SplitRow key={x.costItemId} item={x} gratuitous={gratuitous} />)}
       </tbody>
       <tfoot>
         <tr>
           <td>Summe Werbungskosten</td>
           <td className="num">{fmtEuro(report.expenses.totalCents)}</td>
           <td className="num">{fmtEuro(report.expenses.privateCents)}</td>
+          {gratuitous && <td className="num">{fmtEuro(report.expenses.gratuitousCents ?? 0)}</td>}
           <td className="num">{fmtEuro(report.expenses.deductibleCents)}</td>
           <td />
           <td className="no-print" />
@@ -805,7 +839,7 @@ function SplitTable({ report }: { report: TaxReport }) {
   )
 }
 
-function SplitRow({ item }: { item: TaxExpenseItem }) {
+function SplitRow({ item, gratuitous }: { item: TaxExpenseItem; gratuitous: boolean }) {
   const [open, setOpen] = useState(false)
   return (
     <>
@@ -818,6 +852,7 @@ function SplitRow({ item }: { item: TaxExpenseItem }) {
         </td>
         <td className="num">{fmtEuro(item.amountCents)}</td>
         <td className="num">{fmtEuro(item.privateCents)}</td>
+        {gratuitous && <td className="num">{fmtEuro(item.gratuitousCents ?? 0)}</td>}
         <td className="num">{fmtEuro(item.deductibleCents)}</td>
         <td>{allocationLabel(item)}</td>
         <td className="no-print">
@@ -828,7 +863,7 @@ function SplitRow({ item }: { item: TaxExpenseItem }) {
       </tr>
       {open && (
         <tr className="calc-steps no-print">
-          <td colSpan={6}><StepList steps={item.steps} /></td>
+          <td colSpan={gratuitous ? 7 : 6}><StepList steps={item.steps} /></td>
         </tr>
       )}
     </>
