@@ -572,8 +572,37 @@ Grundmenge ist das ganze Gebäude), Überschuss. Beschreibende Gruppen statt fes
   (`closedItemsChanged`). `abziehbar = Betrag − privat`; **der Überschuss rechnet mit
   `deductibleCents`**. Ohne Eigennutzung ändert sich keine Zahl (Invariante). „Nicht umlagefähig“
   lässt sich für die Steuer Einheiten zuordnen (`key: 'direct'`, `participantUnitIds`); die
-  Abrechnung liest das nicht. AfA, Schuldzinsen, § 82b EStDV, verbilligte Vermietung und
-  Nutzungswechsel werden nur genannt.
+  Abrechnung liest das nicht. AfA, Schuldzinsen, § 82b EStDV und Nutzungswechsel werden nur genannt.
+- **Verbilligte Vermietung** (#257, [cheapRent.ts](cheapRent.ts), Grenzen in `estg.cheap-rent`,
+  [shared/law/estg.ts](../../shared/law/estg.ts)): Die ortsübliche Warmmiete steht **an der Wohnung**
+  (`Unit.localRents`, Tabelle `unit_local_rents`, Staffel ab Monat mit Quelle und Datum), weil sie an Wohnung und
+  Zeit hängt und über einen Mieterwechsel weitergilt; die vereinbarte Miete steht am Mietverhältnis. Quote je
+  Mietverhältnis und Kalenderjahr = Entgelt / ortsübliche Miete derselben Monate (im angebrochenen Monat nach Tagen,
+  `rateInMonth`). **Entgelt** = vereinbarte Kaltmiete (Soll; BFH IX R 7/20, Rz. 11) + gezahlte Umlagen (BMF-Schreiben
+  vom 08.10.2004, BStBl I S. 933, Rz. 11; OFD Frankfurt, Rundvfg. vom 17.06.2025, Tz. 3): der Anteil des Mieters an
+  den Kosten laut Abrechnung über genau das Kalenderjahr (heute gerechnet, der eingefrorene Stand führt keine
+  Mieterzeilen), sonst das Soll der Vorauszahlungen; die Pauschale mit ihrem Soll. Verglichen wird in ganzen Cent,
+  nicht über die Gleitkommaquote. Unter der Grenze von Satz 1 (`split`) wird gekürzt, darunter bis Satz 2 (`paid`)
+  nur genannt (Totalüberschussprognose nach Verwaltungsauffassung), vor 2012 gar nicht (keine Fassung). „Mieter
+  heizt selbst“ ohne Eintrag macht die Quote zur Untergrenze (`lowerBound`, keine Kürzung). **Was der Mieter direkt an
+  Dritte zahlt** (IX R 7/20, Rz. 21; OFD Frankfurt, Tz. 3), steht am Mietverhältnis als Staffel je Monat
+  (`Tenancy.directCharges`, Tabelle `tenancy_direct_charges`, derselbe Schritt 0066; Staffel, weil die Quote je Monat
+  des Mietverhältnisses rechnet), geht nur ins Entgelt (`directChargesCents`), nie in Werbungskosten, Mietkonto oder
+  Abrechnung, und hebt `lowerBound` auf. Eingetragen in derselben Karte wie die ortsübliche Miete. Fehlt für einen Monat der Wert, `incomplete`. **Kürzung je
+  Position**: Umlagefähiges, das die Abrechnung über genau das Kalenderjahr dem Mietverhältnis zubucht, mit seinem
+  Anteil laut Abrechnung × (1 − Quote) (`settledShare`; der Anteil deckt schon seine Tage und folgt dem Schlüssel,
+  Durchsicht von PR #422, S1); sonst (nicht umlagefähig, Pauschale, Inklusivmiete, kein Kalenderzeitraum) Betrag ×
+  Gewicht (direkt 1, sonst Fläche über die betroffenen Einheiten, IX R 26/06, Auslegung) × Σ (1 − Quote) × Tage /
+  Tage des Jahres. Entgeltlicher Anteil der Wohnung = 1 − min(1, Σ (1 − Quote) × Tage / Tage des Jahres); Leerstand
+  zählt als entgeltlich (Auslegung, im Rechenweg genannt). Die Quote ist auf zwei Stellen abgeschnitten (S3); die Umlagen
+  zählen ohne verrechnete CO₂-Erstattung (`recurringShareCents`, K4). Geprüft wird jede nicht selbstgenutzte Wohnung,
+  auch eine vermietete außerhalb der Abrechnungseinheit (K3). Sie steht als `gratuitousCents` an Position, Kostenart, Gruppe und Summe, wird aus dem **abziehbaren** Teil
+  genommen und darauf geklemmt, der private bleibt (keine Doppelkürzung); `deductibleCents` = Brutto − privat −
+  unentgeltlich. Abgeleitete Zeilen (Betriebsstrom, CO₂-Erstattung), ein Abzug des Betriebsstroms und eine Heizposition
+  `included` (Ausschnitte der Stromrechnung, die mit ihrem Gewicht gekürzt wird, #268) und Positionen ohne Fläche
+  (`unallocated`) bleiben ungekürzt. Die Übersicht.csv des Steuer-ZIP bekommt die Spalte „unentgeltlich“ nur mit
+  einem unentgeltlichen Teil. Ohne Eintrag fehlt `cheapRent`, und keine Zahl ändert sich (Prüfsummen tax-golden.json).
+  Invariante: invariant-steuer-verbilligt.test.ts.
 - **Jahr des Abflusses** (#255): Allein `outflowShares` ([outflow.ts](outflow.ts)) bestimmt es,
   Rangfolge `paidOn` (Datum der ganzen Zahlung), dann `taxYear`, dann Beginn des Zeitraums
   (`statedOutflowYear` in [shared/paidOn.ts](../../shared/paidOn.ts) für Formular und Schreibwege). Keine

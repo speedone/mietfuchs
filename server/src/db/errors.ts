@@ -158,6 +158,9 @@ const OWN_CHECK_MESSAGES: Readonly<Record<string, string>> = {
   cost_items_operating_power_deduction_valid: 'Ein Abzug des Betriebsstroms gehört zur Kostenart „Beleuchtung/Allgemeinstrom“ und hat einen negativen Betrag.',
   cost_items_operating_power_link_valid: 'Nur ein Abzug beim Allgemeinstrom zeigt auf eine Betriebsstrom-Position. Bitte laden Sie die Seite neu.',
   cost_items_operating_power_basis_valid: 'Eine Grundlage der Schätzung gibt es nur bei Betriebsstrom oder seinem Abzug.',
+  // Ortsübliche Miete (#257). Die Route lehnt dasselbe vorher mit eigenem Satz ab (LocalRentError).
+  unit_local_rents_source_valid: 'Zur ortsüblichen Miete gehört eine Quelle, etwa der Mietspiegel mit Jahr und Spanne.',
+  unit_local_rents_source_date_valid: 'Zur ortsüblichen Miete gehört das Datum der Quelle in der Form JJJJ-MM-TT.',
   // Durchsicht von #252, G-K3.
   cost_items_operating_power_general_valid: 'Nur ein Abzug des Betriebsstroms zeigt auf eine Stromrechnung. Bitte laden Sie die Seite neu.',
   cost_items_operating_power_included_positive: 'Betriebsstrom, der auch im Allgemeinstrom steckt, hat einen positiven Betrag; eine Gutschrift ist kein Betriebsstrom.',

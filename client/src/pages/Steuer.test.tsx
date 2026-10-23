@@ -495,3 +495,21 @@ test('Ein Datum außerhalb der üblichen Spanne bekommt einen Satz zum Prüfen (
   await zeige(REPORT({ movedOut: [{ ...GS_OUT, outsideSpan: true }] }))
   expect(screen.getByText(/außerhalb der üblichen Spanne/)).toBeTruthy()
 })
+
+// Durchsicht von PR #422, S2: Prognose, Untergrenze und fehlende Vergleichsmiete stehen auch im Druck, je Wohnung mit
+// Quote, Vergleichsmiete und Quelle, nicht nur in der Karte zum Eintragen (no-print).
+test('verbilligte Vermietung: der Satz zur Totalüberschussprognose steht druckbar in der Übersicht', async () => {
+  const quelle = { from: `${JAHR}-01`, monthlyCents: 90000, source: 'Mietspiegel Musterstadt', sourceDate: `${JAHR - 1}-04-01` }
+  await zeige(REPORT({
+    cheapRent: {
+      law: { split: 50, paid: 66, cite: '§ 21 Abs. 2 Satz 1 und 2 EStG', text: '' },
+      units: [{
+        unitId: 'a', unitName: 'DG', paidFactor: 1, gratuitousCents: 0, unallocated: [], sources: [quelle],
+        tenancies: [{ tenancyId: 't', tenantName: 'Tochter', days: 365, baseRentCents: 660000, chargesCents: 0, chargesSource: 'settlement', directChargesCents: 0, entgeltCents: 660000, comparisonCents: 1080000, quotePercent: 61.11, verdict: 'forecast', missingMonths: [] }],
+      }],
+    },
+  }))
+  const satz = await screen.findByText(/Fällt sie negativ aus/)
+  expect(satz.closest('.no-print')).toBeNull()
+  expect(screen.getAllByText(/Mietspiegel Musterstadt/).some((e) => e.closest('.no-print') === null)).toBe(true)
+})

@@ -124,8 +124,8 @@ export type TaxHint = (typeof TAX_HINTS)[number]
 //                        räumt es bewusst nicht ab, denn eine bewusste Zuordnung ist am Datensatz
 //                        nicht von einer stehengebliebenen zu unterscheiden; der Hinweis legt sie
 //                        offen. Ohne selbstgenutzte Einheit wirkt die Zuordnung nicht.
-//   `mixedUseNotCalculated` Was Mietfuchs nicht rechnet: AfA, Schuldzinsen, § 82b EStDV,
-//                        verbilligte Vermietung.
+//   `mixedUseNotCalculated` Was Mietfuchs nicht rechnet: AfA, Schuldzinsen, § 82b EStDV; bei
+//                        verbilligter Vermietung (#257) nur deren Kürzung, die der erfassten Kosten schon.
 //   `operatingPowerBalance` Abzüge beim Allgemeinstrom und Heizpositionen, die auch in der
 //                        Stromrechnung stecken, gleichen sich im Jahr nicht aus (#268); die Übersicht
 //                        rechnet die Zeile „Betriebsstrom der Heizung“ hinzu oder ab und sagt warum.
@@ -248,8 +248,9 @@ export function surplusCentsFor(report: TaxReport, basis: Basis): number {
 // Die Spalten privat und abziehbar zeigt die Seite nur, wenn es etwas Privates geben kann. Ohne
 // selbstgenutzte Wohnung wären sie eine Spalte voller Nullen und eine Spalte, die den Betrag
 // wiederholt; eine Unterscheidung, die es nicht gibt, ist schlechter als keine (wie #68).
+// Mit einem unentgeltlichen Teil bei verbilligter Vermietung (#257) ebenso: Dann ist nicht alles abziehbar.
 export function showsSplit(report: TaxReport): boolean {
-  return report.selfOccupiedExists || report.expenses.privateCents !== 0
+  return report.selfOccupiedExists || report.expenses.privateCents !== 0 || !!report.expenses.gratuitousCents
 }
 
 // Positionen, deren privater Teil laut Abrechnung von dem nach Fläche abweicht, und um wie viel
