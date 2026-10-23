@@ -1,7 +1,7 @@
 // Die Karte „Objekt“ (#92): Was aus dem Formular in den Rumpf von PUT /api/properties wird.
 import { expect, test } from 'vitest'
 import type { Property } from './types'
-import { propertyBody, propertySummary, propertyToForm, STATE_OPTIONS, STATE_UNKNOWN_LABEL, stateFromSelect, stateNote, type PropertyForm } from './propertyForm'
+import { EMPTY_PROPERTY_FORM, propertyBody, propertySummary, propertyToForm, STATE_OPTIONS, STATE_UNKNOWN_LABEL, stateFromSelect, stateNote, type PropertyForm } from './propertyForm'
 
 const form = (over: Partial<PropertyForm>): PropertyForm => ({
   name: 'Haus', address: 'Weg 1', kind: 'mfh', own: false, landlordName: '', iban: '', paymentDeadlineDays: '', cable: 'unbekannt', tightMarket: 'unbekannt', tightMarketFrom: '', tightMarketTo: '', state: '', ...over,
@@ -135,4 +135,17 @@ test('Karte „Objekt“ zum Lesen: ein leerer Text heißt „keine“, nicht �
   const rows = propertySummary({ ...OBJEKT, landlordName: '', iban: '' })
   expect(rows).toContainEqual({ label: 'Vermieter', value: 'keine' })
   expect(rows).toContainEqual({ label: 'IBAN', value: 'keine' })
+})
+
+// Das Fenster „Neues Objekt“ hat dieselben Felder wie „Objekt bearbeiten“. Leer gelassen ergibt jede Angabe ihre
+// Voreinstellung, also dasselbe Objekt wie vorher aus Name, Art und Adresse allein.
+test('neues Objekt: ohne Bezeichnung nichts, sonst jede weitere Angabe auf ihrer Voreinstellung', () => {
+  const empty = propertyBody(EMPTY_PROPERTY_FORM)
+  if (!('error' in empty)) return expect.fail('ein Objekt ohne Bezeichnung darf nicht angelegt werden')
+  expect(empty.problems.map((p) => p.field)).toEqual(['name'])
+  expect(propertyBody({ ...EMPTY_PROPERTY_FORM, name: ' Gartenweg 3 ', kind: 'etw', address: 'Gartenweg 3, 12345 Musterstadt' })).toEqual({
+    name: 'Gartenweg 3', address: 'Gartenweg 3, 12345 Musterstadt', kind: 'etw',
+    landlordName: null, iban: null, paymentDeadlineDays: null,
+    cableBuiltBeforeDec2021: null, tightMarket: null, tightMarketFrom: null, tightMarketTo: null, state: null,
+  })
 })

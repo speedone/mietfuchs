@@ -2,7 +2,7 @@
 import { expect, test } from 'vitest'
 import type { Property } from './types'
 import abrechnungSource from './pages/Abrechnung.tsx?raw'
-import { closeSettlementTitle, createButtonLabel, emptyPropertyNotice, emptyUnitsText, newPropertyBody, propertyHeading } from './propertyView'
+import { closeSettlementTitle, createButtonLabel, emptyPropertyNotice, emptyUnitsText, propertyHeading } from './propertyView'
 
 const objekt = (id: string, name: string): Property => ({
   id, name, kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null,
@@ -15,12 +15,6 @@ test('Seitenkopf: das Objekt steht erst ab zwei Objekten da', () => {
   expect(propertyHeading([A, B], B)).toBe('Haus B')
   expect(propertyHeading([A, objekt('objekt-2', '  ')], objekt('objekt-2', '  '))).toBe('Ohne Namen')
   expect(propertyHeading([A, B], null)).toBeNull()
-})
-
-test('neues Objekt: der Name ist Pflicht, Art und Adresse gehen im selben Aufruf mit', () => {
-  expect(newPropertyBody({ name: '  ', kind: 'etw', address: '' })).toEqual({ error: 'Bitte geben Sie dem neuen Objekt einen Namen.' })
-  expect(newPropertyBody({ name: ' Gartenweg 3 ', kind: 'etw', address: ' Gartenweg 3, 12345 Musterstadt ' }))
-    .toEqual({ name: 'Gartenweg 3', kind: 'etw', address: 'Gartenweg 3, 12345 Musterstadt' })
 })
 
 test('der Knopf sagt, dass gewechselt wird, und wohin', () => {

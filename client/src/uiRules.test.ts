@@ -984,6 +984,7 @@ const requiredOutsideDrawer = (src: string): string[] => {
 // zeigt dann der Drawer. Mit Grund.
 const REQUIRED_HELPERS_IN_DRAWER = new Map<string, string>([
   ['./components/FuelCard.tsx', 'text() zeichnet die Felder der Lieferung, aufgerufen nur im Seitenfenster (#346 Schritt 7)'],
+  ['./components/PropertyFields.tsx', 'die Felder eines Objekts, nur in den Seitenfenstern „Neues Objekt“ und „Objekt bearbeiten“'],
 ])
 const FORM_EXCEPTIONS = new Map<string, string>([
   // heute keine
@@ -1086,6 +1087,10 @@ const createOutsideHead = (file: string, src: string): string[] => {
     .filter((b) => !slots.some(([from, to]) => b.at >= from && b.at < to))
     .map((b) => `${file}: ${b.texts.join(' | ')}`)
 }
+// Anlegen außerhalb eines Kopfs, mit Grund.
+const CREATE_OUTSIDE_HEAD = new Map<string, string>([
+  ['./property.tsx: + Weiteres Objekt anlegen', 'das „+“ neben dem Umschalter in der Seitenleiste, eine Abkürzung ab zwei Objekten; der eigentliche Ort ist „+ Objekt anlegen“ in der Karte „Weitere Objekte“'],
+])
 test('S27: „+ … anlegen“ steht oben rechts, im Seitenkopf oder im Kartenkopf', () => {
   // Probe des Prüfers: unten in der Karte falsch, im Kopf richtig, ein Zeilen-Knopf zählt nicht
   expect(createOutsideHead('probe', '<div className="card"><h2>Zähler</h2><div className="row"><button className="btn secondary" onClick={n}>+ Zähler anlegen</button></div></div>')).toHaveLength(1)
@@ -1094,7 +1099,10 @@ test('S27: „+ … anlegen“ steht oben rechts, im Seitenkopf oder im Kartenko
   expect(createOutsideHead('probe', '<CardHeader level={3} title="Ablesungen" aside={<button className="btn secondary" onClick={n}>+ Ablesung anlegen</button>} />')).toEqual([])
   expect(createOutsideHead('probe', '<Drawer open value={f} onClose={c} actions={<button className="btn">+ Zähler anlegen</button>}>')).toHaveLength(1)
   expect(createOutsideHead('probe', '<button className="btn small secondary">+ Erhöhung ab Monat …</button><button className="btn">+ weitere Teilmenge</button>')).toEqual([])
-  expect(files.flatMap((file) => createOutsideHead(file, sources[file] ?? ''))).toEqual([])
+  const outside = files.flatMap((file) => createOutsideHead(file, sources[file] ?? ''))
+  expect(outside.filter((b) => !CREATE_OUTSIDE_HEAD.has(b))).toEqual([])
+  // Eine Ausnahme, die es nicht mehr gibt, fliegt aus der Liste.
+  expect([...CREATE_OUTSIDE_HEAD.keys()].filter((b) => !outside.includes(b))).toEqual([])
   // Der Prüfer sieht die Knöpfe von heute: Kosten, Zähler, Ablesung, Zahlung, Wohnung, Mietverhältnis, Objekt, Heizanlage, Lieferung
   expect(files.flatMap((f) => buttonsIn(f, sources[f] ?? '')).filter((b) => b.texts.some((t) => /^\+ .+ anlegen$/.test(t))).length).toBeGreaterThanOrEqual(9)
 })

@@ -70,16 +70,17 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+// Der Knopf steht in den Stammdaten in der Karte „Weitere Objekte“ oben rechts.
 async function openCreateDialog() {
   render(<App />)
   fireEvent.click(await screen.findByRole('button', { name: /Stammdaten/ }))
-  fireEvent.click(await screen.findByRole('button', { name: /Weiteres Objekt anlegen/ }))
+  fireEvent.click(await screen.findByRole('button', { name: '+ Objekt anlegen' }))
   return screen.getByRole('dialog')
 }
 
 async function createViaDialog(name: string) {
   const dialog = await openCreateDialog()
-  fireEvent.change(within(dialog).getByLabelText(/^Name/), { target: { value: name } })
+  fireEvent.change(within(dialog).getByLabelText(/^Bezeichnung/), { target: { value: name } })
   fireEvent.click(within(dialog).getByRole('button', { name: `Anlegen und zu „${name}“ wechseln` }))
   return dialog
 }
@@ -89,30 +90,82 @@ const notice = () => screen.findByRole('region', { name: /Neues Objekt/ })
 test('der Dialog erklärt, was ein weiteres Objekt ist, und beschriftet seine Felder', async () => {
   const dialog = await openCreateDialog()
   // Der Dialog trägt seinen Titel als Namen (aria-labelledby).
-  expect(screen.getByRole('dialog', { name: 'Weiteres Objekt anlegen' })).toBe(dialog)
+  expect(screen.getByRole('dialog', { name: 'Neues Objekt' })).toBe(dialog)
   expect(within(dialog).getByText(/bleibt unverändert/)).toBeTruthy()
-  const name = within(dialog).getByLabelText(/^Name/) as HTMLInputElement
-  expect(name.required).toBe(true)
+  const name = within(dialog).getByLabelText(/^Bezeichnung/) as HTMLInputElement
   expect(name.required).toBe(true)
   expect(within(dialog).getByText(/Pflichtangabe/)).toBeTruthy()
   expect(within(dialog).getByLabelText(/^Art/)).toBeTruthy()
   expect(within(dialog).getByLabelText(/^Adresse/)).toBeTruthy()
   // Ohne Namen wird nichts angelegt, und der Dialog sagt warum.
   fireEvent.click(within(dialog).getByRole('button', { name: /^Anlegen und wechseln$/ }))
-  expect(await within(dialog).findByText(/Bitte geben Sie dem neuen Objekt einen Namen/)).toBeTruthy()
+  expect((await within(dialog).findAllByText(/Geben Sie dem Objekt einen Namen/)).length).toBeGreaterThan(0)
   expect(sent).toEqual([])
+})
+
+// Anlegen und Bearbeiten sind ein Formular (wie bei Wohnungen): dieselben Felder in derselben Reihenfolge, dieselbe
+// Breite. Vorher legte ein schmales Fenster nur „Name“, Art und Adresse an.
+const fieldLabels = (dialog: HTMLElement) => within(dialog).getAllByRole('textbox').concat(within(dialog).getAllByRole('combobox'), within(dialog).getAllByRole('checkbox'))
+  .sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1))
+  .map((el) => (el.getAttribute('aria-labelledby') ?? '').split(' ').map((id) => document.getElementById(id)?.textContent ?? '').join(' ').trim() || el.closest('label')?.textContent?.trim())
+
+test('„Neues Objekt“ und „Objekt bearbeiten“ zeigen dieselben Felder in gleicher Breite', async () => {
+  const created = await openCreateDialog()
+  const createdFields = fieldLabels(created)
+  const createdWidth = created.style.width
+  fireEvent.click(within(created).getByRole('button', { name: /^Abbrechen$/ }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+  fireEvent.click(await screen.findByRole('button', { name: /Bearbeiten.*Objekt/ }))
+  const edited = screen.getByRole('dialog', { name: 'Objekt bearbeiten' })
+  expect(createdFields).toEqual(fieldLabels(edited))
+  expect(createdFields[0]).toMatch(/^Bezeichnung/)
+  expect(createdWidth).toBe(edited.style.width)
+})
+
+test('„+ Objekt anlegen“ steht in der Karte „Weitere Objekte“, nicht im Seitenkopf; bei einem Objekt mit Erklärung', async () => {
+  render(<App />)
+  fireEvent.click(await screen.findByRole('button', { name: /Stammdaten/ }))
+  const header = (await screen.findByRole('heading', { name: 'Stammdaten' })).closest<HTMLElement>('.page-head')
+  if (!header) return expect.fail('der Seitenkopf fehlt')
+  expect(within(header).queryByRole('button', { name: /Objekt anlegen/ })).toBeNull()
+  const card = (await screen.findByRole('heading', { name: 'Weitere Objekte' })).closest<HTMLElement>('section')
+  if (!card) return expect.fail('die Karte „Weitere Objekte“ fehlt')
+  expect(within(card).getByRole('button', { name: '+ Objekt anlegen' })).toBeTruthy()
+  expect(card.textContent).toMatch(/„Haus A“ bleibt dabei unverändert/)
+  // Bei einem Objekt gibt es keinen Umschalter und deshalb auch kein „+“ daneben.
+  expect(screen.queryByRole('button', { name: '+ Weiteres Objekt anlegen' })).toBeNull()
+})
+
+// Ab zwei Objekten listet die Karte die übrigen zum Wechseln, und neben dem Umschalter steht ein „+“, das dasselbe
+// Fenster öffnet. Ein Fenster, nicht zwei: Die Sperre nach „angelegt, aber die Liste fehlt“ gilt für beide Wege.
+test('ab zwei Objekten: die übrigen zum Wechseln, „+“ neben dem Umschalter öffnet dasselbe Fenster', async () => {
+  properties = [...properties, objekt('objekt-2', 'Haus B', { kind: 'etw', address: 'Gartenweg 3' })]
+  units['objekt-2'] = []
+  render(<App />)
+  fireEvent.click(await screen.findByRole('button', { name: /Stammdaten/ }))
+  const card = (await screen.findByRole('heading', { name: 'Weitere Objekte' })).closest<HTMLElement>('section')
+  if (!card) return expect.fail('die Karte „Weitere Objekte“ fehlt')
+  // Das gewählte Objekt steht nicht in der Liste, es steht in der Karte „Objekt“.
+  expect(card.textContent).not.toMatch(/Haus A/)
+  expect(card.textContent).toMatch(/Eigentumswohnung/)
+  fireEvent.click(within(card).getByRole('button', { name: 'Wechseln zu „Haus B“' }))
+  await waitFor(() => expect((screen.getByLabelText('Objekt wählen') as HTMLSelectElement).value).toBe('objekt-2'))
+
+  fireEvent.click(screen.getByRole('button', { name: '+ Weiteres Objekt anlegen' }))
+  expect(screen.getAllByRole('dialog', { name: 'Neues Objekt' })).toHaveLength(1)
 })
 
 test('anlegen → Wechsel, Hinweis nennt das vorige Objekt, „Zurück zu …“ zeigt den Bestand wieder', async () => {
   const dialog = await openCreateDialog()
-  fireEvent.change(within(dialog).getByLabelText(/^Name/), { target: { value: 'Gartenweg 3' } })
+  fireEvent.change(within(dialog).getByLabelText(/^Bezeichnung/), { target: { value: 'Gartenweg 3' } })
   fireEvent.change(within(dialog).getByLabelText(/^Art/), { target: { value: 'etw' } })
   fireEvent.change(within(dialog).getByLabelText(/^Adresse/), { target: { value: 'Gartenweg 3, 12345 Musterstadt' } })
   fireEvent.click(within(dialog).getByRole('button', { name: 'Anlegen und zu „Gartenweg 3“ wechseln' }))
 
   // Ein Aufruf mit allem, kein halber Zustand aus Anlegen und nachträglichem Ändern.
   await waitFor(() => expect(sent).toHaveLength(1))
-  expect(sent[0]).toMatchObject({ method: 'POST', url: '/api/properties', body: { name: 'Gartenweg 3', kind: 'etw', address: 'Gartenweg 3, 12345 Musterstadt' } })
+  expect(sent[0]).toMatchObject({ method: 'POST', url: '/api/properties', body: { name: 'Gartenweg 3', kind: 'etw', address: 'Gartenweg 3, 12345 Musterstadt', state: null, cableBuiltBeforeDec2021: null, landlordName: null } })
 
   // Gewechselt, ohne Rückfrage: Der eigene Dialog zählt dabei nicht als offenes Formular.
   await waitFor(() => expect((screen.getByLabelText('Objekt wählen') as HTMLSelectElement).value).toBe('objekt-2'))
@@ -188,19 +241,19 @@ test('Doppelklick und Strg+S während des Anlegens legen nur ein Objekt an', asy
 test('Anlegen klappt, Neuladen scheitert: Meldung im Dialog und kein zweites Objekt', async () => {
   failPropertyList = false
   const dialog = await openCreateDialog()
-  fireEvent.change(within(dialog).getByLabelText(/^Name/), { target: { value: 'Gartenweg 3' } })
+  fireEvent.change(within(dialog).getByLabelText(/^Bezeichnung/), { target: { value: 'Gartenweg 3' } })
   failPropertyList = true
   fireEvent.click(within(dialog).getByRole('button', { name: /Anlegen und zu/ }))
   expect(await within(dialog).findByText(/ist angelegt, die Liste der Objekte ließ sich aber nicht laden/)).toBeTruthy()
   // Schließen und wieder öffnen hebt die Sperre nicht auf, solange die Liste fehlt.
   fireEvent.click(within(dialog).getByRole('button', { name: /^Abbrechen$/ }))
   fireEvent.click(await screen.findByRole('button', { name: 'Verwerfen' }))
-  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Weiteres Objekt anlegen' })).toBeNull())
-  fireEvent.click(screen.getByRole('button', { name: /Weiteres Objekt anlegen/ }))
-  const again = screen.getByRole('dialog', { name: 'Weiteres Objekt anlegen' })
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Neues Objekt' })).toBeNull())
+  fireEvent.click(screen.getByRole('button', { name: '+ Objekt anlegen' }))
+  const again = screen.getByRole('dialog', { name: 'Neues Objekt' })
   // Neu geöffnet ist das Feld leer; die Sperre gilt trotzdem.
-  expect((within(again).getByLabelText(/^Name/) as HTMLInputElement).value).toBe('')
-  fireEvent.change(within(again).getByLabelText(/^Name/), { target: { value: 'Gartenweg 3' } })
+  expect((within(again).getByLabelText(/^Bezeichnung/) as HTMLInputElement).value).toBe('')
+  fireEvent.change(within(again).getByLabelText(/^Bezeichnung/), { target: { value: 'Gartenweg 3' } })
   const button = within(again).getByRole('button', { name: /Anlegen und zu/ }) as HTMLButtonElement
   expect(button.disabled).toBe(true)
   fireEvent.click(button)

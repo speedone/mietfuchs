@@ -179,15 +179,26 @@ export function useSwitchProperty(): (id: string, name?: string) => Promise<bool
 // Der Umschalter in der Seitenleiste. Bei höchstens einem Objekt gibt es nichts zu wählen und
 // deshalb auch nichts zu sehen.
 // Derselbe Baustein wie für den Zeitraum (#346 Schritt 8, N1); lange Namen brechen darin um (#180).
-export function PropertySwitcher({ properties, value, onChange, className }: {
+// Daneben ein „+“ für ein weiteres Objekt, als Abkürzung für den, der schon mehrere hat; der eigentliche Ort ist
+// die Karte „Weitere Objekte“ in den Stammdaten, denn in der Seitenleiste übersieht man es leicht.
+export function PropertySwitcher({ properties, value, onChange, onCreate, className }: {
   properties: Property[]
   value: string | undefined
   onChange: (id: string) => void
+  onCreate?: () => void
   className?: string
 }) {
   if (properties.length <= 1) return null
-  return (
-    <Switcher label="Objekt" ariaLabel="Objekt wählen" value={value ?? ''} className={className}
+  const switcher = (
+    <Switcher label="Objekt" ariaLabel="Objekt wählen" value={value ?? ''} className={onCreate ? 'min-w-0 flex-1' : className}
       options={properties.map((p) => ({ value: p.id, label: p.name || 'Ohne Namen' }))} onChange={onChange} />
+  )
+  if (!onCreate) return switcher
+  return (
+    <div className={`flex items-end gap-1.5${className ? ` ${className}` : ''}`}>
+      {switcher}
+      {/* Der Name beginnt mit dem sichtbaren „+“ (WCAG 2.5.3). */}
+      <button type="button" className="switcher-add no-print" title="Weiteres Objekt anlegen" onClick={onCreate}>+{' '}<span className="sr-only">Weiteres Objekt anlegen</span></button>
+    </div>
   )
 }

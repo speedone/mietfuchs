@@ -196,6 +196,25 @@
   --switcher-label-weight: var(--weight-strong);
   --switcher-label-color: var(--text);
 }
+/* Das „+“ neben dem Umschalter des Objekts in der Seitenleiste: so hoch wie die Auswahl und gerahmt wie sie */
+@utility switcher-add {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: var(--target);
+  height: var(--target);
+  padding: 0;
+  font-size: var(--text-l);
+  color: var(--muted);
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-m);
+  box-shadow: var(--shadow-1);
+  cursor: pointer;
+  &:hover { color: var(--text); background: var(--hover); }
+}
 @utility switcher {
   display: flex;
   flex-direction: column;

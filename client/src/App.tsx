@@ -6,6 +6,7 @@ import { PeriodProvider, usePeriod } from './period'
 import { PeriodSelect } from './components/PeriodSelect'
 import { PropertyProvider, PropertySwitcher, useProperty, useSwitchProperty, withProperty } from './property'
 import { UIProvider, useConfirm, useToast } from './components/feedback'
+import { NewPropertyProvider, useOpenNewProperty } from './components/NewPropertyDrawer'
 import FoxLogo from './components/Logo'
 import { UpdateHint, useUpdateStatus } from './components/Update'
 import DatabaseNotice from './components/Database'
@@ -160,6 +161,7 @@ function Shell() {
     document.querySelector<HTMLElement>(mobile ? 'button.menu-toggle' : 'nav.sidebar [aria-current="page"]')?.focus()
   }, [mobile])
   const switchProperty = useSwitchProperty()
+  const openNewProperty = useOpenNewProperty()
   const confirmLeave = useConfirm()
   // Jeder Seitenwechsel fragt wie der Wechsel von Objekt und Zeitraum, wenn ein Formular offen oder eine
   // Änderung ungespeichert ist (#346, Schritt 7a): App.tsx stellt die Seite neu auf, und die Eingabe wäre
@@ -308,7 +310,9 @@ function Shell() {
         <UpdateHint status={update.status} onDismissed={reload} onShowGuide={() => void navigate('einstellungen')} />
       )}
 
-      <PropertySwitcher properties={properties} value={propertyId} onChange={(id) => void switchProperty(id)} className="px-2.5 pb-3" />
+      {/* Das „+“ öffnet dasselbe Fenster wie die Karte „Weitere Objekte“; am Handy schließt erst das Menüblatt. */}
+      <PropertySwitcher properties={properties} value={propertyId} onChange={(id) => void switchProperty(id)}
+        onCreate={openNewProperty ? () => { close?.(); openNewProperty() } : undefined} className="px-2.5 pb-3" />
 
       <PeriodSelect className="px-2.5 pb-3" />
 
@@ -412,7 +416,9 @@ export default function App() {
     <PeriodProvider>
       <PropertyProvider>
         <UIProvider>
-          <Shell />
+          <NewPropertyProvider>
+            <Shell />
+          </NewPropertyProvider>
         </UIProvider>
       </PropertyProvider>
     </PeriodProvider>
