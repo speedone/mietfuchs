@@ -144,15 +144,31 @@ const MAX_PAGES = 4
 // Echte Seitenbilder sind deutlich unter 1 MB. Die Grenze hält den Arbeitsspeicher klein, denn
 // Seitenbilder werden dort gehalten und für Ollama noch einmal als Base64 kopiert.
 const PAGE_MAX_BYTES = 5 * 1024 * 1024
+// Ein hochgeladener Beleg, wie die Routen ihn weiterreichen. Name und Pfad nimmt `storedUpload` nicht
+// ungeprüft von multer, sondern bildet den Pfad aus dem Namen im Belegordner neu (siehe dort).
+type StoredUpload = { path: string, filename: string, originalname: string, mimetype: string, size: number }
+
+// Den Namen vergibt diskStore selbst (Zeitstempel, Filter ohne Schrägstriche), und `destination` ist fest
+// der Belegordner; ein Ausbruch ist also heute nicht möglich. Trotzdem wird der Pfad hier aus dem Namen neu
+// gebildet und nur ein reiner Dateiname angenommen: So hängt jeder Zugriff auf die Platte an dieser einen
+// Prüfung und nicht daran, dass multer und der Filter oben so bleiben (CodeQL js/path-injection). Ein Name,
+// der keiner ist, ergibt `null`, als wäre nichts hochgeladen.
+function storedUpload(file: Express.Multer.File | undefined): StoredUpload | null {
+  if (!file) return null
+  const name = path.basename(file.filename)
+  if (name !== file.filename || name === '' || name === '.' || name === '..') return null
+  return { path: path.join(UPLOAD_DIR, name), filename: name, originalname: file.originalname, mimetype: file.mimetype, size: file.size }
+}
+
 const checkPageSizes = (req: Request, res: Response, next: NextFunction): void => {
   if (!(filesOf(req).pages ?? []).some((p) => p.size > PAGE_MAX_BYTES)) return next()
   // Der Beleg liegt da schon auf der Platte: wieder entfernen, sonst bliebe ein Rest im Archiv
-  const file = filesOf(req).file?.[0]
+  const file = storedUpload(filesOf(req).file?.[0])
   if (file) fs.rmSync(file.path, { force: true })
   res.status(400).json({ error: 'Ein Seitenbild ist größer als 5 MB.' })
 }
 const fileWithPages = [upload.fields([{ name: 'file', maxCount: 1 }, { name: 'pages', maxCount: MAX_PAGES }]), checkPageSizes]
-const uploadedFile = (req: Request): Express.Multer.File | null => filesOf(req).file?.[0] ?? null
+const uploadedFile = (req: Request): StoredUpload | null => storedUpload(filesOf(req).file?.[0])
 
 // Ein Beleg, der schon im Belegordner liegt (#170, Posteingang), statt eines neu hochgeladenen:
 // Das Feld `existingFile` nennt ihn. Er wird nur gelesen und bei einem Abbruch nicht gelöscht,
@@ -1179,7 +1195,7 @@ async function placementProperty(db: Database, value: unknown): Promise<string |
 // Hochladen nicht**: Eine fehlende Zeile ist erlaubt (der Beleg wird dann aus der Datei
 // beschrieben), ein verlorener Beleg nicht. Abgelehnt wird nur eine ungültige Angabe; dann
 // verschwindet auch die Datei wieder, damit kein Rest im Ordner liegt.
-async function recordNewUpload(req: Request, file: Express.Multer.File): Promise<void> {
+async function recordNewUpload(req: Request, file: StoredUpload): Promise<void> {
   const body = bodyObject(req)
   const year = yearOf(body.year)
   if (year === false) throw new RouteProblem(400, YEAR_INVALID)
@@ -1205,7 +1221,7 @@ async function recordNewUpload(req: Request, file: Express.Multer.File): Promise
 
 // Dasselbe für die KI-Routen, die ihre Antwort selbst schreiben: Statt zu werfen, antwortet die
 // Route und gibt `false` zurück.
-async function recordOrRefuse(req: Request, res: Response, file: Express.Multer.File): Promise<boolean> {
+async function recordOrRefuse(req: Request, res: Response, file: StoredUpload): Promise<boolean> {
   try {
     await recordNewUpload(req, file)
     return true
@@ -1217,9 +1233,10 @@ async function recordOrRefuse(req: Request, res: Response, file: Express.Multer.
 }
 
 app.post('/api/upload', upload.single('file'), async (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'Keine Datei' })
-  if (!(await recordOrRefuse(req, res, req.file))) return
-  res.json({ file: req.file.filename })
+  const file = storedUpload(req.file)
+  if (!file) return res.status(400).json({ error: 'Keine Datei' })
+  if (!(await recordOrRefuse(req, res, file))) return
+  res.json({ file: file.filename })
 })
 
 // Antwort der KI-Routen. Eine Auswertung kann auf dem Prozessor minutenlang laufen, und Firefox

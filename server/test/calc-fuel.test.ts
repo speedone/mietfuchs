@@ -211,7 +211,7 @@ const gutschriftFall = (opts: { tenancies: ReturnType<typeof mieter>[]; estimate
   const je = Object.fromEntries([...n.text.matchAll(/(Mieter [A-Z0-9]+) \([A-Z]\) ([\d.]+,\d\d) €/g)].map((m) => [m[1] ?? '', cents(m[2] ?? '')]))
   return { text: n.text, diff, je, kontrafaktum, summe: Object.values(je).reduce((a, c) => a + c, 0) }
 }
-const fmtCentsTest = (c: number) => `${(c / 100).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace(/\./g, '\\.')} €`
+const fmtCentsTest = (c: number) => `${(c / 100).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} €`
 const schaetzungVon = (id: string, from: string, to: string, cents: number) => lieferung({ id, label: `Schätzung ${id}`, invoiceFrom: from, invoiceTo: to, amountCents: cents, estimated: true })
 // Je Mieter höchstens 1 Cent neben dem Kontrafaktum (beide Seiten sind auf den Cent gerundet).
 const wieKontrafaktum = (f: ReturnType<typeof gutschriftFall>) => {
