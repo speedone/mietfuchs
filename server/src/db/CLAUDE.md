@@ -219,6 +219,43 @@ Wohnung kaskadiert auf alles darunter) half bisher nichts von selbst. Deshalb le
   in `notes`. Die Oberfläche lädt danach **immer** neu (jede Seite hält sonst den alten Stand) und
   zeigt die Hinweise einmal nach dem Neuladen (sessionStorage, mit try/catch).
 
+## Änderungsjournal und Verlauf (#318, Schritte 2 und 3)
+
+[journal.ts](journal.ts), Entwurf in
+[docs/superpowers/specs/2026-10-24-journal-design.md](../../../docs/superpowers/specs/2026-10-24-journal-design.md).
+Neben dem Bestand steht, was jede schreibende Anfrage geändert hat: `change_groups` (eine Gruppe je Anfrage, mit Satz,
+Route, Objekt, Zahl der Migrationsschritte) und `change_log` (je Zeile Tabelle, Schlüssel, Art, `before`/`after` als
+JSON über **alle** Spalten). Keine Berechnung liest es.
+
+- **Die Trigger stehen nicht in der Datei**: `ensureJournal` legt sie bei jedem Öffnen nach `applyMigrations` als
+  TEMP TRIGGER an (je Tabelle AFTER INSERT/UPDATE/DELETE, Spalten aus `PRAGMA table_info`). Deshalb brauchst du für
+  eine neue Tabelle und für einen Schritt, der eine Tabelle neu baut (CREATE `__new_x`, DROP, RENAME, wobei Trigger
+  wegfallen), **nichts zu tun**; keine Datenanweisung. Der Wächter in journal.test.ts verlangt drei Trigger mit allen
+  Spalten je Tabelle (außer Journal, `__drizzle_migrations`, `sqlite_*`). Migrationen, Umstieg, eingefrorener Eingang
+  und Backup-Schnappschüsse laufen ohne Trigger und werden nicht erfasst.
+- **Erfasst wird nur in einer Gruppe**: Die TEMP-Tabelle `journal_current` hält ihre Kennung, die Trigger fragen sie im
+  `WHEN`. Gesetzt wird sie nur von `opened.write(work, journal)`; ohne `journal` (Systemarbeit) wird nichts erfasst.
+  `writeData` in index.ts reicht `journal` aus der laufenden Anfrage (AsyncLocalStorage `requestScope`, gesetzt nach
+  `express.json()` und **erneut nach multer**, sonst ist der Kontext dort weg; eine neue Route mit multer braucht
+  `inRequest` dahinter). Eine Anfrage ist eine Gruppe, auch bei mehreren `writeData`. Eine leere Gruppe
+  (zurückgerollt, nichts geändert) fällt weg; ein Update ohne Unterschied erzeugt keine Zeile.
+- **Satz je Route** in [../journalRoutes.ts](../journalRoutes.ts); journal-routes.test.ts verlangt ihn für jede Route,
+  deren Rumpf `writeData(` aufruft (Vorschauen ausgenommen, sie rollen zurück). Das Objekt der Gruppe bestimmt
+  `propertyOfGroup` über `property_id` oder die Fremdschlüssel (zuerst die Zeilen derselben Gruppe); mehrere oder
+  keines ergeben `NULL` (installationsweit). `property_id` hat bewusst keinen Fremdschlüssel.
+- **Eingefrorene Abrechnungen** (`settlement` der vier Abschlusstabellen, `OMITTED_COLUMNS`) stehen nur als
+  `{"$omitted":1,"length":N}` darin. Alles andere vollständig, damit Rückgängig (Schritt 4) jede Zeile wiederherstellen
+  kann.
+- **Aufbewahrung**: 12 Monate (`JOURNAL_KEEP_MONTHS`), aufgeräumt beim Öffnen. **Backup** ohne Journal, außer
+  `GET /api/backup?journal=1` (`stripJournal` leert den Schnappschuss und macht VACUUM); Vorversionen enthalten es immer.
+  Ein endgültiges Löschen eines ehemaligen Mieters, das das Journal bereinigt, gibt es noch nicht (Grenze).
+- **Lesen**: `GET /api/journal?property=&before=&limit=` (Gruppen mit `title` und Zahl der Änderungen),
+  `GET /api/journal/:id` (Änderungen, `collapse` fasst unverändert gelöscht-und-neu-eingefügte Zeilen der
+  Unterlisten zusammen; gespeichert bleibt die wirkliche Folge). Seite „Verlauf“ (client/src/pages/Verlauf.tsx,
+  Feldnamen in client/src/journalView.ts).
+- **Leistung** (gemessen mit 5000 Ablesungen in einem Vorgang): Einfügen etwa 1,6-mal so lang, Löschen samt Kaskade
+  rund 0,2 statt 0,02 Sekunden; für die Handgriffe eines Vermieters nicht spürbar.
+
 ## Der Umstieg aus der db.json
 
 [changeover.ts](changeover.ts): Beim ersten Start wandert die `db.json` ohne Zutun in die Datenbank:

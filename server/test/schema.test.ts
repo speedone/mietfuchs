@@ -275,6 +275,8 @@ test('Migration lässt sich anwenden und legt alle Tabellen an', async () => {
       'assessment_lines',
       'assessments',
       'base_rents',
+      'change_groups',
+      'change_log',
       'closed_heating_settlement_history',
       'closed_heating_settlements',
       'closed_settlement_history',

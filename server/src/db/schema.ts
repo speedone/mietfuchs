@@ -2024,3 +2024,44 @@ export const tenancyLetterAdjustments = sqliteTable(
     check('tenancy_letter_adjustments_cents_valid', sql.raw(`("mode" = 'custom' AND "cents" IS NOT NULL AND typeof("cents") = 'integer' AND "cents" >= 0) OR ("mode" <> 'custom' AND "cents" IS NULL)`)),
   ],
 )
+
+// ---------- Änderungsjournal (#318, Schritte 2 und 3) ----------
+
+export const JOURNAL_OPS = ['insert', 'update', 'delete'] as const
+
+// Eine Gruppe je Anfrage, die schreibt (gebildet in der Schlange, siehe db/journal.ts). Die Kennung
+// steigt auf, damit die Reihenfolge ohne Uhr feststeht. `property_id` bewusst ohne Fremdschlüssel:
+// Ein gelöschtes Objekt bleibt im Verlauf stehen, und `SET NULL` nähme der Gruppe genau die Angabe,
+// nach der man sie sucht. `schema_steps` zählt die angewendeten Migrationsschritte zur Zeit der
+// Gruppe (die Grenze „Rückgängig nur seit der letzten Migration“ für Schritt 4).
+export const changeGroups = sqliteTable(
+  'change_groups',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    at: text('at').notNull(),
+    method: text('method').notNull(),
+    route: text('route').notNull(),
+    description: text('description').notNull(),
+    subjectTable: text('subject_table'),
+    propertyId: text('property_id'),
+    schemaSteps: integer('schema_steps').notNull(),
+  },
+  (t) => [index('change_groups_property_idx').on(t.propertyId, t.id), index('change_groups_at_idx').on(t.at)],
+)
+
+// Eine Zeile je erfasster Änderung, geschrieben allein von den Triggern (TEMP, bei jedem Öffnen
+// angelegt, db/journal.ts). `before` und `after` tragen alle Spalten als JSON, damit Rückgängig
+// jede Zeile wiederherstellen kann; nur der eingefrorene Stand einer Abrechnung steht als Vermerk.
+export const changeLog = sqliteTable(
+  'change_log',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    groupId: integer('group_id').notNull().references(() => changeGroups.id, { onDelete: 'cascade' }),
+    tableName: text('table_name').notNull(),
+    rowKey: text('row_key').notNull(),
+    op: text('op', { enum: JOURNAL_OPS }).notNull(),
+    before: text('before'),
+    after: text('after'),
+  },
+  (t) => [index('change_log_group_idx').on(t.groupId), oneOf('change_log_op_known', 'op', JOURNAL_OPS)],
+)

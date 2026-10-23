@@ -20,6 +20,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { applyMigrations, connect, loadMigrations, type Connection, type Database, type Migration } from './client.ts'
+import { beginGroup, endGroup, ensureJournal, journalCutoff, type JournalMeta } from './journal.ts'
 import { writable } from '../paths.ts'
 import { APP_VERSION } from '../version.ts'
 
@@ -476,8 +477,9 @@ export type OpenedDatabase = {
   backup: string | null
   // Was zwar zu sagen, aber kein Grund zum Abbruch ist. Der Aufrufer gibt sie aus.
   warnings: string[]
-  // Der einzige Weg zu einem Schreibvorgang, siehe die Begründung bei createLane.
-  write: <T>(work: (db: Database) => Promise<T>) => Promise<T>
+  // Der einzige Weg zu einem Schreibvorgang, siehe die Begründung bei createLane. Mit `journal`
+  // bildet der Vorgang eine Gruppe im Änderungsjournal (db/journal.ts), ohne wird nichts erfasst.
+  write: <T>(work: (db: Database) => Promise<T>, journal?: JournalMeta) => Promise<T>
   // Und der einzige zu einem Lesevorgang, aus demselben Grund: Auf der geteilten Verbindung
   // sähe ein Lesevorgang daneben den nicht festgeschriebenen Stand einer fremden Transaktion.
   read: <T>(work: (db: Database) => Promise<T>) => Promise<T>
@@ -610,7 +612,21 @@ export async function openDatabase(options: OpenOptions): Promise<OpenedDatabase
         err,
       )
     }
+    // Das Änderungsjournal (#318): Trigger nach der Kette, mit den Spalten von heute, und
+    // Aufräumen nach der Aufbewahrungsfrist. Beides gehört zum Öffnen, damit auch eine
+    // wiederhergestellte oder eingespielte Datei sofort erfasst wird.
+    const journalSchema = ensureJournal(connection)
+    connection.exec(`DELETE FROM change_groups WHERE at < '${journalCutoff(new Date())}'`)
+    const schemaSteps = Number(connection.rows('SELECT count(*) FROM __drizzle_migrations')[0]?.[0] ?? 0)
     const lane = createLane()
+    const journaled = async <T>(work: (db: Database) => Promise<T>, journal: JournalMeta): Promise<T> => {
+      const group = await beginGroup(connection.db, journal, schemaSteps, new Date())
+      try {
+        return await work(connection.db)
+      } finally {
+        await endGroup(connection.db, group, journalSchema, journal.scope)
+      }
+    }
     return {
       db: connection.db,
       file,
@@ -619,7 +635,7 @@ export async function openDatabase(options: OpenOptions): Promise<OpenedDatabase
       // backupBeforeMigrating ohnehin null zurück, das hier hält die Zusage aber an einer Stelle.
       backup: applied > 0 ? backup : null,
       warnings,
-      write: (work) => lane.write(() => work(connection.db)),
+      write: (work, journal) => lane.write(() => (journal ? journaled(work, journal) : work(connection.db))),
       read: (work) => lane.read(() => work(connection.db)),
       close: connection.close,
     }
