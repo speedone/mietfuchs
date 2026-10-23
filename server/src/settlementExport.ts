@@ -124,8 +124,6 @@ const totalLabel = (rows: readonly SettlementRow[]): string => (rows.some((r) =>
 
 export function settlementExportCsv(s: ExportableSettlement): string {
   const rows: string[] = []
-  if (errorsOf(s).length > 0) rows.push('Entwurf, nicht versenden: Diese Abrechnung enthält Angaben, die sich widersprechen.')
-  if ((s.heating ?? []).length > 0) rows.push('Angaben der Heizkostenabrechnung (§ 6a, CO₂, Vorrat) nur im JSON-Export')
   rows.push(header(totalLabel(s.statements.flatMap((st) => st.rows))).join(';'))
   for (const st of s.statements) {
     const head = [textField(st.tenantName), textField(st.unitName), st.periodStart, st.periodEnd]
@@ -140,7 +138,12 @@ export function settlementExportCsv(s: ExportableSettlement): string {
     line('Geleistete Vorauszahlungen', ['', '', '', '', '', csvField(euro(st.prepaymentCents)), ''])
     line(st.balanceCents < 0 ? 'Nachzahlung' : st.balanceCents > 0 ? 'Guthaben' : 'Ausgeglichen', ['', '', '', '', '', csvField(euro(Math.abs(st.balanceCents))), ''])
   }
-  return `﻿${rows.join('\r\n')}\r\n`
+  // Hinweise ans Ende, nach einer Leerzeile in der ersten Spalte: Die Kopfzeile bleibt Zeile 1 für jeden Leser.
+  const notes: string[] = []
+  if (errorsOf(s).length > 0) notes.push('Entwurf, nicht versenden: Diese Abrechnung enthält Angaben, die sich widersprechen.')
+  if ((s.heating ?? []).length > 0) notes.push('Angaben der Heizkostenabrechnung (§ 6a, CO₂, Vorrat) nur im JSON-Export')
+  if (notes.length > 0) rows.push('', ...notes)
+  return `\uFEFF${rows.join('\r\n')}\r\n`
 }
 
 // `abrechnung-<Objekt>-<Zeitraum>.<Endung>`: ohne Schrägstriche und Leerzeichen, Umlaute bleiben.
