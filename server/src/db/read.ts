@@ -292,6 +292,7 @@ export async function readCostItems(db: Executor): Promise<CostItem[]> {
       ...(c.operatingPowerItemId !== null ? { operatingPowerItemId: c.operatingPowerItemId } : {}),
       ...(c.operatingPowerBasis !== null ? { operatingPowerBasis: c.operatingPowerBasis } : {}),
       ...(c.operatingPowerGeneralId !== null ? { operatingPowerGeneralId: c.operatingPowerGeneralId } : {}),
+      ...(c.operatingPowerReported !== null ? { operatingPowerReported: c.operatingPowerReported } : {}),
     }
   })
 }

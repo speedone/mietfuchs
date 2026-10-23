@@ -388,6 +388,11 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
   const named = merged(body, 'namedTenancyIds', current.namedTenancyIds, (v) => (v === null ? null : readTenancyIds(v)))
   const category = merged(body, 'category', current.category, (v) => asText(v, ''))
   const operatingPower = merged(body, 'operatingPower', current.operatingPower, (v) => oneOfOrUndefined(OPERATING_POWER, v))
+  const operatingPowerItemId = merged(body, 'operatingPowerItemId', current.operatingPowerItemId, (v) => (typeof v === 'string' && v !== '' ? v : undefined))
+  // #270: Ob ein Abzug ohne Verweis dem Messdienst gemeldet ist. Wird er verknüpft oder ist er kein Abzug mehr, fällt die
+  // Angabe weg (geradegerückt statt abgelehnt: ein alter Tab schickt das Feld nicht mit).
+  const reported = merged(body, 'operatingPowerReported', current.operatingPowerReported, (v) => (typeof v === 'boolean' ? v : undefined))
+  const operatingPowerReported = operatingPower === 'deduction' && operatingPowerItemId === undefined ? reported : undefined
   return {
     id: current.id,
     propertyId: mergedProperty(body, current.propertyId),
@@ -439,9 +444,10 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
     // Betriebsstrom (Heizung PR 15). `null` leert; fehlt das Feld, bleibt die Angabe (Review Focus 3,
     // ein alter Tab). Eine leere Grundlage gilt als keine.
     operatingPower,
-    operatingPowerItemId: merged(body, 'operatingPowerItemId', current.operatingPowerItemId, (v) => (typeof v === 'string' && v !== '' ? v : undefined)),
+    operatingPowerItemId,
     operatingPowerBasis: merged(body, 'operatingPowerBasis', current.operatingPowerBasis, (v) => (typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined)),
     operatingPowerGeneralId: merged(body, 'operatingPowerGeneralId', current.operatingPowerGeneralId, (v) => (typeof v === 'string' && v !== '' ? v : undefined)),
+    ...(operatingPowerReported !== undefined ? { operatingPowerReported } : {}),
   }
 }
 
@@ -2008,6 +2014,7 @@ const costItemRow = (c: CostItem) => ({
   fuelDeliveryId: c.fuelDeliveryId ?? null,
   operatingPower: orNull(c.operatingPower), operatingPowerItemId: orNull(c.operatingPowerItemId),
   operatingPowerBasis: orNull(c.operatingPowerBasis), operatingPowerGeneralId: orNull(c.operatingPowerGeneralId),
+  operatingPowerReported: orNull(c.operatingPowerReported),
 })
 const meterRow = (m: Meter) => ({
   id: m.id, propertyId: m.propertyId, name: m.name, unitId: m.unitId, type: m.type, meterNumber: orNull(m.meterNumber), unit: m.unit,

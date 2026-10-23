@@ -255,6 +255,7 @@ export function carryOverForm(row: CarryRow): ItemForm {
     operatingPowerItemId: '',
     operatingPowerBasis: '',
     operatingPowerGeneralId: '',
+    operatingPowerReported: null,
   }
 }
 

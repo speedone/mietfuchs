@@ -356,7 +356,7 @@ const NOT_IN_DB_JSON = new Set(['period', 'propertyId', 'mea', 'externalMeasure'
   // Ebenso die Lieferung einer Position (Heizung PR 7); ihre Rundreise prüft db-fuel.test.ts.
   'fuelDeliveryId',
   // Betriebsstrom (Heizung PR 15) kennt die db.json nicht; seine Rundreise prüft db-repository.test.ts.
-  'operatingPower', 'operatingPowerItemId', 'operatingPowerBasis', 'operatingPowerGeneralId',
+  'operatingPower', 'operatingPowerItemId', 'operatingPowerBasis', 'operatingPowerGeneralId', 'operatingPowerReported',
   // Die Art einer Zahlung (#280) kennt die db.json nicht; die Kette gibt jeder „rent“ (unten), ihre Rundreise
   // prüft db-repository.test.ts.
   'kind'])

@@ -28,6 +28,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   (§ 9b Abs. 4 HeizkostenV). Dass der Leerstand wie ein Nutzerwechsel geteilt wird, ist eine Auslegung
   und steht so im Hinweis und im Lexikon. Bei zeitanteiliger Teilung nennt der bisherige Hinweis jetzt
   auch den Leerstand. Keine Zahl der Abrechnung ändert sich.
+- Betriebsstrom beim Messdienst: Am Abzug des Betriebsstroms beim Allgemeinstrom ohne Verweis auf eine
+  Heizposition geben Sie bei einer Heizung mit Messdienst an, ob der Betrag dem Messdienst gemeldet ist
+  oder ob Sie ihn selbst tragen ([#270](https://github.com/speedone/mietfuchs/issues/270)). Tragen Sie ihn
+  selbst, zählt die Steuerübersicht die ganze bezahlte Stromrechnung zu den Werbungskosten; vorher fehlte
+  der Abzug dort. Die Abrechnung nennt dann in einem Hinweis, dass der Betriebsstrom in keiner Abrechnung
+  an die Mieter steht. Keine Zahl der Abrechnung ändert sich, und ohne Angabe bleibt alles wie bisher.
 
 ### Geändert
 

@@ -6,7 +6,7 @@
 // Abrechnung verteilt, damit der Hinweis genau einmal erscheint, nämlich dort, wo der Betriebsstrom steht.
 import type { CostItem, HeatingEnergy, HeatingMethod, HeatingSource, HeatingSupply, OperatingPowerDeduction, OperatingPowerHandling } from '../../shared/types.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
-import { asksOperatingPowerHandling, GENERAL_POWER_CATEGORY, nonServiceHeats, OPERATING_POWER_HANDLING_LABELS, OPERATING_POWER_HANDLING_QUESTION, OPERATING_POWER_INCLUDED_QUESTION, OPERATING_POWER_INCLUDED_YES, OPERATING_POWER_KEPT, POWER_GENERATED, serviceReceivesOperatingPower } from '../../shared/operatingPower.ts'
+import { asksOperatingPowerHandling, euro, GENERAL_POWER_CATEGORY, nonServiceHeats, OPERATING_POWER_HANDLING_LABELS, OPERATING_POWER_HANDLING_QUESTION, OPERATING_POWER_INCLUDED_QUESTION, OPERATING_POWER_INCLUDED_YES, OPERATING_POWER_KEPT, OPERATING_POWER_REPORTED, POWER_GENERATED, deductionReported, serviceReceivesOperatingPower } from '../../shared/operatingPower.ts'
 
 // Ein Abzug in einer abgeschlossenen Abrechnung, der den Mietern nicht oder nicht so gutgeschrieben ist,
 // wie er heute dasteht (P-W3, R2-W2). `frozenCents` nur bei `changed`: der eingefrorene Betrag.
@@ -332,6 +332,27 @@ export function selfSupplyPowerText(tenantName: string, unitName: string, genera
     'Hat die Heizung einen eigenen Stromvertrag mit eigenem Zähler und eigener Rechnung, oder läuft ihr Strom über den Zähler des Mieters, ist nichts falsch. Ist der Abzug beim Allgemeinstrom erfasst, entfällt dieser Hinweis.'
 }
 
+// #270: Text des Hinweises `heating.operating-power-not-reported`. Der Vermieter hat am Abzug ohne Verweis angegeben, dass er
+// dem Messdienst nicht gemeldet ist; dann steht der Betriebsstrom in keiner Abrechnung an die Mieter. Rechtmäßig (der
+// Vermieter muss ihn nicht umlegen), deshalb nur Auskunft; der Satz nennt den Weg, falls er umgelegt werden soll. Kein Satz
+// zur Steuer (wie R-8 zu #268): Die Steuerübersicht rechnet den Abzug von selbst als selbst getragen.
+export function notReportedText(d: { description: string; amountCents: number }): string {
+  return `„${d.description}“ (${euro(-d.amountCents)}) ist beim Allgemeinstrom als Betriebsstrom der Heizung abgezogen, und Sie haben angegeben, dass der Betrag dem Messdienst nicht gemeldet ist. ` +
+    'Dann steht dieser Betriebsstrom weder im Allgemeinstrom noch in der Abrechnung des Messdienstes: Die Mieter tragen ihn nicht, Sie tragen ihn selbst. ' +
+    'Das ist zulässig, denn umlegen müssen Sie ihn nicht (BGH, Beschluss vom 13.09.2011, VIII ZR 45/11, Rn. 3; vgl. BGH, Urteil vom 03.06.2016, V ZR 166/15, Rn. 15). ' +
+    'Umlegen lässt er sich als Teil der Heizkosten (§ 7 Abs. 2 HeizkostenV): Sollen die Mieter ihn tragen, melden Sie den Betrag dem Messdienst, bevor er die Heizkostenabrechnung erstellt, ' +
+    `und wählen Sie danach am Abzug im Kostenformular „${OPERATING_POWER_REPORTED}“.`
+}
+
+// #270: Die Abzüge ohne Verweis, die der Vermieter ausdrücklich als nicht gemeldet angegeben hat, während im Zeitraum eine
+// Anlage mit Messdienst heizt. Ohne Messdienst heißt dieselbe Antwort ohnehin „ich trage ihn selbst“.
+export function notReportedDeductions<T extends Pick<CostItem, 'operatingPower' | 'operatingPowerItemId' | 'operatingPowerReported'>>(
+  items: readonly T[], plants: Parameters<typeof serviceReceivesOperatingPower>[0], period: { from: string; to: string },
+): T[] {
+  if (!serviceReceivesOperatingPower(plants, period)) return []
+  return items.filter((c) => c.operatingPower === 'deduction' && !c.operatingPowerItemId && c.operatingPowerReported === false)
+}
+
 // #266: Text des Hinweises `heating.operating-power-bill-missing` (M-2, S-1, S-2): „schadet den Mietern nicht“ nur unter
 // der Bedingung, dass die Rechnung auch nicht im Allgemeinstrom steht (V ZR 166/15, Rn. 15).
 export function billMissingText(f: MissingPowerFinding, label: string): string {
@@ -371,13 +392,13 @@ export function generationPowerText(f: MissingPowerFinding, label: string, betrk
 //   C = Σ Betrag der Abzüge − Σ Betrag der Heizpositionen `included`,
 // mit Vorzeichen und ohne Klemme (Entscheidungen R-2, R-3 zu #268), über alle Positionen des Steuerjahres und nicht je
 // Teil oder je Paar: Ein Verweis in ein anderes Steuerjahr braucht so keine Sonderregel, jedes Jahr stimmt für sich.
-// Ausgenommen sind Abzüge ohne Verweis, wenn eine Anlage mit Messdienst den Zeitraum des Abzugs berührt: Sie heißen im
-// Formular „dem Messdienst als Betriebsstrom gemeldet“, und dann steckt der Betrag im Betrag des Messdienstes, der als
-// Heizposition dasteht. Mietfuchs folgt dieser Angabe; ist nichts gemeldet, fehlt der Betrag (R-5, bekannte Grenze).
-// Heizt im Zeitraum zugleich eine Anlage ohne Messdienst, ist das nicht eindeutig, und die Steuerseite sagt es (R-6).
+// Ausgenommen sind Abzüge ohne Verweis, wenn eine Anlage mit Messdienst den Zeitraum des Abzugs berührt und der Vermieter
+// nicht „nicht gemeldet, selbst getragen“ angegeben hat (#270, `deductionReported`): Dann steckt der Betrag im Betrag des
+// Messdienstes, der als Heizposition dasteht. Ohne Angabe gilt er als gemeldet (R-5); heizt im Zeitraum zugleich eine
+// Anlage ohne Messdienst, ist das ohne Angabe nicht eindeutig, und die Steuerseite sagt es (R-6).
 // Die Abrechnung bleibt unberührt; das hier ist eine Zeile der Steuerübersicht.
 
-type BalanceItem = Pick<CostItem, 'id' | 'category' | 'description' | 'amountCents' | 'heatingPlantId' | 'operatingPower' | 'operatingPowerItemId'>
+type BalanceItem = Pick<CostItem, 'id' | 'category' | 'description' | 'amountCents' | 'heatingPlantId' | 'operatingPower' | 'operatingPowerItemId' | 'operatingPowerReported'>
 type BalancePlant = { id: string; method: HeatingMethod; source?: HeatingSource; supply?: HeatingSupply; endsOn?: string | null; replacesPlantId?: string | null }
 export type BalancePart = { items: readonly BalanceItem[]; plants: readonly BalancePlant[]; period: { from: string; to: string } }
 
@@ -402,12 +423,16 @@ export type BalanceSource = {
   // nicht als Betriebsstrom in den Heizkosten gekennzeichnet ist oder die es im Objekt nicht gibt; ein Verweisfehler,
   // kein anderes Steuerjahr.
   situation: 'kept' | 'otherYear' | 'sameYear' | 'brokenLink'
+  // #270, Durchsicht S2: Abzug ohne Verweis, der neben einem Messdienst nach Angabe nicht gemeldet ist.
+  notReported?: true
 }
 // Die Lage der ganzen Zeile: `kept` nur Abzüge ohne Verweis; `otherYear` nur Paare über zwei Steuerjahre; `mixed`
 // beides; `mismatch`: Abzug und Betriebsstrom sind im selben Steuerjahr verschieden hoch, eine Heizposition hat gar
 // keinen Abzug, oder ein Abzug zeigt ins Leere (`brokenLink`). Nur dann ist etwas zu prüfen.
 export type BalanceKind = 'kept' | 'otherYear' | 'mixed' | 'mismatch'
 export type BalanceNote = { costItemId: string; description: string; amountCents: number }
+// #270, Durchsicht K3: Ein gemeldeter Abzug weiß, ob der Vermieter das angegeben hat oder es ohne Angabe gilt.
+export type ReportedNote = BalanceNote & { stated: boolean }
 export type OperatingPowerBalance = {
   cents: number
   kind: BalanceKind
@@ -416,7 +441,7 @@ export type OperatingPowerBalance = {
   keptCents: number
   sources: BalanceSource[]
   // Abzüge ohne Verweis bei Messdienst: zählen nicht (gemeldet).
-  reported: BalanceNote[]
+  reported: ReportedNote[]
   // Davon die, bei denen im Zeitraum zugleich eine Anlage ohne Messdienst heizt (R-6).
   ambiguous: BalanceNote[]
 }
@@ -434,7 +459,7 @@ export function operatingPowerBalance(parts: readonly BalancePart[], linkable: r
   const yearDeductionsOf = (id: string) => yearItems.filter((c) => c.operatingPower === 'deduction' && c.operatingPowerItemId === id)
   let mismatch = false
   const sources: BalanceSource[] = []
-  const reported: BalanceNote[] = []
+  const reported: ReportedNote[] = []
   const ambiguous: BalanceNote[] = []
   parts.forEach((p, part) => {
     const service = serviceReceivesOperatingPower(p.plants, p.period)
@@ -449,9 +474,11 @@ export function operatingPowerBalance(parts: readonly BalancePart[], linkable: r
       }
       if (c.operatingPower !== 'deduction') continue
       const note = { costItemId: c.id, description: c.description, amountCents: c.amountCents }
-      if (!c.operatingPowerItemId && service) {
-        reported.push(note)
-        if (nonServiceHeats(p.plants, p.period)) ambiguous.push(note)
+      // #270: Mit Angabe „nicht gemeldet“ zählt er wie selbst getragen; mit einer Angabe ist er nie mehrdeutig.
+      if (deductionReported(c, service)) {
+        const stated = c.operatingPowerReported != null
+        reported.push({ ...note, stated })
+        if (!stated && nonServiceHeats(p.plants, p.period)) ambiguous.push(note)
         continue
       }
       const linked = c.operatingPowerItemId ? lookup(c.operatingPowerItemId) : undefined
@@ -463,6 +490,7 @@ export function operatingPowerBalance(parts: readonly BalancePart[], linkable: r
         part, kind: 'deduction', costItemId: c.id, description: c.description, cents: -c.amountCents,
         plant: linked ? linked.heatingPlantId ?? null : undefined, linkedDescription: linked?.description ?? null, situation,
         ...(linked && situation !== 'brokenLink' ? { linkedId: linked.id } : {}),
+        ...(situation === 'kept' && service ? { notReported: true as const } : {}),
       })
     }
   })

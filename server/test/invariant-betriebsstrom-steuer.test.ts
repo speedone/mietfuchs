@@ -45,7 +45,7 @@ const YEARS = [2025, 2026]
 
 type Stock = { source: Source; service: boolean; selfUsed: boolean }
 
-function randomStock(rnd: Rng, opts: { generalKey?: CostKey; noIncluded?: boolean; deductions?: 'none' | 'unlinked' | 'random'; method?: 'manual' | 'service'; credits?: boolean; billYears?: boolean } = {}): Stock {
+function randomStock(rnd: Rng, opts: { generalKey?: CostKey; noIncluded?: boolean; deductions?: 'none' | 'unlinked' | 'random'; method?: 'manual' | 'service'; credits?: boolean; billYears?: boolean; answers?: 'random' | 'kept' } = {}): Stock {
   const pick = <T>(arr: readonly T[]): T => arr[Math.floor(rnd() * arr.length)] as T
   const cents = (min: number, max: number) => Math.round((min + rnd() * (max - min)) * 100)
   const unitCount = 1 + Math.floor(rnd() * 3)
@@ -122,6 +122,19 @@ function randomStock(rnd: Rng, opts: { generalKey?: CostKey; noIncluded?: boolea
       if (c.operatingPower === 'deduction' && rnd() < 0.5) c.taxYear = year + Math.floor(rnd() * 2)
     }
   }
+  // #270: die Angabe am Abzug ohne Verweis, ob er dem Messdienst gemeldet ist; zuletzt gezogen, damit die Bestände ohne
+  // sie gleich bleiben. `kept`: jeder Abzug ohne Verweis „nicht gemeldet, selbst getragen“.
+  if (opts.answers) {
+    for (const c of items) {
+      if (c.operatingPower !== 'deduction' || c.operatingPowerItemId) continue
+      if (opts.answers === 'kept') c.operatingPowerReported = false
+      else {
+        const r = rnd()
+        if (r < 0.35) c.operatingPowerReported = false
+        else if (r < 0.7) c.operatingPowerReported = true
+      }
+    }
+  }
   const source = {
     properties: [{ id: 'objekt-1', kind: 'mfh', cableBuiltBeforeDec2021: null, periodRules: CALENDAR_RULES }],
     units, tenancies, costItems: items, meters: [], readings: [], payments: [], closedSettlements: [], heatingPlants: [plant],
@@ -130,20 +143,27 @@ function randomStock(rnd: Rng, opts: { generalKey?: CostKey; noIncluded?: boolea
 }
 
 const yearItems = (s: Source, year: number) => s.costItems.filter((c) => c.period === periodKey(`${year}-01`))
+// Die Abzüge, die als dem Messdienst gemeldet gelten und deshalb abgezogen bleiben: ohne Verweis, bei Messdienst, und nicht
+// ausdrücklich „nicht gemeldet“ (#270).
+const reportedSum = (own: readonly Item[], service: boolean) => service
+  ? own.filter((c) => c.operatingPower === 'deduction' && !c.operatingPowerItemId && c.operatingPowerReported !== false).reduce((a, c) => a + c.amountCents, 0)
+  : 0
 
-test('#268 Invariante I1–I3: Werbungskosten = bezahlte Rechnungen je Steuerjahr, privat + abziehbar = gesamt, Abrechnung unberührt', () => {
+for (const answers of [undefined, 'random'] as const) test(`#268 Invariante I1–I3${answers ? ' mit Angabe „gemeldet“ (#270)' : ''}: Werbungskosten = bezahlte Rechnungen je Steuerjahr, privat + abziehbar = gesamt, Abrechnung unberührt`, () => {
   let negative = 0
   let positive = 0
+  let answered = 0
   for (const seed of SEEDS) {
     const rnd = makeRng(seed)
-    const { source, service, selfUsed } = randomStock(rnd)
+    const { source, service, selfUsed } = randomStock(rnd, answers ? { answers } : {})
+    if (service) answered += source.costItems.filter((c) => c.operatingPowerReported === false).length
     for (const year of YEARS) {
       const at = `Startwert ${seed}, ${year}`
       const r = taxReportFor(source, 'objekt-1', year)
       const own = yearItems(source, year)
       // I1: bezahlt sind die Rechnungen ohne Kennzeichnung; bei Messdienst bleiben die Abzüge ohne Verweis abgezogen.
       const paid = own.filter((c) => c.operatingPower === undefined).reduce((a, c) => a + c.amountCents, 0)
-      const reported = service ? own.filter((c) => c.operatingPower === 'deduction' && !c.operatingPowerItemId).reduce((a, c) => a + c.amountCents, 0) : 0
+      const reported = reportedSum(own, service)
       assert.equal(r.expenses.totalCents, paid + reported, `${at}: I1`)
       const balance = r.operatingPowerBalanceCents ?? 0
       if (balance < 0) negative++
@@ -155,6 +175,13 @@ test('#268 Invariante I1–I3: Werbungskosten = bezahlte Rechnungen je Steuerjah
       }
       const settlement = computeSettlement(snapshotFor(source, 'objekt-1', calendarYearPeriod(year)))
       assert.equal(r.selfUsedShareCents, settlement.selfUsedShareCents, `${at}: I2 Eigenanteil`)
+      // #270: Die Angabe ändert keine Zahl der Abrechnung an die Mieter.
+      if (answers) {
+        const plain = { ...source, costItems: source.costItems.map((c) => { const { operatingPowerReported: _, ...rest } = c; return rest }) } as Source
+        const before = computeSettlement(snapshotFor(plain, 'objekt-1', calendarYearPeriod(year)))
+        assert.deepEqual(settlement.statements.map((st) => [st.tenancyId, st.totalShareCents, st.balanceCents]), before.statements.map((st) => [st.tenancyId, st.totalShareCents, st.balanceCents]), `${at}: Abrechnung`)
+        assert.equal(settlement.selfUsedShareCents, before.selfUsedShareCents, `${at}: Eigenanteil der Abrechnung`)
+      }
       // I3
       for (const i of r.expenses.items) assert.equal(i.privateCents + i.deductibleCents, i.amountCents, `${at}: I3 ${i.costItemId}`)
       assert.equal(r.expenses.privateCents + r.expenses.deductibleCents, r.expenses.totalCents, `${at}: I3 Summe`)
@@ -163,6 +190,7 @@ test('#268 Invariante I1–I3: Werbungskosten = bezahlte Rechnungen je Steuerjah
   }
   // Der Generator muss beide Richtungen des Ausgleichs erzeugen, sonst prüft I1 die Klemme nicht.
   assert.ok(negative > 0 && positive > 0, `negativ ${negative}, positiv ${positive}`)
+  if (answers && SEEDS.length >= 30) assert.ok(answered > 0, 'kein Abzug „nicht gemeldet“ bei Messdienst')
 })
 
 test('#268 Invariante I4: Strom nach Fläche, Abzug ohne Verweis und ohne Messdienst: Steuer wie ohne Abzug', () => {
@@ -176,6 +204,24 @@ test('#268 Invariante I4: Strom nach Fläche, Abzug ohne Verweis und ohne Messdi
       const at = `Startwert ${seed}, ${year}`
       assert.equal(a.expenses.totalCents, b.expenses.totalCents, `${at}: Betrag`)
       assert.ok(Math.abs(a.expenses.privateCents - b.expenses.privateCents) <= 1, `${at}: privat ${a.expenses.privateCents} gegen ${b.expenses.privateCents}`)
+      compared++
+    }
+  }
+  assert.ok(compared > 0)
+})
+
+test('#270 Invariante I4 bei Messdienst: Abzug ohne Verweis „nicht gemeldet, selbst getragen“ ist wie kein Abzug', () => {
+  let compared = 0
+  for (const seed of SEEDS) {
+    const withDeduction = randomStock(makeRng(seed), { generalKey: 'area', noIncluded: true, deductions: 'unlinked', method: 'service', answers: 'kept' })
+    const without = randomStock(makeRng(seed), { generalKey: 'area', noIncluded: true, deductions: 'none', method: 'service' })
+    for (const year of YEARS) {
+      const a = taxReportFor(withDeduction.source, 'objekt-1', year)
+      const b = taxReportFor(without.source, 'objekt-1', year)
+      const at = `Startwert ${seed}, ${year}`
+      assert.equal(a.expenses.totalCents, b.expenses.totalCents, `${at}: Betrag`)
+      assert.ok(Math.abs(a.expenses.privateCents - b.expenses.privateCents) <= 1, `${at}: privat ${a.expenses.privateCents} gegen ${b.expenses.privateCents}`)
+      assert.equal(a.operatingPowerAmbiguous, undefined, `${at}: mit Angabe eindeutig`)
       compared++
     }
   }
@@ -238,7 +284,7 @@ test('#267 Invariante I1/I3 mit Jahr der Zahlung der Stromrechnung: Werbungskost
       const r = taxReportFor(source, 'objekt-1', year)
       const own = source.costItems.filter((c) => paidYearOf(source, c) === year)
       const paid = own.filter((c) => c.operatingPower === undefined).reduce((a, c) => a + c.amountCents, 0)
-      const reported = service ? own.filter((c) => c.operatingPower === 'deduction' && !c.operatingPowerItemId).reduce((a, c) => a + c.amountCents, 0) : 0
+      const reported = reportedSum(own, service)
       assert.equal(r.expenses.totalCents, paid + reported, `${at}: I1`)
       // Jeder Abzug steht mit seiner Rechnung im selben Jahr.
       const ids = new Set(r.expenses.items.map((i) => i.costItemId))
@@ -252,7 +298,7 @@ test('#267 Invariante I1/I3 mit Jahr der Zahlung der Stromrechnung: Werbungskost
     }
     // Über alle Jahre genau einmal (Plan I2), ohne Kennzeichnung gezählt wie oben.
     const all = source.costItems.filter((c) => c.operatingPower === undefined).reduce((a, c) => a + c.amountCents, 0)
-    const reportedAll = service ? source.costItems.filter((c) => c.operatingPower === 'deduction' && !c.operatingPowerItemId).reduce((a, c) => a + c.amountCents, 0) : 0
+    const reportedAll = reportedSum(source.costItems, service)
     assert.equal(total, all + reportedAll, `Startwert ${seed}: über alle Jahre`)
   }
   if (SEEDS.length >= 30) assert.ok(moved > 0 && stale > 0, `verschobene Rechnungen ${moved}, abweichende Abzüge ${stale}`)

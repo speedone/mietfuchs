@@ -561,9 +561,10 @@ Grundmenge ist das ganze Gebäude), Überschuss. Beschreibende Gruppen statt fes
   (#267); ein verknüpfter Abzug nimmt den Heizanteil aus dem Teil seiner Heizposition
   (`foreignHeatQuota`, dafür löst `taxReportFor` Verweise über alle Positionen des Objekts auf). Der
   private Teil folgt dem Heizanteil, ohne zuordenbare Anlage der Gebäudefläche (Auslegung). Ein Abzug
-  ohne Verweis bei einer Anlage mit Messdienst gilt als dem Messdienst gemeldet
-  (`serviceReceivesOperatingPower`, bekannte Grenze); bei Kesseltausch mit beiden:
-  `operatingPowerAmbiguous`. Negativer Allgemeinstrom ohne Kennzeichnung bleibt
+  ohne Verweis bei einer Anlage mit Messdienst gilt als dem Messdienst gemeldet und zählt nicht, außer der
+  Vermieter hat am Abzug „nicht gemeldet, selbst getragen“ angegeben (#270, `operatingPowerReported`,
+  Regel in `deductionReported`); dann zählt er wie ohne Messdienst. Ohne Angabe bei Kesseltausch mit
+  beiden Anlagen: `operatingPowerAmbiguous`, mit Angabe nie. Negativer Allgemeinstrom ohne Kennzeichnung bleibt
   (`unmarkedPowerCredits`). Invariante S1: privater Teil über alle Jahre gleich, wo immer Rechnung,
   Abzug und Heizposition stehen.
 

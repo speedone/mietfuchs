@@ -96,7 +96,7 @@ import { heatingSnapshotFor, selfAt, snapshotFor, wayOf } from './snapshot.ts'
 import { outflowShares, paidWhollyIn, storedOutflowYear } from './outflow.ts'
 import { deliveryShare, notInvoiceDeliveries, plantFuel, rangeOf, type FuelCarry, type FuelResult, type ShareContext } from './fuel.ts'
 import { co2Plausibility, etsExempt as etsExemptPlant, plausibilityText } from './co2Plausibility.ts'
-import { billMissingText, deductionMissingText, generationPowerText, selfSupplyPowerText, missingOperatingPowerText, missingPowerFindings, operatingPowerBalance, operatingPowerFindings, operatingPowerText, unmarkedPowerCredits, type OperatingPowerBalance } from './operatingPower.ts'
+import { billMissingText, deductionMissingText, generationPowerText, notReportedDeductions, notReportedText, selfSupplyPowerText, missingOperatingPowerText, missingPowerFindings, operatingPowerBalance, operatingPowerFindings, operatingPowerText, unmarkedPowerCredits, type OperatingPowerBalance } from './operatingPower.ts'
 import { GENERAL_POWER_CATEGORY } from '../../shared/operatingPower.ts'
 import { LAW_PARAMS } from '../../shared/law/params.ts'
 import { fuelFromDeliveries, fuelFromStock, isFuelMarked, looseCentsOf, measuredOffset, problemText, settledByDefault, stockKeysOf, stockOf, stockTemplateOfLine, stockTouched, valueOf as stockValueOf, type FuelFigures, type StockPeriodInput, type StockResult } from './fuelStock.ts'
@@ -469,6 +469,8 @@ const noticeKinds = {
   // Heizung PR 19, Durchsicht S-2: zentrale Heizung mit Brennstoff beim Mieter, ohne Heizanlage.
   'heating.self-supply-operating-power': { level: 'hint', title: 'Betriebsstrom der Heizung des Mieters im Allgemeinstrom?', terms: ['operatingPower', 'co2Refund'] },
   'heating.operating-power-bill-missing': { level: 'hint', title: 'Rechnung des Heizungsstromzählers fehlt', terms: ['operatingPower'] },
+  // #270: Abzug ohne Verweis, nach Angabe des Vermieters dem Messdienst nicht gemeldet; er trägt ihn selbst (INFORMATIONAL).
+  'heating.operating-power-not-reported': { level: 'hint', title: 'Betriebsstrom dem Messdienst nicht gemeldet', terms: ['operatingPower'] },
   // Heizung PR 17 (Entwurf 4.5, 10.1): ein Rechtswert, den der Vermieter eingetragen hat.
   'law.value-overridden': { level: 'hint', title: 'Selbst eingetragener Rechtswert', terms: ['legalBasis'] },
   'model.prepayment-unsettled': { level: 'warning', title: 'Vorauszahlung ohne Abrechnung', terms: ['prepayment', 'flatRate'] },
@@ -2138,7 +2140,8 @@ function operatingPowerBalanceItem(
   // und Betriebsstrom im selben Steuerjahr verschieden hoch sind; ein Paar über zwei Steuerjahre ist richtig erfasst.
   for (const s of deductions) {
     // Nachprüfung N3: Ein Verweis auf eine Position, die kein Betriebsstrom in den Heizkosten ist, heißt so.
-    const how = s.situation === 'kept' ? 'ohne Verweis auf eine Heizposition und ohne Messdienst'
+    const how = s.situation === 'kept'
+      ? (s.notReported ? 'ohne Verweis auf eine Heizposition, nach Ihrer Angabe dem Messdienst nicht gemeldet' : 'ohne Verweis auf eine Heizposition und ohne Messdienst')
       : s.situation === 'brokenLink'
         ? (s.linkedDescription === null ? 'verknüpft mit einer Position, die Mietfuchs nicht findet; prüfen Sie den Verweis'
           : `verknüpft mit „${s.linkedDescription}“, die nicht als Betriebsstrom in den Heizkosten gekennzeichnet ist; prüfen Sie den Verweis`)
@@ -2149,7 +2152,9 @@ function operatingPowerBalanceItem(
     steps.push({ label: 'Betriebsstrom in den Heizkosten', value: `„${s.description}“ ${fmtCents(0 - s.cents)}, steckt auch in der Stromrechnung${s.situation === 'otherYear' ? '; ihr Abzug steht in einem anderen Steuerjahr' : ''}`, term: 'operatingPower' })
   }
   for (const r of balance.reported) {
-    steps.push({ label: 'Abzug, dem Messdienst gemeldet', value: `„${r.description}“ ${fmtCents(0 - r.amountCents)}, zählt hier nicht: Nach Ihrer Angabe steckt der Betrag in den Kosten des Messdienstes` })
+    // #270, Durchsicht K3: ohne Angabe gilt der Abzug als gemeldet; der Satz sagt es so.
+    const why = r.stated ? 'Nach Ihrer Angabe steckt der Betrag in den Kosten des Messdienstes' : 'Ohne Ihre Angabe gilt er als dem Messdienst gemeldet; dann steckt der Betrag in den Kosten des Messdienstes'
+    steps.push({ label: 'Abzug, dem Messdienst gemeldet', value: `„${r.description}“ ${fmtCents(0 - r.amountCents)}, zählt hier nicht: ${why}` })
   }
   const deducted = deductions.reduce((a, s) => a + s.cents, 0)
   // K1 der Durchsicht: `0 - …`, damit ohne Heizposition „0,00 €“ steht und nicht „-0,00 €“.
@@ -8065,6 +8070,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         }
       }
     }
+    // #270: Abzug ohne Verweis, dem Messdienst nach Angabe nicht gemeldet.
+    for (const d of notReportedDeductions(items, plants, period)) warn('heating.operating-power-not-reported', notReportedText(d), itemSubject(d))
     for (const f of missingPowerFindings({ period, plants, items, heatingParts: snapshot.heatingParts ?? [] })) {
       if (f.kind === 'operating') {
         warn('heating.operating-power-missing', missingOperatingPowerText(f, label), { kind: 'heatingCosts', id: f.plantId })

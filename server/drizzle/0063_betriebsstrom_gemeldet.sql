@@ -1,0 +1,1 @@
+ALTER TABLE `cost_items` ADD `operating_power_reported` integer;

@@ -168,6 +168,10 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // #258: die Umlagevereinbarung je Mietverhältnis (cost_item_contract). Wird vor dem Merge ein anderer PR davor
   // eingereiht, wird der Schritt neu erzeugt und die Marke ersetzt.
   '0062_kosten_vertrag': '5919ae32ddedf2e1a67268ba7f583d2b762d92dad7487289909ff96683a0bee6',
+  // #270: am Abzug des Betriebsstroms, ob er dem Messdienst gemeldet ist; Spalte und Bedingung in zwei Schritten. Wird
+  // vor dem Merge ein anderer PR davor eingereiht, werden beide Schritte neu erzeugt und die Marken ersetzt.
+  '0063_betriebsstrom_gemeldet': '99f6d5daebf177094a79c6e3d1d07e56150c7660297cb1803dc883fbc1114871',
+  '0064_betriebsstrom_gemeldet_bedingung': 'f9846e5c1a86612ef85758688cd84ee2816c7f30fd5a97220f0ad787df1d9495',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

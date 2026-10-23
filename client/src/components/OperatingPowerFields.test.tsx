@@ -50,7 +50,7 @@ test('Allgemeinstrom mit negativem Betrag: die Auswahl zeigt den gespeicherten V
   const select = screen.getByLabelText(/Abzug des Betriebsstroms/) as HTMLSelectElement
   expect(select.value).toBe('bs')
   fireEvent.change(select, { target: { value: '' } })
-  expect(onChange).toHaveBeenCalledWith({ ...form, operatingPower: '', operatingPowerItemId: '', operatingPowerGeneralId: '', operatingPowerBasis: '' })
+  expect(onChange).toHaveBeenCalledWith({ ...form, operatingPower: '', operatingPowerItemId: '', operatingPowerGeneralId: '', operatingPowerBasis: '', operatingPowerReported: null })
 })
 
 // #268: Ohne Messdienst heißt der Abzug ohne Verweis „selbst getragen“, mit einem Satz zur Steuer; mit Messdienst wie bisher.
@@ -58,14 +58,37 @@ test('Abzug ohne Verweis: ohne Messdienst „trage ihn selbst“ samt Hinweis zu
   const form: ItemForm = { ...EMPTY_ITEM_FORM, category: 'Beleuchtung/Allgemeinstrom', amount: '-147,84', operatingPower: 'deduction', operatingPowerItemId: '' }
   render(<OperatingPowerFields form={form} items={[bs]} periodKey={periodKey('2025-01')} service={false} onChange={vi.fn()} />)
   const select = screen.getByLabelText(/Abzug des Betriebsstroms/) as HTMLSelectElement
-  expect(select.value).toBe('service')
-  expect(select.querySelector('option[value="service"]')?.textContent).toBe(OPERATING_POWER_KEPT)
+  expect(select.value).toBe('kept')
+  expect(select.querySelector('option[value="kept"]')?.textContent).toBe(OPERATING_POWER_KEPT)
+  expect(select.querySelector('option[value="service"]')).toBeNull()
   expect(screen.getByText(/In der Steuerübersicht zählt Mietfuchs ihn trotzdem zu Ihren Werbungskosten, denn Sie haben die ganze Stromrechnung bezahlt\./)).toBeTruthy()
   cleanup()
   render(<OperatingPowerFields form={form} items={[bs]} periodKey={periodKey('2025-01')} service onChange={vi.fn()} />)
   const mit = screen.getByLabelText(/Abzug des Betriebsstroms/) as HTMLSelectElement
+  // Durchsicht S1: ohne Angabe ein eigener Eintrag; „gemeldet“ zu wählen ist dann eine Änderung.
+  expect(mit.value).toBe('unanswered')
+  expect(mit.selectedOptions[0]?.textContent).toBe('Ohne Angabe (gilt als dem Messdienst gemeldet)')
   expect(mit.querySelector('option[value="service"]')?.textContent).toBe('Ja, der Betrag ist dem Messdienst als Betriebsstrom gemeldet')
+  // #270: daneben „selbst getragen“, mit demselben Satz zur Steuer, wenn gewählt.
+  expect(mit.querySelector('option[value="kept"]')?.textContent).toBe(OPERATING_POWER_KEPT)
   expect(screen.queryByText(/zu Ihren Werbungskosten/)).toBeNull()
+  cleanup()
+  const onChange = vi.fn()
+  render(<OperatingPowerFields form={{ ...form, operatingPowerReported: false }} items={[bs]} periodKey={periodKey('2025-01')} service onChange={onChange} />)
+  const selbst = screen.getByLabelText(/Abzug des Betriebsstroms/) as HTMLSelectElement
+  expect(selbst.value).toBe('kept')
+  expect(screen.getByText(/In der Steuerübersicht zählt Mietfuchs ihn trotzdem zu Ihren Werbungskosten/)).toBeTruthy()
+  expect(screen.getByText(/nicht in der Abrechnung des Messdienstes/)).toBeTruthy()
+  // Mit Angabe gibt es den Eintrag „Ohne Angabe“ nicht.
+  expect(selbst.querySelector('option[value="unanswered"]')).toBeNull()
+  fireEvent.change(selbst, { target: { value: 'service' } })
+  expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ operatingPower: 'deduction', operatingPowerItemId: '', operatingPowerReported: true }))
+  cleanup()
+  // Ohne Angabe „gemeldet“ wählen sendet die Angabe.
+  const onAnswer = vi.fn()
+  render(<OperatingPowerFields form={form} items={[bs]} periodKey={periodKey('2025-01')} service onChange={onAnswer} />)
+  fireEvent.change(screen.getByLabelText(/Abzug des Betriebsstroms/), { target: { value: 'service' } })
+  expect(onAnswer).toHaveBeenCalledWith(expect.objectContaining({ operatingPowerReported: true }))
 })
 
 // Durchsicht S3: Der Satz zur Steuer gehört nur zur Antwort „trage ihn selbst“, nicht zum verknüpften Abzug und nicht zu „Nein“.
