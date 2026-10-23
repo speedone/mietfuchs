@@ -23,8 +23,8 @@ export default function ReadingSheet({ sheet, propertyName, subtitle }: { sheet:
           <Table>
             <thead>
               <tr>
-                <th>Bezeichnung und Ort</th><th>Zählernummer</th><th>Art</th><th>Einheit</th>
-                <th>Letzter Stand</th><th>Datum</th><th>Stand</th><th>Unterschrift</th>
+                <th scope="col">Bezeichnung und Ort</th><th scope="col">Zählernummer</th><th scope="col">Art</th><th scope="col">Einheit</th>
+                <th scope="col">Letzter Stand</th><th scope="col">Datum</th><th scope="col">Stand</th><th scope="col">Unterschrift</th>
               </tr>
             </thead>
             <tbody>

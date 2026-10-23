@@ -8,7 +8,7 @@ import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { separateHeatingFor, separateHeatingPlant } from '../heatingSettlementView'
 import Drawer from '../components/Drawer'
 import { SheetPrinter } from '../components/ReadingSheet'
-import { buildReadingSheet, DEFAULT_SHEET_OPTIONS, type ReadingSheet } from '../readingSheet'
+import { buildReadingSheet, DEFAULT_SHEET_OPTIONS, todayIso, type ReadingSheet } from '../readingSheet'
 import { useSaving } from '../useSaving'
 import PropertyCard from '../components/PropertyCard'
 import OtherPropertiesCard from '../components/OtherPropertiesCard'
@@ -958,7 +958,7 @@ function TenantChangeDrawer({ tenancy, unit, plants, onClose, onDone }: {
   async function printSheet() {
     try {
       const readings = await api<Reading[]>(withProperty('/api/readings', propertyId))
-      setSheet(buildReadingSheet({ meters, readings, units: unit ? [unit] : [], plants: [], year: new Date().getFullYear(), options: { ...DEFAULT_SHEET_OPTIONS, unitId: tenancy.unitId } }))
+      setSheet(buildReadingSheet({ meters, readings, units: unit ? [unit] : [], plants: [], today: todayIso(), options: { ...DEFAULT_SHEET_OPTIONS, unitId: tenancy.unitId } }))
     } catch (e) {
       errors.show(errorText(e))
     }
@@ -1028,6 +1028,11 @@ function TenantChangeDrawer({ tenancy, unit, plants, onClose, onDone }: {
 
       <section className="stack">
         <h3>2. Zwischenablesung der Zähler</h3>
+        <div className="row">
+          <button type="button" className="btn secondary" disabled={unitMeters.length === 0} aria-describedby={unitMeters.length === 0 ? 'sheet-none' : undefined} onClick={() => void printSheet()}>Ableseformular drucken</button>
+          {unitMeters.length === 0 && <span id="sheet-none" className="muted">An dieser Wohnung ist kein Zähler erfasst.</span>}
+        </div>
+        {sheet && <SheetPrinter sheet={sheet} propertyName={property?.name ?? ''} subtitle={`${unit?.name ?? ''} · Zwischenablesung`} onDone={closeSheet} />}
         {meters.length === 0 ? (
           <p className="muted">Keine Zähler erfasst — nichts abzulesen. (Wasser nach Personen braucht keine Ablesung.)</p>
         ) : (
@@ -1038,8 +1043,6 @@ function TenantChangeDrawer({ tenancy, unit, plants, onClose, onDone }: {
               {' '}{unitMeters.length === 0 && 'Der Hauptzähler dient nur der Dokumentation.'}
               {' '}Leere Felder werden übersprungen.
             </p>
-            {unitMeters.length > 0 && <button type="button" className="btn secondary" onClick={() => void printSheet()}>Ableseformular drucken</button>}
-            {sheet && <SheetPrinter sheet={sheet} propertyName={property?.name ?? ''} subtitle={`${unit?.name ?? ''} · Zwischenablesung`} onDone={closeSheet} />}
             <div className="field-grid">
               {meters.map((m) => (
                 <Field key={m.id} label={`${m.name} (${m.unitId === null ? 'Hauptzähler' : METER_TYPE_LABELS[m.type] ?? m.type}${m.unit ? `, ${m.unit}` : ''})`} {...errors.field(`meter:${m.id}`)}>

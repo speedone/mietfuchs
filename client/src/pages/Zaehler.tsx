@@ -13,7 +13,7 @@ import { useProperty, withProperty } from '../property'
 import Drawer from '../components/Drawer'
 import ReadingSheetDrawer from '../components/ReadingSheetDrawer'
 import { SheetPrinter } from '../components/ReadingSheet'
-import { buildReadingSheet, type ReadingSheet, type SheetOptions } from '../readingSheet'
+import { todayIso, type ReadingSheet } from '../readingSheet'
 import { CalcNotice, NoticeBox } from '../components/Notice'
 import { useSaving } from '../useSaving'
 import Card, { CardHeader } from '../components/Card'
@@ -237,12 +237,13 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
 
       {sheetChoice && (
         <ReadingSheetDrawer
+          meters={meters}
+          readings={readings}
           units={units}
+          plants={plants}
+          today={todayIso()}
           onClose={() => setSheetChoice(false)}
-          onPrint={(options: SheetOptions) => {
-            setSheetChoice(false)
-            setSheet(buildReadingSheet({ meters, readings, units, plants, year: new Date().getFullYear(), options }))
-          }}
+          onPrint={(next) => { setSheetChoice(false); setSheet(next) }}
         />
       )}
       {sheet && <SheetPrinter sheet={sheet} propertyName={property?.name ?? ''} onDone={closeSheet} />}

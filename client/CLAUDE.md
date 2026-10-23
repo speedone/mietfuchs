@@ -129,7 +129,14 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   vor dem laufenden Jahr, „endet“ im laufenden oder folgenden, Heizkostenverteiler nie. Einstieg: „Ableseformular
   drucken“ auf der Seite Zähler (Auswahl im Seitenfenster, dessen Primärknopf „Drucken“ heißt, S16) und im Mieterwechsel
   mit `unitId` (nur die Zähler der Wohnung). Die Unterschrift steht als Spalte wie die übrigen. Playwright
-  schaltet mit `page.pdf()` `afterprint` aus: erst fotografieren, dann PDF.
+  schaltet mit `page.pdf()` `afterprint` aus: erst fotografieren, dann PDF. Ohne Zähler ist „Drucken“ gesperrt und
+  nennt den Grund daneben (`aria-describedby`), auch im Mieterwechsel; zur Wahl stehen nur Wohnungen mit Zählern
+  (`unitsWithMeters`). Ausgelassen werden Zähler stillgelegter Anlagen (`endsOn` vor heute), Stände nach heute zählen
+  nicht, und ein Heizkostenverteiler gilt nach der Regel von `inUseAt` (server/src/monthlyInfo.ts) als ausgebaut,
+  wenn in derselben Wohnung ein Nachfolger abgelesen wird; **bekannte Grenze**: bei anderen Zählern gibt es kein
+  sicheres Merkmal „ausgebaut“, sie bleiben auf dem Blatt. **Entscheidung**: `value` des Fensters ist die Auswahl,
+  wer ein Häkchen ändert und schließt, wird gefragt (wie bei jedem Fenster). Die Ausnahme vom Verb „Anlegen“/
+  „Speichern“ („Drucken“, nur in ReadingSheetDrawer.tsx) steht in `DRAWER_VERB_EXCEPTIONS` (S16).
 - **Druckkopf**: `letterhead` lässt einen Objektnamen weg, der schon in der Adresse steht, und ist die
   Rücksendeangabe des Anschreibens; Anschrift des Mieters (`recipientLines`); fehlt nach Auszug die neue Anschrift,
   warnt die Seite (`printsFormerAddress`). Der Rechenweg ([CalcSteps.tsx](src/components/CalcSteps.tsx)) ist immer

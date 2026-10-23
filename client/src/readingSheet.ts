@@ -51,17 +51,48 @@ function lastReading(meterId: string, readings: readonly Reading[]): SheetRow['l
   return last === null ? null : { value: last.value, date: last.date }
 }
 
+/**
+ * Ein Heizkostenverteiler gilt als ausgebaut, wenn in derselben Wohnung ein Nachfolger abgelesen wird: ein Gerät,
+ * dessen Ablesungen alle nicht vor der letzten dieses Geräts liegen und von denen eine danach liegt. Sonst fehlt nur
+ * eine Ablesung, das ist eine Lücke und kein Ausbau. Dieselbe Regel wie `inUseAt` in server/src/monthlyInfo.ts; ein
+ * sicheres Merkmal „ausgebaut“ gibt es am Zähler nicht, bei anderen Zählern bleibt es deshalb bei der Liste.
+ */
+function isRemoved(m: Meter, all: readonly Meter[], readings: readonly Reading[]): boolean {
+  if (m.type !== 'hkv' || m.unitId === null) return false
+  const datesOf = (id: string) => readings.filter((r) => r.meterId === id).map((r) => r.date)
+  const own = datesOf(m.id)
+  if (own.length === 0) return false
+  const last = own.reduce((a, d) => (d > a ? d : a))
+  return all.some((x) => {
+    if (x.id === m.id || x.unitId !== m.unitId || x.type !== 'hkv') return false
+    const dates = datesOf(x.id)
+    return dates.length > 0 && dates.every((d) => d >= last) && dates.some((d) => d > last)
+  })
+}
+
+/** Die Wohnungen, an denen eigene Zähler hängen (ohne die der Heizanlage): nur für sie gibt es ein Blatt. */
+export function unitsWithMeters(units: readonly Unit[], meters: readonly Meter[]): Unit[] {
+  return units.filter((u) => meters.some((m) => m.unitId === u.id && !m.heatingPlantId))
+}
+
 export function buildReadingSheet(input: {
   meters: readonly Meter[]
   readings: readonly Reading[]
   units: readonly Unit[]
   plants: readonly HeatingPlant[]
-  /** Das laufende Jahr, für die Eichfrist. */
-  year: number
+  /** Heute (JJJJ-MM-TT): das laufende Jahr für die Eichfrist, Obergrenze der Stände, Betrieb der Anlagen. */
+  today: string
   options: SheetOptions
 }): ReadingSheet {
-  const { options } = input
+  const { options, today } = input
+  const year = Number(today.slice(0, 4))
+  // Stände nach heute sind kein „letzter Stand“.
+  const readings = input.readings.filter((r) => r.date <= today)
+  // Eine stillgelegte Anlage: Ihr letzter Betriebstag liegt vor heute (`endsOn`).
+  const ended = new Set(input.plants.filter((p) => !!p.endsOn && p.endsOn < today).map((p) => p.id))
   const wanted = input.meters.filter((m) => {
+    if (m.heatingPlantId && ended.has(m.heatingPlantId)) return false
+    if (isRemoved(m, input.meters, readings)) return false
     if (options.unitId !== null && (m.unitId !== options.unitId || m.heatingPlantId)) return false
     if (!options.remote && m.remoteReadable === true) return false
     if (!options.hca && m.type === 'hkv') return false
@@ -73,8 +104,8 @@ export function buildReadingSheet(input: {
     meterNumber: m.meterNumber ?? '',
     typeLabel: METER_TYPE_LABELS[m.type],
     unit: m.unit,
-    last: lastReading(m.id, input.readings),
-    mark: calibrationMark(m, input.year),
+    last: lastReading(m.id, readings),
+    mark: calibrationMark(m, year),
   })
   const groups: SheetGroup[] = []
   const add = (key: string, title: string, list: Meter[]) => {
@@ -89,4 +120,10 @@ export function buildReadingSheet(input: {
   for (const p of input.plants) add(`plant:${p.id}`, `Heizanlage ${p.name}`, wanted.filter((m) => m.heatingPlantId === p.id && m.unitId === null))
   add('plant', 'Heizanlage', wanted.filter((m) => inPlant(m) && m.unitId === null && !plantIds.has(m.heatingPlantId ?? '')))
   return { groups, count: groups.reduce((n, g) => n + g.rows.length, 0) }
+}
+
+/** Heute als JJJJ-MM-TT nach der Ortszeit (nicht UTC), wie der Nutzer den Tag sieht. */
+export function todayIso(now: Date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
 }

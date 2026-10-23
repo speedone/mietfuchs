@@ -1,28 +1,44 @@
 // Auswahl fürs Ableseformular (#320): welche Zähler aufs Blatt kommen. Gedruckt wird erst nach dem Schließen des Fensters.
-import { useState } from 'react'
+// `value` ist die Auswahl: Wer ein Häkchen ändert und dann schließt, wird gefragt (bewusst, wie bei jedem Fenster).
+import { useMemo, useState } from 'react'
 import Drawer from './Drawer'
-import type { Unit } from '../types'
-import { DEFAULT_SHEET_OPTIONS, type SheetOptions } from '../readingSheet'
+import Field from './Field'
+import type { HeatingPlant, Meter, Reading, Unit } from '../types'
+import { buildReadingSheet, DEFAULT_SHEET_OPTIONS, unitsWithMeters, type ReadingSheet, type SheetOptions } from '../readingSheet'
 
-export default function ReadingSheetDrawer({ units, onPrint, onClose }: { units: Unit[]; onPrint: (options: SheetOptions) => void; onClose: () => void }) {
+export default function ReadingSheetDrawer({ meters, readings, units, plants, today, onPrint, onClose }: {
+  meters: Meter[]
+  readings: Reading[]
+  units: Unit[]
+  plants: HeatingPlant[]
+  today: string
+  onPrint: (sheet: ReadingSheet) => void
+  onClose: () => void
+}) {
   const [options, setOptions] = useState<SheetOptions>(DEFAULT_SHEET_OPTIONS)
+  const sheet = useMemo(() => buildReadingSheet({ meters, readings, units, plants, today, options }), [meters, readings, units, plants, today, options])
+  const empty = sheet.count === 0
+  const print = () => { if (!empty) onPrint(sheet) }
   return (
     <Drawer
       open
       title="Ableseformular drucken"
-      subtitle="Ein Blatt mit allen Zählern des Objekts, zum Eintragen von Hand."
+      subtitle="Ein Blatt mit den Zählern des Objekts, zum Eintragen von Hand."
+      hint="Strg+S druckt · Esc schließt"
       onClose={onClose}
-      onSubmit={() => onPrint(options)}
+      onSubmit={print}
       value={options}
-      actions={<button className="btn" onClick={() => onPrint(options)}>Drucken</button>}
+      actions={<>
+        <button className="btn" disabled={empty} aria-describedby={empty ? 'reading-sheet-empty' : undefined} onClick={print}>Drucken</button>
+        {empty && <span id="reading-sheet-empty" className="muted">Mit dieser Auswahl gibt es keinen Zähler zum Drucken.</span>}
+      </>}
     >
-      <label className="field">
-        Zähler
+      <Field label="Zähler">
         <select value={options.unitId ?? ''} onChange={(e) => setOptions({ ...options, unitId: e.target.value === '' ? null : e.target.value })}>
           <option value="">Alle Zähler des Objekts</option>
-          {units.map((u) => <option key={u.id} value={u.id}>Nur {u.name}</option>)}
+          {unitsWithMeters(units, meters).map((u) => <option key={u.id} value={u.id}>Nur {u.name}</option>)}
         </select>
-      </label>
+      </Field>
       <label className="checkline">
         <input type="checkbox" checked={options.remote} onChange={(e) => setOptions({ ...options, remote: e.target.checked })} />
         <span>Fernablesbare Zähler aufführen</span>

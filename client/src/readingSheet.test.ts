@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import type { HeatingPlant, Meter, Reading, Unit } from './types'
-import { buildReadingSheet, calibrationMark, DEFAULT_SHEET_OPTIONS, type SheetOptions } from './readingSheet'
+import { buildReadingSheet, calibrationMark, unitsWithMeters, DEFAULT_SHEET_OPTIONS, type SheetOptions } from './readingSheet'
 
 const unit = (id: string, name: string): Unit => ({ id, propertyId: 'p', name, areaM2: 50, participates: true })
 const meter = (id: string, over: Partial<Meter> = {}): Meter => ({ id, propertyId: 'p', name: id, unitId: null, type: 'kaltwasser', unit: 'm³', ...over })
@@ -9,7 +9,7 @@ const plant = { id: 'h1', name: 'Heizung Keller' } as HeatingPlant
 
 const UNITS = [unit('u1', 'EG'), unit('u2', 'OG')]
 const build = (meters: Meter[], options: SheetOptions = DEFAULT_SHEET_OPTIONS, readings: Reading[] = [], plants: HeatingPlant[] = []) =>
-  buildReadingSheet({ meters, readings, units: UNITS, plants, year: 2026, options })
+  buildReadingSheet({ meters, readings, units: UNITS, plants, today: '2026-06-15', options })
 
 test('gruppiert: Hauptzähler zuerst, dann Wohnungen in ihrer Reihenfolge, die Heizanlage zuletzt', () => {
   const meters = [
@@ -74,4 +74,37 @@ test('Wohnung gewählt und Auswahl gelten zusammen', () => {
 test('die Zeile nennt Art, Einheit, Nummer und Kennzeichnung', () => {
   const m = meter('x', { name: 'Küche', meterNumber: '123', type: 'warmwasser', calibratedUntil: 2026 })
   expect(build([m]).groups[0]?.rows[0]).toMatchObject({ name: 'Küche', meterNumber: '123', typeLabel: 'Warmwasser', unit: 'm³', mark: { kind: 'ending', year: 2026 } })
+})
+
+test('Zähler einer stillgelegten Heizanlage fehlen, die einer laufenden stehen drin', () => {
+  const meters = [meter('alt', { heatingPlantId: 'h0' }), meter('neu', { heatingPlantId: 'h1' })]
+  const plants = [{ id: 'h0', name: 'Alt', endsOn: '2026-03-01' }, { id: 'h1', name: 'Neu', endsOn: null }] as HeatingPlant[]
+  const sheet = build(meters, DEFAULT_SHEET_OPTIONS, [], plants)
+  expect(sheet.groups.map((g) => g.title)).toEqual(['Heizanlage Neu'])
+  // Ein Ende heute oder später gilt noch als laufend
+  expect(build([meter('x', { heatingPlantId: 'h0' })], DEFAULT_SHEET_OPTIONS, [], [{ id: 'h0', name: 'Alt', endsOn: '2026-06-15' } as HeatingPlant]).count).toBe(1)
+})
+
+test('ein ausgebauter Heizkostenverteiler fehlt, wenn ein Nachfolger in derselben Wohnung abgelesen wird', () => {
+  const hkv = (id: string) => meter(id, { unitId: 'u1', type: 'hkv', unit: '' })
+  const readings = [reading('alt', '2023-12-31', 10), reading('alt', '2024-12-31', 20), reading('neu', '2025-12-31', 3)]
+  expect(build([hkv('alt'), hkv('neu')], DEFAULT_SHEET_OPTIONS, readings).groups[0]?.rows.map((r) => r.name)).toEqual(['neu'])
+})
+
+test('ein Heizkostenverteiler ohne Nachfolger bleibt, auch mit veralteter Ablesung neben einem laufenden Gerät', () => {
+  const hkv = (id: string) => meter(id, { unitId: 'u1', type: 'hkv', unit: '' })
+  // das zweite Gerät hat auch ältere Ablesungen: kein Nachfolger, nur eine Lücke
+  const readings = [reading('a', '2024-12-31', 20), reading('b', '2023-12-31', 1), reading('b', '2025-12-31', 3)]
+  expect(build([hkv('a'), hkv('b')], DEFAULT_SHEET_OPTIONS, readings).groups[0]?.rows.map((r) => r.name)).toEqual(['a', 'b'])
+  expect(build([hkv('a')], DEFAULT_SHEET_OPTIONS, readings).count).toBe(1)
+})
+
+test('Ablesungen nach heute zählen nicht als letzter Stand', () => {
+  const readings = [reading('a', '2026-01-01', 5), reading('a', '2026-12-31', 99)]
+  expect(build([meter('a')], DEFAULT_SHEET_OPTIONS, readings).groups[0]?.rows[0]?.last).toEqual({ value: 5, date: '2026-01-01' })
+})
+
+test('unitsWithMeters nennt nur Wohnungen mit eigenen Zählern', () => {
+  const meters = [meter('eg', { unitId: 'u1' }), meter('h', { unitId: null }), meter('p', { unitId: 'u2', heatingPlantId: 'h1' })]
+  expect(unitsWithMeters(UNITS, meters).map((u) => u.id)).toEqual(['u1'])
 })

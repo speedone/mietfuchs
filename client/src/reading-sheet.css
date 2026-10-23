@@ -21,5 +21,4 @@
   .reading-sheet-print tr { break-inside: avoid; page-break-inside: avoid; }
   .reading-sheet-print td.reading-fill { height: 11mm; }
   .reading-sheet-print .reading-mark { font-weight: var(--weight-strong); }
-  .reading-sheet-print .reading-note { margin: var(--space-2) 0 0; font-size: 9pt; }
 }
