@@ -34,3 +34,13 @@ test('im Druck keine Überschrift allein am Seitenende und keine geteilten klein
   expect(printBlocks).toMatch(/\.kpi[^{]*\{[^}]*break-inside: avoid/)
   expect(printBlocks).not.toMatch(/(^|[\s,(])\.card(?![\w.-])[^{]*\{[^}]*break-inside: avoid/)
 })
+
+// Das Ableseformular (#320) druckt allein sich: Oberfläche und offene Seitenfenster (der Mieterwechsel druckt aus einem
+// offenen Fenster) fallen weg, das Blatt erscheint nur im Druck.
+test('das Ableseformular blendet im Druck #root und dialog aus und zeigt nur sich', () => {
+  const sheetCss = fs.readFileSync(new URL('./reading-sheet.css', import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+  expect(sheetCss).toMatch(/^\.reading-sheet-print \{ display: none; \}/m)
+  const print = sheetCss.slice(sheetCss.indexOf('@media print'))
+  expect(print).toMatch(/body\.print-reading-sheet > #root, body\.print-reading-sheet dialog \{ display: none !important; \}/)
+  expect(print).toMatch(/body\.print-reading-sheet \.reading-sheet-print \{ display: block;/)
+})

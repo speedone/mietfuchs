@@ -20,12 +20,13 @@ const css = fs.readFileSync(new URL('./index.css', import.meta.url), 'utf8')
 const twCss = fs.readFileSync(new URL('./tw.css', import.meta.url), 'utf8')
 const fieldsCss = fs.readFileSync(new URL('./fields.css', import.meta.url), 'utf8')
 // Das Anschreiben (#415) hat eigene Regeln in der Schicht `components`; seine Klassen zählen für S4, S17 und S20 mit.
-const letterCss = fs.readFileSync(new URL('./letter.css', import.meta.url), 'utf8')
+// Dasselbe gilt für das Ableseformular (#320, reading-sheet.css).
+const letterCss = ['./letter.css', './reading-sheet.css'].map((f) => fs.readFileSync(new URL(f, import.meta.url), 'utf8')).join('\n')
 
 // Tailwind (#346) mit dem Theme aus tw.css, ohne index.css und ohne die Einschränkungen der Suche
 // (`@source`): Gefragt wird, welche Klassennamen Tailwind als Utility kennt.
 const compileTw = (source: string) => compile(
-  source.replace(/@import "\.\/(?:index|fields|letter)\.css"[^;]*;/g, '').replace(/@source[^;]*;/g, ''),
+  source.replace(/@import "\.\/(?:index|fields|letter|reading-sheet)\.css"[^;]*;/g, '').replace(/@source[^;]*;/g, ''),
   {
     base: '.',
     loadStylesheet: async (id) => ({
@@ -553,6 +554,10 @@ const buttonsIn = (file: string, raw: string): ButtonUse[] => {
 const isPrimary = (b: ButtonUse) => /(^|\s)btn(\s|$)/.test(b.className) && !/secondary|ghost|danger|\?|\$\{/.test(b.className)
 const isDangerGhost = (b: ButtonUse) => /danger-ghost/.test(b.className)
 const DRAWER_VERBS = /^(?:Anlegen|Speichern)$/
+// Ein weiteres Verb für genau ein Seitenfenster, mit Grund (nur diese Datei, nur dieses Wort).
+const DRAWER_VERB_EXCEPTIONS = new Map<string, { verb: string; why: string }>([
+  ['./components/ReadingSheetDrawer.tsx', { verb: 'Drucken', why: 'das Fenster speichert nichts, es druckt das Ableseformular (#320)' }],
+])
 // Primärknöpfe im Seitenfenster, die ihren Text aus einem Ausdruck nehmen, mit Grund.
 const DRAWER_LABEL_EXCEPTIONS = new Map<string, string>([
   ['./components/NewPropertyDrawer.tsx', 'createButtonLabel: „Anlegen und zu … wechseln“ nennt die Folge, den Wechsel des Objekts; geprüft unten'],
@@ -564,7 +569,7 @@ const DANGER_WITHOUT_QUESTION = new Map<string, string>([
   ['./components/AiSettings.tsx|Schlüssel löschen', 'der Schlüssel des Dienstes, beim Anbieter jederzeit neu zu holen'],
 ])
 const BANNED_PRIMARY = /^(?:OK|Ok|Übernehmen|Hinzufügen|Umstellen|Abbrechen)$/
-const verbProblems = (uses: ButtonUse[], src: string): string[] => {
+const verbProblems = (uses: ButtonUse[], src: string, file = 'probe'): string[] => {
   const problems: string[] = []
   for (const b of uses) {
     const where = `${b.file}: ${b.texts.join(' | ').slice(0, 60)}`
@@ -587,7 +592,7 @@ const verbProblems = (uses: ButtonUse[], src: string): string[] => {
     for (const b of buttonsIn('actions', actions).filter(isPrimary)) {
       if (b.texts.length === 0) problems.push(`Drawer ohne Text am Primärknopf: ${b.tag.slice(0, 60)}`)
       for (const t of b.texts.filter((x) => !/^(?:Speichert|Wird angelegt) …$/.test(x))) {
-        if (!DRAWER_VERBS.test(t)) problems.push(`Primärknopf im Seitenfenster „${t}“ statt „Anlegen“/„Speichern“`)
+        if (!DRAWER_VERBS.test(t) && DRAWER_VERB_EXCEPTIONS.get(file)?.verb !== t) problems.push(`Primärknopf im Seitenfenster „${t}“ statt „Anlegen“/„Speichern“`)
       }
     }
   }
@@ -605,6 +610,12 @@ test('S16: feste Verben, „Abbrechen“ nie primär, Gefahr mit „…“ und A
   expect(probe('<div className="row"><button className="btn">Speichern</button><button className="btn ghost danger-ghost" onClick={r}>Objekt löschen</button></div>')).toHaveLength(2)
   expect(probe('<div className="row"><button className="btn">Speichern</button><button className="btn ghost danger-ghost ml-auto" onClick={r}>Objekt löschen …</button></div>')).toEqual([])
   expect(probe('<button className="btn secondary">Übernehmen</button>')).toEqual([])
+  // „Drucken“ gilt nur im ausgenommenen Fenster, in jedem anderen ist es ein Befund.
+  const drucken = '<Drawer open value={f} onClose={c} actions={<button className="btn" onClick={p}>Drucken</button>}>'
+  expect(verbProblems(buttonsIn('./components/Anderes.tsx', drucken), drucken, './components/Anderes.tsx')).toHaveLength(1)
+  expect(verbProblems(buttonsIn('./components/ReadingSheetDrawer.tsx', drucken), drucken, './components/ReadingSheetDrawer.tsx')).toEqual([])
+  expect(verbProblems(buttonsIn('./components/ReadingSheetDrawer.tsx', drucken.replace('Drucken', 'Speichern')), drucken.replace('Drucken', 'Speichern'), './components/ReadingSheetDrawer.tsx')).toEqual([])
+  for (const file of DRAWER_VERB_EXCEPTIONS.keys()) expect(sources[file], `${file} fehlt`).toBeTruthy()
   // Der eine Primärknopf mit Ausdruck: Er beginnt immer mit „Anlegen“.
   expect(createButtonLabel('')).toMatch(/^Anlegen /)
   expect(createButtonLabel('Haus B')).toMatch(/^Anlegen /)
@@ -615,7 +626,7 @@ test('S16: feste Verben, „Abbrechen“ nie primär, Gefahr mit „…“ und A
   }
   const all = files.filter((f) => f !== './components/feedback.tsx').flatMap((file) => {
     const src = sources[file] ?? ''
-    const problems = verbProblems(buttonsIn(file, src), src)
+    const problems = verbProblems(buttonsIn(file, src), src, file)
     return DRAWER_LABEL_EXCEPTIONS.has(file) ? problems.filter((p) => !p.startsWith('Drawer ohne Text')) : problems.map((p) => (p.startsWith('Primärknopf') || p.startsWith('Drawer') ? `${file}: ${p}` : p))
   })
   expect(all).toEqual([])

@@ -1,0 +1,24 @@
+/* Das Ableseformular zum Ausdrucken (#320). Eigene Datei in der Schicht `components` (wie letter.css), weil
+   index.css nur noch kleiner wird (Wächter S20). Das Blatt hängt am Ende von body und erscheint nur im Druck;
+   beim Drucken bleibt die Oberfläche weg. A4 hoch mit dem Seitenrand von 12 mm aus letter.css. */
+.reading-sheet-print { display: none; }
+@media print {
+  body.print-reading-sheet > #root, body.print-reading-sheet dialog { display: none !important; }
+  body.print-reading-sheet .reading-sheet-print { display: block; font-size: 10pt; color: var(--text); }
+  .reading-sheet-print h2 { font-size: 14pt; margin: 0 0 var(--space-1); }
+  .reading-sheet-print h3 { font-size: 11pt; margin: var(--space-4) 0 var(--space-1); break-after: avoid; }
+  .reading-sheet-print table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  .reading-sheet-print th, .reading-sheet-print td { border: 1px solid var(--text); padding: 1mm 1.5mm; text-align: left; vertical-align: top; overflow-wrap: break-word; }
+  .reading-sheet-print th { font-weight: var(--weight-strong); background: none; color: var(--text); font-size: 9pt; }
+  .reading-sheet-print h3 { color: var(--text); }
+  .reading-sheet-print th:nth-child(1) { width: 22%; }
+  .reading-sheet-print th:nth-child(2) { width: 15%; }
+  .reading-sheet-print th:nth-child(3) { width: 11%; }
+  .reading-sheet-print th:nth-child(4) { width: 9%; }
+  .reading-sheet-print th:nth-child(5) { width: 13%; }
+  .reading-sheet-print th:nth-child(6), .reading-sheet-print th:nth-child(7) { width: 9%; }
+  .reading-sheet-print th:nth-child(8) { width: 12%; }
+  .reading-sheet-print tr { break-inside: avoid; page-break-inside: avoid; }
+  .reading-sheet-print td.reading-fill { height: 11mm; }
+  .reading-sheet-print .reading-mark { font-weight: var(--weight-strong); }
+}

@@ -11,6 +11,9 @@ import { api, errorText, fmtDate } from '../api'
 import { usePeriod } from '../period'
 import { useProperty, withProperty } from '../property'
 import Drawer from '../components/Drawer'
+import ReadingSheetDrawer from '../components/ReadingSheetDrawer'
+import { SheetPrinter } from '../components/ReadingSheet'
+import { todayIso, type ReadingSheet } from '../readingSheet'
 import { CalcNotice, NoticeBox } from '../components/Notice'
 import { useSaving } from '../useSaving'
 import Card, { CardHeader } from '../components/Card'
@@ -47,6 +50,10 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
   const [readingFor, setReadingFor] = useState<string | null>(null)
   const [readingForm, setReadingForm] = useState<ReadingForm>({ ...EMPTY_READING })
   const [error, setError] = useState('')
+  // Ableseformular (#320): Auswahl im Seitenfenster, danach das Blatt zum Drucken.
+  const [sheetChoice, setSheetChoice] = useState(false)
+  const [sheet, setSheet] = useState<ReadingSheet | null>(null)
+  const closeSheet = useCallback(() => setSheet(null), [])
   const readingError = useFormError<ReadingField>()
   const meterErrors = useFormError<MeterField>()
   // „Hier beheben →“ aus der Abrechnung (#142): die Ablesungen des betroffenen Zählers aufklappen,
@@ -173,7 +180,10 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
         title="Zähler & Stände"
         subtitle={'Zählerstände dokumentieren — Jahresablesung, Zwischenablesung beim Mieterwechsel, Zählerwechsel. Wohnungszähler ermöglichen den Umlageschlüssel „nach Verbrauch“.'}
         // Die Seitenaktion steht im Seitenkopf wie „+ Kostenposition anlegen“ (#346 Schritt 7b); vorher unten in der Karte.
-        actions={<button className="btn" onClick={() => { meterErrors.clear(); setMarkedYear(''); setMeterForm(emptyMeterForm()) }}>+ Zähler anlegen</button>}
+        actions={<>
+          <button className="btn secondary" onClick={() => setSheetChoice(true)}>Ableseformular drucken</button>
+          <button className="btn" onClick={() => { meterErrors.clear(); setMarkedYear(''); setMeterForm(emptyMeterForm()) }}>+ Zähler anlegen</button>
+        </>}
       />
       {error && <NoticeBox level="error" action={error} />}
 
@@ -224,6 +234,19 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
           </Table>
         )}
       </Card>
+
+      {sheetChoice && (
+        <ReadingSheetDrawer
+          meters={meters}
+          readings={readings}
+          units={units}
+          plants={plants}
+          today={todayIso()}
+          onClose={() => setSheetChoice(false)}
+          onPrint={(next) => { setSheetChoice(false); setSheet(next) }}
+        />
+      )}
+      {sheet && <SheetPrinter sheet={sheet} propertyName={property?.name ?? ''} onDone={closeSheet} />}
 
       {readingMeter && (
         <Drawer
