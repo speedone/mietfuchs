@@ -1367,6 +1367,7 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
   }) : null
   if (balanceItem) split.items.set(balanceItem.costItemId, balanceItem)
   const ambiguous = balance.ambiguous
+  const reportedIds = new Set(balance.reported.map((x) => x.costItemId))
   const unmarked = unmarkedPowerCredits(balanceParts)
   // Verbilligte Vermietung (#257, Regeln in cheapRent.ts): der unentgeltliche Teil, aus dem abziehbaren Teil nach der
   // Aufteilung bei Eigennutzung herausgenommen, nie aus dem privaten. Ohne eingetragene ortsübliche Miete gibt es
@@ -1378,7 +1379,12 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
     tenancies: snapshot.tenancies,
     ledgerRows: ledger.rows,
     statements: same === undefined ? null : same.settlement.statements,
-    items: items.filter((c) => groupOf(c.category) !== null && c.operatingPower !== 'deduction' && c.operatingPower !== 'included'),
+    // Betriebsstrom (Integrationsdurchsicht 0.13.0, M1): Heizpositionen `included` und Abzüge, die in der Ausgleichszeile
+    // C stecken, sind keine eigene Zahlung und zählen nicht. Ein Abzug, der als dem Messdienst gemeldet gilt
+    // (`balance.reported`, dieselbe Regel `deductionReported` wie die Steuer), steht dagegen als eigene negative Position
+    // da und wird mitgekürzt.
+    items: items.filter((c) => groupOf(c.category) !== null && c.operatingPower !== 'included'
+      && (c.operatingPower !== 'deduction' || reportedIds.has(c.id))),
     deductible: (id) => split.items.get(id)?.deductibleCents,
     // Durchsicht von PR #422, S1: der Anteil laut Abrechnung des Kalenderjahres, nur für Positionen, die genau diese
     // Abrechnung verteilt, und nur, wo sie ihn dem Mietverhältnis zubucht.
@@ -4259,7 +4265,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const comparedUnits = new Set(plan.units
       // Eine Schätzung nach § 9a stellt die Nutzer ebenfalls in eine Gruppe (`assign` in heating.ts); das ist kein Wechsel
       // ohne Zwischenablesung (Durchsicht von #417, S1).
-      .filter((u) => u.users.length > 1 && u.users.some((x) => x.role === 'vacancy' || x.role === 'self' || (x.pots.heating.group && !x.pots.heating.estimated)))
+      // Integrationsdurchsicht 0.13.0, K1: eine Zeit außerhalb der Abrechnungseinheit (#259) ebenso, denn auch sie ist
+      // ein Wechsel der Nutzer ohne Mieter.
+      .filter((u) => u.users.length > 1 && u.users.some((x) => x.role === 'vacancy' || x.role === 'self' || x.role === 'outside' || (x.pots.heating.group && !x.pots.heating.estimated)))
       .map((u) => u.unit.id))
     const compare = weights !== null && shares !== null && (comparedUnits.size > 0 || (changeSplit === 'time' && plan.units.some((u) => u.users.length > 1)))
       ? {
@@ -4596,8 +4604,15 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         ...(c.days > 0 ? [`Das Mietverhältnis läuft an ${tageText(c.days)} in einer Zeit, in der die Einheit laut ihrer Nutzung nicht vermietet ist.`] : []),
         ...(c.later > 0 ? [`Es reicht über einen Wechsel der Nutzung hinweg in eine spätere vermietete Zeit; für die Kosten zählt nur der erste vermietete Abschnitt, die übrigen ${fmtNum(c.later)} ${c.later === 1 ? 'Tag' : 'Tage'} nicht.`] : []),
       ]
+      // Integrationsdurchsicht 0.13.0, S1: Liegt das Mietverhältnis ganz in einer Zeit ohne Vermietung, bekommt es keine
+      // Abrechnung; der Satz nennt die Vorauszahlungen, die dann in keiner Abrechnung angerechnet werden.
+      const none = !costIds.has(c.t.id)
+      // Dieselbe Anrechnung wie eine Abrechnung dieses Umfangs (`prepaymentOf`), auch bei Weg d (Durchsicht von PR #426, K-2).
+      const prepaid = none && scope !== 'heatingPart' ? prepaymentOf(c.t).cents : 0
+      const noneText = !none ? ''
+        : ` Für dieses Mietverhältnis entsteht deshalb keine Abrechnung${prepaid !== 0 ? `, und seine Vorauszahlungen von ${fmtCents(prepaid)} werden in keiner Abrechnung angerechnet` : ''}.`
       warn('usage.tenancy-conflict',
-        `${c.t.tenantName} (${c.t.unit.name}): ${parts.join(' ')} Für diese Tage trägt der Mieter keine Betriebskosten; sie bleiben beim Vermieter.${heatingUser(c.t) ? ' In der eigenen Heizkostenabrechnung bleibt er dagegen Nutzer, solange das Mietverhältnis läuft.' : ''} Bitte prüfen Sie Ein- und Auszug oder den Nutzungswechsel der Einheit in den Stammdaten.`,
+        `${c.t.tenantName} (${c.t.unit.name}): ${parts.join(' ')} Für diese Tage trägt der Mieter keine Betriebskosten; sie bleiben beim Vermieter.${noneText}${heatingUser(c.t) ? ' In der eigenen Heizkostenabrechnung bleibt er dagegen Nutzer, solange das Mietverhältnis läuft.' : ''} Bitte prüfen Sie Ein- und Auszug oder den Nutzungswechsel der Einheit in den Stammdaten.`,
         { kind: 'tenancy', id: c.t.id })
     }
   }
@@ -7325,7 +7340,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Eigennutzung, deren Anteil der Vermieter trägt). Die Gewichte der anderen Teilung stehen in `sp.compare`.
     const own = (pot?.items ?? []).filter((c) => c.key === 'heatingSystem')
     const sumFor = (w: Map<string, SelfWeights>, key: string): number => own.reduce((a, c) => a + c.amountCents * (w.get(key)?.[c.heatingTarget ?? 'both'] ?? 0), 0)
-    const GAP_NAME: Partial<Record<SelfUserPlan['role'], string>> = { vacancy: 'Leerstand', self: 'Eigennutzung' }
+    const GAP_NAME: Partial<Record<SelfUserPlan['role'], string>> = { vacancy: 'Leerstand', self: 'Eigennutzung', outside: 'Außerhalb der Abrechnungseinheit' }
     // Je Nutzer der Wohnungen die Beträge: erst die eingestellte Teilung, dann die andere.
     const splitList = (units: readonly SelfUnitPlan[], now: string, other: string): string[] => units.flatMap((unit) => unit.users).flatMap((u) => {
       if (!sp.weights || !sp.compare) return []
@@ -8262,6 +8277,19 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     }
   }
 
+  // Nutzungswechsel (Integrationsdurchsicht 0.13.0, S1): Ein Mietverhältnis ganz in einer Zeit ohne Vermietung hat keine
+  // Abrechnung und steht hier, mit den Vorauszahlungen, die keine Abrechnung anrechnet; sonst verschwände es still.
+  // Auch in der Heizkostenabrechnung nach Weg d, mit deren Anrechnung (Durchsicht von PR #426, K-2).
+  if (scope !== 'heatingPart') {
+    for (const t of tenancies) {
+      if (costIds.has(t.id) || !usageIn(t.unit).phased) continue
+      notSettled.push({
+        tenancyId: t.id, tenantName: t.tenantName, unitName: t.unit.name, costModel: t.costModel ?? 'settlement', heatingModel: allocationModel(t.heatingModel),
+        usageConflict: { prepaymentCents: prepaymentOf(t).cents },
+      })
+    }
+  }
+
   // In der Heizkostenabrechnung steht nur, wer Heizkosten oder eine Heizvorauszahlung hat; eine
   // Garage ohne Anschluss an die Anlage bekäme sonst eine leere Abrechnung (Heizung PR 5).
   if (scope === 'heating') {
@@ -8732,8 +8760,23 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const c = itemById.get(row.costItemId) ?? syntheticById.get(row.costItemId)
     return c !== undefined && c.category === HEATING_CATEGORY && separateLater.has(c.heatingPlantId ?? '')
   }
+  // Integrationsdurchsicht 0.13.0, K2: Hochgerechnet wird auf die Tage, an denen das Mietverhältnis Kosten trägt
+  // (`costTenancies`, #259). Ohne Widerspruch zur Nutzung sind das seine Tage; mit einem Widerspruch trägt es nur einen
+  // Teil, und der Vorschlag halbierte sich sonst bei einem Wechsel zur Jahresmitte. `usage.tenancy-conflict` nennt ihn.
+  const costDays = new Map(costTenancies.map((t) => [t.id, t.days]))
+  // Durchsicht von PR #426, S-1: In der eigenen Heizkostenabrechnung bleibt der Mieter Nutzer für seine ganze Zeit (S3
+  // von #259); seine Zeilen dort (Schlüssel `heatingSystem`, dazu die Abzugszeilen ihres Topfs) decken also alle seine
+  // Tage und rechnen auf `st.days` hoch, nur die übrigen auf die Tage mit Kosten.
+  const wholeTime = (row: SettlementRow): boolean => {
+    const relief = /^(?:co2|gmodg):([^:]*):/.exec(row.costItemId)
+    if ((row.kind === 'co2Relief' || row.kind === 'gmodgRelief') && relief) return selfPlans.get(relief[1] ?? '')?.weights != null
+    const c = itemById.get(row.costItemId)
+    return c !== undefined && c.key === 'heatingSystem' && selfPlans.get(c.heatingPlantId ?? '')?.weights != null
+  }
   for (const st of result.statements) {
     st.balanceCents = st.prepaymentCents - st.totalShareCents // >0 Guthaben, <0 Nachzahlung
+    const basisDays = costDays.get(st.tenancyId) ?? st.days
+    const daysOf = (row: SettlementRow): number => (basisDays !== st.days && wholeTime(row) ? st.days : basisDays)
     // Eine Abrechnung nur mit Heizkosten hat keine künftige Vorauszahlung (3.7: „heatingOnly ergibt
     // keinen Vorschlag“).
     if (st.heatingOnly) {
@@ -8762,13 +8805,20 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const factorOf = (row: SettlementRow): number => (row.kind === 'co2Relief' || row.kind === 'gmodgRelief'
         ? reliefFactor(st.rows, row.costItemId, shortBasis.factors)
         : (shortBasis.factors.get(row.costItemId) ?? 0))
-      const annual = st.rows.reduce((a, row) => a + (laterSeparate(row) ? 0 : row.shareCents * factorOf(row)), 0)
-      st.suggestedMonthlyCents = Math.max(0, Math.round((annual * diy) / st.days / 12 / 100) * 100)
+      // Ohne Widerspruch zur Nutzung wie bisher über die Summe; sonst je Zeile mit ihren Tagen (S-1).
+      const yearly = basisDays === st.days
+        ? (st.rows.reduce((a, row) => a + (laterSeparate(row) ? 0 : row.shareCents * factorOf(row)), 0) * diy) / basisDays
+        : st.rows.reduce((a, row) => a + (laterSeparate(row) ? 0 : (row.shareCents * factorOf(row) * diy) / daysOf(row)), 0)
+      st.suggestedMonthlyCents = Math.max(0, Math.round(yearly / 12 / 100) * 100)
     } else {
       // Nie negativ: Überwiegen Gutschriften, gibt es keine Vorauszahlung unter 0 (Integrationsdurchsicht).
       // Ohne CO₂-Erstattung: Sie fällt nicht wieder an (Heizung PR 19, `recurringShareCents`).
       const later = st.rows.reduce((a, row) => a + (laterSeparate(row) ? row.shareCents : 0), 0)
-      st.suggestedMonthlyCents = Math.max(0, Math.round(((recurringShareCents(st) - later) * diy) / st.days / 12 / 100) * 100)
+      // Ohne Widerspruch zur Nutzung wie bisher über die Summe; sonst je Zeile mit ihren Tagen (S-1).
+      const yearly = basisDays === st.days
+        ? ((recurringShareCents(st) - later) * diy) / basisDays
+        : st.rows.reduce((a, row) => a + (laterSeparate(row) || row.kind === 'co2Refund' ? 0 : (row.shareCents * diy) / daysOf(row)), 0)
+      st.suggestedMonthlyCents = Math.max(0, Math.round(yearly / 12 / 100) * 100)
     }
   }
   return result

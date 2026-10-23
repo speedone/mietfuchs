@@ -168,7 +168,9 @@ es eine Meldung, abgebrochen wird nie.
   und die CRC prüfen. Namen wie adm-zip (ohne Kennzeichen UTF-8, wenn gültig, sonst CP437, dann NFC).
   Ausgepackt wird nach `restore-<id>/` im Datenordner, die Belege wandern erst nach vollständiger
   Prüfung. Platzbedarf in restoreFiles.ts (`NKA_TEST_FREE_BYTES` für Tests). Reste
-  (`restore-upload-<id>.zip`, `restore-<16 Hex>/`) räumt der Start weg, nie Ordner des Nutzers.
+  (`restore-upload-<id>.zip`, `restore-<16 Hex>/`, dazu der Schnappschuss eines abgebrochenen Backups
+  `mietfuchs.sqlite.<16 Hex>.backup` samt `-journal`, `-wal`, `-shm`) räumt der Start weg, nie Ordner des Nutzers. Eine vorhandene
+  `db.json.vor-restore` wird beim nächsten Einspielen wie die der Datenbank mit Datum beiseitegelegt (`setAsideName`).
   Der Kontoauszugsleser (`server/src/bank/read.ts`) liest noch mit adm-zip und eigenen Grenzen.
 - Wiederherstellen setzt **keinen vorhandenen Stand voraus** (siehe server/src/CLAUDE.md, API).
 

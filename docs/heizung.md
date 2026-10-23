@@ -243,15 +243,21 @@ Gewichten durch `distributeCents`. Tests bauen Beispiel A mit `selfSnapshot()`
 - **Nicht verteilbar** (fehlender Stand, Zähler, Anteil, α) heißt Fehler an der Anlage und alle
   Positionen beim Vermieter. Hinweise zu Ablesungen rechnen nach dem CO₂-Block (ihre Kürzungen stehen
   auf den gedruckten Zeilen); fehlende Zwischenablesungen beantwortet der Vermieter in
-  `interim_reading_gaps` („Ablesung verwenden“ / „Nach § 9b Abs. 3“, `usableAt`).
+  `interim_reading_gaps` („Ablesung verwenden“ / „Nach § 9b Abs. 3“, `usableAt`). Ein Wechsel nur zwischen Rollen des
+  Vermieters (Leerstand, Eigennutzung, außerhalb, #259) ist keine Grenze, an der abgelesen werden muss (`tenantChange`
+  in heating.ts): kein Befund, keine Frage, kein Eintrag im Ausweis. Ohne Ablesung teilt § 9b Abs. 3 wie bisher, eine nahe
+  Ablesung gilt, und eine ferne gilt **von selbst als nicht hinreichend genau** (`landlordFar`, Festlegung): geteilt wird
+  nach § 9b Abs. 3, als fehlte sie; vorher sperrte sie als `farInterim` die Verteilung, bis der Vermieter wählte. Eine
+  dort gespeicherte Antwort wird nicht mehr gebraucht. Das alles verschiebt nur Geld zwischen den Zeilen des
+  Vermieters; die Verbräuche der Mieter begrenzen die Ablesungen an ihren eigenen Grenzen.
 - **Wärmepumpe**: Ob die Verordnung gilt, entscheidet `heatPumpVerdict` (§ 12 Abs. 3,
   `hkv.heat-pump.capture`). Vor dem 01.10.2024 fiel eine überwiegend versorgende Wärmepumpe nach § 11
   Abs. 1 Nr. 3 a a. F. nicht darunter (`heat_pump_majority`; „ja“ oder ohne Antwort: Hinweis, keine
   Kürzungen, Heizung und Warmwasser gemeinsam).
 - **Vergleich der Teilung beim Wechsel** (#314): Die Gewichte der anderen Teilung nach § 9b Abs. 2 stehen in
   `compare` des Plans in calc.ts, nur zum Vergleich. Bei Gradtagen nennen Rechenweg („Zum Vergleich zeitanteilig“)
-  und `heating.change-split-degree-days` (hint, `INFORMATIONAL`) sie nur für Wohnungen mit Leerstand, Eigennutzung
-  oder Wechsel ohne Zwischenablesung (eine Gruppe allein wegen einer Schätzung nach § 9a zählt nicht), nie beim Ziel
+  und `heating.change-split-degree-days` (hint, `INFORMATIONAL`) sie nur für Wohnungen mit Leerstand, Eigennutzung,
+  einer Zeit außerhalb der Abrechnungseinheit (#259) oder Wechsel ohne Zwischenablesung (eine Gruppe allein wegen einer Schätzung nach § 9a zählt nicht), nie beim Ziel
   Warmwasser (immer nach Tagen) und nicht unter einer Vereinbarung „nach Wohnfläche“; bei zeitanteiliger Teilung
   nennt `heating.change-split-time` wie bisher jeden Wechsel, jetzt mit dem Leerstand. Der Leerstand als
   Nutzerwechsel ist Auslegung (Entwurf 3.5, R-A16); BGH VIII ZR 9/14 ist nur über eine Sekundärquelle gelesen und

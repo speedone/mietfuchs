@@ -170,7 +170,9 @@ async function guardRefund(db: Database, after: Co2Refund): Promise<void> {
     const settled = computeSettlement(snapshotFor(await readStock(db), t.propertyId, p))
     if (!settled.statements.some((st) => st.tenancyId === after.tenancyId)) {
       const unit = settled.notSettled.find((n) => n.tenancyId === after.tenancyId)
-      const why = !t.participates && !t.selfUsed ? 'die Wohnung gehört nicht zur Abrechnungseinheit'
+      // Durchsicht von PR #426, K-1: ganz in einer Zeit, in der die Einheit nicht vermietet ist (#259).
+      const why = unit?.usageConflict ? 'laut der Nutzung der Einheit in diesem Zeitraum nicht vermietet'
+        : !t.participates && !t.selfUsed ? 'die Wohnung gehört nicht zur Abrechnungseinheit'
         : unit?.costModel === 'inclusive' ? 'Inklusivmiete ohne Vorauszahlung'
           : unit?.costModel === 'flatRate' ? 'Pauschale ohne Vorauszahlung'
             : 'keine abzurechnenden Kosten und keine Vorauszahlung'

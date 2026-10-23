@@ -2085,7 +2085,8 @@ app.get('/api/backup', async (req, res) => {
     // Aufgeräumt wird im `finally`. Stirbt der Prozess mitten im Schnappschuss, bleibt eine
     // Datei liegen; weggeräumt wird sie dann bewusst **nicht** von der nächsten Anfrage, denn
     // eine Suche nach fremden Resten träfe genau die Zwischendatei eines gleichzeitig laufenden
-    // Backups und brächte die Verdrängung zurück, die dieser Name gerade verhindert.
+    // Backups und brächte die Verdrängung zurück, die dieser Name gerade verhindert. Das tut der
+    // nächste Start (`cleanRestoreLeftovers`), denn dann läuft kein Backup.
     //
     // Der Schnappschuss entsteht, **bevor** die erste Zeile des Archivs gesendet wird: Scheitert
     // er, gibt es noch eine Fehlermeldung statt eines abgebrochenen Downloads. Weggeräumt wird
@@ -2549,7 +2550,14 @@ async function runRestore(backup: ReadBackup, res: Response): Promise<void> {
   // Verschieben eine schon ersetzte db.json neben halb verschobenen Belegen.
   for (const { fileName, staged } of backup.files) await moveIntoPlace(staged, path.join(UPLOAD_DIR, fileName))
   const current = path.join(DATA_DIR, 'db.json')
-  if (fs.existsSync(current)) fs.copyFileSync(current, path.join(DATA_DIR, 'db.json.vor-restore'))
+  // Eine Sicherheitskopie eines früheren Einspielens wird nicht überschrieben, sondern mit Datum beiseitegelegt wie die
+  // der Datenbank (`setAsideName`, Integrationsdurchsicht 0.13.0): Sonst wäre nach zweimaligem Einspielen der Stand von
+  // vor dem ersten verloren.
+  const before = path.join(DATA_DIR, 'db.json.vor-restore')
+  if (fs.existsSync(current)) {
+    if (fs.existsSync(before)) fs.renameSync(before, setAsideName(before))
+    fs.copyFileSync(current, before)
+  }
   // Führt das Archiv keine db.json, wird auch keine angelegt. Eine leere wäre schlimmer als
   // keine: Der Umstieg beim nächsten Start hielte sie für einen zu übernehmenden Bestand.
   if (backup.dbText !== null) fs.writeFileSync(current, backup.dbText, 'utf8')

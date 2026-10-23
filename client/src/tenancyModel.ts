@@ -62,6 +62,12 @@ const WORDS: Record<CostModel, string> = { settlement: 'abgerechnet', flatRate: 
 
 // Eine Zeile im Kasten „Ohne Abrechnung“ auf der Seite Abrechnung.
 export function notSettledText(n: NotSettled): string {
+  // Nutzungswechsel (Integrationsdurchsicht 0.13.0, S1): ganz in einer Zeit ohne Vermietung, keine Abrechnung.
+  if (n.usageConflict) {
+    const pre = n.usageConflict.prepaymentCents
+    return `${n.tenantName} (${n.unitName}): ganz in einer Zeit, in der die Einheit nicht vermietet ist; keine Abrechnung` +
+      (pre !== 0 ? `, Vorauszahlungen von ${fmtEuro(pre)} werden nicht angerechnet` : '')
+  }
   const teile = [`Nebenkosten ${WORDS[n.costModel]}`]
   if (n.heatingModel !== 'settlement') teile.push(`Heizung ${WORDS[n.heatingModel]}`)
   return `${n.tenantName} (${n.unitName}): ${teile.join(', ')}`

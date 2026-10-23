@@ -147,8 +147,9 @@ Vite `/api` und `/uploads` an `localhost:3001`; im Produktivbetrieb liefert der 
 `client/dist` selbst aus ([server/src/index.ts](server/src/index.ts)).
 
 **Persistenz**: SQLite in `server/data/mietfuchs.sqlite` (#55), Belege in `server/data/uploads/`,
-API-Schlüssel externer KI-Dienste in `server/data/secrets.json` (nicht im Backup). `NKA_DATA_DIR`
-verlegt den Ordner. Die frühere `db.json` wird nur noch gelesen (Umstieg, altes Backup), nie
+API-Schlüssel externer KI-Dienste in `server/data/secrets.json` (nicht im Backup), automatische
+Vorversionen der Datenbank in `server/data/vorversionen/` (#318, ebenfalls nicht im Backup, siehe
+server/src/db/CLAUDE.md). `NKA_DATA_DIR` verlegt den Ordner. Die frühere `db.json` wird nur noch gelesen (Umstieg, altes Backup), nie
 geschrieben; ihre alten Formate wandelt [server/src/legacy/migrate.ts](server/src/legacy/migrate.ts),
 jede Regel einzeln festgehalten in [server/test/store.test.ts](server/test/store.test.ts).
 

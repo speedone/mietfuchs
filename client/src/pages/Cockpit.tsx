@@ -271,7 +271,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
 
     // 7. Abschluss & Versand
     const closed = settlement.closed
-    if (settlement.statements.length === 0 && (settlement.notSettled ?? []).length > 0) {
+    if (settlement.statements.length === 0 && (settlement.notSettled ?? []).length > 0 && (settlement.notSettled ?? []).every((n) => !n.usageConflict)) {
       // Nur Pauschale oder Inklusivmiete (#93): Es gibt keine Abrechnung, also auch keine Frist.
       list.push({ title: 'Abgeschlossen & versendet', level: 'gruen',
         detail: 'Keine Abrechnung nötig: Alle Mietverhältnisse haben eine Pauschale oder Inklusivmiete.' })

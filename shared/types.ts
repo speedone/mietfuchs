@@ -853,6 +853,10 @@ export type NotSettled = {
   costModel: CostModel
   // Wie abgerechnet wird; `selfSupply` erscheint hier nie, es wird abgerechnet wie `settlement` (Heizung PR 19).
   heatingModel: CostModel
+  // Nutzungswechsel (#259, Integrationsdurchsicht 0.13.0, S1): Das Mietverhältnis liegt ganz in einer Zeit, in der die
+  // Einheit laut ihrer Nutzung nicht vermietet ist, und bekommt deshalb keine Abrechnung. Seine Vorauszahlungen im
+  // Zeitraum werden in keiner Abrechnung angerechnet; `usage.tenancy-conflict` (error) nennt sie ebenfalls.
+  usageConflict?: { prepaymentCents: number }
 }
 
 // Ein Hinweis der Berechnung (#112), in fester Gestalt statt als loser Satz. Die Stufe ist

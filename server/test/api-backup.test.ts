@@ -155,6 +155,25 @@ test('Backup: Wiederherstellen gelingt auch ohne vorhandene db.json (frischer Re
   }
 })
 
+test('Backup: eine vorhandene db.json.vor-restore wird beim nächsten Einspielen mit Datum beiseitegelegt (Integrationsdurchsicht 0.13.0, K3)', async () => {
+  // Wie bei der Sicherung der Datenbank (#416): Beim zweiten Einspielen ginge sonst der Stand von vor dem ersten verloren.
+  await withData(async (s) => {
+    const before = path.join(s.dataDir, 'db.json.vor-restore')
+    fs.writeFileSync(before, 'Stand vor dem ersten Einspielen')
+    fs.writeFileSync(path.join(s.dataDir, 'db.json'), 'Stand vor dem zweiten Einspielen')
+    const daten = {
+      settings: {}, units: [{ id: 'u1', name: 'EG', areaM2: 80, participates: true }],
+      tenancies: [], costItems: [], meters: [], readings: [], payments: [],
+    }
+    const r = await restore(s, archive({}, daten))
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    assert.equal(fs.readFileSync(before, 'utf8'), 'Stand vor dem zweiten Einspielen')
+    const aside = fs.readdirSync(s.dataDir).filter((n) => /^db\.json\.vor-restore\.vom-\d{4}-\d{2}-\d{2}-\d{4}$/.test(n))
+    assert.equal(aside.length, 1, fs.readdirSync(s.dataDir).join(', '))
+    assert.equal(fs.readFileSync(path.join(s.dataDir, aside[0] ?? ''), 'utf8'), 'Stand vor dem ersten Einspielen')
+  })
+})
+
 // Setzt einen Eintragsnamen roh ins Archiv, wie ein präpariertes ZIP ihn enthielte. adm-zip
 // bereinigt Namen schon beim Erzeugen, deshalb erst mit gleich langem Platzhalter bauen und die
 // Bytes danach ersetzen (der Name steckt in lokalem Kopf und zentralem Verzeichnis).

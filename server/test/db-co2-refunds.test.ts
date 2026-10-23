@@ -192,6 +192,8 @@ test('Integrationsdurchsicht S1: kein Verrechnen bei einem Mieter, der für den 
   for (const [name, unit, tenancy] of [
     ['Inklusivmiete ohne Vorauszahlung', { participates: true }, { costModel: 'inclusive' }],
     ['die Wohnung gehört nicht zur Abrechnungseinheit', { participates: false }, { prepayments: [{ from: '2020-01', monthlyCents: 10000 }] }],
+    // Durchsicht von PR #426, K-1: ganz in einer Zeit, in der die Einheit nicht vermietet ist (#259).
+    ['laut der Nutzung der Einheit in diesem Zeitraum nicht vermietet', { participates: true, usageChanges: [{ from: '2025-03-01', usage: 'eigen' }] }, { start: '2025-03-01', prepayments: [{ from: '2025-03', monthlyCents: 10000 }] }],
   ] as const) {
     await withDatabase(async (opened) => {
       await opened.write(async (db) => {

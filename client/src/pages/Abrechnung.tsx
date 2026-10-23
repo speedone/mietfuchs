@@ -604,10 +604,18 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
               sie werden genannt statt still zu fehlen. */}
           {(data.notSettled ?? []).length > 0 && (
             <Card title="Ohne Abrechnung" className="no-print">
-              <p className="muted">
-                Für diese Mietverhältnisse ist eine Pauschale oder Inklusivmiete vereinbart. Ihr Anteil an den Kosten
-                bleibt beim Vermieter und zählt als Werbungskosten.
-              </p>
+              {(data.notSettled ?? []).some((n) => !n.usageConflict) && (
+                <p className="muted">
+                  Für diese Mietverhältnisse ist eine Pauschale oder Inklusivmiete vereinbart. Ihr Anteil an den Kosten
+                  bleibt beim Vermieter und zählt als Werbungskosten.
+                </p>
+              )}
+              {(data.notSettled ?? []).some((n) => n.usageConflict) && (
+                <p className="muted">
+                  Ein Mietverhältnis, das ganz in einer Zeit liegt, in der die Einheit laut ihrer Nutzung nicht vermietet
+                  ist, bekommt keine Abrechnung. Bitte prüfen Sie Ein- und Auszug oder den Nutzungswechsel in den Stammdaten.
+                </p>
+              )}
               <ul>
                 {(data.notSettled ?? []).map((n) => <li key={n.tenancyId}>{notSettledText(n)}</li>)}
               </ul>

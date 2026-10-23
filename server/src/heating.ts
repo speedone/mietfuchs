@@ -388,6 +388,12 @@ export function planSelf(input: SelfInput): SelfPlan {
     const measured: SelfUnitPlan['measured'] = []
     const answerAt = (b: string): InterimGapStatus | null => input.gaps.find((x) => x.unitId === unit.id && x.date === b)?.status ?? null
     const isChange = (b: string): boolean => users.some((u, i) => i < users.length - 1 && u.to === b && users[i + 1]?.from === dayAfter(b))
+    // Integrationsdurchsicht 0.13.0, S2: Ein Wechsel nur zwischen Rollen des Vermieters (Leerstand, Eigennutzung,
+    // außerhalb) betrifft keinen Mieter; § 9b Abs. 1 verlangt dort keine Zwischenablesung, und es gibt weder Befund noch
+    // Frage. Ohne Ablesung wird dort wie bisher nach § 9b Abs. 3 geteilt, mit einer nahen Ablesung nach ihr, und eine
+    // ferne gilt von selbst als nicht hinreichend genau (S-2 unten, `landlordFar`); das alles verschiebt nur Geld
+    // zwischen den Zeilen des Vermieters.
+    const tenantChange = (b: string): boolean => isChange(b) && users.some((u) => (u.to === b || u.from === dayAfter(b)) && u.tenancyId !== null)
     // Wie weit die Ablesungen einer Grenze daneben liegen (die fernste über alle Zähler).
     const offAt = new Map<string, { date: string; days: number; permille: number; far: boolean }>()
     // Durchsicht von #242, G-I2: Die Geräte einer geschätzten Wohnung zählen hier mit, wenn ihre Ablesung an der
@@ -407,7 +413,7 @@ export function planSelf(input: SelfInput): SelfPlan {
       if (farthest !== null) offAt.set(b, { date: farthest, ...readingOff(b, farthest, table, input.offRule()) })
     }
     // Ab der Warngrenze neben einem Wechsel wählt der Vermieter (§ 9b Abs. 3 Alt. 2, Abweichung 22).
-    for (const b of boundaries.filter(isChange)) {
+    for (const b of boundaries.filter(tenantChange)) {
       const off = offAt.get(b)
       const answer = answerAt(b)
       if (off?.far && answer !== 'imprecise' && answer !== 'useReading') {
@@ -429,8 +435,11 @@ export function planSelf(input: SelfInput): SelfPlan {
         if (potHasMeters[p] && areaOf(p, unit) > 0) problems.push({ kind: 'missing', pot: p, unitId: unit.id, unitName: unit.name, boundary: null, reason: 'noMeter', meterName: null })
         continue
       }
-      // „Nach § 9b Abs. 3“ gewählt: die Ablesung gilt als nicht hinreichend genau (Abweichung 22).
-      const has = (b: string): boolean => answerAt(b) !== 'imprecise' && meters.every((m) => (readingAt.get(m.id)?.get(b) ?? null) !== null)
+      // „Nach § 9b Abs. 3“ gewählt: die Ablesung gilt als nicht hinreichend genau (Abweichung 22). An einer Grenze nur
+      // zwischen Rollen des Vermieters gilt eine ferne Ablesung von selbst so (Durchsicht von PR #426, S-2; Festlegung):
+      // Kein Mieter ist betroffen, es gibt keine Frage, und eine dort gespeicherte Antwort wird nicht mehr gebraucht.
+      const landlordFar = (b: string): boolean => isChange(b) && !tenantChange(b) && (offAt.get(b)?.far ?? false)
+      const has = (b: string): boolean => answerAt(b) !== 'imprecise' && !landlordFar(b) && meters.every((m) => (readingAt.get(m.id)?.get(b) ?? null) !== null)
       // Ohne Schätzung fehlt ein Stand zu Beginn oder Ende (ein Fall des § 9a); mit Schätzung deckt sie ihn.
       if (estimated === undefined) {
         for (const b of [startBoundary, h.to]) {
@@ -525,7 +534,7 @@ export function planSelf(input: SelfInput): SelfPlan {
 
     // Die Grenzen der Wohnung mit ihren Ablesungen (Ausweis, Ampel, Hinweise).
     const bounds: SelfBoundary[] = boundaries
-      .filter((b) => b === startBoundary || b === h.to || isChange(b))
+      .filter((b) => b === startBoundary || b === h.to || tenantChange(b))
       .map((b) => {
         const live = pots.flatMap((p) => liveMetersOf(unit.id, p))
         const all = live.map((m) => readingAt.get(m.id)?.get(b)?.date ?? null)

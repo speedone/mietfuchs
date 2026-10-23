@@ -451,13 +451,23 @@ Hinweise: `allocation.not-agreed` (nur Info), `allocation.other-unanswered` (fä
   außerhalb, verteilen Fläche, Einheiten und Gemeinschaft **je Abschnitt** (`segmentsOf`, `segmented`; eine Rundung
   je Position); vereinbart, direkt, Verbrauch und Personen brauchen das nicht (Begründung im Entwurf). Für die
   Kosten zählt ein Mietverhältnis nur in seinem ersten vermieteten Abschnitt (`costTenancies`; Abrechnung und
-  Vorauszahlungen am ganzen, `partTenancies`), sonst `usage.tenancy-conflict` (`error`). Der Rest des Hauptzählers
+  Vorauszahlungen am ganzen, `partTenancies`), sonst `usage.tenancy-conflict` (`error`). Liegt ein Mietverhältnis ganz in
+  einer Zeit ohne Vermietung, hat es keine Abrechnung; es steht dann in `notSettled` mit `usageConflict` (seine
+  Vorauszahlungen, die keine Abrechnung anrechnet), und der Hinweis nennt den Betrag, auch in der
+  Heizkostenabrechnung nach Weg d (dort mit deren Anrechnung, `prepaymentOf`). Eine CO₂-Erstattung lässt sich dort nicht
+  verrechnen (eigener Satz in db/co2Refunds.ts). Der Vorschlag nach § 560 rechnet
+  bei einem Widerspruch je Zeile hoch: die Zeilen der eigenen Heizkostenabrechnung (Schlüssel `heatingSystem` samt
+  Abzugszeilen ihres Topfs, `wholeTime`) auf die Tage des Mietverhältnisses, denn dort bleibt es Nutzer für seine ganze
+  Zeit, die übrigen auf die Tage mit Kosten (`costDays`); sonst halbierte bzw. verdoppelte er sich bei einem Wechsel zur
+  Jahresmitte. Ohne Widerspruch rechnet er unverändert über die Summe. Der Rest des Hauptzählers
   ist je Tag Eigenanteil, an dem alle Einheiten ohne Zähler selbstgenutzt sind (`daysAllSelf`, Auslegung). „Selbst bewohnt“ (§ 2 HeizkostenV, § 5d) nur an jedem Tag (`dwellerUnits`). In der eigenen
   Heizkostenabrechnung teilt `usersOf` an den Grenzen der Staffel (§ 9b). Bei „nur Heizung“ nach Gradtagen werden
   Eigenanteil und außerhalb nach demselben Maß gewichtet (`itemSelfShare`). Die Steuer rechnet tagesgenau über
   `taxUsage`, und zwar über den **ganzen Zeitraum des Teils**, nicht nur seinen Schnitt mit dem Steuerjahr (Fläche ×
   Tage der Eigennutzung, Kopf der Anlage V, Ausgleich beim Betriebsstrom, verbilligte Vermietung in cheapRent.ts). Hinweis
-  `usage.changed` (`hint`) nennt die Abschnitte und dass gleichmäßiger Anfall eine Auslegung ist.
+  `usage.changed` (`hint`) nennt die Abschnitte und dass gleichmäßiger Anfall eine Auslegung ist. Eine Invariante über alle Funktionen von 0.13.0 zugleich
+  (Nutzungswechsel, verbilligte Vermietung, Betriebsstrom, Kalenderjahr und Mai bis April) steht in
+  invariant-0-13-zusammenspiel.test.ts, Bestände in server/testing/integration013.ts.
 - **Verbrauchsschlüssel**: Die Basis bilden **alle** Wohnungszähler, unabhängig vom Kennzeichen.
   **Fehlt einer bewohnten Einheit der Verteilbasis ein Zähler, wird der Hauptzähler zur Basis**
   (#116, Vorwegabzug): ihr Verbrauch ist der Rest; bei Eigennutzung als Eigenanteil, bei einer
@@ -617,9 +627,11 @@ Grundmenge ist das ganze Gebäude), Überschuss. Beschreibende Gruppen statt fes
   zählen ohne verrechnete CO₂-Erstattung (`recurringShareCents`, K4). Geprüft wird jede nicht selbstgenutzte Wohnung,
   auch eine vermietete außerhalb der Abrechnungseinheit (K3). Sie steht als `gratuitousCents` an Position, Kostenart, Gruppe und Summe, wird aus dem **abziehbaren** Teil
   genommen und darauf geklemmt, der private bleibt (keine Doppelkürzung); `deductibleCents` = Brutto − privat −
-  unentgeltlich. Abgeleitete Zeilen (Betriebsstrom, CO₂-Erstattung), ein Abzug des Betriebsstroms und eine Heizposition
-  `included` (Ausschnitte der Stromrechnung, die mit ihrem Gewicht gekürzt wird, #268) und Positionen ohne Fläche
-  (`unallocated`) bleiben ungekürzt. Die Übersicht.csv des Steuer-ZIP bekommt die Spalte „unentgeltlich“ nur mit
+  unentgeltlich. Abgeleitete Zeilen (Betriebsstrom, CO₂-Erstattung), ein Abzug des Betriebsstroms, den die Ausgleichszeile aufhebt
+  (selbst getragen oder verknüpft), und eine Heizposition `included` (Ausschnitte der Stromrechnung, die mit ihrem
+  Gewicht gekürzt wird, #268) und Positionen ohne Fläche (`unallocated`) bleiben ungekürzt. Ein Abzug, der als dem
+  Messdienst gemeldet gilt (`balance.reported`, Regel `deductionReported`), steht als eigene negative Position in der
+  Steuer und wird wie jede Position gekürzt (Integrationsdurchsicht 0.13.0, M1). Die Übersicht.csv des Steuer-ZIP bekommt die Spalte „unentgeltlich“ nur mit
   einem unentgeltlichen Teil. Ohne Eintrag fehlt `cheapRent`, und keine Zahl ändert sich (Prüfsummen tax-golden.json).
   Invariante: invariant-steuer-verbilligt.test.ts.
 - **Jahr des Abflusses** (#255): Allein `outflowShares` ([outflow.ts](outflow.ts)) bestimmt es,
