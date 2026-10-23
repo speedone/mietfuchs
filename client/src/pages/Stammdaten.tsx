@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import type { CostModel, HeatingModel, SelfSupplyKind, DepositStatus, HeatingPlant, InterimGapStatus, Meter, MeterType, Settings, Tenancy, Unit, UnitDependents, UnitUsage } from '../types'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { CostModel, HeatingModel, SelfSupplyKind, DepositStatus, HeatingPlant, InterimGapStatus, Meter, MeterType, Reading, Settings, Tenancy, Unit, UnitDependents, UnitUsage } from '../types'
 import { servesUnit } from '../../../shared/heatingPeriod.ts'
 import { DEPOSIT_STATUS_LABELS, METER_TYPE_LABELS, UNIT_USAGE_LABELS, usageOf } from '../types'
 import { everRented } from '../../../shared/unitUsage.ts'
@@ -7,6 +7,8 @@ import { EMPTY_UNIT_FORM, buildUnitBody, usageChangeField, usesSelf, connectionS
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { separateHeatingFor, separateHeatingPlant } from '../heatingSettlementView'
 import Drawer from '../components/Drawer'
+import { SheetPrinter } from '../components/ReadingSheet'
+import { buildReadingSheet, DEFAULT_SHEET_OPTIONS, type ReadingSheet } from '../readingSheet'
 import { useSaving } from '../useSaving'
 import PropertyCard from '../components/PropertyCard'
 import OtherPropertiesCard from '../components/OtherPropertiesCard'
@@ -939,6 +941,9 @@ function TenantChangeDrawer({ tenancy, unit, plants, onClose, onDone }: {
   const [gap, setGap] = useState<{ status: InterimGapStatus | ''; reason: string }>({ status: '', reason: '' })
   const errors = useFormError<TenantChangeField>()
   const [busy, setBusy] = useState(false)
+  // Ableseformular nur mit den Zählern dieser Wohnung (#320)
+  const [sheet, setSheet] = useState<ReadingSheet | null>(null)
+  const closeSheet = useCallback(() => setSheet(null), [])
 
   // Zähler der Wohnung + Hauptzähler (Dokumentation) laden, aus dem Objekt der Wohnung (#92)
   const { property } = useProperty()
@@ -949,6 +954,15 @@ function TenantChangeDrawer({ tenancy, unit, plants, onClose, onDone }: {
       .then((all) => setMeters(all.filter((m) => (m.unitId === tenancy.unitId || m.unitId === null) && !m.heatingPlantId)))
       .catch(() => setMeters([]))
   }, [tenancy.unitId, propertyId])
+
+  async function printSheet() {
+    try {
+      const readings = await api<Reading[]>(withProperty('/api/readings', propertyId))
+      setSheet(buildReadingSheet({ meters, readings, units: unit ? [unit] : [], plants: [], year: new Date().getFullYear(), options: { ...DEFAULT_SHEET_OPTIONS, unitId: tenancy.unitId } }))
+    } catch (e) {
+      errors.show(errorText(e))
+    }
+  }
 
   function changeEnd(value: string) {
     setEndDate(value)
@@ -1024,6 +1038,8 @@ function TenantChangeDrawer({ tenancy, unit, plants, onClose, onDone }: {
               {' '}{unitMeters.length === 0 && 'Der Hauptzähler dient nur der Dokumentation.'}
               {' '}Leere Felder werden übersprungen.
             </p>
+            {unitMeters.length > 0 && <button type="button" className="btn secondary" onClick={() => void printSheet()}>Ableseformular drucken</button>}
+            {sheet && <SheetPrinter sheet={sheet} propertyName={property?.name ?? ''} subtitle={`${unit?.name ?? ''} · Zwischenablesung`} onDone={closeSheet} />}
             <div className="field-grid">
               {meters.map((m) => (
                 <Field key={m.id} label={`${m.name} (${m.unitId === null ? 'Hauptzähler' : METER_TYPE_LABELS[m.type] ?? m.type}${m.unit ? `, ${m.unit}` : ''})`} {...errors.field(`meter:${m.id}`)}>

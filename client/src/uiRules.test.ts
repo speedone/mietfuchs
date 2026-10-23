@@ -20,12 +20,13 @@ const css = fs.readFileSync(new URL('./index.css', import.meta.url), 'utf8')
 const twCss = fs.readFileSync(new URL('./tw.css', import.meta.url), 'utf8')
 const fieldsCss = fs.readFileSync(new URL('./fields.css', import.meta.url), 'utf8')
 // Das Anschreiben (#415) hat eigene Regeln in der Schicht `components`; seine Klassen zählen für S4, S17 und S20 mit.
-const letterCss = fs.readFileSync(new URL('./letter.css', import.meta.url), 'utf8')
+// Dasselbe gilt für das Ableseformular (#320, reading-sheet.css).
+const letterCss = ['./letter.css', './reading-sheet.css'].map((f) => fs.readFileSync(new URL(f, import.meta.url), 'utf8')).join('\n')
 
 // Tailwind (#346) mit dem Theme aus tw.css, ohne index.css und ohne die Einschränkungen der Suche
 // (`@source`): Gefragt wird, welche Klassennamen Tailwind als Utility kennt.
 const compileTw = (source: string) => compile(
-  source.replace(/@import "\.\/(?:index|fields|letter)\.css"[^;]*;/g, '').replace(/@source[^;]*;/g, ''),
+  source.replace(/@import "\.\/(?:index|fields|letter|reading-sheet)\.css"[^;]*;/g, '').replace(/@source[^;]*;/g, ''),
   {
     base: '.',
     loadStylesheet: async (id) => ({
@@ -552,7 +553,8 @@ const buttonsIn = (file: string, raw: string): ButtonUse[] => {
 }
 const isPrimary = (b: ButtonUse) => /(^|\s)btn(\s|$)/.test(b.className) && !/secondary|ghost|danger|\?|\$\{/.test(b.className)
 const isDangerGhost = (b: ButtonUse) => /danger-ghost/.test(b.className)
-const DRAWER_VERBS = /^(?:Anlegen|Speichern)$/
+// „Drucken" nur für das Fenster, das nichts speichert, sondern ein Blatt druckt (Ableseformular, #320).
+const DRAWER_VERBS = /^(?:Anlegen|Speichern|Drucken)$/
 // Primärknöpfe im Seitenfenster, die ihren Text aus einem Ausdruck nehmen, mit Grund.
 const DRAWER_LABEL_EXCEPTIONS = new Map<string, string>([
   ['./components/NewPropertyDrawer.tsx', 'createButtonLabel: „Anlegen und zu … wechseln“ nennt die Folge, den Wechsel des Objekts; geprüft unten'],

@@ -29,6 +29,8 @@
 @import "./fields.css" layer(components);
 /* Das Anschreiben zur Abrechnung samt Druckmaßen nach DIN 5008 (#415), ebenfalls in `components`. */
 @import "./letter.css" layer(components);
+/* Das Ableseformular zum Ausdrucken (#320), ebenfalls in `components`. */
+@import "./reading-sheet.css" layer(components);
 /* Gesucht wird nur in client/src (source("./")): sonst läse Tailwind auch index.html,
    vite.config.ts und alles andere unter client/. */
 @import "tailwindcss/utilities.css" layer(utilities) source("./");

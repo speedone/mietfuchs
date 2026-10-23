@@ -120,6 +120,16 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   ungleich 0 wird als Fehler benannt. Zeilen ohne Position (Pseudo-Kennung mit „:“, sie allein entscheidet) stehen gesondert, ihre Summe muss 0 sein, und
   zählen nicht in die Summenprüfung; ohne `landlordParts` (vor #142) steht eine pauschale Spalte. Die Tabelle ist
   `sticky-first` und scrollt seitlich.
+- **Ableseformular** (#320, [ReadingSheet.tsx](src/components/ReadingSheet.tsx), Logik in
+  [readingSheet.ts](src/readingSheet.ts), Regeln in [reading-sheet.css](src/reading-sheet.css), Schicht `components`
+  wie letter.css, S4/S17/S20 lesen die Datei mit): reine Druckseite ohne eigene Datenhaltung. Das Blatt hängt als
+  Portal an `body` (`SheetPrinter`, Klasse `print-reading-sheet` blendet `#root` und Dialoge aus, erst nach dem Rendern
+  `window.print()`). Gruppen: Hauptzähler, Wohnungen in ihrer Reihenfolge, Heizanlage; `name` gilt als Bezeichnung und
+  Ort (kein Feld „Einbauort“). Die Eichfrist kommt aus `calibratedUntil` (das Ergebnis von `calibrationEnd`): abgelaufen
+  vor dem laufenden Jahr, „endet“ im laufenden oder folgenden, Heizkostenverteiler nie. Einstieg: „Ableseformular
+  drucken“ auf der Seite Zähler (Auswahl im Seitenfenster, dessen Primärknopf „Drucken“ heißt, S16) und im Mieterwechsel
+  mit `unitId` (nur die Zähler der Wohnung). Die Unterschrift steht als Spalte wie die übrigen. Playwright
+  schaltet mit `page.pdf()` `afterprint` aus: erst fotografieren, dann PDF.
 - **Druckkopf**: `letterhead` lässt einen Objektnamen weg, der schon in der Adresse steht, und ist die
   Rücksendeangabe des Anschreibens; Anschrift des Mieters (`recipientLines`); fehlt nach Auszug die neue Anschrift,
   warnt die Seite (`printsFormerAddress`). Der Rechenweg ([CalcSteps.tsx](src/components/CalcSteps.tsx)) ist immer

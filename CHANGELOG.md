@@ -13,6 +13,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Vermieters nebeneinander, dazu eine Summe gegen den Rechnungsbetrag, die Kosten, Vorauszahlung und
   Saldo je Mieter und die Zeilen ohne eigene Kostenposition (etwa CO₂-Anteile) gesondert. Eine
   Differenz wird benannt. Es wird nichts neu gerechnet.
+- Ableseformular zum Ausdrucken ([#320](https://github.com/speedone/mietfuchs/issues/320)):
+  Auf der Seite „Zähler & Stände“ druckt „Ableseformular drucken“ ein Blatt mit allen Zählern des Objekts,
+  gruppiert nach Hauptzähler, Wohnungen und Heizanlage. Je Zähler stehen Bezeichnung, Zählernummer, Art,
+  Einheit und der letzte Stand mit Datum auf dem Blatt, dazu leere Felder für Datum, Stand und
+  Unterschrift. Zähler, deren Eichfrist im laufenden oder im nächsten Jahr endet oder abgelaufen ist, sind
+  gekennzeichnet. Fernablesbare Zähler und Heizkostenverteiler lassen sich weglassen, und das Blatt lässt
+  sich auf eine Wohnung beschränken; im Fenster „Mieterwechsel“ druckt ein Knopf direkt das Blatt für die
+  Zwischenablesung dieser Wohnung. Es wird nichts gespeichert.
 - Automatische Vorversionen der Datenbank ([#318](https://github.com/speedone/mietfuchs/issues/318)):
   Mietfuchs prüft beim Start und danach einmal am Tag, ob die jüngste Kopie Ihrer Daten älter als
   sieben Tage ist, und legt dann eine neue an, im Datenordner unter `vorversionen`. Behalten werden die
