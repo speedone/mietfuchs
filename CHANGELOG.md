@@ -6,6 +6,15 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Geändert
+
+- Objekte anlegen und bearbeiten sehen gleich aus: Das Fenster „Neues Objekt“ hat dieselben Felder,
+  dieselbe Reihenfolge und dieselbe Breite wie „Objekt bearbeiten“, also auch Bundesland, Kabel- oder
+  Antennenanlage, angespannten Wohnungsmarkt und abweichenden Vermieter. Leer gelassen gilt wie bisher
+  jeweils die Voreinstellung. Angelegt wird in den Stammdaten in der neuen Karte „Weitere Objekte“ mit
+  „+ Objekt anlegen“, nicht mehr oben rechts auf der Seite; die Karte listet Ihre übrigen Objekte zum
+  Wechseln. Ab zwei Objekten steht zusätzlich ein „+“ neben der Auswahl des Objekts in der Seitenleiste.
+
 ## [0.12.0] – 2026-10-22
 
 ### Hinzugefügt

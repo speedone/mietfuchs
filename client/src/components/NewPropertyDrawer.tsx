@@ -1,25 +1,27 @@
-import { useEffect, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
-import type { Property, PropertyKind } from '../types'
-import { PROPERTY_KIND_LABELS } from '../types'
+import type { Property } from '../types'
 import { api, errorText } from '../api'
 import { useProperty, useSwitchProperty } from '../property'
 import { useToast } from './feedback'
 import Drawer from './Drawer'
-import Field from './Field'
+import PropertyFields from './PropertyFields'
 import { useFormError } from './ErrorSummary'
-import { createButtonLabel, EMPTY_NEW_PROPERTY, newPropertyBody, type NewPropertyForm } from '../propertyView'
+import { createButtonLabel } from '../propertyView'
+import { EMPTY_PROPERTY_FORM, propertyBody, type PropertyField, type PropertyForm } from '../propertyForm'
 
-// Das Seitenfenster „Weiteres Objekt anlegen“ (#157): sagt, was ein Objekt ist, dass das bisherige unverändert
-// bleibt und dass danach gewechselt wird. Geöffnet aus dem Seitenkopf der Stammdaten. Es bleibt eingehängt, auch
-// wenn es zu ist: Die Sperre nach „angelegt, aber die Liste fehlt“ muss Schließen und neu Öffnen überstehen.
+// Das Seitenfenster „Neues Objekt“ (#157): sagt, was ein Objekt ist, dass das bisherige unverändert bleibt und
+// dass danach gewechselt wird. Die Felder sind dieselben wie in „Objekt bearbeiten“ (PropertyFields), ebenso die
+// Breite. Geöffnet aus der Karte „Weitere Objekte“ der Stammdaten und vom „+“ neben dem Umschalter in der
+// Seitenleiste; beide öffnen dasselbe Fenster (`NewPropertyProvider`). Es bleibt eingehängt, auch wenn es zu ist:
+// Die Sperre nach „angelegt, aber die Liste fehlt“ muss Schließen und neu Öffnen überstehen.
 export default function NewPropertyDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { properties, property, reload, setFocusNoticeFor } = useProperty()
   const switchProperty = useSwitchProperty()
   const toast = useToast()
   // `null` heißt zu; beim Öffnen leer.
-  const [draft, setDraft] = useState<NewPropertyForm | null>(null)
-  const errors = useFormError<'name'>()
+  const [draft, setDraft] = useState<PropertyForm | null>(null)
+  const errors = useFormError<PropertyField>()
   const setError = errors.set
   const [creating, setCreating] = useState(false)
   // Angelegt, aber die Liste fehlt (#157): Ein zweiter Klick legte es doppelt an. Gesperrt bleibt, bis das
@@ -28,22 +30,22 @@ export default function NewPropertyDrawer({ open, onClose }: { open: boolean; on
   const stuck = stuckId !== null && !properties.some((p) => p.id === stuckId)
 
   useEffect(() => {
-    setDraft(open ? EMPTY_NEW_PROPERTY : null)
+    setDraft(open ? EMPTY_PROPERTY_FORM : null)
     if (open) setError('')
   }, [open, setError])
 
   async function create() {
     if (!draft || creating || stuck) return
-    const body = newPropertyBody(draft)
+    const body = propertyBody(draft)
     if ('error' in body) {
-      errors.report([{ field: 'name', short: 'Name fehlt', text: body.error }])
+      errors.report(body.problems)
       return
     }
     setError('')
     setCreating(true)
     let created: Property
     try {
-      // Name, Art und Adresse in einem Aufruf: Scheitert er, gibt es kein halbes Objekt.
+      // Alle Angaben in einem Aufruf: Scheitert er, gibt es kein halbes Objekt.
       created = await api<Property>('/api/properties', { method: 'POST', body: JSON.stringify(body) })
     } catch (e) {
       setError(`Das Objekt wurde nicht angelegt. ${errorText(e)}`)
@@ -78,7 +80,8 @@ export default function NewPropertyDrawer({ open, onClose }: { open: boolean; on
   return (
     <Drawer
       open={open && draft !== null}
-      title="Weiteres Objekt anlegen"
+      title="Neues Objekt"
+      width={640}
       onClose={() => { if (!creating) onClose() }}
       onSubmit={() => void create()}
       value={draft}
@@ -95,19 +98,27 @@ export default function NewPropertyDrawer({ open, onClose }: { open: boolean; on
             bleibt unverändert. Nach dem Anlegen arbeiten Sie im neuen Objekt; zurück geht es
             jederzeit über „Objekt“ in der Seitenleiste.
           </p>
-          <Field label="Name" required width="l" {...errors.field('name')}>
-            <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="z. B. Eigentumswohnung Gartenweg" />
-          </Field>
-          <Field label="Art">
-            <select value={draft.kind} onChange={(e) => setDraft({ ...draft, kind: e.target.value as PropertyKind })}>
-              {(Object.keys(PROPERTY_KIND_LABELS) as PropertyKind[]).map((k) => <option key={k} value={k}>{PROPERTY_KIND_LABELS[k]}</option>)}
-            </select>
-          </Field>
-          <Field label="Adresse" width="l">
-            <input value={draft.address} onChange={(e) => setDraft({ ...draft, address: e.target.value })} placeholder="Straße Nr., PLZ Ort" />
-          </Field>
+          <PropertyFields form={draft} setForm={setDraft} errors={errors} storedIban={null} />
         </>
       )}
     </Drawer>
   )
 }
+
+// Ein Fenster für alle Auslöser, eingehängt einmal in der App. Zwei Fenster hätten je ihre eigene Sperre, und über
+// das andere ließe sich ein Objekt doppelt anlegen.
+const OpenNewProperty = createContext<(() => void) | null>(null)
+
+export function NewPropertyProvider({ children }: { children: ReactNode }) {
+  const [open, setOpen] = useState(false)
+  const show = useCallback(() => setOpen(true), [])
+  return (
+    <OpenNewProperty.Provider value={show}>
+      {children}
+      <NewPropertyDrawer open={open} onClose={() => setOpen(false)} />
+    </OpenNewProperty.Provider>
+  )
+}
+
+// Öffnet das Fenster „Neues Objekt“; `null` ohne `NewPropertyProvider` (eine Seite allein im Test).
+export const useOpenNewProperty = (): (() => void) | null => useContext(OpenNewProperty)

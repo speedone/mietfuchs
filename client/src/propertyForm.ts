@@ -92,6 +92,13 @@ export const propertyToForm = (p: Property): PropertyForm => ({
   state: p.state ?? '',
 })
 
+// Das leere Formular für ein neues Objekt: dieselben Felder wie beim Bearbeiten, jede Angabe auf ihrer
+// Voreinstellung (unbekannt, keine Abweichung), damit das neue Objekt rechnet wie eines, das man nie bearbeitet hat.
+export const EMPTY_PROPERTY_FORM: PropertyForm = {
+  name: '', address: '', kind: 'mfh', own: false, landlordName: '', iban: '', paymentDeadlineDays: '',
+  cable: 'unbekannt', tightMarket: 'unbekannt', tightMarketFrom: '', tightMarketTo: '', state: '',
+}
+
 // **Ein leeres Feld heißt „Vorgabe“, auch mit Haken.** Wer den Haken setzt, um nur eine andere
 // IBAN einzutragen, meint mit dem leeren Vermieternamen nicht „kein Vermieter“; sonst fehlte
 // der Name auf der gedruckten Abrechnung, still und auf einem Dokument für den Mieter. Die

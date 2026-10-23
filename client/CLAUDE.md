@@ -206,6 +206,10 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   nicht, Folgenummer je Anfrage), und ein Satz sagt, dass sie neu nötig ist.
 - **Neues anlegen steht oben rechts**: für die Seite in `PageHeader actions`, für eine Karte in
   `CardHeader aside` (S27). Im Fuß einer Karte nur „Speichern“ links und Gefahrknöpfe rechts.
+  Ein weiteres Objekt legt die Karte „Weitere Objekte“ der Stammdaten an („+ Objekt anlegen“); ab
+  zwei Objekten steht als Abkürzung ein „+“ neben dem Umschalter (einzige Ausnahme von S27). Beide
+  öffnen dasselbe Fenster (`NewPropertyProvider`) mit denselben Feldern wie „Objekt bearbeiten“
+  (`PropertyFields`).
 - **Eine Karte mit Überschrift ist `Card`** (Titel, höchstens eine Aktion als `aside`, weitere Angaben
   wie Drag-Handler gehen an die `section`). Wächter S31 erkennt auch `className` als Ausdruck, einen
   Kommentar vor der Überschrift und einen eigenen Kopf als `div` um sie.

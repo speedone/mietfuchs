@@ -38,19 +38,10 @@ export function pageContextLine(kind: PageContextKind, property: Pick<Property, 
   return line === '' ? null : line
 }
 
-// ---------- Der Dialog „Weiteres Objekt anlegen“ ----------
+// ---------- Das Seitenfenster „Neues Objekt“ ----------
 
-export type NewPropertyForm = { name: string; kind: PropertyKind; address: string }
-export const EMPTY_NEW_PROPERTY: NewPropertyForm = { name: '', kind: 'mfh', address: '' }
-
-// Name, Art und Adresse gehen in **einem** Aufruf an den Server (POST /api/properties nimmt alle
-// Felder des Objekts). Ein Anlegen mit anschließendem Ändern könnte nach dem ersten Schritt
-// scheitern und hinterließe ein Objekt ohne Art und Adresse.
-export function newPropertyBody(form: NewPropertyForm): NewPropertyForm | { error: string } {
-  const name = form.name.trim()
-  if (!name) return { error: 'Bitte geben Sie dem neuen Objekt einen Namen.' }
-  return { name, kind: form.kind, address: form.address.trim() }
-}
+// Die Felder sind dieselben wie beim Bearbeiten (propertyForm.ts, PropertyFields); hier steht nur, was das Anlegen
+// eigens hat.
 
 // Der Knopf sagt, dass gewechselt wird, und wohin.
 export function createButtonLabel(name: string): string {
