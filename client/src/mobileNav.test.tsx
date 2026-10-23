@@ -316,3 +316,17 @@ test('Rückfrage aus dem Blatt, dann breiter: nach Abbrechen steht der Fokus in 
   await waitFor(() => expect(screen.queryByRole('button', { name: /Objekt wechseln/ })).toBeNull())
   expect(document.activeElement).toBe(within(screen.getByRole('navigation', { name: 'Hauptnavigation' })).getByRole('button', { name: /Einstellungen/ }))
 })
+
+// Das „+“ neben dem Umschalter im Menüblatt: erst schließt das Blatt, dann öffnet das Fenster „Neues Objekt“. Zwei
+// modale Dialoge übereinander ließen das Fenster hinter dem Blatt stehen. Geschlossen kehrt der Fokus auf ☰ zurück.
+test('„+“ im Menüblatt schließt das Blatt und öffnet „Neues Objekt“; danach steht der Fokus auf ☰', async () => {
+  render(<App />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Menü' }))
+  const sheet = screen.getByRole('dialog', { name: 'Menü' })
+  fireEvent.click(within(sheet).getByRole('button', { name: '+ Weiteres Objekt anlegen' }))
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Menü' })).toBeNull())
+  const created = screen.getByRole('dialog', { name: 'Neues Objekt' })
+  fireEvent.click(within(created).getByRole('button', { name: /^Abbrechen$/ }))
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Neues Objekt' })).toBeNull())
+  await waitFor(() => expect(document.activeElement).toBe(menuButton()))
+})

@@ -777,7 +777,8 @@ test('S22: Navigationseinträge stehen nur in nav.ts', () => {
 // hier durch. Das fängt pageContext.test.tsx am Verhalten: Dort darf kein Auswahlfeld im Inhalt einer Seite
 // Jahreszahlen, Zeiträume oder Objektnamen anbieten (außer „Kalenderjahr“).
 const SIDEBAR_SWITCHERS: Array<[RegExp, Set<string>]> = [
-  [/<(?:PeriodSelect|PeriodSelectView|PropertySwitcher)\b/, new Set(['./App.tsx', './components/PeriodSelect.tsx'])],
+  // Die Musterseite zeigt den Umschalter des Objekts mit „+“ an festen Objekten; gewählt wird dort nichts
+  [/<(?:PeriodSelect|PeriodSelectView|PropertySwitcher)\b/, new Set(['./App.tsx', './components/PeriodSelect.tsx', './pages/Muster.tsx'])],
   // Die Musterseite zeigt den Baustein mit festen Wohnungen; sie wählt weder Objekt noch Zeitraum
   [/<Switcher\b/, new Set(['./components/PeriodSelect.tsx', './property.tsx', './pages/Muster.tsx'])],
   [/<CalendarYearSelect\b/, new Set(['./pages/Mietkonto.tsx', './pages/Steuer.tsx'])],
