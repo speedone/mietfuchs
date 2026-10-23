@@ -1,8 +1,8 @@
 import { Fragment, useCallback, useEffect, useMemo, useId, useRef, useState } from 'react'
 import { startPrint } from '../printJob'
-import type { CostItem, HeatingSettlementInfo, Notice, NoticeSubject, PeriodKey, Settings, Settlement, SettlementRow, Tenancy, Unit } from '../types'
+import type { CostItem, HeatingSettlementInfo, LetterTemplates, Notice, NoticeSubject, PeriodKey, Settings, Settlement, SettlementRow, Statement, Tenancy, TenancyLetter, Unit } from '../types'
 import {
-  adjustedPrepaymentLabel, heatingChoices, suggestionWithoutHeating, heatingOnlyNote, heatingOverridesWith, prepaymentLabel, prepaymentSplit, recommendedDeadlineText, settlementPaths, settlementTitle, totalLabel,
+  heatingChoices, heatingOnlyNote, heatingOverridesWith, prepaymentLabel, prepaymentSplit, recommendedDeadlineText, settlementPaths, settlementTitle, totalLabel,
 } from '../heatingSettlementView'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { invoiceLabel, renderInvoicePages } from '../pdfPreview'
@@ -28,7 +28,7 @@ import { emptySettlement, startStep } from '../emptyStock'
 import { closeSettlementTitle } from '../propertyView'
 import Term from '../components/Term'
 import CalcSteps from '../components/CalcSteps'
-import { suggestionBasis, totalColumnLabel, totalNote } from '../calcSteps'
+import { totalColumnLabel, totalNote } from '../calcSteps'
 import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
 import Co2Block from '../components/Co2Block'
@@ -41,10 +41,15 @@ import { fuelBlock } from '../fuelView'
 import { closeWithQuestions } from '../fuelClose'
 import { closeErrorsQuestion, closeMessage, completenessQuestion, DRAFT_MARK, printQuestion, sameErrors, showsDraftMark, type ErrorsQuestion } from '../despiteErrors'
 import { co2Block } from '../co2View'
-import { countOf } from '../../../shared/wording.ts'
 import { calendarPeriod } from '../../../shared/period.ts'
-import { formatIban } from '../../../shared/iban.ts'
+import { mergeLetterTexts } from '../../../shared/letter.ts'
 import Card from '../components/Card'
+import Letter from '../components/Letter'
+import { LegacyHead, legacyHeadLine, legacyReceiptsText, LegacyResult } from '../components/LegacyStatement'
+import { exceedsOnePage } from '../../../shared/letter.ts'
+import { suggestionWithoutHeating } from '../heatingSettlementView'
+import LetterDrawer, { type LetterSave } from '../components/LetterDrawer'
+import { asTemplates, letterOf, letterParagraphs, resultRows } from '../letterView'
 
 type Props = {
   settings: Settings | null
@@ -92,10 +97,6 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
   const [target, setTarget] = useState<{ plantId: string; period: PeriodKey } | null>(null)
   const paths = settlementPaths(param, target)
   const choices = heatingChoices(heatingList, period)
-  // Laienprobe B17, B18: Die Betriebskostenabrechnung eines Zeitraums, dessen Heizkosten eigene
-  // Heizkostenabrechnungen haben, rechnet die Heizvorauszahlung nicht an und schlägt nur die übrige vor.
-  // Durchsicht #297 S-C: an diese Abrechnung gebunden, nicht an alle Heizkostenabrechnungen des Objekts.
-  const separateHeating = data ? suggestionWithoutHeating(data, target, choices.length) : false
   // Ein anderer Zeitraum oder ein anderes Objekt: wieder die Betriebskostenabrechnung.
   useEffect(() => { setTarget(null) }, [param, propertyId])
   // Das Ziel aus dem Cockpit, sobald die Liste da ist und es darin steht (E45).
@@ -103,16 +104,37 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
 
   // Die beiden Häkchen zum Druck sind Einstellungen und deshalb ein Entwurf mit einem „Speichern“ für
   // beide (#309). Die Seite zeigt den Entwurf schon an, Vorschau und Druck folgen dem Häkchen; gemerkt
-  // für das nächste Öffnen wird er erst mit „Speichern“.
+  // für das nächste Öffnen wird er erst mit „Speichern“. Den Vorschlag zur Vorauszahlung wählt seit #415
+  // das Anschreiben je Mieter (Vorgabe in den Einstellungen); hier stehen Belegkopien und Falzmarken.
   const printDraft = useDraft({
-    printAdjustSuggestion: settings?.printAdjustSuggestion !== false, // Standard: an
+    printFoldMarks: settings?.printFoldMarks === true, // Standard: aus
     printAttachments: settings?.printAttachments === true, // Standard: aus
   })
-  const printAdjust = printDraft.value.printAdjustSuggestion
+  const printFoldMarks = printDraft.value.printFoldMarks
   const printAttachments = printDraft.value.printAttachments
+  // Das Anschreiben (#415): die Vorlagen der Ebenen und die Anpassungen je Mieter, zum Bearbeiten. Was
+  // gedruckt wird, liefert der Server mit der Abrechnung (`letters`).
+  const [templates, setTemplates] = useState<LetterTemplates | null>(null)
+  const [tenancyLetters, setTenancyLetters] = useState<Record<string, TenancyLetter>>({})
+  const [letterEdit, setLetterEdit] = useState<{ kind: 'property' } | { kind: 'tenancy', tenancyId: string } | null>(null)
   async function savePrint(value: typeof printDraft.value) {
     await api('/api/settings', { method: 'PUT', body: JSON.stringify(value) })
     await reload()
+  }
+  async function saveLetter(save: LetterSave) {
+    if (!letterEdit) return
+    if (letterEdit.kind === 'property') {
+      if (!propertyId) return
+      await api(`/api/properties/${propertyId}/letter-texts`, { method: 'PUT', body: JSON.stringify({ texts: save.texts }) })
+    } else {
+      await api(withProperty(`${paths.load}/letters/${letterEdit.tenancyId}`, propertyId), {
+        method: 'PUT',
+        body: JSON.stringify({ texts: save.texts, ...(save.adjust !== undefined ? { adjustment: save.adjust } : {}) }),
+      })
+    }
+    setLetterEdit(null)
+    await load()
+    toast('Anschreiben gespeichert.')
   }
 
   const load = useCallback(() => {
@@ -128,6 +150,10 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
     ])
       .then(([d, c, h]) => { setData(d); setCostItems(c); setHistory(h); setError('') })
       .catch((e) => setError(String((e as Error).message)))
+      .then(() => Promise.all([
+        api<unknown>(withProperty('/api/letter-texts', propertyId)).then((t) => setTemplates(asTemplates(t))).catch(() => setTemplates(null)),
+        api<Record<string, TenancyLetter>>(withProperty(`${paths.load}/letters`, propertyId)).then(setTenancyLetters).catch(() => setTenancyLetters({})),
+      ]))
       .then(() => api<HeatingSettlementInfo[]>(withProperty('/api/heating-settlements', propertyId)).then(setHeatingList).catch(() => setHeatingList([])))
   }, [paths.load, paths.history, propertyId])
 
@@ -392,14 +418,14 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
       {!(empty && choices.length === 0) && (
       <div className="card no-print">
         <div className="row">
-          <label className="field checkline" title="Absatz mit dem Vorschlag zur Anpassung der monatlichen Vorauszahlung (§ 560 Abs. 4 BGB) andrucken">
+          <label className="field checkline" title="Marken am linken Rand des Anschreibens zum Falten für einen Fensterumschlag (DIN 5008) und zum Lochen">
             <span>
               <input
                 type="checkbox"
-                checked={printAdjust}
-                onChange={(e) => printDraft.set({ ...printDraft.value, printAdjustSuggestion: e.target.checked })}
+                checked={printFoldMarks}
+                onChange={(e) => printDraft.set({ ...printDraft.value, printFoldMarks: e.target.checked })}
               />{' '}
-              Neue <Term id="prepayment">Vorauszahlung</Term> vorschlagen (§ 560 BGB)
+              Falz- und Lochmarken drucken
             </span>
           </label>
           <label className="field checkline" title="Kopien der hochgeladenen Beleg-PDFs als Anlage hinter jeder Abrechnung mit ausdrucken">
@@ -431,6 +457,16 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
           <div className="info no-print">{`Die Heizkosten ${data.separateHeating.map((h) => h.period.label).join(', ')} rechnen Sie getrennt ab; sie stehen nicht in dieser Abrechnung.`}</div>
         )}
       </div>
+      )}
+
+      {data && !empty && data.statements.length > 0 && (
+        <Card title="Anschreiben" className="no-print" aside={propertyId && templates ? <button className="btn secondary" onClick={() => setLetterEdit({ kind: 'property' })}>Vorlage für dieses Objekt bearbeiten</button> : undefined}>
+          <p className="muted m-0">
+            Jede Abrechnung beginnt mit einem Brief an den Mieter. Die Vorlage für alle Objekte steht unter
+            „Einstellungen“; hier weichen Sie für dieses Objekt ab, bei einem Mieter mit „Anschreiben bearbeiten“.
+            {isClosed ? ' Diese Abrechnung ist abgeschlossen; ihr Anschreiben ist eingefroren.' : ''}
+          </p>
+        </Card>
       )}
 
       {data && !empty && (
@@ -578,6 +614,11 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
           )}
 
           {data.statements.map((st) => {
+            const letterDate = data.closed?.sentAt ?? localToday()
+            const draftMark = showsDraftMark(noticesOf(data), !!data.closed)
+            // Vor #415 abgeschlossen: kein eingefrorenes Anschreiben, gedruckt wird der bisherige Aufbau (Durchsicht S1).
+            const legacy = !!data.closed && !data.letters
+            const tenancy = tenancies.find((t) => t.id === st.tenancyId)
             // Belege, die in dieser Abrechnung tatsächlich vorkommen (für die Anlage)
             const stFiles = printAttachments
               ? [...new Set(st.rows
@@ -593,16 +634,15 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
               if (g) g.rows.push(r)
               else groups.push({ category: r.category, rows: [r] })
             }
+            const letter = legacy ? null : letterOf(data, st, { settings, property, tenancies })
+            const attachmentCount = printAttachments ? stFiles.length : 0
+            const paragraphs = letter ? letterParagraphs(letter, st.balanceCents, { date: letterDate, attachments: attachmentCount }) : []
+            // Abgeschlossen gilt die eingefrorene Frist, nicht die heutige Einstellung (Durchsicht S2).
+            const frozenDays = Number(letter?.values.Zahlungsfrist)
+            const paymentDays = data.closed && Number.isFinite(frozenDays) && frozenDays > 0 ? frozenDays : landlord?.paymentDeadlineDays
+            const lockedId = `letter-locked-${st.tenancyId}`
             return (
             <div key={st.tenancyId} className={`card statement ${printId === st.tenancyId ? 'print-target' : ''}`}>
-              {/* Nur im Druck, solange Fehler offen sind; deckt auch Strg+P ab (Durchsicht S2 zu #341). */}
-              {data && showsDraftMark(noticesOf(data), !!data.closed) && <div className="print-only draft-mark">{DRAFT_MARK}</div>}
-              {/* Briefkopf (N5, #341): Absender und Datum in einer Zeile, darunter im Druck die Anschrift des Mieters.
-                  Datum ist der Versand, sonst der Tag des Drucks. */}
-              <div className="muted flex flex-wrap justify-between gap-x-4">
-                <span>{letterhead(landlord?.landlordName, property)}</span>
-                <span>{fmtDate(data?.closed?.sentAt ?? localToday())}</span>
-              </div>
               {printsFormerAddress(tenancies.find((t) => t.id === st.tenancyId), localToday()) && (
                 <NoticeBox
                   level="warning"
@@ -612,29 +652,75 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                   fix={onNavigate ? { label: 'Hier beheben → Stammdaten', onClick: () => onNavigate('stammdaten', { kind: 'tenancy', id: st.tenancyId }) } : null}
                 />
               )}
-              <address className="print-only not-italic">
-                {recipientLines(st.tenantName, st.unitName, tenancies.find((t) => t.id === st.tenancyId), property).map((l, i) => <div key={i}>{l}</div>)}
-              </address>
+              {/* Seite 1: das Anschreiben (#415). Datum ist der Versand, sonst der Tag des Drucks. Absender und Anschrift
+                  aus dem Anschreiben, abgeschlossen also eingefroren (Durchsicht S2). */}
+              {letter ? (
+                <>
+                  <Letter
+                    paragraphs={paragraphs}
+                    sender={letter.sender?.name ?? landlord?.landlordName ?? ''}
+                    returnLine={letter.sender?.returnLine ?? letterhead(landlord?.landlordName, property)}
+                    recipient={letter.recipient ?? recipientLines(st.tenantName, st.unitName, tenancy, property)}
+                    date={fmtDate(letterDate)}
+                    foldMarks={printFoldMarks}
+                    draftMark={draftMark ? DRAFT_MARK : null}
+                  />
+                  {exceedsOnePage(paragraphs.map((p) => p.text)) && (
+                    <NoticeBox level="warning" className="no-print" title="Anschreiben länger als eine Seite" action="Das Anschreiben ist voraussichtlich länger als eine Seite und druckt auf der nächsten weiter. Soll es auf eine Seite passen, kürzen Sie die Texte über „Anschreiben bearbeiten“." />
+                  )}
+                </>
+              ) : (
+                <LegacyHead sender={letterhead(landlord?.landlordName, property)} date={letterDate} recipient={recipientLines(st.tenantName, st.unitName, tenancy, property)} />
+              )}
+              {/* Nur im Druck, solange Fehler offen sind; deckt auch Strg+P ab (Durchsicht S2 zu #341). */}
+              {draftMark && <div className="print-only draft-mark">{DRAFT_MARK}</div>}
               <div className="statement-head">
                 <div className="stack tight">
                   <h2>{data ? settlementTitle(data) : `Nebenkostenabrechnung ${label}`}</h2>
-                  <div className="muted">
-                    {st.tenantName} · {st.unitName} · {personsText(st, tenancies.find((t) => t.id === st.tenancyId))} ·
-                    Zeitraum {fmtDate(st.periodStart)} – {fmtDate(st.periodEnd)} ({countOf(st.days, 'Tag', 'Tage')})
-                  </div>
+                  {/* Name und Wohnung stehen im Druck schon in der Anschrift, Zeitraum und Tage im Ergebniskasten (#415). */}
+                  {legacy ? (
+                    <div className="muted">{legacyHeadLine(st, personsText(st, tenancy))}</div>
+                  ) : (
+                    <div className="muted">
+                      <span className="no-print">{st.tenantName} · {st.unitName} · </span>
+                      {personsText(st, tenancy)}
+                    </div>
+                  )}
                   {heatingOnlyNote(st) && <p>{heatingOnlyNote(st)}</p>}
                   {recommendedDeadlineText(st) && <p className="muted no-print">{recommendedDeadlineText(st)}</p>}
                   {st.prepaymentNote && <p className="muted">{st.prepaymentNote}</p>}
                 </div>
+                <div className="row no-print">
                 <button
-                  className="btn secondary no-print"
+                  className="btn secondary"
+                  disabled={isClosed || !templates}
+                  aria-describedby={isClosed ? lockedId : undefined}
+                  onClick={() => setLetterEdit({ kind: 'tenancy', tenancyId: st.tenancyId })}
+                >
+                  Anschreiben bearbeiten
+                </button>
+                {/* Der Grund steht sichtbar daneben, wie bei anderen gesperrten Knöpfen (Durchsicht K10). */}
+                {isClosed && <span id={lockedId} className="muted">{legacy ? 'Vor dem Anschreiben abgeschlossen; gedruckt wird wie bisher.' : 'Abgeschlossen; das Anschreiben ist eingefroren.'}</span>}
+                <button
+                  className="btn secondary"
                   disabled={printAttachments && !attachmentsReady}
                   title={printAttachments && !attachmentsReady ? 'Belegkopien werden noch vorbereitet …' : undefined}
                   onClick={() => { void goOnPrinting().then((ok) => { if (ok) setPrintId(st.tenancyId) }) }}
                 >
                   🖨 Drucken / PDF
                 </button>
+                </div>
               </div>
+              {!legacy && (
+                <dl className="result-box">
+                  {resultRows(st, paymentDays).map((r) => (
+                    <Fragment key={r.label}>
+                      <dt className={r.strong ? 'result-strong' : undefined}>{r.label}</dt>
+                      <dd className={r.strong ? 'result-strong' : undefined}>{r.value}</dd>
+                    </Fragment>
+                  ))}
+                </dl>
+              )}
 
               {st.rows.length === 0 ? (
                 <div className="empty">Keine Kostenpositionen für {label} erfasst.</div>
@@ -742,12 +828,16 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                     ))}
                     <tr>
                       <td colSpan={3}>
-                        {st.balanceCents >= 0 ? 'Guthaben zu Ihren Gunsten' : 'Nachzahlung zu Ihren Lasten'}
+                        {st.balanceCents < 0 ? 'Nachzahlung zu Ihren Lasten' : st.balanceCents > 0 || legacy ? 'Guthaben zu Ihren Gunsten' : 'Ausgeglichen, weder Nachzahlung noch Guthaben'}
                       </td>
                       <td className="num">
-                        <span className={`saldo ${st.balanceCents >= 0 ? '' : ''}`} style={{ color: st.balanceCents >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                          {fmtEuro(Math.abs(st.balanceCents))}
-                        </span>
+                        {/* Neutral fett, auch die Nachzahlung: In Rot las sie sich wie eine Mahnung (#415). Vor #415
+                            abgeschlossen bleibt es, wie es gedruckt wurde (Durchsicht S1). */}
+                        {legacy ? (
+                          <span className="saldo" style={{ color: st.balanceCents >= 0 ? 'var(--green)' : 'var(--red)' }}>{fmtEuro(Math.abs(st.balanceCents))}</span>
+                        ) : (
+                          <span className="saldo">{fmtEuro(Math.abs(st.balanceCents))}</span>
+                        )}
                       </td>
                     </tr>
                   </tfoot>
@@ -763,27 +853,8 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
               {(data?.heating ?? []).map((h) => <FuelBlock key={`fuel:${h.plantId}:${h.period}`} view={fuelBlock(h)} />)}
               {st.rows.length > 0 && (
                 <>
-                  <p>
-                    {st.balanceCents < 0 ? (
-                      <>
-                        Es ergibt sich eine <strong>Nachzahlung von {fmtEuro(-st.balanceCents)}</strong>.
-                        Bitte überweisen Sie den Betrag innerhalb von {landlord?.paymentDeadlineDays || 30} Tagen
-                        nach Zugang dieser Abrechnung
-                        {landlord?.iban ? <> auf das Konto <strong>{formatIban(landlord.iban)}</strong>{landlord.landlordName ? ` (${landlord.landlordName})` : ''}</> : null}.
-                      </>
-                    ) : (
-                      <>
-                        Es ergibt sich ein <strong>Guthaben von {fmtEuro(st.balanceCents)}</strong>.
-                        Der Betrag wird Ihnen erstattet bzw. mit der nächsten Mietzahlung verrechnet.
-                      </>
-                    )}
-                  </p>
-                  {printAdjust && st.suggestedMonthlyCents > 0 && (
-                    <p>
-                      Auf Basis dieser Abrechnung wird die {adjustedPrepaymentLabel(st, separateHeating)} gemäß
-                      § 560 Abs. 4 BGB ab dem übernächsten Monat auf <strong>{fmtEuro(st.suggestedMonthlyCents)}</strong> angepasst
-                      ({suggestionBasis(st, data.daysInYear)}).
-                    </p>
+                  {legacy && (
+                    <LegacyResult st={st} landlord={landlord} adjust={settings?.printAdjustSuggestion !== false} separate={suggestionWithoutHeating(data, target, choices.length)} daysInYear={data.daysInYear} />
                   )}
                   {st.total35aCents > 0 && (
                     <div className="stack tight">
@@ -811,12 +882,8 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                   )}
                 </>
               )}
-              <p className="muted">
-                {costBasisText(label, calendar)}
-                {printAttachments && stFiles.length > 0
-                  ? ` Kopien der zugrunde liegenden Belege sind als Anlage beigefügt (${stFiles.length} Beleg${stFiles.length > 1 ? 'e' : ''}).`
-                  : ' Die zugrunde liegenden Belege können nach Terminvereinbarung eingesehen werden.'}
-              </p>
+              {/* Belegeinsicht und beigefügte Belege stehen seit #415 im Anschreiben. */}
+              <p className="muted">{costBasisText(label, calendar)}{legacy ? legacyReceiptsText(attachmentCount) : ''}</p>
               {printAttachments && stFiles.length > 0 && (
                 <>
                   <div className="muted no-print">
@@ -878,6 +945,45 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
           )}
         </>
       )}
+      {(() => {
+        if (!letterEdit || !templates || !data) return null
+        if (letterEdit.kind === 'property') {
+          const first = data.statements[0]
+          return (
+            <LetterDrawer
+              open
+              level="property"
+              title={`Anschreiben für „${property?.name || 'dieses Objekt'}“`}
+              intro="Gilt für alle Mieter dieses Objekts, solange Sie für einen Mieter nichts anderes festlegen. Ohne eigenen Text gilt die Vorlage aus den Einstellungen."
+              base={mergeLetterTexts(templates.installation)}
+              own={templates.property ?? {}}
+              values={first ? letterOf(data, first, { settings, property, tenancies }).values : {}}
+              onClose={() => setLetterEdit(null)}
+              onSave={saveLetter}
+            />
+          )
+        }
+        const st: Statement | undefined = data.statements.find((x) => x.tenancyId === letterEdit.tenancyId)
+        if (!st) return null
+        const letter = letterOf(data, st, { settings, property, tenancies })
+        const own = tenancyLetters[st.tenancyId]
+        return (
+          <LetterDrawer
+            open
+            key={st.tenancyId}
+            level="tenancy"
+            title={`Anschreiben an ${st.tenantName}`}
+            intro={`Gilt nur für diese Abrechnung von ${st.tenantName}. Mit dem Abschluss friert der Text ein; eine spätere Änderung der Vorlage ändert dann nicht mehr, was zugestellt wurde.`}
+            base={mergeLetterTexts(templates.installation, templates.property)}
+            own={own?.texts ?? {}}
+            values={{ ...letter.values, Datum: fmtDate(data.closed?.sentAt ?? localToday()) }}
+            adjust={{ mode: own?.adjustment?.mode ?? letter.adjustment.mode, cents: own?.adjustment?.cents ?? null, suggestedCents: st.suggestedMonthlyCents, own: !!own?.adjustment, defaultMode: templates.adjustDefault }}
+            shown={letterParagraphs(letter, st.balanceCents, { date: localToday(), attachments: 0 }).map((p) => p.block)}
+            onClose={() => setLetterEdit(null)}
+            onSave={saveLetter}
+          />
+        )
+      })()}
     </>
   )
 }

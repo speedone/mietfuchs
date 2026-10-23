@@ -69,6 +69,8 @@ const FIELD_NAMES: Record<string, string> = {
   type: 'Zählertyp',
   deposit_status: 'Stand der Kaution',
   state: 'Bundesland',
+  block: 'den Baustein des Anschreibens',
+  mode: 'die Anpassung der Vorauszahlung',
 }
 
 const fieldName = (column: string): string => FIELD_NAMES[column] ?? `„${column}“`
@@ -210,6 +212,10 @@ const OWN_CHECK_MESSAGES: Readonly<Record<string, string>> = {
   heating_monthly_info_reference_positive: 'Der Vergleichswert ist eine Zahl größer als 0 (kWh je m² Wohnfläche im Monat).',
   heating_monthly_info_reference_source_complete: 'Bitte nennen Sie die Quelle des Vergleichswerts, etwa die Vergleichsdaten Ihres Ablesedienstes. Ein Durchschnitt aus Ihrem eigenen Haus ist kein zulässiger Vergleich.',
   heating_monthly_info_sent_on_valid: 'Der Tag der Mitteilung ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie ihn im Kalender.',
+  // Anschreiben zur Abrechnung (#415); shared/letter.ts prüft vorher.
+  tenancy_letter_texts_doc_complete: 'Zu welcher Abrechnung das Anschreiben gehört, fehlt. Das ist ein Fehler in Mietfuchs und keiner in Ihren Daten. Bitte melden Sie ihn.',
+  tenancy_letter_adjustments_doc_complete: 'Zu welcher Abrechnung die Anpassung der Vorauszahlung gehört, fehlt. Das ist ein Fehler in Mietfuchs und keiner in Ihren Daten. Bitte melden Sie ihn.',
+  tenancy_letter_adjustments_cents_valid: 'Einen eigenen Betrag für die Vorauszahlung gibt es nur bei „Eigenen Betrag ankündigen“, und er ist nicht negativ.',
   // CO₂-Erstattung an Mieter, die selbst heizen (Heizung PR 19); db/co2Refunds.ts prüft vorher.
   tenancies_self_supply_kind_valid: 'Welche Heizung der Mieter selbst betreibt, gibt es nur bei „Mieter heizt selbst“. Bitte laden Sie die Seite neu.',
   co2_refunds_settled_or_paid_valid: 'Eine CO₂-Erstattung wird entweder in einer Abrechnung verrechnet oder ausgezahlt, nicht beides.',

@@ -19,11 +19,13 @@ const fs = (await import(/* @vite-ignore */ fsModule)) as { readFileSync: (path:
 const css = fs.readFileSync(new URL('./index.css', import.meta.url), 'utf8')
 const twCss = fs.readFileSync(new URL('./tw.css', import.meta.url), 'utf8')
 const fieldsCss = fs.readFileSync(new URL('./fields.css', import.meta.url), 'utf8')
+// Das Anschreiben (#415) hat eigene Regeln in der Schicht `components`; seine Klassen zählen für S4, S17 und S20 mit.
+const letterCss = fs.readFileSync(new URL('./letter.css', import.meta.url), 'utf8')
 
 // Tailwind (#346) mit dem Theme aus tw.css, ohne index.css und ohne die Einschränkungen der Suche
 // (`@source`): Gefragt wird, welche Klassennamen Tailwind als Utility kennt.
 const compileTw = (source: string) => compile(
-  source.replace(/@import "\.\/(?:index|fields)\.css"[^;]*;/g, '').replace(/@source[^;]*;/g, ''),
+  source.replace(/@import "\.\/(?:index|fields|letter)\.css"[^;]*;/g, '').replace(/@source[^;]*;/g, ''),
   {
     base: '.',
     loadStylesheet: async (id) => ({
@@ -104,7 +106,7 @@ test('Befehle in <pre> sind per Tastatur zu rollen', () => {
 const HOOK_CLASSES = new Set(['assessment-review'])
 
 // Nur Selektoren zählen: ohne Kommentare und ohne den Inhalt der Regeln (Werte wie url(x.png)).
-const cssSelectors = [...css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{/g)].map((m) => m[1] ?? '').join(' ')
+const cssSelectors = [...`${css}\n${letterCss}`.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{/g)].map((m) => m[1] ?? '').join(' ')
 const definedClasses = new Set([...cssSelectors.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)].map((m) => m[1] ?? ''))
 
 /** Jedes Wort, das eine Seite oder ein Baustein als Klasse setzt, mit der ersten Datei. */
@@ -217,7 +219,7 @@ test('S17: keine Farbwerte außerhalb der Token-Blöcke', () => {
     "@media not print { :root[data-theme='dark'] { --z: black; } }",
   ].join('\n'))).toEqual(['.x: #123456', '.y: rgba(', ':root .w: white', '.v: color-mix(', '.u: oklch('])
   expect(css).toContain('--bg: #')
-  const found = [...colorOffenders(css), ...colorOffenders(twCss).map((o) => `tw.css ${o}`)]
+  const found = [...colorOffenders(css), ...colorOffenders(twCss).map((o) => `tw.css ${o}`), ...colorOffenders(letterCss).map((o) => `letter.css ${o}`)]
   expect(found.filter((o) => !COLOR_EXCEPTIONS.has(o))).toEqual([])
   for (const exception of COLOR_EXCEPTIONS.keys()) expect(found, `${exception} kommt nicht mehr vor; aus der Liste streichen`).toContain(exception)
 })

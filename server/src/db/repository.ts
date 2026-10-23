@@ -2641,12 +2641,16 @@ export async function changeTenant(
 // auseinander, sobald jemand ein Feld ergänzt, und gemerkt hätte man es erst daran, dass eine
 // Einstellung nach dem Umstieg anders dasteht als nach dem Speichern.
 export async function writeSettings(db: Database, settingsToStore: MigratedSettings): Promise<void> {
-  await db.transaction(async (tx) => {
-    await tx.delete(aiSlots)
-    await tx.delete(settings)
-    await tx.insert(settings).values(settingsRow(settingsToStore))
-    await tx.insert(aiSlots).values(aiSlotRows(settingsToStore.ai))
-  })
+  await db.transaction((tx) => writeSettingsIn(tx, settingsToStore))
+}
+
+// Dasselbe innerhalb einer Transaktion des Aufrufers (Anschreiben, #415: Vorlage und Vorgabe der
+// Anpassung in einem Vorgang).
+export async function writeSettingsIn(tx: Executor, settingsToStore: MigratedSettings): Promise<void> {
+  await tx.delete(aiSlots)
+  await tx.delete(settings)
+  await tx.insert(settings).values(settingsRow(settingsToStore))
+  await tx.insert(aiSlots).values(aiSlotRows(settingsToStore.ai))
 }
 
 // ---------- Die abgeschlossene Abrechnung ----------

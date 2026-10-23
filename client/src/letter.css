@@ -1,0 +1,63 @@
+/* Das Anschreiben zur Abrechnung und der Ergebniskasten (#415). Eine eigene Datei in der Schicht
+   `components` (wie fields.css), weil index.css nur noch kleiner wird (Wächter S20).
+
+   Am Bildschirm ist das Anschreiben eine Vorschau im Kasten. Im Druck steht es nach DIN 5008 Form B auf
+   einer eigenen Seite; die Maße der Norm gelten ab der Blattkante: Anschriftfeld 20 mm von links, 45 mm von
+   oben, 85 × 45 mm, darin oben die Zusatz- und Vermerkzone (17,7 mm) mit der Rücksendeangabe, darunter die
+   Anschriftzone; der Text im Feld beginnt 5 mm weiter rechts, auf der Fluchtlinie des Brieftexts (25 mm).
+   Informationsblock 125 mm von links, 50 mm von oben. Betreff ab 98,46 mm. Falzmarken bei 105 und 210 mm,
+   Lochmarke bei 148,5 mm. Wer im Druckdialog eigene Ränder wählt, verschiebt das Anschriftfeld. */
+
+.letter { position: relative; max-width: 46rem; margin: 0 0 var(--space-6); padding: var(--space-6); border: 1px solid var(--line); border-radius: var(--radius-m); background: var(--card); }
+.letter-head { font-weight: var(--weight-strong); margin-bottom: var(--space-4); }
+.letter-window { margin-bottom: var(--space-4); }
+.letter-return { display: inline-block; font-size: var(--text-xs); color: var(--muted); border-bottom: 1px solid var(--line); margin-bottom: var(--space-1); }
+.letter-address { font-style: normal; }
+.letter-info { margin-bottom: var(--space-4); }
+.letter-body p { margin: 0 0 var(--space-3); white-space: pre-line; }
+.letter-body .letter-subject { font-weight: var(--weight-bold); }
+.letter-body .letter-greeting { margin-bottom: 0; }
+.letter-body .letter-signature { margin-top: var(--space-8); }
+.letter-mark { display: none; }
+
+/* Bearbeiten im Seitenfenster: je Baustein Feld, Platzhalter als Chips, Vorschau */
+.letter-edit { margin-bottom: var(--space-4); }
+.letter-chips { display: flex; flex-wrap: wrap; gap: var(--space-1); align-items: center; margin-top: var(--space-1); }
+.chip-button { font: inherit; font-size: var(--text-xs); padding: 2px var(--space-2); border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--chip); color: var(--text); cursor: pointer; }
+.chip-button:hover { background: var(--hover); }
+.chip-button:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.letter-preview { margin: var(--space-1) 0 0; font-size: var(--text-s); white-space: pre-line; }
+
+/* Ergebnis oben in der Aufstellung: Zeitraum, Kosten, Vorauszahlungen, Ergebnis, Frist */
+.result-box { display: grid; grid-template-columns: max-content max-content; gap: var(--space-1) var(--space-6); margin: var(--space-3) 0 var(--space-4); padding: var(--space-3) var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-m); }
+.result-box dt { color: var(--muted); }
+.result-box dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.result-box .result-strong { color: var(--text); font-weight: var(--weight-bold); }
+
+/* Seitenränder: Chromium legt den Text aller Seiten in einer Breite an. Hätte die Seite des Anschreibens andere
+   Ränder als die übrigen, liefe die Aufstellung rechts aus dem Blatt (nachgemessen). Deshalb hat jede Seite
+   12 mm Rand, auch die des Briefs, und alle Maße des Briefs stehen unten abzüglich dieser 12 mm (`--page`).
+   So hat auch eine Folgeseite eines langen Briefs oben und unten ihren Rand (Durchsicht S3); die Seite warnt,
+   wenn der Brief voraussichtlich nicht auf eine Seite passt (`exceedsOnePage`). */
+@page { size: A4; margin: 12mm; }
+
+@media print {
+  .letter { --page: 12mm; min-height: calc(297mm - 2 * var(--page) - 1mm); box-sizing: border-box; max-width: none; margin: 0; padding: 0; border: none; border-radius: 0; background: none; font-size: 11pt; line-height: 1.4; color: var(--text); break-after: page; page-break-after: always; }
+  .letter-head { position: absolute; top: calc(15mm - var(--page)); left: calc(25mm - var(--page)); right: calc(20mm - var(--page)); margin: 0; font-size: 12pt; }
+  .letter-window { position: absolute; top: calc(45mm - var(--page)); left: calc(20mm - var(--page)); width: 85mm; height: 45mm; margin: 0; overflow: hidden; }
+  .letter-return { position: absolute; left: 5mm; right: 0; bottom: 27.3mm; display: block; margin: 0; padding-bottom: 0.5mm; font-size: 7pt; line-height: 1.2; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .letter-address { position: absolute; top: 17.7mm; left: 5mm; right: 0; height: 27.3mm; font-size: 10pt; line-height: 1.25; }
+  .letter-info { position: absolute; top: calc(50mm - var(--page)); left: calc(125mm - var(--page)); right: calc(20mm - var(--page)); margin: 0; font-size: 10pt; }
+  .letter-info .muted { color: var(--text); }
+  .letter-body { padding: calc(98.46mm - var(--page)) calc(20mm - var(--page)) 0 calc(25mm - var(--page)); }
+  .letter-body p { margin: 0 0 4.2mm; }
+  .letter-body .letter-signature { margin-top: 12mm; }
+  .letter-draft { position: absolute; top: 0; left: calc(25mm - var(--page)); margin: 0; }
+  /* Die Marken stehen am Rand des Satzspiegels, 12 bis 17 mm von der Blattkante: Was in den Seitenrand ragt,
+     schneidet Chromium ab (nachgemessen), und vor dem Text bei 25 mm bleibt Abstand. */
+  .letter-mark { display: block; position: absolute; left: 0; width: 5mm; border-top: 0.3mm solid var(--text); }
+  .letter-fold-1 { top: calc(105mm - var(--page)); }
+  .letter-punch { top: calc(148.5mm - var(--page)); width: 8mm; }
+  .letter-fold-2 { top: calc(210mm - var(--page)); }
+  .result-box { break-inside: avoid; page-break-inside: avoid; }
+}

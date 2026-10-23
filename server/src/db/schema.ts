@@ -60,6 +60,8 @@ import type {
   HotWater,
   InsulationRule,
   InterimGapStatus,
+  LetterAdjustmentMode,
+  LetterBlock,
   NewDevicesInstall,
   MeterType,
   PeriodKey,
@@ -107,6 +109,9 @@ export const DEPOSIT_STATUS = exactly<DepositStatus>()(['offen', 'erhalten', 'te
 const AI_PROVIDERS = exactly<AiProviderKind>()(['ollama', 'openai'] as const)
 const AI_JSON_MODES = exactly<AiJsonMode>()(['auto', 'schema', 'object', 'prompt'] as const)
 const AI_SLOT_NAMES = exactly<AiSlotName>()(['text', 'images'] as const)
+// Die Bausteine des Anschreibens und die Wahl der Anpassung (#415); Beschriftungen in shared/letter.ts.
+export const LETTER_BLOCKS = exactly<LetterBlock>()(['subject', 'salutation', 'intro', 'credit', 'backPayment', 'balanced', 'adjustSuggestion', 'adjustCustom', 'receipts', 'attachments', 'closing', 'greeting', 'signature'] as const)
+export const LETTER_ADJUSTMENT_MODES = exactly<LetterAdjustmentMode>()(['none', 'suggestion', 'custom'] as const)
 export const UPDATE_CHECK = exactly<NonNullable<Settings['updateCheck']>>()(['on', 'off'] as const)
 
 // Prüfbedingung „dieser Betrag ist nicht negativ“. Als Helfer, damit an jeder Stelle dasselbe
@@ -1508,6 +1513,8 @@ export const settings = sqliteTable(
     ollamaModel: text('ollama_model').notNull(),
     printAdjustSuggestion: integer('print_adjust_suggestion', { mode: 'boolean' }),
     printAttachments: integer('print_attachments', { mode: 'boolean' }),
+    // Falz- und Lochmarken auf dem Anschreiben (#415); ohne Angabe aus.
+    printFoldMarks: integer('print_fold_marks', { mode: 'boolean' }),
     // Ohne Wert wurde noch nicht gefragt; 'on' erlaubt die Abfrage bei GitHub.
     updateCheck: text('update_check', { enum: UPDATE_CHECK }),
     updateDismissed: text('update_dismissed'),
@@ -1870,5 +1877,72 @@ export const heatingMonthlyInfo = sqliteTable(
     check('heating_monthly_info_reference_positive', sql.raw('"reference_kwh_per_m2" IS NULL OR "reference_kwh_per_m2" > 0')),
     check('heating_monthly_info_reference_source_complete', sql.raw(`"reference_kwh_per_m2" IS NULL OR length(trim(coalesce("reference_source", ''))) > 0`)),
     check('heating_monthly_info_sent_on_valid', sql.raw(`"sent_on" IS NULL OR "sent_on" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
+  ],
+)
+
+// ---------- Anschreiben zur Abrechnung (#415) ----------
+
+// Die Texte des Anschreibens, je Ebene eine Tabelle: die Vorlage der Installation, die des Objekts und
+// die einmalige Anpassung je Mieter für eine Abrechnung. Eine fehlende Zeile heißt „die Ebene darüber
+// gilt“ (oben die Vorgaben von Mietfuchs in shared/letter.ts), ein leerer Text „bewusst weggelassen“.
+// Zeilen statt Spalten, weil alle Bausteine dieselbe Gestalt haben; die Prüfung der Platzhalter steht
+// in shared/letter.ts und gilt beim Speichern, die Datenbank sichert nur den Baustein.
+export const letterTexts = sqliteTable(
+  'letter_texts',
+  {
+    block: text('block', { enum: LETTER_BLOCKS }).primaryKey().notNull(),
+    text: text('text').notNull(),
+  },
+  () => [oneOf('letter_texts_block_known', 'block', LETTER_BLOCKS)],
+)
+
+// Fällt mit dem Objekt: Gelöscht wird ohnehin nur ein leeres Objekt, die Vorlage gehört zu ihm.
+export const propertyLetterTexts = sqliteTable(
+  'property_letter_texts',
+  {
+    propertyId: text('property_id').notNull().references(() => properties.id, { onDelete: 'cascade' }),
+    block: text('block', { enum: LETTER_BLOCKS }).notNull(),
+    text: text('text').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.propertyId, t.block] }),
+    oneOf('property_letter_texts_block_known', 'block', LETTER_BLOCKS),
+  ],
+)
+
+// Je Mietverhältnis und Abrechnung (`doc`: der Zeitraum `JJJJ-MM` der Betriebskostenabrechnung, bei einer
+// getrennten Heizkostenabrechnung `heating:<Anlage>:<Heizperiode>`). Gilt, solange die Abrechnung offen
+// ist; beim Abschluss friert der gedruckte Text im Stand ein, diese Zeilen bleiben für ein Wiederöffnen.
+// Kein Verweis auf die Anlage: Eine verwaiste Zeile wird nie gelesen, weil es ihre Abrechnung nicht gibt.
+export const tenancyLetterTexts = sqliteTable(
+  'tenancy_letter_texts',
+  {
+    tenancyId: text('tenancy_id').notNull().references(() => tenancies.id, { onDelete: 'cascade' }),
+    doc: text('doc').notNull(),
+    block: text('block', { enum: LETTER_BLOCKS }).notNull(),
+    text: text('text').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.tenancyId, t.doc, t.block] }),
+    oneOf('tenancy_letter_texts_block_known', 'block', LETTER_BLOCKS),
+    check('tenancy_letter_texts_doc_complete', sql.raw('length("doc") > 0')),
+  ],
+)
+
+// Die Anpassung der Vorauszahlung je Mietverhältnis und Abrechnung; ohne Zeile gilt die Vorgabe der
+// Einstellungen (`print_adjust_suggestion`). Ein eigener Betrag nur bei `custom`.
+export const tenancyLetterAdjustments = sqliteTable(
+  'tenancy_letter_adjustments',
+  {
+    tenancyId: text('tenancy_id').notNull().references(() => tenancies.id, { onDelete: 'cascade' }),
+    doc: text('doc').notNull(),
+    mode: text('mode', { enum: LETTER_ADJUSTMENT_MODES }).notNull(),
+    cents: integer('cents'),
+  },
+  (t) => [
+    primaryKey({ columns: [t.tenancyId, t.doc] }),
+    oneOf('tenancy_letter_adjustments_mode_known', 'mode', LETTER_ADJUSTMENT_MODES),
+    check('tenancy_letter_adjustments_doc_complete', sql.raw('length("doc") > 0')),
+    check('tenancy_letter_adjustments_cents_valid', sql.raw(`("mode" = 'custom' AND "cents" IS NOT NULL AND typeof("cents") = 'integer' AND "cents" >= 0) OR ("mode" <> 'custom' AND "cents" IS NULL)`)),
   ],
 )

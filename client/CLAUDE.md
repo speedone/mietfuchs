@@ -82,9 +82,40 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   fehlende Schritt mit Knopf, ohne Entwurf, Frist, Kennzahlen; ein gesperrter Knopf nennt seinen
   Grund (`aria-describedby`). Nach dem Abschluss nennt die Unterzeile des Cockpits Stand und offene
   Punkte (`cockpitSubtitle`).
-- **Druckkopf**: `letterhead` lässt einen Objektnamen weg, der schon in der Adresse steht; Datum und
-  Anschrift des Mieters (`recipientLines`); fehlt nach Auszug die neue Anschrift, warnt die Seite
-  (`printsFormerAddress`). Der Rechenweg ([CalcSteps.tsx](src/components/CalcSteps.tsx)) ist immer
+- **Anschreiben als Seite 1** (#415, [Letter.tsx](src/components/Letter.tsx), Logik in
+  [letterView.ts](src/letterView.ts)): ein Brief nach DIN 5008 Form B vor jeder Aufstellung. Die Druckmaße stehen in
+  [letter.css](src/letter.css) (Schicht `components` wie fields.css, weil index.css nur kleiner wird; S4, S17 und S20
+  lesen die Datei mit): **jede Seite hat 12 mm Rand** (`@page`), denn Chromium legt alle Seiten in einer Breite an,
+  und andere Ränder auf der Briefseite schnitten die Aufstellung rechts ab (nachgemessen). Die Maße der Norm stehen
+  abzüglich dieser 12 mm (`--page`): Anschriftfeld 20/45 mm, 85 × 45 mm mit Rücksendeangabe in der Vermerkzone,
+  Informationsblock 125/50 mm, Betreff ab 98,46 mm, Falz- und Lochmarken bei 105, 148,5 und 210 mm (12 bis 17 mm von
+  der Kante, im Seitenrand schneidet Chromium ab) nur mit der Druckeinstellung „Falz- und Lochmarken drucken“. Ein
+  langer Brief druckt auf einer Folgeseite mit Rand weiter; Seite und Seitenfenster warnen vorher
+  (`exceedsOnePage`, eine Schätzung nach Zeilen). Die Texte setzt der Server ein (`Settlement.letters`); die Seite
+  wählt die Bausteine (`chooseLetterBlocks`) und setzt nur `{Datum}` und `{AnzahlBelege}` ein. Absender,
+  Rücksendeangabe, Anschrift und (abgeschlossen) die Zahlungsfrist im Ergebniskasten kommen aus dem Anschreiben,
+  also eingefroren. **Eine vor #415 abgeschlossene Abrechnung** (ohne `letters`) druckt im bisherigen Aufbau
+  ([LegacyStatement.tsx](src/components/LegacyStatement.tsx)): kein Anschreiben, kein Ergebniskasten, Kopf und Sätze
+  wie damals. Fehlt `letters` bei einer offenen (Testattrappe), entsteht es aus den Vorgaben (`letterOf`). Der Vermerk
+  „Entwurf, nicht versenden“ steht dann auf beiden Seiten. **Ergebniskasten** (`resultRows`) oben in der Aufstellung, die Nachzahlung neutral fett;
+  die Kopfzeile darunter nennt im Druck nur die Personen (Name und Wohnung stehen in der Anschrift, Zeitraum und Tage
+  im Kasten). Die Sätze zu Zahlung, Erstattung, § 560 und Belegeinsicht stehen nur noch im Anschreiben; unter der
+  Tabelle bleiben § 35a und „Abgerechnet werden die Kosten …“.
+- **Anschreiben bearbeiten** ([LetterDrawer.tsx](src/components/LetterDrawer.tsx), Logik in
+  [letterForm.ts](src/letterForm.ts)): ein Seitenfenster für drei Ebenen, die Vorlage aller Objekte
+  ([LetterTemplateCard.tsx](src/components/LetterTemplateCard.tsx) in den Einstellungen, mit der Vorgabe der Anpassung),
+  das Objekt (Karte „Anschreiben“ auf der Seite Abrechnung) und den Mieter („Anschreiben bearbeiten“, nur offen).
+  Je Baustein ein Textfeld, darunter die Platzhalter als Chips (fügen an der Einfügemarke ein) und „Auf Vorgabe
+  zurücksetzen“, dazu die Vorschau mit den Werten des Mieters bzw. Beispielwerten. Ein Text gleich der Ebene darüber
+  ist keine eigene Angabe (`setText`), geschickt wird nur, was sich geändert hat (`textChanges`); ein unbekannter
+  Platzhalter ist eine Meldung am Feld (`letterProblems`, dieselbe Prüfung wie der Server). Ein eigener Betrag über
+  dem Vorschlag bekommt den Hinweis zu § 560 Abs. 4 BGB (`adjustmentHint`, nur wenn es einen Vorschlag gibt),
+  gesperrt wird nichts. Die Vorschau setzt den neuen Betrag aus dem Entwurf ein (`draftNewCents`); „Anpassung auf
+  Vorgabe zurücksetzen“ nimmt die eigene Wahl des Mieters weg (`adjustment: null`). Ein gesperrter Knopf nennt den
+  Grund daneben.
+- **Druckkopf**: `letterhead` lässt einen Objektnamen weg, der schon in der Adresse steht, und ist die
+  Rücksendeangabe des Anschreibens; Anschrift des Mieters (`recipientLines`); fehlt nach Auszug die neue Anschrift,
+  warnt die Seite (`printsFormerAddress`). Der Rechenweg ([CalcSteps.tsx](src/components/CalcSteps.tsx)) ist immer
   `no-print`.
 
 ## Lexikon und Anleitungen

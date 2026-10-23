@@ -171,6 +171,43 @@ Heizung betreffenden in docs/heizung.md. Was sich nicht aus dem Code erschließt
   `closed_settlement_history` (`…/history`, #56). `taxReport` nimmt den Eigenanteil aus dem
   eingefrorenen Stand.
 
+## Anschreiben zur Abrechnung (#415)
+
+Bausteine, Platzhalter und Vorgabetexte stehen einmal in [shared/letter.ts](../../shared/letter.ts), für Server und
+Oberfläche. Ein Baustein ist Text mit Platzhaltern aus einer festen Liste (`{Betrag}`, `LETTER_FIELDS`), **ohne
+Logik**: Welcher erscheint (Guthaben, Nachzahlung, ausgeglichen, Vorschlag oder eigener Betrag, Belegeinsicht oder
+Belege beigefügt), entscheidet `chooseLetterBlocks`. Beträge und Daten formatiert Mietfuchs; ein leerer Wert nimmt
+das Leerzeichen davor mit (`{Konto}` ohne IBAN ergibt den bisherigen Satz ohne Konto).
+
+- **Die Vorgaben sind die bisherigen Sätze**, wortgleich, wo es sie gab (letter.test.ts). Neu: Betreff, Anrede,
+  Einleitung, „ausgeglichen“ (bei 0 € stand vorher „Guthaben von 0,00 €“), Schluss, Gruß, Unterschrift.
+- **Ebenen** ([db/letters.ts](db/letters.ts), Schritt 0065): `letter_texts` (Installation), `property_letter_texts`
+  (fällt mit dem Objekt), `tenancy_letter_texts` und `tenancy_letter_adjustments` je Mietverhältnis und Abrechnung
+  (`doc`: Zeitraum, bei Weg d `heating:<Anlage>:<Heizperiode>`; fällt mit dem Mietverhältnis). Eine fehlende Zeile
+  heißt „Ebene darüber gilt“, ein leerer Text „weglassen“. `PUT` nach Anwesenheit des Schlüssels, `null` entfernt.
+  Die Vorgabe der Anpassung ist die Spalte `print_adjust_suggestion` (der frühere Schalter, ohne Umbenennung, sein
+  Wert gilt weiter); `print_fold_marks` ist die Druckeinstellung der Falzmarken.
+- **Je Mieter gespeichert, nicht nur für den Druck**: Druckte der Vermieter einen angepassten Text und schlösse
+  danach ab, fröre sonst ein anderer Text ein als der, der beim Mieter liegt. Gespeichert wird nur, solange die
+  Abrechnung offen ist (409 danach); beim Wiederöffnen gilt die gespeicherte Anpassung wieder.
+- **Der Server setzt die Werte ein** (`lettersOf` in shared/letter.ts, gelesen über `lettersFor` in
+  [letter.ts](letter.ts)) und liefert `letters` neben `statements`, offen wie abgeschlossen. **Der Abschluss friert
+  es im Stand ein** (im selben Vorgang wie die Zahlen); danach ändert keine Vorlage mehr, was zugestellt wurde.
+  `{Datum}` und `{AnzahlBelege}` bleiben Platzhalter, denn sie gehören zum Druck (Versanddatum, mitgedruckte
+  Belege). `deviation` vergleicht weiter nur Zahlen.
+- **Vor #415 abgeschlossen** heißt: kein Anschreiben im Stand, und die Route ergänzt auch keines (`letters` fehlt).
+  Was zugestellt wurde, ändert eine Programmänderung nicht rückwirkend; die Seite druckt den bisherigen Aufbau.
+- Werte werden beim Einsetzen maskiert (`{`, `}` in einem Namen), damit der zweite Durchgang beim Druck sie nie als
+  Platzhalter liest. Absender, Rücksendeangabe und Anschrift stehen im Anschreiben (`sender`, `recipient`) und
+  frieren mit ein. `PUT /api/letter-texts` schreibt Texte und Vorgabe der Anpassung in einer Transaktion.
+- **Geprüft wird beim Speichern** mit `parseLetterTexts` (unbekannter Platzhalter, ein Platzhalter, den es im
+  Baustein nicht gibt, einzelne Klammern, Länge): 400 mit dem Baustein im Satz. Backup und Wiederherstellen nehmen
+  die Tabellen mit dem Schnappschuss der Datenbank mit; ein Archiv ohne sie ergibt die Vorgaben, der eingefrorene
+  Eingang kennt sie nicht. Validator und Umstieg berührt das nicht (die db.json kennt kein Anschreiben).
+- Routen: `GET`/`PUT /api/letter-texts` (Installation, `adjustDefault`), `PUT /api/properties/:id/letter-texts`,
+  `GET …/letters` und `PUT …/letters/:tenancyId` unter `/api/settlement/:period` und
+  `/api/heating-settlement/:plant/:period`.
+
 ## Der Schnappschuss (#55)
 
 [snapshot.ts](snapshot.ts): Die Berechnung liest den Speicher nicht selbst, sie bekommt einen

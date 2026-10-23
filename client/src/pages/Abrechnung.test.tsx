@@ -149,8 +149,8 @@ test('Vermieteranteil: die Spalte „Grund“ nennt die tatsächlichen Gründe d
 test('Kopfzeile ohne Adresse endet nicht mit einem Trenner', async () => {
   show()
   await screen.findByText(/manuell angepasst/, {}, SLOW)
-  // Seit N5 (#341) steht das Datum rechts daneben; die Kopfzeile selbst ist der erste Teil.
-  const kopf = document.querySelector('.card.statement > .muted > span')
+  // Seit #415 ist sie die Rücksendeangabe über der Anschrift des Anschreibens.
+  const kopf = document.querySelector('.card.statement .letter-return')
   expect(kopf?.textContent?.trim()).toBe('A')
 })
 
@@ -217,11 +217,12 @@ test('IBAN (#279): auf der Abrechnung in Vierergruppen, eine ungültige, wie sie
       </PropertyProvider>
     </PeriodProvider>,
   )
+  // Seit #415 im Anschreiben, im Satz zur Nachzahlung.
   mit('DE89370400440532013000')
-  expect(await screen.findByText('DE89 3704 0044 0532 0130 00', undefined, SLOW)).toBeTruthy()
+  expect(await screen.findByText(/auf das Konto DE89 3704 0044 0532 0130 00 \(Erika\)\./, undefined, SLOW)).toBeTruthy()
   cleanup()
   mit('de00 1111')
-  expect(await screen.findByText('de00 1111', undefined, SLOW)).toBeTruthy()
+  expect(await screen.findByText(/auf das Konto de00 1111 \(Erika\)\./, undefined, SLOW)).toBeTruthy()
 })
 
 // #319: Meldet der Server beim Abschließen Fehler, nennt der Dialog sie mit Titel und „Hier beheben →“,
@@ -450,9 +451,14 @@ test('abgeschlossen mit Fehlern: Versanddatum und Druck fragen nicht nach, ohne 
 test('Druckvermerk „Entwurf, nicht versenden“ nur bei Fehlern, und nur im Druck', async () => {
   settlement.notices = [HEAT_ERROR]
   const first = show()
-  const mark = await screen.findByText(/Entwurf, nicht versenden/, {}, SLOW)
-  expect(mark.closest('.print-only')).not.toBeNull()
-  expect(mark.closest('.statement')).not.toBeNull()
+  // Auf dem Anschreiben und über der Aufstellung (#415): Beide Seiten liegen beim Mieter.
+  const marks = await screen.findAllByText(/Entwurf, nicht versenden/, {}, SLOW)
+  expect(marks).toHaveLength(2)
+  for (const mark of marks) {
+    expect(mark.closest('.print-only')).not.toBeNull()
+    expect(mark.closest('.statement')).not.toBeNull()
+  }
+  expect(marks[0]?.closest('.letter')).not.toBeNull()
   first.unmount()
   settlement.notices = [INFO_ERROR, { code: 'w', level: 'warning', title: 'Warnung', text: 'W' }]
   show()
@@ -508,7 +514,8 @@ const showWithSettings = (s: Settings, reload: () => Promise<void>) => render(
     </PropertyProvider>
   </PeriodProvider>,
 )
-const adjustBox = async () => (await screen.findByLabelText(/Vorauszahlung.*vorschlagen/, {}, SLOW)) as HTMLInputElement
+// Seit #415 wählt das Anschreiben die Anpassung der Vorauszahlung je Mieter; hier stehen Falzmarken und Belegkopien.
+const foldBox = async () => (await screen.findByLabelText(/Falz- und Lochmarken/, {}, SLOW)) as HTMLInputElement
 const attachBox = () => screen.getByLabelText(/Belegkopien als Anlage/) as HTMLInputElement
 
 test('Druckeinstellungen: Anklicken sendet nichts, „Speichern“ sendet beide genau einmal (#309)', async () => {
@@ -516,9 +523,9 @@ test('Druckeinstellungen: Anklicken sendet nichts, „Speichern“ sendet beide 
   stubSettings(puts)
   const reload = vi.fn(async () => {})
   showWithSettings(SETTINGS, reload)
-  fireEvent.click(await adjustBox())
+  fireEvent.click(await foldBox())
   fireEvent.click(attachBox())
-  expect((await adjustBox()).checked).toBe(false)
+  expect((await foldBox()).checked).toBe(true)
   expect(attachBox().checked).toBe(true)
   expect(puts).toEqual([])
   // Durchsicht KANN 9: Der Entwurf wirkt schon im Druck, gemerkt wird er erst mit „Speichern“.
@@ -527,7 +534,7 @@ test('Druckeinstellungen: Anklicken sendet nichts, „Speichern“ sendet beide 
   fireEvent.click(speichern)
   fireEvent.click(speichern)
   await waitFor(() => expect(screen.queryByRole('button', { name: 'Speichern (Druckeinstellungen)' })).toBeNull(), SLOW)
-  expect(puts).toEqual([{ printAdjustSuggestion: false, printAttachments: true }])
+  expect(puts).toEqual([{ printFoldMarks: true, printAttachments: true }])
   expect(reload).toHaveBeenCalledTimes(1)
 })
 
@@ -535,10 +542,10 @@ test('Druckeinstellungen: „Verwerfen“ stellt beide her, ohne zu senden (#309
   const puts: unknown[] = []
   stubSettings(puts)
   showWithSettings({ ...SETTINGS, printAttachments: true }, async () => {})
-  fireEvent.click(await adjustBox())
+  fireEvent.click(await foldBox())
   fireEvent.click(attachBox())
   fireEvent.click(screen.getByRole('button', { name: 'Verwerfen (Druckeinstellungen)' }))
-  expect((await adjustBox()).checked).toBe(true)
+  expect((await foldBox()).checked).toBe(false)
   expect(attachBox().checked).toBe(true)
   expect(screen.queryByRole('button', { name: 'Speichern (Druckeinstellungen)' })).toBeNull()
   expect(puts).toEqual([])
@@ -549,12 +556,12 @@ test('Druckeinstellungen: scheitert das Speichern, steht der Grund am Knopf und 
   stubSettings(puts, true)
   const reload = vi.fn(async () => {})
   showWithSettings(SETTINGS, reload)
-  fireEvent.click(await adjustBox())
+  fireEvent.click(await foldBox())
   fireEvent.click(screen.getByRole('button', { name: 'Speichern (Druckeinstellungen)' }))
   const alert = await screen.findByRole('alert', {}, SLOW)
   expect(alert.textContent).toMatch(/^Nicht gespeichert: .*Platte voll/)
   expect(alert.closest('.draft-actions')).not.toBeNull()
-  expect((await adjustBox()).checked).toBe(false)
+  expect((await foldBox()).checked).toBe(true)
   expect(screen.getByRole('button', { name: 'Speichern (Druckeinstellungen)' })).toBeTruthy()
   expect(reload).not.toHaveBeenCalled()
 })
@@ -563,12 +570,12 @@ test('Druckeinstellungen: ungespeichert fragt der Wechsel des Jahres nach (#309)
   const puts: unknown[] = []
   stubSettings(puts)
   showWithSettings(SETTINGS, async () => {})
-  fireEvent.click(await adjustBox())
+  fireEvent.click(await foldBox())
   fireEvent.change(screen.getByLabelText('Abrechnungsjahr'), { target: { value: String(YEAR - 1) } })
   expect(await screen.findByText('Offene Eingaben verwerfen?', {}, SLOW)).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }))
   await waitFor(() => expect(screen.queryByText('Offene Eingaben verwerfen?')).toBeNull(), SLOW)
-  expect((await adjustBox()).checked).toBe(false)
+  expect((await foldBox()).checked).toBe(true)
   expect(puts).toEqual([])
 })
 

@@ -568,8 +568,9 @@ export type Settings = {
   paymentDeadlineDays: number
   ollamaUrl: string
   ollamaModel: string
-  printAdjustSuggestion?: boolean // §560-Vorschlag zur Vorauszahlungsanpassung andrucken (Standard: ja)
+  printAdjustSuggestion?: boolean // Vorgabe des Anschreibens (#415): Anpassung nach § 560 Abs. 4 BGB ankündigen (Standard: ja)
   printAttachments?: boolean // Belegkopien als Anlage mit andrucken (Standard: nein)
+  printFoldMarks?: boolean // Falz- und Lochmarken auf dem Anschreiben (#415, Standard: nein)
   // Update-Hinweis: ohne Wert wurde noch nicht gefragt, 'on' erlaubt die Abfrage bei GitHub
   updateCheck?: 'on' | 'off'
   updateDismissed?: string // Version, deren Hinweis mit „Später“ ausgeblendet wurde
@@ -943,6 +944,59 @@ export type Settlement = {
   // Nur bei einer abgeschlossenen Abrechnung (#56): Was die heutige Berechnung je Mieter anders
   // ergäbe. Der eingefrorene Stand bleibt davon unberührt.
   deviation?: SettlementComparison
+  // Das Anschreiben je Mietverhältnis (#415), nach Kennung des Mietverhältnisses. Die Route setzt es,
+  // die Berechnung kennt es nicht; mit dem Abschluss friert es im Stand ein. Optional, weil eine vorher
+  // abgeschlossene Abrechnung es nicht kennt (dann setzt die Route es aus den Vorgaben von Mietfuchs).
+  letters?: Record<string, StatementLetter>
+}
+
+// ---------- Anschreiben zur Abrechnung (#415) ----------
+
+// Die Bausteine des Anschreibens. Welcher erscheint, entscheidet Mietfuchs (`chooseLetterBlocks` in
+// shared/letter.ts): Guthaben nur bei Guthaben, die Anpassung nur, wenn eine gewählt ist.
+export type LetterBlock =
+  | 'subject' | 'salutation' | 'intro'
+  | 'credit' | 'backPayment' | 'balanced'
+  | 'adjustSuggestion' | 'adjustCustom'
+  | 'receipts' | 'attachments'
+  | 'closing' | 'greeting' | 'signature'
+// Die Platzhalter, die ein Baustein enthalten darf, geschrieben als `{Name}`.
+export type LetterField =
+  | 'Name' | 'Wohnung' | 'Objekt' | 'Abrechnung' | 'Zeitraum'
+  | 'Kosten' | 'Vorauszahlungen' | 'Betrag' | 'Zahlungsfrist'
+  | 'IBAN' | 'Konto' | 'Vermieter'
+  | 'Vorauszahlungsart' | 'VorauszahlungBisher' | 'VorauszahlungNeu' | 'Grundlage'
+  | 'AnzahlBelege' | 'Datum'
+// Eigene Texte einer Ebene: ein fehlender Baustein heißt „die Ebene darüber gilt“, ein leerer Text
+// „bewusst weggelassen“.
+export type LetterTexts = Partial<Record<LetterBlock, string>>
+// Die Anpassung der Vorauszahlung nach § 560 Abs. 4 BGB je Mieter: keine, der Vorschlag von Mietfuchs
+// oder ein eigener Betrag (Cent je Monat).
+export type LetterAdjustmentMode = 'none' | 'suggestion' | 'custom'
+export type LetterAdjustment = { mode: LetterAdjustmentMode; cents: number | null }
+// Das Anschreiben eines Mietverhältnisses, wie es gedruckt wird. `texts`: jeder Baustein mit
+// eingesetzten Werten; nur `{Datum}` und `{AnzahlBelege}` stehen noch darin, denn sie gehören zum
+// Druck (Versanddatum, mitgedruckte Belege). `adjustment`: die gewählte Anpassung mit dem neuen Betrag
+// (`newCents` null, wenn keine angekündigt wird). `values`: die eingesetzten Werte, für die Vorschau
+// beim Bearbeiten.
+export type StatementLetter = {
+  texts: Record<LetterBlock, string>
+  adjustment: { mode: LetterAdjustmentMode; newCents: number | null }
+  values: Record<LetterField, string>
+  // Absender, Rücksendeangabe und Anschrift, wie gedruckt; mit dem Abschluss eingefroren (Durchsicht S2).
+  // Optional, weil Abschlüsse aus der ersten Fassung von #415 sie nicht kennen.
+  sender?: { name: string; returnLine: string }
+  recipient?: string[]
+}
+// Was ein Mieter beim Drucken einmalig abweichend festgelegt hat, für diese Abrechnung (#415).
+export type TenancyLetter = { texts: LetterTexts; adjustment: LetterAdjustment | null }
+// Die Ebenen für das Bearbeiten: Vorgaben von Mietfuchs, die der Installation, die des Objekts.
+export type LetterTemplates = {
+  defaults: Record<LetterBlock, string>
+  installation: LetterTexts
+  property: LetterTexts | null
+  // Vorgabe für die Anpassung der Vorauszahlung (Einstellungen, früher `printAdjustSuggestion`)
+  adjustDefault: 'none' | 'suggestion'
 }
 
 // Abweichung eines Mietverhältnisses zwischen eingefrorenem und heutigem Saldo (#56). Salden wie

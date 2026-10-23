@@ -9,13 +9,9 @@ import type { BillingPeriod, HeatingPlant, HeatingPrepaymentOverride, HeatingSet
 
 const sameDays = (a: Pick<BillingPeriod, 'from' | 'to'>, b: Pick<BillingPeriod, 'from' | 'to'>): boolean => a.from === b.from && a.to === b.to
 
-// „Betriebskosten 2026, darin Heiz- und Warmwasserkosten 01.05.2025–30.04.2026“ (3.1, Ausdruck).
-export function settlementTitle(s: Pick<Settlement, 'period' | 'heatingPeriods' | 'scope'>): string {
-  if (s.scope?.kind === 'heating') return `Heizkostenabrechnung ${s.period.label}`
-  const other = (s.heatingPeriods ?? []).filter((h) => !sameDays(h.period, s.period))
-  if (other.length === 0) return `Nebenkostenabrechnung ${s.period.label}`
-  return `Betriebskosten ${s.period.label}, darin Heiz- und Warmwasserkosten ${other.map((h) => `${fmtDate(h.period.from)}–${fmtDate(h.period.to)}`).join(' und ')}`
-}
+// „Betriebskosten 2026, darin Heiz- und Warmwasserkosten 01.05.2025–30.04.2026“ (3.1, Ausdruck); steht in
+// shared/letter.ts, weil auch der Betreff des Anschreibens sie trägt (#415).
+export { settlementTitle } from '../../shared/letter.ts'
 
 // Für den Mieter auf seiner Abrechnung (3.1, R-A4).
 export function heatingOnlyNote(st: Pick<Statement, 'heatingOnly'>): string | null {
@@ -58,8 +54,7 @@ export function suggestionWithoutHeating(data: Pick<Settlement, 'suggestionWitho
   return data.suggestionWithoutHeating ?? choicesInPeriod > 0
 }
 
-export const adjustedPrepaymentLabel = (st: Pick<Statement, 'scope'>, separate: boolean): string =>
-  st.scope === 'heating' ? 'monatliche Heizkostenvorauszahlung' : separate ? 'monatliche Vorauszahlung für die übrigen Nebenkosten (ohne Heizung)' : 'monatliche Nebenkostenvorauszahlung'
+export { adjustedPrepaymentLabel } from '../../shared/letter.ts'
 
 // Die Heizkostenabrechnungen, deren Heizperiode im gewählten Zeitraum endet: Sie gehören zu diesem
 // Abrechnungsjahr, auch wenn sie ihre eigene Frist haben.

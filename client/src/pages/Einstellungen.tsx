@@ -13,6 +13,7 @@ import { ibanChanged, ibanForSave, ibanToInput } from '../ibanField'
 import { IBAN_LABELS } from '../../../shared/iban.ts'
 import Card from '../components/Card'
 import PriorVersionsCard from '../components/PriorVersionsCard'
+import LetterTemplateCard from '../components/LetterTemplateCard'
 
 type Props = { settings: Settings; reload: () => Promise<void>; update: UpdateState }
 
@@ -121,6 +122,8 @@ export default function Einstellungen({ settings, reload, update }: Props) {
           <button className="btn" onClick={save}>Speichern</button>
         </div>
       </Card>
+
+      <LetterTemplateCard reload={reload} />
 
       <AiSettings settings={settings} reload={reload} />
 

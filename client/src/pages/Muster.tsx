@@ -19,6 +19,8 @@ import { useDraft } from '../useDraft'
 import ContractAgreementFields, { WhyQuestion } from '../components/ContractAgreementFields'
 import { EMPTY_ITEM_FORM, type ItemForm } from '../costForm'
 import type { Property, Tenancy, Unit } from '../types'
+import Letter from '../components/Letter'
+import { DEFAULT_LETTER_TEXTS, renderLetterText, resolveTemplate, SAMPLE_LETTER_VALUES } from '../../../shared/letter.ts'
 
 // Musterseite (#346 Schritt 12, Spezifikation Abschnitt 9): alle Bausteine der Oberfläche auf einer Seite, mit festen
 // Werten und ohne Anfrage an den Server. Aufgerufen mit `?muster`, nicht in der Navigation. `npm run screenshots`
@@ -157,6 +159,24 @@ export default function Muster() {
       {/* Bei einem Objekt mit Erklärung, ab zwei mit der Liste der übrigen */}
       <OtherPropertiesView current="Lindenweg 12" others={[]} onCreate={() => toast('Neues Objekt.')} onSwitch={() => {}} />
       <OtherPropertiesView current="Lindenweg 12" others={PROPERTIES.slice(1)} onCreate={() => toast('Neues Objekt.')} onSwitch={(p) => toast(`Gewechselt zu „${p.name}“.`)} />
+
+      {/* Das Anschreiben einer Abrechnung (#415) mit den Vorgaben und Beispielwerten, dazu der Ergebniskasten */}
+      <Card title="Anschreiben und Ergebnis">
+        <Letter
+          paragraphs={(['subject', 'salutation', 'intro', 'backPayment', 'adjustCustom', 'receipts', 'closing', 'greeting', 'signature'] as const)
+            .map((block) => ({ block, text: renderLetterText(resolveTemplate(DEFAULT_LETTER_TEXTS[block], SAMPLE_LETTER_VALUES), { date: '2026-03-15', attachments: 0 }) }))}
+          sender="Max Vermieter"
+          returnLine="Max Vermieter · Lindenweg 12, 12345 Musterstadt"
+          recipient={['Erika Mustermann', 'EG links', 'Lindenweg 12', '12345 Musterstadt']}
+          date="15.03.2026"
+          foldMarks={false}
+        />
+        <dl className="result-box">
+          <dt>Ihre Kosten</dt><dd>1.240,00 €</dd>
+          <dt>Ihre Vorauszahlungen</dt><dd>1.200,00 €</dd>
+          <dt className="result-strong">Nachzahlung</dt><dd className="result-strong">40,00 €</dd>
+        </dl>
+      </Card>
 
       <Card title="Umschalter und Leerzustand">
         <Switcher label="Wohnung" className="switcher-field width-s" value={unit} options={UNITS} onChange={setUnit} />

@@ -302,6 +302,7 @@ test('Migration lässt sich anwenden und legt alle Tabellen an', async () => {
       'heating_service_values',
       'interim_reading_gaps',
       'law_overrides',
+      'letter_texts',
       'meters',
       'payments',
       'period_changes',
@@ -309,10 +310,13 @@ test('Migration lässt sich anwenden und legt alle Tabellen an', async () => {
       'prepayment_overrides',
       'prepayments',
       'properties',
+      'property_letter_texts',
       'readings',
       'settings',
       'sqlite_sequence',
       'tenancies',
+      'tenancy_letter_adjustments',
+      'tenancy_letter_texts',
       'unit_no_connection',
       'units',
       'uploads',
@@ -414,6 +418,25 @@ test('Direktzuordnung überlebt das Löschen ihrer Wohnung, nur der Verweis fäl
     // Jahres nicht verändern.
     assert.equal(Number(row[0]), 40000)
     assert.equal(row[1], null, 'der Verweis zeigt ins Leere, wie calc.ts es erwartet')
+  } finally {
+    cleanup()
+  }
+})
+
+// Anschreiben (#415, Durchsicht K1): Ein eigener Betrag ist ganze Cent, nie leer und nie eine Kommazahl, die
+// SQLite in der INTEGER-Spalte als REAL behielte.
+test('Prüfbedingungen: die Anpassung der Vorauszahlung je Mieter', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    connection.exec(einWohnung)
+    connection.exec("INSERT INTO tenancies (id, unit_id, tenant_name, persons, start) VALUES ('t1', 'u1', 'Meier', 2, '2025-01-01')")
+    const insert = (mode: string, cents: string) => rejects(connection, `INSERT OR REPLACE INTO tenancy_letter_adjustments (tenancy_id, doc, mode, cents) VALUES ('t1', '2025-01', '${mode}', ${cents})`)
+    assert.equal(insert('custom', '12000'), null)
+    assert.equal(insert('suggestion', 'NULL'), null)
+    assert.ok(insert('custom', '1.5'), 'Kommazahl')
+    assert.ok(insert('custom', 'NULL'), 'eigener Betrag ohne Betrag')
+    assert.ok(insert('custom', '-1'), 'negativ')
+    assert.ok(insert('none', '5'), 'Betrag ohne eigenen Betrag')
   } finally {
     cleanup()
   }
