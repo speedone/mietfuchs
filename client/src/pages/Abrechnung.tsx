@@ -44,6 +44,7 @@ import { co2Block } from '../co2View'
 import { calendarPeriod } from '../../../shared/period.ts'
 import { mergeLetterTexts } from '../../../shared/letter.ts'
 import Card from '../components/Card'
+import ControlView from '../components/ControlView'
 import Letter from '../components/Letter'
 import { LegacyHead, legacyHeadLine, legacyReceiptsText, LegacyResult } from '../components/LegacyStatement'
 import { exceedsOnePage } from '../../../shared/letter.ts'
@@ -906,6 +907,8 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
             </div>
             )
           })}
+
+          <ControlView data={data} />
 
           {data.landlord.rows.length > 0 && (
             <Card title="Vermieteranteil (nicht umgelegt)" className="no-print">

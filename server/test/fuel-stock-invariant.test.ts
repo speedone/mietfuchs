@@ -49,6 +49,7 @@
 // Untergrenze. Auf dem Stand vor der Durchsicht war die Invariante bei 1, 15, 19, 21, 28, 30, 31, 33
 // rot; die Mutationsproben stehen im PR #237. Bereich mit INV_FROM/INV_TO.
 import { test } from 'node:test'
+import { assertControlSums } from '../testing/landlordParts.ts'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -350,6 +351,7 @@ for (const { seed, two, tausch, self, dhw, ...rest } of RUNS) {
             if (await findClosedSettlement(db, 'objekt-1', periodKey(pkey))) return
             await db.transaction(async (tx) => {
               const settlement = computeSettlement(snapshotFor(await readStock(tx), 'objekt-1', periodOf(pkey)), {})
+              assertControlSums(settlement, `Kontrollansicht ${pkey}`)
               await closeSettlement(tx, { id: `s${n++}`, propertyId: 'objekt-1', period: periodKey(pkey), closedAt: '2027-01-01', sentAt: null, settlement })
             })
             for (const [p, v] of here) atClose.set(`${p}|${hkey}`, v)

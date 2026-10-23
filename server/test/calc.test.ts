@@ -30,7 +30,7 @@ import type { ClosedSettlement, Db } from '../src/store.ts'
 import type { CostKey, CostModel, MeterType, Payment, Reading, Settings, TaxExpenseGroup, TaxReport, Tenancy, UnitUsage } from '../../shared/types.ts'
 // Die Tests bauen eine db.json; deren Wohnungen, Zähler und Kosten tragen kein Objekt (#92).
 import type { LegacyCostItem as CostItem, LegacyCostKey, LegacyMeter as Meter, LegacyMeterType, LegacyUnit as Unit } from '../src/store.ts'
-import { assertLandlordParts } from '../testing/landlordParts.ts'
+import { assertControlSums, assertLandlordParts } from '../testing/landlordParts.ts'
 import { compareWithFrozen } from '../src/settlementDiff.ts'
 import { calendarPeriod, calendarYearPeriod } from '../../shared/period.ts'
 
@@ -2063,6 +2063,7 @@ test('Invariante: Mieteranteile + Vermieteranteil ergeben die Gesamtkosten, je P
     }
     // Die Zerlegung des Vermieteranteils in seine Gründe (#142) geht auf.
     assertLandlordParts(s, db.tenancies.length, `Fall ${i}\n${JSON.stringify(db)}`)
+    assertControlSums(s, `Fall ${i}`)
   }
 })
 

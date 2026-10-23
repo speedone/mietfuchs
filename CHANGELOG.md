@@ -8,6 +8,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Hinzugefügt
 
+- Kontrollansicht auf der Seite Abrechnung ([#321](https://github.com/speedone/mietfuchs/issues/321)):
+  Aufklappbar und nur am Bildschirm zeigt sie je Kostenposition alle Mieter und die Gründe des
+  Vermieters nebeneinander, dazu eine Summe gegen den Rechnungsbetrag, die Kosten, Vorauszahlung und
+  Saldo je Mieter und die Zeilen ohne eigene Kostenposition (etwa CO₂-Anteile) gesondert. Eine
+  Differenz wird benannt. Es wird nichts neu gerechnet.
 - Automatische Vorversionen der Datenbank ([#318](https://github.com/speedone/mietfuchs/issues/318)):
   Mietfuchs prüft beim Start und danach einmal am Tag, ob die jüngste Kopie Ihrer Daten älter als
   sieben Tage ist, und legt dann eine neue an, im Datenordner unter `vorversionen`. Behalten werden die

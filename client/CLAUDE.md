@@ -113,6 +113,13 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   gesperrt wird nichts. Die Vorschau setzt den neuen Betrag aus dem Entwurf ein (`draftNewCents`); „Anpassung auf
   Vorgabe zurücksetzen“ nimmt die eigene Wahl des Mieters weg (`adjustment: null`). Ein gesperrter Knopf nennt den
   Grund daneben.
+- **Kontrollansicht** (#321, [ControlView.tsx](src/components/ControlView.tsx), Logik in
+  [controlView.ts](src/controlView.ts)): auf der Seite Abrechnung eine aufklappbare Karte, immer `no-print`. Je
+  Position alle Mieter und die Gründe des Vermieters (`landlordParts`) nebeneinander, Summe gegen den Rechnungsbetrag,
+  darunter Kosten, Vorauszahlung und Saldo je Mieter. Nur Anzeige aus `statements` und `landlord`; eine Differenz
+  ungleich 0 wird als Fehler benannt. Zeilen ohne Position (Pseudo-Kennung mit „:“, sie allein entscheidet) stehen gesondert, ihre Summe muss 0 sein, und
+  zählen nicht in die Summenprüfung; ohne `landlordParts` (vor #142) steht eine pauschale Spalte. Die Tabelle ist
+  `sticky-first` und scrollt seitlich.
 - **Druckkopf**: `letterhead` lässt einen Objektnamen weg, der schon in der Adresse steht, und ist die
   Rücksendeangabe des Anschreibens; Anschrift des Mieters (`recipientLines`); fehlt nach Auszug die neue Anschrift,
   warnt die Seite (`printsFormerAddress`). Der Rechenweg ([CalcSteps.tsx](src/components/CalcSteps.tsx)) ist immer

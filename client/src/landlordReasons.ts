@@ -29,6 +29,11 @@ const LABELS: Record<LandlordReason, string> = {
   rounding: 'Rundungsrest',
 }
 
+// Die Beschriftung eines einzelnen Grundes; ein unbekannter (aus einer späteren Fassung) steht als Code da.
+export function landlordReasonLabel(reason: LandlordReason): string {
+  return Object.hasOwn(LABELS, reason) ? LABELS[reason] : reason
+}
+
 export function landlordReasonText(row: SettlementRow): string {
   const parts = row.landlordParts
   // Eine vorher abgeschlossene Abrechnung kennt die Zerlegung nicht; dann bleibt der bisherige Text.

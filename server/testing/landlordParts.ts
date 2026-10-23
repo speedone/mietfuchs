@@ -21,3 +21,22 @@ export function assertLandlordParts(s: ComputedSettlement, tenancyCount: number,
     }
   }
 }
+
+// Die Probe der Kontrollansicht (#321): Je Kostenposition ergeben die Zeilen aller Mieter und die Gründe des
+// Vermieters zusammen genau den Rechnungsbetrag, und die Zeilen ohne eigene Kostenposition (Kennung mit „:“,
+// Überträge, CO₂-Abzüge, Erstattungen) heben sich mit ihren Gegenzeilen auf. Unabhängig von der Oberfläche
+// geschrieben, damit beide Rechnungen sich gegenseitig prüfen.
+export function assertControlSums(s: ComputedSettlement, context: string): void {
+  const items = new Map<string, { total: number; sum: number }>()
+  let extras = 0
+  const add = (costItemId: string, totalCents: number, cents: number) => {
+    if (costItemId.includes(':')) { extras += cents; return }
+    const e = items.get(costItemId) ?? { total: totalCents, sum: 0 }
+    e.sum += cents
+    items.set(costItemId, e)
+  }
+  for (const st of s.statements) for (const r of st.rows) add(r.costItemId, r.totalCents, r.shareCents)
+  for (const r of s.landlord.rows) add(r.costItemId, r.totalCents, r.shareCents)
+  for (const [id, e] of items) assert.equal(e.sum, e.total, `${context}: Position ${id}: Mieter + Vermieter ${e.sum} ≠ Rechnungsbetrag ${e.total}`)
+  assert.equal(extras, 0, `${context}: Zeilen ohne Position ergeben zusammen ${extras} statt 0`)
+}

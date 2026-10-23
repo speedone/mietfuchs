@@ -56,6 +56,7 @@
 //
 // Feste Startwerte, im Lauf der Tests wenige; mehr mit INV_FROM/INV_TO (siehe SEEDS).
 import { test } from 'node:test'
+import { assertControlSums } from '../testing/landlordParts.ts'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -1062,6 +1063,7 @@ for (const variant of VARIANTS) {
                   log.push(`estimate ${made.join('+')}`)
                   settlement = computeSettlement(snapshotFor(await readStock(tx), 'objekt-1', periodOf(key)), {})
                 }
+                assertControlSums(settlement, `Kontrollansicht ${key}`)
                 await closeSettlement(tx, { id: `s${n++}`, propertyId: 'objekt-1', period: periodKey(key), closedAt: '2027-01-01', sentAt: null, settlement })
                 await freezeFuelCarries(tx, settlement)
               })
