@@ -89,6 +89,36 @@ test('Mietverhältnisse: Pauschale und Inklusivmiete stehen in der Liste, die Ab
   expect(rowOf('Abgerechnet').queryByText(/pauschal|inklusiv/i)).toBeNull()
 })
 
+// Leistungsprüfung mit großem Bestand: 82 Mietverhältnisse seit 2010 standen gemischt. Laufende und künftige oben,
+// beendete eingeklappt darunter, neueste zuerst (tenancyList.ts).
+test('Mietverhältnisse: frühere stehen eingeklappt unter den laufenden, neueste zuerst', async () => {
+  const { container } = page([
+    tenancy('t1', 'Erster Mieter', { start: '2010-01-01', end: '2014-12-31' }),
+    tenancy('t2', 'Heute', { start: '2020-01-01' }),
+    tenancy('t3', 'Zweiter Mieter', { start: '2015-01-01', end: '2019-12-31' }),
+    tenancy('t4', 'Bald', { start: '2999-01-01' }),
+  ])
+  await screen.findByText('Heute', undefined, SLOW)
+  const tables = container.querySelectorAll('table.tenancy-table')
+  expect(tables).toHaveLength(2)
+  const names = (t: Element | undefined) => [...(t?.querySelectorAll('tbody tr') ?? [])].map((r) => r.querySelector('td')?.textContent)
+  expect(names(tables[0])).toEqual(['Heute', 'Bald'])
+  const details = container.querySelector('details:has(table.tenancy-table)') as HTMLDetailsElement | null
+  expect(details?.open).toBe(false)
+  expect(details?.querySelector('summary')?.textContent).toBe('Frühere Mietverhältnisse (2)')
+  expect(names(tables[1])).toEqual(['Zweiter Mieter', 'Erster Mieter'])
+})
+
+test('Mietverhältnisse: ohne frühere kein Abschnitt, ohne laufende ein Satz dazu', async () => {
+  const { container, unmount } = page([tenancy('t1', 'Heute')])
+  await screen.findByText('Heute', undefined, SLOW)
+  expect(container.querySelector('details:has(table.tenancy-table)')).toBeNull()
+  unmount()
+  page([tenancy('t1', 'Weg', { end: '2020-12-31' })])
+  await screen.findByText('Kein laufendes Mietverhältnis.', undefined, SLOW)
+  expect(screen.getByText('Frühere Mietverhältnisse (1)')).toBeTruthy()
+})
+
 test('Wohnungen: die Miteigentumsanteile stehen in der Liste, sobald eine Wohnung welche hat', async () => {
   page()
   await screen.findByText('EG', undefined, SLOW)

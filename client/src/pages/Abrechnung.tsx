@@ -21,7 +21,8 @@ import { deviationView } from '../deviation'
 import { deadlineView, historyView, type HistoryEntry } from '../settlementHistory'
 import { costBasisText, personsText } from '../statementView'
 import { legalBasisLines, noticesOf, noticeTarget, type NoticeTab } from '../notices'
-import { CalcNotice, NoticeBox, NoticeGroup } from '../components/Notice'
+import { CalcNotice, CalcNoticeGroup, NoticeBox, NoticeGroup } from '../components/Notice'
+import { groupNotices, noticePeople } from '../noticeGroups'
 import PrintDrawer, { type PrintScope } from '../components/PrintDrawer'
 import { checkList, hintSummary, neighbors, resultText, tenantRows } from '../settlementOverview'
 import PageHeader from '../components/PageHeader'
@@ -672,6 +673,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
   const uniqueChecks = (list: Notice[]) => list.filter((n, i) => list.findIndex((m) => m.title === n.title && m.text === n.text) === i)
   const ownChecks = uniqueChecks(views.flatMap(pageChecks))
   const checks = checkList(data ? [...noticesOf(data), ...ownChecks] : [])
+  const people = noticePeople(data?.statements ?? [])
   // Je Mieter die Titel der eigenen Prüfungen, als Merker in der Tabelle der Übersicht.
   const checksByTenancy = new Map(views.map((v) => [v.st.tenancyId, pageChecks(v).map((n) => (n.code === 'page.address' ? 'Anschrift prüfen' : n.title.replace(/ \(.*\)$/, '')))]))
   const fixOf = (n: Notice) => {
@@ -858,12 +860,19 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
             </NoticeBox>
           )}
           <div className="notice-list">
-            {checks.errors.map((n, i) => <CalcNotice key={`e${i}`} notice={n} fix={fixOf(n)} />)}
-            {checks.warnings.map((n, i) => <CalcNotice key={`w${i}`} notice={n} fix={fixOf(n)} />)}
-            {checks.hints.map((n, i) => <CalcNotice key={`h${i}`} notice={n} fix={fixOf(n)} />)}
+            {/* Gleiche Hinweise mehrerer Mieter stehen in einem Kasten, wörtlich und mit jedem Betrag (noticeGroups.ts). */}
+            {[...groupNotices(checks.errors, people), ...groupNotices(checks.warnings, people), ...groupNotices(checks.hints, people)].map((it, i) => (
+              it.kind === 'group'
+                ? <CalcNoticeGroup key={`g${i}`} item={it} fixOf={fixOf} />
+                : <CalcNotice key={`n${i}`} notice={it.notice} fix={fixOf(it.notice)} />
+            ))}
             {checks.quiet.length > 0 && (
               <NoticeGroup level="hint" summary={hintSummary(checks.quiet)}>
-                {checks.quiet.map((n, i) => <CalcNotice key={`q${i}`} notice={n} fix={fixOf(n)} />)}
+                {groupNotices(checks.quiet, people).map((it, i) => (
+                  it.kind === 'group'
+                    ? <CalcNoticeGroup key={`g${i}`} item={it} fixOf={fixOf} />
+                    : <CalcNotice key={`q${i}`} notice={it.notice} fix={fixOf(it.notice)} />
+                ))}
               </NoticeGroup>
             )}
           </div>

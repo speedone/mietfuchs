@@ -926,3 +926,29 @@ test('Drucken: nach „Speichern“ schließt „Abbrechen“ ohne Rückfrage un
   expect((await foldBox()).checked).toBe(true)
   expect(attachBox().checked).toBe(true)
 })
+
+// Leistungsprüfung mit großem Bestand: Derselbe Hinweis je Mieter füllte als eigener Kasten zwei Drittel der Seite.
+// Mit vier Mietern steht „Rückstand im Mietkonto“ einmal da, mit jedem Namen, jedem Betrag und je einem „Hier beheben →“.
+test('Zu prüfen: gleicher Hinweis bei vier Mietern steht in einem Kasten, jeder Betrag bleibt sichtbar', async () => {
+  const four = [['t1', 'Meier', 'EG', '374,80 €'], ['t2', 'Schulz', 'OG', '408,00 €'], ['t3', 'Wagner', 'DG', '180,00 €'], ['t4', 'Becker', 'UG', '200,00 €']] as const
+  const text = sample('prepayment.arrears')
+  settlement.statements = four.map(([id, name, unit]) => ({ ...STATEMENT, tenancyId: id, tenantName: name, unitName: unit }))
+  settlement.notices = four.map(([id, name, unit, open]): Notice => ({
+    code: 'prepayment.arrears', level: 'warning', title: 'Rückstand im Mietkonto', text: text.replace('u3 (W3)', `${name} (${unit})`).replace('2.331,96 €', open), subject: { kind: 'rentLedger', id },
+  }))
+  const nav = vi.fn()
+  showWithNav(nav)
+  const card = (await screen.findByRole('heading', { name: 'Zu prüfen' }, SLOW)).closest('section') ?? assert.fail('keine Karte')
+  expect(within(card).getAllByText('Rückstand im Mietkonto')).toHaveLength(1)
+  expect(card.textContent).toContain('Betrifft 4 Mietverhältnisse:')
+  for (const [, name, unit, open] of four) {
+    expect(within(card).getByText(`${name} (${unit})`)).toBeTruthy()
+    expect(card.textContent).toContain(open)
+  }
+  // Der gemeinsame Text einmal
+  expect(card.textContent?.split('tragen Sie die Zahlung im Mietkonto nach')).toHaveLength(2)
+  const fixes = within(card).getAllByRole('button', { name: 'Hier beheben → Mietkonto' })
+  expect(fixes.map((k) => document.getElementById(k.getAttribute('aria-describedby') ?? '')?.textContent)).toEqual(['Meier (EG)', 'Schulz (OG)', 'Wagner (DG)', 'Becker (UG)'])
+  fireEvent.click(fixes[2] ?? assert.fail('kein dritter Knopf'))
+  expect(nav).toHaveBeenCalledWith('mietkonto', { kind: 'rentLedger', id: 't3' })
+})

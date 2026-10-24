@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CostModel, HeatingModel, SelfSupplyKind, DepositStatus, HeatingPlant, InterimGapStatus, Meter, MeterType, Reading, Settings, Tenancy, Unit, UnitDependents, UnitUsage } from '../types'
 import { servesUnit } from '../../../shared/heatingPeriod.ts'
 import { DEPOSIT_STATUS_LABELS, METER_TYPE_LABELS, UNIT_USAGE_LABELS, usageOf } from '../types'
@@ -31,7 +31,8 @@ import { useToast, useConfirm } from '../components/feedback'
 import MonthField from '../components/MonthField'
 import Table from '../components/Table'
 import HeatingCard from '../components/HeatingCard'
-import { useFocusTarget, type FocusProps } from '../focus'
+import { useFocusTarget, useScrollToFocus, type FocusProps } from '../focus'
+import { splitTenancies } from '../tenancyList'
 import { tenancyStamp } from '../../../shared/tenancyStamp.ts'
 import { salutationOf } from '../../../shared/letter.ts'
 import { NoticeBox } from '../components/Notice'
@@ -186,7 +187,20 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
   }
   // „Hier beheben →“ aus der Abrechnung (#142): die betroffene Wohnung oder das Mietverhältnis öffnen.
   useFocusTarget(focus, 'unit', units, (u) => u.id, (u) => { unitErrors.clear(); setUnitForm(unitToForm(u)) }, onFocusDone)
-  useFocusTarget(focus, 'tenancy', tenancies, (t) => t.id, (t) => { tenErrors.clear(); setTenForm(tenancyToForm(t)) }, onFocusDone)
+  // Laufende und künftige oben, beendete eingeklappt darunter (tenancyList.ts). Ein Sprung zu einem früheren
+  // Mietverhältnis klappt den Abschnitt auf; die Zeile wird markiert und ihr ✎ bekommt den Fokus, bevor das Fenster
+  // aufgeht, damit er beim Schließen dorthin zurückkehrt (`FocusTenancyRow`).
+  const { current: currentTenancies, former: formerTenancies } = useMemo(() => splitTenancies(tenancies, localToday()), [tenancies])
+  const [formerOpen, setFormerOpen] = useState(false)
+  const [jump, setJump] = useState<{ id: string } | null>(null)
+  const scrollToFocus = useScrollToFocus()
+  useFocusTarget(focus, 'tenancy', tenancies, (t) => t.id, (t) => {
+    if (formerTenancies.some((f) => f.id === t.id)) setFormerOpen(true)
+    setJump({ id: t.id })
+    scrollToFocus()
+    tenErrors.clear()
+    setTenForm(tenancyToForm(t))
+  }, onFocusDone)
 
   async function saveUnit() {
     if (!unitForm) return
@@ -357,6 +371,107 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
   // Miteigentumsanteile (#142): bei einer Eigentumswohnung immer, sonst sobald eine Wohnung welche hat.
   const showsMea = property?.kind === 'etw' || units.some((u) => u.mea != null)
 
+  // Eine Zeile der Tabelle der Mietverhältnisse, für laufende und frühere gleich.
+  const tenancyRow = (t: Tenancy) => (
+    <tr key={t.id} data-tenancy-id={t.id} className={jump?.id === t.id ? 'focus-target' : undefined}>
+      <td data-label="Mieter">
+        {t.tenantName}
+        {/* Pauschale oder Inklusivmiete auf einen Blick (#142); die Abrechnung ist der Normalfall. */}
+        {costModelBadge(t.costModel, t.heatingModel) && (
+          <div className="cell-sub">
+            <span className="badge gray" title="Nebenkostenmodell; ändern unter „Weitere Angaben“">
+              {costModelBadge(t.costModel, t.heatingModel)}
+            </span>
+          </div>
+        )}
+        {(t.email || t.phone) && (
+          <div className="muted cell-sub cell-contact" title={[t.email, t.phone].filter(Boolean).join(' · ')}>
+            {t.email}{t.email && t.phone && ' · '}{t.phone && <span className="nowrap">{t.phone}</span>}
+          </div>
+        )}
+        {t.depositCents != null && (
+          <div className="cell-sub">
+            <span className="muted">Kaution {fmtEuro(t.depositCents)}</span>{' '}
+            <span className={`badge ${t.depositStatus === 'erhalten' ? 'green' : t.depositStatus === 'offen' ? 'gray' : 'gray'}`}>
+              {DEPOSIT_STATUS_LABELS[t.depositStatus ?? 'offen']}
+            </span>
+          </div>
+        )}
+      </td>
+      <td data-label="Wohnung">{units.find((u) => u.id === t.unitId)?.name ?? '—'}</td>
+      <td className="num" data-label="Personen">
+        {(t.personHistory ?? []).map((p, i) => (
+          <div key={i}>
+            {(t.personHistory?.length ?? 0) > 1 && <><span className="muted nowrap">ab {fmtDate(p.from)}:</span>{' '}</>}
+            <span className="nowrap">{p.persons}</span>
+          </div>
+        ))}
+      </td>
+      <td data-label="Zeitraum">
+        {fmtDate(t.start)} – {t.end ? fmtDate(t.end) : 'laufend'}
+      </td>
+      <td className="num" data-label="Kaltmiete je Monat">
+        {(t.baseRents?.length ?? 0) === 0 && '—'}
+        {(t.baseRents ?? []).map((p, i) => (
+          <div key={i}>
+            {(t.baseRents?.length ?? 0) > 1 && <><span className="muted nowrap">ab {p.from.slice(5, 7)}/{p.from.slice(0, 4)}:</span>{' '}</>}
+            <span className="nowrap">{fmtEuro(p.monthlyCents)}</span>
+          </div>
+        ))}
+      </td>
+      <td className="num" data-label="Vorauszahlung je Monat">
+        {prepaymentColumn(t).length === 0 && '—'}
+        {prepaymentColumn(t).map((line, i) => (
+          <div key={i}>
+            {line.label !== null && <><span className="muted nowrap">{line.label}</span>{' '}</>}
+            <span className="nowrap">{line.amount}</span>
+          </div>
+        ))}
+      </td>
+      <td className="actions no-print">
+        {/* Sichtprüfung E13: Bearbeiten und Löschen stehen in jeder Zeile oben, der Mieterwechsel darunter */}
+        <div className="cell-actions">
+        <span className="nowrap">
+        <button
+          className="icon-btn"
+          data-tenancy-edit
+          title="Bearbeiten"
+          aria-label="Mietverhältnis bearbeiten"
+          onClick={() => {
+            tenErrors.clear()
+            setTenForm(tenancyToForm(t))
+          }}
+        >
+          ✎
+        </button>
+        <button className="icon-btn danger" title="Löschen" aria-label="Mietverhältnis löschen" onClick={() => deleteTenancy(t)}>🗑</button>
+        </span>
+        {!t.end && (
+          <button className="btn small secondary" title="Auszug, Zwischenablesung und neuer Mieter in einem Fenster" onClick={() => setWizardFor(t)}>
+            Mieterwechsel
+          </button>
+        )}
+        </div>
+      </td>
+    </tr>
+  )
+  const tenancyTable = (rows: Tenancy[]) => (
+    <Table className="tenancy-table stacked">
+      <thead>
+        <tr>
+          <th>Mieter</th>
+          <th>Wohnung</th>
+          <th className="num">Personen</th>
+          <th>Zeitraum</th>
+          <th className="num">Kaltmiete je Monat</th>
+          <th className="num">Voraus{'\u00ad'}zahlung je Monat</th>
+          <th className="no-print"></th>
+        </tr>
+      </thead>
+      <tbody>{rows.map(tenancyRow)}</tbody>
+    </Table>
+  )
+
   return (
     <>
       <PageHeader
@@ -468,105 +583,20 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
           // Karte von 953 px, und Mieterwechsel, ✎ und 🗑 lagen nur durch Scrollen im Bild. Deshalb
           // dürfen Kopfzeilen, Staffeln und die Aktionen umbrechen, jeweils nur an einer sinnvollen
           // Stelle (zwischen „ab …:“ und dem Wert, zwischen Knopf und Symbolen).
-          <Table className="tenancy-table stacked">
-            <thead>
-              <tr>
-                <th>Mieter</th>
-                <th>Wohnung</th>
-                <th className="num">Personen</th>
-                <th>Zeitraum</th>
-                <th className="num">Kaltmiete je Monat</th>
-                <th className="num">Voraus{'\u00ad'}zahlung je Monat</th>
-                <th className="no-print"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {tenancies.map((t) => (
-                <tr key={t.id}>
-                  <td data-label="Mieter">
-                    {t.tenantName}
-                    {/* Pauschale oder Inklusivmiete auf einen Blick (#142); die Abrechnung ist der Normalfall. */}
-                    {costModelBadge(t.costModel, t.heatingModel) && (
-                      <div className="cell-sub">
-                        <span className="badge gray" title="Nebenkostenmodell; ändern unter „Weitere Angaben“">
-                          {costModelBadge(t.costModel, t.heatingModel)}
-                        </span>
-                      </div>
-                    )}
-                    {(t.email || t.phone) && (
-                      <div className="muted cell-sub cell-contact" title={[t.email, t.phone].filter(Boolean).join(' · ')}>
-                        {t.email}{t.email && t.phone && ' · '}{t.phone && <span className="nowrap">{t.phone}</span>}
-                      </div>
-                    )}
-                    {t.depositCents != null && (
-                      <div className="cell-sub">
-                        <span className="muted">Kaution {fmtEuro(t.depositCents)}</span>{' '}
-                        <span className={`badge ${t.depositStatus === 'erhalten' ? 'green' : t.depositStatus === 'offen' ? 'gray' : 'gray'}`}>
-                          {DEPOSIT_STATUS_LABELS[t.depositStatus ?? 'offen']}
-                        </span>
-                      </div>
-                    )}
-                  </td>
-                  <td data-label="Wohnung">{units.find((u) => u.id === t.unitId)?.name ?? '—'}</td>
-                  <td className="num" data-label="Personen">
-                    {(t.personHistory ?? []).map((p, i) => (
-                      <div key={i}>
-                        {(t.personHistory?.length ?? 0) > 1 && <><span className="muted nowrap">ab {fmtDate(p.from)}:</span>{' '}</>}
-                        <span className="nowrap">{p.persons}</span>
-                      </div>
-                    ))}
-                  </td>
-                  <td data-label="Zeitraum">
-                    {fmtDate(t.start)} – {t.end ? fmtDate(t.end) : 'laufend'}
-                  </td>
-                  <td className="num" data-label="Kaltmiete je Monat">
-                    {(t.baseRents?.length ?? 0) === 0 && '—'}
-                    {(t.baseRents ?? []).map((p, i) => (
-                      <div key={i}>
-                        {(t.baseRents?.length ?? 0) > 1 && <><span className="muted nowrap">ab {p.from.slice(5, 7)}/{p.from.slice(0, 4)}:</span>{' '}</>}
-                        <span className="nowrap">{fmtEuro(p.monthlyCents)}</span>
-                      </div>
-                    ))}
-                  </td>
-                  <td className="num" data-label="Vorauszahlung je Monat">
-                    {prepaymentColumn(t).length === 0 && '—'}
-                    {prepaymentColumn(t).map((line, i) => (
-                      <div key={i}>
-                        {line.label !== null && <><span className="muted nowrap">{line.label}</span>{' '}</>}
-                        <span className="nowrap">{line.amount}</span>
-                      </div>
-                    ))}
-                  </td>
-                  <td className="actions no-print">
-                    {/* Sichtprüfung E13: Bearbeiten und Löschen stehen in jeder Zeile oben, der Mieterwechsel darunter */}
-                    <div className="cell-actions">
-                    <span className="nowrap">
-                    <button
-                      className="icon-btn"
-                      title="Bearbeiten"
-                      aria-label="Mietverhältnis bearbeiten"
-                      onClick={() => {
-                        tenErrors.clear()
-                        setTenForm(tenancyToForm(t))
-                      }}
-                    >
-                      ✎
-                    </button>
-                    <button className="icon-btn danger" title="Löschen" aria-label="Mietverhältnis löschen" onClick={() => deleteTenancy(t)}>🗑</button>
-                    </span>
-                    {!t.end && (
-                      <button className="btn small secondary" title="Auszug, Zwischenablesung und neuer Mieter in einem Fenster" onClick={() => setWizardFor(t)}>
-                        Mieterwechsel
-                      </button>
-                    )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
+          <>
+            {currentTenancies.length > 0 ? tenancyTable(currentTenancies) : <div className="empty">Kein laufendes Mietverhältnis.</div>}
+            {/* Beendete Mietverhältnisse eingeklappt, neueste zuerst (tenancyList.ts); ein Sprung dorthin klappt auf. */}
+            {formerTenancies.length > 0 && (
+              <details className="mt-4" open={formerOpen} onToggle={(e) => setFormerOpen(e.currentTarget.open)}>
+                <summary>{`Frühere Mietverhältnisse (${formerTenancies.length})`}</summary>
+                {tenancyTable(formerTenancies)}
+              </details>
+            )}
+          </>
         )}
       </Card>
+
+      <FocusTenancyRow jump={jump} />
 
       {tenForm && (
         <Drawer
@@ -1153,4 +1183,15 @@ function TenantChangeDrawer({ tenancy, unit, plants, onClose, onDone }: {
 function PartialMonthNote({ rows, start, end, kind }: { rows: readonly { from: string; amount: string }[]; start: string; end: string; kind: ScheduleKind }) {
   const note = partialMonthNote(rows, start, end, kind)
   return note ? <small className="muted">{note}</small> : null
+}
+
+// Den ✎ der angesprungenen Zeile fokussieren. Steht im Baum vor dem Seitenfenster: Dessen `useLayoutEffect` merkt sich
+// das fokussierte Element als Auslöser und gibt ihm beim Schließen den Fokus zurück, Effekte laufen in Baumreihenfolge.
+function FocusTenancyRow({ jump }: { jump: { id: string } | null }) {
+  useLayoutEffect(() => {
+    if (!jump) return
+    const row = [...document.querySelectorAll<HTMLElement>('[data-tenancy-id]')].find((r) => r.dataset.tenancyId === jump.id)
+    row?.querySelector<HTMLElement>('[data-tenancy-edit]')?.focus()
+  }, [jump])
+  return null
 }

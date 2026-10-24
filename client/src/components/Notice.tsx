@@ -12,6 +12,7 @@ import { Fragment, useId, useState, type ReactNode } from 'react'
 import type { Notice, NoticeLevel } from '../types'
 import { NOTICE_LEVEL_LABELS, noticeClass } from '../notices'
 import { splitNoticeText } from '../noticeText'
+import type { NoticeItem } from '../noticeGroups'
 import Term from './Term'
 
 // Zeichen je Stufe, mit U+FE0E als Text und nicht als buntes Emoji.
@@ -95,5 +96,41 @@ export function NoticeGroup({ level, summary, children }: { level: NoticeLevel, 
       <summary><span aria-hidden="true">{NOTICE_SYMBOLS[level]}</span> {summary}</summary>
       <div className="notice-list">{children}</div>
     </details>
+  )
+}
+
+// Gleiche Hinweise mehrerer Mieter in einem Kasten (noticeGroups.ts): Titel, die Betroffenen mit ihren eigenen Sätzen
+// (Name, Betrag) und je einem „Hier beheben →“, darunter der gemeinsame Text, zerlegt wie bei `CalcNotice`. Ein Fehler
+// steht auch hier ganz offen.
+export function CalcNoticeGroup({ item, fixOf }: { item: Extract<NoticeItem, { kind: 'group' }>, fixOf: (n: Notice) => Fix | null }) {
+  const { notice, common, members } = item
+  const { visible, more } = splitNoticeText(common, notice.level)
+  const terms = notice.terms ?? []
+  const baseId = useId()
+  return (
+    <NoticeBox level={notice.level} title={notice.title || undefined} more={more || null}>
+      <div>{`Betrifft ${members.length} Mietverhältnisse:`}</div>
+      <ul className="my-1 grid gap-1 pl-5">
+        {members.map((m, k) => {
+          const fix = fixOf(m.notice)
+          const nameId = `${baseId}-${k}`
+          return (
+            <li key={m.notice.subject?.id ?? k}>
+              <strong id={nameId}>{m.name}</strong>{m.own && <>: {m.own}</>}
+              {fix && (
+                <>
+                  {' '}
+                  <button type="button" className="btn secondary small notice-action print:hidden" aria-describedby={nameId} onClick={fix.onClick}>{fix.label}</button>
+                </>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+      {visible && <div>{visible}</div>}
+      {terms.length > 0 && (
+        <div className="notice-terms">Begriffe: {terms.map((t, k) => <Fragment key={t}>{k > 0 && ', '}<Term id={t} /></Fragment>)}</div>
+      )}
+    </NoticeBox>
   )
 }

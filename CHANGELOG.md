@@ -225,6 +225,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Geändert
 
+- Stammdaten mit vielen Mieterwechseln: Die Liste der Mietverhältnisse zeigt oben die laufenden und künftigen,
+  die beendeten stehen darunter eingeklappt unter „Frühere Mietverhältnisse (N)“, das zuletzt beendete zuerst.
+  Maßgeblich ist der heutige Tag. „Hier beheben →“ zu einem früheren Mietverhältnis klappt den Abschnitt auf und
+  führt zur Zeile.
+- „Zu prüfen“ auf der Seite Abrechnung fasst denselben Hinweis bei mehreren Mietern in einem Kasten zusammen,
+  etwa „Rückstand im Mietkonto“ oder „Anschrift nach dem Auszug fehlt“: Titel und gemeinsamer Text stehen einmal,
+  darunter je Mieter Name, die eigenen Sätze mit allen Beträgen und „Hier beheben →“. Zusammengefasst wird nur,
+  was sich allein in Name, Wohnung und Zahlen unterscheidet; kein Wort und kein Betrag fällt weg.
 - Die Seitenleiste verspricht nicht mehr pauschal, dass alle Daten auf diesem Rechner bleiben (bei Docker oder einem Server im Heimnetz liegen sie auf dem Server). Die Karte „Daten & Sicherung“ nennt stattdessen den Datenordner und sagt genau, was nach außen geht: Belege nur mit Ihrer Zustimmung an einen externen KI-Dienst, bei eingeschalteter Update-Prüfung die Frage nach der neuesten Version bei GitHub.
 - Das gedruckte PDF der Nebenkostenabrechnung folgt DIN 5008 ([#415](https://github.com/speedone/mietfuchs/issues/415)):
   Anschreiben und Aufstellung haben dieselben Ränder (links 25 mm, rechts 20 mm). Rechts neben dem Anschriftfeld

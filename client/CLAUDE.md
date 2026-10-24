@@ -81,7 +81,11 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   Aufforderung offen als `CalcNotice`, eingeklappt nur „Mehr dazu“, „Hier beheben →“ ohne Aufklappen; kein Einzelbetrag im
   Kopf, denn der erste Betrag eines Texts ist oft nur der Anteil des ersten Mieters. Nur stille Hinweise (`isQuietHint`,
   erkannt mit `PROTECTED` und `isAction` aus noticeText.ts) stehen zusammen in `NoticeGroup`. Dazu die Prüfungen der Seite
-  selbst, Anschrift und Länge, als Hinweise derselben Gestalt, `pageChecks`; hat die Abrechnung Fehler, sagt es auch die
+  selbst, Anschrift und Länge, als Hinweise derselben Gestalt, `pageChecks`. **Gleiche Hinweise mehrerer Mieter stehen
+  in einem Kasten** (`groupNotices` in [noticeGroups.ts](src/noticeGroups.ts), `CalcNoticeGroup`): nur bei gleichem
+  Code, Stufe, Titel und Bezug auf ein Mietverhältnis der Abrechnung, wenn der Text nach Abzug von Name, Wohnung und
+  Zahlen gleich ist; Sätze, die bei allen wörtlich gleich sind, stehen einmal, jeder andere Satz wörtlich beim Mieter
+  mit „Hier beheben →“, also jeder Betrag; sonst bleibt der Hinweis einzeln. Hat die Abrechnung Fehler, sagt es auch die
   Vorschau, mit „Zurück zu „Zu prüfen““), die Übersicht (Kennzahlen,
   Tabelle je Mieter `tenantRows` mit den Mietverhältnissen ohne Abrechnung, `stacked`; die Karte zu § 560 bleibt eine
   eigene Karte darunter, als Spalte wäre sie zu eng) und „Kontrolle“ (Kontrollansicht, Vermieteranteil, Rechtsstand je als
