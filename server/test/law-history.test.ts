@@ -108,6 +108,8 @@ const SHIPPED: readonly string[] = [
   // Verbilligte Vermietung (#257)
   'estg.cheap-rent|2012-01-01|2020-12-31|{"split":66,"paid":66}',
   'estg.cheap-rent|2021-01-01||{"split":50,"paid":66}',
+  // Garage und Umsatzsteuer (#323)
+  'ustg.small-business|2025-01-01||{"previousYearEuro":25000,"currentYearEuro":100000}',
   // Fristen nach Werktagen und die Feiertage der Länder (#290)
   'bgb.rent-due-workday|||3',
   'bgb.rent-due-saturday|||false',

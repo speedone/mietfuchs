@@ -72,3 +72,37 @@ export const ustgGasHeatNetworkRate: LawParam<number, 'eventDate'> = {
   }],
   describe: (v) => `${v} %`,
 }
+
+// Kleinunternehmerregelung (#323). Gebraucht nur für Texte (Lexikon, Anleitung Garage), nie für eine
+// Abrechnungs- oder Steuerzahl: Mietfuchs rechnet keine Umsatzsteuer. Am 24.10.2026 auf
+// gesetze-im-internet.de gelesen, § 19 Abs. 1 Satz 1 UStG heute: „Ein von einem im Inland … ansässigen
+// Unternehmer bewirkter Umsatz im Sinne des § 1 Absatz 1 Nummer 1 ist steuerfrei, wenn der Gesamtumsatz
+// nach Absatz 2 im vorangegangenen Kalenderjahr 25 000 Euro nicht überschritten hat und im laufenden
+// Kalenderjahr 100 000 Euro nicht überschreitet.“ § 19 Abs. 2 Satz 1 Nr. 1 nimmt die nach § 4 Nr. 11 bis
+// 29 steuerfreien Umsätze aus dem Gesamtumsatz heraus, also die Wohnungsmiete (§ 4 Nr. 12 Satz 1), nicht
+// aber die Miete eines Stellplatzes (§ 4 Nr. 12 Satz 2). Fassung: Art. 25 Jahressteuergesetz 2024 vom
+// 02.12.2024 (BGBl. 2024 I Nr. 387), mit Wirkung vom 01.01.2025 (Fassungsverlauf auf buzer.de). Die
+// Fassungen davor (bis 2024 mit anderen Grenzen) führt das Register nicht; das Lexikon erklärt das
+// geltende Recht.
+//
+// Zeitregel `periodStart`: Die Grenzen beziehen sich auf Kalenderjahre; gefragt wird mit dem 1. Januar.
+export type SmallBusinessLimits = {
+  // Gesamtumsatz im Vorjahr höchstens (Euro).
+  readonly previousYearEuro: number
+  // Gesamtumsatz im laufenden Jahr höchstens (Euro).
+  readonly currentYearEuro: number
+}
+
+export const ustgSmallBusiness: LawParam<SmallBusinessLimits, 'periodStart'> = {
+  id: 'ustg.small-business',
+  title: 'Kleinunternehmerregelung',
+  norm: '§ 19 Abs. 1 Satz 1 UStG',
+  timing: 'periodStart',
+  versions: [{
+    validFrom: '2025-01-01',
+    value: { previousYearEuro: 25000, currentYearEuro: 100000 },
+    source: { rank: 'law', cite: '§ 19 Abs. 1 Satz 1 und Abs. 2 UStG', url: 'https://www.gesetze-im-internet.de/ustg_1980/__19.html', retrieved: '2026-10-24', checked: 'checked' },
+    enacted: '§ 19 UStG, Fassung Art. 25 Jahressteuergesetz 2024 vom 02.12.2024 (BGBl. 2024 I Nr. 387)',
+  }],
+  describe: (v) => `Gesamtumsatz im Vorjahr höchstens ${v.previousYearEuro.toLocaleString('de-DE')} €, im laufenden Jahr höchstens ${v.currentYearEuro.toLocaleString('de-DE')} €`,
+}

@@ -8,6 +8,16 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Hinzugefügt
 
+- Umsatzsteuer bei getrennt vermieteter Garage oder Stellplatz ([#323](https://github.com/speedone/mietfuchs/issues/323)),
+  nur benannt, nicht gerechnet: Die Anleitung „Garage oder Stellplatz“ und der neue Begriff „Umsatzsteuer bei
+  Garage und Stellplatz“ erklären, dass die Vermietung von Stellplätzen nicht von der Umsatzsteuer befreit ist
+  (§ 4 Nr. 12 Satz 2 UStG), wann sie nach Auffassung der Finanzverwaltung als Nebenleistung zur Wohnung desselben
+  Mieters doch befreit ist (Abschnitt 4.12.2 Abs. 3 UStAE) und dass die Kleinunternehmerregelung sie ersparen kann
+  (§ 19 UStG, Grenzen seit 2025 im Rechtsregister). Der Begriff nennt die Zeilen 26 und 27 des Vordrucks 2025.
+- Vom Mieter übernommene Kosten ([#336](https://github.com/speedone/mietfuchs/issues/336)), nur benannt: Ein
+  neuer Begriff erklärt, dass Kosten, die ein Mieter für den Vermieter übernimmt (etwa eine mit der Miete
+  verrechnete Renovierung), eine Einnahme sind und zugleich Werbungskosten sein können (FG Berlin-Brandenburg,
+  Urteil vom 11.03.2026, 11 K 11216/24). Die Seite Steuer nennt beides in einem ruhigen Satz mit den Begriffen.
 - Export der Abrechnung als Daten ([#415](https://github.com/speedone/mietfuchs/issues/415)): Auf der Seite
   Abrechnung speichern „Als JSON exportieren“ und „Als CSV exportieren“ die Zahlen der Abrechnung. Das JSON
   trägt eine Versionsangabe, Beträge in Cent als ganze Zahlen und alles, was gedruckt wird: je Mieter Zeilen

@@ -11,7 +11,7 @@ import { gmodgHeating43 } from './gmodg.ts'
 import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvExemptions, hkvGenerationPower, hkvHeatingValues, hkvHeatPumpCapture, hkvInfoDistrict, hkvMonthlyInfo, hkvRenewableExemption, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvSettlementInfo } from './heizkostenv.ts'
 import { messevCalibrationYears } from './messev.ts'
 import { practiceEvaporatorWindow, practiceReadingOffWarning, practiceVacancyPersons } from './practice.ts'
-import { ustgGasHeatNetworkRate, ustgStandardRate } from './ustg.ts'
+import { ustgGasHeatNetworkRate, ustgSmallBusiness, ustgStandardRate } from './ustg.ts'
 
 export const LAW_PARAMS: readonly LawParam<LawValue, Timing>[] = [
   betrkvTvSignal,
@@ -75,4 +75,6 @@ export const LAW_PARAMS: readonly LawParam<LawValue, Timing>[] = [
   ...HOLIDAY_PARAMS,
   // Verbilligte Vermietung (#257)
   estgCheapRent,
+  // Garage und Umsatzsteuer (#323)
+  ustgSmallBusiness,
 ]
