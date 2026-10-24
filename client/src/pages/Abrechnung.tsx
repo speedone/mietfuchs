@@ -79,7 +79,7 @@ export const LETTER_CHOICE_NOTE = 'Anschreiben: gilt nur für diesen Druck. Die 
 
 // Warnungen der Seite vor dem Druck (#415), am Brief des Mieters und in „Zu prüfen“ mit demselben Wortlaut.
 // Druck in Safari (#286): WebKit nimmt die Ränder der ersten Seite für alle Seiten (letterDesignView.ts, `canPagePaper`).
-const PAPER_BROWSER_TEXT = 'Dieser Browser (etwa Safari) kann die Ränder nicht je Druckseite unterscheiden; mit Briefpapier stünde der Text der Folgeseiten im Kopf oder Fuß des Papiers. Gedruckt wird deshalb ohne Briefpapier, mit Absender und Fußzeile von Mietfuchs. Mit Briefpapier drucken Sie in Chrome, Edge oder Firefox.'
+const PAPER_BROWSER_TEXT = 'Dieser Browser (etwa Safari) kann die Ränder nicht je Druckseite unterscheiden; mit Briefpapier stünde der Text der Folgeseiten im Kopf oder Fuß des Papiers. Gedruckt wird deshalb wie ohne Briefpapier: mit Seitenrand und Absender oben, die Fußzeile mit Kontakt und Bank nur, wenn sie eingeschaltet ist. Mit Briefpapier drucken Sie in einem aktuellen Chrome, Edge oder Firefox.'
 const LETTER_LONG_TEXT = 'Das Anschreiben ist voraussichtlich länger als eine Seite und druckt auf der nächsten weiter. Soll es auf eine Seite passen, kürzen Sie die Texte über „Anschreiben bearbeiten“.'
 const returnLineText = (line: string) => `Die Rücksendeangabe über der Anschrift hat ${line.trim().length} Zeichen; im Fensterfeld passen rund ${RETURN_LINE_MAX} in zwei kleine Zeilen, der Rest würde abgeschnitten. Kürzen Sie den Namen oder die Anschrift des Vermieters (Einstellungen bzw. beim Objekt).`
 
@@ -701,6 +701,8 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
       {error && <NoticeBox level="error" action={error} />}
       {/* Teil 2b: Mit Briefpapier ohne Seitenrand, das Papier der Folgeseiten einmal für alle Druckseiten. */}
       {design.paper && <style>{PAPER_PAGE_CSS}</style>}
+      {/* Auch für Strg+P und das Menü des Browsers, nicht nur im Fenster „Drucken“ (Durchsicht K2 zu PR #443). */}
+      {planned.paperSkipped && <NoticeBox level="info" className="no-print" title="Briefpapier druckt dieser Browser nicht" action={PAPER_BROWSER_TEXT} />}
       {missingDesign.length > 0 && (
         <NoticeBox
           level="warning"

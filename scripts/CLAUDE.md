@@ -56,15 +56,18 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   nachgemessen an Testseiten und im Lauf, #286): keine Randfelder von `@page`, also keine Seitenzahl (erwartet);
   `thead`/`tfoot` und fest positionierte Elemente nicht je Seite wiederholt, also der Fußvermerk einmal am Ende jeder
   Aufstellung (erwartet) und ohne wiederholten Tabellenkopf weniger Seiten als Chromium (erwartet, wenn dieselben
-  Beträge dastehen); die Ränder der ersten Seite (auch `@page :first`) für alle Seiten, deshalb druckt Safari ohne
-  Briefpapier (erwartet, `canPagePaper` in client/src/letterDesignView.ts); `box-decoration-break: clone` nur mit
-  Präfix und nicht über Druckseiten; `break-inside: avoid` an `tr` nicht (eine mehrzeilige Zeile der Kostentabelle
+  Beträge und derselbe Text ohne Tabellenköpfe, Fußvermerk und Seitenzahl dastehen); die Ränder der ersten Seite (auch
+  `@page :first`) für alle Seiten, deshalb druckt Safari ohne Briefpapier, mit Hinweis auf der Seite und im Fenster
+  „Drucken“ (erwartet und geprüft, `canPagePaper` in client/src/letterDesignView.ts); `box-decoration-break: clone`
+  nur mit Präfix und nicht über Druckseiten. Die Erkennung prüft nur, ob es die Eigenschaft ohne Präfix gibt: Führt
+  WebKit sie ein, meldet der Workflow „Briefpapier gedruckt“, und es ist neu zu messen, ob die Ränder je Seite wirken. `break-inside: avoid` an `tr` beachtet WebKit nicht (eine mehrzeilige Zeile der Kostentabelle
   kann ihre letzte Zeile auf die nächste Seite schieben; dieselbe Angabe an einem Block je Zelle trennt die Zellen
   voneinander, das war schlechter, offen). Der Maßstab: WebKit legt die Druckseite 1,25-mal so breit an, wie sie in Punkt
   misst (`printingMinimumShrinkFactor` in WebCore/page/PrintContext.h), und verkleinert auf die Breite des Inhalts;
   ohne breiten Inhalt druckte es rund 7 % größer, mit der überlangen E-Mail 3 %. Das ist Safari selbst, nicht der
   Aufbau (die Ränder und `scalingFactor` von NSPrintInfo ändern nichts, Safari druckt über denselben Weg); behoben
-  mit `body { width: 186mm }` im Druck (client/src/letter.css). Erwartetes steht im Bericht unter „Erwartet“, nicht
+  mit `body { width: 186mm }` im Druck, nur ohne `box-decoration-break: clone` (client/src/letter.css; in Chromium und
+  Firefox schaltete die feste Breite die Skalierung des Druckdialogs ab). Erwartetes steht im Bericht unter „Erwartet“, nicht
   als Befund. **Von Hand bleibt**: ein Blick auf die Seitenbilder (Überdrucken, Bilder, Linien prüft
   die Auswertung nicht) und gelegentlich „Als PDF sichern“ im echten Safari als Gegenprobe, denn der
   Lauf druckt über WKWebView, nicht über Safaris Menü.

@@ -114,7 +114,6 @@ test('Briefpapier: ohne Seitenrand, Papier auf der ersten und den Folgeseiten, o
   expect(card.classList.contains('paper-print')).toBe(true)
   expect((card as HTMLElement).style.getPropertyValue('--paper-top')).toBe('40mm')
   expect(container.querySelector('style')?.textContent).toMatch(/@page\s*\{\s*margin:\s*0/)
-  expect(container.querySelector('style')?.textContent).toMatch(/body \{ width: 210mm; \}/)
   // Das Papier der Folgeseiten liegt im Kopf der Hülle, den Chromium und Firefox je Seite wiederholen, nicht unter den
   // Belegkopien; einen Rand hält der Kopf nicht frei, das tut der Rahmen um die Hülle (letter.css).
   expect(card.querySelector('.print-pages-frame > .print-pages > thead img.paper-follow')?.getAttribute('src')).toBe(url(NEXT))
@@ -126,6 +125,8 @@ test('Briefpapier: ohne Seitenrand, Papier auf der ersten und den Folgeseiten, o
   expect(card.querySelector('.letter-footer')).toBeNull()
   expect(card.querySelector('.statement-footnote')?.textContent).not.toContain('DE02')
   expect(card.querySelector('.print-pages-spacer')).toBeNull()
+  // Kann der Browser Ränder je Seite, gibt es nichts zu sagen.
+  expect(container.textContent).not.toContain('Briefpapier druckt dieser Browser nicht')
 })
 
 // Druck in Safari (#286): WebKit nimmt die Ränder der ersten Seite für alle Seiten und wiederholt nichts je Seite; mit
@@ -142,8 +143,9 @@ test('ein Browser ohne Ränder je Seite (Safari): ohne Briefpapier, mit Logo, Ra
   expect(card.querySelector('img.letter-paper, img.paper-follow, .print-pages-frame')).toBeNull()
   expect(card.querySelector('.letter-head')?.textContent).toContain('Max Vermieter')
   expect(card.querySelector('.letter-footer')).not.toBeNull()
-  // Nicht auf der Seite (dort wäre es für Chrome falsch), sondern vor dem Druck.
-  expect(container.textContent).not.toContain('Briefpapier druckt dieser Browser nicht')
+  // Auch auf der Seite, für Strg+P und das Menü des Browsers (Durchsicht K2 zu PR #443), aber nicht im Druck.
+  const onPage = [...container.querySelectorAll('.no-print')].find((el) => el.textContent?.includes('Briefpapier druckt dieser Browser nicht'))
+  expect(onPage, 'Hinweis auf der Seite').toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: /Drucken \/ PDF/ }))
   const drawer = await screen.findByRole('dialog', { name: 'Drucken' }, SLOW)
   expect(drawer.textContent).toContain('Briefpapier druckt dieser Browser nicht')

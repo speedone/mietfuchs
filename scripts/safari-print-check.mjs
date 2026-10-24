@@ -123,10 +123,15 @@ async function drivePage(args) {
   await until(() => doc.querySelector('.card.statement'), 'Mieterabrechnungen')
   await sleep(800)
   const imagesReady = () => [...doc.images].every((img) => img.complete)
+  // Der Hinweis „Briefpapier druckt dieser Browser nicht“ auf der Seite (für Strg+P) und im Fenster „Drucken“
+  const PAPER_NOTE = 'Briefpapier druckt dieser Browser nicht'
+  const paperNote = (doc.body.textContent ?? '').includes(PAPER_NOTE)
+  let drawerNote = null
   if (args.mode === 'drawer') {
     printButton.click()
     steps.push('Drucken / PDF')
     const drawer = await until(() => [...doc.querySelectorAll('dialog[open]')].find((d) => [...d.querySelectorAll('h1, h2, h3')].some((h) => text(h) === 'Drucken')), 'Fenster „Drucken“')
+    drawerNote = (drawer.textContent ?? '').includes(PAPER_NOTE)
     const select = /** @type {any} */ (drawer.querySelector('select'))
     const option = [...select.options].find((o) => text(o).includes(args.tenant))
     if (!option) throw new Error(`Kein Eintrag für ${args.tenant}: ${[...select.options].map(text).join(' | ')}`)
@@ -161,7 +166,7 @@ async function drivePage(args) {
   await sleep(500)
   // Steht der Hinweis der Datenbank am Bildschirm? Sonst prüfte der Fall mit Hinweis nichts.
   const banner = (doc.body.textContent ?? '').includes('Sicherung vor dem Update angelegt')
-  return JSON.stringify({ steps, banner, title: doc.title, printOne: doc.body.classList.contains('print-one'), pageNumberStyle: doc.querySelectorAll('style[data-page-numbers]').length, paper: !!doc.querySelector('.paper-print') })
+  return JSON.stringify({ steps, banner, title: doc.title, printOne: doc.body.classList.contains('print-one'), pageNumberStyle: doc.querySelectorAll('style[data-page-numbers]').length, paper: !!doc.querySelector('.paper-print'), paperNote, drawerNote })
 }
 
 // ---------- PDF lesen ----------
@@ -221,7 +226,7 @@ const MONEY = /\d,\d\d\s*€/
 /**
  * @param {PrintCase} c
  * @param {any[]} pages
- * @param {{ tenants: { name: string, footnote: string }[], engine: string, paper?: boolean, referencePages: number | null, reference?: any[] | null }} expect
+ * @param {{ tenants: { name: string, footnote: string }[], engine: string, result?: any, referencePages: number | null, reference?: any[] | null }} expect
  */
 function checkPdf(c, pages, expect) {
   const findings = []
@@ -231,13 +236,20 @@ function checkPdf(c, pages, expect) {
   const n = pages.length
   // Seitenzahl wie Chromium. Weniger Seiten in Safari sind erwartet, wenn derselbe Inhalt dasteht: WebKit wiederholt
   // weder den Kopf der Kostentabelle noch den Fußvermerk je Seite und braucht deshalb weniger Platz. Ob alles dasteht,
-  // prüfen die Beträge: jeder Betrag so oft wie bei Chromium (Kopf und Fußvermerk tragen keinen).
+  // prüfen die Beträge (jeder so oft wie bei Chromium) und der Text ohne die Zeilen, die Chromium je Seite wiederholt:
+  // Köpfe der Tabellen, Fußvermerk, Seitenzahl (Durchsicht K4 zu PR #443).
   if (expect.referencePages !== null && n !== expect.referencePages) {
     // Ohne Leerraum gelesen: WebKit legt jedes Zeichen als eigenes Textstück ab, die Zeile hat dann Lücken.
     const money = (list) => list.flatMap((p) => p.lines.flatMap((l) => squash(l.text).match(/\d+(?:\.\d{3})*,\d\d€/g) ?? [])).sort().join('|')
-    const same = !!expect.reference && money(pages) === money(expect.reference)
-    if (webkit && n < expect.referencePages && same) expected.add(`${n} statt ${expect.referencePages} Seiten bei denselben Beträgen (WebKit wiederholt Tabellenkopf und Fußvermerk nicht je Seite)`)
-    else findings.push(`${n} Seiten, Chromium ${expect.referencePages}${same ? '' : ' (Beträge weichen ab)'}`)
+    const notes = expect.tenants.map((t) => squash(t.footnote))
+    const repeated = (t) => notes.some((f) => t.includes(f)) || /^Seite\d+von\d+$/.test(t) || (/^(Kostenart|Leistung)/.test(t) && t.endsWith('IhrAnteil'))
+    // Als Menge der Zeichen: WebKit und Chromium brechen einzelne Zellen verschieden um, die Zeilen selbst sind deshalb
+    // nicht vergleichbar; ein fehlendes Wort fiele trotzdem auf.
+    const content = (list) => [...list.flatMap((p) => p.lines.map((l) => squash(l.text)).filter((t) => !repeated(t))).join('')].sort().join('')
+    const sameMoney = !!expect.reference && money(pages) === money(expect.reference)
+    const sameText = !!expect.reference && content(pages) === content(expect.reference)
+    if (webkit && n < expect.referencePages && sameMoney && sameText) expected.add(`${n} statt ${expect.referencePages} Seiten bei denselben Beträgen und demselben Text (WebKit wiederholt Tabellenkopf und Fußvermerk nicht je Seite)`)
+    else findings.push(`${n} Seiten, Chromium ${expect.referencePages}${sameMoney ? '' : ' (Beträge weichen ab)'}${sameText ? '' : ' (Text weicht ab)'}`)
   }
   pages.forEach((p, i) => {
     if (Math.abs(p.w - 210) > 1 || Math.abs(p.h - 297) > 1) findings.push(`Seite ${i + 1}: Format ${p.w.toFixed(1)} × ${p.h.toFixed(1)} mm statt A4`)
@@ -306,10 +318,15 @@ function checkPdf(c, pages, expect) {
 
   // Briefpapier nur, wo der Browser die Ränder je Seite wiederholen kann (`canPagePaper`, letterDesignView.ts): Safari
   // druckt ohne, mit Absender und Rand; Chromium mit.
-  if (c.paper && expect.paper !== undefined) {
-    if (webkit && expect.paper) findings.push('Briefpapier gedruckt, obwohl WebKit die Ränder nicht je Seite wiederholen kann')
-    else if (webkit) expected.add('ohne Briefpapier gedruckt (WebKit nimmt die Ränder der ersten Seite für alle Seiten); das Fenster „Drucken“ sagt es')
-    else if (!expect.paper) findings.push('ohne Briefpapier gedruckt')
+  // Den Hinweis dazu gibt es auf der Seite und im Fenster „Drucken“, nur dort, wo das Briefpapier fehlt.
+  if (c.paper && expect.result) {
+    const r = expect.result
+    const told = r.paperNote && (c.mode !== 'drawer' || r.drawerNote)
+    if (webkit && r.paper) findings.push('Briefpapier gedruckt, obwohl WebKit die Ränder nicht je Seite wiederholen kann')
+    else if (webkit && !told) findings.push('ohne Briefpapier gedruckt, aber ohne Hinweis auf der Seite bzw. im Fenster „Drucken“')
+    else if (webkit) expected.add('ohne Briefpapier gedruckt (WebKit nimmt die Ränder der ersten Seite für alle Seiten), mit Hinweis auf der Seite und im Fenster „Drucken“')
+    else if (!r.paper) findings.push('ohne Briefpapier gedruckt')
+    else if (r.paperNote || r.drawerNote) findings.push('Hinweis „Briefpapier druckt dieser Browser nicht“, obwohl Briefpapier gedruckt wird')
   }
   return { findings, expected: [...expected] }
 }
@@ -502,7 +519,7 @@ async function evaluate() {
       const pages = read[engine]
       if (!pages) { cells.push('–'); continue }
       const result = meta.cases[c.name]?.[engine]?.result
-      const { findings, expected } = checkPdf(c, pages, { tenants, engine, paper: result?.paper, referencePages: engine === 'safari' && read.chromium ? read.chromium.length : null, reference: engine === 'safari' ? read.chromium ?? null : null })
+      const { findings, expected } = checkPdf(c, pages, { tenants, engine, result, referencePages: engine === 'safari' && read.chromium ? read.chromium.length : null, reference: engine === 'safari' ? read.chromium ?? null : null })
       for (const e of expected) accepted.push(`- **${c.name}** (${engine === 'safari' ? 'Safari' : 'Chromium'}): ${e}`)
       for (const e of meta.cases[c.name]?.[engine]?.pageErrors ?? []) findings.push(`Meldung der Seite: ${e.slice(0, 200)}`)
       if (c.banner && !meta.cases[c.name]?.[engine]?.result?.banner) findings.push('Hinweis „Sicherung vor dem Update angelegt“ stand nicht auf der Seite, der Fall prüft so nichts')

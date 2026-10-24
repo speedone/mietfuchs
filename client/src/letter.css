@@ -93,13 +93,15 @@
    So hat auch eine Folgeseite eines langen Briefs oben und unten ihren Rand (Durchsicht S3); die Seite warnt,
    wenn der Brief voraussichtlich nicht auf eine Seite passt (`exceedsOnePage`). */
 @page { size: A4; margin: 12mm; }
-/* Im Druck ist das Dokument so breit wie die Seite ohne Rand. WebKit legt die Druckseite sonst 1,25-mal so breit an,
-   wie die Seite in Punkt misst, und verkleinert dann auf die Seite (`printingMinimumShrinkFactor` in WebCore): Ohne
-   breiten Inhalt druckte Safari alles rund 7 % größer, und die Fußzeile des Anschreibens rutschte auf eine eigene
+/* In WebKit ist das Dokument im Druck so breit wie die Seite ohne Rand. WebKit legt die Druckseite sonst 1,25-mal so
+   breit an, wie die Seite in Punkt misst, und verkleinert dann auf die Seite (`printingMinimumShrinkFactor` in WebCore):
+   Ohne breiten Inhalt druckte Safari alles rund 7 % größer, und die Fußzeile des Anschreibens rutschte auf eine eigene
    Seite (Druck in Safari, #286, nachgemessen; die Ränder der Seiteneinstellung ändern daran nichts). Ist das Dokument so
-   breit wie der Satzspiegel, druckt WebKit 1:1 wie Chromium und Firefox; dort ändert die Breite nichts. Mit Briefpapier
-   gilt die Breite des Blatts (`PAPER_PAGE_CSS` in letterDesignView.ts). */
-@media print { body { width: 186mm; } }
+   breit wie der Satzspiegel, druckt WebKit 1:1 wie Chromium. Nur dort (Durchsicht K1 zu PR #443): In Chromium und
+   Firefox machte die feste Breite die Skalierung und die Ränder des Druckdialogs wirkungslos. Erkannt wie beim
+   Briefpapier (`canPagePaper`): ohne `box-decoration-break: clone` ohne Präfix. Briefpapier gibt es in WebKit nicht,
+   deshalb gilt hier immer der Rand von 12 mm. */
+@supports not (box-decoration-break: clone) { @media print { body { width: 186mm; } } }
 /* „Seite x von y“ setzt printJob.ts nur beim Druck einer einzelnen Abrechnung in den Rand (Chromium, Teil 2); beim
    Druck aller zählte er über alle Mieter hinweg. */
 

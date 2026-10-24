@@ -115,9 +115,11 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   lesen die Datei mit): **jede Seite hat 12 mm Rand** (`@page`), denn Chromium legt alle Seiten in einer Breite an,
   und andere Ränder auf der Briefseite schnitten die Aufstellung rechts ab (nachgemessen). Den Rest bis zu den Rändern nach
 DIN 5008 (links 25, rechts 20 mm) hält im Brief der Text, in der Aufstellung die Zelle der Hülle `PrintPages` frei
-(letterCss.test.ts). Im Druck ist `body` so breit wie die Seite ohne Rand (186 mm, mit Briefpapier 210 mm): WebKit legt
-die Druckseite sonst 1,25-mal so breit an, wie sie in Punkt misst (`printingMinimumShrinkFactor` in WebCore), und druckte
-ohne breiten Inhalt alles rund 7 % größer (nachgemessen; das ist Safari selbst, nicht der Prüfaufbau). Die Maße der Norm stehen
+(letterCss.test.ts). In WebKit ist `body` im Druck so breit wie die Seite ohne Rand (186 mm): WebKit legt die
+Druckseite sonst 1,25-mal so breit an, wie sie in Punkt misst (`printingMinimumShrinkFactor` in WebCore), und druckte
+ohne breiten Inhalt alles rund 7 % größer (nachgemessen; das ist Safari selbst, nicht der Prüfaufbau). Nur dort
+(`@supports not (box-decoration-break: clone)`): In Chromium und Firefox schaltete die feste Breite die Skalierung des
+Druckdialogs ab. Die Maße der Norm stehen
   abzüglich dieser 12 mm (`--page`): Anschriftfeld 20/45 mm, 85 × 45 mm mit Rücksendeangabe in der Vermerkzone,
   Informationsblock 125/50 mm, Betreff ab 98,46 mm, Falz- und Lochmarken bei 105, 148,5 und 210 mm (12 bis 17 mm von
   der Kante, im Seitenrand schneidet Chromium ab) nur mit der Druckeinstellung „Falz- und Lochmarken drucken“. Ein
@@ -215,8 +217,7 @@ ohne breiten Inhalt alles rund 7 % größer (nachgemessen; das ist Safari selbst
   Logik in [letterDesignForm.ts](src/letterDesignForm.ts); Karte „Logo und Briefpapier“ in den Einstellungen, am Objekt
   über „Mehr“ in der Kopfzeile der Seite Abrechnung). Das Logo steht oben rechts im Briefkopf (im Anschreiben und im Kopf
   ohne Anschreiben), immer als `<img>`, nie eingefügtes SVG. **Mit Briefpapier druckt die Seite ohne Seitenrand**
-  (`PAPER_PAGE_CSS`: `@page { margin: 0 }` und `body` 210 mm breit, nur solange die Seite Abrechnung mit Briefpapier
-  offen ist): Chromium schneidet ab, was in den Rand von 12 mm ragt (nachgemessen), ein Briefpapier bis zur Blattkante
+  (`PAPER_PAGE_CSS`: `@page { margin: 0 }`, nur solange die Seite Abrechnung mit Briefpapier offen ist): Chromium schneidet ab, was in den Rand von 12 mm ragt (nachgemessen), ein Briefpapier bis zur Blattkante
   käme sonst mit weißem Rahmen heraus. Die Maße des Briefs gelten dann ab der Blattkante (`--page: 0mm`); die
   Aufstellung steht in einem Rahmen (`.print-pages-frame`), dessen Innenabstand oben und unten `box-decoration-break:
   clone` auf jeder Druckseite wiederholt, die Seiten hält die Zelle (`--paper-*` an der Karte). Kein Tabellenkopf oder
@@ -229,7 +230,8 @@ ohne breiten Inhalt alles rund 7 % größer (nachgemessen; das ist Safari selbst
   `thead`/`tfoot` noch ein fest positioniertes Element und schneidet ab, was in den Seitenrand ragt; `page` (benannte
   Seiten) nimmt es an, wirkt aber nicht (alles nachgemessen mit dem Workflow „Druck in Safari“, #286). Papier bis zur
   Blattkante und Ränder auf den Folgeseiten gehen dort nicht zusammen. Safari druckt deshalb wie ohne Briefpapier (mit
-  Rand, Absender und Fußzeile, das Logo bleibt; `printDesign` mit `paperSkipped`), und das Fenster „Drucken“ sagt es.
+  Rand und Absender, die Fußzeile nur mit `printFooter`, das Logo bleibt; `printDesign` mit `paperSkipped`), und die
+  Seite (`no-print`, auch für Strg+P) und das Fenster „Drucken“ sagen es.
   Rand oben höchstens 70 mm (Grenze aus der Zeit des wiederholten Tabellenkopfs, beibehalten). Ein Bild druckt der Browser immer, auch ohne „Hintergrundgrafiken“. Eine PDF rendert
   pdf.js vorab zu einem Bild, ein Bild wird vorher nachgefragt; bis dahin ist „Drucken“ im Fenster „Drucken“ gesperrt. **Fehlt eine
   Datei**, druckt die Seite ohne sie, mit Rand, Absender und Fußzeile, und nennt es (`printedDesign`, Durchsicht M2).

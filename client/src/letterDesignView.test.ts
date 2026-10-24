@@ -34,9 +34,9 @@ describe('Logo und Briefpapier im Druck (#415, Teil 2b)', () => {
   it('Ränder als Variablen in Millimetern, und ohne Seitenrand gedruckt', () => {
     expect(paperVars(withPaper.margins)).toEqual({ '--paper-top': '40mm', '--paper-right': '15mm', '--paper-bottom': '30mm', '--paper-left': '25mm' })
     expect(PAPER_PAGE_CSS).toMatch(/@page\s*\{\s*margin:\s*0/)
-    // WebKit legt die Seite sonst um ein Viertel schmaler an und vergrößert beim Drucken (Druck in Safari, #286): Die
-    // Breite des Dokuments ist im Druck die des Blatts ohne Rand.
-    expect(PAPER_PAGE_CSS).toMatch(/@media print \{\s*body \{ width: 210mm; \}\s*\}/)
+    // Briefpapier druckt nur ein Browser mit Rändern je Seite (nicht WebKit); dort braucht es keine feste Breite, die die
+    // Skalierung des Druckdialogs abschalten würde (Durchsicht K1 zu PR #443).
+    expect(PAPER_PAGE_CSS).not.toMatch(/width/)
   })
 
   // Druck in Safari (#286): WebKit nimmt die Ränder der ersten Seite für alle Seiten (auch `@page :first`) und wiederholt

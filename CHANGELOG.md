@@ -153,7 +153,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   den weiteren Angaben eines Mietverhältnisses, etwa „Sehr geehrte Frau Becker“; das Komma ergänzt Mietfuchs.
   Der neue Platzhalter {Anrede} setzt sie ein und ist die Vorgabe des Bausteins Anrede; ohne Eintrag bleibt
   es bei „Guten Tag {Name},“.
-- Jede Seite der Aufstellung trägt im Druck unten Mieter, Wohnung, Abrechnung und Zeitraum, damit sich lose
+- Jede Seite der Aufstellung trägt im Druck unten Abrechnung, Objekt und Wohnung, damit sich lose
   Blätter zuordnen lassen (Safari druckt den Vermerk einmal am Ende der Aufstellung, weil es nichts je Seite
   wiederholt); beim Druck einer einzelnen Abrechnung steht dazu „Seite x von y“ im Rand (in Chrome und Edge; ein
   Browser ohne diese Druckfunktion, etwa Safari oder Firefox, lässt nur die Seitenzahl weg)
@@ -174,9 +174,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Ein Objekt kann eine eigene Gestaltung haben (Seite Abrechnung, Karte „Anschreiben“). Die Dateien liegen
   im Datenordner unter `briefpapier` und kommen mit ins Backup; eine automatische Vorversion enthält nur die
   Datenbank, ein seither ersetztes Logo oder Briefpapier fehlt nach ihrem Einspielen. Fehlt eine Datei, nennt die
-  Seite Abrechnung das und druckt ohne sie. Der Rand oben geht bis 70 mm. Safari druckt ohne Briefpapier, weil es
-  die Ränder nicht je Seite unterscheiden kann (der Text der Folgeseiten stünde sonst im Kopf oder Fuß des Papiers);
-  das Fenster „Drucken“ sagt es, Chrome, Edge und Firefox drucken es. Eine vor diesem
+  Seite Abrechnung das und druckt ohne sie. Der Rand oben geht bis 70 mm. Ein Browser, der die Ränder nicht je
+  Druckseite unterscheiden kann (etwa Safari oder ein Chrome älter als Version 130), druckt ohne Briefpapier, weil der
+  Text der Folgeseiten sonst im Kopf oder Fuß des Papiers stünde; die Seite Abrechnung und das Fenster „Drucken“
+  sagen es, ein aktuelles Chrome, Edge und Firefox drucken es. Eine vor diesem
   Anschreiben abgeschlossene Abrechnung druckt weiter wie damals, ohne Logo und Briefpapier.
 - Verbilligte Vermietung nach § 21 Abs. 2 EStG ([#257](https://github.com/speedone/mietfuchs/issues/257)):
   Vermieten Sie eine Wohnung günstiger als üblich, etwa an Angehörige, tragen Sie auf der Seite Steuer in

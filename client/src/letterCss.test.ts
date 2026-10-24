@@ -82,10 +82,15 @@ test('der Fußvermerk steht im Fluss und wird nirgends ausgeblendet', () => {
 // WebKit legt die Druckseite 1,25-mal so breit an, wie die Seite in Punkt misst (`printingMinimumShrinkFactor`), und
 // verkleinert dann auf die Seite: alles rund 7 % größer, ohne breiten Inhalt (nachgemessen: 4,52 statt 4,23 mm Schrift).
 // Ist das Dokument im Druck so breit wie der Satzspiegel, druckt WebKit im Maßstab 1:1 wie Chromium.
-test('im Druck ist das Dokument so breit wie die Seite ohne Rand', () => {
+// Nur dort (Durchsicht K1 zu PR #443): In Chromium und Firefox machte die feste Breite die Skalierung des Druckdialogs
+// wirkungslos (mit 80 % stand der Text nur auf 80 % der Breite). Erkannt wie beim Briefpapier (`canPagePaper`): ohne
+// `box-decoration-break: clone` ohne Präfix, also WebKit.
+test('im Druck ist das Dokument in WebKit so breit wie die Seite ohne Rand, sonst nicht', () => {
   const page = Number(css.match(/@page \{ size: A4; margin: ([\d.]+)mm; \}/)?.[1])
-  const width = Number(css.match(/@media print \{ body \{ width: ([\d.]+)mm; \} \}/)?.[1])
+  const width = Number(css.match(/@supports not \(box-decoration-break: clone\) \{ @media print \{ body \{ width: ([\d.]+)mm; \} \} \}/)?.[1])
   expect(width).toBe(210 - 2 * page)
+  // Keine Breite des Dokuments außerhalb dieser Bedingung.
+  expect([...css.matchAll(/body \{ width:/g)]).toHaveLength(1)
 })
 
 // Auch Chromium auf dem Mac: Die E-Mail im Informationsblock ragte mit der Schrift des Systems 1,9 mm über den rechten
