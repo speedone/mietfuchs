@@ -7,6 +7,7 @@
 // nicht, aber liegt der Stand als Sicherung vor, nimmt der Server sie, und die Rückfrage sagt das. Nach dem Einspielen
 // einer Sicherung lädt die Seite immer neu.
 import { useEffect, useRef, useState } from 'react'
+import { useFocusFirstNew } from '../focusNew'
 import { api, ApiError, errorText } from '../api'
 import Card from '../components/Card'
 import Field from '../components/Field'
@@ -209,12 +210,17 @@ export default function Verlauf({ reloadPage = () => window.location.reload() }:
   // Jeder Objektwechsel und jeder Filter beginnt eine neue Liste; eine Antwort zur vorigen gilt dann nicht mehr (K4).
   const generation = useRef(0)
   const busy = useRef(false)
+  // Nach „Ältere Änderungen laden“ der Fokus auf den ersten neuen Eintrag, auch wenn der Knopf danach fehlt
+  // (Durchsicht von PR #449, K3)
+  const listRef = useRef<HTMLDivElement>(null)
+  const focusNew = useFocusFirstNew(listRef, ':scope > details, :scope > [data-snapshot]', 'summary, button')
 
   // Geblättert wird ab der ältesten Gruppe; eine Seite ist voll, wenn sie so viele Gruppen trägt wie verlangt.
   const groupsOf = (list: JournalItem[]) => list.filter((i): i is JournalGroup => !isSnapshot(i))
   const fetchPage = (before: number | null) => api<JournalItem[]>(journalQuery(filter, propertyId, before, PAGE))
   useEffect(() => {
     const mine = ++generation.current
+    focusNew.cancel()
     busy.current = false
     setLoading(false)
     setItems(null)
@@ -234,9 +240,10 @@ export default function Verlauf({ reloadPage = () => window.location.reload() }:
     setLoading(true)
     const mine = generation.current
     const done = () => { if (mine === generation.current) { busy.current = false; setLoading(false) } }
+    focusNew.expect(items?.length ?? 0)
     fetchPage(last.id).then(
       (page) => { if (mine === generation.current) { setItems((g) => [...(g ?? []), ...page]); setMore(groupsOf(page).length === PAGE) }; done() },
-      (e: unknown) => { if (mine === generation.current) setError(errorText(e)); done() },
+      (e: unknown) => { if (mine === generation.current) { focusNew.cancel(); setError(errorText(e)) }; done() },
     )
   }
 
@@ -372,9 +379,11 @@ export default function Verlauf({ reloadPage = () => window.location.reload() }:
             {unfiltered ? 'Noch keine Änderungen. Sobald Sie etwas anlegen, ändern oder löschen, steht es hier.' : 'Keine Änderung passt zu diesem Filter.'}
           </p>
         )}
-        {items?.map((item) => (isSnapshot(item)
-          ? <SnapshotRow key={`s:${item.name}`} point={item} onReturn={onSnapshot} />
-          : <GroupDetails key={item.id} group={item} newest={item.newest} onRevert={onRevert} />))}
+        <div ref={listRef}>
+          {items?.map((item) => (isSnapshot(item)
+            ? <SnapshotRow key={`s:${item.name}`} point={item} onReturn={onSnapshot} />
+            : <GroupDetails key={item.id} group={item} newest={item.newest} onRevert={onRevert} />))}
+        </div>
         {more && (
           <div className="row">
             <button className="btn secondary" disabled={loading} onClick={loadMore}>

@@ -162,6 +162,44 @@ export function buildFolder(uploads: ReceiptUpload[], items: CostItem[], filter:
   return { groups: sorted, unlinked }
 }
 
+// ---------- Gliederung (Leistungsprüfung, Befund 4) ----------
+
+// Mit „Belege aller Jahre zeigen“ stehen die Register je Jahr in einem eigenen Abschnitt, aufgeklappt nur
+// das gewählte Jahr. Über zehn Jahre standen sonst alle Register offen untereinander. Erwartet die Register
+// aus `buildFolder` (nach Jahr absteigend sortiert). Beide Zahlen zählen, was gezeigt wird, bei einer Suche also
+// nur die Treffer (Durchsicht von PR #449, K4): `receipts` jeden Beleg einmal, auch wenn er an Positionen mehrerer
+// Kostenarten hängt, `withoutReceipt` die Positionen ohne Beleg wie die Liste darunter (`missing`), also auch
+// gedeckt über eine Belegbuchung (K2).
+export type YearSection = { year: number; groups: CategoryGroup[]; receipts: number; withoutReceipt: number }
+
+export function yearSections(groups: readonly CategoryGroup[]): YearSection[] {
+  const sections: YearSection[] = []
+  const files = new Map<number, Set<string>>()
+  for (const g of groups) {
+    let s = sections.at(-1)
+    if (!s || s.year !== g.year) {
+      s = { year: g.year, groups: [], receipts: 0, withoutReceipt: 0 }
+      sections.push(s)
+      files.set(g.year, new Set())
+    }
+    s.groups.push(g)
+    const seen = files.get(g.year)
+    for (const c of g.cards) seen?.add(c.upload.file)
+    s.receipts = seen?.size ?? 0
+    s.withoutReceipt += g.missing.length
+  }
+  return sections
+}
+
+// Der Posteingang zeigt die neuesten Belege zuerst und davon `INBOX_STEP`; „Ältere anzeigen“ holt jeweils
+// so viele dazu. 420 Karten untereinander waren nicht mehr zu lesen.
+export const INBOX_STEP = 20
+
+export function inboxPage<T>(cards: readonly T[], count: number): { shown: T[]; hidden: number } {
+  const shown = cards.slice(0, Math.max(0, count))
+  return { shown, hidden: cards.length - shown.length }
+}
+
 // Hinweise auf doppelte Belege. **Gleicher Inhalt** erkennt die Prüfsumme sicher, auch unter
 // anderem Namen und bevor der Beleg an einer Position hängt. Gleicher Rechnungssteller, gleiche
 // Summe und gleiches Jahr ist dagegen nur ein Verdacht: zwei Abschläge desselben Versorgers
@@ -200,6 +238,13 @@ export type Coverage = {
 }
 
 // Je Position die Belege, die über gebuchte Zeilen an ihr hängen (#170).
+// Ob eine Position einen Beleg hat: ihren eigenen oder einen, der nur über eine verknüpfte Zeile an ihr hängt
+// (Belegbuchung); gezählt wird nur eine vorhandene Datei, ohne Dateiliste (`null`) jeder Verweis. Dieselbe Regel
+// für Belegabdeckung, Cockpit und das Abzeichen am Register (Durchsicht von PR #449, K2).
+export function isItemCovered(c: CostItem, present: ReadonlySet<string> | null, booked: ReadonlyMap<string, readonly string[]>): boolean {
+  return [c.invoiceFile, ...(booked.get(c.id) ?? [])].some((f) => !!f && (present === null || present.has(f)))
+}
+
 export function filesByItem(uploads: readonly ReceiptUpload[]): Map<string, string[]> {
   const out = new Map<string, string[]>()
   for (const u of uploads) for (const id of u.bookedItemIds ?? []) out.set(id, [...(out.get(id) ?? []), u.file])
@@ -216,8 +261,7 @@ export function filesByItem(uploads: readonly ReceiptUpload[]): Map<string, stri
 // deckt nichts. Ohne die Liste (Cockpit) zählt der Verweis.
 export function coverage(items: CostItem[], filter: FolderFilter, present: Set<string> | null, booked: ReadonlyMap<string, readonly string[]> = new Map()): Coverage {
   const relevant = items.filter((c) => inScope(c, filter) && c.amountCents !== 0)
-  // Ein Beleg, der nur über eine verknüpfte Zeile an der Position hängt, deckt sie wie ihr eigener.
-  const isCovered = (c: CostItem) => [c.invoiceFile, ...(booked.get(c.id) ?? [])].some((f) => !!f && (present === null || present.has(f)))
+  const isCovered = (c: CostItem) => isItemCovered(c, present, booked)
   const covered = relevant.filter(isCovered)
   const totalCents = relevant.reduce((a, c) => a + Math.abs(c.amountCents), 0)
   const coveredCents = covered.reduce((a, c) => a + Math.abs(c.amountCents), 0)

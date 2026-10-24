@@ -5,7 +5,7 @@
 // Bewusst die legacy-Fassung: Die moderne setzt die allerneuesten Browser voraus und scheitert
 // schon an einem Browser vom Frühjahr 2025 („toHex is not a function“). Die legacy-Fassung
 // bringt die fehlenden Funktionen selbst mit und läuft ab Chrome 125, Safari 18 und Firefox ESR.
-import type { PDFDocumentProxy } from 'pdfjs-dist/legacy/build/pdf.mjs'
+import type { PDFDocumentProxy, PDFWorker } from 'pdfjs-dist/legacy/build/pdf.mjs'
 
 type Pdfjs = typeof import('pdfjs-dist/legacy/build/pdf.mjs')
 let pdfjsPromise: Promise<Pdfjs> | null = null
@@ -26,12 +26,35 @@ function loadPdfjs(): Promise<Pdfjs> {
   return pdfjsPromise
 }
 
+// Ein Worker für alle Dokumente. Ohne `worker` legt pdf.js je Dokument einen eigenen Web Worker an
+// (1,3 MB Skript je Worker); mit ein paar hundert Vorschaubildern im Belegordner stürzte so der Tab ab
+// (Bericht der Leistungsprüfung, Befund 1). Ein Dokument freizugeben (`task.destroy()`) beendet den
+// gemeinsamen Worker nicht. Scheitert er beim Start, versucht der nächste Aufruf einen neuen.
+let sharedWorker: PDFWorker | null = null
+
+function workerOf(pdfjs: Pdfjs): PDFWorker {
+  if (sharedWorker && !sharedWorker.destroyed) return sharedWorker
+  const worker = new pdfjs.PDFWorker()
+  worker.promise.catch(() => { if (sharedWorker === worker) sharedWorker = null })
+  sharedWorker = worker
+  return worker
+}
+
+// Den gemeinsamen Worker verwerfen, etwa wenn ein Auftrag sein Zeitlimit überschritten hat (pdfPreview.ts): Er
+// hängt oder ist gestorben. Was noch auf ihm läuft, scheitert; der nächste Aufruf bekommt einen neuen Worker.
+export function discardPdfWorker(): void {
+  const worker = sharedWorker
+  sharedWorker = null
+  try { worker?.destroy() } catch { /* schon tot */ }
+}
+
 export type PdfSource = { url: string } | { data: ArrayBuffer }
 
 export async function openPdf(source: PdfSource): Promise<{ doc: PDFDocumentProxy; close: () => void }> {
   const pdfjs = await loadPdfjs()
   const task = pdfjs.getDocument({
     ...source,
+    worker: workerOf(pdfjs),
     // Dekoder/Ressourcen, die Vite nach /pdfjs/ kopiert (siehe vite.config.ts):
     // ohne sie bleiben JBIG2-/JPEG2000-Scans (Behörden-Bescheide) fast leer.
     wasmUrl: '/pdfjs/wasm/',

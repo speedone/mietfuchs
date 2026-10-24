@@ -143,6 +143,13 @@ Register, Belegabdeckung und Belegmappe folgen ihm, der Posteingang bleibt beim 
   (`invoiceFilesInUse`).
 - **Backup und Umstieg**: Die Tabelle kommt mit dem Schnappschuss der Datenbank; ein Archiv ohne
   sie ergibt eine leere Tabelle (Praxislauf Fall 13).
+- **Vorschaubilder** ([client/src/previewQueue.ts](../../client/src/previewQueue.ts), pdfPreview.ts): ein gemeinsamer
+  pdf.js-Worker (pdf.ts), höchstens zwei Dokumente zugleich in einer Warteschlange, gerendert erst nahe dem sichtbaren
+  Bereich (IntersectionObserver); wer vorbeiscrollt, zieht die Anfrage zurück. Ergebnisse begrenzt gemerkt. Druck der
+  Belegkopien und Belegmappe gehen durch dieselbe Warteschlange, ohne Sichtbarkeit. Zeitlimit je Auftrag (Vorschau 30 s,
+  Druckseiten 180 s): danach scheitert er wie ein unlesbarer Beleg, der Platz wird frei und der Worker verworfen. Vorher startete jedes Bild einen
+  eigenen Worker, und „alle Jahre“ ließ den Tab abstürzen. Mit „alle Jahre“ steht jedes Jahr in einem eingeklappten
+  Abschnitt (`yearSections`), der Posteingang zeigt 20 und „Ältere anzeigen (N)“ (`inboxPage`).
 - **Belegabdeckung** am Betrag gemessen; die Cockpit-Zeile wird **höchstens gelb**.
 - **Belegmappe für Mieter** ([client/src/tenantFolder.ts](../../client/src/tenantFolder.ts)) im Browser
   mit pdf-lib, Nicht-Kopierbares über pdf.js als Bild. Positionen der Mieterzeilen ohne nicht
