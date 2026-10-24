@@ -504,11 +504,27 @@ export function collapse(rows: LogRow[]): Omit<JournalRowView, 'refs'>[] {
   }))
   const out: Omit<JournalRowView, 'refs'>[] = []
   const used = new Set<number>()
+  // Je Tabelle und Schlüssel die Einfügungen in ihrer Reihenfolge, damit die Suche zu einer Löschung linear
+  // bleibt (Nachprüfung von PR #430, K1: vorher findIndex über alle Zeilen, bei 20.000 Löschungen Sekunden).
+  const rowOf = (v: { table: string, key: Record<string, unknown> }) => `${v.table}\u0000${asJson(v.key)}`
+  const inserts = new Map<string, number[]>()
+  views.forEach((v, k) => {
+    if (v.op !== 'insert') return
+    const list = inserts.get(rowOf(v))
+    if (list) list.push(k)
+    else inserts.set(rowOf(v), [k])
+  })
+  const nextInsert = (key: string, after: number): number => {
+    const list = inserts.get(key)
+    if (!list) return -1
+    while (list.length > 0 && (list[0] <= after || used.has(list[0]))) list.shift()
+    return list.length > 0 ? list[0] : -1
+  }
   for (let i = 0; i < views.length; i++) {
     if (used.has(i)) continue
     const v = views[i]
     if (v.op === 'delete') {
-      const j = views.findIndex((w, k) => k > i && !used.has(k) && w.op === 'insert' && w.table === v.table && asJson(w.key) === asJson(v.key))
+      const j = nextInsert(rowOf(v), i)
       if (j >= 0) {
         used.add(j)
         const merged = { ...v, op: 'update' as const, after: views[j].after }

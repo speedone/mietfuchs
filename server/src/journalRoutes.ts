@@ -93,6 +93,15 @@ export const ROUTE_SENTENCES: Readonly<Record<string, RouteSentence>> = {
   'DELETE /api/uploads/:file': s('Beleg gelöscht', 'uploads'),
 }
 
+// Vorschauen schreiben in der Schlange, rollen aber immer zurück (dryRun.ts); ihre Gruppe bliebe leer.
+// Sie haben bewusst keinen Satz, und `journalMeta` übergeht sie still. Dieselbe Liste nimmt der Wächter
+// in journal-routes.test.ts aus.
+export const DRY_RUN_ROUTES: ReadonlySet<string> = new Set([
+  'POST /api/heating-plants/:id/period/preview',
+  'POST /api/heating-plants/:id/separate/preview',
+  'POST /api/properties/:id/period/preview',
+])
+
 // `null`: Die Route hat keinen Satz und wird nicht erfasst (index.ts, `journalMeta`).
 export function routeSentence(method: string, route: string): RouteSentence | null {
   return ROUTE_SENTENCES[`${method} ${route}`] ?? null

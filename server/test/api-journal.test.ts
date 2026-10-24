@@ -126,7 +126,23 @@ test('Verlauf: Lesen und Systemarbeit im Hintergrund ergeben keine Gruppe, jede 
     assert.ok(filled, 'die Prüfsumme wurde nicht nachgetragen')
     assert.equal((await send(s, 'POST', '/api/ai/cancel/gibt-es-nicht')).status, 404)
     assert.deepEqual((await journal(s)).map((g) => g.title), ['Beleg hochgeladen: grundsteuer.pdf'])
-    assert.doesNotMatch(s.output(), /keinen Satz/)
+    assert.doesNotMatch(s.errorOutput(), /keinen Satz/)
+  } finally {
+    s.stop()
+  }
+})
+
+// Nachprüfung von PR #430, S1: Vorschauen gehen über writeData und rollen zurück. Sie haben bewusst keinen
+// Satz und meldeten sich trotzdem bei jedem Aufruf auf der Konsole.
+test('Verlauf: Eine Vorschau ergibt weder eine Gruppe noch eine Meldung auf der Konsole', async () => {
+  const s = await startServerIn(tmp())
+  try {
+    await stock(s)
+    const before = (await journal(s)).length
+    const res = await send(s, 'POST', '/api/properties/objekt-1/period/preview', { rules: { startMonth: 5, changes: [] } })
+    assert.ok(res.status < 500, String(res.status))
+    assert.equal((await journal(s)).length, before)
+    assert.doesNotMatch(s.errorOutput(), /keinen Satz/)
   } finally {
     s.stop()
   }

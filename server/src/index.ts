@@ -88,7 +88,7 @@ import { derivedTaxLines, planTaxArchive, taxArchiveItems } from './taxReceipts.
 import { createPriorVersion, listPriorVersions, mayCreatePriorVersion, PRIOR_CHECK_INTERVAL_MS, PRIOR_DIR, priorVersionsBlocked, priorVersionTime } from './db/priorVersions.ts'
 import { costItems as costItemsTable } from './db/schema.ts'
 import { journalGroup, listJournal, pruneJournal, type JournalMeta } from './db/journal.ts'
-import { routeSentence } from './journalRoutes.ts'
+import { DRY_RUN_ROUTES, routeSentence } from './journalRoutes.ts'
 import { forgetUpload, placeUpload, recordIfMissing, recordUpload, rowOf, uploadRows, type Placement, type UploadRow } from './db/uploads.ts'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -409,6 +409,7 @@ const journalMeta = (): JournalMeta | undefined => {
   if (!req || req.method === 'GET') return undefined
   const routePath: unknown = req.route?.path
   const route = typeof routePath === 'string' ? routePath : req.path
+  if (DRY_RUN_ROUTES.has(`${req.method} ${route}`)) return undefined
   const sentence = routeSentence(req.method, route)
   if (!sentence) {
     console.error(`Änderungsjournal: Die Route ${req.method} ${route} hat keinen Satz und wird nicht erfasst (journalRoutes.ts).`)

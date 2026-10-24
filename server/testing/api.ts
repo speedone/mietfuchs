@@ -300,7 +300,7 @@ export async function startServerIn(dataDir: string, env: NodeJS.ProcessEnv = {}
       // damit einen Tab auf einem Zufallsport auf. Siehe die Regel in CLAUDE.md.
       CI: 'true',
     },
-    stdio: ['ignore', 'pipe', 'ignore'],
+    stdio: ['ignore', 'pipe', 'pipe'],
   })
   const stop = () => {
     child.kill()
@@ -310,6 +310,11 @@ export async function startServerIn(dataDir: string, env: NodeJS.ProcessEnv = {}
   let printed = ''
   child.stdout.on('data', (chunk: Buffer) => { printed += chunk })
   const output = () => printed
+  // Die Fehlerausgabe ebenso, für Tests, die eine Warnung des Servers ausschließen (#318). Gelesen wird
+  // sie in jedem Fall, sonst liefe der Puffer der Pipe voll.
+  let printedErrors = ''
+  child.stderr.on('data', (chunk: Buffer) => { printedErrors += chunk })
+  const errorOutput = () => printedErrors
   let base
   try {
     base = await readStartUrl(child)
@@ -330,7 +335,7 @@ export async function startServerIn(dataDir: string, env: NodeJS.ProcessEnv = {}
     stop()
     assert.fail('NKA_DATA_DIR wird nicht beachtet')
   }
-  return { api, base, dataDir, stop, child, output }
+  return { api, base, dataDir, stop, child, output, errorOutput }
 }
 
 // ---------- Start aus dem Startmenü (#45) ----------

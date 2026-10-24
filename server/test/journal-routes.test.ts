@@ -5,18 +5,11 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
-import { ROUTE_SENTENCES } from '../src/journalRoutes.ts'
+import { DRY_RUN_ROUTES, ROUTE_SENTENCES } from '../src/journalRoutes.ts'
 import { serverRoot } from '../testing/api.ts'
 
 const COLLECTIONS = ['units', 'tenancies', 'costItems', 'meters', 'readings', 'payments']
 
-// Vorschauen schreiben in der Schlange, rollen aber immer zurück (dryRun.ts); ihre Gruppe ist leer
-// und fällt weg.
-const DRY_RUNS = new Set([
-  'POST /api/heating-plants/:id/period/preview',
-  'POST /api/heating-plants/:id/separate/preview',
-  'POST /api/properties/:id/period/preview',
-])
 
 function writingRoutes(): { all: Set<string>, writing: Set<string> } {
   const source = fs.readFileSync(path.join(serverRoot, 'src', 'index.ts'), 'utf8')
@@ -33,7 +26,7 @@ function writingRoutes(): { all: Set<string>, writing: Set<string> } {
     for (const p of paths) {
       const key = `${match[1].toUpperCase()} ${p}`
       all.add(key)
-      if (/\bwriteData\(|\bsaveSettings\(/.test(body) && !DRY_RUNS.has(key)) writing.add(key)
+      if (/\bwriteData\(|\bsaveSettings\(/.test(body) && !DRY_RUN_ROUTES.has(key)) writing.add(key)
     }
   }
   return { all, writing }
@@ -46,7 +39,8 @@ test('Verlauf: Jede schreibende Route hat einen Satz', () => {
   assert.deepEqual(missing, [])
 })
 
-test('Verlauf: Jeder Satz gehört zu einer Route, die es gibt', () => {
+test('Verlauf: Jeder Satz und jede Vorschau der Ausnahmeliste gehört zu einer Route, die es gibt', () => {
   const { all } = writingRoutes()
+  assert.deepEqual([...DRY_RUN_ROUTES].filter((key) => !all.has(key)), [])
   assert.deepEqual(Object.keys(ROUTE_SENTENCES).filter((key) => !all.has(key)), [])
 })

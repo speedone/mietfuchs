@@ -163,6 +163,22 @@ test('Journal: Der Verlauf fasst unverändert neu eingefügte Zeilen zusammen', 
   assert.deepEqual(views[0].changed, ['persons'])
 })
 
+// Nachprüfung von PR #430, K1: `collapse` suchte zu jeder Löschung das passende Einfügen mit findIndex, also
+// quadratisch. Eine Wohnung mit vielen Ablesungen ergibt viele Löschungen in einer Gruppe.
+test('Journal: collapse bleibt bei 20.000 Löschungen linear', () => {
+  const rows: (typeof changeLog.$inferSelect)[] = Array.from({ length: 20_000 }, (_, i) => ({
+    id: i + 1, groupId: 1, tableName: 'readings', rowKey: `{"id":"r${i}"}`, op: 'delete', before: `{"id":"r${i}","value":${i}}`, after: null,
+  }))
+  // Am Ende ein Einfügen zur ersten Löschung, damit die Suche über alle laufen muss.
+  rows.push({ id: 20_001, groupId: 1, tableName: 'readings', rowKey: '{"id":"r0"}', op: 'insert', before: null, after: '{"id":"r0","value":1}' })
+  const start = performance.now()
+  const views = collapse(rows)
+  const ms = performance.now() - start
+  assert.equal(views.length, 20_000)
+  assert.equal(views[0].op, 'update')
+  assert.ok(ms < 2000, `${Math.round(ms)} ms`)
+})
+
 test('Journal: Einzelheiten einer Gruppe mit Überschrift aus der betroffenen Zeile', () => withDb(async (opened) => {
   await stock(opened)
   await opened.write((db) => db.delete(units).where(eq(units.id, 'u1')), { ...meta('Wohnung gelöscht'), subjectTable: 'units' })
