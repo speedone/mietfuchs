@@ -72,6 +72,7 @@ import { saveHeatingRules } from '../src/db/heatingInfo.ts'
 import { heatingRulesOf } from '../src/heatingInfo.ts'
 import { createDelivery, createEstimates, freezeFuelCarries, fuelGapQuestions, reassignCredit, unfreezeFuelCarries } from '../src/db/fuel.ts'
 import { openFreshDatabase } from '../testing/freshDatabase.ts'
+import { unitBasisOf } from '../../shared/heatingPeriod.ts'
 import { readClosedSettlements, readCostItems, readFuelCarryFrozen, readFuelDeliveries, readStock } from '../src/db/read.ts'
 import { closeSettlement, createEntity, findClosedSettlement, removeEntity, reopenSettlement, settlementHistory, updateEntity } from '../src/db/repository.ts'
 import { properties } from '../src/db/schema.ts'
@@ -467,7 +468,9 @@ function volumeChecks(r: ReturnType<typeof computeSettlement>, stock: InvStock, 
   const self = r.heating?.find((h) => h.plantId === 'hp')?.self
   if (!self?.ok) return
   const plant = stock.heatingPlants.find((p) => p.id === 'hp') ?? assert.fail(`${where}: keine Anlage`)
-  const volumeOf = (unitId: string) => plant.units?.find((u) => u.unitId === unitId)?.volumeM3 ?? assert.fail(`${where}: kein Rauminhalt für ${unitId}`)
+  const volumeOf = (unitId: string) => unitBasisOf(plant, unitId)?.volumeM3 ?? assert.fail(`${where}: kein Rauminhalt für ${unitId}`)
+  // Durchsicht M1: Die Einrichtung lässt die Liste „alle“ stehen.
+  assert.equal(plant.units, null, `${where}: (s7) Liste der Wohnungen`)
   const heat = self.pots.find((p) => p.pot === 'heating') ?? assert.fail(`${where}: kein Topf Heizung`)
   const water = self.pots.find((p) => p.pot === 'water') ?? assert.fail(`${where}: kein Topf Warmwasser`)
   VOLUME.periods++
@@ -730,7 +733,7 @@ for (const variant of VARIANTS) {
             let m = 0
             const hw = variant.hw ?? 'none'
             // #322: der Rauminhalt je Wohnung, zufällig und nicht im Verhältnis der Wohnflächen.
-            const volume = variant.volume ? { areaBasisHeat: 'volume', unitValues: ['a', 'b', 'c', 'd'].map((unitId) => ({ unitId, volumeM3: int(100, 400) + int(0, 9) / 10 })) } : {}
+            const volume = variant.volume ? { areaBasisHeat: 'volume', unitValues: ['a', 'b'].map((unitId) => ({ unitId, volumeM3: int(100, 400) + int(0, 9) / 10 })) } : {}
             await setUpSelf(db, 'hp', { period: '2023-05', heatConsumptionPct: int(50, 70), ...(hw !== 'none' ? { waterConsumptionPct: int(50, 70) } : {}), insulationRule: 'notApplies', hotWater: hw, capture: variant.capture ?? 'heatMeter', dhwHeatMeter: hw === 'combined', ...volume }, '2023-01-01', () => `wz${m++}`)
           }
           for (const plantId of variant.two ? ['hp', 'hp2'] : ['hp']) {

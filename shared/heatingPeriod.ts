@@ -19,7 +19,7 @@
 // fragen beide.
 
 import { periodContaining, periodOfKey, periodsBetween, settlementDeadline } from './period.ts'
-import type { BillingPeriod, CaptureMethod, HotWater, PeriodKey, PeriodRules, SelfSpanRange, SeparateSpan, Unit } from './types.ts'
+import type { BillingPeriod, CaptureMethod, HeatingPlant, HeatingPlantUnit, HotWater, PeriodKey, PeriodRules, SelfSpanRange, SeparateSpan, Unit } from './types.ts'
 
 export type PlantRhythm = { periodStartMonth: number | null; periodChanges: readonly string[] }
 export type PlantWay = PlantRhythm & { separateSpans: readonly SeparateSpan[] }
@@ -85,6 +85,12 @@ export function settlementKeyOf(
   if (h === null) return { key: item.period, separate: false }
   return { key: periodContaining(objectRules, h.to).key, separate: settledSeparately(plant, objectRules, h) }
 }
+
+// #322: Die Werte einer Wohnung für die Grundkosten der Heizung (beheizte Fläche, umbauter Raum), mit Liste an deren
+// Eintrag, ohne Liste in `basisValues`. Alle Werte der Anlage: `plantUnitValues`.
+export const plantUnitValues = (plant: Pick<HeatingPlant, 'units' | 'basisValues'>): readonly HeatingPlantUnit[] => plant.units ?? plant.basisValues ?? []
+export const unitBasisOf = (plant: Pick<HeatingPlant, 'units' | 'basisValues'>, unitId: string): HeatingPlantUnit | undefined =>
+  plantUnitValues(plant).find((u) => u.unitId === unitId)
 
 // Ohne Liste versorgt eine Anlage alle Wohnungen ohne „kein Anschluss: Wärme“ (#117), mit Liste
 // genau diese (PR 4, `units_limited`).

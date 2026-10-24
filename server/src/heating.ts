@@ -132,8 +132,9 @@ export type SelfUnitPlan = {
 }
 export type SelfProblem =
   | { kind: 'noArea'; pot: SelfPot }
-  // #322: Grundkosten nach umbautem Raum, aber an diesen Wohnungen steht keiner (eingespielte Archive; das Speichern lehnt es ab).
-  | { kind: 'noVolume'; unitNames: string[] }
+  // #322: Grundkosten nach umbautem Raum bzw. beheizter Fläche, aber an diesen Wohnungen mit Fläche steht kein Wert (eine
+  // später angelegte Wohnung, ein Archiv; das Speichern lehnt es ab).
+  | { kind: 'noBasisValue'; basis: 'volume' | 'heatedArea'; unitNames: string[] }
   | { kind: 'missing'; pot: SelfPot; unitId: string; unitName: string; boundary: string | null; reason: 'noMeter' | 'noReading' | 'replacement' | 'negative' | 'sameDay'; meterName: string | null }
   // Zwischenablesung ab der Warngrenze ohne Wahl des Vermieters (§ 9b Abs. 3 Alt. 2, Abweichung 22).
   | { kind: 'farInterim'; unitId: string; unitName: string; boundary: string; readingDate: string; days: number }
@@ -321,9 +322,10 @@ export function planSelf(input: SelfInput): SelfPlan {
   const splitOf = (pot: SelfPot, u: SelfUser): number => (pot === 'heating' ? heatSplit(u) : u.days)
   const splitTotal = (pot: SelfPot): number => (pot === 'heating' ? heatSplitTotal : hDays)
   // Der Maßstab der Grundkosten der Heizung (§ 7 Abs. 1 Satz 5): Wohnfläche, beheizte Fläche oder umbauter Raum (#322).
-  // Beim umbauten Raum gibt es keinen Ersatz durch die Fläche; fehlt er, wird nicht verteilt (`noVolume`).
-  const heatAreaOf = (u: SelfUnit): number =>
-    (input.areaBasisHeat === 'volume' ? (u.volumeM3 ?? 0) : input.areaBasisHeat === 'heatedArea' ? (u.heatedAreaM2 ?? u.areaM2) : u.areaM2) || 0
+  // Fehlt einer Wohnung mit Fläche der Wert, wird nicht verteilt (`noBasisValue`); ersetzt wird er nicht, auch nicht durch
+  // die Wohnfläche (Durchsicht M1: sonst trüge eine später angelegte Wohnung still einen anderen Maßstab).
+  const basisValueOf = (u: SelfUnit): number | null => (input.areaBasisHeat === 'volume' ? (u.volumeM3 ?? null) : input.areaBasisHeat === 'heatedArea' ? u.heatedAreaM2 : u.areaM2)
+  const heatAreaOf = (u: SelfUnit): number => basisValueOf(u) || 0
   const areaOf = (pot: SelfPot, u: SelfUnit): number => (pot === 'heating' ? heatAreaOf(u) : u.areaM2 || 0)
   // Heizung PR 12: Der Gerätetyp der Heizung folgt der Erfassung.
   const meterTypeOf = (pot: SelfPot): MeterType => (pot === 'heating' && input.capture === 'hca' ? 'hkv' : POT_METER[pot])
@@ -352,9 +354,10 @@ export function planSelf(input: SelfInput): SelfPlan {
   // Ein Topf ohne einen einzigen Zähler ist nicht erfasst (nur nach Fläche, `heating.no-consumption`);
   // ein Topf mit Zählern verlangt einen an jeder Wohnung mit Fläche.
   const potHasMeters = Object.fromEntries(pots.map((p) => [p, input.units.some((u) => metersOf(u.id, p).length > 0)])) as Record<SelfPot, boolean>
-  const noVolume = input.areaBasisHeat === 'volume' ? input.units.filter((u) => !((u.volumeM3 ?? 0) > 0)) : []
-  if (noVolume.length > 0) problems.push({ kind: 'noVolume', unitNames: noVolume.map((u) => u.name) })
-  for (const p of pots) if (!(totals[p].area > 0) && !(p === 'heating' && noVolume.length > 0)) problems.push({ kind: 'noArea', pot: p })
+  // Eine Einheit ohne Fläche (Garage) braucht keinen Wert (Durchsicht S1).
+  const noValue = input.areaBasisHeat === 'area' ? [] : input.units.filter((u) => (u.areaM2 || 0) > 0 && !((basisValueOf(u) ?? 0) > 0))
+  if (input.areaBasisHeat !== 'area' && noValue.length > 0) problems.push({ kind: 'noBasisValue', basis: input.areaBasisHeat, unitNames: noValue.map((u) => u.name) })
+  for (const p of pots) if (!(totals[p].area > 0) && !(p === 'heating' && noValue.length > 0)) problems.push({ kind: 'noArea', pot: p })
 
   const units: SelfUnitPlan[] = input.units.map((unit) => {
     const users: SelfUserPlan[] = usersOf(unit, input.tenancies, h).map((u) => ({

@@ -9,14 +9,15 @@ import path from 'node:path'
 import { openDatabase } from '../src/db/open.ts'
 import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { readStock } from '../src/db/read.ts'
-import { changeTenant, closeSettlement, createEntity } from '../src/db/repository.ts'
+import { changeTenant, closeSettlement, createEntity, createProperty, removeEntity, updateEntity } from '../src/db/repository.ts'
 import { selfClosedEndsOf, snapshotFor } from '../src/snapshot.ts'
 import { CALENDAR_RULES, periodKey, periodOfKey } from '../../shared/period.ts'
-import { createHeatingPlant, updateHeatingPlant } from '../src/db/heating.ts'
+import { createHeatingPlant, heatingPlantViolations, updateHeatingPlant } from '../src/db/heating.ts'
 import { differsFromLine, removeInterimGap, saveDistribution, saveInterimGap, SelfItemsError, setUpSelf } from '../src/db/heatingSelf.ts'
 import { heatingPeriodViews } from '../src/db/co2.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { heatingPlantUnits } from '../src/db/schema.ts'
+import { computeSettlement } from '../src/calc.ts'
 import { eq } from 'drizzle-orm'
 
 type Opened = Awaited<ReturnType<typeof openDatabase>>
@@ -190,26 +191,84 @@ test('Beheizte Fläche: bei Grundkosten nach beheizter Fläche braucht jede ange
   })
 })
 
-test('#322: Grundkosten nach umbautem Raum brauchen bei jeder angeschlossenen Wohnung den Rauminhalt; die Einrichtung trägt ihn ein', async () => {
+test('#322: Grundkosten nach umbautem Raum brauchen bei jeder Wohnung mit Fläche den Rauminhalt; die Einrichtung trägt ihn ein', async () => {
   await withDatabase(async (opened) => {
     await haus(opened)
     const items = [{ id: 'gas', heatingPart: 'fuel', heatingTarget: 'both' }]
-    // Ohne Werte abgelehnt, ebenso mit einem fehlenden und mit einem Wert, der kein Rauminhalt ist.
-    await assert.rejects(opened.write((db) => setUpSelf(db, 'hp', { ...SETUP, items, areaBasisHeat: 'volume' }, '2026-02-01', newId)), status(400, /umbauten Raum.*m³.*A, B und C/s))
+    // Ohne Werte abgelehnt, ebenso mit einem fehlenden und mit einem Wert, der kein Rauminhalt ist. Die Meldung nennt den Weg (Durchsicht S3).
+    await assert.rejects(opened.write((db) => setUpSelf(db, 'hp', { ...SETUP, items, areaBasisHeat: 'volume' }, '2026-02-01', newId)), status(400, /umbauten Raum.*m³.*A, B und C.*„Heizanlage ändern“/s))
     const teil = [{ unitId: 'a', volumeM3: 150 }, { unitId: 'b', volumeM3: 200 }]
     await assert.rejects(opened.write((db) => setUpSelf(db, 'hp', { ...SETUP, items, areaBasisHeat: 'volume', unitValues: teil }, '2026-02-01', newId)), status(400, /: C\b/))
     await assert.rejects(opened.write((db) => setUpSelf(db, 'hp', { ...SETUP, items, areaBasisHeat: 'volume', unitValues: [...teil, { unitId: 'c', volumeM3: -5 }] }, '2026-02-01', newId)), status(400, /: C\b/))
     assert.equal((await opened.read(readStock)).heatingPlants.find((p) => p.id === 'hp')?.method, 'manual', 'nichts gespeichert')
     const ok = await opened.write((db) => setUpSelf(db, 'hp', { ...SETUP, items, areaBasisHeat: 'volume', unitValues: [...teil, { unitId: 'c', volumeM3: 150.5 }] }, '2026-02-01', newId))
     assert.equal(ok?.plant.areaBasisHeat, 'volume')
-    assert.deepEqual(ok?.plant.units, [{ unitId: 'a', heatedAreaM2: null, volumeM3: 150 }, { unitId: 'b', heatedAreaM2: null, volumeM3: 200 }, { unitId: 'c', heatedAreaM2: null, volumeM3: 150.5 }])
-    // Ein Ändern der Anlage ohne Rauminhalt im Rumpf (ältere Oberfläche) behält ihn, statt ihn still zu leeren.
-    const geaendert = await opened.write((db) => updateHeatingPlant(db, 'hp', { units: [{ unitId: 'a', heatedAreaM2: null }, { unitId: 'b', heatedAreaM2: null }, { unitId: 'c', heatedAreaM2: null }] }))
-    assert.deepEqual(geaendert?.units?.map((u) => u.volumeM3), [150, 200, 150.5])
+    // Durchsicht M1 (a): Die Liste der Wohnungen bleibt, wie der Vermieter sie eingerichtet hat („alle“); die Werte stehen daneben.
+    assert.equal(ok?.plant.units, null)
+    assert.deepEqual(ok?.plant.basisValues, [{ unitId: 'a', heatedAreaM2: null, volumeM3: 150 }, { unitId: 'b', heatedAreaM2: null, volumeM3: 200 }, { unitId: 'c', heatedAreaM2: null, volumeM3: 150.5 }])
+    // Ändern ohne Werte im Rumpf behält sie; berichtigen geht mit `unitValues` (das Feld in „Heizanlage ändern“, Durchsicht M1 b).
+    assert.deepEqual((await opened.write((db) => updateHeatingPlant(db, 'hp', { name: 'Zentralheizung' })))?.basisValues?.map((u) => u.volumeM3), [150, 200, 150.5])
+    assert.deepEqual((await opened.write((db) => updateHeatingPlant(db, 'hp', { unitValues: [{ unitId: 'b', volumeM3: 220 }] })))?.basisValues?.map((u) => u.volumeM3), [150, 220, 150.5])
     // Ausdrücklich geleert: abgelehnt, solange die Grundkosten danach gehen.
-    await assert.rejects(opened.write((db) => updateHeatingPlant(db, 'hp', { units: [{ unitId: 'a', heatedAreaM2: null, volumeM3: null }, { unitId: 'b', heatedAreaM2: null }, { unitId: 'c', heatedAreaM2: null }] })), status(400, /umbauten Raum/))
+    await assert.rejects(opened.write((db) => updateHeatingPlant(db, 'hp', { unitValues: [{ unitId: 'a', volumeM3: null }] })), status(400, /umbauten Raum.*: A\b/s))
+    // Mit ausdrücklicher Liste bleiben die Werte an den Wohnungen der Liste, auch wenn der Eintrag sie nicht nennt (K1).
+    const liste = await opened.write((db) => updateHeatingPlant(db, 'hp', { units: [{ unitId: 'a' }, { unitId: 'b' }, { unitId: 'c' }] }))
+    assert.deepEqual(liste?.units, [{ unitId: 'a', heatedAreaM2: null, volumeM3: 150 }, { unitId: 'b', heatedAreaM2: null, volumeM3: 220 }, { unitId: 'c', heatedAreaM2: null, volumeM3: 150.5 }])
     // Die Bedingung der Datenbank: kein Rauminhalt bis 0.
     await assert.rejects(opened.write((db) => db.update(heatingPlantUnits).set({ volumeM3: 0 }).where(eq(heatingPlantUnits.unitId, 'a'))))
+  })
+})
+
+test('#322, Durchsicht M1: eine später angelegte Wohnung ohne Rauminhalt ist ein Fehler an der Anlage, nachgetragen wird verteilt', async () => {
+  await withDatabase(async (opened) => {
+    await haus(opened)
+    const items = [{ id: 'gas', heatingPart: 'fuel', heatingTarget: 'both' }]
+    const unitValues = [{ unitId: 'a', volumeM3: 150 }, { unitId: 'b', volumeM3: 200 }, { unitId: 'c', volumeM3: 150 }]
+    await opened.write((db) => setUpSelf(db, 'hp', { ...SETUP, items, areaBasisHeat: 'volume', unitValues }, '2026-02-01', newId))
+    await opened.write((db) => createEntity(db, 'units', 'd', { propertyId: 'objekt-1', name: 'D', areaM2: 50, participates: true }))
+    const p = periodOfKey(CALENDAR_RULES, periodKey('2025-01')) ?? assert.fail('kein Zeitraum')
+    const missing = async () => computeSettlement(snapshotFor(await opened.read(readStock), 'objekt-1', p)).notices.filter((n) => n.code === 'heating.self-incomplete' && /umbaute Raum/.test(n.text))
+    const [n] = await missing()
+    assert.match(n?.text ?? '', /An D fehlt der umbaute Raum in m³.*„Heizanlage ändern“/s)
+    // Die neue Wohnung hängt an der Anlage (Liste „alle“), sie wird nicht still ausgelassen.
+    assert.equal((await opened.read(readStock)).heatingPlants.find((x) => x.id === 'hp')?.units, null)
+    await opened.write((db) => updateHeatingPlant(db, 'hp', { unitValues: [{ unitId: 'd', volumeM3: 125 }] }))
+    assert.deepEqual(await missing(), [])
+  })
+})
+
+test('#322: wechselt eine Wohnung ohne Mietverhältnis das Objekt, entfallen ihre Werte an der Anlage ohne Liste', async () => {
+  await withDatabase(async (opened) => {
+    await haus(opened)
+    const items = [{ id: 'gas', heatingPart: 'fuel', heatingTarget: 'both' }]
+    await opened.write((db) => createEntity(db, 'units', 'd', { propertyId: 'objekt-1', name: 'D', areaM2: 50, participates: true }))
+    const unitValues = [{ unitId: 'a', volumeM3: 150 }, { unitId: 'b', volumeM3: 200 }, { unitId: 'c', volumeM3: 150 }, { unitId: 'd', volumeM3: 120 }]
+    await opened.write((db) => setUpSelf(db, 'hp', { ...SETUP, items, areaBasisHeat: 'volume', unitValues }, '2026-02-01', newId))
+    for (const m of (await opened.read(readStock)).meters.filter((x) => x.unitId === 'd')) await opened.write((db) => removeEntity(db, 'meters', m.id))
+    await opened.write((db) => createProperty(db, 'objekt-2', { name: 'Zweites Haus' }))
+    await opened.write((db) => updateEntity(db, 'units', 'd', { propertyId: 'objekt-2' }))
+    assert.deepEqual((await opened.read(readStock)).heatingPlants.find((x) => x.id === 'hp')?.basisValues?.map((u) => u.unitId), ['a', 'b', 'c'])
+    assert.deepEqual(await opened.read((db) => heatingPlantViolations(db)), [])
+  })
+})
+
+test('#322, Durchsicht S1: eine Einheit ohne Fläche braucht keinen Rauminhalt und bekommt keinen Wärmezähler', async () => {
+  await withDatabase(async (opened) => {
+    await haus(opened)
+    await opened.write((db) => createEntity(db, 'units', 'g', { propertyId: 'objekt-1', name: 'Garage', areaM2: 0, participates: true }))
+    const items = [{ id: 'gas', heatingPart: 'fuel', heatingTarget: 'both' }]
+    const unitValues = [{ unitId: 'a', volumeM3: 150 }, { unitId: 'b', volumeM3: 200 }, { unitId: 'c', volumeM3: 150 }]
+    const ok = await opened.write((db) => setUpSelf(db, 'hp', { ...SETUP, items, areaBasisHeat: 'volume', unitValues }, '2026-02-01', newId))
+    assert.ok(!ok?.created.some((m) => m.unitId === 'g'), 'kein Zähler für die Garage')
+  })
+})
+
+test('#322, Durchsicht K2: den Maßstab der Grundkosten ändert bei eigener Abrechnung nur die Einrichtung', async () => {
+  await withDatabase(async (opened) => {
+    await haus(opened)
+    const items = [{ id: 'gas', heatingPart: 'fuel', heatingTarget: 'both' }]
+    await opened.write((db) => setUpSelf(db, 'hp', { ...SETUP, items }, '2026-02-01', newId))
+    await assert.rejects(opened.write((db) => updateHeatingPlant(db, 'hp', { areaBasisHeat: 'volume' })), status(409, /Heizkosten selbst abrechnen/))
   })
 })
 
@@ -219,7 +278,7 @@ test('#322: beheizte Fläche über die Einrichtung eintragen', async () => {
     const items = [{ id: 'gas', heatingPart: 'fuel', heatingTarget: 'both' }]
     const unitValues = [{ unitId: 'a', heatedAreaM2: 50 }, { unitId: 'b', heatedAreaM2: 70 }, { unitId: 'c', heatedAreaM2: 55 }]
     const ok = await opened.write((db) => setUpSelf(db, 'hp', { ...SETUP, items, areaBasisHeat: 'heatedArea', unitValues }, '2026-02-01', newId))
-    assert.deepEqual(ok?.plant.units?.map((u) => u.heatedAreaM2), [50, 70, 55])
+    assert.deepEqual(ok?.plant.basisValues?.map((u) => u.heatedAreaM2), [50, 70, 55])
   })
 })
 

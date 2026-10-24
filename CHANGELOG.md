@@ -23,10 +23,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   verteilen (§ 7 Abs. 1 Satz 5 HeizkostenV), für alle, die ihn als Maßstab bestimmt oder vereinbart haben. Den
   Rauminhalt in m³ tragen Sie je Wohnung in „Heizkosten selbst abrechnen“ ein, ebenso jetzt die beheizte
   Fläche. Die Grundkosten des Warmwassers gehen weiter nach der Wohnfläche (§ 8 Abs. 1). Fehlt einer Wohnung
-  der Rauminhalt, speichert Mietfuchs die Einstellung nicht; die Schätzung nach § 9a misst ihre Grenze dann am
-  umbauten Raum. Eine Vereinbarung nach § 2 „nach Wohnfläche“ verteilt weiter nach der Wohnfläche. Die
-  Voreinstellung bleibt die Wohnfläche, keine Zahl ändert sich. Ändern der Heizanlage behält beheizte Fläche
-  und umbauten Raum, ebenso ein Kesseltausch.
+  der Rauminhalt, speichert Mietfuchs die Einstellung nicht; legen Sie später eine Wohnung an, meldet die
+  Abrechnung den fehlenden Wert, und Sie tragen ihn in „Heizanlage ändern“ nach. Einheiten ohne Fläche wie eine
+  Garage brauchen keinen. Die Schätzung nach § 9a misst ihre Grenze dann am umbauten Raum. Eine Vereinbarung nach
+  § 2 „nach Wohnfläche“ verteilt weiter nach der Wohnfläche. Die Voreinstellung bleibt die Wohnfläche, keine Zahl
+  ändert sich. Ändern der Heizanlage behält beheizte Fläche und umbauten Raum, ebenso ein Kesseltausch.
 - Export der Abrechnung als Daten ([#415](https://github.com/speedone/mietfuchs/issues/415)): Auf der Seite
   Abrechnung speichern „Als JSON exportieren“ und „Als CSV exportieren“ die Zahlen der Abrechnung. Das JSON
   trägt eine Versionsangabe, Beträge in Cent als ganze Zahlen und alles, was gedruckt wird: je Mieter Zeilen

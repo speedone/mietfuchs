@@ -94,7 +94,7 @@ import { knownUnit, metersByUnitText, unitLabel, unitScale, type UnitScale } fro
 import { CALENDAR_RULES, calendarYearPeriod, contextOf, formatDayRange, periodContaining, periodDays, periodLabel, periodMonths, periodOfKey, periodsBetween, previousPeriod, rulesOf, settlementDeadline, settlementPeriod, spansTwoYears, startYearOf, type PeriodContext } from '../../shared/period.ts'
 import { allowsPaidOn, paidOnSpan, paidOnYear } from '../../shared/paidOn.ts'
 import { generatorEnergy, noCo2Supplier } from '../../shared/heatDelivery.ts'
-import { lineRoot, monthSpanText, plantRules, plantSpan, recommendedDeadline, requestMonth, sameBuilding, sameFuelLine, sameLine, sameSpan, separateOwner, servesUnit, settledSeparately } from '../../shared/heatingPeriod.ts'
+import { lineRoot, unitBasisOf, monthSpanText, plantRules, plantSpan, recommendedDeadline, requestMonth, sameBuilding, sameFuelLine, sameLine, sameSpan, separateOwner, servesUnit, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { heatingSnapshotFor, selfAt, snapshotFor, wayOf } from './snapshot.ts'
 import { outflowShares, paidWhollyIn, storedOutflowYear } from './outflow.ts'
 import { deliveryShare, notInvoiceDeliveries, plantFuel, rangeOf, type FuelCarry, type FuelResult, type ShareContext } from './fuel.ts'
@@ -3853,8 +3853,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     if (p.kind === 'farInterim') {
       return `Beim Wechsel in ${p.unitName} zum ${fmtDay(p.boundary)} wurde erst am ${fmtDay(p.readingDate)} abgelesen, ${p.days} Tage daneben und über einen Wintermonat. Lässt die Ablesung wegen des Zeitpunkts keine hinreichend genaue Ermittlung zu, wird nach Gradtagen bzw. Tagen geteilt (§ 9b Abs. 3 HeizkostenV). Ob das so ist, entscheiden Sie: Wählen Sie auf der Seite Heizkosten „Ablesung verwenden“ oder „Nach § 9b Abs. 3“.`
     }
-    if (p.kind === 'noVolume') {
-      return `Die Grundkosten der Heizung werden nach dem umbauten Raum verteilt (§ 7 Abs. 1 Satz 5 HeizkostenV). An ${andList(p.unitNames)} fehlt der umbaute Raum in m³, und die Kosten dieser Heizanlage lassen sich nicht verteilen. Tragen Sie ihn auf der Seite Heizkosten in der Einrichtung der eigenen Abrechnung ein.`
+    if (p.kind === 'noBasisValue') {
+      return p.basis === 'volume'
+        ? `Die Grundkosten der Heizung werden nach dem umbauten Raum verteilt (§ 7 Abs. 1 Satz 5 HeizkostenV). An ${andList(p.unitNames)} fehlt der umbaute Raum in m³, und die Kosten dieser Heizanlage lassen sich nicht verteilen. Tragen Sie ihn auf der Seite Heizkosten unter „Heizanlage ändern“ ein.`
+        : `Die Grundkosten der Heizung werden nach der beheizten Fläche verteilt (§ 7 Abs. 1 Satz 5 HeizkostenV). An ${andList(p.unitNames)} fehlt die beheizte Fläche in m², und die Kosten dieser Heizanlage lassen sich nicht verteilen. Tragen Sie sie auf der Seite Heizkosten unter „Heizanlage ändern“ ein.`
     }
     if (p.kind === 'noArea') {
       return `Für den Topf ${POT_NAME[p.pot]} ist keine Fläche hinterlegt, und die Grundkosten lassen sich nicht verteilen. Tragen Sie die Wohnfläche${p.pot === 'heating' && areaBasisHeat === 'heatedArea' ? ' bzw. die beheizte Fläche' : ''} der Wohnungen ein.`
@@ -3895,8 +3897,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Abweichung 9: die Wechselgrenzen der Nachbarperioden und der eingefrorene Endstand der vorigen.
     const selfUnits: SelfUnit[] = served.map((u) => ({
       id: u.id, name: u.name, areaM2: u.areaM2 || 0,
-      heatedAreaM2: plant.units?.find((x) => x.unitId === u.id)?.heatedAreaM2 ?? null,
-      volumeM3: plant.units?.find((x) => x.unitId === u.id)?.volumeM3 ?? null,
+      // #322: mit Liste an deren Eintrag, ohne Liste aus `basisValues` (Durchsicht M1).
+      heatedAreaM2: unitBasisOf(plant, u.id)?.heatedAreaM2 ?? null,
+      volumeM3: unitBasisOf(plant, u.id)?.volumeM3 ?? null,
       role: u.participates ? 'rented' : u.selfUsed ? 'self' : 'outside',
       // Nutzungswechsel (#259): Die Zeiten ohne Mietverhältnis teilt `usersOf` an den Grenzen der Staffel, ein
       // Wechsel ist also ein Nutzerwechsel nach § 9b HeizkostenV. Über die Heizperiode und ihre Nachbarn, denn
@@ -4343,7 +4346,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
               `${u.pots[p].group ? (estimatedHere ? ', auf die Nutzer der Wohnung wie nach § 9b Abs. 3 HeizkostenV geteilt' : ' (ohne Zwischenablesung nach § 9b Abs. 3 HeizkostenV geteilt)') : ''}`,
             term: estimatedHere ? 'heatingEstimate' : 'consumptionCosts',
           }
-          : { label: `Verbrauchskosten ${POT_NAME[p]}`, value: 'kein Verbrauch erfasst, nur nach Fläche verteilt', term: 'consumptionCosts' })
+          : { label: `Verbrauchskosten ${POT_NAME[p]}`, value: `kein Verbrauch erfasst, nur nach ${basis === 'm³' ? 'umbautem Raum' : 'Fläche'} verteilt`, term: 'consumptionCosts' })
       }
       steps.push({ label: `Anteil nach Verbrauch ${POT_NAME[p]}`, value: `${fmtNum(total.measured && !total.overThreshold ? (sp.shares[p] ?? 0) : 0)} %`, term: 'consumptionCosts' })
     }
@@ -7122,7 +7125,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const unitOfPot = potShownUnit(sp, pot)
       const name = unit.unit.name
       const why = `${CAUSE_TEXT[e.cause]}; Begründung: „${e.reason}“`
-      const headOf = (withWhy: boolean) => `${where}: Der Verbrauch ${potWord(pot)} von ${name} ist nach § 9a HeizkostenV geschätzt: ${amount(e.value, unitOfPot)} für die ganze Heizperiode nach ${METHOD_TEXT[e.method]}${withWhy ? ` (${why})` : ''}.`
+      const headOf = (withWhy: boolean) => `${where}: Der Verbrauch ${potWord(pot)} von ${name} ist nach § 9a HeizkostenV geschätzt: ${amount(e.value, unitOfPot)} für die ganze Heizperiode nach ${basisUnitOf(sp, pot) === 'm³' ? METHOD_TEXT[e.method].replace('je m²', 'je m³') : METHOD_TEXT[e.method]}${withWhy ? ` (${why})` : ''}.`
       const head = headOf(true)
       // Prüfbericht A5 (Abweichung 3 des Plans): Nutzer mit gültiger Ablesung behalten ihren Verbrauch; die
       // übrigen tragen ihren Anteil an der Schätzung, mehrere unter sich wie nach § 9b Abs. 3.
@@ -7321,7 +7324,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         ? ` Die Wärmepumpe hat keine Verbrauchserfassung, obwohl sie bis zum ${fmtDay(law(hkvHeatPumpCapture, { date: period.from }, lawLog).installBy)} einzubauen war (§ 12 Abs. 3 HeizkostenV). Dass die Mieter dann nach § 12 Abs. 1 Satz 1 kürzen dürfen, ist eine Auslegung; entschieden ist es nicht.`
         : ''
       warn('heating.no-consumption',
-        `${where}: Für ${unmeasured.map((p) => POT_NAME[p]).join(' und ')} ist kein Verbrauch erfasst; Mietfuchs verteilt ${unmeasured.length === 1 ? 'diesen Teil' : 'die Kosten'} nur nach Fläche. ` +
+        `${where}: Für ${unmeasured.map((p) => POT_NAME[p]).join(' und ')} ist kein Verbrauch erfasst; Mietfuchs verteilt ${unmeasured.length === 1 ? 'diesen Teil' : 'die Kosten'} nur nach ${unmeasured.every((p) => basisUnitOf(sp, p) === 'm³') ? 'umbautem Raum' : unmeasured.some((p) => basisUnitOf(sp, p) === 'm³') ? 'umbautem Raum bzw. Fläche' : 'Fläche'}. ` +
           `Die Heizkostenverordnung verlangt, ${hkvConsumptionShare.describe(share)} nach dem erfassten Verbrauch zu verteilen; sonst darf jeder Mieter seinen Anteil um ${cut} % kürzen (§ 12 Abs. 1 Satz 1 HeizkostenV)${amounts}.${missingCapture}`,
         subject)
     }

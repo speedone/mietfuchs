@@ -462,7 +462,7 @@ export const GLOSSARY = {
   // Heizung PR 10 (#99, Entwurf 10.3): die eigene Heizkostenabrechnung. Zahlen aus Beispiel A (8.6).
   baseCosts: {
     title: 'Grundkosten',
-    short: 'Der Teil der Heiz- oder Warmwasserkosten, der nicht nach Verbrauch, sondern nach der Fläche verteilt wird. Bei der Heizung lässt die Verordnung die Wohn- oder Nutzfläche oder den umbauten Raum zu, jeweils auch nur der beheizten Räume; beim Warmwasser nur die Fläche.',
+    short: 'Der Teil der Heiz- oder Warmwasserkosten, der nicht nach Verbrauch, sondern nach Fläche oder umbautem Raum verteilt wird. Bei der Heizung lässt die Verordnung die Wohn- oder Nutzfläche oder den umbauten Raum zu, jeweils auch nur der beheizten Räume; beim Warmwasser nur die Fläche.',
     example: 'Topf Heizung 5.628,00 €, davon 30 % Grundkosten = 1.688,40 €. Eine Wohnung mit 60 von 200 m² trägt davon 506,52 €.',
     norm: '§ 7 Abs. 1 Satz 5, § 8 Abs. 1 HeizkostenV',
     needed: 'Ja, wenn Sie die Heizkosten selbst abrechnen. Mietfuchs rechnet sie aus dem Anteil, den Sie nach Verbrauch verteilen. Wer den umbauten Raum als Maßstab bestimmt oder vereinbart hat, wählt ihn bei der Einrichtung und trägt je Wohnung den Rauminhalt in m³ ein; die Grundkosten des Warmwassers gehen dann weiter nach der Wohnfläche.',

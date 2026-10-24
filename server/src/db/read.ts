@@ -372,6 +372,8 @@ export async function readHeatingPlants(db: Executor): Promise<HeatingPlant[]> {
     periodChanges: wechsel.get(p.id) ?? [],
     separateSpans: spannen.get(p.id) ?? [],
     units: p.unitsLimited ? (byPlant.get(p.id) ?? []) : null,
+    // #322: ohne Liste die Werte für die Grundkosten der Heizung (Zeilen ohne Bedeutung für die Versorgung).
+    ...(!p.unitsLimited && (byPlant.get(p.id) ?? []).length > 0 ? { basisValues: byPlant.get(p.id) ?? [] } : {}),
     endsOn: p.endsOn,
     replacesPlantId: p.replacesPlantId,
     buildingWith: p.buildingWith,

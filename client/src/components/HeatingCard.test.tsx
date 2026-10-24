@@ -340,3 +340,22 @@ test('N-3: schon „Mieter heizt selbst“ ohne Art: die Einrichtung trägt „z
     ['PUT', '/api/tenancies/tb', { selfSupplyKind: 'central' }],
   ])
 })
+
+test('#322, Durchsicht M1: „Ändern“ bei eigener Abrechnung nach umbautem Raum trägt den Rauminhalt je Wohnung ein, die Liste bleibt „alle“', async () => {
+  plants = [{ ...PLANT, energy: 'gas', method: 'self', capture: 'heatMeter', areaBasisHeat: 'volume', basisValues: [{ unitId: 'eg', heatedAreaM2: null, volumeM3: 200 }] }]
+  const base = globalThis.fetch
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if ((init?.method ?? 'GET') !== 'PUT') return base(url, init)
+    sent.push({ method: 'PUT', url, body: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown> })
+    return json(plants[0])
+  })
+  render(<UIProvider><PropertyProvider><HeatingCard units={[...UNITS, { id: 'garage', propertyId: 'objekt-1', name: 'Garage', areaM2: 0, participates: true }]} /></PropertyProvider></UIProvider>)
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Ändern' })).toBeTruthy())
+  fireEvent.click(screen.getByRole('button', { name: 'Ändern' }))
+  expect((screen.getByLabelText(/Umbauter Raum EG in m³/) as HTMLInputElement).value).toBe('200')
+  expect(screen.queryByLabelText(/Umbauter Raum Garage/)).toBeNull()
+  fireEvent.change(screen.getByLabelText(/Umbauter Raum OG in m³/), { target: { value: '175' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+  await waitFor(() => expect(sent.some((x) => x.method === 'PUT')).toBe(true))
+  expect(sent.find((x) => x.method === 'PUT')?.body).toMatchObject({ units: null, unitValues: [{ unitId: 'eg', volumeM3: 200 }, { unitId: 'og', volumeM3: 175 }] })
+})

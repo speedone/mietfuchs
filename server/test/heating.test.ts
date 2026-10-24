@@ -245,7 +245,8 @@ test('Leerstand und Eigennutzung sind Nutzer: Grundkosten und gemessener Verbrau
 })
 
 test('R-A21: beheizte Fläche nur im Topf Heizung, Warmwasser nach Wohnfläche', () => {
-  const units = UNITS.map((u) => (u.id === 'c' ? { ...u, heatedAreaM2: 40 } : u))
+  // Seit #322 (Durchsicht M1) ersetzt die Wohnfläche eine fehlende beheizte Fläche nicht mehr; A und B nennen sie deshalb.
+  const units = UNITS.map((u) => ({ ...u, heatedAreaM2: u.id === 'c' ? 40 : u.areaM2 }))
   const plan = planSelf(input({ units, areaBasisHeat: 'heatedArea' }))
   near(plan.totals.heating.area, 180, 'Heizung: 60 + 80 + 40 m²')
   near(plan.totals.water.area, 200, 'Warmwasser: Wohnfläche')
@@ -269,10 +270,15 @@ test('#322: umbauter Raum nur im Topf Heizung, Warmwasser nach Wohnfläche (§ 7
   near(mitFlaeche.totals.heating.area, 600, 'Rauminhalt, nicht beheizte Fläche')
 })
 
+test('#322, Durchsicht M1: fehlt die beheizte Fläche, wird nicht verteilt, statt still die Wohnfläche zu nehmen; eine Einheit ohne Fläche braucht keine', () => {
+  const units = [...UNITS.map((u) => ({ ...u, heatedAreaM2: u.id === 'b' ? null : 50 })), { id: 'g', name: 'Garage', areaM2: 0, heatedAreaM2: null, role: 'rented' as const }]
+  assert.deepEqual(planSelf(input({ units, areaBasisHeat: 'heatedArea' })).problems, [{ kind: 'noBasisValue', basis: 'heatedArea', unitNames: ['B'] }])
+})
+
 test('#322: fehlt einer Wohnung der Rauminhalt, wird nicht verteilt und die Wohnung genannt', () => {
   const units = UNITS.map((u) => ({ ...u, volumeM3: u.id === 'b' ? null : 180 }))
   const plan = planSelf(input({ units, areaBasisHeat: 'volume' }))
-  assert.deepEqual(plan.problems, [{ kind: 'noVolume', unitNames: ['B'] }])
+  assert.deepEqual(plan.problems, [{ kind: 'noBasisValue', basis: 'volume', unitNames: ['B'] }])
 })
 
 test('Review Focus 4: eine Wohnung ohne Wärmezähler ist ein Fehler, nicht eine Wohnung ohne Verbrauch', () => {
@@ -583,7 +589,8 @@ test('Die Grenze wird nur gefragt, wenn es eine Schätzung gibt (Rechtsstand)', 
 test('Review Focus 4: je Topf getrennt; beheizte Fläche zählt nur beim Topf Heizung (15.1 Nr. 6)', () => {
   // C hat 60 m² Wohnfläche, aber nur 20 m² beheizte Fläche: Heizung 20 von 160 m² = 12,5 %; Warmwasser
   // 60 von 200 m² = 30 %.
-  const units = UNITS.map((u) => (u.id === 'c' ? { ...u, heatedAreaM2: 20 } : u))
+  // Seit #322 (Durchsicht M1) ersetzt die Wohnfläche eine fehlende beheizte Fläche nicht mehr; A und B nennen sie deshalb.
+  const units = UNITS.map((u) => ({ ...u, heatedAreaM2: u.id === 'c' ? 20 : u.areaM2 }))
   const plan = planSelf(input({
     units, areaBasisHeat: 'heatedArea',
     readings: READINGS.filter((x) => !(x.date === '2025-12-31' && (x.meterId === 'wc' || x.meterId === 'xc'))),

@@ -4,7 +4,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement, type ComputedSettlement } from '../src/calc.ts'
-import { selfSnapshot } from '../testing/selfHeating.ts'
+import { selfMeters, selfReadings, selfSnapshot } from '../testing/selfHeating.ts'
+import { periodKey } from '../../shared/period.ts'
 import type { HeatingPlantUnit } from '../../shared/types.ts'
 
 const selfOf = (s: ComputedSettlement) => s.heating?.find((h) => h.plantId === 'hp')?.self ?? assert.fail('kein Ausweis der Anlage hp')
@@ -49,4 +50,17 @@ test('#322: fehlt ein Rauminhalt, wird die Anlage nicht verteilt, und der Fehler
   assert.match(n.text, /An B fehlt der umbaute Raum in m³/)
   assert.ok(!/Fläche hinterlegt/.test(s.notices.map((x) => x.text).join(' ')), 'keine zweite Meldung zur Fläche')
   assert.deepEqual(s.landlord.rows.find((r) => r.costItemId === 'gas')?.landlordParts, [{ reason: 'noBasis', cents: 600000 }])
+})
+
+test('#322, Durchsicht S2 und K4: Sätze zur Schätzung und ohne Verbrauch nennen den umbauten Raum', () => {
+  const plant = { areaBasisHeat: 'volume' as const, units: volumes(150, 200, 150) }
+  // Ohne Wärmezähler: nur nach umbautem Raum, im Rechenweg und im Hinweis.
+  const ohne = computeSettlement(selfSnapshot({ plant, meters: selfMeters().filter((m) => m.type !== 'waerme' || m.unitId === null) }))
+  const step = rowsOf(ohne, 'A').find((r) => r.costItemId === 'wz')?.steps?.find((x) => x.label === 'Verbrauchskosten Heizung')
+  assert.equal(step?.value, 'kein Verbrauch erfasst, nur nach umbautem Raum verteilt')
+  assert.match(ohne.notices.find((n) => n.code === 'heating.no-consumption')?.text ?? '', /nur nach umbautem Raum\./)
+  // Schätzung nach dem Durchschnitt des Gebäudes: je m³.
+  const readings = selfReadings().filter((r) => !(r.meterId === 'wz-c' && r.date === '2025-12-31'))
+  const geschaetzt = computeSettlement(selfSnapshot({ plant, readings, estimates: [{ plantId: 'hp', period: periodKey('2025-01'), unitId: 'c', part: 'heat', value: 12000, method: 'buildingAverage', reason: 'Wärmezähler defekt', confirmed: true, cause: 'deviceFailure', capture: 'heatMeter', valueUnit: 'kWh' }] }))
+  assert.match(geschaetzt.notices.find((n) => n.code === 'heating.estimated')?.text ?? '', /Durchschnitt des Gebäudes je m³/)
 })

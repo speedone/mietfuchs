@@ -940,8 +940,10 @@ export async function plantForNewItem(db: Executor, c: CostItem): Promise<string
   const plants = await db.select({ id: heatingPlants.id, endsOn: heatingPlants.endsOn, replacesPlantId: heatingPlants.replacesPlantId }).from(heatingPlants).where(eq(heatingPlants.propertyId, c.propertyId))
   if (plants.length === 0) return null
   const named = await namedUnitsOf(db, c)
+  // Ohne Liste tragen die Zeilen nur Werte für die Grundkosten (#322): zählt nur bei `units_limited`.
   const rows = await db.select({ plantId: heatingPlantUnits.plantId, unitId: heatingPlantUnits.unitId }).from(heatingPlantUnits)
-    .where(inArray(heatingPlantUnits.plantId, plants.map((p) => p.id)))
+    .innerJoin(heatingPlants, eq(heatingPlantUnits.plantId, heatingPlants.id))
+    .where(and(inArray(heatingPlantUnits.plantId, plants.map((p) => p.id)), eq(heatingPlants.unitsLimited, true)))
   const fits = named.length === 0 || plants.length === 1 ? plants : plants.filter((p) => named.every((u) => rows.some((r) => r.plantId === p.id && r.unitId === u)))
   // Kesseltausch: nur die Anlage, die zu Beginn des Leistungszeitraums heizt (ohne Leistungszeitraum zu
   // Beginn des Zeitraums der Position). Eine stillgelegte Anlage bekommt nie eine Position für die Zeit
@@ -1613,7 +1615,8 @@ async function guardUnit(db: Executor, before: Unit | null, after: Unit): Promis
     .select({ name: heatingPlants.name })
     .from(heatingPlantUnits)
     .innerJoin(heatingPlants, eq(heatingPlantUnits.plantId, heatingPlants.id))
-    .where(eq(heatingPlantUnits.unitId, after.id))
+    // Ohne Liste tragen die Zeilen nur Werte für die Grundkosten (#322), keine Versorgung; sie entfallen unten.
+    .where(and(eq(heatingPlantUnits.unitId, after.id), eq(heatingPlants.unitsLimited, true)))
   if (anlagen.length > 0) {
     throw new CrossPropertyError(
       `Die Wohnung „${after.name}“ hängt an der Heizanlage des bisherigen Objekts und kann deshalb nicht in ein anderes Objekt wechseln. ` +
@@ -1658,6 +1661,9 @@ async function guardUnit(db: Executor, before: Unit | null, after: Unit): Promis
     // Vorgang; die abgeschlossener Abrechnungen bleiben.
     const ihre = await db.select({ id: tenancies.id }).from(tenancies).where(eq(tenancies.unitId, after.id))
     for (const t of ihre) await dropOpenTenancyLetters(db, t.id)
+    // #322: Beheizte Fläche und umbauter Raum an einer Anlage ohne Liste gehören zum bisherigen Objekt.
+    const ohneListe = (await db.select({ id: heatingPlants.id }).from(heatingPlants).where(eq(heatingPlants.unitsLimited, false))).map((x) => x.id)
+    if (ohneListe.length > 0) await db.delete(heatingPlantUnits).where(and(eq(heatingPlantUnits.unitId, after.id), inArray(heatingPlantUnits.plantId, ohneListe)))
     return
   }
   throw new CrossPropertyError(

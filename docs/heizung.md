@@ -263,18 +263,23 @@ Gewichten durch `distributeCents`. Tests bauen Beispiel A mit `selfSnapshot()`
   Nutzerwechsel ist Auslegung (Entwurf 3.5, R-A16); BGH VIII ZR 9/14 ist nur über eine Sekundärquelle gelesen und
   wird nicht zitiert.
 - **Maßstab der Grundkosten der Heizung** (`area_basis_heat`, § 7 Abs. 1 Satz 5): Wohnfläche, beheizte Fläche
-  oder umbauter Raum (#322). Beheizte Fläche und Rauminhalt stehen an der Zuordnung Wohnung–Anlage
-  (`heating_plant_units.heated_area_m2`, `.volume_m3`, Schritte 0069/0070), nicht an der Wohnung; ein Wert gilt für
-  beide Lesarten (ganzer Raum oder beheizte Räume), der Vermieter trägt ein, was er bestimmt hat. Eingetragen
-  werden sie in der Einrichtung (`PUT …/self` mit `unitValues`; die Liste der Wohnungen steht dann ausdrücklich da).
-  Fehlt einer Wohnung der Wert, lehnt `guardHeatingPlant` ab (beim umbauten Raum mit den Namen); steht es trotzdem so
-  im Bestand (Archiv), meldet `planSelf` `noVolume`, und nichts wird verteilt. Ein Eintrag ohne `volumeM3` im Rumpf
-  von `PUT` behält den gespeicherten Wert (`readPlantUnits`), der Kesseltausch nimmt beide Werte mit. Das Warmwasser
-  bleibt immer bei der Wohnfläche (§ 8 Abs. 1), die CO₂-Einstufung ebenso. Beim umbauten Raum rechnen Rechenweg,
-  Ausweis (`SelfPotView.basisUnit`) und die Grenze des § 9a Abs. 2 in m³ („maßgeblicher gesamter umbauter Raum“).
-  Eine Vereinbarung nach § 2 „nach Wohnfläche“ verteilt auch dann nach der Wohnfläche. Ob Satz 5 unter die freie
-  Wahl nach § 6 Abs. 4 fällt, sagt der Wortlaut nicht; Texte sprechen deshalb von „bestimmt oder vereinbart“.
-  Invariante: Variante „Grundkosten nach umbautem Raum“ in fuel-invariant.test.ts, Prüfung (s7).
+  oder umbauter Raum (#322). Beheizte Fläche und Rauminhalt stehen in `heating_plant_units` (`heated_area_m2`,
+  `volume_m3`, Schritte 0069/0070), nicht an der Wohnung; ein Wert gilt für beide Lesarten (ganzer Raum oder beheizte
+  Räume). **Die Zeilen tragen auch ohne Liste Werte** (`units_limited` 0): Dann ist `units` null und die Werte stehen in
+  `basisValues`; gelesen wird immer über `unitBasisOf`/`plantUnitValues` (shared/heatingPeriod.ts), und jede Abfrage,
+  die aus den Zeilen die Versorgung liest, filtert auf `units_limited` (Durchsicht M1: Eine erzwungene Liste hängte eine
+  später angelegte Wohnung still ab). Eingetragen werden die Werte mit `unitValues` in der Einrichtung (`PUT …/self`) und in
+  „Heizanlage ändern“ (`PUT /api/heating-plants/:id`); ein Eintrag in `units` ohne Wert behält den gespeicherten.
+  Pflicht sind sie nur an Wohnungen mit Fläche (`guardBasisValues`, die Garage zählt nicht, wie `served` in calc.ts);
+  fehlt einer Wohnung der Wert (später angelegt, Archiv), meldet `planSelf` `noBasisValue`, und nichts wird verteilt.
+  Die Wohnfläche ersetzt eine fehlende beheizte Fläche nicht mehr. Wechselt eine Wohnung das Objekt, entfallen ihre
+  Werte an Anlagen ohne Liste. Das Warmwasser bleibt immer bei der Wohnfläche (§ 8 Abs. 1), die CO₂-Einstufung ebenso.
+  Beim umbauten Raum rechnen Rechenweg, Ausweis (`SelfPotView.basisUnit`), Druckzeilen und die Grenze des § 9a Abs. 2
+  in m³. Eine Vereinbarung nach § 2 „nach Wohnfläche“ verteilt auch dann nach der Wohnfläche. Den Maßstab ändert bei
+  eigener Abrechnung nur die Einrichtung (`PUT` an der Anlage: 409); **bewusst offen**: er steht noch nicht je Zeitraum
+  wie Erfassung und Warmwasser (Fehlerklasse #239/#241). Ob Satz 5 unter die freie Wahl nach § 6 Abs. 4 fällt, sagt der
+  Wortlaut nicht; Texte sprechen von „bestimmt oder vereinbart“. Invariante: Variante „Grundkosten nach umbautem Raum“
+  in fuel-invariant.test.ts, Prüfung (s7).
 - **„Nur Heizung“ bei freien Schlüsseln** nimmt beim Mieterwechsel Gradtage statt Tage; kombinierte
   Positionen bleiben nach Tagen.
 - **Invarianten** (fuel-invariant.test.ts, fuel-stock-invariant.test.ts) mit Varianten für eigene

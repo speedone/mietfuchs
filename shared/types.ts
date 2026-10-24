@@ -1781,6 +1781,10 @@ export type HeatingPlant = {
   // `null`: alle Wohnungen des Objekts ohne „kein Anschluss: Wärme“ (#117). Eine Liste, auch eine
   // leere, nennt die angeschlossenen.
   units: HeatingPlantUnit[] | null
+  // #322 (Durchsicht M1): Ohne Liste (`units` null) stehen beheizte Fläche und umbauter Raum je Wohnung hier, damit die
+  // Werte die Liste „alle“ nicht in eine feste Liste verwandeln. Mit Liste stehen sie an deren Einträgen. Lesen über
+  // `unitBasisOf` (shared/heatingPeriod.ts). Fehlt: keine Werte.
+  basisValues?: HeatingPlantUnit[]
   // Kesseltausch (Heizung PR 9): der letzte Betriebstag einer stillgelegten Anlage und an der neuen die
   // Anlage, die sie ersetzt. Gesetzt nur über den Kesseltausch; sonst `null`.
   endsOn: string | null

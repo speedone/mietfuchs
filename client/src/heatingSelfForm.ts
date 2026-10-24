@@ -7,6 +7,7 @@ import { LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
 import { EVAPORATOR_DEADLINE } from './hcaForm'
 import { billingEnergy } from '../../shared/heatDelivery.ts'
 import { parseNumberDe } from './numbers'
+import { plantUnitValues } from '../../shared/heatingPeriod.ts'
 
 export type SelfItemRow = { id: string; description: string; amountCents: number; heatingPart: HeatingPart | ''; heatingTarget: HeatingTarget | '' }
 export type SelfSetupForm = {
@@ -95,7 +96,7 @@ export function forcedShare(energy: HeatingEnergy, insulation: InsulationRule | 
   return insulation === 'applies' && ['oil', 'gas', 'lpg'].includes(energy) ? valueAt(hkvConsumptionShareForced, LAW_AS_OF) : null
 }
 
-export function emptySelfSetup(plant: Pick<HeatingPlant, 'energy' | 'hotWater' | 'capture' | 'areaBasisHeat'> & { contracting?: boolean; units?: HeatingPlant['units'] }, period: string): SelfSetupForm {
+export function emptySelfSetup(plant: Pick<HeatingPlant, 'energy' | 'hotWater' | 'capture' | 'areaBasisHeat'> & { contracting?: boolean; units?: HeatingPlant['units']; basisValues?: HeatingPlant['basisValues'] }, period: string): SelfSetupForm {
   const basis = plant.areaBasisHeat ?? 'area'
   return {
     period,
@@ -108,7 +109,7 @@ export function emptySelfSetup(plant: Pick<HeatingPlant, 'energy' | 'hotWater' |
     insulation: '',
     above70Agreed: false,
     areaBasisHeat: basis,
-    unitValues: Object.fromEntries((plant.units ?? []).map((u) => [u.unitId, valueText(basis === 'heatedArea' ? u.heatedAreaM2 : u.volumeM3)])),
+    unitValues: Object.fromEntries(plantUnitValues({ units: plant.units ?? null, basisValues: plant.basisValues }).map((u) => [u.unitId, valueText(basis === 'heatedArea' ? u.heatedAreaM2 : u.volumeM3)])),
     dhwHeatMeter: true,
     // Heizung PR 16: bei Contracting wie bei Fernwärme.
     totalHeatMeter: billingEnergy(plant) === 'heatPump' || billingEnergy(plant) === 'districtHeating',
