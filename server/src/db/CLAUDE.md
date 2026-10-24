@@ -216,9 +216,9 @@ Wohnung kaskadiert auf alles darunter) half bisher nichts von selbst. Deshalb le
   (die Meldungen sagen dann „Vorversion“ statt „Archiv“; ein Wächter liest den Rumpf; Integrität,
   `unknownSteps`, Migrationskette nachholen, Verweise), `restoreDatabase` (bisherige als
   `mietfuchs.sqlite.vor-restore`, Hinweis nach dem Update weg), `refreshSettings`; gesperrt über
-  `restoreRunning` wie `/api/restore`. Die Vorversion selbst bleibt unverändert. Die `db.json` und die
-  Belege werden nicht angefasst; Belege, auf die der Stand verweist und die fehlen, nennt die Antwort
-  in `notes`. Die Oberfläche lädt danach **immer** neu (jede Seite hält sonst den alten Stand) und
+  `restoreRunning` wie `/api/restore`. Die Vorversion selbst bleibt unverändert. Die `db.json` wird nicht
+  angefasst; Belege, auf die der Stand verweist und die im Papierkorb liegen, holt der Abgleich zurück (`reconcileFiles`,
+  #318), die übrigen fehlenden nennt die Antwort in `notes`. Die Oberfläche lädt danach **immer** neu (jede Seite hält sonst den alten Stand) und
   zeigt die Hinweise einmal nach dem Neuladen (sessionStorage, mit try/catch).
 
 ## Änderungsjournal und Verlauf (#318, Schritte 2 und 3)
@@ -261,10 +261,94 @@ Route, Zahl der Migrationsschritte) und `change_log` (je Zeile Tabelle, Schlüss
   `secure_delete = FAST` überschreibt gelöschten Inhalt, soweit es nichts zusätzlich kostet. **Backup** ohne Journal,
   außer `GET /api/backup?journal=1` (`stripJournal` leert den Schnappschuss und macht VACUUM); Vorversionen enthalten es
   immer. Ein endgültiges Löschen eines ehemaligen Mieters, das das Journal bereinigt, gibt es noch nicht (Grenze).
-- **Lesen**: `GET /api/journal?property=&before=&limit=` (Gruppen mit `title`, `propertyIds`, `installationWide`, Zahl
+- **Lesen**: `GET /api/journal?property=&before=&limit=&from=&to=&kind=&q=` (Einträge mit `title`, `propertyIds`, `installationWide`, Zahl
   der Änderungen), `GET /api/journal/:id` (Änderungen samt `refs`, den Namen der Zeilen, auf die eine Spalte verweist;
   `collapse` fasst unverändert gelöscht-und-neu-eingefügte Zeilen zusammen, gespeichert bleibt die wirkliche Folge).
   Seite „Verlauf“ (client/src/pages/Verlauf.tsx, Feldnamen und Aufzählungen in client/src/journalView.ts).
+- **Ein Eintrag je Aktion** (Schritt 4): Jede Gruppe trägt `request_id` (Kennung der Anfrage aus index.ts). Schreibt eine
+  Anfrage mehrmals und eine andere dazwischen (Beleg speichern, KI-Auswertung, Auswertung speichern), entstehen mehrere
+  Gruppen; der Verlauf zeigt sie als einen Eintrag (`id` = jüngste, `firstId` = älteste Gruppe, `entryRows`). Routen mit
+  mehr als einem `writeData` stehen mit Grund in `MULTI_WRITE_ROUTES` (journalRoutes.ts); journal-routes.test.ts zählt
+  die Schreibvorgänge je Route über die Funktionen von index.ts hinweg. Der Abbruch einer KI-Auswertung schreibt im
+  Kontext der ausgewerteten Anfrage (`requestScope.run`).
+- **Filter** in `GET /api/journal`: `from`/`to` (ISO-Zeitpunkte, `to` ausschließlich; die Oberfläche rechnet Tage in
+  ihrer Zeitzone um), `kind` (Bereich aus `TABLE_KINDS`, Liste in shared/journal.ts; ein Wächter verlangt einen Bereich
+  je erfasster Tabelle), `q` (LIKE in Satz und Zeilen, `%` und `_` sind Text; Groß und Klein nur bei ASCII gleich). Was
+  sich in SQL sagen lässt, filtert SQL, das Objekt danach (`groupProperties`); die Zeilen einer Seite kommen in einem
+  Zug. 1000 Einträge: jede Seite und jeder Filter unter 200 ms (api-journal-viele.test.ts).
+
+## Rücksprung und Papierkorb (#318, Schritte 4 und 5)
+
+[revert.ts](revert.ts), Papierkorb in [../trash.ts](../trash.ts). **Zurückgenommen wird immer ein Ende des Journals**:
+`POST /api/journal/:id/revert` mit `mode` `including` (der Eintrag und alles danach: Stand vor dem Eintrag) oder
+`after` (nur alles danach: Stand nach dem Eintrag), streng rückwärts, neueste Zeile zuerst, in einer Transaktion durch
+die Schlange. „Rückgängig“ am obersten Eintrag ist derselbe Weg. **Kein selektives Rückgängig**: Ein Rücksprung kehrt in
+einen Zustand zurück, der bestand und den jede Schreibprüfung zugelassen hatte; einen Eintrag mitten heraus zu nehmen
+bräuchte eine Abhängigkeitsregel, deren Fehler einen nie geprüften Bestand ergäben.
+
+- **Vorschau zuerst** (`…/revert/preview`, in `DRY_RUN_ROUTES`): Einträge des Bereichs mit Satz und Zahl der
+  Änderungen, Grenzen als Sätze (`refusals`), Dateien aus dem und in den Papierkorb, Marke (`token`, über Bereich und
+  Einträge). Der Probelauf schreibt und rollt zurück. Ohne passende Marke oder mit Grenze: 409 mit neuer Vorschau.
+  `kind: 'journal'`: Ein späterer Weg (Sicherung einspielen) bekommt eine eigene Art derselben Gestalt.
+- **Gegenstück je Zeile** (`inverse`): Einfügen wird gelöscht, Löschen mit Vorher-Bild **samt `rowid`** wieder eingefügt
+  (die Trigger schreiben sie als `$rowid` ins Bild, `collapse` blendet sie aus; read.ts liest `ORDER BY rowid`),
+  Änderung bekommt ihr Vorher-Bild. `defer_foreign_keys`, weil eine Kaskade Eltern und Kinder in der Reihenfolge von
+  SQLite meldet. Danach das **Sicherheitsnetz**: `PRAGMA foreign_key_check`, `crossPropertyViolations`,
+  `orphanPeriodKeys`, `heatingPlantViolations` (dieselben wie beim Wiederherstellen); ein Verstoß rollt alles zurück
+  (409). Durch die Bauart greift es nicht; ein Test verfälscht das Journal, um es auszulösen.
+- **Der Rücksprung ist selbst eine Gruppe** („Rückgängig: …“, „Zurückgekehrt zum Stand vor/nach … vom …“) und lässt sich
+  ebenso zurücknehmen. `change_groups.reverted_by` markiert die zurückgenommenen; wird ein Rücksprung zurückgenommen,
+  gelten seine Gruppen wieder. Nach dem Rücksprung liest index.ts die Einstellungen neu (`refreshSettings`).
+- **Grenzen** (jede mit Satz und Test in api-ruecksprung.test.ts): Eine Gruppe im Bereich ändert eine Tabelle aus
+  `FROZEN_TABLES` (Abschluss, Wiederöffnen, Versanddatum): abgelehnt, damit nie still ein zugestellter Stand verschwindet
+  oder ohne Abschluss entsteht; „Wieder öffnen“ geht bewusst über die Seite Abrechnung, danach ist der Rücksprung bis
+  dorthin möglich. Eine Gruppe mit anderem `schema_steps` (vor der letzten Migration): nur lesbar. Eine **Schranke**
+  (`barrier`: Backup, Vorversion, Umstieg, eine Gruppe ohne Zeilen, gesetzt von `markBarrier` in index.ts): Über sie
+  hinweg kein Rücksprung, ältere Einträge sind nur lesbar (`readOnly`).
+- **Papierkorb** `papierkorb/<Ablage>/` im Datenordner (Ablagen `uploads` und `briefpapier`, `FILE_STORES`): Das Löschen
+  eines Belegs, der Abbruch einer Auswertung und ein Logo, das keine Gestaltung mehr nennt (`removeUnreferenced`),
+  verschieben die Datei dorthin (`moveFile`: mit Wiederholungen wie `replaceFile`; auf ein anderes Laufwerk kopieren und
+  die Quelle entfernen, scheitert das Entfernen, geht die Kopie wieder weg, nie zwei Exemplare). **Überschrieben wird
+  nie**: Liegt am Ziel eine gleichnamige Datei, fällt bei gleichem Inhalt die Quelle weg (Papierkorb) bzw. bleibt liegen
+  (Belegordner); bei anderem Inhalt bekommt sie im Papierkorb einen eigenen Namen (`x-2.pdf`, das Aufräumen behandelt ihn
+  wie `x.pdf`), und das Zurückholen in den Belegordner wird abgelehnt (Konsole, `notes`). Der Rücksprung vergleicht
+  die genannten Dateien vorher und nachher (`FILE_COLUMNS` in [fileRefs.ts](fileRefs.ts): `uploads.file`,
+  `cost_items.invoice_file`, `assessments.file`, Logo und Briefpapier; ein Wächter in trash.test.ts verlangt jede Spalte
+  `…_file`): wieder genannt heißt zurück aus dem Papierkorb (fehlt sie dort: abgelehnt), nicht mehr genannt heißt in den
+  Papierkorb. **Verschoben wird nach dem Festschreiben**; scheitert es, steht es auf der Konsole. Der **Abgleich**
+  (`reconcileFiles`, beim Start und nach dem Einspielen eines Backups oder einer Vorversion, dann mit Satz in `notes`)
+  holt zurück, was der Bestand nennt und nur im Papierkorb liegt. **In den Papierkorb legt er nie etwas** (Gegenprüfung
+  von PR #439): Ein Beleg im Ordner ohne Zeile ist harmlos und kann einer sein, den der Vermieter von Hand aus dem
+  Papierkorb zurückgeholt hat. Ein nach dem Festschreiben gescheitertes Verschieben in den Papierkorb bleibt deshalb
+  liegen; das steht auf der Konsole. Eine Zeile, die einen schon vorhandenen
+  Beleg nur beschreibt (`placeUpload`, Löschen eines Belegs ohne Zeile), entsteht `unjournaled`: Ein Rücksprung, der sie
+  entfernte, legte sonst einen Beleg in den Papierkorb, der vorher im Ordner lag. **Nicht im Backup**. Aufgeräumt mit der
+  Aufbewahrung (`emptyTrash` in index.ts beim Start und täglich, `cleanTrash`): weg, was weder das Journal noch der
+  Bestand nennt (`trashKeep`; Durchsicht von PR #439, M1: Nach dem Einspielen einer Vorversion nennt der Bestand einen
+  Beleg, den der gealterte Verlauf nicht mehr kennt); nur Dateien unmittelbar in den Ablagen des Papierkorbs, nie Ordner.
+- **Zustimmungen** (`CONSENT_COLUMNS`: `ai_slots.consent_*`, `settings.update_check`): Ein Rücksprung setzt und entfernt
+  sie nie; jede Zeile trägt danach die Zustimmung von vorher, eine neu entstandene keine. Ein Widerruf bleibt ein
+  Widerruf; die Vorschau sagt es in `notes`. Ein Wächter in trash.test.ts verlangt jede Spalte, die nach Zustimmung klingt.
+- **Während einer KI-Auswertung** (`runningAiRequests` in index.ts) kein Rücksprung (Satz in der Vorschau, 409): Sie
+  schriebe danach zu einem Beleg, den es nicht mehr gibt. Eine Kostenposition nimmt einen neu gesetzten oder geänderten
+  `invoiceFile` nur, wenn die Datei im Belegordner liegt (`requireInvoiceFile`, Muster der IBAN).
+- **Ein Rücksprung bleibt im Verlauf**, auch wenn er sich zu nichts zusammenfasst (`dropIfNoChange` und die Liste nehmen
+  `REVERT_ROUTE` aus), denn an ihm hängt `reverted_by`. `newest` an jedem Eintrag sagt, ob er die neueste Gruppe
+  insgesamt ist (nur dann „Rückgängig“).
+- **Invariante** (invariant-ruecksprung.test.ts, Generator in server/testing/revertFlows.ts): Zufallsabläufe über die
+  Routen samt Heizung, Stand nach jedem Eintrag gemerkt; Rücksprung vor bzw. nach einen Eintrag ergibt ihn zeilengleich
+  (mit `rowid`), die Rücknahme den Endstand, mit Abschluss im Bereich die Ablehnung. Jede Route mit Satz steht im
+  Generator oder mit Grund in `UNCOVERED_ROUTES` (nur kürzer werden lassen).
+- **Kosten**: rund 0,4 ms je Zeile des Journals (Trigger und Drizzle). Ein Rücksprung über einen früheren Rücksprung nimmt
+  dessen Zeilen mit; ein Bereich mit 10.000 Zeilen dauert Sekunden.
+
+**Checkliste für Rückgängig**: Eine **neue Tabelle** braucht nichts, die Trigger entstehen beim Öffnen (dazu ein Bereich
+in `TABLE_KINDS`, der Wächter in journal.test.ts sagt es). Eine **neue Ablage für Dateien** braucht den Papierkorb:
+Eintrag in `FILE_STORES` (trash.ts) und `FILE_COLUMNS` (fileRefs.ts), Löschen über `moveToTrash`; eine **neue Spalte
+mit Dateinamen** gehört in `FILE_COLUMNS`, eine **neue Zustimmung** in `CONSENT_COLUMNS` (beides verlangt trash.test.ts). Eine **neue
+Abschlusstabelle** (eingefrorener Stand) gehört in `FROZEN_TABLES`. Eine **neue Schreibroute** braucht ihren Satz
+(journalRoutes.ts), einen Schritt im Generator oder einen Grund in `UNCOVERED_ROUTES`, und schreibt sie mehrmals, einen
+Eintrag in `MULTI_WRITE_ROUTES`.
 
 ## Der Umstieg aus der db.json
 

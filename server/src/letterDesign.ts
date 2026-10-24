@@ -8,6 +8,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { LetterDesign, LetterDesignFile, LetterPaperNext } from '../../shared/types.ts'
 import { LETTER_DESIGN_LIMITS, LIMIT_TEXT, designFileName, designFileType, isDesignFileName, parseMargins, sniffDesignFile, type DesignSlot } from '../../shared/letterDesign.ts'
+import { moveToTrash } from './trash.ts'
 
 export const DESIGN_DIR_NAME = 'briefpapier'
 export const designDir = (dataDir: string): string => path.join(dataDir, DESIGN_DIR_NAME)
@@ -99,11 +100,15 @@ export function writeDesignFiles(dataDir: string, prepared: PreparedFile[]): voi
 
 // Entfernt die genannten Dateien, soweit keine Gestaltung sie mehr nennt. Ein Fehler beim Löschen ist kein
 // Fehlschlag: Dann bleibt eine Datei liegen, die niemand mehr liest.
-export function removeUnreferenced(dataDir: string, candidates: Iterable<string>, referenced: ReadonlySet<string>): void {
+// Was keine Gestaltung mehr nennt, wandert in den Papierkorb (#318, Schritt 5): Ein Rücksprung im Verlauf, der die
+// Gestaltung von vorher wiederherstellt, holt die Datei von dort zurück. `toTrash: false` nur für Dateien, die eben
+// geschrieben wurden und nie eine Gestaltung genannt hat (gescheitertes Speichern).
+export async function removeUnreferenced(dataDir: string, candidates: Iterable<string>, referenced: ReadonlySet<string>, toTrash = true): Promise<void> {
   for (const name of candidates) {
     if (referenced.has(name) || !isDesignFileName(name)) continue
     try {
-      fs.rmSync(path.join(designDir(dataDir), name), { force: true })
+      if (toTrash) await moveToTrash(dataDir, 'briefpapier', name)
+      else fs.rmSync(path.join(designDir(dataDir), name), { force: true })
     } catch { /* bleibt liegen */ }
   }
 }

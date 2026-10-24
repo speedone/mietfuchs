@@ -8,6 +8,7 @@ import { changeTitle, fieldLines, formatValue, type JournalChange, type JournalD
 const GROUP: JournalGroup = {
   id: 7, at: '2026-10-24T08:15:00.000Z', method: 'DELETE', route: '/api/units/:id', description: 'Wohnung gelöscht',
   title: 'Wohnung gelöscht: EG links', propertyIds: ['objekt-1'], installationWide: false, rows: 2,
+  firstId: 7, revertedBy: null, barrier: null, readOnly: false, newest: true,
 }
 const DETAIL: JournalDetail = {
   ...GROUP,

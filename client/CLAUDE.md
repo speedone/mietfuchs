@@ -342,6 +342,20 @@ DIN 5008 (links 25, rechts 20 mm) hält im Brief der Text, in der Aufstellung di
   [src/testing/dialog.ts](src/testing/dialog.ts), Tastendrücke wie im Browser aus
   [src/testing/keys.ts](src/testing/keys.ts) (`press`). `<dialog>` hat die Rolle `dialog`, die
   Rückfrage `alertdialog`; wer nach einer Eingabe „Abbrechen“ klickt, bestätigt danach „Verwerfen“.
+- **Verlauf** ([pages/Verlauf.tsx](src/pages/Verlauf.tsx), Logik in [journalRevert.ts](src/journalRevert.ts) und
+  [journalView.ts](src/journalView.ts), #318): Filterzeile über der Liste (`field-grid` mit `Field`: Objekt als „Nur
+  gewähltes Objekt / Alle Objekte“, weil die Seitenleiste das Objekt wählt; Bereich aus `KIND_OPTIONS`; „Von“/„Bis“ als
+  Datum, Breite `s`, gerechnet in der Zeitzone des Browsers; Suche nach 300 ms Pause). Ein Filter beginnt die Liste neu,
+  Blättern bleibt `before` in Stücken zu 50. Aufgeklappt trägt ein Eintrag Gefahrknöpfe mit Rückfrage (`useConfirm`,
+  `danger`): an der neuesten Gruppe insgesamt „Rückgängig …“ (der Server sagt es mit `newest`; der oberste Eintrag der
+  Liste ist es nicht immer, denn sie zeigt nur das gewählte Objekt), sonst „Diese und alle späteren Änderungen
+  zurücknehmen …“ und „Nur die späteren Änderungen zurücknehmen …“. Die Rückfrage kommt aus der Vorschau des Servers
+  (`revertQuestion`: Titel „Zum Stand vor/nach „…“ zurückkehren?“, die ersten acht Einträge, Dateien aus dem
+  Papierkorb, die Sätze des Servers wie „Zustimmungen bleiben“); eine Grenze steht als `NoticeBox` am Eintrag, ohne
+  Rückfrage. Danach eine Mitteilung (`revertedMessage`: ein Eintrag mit Titel, mehrere mit ihrer Zahl), das Objekt neu
+  geladen (`reload`, Zeitraum und Namen können sich geändert haben) und die Liste neu. Zurückgenommene Einträge tragen
+  „zurückgenommen“, Schranken und nur lesbare haben keine Knöpfe. „Rückgängig“ in der Mitteilung nach einer
+  Speicheraktion gibt es noch nicht (die Mitteilungen haben keine Aktion).
 
 ## Knöpfe, Karten, Anlegen
 

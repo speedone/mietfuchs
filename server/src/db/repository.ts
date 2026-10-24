@@ -1790,7 +1790,7 @@ async function guardHeatingMove(db: Executor, before: Tenancy, after: Tenancy): 
 }
 
 // Verweise über Objektgrenzen im ganzen Bestand, als lesbare Sätze. Leer heißt in Ordnung.
-export async function crossPropertyViolations(db: Database): Promise<string[]> {
+export async function crossPropertyViolations(db: Executor): Promise<string[]> {
   const befunde: string[] = []
   const zaehler = await db
     .select({ id: meters.id, name: meters.name })
@@ -1914,7 +1914,7 @@ export async function crossPropertyViolations(db: Database): Promise<string[]> {
 // Zeitraumschlüssel, die für ihr Objekt keinen Zeitraum bezeichnen (#208), als lesbare Sätze. Über
 // die Routen entsteht keiner (die Schreibprüfungen oben); in einem Archiv kann einer stehen, etwa von
 // Hand bearbeitet. Was darunter steht, erschiene in keiner Abrechnung.
-export async function orphanPeriodKeys(db: Database): Promise<string[]> {
+export async function orphanPeriodKeys(db: Executor): Promise<string[]> {
   const rulesById = new Map((await readProperties(db)).map((p) => [p.id, rulesOf(p)]))
   const befunde: string[] = []
   const pruefe = (propertyId: string | null, key: string, was: string): void => {

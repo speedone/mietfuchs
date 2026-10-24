@@ -97,6 +97,9 @@ export const ROUTE_SENTENCES: Readonly<Record<string, RouteSentence>> = {
   'POST /api/assessments/:id/book': s('Beleg gebucht', 'cost_items'),
   'PUT /api/uploads/:file': s('Beleg im Posteingang geändert', 'uploads'),
   'DELETE /api/uploads/:file': s('Beleg gelöscht', 'uploads'),
+  // #318, Schritt 4: Der Satz wird nach dem Rücksprung durch den genauen ersetzt („Rückgängig: …“, „Zurückgekehrt zum
+  // Stand vor …“, db/revert.ts).
+  'POST /api/journal/:id/revert': s('Rücksprung im Verlauf'),
 }
 
 // Vorschauen schreiben in der Schlange, rollen aber immer zurück (dryRun.ts); ihre Gruppe bliebe leer.
@@ -106,7 +109,20 @@ export const DRY_RUN_ROUTES: ReadonlySet<string> = new Set([
   'POST /api/heating-plants/:id/period/preview',
   'POST /api/heating-plants/:id/separate/preview',
   'POST /api/properties/:id/period/preview',
+  'POST /api/journal/:id/revert/preview',
 ])
+
+// Routen, die bei einer Anfrage mehr als einmal schreiben (#318, Schritt 4). Fachlich ist das eine Aktion; schreibt
+// zwischen den Teilen eine andere Anfrage, entstehen mehrere Gruppen, die die gemeinsame Anfrage-Kennung
+// (`change_groups.request_id`) zu einem Eintrag im Verlauf verbindet. Ein Rücksprung nimmt einen Eintrag immer ganz
+// zurück (ab seiner ältesten Gruppe). journal-routes.test.ts verlangt für jede Route mit mehr als einem Schreibvorgang
+// einen Eintrag hier, mit Grund; die Liste soll nur kürzer werden.
+export const MULTI_WRITE_ROUTES: Readonly<Record<string, string>> = {
+  'POST /api/extract': 'Beleg speichern, dann die KI-Auswertung (bis zu Minuten), dann Rechnungsdatum und Auswertung; ein Abbruch entfernt den Beleg wieder.',
+  'POST /api/intake': 'Wie /api/extract, dazu die Kennzeichnung als Zählerfoto.',
+  'POST /api/heating-plants/:id/service-statement': 'Beleg speichern, dann die KI-Auswertung; ein Abbruch entfernt den Beleg wieder.',
+  'POST /api/heating-plants/:id/fuel-invoice': 'Beleg speichern, dann die KI-Auswertung, dann das Rechnungsdatum.',
+}
 
 // `null`: Die Route hat keinen Satz und wird nicht erfasst (index.ts, `journalMeta`).
 export function routeSentence(method: string, route: string): RouteSentence | null {

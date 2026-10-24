@@ -526,6 +526,20 @@
       "when": 1792810536141,
       "tag": "0074_anpassung_ab_bedingung",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "6",
+      "when": 1792840871906,
+      "tag": "0075_verlauf_ruecksprung",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "6",
+      "when": 1792840881194,
+      "tag": "0076_verlauf_ruecksprung_bedingung",
+      "breakpoints": true
     }
   ]
 }

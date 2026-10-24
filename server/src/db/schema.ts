@@ -2034,6 +2034,7 @@ export const tenancyLetterAdjustments = sqliteTable(
 // ---------- Änderungsjournal (#318, Schritte 2 und 3) ----------
 
 export const JOURNAL_OPS = ['insert', 'update', 'delete'] as const
+export const JOURNAL_BARRIERS = ['restore', 'priorVersion', 'changeover'] as const
 
 // Eine Gruppe je Anfrage, die schreibt (angelegt vom ersten Trigger, siehe db/journal.ts). Die
 // Kennung steigt auf, damit die Reihenfolge ohne Uhr feststeht. Kein Objekt: Das bestimmt der Verlauf
@@ -2050,8 +2051,21 @@ export const changeGroups = sqliteTable(
     description: text('description').notNull(),
     subjectTable: text('subject_table'),
     schemaSteps: integer('schema_steps').notNull(),
+    // Schritt 4 (#318): Die Anfrage, aus der die Gruppe stammt. Schreibt eine Anfrage mehrmals und schreibt
+    // dazwischen eine andere, entstehen mehrere Gruppen; der Verlauf zeigt sie als einen Eintrag.
+    requestId: text('request_id'),
+    // Die Gruppe des Rücksprungs, der diese Gruppe zurückgenommen hat; `null`, solange sie gilt.
+    revertedBy: integer('reverted_by').references((): AnySQLiteColumn => changeGroups.id, { onDelete: 'set null' }),
+    // Eine Schranke ohne Zeilen: ein eingespieltes Backup, eine Vorversion, der Umstieg. Über sie hinweg
+    // gibt es keinen Rücksprung, denn der Stand davor steht nicht in dieser Datei.
+    barrier: text('barrier', { enum: JOURNAL_BARRIERS }),
   },
-  (t) => [index('change_groups_at_idx').on(t.at)],
+  (t) => [
+    index('change_groups_at_idx').on(t.at),
+    index('change_groups_request_idx').on(t.requestId),
+    index('change_groups_reverted_idx').on(t.revertedBy),
+    oneOf('change_groups_barrier_known', 'barrier', JOURNAL_BARRIERS),
+  ],
 )
 
 // Eine Zeile je erfasster Änderung, geschrieben allein von den Triggern (TEMP, bei jedem Öffnen

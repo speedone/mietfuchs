@@ -1020,7 +1020,7 @@ export async function straightenHeatingPlants(db: Database): Promise<string[]> {
   return [...new Set([...waisen, ...ohneGebaeude].map((p) => p.name))]
 }
 
-export async function heatingPlantViolations(db: Database): Promise<string[]> {
+export async function heatingPlantViolations(db: Executor): Promise<string[]> {
   const befunde: string[] = []
   const wohnungen = await db
     .select({ plant: heatingPlants.name, unit: units.name })

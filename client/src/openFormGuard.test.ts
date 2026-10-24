@@ -18,6 +18,7 @@ const sources: Record<string, string> = import.meta.glob<string>(['./components/
 const EXCEPTIONS: Record<string, string> = {
   './components/ServiceImportReview.tsx': 'Teil von ServiceImportCard, die sich anmeldet, solange der Vorschlag offen ist.',
   './pages/Steuer.tsx': 'Nur Auswahl des Jahres und der Ansicht, kein ungespeicherter Stand.',
+  './pages/Verlauf.tsx': 'Nur die Filter des Verlaufs, kein ungespeicherter Stand; der Rücksprung fragt vorher.',
 }
 
 const hasFields = (src: string) => /<input|<select|<textarea/.test(src)
