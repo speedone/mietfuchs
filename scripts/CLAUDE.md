@@ -33,8 +33,35 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   (`--pages -` nur Bedienproben); eine unbekannte Seite, ein Lauf ohne Seite oder eine Seite aus
   nav.ts, die in der Navigation fehlt, ist ein Befund. WebKit braucht unter Linux GTK4, sonst im
   Container `mcr.microsoft.com/playwright:v<Fassung>-noble` (Befehl im Kopf des Skripts). Läuft in
-  release.yml je Engine im vollen Prüfumfang. **Von Hand bleibt** „Als PDF sichern“ in Safari auf
-  dem Mac (#286).
+  release.yml je Engine im vollen Prüfumfang. Gedruckt wird dort nicht (WebKit druckt unter Linux in
+  Playwright nicht); dafür der Druck in Safari.
+- **[safari-print-check.mjs](safari-print-check.mjs)** (#286, Workflow
+  [druck-safari.yml](../.github/workflows/druck-safari.yml), nur von Hand, `macos-latest`, nicht in
+  release.yml): derselbe Bestand plus Heizanlage, acht Fälle der Seite Abrechnung (Strg+P alle mit und
+  ohne Anschreiben, ein Mieter mit Anschreiben, mit Auszug, ohne Anschreiben, mit Hinweis der Datenbank,
+  mit Logo, mit Briefpapier). Je Fall bedient ein Skript in der Seite die Oberfläche wie ein Mensch
+  (Fenster „Drucken“, Mieter, Häkchen, Rückfragen); `window.print()` wird abgefangen, gedruckt wird
+  danach mit dem Zustand, den die Seite gesetzt hat. Safari: [safari-print/main.swift](safari-print/main.swift)
+  (`swiftc`, ohne Xcode-Projekt), WKWebView und `NSPrintOperation` mit Disposition „save“, A4, ohne
+  Hintergründe wie Safaris Vorgabe; die Ränder der Seiteneinstellung ändern nichts, `@page { margin }`
+  gilt. Vergleich: Chromium mit `page.pdf()` auf demselben Rechner. pdf.js prüft Seitenzahl gleich
+  Chromium, A4, jede Mieterabrechnung auf neuer Seite (Anrede bzw. Zeile „Mieter“, darüber kein Betrag),
+  „Seite x von y“ (nur ein Mieter ohne Briefpapier) und Fußvermerk als unterste Zeile jeder Seite außer
+  der Briefseite, kein Text außerhalb 25 bis 190 mm und 5 mm vom oberen Rand, kein Text der Oberfläche,
+  keine Fehler oder `console.error` der Seite. Bericht `bericht.md` in der Zusammenfassung, PDFs und
+  Seitenbilder als Artefakt. Exit 1 heißt Befunde (der Workflow meldet sie vorerst als Warnung und
+  bleibt grün, aber nur, wenn `bericht.md` mindestens einen nennt), Exit 2 ein gescheiterter Lauf
+  (rot; auch ein kaputter Import, eine PDF ohne Seite oder ein Bestand ohne Mieter).
+  Lokal ohne Mac: `--engines chromium`; `--evaluate` wertet vorhandene PDFs neu aus. **Befunde des
+  ersten Laufs** (Safari 26.6.2, offen): WebKit kennt die Randfelder von `@page` nicht (MDN/caniuse:
+  `@bottom-right` nur Chromium ab 131; WebKit hat seit Safari 18.2 nur die Randangaben), also keine
+  Seitenzahl und, weil `pageFooterCss` den Fußvermerk der Hülle ausblendet, beim Druck eines Mieters
+  gar keinen Fußvermerk; den `tfoot` und `thead` der Hülle wiederholt WebKit nicht je Seite (Fußvermerk
+  nur am Ende, mit Briefpapier ohne Papier und Rand auf den Folgeseiten, Text überdruckt das Papier);
+  mit 12 mm Rand druckt WKWebView rund 3 % größer, die Fußzeile des Anschreibens rutscht auf eine
+  eigene Seite. **Von Hand bleibt**: ein Blick auf die Seitenbilder (Überdrucken, Bilder, Linien prüft
+  die Auswertung nicht) und gelegentlich „Als PDF sichern“ im echten Safari als Gegenprobe, denn der
+  Lauf druckt über WKWebView, nicht über Safaris Menü.
 
 ## Programmdateien, Pakete, Docker
 
