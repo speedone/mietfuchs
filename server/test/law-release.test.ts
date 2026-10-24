@@ -10,6 +10,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { LAW_PARAMS } from '../../shared/law/params.ts'
+import { releaseStepsOf } from '../src/db/releaseSteps.ts'
+import { APP_VERSION } from '../src/version.ts'
 import type { LawParam, Timing } from '../../shared/law/register.ts'
 import type { LawValue } from '../../shared/types.ts'
 
@@ -19,6 +21,17 @@ const uncheckedValues = (params: readonly LawParam<LawValue, Timing>[]): string[
 test('Release: kein ungeprüfter Wert im Rechtsregister', { skip: process.env.MIETFUCHS_RELEASE !== '1' }, () => {
   const open = uncheckedValues(LAW_PARAMS)
   assert.deepEqual(open, [], `Vor dem Release an der Quelle lesen und als geprüft eintragen:\n${open.join('\n')}`)
+})
+
+// Durchsicht von PR #442, K3: Beim Tag (set-version.mjs hat die Version schon gesetzt) muss RELEASE_STEPS
+// (server/src/db/releaseSteps.ts) für diese Version genau so viele Schritte nennen, wie server/drizzle/*.sql hat. Sonst
+// hieße die Sicherung vor dem Update auf sie in der Zeitachse nur „Vor einem Update“, und die Merkdatei nennte keine
+// Version. Läuft im selben Schritt von release.yml wie die Sperre des Rechtsregisters.
+test('Release: RELEASE_STEPS nennt die Schritte dieser Version', { skip: process.env.MIETFUCHS_RELEASE !== '1' }, () => {
+  const dir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../drizzle')
+  const steps = fs.readdirSync(dir).filter((n) => n.endsWith('.sql')).length
+  assert.equal(releaseStepsOf(APP_VERSION), steps,
+    `In server/src/db/releaseSteps.ts fehlt ein Eintrag { version: '${APP_VERSION.replace(/-.*$/, '').replace(/\.\d+$/, '.0')}', steps: ${steps} }.`)
 })
 
 test('Release-Sperre: sie findet einen ungeprüften Wert und übersieht die geprüften', () => {
@@ -52,4 +65,5 @@ test('Release-Sperre: der Schritt in release.yml prüft, dass der Sperrtest nich
   assert.match(step, /--test-reporter=tap test\/law-release\.test\.ts/)
   assert.match(step, /grep -qx '# skipped 0'/)
   assert.match(step, /grep -qE '\^ok \[0-9\]\+ - Release: kein ungeprüfter Wert im Rechtsregister\$'/)
+  assert.match(step, /grep -qE '\^ok \[0-9\]\+ - Release: RELEASE_STEPS nennt die Schritte dieser Version\$'/)
 })

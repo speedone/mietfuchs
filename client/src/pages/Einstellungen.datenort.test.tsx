@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // Die Karte „Daten & Sicherung“ nennt, wo die Daten liegen und was nach außen geht.
 import { afterEach, expect, test, vi } from 'vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { Settings } from '../types'
 import { PropertyProvider } from '../property'
 import { UIProvider } from '../components/feedback'
@@ -12,17 +12,44 @@ const SLOW = { timeout: 5000 }
 const SETTINGS: Settings = { houseName: '', address: '', landlordName: '', iban: '', paymentDeadlineDays: 30, ollamaUrl: '', ollamaModel: '' }
 const database = (file: string) => ({ open: true, file, migrations: 1, detail: '', changeover: { state: 'none', message: '', notes: [] }, migrated: null })
 
+let fetched: string[] = []
+let navigated: string[] = []
 function open(health: unknown) {
+  fetched = []
+  navigated = []
   vi.stubGlobal('fetch', async (url: string) => {
+    fetched.push(url)
     const body = url.startsWith('/healthz') ? health : []
     return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
   })
   render(
     <PropertyProvider>
-      <UIProvider><Einstellungen settings={SETTINGS} reload={async () => {}} update={{ status: null, checking: false, checkNow: async () => {} }} /></UIProvider>
+      <UIProvider><Einstellungen settings={SETTINGS} reload={async () => {}} update={{ status: null, checking: false, checkNow: async () => {} }} onNavigate={(tab) => navigated.push(tab)} /></UIProvider>
     </PropertyProvider>,
   )
 }
+
+// Durchsicht von PR #442, M3: Ein Backup bringt keine Zustimmung mit; die Rückfrage sagt es.
+test('die Rückfrage vor dem Wiederherstellen nennt die Zustimmungen', async () => {
+  open({ ok: true })
+  await screen.findByText(/Sonst verlässt nichts den Rechner/, {}, SLOW)
+  const input = document.querySelector('input[type="file"]')
+  if (!input) throw new Error('kein Dateifeld')
+  fireEvent.change(input, { target: { files: [new File(['x'], 'backup.zip', { type: 'application/zip' })] } })
+  const dialog = await screen.findByRole('alertdialog', {}, SLOW)
+  expect(dialog.textContent).toMatch(/Zustimmungen .*bringt das Backup nicht mit/)
+})
+
+// #318: Die Karte „Automatische Vorversionen“ ist in die Zeitachse des Verlaufs gezogen; hier bleibt ein Satz mit Link.
+test('statt der Vorversionen ein Satz mit Link auf den Verlauf', async () => {
+  open({ ok: true })
+  const link = await screen.findByRole('link', { name: 'im Verlauf' }, SLOW)
+  expect(link.closest('p')?.textContent).toBe('Automatische Sicherungen und frühere Stände finden Sie im Verlauf.')
+  fireEvent.click(link)
+  expect(navigated).toEqual(['verlauf'])
+  expect(screen.queryByText(/Automatische Vorversionen/)).toBeNull()
+  expect(fetched.some((u) => u.startsWith('/api/prior-versions'))).toBe(false)
+})
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()

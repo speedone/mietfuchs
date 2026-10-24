@@ -110,6 +110,8 @@ export const DRY_RUN_ROUTES: ReadonlySet<string> = new Set([
   'POST /api/heating-plants/:id/separate/preview',
   'POST /api/properties/:id/period/preview',
   'POST /api/journal/:id/revert/preview',
+  // #318: Einspielen einer Sicherung, geprüft an einer Kopie; schreibt nichts.
+  'POST /api/prior-versions/:name/restore/preview',
 ])
 
 // Routen, die bei einer Anfrage mehr als einmal schreiben (#318, Schritt 4). Fachlich ist das eine Aktion; schreibt

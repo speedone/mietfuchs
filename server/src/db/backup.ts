@@ -100,13 +100,13 @@ export function originText(raw: unknown): string {
 // eingespielt gehört. Die Fremdschlüssel bleiben hier außen vor, denn sie hängen an der
 // Verbindung und nicht an der Datei; sie schaltet `connect` beim nächsten Öffnen ein.
 // Woher die Datei kommt, bestimmt die Worte der Meldung: ein hochgeladenes Backup oder eine
-// automatische Vorversion aus dem Datenordner (#318). Als Parameter und nicht als Textersetzung beim
+// Sicherung aus dem Datenordner (#318: wöchentlich, vor dem Update, vor dem Einspielen; `priorVersion`). Als Parameter und nicht als Textersetzung beim
 // Aufrufer, damit eine neue Meldung nicht still „Archiv“ zu einer Vorversion sagt (Durchsicht S3);
 // ein Wächter in prior-versions.test.ts liest dafür den Rumpf unten.
 export type DatabaseSource = 'archive' | 'priorVersion'
 const SOURCE_WORDS: Record<DatabaseSource, { inThis: string, this: string, another: string }> = {
   archive: { inThis: 'in diesem Archiv', this: 'dieses Backup', another: 'ein anderes Backup' },
-  priorVersion: { inThis: 'in dieser Vorversion', this: 'diese Vorversion', another: 'eine andere Vorversion' },
+  priorVersion: { inThis: 'in dieser Sicherung', this: 'diese Sicherung', another: 'eine andere Sicherung' },
 }
 
 export async function archiveDatabaseProblem(file: string, source: DatabaseSource = 'archive'): Promise<string | null> {

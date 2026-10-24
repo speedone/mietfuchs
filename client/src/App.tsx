@@ -392,7 +392,7 @@ function Shell() {
         {tab === 'hilfe' && <Hilfe onNavigate={(t) => void navigate(t)} focusTerm={helpTerm} onFocusTermDone={() => setHelpTerm(null)} />}
         {tab === 'verlauf' && <Verlauf />}
         {tab === 'einstellungen' && settings && (
-          <Einstellungen settings={settings} reload={reload} update={update} />
+          <Einstellungen settings={settings} reload={reload} update={update} onNavigate={(t) => void navigate(t)} />
         )}
         </Fragment>
       </main>

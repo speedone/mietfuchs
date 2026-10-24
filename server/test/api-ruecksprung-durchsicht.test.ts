@@ -6,7 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 import type { HeatingPlant, Unit } from '../../shared/types.ts'
 import { besideServer, chatRequests, jsonOf, LONG_TEXT, startServerIn, until, uploadBelegFile, waitForExit, withOllama, type Server } from '../testing/api.ts'
-import { dumpStock, journalOf, newest, previewOf, revert, revertRaw } from '../testing/revert.ts'
+import { dumpStock, journalOf, newest, previewOf, revert, revertRaw, snapshotPreviewOf } from '../testing/revert.ts'
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-'))
 const send = (s: Server, method: string, url: string, body?: unknown) =>
@@ -40,7 +40,8 @@ test('Durchsicht M1: Ein Beleg, den der Bestand nennt, kommt aus dem Papierkorb 
     assert.equal((await send(s, 'DELETE', `/api/uploads/${file}`)).status, 200)
     const inUploads = path.join(s.dataDir, 'uploads', file)
     assert.ok(!fs.existsSync(inUploads))
-    const res = await send(s, 'POST', `/api/prior-versions/${name}/restore`, {})
+    const { token } = await snapshotPreviewOf(s, name)
+    const res = await send(s, 'POST', `/api/prior-versions/${name}/restore`, { token })
     assert.equal(res.status, 200, await res.clone().text())
     const body = await jsonOf<{ notes: string[] }>(res)
     assert.ok(fs.existsSync(inUploads), 'nach dem Einspielen zurück im Belegordner')

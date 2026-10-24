@@ -61,6 +61,7 @@ export function restoreUploadPath(dataDir: string, name: string | undefined): st
 // Größe eines Backups, und ohne Aufräumen blieben sie für immer liegen. Beim Start läuft keine
 // Wiederherstellung, beides lässt sich dort gefahrlos entfernen. Ebenso der Schnappschuss eines abgebrochenen Backups
 // (`mietfuchs.sqlite.<id>.backup` samt `-journal`, `-wal`, `-shm`, GET /api/backup; Integrationsdurchsicht 0.13.0): Beim Start läuft auch kein Backup.
+// Und die Kopie der Vorschau einer Sicherung (`mietfuchs.sqlite.vorschau-<id>`, #318).
 //
 // **Nicht** dazu gehört `mietfuchs.sqlite.restore-<id>`: Scheitert der Austausch der Datenbank,
 // kann sie die einzige Kopie der wiederhergestellten Daten sein (siehe runRestore).
@@ -78,7 +79,9 @@ export function cleanRestoreLeftovers(dataDir: string): void {
     const staging = e.isDirectory() && /^restore-[0-9a-f]{16}$/.test(e.name)
     // Samt Beidateien, falls SQLite beim Schreiben welche anlegt (Durchsicht von PR #426, K-4).
     const snapshot = e.isFile() && /^mietfuchs\.sqlite\.[0-9a-f]{16}\.backup(?:-journal|-wal|-shm)?$/.test(e.name)
-    if (!upload && !staging && !snapshot) continue
+    // Die Kopie, an der die Vorschau zum Einspielen einer Sicherung prüft (#318, db/snapshotPreview.ts).
+    const preview = e.isFile() && /^mietfuchs\.sqlite\.vorschau-[0-9a-f]{16}(?:-journal|-wal|-shm)?$/.test(e.name)
+    if (!upload && !staging && !snapshot && !preview) continue
     try {
       fs.rmSync(path.join(dataDir, e.name), { recursive: true, force: true })
     } catch { /* dann beim nächsten Start */ }

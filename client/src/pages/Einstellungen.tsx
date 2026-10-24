@@ -14,13 +14,13 @@ import { ibanChanged, ibanForSave, ibanToInput } from '../ibanField'
 import { IBAN_LABELS } from '../../../shared/iban.ts'
 import Card from '../components/Card'
 import Field from '../components/Field'
-import PriorVersionsCard from '../components/PriorVersionsCard'
 import LetterTemplateCard from '../components/LetterTemplateCard'
 import LetterDesignCard from '../components/LetterDesignCard'
 
-type Props = { settings: Settings; reload: () => Promise<void>; update: UpdateState }
+// `onNavigate`: Sprung auf eine andere Seite (der Link auf den Verlauf, #318).
+type Props = { settings: Settings; reload: () => Promise<void>; update: UpdateState; onNavigate?: (tab: 'verlauf') => void }
 
-export default function Einstellungen({ settings, reload, update }: Props) {
+export default function Einstellungen({ settings, reload, update, onNavigate }: Props) {
   const { properties } = useProperty()
   const toast = useToast()
   const confirm = useConfirm()
@@ -58,7 +58,8 @@ export default function Einstellungen({ settings, reload, update }: Props) {
   async function restore(file: File) {
     const ok = await confirm({
       title: `Backup „${file.name}“ wiederherstellen?`,
-      message: 'Alle aktuellen Daten werden durch den Stand aus dem Backup ersetzt.',
+      message: 'Alle aktuellen Daten werden durch den Stand aus dem Backup ersetzt. ' +
+        'Zustimmungen (Übermittlung an einen KI-Dienst, Abfrage nach Updates) bringt das Backup nicht mit: Es gelten die von jetzt, auf einem neuen Rechner also keine.',
       confirmLabel: 'Wiederherstellen',
       danger: true,
     })
@@ -198,7 +199,11 @@ export default function Einstellungen({ settings, reload, update }: Props) {
         </p>
       </Card>
 
-      <PriorVersionsCard />
+      {/* Die automatischen Sicherungen stehen seit #318 in der Zeitachse des Verlaufs, mit dem Weg zurück. */}
+      <p className="muted">
+        Automatische Sicherungen und frühere Stände finden Sie{' '}
+        <a href="#" onClick={(e) => { e.preventDefault(); onNavigate?.('verlauf') }}>im Verlauf</a>.
+      </p>
     </>
   )
 }

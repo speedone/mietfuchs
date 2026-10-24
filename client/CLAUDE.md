@@ -370,8 +370,25 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   Papierkorb, die Sätze des Servers wie „Zustimmungen bleiben“); eine Grenze steht als `NoticeBox` am Eintrag, ohne
   Rückfrage. Danach eine Mitteilung (`revertedMessage`: ein Eintrag mit Titel, mehrere mit ihrer Zahl), das Objekt neu
   geladen (`reload`, Zeitraum und Namen können sich geändert haben) und die Liste neu. Zurückgenommene Einträge tragen
-  „zurückgenommen“, Schranken und nur lesbare haben keine Knöpfe. „Rückgängig“ in der Mitteilung nach einer
-  Speicheraktion gibt es noch nicht (die Mitteilungen haben keine Aktion).
+  „zurückgenommen“, Schranken haben keine Knöpfe; nur lesbare tragen beide Knöpfe, denn die Vorschau entscheidet, ob
+  der Stand über eine Sicherung erreichbar ist. „Rückgängig“ in der Mitteilung nach einer Speicheraktion gibt es noch
+  nicht (die Mitteilungen haben keine Aktion).
+- **Sicherungspunkte in der Zeitachse** (#318, server/src/db/CLAUDE.md „Sicherungspunkte im Verlauf“): Die Liste kommt
+  mit `snapshots=1` (`journalQuery`); `isSnapshot` trennt die Zeilen, geblättert wird ab der ältesten **Gruppe**, und eine
+  Seite ist voll, wenn sie 50 Gruppen trägt. Eine Sicherung ist eine eigene, ruhige Zeile (`SnapshotRow`, `data-snapshot`,
+  `bg-chip`, 💾, kein `<details>`): Zeitpunkt (`snapshotWhen`, „laut Datei“ bei der Dateizeit), Titel, Größe
+  (`fileSize`) und „Zu diesem Stand zurückkehren …“ (Gefahrknopf, `aria-describedby` auf die Zeile). Vorschau, dann die
+  Rückfrage aus `snapshotQuestion` (`danger`, also Startfokus „Abbrechen“; „Zurückkehren“): alles danach wird ersetzt,
+  die aktuellen Daten werden vorher als `mietfuchs.sqlite.vor-restore` gesichert, fehlende Belege, Belege aus dem
+  Papierkorb, die Zustimmungen. Kommt die Vorschau eines Eintrags mit `kind: 'snapshot'`, steht der Eintrag im Titel und
+  darunter „Schritt für Schritt geht das nicht, nur über die Sicherung …“ mit den Gründen; über einen Abschluss hinweg
+  schickt der Server diese Vorschau nie, die Ablehnung nennt dann die Abrechnungen und „Wieder öffnen“ (Durchsicht von
+  PR #442, M2). Ohne sichere Zählung (`later: null`) nennt die Rückfrage keine Zahl. Die Einleitung der Seite ist kurz
+  (drei Sätze), die Einzelheiten stehen in einem eingeklappten „Mehr dazu“. Nach dem Einspielen lädt die
+  Seite **immer** neu (`reloadPage`, im Test hineingereicht); die Sätze des Servers stehen danach einmal oben
+  (sessionStorage, `keepRestoreNotes`/`readRestoreNotes`, mit try/catch). In den Einstellungen steht an Stelle der
+  früheren Karte „Automatische Vorversionen“ nur „Automatische Sicherungen und frühere Stände finden Sie im Verlauf.“
+  mit Link (`onNavigate`); das ZIP-Backup bleibt dort.
 
 ## Knöpfe, Karten, Anlegen
 

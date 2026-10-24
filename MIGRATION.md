@@ -152,6 +152,13 @@ Was Sie seit dem Update eingegeben haben, fehlt dann. Umgekehrt ist nichts zu be
 ältere Version erkennt eine Datenbank aus einer neueren, arbeitet nicht mit ihr, sondern sagt es
 in der Oberfläche, und verändert sie dabei nicht.
 
+Wollen Sie bei der neuen Version bleiben und nur den Stand von vor dem Update zurück, geht das ohne
+Umbenennen: Auf der Seite „Verlauf“ steht die Sicherung als „Vor dem Update auf Version …“ (oder „Vor
+einem Update“). „Zu diesem Stand zurückkehren …“ spielt sie ein und bringt sie auf den Stand der neuen
+Version; Ihre aktuellen Daten bleiben vorher als `mietfuchs.sqlite.vor-restore` erhalten. Mietfuchs
+behält die Sicherungen vor einem Update aus den letzten zwölf Monaten, mindestens aber die drei
+jüngsten, und räumt ältere selbst weg.
+
 Zurück zu einer Version vor der Datenbank (v0.7.x) geht es anders: Dort benennen Sie
 `db.json.abgeloest` wieder in `db.json` um und legen `mietfuchs.sqlite` beiseite. Was Sie seit dem
 Umstieg eingegeben haben, fehlt dann.

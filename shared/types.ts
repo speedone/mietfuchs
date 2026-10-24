@@ -746,7 +746,9 @@ export type DatabaseState = {
   // und nach dem Wiederherstellen eines Backups (dort ist es mietfuchs.sqlite.vor-restore).
   // `at` ist der Zeitpunkt der Sicherung (ISO): Er unterscheidet sie von einer früheren gleichen
   // Namens, die beiseitegelegt wurde, und daran merkt sich die Oberfläche das Wegklicken.
-  migrated: { steps: number, backup: string, at: string } | null
+  // `version` (#318): die Version, auf die das Update ging, wenn der Server eine veröffentlichte ist (sonst fehlt sie);
+  // daraus nennt der Verlauf die Sicherung „Vor dem Update auf Version …“.
+  migrated: { steps: number, backup: string, at: string, version?: string } | null
 }
 
 // Antwort von /api/update (server/src/update.ts)

@@ -278,7 +278,7 @@ export async function unjournaled<T>(db: Executor, work: () => Promise<T>): Prom
 // über sie hinweg führt kein Rücksprung (revert.ts), denn der Stand davor steht nicht in dieser Datei.
 export const BARRIER_SENTENCES: Readonly<Record<JournalBarrier, string>> = {
   restore: 'Backup eingespielt',
-  priorVersion: 'Vorversion eingespielt',
+  priorVersion: 'Sicherung eingespielt',
   changeover: 'Daten aus der db.json übernommen (Umstieg)',
 }
 

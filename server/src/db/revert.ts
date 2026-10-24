@@ -27,8 +27,8 @@
 // - Dateien: Ein Beleg oder ein Logo, das der Stand wieder nennt, kommt aus dem Papierkorb zurück; fehlt es dort,
 //   wird abgelehnt.
 //
-// Die Vorschau trägt `kind: 'journal'`: Ein späterer Weg (Einspielen einer Sicherung als Sicherungspunkt der
-// Zeitachse) bekommt eine eigene Art mit derselben Gestalt von Vorschau und Marke.
+// Die Vorschau trägt `kind: 'journal'`. Geht ein Stand Schritt für Schritt nicht, aber liegt er als Sicherung vor, nimmt
+// die Route stattdessen die Vorschau mit `kind: 'snapshot'` (snapshotPreview.ts, `snapshotFallback` in index.ts).
 
 import { createHash } from 'node:crypto'
 import { gte, inArray, sql } from 'drizzle-orm'
@@ -51,10 +51,10 @@ export const CONSENT_COLUMNS: Readonly<Record<string, { key: string, columns: re
   settings: { key: 'id', columns: ['update_check'] },
 }
 
-type ConsentSnapshot = Map<string, Map<string, unknown[]>>
+export type ConsentSnapshot = Map<string, Map<string, unknown[]>>
 
 // Die Zustimmungen vor dem Rücksprung, je Tabelle und Schlüssel.
-async function consentSnapshot(db: Executor): Promise<ConsentSnapshot> {
+export async function consentSnapshot(db: Executor): Promise<ConsentSnapshot> {
   const out: ConsentSnapshot = new Map()
   for (const [table, { key, columns }] of Object.entries(CONSENT_COLUMNS)) {
     const rows = await db.all<unknown[]>(sql`SELECT ${sql.identifier(key)}, ${sql.join(columns.map((c) => sql.identifier(c)), sql`, `)} FROM ${sql.identifier(table)}`)
@@ -66,7 +66,7 @@ async function consentSnapshot(db: Executor): Promise<ConsentSnapshot> {
 // Danach: Jede Zeile trägt die Zustimmung von vorher; eine Zeile, die es vorher nicht gab, trägt keine. So setzt ein
 // Rücksprung nie eine Zustimmung, die gerade nicht besteht, und holt keinen Widerruf zurück. (Eine Zeile, die der
 // Rücksprung entfernt, nimmt ihre Zustimmung mit; das ist erlaubt.)
-async function restoreConsent(db: Executor, before: ConsentSnapshot): Promise<void> {
+export async function restoreConsent(db: Executor, before: ConsentSnapshot): Promise<void> {
   for (const [table, { key, columns }] of Object.entries(CONSENT_COLUMNS)) {
     const rows = await db.all<unknown[]>(sql`SELECT ${sql.identifier(key)} FROM ${sql.identifier(table)}`)
     for (const [k] of rows) {
@@ -96,6 +96,9 @@ export type RevertPreview = {
   files: { restore: number, trash: number }
   // Was außerdem zu wissen ist (M2: Zustimmungen bleiben, wie sie sind).
   notes: string[]
+  // Die Abrechnungen, deren Abschluss, Wiederöffnen oder Versanddatum im Bereich liegt (Objekt und Jahr). Dann führt
+  // auch kein Weg über eine Sicherung (Durchsicht von PR #442, M2).
+  frozen: string[]
   token: string
 }
 
@@ -185,41 +188,81 @@ async function entriesOf(db: Executor, schema: JournalSchema, range: Range): Pro
 
 const BARRIER_TEXT: Record<string, (at: string) => string> = {
   restore: (at) =>
-    `Am ${at} wurde ein Backup eingespielt. Über das Einspielen hinweg führt kein Rücksprung, denn der Stand davor steht nicht in dieser Datenbank. Er liegt im Datenordner als „mietfuchs.sqlite.vor-restore“; zurück kommen Sie dorthin über die automatischen Vorversionen oder ein Backup.`,
+    `Am ${at} wurde ein Backup eingespielt. Schritt für Schritt führt kein Rücksprung über das Einspielen hinweg, denn der Stand davor steht nicht in diesem Verlauf. Er steht als Sicherung „Vor dem Einspielen eines Backups“ in der Zeitachse; von dort kehren Sie zu ihm zurück.`,
   priorVersion: (at) =>
-    `Am ${at} wurde eine Vorversion eingespielt. Über das Einspielen hinweg führt kein Rücksprung, denn der Stand davor steht nicht in dieser Datenbank. Er liegt im Datenordner als „mietfuchs.sqlite.vor-restore“; zurück kommen Sie dorthin über die automatischen Vorversionen oder ein Backup.`,
+    `Am ${at} wurde eine Sicherung eingespielt. Schritt für Schritt führt kein Rücksprung über das Einspielen hinweg, denn der Stand davor steht nicht in diesem Verlauf. Er steht als Sicherung „Vor dem Einspielen eines Backups“ in der Zeitachse; von dort kehren Sie zu ihm zurück.`,
   changeover: (at) =>
     `Am ${at} hat Mietfuchs Ihre Daten aus der früheren db.json übernommen. Davor gibt es keinen Verlauf; der frühere Stand liegt im Datenordner als „db.json.abgeloest“.`,
 }
 
 const SCHEMA_TEXT =
-  'Im Bereich liegen Änderungen von vor dem letzten Update von Mietfuchs. Sie lassen sich lesen, aber nicht zurücknehmen, denn ein Update kann den Aufbau der Daten ändern. ' +
-  'Den Stand vor dem Update enthält die Sicherung, die Mietfuchs dabei im Datenordner angelegt hat („mietfuchs.sqlite.vor-…“, siehe MIGRATION.md).'
+  'Im Bereich liegen Änderungen von vor dem letzten Update von Mietfuchs. Sie lassen sich lesen, aber nicht Schritt für Schritt zurücknehmen, denn ein Update kann den Aufbau der Daten ändern. ' +
+  'Den Stand vor dem Update enthält die Sicherung „Vor dem Update …“ in der Zeitachse; von dort kehren Sie zu ihm zurück.'
 
 const FROZEN_TAIL =
   'Ein Abschluss und ein Wiederöffnen lassen sich im Verlauf nicht zurücknehmen, damit kein zugestellter, eingefrorener Stand still verschwindet oder ohne Abschluss entsteht. ' +
   'Öffnen Sie die Abrechnung bei Bedarf bewusst mit „Wieder öffnen“ auf der Seite Abrechnung (der eingefrorene Stand bleibt dort im Verlauf der Abschlüsse). Danach können Sie bis zu diesem Wiederöffnen zurückkehren, aber nicht darüber hinweg.'
 
-// Die Grenzen, die sich ohne Probelauf erkennen lassen.
-async function staticRefusals(db: Executor, schema: JournalSchema, range: Range, schemaSteps: number): Promise<string[]> {
+// Ein Zeitraum für einen Satz: das Kalenderjahr, sonst der Monat des Beginns.
+const periodText = (period: unknown): string => {
+  if (typeof period !== 'string') return ''
+  const m = /^(\d{4})-(\d{2})$/.exec(period)
+  if (!m) return period
+  return m[2] === '01' ? m[1] : `ab ${m[2]}.${m[1]}`
+}
+
+// Welche Abrechnungen die Zeilen der Abschlusstabellen betreffen, als Text mit Objekt und Jahr („Abrechnung 2024 für
+// „Lindenweg 12““, „Heizkostenabrechnung 2024 der Anlage „Gas“ für „Lindenweg 12““). Durchsicht von PR #442, M2: Der
+// Vermieter soll wissen, welcher zugestellte Stand betroffen ist. Objekt und Anlage aus dem Bestand; fehlen sie dort,
+// steht die Abrechnung ohne Namen da.
+export async function frozenLabels(db: Executor, rows: readonly LogRow[]): Promise<string[]> {
+  const out = new Set<string>()
+  const nameOf = async (table: 'properties' | 'heating_plants', id: unknown): Promise<{ name: string, propertyId: unknown } | null> => {
+    if (typeof id !== 'string') return null
+    const row = table === 'properties'
+      ? await db.get<[string, string]>(sql`SELECT name, id FROM properties WHERE id = ${id}`)
+      : await db.get<[string, string]>(sql`SELECT name, property_id FROM heating_plants WHERE id = ${id}`)
+    return row ? { name: String(row[0]), propertyId: row[1] } : null
+  }
+  for (const r of rows) {
+    if (!(FROZEN_TABLES as readonly string[]).includes(r.tableName)) continue
+    const image = parseImage(r.after) ?? parseImage(r.before) ?? {}
+    const period = periodText(image.period)
+    if (r.tableName.includes('heating')) {
+      const plant = await nameOf('heating_plants', image.plant_id)
+      const property = plant ? await nameOf('properties', plant.propertyId) : null
+      out.add(`Heizkostenabrechnung ${period}${plant?.name ? ` der Anlage „${plant.name}“` : ''}${property ? ` für „${property.name}“` : ''}`)
+    } else {
+      const property = await nameOf('properties', image.property_id)
+      out.add(`Abrechnung ${period}${property ? ` für „${property.name}“` : ''}`)
+    }
+  }
+  return [...out]
+}
+
+// Die Grenzen, die sich ohne Probelauf erkennen lassen, und die Abrechnungen, deren Abschluss im Bereich liegt.
+async function staticRefusals(db: Executor, schema: JournalSchema, range: Range, schemaSteps: number): Promise<{ refusals: string[], frozen: string[] }> {
   const out: string[] = []
-  if (range.groups.length === 0) return ['Nach diesem Eintrag gibt es keine Änderung, also ist nichts zurückzunehmen.']
+  if (range.groups.length === 0) return { refusals: ['Nach diesem Eintrag gibt es keine Änderung, also ist nichts zurückzunehmen.'], frozen: [] }
   const barrierId = await latestBarrierId(db)
   for (const g of range.groups) {
     if (g.barrier !== null) out.push(BARRIER_TEXT[g.barrier]?.(berlinTime(g.at)) ?? 'Über diese Stelle des Verlaufs führt kein Rücksprung.')
   }
-  if (out.length === 0 && range.startId < barrierId) out.push('Über das Einspielen eines Backups oder einer Vorversion hinweg führt kein Rücksprung.')
+  if (out.length === 0 && range.startId < barrierId) out.push('Über das Einspielen eines Backups oder einer Sicherung hinweg führt kein Rücksprung.')
   if (range.groups.some((g) => g.schemaSteps !== schemaSteps)) out.push(SCHEMA_TEXT)
   const resolver = new Resolver(db, schema)
   const frozen = range.groups.filter((g) => (range.rows.get(g.id) ?? []).some((r) => (FROZEN_TABLES as readonly string[]).includes(r.tableName)))
+  const labels = new Set<string>()
   for (const g of frozen) {
     const rows = range.rows.get(g.id) ?? []
     const main = rows.find((r) => r.tableName === 'closed_settlements' || r.tableName === 'closed_heating_settlements')
     const what = main?.op === 'insert' ? 'schließt eine Abrechnung ab' : main?.op === 'delete' ? 'öffnet eine abgeschlossene Abrechnung wieder' : 'ändert eine abgeschlossene Abrechnung'
-    out.push(`„${await groupTitle(g.description, g.subjectTable, rows, resolver)}“ vom ${berlinTime(g.at)} ${what}.`)
+    const these = await frozenLabels(db, rows)
+    for (const l of these) labels.add(l)
+    out.push(`„${await groupTitle(g.description, g.subjectTable, rows, resolver)}“ vom ${berlinTime(g.at)} ${what}.${these.length > 0 ? ` Betroffen: ${these.join(', ')}.` : ''}`)
   }
   if (frozen.length > 0) out.push(FROZEN_TAIL)
-  return out
+  return { refusals: out, frozen: [...labels] }
 }
 
 // ---------- Dateien ----------
@@ -345,17 +388,18 @@ class Rollback extends Error {
 const tokenOf = (p: Pick<RevertPreview, 'kind' | 'mode' | 'entry' | 'startId' | 'entries' | 'changes'>): string =>
   createHash('sha256').update(JSON.stringify([p.kind, p.mode, p.entry, p.startId, p.entries, p.changes])).digest('hex').slice(0, 32)
 
-type Plan = { range: Range, entries: RevertEntry[], refusals: string[], token: string }
+type Plan = { range: Range, entries: RevertEntry[], refusals: string[], frozen: string[], token: string }
 
 // Bereich, Einträge, die Grenzen ohne Probelauf und die Marke.
 // `blocked`: Gründe des Aufrufers, etwa eine laufende KI-Auswertung (K2).
 async function planOf(db: Executor, schema: JournalSchema, id: number, mode: RevertMode, schemaSteps: number, blocked: readonly string[]): Promise<Plan | null> {
   const range = await rangeOf(db, schema, id, mode)
   if (!range) return null
-  const refusals = [...blocked, ...await staticRefusals(db, schema, range, schemaSteps)]
+  const found = await staticRefusals(db, schema, range, schemaSteps)
+  const refusals = [...blocked, ...found.refusals]
   const entries = await entriesOf(db, schema, range)
   const changes = entries.reduce((sum, e) => sum + e.rows, 0)
-  return { range, entries, refusals, token: tokenOf({ kind: 'journal', mode, entry: range.entry, startId: range.startId, entries, changes }) }
+  return { range, entries, refusals, frozen: found.frozen, token: tokenOf({ kind: 'journal', mode, entry: range.entry, startId: range.startId, entries, changes }) }
 }
 
 // Die Vorschau: was zurückgenommen würde, und ob es geht. Der Probelauf schreibt in einer Transaktion und rollt
@@ -388,6 +432,7 @@ export async function previewRevert(
     refusals,
     files,
     notes: [CONSENT_NOTE],
+    frozen: plan.frozen,
     token: plan.token,
   }
 }

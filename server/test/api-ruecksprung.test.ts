@@ -206,7 +206,7 @@ test('Rücksprung: Über ein eingespieltes Backup hinweg wird abgelehnt', async 
     // Die Einträge aus dem Archiv stehen darunter, nur lesbar.
     assert.ok(list.slice(1).length > 0 && list.slice(1).every((g) => g.readOnly))
     const preview = await previewOf(s, list[1].id)
-    assert.match(preview.refusals.join(' '), /Backup eingespielt.*mietfuchs\.sqlite\.vor-restore/)
+    assert.match(preview.refusals.join(' '), /Backup eingespielt.*Vor dem Einspielen eines Backups/)
     // Nach dem Einspielen geht es wieder.
     await post(s, '/api/units', { name: 'OG', areaM2: 50, participates: true, selfUsed: false })
     await revert(s, (await newest(s)).id)

@@ -234,6 +234,8 @@ jobs:
           node --test --test-reporter=tap test/law-release.test.ts | tee law-release.tap
           grep -qx '# skipped 0' law-release.tap || { echo "::error::Release-Sperre des Rechtsregisters wurde übersprungen"; exit 1; }
           grep -qE '^ok [0-9]+ - Release: kein ungeprüfter Wert im Rechtsregister$' law-release.tap || { echo "::error::Release-Sperre des Rechtsregisters lief nicht"; exit 1; }
+          # #318: Schritte je Version für die Titel der Sicherungen vor einem Update (server/src/db/releaseSteps.ts).
+          grep -qE '^ok [0-9]+ - Release: RELEASE_STEPS nennt die Schritte dieser Version$' law-release.tap || { echo "::error::RELEASE_STEPS in server/src/db/releaseSteps.ts nennt diese Version nicht"; exit 1; }
 
       # Frontend bauen, Embed-Modul erzeugen und alle Ziel-Binaries kompilieren.
       - name: Binaries bauen
