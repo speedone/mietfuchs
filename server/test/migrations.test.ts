@@ -193,6 +193,10 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // #415, Teil 2b: Logo und Briefpapier (letter_design, property_letter_designs). Wird vor dem Merge ein anderer PR davor
   // eingereiht, wird der Schritt neu erzeugt und die Marke ersetzt.
   '0070_briefpapier': '78ea72142d083b93845687c8bfa7c7515d7eff764f230fd054b2d1a4541ae94c',
+  // #322: der umbaute Raum an der Zuordnung Wohnung–Anlage (Spalte), danach die Bedingungen (Rauminhalt über 0, Maßstab
+  // `volume`). Wird vor dem Merge ein anderer PR davor eingereiht, werden beide Schritte neu erzeugt und die Marken ersetzt.
+  '0071_umbauter_raum': 'f23762af4b54160ad62aac0d61a2411fc057095843ad8fd2f4aaa6a2318ea6ab',
+  '0072_umbauter_raum_bedingung': '6787967df4df190829113c6fe8f0592c97710e0d2484b73aaac406201a30bd2e',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

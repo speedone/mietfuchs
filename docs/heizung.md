@@ -264,7 +264,7 @@ Gewichten durch `distributeCents`. Tests bauen Beispiel A mit `selfSnapshot()`
   wird nicht zitiert.
 - **Maßstab der Grundkosten der Heizung** (`area_basis_heat`, § 7 Abs. 1 Satz 5): Wohnfläche, beheizte Fläche
   oder umbauter Raum (#322). Beheizte Fläche und Rauminhalt stehen in `heating_plant_units` (`heated_area_m2`,
-  `volume_m3`, Schritte 0069/0070), nicht an der Wohnung; ein Wert gilt für beide Lesarten (ganzer Raum oder beheizte
+  `volume_m3`, Schritte 0071/0072), nicht an der Wohnung; ein Wert gilt für beide Lesarten (ganzer Raum oder beheizte
   Räume). **Die Zeilen tragen auch ohne Liste Werte** (`units_limited` 0): Dann ist `units` null und die Werte stehen in
   `basisValues`; gelesen wird immer über `unitBasisOf`/`plantUnitValues` (shared/heatingPeriod.ts), und jede Abfrage,
   die aus den Zeilen die Versorgung liest, filtert auf `units_limited` (Durchsicht M1: Eine erzwungene Liste hängte eine
