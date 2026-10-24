@@ -38,17 +38,43 @@ import { collapse, currentGroupId, groupTitle, latestBarrierId, Resolver, ROWID,
 import { crossPropertyViolations, orphanPeriodKeys } from './repository.ts'
 import { heatingPlantViolations } from './heating.ts'
 import { existsIn, moveToTrash, restoreFromTrash, storeDir, trashDir, type FileStore } from '../trash.ts'
+import { referencedFiles } from './fileRefs.ts'
 
 // Die Tabellen der Abschlüsse. Eine neue Abschlusstabelle gehört hierher (Checkliste in db/CLAUDE.md).
 export const FROZEN_TABLES = ['closed_settlements', 'closed_settlement_history', 'closed_heating_settlements', 'closed_heating_settlement_history'] as const
 
-// Welche Zeilen auf Dateien verweisen, je Ablage (trash.ts). Eine neue Ablage gehört hierher.
-const FILE_COLUMNS: Readonly<Record<FileStore, Readonly<Record<string, readonly string[]>>>> = {
-  uploads: { uploads: ['file'] },
-  briefpapier: {
-    letter_design: ['logo_file', 'paper_file', 'paper_next_file'],
-    property_letter_designs: ['logo_file', 'paper_file', 'paper_next_file'],
-  },
+// Ausdrückliche Zustimmungen des Nutzers (Durchsicht von PR #439, M2): Ein Rücksprung setzt und entfernt sie nie, ein
+// Widerruf bleibt ein Widerruf. Eine neue Spalte, die eine Zustimmung hält, gehört hierher (Wächter in journal.test.ts:
+// jede Spalte, deren Name nach Zustimmung klingt).
+export const CONSENT_COLUMNS: Readonly<Record<string, { key: string, columns: readonly string[] }>> = {
+  ai_slots: { key: 'slot', columns: ['consent_url', 'consent_model', 'consent_date'] },
+  settings: { key: 'id', columns: ['update_check'] },
+}
+
+type ConsentSnapshot = Map<string, Map<string, unknown[]>>
+
+// Die Zustimmungen vor dem Rücksprung, je Tabelle und Schlüssel.
+async function consentSnapshot(db: Executor): Promise<ConsentSnapshot> {
+  const out: ConsentSnapshot = new Map()
+  for (const [table, { key, columns }] of Object.entries(CONSENT_COLUMNS)) {
+    const rows = await db.all<unknown[]>(sql`SELECT ${sql.identifier(key)}, ${sql.join(columns.map((c) => sql.identifier(c)), sql`, `)} FROM ${sql.identifier(table)}`)
+    out.set(table, new Map(rows.map((r) => [String(r[0]), r.slice(1)])))
+  }
+  return out
+}
+
+// Danach: Jede Zeile trägt die Zustimmung von vorher; eine Zeile, die es vorher nicht gab, trägt keine. So setzt ein
+// Rücksprung nie eine Zustimmung, die gerade nicht besteht, und holt keinen Widerruf zurück. (Eine Zeile, die der
+// Rücksprung entfernt, nimmt ihre Zustimmung mit; das ist erlaubt.)
+async function restoreConsent(db: Executor, before: ConsentSnapshot): Promise<void> {
+  for (const [table, { key, columns }] of Object.entries(CONSENT_COLUMNS)) {
+    const rows = await db.all<unknown[]>(sql`SELECT ${sql.identifier(key)} FROM ${sql.identifier(table)}`)
+    for (const [k] of rows) {
+      const values = before.get(table)?.get(String(k)) ?? columns.map(() => null)
+      const sets = columns.map((c, i) => sql`${sql.identifier(c)} = ${values[i] ?? null}`)
+      await db.run(sql`UPDATE ${sql.identifier(table)} SET ${sql.join(sets, sql`, `)} WHERE ${sql.identifier(key)} = ${k}`)
+    }
+  }
 }
 
 export type RevertMode = 'including' | 'after'
@@ -68,8 +94,13 @@ export type RevertPreview = {
   // Leer heißt: Der Rücksprung geht. Sonst je Grenze ein Satz.
   refusals: string[]
   files: { restore: number, trash: number }
+  // Was außerdem zu wissen ist (M2: Zustimmungen bleiben, wie sie sind).
+  notes: string[]
   token: string
 }
+
+export const CONSENT_NOTE =
+  'Zustimmungen (die Übermittlung an einen KI-Dienst, die Abfrage nach Updates) nimmt der Rücksprung nicht zurück; sie bleiben, wie sie gerade sind.'
 
 // Ein Rücksprung, der nicht geht (409). `preview` trägt die neue Vorschau, wenn die Marke nicht mehr stimmte.
 export class RevertRefused extends Error {
@@ -193,42 +224,6 @@ async function staticRefusals(db: Executor, schema: JournalSchema, range: Range,
 
 // ---------- Dateien ----------
 
-async function referencedFiles(db: Executor): Promise<Map<FileStore, Set<string>>> {
-  const out = new Map<FileStore, Set<string>>()
-  for (const [store, tables] of Object.entries(FILE_COLUMNS) as [FileStore, Record<string, readonly string[]>][]) {
-    const names = new Set<string>()
-    for (const [table, columns] of Object.entries(tables)) {
-      for (const column of columns) {
-        for (const row of await db.all<[unknown]>(sql`SELECT ${sql.identifier(column)} FROM ${sql.identifier(table)} WHERE ${sql.identifier(column)} IS NOT NULL`)) {
-          if (typeof row[0] === 'string' && row[0] !== '') names.add(row[0])
-        }
-      }
-    }
-    out.set(store, names)
-  }
-  return out
-}
-
-// Welche Dateien das Journal noch nennt: Was keine Zeile mehr nennt, braucht kein Rücksprung mehr aus dem Papierkorb.
-export async function filesNamedInJournal(db: Executor): Promise<Map<FileStore, Set<string>>> {
-  const out = new Map<FileStore, Set<string>>()
-  for (const [store, tables] of Object.entries(FILE_COLUMNS) as [FileStore, Record<string, readonly string[]>][]) {
-    const names = new Set<string>()
-    const list = Object.keys(tables)
-    const rows = await db.select({ table: changeLog.tableName, before: changeLog.before, after: changeLog.after }).from(changeLog).where(inArray(changeLog.tableName, list)).all()
-    for (const row of rows) {
-      for (const image of [parseImage(row.before), parseImage(row.after)]) {
-        for (const column of tables[row.table] ?? []) {
-          const value = image?.[column]
-          if (typeof value === 'string' && value !== '') names.add(value)
-        }
-      }
-    }
-    out.set(store, names)
-  }
-  return out
-}
-
 type FilePlan = { restore: [FileStore, string][], trash: [FileStore, string][], missing: [FileStore, string][] }
 
 function filePlan(dataDir: string, before: Map<FileStore, Set<string>>, after: Map<FileStore, Set<string>>): FilePlan {
@@ -247,26 +242,23 @@ function filePlan(dataDir: string, before: Map<FileStore, Set<string>>, after: M
   return plan
 }
 
-// Verschiebt die Dateien; scheitert eine, gehen die schon verschobenen zurück, und der Fehler rollt die Transaktion
-// zurück.
-function moveFiles(dataDir: string, plan: FilePlan): void {
-  const done: (() => void)[] = []
-  try {
-    for (const [store, name] of plan.restore) {
-      restoreFromTrash(dataDir, store, name)
-      done.push(() => moveToTrash(dataDir, store, name))
+// Verschiebt die Dateien **nach dem Festschreiben** (Durchsicht von PR #439, K1): Vorher hieße ein Fehler beim
+// Festschreiben, dass Dateien schon verschoben sind, deren Zeilen es nicht gibt. Scheitert hier eine Datei, steht das auf
+// der Konsole, und der Abgleich beim nächsten Start (`reconcileFiles` in fileRefs.ts) rückt es gerade.
+async function moveFiles(dataDir: string, plan: FilePlan): Promise<void> {
+  for (const [store, name] of plan.restore) {
+    try {
+      await restoreFromTrash(dataDir, store, name)
+    } catch (err) {
+      console.error(`Rücksprung: ${name} ließ sich nicht aus dem Papierkorb zurückholen (${String(err)}); der nächste Start holt es nach.`)
     }
-    for (const [store, name] of plan.trash) {
-      moveToTrash(dataDir, store, name)
-      done.push(() => restoreFromTrash(dataDir, store, name))
+  }
+  for (const [store, name] of plan.trash) {
+    try {
+      await moveToTrash(dataDir, store, name)
+    } catch (err) {
+      console.error(`Rücksprung: ${name} ließ sich nicht in den Papierkorb legen (${String(err)}); der nächste Start holt es nach.`)
     }
-  } catch (err) {
-    for (const undo of done.reverse()) {
-      try {
-        undo()
-      } catch { /* bleibt im Papierkorb bzw. im Ordner liegen; die Konsole hat den ersten Fehler */ }
-    }
-    throw err
   }
 }
 
@@ -322,7 +314,9 @@ async function applyRange(db: Executor, range: Range, dataDir: string): Promise<
   const before = await referencedFiles(db)
   await db.run(sql`PRAGMA defer_foreign_keys = ON`)
   const rows = range.groups.flatMap((g) => range.rows.get(g.id) ?? []).sort((a, b) => b.id - a.id)
+  const consent = await consentSnapshot(db)
   for (const row of rows) await inverse(db, row)
+  await restoreConsent(db, consent)
   const problems = await stockProblems(db)
   if (problems.length > 0) {
     throw new RevertRefused(`Nach dem Rücksprung stimmte der Bestand nicht; deshalb ist nichts geändert. ${problems.slice(0, 3).join(' ')}`)
@@ -353,10 +347,11 @@ const tokenOf = (p: Pick<RevertPreview, 'kind' | 'mode' | 'entry' | 'startId' | 
 type Plan = { range: Range, entries: RevertEntry[], refusals: string[], token: string }
 
 // Bereich, Einträge, die Grenzen ohne Probelauf und die Marke.
-async function planOf(db: Executor, schema: JournalSchema, id: number, mode: RevertMode, schemaSteps: number): Promise<Plan | null> {
+// `blocked`: Gründe des Aufrufers, etwa eine laufende KI-Auswertung (K2).
+async function planOf(db: Executor, schema: JournalSchema, id: number, mode: RevertMode, schemaSteps: number, blocked: readonly string[]): Promise<Plan | null> {
   const range = await rangeOf(db, schema, id, mode)
   if (!range) return null
-  const refusals = await staticRefusals(db, schema, range, schemaSteps)
+  const refusals = [...blocked, ...await staticRefusals(db, schema, range, schemaSteps)]
   const entries = await entriesOf(db, schema, range)
   const changes = entries.reduce((sum, e) => sum + e.rows, 0)
   return { range, entries, refusals, token: tokenOf({ kind: 'journal', mode, entry: range.entry, startId: range.startId, entries, changes }) }
@@ -364,8 +359,10 @@ async function planOf(db: Executor, schema: JournalSchema, id: number, mode: Rev
 
 // Die Vorschau: was zurückgenommen würde, und ob es geht. Der Probelauf schreibt in einer Transaktion und rollt
 // zurück; er läuft durch die Schreibschlange ohne Gruppe (DRY_RUN_ROUTES).
-export async function previewRevert(db: Database, schema: JournalSchema, id: number, mode: RevertMode, schemaSteps: number, dataDir: string): Promise<RevertPreview | null> {
-  const plan = await planOf(db, schema, id, mode, schemaSteps)
+export async function previewRevert(
+  db: Database, schema: JournalSchema, id: number, mode: RevertMode, schemaSteps: number, dataDir: string, blocked: readonly string[] = [],
+): Promise<RevertPreview | null> {
+  const plan = await planOf(db, schema, id, mode, schemaSteps, blocked)
   if (!plan) return null
   const refusals = [...plan.refusals]
   let files = { restore: 0, trash: 0 }
@@ -389,6 +386,7 @@ export async function previewRevert(db: Database, schema: JournalSchema, id: num
     changes: plan.entries.reduce((sum, e) => sum + e.rows, 0),
     refusals,
     files,
+    notes: [CONSENT_NOTE],
     token: plan.token,
   }
 }
@@ -405,18 +403,19 @@ function revertDescription(range: Range, entries: RevertEntry[]): string {
 // Der Rücksprung. Läuft in der Schreibschlange mit Gruppe (der Satz der Route wird hier durch den genauen ersetzt); die
 // Marke muss die der Vorschau sein, sonst 409 mit neuer Vorschau. Ohne Zustimmung wird nichts geschrieben.
 export async function applyRevert(
-  db: Database, schema: JournalSchema, id: number, mode: RevertMode, token: unknown, schemaSteps: number, dataDir: string,
+  db: Database, schema: JournalSchema, id: number, mode: RevertMode, token: unknown, schemaSteps: number, dataDir: string, blocked: readonly string[] = [],
 ): Promise<{ groupId: number | null, reverted: number } | null> {
-  const plan = await planOf(db, schema, id, mode, schemaSteps)
+  const plan = await planOf(db, schema, id, mode, schemaSteps, blocked)
   if (!plan) return null
-  const refuse = async (message: string) => new RevertRefused(message, await previewRevert(db, schema, id, mode, schemaSteps, dataDir))
+  const refuse = async (message: string) => new RevertRefused(message, await previewRevert(db, schema, id, mode, schemaSteps, dataDir, blocked))
   if (token !== plan.token) throw await refuse('Der Verlauf hat sich inzwischen geändert. Bitte prüfen Sie den Rücksprung noch einmal.')
   if (plan.refusals.length > 0) throw await refuse(plan.refusals.join(' '))
   const { range, entries } = plan
   let groupId: number | null = null
+  let files: FilePlan | null = null
   try {
     await db.transaction(async (tx) => {
-      const files = await applyRange(tx, range, dataDir)
+      files = await applyRange(tx, range, dataDir)
       groupId = await currentGroupId(tx)
       if (groupId !== null) {
         // Die Gruppe des Rücksprungs gibt es, sobald er eine Zeile geändert hat; ohne Zeile (nur leere Gruppen im
@@ -429,12 +428,12 @@ export async function applyRevert(
         await tx.run(sql`UPDATE change_groups SET reverted_by = ${groupId} WHERE id >= ${range.startId} AND id <> ${groupId} AND reverted_by IS NULL`)
         await tx.run(sql`UPDATE change_groups SET description = ${revertDescription(range, entries)} WHERE id = ${groupId}`)
       }
-      moveFiles(dataDir, files)
     })
   } catch (err) {
     // Das Sicherheitsnetz oder eine fehlende Datei: zurückgerollt, die Antwort trägt die Vorschau mit dem Grund.
     if (err instanceof RevertRefused) throw await refuse(err.message)
     throw err
   }
+  if (files) await moveFiles(dataDir, files)
   return { groupId, reverted: entries.length }
 }

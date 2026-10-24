@@ -240,7 +240,13 @@ export async function endGroup(db: Database, id: number): Promise<void> {
 // eingefügt, etwa beim Speichern der Einstellungen), wird gleich wieder entfernt (S4). Gefragt wird
 // zuerst billig: Eine Zeile `update` ist immer eine Änderung, denn der Trigger schreibt keine ohne
 // Unterschied.
+// **Ausgenommen ist ein Rücksprung** (Durchsicht von PR #439, K3): Er kann sich zu nichts zusammenfassen (eine gelöschte
+// Wohnung, ihr Rückgängig und der Rücksprung vor beide), muss aber stehen bleiben, denn an ihm hängt `reverted_by` der
+// zurückgenommenen Gruppen; fiele er weg, stünden sie wieder als geltend da.
+export const REVERT_ROUTE = '/api/journal/:id/revert'
 async function dropIfNoChange(db: Database, id: number): Promise<void> {
+  const group = await db.select({ route: changeGroups.route }).from(changeGroups).where(eq(changeGroups.id, id)).get()
+  if (group?.route === REVERT_ROUTE) return
   const update = await db.select({ id: changeLog.id }).from(changeLog).where(and(eq(changeLog.groupId, id), eq(changeLog.op, 'update'))).limit(1).get()
   if (update) return
   const rows = await db.select().from(changeLog).where(eq(changeLog.groupId, id)).orderBy(changeLog.id).all()
@@ -447,6 +453,9 @@ export type JournalGroupView = {
   barrier: JournalBarrier | null
   // Nur lesbar: vor der letzten Migration oder vor einer Schranke (Schritt 4, revert.ts).
   readOnly: boolean
+  // Die neueste Gruppe überhaupt (Durchsicht K4): Nur dann heißt der Rücksprung „Rückgängig“. Der oberste Eintrag einer
+  // gefilterten Liste ist es nicht immer.
+  newest: boolean
 }
 
 export type JournalRowView = {
@@ -544,6 +553,11 @@ export type JournalQuery = {
 type GroupRow = typeof changeGroups.$inferSelect
 
 // Die jüngste Schranke: Davor gibt es keinen Rücksprung.
+export async function newestGroupId(db: Executor): Promise<number> {
+  const row = await db.get<[number | null]>(sql`SELECT max(id) FROM change_groups`)
+  return Number(row?.[0] ?? 0)
+}
+
 export async function latestBarrierId(db: Executor): Promise<number> {
   const row = await db.get<[number | null]>(sql`SELECT max(id) FROM change_groups WHERE barrier IS NOT NULL`)
   return Number(row?.[0] ?? 0)
@@ -625,6 +639,7 @@ export async function entryRows(db: Executor, groups: readonly Pick<GroupRow, 'i
 export async function listJournal(db: Executor, schema: JournalSchema, options: JournalQuery): Promise<JournalGroupView[]> {
   const resolver = new Resolver(db, schema)
   const barrierId = await latestBarrierId(db)
+  const newestId = await newestGroupId(db)
   const out: JournalGroupView[] = []
   let before = options.before
   while (out.length < options.limit) {
@@ -635,10 +650,10 @@ export async function listJournal(db: Executor, schema: JournalSchema, options: 
       before = g.id
       const rows = rowsOf.get(g.id) ?? []
       const changes = collapse(rows)
-      if (changes.length === 0 && g.barrier === null) continue
+      if (changes.length === 0 && g.barrier === null && g.route !== REVERT_ROUTE) continue
       const props = g.barrier === null ? await groupProperties(rows, resolver) : { ids: [], installationWide: true }
       if (options.propertyId !== null && !props.installationWide && !props.ids.includes(options.propertyId)) continue
-      out.push(await entryView(g, first.get(g.id) ?? g.id, rows, changes.length, props, resolver, options.schemaSteps, barrierId))
+      out.push(await entryView(g, first.get(g.id) ?? g.id, rows, changes.length, props, resolver, options.schemaSteps, barrierId, newestId))
       if (out.length >= options.limit) break
     }
     if (groups.length < PAGE_SCAN) break
@@ -647,7 +662,7 @@ export async function listJournal(db: Executor, schema: JournalSchema, options: 
 }
 
 async function entryView(
-  g: GroupRow, firstId: number, rows: LogRow[], count: number, props: GroupProperties, resolver: Resolver, schemaSteps: number, barrierId: number,
+  g: GroupRow, firstId: number, rows: LogRow[], count: number, props: GroupProperties, resolver: Resolver, schemaSteps: number, barrierId: number, newestId: number,
 ): Promise<JournalGroupView> {
   return {
     id: g.id,
@@ -663,6 +678,7 @@ async function entryView(
     revertedBy: g.revertedBy,
     barrier: barrierOf(g.barrier),
     readOnly: isReadOnly(g, schemaSteps, barrierId),
+    newest: g.id === newestId,
   }
 }
 
@@ -755,7 +771,7 @@ export async function journalGroup(db: Executor, schema: JournalSchema, id: numb
     changes.push({ ...change, refs })
   }
   const props = group.barrier === null ? await groupProperties(rows, resolver) : { ids: [], installationWide: true }
-  const view = await entryView(group, first.get(id) ?? id, rows, changes.length, props, resolver, schemaSteps, await latestBarrierId(db))
+  const view = await entryView(group, first.get(id) ?? id, rows, changes.length, props, resolver, schemaSteps, await latestBarrierId(db), await newestGroupId(db))
   return { ...view, changes }
 }
 

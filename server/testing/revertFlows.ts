@@ -269,6 +269,26 @@ export const STEPS: readonly Step[] = [
 export const CLOSING_STEPS: readonly Step[] = [
   { name: 'Abrechnung abschließen', routes: ['POST /api/settlement/:period/close'], run: ({ s }) => send(s, 'POST', `/api/settlement/2025/close${Q}`, {}) },
   { name: 'Versanddatum speichern', routes: ['PUT /api/settlement/:period/close'], run: ({ s, rng }) => send(s, 'PUT', `/api/settlement/2025/close${Q}`, { sentAt: day(rng, 2026) }) },
+  // Die Übernahme in die Staffel braucht eine abgeschlossene Abrechnung mit angekündigter Anpassung; der Zufallsbestand hat
+  // nicht immer eine. Deshalb legt der Schritt sie für 2024 selbst an (Wohnung, Mieter mit 40 € Vorauszahlung, 600 €
+  // Grundsteuer), schließt ab und übernimmt. Die Übernahme ändert Mietverhältnisse, nicht den Abschluss.
+  {
+    name: 'Abrechnung 2024 abschließen und angekündigte Vorauszahlung übernehmen', routes: ['POST /api/settlement/:period/prepayment-steps'],
+    run: async ({ s, rng }) => {
+      const unit = await json<Row>(await send(s, 'POST', '/api/units', { propertyId: P, name: `Anbau ${word(rng)}`, areaM2: 60, participates: true, selfUsed: false }))
+      if (!unit) return
+      await send(s, 'POST', '/api/tenancies', { unitId: unit.id, tenantName: `Mieter ${word(rng)}`, persons: 1, start: '2024-01-01', prepayments: [{ from: '2024-01', monthlyCents: 4000 }] })
+      await send(s, 'POST', '/api/costItems', { propertyId: P, period: '2024-01', category: 'Grundsteuer', description: 'Grundsteuer 2024', amountCents: 60000, key: 'area' })
+      let closed = await send(s, 'POST', `/api/settlement/2024/close${Q}`, {})
+      if (closed.status === 409) {
+        const question = await json<{ errorToken?: string }>(closed)
+        if (question?.errorToken) closed = await send(s, 'POST', `/api/settlement/2024/close${Q}`, { despiteErrors: question.errorToken })
+      }
+      const plan = await json<{ token: string, items: { tenancyId: string, state: string }[] }>(await send(s, 'POST', `/api/settlement/2024/prepayment-steps/plan${Q}`, {}))
+      const ids = plan?.items.filter((i) => i.state === 'pending').map((i) => i.tenancyId) ?? []
+      if (plan && ids.length > 0) await send(s, 'POST', `/api/settlement/2024/prepayment-steps${Q}`, { tenancyIds: ids, token: plan.token })
+    },
+  },
   { name: 'Abrechnung wieder öffnen', routes: ['DELETE /api/settlement/:period/close'], run: ({ s }) => send(s, 'DELETE', `/api/settlement/2025/close${Q}`) },
 ]
 
@@ -292,8 +312,7 @@ export const UNCOVERED_ROUTES: Readonly<Record<string, string>> = {
   'PUT /api/heating-settlement/:plant/:period/letters/:tenancyId': 'Braucht die getrennte Heizkostenabrechnung; Zeilen wie das Anschreiben der Abrechnung.',
   'PUT /api/letter-design': 'Formular mit Dateien; die Dateien und den Papierkorb prüft api-ruecksprung.',
   'PUT /api/properties/:id/letter-design': 'Wie PUT /api/letter-design.',
-  'POST /api/settlement/:period/prepayment-steps': 'Braucht eine abgeschlossene Abrechnung mit Anschreiben; über den Abschluss führt ohnehin kein Rücksprung.',
-  'POST /api/heating-settlement/:plant/:period/prepayment-steps': 'Wie die Übernahme der Abrechnung.',
+  'POST /api/heating-settlement/:plant/:period/prepayment-steps': 'Braucht eine abgeschlossene getrennte Heizkostenabrechnung (siehe /separate); Zeilen wie die Übernahme der Abrechnung, die der Generator nimmt.',
   'POST /api/ai/cancel/:id': 'Braucht eine laufende KI-Auswertung (nachgebauter Dienst); die Verknüpfung der Gruppen prüft journal.test.ts.',
   'POST /api/extract': 'Braucht einen nachgebauten KI-Dienst; Zeilen wie Beleg hochladen und Auswertung.',
   'POST /api/intake': 'Wie /api/extract.',
@@ -302,4 +321,4 @@ export const UNCOVERED_ROUTES: Readonly<Record<string, string>> = {
   'PUT /api/assessments/:id': 'Braucht eine Auswertung der KI.',
   'POST /api/assessments/:id/book': 'Braucht eine Auswertung der KI; Zeilen wie Kostenpositionen.',
 }
-export const UNCOVERED_MAX = 27
+export const UNCOVERED_MAX = 26

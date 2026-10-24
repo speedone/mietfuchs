@@ -57,7 +57,7 @@ import {
 } from './db/heatingSettlements.ts'
 import {
   changeTenant, closeSettlement, createEntity, createProperty, ContractError, CrossPropertyError, LocalRentError, LetterInputError, findClosedSettlement, HeatingError, PaidOnQuestion, PaymentError, PeriodConflict, PeriodError, StaleTenancyError, invoiceFilesInUse, previewCostItemSplit, saveCostItemSplit,
-  listProperties, patchTenancyIn, removeEntity, removeProperty, reopenSettlement, setSentAt, settlementHistory, updateEntity, updateProperty,
+  findEntity, listProperties, patchTenancyIn, removeEntity, removeProperty, reopenSettlement, setSentAt, settlementHistory, updateEntity, updateProperty,
   TenantChangeError, unitDependents, writeSettings, writeSettingsIn, nullableBoolean, nullableLine, type CollectionName,
 } from './db/repository.ts'
 import { removeInterimGap, saveDistribution, saveInterimGap, SelfItemsError, setUpSelf } from './db/heatingSelf.ts'
@@ -93,7 +93,8 @@ import { derivedTaxLines, planTaxArchive, taxArchiveItems } from './taxReceipts.
 import { createPriorVersion, listPriorVersions, mayCreatePriorVersion, PRIOR_CHECK_INTERVAL_MS, PRIOR_DIR, priorVersionsBlocked, priorVersionTime } from './db/priorVersions.ts'
 import { costItems as costItemsTable } from './db/schema.ts'
 import { addBarrier, isJournalKind, journalGroup, listJournal, pruneJournal, unjournaled, type JournalBarrier, type JournalMeta } from './db/journal.ts'
-import { applyRevert, filesNamedInJournal, isRevertMode, previewRevert, RevertRefused } from './db/revert.ts'
+import { applyRevert, isRevertMode, previewRevert, RevertRefused } from './db/revert.ts'
+import { reconcileFiles, trashKeep } from './db/fileRefs.ts'
 import { cleanTrash, moveToTrash } from './trash.ts'
 import { DRY_RUN_ROUTES, routeSentence } from './journalRoutes.ts'
 import { forgetUpload, placeUpload, recordIfMissing, recordUpload, rowOf, uploadRows, type Placement, type UploadRow } from './db/uploads.ts'
@@ -449,6 +450,17 @@ const writeData = <T>(work: (db: Database) => Promise<T>): Promise<T> => onDatab
 // Ein Fehler wird hier nicht abgefangen: Express 5 reicht eine abgelehnte Zusage an die
 // Fehlerbehandlung weiter, und dort steht die Übersetzung an einer Stelle.
 const COLLECTIONS: CollectionName[] = ['units', 'tenancies', 'costItems', 'meters', 'readings', 'payments']
+// Ein neu gesetzter oder geänderter Beleg an einer Kostenposition muss im Belegordner liegen (Durchsicht von PR #439, K2;
+// Muster wie bei der IBAN): Sonst verwiese die Position auf eine Datei, die ein Rücksprung oder ein Abbruch gerade
+// weggelegt hat. Ein unveränderter alter Verweis hindert das Speichern nicht.
+function requireInvoiceFile(body: Record<string, unknown>, current: string | null | undefined): void {
+  const sent = body.invoiceFile
+  if (typeof sent !== 'string' || sent === '' || sent === current) return
+  const name = path.basename(sent)
+  if (name !== sent || !fs.existsSync(path.join(UPLOAD_DIR, name)) || !fs.statSync(path.join(UPLOAD_DIR, name)).isFile()) {
+    throw new RouteProblem(400, `Den Beleg „${sent}“ gibt es im Belegordner nicht (mehr). Bitte wählen Sie ihn neu oder laden Sie ihn hoch.`)
+  }
+}
 // Die Sammlungen, die ein Objekt tragen; die übrigen erben es über ihre Wurzel (#92).
 const ROOTS: CollectionName[] = ['units', 'costItems', 'meters']
 
@@ -536,13 +548,20 @@ for (const coll of COLLECTIONS) {
   })
   app.post(`/api/${coll}`, async (req, res) => {
     const body = bodyObject(req)
+    if (coll === 'costItems') requireInvoiceFile(body, undefined)
     res.status(201).json(await writeData(async (db) => {
       const withProperty = ROOTS.includes(coll) ? { ...body, propertyId: await propertyOf(db, req, true) } : body
       return createEntity(db, coll, newId(), withProperty)
     }))
   })
   app.put(`/api/${coll}/:id`, async (req, res) => {
-    const item = await writeData((db) => updateEntity(db, coll, req.params.id, bodyObject(req)))
+    const item = await writeData(async (db) => {
+      if (coll === 'costItems') {
+        const current = await findEntity(db, 'costItems', req.params.id)
+        requireInvoiceFile(bodyObject(req), current && 'invoiceFile' in current ? current.invoiceFile : undefined)
+      }
+      return updateEntity(db, coll, req.params.id, bodyObject(req))
+    })
     if (!item) return res.status(404).json({ error: 'Nicht gefunden' })
     res.json(item)
   })
@@ -606,7 +625,7 @@ app.delete('/api/properties/:id', async (req, res) => {
   const result = await writeData(async (db) => {
     const own = await readPropertyDesign(db, req.params.id)
     const removed = await removeProperty(db, req.params.id)
-    if (removed.removed && own) removeUnreferenced(DATA_DIR, letterDesignFiles(own), await referencedDesignFiles(db))
+    if (removed.removed && own) await removeUnreferenced(DATA_DIR, letterDesignFiles(own), await referencedDesignFiles(db))
     return removed
   })
   if (result.removed) return res.json({ ok: true })
@@ -1243,10 +1262,10 @@ async function saveLetterDesign(req: Request, propertyId: string | null): Promis
         else await savePropertyDesign(tx, propertyId, next)
       })
     } catch (err) {
-      removeUnreferenced(DATA_DIR, written, new Set(), false)
+      await removeUnreferenced(DATA_DIR, written, new Set(), false)
       throw err
     }
-    removeUnreferenced(DATA_DIR, candidates, await referencedDesignFiles(db))
+    await removeUnreferenced(DATA_DIR, candidates, await referencedDesignFiles(db))
   })
 }
 
@@ -1727,7 +1746,7 @@ function aiResponse(req: Request, res: Response): AiAnswer {
     const upload = uploadedFile(req)
     if (upload) {
       // In den Papierkorb (#318): Die Zeile stand schon im Verlauf, ein Rücksprung soll die Datei finden.
-      moveToTrash(DATA_DIR, 'uploads', upload.filename)
+      void moveToTrash(DATA_DIR, 'uploads', upload.filename).catch((err: unknown) => console.error(`Der abgebrochene Beleg ließ sich nicht in den Papierkorb legen: ${messageOf(err)}`))
       // Seine Angaben gehen mit (#170), ebenso eine Auswertung, die beim Abbruch gerade
       // gespeichert wurde; ein Beleg aus dem Posteingang ist nie `upload`. Im Kontext der ausgewerteten Anfrage, ob der
       // Abbruch über POST /api/ai/cancel/:id oder das Schließen der Verbindung kommt: Im Verlauf ist es ein Eintrag.
@@ -1804,7 +1823,7 @@ async function documentOf(req: Request, res: Response): Promise<DocumentSource |
     // Hat der Browser während des Speicherns schon aufgegeben, hört niemand mehr zu, und der
     // Abbruch in aiResponse käme nie an (Durchsicht): dann gleich aufräumen statt auszuwerten.
     if (res.destroyed || req.socket.destroyed) {
-      moveToTrash(DATA_DIR, 'uploads', fresh.filename)
+      await moveToTrash(DATA_DIR, 'uploads', fresh.filename).catch(() => undefined)
       await writeData((db) => forgetUpload(db, fresh.filename)).catch(() => undefined)
       return null
     }
@@ -2219,8 +2238,13 @@ app.delete('/api/uploads/:file', async (req, res) => {
   if (inUse) {
     return res.status(409).json({ error: 'Beleg ist noch mit Kostenpositionen verknüpft.' })
   }
-  // In den Papierkorb statt gelöscht (#318, Schritt 5, trash.ts).
-  moveToTrash(DATA_DIR, 'uploads', name)
+  // In den Papierkorb statt gelöscht (#318, Schritt 5, trash.ts). Scheitert das Verschieben, gleicht der nächste Start ab
+  // (`reconcileFiles`): Die Zeile ist schon weg, die Datei kommt dann in den Papierkorb.
+  try {
+    await moveToTrash(DATA_DIR, 'uploads', name)
+  } catch (err) {
+    console.error(`Der Beleg ${name} ließ sich nicht in den Papierkorb legen: ${messageOf(err)}`)
+  }
   res.json({ ok: true })
 })
 
@@ -2747,7 +2771,7 @@ async function restoreDatabase(staged: string | null, barrier: 'restore' | 'prio
       notes: [], protocol: null, database,
     }
     await markBarrier(barrier)
-    return []
+    return reconcileAfterRestore()
   }
 
   // Fall 2: neu aufbauen. Scheitert er, ist nichts verloren — die wiederhergestellte db.json
@@ -2762,7 +2786,19 @@ async function restoreDatabase(staged: string | null, barrier: 'restore' | 'prio
   database = rebuilt.database
   if (!database) openProblem = 'nach dem Wiederherstellen nicht wieder geöffnet'
   else await markBarrier(barrier)
-  return rebuilt.state === 'failed' ? [rebuilt.message] : rebuilt.notes
+  return rebuilt.state === 'failed' ? [rebuilt.message] : [...rebuilt.notes, ...await reconcileAfterRestore()]
+}
+
+// Nach dem Einspielen (Durchsicht von PR #439, M1): Dateien, die der eingespielte Stand nennt und die nur im
+// Papierkorb liegen, kommen zurück. Wirft nie; die Sätze gehen in die Antwort.
+async function reconcileAfterRestore(): Promise<string[]> {
+  try {
+    const opened = database
+    return opened ? await opened.read((db) => reconcileFiles(db, DATA_DIR)) : []
+  } catch (err) {
+    console.error(`Belegordner und Papierkorb ließen sich nicht abgleichen: ${messageOf(err)}`)
+    return []
+  }
 }
 
 // Die Schranke im Verlauf (#318, Schritt 4): Über ein Einspielen und den Umstieg hinweg führt kein Rücksprung.
@@ -3015,7 +3051,7 @@ async function checkPriorVersion(pruneToo = false): Promise<void> {
 async function emptyTrash(): Promise<void> {
   try {
     if (!database || databaseUnavailable(databaseState()) !== null) return
-    const keep = await database.read((db) => filesNamedInJournal(db))
+    const keep = await database.read((db) => trashKeep(db))
     const removed = cleanTrash(DATA_DIR, keep)
     if (removed > 0) console.log(`Papierkorb: ${removed === 1 ? 'eine Datei' : `${removed} Dateien`} entfernt, die der Verlauf nicht mehr nennt.`)
   } catch (err) {
@@ -3071,6 +3107,11 @@ app.get('/api/journal/:id', async (req, res) => {
 // zurückgenommen), `after` = Stand nach dem Eintrag (nur alles danach). Erst die Vorschau (ein Probelauf, der
 // zurückrollt), dann der Rücksprung mit ihrer Marke; stimmt sie nicht mehr oder steht eine Grenze im Weg, 409 mit
 // neuer Vorschau. Ohne Zustimmung wird nichts geschrieben.
+// Solange eine KI-Auswertung läuft, kein Rücksprung (Durchsicht von PR #439, K2): Sie schriebe danach Auswertung und
+// Rechnungsdatum zu einem Beleg, den der Rücksprung womöglich entfernt hat.
+const revertBlocked = (): string[] => (runningAiRequests.size > 0
+  ? ['Gerade wertet die KI einen Beleg aus. Warten Sie, bis sie fertig ist, oder brechen Sie die Auswertung ab; danach geht der Rücksprung.']
+  : [])
 const revertModeOf = (req: Request) => {
   const mode = bodyObject(req).mode ?? 'including'
   return isRevertMode(mode) ? mode : null
@@ -3079,7 +3120,7 @@ app.post('/api/journal/:id/revert/preview', async (req, res) => {
   const id = journalId(req)
   const mode = revertModeOf(req)
   if (mode === null) return res.status(400).json({ error: 'Unbekannte Art des Rücksprungs.' })
-  const preview = id === null ? null : await writeData((db) => onDatabase((opened) => previewRevert(db, opened.journalSchema, id, mode, opened.schemaSteps, DATA_DIR)))
+  const preview = id === null ? null : await writeData((db) => onDatabase((opened) => previewRevert(db, opened.journalSchema, id, mode, opened.schemaSteps, DATA_DIR, revertBlocked())))
   if (!preview) return res.status(404).json({ error: JOURNAL_GONE })
   res.json(preview)
 })
@@ -3088,7 +3129,7 @@ app.post('/api/journal/:id/revert', async (req, res) => {
   const mode = revertModeOf(req)
   if (mode === null) return res.status(400).json({ error: 'Unbekannte Art des Rücksprungs.' })
   try {
-    const done = id === null ? null : await writeData((db) => onDatabase((opened) => applyRevert(db, opened.journalSchema, id, mode, bodyObject(req).token, opened.schemaSteps, DATA_DIR)))
+    const done = id === null ? null : await writeData((db) => onDatabase((opened) => applyRevert(db, opened.journalSchema, id, mode, bodyObject(req).token, opened.schemaSteps, DATA_DIR, revertBlocked())))
     if (!done) return res.status(404).json({ error: JOURNAL_GONE })
     // Die Einstellungen liegen als Kopie im Arbeitsspeicher; ohne Neulesen schriebe das nächste PUT /api/settings den
     // Stand von vor dem Rücksprung zurück (wie nach dem Wiederherstellen).
@@ -3710,6 +3751,10 @@ function databaseState(): DatabaseState {
 // und nicht danach**: Wer auf „läuft auf …“ wartet (Tests, Skripte), hält den Server danach für
 // fertig. Kam die Vorversion erst nach der Zeile, las der Server noch die Datei, während ein Test
 // schon von außen hineinschrieb, und der scheiterte unter Last mit „database is locked“.
+// Belegordner, Briefpapier und Papierkorb gegen den Bestand abgleichen (M1, K1), vor dem Aufräumen des Papierkorbs.
+if (database && databaseUnavailable(databaseState()) === null) {
+  for (const note of await reconcileAfterRestore()) console.log(note)
+}
 await checkPriorVersion()
 setInterval(() => void checkPriorVersion(true), PRIOR_CHECK_INTERVAL_MS).unref()
 

@@ -216,9 +216,9 @@ Wohnung kaskadiert auf alles darunter) half bisher nichts von selbst. Deshalb le
   (die Meldungen sagen dann „Vorversion“ statt „Archiv“; ein Wächter liest den Rumpf; Integrität,
   `unknownSteps`, Migrationskette nachholen, Verweise), `restoreDatabase` (bisherige als
   `mietfuchs.sqlite.vor-restore`, Hinweis nach dem Update weg), `refreshSettings`; gesperrt über
-  `restoreRunning` wie `/api/restore`. Die Vorversion selbst bleibt unverändert. Die `db.json` und die
-  Belege werden nicht angefasst; Belege, auf die der Stand verweist und die fehlen, nennt die Antwort
-  in `notes`. Die Oberfläche lädt danach **immer** neu (jede Seite hält sonst den alten Stand) und
+  `restoreRunning` wie `/api/restore`. Die Vorversion selbst bleibt unverändert. Die `db.json` wird nicht
+  angefasst; Belege, auf die der Stand verweist und die im Papierkorb liegen, holt der Abgleich zurück (`reconcileFiles`,
+  #318), die übrigen fehlenden nennt die Antwort in `notes`. Die Oberfläche lädt danach **immer** neu (jede Seite hält sonst den alten Stand) und
   zeigt die Hinweise einmal nach dem Neuladen (sessionStorage, mit try/catch).
 
 ## Änderungsjournal und Verlauf (#318, Schritte 2 und 3)
@@ -307,15 +307,30 @@ bräuchte eine Abhängigkeitsregel, deren Fehler einen nie geprüften Bestand er
   hinweg kein Rücksprung, ältere Einträge sind nur lesbar (`readOnly`).
 - **Papierkorb** `papierkorb/<Ablage>/` im Datenordner (Ablagen `uploads` und `briefpapier`, `FILE_STORES`): Das Löschen
   eines Belegs, der Abbruch einer Auswertung und ein Logo, das keine Gestaltung mehr nennt (`removeUnreferenced`),
-  verschieben die Datei dorthin. Der Rücksprung vergleicht die genannten Dateien vorher und nachher (`FILE_COLUMNS`):
-  wieder genannt heißt zurück aus dem Papierkorb (fehlt sie dort: abgelehnt), nicht mehr genannt heißt in den
-  Papierkorb; verschoben wird in der Transaktion, ein Fehler schiebt zurück. Eine Zeile, die einen schon vorhandenen
+  verschieben die Datei dorthin (`moveFile`: mit Wiederholungen wie `replaceFile`; auf ein anderes Laufwerk kopieren und
+  die Quelle entfernen, scheitert das Entfernen, geht die Kopie wieder weg, nie zwei Exemplare). Der Rücksprung vergleicht
+  die genannten Dateien vorher und nachher (`FILE_COLUMNS` in [fileRefs.ts](fileRefs.ts): `uploads.file`,
+  `cost_items.invoice_file`, `assessments.file`, Logo und Briefpapier; ein Wächter in trash.test.ts verlangt jede Spalte
+  `…_file`): wieder genannt heißt zurück aus dem Papierkorb (fehlt sie dort: abgelehnt), nicht mehr genannt heißt in den
+  Papierkorb. **Verschoben wird nach dem Festschreiben**; scheitert es, steht es auf der Konsole, und der **Abgleich**
+  (`reconcileFiles`, beim Start und nach dem Einspielen eines Backups oder einer Vorversion, dann mit Satz in `notes`)
+  rückt es gerade: Was der Bestand nennt und nur im Papierkorb liegt, kommt zurück; ein Beleg im Ordner, den der Bestand
+  nicht nennt und den das Journal zuletzt gelöscht hat, und ein Logo, das keine Gestaltung nennt, das Journal aber kennt,
+  wandern in den Papierkorb. Er löscht nie, eine Datei, die das Journal nicht kennt, bleibt. Eine Zeile, die einen schon vorhandenen
   Beleg nur beschreibt (`placeUpload`, Löschen eines Belegs ohne Zeile), entsteht `unjournaled`: Ein Rücksprung, der sie
   entfernte, legte sonst einen Beleg in den Papierkorb, der vorher im Ordner lag. **Nicht im Backup**. Aufgeräumt mit der
-  Aufbewahrung (`emptyTrash` in index.ts beim Start und täglich, `cleanTrash`): weg, was keine Zeile im Journal mehr nennt;
-  nur Dateien unmittelbar in den Ablagen des Papierkorbs, nie Ordner. Nach einem Backup ohne Verlauf nennt das Journal
-  nichts mehr; der nächste Start oder der tägliche Lauf leert dann den Papierkorb (die Dateien gehörten zum Stand vor
-  dem Einspielen).
+  Aufbewahrung (`emptyTrash` in index.ts beim Start und täglich, `cleanTrash`): weg, was weder das Journal noch der
+  Bestand nennt (`trashKeep`; Durchsicht von PR #439, M1: Nach dem Einspielen einer Vorversion nennt der Bestand einen
+  Beleg, den der gealterte Verlauf nicht mehr kennt); nur Dateien unmittelbar in den Ablagen des Papierkorbs, nie Ordner.
+- **Zustimmungen** (`CONSENT_COLUMNS`: `ai_slots.consent_*`, `settings.update_check`): Ein Rücksprung setzt und entfernt
+  sie nie; jede Zeile trägt danach die Zustimmung von vorher, eine neu entstandene keine. Ein Widerruf bleibt ein
+  Widerruf; die Vorschau sagt es in `notes`. Ein Wächter in trash.test.ts verlangt jede Spalte, die nach Zustimmung klingt.
+- **Während einer KI-Auswertung** (`runningAiRequests` in index.ts) kein Rücksprung (Satz in der Vorschau, 409): Sie
+  schriebe danach zu einem Beleg, den es nicht mehr gibt. Eine Kostenposition nimmt einen neu gesetzten oder geänderten
+  `invoiceFile` nur, wenn die Datei im Belegordner liegt (`requireInvoiceFile`, Muster der IBAN).
+- **Ein Rücksprung bleibt im Verlauf**, auch wenn er sich zu nichts zusammenfasst (`dropIfNoChange` und die Liste nehmen
+  `REVERT_ROUTE` aus), denn an ihm hängt `reverted_by`. `newest` an jedem Eintrag sagt, ob er die neueste Gruppe
+  insgesamt ist (nur dann „Rückgängig“).
 - **Invariante** (invariant-ruecksprung.test.ts, Generator in server/testing/revertFlows.ts): Zufallsabläufe über die
   Routen samt Heizung, Stand nach jedem Eintrag gemerkt; Rücksprung vor bzw. nach einen Eintrag ergibt ihn zeilengleich
   (mit `rowid`), die Rücknahme den Endstand, mit Abschluss im Bereich die Ablehnung. Jede Route mit Satz steht im
@@ -325,7 +340,8 @@ bräuchte eine Abhängigkeitsregel, deren Fehler einen nie geprüften Bestand er
 
 **Checkliste für Rückgängig**: Eine **neue Tabelle** braucht nichts, die Trigger entstehen beim Öffnen (dazu ein Bereich
 in `TABLE_KINDS`, der Wächter in journal.test.ts sagt es). Eine **neue Ablage für Dateien** braucht den Papierkorb:
-Eintrag in `FILE_STORES` (trash.ts) und `FILE_COLUMNS` (revert.ts), Löschen über `moveToTrash`. Eine **neue
+Eintrag in `FILE_STORES` (trash.ts) und `FILE_COLUMNS` (fileRefs.ts), Löschen über `moveToTrash`; eine **neue Spalte
+mit Dateinamen** gehört in `FILE_COLUMNS`, eine **neue Zustimmung** in `CONSENT_COLUMNS` (beides verlangt trash.test.ts). Eine **neue
 Abschlusstabelle** (eingefrorener Stand) gehört in `FROZEN_TABLES`. Eine **neue Schreibroute** braucht ihren Satz
 (journalRoutes.ts), einen Schritt im Generator oder einen Grund in `UNCOVERED_ROUTES`, und schreibt sie mehrmals, einen
 Eintrag in `MULTI_WRITE_ROUTES`.

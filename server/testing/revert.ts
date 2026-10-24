@@ -4,18 +4,25 @@ import assert from 'node:assert/strict'
 import type { JournalGroupView } from '../src/db/journal.ts'
 import type { RevertMode, RevertPreview } from '../src/db/revert.ts'
 import { besideServer, jsonOf, type Server } from './api.ts'
+import { CONSENT_COLUMNS } from '../src/db/revert.ts'
 
 // Nicht verglichen: das Journal selbst und die Buchführung von drizzle und SQLite.
 const SKIP = new Set(['change_groups', 'change_log', '__drizzle_migrations'])
 
-// Der Bestand als Text je Tabelle: jede Zeile mit `rowid`, in der Reihenfolge der `rowid` (read.ts liest so).
-export async function dumpStock(dataDir: string): Promise<Record<string, string[]>> {
+// Der Bestand als Text je Tabelle: jede Zeile mit `rowid`, in der Reihenfolge der `rowid` (read.ts liest so). Die
+// Zustimmungen (`CONSENT_COLUMNS`) nimmt ein Rücksprung bewusst nicht zurück; sie stehen deshalb als `*` da, außer mit
+// `raw`.
+export async function dumpStock(dataDir: string, options: { raw?: boolean } = {}): Promise<Record<string, string[]>> {
   const c = await besideServer(dataDir)
   try {
     const tables = c.rows("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
       .map((r) => String(r[0])).filter((t) => !SKIP.has(t))
     const out: Record<string, string[]> = {}
-    for (const t of tables) out[t] = c.rows(`SELECT rowid, * FROM "${t}" ORDER BY rowid`).map((r) => JSON.stringify(r))
+    for (const t of tables) {
+      const columns = ['rowid', ...c.rows(`PRAGMA table_info("${t}")`).map((r) => String(r[1]))]
+      const masked = new Set(options.raw ? [] : (CONSENT_COLUMNS[t]?.columns ?? []))
+      out[t] = c.rows(`SELECT rowid, * FROM "${t}" ORDER BY rowid`).map((r) => JSON.stringify(r.map((v, i) => (masked.has(columns[i]) ? '*' : v))))
+    }
     return out
   } finally {
     c.close()

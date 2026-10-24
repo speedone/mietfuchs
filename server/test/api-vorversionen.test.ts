@@ -131,6 +131,9 @@ test('Vorversionen: Einspielen nennt Belege, die seither gelöscht wurden', asyn
     const [version] = await list(s.base)
     await s.api(`/api/costItems/${item.id}`, { method: 'DELETE' })
     assert.equal((await fetch(`${s.base}/api/uploads/${encodeURIComponent(file)}`, { method: 'DELETE' })).status, 200)
+    // Seit #318 liegt ein gelöschter Beleg im Papierkorb und käme beim Einspielen zurück (api-ruecksprung-durchsicht.test.ts).
+    // Hier ist er wirklich weg.
+    fs.rmSync(path.join(dir, 'papierkorb', 'uploads', file))
     const res = await postJson(s, `/api/prior-versions/${version.name}/restore`, {})
     assert.equal(res.status, 200)
     const body = await jsonOf<{ notes: string[] }>(res)

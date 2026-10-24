@@ -72,6 +72,8 @@ export type RevertPreview = {
   changes: number
   refusals: string[]
   files: { restore: number, trash: number }
+  // Sätze des Servers, etwa dass Zustimmungen bleiben, wie sie sind.
+  notes: string[]
   token: string
 }
 
@@ -97,6 +99,7 @@ export function revertQuestion(preview: RevertPreview): RevertQuestion {
   const notes: string[] = []
   if (preview.files.restore > 0) notes.push(preview.files.restore === 1 ? 'Ein Beleg oder Logo kommt aus dem Papierkorb zurück.' : `${preview.files.restore} Belege oder Logos kommen aus dem Papierkorb zurück.`)
   if (preview.files.trash > 0) notes.push(preview.files.trash === 1 ? 'Ein Beleg oder Logo wandert in den Papierkorb.' : `${preview.files.trash} Belege oder Logos wandern in den Papierkorb.`)
+  notes.push(...preview.notes)
   notes.push('Der Rücksprung steht danach selbst im Verlauf und lässt sich dort genauso zurücknehmen.')
   return {
     title,
@@ -114,4 +117,12 @@ export function revertQuestion(preview: RevertPreview): RevertQuestion {
 export function revertActions(entry: { readOnly: boolean, barrier: string | null }, newest: boolean): RevertMode[] {
   if (entry.readOnly || entry.barrier !== null) return []
   return newest ? ['including'] : ['including', 'after']
+}
+
+// Die Mitteilung danach: ein Eintrag mit seinem Titel, mehrere mit ihrer Zahl (Durchsicht von PR #439, K4).
+export function revertedMessage(preview: RevertPreview): string {
+  const n = preview.entries.length
+  return n === 1
+    ? `Rückgängig gemacht: „${preview.entries[0]?.title ?? preview.entry.title}“.`
+    : `${n} Einträge zurückgenommen. Der Rücksprung steht oben im Verlauf und lässt sich dort wieder rückgängig machen.`
 }

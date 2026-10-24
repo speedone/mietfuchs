@@ -9,12 +9,12 @@ import type { RevertPreview } from '../journalRevert'
 
 const group = (id: number, title: string, extra: Partial<JournalGroup> = {}): JournalGroup => ({
   id, firstId: id, at: '2026-10-24T08:15:00.000Z', method: 'PUT', route: '/api/units/:id', description: title, title, propertyIds: ['objekt-1'],
-  installationWide: false, rows: 1, revertedBy: null, barrier: null, readOnly: false, ...extra,
+  installationWide: false, rows: 1, revertedBy: null, barrier: null, readOnly: false, newest: false, ...extra,
 })
 const preview = (over: Partial<RevertPreview> = {}): RevertPreview => ({
   kind: 'journal', mode: 'including', entry: { id: 9, firstId: 9, at: '2026-10-24T08:15:00.000Z', title: 'Wohnung geändert: EG' }, startId: 9,
   entries: [{ id: 9, at: '2026-10-24T08:15:00.000Z', title: 'Wohnung geändert: EG', rows: 1, reverted: false }], changes: 1, refusals: [],
-  files: { restore: 0, trash: 0 }, token: 'marke-1', ...over,
+  files: { restore: 0, trash: 0 }, notes: ['Zustimmungen nimmt der Rücksprung nicht zurück.'], token: 'marke-1', ...over,
 })
 
 type Sent = { url: string, method: string, body: unknown }
@@ -24,7 +24,7 @@ let previewBody: RevertPreview
 let revertStatus: number
 beforeEach(() => {
   sent = []
-  listed = [group(9, 'Wohnung geändert: EG'), group(8, 'Wohnung angelegt: EG')]
+  listed = [group(9, 'Wohnung geändert: EG', { newest: true }), group(8, 'Wohnung angelegt: EG')]
   previewBody = preview()
   revertStatus = 200
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
@@ -61,6 +61,7 @@ test('Rückgängig am obersten Eintrag: Vorschau, Rückfrage, Rücksprung mit de
   const dialog = await screen.findByRole('alertdialog')
   expect(within(dialog).getByText('„Wohnung geändert: EG“ rückgängig machen?')).toBeTruthy()
   expect(within(dialog).getByText(/lässt sich dort genauso zurücknehmen/)).toBeTruthy()
+  expect(within(dialog).getByText('Zustimmungen nimmt der Rücksprung nicht zurück.')).toBeTruthy()
   fireEvent.click(within(dialog).getByRole('button', { name: 'Rückgängig machen' }))
   await waitFor(() => expect(sent.some((s) => s.url === '/api/journal/9/revert')).toBe(true))
   expect(sent.find((s) => s.url === '/api/journal/9/revert')?.body).toEqual({ mode: 'including', token: 'marke-1' })
@@ -127,7 +128,7 @@ test('Nur lesbare Einträge und Schranken haben keine Knöpfe, zurückgenommene 
   expect(within(old).getByText(/nur lesen/)).toBeTruthy()
 })
 
-test('Filter: Bereich, Zeitraum und Suche gehen an den Server; mit Filter gibt es kein „Rückgängig“', async () => {
+test('Filter: Bereich, Zeitraum und Suche gehen an den Server', async () => {
   render(<UIProvider><Verlauf /></UIProvider>)
   await screen.findByText('Wohnung geändert: EG')
   fireEvent.change(screen.getByLabelText('Bereich'), { target: { value: 'payments' } })
@@ -140,7 +141,17 @@ test('Filter: Bereich, Zeitraum und Suche gehen an den Server; mit Filter gibt e
   const kind = screen.getByLabelText('Bereich') as HTMLSelectElement
   expect(kind.value).toBe('payments')
   expect([...kind.options].map((o) => o.text)).toContain('Heizung')
+})
+
+// Durchsicht K4: Der oberste Eintrag der Liste (gefiltert nach dem Objekt der Seitenleiste) ist nicht immer die neueste
+// Gruppe; „Rückgängig“ nur, wenn der Server es sagt. Mehrere zurückgenommene Einträge nennt die Mitteilung mit Zahl.
+test('Durchsicht K4: „Rückgängig“ nur an der neuesten Gruppe insgesamt, die Mitteilung nennt die Zahl', async () => {
+  listed = [group(9, 'Wohnung geändert: EG'), group(8, 'Wohnung angelegt: EG')]
+  previewBody = preview({ entries: [...preview().entries, { id: 10, at: '2026-10-24T09:00:00.000Z', title: 'Im anderen Objekt', rows: 1, reverted: false }], changes: 2 })
+  render(<UIProvider><Verlauf /></UIProvider>)
   const top = await open('Wohnung geändert: EG')
   expect(within(top).queryByRole('button', { name: 'Rückgängig …' })).toBeNull()
-  expect(within(top).getByRole('button', { name: /Diese und alle späteren/ })).toBeTruthy()
+  fireEvent.click(within(top).getByRole('button', { name: 'Diese und alle späteren Änderungen zurücknehmen …' }))
+  fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Zurückkehren' }))
+  expect(await screen.findByText(/^2 Einträge zurückgenommen\./)).toBeTruthy()
 })

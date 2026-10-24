@@ -20,7 +20,7 @@ const REVERT_ROUTE = 'POST /api/journal/:id/revert'
 
 // Ein Schritt kann mehrere Anfragen stellen und damit mehrere Einträge ergeben: `firstId` ist der älteste, `id` der jüngste.
 // „Stand vor“ zielt auf `firstId`, „Stand nach“ auf `id`.
-type Mark = { firstId: number, id: number, step: string, before: Record<string, string[]>, after: Record<string, string[]> }
+type Mark = { firstId: number, id: number, step: string, closing: boolean, before: Record<string, string[]>, after: Record<string, string[]> }
 
 async function top(s: Server): Promise<number> {
   const [g] = await journalOf(s, '?limit=1')
@@ -32,7 +32,7 @@ async function run(s: Server, seed: number, randomSteps: number, withClosing: bo
   const rng = rngOf(seed)
   const ctx: Ctx = { s, rng, units: [], tenancies: [], meters: [], readings: [], payments: [], costItems: [], plants: [], deliveries: [], refunds: [], uploads: [], properties: [] }
   const marks: Mark[] = []
-  let state = await dumpStock(s.dataDir)
+  let state = await stateOf(s)
   let last = await top(s)
   const pool: Step[] = [...STEPS, ...(withClosing ? CLOSING_STEPS : [])]
   const order: Step[] = [...STEPS, ...(withClosing ? CLOSING_STEPS : []), ...STEPS]
@@ -43,16 +43,17 @@ async function run(s: Server, seed: number, randomSteps: number, withClosing: bo
     await step.run(ctx)
     const id = await top(s)
     if (id === last) continue
-    const after = await dumpStock(s.dataDir)
+    const after = await stateOf(s)
     const added = (await journalOf(s, '?limit=50')).filter((g) => g.id > last)
-    marks.push({ firstId: Math.min(...added.map((g) => g.firstId)), id, step: step.name, before: state, after })
+    // Ob der Schritt wirklich abgeschlossen, wieder geöffnet oder das Versanddatum geändert hat: an der Route der Gruppen.
+    const closing = added.some((g) => g.route.endsWith('/close'))
+    marks.push({ firstId: Math.min(...added.map((g) => g.firstId)), id, step: step.name, closing, before: state, after })
     state = after
     last = id
   }
   return marks
 }
 
-const closingNames = new Set(CLOSING_STEPS.map((c) => c.name))
 
 async function settlementComputes(s: Server): Promise<void> {
   for (const url of ['/api/settlement/2025?property=objekt-1', '/api/consumption/2025?property=objekt-1']) {
@@ -61,16 +62,29 @@ async function settlementComputes(s: Server): Promise<void> {
   }
 }
 
-async function filesPresent(s: Server): Promise<void> {
-  const uploads = await (await fetch(`${s.base}/api/uploads`)).json() as { file: string }[]
-  for (const u of uploads) assert.ok(fs.existsSync(path.join(s.dataDir, 'uploads', u.file)), `Datei fehlt: ${u.file}`)
+// Der Stand samt Dateien (Durchsicht von PR #439, K6): Belegordner und Ordner für Briefpapier gehören zum Stand und werden
+// mit verglichen, direkt auf dem Dateisystem. Der Papierkorb wächst (was ein Rücksprung weglegt, bleibt dort), deshalb
+// gilt für ihn nur: Was der Stand je hatte, liegt im Belegordner oder im Papierkorb.
+const listing = (dir: string) => { try { return fs.readdirSync(dir).sort() } catch { return [] } }
+async function stateOf(s: Server): Promise<Record<string, string[]>> {
+  return {
+    ...await dumpStock(s.dataDir),
+    'Datei: uploads': listing(path.join(s.dataDir, 'uploads')),
+    'Datei: briefpapier': listing(path.join(s.dataDir, 'briefpapier')),
+  }
+}
+function filesKept(s: Server, state: Record<string, string[]>): void {
+  for (const store of ['uploads', 'briefpapier']) {
+    const all = new Set([...listing(path.join(s.dataDir, store)), ...listing(path.join(s.dataDir, 'papierkorb', store))])
+    assert.deepEqual((state[`Datei: ${store}`] ?? []).filter((f) => !all.has(f)), [], `verloren in ${store}`)
+  }
 }
 
 async function checkRevert(s: Server, marks: Mark[], k: number, mode: RevertMode): Promise<void> {
-  const final = await dumpStock(s.dataDir)
+  const final = await stateOf(s)
   const mark = marks[k]
   const range = mode === 'including' ? marks.slice(k) : marks.slice(k + 1)
-  const blocked = range.some((m) => closingNames.has(m.step))
+  const blocked = range.some((m) => m.closing)
   // Im Verlauf stehen auch die Rücksprünge der früheren Proben samt ihrer Rücknahme; zusammen ändern sie nichts.
   const nothingAfter = mode === 'after' && (await top(s)) === mark.id
   if (process.env.NKA_TEST_REVERT_DEBUG) console.error(`Rücksprung ${mode} zu ${mark.step}`)
@@ -79,7 +93,7 @@ async function checkRevert(s: Server, marks: Mark[], k: number, mode: RevertMode
   if (blocked || nothingAfter) {
     assert.notDeepEqual(preview.refusals, [], `${mode} ${mark.step}: Ablehnung erwartet`)
     assert.equal((await revertRaw(s, target, mode, preview.token)).status, 409)
-    assert.deepEqual(await dumpStock(s.dataDir), final)
+    assert.deepEqual(await stateOf(s), final)
     return
   }
   assert.deepEqual(preview.refusals, [], `${mode} ${mark.step}`)
@@ -87,15 +101,13 @@ async function checkRevert(s: Server, marks: Mark[], k: number, mode: RevertMode
   debug('Vorschau ok')
   await revert(s, target, mode)
   debug('zurückgekehrt')
-  assert.deepEqual(await dumpStock(s.dataDir), mode === 'including' ? mark.before : mark.after, `Rücksprung ${mode} ${mark.step}`)
+  assert.deepEqual(await stateOf(s), mode === 'including' ? mark.before : mark.after, `Rücksprung ${mode} ${mark.step}`)
   await settlementComputes(s)
   debug('rechenbar')
-  await filesPresent(s)
-  debug('Dateien da')
+  filesKept(s, final)
   // Den Rücksprung zurücknehmen: wieder der Endstand.
   await revert(s, (await newest(s)).id, 'including')
-  assert.deepEqual(await dumpStock(s.dataDir), final, `Rückgängig des Rücksprungs ${mode} ${mark.step}`)
-  await filesPresent(s)
+  assert.deepEqual(await stateOf(s), final, `Rückgängig des Rücksprungs ${mode} ${mark.step}`)
 }
 
 async function routesInJournal(s: Server): Promise<Set<string>> {

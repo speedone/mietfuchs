@@ -334,10 +334,12 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   gewähltes Objekt / Alle Objekte“, weil die Seitenleiste das Objekt wählt; Bereich aus `KIND_OPTIONS`; „Von“/„Bis“ als
   Datum, Breite `s`, gerechnet in der Zeitzone des Browsers; Suche nach 300 ms Pause). Ein Filter beginnt die Liste neu,
   Blättern bleibt `before` in Stücken zu 50. Aufgeklappt trägt ein Eintrag Gefahrknöpfe mit Rückfrage (`useConfirm`,
-  `danger`): am obersten (nur ohne Filter erkennbar) „Rückgängig …“, sonst „Diese und alle späteren Änderungen
+  `danger`): an der neuesten Gruppe insgesamt „Rückgängig …“ (der Server sagt es mit `newest`; der oberste Eintrag der
+  Liste ist es nicht immer, denn sie zeigt nur das gewählte Objekt), sonst „Diese und alle späteren Änderungen
   zurücknehmen …“ und „Nur die späteren Änderungen zurücknehmen …“. Die Rückfrage kommt aus der Vorschau des Servers
   (`revertQuestion`: Titel „Zum Stand vor/nach „…“ zurückkehren?“, die ersten acht Einträge, Dateien aus dem
-  Papierkorb); eine Grenze steht als `NoticeBox` am Eintrag, ohne Rückfrage. Danach eine Mitteilung, das Objekt neu
+  Papierkorb, die Sätze des Servers wie „Zustimmungen bleiben“); eine Grenze steht als `NoticeBox` am Eintrag, ohne
+  Rückfrage. Danach eine Mitteilung (`revertedMessage`: ein Eintrag mit Titel, mehrere mit ihrer Zahl), das Objekt neu
   geladen (`reload`, Zeitraum und Namen können sich geändert haben) und die Liste neu. Zurückgenommene Einträge tragen
   „zurückgenommen“, Schranken und nur lesbare haben keine Knöpfe. „Rückgängig“ in der Mitteilung nach einer
   Speicheraktion gibt es noch nicht (die Mitteilungen haben keine Aktion).

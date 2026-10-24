@@ -26,6 +26,9 @@ export type JournalGroup = {
   revertedBy: number | null
   barrier: 'restore' | 'priorVersion' | 'changeover' | null
   readOnly: boolean
+  // Die neueste Gruppe überhaupt (Durchsicht von PR #439, K4): Nur dann gibt es „Rückgängig …“. Der oberste Eintrag der
+  // Liste ist es nicht immer, denn sie zeigt nur das gewählte Objekt.
+  newest: boolean
 }
 
 export type JournalChange = {

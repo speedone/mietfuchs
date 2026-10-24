@@ -103,11 +103,11 @@ export function writeDesignFiles(dataDir: string, prepared: PreparedFile[]): voi
 // Was keine Gestaltung mehr nennt, wandert in den Papierkorb (#318, Schritt 5): Ein Rücksprung im Verlauf, der die
 // Gestaltung von vorher wiederherstellt, holt die Datei von dort zurück. `toTrash: false` nur für Dateien, die eben
 // geschrieben wurden und nie eine Gestaltung genannt hat (gescheitertes Speichern).
-export function removeUnreferenced(dataDir: string, candidates: Iterable<string>, referenced: ReadonlySet<string>, toTrash = true): void {
+export async function removeUnreferenced(dataDir: string, candidates: Iterable<string>, referenced: ReadonlySet<string>, toTrash = true): Promise<void> {
   for (const name of candidates) {
     if (referenced.has(name) || !isDesignFileName(name)) continue
     try {
-      if (toTrash) moveToTrash(dataDir, 'briefpapier', name)
+      if (toTrash) await moveToTrash(dataDir, 'briefpapier', name)
       else fs.rmSync(path.join(designDir(dataDir), name), { force: true })
     } catch { /* bleibt liegen */ }
   }

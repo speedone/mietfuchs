@@ -5,7 +5,7 @@ import { JOURNAL_KINDS } from '../../shared/journal.ts'
 const preview = (over: Partial<RevertPreview> = {}): RevertPreview => ({
   kind: 'journal', mode: 'including', entry: { id: 9, firstId: 9, at: '2026-10-24T08:15:00.000Z', title: 'Zahlung angelegt' }, startId: 9,
   entries: [{ id: 9, at: '2026-10-24T08:15:00.000Z', title: 'Zahlung angelegt', rows: 1, reverted: false }], changes: 1, refusals: [],
-  files: { restore: 0, trash: 0 }, token: 't', ...over,
+  files: { restore: 0, trash: 0 }, notes: ['Zustimmungen bleiben.'], token: 't', ...over,
 })
 
 test('Abfrage: ohne Filter nur Objekt und Seite, mit Filter jede Angabe, „bis“ schließt den Tag ein', () => {
@@ -37,6 +37,7 @@ test('Rückfrage: ein Eintrag heißt „rückgängig machen“, mehrere „zurü
   expect(many.intro).toBe('Zurückgenommen werden 2 Einträge mit zusammen 3 Änderungen, die neueste zuerst:')
   expect(many.entries).toHaveLength(2)
   expect(many.notes[0]).toBe('2 Belege oder Logos wandern in den Papierkorb.')
+  expect(many.notes).toContain('Zustimmungen bleiben.')
   expect(many.confirmLabel).toBe('Zurückkehren')
   expect(revertQuestion(preview({ entries: [...preview().entries, ...preview().entries] })).title).toMatch(/^Zum Stand vor/)
 })

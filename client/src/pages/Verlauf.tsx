@@ -14,7 +14,7 @@ import {
   changeTitle, changesText, fieldLines, journalWhen, type JournalDetail, type JournalGroup,
 } from '../journalView'
 import {
-  EMPTY_FILTER, filterActive, journalQuery, KIND_OPTIONS, revertActions, revertQuestion,
+  EMPTY_FILTER, filterActive, journalQuery, KIND_OPTIONS, revertActions, revertedMessage, revertQuestion,
   type JournalFilter, type JournalKind, type RevertMode, type RevertPreview,
 } from '../journalRevert'
 
@@ -25,7 +25,7 @@ const BARRIER_NOTE = 'Über diese Stelle führt kein Rücksprung, denn der Stand
 function GroupDetails({ group, newest, onRevert }: {
   group: JournalGroup
   newest: boolean
-  onRevert: (group: JournalGroup, mode: RevertMode, newest: boolean) => Promise<string[]>
+  onRevert: (group: JournalGroup, mode: RevertMode) => Promise<string[]>
 }) {
   const [detail, setDetail] = useState<JournalDetail | null>(null)
   const [error, setError] = useState('')
@@ -44,7 +44,7 @@ function GroupDetails({ group, newest, onRevert }: {
     setBusy(true)
     setRefusals([])
     try {
-      setRefusals(await onRevert(group, mode, newest))
+      setRefusals(await onRevert(group, mode))
     } finally {
       setBusy(false)
     }
@@ -191,7 +191,7 @@ export default function Verlauf() {
   }
 
   // Vorschau, Rückfrage, Rücksprung. Liefert die Sätze, warum es nicht geht (leer, wenn es ging oder abgebrochen wurde).
-  const onRevert = async (group: JournalGroup, mode: RevertMode, newest: boolean): Promise<string[]> => {
+  const onRevert = async (group: JournalGroup, mode: RevertMode): Promise<string[]> => {
     let preview: RevertPreview
     try {
       preview = await api<RevertPreview>(`/api/journal/${group.id}/revert/preview`, { method: 'POST', body: JSON.stringify({ mode }) })
@@ -221,7 +221,7 @@ export default function Verlauf() {
     if (!ok) return []
     try {
       await api(`/api/journal/${group.id}/revert`, { method: 'POST', body: JSON.stringify({ mode, token: preview.token }) })
-      toast(newest || (mode === 'including' && preview.entries.length === 1) ? `Rückgängig gemacht: „${preview.entry.title}“.` : 'Zurückgekehrt. Der Rücksprung steht oben im Verlauf und lässt sich dort wieder rückgängig machen.', 'ok')
+      toast(revertedMessage(preview), 'ok')
       // Objekte und ihr Zeitraum können sich mit dem Rücksprung geändert haben.
       await propertyCtx?.reload()
       setReloads((n) => n + 1)
@@ -265,7 +265,7 @@ export default function Verlauf() {
             {unfiltered ? 'Noch keine Änderungen. Sobald Sie etwas anlegen, ändern oder löschen, steht es hier.' : 'Keine Änderung passt zu diesem Filter.'}
           </p>
         )}
-        {groups?.map((g, i) => <GroupDetails key={g.id} group={g} newest={unfiltered && i === 0} onRevert={onRevert} />)}
+        {groups?.map((g) => <GroupDetails key={g.id} group={g} newest={g.newest} onRevert={onRevert} />)}
         {more && (
           <div className="row">
             <button className="btn secondary" disabled={loading} onClick={loadMore}>
