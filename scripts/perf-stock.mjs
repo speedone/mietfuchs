@@ -28,9 +28,13 @@
 // jede Datei eine eigene Prüfsumme hat.
 //
 // Jeder Server bekommt NKA_DATA_DIR, CI=1 und NKA_UPDATE_URL auf einen geschlossenen Port (CLAUDE.md).
+//
+// **Last**: Stufe m braucht grob 1 bis 2 GB Arbeitsspeicher und rund fünf Minuten, l ein Mehrfaches davon (und ohne
+// `--force` bricht l ab, wenn weniger als 4 GB frei sind). Nur allein auf dem Rechner laufen lassen.
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import net from 'node:net'
+import os from 'node:os'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { fileURLToPath } from 'node:url'
@@ -95,13 +99,37 @@ const freePort = () => new Promise((resolve, reject) => {
   })
 })
 
+// Alle Server, die dieses Skript (oder perf-check.mjs) gestartet hat und die noch laufen. Bricht der Lauf mit Strg+C
+// oder SIGTERM ab, beendet der Horcher unten sie, statt sie verwaist stehen zu lassen.
+/** @type {Set<import('node:child_process').ChildProcess>} */
+const running = new Set()
+let signalsHooked = false
+function hookSignals() {
+  if (signalsHooked) return
+  signalsHooked = true
+  for (const sig of /** @type {const} */ (['SIGINT', 'SIGTERM'])) {
+    process.once(sig, () => {
+      for (const child of running) child.kill('SIGKILL')
+      process.exit(130)
+    })
+  }
+}
+
+// Die Umgebung des Aufrufers ohne seine NKA_*-Angaben: Ein `NKA_DATA_DIR` oder `NKA_TEST_TODAY` aus der eigenen Shell
+// soll nicht in die Messung geraten. Gesetzt wird nur, was der Aufruf ausdrücklich mitgibt.
+function cleanEnv() {
+  return Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('NKA_')))
+}
+
 // Ein Server aus dem Repo wie `npm start`, mit den drei Angaben jedes Prüfstarts. `nodeArgs` etwa für
-// `--cpu-prof`; damit das Profil geschrieben wird, beendet SIGTERM den Prozess über `process.exit`.
+// `--cpu-prof`; damit das Profil geschrieben wird, beendet SIGTERM den Prozess über `process.exit`. Scheitert der
+// Start, ist das Kind beendet, bevor der Fehler fliegt. `stop()` schickt SIGTERM und nach 10 s SIGKILL.
 /**
  * @param {string} dataDir
  * @param {{ nodeArgs?: string[], env?: Record<string, string> }} [options]
  */
 export async function startPerfServer(dataDir, { nodeArgs = [], env = {} } = {}) {
+  hookSignals()
   const port = await freePort()
   const began = performance.now()
   const child = spawn(process.execPath, [
@@ -110,7 +138,7 @@ export async function startPerfServer(dataDir, { nodeArgs = [], env = {} } = {})
   ], {
     cwd: path.join(ROOT, 'server'),
     env: {
-      ...process.env,
+      ...cleanEnv(),
       ...env,
       NKA_DATA_DIR: dataDir,
       NKA_PORT: String(port),
@@ -120,9 +148,17 @@ export async function startPerfServer(dataDir, { nodeArgs = [], env = {} } = {})
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
+  running.add(child)
+  child.once('exit', () => running.delete(child))
   let log = ''
-  child.stdout.on('data', (d) => { log += d })
-  child.stderr.on('data', (d) => { log += d })
+  child.stdout?.on('data', (d) => { log += d })
+  child.stderr?.on('data', (d) => { log += d })
+  const stop = () => new Promise((resolve) => {
+    if (child.exitCode !== null || child.signalCode !== null) return resolve(undefined)
+    const hard = setTimeout(() => child.kill('SIGKILL'), 10000)
+    child.once('exit', () => { clearTimeout(hard); resolve(undefined) })
+    child.kill('SIGTERM')
+  })
   const base = `http://127.0.0.1:${port}`
   const deadline = Date.now() + 120000
   for (;;) {
@@ -132,15 +168,13 @@ export async function startPerfServer(dataDir, { nodeArgs = [], env = {} } = {})
     } catch {
       // startet noch
     }
-    if (Date.now() > deadline) throw new Error(`Der Server antwortet nicht:\n${log}`)
+    if (Date.now() > deadline) {
+      await stop()
+      throw new Error(`Der Server antwortet nicht:\n${log}`)
+    }
     await new Promise((r) => setTimeout(r, 25))
   }
   const startMs = performance.now() - began
-  const stop = () => new Promise((resolve) => {
-    if (child.exitCode !== null) return resolve(undefined)
-    child.once('exit', () => resolve(undefined))
-    child.kill('SIGTERM')
-  })
   return { base, pid: child.pid ?? 0, startMs, stop, log: () => log }
 }
 
@@ -194,8 +228,10 @@ export async function buildStock({ size, dataDir, log = (t) => console.log(t) })
   let writes = 0 // je erfolgreichem Schreibaufruf eine Gruppe im Verlauf (ungefähr)
   fs.mkdirSync(dataDir, { recursive: true })
   const ollama = await startFakeOllama({ sequence: ['WASSER', 'MUELL', 'GARTEN', 'GRUNDSTEUER'] })
-  let server = await startPerfServer(dataDir, { env: { NKA_OLLAMA_URL: ollama.url, NKA_OLLAMA_MODEL: 'qwen3.5:4b' } })
+  /** @type {Awaited<ReturnType<typeof startPerfServer>> | null} */
+  let server = null
   try {
+    server = await startPerfServer(dataDir, { env: { NKA_OLLAMA_URL: ollama.url, NKA_OLLAMA_MODEL: 'qwen3.5:4b' } })
     let api = client(server.base)
     const w = async (p) => { const x = await p; writes++; return x }
 
@@ -490,9 +526,9 @@ export async function buildStock({ size, dataDir, log = (t) => console.log(t) })
     return summary
   } catch (err) {
     // Die letzten Zeilen des Servers gehören zur Meldung, sonst bleibt ein Absturz stumm
-    throw new Error(`${err instanceof Error ? err.message : err}\nLetzte Ausgabe des Servers:\n${server.log().slice(-3000)}`, { cause: err })
+    throw new Error(`${err instanceof Error ? err.message : err}\nLetzte Ausgabe des Servers:\n${server?.log().slice(-3000) ?? ''}`, { cause: err })
   } finally {
-    await server.stop()
+    await server?.stop()
     ollama.stop()
   }
 }
@@ -504,6 +540,9 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   }
   const size = arg('size', 'm')
   const out = arg('out', null)
+  if (size === 'l' && os.freemem() < 4 * 1024 ** 3 && !process.argv.includes('--force')) {
+    throw new Error(`Stufe l braucht mehrere GB Arbeitsspeicher, frei sind ${(os.freemem() / 1024 ** 3).toFixed(1)} GB. Mit --force trotzdem.`)
+  }
   if (!out) throw new Error('Bitte mit --out <Ordner> aufrufen (ein leerer Wegwerf-Ordner, nie der echte Datenordner).')
   if (fs.existsSync(out) && fs.readdirSync(out).length > 0) throw new Error(`${out} ist nicht leer.`)
   const summary = await buildStock({ size, dataDir: out })

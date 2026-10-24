@@ -88,11 +88,15 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   (das zugleich prüft, dass der Bestand gültig ist), ein `--cpu-prof` der zwei langsamsten Routen und einen
   Chromium-Lauf durch jede Seite (1440 × 900 und 390 × 844, größtes Objekt) mit Zeit bis Inhalt und bis Ruhe,
   DOM-Knoten, API-Größe, Long Tasks, JS-Heap, typischen Aktionen (auch Filter, Rücksprung- und Sicherungsvorschau
-  im Verlauf) und Fotos. Ergebnis in `<out>/<Stufe>/messung.md`; `--skip-browser`, `--skip-build`, `--skip-profile`,
-  `--runs`. Nicht in der CI, von Hand vor einem Release, **allein auf dem Rechner** (die Antwortzeiten hängen an
-  fremder Last; die Rechenzeit des Servers je Aufruf aus `/proc` nicht). Der Belegordner über alle Jahre und Objekte
-  läuft zuletzt: Solange jedes Vorschaubild einen eigenen pdf.js-Worker startet, treibt er die Last des Rechners in
-  die Hunderte und lässt den Tab abstürzen. Stufe **l** nur auf einem Rechner mit reichlich Speicher und Platte.
+  im Verlauf) und Fotos. Ergebnis in `<out>/<Stufe>/messung.md`. `--stock <Ordner>` nimmt einen vorhandenen Bestand
+  aus perf-stock.mjs (ohne ihn legt das Skript ihn unter `<out>/stock-<Stufe>` an), `--runs`, `--skip-browser`,
+  `--skip-build`, `--skip-profile`, `--skip-heavy`. Jeder Server läuft in `try`/`finally` und wird mit SIGTERM, nach
+  10 s mit SIGKILL beendet, auch bei Strg+C; NKA_*-Angaben der eigenen Shell gelangen nicht hinein. Nicht in der CI,
+  von Hand vor einem Release, **allein auf dem Rechner** (die Antwortzeiten hängen an fremder Last; die Rechenzeit
+  des Servers je Aufruf aus `/proc` nicht). **Last**: m braucht grob 1 bis 2 GB Arbeitsspeicher, l ein Mehrfaches
+  (perf-stock.mjs bricht l unter 4 GB freiem Speicher ab, außer mit `--force`). Der Belegordner über alle Jahre und
+  Objekte läuft zuletzt und kann den Rechner lahmlegen (jedes Vorschaubild startet einen eigenen pdf.js-Worker; Last
+  in den Hunderten, Tab-Absturz), bis der Fix für die Belegvorschauen gemergt ist; `--skip-heavy` lässt ihn weg.
 
 ## Programmdateien, Pakete, Docker
 

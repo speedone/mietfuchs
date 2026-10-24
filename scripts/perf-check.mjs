@@ -5,11 +5,16 @@
 //
 //   node scripts/perf-check.mjs --size m --out /tmp/perf             (Bestand anlegen, dann messen)
 //   node scripts/perf-check.mjs --size m --stock /tmp/perf-m --out /tmp/perf   (vorhandenen Bestand nehmen)
-//   Weitere Angaben: --runs 7 (warme Aufrufe je Route), --skip-browser, --skip-build, --skip-profile
+//   Weitere Angaben: --runs 7 (warme Aufrufe je Route), --skip-browser, --skip-build, --skip-profile, --skip-heavy
 //
 // Gemessen wird nie auf dem Bestand selbst, sondern auf einer Kopie je Serverstart (Wiederherstellen und
 // Speichern ändern sie). Ergebnis: `<out>/<Stufe>/messung.json` und `messung.md`, Fotos und Profil daneben.
-// Fotos und Profile gehören nie ins Repo. Jeder Server bekommt NKA_DATA_DIR, CI=1 und NKA_UPDATE_URL
+// Fotos und Profile gehören nie ins Repo.
+//
+// **Last**: Nur allein auf dem Rechner laufen lassen. Stufe m braucht grob 1 bis 2 GB, l ein Mehrfaches. Der Fall
+// „Belegordner, alle Jahre und alle Objekte“ kann den Rechner lahmlegen (jedes Vorschaubild startet einen eigenen
+// pdf.js-Worker), bis der Fix für die Belegvorschauen gemergt ist; er läuft deshalb zuletzt, `--skip-heavy` lässt ihn
+// weg. Jeder Server bekommt NKA_DATA_DIR, CI=1 und NKA_UPDATE_URL
 // (startPerfServer in perf-stock.mjs). Chromium einmalig: `npx playwright install chromium`.
 import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
@@ -151,87 +156,93 @@ async function timed(base, urlPath, init) {
 {
   await calmMachine()
   const dir = copyStock(stockDir)
-  const first = await startPerfServer(dir)
-  result.server.startFirstMs = round(first.startMs)
-  result.server.rssAfterStart = memoryOf(first.pid)
-  await first.stop()
-  // Der zweite Start ohne Vorversion beim Start (die erste legt die Kopie an, siehe db/CLAUDE.md)
-  const server = await startPerfServer(dir)
-  result.server.startSecondMs = round(server.startMs)
-  const api = client(server.base)
-  // Verlauf tief geblättert: dorthin, wo rund 80 % der Gruppen neuer sind
-  const firstPage = await api.get('/api/journal?limit=1')
-  const newest = firstPage[0]?.id ?? 0
-  ROUTES.push(['Verlauf tief geblättert', `/api/journal?property=${P}&limit=50&before=${Math.max(1, Math.round(newest * 0.2))}`])
-  ROUTES.push(['Verlauf Eintrag', `/api/journal/${newest}`])
-  // Die Seite Verlauf (#318) fragt mit Sicherungspunkten; dazu die Filter und die Vorschauen von Rücksprung und Sicherung
-  const yesterday = new Date(Date.now() - 86400000).toISOString()
-  ROUTES.push(['Verlauf wie Seite (mit Sicherungen)', `/api/journal?limit=50&snapshots=1&property=${P}`])
-  ROUTES.push(['Verlauf Suche', `/api/journal?limit=50&snapshots=1&property=${P}&q=Firma`])
-  ROUTES.push(['Verlauf Suche ohne Treffer', `/api/journal?limit=50&snapshots=1&q=gibtesnicht`])
-  ROUTES.push(['Verlauf Bereich Kosten', `/api/journal?limit=50&snapshots=1&property=${P}&kind=costs`])
-  ROUTES.push(['Verlauf Bereich Belege', `/api/journal?limit=50&snapshots=1&property=${P}&kind=receipts`])
-  ROUTES.push(['Verlauf ab gestern', `/api/journal?limit=50&snapshots=1&property=${P}&from=${encodeURIComponent(yesterday)}`])
-  const json = (body) => ({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
-  ROUTES.push(['Rücksprung Vorschau neuester', `/api/journal/${newest}/revert/preview`, json({ mode: 'including' })])
-  ROUTES.push(['Rücksprung Vorschau 100 zurück', `/api/journal/${Math.max(1, newest - 100)}/revert/preview`, json({ mode: 'including' })])
-  ROUTES.push(['Rücksprung Vorschau 2.000 zurück', `/api/journal/${Math.max(1, newest - 2000)}/revert/preview`, json({ mode: 'including' })])
-  // Die wöchentliche Sicherung, die der Aufbau beim zweiten Start angelegt hat (liegt tief in der Zeitachse)
-  const priorVersion = fs.readdirSync(path.join(dir, 'vorversionen')).filter((f) => f.endsWith('.sqlite')).sort().at(-1)
-  if (priorVersion) ROUTES.push(['Sicherung Vorschau', `/api/prior-versions/${encodeURIComponent(priorVersion)}/restore/preview`, json({})])
-  for (const [name, urlPath, init] of ROUTES) {
-    const cold = await timed(server.base, urlPath, init)
-    if (cold.status >= 400) log(`  ${name}: HTTP ${cold.status} ${cold.body.toString().slice(0, 200)}`)
-    const warm = []
-    const cpuBefore = cpuMsOf(server.pid)
-    for (let i = 0; i < RUNS; i++) warm.push((await timed(server.base, urlPath, init)).ms)
-    const cpuMs = round((cpuMsOf(server.pid) - cpuBefore) / RUNS)
-    const row = { name, path: urlPath, status: cold.status, coldMs: round(cold.ms), medianMs: round(median(warm)), p95Ms: round(p95(warm)), cpuMs, kb: round(cold.bytes / 1024) }
-    result.routes.push(row)
-    log(`  ${name.padEnd(26)} kalt ${String(row.coldMs).padStart(7)} ms  warm ${String(row.medianMs).padStart(7)} / p95 ${String(row.p95Ms).padStart(7)} ms  CPU ${row.cpuMs} ms  ${row.kb} kB`)
-  }
+  /** @type {Awaited<ReturnType<typeof startPerfServer>> | null} */
+  let server = null
+  try {
+    server = await startPerfServer(dir)
+    result.server.startFirstMs = round(server.startMs)
+    result.server.rssAfterStart = memoryOf(server.pid)
+    await server.stop()
+    // Gemessen wird ab dem zweiten Start: Der erste kann eine wöchentliche Sicherung anlegen (VACUUM INTO, wenn die
+    // jüngste älter als sieben Tage ist, db/CLAUDE.md) und ist deshalb kein gewöhnlicher Start.
+    server = await startPerfServer(dir)
+    result.server.startSecondMs = round(server.startMs)
+    const api = client(server.base)
+    // Verlauf tief geblättert: dorthin, wo rund 80 % der Gruppen neuer sind
+    const firstPage = await api.get('/api/journal?limit=1')
+    const newest = firstPage[0]?.id ?? 0
+    ROUTES.push(['Verlauf tief geblättert', `/api/journal?property=${P}&limit=50&before=${Math.max(1, Math.round(newest * 0.2))}`])
+    ROUTES.push(['Verlauf Eintrag', `/api/journal/${newest}`])
+    // Die Seite Verlauf (#318) fragt mit Sicherungspunkten; dazu die Filter und die Vorschauen von Rücksprung und Sicherung
+    const yesterday = new Date(Date.now() - 86400000).toISOString()
+    ROUTES.push(['Verlauf wie Seite (mit Sicherungen)', `/api/journal?limit=50&snapshots=1&property=${P}`])
+    ROUTES.push(['Verlauf Suche', `/api/journal?limit=50&snapshots=1&property=${P}&q=Firma`])
+    ROUTES.push(['Verlauf Suche ohne Treffer', `/api/journal?limit=50&snapshots=1&q=gibtesnicht`])
+    ROUTES.push(['Verlauf Bereich Kosten', `/api/journal?limit=50&snapshots=1&property=${P}&kind=costs`])
+    ROUTES.push(['Verlauf Bereich Belege', `/api/journal?limit=50&snapshots=1&property=${P}&kind=receipts`])
+    ROUTES.push(['Verlauf ab gestern', `/api/journal?limit=50&snapshots=1&property=${P}&from=${encodeURIComponent(yesterday)}`])
+    const json = (body) => ({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    ROUTES.push(['Rücksprung Vorschau neuester', `/api/journal/${newest}/revert/preview`, json({ mode: 'including' })])
+    ROUTES.push(['Rücksprung Vorschau 100 zurück', `/api/journal/${Math.max(1, newest - 100)}/revert/preview`, json({ mode: 'including' })])
+    ROUTES.push(['Rücksprung Vorschau 2.000 zurück', `/api/journal/${Math.max(1, newest - 2000)}/revert/preview`, json({ mode: 'including' })])
+    // Die wöchentliche Sicherung, die der Aufbau beim zweiten Start angelegt hat (liegt tief in der Zeitachse)
+    const priorVersion = fs.readdirSync(path.join(dir, 'vorversionen')).filter((f) => f.endsWith('.sqlite')).sort().at(-1)
+    if (priorVersion) ROUTES.push(['Sicherung Vorschau', `/api/prior-versions/${encodeURIComponent(priorVersion)}/restore/preview`, json({})])
+    for (const [name, urlPath, init] of ROUTES) {
+      const cold = await timed(server.base, urlPath, init)
+      if (cold.status >= 400) log(`  ${name}: HTTP ${cold.status} ${cold.body.toString().slice(0, 200)}`)
+      const warm = []
+      const cpuBefore = cpuMsOf(server.pid)
+      for (let i = 0; i < RUNS; i++) warm.push((await timed(server.base, urlPath, init)).ms)
+      const cpuMs = round((cpuMsOf(server.pid) - cpuBefore) / RUNS)
+      const row = { name, path: urlPath, status: cold.status, coldMs: round(cold.ms), medianMs: round(median(warm)), p95Ms: round(p95(warm)), cpuMs, kb: round(cold.bytes / 1024) }
+      result.routes.push(row)
+      log(`  ${name.padEnd(26)} kalt ${String(row.coldMs).padStart(7)} ms  warm ${String(row.medianMs).padStart(7)} / p95 ${String(row.p95Ms).padStart(7)} ms  CPU ${row.cpuMs} ms  ${row.kb} kB`)
+    }
 
-  // Schreiben: eine Ablesung anlegen, eine Kostenposition ändern
-  const meters = await api.get(`/api/meters?property=${P}`)
-  const meter = meters.find((m) => m.unitId)
-  const items = (await api.get(`/api/costItems?property=${P}`)).filter((c) => c.year === Y)
-  /** @type {Record<string, number[]>} */
-  const writes = { 'Ablesung anlegen (POST /api/readings)': [], 'Position ändern (PUT /api/costItems/:id)': [] }
-  const writeCpu = cpuMsOf(server.pid)
-  for (let i = 0; i < RUNS; i++) {
-    const day = `${Y + 1}-01-${String(i + 2).padStart(2, '0')}`
-    writes['Ablesung anlegen (POST /api/readings)'].push((await timed(server.base, `/api/readings?property=${P}`, {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ meterId: meter.id, date: day, value: 999999 + i }),
-    })).ms)
-    writes['Position ändern (PUT /api/costItems/:id)'].push((await timed(server.base, `/api/costItems/${items[i % items.length].id}`, {
-      method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ vendor: `Messung ${i}` }),
-    })).ms)
-  }
-  const writeCpuMs = round((cpuMsOf(server.pid) - writeCpu) / (2 * RUNS))
-  for (const [name, xs] of Object.entries(writes)) result.writes.push({ name, medianMs: round(median(xs)), p95Ms: round(p95(xs)), cpuMs: writeCpuMs })
-  result.server.rssAfterRoutes = memoryOf(server.pid)
+    // Schreiben: eine Ablesung anlegen, eine Kostenposition ändern
+    const meters = await api.get(`/api/meters?property=${P}`)
+    const meter = meters.find((m) => m.unitId)
+    const items = (await api.get(`/api/costItems?property=${P}`)).filter((c) => c.year === Y)
+    /** @type {Record<string, number[]>} */
+    const writes = { 'Ablesung anlegen (POST /api/readings)': [], 'Position ändern (PUT /api/costItems/:id)': [] }
+    const writeCpu = cpuMsOf(server.pid)
+    for (let i = 0; i < RUNS; i++) {
+      const day = `${Y + 1}-01-${String(i + 2).padStart(2, '0')}`
+      writes['Ablesung anlegen (POST /api/readings)'].push((await timed(server.base, `/api/readings?property=${P}`, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ meterId: meter.id, date: day, value: 999999 + i }),
+      })).ms)
+      writes['Position ändern (PUT /api/costItems/:id)'].push((await timed(server.base, `/api/costItems/${items[i % items.length].id}`, {
+        method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ vendor: `Messung ${i}` }),
+      })).ms)
+    }
+    const writeCpuMs = round((cpuMsOf(server.pid) - writeCpu) / (2 * RUNS))
+    for (const [name, xs] of Object.entries(writes)) result.writes.push({ name, medianMs: round(median(xs)), p95Ms: round(p95(xs)), cpuMs: writeCpuMs })
+    result.server.rssAfterRoutes = memoryOf(server.pid)
 
-  // Backup und Wiederherstellen
-  const backup = await timed(server.base, '/api/backup')
-  const backupFile = path.join(dir, '..', `perf-backup-${SIZE}.zip`)
-  fs.writeFileSync(backupFile, backup.body)
-  result.backup.backupMs = round(backup.ms)
-  result.backup.backupMb = mb(backup.bytes)
-  result.backup.status = backup.status
-  result.server.rssAfterBackup = memoryOf(server.pid)
-  const fd = new FormData()
-  fd.append('file', new Blob([backup.body], { type: 'application/zip' }), 'backup.zip')
-  const restore = await timed(server.base, '/api/restore', { method: 'POST', body: fd })
-  result.backup.restoreMs = round(restore.ms)
-  result.backup.restoreStatus = restore.status
-  if (restore.status >= 400) result.backup.restoreError = restore.body.toString().slice(0, 500)
-  result.server.rssAfterRestore = memoryOf(server.pid)
-  const after = await timed(server.base, `/api/settlement/${Y}?property=${P}`)
-  result.backup.settlementAfterRestore = after.status
-  log(`  Backup ${result.backup.backupMb} MB in ${result.backup.backupMs} ms, Wiederherstellen HTTP ${restore.status} in ${result.backup.restoreMs} ms`)
-  await server.stop()
-  fs.rmSync(backupFile, { force: true })
-  fs.rmSync(dir, { recursive: true, force: true })
+    // Backup und Wiederherstellen
+    const backup = await timed(server.base, '/api/backup')
+    const backupFile = path.join(dir, '..', `perf-backup-${SIZE}.zip`)
+    fs.writeFileSync(backupFile, backup.body)
+    result.backup.backupMs = round(backup.ms)
+    result.backup.backupMb = mb(backup.bytes)
+    result.backup.status = backup.status
+    result.server.rssAfterBackup = memoryOf(server.pid)
+    const fd = new FormData()
+    fd.append('file', new Blob([backup.body], { type: 'application/zip' }), 'backup.zip')
+    const restore = await timed(server.base, '/api/restore', { method: 'POST', body: fd })
+    result.backup.restoreMs = round(restore.ms)
+    result.backup.restoreStatus = restore.status
+    if (restore.status >= 400) result.backup.restoreError = restore.body.toString().slice(0, 500)
+    result.server.rssAfterRestore = memoryOf(server.pid)
+    const after = await timed(server.base, `/api/settlement/${Y}?property=${P}`)
+    result.backup.settlementAfterRestore = after.status
+    log(`  Backup ${result.backup.backupMb} MB in ${result.backup.backupMs} ms, Wiederherstellen HTTP ${restore.status} in ${result.backup.restoreMs} ms`)
+    fs.rmSync(backupFile, { force: true })
+  } finally {
+    await server?.stop()
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
 }
 
 // ---------- Profil der langsamsten Route ----------
@@ -277,23 +288,30 @@ if (!flag('skip-profile')) {
   fs.rmSync(profDir, { recursive: true, force: true })
   fs.mkdirSync(profDir, { recursive: true })
   const dir = copyStock(stockDir)
-  // Erster Start legt die Vorversion an; profiliert wird der zweite
-  await (await startPerfServer(dir)).stop()
-  result.profile = []
-  for (const route of slowest) {
-    const sub = path.join(profDir, route.name.replace(/\W+/g, '-'))
-    fs.mkdirSync(sub, { recursive: true })
-    const server = await startPerfServer(dir, { nodeArgs: ['--cpu-prof', `--cpu-prof-dir=${sub}`, '--cpu-prof-interval=500'] })
-    for (let i = 0; i < 10; i++) await timed(server.base, route.path)
+  /** @type {Awaited<ReturnType<typeof startPerfServer>> | null} */
+  let server = null
+  try {
+    // Erster Start kann die wöchentliche Sicherung anlegen; profiliert wird erst der zweite
+    server = await startPerfServer(dir)
     await server.stop()
-    const file = fs.readdirSync(sub).find((f) => f.endsWith('.cpuprofile'))
-    if (file) {
-      const summary = summarizeProfile(path.join(sub, file))
-      result.profile.push({ route: route.name, path: route.path, file: path.join(sub, file), ...summary })
-      log(`  Profil ${route.name}: ${summary.inclusiveOurs.slice(0, 5).map((f) => `${f.frame} ${f.share} %`).join(' | ')}`)
+    result.profile = []
+    for (const route of slowest) {
+      const sub = path.join(profDir, route.name.replace(/\W+/g, '-'))
+      fs.mkdirSync(sub, { recursive: true })
+      server = await startPerfServer(dir, { nodeArgs: ['--cpu-prof', `--cpu-prof-dir=${sub}`, '--cpu-prof-interval=500'] })
+      for (let i = 0; i < 10; i++) await timed(server.base, route.path)
+      await server.stop()
+      const file = fs.readdirSync(sub).find((f) => f.endsWith('.cpuprofile'))
+      if (file) {
+        const summary = summarizeProfile(path.join(sub, file))
+        result.profile.push({ route: route.name, path: route.path, file: path.join(sub, file), ...summary })
+        log(`  Profil ${route.name}: ${summary.inclusiveOurs.slice(0, 5).map((f) => `${f.frame} ${f.share} %`).join(' | ')}`)
+      }
     }
+  } finally {
+    await server?.stop()
+    fs.rmSync(dir, { recursive: true, force: true })
   }
-  fs.rmSync(dir, { recursive: true, force: true })
 }
 
 // ---------- Browser ----------
@@ -495,8 +513,11 @@ if (!flag('skip-browser')) {
   try {
     for (const [view, viewport] of Object.entries(VIEWS)) {
       const dir = copyStock(stockDir)
-      const server = await startPerfServer(dir)
+      /** @type {Awaited<ReturnType<typeof startPerfServer>> | null} */
+      let server = null
       try {
+        server = await startPerfServer(dir)
+        const base = server.base
         const context = await browser.newContext({ viewport, deviceScaleFactor: 1, locale: 'de-DE', timezoneId: 'Europe/Berlin', colorScheme: 'light' })
         await context.addInitScript((property) => {
           try { /** @type {any} */ (globalThis).localStorage.setItem('mietfuchs.property', property) } catch { /* ohne Speicher */ }
@@ -511,7 +532,7 @@ if (!flag('skip-browser')) {
           p.on('pageerror', (err) => errors.push(err.message))
           const cdp = await context.newCDPSession(p)
           await cdp.send('Performance.enable')
-          await p.goto(server.base)
+          await p.goto(base)
           return { p, cdp }
         }
         let { p: page, cdp } = await openPage()
@@ -569,8 +590,8 @@ if (!flag('skip-browser')) {
             }
           }
         }
-        // Zuletzt der Belegordner über alle Jahre und Objekte (siehe heavyReceipts)
-        try {
+        // Zuletzt der Belegordner über alle Jahre und Objekte (siehe heavyReceipts); `--skip-heavy` lässt ihn aus
+        if (!flag('skip-heavy')) try {
           const target = await navScope()
           await target.locator('.nav-group button').filter({ hasText: 'Belegordner' }).first().click()
           await quiet(page, await now(page))
@@ -583,9 +604,9 @@ if (!flag('skip-browser')) {
         result.browser.push({ view, page: '(Start)', id: 'start', contentMs: round(firstContent), readyMs: round(firstQuiet.doneMs), dom: firstQuiet.dom, longTasks: firstQuiet.longTasks, longTaskMs: round(firstQuiet.longTaskMs), longestTaskMs: round(firstQuiet.longestTaskMs), apiKb: round(firstQuiet.api.reduce((s, a) => s + a[2], 0)), decodedKb: round(firstQuiet.decodedKb), requests: firstQuiet.requests, api: firstQuiet.api })
         await context.close()
       } finally {
-        await server.stop()
-        await calmMachine()
+        await server?.stop()
         fs.rmSync(dir, { recursive: true, force: true })
+        await calmMachine()
       }
     }
   } finally {
