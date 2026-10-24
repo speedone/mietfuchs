@@ -8,7 +8,7 @@ import { JOURNAL_KINDS } from '../../shared/journal.ts'
 const preview = (over: Partial<RevertPreview> = {}): RevertPreview => ({
   kind: 'journal', mode: 'including', entry: { id: 9, firstId: 9, at: '2026-10-24T08:15:00.000Z', title: 'Zahlung angelegt' }, startId: 9,
   entries: [{ id: 9, at: '2026-10-24T08:15:00.000Z', title: 'Zahlung angelegt', rows: 1, reverted: false }], changes: 1, refusals: [],
-  files: { restore: 0, trash: 0 }, notes: ['Zustimmungen bleiben.'], token: 't', ...over,
+  files: { restore: 0, trash: 0 }, notes: ['Zustimmungen bleiben.'], frozen: [], token: 't', ...over,
 })
 
 test('Abfrage: ohne Filter nur Objekt und Seite, mit Filter jede Angabe, „bis“ schließt den Tag ein', () => {
@@ -57,7 +57,7 @@ test('Rücksprünge: keiner bei Schranke oder nur lesbar, am obersten nur der St
 const snapshot = (over: Partial<SnapshotPreview> = {}): SnapshotPreview => ({
   kind: 'snapshot',
   snapshot: { kind: 'snapshot', name: 'mietfuchs.sqlite.vor-restore', type: 'restore', at: '2026-10-20T08:15:00.000Z', timeFrom: 'file', size: 10, version: null, title: 'Vor dem Einspielen eines Backups' },
-  entry: null, mode: null, reasons: [], later: 1, missing: [], fromTrash: 0, consents: ['Zustimmungen bleiben.'], notes: [], refusals: [], token: 't', ...over,
+  entry: null, mode: null, reasons: [], later: 1, missing: [], fromTrash: 0, consents: ['Zustimmungen bleiben.'], notes: [], refusals: [], frozen: [], token: 't', ...over,
 })
 
 test('Rückfrage zu einer Sicherung: ersetzt wird alles danach, die aktuelle wird vorher gesichert', () => {
@@ -77,6 +77,13 @@ test('Rückfrage zu einer Sicherung: ersetzt wird alles danach, die aktuelle wir
   expect(fromEntry.title).toMatch(/^Zum Stand vor „Wohnung angelegt: EG“ \(.+\) zurückkehren\?$/)
   expect(fromEntry.lines[0]).toMatch(/^Schritt für Schritt geht das nicht, nur über die Sicherung „Vor dem Einspielen eines Backups“ vom /)
   expect(fromEntry.lines[1]).toBe('Grund.')
+})
+
+// Durchsicht von PR #442, K1: Lässt sich nicht sicher zählen (Zeitpunkt aus der Datei, Gruppe nicht im Verlauf),
+// nennt die Rückfrage keine Zahl.
+test('Rückfrage zu einer Sicherung ohne sichere Zählung nennt keine Zahl', () => {
+  const q = snapshotQuestion(snapshot({ later: null }))
+  expect(q.lines[0]).toBe('Alles, was nach dieser Sicherung kam, wird durch ihren Stand ersetzt; wie viele Einträge das sind, lässt sich nicht sicher sagen.')
 })
 
 test('Sicherungen: Größe und Zeitpunkt, Abfrage mit snapshots=1', () => {

@@ -54,7 +54,7 @@ test('Der Verlauf nennt jede Gruppe und lädt die Einzelheiten erst beim Aufklap
 
 test('Datenschutz: Die Seite sagt, dass auch Gelöschtes darin steht und wann es verfällt (K8)', async () => {
   render(<Verlauf />)
-  expect(await screen.findByText(/auch Angaben, die Sie inzwischen gelöscht haben/)).toBeTruthy()
+  expect(await screen.findByText(/auch Angaben, die Sie gelöscht haben/)).toBeTruthy()
   expect(screen.getByText(/verfallen nach zwölf\s+Monaten/)).toBeTruthy()
 })
 

@@ -76,6 +76,8 @@ export type RevertPreview = {
   files: { restore: number, trash: number }
   // Sätze des Servers, etwa dass Zustimmungen bleiben, wie sie sind.
   notes: string[]
+  // Abrechnungen (Objekt, Jahr), deren Abschluss, Wiederöffnen oder Versanddatum im Bereich liegt.
+  frozen: string[]
   token: string
 }
 
@@ -146,7 +148,10 @@ export type SnapshotPreview = {
   entry: { id: number, firstId: number, at: string, title: string } | null
   mode: RevertMode | null
   reasons: string[]
-  later: number
+  // `null`: nicht sicher zu zählen (Zeitpunkt aus der Datei, die Sicherung stammt nicht aus diesem Verlauf).
+  later: number | null
+  // Abrechnungen (Objekt, Jahr), die seither abgeschlossen, wieder geöffnet oder mit Versanddatum versehen wurden.
+  frozen: string[]
   missing: string[]
   fromTrash: number
   consents: string[]
@@ -179,9 +184,11 @@ export function snapshotQuestion(preview: SnapshotPreview): SnapshotQuestion {
     lines.push(`Schritt für Schritt geht das nicht, nur über die Sicherung ${named}. Sie wird als Ganzes eingespielt:`)
     lines.push(...preview.reasons)
   }
-  lines.push(preview.later > 0
-    ? `Alles, was danach kam, wird durch diesen Stand ersetzt: ${preview.later === 1 ? 'ein Eintrag' : `${preview.later} Einträge`} im Verlauf seit diesem Zeitpunkt.`
-    : 'Alles, was danach kam, wird durch diesen Stand ersetzt.')
+  lines.push(preview.later === null
+    ? 'Alles, was nach dieser Sicherung kam, wird durch ihren Stand ersetzt; wie viele Einträge das sind, lässt sich nicht sicher sagen.'
+    : preview.later > 0
+      ? `Alles, was danach kam, wird durch diesen Stand ersetzt: ${preview.later === 1 ? 'ein Eintrag' : `${preview.later} Einträge`} im Verlauf seit diesem Zeitpunkt.`
+      : 'Alles, was danach kam, wird durch diesen Stand ersetzt.')
   lines.push('Ihre aktuellen Daten sichert Mietfuchs vorher als mietfuchs.sqlite.vor-restore im Datenordner; sie stehen danach als „Vor dem Einspielen eines Backups“ in dieser Zeitachse, und Sie können zu ihnen zurückkehren.')
   if (preview.missing.length > 0) {
     const shown = preview.missing.slice(0, 5).join(', ')

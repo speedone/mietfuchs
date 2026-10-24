@@ -333,26 +333,34 @@ export default function Verlauf({ reloadPage = () => window.location.reload() }:
         title="Verlauf"
         subtitle="Was in Mietfuchs wann geändert wurde, neueste Änderung zuerst, dazwischen die Sicherungen Ihrer Daten. Angezeigt werden die Änderungen dieses Objekts und die, die alle Objekte betreffen (etwa die Einstellungen oder ein gelöschtes Objekt)."
       />
+      {/* Kurz, die Einzelheiten eingeklappt (Durchsicht von PR #442). */}
       <p className="muted">
-        Der Verlauf zeigt auch Angaben, die Sie inzwischen gelöscht haben, etwa Name, Anschrift und IBAN früherer
-        Mieter. Jeder, der Mietfuchs auf diesem Rechner öffnen kann, sieht ihn. Einträge verfallen nach zwölf
-        Monaten; die Sicherungen enthalten den Verlauf ebenfalls, ein Backup nur auf Ihren Wunsch.
-        Spielen Sie ein Backup ohne Verlauf ein, ersetzt es den Verlauf auf diesem Rechner; der bisherige steht dann
-        nur noch in der Sicherung „Vor dem Einspielen eines Backups“.
+        Der Verlauf zeigt auch Angaben, die Sie gelöscht haben, etwa Name und IBAN früherer Mieter. Jeder, der Mietfuchs
+        auf diesem Rechner öffnet, kann sie sehen. Einträge verfallen nach zwölf Monaten.
       </p>
       <p className="muted">
-        Zurücknehmen geht immer vom neuesten Eintrag rückwärts: „Rückgängig“ nimmt die letzte Änderung zurück, an jedem
-        älteren Eintrag kehren Sie zum Stand vor oder nach ihm zurück, und alles, was danach kam, wird mit zurückgenommen.
-        Abschlüsse einer Abrechnung nimmt der Verlauf nicht Schritt für Schritt zurück; dafür gibt es „Wieder öffnen“ auf
-        der Seite Abrechnung. Gelöschte Belege liegen bis dahin im Papierkorb des Datenordners.
+        Mit „Rückgängig“ nehmen Sie die letzte Änderung zurück. An älteren Einträgen und an jeder Sicherung (💾) kehren
+        Sie zu einem früheren Stand zurück; alles, was danach kam, wird ersetzt. Vorher zeigt Mietfuchs, was sich ändert,
+        und bewahrt Ihre aktuellen Daten: Ein Rücksprung steht selbst im Verlauf, und vor dem Einspielen einer Sicherung
+        sichert Mietfuchs den bisherigen Stand.
       </p>
-      <p className="muted">
-        Sicherungen sind ganze Kopien Ihrer Daten im Datenordner: einmal in der Woche (die letzten vier), vor jedem
-        Update und vor dem Einspielen eines Backups (die letzten drei und alle aus zwölf Monaten). Mit „Zu diesem Stand
-        zurückkehren …“ ersetzt eine Sicherung alles, was danach kam; Ihre aktuellen Daten bleiben vorher als eigene
-        Sicherung erhalten. Die Sicherungen gehören nicht zum Backup und ersetzen es nicht, denn sie liegen auf
-        demselben Rechner.
-      </p>
+      <p className="muted">Die Sicherungen liegen auf diesem Rechner und ersetzen kein Backup.</p>
+      <details className="muted">
+        <summary>Mehr dazu</summary>
+        <p>
+          Sicherungen sind ganze Kopien Ihrer Daten im Datenordner: einmal in der Woche (die letzten vier), vor jedem
+          Update und vor dem Einspielen eines Backups oder einer Sicherung (je die letzten drei und alle aus zwölf
+          Monaten). Sie enthalten den Verlauf, ein Backup nur auf Ihren Wunsch. Spielen Sie ein Backup ohne Verlauf ein,
+          ersetzt es den Verlauf auf diesem Rechner; der bisherige steht dann nur noch in der Sicherung „Vor dem
+          Einspielen eines Backups“.
+        </p>
+        <p>
+          Abschlüsse einer Abrechnung nimmt der Verlauf nicht Schritt für Schritt zurück; dafür gibt es „Wieder öffnen“
+          auf der Seite Abrechnung. Kehren Sie zu einer Sicherung von vor einem Abschluss zurück, gilt danach ihr Stand,
+          und die Vorschau nennt die betroffenen Abrechnungen.
+        </p>
+        <p>Gelöschte Belege liegen im Papierkorb des Datenordners, solange der Verlauf sie nennt.</p>
+      </details>
       {restored && <div className="ok" role="status">{restored}</div>}
       {restoring && <div className="ok" role="status">Die Sicherung wird eingespielt, danach lädt die Seite neu …</div>}
       {error && <NoticeBox level="error" title="Der Verlauf ließ sich nicht laden" action={error} />}

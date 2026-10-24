@@ -29,6 +29,17 @@ function open(health: unknown) {
   )
 }
 
+// Durchsicht von PR #442, M3: Ein Backup bringt keine Zustimmung mit; die Rückfrage sagt es.
+test('die Rückfrage vor dem Wiederherstellen nennt die Zustimmungen', async () => {
+  open({ ok: true })
+  await screen.findByText(/Sonst verlässt nichts den Rechner/, {}, SLOW)
+  const input = document.querySelector('input[type="file"]')
+  if (!input) throw new Error('kein Dateifeld')
+  fireEvent.change(input, { target: { files: [new File(['x'], 'backup.zip', { type: 'application/zip' })] } })
+  const dialog = await screen.findByRole('alertdialog', {}, SLOW)
+  expect(dialog.textContent).toMatch(/Zustimmungen .*bringt das Backup nicht mit/)
+})
+
 // #318: Die Karte „Automatische Vorversionen“ ist in die Zeitachse des Verlaufs gezogen; hier bleibt ein Satz mit Link.
 test('statt der Vorversionen ein Satz mit Link auf den Verlauf', async () => {
   open({ ok: true })

@@ -58,7 +58,8 @@ export default function Einstellungen({ settings, reload, update, onNavigate }: 
   async function restore(file: File) {
     const ok = await confirm({
       title: `Backup „${file.name}“ wiederherstellen?`,
-      message: 'Alle aktuellen Daten werden durch den Stand aus dem Backup ersetzt.',
+      message: 'Alle aktuellen Daten werden durch den Stand aus dem Backup ersetzt. ' +
+        'Zustimmungen (Übermittlung an einen KI-Dienst, Abfrage nach Updates) bringt das Backup nicht mit: Es gelten die von jetzt, auf einem neuen Rechner also keine.',
       confirmLabel: 'Wiederherstellen',
       danger: true,
     })

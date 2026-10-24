@@ -90,7 +90,7 @@ import { acceptIban, IbanRefusal } from './iban.ts'
 import { IBAN_LABELS } from '../../shared/iban.ts'
 import { exportFilename, frozenExportable, settlementExportCsv, settlementExportJson, type ExportableSettlement } from './settlementExport.ts'
 import { derivedTaxLines, planTaxArchive, taxArchiveItems } from './taxReceipts.ts'
-import { createPriorVersion, listPriorVersions, mayCreatePriorVersion, PRIOR_CHECK_INTERVAL_MS, PRIOR_DIR, priorVersionsBlocked, priorVersionTime } from './db/priorVersions.ts'
+import { createPriorVersion, mayCreatePriorVersion, PRIOR_CHECK_INTERVAL_MS, PRIOR_DIR, priorVersionsBlocked } from './db/priorVersions.ts'
 import { changeGroups, costItems as costItemsTable } from './db/schema.ts'
 import { addBarrier, isJournalKind, journalGroup, listJournal, pruneJournal, unjournaled, type JournalBarrier, type JournalMeta } from './db/journal.ts'
 import { applyRevert, consentSnapshot, isRevertMode, previewRevert, restoreConsent, RevertRefused, type ConsentSnapshot, type RevertPreview } from './db/revert.ts'
@@ -2720,6 +2720,9 @@ async function restoreDatabase(staged: string | null, barrier: 'restore' | 'prio
   // geschlossenen Verbindung, und das Leerlaufen wartet ab, was schon läuft. Ein `close()` ohne
   // beides schnitte eine gerade offene Transaktion mitten im Schreiben ab; SQLite rollt sie beim
   // nächsten Öffnen zwar zurück, aber die Anfrage, die sie angestoßen hat, stirbt ohne Antwort.
+  // Die Zustimmungen von jetzt (Durchsicht von PR #442, M3): Ein eingespielter Stand bringt keine mit, weder ein
+  // Backup noch eine Sicherung. Gelesen, solange die Datenbank noch offen ist; danach angeglichen (`keepConsent`).
+  const consent = await consentNow()
   const offen = database
   database = null
   if (offen) {
@@ -2742,7 +2745,19 @@ async function restoreDatabase(staged: string | null, barrier: 'restore' | 'prio
   // den er sucht. Dasselbe Muster wie bei der Sicherung vor einem Update (`….vom-JJJJ-MM-TT-HHMM`).
   const before = path.join(DATA_DIR, DB_BEFORE_RESTORE)
   if (fs.existsSync(target) && fs.existsSync(before)) await replaceFile(before, setAsideName(before))
-  if (fs.existsSync(target)) await replaceFile(target, before)
+  // **Der Zeitpunkt der Sicherung ist der des Einspielens** (Durchsicht von PR #442, M1): `rename` behält die Dateizeit
+  // der Arbeitsdatei, also die letzte Änderung des Stands. Daraus lesen Zeitachse, Aufräumen und `setAsideName` den
+  // Zeitpunkt der Sicherung; mit der alten Zeit hielte das Aufräumen eine eben angelegte Sicherung für über zwölf Monate
+  // alt. Dieselbe Zeit trägt die Schranke im Verlauf.
+  const at = new Date()
+  if (fs.existsSync(target)) {
+    await replaceFile(target, before)
+    try {
+      fs.utimesSync(before, at, at)
+    } catch (err) {
+      console.error(`Die Zeit der Sicherung ${DB_BEFORE_RESTORE} ließ sich nicht setzen: ${messageOf(err)}`)
+    }
+  }
   if (staged) await replaceFile(staged, target)
 
   // Die Sicherung vor einem früheren Update gehört nicht zum wiederhergestellten Stand; der
@@ -2775,8 +2790,8 @@ async function restoreDatabase(staged: string | null, barrier: 'restore' | 'prio
       message: 'Die wiederhergestellte Sicherung hat ihre Datenbank mitgebracht; es war nichts zu übernehmen.',
       notes: [], protocol: null, database,
     }
-    await markBarrier(barrier)
-    return reconcileAfterRestore()
+    await markBarrier(barrier, at)
+    return [...await keepConsent(consent), ...await reconcileAfterRestore()]
   }
 
   // Fall 2: neu aufbauen. Scheitert er, ist nichts verloren — die wiederhergestellte db.json
@@ -2790,8 +2805,32 @@ async function restoreDatabase(staged: string | null, barrier: 'restore' | 'prio
   changeover = rebuilt
   database = rebuilt.database
   if (!database) openProblem = 'nach dem Wiederherstellen nicht wieder geöffnet'
-  else await markBarrier(barrier)
-  return rebuilt.state === 'failed' ? [rebuilt.message] : [...rebuilt.notes, ...await reconcileAfterRestore()]
+  else await markBarrier(barrier, at)
+  return rebuilt.state === 'failed' ? [rebuilt.message] : [...rebuilt.notes, ...await keepConsent(consent), ...await reconcileAfterRestore()]
+}
+
+// Zustimmungen beim Einspielen (Regel aus #439, `restoreConsent` in db/revert.ts): Jede Zeile trägt danach die
+// Zustimmung von vorher, eine neu entstandene keine. Lässt sich die bisherige Datenbank nicht lesen (der Rettungsfall,
+// ein neuer Rechner), gilt danach keine; erteilt wird sie in den Einstellungen neu. Das ist gewollt: Ein Widerruf kommt
+// nie still zurück. Beides wirft nie.
+async function consentNow(): Promise<ConsentSnapshot> {
+  try {
+    const current = stockDatabase()
+    return current ? await current.read((db) => consentSnapshot(db)) : new Map()
+  } catch (err) {
+    console.error(`Die Zustimmungen ließen sich vor dem Einspielen nicht lesen; danach gilt keine: ${messageOf(err)}`)
+    return new Map()
+  }
+}
+// Systemarbeit ohne Gruppe: Die Zustimmungen gehören nicht zum Stand, den der Verlauf zeigt.
+async function keepConsent(consent: ConsentSnapshot): Promise<string[]> {
+  try {
+    const restored = database
+    if (restored) await restored.write((db) => restoreConsent(db, consent))
+    return []
+  } catch (err) {
+    return [`Die Zustimmungen ließen sich nach dem Einspielen nicht angleichen: ${messageOf(err)}`]
+  }
 }
 
 // Nach dem Einspielen (Durchsicht von PR #439, M1): Dateien, die der eingespielte Stand nennt und die nur im
@@ -2808,10 +2847,10 @@ async function reconcileAfterRestore(): Promise<string[]> {
 
 // Die Schranke im Verlauf (#318, Schritt 4): Über ein Einspielen und den Umstieg hinweg führt kein Rücksprung.
 // Systemarbeit ohne Gruppe; ein Fehler steht nur auf der Konsole und hält das Einspielen nicht auf.
-async function markBarrier(barrier: JournalBarrier): Promise<void> {
+async function markBarrier(barrier: JournalBarrier, at = new Date()): Promise<void> {
   try {
     const opened = database
-    if (opened) await opened.write((db) => addBarrier(db, barrier, opened.schemaSteps, new Date()))
+    if (opened) await opened.write((db) => addBarrier(db, barrier, opened.schemaSteps, at))
   } catch (err) {
     console.error(`Die Schranke im Verlauf ließ sich nicht setzen: ${messageOf(err)}`)
   }
@@ -3153,13 +3192,15 @@ app.post('/api/journal/:id/revert/preview', async (req, res) => {
   res.json(await snapshotFallback(preview) ?? preview)
 })
 
-// Geht der Rücksprung Schritt für Schritt nicht (Schranke, anderes Update, Abschluss im Bereich), aber trägt eine
-// Sicherung genau den gewünschten Stand, nimmt die Vorschau sie (#318): `kind: 'snapshot'`. Genau heißt: Ihre jüngste
-// Gruppe im Verlauf ist dieselbe (Kennung und Zeitpunkt) wie die letzte Gruppe des gewünschten Stands. Eine Sicherung
-// aus einem anderen Zweig der Geschichte (vor dem Einspielen eines Backups) hat dort eine andere. Nicht bei einer
-// laufenden KI-Auswertung und nicht, wenn es nichts zurückzunehmen gibt.
+// Geht der Rücksprung Schritt für Schritt nicht (Schranke, anderes Update), aber trägt eine Sicherung genau den
+// gewünschten Stand, nimmt die Vorschau sie (#318): `kind: 'snapshot'`. Genau heißt: Ihre jüngste Gruppe im Verlauf ist
+// dieselbe (Kennung und Zeitpunkt) wie die letzte Gruppe des gewünschten Stands. Eine Sicherung aus einem anderen Zweig
+// der Geschichte (vor dem Einspielen eines Backups) hat dort eine andere. Nicht bei einer laufenden KI-Auswertung, nicht,
+// wenn es nichts zurückzunehmen gibt, und **nicht über einen Abschluss, ein Wiederöffnen oder ein Versanddatum**
+// (Durchsicht von PR #442, M2): Sonst umginge der Weg über die Sicherung die Sperre, die einen zugestellten Stand
+// schützt. Dafür bleibt „Wieder öffnen“; die Zeile der Sicherung ist der ausdrückliche Weg und nennt die Abrechnungen.
 async function snapshotFallback(preview: RevertPreview): Promise<SnapshotPreview | null> {
-  if (preview.refusals.length === 0 || preview.entries.length === 0 || revertBlocked().length > 0) return null
+  if (preview.refusals.length === 0 || preview.entries.length === 0 || preview.frozen.length > 0 || revertBlocked().length > 0) return null
   const opened = stockDatabase()
   if (!opened) return null
   const target = await opened.read((db) => {
@@ -3190,11 +3231,6 @@ app.post('/api/journal/:id/revert', async (req, res) => {
     if (err instanceof RevertRefused) return res.status(409).json({ error: err.message, preview: err.preview })
     throw err
   }
-})
-
-app.get('/api/prior-versions', async (_req, res) => {
-  if (priorVersionsRefusal(res)) return
-  res.json(listPriorVersions(DATA_DIR))
 })
 
 // **Sicherungspunkte** (#318): die wöchentlichen Vorversionen, die Sicherungen vor einem Update und vor dem Einspielen.
@@ -3278,25 +3314,11 @@ app.post('/api/prior-versions/:name/restore', async (req, res) => {
       fs.rmSync(staged, { force: true })
       return res.status(400).json({ error: problem })
     }
-    let consent: ConsentSnapshot = new Map()
-    try {
-      const current = stockDatabase()
-      if (current) consent = await current.read((db) => consentSnapshot(db))
-    } catch (err) {
-      console.error(`Die Zustimmungen ließen sich vor dem Einspielen nicht lesen; danach gilt keine: ${messageOf(err)}`)
-    }
     let notes: string[]
     try {
       notes = await restoreDatabase(staged, 'priorVersion')
     } catch (err) {
       notes = [restoreFailedNote(err, 'Die Sicherung wurde geprüft', '')]
-    }
-    // Systemarbeit ohne Gruppe: Die Zustimmungen gehören nicht zum Stand, den der Verlauf zeigt.
-    try {
-      const restored = database
-      if (restored) await restored.write((db) => restoreConsent(db, consent))
-    } catch (err) {
-      notes = [...notes, `Die Zustimmungen ließen sich nach dem Einspielen nicht angleichen: ${messageOf(err)}`]
     }
     try {
       await refreshSettings()

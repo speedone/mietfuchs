@@ -381,7 +381,10 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   Rückfrage aus `snapshotQuestion` (`danger`, also Startfokus „Abbrechen“; „Zurückkehren“): alles danach wird ersetzt,
   die aktuellen Daten werden vorher als `mietfuchs.sqlite.vor-restore` gesichert, fehlende Belege, Belege aus dem
   Papierkorb, die Zustimmungen. Kommt die Vorschau eines Eintrags mit `kind: 'snapshot'`, steht der Eintrag im Titel und
-  darunter „Schritt für Schritt geht das nicht, nur über die Sicherung …“ mit den Gründen. Nach dem Einspielen lädt die
+  darunter „Schritt für Schritt geht das nicht, nur über die Sicherung …“ mit den Gründen; über einen Abschluss hinweg
+  schickt der Server diese Vorschau nie, die Ablehnung nennt dann die Abrechnungen und „Wieder öffnen“ (Durchsicht von
+  PR #442, M2). Ohne sichere Zählung (`later: null`) nennt die Rückfrage keine Zahl. Die Einleitung der Seite ist kurz
+  (drei Sätze), die Einzelheiten stehen in einem eingeklappten „Mehr dazu“. Nach dem Einspielen lädt die
   Seite **immer** neu (`reloadPage`, im Test hineingereicht); die Sätze des Servers stehen danach einmal oben
   (sessionStorage, `keepRestoreNotes`/`readRestoreNotes`, mit try/catch). In den Einstellungen steht an Stelle der
   früheren Karte „Automatische Vorversionen“ nur „Automatische Sicherungen und frühere Stände finden Sie im Verlauf.“

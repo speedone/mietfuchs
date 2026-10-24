@@ -19,7 +19,7 @@ const point = (over: Partial<SnapshotPoint> = {}): SnapshotPoint => ({
 const snapshotPreview = (over: Partial<SnapshotPreview> = {}): SnapshotPreview => ({
   kind: 'snapshot', snapshot: point(), entry: null, mode: null, reasons: [], later: 3, missing: ['a.pdf'], fromTrash: 1,
   consents: ['Zustimmungen bringt die Sicherung nicht mit; es gelten danach die von jetzt: die Abfrage nach Updates.'],
-  notes: [], refusals: [], token: 'marke-s', ...over,
+  notes: [], refusals: [], frozen: [], token: 'marke-s', ...over,
 })
 
 type Sent = { url: string, method: string, body: unknown }
@@ -73,6 +73,20 @@ test('Die Zeitachse zeigt Sicherungen als eigene Zeilen mit Titel, Zeitpunkt und
   expect(sent.find((s) => s.url.startsWith('/api/journal?'))?.url).toMatch(/[?&]snapshots=1(&|$)/)
   // Eine Sicherung ist kein aufklappbarer Eintrag.
   expect(weekly.closest('details')).toBeNull()
+})
+
+// Durchsicht von PR #442: Die Einleitung ist kurz, die Einzelheiten stehen eingeklappt unter „Mehr dazu“.
+test('Die Einleitung ist kurz, die Einzelheiten stehen unter „Mehr dazu“', async () => {
+  page()
+  await screen.findByText('Wöchentliche Sicherung')
+  expect(screen.getByText(/Einträge verfallen nach zwölf Monaten\./)).toBeTruthy()
+  expect(screen.getByText(/Die Sicherungen liegen auf diesem Rechner und ersetzen kein Backup\./)).toBeTruthy()
+  const more = screen.getByText('Mehr dazu').closest('details')
+  if (!more) throw new Error('kein „Mehr dazu“')
+  expect(more.open).toBe(false)
+  expect(within(more).getByText(/Wieder öffnen/)).toBeTruthy()
+  expect(within(more).getByText(/Papierkorb/)).toBeTruthy()
+  expect(within(more).getByText(/die letzten vier/)).toBeTruthy()
 })
 
 test('Zurückkehren: Vorschau, Rückfrage mit Gefahr und Startfokus „Abbrechen“, dann Einspielen mit Marke und Neuladen', async () => {

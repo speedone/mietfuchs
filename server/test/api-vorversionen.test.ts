@@ -31,10 +31,13 @@ async function dataDirWithStock(): Promise<string> {
   return dir
 }
 
+// Die wöchentlichen Sicherungen, wie die Zeitachse des Verlaufs sie nennt (seit #318; die frühere Liste
+// GET /api/prior-versions brauchte nach dem Umzug der Karte niemand mehr).
 const list = async (base: string): Promise<Listed[]> => {
-  const res = await fetch(`${base}/api/prior-versions`)
+  const res = await fetch(`${base}/api/journal?snapshots=1&limit=200`)
   assert.equal(res.status, 200)
-  return jsonOf<Listed[]>(res)
+  const items = await jsonOf<{ kind?: string, type?: string, name?: string, at: string, size?: number }[]>(res)
+  return items.filter((i) => i.kind === 'snapshot' && i.type === 'weekly').map((i) => ({ name: i.name ?? '', createdAt: i.at, size: i.size ?? 0 }))
 }
 
 // Seit #318 nur mit der Marke der Vorschau.
@@ -221,7 +224,7 @@ test('Durchsicht S1: Stehen die Daten noch in der db.json, antworten die Routen 
   fs.writeFileSync(path.join(dir, 'db.json'), JSON.stringify({ units: [], tenancies: [], costItems: [], meters: [], readings: [], payments: [], settings: {} }))
   const s = await startServerIn(dir)
   try {
-    assert.equal((await fetch(`${s.base}/api/prior-versions`)).status, 503)
+    assert.equal((await fetch(`${s.base}/api/journal?snapshots=1`)).status, 503)
     assert.equal((await postJson(s, `/api/prior-versions/${priorVersionName(new Date())}/restore`, {})).status, 503)
   } finally {
     s.stop()

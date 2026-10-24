@@ -86,16 +86,19 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - Sicherungen in der Zeitachse des Verlaufs ([#318](https://github.com/speedone/mietfuchs/issues/318)): Die Seite
   „Verlauf“ zeigt zwischen den Änderungen auch die Sicherungen Ihrer Daten im Datenordner, als eigene Zeilen mit
   Zeitpunkt und Größe: „Wöchentliche Sicherung“, „Vor dem Update auf Version …“ und „Vor dem Einspielen eines
-  Backups“. „Zu diesem Stand zurückkehren …“ zeigt vorher, wie viele Einträge ersetzt werden, welche Belege
-  fehlen würden und welche Zustimmungen gelten; Ihre aktuellen Daten bleiben als `mietfuchs.sqlite.vor-restore`
-  erhalten und stehen danach selbst in der Zeitachse. Geht ein Rücksprung an einer Änderung nicht Schritt für
-  Schritt (nach einem Update, über ein eingespieltes Backup oder einen Abschluss hinweg), liegt der Stand aber als
-  Sicherung vor, nimmt Mietfuchs die Sicherung und sagt das in der Rückfrage. Die Karte „Automatische
+  Backups“. „Zu diesem Stand zurückkehren …“ zeigt vorher, wie viele Einträge ersetzt werden, welche
+  Abrechnungen seither abgeschlossen wurden (Objekt und Jahr), welche Belege fehlen würden und welche
+  Zustimmungen gelten; Ihre aktuellen Daten bleiben als `mietfuchs.sqlite.vor-restore` erhalten und stehen danach
+  selbst in der Zeitachse, mit dem Zeitpunkt des Einspielens. Geht ein Rücksprung an einer Änderung nicht Schritt
+  für Schritt (nach einem Update oder über ein eingespieltes Backup hinweg), liegt der Stand aber genau als
+  Sicherung vor, nimmt Mietfuchs die Sicherung und sagt das in der Rückfrage. Über einen Abschluss hinweg führt
+  dieser Weg nicht; dafür bleibt „Wieder öffnen“ auf der Seite Abrechnung. Die Karte „Automatische
   Vorversionen“ ist dafür aus den Einstellungen in den Verlauf gezogen; das ZIP-Backup bleibt in den
   Einstellungen. Sicherungen vor einem Update und vor dem Einspielen räumt Mietfuchs selbst auf: Es bleiben je
   Art die drei jüngsten und alle aus den letzten zwölf Monaten, die Sicherung, auf die der Hinweis nach einem
-  Update zeigt, immer. Wie der Rücksprung holt auch das Einspielen einer Sicherung keine widerrufene Zustimmung
-  zurück (Übermittlung an einen KI-Dienst, Abfrage nach Updates).
+  Update zeigt, immer. Wie der Rücksprung holt auch das Einspielen einer Sicherung oder eines Backups keine
+  widerrufene Zustimmung zurück (Übermittlung an einen KI-Dienst, Abfrage nach Updates); auf einem neuen Rechner
+  gilt nach dem Einspielen eines Backups keine, Sie erteilen sie in den Einstellungen neu.
 - Kontrollansicht auf der Seite Abrechnung ([#321](https://github.com/speedone/mietfuchs/issues/321)):
   Aufklappbar und nur am Bildschirm zeigt sie je Kostenposition alle Mieter und die Gründe des
   Vermieters nebeneinander, dazu eine Summe gegen den Rechnungsbetrag, die Kosten, Vorauszahlung und

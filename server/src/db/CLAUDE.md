@@ -169,7 +169,12 @@ beim Start, denn wer auf sie wartet, hält den Server für fertig.
   Ersetzt wird wie beim Umstieg (Schlange leerlaufen, schließen, ersetzen, öffnen), die bisherige als
   `mietfuchs.sqlite.vor-restore` (eine schon vorhandene wird wie bei `backupBeforeMigrating` als
   `….vom-JJJJ-MM-TT-HHMM` beiseitegelegt, `setAsideName`, nie überschrieben), bewegt mit `replaceFile` samt Wiederholungen (Virenscanner unter
-  Windows). Geprüft werden auch Verweise über Objekte, Zeiträume und Heizanlagen
+  Windows). **Ihre Dateizeit wird danach auf den Zeitpunkt des Einspielens gesetzt** (derselbe wie die Schranke im
+  Verlauf; Durchsicht von PR #442, M1): `rename` behielte die letzte Änderung des Stands, und Zeitachse, Aufräumen und
+  `setAsideName` lesen aus ihr den Zeitpunkt der Sicherung. **Zustimmungen** (`CONSENT_COLUMNS`) bringt ein
+  eingespielter Stand nie mit, ob Backup oder Sicherung (`consentNow`/`keepConsent` in `restoreDatabase`, Regel aus
+  #439, Durchsicht von PR #442, M3): Jede Zeile trägt danach die Zustimmung von vorher, eine neu entstandene keine; auf
+  einem neuen Rechner oder ohne lesbare Datenbank gilt also keine. Die Rückfrage vor dem Wiederherstellen sagt es. Geprüft werden auch Verweise über Objekte, Zeiträume und Heizanlagen
   (`crossPropertyViolations`, `orphanPeriodKeys`, `heatingPlantViolations`).
 - **ZIP schreiben** mit yazl als Strom, Namen als UTF-8 mit Kennzeichen (ein Test liest das Backup mit
   adm-zip zurück, wie ältere Versionen). Das Backup packt alles (Bit 3 bei gespeicherten Einträgen
@@ -208,8 +213,8 @@ Wohnung kaskadiert auf alles darunter) half bisher nichts von selbst. Deshalb le
   index.ts **wirft nie**, ein Fehler steht nur auf der Konsole.
 - **Nicht** im Backup-ZIP (es packt nur `uploads/` und den Schnappschuss) und nicht in den `checks`
   von `/healthz`.
-- **Einspielen** (`POST /api/prior-versions/:name/restore` mit Vorschau `…/restore/preview`, Liste
-  `GET /api/prior-versions`): für jeden Sicherungspunkt, nicht nur die wöchentlichen (siehe „Sicherungspunkte im
+- **Einspielen** (`POST /api/prior-versions/:name/restore` mit Vorschau `…/restore/preview`; die Liste kommt aus der
+  Zeitachse, `GET /api/journal?snapshots=1`, eine eigene Route gibt es nicht mehr): für jeden Sicherungspunkt, nicht nur die wöchentlichen (siehe „Sicherungspunkte im
   Verlauf“ unten). 503 nur, wo die Daten noch in der `db.json` stehen (gescheiterter Umstieg, `stale` mit `pending`;
   `priorVersionsBlocked`). **Lässt sich die Datenbank nicht öffnen, gehen Vorschau und Einspielen**, das ist der
   Rettungsfall, und `restoreDatabase` kommt ohne offene Datenbank aus. Weiter: nur ein Name nach dem Muster seiner Art
@@ -218,7 +223,7 @@ Wohnung kaskadiert auf alles darunter) half bisher nichts von selbst. Deshalb le
   Backup: Kopie nach `mietfuchs.sqlite.restore-<id>`, `archiveDatabaseProblem(…, 'priorVersion')`
   (die Meldungen sagen dann „Sicherung“ statt „Archiv“; ein Wächter liest den Rumpf; Integrität,
   `unknownSteps`, Migrationskette nachholen, Verweise), `restoreDatabase` (bisherige als
-  `mietfuchs.sqlite.vor-restore`, Hinweis nach dem Update weg, Schranke `priorVersion`), Zustimmungen angleichen,
+  `mietfuchs.sqlite.vor-restore`, Hinweis nach dem Update weg, Schranke `priorVersion`, Zustimmungen angleichen),
   `refreshSettings`; gesperrt über `restoreRunning` wie `/api/restore`. Die Sicherung selbst bleibt unverändert. Die
   `db.json` wird nicht angefasst; Belege, auf die der Stand verweist und die im Papierkorb liegen, holt der Abgleich
   zurück (`reconcileFiles`, #318), die übrigen fehlenden nennt die Antwort in `notes`. Die Oberfläche (Seite Verlauf) lädt
@@ -369,13 +374,17 @@ zeigt in einer Zeitachse die Änderungen **und** die ganzen Kopien der Datenbank
   auch nach dem Einspielen einer Sicherung). Nicht: `db.json.vor-restore`, Beidateien, Zwischenstände.
 - **Zeitpunkt** (`timeFrom`): aus dem Namen (wöchentlich, `.vom-`; UTC), sonst aus der Merkdatei
   `sicherung-vor-update.json`, wenn sie diese Datei nennt (`notice`), sonst aus der Dateizeit (`file`, in der Oberfläche
-  „laut Datei“). Verlässlich ist die Dateizeit nur, solange niemand den Datenordner ohne Zeiten kopiert hat; dann wirkt
-  eine Sicherung jünger (das Aufräumen irrt so zur sicheren Seite). `….vor-restore` ist die umbenannte Arbeitsdatei, ihre
-  Dateizeit also die letzte Änderung des Stands.
+  „laut Datei“). Die Dateizeit ist die des Entstehens: `VACUUM INTO` schreibt die Sicherung vor dem Update neu, und
+  `restoreDatabase` setzt die von `….vor-restore` auf den Zeitpunkt des Einspielens (die umbenannte Arbeitsdatei trüge
+  sonst die letzte Änderung des Stands; Durchsicht von PR #442, M1, eine `vor-restore` aus der Zeit davor trägt sie noch).
+  Verlässlich ist sie nur, solange niemand den Datenordner ohne Zeiten kopiert hat; dann wirkt eine Sicherung jünger
+  (das Aufräumen irrt so zur sicheren Seite).
 - **Version** im Titel: aus der Merkdatei (`version`, nur wenn der Server eine veröffentlichte Version ist:
   `releaseStepsOf(APP_VERSION) === schemaSteps`), sonst aus dem Schritt im Namen über `RELEASE_STEPS` (die erste Version,
   die ihn enthielt; über mehrere Versionen hinweg nennt das die erste). **Beim Release einer Nebenversion
-  `RELEASE_STEPS` ergänzen**; ein Wächter in snapshots.test.ts verlangt die Nebenversion aus server/package.json. Nach
+  `RELEASE_STEPS` ergänzen**; ein Wächter in snapshots.test.ts verlangt die Nebenversion aus server/package.json, und
+  beim Tag prüft law-release.test.ts (`MIETFUCHS_RELEASE=1`, Schritt „Rechtsregister geprüft?“ in release.yml), dass
+  der Eintrag so viele Schritte nennt, wie server/drizzle/*.sql hat (scripts/CLAUDE.md, Release). Nach
   „Verstanden“ ist die Merkdatei weg, dann gilt der Schritt.
 - **Zeitachse**: `GET /api/journal?snapshots=1` sortiert die Sicherungspunkte (`kind: 'snapshot'`, Art, Zeitpunkt, Größe,
   Titel) zwischen die Gruppen (`interleaveSnapshots`): auf eine Seite, was älter ist als die Gruppe von `before` und nicht
@@ -384,7 +393,10 @@ zeigt in einer Zeitachse die Änderungen **und** die ganzen Kopien der Datenbank
   Einstellungen). Ohne `snapshots=1` bleibt die Antwort wie vorher. Lässt sich die Datenbank nicht lesen, kommen nur die
   Sicherungen (der Rettungsfall; vorher war das die Karte in den Einstellungen).
 - **Die Vorschau entscheidet den Weg**: `POST /api/journal/:id/revert/preview` nimmt das Journal, wenn es geht. Sonst
-  (Schranke, anderes Update, Abschluss im Bereich, nicht aber bei laufender KI-Auswertung oder ohne Einträge) sucht
+  (Schranke, anderes Update; nicht bei laufender KI-Auswertung, ohne Einträge und **nie über einen Abschluss, ein
+  Wiederöffnen oder ein Versanddatum**, `frozen` der Vorschau, Durchsicht von PR #442, M2: sonst umginge der Weg die
+  Sperre, die einen zugestellten Stand schützt; die Ablehnung nennt die Abrechnungen mit Objekt und Jahr,
+  `frozenLabels`, und „Wieder öffnen“) sucht
   `snapshotFallback` in index.ts eine Sicherung, deren **jüngste Gruppe** dieselbe ist (Kennung und Zeitpunkt) wie die
   letzte des gewünschten Stands (`mode: 'after'`: der Eintrag, `including`: die Gruppe davor), und antwortet mit ihrer
   Vorschau (`kind: 'snapshot'`, dazu `entry`, `mode` und `reasons`, die Grenzen des Journals). Eine Sicherung aus einem
@@ -392,13 +404,16 @@ zeigt in einer Zeitachse die Änderungen **und** die ganzen Kopien der Datenbank
   Zeitliche Nähe genügt bewusst nicht.
 - **Vorschau einer Sicherung** (`previewSnapshot`, in `DRY_RUN_ROUTES`): geprüft an einer Kopie
   (`mietfuchs.sqlite.vorschau-<id>`, danach weg, Reste räumt `cleanRestoreLeftovers`) mit `archiveDatabaseProblem`;
-  `refusals` mit dessen Satz; `later` (Einträge seit dem Zeitpunkt, ohne Schranken), `missing` (genannte Belege und Logos
-  weder im Ordner noch im Papierkorb), `fromTrash`, `consents` (die Zustimmungen von jetzt als Sätze), `notes` (frühere
-  Version, Abschluss oder Wiederöffnen seither). Marke über Name, Größe, Dateizeit und die neueste Gruppe.
-- **Zustimmungen** beim Einspielen einer Sicherung wie beim Rücksprung (`consentSnapshot`/`restoreConsent` aus
-  revert.ts): Jede Zeile trägt danach die Zustimmung von vorher, eine neu entstandene keine; ohne lesbare Datenbank gilt
-  keine. Vorher brachte das Einspielen einer Vorversion eine widerrufene Bestätigung zurück (Test vorher rot). Das
-  Einspielen eines ZIP-Backups ist davon nicht berührt (oft ein neuer Rechner ohne eigene Zustimmungen).
+  `refusals` mit dessen Satz; `later` (Einträge seither, ohne Schranken), `frozen` (Abrechnungen, die seither
+  abgeschlossen, wieder geöffnet oder mit Versanddatum versehen wurden, mit Objekt und Jahr; ihr zugestellter Stand
+  verschwindet, die Zeile der Sicherung bleibt dafür der ausdrückliche Weg), `missing` (genannte Belege und Logos weder
+  im Ordner noch im Papierkorb), `fromTrash`, `consents` (die Zustimmungen von jetzt als Sätze), `notes`. **Gezählt wird
+  nach der Kennung** der jüngsten Gruppe der Sicherung, wenn es sie im Verlauf gibt (Durchsicht K1), sonst nach dem
+  Zeitpunkt; stammt er aus der Datei, ist `later` `null` und ein Satz sagt vorsichtshalber, dass sich Abschlüsse nicht
+  sicher ausschließen lassen. `snapshotLastGroup` sieht vorher nach, ob die Datei besteht (K2: SQLite legte sonst eine
+  leere mit dem Namen einer Sicherung an). Marke über Name, Größe, Dateizeit und die neueste Gruppe.
+- **Zustimmungen** beim Einspielen einer Sicherung und eines Backups wie beim Rücksprung (siehe „Backup und
+  Wiederherstellen“). Vorher brachte beides eine widerrufene Bestätigung zurück (Tests vorher rot).
 - **Aufräumen** (`cleanSnapshots`, im Takt der Vorversionen, nicht während eines Wiederherstellens): Je Art (vor dem
   Update, vor dem Einspielen) bleiben die drei jüngsten **und** alle aus zwölf Monaten (Aufbewahrung des Verlaufs, dessen
   ältere Einträge auf die Sicherung vor dem Update verweisen; drei, damit eine Installation ohne Updates ihre letzten

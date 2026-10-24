@@ -10,8 +10,11 @@
 // in Minuten, beides UTC; der Zusatz `.vom-` entsteht aus der Dateizeit beim Beiseitelegen, also aus dem Zeitpunkt, zu
 // dem die Sicherung geschrieben wurde). Sonst aus der Merkdatei `sicherung-vor-update.json`, wenn sie diese Datei nennt
 // (`at`, ebenfalls die Dateizeit beim Update, aber festgehalten). Sonst aus der Dateizeit (`mtime`): `VACUUM INTO`
-// schreibt die Sicherung vor dem Update in einem Zug, und `mietfuchs.sqlite.vor-restore` ist die umbenannte
-// Arbeitsdatei, ihre Dateizeit also die letzte Änderung des Stands. **Verlässlich ist sie nur, solange niemand den
+// schreibt die Sicherung vor dem Update in einem Zug, ihre Dateizeit ist also die ihres Entstehens.
+// `mietfuchs.sqlite.vor-restore` ist die umbenannte Arbeitsdatei; `rename` behielte deren Dateizeit (die letzte
+// Änderung des Stands), deshalb setzt `restoreDatabase` sie auf den Zeitpunkt des Einspielens, denselben wie die
+// Schranke im Verlauf (Durchsicht von PR #442, M1: sonst hielt das Aufräumen eine eben angelegte Sicherung für alt und
+// löschte sie). Eine `vor-restore` aus einer Version davor trägt noch die alte Zeit. **Verlässlich ist sie nur, solange niemand den
 // Datenordner ohne Zeiten kopiert hat**: Dann trägt jede Datei die Zeit des Kopierens. Die Oberfläche kennzeichnet
 // solche Zeitpunkte deshalb („laut Datei“), und das Aufräumen irrt dabei nur zur sicheren Seite (die Datei wirkt jünger).
 //
@@ -174,6 +177,13 @@ export function cleanSnapshots(dataDir: string, tags: readonly string[], now: Da
 // derselbe Zeitpunkt. Eine Sicherung aus einem anderen Zweig der Geschichte (vor dem Einspielen eines Backups) hat
 // dort eine andere Gruppe.
 export async function snapshotLastGroup(file: string): Promise<{ id: number, at: string } | null> {
+  // Erst nachsehen, ob es die Datei gibt (Durchsicht von PR #442, K2): SQLite legt beim Öffnen einer fehlenden Datei eine
+  // leere an, und sie trüge dann den Namen einer Sicherung. Gelesen wird nur; `connect` schreibt nichts in die Datei.
+  try {
+    if (!fs.statSync(file).isFile()) return null
+  } catch {
+    return null
+  }
   let connection
   try {
     connection = await connect(file)

@@ -14,12 +14,13 @@
 import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
-import { sql } from 'drizzle-orm'
+import { and, inArray, sql } from 'drizzle-orm'
 import { connect, loadMigrations, type Executor } from './client.ts'
 import { archiveDatabaseProblem } from './backup.ts'
 import { referencedFiles } from './fileRefs.ts'
-import { FROZEN_TABLES, type RevertMode } from './revert.ts'
-import { snapshotFile, type SnapshotPoint } from './snapshots.ts'
+import { FROZEN_TABLES, frozenLabels, type RevertMode } from './revert.ts'
+import { snapshotFile, snapshotLastGroup, type SnapshotPoint } from './snapshots.ts'
+import { changeLog } from './schema.ts'
 import { existsIn, storeDir, trashDir } from '../trash.ts'
 import { newId } from '../ids.ts'
 import type { OpenedDatabase } from './open.ts'
@@ -32,8 +33,10 @@ export type SnapshotPreview = {
   entry: { id: number, firstId: number, at: string, title: string } | null
   mode: RevertMode | null
   reasons: string[]
-  // Einträge im Verlauf seit dem Zeitpunkt der Sicherung (ohne Schranken); sie werden ersetzt.
-  later: number
+  // Einträge im Verlauf seit der Sicherung (ohne Schranken); sie werden ersetzt. `null`: nicht sicher zu zählen.
+  later: number | null
+  // Abrechnungen (Objekt und Jahr), die seither abgeschlossen, wieder geöffnet oder mit Versanddatum versehen wurden.
+  frozen: string[]
   // Belege und Logos, die der Stand nennt und die weder im Ordner noch im Papierkorb liegen.
   missing: string[]
   // Belege und Logos, die aus dem Papierkorb zurückkommen.
@@ -82,15 +85,26 @@ async function consentSentences(db: Executor | null): Promise<string[]> {
   ]
 }
 
-// Wie viele Einträge seit dem Zeitpunkt der Sicherung im Verlauf stehen, und ob darunter ein Abschluss oder ein
-// Wiederöffnen ist.
-async function laterInJournal(db: Executor, at: string): Promise<{ later: number, frozen: boolean }> {
-  const [row] = await db.all<[number]>(sql`SELECT count(*) FROM change_groups WHERE at > ${at} AND barrier IS NULL`)
-  const frozenTables = sql.join(FROZEN_TABLES.map((t) => sql`${t}`), sql`, `)
-  const [frozen] = await db.all<[number]>(sql`SELECT count(*) FROM change_log l JOIN change_groups g ON g.id = l.group_id
-    WHERE g.at > ${at} AND l.table_name IN (${frozenTables})`)
-  return { later: Number(row?.[0] ?? 0), frozen: Number(frozen?.[0] ?? 0) > 0 }
+// Was seit der Sicherung im Verlauf steht: wie viele Einträge, und welche Abrechnungen seither abgeschlossen, wieder
+// geöffnet oder mit Versanddatum versehen wurden (Objekt und Jahr, `frozenLabels`). **Gezählt wird nach der Kennung**
+// der jüngsten Gruppe der Sicherung, wenn es sie im Verlauf gibt (Durchsicht von PR #442, K1); eine Dateizeit kann
+// falsch sein. Sonst nach dem Zeitpunkt, außer er stammt aus der Datei: dann keine Zahl (`null`) und `unsure`.
+async function laterInJournal(db: Executor, point: SnapshotPoint, last: { id: number, at: string } | null): Promise<{ later: number | null, frozen: string[], unsure: boolean }> {
+  const anchored = last !== null && (await db.all<[number]>(sql`SELECT id FROM change_groups WHERE id = ${last.id} AND at = ${last.at}`)).length > 0
+  if (!anchored && point.timeFrom === 'file') return { later: null, frozen: [], unsure: true }
+  const after = anchored && last ? sql`id > ${last.id}` : sql`at > ${point.at}`
+  const ids = (await db.all<[number, string | null]>(sql`SELECT id, barrier FROM change_groups WHERE ${after}`))
+  const later = ids.filter((r) => r[1] === null).length
+  const groupIds = ids.map((r) => Number(r[0]))
+  const rows = groupIds.length === 0
+    ? []
+    : await db.select().from(changeLog).where(and(inArray(changeLog.groupId, groupIds), inArray(changeLog.tableName, [...FROZEN_TABLES]))).all()
+  return { later, frozen: await frozenLabels(db, rows), unsure: false }
 }
+
+const FROZEN_UNSURE =
+  'Ob seither eine Abrechnung abgeschlossen oder wieder geöffnet wurde, lässt sich für diese Sicherung nicht sicher sagen. ' +
+  'Nach dem Einspielen gilt für Abschlüsse der Stand der Sicherung; prüfen Sie danach auf der Seite Abrechnung, ob jede zugestellte Abrechnung noch abgeschlossen ist.'
 
 export type PreviewContext = { entry: SnapshotPreview['entry'], mode: RevertMode | null, reasons: string[] }
 
@@ -144,14 +158,20 @@ export async function previewSnapshot(
   }
   missing = [...new Set(missing)].sort()
 
-  let later = 0
+  let later: number | null = null
+  let frozen: string[] = []
   let consents: string[]
   if (current) {
-    const seen = await current.read((db) => laterInJournal(db, point.at))
+    const last = await snapshotLastGroup(snapshotFile(dataDir, point))
+    const seen = await current.read((db) => laterInJournal(db, point, last))
     later = seen.later
-    if (seen.frozen) {
-      notes.push('Seit diesem Stand wurde mindestens eine Abrechnung abgeschlossen, wieder geöffnet oder ihr Versanddatum geändert. ' +
-        'Nach dem Einspielen gilt für Abschlüsse der Stand der Sicherung; prüfen Sie danach auf der Seite Abrechnung, ob jede zugestellte Abrechnung noch abgeschlossen ist.')
+    frozen = seen.frozen
+    if (frozen.length > 0) {
+      notes.push(`Seit diesem Stand wurde abgeschlossen, wieder geöffnet oder mit Versanddatum versehen: ${frozen.join(', ')}. ` +
+        'Nach dem Einspielen gilt dafür der Stand der Sicherung; ein zugestellter, eingefrorener Stand verschwindet dann. ' +
+        'Wollen Sie eine Abrechnung ändern, nehmen Sie besser „Wieder öffnen“ auf der Seite Abrechnung.')
+    } else if (seen.unsure) {
+      notes.push(FROZEN_UNSURE)
     }
     consents = await current.read((db) => consentSentences(db))
   } else {
@@ -164,6 +184,7 @@ export async function previewSnapshot(
     mode: context?.mode ?? null,
     reasons: context?.reasons ?? [],
     later,
+    frozen,
     missing,
     fromTrash,
     consents,

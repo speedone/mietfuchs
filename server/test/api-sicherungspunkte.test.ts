@@ -6,7 +6,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import type { Unit } from '../../shared/types.ts'
-import { besideServer, jsonOf, startServerIn, type Server } from '../testing/api.ts'
+import { besideServer, jsonOf, startServerIn, waitForExit, type Server } from '../testing/api.ts'
 import { dumpStock, journalOf, newest, previewOf, restoreSnapshot, restoreSnapshotRaw, snapshotPreviewOf } from '../testing/revert.ts'
 import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { units } from '../src/db/schema.ts'
@@ -191,9 +191,13 @@ test('Sicherungspunkte: Über ein eingespieltes Backup hinweg führt die Vorscha
 
 // Der häufigste Fall: Nach einem Abschluss soll der Stand davor zurück. Schritt für Schritt geht das nicht (ein
 // zugestellter Stand verschwände still); trägt eine Sicherung genau den Stand davor, nimmt die Vorschau sie und sagt es.
-test('Sicherungspunkte: Über einen Abschluss hinweg nimmt die Vorschau die passende Sicherung', async () => {
+// Durchsicht von PR #442, M2: Am Eintrag umgeht der Weg über eine Sicherung die Sperre des Abschlusses nicht. Die
+// Ablehnung nennt die Abrechnung (Objekt, Jahr) und „Wieder öffnen“. Die Zeile der Sicherung bleibt der ausdrückliche
+// Weg; ihre Vorschau nennt die Abrechnung, deren zugestellter Stand verschwindet.
+test('Durchsicht M2: Über einen Abschluss hinweg kein Weg über die Sicherung am Eintrag, die Zeile nennt die Abrechnung', async () => {
   const s = await startServerIn(tmp())
   try {
+    const [property] = await s.api<{ name: string }[]>('/api/properties')
     const unit = await s.api<Unit>('/api/units', { method: 'POST', body: JSON.stringify({ name: 'EG', areaM2: 60, participates: true, selfUsed: false }) })
     await s.api('/api/tenancies', { method: 'POST', body: JSON.stringify({ unitId: unit.id, tenantName: 'Müller', persons: 2, start: '2024-01-01', prepayment: 10000 }) })
     await s.api('/api/costItems', { method: 'POST', body: JSON.stringify({ propertyId: 'objekt-1', period: '2024-01', category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 30000, key: 'area' }) })
@@ -201,17 +205,76 @@ test('Sicherungspunkte: Über einen Abschluss hinweg nimmt die Vorschau die pass
     const closed = await send(s, 'POST', '/api/settlement/2024/close', {})
     assert.equal(closed.status, 201, await closed.clone().text())
     const close = await newest(s)
-    const preview = await previewOf(s, close.id, 'including') as unknown as SnapshotPreview
-    assert.equal(preview.kind, 'snapshot')
-    assert.equal(preview.snapshot.name, name)
-    assert.equal(preview.entry?.id, close.id)
-    assert.equal(preview.mode, 'including')
-    assert.match(preview.reasons.join(' '), /schließt eine Abrechnung ab/)
-    assert.deepEqual(preview.refusals, [])
-    assert.ok(preview.notes.some((n) => /abgeschlossen/.test(n)), preview.notes.join(' | '))
-    const res = await restoreSnapshotRaw(s, name, preview.token)
+    const preview = await previewOf(s, close.id, 'including')
+    assert.equal(preview.kind, 'journal')
+    const said = preview.refusals.join(' ')
+    assert.match(said, /Abrechnung 2024/)
+    assert.ok(said.includes(`„${property.name}“`), said)
+    assert.match(said, /Wieder öffnen/)
+
+    const row = await snapshotPreviewOf(s, name)
+    assert.deepEqual(row.refusals, [])
+    assert.equal(row.frozen.length, 1)
+    assert.match(row.frozen[0], /Abrechnung 2024/)
+    assert.ok(row.frozen[0].includes(`„${property.name}“`), row.frozen[0])
+    const res = await restoreSnapshotRaw(s, name, row.token)
     assert.equal(res.status, 200, await res.clone().text())
     assert.deepEqual((await dumpStock(s.dataDir)).closed_settlements, [])
+  } finally {
+    s.stop()
+  }
+})
+
+// Über ein eingespieltes Backup hinweg: Trägt eine Sicherung genau den Stand nach dem Eintrag, nimmt die Vorschau sie.
+test('Sicherungspunkte: Über eine Schranke hinweg nimmt die Vorschau die genau passende Sicherung', async () => {
+  const s = await startServerIn(tmp())
+  try {
+    await s.api('/api/units', { method: 'POST', body: JSON.stringify({ name: 'EG', areaM2: 80, participates: true }) })
+    await s.api('/api/units', { method: 'POST', body: JSON.stringify({ name: 'OG', areaM2: 50, participates: true }) })
+    const archive = Buffer.from(await (await fetch(`${s.base}/api/backup?journal=1`)).arrayBuffer())
+    const name = await weeklyNow(s)
+    await s.api('/api/units', { method: 'POST', body: JSON.stringify({ name: 'DG', areaM2: 40, participates: true }) })
+    const fd = new FormData()
+    fd.append('file', new Blob([archive], { type: 'application/zip' }), 'backup.zip')
+    assert.equal((await fetch(`${s.base}/api/restore`, { method: 'POST', body: fd })).status, 200)
+    const list = await journalOf(s)
+    assert.equal(list[0].barrier, 'restore')
+    const preview = await previewOf(s, list[1].id, 'after') as unknown as SnapshotPreview
+    assert.equal(preview.kind, 'snapshot')
+    assert.equal(preview.snapshot.name, name)
+    assert.equal(preview.entry?.id, list[1].id)
+    assert.match(preview.reasons.join(' '), /Backup eingespielt/)
+    assert.deepEqual(preview.refusals, [])
+    await restoreSnapshot(s, name)
+    assert.deepEqual(await unitNames(s), ['EG', 'OG'])
+  } finally {
+    s.stop()
+  }
+})
+
+// Durchsicht von PR #442, K1: Gezählt wird nach der Kennung der jüngsten Gruppe der Sicherung, nicht nach einer
+// Dateizeit. Liegt die Gruppe nicht im Verlauf und stammt der Zeitpunkt aus der Datei, nennt die Vorschau keine Zahl.
+test('Durchsicht K1: Die Vorschau zählt nach der Gruppe der Sicherung, nicht nach der Dateizeit', async () => {
+  const s = await startServerIn(await dataDirWithStock())
+  try {
+    await s.api('/api/units', { method: 'POST', body: JSON.stringify({ name: 'OG', areaM2: 50, participates: true }) })
+    const file = path.join(s.dataDir, 'mietfuchs.sqlite.vor-restore')
+    const c = await besideServer(s.dataDir)
+    c.exec(`VACUUM INTO '${file.replace(/'/g, "''")}'`)
+    c.close()
+    const old = new Date(Date.now() - 400 * DAY)
+    fs.utimesSync(file, old, old)
+    await s.api('/api/units', { method: 'POST', body: JSON.stringify({ name: 'DG', areaM2: 40, participates: true }) })
+    await s.api('/api/units', { method: 'POST', body: JSON.stringify({ name: 'KG', areaM2: 30, participates: true }) })
+    assert.equal((await snapshotPreviewOf(s, 'mietfuchs.sqlite.vor-restore')).later, 2)
+    // Eine Sicherung aus einem anderen Zweig: ihre jüngste Gruppe gibt es im Verlauf nicht.
+    const other = await connect(file)
+    other.exec("UPDATE change_groups SET at = '2001-01-01T00:00:00.000Z'")
+    other.close()
+    fs.utimesSync(file, old, old)
+    const unsure = await snapshotPreviewOf(s, 'mietfuchs.sqlite.vor-restore')
+    assert.equal(unsure.later, null)
+    assert.ok(unsure.notes.some((n) => /Abrechnung/.test(n)), unsure.notes.join(' | '))
   } finally {
     s.stop()
   }
@@ -283,6 +346,37 @@ test('Sicherungspunkte: Aufräumen beim Start behält je Art drei und alles aus 
   }
 })
 
+// Durchsicht von PR #442, M1: `vor-restore` ist die umbenannte Arbeitsdatei und trug deren Dateizeit, also den Zeitpunkt
+// der letzten Änderung des Stands, nicht den der Sicherung. Nach mehreren Einspielen an einem Tag hielt das Aufräumen die
+// Sicherung echter Daten deshalb für über zwölf Monate alt und löschte sie; die Zeitachse zeigte einen falschen Zeitpunkt.
+test('Durchsicht M1: Die Sicherung vor dem Einspielen trägt den Zeitpunkt des Einspielens, das Aufräumen behält sie', async () => {
+  let s = await startServerIn(await dataDirWithStock())
+  try {
+    const name = await weeklyNow(s)
+    // Der Stand der Arbeitsdatei wurde zuletzt vor 400 Tagen geändert.
+    const old = new Date(Date.now() - 400 * DAY)
+    fs.utimesSync(path.join(s.dataDir, 'mietfuchs.sqlite'), old, old)
+    await restoreSnapshot(s, name)
+    const barrier = await newest(s)
+    assert.equal(barrier.barrier, 'priorVersion')
+    const snap = (await timeline(s)).find((i) => i.name === 'mietfuchs.sqlite.vor-restore') ?? assert.fail('vor-restore fehlt')
+    assert.ok(Math.abs(Date.parse(snap.at) - Date.parse(barrier.at)) < 1000, `Zeitachse ${snap.at} und Schranke ${barrier.at} nennen denselben Zeitpunkt`)
+    const first = fs.readFileSync(path.join(s.dataDir, 'mietfuchs.sqlite.vor-restore'))
+    // Dreimal weiter einspielen; die erste Sicherung liegt danach beiseitegelegt, ihr Name trägt heute.
+    for (let i = 0; i < 3; i++) await restoreSnapshot(s, name)
+    s.child.kill()
+    await waitForExit(s.child)
+    s = await startServerIn(s.dataDir)
+    const kept = fs.readdirSync(s.dataDir).filter((n) => n.startsWith('mietfuchs.sqlite.vor-restore'))
+    assert.equal(kept.length, 4, kept.join(', '))
+    assert.ok(kept.some((n) => fs.readFileSync(path.join(s.dataDir, n)).equals(first)), 'die Sicherung der echten Daten bleibt')
+    const today = new Date().toISOString().slice(0, 10)
+    assert.ok(kept.filter((n) => n.includes('.vom-')).every((n) => n.includes(`.vom-${today}`)), kept.join(', '))
+  } finally {
+    s.stop()
+  }
+})
+
 // Die Regel aus #439 gilt auch beim Einspielen einer Sicherung: Ein Widerruf kommt nie zurück, und eine Zustimmung, die
 // es gerade nicht gibt, entsteht nicht.
 test('Sicherungspunkte: Einspielen holt keine widerrufene Zustimmung zurück', async () => {
@@ -295,6 +389,28 @@ test('Sicherungspunkte: Einspielen holt keine widerrufene Zustimmung zurück', a
     assert.equal((await send(s, 'PUT', '/api/settings', { updateCheck: 'off' })).status, 200)
     const { preview } = await restoreSnapshot(s, name)
     assert.match(preview.consents.join(' '), /keiner Übermittlung an einen KI-Dienst/)
+    const consent = (await dumpStock(s.dataDir, { raw: true })).ai_slots.join()
+    assert.doesNotMatch(consent, /\d{4}-\d{2}-\d{2}/, 'die Bestätigung bleibt widerrufen')
+    assert.equal((await s.api<{ updateCheck?: string }>('/api/settings')).updateCheck, 'off')
+  } finally {
+    s.stop()
+  }
+})
+
+// Durchsicht von PR #442, M3: Beim ZIP-Backup kam eine widerrufene Zustimmung still zurück. Dieselbe Regel wie bei
+// Sicherungen: Jede Zeile trägt danach die Zustimmung von vorher, eine neu entstandene keine.
+test('Durchsicht M3: Ein eingespieltes Backup holt keine widerrufene Zustimmung zurück', async () => {
+  const s = await startServerIn(await dataDirWithStock())
+  try {
+    assert.equal((await send(s, 'POST', '/api/ai/consent', { slot: 'text' })).status, 200)
+    assert.equal((await send(s, 'PUT', '/api/settings', { updateCheck: 'on' })).status, 200)
+    const archive = Buffer.from(await (await fetch(`${s.base}/api/backup`)).arrayBuffer())
+    assert.equal((await send(s, 'DELETE', '/api/ai/consent/text')).status, 200)
+    assert.equal((await send(s, 'PUT', '/api/settings', { updateCheck: 'off' })).status, 200)
+    const fd = new FormData()
+    fd.append('file', new Blob([archive], { type: 'application/zip' }), 'backup.zip')
+    const res = await fetch(`${s.base}/api/restore`, { method: 'POST', body: fd })
+    assert.equal(res.status, 200, await res.clone().text())
     const consent = (await dumpStock(s.dataDir, { raw: true })).ai_slots.join()
     assert.doesNotMatch(consent, /\d{4}-\d{2}-\d{2}/, 'die Bestätigung bleibt widerrufen')
     assert.equal((await s.api<{ updateCheck?: string }>('/api/settings')).updateCheck, 'off')
@@ -324,7 +440,7 @@ test('Sicherungspunkte: Die Vorschau nennt fehlende Belege und Belege aus dem Pa
     const preview = await snapshotPreviewOf(s, name)
     assert.deepEqual(preview.missing, [b])
     assert.equal(preview.fromTrash, 1)
-    assert.ok(preview.later >= 2)
+    assert.ok((preview.later ?? 0) >= 2)
     void (null as unknown as SnapshotPoint)
   } finally {
     s.stop()

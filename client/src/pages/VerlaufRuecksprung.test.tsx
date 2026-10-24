@@ -14,7 +14,7 @@ const group = (id: number, title: string, extra: Partial<JournalGroup> = {}): Jo
 const preview = (over: Partial<RevertPreview> = {}): RevertPreview => ({
   kind: 'journal', mode: 'including', entry: { id: 9, firstId: 9, at: '2026-10-24T08:15:00.000Z', title: 'Wohnung geändert: EG' }, startId: 9,
   entries: [{ id: 9, at: '2026-10-24T08:15:00.000Z', title: 'Wohnung geändert: EG', rows: 1, reverted: false }], changes: 1, refusals: [],
-  files: { restore: 0, trash: 0 }, notes: ['Zustimmungen nimmt der Rücksprung nicht zurück.'], token: 'marke-1', ...over,
+  files: { restore: 0, trash: 0 }, notes: ['Zustimmungen nimmt der Rücksprung nicht zurück.'], frozen: [], token: 'marke-1', ...over,
 })
 
 type Sent = { url: string, method: string, body: unknown }

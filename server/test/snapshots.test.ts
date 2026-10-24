@@ -7,7 +7,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { loadMigrations } from '../src/db/client.ts'
 import {
-  cleanSnapshots, interleaveSnapshots, listSnapshots, parseSnapshotName, snapshotsToDrop, SNAPSHOT_KEEP, type SnapshotPoint,
+  cleanSnapshots, interleaveSnapshots, listSnapshots, parseSnapshotName, snapshotLastGroup, snapshotsToDrop, SNAPSHOT_KEEP, type SnapshotPoint,
 } from '../src/db/snapshots.ts'
 import { RELEASE_STEPS, releaseStepsOf, versionBringing } from '../src/db/releaseSteps.ts'
 import { PRIOR_DIR } from '../src/db/priorVersions.ts'
@@ -172,4 +172,13 @@ test('Sicherungspunkte: Einsortiert nach der Zeit, je Seite nur zwischen ihren G
   assert.deepEqual(names(interleaveSnapshots([], snaps, { beforeAt: null, last: true, from: null, to: null })), ['neu', 'mitte', 'alt'])
   // Der Zeitraum gilt auch für sie (`to` ausschließlich).
   assert.deepEqual(names(interleaveSnapshots([], snaps, { beforeAt: null, last: true, from: '2026-10-01T00:00:00.000Z', to: '2026-10-20T00:00:00.000Z' })), ['mitte'])
+})
+
+// Durchsicht von PR #442, K2: Das Nachsehen in einer Sicherung legt nie eine Datei an (SQLite legt beim Öffnen einer
+// fehlenden Datei eine leere an, mit dem Namen einer Sicherung).
+test('Durchsicht K2: Eine fehlende Sicherung wird beim Nachsehen nicht angelegt', async () => {
+  const dir = tmp()
+  const file = path.join(dir, 'mietfuchs.sqlite.vor-restore')
+  assert.equal(await snapshotLastGroup(file), null)
+  assert.equal(fs.existsSync(file), false)
 })

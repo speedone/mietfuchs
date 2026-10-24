@@ -120,6 +120,11 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
 - [release.yml](../.github/workflows/release.yml) baut beim `v*`-Tag alle Ziele und hängt sie an:
   macOS als Zip, Linux als tar.gz (Ausführungsbit), Windows roh. **Die Namen der x64-Dateien bleiben
   fest**, der Update-Hinweis älterer Versionen sucht sie.
+- **Bei jeder Nebenversion kommt ein Eintrag in `RELEASE_STEPS`** ([server/src/db/releaseSteps.ts](../server/src/db/releaseSteps.ts),
+  `{ version: 'x.y.0', steps: <Zahl der Dateien server/drizzle/*.sql> }`, #318): Daraus nennt der Verlauf die Sicherung
+  „Vor dem Update auf Version …“. Beim Tag prüft es der Schritt „Rechtsregister geprüft?“ in release.yml
+  (`MIETFUCHS_RELEASE=1`, Test „Release: RELEASE_STEPS nennt die Schritte dieser Version“ in law-release.test.ts); eine
+  Patchversion ohne neuen Schritt braucht keinen.
 - **Ein Tag mit Bindestrich ist eine Vorabversion** (`v0.8.0-rc.1`) und wird ausdrücklich so
   gekennzeichnet, sonst böte `releases/latest` sie jedem an. Docker vergibt dann von selbst kein
   `latest`.
