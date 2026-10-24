@@ -219,11 +219,13 @@ const GUIDE_DATA = {
     caveats: [
       { text: 'Nebenkosten trägt der Mieter einer Garage nur, wenn das vereinbart ist; sonst trägt der Vermieter die Lasten der Mietsache, etwa die Grundsteuer.', norm: '§ 535 Abs. 1 Satz 3, § 556 Abs. 1 BGB' },
       { text: 'In der Anlage V fragen die Zeilen zur Gesamtwohnfläche und zur eigengenutzten Fläche nur Wohnfläche ab; Garagen gehören nicht dazu. Die Steuerübersicht erklärt das, wenn Sie selbst im Haus wohnen.' },
+      { text: 'Anders als eine Wohnung ist die Vermietung einer Garage oder eines Stellplatzes nicht von der Umsatzsteuer befreit, auch an Privatpersonen. Nach Auffassung der Finanzverwaltung ist sie als Nebenleistung zur Wohnung befreit, wenn derselbe Mieter bei Ihnen eine Wohnung im selben Gebäudekomplex oder in unmittelbarer Nähe mietet, auch mit einem eigenen Vertrag; mietet sie jemand anderes, auch ein Angehöriger aus demselben Haushalt, nicht. Fällt Umsatzsteuer an, kann die Kleinunternehmerregelung sie ersparen; Wohnungsmieten zählen dabei nicht mit. Was für Sie gilt, klären Sie bitte mit Ihrem Steuerberater.', norm: '§ 4 Nr. 12 Satz 2, § 19 Abs. 1 und 2 UStG; Abschnitt 4.12.2 Abs. 3 UStAE' },
     ],
     gaps: [
       { text: 'Eine Rechnung für Haus und Garagenhof als zwei Objekte einmal erfassen und vorverteilen.', issue: 95 },
+      { text: 'Umsatzsteuer rechnen oder auf der Abrechnung ausweisen; Mietfuchs nennt sie nur.', issue: 316 },
     ],
-    terms: ['noConnection', 'participants', 'inclusiveRent', 'distributionBasis'],
+    terms: ['noConnection', 'participants', 'inclusiveRent', 'distributionBasis', 'garageVat'],
   },
   flatRate: {
     title: 'Pauschale oder Inklusivmiete',

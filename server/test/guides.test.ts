@@ -721,3 +721,15 @@ test('Integrationsdurchsicht S3: „Heizkosten selbst abrechnen“ nennt die mon
   assert.ok(g.gaps.every((x) => !/Verbrauchsinformation/.test(x.text) || /Heizkostenverteiler/.test(x.text)), 'überholte Lücke zur Verbrauchsinformation')
   assert.ok(g.steps.some((s) => s.page === 'heizkosten' && s.text.includes('„Monatliche Verbrauchsinformation“')))
 })
+
+test('#323: Anleitung Garage nennt die Umsatzsteuer mit Norm, die Nebenleistung als Auffassung der Verwaltung und den Begriff', () => {
+  const g = GUIDES.garage
+  const c = g.caveats.find((x) => /Umsatzsteuer/.test(x.text))
+  if (!c) return assert.fail('kein Hinweis zur Umsatzsteuer in der Anleitung Garage')
+  assert.match(c.norm ?? '', /§ 4 Nr\. 12 Satz 2, § 19 Abs\. 1 und 2 UStG; Abschnitt 4\.12\.2 Abs\. 3 UStAE/)
+  assert.match(c.text, /Nach Auffassung der Finanzverwaltung/)
+  assert.match(c.text, /Angehöriger aus demselben Haushalt/)
+  assert.match(c.text, /Steuerberater/)
+  assert.ok((g.terms as readonly string[]).includes('garageVat'))
+  assert.ok(g.gaps.some((x) => x.issue === 316 && /Umsatzsteuer/.test(x.text)))
+})

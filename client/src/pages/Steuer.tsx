@@ -261,6 +261,17 @@ export default function Steuer({ settings }: Props) {
               />
             )}
 
+            {/* #336 und #323: nur benannt, nicht gerechnet. Ein Satz für jeden, ohne Bedingung: Ob ein
+                Mieter Kosten übernommen hat oder eine Garage umsatzsteuerpflichtig ist, kann Mietfuchs am
+                Bestand nicht sicher erkennen (eine Einheit ohne Fläche kann auch eine Wohnung mit vergessener
+                Fläche sein, und die Nebenleistung hängt am Mieter, nicht an der Einheit). */}
+            <p className="muted fine">
+              Zwei Dinge rechnet Mietfuchs nicht: Kosten, die ein Mieter für Sie übernommen hat, etwa eine mit der
+              Miete verrechnete Renovierung (<Term id="tenantPaidCosts">vom Mieter übernommene Kosten</Term>), und die
+              Umsatzsteuer, die bei einer getrennt vermieteten Garage oder einem Stellplatz anfallen kann
+              (<Term id="garageVat">Umsatzsteuer bei Garage und Stellplatz</Term>).
+            </p>
+
             {/* Der Befund aus #70: Abrechnung und Steuerübersicht nennen bei den Vorauszahlungen
                 verschiedene Zahlen, und beide sind richtig. Bisher stand das nirgends, und wer sie
                 verglich, hielt eine davon für falsch.

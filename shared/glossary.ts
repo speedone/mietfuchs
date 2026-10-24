@@ -22,6 +22,7 @@ import { OPERATING_POWER_HANDLING_LABELS, OPERATING_POWER_HANDLING_QUESTION } fr
 import { co2CutMissing, co2DistrictEtsNew, co2EbevFactors, co2FirstPeriodStart, co2HalfSplit, co2HalfSplitTwoFamily, co2NonResidential, co2Restriction, co2RoundingDecimals, co2SelfSupply, co2StageTable, halfSplitBioFirstDay, halfSplitEnactedOn, halfSplitFirstDay } from './law/co2kostaufg.ts'
 import { bioCapFrom, gmodgHeating43 } from './law/gmodg.ts'
 import { estgCheapRent } from './law/estg.ts'
+import { ustgSmallBusiness } from './law/ustg.ts'
 
 // Hälftige Teilung nach § 5a (Heizung PR 18): Stichtage, Grenze beim Biobrennstoff, Zweifamilienhaus und § 43 GModG.
 const HALF = valueAt(co2HalfSplit, halfSplitBioFirstDay())
@@ -31,6 +32,8 @@ const HEATING43 = valueAt(gmodgHeating43, LAW_AS_OF)
 const SELF = valueAt(co2SelfSupply, LAW_AS_OF)
 // Verbilligte Vermietung (#257): die Grenzen von § 21 Abs. 2 EStG.
 const CHEAP = valueAt(estgCheapRent, LAW_AS_OF)
+// Garage und Umsatzsteuer (#323): die Grenzen der Kleinunternehmerregelung nach § 19 Abs. 1 UStG.
+const SMALL = valueAt(ustgSmallBusiness, LAW_AS_OF)
 
 const SHARE = valueAt(hkvConsumptionShare, LAW_AS_OF)
 const CUT = valueAt(hkvCutNotByConsumption, LAW_AS_OF)
@@ -191,6 +194,26 @@ export const GLOSSARY = {
     example: 'Die Tochter zahlt 200 € kalt ohne Vorauszahlung, ortsüblich wären 900 € warm: 2.400 € von 10.800 € im Jahr, also 22,22 %. Von einer Dachreparatur über 1.000 €, zu 60/100 nach Fläche dieser Wohnung zuzurechnen, sind 600 € × 2.400/10.800 = 133,33 € abziehbar und 466,67 € nicht.',
     norm: '§ 21 Abs. 2 EStG; BFH, Urteil vom 22.02.2021, IX R 7/20 (ortsübliche Miete, Rz. 11 bis 14 und 21); BMF-Schreiben vom 08.10.2004, BStBl I S. 933, Rz. 11 und 13 (Entgelt, Totalüberschussprognose)',
     needed: 'Nur wenn Sie eine Wohnung günstiger als üblich vermieten. Tragen Sie dann an der Wohnung die ortsübliche Warmmiete ein, mit Quelle (meist der Mietspiegel) und Datum; die Steuerübersicht zeigt die Quote, kürzt die Werbungskosten dieser Wohnung, wo das Gesetz es verlangt, und zeigt den Rechenweg. Zahlt der Mieter umlagefähige Kosten unmittelbar an Dritte, etwa Gas für die eigene Heizung oder die Müllabfuhr an die Gemeinde, gehören sie in die ortsübliche Warmmiete und ebenso zum Entgelt; tragen Sie sie in derselben Karte beim Mietverhältnis unter „Direkt gezahlte Kosten“ als Betrag im Monat ein. Sie zählen nur für die Quote, nicht zu Ihren Werbungskosten. Heizt der Mieter selbst und fehlt der Betrag, kürzt Mietfuchs nicht. Abschreibung und Schuldzinsen der Wohnung, die Mietfuchs nicht führt, sind nach derselben Quote zu kürzen. Umlagefähige Kosten rechnet Mietfuchs der Wohnung mit dem Anteil des Mieters laut Abrechnung zu, die übrigen nach Wohnfläche; Tage ohne verbilligtes Mietverhältnis, auch Leerstand, zählen als entgeltlich. Beides ist eine Auslegung von Mietfuchs. Zahlt der Mieter die vereinbarte Miete nicht wie vereinbart, prüft das Finanzamt außerdem, ob das Mietverhältnis einem Fremdvergleich standhält (OFD Frankfurt am Main, Rundverfügung vom 17.06.2025, Tz. 1.2); das rechnet Mietfuchs nicht.',
+  },
+  // #323: getrennt vermietete Garage und Umsatzsteuer, nur benannt, nicht gerechnet. § 4 Nr. 12 und § 19 UStG
+  // am 24.10.2026 auf gesetze-im-internet.de gelesen, Abschnitt 4.12.2 Abs. 3 UStAE im Umsatzsteuer-Anwendungserlass
+  // des BMF (Stand 02.06.2026), die Zeilen am Vordruck „2025AnlV101 – September 2025 –“, Seite 2.
+  garageVat: {
+    title: 'Umsatzsteuer bei Garage und Stellplatz',
+    short: 'Die Vermietung von Wohnungen ist von der Umsatzsteuer befreit, die Vermietung von Plätzen zum Abstellen von Fahrzeugen nicht. Eine getrennt vermietete Garage oder ein getrennt vermieteter Stellplatz ist deshalb grundsätzlich umsatzsteuerpflichtig, auch wenn eine Privatperson sie mietet.',
+    example: `Sie vermieten eine Garage für 60 € im Monat an einen Nachbarn, der keine Wohnung bei Ihnen hat: 720 € im Jahr sind ein steuerpflichtiger Umsatz. Für die Kleinunternehmerregelung zählen die Wohnungsmieten nicht mit, wohl aber die Garagenmiete und Ihre übrigen Umsätze als Unternehmer. Hat diese Summe im Vorjahr ${SMALL.previousYearEuro.toLocaleString('de-DE')} € nicht überschritten und überschreitet sie im laufenden Jahr ${SMALL.currentYearEuro.toLocaleString('de-DE')} € nicht, ist die Garagenmiete steuerfrei. Mietet dagegen Ihr Wohnungsmieter die Garage auf demselben Grundstück, auch mit eigenem Vertrag, ist sie nach Auffassung der Finanzverwaltung eine Nebenleistung zur Wohnung und wie diese befreit.`,
+    norm: '§ 4 Nr. 12 Satz 2, § 19 Abs. 1 und 2 UStG; Abschnitt 4.12.2 Abs. 3 UStAE (Nebenleistung)',
+    needed: 'Nur wenn Sie eine Garage oder einen Stellplatz an jemanden vermieten, der nicht zugleich bei Ihnen eine Wohnung im selben Gebäudekomplex oder in unmittelbarer Nähe mietet. Nach Auffassung der Finanzverwaltung ist es auch dann keine Nebenleistung, wenn ein anderer den Stellplatz mietet als die Wohnung, selbst ein Angehöriger im selben Haushalt. Mietfuchs rechnet keine Umsatzsteuer und weist sie auf der Abrechnung nicht aus. Ob Umsatzsteuer anfällt und was Sie dem Finanzamt dafür erklären müssen, klären Sie bitte mit Ihrem Steuerberater. Im Vordruck der Anlage V für 2025 stehen die Einnahmen aus der Vermietung von Garagen in Zeile 26, die vereinnahmte Umsatzsteuer in Zeile 27.',
+  },
+  // #336: vom Mieter übernommene Kosten als Einnahme, nur benannt. Das Urteil des FG Berlin-Brandenburg am Volltext
+  // gelesen (IWW-Abrufnummer 253577, Entscheidungsgründe II. 2. a und b); das dort zitierte BFH-Urteil vom
+  // 30.09.2003, IX R 9/03, nicht im Volltext, deshalb hier nicht genannt.
+  tenantPaidCosts: {
+    title: 'Vom Mieter übernommene Kosten',
+    short: 'Übernimmt ein Mieter Kosten, die Sie als Vermieter zu tragen haben, etwa eine Renovierung, die er mit der Miete verrechnet, ist das für die Steuer eine Einnahme aus Vermietung, und zwar im Jahr, in dem der Mieter zahlt. Die Kosten selbst können zugleich Ihre Werbungskosten sein.',
+    example: 'Der Mieter lässt für 3.000 € renovieren und verrechnet das wie vereinbart mit zwei Monatsmieten zu je 1.500 €. Auf Ihrem Konto kommt in diesen Monaten nichts an, für die Steuer haben Sie trotzdem 3.000 € Einnahmen. Ist die Renovierung sofort abziehbarer Erhaltungsaufwand, stehen 3.000 € Werbungskosten dagegen, und der Überschuss ändert sich nicht.',
+    norm: '§ 8 Abs. 1, § 11 Abs. 1 EStG; FG Berlin-Brandenburg, Urteil vom 11.03.2026, 11 K 11216/24',
+    needed: 'Nur wenn ein Mieter Arbeiten oder Rechnungen bezahlt hat, die eigentlich Sie schulden. Mietfuchs kennt solche Zahlungen nicht: Bei „tatsächlich gezahlt“ zählen nur die Zahlungen, die Sie im Mietkonto erfasst haben, und bei den Werbungskosten nur Ihre Kostenpositionen. Ob die Kosten sofort abziehbar sind oder nur über die Abschreibung, und ob auch Arbeiten dazugehören, die der Mieter nach dem Mietvertrag ohnehin schuldet, klären Sie bitte mit Ihrem Steuerberater.',
   },
   vacancy: {
     title: 'Leerstand',

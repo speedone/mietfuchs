@@ -7,7 +7,8 @@ import { GLOSSARY } from '../../shared/glossary.ts'
 import { OPERATING_POWER_HANDLING_LABELS, OPERATING_POWER_HANDLING_QUESTION } from '../../shared/operatingPower.ts'
 import { NOTICE_KINDS } from '../src/calc.ts'
 import { co2HalfSplit, halfSplitFirstDay } from '../../shared/law/co2kostaufg.ts'
-import { valueAt } from '../../shared/law/register.ts'
+import { LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
+import { ustgSmallBusiness } from '../../shared/law/ustg.ts'
 
 test('Lexikon: jeder Eintrag ist vollständig, und jedes Beispiel rechnet mit Zahlen', () => {
   const entries = Object.entries(GLOSSARY)
@@ -521,4 +522,34 @@ test('Lexikon: angespannter Wohnungsmarkt mit den drei Verordnungen und nachgere
   assert.match(t.example, /in Textform mitgeteilt/)
   assert.match(t.needed, /höchstens 2 Wohnungen/)
   assert.ok(t.short.length + t.needed.length < 700, 'kurz halten')
+})
+
+test('#323: Garage und Umsatzsteuer, Grenzen der Kleinunternehmerregelung aus dem Register, Nebenleistung nach Abschnitt 4.12.2 UStAE', () => {
+  const t = GLOSSARY.garageVat
+  assert.match(t.norm, /§ 4 Nr\. 12 Satz 2/)
+  assert.match(t.norm, /§ 19 Abs\. 1 und 2 UStG/)
+  assert.match(t.norm, /Abschnitt 4\.12\.2 Abs\. 3 UStAE/)
+  // 60 € im Monat sind 720 € im Jahr; die Grenzen kommen aus dem Register, Fassung ab 2025.
+  assert.equal(60 * 12, 720)
+  assert.deepEqual(valueAt(ustgSmallBusiness, LAW_AS_OF), { previousYearEuro: 25000, currentYearEuro: 100000 })
+  assert.match(t.example, /60 € im Monat.*720 € im Jahr.*25\.000 €.*100\.000 €/s)
+  // Nebenleistung: als Auffassung der Verwaltung benannt, mit dem Beispiel des Angehörigen (Abschnitt 4.12.2 Abs. 3, Beispiel 3).
+  assert.match(t.example, /nach Auffassung der Finanzverwaltung/)
+  assert.match(t.needed, /Angehöriger im selben Haushalt/)
+  assert.match(t.needed, /Steuerberater/)
+  // Zeilen nur für den geprüften Vordruck 2025.
+  assert.match(t.needed, /Anlage V für 2025.*Zeile 26.*Zeile 27/s)
+})
+
+test('#336: vom Mieter übernommene Kosten als Einnahme, mit dem am Volltext gelesenen Urteil und ohne ungelesenes Aktenzeichen', () => {
+  const t = GLOSSARY.tenantPaidCosts
+  assert.match(t.norm, /FG Berlin-Brandenburg, Urteil vom 11\.03\.2026, 11 K 11216\/24/)
+  assert.match(t.norm, /§ 8 Abs\. 1, § 11 Abs\. 1 EStG/)
+  assert.doesNotMatch(t.norm + t.short + t.example + t.needed, /IX R 9\/03/, 'BFH-Urteil nicht im Volltext gelesen')
+  // 2 × 1.500 € = 3.000 € Einnahmen und, als Erhaltungsaufwand, 3.000 € Werbungskosten: Überschuss unverändert.
+  assert.equal(2 * 1500, 3000)
+  assert.match(t.example, /3\.000 €.*1\.500 €.*3\.000 € Einnahmen.*3\.000 € Werbungskosten/s)
+  // Vorsichtig: „können“ Werbungskosten sein, sofort abziehbar nur als Erhaltungsaufwand.
+  assert.match(t.short, /können zugleich Ihre Werbungskosten sein/)
+  assert.match(t.needed, /Abschreibung/)
 })

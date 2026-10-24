@@ -235,6 +235,13 @@ test('Der Soll-Vorbehalt nennt den Paragraphen und steht nicht auf der Ist-Grund
   expect(screen.queryByText(/Diese Ansicht rechnet mit dem vereinbarten Soll/i)).toBeNull()
 })
 
+test('Vom Mieter übernommene Kosten und Umsatzsteuer bei Garagen: genannt, nicht gerechnet, je mit Begriff (#336, #323)', async () => {
+  await zeige(REPORT())
+  expect(screen.getByText(/Zwei Dinge rechnet Mietfuchs nicht/)).toBeTruthy()
+  expect(screen.getByRole('button', { name: /vom Mieter übernommene Kosten/ })).toBeTruthy()
+  expect(screen.getByRole('button', { name: /Umsatzsteuer bei Garage und Stellplatz/ })).toBeTruthy()
+})
+
 test('Der Unterschied zur Abrechnung steht auf der Seite (#70)', async () => {
   await zeige(REPORT({}, { prepaymentSettlementCents: 180000, prepaymentOverridden: true }))
   expect(screen.getByText(new RegExp(`Die Abrechnung ${JAHR} setzt bei den Vorauszahlungen`))).toBeTruthy()
