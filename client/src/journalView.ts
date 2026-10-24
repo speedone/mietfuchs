@@ -9,7 +9,9 @@ import { PAYMENT_KIND_LABELS } from './paymentForm'
 import { STATES } from '../../shared/states.ts'
 
 export type JournalGroup = {
+  // Die jüngste Gruppe des Eintrags; schrieb eine Anfrage in mehrere Gruppen, ist `firstId` die älteste (#318, Schritt 4).
   id: number
+  firstId: number
   at: string
   method: string
   route: string
@@ -19,6 +21,11 @@ export type JournalGroup = {
   propertyIds: string[]
   installationWide: boolean
   rows: number
+  // Schritt 4: der Rücksprung, der den Eintrag zurückgenommen hat; eine Schranke (Backup, Vorversion, Umstieg); nur
+  // lesbar (vor dem letzten Update oder vor einer Schranke).
+  revertedBy: number | null
+  barrier: 'restore' | 'priorVersion' | 'changeover' | null
+  readOnly: boolean
 }
 
 export type JournalChange = {

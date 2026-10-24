@@ -482,6 +482,8 @@ export type OpenedDatabase = {
   write: <T>(work: (db: Database) => Promise<T>, journal?: JournalMeta) => Promise<T>
   // Die erfassten Tabellen mit Spalten und Fremdschlüsseln, für das Lesen des Verlaufs.
   journalSchema: JournalSchema
+  // Die Zahl der angewendeten Migrationsschritte; eine Gruppe mit anderer Zahl ist nur lesbar (#318, Schritt 4).
+  schemaSteps: number
   // Und der einzige zu einem Lesevorgang, aus demselben Grund: Auf der geteilten Verbindung
   // sähe ein Lesevorgang daneben den nicht festgeschriebenen Stand einer fremden Transaktion.
   read: <T>(work: (db: Database) => Promise<T>) => Promise<T>
@@ -646,6 +648,7 @@ export async function openDatabase(options: OpenOptions): Promise<OpenedDatabase
       warnings,
       write: (work, journal) => lane.write(() => (journal ? journaled(work, journal) : work(connection.db))),
       journalSchema,
+      schemaSteps,
       read: (work) => lane.read(() => work(connection.db)),
       close: connection.close,
     }

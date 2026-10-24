@@ -65,8 +65,24 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   und die, die alle Objekte betreffen; aufgeklappt stehen die geänderten Felder mit altem und neuem
   Wert. Der Verlauf wird zwölf Monate aufbewahrt. Ins Backup kommt er nur, wenn Sie in den
   Einstellungen „Verlauf der Änderungen mitsichern“ wählen, denn er enthält auch gelöschte Angaben
-  früherer Mieter. Rückgängig machen lässt sich eine Änderung noch nicht; dafür ist der Verlauf die
-  Grundlage.
+  früherer Mieter.
+- Rückgängig und Rücksprung im Verlauf ([#318](https://github.com/speedone/mietfuchs/issues/318)): Am obersten
+  Eintrag der Seite „Verlauf“ nimmt „Rückgängig …“ die letzte Änderung zurück. An jedem älteren Eintrag kehren
+  Sie zum Stand vor ihm zurück („Diese und alle späteren Änderungen zurücknehmen …“) oder zum Stand nach ihm
+  („Nur die späteren Änderungen zurücknehmen …“); alles, was danach kam, wird dabei mit zurückgenommen, die
+  neueste Änderung zuerst. Vorher zeigt eine Rückfrage, welche Einträge zurückgenommen werden. Der Rücksprung
+  steht danach selbst im Verlauf und lässt sich genauso zurücknehmen; zurückgenommene Einträge sind
+  gekennzeichnet. Nicht über einen Abschluss oder ein Wiederöffnen einer Abrechnung hinweg (dafür gibt es
+  „Wieder öffnen“), nicht über das Einspielen eines Backups oder einer Vorversion und nicht vor das letzte
+  Update; die Rückfrage sagt dann, warum, und wo der frühere Stand liegt. Einzelne Einträge mitten aus dem
+  Verlauf nimmt Mietfuchs bewusst nicht heraus: Ein Rücksprung führt immer in einen Stand, den es so gab.
+- Papierkorb für Belege ([#318](https://github.com/speedone/mietfuchs/issues/318)): Ein gelöschter Beleg und ein
+  ersetztes Logo oder Briefpapier liegen im Ordner „papierkorb“ im Datenordner, bis der Verlauf sie nach zwölf
+  Monaten nicht mehr nennt; ein Rücksprung holt sie zurück. Der Papierkorb kommt nicht ins Backup.
+- Filter und Suche im Verlauf ([#318](https://github.com/speedone/mietfuchs/issues/318)): nur das gewählte
+  Objekt oder alle, ein Bereich (Wohnungen und Mietverhältnisse, Kosten, Zähler, Zahlungen, Heizung, Belege,
+  Abrechnung, Einstellungen), ein Zeitraum und eine Textsuche nach Namen und Beschreibungen. Was eine Aktion in
+  mehreren Schritten schreibt (etwa Beleg hochladen und mit KI auswerten), steht als ein Eintrag da.
 - Kontrollansicht auf der Seite Abrechnung ([#321](https://github.com/speedone/mietfuchs/issues/321)):
   Aufklappbar und nur am Bildschirm zeigt sie je Kostenposition alle Mieter und die Gründe des
   Vermieters nebeneinander, dazu eine Summe gegen den Rechnungsbetrag, die Kosten, Vorauszahlung und

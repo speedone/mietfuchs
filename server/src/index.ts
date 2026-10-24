@@ -92,7 +92,9 @@ import { exportFilename, frozenExportable, settlementExportCsv, settlementExport
 import { derivedTaxLines, planTaxArchive, taxArchiveItems } from './taxReceipts.ts'
 import { createPriorVersion, listPriorVersions, mayCreatePriorVersion, PRIOR_CHECK_INTERVAL_MS, PRIOR_DIR, priorVersionsBlocked, priorVersionTime } from './db/priorVersions.ts'
 import { costItems as costItemsTable } from './db/schema.ts'
-import { journalGroup, listJournal, pruneJournal, type JournalMeta } from './db/journal.ts'
+import { addBarrier, isJournalKind, journalGroup, listJournal, pruneJournal, unjournaled, type JournalBarrier, type JournalMeta } from './db/journal.ts'
+import { applyRevert, filesNamedInJournal, isRevertMode, previewRevert, RevertRefused } from './db/revert.ts'
+import { cleanTrash, moveToTrash } from './trash.ts'
 import { DRY_RUN_ROUTES, routeSentence } from './journalRoutes.ts'
 import { forgetUpload, placeUpload, recordIfMissing, recordUpload, rowOf, uploadRows, type Placement, type UploadRow } from './db/uploads.ts'
 
@@ -107,6 +109,17 @@ app.use(express.json())
 // Fassung und unter Bun so bleibt, sagt niemand zu.
 const requestScope = new AsyncLocalStorage<Request>()
 const inRequest = (req: Request, _res: Response, next: NextFunction): void => requestScope.run(req, next)
+// Die Kennung je Anfrage an ihren Gruppen (#318, Schritt 4): Schreibt eine Anfrage mehrmals (Beleg hochladen, KI
+// auswerten, Auswertung speichern) und eine andere dazwischen, zeigt der Verlauf trotzdem einen Eintrag.
+const requestIds = new WeakMap<Request, string>()
+const requestIdOf = (req: Request): string => {
+  let id = requestIds.get(req)
+  if (!id) {
+    id = newId()
+    requestIds.set(req, id)
+  }
+  return id
+}
 app.use(inRequest)
 
 // ---------- Kleine Helfer ----------
@@ -420,7 +433,7 @@ const journalMeta = (): JournalMeta | undefined => {
     console.error(`Änderungsjournal: Die Route ${req.method} ${route} hat keinen Satz und wird nicht erfasst (journalRoutes.ts).`)
     return undefined
   }
-  return { method: req.method, route, description: sentence.text, subjectTable: sentence.table, scope: req }
+  return { method: req.method, route, description: sentence.text, subjectTable: sentence.table, scope: req, requestId: requestIdOf(req) }
 }
 const writeData = <T>(work: (db: Database) => Promise<T>): Promise<T> => onDatabase((opened) => opened.write(work, journalMeta()))
 
@@ -1230,7 +1243,7 @@ async function saveLetterDesign(req: Request, propertyId: string | null): Promis
         else await savePropertyDesign(tx, propertyId, next)
       })
     } catch (err) {
-      removeUnreferenced(DATA_DIR, written, new Set())
+      removeUnreferenced(DATA_DIR, written, new Set(), false)
       throw err
     }
     removeUnreferenced(DATA_DIR, candidates, await referencedDesignFiles(db))
@@ -1713,13 +1726,15 @@ function aiResponse(req: Request, res: Response): AiAnswer {
     controller.abort()
     const upload = uploadedFile(req)
     if (upload) {
-      fs.rmSync(upload.path, { force: true })
+      // In den Papierkorb (#318): Die Zeile stand schon im Verlauf, ein Rücksprung soll die Datei finden.
+      moveToTrash(DATA_DIR, 'uploads', upload.filename)
       // Seine Angaben gehen mit (#170), ebenso eine Auswertung, die beim Abbruch gerade
-      // gespeichert wurde; ein Beleg aus dem Posteingang ist nie `upload`.
-      void writeData(async (db) => {
+      // gespeichert wurde; ein Beleg aus dem Posteingang ist nie `upload`. Im Kontext der ausgewerteten Anfrage, ob der
+      // Abbruch über POST /api/ai/cancel/:id oder das Schließen der Verbindung kommt: Im Verlauf ist es ein Eintrag.
+      void requestScope.run(req, () => writeData(async (db) => {
         await forgetAssessment(db, upload.filename)
         await forgetUpload(db, upload.filename)
-      }).catch(() => undefined)
+      })).catch(() => undefined)
     }
     // Die Verbindung beenden; hat der Browser sie schon geschlossen, schadet das nicht
     if (!res.writableEnded) res.end()
@@ -1789,7 +1804,7 @@ async function documentOf(req: Request, res: Response): Promise<DocumentSource |
     // Hat der Browser während des Speicherns schon aufgegeben, hört niemand mehr zu, und der
     // Abbruch in aiResponse käme nie an (Durchsicht): dann gleich aufräumen statt auszuwerten.
     if (res.destroyed || req.socket.destroyed) {
-      fs.rmSync(fresh.path, { force: true })
+      moveToTrash(DATA_DIR, 'uploads', fresh.filename)
       await writeData((db) => forgetUpload(db, fresh.filename)).catch(() => undefined)
       return null
     }
@@ -2191,8 +2206,12 @@ app.delete('/api/uploads/:file', async (req, res) => {
   if (name !== req.params.file || !fs.existsSync(full) || !fs.statSync(full).isFile()) return res.status(404).json({ error: 'Datei nicht gefunden' })
   // Prüfung und Vergessen in einem Schreibvorgang: Eine Buchung, die dazwischen ankäme, würde
   // sonst mit der Auswertung gelöscht (Kaskade). Die Datei geht erst danach.
+  // Ein älterer Beleg hat womöglich keine Zeile („eine fehlende Zeile ist kein Fehler“); sie entsteht hier als
+  // Systemarbeit, damit das Löschen im Verlauf steht und ein Rücksprung den Beleg zurückholen kann (#318).
+  const described = describeFile(UPLOAD_DIR, name)
   const inUse = await writeData(async (db) => {
     if ((await invoiceFilesInUse(db, [name])).has(name)) return true
+    if (described) await unjournaled(db, () => recordIfMissing(db, rowOf(described)))
     await forgetUpload(db, name)
     await forgetAssessment(db, name)
     return false
@@ -2200,7 +2219,8 @@ app.delete('/api/uploads/:file', async (req, res) => {
   if (inUse) {
     return res.status(409).json({ error: 'Beleg ist noch mit Kostenpositionen verknüpft.' })
   }
-  fs.unlinkSync(full)
+  // In den Papierkorb statt gelöscht (#318, Schritt 5, trash.ts).
+  moveToTrash(DATA_DIR, 'uploads', name)
   res.json({ ok: true })
 })
 
@@ -2663,7 +2683,7 @@ async function readBackupEntries(zip: ZipReader, staging: string): Promise<ReadB
 //      derselben centgenauen Regression wie beim Umstieg. Die db.json zu ersetzen und die alte
 //      Datenbank stehen zu lassen wäre der schlimmste Ausgang: Der Nutzer sähe eine
 //      Bestätigung und arbeitete danach mit den Daten von vorher weiter.
-async function restoreDatabase(staged: string | null): Promise<string[]> {
+async function restoreDatabase(staged: string | null, barrier: 'restore' | 'priorVersion'): Promise<string[]> {
   const target = databaseFile(DATA_DIR)
 
   // **Erst aus der Nahtstelle nehmen, dann leerlaufen lassen, dann schließen.** Die Reihenfolge
@@ -2726,6 +2746,7 @@ async function restoreDatabase(staged: string | null): Promise<string[]> {
       message: 'Die wiederhergestellte Sicherung hat ihre Datenbank mitgebracht; es war nichts zu übernehmen.',
       notes: [], protocol: null, database,
     }
+    await markBarrier(barrier)
     return []
   }
 
@@ -2740,7 +2761,19 @@ async function restoreDatabase(staged: string | null): Promise<string[]> {
   changeover = rebuilt
   database = rebuilt.database
   if (!database) openProblem = 'nach dem Wiederherstellen nicht wieder geöffnet'
+  else await markBarrier(barrier)
   return rebuilt.state === 'failed' ? [rebuilt.message] : rebuilt.notes
+}
+
+// Die Schranke im Verlauf (#318, Schritt 4): Über ein Einspielen und den Umstieg hinweg führt kein Rücksprung.
+// Systemarbeit ohne Gruppe; ein Fehler steht nur auf der Konsole und hält das Einspielen nicht auf.
+async function markBarrier(barrier: JournalBarrier): Promise<void> {
+  try {
+    const opened = database
+    if (opened) await opened.write((db) => addBarrier(db, barrier, opened.schemaSteps, new Date()))
+  } catch (err) {
+    console.error(`Die Schranke im Verlauf ließ sich nicht setzen: ${messageOf(err)}`)
+  }
 }
 
 // **Nur eine Wiederherstellung auf einmal.** Der eigene Name je Zwischendatei schützt die
@@ -2903,7 +2936,7 @@ async function runRestore(backup: ReadBackup, res: Response): Promise<void> {
 
   let notes: string[]
   try {
-    notes = await restoreDatabase(staged)
+    notes = await restoreDatabase(staged, 'restore')
   } catch (err) {
     // **Hier wird nicht versprochen, dass beim nächsten Start alles gut wird.** Das stand einmal
     // so da und hielt nicht: Scheitert das Bewegen der Datei, kann die wiederhergestellte
@@ -2966,12 +2999,27 @@ async function checkPriorVersion(pruneToo = false): Promise<void> {
   } catch (err) {
     console.error(`Das Änderungsjournal ließ sich nicht aufräumen: ${messageOf(err)}`)
   }
+  await emptyTrash()
   try {
     if (!database || !mayCreatePriorVersion(databaseState(), restoreRunning)) return
     const name = await createPriorVersion(database, DATA_DIR, new Date(), { skip: () => restoreRunning })
     if (name) console.log(`Vorversion der Datenbank angelegt: ${path.join(DATA_DIR, PRIOR_DIR, name)}`)
   } catch (err) {
     console.error(`Die Vorversion der Datenbank ließ sich nicht anlegen: ${messageOf(err)}`)
+  }
+}
+
+// Der Papierkorb (#318, Schritt 5, trash.ts) mit der Aufbewahrung des Journals: Was keine Zeile im Journal mehr nennt,
+// braucht kein Rücksprung. Nur mit einer Datenbank, die den Bestand trägt (sonst wüsste niemand, was noch genannt
+// ist). Wirft nie.
+async function emptyTrash(): Promise<void> {
+  try {
+    if (!database || databaseUnavailable(databaseState()) !== null) return
+    const keep = await database.read((db) => filesNamedInJournal(db))
+    const removed = cleanTrash(DATA_DIR, keep)
+    if (removed > 0) console.log(`Papierkorb: ${removed === 1 ? 'eine Datei' : `${removed} Dateien`} entfernt, die der Verlauf nicht mehr nennt.`)
+  } catch (err) {
+    console.error(`Der Papierkorb ließ sich nicht aufräumen: ${messageOf(err)}`)
   }
 }
 
@@ -2985,22 +3033,71 @@ const priorVersionsRefusal = (res: Response): boolean => {
 
 // ---------- Verlauf (#318, Schritt 3) ----------
 
-// Die Gruppen des Änderungsjournals, neueste zuerst: mit `property` die des Objekts und die
-// installationsweiten, ohne alle. `before` ist die Kennung, ab der weitergeblättert wird.
+// Die Einträge des Änderungsjournals, neueste zuerst: mit `property` die des Objekts und die
+// installationsweiten, ohne alle. `before` ist die Kennung, ab der weitergeblättert wird. Filter (#318, Schritt 4):
+// `from`/`to` als ISO-Zeitpunkte (die Oberfläche rechnet Tage in ihrer Zeitzone um, `to` ausschließlich), `kind`
+// (Bereich, abgeleitet aus den Tabellen), `q` (Text in Satz und Inhalt).
 const JOURNAL_PAGE = 50
+const isoQuery = (value: unknown): string | null =>
+  typeof value === 'string' && /^\d{4}-\d{2}-\d{2}(T[\d:.]+Z)?$/.test(value) && !Number.isNaN(Date.parse(value)) ? new Date(value).toISOString() : null
 app.get('/api/journal', async (req, res) => {
   const property = typeof req.query.property === 'string' && req.query.property ? req.query.property : null
   const before = typeof req.query.before === 'string' && /^\d+$/.test(req.query.before) ? Number(req.query.before) : null
   const asked = typeof req.query.limit === 'string' && /^\d+$/.test(req.query.limit) ? Number(req.query.limit) : JOURNAL_PAGE
   const limit = Math.min(Math.max(asked, 1), 200)
-  res.json(await onDatabase((opened) => opened.read((db) => listJournal(db, opened.journalSchema, { propertyId: property, before, limit }))))
+  const from = isoQuery(req.query.from)
+  const to = isoQuery(req.query.to)
+  if ((req.query.from !== undefined && req.query.from !== '' && from === null) || (req.query.to !== undefined && req.query.to !== '' && to === null)) {
+    return res.status(400).json({ error: 'Der Zeitraum des Filters ist kein gültiges Datum.' })
+  }
+  const kind = req.query.kind === undefined || req.query.kind === '' ? null : req.query.kind
+  if (kind !== null && !isJournalKind(kind)) return res.status(400).json({ error: 'Diesen Bereich kennt der Verlauf nicht.' })
+  const q = typeof req.query.q === 'string' && req.query.q.trim() !== '' ? req.query.q.trim().slice(0, 200) : null
+  res.json(await onDatabase((opened) => opened.read((db) =>
+    listJournal(db, opened.journalSchema, { propertyId: property, before, limit, from, to, kind, q, schemaSteps: opened.schemaSteps }))))
 })
 
+const journalId = (req: Request): number | null => (/^\d+$/.test(String(req.params.id)) ? Number(req.params.id) : null)
+const JOURNAL_GONE = 'Diesen Eintrag gibt es im Verlauf nicht (mehr).'
+
 app.get('/api/journal/:id', async (req, res) => {
-  const id = /^\d+$/.test(req.params.id) ? Number(req.params.id) : null
-  const group = id === null ? null : await onDatabase((opened) => opened.read((db) => journalGroup(db, opened.journalSchema, id)))
-  if (!group) return res.status(404).json({ error: 'Diesen Eintrag gibt es im Verlauf nicht (mehr).' })
+  const id = journalId(req)
+  const group = id === null ? null : await onDatabase((opened) => opened.read((db) => journalGroup(db, opened.journalSchema, id, opened.schemaSteps)))
+  if (!group) return res.status(404).json({ error: JOURNAL_GONE })
   res.json(group)
+})
+
+// Rücksprung (#318, Schritt 4, db/revert.ts): `mode` `including` = Stand vor dem Eintrag (er und alles danach wird
+// zurückgenommen), `after` = Stand nach dem Eintrag (nur alles danach). Erst die Vorschau (ein Probelauf, der
+// zurückrollt), dann der Rücksprung mit ihrer Marke; stimmt sie nicht mehr oder steht eine Grenze im Weg, 409 mit
+// neuer Vorschau. Ohne Zustimmung wird nichts geschrieben.
+const revertModeOf = (req: Request) => {
+  const mode = bodyObject(req).mode ?? 'including'
+  return isRevertMode(mode) ? mode : null
+}
+app.post('/api/journal/:id/revert/preview', async (req, res) => {
+  const id = journalId(req)
+  const mode = revertModeOf(req)
+  if (mode === null) return res.status(400).json({ error: 'Unbekannte Art des Rücksprungs.' })
+  const preview = id === null ? null : await writeData((db) => onDatabase((opened) => previewRevert(db, opened.journalSchema, id, mode, opened.schemaSteps, DATA_DIR)))
+  if (!preview) return res.status(404).json({ error: JOURNAL_GONE })
+  res.json(preview)
+})
+app.post('/api/journal/:id/revert', async (req, res) => {
+  const id = journalId(req)
+  const mode = revertModeOf(req)
+  if (mode === null) return res.status(400).json({ error: 'Unbekannte Art des Rücksprungs.' })
+  try {
+    const done = id === null ? null : await writeData((db) => onDatabase((opened) => applyRevert(db, opened.journalSchema, id, mode, bodyObject(req).token, opened.schemaSteps, DATA_DIR)))
+    if (!done) return res.status(404).json({ error: JOURNAL_GONE })
+    // Die Einstellungen liegen als Kopie im Arbeitsspeicher; ohne Neulesen schriebe das nächste PUT /api/settings den
+    // Stand von vor dem Rücksprung zurück (wie nach dem Wiederherstellen).
+    await refreshSettings()
+    res.json({ ok: true, ...done })
+  } catch (err) {
+    if (err instanceof RevertRefused) return res.status(409).json({ error: err.message, preview: err.preview })
+    throw err
+  }
 })
 
 app.get('/api/prior-versions', async (_req, res) => {
@@ -3042,7 +3139,7 @@ app.post('/api/prior-versions/:name/restore', async (req, res) => {
     }
     let notes: string[]
     try {
-      notes = await restoreDatabase(staged)
+      notes = await restoreDatabase(staged, 'priorVersion')
     } catch (err) {
       notes = [restoreFailedNote(err, 'Die Vorversion wurde geprüft', '')]
     }
@@ -3570,6 +3667,7 @@ let changeover: ChangeoverResult = database
   : changeoverWithoutDatabase(DATA_DIR, openProblem ?? 'unbekannter Grund')
 database = changeover.database
 if (!database) openProblem = openProblem ?? 'nach dem Umstieg nicht wieder geöffnet'
+if (changeover.state === 'done') await markBarrier('changeover')
 // Erst jetzt, denn ob die Sicherung ein Rückweg ist, hängt am Ausgang des Umstiegs.
 const backupOfThisStart = noteAfterChangeover(changeover.state, backupBeforeChangeover)?.file ?? null
 

@@ -27,9 +27,14 @@
 // Fremdschlüssel. So kostet es beim Schreiben nichts, und ein später gelöschtes Objekt macht die
 // Gruppe von selbst installationsweit (S6).
 
-import { and, desc, eq, lt, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm'
 import type { Connection, Database, Executor } from './client.ts'
-import { changeGroups, changeLog } from './schema.ts'
+import { changeGroups, changeLog, type JOURNAL_BARRIERS } from './schema.ts'
+import { isJournalKind, JOURNAL_KINDS, type JournalKind } from '../../../shared/journal.ts'
+
+export { isJournalKind, JOURNAL_KINDS, type JournalKind }
+
+export type JournalBarrier = (typeof JOURNAL_BARRIERS)[number]
 
 // Wie lange Gruppen aufbewahrt werden (Datenschutz, siehe Entwurf). Aufgeräumt wird beim Öffnen und
 // danach einmal am Tag (index.ts, zusammen mit der Vorversion).
@@ -92,6 +97,11 @@ export function journalSchema(connection: Pick<Connection, 'rows'>): JournalSche
 // und der Trigger risse dann die ganze Änderung mit; er steht deshalb hexadezimal da (S5).
 const jsonValue = (ref: string): string => `CASE typeof(${ref}) WHEN 'blob' THEN json_object('$blob', hex(${ref})) ELSE ${ref} END`
 
+// Unter diesem Namen steht die `rowid` einer Zeile im Bild (Schritt 4): Der Rücksprung fügt eine gelöschte Zeile mit
+// ihrer alten `rowid` wieder ein, denn die Reihenfolge trägt Bedeutung (read.ts liest `ORDER BY rowid`; zwei
+// Ablesungen am selben Tag). Kein Spaltenname beginnt mit `$`. Der Verlauf zeigt sie nicht (`collapse`).
+export const ROWID = '$rowid'
+
 // Der Ausdruck für eine Zeile als JSON über alle Spalten; `side` ist OLD oder NEW.
 function rowJson(table: TableInfo, side: 'OLD' | 'NEW'): string {
   const omitted = OMITTED_COLUMNS[table.name] ?? []
@@ -102,7 +112,7 @@ function rowJson(table: TableInfo, side: 'OLD' | 'NEW'): string {
       : jsonValue(ref)
     return `${quoteText(column)}, ${value}`
   })
-  return `json_object(${parts.join(', ')})`
+  return `json_object(${parts.join(', ')}, ${quoteText(ROWID)}, ${side}.rowid)`
 }
 
 function keyJson(table: TableInfo, side: 'OLD' | 'NEW'): string {
@@ -112,7 +122,7 @@ function keyJson(table: TableInfo, side: 'OLD' | 'NEW'): string {
 
 export const triggerName = (table: string, op: (typeof OPS)[number]): string => `${TRIGGER_PREFIX}${table}_${op}`
 
-const GROUP_COLUMNS = 'id, at, method, route, description, subject_table, schema_steps'
+const GROUP_COLUMNS = 'id, at, method, route, description, subject_table, schema_steps, request_id'
 
 // Die drei Trigger einer Tabelle. Unqualifizierte Namen im Rumpf: Ein TEMP-Trigger findet
 // `journal_current` im temp-Schema und `change_groups`/`change_log` in main; Namen mit Schema lässt
@@ -128,7 +138,7 @@ export function triggerSql(table: TableInfo): string[] {
   // nur einfügen, wenn es sie noch nicht gibt.
   const group =
     `INSERT INTO change_groups (${GROUP_COLUMNS}) ` +
-    `SELECT group_id, at, method, route, description, subject_table, schema_steps FROM journal_current ` +
+    `SELECT group_id, at, method, route, description, subject_table, schema_steps, request_id FROM journal_current ` +
     `WHERE NOT EXISTS (SELECT 1 FROM change_groups WHERE id = (SELECT group_id FROM journal_current));`
   const insert = (op: string, key: string, before: string, after: string) =>
     `${group} INSERT INTO change_log (group_id, table_name, row_key, op, before, after) VALUES ` +
@@ -154,7 +164,7 @@ export function ensureJournal(connection: Pick<Connection, 'rows' | 'exec'>): Jo
   connection.exec('PRAGMA recursive_triggers = ON')
   connection.exec('DROP TABLE IF EXISTS temp.journal_current')
   connection.exec(
-    'CREATE TEMP TABLE journal_current (group_id INTEGER, at TEXT, method TEXT, route TEXT, description TEXT, subject_table TEXT, schema_steps INTEGER)',
+    'CREATE TEMP TABLE journal_current (group_id INTEGER, at TEXT, method TEXT, route TEXT, description TEXT, subject_table TEXT, schema_steps INTEGER, request_id TEXT)',
   )
   connection.exec('INSERT INTO temp.journal_current (group_id) VALUES (NULL)')
   const existing = connection
@@ -176,6 +186,10 @@ export type JournalMeta = {
   // Woran zwei Schreibvorgänge derselben Anfrage erkannt werden (die Anfrage selbst). Eine
   // Anfrage ist eine Gruppe.
   scope: object
+  // Die Kennung der Anfrage, gespeichert an der Gruppe (Schritt 4). Schreibt eine Anfrage mehrmals und eine andere
+  // dazwischen (etwa während eine KI-Auswertung läuft), entstehen mehrere Gruppen mit derselben Kennung; der Verlauf
+  // zeigt sie als einen Eintrag.
+  requestId: string
 }
 
 // Die Gruppe des zuletzt erfassten Schreibvorgangs. Weil die Schlange alles nacheinander ausführt,
@@ -200,7 +214,8 @@ export async function beginGroup(db: Database, meta: JournalMeta, schemaSteps: n
     last = { scope: meta.scope, id }
   }
   await db.run(sql`UPDATE temp.journal_current SET group_id = ${id}, at = ${now.toISOString()}, method = ${meta.method},
-    route = ${meta.route}, description = ${meta.description}, subject_table = ${meta.subjectTable}, schema_steps = ${schemaSteps}`)
+    route = ${meta.route}, description = ${meta.description}, subject_table = ${meta.subjectTable}, schema_steps = ${schemaSteps},
+    request_id = ${meta.requestId}`)
   return id
 }
 
@@ -232,7 +247,42 @@ async function dropIfNoChange(db: Database, id: number): Promise<void> {
   if (rows.length > 0 && collapse(rows).length === 0) await db.delete(changeGroups).where(eq(changeGroups.id, id))
 }
 
-type LogRow = typeof changeLog.$inferSelect
+// Die Kennung der laufenden Gruppe, `null` ohne. Die Gruppe selbst gibt es erst mit ihrer ersten Zeile.
+export async function currentGroupId(db: Executor): Promise<number | null> {
+  const row = await db.get<[number | null]>(sql`SELECT group_id FROM temp.journal_current`)
+  return row?.[0] === null || row?.[0] === undefined ? null : Number(row[0])
+}
+
+// Systemarbeit mitten in einem erfassten Schreibvorgang: Was `work` schreibt, steht nicht im Journal. Für die Zeile, die
+// einen schon vorhandenen Beleg nur beschreibt (`placeUpload`, Löschen eines Belegs ohne Zeile): Ihr Anlegen ist keine
+// Handlung des Vermieters, und ein Rücksprung, der sie entfernte, legte die Datei in den Papierkorb, obwohl sie vorher
+// schon im Belegordner lag.
+export async function unjournaled<T>(db: Executor, work: () => Promise<T>): Promise<T> {
+  const id = await currentGroupId(db)
+  if (id === null) return work()
+  await db.run(sql`UPDATE temp.journal_current SET group_id = NULL`)
+  try {
+    return await work()
+  } finally {
+    await db.run(sql`UPDATE temp.journal_current SET group_id = ${id}`)
+  }
+}
+
+// Eine Schranke im Verlauf (Schritt 4): ein eingespieltes Backup, eine Vorversion, der Umstieg. Sie hat keine Zeilen;
+// über sie hinweg führt kein Rücksprung (revert.ts), denn der Stand davor steht nicht in dieser Datei.
+export const BARRIER_SENTENCES: Readonly<Record<JournalBarrier, string>> = {
+  restore: 'Backup eingespielt',
+  priorVersion: 'Vorversion eingespielt',
+  changeover: 'Daten aus der db.json übernommen (Umstieg)',
+}
+
+export async function addBarrier(db: Executor, barrier: JournalBarrier, schemaSteps: number, now: Date): Promise<void> {
+  await db.insert(changeGroups).values({
+    at: now.toISOString(), method: 'POST', route: '', description: BARRIER_SENTENCES[barrier], subjectTable: null, schemaSteps, barrier,
+  })
+}
+
+export type LogRow = typeof changeLog.$inferSelect
 type Image = Record<string, unknown>
 
 const parseRow = (text: string | null): Image | null => {
@@ -378,7 +428,10 @@ export async function pruneJournal(db: Database, now: Date): Promise<number> {
 // ---------- Lesen (Schritt 3) ----------
 
 export type JournalGroupView = {
+  // Die jüngste Gruppe des Eintrags. Schrieb eine Anfrage in mehrere Gruppen (requestId), ist der Eintrag einer, und
+  // `firstId` ist seine älteste Gruppe.
   id: number
+  firstId: number
   at: string
   method: string
   route: string
@@ -388,6 +441,12 @@ export type JournalGroupView = {
   propertyIds: string[]
   installationWide: boolean
   rows: number
+  // Der Rücksprung, der diesen Eintrag zurückgenommen hat (Schritt 4), sonst `null`.
+  revertedBy: number | null
+  // Eine Schranke (Backup, Vorversion, Umstieg): ohne Zeilen, nie zurückzunehmen.
+  barrier: JournalBarrier | null
+  // Nur lesbar: vor der letzten Migration oder vor einer Schranke (Schritt 4, revert.ts).
+  readOnly: boolean
 }
 
 export type JournalRowView = {
@@ -444,48 +503,167 @@ export async function groupTitle(description: string, subjectTable: string | nul
 
 const PAGE_SCAN = 200
 
-// Die Gruppen, neueste zuerst. Mit `propertyId` die des Objekts und die installationsweiten. Gruppen,
-// die nach dem Zusammenfassen nichts ändern, fehlen (S4, falls eine ältere Version sie geschrieben hat).
-export async function listJournal(
-  db: Executor,
-  schema: JournalSchema,
-  options: { propertyId: string | null, before: number | null, limit: number },
-): Promise<JournalGroupView[]> {
+// Der Bereich einer Gruppe für den Filter des Verlaufs, abgeleitet aus ihren Tabellen. Jede erfasste Tabelle hat einen
+// (Wächter in journal.test.ts), sonst fiele sie aus jedem Filter heraus.
+export const TABLE_KINDS: Readonly<Record<string, JournalKind>> = {
+  properties: 'settings', period_changes: 'settings', settings: 'settings', ai_slots: 'settings', law_overrides: 'settings',
+  units: 'units', tenancies: 'units', person_history: 'units', prepayments: 'units', flat_rates: 'units',
+  tenancy_direct_charges: 'units', base_rents: 'units', prepayment_overrides: 'units', unit_no_connection: 'units',
+  unit_local_rents: 'units', unit_usage_changes: 'units',
+  cost_items: 'costs', cost_item_shares: 'costs', cost_item_participants: 'costs', cost_item_amounts: 'costs',
+  cost_item_contract: 'costs', cost_item_self_amounts: 'costs',
+  meters: 'meters', readings: 'meters', interim_reading_gaps: 'meters',
+  payments: 'payments',
+  heating_plants: 'heating', heating_plant_units: 'heating', heating_periods: 'heating', heating_period_changes: 'heating',
+  heating_separate_spans: 'heating', heating_self_spans: 'heating', heating_service_values: 'heating',
+  heating_estimates: 'heating', heating_prepayments: 'heating', heating_prepayment_overrides: 'heating',
+  fuel_deliveries: 'heating', fuel_delivery_parts: 'heating', fuel_carry_frozen: 'heating', degree_day_values: 'heating',
+  co2_statements: 'heating', co2_tenant_reliefs: 'heating', co2_refunds: 'heating', heating_monthly_info: 'heating',
+  uploads: 'receipts', assessments: 'receipts', assessment_lines: 'receipts',
+  closed_settlements: 'settlements', closed_settlement_history: 'settlements', closed_heating_settlements: 'settlements',
+  closed_heating_settlement_history: 'settlements', letter_texts: 'settlements', property_letter_texts: 'settlements',
+  tenancy_letter_texts: 'settlements', tenancy_letter_adjustments: 'settlements', letter_design: 'settlements',
+  property_letter_designs: 'settlements',
+}
+export const tablesOfKind = (kind: JournalKind): string[] => Object.keys(TABLE_KINDS).filter((t) => TABLE_KINDS[t] === kind)
+
+export type JournalQuery = {
+  propertyId: string | null
+  before: number | null
+  limit: number
+  // Zeitpunkte als ISO-Text (die Oberfläche rechnet Tage in ihrer Zeitzone um), `to` ausschließlich.
+  from?: string | null
+  to?: string | null
+  kind?: JournalKind | null
+  // Textsuche in Satz und Inhalt der Zeilen (Namen, Beschreibungen). LIKE übergeht Groß und Klein nur bei ASCII.
+  q?: string | null
+  // Die Zahl der Migrationsschritte der offenen Datei, für `readOnly`.
+  schemaSteps: number
+}
+
+type GroupRow = typeof changeGroups.$inferSelect
+
+// Die jüngste Schranke: Davor gibt es keinen Rücksprung.
+export async function latestBarrierId(db: Executor): Promise<number> {
+  const row = await db.get<[number | null]>(sql`SELECT max(id) FROM change_groups WHERE barrier IS NOT NULL`)
+  return Number(row?.[0] ?? 0)
+}
+
+export const isReadOnly = (g: Pick<GroupRow, 'id' | 'schemaSteps' | 'barrier'>, schemaSteps: number, barrierId: number): boolean =>
+  g.barrier !== null || g.schemaSteps !== schemaSteps || g.id < barrierId
+
+const likeText = (q: string): string => `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`
+
+// Die Gruppen, die ein Eintrag sein können: je Anfrage nur die jüngste (die übrigen gehören zu ihrem Eintrag), mit den
+// Filtern, die sich in SQL sagen lassen. Der Filter nach dem Objekt folgt in `listJournal`, denn das Objekt einer Gruppe
+// bestimmt erst das Lesen (groupProperties).
+async function candidates(db: Executor, options: JournalQuery, before: number | null): Promise<GroupRow[]> {
+  const sameEntry = sql`(m.id = g.id OR (g.request_id IS NOT NULL AND m.request_id = g.request_id))`
+  const where = [sql`NOT EXISTS (SELECT 1 FROM change_groups n WHERE g.request_id IS NOT NULL AND n.request_id = g.request_id AND n.id > g.id)`]
+  if (before !== null) where.push(sql`g.id < ${before}`)
+  if (options.from) where.push(sql`g.at >= ${options.from}`)
+  if (options.to) where.push(sql`g.at < ${options.to}`)
+  if (options.kind) {
+    const tables = tablesOfKind(options.kind)
+    where.push(sql`EXISTS (SELECT 1 FROM change_log l JOIN change_groups m ON m.id = l.group_id WHERE ${sameEntry} AND l.table_name IN (${sql.join(tables.map((t) => sql`${t}`), sql`, `)}))`)
+  }
+  if (options.q) {
+    const like = likeText(options.q)
+    where.push(sql`(g.description LIKE ${like} ESCAPE '\\' OR EXISTS (SELECT 1 FROM change_log l JOIN change_groups m ON m.id = l.group_id WHERE ${sameEntry} AND (l.before LIKE ${like} ESCAPE '\\' OR l.after LIKE ${like} ESCAPE '\\')))`)
+  }
+  const rows = await db.all<[number, string, string, string, string, string | null, number, string | null, number | null, string | null]>(
+    sql`SELECT g.id, g.at, g.method, g.route, g.description, g.subject_table, g.schema_steps, g.request_id, g.reverted_by, g.barrier
+      FROM change_groups g WHERE ${sql.join(where, sql` AND `)} ORDER BY g.id DESC LIMIT ${PAGE_SCAN}`,
+  )
+  return rows.map((r) => ({
+    id: Number(r[0]), at: String(r[1]), method: String(r[2]), route: String(r[3]), description: String(r[4]),
+    subjectTable: r[5] === null ? null : String(r[5]), schemaSteps: Number(r[6]), requestId: r[7] === null ? null : String(r[7]),
+    revertedBy: r[8] === null ? null : Number(r[8]), barrier: barrierOf(r[9]),
+  }))
+}
+
+const barrierOf = (value: unknown): JournalBarrier | null =>
+  value === 'restore' || value === 'priorVersion' || value === 'changeover' ? value : null
+
+// Die Zeilen der Einträge in einem Zug (statt einer Abfrage je Gruppe; so bleibt der Verlauf mit 1000 Einträgen unter
+// der Grenze aus api-journal-viele.test.ts), dazu die älteste Gruppe je Eintrag. Die Zeilen eines Eintrags aus mehreren
+// Gruppen stehen in der Reihenfolge, in der sie entstanden sind.
+export async function entryRows(db: Executor, groups: readonly Pick<GroupRow, 'id' | 'requestId'>[]): Promise<{ rows: Map<number, LogRow[]>, first: Map<number, number>, members: Map<number, number[]> }> {
+  const ids = groups.map((g) => g.id)
+  const requests = [...new Set(groups.flatMap((g) => (g.requestId === null ? [] : [g.requestId])))]
+  const linked = requests.length === 0
+    ? []
+    : await db.select({ id: changeGroups.id, requestId: changeGroups.requestId }).from(changeGroups).where(inArray(changeGroups.requestId, requests)).all()
+  // Gruppe → Eintrag (die jüngste Gruppe ihrer Anfrage)
+  const entryOf = new Map<number, number>(ids.map((id) => [id, id]))
+  const byRequest = new Map(groups.flatMap((g) => (g.requestId === null ? [] : [[g.requestId, g.id] as const])))
+  for (const m of linked) {
+    const entry = m.requestId === null ? undefined : byRequest.get(m.requestId)
+    if (entry !== undefined && m.id <= entry) entryOf.set(m.id, entry)
+  }
+  const members = new Map<number, number[]>(ids.map((id) => [id, []]))
+  for (const [group, entry] of entryOf) members.get(entry)?.push(group)
+  const first = new Map<number, number>()
+  for (const [entry, list] of members) {
+    list.sort((a, b) => a - b)
+    first.set(entry, list[0] ?? entry)
+  }
+  const all = [...entryOf.keys()]
+  const rows = new Map<number, LogRow[]>(ids.map((id) => [id, []]))
+  for (let i = 0; i < all.length; i += 500) {
+    const part = all.slice(i, i + 500)
+    for (const row of await db.select().from(changeLog).where(inArray(changeLog.groupId, part)).orderBy(changeLog.id).all()) {
+      rows.get(entryOf.get(row.groupId) ?? row.groupId)?.push(row)
+    }
+  }
+  for (const list of rows.values()) list.sort((a, b) => a.id - b.id)
+  return { rows, first, members }
+}
+
+// Die Einträge, neueste zuerst. Mit `propertyId` die des Objekts und die installationsweiten. Einträge, die nach dem
+// Zusammenfassen nichts ändern, fehlen (S4, falls eine ältere Version sie geschrieben hat); eine Schranke steht immer da.
+export async function listJournal(db: Executor, schema: JournalSchema, options: JournalQuery): Promise<JournalGroupView[]> {
   const resolver = new Resolver(db, schema)
+  const barrierId = await latestBarrierId(db)
   const out: JournalGroupView[] = []
   let before = options.before
   while (out.length < options.limit) {
-    const groups = await db
-      .select()
-      .from(changeGroups)
-      .where(before === null ? undefined : lt(changeGroups.id, before))
-      .orderBy(desc(changeGroups.id))
-      .limit(PAGE_SCAN)
-      .all()
+    const groups = await candidates(db, options, before)
     if (groups.length === 0) break
+    const { rows: rowsOf, first } = await entryRows(db, groups)
     for (const g of groups) {
       before = g.id
-      const rows = await db.select().from(changeLog).where(eq(changeLog.groupId, g.id)).orderBy(changeLog.id).all()
+      const rows = rowsOf.get(g.id) ?? []
       const changes = collapse(rows)
-      if (changes.length === 0) continue
-      const props = await groupProperties(rows, resolver)
+      if (changes.length === 0 && g.barrier === null) continue
+      const props = g.barrier === null ? await groupProperties(rows, resolver) : { ids: [], installationWide: true }
       if (options.propertyId !== null && !props.installationWide && !props.ids.includes(options.propertyId)) continue
-      out.push({
-        id: g.id,
-        at: g.at,
-        method: g.method,
-        route: g.route,
-        description: g.description,
-        title: await groupTitle(g.description, g.subjectTable, rows, resolver),
-        propertyIds: props.ids,
-        installationWide: props.installationWide,
-        rows: changes.length,
-      })
+      out.push(await entryView(g, first.get(g.id) ?? g.id, rows, changes.length, props, resolver, options.schemaSteps, barrierId))
       if (out.length >= options.limit) break
     }
     if (groups.length < PAGE_SCAN) break
   }
   return out
+}
+
+async function entryView(
+  g: GroupRow, firstId: number, rows: LogRow[], count: number, props: GroupProperties, resolver: Resolver, schemaSteps: number, barrierId: number,
+): Promise<JournalGroupView> {
+  return {
+    id: g.id,
+    firstId,
+    at: g.at,
+    method: g.method,
+    route: g.route,
+    description: g.description,
+    title: await groupTitle(g.description, g.subjectTable, rows, resolver),
+    propertyIds: props.ids,
+    installationWide: props.installationWide,
+    rows: count,
+    revertedBy: g.revertedBy,
+    barrier: barrierOf(g.barrier),
+    readOnly: isReadOnly(g, schemaSteps, barrierId),
+  }
 }
 
 // Ersetzt die Repository-Schicht eine Unterliste (Löschen und neu Einfügen), stehen unveränderte
@@ -498,8 +676,8 @@ export function collapse(rows: LogRow[]): Omit<JournalRowView, 'refs'>[] {
     table: r.tableName,
     key: parseRow(r.rowKey) ?? {},
     op: r.op,
-    before: parseRow(r.before),
-    after: parseRow(r.after),
+    before: withoutRowid(parseRow(r.before)),
+    after: withoutRowid(parseRow(r.after)),
     changed: [],
   }))
   const out: Omit<JournalRowView, 'refs'>[] = []
@@ -541,16 +719,25 @@ export function collapse(rows: LogRow[]): Omit<JournalRowView, 'refs'>[] {
 
 const asJson = (value: unknown): string => JSON.stringify(value)
 
+// Die `rowid` gehört nicht zum Inhalt: Ein unverändert gelöschter und neu eingefügter Eintrag bekommt eine neue, und der
+// Verlauf zeigt sie nicht.
+function withoutRowid(image: Image | null): Image | null {
+  if (!image || !(ROWID in image)) return image
+  const { [ROWID]: _rowid, ...rest } = image
+  return rest
+}
+
 function changedColumns(before: Image | null, after: Image | null): string[] {
   const columns = new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})])
   return [...columns].filter((c) => asJson(before?.[c] ?? null) !== asJson(after?.[c] ?? null))
 }
 
-export async function journalGroup(db: Executor, schema: JournalSchema, id: number): Promise<(JournalGroupView & { changes: JournalRowView[] }) | null> {
+export async function journalGroup(db: Executor, schema: JournalSchema, id: number, schemaSteps: number): Promise<(JournalGroupView & { changes: JournalRowView[] }) | null> {
   const group = await db.select().from(changeGroups).where(eq(changeGroups.id, id)).get()
   if (!group) return null
   const resolver = new Resolver(db, schema)
-  const rows = await db.select().from(changeLog).where(eq(changeLog.groupId, id)).orderBy(changeLog.id).all()
+  const { rows: rowsOf, first } = await entryRows(db, [group])
+  const rows = rowsOf.get(id) ?? []
   const own = ownImages(rows)
   const changes: JournalRowView[] = []
   for (const change of collapse(rows)) {
@@ -567,19 +754,9 @@ export async function journalGroup(db: Executor, schema: JournalSchema, id: numb
     }
     changes.push({ ...change, refs })
   }
-  const props = await groupProperties(rows, resolver)
-  return {
-    id: group.id,
-    at: group.at,
-    method: group.method,
-    route: group.route,
-    description: group.description,
-    title: await groupTitle(group.description, group.subjectTable, rows, resolver),
-    propertyIds: props.ids,
-    installationWide: props.installationWide,
-    rows: changes.length,
-    changes,
-  }
+  const props = group.barrier === null ? await groupProperties(rows, resolver) : { ids: [], installationWide: true }
+  const view = await entryView(group, first.get(id) ?? id, rows, changes.length, props, resolver, schemaSteps, await latestBarrierId(db))
+  return { ...view, changes }
 }
 
 // Leert das Journal in einer fremden Datei (der Schnappschuss fürs Backup ohne Verlauf).

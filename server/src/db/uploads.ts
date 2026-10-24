@@ -7,6 +7,7 @@ import { eq } from 'drizzle-orm'
 import type { UploadInfo } from '../../../shared/types.ts'
 import type { Database } from './client.ts'
 import { uploads } from './schema.ts'
+import { unjournaled } from './journal.ts'
 
 export type UploadRow = typeof uploads.$inferSelect
 
@@ -39,6 +40,9 @@ export async function placeUpload(db: Database, file: string, changes: Placement
   const described = current ? null : fallback()
   const base: UploadRow | null = current ?? (described ? rowOf(described) : null)
   if (!base) return null
+  // Die Zeile für einen schon vorhandenen Beleg ist Systemarbeit (#318, `unjournaled`): Ein Rücksprung soll sie nicht
+  // entfernen und die Datei dabei in den Papierkorb legen. Erfasst wird nur die Änderung danach.
+  if (!current) await unjournaled(db, () => recordUpload(db, base))
   const next: UploadRow = { ...base, ...changes }
   await recordUpload(db, next)
   return next

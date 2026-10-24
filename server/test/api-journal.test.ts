@@ -188,10 +188,11 @@ test('Backup: Der Verlauf kommt nur auf Wunsch mit, ein Wiederherstellen ohne ih
     fd.append('file', new Blob([plain.toBuffer()], { type: 'application/zip' }), 'backup.zip')
     const restored = await fetch(`${s.base}/api/restore`, { method: 'POST', body: fd })
     assert.equal(restored.status, 200, await restored.clone().text())
-    assert.deepEqual(await journal(s), [])
+    // Nur die Schranke (#318, Schritt 4): Über das Einspielen hinweg führt kein Rücksprung.
+    assert.deepEqual((await journal(s)).map((g) => [g.title, g.barrier, g.readOnly]), [['Backup eingespielt', 'restore', true]])
     // Nach dem Wiederherstellen wird weiter erfasst (die Trigger entstehen beim Öffnen neu).
     await s.api('/api/units', { method: 'POST', body: JSON.stringify({ name: 'OG', areaM2: 50, participates: true, selfUsed: false }) })
-    assert.deepEqual((await journal(s)).map((g) => g.title), ['Wohnung angelegt: OG'])
+    assert.deepEqual((await journal(s)).map((g) => g.title), ['Wohnung angelegt: OG', 'Backup eingespielt'])
   } finally {
     s.stop()
   }

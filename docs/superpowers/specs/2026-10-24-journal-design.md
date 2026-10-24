@@ -135,3 +135,9 @@ Zwei Entscheidungen oben sind überholt; der Code und server/src/db/CLAUDE.md ge
 - Endgültiges Löschen eines ehemaligen Mieters samt Journal.
 - Zwei Anfragen, deren Schreibvorgänge sich abwechseln, haben verschränkte Gruppen; Schritt 4 muss vor dem
   Zurücknehmen prüfen, ob spätere Gruppen dieselben Zeilen berührt haben.
+
+## Schritte 4 und 5 (Rücksprung und Papierkorb)
+
+Umgesetzt als Rücksprung statt selektivem Rückgängig: zurückgenommen wird immer ein Ende des Journals, streng rückwärts,
+mit Vorschau und Marke. Begründung, Grenzen, Papierkorb und Checkliste stehen in server/src/db/CLAUDE.md, Abschnitt
+„Rücksprung und Papierkorb“; der Code in server/src/db/revert.ts und server/src/trash.ts.

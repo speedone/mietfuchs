@@ -8,14 +8,14 @@ import { eq, sql } from 'drizzle-orm'
 import { connect } from '../src/db/client.ts'
 import { databaseFile, openDatabase, type OpenedDatabase } from '../src/db/open.ts'
 import { changeGroups, changeLog, closedSettlements, meters, payments, properties, readings, tenancies, units, uploads } from '../src/db/schema.ts'
-import { JOURNAL_KEEP_MONTHS, OMITTED_COLUMNS, TRIGGER_PREFIX, collapse, journalGroup, listJournal, pruneJournal, type JournalMeta } from '../src/db/journal.ts'
+import { JOURNAL_KEEP_MONTHS, OMITTED_COLUMNS, TABLE_KINDS, TRIGGER_PREFIX, collapse, journalGroup, listJournal, pruneJournal, type JournalMeta, type JournalQuery } from '../src/db/journal.ts'
 import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { calendarPeriod } from '../../shared/period.ts'
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-journal-'))
 
 const meta = (description = 'Test', scope: object = {}): JournalMeta => ({
-  method: 'POST', route: '/test', description, subjectTable: null, scope,
+  method: 'POST', route: '/test', description, subjectTable: null, scope, requestId: `r${String(Math.random()).slice(2)}`,
 })
 
 async function withDb<T>(fn: (opened: OpenedDatabase) => Promise<T>): Promise<T> {
@@ -40,8 +40,8 @@ async function stock(opened: OpenedDatabase): Promise<void> {
 }
 
 const list = (opened: OpenedDatabase, propertyId: string | null, before: number | null = null, limit = 50) =>
-  opened.read((db) => listJournal(db, opened.journalSchema, { propertyId, before, limit }))
-const detail = (opened: OpenedDatabase, id: number) => opened.read((db) => journalGroup(db, opened.journalSchema, id))
+  opened.read((db) => listJournal(db, opened.journalSchema, { propertyId, before, limit, schemaSteps: opened.schemaSteps }))
+const detail = (opened: OpenedDatabase, id: number) => opened.read((db) => journalGroup(db, opened.journalSchema, id, opened.schemaSteps))
 
 const allLog = (opened: OpenedDatabase) => opened.read((db) => db.select().from(changeLog).orderBy(changeLog.id).all())
 const allGroups = (opened: OpenedDatabase) => opened.read((db) => db.select().from(changeGroups).orderBy(changeGroups.id).all())
@@ -70,9 +70,9 @@ test('Journal: Einfügen, Ändern und Löschen stehen mit Vorher und Nachher in 
   assert.equal(JSON.parse(log[0].after ?? '').name, 'EG')
   assert.equal(JSON.parse(log[1].before ?? '').name, 'EG')
   assert.equal(JSON.parse(log[1].after ?? '').name, 'EG links')
-  // Der Vorher-Stand ist vollständig: jede Spalte der Tabelle.
+  // Der Vorher-Stand ist vollständig: jede Spalte der Tabelle, dazu die `rowid` (Schritt 4, Reihenfolge beim Wiedereinfügen).
   assert.deepEqual(Object.keys(JSON.parse(log[2].before ?? '')).sort(),
-    ['area_m2', 'floor', 'id', 'mea', 'name', 'notes', 'participates', 'property_id', 'rooms', 'self_persons', 'self_used'])
+    ['$rowid', 'area_m2', 'floor', 'id', 'mea', 'name', 'notes', 'participates', 'property_id', 'rooms', 'self_persons', 'self_used'])
   assert.equal(log[2].after, null)
 }))
 
@@ -411,3 +411,47 @@ test(`Aufbewahrung: Beim Öffnen fallen Gruppen älter als ${JOURNAL_KEEP_MONTHS
     fs.rmSync(dir, { recursive: true, force: true })
   }
 })
+
+// ---------- Schritt 4: Einträge über Anfragen, Filter, Bereiche ----------
+
+test('Schritt 4: Schreiben zwei Anfragen abwechselnd, bleibt jede ein Eintrag (gemeinsame Anfrage-Kennung)', () => withDb(async (opened) => {
+  const a = { scope: {}, requestId: 'anfrage-a' }
+  const b = { scope: {}, requestId: 'anfrage-b' }
+  const at = (m: { scope: object, requestId: string }, description: string): JournalMeta => ({ ...meta(description, m.scope), requestId: m.requestId })
+  await opened.write((db) => db.insert(units).values({ id: 'u1', propertyId: 'objekt-1', name: 'EG', areaM2: 1, participates: true, selfUsed: false }), at(a, 'Beleg ausgewertet'))
+  await opened.write((db) => db.insert(units).values({ id: 'u2', propertyId: 'objekt-1', name: 'OG', areaM2: 1, participates: true, selfUsed: false }), at(b, 'andere'))
+  await opened.write((db) => db.update(units).set({ name: 'EG links' }).where(eq(units.id, 'u1')), at(a, 'Beleg ausgewertet'))
+  assert.equal((await allGroups(opened)).length, 3)
+  const entries = await list(opened, null)
+  assert.deepEqual(entries.map((e) => [e.description, e.rows, e.id - e.firstId]), [['Beleg ausgewertet', 2, 2], ['andere', 1, 0]])
+  const one = await detail(opened, entries[0].id)
+  assert.deepEqual(one?.changes.map((c) => `${c.table}:${c.op}:${String(c.after?.name)}`), ['units:insert:EG', 'units:update:EG links'])
+  // Die `rowid` steht im Journal, im Verlauf nicht.
+  assert.ok(one?.changes.every((c) => !('$rowid' in (c.after ?? {}))))
+}))
+
+test('Schritt 4: Filter nach Bereich, Text und Zeitraum, mit Blättern', () => withDb(async (opened) => {
+  await stock(opened)
+  await opened.write((db) => db.insert(units).values({ id: 'u2', propertyId: 'objekt-1', name: 'Dachgeschoss Süd', areaM2: 1, participates: true, selfUsed: false }), meta('Wohnung angelegt'))
+  await opened.write((db) => db.insert(payments).values({ id: 'p2', tenancyId: 't1', date: '2024-03-01', amountCents: 1 }), meta('Zahlung angelegt'))
+  const query = (q: Partial<JournalQuery>) => opened.read((db) => listJournal(db, opened.journalSchema, { propertyId: null, before: null, limit: 50, schemaSteps: opened.schemaSteps, ...q }))
+  assert.deepEqual((await query({ kind: 'payments' })).map((g) => g.description), ['Zahlung angelegt'])
+  assert.deepEqual((await query({ kind: 'meters' })).map((g) => g.description), [])
+  assert.deepEqual((await query({ q: 'Dachgeschoss' })).map((g) => g.description), ['Wohnung angelegt'])
+  assert.deepEqual((await query({ q: 'zahlung' })).map((g) => g.description), ['Zahlung angelegt'])
+  // Ein Prozentzeichen ist Text, kein Platzhalter.
+  assert.deepEqual(await query({ q: '%' }), [])
+  const all = await query({})
+  assert.equal(all.length, 2)
+  assert.deepEqual(await query({ to: '2000-01-01T00:00:00.000Z' }), [])
+  assert.equal((await query({ from: all[1].at })).length, 2)
+  const page = await query({ kind: 'units', before: all[0].id })
+  assert.deepEqual(page.map((g) => g.description), ['Wohnung angelegt'])
+}))
+
+test('Wächter: Jede erfasste Tabelle hat einen Bereich für den Filter des Verlaufs', () => withDb(async (opened) => {
+  const missing = [...opened.journalSchema.keys()].filter((t) => !(t in TABLE_KINDS))
+  assert.deepEqual(missing, [])
+  const unknown = Object.keys(TABLE_KINDS).filter((t) => !opened.journalSchema.has(t))
+  assert.deepEqual(unknown, [])
+}))
