@@ -77,11 +77,13 @@ export default function PrintDrawer({ scope, onScope, tenants, withLetter, onLet
           {settings.printAttachments && attachmentsLoading && <span className="muted"> (werden vorbereitet …)</span>}
         </span>
       </label>
-      <label className="checkline" title="Vermieter, Anschrift, Kontakt und IBAN unten auf jeder Seite (Anschrift und Kontakt unter „Einstellungen“ bzw. beim Objekt)">
+      <label className="checkline" title="Vermieter, Anschrift, Kontakt und IBAN unten auf der Seite des Anschreibens (Anschrift und Kontakt unter „Einstellungen“ bzw. beim Objekt)">
         <input type="checkbox" checked={settings.printFooter} onChange={(e) => draft.set({ ...settings, printFooter: e.target.checked })} />
         <span>
           Fußzeile mit Kontakt und Bank
           {settings.printFooter && paper && <span className="muted"> (mit Briefpapier nicht)</span>}
+          {/* Druck (#415): Kontakt und Bank stehen im Fuß des Anschreibens, nicht auf jeder Seite der Aufstellung. */}
+          {settings.printFooter && !paper && !withLetter && <span className="muted"> (nur mit Anschreiben)</span>}
         </span>
       </label>
       </div>

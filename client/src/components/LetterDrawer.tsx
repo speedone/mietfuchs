@@ -15,7 +15,7 @@ import { useFormError } from './ErrorSummary'
 import { NoticeBox } from './Notice'
 import { useSaving } from '../useSaving'
 import {
-  adjustFromHint, customCentsOf, monthlessAdjustTexts, draftNewCents, insertField, letterProblems, ownOf, previewOf, setText, shownText, textChanges,
+  adjustFromHint, customCentsOf, monthlessAdjustTexts, draftNewCents, insertField, letterProblems, ownOf, previewOf, salutationHint, setText, shownText, textChanges,
   type LetterDraft, type LetterFieldKey, type LetterLevel,
 } from '../letterForm'
 
@@ -44,6 +44,9 @@ type Props = {
   // Teil 2: „Anschreiben mitdrucken“. Installation: ja oder nein (`base` fehlt); Objekt: wie die Vorgabe (`null`,
   // `base` ist die Vorgabe der Einstellungen), ja oder nein. Fehlt es, fragt das Fenster nicht (Mieter).
   printLetter?: { value: boolean | null, base?: boolean }
+  // Druck (#415): die Mieter ohne eingetragene Anrede (`names`) von allen, für die das Fenster gilt (`total`); dazu, wo man sie
+  // einträgt (`fix`, beim Mieter)
+  salutations?: { names: string[], total: number, fix?: { label: string, onClick: () => void } | null }
   onClose: () => void
   onSave: (save: LetterSave) => Promise<void>
 }
@@ -52,7 +55,7 @@ const centsText = (cents: number | null): string => (cents === null ? '' : (cent
 
 const PRINT_CHOICES = [{ id: 'inherit', value: null }, { id: 'yes', value: true }, { id: 'no', value: false }] as const
 
-export default function LetterDrawer({ open, level, title, intro, base, own, values, adjust, shown, printLetter, onClose, onSave }: Props) {
+export default function LetterDrawer({ open, level, title, intro, base, own, values, adjust, shown, printLetter, salutations, onClose, onSave }: Props) {
   const initial = (): LetterDraft => ({ own: ownOf(own), adjust: adjust?.mode ?? 'none', adjustOwn: adjust?.own ?? true, customCents: centsText(adjust?.cents ?? null), adjustFrom: adjust?.from ?? null, printLetter: printLetter?.value ?? null })
   const [draft, setDraft] = useState<LetterDraft>(initial)
   // Beim Öffnen der gespeicherte Stand; ein offenes Fenster behält seine Eingaben.
@@ -212,6 +215,9 @@ export default function LetterDrawer({ open, level, title, intro, base, own, val
               )}
             </div>
             {text.trim() !== '' && <p className="letter-preview"><span className="muted">Vorschau: </span>{previewOf(text, previewValues)}</p>}
+            {b.id === 'salutation' && salutations && salutationHint(salutations.names, salutations.total, text) && (
+              <NoticeBox level="hint" action={salutationHint(salutations.names, salutations.total, text)} fix={salutations.fix ?? null} />
+            )}
           </div>
         )
       })}

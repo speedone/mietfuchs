@@ -17,12 +17,14 @@ export { letterDoc } from './db/letters.ts'
 export async function lettersFor(
   db: Executor,
   s: Parameters<typeof lettersOf>[0],
-  ctx: { settings: LetterSource['settings'], property: Property | null, tenancies: LetterSource['tenancies'], doc: string, asOf: string },
+  ctx: { settings: LetterSource['settings'], property: Property | null, tenancies: LetterSource['tenancies'], units?: LetterSource['units'], costItems?: LetterSource['costItems'], doc: string, asOf: string },
 ): Promise<Record<string, StatementLetter>> {
   return lettersOf(s, {
     settings: ctx.settings,
     property: ctx.property,
     tenancies: ctx.tenancies,
+    units: ctx.units,
+    costItems: ctx.costItems,
     installation: await readInstallationLetterTexts(db),
     propertyTexts: ctx.property ? await readPropertyLetterTexts(db, ctx.property.id) : {},
     own: await readTenancyLetters(db, ctx.doc, s.statements.map((st) => st.tenancyId)),

@@ -5,15 +5,18 @@
 // Teil 2: Ohne Anschreiben beginnt die Aufstellung mit demselben Kopf (`StatementHead`): Absender,
 // Rücksendeangabe und Anschrift im Fensterfeld, Datum; den Betreff setzt die Aufstellung als Überschrift.
 // Jede Seite der Aufstellung trägt im Druck einen Fußvermerk (`PrintPages`).
-import type { ReactNode } from 'react'
-import type { LetterParagraph } from '../letterView'
+//
+// Druck nach DIN 5008 (#415): Rechts neben dem Anschriftfeld steht der Informationsblock mit Ansprechpartner, Kontakt, Ort
+// und Datum (`infoRows` in letterView.ts), wie ein Geschäftsbrief ihn trägt.
+import { Fragment, type ReactNode } from 'react'
+import type { LabeledRow, LetterParagraph } from '../letterView'
 
 type HeadProps = {
   sender: string // der Absender oben, meist der Name des Vermieters
   senderAddress?: string // seine Anschrift darunter (Teil 2), ohne Angabe nichts
   returnLine: string // die Rücksendeangabe über der Anschrift
   recipient: string[]
-  date: string // schon formatiert
+  info: LabeledRow[] // Informationsblock: Ansprechpartner, Kontakt, Ort und Datum (schon formatiert)
   foldMarks: boolean
   draftMark?: string | null // „Entwurf, nicht versenden“, nur im Druck
   logo?: string | null // Teil 2b: Adresse des Logos, oben rechts im Briefkopf
@@ -27,7 +30,7 @@ type Props = HeadProps & {
 
 const FLOW: readonly LetterParagraph['block'][] = ['intro', 'credit', 'backPayment', 'balanced', 'adjustSuggestion', 'adjustCustom', 'receipts', 'attachments', 'closing']
 
-function LetterHead({ sender, senderAddress, returnLine, recipient, date, foldMarks, draftMark, logo, paper }: HeadProps) {
+function LetterHead({ sender, senderAddress, returnLine, recipient, info, foldMarks, draftMark, logo, paper }: HeadProps) {
   return (
     <>
       {/* Das Briefpapier liegt unter allem auf der ganzen Seite; mit ihm entfällt der Absender von Mietfuchs (der Kopf
@@ -55,7 +58,14 @@ function LetterHead({ sender, senderAddress, returnLine, recipient, date, foldMa
         </address>
       </div>
       <div className="letter-info">
-        <span className="muted">Datum</span> {date}
+        {info.map((r, i) => (r.label ? (
+          <Fragment key={i}>
+            <span className="letter-info-label">{r.label}</span>
+            <span>{r.value}</span>
+          </Fragment>
+        ) : (
+          <span key={i} className={i === info.length - 1 && i > 0 ? 'letter-info-wide letter-info-date' : 'letter-info-wide'}>{r.value}</span>
+        )))}
       </div>
     </>
   )

@@ -140,8 +140,9 @@ test('S2: Absender, Rücksendeangabe und Anschrift stehen im Anschreiben und fri
   })
   const l = out.t1
   if (!l) return assert.fail('kein Anschreiben')
-  assert.deepEqual(l.sender, { name: 'Max', returnLine: 'Max · Haus · Lindenweg 12, 12345 Musterstadt', address: '', footer: 'Max' })
-  assert.deepEqual(l.recipient, ['Erika', 'EG', 'Lindenweg 12', '12345 Musterstadt'])
+  assert.deepEqual(l.sender, { name: 'Max', returnLine: 'Max · Haus · Lindenweg 12, 12345 Musterstadt', address: '', contact: '', footer: 'Max' })
+  // Die Lage der Wohnung gehört in Betreff und Kopf der Abrechnung, nicht in die postalische Anschrift (#415, Druck).
+  assert.deepEqual(l.recipient, ['Erika', 'Lindenweg 12', '12345 Musterstadt'])
 })
 
 test('S3: ein Anschreiben, das nicht auf eine Seite passt, wird erkannt', () => {
@@ -170,6 +171,20 @@ const oneStatement = {
 }
 const house: Property = { id: 'p', name: 'Haus', kind: 'mfh', address: 'Lindenweg 12, 12345 Musterstadt', landlordName: null, iban: null, paymentDeadlineDays: null }
 
+test('Druck: Anschrift und Wohnfläche der Wohnung stehen im Anschreiben und frieren mit ein', () => {
+  const src = (units?: { id: string, areaM2: number }[]) => lettersOf(oneStatement, {
+    settings: { landlordName: 'Max', iban: '', paymentDeadlineDays: 30 },
+    property: house,
+    tenancies: [{ id: 't1', end: null, prepayments: [], correspondenceAddress: '' }],
+    ...(units ? { units } : {}),
+    installation: {}, propertyTexts: {}, own: {}, asOf: '2026-03-15',
+  }).t1 ?? assert.fail('kein Anschreiben')
+  assert.deepEqual(src([{ id: 'u1', areaM2: 72 }]).premises, { address: 'Lindenweg 12, 12345 Musterstadt', areaM2: 72 })
+  // Ohne Fläche (Garage) oder ohne bekannte Wohnung keine Fläche.
+  assert.deepEqual(src([{ id: 'u1', areaM2: 0 }]).premises, { address: 'Lindenweg 12, 12345 Musterstadt', areaM2: null })
+  assert.deepEqual(src().premises, { address: 'Lindenweg 12, 12345 Musterstadt', areaM2: null })
+})
+
 test('Teil 2: die Anschrift des Vermieters steht in Rücksendeangabe und Fußzeile, am Objekt abweichend', () => {
   const src = (settings: Partial<Settings>, property: Partial<Property> = {}, tenancy: Partial<Tenancy> = {}) => lettersOf(oneStatement, {
     settings: { landlordName: 'Max', iban: 'DE02120300000000202051', paymentDeadlineDays: 30, ...settings },
@@ -182,6 +197,7 @@ test('Teil 2: die Anschrift des Vermieters steht in Rücksendeangabe und Fußzei
     name: 'Max',
     returnLine: 'Max · Hauptstr. 1, 10115 Berlin',
     address: 'Hauptstr. 1, 10115 Berlin',
+    contact: 'Tel. 030 123456',
     footer: 'Max · Hauptstr. 1, 10115 Berlin · Tel. 030 123456 · IBAN DE02 1203 0000 0000 2020 51',
   })
   // Ohne Anschrift wie bisher: Vermieter, Objekt und Adresse des Objekts.

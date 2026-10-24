@@ -189,6 +189,18 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Geändert
 
+- Das gedruckte PDF der Nebenkostenabrechnung folgt DIN 5008 ([#415](https://github.com/speedone/mietfuchs/issues/415)):
+  Anschreiben und Aufstellung haben dieselben Ränder (links 25 mm, rechts 20 mm). Rechts neben dem Anschriftfeld
+  steht ein Informationsblock mit Ansprechpartner, Telefon, E-Mail sowie Ort und Datum aus den Angaben unter
+  „Einstellungen“ bzw. beim Objekt. Die Aufstellung beginnt mit einem Kopf aus Mieter, Mietobjekt, Wohnung,
+  Wohnfläche, Abrechnungszeitraum (bei Ein- oder Auszug dazu Ihr Nutzungszeitraum) und Personen; der Zeitraum steht
+  nicht mehr zusätzlich im Ergebniskasten und im Satz „Abgerechnet werden die Kosten …“. Der Fuß jeder Seite nennt
+  links Abrechnung, Objekt und Wohnung und rechts „Seite x von y“, nicht mehr den Namen des Mieters; Kontakt und
+  Bank stehen nur noch im Fuß des Anschreibens. Der Lohnanteil nach § 35a EStG ist eine Tabelle mit Leistung,
+  Gesamtbetrag, Lohnanteil und Ihrem Anteil. Die Lage der Wohnung („EG links“) steht nicht mehr in der Anschrift,
+  sondern in Betreff und Kopf. Ohne eingetragene Anrede weist das Fenster „Anschreiben bearbeiten“ darauf hin, wo
+  eine persönliche Anrede eingetragen wird. Abgeschlossene Abrechnungen behalten ihre eingefrorenen Texte und Zahlen;
+  keine Zahl ändert sich.
 - Seite Abrechnung neu geordnet, in drei Zonen statt vieler Karten vor der ersten Zahl: eine Kopfzeile mit Stand und
   Frist, dem einen Knopf des Zustands (abschließen bzw. Versanddatum und „Wieder öffnen …“), „🖨 Drucken / PDF“ und
   „Mehr“ (Anschreiben und Briefpapier des Objekts, Export als JSON oder CSV); „Zu prüfen“ mit allen Fehlern, Warnungen
@@ -217,6 +229,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- Der Hinweis „Sicherung vor dem Update angelegt“ wurde mitgedruckt und erzeugte im PDF der Abrechnung eine leere
+  Seite; Hinweise der Datenbank werden nicht mehr gedruckt ([#415](https://github.com/speedone/mietfuchs/issues/415)).
 - Ein Kesseltausch machte aus einer Heizanlage, die alle Wohnungen versorgt, eine feste Liste der Wohnungen vom
   Tag des Tauschs, bei der alten wie bei der neuen Anlage (seit dem Kesseltausch in Version 0.11.0). Ums Geld geht
   es bei der eigenen Heizkostenabrechnung nach der Heizkostenverordnung: Eine danach angelegte Wohnung hing an keiner

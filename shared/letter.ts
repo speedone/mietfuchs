@@ -6,7 +6,7 @@
 // Die Vorlagen sind bewusst ohne Logik: Ein Baustein ist Text mit Platzhaltern wie `{Betrag}`, mehr
 // nicht. Welcher Baustein erscheint (Guthaben oder Nachzahlung, Anpassung oder keine), entscheidet
 // Mietfuchs in `chooseLetterBlocks`. Beträge und Daten formatiert Mietfuchs.
-import type { LetterAdjustment, LetterAdjustmentMode, LetterBlock, LetterField, LetterTexts, Property, Settings, Settlement, StatementLetter, Tenancy, TenancyLetter } from './types.ts'
+import type { CostItem, LetterAdjustment, LetterAdjustmentMode, LetterBlock, LetterField, LetterTexts, Property, Settings, Settlement, StatementLetter, Tenancy, TenancyLetter, Unit } from './types.ts'
 import { euro } from './costItem.ts'
 import { formatIban } from './iban.ts'
 import { effectiveLandlord, footerLine, recipientLines, returnLine } from './landlord.ts'
@@ -370,6 +370,10 @@ export type LetterSource = {
   own: Record<string, TenancyLetter>
   // #317: der Tag des Briefs für die Vorgabe des Monats (der Server nimmt heute; der Abschluss friert ihn ein)
   asOf: string
+  // Druck (#415): Wohnfläche für den Kopf der Aufstellung und Rechnungsbetrag samt Lohnanteil für die Tabelle nach § 35a
+  // EStG. Ohne sie (die Oberfläche, wenn eine Antwort kein Anschreiben trägt) fehlen nur diese Angaben.
+  units?: readonly Pick<Unit, 'id' | 'areaM2'>[]
+  costItems?: readonly Pick<CostItem, 'id' | 'amountCents' | 'labor35aCents'>[]
 }
 
 // Die Vorgabe der Einstellungen. Der frühere Schalter „Neue Vorauszahlung vorschlagen“ war ohne
@@ -424,10 +428,20 @@ export function lettersOf(s: Pick<Settlement, 'statements' | 'period' | 'heating
         salutation: tenancy?.letterSalutation ?? '',
       },
     })
+    const area = src.units?.find((u) => u.id === st.unitId)?.areaM2 ?? 0
+    const labor35a: NonNullable<StatementLetter['labor35a']> = {}
+    for (const r of st.rows) {
+      if ((r.labor35aCents ?? 0) <= 0) continue
+      const item = src.costItems?.find((c) => c.id === r.costItemId)
+      const laborCents = item?.labor35aCents ?? 0
+      if (item && laborCents > 0 && laborCents <= Math.abs(item.amountCents)) labor35a[item.id] = { amountCents: item.amountCents, laborCents }
+    }
     out[st.tenancyId] = {
       ...built,
-      sender: { name: landlord.landlordName, returnLine: returnLine(landlord, src.property), address: landlord.landlordAddress, footer: footerLine(landlord) },
-      recipient: recipientLines(st.tenantName, st.unitName, tenancy, src.property),
+      sender: { name: landlord.landlordName, returnLine: returnLine(landlord, src.property), address: landlord.landlordAddress, contact: landlord.landlordContact, footer: footerLine(landlord) },
+      recipient: recipientLines(st.tenantName, tenancy, src.property),
+      premises: { address: (src.property?.address ?? '').trim(), areaM2: area > 0 ? area : null },
+      ...(Object.keys(labor35a).length > 0 ? { labor35a } : {}),
     }
   }
   return out

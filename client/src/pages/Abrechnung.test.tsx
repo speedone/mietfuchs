@@ -79,10 +79,12 @@ test('„(manuell angepasst)“ steht nur am Bildschirm, nicht auf dem Papier de
   expect(mark.closest('.no-print')).not.toBeNull()
 })
 
-test('kein „Abflussprinzip“ mehr, sondern die Kosten des Abrechnungsjahres', async () => {
+test('kein „Abflussprinzip“ mehr; der Abrechnungszeitraum steht im Kopf der Aufstellung', async () => {
   show()
-  await screen.findByText(`Abgerechnet werden die Kosten des Abrechnungsjahres ${YEAR}.`, { exact: false }, SLOW)
+  const term = (await screen.findAllByText('Abrechnungszeitraum', { selector: 'dl.statement-facts dt' }, SLOW))[0]
+  expect(term?.nextElementSibling?.textContent).toContain(`01.01.${YEAR} – 31.12.${YEAR}`)
   expect(screen.queryByText(/Abflussprinzip/)).toBeNull()
+  expect(screen.queryByText(/Abgerechnet werden die Kosten/)).toBeNull()
 })
 
 test('Kopfzeile: wechselnde Personenzahl als Bereich mit Personentagen', async () => {

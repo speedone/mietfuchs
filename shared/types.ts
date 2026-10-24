@@ -1041,8 +1041,15 @@ export type StatementLetter = {
   // Optional, weil Abschlüsse aus der ersten Fassung von #415 sie nicht kennen.
   // `address` und `footer` (Teil 2): Anschrift des Vermieters unter dem Namen im Kopf und die Fußzeile mit
   // Kontakt und Bank; fehlen sie (Abschluss aus Teil 1), gilt der heutige Stand.
-  sender?: { name: string; returnLine: string; address?: string; footer?: string }
+  // `contact` (Druck, #415): Telefon und E-Mail des Vermieters für den Informationsblock; fehlt es, ist das Anschreiben vorher
+  // eingefroren, und der Block nennt nur Ansprechpartner und Datum.
+  sender?: { name: string; returnLine: string; address?: string; contact?: string; footer?: string }
   recipient?: string[]
+  // Druck (#415): Anschrift des Objekts und Wohnfläche der Wohnung für den Kopf der Aufstellung (`areaM2` null ohne Fläche),
+  // dazu je Position mit Lohnanteil nach § 35a EStG Rechnungsbetrag und Lohnanteil der Rechnung. Mit dem Anschreiben
+  // eingefroren; fehlen sie (vorher abgeschlossen), druckt die Aufstellung ohne diese Angaben.
+  premises?: { address: string; areaM2: number | null }
+  labor35a?: Record<string, { amountCents: number; laborCents: number }>
 }
 // ---------- Anpassung in die Staffel übernehmen (#317) ----------
 

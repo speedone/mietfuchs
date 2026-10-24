@@ -39,20 +39,38 @@ export function footerLine(landlord: Pick<EffectiveLandlord, 'landlordName' | 'l
 // „·“. Der Trenner steht nur zwischen Angaben, die es gibt (#142); ohne Adresse endete die Zeile
 // sonst mit „Haus Birke ·“.
 // Die Anschrift des Mieters auf der gedruckten Abrechnung (N5): eine abweichende Anschrift für den
-// Schriftverkehr geht vor (etwa nach dem Auszug), sonst die Wohnung in der Adresse des Objekts. Ohne
-// Adresse steht nur, was es gibt. Die eigene Anschrift ist eine Zeile „Straße, PLZ Ort“ (#229); jedes Komma und jeder
-// Umbruch beginnt eine Zeile im Anschriftfeld, damit auch „c/o …“ oder ein Zusatz wie „Hinterhaus“ auf eigener Zeile
-// steht (DIN 5008). Die Adresse des Objekts trennt weiter nur vor der Postleitzahl.
+// Schriftverkehr geht vor (etwa nach dem Auszug), sonst die Adresse des Objekts. Ohne Adresse steht nur, was es gibt.
+// Die eigene Anschrift ist eine Zeile „Straße, PLZ Ort“ (#229); jedes Komma und jeder Umbruch beginnt eine Zeile im
+// Anschriftfeld, damit auch „c/o …“ oder ein Zusatz wie „Hinterhaus“ auf eigener Zeile steht (DIN 5008). Die Adresse
+// des Objekts trennt weiter nur vor der Postleitzahl.
+//
+// Die Lage der Wohnung („EG links“) steht nicht in der Anschrift (Druck, #415): Sie gehört in Betreff und Kopf der
+// Abrechnung; die Post stellt nach Name, Straße und Ort zu. Bis dahin stand sie als zweite Zeile da, und so ist sie in
+// abgeschlossenen Abrechnungen eingefroren (`formerRecipientLines`).
+function ownAddressLines(tenancy: { correspondenceAddress?: string } | null | undefined): string[] | null {
+  const own = (tenancy?.correspondenceAddress ?? '').trim()
+  return own ? own.split(/\s*[\n,]\s*/).filter((l) => l !== '') : null
+}
 export function recipientLines(
+  tenantName: string,
+  tenancy: { correspondenceAddress?: string } | null | undefined,
+  property: Pick<Property, 'address'> | null | undefined,
+): string[] {
+  const own = ownAddressLines(tenancy)
+  if (own) return [tenantName, ...own]
+  const address = (property?.address ?? '').trim()
+  return [tenantName, ...address.split(/,\s*(?=\d{5}\b)/).filter((l) => l !== '')]
+}
+// Die Anschrift, wie Mietfuchs sie vor dieser Änderung druckte: mit der Wohnung als zweiter Zeile. Für den Druck einer vor
+// #415 abgeschlossenen Abrechnung (ohne eingefrorene Anschrift) und für den Vergleich mit einer so eingefrorenen.
+export function formerRecipientLines(
   tenantName: string,
   unitName: string,
   tenancy: { correspondenceAddress?: string } | null | undefined,
   property: Pick<Property, 'address'> | null | undefined,
 ): string[] {
-  const own = (tenancy?.correspondenceAddress ?? '').trim()
-  if (own) return [tenantName, ...own.split(/\s*[\n,]\s*/).filter((l) => l !== '')]
-  const address = (property?.address ?? '').trim()
-  return [tenantName, unitName, ...address.split(/,\s*(?=\d{5}\b)/).filter((l) => l !== '')]
+  const lines = recipientLines(tenantName, tenancy, property)
+  return ownAddressLines(tenancy) ? lines : [tenantName, unitName, ...lines.slice(1)]
 }
 
 // Heißt das Objekt wie der Anfang seiner Adresse („Lindenweg 12“ in „Lindenweg 12, 12345 Musterstadt“),

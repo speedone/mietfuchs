@@ -13,7 +13,10 @@
 .letter-window { margin-bottom: var(--space-4); }
 .letter-return { display: inline-block; font-size: var(--text-xs); color: var(--muted); border-bottom: 1px solid var(--line); margin-bottom: var(--space-1); }
 .letter-address { font-style: normal; }
-.letter-info { margin-bottom: var(--space-4); }
+.letter-info { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0 var(--space-3); margin-bottom: var(--space-4); font-size: var(--text-s); }
+.letter-info-label { color: var(--muted); }
+.letter-info-wide { grid-column: 1 / -1; }
+.letter-info-date { margin-top: var(--space-2); }
 .letter-body p { margin: 0 0 var(--space-3); white-space: pre-line; }
 .letter-body .letter-subject { font-weight: var(--weight-bold); }
 .letter-body .letter-greeting { margin-bottom: 0; }
@@ -25,6 +28,14 @@
 /* Die Seite Abrechnung zeigt am Bildschirm nur die Abrechnung des Mieters in der Vorschau; die übrigen stehen weiter im
    Dokument, denn gedruckt werden sie wie bisher alle bzw. die gewählte (index.css, `print-one`). Nur am Bildschirm. */
 @media screen { .card.statement.statement-hidden { display: none; } }
+
+/* Druck (#415): der Kopf der Aufstellung, Beschriftung und Wert nebeneinander */
+.statement-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0 var(--space-4); margin: var(--space-1) 0 0; }
+.statement-facts dt { color: var(--muted); }
+.statement-facts dd { margin: 0; }
+/* Die Tabelle nach § 35a EStG mit Abstand zum Block davor (Informationen nach § 6a HeizkostenV) */
+.labor-35a { margin-top: var(--space-4); }
+.labor-35a h3 { margin: 0; font-size: var(--text-m); }
 
 /* Teil 2: ohne Anschreiben der Kopf des Briefs über der Aufstellung, am Bildschirm ohne Abstand nach unten */
 .letter.letter-top { margin-bottom: var(--space-3); }
@@ -90,8 +101,10 @@
      Druck (`returnLineTooLong`, Durchsicht zu PR #427, K7), statt still zu kürzen. */
   .letter-return { position: absolute; left: 5mm; right: 0; bottom: 27.3mm; display: block; margin: 0; padding-bottom: 0.5mm; font-size: 7pt; line-height: 1.2; color: var(--text); max-height: 2.4em; overflow: hidden; }
   .letter-address { position: absolute; top: 17.7mm; left: 5mm; right: 0; height: 27.3mm; font-size: 10pt; line-height: 1.25; }
-  .letter-info { position: absolute; top: calc(50mm - var(--page)); left: calc(125mm - var(--page)); right: calc(20mm - var(--page)); margin: 0; font-size: 10pt; }
-  .letter-info .muted { color: var(--text); }
+  /* Informationsblock nach DIN 5008: 125 mm von links, ab 50 mm von oben, bis zum rechten Rand; Beschriftungen kleiner */
+  .letter-info { position: absolute; top: calc(50mm - var(--page)); left: calc(125mm - var(--page)); right: calc(20mm - var(--page)); margin: 0; font-size: 9pt; line-height: 1.35; column-gap: 3mm; align-items: baseline; }
+  .letter-info-label { font-size: 7.5pt; color: var(--text); }
+  .letter-info-date { margin-top: 3mm; }
   .letter-body { padding: calc(98.46mm - var(--page)) calc(20mm - var(--page)) 0 calc(25mm - var(--page)); }
   .letter-body p { margin: 0 0 4.2mm; }
   .letter-body .letter-signature { margin-top: 12mm; }
@@ -120,7 +133,8 @@
   /* index.css hält jede Tabellenzeile beisammen; die eine Zeile der Hülle muss umbrechen dürfen, sonst begänne die
      Aufstellung ohne Anschreiben erst auf Seite 2 (nachgemessen). */
   .print-pages > tbody > tr { break-inside: auto; page-break-inside: auto; }
-  .print-pages-cell { display: table-cell; }
+  /* Ränder der Aufstellung wie im Brief (DIN 5008): 12 mm Seitenrand plus 13 mm ergibt links 25 mm, plus 8 mm rechts 20 mm. */
+  .print-pages-cell { display: table-cell; padding-left: 13mm; padding-right: 8mm; }
   .print-pages-new { break-before: page; page-break-before: always; }
   .print-pages > tfoot { display: table-footer-group; }
   .print-pages > tfoot .print-pages-cell { font-weight: var(--weight-normal); border: 0; }
@@ -149,5 +163,9 @@
   /* Belegkopien mit Briefpapier: so hoch, wie die Ränder lassen, abzüglich Beschriftung und Fußvermerk (Durchsicht S2). */
   .paper-print .attachments img { max-height: calc(297mm - var(--paper-top) - var(--paper-bottom) - 20mm); }
 
+  .statement-facts { column-gap: 6mm; font-size: 10pt; }
+  .statement-facts dt { color: var(--text); }
+  .labor-35a { break-inside: avoid; page-break-inside: avoid; }
+  .labor-35a h3 { color: var(--text); }
   .statement-footnote { margin-top: 3mm; padding-top: 1mm; border-top: 0.2mm solid var(--line); font-size: 7.5pt; color: var(--text); }
 }
