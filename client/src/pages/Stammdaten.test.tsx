@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 // Stammdaten aus der Browser-Abnahme (#142): Was die Listen zeigen und was die Löschfrage sagt.
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { useState } from 'react'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import type { Meter, PropertyKind, Tenancy, Unit, UnitDependents } from '../types'
 import { PeriodProvider } from '../period'
@@ -652,4 +653,24 @@ test('Anrede im Brief: Vorschlag aus dem Namen, gespeichert mit dem Mietverhält
   fireEvent.change(field, { target: { value: '' } })
   fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Speichern' }))
   await vi.waitFor(() => expect(sent.find((s) => s.method === 'PUT')?.body).toMatchObject({ letterSalutation: null }))
+})
+
+// Durchsicht K3: Wandert eine gespeicherte Zeile unter „Frühere“ (Auszug in der Vergangenheit), wird sie neu eingehängt.
+// Der Abschnitt klappt auf, und der Fokus steht auf ihrem ✎, nicht auf body.
+test('Mietverhältnisse: wandert die gespeicherte Zeile unter „Frühere“, klappt der Abschnitt auf und der Fokus folgt ihr', async () => {
+  const before = [tenancy('t1', 'Zieht aus', { prepayments: [{ from: '2025-01', monthlyCents: 25000 }] }), tenancy('t2', 'Bleibt', { unitId: 'u2' })]
+  const after = [{ ...before[0] as Tenancy, end: '2025-06-30' }, before[1] as Tenancy]
+  function Host() {
+    const [list, setList] = useState<Tenancy[]>(before)
+    return <Stammdaten units={UNITS} tenancies={list} settings={null} reload={async () => { setList(after) }} />
+  }
+  const { container } = render(<PeriodProvider><PropertyProvider><UIProvider><Host /></UIProvider></PropertyProvider></PeriodProvider>)
+  await screen.findByText('Zieht aus', undefined, SLOW)
+  fireEvent.click(rowOf('Zieht aus').getByRole('button', { name: 'Mietverhältnis bearbeiten' }))
+  const dialog = await screen.findByRole('dialog', undefined, SLOW)
+  fireEvent.click(within(dialog).getByRole('button', { name: /^Speichern$/ }))
+  await vi.waitFor(() => expect(screen.getByText('Frühere Mietverhältnisse (1)')).toBeTruthy())
+  const details = container.querySelector('details:has(table.tenancy-table)') as HTMLDetailsElement | null
+  await vi.waitFor(() => expect(details?.open).toBe(true))
+  await vi.waitFor(() => expect(document.activeElement).toBe(rowOf('Zieht aus').getByRole('button', { name: 'Mietverhältnis bearbeiten' })))
 })

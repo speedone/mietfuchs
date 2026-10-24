@@ -12,7 +12,7 @@ import { Fragment, useId, useState, type ReactNode } from 'react'
 import type { Notice, NoticeLevel } from '../types'
 import { NOTICE_LEVEL_LABELS, noticeClass } from '../notices'
 import { splitNoticeText } from '../noticeText'
-import type { NoticeItem } from '../noticeGroups'
+import { memberLine, type NoticeItem } from '../noticeGroups'
 import Term from './Term'
 
 // Zeichen je Stufe, mit U+FE0E als Text und nicht als buntes Emoji.
@@ -106,21 +106,26 @@ export function CalcNoticeGroup({ item, fixOf }: { item: Extract<NoticeItem, { k
   const { notice, common, members } = item
   const { visible, more } = splitNoticeText(common, notice.level)
   const terms = notice.terms ?? []
-  const baseId = useId()
+  const titleId = useId()
   return (
-    <NoticeBox level={notice.level} title={notice.title || undefined} more={more || null}>
+    <NoticeBox level={notice.level} title={notice.title ? <span id={titleId}>{notice.title}</span> : undefined} more={more || null}>
       <div>{`Betrifft ${members.length} Mietverhältnisse:`}</div>
       <ul className="my-1 grid gap-1 pl-5">
         {members.map((m, k) => {
           const fix = fixOf(m.notice)
-          const nameId = `${baseId}-${k}`
+          // Steht der Name schon am Anfang der eigenen Sätze, nur einmal (Durchsicht K1).
+          const line = memberLine(m)
           return (
             <li key={m.notice.subject?.id ?? k}>
-              <strong id={nameId}>{m.name}</strong>{m.own && <>: {m.own}</>}
+              <strong>{line.label}</strong>{line.rest}
               {fix && (
                 <>
                   {' '}
-                  <button type="button" className="btn secondary small notice-action print:hidden" aria-describedby={nameId} onClick={fix.onClick}>{fix.label}</button>
+                  {/* Gleich lautende Knöpfe unterscheidet der Name im Knopf (für Vorleser), der Titel beschreibt sie wie bei
+                      `NoticeBox` (Durchsicht K2). */}
+                  <button type="button" className="btn secondary small notice-action print:hidden" aria-describedby={notice.title ? titleId : undefined} onClick={fix.onClick}>
+                    {fix.label}{' '}<span className="sr-only">{line.label}</span>
+                  </button>
                 </>
               )}
             </li>

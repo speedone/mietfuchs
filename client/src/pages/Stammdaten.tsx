@@ -194,6 +194,22 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
   const [formerOpen, setFormerOpen] = useState(false)
   const [jump, setJump] = useState<{ id: string } | null>(null)
   const scrollToFocus = useScrollToFocus()
+  // Nach dem Speichern oder einem Mieterwechsel (Durchsicht K3): Wandert die Zeile unter „Frühere“, wird sie neu
+  // eingehängt, und der Fokus, den das Fenster an ihr ✎ zurückgab, fiele auf body. Der Abschnitt klappt dann auf, und
+  // das ✎ der Zeile bekommt den Fokus; bleibt sie oben und hat nichts den Fokus, ebenso, nur ohne Markierung.
+  const savedRef = useRef<string | null>(null)
+  useEffect(() => {
+    const id = savedRef.current
+    if (id === null) return
+    savedRef.current = null
+    if (formerTenancies.some((t) => t.id === id)) {
+      setFormerOpen(true)
+      setJump({ id })
+      return
+    }
+    const active = document.activeElement
+    if (active === null || active === document.body) focusTenancyEdit(id)
+  }, [formerTenancies])
   useFocusTarget(focus, 'tenancy', tenancies, (t) => t.id, (t) => {
     if (formerTenancies.some((f) => f.id === t.id)) setFormerOpen(true)
     setJump({ id: t.id })
@@ -343,6 +359,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       return
     }
     const name = tenForm.tenantName.trim()
+    savedRef.current = tenForm.id ?? null
     setTenForm(null)
     await reload()
     toast(editing ? `Mietverhältnis „${name}“ gespeichert.` : `Mietverhältnis „${name}“ angelegt.`)
@@ -933,6 +950,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
           plants={plants}
           onClose={() => setWizardFor(null)}
           onDone={async () => {
+            savedRef.current = wizardFor.id
             setWizardFor(null)
             // Gespeichert ist der Wechsel; scheitert nur das Neuladen, sagt die Seite es, statt ihn noch einmal anzubieten (#150).
             try {
@@ -1189,9 +1207,12 @@ function PartialMonthNote({ rows, start, end, kind }: { rows: readonly { from: s
 // das fokussierte Element als Auslöser und gibt ihm beim Schließen den Fokus zurück, Effekte laufen in Baumreihenfolge.
 function FocusTenancyRow({ jump }: { jump: { id: string } | null }) {
   useLayoutEffect(() => {
-    if (!jump) return
-    const row = [...document.querySelectorAll<HTMLElement>('[data-tenancy-id]')].find((r) => r.dataset.tenancyId === jump.id)
-    row?.querySelector<HTMLElement>('[data-tenancy-edit]')?.focus()
+    if (jump) focusTenancyEdit(jump.id)
   }, [jump])
   return null
+}
+
+function focusTenancyEdit(id: string): void {
+  const row = [...document.querySelectorAll<HTMLElement>('[data-tenancy-id]')].find((r) => r.dataset.tenancyId === id)
+  row?.querySelector<HTMLElement>('[data-tenancy-edit]')?.focus()
 }

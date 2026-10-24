@@ -10,16 +10,21 @@
 //   ein Hinweis, und der Text nennt seinen Mieter beim Namen;
 // - nach Abzug von Name und Wohnung des Mieters und aller Zahlen ist der Text gleich, und er hat gleich viele Sätze;
 // - mindestens ein Satz ist bei allen gleich (sonst gäbe es keinen gemeinsamen Text).
+// **Ein Satz mit Betrag, Prozent, Datum oder Kürzung (`PROTECTED`) bleibt immer beim Mieter**, auch wenn er bei allen
+// gleich lautet: Unter der Liste stünde sonst ein Betrag ohne Mieter (Durchsicht M1).
 // Was davon abweicht, bleibt ein einzelner Hinweis. Ein Kasten steht dort, wo sein erster Hinweis stand.
 import type { Notice } from './types'
-import { sentences } from './noticeText'
+import { fmtDate } from './api'
+import { PROTECTED, sentences } from './noticeText'
 
-export type NoticePerson = { tenantName: string, unitName: string }
+export type NoticePerson = { tenantName: string, unitName: string, periodStart?: string, periodEnd?: string }
 
 export type NoticeMember = {
   notice: Notice
-  // „Name (Wohnung)“
+  // „Name (Wohnung)“, wie die Texte des Servers den Mieter nennen
   name: string
+  // Die Beschriftung der Zeile: der Name, bei zwei gleichen Namen in derselben Gruppe mit dem Zeitraum (Durchsicht K4)
+  label: string
   // Die Sätze, in denen sich dieser Hinweis von den übrigen unterscheidet, wörtlich und in ihrer Reihenfolge
   own: string
 }
@@ -52,13 +57,23 @@ function split(notices: readonly Notice[], people: ReadonlyMap<string, NoticePer
   const parts = notices.map((n) => sentences(n.text))
   const count = parts[0]?.length ?? 0
   if (parts.some((p) => p.length !== count)) return null
-  const same = Array.from({ length: count }, (_, i) => parts.every((p) => p[i] === parts[0]?.[i]))
+  const same = Array.from({ length: count }, (_, i) => {
+    const first = parts[0]?.[i] ?? ''
+    return !PROTECTED.test(first) && parts.every((p) => p[i] === first)
+  })
   if (!same.some(Boolean)) return null
-  const members = notices.map((n, k): NoticeMember => {
+  const named = notices.map((n) => {
     const p = people.get(n.subject?.id ?? '')
+    return { p, name: p ? (p.unitName ? `${p.tenantName} (${p.unitName})` : p.tenantName) : '' }
+  })
+  const members = notices.map((n, k): NoticeMember => {
+    const { p, name } = named[k] ?? { p: undefined, name: '' }
+    const twin = named.some((x, j) => j !== k && x.name === name)
+    const period = p?.periodStart && p.periodEnd ? `${fmtDate(p.periodStart)} – ${fmtDate(p.periodEnd)}` : ''
     return {
       notice: n,
-      name: p ? (p.unitName ? `${p.tenantName} (${p.unitName})` : p.tenantName) : '',
+      name,
+      label: twin && period ? (p?.unitName ? `${p.tenantName} (${p.unitName}, ${period})` : `${name} (${period})`) : name,
       own: (parts[k] ?? []).filter((_, i) => !same[i]).join('').trim(),
     }
   })
@@ -98,5 +113,12 @@ export function groupNotices(notices: readonly Notice[], people: ReadonlyMap<str
 
 // Die Mieter einer Abrechnung, nach Kennung des Mietverhältnisses.
 export function noticePeople(statements: readonly ({ tenancyId: string } & NoticePerson)[]): Map<string, NoticePerson> {
-  return new Map(statements.map((s) => [s.tenancyId, { tenantName: s.tenantName, unitName: s.unitName }]))
+  return new Map(statements.map((s) => [s.tenancyId, { tenantName: s.tenantName, unitName: s.unitName, periodStart: s.periodStart, periodEnd: s.periodEnd }]))
+}
+
+// Die Zeile eines Mieters: Beginnen seine eigenen Sätze schon mit „Name (Wohnung):“, steht der Name nicht doppelt da,
+// sondern der Text folgt der fetten Beschriftung ohne das Präfix (Durchsicht K1). Sonst Beschriftung, Doppelpunkt, Text.
+export function memberLine(m: Pick<NoticeMember, 'name' | 'label' | 'own'>): { label: string, rest: string } {
+  if (m.name && m.own.startsWith(`${m.name}:`)) return { label: m.label, rest: m.own.slice(m.name.length) }
+  return { label: m.label, rest: m.own ? `: ${m.own}` : '' }
 }

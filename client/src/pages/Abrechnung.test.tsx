@@ -942,13 +942,15 @@ test('Zu prüfen: gleicher Hinweis bei vier Mietern steht in einem Kasten, jeder
   expect(within(card).getAllByText('Rückstand im Mietkonto')).toHaveLength(1)
   expect(card.textContent).toContain('Betrifft 4 Mietverhältnisse:')
   for (const [, name, unit, open] of four) {
-    expect(within(card).getByText(`${name} (${unit})`)).toBeTruthy()
+    expect(within(card).getByText(`${name} (${unit})`, { selector: 'strong' })).toBeTruthy()
     expect(card.textContent).toContain(open)
   }
   // Der gemeinsame Text einmal
   expect(card.textContent?.split('tragen Sie die Zahlung im Mietkonto nach')).toHaveLength(2)
-  const fixes = within(card).getAllByRole('button', { name: 'Hier beheben → Mietkonto' })
-  expect(fixes.map((k) => document.getElementById(k.getAttribute('aria-describedby') ?? '')?.textContent)).toEqual(['Meier (EG)', 'Schulz (OG)', 'Wagner (DG)', 'Becker (UG)'])
+  // Durchsicht K2: Der Knopf nennt den Mieter (für Vorleser), der Titel beschreibt ihn wie bei einem einzelnen Hinweis.
+  const fixes = within(card).getAllByRole('button', { name: /^Hier beheben → Mietkonto / })
+  expect(fixes.map((k) => k.textContent)).toEqual(['Hier beheben → Mietkonto Meier (EG)', 'Hier beheben → Mietkonto Schulz (OG)', 'Hier beheben → Mietkonto Wagner (DG)', 'Hier beheben → Mietkonto Becker (UG)'])
+  expect(fixes.map((k) => document.getElementById(k.getAttribute('aria-describedby') ?? '')?.textContent)).toEqual(Array(4).fill('Rückstand im Mietkonto'))
   fireEvent.click(fixes[2] ?? assert.fail('kein dritter Knopf'))
   expect(nav).toHaveBeenCalledWith('mietkonto', { kind: 'rentLedger', id: 't3' })
 })

@@ -1,7 +1,7 @@
 // Gleiche Hinweise je Mieter zu einem Kasten: mit echten Texten der Berechnung, und ohne dass ein Wort verloren geht.
 import { expect, test } from 'vitest'
 import type { Notice } from './types'
-import { groupNotices, noticePeople, type NoticeItem } from './noticeGroups'
+import { groupNotices, memberLine, noticePeople, type NoticeItem } from './noticeGroups'
 import { sentences } from './noticeText'
 import { addressNotice } from './landlord'
 import samplesRaw from './testing/noticeSamples.json?raw'
@@ -122,4 +122,55 @@ test('jeder echte Text eines Codes, je Mieter eingesetzt, verliert beim Zusammen
     }))
     expectLossless(groupNotices(list, people), list)
   }
+})
+
+// Durchsicht M1: Zahlen zwei Mieter dieselbe Vorauszahlung, lautet der Satz mit dem Betrag bei beiden gleich. Er gehört
+// trotzdem zum Mieter, sonst stünde unter der Liste ein Betrag ohne Mieter.
+test('ein Satz mit Betrag bleibt beim Mieter, auch wenn er bei allen gleich lautet', () => {
+  const two = [arrears('t1', '374,80 €', '5,00 €'), arrears('t2', '408,00 €', '5,00 €')]
+  const g = groupNotices(two, people)[0]
+  if (g?.kind !== 'group') return expect.fail('kein Kasten')
+  expect(g.common).not.toContain('€')
+  for (const m of g.members) expect(m.own).toContain('(5,00 €)')
+  expectLossless([g], two)
+  // Ohne einen gemeinsamen Satz ohne Betrag gibt es keinen Kasten
+  const bare = (id: string, name: string): Notice => ({ code: 'c', level: 'warning', title: 'T', text: `${name} schuldet etwas. Am 01.02.2025 fällig.`, subject: { kind: 'tenancy', id } })
+  expect(groupNotices([bare('t1', 'Laura Gerber'), bare('t2', 'Lena Jansen')], people).map((i) => i.kind)).toEqual(['single', 'single'])
+})
+
+// Durchsicht K1: Texte wie prepayment.partial-month beginnen mit „Name (Wohnung):“; die Zeile nennt den Namen dann einmal.
+test('beginnt der eigene Text mit dem Namen, steht er nicht doppelt da', () => {
+  const text = sample('prepayment.partial-month')
+  expect(text.startsWith('M0 (EG): ')).toBe(true)
+  const two: Notice[] = (['t1', 't2'] as const).map((id) => {
+    const p = people.get(id) ?? expect.fail(id)
+    return { code: 'prepayment.partial-month', level: 'warning', title: 'Anteiliger Monat', text: text.replace('M0 (EG)', `${p.tenantName} (${p.unitName})`), subject: { kind: 'tenancy', id } }
+  })
+  const g = groupNotices(two, people)[0]
+  if (g?.kind !== 'group') return expect.fail('kein Kasten')
+  const m = g.members[0] ?? expect.fail('kein Mieter')
+  const line = memberLine(m)
+  expect(line.label).toBe('Laura Gerber (Whg. 1.01)')
+  expect(line.rest.startsWith(': ')).toBe(true)
+  expect(`${line.label}${line.rest}`).toBe(m.own)
+  // Sonst Beschriftung, Doppelpunkt, eigener Text
+  expect(memberLine({ name: 'A (EG)', label: 'A (EG)', own: 'Im Mietkonto von A (EG) fehlt etwas.' })).toEqual({ label: 'A (EG)', rest: ': Im Mietkonto von A (EG) fehlt etwas.' })
+})
+
+// Durchsicht K4: Zwei Mietverhältnisse mit gleichem Namen in derselben Wohnung (Auszug und Wiedereinzug) unterscheidet
+// die Beschriftung am Zeitraum; sonst bleibt sie kurz.
+test('gleicher Name und gleiche Wohnung: die Beschriftung nennt den Zeitraum, nur dann', () => {
+  const twins = noticePeople([
+    { tenancyId: 'a', tenantName: 'Laura Gerber', unitName: 'Whg. 1.01', periodStart: '2025-01-01', periodEnd: '2025-03-31' },
+    { tenancyId: 'b', tenantName: 'Laura Gerber', unitName: 'Whg. 1.01', periodStart: '2025-07-01', periodEnd: '2025-12-31' },
+    { tenancyId: 'c', tenantName: 'Lena Jansen', unitName: 'Whg. 1.02', periodStart: '2025-01-01', periodEnd: '2025-12-31' },
+  ])
+  const make = (id: string, open: string): Notice => ({ ...arrears('t1', open, '1,00 €'), subject: { kind: 'rentLedger', id }, text: arrears('t1', open, '1,00 €').text.replace('Laura Gerber (Whg. 1.01)', id === 'c' ? 'Lena Jansen (Whg. 1.02)' : 'Laura Gerber (Whg. 1.01)') })
+  const g = groupNotices([make('a', '10,00 €'), make('b', '20,00 €'), make('c', '30,00 €')], twins)[0]
+  if (g?.kind !== 'group') return expect.fail('kein Kasten')
+  expect(g.members.map((m) => m.label)).toEqual([
+    'Laura Gerber (Whg. 1.01, 01.01.2025 – 31.03.2025)',
+    'Laura Gerber (Whg. 1.01, 01.07.2025 – 31.12.2025)',
+    'Lena Jansen (Whg. 1.02)',
+  ])
 })
