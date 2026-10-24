@@ -151,7 +151,7 @@ export type SnapshotHeatingPlant = Pick<HeatingPlant, 'id' | 'energy' | 'method'
   & Partial<Pick<HeatingPlant, 'name' | 'periodStartMonth' | 'periodChanges' | 'separateSpans' | 'separateSettlement' | 'nonResidential' | 'restriction' | 'districtEtsNew' | 'supply' | 'endsOn' | 'replacesPlantId' | 'buildingWith' | 'takesOverStock'>>
   // Eigene Heizkostenabrechnung (Heizung PR 10). Fehlt ein Feld, gilt die Vorgabe der Spalte
   // (`combined`, `area`, `degreeDays`); `capture` und die Angaben zur Wärmepumpe fehlen dann.
-  & Partial<Pick<HeatingPlant, 'changeSplit' | 'hotWater' | 'capture' | 'areaBasisHeat' | 'capturedOnOct2024' | 'captureInstalledOn' | 'heatPumpInstalledOn' | 'selfSpans'>>
+  & Partial<Pick<HeatingPlant, 'changeSplit' | 'hotWater' | 'capture' | 'areaBasisHeat' | 'capturedOnOct2024' | 'captureInstalledOn' | 'heatPumpInstalledOn' | 'selfSpans' | 'basisValues'>>
   // Erzeuger der Anlage für den Warmwasseranteil nach einer Formel (Heizung PR 11).
   & Partial<Pick<HeatingPlant, 'heatGeneration' | 'heatPumpMajority'>>
   // Wie der Betriebsstrom erfasst ist (#266), nur für den Hinweis „Betriebsstrom fehlt“; fehlt sie, keine Angabe.

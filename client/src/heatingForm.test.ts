@@ -1,6 +1,6 @@
 // Die Einrichtung „Heizung“ (Heizung PR 4, Entwurf 11.2), ohne DOM.
 import { describe, expect, test } from 'vitest'
-import { asksRemote, asksContracting, asksFuelContract, editFuelContractNote, FUEL_CONTRACT_OPTIONS, selfSupplyOffer, asksSwitch, contractingSwap, energyLabelOf, HOW_TO_TELL, PREVIOUS_SUPPLY_OPTIONS, asksGeneration, asksNewInstall, asksTakeOver, buildingOptions, canSwap, connectionNote, emptyHeatingForm, emptySwapForm, formulaFormOf, HEAT_GENERATION_OPTIONS, HOT_WATER_OPTIONS, hotWaterBody, isFormula, parseDecimal, SELF_HOT_WATER_OPTIONS, selfFormulaBody, PER_UNIT_ENERGY_OPTIONS, plantOptions, swapBody, swapMetersOf, unmeasurableLabel, heatingPlantBody, heatingSummary, heatingToForm, whoHint, whoOptions, type HeatingForm } from './heatingForm'
+import { asksRemote, asksContracting, asksFuelContract, editFuelContractNote, FUEL_CONTRACT_OPTIONS, selfSupplyOffer, asksSwitch, contractingSwap, energyLabelOf, HOW_TO_TELL, PREVIOUS_SUPPLY_OPTIONS, asksGeneration, asksNewInstall, asksTakeOver, buildingOptions, canSwap, connectionNote, emptyHeatingForm, emptySwapForm, formulaFormOf, HEAT_GENERATION_OPTIONS, HOT_WATER_OPTIONS, hotWaterBody, isFormula, parseDecimal, SELF_HOT_WATER_OPTIONS, selfFormulaBody, PER_UNIT_ENERGY_OPTIONS, plantOptions, swapBody, swapMetersOf, unmeasurableLabel, heatingPlantBody, heatingSummary, heatingToForm, unitValueFields, whoHint, whoOptions, type HeatingForm } from './heatingForm'
 import type { HeatingPlant, Unit } from './types'
 
 const UNITS: Pick<Unit, 'id' | 'name' | 'noConnection'>[] = [{ id: 'eg', name: 'EG' }, { id: 'og', name: 'OG' }, { id: 'garage', name: 'Garage', noConnection: ['waerme'] }]
@@ -514,4 +514,22 @@ describe('Wärmelieferant rechnet unmittelbar mit den Mietern ab (#225)', () => 
 
 test('#225: wird die Energie danach auf eine eigene Heizung gestellt, gilt die Antwort „Lieferant“ nicht mehr (das Auswahlfeld zeigt sie dann auch nicht)', () => {
   expect(heatingPlantBody(ausgefuellt({ energy: 'gas', who: 'supplier' }), UNITS)).toEqual({ error: 'Bitte wählen Sie, wer die Heizkostenabrechnung erstellt.' })
+})
+
+describe('#322, Durchsicht M1: beheizte Fläche und umbauter Raum in „Heizanlage ändern“', () => {
+  const units = [{ id: 'eg', name: 'EG', areaM2: 60 }, { id: 'og', name: 'OG', areaM2: 80 }, { id: 'garage', name: 'Garage', areaM2: 0 }]
+  const plant: HeatingPlant = { ...PLANT, method: 'self', areaBasisHeat: 'volume', units: null, basisValues: [{ unitId: 'eg', heatedAreaM2: null, volumeM3: 180 }] }
+  test('vorbelegt, die Liste bleibt „alle“, gesendet werden die Werte je Wohnung mit Fläche', () => {
+    const form = heatingToForm(plant, units)
+    expect(form.unitValues).toEqual({ eg: '180', og: '', garage: '' })
+    expect(heatingPlantBody(form, units, [], 'hp1', plant)).toEqual({ error: expect.stringMatching(/OG: Bitte tragen Sie den umbauten Raum in m³ ein/) })
+    const result = heatingPlantBody({ ...form, unitValues: { ...form.unitValues, og: '210,5' } }, units, [], 'hp1', plant)
+    expect(result).toMatchObject({ body: { units: null, unitValues: [{ unitId: 'eg', volumeM3: 180 }, { unitId: 'og', volumeM3: 210.5 }] } })
+  })
+  test('ohne eigene Abrechnung oder nach Wohnfläche keine Werte', () => {
+    const area = { ...plant, areaBasisHeat: 'area' as const }
+    expect(heatingPlantBody(heatingToForm(area, units), units, [], 'hp1', area)).not.toHaveProperty('body.unitValues')
+    expect(unitValueFields(area, units)).toEqual([])
+    expect(unitValueFields(plant, units).map((u) => u.label)).toEqual(['Umbauter Raum EG in m³', 'Umbauter Raum OG in m³'])
+  })
 })

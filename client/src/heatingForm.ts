@@ -13,7 +13,7 @@ import { parseEuro } from './api'
 import { hkvConsumptionShare, hkvCutNotByConsumption, hkvHeatPumpCapture, hkvRemoteReadingNewDevices, hkvRenewableExemption } from '../../shared/law/heizkostenv.ts'
 import { dayAfter, germanDate, LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
 import { co2SelfSupply, halfSplitEnactedOn } from '../../shared/law/co2kostaufg.ts'
-import { lineRoot, sameLine } from '../../shared/heatingPeriod.ts'
+import { lineRoot, sameLine, unitBasisOf } from '../../shared/heatingPeriod.ts'
 import { parseMeterValue } from './tenantChange'
 import { ambiguousText, ambiguousThousands, parseNumberDe } from './numbers'
 
@@ -72,6 +72,9 @@ export type HeatingForm = {
   deliverySince: string
   previousSupply: '' | PreviousSupply
   announcedOn: string
+  // #322 (Durchsicht M1): beheizte Fläche bzw. umbauter Raum je Wohnung, wie eingetippt; nur bei eigener Abrechnung nach
+  // diesen Maßstäben gefragt und gesendet (`unitValueFields`).
+  unitValues: Record<string, string>
 }
 
 // Was die Einrichtung schickt. Die übrigen Felder der Anlage behalten ihre Vorgabe.
@@ -80,6 +83,7 @@ export type HeatingPlantBody = Pick<
   'energy' | 'supply' | 'method' | 'source' | 'devicesRemote' | 'devicesInstalledAfter2021' | 'capturedOnOct2024' | 'captureInstalledOn' | 'warmRentAverageCents' | 'units' | 'newDevicesInstall' | 'name' | 'buildingWith'
   | 'contracting' | 'heatDeliverySince' | 'previousSupply' | 'switchAnnouncedOn'
 > & Partial<Pick<HeatingPlant, 'heatPumpInstalledOn' | 'heatGeneration' | 'heatPumpMajority'>> & { takesOverStock?: boolean }
+  & { unitValues?: ({ unitId: string; heatedAreaM2: number } | { unitId: string; volumeM3: number })[] }
 // Name und Wohnungen einer bisherigen Anlage, die mit dem Anlegen geändert werden (Heizung PR 9).
 export type AdjustRow = { id: string; name: string; units: HeatingPlantUnit[] }
 // `none`: Es entsteht bewusst keine Anlage, und der Satz sagt warum. Heizt der Mieter selbst (Heizung PR 19), stehen
@@ -89,7 +93,7 @@ export type AdjustRow = { id: string; name: string; units: HeatingPlantUnit[] }
 // `singleTenant`: Das Angebot verlangt einen einzigen Mieter (zentrale Heizung mit Brennstoff des Mieters); ohne Angabe wie `central`.
 export type HeatingResult = { body: HeatingPlantBody; adjust: AdjustRow[]; setUpSelf?: boolean } | { error: string } | { none: string; selfSupplyUnitIds: string[]; central: boolean; singleTenant?: boolean }
 
-type UnitInfo = Pick<Unit, 'id' | 'noConnection'>
+type UnitInfo = Pick<Unit, 'id' | 'noConnection'> & Partial<Pick<Unit, 'name' | 'areaM2'>>
 
 export const ENERGY_OPTIONS: { value: EnergyAnswer; label: string }[] = [
   { value: 'gas', label: 'Gas' },
@@ -325,7 +329,7 @@ export function emptyHeatingForm(units: readonly UnitInfo[], others: readonly He
     energy: '', contract: '', fuelContract: 'landlord', who: '', unitIds: defaultUnitIds(units).filter((id) => !taken.has(id)), remote: 'unknown', installedAfter: 'unknown',
     captured: 'unknown', captureInstalledOn: '', heatPumpInstalledOn: '', warmRentAverage: '', newInstall: '',
     name: '', perUnitEnergy: '', building: '', ownMeters: false, takesOverStock: '', generation: '', majority: '',
-    contracting: false, deliverySince: '', previousSupply: '', announcedOn: '', otherNames: Object.fromEntries(others.filter((p) => p.name.trim() === '' || p.units === null).map((p) => [p.id, p.name])),
+    contracting: false, deliverySince: '', previousSupply: '', announcedOn: '', unitValues: {}, otherNames: Object.fromEntries(others.filter((p) => p.name.trim() === '' || p.units === null).map((p) => [p.id, p.name])),
   }
 }
 
@@ -358,7 +362,22 @@ export function heatingToForm(plant: HeatingPlant, units: readonly UnitInfo[]): 
     deliverySince: plant.heatDeliverySince ?? '',
     previousSupply: plant.previousSupply ?? '',
     announcedOn: plant.switchAnnouncedOn ?? '',
+    unitValues: Object.fromEntries(servedIds(plant, units).map((id) => {
+      const v = unitBasisOf(plant, id)
+      const n = plant.areaBasisHeat === 'volume' ? (v?.volumeM3 ?? null) : plant.areaBasisHeat === 'heatedArea' ? v?.heatedAreaM2 ?? null : null
+      return [id, n === null ? '' : n.toLocaleString('de-DE', { maximumFractionDigits: 2, useGrouping: false })]
+    })),
   }
+}
+
+// #322 (Durchsicht M1, S1): In „Heizanlage ändern“ je Wohnung mit Fläche ein Feld für beheizte Fläche bzw. umbauten Raum,
+// nur bei eigener Abrechnung und einem solchen Maßstab. Eine Einheit ohne Fläche (Garage) bekommt keins.
+export function unitValueFields(plant: Pick<HeatingPlant, 'method' | 'areaBasisHeat'> | null | undefined, units: readonly UnitInfo[], unitIds?: readonly string[]): { id: string; label: string }[] {
+  if (!plant || plant.method !== 'self' || plant.areaBasisHeat === 'area') return []
+  const volume = plant.areaBasisHeat === 'volume'
+  return units
+    .filter((u) => (unitIds === undefined || unitIds.includes(u.id)) && (u.areaM2 ?? 0) > 0)
+    .map((u) => ({ id: u.id, label: `${volume ? 'Umbauter Raum' : 'Beheizte Fläche'} ${u.name ?? u.id} in ${volume ? 'm³' : 'm²'}` }))
 }
 
 // ---------- Wärmelieferung (Heizung PR 16, #213) ----------
@@ -396,7 +415,8 @@ export function contractingSwap(form: SwapForm, checked: boolean, previous: Pick
 
 // `others`: die übrigen Anlagen des Objekts; `editingId`: die Anlage, die geändert wird (dann gibt es
 // keine Anpassung anderer Anlagen, Heizung PR 9).
-export function heatingPlantBody(form: HeatingForm, units: readonly UnitInfo[], others: readonly HeatingPlant[] = [], editingId: string | null = null): HeatingResult {
+// `current`: die Anlage, wie sie gespeichert ist; ihre beheizte Fläche und ihr umbauter Raum je Wohnung gehen beim Ändern mit (#322).
+export function heatingPlantBody(form: HeatingForm, units: readonly UnitInfo[], others: readonly HeatingPlant[] = [], editingId: string | null = null, current: Pick<HeatingPlant, 'units' | 'basisValues' | 'method' | 'areaBasisHeat'> | null = null): HeatingResult {
   if (form.energy === '') return { error: 'Bitte wählen Sie, womit geheizt wird.' }
   // Die Frage nach dem Gebäude (Recht I3 der Durchsicht von #238): beim Anlegen neben einer laufenden Anlage Pflicht.
   if (!editingId && others.some((p) => p.endsOn === null) && form.building === '') {
@@ -421,7 +441,18 @@ export function heatingPlantBody(form: HeatingForm, units: readonly UnitInfo[], 
   }
   const all = defaultUnitIds(units)
   const allServed = !several && form.unitIds.length === all.length && all.every((id) => form.unitIds.includes(id))
-  const unitList = allServed ? null : form.unitIds.map((unitId) => ({ unitId, heatedAreaM2: null }))
+  // Die Werte bleiben beim Server, wenn ein Eintrag sie nicht nennt (#322); geschickt wird nur die Kennung.
+  const unitList = allServed ? null : form.unitIds.map((unitId) => ({ unitId, heatedAreaM2: current ? (unitBasisOf(current, unitId)?.heatedAreaM2 ?? null) : null }))
+  // #322 (Durchsicht M1): beheizte Fläche bzw. umbauter Raum je Wohnung aus „Heizanlage ändern“.
+  const fields = editingId !== null ? unitValueFields(current, units, form.unitIds) : []
+  const unitValues: NonNullable<HeatingPlantBody['unitValues']> = []
+  for (const f of fields) {
+    const v = parseNumberDe(form.unitValues[f.id] ?? '')
+    const volume = current?.areaBasisHeat === 'volume'
+    const name = units.find((u) => u.id === f.id)?.name ?? f.id
+    if (v === null || !(v > 0)) return { error: `${name}: Bitte tragen Sie ${volume ? 'den umbauten Raum in m³' : 'die beheizte Fläche in m²'} ein, eine Zahl über 0.` }
+    unitValues.push(volume ? { unitId: f.id, volumeM3: v } : { unitId: f.id, heatedAreaM2: v })
+  }
   if (form.energy === 'perUnit') {
     if (form.contract === '') return { error: 'Wer hat den Vertrag für die Heizung in der Wohnung?' }
     if (form.contract === 'tenant') return { none: SELF_SUPPLY, selfSupplyUnitIds: form.unitIds, central: false }
@@ -506,6 +537,7 @@ export function heatingPlantBody(form: HeatingForm, units: readonly UnitInfo[], 
       heatDeliverySince: sw && form.deliverySince !== '' ? form.deliverySince : null,
       previousSupply: sw && form.previousSupply !== '' ? form.previousSupply : null,
       switchAnnouncedOn: sw && form.announcedOn !== '' ? form.announcedOn : null,
+      ...(fields.length > 0 ? { unitValues } : {}),
     },
     adjust,
   }

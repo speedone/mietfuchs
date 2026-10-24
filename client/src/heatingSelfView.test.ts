@@ -258,3 +258,23 @@ describe('Durchsicht von #242: Ausweis mit Schätzung', () => {
     expect(potLines({ ...heat, estimatedConsumption: 0, costCents: 100000 }).join(' ')).not.toMatch(/geschätzt/)
   })
 })
+
+describe('#322: Ausweis nach umbautem Raum', () => {
+  it('Grundkosten der Heizung je m³, über der Grenze nach umbautem Raum', () => {
+    const base = { pot: 'heating' as const, costCents: 562800, consumptionPct: 30, byAreaOnly: false, areaM2: 650, consumption: 40000, consumptionUnit: 'kWh', baseCentsPerM2: 606.0923, consumptionCentsPerUnit: 4.221, basisUnit: 'm³' as const }
+    expect(potLines(base)[1]).toBe(`Grundkosten 70 %: ${fmtEuro(393960)} für 650 m³, 6,0609 € je m³`)
+    expect(potLines({ ...base, consumptionPct: 0, overThreshold: true, estimatedAreaM2: 300, consumptionCentsPerUnit: null })).toContain('Geschätzt ist der Verbrauch für 300 von 650 m³; das überschreitet die Grenze des § 9a Abs. 2 HeizkostenV, deshalb nur nach umbautem Raum verteilt.')
+  })
+})
+
+describe('#322, Durchsicht S2 und K4: Druckzeilen beim umbauten Raum', () => {
+  const est = { plantId: 'hp', unitId: 'c', unitName: 'C', part: 'heat' as const, value: 12000, method: 'buildingAverage' as const, reason: 'defekt', confirmed: true, cause: 'deviceFailure' as const, capture: 'heatMeter' as const, valueUnit: 'kWh' as const, users: 1, kept: 0, complete: false }
+  const heat = { pot: 'heating' as const, costCents: 0, consumptionPct: 70, byAreaOnly: false, areaM2: 600, consumption: 40000, consumptionUnit: 'kWh' as const, baseCentsPerM2: 0, consumptionCentsPerUnit: 1, overThreshold: false, estimatedAreaM2: 0, basisUnit: 'm³' as const }
+  it('Schätzung nach dem Durchschnitt je m³, über der Grenze nach umbautem Raum', () => {
+    expect(estimateLines({ pots: [heat], changeSplit: 'degreeDays', estimates: [est] }, 'c', { heatingEstimated: true, heatingConsumption: 12000 })[0]).toMatch(/nach dem Durchschnitt des Gebäudes je m³: 12\.000 kWh/)
+    expect(estimateLines({ pots: [{ ...heat, overThreshold: true }], changeSplit: 'degreeDays', estimates: [est] }, 'c', { heatingEstimated: true, heatingConsumption: 12000 })[0]).toMatch(/Der geschätzte umbaute Raum des Hauses überschreitet die Grenze des § 9a Abs\. 2 HeizkostenV, verteilt wird nur nach umbautem Raum\./)
+  })
+  it('kein Verbrauch erfasst: nur nach umbautem Raum', () => {
+    expect(potLines({ ...heat, byAreaOnly: true, consumptionCentsPerUnit: null })).toContain('Kein Verbrauch erfasst: nur nach umbautem Raum verteilt.')
+  })
+})

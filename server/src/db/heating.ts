@@ -31,6 +31,7 @@ import { parsePeriodKey, periodContaining, periodKey, periodLabel, periodOfKey, 
 import { closedHeatingKeys, heatingPeriodClosed, plantContext } from './heatingPeriodContext.ts'
 import type { Database, Executor } from './client.ts'
 import { readHeatingPlants, readMeters, readProperties, readUnits } from './read.ts'
+import { andList } from '../../../shared/wording.ts'
 import { openSelfSpan } from '../heating.ts'
 import { SELF_VIA_SETUP, SelfItemsError, selfItemsOf } from './heatingSelf.ts'
 import { hkvCutNotByConsumption } from '../../../shared/law/heizkostenv.ts'
@@ -39,7 +40,7 @@ import { gmodgHeating43 } from '../../../shared/law/gmodg.ts'
 import { co2HalfSplitNewBuildings } from '../../../shared/law/co2kostaufg.ts'
 import { asNullableFilled, asNullableText, asText, guardServedChange, has, heatingPeriodAt, heatingRulesOf, HeatingError, insertEntityIn, ISO_DATE, itemPeriodClosed, merged, oneOfOrUndefined, raw, sameProperty } from './repository.ts'
 import { dropOpenHeatingLetters } from './letters.ts'
-import { buildingCycle, lineRoot, sameLine, servesUnit } from '../../../shared/heatingPeriod.ts'
+import { buildingCycle, lineRoot, plantUnitValues, sameLine, servesUnit, unitBasisOf } from '../../../shared/heatingPeriod.ts'
 import {
   AREA_BASES_HEAT, CAPTURE_METHODS, CHANGE_SPLITS, CO2_RESTRICTIONS, HEAT_GENERATIONS, HEAT_PUMP_MAJORITIES, HOT_WATER, fuelDeliveries, closedHeatingSettlementHistory, co2Statements, closedHeatingSettlements, closedSettlements, costItems, DEVICES_INSTALLED_AFTER, DEVICES_REMOTE, HEATING_ENERGIES, HEATING_METHODS,
   HEATING_SOURCES, HEATING_SUPPLIES, NEW_DEVICES_INSTALLS, OPERATING_POWER_HANDLINGS, PREVIOUS_SUPPLIES, co2Statements as co2StatementRows, heatingPeriodChanges, heatingPeriods, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingSelfSpans, heatingSeparateSpans, meters, units,
@@ -58,8 +59,9 @@ const nullableBoolean = (v: unknown): boolean | null => (typeof v === 'boolean' 
 const nullableNumber = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
 
 // Die angeschlossenen Wohnungen aus dem Rumpf: jede einmal, eine beheizte Fläche nur als Zahl. Ein
-// Eintrag ohne Kennung fällt weg.
-function readPlantUnits(value: unknown): HeatingPlantUnit[] {
+// Eintrag ohne Kennung fällt weg. Beheizte Fläche und umbauter Raum (#322) bleiben, wenn der Eintrag sie nicht nennt,
+// die gespeicherten derselben Wohnung (`current`): Ältere Oberflächen schicken die Wohnungen ohne sie und leerten sie sonst still.
+function readPlantUnits(value: unknown, current: readonly HeatingPlantUnit[] = []): HeatingPlantUnit[] {
   if (!Array.isArray(value)) return []
   const seen = new Set<string>()
   const result: HeatingPlantUnit[] = []
@@ -67,9 +69,39 @@ function readPlantUnits(value: unknown): HeatingPlantUnit[] {
     const unitId = asNullableFilled(raw(row, 'unitId'))
     if (unitId === null || seen.has(unitId)) continue
     seen.add(unitId)
-    result.push({ unitId, heatedAreaM2: nullableNumber(raw(row, 'heatedAreaM2')) })
+    const known = current.find((u) => u.unitId === unitId)
+    const heatedAreaM2 = has(row, 'heatedAreaM2') ? nullableNumber(raw(row, 'heatedAreaM2')) : (known?.heatedAreaM2 ?? null)
+    const volumeM3 = has(row, 'volumeM3') ? nullableNumber(raw(row, 'volumeM3')) : (known?.volumeM3 ?? null)
+    result.push({ unitId, heatedAreaM2, volumeM3 })
   }
   return result
+}
+
+// #322 (Durchsicht M1): `unitValues` aus dem Rumpf (Einrichtung, „Heizanlage ändern“) über die gespeicherten Werte legen,
+// ohne die Liste der Wohnungen zu ändern. Ein Schlüssel, der fehlt, lässt den Wert stehen; `null` leert ihn.
+export function withUnitValues(values: readonly HeatingPlantUnit[], body: unknown): HeatingPlantUnit[] {
+  const rows = Array.isArray(body) ? body : []
+  const result = values.map((u) => ({ ...u }))
+  for (const row of rows) {
+    const unitId = asNullableFilled(raw(row, 'unitId'))
+    if (unitId === null) continue
+    let entry = result.find((u) => u.unitId === unitId)
+    if (!entry) {
+      entry = { unitId, heatedAreaM2: null, volumeM3: null }
+      result.push(entry)
+    }
+    if (has(row, 'heatedAreaM2')) entry.heatedAreaM2 = nullableNumber(raw(row, 'heatedAreaM2'))
+    if (has(row, 'volumeM3')) entry.volumeM3 = nullableNumber(raw(row, 'volumeM3'))
+  }
+  return result
+}
+
+// Die Werte auf die Liste oder, ohne Liste, nach `basisValues` (#322).
+export function placeUnitValues(p: HeatingPlant, values: readonly HeatingPlantUnit[]): HeatingPlant {
+  const { basisValues: _drop, ...rest } = p
+  if (rest.units !== null) return { ...rest, units: rest.units.map((u) => values.find((v) => v.unitId === u.unitId) ?? u) }
+  const kept = values.filter((v) => v.heatedAreaM2 !== null || (v.volumeM3 ?? null) !== null)
+  return kept.length > 0 ? { ...rest, basisValues: kept } : rest
 }
 
 // Kennungen aus dem Rumpf, jede einmal.
@@ -112,7 +144,7 @@ function mergeHeatingPlant(current: HeatingPlant, body: unknown): HeatingPlant {
     // Wechsel und Spannen setzen nur die Routen mit Vorschau (Heizung PR 5, Task 4 und 9).
     periodChanges: current.periodChanges,
     separateSpans: current.separateSpans,
-    units: merged(body, 'units', current.units, (v) => (v === null ? null : readPlantUnits(v))),
+    units: merged(body, 'units', current.units, (v) => (v === null ? null : readPlantUnits(v, plantUnitValues(current)))),
     // Setzt nur der Kesseltausch (`replaceHeatingPlant`).
     endsOn: current.endsOn,
     replacesPlantId: current.replacesPlantId,
@@ -161,7 +193,10 @@ function mergeHeatingPlant(current: HeatingPlant, body: unknown): HeatingPlant {
   }
   if (next.emergencyInstall !== true) next.emergencyPriorDuty = null
   if (next.newBuildingFirstUse === null) next.buildingApplicationBefore20260513 = null
-  return next
+  // #322: Die Werte für die Grundkosten gehen mit, auch wenn die Liste zu „alle“ wird oder umgekehrt, und `unitValues`
+  // berichtigt sie ohne die Liste anzufassen (Durchsicht M1).
+  const values = withUnitValues(next.units ?? plantUnitValues(current), raw(body, 'unitValues'))
+  return placeUnitValues(next, values)
 }
 
 // Der Energieträger hat keine Vorgabe; ohne ihn entsteht keine Anlage (createHeatingPlant).
@@ -175,6 +210,27 @@ const emptyHeatingPlant = (id: string, propertyId: string): HeatingPlant => ({
   contracting: false, heatDeliverySince: null, previousSupply: null, switchAnnouncedOn: null,
   gmodg43InstalledOn: null, emergencyInstall: null, emergencyPriorDuty: null, newBuildingFirstUse: null, buildingApplicationBefore20260513: null,
 })
+
+// #322: Grundkosten nach beheizter Fläche oder umbautem Raum brauchen den Wert an jeder versorgten Wohnung mit Fläche
+// (eine Garage ohne Fläche zählt nicht, Durchsicht S1, dieselbe Regel wie in calc.ts). Die Liste der Wohnungen bleibt, wie
+// eingerichtet (Durchsicht M1); eine später angelegte Wohnung meldet die Abrechnung. Die Meldung nennt Wohnungen und Weg.
+export const BASIS_WAY = 'Eintragen und berichtigen lässt er sich auf der Seite Heizkosten unter „Heizanlage ändern“.'
+export const basisMissingText = (basis: 'heatedArea' | 'volume', names: readonly string[]): string =>
+  basis === 'volume'
+    ? `Für Grundkosten nach dem umbauten Raum (§ 7 Abs. 1 Satz 5 HeizkostenV) tragen Sie bei jeder Wohnung der Heizanlage den umbauten Raum in m³ ein; es fehlt bei: ${andList([...names])}. ${BASIS_WAY}`
+    : `Für Grundkosten nach der beheizten Fläche tragen Sie bei jeder Wohnung der Heizanlage die beheizte Fläche in m² ein; es fehlt bei: ${andList([...names])}. ${BASIS_WAY.replace('lässt er sich', 'lässt sie sich')}`
+async function guardBasisValues(db: Executor, after: HeatingPlant): Promise<void> {
+  if (after.areaBasisHeat === 'area') return
+  const basis = after.areaBasisHeat
+  const missing = (await readUnits(db))
+    .filter((u) => u.propertyId === after.propertyId && servesUnit(after, u) && (u.areaM2 || 0) > 0)
+    .filter((u) => {
+      const v = unitBasisOf(after, u.id)
+      return !(((basis === 'volume' ? v?.volumeM3 : v?.heatedAreaM2) ?? 0) > 0)
+    })
+    .map((u) => u.name)
+  if (missing.length > 0) throw new HeatingError(400, basisMissingText(basis, missing))
+}
 
 export async function guardHeatingPlant(db: Executor, before: HeatingPlant | null, after: HeatingPlant): Promise<void> {
   // Wärmelieferung (Heizung PR 16, #213). Contracting gibt es bei jeder zentralen Anlage außer der Fernwärme,
@@ -245,9 +301,14 @@ export async function guardHeatingPlant(db: Executor, before: HeatingPlant | nul
   // Eigene Heizkostenabrechnung (Heizung PR 10, Entwurf 5.3, 8.1, 8.3, Abweichungen 10 und 17).
   if (after.method === 'self') {
     if (after.capture === null) throw new HeatingError(400, 'Bitte wählen Sie, womit der Verbrauch erfasst wird.')
-    if (after.areaBasisHeat === 'heatedArea' && (after.units === null || after.units.some((u) => u.heatedAreaM2 === null))) {
-      throw new HeatingError(400, 'Für Grundkosten nach der beheizten Fläche nennen Sie die angeschlossenen Wohnungen und tragen bei jeder die beheizte Fläche ein.')
-    }
+    // #322: Grundkosten nach beheizter Fläche oder umbautem Raum (§ 7 Abs. 1 Satz 5 HeizkostenV).
+    await guardBasisValues(db, after)
+  }
+  if (plantUnitValues(after).some((u) => (u.volumeM3 ?? null) !== null && !((u.volumeM3 ?? 0) > 0))) {
+    throw new HeatingError(400, 'Der umbaute Raum einer Wohnung ist eine Zahl über 0 m³.')
+  }
+  if (plantUnitValues(after).some((u) => u.heatedAreaM2 !== null && !(u.heatedAreaM2 > 0))) {
+    throw new HeatingError(400, 'Die beheizte Fläche einer Wohnung ist eine Zahl über 0 m².')
   }
   if (after.heatPumpInstalledOn !== null && !ISO_DATE.test(after.heatPumpInstalledOn)) {
     throw new HeatingError(400, 'Das Einbaudatum der Wärmepumpe ist kein Datum. Bitte wählen Sie es im Kalender.')
@@ -383,7 +444,8 @@ export async function guardPlantsOfProperty(db: Executor, propertyId: string): P
     .select({ plantId: heatingPlantUnits.plantId, unitId: units.id, unitName: units.name })
     .from(heatingPlantUnits)
     .innerJoin(units, eq(heatingPlantUnits.unitId, units.id))
-    .where(inArray(heatingPlantUnits.plantId, plants.map((p) => p.id)))
+    // Ohne Liste tragen die Zeilen nur Werte für die Grundkosten (#322), keine Versorgung.
+    .where(inArray(heatingPlantUnits.plantId, plants.filter((p) => p.unitsLimited).map((p) => p.id)))
   const nameOf = new Map(plants.map((p) => [p.id, p.name.trim()]))
   const owner = new Map<string, string>()
   for (const r of rows) {
@@ -438,6 +500,8 @@ export const pinSelfSpans = (p: Pick<HeatingPlant, 'capture' | 'hotWater' | 'sel
 export const CAPTURE_VIA_SETUP =
   'Womit der Verbrauch erfasst wird, ändert sich nur zum Beginn einer Heizperiode, damit frühere Heizperioden nicht rückwirkend anders rechnen. ' +
   'Beenden Sie dafür unter „Ändern“ die eigene Heizkostenabrechnung und richten Sie sie mit „Eigene Heizkostenabrechnung einrichten“ ab der Heizperiode neu ein, in der die neuen Geräte zählen.'
+export const AREA_BASIS_VIA_SETUP =
+  'Nach welchem Maßstab die Grundkosten der Heizung verteilt werden, legen Sie bei der eigenen Heizkostenabrechnung in „Heizkosten selbst abrechnen“ fest, ab einer Heizperiode (§ 6 Abs. 4 HeizkostenV). Gespeichert wurde nichts.'
 export const HOT_WATER_VIA_SETUP =
   'Wie das Warmwasser bereitet wird, ändert sich bei der eigenen Heizkostenabrechnung nur zum Beginn einer Heizperiode, damit frühere Heizperioden nicht rückwirkend anders rechnen. ' +
   'Beenden Sie dafür unter „Ändern“ die eigene Heizkostenabrechnung und richten Sie sie mit „Eigene Heizkostenabrechnung einrichten“ ab der Heizperiode neu ein, ab der die Änderung gilt.'
@@ -449,10 +513,13 @@ export async function writeSelfSpans(tx: Executor, plantId: string, spans: reado
 }
 
 // Die Liste der Wohnungen, ganz ersetzt wie die Untertabellen in repository.ts.
-async function writePlantUnits(db: Executor, p: HeatingPlant): Promise<void> {
+export async function writePlantUnits(db: Executor, p: HeatingPlant): Promise<void> {
   await db.delete(heatingPlantUnits).where(eq(heatingPlantUnits.plantId, p.id))
-  const rows = p.units ?? []
-  if (rows.length > 0) await db.insert(heatingPlantUnits).values(rows.map((u) => ({ plantId: p.id, unitId: u.unitId, heatedAreaM2: u.heatedAreaM2 })))
+  // Ohne Liste stehen hier nur die Werte für die Grundkosten (#322); `units_limited` sagt, ob es eine Liste ist. Werte für
+  // eine Wohnung, die die Anlage nicht versorgt (oder die es im Objekt nicht gibt), fallen weg.
+  const served = p.units === null ? new Set((await readUnits(db)).filter((u) => u.propertyId === p.propertyId && servesUnit(p, u)).map((u) => u.id)) : null
+  const rows = plantUnitValues(p).filter((u) => served === null || served.has(u.unitId))
+  if (rows.length > 0) await db.insert(heatingPlantUnits).values(rows.map((u) => ({ plantId: p.id, unitId: u.unitId, heatedAreaM2: u.heatedAreaM2, volumeM3: u.volumeM3 ?? null })))
 }
 
 export async function listHeatingPlants(db: Database, propertyId: string): Promise<HeatingPlant[]> {
@@ -558,6 +625,9 @@ export async function updateHeatingPlant(db: Database, id: string, body: unknown
     throw new HeatingError(400, CAPTURE_VIA_SETUP)
   }
   if (current.method === 'self' && next.method === 'self' && current.hotWater !== next.hotWater) throw new HeatingError(400, HOT_WATER_VIA_SETUP)
+  // #322, Durchsicht K2: Der Maßstab der Grundkosten steht (noch) nicht je Zeitraum; geändert wird er bei eigener Abrechnung
+  // nur über die Einrichtung, die ihn ab einer Heizperiode setzt, nicht nebenbei über die Anlage.
+  if (current.method === 'self' && next.method === 'self' && current.areaBasisHeat !== next.areaBasisHeat) throw new HeatingError(409, AREA_BASIS_VIA_SETUP)
   if (zurueck) {
     // Die Zeiträume behalten ihre Erfassung; ein Zeitraum von vor PR 12 bekommt die bisherige der Anlage.
     const pinned = pinSelfSpans(current)
@@ -789,7 +859,11 @@ export async function replaceHeatingPlant(db: Database, oldId: string, newId: st
       throw new HeatingError(409, `An der bisherigen Anlage stehen ${was} für die Zeit nach dem Tausch. Ordnen Sie sie zuerst richtig zu oder entfernen Sie sie; gespeichert wurde nichts.`)
     }
   }
-  const served = (await readUnits(db)).filter((u) => u.propertyId === old.propertyId && servesUnit(old, u)).map((u) => ({ unitId: u.id, heatedAreaM2: null }))
+  // Beheizte Fläche und umbauter Raum gehen mit (#322): Dieselben Wohnungen haben dieselben Räume.
+  const served = (await readUnits(db)).filter((u) => u.propertyId === old.propertyId && servesUnit(old, u)).map((u) => {
+    const known = unitBasisOf(old, u.id)
+    return { unitId: u.id, heatedAreaM2: known?.heatedAreaM2 ?? null, volumeM3: known?.volumeM3 ?? null }
+  })
   const picked: Record<string, unknown> = {}
   for (const k of SWAP_FIELDS) if (has(body, k)) picked[k] = raw(body, k)
   // Die Angaben zur Umstellung gehen nur mit, wenn auch die neue Anlage Wärme geliefert bekommt (Heizung PR 16).

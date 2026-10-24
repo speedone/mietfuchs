@@ -138,7 +138,7 @@ type _Payments = Assert<Matches<typeof schema.payments.$inferSelect, Payment>>
 // sähe eine Anlage, deren letzte Wohnung gelöscht wurde, aus wie eine ohne Liste.
 // Die Wechsel der eigenen Heizperiode und die Spannen nach Weg d stehen in eigenen Tabellen
 // (Heizung PR 5), wie die Wohnungen in heating_plant_units.
-type HeatingPlantColumns = Omit<HeatingPlant, 'units' | 'periodChanges' | 'separateSpans' | 'selfSpans'> & { unitsLimited: boolean }
+type HeatingPlantColumns = Omit<HeatingPlant, 'units' | 'basisValues' | 'periodChanges' | 'separateSpans' | 'selfSpans'> & { unitsLimited: boolean }
 type _HeatingPlants = Assert<Matches<typeof schema.heatingPlants.$inferSelect, HeatingPlantColumns>>
 type _HeatingPlantUnits = Assert<Matches<Omit<typeof schema.heatingPlantUnits.$inferSelect, 'plantId'>, HeatingPlantUnit>>
 type _HeatingPeriods = Assert<Matches<typeof schema.heatingPeriods.$inferSelect, HeatingPeriodData>>

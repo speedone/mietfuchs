@@ -149,14 +149,14 @@ export default function EstimateCard({ plant, view, self, onChanged }: {
           {pot && thresholdLines(pot, open, threshold).map((l) => <p key={l}>{l}</p>)}
           <label className="field">Weg nach § 9a Abs. 1
             <select value={form.method} onChange={(ev) => setForm(chooseMethod(form, open, ev.target.value as EstimateMethod, form.comparableUnitId))}>
-              {METHOD_OPTIONS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+              {METHOD_OPTIONS.map((m) => <option key={m.value} value={m.value}>{open.part === 'heat' && pot?.basisUnit === 'm³' ? m.label.replace('je m²', 'je m³') : m.label}</option>)}
             </select>
           </label>
           {form.method === 'comparableUnit' && open.comparable.length > 0 && (
             <label className="field">Vergleichbare Wohnung
               <select value={form.comparableUnitId} onChange={(ev) => setForm(chooseMethod(form, open, 'comparableUnit', ev.target.value))}>
                 <option value="">— bitte wählen —</option>
-                {open.comparable.map((c) => <option key={c.unitId} value={c.unitId}>{c.unitName} ({num(c.perM2)} {unitOf(open)} je m²)</option>)}
+                {open.comparable.map((c) => <option key={c.unitId} value={c.unitId}>{c.unitName} ({num(c.perM2)} {unitOf(open)} je {open.part === 'heat' ? (pot?.basisUnit ?? 'm²') : 'm²'})</option>)}
               </select>
             </label>
           )}

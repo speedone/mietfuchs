@@ -1,0 +1,1 @@
+ALTER TABLE `heating_plant_units` ADD `volume_m3` real;

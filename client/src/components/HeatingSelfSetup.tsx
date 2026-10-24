@@ -9,7 +9,7 @@ import { useToast } from './feedback'
 import Term from './Term'
 import { SELF_UNTIL_SWITCH } from '../heatingForm'
 import {
-  CAPTURE_SELF_OPTIONS, captureHint, HOT_WATER_OPTIONS, PART_OPTIONS, emptySelfSetup, forcedShare, itemsFromConflict, selfSetupBody, shareBounds, targetOptions, type SelfSetupField,
+  AREA_BASIS_OPTIONS, areaBasisHint, CAPTURE_SELF_OPTIONS, captureHint, HOT_WATER_OPTIONS, PART_OPTIONS, emptySelfSetup, forcedShare, itemsFromConflict, selfSetupBody, shareBounds, targetOptions, type SelfSetupField,
 } from '../heatingSelfForm'
 import { INSULATION_OPTIONS, INSULATION_QUESTION, insulationAsked, insulationExplained, percentOf, unsureShareHint } from '../heatingSelfView'
 import { NoticeBox } from './Notice'
@@ -18,8 +18,9 @@ import { NoticeBox } from './Notice'
 // Server mit 409, nennt er die Heizpositionen offener Zeiträume, die Teil und Ziel brauchen; sie
 // erscheinen unter den Fragen, und der zweite Versuch schickt sie mit. Bricht der Vermieter ab, bleibt
 // die Anlage bei „Niemand“.
-export default function HeatingSelfSetup({ plant, period, periodLabel, onDone, onCancel }: {
-  plant: HeatingPlant; period: string; periodLabel?: string; onDone: (p: HeatingPlant) => void; onCancel: () => void
+// `units`: die Wohnungen der Anlage, für beheizte Fläche und umbauten Raum je Wohnung (#322).
+export default function HeatingSelfSetup({ plant, units = [], period, periodLabel, onDone, onCancel }: {
+  plant: HeatingPlant; units?: readonly { id: string; name: string }[]; period: string; periodLabel?: string; onDone: (p: HeatingPlant) => void; onCancel: () => void
 }) {
   const [form, setForm] = useState(() => emptySelfSetup(plant, period))
   const errors = useFormError<SelfSetupField>()
@@ -32,7 +33,7 @@ export default function HeatingSelfSetup({ plant, period, periodLabel, onDone, o
   const hint = unsureShareHint(energy, form.insulation, percentOf(form.share))
 
   async function submit() {
-    const result = selfSetupBody(form, energy)
+    const result = selfSetupBody(form, energy, units)
     if ('error' in result) {
       errors.report(result.problems)
       return
@@ -116,13 +117,20 @@ export default function HeatingSelfSetup({ plant, period, periodLabel, onDone, o
       <p className="muted">Nur ankreuzen, wenn es im Mietvertrag oder einer Vereinbarung mit den Mietern steht; mehr als 100 % gibt es nicht.</p>
       {forced !== null && <p className="muted">Bei einer Öl- oder Gasheizung in diesem Fall sind es bei der Heizung {forced} % (§ 7 Abs. 1 Satz 2 HeizkostenV); mehr nur mit einer Vereinbarung (§ 10 HeizkostenV).</p>}
       {hint && <NoticeBox level="warning" action={hint} />}
-      <label className="field">
-        <span><Term id="baseCosts">Grundkosten</Term> der Heizung verteilen nach</span>
+      <Field label={<><Term id="baseCosts">Grundkosten</Term> der Heizung verteilen nach</>} hint={areaBasisHint(form.areaBasisHeat)}>
         <select value={form.areaBasisHeat} onChange={(e) => setForm({ ...form, areaBasisHeat: e.target.value as AreaBasisHeat })}>
-          <option value="area">Wohnfläche</option>
-          <option value="heatedArea">beheizter Fläche (je Wohnung in der Heizanlage einzutragen)</option>
+          {AREA_BASIS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
-      </label>
+      </Field>
+      {form.areaBasisHeat !== 'area' && units.length > 0 && (
+        <div className="field-grid">
+          {units.map((u) => (
+            <Field key={u.id} label={`${form.areaBasisHeat === 'volume' ? 'Umbauter Raum' : 'Beheizte Fläche'} ${u.name} in ${form.areaBasisHeat === 'volume' ? 'm³' : 'm²'}`} required width="s" {...errors.field(`unit:${u.id}`)}>
+              <input inputMode="decimal" value={form.unitValues[u.id] ?? ''} onChange={(e) => setForm({ ...form, unitValues: { ...form.unitValues, [u.id]: e.target.value } })} />
+            </Field>
+          ))}
+        </div>
+      )}
       {form.hotWater === 'combined' && (
         <label className="checkline">
           <input type="checkbox" checked={form.dhwHeatMeter} onChange={(e) => setForm({ ...form, dhwHeatMeter: e.target.checked })} />

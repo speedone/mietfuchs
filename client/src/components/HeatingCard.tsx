@@ -8,18 +8,19 @@ import Drawer from './Drawer'
 import { CardHeader } from './Card'
 import { useSaving } from '../useSaving'
 import Term from './Term'
+import Field from './Field'
 import HeatingPeriodSection from './HeatingPeriodSection'
 import { setupDoneText } from '../hcaForm'
 import HeatingSelfSetup from './HeatingSelfSetup'
 import HeatDeliveryFields from './HeatDeliveryFields'
 import { useOptionalPeriod } from '../period'
 import { localToday } from '../periodForm'
-import { plantRules } from '../../../shared/heatingPeriod.ts'
+import { plantRules, servesUnit } from '../../../shared/heatingPeriod.ts'
 import { ApiError } from '../api'
 import { useFocusTarget, type FocusProps } from '../focus'
 import {
   CAPTURE_OPTIONS, CONTRACT_OPTIONS, ENERGY_OPTIONS, HOW_TO_TELL, asksRemote, INSTALLED_OPTIONS, NEW_DEVICES_AFTER, NEW_INSTALL_OPTIONS, NEW_INSTALL_QUESTION, PER_UNIT_ENERGY_OPTIONS, REMOTE_OPTIONS, TAKES_OVER_BACK, TAKES_OVER_HINT, takesOverBack, TAKES_OVER_OPTIONS, TAKES_OVER_QUESTION, asksNewInstall, asksTakeOver, buildingOptions, canSwap, emptyHeatingForm, emptySwapForm, heatingPlantBody,
-  connectionNote, heatingSummary, heatingToForm, NEWER_THAN, swapBody, swapMetersOf, whoHint, whoOptions, type CaptureAnswer, type EnergyAnswer, type HeatingForm, type PerUnitContract, type SwapForm, type WhoSettles,
+  connectionNote, heatingSummary, heatingToForm, NEWER_THAN, swapBody, swapMetersOf, unitValueFields, whoHint, whoOptions, type CaptureAnswer, type EnergyAnswer, type HeatingForm, type PerUnitContract, type SwapForm, type WhoSettles,
   asksContracting, asksSwitch, CONTRACTING_LABEL, contractingSwap,
   asksFuelContract, editFuelContractNote, FUEL_CONTRACT_OPTIONS, FUEL_CONTRACT_QUESTION, selfSupplyOffer,
   asksGeneration, GENERATION_QUESTION, HEAT_GENERATION_OPTIONS, MAJORITY_EXPLAINED, MAJORITY_OPTIONS, MAJORITY_QUESTION,
@@ -140,7 +141,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
   async function save() {
     if (!form) return
     const others = plants.filter((p) => p.id !== editingId)
-    const result = heatingPlantBody(form, units, others, editingId)
+    const result = heatingPlantBody(form, units, others, editingId, plants.find((p) => p.id === editingId) ?? null)
     if ('error' in result) {
       setError(result.error)
       return
@@ -281,6 +282,10 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
       <small className="muted">{selfSupplyForm ? HOW_TO_TELL.unitsSelfSupply : form.energy === 'perUnit' ? HOW_TO_TELL.unitsPerUnit : HOW_TO_TELL.units}</small>
     </fieldset>
   )
+  // #322 (Durchsicht M1): bei eigener Abrechnung nach beheizter Fläche oder umbautem Raum je Wohnung ein Feld zum Eintragen
+  // und Berichtigen; eine später angelegte Wohnung bekommt ihren Wert hier.
+  const editingPlant = editingId !== null ? plants.find((p) => p.id === editingId) : undefined
+  const valueFields = form && unitValueFields(editingPlant, units, form.unitIds)
   const periodText = (key: AssignableHeatingItem['period']): string => {
     const p = periodOfKey(rulesOf(property), key)
     return p ? periodLabel(p) : key
@@ -461,6 +466,15 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
               <small className="muted">{HOW_TO_TELL.who}</small>
               {whoHint(shownWho, kind) && <p className="muted">{whoHint(shownWho, kind)}</p>}
               {unitChoice}
+              {valueFields && valueFields.length > 0 && (
+    <div className="field-grid">
+      {valueFields.map((f) => (
+        <Field key={f.id} label={f.label} required width="s" hint={f.id === valueFields[0]?.id ? (editingPlant?.areaBasisHeat === 'volume' ? 'Den umbauten Raum, wie Sie ihn als Maßstab bestimmt oder vereinbart haben; die Grundkosten des Warmwassers gehen nach der Wohnfläche.' : 'Die beheizte Fläche; die Grundkosten des Warmwassers gehen nach der Wohnfläche.') : undefined}>
+          <input inputMode="decimal" value={form.unitValues[f.id] ?? ''} onChange={(e) => setForm({ ...form, unitValues: { ...form.unitValues, [f.id]: e.target.value } })} />
+        </Field>
+      ))}
+    </div>
+              )}
               {asksRemote(form.who) && (<>
               <label className="field">
                 Sind die Zähler und Heizkostenverteiler aus der Ferne ablesbar?
@@ -547,6 +561,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
       {selfFor && (
         <HeatingSelfSetup
           plant={selfFor}
+          units={units.filter((u) => servesUnit({ units: selfFor.units ?? null }, u) && (u.areaM2 || 0) > 0)}
           period={heatingKeyOf(selfFor)}
           periodLabel={periodLabel(periodContaining(plantRules(selfFor, rulesOf(property)), period?.period.to ?? localToday()))}
           // Befund M6 aus #341: Nach „Später“ sagt die Mitteilung, dass bis zum Umstellen nach Umlageschlüsseln verteilt wird.

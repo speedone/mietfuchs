@@ -100,10 +100,12 @@ const perUnit = (cents: number, digits: number) => `${num(cents / 100, digits)}\
 export function potLines(p: SelfPotView): string[] {
   const base = p.costCents * (1 - p.consumptionPct / 100)
   const lines = [`${POT_LABEL[p.pot]}: ${fmtEuro(p.costCents)}`]
-  lines.push(`Grundkosten ${num(100 - p.consumptionPct)} %: ${fmtEuro(Math.round(base))} für ${num(p.areaM2)} m², ${perUnit(p.baseCentsPerM2, 4)} je m²`)
+  // #322: Steht der Topf nach umbautem Raum, sind es Kubikmeter.
+  const unit = p.basisUnit ?? 'm²'
+  lines.push(`Grundkosten ${num(100 - p.consumptionPct)} %: ${fmtEuro(Math.round(base))} für ${num(p.areaM2)} ${unit}, ${perUnit(p.baseCentsPerM2, 4)} je ${unit}`)
   // § 9a Abs. 2 (Heizung PR 13): über der Grenze nur nach Fläche.
-  if (p.overThreshold) lines.push(`Geschätzt ist der Verbrauch für ${num(p.estimatedAreaM2 ?? 0)} von ${num(p.areaM2)} m²; das überschreitet die Grenze des § 9a Abs. 2 HeizkostenV, deshalb nur nach Fläche verteilt.`)
-  else if (p.byAreaOnly) lines.push('Kein Verbrauch erfasst: nur nach Fläche verteilt.')
+  if (p.overThreshold) lines.push(`Geschätzt ist der Verbrauch für ${num(p.estimatedAreaM2 ?? 0)} von ${num(p.areaM2)} ${unit}; das überschreitet die Grenze des § 9a Abs. 2 HeizkostenV, deshalb nur nach ${unit === 'm³' ? 'umbautem Raum' : 'Fläche'} verteilt.`)
+  else if (p.byAreaOnly) lines.push(`Kein Verbrauch erfasst: nur nach ${unit === 'm³' ? 'umbautem Raum' : 'Fläche'} verteilt.`)
   else if (p.consumptionCentsPerUnit !== null) {
     // „je Einheit“, nicht „je Einheiten“ (Durchsicht von #241, Minor 2).
     // Durchsicht von #242, R-M9: der geschätzte Teil, ohne eine Wohnung zu nennen.
@@ -170,8 +172,13 @@ export function estimateLines(
       : e.users > 1
         ? ` Er ist auf die Nutzer der Wohnung geteilt wie nach § 9b Abs. 3 HeizkostenV.${shareText}`
         : e.replacesMeasured ? ' Sie gilt auch für Zeiten, für die Ablesungen vorliegen.' : ''
-    const notUsed = pot?.overThreshold ? ' Für die Verteilung ist der Verbrauch nicht maßgeblich: Die geschätzte Fläche des Hauses überschreitet die Grenze des § 9a Abs. 2 HeizkostenV, verteilt wird nur nach Fläche.' : ''
-    return `${e.part === 'heat' ? 'Heizung' : 'Warmwasser'}: Der Verbrauch Ihrer Wohnung konnte nicht ordnungsgemäß erfasst werden (${what}) und ist nach § 9a HeizkostenV ermittelt, nach ${METHOD_TEXT[e.method]}: ${num(e.value)} ${unit} für die ganze Heizperiode der Wohnung.${split}${notUsed}`
+    // #322 (Durchsicht S2): beim Topf Heizung nach umbautem Raum je m³.
+    const raum = pot?.basisUnit === 'm³'
+    const notUsed = pot?.overThreshold
+      ? ` Für die Verteilung ist der Verbrauch nicht maßgeblich: ${raum ? 'Der geschätzte umbaute Raum' : 'Die geschätzte Fläche'} des Hauses überschreitet die Grenze des § 9a Abs. 2 HeizkostenV, verteilt wird nur nach ${raum ? 'umbautem Raum' : 'Fläche'}.`
+      : ''
+    const method = raum ? METHOD_TEXT[e.method].replace('je m²', 'je m³') : METHOD_TEXT[e.method]
+    return `${e.part === 'heat' ? 'Heizung' : 'Warmwasser'}: Der Verbrauch Ihrer Wohnung konnte nicht ordnungsgemäß erfasst werden (${what}) und ist nach § 9a HeizkostenV ermittelt, nach ${method}: ${num(e.value)} ${unit} für die ganze Heizperiode der Wohnung.${split}${notUsed}`
   })
 }
 

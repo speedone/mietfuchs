@@ -104,3 +104,11 @@ describe('Durchsicht von #242 Runde 2', () => {
     expect(text.match(/nicht (ihre|die) Zahl/g)?.length).toBe(1)
   })
 })
+
+describe('#322: Grenze des § 9a Abs. 2 beim umbauten Raum', () => {
+  it('rechnet mit dem umbauten Raum in m³', () => {
+    const lines = thresholdLines({ ...pot(600), basisUnit: 'm³' }, option({ areaM2: 200 }), 25)
+    expect(lines[0]).toBe('Maßgeblich ist der umbaute Raum der Wohnungen mit geschätztem Verbrauch, nicht ihre Zahl: mit dieser Schätzung 200 von 600 m³, also 33,33 %.')
+    expect(lines[1]).toMatch(/ausschließlich nach umbautem Raum verteilt/)
+  })
+})

@@ -17,7 +17,7 @@ import { and, eq, ne } from 'drizzle-orm'
 import { hkvConsumptionShare, hkvConsumptionShareForced } from '../../../shared/law/heizkostenv.ts'
 import { germanDate, valueAt } from '../../../shared/law/register.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
-import { captureOf, lineRoot, servesUnit } from '../../../shared/heatingPeriod.ts'
+import { captureOf, lineRoot, plantUnitValues, servesUnit } from '../../../shared/heatingPeriod.ts'
 import type {
   BillingPeriod, CostItem, CostKey, HotWater, SelfSpanRange, HeatingDistribution, HeatingEnergy, HeatingPart, HeatingPlant, InterimGap, InsulationRule, Meter,
 } from '../../../shared/types.ts'
@@ -26,10 +26,10 @@ import { consumptionSharesOf, OIL_OR_GAS, POT_METER, selfActive, selfFromOf, tar
 import type { Database, Executor } from './client.ts'
 import { closedHeatingKeys, closedText, ensureHeatingPeriod, heatingPeriodClosed, heatingPeriodOf, plantContext, type PlantContext } from './heatingPeriodContext.ts'
 import { readCostItems, readHeatingEstimates, readHeatingPlants, readHeatingServiceValues, readMeters, readUnits } from './read.ts'
-import { guardHeatingPlant, pinSelfSpans, plantRow, writeSelfSpans } from './heating.ts'
+import { guardHeatingPlant, pinSelfSpans, placeUnitValues, plantRow, withUnitValues, writePlantUnits, writeSelfSpans } from './heating.ts'
 import { CAPTURE_TEXT, estimateFits, hotWaterOf, lineServiceRows } from '../hca.ts'
 import { andList } from '../../../shared/wording.ts'
-import { HeatingError, insertEntityIn, ISO_DATE, oneOfOrUndefined, patchCostItemIn, raw } from './repository.ts'
+import { has, HeatingError, insertEntityIn, ISO_DATE, oneOfOrUndefined, patchCostItemIn, raw } from './repository.ts'
 import { costItems, heatingPeriods, heatingPlants, INSULATION_RULES, INTERIM_GAP_STATUS, interimReadingGaps, units } from './schema.ts'
 import { beforeBeginText, lineRowsOf } from './selfLine.ts'
 
@@ -206,13 +206,16 @@ export async function setUpSelf(db: Database, plantId: string, body: unknown, to
   const h = heatingPeriodOf(ctx, typeof periodText === 'string' ? periodText : '')
   if (await heatingPeriodClosed(db, ctx, h)) throw new HeatingError(409, closedText(h))
   const capture = raw(body, 'capture')
-  const after: HeatingPlant = {
+  const base: HeatingPlant = {
     ...current,
     method: 'self',
     hotWater: raw(body, 'hotWater') === 'separate' ? 'separate' : raw(body, 'hotWater') === 'none' ? 'none' : 'combined',
     capture: capture === 'heatMeter' || capture === 'hca' || capture === 'serviceValues' ? capture : null,
-    areaBasisHeat: raw(body, 'areaBasisHeat') === 'heatedArea' ? 'heatedArea' : 'area',
+    areaBasisHeat: raw(body, 'areaBasisHeat') === 'heatedArea' ? 'heatedArea' : raw(body, 'areaBasisHeat') === 'volume' ? 'volume' : 'area',
   }
+  // #322: Beheizte Fläche und umbauter Raum je Wohnung trägt der Vermieter in der Einrichtung ein (`unitValues`). Die Liste
+  // der Wohnungen bleibt, wie sie eingerichtet ist (Durchsicht M1).
+  const after: HeatingPlant = has(body, 'unitValues') ? placeUnitValues(base, withUnitValues(plantUnitValues(current), raw(body, 'unitValues'))) : base
   await guardHeatingPlant(db, current, after)
   const rows = await shareRows(db, plantId)
   const shares = checkShares(body, after, after.hotWater, h, rows, today)
@@ -273,7 +276,8 @@ export async function setUpSelf(db: Database, plantId: string, body: unknown, to
 
   // Zähler, die fehlen: je angeschlossener Wohnung Wärme, bei Warmwasser auch Warmwasser; an der Anlage
   // der Wärmezähler am Speicher und der Gesamtwärmezähler, wenn gewünscht.
-  const allUnits = (await readUnits(db)).filter((u) => u.propertyId === current.propertyId && servesUnit(after, u))
+  // Durchsicht S1 zu #322: Einheiten ohne Fläche (Garage) bekommen keine Zähler; die Abrechnung zählt sie ohne Zähler nicht mit.
+  const allUnits = (await readUnits(db)).filter((u) => u.propertyId === current.propertyId && servesUnit(after, u) && (u.areaM2 || 0) > 0)
   const allMeters = await readMeters(db)
   const lineIds = lineIdsOf((await lineRowsOf(db, plantId)).plants, plantId)
   const pots = after.hotWater === 'none' ? (['heating'] as const) : (['heating', 'water'] as const)
@@ -298,6 +302,7 @@ export async function setUpSelf(db: Database, plantId: string, body: unknown, to
   const createdIds: string[] = []
   await db.transaction(async (tx) => {
     await tx.update(heatingPlants).set(plantRow(after)).where(eq(heatingPlants.id, plantId))
+    if (has(body, 'unitValues')) await writePlantUnits(tx, after)
     await writeSelfSpans(tx, plantId, spans)
     for (const a of answers) {
       const item = currentItems.find((c) => c.id === a.id)
