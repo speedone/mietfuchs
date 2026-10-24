@@ -378,6 +378,11 @@ async function uploadsAndSettlement() {
   assert(download.status === 200 && Buffer.compare(download.body, content) === 0, 'Beleg ist unverändert abrufbar')
 
   const unit = (await request('/api/units', json('POST', { name: 'EG', areaM2: 80, participates: true }))).body
+  // Das Änderungsjournal (#318): Die Trigger entstehen beim Öffnen; hier zeigt sich auf jeder
+  // Programmdatei, dass sie auch unter Bun greifen.
+  const journal = await request('/api/journal')
+  assert(journal.status === 200 && Array.isArray(journal.body) && journal.body.some((g) => g.title === 'Wohnung angelegt: EG'),
+    'Verlauf nennt das Anlegen der Wohnung', journal.body)
   await request('/api/tenancies', json('POST', {
     unitId: unit.id, tenantName: 'Prüfmieter', personHistory: [{ from: '2025-01-01', persons: 2 }],
     start: '2025-01-01', end: null, prepayments: [{ from: '2025-01', monthlyCents: 1000 }], prepaymentOverrides: {}, baseRents: [],

@@ -17,7 +17,7 @@ Zwei echte Tabellen im Schema (Schritt 0069, erzeugt mit `db:generate`, ohne Dat
 - **`change_groups`**: `id` (INTEGER, aufsteigend, damit die Reihenfolge ohne Uhr feststeht), `at` (ISO-Zeit),
   `method`, `route` (Muster der Route, etwa `DELETE /api/units/:id`), `description` (ein Satz je Route, siehe
   unten), `subject_table` (die Tabelle, um die es der Route geht, für die Überschrift beim Lesen),
-  `property_id` (ohne Fremdschlüssel, siehe unten), `schema_steps` (Zahl der angewendeten Migrationsschritte zur
+  ~~`property_id`~~ (entfallen, siehe „Nach der Durchsicht“), `schema_steps` (Zahl der angewendeten Migrationsschritte zur
   Zeit der Gruppe).
 - **`change_log`**: `id`, `group_id` (Fremdschlüssel, `ON DELETE CASCADE`), `table_name`, `row_key` (JSON der
   Primärschlüsselspalten, ohne Primärschlüssel die `rowid`), `op` (`insert`, `update`, `delete`), `before`,
@@ -113,6 +113,21 @@ Laufzeit des vollen Server-Testlaufs vorher und nachher.
 - `GET /api/journal/:id`: die Zeilen der Gruppe mit Tabelle, Art, Vorher und Nachher.
 - Seite **„Verlauf“** unter „Einrichten“: Liste, Aufklappen zeigt je Zeile die geänderten Felder mit den
   Feldnamen der Oberfläche, wo es sie gibt (client/src/journalView.ts), sonst den Spaltennamen. Kein Rückgängig.
+
+## Nach der Durchsicht von PR #430
+
+Zwei Entscheidungen oben sind überholt; der Code und server/src/db/CLAUDE.md gelten.
+
+- **Die Gruppe legt der erste Trigger an** (statt die Schlange vor der Arbeit): Anlegen und Objekt bestimmen kosteten
+  zwei Festschreibungen je Anfrage und verdoppelten die Zeit von 300 `PUT`. Jetzt schreibt die Schlange nur in die
+  TEMP-Tabelle; die Gruppe entsteht in der Transaktion der Arbeit, ohne Änderung gar nicht. Eingefügt wird mit
+  `WHERE NOT EXISTS`, nicht mit `INSERT OR IGNORE`, denn im Rumpf eines Triggers gilt die Konfliktregel des äußeren
+  Befehls (ein Upsert machte daraus ABORT). `change_groups` hat deshalb **keine Spalte für das Objekt** mehr.
+- **Das Objekt bestimmt der Verlauf beim Lesen**: über Vorher- und Nachher-Bild (Objektwechsel: bei beiden), über die
+  Fremdschlüssel bis in die jüngste Fassung im Journal; installationsweit ist auch eine Gruppe, die ein Objekt löscht
+  oder deren Objekt nicht mehr besteht.
+- Erfasst wird nur eine Route mit Satz; Hintergrundarbeit startet ohne den Kontext der Anfrage. Gruppen, die nach dem
+  Zusammenfassen nichts ändern, entfallen. Aufgeräumt wird auch im täglichen Takt der Vorversion; `secure_delete = FAST`.
 
 ## Bewusst offen
 

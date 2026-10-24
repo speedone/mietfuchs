@@ -7,8 +7,8 @@ import path from 'node:path'
 import { eq, sql } from 'drizzle-orm'
 import { connect } from '../src/db/client.ts'
 import { databaseFile, openDatabase, type OpenedDatabase } from '../src/db/open.ts'
-import { changeGroups, changeLog, closedSettlements, meters, payments, properties, readings, tenancies, units } from '../src/db/schema.ts'
-import { JOURNAL_KEEP_MONTHS, OMITTED_COLUMNS, TRIGGER_PREFIX, collapse, journalGroup, listJournal, type JournalMeta } from '../src/db/journal.ts'
+import { changeGroups, changeLog, closedSettlements, meters, payments, properties, readings, tenancies, units, uploads } from '../src/db/schema.ts'
+import { JOURNAL_KEEP_MONTHS, OMITTED_COLUMNS, TRIGGER_PREFIX, collapse, journalGroup, listJournal, pruneJournal, type JournalMeta } from '../src/db/journal.ts'
 import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { calendarPeriod } from '../../shared/period.ts'
 
@@ -39,6 +39,10 @@ async function stock(opened: OpenedDatabase): Promise<void> {
   })
 }
 
+const list = (opened: OpenedDatabase, propertyId: string | null, before: number | null = null, limit = 50) =>
+  opened.read((db) => listJournal(db, opened.journalSchema, { propertyId, before, limit }))
+const detail = (opened: OpenedDatabase, id: number) => opened.read((db) => journalGroup(db, opened.journalSchema, id))
+
 const allLog = (opened: OpenedDatabase) => opened.read((db) => db.select().from(changeLog).orderBy(changeLog.id).all())
 const allGroups = (opened: OpenedDatabase) => opened.read((db) => db.select().from(changeGroups).orderBy(changeGroups.id).all())
 
@@ -57,7 +61,7 @@ test('Journal: Einfügen, Ändern und Löschen stehen mit Vorher und Nachher in 
   const groups = await allGroups(opened)
   assert.equal(groups.length, 1)
   assert.equal(groups[0].description, 'Wohnung')
-  assert.equal(groups[0].propertyId, 'objekt-1')
+  assert.deepEqual((await list(opened, 'objekt-1')).map((g) => [g.description, g.propertyIds, g.installationWide]), [['Wohnung', ['objekt-1'], false]])
   assert.ok(groups[0].schemaSteps > 60)
   const log = await allLog(opened)
   assert.deepEqual(log.map((l) => [l.tableName, l.op]), [['units', 'insert'], ['units', 'update'], ['units', 'delete']])
@@ -87,8 +91,8 @@ test('Journal: Löschen einer Wohnung erfasst die Kaskade (Mietverhältnis, Zäh
   assert.deepEqual(deleted, ['meters', 'payments', 'readings', 'tenancies', 'units'])
   assert.equal(JSON.parse(log.find((l) => l.tableName === 'tenancies')?.before ?? '{}').tenant_name, 'Müller')
   // Das Objekt ergibt sich auch für die mitgelöschten Zeilen, über die eben gelöschte Wohnung.
-  const [group] = await allGroups(opened)
-  assert.equal(group.propertyId, 'objekt-1')
+  const [group] = await list(opened, null)
+  assert.deepEqual(group.propertyIds, ['objekt-1'])
 }))
 
 test('Journal: Eine zurückgerollte Transaktion hinterlässt weder Zeilen noch Gruppe', () => withDb(async (opened) => {
@@ -122,11 +126,13 @@ test('Journal: Einstellungen sind installationsweit, mehrere Objekte ebenso', ()
     await db.insert(units).values({ id: 'a', propertyId: 'objekt-1', name: 'A', areaM2: 1, participates: true, selfUsed: false })
     await db.insert(units).values({ id: 'b', propertyId: 'objekt-2', name: 'B', areaM2: 1, participates: true, selfUsed: false })
   }, meta('Beide'))
-  const groups = await allGroups(opened)
-  assert.deepEqual(groups.map((g) => [g.description, g.propertyId]), [['Objekt', 'objekt-2'], ['Texte', null], ['Beide', null]])
-  const listed = await opened.read((db) => listJournal(db, { propertyId: 'objekt-1', before: null, limit: 50 }))
-  assert.deepEqual(listed.map((g) => g.description), ['Beide', 'Texte'])
-  const page = await opened.read((db) => listJournal(db, { propertyId: null, before: listed[0].id, limit: 1 }))
+  const all = await list(opened, null)
+  assert.deepEqual(all.map((g) => [g.description, g.propertyIds, g.installationWide]),
+    [['Beide', ['objekt-1', 'objekt-2'], false], ['Texte', [], true], ['Objekt', ['objekt-2'], false]])
+  // Eine Gruppe über zwei Objekte steht bei beiden (K6), die Texte bei allen.
+  assert.deepEqual((await list(opened, 'objekt-1')).map((g) => g.description), ['Beide', 'Texte'])
+  assert.deepEqual((await list(opened, 'objekt-2')).map((g) => g.description), ['Beide', 'Texte', 'Objekt'])
+  const page = await list(opened, null, all[0].id, 1)
   assert.deepEqual(page.map((g) => g.description), ['Texte'])
 }))
 
@@ -160,12 +166,125 @@ test('Journal: Der Verlauf fasst unverändert neu eingefügte Zeilen zusammen', 
 test('Journal: Einzelheiten einer Gruppe mit Überschrift aus der betroffenen Zeile', () => withDb(async (opened) => {
   await stock(opened)
   await opened.write((db) => db.delete(units).where(eq(units.id, 'u1')), { ...meta('Wohnung gelöscht'), subjectTable: 'units' })
-  const [listed] = await opened.read((db) => listJournal(db, { propertyId: 'objekt-1', before: null, limit: 10 }))
+  const [listed] = await list(opened, 'objekt-1', null, 10)
   assert.equal(listed.title, 'Wohnung gelöscht: EG links')
   assert.equal(listed.rows, 5)
-  const detail = await opened.read((db) => journalGroup(db, listed.id))
-  assert.equal(detail?.changes.length, 5)
-  assert.equal(await opened.read((db) => journalGroup(db, 999999)), null)
+  const shown = await detail(opened, listed.id)
+  assert.equal(shown?.changes.length, 5)
+  // Verweise tragen den Namen der Zeile, auch wenn sie mitgelöscht ist (K4)
+  const tenancy = shown?.changes.find((c) => c.table === 'tenancies')
+  assert.equal(tenancy?.refs['unit_id=u1'], 'EG links')
+  const reading = shown?.changes.find((c) => c.table === 'readings')
+  assert.equal(reading?.refs['meter_id=m1'], 'Wasser EG')
+  assert.equal(await detail(opened, 999999), null)
+}))
+
+// ---------- Befunde der Durchsicht von PR #430 ----------
+
+const sequenceOf = async (opened: OpenedDatabase): Promise<number> =>
+  Number((await rawRows(opened, "SELECT coalesce((SELECT seq FROM sqlite_sequence WHERE name = 'change_groups'), 0)"))[0][0])
+
+test('Durchsicht S2: Ein Schreibvorgang ohne Änderung legt keine Gruppe an, auch nicht kurz', () => withDb(async (opened) => {
+  await stock(opened)
+  const before = await sequenceOf(opened)
+  await opened.write((db) => db.update(units).set({ name: 'EG links' }).where(eq(units.id, 'u1')), meta())
+  await assert.rejects(opened.write((db) => db.transaction(async (tx) => {
+    await tx.update(units).set({ name: 'X' }).where(eq(units.id, 'u1'))
+    throw new Error('Abbruch')
+  }), meta()))
+  assert.equal(await sequenceOf(opened), before)
+  // Und eine echte Änderung bekommt die nächste Kennung.
+  await opened.write((db) => db.update(units).set({ name: 'Y' }).where(eq(units.id, 'u1')), meta('echt'))
+  assert.deepEqual((await allGroups(opened)).map((g) => [g.id, g.description]), [[before + 1, 'echt']])
+}))
+
+// Gefunden im Smoke-Test nach der Umstellung von S2: Im Rumpf eines Triggers gilt die Konfliktregel des äußeren
+// Befehls. Ein Upsert machte aus dem Anlegen der Gruppe ein ABORT, ein REPLACE hätte sie samt Zeilen ersetzt.
+test('Durchsicht S2: Upsert und REPLACE in einer Gruppe erfassen alles, die Gruppe bleibt eine', () => withDb(async (opened) => {
+  const row = { file: 'a.pdf', originalName: 'a.pdf', mimeType: 'application/pdf', size: 1, sha256: 'x', uploadedAt: '2025-01-01T00:00:00.000Z', propertyId: null, year: null, invoiceDate: null, kind: 'receipt' as const }
+  const request = {}
+  await opened.write((db) => db.insert(uploads).values(row).onConflictDoUpdate({ target: uploads.file, set: { ...row } }), meta('eins', request))
+  await opened.write((db) => db.insert(uploads).values({ ...row, sha256: 'y' }).onConflictDoUpdate({ target: uploads.file, set: { sha256: 'y' } }), meta('eins', request))
+  await opened.write((db) => db.run(sql`INSERT OR REPLACE INTO letter_texts (block, text) VALUES ('subject', 'A')`), meta('eins', request))
+  await opened.write((db) => db.run(sql`INSERT OR REPLACE INTO letter_texts (block, text) VALUES ('subject', 'B')`), meta('eins', request))
+  const groups = await allGroups(opened)
+  assert.equal(groups.length, 1)
+  assert.deepEqual((await allLog(opened)).map((l) => [l.tableName, l.op]),
+    [['uploads', 'insert'], ['uploads', 'update'], ['letter_texts', 'insert'], ['letter_texts', 'delete'], ['letter_texts', 'insert']])
+}))
+
+test('Durchsicht S4: Löschen und gleich wieder Einfügen ohne Unterschied ergibt keine Gruppe', () => withDb(async (opened) => {
+  await opened.write((db) => db.run(sql`INSERT INTO letter_texts (block, text) VALUES ('subject', 'Betreff')`))
+  await opened.write(async (db) => {
+    await db.run(sql`DELETE FROM letter_texts`)
+    await db.run(sql`INSERT INTO letter_texts (block, text) VALUES ('subject', 'Betreff')`)
+  }, meta('Texte'))
+  assert.deepEqual(await allGroups(opened), [])
+  assert.deepEqual(await allLog(opened), [])
+  // Mit Unterschied bleibt sie.
+  await opened.write(async (db) => {
+    await db.run(sql`DELETE FROM letter_texts`)
+    await db.run(sql`INSERT INTO letter_texts (block, text) VALUES ('subject', 'Neu')`)
+  }, meta('Texte'))
+  assert.deepEqual((await list(opened, null)).map((g) => [g.description, g.rows]), [['Texte', 1]])
+}))
+
+test('Durchsicht S5: Ein BLOB bricht die Erfassung nicht ab, er steht hexadezimal da', async () => {
+  const dir = tmp()
+  try {
+    ;(await openFreshDatabase(dir)).close()
+    const c = await connect(databaseFile(dir))
+    c.exec('CREATE TABLE "blob_probe" ("id" blob PRIMARY KEY NOT NULL, "data" blob)')
+    c.close()
+    const opened = await openDatabase({ dataDir: dir })
+    try {
+      await opened.write((db) => db.run(sql`INSERT INTO blob_probe (id, data) VALUES (${Buffer.from([1, 2])}, ${Buffer.from([255, 0])})`), meta())
+      const [row] = await allLog(opened)
+      assert.deepEqual(JSON.parse(row.rowKey), { id: { $blob: '0102' } })
+      assert.deepEqual(JSON.parse(row.after ?? '{}').data, { $blob: 'FF00' })
+    } finally {
+      opened.close()
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('Durchsicht S6: Eine Gruppe, die ein Objekt löscht oder deren Objekt fehlt, ist installationsweit', () => withDb(async (opened) => {
+  await opened.write((db) => db.insert(properties).values({ id: 'objekt-2', name: 'Zweites', kind: 'mfh', address: '' }), meta('Objekt angelegt'))
+  await opened.write((db) => db.insert(units).values({ id: 'b', propertyId: 'objekt-2', name: 'B', areaM2: 1, participates: true, selfUsed: false }), meta('Wohnung angelegt'))
+  await opened.write((db) => db.delete(units).where(eq(units.id, 'b')), meta('Wohnung gelöscht'))
+  await opened.write((db) => db.delete(properties).where(eq(properties.id, 'objekt-2')), meta('Objekt gelöscht'))
+  const shown = await list(opened, 'objekt-1')
+  assert.deepEqual(shown.map((g) => [g.description, g.installationWide]),
+    [['Objekt gelöscht', true], ['Wohnung gelöscht', true], ['Wohnung angelegt', true], ['Objekt angelegt', true]])
+}))
+
+test('Durchsicht K6: Wechselt eine Wohnung das Objekt, steht die Gruppe bei beiden', () => withDb(async (opened) => {
+  await opened.write((db) => db.insert(properties).values({ id: 'objekt-2', name: 'Zweites', kind: 'mfh', address: '' }))
+  await stock(opened)
+  await opened.write((db) => db.update(units).set({ propertyId: 'objekt-2' }).where(eq(units.id, 'u1')), meta('verschoben'))
+  for (const property of ['objekt-1', 'objekt-2']) {
+    assert.deepEqual((await list(opened, property)).map((g) => g.description), ['verschoben'], property)
+  }
+}))
+
+test('Durchsicht K5: Ändert sich nur eine Staffel, nennt die Überschrift trotzdem das Mietverhältnis', () => withDb(async (opened) => {
+  await stock(opened)
+  await opened.write((db) => db.run(sql`INSERT INTO prepayments (tenancy_id, "from", monthly_cents) VALUES ('t1', '2024-01', 15000)`),
+    { ...meta('Mietverhältnis geändert'), subjectTable: 'tenancies' })
+  assert.deepEqual((await list(opened, 'objekt-1')).map((g) => g.title), ['Mietverhältnis geändert: Müller'])
+}))
+
+test('Durchsicht S3: pruneJournal nimmt nur, was älter als die Frist ist', () => withDb(async (opened) => {
+  await stock(opened)
+  await opened.write((db) => db.update(units).set({ name: 'A' }).where(eq(units.id, 'u1')), meta('alt'))
+  await opened.write((db) => db.update(units).set({ name: 'B' }).where(eq(units.id, 'u1')), meta('neu'))
+  await opened.write((db) => db.update(changeGroups).set({ at: '2020-01-01T00:00:00.000Z' }).where(eq(changeGroups.description, 'alt')))
+  assert.equal(await opened.write((db) => pruneJournal(db, new Date())), 1)
+  assert.deepEqual((await allGroups(opened)).map((g) => g.description), ['neu'])
+  assert.equal((await allLog(opened)).length, 1)
+  assert.equal(await opened.write((db) => pruneJournal(db, new Date())), 0)
 }))
 
 // ---------- Wächter ----------

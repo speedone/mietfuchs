@@ -3,6 +3,10 @@
 // Spaltenname da. Logik ohne DOM, geprüft in journalView.test.ts.
 
 import { fmtDate, fmtEuro } from './api'
+import { DEPOSIT_STATUS_LABELS, KEY_LABELS, METER_TYPE_LABELS, PROPERTY_KIND_LABELS } from './types'
+import { COST_MODEL_LABELS, HEATING_MODEL_LABELS } from './tenancyModel'
+import { PAYMENT_KIND_LABELS } from './paymentForm'
+import { STATES } from '../../shared/states.ts'
 
 export type JournalGroup = {
   id: number
@@ -11,7 +15,9 @@ export type JournalGroup = {
   route: string
   description: string
   title: string
-  propertyId: string | null
+  // Die Objekte der Gruppe; `installationWide` heißt: betrifft alle (oder ein gelöschtes Objekt).
+  propertyIds: string[]
+  installationWide: boolean
   rows: number
 }
 
@@ -23,6 +29,8 @@ export type JournalChange = {
   before: Record<string, unknown> | null
   after: Record<string, unknown> | null
   changed: string[]
+  // Bezeichnungen der Zeilen, auf die eine Spalte verweist, als `spalte=wert` → Name.
+  refs: Record<string, string>
 }
 
 export type JournalDetail = JournalGroup & { changes: JournalChange[] }
@@ -140,7 +148,47 @@ const FIELD_LABELS: Record<string, string> = {
   label: 'Bezeichnung',
   calibrated_until: 'Geeicht bis',
   state: 'Bundesland',
+  heating_plant_id: 'Heizanlage',
+  plant_id: 'Heizanlage',
+  cost_item_id: 'Kostenposition',
+  direct_unit_id: 'Direkt zugeordnet',
+  meter_type: 'Zählertyp',
+  heating_part: 'Teil der Heizkosten',
+  energy: 'Energieträger',
+  block: 'Baustein',
+  text: 'Text',
+  // KI-Anbieter (ai_slots), wie in der Karte „KI-Belegauswertung“
+  slot: 'Platz',
+  provider: 'Anbieter',
+  preset: 'Vorlage',
+  url: 'Adresse',
+  model: 'Modell',
+  vision: 'Versteht Bilder',
+  consent_url: 'Bestätigt für die Adresse',
+  consent_model: 'Bestätigt für das Modell',
+  consent_date: 'Bestätigt am',
 }
+
+// Werte von Aufzählungen mit den Beschriftungen der Oberfläche (K4). Je Spalte, denn „settlement“ heißt bei
+// einer Zahlung etwas anderes als beim Mietmodell.
+const asLabels = (labels: Record<string, string>): Record<string, string> => labels
+const STATE_LABELS = Object.fromEntries(STATES.map((s) => [s.code, s.name]))
+const ENUM_LABELS: Record<string, Record<string, string>> = {
+  key: asLabels(KEY_LABELS),
+  type: asLabels(METER_TYPE_LABELS),
+  meter_type: asLabels(METER_TYPE_LABELS),
+  cost_model: asLabels(COST_MODEL_LABELS),
+  heating_model: asLabels(HEATING_MODEL_LABELS),
+  deposit_status: asLabels(DEPOSIT_STATUS_LABELS),
+  state: STATE_LABELS,
+}
+// Spalten, deren Aufzählung je Tabelle verschieden ist.
+const TABLE_ENUM_LABELS: Record<string, Record<string, Record<string, string>>> = {
+  payments: { kind: asLabels(PAYMENT_KIND_LABELS) },
+  properties: { kind: asLabels(PROPERTY_KIND_LABELS) },
+}
+
+const BOOLEAN_COLUMNS = new Set(['participates', 'self_used', 'replacement', 'vision', 'participants_limited', 'units_limited', 'estimated'])
 
 export const tableLabel = (table: string): string => TABLE_LABELS[table] ?? table
 export const fieldLabel = (column: string): string => FIELD_LABELS[column] ?? column
@@ -152,14 +200,26 @@ export const opLabel = (op: JournalChange['op']): string => OP_LABELS[op]
 const HIDDEN = new Set(['id', 'property_id'])
 
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/
+const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/
 const isOmitted = (value: unknown): boolean => value !== null && typeof value === 'object' && '$omitted' in value
+const isBlob = (value: unknown): boolean => value !== null && typeof value === 'object' && '$blob' in value
 
-export function formatValue(column: string, value: unknown): string {
+// `table` und `refs` sind optional, damit sich ein einzelner Wert auch ohne Zusammenhang lesen lässt.
+export function formatValue(column: string, value: unknown, table?: string, refs?: Record<string, string>): string {
   if (value === null || value === undefined || value === '') return 'leer'
   if (isOmitted(value)) return 'eingefrorener Stand (nicht im Verlauf)'
+  if (isBlob(value)) return 'Binärdaten'
+  const ref = refs?.[`${column}=${String(value)}`]
+  if (ref) return ref
   if (typeof value === 'number' && column.endsWith('_cents')) return fmtEuro(value)
-  if (typeof value === 'number' && (column === 'participates' || column === 'self_used' || column === 'replacement')) return value ? 'ja' : 'nein'
-  if (typeof value === 'string' && ISO_DAY.test(value)) return fmtDate(value)
+  if (typeof value === 'number' && BOOLEAN_COLUMNS.has(column)) return value ? 'ja' : 'nein'
+  if (typeof value === 'string') {
+    const labels = (table ? TABLE_ENUM_LABELS[table]?.[column] : undefined) ?? ENUM_LABELS[column]
+    const label = labels?.[value]
+    if (label) return label
+    if (ISO_DAY.test(value)) return fmtDate(value)
+    if (ISO_TIME.test(value)) return journalWhen(value)
+  }
   if (typeof value === 'number') return value.toLocaleString('de-DE')
   return String(value)
 }
@@ -178,8 +238,8 @@ export function fieldLines(change: JournalChange): FieldLine[] {
     lines.push({
       column,
       label: fieldLabel(column),
-      before: change.op === 'insert' ? null : formatValue(column, before),
-      after: change.op === 'delete' ? null : formatValue(column, after),
+      before: change.op === 'insert' ? null : formatValue(column, before, change.table, change.refs),
+      after: change.op === 'delete' ? null : formatValue(column, after, change.table, change.refs),
     })
   }
   return lines

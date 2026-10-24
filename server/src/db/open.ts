@@ -20,7 +20,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { applyMigrations, connect, loadMigrations, type Connection, type Database, type Migration } from './client.ts'
-import { beginGroup, endGroup, ensureJournal, journalCutoff, type JournalMeta } from './journal.ts'
+import { beginGroup, endGroup, ensureJournal, pruneJournal, type JournalMeta, type JournalSchema } from './journal.ts'
 import { writable } from '../paths.ts'
 import { APP_VERSION } from '../version.ts'
 
@@ -480,6 +480,8 @@ export type OpenedDatabase = {
   // Der einzige Weg zu einem Schreibvorgang, siehe die Begründung bei createLane. Mit `journal`
   // bildet der Vorgang eine Gruppe im Änderungsjournal (db/journal.ts), ohne wird nichts erfasst.
   write: <T>(work: (db: Database) => Promise<T>, journal?: JournalMeta) => Promise<T>
+  // Die erfassten Tabellen mit Spalten und Fremdschlüsseln, für das Lesen des Verlaufs.
+  journalSchema: JournalSchema
   // Und der einzige zu einem Lesevorgang, aus demselben Grund: Auf der geteilten Verbindung
   // sähe ein Lesevorgang daneben den nicht festgeschriebenen Stand einer fremden Transaktion.
   read: <T>(work: (db: Database) => Promise<T>) => Promise<T>
@@ -616,7 +618,12 @@ export async function openDatabase(options: OpenOptions): Promise<OpenedDatabase
     // Aufräumen nach der Aufbewahrungsfrist. Beides gehört zum Öffnen, damit auch eine
     // wiederhergestellte oder eingespielte Datei sofort erfasst wird.
     const journalSchema = ensureJournal(connection)
-    connection.exec(`DELETE FROM change_groups WHERE at < '${journalCutoff(new Date())}'`)
+    await pruneJournal(connection.db, new Date())
+    // Gelöschter Inhalt wird überschrieben, soweit das ohne zusätzliches Schreiben geht (FAST):
+    // Das Journal hält gelöschte Personendaten zwölf Monate, danach sollen sie auch aus den Seiten
+    // der Datei verschwinden. `ON` überschriebe auch freie Seiten und kostete bei jedem Löschen
+    // zusätzliche Schreibvorgänge; FAST kostet nachgemessen nichts Spürbares (Durchsicht von PR #430, S3).
+    connection.exec('PRAGMA secure_delete = FAST')
     const schemaSteps = Number(connection.rows('SELECT count(*) FROM __drizzle_migrations')[0]?.[0] ?? 0)
     const lane = createLane()
     const journaled = async <T>(work: (db: Database) => Promise<T>, journal: JournalMeta): Promise<T> => {
@@ -624,7 +631,7 @@ export async function openDatabase(options: OpenOptions): Promise<OpenedDatabase
       try {
         return await work(connection.db)
       } finally {
-        await endGroup(connection.db, group, journalSchema, journal.scope)
+        await endGroup(connection.db, group)
       }
     }
     return {
@@ -636,6 +643,7 @@ export async function openDatabase(options: OpenOptions): Promise<OpenedDatabase
       backup: applied > 0 ? backup : null,
       warnings,
       write: (work, journal) => lane.write(() => (journal ? journaled(work, journal) : work(connection.db))),
+      journalSchema,
       read: (work) => lane.read(() => work(connection.db)),
       close: connection.close,
     }

@@ -87,7 +87,7 @@ import { exportFilename, frozenExportable, settlementExportCsv, settlementExport
 import { derivedTaxLines, planTaxArchive, taxArchiveItems } from './taxReceipts.ts'
 import { createPriorVersion, listPriorVersions, mayCreatePriorVersion, PRIOR_CHECK_INTERVAL_MS, PRIOR_DIR, priorVersionsBlocked, priorVersionTime } from './db/priorVersions.ts'
 import { costItems as costItemsTable } from './db/schema.ts'
-import { journalGroup, listJournal, type JournalMeta } from './db/journal.ts'
+import { journalGroup, listJournal, pruneJournal, type JournalMeta } from './db/journal.ts'
 import { routeSentence } from './journalRoutes.ts'
 import { forgetUpload, placeUpload, recordIfMissing, recordUpload, rowOf, uploadRows, type Placement, type UploadRow } from './db/uploads.ts'
 
@@ -96,8 +96,10 @@ const app = express()
 app.use(express.json())
 
 // Die laufende Anfrage, für das Änderungsjournal (#318): `writeData` nimmt daraus Route und Satz
-// der Gruppe. Gesetzt nach `express.json()` und erneut nach multer, denn beide rufen `next` aus
-// einem fremden Kontext (dem Strom der Anfrage), und der Speicher ginge dort verloren.
+// der Gruppe. Gesetzt nach `express.json()`. Nach multer noch einmal, als **Sicherung**: Unter Node
+// behält multer den Kontext nachgemessen (Durchsicht von PR #430, K2, der Test mit einem Beleg bleibt
+// ohne die zweite Stelle grün), aber es ruft `next` aus dem Strom der Anfrage, und ob das in jeder
+// Fassung und unter Bun so bleibt, sagt niemand zu.
 const requestScope = new AsyncLocalStorage<Request>()
 const inRequest = (req: Request, _res: Response, next: NextFunction): void => requestScope.run(req, next)
 app.use(inRequest)
@@ -398,12 +400,20 @@ const onDatabase = <T>(work: (opened: OpenedDatabase) => Promise<T>): Promise<T>
 const readData = <T>(work: (db: Database) => Promise<T>): Promise<T> => onDatabase((opened) => opened.read(work))
 // Ein Schreibvorgang aus einer Anfrage bildet eine Gruppe im Änderungsjournal, mit dem Satz ihrer
 // Route (journalRoutes.ts); Schreibvorgänge ohne Anfrage (Systemarbeit) werden nicht erfasst.
+// **Erfasst wird nur, was eine Route mit Satz schreibt** (Durchsicht von PR #430, S1). Eine Lese-Route,
+// die im Hintergrund etwas nachträgt (GET /api/uploads startet `backfillUploads`), erbt den Kontext
+// ihrer Anfrage; ohne diese Regel entstünde dort eine Gruppe „Änderung (GET …)“. Fehlt einer
+// schreibenden Route der Satz, steht das auf der Konsole, und api-journal.test.ts liest die Ausgabe.
 const journalMeta = (): JournalMeta | undefined => {
   const req = requestScope.getStore()
-  if (!req) return undefined
+  if (!req || req.method === 'GET') return undefined
   const routePath: unknown = req.route?.path
   const route = typeof routePath === 'string' ? routePath : req.path
   const sentence = routeSentence(req.method, route)
+  if (!sentence) {
+    console.error(`Änderungsjournal: Die Route ${req.method} ${route} hat keinen Satz und wird nicht erfasst (journalRoutes.ts).`)
+    return undefined
+  }
   return { method: req.method, route, description: sentence.text, subjectTable: sentence.table, scope: req }
 }
 const writeData = <T>(work: (db: Database) => Promise<T>): Promise<T> => onDatabase((opened) => opened.write(work, journalMeta()))
@@ -1871,7 +1881,8 @@ app.get('/api/uploads', async (req, res) => {
   const links = await readData(uploadLinks).catch(() => new Map<string, UploadLinks>())
   const list: UploadEntry[] = describeFolder(UPLOAD_DIR, rows ?? new Map<string, UploadRow>())
     .map((u) => ({ ...u, ...(links.get(u.file) ?? NO_LINKS) }))
-  if (rows && list.some((u) => !u.sha256)) void backfillUploads()
+  // Ohne den Kontext der Anfrage: Das Nachtragen ist Systemarbeit und kein Schritt im Verlauf.
+  if (rows && list.some((u) => !u.sha256)) requestScope.exit(() => void backfillUploads())
   res.json(list)
 })
 
@@ -2689,7 +2700,14 @@ function restoreFailedNote(err: unknown, what: string, ifStaged: string): string
 // nicht stören, deshalb steht ein Fehler auf der Konsole und nirgends sonst. Während eines
 // Wiederherstellens und ohne Datenbank, die den Bestand trägt, wird nichts angelegt: Eine
 // Vorversion einer leeren Datenbank eines gescheiterten Umstiegs wäre keine.
-async function checkPriorVersion(): Promise<void> {
+async function checkPriorVersion(pruneToo = false): Promise<void> {
+  // Das Journal räumt im selben Takt auf (12 Monate, #318); beim Start nicht, das hat open.ts eben getan.
+  // Systemarbeit, also ohne Gruppe, und ein Fehler steht nur auf der Konsole.
+  try {
+    if (pruneToo && database && databaseUnavailable(databaseState()) === null) await database.write((db) => pruneJournal(db, new Date()))
+  } catch (err) {
+    console.error(`Das Änderungsjournal ließ sich nicht aufräumen: ${messageOf(err)}`)
+  }
   try {
     if (!database || !mayCreatePriorVersion(databaseState(), restoreRunning)) return
     const name = await createPriorVersion(database, DATA_DIR, new Date(), { skip: () => restoreRunning })
@@ -2717,12 +2735,12 @@ app.get('/api/journal', async (req, res) => {
   const before = typeof req.query.before === 'string' && /^\d+$/.test(req.query.before) ? Number(req.query.before) : null
   const asked = typeof req.query.limit === 'string' && /^\d+$/.test(req.query.limit) ? Number(req.query.limit) : JOURNAL_PAGE
   const limit = Math.min(Math.max(asked, 1), 200)
-  res.json(await readData((db) => listJournal(db, { propertyId: property, before, limit })))
+  res.json(await onDatabase((opened) => opened.read((db) => listJournal(db, opened.journalSchema, { propertyId: property, before, limit }))))
 })
 
 app.get('/api/journal/:id', async (req, res) => {
   const id = /^\d+$/.test(req.params.id) ? Number(req.params.id) : null
-  const group = id === null ? null : await readData((db) => journalGroup(db, id))
+  const group = id === null ? null : await onDatabase((opened) => opened.read((db) => journalGroup(db, opened.journalSchema, id)))
   if (!group) return res.status(404).json({ error: 'Diesen Eintrag gibt es im Verlauf nicht (mehr).' })
   res.json(group)
 })
@@ -3326,7 +3344,7 @@ function databaseState(): DatabaseState {
 // fertig. Kam die Vorversion erst nach der Zeile, las der Server noch die Datei, während ein Test
 // schon von außen hineinschrieb, und der scheiterte unter Last mit „database is locked“.
 await checkPriorVersion()
-setInterval(() => void checkPriorVersion(), PRIOR_CHECK_INTERVAL_MS).unref()
+setInterval(() => void checkPriorVersion(true), PRIOR_CHECK_INTERVAL_MS).unref()
 
 // Jetzt erst gilt der Start als gelungen: Meldung, Browser und die Anfragen, die gewartet haben.
 {

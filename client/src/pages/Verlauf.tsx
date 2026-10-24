@@ -65,20 +65,39 @@ export default function Verlauf() {
   const [groups, setGroups] = useState<JournalGroup[] | null>(null)
   const [more, setMore] = useState(false)
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+  // Jeder Objektwechsel beginnt eine neue Liste; eine Antwort zur vorigen gilt dann nicht mehr (K4).
+  const generation = useRef(0)
+  const busy = useRef(false)
 
   const fetchPage = (before: number | null) => {
     const query = `/api/journal?limit=${PAGE}${before === null ? '' : `&before=${before}`}`
     return api<JournalGroup[]>(withProperty(query, propertyId))
   }
   useEffect(() => {
+    const mine = ++generation.current
+    busy.current = false
+    setLoading(false)
     setGroups(null)
-    fetchPage(null).then((page) => { setGroups(page); setMore(page.length === PAGE) }, (e: unknown) => setError(errorText(e)))
+    setError('')
+    fetchPage(null).then(
+      (page) => { if (mine === generation.current) { setGroups(page); setMore(page.length === PAGE) } },
+      (e: unknown) => { if (mine === generation.current) setError(errorText(e)) },
+    )
   }, [propertyId])
 
+  // Ein zweiter Klick, solange die Seite lädt, holt nicht dieselbe Seite noch einmal (K4).
   const loadMore = () => {
     const last = groups?.at(-1)
-    if (!last) return
-    fetchPage(last.id).then((page) => { setGroups((g) => [...(g ?? []), ...page]); setMore(page.length === PAGE) }, (e: unknown) => setError(errorText(e)))
+    if (!last || busy.current) return
+    busy.current = true
+    setLoading(true)
+    const mine = generation.current
+    const done = () => { if (mine === generation.current) { busy.current = false; setLoading(false) } }
+    fetchPage(last.id).then(
+      (page) => { if (mine === generation.current) { setGroups((g) => [...(g ?? []), ...page]); setMore(page.length === PAGE) }; done() },
+      (e: unknown) => { if (mine === generation.current) setError(errorText(e)); done() },
+    )
   }
 
   return (
@@ -86,8 +105,13 @@ export default function Verlauf() {
       <PageHeader
         context="property"
         title="Verlauf"
-        subtitle="Was in Mietfuchs wann geändert wurde, neueste Änderung zuerst. Angezeigt werden die Änderungen dieses Objekts und die, die alle Objekte betreffen (etwa die Einstellungen). Mietfuchs bewahrt den Verlauf zwölf Monate auf."
+        subtitle="Was in Mietfuchs wann geändert wurde, neueste Änderung zuerst. Angezeigt werden die Änderungen dieses Objekts und die, die alle Objekte betreffen (etwa die Einstellungen oder ein gelöschtes Objekt)."
       />
+      <p className="muted">
+        Der Verlauf zeigt auch Angaben, die Sie inzwischen gelöscht haben, etwa Name, Anschrift und IBAN früherer
+        Mieter. Jeder, der Mietfuchs auf diesem Rechner öffnen kann, sieht ihn. Einträge verfallen nach zwölf
+        Monaten; die automatischen Vorversionen enthalten den Verlauf ebenfalls, ein Backup nur auf Ihren Wunsch.
+      </p>
       {error && <NoticeBox level="error" title="Der Verlauf ließ sich nicht laden" action={error} />}
       <Card title="Änderungen">
         {groups === null && !error && <p className="muted">Wird geladen …</p>}
@@ -97,7 +121,9 @@ export default function Verlauf() {
         {groups?.map((g) => <GroupDetails key={g.id} group={g} />)}
         {more && (
           <div className="row">
-            <button className="btn secondary" onClick={loadMore}>Ältere Änderungen laden</button>
+            <button className="btn secondary" disabled={loading} onClick={loadMore}>
+              {loading && <span className="spinner" />}Ältere Änderungen laden
+            </button>
           </div>
         )}
       </Card>

@@ -3,8 +3,8 @@
 // nimmt der Verlauf die Bezeichnung („Wohnung gelöscht: EG links“).
 //
 // Schlüssel ist die Methode und das Muster der Route, wie Express es kennt (`req.route.path`).
-// Eine Route ohne Satz steht als „Änderung (Methode Pfad)“ da; journal-routes.test.ts verlangt für
-// jede schreibende Route einen Satz.
+// Eine Route ohne Satz wird nicht erfasst (und die Konsole sagt es); journal-routes.test.ts verlangt
+// für jede schreibende Route einen Satz.
 
 export type RouteSentence = { text: string, table: string | null }
 
@@ -81,6 +81,8 @@ export const ROUTE_SENTENCES: Readonly<Record<string, RouteSentence>> = {
   'PUT /api/settlement/:period/close': s('Versanddatum der Abrechnung gespeichert', 'closed_settlements'),
   'DELETE /api/settlement/:period/close': s('Abrechnung wieder geöffnet', 'closed_settlements'),
   'POST /api/upload': s('Beleg hochgeladen', 'uploads'),
+  // Der Abbruch entfernt den eben hochgeladenen Beleg wieder (`cancel` in index.ts).
+  'POST /api/ai/cancel/:id': s('Auswertung eines Belegs abgebrochen', 'uploads'),
   'POST /api/extract': s('Beleg mit KI ausgewertet', 'uploads'),
   'POST /api/intake': s('Beleg in der Schnellerfassung ausgewertet', 'uploads'),
   'POST /api/heating-plants/:id/service-statement': s('Messdienstabrechnung hochgeladen', 'uploads'),
@@ -91,6 +93,7 @@ export const ROUTE_SENTENCES: Readonly<Record<string, RouteSentence>> = {
   'DELETE /api/uploads/:file': s('Beleg gelöscht', 'uploads'),
 }
 
-export function routeSentence(method: string, route: string): RouteSentence {
-  return ROUTE_SENTENCES[`${method} ${route}`] ?? { text: `Änderung (${method} ${route})`, table: null }
+// `null`: Die Route hat keinen Satz und wird nicht erfasst (index.ts, `journalMeta`).
+export function routeSentence(method: string, route: string): RouteSentence | null {
+  return ROUTE_SENTENCES[`${method} ${route}`] ?? null
 }

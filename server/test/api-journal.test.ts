@@ -55,7 +55,7 @@ test('Verlauf: Jede schreibende Anfrage ist eine Gruppe mit ihrem Satz, Lesen un
     assert.deepEqual(groups.map((g) => g.title), [
       'Zahlung angelegt', 'Ablesung angelegt', 'Zähler angelegt: Wasser EG', 'Mietverhältnis angelegt: Müller', 'Wohnung angelegt: EG links',
     ])
-    assert.ok(groups.every((g) => g.propertyId === 'objekt-1'))
+    assert.ok(groups.every((g) => g.propertyIds.join() === 'objekt-1' && !g.installationWide))
     assert.equal(groups[4].route, '/api/units')
 
     // Wohnung löschen: die Kaskade in einer Gruppe
@@ -99,6 +99,34 @@ test('Verlauf: Auch eine Route hinter multer (Beleg hochladen) bildet ihre Grupp
     await uploadBelegFile(s, '%PDF-1.4 Grundsteuer', 'grundsteuer.pdf', { propertyId: 'objekt-1', year: '2024' })
     const [group] = await journal(s)
     assert.equal(group.title, 'Beleg hochgeladen: grundsteuer.pdf')
+  } finally {
+    s.stop()
+  }
+})
+
+// Durchsicht von PR #430, S1: GET /api/uploads trägt Prüfsummen im Hintergrund nach und erbte dabei den Kontext
+// der Anfrage; daraus wurde eine Gruppe „Änderung (GET /api/uploads)“. Ein Abbruch ohne laufende Auswertung
+// schreibt nichts. Und keine Route schreibt ohne Satz (die Konsole meldete es).
+test('Verlauf: Lesen und Systemarbeit im Hintergrund ergeben keine Gruppe, jede Gruppe hat einen Satz', async () => {
+  const dir = tmp()
+  const s = await startServerIn(dir)
+  try {
+    await uploadBelegFile(s, '%PDF-1.4 Grundsteuer', 'grundsteuer.pdf', { propertyId: 'objekt-1', year: '2024' })
+    // Die Prüfsumme leeren, damit GET sie nachträgt.
+    const file = path.join(dir, 'mietfuchs.sqlite')
+    const c = await connect(file)
+    c.exec("UPDATE uploads SET sha256 = ''")
+    c.close()
+    assert.equal((await fetch(`${s.base}/api/uploads`)).status, 200)
+    let filled = false
+    for (let i = 0; i < 50 && !filled; i++) {
+      await new Promise((r) => setTimeout(r, 100))
+      filled = Number((await rowsOf(file, 'SELECT count(*) FROM uploads WHERE sha256 <> \'\''))[0][0]) === 1
+    }
+    assert.ok(filled, 'die Prüfsumme wurde nicht nachgetragen')
+    assert.equal((await send(s, 'POST', '/api/ai/cancel/gibt-es-nicht')).status, 404)
+    assert.deepEqual((await journal(s)).map((g) => g.title), ['Beleg hochgeladen: grundsteuer.pdf'])
+    assert.doesNotMatch(s.output(), /keinen Satz/)
   } finally {
     s.stop()
   }

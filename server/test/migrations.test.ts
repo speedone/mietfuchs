@@ -189,7 +189,7 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // #318: das Änderungsjournal (change_groups, change_log); die Trigger stehen nicht im Schritt, sie entstehen beim
   // Öffnen (db/journal.ts). Wird vor dem Merge ein anderer PR davor eingereiht, wird der Schritt neu erzeugt und die
   // Marke ersetzt.
-  '0069_journal': 'ab3304b15b60a845a6db84b2aa338926a5e728c63842bbf6a96163c8a05b57d3',
+  '0069_journal': '0e0b8a409fa913639e1ffd34fe2d8a7e9c91bfc58f94bdf5cfecbfa740136fa4',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

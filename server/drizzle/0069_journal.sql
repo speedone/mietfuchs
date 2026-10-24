@@ -5,11 +5,9 @@ CREATE TABLE `change_groups` (
 	`route` text NOT NULL,
 	`description` text NOT NULL,
 	`subject_table` text,
-	`property_id` text,
 	`schema_steps` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE INDEX `change_groups_property_idx` ON `change_groups` (`property_id`,`id`);--> statement-breakpoint
 CREATE INDEX `change_groups_at_idx` ON `change_groups` (`at`);--> statement-breakpoint
 CREATE TABLE `change_log` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -23,4 +21,5 @@ CREATE TABLE `change_log` (
 	CONSTRAINT "change_log_op_known" CHECK("op" IN ('insert', 'update', 'delete'))
 );
 --> statement-breakpoint
-CREATE INDEX `change_log_group_idx` ON `change_log` (`group_id`);
+CREATE INDEX `change_log_group_idx` ON `change_log` (`group_id`);--> statement-breakpoint
+CREATE INDEX `change_log_row_idx` ON `change_log` (`table_name`,`row_key`);

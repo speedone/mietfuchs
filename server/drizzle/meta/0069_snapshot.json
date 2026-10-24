@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "0ea939c2-8648-4e89-a83d-5e350d1f68d3",
+  "id": "0bb3de37-762e-42fc-9138-ad1982888d7e",
   "prevId": "fcdc680c-321a-46bb-ad41-eac44665472e",
   "tables": {
     "ai_slots": {
@@ -499,13 +499,6 @@
           "notNull": false,
           "autoincrement": false
         },
-        "property_id": {
-          "name": "property_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
         "schema_steps": {
           "name": "schema_steps",
           "type": "integer",
@@ -515,14 +508,6 @@
         }
       },
       "indexes": {
-        "change_groups_property_idx": {
-          "name": "change_groups_property_idx",
-          "columns": [
-            "property_id",
-            "id"
-          ],
-          "isUnique": false
-        },
         "change_groups_at_idx": {
           "name": "change_groups_at_idx",
           "columns": [
@@ -594,6 +579,14 @@
           "name": "change_log_group_idx",
           "columns": [
             "group_id"
+          ],
+          "isUnique": false
+        },
+        "change_log_row_idx": {
+          "name": "change_log_row_idx",
+          "columns": [
+            "table_name",
+            "row_key"
           ],
           "isUnique": false
         }

@@ -2029,11 +2029,11 @@ export const tenancyLetterAdjustments = sqliteTable(
 
 export const JOURNAL_OPS = ['insert', 'update', 'delete'] as const
 
-// Eine Gruppe je Anfrage, die schreibt (gebildet in der Schlange, siehe db/journal.ts). Die Kennung
-// steigt auf, damit die Reihenfolge ohne Uhr feststeht. `property_id` bewusst ohne Fremdschlüssel:
-// Ein gelöschtes Objekt bleibt im Verlauf stehen, und `SET NULL` nähme der Gruppe genau die Angabe,
-// nach der man sie sucht. `schema_steps` zählt die angewendeten Migrationsschritte zur Zeit der
-// Gruppe (die Grenze „Rückgängig nur seit der letzten Migration“ für Schritt 4).
+// Eine Gruppe je Anfrage, die schreibt (angelegt vom ersten Trigger, siehe db/journal.ts). Die
+// Kennung steigt auf, damit die Reihenfolge ohne Uhr feststeht. Kein Objekt: Das bestimmt der Verlauf
+// beim Lesen aus den Zeilen, damit es beim Schreiben nichts kostet und ein später gelöschtes Objekt
+// die Gruppe installationsweit macht. `schema_steps` zählt die angewendeten Migrationsschritte zur
+// Zeit der Gruppe (die Grenze „Rückgängig nur seit der letzten Migration“ für Schritt 4).
 export const changeGroups = sqliteTable(
   'change_groups',
   {
@@ -2043,10 +2043,9 @@ export const changeGroups = sqliteTable(
     route: text('route').notNull(),
     description: text('description').notNull(),
     subjectTable: text('subject_table'),
-    propertyId: text('property_id'),
     schemaSteps: integer('schema_steps').notNull(),
   },
-  (t) => [index('change_groups_property_idx').on(t.propertyId, t.id), index('change_groups_at_idx').on(t.at)],
+  (t) => [index('change_groups_at_idx').on(t.at)],
 )
 
 // Eine Zeile je erfasster Änderung, geschrieben allein von den Triggern (TEMP, bei jedem Öffnen
@@ -2063,5 +2062,10 @@ export const changeLog = sqliteTable(
     before: text('before'),
     after: text('after'),
   },
-  (t) => [index('change_log_group_idx').on(t.groupId), oneOf('change_log_op_known', 'op', JOURNAL_OPS)],
+  // (table_name, row_key): die jüngste Fassung einer seither gelöschten Zeile, beim Lesen des Verlaufs.
+  (t) => [
+    index('change_log_group_idx').on(t.groupId),
+    index('change_log_row_idx').on(t.tableName, t.rowKey),
+    oneOf('change_log_op_known', 'op', JOURNAL_OPS),
+  ],
 )
