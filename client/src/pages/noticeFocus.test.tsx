@@ -102,6 +102,25 @@ test('Stammdaten: das betroffene Mietverhältnis öffnet sich zum Bearbeiten', a
   expect(done).toHaveBeenCalled()
 })
 
+// Leistungsprüfung mit großem Bestand: Beendete Mietverhältnisse stehen eingeklappt unter „Frühere Mietverhältnisse“.
+// Ein Sprung zu einem davon klappt den Abschnitt auf, markiert die Zeile, und ihr ✎ hat den Fokus, sobald das Fenster
+// zugeht.
+test('Stammdaten: ein früheres Mietverhältnis klappt seinen Abschnitt auf und führt zur Zeile', async () => {
+  const former: Tenancy[] = [
+    ...TENANCIES,
+    { id: 't0', unitId: 'u2', tenantName: 'Vorgänger', persons: 1, personHistory: [{ from: '2015-01-01', persons: 1 }], start: '2015-01-01', end: '2019-12-31', prepayments: [], prepaymentOverrides: {}, baseRents: [] },
+  ]
+  const { container } = wrap(<Stammdaten units={UNITS} tenancies={former} settings={null} reload={async () => {}} focus={{ kind: 'tenancy', id: 't0' }} onFocusDone={() => {}} />)
+  await screen.findByText('Mietverhältnis bearbeiten', {}, SLOW)
+  const details = [...container.querySelectorAll('details')].find((d) => d.querySelector('summary')?.textContent === 'Frühere Mietverhältnisse (1)')
+  expect(details?.open).toBe(true)
+  const row = container.querySelector('.focus-target')
+  expect(row?.textContent).toContain('Vorgänger')
+  expect(details?.contains(row ?? null)).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }))
+  await waitFor(() => expect(document.activeElement).toBe(row?.querySelector('button[aria-label="Mietverhältnis bearbeiten"]')), SLOW)
+})
+
 test('Stammdaten: die betroffene Wohnung öffnet sich zum Bearbeiten', async () => {
   wrap(<Stammdaten units={UNITS} tenancies={TENANCIES} settings={null} reload={async () => {}} focus={{ kind: 'unit', id: 'u2' }} onFocusDone={() => {}} />)
   await screen.findByText('Wohnung bearbeiten', {}, SLOW)

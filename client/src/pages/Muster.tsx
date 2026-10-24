@@ -13,12 +13,13 @@ import Switcher from '../components/Switcher'
 import { OtherPropertiesView } from '../components/OtherPropertiesCard'
 import { PropertySwitcher } from '../property'
 import { ErrorSummary, useFormError } from '../components/ErrorSummary'
-import { NoticeBox, NoticeGroup, TextNotice } from '../components/Notice'
+import { CalcNoticeGroup, NoticeBox, NoticeGroup, TextNotice } from '../components/Notice'
+import { groupNotices, noticePeople } from '../noticeGroups'
 import { useConfirm, useToast } from '../components/feedback'
 import { useDraft } from '../useDraft'
 import ContractAgreementFields, { WhyQuestion } from '../components/ContractAgreementFields'
 import { EMPTY_ITEM_FORM, type ItemForm } from '../costForm'
-import type { Property, Tenancy, Unit } from '../types'
+import type { Notice, Property, Tenancy, Unit } from '../types'
 import Letter from '../components/Letter'
 import { PaperPreview } from '../components/LetterDesignDrawer'
 import { DEFAULT_LETTER_TEXTS, renderLetterText, resolveTemplate, SAMPLE_LETTER_VALUES } from '../../../shared/letter.ts'
@@ -41,6 +42,16 @@ const CONTRACT_TENANCIES = [contractTenancy('t1', 'eg', 'Anna Becker'), contract
 const CONTRACT_PERIOD = { from: '2025-01-01', to: '2025-12-31' }
 // Mieterwechsel in OG rechts: „Steht nicht im Mietvertrag von:“ mit je einem Häkchen
 const CHANGE_TENANCIES = [contractTenancy('t1', 'eg', 'Anna Becker'), { ...contractTenancy('t2', 'og', 'Jonas Hartmann'), end: '2025-06-30' }, { ...contractTenancy('t3', 'og', 'Lea Schneider'), start: '2025-07-01' }]
+
+// Zwei Mieter mit Rückstand im Mietkonto, für den Kasten gleicher Hinweise.
+const ARREARS_PEOPLE = noticePeople([
+  { tenancyId: 'r1', tenantName: 'Anna Becker', unitName: 'EG links' },
+  { tenancyId: 'r2', tenantName: 'Jonas Hartmann', unitName: 'OG rechts' },
+])
+const ARREARS_SAMPLE: Notice[] = [['r1', 'Anna Becker (EG links)', '374,80 €'], ['r2', 'Jonas Hartmann (OG rechts)', '120,00 €']].map(([id = '', who = '', open = '']) => ({
+  code: 'prepayment.arrears', level: 'warning', title: 'Rückstand im Mietkonto', subject: { kind: 'rentLedger', id },
+  text: `Im Mietkonto 2025 von ${who} sind ${open} offen. Fehlt nur eine Buchung, tragen Sie die Zahlung im Mietkonto nach.`,
+}))
 
 export default function Muster() {
   const toast = useToast()
@@ -149,6 +160,10 @@ export default function Muster() {
           <NoticeBox level="hint" title="Erster" action="Ein Hinweis in der Gruppe." />
           <NoticeBox level="hint" title="Zweiter" action="Noch einer." />
         </NoticeGroup>
+        {/* Gleicher Hinweis bei mehreren Mietern: ein Kasten, je Mieter Name, eigene Sätze und „Hier beheben →“ (noticeGroups.ts). */}
+        {groupNotices(ARREARS_SAMPLE, ARREARS_PEOPLE).map((it, i) => it.kind === 'group' && (
+          <CalcNoticeGroup key={i} item={it} fixOf={() => ({ label: 'Hier beheben → Mietkonto', onClick: () => toast('Sprung zum Mietkonto.') })} />
+        ))}
         <div className="ok">✓ Ein Erfolg.</div>
       </Card>
 
