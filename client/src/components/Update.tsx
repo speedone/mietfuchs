@@ -83,7 +83,7 @@ export function UpdateConsent({ onAnswered }: { onAnswered: () => unknown }) {
         <p>
           Mietfuchs kann beim Öffnen bei GitHub nachsehen, ob eine neue Version erschienen ist.
           GitHub sieht dabei nur Ihre IP-Adresse und die installierte Versionsnummer. Ihre
-          Daten bleiben auf diesem Rechner.
+          Daten werden dabei nicht gesendet.
         </p>
         <div className="row">
           <button className="btn" disabled={busy} onClick={() => void answer('on')}>Ja, Bescheid geben</button>

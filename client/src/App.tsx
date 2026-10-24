@@ -336,7 +336,6 @@ function Shell() {
           🌗 <span>Design: {THEME_LABELS[choice]}</span>
         </button>
         {canQuit(update.status) && <QuitButton onQuit={() => setStopped(true)} />}
-        <div>Alle Daten bleiben lokal auf diesem Rechner.</div>
       </div>
     </>
     )

@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { dataFolder, type HealthReport } from '../database'
 import type { Settings } from '../types'
 import { api, errorText } from '../api'
 import PageHeader from '../components/PageHeader'
@@ -40,6 +41,13 @@ export default function Einstellungen({ settings, reload, update }: Props) {
       form.landlordAddress !== (settings.landlordAddress ?? '') ||
       form.landlordContact !== (settings.landlordContact ?? ''),
   )
+  // Wo die Daten liegen, aus dem Zustandsbericht des Servers; fehlt er, entfällt die Angabe.
+  const [folder, setFolder] = useState<string | null>(null)
+  useEffect(() => {
+    api<HealthReport>('/healthz')
+      .then((r) => setFolder(dataFolder(r?.database?.file)))
+      .catch(() => {})
+  }, [])
   // Ob das Backup den Verlauf der Änderungen mitnimmt (#318). Nur eine Wahl für den Download, nichts wird gespeichert.
   const [withJournal, setWithJournal] = useState(false)
   const [restoring, setRestoring] = useState(false)
@@ -151,7 +159,10 @@ export default function Einstellungen({ settings, reload, update }: Props) {
 
       <Card title={<>Daten &amp; Sicherung</>}>
         <p className="muted">
-          Alle Daten (Stammdaten, Kosten, Zähler, Belege) bleiben lokal auf diesem Rechner.
+          {folder && <>Ihre Daten liegen im Datenordner von Mietfuchs: <code>{folder}</code>. </>}
+          Belege gehen nur an einen externen KI-Dienst, und nur, wenn Sie dem zugestimmt haben; die Update-Prüfung fragt bei
+          GitHub nach der neuesten Version, wenn sie eingeschaltet ist, und sendet dabei keine Daten.
+          Sonst verlässt nichts den Rechner, auf dem Mietfuchs läuft.
           Ein Backup enthält die Datenbank samt aller hochgeladenen Belege, Logo und Briefpapier als ZIP-Datei;
           den Verlauf der Änderungen nur, wenn Sie es unten wählen.
         </p>

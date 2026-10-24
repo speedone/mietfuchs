@@ -13,8 +13,8 @@ Mietfuchs nimmt dir die jährliche Betriebskostenabrechnung ab: Kosten und Beleg
 (optional per lokaler KI-Auswertung), Zählerstände pflegen, und am Jahresende eine fertige,
 centgenau verteilte Abrechnung je Mieter ausdrucken, inklusive Mietkonto und Steuer-Übersicht
 für die Anlage V. Ob ein Mehrfamilienhaus, mehrere Häuser, eine vermietete Eigentumswohnung oder
-das eigene Haus mit Einliegerwohnung: Alle Daten bleiben in einer lokalen Datenbank auf deinem
-Rechner.
+das eigene Haus mit Einliegerwohnung: Alle Daten liegen in einer lokalen Datenbank bei dir,
+ohne Cloud und ohne Konto.
 
 ### Highlights
 
