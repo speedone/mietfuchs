@@ -60,6 +60,7 @@ function fakeOps(files: Set<string>, fail: { rename?: string[], rm?: string[] } 
     calls,
     mkdir: () => undefined,
     exists: (f) => files.has(f),
+    same: () => false,
     rename: (from, to) => {
       calls.push(`rename ${from}`)
       const code = fail.rename?.shift()
@@ -98,10 +99,51 @@ test('Durchsicht K5: Auf ein anderes Laufwerk wird kopiert; scheitert das Entfer
   assert.deepEqual([...stuck], ['/a/x.pdf'], 'die Datei gilt als nicht verschoben, die Kopie ist wieder weg')
 })
 
-test('Durchsicht K5: Liegt am Ziel schon dieselbe Datei (zweimal gelöscht), wird sie ersetzt', async () => {
-  const files = new Set(['/a/x.pdf', '/b/x.pdf'])
-  await moveFile('/a/x.pdf', '/b/x.pdf', fakeOps(files), noWait)
-  assert.deepEqual([...files], ['/b/x.pdf'])
+// Gegenprüfung von PR #439: `moveFile` überschreibt nie eine vorhandene Datei.
+test('Gegenprüfung: In den Papierkorb ersetzt nichts; gleicher Inhalt fällt zusammen, anderer bekommt einen eigenen Namen', async () => {
+  const dir = tmp()
+  try {
+    const from = path.join(dir, 'uploads')
+    const to = trashDir(dir, 'uploads')
+    fs.mkdirSync(from, { recursive: true })
+    fs.mkdirSync(to, { recursive: true })
+    fs.writeFileSync(path.join(from, 'x.pdf'), 'gleich')
+    fs.writeFileSync(path.join(to, 'x.pdf'), 'gleich')
+    await moveToTrash(dir, 'uploads', 'x.pdf')
+    assert.deepEqual([fs.readdirSync(from), fs.readdirSync(to)], [[], ['x.pdf']])
+    fs.writeFileSync(path.join(from, 'x.pdf'), 'anders')
+    await moveToTrash(dir, 'uploads', 'x.pdf')
+    assert.deepEqual(fs.readdirSync(from), [])
+    const kept = fs.readdirSync(to).sort()
+    assert.equal(kept.length, 2)
+    assert.deepEqual(kept.map((f) => fs.readFileSync(path.join(to, f), 'utf8')).sort(), ['anders', 'gleich'])
+    // Das Aufräumen behandelt die Datei mit eigenem Namen wie die, deren Namen sie trägt.
+    assert.equal(cleanTrash(dir, new Map([['uploads', new Set(['x.pdf'])]])), 0)
+    assert.equal(fs.readdirSync(to).length, 2)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('Gegenprüfung: Zurück in den Belegordner wird nichts überschrieben; ein anderer Inhalt dort lehnt ab', async () => {
+  const dir = tmp()
+  try {
+    const store = path.join(dir, 'uploads')
+    const trash = trashDir(dir, 'uploads')
+    fs.mkdirSync(store, { recursive: true })
+    fs.mkdirSync(trash, { recursive: true })
+    fs.writeFileSync(path.join(store, 'x.pdf'), 'vom Nutzer')
+    fs.writeFileSync(path.join(trash, 'x.pdf'), 'aus dem Papierkorb')
+    await assert.rejects(() => restoreFromTrash(dir, 'uploads', 'x.pdf'), /liegt schon/)
+    assert.equal(fs.readFileSync(path.join(store, 'x.pdf'), 'utf8'), 'vom Nutzer')
+    assert.equal(fs.readFileSync(path.join(trash, 'x.pdf'), 'utf8'), 'aus dem Papierkorb')
+    // Gleicher Inhalt: Der Beleg ist schon da, die Kopie im Papierkorb bleibt liegen.
+    fs.writeFileSync(path.join(trash, 'x.pdf'), 'vom Nutzer')
+    await restoreFromTrash(dir, 'uploads', 'x.pdf')
+    assert.deepEqual([fs.readdirSync(store), fs.readdirSync(trash)], [['x.pdf'], ['x.pdf']])
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
 })
 
 // Wächter: Jede Spalte, deren Name eine Datei nennt, steht in FILE_COLUMNS (M1); sonst räumte der Papierkorb eine Datei

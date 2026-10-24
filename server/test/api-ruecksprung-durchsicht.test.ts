@@ -72,21 +72,25 @@ test('Durchsicht M1/K1: Abgleich beim Start in beide Richtungen, eine Datei des 
     assert.ok(fs.existsSync(path.join(uploads, kept)), 'die Datei, die der Bestand nennt, ist zurück')
     assert.ok(!fs.existsSync(path.join(trash, kept)))
     assert.ok(fs.existsSync(path.join(uploads, 'eigene-datei.pdf')), 'die Datei des Nutzers bleibt')
-    // b.pdf nennt der Verlauf nicht mehr (gealtert): Sie bleibt im Belegordner, gelöscht wird nichts.
-    assert.ok(fs.existsSync(path.join(uploads, gone)) || fs.existsSync(path.join(trash, gone)))
+    // b.pdf liegt im Belegordner und bleibt dort: Der Abgleich legt nichts in den Papierkorb.
+    assert.ok(fs.existsSync(path.join(uploads, gone)))
   } finally {
     s.stop()
   }
 })
 
-test('Durchsicht K1: Ein gelöschter Beleg, dessen Datei nach dem Festschreiben im Belegordner blieb, wandert beim Start in den Papierkorb', async () => {
+// Gegenprüfung von PR #439: Holt der Vermieter einen gelöschten Beleg von Hand aus dem Papierkorb in den Belegordner,
+// bleibt er dort. Der Abgleich legt nie einen Beleg aus dem Belegordner in den Papierkorb (vorher tat er es beim nächsten
+// Start, und nach zwölf Monaten war er endgültig weg).
+test('Gegenprüfung: Ein von Hand aus dem Papierkorb zurückgeholter Beleg bleibt im Belegordner', async () => {
   let s = await startServerIn(tmp())
   try {
     const gone = await uploadBelegFile(s, '%PDF-1.4 B', 'b.pdf', { propertyId: 'objekt-1', year: '2024' })
     assert.equal((await send(s, 'DELETE', `/api/uploads/${gone}`)).status, 200)
-    s = await restart(s, (dir) => fs.renameSync(path.join(dir, 'papierkorb', 'uploads', gone), path.join(dir, 'uploads', gone)))
-    assert.ok(!fs.existsSync(path.join(s.dataDir, 'uploads', gone)))
-    assert.ok(fs.existsSync(path.join(s.dataDir, 'papierkorb', 'uploads', gone)))
+    s = await restart(s, (dir) => fs.copyFileSync(path.join(dir, 'papierkorb', 'uploads', gone), path.join(dir, 'uploads', gone)))
+    assert.ok(fs.existsSync(path.join(s.dataDir, 'uploads', gone)), 'der zurückgeholte Beleg bleibt')
+    s = await restart(s, ageJournal)
+    assert.ok(fs.existsSync(path.join(s.dataDir, 'uploads', gone)), 'auch nach dem Aufräumen')
   } finally {
     s.stop()
   }

@@ -50,6 +50,8 @@ export type FileOps = {
   rm: (file: string) => void
   exists: (file: string) => boolean
   mkdir: (dir: string) => void
+  // Ob zwei Dateien byteweise gleich sind.
+  same: (a: string, b: string) => boolean
 }
 const realOps: FileOps = {
   rename: (from, to) => fs.renameSync(from, to),
@@ -57,20 +59,53 @@ const realOps: FileOps = {
   rm: (file) => fs.rmSync(file),
   exists: (file) => fs.existsSync(file),
   mkdir: (dir) => fs.mkdirSync(dir, { recursive: true }),
+  same: (a, b) => {
+    try {
+      return fs.statSync(a).size === fs.statSync(b).size && fs.readFileSync(a).equals(fs.readFileSync(b))
+    } catch {
+      return false
+    }
+  },
 }
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
+// Was geschieht, wenn am Ziel schon eine Datei gleichen Namens liegt (Gegenprüfung von PR #439): **Nie wird eine
+// vorhandene Datei überschrieben.** `keepBoth` (Ziel Papierkorb): Bei gleichem Inhalt fällt die Quelle weg, bei anderem
+// bekommt sie einen eigenen Namen (`name-2.pdf`). `refuse` (Ziel Belegordner): Bei gleichem Inhalt ist der Beleg schon
+// da, und die Quelle bleibt liegen; bei anderem wird abgelehnt, und beide bleiben, wo sie sind.
+export type OnExisting = 'keepBoth' | 'refuse'
+
+export class FileExists extends Error {}
+
+function freeName(target: string, ops: FileOps): string {
+  const ext = path.extname(target)
+  const stem = target.slice(0, target.length - ext.length)
+  for (let n = 2; ; n++) {
+    const candidate = `${stem}-${n}${ext}`
+    if (!ops.exists(candidate)) return candidate
+  }
+}
+
 // Verschiebt eine Datei, mit Wiederholungen wie `replaceFile` (ein Virenscanner unter Windows hält eine eben
-// geschlossene Datei kurz offen). Unter Windows ersetzt `rename` kein vorhandenes Ziel; liegt dort dieselbe Datei
-// (zweimal gelöscht), wird sie vorher entfernt. Auf ein anderes Laufwerk (EXDEV) wird kopiert und die Quelle entfernt;
-// scheitert das Entfernen, wird die Kopie wieder entfernt und der Fehler geworfen: Die Datei gilt dann als nicht
-// verschoben, und es gibt nie zwei Exemplare.
-export async function moveFile(from: string, to: string, ops: FileOps = realOps, wait: (ms: number) => Promise<unknown> = pause): Promise<void> {
+// geschlossene Datei kurz offen). Auf ein anderes Laufwerk (EXDEV) wird kopiert und die Quelle entfernt; scheitert das
+// Entfernen, wird die Kopie wieder entfernt und der Fehler geworfen: Die Datei gilt dann als nicht verschoben, und es
+// gibt nie zwei Exemplare.
+export async function moveFile(
+  from: string, to: string, ops: FileOps = realOps, wait: (ms: number) => Promise<unknown> = pause, onExisting: OnExisting = 'keepBoth',
+): Promise<void> {
   ops.mkdir(path.dirname(to))
+  let target = to
+  if (ops.exists(to)) {
+    if (ops.same(from, to)) {
+      if (onExisting === 'keepBoth') ops.rm(from)
+      return
+    }
+    if (onExisting === 'refuse') throw new FileExists(`${path.basename(to)} liegt schon in ${path.dirname(to)}, mit anderem Inhalt; nichts wurde überschrieben.`)
+    target = freeName(to, ops)
+  }
   for (let attempt = 1; ; attempt++) {
     try {
-      if (ops.exists(to)) ops.rm(to)
-      ops.rename(from, to)
+      ops.rename(from, target)
       return
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === 'EXDEV') break
@@ -78,12 +113,12 @@ export async function moveFile(from: string, to: string, ops: FileOps = realOps,
       await wait(100)
     }
   }
-  ops.copyFile(from, to)
+  ops.copyFile(from, target)
   try {
     ops.rm(from)
   } catch (err) {
     try {
-      ops.rm(to)
+      ops.rm(target)
     } catch { /* bleibt als zweites Exemplar; der Fehler unten nennt den Grund */ }
     throw err
   }
@@ -98,7 +133,7 @@ export async function moveToTrash(dataDir: string, store: FileStore, name: strin
 
 export async function restoreFromTrash(dataDir: string, store: FileStore, name: string): Promise<void> {
   if (!plain(name)) throw new Error(`Ungültiger Dateiname: ${name}`)
-  await moveFile(path.join(trashDir(dataDir, store), name), path.join(storeDir(dataDir, store), name))
+  await moveFile(path.join(trashDir(dataDir, store), name), path.join(storeDir(dataDir, store), name), realOps, pause, 'refuse')
 }
 
 // Entfernt jede Datei im Papierkorb, die `keep` nicht nennt. Wirft nie; ein Fehler steht auf der Konsole.
@@ -107,7 +142,9 @@ export function cleanTrash(dataDir: string, keep: ReadonlyMap<FileStore, Readonl
   for (const store of FILE_STORES) {
     const dir = trashDir(dataDir, store)
     for (const name of filesIn(dir)) {
-      if (keep.get(store)?.has(name)) continue
+      // Eine Datei mit eigenem Namen (`x-2.pdf`, siehe `OnExisting`) gilt wie die, deren Namen sie trägt.
+      const original = name.replace(/-\d+(\.[^.]*)?$/, '$1')
+      if (keep.get(store)?.has(name) || keep.get(store)?.has(original)) continue
       try {
         fs.rmSync(path.join(dir, name))
         removed++

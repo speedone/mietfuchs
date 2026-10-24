@@ -308,15 +308,19 @@ bräuchte eine Abhängigkeitsregel, deren Fehler einen nie geprüften Bestand er
 - **Papierkorb** `papierkorb/<Ablage>/` im Datenordner (Ablagen `uploads` und `briefpapier`, `FILE_STORES`): Das Löschen
   eines Belegs, der Abbruch einer Auswertung und ein Logo, das keine Gestaltung mehr nennt (`removeUnreferenced`),
   verschieben die Datei dorthin (`moveFile`: mit Wiederholungen wie `replaceFile`; auf ein anderes Laufwerk kopieren und
-  die Quelle entfernen, scheitert das Entfernen, geht die Kopie wieder weg, nie zwei Exemplare). Der Rücksprung vergleicht
+  die Quelle entfernen, scheitert das Entfernen, geht die Kopie wieder weg, nie zwei Exemplare). **Überschrieben wird
+  nie**: Liegt am Ziel eine gleichnamige Datei, fällt bei gleichem Inhalt die Quelle weg (Papierkorb) bzw. bleibt liegen
+  (Belegordner); bei anderem Inhalt bekommt sie im Papierkorb einen eigenen Namen (`x-2.pdf`, das Aufräumen behandelt ihn
+  wie `x.pdf`), und das Zurückholen in den Belegordner wird abgelehnt (Konsole, `notes`). Der Rücksprung vergleicht
   die genannten Dateien vorher und nachher (`FILE_COLUMNS` in [fileRefs.ts](fileRefs.ts): `uploads.file`,
   `cost_items.invoice_file`, `assessments.file`, Logo und Briefpapier; ein Wächter in trash.test.ts verlangt jede Spalte
   `…_file`): wieder genannt heißt zurück aus dem Papierkorb (fehlt sie dort: abgelehnt), nicht mehr genannt heißt in den
-  Papierkorb. **Verschoben wird nach dem Festschreiben**; scheitert es, steht es auf der Konsole, und der **Abgleich**
+  Papierkorb. **Verschoben wird nach dem Festschreiben**; scheitert es, steht es auf der Konsole. Der **Abgleich**
   (`reconcileFiles`, beim Start und nach dem Einspielen eines Backups oder einer Vorversion, dann mit Satz in `notes`)
-  rückt es gerade: Was der Bestand nennt und nur im Papierkorb liegt, kommt zurück; ein Beleg im Ordner, den der Bestand
-  nicht nennt und den das Journal zuletzt gelöscht hat, und ein Logo, das keine Gestaltung nennt, das Journal aber kennt,
-  wandern in den Papierkorb. Er löscht nie, eine Datei, die das Journal nicht kennt, bleibt. Eine Zeile, die einen schon vorhandenen
+  holt zurück, was der Bestand nennt und nur im Papierkorb liegt. **In den Papierkorb legt er nie etwas** (Gegenprüfung
+  von PR #439): Ein Beleg im Ordner ohne Zeile ist harmlos und kann einer sein, den der Vermieter von Hand aus dem
+  Papierkorb zurückgeholt hat. Ein nach dem Festschreiben gescheitertes Verschieben in den Papierkorb bleibt deshalb
+  liegen; das steht auf der Konsole. Eine Zeile, die einen schon vorhandenen
   Beleg nur beschreibt (`placeUpload`, Löschen eines Belegs ohne Zeile), entsteht `unjournaled`: Ein Rücksprung, der sie
   entfernte, legte sonst einen Beleg in den Papierkorb, der vorher im Ordner lag. **Nicht im Backup**. Aufgeräumt mit der
   Aufbewahrung (`emptyTrash` in index.ts beim Start und täglich, `cleanTrash`): weg, was weder das Journal noch der

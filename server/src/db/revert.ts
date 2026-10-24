@@ -244,20 +244,21 @@ function filePlan(dataDir: string, before: Map<FileStore, Set<string>>, after: M
 
 // Verschiebt die Dateien **nach dem Festschreiben** (Durchsicht von PR #439, K1): Vorher hieße ein Fehler beim
 // Festschreiben, dass Dateien schon verschoben sind, deren Zeilen es nicht gibt. Scheitert hier eine Datei, steht das auf
-// der Konsole, und der Abgleich beim nächsten Start (`reconcileFiles` in fileRefs.ts) rückt es gerade.
+// der Konsole: Eine, die zurück sollte, holt der Abgleich beim nächsten Start (`reconcileFiles`), eine, die in den
+// Papierkorb sollte, bleibt im Belegordner liegen (harmlos; der Abgleich legt nie etwas in den Papierkorb).
 async function moveFiles(dataDir: string, plan: FilePlan): Promise<void> {
   for (const [store, name] of plan.restore) {
     try {
       await restoreFromTrash(dataDir, store, name)
     } catch (err) {
-      console.error(`Rücksprung: ${name} ließ sich nicht aus dem Papierkorb zurückholen (${String(err)}); der nächste Start holt es nach.`)
+      console.error(`Rücksprung: ${name} ließ sich nicht aus dem Papierkorb zurückholen (${String(err)}); der nächste Start versucht es erneut.`)
     }
   }
   for (const [store, name] of plan.trash) {
     try {
       await moveToTrash(dataDir, store, name)
     } catch (err) {
-      console.error(`Rücksprung: ${name} ließ sich nicht in den Papierkorb legen (${String(err)}); der nächste Start holt es nach.`)
+      console.error(`Rücksprung: ${name} ließ sich nicht in den Papierkorb legen (${String(err)}); er bleibt im Ordner liegen.`)
     }
   }
 }
