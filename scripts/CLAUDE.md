@@ -72,6 +72,32 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   die Auswertung nicht) und gelegentlich „Als PDF sichern“ im echten Safari als Gegenprobe, denn der
   Lauf druckt über WKWebView, nicht über Safaris Menü.
 
+## Messung mit großem Bestand
+
+- **[perf-stock.mjs](perf-stock.mjs)** legt einen erfundenen, reproduzierbaren Bestand an (fester Startwert je
+  Stufe, `--size s|m|l`, `--out` ein leerer Wegwerf-Ordner). Stufe **m** ist das Ziel: 5 Objekte, 60 Wohnungen,
+  10 Jahre mit Mieterwechseln, rund 3.000 Belege (kleine echte PDFs aus `textPdf`, je Datei eine eigene Prüfsumme),
+  22.000 Ablesungen, 1.500 Kostenpositionen, Zahlungen, Ölheizung mit Lieferungen und Vorrat, 100 Auswertungen,
+  rund 10.000 Gruppen im Verlauf, abgeschlossene Vorjahre; **s** ein Zehntel, **l** das Dreifache. Alles geht über
+  die API eines echten Servers, **nur Ablesungen und Zahlungen** schreibt ein eigener Prozess mit `openDatabase` und
+  `insertEntityIn`, während kein Server läuft (über die Route kostete jede ein Lesen der ganzen Sammlung, und das
+  Journal bekäme Zehntausende Gruppen); sie stehen deshalb nicht im Verlauf. Kennungen zufällig, nicht
+  `NKA_TEST_IDS=seq` (der Aufbau startet den Server zweimal).
+- **[perf-check.mjs](perf-check.mjs)** misst auf Kopien des Bestands: Start, RSS, Größe der Datenbank je Tabelle,
+  Antwortzeiten kalt und warm (Median, p95) der Rechen- und Listenrouten, Schreiben, Backup und Wiederherstellen
+  (das zugleich prüft, dass der Bestand gültig ist), ein `--cpu-prof` der zwei langsamsten Routen und einen
+  Chromium-Lauf durch jede Seite (1440 × 900 und 390 × 844, größtes Objekt) mit Zeit bis Inhalt und bis Ruhe,
+  DOM-Knoten, API-Größe, Long Tasks, JS-Heap, typischen Aktionen (auch Filter, Rücksprung- und Sicherungsvorschau
+  im Verlauf) und Fotos. Ergebnis in `<out>/<Stufe>/messung.md`. `--stock <Ordner>` nimmt einen vorhandenen Bestand
+  aus perf-stock.mjs (ohne ihn legt das Skript ihn unter `<out>/stock-<Stufe>` an), `--runs`, `--skip-browser`,
+  `--skip-build`, `--skip-profile`, `--skip-heavy`. Jeder Server läuft in `try`/`finally` und wird mit SIGTERM, nach
+  10 s mit SIGKILL beendet, auch bei Strg+C; NKA_*-Angaben der eigenen Shell gelangen nicht hinein. Nicht in der CI,
+  von Hand vor einem Release, **allein auf dem Rechner** (die Antwortzeiten hängen an fremder Last; die Rechenzeit
+  des Servers je Aufruf aus `/proc` nicht). **Last**: m braucht grob 1 bis 2 GB Arbeitsspeicher, l ein Mehrfaches
+  (perf-stock.mjs bricht l unter 4 GB freiem Speicher ab, außer mit `--force`). Der Belegordner über alle Jahre und
+  Objekte läuft zuletzt und kann den Rechner lahmlegen (jedes Vorschaubild startet einen eigenen pdf.js-Worker; Last
+  in den Hunderten, Tab-Absturz), bis der Fix für die Belegvorschauen gemergt ist; `--skip-heavy` lässt ihn weg.
+
 ## Programmdateien, Pakete, Docker
 
 - **Programmdateien** ([package-binaries.mjs](package-binaries.mjs), `npm run package`): Server und
