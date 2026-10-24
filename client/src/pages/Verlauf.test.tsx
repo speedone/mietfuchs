@@ -37,13 +37,13 @@ test('Der Verlauf nennt jede Gruppe und lädt die Einzelheiten erst beim Aufklap
   render(<Verlauf />)
   const summary = await screen.findByText('Wohnung gelöscht: EG links')
   expect(screen.getByText('(2 Änderungen)')).toBeTruthy()
-  expect(sent).toEqual(['/api/journal?limit=50'])
+  expect(sent).toEqual(['/api/journal?limit=50&snapshots=1'])
   const details = summary.closest('details')
   if (!details) throw new Error('kein details')
   details.open = true
   fireEvent(details, new Event('toggle'))
   expect(await screen.findByText('Mietverhältnis gelöscht: Müller')).toBeTruthy()
-  expect(sent).toEqual(['/api/journal?limit=50', '/api/journal/7'])
+  expect(sent).toEqual(['/api/journal?limit=50&snapshots=1', '/api/journal/7'])
   expect(screen.getByText('Mieter:')).toBeTruthy()
   expect(screen.getByText('01.01.2024')).toBeTruthy()
   // Der Verweis auf die Wohnung steht mit ihrem Namen da, nicht mit der Kennung (K4).

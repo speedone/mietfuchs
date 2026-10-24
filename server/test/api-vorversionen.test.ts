@@ -37,6 +37,13 @@ const list = async (base: string): Promise<Listed[]> => {
   return jsonOf<Listed[]>(res)
 }
 
+// Seit #318 nur mit der Marke der Vorschau.
+async function restoreWithToken(s: Awaited<ReturnType<typeof startServerIn>>, name: string): Promise<Response> {
+  const preview = await postJson(s, `/api/prior-versions/${encodeURIComponent(name)}/restore/preview`, {})
+  assert.equal(preview.status, 200, await preview.clone().text())
+  return postJson(s, `/api/prior-versions/${encodeURIComponent(name)}/restore`, { token: (await jsonOf<{ token: string }>(preview)).token })
+}
+
 const placeCopy = (dir: string, name: string, source = path.join(dir, 'mietfuchs.sqlite')): void => {
   fs.mkdirSync(path.join(dir, PRIOR_DIR), { recursive: true })
   fs.copyFileSync(source, path.join(dir, PRIOR_DIR, name))
@@ -105,7 +112,7 @@ test('Vorversionen: Einspielen bringt den alten Stand zurück, mit Sicherung und
     await s.api('/api/units', { method: 'POST', body: JSON.stringify({ name: 'OG', areaM2: 50, participates: true }) })
     await s.api('/api/settings', { method: 'PUT', body: JSON.stringify({ landlordName: 'Neu Eingetragen' }) })
 
-    const res = await postJson(s, `/api/prior-versions/${encodeURIComponent(version.name)}/restore`, {})
+    const res = await restoreWithToken(s, version.name)
     assert.equal(res.status, 200, await res.clone().text())
     assert.deepEqual((await s.api<Unit[]>('/api/units')).map((u) => u.name), ['EG'])
     assert.notEqual((await s.api<ClientSettings>('/api/settings')).landlordName, 'Neu Eingetragen')
@@ -134,7 +141,7 @@ test('Vorversionen: Einspielen nennt Belege, die seither gelöscht wurden', asyn
     // Seit #318 liegt ein gelöschter Beleg im Papierkorb und käme beim Einspielen zurück (api-ruecksprung-durchsicht.test.ts).
     // Hier ist er wirklich weg.
     fs.rmSync(path.join(dir, 'papierkorb', 'uploads', file))
-    const res = await postJson(s, `/api/prior-versions/${version.name}/restore`, {})
+    const res = await restoreWithToken(s, version.name)
     assert.equal(res.status, 200)
     const body = await jsonOf<{ notes: string[] }>(res)
     assert.ok(body.notes.some((n) => n.includes('fehlt') && n.includes(file)), body.notes.join(' | '))
@@ -150,7 +157,7 @@ test('Vorversionen: Eine Vorversion eines älteren Aufbaus holt die Migrationske
   fs.writeFileSync(path.join(dir, PRIOR_DIR, name), await databaseOfV080(2025))
   const s = await startServerIn(dir)
   try {
-    const res = await postJson(s, `/api/prior-versions/${name}/restore`, {})
+    const res = await restoreWithToken(s, name)
     assert.equal(res.status, 200, await res.clone().text())
     assert.deepEqual((await s.api<Unit[]>('/api/units')).map((u) => u.name).sort(), ['EG', 'OG'])
   } finally {
@@ -165,7 +172,7 @@ test('Vorversionen: Eine beschädigte Vorversion wird abgelehnt, der Bestand ble
   fs.writeFileSync(path.join(dir, PRIOR_DIR, name), 'keine Datenbank')
   const s = await startServerIn(dir)
   try {
-    const res = await postJson(s, `/api/prior-versions/${name}/restore`, {})
+    const res = await restoreWithToken(s, name)
     assert.equal(res.status, 400)
     assert.match(await errorFrom(res), /beschädigt/)
     assert.deepEqual((await s.api<Unit[]>('/api/units')).map((u) => u.name), ['EG'])
@@ -197,7 +204,7 @@ test('Durchsicht S1: Lässt sich die Datenbank nicht öffnen, gehen Liste und Ei
   const s = await startServerIn(dir)
   try {
     assert.deepEqual((await list(s.base)).map((v) => v.name), [name])
-    const res = await postJson(s, `/api/prior-versions/${name}/restore`, {})
+    const res = await restoreWithToken(s, name)
     assert.equal(res.status, 200, await res.clone().text())
     assert.deepEqual((await s.api<Unit[]>('/api/units')).map((u) => u.name), ['EG'])
     // Die kaputte Datei ist nicht weg, sie liegt als vor-restore daneben.
@@ -235,8 +242,8 @@ test('Durchsicht M1: Zweimal einspielen, und der Stand vor dem ersten liegt noch
   try {
     const [version] = await list(s.base)
     await s.api('/api/units', { method: 'POST', body: JSON.stringify({ name: 'OG', areaM2: 50, participates: true }) })
-    assert.equal((await postJson(s, `/api/prior-versions/${version.name}/restore`, {})).status, 200)
-    assert.equal((await postJson(s, `/api/prior-versions/${version.name}/restore`, {})).status, 200)
+    assert.equal((await restoreWithToken(s, version.name)).status, 200)
+    assert.equal((await restoreWithToken(s, version.name)).status, 200)
     const aside = fs.readdirSync(s.dataDir).filter((n) => n.startsWith('mietfuchs.sqlite.vor-restore.vom-'))
     assert.equal(aside.length, 1, fs.readdirSync(s.dataDir).join(', '))
     assert.deepEqual(await unitNamesIn(path.join(s.dataDir, aside[0])), ['EG', 'OG'])

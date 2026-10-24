@@ -43,7 +43,7 @@ import { databaseUnavailable, healthReport, NO_DATABASE, type DatabaseState } fr
 import { databaseFile, openDatabase, setAsideName, type OpenedDatabase } from './db/open.ts'
 import { changeoverWithoutDatabase, replaceFile, runChangeover, type ChangeoverResult } from './db/changeover.ts'
 import { acknowledgeNotice, clearNotice, NOTICE_NAME, noticeKey, readNotice, recordNotice, type MigrationNotice } from './db/migrationNotice.ts'
-import type { Database, Executor } from './db/client.ts'
+import { loadMigrations, type Database, type Executor } from './db/client.ts'
 import { databaseProblem } from './db/errors.ts'
 import { readCostItems, readHeatingPlants, readProperties, readSettings, readStock, readTenancies, readUnits, type Stock } from './db/read.ts'
 import { lettersFor, letterDoc } from './letter.ts'
@@ -91,9 +91,13 @@ import { IBAN_LABELS } from '../../shared/iban.ts'
 import { exportFilename, frozenExportable, settlementExportCsv, settlementExportJson, type ExportableSettlement } from './settlementExport.ts'
 import { derivedTaxLines, planTaxArchive, taxArchiveItems } from './taxReceipts.ts'
 import { createPriorVersion, listPriorVersions, mayCreatePriorVersion, PRIOR_CHECK_INTERVAL_MS, PRIOR_DIR, priorVersionsBlocked, priorVersionTime } from './db/priorVersions.ts'
-import { costItems as costItemsTable } from './db/schema.ts'
+import { changeGroups, costItems as costItemsTable } from './db/schema.ts'
 import { addBarrier, isJournalKind, journalGroup, listJournal, pruneJournal, unjournaled, type JournalBarrier, type JournalMeta } from './db/journal.ts'
-import { applyRevert, isRevertMode, previewRevert, RevertRefused } from './db/revert.ts'
+import { applyRevert, consentSnapshot, isRevertMode, previewRevert, restoreConsent, RevertRefused, type ConsentSnapshot, type RevertPreview } from './db/revert.ts'
+import { cleanSnapshots, interleaveSnapshots, listSnapshots, parseSnapshotName, snapshotFile, snapshotLastGroup, type SnapshotNotice, type SnapshotPoint } from './db/snapshots.ts'
+import { previewSnapshot, snapshotToken, type SnapshotPreview } from './db/snapshotPreview.ts'
+import { releaseStepsOf } from './db/releaseSteps.ts'
+import { sql } from 'drizzle-orm'
 import { reconcileFiles, trashKeep } from './db/fileRefs.ts'
 import { cleanTrash, moveToTrash } from './trash.ts'
 import { DRY_RUN_ROUTES, routeSentence } from './journalRoutes.ts'
@@ -3037,6 +3041,16 @@ async function checkPriorVersion(pruneToo = false): Promise<void> {
     console.error(`Das Änderungsjournal ließ sich nicht aufräumen: ${messageOf(err)}`)
   }
   await emptyTrash()
+  // Sicherungen vor einem Update und vor dem Einspielen (#318, snapshots.ts): die drei jüngsten je Art und alles aus
+  // zwölf Monaten bleiben, die des offenen Hinweises nach dem Update immer. Nicht während eines Wiederherstellens.
+  try {
+    if (!restoreRunning) {
+      const removed = cleanSnapshots(DATA_DIR, await tagsOfMigrations(), new Date(), snapshotNotice())
+      if (removed.length > 0) console.log(`Alte Sicherungen entfernt: ${removed.join(', ')}`)
+    }
+  } catch (err) {
+    console.error(`Die alten Sicherungen ließen sich nicht aufräumen: ${messageOf(err)}`)
+  }
   try {
     if (!database || !mayCreatePriorVersion(databaseState(), restoreRunning)) return
     const name = await createPriorVersion(database, DATA_DIR, new Date(), { skip: () => restoreRunning })
@@ -3090,8 +3104,21 @@ app.get('/api/journal', async (req, res) => {
   const kind = req.query.kind === undefined || req.query.kind === '' ? null : req.query.kind
   if (kind !== null && !isJournalKind(kind)) return res.status(400).json({ error: 'Diesen Bereich kennt der Verlauf nicht.' })
   const q = typeof req.query.q === 'string' && req.query.q.trim() !== '' ? req.query.q.trim().slice(0, 200) : null
-  res.json(await onDatabase((opened) => opened.read((db) =>
-    listJournal(db, opened.journalSchema, { propertyId: property, before, limit, from, to, kind, q, schemaSteps: opened.schemaSteps }))))
+  // Sicherungspunkte (#318) mit `snapshots=1`: zeitlich einsortiert, mit dem Zeitraumfilter. Bereich und Suche blenden
+  // sie aus (eine Sicherung gehört zu keinem Bereich und hat keinen Text); das Objekt nicht, denn sie betrifft alle
+  // Objekte wie die Einstellungen. Lässt sich die Datenbank nicht lesen, kommen nur sie: Das ist der Rettungsfall.
+  const withSnapshots = req.query.snapshots === '1' && kind === null && q === null
+  if (withSnapshots && !stockDatabase()) {
+    if (priorVersionsRefusal(res)) return
+    return res.json(before === null ? interleaveSnapshots([], await currentSnapshots(), { beforeAt: null, last: true, from, to }) : [])
+  }
+  const groups = await onDatabase((opened) => opened.read((db) =>
+    listJournal(db, opened.journalSchema, { propertyId: property, before, limit, from, to, kind, q, schemaSteps: opened.schemaSteps })))
+  if (!withSnapshots) return res.json(groups)
+  // Geblättert wird ab einer Gruppe: Sicherungspunkte gehören auf diese Seite, wenn sie älter sind als sie.
+  const beforeAt = before === null ? null : await onDatabase((opened) => opened.read(async (db) =>
+    (await db.select({ at: changeGroups.at }).from(changeGroups).where(sql`${changeGroups.id} = ${before}`).get())?.at ?? new Date(0).toISOString()))
+  res.json(interleaveSnapshots(groups, await currentSnapshots(), { beforeAt, last: groups.length < limit, from, to }))
 })
 
 const journalId = (req: Request): number | null => (/^\d+$/.test(String(req.params.id)) ? Number(req.params.id) : null)
@@ -3123,8 +3150,31 @@ app.post('/api/journal/:id/revert/preview', async (req, res) => {
   if (mode === null) return res.status(400).json({ error: 'Unbekannte Art des Rücksprungs.' })
   const preview = id === null ? null : await writeData((db) => onDatabase((opened) => previewRevert(db, opened.journalSchema, id, mode, opened.schemaSteps, DATA_DIR, revertBlocked())))
   if (!preview) return res.status(404).json({ error: JOURNAL_GONE })
-  res.json(preview)
+  res.json(await snapshotFallback(preview) ?? preview)
 })
+
+// Geht der Rücksprung Schritt für Schritt nicht (Schranke, anderes Update, Abschluss im Bereich), aber trägt eine
+// Sicherung genau den gewünschten Stand, nimmt die Vorschau sie (#318): `kind: 'snapshot'`. Genau heißt: Ihre jüngste
+// Gruppe im Verlauf ist dieselbe (Kennung und Zeitpunkt) wie die letzte Gruppe des gewünschten Stands. Eine Sicherung
+// aus einem anderen Zweig der Geschichte (vor dem Einspielen eines Backups) hat dort eine andere. Nicht bei einer
+// laufenden KI-Auswertung und nicht, wenn es nichts zurückzunehmen gibt.
+async function snapshotFallback(preview: RevertPreview): Promise<SnapshotPreview | null> {
+  if (preview.refusals.length === 0 || preview.entries.length === 0 || revertBlocked().length > 0) return null
+  const opened = stockDatabase()
+  if (!opened) return null
+  const target = await opened.read((db) => {
+    const where = preview.mode === 'after' ? sql`${changeGroups.id} = ${preview.entry.id}` : sql`${changeGroups.id} < ${preview.entry.firstId}`
+    return db.select({ id: changeGroups.id, at: changeGroups.at }).from(changeGroups).where(where).orderBy(sql`${changeGroups.id} DESC`).limit(1).get()
+  })
+  if (!target) return null
+  for (const point of await currentSnapshots()) {
+    const last = await snapshotLastGroup(snapshotFile(DATA_DIR, point))
+    if (last && last.id === target.id && last.at === target.at) {
+      return previewSnapshot(DATA_DIR, point, opened, [], { entry: preview.entry, mode: preview.mode, reasons: preview.refusals })
+    }
+  }
+  return null
+}
 app.post('/api/journal/:id/revert', async (req, res) => {
   const id = journalId(req)
   const mode = revertModeOf(req)
@@ -3147,24 +3197,73 @@ app.get('/api/prior-versions', async (_req, res) => {
   res.json(listPriorVersions(DATA_DIR))
 })
 
+// **Sicherungspunkte** (#318): die wöchentlichen Vorversionen, die Sicherungen vor einem Update und vor dem Einspielen.
+// Ein Name gilt nur nach dem Muster seiner Art (`parseSnapshotName`, prüft auch `path.basename`), sonst 400; der Pfad
+// entsteht aus der eigenen Liste des Ordners, nie aus der Eingabe.
+// Die Schritte dieser Version, einmal gelesen (sie ändern sich zur Laufzeit nicht).
+let migrationTags: string[] | null = null
+async function tagsOfMigrations(): Promise<string[]> {
+  migrationTags ??= (await loadMigrations()).map((m) => m.tag)
+  return migrationTags
+}
+function snapshotNotice(): SnapshotNotice {
+  return migrationNotice ?? readNotice(DATA_DIR)
+}
+async function currentSnapshots(): Promise<SnapshotPoint[]> {
+  return listSnapshots(DATA_DIR, await tagsOfMigrations(), snapshotNotice())
+}
+// Die offene Datenbank, wenn sie den Bestand trägt; sonst null (der Rettungsfall).
+function stockDatabase(): OpenedDatabase | null {
+  return database && databaseUnavailable(databaseState()) === null ? database : null
+}
+const SNAPSHOT_GONE = 'Diese Sicherung gibt es nicht (mehr). Bitte laden Sie die Seite neu.'
+
+// Sucht den Sicherungspunkt zum Namen der Anfrage; antwortet selbst mit 400, 404 oder 503 und liefert dann null.
+async function snapshotOf(req: Request, res: Response): Promise<SnapshotPoint | null> {
+  const name = String(req.params.name)
+  if (parseSnapshotName(name, new Set(await tagsOfMigrations())) === null) {
+    res.status(400).json({ error: 'Diese Sicherung gibt es nicht.' })
+    return null
+  }
+  if (priorVersionsRefusal(res)) return null
+  const found = (await currentSnapshots()).find((entry) => entry.name === name)
+  if (!found) {
+    res.status(404).json({ error: SNAPSHOT_GONE })
+    return null
+  }
+  return found
+}
+
+// Die Vorschau (db/snapshotPreview.ts): geprüft an einer Kopie, mit allem, was der Vermieter vorher wissen muss, und
+// einer Marke. Sie schreibt nicht (DRY_RUN_ROUTES).
+app.post('/api/prior-versions/:name/restore/preview', async (req, res) => {
+  const point = await snapshotOf(req, res)
+  if (!point) return
+  res.json(await previewSnapshot(DATA_DIR, point, stockDatabase(), revertBlocked()))
+})
+
 // **Eingespielt wird über denselben Weg wie die Datenbank aus einem Backup**: prüfen
 // (`archiveDatabaseProblem`: Integrität, neuerer Aufbau, Migrationskette nachholen, Verweise über
 // Objekte, Zeiträume und Heizanlagen), dann `restoreDatabase` (bisherige als
-// mietfuchs.sqlite.vor-restore, Hinweis nach einem Update weg), dann die Einstellungen neu einlesen.
-// Geprüft und eingespielt wird eine Kopie; die Vorversion selbst bleibt, wie sie ist, und lässt sich
-// ein zweites Mal einspielen. Die Belege bleiben, wie sie sind: Was seither dazukam, bleibt im
-// Belegordner, was seither gelöscht wurde, fehlt, und die Antwort nennt es.
+// mietfuchs.sqlite.vor-restore, Hinweis nach einem Update weg, eine Schranke im Verlauf), dann die Einstellungen neu
+// einlesen. Geprüft und eingespielt wird eine Kopie; die Sicherung selbst bleibt, wie sie ist, und lässt sich ein
+// zweites Mal einspielen (ist sie selbst `mietfuchs.sqlite.vor-restore`, wird sie dabei mit Datum beiseitegelegt). Die
+// Belege bleiben, wie sie sind: Was seither dazukam, bleibt im Belegordner, was seither gelöscht wurde, fehlt, und die
+// Antwort nennt es. **Nur mit der Marke der Vorschau** (#318); stimmt sie nicht, 409 mit neuer Vorschau.
+// **Zustimmungen** bringt die Sicherung nicht mit (Regel aus #439, `restoreConsent`): Jede Zeile trägt danach die
+// Zustimmung von vorher, eine neu entstandene keine; ohne lesbare Datenbank gilt keine.
 app.post('/api/prior-versions/:name/restore', async (req, res) => {
-  const name = req.params.name
-  // Nur ein Name nach dem eigenen Muster, nie ein Pfad (priorVersionTime prüft auch basename).
-  if (priorVersionTime(name) === null) return res.status(400).json({ error: 'Diese Vorversion gibt es nicht.' })
-  if (priorVersionsRefusal(res)) return
-  // Der Pfad entsteht aus der eigenen Liste des Ordners, nie aus der Eingabe: Die Eingabe wählt nur
-  // einen Eintrag aus, den es dort gibt.
-  const found = listPriorVersions(DATA_DIR).find((entry) => entry.name === name)
-  if (!found) return res.status(404).json({ error: 'Diese Vorversion gibt es nicht mehr. Bitte laden Sie die Seite neu.' })
-  const source = path.join(DATA_DIR, PRIOR_DIR, found.name)
+  const found = await snapshotOf(req, res)
+  if (!found) return
+  const source = snapshotFile(DATA_DIR, found)
   if (restoreRunning) return res.status(409).json({ error: 'Es läuft gerade eine Wiederherstellung. Bitte warten Sie, bis sie fertig ist.' })
+  const blocked = revertBlocked()
+  if (bodyObject(req).token !== await snapshotToken(DATA_DIR, found, stockDatabase()) || blocked.length > 0) {
+    return res.status(409).json({
+      error: blocked.length > 0 ? blocked.join(' ') : 'Die Sicherung oder der Verlauf hat sich inzwischen geändert. Bitte prüfen Sie das Einspielen noch einmal.',
+      preview: await previewSnapshot(DATA_DIR, found, stockDatabase(), blocked),
+    })
+  }
   restoreRunning = true
   const staged = `${databaseFile(DATA_DIR)}.restore-${newId()}`
   try {
@@ -3172,18 +3271,32 @@ app.post('/api/prior-versions/:name/restore', async (req, res) => {
       fs.copyFileSync(source, staged)
     } catch (err) {
       fs.rmSync(staged, { force: true })
-      return res.status(500).json({ error: `Die Vorversion ließ sich nicht kopieren: ${messageOf(err)} ${NOTHING_CHANGED}` })
+      return res.status(500).json({ error: `Die Sicherung ließ sich nicht kopieren: ${messageOf(err)} ${NOTHING_CHANGED}` })
     }
     const problem = await archiveDatabaseProblem(staged, 'priorVersion')
     if (problem) {
       fs.rmSync(staged, { force: true })
       return res.status(400).json({ error: problem })
     }
+    let consent: ConsentSnapshot = new Map()
+    try {
+      const current = stockDatabase()
+      if (current) consent = await current.read((db) => consentSnapshot(db))
+    } catch (err) {
+      console.error(`Die Zustimmungen ließen sich vor dem Einspielen nicht lesen; danach gilt keine: ${messageOf(err)}`)
+    }
     let notes: string[]
     try {
       notes = await restoreDatabase(staged, 'priorVersion')
     } catch (err) {
-      notes = [restoreFailedNote(err, 'Die Vorversion wurde geprüft', '')]
+      notes = [restoreFailedNote(err, 'Die Sicherung wurde geprüft', '')]
+    }
+    // Systemarbeit ohne Gruppe: Die Zustimmungen gehören nicht zum Stand, den der Verlauf zeigt.
+    try {
+      const restored = database
+      if (restored) await restored.write((db) => restoreConsent(db, consent))
+    } catch (err) {
+      notes = [...notes, `Die Zustimmungen ließen sich nach dem Einspielen nicht angleichen: ${messageOf(err)}`]
     }
     try {
       await refreshSettings()
@@ -3527,6 +3640,9 @@ function noteBackup(fresh: FreshBackup | null): void {
   }
   // Nur der Name: Die Sicherung liegt immer im Datenordner, und die Oberfläche sagt es so.
   migrationNotice = { steps: fresh.steps, backup: path.basename(fresh.file), at: backupTime(fresh.file) }
+  // Die Version, auf die das Update ging (#318, für den Titel der Sicherung im Verlauf), nur wenn dieser Server eine
+  // veröffentlichte Version ist: genau dann enthält sie so viele Schritte, wie er kennt.
+  if (database && releaseStepsOf(APP_VERSION) === database.schemaSteps) migrationNotice.version = APP_VERSION
   try {
     recordNotice(DATA_DIR, migrationNotice)
   } catch (err) {

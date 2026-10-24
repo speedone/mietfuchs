@@ -27,8 +27,8 @@
 // - Dateien: Ein Beleg oder ein Logo, das der Stand wieder nennt, kommt aus dem Papierkorb zurück; fehlt es dort,
 //   wird abgelehnt.
 //
-// Die Vorschau trägt `kind: 'journal'`: Ein späterer Weg (Einspielen einer Sicherung als Sicherungspunkt der
-// Zeitachse) bekommt eine eigene Art mit derselben Gestalt von Vorschau und Marke.
+// Die Vorschau trägt `kind: 'journal'`. Geht ein Stand Schritt für Schritt nicht, aber liegt er als Sicherung vor, nimmt
+// die Route stattdessen die Vorschau mit `kind: 'snapshot'` (snapshotPreview.ts, `snapshotFallback` in index.ts).
 
 import { createHash } from 'node:crypto'
 import { gte, inArray, sql } from 'drizzle-orm'
@@ -51,10 +51,10 @@ export const CONSENT_COLUMNS: Readonly<Record<string, { key: string, columns: re
   settings: { key: 'id', columns: ['update_check'] },
 }
 
-type ConsentSnapshot = Map<string, Map<string, unknown[]>>
+export type ConsentSnapshot = Map<string, Map<string, unknown[]>>
 
 // Die Zustimmungen vor dem Rücksprung, je Tabelle und Schlüssel.
-async function consentSnapshot(db: Executor): Promise<ConsentSnapshot> {
+export async function consentSnapshot(db: Executor): Promise<ConsentSnapshot> {
   const out: ConsentSnapshot = new Map()
   for (const [table, { key, columns }] of Object.entries(CONSENT_COLUMNS)) {
     const rows = await db.all<unknown[]>(sql`SELECT ${sql.identifier(key)}, ${sql.join(columns.map((c) => sql.identifier(c)), sql`, `)} FROM ${sql.identifier(table)}`)
@@ -66,7 +66,7 @@ async function consentSnapshot(db: Executor): Promise<ConsentSnapshot> {
 // Danach: Jede Zeile trägt die Zustimmung von vorher; eine Zeile, die es vorher nicht gab, trägt keine. So setzt ein
 // Rücksprung nie eine Zustimmung, die gerade nicht besteht, und holt keinen Widerruf zurück. (Eine Zeile, die der
 // Rücksprung entfernt, nimmt ihre Zustimmung mit; das ist erlaubt.)
-async function restoreConsent(db: Executor, before: ConsentSnapshot): Promise<void> {
+export async function restoreConsent(db: Executor, before: ConsentSnapshot): Promise<void> {
   for (const [table, { key, columns }] of Object.entries(CONSENT_COLUMNS)) {
     const rows = await db.all<unknown[]>(sql`SELECT ${sql.identifier(key)} FROM ${sql.identifier(table)}`)
     for (const [k] of rows) {
@@ -185,16 +185,16 @@ async function entriesOf(db: Executor, schema: JournalSchema, range: Range): Pro
 
 const BARRIER_TEXT: Record<string, (at: string) => string> = {
   restore: (at) =>
-    `Am ${at} wurde ein Backup eingespielt. Über das Einspielen hinweg führt kein Rücksprung, denn der Stand davor steht nicht in dieser Datenbank. Er liegt im Datenordner als „mietfuchs.sqlite.vor-restore“; zurück kommen Sie dorthin über die automatischen Vorversionen oder ein Backup.`,
+    `Am ${at} wurde ein Backup eingespielt. Schritt für Schritt führt kein Rücksprung über das Einspielen hinweg, denn der Stand davor steht nicht in diesem Verlauf. Er steht als Sicherung „Vor dem Einspielen eines Backups“ in der Zeitachse; von dort kehren Sie zu ihm zurück.`,
   priorVersion: (at) =>
-    `Am ${at} wurde eine Vorversion eingespielt. Über das Einspielen hinweg führt kein Rücksprung, denn der Stand davor steht nicht in dieser Datenbank. Er liegt im Datenordner als „mietfuchs.sqlite.vor-restore“; zurück kommen Sie dorthin über die automatischen Vorversionen oder ein Backup.`,
+    `Am ${at} wurde eine Sicherung eingespielt. Schritt für Schritt führt kein Rücksprung über das Einspielen hinweg, denn der Stand davor steht nicht in diesem Verlauf. Er steht als Sicherung „Vor dem Einspielen eines Backups“ in der Zeitachse; von dort kehren Sie zu ihm zurück.`,
   changeover: (at) =>
     `Am ${at} hat Mietfuchs Ihre Daten aus der früheren db.json übernommen. Davor gibt es keinen Verlauf; der frühere Stand liegt im Datenordner als „db.json.abgeloest“.`,
 }
 
 const SCHEMA_TEXT =
-  'Im Bereich liegen Änderungen von vor dem letzten Update von Mietfuchs. Sie lassen sich lesen, aber nicht zurücknehmen, denn ein Update kann den Aufbau der Daten ändern. ' +
-  'Den Stand vor dem Update enthält die Sicherung, die Mietfuchs dabei im Datenordner angelegt hat („mietfuchs.sqlite.vor-…“, siehe MIGRATION.md).'
+  'Im Bereich liegen Änderungen von vor dem letzten Update von Mietfuchs. Sie lassen sich lesen, aber nicht Schritt für Schritt zurücknehmen, denn ein Update kann den Aufbau der Daten ändern. ' +
+  'Den Stand vor dem Update enthält die Sicherung „Vor dem Update …“ in der Zeitachse; von dort kehren Sie zu ihm zurück.'
 
 const FROZEN_TAIL =
   'Ein Abschluss und ein Wiederöffnen lassen sich im Verlauf nicht zurücknehmen, damit kein zugestellter, eingefrorener Stand still verschwindet oder ohne Abschluss entsteht. ' +

@@ -39,12 +39,13 @@ export function readNotice(dataDir: string): MigrationNotice | null {
     return null
   }
   if (typeof raw !== 'object' || raw === null) return null
-  const { steps, backup, at } = raw as Record<string, unknown>
+  const { steps, backup, at, version } = raw as Record<string, unknown>
   if (typeof steps !== 'number' || typeof backup !== 'string' || typeof at !== 'string') return null
   // Nur ein Dateiname im Datenordner, nie ein Pfad: Die Datei kommt von außen.
   if (backup !== path.basename(backup) || !backup.startsWith('mietfuchs.sqlite.vor-')) return null
   if (!fs.existsSync(path.join(dataDir, backup))) return null
-  return { steps, backup, at }
+  // Die Version ist nur eine Auskunft (#318); eine, die nicht wie eine aussieht, fällt weg.
+  return typeof version === 'string' && /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?$/.test(version) ? { steps, backup, at, version } : { steps, backup, at }
 }
 
 // Weggeklickt. Nur wenn der Schlüssel zu dem passt, was dasteht: Ein Tab von vor einem weiteren

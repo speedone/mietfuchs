@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict'
 import type { JournalGroupView } from '../src/db/journal.ts'
 import type { RevertMode, RevertPreview } from '../src/db/revert.ts'
+import type { SnapshotPreview } from '../src/db/snapshotPreview.ts'
 import { besideServer, jsonOf, type Server } from './api.ts'
 import { CONSENT_COLUMNS } from '../src/db/revert.ts'
 
@@ -59,4 +60,23 @@ export async function revert(s: Server, id: number, mode: RevertMode = 'includin
 export async function newest(s: Server): Promise<JournalGroupView> {
   const [top] = await journalOf(s, '?limit=1')
   return top ?? assert.fail('Der Verlauf ist leer.')
+}
+
+// Sicherungspunkte (#318): Vorschau zum Einspielen und Einspielen mit ihrer Marke.
+export async function snapshotPreviewOf(s: Server, name: string): Promise<SnapshotPreview> {
+  const res = await post(s, `/api/prior-versions/${encodeURIComponent(name)}/restore/preview`, {})
+  assert.equal(res.status, 200, await res.clone().text())
+  return jsonOf<SnapshotPreview>(res)
+}
+
+export const restoreSnapshotRaw = (s: Server, name: string, token: unknown) =>
+  post(s, `/api/prior-versions/${encodeURIComponent(name)}/restore`, { token })
+
+// Vorschau, dann Einspielen; die Vorschau muss ohne Grenze sein. Liefert Vorschau und die Sätze der Antwort.
+export async function restoreSnapshot(s: Server, name: string): Promise<{ preview: SnapshotPreview, notes: string[] }> {
+  const preview = await snapshotPreviewOf(s, name)
+  assert.deepEqual(preview.refusals, [], `Einspielen von ${name} abgelehnt`)
+  const res = await restoreSnapshotRaw(s, name, preview.token)
+  assert.equal(res.status, 200, await res.clone().text())
+  return { preview, notes: (await jsonOf<{ notes: string[] }>(res)).notes }
 }

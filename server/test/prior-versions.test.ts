@@ -161,7 +161,7 @@ test('Durchsicht K4/K8: Ist die neue Vorversion nicht unversehrt, wird sie verwo
   })
 })
 
-test('Durchsicht S3: Keine Meldung zu einer Vorversion spricht von Archiv oder Backup', async () => {
+test('Durchsicht S3: Keine Meldung zu einer Sicherung im Datenordner spricht von Archiv oder Backup', async () => {
   await withStockDb(async (opened, dir) => {
     const messages: string[] = []
     const kaputt = path.join(dir, 'kaputt.sqlite')
@@ -185,7 +185,7 @@ test('Durchsicht S3: Keine Meldung zu einer Vorversion spricht von Archiv oder B
     for (const m of messages) {
       assert.ok(m.length > 0, 'jede dieser Dateien wird beanstandet')
       assert.doesNotMatch(m, /Archiv|Backup/, m)
-      assert.match(m, /Vorversion/, m)
+      assert.match(m, /Sicherung/, m)
     }
     // Der Weg übers Backup sagt weiterhin Archiv.
     assert.match(await archiveDatabaseProblem(kaputt) ?? '', /Archiv/)

@@ -111,7 +111,7 @@ test('Hat sich der Verlauf inzwischen geändert, sagt es die Mitteilung, und die
   await waitFor(() => expect(lists().length).toBe(2))
 })
 
-test('Nur lesbare Einträge und Schranken haben keine Knöpfe, zurückgenommene sind gekennzeichnet', async () => {
+test('Schranken haben keine Knöpfe, nur lesbare Einträge fragen die Vorschau, zurückgenommene sind gekennzeichnet', async () => {
   listed = [
     group(12, 'Rückgängig: Wohnung geändert: EG'),
     group(11, 'Wohnung geändert: EG', { revertedBy: 12 }),
@@ -124,15 +124,15 @@ test('Nur lesbare Einträge und Schranken haben keine Knöpfe, zurückgenommene 
   expect(within(barrier).queryAllByRole('button')).toEqual([])
   expect(within(barrier).getByText(/kein Rücksprung/)).toBeTruthy()
   const old = await open('Wohnung angelegt: alt')
-  expect(within(old).queryAllByRole('button')).toEqual([])
-  expect(within(old).getByText(/nur lesen/)).toBeTruthy()
+  expect(within(old).getByRole('button', { name: 'Nur die späteren Änderungen zurücknehmen …' })).toBeTruthy()
+  expect(within(old).getByText(/Schritt für Schritt/)).toBeTruthy()
 })
 
 test('Filter: Bereich, Zeitraum und Suche gehen an den Server', async () => {
   render(<UIProvider><Verlauf /></UIProvider>)
   await screen.findByText('Wohnung geändert: EG')
   fireEvent.change(screen.getByLabelText('Bereich'), { target: { value: 'payments' } })
-  await waitFor(() => expect(lists().at(-1)?.url).toBe('/api/journal?limit=50&kind=payments'))
+  await waitFor(() => expect(lists().at(-1)?.url).toBe('/api/journal?limit=50&snapshots=1&kind=payments'))
   fireEvent.change(screen.getByLabelText('Von'), { target: { value: '2026-10-01' } })
   await waitFor(() => expect(lists().at(-1)?.url).toMatch(/&from=2026-(09-30T2|10-01T0)/))
   fireEvent.change(screen.getByLabelText(/^Suche/), { target: { value: 'Müller' } })

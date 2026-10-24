@@ -708,7 +708,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
           level="warning"
           className="no-print"
           title="Logo oder Briefpapier fehlt"
-          action={`${missingDesign.join(', ')}: Die Datei fehlt im Datenordner (etwa nach dem Einspielen einer Vorversion). Gedruckt wird ohne; wählen Sie die Datei unter „Logo und Briefpapier“ neu.`}
+          action={`${missingDesign.join(', ')}: Die Datei fehlt im Datenordner (etwa nach der Rückkehr zu einer früheren Sicherung). Gedruckt wird ohne; wählen Sie die Datei unter „Logo und Briefpapier“ neu.`}
         />
       )}
 
