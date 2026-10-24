@@ -511,7 +511,7 @@ async function evaluate() {
 let exitCode = 2
 try {
   checkArguments()
-  stock = await import('./demo-stock-gibt-es-nicht.mjs')
+  stock = await import('./demo-stock.mjs')
   if (!flag('--evaluate')) await produce()
   const findings = await evaluate()
   exitCode = findings ? 1 : 0
