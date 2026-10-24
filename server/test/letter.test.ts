@@ -31,7 +31,7 @@ const facts = (over: Partial<LetterFacts> = {}): LetterFacts => ({
 const plain = (s: string | null | undefined): string => (s ?? '').replace(/\u00a0/g, ' ')
 const suggestion: LetterAdjustment = { mode: 'suggestion', cents: null }
 const letter = (over: Partial<LetterFacts> = {}, adjustment: LetterAdjustment = suggestion, suggestedCents = 10500) =>
-  buildLetter({ texts: DEFAULT_LETTER_TEXTS, facts: facts(over), adjustment, suggestedCents })
+  buildLetter({ texts: DEFAULT_LETTER_TEXTS, facts: facts(over), adjustment, suggestedCents, from: '2027-01' })
 
 test('ein unbekannter Platzhalter ist eine Meldung, nie ein leerer Text', () => {
   assert.deepEqual(templateProblems('intro', 'Guten Tag {Nam}'), ['Den Platzhalter {Nam} gibt es nicht. Wählen Sie einen aus der Liste unter dem Feld.'])
@@ -64,7 +64,7 @@ test('die Vorgaben drucken die bisherigen Sätze wortgleich', () => {
   assert.equal(plain(letter({ balanceCents: 2550 }).texts.credit),
     'Es ergibt sich ein Guthaben von 25,50 €. Der Betrag wird Ihnen erstattet bzw. mit der nächsten Mietzahlung verrechnet.')
   assert.equal(plain(back.texts.adjustSuggestion),
-    'Auf Basis dieser Abrechnung wird die monatliche Nebenkostenvorauszahlung gemäß § 560 Abs. 4 BGB ab dem übernächsten Monat auf 105,00 € angepasst (ein Zwölftel Ihrer Jahreskosten, gerundet).')
+    'Auf Basis dieser Abrechnung wird die monatliche Nebenkostenvorauszahlung gemäß § 560 Abs. 4 BGB ab Januar 2027 auf 105,00 € angepasst (ein Zwölftel Ihrer Jahreskosten, gerundet).')
   assert.equal(plain(back.texts.receipts), 'Die zugrunde liegenden Belege können nach Terminvereinbarung eingesehen werden.')
   assert.equal(plain(renderLetterText(back.texts.attachments, { date: '2026-03-15', attachments: 3 })), 'Kopien der zugrunde liegenden Belege sind als Anlage beigefügt (3 Belege).')
   assert.equal(plain(renderLetterText(back.texts.attachments, { date: '2026-03-15', attachments: 1 })), 'Kopien der zugrunde liegenden Belege sind als Anlage beigefügt (1 Beleg).')
@@ -82,7 +82,7 @@ test('Mietfuchs wählt die Bausteine nach dem Ergebnis und der Anpassung', () =>
   assert.ok(chooseLetterBlocks(custom, -4000, 0).includes('adjustCustom'))
   assert.match(plain(custom.texts.adjustCustom), /auf 120,00 € angepasst\.$/)
   // Ein leerer Baustein erscheint nicht.
-  const noClosing = buildLetter({ texts: mergeLetterTexts({ closing: '' }), facts: facts(), adjustment: suggestion, suggestedCents: 10500 })
+  const noClosing = buildLetter({ texts: mergeLetterTexts({ closing: '' }), facts: facts(), adjustment: suggestion, suggestedCents: 10500, from: '2027-01' })
   assert.ok(!chooseLetterBlocks(noClosing, -4000, 0).includes('closing'))
 })
 
@@ -94,7 +94,7 @@ test('Ebenen: die oberste, die einen Baustein führt, gilt', () => {
 })
 
 test('Datum und Zahl der Belege bleiben für den Druck stehen', () => {
-  const l = buildLetter({ texts: mergeLetterTexts({ intro: 'Stand {Datum}, {Name}' }), facts: facts(), adjustment: suggestion, suggestedCents: 10500 })
+  const l = buildLetter({ texts: mergeLetterTexts({ intro: 'Stand {Datum}, {Name}' }), facts: facts(), adjustment: suggestion, suggestedCents: 10500, from: '2027-01' })
   assert.equal(l.texts.intro, 'Stand {Datum}, Erika Mustermann')
   assert.equal(plain(renderLetterText(l.texts.intro, { date: '2026-03-15', attachments: 0 })), 'Stand 15.03.2026, Erika Mustermann')
 })
@@ -111,8 +111,8 @@ test('Rümpfe werden geprüft', () => {
   assert.deepEqual(parseLetterTexts({ greeting: 'Gruß\r\n', closing: null }), { texts: { greeting: 'Gruß', closing: null } })
   assert.match(String(Reflect.get(parseLetterTexts({ foo: 'x' }), 'error')), /Baustein „foo“/)
   assert.match(String(Reflect.get(parseLetterTexts({ intro: '{Nam}' }), 'error')), /Einleitung.*\{Nam\}/)
-  assert.deepEqual(parseLetterAdjustment({ mode: 'custom', cents: 12000 }), { mode: 'custom', cents: 12000 })
-  assert.deepEqual(parseLetterAdjustment({ mode: 'suggestion', cents: 5 }), { mode: 'suggestion', cents: null })
+  assert.deepEqual(parseLetterAdjustment({ mode: 'custom', cents: 12000 }), { mode: 'custom', cents: 12000, from: null })
+  assert.deepEqual(parseLetterAdjustment({ mode: 'suggestion', cents: 5 }), { mode: 'suggestion', cents: null, from: null })
   assert.ok('error' in (parseLetterAdjustment({ mode: 'custom', cents: -1 }) ?? {}))
   assert.equal(parseLetterAdjustment(null), null)
 })
@@ -136,7 +136,7 @@ test('S2: Absender, Rücksendeangabe und Anschrift stehen im Anschreiben und fri
     settings: { landlordName: 'Max', iban: '', paymentDeadlineDays: 30 },
     property: { id: 'p', name: 'Haus', kind: 'mfh', address: 'Lindenweg 12, 12345 Musterstadt', landlordName: null, iban: null, paymentDeadlineDays: null },
     tenancies: [{ id: 't1', end: null, prepayments: [], correspondenceAddress: '' }],
-    installation: {}, propertyTexts: {}, own: {},
+    installation: {}, propertyTexts: {}, own: {}, asOf: '2026-03-15',
   })
   const l = out.t1
   if (!l) return assert.fail('kein Anschreiben')
@@ -175,7 +175,7 @@ test('Teil 2: die Anschrift des Vermieters steht in Rücksendeangabe und Fußzei
     settings: { landlordName: 'Max', iban: 'DE02120300000000202051', paymentDeadlineDays: 30, ...settings },
     property: { ...house, ...property },
     tenancies: [{ id: 't1', end: null, prepayments: [], correspondenceAddress: '', ...tenancy }],
-    installation: {}, propertyTexts: {}, own: {},
+    installation: {}, propertyTexts: {}, own: {}, asOf: '2026-03-15',
   }).t1 ?? assert.fail('kein Anschreiben')
   const withAddress = src({ landlordAddress: 'Hauptstr. 1, 10115 Berlin', landlordContact: 'Tel. 030 123456' })
   assert.deepEqual(withAddress.sender, {
@@ -216,4 +216,43 @@ test('K8: eine Zeile oder ein Ja/Nein falscher Art ist ein eigener Fehler mit 40
   const { LetterInputError, nullableBoolean, nullableLine } = await import('../src/db/repository.ts')
   assert.throws(() => nullableLine(5, 'Die Anschrift'), (e: unknown) => e instanceof LetterInputError && e.status === 400 && /Die Anschrift ist kein Text/.test(e.message))
   assert.throws(() => nullableBoolean('ja', '„Anschreiben mitdrucken“'), (e: unknown) => e instanceof LetterInputError && e.status === 400)
+})
+
+// ---------- #317: der Monat der Anpassung ----------
+
+test('#317: das Schreiben nennt den Monat, ab dem die Vorauszahlung angepasst wird', () => {
+  assert.match(DEFAULT_LETTER_TEXTS.adjustSuggestion, /ab \{AnpassungAb\} auf/)
+  assert.match(DEFAULT_LETTER_TEXTS.adjustCustom, /ab \{AnpassungAb\} auf/)
+  assert.doesNotMatch(DEFAULT_LETTER_TEXTS.adjustSuggestion, /übernächsten/)
+  assert.deepEqual(templateProblems('adjustCustom', '{AnpassungAb}'), [])
+  assert.match(templateProblems('intro', '{AnpassungAb}')[0] ?? '', /im Baustein „Einleitung“ nicht/)
+  const l = letter()
+  assert.equal(l.adjustment.from, '2027-01')
+  assert.equal(l.values.AnpassungAb, 'Januar 2027')
+  assert.equal(plain(letter({}, { mode: 'custom', cents: 9000 }).texts.adjustCustom),
+    'Auf Basis dieser Abrechnung wird die monatliche Nebenkostenvorauszahlung gemäß § 560 Abs. 4 BGB ab Januar 2027 auf 90,00 € angepasst.')
+  // Ohne Anpassung kein Monat.
+  assert.equal(letter({}, { mode: 'none', cents: null }).adjustment.from, null)
+})
+
+test('#317: Vorgabe ist der übernächste Monat nach dem Tag des Briefs, je Mieter abweichend', () => {
+  const tenancy = { id: 't1', end: null, prepayments: [{ from: '2024-01', monthlyCents: 4000 }], correspondenceAddress: '' }
+  const st = { ...oneStatement, statements: oneStatement.statements.map((x) => ({ ...x, suggestedMonthlyCents: 5000 })) }
+  const base = { settings: { landlordName: 'Max', iban: '', paymentDeadlineDays: 30 }, property: house, tenancies: [tenancy], installation: {}, propertyTexts: {} }
+  assert.equal(lettersOf(st, { ...base, own: {}, asOf: '2026-10-30' }).t1?.adjustment.from, '2026-12')
+  assert.equal(lettersOf(st, { ...base, own: {}, asOf: '2026-11-01' }).t1?.adjustment.from, '2027-01')
+  const own = { t1: { texts: {}, adjustment: { mode: 'suggestion' as const, cents: null, from: '2027-03' } } }
+  const l = lettersOf(st, { ...base, own, asOf: '2026-10-30' }).t1
+  assert.equal(l?.adjustment.from, '2027-03')
+  assert.match(plain(l?.texts.adjustSuggestion), /ab März 2027 auf 50,00 €/)
+})
+
+test('#317: der Monat der Anpassung wird geprüft', () => {
+  assert.deepEqual(parseLetterAdjustment({ mode: 'suggestion', from: '2027-01' }), { mode: 'suggestion', cents: null, from: '2027-01' })
+  assert.deepEqual(parseLetterAdjustment({ mode: 'custom', cents: 100, from: null }), { mode: 'custom', cents: 100, from: null })
+  assert.deepEqual(parseLetterAdjustment({ mode: 'custom', cents: 100 }), { mode: 'custom', cents: 100, from: null })
+  for (const from of ['2027-13', '2027-1', 'Januar', 2027]) {
+    const r = parseLetterAdjustment({ mode: 'suggestion', from })
+    assert.ok(r !== null && 'error' in r, String(from))
+  }
 })

@@ -2019,11 +2019,14 @@ export const tenancyLetterAdjustments = sqliteTable(
     doc: text('doc').notNull(),
     mode: text('mode', { enum: LETTER_ADJUSTMENT_MODES }).notNull(),
     cents: integer('cents'),
+    // #317: der Monat (JJJJ-MM), ab dem die neue Vorauszahlung gilt; NULL heißt die Vorgabe (übernächster Monat).
+    fromMonth: text('from_month'),
   },
   (t) => [
     primaryKey({ columns: [t.tenancyId, t.doc] }),
     oneOf('tenancy_letter_adjustments_mode_known', 'mode', LETTER_ADJUSTMENT_MODES),
     check('tenancy_letter_adjustments_doc_complete', sql.raw('length("doc") > 0')),
+    periodKeyCheck('tenancy_letter_adjustments_from_valid', 'from_month'),
     check('tenancy_letter_adjustments_cents_valid', sql.raw(`("mode" = 'custom' AND "cents" IS NOT NULL AND typeof("cents") = 'integer' AND "cents" >= 0) OR ("mode" <> 'custom' AND "cents" IS NULL)`)),
   ],
 )

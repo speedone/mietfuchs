@@ -2471,6 +2471,14 @@ export async function insertCostItemIn(tx: Executor, id: string, body: unknown, 
   await costItemCollection.insert(tx, entity)
 }
 
+// #317: die angekündigte Anpassung als Stufe der Staffel, innerhalb der Transaktion der Route, mit derselben
+// Verschmelzung und demselben Wächter wie `PUT /api/tenancies/:id`.
+export async function patchTenancyIn(tx: Executor, current: Tenancy, body: unknown): Promise<void> {
+  const entity = mergeTenancy(current, body)
+  await guardTenancy(tx, current, entity, body)
+  await tenancyCollection.replace(tx, entity)
+}
+
 export async function patchCostItemIn(tx: Executor, current: CostItem, body: unknown): Promise<void> {
   const entity = mergeCostItem(current, body)
   await guardCostItem(tx, current, entity, body)

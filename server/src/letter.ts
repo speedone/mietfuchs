@@ -21,7 +21,7 @@ export const letterDoc = (period: string, owner: { propertyId: string } | { plan
 export async function lettersFor(
   db: Executor,
   s: Parameters<typeof lettersOf>[0],
-  ctx: { settings: LetterSource['settings'], property: Property | null, tenancies: LetterSource['tenancies'], doc: string },
+  ctx: { settings: LetterSource['settings'], property: Property | null, tenancies: LetterSource['tenancies'], doc: string, asOf: string },
 ): Promise<Record<string, StatementLetter>> {
   return lettersOf(s, {
     settings: ctx.settings,
@@ -30,5 +30,6 @@ export async function lettersFor(
     installation: await readInstallationLetterTexts(db),
     propertyTexts: ctx.property ? await readPropertyLetterTexts(db, ctx.property.id) : {},
     own: await readTenancyLetters(db, ctx.doc, s.statements.map((st) => st.tenancyId)),
+    asOf: ctx.asOf,
   })
 }

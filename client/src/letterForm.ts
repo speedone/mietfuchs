@@ -7,7 +7,7 @@ import { fmtEuro, parseEuro } from './api'
 import type { Problem } from './formProblems'
 
 export type LetterLevel = 'installation' | 'property' | 'tenancy'
-export type LetterFieldKey = LetterBlock | 'customCents'
+export type LetterFieldKey = LetterBlock | 'customCents' | 'adjustFrom'
 
 // Je Baustein der eigene Text dieser Ebene oder `null`, wenn die Ebene darüber gilt.
 export type OwnTexts = Record<LetterBlock, string | null>
@@ -18,6 +18,8 @@ export type LetterDraft = {
   // Mieter: Gilt eine eigene Wahl? `false` nach „Anpassung auf Vorgabe zurücksetzen“ (Durchsicht K6).
   adjustOwn: boolean
   customCents: string
+  // #317: der Monat, ab dem die Anpassung gilt; `null` heißt die Vorgabe (übernächster Monat nach dem Tag des Briefs).
+  adjustFrom?: string | null
   // Teil 2: „Anschreiben mitdrucken“ der Ebene; `null` am Objekt heißt „wie die Vorgabe“.
   printLetter?: boolean | null
 }
@@ -45,6 +47,9 @@ export function letterProblems(draft: LetterDraft, base: Record<LetterBlock, str
   for (const b of LETTER_BLOCK_IDS) {
     const problems = templateProblems(b, shownText(draft, base, b))
     if (problems.length > 0) out.push({ field: b, short: problems.join(' '), text: `${blockLabel(b)}: ${problems.join(' ')}` })
+  }
+  if (level === 'tenancy' && draft.adjust !== 'none' && draft.adjustFrom != null && !/^\d{4}-(0[1-9]|1[0-2])$/.test(draft.adjustFrom)) {
+    out.push({ field: 'adjustFrom', short: 'Kein Monat', text: 'Ab Monat: Geben Sie einen Monat ein, etwa „Januar 2027“.' })
   }
   if (level === 'tenancy' && draft.adjust === 'custom' && customCentsOf(draft) === null) {
     out.push({ field: 'customCents', short: 'Betrag fehlt oder ist ungültig', text: 'Neue monatliche Vorauszahlung: Geben Sie einen Betrag in Euro ein, etwa 105,00.' })
@@ -77,3 +82,12 @@ export function draftNewCents(draft: Pick<LetterDraft, 'adjust' | 'customCents'>
   }
   return draft.adjust === 'suggestion' && suggestedCents > 0 ? fmtEuro(suggestedCents) : ''
 }
+
+// #317: Ein Monat, der nicht nach dem laufenden liegt, wirkte zurück; die Anpassung gilt nur für die Zukunft.
+export function adjustFromHint(from: string, today: string): string | null {
+  if (!/^\d{4}-\d{2}$/.test(from) || from > today.slice(0, 7)) return null
+  return 'Der Monat liegt nicht in der Zukunft. Eine Anpassung der Vorauszahlungen ist nur für die Zukunft möglich (BGH, VIII ZR 271/10, Leitsatz 2); wählen Sie einen späteren Monat.'
+}
+
+// #317: Ein eigener Text ohne {AnpassungAb} nennt den Monat nicht, übernommen wird aber ab diesem Monat.
+export const adjustTextLacksMonth = (text: string): boolean => text.trim() !== '' && !text.includes('{AnpassungAb}')

@@ -48,7 +48,7 @@ export async function readTenancyLetters(db: Executor, doc: string, tenancyIds: 
   const out: Record<string, TenancyLetter> = {}
   const entry = (id: string): TenancyLetter => (out[id] ??= { texts: {}, adjustment: null })
   for (const r of texts) entry(r.tenancyId).texts[r.block] = r.text
-  for (const r of adjustments) entry(r.tenancyId).adjustment = { mode: r.mode, cents: r.mode === 'custom' ? r.cents : null }
+  for (const r of adjustments) entry(r.tenancyId).adjustment = { mode: r.mode, cents: r.mode === 'custom' ? r.cents : null, from: r.fromMonth ?? null }
   return out
 }
 
@@ -65,7 +65,7 @@ export async function saveTenancyLetter(db: Executor, tenancyId: string, doc: st
     await db.delete(tenancyLetterAdjustments).where(where)
     return
   }
-  const row = { mode: adjustment.mode, cents: adjustment.mode === 'custom' ? adjustment.cents : null }
+  const row = { mode: adjustment.mode, cents: adjustment.mode === 'custom' ? adjustment.cents : null, fromMonth: adjustment.from ?? null }
   await db.insert(tenancyLetterAdjustments).values({ tenancyId, doc, ...row }).onConflictDoUpdate({ target: [tenancyLetterAdjustments.tenancyId, tenancyLetterAdjustments.doc], set: row })
 }
 

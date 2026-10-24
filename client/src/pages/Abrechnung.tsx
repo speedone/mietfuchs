@@ -42,7 +42,7 @@ import { closeWithQuestions } from '../fuelClose'
 import { closeErrorsQuestion, closeMessage, completenessQuestion, DRAFT_MARK, exportQuestion, printQuestion, sameErrors, showsDraftMark, type ErrorsQuestion } from '../despiteErrors'
 import { co2Block } from '../co2View'
 import { calendarPeriod } from '../../../shared/period.ts'
-import { mergeLetterTexts, printsLetter, renderLetterText, statementBlocks } from '../../../shared/letter.ts'
+import { defaultAdjustFrom, mergeLetterTexts, printsLetter, renderLetterText, statementBlocks } from '../../../shared/letter.ts'
 import Card from '../components/Card'
 import ControlView from '../components/ControlView'
 import Letter, { PrintPages, StatementHead } from '../components/Letter'
@@ -54,6 +54,7 @@ import { LegacyHead, legacyHeadLine, legacyReceiptsText, LegacyResult } from '..
 import { exceedsOnePage } from '../../../shared/letter.ts'
 import { suggestionWithoutHeating } from '../heatingSettlementView'
 import LetterDrawer, { type LetterSave } from '../components/LetterDrawer'
+import PrepaymentStepsCard from '../components/PrepaymentStepsCard'
 import { asTemplates, letterOf, letterParagraphs, RETURN_LINE_MAX, resultRows, returnLineTooLong } from '../letterView'
 
 type Props = {
@@ -614,6 +615,10 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
         </div>
       )}
 
+      {/* #317: was das abgeschlossene Anschreiben an neuer Vorauszahlung ankündigt, in die Staffel übernehmen */}
+      {data?.closed && data.letters && (
+        <PrepaymentStepsCard key={`${paths.load}|${data.closed.closedAt}|${data.closed.sentAt ?? ''}`} path={paths.load} propertyId={propertyId ?? null} onSaved={reload} />
+      )}
       {data && deadlineInfo && data.totalCostsCents > 0 && (
         <div className={`${deadlineInfo.level} no-print`}>{deadlineInfo.text}</div>
       )}
@@ -1150,7 +1155,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
             base={mergeLetterTexts(templates.installation, templates.property)}
             own={own?.texts ?? {}}
             values={{ ...letter.values, Datum: fmtDate(data.closed?.sentAt ?? localToday()) }}
-            adjust={{ mode: own?.adjustment?.mode ?? letter.adjustment.mode, cents: own?.adjustment?.cents ?? null, suggestedCents: st.suggestedMonthlyCents, own: !!own?.adjustment, defaultMode: templates.adjustDefault }}
+            adjust={{ mode: own?.adjustment?.mode ?? letter.adjustment.mode, cents: own?.adjustment?.cents ?? null, suggestedCents: st.suggestedMonthlyCents, own: !!own?.adjustment, defaultMode: templates.adjustDefault, from: own?.adjustment?.from ?? null, defaultFrom: defaultAdjustFrom(localToday()) }}
             shown={letterParagraphs(letter, st.balanceCents, { date: localToday(), attachments: 0 }).map((p) => p.block)}
             onClose={() => setLetterEdit(null)}
             onSave={saveLetter}

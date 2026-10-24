@@ -11,6 +11,7 @@ import { euro } from './costItem.ts'
 import { formatIban } from './iban.ts'
 import { effectiveLandlord, footerLine, recipientLines, returnLine } from './landlord.ts'
 import { rateAtMonth } from './monthRate.ts'
+import { addMonths, monthName } from './monthlyInfo.ts'
 
 export type LetterBlockInfo = { id: LetterBlock; label: string; when: string; multiline: boolean }
 
@@ -56,6 +57,8 @@ export const LETTER_FIELDS: readonly LetterFieldInfo[] = [
   { id: 'Vorauszahlungsart', label: 'Art der Vorauszahlung', example: 'monatliche Nebenkostenvorauszahlung', only: ['adjustSuggestion', 'adjustCustom'] },
   { id: 'VorauszahlungBisher', label: 'monatliche Vorauszahlung bisher', example: '100,00 €' },
   { id: 'VorauszahlungNeu', label: 'monatliche Vorauszahlung neu', example: '105,00 €', only: ['adjustSuggestion', 'adjustCustom'] },
+  // #317: der Monat, ab dem die neue Vorauszahlung gilt („Januar 2027“).
+  { id: 'AnpassungAb', label: 'Monat, ab dem die neue Vorauszahlung gilt', example: 'Januar 2027', only: ['adjustSuggestion', 'adjustCustom'] },
   { id: 'Grundlage', label: 'Wie der Vorschlag entsteht', example: 'ein Zwölftel Ihrer Jahreskosten, gerundet', only: ['adjustSuggestion'] },
   { id: 'AnzahlBelege', label: 'Zahl der beigefügten Belege', example: '3 Belege', only: ['attachments'] },
   { id: 'Datum', label: 'Datum des Briefs', example: '15.03.2026' },
@@ -70,7 +73,8 @@ export const SAMPLE_LETTER_VALUES = Object.fromEntries(LETTER_FIELDS.map((f) => 
 
 // Die Vorgaben von Mietfuchs, gesiezt. Wo es den Satz schon vor #415 unter der Aufstellung gab, ist
 // er wortgleich übernommen (Zahlung, Frist und Konto, Erstattung, § 560 Abs. 4 BGB, Belegeinsicht);
-// eine vorher abgeschlossene Abrechnung druckt sich so wie bisher (letter.test.ts).
+// eine vorher abgeschlossene Abrechnung druckt sich so wie bisher (letter.test.ts). Seit #317 nennt die Anpassung
+// statt „ab dem übernächsten Monat“ den Monat; eingefrorene Anschreiben behalten ihren Text.
 export const DEFAULT_LETTER_TEXTS: Record<LetterBlock, string> = {
   subject: '{Abrechnung}, Wohnung {Wohnung}',
   // Seit Teil 2 über {Anrede}: ohne Anrede beim Mietverhältnis ergibt das wie vorher „Guten Tag {Name},“.
@@ -79,8 +83,8 @@ export const DEFAULT_LETTER_TEXTS: Record<LetterBlock, string> = {
   credit: 'Es ergibt sich ein Guthaben von {Betrag}. Der Betrag wird Ihnen erstattet bzw. mit der nächsten Mietzahlung verrechnet.',
   backPayment: 'Es ergibt sich eine Nachzahlung von {Betrag}. Bitte überweisen Sie den Betrag innerhalb von {Zahlungsfrist} Tagen nach Zugang dieser Abrechnung {Konto}.',
   balanced: 'Ihre Vorauszahlungen decken Ihre Kosten genau; es ergibt sich weder eine Nachzahlung noch ein Guthaben.',
-  adjustSuggestion: 'Auf Basis dieser Abrechnung wird die {Vorauszahlungsart} gemäß § 560 Abs. 4 BGB ab dem übernächsten Monat auf {VorauszahlungNeu} angepasst ({Grundlage}).',
-  adjustCustom: 'Auf Basis dieser Abrechnung wird die {Vorauszahlungsart} gemäß § 560 Abs. 4 BGB ab dem übernächsten Monat auf {VorauszahlungNeu} angepasst.',
+  adjustSuggestion: 'Auf Basis dieser Abrechnung wird die {Vorauszahlungsart} gemäß § 560 Abs. 4 BGB ab {AnpassungAb} auf {VorauszahlungNeu} angepasst ({Grundlage}).',
+  adjustCustom: 'Auf Basis dieser Abrechnung wird die {Vorauszahlungsart} gemäß § 560 Abs. 4 BGB ab {AnpassungAb} auf {VorauszahlungNeu} angepasst.',
   receipts: 'Die zugrunde liegenden Belege können nach Terminvereinbarung eingesehen werden.',
   attachments: 'Kopien der zugrunde liegenden Belege sind als Anlage beigefügt ({AnzahlBelege}).',
   closing: 'Für Rückfragen stehe ich Ihnen gern zur Verfügung.',
@@ -204,7 +208,7 @@ export function salutationOf(tenantName: string, own: string | null | undefined)
   return /[,.!?:;]$/.test(text) ? text : `${text},`
 }
 
-export function letterValues(f: LetterFacts, newCents: number | null): Omit<Record<LetterField, string>, 'Datum' | 'AnzahlBelege'> {
+export function letterValues(f: LetterFacts, newCents: number | null, from: string | null = null): Omit<Record<LetterField, string>, 'Datum' | 'AnzahlBelege'> {
   const iban = f.iban.trim() === '' ? '' : formatIban(f.iban)
   const landlord = f.landlordName.trim()
   return {
@@ -226,8 +230,15 @@ export function letterValues(f: LetterFacts, newCents: number | null): Omit<Reco
     VorauszahlungBisher: f.prepaymentBeforeCents === null ? '' : euro(f.prepaymentBeforeCents),
     VorauszahlungNeu: newCents === null ? '' : euro(newCents),
     Grundlage: f.basis,
+    AnpassungAb: from === null ? '' : monthName(from),
   }
 }
+
+// #317: Ab wann die neue Vorauszahlung gilt, wenn der Mieter nichts anderes festlegt: der übernächste Monat nach dem Tag
+// des Briefs. § 560 Abs. 4 BGB nennt keine Frist; das ist eine vorsichtige Vorgabe von Mietfuchs (wie die Frist des
+// Abs. 2), früher geht nach AG Mannheim, Urteil vom 06.02.2008, 8 C 552/06, Rn. 29 („zum nächsten Fälligkeitstermin“).
+export const defaultAdjustFrom = (asOf: string): string => addMonths(asOf.slice(0, 7), 2)
+export const isMonthKey = (x: unknown): x is string => typeof x === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(x)
 
 // Der neue Betrag zur gewählten Anpassung: beim Vorschlag der von Mietfuchs (nur über 0 €, wie bisher),
 // beim eigenen Betrag dieser. `null` heißt, angekündigt wird nichts.
@@ -242,13 +253,16 @@ export function buildLetter(i: {
   facts: LetterFacts
   adjustment: LetterAdjustment
   suggestedCents: number
+  // #317: der Monat, ab dem die Anpassung gilt (eigene Angabe des Mieters, sonst die Vorgabe)
+  from: string
 }): StatementLetter {
   const newCents = adjustedCents(i.adjustment, i.suggestedCents)
-  const values = letterValues(i.facts, newCents)
+  const from = newCents === null ? null : i.from
+  const values = letterValues(i.facts, newCents, from)
   const texts = Object.fromEntries(LETTER_BLOCK_IDS.map((b) => [b, resolveTemplate(i.texts[b], values)])) as Record<LetterBlock, string>
   return {
     texts,
-    adjustment: { mode: i.adjustment.mode, newCents },
+    adjustment: { mode: i.adjustment.mode, newCents, from },
     values: { ...values, Datum: '', AnzahlBelege: '' },
   }
 }
@@ -331,10 +345,14 @@ export function parseLetterAdjustment(input: unknown): LetterAdjustment | null |
   if (typeof input !== 'object') return { error: 'Die Anpassung der Vorauszahlung ist keine gültige Angabe.' }
   const mode: unknown = Reflect.get(input, 'mode')
   const cents: unknown = Reflect.get(input, 'cents')
+  const rawFrom: unknown = Reflect.get(input, 'from')
   if (mode !== 'none' && mode !== 'suggestion' && mode !== 'custom') return { error: 'Die Anpassung der Vorauszahlung ist „keine“, „Vorschlag“ oder „eigener Betrag“.' }
-  if (mode !== 'custom') return { mode, cents: null }
+  // #317: der Monat als JJJJ-MM; ohne Angabe die Vorgabe.
+  if (rawFrom !== undefined && rawFrom !== null && !isMonthKey(rawFrom)) return { error: 'Der Monat, ab dem die neue Vorauszahlung gilt, ist ungültig (erwartet etwa „Januar 2027“).' }
+  const from = isMonthKey(rawFrom) ? rawFrom : null
+  if (mode !== 'custom') return { mode, cents: null, from }
   if (typeof cents !== 'number' || !Number.isInteger(cents) || cents < 0) return { error: 'Bitte nennen Sie die neue monatliche Vorauszahlung als Betrag in Euro, nicht negativ.' }
-  return { mode, cents }
+  return { mode, cents, from }
 }
 
 export type LetterSource = {
@@ -344,6 +362,8 @@ export type LetterSource = {
   installation: LetterTexts
   propertyTexts: LetterTexts
   own: Record<string, TenancyLetter>
+  // #317: der Tag des Briefs für die Vorgabe des Monats (der Server nimmt heute; der Abschluss friert ihn ein)
+  asOf: string
 }
 
 // Die Vorgabe der Einstellungen. Der frühere Schalter „Neue Vorauszahlung vorschlagen“ war ohne
@@ -378,6 +398,7 @@ export function lettersOf(s: Pick<Settlement, 'statements' | 'period' | 'heating
       texts: mergeLetterTexts(src.installation, src.propertyTexts, own?.texts),
       adjustment: own?.adjustment ?? adjustmentDefault(src.settings),
       suggestedCents: st.suggestedMonthlyCents,
+      from: own?.adjustment?.from ?? defaultAdjustFrom(src.asOf),
       facts: {
         tenantName: st.tenantName,
         unitName: st.unitName,
