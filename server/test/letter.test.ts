@@ -256,3 +256,13 @@ test('#317: der Monat der Anpassung wird geprüft', () => {
     assert.ok(r !== null && 'error' in r, String(from))
   }
 })
+
+// Durchsicht zu PR #435, M1 (2): Die Vorgabe liegt nie im abgerechneten Zeitraum, auch wenn der Brief früh entsteht.
+test('M1: die Vorgabe des Monats liegt nach dem abgerechneten Zeitraum', () => {
+  const tenancy = { id: 't1', end: null, prepayments: [{ from: '2024-01', monthlyCents: 4000 }], correspondenceAddress: '' }
+  const st = { ...oneStatement, statements: oneStatement.statements.map((x) => ({ ...x, suggestedMonthlyCents: 5000 })) }
+  const base = { settings: { landlordName: 'Max', iban: '', paymentDeadlineDays: 30 }, property: house, tenancies: [tenancy], installation: {}, propertyTexts: {}, own: {} }
+  // Zeitraum 2025, Brief im März 2025: übernächster Monat wäre Mai 2025, es gilt Januar 2026.
+  assert.equal(lettersOf(st, { ...base, asOf: '2025-03-01' }).t1?.adjustment.from, '2026-01')
+  assert.equal(lettersOf(st, { ...base, asOf: '2025-12-15' }).t1?.adjustment.from, '2026-02')
+})

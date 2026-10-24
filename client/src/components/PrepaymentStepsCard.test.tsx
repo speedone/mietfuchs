@@ -12,7 +12,7 @@ const SLOW = { timeout: 5000 }
 const plain = (s: string | null | undefined) => (s ?? '').replace(/ /g, ' ')
 const item = (over: Partial<PrepaymentStepItem> = {}): PrepaymentStepItem => ({
   tenancyId: 't1', tenantName: 'Erika', unitName: 'EG', schedule: 'prepayments', cents: 5000, from: '2026-05', announcedFrom: '2026-05',
-  currentCents: 4000, state: 'pending', existing: [], notes: [], overdue: false, ...over,
+  currentCents: 4000, state: 'pending', existing: [], earlier: [], notes: [], overdue: false, ...over,
 })
 let plan: PrepaymentStepPlan
 let posts: { url: string, body: Record<string, unknown> }[]
@@ -79,7 +79,35 @@ test('#317: angekündigt, aber nicht übernommen; Rückfrage bei vorhandener Stu
   fireEvent.click(within(dialog).getByRole('button', { name: 'Speichern' }))
   const question = await screen.findByRole('alertdialog', {}, SLOW)
   expect(plain(question.textContent)).toMatch(/Erika: Ab Mai 2026 steht in der Staffel schon 45,00 € ab Mai 2026\..*203 C 73\/23/)
+  // K2: das Verb nennt die Handlung
+  expect(within(question).getByRole('button', { name: 'In die Staffel übernehmen' })).toBeTruthy()
   fireEvent.click(within(question).getByRole('button', { name: 'Abbrechen' }))
   await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull(), SLOW)
   expect(posts.some((p) => p.url === '/api/settlement/2025/prepayment-steps')).toBe(false)
+})
+
+// Durchsicht zu PR #435, M2: Ein ungültiger oder geleerter Monat wird nicht still durch den des Schreibens ersetzt.
+test('M2: ein ungültiger Monat steht am Feld, gesendet wird nichts', async () => {
+  show()
+  fireEvent.click(within(await cardOf()).getByRole('button', { name: /In die Staffel übernehmen\s*\(Erika\)/ }))
+  const dialog = await screen.findByRole('dialog', { name: 'In die Staffel übernehmen' }, SLOW)
+  for (const value of ['Juniii', '']) {
+    const month = within(dialog).getByRole('textbox', { name: /Ab Monat/ })
+    fireEvent.change(month, { target: { value } })
+    fireEvent.blur(month)
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Speichern' }))
+    await waitFor(() => expect(month.getAttribute('aria-invalid')).toBe('true'), SLOW)
+  }
+  expect(posts.some((p) => p.url === '/api/settlement/2025/prepayment-steps')).toBe(false)
+})
+
+// M1 (3): Ein Monat im abgerechneten Zeitraum ist gesperrt, lässt sich aber unter „Ab Monat“ ändern.
+test('M1: Monat im abgerechneten Zeitraum, „Ab Monat“ steht trotzdem da', async () => {
+  plan = { ...plan, items: [item({ state: 'blocked', fixMonth: true, from: '2025-06', blocked: 'Juni 2025 liegt im abgerechneten Zeitraum. Wählen Sie unter „Ab Monat“ einen Monat danach.' })] }
+  show()
+  const card = await cardOf()
+  fireEvent.click(within(card).getByRole('button', { name: /In die Staffel übernehmen\s*\(Erika\)/ }))
+  const dialog = await screen.findByRole('dialog', { name: 'In die Staffel übernehmen' }, SLOW)
+  expect(plain(dialog.textContent)).toContain('liegt im abgerechneten Zeitraum')
+  expect(within(dialog).getByRole('textbox', { name: /Ab Monat/ })).toBeTruthy()
 })

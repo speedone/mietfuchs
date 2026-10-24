@@ -154,6 +154,22 @@ test('eine abgeschlossene Abrechnung druckt ihr eingefrorenes Anschreiben und l�
   expect((screen.getByRole('button', { name: /Anschreiben bearbeiten/ }) as HTMLButtonElement).disabled).toBe(true)
 })
 
+// Durchsicht zu PR #435, S1: Das Versanddatum liegt nach dem Monat, den das eingefrorene Schreiben nennt.
+test('S1: ein spätes Versanddatum fragt nach dem Monat der Anpassung, Abbrechen speichert nichts', async () => {
+  const frozen = settlement.letters?.t1
+  if (!frozen) throw new Error('kein Anschreiben')
+  settlement = { ...settlement, closed: { closedAt: `${YEAR + 1}-02-01T10:00:00Z`, sentAt: null }, letters: { t1: { ...frozen, adjustment: { ...frozen.adjustment, from: `${YEAR + 1}-04` } } } }
+  show()
+  const field = await screen.findByLabelText(/versendet am/, {}, SLOW)
+  fireEvent.change(field, { target: { value: `${YEAR + 1}-04-02` } })
+  fireEvent.click(await screen.findByRole('button', { name: /Speichern.*Versanddatum/ }, SLOW))
+  const question = await screen.findByRole('alertdialog', {}, SLOW)
+  expect(plain(question.textContent)).toMatch(/Meier: Das Schreiben nennt April .*schon begonnen.*Wieder öffnen/)
+  fireEvent.click(within(question).getByRole('button', { name: 'Abbrechen' }))
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull(), SLOW)
+  expect(puts).toEqual([])
+})
+
 // ---------- Durchsicht zu #421 ----------
 
 test('S1: eine vor #415 abgeschlossene Abrechnung druckt wie bisher, ohne Anschreiben und ohne Ergebniskasten', async () => {

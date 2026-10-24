@@ -238,6 +238,12 @@ export function letterValues(f: LetterFacts, newCents: number | null, from: stri
 // des Briefs. § 560 Abs. 4 BGB nennt keine Frist; das ist eine vorsichtige Vorgabe von Mietfuchs (wie die Frist des
 // Abs. 2), früher geht nach AG Mannheim, Urteil vom 06.02.2008, 8 C 552/06, Rn. 29 („zum nächsten Fälligkeitstermin“).
 export const defaultAdjustFrom = (asOf: string): string => addMonths(asOf.slice(0, 7), 2)
+// Durchsicht zu PR #435, M1: nie im abgerechneten Zeitraum. Entsteht der Brief vor dessen Ende, gilt der erste Monat danach.
+export function adjustFromFor(asOf: string, periodTo: string): string {
+  const own = defaultAdjustFrom(asOf)
+  const after = addMonths(periodTo.slice(0, 7), 1)
+  return own > after ? own : after
+}
 export const isMonthKey = (x: unknown): x is string => typeof x === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(x)
 
 // Der neue Betrag zur gewählten Anpassung: beim Vorschlag der von Mietfuchs (nur über 0 €, wie bisher),
@@ -398,7 +404,7 @@ export function lettersOf(s: Pick<Settlement, 'statements' | 'period' | 'heating
       texts: mergeLetterTexts(src.installation, src.propertyTexts, own?.texts),
       adjustment: own?.adjustment ?? adjustmentDefault(src.settings),
       suggestedCents: st.suggestedMonthlyCents,
-      from: own?.adjustment?.from ?? defaultAdjustFrom(src.asOf),
+      from: own?.adjustment?.from ?? adjustFromFor(src.asOf, s.period.to),
       facts: {
         tenantName: st.tenantName,
         unitName: st.unitName,

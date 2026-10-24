@@ -91,3 +91,12 @@ export function adjustFromHint(from: string, today: string): string | null {
 
 // #317: Ein eigener Text ohne {AnpassungAb} nennt den Monat nicht, übernommen wird aber ab diesem Monat.
 export const adjustTextLacksMonth = (text: string): boolean => text.trim() !== '' && !text.includes('{AnpassungAb}')
+
+// Welche Bausteine zur Anpassung den Monat nicht nennen (K3 der Durchsicht zu PR #435): beim Mieter der seiner gewählten
+// Anpassung, auf Installation und Objekt jeder eigene Text der beiden Bausteine.
+export function monthlessAdjustTexts(draft: LetterDraft, base: Record<LetterBlock, string>, level: LetterLevel): LetterBlock[] {
+  const blocks: LetterBlock[] = level === 'tenancy'
+    ? (draft.adjust === 'none' ? [] : [draft.adjust === 'custom' ? 'adjustCustom' : 'adjustSuggestion'])
+    : (['adjustSuggestion', 'adjustCustom'] as const).filter((b) => draft.own[b] !== null)
+  return blocks.filter((b) => adjustTextLacksMonth(shownText(draft, base, b)))
+}

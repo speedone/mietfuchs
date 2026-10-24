@@ -1063,7 +1063,11 @@ export type PrepaymentStepItem = {
   currentCents: number
   state: 'taken' | 'pending' | 'blocked'
   blocked?: string
+  // Durchsicht zu PR #435: gesperrt, weil der Monat im abgerechneten Zeitraum liegt; mit „Ab Monat“ zu beheben.
+  fixMonth?: boolean
   existing: PrepaymentEntry[]
+  // Stufen zwischen dem Ende des abgerechneten Zeitraums und dem Monat (S2): womöglich schon eine Anpassung aus ihr.
+  earlier: PrepaymentEntry[]
   notes: string[]
   overdue: boolean
 }

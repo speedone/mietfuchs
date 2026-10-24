@@ -9,7 +9,7 @@ import { createHash } from 'node:crypto'
 import type { PrepaymentEntry, PrepaymentStepItem, PrepaymentStepPlan, PrepaymentStepSchedule, Tenancy } from '../../shared/types.ts'
 import { rateAtMonth } from '../../shared/monthRate.ts'
 import { addMonths, monthName } from '../../shared/monthlyInfo.ts'
-import { defaultAdjustFrom, isMonthKey } from '../../shared/letter.ts'
+import { adjustFromFor, isMonthKey } from '../../shared/letter.ts'
 import { compareText } from './calc.ts'
 
 export type StepLetter = { tenancyId: string, tenantName: string, unitName: string, cents: number, from: string | null }
@@ -63,17 +63,27 @@ export function planPrepaymentSteps(i: StepInput): Omit<PrepaymentStepPlan, 'tok
   const schedule: PrepaymentStepSchedule = i.scope === 'heating' ? 'heatingPrepayments' : 'prepayments'
   const items = i.letters.map((l): PrepaymentStepItem => {
     // Vor #317 nannte das Schreiben keinen Monat; vorgeschlagen ist dann der übernächste nach Versand bzw. Abschluss.
-    const proposed = l.from ?? defaultAdjustFrom(i.sentAt ?? i.closedAt)
+    const proposed = l.from ?? adjustFromFor(i.sentAt ?? i.closedAt, i.periodTo)
     const from = i.months[l.tenancyId] ?? proposed
     const t = i.tenancies.find((x) => x.id === l.tenancyId)
     const list: readonly PrepaymentEntry[] = (t ? (schedule === 'heatingPrepayments' ? t.heatingPrepayments : t.prepayments) : undefined) ?? []
     const currentCents = rateAtMonth(list, from)
     const base = {
       tenancyId: l.tenancyId, tenantName: l.tenantName, unitName: l.unitName, schedule, cents: l.cents, from, announcedFrom: l.from,
-      currentCents, existing: list.filter((e) => e.from >= from).map((e) => ({ ...e })), notes: monthNotes(from, l.from, i.sentAt),
+      currentCents, existing: list.filter((e) => e.from >= from).map((e) => ({ ...e })),
+      earlier: list.filter((e) => e.from > i.periodTo.slice(0, 7) && e.from < from).map((e) => ({ ...e })),
+      notes: [
+        ...monthNotes(from, l.from, i.sentAt),
+        // K1: Die Heizung wird getrennt abgerechnet, ab dem Monat steht aber keine Heizstaffel; der Betrag gilt dann nur den übrigen.
+        ...(schedule === 'prepayments' && i.separate && t && rateAtMonth(t.heatingPrepayments ?? [], from) === 0
+          ? [`Die Heizkosten werden getrennt abgerechnet, ab ${monthName(from)} steht aber keine Heizvorauszahlung in der Staffel; der angekündigte Betrag gilt nur den übrigen Nebenkosten. Prüfen Sie die Heizvorauszahlung in den Stammdaten.`]
+          : []),
+      ],
     }
     const blocked = (text: string): PrepaymentStepItem => ({ ...base, state: 'blocked', blocked: text, overdue: false })
     if (!t) return blocked('Dieses Mietverhältnis gibt es nicht mehr.')
+    // M1: Eine Stufe im abgerechneten Zeitraum änderte rückwirkend, was die abgeschlossene Abrechnung angerechnet hat.
+    if (from <= i.periodTo.slice(0, 7)) return { ...blocked(`${monthName(from)} liegt im abgerechneten Zeitraum. Wählen Sie unter „Ab Monat“ einen Monat danach.`), fixMonth: true }
     if (t.end !== null && t.end < `${from}-01`) return blocked(`Das Mietverhältnis endet am ${de(t.end)}, vor ${monthName(from)}.`)
     // Der Vorschlag einer Gesamtabrechnung gilt der ganzen Vorauszahlung. Führt das Mietverhältnis die Heizung in einer
     // eigenen Staffel, ließe sich der neue Betrag nur geraten auf beide verteilen.

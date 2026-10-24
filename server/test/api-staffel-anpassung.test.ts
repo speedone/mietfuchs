@@ -34,6 +34,11 @@ test('#317: das Anschreiben nennt den Monat, je Mieter änderbar', async () => {
     assert.match(plain(live.letters?.[t.id]?.texts.adjustSuggestion), /ab Juli 2026 auf 50,00 €/)
     const bad = await send(s, `/api/settlement/2025/letters/${t.id}`, 'PUT', { adjustment: { mode: 'suggestion', from: '2026-13' } })
     assert.equal(bad.status, 400)
+    // Durchsicht zu PR #435, M1 (1): ein Monat im abgerechneten Zeitraum ist eine 400, und gespeichert ist nichts.
+    const inside = await send(s, `/api/settlement/2025/letters/${t.id}`, 'PUT', { adjustment: { mode: 'suggestion', from: '2025-06' } })
+    assert.equal(inside.status, 400)
+    assert.match((await jsonOf<{ error: string }>(inside)).error, /Juni 2025 liegt im abgerechneten Zeitraum/)
+    assert.equal((await s.api<Settlement>('/api/settlement/2025')).letters?.[t.id]?.adjustment.from, '2026-07')
     // Vor dem Abschluss gibt es nichts zu übernehmen.
     assert.equal((await send(s, '/api/settlement/2025/prepayment-steps/plan', 'POST', {})).status, 409)
   } finally {

@@ -15,7 +15,7 @@ import { useFormError } from './ErrorSummary'
 import { NoticeBox } from './Notice'
 import { useSaving } from '../useSaving'
 import {
-  adjustFromHint, adjustTextLacksMonth, customCentsOf, draftNewCents, insertField, letterProblems, ownOf, previewOf, setText, shownText, textChanges,
+  adjustFromHint, customCentsOf, monthlessAdjustTexts, draftNewCents, insertField, letterProblems, ownOf, previewOf, setText, shownText, textChanges,
   type LetterDraft, type LetterFieldKey, type LetterLevel,
 } from '../letterForm'
 
@@ -68,8 +68,7 @@ export default function LetterDrawer({ open, level, title, intro, base, own, val
   // #317: der Monat der Anpassung, wie der Entwurf ihn nennt
   const shownFrom = draft.adjustFrom ?? adjust?.defaultFrom ?? ''
   const fromHint = level === 'tenancy' && draft.adjust !== 'none' ? adjustFromHint(shownFrom, localToday()) : null
-  const adjustBlock = draft.adjust === 'custom' ? 'adjustCustom' : 'adjustSuggestion'
-  const lacksMonth = level === 'tenancy' && draft.adjust !== 'none' && adjustTextLacksMonth(shownText(draft, base, adjustBlock))
+  const lacksMonth = monthlessAdjustTexts(draft, base, level).length > 0
   const previewValues = level === 'tenancy' ? { ...values, VorauszahlungNeu: draftNewCents(draft, suggested), AnpassungAb: /^\d{4}-\d{2}$/.test(shownFrom) ? monthLabel(shownFrom) : '' } : values
   const longLetter = exceedsOnePage(LETTER_BLOCKS
     .filter((b) => (shown ? shown.includes(b.id) : !['backPayment', 'balanced', 'adjustSuggestion', 'adjustCustom', 'attachments'].includes(b.id)))
@@ -175,13 +174,14 @@ export default function LetterDrawer({ open, level, title, intro, base, own, val
           />
         )}
         {fromHint && <NoticeBox level="hint" action={fromHint} />}
-        {lacksMonth && <NoticeBox level="hint" action={`Ihr Text zur Anpassung nennt den Monat nicht. Mit dem Platzhalter {AnpassungAb} steht ${/^\d{4}-\d{2}$/.test(shownFrom) ? monthLabel(shownFrom) : 'der Monat'} im Brief, und „In die Staffel übernehmen“ nimmt nach dem Abschluss denselben Monat.`} />}
         {level === 'tenancy' && draft.adjustOwn && adjust?.defaultMode && (
           <button type="button" className="btn small ghost" onClick={() => setDraft((d) => ({ ...d, adjust: adjust.defaultMode ?? d.adjust, adjustOwn: false, customCents: '', adjustFrom: null }))}>
             Anpassung auf Vorgabe zurücksetzen
           </button>
         )}
       </fieldset>}
+      {/* K3 der Durchsicht zu PR #435: auf jeder Ebene, auch ohne Auswahl der Anpassung (Objekt) */}
+      {lacksMonth && <NoticeBox level="hint" action={`Ihr Text zur Anpassung nennt den Monat nicht. Mit dem Platzhalter {AnpassungAb} steht ${level === 'tenancy' && /^\d{4}-\d{2}$/.test(shownFrom) ? monthLabel(shownFrom) : 'der Monat'} im Brief, und „In die Staffel übernehmen“ nimmt nach dem Abschluss denselben Monat.`} />}
       {LETTER_BLOCKS.map((b) => {
         const text = shownText(draft, base, b.id)
         const appears = shown ? shown.includes(b.id) : true

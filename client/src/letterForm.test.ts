@@ -1,7 +1,7 @@
 // Bearbeiten des Anschreibens und Ergebniskasten (#415), ohne DOM.
 import { expect, test } from 'vitest'
 import { DEFAULT_LETTER_TEXTS, mergeLetterTexts, SAMPLE_LETTER_VALUES } from '../../shared/letter.ts'
-import { insertField, letterProblems, ownOf, setText, shownText, textChanges, type LetterDraft } from './letterForm'
+import { insertField, letterProblems, monthlessAdjustTexts, ownOf, setText, shownText, textChanges, type LetterDraft } from './letterForm'
 import { letterParagraphs, resultRows } from './letterView'
 import type { Statement, StatementLetter } from './types'
 
@@ -68,4 +68,18 @@ test('das gedruckte Anschreiben: gewählte Bausteine mit Datum und Zahl der Bele
   expect(p.map((x) => x.block)).toEqual(['subject', 'salutation', 'intro', 'backPayment', 'attachments', 'closing', 'greeting', 'signature'])
   expect(p.find((x) => x.block === 'intro')?.text).toBe('Stand 15.03.2026.')
   expect(p.find((x) => x.block === 'attachments')?.text).toBe('Beigefügt: 2 Belege.')
+})
+
+// Durchsicht zu PR #435, K3: Auch eine Vorlage der Installation oder des Objekts ohne {AnpassungAb} nennt den Monat nicht.
+test('K3: eigener Text zur Anpassung ohne {AnpassungAb}, auf jeder Ebene', () => {
+  const draft = (own: Partial<Record<string, string | null>>, adjust: LetterDraft['adjust'] = 'suggestion'): LetterDraft =>
+    ({ own: { ...ownOf({}), ...own }, adjust, adjustOwn: true, customCents: '' })
+  const base = mergeLetterTexts()
+  expect(monthlessAdjustTexts(draft({}), base, 'installation')).toEqual([])
+  expect(monthlessAdjustTexts(draft({ adjustCustom: 'Ab dem übernächsten Monat {VorauszahlungNeu}.' }), base, 'installation')).toEqual(['adjustCustom'])
+  expect(monthlessAdjustTexts(draft({ adjustSuggestion: 'Neu: {VorauszahlungNeu}.' }), base, 'property')).toEqual(['adjustSuggestion'])
+  // Beim Mieter zählt nur der Baustein der gewählten Anpassung.
+  expect(monthlessAdjustTexts(draft({ adjustCustom: 'Neu: {VorauszahlungNeu}.' }), base, 'tenancy')).toEqual([])
+  expect(monthlessAdjustTexts(draft({ adjustCustom: 'Neu: {VorauszahlungNeu}.' }, 'custom'), base, 'tenancy')).toEqual(['adjustCustom'])
+  expect(monthlessAdjustTexts(draft({ adjustCustom: 'Neu.' }, 'none'), base, 'tenancy')).toEqual([])
 })

@@ -76,3 +76,26 @@ test('#317: die neue Staffel ersetzt eine Stufe desselben Monats, spätere bleib
   assert.deepEqual(stepWrites(plan, [t], []), [])
   assert.notEqual(stepToken(plan), stepToken(planPrepaymentSteps(input())))
 })
+
+// Durchsicht zu PR #435
+test('M1 (3): ein Monat des Schreibens im abgerechneten Zeitraum wird nie geschrieben', () => {
+  const june = [{ tenancyId: 't1', tenantName: 'Erika', unitName: 'EG', cents: 5000, from: '2025-06' }]
+  const it = one({ letters: june })
+  assert.equal(it.state, 'blocked')
+  assert.equal(it.fixMonth, true)
+  assert.match(it.blocked ?? '', /Juni 2025 liegt im abgerechneten Zeitraum.*„Ab Monat“/)
+  assert.deepEqual(stepWrites(planPrepaymentSteps(input({ letters: june })), [tenancy], ['t1']), [])
+  // Mit einem geänderten Monat geht es.
+  assert.equal(one({ letters: june, months: { t1: '2026-05' } }).state, 'pending')
+})
+
+test('S2: Stufen zwischen Zeitraumende und Monat stehen im Plan', () => {
+  const t = { ...tenancy, prepayments: [{ from: '2024-01', monthlyCents: 4000 }, { from: '2026-02', monthlyCents: 4400 }] }
+  assert.deepEqual(one({ tenancies: [t] }).earlier, [{ from: '2026-02', monthlyCents: 4400 }])
+  assert.deepEqual(one().earlier, [])
+})
+
+test('K1: getrennte Heizung ohne Heizstaffel ab dem Monat bekommt einen Satz', () => {
+  assert.match(one({ separate: true }).notes.join(' '), /keine Heizvorauszahlung/)
+  assert.doesNotMatch(one({ separate: true, tenancies: [{ ...tenancy, heatingPrepayments: [{ from: '2025-01', monthlyCents: 6000 }] }] }).notes.join(' '), /keine Heizvorauszahlung/)
+})

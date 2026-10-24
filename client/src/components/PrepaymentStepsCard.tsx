@@ -48,7 +48,7 @@ export default function PrepaymentStepsCard({ path, propertyId, onSaved }: Props
     setMonths(next)
     if (!/^\d{4}-\d{2}$/.test(value)) return
     const valid = Object.fromEntries(Object.entries(next).filter(([, v]) => /^\d{4}-\d{2}$/.test(v)))
-    fetchPlan(valid).then((p) => { if (p) setPlan(p); errors.clearField(id) }).catch((e: unknown) => errors.report([{ field: id, short: errorText(e), text: errorText(e) }]))
+    fetchPlan(valid).then((p) => { if (p) setPlan(p); errors.clearField(id) }).catch((e: unknown) => errors.report([{ field: id, short: errorText(e), text: errorText(e) }], { focus: false }))
   }
 
   function open(ids: string[]) {
@@ -60,12 +60,18 @@ export default function PrepaymentStepsCard({ path, propertyId, onSaved }: Props
   function save() {
     if (!plan || !chosen) return
     void run(async () => {
+      // M2 der Durchsicht: Ein gesetzter, aber ungültiger oder geleerter Monat wird nie durch den des Schreibens ersetzt.
+      const bad = plan.items.filter((it) => chosen.includes(it.tenancyId) && (it.state === 'pending' || it.fixMonth) && months[it.tenancyId] !== undefined && !/^\d{4}-(0[1-9]|1[0-2])$/.test(months[it.tenancyId] ?? ''))
+      if (bad.length > 0) {
+        errors.report(bad.map((it) => ({ field: it.tenancyId, short: 'Kein Monat', text: `Ab Monat (${it.tenantName}): Geben Sie einen Monat ein, etwa „Januar 2027“.` })))
+        return
+      }
       const lines = stepQuestion(plan, chosen)
       if (lines) {
         const ok = await confirm({
           title: 'Trotzdem in die Staffel übernehmen?',
           message: <ul className="m-0">{lines.map((l, i) => <li key={i}>{l}</li>)}</ul>,
-          confirmLabel: 'Übernehmen',
+          confirmLabel: 'In die Staffel übernehmen',
           defaultChoice: 'cancel',
         })
         if (!ok) return
@@ -105,7 +111,7 @@ export default function PrepaymentStepsCard({ path, propertyId, onSaved }: Props
         {plan.items.map((it) => (
           <li key={it.tenancyId}>
             <strong>{it.tenantName}</strong> ({it.unitName}): {stepStatus(it)}{' '}
-            {it.state === 'pending' && <button className="btn small secondary" onClick={() => open([it.tenancyId])}>In die Staffel übernehmen<span className="sr-only">{` (${it.tenantName})`}</span></button>}
+            {(it.state === 'pending' || it.fixMonth) && <button className="btn small secondary" onClick={() => open([it.tenancyId])}>In die Staffel übernehmen<span className="sr-only">{` (${it.tenantName})`}</span></button>}
           </li>
         ))}
       </ul>
@@ -131,7 +137,7 @@ export default function PrepaymentStepsCard({ path, propertyId, onSaved }: Props
               <p className="m-0">{`${scheduleLabel(it)}: ${fmtEuro(it.cents)} statt ${fmtEuro(it.currentCents)}`}</p>
               {it.state === 'blocked' && <NoticeBox level="warning" action={it.blocked} />}
               {it.state === 'taken' && <p className="muted m-0">Steht schon in der Staffel.</p>}
-              {it.state === 'pending' && (
+              {(it.state === 'pending' || it.fixMonth) && (
                 <MonthField
                   label="Ab Monat"
                   value={months[it.tenancyId] ?? it.from}

@@ -1250,7 +1250,7 @@ app.put('/api/properties/:id/letter-design', designFields, inRequest, async (req
 // gespeichert, solange sie offen ist: Druckt der Vermieter, ändert dann den Text und schließt ab,
 // fröre sonst ein anderer Text ein als der, der beim Mieter liegt. Mit dem Abschluss friert der
 // gedruckte Text ein; danach ist hier nichts mehr zu ändern (409).
-async function letterTarget(db: Database, req: Request): Promise<{ doc: string, closed: boolean, tenancyIds: string[] }> {
+async function letterTarget(db: Database, req: Request): Promise<{ doc: string, closed: boolean, tenancyIds: string[], periodTo: string }> {
   const plantId: unknown = req.params.plant
   const unitProperty = new Map((await readUnits(db)).map((u) => [u.id, u.propertyId]))
   const tenancies = await readTenancies(db)
@@ -1258,12 +1258,12 @@ async function letterTarget(db: Database, req: Request): Promise<{ doc: string, 
   if (typeof plantId === 'string') {
     const target = await heatingTargetOf(db, req)
     const closed = !!(await findClosedHeatingSettlement(db, target.plant.id, target.period.key))
-    return { doc: letterDoc(target.period.key, { plantId: target.plant.id }), closed, tenancyIds: tenanciesOf(target.plant.propertyId) }
+    return { doc: letterDoc(target.period.key, { plantId: target.plant.id }), closed, tenancyIds: tenanciesOf(target.plant.propertyId), periodTo: target.period.to }
   }
   const propertyId = await propertyOf(db, req)
   const period = await periodOf(db, req, propertyId)
   const closed = !!(await findClosedSettlement(db, propertyId, period.key))
-  return { doc: letterDoc(period.key, { propertyId }), closed, tenancyIds: tenanciesOf(propertyId) }
+  return { doc: letterDoc(period.key, { propertyId }), closed, tenancyIds: tenanciesOf(propertyId), periodTo: period.to }
 }
 
 const tenancyLettersRoute = async (req: Request, res: Response) => {
@@ -1281,6 +1281,10 @@ const saveTenancyLetterRoute = async (req: Request, res: Response) => {
     const tenancyId = String(req.params.tenancyId ?? '')
     if (!t.tenancyIds.includes(tenancyId)) throw new RouteProblem(404, 'Dieses Mietverhältnis gehört nicht zu diesem Objekt oder gibt es nicht (mehr). Bitte laden Sie die Seite neu.')
     if (t.closed) throw new RouteProblem(409, 'Die Abrechnung ist abgeschlossen; ihr Anschreiben ist eingefroren. Öffnen Sie sie wieder, um es zu ändern.')
+    // Durchsicht zu PR #435, M1: Der Monat der Anpassung liegt nach dem abgerechneten Zeitraum (#317).
+    const from = adjustment !== null && 'mode' in adjustment ? adjustment.from ?? null : null
+    const problem = from === null ? null : stepMonthProblem(from, t.periodTo)
+    if (problem) throw new RouteProblem(400, problem)
     await saveTenancyLetter(db, tenancyId, t.doc, texts, Object.hasOwn(body, 'adjustment') ? adjustment : undefined)
   })
   res.json({ ok: true })
