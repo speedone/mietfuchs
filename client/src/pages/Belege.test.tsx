@@ -618,3 +618,117 @@ test('Rumpfzeitraum: Register, Satz und Belegabdeckung zeigen den gewählten Zei
   expect(registers()).not.toContain('Grundsteuer neu')
   expect(registers()).toContain('Grundsteuer B')
 })
+
+// ---------- Leistungsprüfung, Befund 1 und 4: Vorschaubilder erst im Bild, Gliederung ----------
+
+// Ein nachgestellter IntersectionObserver: Der Test sagt, welches Element in die Nähe des sichtbaren Bereichs kommt.
+class FakeObserver {
+  static all: FakeObserver[] = []
+  readonly observed = new Set<Element>()
+  readonly callback: IntersectionObserverCallback
+  readonly options: IntersectionObserverInit | undefined
+  constructor(callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
+    this.callback = callback
+    this.options = options
+    FakeObserver.all.push(this)
+  }
+  observe(el: Element) { this.observed.add(el) }
+  unobserve(el: Element) { this.observed.delete(el) }
+  disconnect() { this.observed.clear() }
+  takeRecords() { return [] }
+}
+const intersect = (el: Element, isIntersecting: boolean) => {
+  for (const o of FakeObserver.all.filter((x) => x.observed.has(el))) {
+    o.callback([{ target: el, isIntersecting } as IntersectionObserverEntry], o as unknown as IntersectionObserver)
+  }
+}
+const thumbOf = (name: string) => screen.getByRole('link', { name: `${name} öffnen` })
+
+test('Vorschaubilder: gerendert wird erst, was in die Nähe des sichtbaren Bereichs kommt; vorbeigescrollt wird zurückgezogen', async () => {
+  FakeObserver.all = []
+  vi.stubGlobal('IntersectionObserver', FakeObserver)
+  const asked: { file: string; signal: AbortSignal | undefined; resolve: (src: string) => void }[] = []
+  const renderThumb = (file: string, _mime: string, signal?: AbortSignal) =>
+    new Promise<string>((resolve) => { asked.push({ file, signal, resolve }) })
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <Belege renderThumb={renderThumb} />
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  await screen.findByText('Wasser/Abwasser')
+  // Alle Bilder sind angemeldet, mit Vorlauf, aber keins ist angefragt
+  expect(FakeObserver.all.some((o) => o.observed.has(thumbOf('wasser.pdf')))).toBe(true)
+  expect(FakeObserver.all[0]?.options?.rootMargin).toMatch(/px/)
+  expect(asked).toEqual([])
+
+  intersect(thumbOf('wasser.pdf'), true)
+  expect(asked.map((a) => a.file)).toEqual(['2_wasser.pdf'])
+  // Vorbeigescrollt, bevor das Bild dran war: Die Anfrage wird zurückgezogen
+  intersect(thumbOf('gs.pdf'), true)
+  intersect(thumbOf('gs.pdf'), false)
+  expect(asked.find((a) => a.file === '1_gs.pdf')?.signal?.aborted).toBe(true)
+  expect(asked.find((a) => a.file === '2_wasser.pdf')?.signal?.aborted).toBe(false)
+
+  asked[0]?.resolve('data:image/gif;base64,R0lGODlhAQABAAAAACw=')
+  await waitFor(() => expect(thumbOf('wasser.pdf').querySelector('img')).not.toBeNull())
+  expect(thumbOf('gs.pdf').querySelector('img')).toBeNull()
+})
+
+test('Vorschaubilder: ohne IntersectionObserver (älterer Browser) wird gleich angefragt', async () => {
+  vi.stubGlobal('IntersectionObserver', undefined)
+  const asked: string[] = []
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <Belege renderThumb={(file) => { asked.push(file); return Promise.resolve('data:image/gif;base64,R0lGODlhAQABAAAAACw=') }} />
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  await screen.findByText('Wasser/Abwasser')
+  await waitFor(() => expect([...asked].sort()).toEqual(['1_gs.pdf', '2_wasser.pdf', '4_lose.pdf']))
+})
+
+test('„alle Jahre“: je Jahr ein Abschnitt mit Anzahl, aufgeklappt nur das gewählte Jahr', async () => {
+  extraItems = [
+    { id: 'alt', propertyId: 'p1', period: calendarPeriod(YEAR - 3), category: 'Gartenpflege', description: 'Gartenpflege alt', amountCents: 10000, key: 'area', invoiceFile: '7_garten.pdf' },
+    { id: 'alt2', propertyId: 'p1', period: calendarPeriod(YEAR - 3), category: 'Grundsteuer', description: 'Grundsteuer alt', amountCents: 10000, key: 'area' },
+  ]
+  extraUploads = [up('7_garten.pdf')]
+  const { container } = renderPage()
+  await screen.findByText('Wasser/Abwasser')
+  expect(container.querySelector('details[data-year-section]')).toBeNull()
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Belege aller Jahre zeigen' }))
+  await screen.findByText('Gartenpflege')
+  const sections = [...container.querySelectorAll<HTMLDetailsElement>('details[data-year-section]')]
+  expect(sections.map((d) => d.querySelector('summary')?.textContent)).toEqual([
+    `${YEAR}2 Belege⚠ 1 Position ohne Beleg`,
+    `${YEAR - 3}1 Beleg⚠ 1 Position ohne Beleg`,
+  ])
+  expect(sections.map((d) => d.open)).toEqual([true, false])
+  // Die Register stehen im Abschnitt ihres Jahres
+  expect(within(sections[1] as HTMLElement).getByText('Gartenpflege')).toBeTruthy()
+  expect(within(sections[0] as HTMLElement).queryByText('Gartenpflege')).toBeNull()
+  // Eine Suche klappt die Jahre mit Treffern auf
+  fireEvent.change(screen.getByRole('searchbox', { name: 'Suche' }), { target: { value: 'Garten' } })
+  await waitFor(() => expect([...container.querySelectorAll<HTMLDetailsElement>('details[data-year-section]')].map((d) => d.open)).toEqual([true]))
+})
+
+test('Posteingang: die neuesten 20, darunter „Ältere anzeigen (N)“', async () => {
+  // 30 weitere lose Belege, je später hochgeladen, je weiter oben; dazu der eine aus dem Bestand (4_lose.pdf, der älteste)
+  extraUploads = Array.from({ length: 30 }, (_, i) => ({ ...up(`${100 + i}_lose${i}.pdf`), uploadedAt: `2026-02-${String(i + 1).padStart(2, '0')}T10:00:00.000Z` }))
+  const { container } = renderPage()
+  await screen.findByText('📥 Posteingang (31)')
+  const inbox = () => container.querySelector('.receipt-inbox') as HTMLElement
+  const cards = () => [...inbox().querySelectorAll('.receipt-card')]
+  expect(cards()).toHaveLength(20)
+  expect(within(cards()[0] as HTMLElement).getAllByText('lose29.pdf').length).toBeGreaterThan(0)
+  fireEvent.click(within(inbox()).getByRole('button', { name: 'Ältere anzeigen (11)' }))
+  expect(cards()).toHaveLength(31)
+  expect(within(inbox()).queryByRole('button', { name: /Ältere anzeigen/ })).toBeNull()
+  // Eine Suche beginnt wieder bei den neuesten 20
+  fireEvent.change(screen.getByRole('searchbox', { name: 'Suche' }), { target: { value: 'lose' } })
+  await waitFor(() => expect(cards()).toHaveLength(20))
+  expect(within(inbox()).getByRole('button', { name: 'Ältere anzeigen (11)' })).toBeTruthy()
+})

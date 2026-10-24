@@ -162,6 +162,43 @@ export function buildFolder(uploads: ReceiptUpload[], items: CostItem[], filter:
   return { groups: sorted, unlinked }
 }
 
+// ---------- Gliederung (Leistungsprüfung, Befund 4) ----------
+
+// Mit „Belege aller Jahre zeigen“ stehen die Register je Jahr in einem eigenen Abschnitt, aufgeklappt nur
+// das gewählte Jahr. Über zehn Jahre standen sonst alle Register offen untereinander. Erwartet die Register
+// aus `buildFolder` (nach Jahr absteigend sortiert); `receipts` zählt jeden Beleg einmal, auch wenn er an
+// Positionen mehrerer Kostenarten hängt, `withoutReceipt` die Positionen ohne vorhandene Datei, wie das
+// Abzeichen am Register.
+export type YearSection = { year: number; groups: CategoryGroup[]; receipts: number; withoutReceipt: number }
+
+export function yearSections(groups: readonly CategoryGroup[], present: ReadonlySet<string>): YearSection[] {
+  const sections: YearSection[] = []
+  const files = new Map<number, Set<string>>()
+  for (const g of groups) {
+    let s = sections.at(-1)
+    if (!s || s.year !== g.year) {
+      s = { year: g.year, groups: [], receipts: 0, withoutReceipt: 0 }
+      sections.push(s)
+      files.set(g.year, new Set())
+    }
+    s.groups.push(g)
+    const seen = files.get(g.year)
+    for (const c of g.cards) seen?.add(c.upload.file)
+    s.receipts = seen?.size ?? 0
+    s.withoutReceipt += g.items.filter((c) => !c.invoiceFile || !present.has(c.invoiceFile)).length
+  }
+  return sections
+}
+
+// Der Posteingang zeigt die neuesten Belege zuerst und davon `INBOX_STEP`; „Ältere anzeigen“ holt jeweils
+// so viele dazu. 420 Karten untereinander waren nicht mehr zu lesen.
+export const INBOX_STEP = 20
+
+export function inboxPage<T>(cards: readonly T[], count: number): { shown: T[]; hidden: number } {
+  const shown = cards.slice(0, Math.max(0, count))
+  return { shown, hidden: cards.length - shown.length }
+}
+
 // Hinweise auf doppelte Belege. **Gleicher Inhalt** erkennt die Prüfsumme sicher, auch unter
 // anderem Namen und bevor der Beleg an einer Position hängt. Gleicher Rechnungssteller, gleiche
 // Summe und gleiches Jahr ist dagegen nur ein Verdacht: zwei Abschläge desselben Versorgers

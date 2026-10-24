@@ -233,6 +233,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   etwa „Rückstand im Mietkonto“ oder „Anschrift nach dem Auszug fehlt“: Titel und gemeinsamer Text stehen einmal,
   darunter je Mieter Name, die eigenen Sätze mit allen Beträgen und „Hier beheben →“. Zusammengefasst wird nur,
   was sich allein in Name, Wohnung und Zahlen unterscheidet; kein Wort und kein Betrag fällt weg.
+- Belegordner und Posteingang gegliedert: Mit „Belege aller Jahre zeigen“ steht jedes Jahr in einem eigenen,
+  eingeklappten Abschnitt mit der Zahl seiner Belege und der Positionen ohne Beleg; aufgeklappt ist das in der
+  Seitenleiste gewählte Jahr, bei einer Suche jedes Jahr mit Treffern. Der Posteingang zeigt die neuesten 20 Belege,
+  darunter holt „Ältere anzeigen“ jeweils 20 weitere.
+- Der Rechenweg der Abrechnung legt seine Zahlenformate einmal an, statt sie für jede Zahl neu zu bauen. Die Abrechnung
+  und die Steuer rechnen dadurch schneller; jede Zahl und jeder Text bleibt gleich.
 - Die Seitenleiste verspricht nicht mehr pauschal, dass alle Daten auf diesem Rechner bleiben (bei Docker oder einem Server im Heimnetz liegen sie auf dem Server). Die Karte „Daten & Sicherung“ nennt stattdessen den Datenordner und sagt genau, was nach außen geht: Belege nur mit Ihrer Zustimmung an einen externen KI-Dienst, bei eingeschalteter Update-Prüfung die Frage nach der neuesten Version bei GitHub.
 - Das gedruckte PDF der Nebenkostenabrechnung folgt DIN 5008 ([#415](https://github.com/speedone/mietfuchs/issues/415)):
   Anschreiben und Aufstellung haben dieselben Ränder (links 25 mm, rechts 20 mm). Rechts neben dem Anschriftfeld
@@ -274,6 +280,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- Der Belegordner brachte mit vielen Belegen den Tab zum Absturz und den Rechner an seine Grenze, sobald
+  „Belege aller Jahre zeigen“ oder „Belege aller Objekte zeigen“ angehakt war (in allen bisherigen Versionen mit
+  Belegordner). Jedes Vorschaubild startete sofort ein eigenes pdf.js mit eigenem Hintergrundprozess, auch weit
+  unterhalb des sichtbaren Bereichs. Jetzt teilen sich alle Vorschauen einen Hintergrundprozess, es werden höchstens
+  zwei zugleich gerendert, und ein Vorschaubild entsteht erst, wenn es in die Nähe des sichtbaren Bereichs kommt.
+  Dasselbe gilt für die Belegkopien im Druck der Abrechnung und die Belegmappe (dort ohne Rücksicht auf die
+  Sichtbarkeit, denn sie brauchen alle Seiten).
 - Der Hinweis „Sicherung vor dem Update angelegt“ wurde mitgedruckt und erzeugte im PDF der Abrechnung eine leere
   Seite; Hinweise der Datenbank werden nicht mehr gedruckt ([#415](https://github.com/speedone/mietfuchs/issues/415)).
 - Ein Kesseltausch machte aus einer Heizanlage, die alle Wohnungen versorgt, eine feste Liste der Wohnungen vom

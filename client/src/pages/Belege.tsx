@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { BillingPeriod, CostItem, PeriodRules, UploadEntry, UploadInfo, Property, Settlement } from '../types'
 import { useOpenForm, withProperty, useProperty } from '../property'
 import { flushSync } from 'react-dom'
@@ -13,7 +13,8 @@ import { closedCheckPath, filedUnderSettlement, type PlantPeriods } from '../cos
 import { isCalendarRules, periodContaining, periodLabel, periodsBetween, rulesOf, startYearOf } from '../../../shared/period.ts'
 import { renderInvoicePages, renderThumbnail } from '../pdfPreview'
 import { buildTenantFolderPdf, isIndividualAmounts, planTenantFolder, type TenantFolderPlan } from '../tenantFolder'
-import { amountCheckBody, amountCheckMode, attachChoices, buildFolder, coverage, filesByItem, duplicateHints, inboxFor, inboxOf, matchesQuery, receiptCards, receiptName, type FolderFilter, type ReceiptCard, type ReceiptUpload } from '../receipts'
+import { amountCheckBody, amountCheckMode, attachChoices, buildFolder, coverage, filesByItem, duplicateHints, inboxFor, inboxOf, inboxPage, INBOX_STEP, matchesQuery, receiptCards, receiptName, yearSections, type CategoryGroup, type FolderFilter, type ReceiptCard, type ReceiptUpload } from '../receipts'
+import { previewWhenVisible } from '../previewQueue'
 import Field from '../components/Field'
 import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
@@ -27,18 +28,38 @@ const fmtSize = (b: number) =>
 
 const fmtDay = (iso: string) => fmtDate(iso.slice(0, 10))
 
+// Wie weit vor dem sichtbaren Bereich ein Vorschaubild schon angefragt wird: etwa eine halbe Bildschirmhöhe,
+// damit beim Scrollen kein leerer Kasten aufblitzt.
+export const THUMB_LOOKAHEAD = '400px 0px'
+
 // Vorschaubild eines Belegs. PDFs rendert pdf.js klein, Bilder zeigt der Browser selbst. Scheitert
 // das Rendern (passwortgeschützt, beschädigt), bleibt ein Platzhalter: Der Beleg ist trotzdem da.
+// Gerendert wird erst, wenn das Bild in die Nähe des sichtbaren Bereichs kommt, und über die gemeinsame
+// Warteschlange (höchstens zwei zugleich, previewQueue.ts); wer vorbeiscrollt, bevor es dran ist, zieht
+// die Anfrage zurück. Ohne IntersectionObserver (alter Browser) wird gleich angefragt, ebenfalls über die
+// Warteschlange.
 function Thumb({ upload, render }: { upload: UploadInfo; render: typeof renderThumbnail }) {
+  const ref = useRef<HTMLAnchorElement>(null)
   const [src, setSrc] = useState<string | null>(null)
   const [failed, setFailed] = useState(false)
   useEffect(() => {
-    let live = true
-    render(upload.file, upload.mimeType).then((s) => { if (live) setSrc(s) }, () => { if (live) setFailed(true) })
-    return () => { live = false }
+    const preview = previewWhenVisible(
+      (signal) => render(upload.file, upload.mimeType, signal),
+      (result) => { if (result.ok) setSrc(result.value); else setFailed(true) },
+    )
+    const el = ref.current
+    if (!el || typeof IntersectionObserver === 'undefined') {
+      preview.visible(true)
+      return () => preview.dispose()
+    }
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) preview.visible(entry.isIntersecting)
+    }, { rootMargin: THUMB_LOOKAHEAD })
+    observer.observe(el)
+    return () => { observer.disconnect(); preview.dispose() }
   }, [upload.file, upload.mimeType, render])
   return (
-    <a className="receipt-thumb" href={`/uploads/${encodeURIComponent(upload.file)}`} target="_blank" rel="noreferrer" aria-label={`${receiptName(upload)} öffnen`}>
+    <a ref={ref} className="receipt-thumb" href={`/uploads/${encodeURIComponent(upload.file)}`} target="_blank" rel="noreferrer" aria-label={`${receiptName(upload)} öffnen`}>
       {src ? <img src={src} alt="" loading="lazy" /> : <span aria-hidden="true">{failed ? '📄' : '…'}</span>}
     </a>
   )
@@ -360,6 +381,10 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
   const meterPhotos = useMemo(() => allCards.filter((c) => c.upload.kind === 'meterPhoto' && c.items.length === 0), [allCards])
   // Die Suche gilt auch im Posteingang
   const inbox = useMemo(() => inboxOf(allCards.filter((c) => matchesQuery(c, query)), filter), [allCards, filter, query])
+  // Die neuesten 20, darunter „Ältere anzeigen (N)“; eine andere Auswahl oder Suche beginnt wieder bei 20.
+  const inboxScope = `${filter.propertyId}|${filter.year}|${query}`
+  const [inboxCount, setInboxCount] = useState({ scope: inboxScope, count: INBOX_STEP })
+  const inboxShown = inboxPage(inbox.here, inboxCount.scope === inboxScope ? inboxCount.count : INBOX_STEP)
   const [dragOver, setDragOver] = useState(false)
   const [uploading, setUploading] = useState(0)
   const present = useMemo(() => new Set(uploads.map((u) => u.file)), [uploads])
@@ -589,6 +614,54 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
     )
   }
 
+  // Ein Register: eine Kostenart eines Jahres, mit den Belegen und den Positionen ohne Beleg
+  const renderGroup = (g: CategoryGroup) => {
+    const ohne = g.items.filter((c) => !c.invoiceFile || !present.has(c.invoiceFile)).length
+    return (
+      <details key={g.key} className="card receipt-group" open>
+        <summary>
+          <span className="receipt-group-title">{g.category}</span>
+          <span className="num">{fmtEuro(g.sumCents)}</span>
+          {ohne === 0
+            ? <span className="badge green">✓ {g.items.length === 1 ? 'Beleg vorhanden' : 'alle Belege vorhanden'}</span>
+            : <span className="badge amber">⚠ {ohne} von {g.items.length} Position{g.items.length > 1 ? 'en' : ''} ohne Beleg</span>}
+        </summary>
+        {g.cards.length > 0 && <ul className="receipt-list">{g.cards.map(renderCard)}</ul>}
+        {g.missing.length > 0 && (
+          <ul className="receipt-missing">
+            {g.missing.map((c) => (
+              <li key={c.id}>
+                <span>– {c.description}{showProperty ? ` (${propertyName(c.propertyId)})` : ''} · {fmtEuro(c.amountCents)} <span className="muted">ohne Beleg</span></span>
+                {/* Der Knopf darf nicht springen, wenn hinter der Auswahl „Speichern“ und „Verwerfen“ erscheinen (N7 aus
+                    #341). Die Gruppe ist auch nach einem Umbruch rechtsbündig; am breiten Bildschirm steht der Knopf zuletzt,
+                    sodass sie nach links wächst, am Handy zuerst, sodass die Knöpfe darunter umbrechen (Durchsicht von N7) */}
+                <span className="receipt-attach ml-auto justify-end">
+                  {inboxFor(allCards, c).length > 0 && (
+                    <AttachPicker label={`Vorhandenen Beleg für ${c.description} zuordnen`} what={`Beleg für ${c.description}`}
+                      placeholder="Aus dem Posteingang …" scope={c.id} values={inboxFor(allCards, c).map((u) => u.upload.file)}
+                      onSave={(file) => attachExisting(c, file)}>
+                      {inboxFor(allCards, c).map((u) => <option key={u.upload.file} value={u.upload.file}>{receiptName(u.upload)}</option>)}
+                    </AttachPicker>
+                  )}
+                  <label className="btn secondary max-sm:order-first">
+                    Beleg nachreichen
+                    <input
+                      type="file"
+                      className="sr-only"
+                      accept="application/pdf,image/*"
+                      aria-label={`Beleg für ${c.description} hochladen`}
+                      onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void uploadFor(c, f) }}
+                    />
+                  </label>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </details>
+    )
+  }
+
   return (
     <>
       <PageHeader
@@ -694,7 +767,15 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
           danach ordnen Sie jeden einer Position zu oder lassen ihn per KI auswerten.
           {inbox.elsewhere > 0 && ` ${inbox.elsewhere} weitere ${inbox.elsewhere === 1 ? 'ist' : 'sind'} einem anderen Objekt oder Jahr zugedacht; Sie sehen ${inbox.elsewhere === 1 ? 'ihn' : 'sie'} mit ${properties.length > 1 ? '„Belege aller Objekte zeigen“ oder ' : ''}„Belege aller Jahre zeigen“.`}
         </p>
-        {inbox.here.length > 0 && <ul className="receipt-list">{inbox.here.map(renderCard)}</ul>}
+        {inboxShown.shown.length > 0 && <ul className="receipt-list">{inboxShown.shown.map(renderCard)}</ul>}
+        {inboxShown.hidden > 0 && (
+          <div className="row">
+            <button type="button" className="btn secondary"
+              onClick={() => setInboxCount({ scope: inboxScope, count: inboxShown.shown.length + INBOX_STEP })}>
+              Ältere anzeigen ({inboxShown.hidden})
+            </button>
+          </div>
+        )}
       </Card>
 
       {coverageRows.length > 0 && (
@@ -728,53 +809,22 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
 
       {folder.groups.length === 0 ? (
         <div className="card"><div className="empty">{query.trim() ? 'Nichts gefunden.' : 'Für diese Auswahl sind keine Kosten erfasst.'}</div></div>
+      ) : filter.year === 'all' ? (
+        // „Belege aller Jahre zeigen“: ein Abschnitt je Jahr mit Anzahl, aufgeklappt nur das gewählte Jahr; bei einer
+        // Suche alle Jahre mit Treffern (Leistungsprüfung, Befund 4).
+        yearSections(folder.groups, present).map((section) => (
+          // Aufklapper und Kopfzeile wie ein Register (`receipt-group`), aber ohne Karte: Die Register stehen darin.
+          <details key={section.year} data-year-section={section.year} className="receipt-group" open={section.year === currentYear || query.trim() !== ''}>
+            <summary className="mb-3 border-b border-line py-2">
+              <span className="text-l font-strong">{section.year}</span>
+              <span className="muted">{section.receipts === 1 ? '1 Beleg' : `${section.receipts} Belege`}</span>
+              {section.withoutReceipt > 0 && <span className="badge amber">⚠ {section.withoutReceipt} Position{section.withoutReceipt > 1 ? 'en' : ''} ohne Beleg</span>}
+            </summary>
+            {section.groups.map(renderGroup)}
+          </details>
+        ))
       ) : (
-        folder.groups.map((g) => {
-          const ohne = g.items.filter((c) => !c.invoiceFile || !present.has(c.invoiceFile)).length
-          return (
-            <details key={g.key} className="card receipt-group" open>
-              <summary>
-                <span className="receipt-group-title">{filter.year === 'all' ? `${g.year} · ` : ''}{g.category}</span>
-                <span className="num">{fmtEuro(g.sumCents)}</span>
-                {ohne === 0
-                  ? <span className="badge green">✓ {g.items.length === 1 ? 'Beleg vorhanden' : 'alle Belege vorhanden'}</span>
-                  : <span className="badge amber">⚠ {ohne} von {g.items.length} Position{g.items.length > 1 ? 'en' : ''} ohne Beleg</span>}
-              </summary>
-              {g.cards.length > 0 && <ul className="receipt-list">{g.cards.map(renderCard)}</ul>}
-              {g.missing.length > 0 && (
-                <ul className="receipt-missing">
-                  {g.missing.map((c) => (
-                    <li key={c.id}>
-                      <span>– {c.description}{showProperty ? ` (${propertyName(c.propertyId)})` : ''} · {fmtEuro(c.amountCents)} <span className="muted">ohne Beleg</span></span>
-                      {/* Der Knopf darf nicht springen, wenn hinter der Auswahl „Speichern“ und „Verwerfen“ erscheinen (N7 aus
-                          #341). Die Gruppe ist auch nach einem Umbruch rechtsbündig; am breiten Bildschirm steht der Knopf zuletzt,
-                          sodass sie nach links wächst, am Handy zuerst, sodass die Knöpfe darunter umbrechen (Durchsicht von N7) */}
-                      <span className="receipt-attach ml-auto justify-end">
-                        {inboxFor(allCards, c).length > 0 && (
-                          <AttachPicker label={`Vorhandenen Beleg für ${c.description} zuordnen`} what={`Beleg für ${c.description}`}
-                            placeholder="Aus dem Posteingang …" scope={c.id} values={inboxFor(allCards, c).map((u) => u.upload.file)}
-                            onSave={(file) => attachExisting(c, file)}>
-                            {inboxFor(allCards, c).map((u) => <option key={u.upload.file} value={u.upload.file}>{receiptName(u.upload)}</option>)}
-                          </AttachPicker>
-                        )}
-                        <label className="btn secondary max-sm:order-first">
-                          Beleg nachreichen
-                          <input
-                            type="file"
-                            className="sr-only"
-                            accept="application/pdf,image/*"
-                            aria-label={`Beleg für ${c.description} hochladen`}
-                            onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void uploadFor(c, f) }}
-                          />
-                        </label>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </details>
-          )
-        })
+        folder.groups.map(renderGroup)
       )}
 
       {meterPhotos.length > 0 && (

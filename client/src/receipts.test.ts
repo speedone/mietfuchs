@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { calendarPeriod, periodKey } from '../../shared/period.ts'
 import type { CostItem, UploadInfo } from './types'
-import { amountCheckBody, amountCheckMode, attachChoices, buildFolder, coverage, coverageCheck, duplicateHints, filesByItem, inboxFor, inboxOf, matchesQuery, receiptCards } from './receipts'
+import { amountCheckBody, amountCheckMode, attachChoices, buildFolder, coverage, coverageCheck, duplicateHints, filesByItem, inboxFor, inboxOf, inboxPage, INBOX_STEP, matchesQuery, receiptCards, yearSections } from './receipts'
 
 const upload = (file: string, extra: Partial<UploadInfo> = {}): UploadInfo => ({
   file, size: 10, mtime: '2026-01-02T10:00:00.000Z', originalName: file.replace(/^\d+_/, ''),
@@ -361,5 +361,45 @@ describe('Belegordner bei Rumpfzeiträumen', () => {
   it('die Belegabdeckung zählt dieselben Positionen', () => {
     const cov = coverage([rumpf, neu], { propertyId: 'p1', year: 2025, period: { propertyId: 'p1', key: periodKey('2025-05') } }, null)
     expect(cov.totalCents).toBe(neu.amountCents)
+  })
+})
+
+describe('Belegordner gegliedert (Leistungsprüfung, Befund 4)', () => {
+  const uploads = [upload('1_gs.pdf'), upload('2_wasser.pdf'), upload('3_alt.pdf'), upload('5_alt2.pdf')]
+  const items = [
+    item('gs', { invoiceFile: '1_gs.pdf', amountCents: 60000 }),
+    item('w1', { invoiceFile: '2_wasser.pdf', category: 'Wasser/Abwasser', amountCents: 98000 }),
+    item('w2', { category: 'Wasser/Abwasser', amountCents: 26000 }),
+    item('alt', { invoiceFile: '3_alt.pdf', period: calendarPeriod(2024) }),
+    // Ein Beleg an zwei Positionen desselben Jahres zählt einmal
+    item('alt2', { invoiceFile: '5_alt2.pdf', period: calendarPeriod(2024), category: 'Wasser/Abwasser' }),
+    item('alt3', { invoiceFile: '5_alt2.pdf', period: calendarPeriod(2024), category: 'Müllbeseitigung' }),
+    item('alt4', { period: calendarPeriod(2022) }),
+  ]
+
+  it('„alle Jahre“: ein Abschnitt je Jahr, das neueste zuerst, mit der Zahl der Belege und der Positionen ohne Beleg', () => {
+    const folder = buildFolder(uploads, items, { propertyId: 'p1', year: 'all' }, '')
+    const present = new Set(uploads.map((u) => u.file))
+    const sections = yearSections(folder.groups, present)
+    expect(sections.map((s) => s.year)).toEqual([2025, 2024, 2022])
+    expect(sections.map((s) => s.receipts)).toEqual([2, 2, 0])
+    expect(sections.map((s) => s.withoutReceipt)).toEqual([1, 0, 1])
+    expect(sections[0]?.groups.map((g) => g.category)).toEqual(['Grundsteuer', 'Wasser/Abwasser'])
+    expect(sections.flatMap((s) => s.groups)).toEqual(folder.groups)
+  })
+
+  it('ein verknüpfter Beleg, dessen Datei fehlt, zählt als Position ohne Beleg', () => {
+    const folder = buildFolder(uploads, items, { propertyId: 'p1', year: 2025 }, '')
+    const sections = yearSections(folder.groups, new Set(['2_wasser.pdf']))
+    expect(sections[0]?.withoutReceipt).toBe(2)
+  })
+
+  it('der Posteingang zeigt die neuesten 20, der Rest wartet hinter „Ältere anzeigen“', () => {
+    expect(INBOX_STEP).toBe(20)
+    const cards = Array.from({ length: 45 }, (_, i) => i)
+    expect(inboxPage(cards, INBOX_STEP)).toEqual({ shown: cards.slice(0, 20), hidden: 25 })
+    expect(inboxPage(cards, 40)).toEqual({ shown: cards.slice(0, 40), hidden: 5 })
+    expect(inboxPage(cards, 60)).toEqual({ shown: cards, hidden: 0 })
+    expect(inboxPage([], INBOX_STEP)).toEqual({ shown: [], hidden: 0 })
   })
 })

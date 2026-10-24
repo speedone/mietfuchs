@@ -131,9 +131,20 @@ export const KEY_LABELS: Record<CostKey, string> = {
 
 const MS_DAY = 86400000
 
-function toUTC(iso: string): number {
+// Ein Datumstext als Zeitpunkt in UTC. Die Zählerrechnung vergleicht dieselben Texte sehr oft (je Ablesung,
+// Segment und Position); das Zerlegen kostete rund ein Zehntel der Abrechnung (Leistungsprüfung, Befund 3).
+// Deshalb gemerkt: Der Wert hängt nur am Text. Begrenzt, damit ein lange laufender Server nicht wächst; beim
+// Überlauf wird der Speicher geleert, das Ergebnis bleibt dasselbe (calc-zahlenformat.test.ts).
+const UTC_CACHE = new Map<string, number>()
+const UTC_CACHE_MAX = 20000
+export function toUTC(iso: string): number {
+  const hit = UTC_CACHE.get(iso)
+  if (hit !== undefined) return hit
   const [y, m, d] = iso.split('-').map(Number)
-  return Date.UTC(y, m - 1, d)
+  const value = Date.UTC(y, m - 1, d)
+  if (UTC_CACHE.size >= UTC_CACHE_MAX) UTC_CACHE.clear()
+  UTC_CACHE.set(iso, value)
+  return value
 }
 
 export function daysInYear(year: number): number {
@@ -595,16 +606,26 @@ function unitProblemSubject(meters: readonly UnitMeterRef[]): NoticeSubject | un
 }
 const hasFamily = (t: MeterType): boolean => t !== 'sonstig' && t !== 'hkv'
 
+// Die Zahlenformate einmal angelegt (Leistungsprüfung, Befund 3): `toLocaleString` baut je Aufruf ein neues
+// Intl-Objekt, und der Rechenweg formatiert Tausende Zahlen. Gleiche Sprache, gleiche Optionen, also
+// zeichengleich (calc-zahlenformat.test.ts vergleicht mit dem früheren Aufruf).
+const NF_MAX2 = new Intl.NumberFormat('de-DE', { maximumFractionDigits: 2 })
+const NF_MAX3 = new Intl.NumberFormat('de-DE', { maximumFractionDigits: 3 })
+const NF_MAX6 = new Intl.NumberFormat('de-DE', { maximumFractionDigits: 6 })
+const NF_FIX1 = new Intl.NumberFormat('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+const NF_FIX2 = new Intl.NumberFormat('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const NF_2TO4 = new Intl.NumberFormat('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 4 })
+
 function fmtMeter(n: number): string {
-  return n.toLocaleString('de-DE', { maximumFractionDigits: 3 })
+  return NF_MAX3.format(n)
 }
 
 // Ein Datum in den Meldungen der Zähler deutsch, wie überall in der Oberfläche (#142): Der
 // Vermieter liest „am 01.07.2025“ und nicht „am 2025-07-01“. Aus der Zeichenkette gebaut und nicht
 // über `Date`, damit keine Zeitzone einen Tag verschiebt.
 // kg mit bis zu zwei, Promille mit einer Nachkommastelle (Heizung PR 8; Entwurf 3.5 „27,4 ‰“).
-const fmtKg = (kg: number): string => kg.toLocaleString('de-DE', { maximumFractionDigits: 2 })
-const fmtPermille = (pm: number): string => (Math.round(pm * 10) / 10).toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+const fmtKg = (kg: number): string => NF_MAX2.format(kg)
+const fmtPermille = (pm: number): string => NF_FIX1.format(Math.round(pm * 10) / 10)
 
 function fmtDay(iso: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso)
@@ -2492,7 +2513,7 @@ export function largestRemainder(totalCents: number, raws: number[], keys: strin
 }
 
 function fmtNum(n: number): string {
-  return n.toLocaleString('de-DE', { maximumFractionDigits: 2 })
+  return NF_MAX2.format(n)
 }
 
 // Zwischenwerte des Rechenwegs (#114). Der Prozentsatz mit bis zu sechs Stellen, damit Betrag ×
@@ -2500,18 +2521,21 @@ function fmtNum(n: number): string {
 // und höchstens vier, damit ein Rundungsschritt sichtbar bleibt und er neben den übrigen
 // Beträgen nicht ohne Cent dasteht.
 function fmtPercent(n: number): string {
-  return n.toLocaleString('de-DE', { maximumFractionDigits: 6 })
+  return NF_MAX6.format(n)
 }
 function fmtExactEuro(cents: number): string {
-  return `${(cents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 4 })} €`
+  return `${NF_2TO4.format(cents / 100)} €`
 }
 
 // Ein Betrag für den Rechenweg auf der Abrechnung (#94): mit zwei Stellen und einem gewöhnlichen
 // Leerzeichen vor dem Zeichen. `toLocaleString` mit `currency` setzte ein geschütztes, das in
 // den Zeilen nicht anders aussieht, beim Vergleichen und Kopieren aber stört.
 function fmtCents(cents: number): string {
-  return `${(cents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
+  return `${NF_FIX2.format(cents / 100)} €`
 }
+
+// Für calc-zahlenformat.test.ts: die Formate gegen den früheren Aufruf
+export const STEP_FORMATS = { fmtNum, fmtPercent, fmtExactEuro, fmtCents, fmtMeter, fmtKg, fmtPermille }
 
 // Die Abzugszeile nach § 7 Abs. 5 CO2KostAufG (Heizung PR 18).
 const GMODG_RELIEF_LABEL = 'Netzentgelte und Biobrennstoff: Anteil des Vermieters (§ 5a CO2KostAufG)'
