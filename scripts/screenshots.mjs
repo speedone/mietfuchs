@@ -118,7 +118,12 @@ async function shoot(browser, base) {
   await tall(1500)
   await page.waitForFunction(() => {
     // Im Browser ausgeführt; scripts/tsconfig.json kennt die Typen des DOM nicht
-    const thumbs = [.../** @type {any} */ (globalThis).document.querySelectorAll('.receipt-thumb')]
+    // Seit #449 rendern nur Vorschauen, die ins Bild kommen; gewartet wird auf die sichtbaren
+    const win = /** @type {any} */ (globalThis)
+    const thumbs = [...win.document.querySelectorAll('.receipt-thumb')].filter((/** @type {any} */ t) => {
+      const r = t.getBoundingClientRect()
+      return r.bottom > 0 && r.top < win.innerHeight
+    })
     return thumbs.length > 0 && thumbs.every((/** @type {any} */ t) => {
       const img = t.querySelector('img')
       return img ? img.complete && img.naturalWidth > 0 : t.textContent?.trim() !== '…'
