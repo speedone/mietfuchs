@@ -75,6 +75,9 @@ export const ROUTE_SENTENCES: Readonly<Record<string, RouteSentence>> = {
   'PUT /api/properties/:id/period': s('Abrechnungszeitraum geändert', 'properties'),
   'PUT /api/letter-texts': s('Texte des Anschreibens geändert'),
   'PUT /api/properties/:id/letter-texts': s('Texte des Anschreibens für das Objekt geändert'),
+  // #415, Teil 2b: Logo und Briefpapier; Dateien kommen mit derselben Anfrage (hochladen, ersetzen, entfernen).
+  'PUT /api/letter-design': s('Logo und Briefpapier geändert'),
+  'PUT /api/properties/:id/letter-design': s('Logo und Briefpapier für das Objekt geändert', 'properties'),
   'PUT /api/settlement/:period/letters/:tenancyId': s('Anschreiben an einen Mieter angepasst'),
   'PUT /api/heating-settlement/:plant/:period/letters/:tenancyId': s('Anschreiben an einen Mieter angepasst'),
   'POST /api/settlement/:period/close': s('Abrechnung abgeschlossen', 'closed_settlements'),

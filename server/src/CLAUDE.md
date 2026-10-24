@@ -223,6 +223,26 @@ das Leerzeichen davor mit (`{Konto}` ohne IBAN ergibt den bisherigen Satz ohne K
   Ausschalten der getrennten Heizkostenabrechnung und das Entfernen der Anlage entfernen die offenen Zeilen
   `heating:<Anlage>:…` (`dropOpenHeatingLetters`). Falsche Angaben zu Anschrift, Kontakt, Anrede und „mitdrucken“ sind
   ein `LetterInputError` (400).
+- **Teil 2b: Logo und Briefpapier** (Regeln in [shared/letterDesign.ts](../../shared/letterDesign.ts), Dateien in
+  [letterDesign.ts](letterDesign.ts), Zeilen in [db/letterDesign.ts](db/letterDesign.ts), Schritt 0070): Tabellen
+  `letter_design` (eine Zeile, Installation; ohne Zeile die Vorgaben) und `property_letter_designs` (eigene Gestaltung
+  je Objekt, CASCADE; ohne Zeile gilt die der Installation). Die Dateien liegen in `briefpapier/` im Datenordner,
+  **Namen vergibt der Server** (`logo|paper-<16 Hex>.<Endung>`, Art am Inhalt erkannt, nie am Namen), nur PNG, JPG und
+  (Briefpapier) PDF, Grenzen 2 MB (Logo) und 10 MB (Briefpapier). **Kein SVG** (Durchsicht S1): Eine Musterprüfung auf
+  Skripte war umgehbar; die Oberfläche wandelt ein gewähltes SVG vor dem Hochladen in ein PNG um (300 dpi). Der Rand oben
+  geht bis 70 mm (M1: Chromium wiederholt den Tabellenkopf ab rund einem Viertel der Seitenhöhe nicht mehr). **Ein Pfad entsteht nur aus einem Namen der eigenen
+  Liste** (`designFilePath` setzt den Eintrag aus `referencedDesignFiles` ein, nie den Namen der Anfrage). Ausgeliefert
+  mit `nosniff` und `Content-Security-Policy: … sandbox` (ein SVG, in einem eigenen Fenster geöffnet, führt nichts
+  aus). `PUT` als Formular (`design` als JSON mit `keep`/`remove`/`new` je Datei, die Dateien daneben): erst die neuen
+  Dateien schreiben, dann die Zeile in einer Transaktion, danach weg, was **keine** Gestaltung mehr nennt (Installation
+  und Objekt können dieselbe Datei nennen, die eigene beginnt mit der Vorgabe); scheitert die Transaktion, gehen die
+  neuen wieder weg. Das Löschen eines Objekts räumt seine Dateien ebenso. **Die Gestaltung ist Druck und friert nicht
+  ein**: Sie ändert nur das Aussehen, nie eine Angabe. Backup packt `briefpapier/`, das Wiederherstellen nimmt nur Namen
+  der eigenen Gestalt bis 10 MB, deren Inhalt zur Endung passt (`archivedDesignProblem`, sonst 400, nichts ersetzt).
+  `GET /api/letter-design` nennt eine Datei, die im Ordner fehlt, als `null` und in `missing` (`presentDesign`, M2); die
+  Seite druckt dann ohne sie. Die Seitenzahl einer PDF prüft nur die Oberfläche; der Server druckt ohnehin nur Seite 1. Eine Vorversion (#318) enthält nur die Datenbank; ein seither
+  ersetztes Logo fehlt dann, die Antwort nennt es. Routen: `GET /api/letter-design` (`?property=`),
+  `GET /api/letter-design/files/:name`, `PUT /api/letter-design`, `PUT /api/properties/:id/letter-design` (dazu `own`).
 - Routen: `GET`/`PUT /api/letter-texts` (Installation, `adjustDefault`, `printLetter`), `PUT /api/properties/:id/letter-texts` (dazu `printLetter`, `null` = Vorgabe),
   `GET …/letters` und `PUT …/letters/:tenancyId` unter `/api/settlement/:period` und
   `/api/heating-settlement/:plant/:period`.

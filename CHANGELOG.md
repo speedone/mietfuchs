@@ -121,6 +121,20 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   anderes Objekt oder ändert sich der Abrechnungszeitraum oder die Heizperiode, entfallen die offenen; die
   Vorschau des Wechsels sagt das vorher. Abgeschlossene bleiben eingefroren
   ([#415](https://github.com/speedone/mietfuchs/issues/415)).
+- Logo und eigenes Briefpapier für die Abrechnung ([#415](https://github.com/speedone/mietfuchs/issues/415)):
+  In den Einstellungen unter „Logo und Briefpapier“ wählen Sie ein Logo (PNG, JPG oder SVG, höchstens 2 MB),
+  das oben rechts im Briefkopf steht, und ein Briefpapier (Bild oder eine PDF mit einer Seite, höchstens
+  10 MB) als Hintergrund der ersten Seite; für die Folgeseiten dasselbe, ein zweites oder keines (unter
+  mitgedruckten Belegkopien liegt keines). Ein SVG wandelt Mietfuchs beim Auswählen in ein Bild um. Die
+  Ränder des Textbereichs lassen sich einstellen, damit Kopf und Fuß des Briefpapiers frei bleiben; das
+  Anschriftfeld für Fensterumschläge bleibt an seinem Platz, und die Vorschau zeigt seinen Rahmen. Mit
+  Briefpapier entfallen der Absender oben und die Fußzeile von Mietfuchs, und gedruckt wird ohne
+  Seitenrand, damit das Briefpapier bis an die Blattkante reicht (die Seitenzahl im Rand entfällt dann).
+  Ein Objekt kann eine eigene Gestaltung haben (Seite Abrechnung, Karte „Anschreiben“). Die Dateien liegen
+  im Datenordner unter `briefpapier` und kommen mit ins Backup; eine automatische Vorversion enthält nur die
+  Datenbank, ein seither ersetztes Logo oder Briefpapier fehlt nach ihrem Einspielen. Fehlt eine Datei, nennt die
+  Seite Abrechnung das und druckt ohne sie. Der Rand oben geht bis 70 mm. Eine vor diesem
+  Anschreiben abgeschlossene Abrechnung druckt weiter wie damals, ohne Logo und Briefpapier.
 - Verbilligte Vermietung nach § 21 Abs. 2 EStG ([#257](https://github.com/speedone/mietfuchs/issues/257)):
   Vermieten Sie eine Wohnung günstiger als üblich, etwa an Angehörige, tragen Sie auf der Seite Steuer in
   der neuen Karte „Verbilligte Vermietung“ die ortsübliche Warmmiete der Wohnung ein, mit Quelle und

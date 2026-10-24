@@ -15,6 +15,7 @@ import Card from '../components/Card'
 import Field from '../components/Field'
 import PriorVersionsCard from '../components/PriorVersionsCard'
 import LetterTemplateCard from '../components/LetterTemplateCard'
+import LetterDesignCard from '../components/LetterDesignCard'
 
 type Props = { settings: Settings; reload: () => Promise<void>; update: UpdateState }
 
@@ -140,6 +141,7 @@ export default function Einstellungen({ settings, reload, update }: Props) {
       </Card>
 
       <LetterTemplateCard reload={reload} />
+      <LetterDesignCard />
 
       <AiSettings settings={settings} reload={reload} />
 

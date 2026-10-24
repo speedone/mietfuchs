@@ -46,6 +46,10 @@ import { mergeLetterTexts, printsLetter, renderLetterText, statementBlocks } fro
 import Card from '../components/Card'
 import ControlView from '../components/ControlView'
 import Letter, { PrintPages, StatementHead } from '../components/Letter'
+import LetterDesignDrawer, { designSummary, sendLetterDesign } from '../components/LetterDesignDrawer'
+import { PAPER_PAGE_CSS, asLetterDesigns, designKey, paperVars, printDesign, printedDesign, type LoadedDesign } from '../letterDesignView'
+import { designImage } from '../letterPaper'
+import type { LetterDesigns } from '../../../shared/types.ts'
 import { LegacyHead, legacyHeadLine, legacyReceiptsText, LegacyResult } from '../components/LegacyStatement'
 import { exceedsOnePage } from '../../../shared/letter.ts'
 import { suggestionWithoutHeating } from '../heatingSettlementView'
@@ -143,6 +147,10 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
   const [templates, setTemplates] = useState<LetterTemplates | null>(null)
   const [tenancyLetters, setTenancyLetters] = useState<Record<string, TenancyLetter>>({})
   const [letterEdit, setLetterEdit] = useState<{ kind: 'property' } | { kind: 'tenancy', tenancyId: string } | null>(null)
+  // Teil 2b: Logo und Briefpapier (Vorgabe der Einstellungen, je Objekt eine eigene). Nur Druck, friert nicht ein.
+  const [designs, setDesigns] = useState<LetterDesigns | null>(null)
+  const [designEdit, setDesignEdit] = useState(false)
+  const [loadedDesign, setLoadedDesign] = useState<LoadedDesign | null>(null)
   // Teil 2: Anschreiben mitdrucken. Die Vorgabe steht am Objekt bzw. in den Einstellungen (geladen mit den Vorlagen);
   // hier lässt sie sich für diesen Druck umschalten, gespeichert wird dabei nichts. `null` heißt „die Vorgabe gilt“.
   const letterDefault = printsLetter(templates ? { printLetter: templates.propertyPrintLetter ?? null } : null, { printLetter: templates?.printLetter })
@@ -185,6 +193,8 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
       .then(() => Promise.all([
         api<unknown>(withProperty('/api/letter-texts', propertyId)).then((t) => setTemplates(asTemplates(t))).catch(() => setTemplates(null)),
         api<Record<string, TenancyLetter>>(withProperty(`${paths.load}/letters`, propertyId)).then(setTenancyLetters).catch(() => setTenancyLetters({})),
+        // Ein älterer Server ohne die Route: ohne Logo und Briefpapier.
+        api<unknown>(withProperty('/api/letter-design', propertyId)).then((d) => setDesigns(asLetterDesigns(d))).catch(() => setDesigns(null)),
       ]))
       .then(() => api<HeatingSettlementInfo[]>(withProperty('/api/heating-settlements', propertyId)).then(setHeatingList).catch(() => setHeatingList([])))
   }, [paths.load, paths.history, propertyId])
@@ -439,6 +449,21 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
   // Abrechnungszeitraums zugehen, sonst sind Nachforderungen ausgeschlossen. Nach dem
   // Wiederöffnen zählt der frühere Versand weiter (#142, siehe deadlineView). Bezeichnung und Frist
   // vom Server (#208).
+  // Teil 2b: Vor #415 abgeschlossen druckt die ganze Abrechnung wie damals, ohne Logo und Briefpapier.
+  const planned = printDesign(designs, { legacy: !!data?.closed && !data?.letters })
+  // Erst geladen, dann gedruckt: Eine PDF als Briefpapier rendert pdf.js vorab zu einem Bild, wie die Belegkopien; bis
+  // dahin wartet „Drucken“. Fehlt eine Datei, druckt die Seite ohne sie (Durchsicht M2, `printedDesign`).
+  const design = printedDesign(planned, loadedDesign)
+  const plannedKey = designKey(planned)
+  useEffect(() => {
+    let alive = true
+    const load = (f: typeof planned.logo, label: string, failed: string[]) => (f ? designImage(f).catch(() => { failed.push(label); return null }) : Promise.resolve(null))
+    const failed: string[] = []
+    void Promise.all([load(planned.logo, 'Logo', failed), load(planned.paper, 'Briefpapier', failed), load(planned.follow, planned.follow?.file === planned.paper?.file ? 'Briefpapier' : 'Briefpapier der Folgeseiten', failed)])
+      .then(([logo, paper, follow]) => { if (alive) setLoadedDesign({ key: plannedKey, logo, paper, follow, failed: [...new Set(failed)] }) })
+    return () => { alive = false }
+  }, [plannedKey])
+  const missingDesign = [...new Set([...(designs?.missing ?? []), ...design.failed])]
   const deadlineInfo = data ? deadlineView(data.period.label, data.deadline, data.closed?.sentAt ?? null, history, new Date()) : null
 
   return (
@@ -447,6 +472,16 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
         <PageHeader title="Abrechnung" subtitle={'Die fertige Nebenkostenabrechnung pro Mieter — als PDF speichern über „Drucken“.'} />
       </div>
       {error && <NoticeBox level="error" action={error} />}
+      {/* Teil 2b: Mit Briefpapier ohne Seitenrand, das Papier der Folgeseiten einmal für alle Druckseiten. */}
+      {design.paper && <style>{PAPER_PAGE_CSS}</style>}
+      {missingDesign.length > 0 && (
+        <NoticeBox
+          level="warning"
+          className="no-print"
+          title="Logo oder Briefpapier fehlt"
+          action={`${missingDesign.join(', ')}: Die Datei fehlt im Datenordner (etwa nach dem Einspielen einer Vorversion). Gedruckt wird ohne; wählen Sie die Datei unter „Logo und Briefpapier“ neu.`}
+        />
+      )}
 
       {/* Im leeren Zeitraum gibt es nichts zu drucken (N12) */}
       {!(empty && choices.length === 0) && (
@@ -488,6 +523,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                 onChange={(e) => printDraft.set({ ...printDraft.value, printFooter: e.target.checked })}
               />{' '}
               Fußzeile mit Kontakt und Bank
+              {printFooter && design.paper && <span className="muted"> (mit Briefpapier nicht)</span>}
             </span>
           </label>
           <DraftActions draft={printDraft} onSave={savePrint} what="Druckeinstellungen" />
@@ -518,6 +554,13 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
             „Einstellungen“; hier weichen Sie für dieses Objekt ab, bei einem Mieter mit „Anschreiben bearbeiten“.
             {isClosed ? ' Diese Abrechnung ist abgeschlossen; ihr Anschreiben ist eingefroren.' : ''}
           </p>
+          {/* Teil 2b: Logo und Briefpapier, die Vorgabe aus den Einstellungen oder eine eigene für dieses Objekt. */}
+          {designs && propertyId && (
+            <div className="row mt-3">
+              <span className="muted">Logo und Briefpapier: {designSummary(designs.property ?? designs.installation)}{designs.property ? ' (eigene für dieses Objekt)' : ' (wie in den Einstellungen)'}</span>
+              <button className="btn secondary" onClick={() => setDesignEdit(true)}>Logo und Briefpapier für dieses Objekt</button>
+            </div>
+          )}
         </Card>
       )}
 
@@ -718,7 +761,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
             const print = { date: letterDate, attachments: attachmentCount }
             // Ein Abschluss ohne eingefrorene Fußzeile (zwischen #421 und Teil 2) druckt keine, statt Kontakt und Bank von heute
             // (Durchsicht zu PR #427, K3).
-            const footerText = printFooter && letter ? (letter.sender ? (letter.sender.footer ?? '') : (landlord ? footerLine(landlord) : '')) || null : null
+            const footerText = printFooter && letter && !design.paper ? (letter.sender ? (letter.sender.footer ?? '') : (landlord ? footerLine(landlord) : '')) || null : null
             const head = letter ? {
               sender: letter.sender?.name ?? landlord?.landlordName ?? '',
               senderAddress: letter.sender ? (letter.sender.address ?? '') : (landlord?.landlordAddress ?? ''),
@@ -727,6 +770,9 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
               date: fmtDate(letterDate),
               foldMarks: printFoldMarks,
               draftMark: draftMark ? DRAFT_MARK : null,
+              // Teil 2b: Logo oben rechts; mit Briefpapier entfällt der Absender von Mietfuchs (Letter.tsx).
+              logo: design.logo,
+              paper: design.paper,
             } : null
             const subject = letter && !showLetter ? renderLetterText(letter.texts.subject, print) : ''
             const underTable = letter && !showLetter ? statementBlocks(letter, st.balanceCents, attachmentCount).map((b) => ({ block: b, text: renderLetterText(letter.texts[b], print) })) : []
@@ -740,7 +786,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
             // mit dem, was gedruckt würde (abgeschlossen also eingefroren).
             const addressState = addressCheck(st, tenancy, head?.recipient, property, localToday(), data.closed?.sentAt)
             return (
-            <div key={st.tenancyId} className={`card statement ${printId === st.tenancyId ? 'print-target' : ''}`}>
+            <div key={st.tenancyId} className={`card statement ${printId === st.tenancyId ? 'print-target' : ''}${design.paper ? ' paper-print' : ''}`} style={design.margins ? paperVars(design.margins) : undefined}>
               {addressState && (
                 <NoticeBox
                   level="warning"
@@ -770,7 +816,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
               {head && addressFieldWarning(head.recipient) && (
                 <NoticeBox level="warning" className="no-print" title="Anschrift zu lang für das Fensterfeld" action={addressFieldWarning(head.recipient) ?? ''} />
               )}
-              <PrintPages footnote={footnote}>
+              <PrintPages footnote={footnote} paper={!!design.paper} follow={design.follow}>
               {/* Nur im Druck, solange Fehler offen sind; deckt auch Strg+P ab (Durchsicht S2 zu #341). Ohne Anschreiben
                   steht der Vermerk schon im Kopf. */}
               {draftMark && (showLetter || !letter) && <div className="print-only draft-mark">{DRAFT_MARK}</div>}
@@ -804,8 +850,8 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                 {isClosed && <span id={lockedId} className="muted">{legacy ? 'Vor dem Anschreiben abgeschlossen; gedruckt wird wie bisher.' : 'Abgeschlossen; das Anschreiben ist eingefroren.'}</span>}
                 <button
                   className="btn secondary"
-                  disabled={printAttachments && !attachmentsReady}
-                  title={printAttachments && !attachmentsReady ? 'Belegkopien werden noch vorbereitet …' : undefined}
+                  disabled={(printAttachments && !attachmentsReady) || !design.ready}
+                  title={printAttachments && !attachmentsReady ? 'Belegkopien werden noch vorbereitet …' : !design.ready ? 'Logo und Briefpapier werden noch vorbereitet …' : undefined}
                   onClick={() => { void goOnPrinting().then((ok) => { if (ok) setPrintId(st.tenancyId) }) }}
                 >
                   🖨 Drucken / PDF
@@ -987,12 +1033,16 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
               )}
               {/* Belegeinsicht und beigefügte Belege stehen seit #415 im Anschreiben. */}
               <p className="muted">{costBasisText(label, calendar)}{legacy ? legacyReceiptsText(attachmentCount) : ''}</p>
-              {/* Auch die Belegkopien tragen den Fußvermerk (Durchsicht zu PR #427, K2). */}
               {printAttachments && stFiles.length > 0 && (
-                <>
-                  <div className="muted no-print">
-                    Anlage beim Druck: {stFiles.map(fileLabel).join(' · ')}
-                  </div>
+                <div className="muted no-print">
+                  Anlage beim Druck: {stFiles.map(fileLabel).join(' · ')}
+                </div>
+              )}
+              </PrintPages>
+              {/* Auch die Belegkopien tragen den Fußvermerk (Durchsicht zu PR #427, K2), in einer eigenen Hülle: Unter fremden
+                  Rechnungen liegt kein Briefpapier (Durchsicht S2 zu PR #432), die Ränder bleiben. */}
+              {printAttachments && stFiles.length > 0 && (
+                <PrintPages footnote={footnote} paper={!!design.paper} newPage>
                   <div className="print-only attachments">
                     {stFiles.map((f, idx) => (
                       <div key={f} className="attachment">
@@ -1005,9 +1055,8 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                       </div>
                     ))}
                   </div>
-                </>
+                </PrintPages>
               )}
-              </PrintPages>
             </div>
             )
           })}
@@ -1051,6 +1100,22 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
             </Card>
           )}
         </>
+      )}
+      {designs && propertyId && (
+        <LetterDesignDrawer
+          open={designEdit}
+          level="property"
+          title={`Logo und Briefpapier für „${property?.name || 'dieses Objekt'}“`}
+          stored={designs.property}
+          installation={designs.installation}
+          onClose={() => setDesignEdit(false)}
+          onSave={async (payload) => {
+            await sendLetterDesign(`/api/properties/${propertyId}/letter-design`, payload)
+            setDesignEdit(false)
+            await load()
+            toast('Logo und Briefpapier gespeichert.')
+          }}
+        />
       )}
       {(() => {
         if (!letterEdit || !templates || !data) return null

@@ -127,6 +127,12 @@ const OWN_CHECK_MESSAGES: Readonly<Record<string, string>> = {
   cost_items_service_order_valid: 'Der Leistungszeitraum endet vor seinem Beginn. Bitte prüfen Sie die beiden Daten.',
   cost_items_tax_year_valid: 'Das Jahr der Zahlung liegt außerhalb dessen, was es geben kann. Bitte tragen Sie ein Jahr wie 2025 ein.',
   cost_items_heating_part_category_valid: '„Brennstoff/Energie“ gibt es nur bei der Kostenart „Heizung und Warmwasser“.',
+  // Logo und Briefpapier (#415, Teil 2b): die Route prüft vorher, die Bedingungen sind das Netz.
+  letter_design_id_valid: 'Die Gestaltung der Installation hat genau eine Zeile. Bitte laden Sie die Seite neu und versuchen Sie es noch einmal.',
+  letter_design_paper_next_file_valid: 'Ein zweites Briefpapier gibt es nur, wenn die Folgeseiten „ein zweites“ bekommen.',
+  letter_design_margins_valid: 'Die Ränder des Textbereichs sind ganze Millimeter: oben 10 bis 70, rechts 10 bis 40, unten 10 bis 60, links 15 bis 40.',
+  property_letter_designs_paper_next_file_valid: 'Ein zweites Briefpapier gibt es nur, wenn die Folgeseiten „ein zweites“ bekommen.',
+  property_letter_designs_margins_valid: 'Die Ränder des Textbereichs sind ganze Millimeter: oben 10 bis 70, rechts 10 bis 40, unten 10 bis 60, links 15 bis 40.',
   // Heizanlage (Heizung PR 4)
   heating_plants_source_method_valid:
     'Liefert die Gemeinschaft der Eigentümer die Heizkostenabrechnung, wird sie wie die eines Messdienstes übernommen. Bitte wählen Sie in der Einrichtung „Heizung“ dafür „Die Gemeinschaft (Hausverwaltung) rechnet ab“.',

@@ -16,6 +16,8 @@ type HeadProps = {
   date: string // schon formatiert
   foldMarks: boolean
   draftMark?: string | null // „Entwurf, nicht versenden“, nur im Druck
+  logo?: string | null // Teil 2b: Adresse des Logos, oben rechts im Briefkopf
+  paper?: string | null // Teil 2b: Briefpapier der ersten Seite (Adresse oder gerendertes Bild), nur im Druck
 }
 
 type Props = HeadProps & {
@@ -25,9 +27,13 @@ type Props = HeadProps & {
 
 const FLOW: readonly LetterParagraph['block'][] = ['intro', 'credit', 'backPayment', 'balanced', 'adjustSuggestion', 'adjustCustom', 'receipts', 'attachments', 'closing']
 
-function LetterHead({ sender, senderAddress, returnLine, recipient, date, foldMarks, draftMark }: HeadProps) {
+function LetterHead({ sender, senderAddress, returnLine, recipient, date, foldMarks, draftMark, logo, paper }: HeadProps) {
   return (
     <>
+      {/* Das Briefpapier liegt unter allem auf der ganzen Seite; mit ihm entfällt der Absender von Mietfuchs (der Kopf
+          des Briefpapiers nennt ihn). Die Rücksendeangabe im Fenster bleibt. Immer ein Bild (PNG, JPG, gerenderte PDF). */}
+      {paper && <img className="letter-paper" src={paper} alt="" aria-hidden="true" />}
+      {logo && <img className="letter-logo" src={logo} alt="Logo" />}
       {foldMarks && (
         <>
           <span className="letter-mark letter-fold-1" aria-hidden="true" />
@@ -36,7 +42,7 @@ function LetterHead({ sender, senderAddress, returnLine, recipient, date, foldMa
         </>
       )}
       {draftMark && <div className="print-only draft-mark letter-draft">{draftMark}</div>}
-      {sender && (
+      {sender && !paper && (
         <div className="letter-head">
           {sender}
           {senderAddress && <div className="letter-head-address">{senderAddress}</div>}
@@ -90,12 +96,23 @@ export function StatementHead(props: HeadProps) {
 // Der Fußvermerk auf jeder Seite der Aufstellung (Teil 2, Durchsicht K8 zu #421): Chromium und Firefox
 // wiederholen den Fuß einer echten Tabelle auf jeder Druckseite, eine Tabelle aus CSS dagegen nicht
 // (nachgemessen). Am Bildschirm ist die Hülle unsichtbar und der Fuß ausgeblendet. Ohne Vermerk keine Hülle.
-export function PrintPages({ footnote, children }: { footnote: ReactNode | null, children: ReactNode }) {
-  if (footnote === null) return <>{children}</>
+//
+// Teil 2b: Mit Briefpapier druckt die Seite ohne Seitenrand; dann hält ein leerer Kopf jeder Druckseite den oberen Rand
+// frei, der Fuß den unteren, und die Zelle die seitlichen (`paper`, Maße in letter.css). Im Kopf liegt auch das
+// Briefpapier der Folgeseiten (`follow`): Den Kopf wiederholt der Browser auf jeder Seite, und so trägt nur diese Hülle
+// es, nicht die der Belegkopien dahinter (Durchsicht S2; ein fest positioniertes Bild läge unter jeder Seite). `newPage`:
+// Die Hülle beginnt auf einer neuen Seite; ein Umbruch vor dem ersten Inhalt der Zelle wirkte nicht (nachgemessen).
+export function PrintPages({ footnote, paper = false, follow = null, newPage = false, children }: { footnote: ReactNode | null, paper?: boolean, follow?: string | null, newPage?: boolean, children: ReactNode }) {
+  if (footnote === null && !paper) return <>{children}</>
   return (
-    <table className="print-pages" role="presentation">
+    <table className={newPage ? 'print-pages print-pages-new' : 'print-pages'} role="presentation">
+      {paper && (
+        <thead>
+          <tr><td className="print-pages-cell"><div className="print-pages-spacer">{follow && <img className="paper-follow" src={follow} alt="" aria-hidden="true" />}</div></td></tr>
+        </thead>
+      )}
       <tfoot>
-        <tr><td className="print-pages-cell"><div className="statement-footnote">{footnote}</div></td></tr>
+        <tr><td className="print-pages-cell">{footnote !== null && <div className="statement-footnote">{footnote}</div>}</td></tr>
       </tfoot>
       <tbody>
         <tr><td className="print-pages-cell">{children}</td></tr>

@@ -29,8 +29,25 @@
 /* Teil 2: der Fußvermerk je Druckseite. Die Hülle ist eine echte Tabelle, denn nur deren Fuß wiederholt der
    Browser auf jeder Seite (eine Tabelle aus CSS nicht, nachgemessen in Chromium). Am Bildschirm ist sie unsichtbar. */
 .print-pages, .print-pages > tbody, .print-pages > tbody > tr, .print-pages-cell { display: block; }
-.print-pages > tfoot { display: none; }
+.print-pages > tfoot, .print-pages > thead { display: none; }
 .print-pages-cell { padding: 0; border: 0; background: none; }
+
+/* Teil 2b: Logo oben rechts im Briefkopf; am Bildschirm in der Ecke der Vorschau. Das Briefpapier nur im Druck. */
+.letter-logo { position: absolute; top: var(--space-6); right: var(--space-6); max-height: 3rem; max-width: 10rem; object-fit: contain; }
+.letter-paper, .paper-follow { display: none; }
+
+/* Die Vorschau des Briefpapiers im Seitenfenster: ein A4-Blatt im Maßstab, darauf der Rahmen des Anschriftfelds nach
+   DIN 5008 (20/45 mm, 85 × 45 mm) und der Textbereich aus den Rändern; Lagen in Prozent der Blattmaße. */
+.paper-preview { position: relative; width: 100%; max-width: 14rem; aspect-ratio: 210 / 297; border: 1px solid var(--line); background: var(--card); overflow: hidden; }
+.paper-preview img { position: absolute; }
+.paper-preview .paper-preview-sheet { inset: 0; width: 100%; height: 100%; object-fit: fill; }
+.paper-preview .paper-preview-logo { top: 5.05%; right: 9.52%; max-height: 8.4%; max-width: 31%; object-fit: contain; }
+.paper-preview-frame { position: absolute; border: 1px dashed var(--muted); }
+.paper-preview-window { left: 9.52%; top: 15.15%; width: 40.48%; height: 15.15%; border-color: var(--accent); }
+.paper-preview-text { top: var(--preview-top); right: var(--preview-right); bottom: var(--preview-bottom); left: var(--preview-left); }
+.paper-preview-legend { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-4); font-size: var(--text-xs); color: var(--muted); }
+.paper-preview-key { display: inline-block; width: 1.5em; margin-right: var(--space-1); vertical-align: middle; border-top: 1px dashed var(--muted); }
+.paper-preview-key.window { border-color: var(--accent); }
 
 /* Bearbeiten im Seitenfenster: je Baustein Feld, Platzhalter als Chips, Vorschau */
 .letter-edit { margin-bottom: var(--space-4); }
@@ -100,7 +117,33 @@
      Aufstellung ohne Anschreiben erst auf Seite 2 (nachgemessen). */
   .print-pages > tbody > tr { break-inside: auto; page-break-inside: auto; }
   .print-pages-cell { display: table-cell; }
+  .print-pages-new { break-before: page; page-break-before: always; }
   .print-pages > tfoot { display: table-footer-group; }
   .print-pages > tfoot .print-pages-cell { font-weight: var(--weight-normal); border: 0; }
+  .letter-logo { top: calc(15mm - var(--page)); right: calc(20mm - var(--page)); max-height: 25mm; max-width: 65mm; }
+
+  /* Teil 2b: Briefpapier. Die Seite druckt dann ohne Seitenrand (`PAPER_PAGE_CSS` in letterDesignView.ts), die Maße des
+     Briefs gelten ab der Blattkante (`--page: 0mm`). Das Papier liegt als Bild unter allem auf der ganzen Seite: die
+     erste Seite im Kopf des Briefs (mit weißem Grund), die Folgeseiten im Tabellenkopf der Hülle der Aufstellung, den
+     der Browser auf jeder Druckseite wiederholt (darunter, Durchsicht S2). Die Hülle der Belegkopien hat keines.
+     Die Karte der Abrechnung darf keinen eigenen Grund haben, sonst läge er über dem Papier. Ein Bild druckt der
+     Browser immer, auch ohne „Hintergrundgrafiken“. */
+  .paper-print .letter { --page: 0mm; }
+  .letter-paper { display: block; position: absolute; top: 0; left: 0; width: 210mm; height: 297mm; max-width: none; object-fit: fill; z-index: -1; background: var(--card); }
+  .paper-print .print-pages-spacer { position: relative; }
+  .paper-follow { display: block; position: absolute; top: 0; left: calc(-1 * var(--paper-left)); width: 210mm; height: 297mm; max-width: none; object-fit: fill; z-index: -2; }
+  .card.statement.paper-print { background: none; }
+  /* Ränder des Textbereichs: im Brief nur der Text (Anschriftfeld und Informationsblock bleiben nach DIN 5008),
+     in der Aufstellung Kopf, Fuß und Seiten jeder Druckseite. */
+  .paper-print .letter-body { padding-left: var(--paper-left); padding-right: var(--paper-right); padding-bottom: var(--paper-bottom); }
+  .paper-print .letter.letter-top { height: calc(98.46mm - 2mm - var(--paper-top)); }
+  .paper-print .print-pages > thead { display: table-header-group; }
+  .paper-print .print-pages > thead > tr { display: table-row; }
+  .paper-print .print-pages-spacer { height: var(--paper-top); }
+  .paper-print .print-pages-cell { padding: 0 var(--paper-right) 0 var(--paper-left); }
+  .paper-print .print-pages > tfoot .print-pages-cell { padding-bottom: var(--paper-bottom); }
+  /* Belegkopien mit Briefpapier: so hoch, wie die Ränder lassen, abzüglich Beschriftung und Fußvermerk (Durchsicht S2). */
+  .paper-print .attachments img { max-height: calc(297mm - var(--paper-top) - var(--paper-bottom) - 20mm); }
+
   .statement-footnote { margin-top: 3mm; padding-top: 1mm; border-top: 0.2mm solid var(--line); font-size: 7.5pt; color: var(--text); }
 }

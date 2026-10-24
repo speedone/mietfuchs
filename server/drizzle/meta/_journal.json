@@ -491,6 +491,13 @@
       "when": 1792801114490,
       "tag": "0069_journal",
       "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "6",
+      "when": 1792807433368,
+      "tag": "0070_briefpapier",
+      "breakpoints": true
     }
   ]
 }

@@ -21,7 +21,7 @@ import { compareWithFrozen } from './settlementDiff.ts'
 import { computeSettlement, consumptionOverview, rentLedger, taxPartsFor, taxReportFor, type ComputedSettlement } from './calc.ts'
 import { heatingSnapshotFor, narrowToProperty, snapshotFor } from './snapshot.ts'
 import { calendarYearPeriod, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodOfKey, resolvePeriodParam, rulesOf, settlementDeadline, settlementPeriod, startYearOf } from '../../shared/period.ts'
-import type { BillingPeriod, FuelGapQuestion, HeatingPlant, LetterTemplates, StatementLetter, Unit } from '../../shared/types.ts'
+import type { BillingPeriod, FuelGapQuestion, HeatingPlant, LetterDesigns, LetterTemplates, StatementLetter, Unit } from '../../shared/types.ts'
 import { closeWithQuestions, type CloseQuestion, type FuelAnswer } from './closeQuestion.ts'
 import { plantRules, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { extractFromFile, classifyDocType, extractMeterReading, type AskProgressEvent, type AskStats } from './extract.ts'
@@ -47,6 +47,9 @@ import { readHeatingPlants, readProperties, readSettings, readStock, readTenanci
 import { lettersFor, letterDoc } from './letter.ts'
 import { savePropertyPrintLetter, readInstallationLetterTexts, readPropertyLetterTexts, readTenancyLetters, saveInstallationLetterTexts, savePropertyLetterTexts, saveTenancyLetter } from './db/letters.ts'
 import { DEFAULT_LETTER_TEXTS, lettersOf, parseLetterAdjustment, parseLetterTexts } from '../../shared/letter.ts'
+import { readInstallationDesign, readPropertyDesign, referencedDesignFiles, saveInstallationDesign, savePropertyDesign } from './db/letterDesign.ts'
+import { LETTER_DESIGN_LIMITS, LIMIT_TEXT, MIME_TYPES, designFileType, isDesignFileName, letterDesignFiles } from '../../shared/letterDesign.ts'
+import { LetterDesignError, archivedDesignProblem, designDir, designFilePath, designFilesOnDisk, nextDesign, parseDesignRequest, prepareDesignFiles, presentDesign, removeUnreferenced, writeDesignFiles } from './letterDesign.ts'
 import {
   closeHeatingSettlement, findClosedHeatingSettlement, heatingSettlementHistory, reopenHeatingSettlement, separateHeatingSettlements, setHeatingSentAt,
 } from './db/heatingSettlements.ts'
@@ -584,7 +587,13 @@ app.delete('/api/law-overrides/:paramId/:year', async (req, res) => {
 })
 
 app.delete('/api/properties/:id', async (req, res) => {
-  const result = await writeData((db) => removeProperty(db, req.params.id))
+  // Logo und Briefpapier einer eigenen Gestaltung gehen mit dem Objekt (#415, Teil 2b), soweit niemand sonst sie nennt.
+  const result = await writeData(async (db) => {
+    const own = await readPropertyDesign(db, req.params.id)
+    const removed = await removeProperty(db, req.params.id)
+    if (removed.removed && own) removeUnreferenced(DATA_DIR, letterDesignFiles(own), await referencedDesignFiles(db))
+    return removed
+  })
   if (result.removed) return res.json({ ok: true })
   if (result.reason !== 'inUse') {
     return result.reason === 'missing'
@@ -1146,6 +1155,88 @@ app.put('/api/properties/:id/letter-texts', async (req, res) => {
     await savePropertyLetterTexts(tx, req.params.id, texts)
     if (printLetter !== undefined) await savePropertyPrintLetter(tx, req.params.id, printLetter)
   }))
+  res.json({ ok: true })
+})
+
+// ---------- Logo und Briefpapier (#415, Teil 2b) ----------
+// Die Gestaltung des Drucks: Vorgabe der Installation, je Objekt eine eigene. Die Dateien liegen in `briefpapier/` im
+// Datenordner unter Namen, die der Server vergibt (letterDesign.ts); ausgeliefert wird nur, was eine Gestaltung nennt.
+app.get('/api/letter-design', async (req, res) => {
+  const result: LetterDesigns = await readData(async (db) => {
+    const wanted: unknown = req.query.property
+    const property = typeof wanted === 'string' && wanted !== '' ? await propertyOf(db, req) : null
+    const missing = new Set<string>()
+    const own = property === null ? null : await readPropertyDesign(db, property)
+    return {
+      installation: presentDesign(DATA_DIR, await readInstallationDesign(db), missing),
+      property: own === null ? null : presentDesign(DATA_DIR, own, missing),
+      ...(missing.size > 0 ? { missing: [...missing] } : {}),
+    }
+  })
+  res.json(result)
+})
+
+app.get('/api/letter-design/files/:name', async (req, res) => {
+  const full = designFilePath(DATA_DIR, req.params.name, await readData((db) => referencedDesignFiles(db)))
+  const type = full ? designFileType(path.basename(full)) : null
+  // Gelesen wird vor dem Antworten; verschwindet die Datei dazwischen, ist das ein 404 und kein Serverfehler (Durchsicht K4).
+  let data: Buffer | null = null
+  try {
+    data = full && type ? fs.readFileSync(full) : null
+  } catch {
+    data = null
+  }
+  if (!data || !type) return res.status(404).json({ error: 'Diese Datei gibt es nicht (mehr).' })
+  res.set({
+    'Content-Type': MIME_TYPES[type],
+    'X-Content-Type-Options': 'nosniff',
+    // Gespeichert sind nur PNG, JPG und PDF (kein SVG); die Sperre für Skripte gilt trotzdem, falls jemand die Datei öffnet.
+    'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox",
+    // Der Name ändert sich mit jeder neuen Datei.
+    'Cache-Control': 'private, max-age=31536000, immutable',
+  })
+  res.send(data)
+})
+
+const designUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: LETTER_DESIGN_LIMITS.paper, files: 3 } })
+const designFields = designUpload.fields([{ name: 'logo', maxCount: 1 }, { name: 'paper', maxCount: 1 }, { name: 'paperNextFile', maxCount: 1 }])
+
+// Schreibt die neuen Dateien, dann die Zeile in einer Transaktion; danach geht weg, was niemand mehr nennt. Scheitert
+// die Transaktion, gehen die eben geschriebenen Dateien wieder weg.
+async function saveLetterDesign(req: Request, propertyId: string | null): Promise<void> {
+  const body = bodyObject(req)
+  const request = parseDesignRequest(body.design, propertyId !== null)
+  const files = filesOf(req)
+  const prepared = prepareDesignFiles(request, { logo: files.logo?.[0], paper: files.paper?.[0], paperNextFile: files.paperNextFile?.[0] }, newId)
+  await writeData(async (db) => {
+    const written = prepared.map((p) => p.file.file)
+    const candidates: string[] = [...written]
+    writeDesignFiles(DATA_DIR, prepared)
+    try {
+      await db.transaction(async (tx) => {
+        if (propertyId !== null && !(await listProperties(tx)).some((p) => p.id === propertyId)) throw new RouteProblem(404, 'Dieses Objekt gibt es nicht (mehr). Bitte laden Sie die Seite neu.')
+        const installation = await readInstallationDesign(tx)
+        const current = propertyId === null ? installation : await readPropertyDesign(tx, propertyId)
+        if (current) candidates.push(...letterDesignFiles(current))
+        if (propertyId !== null && request.own === false) return savePropertyDesign(tx, propertyId, null)
+        const next = nextDesign(current ?? installation, request, prepared)
+        if (propertyId === null) await saveInstallationDesign(tx, next)
+        else await savePropertyDesign(tx, propertyId, next)
+      })
+    } catch (err) {
+      removeUnreferenced(DATA_DIR, written, new Set())
+      throw err
+    }
+    removeUnreferenced(DATA_DIR, candidates, await referencedDesignFiles(db))
+  })
+}
+
+app.put('/api/letter-design', designFields, inRequest, async (req, res) => {
+  await saveLetterDesign(req, null)
+  res.json({ ok: true })
+})
+app.put('/api/properties/:id/letter-design', designFields, inRequest, async (req, res) => {
+  await saveLetterDesign(req, String(req.params.id))
   res.json({ ok: true })
 })
 
@@ -2151,6 +2242,8 @@ app.get('/api/backup', async (req, res) => {
   for (const entry of fs.readdirSync(UPLOAD_DIR, { withFileTypes: true })) {
     if (entry.isFile()) out.addFile(path.join(UPLOAD_DIR, entry.name), `uploads/${entry.name}`)
   }
+  // Logo und Briefpapier (#415, Teil 2b): nur Namen der eigenen Gestalt.
+  for (const name of designFilesOnDisk(DATA_DIR)) out.addFile(path.join(designDir(DATA_DIR), name), `briefpapier/${name}`)
 
   // Die Datenbank kommt als **Schnappschuss** mit und nicht als Kopie der laufenden Datei
   // (db/backup.ts).
@@ -2259,6 +2352,8 @@ type ReadBackup = {
   // Ohne sie trüge jeder Beleg danach das Datum der Wiederherstellung, und im Belegordner sähe
   // eine alte Rechnung aus wie eben hochgeladen.
   files: { fileName: string, staged: string }[]
+  // Logo und Briefpapier (#415, Teil 2b), ebenso ausgepackt; Archive von vor 0.13 haben keine.
+  designFiles: { fileName: string, staged: string }[]
   // Die Datenbank aus dem Archiv, ausgepackt in der Zwischenablage, oder `null` bei einem Archiv
   // aus einer Version vor ihr. Das ist kein Randfall: Genau solche Archive liegen bei den
   // heutigen Nutzern.
@@ -2305,8 +2400,19 @@ async function readBackupEntries(zip: ZipReader, staging: string): Promise<ReadB
   }
 
   const files: { fileName: string, e: ZipItem }[] = []
+  const designs: { fileName: string, e: ZipItem }[] = []
   for (const e of entries) {
     const name = e.name
+    // Logo und Briefpapier (#415, Teil 2b): nur Namen der eigenen Gestalt, direkt im Ordner, höchstens so groß wie ein
+    // Briefpapier sein darf.
+    if (name.startsWith('briefpapier/')) {
+      if (e.isDirectory && name === 'briefpapier/') continue
+      const fileName = name.slice('briefpapier/'.length)
+      if (e.isDirectory || !isDesignFileName(fileName)) throw new Error(`Das Archiv enthält einen ungültigen Eintrag („${name}“) und wird nicht übernommen.`)
+      if (e.size > LETTER_DESIGN_LIMITS.paper) throw new Error(`Das Briefpapier „${fileName}“ im Archiv ist größer als ${LIMIT_TEXT.paper} und wird nicht übernommen. ${NOTHING_CHANGED}`)
+      designs.push({ fileName, e })
+      continue
+    }
     if (name === 'db.json' || !name.startsWith('uploads/')) continue // anderes bleibt unbeachtet
     if (e.isDirectory && name === 'uploads/') continue
     // Ein Backup enthält Belege nur direkt in uploads/. Alles andere ist verdächtig.
@@ -2326,7 +2432,7 @@ async function readBackupEntries(zip: ZipReader, staging: string): Promise<ReadB
     currentDatabase = fs.statSync(databaseFile(DATA_DIR)).size
   } catch { /* keine Datenbank, etwa auf einem frischen Rechner */ }
   const needed = restoreSpaceNeeded({
-    files: files.reduce((sum, f) => sum + f.e.size, 0),
+    files: [...files, ...designs].reduce((sum, f) => sum + f.e.size, 0),
     database: unpackDatabase?.size ?? 0,
     currentDatabase,
     dbJson: dbEntry?.size ?? 0,
@@ -2386,12 +2492,28 @@ async function readBackupEntries(zip: ZipReader, staging: string): Promise<ReadB
     await zip.extract(e, target)
     staged.push({ fileName, staged: target })
   }
+  const designStaged: { fileName: string, staged: string }[] = []
+  for (const [i, { fileName, e }] of designs.entries()) {
+    const target = path.join(staging, `briefpapier-${i}`)
+    await zip.extract(e, target)
+    // Geprüft wie beim Hochladen (Durchsicht K1): ein PNG muss ein PNG sein, eine PDF eine PDF.
+    const fd = fs.openSync(target, 'r')
+    const head = Buffer.alloc(16)
+    try {
+      fs.readSync(fd, head, 0, 16, 0)
+    } finally {
+      fs.closeSync(fd)
+    }
+    const problem = archivedDesignProblem(fileName, head)
+    if (problem) throw new Error(`${problem} ${NOTHING_CHANGED}`)
+    designStaged.push({ fileName, staged: target })
+  }
   let database: string | null = null
   if (unpackDatabase) {
     database = path.join(staging, ARCHIVE_DB_NAME)
     await zip.extract(unpackDatabase, database)
   }
-  return { dbText, files: staged, database, origin: originText(info) }
+  return { dbText, files: staged, designFiles: designStaged, database, origin: originText(info) }
 }
 
 
@@ -2632,6 +2754,9 @@ async function runRestore(backup: ReadBackup, res: Response): Promise<void> {
   // wandern sie nur an ihren Platz. Stünden sie hinter der db.json, hinterließe ein Fehler beim
   // Verschieben eine schon ersetzte db.json neben halb verschobenen Belegen.
   for (const { fileName, staged } of backup.files) await moveIntoPlace(staged, path.join(UPLOAD_DIR, fileName))
+  // Logo und Briefpapier ebenso; ihre Namen sind eindeutig, ein vorhandenes gleichen Namens ist dieselbe Datei.
+  if (backup.designFiles.length > 0) fs.mkdirSync(designDir(DATA_DIR), { recursive: true })
+  for (const { fileName, staged } of backup.designFiles) await moveIntoPlace(staged, path.join(designDir(DATA_DIR), fileName))
   const current = path.join(DATA_DIR, 'db.json')
   // Eine Sicherheitskopie eines früheren Einspielens wird nicht überschrieben, sondern mit Datum beiseitegelegt wie die
   // der Datenbank (`setAsideName`, Integrationsdurchsicht 0.13.0): Sonst wäre nach zweimaligem Einspielen der Stand von
@@ -2805,6 +2930,17 @@ app.post('/api/prior-versions/:name/restore', async (req, res) => {
       }
     } catch {
       // Nur eine Auskunft; das Einspielen ist gelungen.
+    }
+    // Ebenso Logo und Briefpapier (#415, Teil 2b): Eine Vorversion enthält nur die Datenbank, und ein seither ersetztes
+    // Logo oder Briefpapier ist weggeräumt. Gedruckt wird dann ohne; die Gestaltung lässt sich neu wählen.
+    try {
+      const names = database ? [...await database.read((db) => referencedDesignFiles(db))] : []
+      const missing = names.filter((n) => !fs.existsSync(path.join(designDir(DATA_DIR), n)))
+      if (missing.length > 0) {
+        notes = [...notes, 'Logo oder Briefpapier dieses Stands sind seither ersetzt oder entfernt worden und fehlen; gedruckt wird ohne sie. Wählen Sie sie bei Bedarf in den Einstellungen unter „Logo und Briefpapier“ neu.']
+      }
+    } catch {
+      // Nur eine Auskunft.
     }
     res.json({ ok: true, notes })
   } finally {
@@ -2987,7 +3123,7 @@ app.use('/api', (err: unknown, req: Request, res: Response, next: NextFunction) 
   const full = diskFullMessage(err)
   if (full) return res.status(507).json({ error: full })
   if (err instanceof multer.MulterError) {
-    const limit = req.path === '/restore' ? RESTORE_MAX_BYTES : UPLOAD_MAX_BYTES
+    const limit = req.path === '/restore' ? RESTORE_MAX_BYTES : req.path.includes('letter-design') ? LETTER_DESIGN_LIMITS.paper : UPLOAD_MAX_BYTES
     const message =
       err.code === 'LIMIT_FILE_SIZE' ? `Die Datei ist größer als ${limit >= 1024 ** 3 ? `${limit / 1024 ** 3} GB` : `${limit / 1024 / 1024} MB`}.`
         : err.code === 'LIMIT_UNEXPECTED_FILE' && err.field === 'pages' ? `Höchstens ${MAX_PAGES} Seitenbilder je Beleg.`
@@ -3000,7 +3136,7 @@ app.use('/api', (err: unknown, req: Request, res: Response, next: NextFunction) 
   // Das Zahlungsdatum (#255 PR 3): die Rückfrage mit eigenem Kennzeichen, wie beim Betriebsstrom.
   if (err instanceof PaidOnQuestion) return res.status(409).json({ error: err.message, question: 'paidOn' })
   // Ablehnungen, deren Meldung schon für den Nutzer geschrieben ist (#92).
-  if (err instanceof RouteProblem || err instanceof CrossPropertyError || err instanceof PeriodError || err instanceof PeriodConflict || err instanceof TenantChangeError || err instanceof BookingRefusal || err instanceof HeatingError || err instanceof LetterInputError || err instanceof StaleTenancyError || err instanceof LawOverrideError || err instanceof IbanRefusal || err instanceof PaymentError || err instanceof ContractError || err instanceof LocalRentError) {
+  if (err instanceof RouteProblem || err instanceof CrossPropertyError || err instanceof PeriodError || err instanceof PeriodConflict || err instanceof TenantChangeError || err instanceof BookingRefusal || err instanceof HeatingError || err instanceof LetterInputError || err instanceof LetterDesignError || err instanceof StaleTenancyError || err instanceof LawOverrideError || err instanceof IbanRefusal || err instanceof PaymentError || err instanceof ContractError || err instanceof LocalRentError) {
     return res.status(err.status).json({ error: err.message })
   }
   // **Fehler der Datenbank bekommen ihre eigene Meldung** (db/errors.ts). Ohne diese Zeile käme
