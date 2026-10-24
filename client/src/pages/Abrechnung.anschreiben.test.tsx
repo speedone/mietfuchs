@@ -381,6 +381,25 @@ test('Druck: Kopf der Aufstellung mit Mieter, Mietobjekt, Wohnung, Zeitraum und 
   expect(plain(labor.textContent)).not.toContain('—')
 })
 
+// Durchsicht K2: Ein Anschreiben, das vor dieser Änderung abgeschlossen wurde, kennt Rechnungsbetrag und Lohnanteil nicht.
+test('Druck: § 35a ohne eingefrorenen Lohnanteil der Rechnung nur mit Leistung und Ihrem Anteil', async () => {
+  const st: Statement = {
+    ...STATEMENT,
+    rows: [...STATEMENT.rows, { costItemId: 'k2', category: 'Hauswart', description: 'Hausmeisterdienst', totalCents: 180000, keyLabel: 'Wohnfläche', basisText: '60 m² von 120 m²', shareCents: 90000, labor35aCents: 75000 }],
+    totalShareCents: 150000, total35aCents: 75000, balanceCents: -102000,
+  }
+  const l = settlement.letters?.t1
+  if (!l) throw new Error('kein Anschreiben')
+  const { labor35a: _labor, ...frozen } = l
+  settlement = { ...settlement, statements: [st], letters: { t1: frozen }, closed: { closedAt: `${YEAR + 1}-02-01T10:00:00Z`, sentAt: null } }
+  show()
+  const card = await statementCard()
+  const labor = await within(card).findByRole('table', { name: /§ 35a EStG/ }, SLOW)
+  expect([...labor.querySelectorAll('th')].map((th) => th.textContent)).toEqual(['Leistung', 'Ihr Anteil'])
+  expect(plain(labor.querySelector(':scope > tbody > tr')?.textContent)).toBe('Hauswart: Hausmeisterdienst750,00 €')
+  expect(plain(labor.querySelector(':scope > tfoot > tr')?.textContent)).toBe('Summe Ihres Anteils an den Arbeitskosten750,00 €')
+})
+
 test('Teil 2: eine vor #415 abgeschlossene Abrechnung bekommt keinen Fußvermerk', async () => {
   settlement = { ...settlement, closed: { closedAt: `${YEAR + 1}-02-01T10:00:00Z`, sentAt: null }, letters: undefined }
   show()

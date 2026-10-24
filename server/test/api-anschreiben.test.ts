@@ -110,6 +110,32 @@ test('Anschreiben (#415): friert mit dem Abschluss ein; spätere Vorlagen änder
   }
 })
 
+// Druck (#415), Durchsicht K1: Die Route gibt `lettersOf` Wohnungen und Kostenpositionen mit; Wohnfläche, Kontakt und je
+// Position mit Lohnanteil nach § 35a EStG Rechnungsbetrag und Lohnanteil stehen im Anschreiben und frieren mit ihm ein.
+test('Anschreiben (#415): Wohnfläche, Kontakt und Lohnanteil der Rechnung frieren mit dem Abschluss ein', async () => {
+  const s = await startServer()
+  try {
+    const { unit, tenancy } = await house(s)
+    await s.api('/api/settings', { method: 'PUT', body: JSON.stringify({ landlordContact: 'Tel. 0123 456789' }) })
+    const hauswart = await s.api<{ id: string }>('/api/costItems', { method: 'POST', body: JSON.stringify({ period: '2025-01', category: 'Hauswart', description: 'Hausmeisterdienst', amountCents: 180000, labor35aCents: 150000, key: 'area' }) })
+    const live = letterOf(await s.api<Settlement>('/api/settlement/2025'), tenancy.id)
+    assert.deepEqual(live.labor35a, { [hauswart.id]: { amountCents: 180000, laborCents: 150000 } })
+    assert.equal(live.premises?.areaM2, 60)
+    assert.equal(live.sender?.contact, 'Tel. 0123 456789')
+
+    assert.equal((await send(s, '/api/settlement/2025/close', 'POST', {})).status, 201)
+    // Danach geänderte Stammdaten ändern das eingefrorene Anschreiben nicht.
+    await s.api(`/api/units/${unit.id}`, { method: 'PUT', body: JSON.stringify({ ...unit, areaM2: 75 }) })
+    await s.api('/api/settings', { method: 'PUT', body: JSON.stringify({ landlordContact: 'Tel. 0999 1' }) })
+    const closed = letterOf(await s.api<Settlement>('/api/settlement/2025'), tenancy.id)
+    assert.deepEqual(closed.labor35a, { [hauswart.id]: { amountCents: 180000, laborCents: 150000 } })
+    assert.equal(closed.premises?.areaM2, 60)
+    assert.equal(closed.sender?.contact, 'Tel. 0123 456789')
+  } finally {
+    s.stop()
+  }
+})
+
 test('Anschreiben (#415): eine vor #415 abgeschlossene Abrechnung bekommt kein Anschreiben, sie druckt wie bisher (Durchsicht S1)', async () => {
   const s = await startServer()
   try {

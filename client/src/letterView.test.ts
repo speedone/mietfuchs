@@ -2,7 +2,7 @@
 // § 35a EStG, ohne DOM geprüft. Die Werte kommen aus dem Anschreiben (abgeschlossen also eingefroren) und der Abrechnung.
 import { expect, test } from 'vitest'
 import type { Statement, StatementLetter } from './types'
-import { contactRows, footnoteText, infoRows, labor35aRows, resultRows, statementHeadRows } from './letterView'
+import { contactRows, footnoteText, infoRows, labor35aTable, resultRows, statementHeadRows } from './letterView'
 
 const plain = (s: string) => s.replace(/[\u00a0\u202f]/g, ' ')
 
@@ -30,6 +30,18 @@ test('Kontakt des Vermieters: Telefon und E-Mail werden erkannt, Freitext bleibt
     { label: 'Telefon', value: '030 123' }, { label: 'Telefax', value: '030 124' }, { label: 'Mobil', value: '0171 1' },
   ])
   expect(contactRows('Sprechzeiten montags')).toEqual([{ label: null, value: 'Sprechzeiten montags' }])
+  // Durchsicht K3: Ein Komma trennt nur vor einer erkannten Telefonnummer oder E-Mail; Zeilenumbruch und Semikolon immer.
+  expect(contactRows('Sprechzeiten Mo, Mi 9–12 Uhr')).toEqual([{ label: null, value: 'Sprechzeiten Mo, Mi 9–12 Uhr' }])
+  expect(contactRows('Sprechzeiten Mo, Mi 9–12 Uhr, Tel. 0123 456789')).toEqual([
+    { label: null, value: 'Sprechzeiten Mo, Mi 9–12 Uhr' }, { label: 'Telefon', value: '0123 456789' },
+  ])
+  expect(contactRows('Hausverwaltung, 2. OG\nklaus@example.org')).toEqual([
+    { label: null, value: 'Hausverwaltung, 2. OG' }, { label: 'E-Mail', value: 'klaus@example.org' },
+  ])
+  // Der Kontakt aus dem Beispielbestand (scripts/demo-stock.mjs im Druckprobenlauf)
+  expect(contactRows('Tel. 0123 456789, E-Mail klaus.wegener@example.org')).toEqual([
+    { label: 'Telefon', value: '0123 456789' }, { label: 'E-Mail', value: 'klaus.wegener@example.org' },
+  ])
   expect(contactRows('')).toEqual([])
   expect(contactRows(undefined)).toEqual([])
 })
@@ -88,10 +100,17 @@ test('§ 35a EStG als Tabelle: Leistung, Gesamtbetrag, Lohnanteil, Ihr Anteil', 
     { costItemId: 'k2', category: 'Grundsteuer', description: 'Grundsteuer', totalCents: 61240, keyLabel: 'Wohnfläche', shareCents: 16331, labor35aCents: 0 },
     { costItemId: 'k3', category: 'Schornsteinfeger', description: 'Schornsteinfeger', totalCents: 9530, keyLabel: 'Wohnfläche', shareCents: 2541, labor35aCents: 1685 },
   ]
-  const out = labor35aRows(st({ rows }), letter({ labor35a: { k1: { amountCents: 180000, laborCents: 150000 } } }))
-  expect(out.map((r) => ({ ...r, total: plain(r.total), labor: plain(r.labor), share: plain(r.share) }))).toEqual([
+  const show = (t: ReturnType<typeof labor35aTable>) => ({ full: t.full, rows: t.rows.map((r) => ({ ...r, total: plain(r.total), labor: plain(r.labor), share: plain(r.share) })) })
+  const full = labor35aTable(st({ rows }), letter({ labor35a: { k1: { amountCents: 180000, laborCents: 150000 }, k3: { amountCents: 9530, laborCents: 6320 } } }))
+  expect(show(full)).toEqual({ full: true, rows: [
     { service: 'Hauswart: Hausmeisterdienst', total: '1.800,00 €', labor: '1.500,00 €', share: '400,00 €' },
-    // Ohne eingefrorenen Lohnanteil der Rechnung (Abschluss vor dieser Änderung) bleibt die Spalte leer.
-    { service: 'Schornsteinfeger', total: '95,30 €', labor: '', share: '16,85 €' },
-  ])
+    { service: 'Schornsteinfeger', total: '95,30 €', labor: '63,20 €', share: '16,85 €' },
+  ] })
+  // Durchsicht K2: Ein Anschreiben, das vor dieser Änderung eingefroren wurde, kennt Rechnungsbetrag und Lohnanteil nicht;
+  // dann stehen nur Leistung und Ihr Anteil da, keine leeren Spalten.
+  expect(show(labor35aTable(st({ rows }), letter()))).toEqual({ full: false, rows: [
+    { service: 'Hauswart: Hausmeisterdienst', total: '', labor: '', share: '400,00 €' },
+    { service: 'Schornsteinfeger', total: '', labor: '', share: '16,85 €' },
+  ] })
+  expect(labor35aTable(st({ rows }), null).full).toBe(false)
 })

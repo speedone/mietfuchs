@@ -58,7 +58,7 @@ import { suggestionWithoutHeating } from '../heatingSettlementView'
 import LetterDrawer, { type LetterSave } from '../components/LetterDrawer'
 import PrepaymentStepsCard from '../components/PrepaymentStepsCard'
 import { sentMonthLines } from '../prepaymentSteps'
-import { asTemplates, footnoteText, infoRows, labor35aRows, letterOf, letterParagraphs, RETURN_LINE_MAX, resultRows, returnLineTooLong, statementHeadRows } from '../letterView'
+import { asTemplates, footnoteText, infoRows, labor35aTable, letterOf, letterParagraphs, RETURN_LINE_MAX, resultRows, returnLineTooLong, statementHeadRows } from '../letterView'
 
 type Props = {
   settings: Settings | null
@@ -1246,40 +1246,46 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                     </div>
                   ) : (
                     // Druck (#415): eine Tabelle je Position mit Rechnungsbetrag, Lohnanteil der Rechnung und dem Anteil des
-                    // Mieters daran; vor #415 abgeschlossen bleibt die Liste von damals.
-                    <div className="stack tight labor-35a">
-                      <h3 id={`labor35a-${st.tenancyId}`}>Bescheinigung nach § 35a EStG</h3>
-                      <p className="muted">
-                        In Ihrem Kostenanteil sind folgende Arbeitskosten für haushaltsnahe Dienstleistungen und
-                        Handwerkerleistungen enthalten, die Sie gegebenenfalls steuerlich geltend machen können.
-                      </p>
-                      <Table aria-labelledby={`labor35a-${st.tenancyId}`}>
-                        <thead>
-                          <tr>
-                            <th>Leistung</th>
-                            <th className="num">Gesamtbetrag</th>
-                            <th className="num">Lohnanteil</th>
-                            <th className="num">Ihr Anteil</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {labor35aRows(st, letter).map((r, i) => (
-                            <tr key={i}>
-                              <td>{r.service}</td>
-                              <td className="num">{r.total}</td>
-                              <td className="num">{r.labor}</td>
-                              <td className="num">{r.share}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                        <tfoot>
-                          <tr>
-                            <td colSpan={3}>Summe Ihres Anteils an den Arbeitskosten</td>
-                            <td className="num">{fmtEuro(st.total35aCents)}</td>
-                          </tr>
-                        </tfoot>
-                      </Table>
-                    </div>
+                    // Mieters daran, beide eingefroren im Anschreiben. Ein vorher eingefrorenes Anschreiben kennt sie nicht; dann
+                    // nur Leistung und Ihr Anteil (Durchsicht K2). Vor #415 abgeschlossen bleibt die Liste von damals (oben).
+                    (() => {
+                      const labor = labor35aTable(st, letter)
+                      return (
+                        <div className="stack tight labor-35a">
+                          <h3 id={`labor35a-${st.tenancyId}`}>Bescheinigung nach § 35a EStG</h3>
+                          <p className="muted">
+                            In Ihrem Kostenanteil sind folgende Arbeitskosten für haushaltsnahe Dienstleistungen und
+                            Handwerkerleistungen enthalten, die Sie gegebenenfalls steuerlich geltend machen können.
+                          </p>
+                          <Table aria-labelledby={`labor35a-${st.tenancyId}`}>
+                            <thead>
+                              <tr>
+                                <th>Leistung</th>
+                                {labor.full && <th className="num">Gesamtbetrag</th>}
+                                {labor.full && <th className="num">Lohnanteil</th>}
+                                <th className="num">Ihr Anteil</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {labor.rows.map((r, i) => (
+                                <tr key={i}>
+                                  <td>{r.service}</td>
+                                  {labor.full && <td className="num">{r.total}</td>}
+                                  {labor.full && <td className="num">{r.labor}</td>}
+                                  <td className="num">{r.share}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                            <tfoot>
+                              <tr>
+                                <td colSpan={labor.full ? 3 : 1}>Summe Ihres Anteils an den Arbeitskosten</td>
+                                <td className="num">{fmtEuro(st.total35aCents)}</td>
+                              </tr>
+                            </tfoot>
+                          </Table>
+                        </div>
+                      )
+                    })()
                   ))}
                 </>
               )}

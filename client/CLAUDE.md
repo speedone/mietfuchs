@@ -130,9 +130,10 @@ DIN 5008 (links 25, rechts 20 mm) hält im Brief der Text, in der Aufstellung di
   Mietobjekt, Wohnung, Wohnfläche, Abrechnungszeitraum (bei Ein- oder Auszug dazu „Ihr Nutzungszeitraum“) und Personen;
   Anschrift und Fläche aus dem Anschreiben (`premises`, eingefroren, vorher abgeschlossen ohne). Der Zeitraum steht nur
   dort. **Ergebniskasten** (`resultRows`) darunter, die Nachzahlung neutral fett. Die Sätze zu Zahlung, Erstattung,
-  § 560 und Belegeinsicht stehen nur im Anschreiben; unter der Tabelle die Tabelle nach § 35a EStG (`labor35aRows`:
-  Leistung, Gesamtbetrag, Lohnanteil, Ihr Anteil; Rechnungsbetrag und Lohnanteil aus `labor35a` des Anschreibens).
-  **Informationsblock** (`infoRows`): Ansprechpartner, Kontakt (`contactRows` zerlegt das freie Feld), „Ort, Datum“.
+  § 560 und Belegeinsicht stehen nur im Anschreiben; unter der Tabelle die Tabelle nach § 35a EStG (`labor35aTable`:
+  Leistung, Gesamtbetrag, Lohnanteil, Ihr Anteil; Rechnungsbetrag und Lohnanteil aus `labor35a` des Anschreibens, fehlt
+  es, nur Leistung und Ihr Anteil). **Informationsblock** (`infoRows`): Ansprechpartner, Kontakt (`contactRows` trennt das
+  freie Feld an Umbruch und Semikolon, an einem Komma nur vor einer erkannten Telefonnummer oder E-Mail), „Ort, Datum“.
   Vor #415 abgeschlossen bleibt alles wie damals (Kopfzeile, Liste zu § 35a, „Abgerechnet werden die Kosten …“).
 - **Anschreiben bearbeiten** ([LetterDrawer.tsx](src/components/LetterDrawer.tsx), Logik in
   [letterForm.ts](src/letterForm.ts)): ein Seitenfenster für drei Ebenen, die Vorlage aller Objekte

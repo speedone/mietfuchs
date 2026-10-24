@@ -65,24 +65,42 @@ export function resultRows(st: Statement, paymentDeadlineDays: number | null | u
 // Eine Zeile aus Beschriftung und Wert; ohne Beschriftung steht der Wert allein (Freitext, „Ort, Datum“).
 export type LabeledRow = { label: string | null, value: string }
 
-// Der Kontakt des Vermieters ist ein freies Feld („Tel. 0123 456789, E-Mail …“). Für den Informationsblock wird er an Komma,
-// Semikolon, Mittelpunkt und Umbruch zerlegt; Telefon, Telefax, Mobil und E-Mail werden an ihrem Wort oder an ihrer Gestalt
-// erkannt, alles andere bleibt ohne Beschriftung stehen, wie eingegeben.
+// Der Kontakt des Vermieters ist ein freies Feld („Tel. 0123 456789, E-Mail …“). Für den Informationsblock wird er an
+// Zeilenumbruch und Semikolon zerlegt; ein Komma, ein Mittelpunkt oder ein senkrechter Strich trennt nur, wenn danach
+// erkennbar Telefon, Telefax, Mobil oder E-Mail folgt (Durchsicht K3: „Sprechzeiten Mo, Mi 9–12 Uhr“ bleibt eine Zeile).
+// Telefon und E-Mail werden an ihrem Wort oder an ihrer Gestalt erkannt, alles andere bleibt ohne Beschriftung stehen.
 const CONTACT_WORDS: readonly [RegExp, string][] = [
   [/^(?:tel(?:efon)?|fon|phone)\.?$/i, 'Telefon'],
   [/^(?:tele)?fax\.?$/i, 'Telefax'],
   [/^(?:mobil(?:funk)?|handy)\.?$/i, 'Mobil'],
   [/^(?:e-?mail|mail)$/i, 'E-Mail'],
 ]
+function contactRow(part: string): LabeledRow {
+  const m = part.match(/^([A-Za-z-]+\.?)\s*:?\s+(.+)$/)
+  const word = m ? CONTACT_WORDS.find(([re]) => re.test(m[1] ?? '')) : undefined
+  if (m && word) return { label: word[1], value: (m[2] ?? '').trim() }
+  if (/^\S+@\S+\.\S+$/.test(part)) return { label: 'E-Mail', value: part }
+  if (/^\+?\d[\d\s/()-]{4,}$/.test(part)) return { label: 'Telefon', value: part }
+  return { label: null, value: part }
+}
 export function contactRows(contact: string | null | undefined): LabeledRow[] {
-  return (contact ?? '').split(/\s*(?:[,;·|]|\n)\s*/).map((p) => p.trim()).filter((p) => p !== '').map((part) => {
-    const m = part.match(/^([A-Za-z-]+\.?)\s*:?\s+(.+)$/)
-    const word = m ? CONTACT_WORDS.find(([re]) => re.test(m[1] ?? '')) : undefined
-    if (m && word) return { label: word[1], value: (m[2] ?? '').trim() }
-    if (/^\S+@\S+\.\S+$/.test(part)) return { label: 'E-Mail', value: part }
-    if (/^\+?[\d][\d\s/()-]{4,}$/.test(part)) return { label: 'Telefon', value: part }
-    return { label: null, value: part }
-  })
+  const rows: LabeledRow[] = []
+  for (const line of (contact ?? '').split(/\s*[\n;]\s*/)) {
+    // Ungerade Stellen sind die Trenner; ein Stück ohne erkannte Angabe hängt mit seinem Trenner am vorigen.
+    const pieces = line.split(/(\s*[,·|]\s*)/)
+    let current = ''
+    for (let i = 0; i < pieces.length; i += 2) {
+      const piece = (pieces[i] ?? '').trim()
+      if (current !== '' && piece !== '' && contactRow(piece).label !== null) {
+        rows.push(contactRow(current))
+        current = piece
+      } else {
+        current = current === '' ? piece : `${current}${i > 0 ? (pieces[i - 1] ?? '') : ''}${piece}`
+      }
+    }
+    if (current.trim() !== '') rows.push(contactRow(current.trim()))
+  }
+  return rows
 }
 
 // Der Ort aus der Anschrift des Vermieters („Ahornstraße 3, 12345 Musterstadt“): was nach der Postleitzahl steht.
@@ -136,17 +154,22 @@ export function footnoteText(letter: Pick<StatementLetter, 'values'>): string {
 }
 
 // Die Tabelle nach § 35a EStG: je Position mit Lohnanteil die Leistung, der Rechnungsbetrag, der Lohnanteil der Rechnung und
-// der Anteil des Mieters daran. Rechnungsbetrag und Lohnanteil kommen aus dem Anschreiben (eingefroren); ein vorher
-// abgeschlossenes kennt sie nicht, dann steht der Gesamtbetrag der Aufstellung, und die Spalte Lohnanteil bleibt leer.
+// der Anteil des Mieters daran. Rechnungsbetrag und Lohnanteil kommen aus dem Anschreiben (eingefroren). Ein Anschreiben, das
+// vor dieser Änderung eingefroren wurde, kennt sie nicht (`full: false`): Dann zeigt die Tabelle nur Leistung und Ihren
+// Anteil, statt leerer Spalten (Durchsicht K2).
 export type Labor35aRow = { service: string, total: string, labor: string, share: string }
-export function labor35aRows(st: Statement, letter: Pick<StatementLetter, 'labor35a'> | null): Labor35aRow[] {
-  return st.rows.filter((r) => (r.labor35aCents ?? 0) > 0).map((r) => {
-    const own = letter?.labor35a?.[r.costItemId]
-    return {
-      service: r.description && r.description !== r.category ? `${r.category}: ${r.description}` : r.category,
-      total: fmtEuro(own?.amountCents ?? r.totalCents),
-      labor: own ? fmtEuro(own.laborCents) : '',
-      share: fmtEuro(r.labor35aCents ?? 0),
-    }
-  })
+export function labor35aTable(st: Statement, letter: Pick<StatementLetter, 'labor35a'> | null): { full: boolean, rows: Labor35aRow[] } {
+  const frozen = letter?.labor35a
+  return {
+    full: frozen !== undefined,
+    rows: st.rows.filter((r) => (r.labor35aCents ?? 0) > 0).map((r) => {
+      const own = frozen?.[r.costItemId]
+      return {
+        service: r.description && r.description !== r.category ? `${r.category}: ${r.description}` : r.category,
+        total: own ? fmtEuro(own.amountCents) : '',
+        labor: own ? fmtEuro(own.laborCents) : '',
+        share: fmtEuro(r.labor35aCents ?? 0),
+      }
+    }),
+  }
 }
