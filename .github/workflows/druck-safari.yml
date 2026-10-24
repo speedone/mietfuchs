@@ -1,0 +1,66 @@
+name: Druck in Safari
+
+# Druck und PDF der Nebenkostenabrechnung in Safari (WebKit unter macOS), automatisch statt von Hand (#286).
+# Playwright druckt mit WebKit nur unter Linux nicht, deshalb ein Mac: WKWebView mit NSPrintOperation („Als PDF
+# sichern“), daneben Chromium als Vergleich, ausgewertet mit pdf.js (scripts/safari-print-check.mjs, das Swift-Programm
+# in scripts/safari-print/). Bericht in der Zusammenfassung, PDFs und Seitenbilder als Artefakt.
+#
+# Vorerst nur von Hand startbar und nicht Teil von release.yml: Ob und wie der Lauf in den vollen Prüfumfang kommt,
+# wird nach den Probeläufen entschieden. Ein Befund färbt den Lauf rot; blockiert wird damit nichts.
+# `macos-latest` mit Absicht: Geprüft werden soll das Safari, das Nutzer haben, also das neueste.
+on:
+  workflow_dispatch:
+  # PROBELAUF, vor dem PR entfernen: workflow_dispatch geht erst, wenn die Datei auf main liegt
+  push:
+    branches: [ci/druck-safari]
+
+permissions:
+  contents: read
+
+jobs:
+  safari:
+    name: Druck in Safari (WebKit)
+    runs-on: macos-latest
+    # Lokal rund drei Minuten; ein hängender Druck soll den Runner nicht sechs Stunden halten
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: '**/package-lock.json'
+      - run: npm install
+      - run: npm run build
+      - run: npx playwright install chromium
+      - name: Fassungen von macOS, Safari und Swift
+        run: |
+          {
+            echo "macOS $(sw_vers -productVersion) ($(sw_vers -buildVersion)), $(uname -m)"
+            echo "Safari $(defaults read /Applications/Safari.app/Contents/Info CFBundleShortVersionString), WebKit $(defaults read /System/Library/Frameworks/WebKit.framework/Resources/Info CFBundleVersion 2>/dev/null || echo unbekannt)"
+            swiftc --version 2>&1 | head -1
+          } | tee fassungen.txt
+      - name: Swift-Programm übersetzen
+        run: swiftc -O scripts/safari-print/main.swift -o "$RUNNER_TEMP/safari-print"
+      - name: Drucken und prüfen
+        run: node scripts/safari-print-check.mjs --out "$RUNNER_TEMP/druck-safari" --safari-bin "$RUNNER_TEMP/safari-print"
+      - name: Bericht in die Zusammenfassung
+        if: always()
+        run: |
+          {
+            if [ -f "$RUNNER_TEMP/druck-safari/bericht.md" ]; then cat "$RUNNER_TEMP/druck-safari/bericht.md"; else echo "# Druck in Safari: kein Bericht (Lauf vorher abgebrochen, siehe Protokoll)"; fi
+            echo
+            echo '```'
+            cat fassungen.txt 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          cp fassungen.txt "$RUNNER_TEMP/druck-safari/" 2>/dev/null || true
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: druck-safari
+          path: |
+            ${{ runner.temp }}/druck-safari
+            !${{ runner.temp }}/druck-safari/.bin
+          if-no-files-found: error
+          retention-days: 14
