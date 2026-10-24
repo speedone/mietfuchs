@@ -2642,6 +2642,27 @@ const isoToGerman = (iso: string): string => iso.split('-').reverse().join('.')
 const isIsoDate = (value: unknown): value is string =>
   typeof value === 'string' && ISO_DATE.test(value) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value
 
+// Neue Anschrift, E-Mail und Telefon des ausziehenden Mieters (#229), alles freiwillig und in den Feldern, die das
+// Mietverhältnis schon hat. Nur, was mitkommt, ändert sich (wie bei `PUT`); leer entfernt die Angabe. Die Anschrift ist
+// eine Zeile wie die des Vermieters (Umbrüche werden „, “), höchstens 200 Zeichen.
+const CONTACT_FIELDS = [
+  ['correspondenceAddress', 'Die neue Anschrift'], ['email', 'Die E-Mail-Adresse'], ['phone', 'Die Telefonnummer'],
+] as const
+function departingContact(input: unknown): Partial<Record<(typeof CONTACT_FIELDS)[number][0], string | undefined>> {
+  if (input === undefined || input === null) return {}
+  if (!isObject(input)) throw new TenantChangeError(400, 'Die Angaben zur Erreichbarkeit des bisherigen Mieters sind unlesbar.')
+  const out: Partial<Record<(typeof CONTACT_FIELDS)[number][0], string | undefined>> = {}
+  for (const [key, label] of CONTACT_FIELDS) {
+    if (!has(input, key)) continue
+    const value = raw(input, key)
+    if (value !== null && typeof value !== 'string') throw new TenantChangeError(400, `${label} des bisherigen Mieters ist kein Text.`)
+    const line = (value ?? '').trim().replace(/\s*\n\s*/g, ', ')
+    if (line.length > LETTER_LINE_MAX) throw new TenantChangeError(400, `${label} des bisherigen Mieters ist zu lang (höchstens ${LETTER_LINE_MAX} Zeichen).`)
+    out[key] = line === '' ? undefined : line
+  }
+  return out
+}
+
 // `null`, wenn es das Mietverhältnis nicht gibt; die Route macht daraus ihre 404.
 // **Heizung PR 10 (Entwurf 3.5, 11.4):** Eine Ablesung darf ein eigenes Datum tragen, wenn sie neben
 // dem Auszug liegt (Brunata erfasst Wechsel- und Ablesedatum getrennt); gerechnet wird mit dem Wert,
@@ -2721,7 +2742,7 @@ export async function changeTenant(
     }
   }
 
-  const beendet = mergeTenancy(current, { end })
+  const beendet = mergeTenancy(current, { end, ...departingContact(raw(body, 'contact')) })
   await db.transaction(async (tx) => {
     await guardTenancy(tx, current, beendet, { end })
     await tenancyCollection.replace(tx, beendet)

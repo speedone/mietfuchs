@@ -352,6 +352,47 @@ test('K3: ein Abschluss ohne eingefrorene Fußzeile druckt keine, statt Kontakt 
   expect(plain(document.querySelector('table.print-pages > tfoot')?.textContent)).not.toContain('IBAN')
 })
 
+// #229: Nach dem Auszug ohne neue Anschrift warnt die Seite; ist die Abrechnung abgeschlossen und die Anschrift danach
+// eingetragen, sagt sie, dass die eingefrorene gedruckt wird. Nach dem Versand schweigt sie.
+test('#229: Anschrift nach dem Auszug fehlt oder hat sich nach dem Abschluss geändert', async () => {
+  const movedOut: Tenancy[] = [{ ...TENANCIES[0]!, end: `${YEAR}-06-30` }]
+  const showWith = (tenancies: Tenancy[]) => render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <UIProvider><Abrechnung settings={SETTINGS} units={[]} tenancies={tenancies} reload={async () => {}} /></UIProvider>
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  showWith(movedOut)
+  expect(await screen.findByText('Anschrift nach dem Auszug fehlt', {}, SLOW)).toBeTruthy()
+  cleanup()
+
+  // Abgeschlossen mit der Anschrift der Wohnung, danach die neue eingetragen.
+  const frozen = settlement.letters?.t1
+  if (!frozen) throw new Error('kein Anschreiben')
+  settlement = { ...settlement, closed: { closedAt: `${YEAR + 1}-02-01T10:00:00Z`, sentAt: null } }
+  showWith([{ ...movedOut[0]!, correspondenceAddress: 'Birkenweg 3, 54321 Anderswo' }])
+  expect(await screen.findByText('Anschrift nach dem Abschluss geändert', {}, SLOW)).toBeTruthy()
+  const letter = await screen.findByRole('region', { name: 'Anschreiben an Meier' }, SLOW)
+  expect(letter.querySelector('address')?.textContent).toBe(frozen.recipient?.join(''))
+  cleanup()
+
+  settlement = { ...settlement, closed: { closedAt: `${YEAR + 1}-02-01T10:00:00Z`, sentAt: `${YEAR + 1}-02-02` } }
+  showWith(movedOut)
+  await screen.findByRole('region', { name: 'Anschreiben an Meier' }, SLOW)
+  expect(screen.queryByText(/Anschrift nach dem/)).toBeNull()
+})
+
+// #229, Durchsicht S1: Eine Anschrift, die nicht ins Fensterfeld passt, nennt die Seite vor dem Druck.
+test('#229 S1: eine Anschrift mit mehr als sechs Zeilen wird vor dem Druck genannt', async () => {
+  const l = settlement.letters?.t1
+  if (!l) throw new Error('kein Anschreiben')
+  settlement = { ...settlement, letters: { t1: { ...l, recipient: ['Meier', 'c/o Weber', 'Hinterhaus', '3. OG', 'Birkenweg 3', 'Postfach 12', '54321 Anderswo'] } } }
+  show()
+  expect(await screen.findByText('Anschrift zu lang für das Fensterfeld', {}, SLOW)).toBeTruthy()
+  expect(screen.getByText(/Die Anschrift hat 7 Zeilen; im Anschriftfeld passen 6/)).toBeTruthy()
+})
+
 test('K7: eine Rücksendeangabe, die nicht in die Vermerkzone passt, wird vor dem Druck genannt', async () => {
   const l = settlement.letters?.t1
   if (!l) throw new Error('kein Anschreiben')

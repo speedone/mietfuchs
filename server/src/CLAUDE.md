@@ -160,7 +160,9 @@ Fremdschlüssel. Alle Datenrouten nehmen `?property=`. Die übrigen Routen stehe
 Heizung betreffenden in docs/heizung.md. Was sich nicht aus dem Code erschließt:
 
 - `POST /api/tenancies/:id/change`: Mieterwechsel (Ende, Zwischenablesungen, Nachmieter) in einer
-  Transaktion, ganz oder gar nicht (`changeTenant`).
+  Transaktion, ganz oder gar nicht (`changeTenant`). `contact` (#229) setzt neue Anschrift, E-Mail und Telefon des
+  ausziehenden Mieters in den vorhandenen Feldern, nur die mitgeschickten Schlüssel, leer entfernt; falsche Art oder über
+  200 Zeichen ist eine 400, bevor etwas geschrieben wird (`departingContact`).
 - `/api/restore` setzt **keinen vorhandenen Stand voraus** (auf einem frischen Rechner wird am
   häufigsten wiederhergestellt): Sicherheitskopien nur, wo es etwas zu sichern gab, den Belegordner
   legt die Route selbst an. Geprüft wird vor jedem Überschreiben (siehe db/CLAUDE.md).

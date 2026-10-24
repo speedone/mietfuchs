@@ -19,7 +19,8 @@ import { ibanForSave, ibanToInput, storedIbanInvalid } from '../ibanField'
 import { IBAN_LABELS, normalizeIban } from '../../../shared/iban.ts'
 import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_KIND_OPTIONS, SELF_SUPPLY_TENANCY_HINT, buildPersonHistory, costModelBadge, costModelBody, buildSchedule, defaultTenancyUnitId, overlapQuestion, partialMonthNote, prepaymentColumn, tenancyRequired, type ScheduleKind, type TenancyField, scheduleField, scheduleLabel, scheduleMonthText, showsFlatRates, startsSchedule } from '../tenancyModel'
 import { useOpenForm, useProperty, withProperty } from '../property'
-import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, INTERIM_FEE_HINT, INTERIM_GAP_OPTIONS, parseMeterValue, successorHeatingNote, tenantChangeProblems, type NewTenantForm, type TenantChangeField } from '../tenantChange'
+import { buildTenantChange, contactForm, defaultStart, EMPTY_NEW_TENANT, INTERIM_FEE_HINT, INTERIM_GAP_OPTIONS, parseMeterValue, successorHeatingNote, tenantChangeProblems, type ContactForm, type NewTenantForm, type TenantChangeField } from '../tenantChange'
+import { DEADLINE_SENTENCE, ownAddressWarning } from '../landlord'
 import { gapConsequence } from '../heatingSelfView'
 import PeriodCard from '../components/PeriodCard'
 import Card from '../components/Card'
@@ -749,8 +750,8 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                 <Field label="Telefon">
                   <input value={tenForm.phone} onChange={(e) => setTenForm({ ...tenForm, phone: e.target.value })} placeholder="0123 456789" />
                 </Field>
-                <Field label="Abweichende Anschrift (Schriftverkehr)">
-                  <input value={tenForm.correspondenceAddress} onChange={(e) => setTenForm({ ...tenForm, correspondenceAddress: e.target.value })} placeholder="z. B. neue Adresse nach Auszug" />
+                <Field label="Abweichende Anschrift (Schriftverkehr)" hint={ownAddressWarning(tenForm.tenantName, tenForm.correspondenceAddress) ?? 'Straße, PLZ Ort. Steht im Anschriftfeld der Abrechnung, etwa nach dem Auszug.'}>
+                  <input value={tenForm.correspondenceAddress} onChange={(e) => setTenForm({ ...tenForm, correspondenceAddress: e.target.value })} placeholder="z. B. Birkenweg 3, 54321 Anderswo" />
                 </Field>
                 {/* #415, Teil 2: die Anrede im Anschreiben ({Anrede}); ohne Eintrag gilt der Vorschlag im Feld. */}
                 <Field label="Anrede im Brief" width="l" hint="Etwa „Sehr geehrte Frau Becker“; ein Komma am Ende ergänzt Mietfuchs. Ohne Eintrag steht im Brief, was im Feld vorgeschlagen ist.">
@@ -937,6 +938,8 @@ function TenantChangeDrawer({ tenancy, unit, plants, onClose, onDone }: {
   const [endDate, setEndDate] = useState('')
   const [meterValues, setMeterValues] = useState<Record<string, string>>({})
   const [vacancy, setVacancy] = useState(false)
+  // #229: neue Anschrift, E-Mail und Telefon des ausziehenden Mieters, vorbelegt mit dem Mietverhältnis.
+  const [contact, setContact] = useState<ContactForm>(() => contactForm(tenancy))
   const [newTenant, setNewTenant] = useState<NewTenantForm>(EMPTY_NEW_TENANT)
   // Der Einzug folgt dem Auszug (Tag danach), bis er selbst geändert wird.
   const [startTouched, setStartTouched] = useState(false)
@@ -988,7 +991,7 @@ function TenantChangeDrawer({ tenancy, unit, plants, onClose, onDone }: {
   async function commit() {
     if (busy) return
     const heatMeterIds = selfHeating ? meters.filter((m) => m.unitId === tenancy.unitId && (m.type === 'waerme' || m.type === 'warmwasser')).map((m) => m.id) : []
-    const input = { tenancy, endDate, meters, meterValues, vacancy, newTenant, askHeating, meterDates, heatMeterIds, interimGap: gap }
+    const input = { tenancy, endDate, contact, meters, meterValues, vacancy, newTenant, askHeating, meterDates, heatMeterIds, interimGap: gap }
     const problems = tenantChangeProblems(input)
     if (problems.length > 0) {
       errors.report(problems)
@@ -1022,7 +1025,7 @@ function TenantChangeDrawer({ tenancy, unit, plants, onClose, onDone }: {
       width={560}
       onClose={onClose}
       onSubmit={() => void commit()}
-      value={{ endDate, meterValues, meterDates, vacancy, newTenant, gap }}
+      value={{ endDate, contact, meterValues, meterDates, vacancy, newTenant, gap }}
       busy={busy}
       errors={errors}
       actions={<button className="btn" disabled={busy} onClick={() => void commit()}>{busy && <span className="spinner" />}Speichern</button>}
@@ -1032,6 +1035,20 @@ function TenantChangeDrawer({ tenancy, unit, plants, onClose, onDone }: {
         <Field label="Auszugsdatum (letzter Miettag)" required width="m" {...errors.field('end')}>
           <input type="date" value={endDate} onChange={(e) => changeEnd(e.target.value)} />
         </Field>
+        {/* #229: Die Abrechnung geht nach dem Auszug an die neue Anschrift; die Frist nach § 556 Abs. 3 BGB läuft auch
+            gegenüber dem bisherigen Mieter. Alles freiwillig, gespeichert am Mietverhältnis. */}
+        <p className="muted">{`Wie erreichen Sie ${tenancy.tenantName} nach dem Auszug? Die Nebenkostenabrechnung geht an die neue Anschrift. ${DEADLINE_SENTENCE} Alle Angaben sind freiwillig.`}</p>
+        <div className="field-grid">
+          <Field label="Neue Anschrift" width="l" hint={ownAddressWarning(tenancy.tenantName, contact.correspondenceAddress) ?? 'Straße, PLZ Ort. Gilt ab dem Speichern für alle Schreiben an diesen Mieter.'} {...errors.field('correspondenceAddress')}>
+            <input value={contact.correspondenceAddress} placeholder="z. B. Birkenweg 3, 54321 Anderswo" autoComplete="off" onChange={(e) => setContact({ ...contact, correspondenceAddress: e.target.value })} />
+          </Field>
+          <Field label="E-Mail" width="l" {...errors.field('email')}>
+            <input type="email" value={contact.email} autoComplete="off" onChange={(e) => setContact({ ...contact, email: e.target.value })} />
+          </Field>
+          <Field label="Telefon" width="m" {...errors.field('phone')}>
+            <input type="tel" value={contact.phone} autoComplete="off" onChange={(e) => setContact({ ...contact, phone: e.target.value })} />
+          </Field>
+        </div>
       </section>
 
       <section className="stack">

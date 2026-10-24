@@ -388,6 +388,42 @@ test('Mieterwechsel (#150): beendet, liest ab und legt den Nachmieter an, alles 
   }
 })
 
+test('Mieterwechsel (#229): neue Anschrift, E-Mail und Telefon des Vormieters im selben Schritt, alles freiwillig', async () => {
+  const s = await startServer()
+  try {
+    const { tenancy } = await changeStock(s)
+    await s.api(`/api/tenancies/${tenancy.id}?property=objekt-1`, { method: 'PUT', body: JSON.stringify({ email: 'alt@example.org', phone: '0301234' }) })
+    // Eine Angabe falscher Art wird abgelehnt, und nichts ist gespeichert.
+    for (const contact of ['Birkenweg 3', { email: 5 }, { correspondenceAddress: 'x'.repeat(201) }]) {
+      const res = await postChange(s, tenancy.id, { end: '2025-06-30', readings: [], newTenancy: null, contact })
+      assert.equal(res.status, 400, JSON.stringify(contact))
+      assert.equal((await s.api<Tenancy[]>('/api/tenancies?property=objekt-1')).find((t) => t.id === tenancy.id)?.end, null)
+    }
+    // Nur, was mitkommt, ändert sich; leer entfernt die Angabe, ein Umbruch wird „, “.
+    const res = await postChange(s, tenancy.id, {
+      end: '2025-06-30', readings: [], newTenancy: null,
+      contact: { correspondenceAddress: ' Birkenweg 3\n54321 Anderswo ', phone: '' },
+    })
+    assert.equal(res.status, 200, await res.clone().text())
+    const ended = (await s.api<Tenancy[]>('/api/tenancies?property=objekt-1')).find((t) => t.id === tenancy.id) ?? assert.fail('weg')
+    assert.equal(ended.end, '2025-06-30')
+    assert.equal(ended.correspondenceAddress, 'Birkenweg 3, 54321 Anderswo')
+    assert.equal(ended.email, 'alt@example.org', 'nicht mitgeschickt, bleibt')
+    assert.equal(ended.phone, undefined, 'leer entfernt')
+
+    // Die Abrechnung schreibt an die neue Anschrift; mit dem Abschluss friert sie ein.
+    const letterOf = (st: Settlement) => st.letters?.[tenancy.id] ?? assert.fail('kein Anschreiben')
+    await s.api('/api/costItems?property=objekt-1', { method: 'POST', body: JSON.stringify({ period: '2025-01', category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 60000, key: 'area' }) })
+    assert.deepEqual(letterOf(await s.api<Settlement>('/api/settlement/2025?property=objekt-1')).recipient, ['Alt', 'Birkenweg 3', '54321 Anderswo'])
+    const close = await fetch(`${s.base}/api/settlement/2025/close?property=objekt-1`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
+    assert.equal(close.status, 201, await close.clone().text())
+    await s.api(`/api/tenancies/${tenancy.id}?property=objekt-1`, { method: 'PUT', body: JSON.stringify({ correspondenceAddress: 'Ganz woanders 1, 99999 Fern' }) })
+    assert.deepEqual(letterOf(await s.api<Settlement>('/api/settlement/2025?property=objekt-1')).recipient, ['Alt', 'Birkenweg 3', '54321 Anderswo'], 'eingefroren')
+  } finally {
+    s.stop()
+  }
+})
+
 test('Mieterwechsel (#150): scheitert der dritte Schritt, ist nichts gespeichert, und ein zweiter Versuch legt nichts doppelt an', async () => {
   const s = await startServer()
   try {
