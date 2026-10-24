@@ -48,11 +48,17 @@ jobs:
         run: |
           code=0
           node scripts/safari-print-check.mjs --out "$RUNNER_TEMP/druck-safari" --safari-bin "$RUNNER_TEMP/safari-print" || code=$?
-          if [ "$code" = 1 ]; then
+          # Exit 1 gilt nur als Befund, wenn der Bericht da ist und mindestens einen nennt. Node endet auch bei einer
+          # nicht abgefangenen Ausnahme mit 1; ohne diese Probe würde ein kaputter Lauf still grün.
+          anzahl=0
+          if [ -f "$RUNNER_TEMP/druck-safari/bericht.md" ]; then
             anzahl=$(grep -c '^- \*\*' "$RUNNER_TEMP/druck-safari/bericht.md" || true)
+          fi
+          if [ "$code" = 1 ] && [ "$anzahl" -gt 0 ]; then
             echo "::warning title=Druck in Safari::$anzahl Befund(e), siehe Zusammenfassung des Laufs (vorerst gemeldet, nicht gescheitert)"
             exit 0
           fi
+          if [ "$code" = 1 ]; then echo "::error title=Druck in Safari::Exit 1 ohne Befund im Bericht, der Lauf ist gescheitert"; fi
           exit "$code"
       - name: Bericht in die Zusammenfassung
         if: always()

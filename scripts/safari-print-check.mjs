@@ -28,7 +28,10 @@ import fs from 'node:fs'
 import http from 'node:http'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { loadPlaywright, startDemo, textPdf, YEAR } from './demo-stock.mjs'
+// demo-stock.mjs (und mit ihm Playwright) wird erst im Ablauf geladen, damit auch ein kaputter Import als gescheiterter
+// Lauf endet (Exit 2) und nicht wie Befunde (Exit 1).
+/** @type {typeof import('./demo-stock.mjs')} */
+let stock
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const MM = 25.4 / 72
@@ -42,8 +45,10 @@ const option = (name) => {
 }
 const out = path.resolve(option('--out') ?? path.join(root, 'safari-print-out'))
 const engines = (option('--engines') ?? (process.platform === 'darwin' ? 'safari,chromium' : 'chromium')).split(',')
-for (const e of engines) if (e !== 'safari' && e !== 'chromium') throw new Error(`Unbekannte Engine: ${e}`)
-if (engines.includes('safari') && process.platform !== 'darwin') throw new Error('Safari gibt es nur unter macOS.')
+function checkArguments() {
+  for (const e of engines) if (e !== 'safari' && e !== 'chromium') throw new Error(`Unbekannte Engine: ${e}`)
+  if (engines.includes('safari') && process.platform !== 'darwin') throw new Error('Safari gibt es nur unter macOS.')
+  }
 
 // ---------- Fälle ----------
 // Dieselben wie die Druckproben zu #438. `letter`: ob ein Anschreiben gedruckt wird; `paper`: Briefpapier (ohne Rand,
@@ -62,7 +67,6 @@ const CASES = [
 ]
 const only = option('--cases')?.split(',')
 const cases = only ? CASES.filter((c) => only.includes(c.name)) : CASES
-if (only && cases.length !== only.length) throw new Error(`Unbekannter Fall in --cases: ${only.filter((n) => !CASES.some((c) => c.name === n)).join(', ')}`)
 
 // Texte der Oberfläche, die nie im Druck stehen dürfen: Navigation (ganze Zeile), Knöpfe und Hinweise (Teil der Zeile).
 // Nicht dabei sind Wörter, die auch die Abrechnung druckt („Abrechnung“, „Kosten“, „Heizkosten“).
@@ -178,6 +182,8 @@ async function readPdf(file) {
     }
     pages.push({ w: vp.width * MM, h: vp.height * MM, items, lines: toLines(items) })
   }
+  // Eine PDF ohne Seite ist ein kaputter Druck, kein Befund über das Aussehen
+  if (pages.length === 0) throw new Error(`${path.basename(file)} hat keine Seite`)
   return pages
 }
 // Textstücke auf einer Höhe (±0,8 mm) zu Zeilen, links nach rechts
@@ -220,7 +226,6 @@ const MONEY = /\d,\d\d\s*€/
 function checkPdf(c, pages, expect) {
   const findings = []
   const n = pages.length
-  if (n === 0) return ['keine Seite']
   if (expect.referencePages !== null && n !== expect.referencePages) findings.push(`${n} Seiten, Chromium ${expect.referencePages}`)
   pages.forEach((p, i) => {
     if (Math.abs(p.w - 210) > 1 || Math.abs(p.h - 297) > 1) findings.push(`Seite ${i + 1}: Format ${p.w.toFixed(1)} × ${p.h.toFixed(1)} mm statt A4`)
@@ -349,7 +354,9 @@ function runSafari(bin, { url, preludeFile, driverFile, args, file, log }) {
     child.on('error', reject)
     child.on('exit', (code) => {
       fs.writeFileSync(log, `${stdout}\n${stderr}`)
-      if (code === 0) resolve(JSON.parse(stdout.trim().split('\n').pop() ?? '{}'))
+      // Meldungen der Seite (main.swift schreibt sie mit „seite: “ auf stderr): Fehler und console.error
+      const pageErrors = stderr.split('\n').filter((l) => l.startsWith('seite: ')).map((l) => l.slice(7))
+      if (code === 0) resolve({ ...JSON.parse(stdout.trim().split('\n').pop() ?? '{}'), pageErrors })
       else reject(new Error(`Safari-Druck endete mit ${code}:\n${stderr.slice(-2000)}`))
     })
   })
@@ -358,40 +365,45 @@ function runSafari(bin, { url, preludeFile, driverFile, args, file, log }) {
 // ---------- Ablauf ----------
 async function produce() {
   fs.mkdirSync(out, { recursive: true })
-  const { chromium } = await loadPlaywright()
+  const { chromium } = await stock.loadPlaywright()
   const browser = await chromium.launch({ args: ['--lang=de-DE'], env: { ...process.env, LANG: 'de_DE.UTF-8' } })
-  const safariBin = engines.includes('safari') ? buildSafari() : null
-  const helper = await browser.newPage()
-  const shot = async (html, width, height) => {
-    await helper.setViewportSize({ width, height })
-    await helper.setContent(html)
-    return helper.screenshot({ type: 'png' })
-  }
-  // Ein Logo und ein Briefpapier als PNG, erfunden wie der übrige Bestand
-  const logo = await shot('<body style="margin:0"><div style="width:400px;height:120px;display:flex;align-items:center;justify-content:center;background:#fff;font:bold 54px sans-serif;color:#2f4f8f">WEGENER</div></body>', 400, 120)
-  const paper = await shot('<body style="margin:0"><div style="width:1240px;height:1754px;position:relative;background:#fff"><div style="position:absolute;top:0;left:0;right:0;height:60px;background:#2f4f8f"></div><div style="position:absolute;bottom:40px;left:148px;right:118px;border-top:2px solid #2f4f8f;font:20px sans-serif;color:#2f4f8f;padding-top:8px">Hausverwaltung Wegener · Ahornstraße 3 · 12345 Musterstadt · Tel. 0123 456789</div></div></body>', 1240, 1754)
-  await helper.close()
-
-  const demo = await startDemo({ pdf: (html) => textPdf(html), prefix: 'mietfuchs-safari-print-' })
+  /** @type {Awaited<ReturnType<typeof stock.startDemo>> | null} */
+  let demo = null
   /** @type {Record<string, any>} */
   const meta = { engines, cases: {}, started: new Date().toISOString() }
+  // Ab hier räumt `finally` auf: Ein Fehler beim Übersetzen oder beim Start des Servers ließe sonst Chromium offen.
   try {
+    const safariBin = engines.includes('safari') ? buildSafari() : null
+    const helper = await browser.newPage()
+    const shot = async (html, width, height) => {
+      await helper.setViewportSize({ width, height })
+      await helper.setContent(html)
+      return helper.screenshot({ type: 'png' })
+    }
+    // Ein Logo und ein Briefpapier als PNG, erfunden wie der übrige Bestand
+    const logo = await shot('<body style="margin:0"><div style="width:400px;height:120px;display:flex;align-items:center;justify-content:center;background:#fff;font:bold 54px sans-serif;color:#2f4f8f">WEGENER</div></body>', 400, 120)
+    const paper = await shot('<body style="margin:0"><div style="width:1240px;height:1754px;position:relative;background:#fff"><div style="position:absolute;top:0;left:0;right:0;height:60px;background:#2f4f8f"></div><div style="position:absolute;bottom:40px;left:148px;right:118px;border-top:2px solid #2f4f8f;font:20px sans-serif;color:#2f4f8f;padding-top:8px">Hausverwaltung Wegener · Ahornstraße 3 · 12345 Musterstadt · Tel. 0123 456789</div></div></body>', 1240, 1754)
+    await helper.close()
+
+    demo = await stock.startDemo({ pdf: (html) => stock.textPdf(html), prefix: 'mietfuchs-safari-print-' })
+    const server = demo
     const api = demo.api
     const settings = await api.get('/api/settings')
     await api.put('/api/settings', { ...settings, landlordAddress: 'Ahornstraße 3, 12345 Musterstadt', landlordContact: 'Tel. 0123 456789, E-Mail klaus.wegener@example.org', printFooter: true, printFoldMarks: true })
     // Heizanlage mit der Heizungsposition, damit die Blöcke der Heizung erscheinen (wie im Browserlauf)
     const items = await api.get(`/api/costItems?property=${demo.ids.haus}`)
-    const heat = items.find((c) => c.category === 'Heizung und Warmwasser' && c.year === YEAR)
+    const heat = items.find((c) => c.category === 'Heizung und Warmwasser' && c.year === stock.YEAR)
     await api.post(`/api/heating-plants?property=${demo.ids.haus}`, { energy: 'gas', method: 'manual', assignItemIds: heat ? [heat.id] : [] })
-    const settlement = await api.get(`/api/settlement/${YEAR}?property=${demo.ids.haus}`)
+    const settlement = await api.get(`/api/settlement/${stock.YEAR}?property=${demo.ids.haus}`)
     const tenants = settlement.statements.map((s) => ({ name: s.tenantName, footnote: footnoteText(settlement.letters?.[s.tenancyId]?.values ?? {}) }))
+    if (tenants.length === 0) throw new Error('Die Abrechnung des Beispielbestands hat keine Mieter, es gäbe nichts zu prüfen')
     meta.tenants = tenants
 
     const design = async (body, files = {}) => {
       const fd = new FormData()
       fd.append('design', JSON.stringify(body))
       for (const [k, v] of Object.entries(files)) fd.append(k, new Blob([v]), `${k}.png`)
-      const res = await fetch(`${demo.base}/api/letter-design`, { method: 'PUT', body: fd })
+      const res = await fetch(`${server.base}/api/letter-design`, { method: 'PUT', body: fd })
       if (!res.ok) throw new Error(`Briefpapier: HTTP ${res.status} ${await res.text()}`)
     }
     const margins = { top: 45, right: 20, bottom: 30, left: 25 }
@@ -415,22 +427,23 @@ async function produce() {
         if (engine === 'chromium') {
           const page = await context.newPage()
           await page.addInitScript(preludeSource)
-          const errors = []
-          page.on('pageerror', (e) => errors.push(e.message))
-          await page.goto(demo.base)
+          const pageErrors = []
+          page.on('pageerror', (e) => pageErrors.push(`Fehler: ${e.message}`))
+          page.on('console', (m) => { if (m.type() === 'error') pageErrors.push(`console.error: ${m.text()}`) })
+          await page.goto(server.base)
           await page.waitForLoadState('networkidle')
           const result = JSON.parse(await page.evaluate(drivePage, args))
           await page.pdf({ path: file, preferCSSPageSize: true, printBackground: false })
           await page.close()
-          meta.cases[c.name][engine] = { result, errors, ms: Date.now() - t0 }
+          meta.cases[c.name][engine] = { result, pageErrors, ms: Date.now() - t0 }
         } else {
           const preludeFile = path.join(scratch, `${c.name}-prelude.js`)
           fs.writeFileSync(preludeFile, preludeSource)
-          const report = await runSafari(/** @type {string} */ (safariBin), { url: demo.base, preludeFile, driverFile, args, file, log: path.join(out, `${c.name}-safari.log`) })
-          meta.cases[c.name][engine] = { result: typeof report.driver === 'string' ? JSON.parse(report.driver) : report.driver, printInfo: report.printInfo, os: report.os, ms: Date.now() - t0 }
+          const report = await runSafari(/** @type {string} */ (safariBin), { url: server.base, preludeFile, driverFile, args, file, log: path.join(out, `${c.name}-safari.log`) })
+          meta.cases[c.name][engine] = { result: typeof report.driver === 'string' ? JSON.parse(report.driver) : report.driver, pageErrors: report.pageErrors, printInfo: report.printInfo, os: report.os, ms: Date.now() - t0 }
         }
         console.log(`${c.name} (${engine}): ${((Date.now() - t0) / 1000).toFixed(1)} s`)
-        if (demo.problem()) throw new Error(/** @type {string} */ (demo.problem()))
+        if (server.problem()) throw new Error(/** @type {string} */ (server.problem()))
       }
       if (c.setup === 'no-letter') await api.put('/api/letter-texts', { texts: {}, printLetter: true })
       if (c.setup === 'paper' || c.setup === 'logo') await design({ logo: 'remove', paper: 'remove', paperNextFile: 'keep', paperNext: 'none', margins })
@@ -441,13 +454,14 @@ async function produce() {
     meta.finished = new Date().toISOString()
     fs.writeFileSync(path.join(out, 'lauf.json'), JSON.stringify(meta, null, 2))
     await browser.close()
-    await demo.stop()
+    await demo?.stop()
   }
 }
 
 async function evaluate() {
   const meta = JSON.parse(fs.readFileSync(path.join(out, 'lauf.json'), 'utf8'))
   const tenantsAll = meta.tenants
+  if (!Array.isArray(tenantsAll) || tenantsAll.length === 0) throw new Error('lauf.json nennt keine Mieter')
   const rows = []
   const lines = []
   let count = 0
@@ -463,6 +477,7 @@ async function evaluate() {
       const pages = read[engine]
       if (!pages) { cells.push('–'); continue }
       const findings = checkPdf(c, pages, { tenants, referencePages: engine === 'safari' && read.chromium ? read.chromium.length : null })
+      for (const e of meta.cases[c.name]?.[engine]?.pageErrors ?? []) findings.push(`Meldung der Seite: ${e.slice(0, 200)}`)
       if (c.banner && !meta.cases[c.name]?.[engine]?.result?.banner) findings.push('Hinweis „Sicherung vor dem Update angelegt“ stand nicht auf der Seite, der Fall prüft so nichts')
       cells.push(String(pages.length))
       for (const f of findings) lines.push(`- **${c.name}** (${engine === 'safari' ? 'Safari' : 'Chromium'}): ${f}`)
@@ -493,12 +508,18 @@ async function evaluate() {
   return count
 }
 
+let exitCode = 2
 try {
+  checkArguments()
+  stock = await import('./demo-stock.mjs')
   if (!flag('--evaluate')) await produce()
   const findings = await evaluate()
-  process.exitCode = findings ? 1 : 0
+  exitCode = findings ? 1 : 0
 } catch (err) {
   // Ein gescheiterter Lauf ist kein Befund: eigener Code, damit der Workflow beides unterscheidet
   console.error(err)
-  process.exitCode = 2
+  exitCode = 2
 }
+// Ausdrücklich beenden: Ein offener Browser oder Server hielte den Lauf sonst bis zum Timeout auf.
+// Erst nach der Ausgabe (unter macOS schreibt Node in eine Pipe asynchron)
+process.stdout.write('', () => process.exit(exitCode))

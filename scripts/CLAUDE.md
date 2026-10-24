@@ -47,9 +47,11 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   gilt. Vergleich: Chromium mit `page.pdf()` auf demselben Rechner. pdf.js prüft Seitenzahl gleich
   Chromium, A4, jede Mieterabrechnung auf neuer Seite (Anrede bzw. Zeile „Mieter“, darüber kein Betrag),
   „Seite x von y“ (nur ein Mieter ohne Briefpapier) und Fußvermerk als unterste Zeile jeder Seite außer
-  der Briefseite, kein Text außerhalb 25 bis 190 mm und 5 mm vom oberen Rand, kein Text der Oberfläche.
-  Bericht `bericht.md` in der Zusammenfassung, PDFs und Seitenbilder als Artefakt. Exit 1 heißt Befunde
-  (der Workflow meldet sie vorerst als Warnung und bleibt grün), Exit 2 ein gescheiterter Lauf (rot).
+  der Briefseite, kein Text außerhalb 25 bis 190 mm und 5 mm vom oberen Rand, kein Text der Oberfläche,
+  keine Fehler oder `console.error` der Seite. Bericht `bericht.md` in der Zusammenfassung, PDFs und
+  Seitenbilder als Artefakt. Exit 1 heißt Befunde (der Workflow meldet sie vorerst als Warnung und
+  bleibt grün, aber nur, wenn `bericht.md` mindestens einen nennt), Exit 2 ein gescheiterter Lauf
+  (rot; auch ein kaputter Import, eine PDF ohne Seite oder ein Bestand ohne Mieter).
   Lokal ohne Mac: `--engines chromium`; `--evaluate` wertet vorhandene PDFs neu aus. **Befunde des
   ersten Laufs** (Safari 26.6.2, offen): WebKit kennt die Randfelder von `@page` nicht (MDN/caniuse:
   `@bottom-right` nur Chromium ab 131; WebKit hat seit Safari 18.2 nur die Randangaben), also keine
