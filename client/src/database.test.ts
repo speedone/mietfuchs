@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { databaseHint, MIGRATION_GUIDE_URL, updateHint } from './database'
+import { databaseHint, dataFolder, MIGRATION_GUIDE_URL, updateHint } from './database'
 import type { DatabaseState } from './types'
 import guide from '../../MIGRATION.md?raw'
 
@@ -101,4 +101,11 @@ describe('Sicherung vor dem Update (#154)', () => {
     const gelesen = 'mietfuchs.sqlite.vor-0001_objekte@2026-08-01T10:00:00.000Z'
     expect(updateHint(migrated('mietfuchs.sqlite.vor-0001_objekte'), '0.9.0', gelesen)).not.toBeNull()
   })
+})
+
+test('dataFolder: Ordner der Datenbankdatei, mit beiden Trennzeichen', () => {
+  expect(dataFolder('/srv/x/mietfuchs.sqlite')).toBe('/srv/x')
+  expect(dataFolder('C:\\a\\b\\mietfuchs.sqlite')).toBe('C:\\a\\b')
+  expect(dataFolder('mietfuchs.sqlite')).toBeNull()
+  expect(dataFolder(undefined)).toBeNull()
 })

@@ -24,6 +24,12 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+test('der Fuß verspricht nichts Pauschales über den Ort der Daten', async () => {
+  render(<App />)
+  await screen.findByRole('button', { name: /^Design: System/ }, { timeout: 5000 })
+  expect(document.body.textContent).not.toMatch(/bleiben lokal/)
+})
+
 test('der Design-Knopf ist benannt, und sein Name beginnt mit dem sichtbaren Text', async () => {
   render(<App />)
   // Der zugängliche Name beginnt mit dem sichtbaren Text (WCAG 2.5.3, Beschriftung im Namen):

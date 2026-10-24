@@ -189,6 +189,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Geändert
 
+- Die Seitenleiste verspricht nicht mehr pauschal, dass alle Daten auf diesem Rechner bleiben (bei Docker oder einem Server im Heimnetz liegen sie auf dem Server). Die Karte „Daten & Sicherung“ nennt stattdessen den Datenordner und sagt genau, was nach außen geht: Belege nur mit Ihrer Zustimmung an einen externen KI-Dienst, bei eingeschalteter Update-Prüfung die Frage nach der neuesten Version bei GitHub.
 - Das gedruckte PDF der Nebenkostenabrechnung folgt DIN 5008 ([#415](https://github.com/speedone/mietfuchs/issues/415)):
   Anschreiben und Aufstellung haben dieselben Ränder (links 25 mm, rechts 20 mm). Rechts neben dem Anschriftfeld
   steht ein Informationsblock mit Ansprechpartner, Telefon, E-Mail sowie Ort und Datum aus den Angaben unter

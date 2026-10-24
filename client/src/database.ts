@@ -13,6 +13,14 @@ import type { DatabaseState } from './types'
 // Betrieb gedacht (Container-Orchestratoren) und geht sie nichts an.
 export type HealthReport = { version?: string, database?: DatabaseState }
 
+// Der Datenordner, in dem die Datenbankdatei liegt (aus `database.file` in /healthz). Der Pfad kommt vom Server und
+// kann Windows- oder POSIX-Schreibweise tragen; ohne Ordnerteil gibt es nichts zu nennen.
+export function dataFolder(file: string | null | undefined): string | null {
+  if (!file) return null
+  const cut = Math.max(file.lastIndexOf('/'), file.lastIndexOf('\\'))
+  return cut > 0 ? file.slice(0, cut) : null
+}
+
 export type DatabaseHint = {
   // 'done' ist eine gute Nachricht in einem Satz, 'failed' eine Erklärung, 'stale' eine
   // Feststellung mit einer Handlungsanweisung (#89), die nicht nach einem Fehler aussehen darf.
