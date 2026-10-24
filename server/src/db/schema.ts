@@ -2024,3 +2024,48 @@ export const tenancyLetterAdjustments = sqliteTable(
     check('tenancy_letter_adjustments_cents_valid', sql.raw(`("mode" = 'custom' AND "cents" IS NOT NULL AND typeof("cents") = 'integer' AND "cents" >= 0) OR ("mode" <> 'custom' AND "cents" IS NULL)`)),
   ],
 )
+
+// ---------- Änderungsjournal (#318, Schritte 2 und 3) ----------
+
+export const JOURNAL_OPS = ['insert', 'update', 'delete'] as const
+
+// Eine Gruppe je Anfrage, die schreibt (angelegt vom ersten Trigger, siehe db/journal.ts). Die
+// Kennung steigt auf, damit die Reihenfolge ohne Uhr feststeht. Kein Objekt: Das bestimmt der Verlauf
+// beim Lesen aus den Zeilen, damit es beim Schreiben nichts kostet und ein später gelöschtes Objekt
+// die Gruppe installationsweit macht. `schema_steps` zählt die angewendeten Migrationsschritte zur
+// Zeit der Gruppe (die Grenze „Rückgängig nur seit der letzten Migration“ für Schritt 4).
+export const changeGroups = sqliteTable(
+  'change_groups',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    at: text('at').notNull(),
+    method: text('method').notNull(),
+    route: text('route').notNull(),
+    description: text('description').notNull(),
+    subjectTable: text('subject_table'),
+    schemaSteps: integer('schema_steps').notNull(),
+  },
+  (t) => [index('change_groups_at_idx').on(t.at)],
+)
+
+// Eine Zeile je erfasster Änderung, geschrieben allein von den Triggern (TEMP, bei jedem Öffnen
+// angelegt, db/journal.ts). `before` und `after` tragen alle Spalten als JSON, damit Rückgängig
+// jede Zeile wiederherstellen kann; nur der eingefrorene Stand einer Abrechnung steht als Vermerk.
+export const changeLog = sqliteTable(
+  'change_log',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    groupId: integer('group_id').notNull().references(() => changeGroups.id, { onDelete: 'cascade' }),
+    tableName: text('table_name').notNull(),
+    rowKey: text('row_key').notNull(),
+    op: text('op', { enum: JOURNAL_OPS }).notNull(),
+    before: text('before'),
+    after: text('after'),
+  },
+  // (table_name, row_key): die jüngste Fassung einer seither gelöschten Zeile, beim Lesen des Verlaufs.
+  (t) => [
+    index('change_log_group_idx').on(t.groupId),
+    index('change_log_row_idx').on(t.tableName, t.rowKey),
+    oneOf('change_log_op_known', 'op', JOURNAL_OPS),
+  ],
+)

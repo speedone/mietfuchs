@@ -8,7 +8,7 @@ import type { GuidePage } from '../../shared/guides.ts'
 export type Tab =
   | 'cockpit' | 'schnellerfassung' | 'zaehler' | 'kosten' | 'mietkonto'
   | 'heizkosten' | 'abrechnung' | 'uebersicht' | 'steuer'
-  | 'stammdaten' | 'belege' | 'einstellungen' | 'hilfe'
+  | 'stammdaten' | 'belege' | 'einstellungen' | 'verlauf' | 'hilfe'
 
 // `short` ist die Beschriftung in der unteren Leiste am Handy (#346, Schritt 9), wo fünf Einträge
 // nebeneinander stehen; fehlt sie, gilt `label`.
@@ -41,6 +41,8 @@ export const NAV: { section?: string; items: NavItem[] }[] = [
     items: [
       { id: 'stammdaten', label: 'Stammdaten', icon: '🏠' },
       { id: 'einstellungen', label: 'Einstellungen', icon: '⚙️' },
+      // Das Änderungsjournal (#318, Schritt 3): was wann geändert wurde.
+      { id: 'verlauf', label: 'Verlauf', icon: '🕘' },
       { id: 'hilfe', label: 'Hilfe & Begriffe', icon: '❓' },
     ],
   },

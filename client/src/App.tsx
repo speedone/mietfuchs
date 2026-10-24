@@ -23,6 +23,7 @@ import Zaehler from './pages/Zaehler'
 import Belege from './pages/Belege'
 import Abrechnung from './pages/Abrechnung'
 import Hilfe from './pages/Hilfe'
+import Verlauf from './pages/Verlauf'
 import Steuer from './pages/Steuer'
 import Einstellungen from './pages/Einstellungen'
 import { navFor, tabLabel, type Tab } from './nav'
@@ -390,6 +391,7 @@ function Shell() {
         {tab === 'heizkosten' && <Heizkosten units={units} tenancies={tenancies} onTenanciesChanged={reload} />}
         {tab === 'steuer' && <Steuer settings={settings} />}
         {tab === 'hilfe' && <Hilfe onNavigate={(t) => void navigate(t)} focusTerm={helpTerm} onFocusTermDone={() => setHelpTerm(null)} />}
+        {tab === 'verlauf' && <Verlauf />}
         {tab === 'einstellungen' && settings && (
           <Einstellungen settings={settings} reload={reload} update={update} />
         )}

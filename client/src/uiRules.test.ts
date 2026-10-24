@@ -404,7 +404,7 @@ test('S11: Seitentitel beginnt mit dem Namen in der Navigation', () => {
   const fileOf: Record<string, string> = {
     cockpit: 'Cockpit', schnellerfassung: 'Schnellerfassung', zaehler: 'Zaehler', kosten: 'Kosten', belege: 'Belege',
     mietkonto: 'Mietkonto', heizkosten: 'Heizkosten', abrechnung: 'Abrechnung', uebersicht: 'Uebersicht', steuer: 'Steuer',
-    stammdaten: 'Stammdaten', einstellungen: 'Einstellungen', hilfe: 'Hilfe',
+    stammdaten: 'Stammdaten', einstellungen: 'Einstellungen', verlauf: 'Verlauf', hilfe: 'Hilfe',
   }
   const wrong = NAV.flatMap((g) => g.items).flatMap((item) => {
     const src = sources[`./pages/${fileOf[item.id] ?? '?'}.tsx`] ?? ''

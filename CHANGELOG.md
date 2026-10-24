@@ -35,6 +35,15 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   „Anschrift für den Versand“ mit Sprung zum Mietverhältnis, denn die Frist nach § 556 Abs. 3 BGB läuft
   auch gegenüber dem bisherigen Mieter. Die Anschrift friert mit dem Abschluss ein; wurde sie danach
   geändert, sagt die Seite Abrechnung, dass die eingefrorene gedruckt wird.
+- Verlauf der Änderungen ([#318](https://github.com/speedone/mietfuchs/issues/318)): Mietfuchs hält
+  jede Änderung am Bestand fest, je Aktion eine Zeile mit Zeitpunkt und einem Satz („Wohnung
+  gelöscht: EG links“), auch was beim Löschen mitgelöscht wird (Mietverhältnisse, Zähler, Ablesungen,
+  Zahlungen). Die neue Seite „Verlauf“ unter „Einrichten“ zeigt die Änderungen des gewählten Objekts
+  und die, die alle Objekte betreffen; aufgeklappt stehen die geänderten Felder mit altem und neuem
+  Wert. Der Verlauf wird zwölf Monate aufbewahrt. Ins Backup kommt er nur, wenn Sie in den
+  Einstellungen „Verlauf der Änderungen mitsichern“ wählen, denn er enthält auch gelöschte Angaben
+  früherer Mieter. Rückgängig machen lässt sich eine Änderung noch nicht; dafür ist der Verlauf die
+  Grundlage.
 - Kontrollansicht auf der Seite Abrechnung ([#321](https://github.com/speedone/mietfuchs/issues/321)):
   Aufklappbar und nur am Bildschirm zeigt sie je Kostenposition alle Mieter und die Gründe des
   Vermieters nebeneinander, dazu eine Summe gegen den Rechnungsbetrag, die Kosten, Vorauszahlung und

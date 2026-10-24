@@ -23,6 +23,7 @@ import { APP_VERSION } from '../version.ts'
 import { applyMigrations, connect, loadMigrations } from './client.ts'
 import { crossPropertyViolations, orphanPeriodKeys } from './repository.ts'
 import { heatingPlantViolations, straightenHeatingPlants } from './heating.ts'
+import { clearJournal } from './journal.ts'
 import { germanDate, integrityProblem, messageOf, unknownSteps, type OpenedDatabase } from './open.ts'
 
 // Die Namen im Archiv. Die Datenbank heißt darin wie im Datenordner, damit jemand, der das ZIP
@@ -50,6 +51,21 @@ export async function writeDatabaseSnapshot(opened: OpenedDatabase, target: stri
   // und bricht sonst ab.
   fs.rmSync(target, { force: true })
   await opened.write((db) => db.run(sql`VACUUM INTO ${target}`))
+}
+
+// **Ohne Verlauf, solange der Vermieter ihn nicht ausdrücklich mitsichert** (#318). Ein Backup wird
+// weitergegeben (Steuerberater, neuer Rechner, Cloud-Ordner), und das Änderungsjournal trägt bis zu
+// zwölf Monate lang auch gelöschte Mietverhältnisse samt Namen, Anschrift und IBAN. Geleert wird im
+// Schnappschuss, nie in der laufenden Datei; das abschließende VACUUM gibt den Platz frei, damit die
+// Daten auch nicht mehr in freien Seiten der Datei stehen.
+export async function stripJournal(file: string): Promise<void> {
+  const connection = await connect(file)
+  try {
+    clearJournal(connection)
+    connection.exec('VACUUM')
+  } finally {
+    connection.close()
+  }
 }
 
 // ---------- Die Angabe, woher das Archiv stammt ----------

@@ -39,6 +39,8 @@ export default function Einstellungen({ settings, reload, update }: Props) {
       form.landlordAddress !== (settings.landlordAddress ?? '') ||
       form.landlordContact !== (settings.landlordContact ?? ''),
   )
+  // Ob das Backup den Verlauf der Änderungen mitnimmt (#318). Nur eine Wahl für den Download, nichts wird gespeichert.
+  const [withJournal, setWithJournal] = useState(false)
   const [restoring, setRestoring] = useState(false)
   const [restoreMsg, setRestoreMsg] = useState('')
   // Die Fehler der Karte „Vermieter & Zahlung“, oben in der Karte (#346, Schritt 3)
@@ -151,7 +153,7 @@ export default function Einstellungen({ settings, reload, update }: Props) {
           Ein Backup enthält die komplette Datenbank samt aller hochgeladenen Belege als ZIP-Datei.
         </p>
         <div className="row">
-          <a className="btn secondary" href="/api/backup" download>⬇ Backup herunterladen (ZIP)</a>
+          <a className="btn secondary" href={withJournal ? '/api/backup?journal=1' : '/api/backup'} download>⬇ Backup herunterladen (ZIP)</a>
           <label className="btn secondary">
             {restoring && <span className="spinner" />}⬆ Backup wiederherstellen …
             <input
@@ -162,6 +164,15 @@ export default function Einstellungen({ settings, reload, update }: Props) {
             />
           </label>
         </div>
+        <label className="checkline">
+          <input type="checkbox" checked={withJournal} onChange={(e) => setWithJournal(e.target.checked)} />
+          Verlauf der Änderungen mitsichern
+        </label>
+        <p className="muted">
+          Der Verlauf (Seite „Verlauf“) enthält bis zu zwölf Monate lang auch gelöschte Angaben, etwa Name, Anschrift
+          und IBAN früherer Mieter. Ohne dieses Häkchen bleibt er auf diesem Rechner; wählen Sie es nur, wenn das
+          Backup den Verlauf mitnehmen soll, und geben Sie ein solches Backup nicht weiter.
+        </p>
         {restoreMsg && <div className={restoreMsg.startsWith('Fehler') ? 'error' : 'ok'}>{restoreMsg}</div>}
         <p className="muted">
           Beim Wiederherstellen werden die aktuellen Daten <strong>überschrieben</strong> (eine

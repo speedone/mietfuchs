@@ -186,6 +186,10 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // das Objekt im Schlüssel der Anschreiben je Mieter (Datenanweisung). Wird vor dem Merge ein anderer PR davor eingereiht,
   // wird der Schritt neu erzeugt, die Datenanweisung wieder angehängt und die Marke ersetzt.
   '0068_anschreiben_teil2': 'ec6708b5449d1f9a31b4547b0a8b84adedd264e4b14101ae013df08ba1a119cd',
+  // #318: das Änderungsjournal (change_groups, change_log); die Trigger stehen nicht im Schritt, sie entstehen beim
+  // Öffnen (db/journal.ts). Wird vor dem Merge ein anderer PR davor eingereiht, wird der Schritt neu erzeugt und die
+  // Marke ersetzt.
+  '0069_journal': '0e0b8a409fa913639e1ffd34fe2d8a7e9c91bfc58f94bdf5cfecbfa740136fa4',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

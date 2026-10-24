@@ -1,4 +1,5 @@
 import express, { type NextFunction, type Request, type Response } from 'express'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import multer from 'multer'
 import path from 'node:path'
 import fs from 'node:fs'
@@ -74,7 +75,7 @@ import { applySeparate, previewSeparate } from './db/separateSettlement.ts'
 import { applyPeriodChange, previewPeriodChange } from './db/periodChange.ts'
 import {
   ARCHIVE_DB_NAME, ARCHIVE_INFO_NAME, DB_BEFORE_RESTORE,
-  archiveDatabaseProblem, archiveInfoText, originText, writeDatabaseSnapshot,
+  archiveDatabaseProblem, archiveInfoText, originText, stripJournal, writeDatabaseSnapshot,
 } from './db/backup.ts'
 import { findingsText, validateDb } from './legacy/validate.ts'
 import { createUpdateChecker, UPDATE_URL } from './update.ts'
@@ -86,11 +87,22 @@ import { exportFilename, frozenExportable, settlementExportCsv, settlementExport
 import { derivedTaxLines, planTaxArchive, taxArchiveItems } from './taxReceipts.ts'
 import { createPriorVersion, listPriorVersions, mayCreatePriorVersion, PRIOR_CHECK_INTERVAL_MS, PRIOR_DIR, priorVersionsBlocked, priorVersionTime } from './db/priorVersions.ts'
 import { costItems as costItemsTable } from './db/schema.ts'
+import { journalGroup, listJournal, pruneJournal, type JournalMeta } from './db/journal.ts'
+import { DRY_RUN_ROUTES, routeSentence } from './journalRoutes.ts'
 import { forgetUpload, placeUpload, recordIfMissing, recordUpload, rowOf, uploadRows, type Placement, type UploadRow } from './db/uploads.ts'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
 app.use(express.json())
+
+// Die laufende Anfrage, für das Änderungsjournal (#318): `writeData` nimmt daraus Route und Satz
+// der Gruppe. Gesetzt nach `express.json()`. Nach multer noch einmal, als **Sicherung**: Unter Node
+// behält multer den Kontext nachgemessen (Durchsicht von PR #430, K2, der Test mit einem Beleg bleibt
+// ohne die zweite Stelle grün), aber es ruft `next` aus dem Strom der Anfrage, und ob das in jeder
+// Fassung und unter Bun so bleibt, sagt niemand zu.
+const requestScope = new AsyncLocalStorage<Request>()
+const inRequest = (req: Request, _res: Response, next: NextFunction): void => requestScope.run(req, next)
+app.use(inRequest)
 
 // ---------- Kleine Helfer ----------
 const isObject = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v)
@@ -171,7 +183,7 @@ const checkPageSizes = (req: Request, res: Response, next: NextFunction): void =
   if (file) fs.rmSync(file.path, { force: true })
   res.status(400).json({ error: 'Ein Seitenbild ist größer als 5 MB.' })
 }
-const fileWithPages = [upload.fields([{ name: 'file', maxCount: 1 }, { name: 'pages', maxCount: MAX_PAGES }]), checkPageSizes]
+const fileWithPages = [upload.fields([{ name: 'file', maxCount: 1 }, { name: 'pages', maxCount: MAX_PAGES }]), checkPageSizes, inRequest]
 const uploadedFile = (req: Request): StoredUpload | null => storedUpload(filesOf(req).file?.[0])
 
 // Ein Beleg, der schon im Belegordner liegt (#170, Posteingang), statt eines neu hochgeladenen:
@@ -386,7 +398,26 @@ const onDatabase = <T>(work: (opened: OpenedDatabase) => Promise<T>): Promise<T>
 }
 
 const readData = <T>(work: (db: Database) => Promise<T>): Promise<T> => onDatabase((opened) => opened.read(work))
-const writeData = <T>(work: (db: Database) => Promise<T>): Promise<T> => onDatabase((opened) => opened.write(work))
+// Ein Schreibvorgang aus einer Anfrage bildet eine Gruppe im Änderungsjournal, mit dem Satz ihrer
+// Route (journalRoutes.ts); Schreibvorgänge ohne Anfrage (Systemarbeit) werden nicht erfasst.
+// **Erfasst wird nur, was eine Route mit Satz schreibt** (Durchsicht von PR #430, S1). Eine Lese-Route,
+// die im Hintergrund etwas nachträgt (GET /api/uploads startet `backfillUploads`), erbt den Kontext
+// ihrer Anfrage; ohne diese Regel entstünde dort eine Gruppe „Änderung (GET …)“. Fehlt einer
+// schreibenden Route der Satz, steht das auf der Konsole, und api-journal.test.ts liest die Ausgabe.
+const journalMeta = (): JournalMeta | undefined => {
+  const req = requestScope.getStore()
+  if (!req || req.method === 'GET') return undefined
+  const routePath: unknown = req.route?.path
+  const route = typeof routePath === 'string' ? routePath : req.path
+  if (DRY_RUN_ROUTES.has(`${req.method} ${route}`)) return undefined
+  const sentence = routeSentence(req.method, route)
+  if (!sentence) {
+    console.error(`Änderungsjournal: Die Route ${req.method} ${route} hat keinen Satz und wird nicht erfasst (journalRoutes.ts).`)
+    return undefined
+  }
+  return { method: req.method, route, description: sentence.text, subjectTable: sentence.table, scope: req }
+}
+const writeData = <T>(work: (db: Database) => Promise<T>): Promise<T> => onDatabase((opened) => opened.write(work, journalMeta()))
 
 // ---------- Generische CRUD-Routen für Stammdaten & Kosten ----------
 // Die generischen Routen behandeln alle Collections gleich und brauchen von einem Datensatz nur
@@ -1401,7 +1432,7 @@ async function recordOrRefuse(req: Request, res: Response, file: StoredUpload): 
   }
 }
 
-app.post('/api/upload', upload.single('file'), async (req, res) => {
+app.post('/api/upload', upload.single('file'), inRequest, async (req, res) => {
   const file = storedUpload(req.file)
   if (!file) return res.status(400).json({ error: 'Keine Datei' })
   if (!(await recordOrRefuse(req, res, file))) return
@@ -1851,7 +1882,8 @@ app.get('/api/uploads', async (req, res) => {
   const links = await readData(uploadLinks).catch(() => new Map<string, UploadLinks>())
   const list: UploadEntry[] = describeFolder(UPLOAD_DIR, rows ?? new Map<string, UploadRow>())
     .map((u) => ({ ...u, ...(links.get(u.file) ?? NO_LINKS) }))
-  if (rows && list.some((u) => !u.sha256)) void backfillUploads()
+  // Ohne den Kontext der Anfrage: Das Nachtragen ist Systemarbeit und kein Schritt im Verlauf.
+  if (rows && list.some((u) => !u.sha256)) requestScope.exit(() => void backfillUploads())
   res.json(list)
 })
 
@@ -2143,6 +2175,8 @@ app.get('/api/backup', async (req, res) => {
     const temp = path.join(DATA_DIR, `${ARCHIVE_DB_NAME}.${newId()}.backup`)
     try {
       await writeDatabaseSnapshot(database, temp)
+      // Der Verlauf nur auf ausdrücklichen Wunsch (db/backup.ts, `stripJournal`).
+      if (req.query.journal !== '1') await stripJournal(temp)
     } catch (err) {
       fs.rmSync(temp, { force: true })
       // Hier wird abgebrochen und nicht stillschweigend ohne Datenbank gepackt: Ein Archiv, das
@@ -2667,7 +2701,14 @@ function restoreFailedNote(err: unknown, what: string, ifStaged: string): string
 // nicht stören, deshalb steht ein Fehler auf der Konsole und nirgends sonst. Während eines
 // Wiederherstellens und ohne Datenbank, die den Bestand trägt, wird nichts angelegt: Eine
 // Vorversion einer leeren Datenbank eines gescheiterten Umstiegs wäre keine.
-async function checkPriorVersion(): Promise<void> {
+async function checkPriorVersion(pruneToo = false): Promise<void> {
+  // Das Journal räumt im selben Takt auf (12 Monate, #318); beim Start nicht, das hat open.ts eben getan.
+  // Systemarbeit, also ohne Gruppe, und ein Fehler steht nur auf der Konsole.
+  try {
+    if (pruneToo && database && databaseUnavailable(databaseState()) === null) await database.write((db) => pruneJournal(db, new Date()))
+  } catch (err) {
+    console.error(`Das Änderungsjournal ließ sich nicht aufräumen: ${messageOf(err)}`)
+  }
   try {
     if (!database || !mayCreatePriorVersion(databaseState(), restoreRunning)) return
     const name = await createPriorVersion(database, DATA_DIR, new Date(), { skip: () => restoreRunning })
@@ -2684,6 +2725,26 @@ const priorVersionsRefusal = (res: Response): boolean => {
   if (reason) res.status(503).json({ error: reason })
   return reason !== null
 }
+
+// ---------- Verlauf (#318, Schritt 3) ----------
+
+// Die Gruppen des Änderungsjournals, neueste zuerst: mit `property` die des Objekts und die
+// installationsweiten, ohne alle. `before` ist die Kennung, ab der weitergeblättert wird.
+const JOURNAL_PAGE = 50
+app.get('/api/journal', async (req, res) => {
+  const property = typeof req.query.property === 'string' && req.query.property ? req.query.property : null
+  const before = typeof req.query.before === 'string' && /^\d+$/.test(req.query.before) ? Number(req.query.before) : null
+  const asked = typeof req.query.limit === 'string' && /^\d+$/.test(req.query.limit) ? Number(req.query.limit) : JOURNAL_PAGE
+  const limit = Math.min(Math.max(asked, 1), 200)
+  res.json(await onDatabase((opened) => opened.read((db) => listJournal(db, opened.journalSchema, { propertyId: property, before, limit }))))
+})
+
+app.get('/api/journal/:id', async (req, res) => {
+  const id = /^\d+$/.test(req.params.id) ? Number(req.params.id) : null
+  const group = id === null ? null : await onDatabase((opened) => opened.read((db) => journalGroup(db, opened.journalSchema, id)))
+  if (!group) return res.status(404).json({ error: 'Diesen Eintrag gibt es im Verlauf nicht (mehr).' })
+  res.json(group)
+})
 
 app.get('/api/prior-versions', async (_req, res) => {
   if (priorVersionsRefusal(res)) return
@@ -3284,7 +3345,7 @@ function databaseState(): DatabaseState {
 // fertig. Kam die Vorversion erst nach der Zeile, las der Server noch die Datei, während ein Test
 // schon von außen hineinschrieb, und der scheiterte unter Last mit „database is locked“.
 await checkPriorVersion()
-setInterval(() => void checkPriorVersion(), PRIOR_CHECK_INTERVAL_MS).unref()
+setInterval(() => void checkPriorVersion(true), PRIOR_CHECK_INTERVAL_MS).unref()
 
 // Jetzt erst gilt der Start als gelungen: Meldung, Browser und die Anfragen, die gewartet haben.
 {
