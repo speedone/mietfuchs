@@ -40,7 +40,7 @@ beforeEach(() => {
     landlord: { rows: [], totalCents: 0 }, selfUsedShareCents: 0, totalCostsCents: 120000, warnings: [], notices: [], closed: null,
   }
   const property = { id: 'objekt-1', name: 'Lindenweg 12', kind: 'mfh' as const, address: 'Lindenweg 12, 12345 Musterstadt', landlordName: null, iban: null, paymentDeadlineDays: null }
-  settlement = { ...base, letters: lettersOf(base, { settings: SETTINGS, property, tenancies: TENANCIES, installation: {}, propertyTexts: {}, own: {} }) }
+  settlement = { ...base, letters: lettersOf(base, { settings: SETTINGS, property, tenancies: TENANCIES, installation: {}, propertyTexts: {}, own: {}, asOf: '2026-10-30' }) }
   puts = []
   ownLetters = {}
   templates = TEMPLATES
@@ -85,7 +85,7 @@ test('Seite 1 ist das Anschreiben, danach die Aufstellung mit Ergebniskasten und
   expect(text).toContain('Nebenkostenabrechnung')
   expect(text).toContain('Guten Tag Meier,')
   expect(text).toContain('Es ergibt sich eine Nachzahlung von 120,00 €. Bitte überweisen Sie den Betrag innerhalb von 14 Tagen nach Zugang dieser Abrechnung auf das Konto DE02 1203 0000 0000 2020 51 (Max Vermieter).')
-  expect(text).toContain('§ 560 Abs. 4 BGB ab dem übernächsten Monat auf 50,00 € angepasst')
+  expect(text).toContain('§ 560 Abs. 4 BGB ab Dezember 2026 auf 50,00 € angepasst')
   expect(text).toContain('Die zugrunde liegenden Belege können nach Terminvereinbarung eingesehen werden.')
   expect(text).toContain('Mit freundlichen Grüßen')
   expect(within(letter).getByText(/Lindenweg 12, 12345 Musterstadt/, { selector: '.letter-return' })).toBeTruthy()
@@ -127,7 +127,20 @@ test('Anschreiben bearbeiten: unbekannter Platzhalter am Feld, Chips, eigener Be
 
   fireEvent.click(within(dialog).getByRole('button', { name: 'Speichern' }))
   await waitFor(() => expect(puts).toHaveLength(1), SLOW)
-  expect(puts[0]).toEqual({ url: `/api/settlement/${YEAR}/letters/t1`, body: { texts: { greeting: 'Viele Grüße, {Vermieter}' }, adjustment: { mode: 'custom', cents: 8000 } } })
+  expect(puts[0]).toEqual({ url: `/api/settlement/${YEAR}/letters/t1`, body: { texts: { greeting: 'Viele Grüße, {Vermieter}' }, adjustment: { mode: 'custom', cents: 8000, from: null } } })
+})
+
+test('#317: Ab Monat im Anschreiben, Vorschau und gesendeter Monat', async () => {
+  show()
+  fireEvent.click(await screen.findByRole('button', { name: /Anschreiben bearbeiten/ }, SLOW))
+  const dialog = await screen.findByRole('dialog', {}, SLOW)
+  const month = within(dialog).getByRole('textbox', { name: /Ab Monat/ })
+  fireEvent.change(month, { target: { value: '2.2099' } })
+  fireEvent.blur(month)
+  await waitFor(() => expect(plain(dialog.textContent)).toMatch(/Vorschau: Auf Basis dieser Abrechnung wird die monatliche Nebenkostenvorauszahlung gemäß § 560 Abs\. 4 BGB ab Februar 2099 auf 50,00 € angepasst/), SLOW)
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Speichern' }))
+  await waitFor(() => expect(puts).toHaveLength(1), SLOW)
+  expect(puts[0]?.body).toEqual({ texts: {}, adjustment: { mode: 'suggestion', cents: null, from: '2099-02' } })
 })
 
 test('eine abgeschlossene Abrechnung druckt ihr eingefrorenes Anschreiben und lässt es nicht bearbeiten', async () => {
@@ -139,6 +152,22 @@ test('eine abgeschlossene Abrechnung druckt ihr eingefrorenes Anschreiben und l�
   expect(letter.textContent).toContain('Eingefrorener Gruß')
   expect(letter.textContent).toContain(`03.02.${YEAR + 1}`)
   expect((screen.getByRole('button', { name: /Anschreiben bearbeiten/ }) as HTMLButtonElement).disabled).toBe(true)
+})
+
+// Durchsicht zu PR #435, S1: Das Versanddatum liegt nach dem Monat, den das eingefrorene Schreiben nennt.
+test('S1: ein spätes Versanddatum fragt nach dem Monat der Anpassung, Abbrechen speichert nichts', async () => {
+  const frozen = settlement.letters?.t1
+  if (!frozen) throw new Error('kein Anschreiben')
+  settlement = { ...settlement, closed: { closedAt: `${YEAR + 1}-02-01T10:00:00Z`, sentAt: null }, letters: { t1: { ...frozen, adjustment: { ...frozen.adjustment, from: `${YEAR + 1}-04` } } } }
+  show()
+  const field = await screen.findByLabelText(/versendet am/, {}, SLOW)
+  fireEvent.change(field, { target: { value: `${YEAR + 1}-04-02` } })
+  fireEvent.click(await screen.findByRole('button', { name: /Speichern.*Versanddatum/ }, SLOW))
+  const question = await screen.findByRole('alertdialog', {}, SLOW)
+  expect(plain(question.textContent)).toMatch(/Meier: Das Schreiben nennt April .*schon begonnen.*Wieder öffnen/)
+  fireEvent.click(within(question).getByRole('button', { name: 'Abbrechen' }))
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull(), SLOW)
+  expect(puts).toEqual([])
 })
 
 // ---------- Durchsicht zu #421 ----------
@@ -183,7 +212,7 @@ test('S2: abgeschlossen nehmen Frist, Absender und Anschrift den eingefrorenen S
 
 test('K3: bei 0 € sagt die Tabelle „ausgeglichen“', async () => {
   settlement = { ...settlement, statements: [{ ...STATEMENT, balanceCents: 0, prepaymentCents: 60000 }] }
-  settlement = { ...settlement, letters: lettersOf(settlement, { settings: SETTINGS, property: null, tenancies: TENANCIES, installation: {}, propertyTexts: {}, own: {} }) }
+  settlement = { ...settlement, letters: lettersOf(settlement, { settings: SETTINGS, property: null, tenancies: TENANCIES, installation: {}, propertyTexts: {}, own: {}, asOf: '2026-10-30' }) }
   show()
   const table = (await screen.findByRole('region', { name: 'Anschreiben an Meier' }, SLOW)).closest('.statement')?.querySelector('table')
   expect(plain(table?.textContent)).toMatch(/Ausgeglichen/)
@@ -214,7 +243,7 @@ test('S4 und K6: Vorschau mit dem neuen Betrag aus dem Entwurf, Anpassung auf Vo
   const amount = await within(dialog).findByRole('textbox', { name: /Neue monatliche Vorauszahlung/ }, SLOW)
   expect((amount as HTMLInputElement).value).toBe('70,00')
   fireEvent.change(amount, { target: { value: '80,00' } })
-  expect(plain(dialog.textContent)).toMatch(/Vorschau: Auf Basis dieser Abrechnung wird die monatliche Nebenkostenvorauszahlung gemäß § 560 Abs\. 4 BGB ab dem übernächsten Monat auf 80,00 € angepasst\./)
+  expect(plain(dialog.textContent)).toMatch(/Vorschau: Auf Basis dieser Abrechnung wird die monatliche Nebenkostenvorauszahlung gemäß § 560 Abs\. 4 BGB ab Dezember 2026 auf 80,00 € angepasst\./)
   fireEvent.click(within(dialog).getByRole('button', { name: /Anpassung auf Vorgabe zurücksetzen/ }))
   expect((within(dialog).getByRole('radio', { name: /Vorschlag von Mietfuchs/ }) as HTMLInputElement).checked).toBe(true)
   fireEvent.click(within(dialog).getByRole('button', { name: 'Speichern' }))
@@ -249,7 +278,7 @@ test('Teil 2: ohne Anschreiben beginnt die Aufstellung mit Anschrift, Datum und 
   const after = [...card.querySelectorAll('p.statement-letter-text')]
   expect(after.map((p) => plain(p.textContent))).toEqual([
     'Es ergibt sich eine Nachzahlung von 120,00 €. Bitte überweisen Sie den Betrag innerhalb von 14 Tagen nach Zugang dieser Abrechnung auf das Konto DE02 1203 0000 0000 2020 51 (Max Vermieter).',
-    'Auf Basis dieser Abrechnung wird die monatliche Nebenkostenvorauszahlung gemäß § 560 Abs. 4 BGB ab dem übernächsten Monat auf 50,00 € angepasst (ein Zwölftel Ihrer Jahreskosten, gerundet).',
+    'Auf Basis dieser Abrechnung wird die monatliche Nebenkostenvorauszahlung gemäß § 560 Abs. 4 BGB ab Dezember 2026 auf 50,00 € angepasst (ein Zwölftel Ihrer Jahreskosten, gerundet).',
     'Die zugrunde liegenden Belege können nach Terminvereinbarung eingesehen werden.',
   ])
   for (const p of after) expect(table.compareDocumentPosition(p) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()

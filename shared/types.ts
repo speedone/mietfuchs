@@ -1015,7 +1015,7 @@ export type LetterField =
   | 'Name' | 'Wohnung' | 'Objekt' | 'Abrechnung' | 'Zeitraum'
   | 'Kosten' | 'Vorauszahlungen' | 'Betrag' | 'Zahlungsfrist'
   | 'IBAN' | 'Konto' | 'Vermieter' | 'Anrede'
-  | 'Vorauszahlungsart' | 'VorauszahlungBisher' | 'VorauszahlungNeu' | 'Grundlage'
+  | 'Vorauszahlungsart' | 'VorauszahlungBisher' | 'VorauszahlungNeu' | 'Grundlage' | 'AnpassungAb'
   | 'AnzahlBelege' | 'Datum'
 // Eigene Texte einer Ebene: ein fehlender Baustein heißt „die Ebene darüber gilt“, ein leerer Text
 // „bewusst weggelassen“.
@@ -1023,7 +1023,9 @@ export type LetterTexts = Partial<Record<LetterBlock, string>>
 // Die Anpassung der Vorauszahlung nach § 560 Abs. 4 BGB je Mieter: keine, der Vorschlag von Mietfuchs
 // oder ein eigener Betrag (Cent je Monat).
 export type LetterAdjustmentMode = 'none' | 'suggestion' | 'custom'
-export type LetterAdjustment = { mode: LetterAdjustmentMode; cents: number | null }
+// `from` (#317): der Monat ('JJJJ-MM'), ab dem die neue Vorauszahlung gilt; `null` oder fehlend heißt die Vorgabe
+// von Mietfuchs, der übernächste Monat nach dem Tag des Briefs.
+export type LetterAdjustment = { mode: LetterAdjustmentMode; cents: number | null; from?: string | null }
 // Das Anschreiben eines Mietverhältnisses, wie es gedruckt wird. `texts`: jeder Baustein mit
 // eingesetzten Werten; nur `{Datum}` und `{AnzahlBelege}` stehen noch darin, denn sie gehören zum
 // Druck (Versanddatum, mitgedruckte Belege). `adjustment`: die gewählte Anpassung mit dem neuen Betrag
@@ -1031,7 +1033,9 @@ export type LetterAdjustment = { mode: LetterAdjustmentMode; cents: number | nul
 // beim Bearbeiten.
 export type StatementLetter = {
   texts: Record<LetterBlock, string>
-  adjustment: { mode: LetterAdjustmentMode; newCents: number | null }
+  // `from` (#317): der Monat, den das Schreiben nennt ('JJJJ-MM', `null` ohne Anpassung). Fehlt er, ist das Anschreiben
+  // vor #317 eingefroren und nannte „ab dem übernächsten Monat“.
+  adjustment: { mode: LetterAdjustmentMode; newCents: number | null; from?: string | null }
   values: Record<LetterField, string>
   // Absender, Rücksendeangabe und Anschrift, wie gedruckt; mit dem Abschluss eingefroren (Durchsicht S2).
   // Optional, weil Abschlüsse aus der ersten Fassung von #415 sie nicht kennen.
@@ -1040,6 +1044,37 @@ export type StatementLetter = {
   sender?: { name: string; returnLine: string; address?: string; footer?: string }
   recipient?: string[]
 }
+// ---------- Anpassung in die Staffel übernehmen (#317) ----------
+
+// Je Mieter einer abgeschlossenen Abrechnung, deren Anschreiben eine neue Vorauszahlung ankündigt: in welche Staffel sie
+// gehört (`prepayments`, bei der Heizkostenabrechnung nach Weg d `heatingPrepayments`), ab welchem Monat, und ob sie
+// dort schon steht. `announcedFrom`: der Monat im Schreiben, `null` bei einem Anschreiben von vor #317 („ab dem
+// übernächsten Monat“). `existing`: Stufen der Staffel ab diesem Monat. `notes`: ganze Sätze zum Monat (Versand,
+// Zugang, Abweichung vom Schreiben). `overdue`: der Monat hat begonnen, und die Staffel nennt einen anderen Betrag.
+export type PrepaymentStepSchedule = 'prepayments' | 'heatingPrepayments'
+export type PrepaymentStepItem = {
+  tenancyId: string
+  tenantName: string
+  unitName: string
+  schedule: PrepaymentStepSchedule
+  cents: number
+  from: string
+  announcedFrom: string | null
+  currentCents: number
+  state: 'taken' | 'pending' | 'blocked'
+  blocked?: string
+  // Durchsicht zu PR #435: gesperrt, weil der Monat im abgerechneten Zeitraum liegt; mit „Ab Monat“ zu beheben.
+  fixMonth?: boolean
+  existing: PrepaymentEntry[]
+  // Stufen zwischen dem Ende des abgerechneten Zeitraums und dem Monat (S2): womöglich schon eine Anpassung aus ihr.
+  earlier: PrepaymentEntry[]
+  notes: string[]
+  overdue: boolean
+}
+// `errors`: Titel der Fehler der eingefrorenen Abrechnung (`blockingErrors`). `token`: Marke des Plans; übernommen
+// wird nur mit der Marke des Plans, den der Vermieter gesehen hat.
+export type PrepaymentStepPlan = { items: PrepaymentStepItem[]; errors: string[]; sentAt: string | null; token: string }
+
 // Was ein Mieter beim Drucken einmalig abweichend festgelegt hat, für diese Abrechnung (#415).
 export type TenancyLetter = { texts: LetterTexts; adjustment: LetterAdjustment | null }
 // Die Ebenen für das Bearbeiten: Vorgaben von Mietfuchs, die der Installation, die des Objekts.

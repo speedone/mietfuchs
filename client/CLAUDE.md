@@ -113,6 +113,17 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   gesperrt wird nichts. Die Vorschau setzt den neuen Betrag aus dem Entwurf ein (`draftNewCents`); „Anpassung auf
   Vorgabe zurücksetzen“ nimmt die eigene Wahl des Mieters weg (`adjustment: null`). Ein gesperrter Knopf nennt den
   Grund daneben.
+- **Ab Monat und „In die Staffel übernehmen“** (#317): Das Seitenfenster des Mieters hat bei einer Anpassung ein
+  Monatsfeld „Ab Monat“ (`adjustFrom` im Entwurf, `null` = Vorgabe `adjustFromFor`), mit Hinweis bei einem Monat
+  nicht in der Zukunft (`adjustFromHint`) und bei einem eigenen Text ohne `{AnpassungAb}` (auf jeder Ebene,
+  `monthlessAdjustTexts`). Beim Versanddatum und vor dem Druck einer abgeschlossenen Abrechnung fragt die Seite, wenn
+  der Versand nach dem Monat des Schreibens oder später als zwei Monate davor liegt (`sentMonthLines`, Weg: wieder
+  öffnen, Monat ändern). Auf einer abgeschlossenen
+  Abrechnung mit Anschreiben steht [PrepaymentStepsCard.tsx](src/components/PrepaymentStepsCard.tsx) (Logik in
+  [prepaymentSteps.ts](src/prepaymentSteps.ts)): Stand je Mieter, Warnung „Angekündigt, aber nicht übernommen“, ein
+  Seitenfenster mit „Ab Monat“ je Mieter (ein geänderter Monat plant neu; ein gesetzter ungültiger oder leerer Monat
+  ist eine Meldung am Feld und wird nie durch den des Schreibens ersetzt), Rückfrage aus `stepQuestion` (auch zu Stufen
+  zwischen Zeitraumende und Monat), gesendet wird die Marke des Plans.
 - **Kontrollansicht** (#321, [ControlView.tsx](src/components/ControlView.tsx), Logik in
   [controlView.ts](src/controlView.ts)): auf der Seite Abrechnung eine aufklappbare Karte, immer `no-print`. Je
   Position alle Mieter und die Gründe des Vermieters (`landlordParts`) nebeneinander, Summe gegen den Rechnungsbetrag,

@@ -28,11 +28,24 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Garage brauchen keinen. Die Schätzung nach § 9a misst ihre Grenze dann am umbauten Raum. Eine Vereinbarung nach
   § 2 „nach Wohnfläche“ verteilt weiter nach der Wohnfläche. Die Voreinstellung bleibt die Wohnfläche, keine Zahl
   ändert sich. Ändern der Heizanlage behält beheizte Fläche und umbauten Raum, ebenso ein Kesseltausch.
+- Angekündigte Vorauszahlung in die Staffel übernehmen ([#317](https://github.com/speedone/mietfuchs/issues/317)):
+  Das Anschreiben nennt statt „ab dem übernächsten Monat“ den Monat, ab dem die neue Vorauszahlung gilt
+  („ab Januar 2027“). Vorgabe bleibt der übernächste Monat nach dem Tag des Briefs, eine vorsichtige
+  Entscheidung von Mietfuchs, denn § 560 Abs. 4 BGB nennt keine Frist; im Fenster „Anschreiben bearbeiten“
+  lässt sich der Monat je Mieter ändern (neuer Platzhalter `{AnpassungAb}`). Auf einer abgeschlossenen
+  Abrechnung zeigt die Karte „Angekündigte Anpassung der Vorauszahlung“ je Mieter, ob der angekündigte
+  Betrag in der Staffel steht, und „In die Staffel übernehmen“ (je Mieter oder für alle) trägt ihn ab dem
+  genannten Monat als Stufe ein, bei der Heizkostenabrechnung in die Heizvorauszahlung; der Monat ist dabei
+  änderbar. Vorher fragt Mietfuchs nach, wenn die Abrechnung Fehler hat, ab dem Monat schon eine Stufe steht
+  oder das Schreiben spät versandt wurde. Hat der Monat begonnen und steht der Betrag noch nicht in der
+  Staffel, sagt die Karte es. Führt ein Mietverhältnis die Heizung in eigener Staffel, die Gesamtabrechnung
+  aber beide zusammen, übernimmt Mietfuchs nichts und verweist auf die Stammdaten. Eingefrorene Anschreiben
+  behalten ihren Text.
 - Export der Abrechnung als Daten ([#415](https://github.com/speedone/mietfuchs/issues/415)): Auf der Seite
   Abrechnung speichern „Als JSON exportieren“ und „Als CSV exportieren“ die Zahlen der Abrechnung. Das JSON
   trägt eine Versionsangabe, Beträge in Cent als ganze Zahlen und alles, was gedruckt wird: je Mieter Zeilen
   (mit der Art von Sonderzeilen wie CO₂-Anteil oder Übertrag), Summen, Vorauszahlungen samt Vermerk, Vorschlag
-  und gewählte Anpassung, dazu die Heizungsblöcke (Angaben nach § 6a, CO₂, Vorrat, Lieferungen). Die CSV
+  und die je Mieter gewählte Anpassung (auch bei offener Abrechnung), dazu die Heizungsblöcke (Angaben nach § 6a, CO₂, Vorrat, Lieferungen). Die CSV
   (BOM, Semikolon, Beträge wie die Übersicht.csv der Steuer) führt die Zeilen und Summen je Mieter, schützt
   Textfelder gegen Formeln und verweist bei Heizungsangaben auf das JSON. Bei einer abgeschlossenen Abrechnung
   ist es der eingefrorene Stand; eine offene mit Fehlern ist als Entwurf gekennzeichnet (`draft`), und die

@@ -10,18 +10,14 @@ import { lettersOf, type LetterSource } from '../../shared/letter.ts'
 import type { Executor } from './db/client.ts'
 import { readInstallationLetterTexts, readPropertyLetterTexts, readTenancyLetters } from './db/letters.ts'
 
-// Die Kennung einer Abrechnung für die Anpassungen je Mieter: Objekt und Zeitraum der Betriebskostenabrechnung oder
-// Anlage und Heizperiode einer getrennten Heizkostenabrechnung (die Anlage gehört zu einem Objekt). Das Objekt steht im
-// Schlüssel seit der Integrationsdurchsicht: Ein Mietverhältnis, das das Objekt wechselte, nahm sonst seine Texte in die
-// Abrechnung gleichen Zeitraums des anderen Hauses mit (db/letters.ts, `dropOpenTenancyLetters`).
-export const letterDoc = (period: string, owner: { propertyId: string } | { plantId: string }): string =>
-  ('plantId' in owner ? `heating:${owner.plantId}:${period}` : `${owner.propertyId}:${period}`)
+// Der Schlüssel der Anpassungen je Mieter steht in db/letters.ts (`letterDoc`), eine Stelle.
+export { letterDoc } from './db/letters.ts'
 
 // Liest alles, was `lettersOf` braucht: die Texte aller Ebenen und die Anpassungen je Mieter.
 export async function lettersFor(
   db: Executor,
   s: Parameters<typeof lettersOf>[0],
-  ctx: { settings: LetterSource['settings'], property: Property | null, tenancies: LetterSource['tenancies'], doc: string },
+  ctx: { settings: LetterSource['settings'], property: Property | null, tenancies: LetterSource['tenancies'], doc: string, asOf: string },
 ): Promise<Record<string, StatementLetter>> {
   return lettersOf(s, {
     settings: ctx.settings,
@@ -30,5 +26,6 @@ export async function lettersFor(
     installation: await readInstallationLetterTexts(db),
     propertyTexts: ctx.property ? await readPropertyLetterTexts(db, ctx.property.id) : {},
     own: await readTenancyLetters(db, ctx.doc, s.statements.map((st) => st.tenancyId)),
+    asOf: ctx.asOf,
   })
 }

@@ -62,9 +62,9 @@ test('Anschreiben (#415): Vorgaben mit eingesetzten Werten, Ebenen und je Mieter
     assert.equal((await send(s, `/api/settlement/2025/letters/${tenancy.id}`, 'PUT', { texts: { greeting: 'Bis bald' }, adjustment: { mode: 'custom', cents: 6000 } })).status, 200)
     now = letterOf(await s.api<Settlement>('/api/settlement/2025'), tenancy.id)
     assert.equal(now.texts.greeting, 'Bis bald')
-    assert.deepEqual(now.adjustment, { mode: 'custom', newCents: 6000 })
+    assert.deepEqual({ mode: now.adjustment.mode, newCents: now.adjustment.newCents }, { mode: 'custom', newCents: 6000 })
     assert.match(plain(now.texts.adjustCustom), /auf 60,00 € angepasst\.$/)
-    assert.deepEqual(await s.api<Record<string, TenancyLetter>>('/api/settlement/2025/letters'), { [tenancy.id]: { texts: { greeting: 'Bis bald' }, adjustment: { mode: 'custom', cents: 6000 } } })
+    assert.deepEqual(await s.api<Record<string, TenancyLetter>>('/api/settlement/2025/letters'), { [tenancy.id]: { texts: { greeting: 'Bis bald' }, adjustment: { mode: 'custom', cents: 6000, from: null } } })
     // `null` nimmt die eigene Angabe weg; die Ebene darüber gilt wieder.
     assert.equal((await send(s, `/api/settlement/2025/letters/${tenancy.id}`, 'PUT', { texts: { greeting: null }, adjustment: null })).status, 200)
     now = letterOf(await s.api<Settlement>('/api/settlement/2025'), tenancy.id)
@@ -74,7 +74,7 @@ test('Anschreiben (#415): Vorgaben mit eingesetzten Werten, Ebenen und je Mieter
     // Die Vorgabe der Anpassung steht in den Einstellungen (früher `printAdjustSuggestion`).
     assert.equal((await send(s, '/api/letter-texts', 'PUT', { texts: {}, adjustDefault: 'none' })).status, 200)
     assert.equal((await s.api<{ printAdjustSuggestion?: boolean }>('/api/settings')).printAdjustSuggestion, false)
-    assert.deepEqual(letterOf(await s.api<Settlement>('/api/settlement/2025'), tenancy.id).adjustment, { mode: 'none', newCents: null })
+    assert.deepEqual(letterOf(await s.api<Settlement>('/api/settlement/2025'), tenancy.id).adjustment, { mode: 'none', newCents: null, from: null })
     assert.equal((await send(s, '/api/letter-texts', 'PUT', { texts: {}, adjustDefault: 'immer' })).status, 400)
 
     // Ein Mietverhältnis eines anderen Objekts nimmt die Route nicht an.

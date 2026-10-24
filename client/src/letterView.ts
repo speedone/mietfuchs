@@ -4,6 +4,7 @@ import type { LetterBlock, LetterTemplates, Property, Settings, Settlement, Stat
 import { chooseLetterBlocks, lettersOf, renderLetterText } from '../../shared/letter.ts'
 import { fmtDate, fmtEuro } from './api'
 import { countOf } from '../../shared/wording.ts'
+import { localToday } from './periodForm'
 
 // Eine Antwort von /api/letter-texts, wie sie sein soll; ein älterer Server oder eine Testattrappe liefert
 // etwas anderes, dann gibt es nichts zu bearbeiten, und die Seite bleibt bedienbar.
@@ -23,7 +24,7 @@ export function letterOf(
   const own = data.letters?.[st.tenancyId]
   if (own) return own
   const settings = ctx.settings ?? { landlordName: '', iban: '', paymentDeadlineDays: 30 }
-  const built = lettersOf({ ...data, statements: [st] }, { settings, property: ctx.property, tenancies: ctx.tenancies, installation: {}, propertyTexts: {}, own: {} })
+  const built = lettersOf({ ...data, statements: [st] }, { settings, property: ctx.property, tenancies: ctx.tenancies, installation: {}, propertyTexts: {}, own: {}, asOf: localToday() })
   const letter = built[st.tenancyId]
   if (!letter) throw new Error('Das Anschreiben ließ sich nicht zusammenstellen.')
   return letter

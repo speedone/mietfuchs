@@ -197,6 +197,10 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // `volume`). Wird vor dem Merge ein anderer PR davor eingereiht, werden beide Schritte neu erzeugt und die Marken ersetzt.
   '0071_umbauter_raum': 'f23762af4b54160ad62aac0d61a2411fc057095843ad8fd2f4aaa6a2318ea6ab',
   '0072_umbauter_raum_bedingung': '6787967df4df190829113c6fe8f0592c97710e0d2484b73aaac406201a30bd2e',
+  // #317: der Monat der Anpassung je Mieter (tenancy_letter_adjustments.from_month), danach die Bedingung (JJJJ-MM). Wird
+  // vor dem Merge ein anderer PR davor eingereiht, werden beide Schritte neu erzeugt und die Marken ersetzt.
+  '0073_anpassung_ab': '90ae182e62dce87a4d834055f0f36b919d0d92c6bd359002fc937fadb6be364c',
+  '0074_anpassung_ab_bedingung': 'c69cb4611b76c351f193316e74cd2da764fa9aded2d1049cf0a9a3f8827933c0',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

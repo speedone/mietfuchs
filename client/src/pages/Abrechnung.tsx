@@ -10,7 +10,7 @@ import { usePeriod } from '../period'
 import { useFocusTarget } from '../focus'
 import { settledInvoiceFiles, type PlantPeriods } from '../costPeriods'
 import { useOpenForm, useProperty, withProperty } from '../property'
-import { useConfirmDiscard, useDraft } from '../useDraft'
+import { keepDraft, useConfirmDiscard, useDraft } from '../useDraft'
 import DraftActions from '../components/DraftActions'
 import { FieldMessage } from '../components/Field'
 import { effectiveLandlord, footerLine, letterhead, addressCheck, addressFieldWarning, addressNotice, recipientLines, returnLine } from '../landlord'
@@ -42,7 +42,7 @@ import { closeWithQuestions } from '../fuelClose'
 import { closeErrorsQuestion, closeMessage, completenessQuestion, DRAFT_MARK, exportQuestion, printQuestion, sameErrors, showsDraftMark, type ErrorsQuestion } from '../despiteErrors'
 import { co2Block } from '../co2View'
 import { calendarPeriod } from '../../../shared/period.ts'
-import { mergeLetterTexts, printsLetter, renderLetterText, statementBlocks } from '../../../shared/letter.ts'
+import { adjustFromFor, mergeLetterTexts, printsLetter, renderLetterText, statementBlocks } from '../../../shared/letter.ts'
 import Card from '../components/Card'
 import ControlView from '../components/ControlView'
 import Letter, { PrintPages, StatementHead } from '../components/Letter'
@@ -54,6 +54,8 @@ import { LegacyHead, legacyHeadLine, legacyReceiptsText, LegacyResult } from '..
 import { exceedsOnePage } from '../../../shared/letter.ts'
 import { suggestionWithoutHeating } from '../heatingSettlementView'
 import LetterDrawer, { type LetterSave } from '../components/LetterDrawer'
+import PrepaymentStepsCard from '../components/PrepaymentStepsCard'
+import { sentMonthLines } from '../prepaymentSteps'
 import { asTemplates, letterOf, letterParagraphs, RETURN_LINE_MAX, resultRows, returnLineTooLong } from '../letterView'
 
 type Props = {
@@ -292,7 +294,19 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
   // Vor dem Drucken einer offenen Abrechnung mit Fehlern; eine abgeschlossene fragt nicht (Durchsicht S6).
   async function goOnPrinting(): Promise<boolean> {
     const q = data ? printQuestion(noticesOf(data), !!data.closed) : null
-    return q ? askDespiteErrors(q) : true
+    if (q && !(await askDespiteErrors(q))) return false
+    // #317, Durchsicht S1: Der Monat der Anpassung im eingefrorenen Anschreiben gegen den Tag des Versands.
+    return data?.closed && data.letters ? askSentMonth(data.closed.sentAt ?? localToday(), 'Trotzdem drucken') : true
+  }
+  async function askSentMonth(sentOn: string, confirmLabel: string): Promise<boolean> {
+    const lines = data?.letters ? sentMonthLines(data.letters, data.statements, sentOn) : []
+    if (lines.length === 0) return true
+    return confirm({
+      title: 'Monat der Anpassung prüfen',
+      message: <ul className="m-0">{lines.map((l, i) => <li key={i}>{l}</li>)}</ul>,
+      confirmLabel,
+      defaultChoice: 'cancel',
+    })
   }
 
   // Abrechnung abschließen / wieder öffnen / Versanddatum festhalten
@@ -361,6 +375,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
   // Formular weiter und tauchte beim nächsten Abschluss wieder auf.
   const sentAt = useDraft(data?.closed?.sentAt ?? '', { scope: `${propertyId ?? ''}|${paths.close}|${data?.closed?.closedAt ?? ''}` })
   async function saveSentAt(value: string) {
+    if (value && !(await askSentMonth(value, 'Versanddatum speichern'))) return keepDraft
     await api(withProperty(paths.close, propertyId), { method: 'PUT', body: JSON.stringify({ sentAt: value || null }) })
     await load()
   }
@@ -614,6 +629,10 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
         </div>
       )}
 
+      {/* #317: was das abgeschlossene Anschreiben an neuer Vorauszahlung ankündigt, in die Staffel übernehmen */}
+      {data?.closed && data.letters && (
+        <PrepaymentStepsCard key={`${paths.load}|${data.closed.closedAt}|${data.closed.sentAt ?? ''}`} path={paths.load} propertyId={propertyId ?? null} onSaved={reload} />
+      )}
       {data && deadlineInfo && data.totalCostsCents > 0 && (
         <div className={`${deadlineInfo.level} no-print`}>{deadlineInfo.text}</div>
       )}
@@ -1150,7 +1169,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
             base={mergeLetterTexts(templates.installation, templates.property)}
             own={own?.texts ?? {}}
             values={{ ...letter.values, Datum: fmtDate(data.closed?.sentAt ?? localToday()) }}
-            adjust={{ mode: own?.adjustment?.mode ?? letter.adjustment.mode, cents: own?.adjustment?.cents ?? null, suggestedCents: st.suggestedMonthlyCents, own: !!own?.adjustment, defaultMode: templates.adjustDefault }}
+            adjust={{ mode: own?.adjustment?.mode ?? letter.adjustment.mode, cents: own?.adjustment?.cents ?? null, suggestedCents: st.suggestedMonthlyCents, own: !!own?.adjustment, defaultMode: templates.adjustDefault, from: own?.adjustment?.from ?? null, defaultFrom: adjustFromFor(localToday(), data.period.to) }}
             shown={letterParagraphs(letter, st.balanceCents, { date: localToday(), attachments: 0 }).map((p) => p.block)}
             onClose={() => setLetterEdit(null)}
             onSave={saveLetter}

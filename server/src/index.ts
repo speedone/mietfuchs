@@ -21,8 +21,10 @@ import { compareWithFrozen } from './settlementDiff.ts'
 import { computeSettlement, consumptionOverview, rentLedger, taxPartsFor, taxReportFor, type ComputedSettlement } from './calc.ts'
 import { heatingSnapshotFor, narrowToProperty, snapshotFor } from './snapshot.ts'
 import { calendarYearPeriod, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodOfKey, resolvePeriodParam, rulesOf, settlementDeadline, settlementPeriod, startYearOf } from '../../shared/period.ts'
-import type { BillingPeriod, FuelGapQuestion, HeatingPlant, LetterDesigns, LetterTemplates, StatementLetter, Unit } from '../../shared/types.ts'
+import type { BillingPeriod, FuelGapQuestion, HeatingPlant, LetterDesigns, LetterTemplates, Notice, PrepaymentStepPlan, StatementLetter, Unit } from '../../shared/types.ts'
 import { closeWithQuestions, type CloseQuestion, type FuelAnswer } from './closeQuestion.ts'
+import { planPrepaymentSteps, stepMonthProblem, stepToken, stepWrites, type StepInput, type StepLetter } from './prepaymentSteps.ts'
+import { blockingErrors } from '../../shared/notices.ts'
 import { plantRules, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { extractFromFile, classifyDocType, extractMeterReading, type AskProgressEvent, type AskStats } from './extract.ts'
 import { extractFuelInvoice, extractServiceStatement } from './extractHeating.ts'
@@ -46,7 +48,7 @@ import { databaseProblem } from './db/errors.ts'
 import { readHeatingPlants, readProperties, readSettings, readStock, readTenancies, readUnits, type Stock } from './db/read.ts'
 import { lettersFor, letterDoc } from './letter.ts'
 import { savePropertyPrintLetter, readInstallationLetterTexts, readPropertyLetterTexts, readTenancyLetters, saveInstallationLetterTexts, savePropertyLetterTexts, saveTenancyLetter } from './db/letters.ts'
-import { DEFAULT_LETTER_TEXTS, lettersOf, parseLetterAdjustment, parseLetterTexts } from '../../shared/letter.ts'
+import { DEFAULT_LETTER_TEXTS, isMonthKey, lettersOf, parseLetterAdjustment, parseLetterTexts } from '../../shared/letter.ts'
 import { readInstallationDesign, readPropertyDesign, referencedDesignFiles, saveInstallationDesign, savePropertyDesign } from './db/letterDesign.ts'
 import { LETTER_DESIGN_LIMITS, LIMIT_TEXT, MIME_TYPES, designFileType, isDesignFileName, letterDesignFiles } from '../../shared/letterDesign.ts'
 import { LetterDesignError, archivedDesignProblem, designDir, designFilePath, designFilesOnDisk, nextDesign, parseDesignRequest, prepareDesignFiles, presentDesign, removeUnreferenced, writeDesignFiles } from './letterDesign.ts'
@@ -55,7 +57,7 @@ import {
 } from './db/heatingSettlements.ts'
 import {
   changeTenant, closeSettlement, createEntity, createProperty, ContractError, CrossPropertyError, LocalRentError, LetterInputError, findClosedSettlement, HeatingError, PaidOnQuestion, PaymentError, PeriodConflict, PeriodError, StaleTenancyError, invoiceFilesInUse, previewCostItemSplit, saveCostItemSplit,
-  listProperties, removeEntity, removeProperty, reopenSettlement, setSentAt, settlementHistory, updateEntity, updateProperty,
+  listProperties, patchTenancyIn, removeEntity, removeProperty, reopenSettlement, setSentAt, settlementHistory, updateEntity, updateProperty,
   TenantChangeError, unitDependents, writeSettings, writeSettingsIn, nullableBoolean, nullableLine, type CollectionName,
 } from './db/repository.ts'
 import { removeInterimGap, saveDistribution, saveInterimGap, SelfItemsError, setUpSelf } from './db/heatingSelf.ts'
@@ -939,7 +941,6 @@ app.get('/api/heating-settlement/:plant/:period', async (req, res) => {
     deadline: settlementDeadline(target.period),
     scope: { kind: 'heating' as const, plantId: target.plant.id, plantName: target.plant.name },
   }
-  const doc = letterDoc(target.period.key, { plantId: target.plant.id })
   if (closed) {
     const stand = closed.settlement !== null && typeof closed.settlement === 'object' ? closed.settlement : {}
     const deviation = compareWithFrozen(closed.settlement, () => computeHeating(stock, target.plant, target.period), frame.deadline, today())
@@ -947,7 +948,7 @@ app.get('/api/heating-settlement/:plant/:period', async (req, res) => {
     return res.json({ selfUsedShareCents: 0, ...stand, ...frame, closed: { closedAt: closed.closedAt, sentAt: closed.sentAt }, deviation, letters })
   }
   const computed = computeHeating(stock, target.plant, target.period)
-  res.json({ ...computed, closed: null, letters: await readData((db) => openLetters(db, computed, target.plant.propertyId, doc)) })
+  res.json({ ...computed, closed: null, letters: await readData((db) => openLetters(db, computed, { propertyId: target.plant.propertyId, plantId: target.plant.id, period: target.period.key })) })
 })
 
 app.post('/api/heating-settlement/:plant/:period/close', async (req, res) => {
@@ -969,7 +970,7 @@ app.post('/api/heating-settlement/:plant/:period/close', async (req, res) => {
       async (tx) => computeHeating(await readStock(tx), target.plant, target.period),
       async (tx, settlement) => closeHeatingSettlement(tx, {
         id: newId(), plantId: target.plant.id, period: target.period.key, closedAt: new Date().toISOString(), sentAt,
-        settlement: { ...settlement, letters: await openLetters(tx, settlement, target.plant.propertyId, letterDoc(target.period.key, { plantId: target.plant.id })) },
+        settlement: { ...settlement, letters: await openLetters(tx, settlement, { propertyId: target.plant.propertyId, plantId: target.plant.id, period: target.period.key }) },
       }),
     )
     return { schonDa: false, label, question }
@@ -1052,7 +1053,7 @@ app.get('/api/settlement/:period', async (req, res) => {
     return res.json({ selfUsedShareCents: 0, ...stand, ...frame, closed: { closedAt: closed.closedAt, sentAt: closed.sentAt }, deviation, letters })
   }
   const computed = computeSettlement(snapshotFor(stock, property, period), { asOf: today() })
-  res.json({ ...computed, closed: null, letters: await readData((db) => openLetters(db, computed, property, letterDoc(period.key, { propertyId: property }))) })
+  res.json({ ...computed, closed: null, letters: await readData((db) => openLetters(db, computed, { propertyId: property, period: period.key })) })
 })
 
 // Export der Abrechnung als Daten (#415, Teil 3): JSON (Cent) oder CSV der Zeilen je Mieter, mit den Zahlen, die
@@ -1075,7 +1076,7 @@ app.get('/api/settlement/:period/export', async (req, res) => {
     data = { ...stand, ...frame, closed: { closedAt: closed.closedAt, sentAt: closed.sentAt } }
   } else {
     const computed = computeSettlement(snapshotFor(stock, property, period), { asOf: today() })
-    data = { ...computed, closed: null, letters: await readData((db) => openLetters(db, computed, property, period.key)) }
+    data = { ...computed, closed: null, letters: await readData((db) => openLetters(db, computed, { propertyId: property, period: period.key })) }
   }
   res.attachment(exportFilename(propertyName, frame.period.label, format))
   if (format === 'csv') return res.type('text/csv; charset=utf-8').send(settlementExportCsv(data))
@@ -1086,9 +1087,14 @@ app.get('/api/settlement/:period/export', async (req, res) => {
 
 // Das Anschreiben einer offenen Abrechnung: mit den Texten aller Ebenen und den Anpassungen je Mieter.
 // Dasselbe friert der Abschluss ein (im selben Vorgang wie die Zahlen).
-async function openLetters(db: Executor, s: Parameters<typeof lettersOf>[0], propertyId: string, doc: string): Promise<Record<string, StatementLetter>> {
+// Der Schlüssel der Anpassungen je Mieter entsteht hier und nur hier (`letterDoc`): Der Export las sie einmal unter dem
+// nackten Zeitraum und lieferte die Vorgabe statt der Wahl des Mieters (Durchsicht zu #317).
+async function openLetters(db: Executor, s: Parameters<typeof lettersOf>[0], target: { propertyId: string, period: string, plantId?: string }): Promise<Record<string, StatementLetter>> {
+  const { propertyId } = target
+  const doc = target.plantId === undefined ? letterDoc(target.period, { propertyId }) : letterDoc(target.period, { plantId: target.plantId })
   const property = (await listProperties(db)).find((p) => p.id === propertyId) ?? null
-  return lettersFor(db, s, { settings: storedSettings, property, tenancies: await readTenancies(db), doc })
+  // #317: Der Monat der Anpassung ist ohne eigene Angabe der übernächste nach heute; der Abschluss friert ihn ein.
+  return lettersFor(db, s, { settings: storedSettings, property, tenancies: await readTenancies(db), doc, asOf: today() })
 }
 
 // Das Anschreiben einer abgeschlossenen Abrechnung ist das eingefrorene. Wurde sie vor #415
@@ -1244,7 +1250,7 @@ app.put('/api/properties/:id/letter-design', designFields, inRequest, async (req
 // gespeichert, solange sie offen ist: Druckt der Vermieter, ändert dann den Text und schließt ab,
 // fröre sonst ein anderer Text ein als der, der beim Mieter liegt. Mit dem Abschluss friert der
 // gedruckte Text ein; danach ist hier nichts mehr zu ändern (409).
-async function letterTarget(db: Database, req: Request): Promise<{ doc: string, closed: boolean, tenancyIds: string[] }> {
+async function letterTarget(db: Database, req: Request): Promise<{ doc: string, closed: boolean, tenancyIds: string[], periodTo: string }> {
   const plantId: unknown = req.params.plant
   const unitProperty = new Map((await readUnits(db)).map((u) => [u.id, u.propertyId]))
   const tenancies = await readTenancies(db)
@@ -1252,12 +1258,12 @@ async function letterTarget(db: Database, req: Request): Promise<{ doc: string, 
   if (typeof plantId === 'string') {
     const target = await heatingTargetOf(db, req)
     const closed = !!(await findClosedHeatingSettlement(db, target.plant.id, target.period.key))
-    return { doc: letterDoc(target.period.key, { plantId: target.plant.id }), closed, tenancyIds: tenanciesOf(target.plant.propertyId) }
+    return { doc: letterDoc(target.period.key, { plantId: target.plant.id }), closed, tenancyIds: tenanciesOf(target.plant.propertyId), periodTo: target.period.to }
   }
   const propertyId = await propertyOf(db, req)
   const period = await periodOf(db, req, propertyId)
   const closed = !!(await findClosedSettlement(db, propertyId, period.key))
-  return { doc: letterDoc(period.key, { propertyId }), closed, tenancyIds: tenanciesOf(propertyId) }
+  return { doc: letterDoc(period.key, { propertyId }), closed, tenancyIds: tenanciesOf(propertyId), periodTo: period.to }
 }
 
 const tenancyLettersRoute = async (req: Request, res: Response) => {
@@ -1275,6 +1281,10 @@ const saveTenancyLetterRoute = async (req: Request, res: Response) => {
     const tenancyId = String(req.params.tenancyId ?? '')
     if (!t.tenancyIds.includes(tenancyId)) throw new RouteProblem(404, 'Dieses Mietverhältnis gehört nicht zu diesem Objekt oder gibt es nicht (mehr). Bitte laden Sie die Seite neu.')
     if (t.closed) throw new RouteProblem(409, 'Die Abrechnung ist abgeschlossen; ihr Anschreiben ist eingefroren. Öffnen Sie sie wieder, um es zu ändern.')
+    // Durchsicht zu PR #435, M1: Der Monat der Anpassung liegt nach dem abgerechneten Zeitraum (#317).
+    const from = adjustment !== null && 'mode' in adjustment ? adjustment.from ?? null : null
+    const problem = from === null ? null : stepMonthProblem(from, t.periodTo)
+    if (problem) throw new RouteProblem(400, problem)
     await saveTenancyLetter(db, tenancyId, t.doc, texts, Object.hasOwn(body, 'adjustment') ? adjustment : undefined)
   })
   res.json({ ok: true })
@@ -1283,6 +1293,115 @@ app.get('/api/settlement/:period/letters', tenancyLettersRoute)
 app.put('/api/settlement/:period/letters/:tenancyId', saveTenancyLetterRoute)
 app.get('/api/heating-settlement/:plant/:period/letters', tenancyLettersRoute)
 app.put('/api/heating-settlement/:plant/:period/letters/:tenancyId', saveTenancyLetterRoute)
+
+// ---------- Anpassung in die Staffel übernehmen (#317) ----------
+
+// Was das eingefrorene Anschreiben ankündigt, je Mieter: Betrag und Monat (vor #317 ohne Monat). Eine vor #415
+// abgeschlossene Abrechnung hat kein Anschreiben und damit nichts zu übernehmen.
+function frozenStepLetters(stand: object): StepLetter[] {
+  const letters: unknown = Reflect.get(stand, 'letters')
+  const statements: unknown = Reflect.get(stand, 'statements')
+  if (letters === null || typeof letters !== 'object' || !Array.isArray(statements)) return []
+  return statements.flatMap((st: unknown): StepLetter[] => {
+    if (st === null || typeof st !== 'object') return []
+    const tenancyId: unknown = Reflect.get(st, 'tenancyId')
+    const letter: unknown = typeof tenancyId === 'string' ? Reflect.get(letters, tenancyId) : undefined
+    const adjustment: unknown = letter !== null && typeof letter === 'object' ? Reflect.get(letter, 'adjustment') : undefined
+    const cents: unknown = adjustment !== null && typeof adjustment === 'object' ? Reflect.get(adjustment, 'newCents') : undefined
+    if (typeof tenancyId !== 'string' || typeof cents !== 'number' || adjustment === null || typeof adjustment !== 'object') return []
+    const from: unknown = Reflect.get(adjustment, 'from')
+    const text = (key: string): string => { const v: unknown = Reflect.get(st, key); return typeof v === 'string' ? v : '' }
+    return [{ tenancyId, tenantName: text('tenantName'), unitName: text('unitName'), cents, from: isMonthKey(from) ? from : null }]
+  })
+}
+
+function frozenErrors(stand: object): string[] {
+  const notices: unknown = Reflect.get(stand, 'notices')
+  return Array.isArray(notices) ? blockingErrors(notices.filter((n): n is Notice => n !== null && typeof n === 'object' && typeof Reflect.get(n, 'level') === 'string')).map((n) => n.title) : []
+}
+
+// Die geänderten Monate aus dem Rumpf, geprüft: JJJJ-MM und nach dem abgerechneten Zeitraum.
+function stepMonthsOf(req: Request, periodTo: string): Record<string, string> {
+  const raw: unknown = bodyObject(req).months ?? {}
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) throw new RouteProblem(400, 'Die Monate der Übernahme sind keine gültige Angabe.')
+  const out: Record<string, string> = {}
+  for (const [id, month] of Object.entries(raw)) {
+    const problem = stepMonthProblem(month, periodTo)
+    if (problem) throw new RouteProblem(400, problem)
+    if (typeof month === 'string') out[id] = month
+  }
+  return out
+}
+
+async function stepInputOf(db: Database, req: Request): Promise<StepInput> {
+  const plantId: unknown = req.params.plant
+  let closed: { closedAt: string, sentAt: string | null, settlement: unknown } | null
+  let periodTo: string
+  let scope: StepInput['scope']
+  if (typeof plantId === 'string') {
+    const target = await heatingTargetOf(db, req)
+    closed = (await findClosedHeatingSettlement(db, target.plant.id, target.period.key)) ?? null
+    periodTo = target.period.to
+    scope = 'heating'
+  } else {
+    const property = await propertyOf(db, req)
+    const period = await periodOf(db, req, property)
+    closed = (await findClosedSettlement(db, property, period.key)) ?? null
+    periodTo = period.to
+    scope = 'all'
+  }
+  if (!closed) throw new RouteProblem(409, 'Die Abrechnung ist nicht abgeschlossen. Übernommen wird die Anpassung, die das abgeschlossene Anschreiben ankündigt.')
+  const stand = closed.settlement !== null && typeof closed.settlement === 'object' ? closed.settlement : {}
+  const separateHeating: unknown = Reflect.get(stand, 'separateHeating')
+  const without: unknown = Reflect.get(stand, 'suggestionWithoutHeating')
+  return {
+    scope,
+    separate: scope === 'all' && (typeof without === 'boolean' ? without : Array.isArray(separateHeating) && separateHeating.length > 0),
+    periodTo,
+    closedAt: closed.closedAt,
+    sentAt: closed.sentAt,
+    today: today(),
+    errors: frozenErrors(stand),
+    letters: frozenStepLetters(stand),
+    tenancies: await readTenancies(db),
+    months: stepMonthsOf(req, periodTo),
+  }
+}
+
+// Der Plan: je Mieter Staffel, Monat, Stand und was vorher zu fragen ist, mit Marke.
+const stepPlanRoute = async (req: Request, res: Response) => {
+  const plan = planPrepaymentSteps(await readData((db) => stepInputOf(db, req)))
+  res.json({ ...plan, token: stepToken(plan) } satisfies PrepaymentStepPlan)
+}
+// Übernehmen: nur mit der Marke des Plans, den der Vermieter gesehen hat (Rückfragen zu Fehlern, vorhandenen Stufen und
+// zum Monat stehen darin); sonst 409 mit dem neuen Plan. Alle gewählten Mieter in einer Transaktion.
+const stepSaveRoute = async (req: Request, res: Response) => {
+  const body = bodyObject(req)
+  const chosen: unknown = body.tenancyIds
+  if (!Array.isArray(chosen) || !chosen.every((x) => typeof x === 'string')) return res.status(400).json({ error: 'Bitte wählen Sie die Mieter, deren Anpassung übernommen wird.' })
+  // Gelesen wird in derselben Schreibschlange wie geschrieben; dazwischen ändert niemand den Bestand.
+  const result = await writeData(async (db) => {
+    const input = await stepInputOf(db, req)
+    const plan = planPrepaymentSteps(input)
+    const token = stepToken(plan)
+    if (body.token !== token) return { stale: { ...plan, token } }
+    const writes = stepWrites(plan, input.tenancies, chosen)
+    const all = await readTenancies(db)
+    await db.transaction(async (tx) => {
+      for (const w of writes) {
+        const current = all.find((t) => t.id === w.tenancyId)
+        if (current) await patchTenancyIn(tx, current, { [w.schedule]: w.entries })
+      }
+    })
+    return { written: writes.map((w) => w.tenancyId) }
+  })
+  if ('stale' in result) return res.status(409).json({ error: 'Der Stand hat sich geändert. Bitte prüfen Sie die Übernahme noch einmal.', plan: result.stale })
+  res.json({ ok: true, written: result.written })
+}
+app.post('/api/settlement/:period/prepayment-steps/plan', stepPlanRoute)
+app.post('/api/settlement/:period/prepayment-steps', stepSaveRoute)
+app.post('/api/heating-settlement/:plant/:period/prepayment-steps/plan', stepPlanRoute)
+app.post('/api/heating-settlement/:plant/:period/prepayment-steps', stepSaveRoute)
 
 // Ein Datum als JJJJ-MM-TT, wie es <input type="date"> liefert. Der Vergleich mit dem
 // Rückweg über Date schließt Tage aus, die es im Kalender nicht gibt: JavaScript rechnet den
@@ -1387,7 +1506,7 @@ app.post('/api/settlement/:period/close', async (req, res) => {
       // Mit den Zahlen friert das Anschreiben ein (#415), wie die Seite es gerade zeigt.
       async (tx, settlement) => closeSettlement(tx, {
         id: newId(), propertyId: property, period: period.key, closedAt: new Date().toISOString(), sentAt,
-        settlement: { ...settlement, letters: await openLetters(tx, settlement, property, letterDoc(period.key, { propertyId: property })) },
+        settlement: { ...settlement, letters: await openLetters(tx, settlement, { propertyId: property, period: period.key }) },
       }),
     )
     return { schonDa: false, label, question }

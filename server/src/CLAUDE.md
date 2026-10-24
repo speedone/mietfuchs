@@ -247,6 +247,24 @@ das Leerzeichen davor mit (`{Konto}` ohne IBAN ergibt den bisherigen Satz ohne K
   `GET …/letters` und `PUT …/letters/:tenancyId` unter `/api/settlement/:period` und
   `/api/heating-settlement/:plant/:period`.
 
+- **Monat der Anpassung und Übernahme in die Staffel** (#317, [prepaymentSteps.ts](prepaymentSteps.ts)): Das
+  Anschreiben nennt den Monat (`{AnpassungAb}`, `StatementLetter.adjustment.from`); ohne eigene Angabe des Mieters
+  (`tenancy_letter_adjustments.from_month`, Schritte 0073/0074) ist es der übernächste nach dem Tag des Briefs
+  (`adjustFromFor`, `LetterSource.asOf` = `today()`, mit dem Abschluss eingefroren), **nie im abgerechneten Zeitraum**
+  (dann der erste Monat danach); eine eigene Angabe im Zeitraum lehnt `PUT …/letters/:tenancyId` mit 400 ab. Das ist eine vorsichtige
+  Vorgabe; § 560 Abs. 4 BGB nennt keine Frist (AG Mannheim, 8 C 552/06, Rn. 29: nächster Fälligkeitstermin).
+  `POST …/prepayment-steps/plan` (unter `/api/settlement/:period` und `/api/heating-settlement/:plant/:period`) liest
+  nur die abgeschlossene Abrechnung (sonst 409): je Mieter Betrag und Monat aus dem eingefrorenen Anschreiben (vor
+  #317 ohne Monat: übernächster nach Versand bzw. Abschluss), Staffel (`heatingPrepayments` bei Weg d), Stand, Stufen
+  ab dem Monat, Sätze zu Versand und Zugang, Fehler der Abrechnung (`blockingErrors` der eingefrorenen Hinweise),
+  dazu eine Marke. `POST …/prepayment-steps` schreibt nur mit dieser Marke (sonst 409 mit neuem Plan), über
+  `patchTenancyIn` (Verschmelzung und Wächter wie `PUT /api/tenancies/:id`) in einer Transaktion; eine Stufe desselben
+  Monats wird ersetzt, spätere bleiben. Ein geänderter Monat im abgerechneten Zeitraum ist eine 400; steht er so im
+  Schreiben, ist die Zeile gesperrt (`fixMonth`) und wird nie geschrieben. `earlier` nennt Stufen zwischen Zeitraumende
+  und Monat. Gesperrt: Mietverhältnis
+  endet vorher, oder eine Gesamtabrechnung neben einer eigenen Heizstaffel (der Betrag gilt beiden; nicht geraten).
+  Rückfragen formuliert die Oberfläche (client/src/prepaymentSteps.ts) mit gelesenen Fundstellen: BGH VIII ZR 246/11
+  (Leitsatz), VIII ZR 271/10 (Leitsatz 2), AG Köln 203 C 73/23 (Rn. 27).
 - **Export als Daten** (#415 Teil 3, [settlementExport.ts](settlementExport.ts)): `GET /api/settlement/:period/export?format=json|csv`
   (`?property=` und Zeitraum wie die Abrechnung). Eine Stelle baut die Form; bei Abschluss gilt nur der eingefrorene
   Stand plus Rahmen (`frozenExportable`, nichts wird neu gerechnet; fehlen Pflichtfelder: 409). JSON: `format:

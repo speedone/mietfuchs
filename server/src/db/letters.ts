@@ -48,7 +48,7 @@ export async function readTenancyLetters(db: Executor, doc: string, tenancyIds: 
   const out: Record<string, TenancyLetter> = {}
   const entry = (id: string): TenancyLetter => (out[id] ??= { texts: {}, adjustment: null })
   for (const r of texts) entry(r.tenancyId).texts[r.block] = r.text
-  for (const r of adjustments) entry(r.tenancyId).adjustment = { mode: r.mode, cents: r.mode === 'custom' ? r.cents : null }
+  for (const r of adjustments) entry(r.tenancyId).adjustment = { mode: r.mode, cents: r.mode === 'custom' ? r.cents : null, from: r.fromMonth ?? null }
   return out
 }
 
@@ -65,7 +65,7 @@ export async function saveTenancyLetter(db: Executor, tenancyId: string, doc: st
     await db.delete(tenancyLetterAdjustments).where(where)
     return
   }
-  const row = { mode: adjustment.mode, cents: adjustment.mode === 'custom' ? adjustment.cents : null }
+  const row = { mode: adjustment.mode, cents: adjustment.mode === 'custom' ? adjustment.cents : null, fromMonth: adjustment.from ?? null }
   await db.insert(tenancyLetterAdjustments).values({ tenancyId, doc, ...row }).onConflictDoUpdate({ target: [tenancyLetterAdjustments.tenancyId, tenancyLetterAdjustments.doc], set: row })
 }
 
@@ -75,6 +75,13 @@ export async function saveTenancyLetter(db: Executor, tenancyId: string, doc: st
 // (`heating:<Anlage>:<Heizperiode>`, die Anlage gehört zu einem Objekt; `letterDoc` in letter.ts). Ändert sich ein
 // Zeitraum, gehörten die Texte zu einem anderen Brief; wechselt ein Mietverhältnis das Objekt, zu einem fremden Haus.
 // Dann entfallen die offenen; abgeschlossene sind im Stand eingefroren und bleiben.
+
+// Der Schlüssel `doc` entsteht nur hier (Durchsicht zu #317: der Export baute ihn einmal selbst und las die Anpassungen
+// je Mieter nicht). Objekt und Zeitraum der Betriebskostenabrechnung oder Anlage und Heizperiode einer getrennten
+// Heizkostenabrechnung; `letterDocPrefix` ist der Anfang aller Schlüssel eines Eigentümers.
+export type LetterOwner = { propertyId: string } | { plantId: string }
+export const letterDocPrefix = (owner: LetterOwner): string => ('plantId' in owner ? `heating:${owner.plantId}:` : `${owner.propertyId}:`)
+export const letterDoc = (period: string, owner: LetterOwner): string => `${letterDocPrefix(owner)}${period}`
 
 export type LetterDocRows = { doc: string, period: string, tenancyIds: string[] }
 const periodOfDoc = (doc: string): string => doc.slice(doc.lastIndexOf(':') + 1)
@@ -111,7 +118,7 @@ export function droppedLettersText(names: readonly string[], label: string): str
 // Ausschalten von Weg d und beim Entfernen der Anlage. Abgeschlossene bleiben eingefroren.
 export async function dropOpenHeatingLetters(db: Executor, plantId: string, from: string | null): Promise<void> {
   const closed = new Set((await db.select({ period: closedHeatingSettlements.period }).from(closedHeatingSettlements).where(eq(closedHeatingSettlements.plantId, plantId))).map((c) => c.period as string))
-  const docs = (await letterDocsWithPrefix(db, `heating:${plantId}:`)).filter((d) => (from === null || d.period >= from) && !closed.has(d.period))
+  const docs = (await letterDocsWithPrefix(db, letterDocPrefix({ plantId }))).filter((d) => (from === null || d.period >= from) && !closed.has(d.period))
   await dropLetterDocs(db, docs.map((d) => d.doc))
 }
 
@@ -123,8 +130,8 @@ export async function dropOpenTenancyLetters(db: Executor, tenancyId: string): P
   ])
   if (docs.size === 0) return
   const closed = new Set([
-    ...(await db.select({ owner: closedSettlements.propertyId, period: closedSettlements.period }).from(closedSettlements)).map((c) => `${c.owner}:${c.period}`),
-    ...(await db.select({ owner: closedHeatingSettlements.plantId, period: closedHeatingSettlements.period }).from(closedHeatingSettlements)).map((c) => `heating:${c.owner}:${c.period}`),
+    ...(await db.select({ owner: closedSettlements.propertyId, period: closedSettlements.period }).from(closedSettlements)).map((c) => letterDoc(c.period, { propertyId: c.owner })),
+    ...(await db.select({ owner: closedHeatingSettlements.plantId, period: closedHeatingSettlements.period }).from(closedHeatingSettlements)).map((c) => letterDoc(c.period, { plantId: c.owner })),
   ])
   const open = [...docs].filter((d) => !closed.has(d))
   if (open.length === 0) return

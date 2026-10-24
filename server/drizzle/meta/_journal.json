@@ -512,6 +512,20 @@
       "when": 1792809184984,
       "tag": "0072_umbauter_raum_bedingung",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "6",
+      "when": 1792810523743,
+      "tag": "0073_anpassung_ab",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "6",
+      "when": 1792810536141,
+      "tag": "0074_anpassung_ab_bedingung",
+      "breakpoints": true
     }
   ]
 }
