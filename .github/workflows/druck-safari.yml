@@ -10,9 +10,6 @@ name: Druck in Safari
 # `macos-latest` mit Absicht: Geprüft werden soll das Safari, das Nutzer haben, also das neueste.
 on:
   workflow_dispatch:
-  # PROBELAUF, vor dem PR entfernen: workflow_dispatch geht erst, wenn die Datei auf main liegt
-  push:
-    branches: [ci/druck-safari]
 
 permissions:
   contents: read

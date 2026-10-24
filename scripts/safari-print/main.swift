@@ -29,9 +29,15 @@ let url: URL = {
   guard let text = argument("--url"), let url = URL(string: text) else { fail("--url fehlt") }
   return url
 }()
-let outPath: String = argument("--out") ?? fail("--out fehlt")
+let outPath: String = {
+  guard let path = argument("--out") else { fail("--out fehlt") }
+  return path
+}()
 let prelude = (try? String(contentsOfFile: argument("--prelude") ?? "", encoding: .utf8)) ?? ""
-let driver: String = (try? String(contentsOfFile: argument("--driver") ?? "", encoding: .utf8)) ?? fail("--driver fehlt")
+let driver: String = {
+  guard let text = try? String(contentsOfFile: argument("--driver") ?? "", encoding: .utf8) else { fail("--driver fehlt") }
+  return text
+}()
 let argsJSON = argument("--args") ?? "{}"
 let timeoutSeconds = Double(argument("--timeout") ?? "120") ?? 120
 
