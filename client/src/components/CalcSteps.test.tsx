@@ -50,3 +50,14 @@ test('der geöffnete Begriff schiebt die Zeile nicht auseinander, Beschriftung u
   expect(pop.matches(':popover-open')).toBe(false)
   await waitFor(() => expect(document.activeElement).toBe(begriff))
 })
+
+// Seite Abrechnung: ein Schalter für die ganze Aufstellung statt eines Knopfs je Zeile.
+test('von außen geöffnet: kein Knopf je Zeile, die Schritte folgen dem Schalter', () => {
+  const row = { costItemId: 'k', category: 'Grundsteuer', description: 'Grundsteuer', totalCents: 100000, keyLabel: 'Wohnfläche', shareCents: 33333, steps: [{ label: 'Rechnungsbetrag', value: '1.000,00 €' }] }
+  const view = (open: boolean) => <table><tbody><CalcSteps colSpan={4} row={row} open={open}>{(toggle) => <tr><td>{toggle}</td></tr>}</CalcSteps></tbody></table>
+  const { rerender } = render(view(false))
+  expect(screen.queryByRole('button', { name: /Rechenweg/ })).toBeNull()
+  expect(screen.queryByText('1.000,00 €')).toBeNull()
+  rerender(view(true))
+  expect(screen.getByText('1.000,00 €')).toBeTruthy()
+})

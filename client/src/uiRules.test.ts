@@ -557,6 +557,7 @@ const DRAWER_VERBS = /^(?:Anlegen|Speichern)$/
 // Ein weiteres Verb für genau ein Seitenfenster, mit Grund (nur diese Datei, nur dieses Wort).
 const DRAWER_VERB_EXCEPTIONS = new Map<string, { verb: string; why: string }>([
   ['./components/ReadingSheetDrawer.tsx', { verb: 'Drucken', why: 'das Fenster speichert nichts, es druckt das Ableseformular (#320)' }],
+  ['./components/PrintDrawer.tsx', { verb: 'Drucken', why: 'das Fenster druckt die Abrechnung; die Druckeinstellungen speichert ihr eigenes „Speichern“ am Entwurf' }],
 ])
 // Primärknöpfe im Seitenfenster, die ihren Text aus einem Ausdruck nehmen, mit Grund.
 const DRAWER_LABEL_EXCEPTIONS = new Map<string, string>([

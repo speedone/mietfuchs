@@ -8,10 +8,13 @@ import { stepsOf } from '../calcSteps'
 import type { CalcStep, SettlementRow } from '../types'
 import Term from './Term'
 
-export default function CalcSteps({ row, colSpan, children }: { row: SettlementRow; colSpan: number; children: (toggle: ReactNode) => ReactNode }) {
-  const [open, setOpen] = useState(false)
+// `open` von außen (Seite Abrechnung: ein Schalter „Rechenweg zeigen“ für die ganze Aufstellung) ersetzt den Knopf je
+// Zeile; `toggle` ist dann leer.
+export default function CalcSteps({ row, colSpan, open: shown, children }: { row: SettlementRow; colSpan: number; open?: boolean; children: (toggle: ReactNode) => ReactNode }) {
+  const [own, setOpen] = useState(false)
+  const open = shown ?? own
   const { steps, complete } = stepsOf(row)
-  const toggle = (
+  const toggle = shown !== undefined ? null : (
     <button type="button" className="btn small secondary no-print calc-toggle" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
       {open ? 'Rechenweg schließen' : 'Rechenweg'}
     </button>

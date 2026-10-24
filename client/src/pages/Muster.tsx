@@ -13,7 +13,7 @@ import Switcher from '../components/Switcher'
 import { OtherPropertiesView } from '../components/OtherPropertiesCard'
 import { PropertySwitcher } from '../property'
 import { ErrorSummary, useFormError } from '../components/ErrorSummary'
-import { NoticeBox, TextNotice } from '../components/Notice'
+import { CompactNotice, NoticeBox, NoticeGroup, TextNotice } from '../components/Notice'
 import { useConfirm, useToast } from '../components/feedback'
 import { useDraft } from '../useDraft'
 import ContractAgreementFields, { WhyQuestion } from '../components/ContractAgreementFields'
@@ -144,6 +144,17 @@ export default function Muster() {
         <NoticeBox level="warning" title="Warnung" action="Geld landet anders als vermutlich gewollt." more="Begründung aus einer Fundstelle (BGH VIII ZR 156/11)." />
         <NoticeBox level="hint" title="Hinweis" action="Bitte prüfen, ohne sicheren Fehler." />
         <TextNotice level="info" text="Eine Auskunft als fertiger Text. Sie wird in Sätze zerlegt." />
+        {/* „Zu prüfen“ auf der Seite Abrechnung: eine Warnung als Zeile mit Betrag, Hinweise in einer Zeile zusammengefasst. */}
+        <CompactNotice
+          notice={{ code: 'muster', level: 'warning', title: 'Warnung als Zeile', text: 'Aufgeklappt steht der ganze Text, hier mit 12,40 € Kürzung.' }}
+          headline="Warnung als Zeile"
+          amount="12,40 €"
+          fix={{ label: 'Hier beheben →', onClick: () => toast('Sprung zur Stelle.') }}
+        />
+        <NoticeGroup level="hint" summary="2 Hinweise (Erster, Zweiter)">
+          <NoticeBox level="hint" title="Erster" action="Ein Hinweis in der Gruppe." />
+          <NoticeBox level="hint" title="Zweiter" action="Noch einer." />
+        </NoticeGroup>
         <div className="ok">✓ Ein Erfolg.</div>
       </Card>
 

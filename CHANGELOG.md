@@ -189,6 +189,16 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Geändert
 
+- Seite Abrechnung neu geordnet, in drei Zonen statt vieler Karten vor der ersten Zahl: eine Kopfzeile mit Stand und
+  Frist, dem einen Knopf des Zustands (abschließen bzw. Versanddatum und „Wieder öffnen …“), „🖨 Drucken / PDF“ und
+  „Mehr“ (Anschreiben und Briefpapier des Objekts, Export als JSON oder CSV); „Zu prüfen“ mit einer Zeile je Warnung
+  zum Aufklappen, Fehlern ganz offen und den Hinweisen in einer Zeile; die Übersicht mit den Kennzahlen und einer
+  Tabelle je Mieter, in der auch die Mietverhältnisse ohne Abrechnung mit ihrem Grund stehen; unten die Karte
+  „Kontrolle“ mit Kontrollansicht, Vermieteranteil und Rechtsstand. Brief und Aufstellung eines Mieters zeigt
+  „Ansehen“ über die ganze Breite, mit Blättern zum vorigen und nächsten Mieter, „Anschreiben bearbeiten“, „Drucken“
+  und einem Schalter „Rechenweg zeigen“ statt eines Knopfs je Zeile. Die Häkchen zum Druck stehen im Fenster
+  „Drucken“, das auch wählt, ob alle Mieter oder einer gedruckt werden, und vor dem Druck nennt, was zu prüfen ist.
+  Gedruckt wird genau wie vorher.
 - Die Karte „Heizung nach § 43 GModG“ nennt im ersten Satz, wann ein Neubau unter die hälftige Teilung
   fällt (erstmals genutzt bis 31.12.2029, nicht bei Bauantrag, Antrag auf Zustimmung oder Bauanzeige vor
   dem 13.05.2026) und dass sie nach einem Einbau wegen eines irreparablen Ausfalls der bisherigen Heizung

@@ -87,3 +87,46 @@ export function CalcNotice({ notice, fix, className }: { notice: Notice, fix?: F
     </NoticeBox>
   )
 }
+
+// Mehrere Hinweise einer Stufe zusammengefasst in einer aufklappbaren Zeile („3 Hinweise (…)“), darin die Hinweise.
+export function NoticeGroup({ level, summary, children }: { level: NoticeLevel, summary: ReactNode, children: ReactNode }) {
+  return (
+    <details className={`${noticeClass(level)} notice-item`}>
+      <summary><span aria-hidden="true">{NOTICE_SYMBOLS[level]}</span> {summary}</summary>
+      <div className="notice-list">{children}</div>
+    </details>
+  )
+}
+
+// Ein Hinweis als eine Zeile einer Liste („Zu prüfen“ auf der Seite Abrechnung): Stufe, Kopf und, wo der Text einen
+// nennt, der Betrag; aufgeklappt der volle Text wie bei `CalcNotice`. „Hier beheben →“ steht neben der Zeile, also auch
+// zugeklappt erreichbar. Für Fehler nicht gedacht: Ein Fehler steht ganz offen (#236).
+export function CompactNotice({ notice, headline, amount, fix }: { notice: Notice, headline: string, amount: string | null, fix?: Fix | null }) {
+  const { visible, more } = splitNoticeText(notice.text, notice.level)
+  const [open, setOpen] = useState(false)
+  const moreId = useId()
+  const headId = useId()
+  const terms = notice.terms ?? []
+  return (
+    <div className={`${noticeClass(notice.level)} notice-item flex flex-wrap items-baseline gap-2`}>
+      <details className="grow">
+        <summary>
+          <span aria-hidden="true">{NOTICE_SYMBOLS[notice.level]}</span>{' '}
+          <span className="notice-level">{NOTICE_LEVEL_LABELS[notice.level]}<span className="sr-only">:</span></span>{' '}
+          <strong id={headId}>{headline}</strong>
+          {amount && <span>{` · ${amount}`}</span>}
+        </summary>
+        {/* Ohne Titel ist der Kopf der erste Satz; der volle Text steht aufgeklappt trotzdem ganz da. */}
+        <div>{visible}</div>
+        {more && <div id={moreId} hidden={!open}>{more}</div>}
+        {more && (
+          <div><button type="button" className="btn ghost notice-action" aria-expanded={open} aria-controls={moreId} onClick={() => setOpen((o) => !o)}>Mehr dazu</button></div>
+        )}
+        {terms.length > 0 && (
+          <div className="notice-terms">Begriffe: {terms.map((t, k) => <Fragment key={t}>{k > 0 && ', '}<Term id={t} /></Fragment>)}</div>
+        )}
+      </details>
+      {fix && <button type="button" className="btn secondary notice-action" aria-describedby={headId} onClick={fix.onClick}>{fix.label}</button>}
+    </div>
+  )
+}

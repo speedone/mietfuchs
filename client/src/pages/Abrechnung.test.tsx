@@ -391,27 +391,36 @@ test('Versanddatum: nach „Wieder öffnen“ bleibt kein unsichtbarer Entwurf z
 const HEAT_ERROR = { code: 'heating.self-incomplete', level: 'error' as const, title: 'Heizkostenabrechnung unvollständig', text: 'Die Heizkosten fehlen in jeder Mieterabrechnung.', subject: { kind: 'tenancy' as const, id: 't1' } }
 const INFO_ERROR = { code: 'period.short', level: 'error' as const, title: 'Nur Auskunft', text: 'Färbt nicht.' }
 const printing = () => document.body.classList.contains('print-one')
+// Gedruckt wird über das Fenster „Drucken“: aus der Vorschau eines Mieters dieser Mieter, aus der Kopfzeile alle.
+const printDrawer = async () => screen.findByRole('dialog', { name: 'Drucken' }, SLOW)
+async function printOne() {
+  fireEvent.click(await screen.findByRole('button', { name: /^Ansehen/ }, SLOW))
+  fireEvent.click(await screen.findByRole('button', { name: /^🖨 Drucken \(/ }, SLOW))
+  fireEvent.click(within(await printDrawer()).getByRole('button', { name: 'Drucken' }))
+}
 
 test('Drucken mit Fehlern: Rückfrage, Vorgabe „Nicht drucken“, „Trotzdem drucken“ druckt', async () => {
   settlement.notices = [HEAT_ERROR]
   showWithNav(() => {})
-  fireEvent.click(await screen.findByRole('button', { name: /Drucken \/ PDF/ }, SLOW))
+  await printOne()
   const dialog = await screen.findByRole('alertdialog', { name: /Fehler/ }, SLOW)
   expect(dialog.textContent).toContain('Heizkostenabrechnung unvollständig')
   expect(document.activeElement?.textContent).toBe('Nicht drucken')
   fireEvent.click(screen.getByRole('button', { name: 'Nicht drucken' }))
   await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull(), SLOW)
   expect(printing()).toBe(false)
-  fireEvent.click(screen.getByRole('button', { name: /Drucken \/ PDF/ }))
+  // Das Fenster „Drucken“ bleibt offen; ein zweiter Versuch fragt wieder.
+  fireEvent.click(within(await printDrawer()).getByRole('button', { name: 'Drucken' }))
   fireEvent.click(await screen.findByRole('button', { name: 'Trotzdem drucken' }, SLOW))
   await waitFor(() => expect(printing()).toBe(true), SLOW)
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Drucken' })).toBeNull(), SLOW)
 })
 
 test('Drucken mit Fehlern: „Hier beheben →“ druckt nicht und führt zum Eintrag', async () => {
   settlement.notices = [HEAT_ERROR]
   const nav = vi.fn()
   showWithNav(nav)
-  fireEvent.click(await screen.findByRole('button', { name: /Drucken \/ PDF/ }, SLOW))
+  await printOne()
   const dialog = await screen.findByRole('alertdialog', { name: /Fehler/ }, SLOW)
   fireEvent.click(within(dialog).getByRole('button', { name: 'Hier beheben → Stammdaten' }))
   await waitFor(() => expect(nav).toHaveBeenCalledWith('stammdaten', { kind: 'tenancy', id: 't1' }), SLOW)
@@ -422,7 +431,7 @@ test('Drucken mit Fehlern: „Hier beheben →“ druckt nicht und führt zum Ei
 test('Drucken: eine Auskunft aus INFORMATIONAL und Warnungen fragen nicht nach', async () => {
   settlement.notices = [INFO_ERROR, { code: 'w', level: 'warning', title: 'Warnung', text: 'W' }]
   show()
-  fireEvent.click(await screen.findByRole('button', { name: /Drucken \/ PDF/ }, SLOW))
+  await printOne()
   await waitFor(() => expect(printing()).toBe(true), SLOW)
   expect(screen.queryByRole('alertdialog')).toBeNull()
 })
@@ -442,7 +451,7 @@ test('abgeschlossen mit Fehlern: Versanddatum und Druck fragen nicht nach, ohne 
   await waitFor(() => expect(puts).toEqual([{ sentAt: `${YEAR + 1}-01-15` }]), SLOW)
   expect(screen.queryByRole('alertdialog')).toBeNull()
   expect(screen.queryByText(/Entwurf, nicht versenden/)).toBeNull()
-  fireEvent.click(screen.getByRole('button', { name: /Drucken \/ PDF/ }))
+  await printOne()
   await waitFor(() => expect(printing()).toBe(true), SLOW)
   expect(screen.queryByRole('alertdialog')).toBeNull()
 })
@@ -517,12 +526,15 @@ const showWithSettings = (s: Settings, reload: () => Promise<void>) => render(
 // Seit #415 wählt das Anschreiben die Anpassung der Vorauszahlung je Mieter; hier stehen Falzmarken und Belegkopien.
 const foldBox = async () => (await screen.findByLabelText(/Falz- und Lochmarken/, {}, SLOW)) as HTMLInputElement
 const attachBox = () => screen.getByLabelText(/Belegkopien als Anlage/) as HTMLInputElement
+// Seit der Neuordnung der Seite stehen die Häkchen im Fenster „Drucken“, das „🖨 Drucken / PDF“ öffnet.
+const openPrintSettings = async () => fireEvent.click(await screen.findByRole('button', { name: /Drucken \/ PDF/ }, SLOW))
 
 test('Druckeinstellungen: Anklicken sendet nichts, „Speichern“ sendet beide genau einmal (#309)', async () => {
   const puts: unknown[] = []
   stubSettings(puts)
   const reload = vi.fn(async () => {})
   showWithSettings(SETTINGS, reload)
+  await openPrintSettings()
   fireEvent.click(await foldBox())
   fireEvent.click(attachBox())
   expect((await foldBox()).checked).toBe(true)
@@ -543,6 +555,7 @@ test('Druckeinstellungen: „Verwerfen“ stellt beide her, ohne zu senden (#309
   const puts: unknown[] = []
   stubSettings(puts)
   showWithSettings({ ...SETTINGS, printAttachments: true }, async () => {})
+  await openPrintSettings()
   fireEvent.click(await foldBox())
   fireEvent.click(attachBox())
   fireEvent.click(screen.getByRole('button', { name: 'Verwerfen (Druckeinstellungen)' }))
@@ -557,6 +570,7 @@ test('Druckeinstellungen: scheitert das Speichern, steht der Grund am Knopf und 
   stubSettings(puts, true)
   const reload = vi.fn(async () => {})
   showWithSettings(SETTINGS, reload)
+  await openPrintSettings()
   fireEvent.click(await foldBox())
   fireEvent.click(screen.getByRole('button', { name: 'Speichern (Druckeinstellungen)' }))
   const alert = await screen.findByRole('alert', {}, SLOW)
@@ -571,11 +585,21 @@ test('Druckeinstellungen: ungespeichert fragt der Wechsel des Jahres nach (#309)
   const puts: unknown[] = []
   stubSettings(puts)
   showWithSettings(SETTINGS, async () => {})
+  window.print = vi.fn()
+  await openPrintSettings()
   fireEvent.click(await foldBox())
+  // Gedruckt (alle Mieter): Das Fenster ist zu, der Entwurf steht mit „Speichern“ in der Kopfzeile.
+  fireEvent.click(within(await printDrawer()).getByRole('button', { name: 'Drucken' }))
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Drucken' })).toBeNull(), SLOW)
+  await waitFor(() => expect(window.print).toHaveBeenCalled(), SLOW)
+  expect(document.body.classList.contains('print-one')).toBe(false)
+  expect(screen.getByText(PRINT_DRAFT_NOTE)).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Speichern (Druckeinstellungen)' })).toBeTruthy()
   fireEvent.change(screen.getByLabelText('Abrechnungsjahr'), { target: { value: String(YEAR - 1) } })
   expect(await screen.findByText('Offene Eingaben verwerfen?', {}, SLOW)).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }))
   await waitFor(() => expect(screen.queryByText('Offene Eingaben verwerfen?')).toBeNull(), SLOW)
+  await openPrintSettings()
   expect((await foldBox()).checked).toBe(true)
   expect(puts).toEqual([])
 })
@@ -636,6 +660,7 @@ test('Export: Knöpfe laden die Datei und speichern sie unter dem Namen aus file
   const calls = exportFetch((_p, q) => new Response('{}', { status: 200, headers: { 'content-disposition': `attachment; filename=x.${q.includes('csv') ? 'csv' : 'json'}; filename*=UTF-8''abrechnung-S%C3%BCd-${YEAR}.${q.includes('csv') ? 'csv' : 'json'}` } }))
   const names = captureDownload()
   show()
+  fireEvent.click(await screen.findByRole('button', { name: /^Mehr/ }, SLOW))
   fireEvent.click(await screen.findByRole('button', { name: 'Als CSV exportieren' }, SLOW))
   await waitFor(() => expect(names).toEqual([`abrechnung-Süd-${YEAR}.csv`]), SLOW)
   expect(calls[0]).toContain(`/api/settlement/${YEAR}/export?format=csv`)
@@ -649,6 +674,7 @@ test('Export: eine Absage des Servers erscheint als Mitteilung, nichts wird gesp
   exportFetch(() => new Response(JSON.stringify({ error: 'Der eingefrorene Stand lässt sich nicht als Daten ausgeben.' }), { status: 409, headers: { 'content-type': 'application/json' } }))
   const names = captureDownload()
   show()
+  fireEvent.click(await screen.findByRole('button', { name: /^Mehr/ }, SLOW))
   fireEvent.click(await screen.findByRole('button', { name: 'Als JSON exportieren' }, SLOW))
   expect((await screen.findAllByText(/nicht als Daten ausgeben/, undefined, SLOW)).length).toBeGreaterThan(0)
   expect(names).toEqual([])
@@ -659,6 +685,7 @@ test('Export mit Fehlern: Rückfrage wie vor dem Drucken, „Nicht exportieren�
   const calls = exportFetch(() => null)
   const names = captureDownload()
   showWithNav(() => {})
+  fireEvent.click(await screen.findByRole('button', { name: /^Mehr/ }, SLOW))
   fireEvent.click(await screen.findByRole('button', { name: 'Als JSON exportieren' }, SLOW))
   await screen.findByRole('alertdialog', { name: /Fehler/ }, SLOW)
   fireEvent.click(screen.getByRole('button', { name: 'Nicht exportieren' }))
@@ -688,5 +715,130 @@ test('Export: bei der Heizkostenabrechnung nach Weg d gibt es die Knöpfe nicht'
     </PeriodProvider>,
   )
   await screen.findByRole('button', { name: `🔒 Heizkostenabrechnung ${YEAR - 1}/${YEAR} abschließen` }, SLOW)
+  const more = screen.queryByRole('button', { name: /^Mehr/ })
+  if (more) fireEvent.click(more)
   expect(screen.queryByRole('button', { name: 'Als JSON exportieren' })).toBeNull()
+})
+
+// ---------- Die Seite in drei Zonen und die Vorschau je Mieter ----------
+
+const SECOND: Statement = { ...STATEMENT, tenancyId: 't2', tenantName: 'Schulz', unitName: 'OG', balanceCents: 2500, prepaymentOverridden: false,
+  rows: [{ ...STATEMENT.rows[0]!, steps: [{ label: 'Rechnungsbetrag', value: '600,00 €' }] }] }
+
+test('Übersicht: eine Zeile je Mieter mit Ergebnis, ohne Abrechnung mit Grund, kein Rechenweg-Knopf je Zeile', async () => {
+  settlement.statements = [STATEMENT, SECOND]
+  settlement.notSettled = [{ tenancyId: 't3', tenantName: 'Paul', unitName: 'Garage', costModel: 'flatRate', heatingModel: 'settlement' }]
+  show()
+  const table = await screen.findByRole('table', { name: 'Abrechnungen je Mieter' }, SLOW)
+  const rows = within(table).getAllByRole('row').slice(1)
+  expect(rows.map((r) => r.textContent)).toEqual([
+    expect.stringMatching(/^Meier.*EG.*Nachzahlung 100,00\s€.*Ansehen/),
+    expect.stringMatching(/^Schulz.*OG.*Guthaben 25,00\s€.*Ansehen/),
+    expect.stringMatching(/^Paul.*Garage.*Ohne Abrechnung: Nebenkosten als Pauschale$/),
+  ])
+  expect(screen.queryByRole('button', { name: /^Rechenweg/ })).toBeNull()
+  expect(screen.queryByText('Ohne Abrechnung')).toBeNull()
+})
+
+test('Vorschau: Fokus auf die Überschrift, Blättern zum nächsten Mieter, zurück mit Fokus auf „Ansehen“', async () => {
+  settlement.statements = [STATEMENT, SECOND]
+  show()
+  const ansehen = await screen.findByRole('button', { name: 'Ansehen (Schulz, OG)' }, SLOW)
+  fireEvent.click(screen.getByRole('button', { name: 'Ansehen (Meier, EG)' }))
+  const heading = await screen.findByRole('heading', { name: 'Vorschau: Meier · EG' }, SLOW)
+  await waitFor(() => expect(document.activeElement).toBe(heading))
+  // In der Vorschau keine Übersicht und kein „Zu prüfen“
+  expect(screen.queryByRole('table', { name: 'Abrechnungen je Mieter' })).toBeNull()
+  // Nur die Abrechnung der Vorschau steht am Bildschirm, die übrigen bleiben für den Druck im Dokument.
+  const cards = [...document.querySelectorAll('.card.statement')]
+  expect(cards.map((c) => c.classList.contains('statement-hidden'))).toEqual([false, true])
+  expect((screen.getByRole('button', { name: /^‹ Vorheriger Mieter/ }) as HTMLButtonElement).disabled).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: 'Nächster Mieter › (Schulz)' }))
+  const second = await screen.findByRole('heading', { name: 'Vorschau: Schulz · OG' }, SLOW)
+  await waitFor(() => expect(document.activeElement).toBe(second))
+  expect([...document.querySelectorAll('.card.statement')].map((c) => c.classList.contains('statement-hidden'))).toEqual([true, false])
+  fireEvent.click(screen.getByRole('button', { name: '‹ Zurück zur Übersicht' }))
+  await screen.findByRole('table', { name: 'Abrechnungen je Mieter' }, SLOW)
+  await waitFor(() => expect(document.activeElement?.textContent).toBe(ansehen.textContent))
+  expect([...document.querySelectorAll('.card.statement')].every((c) => c.classList.contains('statement-hidden'))).toBe(true)
+})
+
+test('Vorschau: ein Schalter „Rechenweg zeigen“ für die ganze Aufstellung, nie im Druck', async () => {
+  settlement.statements = [SECOND]
+  show()
+  fireEvent.click(await screen.findByRole('button', { name: /^Ansehen/ }, SLOW))
+  const toggle = await screen.findByRole('checkbox', { name: 'Rechenweg zeigen' }, SLOW)
+  expect(document.querySelectorAll('tr.calc-steps')).toHaveLength(0)
+  fireEvent.click(toggle)
+  const steps = document.querySelectorAll('tr.calc-steps')
+  expect(steps).toHaveLength(1)
+  expect(steps[0]?.classList.contains('no-print')).toBe(true)
+  expect(steps[0]?.textContent).toContain('Rechnungsbetrag: 600,00 €')
+  expect(toggle.closest('.no-print')).not.toBeNull()
+})
+
+test('Zu prüfen: Fehler ganz offen, Warnung als Zeile mit Betrag und „Hier beheben →“, Hinweise in einer Zeile', async () => {
+  settlement.notices = [
+    { code: 'h1', level: 'hint', title: 'Leerstand', text: 'Ein Hinweis.' },
+    { code: 'w1', level: 'warning', title: 'Kürzungsrecht', text: 'Die Mieter dürfen um 3 % kürzen, zusammen 12,40 €.', subject: { kind: 'tenancy', id: 't1' } },
+    HEAT_ERROR,
+    { code: 'h2', level: 'hint', title: 'Schlüssel geändert', text: 'Noch ein Hinweis.' },
+  ]
+  const nav = vi.fn()
+  showWithNav(nav)
+  const card = (await screen.findByRole('heading', { name: 'Zu prüfen' }, SLOW)).closest('section') as HTMLElement
+  // Der Fehler: Titel und Text stehen offen, nicht in einem <details>.
+  const error = within(card).getByText('Heizkostenabrechnung unvollständig')
+  expect(error.closest('details')).toBeNull()
+  // Die Warnung: eine Zeile, aufklappbar, mit dem Betrag; der Knopf steht neben der Zeile.
+  const summary = within(card).getByText('Kürzungsrecht').closest('summary')
+  expect(summary?.textContent).toMatch(/Warnung.*Kürzungsrecht · 12,40\s€/)
+  expect(summary?.closest('details')?.open).toBe(false)
+  // Die Hinweise zusammengefasst
+  expect(within(card).getByText('2 Hinweise (Leerstand, Schlüssel geändert)').closest('summary')).not.toBeNull()
+  const fixes = within(card).getAllByRole('button', { name: 'Hier beheben → Stammdaten' })
+  expect(fixes).toHaveLength(2)
+  fireEvent.click(fixes[1] ?? assert.fail('kein Knopf'))
+  expect(nav).toHaveBeenCalledWith('stammdaten', { kind: 'tenancy', id: 't1' })
+})
+
+test('Drucken: „Abbrechen“ im Fenster stellt Häkchen und „Anschreiben mitdrucken“ wieder her', async () => {
+  const puts: unknown[] = []
+  stubSettings(puts)
+  showWithSettings(SETTINGS, async () => {})
+  await openPrintSettings()
+  const drawer = await printDrawer()
+  const letter = within(drawer).getByRole('checkbox', { name: /Anschreiben mitdrucken/ }) as HTMLInputElement
+  expect(letter.checked).toBe(true)
+  fireEvent.click(letter)
+  fireEvent.click(await foldBox())
+  fireEvent.click(within(drawer).getByRole('button', { name: 'Abbrechen' }))
+  fireEvent.click(within(await screen.findByRole('alertdialog', {}, SLOW)).getByRole('button', { name: 'Verwerfen' }))
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Drucken' })).toBeNull(), SLOW)
+  expect(screen.queryByRole('button', { name: 'Speichern (Druckeinstellungen)' })).toBeNull()
+  await openPrintSettings()
+  expect((await foldBox()).checked).toBe(false)
+  expect((within(await printDrawer()).getByRole('checkbox', { name: /Anschreiben mitdrucken/ }) as HTMLInputElement).checked).toBe(true)
+  expect(puts).toEqual([])
+})
+
+test('Drucken: „Was drucken?“ wählt alle Mieter oder einen; alle ohne Seitenzahl, einer mit', async () => {
+  settlement.statements = [STATEMENT, SECOND]
+  window.print = vi.fn()
+  show()
+  await openPrintSettings()
+  const scope = within(await printDrawer()).getByRole('combobox', { name: 'Was drucken?' }) as HTMLSelectElement
+  expect([...scope.options].map((o) => o.text)).toEqual(['Alle Mieter (2)', 'Meier (EG)', 'Schulz (OG)'])
+  fireEvent.click(within(await printDrawer()).getByRole('button', { name: 'Drucken' }))
+  await waitFor(() => expect(window.print).toHaveBeenCalledTimes(1), SLOW)
+  expect(printing()).toBe(false)
+  expect(document.querySelector('style[data-page-numbers]')).toBeNull()
+  // Die nächste Bedienung räumt den Druck auf (printJob.ts), dann einer allein.
+  fireEvent.pointerDown(document.body)
+  await openPrintSettings()
+  fireEvent.change(within(await printDrawer()).getByRole('combobox', { name: 'Was drucken?' }), { target: { value: 't2' } })
+  fireEvent.click(within(await printDrawer()).getByRole('button', { name: 'Drucken' }))
+  await waitFor(() => expect(printing()).toBe(true), SLOW)
+  expect(document.querySelector('.card.statement.print-target')?.textContent).toContain('Schulz')
+  expect(document.querySelector('style[data-page-numbers]')).not.toBeNull()
 })

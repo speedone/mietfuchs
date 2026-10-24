@@ -11,16 +11,16 @@ import Table from './Table'
 
 const cell = (cents: number) => (cents === 0 ? '–' : fmtEuro(cents))
 
-export default function ControlView({ data }: { data: Pick<Settlement, 'statements' | 'landlord'> & Partial<Pick<Settlement, 'separateHeating' | 'closed'>> }) {
+// `embedded`: nur der aufklappbare Abschnitt, ohne eigene Karte (in der Karte „Kontrolle“ der Seite Abrechnung).
+export default function ControlView({ data, embedded = false }: { data: Pick<Settlement, 'statements' | 'landlord'> & Partial<Pick<Settlement, 'separateHeating' | 'closed'>>, embedded?: boolean }) {
   const [open, setOpen] = useState(false)
   const view = useMemo(() => controlView(data), [data])
   if (view.items.length === 0 && view.extras.length === 0) return null
   const columns = view.landlordColumns
   const span = 2 + view.tenants.length + columns.length + 2
-  return (
-    <Card title="Kontrollansicht" className="no-print">
+  const section = (
       <details onToggle={(e) => setOpen(e.currentTarget.open)}>
-        <summary>Alle Empfänger je Position nebeneinander</summary>
+        <summary>{embedded ? 'Kontrollansicht: alle Empfänger je Position nebeneinander' : 'Alle Empfänger je Position nebeneinander'}</summary>
         {open && (
           <>
             <p className="muted">
@@ -108,6 +108,6 @@ export default function ControlView({ data }: { data: Pick<Settlement, 'statemen
           </>
         )}
       </details>
-    </Card>
   )
+  return embedded ? section : <Card title="Kontrollansicht" className="no-print">{section}</Card>
 }
