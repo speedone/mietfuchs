@@ -612,3 +612,81 @@ test('Versanddatum: der Wechsel zur Heizkostenabrechnung fragt bei einem ungespe
   await waitFor(() => expect(heizung.getAttribute('aria-pressed')).toBe('true'), SLOW)
   expect(puts).toEqual([])
 })
+
+// #415 Teil 3: Export als Daten.
+function exportFetch(answer: (path: string, query: string) => Response | null) {
+  const before = globalThis.fetch
+  const calls: string[] = []
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    const [path = '', query = ''] = url.split('?')
+    if (/\/export$/.test(path)) { calls.push(url); return answer(path, query) ?? new Response('{}', { status: 200 }) }
+    return before(url, init)
+  })
+  return calls
+}
+function captureDownload() {
+  const names: string[] = []
+  URL.createObjectURL = () => 'blob:x'
+  URL.revokeObjectURL = () => {}
+  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { names.push(this.download) })
+  return names
+}
+
+test('Export: Knöpfe laden die Datei und speichern sie unter dem Namen aus filename*', async () => {
+  const calls = exportFetch((_p, q) => new Response('{}', { status: 200, headers: { 'content-disposition': `attachment; filename=x.${q.includes('csv') ? 'csv' : 'json'}; filename*=UTF-8''abrechnung-S%C3%BCd-${YEAR}.${q.includes('csv') ? 'csv' : 'json'}` } }))
+  const names = captureDownload()
+  show()
+  fireEvent.click(await screen.findByRole('button', { name: 'Als CSV exportieren' }, SLOW))
+  await waitFor(() => expect(names).toEqual([`abrechnung-Süd-${YEAR}.csv`]), SLOW)
+  expect(calls[0]).toContain(`/api/settlement/${YEAR}/export?format=csv`)
+  fireEvent.click(screen.getByRole('button', { name: 'Als JSON exportieren' }))
+  await waitFor(() => expect(names).toHaveLength(2), SLOW)
+  expect(calls[1]).toContain('format=json')
+  expect(screen.getByRole('button', { name: 'Als JSON exportieren' }).closest('.no-print')).not.toBeNull()
+})
+
+test('Export: eine Absage des Servers erscheint als Mitteilung, nichts wird gespeichert', async () => {
+  exportFetch(() => new Response(JSON.stringify({ error: 'Der eingefrorene Stand lässt sich nicht als Daten ausgeben.' }), { status: 409, headers: { 'content-type': 'application/json' } }))
+  const names = captureDownload()
+  show()
+  fireEvent.click(await screen.findByRole('button', { name: 'Als JSON exportieren' }, SLOW))
+  expect((await screen.findAllByText(/nicht als Daten ausgeben/, undefined, SLOW)).length).toBeGreaterThan(0)
+  expect(names).toEqual([])
+})
+
+test('Export mit Fehlern: Rückfrage wie vor dem Drucken, „Nicht exportieren“ lädt nichts', async () => {
+  settlement.notices = [HEAT_ERROR]
+  const calls = exportFetch(() => null)
+  const names = captureDownload()
+  showWithNav(() => {})
+  fireEvent.click(await screen.findByRole('button', { name: 'Als JSON exportieren' }, SLOW))
+  await screen.findByRole('alertdialog', { name: /Fehler/ }, SLOW)
+  fireEvent.click(screen.getByRole('button', { name: 'Nicht exportieren' }))
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull(), SLOW)
+  expect(calls).toEqual([])
+  fireEvent.click(screen.getByRole('button', { name: 'Als JSON exportieren' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Trotzdem exportieren' }, SLOW))
+  await waitFor(() => expect(names).toHaveLength(1), SLOW)
+})
+
+test('Export: bei der Heizkostenabrechnung nach Weg d gibt es die Knöpfe nicht', async () => {
+  const h = { plantId: 'hp1', plantName: '', deadline: `${YEAR + 1}-04-30`, closed: null,
+    period: { key: `${YEAR - 1}-05`, from: `${YEAR - 1}-05-01`, to: `${YEAR}-04-30`, short: false, label: `${YEAR - 1}/${YEAR}` } }
+  const base = globalThis.fetch
+  const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    const path = url.split('?')[0] ?? url
+    if (path === '/api/heating-settlements') return json([h])
+    if (path === `/api/heating-settlement/hp1/${YEAR - 1}-05`) return json({ ...settlement, period: h.period, scope: { kind: 'heating', plantId: 'hp1', plantName: '' } })
+    return base(url, init)
+  })
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <UIProvider><Abrechnung settings={null} units={[]} tenancies={TENANCIES} reload={async () => {}} focus={{ kind: 'heatingSettlement', id: `hp1|${YEAR - 1}-05` }} onFocusDone={() => {}} /></UIProvider>
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  await screen.findByRole('button', { name: `🔒 Heizkostenabrechnung ${YEAR - 1}/${YEAR} abschließen` }, SLOW)
+  expect(screen.queryByRole('button', { name: 'Als JSON exportieren' })).toBeNull()
+})
