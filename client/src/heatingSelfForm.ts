@@ -6,6 +6,7 @@ import { hkvConsumptionShare, hkvConsumptionShareForced } from '../../shared/law
 import { LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
 import { EVAPORATOR_DEADLINE } from './hcaForm'
 import { billingEnergy } from '../../shared/heatDelivery.ts'
+import { parseNumberDe } from './numbers'
 
 export type SelfItemRow = { id: string; description: string; amountCents: number; heatingPart: HeatingPart | ''; heatingTarget: HeatingTarget | '' }
 export type SelfSetupForm = {
@@ -19,6 +20,8 @@ export type SelfSetupForm = {
   // Mehr als 70 % nach Verbrauch sind mit den Mietern vereinbart (§ 10 HeizkostenV, Heizung PR 14).
   above70Agreed: boolean
   areaBasisHeat: AreaBasisHeat
+  // #322: je Wohnung die beheizte Fläche bzw. der umbaute Raum, wie eingetippt (nur bei diesen Maßstäben gesendet).
+  unitValues: Record<string, string>
   dhwHeatMeter: boolean
   totalHeatMeter: boolean
   items: SelfItemRow[]
@@ -32,10 +35,26 @@ export type SelfSetupBody = {
   hotWater: HotWater
   capture: CaptureMethod
   areaBasisHeat: AreaBasisHeat
+  unitValues?: ({ unitId: string; heatedAreaM2: number } | { unitId: string; volumeM3: number })[]
   dhwHeatMeter: boolean
   totalHeatMeter: boolean
   items: { id: string; heatingPart: HeatingPart; heatingTarget: HeatingTarget }[]
 }
+
+// #322: Maßstab der Grundkosten der Heizung (§ 7 Abs. 1 Satz 5 HeizkostenV). Beim Warmwasser gilt immer die Wohnfläche
+// (§ 8 Abs. 1). Wer den umbauten Raum als Maßstab bestimmt oder vereinbart hat, wählt ihn hier.
+export const AREA_BASIS_OPTIONS: { value: AreaBasisHeat; label: string }[] = [
+  { value: 'area', label: 'Wohnfläche' },
+  { value: 'heatedArea', label: 'beheizter Fläche' },
+  { value: 'volume', label: 'umbautem Raum' },
+]
+export const areaBasisHint = (basis: AreaBasisHeat): string =>
+  basis === 'volume'
+    ? 'Je Wohnung der umbaute Raum in m³, wie Sie ihn als Maßstab bestimmt oder vereinbart haben (des ganzen Raums oder der beheizten Räume). Die Grundkosten des Warmwassers gehen weiter nach der Wohnfläche (§ 8 Abs. 1 HeizkostenV).'
+    : basis === 'heatedArea'
+      ? 'Je Wohnung die beheizte Fläche in m². Die Grundkosten des Warmwassers gehen weiter nach der Wohnfläche (§ 8 Abs. 1 HeizkostenV).'
+      : 'Die Grundkosten von Heizung und Warmwasser gehen nach der Wohnfläche.'
+const valueText = (n: number | null | undefined): string => (n === null || n === undefined ? '' : n.toLocaleString('de-DE', { maximumFractionDigits: 2, useGrouping: false }))
 
 export const HOT_WATER_OPTIONS: { value: HotWater; label: string }[] = [
   { value: 'combined', label: 'Ja, auch das Warmwasser' },
@@ -76,7 +95,8 @@ export function forcedShare(energy: HeatingEnergy, insulation: InsulationRule | 
   return insulation === 'applies' && ['oil', 'gas', 'lpg'].includes(energy) ? valueAt(hkvConsumptionShareForced, LAW_AS_OF) : null
 }
 
-export function emptySelfSetup(plant: Pick<HeatingPlant, 'energy' | 'hotWater' | 'capture' | 'areaBasisHeat'> & { contracting?: boolean }, period: string): SelfSetupForm {
+export function emptySelfSetup(plant: Pick<HeatingPlant, 'energy' | 'hotWater' | 'capture' | 'areaBasisHeat'> & { contracting?: boolean; units?: HeatingPlant['units'] }, period: string): SelfSetupForm {
+  const basis = plant.areaBasisHeat ?? 'area'
   return {
     period,
     // Heizung PR 11: Verbundenes Warmwasser geht bei jeder Energie; bei Brennstoff in Litern, Kilogramm oder
@@ -87,7 +107,8 @@ export function emptySelfSetup(plant: Pick<HeatingPlant, 'energy' | 'hotWater' |
     waterShare: '',
     insulation: '',
     above70Agreed: false,
-    areaBasisHeat: plant.areaBasisHeat ?? 'area',
+    areaBasisHeat: basis,
+    unitValues: Object.fromEntries((plant.units ?? []).map((u) => [u.unitId, valueText(basis === 'heatedArea' ? u.heatedAreaM2 : u.volumeM3)])),
     dhwHeatMeter: true,
     // Heizung PR 16: bei Contracting wie bei Fernwärme.
     totalHeatMeter: billingEnergy(plant) === 'heatPump' || billingEnergy(plant) === 'districtHeating',
@@ -108,12 +129,13 @@ export function itemsFromConflict(data: Record<string, unknown>): SelfItemRow[] 
 }
 
 // Die Felder der Einrichtung, an denen eine Meldung stehen kann (#346, Schritt 3); je Heizposition Teil und Ziel.
-export type SelfSetupField = 'capture' | 'hotWater' | 'insulation' | 'share' | 'waterShare' | `part:${string}` | `target:${string}`
+export type SelfSetupField = 'capture' | 'hotWater' | 'insulation' | 'share' | 'waterShare' | `part:${string}` | `target:${string}` | `unit:${string}`
 // `problems` nennt alle Angaben auf einmal (#346, Schritt 3); `error`, `field` und `short` sind die erste davon.
 type SelfSetupProblem = { text: string; field: SelfSetupField; short: string }
 type SelfSetupError = { error: string; field: SelfSetupField; short: string; problems: SelfSetupProblem[] }
 
-export function selfSetupBody(form: SelfSetupForm, energy: HeatingEnergy): { body: SelfSetupBody } | SelfSetupError {
+// `units`: die Wohnungen der Anlage; nach beheizter Fläche oder umbautem Raum braucht jede ihren Wert (#322).
+export function selfSetupBody(form: SelfSetupForm, energy: HeatingEnergy, units: readonly { id: string; name: string }[] = []): { body: SelfSetupBody } | SelfSetupError {
   const { min, max } = shareBounds()
   const problems: SelfSetupProblem[] = []
   if (CAPTURE_SELF_OPTIONS.find((o) => o.value === form.capture)?.later) {
@@ -161,13 +183,27 @@ export function selfSetupBody(form: SelfSetupForm, energy: HeatingEnergy): { bod
     }
     items.push({ id: row.id, heatingPart: row.heatingPart, heatingTarget: row.heatingTarget })
   }
+  const unitValues: NonNullable<SelfSetupBody['unitValues']> = []
+  if (form.areaBasisHeat !== 'area') {
+    const volume = form.areaBasisHeat === 'volume'
+    for (const u of units) {
+      const v = parseNumberDe(form.unitValues[u.id] ?? '')
+      if (v === null || !(v > 0)) {
+        problems.push(volume
+          ? { text: `${u.name}: Bitte tragen Sie den umbauten Raum in m³ ein, eine Zahl über 0.`, field: `unit:${u.id}`, short: 'Rauminhalt fehlt' }
+          : { text: `${u.name}: Bitte tragen Sie die beheizte Fläche in m² ein, eine Zahl über 0.`, field: `unit:${u.id}`, short: 'Fläche fehlt' })
+        continue
+      }
+      unitValues.push(volume ? { unitId: u.id, volumeM3: v } : { unitId: u.id, heatedAreaM2: v })
+    }
+  }
   const first = problems[0]
   if (first) return { error: first.text, field: first.field, short: first.short, problems }
   if (share === null || form.hotWater === '') return { error: '', field: 'share', short: '', problems }
   return {
     body: {
       period: form.period, heatConsumptionPct: share, waterConsumptionPct: water, insulationRule, above70Agreed: form.above70Agreed, hotWater: form.hotWater, capture: form.capture,
-      areaBasisHeat: form.areaBasisHeat, dhwHeatMeter: form.hotWater === 'combined' && form.dhwHeatMeter, totalHeatMeter: form.totalHeatMeter, items,
+      areaBasisHeat: form.areaBasisHeat, ...(form.areaBasisHeat !== 'area' && units.length > 0 ? { unitValues } : {}), dhwHeatMeter: form.hotWater === 'combined' && form.dhwHeatMeter, totalHeatMeter: form.totalHeatMeter, items,
     },
   }
 }

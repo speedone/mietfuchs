@@ -515,3 +515,14 @@ describe('Wärmelieferant rechnet unmittelbar mit den Mietern ab (#225)', () => 
 test('#225: wird die Energie danach auf eine eigene Heizung gestellt, gilt die Antwort „Lieferant“ nicht mehr (das Auswahlfeld zeigt sie dann auch nicht)', () => {
   expect(heatingPlantBody(ausgefuellt({ energy: 'gas', who: 'supplier' }), UNITS)).toEqual({ error: 'Bitte wählen Sie, wer die Heizkostenabrechnung erstellt.' })
 })
+
+describe('#322: beheizte Fläche und umbauter Raum beim Ändern der Anlage', () => {
+  test('bleiben je Wohnung erhalten, und die Liste steht ausdrücklich da', () => {
+    const plant: HeatingPlant = { ...PLANT, method: 'self', areaBasisHeat: 'volume', units: null }
+    const valued: HeatingPlant = { ...plant, units: [{ unitId: 'eg', heatedAreaM2: null, volumeM3: 180 }, { unitId: 'og', heatedAreaM2: 55, volumeM3: 210 }] }
+    const form = heatingToForm(valued, UNITS)
+    expect(heatingPlantBody(form, UNITS, [], 'hp1', valued)).toMatchObject({ body: { units: [{ unitId: 'eg', heatedAreaM2: null, volumeM3: 180 }, { unitId: 'og', heatedAreaM2: 55, volumeM3: 210 }] } })
+    // Ohne gespeicherte Werte wie bisher: alle Wohnungen heißt „alle“.
+    expect(heatingPlantBody(heatingToForm(plant, UNITS), UNITS, [], 'hp1', plant)).toMatchObject({ body: { units: null } })
+  })
+})

@@ -69,16 +69,18 @@ const m2 = (n: number): string => n.toLocaleString('de-DE', { maximumFractionDig
 // Der tatsächliche Flächenanteil mit dieser Schätzung und was daraus folgt (§ 9a Abs. 2, „überschreitet“:
 // streng größer, verglichen über Produkte wie in der Berechnung). Der letzte Satz stimmt bei gleich und
 // verschieden großen Wohnungen (Abweichung 9 des Plans).
-export function thresholdLines(pot: Pick<SelfPotView, 'pot' | 'areaM2' | 'estimatedAreaM2'>, option: Pick<SelfEstimateOption, 'areaM2' | 'estimated' | 'partlyMeasured'>, threshold: number): string[] {
+// #322: Beim umbauten Raum (`basisUnit` 'm³') ist es der maßgebliche gesamte umbaute Raum (§ 9a Abs. 2 HeizkostenV).
+export function thresholdLines(pot: Pick<SelfPotView, 'pot' | 'areaM2' | 'estimatedAreaM2' | 'basisUnit'>, option: Pick<SelfEstimateOption, 'areaM2' | 'estimated' | 'partlyMeasured'>, threshold: number): string[] {
+  const volume = pot.basisUnit === 'm³'
   const estimated = (pot.estimatedAreaM2 ?? 0) + (option.estimated ? 0 : option.areaM2)
   const share = pot.areaM2 > 0 ? (estimated * 100) / pot.areaM2 : 0
   const verdict = estimated * 100 > pot.areaM2 * threshold
-    ? `Das überschreitet ${threshold} %: Die Kosten ${pot.pot === 'heating' ? 'der Heizung' : 'des Warmwassers'} werden dann ausschließlich nach Fläche verteilt (§ 9a Abs. 2 HeizkostenV).`
+    ? `Das überschreitet ${threshold} %: Die Kosten ${pot.pot === 'heating' ? 'der Heizung' : 'des Warmwassers'} werden dann ausschließlich nach ${volume ? 'umbautem Raum' : 'Fläche'} verteilt (§ 9a Abs. 2 HeizkostenV).`
     : estimated * 100 === pot.areaM2 * threshold
       ? `Das sind genau ${threshold} %, also keine Überschreitung; die Kosten werden weiter nach Verbrauch verteilt.`
       : `Das liegt unter ${threshold} %; die Kosten werden weiter nach Verbrauch verteilt.`
   return [
-    `Maßgeblich ist die Fläche der Wohnungen mit geschätztem Verbrauch, nicht ihre Zahl: mit dieser Schätzung ${m2(estimated)} von ${m2(pot.areaM2)} m², also ${pct(share)} %.`,
+    `Maßgeblich ist ${volume ? 'der umbaute Raum' : 'die Fläche'} der Wohnungen mit geschätztem Verbrauch, nicht ihre Zahl: mit dieser Schätzung ${m2(estimated)} von ${m2(pot.areaM2)} ${volume ? 'm³' : 'm²'}, also ${pct(share)} %.`,
     verdict,
     // Durchsicht von #242, R-M7: allgemein, nicht nur für vier gleich große Wohnungen.
     `Eine Wohnung mit mehr als ${threshold} % der Fläche überschreitet die Grenze allein, mehrere kleinere können es zusammen.`,

@@ -258,3 +258,11 @@ describe('Durchsicht von #242: Ausweis mit Schätzung', () => {
     expect(potLines({ ...heat, estimatedConsumption: 0, costCents: 100000 }).join(' ')).not.toMatch(/geschätzt/)
   })
 })
+
+describe('#322: Ausweis nach umbautem Raum', () => {
+  it('Grundkosten der Heizung je m³, über der Grenze nach umbautem Raum', () => {
+    const base = { pot: 'heating' as const, costCents: 562800, consumptionPct: 30, byAreaOnly: false, areaM2: 650, consumption: 40000, consumptionUnit: 'kWh', baseCentsPerM2: 606.0923, consumptionCentsPerUnit: 4.221, basisUnit: 'm³' as const }
+    expect(potLines(base)[1]).toBe(`Grundkosten 70 %: ${fmtEuro(393960)} für 650 m³, 6,0609 € je m³`)
+    expect(potLines({ ...base, consumptionPct: 0, overThreshold: true, estimatedAreaM2: 300, consumptionCentsPerUnit: null })).toContain('Geschätzt ist der Verbrauch für 300 von 650 m³; das überschreitet die Grenze des § 9a Abs. 2 HeizkostenV, deshalb nur nach umbautem Raum verteilt.')
+  })
+})

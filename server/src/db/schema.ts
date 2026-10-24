@@ -465,7 +465,7 @@ export const CREDIT_NOTE_KINDS = exactly<CreditNoteKind>()(['standalone'] as con
 export const HEATING_TARGETS = exactly<HeatingTarget>()(['both', 'heating', 'water'] as const)
 export const HOT_WATER = exactly<HotWater>()(['combined', 'separate', 'none'] as const)
 export const CAPTURE_METHODS = exactly<CaptureMethod>()(['heatMeter', 'hca', 'serviceValues'] as const)
-export const AREA_BASES_HEAT = exactly<AreaBasisHeat>()(['area', 'heatedArea'] as const)
+export const AREA_BASES_HEAT = exactly<AreaBasisHeat>()(['area', 'heatedArea', 'volume'] as const)
 export const INTERIM_GAP_STATUS = exactly<InterimGapStatus>()(['impossible', 'missed', 'imprecise', 'useReading'] as const)
 
 // Die Heizanlage eines Objekts. Spalten späterer PRs kommen mit ihnen (CO₂-Merkmale mit PR 7, §§ 5a
@@ -602,10 +602,13 @@ export const heatingPlantUnits = sqliteTable(
       .notNull()
       .references(() => units.id, { onDelete: 'cascade' }),
     heatedAreaM2: real('heated_area_m2'),
+    // #322: der umbaute Raum in m³ für die Grundkosten der Heizung (§ 7 Abs. 1 Satz 5 HeizkostenV).
+    volumeM3: real('volume_m3'),
   },
   (t) => [
     primaryKey({ columns: [t.plantId, t.unitId] }),
     check('heating_plant_units_heated_area_positive', sql.raw('"heated_area_m2" > 0')),
+    check('heating_plant_units_volume_positive', sql.raw('"volume_m3" > 0')),
   ],
 )
 

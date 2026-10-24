@@ -1741,8 +1741,10 @@ export type OperatingPowerHandling = 'ownMeter' | 'deducted' | 'landlordPays'
 // Einzelöfen (BGH, Urteil vom 20.05.2026, VIII ZR 46/25: § 556c gilt dann nicht).
 export type PreviousSupply = 'landlord' | 'tenant'
 
-// Eine angeschlossene Wohnung. Die beheizte Fläche (§ 7 Abs. 1 Satz 5) kommt mit PR 10.
-export type HeatingPlantUnit = { unitId: string; heatedAreaM2: number | null }
+// Eine angeschlossene Wohnung. Die beheizte Fläche (§ 7 Abs. 1 Satz 5) kommt mit PR 10, der umbaute Raum in m³
+// mit #322 (ein Wert, ganzer Raum oder beheizte Räume, wie der Vermieter ihn bestimmt hat). Fehlt `volumeM3`, ist
+// keiner eingetragen.
+export type HeatingPlantUnit = { unitId: string; heatedAreaM2: number | null; volumeM3?: number | null }
 
 export type HeatingPlant = {
   id: string
@@ -2568,7 +2570,8 @@ export type StockView = {
 export type HeatingTarget = 'both' | 'heating' | 'water'
 export type HotWater = 'combined' | 'separate' | 'none'
 export type CaptureMethod = 'heatMeter' | 'hca' | 'serviceValues'
-export type AreaBasisHeat = 'area' | 'heatedArea'
+// `volume` (#322): umbauter Raum in m³, nur für die Grundkosten der Heizung (§ 7 Abs. 1 Satz 5 HeizkostenV).
+export type AreaBasisHeat = 'area' | 'heatedArea' | 'volume'
 
 // Antwort des Vermieters zur Zwischenablesung an einer Grenze (Entwurf 3.5): keine, weil „nicht
 // möglich“ (§ 9b Abs. 3 Alt. 1) oder „nicht durchgeführt“; oder eine Ablesung ab der Warngrenze, die
@@ -2616,6 +2619,9 @@ export type SelfPotView = {
   estimatedAreaM2?: number
   // Der Teil von `consumption`, der aus Schätzungen kommt (Durchsicht von #242, R-M9).
   estimatedConsumption?: number
+  // #322: Steht der Topf Heizung nach umbautem Raum, sind `areaM2`, `estimatedAreaM2` und `baseCentsPerM2`
+  // Kubikmeter; dann steht hier 'm³'. Fehlt: Quadratmeter.
+  basisUnit?: 'm³'
 }
 // Eine Ablesung an einer Grenze: `date` null heißt, es gibt keine.
 // `oldEndValue` (Durchsicht von #241, Recht-I2): bei einem Wechsel oder Stichtag an der Grenze der Stand davor; beim

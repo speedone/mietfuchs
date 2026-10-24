@@ -253,6 +253,28 @@ test('R-A21: beheizte Fläche nur im Topf Heizung, Warmwasser nach Wohnfläche',
   near(userOf(plan, 'A').pots.water.base, 60 / 200, 'A Warmwasser')
 })
 
+test('#322: umbauter Raum nur im Topf Heizung, Warmwasser nach Wohnfläche (§ 7 Abs. 1 Satz 5, § 8 Abs. 1 HeizkostenV)', () => {
+  const vol: Record<string, number> = { a: 150, b: 200, c: 250 }
+  const units = UNITS.map((u) => ({ ...u, volumeM3: vol[u.id] ?? null }))
+  const plan = planSelf(input({ units, areaBasisHeat: 'volume' }))
+  assert.deepEqual(plan.problems, [])
+  near(plan.totals.heating.area, 600, 'Heizung: 150 + 200 + 250 m³')
+  near(plan.totals.water.area, 200, 'Warmwasser: Wohnfläche')
+  near(userOf(plan, 'A').pots.heating.base, 150 / 600, 'A Heizung nach Rauminhalt')
+  near(userOf(plan, 'A').pots.water.base, 60 / 200, 'A Warmwasser nach Wohnfläche')
+  // Beim Mieterwechsel teilen C1 und C2 die Grundkosten der Wohnung nach Gradtagen wie bei der Fläche.
+  near(userOf(plan, 'C1').pots.heating.base + userOf(plan, 'C2').pots.heating.base, 250 / 600, 'C1 und C2 zusammen')
+  // Die beheizte Fläche zählt beim umbauten Raum nicht.
+  const mitFlaeche = planSelf(input({ units: units.map((u) => ({ ...u, heatedAreaM2: 10 })), areaBasisHeat: 'volume' }))
+  near(mitFlaeche.totals.heating.area, 600, 'Rauminhalt, nicht beheizte Fläche')
+})
+
+test('#322: fehlt einer Wohnung der Rauminhalt, wird nicht verteilt und die Wohnung genannt', () => {
+  const units = UNITS.map((u) => ({ ...u, volumeM3: u.id === 'b' ? null : 180 }))
+  const plan = planSelf(input({ units, areaBasisHeat: 'volume' }))
+  assert.deepEqual(plan.problems, [{ kind: 'noVolume', unitNames: ['B'] }])
+})
+
 test('Review Focus 4: eine Wohnung ohne Wärmezähler ist ein Fehler, nicht eine Wohnung ohne Verbrauch', () => {
   const plan = planSelf(input({ meters: METERS.filter((m) => m.id !== 'wb') }))
   assert.deepEqual(plan.problems, [{ kind: 'missing', pot: 'heating', unitId: 'b', unitName: 'B', boundary: null, reason: 'noMeter', meterName: null }])

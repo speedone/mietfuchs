@@ -97,3 +97,25 @@ describe('Wärmelieferung (Heizung PR 16)', () => {
     expect(emptySelfSetup(plant, '2025-01').totalHeatMeter).toBe(false)
   })
 })
+
+describe('#322: Grundkosten nach umbautem Raum', () => {
+  const units = [{ id: 'a', name: 'EG' }, { id: 'b', name: 'OG' }]
+  const raum = { ...plant, areaBasisHeat: 'volume' as const, units: [{ unitId: 'a', heatedAreaM2: null, volumeM3: 180.5 }, { unitId: 'b', heatedAreaM2: null }] }
+  it('vorbelegt mit dem gespeicherten Rauminhalt, deutsch geschrieben', () => {
+    expect(emptySelfSetup(raum, '2025-01').unitValues).toEqual({ a: '180,5', b: '' })
+  })
+  it('fehlt ein Rauminhalt, nennt die Prüfung die Wohnung am Feld', () => {
+    const form: SelfSetupForm = { ...emptySelfSetup(raum, '2025-01'), share: '70', waterShare: '70', insulation: 'notApplies' }
+    expect(selfSetupBody(form, 'gas', units)).toMatchObject({ problems: [{ field: 'unit:b', short: 'Rauminhalt fehlt', text: expect.stringMatching(/OG.*umbauten Raum in m³/) }] })
+    expect(selfSetupBody({ ...form, unitValues: { a: '180,5', b: '0' } }, 'gas', units)).toMatchObject({ problems: [{ field: 'unit:b' }] })
+  })
+  it('gesendet werden Maßstab und Rauminhalt je Wohnung', () => {
+    const form: SelfSetupForm = { ...emptySelfSetup(raum, '2025-01'), share: '70', waterShare: '70', insulation: 'notApplies', unitValues: { a: '180,5', b: '1.200' } }
+    expect(selfSetupBody(form, 'gas', units)).toMatchObject({ body: { areaBasisHeat: 'volume', unitValues: [{ unitId: 'a', volumeM3: 180.5 }, { unitId: 'b', volumeM3: 1200 }] } })
+  })
+  it('beheizte Fläche ebenso je Wohnung; nach Wohnfläche ohne Werte', () => {
+    const form = filled({ areaBasisHeat: 'heatedArea', unitValues: { a: '50', b: '70' } })
+    expect(selfSetupBody(form, 'gas', units)).toMatchObject({ body: { unitValues: [{ unitId: 'a', heatedAreaM2: 50 }, { unitId: 'b', heatedAreaM2: 70 }] } })
+    expect(selfSetupBody({ ...form, areaBasisHeat: 'area' }, 'gas', units)).not.toHaveProperty('body.unitValues')
+  })
+})

@@ -14,7 +14,7 @@ import HeatingSelfSetup from './HeatingSelfSetup'
 import HeatDeliveryFields from './HeatDeliveryFields'
 import { useOptionalPeriod } from '../period'
 import { localToday } from '../periodForm'
-import { plantRules } from '../../../shared/heatingPeriod.ts'
+import { plantRules, servesUnit } from '../../../shared/heatingPeriod.ts'
 import { ApiError } from '../api'
 import { useFocusTarget, type FocusProps } from '../focus'
 import {
@@ -140,7 +140,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
   async function save() {
     if (!form) return
     const others = plants.filter((p) => p.id !== editingId)
-    const result = heatingPlantBody(form, units, others, editingId)
+    const result = heatingPlantBody(form, units, others, editingId, plants.find((p) => p.id === editingId) ?? null)
     if ('error' in result) {
       setError(result.error)
       return
@@ -547,6 +547,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
       {selfFor && (
         <HeatingSelfSetup
           plant={selfFor}
+          units={units.filter((u) => servesUnit(selfFor, u))}
           period={heatingKeyOf(selfFor)}
           periodLabel={periodLabel(periodContaining(plantRules(selfFor, rulesOf(property)), period?.period.to ?? localToday()))}
           // Befund M6 aus #341: Nach „Später“ sagt die Mitteilung, dass bis zum Umstellen nach Umlageschlüsseln verteilt wird.

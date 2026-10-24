@@ -343,7 +343,7 @@ export async function readMeters(db: Executor): Promise<Meter[]> {
 export async function readHeatingPlants(db: Executor): Promise<HeatingPlant[]> {
   const rows = await db.select().from(heatingPlants).orderBy(INSERTION_ORDER)
   const zeilen = await db.select().from(heatingPlantUnits).orderBy(INSERTION_ORDER)
-  const byPlant = groupBy(zeilen, (z) => z.plantId, (z) => ({ unitId: z.unitId, heatedAreaM2: z.heatedAreaM2 }))
+  const byPlant = groupBy(zeilen, (z) => z.plantId, (z) => ({ unitId: z.unitId, heatedAreaM2: z.heatedAreaM2, ...(z.volumeM3 !== null ? { volumeM3: z.volumeM3 } : {}) }))
   // Wechsel und Spannen nach Weg d (Heizung PR 5), aufsteigend.
   const wechsel = groupBy(await db.select().from(heatingPeriodChanges).orderBy(heatingPeriodChanges.fromMonth), (w) => w.plantId, (w) => w.fromMonth)
   const spannen = groupBy(await db.select().from(heatingSeparateSpans).orderBy(heatingSeparateSpans.from), (s) => s.plantId, (s) => ({ from: s.from, until: s.until }))

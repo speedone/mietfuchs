@@ -185,7 +185,7 @@ const SEEDS: number[] = process.env.INV_FROM !== undefined || process.env.INV_TO
   : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 16, 81, 607]
 const STEPS = Number(process.env.INV_STEPS ?? 30)
 
-type Variant = { name: string; lazy: boolean; estimate: boolean; change?: boolean; two?: boolean; swap?: boolean; self?: boolean; hw?: 'combined' | 'separate'; dhw?: 'volumeFormula' | 'areaFormula'; capture?: 'hca' | 'serviceValues'; offset?: boolean; failure?: boolean; rules?: boolean; einlieger?: boolean; credit?: boolean; usage?: boolean; usageOutside?: boolean }
+type Variant = { name: string; lazy: boolean; estimate: boolean; change?: boolean; two?: boolean; swap?: boolean; self?: boolean; hw?: 'combined' | 'separate'; dhw?: 'volumeFormula' | 'areaFormula'; capture?: 'hca' | 'serviceValues'; offset?: boolean; failure?: boolean; rules?: boolean; einlieger?: boolean; credit?: boolean; usage?: boolean; usageOutside?: boolean; volume?: boolean }
 const VARIANTS: Variant[] = [
   { name: 'Grundform', lazy: false, estimate: false },
   { name: 'Rechnung kommt später', lazy: true, estimate: false },
@@ -237,6 +237,9 @@ const VARIANTS: Variant[] = [
   // Nachprüfung von #423: B liegt vom 16.01. bis 31.08.2025 außerhalb der Abrechnungseinheit; Fläche und Einheiten
   // verteilen dann je Abschnitt. Der Teil außerhalb darf nur als `outsideUnit` beim Vermieter stehen.
   { name: 'Freie Schlüssel, B zeitweise außerhalb', lazy: false, estimate: false, usage: true, usageOutside: true },
+  // #322: Grundkosten der Heizung nach umbautem Raum, mit Mieterwechsel in B und verbundenem Warmwasser; (s7) prüft, dass
+  // die Grundkosten der Heizung dem Rauminhalt folgen und die des Warmwassers der Wohnfläche.
+  { name: 'Eigene Heizkostenabrechnung, Grundkosten nach umbautem Raum', lazy: false, estimate: false, self: true, hw: 'combined', change: true, volume: true },
   { name: 'Eigene Heizkostenabrechnung, B zeitweise außerhalb', lazy: false, estimate: false, self: true, usage: true, usageOutside: true },
 ]
 
@@ -452,6 +455,37 @@ function selfChecks(r: ReturnType<typeof computeSettlement>, items: readonly { i
       assert.ok(p.reason !== 'noBasis', `${where}: (s1) ${row.costItemId} ohne Verteilung beim Vermieter`)
       assert.ok(p.reason !== 'vacancy' || p.cents * Math.sign(row.totalCents || 1) >= -1, `${where}: (s1) negativer Leerstand ${p.cents} bei ${row.costItemId}`)
     }
+  }
+}
+
+// #322, (s7): Grundkosten nach umbautem Raum. Der Topf Heizung steht in m³ mit Σ Rauminhalt der Wohnungen, jede Wohnung
+// mit ihrem Rauminhalt, der Topf Warmwasser in m² mit Σ Wohnfläche. Je Wohnung mit gemessenem Verbrauch aller Nutzer ist
+// ihr Topfbetrag der Heizung abzüglich der Verbrauchskosten genau Grundkosten je m³ × Rauminhalt, je Nutzer höchstens ein
+// Cent daneben: Die Gewichte folgen dem Rauminhalt. Dass der Topf ganz verteilt wird, prüft (s1).
+const VOLUME = { periods: 0, units: 0 }
+function volumeChecks(r: ReturnType<typeof computeSettlement>, stock: InvStock, where: string): void {
+  const self = r.heating?.find((h) => h.plantId === 'hp')?.self
+  if (!self?.ok) return
+  const plant = stock.heatingPlants.find((p) => p.id === 'hp') ?? assert.fail(`${where}: keine Anlage`)
+  const volumeOf = (unitId: string) => plant.units?.find((u) => u.unitId === unitId)?.volumeM3 ?? assert.fail(`${where}: kein Rauminhalt für ${unitId}`)
+  const heat = self.pots.find((p) => p.pot === 'heating') ?? assert.fail(`${where}: kein Topf Heizung`)
+  const water = self.pots.find((p) => p.pot === 'water') ?? assert.fail(`${where}: kein Topf Warmwasser`)
+  VOLUME.periods++
+  assert.equal(heat.basisUnit, 'm³', `${where}: (s7) Einheit Heizung`)
+  assert.equal(water.basisUnit, undefined, `${where}: (s7) Einheit Warmwasser`)
+  const sumVol = self.units.reduce((a, u) => a + volumeOf(u.unitId), 0)
+  assert.ok(Math.abs(heat.areaM2 - sumVol) < 1e-9, `${where}: (s7) Σ Rauminhalt ${heat.areaM2} statt ${sumVol}`)
+  assert.ok(Math.abs(water.areaM2 - self.units.reduce((a, u) => a + u.areaM2, 0)) < 1e-9, `${where}: (s7) Warmwasser nach Wohnfläche`)
+  for (const u of self.units) {
+    assert.ok(Math.abs(u.heatAreaM2 - volumeOf(u.unitId)) < 1e-9, `${where}: (s7) ${u.unitName}: ${u.heatAreaM2} statt ${volumeOf(u.unitId)}`)
+    const perUnit = heat.consumptionCentsPerUnit
+    if (perUnit === null && !heat.byAreaOnly) continue
+    if (perUnit !== null && u.users.some((x) => x.heatingConsumption === null || x.heatingGroup)) continue
+    const consumption = u.users.reduce((a, x) => a + (x.heatingConsumption ?? 0), 0) * (perUnit ?? 0)
+    const base = u.users.reduce((a, x) => a + x.heatingCents, 0) - consumption
+    const want = heat.baseCentsPerM2 * volumeOf(u.unitId)
+    VOLUME.units++
+    assert.ok(Math.abs(base - want) <= u.users.length, `${where}: (s7) ${u.unitName}: Grundkosten ${base.toFixed(2)} statt ${want.toFixed(2)} (${volumeOf(u.unitId)} m³)`)
   }
 }
 
@@ -695,7 +729,9 @@ for (const variant of VARIANTS) {
           if (variant.self) {
             let m = 0
             const hw = variant.hw ?? 'none'
-            await setUpSelf(db, 'hp', { period: '2023-05', heatConsumptionPct: int(50, 70), ...(hw !== 'none' ? { waterConsumptionPct: int(50, 70) } : {}), insulationRule: 'notApplies', hotWater: hw, capture: variant.capture ?? 'heatMeter', dhwHeatMeter: hw === 'combined' }, '2023-01-01', () => `wz${m++}`)
+            // #322: der Rauminhalt je Wohnung, zufällig und nicht im Verhältnis der Wohnflächen.
+            const volume = variant.volume ? { areaBasisHeat: 'volume', unitValues: ['a', 'b', 'c', 'd'].map((unitId) => ({ unitId, volumeM3: int(100, 400) + int(0, 9) / 10 })) } : {}
+            await setUpSelf(db, 'hp', { period: '2023-05', heatConsumptionPct: int(50, 70), ...(hw !== 'none' ? { waterConsumptionPct: int(50, 70) } : {}), insulationRule: 'notApplies', hotWater: hw, capture: variant.capture ?? 'heatMeter', dhwHeatMeter: hw === 'combined', ...volume }, '2023-01-01', () => `wz${m++}`)
           }
           for (const plantId of variant.two ? ['hp', 'hp2'] : ['hp']) {
             let start = variant.estimate ? '2024-05-01' : isoOf(Date.UTC(2024, 1, 1) + int(0, 120) * DAY)
@@ -1144,6 +1180,7 @@ for (const variant of VARIANTS) {
             }
           }
           if (r && variant.self) selfChecks(r, items.filter((c) => c.period === key), `${fall}; ${key}`)
+          if (r && variant.volume) volumeChecks(r, (await opened.read((db) => readStock(db))), `${fall}; ${key}`)
           if (r && variant.capture) unitChecks(r, expectedUnits.get(key), expectedWater.get(key), `${fall}; ${key}`, variant.name)
           if (r && variant.rules) rulesChecks(r, stock, key, periodOf(key), `${fall}; ${key}`)
           if (r && variant.failure) estimateChecks(r, stock.heatingEstimates.filter((e) => e.plantId === 'hp' && e.period === key), bFacts.get(key) ?? null, `${fall}; ${key}`)
@@ -1344,6 +1381,12 @@ test('Invariante, Ausnahme nach § 11: Abdeckung', () => {
   assert.ok(RULES.heat > 0, 'keine Heizperiode mit Ausnahme nur der Wärme geprüft (x)')
   assert.ok(RULES.agreedBilling > 0, 'keine Ausnahme mit vereinbarter Abrechnung geprüft (x)')
   assert.ok(RULES.agreedArea > 0, 'keine Heizperiode mit Vereinbarung „nach Wohnfläche“ geprüft (x)')
+})
+
+test('Invariante, umbauter Raum (#322): Abdeckung', () => {
+  if (process.env.INV_LOG) console.log('Umbauter Raum', JSON.stringify(VOLUME))
+  assert.ok(VOLUME.periods > 0, 'keine Heizperiode mit Grundkosten nach umbautem Raum geprüft (s7)')
+  assert.ok(VOLUME.units > 0, 'keine Wohnung mit Grundkosten nach umbautem Raum geprüft (s7)')
 })
 
 test('Invariante, Kesseltausch: Abdeckung', () => {

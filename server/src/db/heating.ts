@@ -31,6 +31,7 @@ import { parsePeriodKey, periodContaining, periodKey, periodLabel, periodOfKey, 
 import { closedHeatingKeys, heatingPeriodClosed, plantContext } from './heatingPeriodContext.ts'
 import type { Database, Executor } from './client.ts'
 import { readHeatingPlants, readMeters, readProperties, readUnits } from './read.ts'
+import { andList } from '../../../shared/wording.ts'
 import { openSelfSpan } from '../heating.ts'
 import { SELF_VIA_SETUP, SelfItemsError, selfItemsOf } from './heatingSelf.ts'
 import { hkvCutNotByConsumption } from '../../../shared/law/heizkostenv.ts'
@@ -58,8 +59,9 @@ const nullableBoolean = (v: unknown): boolean | null => (typeof v === 'boolean' 
 const nullableNumber = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
 
 // Die angeschlossenen Wohnungen aus dem Rumpf: jede einmal, eine beheizte Fläche nur als Zahl. Ein
-// Eintrag ohne Kennung fällt weg.
-function readPlantUnits(value: unknown): HeatingPlantUnit[] {
+// Eintrag ohne Kennung fällt weg. Der umbaute Raum (#322) bleibt, wenn der Eintrag ihn nicht nennt, der
+// gespeicherte derselben Wohnung (`current`): Ältere Oberflächen schicken die Wohnungen ohne ihn und leerten ihn sonst still.
+function readPlantUnits(value: unknown, current: readonly HeatingPlantUnit[] | null = null): HeatingPlantUnit[] {
   if (!Array.isArray(value)) return []
   const seen = new Set<string>()
   const result: HeatingPlantUnit[] = []
@@ -67,7 +69,8 @@ function readPlantUnits(value: unknown): HeatingPlantUnit[] {
     const unitId = asNullableFilled(raw(row, 'unitId'))
     if (unitId === null || seen.has(unitId)) continue
     seen.add(unitId)
-    result.push({ unitId, heatedAreaM2: nullableNumber(raw(row, 'heatedAreaM2')) })
+    const volumeM3 = has(row, 'volumeM3') ? nullableNumber(raw(row, 'volumeM3')) : (current?.find((u) => u.unitId === unitId)?.volumeM3 ?? null)
+    result.push({ unitId, heatedAreaM2: nullableNumber(raw(row, 'heatedAreaM2')), volumeM3 })
   }
   return result
 }
@@ -112,7 +115,7 @@ function mergeHeatingPlant(current: HeatingPlant, body: unknown): HeatingPlant {
     // Wechsel und Spannen setzen nur die Routen mit Vorschau (Heizung PR 5, Task 4 und 9).
     periodChanges: current.periodChanges,
     separateSpans: current.separateSpans,
-    units: merged(body, 'units', current.units, (v) => (v === null ? null : readPlantUnits(v))),
+    units: merged(body, 'units', current.units, (v) => (v === null ? null : readPlantUnits(v, current.units))),
     // Setzt nur der Kesseltausch (`replaceHeatingPlant`).
     endsOn: current.endsOn,
     replacesPlantId: current.replacesPlantId,
@@ -175,6 +178,18 @@ const emptyHeatingPlant = (id: string, propertyId: string): HeatingPlant => ({
   contracting: false, heatDeliverySince: null, previousSupply: null, switchAnnouncedOn: null,
   gmodg43InstalledOn: null, emergencyInstall: null, emergencyPriorDuty: null, newBuildingFirstUse: null, buildingApplicationBefore20260513: null,
 })
+
+// #322: Grundkosten nach umbautem Raum. Die Liste der Wohnungen muss ausdrücklich dastehen (wie bei der beheizten
+// Fläche), und jede braucht ihren Rauminhalt; die Meldung nennt die Wohnungen, denen er fehlt.
+export const VOLUME_MISSING = 'Für Grundkosten nach dem umbauten Raum (§ 7 Abs. 1 Satz 5 HeizkostenV) tragen Sie bei jeder angeschlossenen Wohnung den umbauten Raum in m³ ein'
+async function guardVolumes(db: Executor, after: HeatingPlant): Promise<void> {
+  const units = (await readUnits(db)).filter((u) => u.propertyId === after.propertyId)
+  const missing = after.units === null
+    ? units.filter((u) => servesUnit(after, u)).map((u) => u.name)
+    : after.units.filter((u) => !((u.volumeM3 ?? 0) > 0)).map((u) => units.find((x) => x.id === u.unitId)?.name ?? u.unitId)
+  if (after.units === null && missing.length === 0) throw new HeatingError(400, `${VOLUME_MISSING}.`)
+  if (missing.length > 0) throw new HeatingError(400, `${VOLUME_MISSING}; es fehlt bei: ${andList(missing)}.`)
+}
 
 export async function guardHeatingPlant(db: Executor, before: HeatingPlant | null, after: HeatingPlant): Promise<void> {
   // Wärmelieferung (Heizung PR 16, #213). Contracting gibt es bei jeder zentralen Anlage außer der Fernwärme,
@@ -248,6 +263,11 @@ export async function guardHeatingPlant(db: Executor, before: HeatingPlant | nul
     if (after.areaBasisHeat === 'heatedArea' && (after.units === null || after.units.some((u) => u.heatedAreaM2 === null))) {
       throw new HeatingError(400, 'Für Grundkosten nach der beheizten Fläche nennen Sie die angeschlossenen Wohnungen und tragen bei jeder die beheizte Fläche ein.')
     }
+    // #322: Grundkosten nach umbautem Raum (§ 7 Abs. 1 Satz 5 HeizkostenV) brauchen ihn an jeder Wohnung der Liste.
+    if (after.areaBasisHeat === 'volume') await guardVolumes(db, after)
+  }
+  if (after.units?.some((u) => u.volumeM3 !== null && u.volumeM3 !== undefined && !(u.volumeM3 > 0))) {
+    throw new HeatingError(400, 'Der umbaute Raum einer Wohnung ist eine Zahl über 0 m³.')
   }
   if (after.heatPumpInstalledOn !== null && !ISO_DATE.test(after.heatPumpInstalledOn)) {
     throw new HeatingError(400, 'Das Einbaudatum der Wärmepumpe ist kein Datum. Bitte wählen Sie es im Kalender.')
@@ -449,10 +469,10 @@ export async function writeSelfSpans(tx: Executor, plantId: string, spans: reado
 }
 
 // Die Liste der Wohnungen, ganz ersetzt wie die Untertabellen in repository.ts.
-async function writePlantUnits(db: Executor, p: HeatingPlant): Promise<void> {
+export async function writePlantUnits(db: Executor, p: HeatingPlant): Promise<void> {
   await db.delete(heatingPlantUnits).where(eq(heatingPlantUnits.plantId, p.id))
   const rows = p.units ?? []
-  if (rows.length > 0) await db.insert(heatingPlantUnits).values(rows.map((u) => ({ plantId: p.id, unitId: u.unitId, heatedAreaM2: u.heatedAreaM2 })))
+  if (rows.length > 0) await db.insert(heatingPlantUnits).values(rows.map((u) => ({ plantId: p.id, unitId: u.unitId, heatedAreaM2: u.heatedAreaM2, volumeM3: u.volumeM3 ?? null })))
 }
 
 export async function listHeatingPlants(db: Database, propertyId: string): Promise<HeatingPlant[]> {
@@ -789,7 +809,11 @@ export async function replaceHeatingPlant(db: Database, oldId: string, newId: st
       throw new HeatingError(409, `An der bisherigen Anlage stehen ${was} für die Zeit nach dem Tausch. Ordnen Sie sie zuerst richtig zu oder entfernen Sie sie; gespeichert wurde nichts.`)
     }
   }
-  const served = (await readUnits(db)).filter((u) => u.propertyId === old.propertyId && servesUnit(old, u)).map((u) => ({ unitId: u.id, heatedAreaM2: null }))
+  // Beheizte Fläche und umbauter Raum gehen mit (#322): Dieselben Wohnungen haben dieselben Räume.
+  const served = (await readUnits(db)).filter((u) => u.propertyId === old.propertyId && servesUnit(old, u)).map((u) => {
+    const known = old.units?.find((x) => x.unitId === u.id)
+    return { unitId: u.id, heatedAreaM2: known?.heatedAreaM2 ?? null, volumeM3: known?.volumeM3 ?? null }
+  })
   const picked: Record<string, unknown> = {}
   for (const k of SWAP_FIELDS) if (has(body, k)) picked[k] = raw(body, k)
   // Die Angaben zur Umstellung gehen nur mit, wenn auch die neue Anlage Wärme geliefert bekommt (Heizung PR 16).

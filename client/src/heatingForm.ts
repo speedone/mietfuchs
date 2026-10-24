@@ -396,7 +396,8 @@ export function contractingSwap(form: SwapForm, checked: boolean, previous: Pick
 
 // `others`: die übrigen Anlagen des Objekts; `editingId`: die Anlage, die geändert wird (dann gibt es
 // keine Anpassung anderer Anlagen, Heizung PR 9).
-export function heatingPlantBody(form: HeatingForm, units: readonly UnitInfo[], others: readonly HeatingPlant[] = [], editingId: string | null = null): HeatingResult {
+// `current`: die Anlage, wie sie gespeichert ist; ihre beheizte Fläche und ihr umbauter Raum je Wohnung gehen beim Ändern mit (#322).
+export function heatingPlantBody(form: HeatingForm, units: readonly UnitInfo[], others: readonly HeatingPlant[] = [], editingId: string | null = null, current: Pick<HeatingPlant, 'units'> | null = null): HeatingResult {
   if (form.energy === '') return { error: 'Bitte wählen Sie, womit geheizt wird.' }
   // Die Frage nach dem Gebäude (Recht I3 der Durchsicht von #238): beim Anlegen neben einer laufenden Anlage Pflicht.
   if (!editingId && others.some((p) => p.endsOn === null) && form.building === '') {
@@ -421,7 +422,13 @@ export function heatingPlantBody(form: HeatingForm, units: readonly UnitInfo[], 
   }
   const all = defaultUnitIds(units)
   const allServed = !several && form.unitIds.length === all.length && all.every((id) => form.unitIds.includes(id))
-  const unitList = allServed ? null : form.unitIds.map((unitId) => ({ unitId, heatedAreaM2: null }))
+  // Trägt eine Wohnung eine beheizte Fläche oder einen umbauten Raum, steht die Liste ausdrücklich da, und die Werte bleiben:
+  // Die Grundkosten nach diesen Maßstäben verlangen beides (Prüfung im Server).
+  const known = (current?.units ?? []).filter((u) => u.heatedAreaM2 !== null || (u.volumeM3 ?? null) !== null)
+  const unitList = allServed && known.length === 0 ? null : form.unitIds.map((unitId) => {
+    const k = known.find((u) => u.unitId === unitId)
+    return { unitId, heatedAreaM2: k?.heatedAreaM2 ?? null, ...((k?.volumeM3 ?? null) !== null ? { volumeM3: k?.volumeM3 ?? null } : {}) }
+  })
   if (form.energy === 'perUnit') {
     if (form.contract === '') return { error: 'Wer hat den Vertrag für die Heizung in der Wohnung?' }
     if (form.contract === 'tenant') return { none: SELF_SUPPLY, selfSupplyUnitIds: form.unitIds, central: false }

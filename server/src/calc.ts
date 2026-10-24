@@ -3846,9 +3846,15 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   const potUnitOf = (sp: Pick<SelfPlantPlan, 'capture' | 'serviceValues'>, p: SelfPot): 'kWh' | 'm³' | 'Einheiten' => potUnitFor(sp.capture, p, sp.serviceValues)
   // Die Einheit, in der der Verbrauch eines Topfs dasteht (Durchsicht von #342, E2): bei einheitlich MWh oder Litern diese.
   const potShownUnit = (sp: Pick<SelfPlantPlan, 'capture' | 'serviceValues' | 'potUnits'>, p: SelfPot): string => sp.potUnits[p] ?? potUnitOf(sp, p)
+  // #322: In welcher Einheit die Grundkosten eines Topfs verteilt werden: beim Topf Heizung nach umbautem Raum m³,
+  // sonst m² (beim Warmwasser immer, § 8 Abs. 1 HeizkostenV).
+  const basisUnitOf = (sp: Pick<SelfPlantPlan, 'input'>, p: SelfPot): 'm²' | 'm³' => (p === 'heating' && sp.input.areaBasisHeat === 'volume' ? 'm³' : 'm²')
   const selfProblemText = (p: SelfProblem, areaBasisHeat: string, capture: CaptureMethod = 'heatMeter'): string => {
     if (p.kind === 'farInterim') {
       return `Beim Wechsel in ${p.unitName} zum ${fmtDay(p.boundary)} wurde erst am ${fmtDay(p.readingDate)} abgelesen, ${p.days} Tage daneben und über einen Wintermonat. Lässt die Ablesung wegen des Zeitpunkts keine hinreichend genaue Ermittlung zu, wird nach Gradtagen bzw. Tagen geteilt (§ 9b Abs. 3 HeizkostenV). Ob das so ist, entscheiden Sie: Wählen Sie auf der Seite Heizkosten „Ablesung verwenden“ oder „Nach § 9b Abs. 3“.`
+    }
+    if (p.kind === 'noVolume') {
+      return `Die Grundkosten der Heizung werden nach dem umbauten Raum verteilt (§ 7 Abs. 1 Satz 5 HeizkostenV). An ${andList(p.unitNames)} fehlt der umbaute Raum in m³, und die Kosten dieser Heizanlage lassen sich nicht verteilen. Tragen Sie ihn auf der Seite Heizkosten in der Einrichtung der eigenen Abrechnung ein.`
     }
     if (p.kind === 'noArea') {
       return `Für den Topf ${POT_NAME[p.pot]} ist keine Fläche hinterlegt, und die Grundkosten lassen sich nicht verteilen. Tragen Sie die Wohnfläche${p.pot === 'heating' && areaBasisHeat === 'heatedArea' ? ' bzw. die beheizte Fläche' : ''} der Wohnungen ein.`
@@ -3890,6 +3896,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const selfUnits: SelfUnit[] = served.map((u) => ({
       id: u.id, name: u.name, areaM2: u.areaM2 || 0,
       heatedAreaM2: plant.units?.find((x) => x.unitId === u.id)?.heatedAreaM2 ?? null,
+      volumeM3: plant.units?.find((x) => x.unitId === u.id)?.volumeM3 ?? null,
       role: u.participates ? 'rented' : u.selfUsed ? 'self' : 'outside',
       // Nutzungswechsel (#259): Die Zeiten ohne Mietverhältnis teilt `usersOf` an den Grenzen der Staffel, ein
       // Wechsel ist also ein Nutzerwechsel nach § 9b HeizkostenV. Über die Heizperiode und ihre Nachbarn, denn
@@ -3941,7 +3948,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       opening,
       changeSplit: plant.changeSplit ?? 'degreeDays',
       hotWater,
-      areaBasisHeat: plant.areaBasisHeat ?? 'area',
+      // #322: Eine Vereinbarung nach § 2 „nach Wohnfläche“ verteilt nach der Wohnfläche, auch wenn für die eigene
+      // Abrechnung der umbaute Raum eingestellt ist. Die beheizte Fläche bleibt dort wie vor #322.
+      areaBasisHeat: plant.areaBasisHeat === 'volume' && agreedFor(plant.id, String(period.key)) === 'area' ? 'area' : (plant.areaBasisHeat ?? 'area'),
       units: selfUnits,
       tenancies: selfTenancies,
       meters: [
@@ -4307,6 +4316,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     for (const p of pots) {
       const total = sp.plan.totals[p]
       const area = p === 'heating' ? unit.heatArea : unit.unit.areaM2
+      const basis = basisUnitOf(sp, p)
       const byDegree = p === 'heating' && sp.changeSplit === 'degreeDays'
       // Runde 3 (N2-H2): Unter einer Vereinbarung „nach Wohnfläche“ gilt die Verordnung nicht; die Teilung nach
       // Gradtagzahlen übernimmt Mietfuchs sinngemäß und sagt es.
@@ -4315,7 +4325,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           ? ` · ${fmtNum(Math.round(u.degreeDayPermille * 10) / 10)} von ${fmtNum(Math.round(sp.hDegree * 10) / 10)} ‰ Gradtage${sp.agreedArea ? ' (nach Gradtagzahlen geteilt wie § 9b Abs. 2 HeizkostenV, sinngemäß)' : ''}`
           : ` · ${u.days}/${sp.hDays} Tage`
         : ''
-      steps.push({ label: `Grundkosten ${POT_NAME[p]}`, value: `${fmtNum(area)} von ${fmtNum(total.area)} m²${part}`, term: 'baseCosts' })
+      steps.push({ label: `Grundkosten ${POT_NAME[p]}`, value: `${fmtNum(area)} von ${fmtNum(total.area)} ${basis}${part}`, term: 'baseCosts' })
       const v = u.pots[p].value
       // Nur der Teil des Nutzers ohne gültige Ablesung ist geschätzt (Heizung PR 13, Abweichung 3 des Plans).
       const estimatedHere = u.pots[p].estimated === true
@@ -4323,7 +4333,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         steps.push({ label: `Verbrauchskosten ${POT_NAME[p]}`, value: 'keine: nach der Vereinbarung (§ 2 HeizkostenV) nur nach Wohnfläche verteilt', term: 'heatingCostOrdinance' })
       } else if (total.overThreshold) {
         // § 9a Abs. 2 (Heizung PR 13): der Topf ausschließlich nach Fläche.
-        steps.push({ label: `Verbrauchskosten ${POT_NAME[p]}`, value: `geschätzt für ${fmtNum(total.estimatedArea)} von ${fmtNum(total.area)} m², mehr als die Grenze: nur nach Fläche verteilt (§ 9a Abs. 2 HeizkostenV)`, term: 'heatingEstimate' })
+        steps.push({ label: `Verbrauchskosten ${POT_NAME[p]}`, value: `geschätzt für ${fmtNum(total.estimatedArea)} von ${fmtNum(total.area)} ${basis}, mehr als die Grenze: nur nach ${basis === 'm³' ? 'umbautem Raum' : 'Fläche'} verteilt (§ 9a Abs. 2 HeizkostenV)`, term: 'heatingEstimate' })
       } else {
         steps.push(total.measured && v !== null
           ? {
@@ -4411,7 +4421,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       ok: sp.weights !== null,
       heatPump: sp.verdict?.kind ?? null,
       changeSplit: sp.changeSplit,
-      areaBasisHeat: sp.plant.areaBasisHeat ?? 'area',
+      areaBasisHeat: sp.input.areaBasisHeat,
       hotWater: sp.hotWater,
       alpha: sp.alpha ? { percent: sp.alpha.value * 100, dhwHeatKwh: sp.alpha.dhwHeatKwh, referenceKwh: sp.alpha.referenceKwh, reference: sp.alpha.reference, estimated: sp.alpha.estimated } : null,
       // Der Rechenweg zum Warmwasseranteil (Heizung PR 11, Entwurf 8.8 „α mit Methode“).
@@ -4431,6 +4441,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           estimatedAreaM2: t.estimatedArea,
           // Durchsicht von #242, R-M9: der geschätzte Teil des Verbrauchs im Topf.
           estimatedConsumption: sp.plan.units.flatMap((u) => u.users).reduce((a, x) => a + (x.pots[p].estimated === true ? (x.pots[p].value ?? 0) : 0), 0),
+          ...(basisUnitOf(sp, p) === 'm³' ? { basisUnit: 'm³' as const } : {}),
         }
       }),
       units: sp.plan.units.map((u): SelfUnitView => ({
@@ -7194,10 +7205,12 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       if (!t.overThreshold || !firstInLine(`${root}|over|${p}`)) continue
       const limit = law(hkvEstimateThreshold, { period: lawPeriod }, lawLog)
       const cut = law(hkvCutNotByConsumption, { period: lawPeriod }, lawLog)
+      // #322: Beim umbauten Raum ist der maßgebliche gesamte umbaute Raum die Grundlage (§ 9a Abs. 2 HeizkostenV).
+      const raum = basisUnitOf(sp, p) === 'm³'
       warn('heating.estimate-over-25',
-        `${where}: Geschätzt ist der Verbrauch ${potWord(p)} für ${fmtNum(t.estimatedArea)} von ${fmtNum(t.area)} m² (${fmtPercent((t.estimatedArea * 100) / t.area)} %). ` +
-          `Das ${hkvEstimateThreshold.describe(limit)} der für die Verteilung maßgeblichen Fläche; die Kosten ${p === 'heating' ? 'der Heizung' : 'des Warmwassers'} werden deshalb ausschließlich nach Fläche verteilt (§ 9a Abs. 2 HeizkostenV). ` +
-          'Mietfuchs zählt dabei die ganze Fläche der Wohnung, auch wenn nur ein Teil der Heizperiode geschätzt ist, und prüft Heizung und Warmwasser getrennt; die Verordnung sagt dazu nichts Ausdrückliches, das ist eine Auslegung von Mietfuchs. ' +
+        `${where}: Geschätzt ist der Verbrauch ${potWord(p)} für ${fmtNum(t.estimatedArea)} von ${fmtNum(t.area)} ${raum ? 'm³' : 'm²'} (${fmtPercent((t.estimatedArea * 100) / t.area)} %). ` +
+          `Das ${hkvEstimateThreshold.describe(limit)} ${raum ? 'des für die Verteilung maßgeblichen umbauten Raums' : 'der für die Verteilung maßgeblichen Fläche'}; die Kosten ${p === 'heating' ? 'der Heizung' : 'des Warmwassers'} werden deshalb ausschließlich nach ${raum ? 'umbautem Raum' : 'Fläche'} verteilt (§ 9a Abs. 2 HeizkostenV). ` +
+          `Mietfuchs zählt dabei ${raum ? 'den ganzen umbauten Raum' : 'die ganze Fläche'} der Wohnung, auch wenn nur ein Teil der Heizperiode geschätzt ist, und prüft Heizung und Warmwasser getrennt; die Verordnung sagt dazu nichts Ausdrückliches, das ist eine Auslegung von Mietfuchs. ` +
           'Einen Kürzungsbetrag nach § 12 HeizkostenV nennt Mietfuchs nicht: Die Verteilung nach Fläche schreibt hier die Verordnung selbst vor, und § 12 Abs. 1 Satz 1 betrifft eine Abrechnung „entgegen den Vorschriften dieser Verordnung“. ' +
           `Für eine Abrechnung mit einem nach § 9a Abs. 1 ermittelten Verbrauch hat der BGH die Kürzung um ${cut} % verneint (BGH VIII ZR 373/04); für die Verteilung nach Abs. 2 ist das nicht ausdrücklich entschieden.`,
         subject)

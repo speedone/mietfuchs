@@ -319,6 +319,13 @@ test('Durchsicht G-W3: Vereinbarung nach § 2 „nach Wohnfläche“ verteilt di
   assert.match(notice(computeSettlement(zfh({ agreedOtherwise: 'fixedPercent' })), 'heating.self-incomplete').text, /feste Anteile.*freien Schlüsseln/s)
   // Golden: im Haus mit drei Wohnungen ändert die Angabe nichts.
   assert.equal(ohneAbzug(computeSettlement(beispiel({ row: { agreedOtherwise: 'area' } })), 'B'), ohneAbzug(computeSettlement(beispiel()), 'B'))
+  // #322: „nach Wohnfläche“ verteilt nach der Wohnfläche, auch wenn die Grundkosten nach umbautem Raum eingestellt sind.
+  const raum = (row: Partial<HeatingPeriodData>): Snapshot => {
+    const s = zfh(row)
+    return { ...s, heatingPlants: (s.heatingPlants ?? []).map((p) => ({ ...p, areaBasisHeat: 'volume' as const, units: [{ unitId: 'a', heatedAreaM2: null, volumeM3: 300 }, { unitId: 'b', heatedAreaM2: null, volumeM3: 100 }] })) }
+  }
+  assert.equal(ohneAbzug(computeSettlement(raum({ agreedOtherwise: 'area' })), 'B'), 380572)
+  assert.notEqual(ohneAbzug(computeSettlement(raum({})), 'B'), ohneAbzug(verbrauch, 'B'), 'ohne Vereinbarung gilt der umbaute Raum')
 })
 
 test('Durchsicht R-W2: Fehlt Nr. 5 nur für B, nennt der Hinweis die Kürzung nur für B', () => {
