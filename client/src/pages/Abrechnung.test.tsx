@@ -13,6 +13,11 @@ import Abrechnung, { PRINT_DRAFT_NOTE } from './Abrechnung'
 import { PeriodSelect } from '../components/PeriodSelect'
 import type { HistoryEntry } from '../settlementHistory'
 import { calendarPeriod, calendarYearPeriod, settlementPeriod } from '../../../shared/period.ts'
+import samplesRaw from '../testing/noticeSamples.json?raw'
+
+// Echte Texte der Berechnung je Code (noticeText.test.ts pflegt sie).
+const samples = JSON.parse(samplesRaw) as { code: string, text: string }[]
+const sample = (code: string): string => samples.find((x) => x.code === code)?.text ?? assert.fail(`kein Beispiel für ${code}`)
 
 // Die Seite rendert ganz; unter Last braucht das mehr als die voreingestellten Zeiten.
 vi.setConfig({ testTimeout: 20000 })
@@ -777,29 +782,65 @@ test('Vorschau: ein Schalter „Rechenweg zeigen“ für die ganze Aufstellung, 
   expect(toggle.closest('.no-print')).not.toBeNull()
 })
 
-test('Zu prüfen: Fehler ganz offen, Warnung als Zeile mit Betrag und „Hier beheben →“, Hinweise in einer Zeile', async () => {
+// Durchsicht M1 und K3: Was ein Hinweis an Beträgen, Kürzungen und Aufforderungen trägt, steht offen da, wie beim Baustein
+// Notice; eingeklappt ist nur „Mehr dazu“. Kein einzelner Betrag als Kopf (bei co2.missing war das der Anteil des ersten
+// Mieters). Zusammengefasst werden nur stille Hinweise, „Hier beheben →“ ist bei jedem offenen ohne Aufklappen erreichbar.
+const shown = (el: Element) => !el.closest('details:not([open])') && !el.closest('[hidden]')
+test('Zu prüfen: Fehler und Warnungen offen mit allen Beträgen, Hinweise mit Kürzung offen, stille Hinweise in einer Zeile', async () => {
   settlement.notices = [
     { code: 'h1', level: 'hint', title: 'Leerstand', text: 'Ein Hinweis.' },
-    { code: 'w1', level: 'warning', title: 'Kürzungsrecht', text: 'Die Mieter dürfen um 3 % kürzen, zusammen 12,40 €.', subject: { kind: 'tenancy', id: 't1' } },
+    { code: 'co2.missing', level: 'warning', title: 'CO₂-Angaben fehlen', text: sample('co2.missing'), subject: { kind: 'tenancy', id: 't1' } },
     HEAT_ERROR,
+    { code: 'co2.fuel-unknown', level: 'hint', title: 'Brennstoff unbekannt', text: sample('co2.fuel-unknown'), subject: { kind: 'heatingPlant', id: '' } },
     { code: 'h2', level: 'hint', title: 'Schlüssel geändert', text: 'Noch ein Hinweis.' },
   ]
   const nav = vi.fn()
   showWithNav(nav)
   const card = (await screen.findByRole('heading', { name: 'Zu prüfen' }, SLOW)).closest('section') as HTMLElement
-  // Der Fehler: Titel und Text stehen offen, nicht in einem <details>.
-  const error = within(card).getByText('Heizkostenabrechnung unvollständig')
-  expect(error.closest('details')).toBeNull()
-  // Die Warnung: eine Zeile, aufklappbar, mit dem Betrag; der Knopf steht neben der Zeile.
-  const summary = within(card).getByText('Kürzungsrecht').closest('summary')
-  expect(summary?.textContent).toMatch(/Warnung.*Kürzungsrecht · 12,40\s€/)
-  expect(summary?.closest('details')?.open).toBe(false)
-  // Die Hinweise zusammengefasst
-  expect(within(card).getByText('2 Hinweise (Leerstand, Schlüssel geändert)').closest('summary')).not.toBeNull()
+  expect(shown(within(card).getByText('Heizkostenabrechnung unvollständig'))).toBe(true)
+  // Die Warnung: alle Beträge je Mieter sichtbar, kein Einzelbetrag als Kopf.
+  for (const part of [/Mieter A \(A\) 58,86 €/, /Mieter B \(B\) 78,48 €/, /Mieter C2 \(C\) 22,52 €/]) expect(shown(within(card).getByText(part))).toBe(true)
+  expect(card.textContent).not.toMatch(/CO₂-Angaben fehlen · /)
+  // Der Hinweis mit Kürzung und Beträgen steht offen.
+  expect(shown(within(card).getByText(/Zora \(Wohnung B\) 15,00 €/))).toBe(true)
+  // Nur die stillen Hinweise zusammengefasst
+  const group = within(card).getByText('2 Hinweise (Leerstand, Schlüssel geändert)')
+  expect(group.closest('summary')).not.toBeNull()
+  expect(shown(within(card).getByText('Ein Hinweis.'))).toBe(false)
+  // „Hier beheben →“ ohne Aufklappen
   const fixes = within(card).getAllByRole('button', { name: 'Hier beheben → Stammdaten' })
   expect(fixes).toHaveLength(2)
+  for (const f of fixes) expect(shown(f)).toBe(true)
+  expect(shown(within(card).getByRole('button', { name: 'Heizung einrichten →' }))).toBe(true)
   fireEvent.click(fixes[1] ?? assert.fail('kein Knopf'))
   expect(nav).toHaveBeenCalledWith('stammdaten', { kind: 'tenancy', id: 't1' })
+})
+
+// Durchsicht K4: Hat die Abrechnung Fehler, sagt es die Vorschau eines Mieters, mit dem Weg zurück zu „Zu prüfen“.
+test('Vorschau mit Fehlern: ein Satz mit der Zahl und der Rücksprung zu „Zu prüfen“, nie im Druck', async () => {
+  settlement.notices = [HEAT_ERROR, { ...HEAT_ERROR, title: 'Zweiter Fehler' }]
+  show()
+  fireEvent.click(await screen.findByRole('button', { name: /^Ansehen/ }, SLOW))
+  const note = await screen.findByText('Diese Abrechnung hat 2 Fehler; sie stehen unter „Zu prüfen“.', {}, SLOW)
+  expect(note.closest('.no-print')).not.toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Zurück zu „Zu prüfen“' }))
+  const heading = await screen.findByRole('heading', { name: 'Zu prüfen' }, SLOW)
+  await waitFor(() => expect(document.activeElement).toBe(heading.closest('section')))
+})
+test('Vorschau ohne Fehler: kein Satz zu Fehlern', async () => {
+  settlement.notices = [{ code: 'w', level: 'warning', title: 'Warnung', text: 'W' }]
+  show()
+  fireEvent.click(await screen.findByRole('button', { name: /^Ansehen/ }, SLOW))
+  await screen.findByRole('heading', { name: /^Vorschau/ }, SLOW)
+  expect(screen.queryByText(/Diese Abrechnung hat \d+ Fehler/)).toBeNull()
+})
+
+// Durchsicht K5: Die früheren Abschlüsse stehen auch im leeren Zeitraum da.
+test('frühere Abschlüsse auch ohne Kosten und ohne Kopfzeile', async () => {
+  settlement = { ...settlement, statements: [], totalCostsCents: 0, landlord: { rows: [], totalCents: 0 } }
+  history = [{ id: 'h1', closedAt: `${YEAR + 1}-01-10T10:00:00Z`, reopenedAt: `${YEAR + 1}-01-20T10:00:00Z`, sentAt: null, settlement: settlement }]
+  show()
+  expect(await screen.findByText('Frühere Abschlüsse dieses Jahres (1)', {}, SLOW)).toBeTruthy()
 })
 
 test('Drucken: „Abbrechen“ im Fenster stellt Häkchen und „Anschreiben mitdrucken“ wieder her', async () => {
@@ -841,4 +882,45 @@ test('Drucken: „Was drucken?“ wählt alle Mieter oder einen; alle ohne Seite
   await waitFor(() => expect(printing()).toBe(true), SLOW)
   expect(document.querySelector('.card.statement.print-target')?.textContent).toContain('Schulz')
   expect(document.querySelector('style[data-page-numbers]')).not.toBeNull()
+})
+
+// Durchsicht K2: Wer im Fenster „Drucken“ die Druckeinstellungen speichert und danach „Abbrechen“ wählt, wird nicht
+// mehr nach Verwerfen gefragt, und ein Entwurf von vorher lebt nicht wieder auf.
+test('Drucken: nach „Speichern“ schließt „Abbrechen“ ohne Rückfrage und stellt keinen alten Entwurf her', async () => {
+  const puts: unknown[] = []
+  stubSettings(puts)
+  window.print = vi.fn()
+  let current: Settings = SETTINGS
+  const tree = () => (
+    <PeriodProvider>
+      <PropertyProvider>
+        <UIProvider><PeriodSelect /><Abrechnung settings={current} units={[]} tenancies={TENANCIES} reload={reload} /></UIProvider>
+      </PropertyProvider>
+    </PeriodProvider>
+  )
+  // Wie die App: Nach dem Speichern kommen die Einstellungen neu vom Server.
+  async function reload() {
+    const last = puts.at(-1)
+    if (last && typeof last === 'object') current = { ...current, ...(last as Partial<Settings>) }
+    view.rerender(tree())
+  }
+  const view = render(tree())
+  // Ein Entwurf von vorher: Falzmarken an, gedruckt, nicht gespeichert.
+  await openPrintSettings()
+  fireEvent.click(await foldBox())
+  fireEvent.click(within(await printDrawer()).getByRole('button', { name: 'Drucken' }))
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Drucken' })).toBeNull(), SLOW)
+  // Im Fenster dazu die Belegkopien, dann beides gespeichert.
+  await openPrintSettings()
+  fireEvent.click(attachBox())
+  fireEvent.click(within(await printDrawer()).getByRole('button', { name: 'Speichern (Druckeinstellungen)' }))
+  await waitFor(() => expect(puts).toEqual([{ printFoldMarks: true, printAttachments: true, printFooter: false }]), SLOW)
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Speichern (Druckeinstellungen)' })).toBeNull(), SLOW)
+  fireEvent.click(within(await printDrawer()).getByRole('button', { name: 'Abbrechen' }))
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Drucken' })).toBeNull(), SLOW)
+  expect(screen.queryByRole('alertdialog')).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Speichern (Druckeinstellungen)' })).toBeNull()
+  await openPrintSettings()
+  expect((await foldBox()).checked).toBe(true)
+  expect(attachBox().checked).toBe(true)
 })

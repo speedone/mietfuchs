@@ -21,9 +21,9 @@ import { deviationView } from '../deviation'
 import { deadlineView, historyView, type HistoryEntry } from '../settlementHistory'
 import { costBasisText, personsText } from '../statementView'
 import { legalBasisLines, noticesOf, noticeTarget, type NoticeTab } from '../notices'
-import { CalcNotice, CompactNotice, NoticeBox, NoticeGroup } from '../components/Notice'
+import { CalcNotice, NoticeBox, NoticeGroup } from '../components/Notice'
 import PrintDrawer, { type PrintScope } from '../components/PrintDrawer'
-import { checkList, hintSummary, neighbors, noticeAmount, noticeHeadline, resultText, tenantRows } from '../settlementOverview'
+import { checkList, hintSummary, neighbors, resultText, tenantRows } from '../settlementOverview'
 import PageHeader from '../components/PageHeader'
 import EmptyState from '../components/EmptyState'
 import { emptySettlement, startStep } from '../emptyStock'
@@ -104,6 +104,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
   // „Mehr“ in der Kopfzeile: Anschreiben und Briefpapier des Objekts, Export.
   const [moreOpen, setMoreOpen] = useState(false)
   const moreId = useId()
+  const checksId = useId()
   // Das Fenster „Drucken“ und der Stand der Häkchen beim Öffnen, den „Abbrechen“ wiederherstellt.
   const [printDrawer, setPrintDrawer] = useState<{ scope: PrintScope } | null>(null)
   const printBefore = useRef<{ letterChoice: boolean | null, settings: { printFoldMarks: boolean, printAttachments: boolean, printFooter: boolean }, dirty: boolean } | null>(null)
@@ -494,6 +495,12 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
   function closePreview() {
     setPreviewId(null)
   }
+  // Aus der Vorschau zu „Zu prüfen“ (Durchsicht K4): der Fokus auf die Karte statt auf „Ansehen“.
+  const CHECKS = '\u0000checks'
+  function backToChecks() {
+    returnTo.current = CHECKS
+    setPreviewId(null)
+  }
   useEffect(() => {
     if (previewId) {
       previewHeading.current?.focus()
@@ -501,13 +508,22 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
     }
     const back = returnTo.current
     returnTo.current = null
-    if (back) document.getElementById(`${previewIds}-${back}`)?.focus()
-  }, [previewId, previewIds])
+    if (back === CHECKS) document.getElementById(checksId)?.focus()
+    else if (back) document.getElementById(`${previewIds}-${back}`)?.focus()
+  }, [previewId, previewIds, checksId])
 
   // Das Fenster „Drucken“: merkt sich die Häkchen, damit „Abbrechen“ sie wiederherstellt.
   function openPrint(scope: PrintScope) {
     printBefore.current = { letterChoice, settings: printDraft.value, dirty: printDraft.dirty }
     setPrintDrawer({ scope })
+  }
+  // Gespeichert im Fenster (Durchsicht K2): Der gespeicherte Stand ist der neue Stand von vorher, und das Fenster
+  // vergleicht ab jetzt mit ihm (neu eingehängt über `key`); „Abbrechen“ fragt dann nicht und stellt nichts Altes her.
+  const [printSaves, setPrintSaves] = useState(0)
+  async function savePrintInDrawer(value: typeof printDraft.value) {
+    await savePrint(value)
+    printBefore.current = { letterChoice, settings: value, dirty: false }
+    setPrintSaves((n) => n + 1)
   }
   function cancelPrint() {
     const before = printBefore.current
@@ -801,7 +817,12 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
             )}
           </div>
         )}
-        {history.length > 0 && (
+      </div>
+      )}
+      {/* Frühere Abschlüsse (#56), auch ohne Kopfzeile, etwa im leeren Zeitraum (Durchsicht K5). */}
+      {!preview && (
+        <>
+          {history.length > 0 && (
           <details className="settlement-history no-print">
             <summary>Frühere Abschlüsse dieses Jahres ({history.length})</summary>
             <div className="muted">Beim Wiederöffnen bleibt der bisherige Stand erhalten; hier stehen die früheren, der zuletzt wiedergeöffnete zuerst.</div>
@@ -812,14 +833,15 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
               </div>
             ))}
           </details>
-        )}
-      </div>
+          )}
+        </>
       )}
 
-      {/* Zone 2, „Zu prüfen“: je Warnung eine Zeile zum Aufklappen, Fehler ganz offen, Hinweise in einer Zeile
-          zusammengefasst. Der Wortlaut der Hinweise bleibt unverändert (CalcNotice, CompactNotice). */}
-      {!preview && data && (checks.errors.length + checks.warnings.length + checks.hints.length > 0 || deviation) && (
-        <Card title="Zu prüfen" className="no-print">
+      {/* Zone 2, „Zu prüfen“: Fehler, Warnungen und Hinweise mit Betrag, Kürzung oder Aufforderung stehen offen wie im
+          Baustein Notice (eingeklappt nur „Mehr dazu“), „Hier beheben →“ ohne Aufklappen; nur stille Hinweise sind in einer
+          Zeile zusammengefasst (Durchsicht M1, K3). Der Wortlaut der Hinweise bleibt unverändert. */}
+      {!preview && data && (checks.errors.length + checks.warnings.length + checks.hints.length + checks.quiet.length > 0 || deviation) && (
+        <Card id={checksId} tabIndex={-1} title="Zu prüfen" className="no-print">
           {deviation && (
             // Abgeschlossenes Jahr gegen die heutige Berechnung (#56): erklären, nicht drängen.
             <NoticeBox level="warning" title={deviation.title}>
@@ -829,10 +851,11 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
           )}
           <div className="notice-list">
             {checks.errors.map((n, i) => <CalcNotice key={`e${i}`} notice={n} fix={fixOf(n)} />)}
-            {checks.warnings.map((n, i) => <CompactNotice key={`w${i}`} notice={n} headline={noticeHeadline(n)} amount={noticeAmount(n.text)} fix={fixOf(n)} />)}
-            {checks.hints.length > 0 && (
-              <NoticeGroup level="hint" summary={hintSummary(checks.hints)}>
-                {checks.hints.map((n, i) => <CalcNotice key={`h${i}`} notice={n} fix={fixOf(n)} />)}
+            {checks.warnings.map((n, i) => <CalcNotice key={`w${i}`} notice={n} fix={fixOf(n)} />)}
+            {checks.hints.map((n, i) => <CalcNotice key={`h${i}`} notice={n} fix={fixOf(n)} />)}
+            {checks.quiet.length > 0 && (
+              <NoticeGroup level="hint" summary={hintSummary(checks.quiet)}>
+                {checks.quiet.map((n, i) => <CalcNotice key={`q${i}`} notice={n} fix={fixOf(n)} />)}
               </NoticeGroup>
             )}
           </div>
@@ -954,6 +977,14 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                 </button>
               </div>
               <h2 ref={previewHeading} tabIndex={-1} className="m-0">{`Vorschau: ${preview.st.tenantName} · ${preview.st.unitName}`}</h2>
+              {/* Durchsicht K4: Fehler der Abrechnung stehen in „Zu prüfen“; die Vorschau sagt, dass es sie gibt. */}
+              {checks.errors.length > 0 && (
+                <NoticeBox
+                  level="error"
+                  action={`Diese Abrechnung hat ${checks.errors.length} Fehler; sie stehen unter „Zu prüfen“.`}
+                  fix={{ label: 'Zurück zu „Zu prüfen“', onClick: backToChecks }}
+                />
+              )}
               <div className="flex flex-wrap items-center gap-3">
                 <button
                   className="btn secondary"
@@ -1303,6 +1334,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
       )}
       {printDrawer && data && (
         <PrintDrawer
+          key={printSaves}
           scope={printDrawer.scope}
           onScope={(scope) => setPrintDrawer({ scope })}
           tenants={data.statements.map((st) => ({ id: st.tenancyId, label: `${st.tenantName} (${st.unitName})` }))}
@@ -1310,7 +1342,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
           onLetter={setLetterChoice}
           letterNote={letterChoice !== null && letterChoice !== letterDefault ? LETTER_CHOICE_NOTE : null}
           draft={printDraft}
-          onSaveDraft={savePrint}
+          onSaveDraft={savePrintInDrawer}
           draftNote={PRINT_DRAFT_NOTE}
           attachmentsLoading={attachmentsLoading}
           paper={!!design.paper}

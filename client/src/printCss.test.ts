@@ -44,3 +44,23 @@ test('das Ableseformular blendet im Druck #root und dialog aus und zeigt nur sic
   expect(print).toMatch(/body\.print-reading-sheet > #root, body\.print-reading-sheet dialog \{ display: none !important; \}/)
   expect(print).toMatch(/body\.print-reading-sheet \.reading-sheet-print \{ display: block;/)
 })
+
+// Seite Abrechnung (Durchsicht K1 zu PR #437): Die Mieterabrechnungen außer der Vorschau sind nur am Bildschirm
+// ausgeblendet. Stünde `.statement-hidden { display: none }` auch im Druck, fehlten Mieter auf dem Papier.
+const hiddenProblems = (src: string): string[] => {
+  const plain = src.replace(/\/\*[\s\S]*?\*\//g, '')
+  const problems: string[] = []
+  const screenBlocks = [...plain.matchAll(/@media screen \{((?:[^{}]|\{[^{}]*\})*)\}/g)].map((m) => m[1] ?? '')
+  const total = [...plain.matchAll(/\.statement-hidden\b/g)].length
+  const inScreen = screenBlocks.reduce((n, b) => n + [...b.matchAll(/\.statement-hidden\b/g)].length, 0)
+  if (total !== inScreen) problems.push('.statement-hidden außerhalb von @media screen')
+  if (!screenBlocks.some((b) => /\.statement-hidden\s*\{[^}]*display:\s*none/.test(b))) problems.push('keine Regel display: none in @media screen')
+  return problems
+}
+test('die ausgeblendeten Mieterabrechnungen der Seite Abrechnung stehen nur am Bildschirm nicht da', () => {
+  // Mutationsproben: ohne @media screen, und zusätzlich im Druck
+  expect(hiddenProblems('.card.statement.statement-hidden { display: none; }')).toHaveLength(2)
+  expect(hiddenProblems('@media screen { .card.statement.statement-hidden { display: none; } }\n@media print { .statement-hidden { display: none; } }')).toEqual(['.statement-hidden außerhalb von @media screen'])
+  const sources = ['./index.css', './letter.css', './fields.css', './reading-sheet.css', './tw.css'].map((f) => fs.readFileSync(new URL(f, import.meta.url), 'utf8')).join('\n')
+  expect(hiddenProblems(sources)).toEqual([])
+})

@@ -191,8 +191,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 - Seite Abrechnung neu geordnet, in drei Zonen statt vieler Karten vor der ersten Zahl: eine Kopfzeile mit Stand und
   Frist, dem einen Knopf des Zustands (abschließen bzw. Versanddatum und „Wieder öffnen …“), „🖨 Drucken / PDF“ und
-  „Mehr“ (Anschreiben und Briefpapier des Objekts, Export als JSON oder CSV); „Zu prüfen“ mit einer Zeile je Warnung
-  zum Aufklappen, Fehlern ganz offen und den Hinweisen in einer Zeile; die Übersicht mit den Kennzahlen und einer
+  „Mehr“ (Anschreiben und Briefpapier des Objekts, Export als JSON oder CSV); „Zu prüfen“ mit allen Fehlern, Warnungen
+  und Hinweisen mit Betrag oder Kürzung offen, die übrigen Hinweise in einer Zeile; die Übersicht mit den Kennzahlen und einer
   Tabelle je Mieter, in der auch die Mietverhältnisse ohne Abrechnung mit ihrem Grund stehen; unten die Karte
   „Kontrolle“ mit Kontrollansicht, Vermieteranteil und Rechtsstand. Brief und Aufstellung eines Mieters zeigt
   „Ansehen“ über die ganze Breite, mit Blättern zum vorigen und nächsten Mieter, „Anschreiben bearbeiten“, „Drucken“

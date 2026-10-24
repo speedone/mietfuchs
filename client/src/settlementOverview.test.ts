@@ -1,7 +1,12 @@
 // Die Ordnung der Seite Abrechnung: „Zu prüfen“, die Tabelle je Mieter und das Blättern in der Vorschau, ohne DOM.
 import { expect, test } from 'vitest'
 import type { NotSettled, Notice, Statement } from './types'
-import { checkList, hintSummary, neighbors, noticeAmount, noticeHeadline, resultText, tenantRows } from './settlementOverview'
+import { checkList, hintSummary, isQuietHint, neighbors, noticeHeadline, resultText, tenantRows } from './settlementOverview'
+import samplesRaw from './testing/noticeSamples.json?raw'
+
+// Echte Texte der Berechnung je Code (noticeText.test.ts erzeugt und pflegt sie).
+const samples = JSON.parse(samplesRaw) as { code: string, text: string }[]
+const sample = (code: string): string => samples.find((x) => x.code === code)?.text ?? expect.fail(`kein Beispiel für ${code}`)
 
 const n = (level: Notice['level'], title: string, text = `${title}.`): Notice => ({ code: `c.${title}`, level, title, text })
 
@@ -9,8 +14,23 @@ test('Zu prüfen: Fehler, Warnungen und Hinweise getrennt, Info zählt zu den Hi
   const list = checkList([n('warning', 'W1'), n('error', 'F1'), n('hint', 'H1'), n('info', 'I1'), n('warning', 'W2'), n('error', 'F2')])
   expect(list.errors.map((x) => x.title)).toEqual(['F1', 'F2'])
   expect(list.warnings.map((x) => x.title)).toEqual(['W1', 'W2'])
-  expect(list.hints.map((x) => x.title)).toEqual(['H1', 'I1'])
-  expect(checkList([])).toEqual({ errors: [], warnings: [], hints: [] })
+  expect(list.hints).toEqual([])
+  expect(list.quiet.map((x) => x.title)).toEqual(['H1', 'I1'])
+  expect(checkList([])).toEqual({ errors: [], warnings: [], hints: [], quiet: [] })
+})
+
+// Durchsicht M1: In die zugeklappte Zeile kommen nur Hinweise ohne Betrag, Prozentzahl, Kürzung und Aufforderung,
+// erkannt wie in noticeText.ts. co2.fuel-unknown (Stufe hint) nennt 3 % und die Beträge je Mieter: Er bleibt offen.
+test('ein Hinweis mit Kürzung, Betrag oder Aufforderung bleibt offen, nur stille Hinweise werden zusammengefasst', () => {
+  const loud: Notice = { code: 'co2.fuel-unknown', level: 'hint', title: 'Brennstoff unbekannt', text: sample('co2.fuel-unknown') }
+  const quiet: Notice = { code: 'basis.vacancy-persons', level: 'hint', title: 'Leerstand', text: 'Die leere Wohnung zählt mit einer Person je Tag. Das ist eine Auslegung von Mietfuchs.' }
+  expect(isQuietHint(loud)).toBe(false)
+  expect(isQuietHint(quiet)).toBe(true)
+  expect(isQuietHint({ ...quiet, text: 'Bitte prüfen Sie die Fläche.' })).toBe(false)
+  expect(isQuietHint({ ...quiet, text: 'Der Anteil beträgt 12 %.' })).toBe(false)
+  const list = checkList([loud, quiet])
+  expect(list.hints).toEqual([loud])
+  expect(list.quiet).toEqual([quiet])
 })
 
 test('Hinweise zusammengefasst: Zahl und Titel, gleiche Titel einmal, nach drei Titeln „…“', () => {
@@ -29,13 +49,6 @@ test('Kopf eines Hinweises: der Titel, sonst der erste Satz, gekürzt', () => {
   expect(long.endsWith('…')).toBe(true)
   // Abkürzungen beenden keinen Satz.
   expect(noticeHeadline({ code: 'legacy', level: 'warning', title: '', text: 'Nach § 556 Abs. 3 BGB gilt das. Weiter.' })).toBe('Nach § 556 Abs. 3 BGB gilt das.')
-})
-
-test('der bezifferte Betrag eines Hinweises: der erste Euro-Betrag im Text', () => {
-  expect(noticeAmount('Die Mieter tragen 1.234,56 € zu viel, dazu 3,00 €.')).toBe('1.234,56 €')
-  expect(noticeAmount('Kürzung um 3 % (12,40 €).')).toBe('12,40 €')
-  expect(noticeAmount('Ohne Betrag, nur 3 %.')).toBeNull()
-  expect(noticeAmount('minus −50,00 € Gutschrift')).toBe('−50,00 €')
 })
 
 const st = (over: Partial<Statement>): Statement => ({

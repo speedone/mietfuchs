@@ -2,18 +2,27 @@
 // Blättern in der Vorschau eines Mieters. Reine Funktionen ohne DOM; die Seite rendert nur.
 import { fmtDate, fmtEuro } from './api'
 import type { NotSettled, Notice, Settlement } from './types'
-import { sentences } from './noticeText'
+import { isAction, PROTECTED, sentences } from './noticeText'
 import { notSettledReason } from './tenancyModel'
 
-export type CheckList = { errors: Notice[]; warnings: Notice[]; hints: Notice[] }
+export type CheckList = { errors: Notice[]; warnings: Notice[]; hints: Notice[]; quiet: Notice[] }
 
-// Fehler stehen ganz offen, Warnungen je eine Zeile zum Aufklappen, Hinweise (und reine Auskünfte) zusammengefasst in
-// einer Zeile. Die Reihenfolge innerhalb einer Stufe bleibt die der Berechnung.
+// Ein stiller Hinweis: keiner seiner Sätze trägt einen Betrag, eine Prozentzahl, ein Datum, eine Kürzung oder eine
+// Aufforderung. Erkannt wie in noticeText.ts (`PROTECTED`, `isAction`), keine zweite Regel.
+export function isQuietHint(n: Notice): boolean {
+  return (n.level === 'hint' || n.level === 'info') && sentences(n.text).every((s) => !PROTECTED.test(s) && !isAction(s))
+}
+
+// Fehler, Warnungen und Hinweise mit Betrag, Kürzung oder Aufforderung stehen offen wie im Baustein Notice (eingeklappt
+// nur „Mehr dazu“); nur stille Hinweise und Auskünfte werden in einer Zeile zusammengefasst (Durchsicht M1). Die
+// Reihenfolge innerhalb einer Stufe bleibt die der Berechnung.
 export function checkList(notices: readonly Notice[]): CheckList {
+  const hints = notices.filter((n) => n.level === 'hint' || n.level === 'info')
   return {
     errors: notices.filter((n) => n.level === 'error'),
     warnings: notices.filter((n) => n.level === 'warning'),
-    hints: notices.filter((n) => n.level === 'hint' || n.level === 'info'),
+    hints: hints.filter((n) => !isQuietHint(n)),
+    quiet: hints.filter(isQuietHint),
   }
 }
 
@@ -31,12 +40,6 @@ export function hintSummary(hints: readonly Notice[]): string {
   const titles = [...new Set(hints.map(noticeHeadline))]
   const shown = titles.slice(0, 3).join(', ') + (titles.length > 3 ? ', …' : '')
   return `${hints.length} ${hints.length === 1 ? 'Hinweis' : 'Hinweise'} (${shown})`
-}
-
-// Der erste Euro-Betrag im Text, so wie er dort steht; der Betrag, um den es in einer Warnung geht.
-const AMOUNT = /[−-]?\d{1,3}(?:\.\d{3})*,\d{2}[\s ]€/
-export function noticeAmount(text: string): string | null {
-  return AMOUNT.exec(text)?.[0] ?? null
 }
 
 // Das Ergebnis in Worten, wie die Aufstellung es nennt (negativ heißt Nachzahlung).

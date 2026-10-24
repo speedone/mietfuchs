@@ -77,9 +77,12 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
 - **Seite Abrechnung in drei Zonen** ([pages/Abrechnung.tsx](src/pages/Abrechnung.tsx), Logik in
   [settlementOverview.ts](src/settlementOverview.ts)): eine Kopfzeile (Stand und Frist, der eine Primärknopf des Zustands,
   „🖨 Drucken / PDF“, „Mehr“ als Ausklapper mit Anschreiben, Briefpapier und Export; einen Menü-Baustein gibt es nicht,
-  Popover nur über `usePopover`, S12), „Zu prüfen“ (`checkList`: Fehler offen als `CalcNotice`, Warnungen als
-  `CompactNotice` mit Betrag aus dem Text (`noticeAmount`), Hinweise und Auskünfte zusammen in `NoticeGroup`; dazu die
-  Prüfungen der Seite selbst, Anschrift und Länge, als Hinweise derselben Gestalt, `pageChecks`), die Übersicht (Kennzahlen,
+  Popover nur über `usePopover`, S12), „Zu prüfen“ (`checkList`: Fehler, Warnungen und Hinweise mit Betrag, Kürzung oder
+  Aufforderung offen als `CalcNotice`, eingeklappt nur „Mehr dazu“, „Hier beheben →“ ohne Aufklappen; kein Einzelbetrag im
+  Kopf, denn der erste Betrag eines Texts ist oft nur der Anteil des ersten Mieters. Nur stille Hinweise (`isQuietHint`,
+  erkannt mit `PROTECTED` und `isAction` aus noticeText.ts) stehen zusammen in `NoticeGroup`. Dazu die Prüfungen der Seite
+  selbst, Anschrift und Länge, als Hinweise derselben Gestalt, `pageChecks`; hat die Abrechnung Fehler, sagt es auch die
+  Vorschau, mit „Zurück zu „Zu prüfen““), die Übersicht (Kennzahlen,
   Tabelle je Mieter `tenantRows` mit den Mietverhältnissen ohne Abrechnung, `stacked`; die Karte zu § 560 bleibt eine
   eigene Karte darunter, als Spalte wäre sie zu eng) und „Kontrolle“ (Kontrollansicht, Vermieteranteil, Rechtsstand je als
   `<details>`). „Ansehen“ öffnet die **Vorschau eines Mieters** über die ganze Breite (Zustand `previewId`, kein Router):
@@ -90,10 +93,12 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   über das Fenster „Drucken“ ([PrintDrawer.tsx](src/components/PrintDrawer.tsx), Ausnahme „Drucken“ in S16): „Was
   drucken?“ (alle Mieter ohne Seitenzahl, einer mit), die vier Häkchen wie vorher (Anschreiben nur für diesen Druck, die
   drei übrigen ein Entwurf der Einstellungen mit eigenem „Speichern“), die Prüfungen der Seite für die gewählten Mieter;
-  „Abbrechen“ stellt die Häkchen von vorher her. Erst danach fragen die Rückfragen vor dem Druck (Fehler, Monat der
+  „Abbrechen“ stellt die Häkchen von vorher her; nach „Speichern“ im Fenster gilt der gespeicherte Stand als der von
+  vorher (Fenster über `key` neu eingehängt), „Abbrechen“ fragt dann nicht. Erst danach fragen die Rückfragen vor dem Druck (Fehler, Monat der
   Anpassung); „Nicht drucken“ lässt das Fenster offen. Bleibt nach dem Druck ein Entwurf der Häkchen, steht er mit
   „Speichern“ in der Kopfzeile. Nachweis, dass sich der Druck nicht ändert: PDFs des Beispielbestands (alle, einer, ohne
-  Anschreiben, mit Anlagen) vorher und nachher, Seitenzahl, Text und Lage jedes Textstücks gleich.
+  Anschreiben, mit Anlagen) vorher und nachher, Seitenzahl, Text und Lage jedes Textstücks gleich. Ein Wächter in printCss.test.ts
+  verlangt `.statement-hidden` nur in `@media screen`.
 - **Fehler vor dem Druck**: Hat eine offene Abrechnung Fehler der Stufe `error`, fragt die Seite vor
   dem Drucken ([despiteErrors.ts](src/despiteErrors.ts)), und jede Mieterabrechnung trägt im Druck
   „Entwurf, nicht versenden“ (`print-only`, auch bei Strg+P). Eine abgeschlossene nie. Die erste
