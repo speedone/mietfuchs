@@ -20,6 +20,7 @@ import ContractAgreementFields, { WhyQuestion } from '../components/ContractAgre
 import { EMPTY_ITEM_FORM, type ItemForm } from '../costForm'
 import type { Property, Tenancy, Unit } from '../types'
 import Letter from '../components/Letter'
+import { PaperPreview } from '../components/LetterDesignDrawer'
 import { DEFAULT_LETTER_TEXTS, renderLetterText, resolveTemplate, SAMPLE_LETTER_VALUES } from '../../../shared/letter.ts'
 
 // Musterseite (#346 Schritt 12, Spezifikation Abschnitt 9): alle Bausteine der Oberfläche auf einer Seite, mit festen
@@ -176,6 +177,11 @@ export default function Muster() {
           <dt>Ihre Vorauszahlungen</dt><dd>1.200,00 €</dd>
           <dt className="result-strong">Nachzahlung</dt><dd className="result-strong">40,00 €</dd>
         </dl>
+      </Card>
+
+      {/* Logo und Briefpapier (#415, Teil 2b): die Vorschau aus dem Seitenfenster, ohne Datei */}
+      <Card title="Vorschau des Briefpapiers">
+        <PaperPreview paper={null} logo={null} margins={{ top: 40, right: 20, bottom: 30, left: 25 }} />
       </Card>
 
       <Card title="Umschalter und Leerzustand">

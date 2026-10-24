@@ -2069,3 +2069,44 @@ export const changeLog = sqliteTable(
     oneOf('change_log_op_known', 'op', JOURNAL_OPS),
   ],
 )
+
+// ---------- Logo und Briefpapier (#415, Teil 2b) ----------
+
+// Die Gestaltung des Drucks: Dateinamen im Ordner `briefpapier/` des Datenordners (vergeben vom Server, Gestalt in
+// shared/letterDesign.ts), das Briefpapier der Folgeseiten und die Ränder des Textbereichs in Millimetern. Eine Zeile
+// für die Installation (ohne Zeile gelten die Vorgaben) und je Objekt eine, wenn es eine eigene Gestaltung hat
+// (ohne Zeile gilt die der Installation). Spalten statt JSON, damit die Datenbank die Grenzen zusichert; die Grenzen
+// stehen gleich in `MARGIN_LIMITS` (shared/letterDesign.ts, ein Test vergleicht beide).
+const LETTER_PAPER_NEXT = ['same', 'other', 'none'] as const
+const designColumns = () => ({
+  logoFile: text('logo_file'),
+  paperFile: text('paper_file'),
+  paperNext: text('paper_next', { enum: LETTER_PAPER_NEXT }).notNull(),
+  paperNextFile: text('paper_next_file'),
+  marginTop: integer('margin_top').notNull(),
+  marginRight: integer('margin_right').notNull(),
+  marginBottom: integer('margin_bottom').notNull(),
+  marginLeft: integer('margin_left').notNull(),
+})
+const designChecks = (table: string) => [
+  oneOf(`${table}_paper_next_known`, 'paper_next', LETTER_PAPER_NEXT),
+  // Ein zweites Briefpapier nur für „ein zweites“ auf den Folgeseiten
+  check(`${table}_paper_next_file_valid`, sql.raw(`"paper_next_file" IS NULL OR "paper_next" = 'other'`)),
+  check(`${table}_margins_valid`, sql.raw(
+    `typeof("margin_top") = 'integer' AND "margin_top" BETWEEN 10 AND 70 AND typeof("margin_right") = 'integer' AND "margin_right" BETWEEN 10 AND 40 ` +
+    `AND typeof("margin_bottom") = 'integer' AND "margin_bottom" BETWEEN 10 AND 60 AND typeof("margin_left") = 'integer' AND "margin_left" BETWEEN 15 AND 40`,
+  )),
+]
+
+export const letterDesign = sqliteTable(
+  'letter_design',
+  { id: integer('id').primaryKey().notNull(), ...designColumns() },
+  (t) => [check('letter_design_id_valid', sql`${t.id} = 1`), ...designChecks('letter_design')],
+)
+
+// Fällt mit dem Objekt (gelöscht wird ohnehin nur ein leeres); die Dateien räumt die Route weg.
+export const propertyLetterDesigns = sqliteTable(
+  'property_letter_designs',
+  { propertyId: text('property_id').primaryKey().notNull().references(() => properties.id, { onDelete: 'cascade' }), ...designColumns() },
+  () => designChecks('property_letter_designs'),
+)

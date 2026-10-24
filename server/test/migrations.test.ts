@@ -190,6 +190,9 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // Öffnen (db/journal.ts). Wird vor dem Merge ein anderer PR davor eingereiht, wird der Schritt neu erzeugt und die
   // Marke ersetzt.
   '0069_journal': '0e0b8a409fa913639e1ffd34fe2d8a7e9c91bfc58f94bdf5cfecbfa740136fa4',
+  // #415, Teil 2b: Logo und Briefpapier (letter_design, property_letter_designs). Wird vor dem Merge ein anderer PR davor
+  // eingereiht, wird der Schritt neu erzeugt und die Marke ersetzt.
+  '0070_briefpapier': '78ea72142d083b93845687c8bfa7c7515d7eff764f230fd054b2d1a4541ae94c',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

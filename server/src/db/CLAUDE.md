@@ -153,7 +153,9 @@ beim Start, denn wer auf sie wartet, hält den Server für fertig.
 [backup.ts](backup.ts), [../restoreFiles.ts](../restoreFiles.ts), [../zipRead.ts](../zipRead.ts).
 
 - Das Archiv enthält `mietfuchs.sqlite` (über **`VACUUM INTO`**, nie als Dateikopie der offenen
-  Datei) und `mietfuchs-backup.json` (Version, Zeitpunkt; nur Auskunft) samt Belegen.
+  Datei) und `mietfuchs-backup.json` (Version, Zeitpunkt; nur Auskunft) samt Belegen und, seit #415 Teil 2b,
+  Logo und Briefpapier unter `briefpapier/` (nur Namen der eigenen Gestalt, beim Wiederherstellen ebenso geprüft
+  und erst nach vollständiger Prüfung an ihren Platz bewegt).
 - **Genau eine Ablage kommt ins Archiv, die, die den Bestand trägt**: die Datenbank nur, wenn
   `databaseUnavailable` `null` sagt, sonst die `db.json`. **Beim Wiederherstellen gilt eine `db.json`
   im Archiv vor der Datenbank.** Ohne diese Regeln sah der Vermieter nach „ok“ ein veraltetes oder

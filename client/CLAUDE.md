@@ -156,6 +156,25 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   der Hülle und tragen den Fußvermerk. Die Rücksendeangabe bricht in höchstens zwei Zeilen um; über `RETURN_LINE_MAX`
   (110 Zeichen, nachgemessen) warnt die Seite (`returnLineTooLong`). Eine vor #415 abgeschlossene Abrechnung bekommt
   nichts davon.
+- **Teil 2b von #415: Logo und Briefpapier** ([letterDesignView.ts](src/letterDesignView.ts),
+  [letterPaper.ts](src/letterPaper.ts), Seitenfenster [LetterDesignDrawer.tsx](src/components/LetterDesignDrawer.tsx) mit
+  Logik in [letterDesignForm.ts](src/letterDesignForm.ts); Karte „Logo und Briefpapier“ in den Einstellungen, am Objekt
+  über die Karte „Anschreiben“ der Seite Abrechnung). Das Logo steht oben rechts im Briefkopf (im Anschreiben und im Kopf
+  ohne Anschreiben), immer als `<img>`, nie eingefügtes SVG. **Mit Briefpapier druckt die Seite ohne Seitenrand**
+  (`<style>@page { margin: 0 }</style>`, nur solange die Seite Abrechnung mit Briefpapier offen ist): Chromium schneidet
+  ab, was in den Rand von 12 mm ragt (nachgemessen), ein Briefpapier bis zur Blattkante käme sonst mit weißem Rahmen
+  heraus. Die Maße des Briefs gelten dann ab der Blattkante (`--page: 0mm`); die Aufstellung hält ihre Ränder über einen
+  leeren `thead` (oben) und den `tfoot` (unten) der Hülle `PrintPages`, die der Browser je Seite wiederholt, die
+  Seiten über die Zelle (`--paper-*` an der Karte). Das Papier der ersten Seite liegt als Bild im Kopf des Briefs, das
+  der Folgeseiten im wiederholten `thead` der Hülle (`follow`, darunter); die Belegkopien stehen in einer eigenen Hülle
+  ohne Briefpapier (`newPage`: ein Umbruch vor dem ersten Inhalt einer Zelle wirkte nicht). Deshalb hat die Karte im
+  Druck keinen Grund. Rand oben höchstens 70 mm: Chromium wiederholt einen höheren Tabellenkopf nicht (nachgemessen). Ein Bild druckt der Browser immer, auch ohne „Hintergrundgrafiken“. Eine PDF rendert
+  pdf.js vorab zu einem Bild, ein Bild wird vorher nachgefragt; bis dahin ist „Drucken / PDF“ gesperrt. **Fehlt eine
+  Datei**, druckt die Seite ohne sie, mit Rand, Absender und Fußzeile, und nennt es (`printedDesign`, Durchsicht M2).
+  Im Seitenfenster wird nur eine einseitige PDF angenommen, und ein SVG wird dort mit Canvas zu einem PNG (`svgToPng`). Mit Briefpapier entfallen Absender (`.letter-head`) und Fußzeile von Mietfuchs; Rücksendeangabe und
+  Fußvermerk bleiben. Die Seitenzahl im Rand entfällt (kein Rand). Gewählte Dateien gehen erst mit „Speichern“ hinaus.
+  Eine vor #415 abgeschlossene Abrechnung bekommt nichts davon. Druckprobe: Anschriftfeld, Datum und Betreff an den
+  Stellen wie ohne Briefpapier (Rücksendeangabe 61 mm, Anschrift ab 66 mm, Datum 53,4 mm).
 - **Druckkopf**: `letterhead` lässt einen Objektnamen weg, der schon in der Adresse steht, und ist die
   Rücksendeangabe des Anschreibens; Anschrift des Mieters (`recipientLines`: eine eigene Anschrift für den
   Schriftverkehr geht vor, jedes Komma ist eine Zeile). **Anschrift vor dem Versand** (#229, `addressCheck` in

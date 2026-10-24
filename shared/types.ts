@@ -1055,6 +1055,26 @@ export type LetterTemplates = {
   propertyPrintLetter?: boolean | null
 }
 
+// Teil 2b von #415: Logo und Briefpapier. Die Dateien liegen im Datenordner (`briefpapier/`), Namen vergibt der Server
+// (shared/letterDesign.ts). Druck, kein Inhalt: Die Gestaltung friert mit dem Abschluss nicht ein.
+export type LetterDesignFileType = 'png' | 'jpg' | 'pdf'
+export type LetterDesignFile = { file: string; type: LetterDesignFileType }
+// Briefpapier der Folgeseiten: dasselbe wie die erste Seite, ein zweites oder keines
+export type LetterPaperNext = 'same' | 'other' | 'none'
+// Ränder des Textbereichs in Millimetern ab der Blattkante, nur mit Briefpapier
+export type LetterMargins = { top: number; right: number; bottom: number; left: number }
+export type LetterDesign = {
+  logo: LetterDesignFile | null
+  paper: LetterDesignFile | null
+  paperNext: LetterPaperNext
+  paperNextFile: LetterDesignFile | null
+  margins: LetterMargins
+}
+// Die Vorgabe der Installation und, falls das Objekt eine eigene hat, die des Objekts (`null`: die Vorgabe gilt).
+// `missing`: Dateien, die eine Gestaltung nennt, die im Datenordner aber fehlen (nach einer Vorversion, aus einem Archiv
+// ohne sie oder von Hand gelöscht); sie stehen dann als `null` darin, gedruckt wird ohne sie (Durchsicht M2).
+export type LetterDesigns = { installation: LetterDesign; property: LetterDesign | null; missing?: string[] }
+
 // Abweichung eines Mietverhältnisses zwischen eingefrorenem und heutigem Saldo (#56). Salden wie
 // in der Abrechnung: über null Guthaben des Mieters, unter null Nachzahlung. `null` heißt, das
 // Mietverhältnis steht nur auf einer der beiden Seiten.
