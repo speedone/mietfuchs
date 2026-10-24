@@ -40,7 +40,7 @@ import { dryRun, earliestTenancyStart, lostClaims, outcomeOf } from './dryRun.ts
 import { HeatingError, PeriodConflict, PeriodError, rewriteCostItemFamily, settleOperatingPowerLinks, writeCostItemParts } from './repository.ts'
 import { assessmentLines, assessments, closedSettlementHistory, periodChanges, prepaymentOverrides, properties } from './schema.ts'
 import { GENERAL_POWER_CATEGORY } from '../../../shared/operatingPower.ts'
-import { droppedLettersText, dropLetterDocs, letterDocsWithPrefix } from './letters.ts'
+import { droppedLettersText, dropLetterDocs, letterDocPrefix, letterDocsWithPrefix } from './letters.ts'
 import { euro } from '../../../shared/costItem.ts'
 import { storedOutflowYear } from '../outflow.ts'
 
@@ -445,7 +445,7 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
   // sie entfallen, und die Vorschau sagt es. Abgeschlossene ändert der Wechsel nie (blocked).
   const letterDocs: string[] = []
   const lettersPreview: string[] = []
-  for (const d of await letterDocsWithPrefix(db, `${propertyId}:`)) {
+  for (const d of await letterDocsWithPrefix(db, letterDocPrefix({ propertyId }))) {
     const key = parsePeriodKey(d.period)
     const a = key === null ? null : changed(key)
     if (a === null) continue

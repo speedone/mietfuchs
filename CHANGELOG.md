@@ -45,7 +45,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Abrechnung speichern „Als JSON exportieren“ und „Als CSV exportieren“ die Zahlen der Abrechnung. Das JSON
   trägt eine Versionsangabe, Beträge in Cent als ganze Zahlen und alles, was gedruckt wird: je Mieter Zeilen
   (mit der Art von Sonderzeilen wie CO₂-Anteil oder Übertrag), Summen, Vorauszahlungen samt Vermerk, Vorschlag
-  und gewählte Anpassung, dazu die Heizungsblöcke (Angaben nach § 6a, CO₂, Vorrat, Lieferungen). Die CSV
+  und die je Mieter gewählte Anpassung (auch bei offener Abrechnung), dazu die Heizungsblöcke (Angaben nach § 6a, CO₂, Vorrat, Lieferungen). Die CSV
   (BOM, Semikolon, Beträge wie die Übersicht.csv der Steuer) führt die Zeilen und Summen je Mieter, schützt
   Textfelder gegen Formeln und verweist bei Heizungsangaben auf das JSON. Bei einer abgeschlossenen Abrechnung
   ist es der eingefrorene Stand; eine offene mit Fehlern ist als Entwurf gekennzeichnet (`draft`), und die

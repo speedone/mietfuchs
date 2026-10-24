@@ -67,3 +67,19 @@ test('Export: JSON und CSV mit den Zahlen der Abrechnung, eingefroren nach dem A
     s.stop()
   }
 })
+
+// Die Anpassung je Mieter einer offenen Abrechnung steht unter dem Schlüssel `letterDoc` (Objekt und Zeitraum); der Export
+// las sie vorher unter dem nackten Zeitraum und lieferte die Vorgabe statt der Wahl des Mieters (Durchsicht zu #317).
+test('Export: die Anpassung je Mieter einer offenen Abrechnung ist die gespeicherte, wie auf der Abrechnung', async () => {
+  const s = await startServer()
+  try {
+    const unit = await s.api<Unit>('/api/units', { method: 'POST', body: JSON.stringify({ name: 'EG', areaM2: 60, participates: true }) })
+    const tenancy = await s.api<Tenancy>('/api/tenancies', { method: 'POST', body: JSON.stringify({ unitId: unit.id, tenantName: 'Erika Mustermann', persons: 1, start: '2024-01-01', end: null, prepayments: [{ from: '2024-01', monthlyCents: 4000 }] }) })
+    await s.api('/api/costItems', { method: 'POST', body: JSON.stringify({ period: '2025-01', category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 60000, key: 'area' }) })
+    await s.api(`/api/settlement/2025/letters/${tenancy.id}`, { method: 'PUT', body: JSON.stringify({ texts: {}, adjustment: { mode: 'custom', cents: 6500 } }) })
+    const json = (await (await fetch(`${s.base}/api/settlement/2025/export?format=json`)).json()) as SettlementExport
+    assert.deepEqual({ mode: json.statements[0]?.adjustment?.mode, newCents: json.statements[0]?.adjustment?.newCents }, { mode: 'custom', newCents: 6500 })
+  } finally {
+    s.stop()
+  }
+})

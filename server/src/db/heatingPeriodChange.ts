@@ -32,7 +32,7 @@ import { checkRules, monthsText, passedDeadlineText } from './periodChange.ts'
 import { readClosedSettlements, readCostItems, readHeatingPlants, readProperties, readStock, readTenancies, readUnits } from './read.ts'
 import { tenancyMonths } from '../calc.ts'
 import { patchCostItemIn, PeriodError } from './repository.ts'
-import { droppedLettersText, dropLetterDocs, letterDocsWithPrefix } from './letters.ts'
+import { droppedLettersText, dropLetterDocs, letterDocPrefix, letterDocsWithPrefix } from './letters.ts'
 import {
   closedHeatingSettlementHistory, closedHeatingSettlements, costItems, heatingPeriodChanges, heatingPeriods, heatingPlants, heatingPrepaymentOverrides, prepaymentOverrides,
 } from './schema.ts'
@@ -245,7 +245,7 @@ async function planHeatingPeriodChange(db: Database, plantId: string, rawRules: 
   const letterDocs: string[] = []
   const lettersPreview: string[] = []
   const names = await readTenancies(db)
-  for (const d of await letterDocsWithPrefix(db, `heating:${plantId}:`)) {
+  for (const d of await letterDocsWithPrefix(db, letterDocPrefix({ plantId }))) {
     const key = parsePeriodKey(d.period)
     const a = key === null ? null : changed(key)
     if (a === null) continue

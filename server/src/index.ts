@@ -941,7 +941,6 @@ app.get('/api/heating-settlement/:plant/:period', async (req, res) => {
     deadline: settlementDeadline(target.period),
     scope: { kind: 'heating' as const, plantId: target.plant.id, plantName: target.plant.name },
   }
-  const doc = letterDoc(target.period.key, { plantId: target.plant.id })
   if (closed) {
     const stand = closed.settlement !== null && typeof closed.settlement === 'object' ? closed.settlement : {}
     const deviation = compareWithFrozen(closed.settlement, () => computeHeating(stock, target.plant, target.period), frame.deadline, today())
@@ -949,7 +948,7 @@ app.get('/api/heating-settlement/:plant/:period', async (req, res) => {
     return res.json({ selfUsedShareCents: 0, ...stand, ...frame, closed: { closedAt: closed.closedAt, sentAt: closed.sentAt }, deviation, letters })
   }
   const computed = computeHeating(stock, target.plant, target.period)
-  res.json({ ...computed, closed: null, letters: await readData((db) => openLetters(db, computed, target.plant.propertyId, doc)) })
+  res.json({ ...computed, closed: null, letters: await readData((db) => openLetters(db, computed, { propertyId: target.plant.propertyId, plantId: target.plant.id, period: target.period.key })) })
 })
 
 app.post('/api/heating-settlement/:plant/:period/close', async (req, res) => {
@@ -971,7 +970,7 @@ app.post('/api/heating-settlement/:plant/:period/close', async (req, res) => {
       async (tx) => computeHeating(await readStock(tx), target.plant, target.period),
       async (tx, settlement) => closeHeatingSettlement(tx, {
         id: newId(), plantId: target.plant.id, period: target.period.key, closedAt: new Date().toISOString(), sentAt,
-        settlement: { ...settlement, letters: await openLetters(tx, settlement, target.plant.propertyId, letterDoc(target.period.key, { plantId: target.plant.id })) },
+        settlement: { ...settlement, letters: await openLetters(tx, settlement, { propertyId: target.plant.propertyId, plantId: target.plant.id, period: target.period.key }) },
       }),
     )
     return { schonDa: false, label, question }
@@ -1054,7 +1053,7 @@ app.get('/api/settlement/:period', async (req, res) => {
     return res.json({ selfUsedShareCents: 0, ...stand, ...frame, closed: { closedAt: closed.closedAt, sentAt: closed.sentAt }, deviation, letters })
   }
   const computed = computeSettlement(snapshotFor(stock, property, period), { asOf: today() })
-  res.json({ ...computed, closed: null, letters: await readData((db) => openLetters(db, computed, property, letterDoc(period.key, { propertyId: property }))) })
+  res.json({ ...computed, closed: null, letters: await readData((db) => openLetters(db, computed, { propertyId: property, period: period.key })) })
 })
 
 // Export der Abrechnung als Daten (#415, Teil 3): JSON (Cent) oder CSV der Zeilen je Mieter, mit den Zahlen, die
@@ -1077,7 +1076,7 @@ app.get('/api/settlement/:period/export', async (req, res) => {
     data = { ...stand, ...frame, closed: { closedAt: closed.closedAt, sentAt: closed.sentAt } }
   } else {
     const computed = computeSettlement(snapshotFor(stock, property, period), { asOf: today() })
-    data = { ...computed, closed: null, letters: await readData((db) => openLetters(db, computed, property, period.key)) }
+    data = { ...computed, closed: null, letters: await readData((db) => openLetters(db, computed, { propertyId: property, period: period.key })) }
   }
   res.attachment(exportFilename(propertyName, frame.period.label, format))
   if (format === 'csv') return res.type('text/csv; charset=utf-8').send(settlementExportCsv(data))
@@ -1088,7 +1087,11 @@ app.get('/api/settlement/:period/export', async (req, res) => {
 
 // Das Anschreiben einer offenen Abrechnung: mit den Texten aller Ebenen und den Anpassungen je Mieter.
 // Dasselbe friert der Abschluss ein (im selben Vorgang wie die Zahlen).
-async function openLetters(db: Executor, s: Parameters<typeof lettersOf>[0], propertyId: string, doc: string): Promise<Record<string, StatementLetter>> {
+// Der Schlüssel der Anpassungen je Mieter entsteht hier und nur hier (`letterDoc`): Der Export las sie einmal unter dem
+// nackten Zeitraum und lieferte die Vorgabe statt der Wahl des Mieters (Durchsicht zu #317).
+async function openLetters(db: Executor, s: Parameters<typeof lettersOf>[0], target: { propertyId: string, period: string, plantId?: string }): Promise<Record<string, StatementLetter>> {
+  const { propertyId } = target
+  const doc = target.plantId === undefined ? letterDoc(target.period, { propertyId }) : letterDoc(target.period, { plantId: target.plantId })
   const property = (await listProperties(db)).find((p) => p.id === propertyId) ?? null
   // #317: Der Monat der Anpassung ist ohne eigene Angabe der übernächste nach heute; der Abschluss friert ihn ein.
   return lettersFor(db, s, { settings: storedSettings, property, tenancies: await readTenancies(db), doc, asOf: today() })
@@ -1499,7 +1502,7 @@ app.post('/api/settlement/:period/close', async (req, res) => {
       // Mit den Zahlen friert das Anschreiben ein (#415), wie die Seite es gerade zeigt.
       async (tx, settlement) => closeSettlement(tx, {
         id: newId(), propertyId: property, period: period.key, closedAt: new Date().toISOString(), sentAt,
-        settlement: { ...settlement, letters: await openLetters(tx, settlement, property, letterDoc(period.key, { propertyId: property })) },
+        settlement: { ...settlement, letters: await openLetters(tx, settlement, { propertyId: property, period: period.key }) },
       }),
     )
     return { schonDa: false, label, question }
