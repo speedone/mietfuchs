@@ -115,7 +115,12 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   lesen die Datei mit): **jede Seite hat 12 mm Rand** (`@page`), denn Chromium legt alle Seiten in einer Breite an,
   und andere Ränder auf der Briefseite schnitten die Aufstellung rechts ab (nachgemessen). Den Rest bis zu den Rändern nach
 DIN 5008 (links 25, rechts 20 mm) hält im Brief der Text, in der Aufstellung die Zelle der Hülle `PrintPages` frei
-(letterCss.test.ts). Die Maße der Norm stehen
+(letterCss.test.ts). In WebKit ist `body` im Druck so breit wie die Seite ohne Rand (186 mm): WebKit legt die
+Druckseite sonst 1,25-mal so breit an, wie sie in Punkt misst (`printingMinimumShrinkFactor` in WebCore), und druckte
+ohne breiten Inhalt alles rund 7 % größer (nachgemessen; das ist Safari selbst, nicht der Prüfaufbau). Nur dort
+(Klasse `print-fixed-width` an `html`, beim Start von `markPrintWidth` gesetzt, wenn `canPagePaper` fehlt; ein
+`@supports not (box-decoration-break: clone)` schreibt der Build mit der Angabe mit Präfix um, die WebKit kennt): In
+Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs ab. Die Maße der Norm stehen
   abzüglich dieser 12 mm (`--page`): Anschriftfeld 20/45 mm, 85 × 45 mm mit Rücksendeangabe in der Vermerkzone,
   Informationsblock 125/50 mm, Betreff ab 98,46 mm, Falz- und Lochmarken bei 105, 148,5 und 210 mm (12 bis 17 mm von
   der Kante, im Seitenrand schneidet Chromium ab) nur mit der Druckeinstellung „Falz- und Lochmarken drucken“. Ein
@@ -190,14 +195,17 @@ DIN 5008 (links 25, rechts 20 mm) hält im Brief der Text, in der Aufstellung di
   Ohne Anschreiben zeichnet `StatementHead` (Letter.tsx) denselben Kopf mit denselben Druckmaßen (`.letter.letter-top`,
   danach beginnt die Aufstellung auf der Höhe des Betreffs), der Betreff ist die Überschrift, und `statementBlocks`
   setzt Ergebnis, Anpassung und Belegeinsicht unter die Tabelle (`p.statement-letter-text`), aus den eingefrorenen
-  Texten. **Fußvermerk je Druckseite** (`footnoteText`: Abrechnung, Objekt und Wohnung, kein Name, keine
-  Bank): `PrintPages` legt eine echte `<table role="presentation">` um die Aufstellung,
-  denn nur den `tfoot` einer echten Tabelle wiederholen Browser auf jeder Seite (eine Tabelle aus CSS nicht, nachgemessen);
+  Texten. **Fußvermerk** (`footnoteText`: Abrechnung, Objekt und Wohnung, kein Name, keine
+  Bank): `PrintPages` legt eine echte `<table role="presentation">` um die Aufstellung, der Vermerk steht in ihrem `tfoot`,
+  denn nur den einer echten Tabelle wiederholen Chromium und Firefox auf jeder Seite (eine Tabelle aus CSS nicht,
+  nachgemessen); Safari wiederholt ihn nicht und druckt ihn einmal am Ende der Aufstellung. Er steht also immer im Fluss,
+  je Seite, wo der Browser es kann, und wird nie ausgeblendet (Wächter in letterCss.test.ts);
   am Bildschirm ist die Hülle `display: block` und der Fuß weg, und weil index.css jede Tabellenzeile zusammenhält, darf
   ihre eine Zeile umbrechen. Table.test.ts lässt genau diese Hülle zu. **„Seite x von y“** setzt `startPrint` mit
-  `pageNumbers` nur beim Druck einer Abrechnung als Randfeld (`@bottom-right`, Chromium ab 131), links auf derselben
-  Linie der Fußvermerk (`pageFooterCss`; der der Hülle entfällt dann, auf der Briefseite steht links nichts; Randfelder
-  bekommen ihre Schrift ausdrücklich, sonst druckt Chromium eine Serifenschrift). Ein Zähler je Mieter lässt sich in
+  `pageNumbers` nur beim Druck einer Abrechnung als Randfeld (`@bottom-right`, `PAGE_NUMBER_CSS`, Chromium ab 131;
+  Safari und Firefox kennen die Randfelder nicht und drucken keine, bewusst hingenommen). Ein Randfeld trägt nur, was
+  fehlen darf, nie den Fußvermerk (Wächter in printJob.test.ts; Randfelder bekommen ihre Schrift ausdrücklich, sonst
+  druckt Chromium eine Serifenschrift). Ein Zähler je Mieter lässt sich in
   Chromium nicht zurücksetzen, beim Druck aller zählte er also über alle. **Fußzeile mit Kontakt und Bank** ist eine
   Druckeinstellung (`printFooter`) und steht nur auf der Briefseite; ihr Text (`sender.footer`) friert mit dem
   Anschreiben ein; ein Abschluss ohne `sender.footer` druckt keine. Mit Fußzeile hält der Brieftext unten Platz frei (`.letter-with-footer`),
@@ -210,14 +218,22 @@ DIN 5008 (links 25, rechts 20 mm) hält im Brief der Text, in der Aufstellung di
   Logik in [letterDesignForm.ts](src/letterDesignForm.ts); Karte „Logo und Briefpapier“ in den Einstellungen, am Objekt
   über „Mehr“ in der Kopfzeile der Seite Abrechnung). Das Logo steht oben rechts im Briefkopf (im Anschreiben und im Kopf
   ohne Anschreiben), immer als `<img>`, nie eingefügtes SVG. **Mit Briefpapier druckt die Seite ohne Seitenrand**
-  (`<style>@page { margin: 0 }</style>`, nur solange die Seite Abrechnung mit Briefpapier offen ist): Chromium schneidet
-  ab, was in den Rand von 12 mm ragt (nachgemessen), ein Briefpapier bis zur Blattkante käme sonst mit weißem Rahmen
-  heraus. Die Maße des Briefs gelten dann ab der Blattkante (`--page: 0mm`); die Aufstellung hält ihre Ränder über einen
-  leeren `thead` (oben) und den `tfoot` (unten) der Hülle `PrintPages`, die der Browser je Seite wiederholt, die
-  Seiten über die Zelle (`--paper-*` an der Karte). Das Papier der ersten Seite liegt als Bild im Kopf des Briefs, das
-  der Folgeseiten im wiederholten `thead` der Hülle (`follow`, darunter); die Belegkopien stehen in einer eigenen Hülle
-  ohne Briefpapier (`newPage`: ein Umbruch vor dem ersten Inhalt einer Zelle wirkte nicht). Deshalb hat die Karte im
-  Druck keinen Grund. Rand oben höchstens 70 mm: Chromium wiederholt einen höheren Tabellenkopf nicht (nachgemessen). Ein Bild druckt der Browser immer, auch ohne „Hintergrundgrafiken“. Eine PDF rendert
+  (`PAPER_PAGE_CSS`: `@page { margin: 0 }`, nur solange die Seite Abrechnung mit Briefpapier offen ist): Chromium schneidet ab, was in den Rand von 12 mm ragt (nachgemessen), ein Briefpapier bis zur Blattkante
+  käme sonst mit weißem Rahmen heraus. Die Maße des Briefs gelten dann ab der Blattkante (`--page: 0mm`); die
+  Aufstellung steht in einem Rahmen (`.print-pages-frame`), dessen Innenabstand oben und unten `box-decoration-break:
+  clone` auf jeder Druckseite wiederholt, die Seiten hält die Zelle (`--paper-*` an der Karte). Kein Tabellenkopf oder
+  -fuß hält einen Rand frei (Wächter in letterCss.test.ts). Das Papier der ersten Seite liegt als Bild im Kopf des
+  Briefs, das der Folgeseiten ohne eigene Höhe im `thead` der Hülle (`follow`, Verzierung: Chromium und Firefox
+  wiederholen ihn); die Belegkopien stehen in einer eigenen Hülle ohne Briefpapier (`newPage`: ein Umbruch vor dem ersten
+  Inhalt einer Zelle wirkte nicht). Deshalb hat die Karte im Druck keinen Grund. **Briefpapier nur, wo der Browser die
+  Ränder je Seite wiederholen kann** (`canPagePaper`: `CSS.supports('box-decoration-break', 'clone')`, Chromium ab 130
+  und Firefox). WebKit nimmt die Ränder der ersten Seite für alle Seiten, auch die aus `@page :first`, wiederholt weder
+  `thead`/`tfoot` noch ein fest positioniertes Element und schneidet ab, was in den Seitenrand ragt; `page` (benannte
+  Seiten) nimmt es an, wirkt aber nicht (alles nachgemessen mit dem Workflow „Druck in Safari“, #286). Papier bis zur
+  Blattkante und Ränder auf den Folgeseiten gehen dort nicht zusammen. Safari druckt deshalb wie ohne Briefpapier (mit
+  Rand und Absender, die Fußzeile nur mit `printFooter`, das Logo bleibt; `printDesign` mit `paperSkipped`), und die
+  Seite (`no-print`, auch für Strg+P) und das Fenster „Drucken“ sagen es.
+  Rand oben höchstens 70 mm (Grenze aus der Zeit des wiederholten Tabellenkopfs, beibehalten). Ein Bild druckt der Browser immer, auch ohne „Hintergrundgrafiken“. Eine PDF rendert
   pdf.js vorab zu einem Bild, ein Bild wird vorher nachgefragt; bis dahin ist „Drucken“ im Fenster „Drucken“ gesperrt. **Fehlt eine
   Datei**, druckt die Seite ohne sie, mit Rand, Absender und Fußzeile, und nennt es (`printedDesign`, Durchsicht M2).
   Im Seitenfenster wird nur eine einseitige PDF angenommen, und ein SVG wird dort mit Canvas zu einem PNG (`svgToPng`). Mit Briefpapier entfallen Absender (`.letter-head`) und Fußzeile von Mietfuchs; Rücksendeangabe und

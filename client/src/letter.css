@@ -13,7 +13,9 @@
 .letter-window { margin-bottom: var(--space-4); }
 .letter-return { display: inline-block; font-size: var(--text-xs); color: var(--muted); border-bottom: 1px solid var(--line); margin-bottom: var(--space-1); }
 .letter-address { font-style: normal; }
-.letter-info { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0 var(--space-3); margin-bottom: var(--space-4); font-size: var(--text-s); }
+/* Lange Angaben (eine E-Mail) brechen um, statt über den rechten Rand zu ragen (Druck in Safari, #286: mit der Schrift des
+   Systems auf dem Mac 1,9 mm darüber); Letter.tsx erlaubt den Umbruch nach dem @. */
+.letter-info { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0 var(--space-3); margin-bottom: var(--space-4); font-size: var(--text-s); overflow-wrap: anywhere; }
 .letter-info-label { color: var(--muted); }
 .letter-info-wide { grid-column: 1 / -1; }
 .letter-info-date { margin-top: var(--space-2); }
@@ -41,8 +43,9 @@
 .letter.letter-top { margin-bottom: var(--space-3); }
 .statement-letter-text { margin: 0 0 var(--space-3); }
 
-/* Teil 2: der Fußvermerk je Druckseite. Die Hülle ist eine echte Tabelle, denn nur deren Fuß wiederholt der
-   Browser auf jeder Seite (eine Tabelle aus CSS nicht, nachgemessen in Chromium). Am Bildschirm ist sie unsichtbar. */
+/* Teil 2: der Fußvermerk. Die Hülle ist eine echte Tabelle mit dem Vermerk im Fuß: Chromium und Firefox wiederholen
+   ihn auf jeder Druckseite (eine Tabelle aus CSS nicht, nachgemessen in Chromium), Safari druckt ihn einmal am Ende
+   der Aufstellung (WebKit wiederholt `tfoot` nicht, nachgemessen). Am Bildschirm ist sie unsichtbar. */
 .print-pages, .print-pages > tbody, .print-pages > tbody > tr, .print-pages-cell { display: block; }
 .print-pages > tfoot, .print-pages > thead { display: none; }
 .print-pages-cell { padding: 0; border: 0; background: none; }
@@ -90,11 +93,23 @@
    So hat auch eine Folgeseite eines langen Briefs oben und unten ihren Rand (Durchsicht S3); die Seite warnt,
    wenn der Brief voraussichtlich nicht auf eine Seite passt (`exceedsOnePage`). */
 @page { size: A4; margin: 12mm; }
+/* In WebKit ist das Dokument im Druck so breit wie die Seite ohne Rand. WebKit legt die Druckseite sonst 1,25-mal so
+   breit an, wie die Seite in Punkt misst, und verkleinert dann auf die Seite (`printingMinimumShrinkFactor` in WebCore):
+   Ohne breiten Inhalt druckte Safari alles rund 7 % größer, und die Fußzeile des Anschreibens rutschte auf eine eigene
+   Seite (Druck in Safari, #286, nachgemessen; die Ränder der Seiteneinstellung ändern daran nichts). Ist das Dokument so
+   breit wie der Satzspiegel, druckt WebKit 1:1 wie Chromium. Nur dort (Durchsicht K1 zu PR #443): In Chromium und
+   Firefox machte die feste Breite die Skalierung und die Ränder des Druckdialogs wirkungslos. Erkannt wie beim
+   Briefpapier (`canPagePaper`), gesetzt beim Start als Klasse an `html` (`markPrintWidth` in letterDesignView.ts):
+   Ein `@supports not (box-decoration-break: clone)` schreibt der Build um und nimmt die Angabe mit Präfix dazu, die
+   WebKit kennt. Briefpapier gibt es in WebKit nicht, deshalb gilt hier immer der Rand von 12 mm. */
+@media print { html.print-fixed-width body { width: 186mm; } }
 /* „Seite x von y“ setzt printJob.ts nur beim Druck einer einzelnen Abrechnung in den Rand (Chromium, Teil 2); beim
    Druck aller zählte er über alle Mieter hinweg. */
 
 @media print {
-  .letter { --page: 12mm; min-height: calc(297mm - 2 * var(--page) - 1mm); box-sizing: border-box; max-width: none; margin: 0; padding: 0; border: none; border-radius: 0; background: none; font-size: 11pt; line-height: 1.4; color: var(--text); break-after: page; page-break-after: always; }
+  /* Die Briefseite füllt das Blatt bis 4 mm vor den unteren Rand: Firefox schob mit 1 mm Luft die zweite Zeile der
+     Fußzeile auf eine eigene Seite (nachgemessen, Druck in Safari #286). */
+  .letter { --page: 12mm; min-height: calc(297mm - 2 * var(--page) - 4mm); box-sizing: border-box; max-width: none; margin: 0; padding: 0; border: none; border-radius: 0; background: none; font-size: 11pt; line-height: 1.4; color: var(--text); break-after: page; page-break-after: always; }
   .letter-head { position: absolute; top: calc(15mm - var(--page)); left: calc(25mm - var(--page)); right: calc(20mm - var(--page)); margin: 0; font-size: 12pt; }
   .letter-window { position: absolute; top: calc(45mm - var(--page)); left: calc(20mm - var(--page)); width: 85mm; height: 45mm; margin: 0; overflow: hidden; }
   /* Höchstens zwei Zeilen, nach oben wachsend und in der Vermerkzone (17,7 mm); was länger ist, nennt die Seite vor dem
@@ -125,8 +140,9 @@
   /* Ohne Anschreiben: derselbe Kopf, die Aufstellung beginnt auf der Höhe des Betreffs (98,46 mm). */
   .letter.letter-top { min-height: 0; height: calc(98.46mm - var(--page) - 2mm); break-after: auto; page-break-after: auto; }
 
-  /* Der Fuß der Hülle wiederholt sich auf jeder Seite der Aufstellung; index.css setzt jeden anderen tfoot einmal ans
-     Tabellenende (table-row-group), hier gilt der Fuß der Hülle. */
+  /* Der Fuß der Hülle wiederholt sich in Chromium und Firefox auf jeder Seite der Aufstellung, in Safari steht er einmal
+     an ihrem Ende; index.css setzt jeden anderen tfoot einmal ans Tabellenende (table-row-group), hier gilt der Fuß der
+     Hülle. Einen Rand hält er nicht frei (letterCss.test.ts). */
   .print-pages { display: table; width: 100%; border-collapse: collapse; }
   .print-pages > tbody { display: table-row-group; }
   .print-pages > tbody > tr, .print-pages > tfoot > tr { display: table-row; }
@@ -141,25 +157,27 @@
   .letter-logo { top: calc(15mm - var(--page)); right: calc(20mm - var(--page)); max-height: 25mm; max-width: 65mm; }
 
   /* Teil 2b: Briefpapier. Die Seite druckt dann ohne Seitenrand (`PAPER_PAGE_CSS` in letterDesignView.ts), die Maße des
-     Briefs gelten ab der Blattkante (`--page: 0mm`). Das Papier liegt als Bild unter allem auf der ganzen Seite: die
-     erste Seite im Kopf des Briefs (mit weißem Grund), die Folgeseiten im Tabellenkopf der Hülle der Aufstellung, den
-     der Browser auf jeder Druckseite wiederholt (darunter, Durchsicht S2). Die Hülle der Belegkopien hat keines.
-     Die Karte der Abrechnung darf keinen eigenen Grund haben, sonst läge er über dem Papier. Ein Bild druckt der
-     Browser immer, auch ohne „Hintergrundgrafiken“. */
+     Briefs gelten ab der Blattkante (`--page: 0mm`). Das Papier der ersten Seite liegt als Bild unter dem Brief (mit
+     weißem Grund). Die Aufstellung steht in einem Rahmen (`.print-pages-frame`), dessen Innenabstand oben und unten
+     `box-decoration-break: clone` auf jeder Druckseite wiederholt: die Ränder aus der Gestaltung, auf jeder Seite, ohne
+     wiederholten Tabellenkopf. Das können Chromium ab 130 und Firefox; WebKit nicht (nur Zeilen), dort druckt die Seite
+     ohne Briefpapier (`canPagePaper`). Das Papier der Folgeseiten liegt im Kopf der Hülle, den Chromium und Firefox je
+     Seite wiederholen, ohne eigene Höhe (Verzierung, kein Rand). Die Hülle der Belegkopien hat keines. Die Karte der
+     Abrechnung darf keinen eigenen Grund haben, sonst läge er über dem Papier. Ein Bild druckt der Browser immer, auch
+     ohne „Hintergrundgrafiken“. */
   .paper-print .letter { --page: 0mm; }
   .letter-paper { display: block; position: absolute; top: 0; left: 0; width: 210mm; height: 297mm; max-width: none; object-fit: fill; z-index: -1; background: var(--card); }
-  .paper-print .print-pages-spacer { position: relative; }
-  .paper-follow { display: block; position: absolute; top: 0; left: calc(-1 * var(--paper-left)); width: 210mm; height: 297mm; max-width: none; object-fit: fill; z-index: -2; }
-  .card.statement.paper-print { background: none; }
-  /* Ränder des Textbereichs: im Brief nur der Text (Anschriftfeld und Informationsblock bleiben nach DIN 5008),
-     in der Aufstellung Kopf, Fuß und Seiten jeder Druckseite. */
-  .paper-print .letter-body { padding-left: var(--paper-left); padding-right: var(--paper-right); padding-bottom: var(--paper-bottom); }
-  .paper-print .letter.letter-top { height: calc(98.46mm - 2mm - var(--paper-top)); }
+  .paper-print .print-pages-frame { padding: var(--paper-top) 0 var(--paper-bottom); -webkit-box-decoration-break: clone; box-decoration-break: clone; }
   .paper-print .print-pages > thead { display: table-header-group; }
   .paper-print .print-pages > thead > tr { display: table-row; }
-  .paper-print .print-pages-spacer { height: var(--paper-top); }
+  .print-pages-follow { position: relative; }
+  .paper-follow { display: block; position: absolute; top: calc(-1 * var(--paper-top)); left: calc(-1 * var(--paper-left)); width: 210mm; height: 297mm; max-width: none; object-fit: fill; z-index: -2; }
+  .card.statement.paper-print { background: none; }
+  /* Ränder des Textbereichs: im Brief nur der Text (Anschriftfeld und Informationsblock bleiben nach DIN 5008),
+     in der Aufstellung die Seiten über die Zelle, oben und unten über den Rahmen. */
+  .paper-print .letter-body { padding-left: var(--paper-left); padding-right: var(--paper-right); padding-bottom: var(--paper-bottom); }
+  .paper-print .letter.letter-top { height: calc(98.46mm - 2mm - var(--paper-top)); }
   .paper-print .print-pages-cell { padding: 0 var(--paper-right) 0 var(--paper-left); }
-  .paper-print .print-pages > tfoot .print-pages-cell { padding-bottom: var(--paper-bottom); }
   /* Belegkopien mit Briefpapier: so hoch, wie die Ränder lassen, abzüglich Beschriftung und Fußvermerk (Durchsicht S2). */
   .paper-print .attachments img { max-height: calc(297mm - var(--paper-top) - var(--paper-bottom) - 20mm); }
 

@@ -49,7 +49,7 @@ import Card from '../components/Card'
 import ControlView from '../components/ControlView'
 import Letter, { PrintPages, StatementHead } from '../components/Letter'
 import LetterDesignDrawer, { designSummary, sendLetterDesign } from '../components/LetterDesignDrawer'
-import { PAPER_PAGE_CSS, asLetterDesigns, designKey, paperVars, printDesign, printedDesign, type LoadedDesign } from '../letterDesignView'
+import { PAPER_PAGE_CSS, asLetterDesigns, canPagePaper, designKey, paperVars, printDesign, printedDesign, type LoadedDesign } from '../letterDesignView'
 import { designImage } from '../letterPaper'
 import type { LetterDesigns } from '../../../shared/types.ts'
 import { LegacyHead, legacyHeadLine, legacyReceiptsText, LegacyResult } from '../components/LegacyStatement'
@@ -78,6 +78,8 @@ export const PRINT_DRAFT_NOTE = 'Gilt schon für diese Vorschau und den Druck; m
 export const LETTER_CHOICE_NOTE = 'Anschreiben: gilt nur für diesen Druck. Die Vorgabe ändern Sie mit „Vorlage für dieses Objekt bearbeiten“ oder in den Einstellungen.'
 
 // Warnungen der Seite vor dem Druck (#415), am Brief des Mieters und in „Zu prüfen“ mit demselben Wortlaut.
+// Druck in Safari (#286): WebKit nimmt die Ränder der ersten Seite für alle Seiten (letterDesignView.ts, `canPagePaper`).
+const PAPER_BROWSER_TEXT = 'Dieser Browser (etwa Safari) kann die Ränder nicht je Druckseite unterscheiden; mit Briefpapier stünde der Text der Folgeseiten im Kopf oder Fuß des Papiers. Gedruckt wird deshalb wie ohne Briefpapier: mit Seitenrand und Absender oben, die Fußzeile mit Kontakt und Bank nur, wenn sie eingeschaltet ist. Mit Briefpapier drucken Sie in einem aktuellen Chrome, Edge oder Firefox.'
 const LETTER_LONG_TEXT = 'Das Anschreiben ist voraussichtlich länger als eine Seite und druckt auf der nächsten weiter. Soll es auf eine Seite passen, kürzen Sie die Texte über „Anschreiben bearbeiten“.'
 const returnLineText = (line: string) => `Die Rücksendeangabe über der Anschrift hat ${line.trim().length} Zeichen; im Fensterfeld passen rund ${RETURN_LINE_MAX} in zwei kleine Zeilen, der Rest würde abgeschnitten. Kürzen Sie den Namen oder die Anschrift des Vermieters (Einstellungen bzw. beim Objekt).`
 
@@ -454,8 +456,8 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
   // der Daten, während auf die nächste Bedienung gewartet wird, den Druckdialog ein zweites Mal
   const printSource = useRef({ data, label })
   printSource.current = { data, label }
-  // Druck (#415): Fußvermerk und Seitenzahl je gedruckter Abrechnung, gesetzt, sobald die Ansichten feststehen (unten).
-  const pageFooter = useRef<(id: string) => true | { footnote: string | null, letterFirst: boolean }>(() => true)
+  // Druck (#415): ob die Seitenzahl in den Rand kommt, gesetzt, sobald die Gestaltung feststeht (unten).
+  const pageNumbers = useRef(true)
   useEffect(() => {
     if (!printId) return
     document.body.classList.add('print-one')
@@ -465,8 +467,8 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
     const st = data?.statements.find((s) => s.tenancyId === printId)
     const job = startPrint({
       title: st ? `${data ? settlementTitle(data) : `Nebenkostenabrechnung ${label}`} ${st.unitName} ${st.tenantName}` : document.title,
-      // „Seite x von y“ nur beim Druck dieser einen Abrechnung (#415, Teil 2), links auf derselben Linie der Fußvermerk.
-      pageNumbers: pageFooter.current(printId),
+      // „Seite x von y“ nur beim Druck dieser einen Abrechnung (#415, Teil 2); der Fußvermerk steht im Fluss (Letter.tsx).
+      pageNumbers: pageNumbers.current,
       onDone: () => {
         document.body.classList.remove('print-one')
         setPrintId(null)
@@ -561,7 +563,8 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
   // Wiederöffnen zählt der frühere Versand weiter (#142, siehe deadlineView). Bezeichnung und Frist
   // vom Server (#208).
   // Teil 2b: Vor #415 abgeschlossen druckt die ganze Abrechnung wie damals, ohne Logo und Briefpapier.
-  const planned = printDesign(designs, { legacy: !!data?.closed && !data?.letters })
+  // Druck in Safari (#286): Briefpapier nur, wo der Browser die Ränder je Druckseite wiederholen kann (`canPagePaper`).
+  const planned = printDesign(designs, { legacy: !!data?.closed && !data?.letters, pagedPaper: canPagePaper() })
   // Erst geladen, dann gedruckt: Eine PDF als Briefpapier rendert pdf.js vorab zu einem Bild, wie die Belegkopien; bis
   // dahin wartet „Drucken“. Fehlt eine Datei, druckt die Seite ohne sie (Durchsicht M2, `printedDesign`).
   const design = printedDesign(planned, loadedDesign)
@@ -639,11 +642,8 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
     return { st, letterDate, draftMark, legacy, tenancy, stFiles, attachmentsReady, groups, letter, attachmentCount, paragraphs, paymentDays, lockedId, showLetter, print, footerText, head, subject, underTable, footnote, addressState }
   }
   const views = data ? data.statements.map((st) => viewOf(data, st)) : []
-  // Mit Briefpapier hat die Seite keinen Rand und damit keine Randfelder; dann bleibt der Fußvermerk in der Hülle.
-  pageFooter.current = (id) => {
-    const v = views.find((x) => x.st.tenancyId === id)
-    return v && !design.paper ? { footnote: v.footnote, letterFirst: v.showLetter } : true
-  }
+  // Mit Briefpapier hat die Seite keinen Rand und damit keine Randfelder.
+  pageNumbers.current = !design.paper
   const preview = views.find((v) => v.st.tenancyId === previewId) ?? null
   const around = neighbors(views.map((v) => v.st.tenancyId), previewId ?? '')
   const nameOf = (id: string | null) => views.find((v) => v.st.tenancyId === id)?.st.tenantName ?? ''
@@ -691,6 +691,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
     ? 'Belegkopien werden noch vorbereitet …'
     : !design.ready ? 'Logo und Briefpapier werden noch vorbereitet …' : null
   const printWarnings = uniqueChecks(printViews.flatMap(pageChecks))
+  if (planned.paperSkipped) printWarnings.push({ code: 'page.paper-browser', level: 'info', title: 'Briefpapier druckt dieser Browser nicht', text: PAPER_BROWSER_TEXT })
 
   return (
     <>
@@ -700,6 +701,8 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
       {error && <NoticeBox level="error" action={error} />}
       {/* Teil 2b: Mit Briefpapier ohne Seitenrand, das Papier der Folgeseiten einmal für alle Druckseiten. */}
       {design.paper && <style>{PAPER_PAGE_CSS}</style>}
+      {/* Auch für Strg+P und das Menü des Browsers, nicht nur im Fenster „Drucken“ (Durchsicht K2 zu PR #443). */}
+      {planned.paperSkipped && <NoticeBox level="info" className="no-print" title="Briefpapier druckt dieser Browser nicht" action={PAPER_BROWSER_TEXT} />}
       {missingDesign.length > 0 && (
         <NoticeBox
           level="warning"

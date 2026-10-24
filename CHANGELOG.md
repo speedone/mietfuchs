@@ -153,9 +153,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   den weiteren Angaben eines Mietverhältnisses, etwa „Sehr geehrte Frau Becker“; das Komma ergänzt Mietfuchs.
   Der neue Platzhalter {Anrede} setzt sie ein und ist die Vorgabe des Bausteins Anrede; ohne Eintrag bleibt
   es bei „Guten Tag {Name},“.
-- Jede Seite der Aufstellung trägt im Druck unten Mieter, Wohnung, Abrechnung und Zeitraum, damit sich lose
-  Blätter zuordnen lassen; beim Druck einer einzelnen Abrechnung steht dazu „Seite x von y“ im Rand (in
-  Chrome und Edge; ein Browser ohne diese Druckfunktion lässt nur die Seitenzahl weg)
+- Jede Seite der Aufstellung trägt im Druck unten Abrechnung, Objekt und Wohnung, damit sich lose
+  Blätter zuordnen lassen (Safari druckt den Vermerk einmal am Ende der Aufstellung, weil es nichts je Seite
+  wiederholt); beim Druck einer einzelnen Abrechnung steht dazu „Seite x von y“ im Rand (in Chrome und Edge; ein
+  Browser ohne diese Druckfunktion, etwa Safari oder Firefox, lässt nur die Seitenzahl weg)
   ([#415](https://github.com/speedone/mietfuchs/issues/415)).
 - Eigene Anschreiben je Mieter gehören jetzt fest zu Objekt und Zeitraum: Wechselt ein Mietverhältnis in ein
   anderes Objekt oder ändert sich der Abrechnungszeitraum oder die Heizperiode, entfallen die offenen; die
@@ -173,7 +174,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Ein Objekt kann eine eigene Gestaltung haben (Seite Abrechnung, Karte „Anschreiben“). Die Dateien liegen
   im Datenordner unter `briefpapier` und kommen mit ins Backup; eine automatische Vorversion enthält nur die
   Datenbank, ein seither ersetztes Logo oder Briefpapier fehlt nach ihrem Einspielen. Fehlt eine Datei, nennt die
-  Seite Abrechnung das und druckt ohne sie. Der Rand oben geht bis 70 mm. Eine vor diesem
+  Seite Abrechnung das und druckt ohne sie. Der Rand oben geht bis 70 mm. Ein Browser, der die Ränder nicht je
+  Druckseite unterscheiden kann (etwa Safari oder ein Chrome älter als Version 130), druckt ohne Briefpapier, weil der
+  Text der Folgeseiten sonst im Kopf oder Fuß des Papiers stünde; die Seite Abrechnung und das Fenster „Drucken“
+  sagen es, ein aktuelles Chrome, Edge und Firefox drucken es. Eine vor diesem
   Anschreiben abgeschlossene Abrechnung druckt weiter wie damals, ohne Logo und Briefpapier.
 - Verbilligte Vermietung nach § 21 Abs. 2 EStG ([#257](https://github.com/speedone/mietfuchs/issues/257)):
   Vermieten Sie eine Wohnung günstiger als üblich, etwa an Angehörige, tragen Sie auf der Seite Steuer in
@@ -212,7 +216,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   „Einstellungen“ bzw. beim Objekt. Die Aufstellung beginnt mit einem Kopf aus Mieter, Mietobjekt, Wohnung,
   Wohnfläche, Abrechnungszeitraum (bei Ein- oder Auszug dazu Ihr Nutzungszeitraum) und Personen; der Zeitraum steht
   nicht mehr zusätzlich im Ergebniskasten und im Satz „Abgerechnet werden die Kosten …“. Der Fuß jeder Seite nennt
-  links Abrechnung, Objekt und Wohnung und rechts „Seite x von y“, nicht mehr den Namen des Mieters; Kontakt und
+  Abrechnung, Objekt und Wohnung, darunter rechts „Seite x von y“, nicht mehr den Namen des Mieters; Kontakt und
   Bank stehen nur noch im Fuß des Anschreibens. Der Lohnanteil nach § 35a EStG ist eine Tabelle mit Leistung,
   Gesamtbetrag, Lohnanteil und Ihrem Anteil. Die Lage der Wohnung („EG links“) steht nicht mehr in der Anschrift,
   sondern in Betreff und Kopf. Ohne eingetragene Anrede weist das Fenster „Anschreiben bearbeiten“ darauf hin, wo

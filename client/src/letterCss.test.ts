@@ -48,3 +48,57 @@ test('K7: die Rücksendeangabe darf zweizeilig umbrechen und bleibt in der Verme
   expect(rule).not.toMatch(/white-space: nowrap/)
   expect(rule).toMatch(/max-height: 2\.4em/)
 })
+
+// Druck in Safari (#286, nachgemessen mit WKWebView, Workflow „Druck in Safari“): WebKit wiederholt `thead` und `tfoot`
+// nicht je Druckseite, kennt keine Randfelder von `@page` und nimmt die Ränder der ersten Seite für alle. Wächter, dass
+// der Druck sich nicht wieder darauf stützt: Ränder kommen aus `@page` (ohne Briefpapier) bzw. aus dem Innenabstand des
+// Rahmens, den `box-decoration-break: clone` je Seite wiederholt (mit Briefpapier, nur wo der Browser das kann,
+// `canPagePaper`); kein Tabellenkopf oder -fuß hält einen Rand frei, und der Fußvermerk wird nie ausgeblendet.
+const sources = ['./index.css', './letter.css', './fields.css', './reading-sheet.css', './tw.css']
+  .map((f) => fs.readFileSync(new URL(f, import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')).join('\n')
+const rules = (src: string): { selector: string, body: string }[] =>
+  [...src.matchAll(/([^{}@;]+)\{([^{}]*)\}/g)].map((m) => ({ selector: (m[1] ?? '').trim(), body: m[2] ?? '' }))
+
+test('kein Tabellenkopf oder -fuß der Hülle hält einen Rand frei', () => {
+  const holders = rules(print).filter((r) => /thead|tfoot|print-pages-spacer|print-pages-follow/.test(r.selector) && /(^|;)\s*(height|min-height|padding(-top|-bottom)?)\s*:/.test(r.body))
+  expect(holders.map((r) => r.selector)).toEqual([])
+  // Mit Briefpapier: oben und unten der Innenabstand des Rahmens, auf jeder Druckseite wiederholt.
+  const frame = rules(print).find((r) => r.selector === '.paper-print .print-pages-frame')?.body ?? ''
+  expect(frame).toMatch(/padding: var\(--paper-top\) 0 var\(--paper-bottom\)/)
+  expect(frame).toMatch(/(^|[\s;])box-decoration-break: clone/)
+  expect(frame).toMatch(/-webkit-box-decoration-break: clone/)
+})
+
+test('der Fußvermerk steht im Fluss und wird nirgends ausgeblendet', () => {
+  const hidden = rules(sources).filter((r) => /statement-footnote/.test(r.selector) && /display:\s*none/.test(r.body))
+  expect(hidden.map((r) => r.selector)).toEqual([])
+  // Im Druck ist der Fuß der Hülle ein Tabellenfuß: Chromium und Firefox wiederholen ihn je Seite, Safari druckt ihn
+  // einmal am Ende der Aufstellung.
+  expect(print).toMatch(/\.print-pages > tfoot \{ display: table-footer-group; \}/)
+  // Mutationsprobe: ein ausgeblendeter Fußvermerk fiele auf.
+  expect(rules('@media print { .statement-footnote { display: none !important; } }').filter((r) => /statement-footnote/.test(r.selector) && /display:\s*none/.test(r.body))).toHaveLength(1)
+})
+
+// WebKit legt die Druckseite 1,25-mal so breit an, wie die Seite in Punkt misst (`printingMinimumShrinkFactor`), und
+// verkleinert dann auf die Seite: alles rund 7 % größer, ohne breiten Inhalt (nachgemessen: 4,52 statt 4,23 mm Schrift).
+// Ist das Dokument im Druck so breit wie der Satzspiegel, druckt WebKit im Maßstab 1:1 wie Chromium.
+// Nur dort (Durchsicht K1 zu PR #443): In Chromium und Firefox machte die feste Breite die Skalierung des Druckdialogs
+// wirkungslos (mit 80 % stand der Text nur auf 80 % der Breite). Erkannt wie beim Briefpapier (`canPagePaper`), aber in
+// JS (`markPrintWidth`, letterDesignView.ts): Ein `@supports not (box-decoration-break: clone)` schreibt der Build um
+// und nimmt die Angabe mit Präfix dazu, die WebKit kennt; dann galt die Breite nirgends (Lauf auf dem Mac).
+test('im Druck ist das Dokument in WebKit so breit wie die Seite ohne Rand, sonst nicht', () => {
+  const page = Number(css.match(/@page \{ size: A4; margin: ([\d.]+)mm; \}/)?.[1])
+  const width = Number(css.match(/@media print \{ html\.print-fixed-width body \{ width: ([\d.]+)mm; \} \}/)?.[1])
+  expect(width).toBe(210 - 2 * page)
+  // Keine Breite des Dokuments außerhalb dieser Bedingung und keine Bedingung, die der Build umschreibt.
+  expect([...css.matchAll(/body \{ width:/g)]).toHaveLength(1)
+  expect(css).not.toMatch(/@supports[^{]*box-decoration-break/)
+  const main = fs.readFileSync(new URL('./main.tsx', import.meta.url), 'utf8')
+  expect(main).toMatch(/markPrintWidth\(document\.documentElement\)/)
+})
+
+// Auch Chromium auf dem Mac: Die E-Mail im Informationsblock ragte mit der Schrift des Systems 1,9 mm über den rechten
+// Rand (Druck in Safari, #286). Sie bricht um, statt hinauszuragen.
+test('der Informationsblock bricht lange Angaben um, statt über den Rand zu ragen', () => {
+  expect(css).toMatch(/\.letter-info \{[^}]*overflow-wrap: anywhere/)
+})

@@ -52,14 +52,23 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   Seitenbilder als Artefakt. Exit 1 heißt Befunde (der Workflow meldet sie vorerst als Warnung und
   bleibt grün, aber nur, wenn `bericht.md` mindestens einen nennt), Exit 2 ein gescheiterter Lauf
   (rot; auch ein kaputter Import, eine PDF ohne Seite oder ein Bestand ohne Mieter).
-  Lokal ohne Mac: `--engines chromium`; `--evaluate` wertet vorhandene PDFs neu aus. **Befunde des
-  ersten Laufs** (Safari 26.6.2, offen): WebKit kennt die Randfelder von `@page` nicht (MDN/caniuse:
-  `@bottom-right` nur Chromium ab 131; WebKit hat seit Safari 18.2 nur die Randangaben), also keine
-  Seitenzahl und, weil `pageFooterCss` den Fußvermerk der Hülle ausblendet, beim Druck eines Mieters
-  gar keinen Fußvermerk; den `tfoot` und `thead` der Hülle wiederholt WebKit nicht je Seite (Fußvermerk
-  nur am Ende, mit Briefpapier ohne Papier und Rand auf den Folgeseiten, Text überdruckt das Papier);
-  mit 12 mm Rand druckt WKWebView rund 3 % größer, die Fußzeile des Anschreibens rutscht auf eine
-  eigene Seite. **Von Hand bleibt**: ein Blick auf die Seitenbilder (Überdrucken, Bilder, Linien prüft
+  Lokal ohne Mac: `--engines chromium`; `--evaluate` wertet vorhandene PDFs neu aus. **Was in WebKit gilt** (Safari 26.6.2,
+  nachgemessen an Testseiten und im Lauf, #286): keine Randfelder von `@page`, also keine Seitenzahl (erwartet);
+  `thead`/`tfoot` und fest positionierte Elemente nicht je Seite wiederholt, also der Fußvermerk einmal am Ende jeder
+  Aufstellung (erwartet) und ohne wiederholten Tabellenkopf weniger Seiten als Chromium (erwartet, wenn dieselben
+  Beträge und derselbe Text ohne Tabellenköpfe, Fußvermerk und Seitenzahl dastehen); die Ränder der ersten Seite (auch
+  `@page :first`) für alle Seiten, deshalb druckt Safari ohne Briefpapier, mit Hinweis auf der Seite und im Fenster
+  „Drucken“ (erwartet und geprüft, `canPagePaper` in client/src/letterDesignView.ts); `box-decoration-break: clone`
+  nur mit Präfix und nicht über Druckseiten. Die Erkennung prüft nur, ob es die Eigenschaft ohne Präfix gibt: Führt
+  WebKit sie ein, meldet der Workflow „Briefpapier gedruckt“, und es ist neu zu messen, ob die Ränder je Seite wirken. `break-inside: avoid` an `tr` beachtet WebKit nicht (eine mehrzeilige Zeile der Kostentabelle
+  kann ihre letzte Zeile auf die nächste Seite schieben; dieselbe Angabe an einem Block je Zelle trennt die Zellen
+  voneinander, das war schlechter, offen). Der Maßstab: WebKit legt die Druckseite 1,25-mal so breit an, wie sie in Punkt
+  misst (`printingMinimumShrinkFactor` in WebCore/page/PrintContext.h), und verkleinert auf die Breite des Inhalts;
+  ohne breiten Inhalt druckte es rund 7 % größer, mit der überlangen E-Mail 3 %. Das ist Safari selbst, nicht der
+  Aufbau (die Ränder und `scalingFactor` von NSPrintInfo ändern nichts, Safari druckt über denselben Weg); behoben
+  mit `body { width: 186mm }` im Druck, nur ohne `box-decoration-break: clone` (Klasse `print-fixed-width`, client/src/letter.css; in Chromium und
+  Firefox schaltete die feste Breite die Skalierung des Druckdialogs ab). Erwartetes steht im Bericht unter „Erwartet“, nicht
+  als Befund. **Von Hand bleibt**: ein Blick auf die Seitenbilder (Überdrucken, Bilder, Linien prüft
   die Auswertung nicht) und gelegentlich „Als PDF sichern“ im echten Safari als Gegenprobe, denn der
   Lauf druckt über WKWebView, nicht über Safaris Menü.
 
