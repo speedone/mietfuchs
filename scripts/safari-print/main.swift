@@ -24,10 +24,14 @@ func fail(_ text: String) -> Never {
   FileHandle.standardError.write("safari-print: \(text)\n".data(using: .utf8)!)
   exit(1)
 }
-guard let urlText = argument("--url"), let url = URL(string: urlText) else { fail("--url fehlt") }
-guard let outPath = argument("--out") else { fail("--out fehlt") }
+// Als Werte des Moduls, nicht über `guard let` (dessen Namen sähe die Klasse unten nicht)
+let url: URL = {
+  guard let text = argument("--url"), let url = URL(string: text) else { fail("--url fehlt") }
+  return url
+}()
+let outPath: String = argument("--out") ?? fail("--out fehlt")
 let prelude = (try? String(contentsOfFile: argument("--prelude") ?? "", encoding: .utf8)) ?? ""
-guard let driver = try? String(contentsOfFile: argument("--driver") ?? "", encoding: .utf8) else { fail("--driver fehlt") }
+let driver: String = (try? String(contentsOfFile: argument("--driver") ?? "", encoding: .utf8)) ?? fail("--driver fehlt")
 let argsJSON = argument("--args") ?? "{}"
 let timeoutSeconds = Double(argument("--timeout") ?? "120") ?? 120
 
@@ -65,7 +69,7 @@ final class Runner: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
     webView.load(URLRequest(url: url))
   }
 
-  nonisolated func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+  func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
     let text = "\(message.body)"
     FileHandle.standardError.write("seite: \(text)\n".data(using: .utf8)!)
   }
