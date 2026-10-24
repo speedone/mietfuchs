@@ -27,6 +27,8 @@ export type StepInput = {
   tenancies: readonly Pick<Tenancy, 'id' | 'end' | 'prepayments' | 'heatingPrepayments'>[]
   // Ein bei der Übernahme geänderter Monat je Mietverhältnis.
   months: Readonly<Record<string, string>>
+  // Wird die Heizung im Monat noch getrennt abgerechnet (Weg d)? Ohne Angabe gilt `separate`.
+  heatingSeparateAt?: (month: string) => boolean
 }
 
 const de = (iso: string): string => `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}`
@@ -42,10 +44,15 @@ export function stepMonthProblem(month: unknown, periodTo: string): string | nul
 
 // Sätze zum Monat: ohne Versanddatum, Versand nach Beginn des Monats, Versand später als zwei Monate davor. Maßgeblich ist
 // der Zugang beim Mieter (§ 130 Abs. 1 BGB); Mietfuchs kennt nur das Versanddatum, deshalb „prüfen Sie“.
-function monthNotes(from: string, announced: string | null, sentAt: string | null): string[] {
+// Hat der Monat schon begonnen (Integrationsdurchsicht 0.13.0, #435 K1), fordert das Mietkonto nach dem Übernehmen die neue
+// Vorauszahlung ab dort als Soll, auch für Monate, die schon bezahlt sind; das gilt mit und ohne Versanddatum.
+function monthNotes(from: string, announced: string | null, sentAt: string | null, today: string): string[] {
   const out: string[] = []
   if (announced === null) out.push(`Das Schreiben nennt keinen Monat, sondern „ab dem übernächsten Monat“; vorgeschlagen ist ${monthName(from)}, der übernächste Monat nach ${sentAt ? 'dem Versand' : 'dem Abschluss'}.`)
   else if (announced !== from) out.push(`Das Schreiben nennt ${monthName(announced)}, übernommen wird ab ${monthName(from)}.`)
+  if (from <= today.slice(0, 7)) {
+    out.push(`${monthName(from)} hat schon begonnen. Übernehmen Sie die Anpassung ab diesem Monat, fordert das Mietkonto die neue Vorauszahlung rückwirkend ab ${monthName(from)} als Soll, auch für Monate, die der Mieter schon mit dem bisherigen Betrag bezahlt hat; prüfen Sie den Monat.`)
+  }
   if (sentAt === null) {
     out.push('Ein Versanddatum ist nicht eingetragen. Übernehmen Sie die Anpassung, wenn das Schreiben versandt ist, und prüfen Sie dann den Monat.')
     return out
@@ -61,6 +68,7 @@ function monthNotes(from: string, announced: string | null, sentAt: string | nul
 
 export function planPrepaymentSteps(i: StepInput): Omit<PrepaymentStepPlan, 'token'> {
   const schedule: PrepaymentStepSchedule = i.scope === 'heating' ? 'heatingPrepayments' : 'prepayments'
+  const separateAt = i.heatingSeparateAt ?? (() => i.separate)
   const items = i.letters.map((l): PrepaymentStepItem => {
     // Vor #317 nannte das Schreiben keinen Monat; vorgeschlagen ist dann der übernächste nach Versand bzw. Abschluss.
     const proposed = l.from ?? adjustFromFor(i.sentAt ?? i.closedAt, i.periodTo)
@@ -73,9 +81,9 @@ export function planPrepaymentSteps(i: StepInput): Omit<PrepaymentStepPlan, 'tok
       currentCents, existing: list.filter((e) => e.from >= from).map((e) => ({ ...e })),
       earlier: list.filter((e) => e.from > i.periodTo.slice(0, 7) && e.from < from).map((e) => ({ ...e })),
       notes: [
-        ...monthNotes(from, l.from, i.sentAt),
+        ...monthNotes(from, l.from, i.sentAt, i.today),
         // K1: Die Heizung wird getrennt abgerechnet, ab dem Monat steht aber keine Heizstaffel; der Betrag gilt dann nur den übrigen.
-        ...(schedule === 'prepayments' && i.separate && t && rateAtMonth(t.heatingPrepayments ?? [], from) === 0
+        ...(schedule === 'prepayments' && i.separate && separateAt(from) && t && rateAtMonth(t.heatingPrepayments ?? [], from) === 0
           ? [`Die Heizkosten werden getrennt abgerechnet, ab ${monthName(from)} steht aber keine Heizvorauszahlung in der Staffel; der angekündigte Betrag gilt nur den übrigen Nebenkosten. Prüfen Sie die Heizvorauszahlung in den Stammdaten.`]
           : []),
       ],
@@ -89,6 +97,13 @@ export function planPrepaymentSteps(i: StepInput): Omit<PrepaymentStepPlan, 'tok
     // eigenen Staffel, ließe sich der neue Betrag nur geraten auf beide verteilen.
     if (schedule === 'prepayments' && !i.separate && rateAtMonth(t.heatingPrepayments ?? [], from) > 0) {
       return blocked(`Die Vorauszahlung steht in zwei Staffeln (übrige Nebenkosten und Heizung, zusammen ${euro(currentCents + rateAtMonth(t.heatingPrepayments ?? [], from))}); der angekündigte Betrag gilt beiden zusammen. Tragen Sie die neuen Stufen bitte in den Stammdaten ein.`)
+    }
+    // Integrationsdurchsicht 0.13.0 (#435): Der Vorschlag ist ohne Heizung, Weg d endet aber vor dem Monat, und eine eigene
+    // Heizstaffel gibt es dann nicht. Die Staffel der übrigen Nebenkosten trägt ab dort auch die Heizung (P rechnet sie an);
+    // der Betrag ohne Heizung ersetzte sie ganz, und die Heizkosten blieben ohne Vorauszahlung. Wie viel davon auf die Heizung
+    // entfällt, sagt die Heizkostenabrechnung, nicht dieses Schreiben; geraten wird nicht.
+    if (schedule === 'prepayments' && i.separate && !separateAt(from) && rateAtMonth(t.heatingPrepayments ?? [], from) === 0) {
+      return blocked(`Der angekündigte Betrag gilt nur den übrigen Nebenkosten (ohne Heizung). Ab ${monthName(from)} werden die Heizkosten nicht mehr getrennt abgerechnet, und eine eigene Heizvorauszahlung steht dann nicht in der Staffel; die Vorauszahlung dort deckt also auch die Heizung. Übernommen, entfiele die Vorauszahlung für die Heizung. Tragen Sie die neue Vorauszahlung bitte in den Stammdaten ein: diesen Betrag zuzüglich der Vorauszahlung für die Heizung, etwa nach der Heizkostenabrechnung.`)
     }
     const taken = currentCents === l.cents
     return { ...base, state: taken ? 'taken' : 'pending', overdue: !taken && i.today.slice(0, 7) >= from }

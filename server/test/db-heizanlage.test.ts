@@ -394,9 +394,10 @@ test('Kesseltausch: die alte Anlage endet am Vortag, die neue beginnt mit densel
     await assert.rejects(() => opened.write((db) => replaceHeatingPlant(db, 'hp1', 'hp2', { date: '01.07.2025', energy: 'gas' })), refused(400, /kein Datum/))
     await assert.rejects(() => opened.write((db) => replaceHeatingPlant(db, 'hp1', 'hp2', { date: '2025-03-01', energy: 'gas' })), refused(400, /Lieferung .* nach dem Tausch/))
     const { plant } = (await opened.write((db) => replaceHeatingPlant(db, 'hp1', 'hp2', { date: '2025-07-01', energy: 'gas', name: 'Gastherme', previousName: 'Ölkessel' }))) ?? assert.fail('keine Anlage')
-    assert.deepEqual([plant.name, plant.energy, plant.method, plant.replacesPlantId, plant.endsOn, plant.units?.map((u) => u.unitId)], ['Gastherme', 'gas', 'manual', 'hp1', null, ['eg', 'og']])
+    assert.deepEqual([plant.name, plant.energy, plant.method, plant.replacesPlantId, plant.endsOn, plant.units], ['Gastherme', 'gas', 'manual', 'hp1', null, null])
     const alt = (await opened.read((db) => listHeatingPlants(db, 'objekt-1'))).find((p) => p.id === 'hp1')
-    assert.deepEqual([alt?.name, alt?.endsOn, alt?.units?.map((u) => u.unitId)], ['Ölkessel', '2025-06-30', ['eg', 'og']])
+    // Ohne Liste bleibt es ohne Liste (Integrationsdurchsicht 0.13.0).
+    assert.deepEqual([alt?.name, alt?.endsOn, alt?.units], ['Ölkessel', '2025-06-30', null])
     // Beim Wiederherstellen kein Befund: Die beiden Anlagen teilen sich die Wohnungen nacheinander.
     assert.deepEqual(await opened.read((db) => heatingPlantViolations(db)), [])
     // Ein zweiter Tausch derselben Anlage geht nicht; eine Lieferung nach dem letzten Betriebstag auch nicht.
@@ -413,7 +414,10 @@ test('Kesseltausch: die alte Anlage endet am Vortag, die neue beginnt mit densel
     // Mit verknüpfter Lieferung deren Anlage.
     assert.equal(fieldOf(await opened.write((db) => heizposition(db, 'c25g', '2025-01', { serviceFrom: '2025-01-01', serviceTo: '2025-01-31', fuelDeliveryId: 'g2', heatingPart: 'fuel' })), 'heatingPlantId'), 'hp2')
     // Die Wohnungen beider Anlagen ändern sich nur gemeinsam; eine dritte Anlage darf sie nicht haben.
-    await assert.rejects(() => opened.write((db) => createHeatingPlant(db, 'hp9', 'objekt-1', { buildingWith: 'own', name: 'Kamin', energy: 'other', units: [{ unitId: 'eg', heatedAreaM2: null }] })), refused(400, /Die Wohnung „eg“ hängt an/))
+    await assert.rejects(() => opened.write((db) => createHeatingPlant(db, 'hp9', 'objekt-1', { buildingWith: 'own', name: 'Kamin', energy: 'other', units: [{ unitId: 'eg', heatedAreaM2: null }] })), refused(400, /braucht jede ihre Wohnungen/))
+    // Mit Listen für die Linie (wie die Oberfläche sie beim Anlegen mitschickt) bleibt es dabei: eg hängt schon an ihr.
+    const liste = { units: [{ unitId: 'eg', heatedAreaM2: null }, { unitId: 'og', heatedAreaM2: null }] }
+    await assert.rejects(() => opened.write((db) => createHeatingPlant(db, 'hp9', 'objekt-1', { buildingWith: 'own', name: 'Kamin', energy: 'other', units: [{ unitId: 'eg', heatedAreaM2: null }], adjust: [{ id: 'hp1', ...liste }, { id: 'hp2', ...liste }] })), refused(400, /Die Wohnung „eg“ hängt an/))
   })
 })
 

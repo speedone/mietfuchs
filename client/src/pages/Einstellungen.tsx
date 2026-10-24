@@ -152,7 +152,8 @@ export default function Einstellungen({ settings, reload, update }: Props) {
       <Card title={<>Daten &amp; Sicherung</>}>
         <p className="muted">
           Alle Daten (Stammdaten, Kosten, Zähler, Belege) bleiben lokal auf diesem Rechner.
-          Ein Backup enthält die komplette Datenbank samt aller hochgeladenen Belege als ZIP-Datei.
+          Ein Backup enthält die Datenbank samt aller hochgeladenen Belege, Logo und Briefpapier als ZIP-Datei;
+          den Verlauf der Änderungen nur, wenn Sie es unten wählen.
         </p>
         <div className="row">
           <a className="btn secondary" href={withJournal ? '/api/backup?journal=1' : '/api/backup'} download>⬇ Backup herunterladen (ZIP)</a>
@@ -173,7 +174,10 @@ export default function Einstellungen({ settings, reload, update }: Props) {
         <p className="muted">
           Der Verlauf (Seite „Verlauf“) enthält bis zu zwölf Monate lang auch gelöschte Angaben, etwa Name, Anschrift
           und IBAN früherer Mieter. Ohne dieses Häkchen bleibt er auf diesem Rechner; wählen Sie es nur, wenn das
-          Backup den Verlauf mitnehmen soll, und geben Sie ein solches Backup nicht weiter.
+          Backup den Verlauf mitnehmen soll, und geben Sie ein solches Backup nicht weiter. Die Sicherungen, die
+          Mietfuchs vor einem Update und vor dem Einspielen eines Backups im Datenordner anlegt, enthalten den Verlauf
+          ohne die Frist von zwölf Monaten. Ein Backup ohne Verlauf ersetzt beim Einspielen den Verlauf auf diesem
+          Rechner; der bisherige steht dann nur noch in dieser Sicherung.
         </p>
         {restoreMsg && <div className={restoreMsg.startsWith('Fehler') ? 'error' : 'ok'}>{restoreMsg}</div>}
         <p className="muted">

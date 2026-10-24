@@ -190,7 +190,10 @@ Gradtage des Orts in `degree_day_values`. CO₂-Merkmale an der Anlage (`non_res
   d BetrKV nennt nur Reinigung und Wartung): `heating.per-unit-basis` und Lexikon sagen das. Fernwärme
   ist keine Etagenheizung. Etagenheizungen haben keine Angaben nach § 6a, § 2, § 11.
 - **Kesseltausch** (`POST /api/heating-plants/:id/replace`, `replaceHeatingPlant`): alte Anlage
-  `ends_on` (letzter Betriebstag), neue `replaces_plant_id`, Name und Wohnungen; Rhythmus,
+  `ends_on` (letzter Betriebstag), neue `replaces_plant_id`, Name und Wohnungen (ohne Liste bleibt es
+  ohne Liste, Werte über `basisValues`; Integrationsdurchsicht 0.13.0: Eine Linie allein darf ohne Liste
+  stehen, `guardPlantsOfProperty`, `heatingPlantViolations`; für Bestände mit fester Liste vom Tausch
+  warnt `heating.unit-unserved`); Rhythmus,
   Gebäudemerkmale, Betriebsstrom-Angabe und Zeitraum der eigenen Abrechnung werden übernommen. Kein
   Fremdschlüssel (drizzle-kit schreibt beim Hinzufügen kein `ON DELETE`). Lieferungen und Vorrat nur
   in der Betriebszeit (`plantSpanOf`); die Bestandsrechnung endet am letzten Betriebstag mit dem

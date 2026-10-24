@@ -470,6 +470,10 @@ const noticeKinds = {
   // kann die Voraussetzungen des § 556c BGB nicht prüfen und nichts beziffern. Der Titel nennt § 556c nicht, denn
   // der Text sagt auch, wann er nicht gilt (Prüfung R-S3).
   'heating.contracting': { level: 'hint', title: 'Umstellung auf Wärmelieferung', terms: ['heatDelivery', 'heatingCostOrdinance'] },
+  // Integrationsdurchsicht 0.13.0: Bis 0.12 legte ein Kesseltausch die Liste der Wohnungen fest; eine später angelegte
+  // Wohnung hing an keiner Anlage, und ihre Heizkosten trugen die übrigen Mieter. Ob eine Liste vom Vermieter oder vom
+  // Tausch stammt, lässt sich nicht unterscheiden, deshalb kein Datenschritt, sondern dieser Hinweis.
+  'heating.unit-unserved': { level: 'warning', title: 'Wohnung an keiner Heizanlage', terms: ['heatingSystem'] },
   'heating.generation-power-missing': { level: 'hint', title: 'Strom zur Wärmeerzeugung womöglich im Allgemeinstrom', terms: ['operatingPower', 'heatingCostOrdinance'] },
   // #266: mit Angabe an der Anlage. Fehlt der Abzug trotz Angabe, ist das der Fall aus BGH V ZR 166/15 und VIII ZR 27/07
   // und färbt die Ampel; fehlt nur die Rechnung des eigenen Stromvertrags, trägt der Vermieter eigenes Geld (INFORMATIONAL).
@@ -8519,6 +8523,30 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     warn('heating.contracting', switchText(f, rule, fmtDay, switchFrom), { kind: 'heatingPlant', id: f.plantId })
   }
 
+  // Wohnung an keiner Heizanlage (Integrationsdurchsicht 0.13.0): eine bewohnte Wohnung mit Fläche, die keine im
+  // Zeitraum laufende Anlage versorgt, obwohl eine zentrale Anlage dieses Zeitraums Heizkosten verteilt. Ausgenommen sind
+  // Wohnungen ohne Wärmeanschluss (#117) und solche, deren Mieter selbst heizt.
+  const running = plants.filter((p) => {
+    const span = plantSpan(p, plants)
+    return (span.from === null || span.from <= yTo) && (span.to === null || span.to >= yFrom)
+  })
+  const central = running.find((p) => p.supply !== 'perUnit' && items.some((c) => c.heatingPlantId === p.id))
+  if (central) {
+    for (const u of snapshot.units) {
+      if (!(u.areaM2 > 0) || (u.noConnection ?? []).includes('waerme')) continue
+      if (running.some((p) => servesUnit(p, u))) continue
+      const own = snapshot.tenancies.filter((t) => t.unitId === u.id && t.start <= yTo && (t.end === null || t.end >= yFrom))
+      const lived = usageIn(u).self > 0 || (usageIn(u).rented > 0 && own.length > 0)
+      if (!lived || own.some((t) => t.heatingModel === 'selfSupply')) continue
+      warn('heating.unit-unserved',
+        `Die Wohnung „${u.name}“ hängt an keiner Heizanlage, obwohl im Objekt ${(central.name ?? '').trim() ? `die Heizanlage „${(central.name ?? '').trim()}“` : 'eine Heizanlage'} zentral heizt. ` +
+          'Ihre Heizkosten tragen in dieser Abrechnung deshalb die übrigen Mieter oder, bei Eigennutzung, nicht Sie. ' +
+          'Das kann nach einem Kesseltausch geschehen sein: Bis Version 0.12 legte der Tausch die Liste der Wohnungen fest, und eine später angelegte Wohnung kam nicht hinein. ' +
+          'Nehmen Sie die Wohnung auf der Seite Heizkosten unter „Heizanlage ändern“ in die Liste ihrer Heizanlage auf. Hat sie keinen Anschluss an die Heizung, nehmen Sie in den Stammdaten bei der Wohnung unter den Anschlüssen das Häkchen bei Wärme heraus.',
+        { kind: 'heatingPlant', id: central.id })
+    }
+  }
+
   // ---------- CO₂-Erstattung an Mieter, die selbst heizen (§ 6 Abs. 2 CO2KostAufG, Heizung PR 19) ----------
   // Verrechnet in diesem Zeitraum: eine Gutschriftzeile beim Mieter und die Gegenzeile beim Vermieter; die Summe
   // aller Zeilen bleibt die der Positionen. Nicht verrechnet und nicht ausgezahlt: ab der Fälligkeit eine Warnung
@@ -8768,7 +8796,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   const nextMonth = dayAfter(period.to).slice(0, 7)
   const separateLater = new Set(scope === 'all' ? plants.filter((p) => separateOwner(wayOf(p), objectRules, nextMonth) !== null).map((p) => p.id) : [])
   const syntheticById = new Map(fuelSynthetic.map((c) => [c.id, c]))
-  if (scope === 'all') result.suggestionWithoutHeating = separateLater.size > 0
+  // Integrationsdurchsicht 0.13.0 (#435): Endet in P eine getrennt abgerechnete Heizperiode, fehlen ihre Heizkosten in P und
+  // damit im Vorschlag, auch wenn Weg d danach endet. Ohne diese Angabe hieße der Betrag „Vorauszahlung“ für alles, und die
+  // Übernahme in die Staffel ersetzte die ganze Vorauszahlung durch die ohne Heizung.
+  if (scope === 'all') result.suggestionWithoutHeating = separateLater.size > 0 || separateHeating.length > 0
   const laterSeparate = (row: SettlementRow): boolean => {
     if (separateLater.size === 0) return false
     const relief = /^(?:co2|gmodg):([^:]*):/.exec(row.costItemId)

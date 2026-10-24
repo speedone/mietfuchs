@@ -481,9 +481,12 @@ secrets:
 
 ## Daten & Backup
 
-Alles liegt in einem `data/`-Ordner (`mietfuchs.sqlite` und hochgeladene Belege in `uploads/`;
-Angaben zu den Belegen und gespeicherte KI-Auswertungen stehen in der Datenbank und kommen mit
-ins Backup).
+Alles liegt in einem `data/`-Ordner (`mietfuchs.sqlite`, hochgeladene Belege in `uploads/`, Logo
+und Briefpapier für den Druck in `briefpapier/`; Angaben zu den Belegen und gespeicherte
+KI-Auswertungen stehen in der Datenbank und kommen mit ins Backup).
+Der Verlauf der Änderungen (Seite „Verlauf“) kommt nur mit, wenn du beim Backup „Verlauf der
+Änderungen mitsichern“ anhakst: Er enthält bis zu zwölf Monate lang auch gelöschte Angaben
+früherer Mieter.
 Bei der heruntergeladenen Programmdatei liegt er **neben der Datei**, beim Start aus dem
 Quellcode unter `server/data/`. Aus einem Linux-Paket installiert, liegen die Daten in
 `~/.local/share/mietfuchs` (unter macOS in `~/Library/Application Support/Mietfuchs`, unter

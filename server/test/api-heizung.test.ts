@@ -590,7 +590,8 @@ test('Kesseltausch über die Route: Öl endet, Gas beginnt; der Restbestand steh
     const tausch = await send(`/api/heating-plants/${oel.id}/replace`, jsonPost({ date: '2025-07-01', energy: 'gas', method: 'manual', name: 'Gastherme', previousName: 'Ölkessel' }))
     assert.equal(tausch.status, 201)
     const { plant, previous } = await jsonOf<{ plant: HeatingPlant; previous: HeatingPlant }>(tausch)
-    assert.deepEqual([previous.endsOn, plant.replacesPlantId, plant.units?.map((u) => u.unitId)], ['2025-06-30', oel.id, [eg.id]])
+    // Ohne Liste bleibt es ohne Liste (Integrationsdurchsicht 0.13.0).
+    assert.deepEqual([previous.endsOn, plant.replacesPlantId, plant.units, previous.units], ['2025-06-30', oel.id, null, null])
     assert.equal((await send('/api/heating-plants/gibt-es-nicht/replace', jsonPost({ date: '2025-07-01', energy: 'gas' }))).status, 404)
     const abrechnung = await s.api<Settlement>('/api/settlement/2025-01')
     const rest = abrechnung.landlord.rows.find((r) => r.costItemId.endsWith(':remaining')) ?? assert.fail('kein Restbestand beim Vermieter')

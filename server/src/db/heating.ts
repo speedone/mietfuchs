@@ -430,13 +430,16 @@ export async function guardPlantsOfProperty(db: Executor, propertyId: string): P
     throw new HeatingError(400, `Die Angaben zum Gebäude verweisen im Kreis aufeinander (${names.join(' → ')} → ${names[0] ?? ''}). Diese Heizanlagen stehen damit schon im selben Gebäude; die Angabe hier ist nicht nötig. Gespeichert wurde nichts.`)
   }
   const seen = new Set<string>()
+  const oneLine = new Set(plants.map((p) => lineRoot(p, plants))).size === 1
   for (const p of plants) {
     const name = p.name.trim()
     if (name === '') throw new HeatingError(400, NAME_REQUIRED)
     const key = name.toLocaleLowerCase('de-DE')
     if (seen.has(key)) throw new HeatingError(400, `Zwei Heizanlagen heißen „${name}“. Bitte geben Sie ihnen verschiedene Namen.`)
     seen.add(key)
-    if (!p.unitsLimited) {
+    // Integrationsdurchsicht 0.13.0: Gehören alle Anlagen des Objekts zu einer Linie von Täuschen, heizen sie
+    // nacheinander, und „alle Wohnungen“ bleibt ohne Liste.
+    if (!p.unitsLimited && !oneLine) {
       throw new HeatingError(400, `Bei mehreren Heizanlagen braucht jede ihre Wohnungen. Wählen Sie bei „${name}“ aus, welche Wohnungen an ihr hängen.`)
     }
   }
@@ -860,7 +863,10 @@ export async function replaceHeatingPlant(db: Database, oldId: string, newId: st
     }
   }
   // Beheizte Fläche und umbauter Raum gehen mit (#322): Dieselben Wohnungen haben dieselben Räume.
-  const served = (await readUnits(db)).filter((u) => u.propertyId === old.propertyId && servesUnit(old, u)).map((u) => {
+  // Ohne Liste bleibt es ohne Liste (Integrationsdurchsicht 0.13.0): Eine feste Liste vom Tag des Tauschs ließe jede
+  // später angelegte Wohnung still ohne Heizanlage, und ihre Heizkosten trügen die übrigen Mieter. Die Werte stehen dann
+  // in `basisValues`, die `{ ...old }` mitnimmt.
+  const served = old.units === null ? null : (await readUnits(db)).filter((u) => u.propertyId === old.propertyId && servesUnit(old, u)).map((u) => {
     const known = unitBasisOf(old, u.id)
     return { unitId: u.id, heatedAreaM2: known?.heatedAreaM2 ?? null, volumeM3: known?.volumeM3 ?? null }
   })
@@ -904,7 +910,7 @@ export async function replaceHeatingPlant(db: Database, oldId: string, newId: st
     // Geprüft wird die neue Anlage wie beim Ändern (`before` = sie selbst): Ihr Rhythmus kommt von der
     // alten und wird nicht neu gesetzt.
     await guardHeatingPlant(tx, plant, plant)
-    await tx.update(heatingPlants).set({ name: previous.name, unitsLimited: true, endsOn }).where(eq(heatingPlants.id, oldId))
+    await tx.update(heatingPlants).set({ name: previous.name, unitsLimited: previous.units !== null, endsOn }).where(eq(heatingPlants.id, oldId))
     await writePlantUnits(tx, previous)
     await tx.insert(heatingPlants).values(plantRow(plant))
     await writePlantUnits(tx, plant)
@@ -1051,7 +1057,9 @@ export async function heatingPlantViolations(db: Database): Promise<string[]> {
   for (const propertyId of new Set(anlagen.map((p) => p.propertyId))) {
     const imObjekt = anlagen.filter((p) => p.propertyId === propertyId)
     if (imObjekt.length < 2) continue
-    for (const p of imObjekt.filter((x) => x.units === null)) {
+    // Integrationsdurchsicht 0.13.0: Eine Linie von Täuschen allein darf ohne Liste stehen.
+    const oneLine = new Set(imObjekt.map((p) => lineRoot(p, imObjekt))).size === 1
+    for (const p of oneLine ? [] : imObjekt.filter((x) => x.units === null)) {
       befunde.push(`Im Objekt stehen mehrere Heizanlagen, und die Heizanlage ${plantName(p.name)} hat keine Liste der Wohnungen; dann versorgten zwei Anlagen dieselben Wohnungen.`)
     }
     // Nach einem Kesseltausch dürfen alte und neue Anlage dieselben Wohnungen haben (Heizung PR 9).

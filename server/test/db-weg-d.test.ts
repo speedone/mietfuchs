@@ -200,6 +200,22 @@ test('D1 Fall 1: P 2025 abgeschlossen, Ausschalten wirkt ab 2026/2027; 2025/2026
   })
 })
 
+test('Integrationsdurchsicht 0.13.0 (#435): endet Weg d nach P, heißt der Vorschlag von P ohne Heizung', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => haus(db, {}))
+    await ein(opened, '2025-05', { '2025-05': 12300 })
+    await schliessen(opened, '2025-01')
+    const r = await apply(opened, { separate: false, answers: { merge: true } })
+    assert.ok(r && 'plant' in r)
+    await opened.write((db) => createEntity(db, 'costItems', 'gs2026', { propertyId: 'objekt-1', period: '2026-01', category: 'Grundsteuer', description: 'Grundsteuer 2026', amountCents: 600000, key: 'area' }))
+    // P 2026 enthält die Heizperiode 2025/2026 nicht (getrennt), 2026/2027 endet erst 2027: Der Vorschlag ist ohne Heizung.
+    const p2026 = await abrechnung(opened, '2026-01')
+    assert.deepEqual(p2026.separateHeating?.map((h) => h.period.key), ['2025-05'])
+    assert.equal(p2026.statements.find((st) => st.tenancyId === 't1')?.suggestedMonthlyCents, 50000)
+    assert.equal(p2026.suggestionWithoutHeating, true)
+  })
+})
+
 test('D1 Fall 2: Heizkostenabrechnung 2025/2026 abgeschlossen; ihre Positionen kommen nicht in P 2026', async () => {
   await withDatabase(async (opened) => {
     await opened.write((db) => haus(db, {}))

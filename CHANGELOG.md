@@ -114,7 +114,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Seitenfenster anpassen: für alle Objekte in den Einstellungen, abweichend je Objekt und einmalig je Mieter
   auf der Seite Abrechnung, mit Platzhaltern wie {Betrag} zum Anklicken, Vorschau und „Auf Vorgabe
   zurücksetzen“. Welcher Baustein erscheint, entscheidet Mietfuchs. Ein unbekannter Platzhalter wird nicht
-  gespeichert. Die Vorgaben übernehmen die bisherigen Sätze wortgleich; eine schon abgeschlossene Abrechnung
+  gespeichert. Die Vorgaben übernehmen die bisherigen Sätze wortgleich (bis auf den Monat der Anpassung,
+  [#317](https://github.com/speedone/mietfuchs/issues/317)); eine schon abgeschlossene Abrechnung
   druckt sich wie bisher, ohne Anschreiben. Mit dem Abschluss friert das Anschreiben ein, eine spätere Änderung der Vorlage
   ändert nicht, was zugestellt wurde ([#415](https://github.com/speedone/mietfuchs/issues/415)).
 - Die Anpassung der Vorauszahlung nach § 560 Abs. 4 BGB wählen Sie je Mieter: keine, den Vorschlag von
@@ -206,6 +207,21 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- Ein Kesseltausch machte aus einer Heizanlage, die alle Wohnungen versorgt, eine feste Liste der Wohnungen vom
+  Tag des Tauschs, bei der alten wie bei der neuen Anlage. Eine danach angelegte Wohnung hing deshalb an keiner
+  Heizanlage, und ihre Heizkosten trugen die übrigen Mieter. Der Fehler bestand seit dem Kesseltausch in Version
+  0.11.0. Jetzt bleibt „alle Wohnungen“ nach dem Tausch erhalten, samt beheizter Fläche und umbautem Raum. Ob eine
+  vorhandene Liste vom Tausch oder von Ihnen stammt, lässt sich nicht unterscheiden; Mietfuchs ändert sie deshalb
+  nicht, sondern warnt in der Abrechnung, wenn eine bewohnte Wohnung mit Fläche an keiner Heizanlage hängt,
+  obwohl im Objekt eine zentrale Heizung die Heizkosten verteilt. Nehmen Sie die Wohnung dann auf der Seite
+  Heizkosten unter „Heizanlage ändern“ in die Liste auf.
+- Endet eine getrennt abgerechnete Heizperiode im Abrechnungszeitraum und die getrennte Heizkostenabrechnung
+  danach, enthält der Vorschlag zur Anpassung der Vorauszahlung keine Heizkosten. Er hieß trotzdem
+  „monatliche Nebenkostenvorauszahlung“ statt „monatliche Vorauszahlung für die übrigen Nebenkosten (ohne Heizung)“
+  (seit 0.11.0). Die Übernahme in
+  die Staffel lehnt einen solchen Betrag ab, wenn danach keine eigene Heizvorauszahlung besteht, statt die ganze
+  Vorauszahlung durch die ohne Heizung zu ersetzen
+  ([#317](https://github.com/speedone/mietfuchs/issues/317)).
 - Spielen Sie ein Backup mit einer db.json zweimal ein, bleibt die Sicherheitskopie vom ersten Mal
   erhalten: Eine vorhandene `db.json.vor-restore` wird mit Datum beiseitegelegt statt überschrieben, wie
   schon die Sicherung der Datenbank.

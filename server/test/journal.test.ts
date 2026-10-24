@@ -371,6 +371,26 @@ test('Journal: Die ganze Kette auf einer leeren Datei ergibt Journal und Trigger
 
 // ---------- Aufbewahrung ----------
 
+test('Integrationsdurchsicht 0.13.0: was das Aufräumen beim Öffnen löscht, steht danach nicht mehr in der Datei', async () => {
+  const dir = tmp()
+  const marker = 'Geheimname-Zz9Qx-Mieterin'
+  try {
+    const opened = await openFreshDatabase(dir)
+    await opened.write((db) => db.insert(units).values({ id: 'u1', propertyId: 'objekt-1', name: 'EG', areaM2: 1, participates: true, selfUsed: false }), meta('neu'))
+    await opened.write((db) => db.update(units).set({ name: marker }).where(eq(units.id, 'u1')), meta('alt'))
+    await opened.write((db) => db.update(units).set({ name: 'OG' }).where(eq(units.id, 'u1')), meta('alt'))
+    const old = new Date(Date.now() - 400 * 24 * 60 * 60 * 1000).toISOString()
+    await opened.write((db) => db.update(changeGroups).set({ at: old }).where(eq(changeGroups.description, 'alt')))
+    opened.close()
+    assert.ok(fs.readFileSync(databaseFile(dir)).includes(Buffer.from(marker)), 'vorher steht der Name im Journal')
+    const again = await openDatabase({ dataDir: dir })
+    again.close()
+    assert.equal(fs.readFileSync(databaseFile(dir)).includes(Buffer.from(marker)), false)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test(`Aufbewahrung: Beim Öffnen fallen Gruppen älter als ${JOURNAL_KEEP_MONTHS} Monate samt Zeilen weg`, async () => {
   const dir = tmp()
   try {

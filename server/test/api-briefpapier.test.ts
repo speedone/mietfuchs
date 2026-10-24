@@ -171,6 +171,30 @@ test('Briefpapier: kommt mit dem Backup und wieder zurück; ein fremder Eintrag 
   }
 })
 
+test('Integrationsdurchsicht 0.13.0: Backup und Wiederherstellen tragen nur Dateien, auf die eine Gestaltung verweist', async () => {
+  const s = await startServer()
+  try {
+    assert.equal((await put(s, '/api/letter-design', { logo: 'new' }, { logo: [PNG, 'a.png'] })).status, 200)
+    const logo = fileOf((await designs(s)).installation, 'logo')
+    // Eine liegengebliebene Datei, etwa nach einem abgebrochenen Ersetzen.
+    const orphan = 'paper-0123456789abcdef.pdf'
+    fs.writeFileSync(path.join(dir(s), orphan), PDF)
+    const backup = Buffer.from(await (await fetch(`${s.base}/api/backup`)).arrayBuffer())
+    const names = new AdmZip(backup).getEntries().map((e) => e.entryName)
+    assert.ok(names.includes(`briefpapier/${logo}`), names.join(', '))
+    assert.ok(!names.includes(`briefpapier/${orphan}`), names.join(', '))
+    // Ein Archiv mit einer Datei ohne Verweis (etwa aus einer früheren Version): Sie bleibt nach dem Einspielen nicht liegen,
+    // ebenso wenig die liegengebliebene auf dem Rechner.
+    const zip = new AdmZip(backup)
+    zip.addFile('briefpapier/logo-0123456789abcdef.jpg', JPG)
+    const r = await restore(s, zip.toBuffer())
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    assert.deepEqual(filesOnDisk(s), [logo])
+  } finally {
+    s.stop()
+  }
+})
+
 test('Briefpapier: beim Wiederherstellen zählt der Inhalt wie beim Hochladen (Durchsicht K1)', async () => {
   const s = await startServer()
   try {

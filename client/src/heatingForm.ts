@@ -416,7 +416,7 @@ export function contractingSwap(form: SwapForm, checked: boolean, previous: Pick
 // `others`: die übrigen Anlagen des Objekts; `editingId`: die Anlage, die geändert wird (dann gibt es
 // keine Anpassung anderer Anlagen, Heizung PR 9).
 // `current`: die Anlage, wie sie gespeichert ist; ihre beheizte Fläche und ihr umbauter Raum je Wohnung gehen beim Ändern mit (#322).
-export function heatingPlantBody(form: HeatingForm, units: readonly UnitInfo[], others: readonly HeatingPlant[] = [], editingId: string | null = null, current: Pick<HeatingPlant, 'units' | 'basisValues' | 'method' | 'areaBasisHeat'> | null = null): HeatingResult {
+export function heatingPlantBody(form: HeatingForm, units: readonly UnitInfo[], others: readonly HeatingPlant[] = [], editingId: string | null = null, current: (Pick<HeatingPlant, 'units' | 'basisValues' | 'method' | 'areaBasisHeat'> & { replacesPlantId?: string | null }) | null = null): HeatingResult {
   if (form.energy === '') return { error: 'Bitte wählen Sie, womit geheizt wird.' }
   // Die Frage nach dem Gebäude (Recht I3 der Durchsicht von #238): beim Anlegen neben einer laufenden Anlage Pflicht.
   if (!editingId && others.some((p) => p.endsOn === null) && form.building === '') {
@@ -440,7 +440,11 @@ export function heatingPlantBody(form: HeatingForm, units: readonly UnitInfo[], 
     }
   }
   const all = defaultUnitIds(units)
-  const allServed = !several && form.unitIds.length === all.length && all.every((id) => form.unitIds.includes(id))
+  // Integrationsdurchsicht 0.13.0: Nach einem Kesseltausch ohne Liste bleibt die Anlage ohne Liste, solange alle Anlagen
+  // des Objekts zu ihrer Linie gehören; sonst hinge eine später angelegte Wohnung an keiner Anlage.
+  const self = { id: editingId ?? '', replacesPlantId: current?.replacesPlantId ?? null }
+  const oneLine = editingId !== null && current?.units === null && others.every((o) => lineRoot(o, [...others, self]) === lineRoot(self, [...others, self]))
+  const allServed = (!several || oneLine) && form.unitIds.length === all.length && all.every((id) => form.unitIds.includes(id))
   // Die Werte bleiben beim Server, wenn ein Eintrag sie nicht nennt (#322); geschickt wird nur die Kennung.
   const unitList = allServed ? null : form.unitIds.map((unitId) => ({ unitId, heatedAreaM2: current ? (unitBasisOf(current, unitId)?.heatedAreaM2 ?? null) : null }))
   // #322 (Durchsicht M1): beheizte Fläche bzw. umbauter Raum je Wohnung aus „Heizanlage ändern“.

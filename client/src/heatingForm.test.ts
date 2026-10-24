@@ -27,6 +27,16 @@ describe('Einrichtung Heizung', () => {
     expect(heatingPlantBody(ausgefuellt({ unitIds: ['og'] }), UNITS)).toMatchObject({ body: { units: [{ unitId: 'og', heatedAreaM2: null }] } })
   })
 
+  test('Integrationsdurchsicht 0.13.0: nach einem Kesseltausch ohne Liste bleibt „alle Wohnungen“ ohne Liste', () => {
+    const alt: HeatingPlant = { ...PLANT, id: 'hp1', name: 'Öl', energy: 'oil', units: null, endsOn: '2024-12-31' }
+    const neu: HeatingPlant = { ...PLANT, id: 'hp2', name: 'Gas', energy: 'gas', units: null, replacesPlantId: 'hp1' }
+    const form = { ...heatingToForm(neu, UNITS), name: 'Gastherme' }
+    expect(heatingPlantBody(form, UNITS, [alt], 'hp2', neu)).toMatchObject({ body: { units: null } })
+    // Eine zweite Anlage außerhalb der Linie verlangt weiter die Liste.
+    const fremd: HeatingPlant = { ...PLANT, id: 'hp3', name: 'Haus B', energy: 'gas', units: [{ unitId: 'og', heatedAreaM2: null }] }
+    expect(heatingPlantBody(form, UNITS, [alt, fremd], 'hp2', neu)).toMatchObject({ body: { units: [{ unitId: 'eg' }, { unitId: 'og' }] } })
+  })
+
   test('Ohne Antwort ein Satz statt einer Anlage', () => {
     expect(heatingPlantBody(emptyHeatingForm(UNITS), UNITS)).toEqual({ error: 'Bitte wählen Sie, womit geheizt wird.' })
     expect(heatingPlantBody({ ...emptyHeatingForm(UNITS), energy: 'gas' }, UNITS)).toEqual({ error: 'Bitte wählen Sie, wer die Heizkostenabrechnung erstellt.' })
