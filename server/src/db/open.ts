@@ -618,12 +618,14 @@ export async function openDatabase(options: OpenOptions): Promise<OpenedDatabase
     // Aufräumen nach der Aufbewahrungsfrist. Beides gehört zum Öffnen, damit auch eine
     // wiederhergestellte oder eingespielte Datei sofort erfasst wird.
     const journalSchema = ensureJournal(connection)
-    await pruneJournal(connection.db, new Date())
     // Gelöschter Inhalt wird überschrieben, soweit das ohne zusätzliches Schreiben geht (FAST):
     // Das Journal hält gelöschte Personendaten zwölf Monate, danach sollen sie auch aus den Seiten
     // der Datei verschwinden. `ON` überschriebe auch freie Seiten und kostete bei jedem Löschen
     // zusätzliche Schreibvorgänge; FAST kostet nachgemessen nichts Spürbares (Durchsicht von PR #430, S3).
+    // Vor dem Aufräumen gesetzt (Integrationsdurchsicht 0.13.0), sonst blieben gerade die Zeilen, die nach
+    // der Frist fallen, in den Seiten der Datei lesbar.
     connection.exec('PRAGMA secure_delete = FAST')
+    await pruneJournal(connection.db, new Date())
     const schemaSteps = Number(connection.rows('SELECT count(*) FROM __drizzle_migrations')[0]?.[0] ?? 0)
     const lane = createLane()
     const journaled = async <T>(work: (db: Database) => Promise<T>, journal: JournalMeta): Promise<T> => {

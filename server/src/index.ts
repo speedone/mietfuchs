@@ -25,7 +25,7 @@ import type { BillingPeriod, FuelGapQuestion, HeatingPlant, LetterDesigns, Lette
 import { closeWithQuestions, type CloseQuestion, type FuelAnswer } from './closeQuestion.ts'
 import { planPrepaymentSteps, stepMonthProblem, stepToken, stepWrites, type StepInput, type StepLetter } from './prepaymentSteps.ts'
 import { blockingErrors } from '../../shared/notices.ts'
-import { plantRules, settledSeparately } from '../../shared/heatingPeriod.ts'
+import { plantRules, separateOwner, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { extractFromFile, classifyDocType, extractMeterReading, type AskProgressEvent, type AskStats } from './extract.ts'
 import { extractFuelInvoice, extractServiceStatement } from './extractHeating.ts'
 import { listOllamaModels, findOllama, defaultCandidates, pullOllamaModel } from './ai/ollama.ts'
@@ -1338,6 +1338,7 @@ async function stepInputOf(db: Database, req: Request): Promise<StepInput> {
   let closed: { closedAt: string, sentAt: string | null, settlement: unknown } | null
   let periodTo: string
   let scope: StepInput['scope']
+  let heatingSeparateAt: StepInput['heatingSeparateAt']
   if (typeof plantId === 'string') {
     const target = await heatingTargetOf(db, req)
     closed = (await findClosedHeatingSettlement(db, target.plant.id, target.period.key)) ?? null
@@ -1349,6 +1350,10 @@ async function stepInputOf(db: Database, req: Request): Promise<StepInput> {
     closed = (await findClosedSettlement(db, property, period.key)) ?? null
     periodTo = period.to
     scope = 'all'
+    // Integrationsdurchsicht 0.13.0 (#435): ob die Heizung im Monat der neuen Stufe noch getrennt abgerechnet wird.
+    const rules = rulesOf((await listProperties(db)).find((p) => p.id === property))
+    const plants = (await readHeatingPlants(db)).filter((p) => p.propertyId === property)
+    heatingSeparateAt = (month) => plants.some((p) => separateOwner(p, rules, month) !== null)
   }
   if (!closed) throw new RouteProblem(409, 'Die Abrechnung ist nicht abgeschlossen. Übernommen wird die Anpassung, die das abgeschlossene Anschreiben ankündigt.')
   const stand = closed.settlement !== null && typeof closed.settlement === 'object' ? closed.settlement : {}
@@ -1356,7 +1361,10 @@ async function stepInputOf(db: Database, req: Request): Promise<StepInput> {
   const without: unknown = Reflect.get(stand, 'suggestionWithoutHeating')
   return {
     scope,
-    separate: scope === 'all' && (typeof without === 'boolean' ? without : Array.isArray(separateHeating) && separateHeating.length > 0),
+    // Integrationsdurchsicht 0.13.0 (#435): Endet in P eine getrennt abgerechnete Heizperiode, ist der Vorschlag ohne ihre
+    // Heizung, auch wenn ein vorher eingefrorener Stand `suggestionWithoutHeating: false` trägt (Weg d endete nach P).
+    separate: scope === 'all' && (without === true || (Array.isArray(separateHeating) && separateHeating.length > 0)),
+    heatingSeparateAt,
     periodTo,
     closedAt: closed.closedAt,
     sentAt: closed.sentAt,
@@ -2361,8 +2369,11 @@ app.get('/api/backup', async (req, res) => {
   for (const entry of fs.readdirSync(UPLOAD_DIR, { withFileTypes: true })) {
     if (entry.isFile()) out.addFile(path.join(UPLOAD_DIR, entry.name), `uploads/${entry.name}`)
   }
-  // Logo und Briefpapier (#415, Teil 2b): nur Namen der eigenen Gestalt.
-  for (const name of designFilesOnDisk(DATA_DIR)) out.addFile(path.join(designDir(DATA_DIR), name), `briefpapier/${name}`)
+  // Logo und Briefpapier (#415, Teil 2b): nur Namen der eigenen Gestalt, und nur, worauf eine Gestaltung des Bestands
+  // verweist (Integrationsdurchsicht 0.13.0). Eine liegengebliebene Datei, etwa nach einem abgebrochenen Ersetzen, gehört
+  // zu keinem Stand; eine db.json kennt gar keine Gestaltung.
+  const designNames = traegtDenBestand && database ? await database.read((db) => referencedDesignFiles(db)) : new Set<string>()
+  for (const name of designFilesOnDisk(DATA_DIR).filter((n) => designNames.has(n))) out.addFile(path.join(designDir(DATA_DIR), name), `briefpapier/${name}`)
 
   // Die Datenbank kommt als **Schnappschuss** mit und nicht als Kopie der laufenden Datei
   // (db/backup.ts).
@@ -2921,6 +2932,8 @@ async function runRestore(backup: ReadBackup, res: Response): Promise<void> {
   } catch (err) {
     notes = [...notes, `Die Einstellungen ließen sich nach dem Wiederherstellen nicht lesen: ${messageOf(err)}`]
   }
+  // Logo und Briefpapier, auf die der eingespielte Stand nicht verweist, bleiben liegen (Durchsicht zu PR #436, S3): Die
+  // Sicherung `mietfuchs.sqlite.vor-restore` verweist noch auf sie. Ins nächste Backup kommen sie nicht.
   res.json({ ok: true, notes })
 }
 

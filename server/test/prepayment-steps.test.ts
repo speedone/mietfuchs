@@ -95,7 +95,29 @@ test('S2: Stufen zwischen Zeitraumende und Monat stehen im Plan', () => {
   assert.deepEqual(one().earlier, [])
 })
 
+test('Integrationsdurchsicht 0.13.0, #435 K1: ein Monat, der schon begonnen hat, fordert das Mietkonto rückwirkend', () => {
+  assert.doesNotMatch(one().notes.join(' '), /rückwirkend/)
+  assert.match(one({ today: '2026-05-01' }).notes.join(' '), /Mai 2026 hat schon begonnen.*Mietkonto.*rückwirkend/)
+  assert.match(one({ today: '2026-06-15' }).notes.join(' '), /Mai 2026 hat schon begonnen/)
+  // Auch ohne Versanddatum.
+  assert.match(one({ today: '2026-05-01', sentAt: null }).notes.join(' '), /Mai 2026 hat schon begonnen.*rückwirkend/)
+})
+
 test('K1: getrennte Heizung ohne Heizstaffel ab dem Monat bekommt einen Satz', () => {
   assert.match(one({ separate: true }).notes.join(' '), /keine Heizvorauszahlung/)
   assert.doesNotMatch(one({ separate: true, tenancies: [{ ...tenancy, heatingPrepayments: [{ from: '2025-01', monthlyCents: 6000 }] }] }).notes.join(' '), /keine Heizvorauszahlung/)
+})
+
+test('Integrationsdurchsicht 0.13.0 (#435): Vorschlag ohne Heizung, Weg d endet vor dem Monat, keine Heizstaffel: gesperrt', () => {
+  const ended = one({ separate: true, heatingSeparateAt: () => false })
+  assert.equal(ended.state, 'blocked')
+  assert.match(ended.blocked ?? '', /nur den übrigen Nebenkosten.*Mai 2026.*nicht mehr getrennt.*entfiele die Vorauszahlung für die Heizung/)
+  assert.deepEqual(stepWrites(planPrepaymentSteps(input({ separate: true, heatingSeparateAt: () => false })), [tenancy], ['t1']), [])
+  // Mit Heizstaffel trägt sie die Heizung weiter; der Betrag gehört in die Staffel der übrigen Nebenkosten.
+  const withHeat = { ...tenancy, heatingPrepayments: [{ from: '2025-01', monthlyCents: 6000 }] }
+  assert.equal(one({ separate: true, heatingSeparateAt: () => false, tenancies: [withHeat] }).state, 'pending')
+  // Läuft Weg d im Monat weiter, bleibt es beim Satz (K1).
+  const still = one({ separate: true, heatingSeparateAt: () => true })
+  assert.equal(still.state, 'pending')
+  assert.match(still.notes.join(' '), /keine Heizvorauszahlung/)
 })

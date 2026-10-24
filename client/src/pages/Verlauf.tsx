@@ -111,6 +111,9 @@ export default function Verlauf() {
         Der Verlauf zeigt auch Angaben, die Sie inzwischen gelöscht haben, etwa Name, Anschrift und IBAN früherer
         Mieter. Jeder, der Mietfuchs auf diesem Rechner öffnen kann, sieht ihn. Einträge verfallen nach zwölf
         Monaten; die automatischen Vorversionen enthalten den Verlauf ebenfalls, ein Backup nur auf Ihren Wunsch.
+        Die Sicherungen, die Mietfuchs vor einem Update und vor dem Einspielen eines Backups im Datenordner anlegt,
+        enthalten ihn ohne diese Frist. Spielen Sie ein Backup ohne Verlauf ein, ersetzt es den Verlauf auf diesem
+        Rechner; der bisherige steht dann nur noch in dieser Sicherung.
       </p>
       {error && <NoticeBox level="error" title="Der Verlauf ließ sich nicht laden" action={error} />}
       <Card title="Änderungen">
