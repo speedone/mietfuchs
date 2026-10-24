@@ -2932,16 +2932,8 @@ async function runRestore(backup: ReadBackup, res: Response): Promise<void> {
   } catch (err) {
     notes = [...notes, `Die Einstellungen ließen sich nach dem Wiederherstellen nicht lesen: ${messageOf(err)}`]
   }
-  // Logo und Briefpapier, auf die der eingespielte Stand nicht verweist (Integrationsdurchsicht 0.13.0): Sie gehörten
-  // zum Stand davor und würden sonst mit jedem Backup weitergetragen. Nur mit einer Datenbank, die den Bestand trägt;
-  // sonst wüsste Mietfuchs nicht, worauf verwiesen wird. Ein Fehler hier ist kein Fehlschlag.
-  try {
-    if (database && databaseUnavailable(databaseState()) === null) {
-      removeUnreferenced(DATA_DIR, designFilesOnDisk(DATA_DIR), await database.read((db) => referencedDesignFiles(db)))
-    }
-  } catch {
-    // Dann bleibt eine Datei liegen, die niemand liest.
-  }
+  // Logo und Briefpapier, auf die der eingespielte Stand nicht verweist, bleiben liegen (Durchsicht zu PR #436, S3): Die
+  // Sicherung `mietfuchs.sqlite.vor-restore` verweist noch auf sie. Ins nächste Backup kommen sie nicht.
   res.json({ ok: true, notes })
 }
 

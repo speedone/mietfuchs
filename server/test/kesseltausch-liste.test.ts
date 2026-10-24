@@ -12,6 +12,7 @@ import { readStock } from '../src/db/read.ts'
 import { createEntity } from '../src/db/repository.ts'
 import { createHeatingPlant, heatingPlantViolations, listHeatingPlants, replaceHeatingPlant, updateHeatingPlant } from '../src/db/heating.ts'
 import { setUpSelf } from '../src/db/heatingSelf.ts'
+import { saveServiceValues } from '../src/db/serviceValues.ts'
 import { snapshotFor } from '../src/snapshot.ts'
 import { computeSettlement } from '../src/calc.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
@@ -34,23 +35,36 @@ const wohnung = (opened: OpenedDatabase, id: string, area: number) => opened.wri
   await createEntity(db, 'tenancies', `t${id}`, { unitId: id, tenantName: `Mieter ${id.toUpperCase()}`, persons: 1, start: '2020-01-01' })
 })
 
-test('Kesseltausch ohne Liste: eine danach angelegte Wohnung trägt ihre Heizkosten', async () => {
+// Eigene Heizkostenabrechnung mit Werten eines Ablesedienstes, ohne Warmwasser: 70 % nach Verbrauch, 30 % nach Fläche.
+let ids = 0
+const SELF = { heatConsumptionPct: 70, waterConsumptionPct: 70, insulationRule: 'notApplies', hotWater: 'none', capture: 'serviceValues', dhwHeatMeter: false, totalHeatMeter: false }
+const selbst = (opened: OpenedDatabase, plantId: string, period: string) =>
+  opened.write((db) => setUpSelf(db, plantId, { ...SELF, period }, '2024-02-01', () => `neu-${++ids}`))
+const werte = (opened: OpenedDatabase, plantId: string, rows: [string, number][]) =>
+  opened.write((db) => saveServiceValues(db, plantId, '2025-01', { values: rows.map(([unitId, heatValue]) => ({ unitId, from: '2025-01-01', to: '2025-12-31', heatValue, waterValue: null })) }))
+const heizkosten = (opened: OpenedDatabase, plantId: string) =>
+  opened.write((db) => createEntity(db, 'costItems', 'heiz', { propertyId: 'objekt-1', period: '2025-01', category: HEATING_CATEGORY, description: 'Gas', amountCents: 200000, key: 'heatingSystem', heatingPlantId: plantId, heatingPart: 'fuel', heatingTarget: 'heating' }))
+
+test('Kesseltausch ohne Liste: eine danach angelegte Wohnung trägt bei eigener Heizkostenabrechnung ihren Anteil', async () => {
   await withDatabase(async (opened) => {
     await wohnung(opened, 'a', 50)
     await wohnung(opened, 'b', 50)
     await opened.write((db) => createHeatingPlant(db, 'k0', 'objekt-1', { energy: 'oil', method: 'manual' }))
+    await selbst(opened, 'k0', '2024-01')
     await opened.write((db) => replaceHeatingPlant(db, 'k0', 'k1', { date: '2025-01-01', energy: 'gas', name: 'Gas', previousName: 'Öl' }))
+    await wohnung(opened, 'c', 100)
+    // Vor der Behebung hing C nicht an der Anlage, und ihre Werte ließen sich nicht speichern.
+    await werte(opened, 'k1', [['a', 100], ['b', 100], ['c', 200]]).catch(() => werte(opened, 'k1', [['a', 100], ['b', 100]]))
+    await heizkosten(opened, 'k1')
+    const s = await settlement(opened, 2025)
+    const share = (id: string) => s.statements.find((st) => st.tenancyId === id)?.totalShareCents
+    assert.deepEqual([share('ta'), share('tb'), share('tc')], [50000, 50000, 100000], s.notices.map((n) => n.text).join('\n'))
+    assert.ok(!s.notices.some((n) => n.code === 'heating.unit-unserved'), s.notices.map((n) => n.code).join(', '))
     const plants = await opened.read((db) => listHeatingPlants(db, 'objekt-1'))
-    assert.deepEqual(plants.map((p) => [p.id, p.units]), [['k0', null], ['k1', null]])
+    assert.deepEqual(plants.map((p) => [p.id, p.units, p.method]), [['k0', null, 'self'], ['k1', null, 'self']])
     assert.deepEqual(await opened.read((db) => heatingPlantViolations(db)), [])
     // Die Anlage lässt sich ändern, ohne dass sie eine Liste bekommt.
     assert.equal((await opened.write((db) => updateHeatingPlant(db, 'k1', { name: 'Gastherme' })))?.units, null)
-    await wohnung(opened, 'c', 100)
-    await opened.write((db) => createEntity(db, 'costItems', 'gas', { propertyId: 'objekt-1', period: '2025-01', category: HEATING_CATEGORY, description: 'Gas', amountCents: 200000, key: 'area' }))
-    const s = await settlement(opened, 2025)
-    const share = (id: string) => s.statements.find((st) => st.tenancyId === id)?.totalShareCents
-    assert.deepEqual([share('ta'), share('tb'), share('tc')], [50000, 50000, 100000])
-    assert.ok(!s.notices.some((n) => n.code === 'heating.unit-unserved'), s.notices.map((n) => n.code).join(', '))
   })
 })
 
@@ -88,29 +102,50 @@ test('Kesseltausch ohne Liste: der umbaute Raum geht mit, eine danach angelegte 
 })
 
 // Bestand: Eine von 0.11.0 bis 0.12 getauschte Anlage trägt die feste Liste vom Tag des Tauschs, und ob sie vom Vermieter
-// stammt, lässt sich nicht unterscheiden. Die Abrechnung nennt die bewohnte Wohnung, die an keiner Anlage hängt.
-test('Bestand: eine bewohnte Wohnung mit Fläche an keiner laufenden Anlage ergibt eine Warnung mit dem Weg', async () => {
+// stammt, lässt sich nicht unterscheiden. Bei eigener Heizkostenabrechnung nennt die Abrechnung jede Wohnung mit Fläche,
+// die an keiner Anlage hängt, auch eine leere (Durchsicht zu PR #436, M1).
+async function bestand(opened: OpenedDatabase, method: 'self' | 'manual', swap: boolean): Promise<void> {
+  await wohnung(opened, 'a', 50)
+  await wohnung(opened, 'b', 50)
+  const liste = [{ unitId: 'a', heatedAreaM2: null }, { unitId: 'b', heatedAreaM2: null }]
+  await opened.write((db) => createHeatingPlant(db, 'k0', 'objekt-1', { energy: 'oil', method: 'manual', units: liste }))
+  if (method === 'self') await selbst(opened, 'k0', '2024-01')
+  if (swap) await opened.write((db) => replaceHeatingPlant(db, 'k0', 'k1', { date: '2025-01-01', energy: 'gas', name: 'Gas', previousName: 'Öl' }))
+  const plant = swap ? 'k1' : 'k0'
+  await wohnung(opened, 'c', 100)
+  await opened.write(async (db) => {
+    await createEntity(db, 'units', 'garage', { propertyId: 'objekt-1', name: 'Garage', areaM2: 0, participates: true })
+    await createEntity(db, 'units', 'leer', { propertyId: 'objekt-1', name: 'Leer', areaM2: 40, participates: true })
+    await createEntity(db, 'units', 'kalt', { propertyId: 'objekt-1', name: 'Kalt', areaM2: 40, participates: true, noConnection: ['waerme'] })
+    await createEntity(db, 'tenancies', 'tkalt', { unitId: 'kalt', tenantName: 'Kalt', persons: 1, start: '2020-01-01' })
+  })
+  if (method === 'self') {
+    await werte(opened, plant, [['a', 100], ['b', 100]])
+    await heizkosten(opened, plant)
+  } else {
+    await opened.write((db) => createEntity(db, 'costItems', 'heiz', { propertyId: 'objekt-1', period: '2025-01', category: HEATING_CATEGORY, description: 'Gas', amountCents: 200000, key: 'area', heatingPlantId: plant }))
+  }
+}
+const unserved = async (opened: OpenedDatabase, y = 2025) => (await settlement(opened, y)).notices.filter((n) => n.code === 'heating.unit-unserved')
+
+test('Bestand: eigene Heizkostenabrechnung nach Tausch, Wohnung mit Fläche an keiner Anlage ergibt eine Warnung mit dem Weg', async () => {
   await withDatabase(async (opened) => {
-    await wohnung(opened, 'a', 50)
-    await wohnung(opened, 'b', 50)
-    const liste = [{ unitId: 'a', heatedAreaM2: null }, { unitId: 'b', heatedAreaM2: null }]
-    await opened.write((db) => createHeatingPlant(db, 'k0', 'objekt-1', { energy: 'oil', method: 'manual', units: liste }))
-    await opened.write((db) => replaceHeatingPlant(db, 'k0', 'k1', { date: '2025-01-01', energy: 'gas', name: 'Gas', previousName: 'Öl' }))
-    await wohnung(opened, 'c', 100)
-    await opened.write(async (db) => {
-      await createEntity(db, 'units', 'garage', { propertyId: 'objekt-1', name: 'Garage', areaM2: 0, participates: true })
-      await createEntity(db, 'units', 'leer', { propertyId: 'objekt-1', name: 'Leer', areaM2: 40, participates: true })
-      await createEntity(db, 'units', 'kalt', { propertyId: 'objekt-1', name: 'Kalt', areaM2: 40, participates: true, noConnection: ['waerme'] })
-      await createEntity(db, 'tenancies', 'tkalt', { unitId: 'kalt', tenantName: 'Kalt', persons: 1, start: '2020-01-01' })
-      await createEntity(db, 'costItems', 'gas', { propertyId: 'objekt-1', period: '2025-01', category: HEATING_CATEGORY, description: 'Gas', amountCents: 200000, key: 'area' })
-    })
-    const s = await settlement(opened, 2025)
-    const found = s.notices.filter((n) => n.code === 'heating.unit-unserved')
-    assert.equal(found.length, 1, found.map((n) => n.text).join('\n'))
-    assert.match(found[0]?.text ?? '', /„C“ hängt an keiner Heizanlage.*„Gas“.*„Heizanlage ändern“/s)
+    await bestand(opened, 'self', true)
+    const found = await unserved(opened)
+    assert.deepEqual(found.map((n) => /„(\w+)“ hängt/.exec(n.text)?.[1]), ['C', 'Leer'], found.map((n) => n.text).join('\n'))
+    assert.match(found[0]?.text ?? '', /trägt deshalb keinen Anteil an den Heizkosten der Heizanlage „Gas“.*die übrigen Nutzer tragen ihn.*„Heizanlage ändern“/s)
     assert.equal(found[0]?.level, 'warning')
     assert.deepEqual(found[0]?.subject, { kind: 'heatingPlant', id: 'k1' })
     // Ohne Heizkosten im Zeitraum kein Hinweis.
-    assert.ok(!(await settlement(opened, 2026)).notices.some((n) => n.code === 'heating.unit-unserved'))
+    assert.deepEqual(await unserved(opened, 2026), [])
   })
+})
+
+test('Bestand: ohne Kesseltausch (Liste vom Vermieter) und bei freien Schlüsseln nach Tausch kein Hinweis', async () => {
+  for (const [method, swap] of [['self', false], ['manual', true]] as const) {
+    await withDatabase(async (opened) => {
+      await bestand(opened, method, swap)
+      assert.deepEqual(await unserved(opened), [], `${method} ${swap}`)
+    })
+  }
 })

@@ -183,13 +183,16 @@ test('Integrationsdurchsicht 0.13.0: Backup und Wiederherstellen tragen nur Date
     const names = new AdmZip(backup).getEntries().map((e) => e.entryName)
     assert.ok(names.includes(`briefpapier/${logo}`), names.join(', '))
     assert.ok(!names.includes(`briefpapier/${orphan}`), names.join(', '))
-    // Ein Archiv mit einer Datei ohne Verweis (etwa aus einer früheren Version): Sie bleibt nach dem Einspielen nicht liegen,
-    // ebenso wenig die liegengebliebene auf dem Rechner.
+    // Ein Archiv mit einer Datei ohne Verweis (etwa aus einer früheren Version): Eingespielt bleibt sie liegen, denn die
+    // Sicherung vor dem Einspielen kann noch auf Dateien verweisen (Durchsicht zu PR #436, S3); ins nächste Backup kommt sie
+    // nicht.
     const zip = new AdmZip(backup)
     zip.addFile('briefpapier/logo-0123456789abcdef.jpg', JPG)
     const r = await restore(s, zip.toBuffer())
     assert.equal(r.status, 200, JSON.stringify(r.body))
-    assert.deepEqual(filesOnDisk(s), [logo])
+    assert.ok(filesOnDisk(s).includes(orphan))
+    const next = new AdmZip(Buffer.from(await (await fetch(`${s.base}/api/backup`)).arrayBuffer())).getEntries().map((e) => e.entryName).filter((n) => n.startsWith('briefpapier/'))
+    assert.deepEqual(next, [`briefpapier/${logo}`])
   } finally {
     s.stop()
   }

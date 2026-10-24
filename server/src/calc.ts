@@ -8523,27 +8523,31 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     warn('heating.contracting', switchText(f, rule, fmtDay, switchFrom), { kind: 'heatingPlant', id: f.plantId })
   }
 
-  // Wohnung an keiner Heizanlage (Integrationsdurchsicht 0.13.0): eine bewohnte Wohnung mit Fläche, die keine im
-  // Zeitraum laufende Anlage versorgt, obwohl eine zentrale Anlage dieses Zeitraums Heizkosten verteilt. Ausgenommen sind
-  // Wohnungen ohne Wärmeanschluss (#117) und solche, deren Mieter selbst heizt.
+  // Wohnung an keiner Heizanlage (Integrationsdurchsicht 0.13.0, Durchsicht zu PR #436 M1): Bis 0.12 schrieb ein
+  // Kesseltausch die Liste der Wohnungen fest. Aufs Geld wirkt die Liste nur bei der eigenen Heizkostenabrechnung
+  // (Schlüssel `heatingSystem`, Nutzer nach der Liste); freie Schlüssel verteilen über ihre eigene Basis. Gemeldet wird
+  // deshalb nur dort und nur in einer Linie mit Tausch, denn nur dort kann der Fehler stecken. Jede Wohnung mit Fläche der
+  // Abrechnungseinheit zählt, auch eine leere: Ihr Leerstand gehört zum Vermieter, ohne Liste trügen ihn die übrigen.
+  // Ausgenommen sind Wohnungen ohne Wärmeanschluss (#117) und solche, deren Mieter selbst heizt.
   const running = plants.filter((p) => {
     const span = plantSpan(p, plants)
     return (span.from === null || span.from <= yTo) && (span.to === null || span.to >= yFrom)
   })
-  const central = running.find((p) => p.supply !== 'perUnit' && items.some((c) => c.heatingPlantId === p.id))
-  if (central) {
+  const swappedSelf = running.find((p) => p.method === 'self' && p.supply !== 'perUnit' && p.units !== null
+    && plants.some((q) => sameLine(p, q, plants)) && items.some((c) => c.heatingPlantId === p.id && c.key === 'heatingSystem'))
+  if (swappedSelf) {
+    const plantLabel = (swappedSelf.name ?? '').trim() ? `der Heizanlage „${(swappedSelf.name ?? '').trim()}“` : 'der Heizanlage'
     for (const u of snapshot.units) {
       if (!(u.areaM2 > 0) || (u.noConnection ?? []).includes('waerme')) continue
       if (running.some((p) => servesUnit(p, u))) continue
+      if (usageIn(u).rented + usageIn(u).self === 0) continue
       const own = snapshot.tenancies.filter((t) => t.unitId === u.id && t.start <= yTo && (t.end === null || t.end >= yFrom))
-      const lived = usageIn(u).self > 0 || (usageIn(u).rented > 0 && own.length > 0)
-      if (!lived || own.some((t) => t.heatingModel === 'selfSupply')) continue
+      if (own.some((t) => t.heatingModel === 'selfSupply')) continue
       warn('heating.unit-unserved',
-        `Die Wohnung „${u.name}“ hängt an keiner Heizanlage, obwohl im Objekt ${(central.name ?? '').trim() ? `die Heizanlage „${(central.name ?? '').trim()}“` : 'eine Heizanlage'} zentral heizt. ` +
-          'Ihre Heizkosten tragen in dieser Abrechnung deshalb die übrigen Mieter oder, bei Eigennutzung, nicht Sie. ' +
+        `Die Wohnung „${u.name}“ hängt an keiner Heizanlage und trägt deshalb keinen Anteil an den Heizkosten ${plantLabel}, die nach der Heizkostenverordnung verteilt werden; die übrigen Nutzer tragen ihn. ` +
           'Das kann nach einem Kesseltausch geschehen sein: Bis Version 0.12 legte der Tausch die Liste der Wohnungen fest, und eine später angelegte Wohnung kam nicht hinein. ' +
           'Nehmen Sie die Wohnung auf der Seite Heizkosten unter „Heizanlage ändern“ in die Liste ihrer Heizanlage auf. Hat sie keinen Anschluss an die Heizung, nehmen Sie in den Stammdaten bei der Wohnung unter den Anschlüssen das Häkchen bei Wärme heraus.',
-        { kind: 'heatingPlant', id: central.id })
+        { kind: 'heatingPlant', id: swappedSelf.id })
     }
   }
 

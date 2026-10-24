@@ -193,7 +193,7 @@ Gradtage des Orts in `degree_day_values`. CO₂-Merkmale an der Anlage (`non_res
   `ends_on` (letzter Betriebstag), neue `replaces_plant_id`, Name und Wohnungen (ohne Liste bleibt es
   ohne Liste, Werte über `basisValues`; Integrationsdurchsicht 0.13.0: Eine Linie allein darf ohne Liste
   stehen, `guardPlantsOfProperty`, `heatingPlantViolations`; für Bestände mit fester Liste vom Tausch
-  warnt `heating.unit-unserved`); Rhythmus,
+  warnt `heating.unit-unserved`, nur bei `method = 'self'` in einer Linie mit Tausch, denn nur dort verteilt die Liste Geld); Rhythmus,
   Gebäudemerkmale, Betriebsstrom-Angabe und Zeitraum der eigenen Abrechnung werden übernommen. Kein
   Fremdschlüssel (drizzle-kit schreibt beim Hinzufügen kein `ON DELETE`). Lieferungen und Vorrat nur
   in der Betriebszeit (`plantSpanOf`); die Bestandsrechnung endet am letzten Betriebstag mit dem

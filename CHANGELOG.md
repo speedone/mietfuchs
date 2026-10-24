@@ -208,13 +208,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 ### Behoben
 
 - Ein Kesseltausch machte aus einer Heizanlage, die alle Wohnungen versorgt, eine feste Liste der Wohnungen vom
-  Tag des Tauschs, bei der alten wie bei der neuen Anlage. Eine danach angelegte Wohnung hing deshalb an keiner
-  Heizanlage, und ihre Heizkosten trugen die übrigen Mieter. Der Fehler bestand seit dem Kesseltausch in Version
-  0.11.0. Jetzt bleibt „alle Wohnungen“ nach dem Tausch erhalten, samt beheizter Fläche und umbautem Raum. Ob eine
-  vorhandene Liste vom Tausch oder von Ihnen stammt, lässt sich nicht unterscheiden; Mietfuchs ändert sie deshalb
-  nicht, sondern warnt in der Abrechnung, wenn eine bewohnte Wohnung mit Fläche an keiner Heizanlage hängt,
-  obwohl im Objekt eine zentrale Heizung die Heizkosten verteilt. Nehmen Sie die Wohnung dann auf der Seite
-  Heizkosten unter „Heizanlage ändern“ in die Liste auf.
+  Tag des Tauschs, bei der alten wie bei der neuen Anlage (seit dem Kesseltausch in Version 0.11.0). Ums Geld geht
+  es bei der eigenen Heizkostenabrechnung nach der Heizkostenverordnung: Eine danach angelegte Wohnung hing an keiner
+  Heizanlage, trug keinen Anteil an deren Heizkosten, und die übrigen Nutzer trugen ihn. Mit freien Schlüsseln
+  verteilt die Abrechnung wie bisher nach ihrer eigenen Basis. Jetzt bleibt „alle Wohnungen“ nach dem Tausch
+  erhalten, samt beheizter Fläche und umbautem Raum. Ob eine vorhandene Liste vom Tausch oder von Ihnen stammt,
+  lässt sich nicht unterscheiden; Mietfuchs ändert sie deshalb nicht, sondern warnt bei eigener Heizkostenabrechnung
+  nach einem Kesseltausch, wenn eine Wohnung mit Fläche an keiner Heizanlage hängt, auch eine leere. Nehmen Sie die
+  Wohnung dann auf der Seite Heizkosten unter „Heizanlage ändern“ in die Liste auf.
 - Endet eine getrennt abgerechnete Heizperiode im Abrechnungszeitraum und die getrennte Heizkostenabrechnung
   danach, enthält der Vorschlag zur Anpassung der Vorauszahlung keine Heizkosten. Er hieß trotzdem
   „monatliche Nebenkostenvorauszahlung“ statt „monatliche Vorauszahlung für die übrigen Nebenkosten (ohne Heizung)“
