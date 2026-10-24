@@ -72,6 +72,9 @@ test('#317: In die Staffel übernehmen, mit Marke, Rückfrage bei einer Stufe ab
     const after = (await s.api<Tenancy[]>('/api/tenancies')).find((x) => x.id === t.id)
     assert.deepEqual(after?.prepayments, [{ from: '2024-01', monthlyCents: 4000 }, { from: '2026-05', monthlyCents: 5000 }])
     assert.equal((await plan(s)).items[0]?.state, 'taken')
+    // Das Änderungsjournal (#318) führt die Übernahme mit ihrem Satz.
+    const groups = await s.api<{ title: string }[]>('/api/journal')
+    assert.ok(groups.some((g) => g.title.startsWith('Angekündigte Vorauszahlung in die Staffel übernommen')), JSON.stringify(groups.map((g) => g.title)))
 
     // Ein geänderter Monat: übernommen ab Juni, der Satz nennt den Monat des Schreibens.
     const june = await plan(s, { [t.id]: '2026-06' })

@@ -249,7 +249,7 @@ das Leerzeichen davor mit (`{Konto}` ohne IBAN ergibt den bisherigen Satz ohne K
 
 - **Monat der Anpassung und Übernahme in die Staffel** (#317, [prepaymentSteps.ts](prepaymentSteps.ts)): Das
   Anschreiben nennt den Monat (`{AnpassungAb}`, `StatementLetter.adjustment.from`); ohne eigene Angabe des Mieters
-  (`tenancy_letter_adjustments.from_month`, Schritte 0069/0070) ist es der übernächste nach dem Tag des Briefs
+  (`tenancy_letter_adjustments.from_month`, Schritte 0073/0074) ist es der übernächste nach dem Tag des Briefs
   (`adjustFromFor`, `LetterSource.asOf` = `today()`, mit dem Abschluss eingefroren), **nie im abgerechneten Zeitraum**
   (dann der erste Monat danach); eine eigene Angabe im Zeitraum lehnt `PUT …/letters/:tenancyId` mit 400 ab. Das ist eine vorsichtige
   Vorgabe; § 560 Abs. 4 BGB nennt keine Frist (AG Mannheim, 8 C 552/06, Rn. 29: nächster Fälligkeitstermin).
