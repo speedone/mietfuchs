@@ -335,7 +335,8 @@ function buildSafari() {
 }
 function runSafari(bin, { url, preludeFile, driverFile, args, file, log }) {
   return new Promise((resolve, reject) => {
-    const child = spawn(bin, ['--url', url, '--prelude', preludeFile, '--driver', driverFile, '--args', JSON.stringify(args), '--out', file, '--timeout', '150'], { stdio: ['ignore', 'pipe', 'pipe'] })
+    const extra = [...(option('--safari-margins') ? ['--margins', /** @type {string} */ (option('--safari-margins'))] : []), ...(option('--safari-scale') ? ['--scale', /** @type {string} */ (option('--safari-scale'))] : [])]
+    const child = spawn(bin, ['--url', url, '--prelude', preludeFile, '--driver', driverFile, '--args', JSON.stringify(args), '--out', file, '--timeout', '150', ...extra], { stdio: ['ignore', 'pipe', 'pipe'] })
     let stdout = ''
     let stderr = ''
     child.stdout.on('data', (d) => { stdout += d })

@@ -103,6 +103,11 @@ final class Runner: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
     info.orientation = .portrait
     // Die Ränder bleiben die Vorgabe von NSPrintInfo, wie in Safari ohne eigene Seiteneinstellung; die Seite setzt ihre
     // eigenen über `@page { margin }` (WebKit kennt diese Angabe seit Safari 18.2).
+    // `--margins l,r,t,b` (Punkt) setzt die Ränder der Seiteneinstellung, wie sie ein Nutzer in Safari ändern kann
+    if let m = argument("--margins")?.split(separator: ",").compactMap({ Double($0) }), m.count == 4 {
+      info.leftMargin = m[0]; info.rightMargin = m[1]; info.topMargin = m[2]; info.bottomMargin = m[3]
+    }
+    if let s = argument("--scale").flatMap({ Double($0) }) { info.dictionary()[NSPrintInfo.AttributeKey.scalingFactor.rawValue] = s }
     info.jobDisposition = .save
     info.dictionary()[NSPrintInfo.AttributeKey.jobSavingURL.rawValue] = URL(fileURLWithPath: outPath)
     info.isHorizontallyCentered = false

@@ -41,6 +41,13 @@ jobs:
         run: swiftc -O scripts/safari-print/main.swift -o "$RUNNER_TEMP/safari-print"
       - name: Drucken und prüfen
         run: node scripts/safari-print-check.mjs --out "$RUNNER_TEMP/druck-safari" --safari-bin "$RUNNER_TEMP/safari-print"
+      - name: VERSUCH Ränder (wieder entfernen)
+        if: always()
+        continue-on-error: true
+        run: |
+          for m in 0,0,0,0 18,18,18,18 34,34,34,34 72,72,72,72; do
+            node scripts/safari-print-check.mjs --out "$RUNNER_TEMP/druck-safari/versuch-${m//,/-}" --safari-bin "$RUNNER_TEMP/safari-print" --cases einer-becker-heizung-35a --engines safari --safari-margins $m || true
+          done
       - name: Bericht in die Zusammenfassung
         if: always()
         run: |
