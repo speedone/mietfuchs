@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { calendarPeriod, periodKey } from '../../shared/period.ts'
 import type { CostItem, UploadInfo } from './types'
-import { amountCheckBody, amountCheckMode, attachChoices, buildFolder, coverage, coverageCheck, duplicateHints, filesByItem, inboxFor, inboxOf, inboxPage, INBOX_STEP, matchesQuery, receiptCards, yearSections } from './receipts'
+import { amountCheckBody, amountCheckMode, attachChoices, buildFolder, coverage, coverageCheck, duplicateHints, filesByItem, inboxFor, inboxOf, inboxPage, INBOX_STEP, isItemCovered, matchesQuery, receiptCards, yearSections } from './receipts'
 
 const upload = (file: string, extra: Partial<UploadInfo> = {}): UploadInfo => ({
   file, size: 10, mtime: '2026-01-02T10:00:00.000Z', originalName: file.replace(/^\d+_/, ''),
@@ -379,8 +379,7 @@ describe('Belegordner gegliedert (Leistungsprüfung, Befund 4)', () => {
 
   it('„alle Jahre“: ein Abschnitt je Jahr, das neueste zuerst, mit der Zahl der Belege und der Positionen ohne Beleg', () => {
     const folder = buildFolder(uploads, items, { propertyId: 'p1', year: 'all' }, '')
-    const present = new Set(uploads.map((u) => u.file))
-    const sections = yearSections(folder.groups, present)
+    const sections = yearSections(folder.groups)
     expect(sections.map((s) => s.year)).toEqual([2025, 2024, 2022])
     expect(sections.map((s) => s.receipts)).toEqual([2, 2, 0])
     expect(sections.map((s) => s.withoutReceipt)).toEqual([1, 0, 1])
@@ -389,9 +388,29 @@ describe('Belegordner gegliedert (Leistungsprüfung, Befund 4)', () => {
   })
 
   it('ein verknüpfter Beleg, dessen Datei fehlt, zählt als Position ohne Beleg', () => {
-    const folder = buildFolder(uploads, items, { propertyId: 'p1', year: 2025 }, '')
-    const sections = yearSections(folder.groups, new Set(['2_wasser.pdf']))
-    expect(sections[0]?.withoutReceipt).toBe(2)
+    const folder = buildFolder(uploads.filter((u) => u.file !== '1_gs.pdf'), items, { propertyId: 'p1', year: 2025 }, '')
+    expect(yearSections(folder.groups)[0]?.withoutReceipt).toBe(2)
+  })
+
+  // Durchsicht von PR #449, K2: Ein Beleg, der über eine gebuchte Zeile an einer Position hängt, deckt sie, wie in
+  // Belegabdeckung und Liste.
+  it('eine Position, die über eine Belegbuchung gedeckt ist, zählt nicht als ohne Beleg', () => {
+    const booked = [...uploads, { ...upload('6_abwasser.pdf'), bookedItemIds: ['w2'] }]
+    const folder = buildFolder(booked, items, { propertyId: 'p1', year: 2025 }, '')
+    expect(yearSections(folder.groups)[0]?.withoutReceipt).toBe(0)
+    const present = new Set(booked.map((u) => u.file))
+    const w2 = items.find((c) => c.id === 'w2')
+    if (!w2) return expect.fail('w2 fehlt')
+    expect(isItemCovered(w2, present, filesByItem(booked))).toBe(true)
+    expect(isItemCovered(w2, present, new Map())).toBe(false)
+    expect(coverage(items, { propertyId: 'p1', year: 2025 }, present, filesByItem(booked)).missing).toEqual([])
+  })
+
+  // K4: Bei einer Suche zählen Belege und Positionen ohne Beleg auf derselben Grundlage, dem Gezeigten.
+  it('bei einer Suche zählt die Jahreszeile nur, was die Suche zeigt', () => {
+    const folder = buildFolder(uploads, items, { propertyId: 'p1', year: 'all' }, 'Grundsteuer')
+    const sections = yearSections(folder.groups)
+    expect(sections.map((s) => [s.year, s.receipts, s.withoutReceipt])).toEqual([[2025, 1, 0], [2024, 1, 0], [2022, 0, 1]])
   })
 
   it('der Posteingang zeigt die neuesten 20, der Rest wartet hinter „Ältere anzeigen“', () => {

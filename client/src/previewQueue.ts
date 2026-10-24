@@ -24,13 +24,26 @@ export function abortError(): Error {
 
 export const isAbort = (err: unknown): boolean => err instanceof Error && err.name === 'AbortError'
 
+// Ein Auftrag, der sein Zeitlimit überschreitet, scheitert wie ein unlesbarer Beleg. Sonst belegte ein
+// hängendes Dokument (oder ein Worker, der nach dem Start stirbt) seinen Platz für immer, und mit zwei solchen
+// stünden Vorschauen, Belegkopien und Belegmappe still (Durchsicht von PR #449, K1).
+export function timeoutError(): Error {
+  const err = new Error('Der Beleg ließ sich nicht rechtzeitig darstellen.')
+  err.name = 'TimeoutError'
+  return err
+}
+
+export const isTimeout = (err: unknown): boolean => err instanceof Error && err.name === 'TimeoutError'
+
 export type Limiter = {
-  run<T>(job: () => Promise<T>, signal?: AbortSignal): Promise<T>
+  // `timeoutMs`: Zeitlimit ab dem Start des Auftrags. Danach ist der Platz frei, eine späte Antwort zählt nicht.
+  run<T>(job: () => Promise<T>, signal?: AbortSignal, timeoutMs?: number): Promise<T>
   readonly running: number
   readonly waiting: number
 }
 
-export function createLimiter(limit: number = PREVIEW_CONCURRENCY): Limiter {
+// `onTimeout`: läuft, wenn ein Auftrag sein Zeitlimit überschreitet (pdfPreview.ts verwirft dann den Worker).
+export function createLimiter(limit: number = PREVIEW_CONCURRENCY, { onTimeout }: { onTimeout?: () => void } = {}): Limiter {
   let running = 0
   type Waiting = { start: () => void; cancel: () => void; signal: AbortSignal | undefined }
   const queue: Waiting[] = []
@@ -43,17 +56,33 @@ export function createLimiter(limit: number = PREVIEW_CONCURRENCY): Limiter {
     }
   }
   return {
-    run<T>(job: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+    run<T>(job: () => Promise<T>, signal?: AbortSignal, timeoutMs?: number): Promise<T> {
       return new Promise<T>((resolve, reject) => {
         if (signal?.aborted) { reject(abortError()); return }
         const entry: Waiting = {
           signal,
           start: () => {
             running++
+            let over = false
+            const finish = () => {
+              if (over) return false
+              over = true
+              if (timer !== undefined) clearTimeout(timer)
+              running--
+              next()
+              return true
+            }
+            const timer = timeoutMs === undefined ? undefined : setTimeout(() => {
+              if (!finish()) return
+              reject(timeoutError())
+              onTimeout?.()
+            }, timeoutMs)
             Promise.resolve()
               .then(job)
-              .then(resolve, reject)
-              .finally(() => { running--; next() })
+              .then(
+                (value) => { if (finish()) resolve(value) },
+                (err: unknown) => { if (finish()) reject(err) },
+              )
           },
           cancel: () => {
             const i = queue.indexOf(entry)
@@ -77,7 +106,7 @@ export type PreviewCache<T> = {
   readonly size: number
 }
 
-export function createPreviewCache<T>(limiter: Limiter, maxEntries: number): PreviewCache<T> {
+export function createPreviewCache<T>(limiter: Limiter, maxEntries: number, { timeoutMs }: { timeoutMs?: number } = {}): PreviewCache<T> {
   const done = new Map<string, T>()
   type Pending = { promise: Promise<T>; controller: AbortController; users: number; started: boolean }
   const pending = new Map<string, Pending>()
@@ -102,7 +131,7 @@ export function createPreviewCache<T>(limiter: Limiter, maxEntries: number): Pre
       if (!entry) {
         const controller = new AbortController()
         const created: Pending = { promise: Promise.resolve() as unknown as Promise<T>, controller, users: 0, started: false }
-        created.promise = limiter.run(() => { created.started = true; return job() }, controller.signal).then(
+        created.promise = limiter.run(() => { created.started = true; return job() }, controller.signal, timeoutMs).then(
           (value) => {
             if (pending.get(key) === created) pending.delete(key)
             remember(key, value)

@@ -13,8 +13,9 @@ import { closedCheckPath, filedUnderSettlement, type PlantPeriods } from '../cos
 import { isCalendarRules, periodContaining, periodLabel, periodsBetween, rulesOf, startYearOf } from '../../../shared/period.ts'
 import { renderInvoicePages, renderThumbnail } from '../pdfPreview'
 import { buildTenantFolderPdf, isIndividualAmounts, planTenantFolder, type TenantFolderPlan } from '../tenantFolder'
-import { amountCheckBody, amountCheckMode, attachChoices, buildFolder, coverage, filesByItem, duplicateHints, inboxFor, inboxOf, inboxPage, INBOX_STEP, matchesQuery, receiptCards, receiptName, yearSections, type CategoryGroup, type FolderFilter, type ReceiptCard, type ReceiptUpload } from '../receipts'
+import { amountCheckBody, amountCheckMode, attachChoices, buildFolder, coverage, filesByItem, duplicateHints, inboxFor, inboxOf, inboxPage, INBOX_STEP, isItemCovered, matchesQuery, receiptCards, receiptName, yearSections, type CategoryGroup, type FolderFilter, type ReceiptCard, type ReceiptUpload } from '../receipts'
 import { previewWhenVisible } from '../previewQueue'
+import { useFocusFirstNew } from '../focusNew'
 import Field from '../components/Field'
 import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
@@ -385,6 +386,9 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
   const inboxScope = `${filter.propertyId}|${filter.year}|${query}`
   const [inboxCount, setInboxCount] = useState({ scope: inboxScope, count: INBOX_STEP })
   const inboxShown = inboxPage(inbox.here, inboxCount.scope === inboxScope ? inboxCount.count : INBOX_STEP)
+  // Nach „Ältere anzeigen“ der Fokus auf die erste neu gezeigte Karte (Durchsicht von PR #449, K3)
+  const inboxList = useRef<HTMLUListElement>(null)
+  const inboxFocus = useFocusFirstNew(inboxList, ':scope > li', '.receipt-title a')
   const [dragOver, setDragOver] = useState(false)
   const [uploading, setUploading] = useState(0)
   const present = useMemo(() => new Set(uploads.map((u) => u.file)), [uploads])
@@ -616,7 +620,8 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
 
   // Ein Register: eine Kostenart eines Jahres, mit den Belegen und den Positionen ohne Beleg
   const renderGroup = (g: CategoryGroup) => {
-    const ohne = g.items.filter((c) => !c.invoiceFile || !present.has(c.invoiceFile)).length
+    // Wie die Belegabdeckung: auch ein Beleg über eine gebuchte Zeile deckt die Position (Durchsicht von PR #449, K2).
+    const ohne = g.items.filter((c) => !isItemCovered(c, present, booked)).length
     return (
       <details key={g.key} className="card receipt-group" open>
         <summary>
@@ -767,11 +772,11 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
           danach ordnen Sie jeden einer Position zu oder lassen ihn per KI auswerten.
           {inbox.elsewhere > 0 && ` ${inbox.elsewhere} weitere ${inbox.elsewhere === 1 ? 'ist' : 'sind'} einem anderen Objekt oder Jahr zugedacht; Sie sehen ${inbox.elsewhere === 1 ? 'ihn' : 'sie'} mit ${properties.length > 1 ? '„Belege aller Objekte zeigen“ oder ' : ''}„Belege aller Jahre zeigen“.`}
         </p>
-        {inboxShown.shown.length > 0 && <ul className="receipt-list">{inboxShown.shown.map(renderCard)}</ul>}
+        {inboxShown.shown.length > 0 && <ul ref={inboxList} className="receipt-list">{inboxShown.shown.map(renderCard)}</ul>}
         {inboxShown.hidden > 0 && (
           <div className="row">
             <button type="button" className="btn secondary"
-              onClick={() => setInboxCount({ scope: inboxScope, count: inboxShown.shown.length + INBOX_STEP })}>
+              onClick={() => { inboxFocus.expect(inboxShown.shown.length); setInboxCount({ scope: inboxScope, count: inboxShown.shown.length + INBOX_STEP }) }}>
               Ältere anzeigen ({inboxShown.hidden})
             </button>
           </div>
@@ -812,7 +817,7 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
       ) : filter.year === 'all' ? (
         // „Belege aller Jahre zeigen“: ein Abschnitt je Jahr mit Anzahl, aufgeklappt nur das gewählte Jahr; bei einer
         // Suche alle Jahre mit Treffern (Leistungsprüfung, Befund 4).
-        yearSections(folder.groups, present).map((section) => (
+        yearSections(folder.groups).map((section) => (
           // Aufklapper und Kopfzeile wie ein Register (`receipt-group`), aber ohne Karte: Die Register stehen darin.
           <details key={section.year} data-year-section={section.year} className="receipt-group" open={section.year === currentYear || query.trim() !== ''}>
             <summary className="mb-3 border-b border-line py-2">

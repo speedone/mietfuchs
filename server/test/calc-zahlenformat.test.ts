@@ -16,6 +16,9 @@ const OLD: Record<keyof typeof STEP_FORMATS, (n: number) => string> = {
   fmtMeter: (n) => n.toLocaleString('de-DE', { maximumFractionDigits: 3 }),
   fmtKg: (kg) => kg.toLocaleString('de-DE', { maximumFractionDigits: 2 }),
   fmtPermille: (pm) => (Math.round(pm * 10) / 10).toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
+  // Menge des Vorrats und Heizwert (Durchsicht von PR #449, K4)
+  fmtQuantity: (n) => n.toLocaleString('de-DE', { maximumFractionDigits: 2 }),
+  fmtPlain: (n) => n.toLocaleString('de-DE'),
 }
 
 const EDGES = [

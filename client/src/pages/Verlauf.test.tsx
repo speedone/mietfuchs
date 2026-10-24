@@ -104,3 +104,23 @@ test('Werte: Kennzeichen, eingefrorener Stand und unbekannte Spalten', () => {
   expect(formatValue('irgendwas', 'x')).toBe('x')
   expect(changeTitle({ id: 1, table: 'neue_tabelle', key: {}, op: 'insert', before: null, after: {}, changed: [], refs: {} })).toBe('neue_tabelle angelegt')
 })
+
+// Durchsicht von PR #449, K3: Nach „Ältere Änderungen laden“ steht der Fokus auf dem ersten neuen Eintrag. Der Knopf
+// verschwindet hier danach (die letzte Seite ist nicht voll); ohne das fiele der Fokus an den Anfang der Seite.
+test('Ältere Änderungen: der Fokus geht auf den ersten neuen Eintrag, auch wenn der Knopf danach fehlt', async () => {
+  vi.stubGlobal('fetch', async (url: string) => {
+    sent.push(url)
+    const older = url.includes('before=')
+    const body = older
+      ? [{ ...GROUP, id: 10, title: 'Älterer Eintrag' }, { ...GROUP, id: 9, title: 'Noch älter' }]
+      : Array.from({ length: 50 }, (_, i) => ({ ...GROUP, id: 100 - i }))
+    return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
+  })
+  render(<Verlauf />)
+  const button = await screen.findByRole('button', { name: /Ältere Änderungen laden/ })
+  button.focus()
+  fireEvent.click(button)
+  const first = await screen.findByText('Älterer Eintrag')
+  expect(screen.queryByRole('button', { name: /Ältere Änderungen laden/ })).toBeNull()
+  expect(document.activeElement).toBe(first.closest('summary'))
+})

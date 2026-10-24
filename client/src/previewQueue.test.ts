@@ -1,7 +1,7 @@
 // Warteschlange und Sichtbarkeit der Vorschaubilder ohne pdf.js: Mit vielen Belegen startete vorher jede
 // Vorschau sofort einen eigenen Worker, der Tab stürzte ab (Bericht der Leistungsprüfung, Befund 1).
-import { describe, expect, test } from 'vitest'
-import { createLimiter, createPreviewCache, isAbort, previewWhenVisible, type PreviewResult } from './previewQueue'
+import { afterEach, describe, expect, test, vi } from 'vitest'
+import { createLimiter, createPreviewCache, isAbort, isTimeout, previewWhenVisible, type PreviewResult } from './previewQueue'
 
 // Ein Auftrag, der erst endet, wenn der Test es sagt
 function gate<T>() {
@@ -203,5 +203,56 @@ describe('Sichtbarkeit', () => {
     await flush()
     expect(started).toEqual(['a.pdf'])
     expect(limiter.waiting).toBe(0)
+  })
+})
+
+// Durchsicht von PR #449, K1: Ein Auftrag, der nie endet (ein hängendes Dokument, ein Worker, der nach dem Start
+// stirbt), belegte seinen Platz für immer; mit zwei solchen standen Vorschauen, Belegkopien und Belegmappe still.
+describe('Zeitlimit je Auftrag', () => {
+  afterEach(() => { vi.useRealTimers() })
+
+  test('ein Auftrag, der nie endet, scheitert nach dem Zeitlimit und gibt seinen Platz frei', async () => {
+    vi.useFakeTimers()
+    const timedOut: number[] = []
+    const limiter = createLimiter(1, { onTimeout: () => { timedOut.push(1) } })
+    const never = limiter.run(() => new Promise<string>(() => {}), undefined, 30_000)
+    const failure = never.catch((e: unknown) => e)
+    let started = false
+    const next = limiter.run(async () => { started = true; return 'B' })
+    await vi.advanceTimersByTimeAsync(29_999)
+    expect(started).toBe(false)
+    expect(timedOut).toEqual([])
+    await vi.advanceTimersByTimeAsync(1)
+    expect(isTimeout(await failure)).toBe(true)
+    expect(await next).toBe('B')
+    expect(started).toBe(true)
+    expect(timedOut).toEqual([1])
+    expect(limiter.running).toBe(0)
+  })
+
+  test('was rechtzeitig endet, scheitert nicht nachträglich, und eine späte Antwort zählt nicht', async () => {
+    vi.useFakeTimers()
+    const timedOut: number[] = []
+    const limiter = createLimiter(2, { onTimeout: () => { timedOut.push(1) } })
+    expect(await limiter.run(async () => 'A', undefined, 1000)).toBe('A')
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(timedOut).toEqual([])
+    let late!: (v: string) => void
+    const slow = limiter.run(() => new Promise<string>((ok) => { late = ok }), undefined, 1000).catch((e: unknown) => e)
+    await vi.advanceTimersByTimeAsync(1000)
+    late('zu spät')
+    expect(isTimeout(await slow)).toBe(true)
+    expect(limiter.running).toBe(0)
+  })
+
+  test('der Zwischenspeicher merkt sich ein Zeitlimit nicht, der nächste Versuch läuft neu', async () => {
+    vi.useFakeTimers()
+    const cache = createPreviewCache<string>(createLimiter(2), 10, { timeoutMs: 1000 })
+    let runs = 0
+    const first = cache.get('a', () => { runs++; return new Promise<string>(() => {}) }).catch((e: unknown) => e)
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(isTimeout(await first)).toBe(true)
+    expect(await cache.get('a', async () => { runs++; return 'A' })).toBe('A')
+    expect(runs).toBe(2)
   })
 })

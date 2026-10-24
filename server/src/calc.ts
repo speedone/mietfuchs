@@ -615,6 +615,10 @@ const NF_MAX6 = new Intl.NumberFormat('de-DE', { maximumFractionDigits: 6 })
 const NF_FIX1 = new Intl.NumberFormat('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
 const NF_FIX2 = new Intl.NumberFormat('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const NF_2TO4 = new Intl.NumberFormat('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 4 })
+const NF_PLAIN = new Intl.NumberFormat('de-DE')
+// Menge des Vorrats (bis zwei Stellen) und Heizwert (Vorgabe der Sprache, drei Stellen), Durchsicht von PR #449, K4
+const fmtQuantity = (n: number): string => NF_MAX2.format(n)
+const fmtPlain = (n: number): string => NF_PLAIN.format(n)
 
 function fmtMeter(n: number): string {
   return NF_MAX3.format(n)
@@ -2535,7 +2539,7 @@ function fmtCents(cents: number): string {
 }
 
 // Für calc-zahlenformat.test.ts: die Formate gegen den früheren Aufruf
-export const STEP_FORMATS = { fmtNum, fmtPercent, fmtExactEuro, fmtCents, fmtMeter, fmtKg, fmtPermille }
+export const STEP_FORMATS = { fmtNum, fmtPercent, fmtExactEuro, fmtCents, fmtMeter, fmtKg, fmtPermille, fmtQuantity, fmtPlain }
 
 // Die Abzugszeile nach § 7 Abs. 5 CO2KostAufG (Heizung PR 18).
 const GMODG_RELIEF_LABEL = 'Netzentgelte und Biobrennstoff: Anteil des Vermieters (§ 5a CO2KostAufG)'
@@ -3650,7 +3654,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const st = entry.result.statement
     const opening = st.opening.costCents ?? 0
     const closing = st.closing.costCents ?? 0
-    const q = (n: number): string => `${n.toLocaleString('de-DE', { maximumFractionDigits: 2 })} ${STOCK_UNIT_TEXT[st.unit]}`
+    const q = (n: number): string => `${fmtQuantity(n)} ${STOCK_UNIT_TEXT[st.unit]}`
     const { labor35aCents: _labor, serviceFrom: _from, serviceTo: _to, ...rest } = template
     const make = (suffix: 'in' | 'out', description: string, cents: number, step: CalcStep): void => {
       const id = `stock:${plantId}:${period.key}:${suffix}`
@@ -4281,7 +4285,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       for (const v of alpha.statement.heatingValues.filter((x) => x.source === 'table')) {
         warn('heating.heating-value-from-table',
           `${where}: Die Rechnung „${v.label}“ nennt keinen Heizwert. Mietfuchs rechnet deshalb mit dem Wert der Heizkostenverordnung für ` +
-            `${v.grade ? FUEL_GRADE_LABELS[v.grade] : 'diesen Brennstoff'}: ${v.kwh.toLocaleString('de-DE')} kWh je ${HEATING_VALUE_UNIT_TEXT[v.per]} (§ 9 Abs. 3 HeizkostenV, hilfsweise). ` +
+            `${v.grade ? FUEL_GRADE_LABELS[v.grade] : 'diesen Brennstoff'}: ${fmtPlain(v.kwh)} kWh je ${HEATING_VALUE_UNIT_TEXT[v.per]} (§ 9 Abs. 3 HeizkostenV, hilfsweise). ` +
             'Steht ein Heizwert auf der Rechnung, tragen Sie ihn an der Lieferung ein; er geht vor.',
           plantSubjectSelf)
       }

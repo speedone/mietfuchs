@@ -40,6 +40,14 @@ function workerOf(pdfjs: Pdfjs): PDFWorker {
   return worker
 }
 
+// Den gemeinsamen Worker verwerfen, etwa wenn ein Auftrag sein Zeitlimit überschritten hat (pdfPreview.ts): Er
+// hängt oder ist gestorben. Was noch auf ihm läuft, scheitert; der nächste Aufruf bekommt einen neuen Worker.
+export function discardPdfWorker(): void {
+  const worker = sharedWorker
+  sharedWorker = null
+  try { worker?.destroy() } catch { /* schon tot */ }
+}
+
 export type PdfSource = { url: string } | { data: ArrayBuffer }
 
 export async function openPdf(source: PdfSource): Promise<{ doc: PDFDocumentProxy; close: () => void }> {

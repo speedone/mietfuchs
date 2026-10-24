@@ -732,3 +732,30 @@ test('Posteingang: die neuesten 20, darunter „Ältere anzeigen (N)“', async 
   await waitFor(() => expect(cards()).toHaveLength(20))
   expect(within(inbox()).getByRole('button', { name: 'Ältere anzeigen (11)' })).toBeTruthy()
 })
+
+// Durchsicht von PR #449, K2: Eine Position, die über eine Belegbuchung gedeckt ist, steht am Register und in der
+// Jahreszeile nicht als „ohne Beleg“, wie in Belegabdeckung und Liste.
+test('Register: eine über eine Belegbuchung gedeckte Position zählt als belegt', async () => {
+  extraUploads = [{ ...up('8_abwasser.pdf'), bookedItemIds: ['w2'] }]
+  const { container } = renderPage()
+  const wasser = (await screen.findByText('Wasser/Abwasser')).closest('details') as HTMLElement
+  expect(within(wasser).getByText(/alle Belege vorhanden/)).toBeTruthy()
+  expect(within(wasser).queryByText(/ohne Beleg/)).toBeNull()
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Belege aller Jahre zeigen' }))
+  await waitFor(() => expect(container.querySelector('details[data-year-section]')).not.toBeNull())
+  expect(container.querySelector('details[data-year-section] > summary')?.textContent).toBe(`${YEAR}3 Belege`)
+})
+
+// K3: Nach „Ältere anzeigen“ steht der Fokus auf der ersten neu gezeigten Karte, auch wenn der Knopf danach fehlt.
+test('Posteingang: nach „Ältere anzeigen“ hat die erste neue Karte den Fokus', async () => {
+  extraUploads = Array.from({ length: 30 }, (_, i) => ({ ...up(`${100 + i}_lose${i}.pdf`), uploadedAt: `2026-02-${String(i + 1).padStart(2, '0')}T10:00:00.000Z` }))
+  const { container } = renderPage()
+  await screen.findByText('📥 Posteingang (31)')
+  const inbox = container.querySelector('.receipt-inbox') as HTMLElement
+  const button = within(inbox).getByRole('button', { name: 'Ältere anzeigen (11)' })
+  button.focus()
+  fireEvent.click(button)
+  const cards = [...inbox.querySelectorAll('.receipt-card')]
+  expect(cards).toHaveLength(31)
+  expect(document.activeElement).toBe(cards[20]?.querySelector('.receipt-title a'))
+})
