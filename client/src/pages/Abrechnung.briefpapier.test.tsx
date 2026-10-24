@@ -38,7 +38,12 @@ let templates: LetterTemplates
 let costItems: unknown[]
 let ownLetters: Record<string, unknown>
 let puts: { url: string, body: unknown }[]
+// Ob der Browser Ränder je Druckseite wiederholen kann (`canPagePaper`): Chromium und Firefox ja, Safari nein. jsdom kennt
+// keine CSS-Schnittstelle; die Tests stellen sie nach.
+let pagedPaper: boolean
 beforeEach(() => {
+  pagedPaper = true
+  vi.stubGlobal('CSS', { supports: (property: string, value: string) => pagedPaper && property === 'box-decoration-break' && value === 'clone' })
   const base: Settlement = {
     year: YEAR, daysInYear: 365, period: settlementPeriod(calendarYearPeriod(YEAR)), deadline: `${YEAR + 1}-12-31`, statements: [STATEMENT],
     landlord: { rows: [], totalCents: 0 }, selfUsedShareCents: 0, totalCostsCents: 120000, warnings: [], notices: [], closed: null,
@@ -109,8 +114,10 @@ test('Briefpapier: ohne Seitenrand, Papier auf der ersten und den Folgeseiten, o
   expect(card.classList.contains('paper-print')).toBe(true)
   expect((card as HTMLElement).style.getPropertyValue('--paper-top')).toBe('40mm')
   expect(container.querySelector('style')?.textContent).toMatch(/@page\s*\{\s*margin:\s*0/)
-  // Das Papier der Folgeseiten liegt im Kopf der Hülle, den der Browser je Seite wiederholt, nicht unter den Belegkopien.
-  expect(card.querySelector('.print-pages > thead img.paper-follow')?.getAttribute('src')).toBe(url(NEXT))
+  expect(container.querySelector('style')?.textContent).toMatch(/body \{ width: 210mm; \}/)
+  // Das Papier der Folgeseiten liegt im Kopf der Hülle, den Chromium und Firefox je Seite wiederholen, nicht unter den
+  // Belegkopien; einen Rand hält der Kopf nicht frei, das tut der Rahmen um die Hülle (letter.css).
+  expect(card.querySelector('.print-pages-frame > .print-pages > thead img.paper-follow')?.getAttribute('src')).toBe(url(NEXT))
   expect(container.querySelectorAll('img.paper-follow')).toHaveLength(1)
   // Der Absender steht auf dem Briefpapier; die Rücksendeangabe im Fenster bleibt.
   expect(card.querySelector('.letter-head')).toBeNull()
@@ -118,8 +125,30 @@ test('Briefpapier: ohne Seitenrand, Papier auf der ersten und den Folgeseiten, o
   expect(card.querySelector('img.letter-logo')).not.toBeNull()
   expect(card.querySelector('.letter-footer')).toBeNull()
   expect(card.querySelector('.statement-footnote')?.textContent).not.toContain('DE02')
-  // Der Kopf jeder Druckseite der Aufstellung hält den oberen Rand frei.
-  expect(card.querySelector('.print-pages > thead .print-pages-spacer')).not.toBeNull()
+  expect(card.querySelector('.print-pages-spacer')).toBeNull()
+})
+
+// Druck in Safari (#286): WebKit nimmt die Ränder der ersten Seite für alle Seiten und wiederholt nichts je Seite; mit
+// Briefpapier stünde der Text der Folgeseiten im Papier oder an der Blattkante. Dort druckt die Seite wie ohne Briefpapier
+// und sagt es im Fenster „Drucken“.
+test('ein Browser ohne Ränder je Seite (Safari): ohne Briefpapier, mit Logo, Rand und Absender, und das Fenster sagt es', async () => {
+  pagedPaper = false
+  designs = { installation: { ...DEFAULT_LETTER_DESIGN, logo: LOGO, paper: PAPER }, property: null }
+  const { container } = show({ ...SETTINGS, printFooter: true })
+  const card = await statementOf()
+  await waitFor(() => expect(card.querySelector('img.letter-logo')?.getAttribute('src')).toBe(url(LOGO)), SLOW)
+  expect(container.querySelector('style')).toBeNull()
+  expect(card.classList.contains('paper-print')).toBe(false)
+  expect(card.querySelector('img.letter-paper, img.paper-follow, .print-pages-frame')).toBeNull()
+  expect(card.querySelector('.letter-head')?.textContent).toContain('Max Vermieter')
+  expect(card.querySelector('.letter-footer')).not.toBeNull()
+  // Nicht auf der Seite (dort wäre es für Chrome falsch), sondern vor dem Druck.
+  expect(container.textContent).not.toContain('Briefpapier druckt dieser Browser nicht')
+  fireEvent.click(screen.getByRole('button', { name: /Drucken \/ PDF/ }))
+  const drawer = await screen.findByRole('dialog', { name: 'Drucken' }, SLOW)
+  expect(drawer.textContent).toContain('Briefpapier druckt dieser Browser nicht')
+  expect(drawer.textContent).toContain('Chrome, Edge oder Firefox')
+  expect((within(drawer).getByRole('button', { name: 'Drucken' }) as HTMLButtonElement).disabled).toBe(false)
 })
 
 test('Briefpapier nur auf der ersten Seite: kein Papier auf den Folgeseiten', async () => {

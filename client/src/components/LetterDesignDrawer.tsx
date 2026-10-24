@@ -223,7 +223,8 @@ export default function LetterDesignDrawer({ open, level, title, stored, install
                 bleibt. Gedruckt wird ohne Seitenrand, damit das Briefpapier bis an die Blattkante reicht: Wählen Sie im
                 Druckdialog die Skalierung 100 %. Was sehr nah am Blattrand liegt, druckt nicht jeder Drucker; „Als PDF
                 speichern“ enthält alles. Ohne Seitenrand entfällt die Seitenzahl unten rechts; jede Seite der Aufstellung
-                nennt weiter Mieter, Wohnung und Zeitraum.
+                nennt weiter Mieter, Wohnung und Zeitraum. Safari druckt ohne Briefpapier, weil es die Ränder nicht je Seite
+                unterscheiden kann.
               </p>
             </>
           )}

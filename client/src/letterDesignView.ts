@@ -4,7 +4,15 @@
 // **Mit Briefpapier druckt die Seite ohne Seitenrand** (`PAPER_PAGE_CSS`): Chromium schneidet alles ab, was in den Rand
 // von 12 mm ragt (nachgemessen), ein Briefpapier mit Kopf und Fuß bis an die Blattkante käme sonst mit weißem Rahmen
 // heraus. Die Ränder des Textbereichs setzt die Seite dann selbst: das Anschreiben mit seinen Maßen ab der Blattkante,
-// die Aufstellung über Kopf- und Fußzeile der Hülle, die der Browser auf jeder Seite wiederholt (letter.css).
+// die Aufstellung über einen Rahmen, dessen Innenabstand oben und unten sich mit `box-decoration-break: clone` auf jeder
+// Druckseite wiederholt (letter.css).
+//
+// **Ohne diese Funktion kein Briefpapier** (Druck in Safari, #286, nachgemessen mit WKWebView): WebKit nimmt die Ränder
+// der ersten Seite für alle Seiten (auch die aus `@page :first`), wiederholt weder Tabellenkopf noch -fuß noch ein fest
+// positioniertes Element je Seite und schneidet ab, was in den Seitenrand ragt. Ein Papier bis zur Blattkante und Ränder
+// auf den Folgeseiten gehen dort nicht zusammen: Der Text stünde im Kopf oder Fuß des Papiers bzw. an der Blattkante. Ein
+// solcher Browser druckt deshalb ohne Briefpapier, wie wenn die Datei fehlte (mit Absender, Seitenrand und Fußzeile von
+// Mietfuchs); das Fenster „Drucken“ sagt es. Erkannt wird die Funktion selbst (`canPagePaper`), nicht der Browser.
 import type { LetterDesignFile, LetterDesigns, LetterMargins } from '../../shared/types.ts'
 import { effectiveLetterDesign, followPaper } from '../../shared/letterDesign.ts'
 
@@ -13,21 +21,31 @@ export type PrintDesign = {
   paper: LetterDesignFile | null // erste Seite
   follow: LetterDesignFile | null // Folgeseiten
   margins: LetterMargins | null // nur mit Briefpapier
+  paperSkipped: boolean // ein Briefpapier ist gewählt, aber dieser Browser kann es nicht drucken (Safari)
 }
 
-const NONE: PrintDesign = { logo: null, paper: null, follow: null, margins: null }
+const NONE: PrintDesign = { logo: null, paper: null, follow: null, margins: null, paperSkipped: false }
 
-export const PAPER_PAGE_CSS = '@page { margin: 0; }'
+// Ohne Seitenrand; die Breite des Dokuments ist die des Blatts. Sonst legt WebKit die Seite um ein Viertel breiter an, als
+// das Blatt in Punkt misst, und druckt alles rund 7 % größer (`printingMinimumShrinkFactor` in WebCore, letter.css).
+export const PAPER_PAGE_CSS = '@page { margin: 0; } @media print { body { width: 210mm; } }'
 
-export function printDesign(designs: LetterDesigns | null, { legacy }: { legacy: boolean }): PrintDesign {
+// Kann der Browser den Innenabstand eines Blocks auf jeder Druckseite wiederholen? Chromium ab 130 und Firefox ja,
+// WebKit nur mit Präfix und nur für Zeilen, nicht für Druckseiten (nachgemessen).
+export const canPagePaper = (css: { supports: (property: string, value: string) => boolean } | undefined = globalThis.CSS): boolean =>
+  typeof css?.supports === 'function' && css.supports('box-decoration-break', 'clone')
+
+export function printDesign(designs: LetterDesigns | null, { legacy, pagedPaper }: { legacy: boolean, pagedPaper: boolean }): PrintDesign {
   // Vor #415 abgeschlossen: gedruckt wird der bisherige Aufbau, ohne Gestaltung.
   if (!designs || legacy) return NONE
   const d = effectiveLetterDesign(designs)
+  const paper = pagedPaper ? d.paper : null
   return {
     logo: d.logo,
-    paper: d.paper,
-    follow: followPaper(d),
-    margins: d.paper ? d.margins : null,
+    paper,
+    follow: paper ? followPaper(d) : null,
+    margins: paper ? d.margins : null,
+    paperSkipped: !!d.paper && !paper,
   }
 }
 

@@ -12,9 +12,9 @@ export const LETTER_DESIGN_LIMITS: Record<DesignSlot, number> = { logo: 2 * 1024
 export const LIMIT_TEXT: Record<DesignSlot, string> = { logo: '2 MB', paper: '10 MB' }
 
 // Ränder des Textbereichs ab der Blattkante. Die Vorgaben folgen DIN 5008 (links 25 mm, rechts 20 mm); oben und unten
-// lässt das Briefpapier Kopf und Fuß frei. Oben höchstens 70 mm (Durchsicht M1): Den oberen Rand der Folgeseiten hält
-// ein Tabellenkopf frei, den Chromium auf jeder Seite wiederholt, aber nur bis rund einem Viertel der Seitenhöhe; ab
-// 76 mm druckte der Inhalt in den Briefkopf (nachgemessen mit page.pdf, 70 und 74 mm gingen).
+// lässt das Briefpapier Kopf und Fuß frei. Oben höchstens 70 mm (Durchsicht M1): Damals hielt ein Tabellenkopf den oberen
+// Rand der Folgeseiten frei, den Chromium nur bis rund einem Viertel der Seitenhöhe wiederholt; heute tut das der
+// Innenabstand eines Rahmens (`box-decoration-break: clone`, client/src/letter.css), die Grenze bleibt.
 export const MARGIN_LIMITS: Record<keyof LetterMargins, { min: number; max: number; label: string }> = {
   top: { min: 10, max: 70, label: 'Rand oben' },
   right: { min: 10, max: 40, label: 'Rand rechts' },

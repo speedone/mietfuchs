@@ -4,7 +4,7 @@
 //
 // Teil 2: Ohne Anschreiben beginnt die Aufstellung mit demselben Kopf (`StatementHead`): Absender,
 // Rücksendeangabe und Anschrift im Fensterfeld, Datum; den Betreff setzt die Aufstellung als Überschrift.
-// Jede Seite der Aufstellung trägt im Druck einen Fußvermerk (`PrintPages`).
+// Die Aufstellung trägt im Druck einen Fußvermerk (`PrintPages`), wo der Browser es kann auf jeder Seite.
 //
 // Druck nach DIN 5008 (#415): Rechts neben dem Anschriftfeld steht der Informationsblock mit Ansprechpartner, Kontakt, Ort
 // und Datum (`infoRows` in letterView.ts), wie ein Geschäftsbrief ihn trägt.
@@ -26,6 +26,13 @@ type HeadProps = {
 type Props = HeadProps & {
   paragraphs: LetterParagraph[]
   footer?: string | null // Teil 2: Fußzeile mit Kontakt und Bank, nur auf Wunsch
+}
+
+// Eine E-Mail darf nach dem @ umbrechen, statt über den rechten Rand zu ragen (Druck in Safari, #286); was dann noch zu
+// lang ist, bricht `overflow-wrap: anywhere` (letter.css).
+export function breakAfterAt(text: string): ReactNode {
+  const parts = text.split('@')
+  return parts.length < 2 ? text : parts.map((p, i) => (i === 0 ? p : <Fragment key={i}>@<wbr />{p}</Fragment>))
 }
 
 const FLOW: readonly LetterParagraph['block'][] = ['intro', 'credit', 'backPayment', 'balanced', 'adjustSuggestion', 'adjustCustom', 'receipts', 'attachments', 'closing']
@@ -61,7 +68,7 @@ function LetterHead({ sender, senderAddress, returnLine, recipient, info, foldMa
         {info.map((r, i) => (r.label ? (
           <Fragment key={i}>
             <span className="letter-info-label">{r.label}</span>
-            <span>{r.value}</span>
+            <span>{breakAfterAt(r.value)}</span>
           </Fragment>
         ) : (
           <span key={i} className={i === info.length - 1 && i > 0 ? 'letter-info-wide letter-info-date' : 'letter-info-wide'}>{r.value}</span>
@@ -103,22 +110,25 @@ export function StatementHead(props: HeadProps) {
   )
 }
 
-// Der Fußvermerk auf jeder Seite der Aufstellung (Teil 2, Durchsicht K8 zu #421): Chromium und Firefox
-// wiederholen den Fuß einer echten Tabelle auf jeder Druckseite, eine Tabelle aus CSS dagegen nicht
-// (nachgemessen). Am Bildschirm ist die Hülle unsichtbar und der Fuß ausgeblendet. Ohne Vermerk keine Hülle.
+// Der Fußvermerk der Aufstellung (Teil 2, Durchsicht K8 zu #421) steht im Fuß einer echten Tabelle: Chromium und Firefox
+// wiederholen ihn auf jeder Druckseite, eine Tabelle aus CSS dagegen nicht (nachgemessen); Safari druckt ihn einmal am
+// Ende der Aufstellung (WebKit wiederholt `tfoot` nicht, Druck in Safari #286). Er steht damit immer mindestens einmal im
+// Fluss, und je Seite, wo der Browser es kann. Am Bildschirm ist die Hülle unsichtbar und der Fuß ausgeblendet. Ohne
+// Vermerk keine Hülle.
 //
-// Teil 2b: Mit Briefpapier druckt die Seite ohne Seitenrand; dann hält ein leerer Kopf jeder Druckseite den oberen Rand
-// frei, der Fuß den unteren, und die Zelle die seitlichen (`paper`, Maße in letter.css). Im Kopf liegt auch das
-// Briefpapier der Folgeseiten (`follow`): Den Kopf wiederholt der Browser auf jeder Seite, und so trägt nur diese Hülle
-// es, nicht die der Belegkopien dahinter (Durchsicht S2; ein fest positioniertes Bild läge unter jeder Seite). `newPage`:
-// Die Hülle beginnt auf einer neuen Seite; ein Umbruch vor dem ersten Inhalt der Zelle wirkte nicht (nachgemessen).
+// Teil 2b: Mit Briefpapier druckt die Seite ohne Seitenrand; dann liegt die Hülle in einem Rahmen, dessen Innenabstand
+// oben und unten sich auf jeder Druckseite wiederholt (`box-decoration-break: clone`, letter.css), und die Zelle hält die
+// seitlichen Ränder (`paper`). Im Kopf der Hülle liegt das Briefpapier der Folgeseiten (`follow`), ohne eigene Höhe: Den
+// Kopf wiederholen Chromium und Firefox auf jeder Seite, und so trägt nur diese Hülle es, nicht die der Belegkopien
+// dahinter (Durchsicht S2; ein fest positioniertes Bild läge unter jeder Seite). `newPage`: Die Hülle beginnt auf einer
+// neuen Seite; ein Umbruch vor dem ersten Inhalt der Zelle wirkte nicht (nachgemessen).
 export function PrintPages({ footnote, paper = false, follow = null, newPage = false, children }: { footnote: ReactNode | null, paper?: boolean, follow?: string | null, newPage?: boolean, children: ReactNode }) {
   if (footnote === null && !paper) return <>{children}</>
-  return (
-    <table className={newPage ? 'print-pages print-pages-new' : 'print-pages'} role="presentation">
-      {paper && (
+  const table = (
+    <table className="print-pages" role="presentation">
+      {paper && follow && (
         <thead>
-          <tr><td className="print-pages-cell"><div className="print-pages-spacer">{follow && <img className="paper-follow" src={follow} alt="" aria-hidden="true" />}</div></td></tr>
+          <tr><td className="print-pages-cell"><div className="print-pages-follow"><img className="paper-follow" src={follow} alt="" aria-hidden="true" /></div></td></tr>
         </thead>
       )}
       <tfoot>
@@ -129,4 +139,6 @@ export function PrintPages({ footnote, paper = false, follow = null, newPage = f
       </tbody>
     </table>
   )
+  const frame = [paper ? 'print-pages-frame' : '', newPage ? 'print-pages-new' : ''].filter((c) => c !== '').join(' ')
+  return frame ? <div className={frame}>{table}</div> : table
 }
