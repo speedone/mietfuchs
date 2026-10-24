@@ -11,6 +11,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import AdmZip from 'adm-zip'
+import { sql } from 'drizzle-orm'
 import { createHash } from 'node:crypto'
 import { LEGACY_JSON_NAME } from '../src/db/changeover.ts'
 import { connect, loadMigrations } from '../src/db/client.ts'
@@ -1122,5 +1123,48 @@ test('Update: nach dem Wiederherstellen nennt /healthz keine Sicherung, die zu d
     assert.equal((await danach.api<HealthReport>('/healthz')).database?.migrated, null)
   } finally {
     danach.stop()
+  }
+})
+
+// **Die Startzeile kommt erst, wenn der Start fertig ist.** Seit #416 legte der Server die
+// Vorversion erst *nach* der Zeile „Mietfuchs-Server läuft auf …“ an. Wer auf die Zeile wartet
+// (startServerIn, Skripte), hielt den Server damit für bereit, während er noch die Datenbank las
+// (`carriesStock`) oder mit `VACUUM INTO` kopierte. Schrieb ein Test dann über `inDatabase`
+// unmittelbar in die Datei, scheiterte das unter Last mit „database is locked“: zwei Prozesse,
+// eine Datei, und die Verbindung des Tests wartete nicht (nachgestellt mit zwölf parallelen Läufen
+// von api-belegbuchung.test.ts, zwei davon rot). Ein Bestand, der beim ersten Start umsteigt,
+// bekommt gleich eine Vorversion, deshalb zeigt die Reihenfolge der Ausgabe es ohne Zufall.
+test('Start: Die Vorversion entsteht vor der Startzeile, danach antwortet /healthz nicht mehr mit „starting“', async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-'))
+  fs.writeFileSync(path.join(dataDir, 'db.json'), JSON.stringify({
+    settings: { houseName: 'Haus', address: '', landlordName: '', iban: '', paymentDeadlineDays: 30 },
+    units: [{ id: 'u1', name: 'EG', areaM2: 80, participates: true }],
+    tenancies: [], costItems: [], meters: [], readings: [], payments: [], closedSettlements: [],
+  }))
+  const s = await startServerIn(dataDir)
+  try {
+    const body = await jsonOf<{ status?: string }>(await fetch(`${s.base}/healthz`))
+    assert.notEqual(body.status, 'starting', 'startServerIn kam zurück, bevor der Start fertig war')
+    const out = s.output()
+    const prior = out.indexOf('Vorversion der Datenbank angelegt')
+    assert.ok(prior >= 0, `keine Vorversion beim Start: ${out}`)
+    assert.ok(prior < out.indexOf('läuft auf'), `Die Vorversion entstand erst nach der Startzeile:\n${out}`)
+  } finally {
+    s.stop()
+  }
+})
+
+// Die zweite Hälfte derselben Ursache: Auch nach dem Start liest der Server im Hintergrund
+// (`backfillUploads`, die tägliche Vorversion). Die Verbindung des Tests wartet deshalb auf eine
+// Sperre, statt sofort mit „database is locked“ zu scheitern.
+test('Start: Die Verbindung von inDatabase wartet auf eine Sperre, statt sofort zu scheitern', async () => {
+  const s = await startServer()
+  try {
+    const rows = await inDatabase(s, async (db) => db.all<unknown>(sql`PRAGMA busy_timeout`))
+    const first = rows[0]
+    const timeout = Number(Array.isArray(first) ? first[0] : Object.values(first ?? {})[0])
+    assert.ok(timeout >= 1000, `busy_timeout ist ${timeout}`)
+  } finally {
+    s.stop()
   }
 })

@@ -21,7 +21,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import AdmZip from 'adm-zip'
-import { applyMigrations, connect, loadMigrations, type Database } from '../src/db/client.ts'
+import { applyMigrations, connect, loadMigrations, type Connection, type Database } from '../src/db/client.ts'
 import { migrateLegacy, straightenForDatabase } from '../src/legacy/migrate.ts'
 import { writeStock } from '../src/legacy/write.ts'
 import { readStock } from '../src/db/read.ts'
@@ -127,13 +127,26 @@ export const fileOf = (body: { file?: string }): string => {
 //
 // Bis Aufgabe 6 stand hier die db.json. Sie wird seit dem Umstellen der Routen nicht mehr
 // fortgeschrieben, ein Blick hinein sähe also den Stand von damals und nicht den von jetzt.
+//
+// **Diese Verbindung ist eine zweite neben der des Servers**, in einem anderen Prozess. Die Schlange
+// (db/open.ts) ordnet nur die Zugriffe des Servers; liest der Server gerade (eine Vorversion, das
+// Nachtragen der Prüfsummen), scheiterte ein Schreiben hier ohne Wartezeit sofort mit „database is
+// locked“. Deshalb wartet sie bis zu fünf Sekunden auf die Sperre (`besideServer`).
 export async function inDatabase<T>(s: { dataDir: string }, read: (db: Database) => Promise<T>): Promise<T> {
-  const connection = await connect(path.join(s.dataDir, 'mietfuchs.sqlite'))
+  const connection = await besideServer(s.dataDir)
   try {
     return await read(connection.db)
   } finally {
     connection.close()
   }
+}
+
+// Eine Verbindung auf die Datei eines laufenden Servers, die auf seine Sperren wartet. Nur für
+// Tests: Der Server selbst hat genau eine Verbindung und braucht das nicht (db/CLAUDE.md).
+export async function besideServer(dataDir: string): Promise<Connection> {
+  const connection = await connect(path.join(dataDir, 'mietfuchs.sqlite'))
+  connection.exec('PRAGMA busy_timeout = 5000')
+  return connection
 }
 
 export const storedDb = (s: { dataDir: string }) => inDatabase(s, readStock)
@@ -717,7 +730,7 @@ export function archive(entries: Record<string, string | Buffer> = {}, db: unkno
 // Die Wohnungen, wie sie in der Datenbank stehen — an den Routen vorbei gelesen. Nur so lässt
 // sich unterscheiden, ob eine Route wirklich dort geschrieben hat oder nur in der db.json.
 export async function unitRowsInDatabase(dataDir: string): Promise<string[]> {
-  const connection = await connect(path.join(dataDir, 'mietfuchs.sqlite'))
+  const connection = await besideServer(dataDir)
   try {
     return connection.rows('SELECT id FROM units ORDER BY rowid').map((zeile) => String(zeile[0]))
   } finally {

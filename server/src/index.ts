@@ -3278,6 +3278,14 @@ function databaseState(): DatabaseState {
   return { open: false, file: databaseFile(DATA_DIR), migrations: 0, detail: openProblem ?? 'nicht geöffnet', changeover: wie, migrated: null }
 }
 
+// Vorversion beim Start, bevor wartende Anfragen bedient werden (eine Kopie der Datenbank dauert
+// bei einem privaten Bestand Bruchteile einer Sekunde), danach einmal am Tag. **Vor der Startzeile
+// und nicht danach**: Wer auf „läuft auf …“ wartet (Tests, Skripte), hält den Server danach für
+// fertig. Kam die Vorversion erst nach der Zeile, las der Server noch die Datei, während ein Test
+// schon von außen hineinschrieb, und der scheiterte unter Last mit „database is locked“.
+await checkPriorVersion()
+setInterval(() => void checkPriorVersion(), PRIOR_CHECK_INTERVAL_MS).unref()
+
 // Jetzt erst gilt der Start als gelungen: Meldung, Browser und die Anfragen, die gewartet haben.
 {
   // Bewusst 127.0.0.1 statt localhost: Unter Windows löst "localhost" zuerst auf IPv6
@@ -3330,9 +3338,5 @@ function databaseState(): DatabaseState {
     if (!process.env.CI) openBrowser(url)
   }
 }
-// Vorversion beim Start, bevor wartende Anfragen bedient werden (eine Kopie der Datenbank dauert
-// bei einem privaten Bestand Bruchteile einer Sekunde), danach einmal am Tag.
-await checkPriorVersion()
-setInterval(() => void checkPriorVersion(), PRIOR_CHECK_INTERVAL_MS).unref()
 startupDone = true
 finishStartup()

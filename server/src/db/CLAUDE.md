@@ -56,6 +56,14 @@ sonst beendete Node den Prozess). Das Kennzeichen in `AsyncLocalStorage` ist ein
 Kärtchen, das am Ende ungültig wird, weil Zeitgeber den Speicher überleben. Nach 30 Sekunden gibt
 es eine Meldung, abgebrochen wird nie.
 
+**Eine zweite Verbindung auf die Datei gibt es nur in Tests**, und die Schlange ordnet sie nicht.
+Ohne WAL und ohne `busy_timeout` scheitert ein Schreiben dort sofort mit „database is locked“, wenn
+der Server gerade liest. Öffne sie deshalb mit `besideServer` aus server/testing/api.ts (wartet bis
+zu fünf Sekunden), wie `inDatabase` es tut. Die Hauptverbindung des Servers bekommt kein
+`busy_timeout`: Im Betrieb gibt es keinen zweiten Schreiber, und ein Warten dort verdeckte genau den
+Fehler, dass doch einer dazukam. Und die Startzeile „läuft auf …“ kommt erst nach der Vorversion
+beim Start, denn wer auf sie wartet, hält den Server für fertig.
+
 ## Schema
 
 - **Verschachtelte Listen sind Tabellen** (Staffeln, Jahreskorrektur, vereinbarte Anteile …), damit
