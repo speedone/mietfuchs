@@ -13,7 +13,7 @@ import { useOpenForm, useProperty, withProperty } from '../property'
 import { useConfirmDiscard, useDraft } from '../useDraft'
 import DraftActions from '../components/DraftActions'
 import { FieldMessage } from '../components/Field'
-import { effectiveLandlord, footerLine, letterhead, addressCheck, addressNotice, recipientLines, returnLine } from '../landlord'
+import { effectiveLandlord, footerLine, letterhead, addressCheck, addressFieldWarning, addressNotice, recipientLines, returnLine } from '../landlord'
 import { localToday } from '../periodForm'
 import { landlordReasonText } from '../landlordReasons'
 import { notSettledText } from '../tenancyModel'
@@ -766,6 +766,9 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
               )}
               {head && returnLineTooLong(head.returnLine) && (
                 <NoticeBox level="warning" className="no-print" title="Rücksendeangabe zu lang" action={`Die Rücksendeangabe über der Anschrift hat ${head.returnLine.trim().length} Zeichen; im Fensterfeld passen rund ${RETURN_LINE_MAX} in zwei kleine Zeilen, der Rest würde abgeschnitten. Kürzen Sie den Namen oder die Anschrift des Vermieters (Einstellungen bzw. beim Objekt).`} />
+              )}
+              {head && addressFieldWarning(head.recipient) && (
+                <NoticeBox level="warning" className="no-print" title="Anschrift zu lang für das Fensterfeld" action={addressFieldWarning(head.recipient) ?? ''} />
               )}
               <PrintPages footnote={footnote}>
               {/* Nur im Druck, solange Fehler offen sind; deckt auch Strg+P ab (Durchsicht S2 zu #341). Ohne Anschreiben

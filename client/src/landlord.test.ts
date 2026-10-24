@@ -2,7 +2,7 @@
 // `null` heißt „die Vorgabe aus den Einstellungen gilt“. Eine leere Angabe am Objekt ist dagegen
 // eine Angabe, etwa für ein Haus, dessen Miete bar gezahlt wird.
 import { expect, test } from 'vitest'
-import { effectiveLandlord, letterhead, addressCheck, addressCheckDetail, addressFindings, recipientLines } from './landlord'
+import { effectiveLandlord, letterhead, addressCheck, addressCheckDetail, addressFieldWarning, addressFindings, ADDRESS_LINE_MAX, recipientLines } from './landlord'
 import type { Property } from './types'
 
 const vorgabe = { landlordName: 'Erika Muster', iban: 'DE01', paymentDeadlineDays: 30 }
@@ -70,6 +70,25 @@ test('ausgezogen ohne Anschrift für den Schriftverkehr: Mietfuchs weist darauf 
   expect(check({ end: '2025-06-30', correspondenceAddress: neu }, recipientLines('Anna', 'EG', { correspondenceAddress: neu }, haus))).toBeNull()
   // Versendet: nichts mehr zu tun.
   expect(check({ end: '2025-06-30' }, frozenOld, '2026-02-01')).toBeNull()
+})
+
+// Durchsicht M2: Verglichen wird der Inhalt, nicht die Zeilen. Vor #229 trennte Mietfuchs die eigene Anschrift nur vor
+// der Postleitzahl; ein so eingefrorener Stand ist keine geänderte Anschrift, ebenso wenig doppelter Leerraum.
+test('eingefroren mit der früheren Trennung oder anderem Leerraum ist nicht „geändert“', () => {
+  const address = 'Birkenweg 3, Hinterhaus, 54321 Anderswo'
+  const frozenBefore229 = ['Anna', 'Birkenweg 3, Hinterhaus', '54321 Anderswo']
+  expect(addressCheck(st, { end: '2025-06-30', correspondenceAddress: address }, frozenBefore229, haus, '2026-03-01', null)).toBeNull()
+  expect(addressCheck(st, { end: '2025-06-30', correspondenceAddress: 'Birkenweg  3,  54321 Anderswo' }, ['Anna', 'Birkenweg 3', '54321 Anderswo'], haus, '2026-03-01', null)).toBeNull()
+  // Der eingefrorene Stand ohne eigene Anschrift ist weiter „former“, wenn die heutige auch keine hat.
+  expect(addressCheck(st, { end: '2025-06-30' }, ['Anna', 'EG', 'Lindenweg 12', '12345 Musterstadt'], haus, '2026-03-01', null)).toBe('former')
+})
+
+// Durchsicht S1: Das Anschriftfeld fasst sechs Zeilen; eine längere Zeile bricht um und wird abgeschnitten.
+test('Anschriftfeld: zu viele oder zu lange Zeilen werden vor dem Druck genannt', () => {
+  expect(addressFieldWarning(['Anna', 'Birkenweg 3', '54321 Anderswo'])).toBeNull()
+  expect(addressFieldWarning(['Anna', 'a', 'b', 'c', 'd', 'e', 'f'])).toMatch(/7 Zeilen.*6/)
+  expect(addressFieldWarning(['Anna', `Birkenweg ${'3'.repeat(ADDRESS_LINE_MAX)}`])).toBeNull()
+  expect(addressFieldWarning(['Anna', 'a', 'b', 'c', 'd', `Birkenweg ${'3'.repeat(ADDRESS_LINE_MAX)}`])).toMatch(/Zeile „Birkenweg/)
 })
 
 test('Cockpit: alle betroffenen Mieter einer Abrechnung, beim Namen', () => {

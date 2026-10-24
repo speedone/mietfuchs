@@ -20,6 +20,7 @@ import { IBAN_LABELS, normalizeIban } from '../../../shared/iban.ts'
 import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_KIND_OPTIONS, SELF_SUPPLY_TENANCY_HINT, buildPersonHistory, costModelBadge, costModelBody, buildSchedule, defaultTenancyUnitId, overlapQuestion, partialMonthNote, prepaymentColumn, tenancyRequired, type ScheduleKind, type TenancyField, scheduleField, scheduleLabel, scheduleMonthText, showsFlatRates, startsSchedule } from '../tenancyModel'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import { buildTenantChange, contactForm, defaultStart, EMPTY_NEW_TENANT, INTERIM_FEE_HINT, INTERIM_GAP_OPTIONS, parseMeterValue, successorHeatingNote, tenantChangeProblems, type ContactForm, type NewTenantForm, type TenantChangeField } from '../tenantChange'
+import { DEADLINE_SENTENCE, ownAddressWarning } from '../landlord'
 import { gapConsequence } from '../heatingSelfView'
 import PeriodCard from '../components/PeriodCard'
 import Card from '../components/Card'
@@ -749,7 +750,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                 <Field label="Telefon">
                   <input value={tenForm.phone} onChange={(e) => setTenForm({ ...tenForm, phone: e.target.value })} placeholder="0123 456789" />
                 </Field>
-                <Field label="Abweichende Anschrift (Schriftverkehr)" hint="Straße, PLZ Ort. Steht im Anschriftfeld der Abrechnung, etwa nach dem Auszug.">
+                <Field label="Abweichende Anschrift (Schriftverkehr)" hint={ownAddressWarning(tenForm.tenantName, tenForm.correspondenceAddress) ?? 'Straße, PLZ Ort. Steht im Anschriftfeld der Abrechnung, etwa nach dem Auszug.'}>
                   <input value={tenForm.correspondenceAddress} onChange={(e) => setTenForm({ ...tenForm, correspondenceAddress: e.target.value })} placeholder="z. B. Birkenweg 3, 54321 Anderswo" />
                 </Field>
                 {/* #415, Teil 2: die Anrede im Anschreiben ({Anrede}); ohne Eintrag gilt der Vorschlag im Feld. */}
@@ -1036,9 +1037,9 @@ function TenantChangeDrawer({ tenancy, unit, plants, onClose, onDone }: {
         </Field>
         {/* #229: Die Abrechnung geht nach dem Auszug an die neue Anschrift; die Frist nach § 556 Abs. 3 BGB läuft auch
             gegenüber dem bisherigen Mieter. Alles freiwillig, gespeichert am Mietverhältnis. */}
-        <p className="muted">Wie erreichen Sie {tenancy.tenantName} nach dem Auszug? Die Nebenkostenabrechnung geht an die neue Anschrift; die Frist nach § 556 Abs. 3 BGB läuft auch gegenüber dem bisherigen Mieter. Alle Angaben sind freiwillig.</p>
+        <p className="muted">{`Wie erreichen Sie ${tenancy.tenantName} nach dem Auszug? Die Nebenkostenabrechnung geht an die neue Anschrift. ${DEADLINE_SENTENCE} Alle Angaben sind freiwillig.`}</p>
         <div className="field-grid">
-          <Field label="Neue Anschrift" width="l" hint="Straße, PLZ Ort. Gilt ab dem Speichern für alle Schreiben an diesen Mieter." {...errors.field('correspondenceAddress')}>
+          <Field label="Neue Anschrift" width="l" hint={ownAddressWarning(tenancy.tenantName, contact.correspondenceAddress) ?? 'Straße, PLZ Ort. Gilt ab dem Speichern für alle Schreiben an diesen Mieter.'} {...errors.field('correspondenceAddress')}>
             <input value={contact.correspondenceAddress} placeholder="z. B. Birkenweg 3, 54321 Anderswo" autoComplete="off" onChange={(e) => setContact({ ...contact, correspondenceAddress: e.target.value })} />
           </Field>
           <Field label="E-Mail" width="l" {...errors.field('email')}>

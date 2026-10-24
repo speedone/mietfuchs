@@ -206,4 +206,22 @@ describe('Mieterwechsel: Erreichbarkeit des bisherigen Mieters (#229)', () => {
     ])
     expect(buildTenantChange(input({ tenancy, contact }))).toEqual({ error: expect.stringMatching(/Anschrift/) })
   })
+  // Durchsicht M1: Geprüft wird nur, was geändert ist (wie bei der IBAN). Eine gespeicherte Angabe, die die Prüfung
+  // nicht besteht, sperrt den Wechsel nicht, und sie kommt nicht in den Rumpf.
+  test('eine gespeicherte, unveränderte Angabe sperrt den Wechsel nicht', () => {
+    const stored = { start: '2024-01-01', email: 'mieter@intranet', correspondenceAddress: 'y'.repeat(201) }
+    const contact = contactForm(stored)
+    expect(tenantChangeProblems(input({ tenancy: stored, contact }))).toEqual([])
+    const r = buildTenantChange(input({ tenancy: stored, vacancy: true, contact }))
+    expect(r).toEqual({ body: { end: '2025-06-30', readings: [{ meterId: 'm1', value: 123.5 }], newTenancy: null } })
+    // Geändert wird wieder geprüft.
+    expect(tenantChangeProblems(input({ tenancy: stored, contact: { ...contact, email: 'neu@intranet' } })).map((p) => p.field)).toEqual(['email'])
+  })
+  // Durchsicht S2: E-Mail und Telefon haben dieselbe Grenze wie beim Server.
+  test('E-Mail und Telefon über 200 Zeichen sind Meldungen am Feld', () => {
+    const contact = { correspondenceAddress: '', email: `${'a'.repeat(195)}@example.org`, phone: '1'.repeat(201) }
+    expect(tenantChangeProblems(input({ tenancy, contact })).map((p) => [p.field, p.short])).toEqual([
+      ['email', 'Höchstens 200 Zeichen'], ['phone', 'Höchstens 200 Zeichen'],
+    ])
+  })
 })

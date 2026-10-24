@@ -160,11 +160,16 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   Rücksendeangabe des Anschreibens; Anschrift des Mieters (`recipientLines`: eine eigene Anschrift für den
   Schriftverkehr geht vor, jedes Komma ist eine Zeile). **Anschrift vor dem Versand** (#229, `addressCheck` in
   landlord.ts): `former`, wenn der Mieter ausgezogen ist und gedruckt die Wohnung im Anschriftfeld stünde; `outdated`,
-  wenn die eingefrorene Anschrift (`letters[…].recipient`) von der heutigen abweicht (dann hilft nur Wiederöffnen).
+  wenn die eingefrorene Anschrift (`letters[…].recipient`) von der heutigen abweicht (dann hilft nur Wiederöffnen);
+  verglichen wird der Inhalt (an Komma und Umbruch getrennt, Leerraum zusammengezogen), nicht die Zeilen, denn vor #229
+  wurde nur vor der Postleitzahl getrennt. Passt die Anschrift nicht ins Fensterfeld (mehr als 6 Zeilen, je rund 45
+  Zeichen, nachgemessen; `addressFieldWarning`), warnt die Seite vor dem Druck, und Mieterwechsel und Stammdaten nennen
+  es als Hinweis am Feld (`ownAddressWarning`).
   Nach dem Versand nichts. Die Seite Abrechnung nennt es je Mieter, das Cockpit in einer gelben Zeile „Anschrift für den
   Versand“ (`addressFindings`). Bewusst kein Hinweis der Berechnung: Der Schnappschuss kennt keine Kontaktdaten. Der
   Mieterwechsel fragt nach neuer Anschrift, E-Mail und Telefon (vorbelegt, freiwillig); gesendet wird nur, was sich
-  geändert hat (`contactChanges` in tenantChange.ts, Rumpf `contact`). Der Rechenweg ([CalcSteps.tsx](src/components/CalcSteps.tsx)) ist immer
+  geändert hat (`contactChanges` in tenantChange.ts, Rumpf `contact`), und geprüft wird ebenso nur Geändertes (eine
+  gespeicherte, ungültige Angabe sperrt den Wechsel nicht, wie bei der IBAN). Der Rechenweg ([CalcSteps.tsx](src/components/CalcSteps.tsx)) ist immer
   `no-print`.
 
 ## Lexikon und Anleitungen

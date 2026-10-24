@@ -62,14 +62,21 @@ export function contactChanges(t: ContactSource, form: ContactForm | undefined):
 }
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-function contactProblems(form: ContactForm | undefined): Problem<TenantChangeField>[] {
-  if (!form) return []
+const CONTACT_LABELS: Record<keyof ContactForm, string> = { correspondenceAddress: 'Neue Anschrift', email: 'E-Mail-Adresse', phone: 'Telefon' }
+// Geprüft wird nur, was geändert ist (Durchsicht M1, wie bei der IBAN): Eine gespeicherte Angabe, die die Prüfung nicht
+// besteht, sperrt den Wechsel nicht; sie wird ja auch nicht gesendet.
+function contactProblems(t: ContactSource, form: ContactForm | undefined): Problem<TenantChangeField>[] {
+  const changes = contactChanges(t, form) ?? {}
   const problems: Problem<TenantChangeField>[] = []
-  if (form.correspondenceAddress.trim().length > CONTACT_LINE_MAX) {
-    problems.push({ field: 'correspondenceAddress', short: `Höchstens ${CONTACT_LINE_MAX} Zeichen`, text: `Neue Anschrift: Bitte höchstens ${CONTACT_LINE_MAX} Zeichen.` })
+  for (const key of CONTACT_KEYS) {
+    const value = changes[key]
+    if (typeof value !== 'string') continue
+    if (value.length > CONTACT_LINE_MAX) {
+      problems.push({ field: key, short: `Höchstens ${CONTACT_LINE_MAX} Zeichen`, text: `${CONTACT_LABELS[key]}: Bitte höchstens ${CONTACT_LINE_MAX} Zeichen.` })
+    } else if (key === 'email' && !EMAIL.test(value)) {
+      problems.push({ field: 'email', short: 'Keine E-Mail-Adresse', text: 'E-Mail-Adresse: Bitte in der Form name@beispiel.de angeben oder leer lassen.' })
+    }
   }
-  const email = form.email.trim()
-  if (email !== '' && !EMAIL.test(email)) problems.push({ field: 'email', short: 'Keine E-Mail-Adresse', text: 'E-Mail-Adresse: Bitte in der Form name@beispiel.de angeben oder leer lassen.' })
   return problems
 }
 
@@ -128,7 +135,7 @@ export function gapProblem(heatIds: readonly string[], meterValues: Record<strin
 }
 
 export type TenantChangeInput = Parameters<typeof buildTenantChange>[0]
-export type TenantChangeField = 'end' | 'correspondenceAddress' | 'email' | 'phone' |'name' | 'start' | 'persons' | 'baseRent' | 'prepayment' | 'heatingPrepayment' | 'gapStatus' | 'gapReason' | `meter:${string}` | `meterDate:${string}`
+export type TenantChangeField = 'end' | 'correspondenceAddress' | 'email' | 'phone' | 'name' | 'start' | 'persons' | 'baseRent' | 'prepayment' | 'heatingPrepayment' | 'gapStatus' | 'gapReason' | `meter:${string}` | `meterDate:${string}`
 
 // Der Mieterwechsel im Seitenfenster (#346 Schritt 7): alle Angaben auf einmal, je mit Feld, kurze Fassung am Feld und
 // Satz mit Ort für die Sammelmeldung. Dieselben Regeln wie buildTenantChange, das danach den Rumpf baut; ist die
@@ -141,7 +148,7 @@ export function tenantChangeProblems(input: TenantChangeInput): Problem<TenantCh
     const short = endDate === '' ? 'Auszugsdatum fehlt' : ISO_DATE.test(endDate) ? 'Vor dem Einzug' : 'Kein Datum'
     problems.push({ field: 'end', short, text: 'Auszug: Bitte ein gültiges Auszugsdatum nach dem Einzug angeben.' })
   }
-  problems.push(...contactProblems(input.contact))
+  problems.push(...contactProblems(input.tenancy, input.contact))
   for (const m of meters) {
     const v = meterValues[m.id]
     if (v?.trim() && parseMeterValue(v) === null) problems.push({ field: `meter:${m.id}`, short: 'Keine Zahl', text: `Zählerstand für „${m.name}“ ist keine gültige Zahl.` })
@@ -215,7 +222,7 @@ export function buildTenantChange(input: {
   if (gapError) return { error: gapError }
   const g = input.interimGap
   if (heatIds.length > 0 && missingHeat && g && g.status !== '') interimGap = { status: g.status, reason: g.reason.trim() }
-  const contactError = contactProblems(input.contact)[0]
+  const contactError = contactProblems(tenancy, input.contact)[0]
   if (contactError) return { error: contactError.text }
   const changes = contactChanges(tenancy, input.contact)
   const gap = { ...(interimGap ? { interimGap } : {}), ...(changes ? { contact: changes } : {}) }

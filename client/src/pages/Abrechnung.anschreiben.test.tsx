@@ -383,6 +383,16 @@ test('#229: Anschrift nach dem Auszug fehlt oder hat sich nach dem Abschluss ge�
   expect(screen.queryByText(/Anschrift nach dem/)).toBeNull()
 })
 
+// #229, Durchsicht S1: Eine Anschrift, die nicht ins Fensterfeld passt, nennt die Seite vor dem Druck.
+test('#229 S1: eine Anschrift mit mehr als sechs Zeilen wird vor dem Druck genannt', async () => {
+  const l = settlement.letters?.t1
+  if (!l) throw new Error('kein Anschreiben')
+  settlement = { ...settlement, letters: { t1: { ...l, recipient: ['Meier', 'c/o Weber', 'Hinterhaus', '3. OG', 'Birkenweg 3', 'Postfach 12', '54321 Anderswo'] } } }
+  show()
+  expect(await screen.findByText('Anschrift zu lang für das Fensterfeld', {}, SLOW)).toBeTruthy()
+  expect(screen.getByText(/Die Anschrift hat 7 Zeilen; im Anschriftfeld passen 6/)).toBeTruthy()
+})
+
 test('K7: eine Rücksendeangabe, die nicht in die Vermerkzone passt, wird vor dem Druck genannt', async () => {
   const l = settlement.letters?.t1
   if (!l) throw new Error('kein Anschreiben')

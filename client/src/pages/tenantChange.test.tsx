@@ -243,3 +243,17 @@ test('Mieterwechsel: neue Anschrift und E-Mail des bisherigen Mieters gehen in d
   await waitFor(() => expect(sent).toHaveLength(1), SLOW)
   expect(sent[0]?.body).toEqual({ ...BODY_SCHMIDT, contact: { correspondenceAddress: 'Birkenweg 3, 54321 Anderswo', email: 'mueller@example.org' } })
 })
+
+// Durchsicht S1: Passt die neue Anschrift nicht ins Fensterfeld, sagt es der Hinweis am Feld (gespeichert wird trotzdem).
+test('Mieterwechsel: eine Anschrift mit mehr als sechs Zeilen bekommt einen Hinweis am Feld', async () => {
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <UIProvider><Stammdaten units={UNITS} tenancies={TENANCIES} settings={null} reload={async () => {}} /></UIProvider>
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  const box = await openChange()
+  fireEvent.change(within(box).getByLabelText(/^Neue Anschrift/), { target: { value: 'c/o Weber, Hinterhaus, 3. OG, Birkenweg 3, Postfach 12, 54321 Anderswo' } })
+  expect(within(box).getByText(/Die Anschrift hat 7 Zeilen; im Anschriftfeld passen 6/)).toBeTruthy()
+})
