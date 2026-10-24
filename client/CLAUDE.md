@@ -118,8 +118,9 @@ DIN 5008 (links 25, rechts 20 mm) hält im Brief der Text, in der Aufstellung di
 (letterCss.test.ts). In WebKit ist `body` im Druck so breit wie die Seite ohne Rand (186 mm): WebKit legt die
 Druckseite sonst 1,25-mal so breit an, wie sie in Punkt misst (`printingMinimumShrinkFactor` in WebCore), und druckte
 ohne breiten Inhalt alles rund 7 % größer (nachgemessen; das ist Safari selbst, nicht der Prüfaufbau). Nur dort
-(`@supports not (box-decoration-break: clone)`): In Chromium und Firefox schaltete die feste Breite die Skalierung des
-Druckdialogs ab. Die Maße der Norm stehen
+(Klasse `print-fixed-width` an `html`, beim Start von `markPrintWidth` gesetzt, wenn `canPagePaper` fehlt; ein
+`@supports not (box-decoration-break: clone)` schreibt der Build mit der Angabe mit Präfix um, die WebKit kennt): In
+Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs ab. Die Maße der Norm stehen
   abzüglich dieser 12 mm (`--page`): Anschriftfeld 20/45 mm, 85 × 45 mm mit Rücksendeangabe in der Vermerkzone,
   Informationsblock 125/50 mm, Betreff ab 98,46 mm, Falz- und Lochmarken bei 105, 148,5 und 210 mm (12 bis 17 mm von
   der Kante, im Seitenrand schneidet Chromium ab) nur mit der Druckeinstellung „Falz- und Lochmarken drucken“. Ein

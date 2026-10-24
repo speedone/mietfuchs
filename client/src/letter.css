@@ -99,9 +99,10 @@
    Seite (Druck in Safari, #286, nachgemessen; die Ränder der Seiteneinstellung ändern daran nichts). Ist das Dokument so
    breit wie der Satzspiegel, druckt WebKit 1:1 wie Chromium. Nur dort (Durchsicht K1 zu PR #443): In Chromium und
    Firefox machte die feste Breite die Skalierung und die Ränder des Druckdialogs wirkungslos. Erkannt wie beim
-   Briefpapier (`canPagePaper`): ohne `box-decoration-break: clone` ohne Präfix. Briefpapier gibt es in WebKit nicht,
-   deshalb gilt hier immer der Rand von 12 mm. */
-@supports not (box-decoration-break: clone) { @media print { body { width: 186mm; } } }
+   Briefpapier (`canPagePaper`), gesetzt beim Start als Klasse an `html` (`markPrintWidth` in letterDesignView.ts):
+   Ein `@supports not (box-decoration-break: clone)` schreibt der Build um und nimmt die Angabe mit Präfix dazu, die
+   WebKit kennt. Briefpapier gibt es in WebKit nicht, deshalb gilt hier immer der Rand von 12 mm. */
+@media print { html.print-fixed-width body { width: 186mm; } }
 /* „Seite x von y“ setzt printJob.ts nur beim Druck einer einzelnen Abrechnung in den Rand (Chromium, Teil 2); beim
    Druck aller zählte er über alle Mieter hinweg. */
 

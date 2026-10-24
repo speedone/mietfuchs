@@ -35,6 +35,13 @@ export const PAPER_PAGE_CSS = '@page { margin: 0; }'
 export const canPagePaper = (css: { supports: (property: string, value: string) => boolean } | undefined = globalThis.CSS): boolean =>
   typeof css?.supports === 'function' && css.supports('box-decoration-break', 'clone')
 
+// Die feste Breite des Dokuments im Druck (letter.css) nur in einem Browser ohne Ränder je Seite, also WebKit: Dort legt
+// der Druck die Seite sonst um ein Viertel breiter an und druckt rund 7 % größer; in Chromium und Firefox schaltete sie
+// die Skalierung des Druckdialogs ab (Durchsicht K1 zu PR #443). Einmal beim Start (main.tsx), auch für Strg+P.
+export function markPrintWidth(root: { classList: { toggle: (name: string, on: boolean) => unknown } }, css: Parameters<typeof canPagePaper>[0] = globalThis.CSS): void {
+  root.classList.toggle('print-fixed-width', !canPagePaper(css))
+}
+
 export function printDesign(designs: LetterDesigns | null, { legacy, pagedPaper }: { legacy: boolean, pagedPaper: boolean }): PrintDesign {
   // Vor #415 abgeschlossen: gedruckt wird der bisherige Aufbau, ohne Gestaltung.
   if (!designs || legacy) return NONE

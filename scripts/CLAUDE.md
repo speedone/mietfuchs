@@ -66,7 +66,7 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   misst (`printingMinimumShrinkFactor` in WebCore/page/PrintContext.h), und verkleinert auf die Breite des Inhalts;
   ohne breiten Inhalt druckte es rund 7 % größer, mit der überlangen E-Mail 3 %. Das ist Safari selbst, nicht der
   Aufbau (die Ränder und `scalingFactor` von NSPrintInfo ändern nichts, Safari druckt über denselben Weg); behoben
-  mit `body { width: 186mm }` im Druck, nur ohne `box-decoration-break: clone` (client/src/letter.css; in Chromium und
+  mit `body { width: 186mm }` im Druck, nur ohne `box-decoration-break: clone` (Klasse `print-fixed-width`, client/src/letter.css; in Chromium und
   Firefox schaltete die feste Breite die Skalierung des Druckdialogs ab). Erwartetes steht im Bericht unter „Erwartet“, nicht
   als Befund. **Von Hand bleibt**: ein Blick auf die Seitenbilder (Überdrucken, Bilder, Linien prüft
   die Auswertung nicht) und gelegentlich „Als PDF sichern“ im echten Safari als Gegenprobe, denn der

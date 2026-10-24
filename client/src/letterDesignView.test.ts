@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { LetterDesign } from '../../shared/types.ts'
 import { DEFAULT_LETTER_DESIGN } from '../../shared/letterDesign.ts'
-import { PAPER_PAGE_CSS, canPagePaper, designKey, paperVars, printDesign, printedDesign } from './letterDesignView'
+import { PAPER_PAGE_CSS, canPagePaper, designKey, markPrintWidth, paperVars, printDesign, printedDesign } from './letterDesignView'
 
 const logo = { file: 'logo-0123456789abcdef.png', type: 'png' as const }
 const paper = { file: 'paper-0123456789abcdef.pdf', type: 'pdf' as const }
@@ -59,6 +59,15 @@ describe('Logo und Briefpapier im Druck (#415, Teil 2b)', () => {
     expect(asks).toEqual(['box-decoration-break: clone', 'box-decoration-break: clone'])
     // Ohne CSS-Schnittstelle (jsdom, sehr alte Browser): lieber ohne Briefpapier als Text im Papier.
     expect(canPagePaper(undefined)).toBe(false)
+  })
+
+  // Durchsicht K1 zu PR #443: die feste Breite des Dokuments im Druck (letter.css) nur, wo Ränder je Seite fehlen.
+  it('die feste Druckbreite gilt nur in einem Browser ohne Ränder je Seite (WebKit)', () => {
+    const root = { classList: { on: new Set<string>(), toggle(name: string, on: boolean) { if (on) this.on.add(name); else this.on.delete(name) } } }
+    markPrintWidth(root, { supports: () => false })
+    expect([...root.classList.on]).toEqual(['print-fixed-width'])
+    markPrintWidth(root, { supports: () => true })
+    expect([...root.classList.on]).toEqual([])
   })
 
   it('gedruckt wird erst, was geladen ist; fehlt eine Datei, ohne sie und mit Absender (Durchsicht M2)', () => {
