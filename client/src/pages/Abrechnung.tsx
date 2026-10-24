@@ -11,17 +11,19 @@ import { useFocusTarget } from '../focus'
 import { settledInvoiceFiles, type PlantPeriods } from '../costPeriods'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import { keepDraft, useConfirmDiscard, useDraft } from '../useDraft'
+import { useSaving } from '../useSaving'
 import DraftActions from '../components/DraftActions'
 import { FieldMessage } from '../components/Field'
 import { effectiveLandlord, footerLine, letterhead, addressCheck, addressFieldWarning, addressNotice, recipientLines, returnLine } from '../landlord'
 import { localToday } from '../periodForm'
 import { landlordReasonText } from '../landlordReasons'
-import { notSettledText } from '../tenancyModel'
 import { deviationView } from '../deviation'
 import { deadlineView, historyView, type HistoryEntry } from '../settlementHistory'
 import { costBasisText, personsText } from '../statementView'
 import { legalBasisLines, noticesOf, noticeTarget, type NoticeTab } from '../notices'
-import { CalcNotice, NoticeBox } from '../components/Notice'
+import { CalcNotice, NoticeBox, NoticeGroup } from '../components/Notice'
+import PrintDrawer, { type PrintScope } from '../components/PrintDrawer'
+import { checkList, hintSummary, neighbors, resultText, tenantRows } from '../settlementOverview'
 import PageHeader from '../components/PageHeader'
 import EmptyState from '../components/EmptyState'
 import { emptySettlement, startStep } from '../emptyStock'
@@ -75,6 +77,10 @@ export const PRINT_DRAFT_NOTE = 'Gilt schon für diese Vorschau und den Druck; m
 // Teil 2 von #415: „Anschreiben mitdrucken“ gilt hier nur für diesen Druck.
 export const LETTER_CHOICE_NOTE = 'Anschreiben: gilt nur für diesen Druck. Die Vorgabe ändern Sie mit „Vorlage für dieses Objekt bearbeiten“ oder in den Einstellungen.'
 
+// Warnungen der Seite vor dem Druck (#415), am Brief des Mieters und in „Zu prüfen“ mit demselben Wortlaut.
+const LETTER_LONG_TEXT = 'Das Anschreiben ist voraussichtlich länger als eine Seite und druckt auf der nächsten weiter. Soll es auf eine Seite passen, kürzen Sie die Texte über „Anschreiben bearbeiten“.'
+const returnLineText = (line: string) => `Die Rücksendeangabe über der Anschrift hat ${line.trim().length} Zeichen; im Fensterfeld passen rund ${RETURN_LINE_MAX} in zwei kleine Zeilen, der Rest würde abgeschnitten. Kürzen Sie den Namen oder die Anschrift des Vermieters (Einstellungen bzw. beim Objekt).`
+
 export default function Abrechnung({ settings, units, tenancies, reload, onNavigate, focus, onFocusDone }: Props) {
   const { key, label, param, calendar, period, rules } = usePeriod()
   const { properties, property } = useProperty()
@@ -86,6 +92,22 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
   const [data, setData] = useState<Settlement | null>(null)
   const [error, setError] = useState('')
   const [printId, setPrintId] = useState<string | null>(null)
+  // Druck aller Mieter (Fenster „Drucken“, „Alle Mieter“), ohne Seitenzahl im Rand (#415, Teil 2).
+  const [printingAll, setPrintingAll] = useState(false)
+  // Die Vorschau eines Mieters über die ganze Breite (Kennung des Mietverhältnisses), sonst die Übersicht.
+  const [previewId, setPreviewId] = useState<string | null>(null)
+  const [showSteps, setShowSteps] = useState(false)
+  const previewHeading = useRef<HTMLHeadingElement>(null)
+  const previewIds = useId()
+  // Wohin der Fokus nach „Zurück zur Übersicht“ geht: der „Ansehen“-Knopf des zuletzt gezeigten Mieters.
+  const returnTo = useRef<string | null>(null)
+  // „Mehr“ in der Kopfzeile: Anschreiben und Briefpapier des Objekts, Export.
+  const [moreOpen, setMoreOpen] = useState(false)
+  const moreId = useId()
+  const checksId = useId()
+  // Das Fenster „Drucken“ und der Stand der Häkchen beim Öffnen, den „Abbrechen“ wiederherstellt.
+  const [printDrawer, setPrintDrawer] = useState<{ scope: PrintScope } | null>(null)
+  const printBefore = useRef<{ letterChoice: boolean | null, settings: { printFoldMarks: boolean, printAttachments: boolean, printFooter: boolean }, dirty: boolean } | null>(null)
   // `error` ist die Meldung am Feld (UI-Durchsicht H4): Eine ungültige Eingabe wurde vorher stumm verworfen.
   const [ppEdit, setPpEdit] = useState<{ tenancyId: string; value: string; error?: string } | null>(null)
   const ppErrorId = useId()
@@ -107,7 +129,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
   const paths = settlementPaths(param, target)
   const choices = heatingChoices(heatingList, period)
   // Ein anderer Zeitraum oder ein anderes Objekt: wieder die Betriebskostenabrechnung.
-  useEffect(() => { setTarget(null) }, [param, propertyId])
+  useEffect(() => { setTarget(null); setPreviewId(null) }, [param, propertyId])
   // Das Ziel aus dem Cockpit, sobald die Liste da ist und es darin steht (E45).
   useFocusTarget(focus, 'heatingSettlement', heatingList, (h) => `${h.plantId}|${h.period.key}`, (h) => setTarget({ plantId: h.plantId, period: h.period.key }), onFocusDone)
 
@@ -385,7 +407,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
   const confirmDiscard = useConfirmDiscard()
   async function switchTarget(next: typeof target) {
     if (next?.plantId === target?.plantId && next?.period === target?.period) return
-    if (await confirmDiscard([sentAt])) setTarget(next)
+    if (await confirmDiscard([sentAt])) { setTarget(next); setPreviewId(null) }
   }
 
   // Die Eingabe aus „✎ anpassen“: gültig gespeichert, ungültig mit Meldung am Feld und ohne Speichern.
@@ -454,6 +476,78 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
     }
   }, [printId])
 
+  // Alle Mieter drucken: wie Strg+P, mit dem Titel der Abrechnung als Dateiname.
+  useEffect(() => {
+    if (!printingAll) return
+    const { data, label } = printSource.current
+    const job = startPrint({
+      title: data ? settlementTitle(data) : `Nebenkostenabrechnung ${label}`,
+      onDone: () => setPrintingAll(false),
+    })
+    return () => job.cancel()
+  }, [printingAll])
+
+  // Vorschau öffnen und schließen: der Fokus auf die Überschrift der Vorschau, beim Zurück auf „Ansehen“ des Mieters.
+  function openPreview(id: string) {
+    returnTo.current = id
+    setPreviewId(id)
+  }
+  function closePreview() {
+    setPreviewId(null)
+  }
+  // Aus der Vorschau zu „Zu prüfen“ (Durchsicht K4): der Fokus auf die Karte statt auf „Ansehen“.
+  const CHECKS = '\u0000checks'
+  function backToChecks() {
+    returnTo.current = CHECKS
+    setPreviewId(null)
+  }
+  useEffect(() => {
+    if (previewId) {
+      previewHeading.current?.focus()
+      return
+    }
+    const back = returnTo.current
+    returnTo.current = null
+    if (back === CHECKS) document.getElementById(checksId)?.focus()
+    else if (back) document.getElementById(`${previewIds}-${back}`)?.focus()
+  }, [previewId, previewIds, checksId])
+
+  // Das Fenster „Drucken“: merkt sich die Häkchen, damit „Abbrechen“ sie wiederherstellt.
+  function openPrint(scope: PrintScope) {
+    printBefore.current = { letterChoice, settings: printDraft.value, dirty: printDraft.dirty }
+    setPrintDrawer({ scope })
+  }
+  // Gespeichert im Fenster (Durchsicht K2): Der gespeicherte Stand ist der neue Stand von vorher, und das Fenster
+  // vergleicht ab jetzt mit ihm (neu eingehängt über `key`); „Abbrechen“ fragt dann nicht und stellt nichts Altes her.
+  const [printSaves, setPrintSaves] = useState(0)
+  async function savePrintInDrawer(value: typeof printDraft.value) {
+    await savePrint(value)
+    printBefore.current = { letterChoice, settings: value, dirty: false }
+    setPrintSaves((n) => n + 1)
+  }
+  function cancelPrint() {
+    const before = printBefore.current
+    if (before) {
+      setLetterChoice(before.letterChoice)
+      if (before.dirty) printDraft.set(before.settings)
+      else printDraft.discard()
+    }
+    printBefore.current = null
+    setPrintDrawer(null)
+  }
+  const { busy: printBusy, run: runPrint } = useSaving()
+  function printNow() {
+    const scope = printDrawer?.scope
+    if (!scope) return
+    void runPrint(async () => {
+      if (!(await goOnPrinting())) return
+      printBefore.current = null
+      setPrintDrawer(null)
+      if (scope === 'all') setPrintingAll(true)
+      else setPrintId(scope)
+    })
+  }
+
   const distributed = data ? data.totalCostsCents - data.landlord.totalCents : 0
   // Ein Zeitraum ohne Abrechnung, Pauschale und Kosten: kein Entwurf, keine Kennzahlen, nur der erste Schritt (N12).
   // Abgeschlossen bleibt die Karte zum Wiederöffnen (Durchsicht K1).
@@ -481,6 +575,118 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
   const missingDesign = [...new Set([...(designs?.missing ?? []), ...design.failed])]
   const deadlineInfo = data ? deadlineView(data.period.label, data.deadline, data.closed?.sentAt ?? null, history, new Date()) : null
 
+  // Alles, was eine Mieterabrechnung zum Drucken braucht, einmal je Mieter: für die Abrechnung selbst, für das Fenster
+  // „Drucken“ (was vor dem Druck zu prüfen ist) und für „Zu prüfen“.
+  function viewOf(data: Settlement, st: Statement) {
+              const letterDate = data.closed?.sentAt ?? localToday()
+              const draftMark = showsDraftMark(noticesOf(data), !!data.closed)
+              // Vor #415 abgeschlossen: kein eingefrorenes Anschreiben, gedruckt wird der bisherige Aufbau (Durchsicht S1).
+              const legacy = !!data.closed && !data.letters
+              const tenancy = tenancies.find((t) => t.id === st.tenancyId)
+              // Belege, die in dieser Abrechnung tatsächlich vorkommen (für die Anlage)
+              const stFiles = printAttachments
+                ? [...new Set(st.rows
+                    .map((r) => costItems.find((c) => c.id === r.costItemId)?.invoiceFile)
+                    .filter((f): f is string => !!f))]
+                : []
+              const attachmentsReady = stFiles.every((f) => attachmentPages[f])
+              // Positionen nach Kostenart gruppieren — mit Zwischensumme, sobald eine
+              // Kostenart mehrere Positionen hat (erleichtert den Abgleich mit dem Bescheid).
+              const groups: { category: string; rows: SettlementRow[] }[] = []
+              for (const r of st.rows) {
+                const g = groups.find((x) => x.category === r.category)
+                if (g) g.rows.push(r)
+                else groups.push({ category: r.category, rows: [r] })
+              }
+              const letter = legacy ? null : letterOf(data, st, { settings, property, tenancies })
+              const attachmentCount = printAttachments ? stFiles.length : 0
+              const paragraphs = letter ? letterParagraphs(letter, st.balanceCents, { date: letterDate, attachments: attachmentCount }) : []
+              // Abgeschlossen gilt die eingefrorene Frist, nicht die heutige Einstellung (Durchsicht S2).
+              const frozenDays = Number(letter?.values.Zahlungsfrist)
+              const paymentDays = data.closed && Number.isFinite(frozenDays) && frozenDays > 0 ? frozenDays : landlord?.paymentDeadlineDays
+              const lockedId = `letter-locked-${st.tenancyId}`
+              // Teil 2: mit oder ohne Anschreiben; Kopf, Fußzeile und Fußvermerk aus dem Anschreiben, abgeschlossen also
+              // eingefroren. Ein Abschluss aus Teil 1 kennt Anschrift und Fußzeile des Vermieters nicht: keine Anschrift
+              // im Kopf (die Rücksendeangabe ist eingefroren) und keine Fußzeile.
+              const showLetter = letter !== null && withLetter
+              const print = { date: letterDate, attachments: attachmentCount }
+              // Ein Abschluss ohne eingefrorene Fußzeile (zwischen #421 und Teil 2) druckt keine, statt Kontakt und Bank von heute
+              // (Durchsicht zu PR #427, K3).
+              const footerText = printFooter && letter && !design.paper ? (letter.sender ? (letter.sender.footer ?? '') : (landlord ? footerLine(landlord) : '')) || null : null
+              const head = letter ? {
+                sender: letter.sender?.name ?? landlord?.landlordName ?? '',
+                senderAddress: letter.sender ? (letter.sender.address ?? '') : (landlord?.landlordAddress ?? ''),
+                returnLine: letter.sender?.returnLine ?? (landlord ? returnLine(landlord, property) : letterhead('', property)),
+                recipient: letter.recipient ?? recipientLines(st.tenantName, st.unitName, tenancy, property),
+                date: fmtDate(letterDate),
+                foldMarks: printFoldMarks,
+                draftMark: draftMark ? DRAFT_MARK : null,
+                // Teil 2b: Logo oben rechts; mit Briefpapier entfällt der Absender von Mietfuchs (Letter.tsx).
+                logo: design.logo,
+                paper: design.paper,
+              } : null
+              const subject = letter && !showLetter ? renderLetterText(letter.texts.subject, print) : ''
+              const underTable = letter && !showLetter ? statementBlocks(letter, st.balanceCents, attachmentCount).map((b) => ({ block: b, text: renderLetterText(letter.texts[b], print) })) : []
+              const footnote = letter ? (
+                <>
+                  <div>{[letter.values.Name, letter.values.Wohnung, letter.values.Abrechnung, letter.values.Zeitraum].filter((x) => x).join(' · ')}</div>
+                  {footerText && <div>{footerText}</div>}
+                </>
+              ) : null
+              // #229: fehlt nach dem Auszug die neue Anschrift, oder hat sie sich nach dem Abschluss geändert? Verglichen wird
+              // mit dem, was gedruckt würde (abgeschlossen also eingefroren).
+              const addressState = addressCheck(st, tenancy, head?.recipient, property, localToday(), data.closed?.sentAt)
+    return { st, letterDate, draftMark, legacy, tenancy, stFiles, attachmentsReady, groups, letter, attachmentCount, paragraphs, paymentDays, lockedId, showLetter, print, footerText, head, subject, underTable, footnote, addressState }
+  }
+  const views = data ? data.statements.map((st) => viewOf(data, st)) : []
+  const preview = views.find((v) => v.st.tenancyId === previewId) ?? null
+  const around = neighbors(views.map((v) => v.st.tenancyId), previewId ?? '')
+  const nameOf = (id: string | null) => views.find((v) => v.st.tenancyId === id)?.st.tenantName ?? ''
+  const prevName = nameOf(around.prev)
+  const nextName = nameOf(around.next)
+  const rows = data ? tenantRows(data) : []
+
+  // Was die Seite selbst vor dem Versand prüft (Anschrift, Länge von Anschreiben und Anschrift, #229, #415), als Hinweise
+  // derselben Gestalt wie die der Berechnung; in „Zu prüfen“, im Fenster „Drucken“ und weiter in der Vorschau.
+  function pageChecks(v: ReturnType<typeof viewOf>): Notice[] {
+    const out: Notice[] = []
+    const who = `${v.st.tenantName}, ${v.st.unitName}`
+    if (v.addressState) {
+      const a = addressNotice(v.addressState, v.st.tenantName, v.st.unitName)
+      out.push({ code: 'page.address', level: 'warning', title: a.title, text: a.text, ...(v.addressState === 'former' ? { subject: { kind: 'tenancy', id: v.st.tenancyId } } : {}) })
+    }
+    if (v.showLetter && exceedsOnePage(v.paragraphs.map((p) => p.text))) {
+      out.push({ code: 'page.letter-long', level: 'warning', title: `Anschreiben länger als eine Seite (${who})`, text: LETTER_LONG_TEXT })
+    }
+    if (v.head && returnLineTooLong(v.head.returnLine)) out.push({ code: 'page.return-line', level: 'warning', title: 'Rücksendeangabe zu lang', text: returnLineText(v.head.returnLine) })
+    const field = v.head ? addressFieldWarning(v.head.recipient) : null
+    if (field) out.push({ code: 'page.address-field', level: 'warning', title: `Anschrift zu lang für das Fensterfeld (${who})`, text: field })
+    return out
+  }
+  // Je Hinweis einmal (die Rücksendeangabe ist bei allen Mietern dieselbe).
+  const uniqueChecks = (list: Notice[]) => list.filter((n, i) => list.findIndex((m) => m.title === n.title && m.text === n.text) === i)
+  const ownChecks = uniqueChecks(views.flatMap(pageChecks))
+  const checks = checkList(data ? [...noticesOf(data), ...ownChecks] : [])
+  // Je Mieter die Titel der eigenen Prüfungen, als Merker in der Tabelle der Übersicht.
+  const checksByTenancy = new Map(views.map((v) => [v.st.tenancyId, pageChecks(v).map((n) => (n.code === 'page.address' ? 'Anschrift prüfen' : n.title.replace(/ \(.*\)$/, '')))]))
+  const fixOf = (n: Notice) => {
+    const t = noticeTarget(n.subject)
+    return t && onNavigate ? { label: t.label, onClick: () => onNavigate(t.tab, t.focus) } : null
+  }
+  const deviation = data?.closed ? deviationView(data.deviation) : null
+
+  // Die Aktionen unter „Mehr“: Anschreiben und Briefpapier des Objekts, Export.
+  const letterMore = !!data && !empty && data.statements.length > 0 && ((!!propertyId && !!templates) || (!!designs && !!propertyId))
+  const exportMore = !!data && !empty && !target
+  const moreItems = letterMore || exportMore
+
+  // Was gedruckt würde und ob es schon geht.
+  const printViews = printDrawer ? (printDrawer.scope === 'all' ? views : views.filter((v) => v.st.tenancyId === printDrawer.scope)) : []
+  const printBlocked = printAttachments && !printViews.every((v) => v.attachmentsReady)
+    ? 'Belegkopien werden noch vorbereitet …'
+    : !design.ready ? 'Logo und Briefpapier werden noch vorbereitet …' : null
+  const printWarnings = uniqueChecks(printViews.flatMap(pageChecks))
+
   return (
     <>
       <div className="no-print">
@@ -498,53 +704,11 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
         />
       )}
 
-      {/* Im leeren Zeitraum gibt es nichts zu drucken (N12) */}
-      {!(empty && choices.length === 0) && (
+      {/* Zone 1, die Kopfzeile: welche Abrechnung, ihr Stand und die Frist, rechts der eine Primärknopf des Zustands,
+          „Drucken“ und „Mehr“. Im leeren Zeitraum gibt es nichts zu drucken (N12); den Umschalter zur
+          Heizkostenabrechnung gibt es trotzdem. In der Vorschau eines Mieters steht statt ihrer die Leiste der Vorschau. */}
+      {!preview && data && (!empty || choices.length > 0) && (
       <div className="card no-print">
-        <div className="row">
-          {/* Teil 2: nur für diesen Druck; die Vorgabe steht in der Vorlage des Objekts bzw. in den Einstellungen. */}
-          <label className="field checkline" title="Ein Brief an den Mieter als erste Seite; ohne ihn beginnt die Aufstellung mit Anschrift, Datum und Betreff">
-            <span>
-              <input type="checkbox" checked={withLetter} onChange={(e) => setLetterChoice(e.target.checked)} />{' '}
-              Anschreiben mitdrucken
-            </span>
-          </label>
-          <label className="field checkline" title="Marken am linken Rand des Anschreibens zum Falten für einen Fensterumschlag (DIN 5008) und zum Lochen">
-            <span>
-              <input
-                type="checkbox"
-                checked={printFoldMarks}
-                onChange={(e) => printDraft.set({ ...printDraft.value, printFoldMarks: e.target.checked })}
-              />{' '}
-              Falz- und Lochmarken drucken
-            </span>
-          </label>
-          <label className="field checkline" title="Kopien der hochgeladenen Beleg-PDFs als Anlage hinter jeder Abrechnung mit ausdrucken">
-            <span>
-              <input
-                type="checkbox"
-                checked={printAttachments}
-                onChange={(e) => printDraft.set({ ...printDraft.value, printAttachments: e.target.checked })}
-              />{' '}
-              Belegkopien als Anlage mitdrucken
-              {printAttachments && attachmentsLoading && <span className="muted"> (werden vorbereitet …)</span>}
-            </span>
-          </label>
-          <label className="field checkline" title="Vermieter, Anschrift, Kontakt und IBAN unten auf jeder Seite (Anschrift und Kontakt unter „Einstellungen“ bzw. beim Objekt)">
-            <span>
-              <input
-                type="checkbox"
-                checked={printFooter}
-                onChange={(e) => printDraft.set({ ...printDraft.value, printFooter: e.target.checked })}
-              />{' '}
-              Fußzeile mit Kontakt und Bank
-              {printFooter && design.paper && <span className="muted"> (mit Briefpapier nicht)</span>}
-            </span>
-          </label>
-          <DraftActions draft={printDraft} onSave={savePrint} what="Druckeinstellungen" />
-          {printDraft.dirty && <span className="muted">{PRINT_DRAFT_NOTE}</span>}
-          {letterChoice !== null && letterChoice !== letterDefault && <span className="muted">{LETTER_CHOICE_NOTE}</span>}
-        </div>
         {choices.length > 0 && (
           // Sichtprüfung S7/E44: ein Umschalter, dessen gewählter Teil hervorgehoben ist
           <div className="segmented no-print" role="group" aria-label="Welche Abrechnung?">
@@ -556,144 +720,152 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
             ))}
           </div>
         )}
-        {data?.separateHeating && data.separateHeating.length > 0 && target === null && (
+        {data.separateHeating && data.separateHeating.length > 0 && target === null && (
           <div className="info no-print">{`Die Heizkosten ${data.separateHeating.map((h) => h.period.label).join(', ')} rechnen Sie getrennt ab; sie stehen nicht in dieser Abrechnung.`}</div>
         )}
-      </div>
-      )}
-
-      {data && !empty && data.statements.length > 0 && (
-        <Card title="Anschreiben" className="no-print" aside={propertyId && templates ? <button className="btn secondary" onClick={() => setLetterEdit({ kind: 'property' })}>Vorlage für dieses Objekt bearbeiten</button> : undefined}>
-          <p className="muted m-0">
-            {withLetter ? 'Jede Abrechnung beginnt mit einem Brief an den Mieter.' : 'Ohne Anschreiben beginnt die Aufstellung mit Anschrift, Datum und Betreff; Ergebnis, Anpassung und Belegeinsicht stehen unter der Tabelle.'} Die Vorlage für alle Objekte steht unter
-            „Einstellungen“; hier weichen Sie für dieses Objekt ab, bei einem Mieter mit „Anschreiben bearbeiten“.
-            {isClosed ? ' Diese Abrechnung ist abgeschlossen; ihr Anschreiben ist eingefroren.' : ''}
-          </p>
-          {/* Teil 2b: Logo und Briefpapier, die Vorgabe aus den Einstellungen oder eine eigene für dieses Objekt. */}
-          {designs && propertyId && (
-            <div className="row mt-3">
-              <span className="muted">Logo und Briefpapier: {designSummary(designs.property ?? designs.installation)}{designs.property ? ' (eigene für dieses Objekt)' : ' (wie in den Einstellungen)'}</span>
-              <button className="btn secondary" onClick={() => setDesignEdit(true)}>Logo und Briefpapier für dieses Objekt</button>
-            </div>
-          )}
-        </Card>
-      )}
-
-      {data && !empty && !target && (
-        <div className="card no-print">
-          <div className="row center">
-            <span className="muted grow">Die Zahlen dieser Abrechnung als Daten, etwa für ein eigenes Layout (Beträge in JSON in Cent).</span>
-            <button className="btn secondary" onClick={() => void exportData('json')}>Als JSON exportieren</button>
-            <button className="btn secondary" onClick={() => void exportData('csv')}>Als CSV exportieren</button>
-          </div>
-        </div>
-      )}
-
-      {data && !empty && (
-        <div className="card no-print">
-          <div className="row center">
-            {isClosed ? (
-              <>
-                <div className="grow">
+        {!empty && (
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="grow">
+              {isClosed ? (
+                <>
                   <span className="badge green">abgeschlossen</span>{' '}
                   <span className="muted">
                     am {fmtDate(data.closed!.closedAt.slice(0, 10))} eingefroren — Änderungen an Kosten/Stammdaten wirken sich nicht mehr aus.
                   </span>
-                </div>
-                <label className="field" title="Datum, an dem die Abrechnung an die Mieter ging — maßgeblich für die §556-Frist">
-                  versendet am
-                  <input
-                    type="date"
-                    value={sentAt.value}
-                    disabled={sentAt.saving}
-                    onChange={(e) => sentAt.set(e.target.value)}
-                  />
-                </label>
-                <DraftActions draft={sentAt} onSave={saveSentAt} what="Versanddatum" />
-                {/* Mit Abstand zu „Speichern“ des Versanddatums, rot beim Überfahren und „…“, weil eine Rückfrage folgt (#346 Schritt 7, M19). */}
-                <button className="btn ghost danger-ghost ml-auto" onClick={() => void reopenSettlement()}>Wieder öffnen …</button>
-              </>
-            ) : (
-              <>
-                <div className="grow">
+                </>
+              ) : (
+                <>
                   <span className="badge gray">Entwurf</span>{' '}
                   <span className="muted">Die Abrechnung wird laufend neu berechnet. Nach dem Versand abschließen, damit sich der Stand nicht mehr ändert.</span>
-                </div>
-                <button className="btn" disabled={!data || data.totalCostsCents === 0} onClick={() => void closeSettlement()}>
-                  🔒 {docLabel} abschließen
-                </button>
-                {data.totalCostsCents === 0 && <span className="muted">Noch keine Kosten erfasst, nichts abzuschließen.</span>}
-              </>
+                </>
+              )}
+              {/* Die Frist (§ 556 Abs. 3 BGB) in derselben Zeile; läuft sie bald ab oder ist sie abgelaufen, steht sie darunter als Hinweis. */}
+              {deadlineInfo && data.totalCostsCents > 0 && deadlineInfo.level === 'ok' && <div className="muted">{deadlineInfo.text}</div>}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {isClosed ? (
+                <>
+                  <label className="field" title="Datum, an dem die Abrechnung an die Mieter ging — maßgeblich für die §556-Frist">
+                    versendet am
+                    <input
+                      type="date"
+                      value={sentAt.value}
+                      disabled={sentAt.saving}
+                      onChange={(e) => sentAt.set(e.target.value)}
+                    />
+                  </label>
+                  <DraftActions draft={sentAt} onSave={saveSentAt} what="Versanddatum" />
+                </>
+              ) : (
+                <>
+                  <button className="btn" disabled={!data || data.totalCostsCents === 0} aria-describedby={data.totalCostsCents === 0 ? 'close-none' : undefined} onClick={() => void closeSettlement()}>
+                    🔒 {docLabel} abschließen
+                  </button>
+                  {data.totalCostsCents === 0 && <span id="close-none" className="muted">Noch keine Kosten erfasst, nichts abzuschließen.</span>}
+                </>
+              )}
+              {data.statements.length > 0 && (
+                <button className="btn secondary" onClick={() => openPrint('all')}>🖨 Drucken / PDF</button>
+              )}
+              {moreItems && (
+                <button className="btn secondary" aria-expanded={moreOpen} aria-controls={moreId} onClick={() => setMoreOpen((o) => !o)}>Mehr {moreOpen ? '▴' : '▾'}</button>
+              )}
+              {/* Mit Abstand zu „Speichern“ des Versanddatums, rot beim Überfahren und „…“, weil eine Rückfrage folgt (#346 Schritt 7, M19). */}
+              {isClosed && <button className="btn ghost danger-ghost ml-auto" onClick={() => void reopenSettlement()}>Wieder öffnen …</button>}
+            </div>
+          </div>
+        )}
+        {data && deadlineInfo && data.totalCostsCents > 0 && deadlineInfo.level !== 'ok' && (
+          <NoticeBox level={deadlineInfo.level === 'error' ? 'error' : 'warning'} action={deadlineInfo.text} />
+        )}
+        {/* Geänderte Druckeinstellungen nach dem Schließen des Fensters „Drucken“: hier speichern oder verwerfen (#309). */}
+        {!printDrawer && printDraft.dirty && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span>Druckeinstellungen geändert.</span>
+            <DraftActions draft={printDraft} onSave={savePrint} what="Druckeinstellungen" />
+            <span className="muted">{PRINT_DRAFT_NOTE}</span>
+          </div>
+        )}
+        {!printDrawer && letterChoice !== null && letterChoice !== letterDefault && <p className="muted m-0">{LETTER_CHOICE_NOTE}</p>}
+        {moreItems && moreOpen && (
+          <div id={moreId} className="grid gap-3 pt-3 border-t border-line">
+            {letterMore && (
+              <div className="grid gap-2">
+                <p className="muted m-0">
+                  {withLetter ? 'Jede Abrechnung beginnt mit einem Brief an den Mieter.' : 'Ohne Anschreiben beginnt die Aufstellung mit Anschrift, Datum und Betreff; Ergebnis, Anpassung und Belegeinsicht stehen unter der Tabelle.'} Die Vorlage für alle Objekte steht unter
+                  „Einstellungen“; hier weichen Sie für dieses Objekt ab, bei einem Mieter mit „Anschreiben bearbeiten“ in seiner Vorschau.
+                  {isClosed ? ' Diese Abrechnung ist abgeschlossen; ihr Anschreiben ist eingefroren.' : ''}
+                </p>
+                {propertyId && templates && (
+                  <div><button className="btn secondary" onClick={() => setLetterEdit({ kind: 'property' })}>Vorlage für dieses Objekt bearbeiten</button></div>
+                )}
+                {/* Teil 2b: Logo und Briefpapier, die Vorgabe aus den Einstellungen oder eine eigene für dieses Objekt. */}
+                {designs && propertyId && (
+                  <div className="row">
+                    <span className="muted">Logo und Briefpapier: {designSummary(designs.property ?? designs.installation)}{designs.property ? ' (eigene für dieses Objekt)' : ' (wie in den Einstellungen)'}</span>
+                    <button className="btn secondary" onClick={() => setDesignEdit(true)}>Logo und Briefpapier für dieses Objekt</button>
+                  </div>
+                )}
+              </div>
+            )}
+            {exportMore && (
+              <div className="row center">
+                <span className="muted grow">Die Zahlen dieser Abrechnung als Daten, etwa für ein eigenes Layout (Beträge in JSON in Cent).</span>
+                <button className="btn secondary" onClick={() => void exportData('json')}>Als JSON exportieren</button>
+                <button className="btn secondary" onClick={() => void exportData('csv')}>Als CSV exportieren</button>
+              </div>
             )}
           </div>
-        </div>
+        )}
+      </div>
+      )}
+      {/* Frühere Abschlüsse (#56), auch ohne Kopfzeile, etwa im leeren Zeitraum (Durchsicht K5). */}
+      {!preview && (
+        <>
+          {history.length > 0 && (
+          <details className="settlement-history no-print">
+            <summary>Frühere Abschlüsse dieses Jahres ({history.length})</summary>
+            <div className="muted">Beim Wiederöffnen bleibt der bisherige Stand erhalten; hier stehen die früheren, der zuletzt wiedergeöffnete zuerst.</div>
+            {historyView(history).map((h) => (
+              <div key={h.id} className="settlement-history-entry">
+                <strong>{h.head}</strong>
+                <ul>{h.lines.map((l, i) => <li key={i}>{l}</li>)}</ul>
+              </div>
+            ))}
+          </details>
+          )}
+        </>
       )}
 
-      {/* #317: was das abgeschlossene Anschreiben an neuer Vorauszahlung ankündigt, in die Staffel übernehmen */}
-      {data?.closed && data.letters && (
-        <PrepaymentStepsCard key={`${paths.load}|${data.closed.closedAt}|${data.closed.sentAt ?? ''}`} path={paths.load} propertyId={propertyId ?? null} onSaved={reload} />
-      )}
-      {data && deadlineInfo && data.totalCostsCents > 0 && (
-        <div className={`${deadlineInfo.level} no-print`}>{deadlineInfo.text}</div>
-      )}
-      {history.length > 0 && (
-        <details className="settlement-history no-print">
-          <summary>Frühere Abschlüsse dieses Jahres ({history.length})</summary>
-          <div className="muted">Beim Wiederöffnen bleibt der bisherige Stand erhalten; hier stehen die früheren, der zuletzt wiedergeöffnete zuerst.</div>
-          {historyView(history).map((h) => (
-            <div key={h.id} className="settlement-history-entry">
-              <strong>{h.head}</strong>
-              <ul>{h.lines.map((l, i) => <li key={i}>{l}</li>)}</ul>
-            </div>
-          ))}
-        </details>
-      )}
-      {data?.closed && (() => {
-        // Abgeschlossenes Jahr gegen die heutige Berechnung (#56): erklären, nicht drängen.
-        const view = deviationView(data.deviation)
-        if (!view) return null
-        return (
-          <NoticeBox level="warning" title={view.title} className="no-print">
-            <div>{view.intro}</div>
-            {view.lines.length > 0 && <ul className="deviation-list">{view.lines.map((l) => <li key={l.id}>{l.text}</li>)}</ul>}
-          </NoticeBox>
-        )
-      })()}
-      {/* Hinweise der Berechnung (#346, Schritt 10, M8): Stufe und Titel, ein Satz „was tun“, „Hier beheben →“
-          und der Rest unter „Mehr dazu“ (CalcNotice). Der Wortlaut bleibt unverändert; ein Hinweis ohne Titel
-          (abgeschlossen vor #112) trägt nur die Stufe als Kopf. */}
-      {data && noticesOf(data).length > 0 && (
-        <div className="notice-list no-print">
-          {noticesOf(data).map((n, i) => {
-            const target = noticeTarget(n.subject)
-            return <CalcNotice key={i} notice={n} fix={target && onNavigate ? { label: target.label, onClick: () => onNavigate(target.tab, target.focus) } : null} />
-          })}
-        </div>
-      )}
-      {data && !empty && (() => {
-        const basis = legalBasisLines(data.legalBasis)
-        return (
-          <details className="legal-basis no-print">
-            <summary>Angewandte Regeln und Rechtswerte · {basis.head}</summary>
-            {basis.rules.length > 0 ? (
-              <ul>{basis.rules.map((r) => <li key={r}>{r}</li>)}</ul>
-            ) : (
-              data.legalBasis && <p>Für dieses Jahr wendet Mietfuchs keine besondere Rechtsregel an.</p>
+      {/* Zone 2, „Zu prüfen“: Fehler, Warnungen und Hinweise mit Betrag, Kürzung oder Aufforderung stehen offen wie im
+          Baustein Notice (eingeklappt nur „Mehr dazu“), „Hier beheben →“ ohne Aufklappen; nur stille Hinweise sind in einer
+          Zeile zusammengefasst (Durchsicht M1, K3). Der Wortlaut der Hinweise bleibt unverändert. */}
+      {!preview && data && (checks.errors.length + checks.warnings.length + checks.hints.length + checks.quiet.length > 0 || deviation) && (
+        <Card id={checksId} tabIndex={-1} title="Zu prüfen" className="no-print">
+          {deviation && (
+            // Abgeschlossenes Jahr gegen die heutige Berechnung (#56): erklären, nicht drängen.
+            <NoticeBox level="warning" title={deviation.title}>
+              <div>{deviation.intro}</div>
+              {deviation.lines.length > 0 && <ul className="deviation-list">{deviation.lines.map((l) => <li key={l.id}>{l.text}</li>)}</ul>}
+            </NoticeBox>
+          )}
+          <div className="notice-list">
+            {checks.errors.map((n, i) => <CalcNotice key={`e${i}`} notice={n} fix={fixOf(n)} />)}
+            {checks.warnings.map((n, i) => <CalcNotice key={`w${i}`} notice={n} fix={fixOf(n)} />)}
+            {checks.hints.map((n, i) => <CalcNotice key={`h${i}`} notice={n} fix={fixOf(n)} />)}
+            {checks.quiet.length > 0 && (
+              <NoticeGroup level="hint" summary={hintSummary(checks.quiet)}>
+                {checks.quiet.map((n, i) => <CalcNotice key={`q${i}`} notice={n} fix={fixOf(n)} />)}
+              </NoticeGroup>
             )}
-            {basis.values.length > 0 && (
-              <>
-                <p>Angewandte Rechtswerte:</p>
-                <ul>{basis.values.map((v) => <li key={v}>{v}</li>)}</ul>
-              </>
-            )}
-            {basis.valuesNote && <p>{basis.valuesNote}</p>}
-          </details>
-        )
-      })()}
+          </div>
+        </Card>
+      )}
 
       {data && (
         <>
-          {!empty && (
+          {/* Zone 3, „Übersicht“: die Kennzahlen und eine Zeile je Mieter, mit „Ansehen“ zur Vorschau. */}
+          {!preview && !empty && (
             <div className="kpis no-print">
               <div className="kpi">
                 <div className="v">{fmtEuro(data.totalCostsCents)}</div>
@@ -711,7 +883,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
           )}
 
           {/* Leerzustand (#346, Schritt 10, N12): die fehlende Voraussetzung mit dem Knopf dorthin. */}
-          {data.statements.length === 0 && (data.notSettled ?? []).length === 0 && (
+          {!preview && data.statements.length === 0 && (data.notSettled ?? []).length === 0 && (
             <div className="card no-print">
               {empty ? (
                 <EmptyState action={onNavigate ? { label: start.label, onClick: () => onNavigate(start.tab) } : null}>{start.text}</EmptyState>
@@ -723,14 +895,56 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
             </div>
           )}
 
-          {/* Mietverhältnisse mit Pauschale oder Inklusivmiete bekommen keine Abrechnung (#93);
-              sie werden genannt statt still zu fehlen. */}
-          {(data.notSettled ?? []).length > 0 && (
-            <Card title="Ohne Abrechnung" className="no-print">
+          {/* Mietverhältnisse mit Pauschale oder Inklusivmiete bekommen keine Abrechnung (#93); sie stehen als Zeile
+              „Ohne Abrechnung“ mit ihrem Grund in derselben Tabelle, statt still zu fehlen. */}
+          {!preview && rows.length > 0 && (
+            <Card title="Abrechnungen je Mieter" className="no-print">
+              <Table className="stacked" aria-label="Abrechnungen je Mieter">
+                <thead>
+                  <tr>
+                    <th scope="col">Mieter</th>
+                    <th scope="col">Wohnung</th>
+                    <th scope="col">Zeitraum</th>
+                    <th scope="col" className="num">Kosten</th>
+                    <th scope="col" className="num">Vorauszahlungen</th>
+                    <th scope="col">Ergebnis</th>
+                    <th scope="col"><span className="sr-only">Aktion</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r) => (
+                    <tr key={r.tenancyId}>
+                      <td data-label="Mieter">
+                        {r.tenantName}
+                        {(checksByTenancy.get(r.tenancyId) ?? []).map((t) => <div key={t} className="muted">{`⚠︎ ${t}`}</div>)}
+                      </td>
+                      <td data-label="Wohnung">{r.unitName}</td>
+                      {r.settled ? (
+                        <>
+                          <td data-label="Zeitraum">{r.period}<div className="muted">{`${r.days} Tage`}</div></td>
+                          <td data-label="Kosten" className="num">{fmtEuro(r.costsCents)}</td>
+                          <td data-label="Vorauszahlungen" className="num">{fmtEuro(r.prepaymentCents)}</td>
+                          <td data-label="Ergebnis"><strong>{resultText(r.balanceCents)}</strong></td>
+                          <td className="actions">
+                            <button id={`${previewIds}-${r.tenancyId}`} className="btn small secondary" onClick={() => openPreview(r.tenancyId)}>
+                              Ansehen{' '}<span className="sr-only">{`(${r.tenantName}, ${r.unitName})`}</span>
+                            </button>
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td data-label="Ergebnis" colSpan={4}>{`Ohne Abrechnung: ${r.reason}`}</td>
+                          <td className="actions" />
+                        </>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
               {(data.notSettled ?? []).some((n) => !n.usageConflict) && (
                 <p className="muted">
-                  Für diese Mietverhältnisse ist eine Pauschale oder Inklusivmiete vereinbart. Ihr Anteil an den Kosten
-                  bleibt beim Vermieter und zählt als Werbungskosten.
+                  Bei Pauschale oder Inklusivmiete bleibt der Anteil des Mietverhältnisses an den Kosten beim Vermieter und zählt
+                  als Werbungskosten.
                 </p>
               )}
               {(data.notSettled ?? []).some((n) => n.usageConflict) && (
@@ -739,73 +953,66 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                   ist, bekommt keine Abrechnung. Bitte prüfen Sie Ein- und Auszug oder den Nutzungswechsel in den Stammdaten.
                 </p>
               )}
-              <ul>
-                {(data.notSettled ?? []).map((n) => <li key={n.tenancyId}>{notSettledText(n)}</li>)}
-              </ul>
             </Card>
           )}
 
-          {data.statements.map((st) => {
-            const letterDate = data.closed?.sentAt ?? localToday()
-            const draftMark = showsDraftMark(noticesOf(data), !!data.closed)
-            // Vor #415 abgeschlossen: kein eingefrorenes Anschreiben, gedruckt wird der bisherige Aufbau (Durchsicht S1).
-            const legacy = !!data.closed && !data.letters
-            const tenancy = tenancies.find((t) => t.id === st.tenancyId)
-            // Belege, die in dieser Abrechnung tatsächlich vorkommen (für die Anlage)
-            const stFiles = printAttachments
-              ? [...new Set(st.rows
-                  .map((r) => costItems.find((c) => c.id === r.costItemId)?.invoiceFile)
-                  .filter((f): f is string => !!f))]
-              : []
-            const attachmentsReady = stFiles.every((f) => attachmentPages[f])
-            // Positionen nach Kostenart gruppieren — mit Zwischensumme, sobald eine
-            // Kostenart mehrere Positionen hat (erleichtert den Abgleich mit dem Bescheid).
-            const groups: { category: string; rows: SettlementRow[] }[] = []
-            for (const r of st.rows) {
-              const g = groups.find((x) => x.category === r.category)
-              if (g) g.rows.push(r)
-              else groups.push({ category: r.category, rows: [r] })
-            }
-            const letter = legacy ? null : letterOf(data, st, { settings, property, tenancies })
-            const attachmentCount = printAttachments ? stFiles.length : 0
-            const paragraphs = letter ? letterParagraphs(letter, st.balanceCents, { date: letterDate, attachments: attachmentCount }) : []
-            // Abgeschlossen gilt die eingefrorene Frist, nicht die heutige Einstellung (Durchsicht S2).
-            const frozenDays = Number(letter?.values.Zahlungsfrist)
-            const paymentDays = data.closed && Number.isFinite(frozenDays) && frozenDays > 0 ? frozenDays : landlord?.paymentDeadlineDays
-            const lockedId = `letter-locked-${st.tenancyId}`
-            // Teil 2: mit oder ohne Anschreiben; Kopf, Fußzeile und Fußvermerk aus dem Anschreiben, abgeschlossen also
-            // eingefroren. Ein Abschluss aus Teil 1 kennt Anschrift und Fußzeile des Vermieters nicht: keine Anschrift
-            // im Kopf (die Rücksendeangabe ist eingefroren) und keine Fußzeile.
-            const showLetter = letter !== null && withLetter
-            const print = { date: letterDate, attachments: attachmentCount }
-            // Ein Abschluss ohne eingefrorene Fußzeile (zwischen #421 und Teil 2) druckt keine, statt Kontakt und Bank von heute
-            // (Durchsicht zu PR #427, K3).
-            const footerText = printFooter && letter && !design.paper ? (letter.sender ? (letter.sender.footer ?? '') : (landlord ? footerLine(landlord) : '')) || null : null
-            const head = letter ? {
-              sender: letter.sender?.name ?? landlord?.landlordName ?? '',
-              senderAddress: letter.sender ? (letter.sender.address ?? '') : (landlord?.landlordAddress ?? ''),
-              returnLine: letter.sender?.returnLine ?? (landlord ? returnLine(landlord, property) : letterhead('', property)),
-              recipient: letter.recipient ?? recipientLines(st.tenantName, st.unitName, tenancy, property),
-              date: fmtDate(letterDate),
-              foldMarks: printFoldMarks,
-              draftMark: draftMark ? DRAFT_MARK : null,
-              // Teil 2b: Logo oben rechts; mit Briefpapier entfällt der Absender von Mietfuchs (Letter.tsx).
-              logo: design.logo,
-              paper: design.paper,
-            } : null
-            const subject = letter && !showLetter ? renderLetterText(letter.texts.subject, print) : ''
-            const underTable = letter && !showLetter ? statementBlocks(letter, st.balanceCents, attachmentCount).map((b) => ({ block: b, text: renderLetterText(letter.texts[b], print) })) : []
-            const footnote = letter ? (
-              <>
-                <div>{[letter.values.Name, letter.values.Wohnung, letter.values.Abrechnung, letter.values.Zeitraum].filter((x) => x).join(' · ')}</div>
-                {footerText && <div>{footerText}</div>}
-              </>
-            ) : null
-            // #229: fehlt nach dem Auszug die neue Anschrift, oder hat sie sich nach dem Abschluss geändert? Verglichen wird
-            // mit dem, was gedruckt würde (abgeschlossen also eingefroren).
-            const addressState = addressCheck(st, tenancy, head?.recipient, property, localToday(), data.closed?.sentAt)
+          {/* #317: was das abgeschlossene Anschreiben an neuer Vorauszahlung ankündigt, in die Staffel übernehmen. Eine
+              eigene Karte unter der Tabelle, denn Stand, Warnung und Monat je Mieter wären als Spalte zu eng. */}
+          {!preview && data.closed && data.letters && (
+            <PrepaymentStepsCard key={`${paths.load}|${data.closed.closedAt}|${data.closed.sentAt ?? ''}`} path={paths.load} propertyId={propertyId ?? null} onSaved={reload} />
+          )}
+
+          {/* Die Vorschau eines Mieters über die ganze Breite: Brief und Aufstellung, wie sie gedruckt werden. */}
+          {preview && (
+            <div className="card no-print grid gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <button className="btn secondary" onClick={closePreview}>‹ Zurück zur Übersicht</button>
+                <span className="grow" />
+                <button className="btn secondary" disabled={!around.prev} onClick={() => around.prev && openPreview(around.prev)}>
+                  ‹ Vorheriger Mieter{prevName && <>{' '}<span className="sr-only">{`(${prevName})`}</span></>}
+                </button>
+                <span className="muted">{`${around.index + 1} von ${around.count}`}</span>
+                <button className="btn secondary" disabled={!around.next} onClick={() => around.next && openPreview(around.next)}>
+                  Nächster Mieter ›{nextName && <>{' '}<span className="sr-only">{`(${nextName})`}</span></>}
+                </button>
+              </div>
+              <h2 ref={previewHeading} tabIndex={-1} className="m-0">{`Vorschau: ${preview.st.tenantName} · ${preview.st.unitName}`}</h2>
+              {/* Durchsicht K4: Fehler der Abrechnung stehen in „Zu prüfen“; die Vorschau sagt, dass es sie gibt. */}
+              {checks.errors.length > 0 && (
+                <NoticeBox
+                  level="error"
+                  action={`Diese Abrechnung hat ${checks.errors.length} Fehler; sie stehen unter „Zu prüfen“.`}
+                  fix={{ label: 'Zurück zu „Zu prüfen“', onClick: backToChecks }}
+                />
+              )}
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  className="btn secondary"
+                  disabled={isClosed || !templates}
+                  aria-describedby={isClosed ? preview.lockedId : undefined}
+                  onClick={() => setLetterEdit({ kind: 'tenancy', tenancyId: preview.st.tenancyId })}
+                >
+                  Anschreiben bearbeiten
+                </button>
+                {/* Der Grund steht sichtbar daneben, wie bei anderen gesperrten Knöpfen (Durchsicht K10). */}
+                {isClosed && <span id={preview.lockedId} className="muted">{preview.legacy ? 'Vor dem Anschreiben abgeschlossen; gedruckt wird wie bisher.' : 'Abgeschlossen; das Anschreiben ist eingefroren.'}</span>}
+                <button className="btn secondary" onClick={() => openPrint(preview.st.tenancyId)}>
+                  🖨 Drucken{' '}<span className="sr-only">{`(${preview.st.tenantName})`}</span>
+                </button>
+                <label className="checkline">
+                  <input type="checkbox" checked={showSteps} onChange={(e) => setShowSteps(e.target.checked)} />
+                  <span>Rechenweg zeigen</span>
+                </label>
+              </div>
+            </div>
+          )}
+
+          {views.map((v) => {
+            const { st, letterDate, draftMark, legacy, tenancy, stFiles, groups, letter, attachmentCount, paragraphs, paymentDays, showLetter, footerText, head, subject, underTable, footnote, addressState } = v
+            // Auf dem Bildschirm steht nur die Abrechnung der Vorschau; gedruckt werden sie alle bzw. die gewählte.
+            const hidden = preview?.st.tenancyId !== st.tenancyId
             return (
-            <div key={st.tenancyId} className={`card statement ${printId === st.tenancyId ? 'print-target' : ''}${design.paper ? ' paper-print' : ''}`} style={design.margins ? paperVars(design.margins) : undefined}>
+            <div key={st.tenancyId} className={`card statement ${printId === st.tenancyId ? 'print-target' : ''}${design.paper ? ' paper-print' : ''}${hidden ? ' statement-hidden' : ''}`} style={design.margins ? paperVars(design.margins) : undefined}>
               {addressState && (
                 <NoticeBox
                   level="warning"
@@ -821,7 +1028,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                 <>
                   <Letter {...head} paragraphs={paragraphs} footer={footerText} />
                   {exceedsOnePage(paragraphs.map((p) => p.text)) && (
-                    <NoticeBox level="warning" className="no-print" title="Anschreiben länger als eine Seite" action="Das Anschreiben ist voraussichtlich länger als eine Seite und druckt auf der nächsten weiter. Soll es auf eine Seite passen, kürzen Sie die Texte über „Anschreiben bearbeiten“." />
+                    <NoticeBox level="warning" className="no-print" title="Anschreiben länger als eine Seite" action={LETTER_LONG_TEXT} />
                   )}
                 </>
               ) : head ? (
@@ -830,7 +1037,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                 <LegacyHead sender={letterhead(landlord?.landlordName, property)} date={letterDate} recipient={recipientLines(st.tenantName, st.unitName, tenancy, property)} />
               )}
               {head && returnLineTooLong(head.returnLine) && (
-                <NoticeBox level="warning" className="no-print" title="Rücksendeangabe zu lang" action={`Die Rücksendeangabe über der Anschrift hat ${head.returnLine.trim().length} Zeichen; im Fensterfeld passen rund ${RETURN_LINE_MAX} in zwei kleine Zeilen, der Rest würde abgeschnitten. Kürzen Sie den Namen oder die Anschrift des Vermieters (Einstellungen bzw. beim Objekt).`} />
+                <NoticeBox level="warning" className="no-print" title="Rücksendeangabe zu lang" action={returnLineText(head.returnLine)} />
               )}
               {head && addressFieldWarning(head.recipient) && (
                 <NoticeBox level="warning" className="no-print" title="Anschrift zu lang für das Fensterfeld" action={addressFieldWarning(head.recipient) ?? ''} />
@@ -855,26 +1062,6 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                   {heatingOnlyNote(st) && <p>{heatingOnlyNote(st)}</p>}
                   {recommendedDeadlineText(st) && <p className="muted no-print">{recommendedDeadlineText(st)}</p>}
                   {st.prepaymentNote && <p className="muted">{st.prepaymentNote}</p>}
-                </div>
-                <div className="row no-print">
-                <button
-                  className="btn secondary"
-                  disabled={isClosed || !templates}
-                  aria-describedby={isClosed ? lockedId : undefined}
-                  onClick={() => setLetterEdit({ kind: 'tenancy', tenancyId: st.tenancyId })}
-                >
-                  Anschreiben bearbeiten
-                </button>
-                {/* Der Grund steht sichtbar daneben, wie bei anderen gesperrten Knöpfen (Durchsicht K10). */}
-                {isClosed && <span id={lockedId} className="muted">{legacy ? 'Vor dem Anschreiben abgeschlossen; gedruckt wird wie bisher.' : 'Abgeschlossen; das Anschreiben ist eingefroren.'}</span>}
-                <button
-                  className="btn secondary"
-                  disabled={(printAttachments && !attachmentsReady) || !design.ready}
-                  title={printAttachments && !attachmentsReady ? 'Belegkopien werden noch vorbereitet …' : !design.ready ? 'Logo und Briefpapier werden noch vorbereitet …' : undefined}
-                  onClick={() => { void goOnPrinting().then((ok) => { if (ok) setPrintId(st.tenancyId) }) }}
-                >
-                  🖨 Drucken / PDF
-                </button>
                 </div>
               </div>
               {!legacy && (
@@ -904,7 +1091,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                     {groups.map((g) => (
                       <Fragment key={g.category}>
                         {g.rows.map((r) => (
-                          <CalcSteps key={r.costItemId} row={r} colSpan={4}>
+                          <CalcSteps key={r.costItemId} row={r} colSpan={4} open={showSteps}>
                             {(toggle) => (
                               <tr>
                                 <td>
@@ -1080,45 +1267,95 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
             )
           })}
 
-          <ControlView data={data} />
-
-          {data.landlord.rows.length > 0 && (
-            <Card title="Vermieteranteil (nicht umgelegt)" className="no-print">
-              <Table className="sticky-first">
-                <thead>
-                  <tr>
-                    <th>Kostenart</th>
-                    <th className="num">Gesamtkosten</th>
-                    <th>Grund</th>
-                    <th className="num">Ihr Anteil</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.landlord.rows.map((r, i) => (
-                    <tr key={i}>
-                      <td>{r.category}<div className="muted">{r.description}</div></td>
-                      <td className="num">{fmtEuro(r.totalCents)}</td>
-                      <td className="muted">{landlordReasonText(r)}</td>
-                      <td className="num">{fmtEuro(r.shareCents)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr>
-                    <td colSpan={3}>Summe Vermieteranteil</td>
-                    <td className="num">{fmtEuro(data.landlord.totalCents)}</td>
-                  </tr>
-                  {data.selfUsedShareCents !== 0 && (
-                    <tr>
-                      <td colSpan={3} className="muted">davon <Term id="ownShare">Eigenanteil</Term> selbstgenutzter Wohnungen (steuerlich privat)</td>
-                      <td className="num muted">{fmtEuro(data.selfUsedShareCents)}</td>
-                    </tr>
-                  )}
-                </tfoot>
-              </Table>
+          {/* Zone „Kontrolle“: Kontrollansicht (#321), Vermieteranteil und Rechtsstand, je ein Abschnitt zum Aufklappen. */}
+          {!preview && (!empty || data.landlord.rows.length > 0) && (
+            <Card title="Kontrolle" className="no-print">
+              <ControlView data={data} embedded />
+              {data.landlord.rows.length > 0 && (
+                <details>
+                  <summary>{`Vermieteranteil (nicht umgelegt) · ${fmtEuro(data.landlord.totalCents)}`}</summary>
+                  <Table className="sticky-first" aria-label="Vermieteranteil (nicht umgelegt)">
+                    <thead>
+                      <tr>
+                        <th>Kostenart</th>
+                        <th className="num">Gesamtkosten</th>
+                        <th>Grund</th>
+                        <th className="num">Ihr Anteil</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.landlord.rows.map((r, i) => (
+                        <tr key={i}>
+                          <td>{r.category}<div className="muted">{r.description}</div></td>
+                          <td className="num">{fmtEuro(r.totalCents)}</td>
+                          <td className="muted">{landlordReasonText(r)}</td>
+                          <td className="num">{fmtEuro(r.shareCents)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr>
+                        <td colSpan={3}>Summe Vermieteranteil</td>
+                        <td className="num">{fmtEuro(data.landlord.totalCents)}</td>
+                      </tr>
+                      {data.selfUsedShareCents !== 0 && (
+                        <tr>
+                          <td colSpan={3} className="muted">davon <Term id="ownShare">Eigenanteil</Term> selbstgenutzter Wohnungen (steuerlich privat)</td>
+                          <td className="num muted">{fmtEuro(data.selfUsedShareCents)}</td>
+                        </tr>
+                      )}
+                    </tfoot>
+                  </Table>
+                </details>
+              )}
+              {!empty && (() => {
+                const basis = legalBasisLines(data.legalBasis)
+                return (
+                  <details className="legal-basis">
+                    <summary>Angewandte Regeln und Rechtswerte · {basis.head}</summary>
+                    {basis.rules.length > 0 ? (
+                      <ul>{basis.rules.map((r) => <li key={r}>{r}</li>)}</ul>
+                    ) : (
+                      data.legalBasis && <p>Für dieses Jahr wendet Mietfuchs keine besondere Rechtsregel an.</p>
+                    )}
+                    {basis.values.length > 0 && (
+                      <>
+                        <p>Angewandte Rechtswerte:</p>
+                        <ul>{basis.values.map((v) => <li key={v}>{v}</li>)}</ul>
+                      </>
+                    )}
+                    {basis.valuesNote && <p>{basis.valuesNote}</p>}
+                  </details>
+                )
+              })()}
             </Card>
           )}
         </>
+      )}
+      {printDrawer && data && (
+        <PrintDrawer
+          key={printSaves}
+          scope={printDrawer.scope}
+          onScope={(scope) => setPrintDrawer({ scope })}
+          tenants={data.statements.map((st) => ({ id: st.tenancyId, label: `${st.tenantName} (${st.unitName})` }))}
+          withLetter={withLetter}
+          onLetter={setLetterChoice}
+          letterNote={letterChoice !== null && letterChoice !== letterDefault ? LETTER_CHOICE_NOTE : null}
+          draft={printDraft}
+          onSaveDraft={savePrintInDrawer}
+          draftNote={PRINT_DRAFT_NOTE}
+          attachmentsLoading={attachmentsLoading}
+          paper={!!design.paper}
+          blocked={printBlocked}
+          warnings={printWarnings.length > 0 ? (
+            <div className="notice-list">
+              {printWarnings.map((n, i) => <CalcNotice key={i} notice={n} />)}
+            </div>
+          ) : null}
+          busy={printBusy}
+          onPrint={printNow}
+          onClose={cancelPrint}
+        />
       )}
       {designs && propertyId && (
         <LetterDesignDrawer

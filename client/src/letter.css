@@ -22,6 +22,10 @@
 .letter-head-address { font-weight: var(--weight-normal); font-size: var(--text-s); }
 .letter-footer { margin-top: var(--space-4); padding-top: var(--space-2); border-top: 1px solid var(--line); font-size: var(--text-xs); color: var(--muted); }
 
+/* Die Seite Abrechnung zeigt am Bildschirm nur die Abrechnung des Mieters in der Vorschau; die übrigen stehen weiter im
+   Dokument, denn gedruckt werden sie wie bisher alle bzw. die gewählte (index.css, `print-one`). Nur am Bildschirm. */
+@media screen { .card.statement.statement-hidden { display: none; } }
+
 /* Teil 2: ohne Anschreiben der Kopf des Briefs über der Aufstellung, am Bildschirm ohne Abstand nach unten */
 .letter.letter-top { margin-bottom: var(--space-3); }
 .statement-letter-text { margin: 0 0 var(--space-3); }

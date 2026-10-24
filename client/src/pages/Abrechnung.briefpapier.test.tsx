@@ -150,7 +150,10 @@ test('fehlt das Briefpapier, druckt die Seite wie ohne: mit Rand, Absender und H
   expect(card.querySelector('img.letter-paper')).toBeNull()
   expect(card.querySelector('.letter-head')?.textContent).toContain('Max Vermieter')
   expect(card.querySelector('img.letter-logo')?.getAttribute('src')).toBe(url(LOGO))
-  expect((within(card as HTMLElement).getByRole("button", { name: /Drucken/ }) as HTMLButtonElement).disabled).toBe(false)
+  // „Drucken“ im Fenster „Drucken“ geht.
+  fireEvent.click(screen.getByRole('button', { name: /Drucken \/ PDF/ }))
+  const drawer = await screen.findByRole('dialog', { name: 'Drucken' }, SLOW)
+  expect((within(drawer).getByRole('button', { name: 'Drucken' }) as HTMLButtonElement).disabled).toBe(false)
 })
 
 test('meldet der Server eine fehlende Datei, nennt die Seite sie', async () => {

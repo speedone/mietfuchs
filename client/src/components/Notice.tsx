@@ -87,3 +87,13 @@ export function CalcNotice({ notice, fix, className }: { notice: Notice, fix?: F
     </NoticeBox>
   )
 }
+
+// Mehrere Hinweise einer Stufe zusammengefasst in einer aufklappbaren Zeile („3 Hinweise (…)“), darin die Hinweise.
+export function NoticeGroup({ level, summary, children }: { level: NoticeLevel, summary: ReactNode, children: ReactNode }) {
+  return (
+    <details className={`${noticeClass(level)} notice-item`}>
+      <summary><span aria-hidden="true">{NOTICE_SYMBOLS[level]}</span> {summary}</summary>
+      <div className="notice-list">{children}</div>
+    </details>
+  )
+}

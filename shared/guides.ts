@@ -82,7 +82,7 @@ const GUIDE_DATA = {
       { page: 'belege', text: 'Die Belege dazu lädt der Belegordner mit „Belege für die Steuer“ als ZIP, geordnet nach den Gruppen der Anlage V; die Übersicht darin nennt je Position den privaten und den abziehbaren Teil wie die Steuerübersicht.' },
     ],
     result: [
-      'Ihre Wohnung zählt in die Verteilbasis. Nach Fläche, Wohneinheiten und Personen trägt die Mieterin nur ihren Teil, der Rest ist Ihr Eigenanteil. Er steht auf der Seite Abrechnung unter „Vermieteranteil (nicht umgelegt)“ mit dem Grund „Eigennutzung“.',
+      'Ihre Wohnung zählt in die Verteilbasis. Nach Fläche, Wohneinheiten und Personen trägt die Mieterin nur ihren Teil, der Rest ist Ihr Eigenanteil. Er steht auf der Seite Abrechnung in der Karte „Kontrolle“ unter „Vermieteranteil (nicht umgelegt)“ mit dem Grund „Eigennutzung“.',
       'Beim Wasser gilt der Hauptzähler als Grundlage: Die Mieterin zahlt ihren gemessenen Verbrauch, der Rest des Hauptzählers ist Ihr Eigenanteil.',
       'Die Steuerübersicht teilt jede Position in privat und abziehbar: umlagefähige Kosten mit dem Eigenanteil der Abrechnung, nicht umlagefähige nach ihrer Zuordnung oder nach der Fläche. Überschuss und Hauptzahl rechnen mit dem abziehbaren Teil, der Rechenweg steht je Position zum Aufklappen.',
       'Bei der Heizung kennt Mietfuchs die Ausnahme für das Haus mit höchstens zwei Wohnungen, von denen Sie eine selbst bewohnen: Eine Warmmiete oder Pauschale ergibt dort keine Warnung.',
@@ -115,10 +115,10 @@ const GUIDE_DATA = {
       { page: 'abrechnung', text: 'Prüfen Sie die Hinweise der Abrechnung; „Hier beheben →“ führt zum betroffenen Eintrag. Nach dem Versand schließen Sie die Abrechnung mit dem Knopf mit dem Schloss ab und tragen das Datum bei „versendet am“ ein.' },
     ],
     result: [
-      'Jede Rechnung wird centgenau verteilt; der Rechenweg jeder Zeile steht auf der Seite Abrechnung unter „Rechenweg“.',
+      'Jede Rechnung wird centgenau verteilt; den Rechenweg jeder Zeile zeigt auf der Seite Abrechnung die Vorschau eines Mieters („Ansehen“) mit „Rechenweg zeigen“.',
       'Eine neue Position bekommt den Umlageschlüssel, den dieselbe Kostenart im Vorjahr hatte. Weicht sie davon ab, weisen Formular und Abrechnung darauf hin. Eine Rechnung, die schon als Position erfasst ist, legt die KI-Auswertung nicht still ein zweites Mal an, sondern bietet an, den Beleg mit der Position zu verknüpfen.',
       'Für die Belegeinsicht Ihrer Mieter erstellt der Belegordner die „Belegmappe für Mieter“ als PDF.',
-      'Was nicht auf Mieter entfällt, steht unter „Vermieteranteil (nicht umgelegt)“ mit seinem Grund, etwa Eigennutzung, Leerstand oder nicht umlagefähig.',
+      'Was nicht auf Mieter entfällt, steht in der Karte „Kontrolle“ unter „Vermieteranteil (nicht umgelegt)“ mit seinem Grund, etwa Eigennutzung, Leerstand oder nicht umlagefähig.',
       'Werden Heizkosten nur nach Fläche verteilt, nennt die Abrechnung je Mieter den Betrag, um den er nach der Heizkostenverordnung kürzen darf.',
       'Wohnen Sie selbst im Haus, teilt die Steuerübersicht die Werbungskosten in privat und abziehbar, wie bei der Einliegerwohnung.',
     ],
@@ -239,7 +239,7 @@ const GUIDE_DATA = {
       { page: 'steuer', text: 'Lesen Sie die Hinweise der Steuerübersicht zu den Zeilen 20 und 24 der Anlage V.' },
     ],
     result: [
-      'Ein Mietverhältnis mit Pauschale oder Inklusivmiete bekommt keine Abrechnung; die Seite Abrechnung nennt es unter „Ohne Abrechnung“.',
+      'Ein Mietverhältnis mit Pauschale oder Inklusivmiete bekommt keine Abrechnung; die Seite Abrechnung nennt es in der Tabelle je Mieter mit „Ohne Abrechnung“ und dem Grund.',
       'Es bleibt in der Verteilbasis. Sein Anteil wird ihm nicht berechnet, sondern bleibt beim Vermieter, mit dem Grund „Betriebskostenpauschale“ oder „Inklusivmiete“. Das ist kein Eigenanteil und zählt als Werbungskosten.',
       'Das Mietkonto führt die Pauschale im monatlichen Soll; die Abrechnung rechnet sie nie an.',
       'Ist für die Heizung eine Pauschale oder Warmmiete vereinbart, obwohl das Haus nicht das selbstbewohnte Zweifamilienhaus ist, warnt die Abrechnung.',

@@ -74,6 +74,31 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   stehen, die Region „Neues Objekt“, der Statustext unter „Bezahlt am“). Ein Erfolg ist kein Hinweis,
   sondern `div.ok` mit `role="status"`. Ein Rückverweis am Satzanfang oder mitten im Satz („deshalb“,
   „daher“, „folglich“ …) holt die eingeklappte Begründung davor wieder hervor.
+- **Seite Abrechnung in drei Zonen** ([pages/Abrechnung.tsx](src/pages/Abrechnung.tsx), Logik in
+  [settlementOverview.ts](src/settlementOverview.ts)): eine Kopfzeile (Stand und Frist, der eine Primärknopf des Zustands,
+  „🖨 Drucken / PDF“, „Mehr“ als Ausklapper mit Anschreiben, Briefpapier und Export; einen Menü-Baustein gibt es nicht,
+  Popover nur über `usePopover`, S12), „Zu prüfen“ (`checkList`: Fehler, Warnungen und Hinweise mit Betrag, Kürzung oder
+  Aufforderung offen als `CalcNotice`, eingeklappt nur „Mehr dazu“, „Hier beheben →“ ohne Aufklappen; kein Einzelbetrag im
+  Kopf, denn der erste Betrag eines Texts ist oft nur der Anteil des ersten Mieters. Nur stille Hinweise (`isQuietHint`,
+  erkannt mit `PROTECTED` und `isAction` aus noticeText.ts) stehen zusammen in `NoticeGroup`. Dazu die Prüfungen der Seite
+  selbst, Anschrift und Länge, als Hinweise derselben Gestalt, `pageChecks`; hat die Abrechnung Fehler, sagt es auch die
+  Vorschau, mit „Zurück zu „Zu prüfen““), die Übersicht (Kennzahlen,
+  Tabelle je Mieter `tenantRows` mit den Mietverhältnissen ohne Abrechnung, `stacked`; die Karte zu § 560 bleibt eine
+  eigene Karte darunter, als Spalte wäre sie zu eng) und „Kontrolle“ (Kontrollansicht, Vermieteranteil, Rechtsstand je als
+  `<details>`). „Ansehen“ öffnet die **Vorschau eines Mieters** über die ganze Breite (Zustand `previewId`, kein Router):
+  Fokus auf ihre Überschrift, beim Zurück auf „Ansehen“; Blättern mit `neighbors`; ein Schalter „Rechenweg zeigen“
+  (`CalcSteps` mit `open`, ohne Knopf je Zeile). **Die Mieterabrechnungen stehen immer alle im Dokument**, wie vorher, und
+  sind am Bildschirm außer der Vorschau ausgeblendet (`statement-hidden`, nur `@media screen` in letter.css); deshalb
+  druckt die Seite genau wie vorher, alle mit `.card.statement ~ .card.statement` oder einer mit `print-one`. Gedruckt wird
+  über das Fenster „Drucken“ ([PrintDrawer.tsx](src/components/PrintDrawer.tsx), Ausnahme „Drucken“ in S16): „Was
+  drucken?“ (alle Mieter ohne Seitenzahl, einer mit), die vier Häkchen wie vorher (Anschreiben nur für diesen Druck, die
+  drei übrigen ein Entwurf der Einstellungen mit eigenem „Speichern“), die Prüfungen der Seite für die gewählten Mieter;
+  „Abbrechen“ stellt die Häkchen von vorher her; nach „Speichern“ im Fenster gilt der gespeicherte Stand als der von
+  vorher (Fenster über `key` neu eingehängt), „Abbrechen“ fragt dann nicht. Erst danach fragen die Rückfragen vor dem Druck (Fehler, Monat der
+  Anpassung); „Nicht drucken“ lässt das Fenster offen. Bleibt nach dem Druck ein Entwurf der Häkchen, steht er mit
+  „Speichern“ in der Kopfzeile. Nachweis, dass sich der Druck nicht ändert: PDFs des Beispielbestands (alle, einer, ohne
+  Anschreiben, mit Anlagen) vorher und nachher, Seitenzahl, Text und Lage jedes Textstücks gleich. Ein Wächter in printCss.test.ts
+  verlangt `.statement-hidden` nur in `@media screen`.
 - **Fehler vor dem Druck**: Hat eine offene Abrechnung Fehler der Stufe `error`, fragt die Seite vor
   dem Drucken ([despiteErrors.ts](src/despiteErrors.ts)), und jede Mieterabrechnung trägt im Druck
   „Entwurf, nicht versenden“ (`print-only`, auch bei Strg+P). Eine abgeschlossene nie. Die erste
@@ -104,7 +129,8 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
 - **Anschreiben bearbeiten** ([LetterDrawer.tsx](src/components/LetterDrawer.tsx), Logik in
   [letterForm.ts](src/letterForm.ts)): ein Seitenfenster für drei Ebenen, die Vorlage aller Objekte
   ([LetterTemplateCard.tsx](src/components/LetterTemplateCard.tsx) in den Einstellungen, mit der Vorgabe der Anpassung),
-  das Objekt (Karte „Anschreiben“ auf der Seite Abrechnung) und den Mieter („Anschreiben bearbeiten“, nur offen).
+  das Objekt („Vorlage für dieses Objekt bearbeiten“ unter „Mehr“ in der Kopfzeile der Seite Abrechnung) und den Mieter
+  („Anschreiben bearbeiten“ in seiner Vorschau, nur offen).
   Je Baustein ein Textfeld, darunter die Platzhalter als Chips (fügen an der Einfügemarke ein) und „Auf Vorgabe
   zurücksetzen“, dazu die Vorschau mit den Werten des Mieters bzw. Beispielwerten. Ein Text gleich der Ebene darüber
   ist keine eigene Angabe (`setText`), geschickt wird nur, was sich geändert hat (`textChanges`); ein unbekannter
@@ -125,7 +151,7 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   ist eine Meldung am Feld und wird nie durch den des Schreibens ersetzt), Rückfrage aus `stepQuestion` (auch zu Stufen
   zwischen Zeitraumende und Monat), gesendet wird die Marke des Plans.
 - **Kontrollansicht** (#321, [ControlView.tsx](src/components/ControlView.tsx), Logik in
-  [controlView.ts](src/controlView.ts)): auf der Seite Abrechnung eine aufklappbare Karte, immer `no-print`. Je
+  [controlView.ts](src/controlView.ts)): auf der Seite Abrechnung ein aufklappbarer Abschnitt der Karte „Kontrolle“ (`embedded`), immer `no-print`. Je
   Position alle Mieter und die Gründe des Vermieters (`landlordParts`) nebeneinander, Summe gegen den Rechnungsbetrag,
   darunter Kosten, Vorauszahlung und Saldo je Mieter. Nur Anzeige aus `statements` und `landlord`; eine Differenz
   ungleich 0 wird als Fehler benannt. Zeilen ohne Position (Pseudo-Kennung mit „:“, sie allein entscheidet) stehen gesondert, ihre Summe muss 0 sein, und
@@ -151,7 +177,7 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
 - **Teil 2 von #415: ohne Anschreiben, Fußvermerk, Seitenzahl.** „Anschreiben mitdrucken“ hat eine Vorgabe in der
   Vorlage der Installation (Häkchen im Seitenfenster) und am Objekt (Auswahl „wie in den Einstellungen“, ja, nein, im
   Seitenfenster der Objektvorlage); beides liefert `/api/letter-texts` (`printLetter`, `propertyPrintLetter`), es gilt
-  `printsLetter` (shared/letter.ts). Das Häkchen auf der Seite Abrechnung gilt nur für diesen Druck und speichert nichts.
+  `printsLetter` (shared/letter.ts). Das Häkchen im Fenster „Drucken“ der Seite Abrechnung gilt nur für diesen Druck und speichert nichts.
   Ohne Anschreiben zeichnet `StatementHead` (Letter.tsx) denselben Kopf mit denselben Druckmaßen (`.letter.letter-top`,
   danach beginnt die Aufstellung auf der Höhe des Betreffs), der Betreff ist die Überschrift, und `statementBlocks`
   setzt Ergebnis, Anpassung und Belegeinsicht unter die Tabelle (`p.statement-letter-text`), aus den eingefrorenen
@@ -170,7 +196,7 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
 - **Teil 2b von #415: Logo und Briefpapier** ([letterDesignView.ts](src/letterDesignView.ts),
   [letterPaper.ts](src/letterPaper.ts), Seitenfenster [LetterDesignDrawer.tsx](src/components/LetterDesignDrawer.tsx) mit
   Logik in [letterDesignForm.ts](src/letterDesignForm.ts); Karte „Logo und Briefpapier“ in den Einstellungen, am Objekt
-  über die Karte „Anschreiben“ der Seite Abrechnung). Das Logo steht oben rechts im Briefkopf (im Anschreiben und im Kopf
+  über „Mehr“ in der Kopfzeile der Seite Abrechnung). Das Logo steht oben rechts im Briefkopf (im Anschreiben und im Kopf
   ohne Anschreiben), immer als `<img>`, nie eingefügtes SVG. **Mit Briefpapier druckt die Seite ohne Seitenrand**
   (`<style>@page { margin: 0 }</style>`, nur solange die Seite Abrechnung mit Briefpapier offen ist): Chromium schneidet
   ab, was in den Rand von 12 mm ragt (nachgemessen), ein Briefpapier bis zur Blattkante käme sonst mit weißem Rahmen
@@ -180,7 +206,7 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   der Folgeseiten im wiederholten `thead` der Hülle (`follow`, darunter); die Belegkopien stehen in einer eigenen Hülle
   ohne Briefpapier (`newPage`: ein Umbruch vor dem ersten Inhalt einer Zelle wirkte nicht). Deshalb hat die Karte im
   Druck keinen Grund. Rand oben höchstens 70 mm: Chromium wiederholt einen höheren Tabellenkopf nicht (nachgemessen). Ein Bild druckt der Browser immer, auch ohne „Hintergrundgrafiken“. Eine PDF rendert
-  pdf.js vorab zu einem Bild, ein Bild wird vorher nachgefragt; bis dahin ist „Drucken / PDF“ gesperrt. **Fehlt eine
+  pdf.js vorab zu einem Bild, ein Bild wird vorher nachgefragt; bis dahin ist „Drucken“ im Fenster „Drucken“ gesperrt. **Fehlt eine
   Datei**, druckt die Seite ohne sie, mit Rand, Absender und Fußzeile, und nennt es (`printedDesign`, Durchsicht M2).
   Im Seitenfenster wird nur eine einseitige PDF angenommen, und ein SVG wird dort mit Canvas zu einem PNG (`svgToPng`). Mit Briefpapier entfallen Absender (`.letter-head`) und Fußzeile von Mietfuchs; Rücksendeangabe und
   Fußvermerk bleiben. Die Seitenzahl im Rand entfällt (kein Rand). Gewählte Dateien gehen erst mit „Speichern“ hinaus.

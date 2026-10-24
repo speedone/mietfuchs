@@ -263,7 +263,9 @@ const MIN_DRAWERS = 17
 
 // Seitenfenster einer Seite zum Messen: jedes „+ … anlegen“ und je Art das erste ✎ („… bearbeiten“), dazu die
 // Knöpfe, die ein Fenster zum Ändern öffnen. Geschlossen wird mit Esc (ohne Eingabe fragt es nicht).
-const DRAWER_OPENERS = /^(\+ .+ anlegen|Abrechnungszeitraum ändern|Ändern|Mieterwechsel|Eigene Heizkostenabrechnung einrichten|Heizung erneuert \(Kessel getauscht\)|.+ bearbeiten)$/
+const DRAWER_OPENERS = /^(\+ .+ anlegen|Abrechnungszeitraum ändern|Ändern|Mieterwechsel|Eigene Heizkostenabrechnung einrichten|Heizung erneuert \(Kessel getauscht\)|.+ bearbeiten|🖨 Drucken \/ PDF)$/
+// „🖨 Drucken / PDF“ öffnet nur auf der Seite Abrechnung ein Seitenfenster („Drucken“); auf der Seite Steuer druckt er sofort.
+const PRINT_OPENER = '🖨 Drucken / PDF'
 
 // Sichtbare Fehlermeldungen der Oberfläche: die Sammelmeldung, Meldungen am Feld und `.error`.
 async function visibleErrors(page) {
@@ -523,7 +525,7 @@ async function checkDrawers(page, id, dir, add, reportClipped) {
     return out
   }, DRAWER_OPENERS.source)
   let n = 0
-  for (const name of names) {
+  for (const name of names.filter((x) => x !== PRINT_OPENER || id === 'abrechnung')) {
     const button = page.locator('main').getByRole('button', { name, exact: true }).first()
     if (!(await button.count())) continue
     await button.scrollIntoViewIfNeeded().catch(() => {})

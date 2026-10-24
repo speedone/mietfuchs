@@ -60,17 +60,22 @@ export function costModelBody(costModel: CostModel, heatingModel: HeatingModel):
 
 const WORDS: Record<CostModel, string> = { settlement: 'abgerechnet', flatRate: 'als Pauschale', inclusive: 'in der Miete enthalten' }
 
-// Eine Zeile im Kasten „Ohne Abrechnung“ auf der Seite Abrechnung.
+// Eine Zeile „Ohne Abrechnung“ auf der Seite Abrechnung: Name, Wohnung und Grund.
 export function notSettledText(n: NotSettled): string {
+  return `${n.tenantName} (${n.unitName}): ${notSettledReason(n)}`
+}
+
+// Der Grund allein, für die Tabelle je Mieter, in der Name und Wohnung eigene Spalten haben.
+export function notSettledReason(n: NotSettled): string {
   // Nutzungswechsel (Integrationsdurchsicht 0.13.0, S1): ganz in einer Zeit ohne Vermietung, keine Abrechnung.
   if (n.usageConflict) {
     const pre = n.usageConflict.prepaymentCents
-    return `${n.tenantName} (${n.unitName}): ganz in einer Zeit, in der die Einheit nicht vermietet ist; keine Abrechnung` +
+    return 'ganz in einer Zeit, in der die Einheit nicht vermietet ist; keine Abrechnung' +
       (pre !== 0 ? `, Vorauszahlungen von ${fmtEuro(pre)} werden nicht angerechnet` : '')
   }
   const teile = [`Nebenkosten ${WORDS[n.costModel]}`]
   if (n.heatingModel !== 'settlement') teile.push(`Heizung ${WORDS[n.heatingModel]}`)
-  return `${n.tenantName} (${n.unitName}): ${teile.join(', ')}`
+  return teile.join(', ')
 }
 
 // Das Kennzeichen in der Liste der Mietverhältnisse (#142): nichts, solange beides abgerechnet

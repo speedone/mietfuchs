@@ -105,6 +105,7 @@ test('Seite 1 ist das Anschreiben, danach die Aufstellung mit Ergebniskasten und
 
 test('Anschreiben bearbeiten: unbekannter Platzhalter am Feld, Chips, eigener Betrag mit Hinweis, Speichern sendet nur die Änderung', async () => {
   show()
+  await openPreview()
   fireEvent.click(await screen.findByRole('button', { name: /Anschreiben bearbeiten/ }, SLOW))
   const dialog = await screen.findByRole('dialog', {}, SLOW)
   const greeting = within(dialog).getByRole('textbox', { name: 'Gruß' })
@@ -132,6 +133,7 @@ test('Anschreiben bearbeiten: unbekannter Platzhalter am Feld, Chips, eigener Be
 
 test('#317: Ab Monat im Anschreiben, Vorschau und gesendeter Monat', async () => {
   show()
+  await openPreview()
   fireEvent.click(await screen.findByRole('button', { name: /Anschreiben bearbeiten/ }, SLOW))
   const dialog = await screen.findByRole('dialog', {}, SLOW)
   const month = within(dialog).getByRole('textbox', { name: /Ab Monat/ })
@@ -151,6 +153,7 @@ test('eine abgeschlossene Abrechnung druckt ihr eingefrorenes Anschreiben und l�
   const letter = await screen.findByRole('region', { name: 'Anschreiben an Meier' }, SLOW)
   expect(letter.textContent).toContain('Eingefrorener Gruß')
   expect(letter.textContent).toContain(`03.02.${YEAR + 1}`)
+  await openPreview()
   expect((screen.getByRole('button', { name: /Anschreiben bearbeiten/ }) as HTMLButtonElement).disabled).toBe(true)
 })
 
@@ -222,6 +225,7 @@ test('K3: bei 0 € sagt die Tabelle „ausgeglichen“', async () => {
 test('K10: der Grund für den gesperrten Knopf steht daneben', async () => {
   settlement = { ...settlement, closed: { closedAt: `${YEAR + 1}-02-01T10:00:00Z`, sentAt: null } }
   show()
+  await openPreview()
   const button = await screen.findByRole('button', { name: /Anschreiben bearbeiten/ }, SLOW)
   const reason = document.getElementById(button.getAttribute('aria-describedby') ?? '')
   expect(reason?.textContent).toMatch(/abgeschlossen.*eingefroren/i)
@@ -238,6 +242,7 @@ test('S3: ein Anschreiben länger als eine Seite bekommt eine Warnung', async ()
 test('S4 und K6: Vorschau mit dem neuen Betrag aus dem Entwurf, Anpassung auf Vorgabe zurücksetzen', async () => {
   ownLetters = { t1: { texts: {}, adjustment: { mode: 'custom', cents: 7000 } } }
   show()
+  await openPreview()
   fireEvent.click(await screen.findByRole('button', { name: /Anschreiben bearbeiten/ }, SLOW))
   const dialog = await screen.findByRole('dialog', {}, SLOW)
   const amount = await within(dialog).findByRole('textbox', { name: /Neue monatliche Vorauszahlung/ }, SLOW)
@@ -252,6 +257,15 @@ test('S4 und K6: Vorschau mit dem neuen Betrag aus dem Entwurf, Anpassung auf Vo
 })
 
 // ---------- Teil 2 von #415 ----------
+
+// Die Vorschau eines Mieters (Seite Abrechnung, Zone „Übersicht“) und das Fenster „Drucken“ mit den Häkchen.
+async function openPreview() {
+  fireEvent.click(await screen.findByRole('button', { name: /^Ansehen/ }, SLOW))
+}
+async function openPrintDrawer(): Promise<HTMLElement> {
+  fireEvent.click(await screen.findByRole('button', { name: /Drucken \/ PDF/ }, SLOW))
+  return screen.findByRole('dialog', { name: 'Drucken' }, SLOW)
+}
 
 const statementCard = async (): Promise<HTMLElement> => {
   await screen.findByRole('button', { name: /Drucken \/ PDF/ }, SLOW)
@@ -284,7 +298,7 @@ test('Teil 2: ohne Anschreiben beginnt die Aufstellung mit Anschrift, Datum und 
   for (const p of after) expect(table.compareDocumentPosition(p) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 
   // Für diesen Druck umschaltbar, ohne etwas zu speichern.
-  const box = screen.getByRole('checkbox', { name: /Anschreiben mitdrucken/ }) as HTMLInputElement
+  const box = within(await openPrintDrawer()).getByRole('checkbox', { name: /Anschreiben mitdrucken/ }) as HTMLInputElement
   expect(box.checked).toBe(false)
   fireEvent.click(box)
   expect(await screen.findByRole('region', { name: 'Anschreiben an Meier' }, SLOW)).toBeTruthy()
@@ -318,7 +332,7 @@ test('Teil 2: jede Seite der Aufstellung trägt im Druck Mieter, Wohnung und Zei
   expect(card.querySelector('table.print-pages .letter')).toBeNull()
   // Die Fußzeile mit Kontakt und Bank nur mit dem Häkchen, dann auch auf dem Anschreiben.
   expect(card.querySelector('.letter-footer')).toBeNull()
-  fireEvent.click(screen.getByRole('checkbox', { name: /Fußzeile mit Kontakt und Bank/ }))
+  fireEvent.click(within(await openPrintDrawer()).getByRole('checkbox', { name: /Fußzeile mit Kontakt und Bank/ }))
   await waitFor(() => expect(plain(card.querySelector('.letter-footer')?.textContent)).toBe('Max Vermieter · IBAN DE02 1203 0000 0000 2020 51'), SLOW)
   expect(plain(foot.textContent)).toContain('Max Vermieter · IBAN DE02 1203 0000 0000 2020 51')
   cleanup()
@@ -339,6 +353,7 @@ test('Teil 2: eine vor #415 abgeschlossene Abrechnung bekommt keinen Fußvermerk
 test('Teil 2: am Objekt „Anschreiben mitdrucken“ wie die Vorgabe, ja oder nein, mit den Texten gespeichert', async () => {
   templates = { ...TEMPLATES, printLetter: true, propertyPrintLetter: null }
   show()
+  fireEvent.click(await screen.findByRole('button', { name: /^Mehr/ }, SLOW))
   fireEvent.click(await screen.findByRole('button', { name: 'Vorlage für dieses Objekt bearbeiten' }, SLOW))
   const dialog = await screen.findByRole('dialog', {}, SLOW)
   const select = within(dialog).getByRole('combobox', { name: /Anschreiben mitdrucken/ }) as HTMLSelectElement
@@ -393,7 +408,8 @@ test('#229: Anschrift nach dem Auszug fehlt oder hat sich nach dem Abschluss ge�
     </PeriodProvider>,
   )
   showWith(movedOut)
-  expect(await screen.findByText('Anschrift nach dem Auszug fehlt', {}, SLOW)).toBeTruthy()
+  // Am Brief des Mieters und in „Zu prüfen“
+  expect(await screen.findAllByText('Anschrift nach dem Auszug fehlt', {}, SLOW)).toHaveLength(2)
   cleanup()
 
   // Abgeschlossen mit der Anschrift der Wohnung, danach die neue eingetragen.
@@ -401,7 +417,7 @@ test('#229: Anschrift nach dem Auszug fehlt oder hat sich nach dem Abschluss ge�
   if (!frozen) throw new Error('kein Anschreiben')
   settlement = { ...settlement, closed: { closedAt: `${YEAR + 1}-02-01T10:00:00Z`, sentAt: null } }
   showWith([{ ...movedOut[0]!, correspondenceAddress: 'Birkenweg 3, 54321 Anderswo' }])
-  expect(await screen.findByText('Anschrift nach dem Abschluss geändert', {}, SLOW)).toBeTruthy()
+  expect(await screen.findAllByText('Anschrift nach dem Abschluss geändert', {}, SLOW)).toHaveLength(2)
   const letter = await screen.findByRole('region', { name: 'Anschreiben an Meier' }, SLOW)
   expect(letter.querySelector('address')?.textContent).toBe(frozen.recipient?.join(''))
   cleanup()
@@ -419,7 +435,9 @@ test('#229 S1: eine Anschrift mit mehr als sechs Zeilen wird vor dem Druck genan
   settlement = { ...settlement, letters: { t1: { ...l, recipient: ['Meier', 'c/o Weber', 'Hinterhaus', '3. OG', 'Birkenweg 3', 'Postfach 12', '54321 Anderswo'] } } }
   show()
   expect(await screen.findByText('Anschrift zu lang für das Fensterfeld', {}, SLOW)).toBeTruthy()
-  expect(screen.getByText(/Die Anschrift hat 7 Zeilen; im Anschriftfeld passen 6/)).toBeTruthy()
+  expect(screen.getAllByText(/Die Anschrift hat 7 Zeilen; im Anschriftfeld passen 6/)).toHaveLength(2)
+  // In „Zu prüfen“ mit dem Mieter
+  expect(screen.getByText('Anschrift zu lang für das Fensterfeld (Meier, EG)')).toBeTruthy()
 })
 
 test('K7: eine Rücksendeangabe, die nicht in die Vermerkzone passt, wird vor dem Druck genannt', async () => {
@@ -428,5 +446,7 @@ test('K7: eine Rücksendeangabe, die nicht in die Vermerkzone passt, wird vor de
   const long = `Max Vermieter · ${'Sehr lange Straße mit Hausnummer 1, '.repeat(4)}12345 Musterstadt`
   settlement = { ...settlement, letters: { t1: { ...l, sender: { name: 'Max Vermieter', returnLine: long, address: '', footer: '' } } } }
   show()
-  expect(await screen.findByText(/Rücksendeangabe zu lang/, {}, SLOW)).toBeTruthy()
+  // Am Brief und einmal in „Zu prüfen“ (dort Kopf und Text)
+  await screen.findAllByText(/Rücksendeangabe zu lang/, {}, SLOW)
+  expect(screen.getAllByText('Rücksendeangabe zu lang')).toHaveLength(2)
 })

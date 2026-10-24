@@ -87,9 +87,10 @@ async function shoot(browser, base) {
   await save('cockpit')
 
   await go('Abrechnung')
-  // Die Abrechnung des ersten Mieters, den Rechenweg ihrer ersten Zeile aufgeklappt
-  await page.locator('button.calc-toggle').first().click()
-  await scrollTo(page.locator('.card', { has: page.locator('tr.calc-steps') }).first())
+  // Die Vorschau des ersten Mieters mit dem Rechenweg, oben die Aufstellung mit ihren ersten Zeilen
+  await page.getByRole('button', { name: /^Ansehen/ }).first().click()
+  await page.getByRole('checkbox', { name: 'Rechenweg zeigen' }).check()
+  await scrollTo(page.locator('.card.statement:not(.statement-hidden) table').first(), 120)
   await save('abrechnung')
 
   await go('Mietkonto')

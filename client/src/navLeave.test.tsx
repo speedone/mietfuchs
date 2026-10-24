@@ -180,11 +180,15 @@ test('Karte „Angaben zur Abrechnung (§ 6a)“: eine ungespeicherte Eingabe z�
 })
 
 // Nachprüfung B4: Auch ein Sprung aus einer Seite („Hier beheben →“) fragt, hier mit einem ungespeicherten
-// Druck-Häkchen auf der Abrechnung.
+// Druck-Häkchen auf der Abrechnung. Die Häkchen stehen im Fenster „Drucken“; nach dem Druck bleibt der Entwurf mit
+// „Speichern“ in der Kopfzeile stehen.
 test('„Hier beheben →“ mit ungespeicherter Änderung fragt; Abbrechen bleibt auf der Seite', async () => {
   const year = new Date().getFullYear() - 1
   const settlement = {
-    year, daysInYear: 365, period: settlementPeriod(calendarYearPeriod(year)), deadline: `${year + 1}-12-31`, statements: [], landlord: { rows: [], totalCents: 0 }, selfUsedShareCents: 0,
+    year, daysInYear: 365, period: settlementPeriod(calendarYearPeriod(year)), deadline: `${year + 1}-12-31`, statements: [{
+      tenancyId: 't-a', unitId: 'u-a', tenantName: 'Anna', unitName: 'EG', persons: 1, days: 365, personDays: 365, periodStart: `${year}-01-01`, periodEnd: `${year}-12-31`,
+      rows: [], totalShareCents: 0, total35aCents: 0, prepaymentCents: 0, prepaymentOverridden: false, suggestedMonthlyCents: 0, balanceCents: 0,
+    }], landlord: { rows: [], totalCents: 0 }, selfUsedShareCents: 0,
     // Mit Kosten: Ein ganz leerer Zeitraum zeigt keine Druckeinstellungen (#346, Schritt 10).
     totalCostsCents: 100000, warnings: ['EG: zugleich.'], closed: null,
     notices: [{ code: 'tenancy.overlap', level: 'error', title: 'Mietverhältnisse überschneiden sich', text: 'EG: zugleich.', subject: { kind: 'tenancy', id: 't-a' } }],
@@ -198,13 +202,19 @@ test('„Hier beheben →“ mit ungespeicherter Änderung fragt; Abbrechen blei
   })
   render(<App />)
   fireEvent.click(within(await screen.findByRole('navigation', { name: 'Hauptnavigation' })).getByRole('button', { name: /Abrechnung/ }))
-  fireEvent.click(await screen.findByLabelText(/Belegkopien als Anlage/, {}, { timeout: 5000 }))
+  window.print = vi.fn()
+  fireEvent.click(await screen.findByRole('button', { name: /Drucken \/ PDF/ }, { timeout: 5000 }))
+  const drawer = await screen.findByRole('dialog', { name: 'Drucken' })
+  fireEvent.click(within(drawer).getByLabelText(/Belegkopien als Anlage/))
+  fireEvent.click(within(drawer).getByRole('button', { name: 'Drucken' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Trotzdem drucken' }))
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Drucken' })).toBeNull())
   fireEvent.click((await screen.findAllByRole('button', { name: /^Hier beheben/ }, { timeout: 5000 }))[0] ?? (() => { throw new Error('kein Knopf') })())
   const dialog = (await screen.findByText('Ungespeicherte Änderungen verwerfen?')).closest('.dialog') as HTMLElement
   fireEvent.click(within(dialog).getByRole('button', { name: 'Abbrechen' }))
   await waitFor(() => expect(question()).toBeNull())
   expect(within(sidebar()).getByRole('button', { name: /Abrechnung/ }).getAttribute('aria-current')).toBe('page')
-  expect((screen.getByLabelText(/Belegkopien als Anlage/) as HTMLInputElement).checked).toBe(true)
+  expect(screen.getByRole('button', { name: 'Speichern (Druckeinstellungen)' })).toBeTruthy()
 })
 
 // Durchsicht S1 (#346, Schritt 6): „Mehr in ‚Hilfe & Begriffe‘ →“ springt einmal zum Begriff. Ein späterer gewöhnlicher
