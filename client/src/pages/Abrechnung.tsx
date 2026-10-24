@@ -14,7 +14,7 @@ import { keepDraft, useConfirmDiscard, useDraft } from '../useDraft'
 import { useSaving } from '../useSaving'
 import DraftActions from '../components/DraftActions'
 import { FieldMessage } from '../components/Field'
-import { effectiveLandlord, footerLine, letterhead, addressCheck, addressFieldWarning, addressNotice, recipientLines, returnLine } from '../landlord'
+import { effectiveLandlord, footerLine, formerRecipientLines, letterhead, addressCheck, addressFieldWarning, addressNotice, recipientLines, returnLine } from '../landlord'
 import { localToday } from '../periodForm'
 import { landlordReasonText } from '../landlordReasons'
 import { deviationView } from '../deviation'
@@ -58,7 +58,7 @@ import { suggestionWithoutHeating } from '../heatingSettlementView'
 import LetterDrawer, { type LetterSave } from '../components/LetterDrawer'
 import PrepaymentStepsCard from '../components/PrepaymentStepsCard'
 import { sentMonthLines } from '../prepaymentSteps'
-import { asTemplates, letterOf, letterParagraphs, RETURN_LINE_MAX, resultRows, returnLineTooLong } from '../letterView'
+import { asTemplates, footnoteText, infoRows, labor35aRows, letterOf, letterParagraphs, RETURN_LINE_MAX, resultRows, returnLineTooLong, statementHeadRows } from '../letterView'
 
 type Props = {
   settings: Settings | null
@@ -454,6 +454,8 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
   // der Daten, während auf die nächste Bedienung gewartet wird, den Druckdialog ein zweites Mal
   const printSource = useRef({ data, label })
   printSource.current = { data, label }
+  // Druck (#415): Fußvermerk und Seitenzahl je gedruckter Abrechnung, gesetzt, sobald die Ansichten feststehen (unten).
+  const pageFooter = useRef<(id: string) => true | { footnote: string | null, letterFirst: boolean }>(() => true)
   useEffect(() => {
     if (!printId) return
     document.body.classList.add('print-one')
@@ -463,8 +465,8 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
     const st = data?.statements.find((s) => s.tenancyId === printId)
     const job = startPrint({
       title: st ? `${data ? settlementTitle(data) : `Nebenkostenabrechnung ${label}`} ${st.unitName} ${st.tenantName}` : document.title,
-      // „Seite x von y“ nur beim Druck dieser einen Abrechnung (#415, Teil 2).
-      pageNumbers: true,
+      // „Seite x von y“ nur beim Druck dieser einen Abrechnung (#415, Teil 2), links auf derselben Linie der Fußvermerk.
+      pageNumbers: pageFooter.current(printId),
       onDone: () => {
         document.body.classList.remove('print-one')
         setPrintId(null)
@@ -617,8 +619,10 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                 sender: letter.sender?.name ?? landlord?.landlordName ?? '',
                 senderAddress: letter.sender ? (letter.sender.address ?? '') : (landlord?.landlordAddress ?? ''),
                 returnLine: letter.sender?.returnLine ?? (landlord ? returnLine(landlord, property) : letterhead('', property)),
-                recipient: letter.recipient ?? recipientLines(st.tenantName, st.unitName, tenancy, property),
-                date: fmtDate(letterDate),
+                // Ohne eingefrorene Anschrift (Abschluss aus der ersten Fassung von #415) wie damals mit der Wohnung als Zeile.
+                recipient: letter.recipient ?? (data.closed ? formerRecipientLines(st.tenantName, st.unitName, tenancy, property) : recipientLines(st.tenantName, tenancy, property)),
+                // Informationsblock nach DIN 5008 (Druck, #415): Ansprechpartner, Kontakt, Ort und Datum.
+                info: infoRows(letter.sender ?? { name: landlord?.landlordName ?? '', returnLine: '' }, fmtDate(letterDate)),
                 foldMarks: printFoldMarks,
                 draftMark: draftMark ? DRAFT_MARK : null,
                 // Teil 2b: Logo oben rechts; mit Briefpapier entfällt der Absender von Mietfuchs (Letter.tsx).
@@ -627,18 +631,19 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
               } : null
               const subject = letter && !showLetter ? renderLetterText(letter.texts.subject, print) : ''
               const underTable = letter && !showLetter ? statementBlocks(letter, st.balanceCents, attachmentCount).map((b) => ({ block: b, text: renderLetterText(letter.texts[b], print) })) : []
-              const footnote = letter ? (
-                <>
-                  <div>{[letter.values.Name, letter.values.Wohnung, letter.values.Abrechnung, letter.values.Zeitraum].filter((x) => x).join(' · ')}</div>
-                  {footerText && <div>{footerText}</div>}
-                </>
-              ) : null
+              // Druck (#415): je Seite Abrechnung, Objekt und Wohnung; Kontakt und Bank stehen auf der Briefseite, nicht auf jeder.
+              const footnote = letter ? footnoteText(letter) : null
               // #229: fehlt nach dem Auszug die neue Anschrift, oder hat sie sich nach dem Abschluss geändert? Verglichen wird
               // mit dem, was gedruckt würde (abgeschlossen also eingefroren).
               const addressState = addressCheck(st, tenancy, head?.recipient, property, localToday(), data.closed?.sentAt)
     return { st, letterDate, draftMark, legacy, tenancy, stFiles, attachmentsReady, groups, letter, attachmentCount, paragraphs, paymentDays, lockedId, showLetter, print, footerText, head, subject, underTable, footnote, addressState }
   }
   const views = data ? data.statements.map((st) => viewOf(data, st)) : []
+  // Mit Briefpapier hat die Seite keinen Rand und damit keine Randfelder; dann bleibt der Fußvermerk in der Hülle.
+  pageFooter.current = (id) => {
+    const v = views.find((x) => x.st.tenancyId === id)
+    return v && !design.paper ? { footnote: v.footnote, letterFirst: v.showLetter } : true
+  }
   const preview = views.find((v) => v.st.tenancyId === previewId) ?? null
   const around = neighbors(views.map((v) => v.st.tenancyId), previewId ?? '')
   const nameOf = (id: string | null) => views.find((v) => v.st.tenancyId === id)?.st.tenantName ?? ''
@@ -1034,7 +1039,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
               ) : head ? (
                 <StatementHead {...head} />
               ) : (
-                <LegacyHead sender={letterhead(landlord?.landlordName, property)} date={letterDate} recipient={recipientLines(st.tenantName, st.unitName, tenancy, property)} />
+                <LegacyHead sender={letterhead(landlord?.landlordName, property)} date={letterDate} recipient={formerRecipientLines(st.tenantName, st.unitName, tenancy, property)} />
               )}
               {head && returnLineTooLong(head.returnLine) && (
                 <NoticeBox level="warning" className="no-print" title="Rücksendeangabe zu lang" action={returnLineText(head.returnLine)} />
@@ -1050,14 +1055,19 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                 <div className="stack tight">
                   {/* Ohne Anschreiben ist der Betreff die Überschrift der Aufstellung (Teil 2). */}
                   <h2>{subject || (data ? settlementTitle(data) : `Nebenkostenabrechnung ${label}`)}</h2>
-                  {/* Name und Wohnung stehen im Druck schon in der Anschrift, Zeitraum und Tage im Ergebniskasten (#415). */}
+                  {/* Druck (#415): Mieter, Mietobjekt, Wohnung, Wohnfläche, Zeitraum und Personen als Kopf der Aufstellung; den
+                      Zeitraum nennt nur noch er. */}
                   {legacy ? (
                     <div className="muted">{legacyHeadLine(st, personsText(st, tenancy))}</div>
                   ) : (
-                    <div className="muted">
-                      <span className="no-print">{st.tenantName} · {st.unitName} · </span>
-                      {personsText(st, tenancy)}
-                    </div>
+                    <dl className="statement-facts">
+                      {statementHeadRows(st, letter, { period: data?.period ?? { from: st.periodStart, to: st.periodEnd }, persons: personsText(st, tenancy) }).map((r) => (
+                        <Fragment key={r.label}>
+                          <dt>{r.label}</dt>
+                          <dd>{r.value}</dd>
+                        </Fragment>
+                      ))}
+                    </dl>
                   )}
                   {heatingOnlyNote(st) && <p>{heatingOnlyNote(st)}</p>}
                   {recommendedDeadlineText(st) && <p className="muted no-print">{recommendedDeadlineText(st)}</p>}
@@ -1211,7 +1221,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                   {legacy && (
                     <LegacyResult st={st} landlord={landlord} adjust={settings?.printAdjustSuggestion !== false} separate={suggestionWithoutHeating(data, target, choices.length)} daysInYear={data.daysInYear} />
                   )}
-                  {st.total35aCents > 0 && (
+                  {st.total35aCents > 0 && (legacy ? (
                     <div className="stack tight">
                       <strong>Bescheinigung nach § 35a EStG</strong>
                       <p className="muted">
@@ -1234,11 +1244,48 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                         </tbody>
                       </Table>
                     </div>
-                  )}
+                  ) : (
+                    // Druck (#415): eine Tabelle je Position mit Rechnungsbetrag, Lohnanteil der Rechnung und dem Anteil des
+                    // Mieters daran; vor #415 abgeschlossen bleibt die Liste von damals.
+                    <div className="stack tight labor-35a">
+                      <h3 id={`labor35a-${st.tenancyId}`}>Bescheinigung nach § 35a EStG</h3>
+                      <p className="muted">
+                        In Ihrem Kostenanteil sind folgende Arbeitskosten für haushaltsnahe Dienstleistungen und
+                        Handwerkerleistungen enthalten, die Sie gegebenenfalls steuerlich geltend machen können.
+                      </p>
+                      <Table aria-labelledby={`labor35a-${st.tenancyId}`}>
+                        <thead>
+                          <tr>
+                            <th>Leistung</th>
+                            <th className="num">Gesamtbetrag</th>
+                            <th className="num">Lohnanteil</th>
+                            <th className="num">Ihr Anteil</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {labor35aRows(st, letter).map((r, i) => (
+                            <tr key={i}>
+                              <td>{r.service}</td>
+                              <td className="num">{r.total}</td>
+                              <td className="num">{r.labor}</td>
+                              <td className="num">{r.share}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr>
+                            <td colSpan={3}>Summe Ihres Anteils an den Arbeitskosten</td>
+                            <td className="num">{fmtEuro(st.total35aCents)}</td>
+                          </tr>
+                        </tfoot>
+                      </Table>
+                    </div>
+                  ))}
                 </>
               )}
               {/* Belegeinsicht und beigefügte Belege stehen seit #415 im Anschreiben. */}
-              <p className="muted">{costBasisText(label, calendar)}{legacy ? legacyReceiptsText(attachmentCount) : ''}</p>
+              {/* Vor #415 abgeschlossen wie damals; sonst nennt der Kopf der Aufstellung den Abrechnungszeitraum (Druck, #415). */}
+              {legacy && <p className="muted">{costBasisText(label, calendar)}{legacyReceiptsText(attachmentCount)}</p>}
               {printAttachments && stFiles.length > 0 && (
                 <div className="muted no-print">
                   Anlage beim Druck: {stFiles.map(fileLabel).join(' · ')}
@@ -1375,6 +1422,8 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
       )}
       {(() => {
         if (!letterEdit || !templates || !data) return null
+        // Druck (#415): Ist beim Mietverhältnis eine Anrede eingetragen? Sonst sagt das Fenster, wo sie hingehört.
+        const ownSalutation = (id: string) => (tenancies.find((t) => t.id === id)?.letterSalutation ?? '').trim() !== ''
         if (letterEdit.kind === 'property') {
           const first = data.statements[0]
           return (
@@ -1387,6 +1436,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
               own={templates.property ?? {}}
               printLetter={{ value: templates.propertyPrintLetter ?? null, base: templates.printLetter ?? true }}
               values={first ? letterOf(data, first, { settings, property, tenancies }).values : {}}
+              salutations={{ names: data.statements.filter((x) => !ownSalutation(x.tenancyId)).map((x) => x.tenantName), total: data.statements.length }}
               onClose={() => setLetterEdit(null)}
               onSave={saveLetter}
             />
@@ -1408,6 +1458,11 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
             values={{ ...letter.values, Datum: fmtDate(data.closed?.sentAt ?? localToday()) }}
             adjust={{ mode: own?.adjustment?.mode ?? letter.adjustment.mode, cents: own?.adjustment?.cents ?? null, suggestedCents: st.suggestedMonthlyCents, own: !!own?.adjustment, defaultMode: templates.adjustDefault, from: own?.adjustment?.from ?? null, defaultFrom: adjustFromFor(localToday(), data.period.to) }}
             shown={letterParagraphs(letter, st.balanceCents, { date: localToday(), attachments: 0 }).map((p) => p.block)}
+            salutations={{
+              names: ownSalutation(st.tenancyId) ? [] : [st.tenantName],
+              total: 1,
+              fix: onNavigate ? { label: 'Hier beheben → Stammdaten', onClick: () => { setLetterEdit(null); onNavigate('stammdaten', { kind: 'tenancy', id: st.tenancyId }) } } : null,
+            }}
             onClose={() => setLetterEdit(null)}
             onSave={saveLetter}
           />

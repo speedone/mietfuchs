@@ -173,10 +173,16 @@ export default function Muster() {
             .map((block) => ({ block, text: renderLetterText(resolveTemplate(DEFAULT_LETTER_TEXTS[block], SAMPLE_LETTER_VALUES), { date: '2026-03-15', attachments: 0 }) }))}
           sender="Max Vermieter"
           returnLine="Max Vermieter · Lindenweg 12, 12345 Musterstadt"
-          recipient={['Erika Mustermann', 'EG links', 'Lindenweg 12', '12345 Musterstadt']}
-          date="15.03.2026"
+          recipient={['Erika Mustermann', 'Lindenweg 12', '12345 Musterstadt']}
+          info={[{ label: 'Ansprechpartner', value: 'Max Vermieter' }, { label: 'Telefon', value: '0123 456789' }, { label: null, value: 'Musterstadt, 15.03.2026' }]}
           foldMarks={false}
         />
+        <dl className="statement-facts">
+          <dt>Mieter</dt><dd>Erika Mustermann</dd>
+          <dt>Mietobjekt</dt><dd>Lindenweg 12, 12345 Musterstadt</dd>
+          <dt>Wohnung</dt><dd>EG links</dd>
+          <dt>Abrechnungszeitraum</dt><dd>01.01.2025 – 31.12.2025 (365 Tage)</dd>
+        </dl>
         <dl className="result-box">
           <dt>Ihre Kosten</dt><dd>1.240,00 €</dd>
           <dt>Ihre Vorauszahlungen</dt><dd>1.200,00 €</dd>

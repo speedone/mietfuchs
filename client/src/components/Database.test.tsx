@@ -148,3 +148,19 @@ test('ohne Zugriff auf den Speicher des Browsers erscheint der Hinweis trotzdem 
     vi.restoreAllMocks()
   }
 })
+
+// Druck (#415): Die Hinweise gehören zur Oberfläche, nicht aufs Papier. Gedruckt erzeugte „Sicherung vor dem Update
+// angelegt“ vor der Abrechnung eine eigene leere Seite (nachgemessen im PDF der Seite Abrechnung).
+test('beide Hinweise werden nicht gedruckt', async () => {
+  const { unmount } = render(<DatabaseNotice />)
+  const done = await screen.findByRole('status')
+  expect(done.classList.contains('no-print')).toBe(true)
+  unmount()
+  report = {
+    version: '0.9.0',
+    database: { ...state({ state: 'none', message: '', notes: [] }), migrated: { steps: 2, backup: 'mietfuchs.sqlite.vor-0001_objekte', at: '2026-10-01T10:00:00.000Z' } },
+  }
+  render(<DatabaseNotice />)
+  await screen.findByText(/Mietfuchs wurde auf Version 0\.9\.0 aktualisiert/)
+  expect(screen.getByRole('status').classList.contains('no-print')).toBe(true)
+})

@@ -13,8 +13,26 @@ export type PrintJob = { cancel: () => void }
 // „Seite x von y“ unten rechts im Seitenrand (#415, Teil 2). Nur beim Druck einer einzelnen Abrechnung: Beim Druck
 // aller zählte der Zähler über alle Mieter hinweg, und ein Zurücksetzen je Mieter kann Chromium nicht (nachgemessen).
 // Chromium kann Randfelder seit Version 131; ein Browser ohne sie druckt keine Seitenzahl, der Fußvermerk je Seite
-// nennt Mieter, Wohnung und Zeitraum trotzdem.
-export const PAGE_NUMBER_CSS = '@page { @bottom-right { content: "Seite " counter(page) " von " counter(pages); font-size: 7.5pt; } }'
+// in der Hülle `PrintPages` steht trotzdem da.
+//
+// Druck (#415): Mit einem Fußvermerk steht er links im Randfeld, auf einer Linie mit der Seitenzahl rechts, und der
+// Fußvermerk der Hülle entfällt (sonst stünde er doppelt und eine Zeile höher). Auf der Briefseite (`letterFirst`) steht
+// links nichts, dort steht die Fußzeile des Briefs. Randfelder erben die Schrift der Seite nicht (gedruckt kam eine Serifenschrift
+// heraus), deshalb steht sie hier. Die Abstände: 12 mm Seitenrand (letter.css) plus 13 mm ergibt den linken Rand des Texts
+// (25 mm nach DIN 5008), 12 plus 8 den rechten (20 mm).
+const FOOTER_FONT = "font-family: 'Inter', 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-size: 7.5pt; vertical-align: top; padding-top: 2mm"
+const cssString = (text: string): string => `"${text.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\s+/g, ' ')}"`
+export function pageFooterCss(options: { footnote: string | null, letterFirst: boolean }): string {
+  const right = `@bottom-right { content: "Seite " counter(page) " von " counter(pages); ${FOOTER_FONT}; padding-right: 8mm; }`
+  if (!options.footnote) return `@page { ${right} }`
+  const left = `@bottom-left { content: ${cssString(options.footnote)}; ${FOOTER_FONT}; padding-left: 13mm; }`
+  return [
+    `@page { ${left} ${right} }`,
+    options.letterFirst ? '@page :first { @bottom-left { content: none; } }' : '',
+    '.statement-footnote { display: none !important; }',
+  ].filter((x) => x !== '').join('\n')
+}
+export const PAGE_NUMBER_CSS = pageFooterCss({ footnote: null, letterFirst: false })
 
 export function startPrint(options: {
   title: string
@@ -22,7 +40,8 @@ export function startPrint(options: {
   onDone?: () => void
   delayMs?: number
   win?: Window
-  pageNumbers?: boolean
+  // `true`: nur die Seitenzahl; mit Fußvermerk dazu links derselbe (`pageFooterCss`)
+  pageNumbers?: boolean | { footnote: string | null, letterFirst: boolean }
 }): PrintJob {
   const win = options.win ?? window
   const doc = win.document
@@ -32,7 +51,7 @@ export function startPrint(options: {
   const numbers = options.pageNumbers ? doc.createElement('style') : null
   if (numbers) {
     numbers.dataset.pageNumbers = ''
-    numbers.textContent = PAGE_NUMBER_CSS
+    numbers.textContent = typeof options.pageNumbers === 'object' ? pageFooterCss(options.pageNumbers) : PAGE_NUMBER_CSS
     doc.head.append(numbers)
   }
   let finished = false

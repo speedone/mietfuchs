@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { startPrint, type PrintJob } from './printJob'
+import { pageFooterCss, startPrint, type PrintJob } from './printJob'
 
 describe('startPrint', () => {
   const jobs: PrintJob[] = []
@@ -36,6 +36,24 @@ describe('startPrint', () => {
     expect(numbers()).toHaveLength(0)
     start({ title: 'Noch einmal', pageNumbers: true }).cancel()
     expect(numbers()).toHaveLength(0)
+  })
+
+  // Druck (#415): Links der Fußvermerk, rechts „Seite x von y“, auf derselben Linie in den Randfeldern; der Fußvermerk der
+  // Hülle entfällt dann. Auf der Briefseite steht links nichts (dort steht die Fußzeile des Briefs).
+  it('Fußvermerk und Seitenzahl in den Randfeldern, in der Schrift der Seite und an den Rändern des Texts', () => {
+    const css = pageFooterCss({ footnote: 'Nebenkostenabrechnung 2025 · Lindenweg 12, "EG" links \\ 1', letterFirst: true })
+    expect(css).toContain('@bottom-left { content: "Nebenkostenabrechnung 2025 · Lindenweg 12, \\"EG\\" links \\\\ 1"')
+    expect(css).toContain('@bottom-right { content: "Seite " counter(page) " von " counter(pages)')
+    expect(css).toMatch(/@page :first \{ @bottom-left \{ content: none; \} \}/)
+    expect(css).toMatch(/\.statement-footnote \{ display: none !important; \}/)
+    expect(css).toMatch(/font-family: [^;]*sans-serif/)
+    // 12 mm Seitenrand plus 13 mm ergibt den linken Rand des Texts (25 mm), 12 plus 8 den rechten (20 mm).
+    expect(css).toMatch(/@bottom-left \{[^}]*padding-left: 13mm/)
+    expect(css).toMatch(/@bottom-right \{[^}]*padding-right: 8mm/)
+    const plain = pageFooterCss({ footnote: null, letterFirst: false })
+    expect(plain).not.toContain('@bottom-left')
+    expect(plain).not.toContain(':first')
+    expect(plain).not.toContain('statement-footnote')
   })
 
   it('setzt den Titel als Dateinamen und druckt nach der Verzögerung', () => {

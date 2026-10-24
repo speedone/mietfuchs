@@ -53,10 +53,12 @@ export default function DatabaseNotice() {
   const update = updateHint(database, report?.version, updateDismissed)
   if (!hint && !update) return null
 
+  // Beide Hinweise nur am Bildschirm: Gedruckt stand „Sicherung vor dem Update angelegt“ als eigene Seite vor der
+  // Abrechnung (Druck, #415).
   return (
     <>
       {hint && (
-        <section className={`card db-notice${hint.kind === 'failed' ? ' db-notice-problem' : ''}`} role="status">
+        <section className={`card db-notice no-print${hint.kind === 'failed' ? ' db-notice-problem' : ''}`} role="status">
           <span className="db-notice-icon" aria-hidden="true">{hint.kind === 'failed' ? '⚠️' : hint.kind === 'stale' ? 'ℹ️' : '🗄️'}</span>
           <div className="db-notice-body">
             <h2>{hint.kind === 'done' ? 'Ihre Daten sind umgezogen' : hint.kind === 'stale' ? 'Im Datenordner liegt noch eine alte Datei' : 'Der Umstieg der Daten ist nicht gelungen'}</h2>
@@ -70,7 +72,7 @@ export default function DatabaseNotice() {
         </section>
       )}
       {update && (
-        <section className="card db-notice" role="status">
+        <section className="card db-notice no-print" role="status">
           <span className="db-notice-icon" aria-hidden="true">🗄️</span>
           <div className="db-notice-body">
             <h2>Sicherung vor dem Update angelegt</h2>

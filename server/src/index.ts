@@ -45,7 +45,7 @@ import { changeoverWithoutDatabase, replaceFile, runChangeover, type ChangeoverR
 import { acknowledgeNotice, clearNotice, NOTICE_NAME, noticeKey, readNotice, recordNotice, type MigrationNotice } from './db/migrationNotice.ts'
 import type { Database, Executor } from './db/client.ts'
 import { databaseProblem } from './db/errors.ts'
-import { readHeatingPlants, readProperties, readSettings, readStock, readTenancies, readUnits, type Stock } from './db/read.ts'
+import { readCostItems, readHeatingPlants, readProperties, readSettings, readStock, readTenancies, readUnits, type Stock } from './db/read.ts'
 import { lettersFor, letterDoc } from './letter.ts'
 import { savePropertyPrintLetter, readInstallationLetterTexts, readPropertyLetterTexts, readTenancyLetters, saveInstallationLetterTexts, savePropertyLetterTexts, saveTenancyLetter } from './db/letters.ts'
 import { DEFAULT_LETTER_TEXTS, isMonthKey, lettersOf, parseLetterAdjustment, parseLetterTexts } from '../../shared/letter.ts'
@@ -1094,7 +1094,8 @@ async function openLetters(db: Executor, s: Parameters<typeof lettersOf>[0], tar
   const doc = target.plantId === undefined ? letterDoc(target.period, { propertyId }) : letterDoc(target.period, { plantId: target.plantId })
   const property = (await listProperties(db)).find((p) => p.id === propertyId) ?? null
   // #317: Der Monat der Anpassung ist ohne eigene Angabe der übernächste nach heute; der Abschluss friert ihn ein.
-  return lettersFor(db, s, { settings: storedSettings, property, tenancies: await readTenancies(db), doc, asOf: today() })
+  // Druck (#415): Wohnfläche und Lohnanteile nach § 35a EStG für den Kopf und die Tabelle der Aufstellung, eingefroren mit dem Anschreiben.
+  return lettersFor(db, s, { settings: storedSettings, property, tenancies: await readTenancies(db), units: await readUnits(db), costItems: await readCostItems(db), doc, asOf: today() })
 }
 
 // Das Anschreiben einer abgeschlossenen Abrechnung ist das eingefrorene. Wurde sie vor #415

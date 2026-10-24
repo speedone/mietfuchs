@@ -131,6 +131,19 @@ test('Anschreiben bearbeiten: unbekannter Platzhalter am Feld, Chips, eigener Be
   expect(puts[0]).toEqual({ url: `/api/settlement/${YEAR}/letters/t1`, body: { texts: { greeting: 'Viele Grüße, {Vermieter}' }, adjustment: { mode: 'custom', cents: 8000, from: null } } })
 })
 
+// Druck (#415): Ohne Anrede beim Mietverhältnis beginnt der Brief mit „Guten Tag Meier,“; das Fenster sagt es und führt dorthin,
+// wo die Anrede eingetragen wird.
+test('Anschreiben bearbeiten: ohne eingetragene Anrede ein Hinweis mit dem Weg in die Stammdaten', async () => {
+  show()
+  await openPreview()
+  fireEvent.click(await screen.findByRole('button', { name: /Anschreiben bearbeiten/ }, SLOW))
+  const dialog = await screen.findByRole('dialog', {}, SLOW)
+  expect(plain(dialog.textContent)).toContain('Für Meier ist keine Anrede eingetragen; der Brief beginnt mit „Guten Tag Meier,“.')
+  // Ein eigener Text ohne {Anrede}: nichts zu sagen.
+  fireEvent.change(within(dialog).getByRole('textbox', { name: 'Anrede' }), { target: { value: 'Liebe Familie Meier,' } })
+  expect(plain(dialog.textContent)).not.toContain('keine Anrede eingetragen')
+})
+
 test('#317: Ab Monat im Anschreiben, Vorschau und gesendeter Monat', async () => {
   show()
   await openPreview()
@@ -282,7 +295,7 @@ test('Teil 2: ohne Anschreiben beginnt die Aufstellung mit Anschrift, Datum und 
   const top = card.querySelector('.letter-top')
   if (!top) throw new Error('kein Briefkopf')
   expect(top.querySelector('.letter-return')?.textContent).toBe('Max Vermieter · Lindenweg 12, 12345 Musterstadt')
-  expect(top.querySelector('address')?.textContent).toBe('MeierEGLindenweg 1212345 Musterstadt')
+  expect(top.querySelector('address')?.textContent).toBe('MeierLindenweg 1212345 Musterstadt')
   expect(card.querySelector('h2')?.textContent).toBe(`Nebenkostenabrechnung ${YEAR}, Wohnung EG`)
   const text = plain(card.textContent)
   expect(text).not.toContain('Guten Tag')
@@ -318,7 +331,7 @@ test('Teil 2: am Objekt abweichend; die Anschrift des Vermieters steht in der R�
   expect(card.querySelector('.letter-top .letter-head')?.textContent).toBe('Max VermieterHauptstr. 1, 10115 Berlin')
 })
 
-test('Teil 2: jede Seite der Aufstellung trägt im Druck Mieter, Wohnung und Zeitraum, auf Wunsch Kontakt und Bank', async () => {
+test('Druck: jede Seite der Aufstellung trägt Abrechnung, Objekt und Wohnung; Kontakt und Bank nur der Brief', async () => {
   const l = settlement.letters?.t1
   if (!l) throw new Error('kein Anschreiben')
   settlement = { ...settlement, letters: { t1: { ...l, sender: { name: 'Max Vermieter', returnLine: 'x', address: '', footer: 'Max Vermieter · IBAN DE02 1203 0000 0000 2020 51' } } } }
@@ -326,7 +339,7 @@ test('Teil 2: jede Seite der Aufstellung trägt im Druck Mieter, Wohnung und Zei
   const card = await statementCard()
   const foot = card.querySelector('table.print-pages > tfoot')
   if (!foot) throw new Error('kein Fußvermerk')
-  expect(plain(foot.textContent)).toBe(`Meier · EG · Nebenkostenabrechnung ${YEAR} · 01.01.${YEAR} – 31.12.${YEAR}`)
+  expect(plain(foot.textContent)).toBe(`Nebenkostenabrechnung ${YEAR} · Lindenweg 12, EG`)
   // Die Aufstellung steht im Rumpf, das Anschreiben davor nicht.
   expect(card.querySelector('table.print-pages > tbody table')).not.toBeNull()
   expect(card.querySelector('table.print-pages .letter')).toBeNull()
@@ -334,12 +347,38 @@ test('Teil 2: jede Seite der Aufstellung trägt im Druck Mieter, Wohnung und Zei
   expect(card.querySelector('.letter-footer')).toBeNull()
   fireEvent.click(within(await openPrintDrawer()).getByRole('checkbox', { name: /Fußzeile mit Kontakt und Bank/ }))
   await waitFor(() => expect(plain(card.querySelector('.letter-footer')?.textContent)).toBe('Max Vermieter · IBAN DE02 1203 0000 0000 2020 51'), SLOW)
-  expect(plain(foot.textContent)).toContain('Max Vermieter · IBAN DE02 1203 0000 0000 2020 51')
+  // Nicht auf jeder Seite: Kontakt und Bank stehen auf der Briefseite (DIN 5008, Fuß des Geschäftsbriefs).
+  expect(plain(foot.textContent)).toBe(`Nebenkostenabrechnung ${YEAR} · Lindenweg 12, EG`)
   cleanup()
   // Gespeichert wird die Vorgabe der Fußzeile mit den übrigen Druckeinstellungen.
   show({ ...SETTINGS, printFooter: true })
   const again = await statementCard()
   await waitFor(() => expect(again.querySelector('.letter-footer')).not.toBeNull(), SLOW)
+})
+
+// Druck (#415): Der Kopf der Aufstellung nennt, wen und was sie betrifft (Mindestangaben nach BGH VIII ZR 84/07, Rn. 15, und
+// der Abrechnungszeitraum); der Zeitraum steht dort einmal, nicht noch im Ergebniskasten und in einem Satz darunter. Der
+// Lohnanteil nach § 35a EStG ist eine Tabelle.
+test('Druck: Kopf der Aufstellung mit Mieter, Mietobjekt, Wohnung, Zeitraum und Personen; § 35a als Tabelle', async () => {
+  const st: Statement = {
+    ...STATEMENT,
+    rows: [...STATEMENT.rows, { costItemId: 'k2', category: 'Hauswart', description: 'Hausmeisterdienst', totalCents: 180000, keyLabel: 'Wohnfläche', basisText: '60 m² von 120 m²', shareCents: 90000, labor35aCents: 75000 }],
+    totalShareCents: 150000, total35aCents: 75000, balanceCents: -102000,
+  }
+  const l = settlement.letters?.t1
+  if (!l) throw new Error('kein Anschreiben')
+  settlement = { ...settlement, statements: [st], letters: { t1: { ...l, premises: { address: 'Lindenweg 12, 12345 Musterstadt', areaM2: 60 }, labor35a: { k2: { amountCents: 180000, laborCents: 150000 } } } } }
+  show()
+  const card = await statementCard()
+  const facts = card.querySelector('dl.statement-facts')
+  if (!facts) throw new Error('kein Kopf der Aufstellung')
+  expect(plain(facts.textContent)).toBe(`MieterMeierMietobjektLindenweg 12, 12345 MusterstadtWohnungEGWohnfläche60 m²Abrechnungszeitraum01.01.${YEAR} – 31.12.${YEAR} (365 Tage)Personen1 Person`)
+  expect(plain(card.querySelector('dl.result-box')?.textContent)).not.toContain('Zeitraum')
+  expect(plain(card.textContent)).not.toContain('Abgerechnet werden die Kosten')
+  const labor = within(card).getByRole('table', { name: /§ 35a EStG/ })
+  expect([...labor.querySelectorAll('th')].map((th) => th.textContent)).toEqual(['Leistung', 'Gesamtbetrag', 'Lohnanteil', 'Ihr Anteil'])
+  expect(plain(labor.querySelector(':scope > tbody > tr')?.textContent)).toBe('Hauswart: Hausmeisterdienst1.800,00 €1.500,00 €750,00 €')
+  expect(plain(labor.textContent)).not.toContain('—')
 })
 
 test('Teil 2: eine vor #415 abgeschlossene Abrechnung bekommt keinen Fußvermerk', async () => {

@@ -1,7 +1,7 @@
 // Bearbeiten des Anschreibens und Ergebniskasten (#415), ohne DOM.
 import { expect, test } from 'vitest'
 import { DEFAULT_LETTER_TEXTS, mergeLetterTexts, SAMPLE_LETTER_VALUES } from '../../shared/letter.ts'
-import { insertField, letterProblems, monthlessAdjustTexts, ownOf, setText, shownText, textChanges, type LetterDraft } from './letterForm'
+import { insertField, letterProblems, monthlessAdjustTexts, ownOf, salutationHint, setText, shownText, textChanges, type LetterDraft } from './letterForm'
 import { letterParagraphs, resultRows } from './letterView'
 import type { Statement, StatementLetter } from './types'
 
@@ -48,14 +48,13 @@ const ST: Statement = {
 
 test('Ergebniskasten: Zeitraum, Kosten, Vorauszahlungen, Ergebnis und Frist; die Nachzahlung fett', () => {
   expect(resultRows(ST, 14).map((r) => [r.label, plain(r.value), r.strong === true])).toEqual([
-    ['Zeitraum', '01.01.2025 – 31.12.2025 (365 Tage)', false],
     ['Ihre Kosten', '600,00 €', false],
     ['Ihre Vorauszahlungen', '500,00 €', false],
     ['Nachzahlung', '100,00 €', true],
     ['Zahlbar', 'innerhalb von 14 Tagen nach Zugang', false],
   ])
-  expect(resultRows({ ...ST, balanceCents: 2500 }, null).slice(3).map((r) => [r.label, plain(r.value)])).toEqual([['Guthaben', '25,00 €']])
-  expect(resultRows({ ...ST, balanceCents: 0 }, null).slice(3).map((r) => r.value)).toEqual(['ausgeglichen'])
+  expect(resultRows({ ...ST, balanceCents: 2500 }, null).slice(2).map((r) => [r.label, plain(r.value)])).toEqual([['Guthaben', '25,00 €']])
+  expect(resultRows({ ...ST, balanceCents: 0 }, null).slice(2).map((r) => r.value)).toEqual(['ausgeglichen'])
 })
 
 test('das gedruckte Anschreiben: gewählte Bausteine mit Datum und Zahl der Belege', () => {
@@ -82,4 +81,13 @@ test('K3: eigener Text zur Anpassung ohne {AnpassungAb}, auf jeder Ebene', () =>
   expect(monthlessAdjustTexts(draft({ adjustCustom: 'Neu: {VorauszahlungNeu}.' }), base, 'tenancy')).toEqual([])
   expect(monthlessAdjustTexts(draft({ adjustCustom: 'Neu: {VorauszahlungNeu}.' }, 'custom'), base, 'tenancy')).toEqual(['adjustCustom'])
   expect(monthlessAdjustTexts(draft({ adjustCustom: 'Neu.' }, 'none'), base, 'tenancy')).toEqual([])
+})
+
+// Druck (#415): Ohne eingetragene Anrede beginnt der Brief mit „Guten Tag {Name},“. Das Seitenfenster sagt es und nennt, wo
+// eine persönliche Anrede eingetragen wird; mit eigenem Text ohne {Anrede} gibt es nichts zu sagen.
+test('Anrede: Hinweis, solange beim Mietverhältnis keine eingetragen ist', () => {
+  expect(salutationHint(['Anna Becker'], 1, '{Anrede}')).toBe('Für Anna Becker ist keine Anrede eingetragen; der Brief beginnt mit „Guten Tag Anna Becker,“. Eine persönliche Anrede wie „Sehr geehrte Frau Becker“ tragen Sie in den Stammdaten beim Mietverhältnis ein, im Feld „Anrede im Brief“.')
+  expect(salutationHint(['Anna Becker', 'Jonas Hartmann'], 4, '{Anrede}')).toBe('Für 2 von 4 Mietern (Anna Becker und Jonas Hartmann) ist keine Anrede eingetragen; deren Brief beginnt mit „Guten Tag {Name},“. Eine persönliche Anrede wie „Sehr geehrte Frau Becker“ tragen Sie in den Stammdaten beim Mietverhältnis ein, im Feld „Anrede im Brief“.')
+  expect(salutationHint([], 4, '{Anrede}')).toBeNull()
+  expect(salutationHint(['Anna Becker'], 1, 'Liebe Mieter,')).toBeNull()
 })

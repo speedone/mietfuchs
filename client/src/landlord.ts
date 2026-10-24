@@ -5,8 +5,8 @@ export { effectiveLandlord } from '../../shared/landlord.ts'
 
 // Kopfzeile (Rücksendeangabe) und Anschrift des Mieters stehen in shared/landlord.ts, weil der Server sie ins
 // Anschreiben einsetzt und mit ihm einfriert (#415).
-export { footerLine, letterhead, recipientLines, returnLine } from '../../shared/landlord.ts'
-import { recipientLines } from '../../shared/landlord.ts'
+export { footerLine, formerRecipientLines, letterhead, recipientLines, returnLine } from '../../shared/landlord.ts'
+import { formerRecipientLines, recipientLines } from '../../shared/landlord.ts'
 import { andList } from '../../shared/wording.ts'
 import type { Property } from './types'
 
@@ -52,17 +52,19 @@ export function addressCheck(
   sentAt: string | null | undefined,
 ): AddressCheck {
   if (sentAt || !tenancy) return null
-  const current = recipientLines(st.tenantName, st.unitName, tenancy, property)
-  const shown = printed ?? current
-  if (!sameLines(shown, current)) return 'outdated'
+  // Bis zum Druck nach #415 stand die Wohnung als eigene Zeile in der Anschrift; so eingefroren ist es dieselbe Anschrift.
+  const same = (a: readonly string[], t: RecipientTenancy | null) =>
+    sameLines(a, recipientLines(st.tenantName, t, property)) || sameLines(a, formerRecipientLines(st.tenantName, st.unitName, t, property))
+  const shown = printed ?? recipientLines(st.tenantName, tenancy, property)
+  if (!same(shown, tenancy)) return 'outdated'
   const movedOut = !!tenancy.end && tenancy.end < today
-  return movedOut && sameLines(shown, recipientLines(st.tenantName, st.unitName, null, property)) ? 'former' : null
+  return movedOut && same(shown, null) ? 'former' : null
 }
 
 // Dieselbe Prüfung am Feld einer eigenen Anschrift (Mieterwechsel, Stammdaten), bevor etwas gedruckt wird.
 export function ownAddressWarning(tenantName: string, correspondenceAddress: string): string | null {
   if (correspondenceAddress.trim() === '') return null
-  return addressFieldWarning(recipientLines(tenantName.trim() || 'Name', '', { correspondenceAddress }, null))
+  return addressFieldWarning(recipientLines(tenantName.trim() || 'Name', { correspondenceAddress }, null))
 }
 
 // Der Hinweis dazu, auf der Seite Abrechnung je Mieter (vor dem Druck, nicht gedruckt).

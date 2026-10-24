@@ -243,6 +243,10 @@ das Leerzeichen davor mit (`{Konto}` ohne IBAN ergibt den bisherigen Satz ohne K
   Seite druckt dann ohne sie. Die Seitenzahl einer PDF prüft nur die Oberfläche; der Server druckt ohnehin nur Seite 1. Eine Vorversion (#318) enthält nur die Datenbank; ein seither
   ersetztes Logo fehlt dann, die Antwort nennt es. Routen: `GET /api/letter-design` (`?property=`),
   `GET /api/letter-design/files/:name`, `PUT /api/letter-design`, `PUT /api/properties/:id/letter-design` (dazu `own`).
+- **Druck nach DIN 5008** (#415): `sender.contact` (Kontakt für den Informationsblock), `premises` (Anschrift des
+  Objekts, Wohnfläche der Wohnung, `null` ohne Fläche) und `labor35a` (je Position mit Lohnanteil Rechnungsbetrag und
+  Lohnanteil der Rechnung) setzt `lettersOf` aus `units` und `costItems` der Route; sie frieren mit ein. Die Anschrift
+  (`recipient`) nennt die Lage der Wohnung nicht mehr; eingefrorene behalten sie.
 - Routen: `GET`/`PUT /api/letter-texts` (Installation, `adjustDefault`, `printLetter`), `PUT /api/properties/:id/letter-texts` (dazu `printLetter`, `null` = Vorgabe),
   `GET …/letters` und `PUT …/letters/:tenancyId` unter `/api/settlement/:period` und
   `/api/heating-settlement/:plant/:period`.

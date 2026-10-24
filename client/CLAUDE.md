@@ -99,6 +99,8 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   „Speichern“ in der Kopfzeile. Nachweis, dass sich der Druck nicht ändert: PDFs des Beispielbestands (alle, einer, ohne
   Anschreiben, mit Anlagen) vorher und nachher, Seitenzahl, Text und Lage jedes Textstücks gleich. Ein Wächter in printCss.test.ts
   verlangt `.statement-hidden` nur in `@media screen`.
+- **Nicht gedruckt** wird, was nicht zur Abrechnung gehört: Hinweise der Datenbank (Database.tsx), Hinweis im leeren
+  Objekt, Mitteilungen, Kopf und Leiste am Handy tragen `no-print`.
 - **Fehler vor dem Druck**: Hat eine offene Abrechnung Fehler der Stufe `error`, fragt die Seite vor
   dem Drucken ([despiteErrors.ts](src/despiteErrors.ts)), und jede Mieterabrechnung trägt im Druck
   „Entwurf, nicht versenden“ (`print-only`, auch bei Strg+P). Eine abgeschlossene nie. Die erste
@@ -111,7 +113,9 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   [letterView.ts](src/letterView.ts)): ein Brief nach DIN 5008 Form B vor jeder Aufstellung. Die Druckmaße stehen in
   [letter.css](src/letter.css) (Schicht `components` wie fields.css, weil index.css nur kleiner wird; S4, S17 und S20
   lesen die Datei mit): **jede Seite hat 12 mm Rand** (`@page`), denn Chromium legt alle Seiten in einer Breite an,
-  und andere Ränder auf der Briefseite schnitten die Aufstellung rechts ab (nachgemessen). Die Maße der Norm stehen
+  und andere Ränder auf der Briefseite schnitten die Aufstellung rechts ab (nachgemessen). Den Rest bis zu den Rändern nach
+DIN 5008 (links 25, rechts 20 mm) hält im Brief der Text, in der Aufstellung die Zelle der Hülle `PrintPages` frei
+(letterCss.test.ts). Die Maße der Norm stehen
   abzüglich dieser 12 mm (`--page`): Anschriftfeld 20/45 mm, 85 × 45 mm mit Rücksendeangabe in der Vermerkzone,
   Informationsblock 125/50 mm, Betreff ab 98,46 mm, Falz- und Lochmarken bei 105, 148,5 und 210 mm (12 bis 17 mm von
   der Kante, im Seitenrand schneidet Chromium ab) nur mit der Druckeinstellung „Falz- und Lochmarken drucken“. Ein
@@ -122,10 +126,14 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   also eingefroren. **Eine vor #415 abgeschlossene Abrechnung** (ohne `letters`) druckt im bisherigen Aufbau
   ([LegacyStatement.tsx](src/components/LegacyStatement.tsx)): kein Anschreiben, kein Ergebniskasten, Kopf und Sätze
   wie damals. Fehlt `letters` bei einer offenen (Testattrappe), entsteht es aus den Vorgaben (`letterOf`). Der Vermerk
-  „Entwurf, nicht versenden“ steht dann auf beiden Seiten. **Ergebniskasten** (`resultRows`) oben in der Aufstellung, die Nachzahlung neutral fett;
-  die Kopfzeile darunter nennt im Druck nur die Personen (Name und Wohnung stehen in der Anschrift, Zeitraum und Tage
-  im Kasten). Die Sätze zu Zahlung, Erstattung, § 560 und Belegeinsicht stehen nur noch im Anschreiben; unter der
-  Tabelle bleiben § 35a und „Abgerechnet werden die Kosten …“.
+  „Entwurf, nicht versenden“ steht dann auf beiden Seiten. **Kopf der Aufstellung** (`statementHeadRows`, `dl.statement-facts`): Mieter,
+  Mietobjekt, Wohnung, Wohnfläche, Abrechnungszeitraum (bei Ein- oder Auszug dazu „Ihr Nutzungszeitraum“) und Personen;
+  Anschrift und Fläche aus dem Anschreiben (`premises`, eingefroren, vorher abgeschlossen ohne). Der Zeitraum steht nur
+  dort. **Ergebniskasten** (`resultRows`) darunter, die Nachzahlung neutral fett. Die Sätze zu Zahlung, Erstattung,
+  § 560 und Belegeinsicht stehen nur im Anschreiben; unter der Tabelle die Tabelle nach § 35a EStG (`labor35aRows`:
+  Leistung, Gesamtbetrag, Lohnanteil, Ihr Anteil; Rechnungsbetrag und Lohnanteil aus `labor35a` des Anschreibens).
+  **Informationsblock** (`infoRows`): Ansprechpartner, Kontakt (`contactRows` zerlegt das freie Feld), „Ort, Datum“.
+  Vor #415 abgeschlossen bleibt alles wie damals (Kopfzeile, Liste zu § 35a, „Abgerechnet werden die Kosten …“).
 - **Anschreiben bearbeiten** ([LetterDrawer.tsx](src/components/LetterDrawer.tsx), Logik in
   [letterForm.ts](src/letterForm.ts)): ein Seitenfenster für drei Ebenen, die Vorlage aller Objekte
   ([LetterTemplateCard.tsx](src/components/LetterTemplateCard.tsx) in den Einstellungen, mit der Vorgabe der Anpassung),
@@ -181,14 +189,17 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   Ohne Anschreiben zeichnet `StatementHead` (Letter.tsx) denselben Kopf mit denselben Druckmaßen (`.letter.letter-top`,
   danach beginnt die Aufstellung auf der Höhe des Betreffs), der Betreff ist die Überschrift, und `statementBlocks`
   setzt Ergebnis, Anpassung und Belegeinsicht unter die Tabelle (`p.statement-letter-text`), aus den eingefrorenen
-  Texten. **Fußvermerk je Druckseite**: `PrintPages` legt eine echte `<table role="presentation">` um die Aufstellung,
+  Texten. **Fußvermerk je Druckseite** (`footnoteText`: Abrechnung, Objekt und Wohnung, kein Name, keine
+  Bank): `PrintPages` legt eine echte `<table role="presentation">` um die Aufstellung,
   denn nur den `tfoot` einer echten Tabelle wiederholen Browser auf jeder Seite (eine Tabelle aus CSS nicht, nachgemessen);
   am Bildschirm ist die Hülle `display: block` und der Fuß weg, und weil index.css jede Tabellenzeile zusammenhält, darf
   ihre eine Zeile umbrechen. Table.test.ts lässt genau diese Hülle zu. **„Seite x von y“** setzt `startPrint` mit
-  `pageNumbers` nur beim Druck einer Abrechnung als Randfeld (`@bottom-right`, Chromium ab 131): Ein Zähler je Mieter
-  lässt sich in Chromium nicht zurücksetzen, beim Druck aller zählte er also über alle. **Fußzeile mit Kontakt und
-  Bank** ist eine Druckeinstellung (`printFooter`), ihr Text (`sender.footer`) friert mit dem Anschreiben ein; ein
-  Abschluss ohne `sender.footer` druckt keine. Mit Fußzeile hält der Brieftext unten Platz frei (`.letter-with-footer`),
+  `pageNumbers` nur beim Druck einer Abrechnung als Randfeld (`@bottom-right`, Chromium ab 131), links auf derselben
+  Linie der Fußvermerk (`pageFooterCss`; der der Hülle entfällt dann, auf der Briefseite steht links nichts; Randfelder
+  bekommen ihre Schrift ausdrücklich, sonst druckt Chromium eine Serifenschrift). Ein Zähler je Mieter lässt sich in
+  Chromium nicht zurücksetzen, beim Druck aller zählte er also über alle. **Fußzeile mit Kontakt und Bank** ist eine
+  Druckeinstellung (`printFooter`) und steht nur auf der Briefseite; ihr Text (`sender.footer`) friert mit dem
+  Anschreiben ein; ein Abschluss ohne `sender.footer` druckt keine. Mit Fußzeile hält der Brieftext unten Platz frei (`.letter-with-footer`),
   sonst überdruckte sie bei einem Brief über zwei Seiten die Unterschrift (letterCss.test.ts). Die Belegkopien liegen in
   der Hülle und tragen den Fußvermerk. Die Rücksendeangabe bricht in höchstens zwei Zeilen um; über `RETURN_LINE_MAX`
   (110 Zeichen, nachgemessen) warnt die Seite (`returnLineTooLong`). Eine vor #415 abgeschlossene Abrechnung bekommt
@@ -214,7 +225,8 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   Stellen wie ohne Briefpapier (Rücksendeangabe 61 mm, Anschrift ab 66 mm, Datum 53,4 mm).
 - **Druckkopf**: `letterhead` lässt einen Objektnamen weg, der schon in der Adresse steht, und ist die
   Rücksendeangabe des Anschreibens; Anschrift des Mieters (`recipientLines`: eine eigene Anschrift für den
-  Schriftverkehr geht vor, jedes Komma ist eine Zeile). **Anschrift vor dem Versand** (#229, `addressCheck` in
+  Schriftverkehr geht vor, jedes Komma ist eine Zeile; die Lage der Wohnung steht nicht darin, sondern in Betreff und Kopf.
+  Eingefroren mit ihr als zweiter Zeile ist dieselbe Anschrift, `formerRecipientLines`). **Anschrift vor dem Versand** (#229, `addressCheck` in
   landlord.ts): `former`, wenn der Mieter ausgezogen ist und gedruckt die Wohnung im Anschriftfeld stünde; `outdated`,
   wenn die eingefrorene Anschrift (`letters[…].recipient`) von der heutigen abweicht (dann hilft nur Wiederöffnen);
   verglichen wird der Inhalt (an Komma und Umbruch getrennt, Leerraum zusammengezogen), nicht die Zeilen, denn vor #229

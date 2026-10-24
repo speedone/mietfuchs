@@ -5,6 +5,7 @@ import type { LetterAdjustmentMode, LetterBlock, LetterField, LetterTexts } from
 import { blockLabel, LETTER_BLOCK_IDS, resolveTemplate, templateProblems, unmaskLetterText } from '../../shared/letter.ts'
 import { fmtEuro, parseEuro } from './api'
 import type { Problem } from './formProblems'
+import { andList } from '../../shared/wording.ts'
 
 export type LetterLevel = 'installation' | 'property' | 'tenancy'
 export type LetterFieldKey = LetterBlock | 'customCents' | 'adjustFrom'
@@ -99,4 +100,14 @@ export function monthlessAdjustTexts(draft: LetterDraft, base: Record<LetterBloc
     ? (draft.adjust === 'none' ? [] : [draft.adjust === 'custom' ? 'adjustCustom' : 'adjustSuggestion'])
     : (['adjustSuggestion', 'adjustCustom'] as const).filter((b) => draft.own[b] !== null)
   return blocks.filter((b) => adjustTextLacksMonth(shownText(draft, base, b)))
+}
+
+// Druck (#415): Ohne eingetragene Anrede beginnt der Brief mit „Guten Tag {Name},“. Das Seitenfenster sagt es, solange der
+// Baustein die Anrede des Mietverhältnisses nimmt ({Anrede}), und nennt, wo eine persönliche eingetragen wird. `names`: die
+// Mieter ohne Anrede, `total`: alle Mieter, für die das Fenster gilt.
+const SALUTATION_WHERE = 'Eine persönliche Anrede wie „Sehr geehrte Frau Becker“ tragen Sie in den Stammdaten beim Mietverhältnis ein, im Feld „Anrede im Brief“.'
+export function salutationHint(names: readonly string[], total: number, salutationText: string): string | null {
+  if (names.length === 0 || !salutationText.includes('{Anrede}')) return null
+  if (names.length === 1 && total === 1) return `Für ${names[0]} ist keine Anrede eingetragen; der Brief beginnt mit „Guten Tag ${names[0]},“. ${SALUTATION_WHERE}`
+  return `Für ${names.length} von ${total} Mietern (${andList(names)}) ist keine Anrede eingetragen; deren Brief beginnt mit „Guten Tag {Name},“. ${SALUTATION_WHERE}`
 }
