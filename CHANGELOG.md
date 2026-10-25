@@ -6,7 +6,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
-## [0.13.0] – 2026-10-24
+## [0.13.0] – 2026-10-25
 
 ### Hinzugefügt
 
@@ -312,6 +312,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   schon die Sicherung der Datenbank.
 - Wird das Herunterladen eines Backups abgebrochen, räumt Mietfuchs den liegengebliebenen Schnappschuss
   der Datenbank (`mietfuchs.sqlite.<Kennung>.backup`, samt Beidateien) beim nächsten Start aus dem Datenordner.
+
+### Sicherheit
+
+- Abhängigkeiten des Servers mit Sicherheitskorrekturen angehoben: multer 2.5.0 (Hochladen von Belegen) und
+  body-parser 2.4.0. Dazu undici 8.12.3, das nur die Tests des Clients nutzen.
 
 ## [0.12.0] – 2026-10-22
 
