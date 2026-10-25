@@ -61,7 +61,7 @@ export type HealthReport = {
     // auch die Oberfläche; beim Start aus einem Linux-Paket gibt es keine Konsole.
     changeover: { state: string, message: string, notes: string[] }
     // Hat dieser Start Schritte nachgeholt, die Sicherung davor (#154), sonst null.
-    migrated: { steps: number, backup: string, at: string } | null
+    migrated: { steps: number, backup: string, at: string, version?: string } | null
   }
 }
 

@@ -12,6 +12,8 @@ import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { units } from '../src/db/schema.ts'
 import { applyMigrations, connect, loadMigrations } from '../src/db/client.ts'
 import { PRIOR_DIR, priorVersionName } from '../src/db/priorVersions.ts'
+import { releaseStepsOf, versionBringing } from '../src/db/releaseSteps.ts'
+import { APP_VERSION } from '../src/version.ts'
 import type { SnapshotPoint } from '../src/db/snapshots.ts'
 import type { SnapshotPreview } from '../src/db/snapshotPreview.ts'
 
@@ -115,8 +117,12 @@ test('Sicherungspunkte: Rücksprung über die Sicherung vor dem Update, mit Mark
     assert.deepEqual(await unitNames(s), ['EG', 'OG'])
 
     const snap = (await timeline(s)).find((i) => i.name === backup) ?? assert.fail('Sicherung fehlt in der Zeitachse')
-    // Der Schritt ist noch in keiner veröffentlichten Version, und die Merkdatei nennt keine: „Vor einem Update“.
-    assert.deepEqual([snap.type, snap.title, snap.timeFrom], ['update', 'Vor einem Update', 'notice'])
+    // Die Merkdatei nennt die laufende Version, wenn sie genau diese Schritte veröffentlicht hat (beim Release); sonst
+    // gilt die Version aus dem Schritt, und enthält ihn noch keine (main zwischen zwei Releases): „Vor einem Update“.
+    const all = await loadMigrations()
+    const version = releaseStepsOf(APP_VERSION) === all.length ? APP_VERSION : versionBringing(all.length - 2)
+    assert.deepEqual([snap.type, snap.title, snap.timeFrom],
+      ['update', version ? `Vor dem Update auf Version ${version}` : 'Vor einem Update', 'notice'])
 
     // Der Eintrag von vor dem Update lässt sich nur lesen; den Stand vor ihm trägt keine Sicherung, es bleibt bei der
     // Ablehnung. Der Stand nach ihm geht Schritt für Schritt (nur die Wohnung OG danach), also ohne Sicherung.

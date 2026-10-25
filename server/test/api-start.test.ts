@@ -16,6 +16,8 @@ import { createHash } from 'node:crypto'
 import { LEGACY_JSON_NAME } from '../src/db/changeover.ts'
 import { connect, loadMigrations } from '../src/db/client.ts'
 import { readClosedSettlements } from '../src/db/read.ts'
+import { releaseStepsOf } from '../src/db/releaseSteps.ts'
+import { APP_VERSION } from '../src/version.ts'
 import { LAW_AS_OF } from '../../shared/law/register.ts'
 import { calendarPeriod } from '../../shared/period.ts'
 import type { CostItem, Settlement, TaxReport, Tenancy, Unit, UpdateStatus } from '../../shared/types.ts'
@@ -1012,13 +1014,16 @@ test('Update: nach nachgeholten Schritten nennt /healthz die Sicherung, auch nac
   const dataDir = await dataDirAtBaseline()
   const schritte = (await loadMigrations()).length - 1
   const erster = await startServerIn(dataDir)
-  let genannt: { steps: number, backup: string, at: string }
+  let genannt: { steps: number, backup: string, at: string, version?: string }
   try {
     const report = await erster.api<HealthReport>('/healthz')
     // Nur der Name: Die Oberfläche sagt „im Datenordner“, einen Pfad braucht sie nicht.
     genannt = report.database?.migrated ?? assert.fail('keine Sicherung genannt')
     const { at, ...rest } = genannt
-    assert.deepEqual(rest, { steps: schritte, backup: 'mietfuchs.sqlite.vor-0001_objekte' })
+    // Die Version nennt sie nur, wenn die laufende genau diese Schritte veröffentlicht hat (beim Release, nicht auf main
+    // zwischen zwei Releases).
+    const version = releaseStepsOf(APP_VERSION) === schritte + 1 ? { version: APP_VERSION } : {}
+    assert.deepEqual(rest, { steps: schritte, backup: 'mietfuchs.sqlite.vor-0001_objekte', ...version })
     // Der Zeitpunkt der Sicherung unterscheidet sie von einer früheren gleichen Namens.
     assert.equal(at, fs.statSync(path.join(dataDir, 'mietfuchs.sqlite.vor-0001_objekte')).mtime.toISOString())
     assert.ok(fs.existsSync(path.join(dataDir, 'mietfuchs.sqlite.vor-0001_objekte')), 'die genannte Sicherung fehlt')

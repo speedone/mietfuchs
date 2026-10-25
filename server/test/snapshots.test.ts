@@ -73,10 +73,14 @@ test('Sicherungspunkte: Zeitpunkt aus dem Namen, sonst aus der Merkdatei oder de
   assert.deepEqual(setAside && { at: setAside.at, timeFrom: setAside.timeFrom, version: setAside.version, title: setAside.title }, {
     at: '2026-03-04T05:06:00.000Z', timeFrom: 'name', version: '0.9.0', title: 'Vor dem Update auf Version 0.9.0',
   })
-  // Ein Schritt, den noch keine veröffentlichte Version enthält: keine Version, Zeitpunkt aus der Datei.
-  const unreleased = byName.get('mietfuchs.sqlite.vor-0075_verlauf_ruecksprung')
-  assert.deepEqual(unreleased && { at: unreleased.at, timeFrom: unreleased.timeFrom, version: unreleased.version, title: unreleased.title }, {
-    at: fileTime.toISOString(), timeFrom: 'file', version: null, title: 'Vor einem Update',
+  // Ohne Merkdatei: Zeitpunkt aus der Datei, Version aus dem Schritt. Enthält ihn noch keine veröffentlichte Version (ein
+  // Stand von main zwischen zwei Releases), bleibt sie leer; mit dem Release nennt sie die neue. Abgeleitet, damit der
+  // Test vor und nach dem Eintrag in RELEASE_STEPS gilt.
+  const late = byName.get('mietfuchs.sqlite.vor-0075_verlauf_ruecksprung')
+  const lateVersion = versionBringing(all.indexOf('0075_verlauf_ruecksprung'))
+  assert.deepEqual(late && { at: late.at, timeFrom: late.timeFrom, version: late.version, title: late.title }, {
+    at: fileTime.toISOString(), timeFrom: 'file', version: lateVersion,
+    title: lateVersion ? `Vor dem Update auf Version ${lateVersion}` : 'Vor einem Update',
   })
   const restore = byName.get('mietfuchs.sqlite.vor-restore')
   assert.deepEqual(restore && { at: restore.at, timeFrom: restore.timeFrom, title: restore.title }, {
@@ -96,7 +100,11 @@ test('Sicherungspunkte: Versionen je Schritt aus den veröffentlichten Versionen
   assert.equal(versionBringing(11), '0.9.0')
   assert.equal(versionBringing(12), '0.10.0')
   assert.equal(versionBringing(62), '0.12.0')
-  assert.equal(versionBringing(63), null)
+  assert.equal(versionBringing(63), '0.13.0')
+  // Ein Schritt nach der jüngsten veröffentlichten Version gehört noch zu keiner.
+  const last = RELEASE_STEPS.at(-1) ?? assert.fail('RELEASE_STEPS leer')
+  assert.equal(versionBringing(last.steps - 1), last.version)
+  assert.equal(versionBringing(last.steps), null)
   assert.equal(releaseStepsOf('0.11.3'), 56)
   assert.equal(releaseStepsOf('0.12.0'), 63)
   assert.equal(releaseStepsOf('0.7.1'), 0)

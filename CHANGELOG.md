@@ -6,6 +6,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+## [0.13.0] – 2026-10-25
+
 ### Hinzugefügt
 
 - Umsatzsteuer bei getrennt vermieteter Garage oder Stellplatz ([#323](https://github.com/speedone/mietfuchs/issues/323)),
@@ -297,19 +299,24 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   erhalten, samt beheizter Fläche und umbautem Raum. Ob eine vorhandene Liste vom Tausch oder von Ihnen stammt,
   lässt sich nicht unterscheiden; Mietfuchs ändert sie deshalb nicht, sondern warnt bei eigener Heizkostenabrechnung
   nach einem Kesseltausch, wenn eine Wohnung mit Fläche an keiner Heizanlage hängt, auch eine leere. Nehmen Sie die
-  Wohnung dann auf der Seite Heizkosten unter „Heizanlage ändern“ in die Liste auf.
+  Wohnung dann auf der Seite Heizkosten unter „Heizanlage ändern“ in die Liste auf ([#445](https://github.com/speedone/mietfuchs/issues/445)).
 - Endet eine getrennt abgerechnete Heizperiode im Abrechnungszeitraum und die getrennte Heizkostenabrechnung
   danach, enthält der Vorschlag zur Anpassung der Vorauszahlung keine Heizkosten. Er hieß trotzdem
   „monatliche Nebenkostenvorauszahlung“ statt „monatliche Vorauszahlung für die übrigen Nebenkosten (ohne Heizung)“
   (seit 0.11.0). Die Übernahme in
   die Staffel lehnt einen solchen Betrag ab, wenn danach keine eigene Heizvorauszahlung besteht, statt die ganze
   Vorauszahlung durch die ohne Heizung zu ersetzen
-  ([#317](https://github.com/speedone/mietfuchs/issues/317)).
+  ([#317](https://github.com/speedone/mietfuchs/issues/317), [#446](https://github.com/speedone/mietfuchs/issues/446)).
 - Spielen Sie ein Backup mit einer db.json zweimal ein, bleibt die Sicherheitskopie vom ersten Mal
   erhalten: Eine vorhandene `db.json.vor-restore` wird mit Datum beiseitegelegt statt überschrieben, wie
   schon die Sicherung der Datenbank.
 - Wird das Herunterladen eines Backups abgebrochen, räumt Mietfuchs den liegengebliebenen Schnappschuss
   der Datenbank (`mietfuchs.sqlite.<Kennung>.backup`, samt Beidateien) beim nächsten Start aus dem Datenordner.
+
+### Sicherheit
+
+- Abhängigkeiten des Servers mit Sicherheitskorrekturen angehoben: multer 2.5.0 (Hochladen von Belegen) und
+  body-parser 2.4.0. Dazu undici 8.12.3, das nur die Tests des Clients nutzen.
 
 ## [0.12.0] – 2026-10-22
 
@@ -3037,7 +3044,8 @@ Verteilung nach Wohnfläche, Personenzahl, Wohneinheiten, Verbrauch oder Direktz
 druckfertige Abrechnung je Mieter, Mietkonto, Steuerübersicht für die Anlage V, optionale
 KI-Belegauswertung gegen eine lokale Ollama-Instanz, Backup und Wiederherstellung.
 
-[Unveröffentlicht]: https://github.com/speedone/mietfuchs/compare/v0.12.0...HEAD
+[Unveröffentlicht]: https://github.com/speedone/mietfuchs/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/speedone/mietfuchs/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/speedone/mietfuchs/compare/v0.11.3...v0.12.0
 [0.11.3]: https://github.com/speedone/mietfuchs/compare/v0.11.2...v0.11.3
 [0.11.2]: https://github.com/speedone/mietfuchs/compare/v0.11.1...v0.11.2
