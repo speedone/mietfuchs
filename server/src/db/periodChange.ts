@@ -26,6 +26,7 @@
 import crypto from 'node:crypto'
 import { and, eq, inArray } from 'drizzle-orm'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
+import { splitBlocker, splitFamilyKey } from '../../../shared/splitPart.ts'
 import { plantRules, settledSeparately } from '../../../shared/heatingPeriod.ts'
 import {
   formatDayRange, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, settlementDeadline, spansTwoYears,
@@ -116,7 +117,7 @@ function bestFor(a: Affected, options: readonly BillingPeriod[]): BillingPeriod 
   return best
 }
 
-type Group = { from: PeriodKey; old: BillingPeriod; heating: boolean; items: CostItem[]; options: BillingPeriod[]; split: Map<string, ServicePart[]> | null }
+type Group = { from: PeriodKey; old: BillingPeriod; heating: boolean; amounts: boolean; items: CostItem[]; options: BillingPeriod[]; split: Map<string, ServicePart[]> | null }
 
 // Das Jahr der Zahlung, das eine Position heute für die Steuer hat (Entwurf 3.10), aus derselben Stelle wie die
 // Steuerübersicht (`storedOutflowYear` in outflow.ts, #255): das gespeicherte, sonst das Kalenderjahr ihres Zeitraums.
@@ -258,8 +259,7 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
   // ohne den Zusatz „(anteilig …)“, Leistungszeitraum, Rechnungssteller, Beleg und Schlüssel, je in
   // einem anderen Zeitraum. Sie werden beim Wechsel als Ganzes neu geteilt; jeden Teil einzeln zu
   // teilen, summierte die Rundungen, und nach einigen Wechseln stand ein Cent im falschen Zeitraum.
-  const familyKey = (c: CostItem): string =>
-    [c.category, baseDescription(c.description), c.serviceFrom, c.serviceTo, c.vendor ?? '', c.invoiceFile ?? '', c.key].join('\u0000')
+  const familyKey = splitFamilyKey
   const families = new Map<string, CostItem[]>()
   for (const c of items) {
     if (c.category === HEATING_CATEGORY || c.serviceFrom === undefined || c.serviceTo === undefined) continue
@@ -335,6 +335,17 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
     // Ein Abzug auf eine Rechnung ohne Leistungszeitraum geht mit ihr in die Gruppe, auch wenn er selbst einen trägt.
     if (item.category !== HEATING_CATEGORY && item.serviceFrom !== undefined && item.serviceTo !== undefined && general === undefined) {
       if (done.has(item.id)) continue
+      // Einzelbeträge teilt Mietfuchs nicht nach Tagen (#454, `splitBlocker`): Reicht die Rechnung über die neue
+      // Grenze, sperrt das den Wechsel mit dem Rat, sie vorher je Zeitraum zu erfassen; sonst wandert sie ganz.
+      const blocker = splitBlocker(item)
+      if (blocker !== null) {
+        const from = item.serviceFrom > a.old.from ? item.serviceFrom : a.old.from
+        const to = item.serviceTo < a.old.to ? item.serviceTo : a.old.to
+        const parts = splitByService(next, { ...item, ...(from <= to ? { serviceFrom: from, serviceTo: to } : { serviceFrom: item.serviceFrom, serviceTo: item.serviceTo }) })
+        if (parts.length > 1) blocked.add(`${blocker} Danach lässt sich der Abrechnungszeitraum umstellen.`)
+        else if (parts[0] !== undefined && parts[0].period.key !== item.period) splits.push({ item, parts })
+        continue
+      }
       const whole = wholeInvoice(item, familyOf(item))
       if (whole !== null) {
         for (const m of whole.family) done.add(m.id)
@@ -362,9 +373,12 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
     // Abdeckung V20: Eine Position, die mit einer Brennstoffrechnung verknüpft ist, gehört in die Heizperiode, in der die
     // Rechnung endet; das Speichern lehnt jeden anderen Zeitraum ab. Die Vorschau bietet deshalb nur diesen an.
     const required = heating ? requiredPeriodOf(item) : null
-    const id = heating ? (required ? `${a.key}|heizung|${required}` : `${a.key}|heizung`) : a.key
+    // Einzelbeträge (#454) wie Heizkosten in eigener Gruppe ohne Aufteilen: Der Vermieter wählt den Zeitraum. Ein Abzug
+    // beim Betriebsstrom geht mit seiner Rechnung (Durchsicht, Befund 4), sonst teilte er sich nach Tagen und sie nicht.
+    const amounts = !heating && (splitBlocker(item) !== null || (general !== undefined && splitBlocker(general) !== null))
+    const id = heating ? (required ? `${a.key}|heizung|${required}` : `${a.key}|heizung`) : amounts ? `${a.key}|einzelbetraege` : a.key
     const allowed = optionsFor(a).filter((p) => required === null || p.key === required)
-    const g = groups.get(id) ?? { from: a.key, old: a.old, heating, items: [], options: allowed.length > 0 ? allowed : optionsFor(a), split: heating ? null : new Map<string, ServicePart[]>() }
+    const g = groups.get(id) ?? { from: a.key, old: a.old, heating, amounts, items: [], options: allowed.length > 0 ? allowed : optionsFor(a), split: heating || amounts ? null : new Map<string, ServicePart[]>() }
     g.items.push(item)
     if (g.split !== null) {
       const parts = splitByService(next, { ...item, serviceFrom: a.old.from, serviceTo: a.old.to })
@@ -497,6 +511,7 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
         from: g.from,
         fromLabel: periodLabel(a.old),
         heating: g.heating,
+        ...(g.amounts ? { individualAmounts: true } : {}),
         items: g.items.map((i) => ({ costItemId: i.id, description: i.description, amountCents: i.amountCents })),
         options: g.options.map((p) => ({ key: p.key, label: periodLabel(p) })),
         split: g.split === null ? null : {

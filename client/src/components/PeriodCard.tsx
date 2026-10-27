@@ -150,6 +150,12 @@ export function PreviewAnswers({ preview, answers, onChange }: { preview: Period
                 eine Jahresrechnung stünde sonst ganz in {target?.label ?? chosen}.
               </div>
             )}
+            {g.individualAmounts && (
+              <div className="warn">
+                Einzelbeträge teilt Mietfuchs nicht nach Tagen: Welcher Betrag in welchen Zeitraum gehört, steht nur in der Abrechnung, aus der sie stammen.
+                {' '}Wählen Sie den Zeitraum, dem die Rechnung angehört. Betrifft sie beide, erfassen Sie sie danach je Zeitraum mit den Einzelbeträgen, die darauf entfallen.
+              </div>
+            )}
             {g.heating && (
               <div className="warn">
                 Heizkosten teilt Mietfuchs nicht nach Tagen, denn im Winter wird mehr verbraucht als im Sommer (BGH VIII ZR 156/11).

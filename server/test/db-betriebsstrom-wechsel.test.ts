@@ -13,7 +13,7 @@ import { applyPeriodChange, previewPeriodChange } from '../src/db/periodChange.t
 import { createHeatingPlant } from '../src/db/heating.ts'
 import { bookOperatingPower } from '../src/db/operatingPower.ts'
 import { readCostItems, readStock } from '../src/db/read.ts'
-import { createEntity, saveCostItemSplit } from '../src/db/repository.ts'
+import { createEntity, saveCostItemSplit, updateEntity } from '../src/db/repository.ts'
 import { eq } from 'drizzle-orm'
 import { properties } from '../src/db/schema.ts'
 import type { CostItem } from '../../shared/types.ts'
@@ -209,5 +209,25 @@ test('G4-K1: Hausstrom mit Leistungszeitraum: Abzug im selben Verhältnis, je Mi
     const m = await jeMieter(opened)
     assert.equal(m['Mieter B1'], 14794, 'Mieter B1')
     assert.equal(m['Mieter B2'], 132205, 'Mieter B2')
+  })
+})
+
+// Durchsicht von #454, Befund 4: Ist der Hausstrom nach Einzelbeträgen verteilt, steht er beim Wechsel in einer eigenen
+// Gruppe ohne Aufteilen. Sein Abzug gehört in dieselbe Gruppe; sonst würde er nach Tagen geteilt, die Rechnung aber ganz
+// verschoben, und ein Abzug stünde ohne seine Rechnung im Zeitraum.
+test('#454: Abzug beim Betriebsstrom geht mit Hausstrom nach Einzelbeträgen in dessen Gruppe und denselben Zeitraum', async () => {
+  await withDatabase(async (opened) => {
+    await bestand(opened, 'service')
+    await opened.write((db) => updateEntity(db, 'costItems', 'hs', { key: 'amounts', tenancyAmounts: { 't-a': 80000, 't-b': 20000 } }))
+    const preview = (await opened.read((db) => previewPeriodChange(db, 'objekt-1', MAI_AB_2025, TODAY))) ?? assert.fail('kein Objekt')
+    const gruppe = preview.groups.find((g) => g.individualAmounts) ?? assert.fail('keine Gruppe für Einzelbeträge')
+    const abzug = (await items(opened)).find((c) => c.operatingPower === 'deduction') ?? assert.fail('kein Abzug')
+    assert.deepEqual(gruppe.items.map((i) => i.costItemId).sort(), ['hs', abzug.id].sort())
+    const groups = Object.fromEntries(preview.groups.map((g) => [g.id, g.individualAmounts ? '2025-05' : 'split']))
+    const r = await opened.write((db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { understood: true, groups, token: preview.token }, ids, TODAY))
+    if (!r || 'error' in r) return assert.fail(r ? r.error : 'kein Objekt')
+    const nachher = await items(opened)
+    assert.deepEqual(nachher.filter((c) => c.category === 'Beleuchtung/Allgemeinstrom').map((c) => [c.operatingPower ?? 'rechnung', c.period, c.amountCents]).sort(),
+      [['deduction', '2025-05', -10000], ['rechnung', '2025-05', 100000]])
   })
 })

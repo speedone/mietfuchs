@@ -13,6 +13,7 @@ import { closeSettlement, createEntity, listCollection, PeriodConflict, PeriodEr
 import { periodChanges, properties } from '../src/db/schema.ts'
 import { periodKey } from '../../shared/period.ts'
 import type { CostItem } from '../../shared/types.ts'
+import { SPLIT_FIELDS } from '../../shared/splitPart.ts'
 
 async function withDatabase(work: (opened: OpenedDatabase) => Promise<void>): Promise<void> {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-aufteilen-'))
@@ -91,5 +92,58 @@ test('Eine vorhandene Position aufteilen: Sie behält ihre Kennung für den Teil
     const teile = await opened.write((db) => saveCostItemSplit(db, null, { serviceFrom: '2025-01-01', serviceTo: '2025-12-31', taxYear: 2025 }, 'alt', ids))
     assert.deepEqual(teile.map((c) => [c.id === 'alt', c.period, c.amountCents]), [[true, '2025-01', 15781], [false, '2025-05', 32219]])
     assert.equal((await costItems(opened)).length, 2)
+  })
+})
+
+// #454: Einzelbeträge hängen am Mieter; welcher in welchen Zeitraum gehört, weiß nur die Abrechnung, aus der sie stammen.
+// Vorher standen sie ungekürzt in jedem Teil, die Summe überstieg den Teil, und in beiden Zeiträumen wurde nichts verteilt.
+test('#454: Einzelbeträge werden nicht nach Tagen aufgeteilt; Vorschau, Speichern und gewöhnliches Speichern sagen, was zu tun ist', async () => {
+  await withDatabase(async (opened) => {
+    await setRules(opened, 1, ['2025-07'])
+    await opened.write((db) => createEntity(db, 'units', 'u1', { propertyId: 'objekt-1', name: 'EG', areaM2: 60, participates: true }))
+    await opened.write((db) => createEntity(db, 'tenancies', 't1', { unitId: 'u1', tenantName: 'A', persons: 1, start: '2024-01-01' }))
+    const garten = { period: '2025-01', category: 'Gartenpflege', description: 'Garten', amountCents: 10000, key: 'amounts', tenancyAmounts: { t1: 10000 }, serviceFrom: '2025-01-01', serviceTo: '2025-12-31' }
+    await assert.rejects(opened.read((db) => previewCostItemSplit(db, 'objekt-1', garten, null)), (e) => e instanceof PeriodError && /nach Einzelbeträgen verteilt.*Erfassen Sie die Rechnung je Abrechnungszeitraum.*ohne Leistungszeitraum \(Abflussprinzip, BGH VIII ZR 49\/07\)\.$/.test(e.message))
+    await assert.rejects(opened.write((db) => saveCostItemSplit(db, 'objekt-1', garten, null, ids)), (e) => e instanceof PeriodError && /nach Einzelbeträgen verteilt/.test(e.message))
+    await assert.rejects(opened.write((db) => createEntity(db, 'costItems', 'g', { ...garten, propertyId: 'objekt-1' })),
+      (e) => e instanceof PeriodError && /Erfassen Sie die Rechnung je Abrechnungszeitraum/.test(e.message) && !/Aufteilen und speichern/.test(e.message))
+    assert.deepEqual(await costItems(opened), [], 'nichts geschrieben')
+  })
+})
+
+// #454, Architektur: Was ein Teil von der Rechnung erbt, steht in SPLIT_FIELDS. Jedes Feld `same` und `whole` kommt
+// unverändert in jedem Teil an; die Felder `part` setzt das Aufteilen.
+test('#454: jeder Teil erbt die Felder `same` und `whole` unverändert', async () => {
+  await withDatabase(async (opened) => {
+    await setRules(opened, 1, ['2025-07'])
+    await opened.write((db) => createEntity(db, 'units', 'u1', { propertyId: 'objekt-1', name: 'EG', areaM2: 60, participates: true, mea: 50 }))
+    const hausgeld = { period: '2025-01', category: 'Hauswart', description: 'Hausmeister', vendor: 'WEG Muster', amountCents: 10000, key: 'external',
+      externalBasis: { measure: 'mea', total: 1000, totalCents: 200000 }, participantUnitIds: ['u1'], serviceFrom: '2025-01-01', serviceTo: '2025-12-31', taxYear: 2025 }
+    await opened.write((db) => saveCostItemSplit(db, 'objekt-1', hausgeld, null, ids))
+    const parts = await costItems(opened)
+    assert.equal(parts.length, 2)
+    const [first] = parts
+    if (first === undefined) return assert.fail('kein Teil')
+    for (const [field, rule] of Object.entries(SPLIT_FIELDS)) {
+      if (rule !== 'same' && rule !== 'whole') continue
+      for (const p of parts) assert.deepEqual(p[field as keyof CostItem], first[field as keyof CostItem], `${field} in ${p.period}`)
+    }
+    assert.deepEqual(first.externalBasis, hausgeld.externalBasis)
+    assert.deepEqual(parts.map((p) => p.amountCents).reduce((a, b) => a + b, 0), 10000)
+  })
+})
+
+// Durchsicht von #454, Befund 1: Das Formular fragt bei jedem Leistungszeitraum die Vorschau (`needsSplitCheck`). Eine
+// Rechnung mit Einzelbeträgen, deren Leistungszeitraum in einem einzigen Zeitraum liegt, muss dort einen Teil ergeben
+// und sich gewöhnlich speichern lassen; abgelehnt wird nur, was wirklich geteilt würde.
+test('#454: Einzelbeträge mit Leistungszeitraum in einem Zeitraum: Vorschau ein Teil, gewöhnlich gespeichert', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createEntity(db, 'units', 'u1', { propertyId: 'objekt-1', name: 'EG', areaM2: 60, participates: true }))
+    await opened.write((db) => createEntity(db, 'tenancies', 't1', { unitId: 'u1', tenantName: 'A', persons: 1, start: '2024-01-01' }))
+    const kabel = { period: '2025-01', category: 'Kabelanschluss', description: 'Kabel', amountCents: 12000, key: 'amounts', tenancyAmounts: { t1: 12000 }, serviceFrom: '2025-01-01', serviceTo: '2025-12-31' }
+    const vorschau = await opened.read((db) => previewCostItemSplit(db, 'objekt-1', kabel, null))
+    assert.deepEqual(vorschau.map((p) => [p.period, p.amountCents]), [['2025-01', 12000]])
+    await opened.write((db) => createEntity(db, 'costItems', 'k', { ...kabel, propertyId: 'objekt-1' }))
+    assert.deepEqual((await costItems(opened)).map((c) => [c.id, c.amountCents]), [['k', 12000]])
   })
 })

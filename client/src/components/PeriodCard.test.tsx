@@ -99,6 +99,17 @@ describe('Laienprobe (B2, B3, B4)', () => {
     expect(screen.getByText(/„Grundsteuer 2025“ 01\.01\.–30\.06\.2025: 208,27 €, 2025\/2026: 211,73 €/)).toBeTruthy()
     expect(screen.getByText(/2\.600,00 € stehen danach ganz im Rumpfzeitraum 01\.01\.–30\.06\.2025/)).toBeTruthy()
   })
+  test('#454: Einzelbeträge in eigener Gruppe, ohne Aufteilen, mit dem Satz, warum', () => {
+    const kabel = { id: '2025-01|einzelbetraege', heating: false, individualAmounts: true as const, taxShifts: [], from: periodKey('2025-01'), fromLabel: '2025',
+      items: [{ costItemId: 'kabel', description: 'Kabel 2025', amountCents: 12000 }],
+      options: [{ key: periodKey('2025-01'), label: '01.01.–30.06.2025' }, { key: periodKey('2025-07'), label: '2025/2026' }], split: null, suggested: periodKey('2025-01') }
+    const preview = { ...basis, groups: [kabel] }
+    render(<PreviewAnswers preview={preview} answers={initialAnswers(preview)} onChange={() => {}} />)
+    const feld = screen.getByRole('combobox', { name: /Zeitraum für „Kabel 2025“/ }) as HTMLSelectElement
+    expect([...feld.options].map((o) => o.value)).toEqual(['2025-01', '2025-07'])
+    expect(feld.value).toBe('2025-01')
+    expect(screen.getByText(/Einzelbeträge teilt Mietfuchs nicht nach Tagen/)).toBeTruthy()
+  })
   test('B2: wer eine kalte Rechnung doch ganz in einen Zeitraum legt, bekommt den Betrag genannt', () => {
     render(<PreviewAnswers preview={basis} answers={{ ...initialAnswers(basis), groups: { '2025-01': '2025-01', '2025-01|heizung': '2025-07' } }} onChange={() => {}} />)
     expect(screen.getByText(/420,00 € kommen ganz nach 01\.01\.–30\.06\.2025/)).toBeTruthy()

@@ -299,6 +299,20 @@ describe('Teilnehmer, Gemeinschaftsabrechnung und Einzelbeträge (#94)', () => {
     expect(externalHint(form({ ...angaben, amount: '620,00' }), wohnungen)).not.toMatch(/weicht/)
   })
 
+  test('Gemeinschaft: ein Teil einer aufgeteilten Rechnung wird am gekürzten Anteil gemessen (#454)', () => {
+    // 2.000 € · 50/1.000 = 100 €, davon 184 von 214 Tagen im Zeitraum: 85,98 €.
+    const wohnungen = [unit('u1', { mea: 50 })]
+    const angaben = { key: 'external' as const, externalMeasure: 'mea' as const, externalTotal: '1000', externalTotalAmount: '2.000,00' }
+    const part = { days: 184, of: 214 }
+    expect(externalMismatch(form({ ...angaben, amount: '85,98' }), wohnungen, part)).toBe(false)
+    expect(externalHint(form({ ...angaben, amount: '85,98' }), wohnungen, part)).toBe('Rechnerischer Anteil: 50 von 1.000 MEA · 184 von 214 Tagen des Leistungszeitraums = 85,98 €')
+    expect(externalMismatch(form({ ...angaben, amount: '85,98' }), wohnungen), 'ohne Tagesanteil die ganze Rechnung').toBe(true)
+    expect(externalMismatch(form({ ...angaben, amount: '50,00' }), wohnungen, part)).toBe(true)
+    // Durchsicht, Befund 2: ein zweiter Teil derselben Rechnung im Zeitraum zählt mit.
+    expect(externalMismatch(form({ ...angaben, amount: '50,00' }), wohnungen, { ...part, othersCents: 3598 })).toBe(false)
+    expect(externalHint(form({ ...angaben, amount: '50,00' }), wohnungen, { ...part, othersCents: 3598 })).toMatch(/mit den übrigen Teilen dieser Rechnung im Zeitraum \(35,98 €\)/)
+  })
+
   test('Einzelbeträge: je Mietverhältnis des Jahres, die Summe darf den Betrag nicht übersteigen', () => {
     const mieter = [t('t1', 'u1', '2025-01-01', '2025-06-30'), t('t2', 'u1', '2025-07-01'), t('alt', 'u2', '2020-01-01', '2024-12-31')]
     expect(tenanciesForAmounts(mieter, UNITS, 2025).map((x) => x.id)).toEqual(['t1', 't2'])

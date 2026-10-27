@@ -56,6 +56,7 @@ import { IBAN_LABELS } from '../../../shared/iban.ts'
 import { lastPerFrom, straightenPersonHistory } from '../schedule.ts'
 import { compareText } from '../calc.ts'
 import { isSplitPart, splitByService } from '../serviceSplit.ts'
+import { splitBlocker } from '../../../shared/splitPart.ts'
 import { tenancyStamp } from '../../../shared/tenancyStamp.ts'
 import { allowsPaidOn, isPaidOnDate, paidOnQuestions, splitPaidOnQuestions, type YearSpan } from '../../../shared/paidOn.ts'
 import { statedOutflowYear } from '../outflow.ts'
@@ -1202,9 +1203,11 @@ async function requireServiceAndTax(db: Executor, before: CostItem | null, after
   if (unchanged) return
   const touched = periodsBetween(rules, from, to)
   if (touched.length > 1) {
+    // Einzelbeträge lassen sich nicht aufteilen (#454); der Rat zum Aufteilen führte dort in die nächste Ablehnung.
+    const blocker = splitBlocker(after)
     throw new PeriodError(
       `Die Rechnung ${what} betrifft die Abrechnungszeiträume ${andList(touched.map(periodLabel))} (Leistungszeitraum ${formatDayRange(from, to)}). ` +
-        'Kalte Betriebskosten gehören anteilig in jeden dieser Zeiträume; speichern Sie die Rechnung mit „Aufteilen und speichern“.',
+        (blocker ?? 'Kalte Betriebskosten gehören anteilig in jeden dieser Zeiträume; speichern Sie die Rechnung mit „Aufteilen und speichern“.'),
     )
   }
 }
@@ -2579,7 +2582,12 @@ export async function previewCostItemSplit(db: Database, propertyId: string | nu
   const { base, from, to } = await splitBase(db, propertyId, body, currentId)
   const rules = await rulesForProperty(db, base.propertyId)
   const closed = new Set((await readClosedSettlements(db)).filter((c) => c.propertyId === base.propertyId).map((c) => c.period))
-  return splitByService(rules, { ...base, serviceFrom: from, serviceTo: to }).map((p) => ({
+  const parts = splitByService(rules, { ...base, serviceFrom: from, serviceTo: to })
+  // Einzelbeträge teilt Mietfuchs nicht nach Tagen (#454). Abgelehnt wird erst, was wirklich geteilt würde: Das Formular
+  // fragt die Vorschau bei jedem Leistungszeitraum, auch bei einem in einem einzigen Zeitraum (Durchsicht, Befund 1).
+  const blocker = parts.length > 1 ? splitBlocker(base) : null
+  if (blocker !== null) throw new PeriodError(blocker)
+  return parts.map((p) => ({
     period: p.period.key,
     label: periodLabel(p.period),
     days: p.days,

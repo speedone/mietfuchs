@@ -441,6 +441,8 @@ export type PeriodChangePreview = {
     from: PeriodKey
     fromLabel: string
     heating: boolean
+    // Einzelbeträge (#454): wie Heizkosten nie nach Tagen geteilt, der Vermieter wählt den Zeitraum.
+    individualAmounts?: true
     items: { costItemId: string; description: string; amountCents: number }[]
     options: { key: PeriodKey; label: string }[]
     // `notes` (Review der Laienprobe, Runde 1): warum das Aufteilen nicht vorbelegt ist (gebuchte

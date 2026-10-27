@@ -13,7 +13,8 @@
 import { largestRemainder } from './calc.ts'
 import { formatDayRange, periodsBetween } from '../../shared/period.ts'
 import type { BillingPeriod, PeriodRules } from '../../shared/types.ts'
-export { isSplitPart } from '../../shared/splitPart.ts'
+export { baseDescription, isSplitPart } from '../../shared/splitPart.ts'
+import { baseDescription, SPLIT_SUFFIX } from '../../shared/splitPart.ts'
 
 export type ServicePart = { period: BillingPeriod; days: number; amountCents: number; labor35aCents: number | null; description: string }
 
@@ -22,10 +23,6 @@ type SplitItem = { id: string; description: string; amountCents: number; labor35
 const MS_DAY = 86400000
 const days = (from: string, to: string): number => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / MS_DAY) + 1
 
-const SUFFIX = / \(anteilig [^)]*\)$/
-
-// Die Beschreibung ohne den Zusatz eines früheren Aufteilens.
-export const baseDescription = (description: string): string => description.replace(SUFFIX, '')
 
 // Ein Betrag auf die Tage verteilt; ein negativer mit seinem Betrag und danach mit Vorzeichen.
 function byDays(total: number, weights: number[], keys: string[]): number[] {
@@ -100,7 +97,7 @@ export function splitDeductionsAlike(deductions: readonly { id: string; descript
       days: p.days,
       amountCents: sign * (shares[j]?.[k] ?? 0) || 0,
       labor35aCents: null,
-      description: parts.length > 1 ? `${base}${SUFFIX.exec(p.description)?.[0] ?? ''}` : d.description,
+      description: parts.length > 1 ? `${base}${SPLIT_SUFFIX.exec(p.description)?.[0] ?? ''}` : d.description,
     }))
   })
 }
