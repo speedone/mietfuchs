@@ -197,12 +197,15 @@ export function tenanciesForAmounts(tenancies: Tenancy[], units: Unit[], period:
 
 // Der rechnerische Anteil laut Gemeinschaftsabrechnung, zum Vergleich mit dem eingetragenen
 // Betrag. Leer, solange die Angaben dafür fehlen.
-export function externalHint(form: ItemForm, units: Unit[]): string {
-  const share = externalShare(form, units)
+// `part`: Der Tagesanteil, wenn das Formular einen gespeicherten Teil einer aufgeteilten Rechnung zeigt (#454,
+// `partShare` aus shared/splitPart.ts); sein Betrag ist dann nur der Anteil seines Zeitraums.
+export function externalHint(form: ItemForm, units: Unit[], part: PartShare = null): string {
+  const share = externalShare(form, units, part)
   if (share === null) return ''
   if (typeof share === 'string') return share
   const { own, total, expected, amount } = share
-  const text = `Rechnerischer Anteil: ${fmtPct(own)} von ${fmtPct(total)} ${MEASURE_LABELS[form.externalMeasure]} = ${fmtCentsInput(expected)} €`
+  const days = part ? ` · ${part.days} von ${part.of} Tagen des Leistungszeitraums` : ''
+  const text = `Rechnerischer Anteil: ${fmtPct(own)} von ${fmtPct(total)} ${MEASURE_LABELS[form.externalMeasure]}${days} = ${fmtCentsInput(expected)} €`
   if (amount === null || !isMismatch(expected, amount)) return text
   return `${text} — weicht um ${fmtCentsInput(Math.abs(expected - amount))} € vom Betrag ab. Bitte die Angaben aus der Gemeinschaftsabrechnung prüfen; verteilt wird der eingetragene Betrag.`
 }
@@ -210,14 +213,16 @@ export function externalHint(form: ItemForm, units: Unit[]): string {
 // Weicht der rechnerische Anteil vom eingetragenen Betrag ab (#144)? Dann markiert das Formular
 // ihn. Dieselbe Toleranz wie die Warnung `external.amount-mismatch` in server/src/calc.ts: mehr
 // als 1,00 €, denn die Gemeinschaft rundet je Position und Wohnung.
-export function externalMismatch(form: ItemForm, units: Unit[]): boolean {
-  const share = externalShare(form, units)
+export function externalMismatch(form: ItemForm, units: Unit[], part: PartShare = null): boolean {
+  const share = externalShare(form, units, part)
   return share !== null && typeof share !== 'string' && share.amount !== null && isMismatch(share.expected, share.amount)
 }
 const isMismatch = (expected: number, amount: number) => Math.abs(expected - amount) > 100
 
 // Der rechnerische Anteil, eine Erklärung, warum es keinen gibt, oder `null`, solange Angaben fehlen.
-function externalShare(form: ItemForm, units: Unit[]): { own: number, total: number, expected: number, amount: number | null } | string | null {
+type PartShare = { days: number; of: number } | null
+
+function externalShare(form: ItemForm, units: Unit[], part: PartShare): { own: number, total: number, expected: number, amount: number | null } | string | null {
   const total = parseAmountNumber(form.externalTotal)
   const totalCents = parseEuro(form.externalTotalAmount)
   if (total === null || !(total > 0) || totalCents === null) return null
@@ -225,7 +230,7 @@ function externalShare(form: ItemForm, units: Unit[]): { own: number, total: num
   // Mit Teilnehmern (#105) nur deren Wohnungen, wie in der Abrechnung.
   const own = basisUnitsOf(units).filter((u) => form.participants === null || form.participants.includes(u.id)).reduce((a, u) => a + valueOf(u), 0)
   if (!(own > 0)) return form.externalMeasure === 'mea' ? 'Für die Wohnungen sind noch keine Miteigentumsanteile hinterlegt (Stammdaten).' : null
-  return { own, total, expected: Math.round((totalCents * own) / total), amount: parseEuro(form.amount) }
+  return { own, total, expected: Math.round((totalCents * own * (part ? part.days / part.of : 1)) / total), amount: parseEuro(form.amount) }
 }
 
 // Die Wohnungen, für die ein Eigenbetrag (#104) gilt: selbstgenutzt und, wenn die Position auf

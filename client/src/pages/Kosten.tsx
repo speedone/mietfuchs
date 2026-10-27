@@ -66,6 +66,7 @@ import { useEvaluationQueue } from '../evaluationQueue'
 import AssessmentReview from '../components/AssessmentReview'
 import Co2RefundsCard from '../components/Co2RefundsCard'
 import { usePeriod } from '../period'
+import { partShare } from '../../../shared/splitPart.ts'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import Drawer from '../components/Drawer'
 import { useSaving } from '../useSaving'
@@ -190,6 +191,10 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     if (form && heatTax?.show && !heatTax.valid && form.taxYear !== heatTax.fallback) setForm({ ...form, taxYear: heatTax.fallback })
   }, [form, heatTax?.show, heatTax?.valid, heatTax?.fallback])
 
+  // Ein gespeicherter Teil einer aufgeteilten Rechnung (#454): Sein Betrag gilt nur für die Tage seines Zeitraums. Gefragt
+  // wird am gespeicherten Stand, denn eine neue Rechnung über zwei Zeiträume trägt im Formular noch den ganzen Betrag.
+  const storedItem = form?.id ? items.find((i) => i.id === form.id) : undefined
+  const formPart = storedItem ? partShare(storedItem, period) : null
   // Die Jahre des Zeitraums der Position für die übliche Spanne des Zahlungsdatums (#255 PR 3, R-4): bei einer
   // Heizposition unter eigener Heizperiode deren Jahre, sonst die des Abrechnungszeitraums.
   const paidOnSpanOfForm = heatingOption
@@ -1081,10 +1086,10 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                   </label>
                 </div>
                 {/* #144: weicht der rechnerische Anteil vom Betrag ab, steht er markiert da */}
-                {externalHint(form, units) && (
-                  externalMismatch(form, units)
-                    ? <NoticeBox level="warning"><strong>{externalHint(form, units)}</strong></NoticeBox>
-                    : <div className="muted">{externalHint(form, units)}</div>
+                {externalHint(form, units, formPart) && (
+                  externalMismatch(form, units, formPart)
+                    ? <NoticeBox level="warning"><strong>{externalHint(form, units, formPart)}</strong></NoticeBox>
+                    : <div className="muted">{externalHint(form, units, formPart)}</div>
                 )}
               </div>
             )}

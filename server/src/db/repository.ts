@@ -56,6 +56,7 @@ import { IBAN_LABELS } from '../../../shared/iban.ts'
 import { lastPerFrom, straightenPersonHistory } from '../schedule.ts'
 import { compareText } from '../calc.ts'
 import { isSplitPart, splitByService } from '../serviceSplit.ts'
+import { splitBlocker } from '../../../shared/splitPart.ts'
 import { tenancyStamp } from '../../../shared/tenancyStamp.ts'
 import { allowsPaidOn, isPaidOnDate, paidOnQuestions, splitPaidOnQuestions, type YearSpan } from '../../../shared/paidOn.ts'
 import { statedOutflowYear } from '../outflow.ts'
@@ -1202,9 +1203,11 @@ async function requireServiceAndTax(db: Executor, before: CostItem | null, after
   if (unchanged) return
   const touched = periodsBetween(rules, from, to)
   if (touched.length > 1) {
+    // Einzelbeträge lassen sich nicht aufteilen (#454); der Rat zum Aufteilen führte dort in die nächste Ablehnung.
+    const blocker = splitBlocker(after)
     throw new PeriodError(
       `Die Rechnung ${what} betrifft die Abrechnungszeiträume ${andList(touched.map(periodLabel))} (Leistungszeitraum ${formatDayRange(from, to)}). ` +
-        'Kalte Betriebskosten gehören anteilig in jeden dieser Zeiträume; speichern Sie die Rechnung mit „Aufteilen und speichern“.',
+        (blocker ?? 'Kalte Betriebskosten gehören anteilig in jeden dieser Zeiträume; speichern Sie die Rechnung mit „Aufteilen und speichern“.'),
     )
   }
 }
@@ -2569,6 +2572,8 @@ async function splitBase(db: Database, propertyId: string | null, body: unknown,
   if (base.category === HEATING_CATEGORY) {
     throw new PeriodError('Heizkosten teilt Mietfuchs nicht nach Tagen auf: Sie müssen den Verbrauch im Abrechnungszeitraum abbilden (BGH VIII ZR 156/11).')
   }
+  const blocker = splitBlocker(base)
+  if (blocker !== null) throw new PeriodError(blocker)
   if (base.serviceFrom === undefined || base.serviceTo === undefined || !isIsoDate(base.serviceFrom) || !isIsoDate(base.serviceTo) || base.serviceFrom > base.serviceTo) {
     throw new PeriodError(`Zum Aufteilen braucht „${base.description}“ einen Leistungszeitraum mit Beginn und Ende.`)
   }

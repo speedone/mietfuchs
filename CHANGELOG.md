@@ -6,6 +6,23 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Behoben
+
+- Aufgeteilte Rechnungen „laut Gemeinschaftsabrechnung“ ([#454](https://github.com/speedone/mietfuchs/issues/454)):
+  Reicht der Leistungszeitraum über zwei Abrechnungszeiträume und wurde die Position deshalb nach Tagen geteilt,
+  meldete die Seite Abrechnung unter „Zu prüfen“ „Betrag passt nicht zum Anteil“, und die Abrechnung des Mieters
+  trug den Vermerk „angesetzt laut Hausgeldabrechnung“, obwohl alles stimmte. Verglichen wird jetzt mit dem
+  rechnerischen Anteil, gekürzt um denselben Tagesanteil; der Hinweis nennt die Tage. Ebenso im Kostenformular
+  beim Bearbeiten eines Teils. Verteilt wurde schon vorher der richtige Betrag.
+- Einzelbeträge werden nicht mehr nach Tagen aufgeteilt. Bisher stand beim Aufteilen jeder Einzelbetrag
+  ungekürzt in jedem Teil; die Einzelbeträge überstiegen dann den Teil, und in beiden Zeiträumen wurde nichts
+  auf die Mieter verteilt (Fehler „Einzelbeträge über dem Rechnungsbetrag“). Welcher Einzelbetrag in welchen
+  Zeitraum gehört, steht nur in der Abrechnung, aus der die Beträge stammen, etwa der des Messdienstes nach
+  einem Mieterwechsel. Mietfuchs bittet deshalb, eine solche Rechnung je Abrechnungszeitraum zu erfassen; beim
+  Wechsel des Abrechnungszeitraums wählen Sie den Zeitraum wie bei Heizkosten. **Für bestehende Daten:** Steht
+  bei einer aufgeteilten Position der Fehler „Einzelbeträge über dem Rechnungsbetrag“, tragen Sie in jedem Teil
+  die Einzelbeträge ein, die auf diesen Zeitraum entfallen; der Fehler sagt es jetzt auch.
+
 ## [0.13.0] – 2026-10-25
 
 ### Hinzugefügt

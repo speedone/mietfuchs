@@ -82,6 +82,7 @@ import { heatingInfoOf, heatingRulesOf, planByConsumption, type RuleRow } from '
 import { co2ExemptionOf, co2OffByExemptionOf, exemptionScopeFor, exemptionText as exemptionTextOf } from './co2Exemption.ts'
 import { AGREED_FIXED_SELF_TEXT, INFO_CONTACTS, INFO_CONTACTS_CHECKED } from '../../shared/heatingInfo.ts'
 import { practiceReadingOffWarning, practiceVacancyPersons } from '../../shared/law/practice.ts'
+import { partShare } from '../../shared/splitPart.ts'
 import { HEATING_CATEGORY, heatingByConsumption, heatingFindings, mayAgreeOtherwise, PART_OF_POT, POT_OF_PART } from '../../shared/heating.ts'
 import { andList, meterTypeLabel, plural } from '../../shared/wording.ts'
 import type { TermId } from '../../shared/glossary.ts'
@@ -5055,9 +5056,13 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           }
           // Ein Tippfehler in der Gesamtsumme soll auffallen, aber keine Zahl verschieben:
           // Gezahlt ist der eingetragene Betrag, und der wird verteilt.
-          const expected = Math.round((eb.totalCents * own) / eb.total)
+          // Ein Teil einer aufgeteilten Rechnung trägt nur die Tage seines Zeitraums, die Angaben der Gemeinschaft
+          // beschreiben die ganze (#454, `whole` in SPLIT_FIELDS); verglichen wird mit demselben Tagesanteil.
+          const share = partShare(item, { from: yFrom, to: yTo })
+          const expected = Math.round((eb.totalCents * own * (share ? share.days / share.of : 1)) / eb.total)
           if (Math.abs(expected - item.amountCents) > 100) {
-            warn('external.amount-mismatch', `„${item.description}“: der Betrag ${fmtCents(item.amountCents)} passt nicht zum rechnerischen Anteil ${fmtCents(expected)} (${fmtNum(own)} von ${fmtNum(eb.total)} ${MEASURE_LABELS[eb.measure]} aus ${fmtCents(eb.totalCents)}) — bitte die Angaben aus der Gemeinschaftsabrechnung prüfen. Verteilt wird der eingetragene Betrag.`, itemSubject(item))
+            const days = share ? `, davon ${share.days} von ${share.of} Tagen des Leistungszeitraums` : ''
+            warn('external.amount-mismatch', `„${item.description}“: der Betrag ${fmtCents(item.amountCents)} passt nicht zum rechnerischen Anteil ${fmtCents(expected)} (${fmtNum(own)} von ${fmtNum(eb.total)} ${MEASURE_LABELS[eb.measure]} aus ${fmtCents(eb.totalCents)}${days}) — bitte die Angaben aus der Gemeinschaftsabrechnung prüfen. Verteilt wird der eingetragene Betrag.`, itemSubject(item))
           }
           // „Kosten der Gemeinschaft“ und nicht „Gesamtkosten der Anlage“ (#144): Die Spalte
           // Gesamtkosten zeigt hier den Anteil des Vermieters, und zweimal „Gesamtkosten“ mit zwei
@@ -5101,7 +5106,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const sum = Object.values(given).reduce((a, c) => a + Math.max(0, c), 0) + selfSum
       if (sum > item.amountCents) {
         forced = 'noBasis'
-        warn('amounts.exceed', `„${item.description}“: die Einzelbeträge ergeben zusammen ${fmtCents(sum)} und übersteigen den Rechnungsbetrag ${fmtCents(item.amountCents)} — es wird nichts verteilt, der Betrag geht an den Vermieter.`, itemSubject(item))
+        // Bis 0.13.0 teilte Mietfuchs Einzelbeträge nach Tagen und ließ die Beträge je Mieter ungekürzt in jedem Teil
+        // (#454); seither nie (`splitBlocker`). Ein solcher Teil sagt, was zu tun ist.
+        const part = partShare(item, { from: yFrom, to: yTo }) ? ' Die Rechnung ist nach Tagen auf mehrere Abrechnungszeiträume aufgeteilt, die Einzelbeträge aber nicht: Tragen Sie in jedem Teil die Einzelbeträge ein, die auf diesen Zeitraum entfallen.' : ''
+        warn('amounts.exceed', `„${item.description}“: die Einzelbeträge ergeben zusammen ${fmtCents(sum)} und übersteigen den Rechnungsbetrag ${fmtCents(item.amountCents)} — es wird nichts verteilt, der Betrag geht an den Vermieter.${part}`, itemSubject(item))
       } else {
         const inYear = new Map(b.partTenancies.map((t) => [t.id, t]))
         const forfeited = Object.entries(given).filter(([id, c]) => c > 0 && !inYear.has(id))

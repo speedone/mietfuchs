@@ -421,3 +421,24 @@ test('Abdeckung V20: Wechsel in einen Rumpf; die Vorschau schlägt für eine ver
     assert.equal((await items(opened)).find((c) => c.id === 'gas')?.period, '2025-05')
   })
 })
+
+// #454: Einzelbeträge teilt auch der Wechsel nicht nach Tagen. Mit Leistungszeitraum über die neue Grenze sperrt das den
+// Wechsel mit dem Rat; ohne Leistungszeitraum stehen sie wie Heizkosten in eigener Gruppe, der Vermieter wählt.
+test('#454: Einzelbeträge beim Wechsel: über die Grenze gesperrt, ohne Leistungszeitraum eigene Gruppe ohne Aufteilen', async () => {
+  await withDatabase(async (opened) => {
+    await birkenweg(opened)
+    await opened.write((db) => createEntity(db, 'costItems', 'kabel', { propertyId: 'objekt-1', period: '2025-01', category: 'Kabelanschluss', description: 'Kabel 2025', amountCents: 12000, key: 'amounts', tenancyAmounts: { 't-bsp': 12000 } }))
+    const v = await preview(opened, JULI_AB_2025)
+    assert.deepEqual(v.groups.map((g) => [g.id, g.heating, g.individualAmounts ?? false, g.items.map((i) => i.costItemId), g.split === null, g.suggested]), [
+      ['2025-01', false, false, ['gs25'], false, 'split'],
+      ['2025-01|heizung', true, false, ['gas25'], true, '2025-01'],
+      ['2025-01|einzelbetraege', false, true, ['kabel'], true, '2025-01'],
+    ])
+    assert.deepEqual(v.blocked, [])
+
+    await opened.write((db) => updateEntity(db, 'costItems', 'kabel', { serviceFrom: '2025-01-01', serviceTo: '2025-12-31' }))
+    const gesperrt = await preview(opened, JULI_AB_2025)
+    assert.equal(gesperrt.blocked.length, 1)
+    assert.match(gesperrt.blocked[0] ?? '', /„Kabel 2025“ ist nach Einzelbeträgen verteilt\..*Danach lässt sich der Abrechnungszeitraum umstellen\.$/)
+  })
+})
