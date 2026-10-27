@@ -12,14 +12,17 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Reicht der Leistungszeitraum über zwei Abrechnungszeiträume und wurde die Position deshalb nach Tagen geteilt,
   meldete die Seite Abrechnung unter „Zu prüfen“ „Betrag passt nicht zum Anteil“, und die Abrechnung des Mieters
   trug den Vermerk „angesetzt laut Hausgeldabrechnung“, obwohl alles stimmte. Verglichen wird jetzt mit dem
-  rechnerischen Anteil, gekürzt um denselben Tagesanteil; der Hinweis nennt die Tage. Ebenso im Kostenformular
-  beim Bearbeiten eines Teils. Verteilt wurde schon vorher der richtige Betrag.
+  rechnerischen Anteil, gekürzt um denselben Tagesanteil; der Hinweis nennt die Tage. Stehen nach zwei Wechseln
+  des Abrechnungszeitraums zwei Teile derselben Rechnung im selben Zeitraum, zählen sie zusammen. Ebenso im
+  Kostenformular beim Bearbeiten eines Teils. Verteilt wurde schon vorher der richtige Betrag.
 - Einzelbeträge werden nicht mehr nach Tagen aufgeteilt. Bisher stand beim Aufteilen jeder Einzelbetrag
   ungekürzt in jedem Teil; die Einzelbeträge überstiegen dann den Teil, und in beiden Zeiträumen wurde nichts
   auf die Mieter verteilt (Fehler „Einzelbeträge über dem Rechnungsbetrag“). Welcher Einzelbetrag in welchen
   Zeitraum gehört, steht nur in der Abrechnung, aus der die Beträge stammen, etwa der des Messdienstes nach
-  einem Mieterwechsel. Mietfuchs bittet deshalb, eine solche Rechnung je Abrechnungszeitraum zu erfassen; beim
-  Wechsel des Abrechnungszeitraums wählen Sie den Zeitraum wie bei Heizkosten. **Für bestehende Daten:** Steht
+  einem Mieterwechsel. Mietfuchs bittet deshalb, eine solche Rechnung je Abrechnungszeitraum zu erfassen, oder,
+  wenn es keine Beträge je Zeitraum gibt, ganz in dem Zeitraum, in dem sie bezahlt wurde (Abflussprinzip). Beim
+  Wechsel des Abrechnungszeitraums wählen Sie den Zeitraum wie bei Heizkosten; ein Abzug beim Betriebsstrom geht
+  mit seiner Stromrechnung. **Für bestehende Daten:** Steht
   bei einer aufgeteilten Position der Fehler „Einzelbeträge über dem Rechnungsbetrag“, tragen Sie in jedem Teil
   die Einzelbeträge ein, die auf diesen Zeitraum entfallen; der Fehler sagt es jetzt auch.
 

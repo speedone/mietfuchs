@@ -26,7 +26,7 @@
 import crypto from 'node:crypto'
 import { and, eq, inArray } from 'drizzle-orm'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
-import { splitBlocker } from '../../../shared/splitPart.ts'
+import { splitBlocker, splitFamilyKey } from '../../../shared/splitPart.ts'
 import { plantRules, settledSeparately } from '../../../shared/heatingPeriod.ts'
 import {
   formatDayRange, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, settlementDeadline, spansTwoYears,
@@ -259,8 +259,7 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
   // ohne den Zusatz „(anteilig …)“, Leistungszeitraum, Rechnungssteller, Beleg und Schlüssel, je in
   // einem anderen Zeitraum. Sie werden beim Wechsel als Ganzes neu geteilt; jeden Teil einzeln zu
   // teilen, summierte die Rundungen, und nach einigen Wechseln stand ein Cent im falschen Zeitraum.
-  const familyKey = (c: CostItem): string =>
-    [c.category, baseDescription(c.description), c.serviceFrom, c.serviceTo, c.vendor ?? '', c.invoiceFile ?? '', c.key].join('\u0000')
+  const familyKey = splitFamilyKey
   const families = new Map<string, CostItem[]>()
   for (const c of items) {
     if (c.category === HEATING_CATEGORY || c.serviceFrom === undefined || c.serviceTo === undefined) continue
@@ -374,8 +373,9 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
     // Abdeckung V20: Eine Position, die mit einer Brennstoffrechnung verknüpft ist, gehört in die Heizperiode, in der die
     // Rechnung endet; das Speichern lehnt jeden anderen Zeitraum ab. Die Vorschau bietet deshalb nur diesen an.
     const required = heating ? requiredPeriodOf(item) : null
-    // Einzelbeträge (#454) wie Heizkosten in eigener Gruppe ohne Aufteilen: Der Vermieter wählt den Zeitraum.
-    const amounts = !heating && splitBlocker(item) !== null
+    // Einzelbeträge (#454) wie Heizkosten in eigener Gruppe ohne Aufteilen: Der Vermieter wählt den Zeitraum. Ein Abzug
+    // beim Betriebsstrom geht mit seiner Rechnung (Durchsicht, Befund 4), sonst teilte er sich nach Tagen und sie nicht.
+    const amounts = !heating && (splitBlocker(item) !== null || (general !== undefined && splitBlocker(general) !== null))
     const id = heating ? (required ? `${a.key}|heizung|${required}` : `${a.key}|heizung`) : amounts ? `${a.key}|einzelbetraege` : a.key
     const allowed = optionsFor(a).filter((p) => required === null || p.key === required)
     const g = groups.get(id) ?? { from: a.key, old: a.old, heating, amounts, items: [], options: allowed.length > 0 ? allowed : optionsFor(a), split: heating || amounts ? null : new Map<string, ServicePart[]>() }

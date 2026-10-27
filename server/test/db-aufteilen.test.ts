@@ -103,7 +103,7 @@ test('#454: Einzelbeträge werden nicht nach Tagen aufgeteilt; Vorschau, Speiche
     await opened.write((db) => createEntity(db, 'units', 'u1', { propertyId: 'objekt-1', name: 'EG', areaM2: 60, participates: true }))
     await opened.write((db) => createEntity(db, 'tenancies', 't1', { unitId: 'u1', tenantName: 'A', persons: 1, start: '2024-01-01' }))
     const garten = { period: '2025-01', category: 'Gartenpflege', description: 'Garten', amountCents: 10000, key: 'amounts', tenancyAmounts: { t1: 10000 }, serviceFrom: '2025-01-01', serviceTo: '2025-12-31' }
-    await assert.rejects(opened.read((db) => previewCostItemSplit(db, 'objekt-1', garten, null)), (e) => e instanceof PeriodError && /nach Einzelbeträgen verteilt.*Erfassen Sie die Rechnung je Abrechnungszeitraum/.test(e.message))
+    await assert.rejects(opened.read((db) => previewCostItemSplit(db, 'objekt-1', garten, null)), (e) => e instanceof PeriodError && /nach Einzelbeträgen verteilt.*Erfassen Sie die Rechnung je Abrechnungszeitraum.*ohne Leistungszeitraum \(Abflussprinzip, BGH VIII ZR 49\/07\)\.$/.test(e.message))
     await assert.rejects(opened.write((db) => saveCostItemSplit(db, 'objekt-1', garten, null, ids)), (e) => e instanceof PeriodError && /nach Einzelbeträgen verteilt/.test(e.message))
     await assert.rejects(opened.write((db) => createEntity(db, 'costItems', 'g', { ...garten, propertyId: 'objekt-1' })),
       (e) => e instanceof PeriodError && /Erfassen Sie die Rechnung je Abrechnungszeitraum/.test(e.message) && !/Aufteilen und speichern/.test(e.message))
@@ -130,5 +130,20 @@ test('#454: jeder Teil erbt die Felder `same` und `whole` unverändert', async (
     }
     assert.deepEqual(first.externalBasis, hausgeld.externalBasis)
     assert.deepEqual(parts.map((p) => p.amountCents).reduce((a, b) => a + b, 0), 10000)
+  })
+})
+
+// Durchsicht von #454, Befund 1: Das Formular fragt bei jedem Leistungszeitraum die Vorschau (`needsSplitCheck`). Eine
+// Rechnung mit Einzelbeträgen, deren Leistungszeitraum in einem einzigen Zeitraum liegt, muss dort einen Teil ergeben
+// und sich gewöhnlich speichern lassen; abgelehnt wird nur, was wirklich geteilt würde.
+test('#454: Einzelbeträge mit Leistungszeitraum in einem Zeitraum: Vorschau ein Teil, gewöhnlich gespeichert', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createEntity(db, 'units', 'u1', { propertyId: 'objekt-1', name: 'EG', areaM2: 60, participates: true }))
+    await opened.write((db) => createEntity(db, 'tenancies', 't1', { unitId: 'u1', tenantName: 'A', persons: 1, start: '2024-01-01' }))
+    const kabel = { period: '2025-01', category: 'Kabelanschluss', description: 'Kabel', amountCents: 12000, key: 'amounts', tenancyAmounts: { t1: 12000 }, serviceFrom: '2025-01-01', serviceTo: '2025-12-31' }
+    const vorschau = await opened.read((db) => previewCostItemSplit(db, 'objekt-1', kabel, null))
+    assert.deepEqual(vorschau.map((p) => [p.period, p.amountCents]), [['2025-01', 12000]])
+    await opened.write((db) => createEntity(db, 'costItems', 'k', { ...kabel, propertyId: 'objekt-1' }))
+    assert.deepEqual((await costItems(opened)).map((c) => [c.id, c.amountCents]), [['k', 12000]])
   })
 })

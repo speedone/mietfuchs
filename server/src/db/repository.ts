@@ -2572,8 +2572,6 @@ async function splitBase(db: Database, propertyId: string | null, body: unknown,
   if (base.category === HEATING_CATEGORY) {
     throw new PeriodError('Heizkosten teilt Mietfuchs nicht nach Tagen auf: Sie müssen den Verbrauch im Abrechnungszeitraum abbilden (BGH VIII ZR 156/11).')
   }
-  const blocker = splitBlocker(base)
-  if (blocker !== null) throw new PeriodError(blocker)
   if (base.serviceFrom === undefined || base.serviceTo === undefined || !isIsoDate(base.serviceFrom) || !isIsoDate(base.serviceTo) || base.serviceFrom > base.serviceTo) {
     throw new PeriodError(`Zum Aufteilen braucht „${base.description}“ einen Leistungszeitraum mit Beginn und Ende.`)
   }
@@ -2584,7 +2582,12 @@ export async function previewCostItemSplit(db: Database, propertyId: string | nu
   const { base, from, to } = await splitBase(db, propertyId, body, currentId)
   const rules = await rulesForProperty(db, base.propertyId)
   const closed = new Set((await readClosedSettlements(db)).filter((c) => c.propertyId === base.propertyId).map((c) => c.period))
-  return splitByService(rules, { ...base, serviceFrom: from, serviceTo: to }).map((p) => ({
+  const parts = splitByService(rules, { ...base, serviceFrom: from, serviceTo: to })
+  // Einzelbeträge teilt Mietfuchs nicht nach Tagen (#454). Abgelehnt wird erst, was wirklich geteilt würde: Das Formular
+  // fragt die Vorschau bei jedem Leistungszeitraum, auch bei einem in einem einzigen Zeitraum (Durchsicht, Befund 1).
+  const blocker = parts.length > 1 ? splitBlocker(base) : null
+  if (blocker !== null) throw new PeriodError(blocker)
+  return parts.map((p) => ({
     period: p.period.key,
     label: periodLabel(p.period),
     days: p.days,

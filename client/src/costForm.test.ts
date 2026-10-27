@@ -308,6 +308,9 @@ describe('Teilnehmer, Gemeinschaftsabrechnung und Einzelbeträge (#94)', () => {
     expect(externalHint(form({ ...angaben, amount: '85,98' }), wohnungen, part)).toBe('Rechnerischer Anteil: 50 von 1.000 MEA · 184 von 214 Tagen des Leistungszeitraums = 85,98 €')
     expect(externalMismatch(form({ ...angaben, amount: '85,98' }), wohnungen), 'ohne Tagesanteil die ganze Rechnung').toBe(true)
     expect(externalMismatch(form({ ...angaben, amount: '50,00' }), wohnungen, part)).toBe(true)
+    // Durchsicht, Befund 2: ein zweiter Teil derselben Rechnung im Zeitraum zählt mit.
+    expect(externalMismatch(form({ ...angaben, amount: '50,00' }), wohnungen, { ...part, othersCents: 3598 })).toBe(false)
+    expect(externalHint(form({ ...angaben, amount: '50,00' }), wohnungen, { ...part, othersCents: 3598 })).toMatch(/mit den übrigen Teilen dieser Rechnung im Zeitraum \(35,98 €\)/)
   })
 
   test('Einzelbeträge: je Mietverhältnis des Jahres, die Summe darf den Betrag nicht übersteigen', () => {

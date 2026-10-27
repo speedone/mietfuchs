@@ -12,6 +12,18 @@ export function isSplitPart(rules: PeriodRules, c: Pick<CostItem, 'category' | '
   return periodsBetween(rules, c.serviceFrom, c.serviceTo).length > 1
 }
 
+export const SPLIT_SUFFIX = / \(anteilig [^)]*\)$/
+
+// Die Beschreibung ohne den Zusatz eines früheren Aufteilens.
+export const baseDescription = (description: string): string => description.replace(SPLIT_SUFFIX, '')
+
+// Welche Positionen Teile derselben Rechnung sind (Nachprüfung von #226, 2): gleiche Kostenart, Beschreibung ohne den
+// Zusatz „(anteilig …)“, Leistungszeitraum, Rechnungssteller, Beleg und Schlüssel. Eine Heuristik, denn die Teile tragen
+// keinen Verweis auf ihre Rechnung (#455); in shared/, damit der Wechsel des Rhythmus (periodChange.ts), die Berechnung
+// und das Kostenformular dieselbe Regel nutzen (#454).
+export const splitFamilyKey = (c: Pick<CostItem, 'category' | 'description' | 'serviceFrom' | 'serviceTo' | 'vendor' | 'invoiceFile' | 'key'>): string =>
+  [c.category, baseDescription(c.description), c.serviceFrom, c.serviceTo, c.vendor ?? '', c.invoiceFile ?? '', c.key].join('\u0000')
+
 const MS_DAY = 86400000
 const daysOf = (from: string, to: string): number => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / MS_DAY) + 1
 
@@ -57,9 +69,13 @@ export const SPLIT_FIELDS = {
 } as const satisfies Record<keyof CostItem, SplitRule>
 
 // Warum sich eine Position nicht nach Tagen teilen lässt, oder `null`. Heizkosten fragt der Aufrufer selbst (eigene
-// Sätze mit VIII ZR 156/11).
+// Sätze mit VIII ZR 156/11); für sie gilt der Rat zum Abflussprinzip nicht, sie erreichen diesen Satz aber nie.
+// Durchsicht, Befund 3: Rechnet die Quelle der Einzelbeträge in einem anderen Zeitraum ab, gibt es keine Beträge je
+// Abrechnungszeitraum; dann bleibt die ganze Rechnung im Zeitraum der Zahlung, wie der Wechsel es für Positionen ohne
+// Leistungszeitraum ohnehin tut (Gruppe `|einzelbetraege`).
 export function splitBlocker(c: Pick<CostItem, 'key' | 'description'>): string | null {
   if (c.key !== 'amounts') return null
   return `„${c.description}“ ist nach Einzelbeträgen verteilt. Welcher Einzelbetrag in welchen Abrechnungszeitraum gehört, steht nur in der Abrechnung, aus der die Beträge stammen; nach Tagen teilt Mietfuchs sie nicht. ` +
-    'Erfassen Sie die Rechnung je Abrechnungszeitraum, mit dem Leistungszeitraum in diesem Zeitraum und den Einzelbeträgen, die darauf entfallen.'
+    'Erfassen Sie die Rechnung je Abrechnungszeitraum, mit dem Leistungszeitraum in diesem Zeitraum und den Einzelbeträgen, die darauf entfallen. ' +
+    'Gibt es keine Beträge je Zeitraum (etwa weil der Messdienst im Kalenderjahr abrechnet), erfassen Sie die Rechnung ganz in dem Abrechnungszeitraum, in dem sie bezahlt wurde, ohne Leistungszeitraum (Abflussprinzip, BGH VIII ZR 49/07).'
 }

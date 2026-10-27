@@ -109,3 +109,21 @@ test('Invariante (#454): ein Teil meldet nichts, was die ungeteilte Rechnung nic
     }
   }
 })
+
+// Durchsicht von #454, Befund 2: Nach zwei Wechseln stehen zwei Teile derselben Rechnung im selben Zeitraum (so gewollt,
+// db-wechsel.test.ts „Ein schon aufgeteilter Teil …“): 157,81 € für Januar bis April und 80,22 € für Mai und Juni,
+// beide mit dem Leistungszeitraum 2025. Gemessen werden sie zusammen, 238,03 € gegen 480,00 € · 181/365 = 238,03 €.
+test('#454: zwei Teile derselben Rechnung im selben Zeitraum werden zusammen gemessen', () => {
+  const juli: PeriodRules = { startMonth: 1, changes: ['2025-07'] }
+  const teil = (id: string, amountCents: number, anteil: string): SnapshotCostItem => ({ id, period: periodKey('2025-01'), category: 'Hauswart',
+    description: `Hausmeister (anteilig ${anteil})`, amountCents, key: 'external', externalBasis: { measure: 'mea', total: 1000, totalCents: 960000 },
+    serviceFrom: '2025-01-01', serviceTo: '2025-12-31' })
+  const units: SnapshotUnit[] = [{ id: 'w', name: 'ETW', areaM2: 60, participates: true, mea: 50 }]
+  const s = settleIn(juli, '2025-01', source(units, [tenancy('t', 'w')], [teil('a', 15781, '01.01.–30.04.2025'), teil('b', 8022, '01.05.–30.06.2025')]))
+  assert.deepEqual(s.notices.filter((n) => n.code === 'external.amount-mismatch'), [])
+  assert.doesNotMatch(JSON.stringify(s.statements), /angesetzt laut Hausgeldabrechnung/)
+  // Eine andere Rechnung derselben Kostenart (andere Beschreibung) zählt nicht mit.
+  const fremd = { ...teil('c', 23803, '01.01.–30.06.2025'), description: 'Winterdienst' }
+  const t = settleIn(juli, '2025-01', source(units, [tenancy('t', 'w')], [teil('a', 15781, '01.01.–30.04.2025'), fremd]))
+  assert.deepEqual(t.notices.filter((n) => n.code === 'external.amount-mismatch').map((n) => n.text.slice(0, 20)), ['„Hausmeister (anteil'])
+})

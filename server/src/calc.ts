@@ -82,7 +82,7 @@ import { heatingInfoOf, heatingRulesOf, planByConsumption, type RuleRow } from '
 import { co2ExemptionOf, co2OffByExemptionOf, exemptionScopeFor, exemptionText as exemptionTextOf } from './co2Exemption.ts'
 import { AGREED_FIXED_SELF_TEXT, INFO_CONTACTS, INFO_CONTACTS_CHECKED } from '../../shared/heatingInfo.ts'
 import { practiceReadingOffWarning, practiceVacancyPersons } from '../../shared/law/practice.ts'
-import { partShare } from '../../shared/splitPart.ts'
+import { partShare, splitFamilyKey } from '../../shared/splitPart.ts'
 import { HEATING_CATEGORY, heatingByConsumption, heatingFindings, mayAgreeOtherwise, PART_OF_POT, POT_OF_PART } from '../../shared/heating.ts'
 import { andList, meterTypeLabel, plural } from '../../shared/wording.ts'
 import type { TermId } from '../../shared/glossary.ts'
@@ -5060,15 +5060,21 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           // beschreiben die ganze (#454, `whole` in SPLIT_FIELDS); verglichen wird mit demselben Tagesanteil.
           const share = partShare(item, { from: yFrom, to: yTo })
           const expected = Math.round((eb.totalCents * own * (share ? share.days / share.of : 1)) / eb.total)
-          if (Math.abs(expected - item.amountCents) > 100) {
+          // Nach zwei Wechseln können zwei Teile derselben Rechnung im Zeitraum stehen (Durchsicht, Befund 2); der
+          // Tagesanteil gilt für beide zusammen, also werden sie zusammen gemessen.
+          const family = share ? splitFamilyKey(item) : null
+          const measured = family === null ? item.amountCents
+            : items.filter((o) => o.key === 'external' && splitFamilyKey(o) === family).reduce((a, o) => a + o.amountCents, 0)
+          if (Math.abs(expected - measured) > 100) {
             const days = share ? `, davon ${share.days} von ${share.of} Tagen des Leistungszeitraums` : ''
-            warn('external.amount-mismatch', `„${item.description}“: der Betrag ${fmtCents(item.amountCents)} passt nicht zum rechnerischen Anteil ${fmtCents(expected)} (${fmtNum(own)} von ${fmtNum(eb.total)} ${MEASURE_LABELS[eb.measure]} aus ${fmtCents(eb.totalCents)}${days}) — bitte die Angaben aus der Gemeinschaftsabrechnung prüfen. Verteilt wird der eingetragene Betrag.`, itemSubject(item))
+            const together = measured !== item.amountCents ? ' mit den übrigen Teilen dieser Rechnung im Zeitraum' : ''
+            warn('external.amount-mismatch', `„${item.description}“: der Betrag ${fmtCents(measured)}${together} passt nicht zum rechnerischen Anteil ${fmtCents(expected)} (${fmtNum(own)} von ${fmtNum(eb.total)} ${MEASURE_LABELS[eb.measure]} aus ${fmtCents(eb.totalCents)}${days}) — bitte die Angaben aus der Gemeinschaftsabrechnung prüfen. Verteilt wird der eingetragene Betrag.`, itemSubject(item))
           }
           // „Kosten der Gemeinschaft“ und nicht „Gesamtkosten der Anlage“ (#144): Die Spalte
           // Gesamtkosten zeigt hier den Anteil des Vermieters, und zweimal „Gesamtkosten“ mit zwei
           // Zahlen war doppeldeutig. Weicht der Betrag ab, steht das auch im Druck; der Rechenweg
           // erscheint dort nicht, und der Mieter sähe sonst eine Rechnung, die nicht aufgeht.
-          const applied = Math.abs(expected - item.amountCents) > 100 ? ' · angesetzt laut Hausgeldabrechnung' : ''
+          const applied = Math.abs(expected - measured) > 100 ? ' · angesetzt laut Hausgeldabrechnung' : ''
           const suffix = ` · Kosten der Gemeinschaft ${fmtCents(eb.totalCents)}${applied}`
           const label = MEASURE_LABELS[eb.measure]
           // Je Abschnitt, wenn eine Einheit zwischen drinnen und außerhalb wechselt (#259, S1).

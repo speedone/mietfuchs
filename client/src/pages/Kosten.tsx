@@ -66,7 +66,7 @@ import { useEvaluationQueue } from '../evaluationQueue'
 import AssessmentReview from '../components/AssessmentReview'
 import Co2RefundsCard from '../components/Co2RefundsCard'
 import { usePeriod } from '../period'
-import { partShare } from '../../../shared/splitPart.ts'
+import { partShare, splitFamilyKey } from '../../../shared/splitPart.ts'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import Drawer from '../components/Drawer'
 import { useSaving } from '../useSaving'
@@ -194,7 +194,12 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   // Ein gespeicherter Teil einer aufgeteilten Rechnung (#454): Sein Betrag gilt nur für die Tage seines Zeitraums. Gefragt
   // wird am gespeicherten Stand, denn eine neue Rechnung über zwei Zeiträume trägt im Formular noch den ganzen Betrag.
   const storedItem = form?.id ? items.find((i) => i.id === form.id) : undefined
-  const formPart = storedItem ? partShare(storedItem, period) : null
+  const formShare = storedItem ? partShare(storedItem, period) : null
+  const formPart = storedItem && formShare ? {
+    ...formShare,
+    othersCents: items.filter((o) => o.id !== storedItem.id && o.period === storedItem.period && o.key === 'external' && splitFamilyKey(o) === splitFamilyKey(storedItem))
+      .reduce((a, o) => a + o.amountCents, 0),
+  } : null
   // Die Jahre des Zeitraums der Position für die übliche Spanne des Zahlungsdatums (#255 PR 3, R-4): bei einer
   // Heizposition unter eigener Heizperiode deren Jahre, sonst die des Abrechnungszeitraums.
   const paidOnSpanOfForm = heatingOption

@@ -204,7 +204,7 @@ export function externalHint(form: ItemForm, units: Unit[], part: PartShare = nu
   if (share === null) return ''
   if (typeof share === 'string') return share
   const { own, total, expected, amount } = share
-  const days = part ? ` · ${part.days} von ${part.of} Tagen des Leistungszeitraums` : ''
+  const days = part ? ` · ${part.days} von ${part.of} Tagen des Leistungszeitraums${part.othersCents ? `, mit den übrigen Teilen dieser Rechnung im Zeitraum (${fmtCentsInput(part.othersCents)} €)` : ''}` : ''
   const text = `Rechnerischer Anteil: ${fmtPct(own)} von ${fmtPct(total)} ${MEASURE_LABELS[form.externalMeasure]}${days} = ${fmtCentsInput(expected)} €`
   if (amount === null || !isMismatch(expected, amount)) return text
   return `${text} — weicht um ${fmtCentsInput(Math.abs(expected - amount))} € vom Betrag ab. Bitte die Angaben aus der Gemeinschaftsabrechnung prüfen; verteilt wird der eingetragene Betrag.`
@@ -220,7 +220,9 @@ export function externalMismatch(form: ItemForm, units: Unit[], part: PartShare 
 const isMismatch = (expected: number, amount: number) => Math.abs(expected - amount) > 100
 
 // Der rechnerische Anteil, eine Erklärung, warum es keinen gibt, oder `null`, solange Angaben fehlen.
-type PartShare = { days: number; of: number } | null
+// `othersCents`: die übrigen Teile derselben Rechnung im Zeitraum (nach zwei Wechseln möglich, Durchsicht von #454); der
+// Tagesanteil gilt für alle zusammen.
+type PartShare = { days: number; of: number; othersCents?: number } | null
 
 function externalShare(form: ItemForm, units: Unit[], part: PartShare): { own: number, total: number, expected: number, amount: number | null } | string | null {
   const total = parseAmountNumber(form.externalTotal)
@@ -230,7 +232,8 @@ function externalShare(form: ItemForm, units: Unit[], part: PartShare): { own: n
   // Mit Teilnehmern (#105) nur deren Wohnungen, wie in der Abrechnung.
   const own = basisUnitsOf(units).filter((u) => form.participants === null || form.participants.includes(u.id)).reduce((a, u) => a + valueOf(u), 0)
   if (!(own > 0)) return form.externalMeasure === 'mea' ? 'Für die Wohnungen sind noch keine Miteigentumsanteile hinterlegt (Stammdaten).' : null
-  return { own, total, expected: Math.round((totalCents * own * (part ? part.days / part.of : 1)) / total), amount: parseEuro(form.amount) }
+  const amount = parseEuro(form.amount)
+  return { own, total, expected: Math.round((totalCents * own * (part ? part.days / part.of : 1)) / total), amount: amount === null ? null : amount + (part?.othersCents ?? 0) }
 }
 
 // Die Wohnungen, für die ein Eigenbetrag (#104) gilt: selbstgenutzt und, wenn die Position auf
