@@ -535,6 +535,8 @@ fall(11, 'Datenbank von v0.8.0, Update auf mehrere Objekte (#92)', async () => {
   const { applyMigrations, connect, loadMigrations } = await import('../server/src/db/client.ts')
   const { migrateLegacy, straightenForDatabase } = await import('../server/src/legacy/migrate.ts')
   const { writeStock } = await import('../server/src/legacy/write.ts')
+  const { releaseStepsOf } = await import('../server/src/db/releaseSteps.ts')
+  const { APP_VERSION } = await import('../server/src/version.ts')
   const dataDir = tempDir()
   const connection = await connect(path.join(dataDir, 'mietfuchs.sqlite'))
   const [baseline] = await loadMigrations()
@@ -549,7 +551,10 @@ fall(11, 'Datenbank von v0.8.0, Update auf mehrere Objekte (#92)', async () => {
     // Die Oberfläche erfährt von der Sicherung, mit Namen und ohne Pfad (#154).
     const bericht = await holen(base, '/healthz')
     const { at, ...genannt } = bericht.database?.migrated ?? {}
-    gleich(genannt, { steps: schritte, backup: 'mietfuchs.sqlite.vor-0001_objekte' },
+    // Die Version nennt sie nur, wenn die laufende genau diese Schritte veröffentlicht hat (beim Release, nicht auf main
+    // zwischen zwei Releases); dieselbe Regel wie in api-start.test.ts.
+    const version = releaseStepsOf(APP_VERSION) === schritte + 1 ? { version: APP_VERSION } : {}
+    gleich(genannt, { steps: schritte, backup: 'mietfuchs.sqlite.vor-0001_objekte', ...version },
       'Update: /healthz nennt die Sicherung vor dem Update')
     gleich(at, fs.statSync(path.join(dataDir, 'mietfuchs.sqlite.vor-0001_objekte')).mtime.toISOString(),
       'Update: /healthz nennt den Zeitpunkt der Sicherung')

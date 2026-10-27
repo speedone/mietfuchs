@@ -6,6 +6,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+## [0.13.1] – 2026-10-27
+
 ### Behoben
 
 - Aufgeteilte Rechnungen „laut Gemeinschaftsabrechnung“ ([#454](https://github.com/speedone/mietfuchs/issues/454)):
@@ -22,9 +24,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   einem Mieterwechsel. Mietfuchs bittet deshalb, eine solche Rechnung je Abrechnungszeitraum zu erfassen, oder,
   wenn es keine Beträge je Zeitraum gibt, ganz in dem Zeitraum, in dem sie bezahlt wurde (Abflussprinzip). Beim
   Wechsel des Abrechnungszeitraums wählen Sie den Zeitraum wie bei Heizkosten; ein Abzug beim Betriebsstrom geht
-  mit seiner Stromrechnung. **Für bestehende Daten:** Steht
-  bei einer aufgeteilten Position der Fehler „Einzelbeträge über dem Rechnungsbetrag“, tragen Sie in jedem Teil
-  die Einzelbeträge ein, die auf diesen Zeitraum entfallen; der Fehler sagt es jetzt auch.
+  mit seiner Stromrechnung. **Für bestehende Daten:** Steht bei einer aufgeteilten Position der Fehler
+  „Einzelbeträge über dem Rechnungsbetrag“, tragen Sie in jedem Teil die Einzelbeträge ein, die auf diesen
+  Zeitraum entfallen; der Fehler sagt es jetzt auch.
 
 ## [0.13.0] – 2026-10-25
 
@@ -3064,7 +3066,8 @@ Verteilung nach Wohnfläche, Personenzahl, Wohneinheiten, Verbrauch oder Direktz
 druckfertige Abrechnung je Mieter, Mietkonto, Steuerübersicht für die Anlage V, optionale
 KI-Belegauswertung gegen eine lokale Ollama-Instanz, Backup und Wiederherstellung.
 
-[Unveröffentlicht]: https://github.com/speedone/mietfuchs/compare/v0.13.0...HEAD
+[Unveröffentlicht]: https://github.com/speedone/mietfuchs/compare/v0.13.1...HEAD
+[0.13.1]: https://github.com/speedone/mietfuchs/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/speedone/mietfuchs/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/speedone/mietfuchs/compare/v0.11.3...v0.12.0
 [0.11.3]: https://github.com/speedone/mietfuchs/compare/v0.11.2...v0.11.3
