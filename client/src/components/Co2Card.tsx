@@ -6,7 +6,7 @@ import { api, errorText } from '../api'
 import { useConfirm, useToast } from './feedback'
 import Term from './Term'
 import { useOpenWhenDiffers } from '../useDraft'
-import { CO2_ANSWER_OPTIONS, CO2_EXAMPLE, CO2_NOT_A_SIGN, CO2_QUESTION, co2Body, co2Labels, co2ToForm, probeLine, type Co2Form } from '../co2Form'
+import { CO2_ANSWER_OPTIONS, CO2_EXAMPLE, CO2_NOT_A_SIGN, CO2_QUESTION, co2Body, co2Labels, co2ToForm, probeLine, probeQuestion, type Co2Form } from '../co2Form'
 import type { HeatingPeriodView, Tenancy } from '../types'
 import { ErrorSummary, useFormError } from './ErrorSummary'
 import { NoticeBox } from './Notice'
@@ -45,7 +45,7 @@ export default function Co2Card({ view, tenancies, unitsCount, hasSelfUsed = fal
     if (probe && !probe.ok) {
       const ok = await confirm({
         title: 'Die Probe geht nicht auf',
-        message: `${probe.text}. Solange die Probe nicht aufgeht, bucht Mietfuchs keine CO₂-Aufteilung, und die Abrechnung meldet einen Fehler. Prüfen Sie den Betrag der Position und Ihre Antwort auf die Frage nach der Abzugszeile. Trotzdem speichern?`,
+        message: probeQuestion(probe.text, 'Prüfen Sie den Betrag der Position und Ihre Antwort auf die Frage nach der Abzugszeile.'),
         confirmLabel: 'Trotzdem speichern',
       })
       if (!ok) return

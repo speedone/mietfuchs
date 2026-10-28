@@ -54,6 +54,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - Verlauf: Die Rückfrage vor „Rückgängig“ sagt bei einem Eintrag mit mehreren Änderungen jetzt
   „Zurückgenommen werden 4 Änderungen“ statt „Zurückgenommen wird 4 Änderungen“.
 
+- Heizkosten: Die Rückfrage „Die Probe geht nicht auf“ beim Speichern der CO₂-Angaben setzt nach der Probe
+  keinen doppelten Punkt mehr („… auf der Seite Kosten.. Solange …“).
+
 ## [0.13.1] – 2026-10-27
 
 ### Behoben

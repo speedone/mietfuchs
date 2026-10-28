@@ -7,7 +7,7 @@ import { useConfirm, useToast } from './feedback'
 import Table from './Table'
 import Term from './Term'
 import YearField from './YearField'
-import { CO2_ANSWER_OPTIONS, CO2_EXAMPLE, CO2_QUESTION, co2Body, co2ToForm, probeLine, type Co2Answer } from '../co2Form'
+import { CO2_ANSWER_OPTIONS, CO2_EXAMPLE, CO2_QUESTION, co2Body, co2ToForm, probeLine, probeQuestion, type Co2Answer } from '../co2Form'
 import {
   answerConflict, blockBlocked, co2FormFromExtraction, deductionHint, DHW_LABELS, dhwNote, draftsOf, duplicateBlocks, itemBodies, serviceChecks, targetOptions,
   type BlockDraft, type ImportContext,
@@ -99,7 +99,7 @@ export default function ServiceImportReview({ x, file, ctx, view, co2 = true, on
     if (probe && !probe.ok) {
       const ok = await confirm({
         title: 'Die Probe geht nicht auf',
-        message: `${probe.text}. Solange die Probe nicht aufgeht, bucht Mietfuchs keine CO₂-Aufteilung, und die Abrechnung meldet einen Fehler. Legen Sie zuerst die Positionen an und prüfen Sie Ihre Antwort auf die Frage nach der Abzugszeile. Trotzdem speichern?`,
+        message: probeQuestion(probe.text, 'Legen Sie zuerst die Positionen an und prüfen Sie Ihre Antwort auf die Frage nach der Abzugszeile.'),
         confirmLabel: 'Trotzdem speichern',
       })
       if (!ok) return

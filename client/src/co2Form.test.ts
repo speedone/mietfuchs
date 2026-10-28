@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import { fmtEuro } from './api'
-import { CO2_ANSWER_OPTIONS, CO2_NOT_A_SIGN, CO2_QUESTION, co2Body, co2Labels, co2ToForm, parseDecimal, probeLine, usersTotalOf, type Co2Context } from './co2Form'
+import { CO2_ANSWER_OPTIONS, CO2_NOT_A_SIGN, CO2_QUESTION, co2Body, co2Labels, co2ToForm, parseDecimal, probeLine, probeQuestion, usersTotalOf, type Co2Context } from './co2Form'
 import { periodKey } from '../../shared/period.ts'
 import type { Co2Statement } from './types'
 
@@ -116,4 +116,9 @@ test('Abdeckung V14, Eigentumswohnung: die Karte fragt nach dem eigenen Anteil l
   expect(haus?.text).toContain(`mit Abzugszeile erwartet: Heizkosten Ihrer Wohnung ${fmtEuro(1840000)} + Anteil Vermieter ${fmtEuro(6000)} = ${fmtEuro(1846000)}; ohne Abzugszeile: ${fmtEuro(1840000)}.`)
   expect(haus?.text).toContain('Nicht gemeint ist die Summe des ganzen Hauses.')
   expect(co2Body({ ...f, usersTotal: '' }, etw)).toEqual({ error: 'Bitte tragen Sie die Heizkosten Ihrer Wohnung laut Einzelabrechnung der Gemeinschaft ein, oder kreuzen Sie „Ich finde diese Zeile nicht“ an.' })
+})
+
+test('Rückfrage zur Probe: genau ein Punkt nach der Probe, ob sie mit einem endet oder nicht', () => {
+  expect(probeQuestion('… auf der Seite Kosten.', 'Prüfen Sie.')).toBe('… auf der Seite Kosten. Solange die Probe nicht aufgeht, bucht Mietfuchs keine CO₂-Aufteilung, und die Abrechnung meldet einen Fehler. Prüfen Sie. Trotzdem speichern?')
+  expect(probeQuestion('erwartet: 900,00 € ✗', 'Prüfen Sie.')).toMatch(/^erwartet: 900,00 € ✗\. Solange/)
 })

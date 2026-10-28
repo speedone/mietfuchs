@@ -178,6 +178,12 @@ export function co2Body(form: Co2Form, ctx: Co2Context): { body: Record<string, 
   return { body }
 }
 
+// Der Satz der Rückfrage, wenn die Probe nicht aufgeht: Endet die Probe schon mit einem Punkt (sie nennt dann beide
+// Lesarten), folgt kein zweiter.
+export function probeQuestion(probeText: string, advice: string): string {
+  return `${probeText.replace(/\.$/, '')}. Solange die Probe nicht aufgeht, bucht Mietfuchs keine CO₂-Aufteilung, und die Abrechnung meldet einen Fehler. ${advice} Trotzdem speichern?`
+}
+
 // Die Probe unter der Karte (Entwurf 11.3): „Ihre Positionen: 3.933,01 € · erwartet: 3.933,01 € ✓“.
 export function probeLine(form: Co2Form, ctx: Co2Context): { text: string; ok: boolean } | null {
   if (form.answer !== 'deducted' && form.answer !== 'shown') return null
