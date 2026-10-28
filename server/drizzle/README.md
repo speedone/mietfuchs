@@ -46,6 +46,15 @@ Regel oben unverändert. Jeder Schritt läuft in einer eigenen Transaktion mit a
 Prüfung der Fremdschlüssel (`applyMigrations` in client.ts). Ein Datenanteil, der einen Verweis
 ins Leere hinterließe, rollt also zurück, statt festgeschrieben zu werden.
 
+**Reicht SQL nicht, ein Datenschritt in TypeScript** (#455). Wo die Daten eines Schritts berechnet
+werden müssen (Verteilen mit Rest, Zerlegen von Text), steht unter dem `tag` des Schrittes eine Funktion in
+[../src/db/dataSteps/index.ts](../src/db/dataSteps/index.ts) (`DATA_STEPS`). `applyMigrations` ruft sie nach
+den Anweisungen des Schrittes und vor seiner Marke auf, in derselben Transaktion; wirft sie, rollt der
+Schritt zurück. Sie ist **eingefroren wie die SQL-Datei**: rohes SQL über `connection`, keine Importe
+außer `import type` aus `../client.ts` und Geschwistern im Ordner (kein schema.ts, kein shared/,
+kein Repository), und sie wird nach der Veröffentlichung nie geändert. Ein Wächter in
+`server/test/data-steps.test.ts` prüft die Importe und dass jeder Schlüssel ein Schritt ist.
+
 **Neue Spalten und geänderte Bedingungen nie in einem Schritt** (#94, Paar 0003/0004). Baut
 drizzle-kit (0.31) eine Tabelle neu, weil sich eine Prüfbedingung ändert, und kommen im selben
 Schritt Spalten hinzu, kopiert es beim Umkopieren auch die neuen Spalten aus der alten Tabelle,

@@ -54,6 +54,7 @@ import { fileURLToPath } from 'node:url'
 import { drizzle } from 'drizzle-orm/sqlite-proxy'
 import type { SqliteRemoteDatabase } from 'drizzle-orm/sqlite-proxy'
 import * as schema from './schema.ts'
+import { DATA_STEPS, type DataStep } from './dataSteps/index.ts'
 
 export type Database = SqliteRemoteDatabase<typeof schema>
 
@@ -369,11 +370,21 @@ const BOOKKEEPING = `CREATE TABLE IF NOT EXISTS __drizzle_migrations (
 // kein Pragma, wirkt sie in der Transaktion; ein kaputter Verweis führt also zum Rückrollen und
 // nicht zu einem Fehler nach dem Festschreiben.
 //
+// **Datenschritte (#455):** Reicht SQL für die Daten eines Schrittes nicht, steht in
+// `DATA_STEPS` (dataSteps/index.ts) unter seinem `tag` eine TypeScript-Funktion. Sie läuft nach den
+// Anweisungen des Schrittes, vor der Marke und vor der Fremdschlüsselprüfung, in derselben
+// Transaktion: Wirft sie, rollt der Schritt samt Tabelle zurück. Der dritte Parameter ist nur für
+// Tests da.
+//
 // **Achtung, wenn wir später auf Drizzles eigenen Migrator wechseln:** Der macht denselben
 // Fehler, er reicht alle Anweisungen als einen Block in eine Transaktion. Ein Wechsel auf ihn
 // löst das hier also nicht, sondern bringt es zurück. Diese Behebung darf dabei nicht
 // verschwinden.
-export function applyMigrations(connection: Connection, migrations: Migration[]): number {
+export function applyMigrations(
+  connection: Connection,
+  migrations: Migration[],
+  dataSteps: Readonly<Record<string, DataStep>> = DATA_STEPS,
+): number {
   connection.exec(BOOKKEEPING)
   const done = new Set(connection.rows('SELECT hash FROM __drizzle_migrations').map((row) => String(row[0])))
   const pending = migrations.filter((m) => !done.has(m.hash))
@@ -386,6 +397,7 @@ export function applyMigrations(connection: Connection, migrations: Migration[])
       connection.exec('BEGIN')
       try {
         for (const statement of migration.statements) connection.exec(statement)
+        dataSteps[migration.tag]?.(connection)
         connection.exec(
           `INSERT INTO __drizzle_migrations (hash, created_at) VALUES ('${migration.hash}', ${migration.folderMillis})`,
         )
