@@ -240,6 +240,12 @@ Ganzrechnungs-Wechsel verliert, den er heute hat (sonst käme die Rundungsdrift 
    ganze Familie ohne Quelle, wie heute.
 4. Eine Familie mit einem einzigen Mitglied bekommt keine Quelle.
 
+Bekannte Abweichung von „dieselben Familien“: Der Code vor dieser Version bildete Familien aus **jeder**
+kalten Position mit Leistungszeitraum, also auch aus Einzelbeträgen und Abzügen. Der Schritt nimmt nur
+Kandidaten. Bei Einzelbeträgen und Abzügen ist das so entschieden (sie bekommen nie eine Quelle). Bei
+Zeilen ohne Zusatz in einem Zeitraum wäre es nur theoretisch: Es bräuchte eine gleiche Spanne ganz in
+einem Zeitraum neben Teilen in anderen.
+
 - Die Kennung der Quelle ist die **kleinste Kennung** ihrer Teile, damit der Schritt reproduzierbar ist
   (Tabellen verschieden, keine Kollision).
 - `UPDATE cost_items SET source_id = …` ist der **einzige** Eingriff: kein Betrag, keine Zeile, keine
