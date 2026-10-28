@@ -2,12 +2,13 @@
 // Die Karte „Messdienstabrechnung auslesen“ (Heizung PR 20): Der Beleg geht mit Objekt und Jahr an die Route
 // der Anlage (Prüfung S4), und die Antwort erscheint als Prüfansicht, ohne dass etwas gespeichert wird.
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import ServiceImportCard from './ServiceImportCard'
 import { OpenFormScope, hasOpenForm } from '../testing/openForm'
 import { periodKey } from '../../../shared/period.ts'
 import type { HeatingPeriodView, ServiceExtractResult, Tenancy, Unit } from '../types'
 import { noInfoView } from '../testing/heatingView'
+import { UIProvider } from './feedback'
 
 const view = (closed = false): HeatingPeriodView => ({
   plantId: 'hp', period: periodKey('2025-01'), label: '2025', from: '2025-01-01', to: '2025-12-31', short: false, closed,
@@ -43,7 +44,7 @@ afterEach(() => {
 })
 
 test('Der Beleg geht mit Objekt und Jahr an die Anlage; die Prüfansicht zeigt die Zuordnung', async () => {
-  render(<ServiceImportCard plant={{ id: 'hp', propertyId: 'objekt-1' }} view={view()} object={{ key: periodKey('2025-01'), from: '2025-01-01', to: '2025-12-31' }} tenancies={TENANCIES} units={UNITS} onSaved={() => {}} />)
+  render(<ServiceImportCard plant={{ id: 'hp', propertyId: 'objekt-1', units: null }} view={view()} object={{ key: periodKey('2025-01'), from: '2025-01-01', to: '2025-12-31' }} tenancies={TENANCIES} units={UNITS} onSaved={() => {}} />)
   const input = screen.getByLabelText('Messdienstabrechnung wählen')
   fireEvent.change(input, { target: { files: [new File(['x'], 'abrechnung.jpg', { type: 'image/jpeg' })] } })
   const zuordnung = await screen.findByLabelText('Zuordnung „Mustermann, Erika“')
@@ -55,7 +56,7 @@ test('Der Beleg geht mit Objekt und Jahr an die Anlage; die Prüfansicht zeigt d
 test('Durchsicht S4: steht Kaltwasser mit Einzelbeträgen schon im Abrechnungszeitraum, ist der Block nicht vorgehakt', async () => {
   result.extraction.blocks.push({ title: 'Kaltwasser', category: 'Wasser/Abwasser', totalEur: 100, lines: [{ label: 'Mustermann, Erika', unitLabel: null, from: null, to: null, amountEur: 100, vacancy: false }] })
   try {
-    render(<ServiceImportCard plant={{ id: 'hp', propertyId: 'objekt-1' }} view={view()} object={{ key: periodKey('2025-01'), from: '2025-01-01', to: '2025-12-31' }} tenancies={TENANCIES} units={UNITS}
+    render(<ServiceImportCard plant={{ id: 'hp', propertyId: 'objekt-1', units: null }} view={view()} object={{ key: periodKey('2025-01'), from: '2025-01-01', to: '2025-12-31' }} tenancies={TENANCIES} units={UNITS}
       items={[{ period: periodKey('2025-01'), key: 'amounts', category: 'Wasser/Abwasser' }, { period: periodKey('2024-01'), key: 'amounts', category: 'Müllabfuhr' }]} onSaved={() => {}} />)
     fireEvent.change(screen.getByLabelText('Messdienstabrechnung wählen'), { target: { files: [new File(['x'], 'abrechnung.jpg', { type: 'image/jpeg' })] } })
     const kalt = await screen.findByLabelText('Kaltwasser')
@@ -68,18 +69,41 @@ test('Durchsicht S4: steht Kaltwasser mit Einzelbeträgen schon im Abrechnungsze
 })
 
 test('In einer abgeschlossenen Heizperiode gibt es nichts auszulesen', () => {
-  render(<ServiceImportCard plant={{ id: 'hp', propertyId: 'objekt-1' }} view={view(true)} object={{ key: periodKey('2025-01'), from: '2025-01-01', to: '2025-12-31' }} tenancies={TENANCIES} units={UNITS} onSaved={() => {}} />)
+  render(<ServiceImportCard plant={{ id: 'hp', propertyId: 'objekt-1', units: null }} view={view(true)} object={{ key: periodKey('2025-01'), from: '2025-01-01', to: '2025-12-31' }} tenancies={TENANCIES} units={UNITS} onSaved={() => {}} />)
   expect(screen.queryByLabelText('Messdienstabrechnung wählen')).toBeNull()
 })
 
 // #346, Schritt 7a: Der Vorschlag der KI zählt als offenes Formular, bis er geschlossen wird; neu holen kostet
 // einen weiteren Lauf.
 test('7a: der Vorschlag meldet die Karte an, „Schließen“ nimmt die Marke weg', async () => {
-  render(<OpenFormScope><ServiceImportCard plant={{ id: 'hp', propertyId: 'objekt-1' }} view={view()} object={{ key: periodKey('2025-01'), from: '2025-01-01', to: '2025-12-31' }} tenancies={TENANCIES} units={UNITS} onSaved={() => {}} /></OpenFormScope>)
+  render(<OpenFormScope><ServiceImportCard plant={{ id: 'hp', propertyId: 'objekt-1', units: null }} view={view()} object={{ key: periodKey('2025-01'), from: '2025-01-01', to: '2025-12-31' }} tenancies={TENANCIES} units={UNITS} onSaved={() => {}} /></OpenFormScope>)
   expect(hasOpenForm()).toBe(false)
   fireEvent.change(screen.getByLabelText('Messdienstabrechnung wählen'), { target: { files: [new File(['x'], 'abrechnung.jpg', { type: 'image/jpeg' })] } })
   await screen.findByLabelText('Zuordnung „Mustermann, Erika“')
   expect(hasOpenForm()).toBe(true)
   fireEvent.click(screen.getByRole('button', { name: 'Schließen' }))
   expect(hasOpenForm()).toBe(false)
+})
+
+// Praxistest, Durchsicht: Nennt die Abrechnung keine Nutzeinheiten, zählt die Karte die Wohnungen an der Heizung
+// (`servesUnit`), nicht alle des Objekts; eine Garage ohne Wärmeanschluss zählt nicht mit.
+test('ohne Nutzeinheiten in der Abrechnung gehen nur die Wohnungen an der Heizung in die CO₂-Angaben', async () => {
+  const sent: { url: string; body: unknown }[] = []
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (init?.body instanceof FormData) {
+      const extraction = { ...result.extraction, unitsCount: null, deductionEur: 50 }
+      return new Response(JSON.stringify({ ...result, extraction }), { status: 200, headers: { 'content-type': 'application/json' } })
+    }
+    if (init?.method && init.method !== 'GET') sent.push({ url, body: JSON.parse(String(init.body ?? 'null')) })
+    return new Response(JSON.stringify({ ai: { pageImageEdge: null } }), { status: 200, headers: { 'content-type': 'application/json' } })
+  })
+  const units: Unit[] = [...UNITS, { id: 'g', propertyId: 'objekt-1', name: 'Garage', areaM2: 15, participates: true, noConnection: ['waerme'] }]
+  render(<UIProvider><ServiceImportCard plant={{ id: 'hp', propertyId: 'objekt-1', units: null }} view={view()} object={{ key: periodKey('2025-01'), from: '2025-01-01', to: '2025-12-31' }} tenancies={TENANCIES} units={units} onSaved={() => {}} /></UIProvider>)
+  fireEvent.change(screen.getByLabelText('Messdienstabrechnung wählen'), { target: { files: [new File(['x'], 'abrechnung.jpg', { type: 'image/jpeg' })] } })
+  const frage = await screen.findByLabelText('Steht in der Kostenaufstellung eine Abzugszeile?')
+  fireEvent.change(frage, { target: { value: 'deducted' } })
+  fireEvent.click(screen.getByText('CO₂-Angaben übernehmen'))
+  // Ohne angelegte Positionen geht die Probe nicht auf; die Rückfrage wird bejaht.
+  fireEvent.click(await screen.findByRole('button', { name: 'Trotzdem speichern' }))
+  await waitFor(() => expect(sent.find((x) => x.url.endsWith('/co2'))?.body).toMatchObject({ serviceUnitsCount: 1 }))
 })
