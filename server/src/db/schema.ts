@@ -45,6 +45,7 @@ import type {
   GasBasis,
   HcaScale,
   ServiceHeatUnit,
+  SourceRule,
   HeatGeneration,
   HeatingExemption,
   HeatPumpMajority,
@@ -115,6 +116,8 @@ const AI_SLOT_NAMES = exactly<AiSlotName>()(['text', 'images'] as const)
 // Die Bausteine des Anschreibens und die Wahl der Anpassung (#415); Beschriftungen in shared/letter.ts.
 export const LETTER_BLOCKS = exactly<LetterBlock>()(['subject', 'salutation', 'intro', 'credit', 'backPayment', 'balanced', 'adjustSuggestion', 'adjustCustom', 'receipts', 'attachments', 'closing', 'greeting', 'signature'] as const)
 export const LETTER_ADJUSTMENT_MODES = exactly<LetterAdjustmentMode>()(['none', 'suggestion', 'custom'] as const)
+// Die Regel, nach der eine aufgeteilte Rechnung ihre Teile ergibt (#455); weitere kommen in 1.x mit eigener Bedingung.
+export const SOURCE_RULES = exactly<SourceRule>()(['days'] as const)
 export const UPDATE_CHECK = exactly<NonNullable<Settings['updateCheck']>>()(['on', 'off'] as const)
 
 // Prüfbedingung „dieser Betrag ist nicht negativ“. Als Helfer, damit an jeder Stelle dasselbe
@@ -1092,6 +1095,20 @@ export const degreeDayValues = sqliteTable(
 
 // ---------- Kostenpositionen ----------
 
+// Eine aufgeteilte Rechnung (#455): Ihre Teile stehen als Kostenpositionen je Abrechnungszeitraum da und verweisen mit
+// `source_id` hierher. Bewusst ohne Betrag, Leistungszeitraum, Beschreibung, Rechnungssteller und Beleg: Die Teile
+// tragen sie, und die Berechnung liest sie dort; an der Quelle wären es zweite Wahrheiten. Der Rechnungsbetrag ist die
+// Summe der Teile. Eine Quelle fällt mit ihrem letzten Teil weg (`costItemCollection.remove` in repository.ts).
+export const costSources = sqliteTable(
+  'cost_sources',
+  {
+    id: text('id').primaryKey().notNull(),
+    propertyId: propertyRef(),
+    rule: text('rule', { enum: SOURCE_RULES }).notNull(),
+  },
+  () => [oneOf('cost_sources_rule_known', 'rule', SOURCE_RULES)],
+)
+
 export const costItems = sqliteTable(
   'cost_items',
   {
@@ -1165,11 +1182,16 @@ export const costItems = sqliteTable(
     // Messdienst als Betriebsstrom gemeldet, 0 = nicht gemeldet, der Vermieter trägt ihn selbst. NULL = keine Angabe; dann
     // gilt er wie vor #270 als gemeldet, wo ein Messdienst heizt (shared/operatingPower.ts, `deductionReported`).
     operatingPowerReported: integer('operating_power_reported', { mode: 'boolean' }),
+    // Die aufgeteilte Rechnung, zu der dieser Teil gehört (#455); NULL heißt keine. `RESTRICT`: Eine Quelle wird nie
+    // gelöscht, solange ein Teil auf sie zeigt. Gesetzt wird der Verweis nur von den Schreibwegen der Teile.
+    sourceId: text('source_id').references(() => costSources.id, { onDelete: 'restrict' }),
   },
   (t) => [
     // Der einzige Filter, den der Schnappschuss wirklich setzt: die Kostenpositionen eines
     // Abrechnungszeitraums (siehe snapshot.ts), innerhalb eines Objekts.
     index('cost_items_property_period_idx').on(t.propertyId, t.period),
+    // Das Löschen und der Wechsel des Rhythmus suchen die Teile einer Quelle (#455).
+    index('cost_items_source_idx').on(t.sourceId),
     periodKeyCheck('cost_items_period_valid', 'period'),
     // Ein unbekannter Umlageschlüssel verteilte gar nichts, und die Position fiele still dem
     // Vermieter zu. Deshalb hier eine echte Bedingung und nicht nur der Typ.

@@ -320,6 +320,10 @@ export type ExternalBasis = {
 // Brennstoff nach Gradtagen hoch. Pflicht wird die Angabe mit der eigenen Heizkostenabrechnung.
 export type HeatingPart = 'fuel' | 'operating' | 'metering'
 
+// Wie aus einer aufgeteilten Rechnung ihre Teile entstehen (#455): heute nur nach Tagen je Abrechnungszeitraum (#208).
+// Weitere Regeln (#95, #141, #262, #292) kommen in 1.x als zusätzliche Werte dazu.
+export type SourceRule = 'days'
+
 export type CostItem = {
   id: string
   propertyId: string
@@ -398,6 +402,10 @@ export type CostItem = {
   // nicht gemeldet, der Vermieter trägt ihn selbst. Fehlt die Angabe, gilt er als gemeldet, wo im Zeitraum eine Anlage
   // mit Messdienst heizt (`deductionReported` in shared/operatingPower.ts).
   operatingPowerReported?: boolean
+  // Die aufgeteilte Rechnung, zu der dieser Teil gehört (#455, `cost_sources`): Alle Teile einer Rechnung tragen
+  // dieselbe Kennung. Fehlt sie, ist die Position keine aufgeteilte Rechnung oder ein alter Teil ohne eindeutige
+  // Zuordnung. Gesetzt wird sie nur von den Schreibwegen der Teile im Server, nie aus dem Rumpf einer Anfrage.
+  sourceId?: string
 }
 
 // Ein Teil einer aufgeteilten Rechnung in der Vorschau (#208, Entwurf 3.4). `needsTaxYear`: Der

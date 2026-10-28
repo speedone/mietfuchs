@@ -65,6 +65,7 @@ const TABLE_LABELS: Record<string, string> = {
   cost_item_amounts: 'Einzelbetrag',
   cost_item_self_amounts: 'Eigenbetrag',
   cost_item_contract: 'Umlagevereinbarung',
+  cost_sources: 'Aufgeteilte Rechnung',
   unit_no_connection: 'Ohne Anschluss',
   unit_usage_changes: 'Nutzungswechsel',
   unit_local_rents: 'Ortsübliche Miete',
@@ -134,6 +135,8 @@ const FIELD_LABELS: Record<string, string> = {
   service_to: 'Leistung bis',
   tax_year: 'Jahr der Zahlung',
   paid_on: 'Bezahlt am',
+  source_id: 'Aufgeteilte Rechnung',
+  rule: 'Aufteilung',
   type: 'Zählertyp',
   meter_number: 'Zählernummer',
   unit: 'Einheit',
@@ -196,6 +199,7 @@ const ENUM_LABELS: Record<string, Record<string, string>> = {
 const TABLE_ENUM_LABELS: Record<string, Record<string, Record<string, string>>> = {
   payments: { kind: asLabels(PAYMENT_KIND_LABELS) },
   properties: { kind: asLabels(PROPERTY_KIND_LABELS) },
+  cost_sources: { rule: { days: 'Nach Tagen je Abrechnungszeitraum' } },
 }
 
 const BOOLEAN_COLUMNS = new Set(['participates', 'self_used', 'replacement', 'vision', 'participants_limited', 'units_limited', 'estimated'])

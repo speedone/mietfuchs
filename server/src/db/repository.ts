@@ -66,7 +66,7 @@ import {
   readUnits, type StoredClosedSettlement,
 } from './read.ts'
 import {
-  aiSlots, assessmentLines, assessments, baseRents, co2Refunds, co2Statements, co2TenantReliefs, heatingPeriods, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, HEATING_MODELS, SELF_SUPPLY_KINDS, costItemAmounts, costItemContract, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, DEPOSIT_STATUS, PAYMENT_KINDS, EXTERNAL_MEASURES,
+  aiSlots, assessmentLines, assessments, baseRents, co2Refunds, co2Statements, co2TenantReliefs, heatingPeriods, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, HEATING_MODELS, SELF_SUPPLY_KINDS, costItemAmounts, costItemContract, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, costSources, DEPOSIT_STATUS, PAYMENT_KINDS, EXTERNAL_MEASURES,
   HCA_SCALES, HEATING_PARTS, OPERATING_POWER, HEATING_ROLES, HEATING_TARGETS, INTERIM_GAP_STATUS, interimReadingGaps, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingSelfSpans, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans, heatingServiceValues, heatingEstimates,
   flatRates, tenancyDirectCharges, METER_TYPES, UNIT_USAGES, meters, payments, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
   readings, settings, tenancies, unitLocalRents, unitNoConnection, unitUsageChanges, units, fuelCarryFrozen, fuelDeliveries,
@@ -542,6 +542,9 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
     operatingPowerBasis: merged(body, 'operatingPowerBasis', current.operatingPowerBasis, (v) => (typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined)),
     operatingPowerGeneralId: merged(body, 'operatingPowerGeneralId', current.operatingPowerGeneralId, (v) => (typeof v === 'string' && v !== '' ? v : undefined)),
     ...(operatingPowerReported !== undefined ? { operatingPowerReported } : {}),
+    // Die Quelle (#455) kommt nie aus dem Rumpf: Gesetzt wird sie nur von den Schreibwegen der Teile
+    // (`writeCostItemParts`), sonst hängte ein alter Tab eine Position an eine fremde Rechnung.
+    ...(current.sourceId !== undefined ? { sourceId: current.sourceId } : {}),
   }
 }
 
@@ -1844,6 +1847,13 @@ export async function crossPropertyViolations(db: Executor): Promise<string[]> {
     .innerJoin(units, eq(costItemSelfAmounts.unitId, units.id))
     .where(ne(costItems.propertyId, units.propertyId))
   for (const c of eigen) befunde.push(`Die Kostenposition „${c.description}“ hat einen Eigenbetrag für eine Wohnung eines anderen Objekts.`)
+  // Eine aufgeteilte Rechnung (#455) gehört zum Objekt ihrer Teile.
+  const quelle = await db
+    .select({ description: costItems.description })
+    .from(costItems)
+    .innerJoin(costSources, eq(costItems.sourceId, costSources.id))
+    .where(ne(costItems.propertyId, costSources.propertyId))
+  for (const c of quelle) befunde.push(`Die Kostenposition „${c.description}“ gehört zu einer aufgeteilten Rechnung eines anderen Objekts.`)
   // Heizung PR 5: eine Heizkorrektur auf die Anlage eines anderen Objekts.
   const anlagen = new Map((await db.select({ id: heatingPlants.id, propertyId: heatingPlants.propertyId }).from(heatingPlants)).map((p) => [p.id, p.propertyId]))
   const heiz = await db
@@ -2133,6 +2143,7 @@ const costItemRow = (c: CostItem) => ({
   operatingPower: orNull(c.operatingPower), operatingPowerItemId: orNull(c.operatingPowerItemId),
   operatingPowerBasis: orNull(c.operatingPowerBasis), operatingPowerGeneralId: orNull(c.operatingPowerGeneralId),
   operatingPowerReported: orNull(c.operatingPowerReported),
+  sourceId: orNull(c.sourceId),
 })
 const meterRow = (m: Meter) => ({
   id: m.id, propertyId: m.propertyId, name: m.name, unitId: m.unitId, type: m.type, meterNumber: orNull(m.meterNumber), unit: m.unit,
@@ -2322,9 +2333,11 @@ const costItemCollection: Collection<CostItem> = {
     if (abzuege.length > 0) {
       throw new HeatingError(400, `Zu dieser Position gehört ${abzuege.length === 1 ? 'der Abzug' : 'die Abzüge'} ${abzuege.map((a) => `„${a.description}“`).join(', ')} beim Allgemeinstrom. Löschen Sie zuerst den Abzug, damit der Allgemeinstrom nicht still gemindert bleibt.`)
     }
-    const [c] = await db.select({ fuelDeliveryId: costItems.fuelDeliveryId, period: costItems.period }).from(costItems).where(eq(costItems.id, id))
+    const [c] = await db.select({ fuelDeliveryId: costItems.fuelDeliveryId, period: costItems.period, sourceId: costItems.sourceId }).from(costItems).where(eq(costItems.id, id))
     if (c) await guardFrozenLink(db, { id, fuelDeliveryId: c.fuelDeliveryId, period: c.period }, null)
     await db.delete(costItems).where(eq(costItems.id, id))
+    // Mit dem letzten Teil fällt seine Quelle weg (#455), im selben Vorgang.
+    await dropEmptySource(db, c?.sourceId ?? undefined)
   },
 }
 
@@ -2490,20 +2503,35 @@ export async function patchCostItemIn(tx: Executor, current: CostItem, body: unk
 
 // ---------- Eine Rechnung aufteilen (#208, Entwurf 3.4) ----------
 
+// Eine Quelle für die Teile einer aufgeteilten Rechnung (#455), heute nur nach Tagen. Ohne Transaktion, der Aufrufer
+// schreibt die Teile im selben Vorgang.
+export async function insertCostSource(tx: Executor, propertyId: string, id: string): Promise<void> {
+  await tx.insert(costSources).values({ id, propertyId, rule: 'days' })
+}
+
+// Löscht eine Quelle, auf die keine Position mehr zeigt (#455, Invariante 3). Eine mit Teilen bleibt.
+export async function dropEmptySource(tx: Executor, sourceId: string | undefined): Promise<void> {
+  if (sourceId === undefined) return
+  const [rest] = await tx.select({ n: count() }).from(costItems).where(eq(costItems.sourceId, sourceId))
+  if ((rest?.n ?? 0) === 0) await tx.delete(costSources).where(eq(costSources.id, sourceId))
+}
+
 export type PartWrite = { period: PeriodKey; amountCents: number; labor35aCents: number | null; description: string; taxYear: number | null }
 
 // Schreibt die Teile einer Rechnung durch dieselbe Verschmelzung, denselben Wächter und dasselbe
 // Schreiben wie das gewöhnliche Anlegen; `base` gibt alles Übrige (Schlüssel, Anteile, Beleg).
 // `keepId`: Die Kennung bleibt am Teil dieses Zeitraums, sonst am ersten. Ohne Transaktion, denn
-// beide Aufrufer (Aufteilen, Wechsel des Rhythmus) laufen schon in einer.
-export async function writeCostItemParts(tx: Executor, base: CostItem, parts: readonly PartWrite[], newId: () => string, keepId: string | null, guardOptions: CostItemGuardOptions = { splitPart: true }): Promise<string[]> {
+// beide Aufrufer (Aufteilen, Wechsel des Rhythmus) laufen schon in einer. `sourceId` (#455): die Quelle, die jeder Teil
+// trägt; `null` lässt die von `base`. Ein Rumpf setzt sie nie (`mergeCostItem`), deshalb hier ausdrücklich.
+export async function writeCostItemParts(tx: Executor, base: CostItem, parts: readonly PartWrite[], newId: () => string, keepId: string | null, guardOptions: CostItemGuardOptions = { splitPart: true }, sourceId: string | null = null): Promise<string[]> {
   const keepAt = Math.max(0, parts.findIndex((p) => p.period === base.period))
   const written: string[] = []
   for (const [i, part] of parts.entries()) {
     const id = keepId !== null && i === keepAt ? keepId : newId()
-    const entity = mergeCostItem(keepId !== null && i === keepAt ? base : { ...base, id }, {
+    const merged = mergeCostItem(keepId !== null && i === keepAt ? base : { ...base, id }, {
       period: part.period, amountCents: part.amountCents, labor35aCents: part.labor35aCents, description: part.description, taxYear: part.taxYear,
     })
+    const entity = sourceId === null ? merged : { ...merged, sourceId }
     await guardCostItem(tx, keepId !== null && i === keepAt ? base : null, entity, {}, guardOptions)
     if (keepId !== null && i === keepAt) await costItemCollection.replace(tx, entity)
     else await costItemCollection.insert(tx, entity)
