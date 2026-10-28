@@ -10,7 +10,7 @@ import path from 'node:path'
 import { eq } from 'drizzle-orm'
 import type { OpenedDatabase } from '../src/db/open.ts'
 import { openFreshDatabase } from '../testing/freshDatabase.ts'
-import { createEntity, crossPropertyViolations, insertCostSource, listCollection, removeEntity, updateEntity, writeCostItemParts } from '../src/db/repository.ts'
+import { createEntity, crossPropertyViolations, CrossPropertyError, insertCostSource, listCollection, removeEntity, removeProperty, updateEntity, writeCostItemParts } from '../src/db/repository.ts'
 import { costSources, periodChanges, properties } from '../src/db/schema.ts'
 import { periodKey } from '../../shared/period.ts'
 import type { CostItem } from '../../shared/types.ts'
@@ -77,13 +77,13 @@ test('Ein Rumpf setzt keine Quelle', async () => {
     await opened.write((db) => createEntity(db, 'costItems', 'c1', { propertyId: 'objekt-1', category: 'Grundsteuer', description: 'G', amountCents: 100, key: 'area', period: '2025-01', sourceId: 'fremd' }))
     assert.deepEqual((await costItems(opened)).map((c) => [c.id, c.sourceId]), [['c1', undefined]])
     // Ändern eines Teils mit einer fremden oder leeren Quelle: Die bisherige bleibt.
-    const [first] = await twoParts(opened)
-    if (first === undefined) assert.fail('kein Teil geschrieben')
+    const [first, second] = await twoParts(opened)
+    if (first === undefined || second === undefined) assert.fail('zwei Teile erwartet')
     await opened.write((db) => updateEntity(db, 'costItems', first, { amountCents: 15000, sourceId: 'fremd' }))
     await opened.write((db) => updateEntity(db, 'costItems', 'c1', { sourceId: 'q1' }))
     await opened.write((db) => updateEntity(db, 'costItems', first, { sourceId: null }))
     const nachher = await costItems(opened)
-    assert.deepEqual(nachher.map((c) => [c.id, c.amountCents, c.sourceId]), [['c1', 100, undefined], [first, 15000, 'q1'], [nachher[2]?.id, 32219, 'q1']])
+    assert.deepEqual(nachher.map((c) => [c.id, c.amountCents, c.sourceId]), [['c1', 100, undefined], [first, 15000, 'q1'], [second, 32219, 'q1']])
   })
 })
 
@@ -111,5 +111,29 @@ test('Wiederherstellen lehnt eine Quelle eines anderen Objekts ab', async () => 
       'Die Kostenposition „Grundsteuer 2025 (anteilig 01.01.–30.04.2025)“ gehört zu einer aufgeteilten Rechnung eines anderen Objekts.',
       'Die Kostenposition „Grundsteuer 2025 (anteilig 01.05.–31.12.2025)“ gehört zu einer aufgeteilten Rechnung eines anderen Objekts.',
     ])
+  })
+})
+
+test('Ein Teil einer aufgeteilten Rechnung wechselt nicht das Objekt', async () => {
+  await withDatabase(async (opened) => {
+    const [first] = await twoParts(opened)
+    if (first === undefined) assert.fail('kein Teil geschrieben')
+    await opened.write((db) => db.insert(properties).values({ id: 'objekt-2', name: 'Zweites', kind: 'mfh', address: '' }))
+    await assert.rejects(
+      opened.write((db) => updateEntity(db, 'costItems', first, { propertyId: 'objekt-2' })),
+      (e: unknown) => e instanceof CrossPropertyError && /zusammen/.test(e.message),
+    )
+    assert.deepEqual(await opened.read((db) => crossPropertyViolations(db)), [])
+  })
+})
+
+test('Ein leeres Objekt mit einer Quelle ohne Teile lässt sich löschen', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      await db.insert(properties).values({ id: 'objekt-2', name: 'Zweites', kind: 'mfh', address: '' })
+      await db.insert(costSources).values({ id: 'leer', propertyId: 'objekt-2', rule: 'days' })
+    })
+    assert.deepEqual(await opened.write((db) => removeProperty(db, 'objekt-2')), { removed: true })
+    assert.deepEqual(await sources(opened), [])
   })
 })

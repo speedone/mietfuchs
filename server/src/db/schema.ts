@@ -1182,8 +1182,10 @@ export const costItems = sqliteTable(
     // Messdienst als Betriebsstrom gemeldet, 0 = nicht gemeldet, der Vermieter trägt ihn selbst. NULL = keine Angabe; dann
     // gilt er wie vor #270 als gemeldet, wo ein Messdienst heizt (shared/operatingPower.ts, `deductionReported`).
     operatingPowerReported: integer('operating_power_reported', { mode: 'boolean' }),
-    // Die aufgeteilte Rechnung, zu der dieser Teil gehört (#455); NULL heißt keine. `RESTRICT`: Eine Quelle wird nie
-    // gelöscht, solange ein Teil auf sie zeigt. Gesetzt wird der Verweis nur von den Schreibwegen der Teile.
+    // Die aufgeteilte Rechnung, zu der dieser Teil gehört (#455); NULL heißt keine. Gemeint ist `RESTRICT`: Eine Quelle wird nie
+    // gelöscht, solange ein Teil auf sie zeigt. In der erzeugten Datenbank steht der Fremdschlüssel aber als NO ACTION
+    // (drizzle lässt ON DELETE bei ALTER ADD weg), bis ein späterer Schritt cost_items neu baut; unter defer_foreign_keys
+    // (Rücksprung) wird erst beim Festschreiben geprüft. Gesetzt wird der Verweis nur von den Schreibwegen der Teile.
     sourceId: text('source_id').references(() => costSources.id, { onDelete: 'restrict' }),
   },
   (t) => [

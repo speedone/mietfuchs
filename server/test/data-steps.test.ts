@@ -23,7 +23,7 @@ const chain = (): Migration[] => [
   step('0001_zwei', 2, 'CREATE TABLE u (y INTEGER)'),
 ]
 
-test('Ein Datenschritt läuft nach seinem Schritt in derselben Transaktion', async () => {
+test('Ein Datenschritt sieht die Tabelle seines Schrittes und wird mit ihm vermerkt', async () => {
   const dir = tempDir()
   try {
     const c = await connect(path.join(dir, 'db.sqlite'))
@@ -78,31 +78,45 @@ test('Datenschritt: ohne Eintrag für einen Schritt läuft er wie bisher', async
   }
 })
 
+// Der Wächter als Funktion, damit ein Test ihn an einer nachgestellten Quelle prüfen kann.
+function importProblems(file: string, source: string): string[] {
+  const problems: string[] = []
+  if (/from\s+['"][^'"]*schema\.ts['"]/.test(source)) problems.push(`${file}: kein Import aus schema.ts`)
+  if (/from\s+['"][^'"]*shared\//.test(source)) problems.push(`${file}: kein Import aus shared/`)
+  if (/\bimport\s*\(/.test(source)) problems.push(`${file}: kein dynamisches import(`)
+  if (/\brequire\s*\(/.test(source)) problems.push(`${file}: kein require(`)
+  const imports = [...source.matchAll(/^\s*(import|export)\b[^'"]*?from\s+['"]([^'"]+)['"]/gm)]
+  const bare = [...source.matchAll(/^\s*import\s+['"]([^'"]+)['"]/gm)]
+  for (const match of imports) {
+    const [line, , spec] = match as unknown as [string, string, string]
+    if (!spec.startsWith('.')) continue // Pakete des Laufzeitsystems (node:…) sind erlaubt
+    if (spec === '../client.ts') {
+      if (!/^\s*import type\b/.test(line)) problems.push(`${file}: ../client.ts nur als import type`)
+    } else if (spec.startsWith('./') && !spec.slice(2).includes('/')) {
+      continue // Geschwister im Ordner
+    } else {
+      problems.push(`${file}: Import ${spec} verlässt den Ordner`)
+    }
+  }
+  for (const match of bare) {
+    if (match[1]!.startsWith('.')) problems.push(`${file}: Seiteneffekt-Import ${match[1]}`)
+  }
+  return problems
+}
+
 test('Wächter: Datenschritte importieren nichts außer ihrem Ordner und ../client.ts (nur import type)', () => {
   const folder = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'db', 'dataSteps')
   const files = fs.readdirSync(folder).filter((f) => f.endsWith('.ts'))
   assert.ok(files.length > 0, 'index.ts fehlt')
   for (const file of files) {
-    const source = fs.readFileSync(path.join(folder, file), 'utf8')
-    assert.doesNotMatch(source, /from\s+['"][^'"]*schema\.ts['"]/, `${file}: kein Import aus schema.ts`)
-    assert.doesNotMatch(source, /from\s+['"][^'"]*shared\//, `${file}: kein Import aus shared/`)
-    const imports = [...source.matchAll(/^\s*(import|export)\b[^'"]*?from\s+['"]([^'"]+)['"]/gm)]
-    const bare = [...source.matchAll(/^\s*import\s+['"]([^'"]+)['"]/gm)]
-    for (const match of imports) {
-      const [line, , spec] = match as unknown as [string, string, string]
-      if (!spec.startsWith('.')) continue // Pakete des Laufzeitsystems (node:…) sind erlaubt
-      if (spec === '../client.ts') {
-        assert.match(line, /^\s*import type\b/, `${file}: ../client.ts nur als import type`)
-      } else if (spec.startsWith('./') && !spec.slice(2).includes('/')) {
-        continue // Geschwister im Ordner
-      } else {
-        assert.fail(`${file}: Import ${spec} verlässt den Ordner`)
-      }
-    }
-    for (const match of bare) {
-      if (match[1]!.startsWith('.')) assert.fail(`${file}: Seiteneffekt-Import ${match[1]}`)
-    }
+    assert.deepEqual(importProblems(file, fs.readFileSync(path.join(folder, file), 'utf8')), [])
   }
+})
+
+test('Wächter: dynamisches import( und require( in einem Datenschritt fallen auf', () => {
+  assert.equal(importProblems('x.ts', "const m = await import('../schema.ts')").length, 1)
+  assert.equal(importProblems('x.ts', "const m = require('../x')").length, 1)
+  assert.deepEqual(importProblems('x.ts', "import type { Connection } from '../client.ts'\nimport { a } from './b.ts'"), [])
 })
 
 test('Wächter: jeder Datenschritt gehört zu einer Migration', async () => {

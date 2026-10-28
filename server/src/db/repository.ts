@@ -1383,6 +1383,10 @@ async function guardMeter(db: Executor, before: Meter | null, after: Meter): Pro
 }
 
 async function guardCostItem(db: Executor, before: CostItem | null, after: CostItem, body: unknown, options: CostItemGuardOptions = {}): Promise<void> {
+  // Die Teile einer aufgeteilten Rechnung (#455) gehören zusammen und damit zu einem Objekt.
+  if (before?.sourceId && after.propertyId !== before.propertyId) {
+    throw new CrossPropertyError(`„${after.description}“ ist Teil einer aufgeteilten Rechnung; die Teile gehören zusammen und können nicht in ein anderes Objekt wechseln. Erfassen Sie die Rechnung im anderen Objekt neu.`)
+  }
   // Der Zeitraum (#208) muss zum Objekt gehören, bei einer Heizposition mit eigener Heizperiode zur
   // Anlage (Heizung PR 5). `year` ohne `period` schickt nur ein alter Tab.
   const heating = after.heatingPlantId ? await heatingRulesOf(db, after.heatingPlantId) : null
@@ -2105,6 +2109,8 @@ export async function removeProperty(db: Database, id: string): Promise<Property
   // setzt `property_id` auf NULL, und ein Zeitraum ohne Objekt verletzte die Prüfbedingung.
   await db.transaction(async (tx) => {
     await tx.update(assessments).set({ requestedPeriod: null }).where(eq(assessments.propertyId, id))
+    // Eine Quelle ohne Teile (krumm, etwa aus einem bearbeiteten Backup) hielte den Fremdschlüssel fest (#455).
+    await tx.delete(costSources).where(eq(costSources.propertyId, id))
     await tx.delete(properties).where(eq(properties.id, id))
   })
   return { removed: true }
