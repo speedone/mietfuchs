@@ -45,6 +45,11 @@ test('Rückfrage: ein Eintrag heißt „rückgängig machen“, mehrere „zurü
   expect(revertQuestion(preview({ entries: [...preview().entries, ...preview().entries] })).title).toMatch(/^Zum Stand vor/)
 })
 
+test('Rückfrage: ein Eintrag mit mehreren Änderungen steht im Plural', () => {
+  expect(revertQuestion(preview()).intro).toBe('Zurückgenommen wird eine Änderung.')
+  expect(revertQuestion(preview({ changes: 4 })).intro).toBe('Zurückgenommen werden 4 Änderungen.')
+})
+
 test('Rücksprünge: keiner bei Schranke oder nur lesbar, am obersten nur der Stand davor', () => {
   expect(revertActions({ readOnly: false, barrier: null }, true)).toEqual(['including'])
   expect(revertActions({ readOnly: false, barrier: null }, false)).toEqual(['including', 'after'])
