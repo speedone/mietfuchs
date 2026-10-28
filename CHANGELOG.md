@@ -64,6 +64,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 - Mietkonto: Ein Monat mit offenem Betrag öffnet die Zahlung jetzt auch per Tastatur (Tab, Enter) und wird von
   Vorlesern als „Zahlung erfassen“ angesagt. Bisher ließ er sich nur mit der Maus anklicken.
+### Behoben
+
+- Zählerwechsel: Im Fenster der Ablesung lässt sich beim Wechsel jetzt das Eichjahr des neuen Zählers eintragen
+  („Neuer Zähler geeicht bis Ende (Jahr)“). Bisher blieb nach dem Wechsel die Warnung „Eichfrist abgelaufen“ des
+  ausgebauten Zählers stehen, bis man das Jahr eigens über „Zähler bearbeiten“ änderte. Leer gelassen bleibt das
+  bisherige Jahr stehen.
 
 ## [0.13.1] – 2026-10-27
 

@@ -1010,3 +1010,42 @@ test('Eichfrist über die Routen: gespeichert, Hinweis auf der Zähler-Seite, ni
     s.stop()
   }
 })
+
+// Praxistest: Nach dem Zählerwechsel blieb die Warnung stehen, denn das Eichjahr gehört zum heutigen Gerät und das
+// Fenster des Wechsels fragte es nicht ab. Jetzt nimmt die Ablesung des Wechsels das Jahr des neuen Geräts mit, in
+// einem Vorgang mit der Ablesung.
+test('Zählerwechsel mit Eichjahr des neuen Zählers: Jahr am Zähler, Warnung weg; ohne Wechsel oder am HKV 400 und nichts gespeichert', async () => {
+  const s = await startServer()
+  try {
+    const unit = await s.api<Unit>('/api/units', jsonPost({ name: 'EG', areaM2: 80, participates: true }))
+    const meter = await s.api<Meter>('/api/meters', jsonPost({ name: 'Kaltwasser EG', unitId: unit.id, type: 'kaltwasser', unit: 'm³', calibratedUntil: 2024 }))
+    await s.api('/api/readings', jsonPost({ meterId: meter.id, date: '2024-12-31', value: 100 }))
+    const post = (body: unknown) => fetch(`${s.base}/api/readings`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    const ohneWechsel = await post({ meterId: meter.id, date: '2025-03-31', value: 120, newCalibratedUntil: 2031 })
+    assert.equal(ohneWechsel.status, 400)
+    assert.match(await errorFrom(ohneWechsel), /nur bei einem Zählerwechsel/)
+    const keineZahl = await post({ meterId: meter.id, date: '2025-03-31', value: 0, replacement: true, oldEndValue: 120, newCalibratedUntil: 31 })
+    assert.equal(keineZahl.status, 400)
+    assert.match(await errorFrom(keineZahl), /Eichjahr ist keine Jahreszahl/)
+    assert.equal((await s.api<unknown[]>('/api/readings')).length, 1, 'eine abgelehnte Angabe nimmt die Ablesung nicht mit')
+    const wechsel = await post({ meterId: meter.id, date: '2025-03-31', value: 0, replacement: true, oldEndValue: 120, newCalibratedUntil: 2031 })
+    assert.equal(wechsel.status, 201)
+    const gespeichert: unknown = await wechsel.json()
+    assert.ok(gespeichert !== null && typeof gespeichert === 'object' && !('newCalibratedUntil' in gespeichert), 'das Jahr ist keine Angabe der Ablesung')
+    await s.api('/api/readings', jsonPost({ meterId: meter.id, date: '2025-12-31', value: 60 }))
+    const zaehler = (await s.api<Meter[]>('/api/meters')).find((m) => m.id === meter.id) ?? assert.fail('Zähler fehlt')
+    assert.equal(zaehler.calibratedUntil, 2031)
+    const zeilen = await s.api<{ meterId: string; consumption: number; notices: Notice[] }[]>('/api/consumption/2025')
+    const zeile = zeilen.find((z) => z.meterId === meter.id) ?? assert.fail('Zähler fehlt')
+    assert.deepEqual(zeile.notices.map((n) => n.code), [])
+    assert.equal(zeile.consumption, 80)
+
+    const hkv = await s.api<Meter>('/api/meters', jsonPost({ name: 'HKV', unitId: unit.id, type: 'hkv', unit: 'Einheiten' }))
+    const amHkv = await post({ meterId: hkv.id, date: '2025-03-31', value: 0, replacement: true, oldEndValue: 5, newCalibratedUntil: 2031 })
+    assert.equal(amHkv.status, 400)
+    assert.match(await errorFrom(amHkv), /Heizkostenverteiler sind keine eichpflichtigen Messgeräte/)
+    assert.ok(!(await s.api<{ meterId: string }[]>('/api/readings')).some((r) => r.meterId === hkv.id), 'nichts Halbes gespeichert')
+  } finally {
+    s.stop()
+  }
+})

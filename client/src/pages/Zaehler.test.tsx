@@ -256,6 +256,22 @@ test('Ablesung mit Zählerwechsel: Endstand alt und Startstand neu wie bisher', 
   expect(calls[0]).toEqual({ url: '/api/readings', method: 'POST', body: { meterId: 'm1', date: '2025-06-30', value: 5, replacement: true, oldEndValue: 980 } })
 })
 
+// Praxistest: Nach dem Wechsel blieb die Warnung „Eichfrist abgelaufen“ stehen, denn das Fenster fragte kein
+// Eichjahr für den neuen Zähler ab. Jetzt fragt es danach, nur beim Wechsel; leer bleibt der Rumpf wie bisher.
+test('Zählerwechsel: Eichjahr des neuen Zählers geht mit der Ablesung hinaus, leer nicht', async () => {
+  stubWithUrls()
+  const box = await openReadingForm()
+  expect(within(box).queryByLabelText(/Neuer Zähler geeicht bis Ende/)).toBeNull()
+  fireEvent.change(within(box).getByLabelText(/^Datum/), { target: { value: '2025-06-30' } })
+  fireEvent.click(within(box).getByLabelText(/Zählerwechsel/))
+  fireEvent.change(within(box).getByLabelText(/^Startstand neuer Zähler/), { target: { value: '5' } })
+  fireEvent.change(within(box).getByLabelText(/^Endstand alter Zähler/), { target: { value: '980' } })
+  fireEvent.change(within(box).getByLabelText(/Neuer Zähler geeicht bis Ende/), { target: { value: '2031' } })
+  saveReadingIn(box)
+  await waitFor(() => expect(calls).toHaveLength(1))
+  expect(calls[0]).toEqual({ url: '/api/readings', method: 'POST', body: { meterId: 'm1', date: '2025-06-30', value: 5, replacement: true, oldEndValue: 980, newCalibratedUntil: 2031 } })
+})
+
 // Durchsicht S1: Ein Doppelklick auf „Anlegen“ legte die Ablesung zweimal an (zwei gleiche Stände am selben Tag, #69).
 test('Ablesung: Doppelklick und Strg+S legen genau eine an', async () => {
   stubWithUrls()

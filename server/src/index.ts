@@ -56,7 +56,7 @@ import {
   closeHeatingSettlement, findClosedHeatingSettlement, heatingSettlementHistory, reopenHeatingSettlement, separateHeatingSettlements, setHeatingSentAt,
 } from './db/heatingSettlements.ts'
 import {
-  changeTenant, closeSettlement, createEntity, createProperty, ContractError, CrossPropertyError, LocalRentError, LetterInputError, findClosedSettlement, HeatingError, PaidOnQuestion, PaymentError, PeriodConflict, PeriodError, StaleTenancyError, invoiceFilesInUse, previewCostItemSplit, saveCostItemSplit,
+  changeTenant, closeSettlement, createEntity, createProperty, createReading, ContractError, CrossPropertyError, LocalRentError, LetterInputError, findClosedSettlement, HeatingError, PaidOnQuestion, PaymentError, PeriodConflict, PeriodError, StaleTenancyError, invoiceFilesInUse, previewCostItemSplit, saveCostItemSplit,
   findEntity, listProperties, patchTenancyIn, removeEntity, removeProperty, reopenSettlement, setSentAt, settlementHistory, updateEntity, updateProperty,
   TenantChangeError, unitDependents, writeSettings, writeSettingsIn, nullableBoolean, nullableLine, type CollectionName,
 } from './db/repository.ts'
@@ -555,7 +555,7 @@ for (const coll of COLLECTIONS) {
     if (coll === 'costItems') requireInvoiceFile(body, undefined)
     res.status(201).json(await writeData(async (db) => {
       const withProperty = ROOTS.includes(coll) ? { ...body, propertyId: await propertyOf(db, req, true) } : body
-      return createEntity(db, coll, newId(), withProperty)
+      return coll === 'readings' ? createReading(db, newId(), withProperty) : createEntity(db, coll, newId(), withProperty)
     }))
   })
   app.put(`/api/${coll}/:id`, async (req, res) => {

@@ -2464,6 +2464,34 @@ export async function createEntity(db: Database, coll: CollectionName, id: strin
   return gespeichert
 }
 
+// Eine Ablesung, beim Zählerwechsel mit dem Eichjahr des neuen Geräts (Praxistest, Befund „Eichfrist nach dem
+// Wechsel“). Das Eichjahr am Zähler gilt für das heutige Gerät (calibration.ts); ohne diese Angabe blieb nach dem
+// Wechsel die Warnung des ausgebauten Geräts stehen, und wer sie ernst nahm, musste den Zähler eigens bearbeiten.
+// `newCalibratedUntil` ist keine Spalte der Ablesung, sondern ein Teilrumpf für den Zähler: Ablesung und Jahr gehen in
+// einer Transaktion hinein, eine abgelehnte Jahreszahl nimmt also die Ablesung mit. Ohne den Schlüssel bleibt alles
+// wie bisher (createEntity). Nur bei einem Wechsel, denn sonst ist es dasselbe Gerät und das Jahr gehört ins
+// Zählerformular; geprüft wird das Jahr wie dort (`guardMeter`, auch: nie am Heizkostenverteiler).
+export async function createReading(db: Database, id: string, body: unknown): Promise<CollectionEntity> {
+  if (!has(body, 'newCalibratedUntil')) return createEntity(db, 'readings', id, body)
+  const { newCalibratedUntil, ...rest } = Object(body) as Record<string, unknown>
+  const reading = mergeReading(emptyReading(id), rest)
+  if (reading.replacement !== true) {
+    throw new HeatingError(400, 'Das Eichjahr eines neuen Zählers gibt es nur bei einem Zählerwechsel. Ändern Sie das Eichjahr sonst über „Zähler bearbeiten“.')
+  }
+  await db.transaction(async (tx) => {
+    await guardReading(tx, null, reading)
+    await readingCollection.insert(tx, reading)
+    const meter = (await readMeters(tx)).find((m) => m.id === reading.meterId)
+    if (!meter) return
+    const next = mergeMeter(meter, { calibratedUntil: newCalibratedUntil })
+    await guardMeter(tx, meter, next)
+    await meterCollection.replace(tx, next)
+  })
+  const gespeichert = await findEntity(db, 'readings', id)
+  if (!gespeichert) throw new Error('Der Datensatz ist nach dem Anlegen nicht auffindbar.')
+  return gespeichert
+}
+
 // `null`, wenn es den Datensatz nicht gibt; die Route macht daraus ihre 404.
 export async function updateEntity(db: Database, coll: CollectionName, id: string, body: unknown): Promise<CollectionEntity | null> {
   const geschrieben = await withCollection<Promise<boolean>>(coll, async (c) => {
