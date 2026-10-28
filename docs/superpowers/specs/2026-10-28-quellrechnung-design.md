@@ -214,7 +214,14 @@ Für jedes Objekt die Regeln zur Zeit des Schrittes. **Kandidat** ist eine Posit
 
 - nicht Heizung ist (`category <> 'Heizung und Warmwasser'`), einen Leistungszeitraum hat, nicht
   `key = 'amounts'` ist und kein Abzug beim Betriebsstrom (`operating_power IS NOT 'deduction'`),
-- und deren Leistungszeitraum mehr als einen Zeitraum des Objekts berührt (`isSplitPart`).
+- und deren Leistungszeitraum mehr als einen Zeitraum des Objekts berührt (`isSplitPart`) **oder** deren
+  Beschreibung auf „(anteilig …)“ endet (`SPLIT_SUFFIX`). Das zweite braucht der Fall aus dem Issue: Nach
+  Schritt 2 liegt der Leistungszeitraum wieder ganz in einem Zeitraum, beide Zeilen sind aber Teile
+  derselben Rechnung. Den Zusatz schreibt nur das Aufteilen. Zwei gleiche Rechnungen ohne Zusatz in
+  einem Zeitraum bleiben deshalb ohne Quelle.
+
+Folge für den übrigen Code: **Ob eine Position Teil einer Quelle ist, sagt `sourceId`, nicht
+`isSplitPart`.** Der Wächter für Teile mit Quelle und die Familie im Wechsel fragen `sourceId`.
 
 Der Schritt findet **dieselben Familien wie der Code vor dieser Version**, damit niemand einen
 Ganzrechnungs-Wechsel verliert, den er heute hat (sonst käme die Rundungsdrift aus #226 zurück):
