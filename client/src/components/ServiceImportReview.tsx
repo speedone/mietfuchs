@@ -87,7 +87,7 @@ export default function ServiceImportReview({ x, file, ctx, view, co2 = true, on
   }
 
   async function saveCo2() {
-    const co2Ctx = { items: view.items, unitsCount: x.unitsCount ?? ctx.units.length }
+    const co2Ctx = { items: view.items, unitsCount: x.unitsCount ?? ctx.servedUnitsCount ?? ctx.units.length }
     const form = { ...co2FormFromExtraction(x, co2ToForm(view.co2, co2Ctx), heatingItemId), answer }
     const r = co2Body(form, co2Ctx)
     if ('error' in r) {

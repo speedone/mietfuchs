@@ -21,6 +21,8 @@ export type ImportContext = {
   tenancies: readonly Pick<Tenancy, 'id' | 'unitId' | 'tenantName' | 'start' | 'end'>[]
   units: readonly Pick<Unit, 'id' | 'name' | 'participates' | 'selfUsed' | 'usageChanges'>[]
   existingAmountItems: number
+  // Wohnungen an dieser Heizung (`servesUnit`), Vorbelegung der Nutzeinheiten, wenn die Abrechnung keine nennt.
+  servedUnitsCount?: number
   // Kostenarten, für die im Abrechnungszeitraum des Objekts schon eine Position mit Einzelbeträgen steht
   // (Durchsicht S4): Wird dieselbe Abrechnung erneut ausgelesen, stünden kalte Blöcke sonst doppelt da, und
   // `cost.possible-duplicate` schwiege, weil beide Positionen einen Beleg tragen.

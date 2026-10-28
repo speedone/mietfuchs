@@ -9,11 +9,12 @@ import { heatingUpload } from '../aiUpload'
 import ServiceImportReview from './ServiceImportReview'
 import type { ImportContext } from '../serviceImport'
 import { startYearOf } from '../../../shared/period.ts'
+import { servesUnit } from '../../../shared/heatingPeriod.ts'
 import type { BillingPeriod, CostItem, HeatingPeriodView, HeatingPlant, ServiceExtractResult, Tenancy, Unit } from '../types'
 import { ErrorSummary, useFormError } from './ErrorSummary'
 
 export default function ServiceImportCard({ plant, view, object, tenancies, units, items = [], co2 = true, onSaved }: {
-  plant: Pick<HeatingPlant, 'id' | 'propertyId'>
+  plant: Pick<HeatingPlant, 'id' | 'propertyId'> & Partial<Pick<HeatingPlant, 'units'>>
   view: HeatingPeriodView
   // Der Abrechnungszeitraum des Objekts, für die kalten Blöcke einer Komplettabrechnung.
   object: Pick<BillingPeriod, 'key' | 'from' | 'to'>
@@ -58,7 +59,7 @@ export default function ServiceImportCard({ plant, view, object, tenancies, unit
     propertyId: plant.propertyId, plantId: plant.id,
     heating: { key: String(view.period), from: view.from, to: view.to },
     object: { key: String(object.key), from: object.from, to: object.to },
-    tenancies, units, existingAmountItems: view.items.filter((i) => i.key === 'amounts').length,
+    tenancies, units, servedUnitsCount: units.filter((u) => servesUnit({ units: plant.units ?? null }, u)).length, existingAmountItems: view.items.filter((i) => i.key === 'amounts').length,
     existingAmountCategories: items.filter((i) => i.key === 'amounts' && String(i.period) === String(object.key)).map((i) => i.category),
   }
   return (

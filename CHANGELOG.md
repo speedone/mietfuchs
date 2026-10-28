@@ -56,6 +56,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 - Heizkosten: Die Rückfrage „Die Probe geht nicht auf“ beim Speichern der CO₂-Angaben setzt nach der Probe
   keinen doppelten Punkt mehr („… auf der Seite Kosten.. Solange …“).
+### Behoben
+
+- Heizkosten, CO₂-Angaben: „Nutzeinheiten laut Abrechnung“ ist mit den Wohnungen an der Heizung vorbelegt. Bisher
+  zählten Wohnungen ohne Wärmeanschluss mit (etwa eine Garage), obwohl die Karte „Heizung“ sie ausnimmt. Ebenso beim
+  Übernehmen aus der Messdienstabrechnung, wenn diese keine Zahl nennt. Gespeicherte Angaben bleiben, wie sie sind;
+  wer die Vorbelegung übernommen hat, prüft die Zahl gegen die Abrechnung des Messdienstes.
 
 ## [0.13.1] – 2026-10-27
 
