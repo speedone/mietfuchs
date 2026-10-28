@@ -61,7 +61,6 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   zählten Wohnungen ohne Wärmeanschluss mit (etwa eine Garage), obwohl die Karte „Heizung“ sie ausnimmt. Ebenso beim
   Übernehmen aus der Messdienstabrechnung, wenn diese keine Zahl nennt. Gespeicherte Angaben bleiben, wie sie sind;
   wer die Vorbelegung übernommen hat, prüft die Zahl gegen die Abrechnung des Messdienstes.
-### Behoben
 
 - Mietkonto: Ein Monat mit offenem Betrag öffnet die Zahlung jetzt auch per Tastatur (Tab, Enter) und wird von
   Vorlesern als „Zahlung erfassen“ angesagt. Bisher ließ er sich nur mit der Maus anklicken.

@@ -296,19 +296,18 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
                       </>
                     )
                     // Ein Monat mit offenem Rest ist ein Knopf, damit er auch per Tastatur die Zahlung
-                    // öffnet; der Name beginnt mit dem sichtbaren Text (WCAG 2.5.3).
+                    // öffnet; der Zusatz steht unsichtbar hinter dem sichtbaren Text (WCAG 2.5.3).
                     if (mo.sollCents - mo.paidCents > 0) {
-                      const shown = [MONTHS[mo.month - 1], fmtEuro(mo.sollCents), partial].filter(Boolean).join(' ')
                       return (
                         <button
                           type="button"
                           key={mo.month}
                           className={`rent-month ${cls}`}
                           title={detail}
-                          aria-label={`${shown}: gezahlt ${fmtEuro(mo.paidCents)}${mo.status === 'notDue' ? ', zählt noch nicht als Rückstand' : ''}, Zahlung erfassen`}
                           onClick={() => bookMonth(r.tenancyId, mo)}
                         >
                           {content}
+                          <span className="sr-only">{`: gezahlt ${fmtEuro(mo.paidCents)}${mo.status === 'notDue' ? ', zählt noch nicht als Rückstand' : ''}, Zahlung erfassen`}</span>
                         </button>
                       )
                     }
