@@ -6,6 +6,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Geändert
+
+- Eine aufgeteilte Rechnung trägt intern eine Kennung ([#455](https://github.com/speedone/mietfuchs/issues/455)):
+  Rechnungen, deren Leistungszeitraum über mehrere Abrechnungszeiträume reicht, stehen weiter als Teile je
+  Zeitraum da; jeder Teil verweist jetzt auf seine Rechnung. Beim Update bekommen bestehende Teile diese Kennung
+  von selbst, auch die aus einem eingespielten Backup. Keine Zahl ändert sich, auch keine abgeschlossene
+  Abrechnung.
+
 ## [0.13.1] – 2026-10-27
 
 ### Behoben

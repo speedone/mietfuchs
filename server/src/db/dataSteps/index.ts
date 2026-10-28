@@ -9,7 +9,11 @@
 // ein veröffentlichter Schritt mit dem Code, und zwei Bestände, die denselben Schritt durchlaufen
 // haben, wichen voneinander ab. Ein Wächter in server/test/data-steps.test.ts hält das fest.
 import type { Connection } from '../client.ts'
+import { assignSources } from './0077_quellrechnung.ts'
 
 export type DataStep = (connection: Connection) => void
 
-export const DATA_STEPS: Readonly<Record<string, DataStep>> = {}
+export const DATA_STEPS: Readonly<Record<string, DataStep>> = {
+  // Bestehende Teile einer aufgeteilten Rechnung bekommen ihre Quelle (#455).
+  '0077_quellrechnung': assignSources,
+}

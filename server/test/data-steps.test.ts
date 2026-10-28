@@ -1,6 +1,7 @@
 // Datenschritte (#455): TypeScript, das innerhalb eines Migrationsschrittes läuft, wo SQL nicht reicht.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -107,4 +108,29 @@ test('Wächter: Datenschritte importieren nichts außer ihrem Ordner und ../clie
 test('Wächter: jeder Datenschritt gehört zu einer Migration', async () => {
   const tags = new Set((await loadMigrations()).map((m) => m.tag))
   for (const tag of Object.keys(DATA_STEPS)) assert.ok(tags.has(tag), `${tag} ist keine Migration`)
+})
+
+// Ein veröffentlichter Datenschritt ist eingefroren wie seine SQL-Datei (Muster legacy-schema.test.ts): Was sich nicht
+// ändern darf, hängt an seiner Prüfsumme. Zeilenenden werden vereinheitlicht, weil Git unter Windows auf CRLF umstellt.
+test('Wächter: jeder Datenschritt hängt an seiner Prüfsumme', () => {
+  const PINNED: Record<string, string> = {
+    '0077_quellrechnung.ts': '009f875773b66c8c215b0fd16988499cb27b5e914af0742a755123e7c960e20e',
+  }
+  const folder = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'db', 'dataSteps')
+  const steps = fs.readdirSync(folder).filter((f) => f.endsWith('.ts') && f !== 'index.ts').sort()
+  assert.deepEqual(steps, Object.keys(PINNED).sort(), 'jeder Datenschritt steht mit Prüfsumme hier')
+  for (const [name, expected] of Object.entries(PINNED)) {
+    const content = fs.readFileSync(path.join(folder, name), 'utf8').split(String.fromCharCode(13)).join('')
+    assert.equal(
+      createHash('sha256').update(content).digest('hex'),
+      expected,
+      `server/src/db/dataSteps/${name} ist verändert worden. Ein Datenschritt beschreibt, was sein Schritt mit den Daten ` +
+        'tat, und wird nach der Veröffentlichung nie geändert; ein Fehler wird mit einem neuen Schritt geradegerückt ' +
+        '(server/drizzle/README.md).',
+    )
+  }
+})
+
+test('Datenschritt 0077_quellrechnung ist eingetragen', () => {
+  assert.equal(typeof DATA_STEPS['0077_quellrechnung'], 'function')
 })
