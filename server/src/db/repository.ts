@@ -1382,11 +1382,28 @@ async function guardMeter(db: Executor, before: Meter | null, after: Meter): Pro
   }
 }
 
+// Was an einem Teil mit Quelle (#455) nicht geändert wird, denn die Teile teilen Kostenart und Verteilung der Rechnung:
+// keine andere Kostenart, nicht Einzelbeträge (die teilt Mietfuchs nicht nach Tagen, `splitBlocker`), kein Betriebsstrom.
+// Entschieden wird allein nach `sourceId`, nicht nach `isSplitPart`: Eine Quelle kann Teile haben, die in einem einzigen
+// Zeitraum liegen. `splitPart` und `periodChange` kommen nur aus der Ableitung der Teile und lassen die Prüfung aus.
+function requireSourcePartStays(before: CostItem | null, after: CostItem, options: CostItemGuardOptions): void {
+  if (!before?.sourceId || options.splitPart || options.periodChange) return
+  const what = `„${after.description}“ ist ein Teil einer aufgeteilten Rechnung. `
+  if (after.category !== before.category) {
+    throw new PeriodError(`${what}Die Kostenart ändern Sie nicht an einem einzelnen Teil, sonst passten die Teile nicht mehr zusammen. Löschen Sie alle Teile und erfassen Sie die Rechnung neu mit „Aufteilen und speichern“.`)
+  }
+  if (after.key === 'amounts' && before.key !== 'amounts') throw new PeriodError(splitBlocker(after) ?? `${what}Nach Einzelbeträgen verteilt Mietfuchs sie nicht.`)
+  if (after.operatingPower !== undefined && before.operatingPower === undefined) {
+    throw new PeriodError(`${what}Als Betriebsstrom (Abzug oder Stromrechnung) lässt sich ein einzelner Teil nicht verbuchen; erfassen Sie die Rechnung dafür ohne Aufteilen.`)
+  }
+}
+
 async function guardCostItem(db: Executor, before: CostItem | null, after: CostItem, body: unknown, options: CostItemGuardOptions = {}): Promise<void> {
   // Die Teile einer aufgeteilten Rechnung (#455) gehören zusammen und damit zu einem Objekt.
   if (before?.sourceId && after.propertyId !== before.propertyId) {
     throw new CrossPropertyError(`„${after.description}“ ist Teil einer aufgeteilten Rechnung; die Teile gehören zusammen und können nicht in ein anderes Objekt wechseln. Erfassen Sie die Rechnung im anderen Objekt neu.`)
   }
+  requireSourcePartStays(before, after, options)
   // Der Zeitraum (#208) muss zum Objekt gehören, bei einer Heizposition mit eigener Heizperiode zur
   // Anlage (Heizung PR 5). `year` ohne `period` schickt nur ein alter Tab.
   const heating = after.heatingPlantId ? await heatingRulesOf(db, after.heatingPlantId) : null
@@ -2655,10 +2672,18 @@ export async function saveCostItemSplit(db: Database, propertyId: string | null,
     const questions = splitPaidOnQuestions(current, base, parts)
     if (questions.length > 0) throw new PaidOnQuestion(questions.join(' '))
   }
-  const ids = await db.transaction((tx) => writeCostItemParts(tx, base, parts.map((p) => ({
-    period: p.period, amountCents: p.amountCents, labor35aCents: p.labor35aCents, description: p.description,
-    taxYear: p.needsTaxYear ? base.taxYear ?? null : null,
-  })), newId, currentId))
+  const ids = await db.transaction(async (tx) => {
+    // Die Quelle entsteht vor den Teilen, die auf sie zeigen (Fremdschlüssel), und fällt mit einer Ablehnung weg.
+    const sourceId = newId()
+    await insertCostSource(tx, base.propertyId, sourceId)
+    const written = await writeCostItemParts(tx, base, parts.map((p) => ({
+      period: p.period, amountCents: p.amountCents, labor35aCents: p.labor35aCents, description: p.description,
+      taxYear: p.needsTaxYear ? base.taxYear ?? null : null,
+    })), newId, currentId, { splitPart: true }, sourceId)
+    // Zeigte die aufgeteilte Position schon auf eine Quelle, ist sie jetzt womöglich leer.
+    await dropEmptySource(tx, current?.sourceId)
+    return written
+  })
   const all = await readCostItems(db)
   return ids.map((id) => all.find((c) => c.id === id)).filter((c): c is CostItem => c !== undefined)
 }

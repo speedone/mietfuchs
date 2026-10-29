@@ -122,6 +122,30 @@ test('Rücksprung über das Löschen des letzten Teils stellt Quelle und Teil wi
   }
 })
 
+// #455: Das Aufteilen legt Quelle und Teile in einem Vorgang an; der Rücksprung nimmt beide zurück.
+test('Rücksprung über ein Aufteilen entfernt Quelle und Teile', async () => {
+  const s = await startServerIn(tmp())
+  try {
+    const before = await dumpStock(s.dataDir)
+    const teile = await post<{ id: string, sourceId?: string }[]>(s, '/api/costItems/split', {
+      propertyId: 'objekt-1', period: '2024-01', category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 48000, key: 'area',
+      serviceFrom: '2024-07-01', serviceTo: '2025-06-30', taxYear: 2024,
+    })
+    assert.equal(teile.length, 2)
+    assert.equal(new Set(teile.map((t) => t.sourceId)).size, 1)
+    const after = await dumpStock(s.dataDir)
+    assert.equal(after.cost_sources?.length, 1)
+    assert.equal(after.cost_items?.length, 2)
+    const top = await newest(s)
+    await revert(s, top.id)
+    const gone = await dumpStock(s.dataDir)
+    assert.deepEqual([gone.cost_sources, gone.cost_items], [[], []])
+    assert.deepEqual(gone, before)
+  } finally {
+    s.stop()
+  }
+})
+
 test('Rücksprung: „Stand vor“ nimmt den Eintrag und alles danach zurück, „Stand nach“ nur alles danach', async () => {
   const s = await startServerIn(tmp())
   try {
