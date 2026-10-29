@@ -394,6 +394,30 @@ function everything(stock: Stock): Record<string, unknown> {
   return result
 }
 
+// Der Hinweis auf doppelte Positionen zählt die Teile einer Quelle als eine Rechnung (Entwurf, Datenschritt: „Nur der
+// Hinweis auf doppelte Positionen zählt sie dann als eine Rechnung“). Sein Text darf sich durch den Schritt ändern und
+// er darf verschwinden, aber nie neu entstehen; alles andere bleibt wortgleich.
+const DUPLICATE_HINT = 'cost.possible-duplicate'
+type WithNotices = { notices: { code: string; text: string }[]; warnings?: string[] }
+const hasNotices = (v: unknown): v is WithNotices =>
+  typeof v === 'object' && v !== null && 'notices' in v && Array.isArray(v.notices)
+function splitDuplicateHints(result: Record<string, unknown>): { rest: Record<string, unknown>; hints: Map<string, number> } {
+  const rest: Record<string, unknown> = {}
+  const hints = new Map<string, number>()
+  for (const [key, value] of Object.entries(result)) {
+    if (!hasNotices(value)) { rest[key] = value; continue }
+    const texts = new Set(value.notices.filter((n) => n.code === DUPLICATE_HINT).map((n) => n.text))
+    hints.set(key, texts.size)
+    // `warnings` wiederholt die Texte der Hinweise
+    rest[key] = {
+      ...value,
+      notices: value.notices.filter((n) => n.code !== DUPLICATE_HINT),
+      ...(value.warnings ? { warnings: value.warnings.filter((w) => !texts.has(w)) } : {}),
+    }
+  }
+  return { rest, hints }
+}
+
 const frozenOf = async (c: Connection): Promise<FrozenSettlement[]> =>
   (await readClosedSettlements(c.db)).map((s) => ({ id: s.id, year: startYearOf(s.period), settlement: s.settlement }))
 const withoutSource = (items: readonly CostItem[]): CostItem[] => items.map(({ sourceId: _, ...rest }) => rest)
@@ -431,10 +455,13 @@ test('Der Schritt ändert keinen Betrag', async () => {
         assert.deepEqual(withoutSource(after.costItems), withoutSource(before.costItems), 'nur der Verweis ändert sich')
         assert.equal(frozenDifference(frozenBefore, frozenAfter), null, 'der abgeschlossene Stand bleibt wortgleich')
         assert.ok(frozenBefore.length > 0, 'der Bestand hat einen abgeschlossenen Zeitraum')
-        const vorher = everything(before)
-        const nachher = everything(after)
-        const difference = firstDifference(vorher, nachher)
+        const vorher = splitDuplicateHints(everything(before))
+        const nachher = splitDuplicateHints(everything(after))
+        const difference = firstDifference(vorher.rest, nachher.rest)
         assert.equal(difference, null, `Startwert ${seed}: ${JSON.stringify(difference)}`)
+        for (const [key, count] of nachher.hints) {
+          assert.ok(count <= (vorher.hints.get(key) ?? 0), `Startwert ${seed}: ${key} meldet nach dem Schritt mehr doppelte Positionen`)
+        }
 
         const bySource = new Map<string, CostItem[]>()
         for (const item of after.costItems) if (item.sourceId) bySource.set(item.sourceId, [...(bySource.get(item.sourceId) ?? []), item])

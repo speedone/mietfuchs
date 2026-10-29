@@ -62,6 +62,14 @@ export function periodCosts(items: readonly (Positioned & { category: string; am
   return [...rows.values()].sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
 }
 
+// Der Beleg einer Position für die Belegkopien: ihr eigener, sonst bei einem Teil einer aufgeteilten Rechnung (#455) der
+// eines anderen Teils derselben Quelle, gleich in welchem Zeitraum. `items` sind alle Positionen des Objekts.
+type FileItem = { id: string; invoiceFile?: string; sourceId?: string }
+export function invoiceFileOf(c: FileItem, items: readonly FileItem[]): string | undefined {
+  if (c.invoiceFile || !c.sourceId) return c.invoiceFile
+  return items.find((o) => o.id !== c.id && o.sourceId === c.sourceId && o.invoiceFile)?.invoiceFile
+}
+
 // Die Belegkopien zu einer Abrechnung, in der Reihenfolge der erfassten Positionen und ohne Doppelte:
 // die Belege der Positionen, die auf dem Papier stehen. Vorher galt `period` gleich dem Zeitraum, und
 // die Heizrechnung einer eigenen Heizperiode fehlte unter den Anlagen, obwohl ihre Kosten dastanden.
@@ -74,7 +82,7 @@ export function settledInvoiceFiles(
     period?: { key: PeriodKey }
     scope?: { kind: string; plantId?: string } | null
   },
-  items: readonly { id: string; invoiceFile?: string; amountCents?: number; period?: PeriodKey; heatingPlantId?: string | null }[],
+  items: readonly { id: string; invoiceFile?: string; sourceId?: string; amountCents?: number; period?: PeriodKey; heatingPlantId?: string | null }[],
   objectRules: PeriodRules = CALENDAR_RULES,
   plants: readonly PlantPeriods[] = [],
 ): string[] {
@@ -85,7 +93,7 @@ export function settledInvoiceFiles(
     const k = settlementKeyOf({ period: c.period, heatingPlantId: c.heatingPlantId ?? null }, objectRules, plants)
     return k.key === s.period.key && !k.separate
   }
-  return [...new Set(items.filter((c) => (ids.has(c.id) || zeroHere(c)) && c.invoiceFile).map((c) => c.invoiceFile as string))]
+  return [...new Set(items.filter((c) => ids.has(c.id) || zeroHere(c)).map((c) => invoiceFileOf(c, items)).filter((f): f is string => !!f))]
 }
 
 // Welche Abrechnung sagt, ob die Position abgeschlossen ist (Durchsicht N2): nach Weg d die

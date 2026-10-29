@@ -98,3 +98,22 @@ test('M1 Integrationsdurchsicht: der Rat führt nicht zum bloßen Zuordnen, das 
   assert.equal(dupes(zugeordnet).length, 0)
   assert.equal(settle(zugeordnet).totalCostsCents, 300000)
 })
+
+// #455, Durchsicht von Task 8 (I1): Die Teile einer aufgeteilten Rechnung im selben Zeitraum sind eine Rechnung. Trägt
+// ein Teil den Beleg, ist die Rechnung belegt; der andere Teil darf weder „ohne Beleg“ heißen noch der Ort von „Hier
+// beheben“ sein, sonst löschte der Vermieter einen echten Teil der Rechnung.
+test('Teile einer Rechnung im selben Zeitraum: als eine Rechnung genannt, belegt über einen Teil, nicht Ziel des Rats', () => {
+  const found = dupes([
+    item({ id: 'vj', period: calendarPeriod(2025) }),
+    item({ id: 'teil1', period: calendarPeriod(2026), description: 'Grundsteuer (anteilig)', amountCents: 12000, sourceId: 'q1', invoiceFile: 'gs.pdf' }),
+    item({ id: 'teil2', period: calendarPeriod(2026), description: 'Grundsteuer (anteilig)', amountCents: 24500, sourceId: 'q1', key: 'persons' }),
+    item({ id: 'schaetzung', period: calendarPeriod(2026), amountCents: 61000 }),
+  ])
+  assert.equal(found.length, 1)
+  const n = found[0]
+  assert.deepEqual(n?.subject, { kind: 'costItem', id: 'schaetzung' })
+  const text = n?.text ?? ''
+  assert.match(text, /„Grundsteuer \(anteilig\)“ \(2 Teile einer Rechnung, zusammen 365,00 €\) und „Grundsteuer 2026“ \(610,00 €, ohne Beleg\) stehen beide 2026 unter „Grundsteuer“/)
+  assert.doesNotMatch(text, /365,00 €, ohne Beleg/)
+  assert.match(text, /eine der beiden Positionen löschen, in der Regel die ohne Beleg/)
+})

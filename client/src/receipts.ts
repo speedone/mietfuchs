@@ -16,7 +16,7 @@ import type { CostItem, PeriodKey, UploadInfo, UploadLinks } from './types'
 import { CATEGORIES, matchCategory } from './types'
 import { fmtEuro, parseEuro } from './api'
 import { amountProblem } from './costForm'
-import { sameCostCandidates } from '../../shared/duplicates.ts'
+import { invoiceOf, sameCostCandidates } from '../../shared/duplicates.ts'
 import { countOf } from '../../shared/wording.ts'
 import { startYearOf } from '../../shared/period.ts'
 
@@ -255,14 +255,20 @@ export function isItemCovered(c: CostItem, present: ReadonlySet<string> | null, 
   return own(c) || (!!c.sourceId && (parts.get(c.sourceId) ?? []).some((x) => x.id !== c.id && own(x)))
 }
 
-// Die Rechnung einer Position (#455): die Quelle ihrer Teile, sonst die Position selbst.
-const invoiceOf = (c: CostItem): string => (c.sourceId ? `q:${c.sourceId}` : `p:${c.id}`)
-
 // Die Teile je Quelle (#455), über alle Zeiträume; Positionen ohne Quelle fehlen.
 export function partsBySource(items: readonly CostItem[]): Map<string, CostItem[]> {
   const out = new Map<string, CostItem[]>()
   for (const c of items) if (c.sourceId) out.set(c.sourceId, [...(out.get(c.sourceId) ?? []), c])
   return out
+}
+
+// Das Abzeichen am Register (Belege.tsx): Rechnungen und Rechnungen ohne Beleg, gezählt wie in der Belegabdeckung
+// (#455, die Teile einer Quelle sind eine Rechnung).
+export function registerCount(g: Pick<CategoryGroup, 'items'>, present: ReadonlySet<string> | null, booked: ReadonlyMap<string, readonly string[]>, parts: ReadonlyMap<string, readonly CostItem[]>): { positions: number; without: number } {
+  return {
+    positions: new Set(g.items.map(invoiceOf)).size,
+    without: new Set(g.items.filter((c) => !isItemCovered(c, present, booked, parts)).map(invoiceOf)).size,
+  }
 }
 
 export function filesByItem(uploads: readonly ReceiptUpload[]): Map<string, string[]> {

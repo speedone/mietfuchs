@@ -60,7 +60,7 @@ import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { hotWaterOf } from '../../../shared/heatingPeriod.ts'
 import { serviceReceivesOperatingPower } from '../../../shared/operatingPower.ts'
 import { paidOnYear, splitPaidOnQuestions } from '../../../shared/paidOn.ts'
-import { sourceLabel } from '../costSource'
+import { sourceLabels } from '../costSource'
 import { alreadyCarried, carryKeyDetails, carryOverBody, carryOverForm, carryOverRows, withCarryAmount, type CarryRow } from '../carryOver'
 import { api, ApiError, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { aiSummary } from '../aiForm'
@@ -267,6 +267,8 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
 
   // Die Positionen des Zeitraums und die Heizpositionen der Heizperioden, die darin enden (Heizung PR 5).
   const heatingKeysText = JSON.stringify(heatingKeys)
+  // #455: „Teil von N · Rechnung gesamt …“ je Teil, einmal für alle Zeilen
+  const partLabels = useMemo(() => sourceLabels(items), [items])
   const yearItems = useMemo(() => itemsOfPeriod(items, key, JSON.parse(heatingKeysText) as { plantId: string; key: string }[]), [items, key, heatingKeysText])
   // Woraus eine neue Position ihren Schlüssel vorgeschlagen bekommt (#141): die Positionen des
   // Objekts, das Jahr und die Art des Objekts.
@@ -809,7 +811,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                     {i.description}
                     {!i.invoiceFile && i.vendor && <div className="muted">{i.vendor}</div>}
                     {/* #455: ein Teil einer aufgeteilten Rechnung, die Summe über alle Zeiträume */}
-                    {sourceLabel(i, items) && <div className="muted">{sourceLabel(i, items)}</div>}
+                    {partLabels.get(i.id) && <div className="muted">{partLabels.get(i.id)}</div>}
                   </td>
                   <td data-label="Umlageschlüssel">
                     {/* Nicht umlagefähig (#142): kein Schlüssel, die Position trägt der Vermieter. */}

@@ -85,10 +85,24 @@ const isCredit = (i: DuplicateItem): boolean => (i.amountCents ?? 0) < 0
 
 // Die Rechnung, zu der eine Position gehört (#455): Die Teile einer Quelle sind eine Rechnung, jede andere Position
 // ist ihre eigene.
-const invoiceOf = (i: DuplicateItem): string => (i.sourceId ? `q:${i.sourceId}` : `p:${i.id}`)
+export const invoiceOf = (i: DuplicateItem): string => (i.sourceId ? `q:${i.sourceId}` : `p:${i.id}`)
 const invoiceCount = (items: readonly DuplicateItem[]): number => new Set(items.map(invoiceOf)).size
 // Eine Rechnung gilt als belegt, wenn einer ihrer Teile den Beleg trägt.
 const withReceipt = (items: readonly DuplicateItem[]): Set<string> => new Set(items.filter((i) => i.invoiceFile).map(invoiceOf))
+
+// Eine Gruppe möglicher Doppelungen je Rechnung (#455), für den Text des Hinweises: die Teile jeder Rechnung in der
+// Reihenfolge der Gruppe, und ob sie belegt ist (ein Teil trägt den Beleg).
+export function invoicesOf<T extends DuplicateItem>(group: readonly T[]): { parts: T[]; hasReceipt: boolean }[] {
+  const out = new Map<string, { parts: T[]; hasReceipt: boolean }>()
+  for (const i of group) {
+    const key = invoiceOf(i)
+    const inv = out.get(key) ?? { parts: [], hasReceipt: false }
+    inv.parts.push(i)
+    inv.hasReceipt ||= !!i.invoiceFile
+    out.set(key, inv)
+  }
+  return [...out.values()]
+}
 
 const queryOf = (i: DuplicateItem, period: PeriodKey = i.period): CostQuery => ({
   propertyId: i.propertyId, period, category: i.category, description: i.description, vendor: i.vendor, amountCents: i.amountCents, excludeId: i.id,
@@ -128,7 +142,10 @@ export function possibleDuplicates<T extends DuplicateItem>(items: readonly T[],
   // Gezählt wird je Rechnung (#455): Die Teile einer Quelle im selben Zeitraum melden einander nicht, und eine
   // Rechnung ist belegt, wenn einer ihrer Teile den Beleg trägt. Gemeldet wird eine Gruppe mit allen ihren Positionen.
   return groups
-    .filter((g) => invoiceCount(g) >= 2 && g.some((i) => !withReceipt(g).has(invoiceOf(i))))
+    .filter((g) => {
+      const belegt = withReceipt(g)
+      return invoiceCount(g) >= 2 && g.some((i) => !belegt.has(invoiceOf(i)))
+    })
     .map((g) => own.filter((i) => g.includes(i)))
     .filter((g) => {
       if (g.some((i) => i.invoiceFile)) return true

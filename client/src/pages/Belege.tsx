@@ -13,7 +13,7 @@ import { closedCheckPath, filedUnderSettlement, type PlantPeriods } from '../cos
 import { isCalendarRules, periodContaining, periodLabel, periodsBetween, rulesOf, startYearOf } from '../../../shared/period.ts'
 import { renderInvoicePages, renderThumbnail } from '../pdfPreview'
 import { buildTenantFolderPdf, isIndividualAmounts, planTenantFolder, type TenantFolderPlan } from '../tenantFolder'
-import { amountCheckBody, amountCheckMode, attachChoices, buildFolder, coverage, filesByItem, duplicateHints, inboxFor, inboxOf, inboxPage, INBOX_STEP, isItemCovered, matchesQuery, partsBySource, receiptCards, receiptName, yearSections, type CategoryGroup, type FolderFilter, type ReceiptCard, type ReceiptUpload } from '../receipts'
+import { amountCheckBody, amountCheckMode, attachChoices, buildFolder, coverage, filesByItem, duplicateHints, inboxFor, inboxOf, inboxPage, INBOX_STEP, matchesQuery, partsBySource, receiptCards, registerCount, receiptName, yearSections, type CategoryGroup, type FolderFilter, type ReceiptCard, type ReceiptUpload } from '../receipts'
 import { previewWhenVisible } from '../previewQueue'
 import { useFocusFirstNew } from '../focusNew'
 import Field from '../components/Field'
@@ -133,6 +133,8 @@ function FolderPacks({ propertyId, propertyName, year, chosen, rules, uploads, c
 }) {
   const [open, setOpen] = useState(false)
   const [settlement, setSettlement] = useState<Settlement | null>(null)
+  // Die Teile je Rechnung über alle Zeiträume (#455): Ein Teil ohne eigenen Beleg bekommt den seiner Rechnung.
+  const parts = useMemo(() => partsBySource(costItems), [costItems])
   const [includeIndividual, setIncludeIndividual] = useState(false)
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState('')
@@ -151,8 +153,8 @@ function FolderPacks({ propertyId, propertyName, year, chosen, rules, uploads, c
   }, [open, param, propertyId])
 
   const plan = useMemo(
-    () => (settlement ? planTenantFolder(settlement, costItems.filter((c) => c.propertyId === propertyId && c.period === period.key), uploads, { includeIndividual }) : null),
-    [settlement, costItems, uploads, includeIndividual, propertyId, period.key],
+    () => (settlement ? planTenantFolder(settlement, costItems.filter((c) => c.propertyId === propertyId && c.period === period.key), uploads, { includeIndividual }, parts) : null),
+    [settlement, costItems, uploads, includeIndividual, propertyId, period.key, parts],
   )
   const count = (status: string) => plan?.entries.filter((e) => e.status === status).length ?? 0
   const individual = plan?.entries.filter((e) => isIndividualAmounts(e.item) && e.upload).length ?? 0
@@ -623,15 +625,16 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
   // Ein Register: eine Kostenart eines Jahres, mit den Belegen und den Positionen ohne Beleg
   const renderGroup = (g: CategoryGroup) => {
     // Wie die Belegabdeckung: auch ein Beleg über eine gebuchte Zeile deckt die Position (Durchsicht von PR #449, K2).
-    const ohne = g.items.filter((c) => !isItemCovered(c, present, booked, parts)).length
+    // Je Rechnung wie die Belegabdeckung (#455): Die Teile einer Quelle zählen als eine Position.
+    const { positions, without: ohne } = registerCount(g, present, booked, parts)
     return (
       <details key={g.key} className="card receipt-group" open>
         <summary>
           <span className="receipt-group-title">{g.category}</span>
           <span className="num">{fmtEuro(g.sumCents)}</span>
           {ohne === 0
-            ? <span className="badge green">✓ {g.items.length === 1 ? 'Beleg vorhanden' : 'alle Belege vorhanden'}</span>
-            : <span className="badge amber">⚠ {ohne} von {g.items.length} Position{g.items.length > 1 ? 'en' : ''} ohne Beleg</span>}
+            ? <span className="badge green">✓ {positions === 1 ? 'Beleg vorhanden' : 'alle Belege vorhanden'}</span>
+            : <span className="badge amber">⚠ {ohne} von {positions} Position{positions > 1 ? 'en' : ''} ohne Beleg</span>}
         </summary>
         {g.cards.length > 0 && <ul className="receipt-list">{g.cards.map(renderCard)}</ul>}
         {g.missing.length > 0 && (

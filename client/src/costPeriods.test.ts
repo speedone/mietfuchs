@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { closedCheckPath, filedUnderSettlement, heatingRowTarget, itemsOfSettlement, periodCosts, settledInvoiceFiles, settlementKeyOf } from './costPeriods'
+import { closedCheckPath, filedUnderSettlement, heatingRowTarget, invoiceFileOf, itemsOfSettlement, periodCosts, settledInvoiceFiles, settlementKeyOf } from './costPeriods'
 import { CALENDAR_RULES, periodKey as k } from '../../shared/period.ts'
 import type { CostItem, HeatingPlant, HeatingSettlementInfo, PeriodRules } from './types'
 
@@ -78,6 +78,19 @@ describe('Belegkopien einer Abrechnung', () => {
     const id = (i: number) => settled[i]?.id ?? ''
     const s = { statements: [{ rows: [row(id(0)), row(id(1))] }], landlord: { rows: [row(id(2))] } }
     expect(settledInvoiceFiles(s, settled)).toEqual(['a.pdf', 'erdgas.pdf'])
+  })
+
+  // #455, Durchsicht von Task 8 (I2): Der Beleg einer aufgeteilten Rechnung hängt oft nur an einem Teil, auch an einem
+  // im Vorzeitraum. Der Teil auf dem Papier bekommt dann den Beleg seiner Rechnung als Kopie.
+  test('ein Teil ohne eigenen Beleg bringt den Beleg seiner Rechnung mit, auch aus einem anderen Zeitraum', () => {
+    const row = (costItemId: string) => ({ costItemId, category: 'x', description: 'x', totalCents: 1, keyLabel: 'x', shareCents: 1 })
+    const vorher = item('2024-01', 1, { sourceId: 'q1', invoiceFile: 'gs.pdf' })
+    const teil = item('2025-01', 1, { sourceId: 'q1' })
+    const ohne = item('2025-01', 1)
+    const s = { statements: [{ rows: [row(teil.id), row(ohne.id)] }], landlord: { rows: [] } }
+    expect(settledInvoiceFiles(s, [vorher, teil, ohne])).toEqual(['gs.pdf'])
+    expect(invoiceFileOf(teil, [vorher, teil, ohne])).toBe('gs.pdf')
+    expect(invoiceFileOf(ohne, [vorher, teil, ohne])).toBeUndefined()
   })
 })
 

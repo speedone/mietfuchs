@@ -13,7 +13,23 @@ export function sourceSummary(item: CostItem, all: readonly CostItem[]): { parts
   return { parts: parts.length, totalCents: parts.reduce((a, c) => a + c.amountCents, 0) }
 }
 
+const labelOf = (s: { parts: number; totalCents: number }): string => `Teil von ${s.parts} · Rechnung gesamt ${fmtEuro(s.totalCents)}`
+
 export function sourceLabel(item: CostItem, all: readonly CostItem[]): string | null {
   const s = sourceSummary(item, all)
-  return s ? `Teil von ${s.parts} · Rechnung gesamt ${fmtEuro(s.totalCents)}` : null
+  return s ? labelOf(s) : null
+}
+
+// Die Sätze aller Teile auf einmal, je Kennung der Position: für die Kostenliste, die sonst je Zeile alle Positionen
+// durchginge.
+export function sourceLabels(all: readonly CostItem[]): Map<string, string> {
+  const bySource = new Map<string, CostItem[]>()
+  for (const c of all) if (c.sourceId) bySource.set(c.sourceId, [...(bySource.get(c.sourceId) ?? []), c])
+  const out = new Map<string, string>()
+  for (const parts of bySource.values()) {
+    if (parts.length < 2) continue
+    const text = labelOf({ parts: parts.length, totalCents: parts.reduce((a, c) => a + c.amountCents, 0) })
+    for (const c of parts) out.set(c.id, text)
+  }
+  return out
 }

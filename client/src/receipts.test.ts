@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { calendarPeriod, periodKey } from '../../shared/period.ts'
 import type { CostItem, UploadInfo } from './types'
-import { amountCheckBody, amountCheckMode, attachChoices, buildFolder, coverage, coverageCheck, duplicateHints, filesByItem, inboxFor, inboxOf, inboxPage, INBOX_STEP, isItemCovered, matchesQuery, partsBySource, receiptCards, yearSections } from './receipts'
+import { amountCheckBody, amountCheckMode, attachChoices, buildFolder, coverage, coverageCheck, duplicateHints, filesByItem, inboxFor, inboxOf, inboxPage, INBOX_STEP, isItemCovered, matchesQuery, partsBySource, receiptCards, registerCount, yearSections } from './receipts'
 
 const upload = (file: string, extra: Partial<UploadInfo> = {}): UploadInfo => ({
   file, size: 10, mtime: '2026-01-02T10:00:00.000Z', originalName: file.replace(/^\d+_/, ''),
@@ -204,6 +204,18 @@ describe('Belegabdeckung', () => {
     const folder = buildFolder([upload('1_a.pdf')], teile, { propertyId: 'p1', year: 2025 }, '')
     expect(folder.groups[0]?.missing).toEqual([])
     expect(folder.groups[0]?.cards.map((c) => c.upload.file)).toEqual(['1_a.pdf'])
+  })
+
+  // Durchsicht von Task 8 (M1): Das Abzeichen am Register zählt wie die Belegabdeckung je Rechnung.
+  it('das Abzeichen am Register zählt eine aufgeteilte Rechnung einmal', () => {
+    const teile = [
+      item('t1', { amountCents: 12000, sourceId: 'q1' }),
+      item('t2', { amountCents: 24500, sourceId: 'q1' }),
+      item('b', { amountCents: 30000, invoiceFile: '1_b.pdf' }),
+    ]
+    const folder = buildFolder([upload('1_b.pdf')], teile, { propertyId: 'p1', year: 2025 }, '')
+    const g = folder.groups[0] ?? expect.fail('kein Register')
+    expect(registerCount(g, new Set(['1_b.pdf']), new Map(), partsBySource(teile))).toEqual({ positions: 2, without: 1 })
   })
 
   it('zeigt 100 % nur, wenn wirklich nichts fehlt', () => {

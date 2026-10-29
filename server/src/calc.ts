@@ -87,7 +87,7 @@ import { HEATING_CATEGORY, heatingByConsumption, heatingFindings, mayAgreeOtherw
 import { andList, meterTypeLabel, plural } from '../../shared/wording.ts'
 import type { TermId } from '../../shared/glossary.ts'
 import { allocationOf, comparablePrevious, sameAllocation, sameUnits } from '../../shared/allocation.ts'
-import { possibleDuplicates } from '../../shared/duplicates.ts'
+import { invoicesOf, possibleDuplicates } from '../../shared/duplicates.ts'
 import { commonPeriod, tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
 import { baseUsage, unitAsOf, usageChangesWithin, usageDays, usageFlags, usageSpans, type UsageSpan } from '../../shared/unitUsage.ts'
 import type { UnitUsage } from '../../shared/types.ts'
@@ -4816,10 +4816,19 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // dieselbe Rechnung noch einmal aus dem Beleg. Nur ein Hinweis, verteilt wird wie erfasst. Der Rat
   // lautet „löschen“ und nicht „Beleg zuordnen“: Zugeordnet verstummt der Hinweis (er verlangt eine
   // Position ohne Beleg), die Summe bliebe aber doppelt (Integrationsdurchsicht M1).
+  // Gezählt und genannt wird je Rechnung (#455): Die Teile einer Quelle stehen als eine Rechnung da, belegt, wenn einer
+  // von ihnen den Beleg trägt; „Hier beheben“ führt nie zu einem Teil einer belegten Rechnung.
   for (const group of possibleDuplicates(items, at, snapshot.comparableCostItems ?? snapshot.previousCostItems ?? [])) {
-    const first = group.find((i) => !i.invoiceFile) ?? group[0]
+    const invoices = invoicesOf(group)
+    const first = invoices.find((inv) => !inv.hasReceipt)?.parts[0] ?? group[0]
     if (!first) continue
-    const list = group.map((i) => `„${i.description}“ (${fmtCents(i.amountCents)}${i.invoiceFile ? '' : ', ohne Beleg'})`)
+    const list = invoices.map(({ parts, hasReceipt }) => {
+      const head = parts[0]
+      const amount = parts.length > 1
+        ? `${parts.length} Teile einer Rechnung, zusammen ${fmtCents(parts.reduce((a, i) => a + i.amountCents, 0))}`
+        : fmtCents(head?.amountCents ?? 0)
+      return `„${head?.description ?? ''}“ (${amount}${hasReceipt ? '' : ', ohne Beleg'})`
+    })
     const named = andList(list)
     warn('cost.possible-duplicate',
       `${named} stehen ${list.length === 2 ? `beide ${at.label}` : `${at.label} alle`} unter „${first.category}“. ${list.length === 2 ? 'Ist das dieselbe Rechnung' : 'Ist darunter dieselbe Rechnung zweimal'}, etwa einmal aus dem Vorjahr übernommen und einmal aus dem Beleg erfasst, wird sie zweimal verteilt. ` +

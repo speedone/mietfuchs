@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { calendarPeriod } from '../../shared/period.ts'
 import type { CostItem } from './types'
-import { sourceLabel, sourceSummary } from './costSource'
+import { sourceLabel, sourceLabels, sourceSummary } from './costSource'
 
 const item = (id: string, extra: Partial<CostItem> = {}): CostItem => ({
   id, propertyId: 'p1', period: calendarPeriod(2025), category: 'Grundsteuer', description: `Position ${id}`, amountCents: 10000, key: 'area', ...extra,
@@ -23,5 +23,13 @@ describe('Teil einer aufgeteilten Rechnung (#455)', () => {
     expect(sourceSummary(ohne, [t1, t2, ohne])).toBeNull()
     expect(sourceSummary(fremd, [t1, t2, fremd])).toBeNull()
     expect(sourceLabel(fremd, [fremd])).toBeNull()
+  })
+
+  // Durchsicht von Task 8 (M2): Die Kostenliste rechnet die Sätze einmal für alle Zeilen, nicht je Zeile über alle.
+  it('sourceLabels: je Teil derselbe Satz wie sourceLabel, Positionen ohne Satz fehlen', () => {
+    const all = [t1, t2, fremd, ohne]
+    const labels = sourceLabels(all)
+    expect([...labels.keys()]).toEqual(['t1', 't2'])
+    for (const c of all) expect(labels.get(c.id) ?? null).toBe(sourceLabel(c, all))
   })
 })

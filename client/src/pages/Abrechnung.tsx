@@ -8,7 +8,7 @@ import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { invoiceLabel, renderInvoicePages } from '../pdfPreview'
 import { usePeriod } from '../period'
 import { useFocusTarget } from '../focus'
-import { settledInvoiceFiles, type PlantPeriods } from '../costPeriods'
+import { invoiceFileOf, settledInvoiceFiles, type PlantPeriods } from '../costPeriods'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import { keepDraft, useConfirmDiscard, useDraft } from '../useDraft'
 import { useSaving } from '../useSaving'
@@ -592,7 +592,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
               // Belege, die in dieser Abrechnung tatsächlich vorkommen (für die Anlage)
               const stFiles = printAttachments
                 ? [...new Set(st.rows
-                    .map((r) => costItems.find((c) => c.id === r.costItemId)?.invoiceFile)
+                    .map((r) => { const c = costItems.find((x) => x.id === r.costItemId); return c ? invoiceFileOf(c, costItems) : undefined })
                     .filter((f): f is string => !!f))]
                 : []
               const attachmentsReady = stFiles.every((f) => attachmentPages[f])
