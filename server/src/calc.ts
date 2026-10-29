@@ -87,7 +87,7 @@ import { HEATING_CATEGORY, heatingByConsumption, heatingFindings, mayAgreeOtherw
 import { andList, meterTypeLabel, plural } from '../../shared/wording.ts'
 import type { TermId } from '../../shared/glossary.ts'
 import { allocationOf, comparablePrevious, sameAllocation, sameUnits } from '../../shared/allocation.ts'
-import { invoicesOf, possibleDuplicates } from '../../shared/duplicates.ts'
+import { invoicesOf, possibleDuplicates, receiptedSources } from '../../shared/duplicates.ts'
 import { commonPeriod, tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
 import { baseUsage, unitAsOf, usageChangesWithin, usageDays, usageFlags, usageSpans, type UsageSpan } from '../../shared/unitUsage.ts'
 import type { UnitUsage } from '../../shared/types.ts'
@@ -4818,10 +4818,14 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Position ohne Beleg), die Summe bliebe aber doppelt (Integrationsdurchsicht M1).
   // Gezählt und genannt wird je Rechnung (#455): Die Teile einer Quelle stehen als eine Rechnung da, belegt, wenn einer
   // von ihnen den Beleg trägt; „Hier beheben“ führt nie zu einem Teil einer belegten Rechnung.
-  for (const group of possibleDuplicates(items, at, snapshot.comparableCostItems ?? snapshot.previousCostItems ?? [])) {
-    const invoices = invoicesOf(group)
-    const first = invoices.find((inv) => !inv.hasReceipt)?.parts[0] ?? group[0]
+  // Belegt ist eine Rechnung auch, wenn ein Teil in einem anderen Zeitraum den Beleg trägt (N1 der Durchsicht von Task 8).
+  const receipted = new Set([...receiptedSources(snapshot.costItems), ...(snapshot.receiptedSources ?? [])])
+  for (const group of possibleDuplicates(items, at, snapshot.comparableCostItems ?? snapshot.previousCostItems ?? [], receipted)) {
+    const invoices = invoicesOf(group, receipted)
+    const unreceipted = invoices.find((inv) => !inv.hasReceipt)
+    const first = unreceipted?.parts[0] ?? group[0]
     if (!first) continue
+    const manyParts = (unreceipted?.parts.length ?? 0) > 1
     const list = invoices.map(({ parts, hasReceipt }) => {
       const head = parts[0]
       const amount = parts.length > 1
@@ -4832,7 +4836,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const named = andList(list)
     warn('cost.possible-duplicate',
       `${named} stehen ${list.length === 2 ? `beide ${at.label}` : `${at.label} alle`} unter „${first.category}“. ${list.length === 2 ? 'Ist das dieselbe Rechnung' : 'Ist darunter dieselbe Rechnung zweimal'}, etwa einmal aus dem Vorjahr übernommen und einmal aus dem Beleg erfasst, wird sie zweimal verteilt. ` +
-      (list.length === 2
+      (manyParts
+        ? 'Dann bitte die Teile dieser Rechnung löschen, alle und nicht einen einzelnen, in der Regel die Rechnung ohne Beleg. '
+        : list.length === 2
         ? 'Dann bitte eine der beiden Positionen löschen, in der Regel die ohne Beleg. Soll die ohne Beleg bleiben, setzen Sie ihren Betrag auf den der Rechnung und löschen die andere. '
         : 'Dann bitte die doppelt erfasste Position löschen, in der Regel die ohne Beleg. ') +
       'Nur den Beleg zuzuordnen genügt nicht: Die Rechnung stünde weiter zweimal in der Summe. Sind es verschiedene Rechnungen, ist nichts zu tun.',

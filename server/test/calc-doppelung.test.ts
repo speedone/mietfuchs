@@ -117,3 +117,28 @@ test('Teile einer Rechnung im selben Zeitraum: als eine Rechnung genannt, belegt
   assert.doesNotMatch(text, /365,00 €, ohne Beleg/)
   assert.match(text, /eine der beiden Positionen löschen, in der Regel die ohne Beleg/)
 })
+
+// #455, Re-Durchsicht von Task 8 (N1): Eine Rechnung ist belegt, wenn ein Teil in irgendeinem Zeitraum den Beleg trägt
+// (so zählen Belegabdeckung, Abzeichen und Cockpit). Der Hinweis sah nur die Gruppe des Zeitraums und nannte den Teil
+// ohne Beleg trotzdem „ohne Beleg“, obwohl die Rechnung gedeckt ist.
+test('Teil einer Rechnung, deren Beleg an einem Teil in einem anderen Zeitraum hängt: nicht „ohne Beleg“, kein Hinweis', () => {
+  const found = dupes([
+    item({ id: 'a1', period: calendarPeriod(2025), description: 'Versicherung (anteilig)', category: 'Sachversicherung', amountCents: 30000, sourceId: 'qa', invoiceFile: 'a.pdf' }),
+    item({ id: 'a2', period: calendarPeriod(2026), description: 'Versicherung (anteilig)', category: 'Sachversicherung', amountCents: 60000, sourceId: 'qa' }),
+    item({ id: 'b1', period: calendarPeriod(2026), description: 'Versicherung Haftpflicht', category: 'Sachversicherung', amountCents: 40000, sourceId: 'qb', invoiceFile: 'b.pdf' }),
+  ])
+  assert.deepEqual(found, [])
+})
+
+test('Fehlt der Beleg einer Rechnung aus mehreren Teilen, spricht der Rat von den Teilen dieser Rechnung', () => {
+  const found = dupes([
+    item({ id: 'vj', period: calendarPeriod(2025) }),
+    item({ id: 'teil1', period: calendarPeriod(2026), description: 'Grundsteuer (anteilig)', amountCents: 12000, sourceId: 'q1' }),
+    item({ id: 'teil2', period: calendarPeriod(2026), description: 'Grundsteuer (anteilig)', amountCents: 24500, sourceId: 'q1' }),
+    item({ id: 'beleg', period: calendarPeriod(2026), amountCents: 61000, invoiceFile: 'gs.pdf' }),
+  ])
+  assert.equal(found.length, 1)
+  const text = found[0]?.text ?? ''
+  assert.match(text, /die Teile dieser Rechnung/)
+  assert.doesNotMatch(text, /eine der beiden Positionen löschen/)
+})
