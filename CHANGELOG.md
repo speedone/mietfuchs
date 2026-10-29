@@ -23,7 +23,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
     den Anteil seines Zeitraums; der Betrag wird im Formular geprüft.
   - An einem Teil ändern Sie weder Kostenart noch Einzelbeträge noch Betriebsstrom; die Meldung nennt den Weg (alle Teile
     löschen und neu erfassen, oder je Abrechnungszeitraum eine Position). Bei der Belegbuchung wird ein Teil nur geöffnet,
-    nicht verknüpft; der Hinweis sagt, die Zeile zu verwerfen, wenn der Teil stimmt.
+    nicht verknüpft; der Hinweis sagt, die Zeile zu verwerfen, wenn der Teil stimmt. Lösen Sie eine früher verknüpfte
+    Zeile an einem Teil, behält der Teil seinen Betrag; bisher stand danach die ganze Rechnung an ihm.
 
 ### Behoben
 

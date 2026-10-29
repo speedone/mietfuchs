@@ -279,6 +279,13 @@ export function planBooking(input: PlanInput, decisions: readonly LineDecision[]
   }
 
   // ---------- Die Summenregel je berührter Position ----------
+  // Der Beleg der Position nach dem Lösen: Er wechselt nur, wenn er der Beleg der gelösten Zeile ist und aus ihm keine
+  // Zeile mehr an der Position hängt; dann gilt der Beleg der ersten verbleibenden Zeile. Trägt sie keinen, ebenso.
+  const releasedInvoiceFile = (t: CostItem, links: Link[]): string | undefined =>
+    !t.invoiceFile || (t.invoiceFile === a.file && !links.some((l) => l.file === a.file)) ? links[0]?.file : undefined
+  const invoiceFileNotice = (t: CostItem, invoiceFile: string): string => (t.invoiceFile
+    ? `${quote(t.description)} trägt künftig den Beleg ${fileName(invoiceFile)}, denn mit ${fileName(t.invoiceFile)} ist keine Zeile mehr an ihr verknüpft.`
+    : `${quote(t.description)} trägt künftig den Beleg ${fileName(invoiceFile)}.`)
   const updateWrites: BookingWrite[] = []
   const touchedItems: PreviewItem[] = []
   for (const id of touched) {
@@ -295,6 +302,22 @@ export function planBooking(input: PlanInput, decisions: readonly LineDecision[]
       notices.push(`${quote(t.description)} behält ihren Betrag von ${euro(t.amountCents)}; mit ihr ist keine Zeile eines Belegs mehr verknüpft.`)
       touchedItems.push({
         costItemId: id, lines: [], description: t.description, category: t.category, year: startYearOf(t.period), beforeCents: t.amountCents,
+        afterCents: t.amountCents, beforeLabor35aCents: t.labor35aCents ?? null, afterLabor35aCents: t.labor35aCents ?? null,
+      })
+      continue
+    }
+    // Integrationsdurchsicht von #467 (I2): Hierher kommt ein Teil einer aufgeteilten Rechnung nur über das Lösen, denn
+    // Verknüpfen lehnt ihn ab. Die Summe der verbleibenden Zeilen wäre die ganze Rechnung, und die übrigen Teile stünden
+    // zusätzlich da. Der Teil behält seinen Betrag; gelöst wird nur die Verknüpfung.
+    if (isInvoicePart(input.rules, t)) {
+      const invoiceFile = released.has(id) ? releasedInvoiceFile(t, links) : undefined
+      notices.push(`${quote(t.description)} ist ein Teil einer nach Tagen aufgeteilten Rechnung und behält ihren Betrag von ${euro(t.amountCents)}; gelöst wird nur die Verknüpfung. Hat sich der Betrag der Rechnung geändert, öffnen Sie die Position und berichtigen Sie ihn dort.`)
+      if (invoiceFile !== undefined && invoiceFile !== t.invoiceFile) {
+        notices.push(invoiceFileNotice(t, invoiceFile))
+        updateWrites.push({ kind: 'updateItem', id, patch: { amountCents: t.amountCents, labor35aCents: t.labor35aCents ?? null, invoiceFile } })
+      }
+      touchedItems.push({
+        costItemId: id, lines: ownLines, description: t.description, category: t.category, year: startYearOf(t.period), beforeCents: t.amountCents,
         afterCents: t.amountCents, beforeLabor35aCents: t.labor35aCents ?? null, afterLabor35aCents: t.labor35aCents ?? null,
       })
       continue
@@ -345,12 +368,8 @@ export function planBooking(input: PlanInput, decisions: readonly LineDecision[]
     // nie aber der gerade gelöste. Ein von Hand angehängter Beleg wird nie ersetzt.
     let invoiceFile: string | undefined
     if (released.has(id)) {
-      if (!t.invoiceFile || (t.invoiceFile === a.file && !links.some((l) => l.file === a.file))) invoiceFile = links[0]?.file
-      if (invoiceFile !== undefined && invoiceFile !== t.invoiceFile) {
-        notices.push(t.invoiceFile
-          ? `${quote(t.description)} trägt künftig den Beleg ${fileName(invoiceFile)}, denn mit ${fileName(t.invoiceFile)} ist keine Zeile mehr an ihr verknüpft.`
-          : `${quote(t.description)} trägt künftig den Beleg ${fileName(invoiceFile)}.`)
-      }
+      invoiceFile = releasedInvoiceFile(t, links)
+      if (invoiceFile !== undefined && invoiceFile !== t.invoiceFile) notices.push(invoiceFileNotice(t, invoiceFile))
     } else if (!t.invoiceFile) {
       invoiceFile = a.file
     }

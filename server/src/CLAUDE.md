@@ -423,7 +423,7 @@ einander nicht. Belegt ist eine Rechnung, wenn ein Teil in irgendeinem Zeitraum 
 Schnappschuss trägt `receiptedSources`, weil er sonst nur seinen Zeitraum sieht). Dieselbe Regel gilt für Belegabdeckung,
 Abzeichen, Cockpit und Belegmappe (`isItemCovered` mit `partsBySource`); „Hier beheben“ führt nie zu einem Teil einer
 belegten Rechnung. Die Kostenliste zeigt unter einem Teil „Teil von N“. Bei der Belegbuchung ist ein Teil kein Ziel zum
-Verknüpfen (`formOnly`, `part`): Die Zeile wird verworfen, wenn der Teil stimmt. Das Steuer-ZIP bleibt je Position.
+Verknüpfen (`formOnly`, `part`): Die Zeile wird verworfen, wenn der Teil stimmt. Lösen lässt seinen Betrag stehen. Das Steuer-ZIP bleibt je Position.
 
 Ist eine aufgeteilte Rechnung an der Gruppe beteiligt, richtet sich der Rat nach der Quelle, nicht nach der Zahl der
 Teile im Zeitraum (die übrigen sieht die Gruppe nicht): nie „setzen Sie ihren Betrag auf den der Rechnung“, gelöscht
@@ -464,7 +464,8 @@ Eine Rechnung landet genau einmal in den Kosten, weil **der Server bucht, nicht 
   Kandidat jeder seiner Zeilen, gleich welcher Kostenart (`lineCandidates`): rot, Anlegen nur mit
   Bestätigung. Derselbe Beleg kann nicht zweimal an dieselbe Position.
 - Beim Lösen einer Zeile wechselt der Beleg der Position nur, wenn der gelöste ihr Beleg war.
-  Verwerfen ergibt einen Hinweis je Zeile.
+  Verwerfen ergibt einen Hinweis je Zeile. **Ein Teil einer aufgeteilten Rechnung** (`isInvoicePart`) behält beim
+  Lösen seinen Betrag (die Summe der übrigen Zeilen wäre die ganze Rechnung); die Vorschau sagt es.
 - **Eine Zeile wird nie zweimal gebucht**: „genau so gebucht“ ist Erfolg ohne Änderung
   (Doppelklick, Wiederholung), **jede Abweichung 409 mit aktuellem Stand**. Die Vorschau trägt eine
   Marke (`token`, SHA-256 über `tokenSource`); weicht der Stand ab, 409 mit neuer Vorschau. Gebucht
