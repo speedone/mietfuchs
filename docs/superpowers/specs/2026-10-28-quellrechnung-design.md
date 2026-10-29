@@ -57,7 +57,9 @@ anderes als die Teile.
 
 ### `cost_items.source_id` (neu)
 
-TEXT, NULL-fähig, → `cost_sources(id)` **ON DELETE RESTRICT**. Eine Quelle wird nie gelöscht, solange
+TEXT, NULL-fähig, → `cost_sources(id)` **ON DELETE RESTRICT** im Schema; in der Datei NO ACTION, weil drizzle-kit
+bei `ALTER TABLE … ADD` kein `ON DELETE` schreibt, bis ein späterer Schritt `cost_items` neu baut (unter
+`defer_foreign_keys` wird dann erst beim Festschreiben geprüft). Eine Quelle wird nie gelöscht, solange
 ein Teil auf sie zeigt; sie fällt mit ihrem letzten Teil weg (`costItemCollection.remove` löscht eine
 Quelle ohne Teile im selben Vorgang). `NULL` heißt: keine aufgeteilte Rechnung, oder ein alter Teil ohne
 eindeutige Zuordnung.
