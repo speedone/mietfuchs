@@ -272,6 +272,21 @@ test('Zählerwechsel: Eichjahr des neuen Zählers geht mit der Ablesung hinaus, 
   expect(calls[0]).toEqual({ url: '/api/readings', method: 'POST', body: { meterId: 'm1', date: '2025-06-30', value: 5, replacement: true, oldEndValue: 980, newCalibratedUntil: 2031 } })
 })
 
+// Durchsicht: Ein Heizkostenverteiler ist nicht eichpflichtig; das Feld erscheint dort auch beim Wechsel nicht.
+test('Zählerwechsel am Heizkostenverteiler: kein Feld für das Eichjahr', async () => {
+  const before = METERS
+  METERS = [{ id: 'm1', propertyId: 'objekt-1', name: 'HKV Bad', unitId: 'u1', type: 'hkv', unit: 'Einheiten' }]
+  try {
+    stubWithUrls()
+    const box = await openReadingForm()
+    fireEvent.click(within(box).getByLabelText(/Zählerwechsel/))
+    expect(within(box).getByLabelText(/^Endstand alter Zähler/)).toBeTruthy()
+    expect(within(box).queryByLabelText(/Neuer Zähler geeicht bis Ende/)).toBeNull()
+  } finally {
+    METERS = before
+  }
+})
+
 // Durchsicht S1: Ein Doppelklick auf „Anlegen“ legte die Ablesung zweimal an (zwei gleiche Stände am selben Tag, #69).
 test('Ablesung: Doppelklick und Strg+S legen genau eine an', async () => {
   stubWithUrls()

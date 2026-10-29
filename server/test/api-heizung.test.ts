@@ -1028,6 +1028,16 @@ test('Zählerwechsel mit Eichjahr des neuen Zählers: Jahr am Zähler, Warnung w
     assert.equal(keineZahl.status, 400)
     assert.match(await errorFrom(keineZahl), /Eichjahr ist keine Jahreszahl/)
     assert.equal((await s.api<unknown[]>('/api/readings')).length, 1, 'eine abgelehnte Angabe nimmt die Ablesung nicht mit')
+    // Durchsicht: ohne neues Jahr bleibt die Warnung stehen (Gegenprobe), und ein `null` ist wie nicht gesendet,
+    // löscht also nicht still das Jahr am Zähler.
+    const kontrolle = await s.api<Meter>('/api/meters', jsonPost({ name: 'Kaltwasser OG', unitId: unit.id, type: 'kaltwasser', unit: 'm³', calibratedUntil: 2024 }))
+    await s.api('/api/readings', jsonPost({ meterId: kontrolle.id, date: '2024-12-31', value: 10 }))
+    assert.equal((await post({ meterId: kontrolle.id, date: '2025-03-31', value: 0, replacement: true, oldEndValue: 20, newCalibratedUntil: null })).status, 201)
+    await s.api('/api/readings', jsonPost({ meterId: kontrolle.id, date: '2025-12-31', value: 30 }))
+    const ohneJahr = (await s.api<Meter[]>('/api/meters')).find((m) => m.id === kontrolle.id) ?? assert.fail('Kontrollzähler fehlt')
+    assert.equal(ohneJahr.calibratedUntil, 2024)
+    const vorher = await s.api<{ meterId: string; notices: Notice[] }[]>('/api/consumption/2025')
+    assert.deepEqual(vorher.find((z) => z.meterId === kontrolle.id)?.notices.map((n) => n.code), ['meter.calibration-overdue'])
     const wechsel = await post({ meterId: meter.id, date: '2025-03-31', value: 0, replacement: true, oldEndValue: 120, newCalibratedUntil: 2031 })
     assert.equal(wechsel.status, 201)
     const gespeichert: unknown = await wechsel.json()
@@ -1039,6 +1049,12 @@ test('Zählerwechsel mit Eichjahr des neuen Zählers: Jahr am Zähler, Warnung w
     const zeile = zeilen.find((z) => z.meterId === meter.id) ?? assert.fail('Zähler fehlt')
     assert.deepEqual(zeile.notices.map((n) => n.code), [])
     assert.equal(zeile.consumption, 80)
+
+    // Durchsicht: Beim Ändern einer Ablesung gibt es das Jahr nicht; still verworfen sähe es aus wie gespeichert.
+    const eine = (await s.api<{ id: string; meterId: string }[]>('/api/readings')).find((r) => r.meterId === meter.id) ?? assert.fail('keine Ablesung')
+    const geaendert = await fetch(`${s.base}/api/readings/${eine.id}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ newCalibratedUntil: 2033 }) })
+    assert.equal(geaendert.status, 400)
+    assert.match(await errorFrom(geaendert), /Zähler bearbeiten/)
 
     const hkv = await s.api<Meter>('/api/meters', jsonPost({ name: 'HKV', unitId: unit.id, type: 'hkv', unit: 'Einheiten' }))
     const amHkv = await post({ meterId: hkv.id, date: '2025-03-31', value: 0, replacement: true, oldEndValue: 5, newCalibratedUntil: 2031 })

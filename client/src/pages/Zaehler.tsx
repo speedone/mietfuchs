@@ -284,7 +284,9 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
           {readingForm.replacement && asksReplacementCalibration(readingMeter) && (
             <YearField
               label="Neuer Zähler geeicht bis Ende (Jahr)"
-              hint={<>{replacementCalibrationHint(readingMeter)} Die <Term id="meterCalibration">Eichfrist</Term> endet mit dem Ende dieses Jahres; es steht in der Mitteilung des Messdienstes oder auf dem Eichschein.</>}
+              hint={<>{replacementCalibrationHint(readingMeter)} Die <Term id="meterCalibration">Eichfrist</Term> endet mit dem Ende dieses Jahres; das Jahr steht in der Mitteilung des Messdienstes oder auf dem Eichschein.</>}
+              // Blättern beginnt beim Jahr des Wechsels, nicht bei heute (Durchsicht).
+              today={readingForm.date || undefined}
               value={readingForm.newCalibratedUntil}
               onChange={(newCalibratedUntil) => setReadingForm({ ...readingForm, newCalibratedUntil })}
               {...readingError.field('newCalibratedUntil')}

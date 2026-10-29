@@ -674,7 +674,8 @@ Hinweise: `allocation.not-agreed` (nur Info), `allocation.other-unanswered` (fä
   Leitsatz c (calibration.test.ts hält beides fest). Gas- und Stromzähler: Feld ohne Vorschlag.
   **Beim Zählerwechsel** nimmt `POST /api/readings` mit `replacement: true` ein `newCalibratedUntil` mit
   (`createReading` in db/repository.ts): das Jahr des neuen Geräts, in einer Transaktion mit der Ablesung an den
-  Zähler geschrieben und geprüft wie dort (`guardMeter`); ohne Wechsel 400. Das bisherige Jahr wird ersetzt, nicht
+  Zähler geschrieben und geprüft wie dort (`guardMeter`); ohne Wechsel 400, `null` wie nicht gesendet, im `PUT` einer
+  Ablesung 400. Gefragt wird nur im Fenster der Seite Zähler, nicht in der Schnellerfassung. Das bisherige Jahr wird ersetzt, nicht
   aufbewahrt: Für einen Zeitraum, in dem das ausgebaute Gerät schon abgelaufen war, entfällt dessen Warnung
   (bekannte Grenze; das Jahr je Gerät hieße eine Spalte an der Ablesung).
 

@@ -4,6 +4,7 @@ import { parseQuantity } from './costForm'
 import type { Problem } from './formProblems'
 import { parseYearText } from './yearText'
 import type { Meter } from './types'
+import { asksCalibration } from './meterForm'
 
 // `newCalibratedUntil`: das Eichjahr des neuen Zählers beim Wechsel (Praxistest), als Text wie das Jahresfeld.
 export type ReadingForm = { date: string; value: string; replacement: boolean; oldEndValue: string; newCalibratedUntil: string; note: string }
@@ -66,9 +67,9 @@ export function buildReadingBody(form: ReadingForm, meterId: string, asksYear = 
   }
 }
 
-// Das Eichjahr des neuen Geräts fragt das Fenster nur bei eichpflichtigen Zählern (wie `asksCalibration` im
-// Zählerformular: nie am Heizkostenverteiler).
-export const asksReplacementCalibration = (meter: Pick<Meter, 'type'>): boolean => meter.type !== 'hkv'
+// Das Eichjahr des neuen Geräts fragt das Fenster nach derselben Regel wie das Zählerformular (nie am
+// Heizkostenverteiler).
+export const asksReplacementCalibration = (meter: Pick<Meter, 'type'>): boolean => asksCalibration(meter)
 
 // Was mit dem bisherigen Jahr geschieht: Es bleibt, wenn das Feld leer ist, und gilt dann weiter als das des Zählers.
 export function replacementCalibrationHint(meter: Pick<Meter, 'calibratedUntil'>): string {

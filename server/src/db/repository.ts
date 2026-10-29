@@ -604,6 +604,11 @@ function mergeMeter(current: Meter, body: unknown): Meter {
 }
 
 function mergeReading(current: Reading, body: unknown): Reading {
+  // Das Eichjahr des neuen Geräts gibt es nur beim Anlegen des Wechsels (`createReading`); beim Ändern einer Ablesung
+  // fiele es sonst still weg und sähe aus wie gespeichert (Durchsicht).
+  if (current.meterId !== '' && has(body, 'newCalibratedUntil')) {
+    throw new HeatingError(400, 'Das Eichjahr eines neuen Zählers lässt sich nur beim Erfassen des Zählerwechsels mitgeben. Ändern Sie es über „Zähler bearbeiten“.')
+  }
   return {
     id: current.id,
     meterId: merged(body, 'meterId', current.meterId, (v) => asText(v, '')),
@@ -2470,10 +2475,11 @@ export async function createEntity(db: Database, coll: CollectionName, id: strin
 // `newCalibratedUntil` ist keine Spalte der Ablesung, sondern ein Teilrumpf für den Zähler: Ablesung und Jahr gehen in
 // einer Transaktion hinein, eine abgelehnte Jahreszahl nimmt also die Ablesung mit. Ohne den Schlüssel bleibt alles
 // wie bisher (createEntity). Nur bei einem Wechsel, denn sonst ist es dasselbe Gerät und das Jahr gehört ins
-// Zählerformular; geprüft wird das Jahr wie dort (`guardMeter`, auch: nie am Heizkostenverteiler).
+// Zählerformular; geprüft wird das Jahr wie dort (`guardMeter`, auch: nie am Heizkostenverteiler). `null` gilt wie
+// nicht gesendet (Durchsicht): Es löschte sonst still das Jahr am Zähler, und die Oberfläche sendet ein leeres Feld nie.
 export async function createReading(db: Database, id: string, body: unknown): Promise<CollectionEntity> {
-  if (!has(body, 'newCalibratedUntil')) return createEntity(db, 'readings', id, body)
-  const { newCalibratedUntil, ...rest } = Object(body) as Record<string, unknown>
+  const { newCalibratedUntil, ...rest } = isObject(body) ? Object(body) as Record<string, unknown> : {}
+  if (newCalibratedUntil === undefined || newCalibratedUntil === null) return createEntity(db, 'readings', id, isObject(body) ? rest : body)
   const reading = mergeReading(emptyReading(id), rest)
   if (reading.replacement !== true) {
     throw new HeatingError(400, 'Das Eichjahr eines neuen Zählers gibt es nur bei einem Zählerwechsel. Ändern Sie das Eichjahr sonst über „Zähler bearbeiten“.')
