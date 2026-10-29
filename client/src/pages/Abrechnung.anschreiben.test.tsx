@@ -508,3 +508,30 @@ test('K7: eine Rücksendeangabe, die nicht in die Vermerkzone passt, wird vor de
   await screen.findAllByText(/Rücksendeangabe zu lang/, {}, SLOW)
   expect(screen.getAllByText('Rücksendeangabe zu lang')).toHaveLength(2)
 })
+
+// Praxistest: Ohne Namen des Vermieters druckte das Anschreiben ohne Absender und Unterschrift, und „Zu prüfen“ sagte
+// nichts. Eine Anpassung nach § 560 Abs. 4 BGB braucht Textform; dafür muss der Erklärende genannt sein (§ 126b BGB).
+test('ohne Namen des Vermieters: „Absender fehlt“ in „Zu prüfen“ mit Weg in die Einstellungen', async () => {
+  const navigated: unknown[] = []
+  const noName: Settings = { ...SETTINGS, landlordName: '' }
+  const l = settlement.letters?.t1
+  if (!l) throw new Error('kein Anschreiben')
+  settlement = { ...settlement, letters: { t1: { ...l, sender: { name: '', returnLine: 'Lindenweg 12, 12345 Musterstadt', address: '', footer: '' }, texts: { ...l.texts, signature: '' } } } }
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <UIProvider><Abrechnung settings={noName} units={[]} tenancies={TENANCIES} reload={async () => {}} onNavigate={(t) => navigated.push(t)} /></UIProvider>
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  expect(await screen.findByText('Absender fehlt', {}, SLOW)).toBeTruthy()
+  expect(screen.getByText(/§ 126b BGB/)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: /Hier beheben → Einstellungen/ }))
+  expect(navigated).toEqual(['einstellungen'])
+})
+
+test('mit Namen des Vermieters: kein „Absender fehlt“', async () => {
+  show()
+  await screen.findByRole('region', { name: 'Anschreiben an Meier' }, SLOW)
+  expect(screen.queryByText('Absender fehlt')).toBeNull()
+})

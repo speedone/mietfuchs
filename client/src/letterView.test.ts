@@ -1,8 +1,8 @@
 // Der Druck der Abrechnung (#415): Informationsblock, Kopf der Abrechnung, Fußvermerk, Ergebniskasten und die Tabelle nach
 // § 35a EStG, ohne DOM geprüft. Die Werte kommen aus dem Anschreiben (abgeschlossen also eingefroren) und der Abrechnung.
-import { expect, test } from 'vitest'
+import { describe, expect, test } from 'vitest'
 import type { Statement, StatementLetter } from './types'
-import { contactRows, footnoteText, infoRows, labor35aTable, resultRows, statementHeadRows } from './letterView'
+import { contactRows, footnoteText, infoRows, labor35aTable, resultRows, statementHeadRows, senderMissing } from './letterView'
 
 const plain = (s: string) => s.replace(/[\u00a0\u202f]/g, ' ')
 
@@ -113,4 +113,19 @@ test('§ 35a EStG als Tabelle: Leistung, Gesamtbetrag, Lohnanteil, Ihr Anteil', 
     { service: 'Schornsteinfeger', total: '', labor: '', share: '16,85 €' },
   ] })
   expect(labor35aTable(st({ rows }), null).full).toBe(false)
+})
+
+// Praxistest: Ohne Namen des Vermieters druckte das Anschreiben weder Absender noch Unterschrift, ohne Warnung.
+describe('Absender fehlt (senderMissing)', () => {
+  test('ohne Namen und ohne Unterschrift fehlt der Absender; ein Name an einer der beiden Stellen genügt', () => {
+    expect(senderMissing({ sender: '', signature: '', paper: false })).toBe(true)
+    expect(senderMissing({ sender: '  ', signature: null, paper: false })).toBe(true)
+    expect(senderMissing({ sender: 'Max Vermieter', signature: '', paper: false })).toBe(false)
+    // Eine eigene Unterschrift nennt den Erklärenden ebenso (§ 126b BGB verlangt keinen Briefkopf).
+    expect(senderMissing({ sender: '', signature: 'Erika Muster', paper: false })).toBe(false)
+  })
+
+  test('mit Briefpapier trägt das Papier den Absender; Mietfuchs sieht es nicht und warnt nicht', () => {
+    expect(senderMissing({ sender: '', signature: '', paper: true })).toBe(false)
+  })
 })

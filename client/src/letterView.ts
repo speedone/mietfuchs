@@ -173,3 +173,17 @@ export function labor35aTable(st: Statement, letter: Pick<StatementLetter, 'labo
     }),
   }
 }
+
+// Absender fehlt (Praxistest): Ohne Namen des Vermieters (Einstellungen oder Objekt) druckt das Anschreiben weder
+// Absender noch Unterschrift, denn beide sind `{Vermieter}`. Eine Anpassung der Vorauszahlungen nach § 560 Abs. 4 BGB
+// braucht Textform, und dafür muss die Person des Erklärenden genannt sein (§ 126b BGB). Eine eigene Unterschrift mit
+// Namen genügt dafür; mit Briefpapier trägt das Papier den Absender, und Mietfuchs sieht nicht, was darauf steht.
+// Eine Warnung, keine Sperre: Gedruckt wird trotzdem.
+export function senderMissing(p: { sender: string, signature: string | null, paper: boolean }): boolean {
+  if (p.paper) return false
+  return p.sender.trim() === '' && (p.signature ?? '').trim() === ''
+}
+export const SENDER_MISSING_TEXT =
+  'Im Anschreiben steht kein Name des Vermieters: Gedruckt werden weder Absender noch Unterschrift. ' +
+  'Eine Anpassung der Vorauszahlungen nach § 560 Abs. 4 BGB braucht Textform, und dafür muss die Person des Erklärenden genannt sein (§ 126b BGB). ' +
+  'Tragen Sie Ihren Namen in den Einstellungen unter „Name des Vermieters“ ein, bei einem Objekt mit eigenem Vermieter in den Stammdaten des Objekts.'

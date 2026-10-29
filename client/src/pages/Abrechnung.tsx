@@ -59,7 +59,7 @@ import { suggestionWithoutHeating } from '../heatingSettlementView'
 import LetterDrawer, { type LetterSave } from '../components/LetterDrawer'
 import PrepaymentStepsCard from '../components/PrepaymentStepsCard'
 import { sentMonthLines } from '../prepaymentSteps'
-import { asTemplates, footnoteText, infoRows, labor35aTable, letterOf, letterParagraphs, RETURN_LINE_MAX, resultRows, returnLineTooLong, statementHeadRows } from '../letterView'
+import { asTemplates, footnoteText, infoRows, labor35aTable, letterOf, letterParagraphs, RETURN_LINE_MAX, resultRows, returnLineTooLong, SENDER_MISSING_TEXT, senderMissing, statementHeadRows } from '../letterView'
 
 type Props = {
   settings: Settings | null
@@ -667,6 +667,12 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
     if (v.head && returnLineTooLong(v.head.returnLine)) out.push({ code: 'page.return-line', level: 'warning', title: 'Rücksendeangabe zu lang', text: returnLineText(v.head.returnLine) })
     const field = v.head ? addressFieldWarning(v.head.recipient) : null
     if (field) out.push({ code: 'page.address-field', level: 'warning', title: `Anschrift zu lang für das Fensterfeld (${who})`, text: field })
+    // Absender fehlt (Praxistest), solange die Abrechnung offen ist; danach gilt der eingefrorene Absender, und nur
+    // Wiederöffnen hilft. Je Abrechnung einmal (uniqueChecks), denn der Absender ist bei allen Mietern derselbe.
+    const signature = v.showLetter ? v.paragraphs.find((p) => p.block === 'signature')?.text ?? '' : ''
+    if (!data?.closed && v.head && senderMissing({ sender: v.head.sender, signature, paper: !!v.head.paper })) {
+      out.push({ code: 'page.sender', level: 'warning', title: 'Absender fehlt', text: SENDER_MISSING_TEXT })
+    }
     return out
   }
   // Je Hinweis einmal (die Rücksendeangabe ist bei allen Mietern dieselbe).
@@ -677,6 +683,11 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
   // Je Mieter die Titel der eigenen Prüfungen, als Merker in der Tabelle der Übersicht.
   const checksByTenancy = new Map(views.map((v) => [v.st.tenancyId, pageChecks(v).map((n) => (n.code === 'page.address' ? 'Anschrift prüfen' : n.title.replace(/ \(.*\)$/, '')))]))
   const fixOf = (n: Notice) => {
+    // Absender fehlt: zum Namen des Vermieters, in die Stammdaten, wenn das Objekt einen eigenen Namen führt.
+    if (n.code === 'page.sender' && onNavigate) {
+      const own = property?.landlordName != null
+      return { label: own ? 'Hier beheben → Stammdaten' : 'Hier beheben → Einstellungen', onClick: () => onNavigate(own ? 'stammdaten' : 'einstellungen') }
+    }
     const t = noticeTarget(n.subject)
     return t && onNavigate ? { label: t.label, onClick: () => onNavigate(t.tab, t.focus) } : null
   }
