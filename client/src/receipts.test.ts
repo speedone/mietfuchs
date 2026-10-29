@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { calendarPeriod, periodKey } from '../../shared/period.ts'
 import type { CostItem, UploadInfo } from './types'
-import { amountCheckBody, amountCheckMode, attachChoices, buildFolder, coverage, coverageCheck, duplicateHints, filesByItem, inboxFor, inboxOf, inboxPage, INBOX_STEP, isItemCovered, matchesQuery, receiptCards, yearSections } from './receipts'
+import { amountCheckBody, amountCheckMode, attachChoices, buildFolder, coverage, coverageCheck, duplicateHints, filesByItem, inboxFor, inboxOf, inboxPage, INBOX_STEP, isItemCovered, matchesQuery, partsBySource, receiptCards, yearSections } from './receipts'
 
 const upload = (file: string, extra: Partial<UploadInfo> = {}): UploadInfo => ({
   file, size: 10, mtime: '2026-01-02T10:00:00.000Z', originalName: file.replace(/^\d+_/, ''),
@@ -159,6 +159,51 @@ describe('Belegabdeckung', () => {
     expect(cov.percent).toBe(60)
     // Ein verknüpfter Beleg, dessen Datei fehlt, zählt als fehlend.
     expect(cov.missing.map((c) => c.id)).toEqual(['b', 'c'])
+  })
+
+  // #455: Die Teile einer aufgeteilten Rechnung tragen eine Quelle. Der Beleg ist die ganze Rechnung; er hängt oft
+  // nur am ersten Teil.
+  it('Belegabdeckung zählt eine aufgeteilte Rechnung einmal, belegt, wenn ein Teil den Beleg trägt', () => {
+    const teile = [
+      item('t1', { amountCents: 12000, sourceId: 'q1', invoiceFile: '1_a.pdf' }),
+      item('t2', { amountCents: 24500, sourceId: 'q1' }),
+      item('b', { amountCents: 30000 }),
+    ]
+    const cov = coverage(teile, { propertyId: 'p1', year: 2025 }, new Set(['1_a.pdf']))
+    expect(cov.positions).toBe(2)
+    expect(cov.covered).toBe(1)
+    expect(cov.totalCents).toBe(66500)
+    expect(cov.coveredCents).toBe(36500)
+    expect(cov.percent).toBe(54)
+    expect(cov.missing.map((c) => c.id)).toEqual(['b'])
+    // Liegt der Teil mit Beleg in einem anderen Jahr, deckt er den Teil dieses Jahres trotzdem
+    const ueberJahre = [
+      item('t0', { period: calendarPeriod(2024), amountCents: 12000, sourceId: 'q1', invoiceFile: '1_a.pdf' }),
+      item('t2', { amountCents: 24500, sourceId: 'q1' }),
+    ]
+    expect(coverage(ueberJahre, { propertyId: 'p1', year: 2025 }, new Set(['1_a.pdf'])))
+      .toMatchObject({ positions: 1, covered: 1, coveredCents: 24500, percent: 100 })
+    // Ohne Beleg an irgendeinem Teil fehlt die Rechnung einmal, mit allen ihren Teilen
+    const ohne = coverage(teile.map((c) => ({ ...c, invoiceFile: undefined })), { propertyId: 'p1', year: 2025 }, null)
+    expect(ohne).toMatchObject({ positions: 2, covered: 0 })
+    expect(ohne.missing.map((c) => c.id)).toEqual(['t1', 't2', 'b'])
+    expect(coverageCheck(teile.map((c) => ({ ...c, invoiceFile: undefined }))).detail).toMatch(/^2 von 2 Positionen ohne Beleg/)
+  })
+
+  // Dieselbe Regel für das Abzeichen am Register und die Liste ohne Beleg im Belegordner (K2)
+  it('ein Teil, dessen Rechnung über einen anderen Teil belegt ist, steht im Belegordner nicht als ohne Beleg', () => {
+    const teile = [
+      item('t0', { period: calendarPeriod(2024), amountCents: 12000, sourceId: 'q1', invoiceFile: '1_a.pdf' }),
+      item('t2', { amountCents: 24500, sourceId: 'q1' }),
+    ]
+    const t2 = teile[1] ?? expect.fail('t2 fehlt')
+    const present = new Set(['1_a.pdf'])
+    expect(isItemCovered(t2, present, new Map())).toBe(false)
+    expect(isItemCovered(t2, present, new Map(), partsBySource(teile))).toBe(true)
+    expect(isItemCovered(t2, new Set<string>(), new Map(), partsBySource(teile))).toBe(false)
+    const folder = buildFolder([upload('1_a.pdf')], teile, { propertyId: 'p1', year: 2025 }, '')
+    expect(folder.groups[0]?.missing).toEqual([])
+    expect(folder.groups[0]?.cards.map((c) => c.upload.file)).toEqual(['1_a.pdf'])
   })
 
   it('zeigt 100 % nur, wenn wirklich nichts fehlt', () => {

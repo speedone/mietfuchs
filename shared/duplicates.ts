@@ -13,7 +13,7 @@ import type { PeriodContext } from './period.ts'
 import { BROAD_CATEGORIES } from './allocation.ts'
 
 export type DuplicateItem = Pick<CostItem, 'id' | 'period' | 'category' | 'description'> &
-  Partial<Pick<CostItem, 'propertyId' | 'vendor' | 'invoiceFile' | 'amountCents'>>
+  Partial<Pick<CostItem, 'propertyId' | 'vendor' | 'invoiceFile' | 'amountCents' | 'sourceId'>>
 
 export type CostQuery = {
   propertyId?: string | null
@@ -83,17 +83,25 @@ export function sameCostCandidates<T extends DuplicateItem>(items: readonly T[],
 
 const isCredit = (i: DuplicateItem): boolean => (i.amountCents ?? 0) < 0
 
+// Die Rechnung, zu der eine Position gehört (#455): Die Teile einer Quelle sind eine Rechnung, jede andere Position
+// ist ihre eigene.
+const invoiceOf = (i: DuplicateItem): string => (i.sourceId ? `q:${i.sourceId}` : `p:${i.id}`)
+const invoiceCount = (items: readonly DuplicateItem[]): number => new Set(items.map(invoiceOf)).size
+// Eine Rechnung gilt als belegt, wenn einer ihrer Teile den Beleg trägt.
+const withReceipt = (items: readonly DuplicateItem[]): Set<string> => new Set(items.filter((i) => i.invoiceFile).map(invoiceOf))
+
 const queryOf = (i: DuplicateItem, period: PeriodKey = i.period): CostQuery => ({
   propertyId: i.propertyId, period, category: i.category, description: i.description, vendor: i.vendor, amountCents: i.amountCents, excludeId: i.id,
 })
 
 // Die Gruppen möglicher Doppelungen eines Zeitraums, für den Hinweis der Abrechnung: zwei oder mehr
-// Positionen, die nach der Regel oben zusammengehören, mindestens eine davon ohne Beleg, und dazu
-// (a) mindestens eine mit Beleg, also der Fall „übernommen und dann aus dem Beleg erfasst“, oder
-// (b) ein Vorzeitraum mit Positionen dieser Art, und in diesem sind es mehr. Ohne Vorzeitraum und ganz
-// ohne Belege bleibt es still: Zwei von Hand erfasste Versicherungen sind zwei Rechnungen, und der
-// Hinweis färbte die Ampel sonst dauerhaft (zweite Durchsicht). Ebenso still bleiben Restmüll und
-// Biomüll, beide aus dem Vorjahr übernommen: Das ist die Gliederung des Hauses.
+// Rechnungen (die Teile einer Quelle zählen als eine, #455), die nach der Regel oben zusammengehören,
+// mindestens eine davon ohne Beleg, und dazu (a) mindestens eine mit Beleg, also der Fall „übernommen
+// und dann aus dem Beleg erfasst“, oder (b) ein Vorzeitraum mit Positionen dieser Art, und in diesem
+// sind es mehr. Ohne Vorzeitraum und ganz ohne Belege bleibt es still: Zwei von Hand erfasste
+// Versicherungen sind zwei Rechnungen, und der Hinweis färbte die Ampel sonst dauerhaft (zweite
+// Durchsicht). Ebenso still bleiben Restmüll und Biomüll, beide aus dem Vorjahr übernommen: Das ist
+// die Gliederung des Hauses.
 export function possibleDuplicates<T extends DuplicateItem>(items: readonly T[], at: PeriodContext, previous: readonly DuplicateItem[] = []): T[][] {
   const own = items.filter((i) => i.period === at.key)
   const groupOf = new Map<string, T[]>()
@@ -117,12 +125,14 @@ export function possibleDuplicates<T extends DuplicateItem>(items: readonly T[],
     target.push(i)
     groupOf.set(i.id, target)
   }
+  // Gezählt wird je Rechnung (#455): Die Teile einer Quelle im selben Zeitraum melden einander nicht, und eine
+  // Rechnung ist belegt, wenn einer ihrer Teile den Beleg trägt. Gemeldet wird eine Gruppe mit allen ihren Positionen.
   return groups
-    .filter((g) => g.length >= 2 && g.some((i) => !i.invoiceFile))
+    .filter((g) => invoiceCount(g) >= 2 && g.some((i) => !withReceipt(g).has(invoiceOf(i))))
     .map((g) => own.filter((i) => g.includes(i)))
     .filter((g) => {
       if (g.some((i) => i.invoiceFile)) return true
       const before = previous.filter((p) => g.some((i) => sameCostCandidates([p], queryOf(i, at.previous)).length > 0))
-      return before.length > 0 && g.length > before.length
+      return before.length > 0 && invoiceCount(g) > invoiceCount(before)
     })
 }

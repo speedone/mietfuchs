@@ -60,6 +60,7 @@ import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { hotWaterOf } from '../../../shared/heatingPeriod.ts'
 import { serviceReceivesOperatingPower } from '../../../shared/operatingPower.ts'
 import { paidOnYear, splitPaidOnQuestions } from '../../../shared/paidOn.ts'
+import { sourceLabel } from '../costSource'
 import { alreadyCarried, carryKeyDetails, carryOverBody, carryOverForm, carryOverRows, withCarryAmount, type CarryRow } from '../carryOver'
 import { api, ApiError, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { aiSummary } from '../aiForm'
@@ -812,6 +813,8 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                   <td data-label="Beschreibung">
                     {i.description}
                     {!i.invoiceFile && i.vendor && <div className="muted">{i.vendor}</div>}
+                    {/* #455: ein Teil einer aufgeteilten Rechnung, die Summe über alle Zeiträume */}
+                    {sourceLabel(i, items) && <div className="muted">{sourceLabel(i, items)}</div>}
                   </td>
                   <td data-label="Umlageschlüssel">
                     {/* Nicht umlagefähig (#142): kein Schlüssel, die Position trägt der Vermieter. */}

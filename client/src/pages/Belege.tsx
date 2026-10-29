@@ -13,7 +13,7 @@ import { closedCheckPath, filedUnderSettlement, type PlantPeriods } from '../cos
 import { isCalendarRules, periodContaining, periodLabel, periodsBetween, rulesOf, startYearOf } from '../../../shared/period.ts'
 import { renderInvoicePages, renderThumbnail } from '../pdfPreview'
 import { buildTenantFolderPdf, isIndividualAmounts, planTenantFolder, type TenantFolderPlan } from '../tenantFolder'
-import { amountCheckBody, amountCheckMode, attachChoices, buildFolder, coverage, filesByItem, duplicateHints, inboxFor, inboxOf, inboxPage, INBOX_STEP, isItemCovered, matchesQuery, receiptCards, receiptName, yearSections, type CategoryGroup, type FolderFilter, type ReceiptCard, type ReceiptUpload } from '../receipts'
+import { amountCheckBody, amountCheckMode, attachChoices, buildFolder, coverage, filesByItem, duplicateHints, inboxFor, inboxOf, inboxPage, INBOX_STEP, isItemCovered, matchesQuery, partsBySource, receiptCards, receiptName, yearSections, type CategoryGroup, type FolderFilter, type ReceiptCard, type ReceiptUpload } from '../receipts'
 import { previewWhenVisible } from '../previewQueue'
 import { useFocusFirstNew } from '../focusNew'
 import Field from '../components/Field'
@@ -393,6 +393,8 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
   const [uploading, setUploading] = useState(0)
   const present = useMemo(() => new Set(uploads.map((u) => u.file)), [uploads])
   const booked = useMemo(() => filesByItem(uploads), [uploads])
+  // Die Teile je Rechnung (#455): Der Beleg eines Teils belegt auch die übrigen.
+  const parts = useMemo(() => partsBySource(costItems), [costItems])
   const propertyName = (id: string) => properties.find((p) => p.id === id)?.name || 'Ohne Namen'
   const showProperty = filter.propertyId === 'all' && properties.length > 1
   // Mappen gibt es je Objekt und Jahr; bei einem einzigen Objekt ist es dieses.
@@ -621,7 +623,7 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
   // Ein Register: eine Kostenart eines Jahres, mit den Belegen und den Positionen ohne Beleg
   const renderGroup = (g: CategoryGroup) => {
     // Wie die Belegabdeckung: auch ein Beleg über eine gebuchte Zeile deckt die Position (Durchsicht von PR #449, K2).
-    const ohne = g.items.filter((c) => !isItemCovered(c, present, booked)).length
+    const ohne = g.items.filter((c) => !isItemCovered(c, present, booked, parts)).length
     return (
       <details key={g.key} className="card receipt-group" open>
         <summary>

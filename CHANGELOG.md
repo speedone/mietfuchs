@@ -13,6 +13,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Zeitraum da; jeder Teil verweist jetzt auf seine Rechnung. Beim Update bekommen bestehende Teile, die eindeutig
   zusammengehören, diese Kennung von selbst, auch die aus einem eingespielten Backup. Keine Zahl ändert sich, auch keine abgeschlossene
   Abrechnung.
+- Die Teile einer aufgeteilten Rechnung zählen als eine Rechnung ([#455](https://github.com/speedone/mietfuchs/issues/455)):
+  In der Kostenliste steht unter einem Teil „Teil von 2 · Rechnung gesamt …“. Die Belegabdeckung in Belegordner und
+  Cockpit zählt die Rechnung einmal und belegt, sobald ein Teil den Beleg trägt, auch einer in einem anderen Zeitraum.
+  Zwei Teile derselben Rechnung im selben Zeitraum gelten im Hinweis auf doppelte Positionen nicht mehr als Doppelung.
 
 ### Behoben
 

@@ -134,6 +134,7 @@ export function buildFolder(uploads: ReceiptUpload[], items: CostItem[], filter:
   const cardByFile = new Map(cards.map((c) => [c.upload.file, c]))
   const cardsByItem = new Map<string, ReceiptCard[]>()
   for (const card of cards) for (const id of card.upload.bookedItemIds ?? []) cardsByItem.set(id, [...(cardsByItem.get(id) ?? []), card])
+  const parts = partsBySource(items)
   const groups = new Map<string, CategoryGroup>()
   for (const c of items) {
     if (!inScope(c, filter)) continue
@@ -146,8 +147,13 @@ export function buildFolder(uploads: ReceiptUpload[], items: CostItem[], filter:
     }
     g.sumCents += c.amountCents
     g.items.push(c)
-    const own = c.invoiceFile ? cardByFile.get(c.invoiceFile) : undefined
-    const all = [...(own ? [own] : []), ...(cardsByItem.get(c.id) ?? []).filter((x) => x !== own)]
+    const cardsOf = (x: CostItem): ReceiptCard[] => {
+      const own = x.invoiceFile ? cardByFile.get(x.invoiceFile) : undefined
+      return [...(own ? [own] : []), ...(cardsByItem.get(x.id) ?? []).filter((y) => y !== own)]
+    }
+    // Ohne eigenen Beleg trägt ein Teil den Beleg seiner Rechnung (#455), wie in der Belegabdeckung.
+    let all = cardsOf(c)
+    if (all.length === 0 && c.sourceId) all = [...new Set((parts.get(c.sourceId) ?? []).filter((x) => x.id !== c.id).flatMap(cardsOf))]
     if (all.length === 0) {
       // Ohne Beleg, oder der verknüpfte Beleg liegt nicht mehr im Ordner: beides fehlt.
       if (itemMatchesQuery(c, query)) g.missing.push(c)
@@ -241,8 +247,22 @@ export type Coverage = {
 // Ob eine Position einen Beleg hat: ihren eigenen oder einen, der nur über eine verknüpfte Zeile an ihr hängt
 // (Belegbuchung); gezählt wird nur eine vorhandene Datei, ohne Dateiliste (`null`) jeder Verweis. Dieselbe Regel
 // für Belegabdeckung, Cockpit und das Abzeichen am Register (Durchsicht von PR #449, K2).
-export function isItemCovered(c: CostItem, present: ReadonlySet<string> | null, booked: ReadonlyMap<string, readonly string[]>): boolean {
-  return [c.invoiceFile, ...(booked.get(c.id) ?? [])].some((f) => !!f && (present === null || present.has(f)))
+//
+// Eine aufgeteilte Rechnung (#455) ist mit einem Beleg belegt: Mit `parts` (aus `partsBySource`) deckt der Beleg
+// eines Teils auch die übrigen Teile derselben Quelle, gleich in welchem Zeitraum sie stehen.
+export function isItemCovered(c: CostItem, present: ReadonlySet<string> | null, booked: ReadonlyMap<string, readonly string[]>, parts: ReadonlyMap<string, readonly CostItem[]> = new Map()): boolean {
+  const own = (x: CostItem) => [x.invoiceFile, ...(booked.get(x.id) ?? [])].some((f) => !!f && (present === null || present.has(f)))
+  return own(c) || (!!c.sourceId && (parts.get(c.sourceId) ?? []).some((x) => x.id !== c.id && own(x)))
+}
+
+// Die Rechnung einer Position (#455): die Quelle ihrer Teile, sonst die Position selbst.
+const invoiceOf = (c: CostItem): string => (c.sourceId ? `q:${c.sourceId}` : `p:${c.id}`)
+
+// Die Teile je Quelle (#455), über alle Zeiträume; Positionen ohne Quelle fehlen.
+export function partsBySource(items: readonly CostItem[]): Map<string, CostItem[]> {
+  const out = new Map<string, CostItem[]>()
+  for (const c of items) if (c.sourceId) out.set(c.sourceId, [...(out.get(c.sourceId) ?? []), c])
+  return out
 }
 
 export function filesByItem(uploads: readonly ReceiptUpload[]): Map<string, string[]> {
@@ -259,19 +279,25 @@ export function filesByItem(uploads: readonly ReceiptUpload[]): Map<string, stri
 //
 // `present` sind die Dateien, die im Belegordner liegen. Ein Verweis auf eine Datei, die fehlt,
 // deckt nichts. Ohne die Liste (Cockpit) zählt der Verweis.
-export function coverage(items: CostItem[], filter: FolderFilter, present: Set<string> | null, booked: ReadonlyMap<string, readonly string[]> = new Map()): Coverage {
+//
+// Gezählt wird je Rechnung (#455): Die Teile einer Quelle sind eine Position, belegt, wenn einer von ihnen den Beleg
+// trägt, auch einer außerhalb der Auswahl (`parts`, Vorgabe aus `items`). Die Beträge sind die der Teile in der
+// Auswahl; `missing` nennt jeden Teil.
+export function coverage(items: CostItem[], filter: FolderFilter, present: Set<string> | null, booked: ReadonlyMap<string, readonly string[]> = new Map(), parts: ReadonlyMap<string, readonly CostItem[]> = partsBySource(items)): Coverage {
   const relevant = items.filter((c) => inScope(c, filter) && c.amountCents !== 0)
-  const isCovered = (c: CostItem) => isItemCovered(c, present, booked)
+  const isCovered = (c: CostItem) => isItemCovered(c, present, booked, parts)
   const covered = relevant.filter(isCovered)
+  const positions = new Set(relevant.map(invoiceOf)).size
+  const coveredPositions = new Set(covered.map(invoiceOf)).size
   const totalCents = relevant.reduce((a, c) => a + Math.abs(c.amountCents), 0)
   const coveredCents = covered.reduce((a, c) => a + Math.abs(c.amountCents), 0)
   const percent = totalCents === 0 ? 100 : Math.floor((coveredCents / totalCents) * 100)
   return {
-    positions: relevant.length,
-    covered: covered.length,
+    positions,
+    covered: coveredPositions,
     totalCents,
     coveredCents,
-    percent: covered.length < relevant.length ? Math.min(percent, 99) : 100,
+    percent: coveredPositions < positions ? Math.min(percent, 99) : 100,
     missing: relevant.filter((c) => !isCovered(c)),
   }
 }
@@ -283,9 +309,12 @@ export function coverage(items: CostItem[], filter: FolderFilter, present: Set<s
 // `present`: die Dateien im Belegordner. Mit ihr zählt ein Verweis auf eine fehlende Datei wie im
 // Belegordner als fehlend, und die Zeile sagt es; sonst widersprächen Cockpit und Belegordner
 // einander (Durchsicht). Ohne sie (Liste nicht geladen) zählt der Verweis.
-export function coverageCheck(yearItems: CostItem[], present: Set<string> | null = null, booked: ReadonlyMap<string, readonly string[]> = new Map()): { level: 'gruen' | 'gelb' | 'leer'; detail: string } {
-  const cov = coverage(yearItems, { propertyId: 'all', year: 'all' }, present, booked)
-  const fileGone = cov.missing.filter((c) => c.invoiceFile).length
+//
+// `parts`: die Teile je Rechnung über alle Zeiträume (#455), damit der Beleg eines Teils im Vorzeitraum auch hier zählt.
+export function coverageCheck(yearItems: CostItem[], present: Set<string> | null = null, booked: ReadonlyMap<string, readonly string[]> = new Map(), parts: ReadonlyMap<string, readonly CostItem[]> = partsBySource(yearItems)): { level: 'gruen' | 'gelb' | 'leer'; detail: string } {
+  const cov = coverage(yearItems, { propertyId: 'all', year: 'all' }, present, booked, parts)
+  // Je Rechnung, wie `positions` (#455)
+  const fileGone = new Set(cov.missing.filter((c) => c.invoiceFile).map(invoiceOf)).size
   if (cov.positions === 0) return { level: 'leer', detail: 'Noch keine Kosten erfasst, also auch nichts zu belegen.' }
   if (cov.covered === cov.positions) {
     return { level: 'gruen', detail: cov.positions === 1 ? 'Zur einzigen Position liegt ein Beleg vor.' : `Zu allen ${cov.positions} Positionen liegt ein Beleg vor.` }

@@ -123,7 +123,8 @@ export type SnapshotCostItem = Pick<
   | 'operatingPowerGeneralId'
   // #270: ob ein Abzug ohne Verweis dem Messdienst gemeldet ist (Steuer und Hinweis; verteilt wird nicht danach).
   | 'operatingPowerReported'
-  // Die aufgeteilte Rechnung (#455): für den Hinweis „Betrag passt nicht zum Anteil“; verteilt wird nicht danach.
+  // Die aufgeteilte Rechnung (#455): für die Hinweise „Betrag passt nicht zum Anteil“ und auf doppelte Positionen;
+  // verteilt wird nicht danach.
   | 'sourceId'
 >
 
