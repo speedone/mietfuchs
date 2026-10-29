@@ -10,7 +10,7 @@ import { isNotAllocable, matchCategory } from '../../shared/categories.ts'
 import { calendarPeriod, periodContext, periodLabel, periodOfKey } from '../../shared/period.ts'
 import { normalizedText, sameCostCandidates } from '../../shared/duplicates.ts'
 import { costItemBody, type CostItemDraft } from '../../shared/costItem.ts'
-import { isSplitPart } from '../../shared/splitPart.ts'
+import { isInvoicePart } from '../../shared/splitPart.ts'
 import { aiPositionDefaults, aiPositionPreselect, aiRowPreselected, bookingPeriod, bookingTaxYear, categoryDeviationPct, invoiceSumCheck, scorePosition } from '../../shared/assessment.ts'
 
 // Eine Zeile, wie sie aus der KI kommt, noch ohne Nummer und ohne Buchung.
@@ -219,7 +219,7 @@ export function replacedByLinking<T extends CostItem>(
 ): T | null {
   if (line.amountCents === null || line.amountCents <= 0) return null
   // Ein Teil einer aufgeteilten Rechnung ist kein Verknüpfungsziel (Review der Laienprobe, Runde 1).
-  const fits = candidates.filter((c) => !isSplitPart(rules, c) &&
+  const fits = candidates.filter((c) => !isInvoicePart(rules, c) &&
     c.period === period && c.category === line.category && !c.invoiceFile && c.key !== 'amounts' && c.key !== 'external' &&
     !booked.some((l) => l.costItemId === c.id))
   return fits.length === 1 ? fits[0] ?? null : null
@@ -338,7 +338,7 @@ function suggestLine(line: StoredAssessmentLine, a: StoredAssessment, others: re
     candidates: candidates.map((c) => ({
       id: c.id, description: c.description, amountCents: c.amountCents, invoiceFile: c.invoiceFile ?? null, key: c.key,
       // Auch ein Teil einer aufgeteilten Rechnung wird nur geöffnet, nicht verknüpft (Review, Runde 1).
-      formOnly: c.key === 'amounts' || c.key === 'external' || isSplitPart(rules, c),
+      formOnly: c.key === 'amounts' || c.key === 'external' || isInvoicePart(rules, c),
     })),
     level,
     reasons,

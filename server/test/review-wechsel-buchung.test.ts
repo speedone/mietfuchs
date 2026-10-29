@@ -6,6 +6,7 @@ import path from 'node:path'
 import type { CostItem, LineDecision } from '../../shared/types.ts'
 import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { createEntity } from '../src/db/repository.ts'
+import { costItems as costItemsTable, costSources } from '../src/db/schema.ts'
 import { readStock } from '../src/db/read.ts'
 import { saveAssessment } from '../src/db/assessments.ts'
 import { bookAssessment, previewBooking } from '../src/db/booking.ts'
@@ -87,5 +88,34 @@ test('Review B2 (a): Wer trotzdem teilt, kann eine weitere Zeile nicht mit einem
     const p2 = await opened.read((db) => previewBooking(db, b.assessment.id, d2, uploadDir))
     assert.match(p2.errors.map((e) => e.message).join(' '), /Teil einer nach Tagen aufgeteilten Rechnung/)
     assert.equal(p2.errors[0]?.openItemId, 'gs-item')
+  } finally { opened.close(); fs.rmSync(dataDir, { recursive: true, force: true }) }
+})
+
+// Durchsicht von Task 7, I2 (#455): Zwei Teile einer Quelle aus dem Datenschritt im selben Zeitraum, beide mit dem
+// Leistungszeitraum 2025 (kein `isSplitPart`). Die Summenregel setzte den einen auf die ganze Rechnung, der andere bliebe
+// stehen; gezählt würde doppelt. Ob er ein Teil ist, sagt die Quelle.
+test('#455: Ein Teil mit Quelle in einem Zeitraum ist kein Verknüpfungsziel', async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mf-review-'))
+  const uploadDir = path.join(dataDir, 'uploads'); fs.mkdirSync(uploadDir, { recursive: true })
+  const opened = await openFreshDatabase(dataDir)
+  try {
+    await opened.write(async (db) => {
+      await createEntity(db, 'units', 'eg', { propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true })
+      const teil = { propertyId: 'objekt-1', period: '2025-01', category: 'Grundsteuer', key: 'area', serviceFrom: '2025-01-01', serviceTo: '2025-12-31', taxYear: 2025 }
+      await createEntity(db, 'costItems', 'a', { ...teil, description: 'Grundsteuer (Teil 1)', amountCents: 12000 })
+      await createEntity(db, 'costItems', 'b', { ...teil, description: 'Grundsteuer (Teil 2)', amountCents: 24500 })
+      await db.insert(costSources).values({ id: 'q1', propertyId: 'objekt-1', rule: 'days' })
+      await db.update(costItemsTable).set({ sourceId: 'q1' })
+    })
+    fs.writeFileSync(path.join(uploadDir, 'gs.pdf'), '%PDF gs')
+    const b = await opened.write((db) => saveAssessment(db, {
+      file: 'gs.pdf', propertyId: 'objekt-1', year: 2025, detectedYear: 2025, requestedYear: 2025, requestedPeriod: periodKey('2025-01'), vendor: 'Stadt', invoiceDate: '2025-02-10',
+      totalGrossCents: null, amountsAdjusted: null, laborFromTotal: false,
+      lines: [{ description: 'Grundsteuer 2025', category: 'Grundsteuer', categoryGuessed: false, amountCents: 36500, labor35aCents: null }],
+    }, { id: 'a1', now: '2026-03-01T00:00:00Z' }))
+    const d: LineDecision[] = [{ idx: 0, action: 'link', costItemId: 'a', despiteCandidates: true }]
+    const p = await opened.read((db) => previewBooking(db, b.assessment.id, d, uploadDir))
+    assert.match(p.errors.map((e) => e.message).join(' '), /Teil einer nach Tagen aufgeteilten Rechnung/)
+    assert.equal(p.errors[0]?.openItemId, 'a')
   } finally { opened.close(); fs.rmSync(dataDir, { recursive: true, force: true }) }
 })

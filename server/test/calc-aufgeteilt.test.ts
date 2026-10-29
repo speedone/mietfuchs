@@ -148,3 +148,15 @@ test('#455: zwei Positionen mit gleichem Familienschlüssel ohne gemeinsame Quel
     [hausmeisterTeil('a', 15781, '01.01.–30.04.2025', 'q'), hausmeisterTeil('b', 8022, '01.05.–30.06.2025')]))
   assert.equal(mismatches(t).length, 2)
 })
+
+// Durchsicht von Task 7, I1: Zwei Teile einer Quelle ohne Tagesanteil (Datenschritt, Leistungszeitraum ganz im Zeitraum)
+// werden zusammen an der ganzen Rechnung gemessen, wie im Formular.
+test('#455: Quelle, kein Tagesanteil, zwei Teile im Zeitraum werden zusammen an der ganzen Rechnung gemessen', () => {
+  const teil = (id: string, sourceId?: string): SnapshotCostItem => ({ id, period: calendarPeriod(2025), category: 'Hausgeld', description: `Hausgeld (Teil ${id})`,
+    amountCents: 5000, key: 'external', externalBasis: { measure: 'mea', total: 1000, totalCents: 200000 }, serviceFrom: '2025-01-01', serviceTo: '2025-12-31',
+    ...(sourceId === undefined ? {} : { sourceId }) })
+  const mit = computeSettlement(snapshotOf(source(etwUnits, [tenancy('t', 'w')], [teil('a', 'q'), teil('b', 'q')]), 2025))
+  assert.deepEqual(mismatches(mit), [])
+  const ohne = computeSettlement(snapshotOf(source(etwUnits, [tenancy('t', 'w')], [teil('a'), teil('b')]), 2025))
+  assert.equal(mismatches(ohne).length, 2)
+})

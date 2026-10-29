@@ -205,10 +205,16 @@ die auf ihn zeigen, `guardFrozenLink`). Neu ist nur: Ist es der letzte Teil sein
 Quelle im selben Vorgang weg. Weil der Wechsel nur bewegte Spannen verteilt, verschiebt eine Lücke
 kein Geld. Eine Route „ganze Rechnung löschen“ gibt es in diesem Schritt nicht.
 
-Ein Teil, dessen übrige Teile gelöscht sind, behält seine Quelle und bleibt gesperrt (Durchsicht von PR 2, M3). Seine
-Quelle zu lösen hülfe kaum: Reicht sein Leistungszeitraum über mehrere Zeiträume, sperrt `isSplitPart` ihn ohnehin, und
-ein stilles Lösen nähme dem Verlauf die Zuordnung. Jeder Satz der Sperren (`splitPartMessage`, `requireSourcePartStays`)
-nennt deshalb den Ausweg, der geht: alle Teile löschen und die Rechnung neu erfassen.
+Ein Teil, dessen übrige Teile gelöscht sind, behält seine Quelle und bleibt gesperrt (Durchsicht von PR 2, M3). Der
+Wechsel des Rhythmus löst dagegen eine Quelle mit einem einzigen Teil (Invariante 3, `source_id = NULL`). Der Unterschied
+ist gewollt: Nach dem Wechsel trägt der eine Teil die ganze Rechnung, denn die Ableitung hat ihr ganzes Geld in ihn gelegt.
+Nach dem Löschen trägt er nur den Anteil seiner Tage, der Rest der Rechnung ist mit den Geschwistern gegangen. Er ist also
+weiter ein Teil, und die Quelle sorgt dafür, dass ihn Hinweis, Formular und Belegbuchung so behandeln. Ohne Quelle würde
+ihn etwa die Summenregel der Belegbuchung auf die ganze Rechnung setzen. Dazu kommt, dass das Löschen heute genau eine
+Position betrifft, und so bleibt es im Verlauf: Ein stilles Lösen schriebe dort eine zweite Änderung an einer Position,
+die niemand angefasst hat. Reicht sein Leistungszeitraum über mehrere Zeiträume, sperrt ihn `isSplitPart` ohnehin. Jeder
+Satz der Sperren (`splitPartMessage`, `requireSourcePartStays`) nennt deshalb den Ausweg, der geht: alle Teile löschen
+und die Rechnung neu erfassen, mit „Aufteilen und speichern“ oder, ohne Aufteilen, je Abrechnungszeitraum eine Position.
 
 ## Datenschritt für bestehende Teile
 

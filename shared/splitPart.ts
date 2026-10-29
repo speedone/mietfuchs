@@ -12,6 +12,14 @@ export function isSplitPart(rules: PeriodRules, c: Pick<CostItem, 'category' | '
   return periodsBetween(rules, c.serviceFrom, c.serviceTo).length > 1
 }
 
+// Ob eine Position ein Teil einer Rechnung ist, für Wege, die einen Teil nicht wie eine ganze Rechnung behandeln dürfen
+// (Belegbuchung: Verknüpfen, `formOnly`). Seit #455 sagt das die Quelle; ein Teil aus dem Datenschritt kann ganz in
+// einem Zeitraum liegen und wäre für `isSplitPart` keiner (Durchsicht von Task 7, I2). `isSplitPart` bleibt für alte
+// Teile ohne eindeutige Zuordnung, die der Datenschritt nicht zusammenführen konnte.
+export function isInvoicePart(rules: PeriodRules, c: Pick<CostItem, 'category' | 'serviceFrom' | 'serviceTo' | 'sourceId'>): boolean {
+  return Boolean(c.sourceId) || isSplitPart(rules, c)
+}
+
 export const SPLIT_SUFFIX = / \(anteilig [^)]*\)$/
 
 // Die Beschreibung ohne den Zusatz eines früheren Aufteilens.
