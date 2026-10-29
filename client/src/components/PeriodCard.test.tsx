@@ -88,6 +88,13 @@ describe('Wechsel nach Quelle (#455)', () => {
     expect(screen.getByText(/„Grundsteuer 2025“ \(245,00 €\) wird nach Tagen aufgeteilt: 2025: 245,00 €\. Der Anteil für 2025 wird mit dem Teil „Grundsteuer 2025 \(anteilig 01\.01\.–30\.04\.2025\)“ zusammengefasst\./)).toBeTruthy()
     expect(screen.getByText(/„Wasser“/).textContent).not.toMatch(/zusammengefasst/)
   })
+  // Integrationsdurchsicht zu #455, M1: Hängt das Zusammenfassen am gefragten Jahr der Zahlung, gilt der Satz nur dafür.
+  test('mit Frage nach dem Jahr der Zahlung nur unter Bedingung', () => {
+    render(<MoveList moves={[{ costItemId: 'gs-2', description: 'Grundsteuer 2025', amountCents: 12000, parts: [
+      { period: periodKey('2025-05'), label: '2025/2026', amountCents: 12000, mergedInto: 'Grundsteuer 2025 (anteilig 01.05.–31.12.2025)', mergeDependsOnYear: true },
+    ] }]} />)
+    expect(screen.getByText(/Bleibt es beim vorbelegten Jahr der Zahlung, wird der Anteil für 2025\/2026 mit dem Teil „Grundsteuer 2025 \(anteilig 01\.05\.–31\.12\.2025\)“ zusammengefasst; mit einem anderen Jahr bleibt er eine eigene Zeile\./)).toBeTruthy()
+  })
 })
 
 describe('Laienprobe (B2, B3, B4)', () => {

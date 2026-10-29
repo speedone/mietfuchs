@@ -170,8 +170,18 @@ Abzüge beim Betriebsstrom (`follows`, Gruppen mit Abzügen) bekommen keine.
   (`rewriteCostItemFamily`, unverändert samt Umhängen gebuchter Belegzeilen und des Belegs). Das ist
   das Verhalten von heute; ein abweichender Schlüssel eines Zeitraums (§ 556a Abs. 2 BGB) bleibt an
   seinem Teil.
-- **Mehrere Teile im selben Zeitraum** (aus Beständen vor dieser Version): Stehen sie, bleiben beide
-  Zeilen. Werden sie bewegt, zählen sie zusammen und ergeben je neuem Zeitraum eine Zeile.
+- **Mehrere Teile im selben Zeitraum** (aus Beständen vor dieser Version, oder das Zusammenfassen ließ sie wegen
+  verschiedener Jahre getrennt): Stehen sie, bleiben beide Zeilen. Werden sie bewegt, zählen sie zusammen und ergeben
+  je neuem Zeitraum eine Zeile, **aber nur bei gleichem Jahr der Zahlung (`storedOutflowYear`) und Zahlungsdatum**
+  (Integrationsdurchsicht, I1). Sonst wird je Jahr und Zahlungsdatum eine eigene Rechnung geteilt, mit eigenem
+  führendem Teil und eigener Frage nach dem Jahr; zusammengezählt hätten alle das Jahr des ersten bekommen, und
+  Werbungskosten wechselten das Jahr. Die Ergebnisse einer späteren solchen Rechnung kommen zu einer eigenen Zeile
+  einer früheren derselben Quelle, wenn sie danach dasselbe Jahr haben (wie beim Zusammenfassen), so bleibt es je
+  Zeitraum und Jahr eine Zeile. Liegt jeder bewegte Teil in einem anderen Zeitraum, bleibt es eine Rechnung wie bei
+  `wholeInvoice` (Invariante 4); dort gilt die Vorbelegung des führenden Teils weiter.
+- **Vorschau des Zusammenfassens**: gerechnet mit den vorbelegten Jahren. Fragt die Vorschau in dem Zeitraum ein
+  Jahr der Zahlung (des bewegten oder des stehenden Teils), trägt der Teil `mergeDependsOnYear`, und der Satz sagt,
+  dass das Zusammenfassen nur beim vorbelegten Jahr gilt.
 - Ergibt der Wechsel für eine Quelle nur noch einen Teil, entfällt die Quelle (Invariante 3).
 - **Teile ohne Quelle** (alter Bestand, unten) behalten den bisherigen Weg: geteilt über den eigenen
   Teil des Leistungszeitraums. Die Teile, die dabei entstehen, bekommen **eine neue Quelle**, denn sie

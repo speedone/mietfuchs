@@ -69,11 +69,17 @@ const balance = (cents: number): string => (cents >= 0 ? `Guthaben ${fmtEuro(cen
 
 // Kalte Rechnungen mit Leistungszeitraum, nach Tagen auf die neuen Zeiträume geteilt. Kommt ein Anteil zu einem Teil
 // derselben Rechnung, der im Zeitraum stehen bleibt, sagt es ein Satz (#455): Dort entsteht keine zweite Zeile.
+// Integrationsdurchsicht zu #455, M1: Hängt das Zusammenfassen am Jahr der Zahlung, das die Vorschau unten fragt, gilt
+// der Satz nur für die vorbelegten Jahre.
+const mergeText = (label: string, into: string, dependsOnYear: boolean): string => dependsOnYear
+  ? ` Bleibt es beim vorbelegten Jahr der Zahlung, wird der Anteil für ${label} mit dem Teil „${into}“ zusammengefasst; mit einem anderen Jahr bleibt er eine eigene Zeile.`
+  : ` Der Anteil für ${label} wird mit dem Teil „${into}“ zusammengefasst.`
+
 export function MoveList({ moves }: { moves: PeriodChangePreview['moves'] }) {
   return moves.map((m) => (
     <p key={m.costItemId}>
       „{m.description}“ ({fmtEuro(m.amountCents)}) wird nach Tagen aufgeteilt: {m.parts.map((p) => `${p.label}: ${fmtEuro(p.amountCents)}`).join(', ')}.
-      {m.parts.flatMap((p) => (p.mergedInto === undefined ? [] : [` Der Anteil für ${p.label} wird mit dem Teil „${p.mergedInto}“ zusammengefasst.`])).join('')}
+      {m.parts.flatMap((p) => (p.mergedInto === undefined ? [] : [mergeText(p.label, p.mergedInto, p.mergeDependsOnYear === true)])).join('')}
     </p>
   ))
 }
