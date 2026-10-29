@@ -122,3 +122,14 @@ test('Rückfrage zur Probe: genau ein Punkt nach der Probe, ob sie mit einem end
   expect(probeQuestion('… auf der Seite Kosten.', 'Prüfen Sie.')).toBe('… auf der Seite Kosten. Solange die Probe nicht aufgeht, bucht Mietfuchs keine CO₂-Aufteilung, und die Abrechnung meldet einen Fehler. Prüfen Sie. Trotzdem speichern?')
   expect(probeQuestion('erwartet: 900,00 € ✗', 'Prüfen Sie.')).toMatch(/^erwartet: 900,00 € ✗\. Solange/)
 })
+
+// Praxistest: Ohne Position mit Einzelbeträgen zeigte die Probe „Ihre Positionen: 0,00 €“ und sagte nicht, warum.
+test('Probe ohne Position mit Einzelbeträgen: nennt den Grund statt „Ihre Positionen: 0,00 €“', () => {
+  const f = co2ToForm(gespeichert, ctx)
+  const nachZaehler: Co2Context = { ...ctx, items: ctx.items.map((i) => ({ ...i, key: 'meter' as const, tenancyAmounts: undefined })) }
+  const p = probeLine(f, nachZaehler)
+  expect(p?.ok).toBe(false)
+  expect(p?.text).not.toMatch(/Ihre Positionen/)
+  expect(p?.text).toMatch(/Keine Heizposition mit dem Schlüssel „Einzelbeträge je Mieter \(z\. B\. Messdienst\)“/)
+  expect(p?.text).toMatch(/Verbrauch \(Zähler\)/)
+})

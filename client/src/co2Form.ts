@@ -8,6 +8,7 @@ import { fmtEuro, parseEuro } from './api'
 import { parseNumberDe } from './numbers'
 import { enteredCentsOf, serviceProbe } from '../../shared/co2Probe.ts'
 import type { Co2Method, Co2Statement, HeatingPeriodView } from './types'
+import { KEY_LABELS } from './types'
 
 export type Co2Answer = '' | 'deducted' | 'shown' | 'unsplit'
 const METHOD_OF: Record<Exclude<Co2Answer, ''>, Co2Method> = { deducted: 'serviceDeducted', shown: 'serviceShown', unsplit: 'selfAfterService' }
@@ -191,6 +192,16 @@ export function probeLine(form: Co2Form, ctx: Co2Context): { text: string; ok: b
   const L = form.landlordCo2.trim() === '' ? null : parseEuro(form.landlordCo2)
   const units = Number(form.unitsCount)
   if (S === null || L === null || !Number.isInteger(units) || units < 1) return null
+  // Ohne Position mit Einzelbeträgen stand hier „Ihre Positionen: 0,00 €“ (Praxistest): Die Probe vergleicht nur
+  // Messdienstpositionen, geht so also nie auf. Dann der Grund statt der Zahl.
+  if (serviceItemsOf(ctx).length === 0) {
+    const others = ctx.items.map((i) => `„${i.description}“ (${KEY_LABELS[i.key]})`).join(', ')
+    return {
+      text: `Keine Heizposition mit dem Schlüssel „${KEY_LABELS.amounts}“${others ? `, erfasst: ${others}` : ''} ✗ · ` +
+        'Die Probe vergleicht nur Positionen mit den Einzelbeträgen laut Messdienst und kann so nicht aufgehen. Übernehmen Sie die Einzelbeträge je Mieter an der Position auf der Seite Kosten',
+      ok: false,
+    }
+  }
   const p = serviceProbe({ deducted: form.answer === 'deducted', items: serviceItemsOf(ctx), usersTotalCents: S, landlordCents: L, unitsCount: units, approx: form.usersTotalApprox })
   const entered = p.enteredOk ? '' : ` · Einzel- und Eigenbeträge zusammen ${fmtEuro(p.enteredCents)}, mehr als ${ctx.homeowners ? 'die Heizkosten Ihrer Wohnung' : 'die Summe der Kosten aller Nutzer'}`
   // Geht sie nicht auf, nennt die Zeile beide Lesarten (Durchsicht M3): Oft ist nur die Antwort auf
