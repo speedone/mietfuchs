@@ -69,7 +69,6 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   („Neuer Zähler geeicht bis Ende (Jahr)“). Bisher blieb nach dem Wechsel die Warnung „Eichfrist abgelaufen“ des
   ausgebauten Zählers stehen, bis man das Jahr eigens über „Zähler bearbeiten“ änderte. Leer gelassen bleibt das
   bisherige Jahr stehen.
-### Behoben
 
 - Abrechnung: Ist kein Name des Vermieters hinterlegt, nennt „Zu prüfen“ (und das Fenster „Drucken“) jetzt „Absender
   fehlt“ mit Weg in die Einstellungen. Bisher druckte das Anschreiben ohne Absender und ohne Unterschrift, ohne

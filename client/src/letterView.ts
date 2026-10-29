@@ -186,4 +186,9 @@ export function senderMissing(p: { sender: string, signature: string | null, pap
 export const SENDER_MISSING_TEXT =
   'Im Anschreiben steht kein Name des Vermieters: Gedruckt werden weder Absender noch Unterschrift. ' +
   'Eine Anpassung der Vorauszahlungen nach § 560 Abs. 4 BGB braucht Textform, und dafür muss die Person des Erklärenden genannt sein (§ 126b BGB). ' +
-  'Tragen Sie Ihren Namen in den Einstellungen unter „Name des Vermieters“ ein, bei einem Objekt mit eigenem Vermieter in den Stammdaten des Objekts.'
+  'Tragen Sie Ihren Namen in den Einstellungen unter „Name des Vermieters“ ein oder, nur für dieses Objekt, in den Stammdaten beim Objekt.'
+// Abgeschlossen ist der Absender eingefroren (Durchsicht): Ein Name in den Einstellungen ändert das Anschreiben nicht mehr.
+export const SENDER_MISSING_CLOSED_TEXT =
+  'Im abgeschlossenen Anschreiben steht kein Name des Vermieters: Gedruckt werden weder Absender noch Unterschrift. ' +
+  'Eine Anpassung der Vorauszahlungen nach § 560 Abs. 4 BGB braucht Textform, und dafür muss die Person des Erklärenden genannt sein (§ 126b BGB). ' +
+  'Absender und Unterschrift sind mit der Abrechnung eingefroren: Bitte wieder öffnen, Ihren Namen eintragen und erneut abschließen.'

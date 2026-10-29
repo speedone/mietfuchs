@@ -59,7 +59,7 @@ import { suggestionWithoutHeating } from '../heatingSettlementView'
 import LetterDrawer, { type LetterSave } from '../components/LetterDrawer'
 import PrepaymentStepsCard from '../components/PrepaymentStepsCard'
 import { sentMonthLines } from '../prepaymentSteps'
-import { asTemplates, footnoteText, infoRows, labor35aTable, letterOf, letterParagraphs, RETURN_LINE_MAX, resultRows, returnLineTooLong, SENDER_MISSING_TEXT, senderMissing, statementHeadRows } from '../letterView'
+import { asTemplates, footnoteText, infoRows, labor35aTable, letterOf, letterParagraphs, RETURN_LINE_MAX, resultRows, returnLineTooLong, SENDER_MISSING_CLOSED_TEXT, SENDER_MISSING_TEXT, senderMissing, statementHeadRows } from '../letterView'
 
 type Props = {
   settings: Settings | null
@@ -667,11 +667,13 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
     if (v.head && returnLineTooLong(v.head.returnLine)) out.push({ code: 'page.return-line', level: 'warning', title: 'Rücksendeangabe zu lang', text: returnLineText(v.head.returnLine) })
     const field = v.head ? addressFieldWarning(v.head.recipient) : null
     if (field) out.push({ code: 'page.address-field', level: 'warning', title: `Anschrift zu lang für das Fensterfeld (${who})`, text: field })
-    // Absender fehlt (Praxistest), solange die Abrechnung offen ist; danach gilt der eingefrorene Absender, und nur
-    // Wiederöffnen hilft. Je Abrechnung einmal (uniqueChecks), denn der Absender ist bei allen Mietern derselbe.
+    // Absender fehlt (Praxistest) bis zum Versand. Abgeschlossen ist der Absender eingefroren, dann hilft nur Wiederöffnen
+    // (Durchsicht). Je Abrechnung einmal (uniqueChecks), denn der Absender ist bei allen Mietern derselbe. Solange das
+    // Briefpapier noch lädt, gilt es als da (Durchsicht: sonst blinkte der Hinweis kurz auf).
     const signature = v.showLetter ? v.paragraphs.find((p) => p.block === 'signature')?.text ?? '' : ''
-    if (!data?.closed && v.head && senderMissing({ sender: v.head.sender, signature, paper: !!v.head.paper })) {
-      out.push({ code: 'page.sender', level: 'warning', title: 'Absender fehlt', text: SENDER_MISSING_TEXT })
+    const paper = !!v.head?.paper || (!design.ready && !!planned.paper)
+    if (!data?.closed?.sentAt && v.head && senderMissing({ sender: v.head.sender, signature, paper })) {
+      out.push({ code: 'page.sender', level: 'warning', title: 'Absender fehlt', text: data?.closed ? SENDER_MISSING_CLOSED_TEXT : SENDER_MISSING_TEXT })
     }
     return out
   }
@@ -683,8 +685,11 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
   // Je Mieter die Titel der eigenen Prüfungen, als Merker in der Tabelle der Übersicht.
   const checksByTenancy = new Map(views.map((v) => [v.st.tenancyId, pageChecks(v).map((n) => (n.code === 'page.address' ? 'Anschrift prüfen' : n.title.replace(/ \(.*\)$/, '')))]))
   const fixOf = (n: Notice) => {
-    // Absender fehlt: zum Namen des Vermieters, in die Stammdaten, wenn das Objekt einen eigenen Namen führt.
-    if (n.code === 'page.sender' && onNavigate) {
+    // Absender fehlt: zum Namen des Vermieters, in die Stammdaten, wenn das Objekt einen eigenen Namen führt (gespeichert
+    // nur als leerer Text aus älteren Daten oder über die API; das Formular speichert dann `null`). Abgeschlossen kein
+    // Knopf: Der Absender ist eingefroren, der Text nennt „wieder öffnen“.
+    if (n.code === 'page.sender') {
+      if (data?.closed || !onNavigate) return null
       const own = property?.landlordName != null
       return { label: own ? 'Hier beheben → Stammdaten' : 'Hier beheben → Einstellungen', onClick: () => onNavigate(own ? 'stammdaten' : 'einstellungen') }
     }
@@ -1067,6 +1072,10 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
               {head && returnLineTooLong(head.returnLine) && (
                 <NoticeBox level="warning" className="no-print" title="Rücksendeangabe zu lang" action={returnLineText(head.returnLine)} />
               )}
+              {/* Durchsicht: auch in der Vorschau des Mieters, wo „Zu prüfen“ nicht steht. */}
+              {pageChecks(v).filter((n) => n.code === 'page.sender').map((n) => (
+                <NoticeBox key={n.code} level="warning" className="no-print" title={n.title} action={n.text} fix={fixOf(n)} />
+              ))}
               {head && addressFieldWarning(head.recipient) && (
                 <NoticeBox level="warning" className="no-print" title="Anschrift zu lang für das Fensterfeld" action={addressFieldWarning(head.recipient) ?? ''} />
               )}

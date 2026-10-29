@@ -514,9 +514,9 @@ test('K7: eine Rücksendeangabe, die nicht in die Vermerkzone passt, wird vor de
 test('ohne Namen des Vermieters: „Absender fehlt“ in „Zu prüfen“ mit Weg in die Einstellungen', async () => {
   const navigated: unknown[] = []
   const noName: Settings = { ...SETTINGS, landlordName: '' }
-  const l = settlement.letters?.t1
-  if (!l) throw new Error('kein Anschreiben')
-  settlement = { ...settlement, letters: { t1: { ...l, sender: { name: '', returnLine: 'Lindenweg 12, 12345 Musterstadt', address: '', footer: '' }, texts: { ...l.texts, signature: '' } } } }
+  // Durchsicht: das Anschreiben aus den Vorgaben, wie der Server es baut; die Unterschrift `{Vermieter}` wird dann leer.
+  const property = { id: 'objekt-1', name: 'Lindenweg 12', kind: 'mfh' as const, address: 'Lindenweg 12, 12345 Musterstadt', landlordName: null, iban: null, paymentDeadlineDays: null }
+  settlement = { ...settlement, letters: lettersOf(settlement, { settings: noName, property, tenancies: TENANCIES, installation: {}, propertyTexts: {}, own: {}, asOf: '2026-10-30' }) }
   render(
     <PeriodProvider>
       <PropertyProvider>
@@ -524,10 +524,32 @@ test('ohne Namen des Vermieters: „Absender fehlt“ in „Zu prüfen“ mit We
       </PropertyProvider>
     </PeriodProvider>,
   )
-  expect(await screen.findByText('Absender fehlt', {}, SLOW)).toBeTruthy()
-  expect(screen.getByText(/§ 126b BGB/)).toBeTruthy()
-  fireEvent.click(screen.getByRole('button', { name: /Hier beheben → Einstellungen/ }))
+  // In „Zu prüfen“ und am Brief (in der Vorschau des Mieters sichtbar, wo „Zu prüfen“ nicht steht; Durchsicht)
+  await screen.findAllByText('Absender fehlt', {}, SLOW)
+  expect(screen.getAllByText('Absender fehlt')).toHaveLength(2)
+  expect(screen.getAllByText(/§ 126b BGB/).length).toBeGreaterThan(0)
+  const fix = screen.getAllByRole('button', { name: /Hier beheben → Einstellungen/ })[0]
+  if (!fix) throw new Error('kein Knopf')
+  fireEvent.click(fix)
   expect(navigated).toEqual(['einstellungen'])
+})
+
+// Durchsicht: Gedruckt und versendet wird meist nach dem Abschluss. Bis zum Versand nennt die Seite den fehlenden
+// Absender weiter, mit dem Weg über „Wieder öffnen“, denn der Absender ist eingefroren.
+test('abgeschlossen ohne Absender: Hinweis bis zum Versand, mit Wieder öffnen statt Einstellungen', async () => {
+  const noName: Settings = { ...SETTINGS, landlordName: '' }
+  const property = { id: 'objekt-1', name: 'Lindenweg 12', kind: 'mfh' as const, address: 'Lindenweg 12, 12345 Musterstadt', landlordName: null, iban: null, paymentDeadlineDays: null }
+  const letters = lettersOf(settlement, { settings: noName, property, tenancies: TENANCIES, installation: {}, propertyTexts: {}, own: {}, asOf: '2026-10-30' })
+  settlement = { ...settlement, letters, closed: { closedAt: `${YEAR + 1}-02-01T10:00:00Z`, sentAt: null } }
+  show()
+  await screen.findAllByText('Absender fehlt', {}, SLOW)
+  expect(screen.getAllByText(/Bitte wieder öffnen, Ihren Namen eintragen/).length).toBeGreaterThan(0)
+  expect(screen.queryByRole('button', { name: /Hier beheben → Einstellungen/ })).toBeNull()
+  cleanup()
+  settlement = { ...settlement, closed: { closedAt: `${YEAR + 1}-02-01T10:00:00Z`, sentAt: `${YEAR + 1}-02-02` } }
+  show()
+  await screen.findByRole('region', { name: 'Anschreiben an Meier' }, SLOW)
+  expect(screen.queryByText('Absender fehlt')).toBeNull()
 })
 
 test('mit Namen des Vermieters: kein „Absender fehlt“', async () => {
