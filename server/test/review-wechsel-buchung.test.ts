@@ -117,5 +117,10 @@ test('#455: Ein Teil mit Quelle in einem Zeitraum ist kein Verknüpfungsziel', a
     const p = await opened.read((db) => previewBooking(db, b.assessment.id, d, uploadDir))
     assert.match(p.errors.map((e) => e.message).join(' '), /Teil einer nach Tagen aufgeteilten Rechnung/)
     assert.equal(p.errors[0]?.openItemId, 'a')
+    // Wortlaut (Durchsicht von PR 2): Stimmt der Teil, wird die Zeile verworfen; als eigene Position nur, wenn sie eine andere
+    // Rechnung ist. Sonst zählte die Rechnung doppelt.
+    const msg = p.errors[0]?.message ?? assert.fail('keine Ablehnung')
+    assert.match(msg, /Stimmt der Teil, verwerfen Sie die Zeile; legen Sie sie nur als eigene Position an, wenn sie eine andere Rechnung ist\./)
+    assert.doesNotMatch(msg, /oder legen Sie .* als eigene Position an\./)
   } finally { opened.close(); fs.rmSync(dataDir, { recursive: true, force: true }) }
 })

@@ -339,6 +339,7 @@ function suggestLine(line: StoredAssessmentLine, a: StoredAssessment, others: re
       id: c.id, description: c.description, amountCents: c.amountCents, invoiceFile: c.invoiceFile ?? null, key: c.key,
       // Auch ein Teil einer aufgeteilten Rechnung wird nur geöffnet, nicht verknüpft (Review, Runde 1).
       formOnly: c.key === 'amounts' || c.key === 'external' || isInvoicePart(rules, c),
+      part: isInvoicePart(rules, c),
     })),
     level,
     reasons,

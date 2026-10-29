@@ -223,7 +223,7 @@ export function planBooking(input: PlanInput, decisions: readonly LineDecision[]
       // Die Summenregel setzte seinen Betrag auf die Summe der Zeilen, also auf die ganze Rechnung, und
       // die übrigen Teile stünden zusätzlich da (gemessen 681,73 € statt 470 €).
       if (isInvoicePart(input.rules, target)) {
-        errors.push({ idx: d.idx, openItemId: target.id, message: `${quote(target.description)} ist ein Teil einer nach Tagen aufgeteilten Rechnung; ihr Betrag ist nur der Anteil dieses Zeitraums. Verknüpfen lässt sich eine Zeile damit nicht. Öffnen Sie die Position, wenn sich der Betrag der Rechnung geändert hat, oder legen Sie ${named(line)} als eigene Position an.` })
+        errors.push({ idx: d.idx, openItemId: target.id, message: `${quote(target.description)} ist ein Teil einer nach Tagen aufgeteilten Rechnung; ihr Betrag ist nur der Anteil dieses Zeitraums. Verknüpfen lässt sich eine Zeile damit nicht. Öffnen Sie die Position, wenn sich der Betrag der Rechnung geändert hat. Stimmt der Teil, verwerfen Sie die Zeile; legen Sie sie nur als eigene Position an, wenn sie eine andere Rechnung ist.` })
         continue
       }
       if (FORM_ONLY.includes(target.key)) {

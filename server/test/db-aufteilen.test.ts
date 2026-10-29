@@ -256,9 +256,9 @@ test('#455: Ein Teil ohne Geschwister bleibt gesperrt, jeder Satz nennt Löschen
     const sperren: [string, object, RegExp][] = [
       ['Leistungszeitraum', { serviceFrom: '2025-01-01', serviceTo: '2025-04-30' }, zeitraum],
       ['Zeitraum', { period: '2025-05', taxYear: 2025 }, zeitraum],
-      ['Kostenart', { category: 'Gartenpflege' }, /Löschen Sie alle Teile und erfassen Sie die Rechnung neu mit „Aufteilen und speichern“/],
+      ['Kostenart', { category: 'Gartenpflege' }, /Löschen Sie alle Teile und erfassen Sie die Rechnung neu mit „Aufteilen und speichern“, oder, ohne Aufteilen, je Abrechnungszeitraum eine Position\./],
       ['Betriebsstrom', { operatingPower: 'deduction' }, /Löschen Sie dafür alle Teile und erfassen Sie die Rechnung neu, je Abrechnungszeitraum eine Position mit dem Leistungszeitraum in diesem Zeitraum\.$/],
-      ['Einzelbeträge', { key: 'amounts', tenancyAmounts: {} }, /ist ein Teil einer aufgeteilten Rechnung\. Löschen Sie dafür zuerst alle Teile\. „[^“]*“ ist nach Einzelbeträgen verteilt\..*Erfassen Sie die Rechnung je Abrechnungszeitraum/],
+      ['Einzelbeträge', { key: 'amounts', tenancyAmounts: {} }, /ist ein Teil einer aufgeteilten Rechnung\. Um nach Einzelbeträgen zu verteilen, löschen Sie zuerst alle Teile\. „[^“]*“ ist nach Einzelbeträgen verteilt\..*Erfassen Sie die Rechnung je Abrechnungszeitraum/],
     ]
     for (const [was, body, ausweg] of sperren) {
       await assert.rejects(update(body), (e) => e instanceof PeriodError && ausweg.test(e.message), was)

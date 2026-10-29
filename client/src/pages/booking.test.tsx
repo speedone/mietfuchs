@@ -508,6 +508,15 @@ test('M2: der Hinweis zu einer Position mit Einzelbeträgen sagt, die Zeile nach
   expect(screen.getByText(/verwerfen Sie diese Zeile hier danach/)).toBeTruthy()
 })
 
+// Durchsicht von PR 2 (#455): Ein Teil einer aufgeteilten Rechnung gehört keiner Gemeinschaftsabrechnung; der Hinweis sagt, was er ist.
+test('#455: der Hinweis zu einem Teil einer aufgeteilten Rechnung nennt den Teil, nicht die Gemeinschaftsabrechnung', () => {
+  const view = crafted({}, { candidates: [{ id: 'gs', description: 'Grundsteuer (anteilig 01.01.–30.04.)', amountCents: 16000, invoiceFile: null, key: 'area', formOnly: true, part: true }] })
+  render(<UIProvider><AssessmentReview assessment={view} units={UNITS} onChange={() => {}} onOpenItem={() => {}} /></UIProvider>)
+  expect(screen.getByText(/ist ein Teil einer aufgeteilten Rechnung/)).toBeTruthy()
+  expect(screen.queryByText(/laut Gemeinschaftsabrechnung/)).toBeNull()
+  expect(screen.getByText(/verwerfen Sie diese Zeile hier danach/)).toBeTruthy()
+})
+
 // ---------- Integrationsdurchsicht ----------
 
 test('H1: eine erneut ausgewertete Zeile an eine schon aus diesem Beleg gebuchte Position verknüpfen fragt mit „Trotzdem verknüpfen“ nach', async () => {
