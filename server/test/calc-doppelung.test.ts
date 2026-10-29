@@ -161,7 +161,7 @@ test('Teil ohne Beleg gegen eine belegte Position: kein Rat, den Betrag auf den 
   const text = n?.text ?? ''
   assert.doesNotMatch(text, /setzen Sie ihren Betrag/)
   assert.match(text, /mit allen ihren Teilen, auch denen in anderen Zeiträumen/)
-  assert.match(text, /löschen Sie stattdessen die andere Position/)
+  assert.match(text, /Soll sie bleiben, löschen Sie stattdessen die andere Rechnung\. /)
 })
 
 test('Belegte aufgeteilte Rechnung gegen eine Position ohne Beleg: die ohne Beleg löschen, die Rechnung bleibt ganz', () => {
@@ -200,4 +200,50 @@ test('Zwei Rechnungen mit getrennten Leistungszeiträumen sind keine Doppelung',
     item({ id: 'b26', period: calendarPeriod(2026), ...vers, amountCents: 31000, serviceFrom: '2026-07-01', serviceTo: '2027-06-30', sourceId: 'qb', invoiceFile: 'b.pdf' }),
   ])
   assert.equal(oneSided.length, 1)
+})
+
+// #455, zweite Durchsicht von PR 3 (R1): Sind beide Rechnungen aufgeteilt, gilt auch für die andere: gelöscht wird sie
+// nur mit allen Teilen. „Löschen Sie stattdessen die andere Position“ ließe ihren Teil im anderen Zeitraum allein stehen.
+test('Beide Rechnungen aufgeteilt: auch die andere wird nur mit allen ihren Teilen gelöscht', () => {
+  const S = { category: 'Sachversicherung', serviceFrom: '2025-07-01', serviceTo: '2026-06-30' }
+  const found = dupes([
+    item({ id: 'a25', period: calendarPeriod(2025), ...S, description: 'Versicherung (anteilig)', amountCents: 30000, sourceId: 'qa' }),
+    item({ id: 'a26', period: calendarPeriod(2026), ...S, description: 'Versicherung (anteilig)', amountCents: 30000, sourceId: 'qa' }),
+    item({ id: 'b25', period: calendarPeriod(2025), ...S, description: 'Versicherung Gebäude', amountCents: 30000, sourceId: 'qb', invoiceFile: 'b.pdf' }),
+    item({ id: 'b26', period: calendarPeriod(2026), ...S, description: 'Versicherung Gebäude', amountCents: 30000, sourceId: 'qb' }),
+  ])
+  assert.equal(found.length, 1)
+  const text = found[0]?.text ?? ''
+  assert.deepEqual(found[0]?.subject, { kind: 'costItem', id: 'a26' })
+  assert.doesNotMatch(text, /löschen Sie stattdessen die andere Position/)
+  assert.match(text, /Soll sie bleiben, löschen Sie stattdessen die andere Rechnung, ebenfalls mit allen ihren Teilen, auch denen in anderen Zeiträumen/)
+  assert.match(text, /Den Betrag eines Teils auf den der ganzen Rechnung zu setzen, zählte die übrigen Teile doppelt/)
+})
+
+// R2: Eine Position ohne Leistungszeitraum verbindet zwei getrennte Rechnungen zu einer Gruppe. „Hier beheben“ führt
+// dann zu der Position ohne Beleg, die zu allen anderen passt, nicht zur früheren Versicherung.
+test('Über eine dritte Position verbunden: „Hier beheben“ an der Position, die zu allen passt', () => {
+  const S = { category: 'Sachversicherung', description: 'Versicherung (anteilig)' }
+  const found = dupes([
+    item({ id: 'vj', period: calendarPeriod(2025), ...S }),
+    item({ id: 'a26', period: calendarPeriod(2026), ...S, amountCents: 30000, sourceId: 'qa', serviceFrom: '2025-07-01', serviceTo: '2026-06-30' }),
+    item({ id: 'c', period: calendarPeriod(2026), ...S, amountCents: 50000 }),
+    item({ id: 'b26', period: calendarPeriod(2026), ...S, amountCents: 31000, sourceId: 'qb', serviceFrom: '2026-07-01', serviceTo: '2027-06-30', invoiceFile: 'b.pdf' }),
+  ])
+  assert.equal(found.length, 1)
+  assert.deepEqual(found[0]?.subject, { kind: 'costItem', id: 'c' })
+})
+
+// R3: Ein alter Teil ohne Quelle (Leistungszeitraum über zwei Zeiträume, `isSplitPart`) ist ebenso ein Teil; Szenario A
+// endete sonst bei 900 € für eine Rechnung über 600 €.
+test('Alter Teil ohne Quelle: kein Rat, den Betrag auf den der Rechnung zu setzen', () => {
+  const found = dupes([
+    item({ id: 'p25', period: calendarPeriod(2025), description: 'Grundsteuer (anteilig)', amountCents: 30000, serviceFrom: '2025-07-01', serviceTo: '2026-06-30' }),
+    item({ id: 'p26', period: calendarPeriod(2026), description: 'Grundsteuer (anteilig)', amountCents: 30000, serviceFrom: '2025-07-01', serviceTo: '2026-06-30' }),
+    item({ id: 'bescheid', period: calendarPeriod(2026), description: 'Grundsteuerbescheid', amountCents: 60000, invoiceFile: 'gs.pdf' }),
+  ])
+  assert.equal(found.length, 1)
+  const text = found[0]?.text ?? ''
+  assert.doesNotMatch(text, /setzen Sie ihren Betrag/)
+  assert.match(text, /mit allen ihren Teilen, auch denen in anderen Zeiträumen/)
 })

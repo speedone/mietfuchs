@@ -427,10 +427,12 @@ Verknüpfen (`formOnly`, `part`): Die Zeile wird verworfen, wenn der Teil stimmt
 
 Ist eine aufgeteilte Rechnung an der Gruppe beteiligt, richtet sich der Rat nach der Quelle, nicht nach der Zahl der
 Teile im Zeitraum (die übrigen sieht die Gruppe nicht): nie „setzen Sie ihren Betrag auf den der Rechnung“, gelöscht
-wird eine aufgeteilte Rechnung nur mit allen Teilen, auch denen in anderen Zeiträumen. Ohne Quelle bleibt der Wortlaut.
+wird eine aufgeteilte Rechnung nur mit allen Teilen, auch denen in anderen Zeiträumen, das gilt für beide Seiten. Als
+aufgeteilt zählt `isInvoicePart`, also auch ein alter Teil ohne Quelle. Ohne Teil in der Gruppe bleibt der Wortlaut.
 Zwei Positionen, deren Leistungszeiträume beide angegeben sind und sich nicht überschneiden, verbindet
-`possibleDuplicates` nicht (die Versicherung Juli bis Juni, zwei Jahre nacheinander); `sameCostCandidates` und damit
-Kostenformular und Belegbuchung fragen weiter ohne Leistungszeitraum.
+`possibleDuplicates` nicht (`separateService`; die Versicherung Juli bis Juni, zwei Jahre nacheinander); verbindet sie
+eine dritte ohne Leistungszeitraum, führt „Hier beheben“ zu der Rechnung ohne Beleg, die zu allen anderen passt.
+`sameCostCandidates` und damit Kostenformular und Belegbuchung fragen weiter ohne Leistungszeitraum.
 
 ## Belegbuchung (#170)
 

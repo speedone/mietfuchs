@@ -332,6 +332,9 @@ describe('Posteingang: einer Position zuordnen', () => {
     const teil = item('t', { sourceId: 'q1' })
     expect(amountCheckMode(teil, rules)).toBe('form')
     expect(amountCheckFormReason(teil, rules)).toMatch(/Teil einer aufgeteilten Rechnung; der Betrag ist nur der Anteil dieses Zeitraums/)
+    // Zweite Durchsicht (R4): Das Formular zeigt nur den Betrag des Teils; die Summe steht in der Kostenliste.
+    expect(amountCheckFormReason(teil, rules)).toMatch(/„Rechnung gesamt“ unter dem Teil in der Kostenliste/)
+    expect(amountCheckFormReason(teil, rules)).not.toMatch(/Betrag der Rechnung bitte im Formular/)
     // Ein alter Teil ohne Quelle, dessen Leistungszeitraum zwei Zeiträume berührt, ebenso.
     const alt = item('alt', { serviceFrom: '2025-07-01', serviceTo: '2026-06-30' })
     expect(amountCheckMode(alt, rules)).toBe('form')

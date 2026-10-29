@@ -87,7 +87,7 @@ const isCredit = (i: DuplicateItem): boolean => (i.amountCents ?? 0) < 0
 // I3): die Versicherung von Juli bis Juni, zwei Jahre nacheinander, jede in zwei Teile geteilt. Jeder Teil trägt den
 // ganzen Leistungszeitraum seiner Rechnung, der Teil im Zeitraum genügt also. Fehlt einer der beiden der
 // Leistungszeitraum, bleibt es bei der Regel oben.
-function separateService(a: DuplicateItem, b: DuplicateItem): boolean {
+export function separateService(a: DuplicateItem, b: DuplicateItem): boolean {
   if (!a.serviceFrom || !a.serviceTo || !b.serviceFrom || !b.serviceTo) return false
   return a.serviceTo < b.serviceFrom || b.serviceTo < a.serviceFrom
 }

@@ -386,7 +386,10 @@ export function amountCheckMode(item: CostItem, rules?: PeriodRules): 'field' | 
 // Warum „Betrag prüfen“ ins Formular führt.
 export function amountCheckFormReason(item: CostItem, rules?: PeriodRules): string {
   if (amountCheckIsPart(item, rules)) {
-    return 'Diese Position ist ein Teil einer aufgeteilten Rechnung; der Betrag ist nur der Anteil dieses Zeitraums, nicht der Betrag des Belegs. Prüfen Sie den Betrag der Rechnung bitte im Formular.'
+    // Das Formular zeigt nur den Betrag des Teils (zweite Durchsicht, R4); die Summe der Teile steht in der Kostenliste,
+    // bei einem alten Teil ohne Quelle nicht.
+    return 'Diese Position ist ein Teil einer aufgeteilten Rechnung; der Betrag ist nur der Anteil dieses Zeitraums, nicht der Betrag des Belegs. ' +
+      `Mit dem Beleg vergleichen Sie die Summe aller Teile${item.sourceId ? ' („Rechnung gesamt“ unter dem Teil in der Kostenliste)' : ''}; im Formular setzen Sie einen Teil nie auf den Betrag des Belegs.`
   }
   return 'Bei dieser Position prüfen Sie den Betrag im Formular: Er hängt an weiteren Angaben (Einzelbeträge oder Kosten der Gemeinschaft).'
 }
