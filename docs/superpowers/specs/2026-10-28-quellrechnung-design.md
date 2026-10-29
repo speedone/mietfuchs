@@ -205,6 +205,11 @@ die auf ihn zeigen, `guardFrozenLink`). Neu ist nur: Ist es der letzte Teil sein
 Quelle im selben Vorgang weg. Weil der Wechsel nur bewegte Spannen verteilt, verschiebt eine Lücke
 kein Geld. Eine Route „ganze Rechnung löschen“ gibt es in diesem Schritt nicht.
 
+Ein Teil, dessen übrige Teile gelöscht sind, behält seine Quelle und bleibt gesperrt (Durchsicht von PR 2, M3). Seine
+Quelle zu lösen hülfe kaum: Reicht sein Leistungszeitraum über mehrere Zeiträume, sperrt `isSplitPart` ihn ohnehin, und
+ein stilles Lösen nähme dem Verlauf die Zuordnung. Jeder Satz der Sperren (`splitPartMessage`, `requireSourcePartStays`)
+nennt deshalb den Ausweg, der geht: alle Teile löschen und die Rechnung neu erfassen.
+
 ## Datenschritt für bestehende Teile
 
 ### Mechanik: Datenschritt in TypeScript nach einem Schemaschritt

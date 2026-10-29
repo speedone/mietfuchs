@@ -17,13 +17,6 @@ export const SPLIT_SUFFIX = / \(anteilig [^)]*\)$/
 // Die Beschreibung ohne den Zusatz eines früheren Aufteilens.
 export const baseDescription = (description: string): string => description.replace(SPLIT_SUFFIX, '')
 
-// Welche Positionen Teile derselben Rechnung sind (Nachprüfung von #226, 2): gleiche Kostenart, Beschreibung ohne den
-// Zusatz „(anteilig …)“, Leistungszeitraum, Rechnungssteller, Beleg und Schlüssel. Eine Heuristik, denn die Teile tragen
-// keinen Verweis auf ihre Rechnung (#455); in shared/, damit der Wechsel des Rhythmus (periodChange.ts), die Berechnung
-// und das Kostenformular dieselbe Regel nutzen (#454).
-export const splitFamilyKey = (c: Pick<CostItem, 'category' | 'description' | 'serviceFrom' | 'serviceTo' | 'vendor' | 'invoiceFile' | 'key'>): string =>
-  [c.category, baseDescription(c.description), c.serviceFrom, c.serviceTo, c.vendor ?? '', c.invoiceFile ?? '', c.key].join('\u0000')
-
 const MS_DAY = 86400000
 const daysOf = (from: string, to: string): number => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / MS_DAY) + 1
 

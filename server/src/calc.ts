@@ -82,7 +82,7 @@ import { heatingInfoOf, heatingRulesOf, planByConsumption, type RuleRow } from '
 import { co2ExemptionOf, co2OffByExemptionOf, exemptionScopeFor, exemptionText as exemptionTextOf } from './co2Exemption.ts'
 import { AGREED_FIXED_SELF_TEXT, INFO_CONTACTS, INFO_CONTACTS_CHECKED } from '../../shared/heatingInfo.ts'
 import { practiceReadingOffWarning, practiceVacancyPersons } from '../../shared/law/practice.ts'
-import { partShare, splitFamilyKey } from '../../shared/splitPart.ts'
+import { partShare } from '../../shared/splitPart.ts'
 import { HEATING_CATEGORY, heatingByConsumption, heatingFindings, mayAgreeOtherwise, PART_OF_POT, POT_OF_PART } from '../../shared/heating.ts'
 import { andList, meterTypeLabel, plural } from '../../shared/wording.ts'
 import type { TermId } from '../../shared/glossary.ts'
@@ -5061,10 +5061,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           const share = partShare(item, { from: yFrom, to: yTo })
           const expected = Math.round((eb.totalCents * own * (share ? share.days / share.of : 1)) / eb.total)
           // Nach zwei Wechseln können zwei Teile derselben Rechnung im Zeitraum stehen (Durchsicht, Befund 2); der
-          // Tagesanteil gilt für beide zusammen, also werden sie zusammen gemessen.
-          const family = share ? splitFamilyKey(item) : null
-          const measured = family === null ? item.amountCents
-            : items.filter((o) => o.key === 'external' && splitFamilyKey(o) === family).reduce((a, o) => a + o.amountCents, 0)
+          // Tagesanteil gilt für beide zusammen, also werden sie zusammen gemessen. Welche Teile zusammengehören, sagt
+          // die Quelle (#455); ohne Quelle zählt nur die Position selbst.
+          const source = item.sourceId
+          const measured = !source ? item.amountCents
+            : items.filter((o) => o.key === 'external' && o.sourceId === source).reduce((a, o) => a + o.amountCents, 0)
           if (Math.abs(expected - measured) > 100) {
             const days = share ? `, davon ${share.days} von ${share.of} Tagen des Leistungszeitraums` : ''
             const together = measured !== item.amountCents ? ' mit den übrigen Teilen dieser Rechnung im Zeitraum' : ''

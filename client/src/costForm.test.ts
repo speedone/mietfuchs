@@ -24,6 +24,7 @@ import {
   amountsSumText,
   externalHint,
   externalMismatch,
+  othersOfSourceCents,
   tenanciesForAmounts,
   categoryNotice,
   selfAmountUnits,
@@ -311,6 +312,21 @@ describe('Teilnehmer, Gemeinschaftsabrechnung und Einzelbeträge (#94)', () => {
     // Durchsicht, Befund 2: ein zweiter Teil derselben Rechnung im Zeitraum zählt mit.
     expect(externalMismatch(form({ ...angaben, amount: '50,00' }), wohnungen, { ...part, othersCents: 3598 })).toBe(false)
     expect(externalHint(form({ ...angaben, amount: '50,00' }), wohnungen, { ...part, othersCents: 3598 })).toMatch(/mit den übrigen Teilen dieser Rechnung im Zeitraum \(35,98 €\)/)
+  })
+
+  test('Gemeinschaft: die übrigen Teile im Zeitraum zählen nach Quelle, nicht nach gleichen Feldern (#455)', () => {
+    const teil = (id: string, amountCents: number, sourceId?: string, period = periodKey('2025-01')): CostItemOf => ({ id, propertyId: 'o', period,
+      category: 'Hauswart', description: 'Hausmeister (anteilig …)', amountCents, key: 'external', serviceFrom: '2025-01-01', serviceTo: '2025-12-31',
+      ...(sourceId === undefined ? {} : { sourceId }) })
+    const a = teil('a', 15781, 'q')
+    // zwei Teile derselben Quelle im selben Zeitraum werden zusammen gemessen
+    expect(othersOfSourceCents([a, teil('b', 8022, 'q')], a)).toBe(8022)
+    // ein Teil derselben Quelle in einem anderen Zeitraum zählt nicht, einer einer anderen Quelle auch nicht
+    expect(othersOfSourceCents([a, teil('b', 8022, 'q', periodKey('2025-07')), teil('c', 500, 'r')], a)).toBe(0)
+    // zwei Positionen mit gleichem Familienschlüssel ohne gemeinsame Quelle werden einzeln gemessen
+    const ohne = teil('a', 15781)
+    expect(othersOfSourceCents([ohne, teil('b', 8022)], ohne)).toBe(0)
+    expect(othersOfSourceCents([a, teil('b', 8022)], a)).toBe(0)
   })
 
   test('Einzelbeträge: je Mietverhältnis des Jahres, die Summe darf den Betrag nicht übersteigen', () => {

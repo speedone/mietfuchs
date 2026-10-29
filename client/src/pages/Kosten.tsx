@@ -48,6 +48,7 @@ import {
   type KeyContext,
   costMeterTypes,
   costFieldProblems,
+  othersOfSourceCents,
   type CostField,
 } from '../costForm'
 import { notAgreedText, openWhy, untickedChoices, withParticipant } from '../contractAgreement'
@@ -66,7 +67,7 @@ import { useEvaluationQueue } from '../evaluationQueue'
 import AssessmentReview from '../components/AssessmentReview'
 import Co2RefundsCard from '../components/Co2RefundsCard'
 import { usePeriod } from '../period'
-import { partShare, splitFamilyKey } from '../../../shared/splitPart.ts'
+import { partShare } from '../../../shared/splitPart.ts'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import Drawer from '../components/Drawer'
 import { useSaving } from '../useSaving'
@@ -197,8 +198,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   const formShare = storedItem ? partShare(storedItem, period) : null
   const formPart = storedItem && formShare ? {
     ...formShare,
-    othersCents: items.filter((o) => o.id !== storedItem.id && o.period === storedItem.period && o.key === 'external' && splitFamilyKey(o) === splitFamilyKey(storedItem))
-      .reduce((a, o) => a + o.amountCents, 0),
+    othersCents: othersOfSourceCents(items, storedItem),
   } : null
   // Die Jahre des Zeitraums der Position für die übliche Spanne des Zahlungsdatums (#255 PR 3, R-4): bei einer
   // Heizposition unter eigener Heizperiode deren Jahre, sonst die des Abrechnungszeitraums.

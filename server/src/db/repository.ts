@@ -1392,9 +1392,13 @@ function requireSourcePartStays(before: CostItem | null, after: CostItem, option
   if (after.category !== before.category) {
     throw new PeriodError(`${what}Die Kostenart ändern Sie nicht an einem einzelnen Teil, sonst passten die Teile nicht mehr zusammen. Löschen Sie alle Teile und erfassen Sie die Rechnung neu mit „Aufteilen und speichern“.`)
   }
-  if (after.key === 'amounts' && before.key !== 'amounts') throw new PeriodError(splitBlocker(after) ?? `${what}Nach Einzelbeträgen verteilt Mietfuchs sie nicht.`)
+  // Durchsicht von PR 2, M3: Auch ein Teil, dessen übrige Teile schon gelöscht sind, bleibt ein Teil mit Quelle; jeder
+  // Satz nennt deshalb den Ausweg, der wirklich geht: alle Teile löschen und die Rechnung neu erfassen.
+  if (after.key === 'amounts' && before.key !== 'amounts') {
+    throw new PeriodError(`${splitBlocker(after) ?? `${what}Nach Einzelbeträgen verteilt Mietfuchs sie nicht.`} Löschen Sie dafür zuerst alle Teile dieser aufgeteilten Rechnung und erfassen Sie die Rechnung dann neu.`)
+  }
   if (after.operatingPower !== before.operatingPower) {
-    throw new PeriodError(`${what}Als Betriebsstrom (Abzug oder Stromrechnung) lässt sich ein einzelner Teil nicht verbuchen; erfassen Sie die Rechnung dafür ohne Aufteilen.`)
+    throw new PeriodError(`${what}Als Betriebsstrom (Abzug oder Stromrechnung) lässt sich ein einzelner Teil nicht verbuchen. Löschen Sie dafür alle Teile und erfassen Sie die Rechnung neu, ohne Aufteilen.`)
   }
 }
 

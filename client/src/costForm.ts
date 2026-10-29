@@ -219,6 +219,17 @@ export function externalMismatch(form: ItemForm, units: Unit[], part: PartShare 
 }
 const isMismatch = (expected: number, amount: number) => Math.abs(expected - amount) > 100
 
+// Die übrigen Teile derselben Rechnung im Zeitraum eines gespeicherten Teils, in Cent (`othersCents`). Welche
+// Positionen dazugehören, sagt die Quelle (#455), nicht die Ähnlichkeit der Felder; ohne Quelle gibt es keine. Wie
+// beim Hinweis `external.amount-mismatch` in server/src/calc.ts zählen nur Teile, die nach der Gemeinschaftsabrechnung
+// verteilt sind.
+export function othersOfSourceCents(items: readonly CostItem[], stored: CostItem): number {
+  const source = stored.sourceId
+  if (!source) return 0
+  return items.filter((o) => o.id !== stored.id && o.period === stored.period && o.key === 'external' && o.sourceId === source)
+    .reduce((a, o) => a + o.amountCents, 0)
+}
+
 // Der rechnerische Anteil, eine Erklärung, warum es keinen gibt, oder `null`, solange Angaben fehlen.
 // `othersCents`: die übrigen Teile derselben Rechnung im Zeitraum (nach zwei Wechseln möglich, Durchsicht von #454); der
 // Tagesanteil gilt für alle zusammen.
