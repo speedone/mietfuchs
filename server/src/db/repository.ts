@@ -2568,8 +2568,9 @@ export async function writeCostItemParts(tx: Executor, base: CostItem, parts: re
 // sonst die eines übrigen; was übrig bleibt, wird gelöscht. Vorher wandern die gebuchten Zeilen
 // einer Belegauswertung und der Beleg auf einen verbleibenden Teil derselben Rechnung: Mit
 // `SET NULL` stünde die schon gebuchte Rechnung sonst wieder offen im Posteingang und ließe sich ein
-// zweites Mal buchen (#184). Ohne Transaktion, der Aufrufer läuft in einer.
-export async function rewriteCostItemFamily(tx: Executor, members: readonly CostItem[], parts: readonly PartWrite[], newId: () => string, guardOptions: CostItemGuardOptions = { splitPart: true }): Promise<string[]> {
+// zweites Mal buchen (#184). Ohne Transaktion, der Aufrufer läuft in einer. `heir` (#455): ein stehender Teil derselben
+// Quelle, zu dem ein Teil zusammengefasst wird; er übernimmt Belegzeilen und Beleg, wenn kein neuer Teil bleibt.
+export async function rewriteCostItemFamily(tx: Executor, members: readonly CostItem[], parts: readonly PartWrite[], newId: () => string, guardOptions: CostItemGuardOptions = { splitPart: true }, heir?: CostItem): Promise<string[]> {
   const first = members[0]
   if (first === undefined) return []
   const unused = [...members]
@@ -2596,7 +2597,7 @@ export async function rewriteCostItemFamily(tx: Executor, members: readonly Cost
       written.push(id)
     }
   }
-  const keep = chosen.find((m) => m !== undefined)
+  const keep = chosen.find((m) => m !== undefined) ?? heir
   for (const m of unused) {
     const booked = await tx.select({ idx: assessmentLines.idx }).from(assessmentLines).where(eq(assessmentLines.costItemId, m.id))
     if (keep === undefined && (booked.length > 0 || m.invoiceFile !== undefined)) {
@@ -2969,7 +2970,9 @@ export async function sharesForUnit(db: Database, unitId: string): Promise<numbe
 export async function settleOperatingPowerLinks(tx: Executor, propertyId: string, parts: ReadonlyMap<string, readonly { id: string; period: PeriodKey }[]>): Promise<void> {
   const all = (await readCostItems(tx)).filter((c) => c.propertyId === propertyId)
   const byId = new Map(all.map((c) => [c.id, c]))
-  const familyOf = (id: string) => [...parts.values()].find((list) => list.some((p) => p.id === id)) ?? []
+  // Je bisheriger Position ihre Teile; ein Teil, der im Wechsel zusammengefasst und gelöscht wurde, findet sie unter seiner
+  // eigenen Kennung (#455).
+  const familyOf = (id: string) => parts.get(id) ?? [...parts.values()].find((list) => list.some((p) => p.id === id)) ?? []
   for (const d of all) {
     if (d.operatingPower !== 'deduction' || d.operatingPowerGeneralId === undefined) continue
     const g = byId.get(d.operatingPowerGeneralId)

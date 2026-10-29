@@ -46,7 +46,10 @@ export type FlowStep = {
   // je Basisbeschreibung, je Jahr der Zahlung
   taxYears: Record<string, Record<string, number>>
 }
-export type Flow = { index: number; wholeThroughout: boolean; steps: FlowStep[] }
+// `corrected` (nicht in der Datei von vor dem Umbau): Vor diesem Wechsel wurde ein Betrag berichtigt. Dann sind die
+// Teile einer Rechnung nicht mehr nach Tagen verteilt, und wer sie einzeln statt als Ganzes neu teilt, legt die
+// Berichtigung in andere Zeiträume.
+export type Flow = { index: number; wholeThroughout: boolean; steps: (FlowStep & { corrected?: boolean })[] }
 
 const pick = <T>(rng: Rng, list: readonly T[]): T => {
   const v = list[Math.floor(rng() * list.length)]
@@ -178,7 +181,10 @@ function treatedWhole(items: readonly CostItem[], before: PeriodRules, next: Per
   return true
 }
 
-export async function runFlow(index: number): Promise<Flow> {
+// `onStep` sieht nach jedem Wechsel die Positionen des Objekts (Prüfungen, die nicht in der Datei stehen).
+export type StepCheck = (items: readonly CostItem[], step: { index: number; step: number }) => void
+
+export async function runFlow(index: number, onStep?: StepCheck): Promise<Flow> {
   const rng = rngOf(FLOW_SEED * 1000 + index)
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-wechsel-quelle-'))
   const opened = await openFreshDatabase(dataDir)
@@ -202,7 +208,8 @@ export async function runFlow(index: number): Promise<Flow> {
       }
     })
     let whole = true
-    const steps: FlowStep[] = []
+    let corrected = false
+    const steps: Flow['steps'] = []
     const changes = int(rng, 2, 5)
     for (let step = 0; step < changes; step++) {
       // Manchmal ein berichtigter Betrag: gewählt nach Zeitraum und Basisbeschreibung, nicht nach Zeile.
@@ -216,7 +223,7 @@ export async function runFlow(index: number): Promise<Flow> {
           const row = items.filter((c) => `${c.period}\u0000${baseDescription(c.description)}` === chosen).sort((a, b) => (a.id < b.id ? -1 : 1))[0]
           // Lehnt die Schreibprüfung ab (etwa ein Jahr der Zahlung, das ein früherer Wechsel stehen ließ), bleibt der
           // Betrag; der Ablauf geht weiter.
-          if (row !== undefined) await updateEntity(db, 'costItems', row.id, { amountCents: row.amountCents + Math.sign(row.amountCents || 1) * delta }).catch(() => null)
+          if (row !== undefined && (await updateEntity(db, 'costItems', row.id, { amountCents: row.amountCents + Math.sign(row.amountCents || 1) * delta }).catch(() => null)) !== null) corrected = true
         })
       }
       const result = await opened.write(async (db) => {
@@ -237,7 +244,8 @@ export async function runFlow(index: number): Promise<Flow> {
         const error = r === null ? 'kein Objekt' : 'error' in r ? r.error : null
         return { next, error, items: (await readCostItems(db)).filter((c) => c.propertyId === P) }
       })
-      steps.push({ rules: result.next, error: result.error, ...sumsOf(result.items) })
+      onStep?.(result.items, { index, step })
+      steps.push({ rules: result.next, error: result.error, ...sumsOf(result.items), ...(corrected ? { corrected } : {}) })
     }
     return { index, wholeThroughout: whole, steps }
   } finally {
@@ -246,8 +254,8 @@ export async function runFlow(index: number): Promise<Flow> {
   }
 }
 
-export async function runFlows(count = FLOW_COUNT): Promise<Flow[]> {
+export async function runFlows(count = FLOW_COUNT, onStep?: StepCheck): Promise<Flow[]> {
   const flows: Flow[] = []
-  for (let i = 0; i < count; i++) flows.push(await runFlow(i))
+  for (let i = 0; i < count; i++) flows.push(await runFlow(i, onStep))
   return flows
 }

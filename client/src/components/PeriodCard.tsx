@@ -67,6 +67,17 @@ export function RhythmFields({ form, onChange, fromField }: { form: RhythmForm; 
 // und dem Betrag. Auch die Vorschau der Heizung nutzt die Liste.
 const balance = (cents: number): string => (cents >= 0 ? `Guthaben ${fmtEuro(cents)}` : `Nachzahlung ${fmtEuro(-cents)}`)
 
+// Kalte Rechnungen mit Leistungszeitraum, nach Tagen auf die neuen Zeiträume geteilt. Kommt ein Anteil zu einem Teil
+// derselben Rechnung, der im Zeitraum stehen bleibt, sagt es ein Satz (#455): Dort entsteht keine zweite Zeile.
+export function MoveList({ moves }: { moves: PeriodChangePreview['moves'] }) {
+  return moves.map((m) => (
+    <p key={m.costItemId}>
+      „{m.description}“ ({fmtEuro(m.amountCents)}) wird nach Tagen aufgeteilt: {m.parts.map((p) => `${p.label}: ${fmtEuro(p.amountCents)}`).join(', ')}.
+      {m.parts.flatMap((p) => (p.mergedInto === undefined ? [] : [` Der Anteil für ${p.label} wird mit dem Teil „${p.mergedInto}“ zusammengefasst.`])).join('')}
+    </p>
+  ))
+}
+
 export function EffectsList({ effects, earliest }: { effects: PeriodEffect[]; earliest?: string }) {
   if (effects.length === 0) return null
   return (
@@ -366,9 +377,7 @@ export default function PeriodCard({ onChanged }: { onChanged?: () => Promise<vo
                 </div>
               )}
               {preview.blocked.map((b) => <NoticeBox key={b} level="error" action={b} />)}
-              {preview.moves.map((m) => (
-                <p key={m.costItemId}>„{m.description}“ ({fmtEuro(m.amountCents)}) wird nach Tagen aufgeteilt: {m.parts.map((p) => `${p.label}: ${fmtEuro(p.amountCents)}`).join(', ')}.</p>
-              ))}
+              <MoveList moves={preview.moves} />
               {preview.assessments.map((a) => <p key={a.assessmentId} className="muted">Belegauswertung „{a.file}“: künftig {a.toLabel}.</p>)}
               {/* Integrationsdurchsicht zu #415: eigene Anschreiben je Mieter eines Zeitraums, der sich ändert, entfallen. */}
               {(preview.letters ?? []).map((t) => <p key={t} className="muted">{t}</p>)}

@@ -250,7 +250,8 @@ test('H2: zweiter Wechsel über eine schon geteilte Rechnung verschiebt je Miete
     assert.equal(sum(nachher), sum(vorher))
     verweiseStimmen(nachher)
     const strom = nachher.filter((c) => c.category === 'Beleuchtung/Allgemeinstrom')
-    assert.deepEqual(strom.filter((c) => c.operatingPower === undefined).map((c) => [c.period, c.amountCents]).sort(), [['2025-01', 16712], ['2025-01', 32877], ['2025-07', 50411]])
+    // #455: Der bewegte Anteil (16.712) kommt zum stehenden Teil des Rumpfs (32.877), eine Zeile je Zeitraum.
+    assert.deepEqual(strom.filter((c) => c.operatingPower === undefined).map((c) => [c.period, c.amountCents]).sort(), [['2025-01', 49589], ['2025-07', 50411]])
     assert.deepEqual(strom.filter((c) => c.operatingPower === 'deduction').map((c) => [c.period, c.amountCents]).sort(), [['2025-01', -1671], ['2025-01', -3288], ['2025-07', -5041]])
     assert.deepEqual(await jeMieter(opened, ['2025-01', '2025-07']), soll)
   })

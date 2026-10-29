@@ -412,6 +412,14 @@ test('Der Schritt ändert keinen Betrag', async () => {
         // wieder heraus).
         c.exec('UPDATE cost_items SET source_id = NULL')
         c.exec('DELETE FROM cost_sources')
+        // Zwei Teile derselben Rechnung im selben Zeitraum (Fall aus #455, Schritt 2). Seit der Wechsel nach Quelle
+        // zusammenfasst, entstehen sie über die Routen nicht mehr; deshalb hier von Hand, wie 0.13.1 sie hinterließ.
+        for (const property of (await readStock(c.db)).properties) {
+          const period = periodContaining(rulesOf(property), '2025-07-01').key
+          for (const [i, amount] of [[1, 1200], [2, 2450]] as const) {
+            insertCostItem(c, { id: `dup-${property.id}-${i}`, property_id: property.id, period, category: 'Grundsteuer', description: `Grundsteuer Juli (anteilig ${i}. Teil)`, amount_cents: amount, key: 'area', service_from: '2025-07-01', service_to: '2025-07-31' })
+          }
+        }
         const before = await readStock(c.db)
         const frozenBefore = await frozenOf(c)
         c.exec('BEGIN')
