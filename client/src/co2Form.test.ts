@@ -3,6 +3,7 @@ import { fmtEuro } from './api'
 import { CO2_ANSWER_OPTIONS, CO2_NOT_A_SIGN, CO2_QUESTION, co2Body, co2Labels, co2ToForm, parseDecimal, probeLine, probeQuestion, usersTotalOf, type Co2Context } from './co2Form'
 import { periodKey } from '../../shared/period.ts'
 import type { Co2Statement } from './types'
+import { KEY_LABELS } from './types'
 
 const ctx: Co2Context = {
   unitsCount: 4,
@@ -132,4 +133,22 @@ test('Probe ohne Position mit Einzelbeträgen: nennt den Grund statt „Ihre Pos
   expect(p?.text).not.toMatch(/Ihre Positionen/)
   expect(p?.text).toMatch(/Keine Heizposition mit dem Schlüssel „Einzelbeträge je Mieter \(z\. B\. Messdienst\)“/)
   expect(p?.text).toMatch(/Verbrauch \(Zähler\)/)
+})
+
+test('Probe ohne Einzelbeträge: Eigentumswohnung, leerer Topf, und eine aufgehende Probe bleibt ✓', () => {
+  const f = co2ToForm(gespeichert, ctx)
+  const extern: Co2Context = { unitsCount: 1, homeowners: true, items: [{ id: 'hz', description: 'Hausgeld Heizung', amountCents: 123000, key: 'external' }] }
+  const etw = probeLine({ ...co2ToForm(gespeichert, extern), unitsCount: '1' }, extern)
+  expect(etw?.text).toMatch(/Übernehmen Sie an der Position den Betrag Ihrer Wohnung aus der Einzelabrechnung \(Heizung\)/)
+  expect(etw?.text).not.toMatch(/je Mieter an der Position|laut Messdienst/)
+  const leer = probeLine(f, { ...ctx, items: [] })
+  expect(leer?.text).toMatch(/Für diese Anlage ist keine Heizposition erfasst/)
+  expect(leer?.text).not.toMatch(/an der Position/)
+  // Wie auf dem Server: Ohne Kosten und CO₂-Anteil geht die Probe auf, das Formular meldet dann keinen Fehler.
+  expect(probeLine({ ...f, usersTotal: '0', landlordCo2: '0' }, { ...ctx, items: [] })?.ok).toBe(true)
+})
+
+// Der Server nennt diese Auswahl in co2.sum-check wörtlich (calc.ts kennt nur die Drucktexte); wer sie umbenennt, zieht calc.ts mit.
+test('Name der Auswahl für Einzelbeträge wie im Hinweis co2.sum-check', () => {
+  expect(KEY_LABELS.amounts).toBe('Einzelbeträge je Mieter (z. B. Messdienst)')
 })

@@ -192,17 +192,23 @@ export function probeLine(form: Co2Form, ctx: Co2Context): { text: string; ok: b
   const L = form.landlordCo2.trim() === '' ? null : parseEuro(form.landlordCo2)
   const units = Number(form.unitsCount)
   if (S === null || L === null || !Number.isInteger(units) || units < 1) return null
+  const p = serviceProbe({ deducted: form.answer === 'deducted', items: serviceItemsOf(ctx), usersTotalCents: S, landlordCents: L, unitsCount: units, approx: form.usersTotalApprox })
   // Ohne Position mit Einzelbeträgen stand hier „Ihre Positionen: 0,00 €“ (Praxistest): Die Probe vergleicht nur
-  // Messdienstpositionen, geht so also nie auf. Dann der Grund statt der Zahl.
-  if (serviceItemsOf(ctx).length === 0) {
+  // Positionen mit Einzelbeträgen und geht so nicht auf. Dann der Grund statt der Zahl, wie co2.sum-check auf dem Server.
+  if (serviceItemsOf(ctx).length === 0 && !p.ok) {
     const others = ctx.items.map((i) => `„${i.description}“ (${KEY_LABELS[i.key]})`).join(', ')
+    const advice = ctx.items.length === 0
+      ? `Erfassen Sie die Heizkosten auf der Seite Kosten mit dieser Heizanlage und dem Schlüssel „${KEY_LABELS.amounts}“`
+      : ctx.homeowners
+        ? 'Übernehmen Sie an der Position den Betrag Ihrer Wohnung aus der Einzelabrechnung (Heizung) auf der Seite Kosten'
+        : 'Übernehmen Sie die Einzelbeträge je Mieter an der Position auf der Seite Kosten'
+    // Ohne Punkt am Ende wie die übrigen Probezeilen: Die Rückfrage beim Speichern hängt selbst „.“ an.
     return {
-      text: `Keine Heizposition mit dem Schlüssel „${KEY_LABELS.amounts}“${others ? `, erfasst: ${others}` : ''} ✗ · ` +
-        'Die Probe vergleicht nur Positionen mit den Einzelbeträgen laut Messdienst und kann so nicht aufgehen. Übernehmen Sie die Einzelbeträge je Mieter an der Position auf der Seite Kosten',
+      text: (ctx.items.length === 0 ? 'Für diese Anlage ist keine Heizposition erfasst ✗ · ' : `Keine Heizposition mit dem Schlüssel „${KEY_LABELS.amounts}“, erfasst: ${others} ✗ · `) +
+        `Die Probe vergleicht nur Positionen mit Einzelbeträgen laut Abrechnung und kann so nicht aufgehen. ${advice}`,
       ok: false,
     }
   }
-  const p = serviceProbe({ deducted: form.answer === 'deducted', items: serviceItemsOf(ctx), usersTotalCents: S, landlordCents: L, unitsCount: units, approx: form.usersTotalApprox })
   const entered = p.enteredOk ? '' : ` · Einzel- und Eigenbeträge zusammen ${fmtEuro(p.enteredCents)}, mehr als ${ctx.homeowners ? 'die Heizkosten Ihrer Wohnung' : 'die Summe der Kosten aller Nutzer'}`
   // Geht sie nicht auf, nennt die Zeile beide Lesarten (Durchsicht M3): Oft ist nur die Antwort auf
   // die Frage nach der Abzugszeile falsch. Laienprobe B20: in Worten, ohne S und L.

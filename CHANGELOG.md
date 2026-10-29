@@ -74,7 +74,6 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   fehlt“ mit Weg in die Einstellungen. Bisher druckte das Anschreiben ohne Absender und ohne Unterschrift, ohne
   Warnung; eine Anpassung der Vorauszahlungen nach § 560 Abs. 4 BGB braucht Textform, und dafür muss der Erklärende
   genannt sein (§ 126b BGB). Gedruckt wird weiterhin.
-### Behoben
 
 - CO₂-Kosten: Sind die Heizkosten einer Anlage nicht mit dem Schlüssel „Einzelbeträge je Mieter (z. B. Messdienst)“
   erfasst, sondern etwa nach Wohnfläche oder Verbrauch verteilt, meldete die Probe der CO₂-Angaben „Ihre Positionen:

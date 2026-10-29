@@ -553,11 +553,28 @@ test('Heizposition mit eigenem Schlüssel statt Einzelbeträgen: Die Probe nennt
   const text = textOf(r, 'co2.sum-check')
   assert.doesNotMatch(text, /0,00 €/)
   assert.doesNotMatch(text, /Ihre Positionen? +(hat|haben)/)
-  assert.match(text, /„Heizkosten laut Messdienst“ \(Schlüssel „Wohnfläche“\)/)
+  // Derselbe Satzteil wie die Auswahl im Formular („nach Wohnfläche“), Durchsicht.
+  assert.match(text, /„Heizkosten laut Messdienst“ \(nach Wohnfläche\)/)
+  assert.match(text, /Übernehmen Sie an der Position die Einzelbeträge je Mieter aus der Abrechnung des Messdienstes/)
   assert.match(text, /Schlüssel „Einzelbeträge je Mieter \(z\. B\. Messdienst\)“/)
   // Die Folgen bleiben dieselben: nichts gebucht, Kürzungsrecht genannt.
   assert.match(text, /bucht Mietfuchs keine CO₂-Aufteilung/)
   assert.match(text, /um 3 % kürzen/)
   assert.ok(!codes(r).includes('co2.pool-foreign-item'), 'der Hinweis je Position stünde doppelt')
   assert.deepEqual(partsOf(r), [])
+})
+
+// Durchsicht der Behebung: Eigentumswohnung und geschätzte Summe brauchen je eigene Sätze. Ohne jede Heizposition
+// rechnet die Anlage hier nichts ab (kein settledHere), der Hinweis kommt dann gar nicht; das Formular sagt es selbst.
+test('Ohne Einzelbeträge, Eigentumswohnung: Der Rat nennt die Einzelabrechnung (Heizung), nicht den Messdienst', () => {
+  const s = { units: [unit('w')], tenancies: [tenancy('tw', 'w')], costItems: [{ id: 'hz', period: P, category: HEATING_CATEGORY, description: 'Heizkosten laut Hausgeld', amountCents: 123000, key: 'area', heatingPlantId: 'hp' } satisfies SnapshotCostItem] }
+  const text = textOf(settle(s, [co2({ serviceUsersTotalCents: 120000, serviceLandlordCents: 3000, serviceUnitsCount: 1 })], [plant({ source: 'homeowners' })]), 'co2.sum-check')
+  assert.match(text, /Übernehmen Sie an der Position den Betrag Ihrer Wohnung aus der Einzelabrechnung \(Heizung\)/, text)
+  assert.doesNotMatch(text, /Abrechnung des Messdienstes|je Mieter aus/, text)
+})
+
+test('Ohne Einzelbeträge mit geschätzter Summe: kein Satz zum Rundungsspielraum, der hier nichts sagt', () => {
+  const nachFlaeche: SnapshotCostItem = { id: 'hz', period: P, category: HEATING_CATEGORY, description: 'Heizkosten', amountCents: 393301, key: 'area', heatingPlantId: 'hp' }
+  const text = textOf(settle({ ...vier, costItems: [nachFlaeche] }, [techem({ serviceUsersTotalApprox: true })]), 'co2.sum-check')
+  assert.doesNotMatch(text, /Rundungsspielraum/, text)
 })
