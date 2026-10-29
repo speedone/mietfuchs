@@ -8,15 +8,18 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Geändert
 
-- Eine aufgeteilte Rechnung trägt intern eine Kennung ([#455](https://github.com/speedone/mietfuchs/issues/455)):
-  Rechnungen, deren Leistungszeitraum über mehrere Abrechnungszeiträume reicht, stehen weiter als Teile je
-  Zeitraum da; jeder Teil verweist jetzt auf seine Rechnung. Beim Update bekommen bestehende Teile, die eindeutig
-  zusammengehören, diese Kennung von selbst, auch die aus einem eingespielten Backup. Keine Zahl ändert sich, auch keine abgeschlossene
-  Abrechnung.
-- Die Teile einer aufgeteilten Rechnung zählen als eine Rechnung ([#455](https://github.com/speedone/mietfuchs/issues/455)):
-  In der Kostenliste steht unter einem Teil „Teil von 2 · Rechnung gesamt …“. Die Belegabdeckung in Belegordner und
-  Cockpit zählt die Rechnung einmal und belegt, sobald ein Teil den Beleg trägt, auch einer in einem anderen Zeitraum.
-  Zwei Teile derselben Rechnung im selben Zeitraum gelten im Hinweis auf doppelte Positionen nicht mehr als Doppelung.
+- Aufgeteilte Rechnungen sind jetzt eine Rechnung ([#455](https://github.com/speedone/mietfuchs/issues/455)): Reicht der Leistungszeitraum einer Rechnung über mehrere
+  Abrechnungszeiträume, stehen weiter Teile je Zeitraum da, aber jeder Teil verweist auf seine Rechnung. Beim Update
+  bekommen bestehende Teile, die eindeutig zusammengehören, diese Kennung von selbst, auch die aus einem eingespielten
+  Backup. Keine Zahl ändert sich, auch keine abgeschlossene Abrechnung.
+  - In der Kostenliste steht unter einem Teil „Teil von 2 · Rechnung gesamt …“. Die Belegabdeckung in Belegordner,
+    Cockpit und Belegmappe zählt die Rechnung einmal und belegt, sobald ein Teil den Beleg trägt, auch einer in einem
+    anderen Zeitraum; die Belegkopien der Abrechnung nehmen den Beleg der Rechnung mit.
+  - Der Hinweis auf doppelte Positionen zählt je Rechnung: Zwei Teile derselben Rechnung gelten nicht als Doppelung, und
+    ein Teil heißt nicht „ohne Beleg“, wenn die Rechnung anderswo belegt ist.
+  - An einem Teil ändern Sie weder Kostenart noch Einzelbeträge noch Betriebsstrom; die Meldung nennt den Weg (alle Teile
+    löschen und neu erfassen, oder je Abrechnungszeitraum eine Position). Bei der Belegbuchung wird ein Teil nur geöffnet,
+    nicht verknüpft; der Hinweis sagt, die Zeile zu verwerfen, wenn der Teil stimmt.
 
 ### Behoben
 
