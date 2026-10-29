@@ -1194,7 +1194,7 @@ async function requireServiceAndTax(db: Executor, before: CostItem | null, after
   // anderen Leistungszeitraum oder Zeitraum stimmte sein Anteil nicht mehr zum Schnitt nach Tagen,
   // und die Geschwisterteile blieben stehen. Den Wechsel des Rhythmus (`splitPart`) betrifft das nicht.
   // Auch nicht zur Heizposition (Nachprüfung von #226): Heizkosten werden nie nach Tagen geteilt.
-  if (before !== null && !options.splitPart && isSplitPart(rules, before) &&
+  if (before !== null && !options.splitPart && (before.sourceId !== undefined || isSplitPart(rules, before)) &&
     (before.serviceFrom !== from || before.serviceTo !== to || before.period !== after.period || after.category === HEATING_CATEGORY)) {
     throw new PeriodError(splitPartMessage(before))
   }
@@ -1393,7 +1393,7 @@ function requireSourcePartStays(before: CostItem | null, after: CostItem, option
     throw new PeriodError(`${what}Die Kostenart ändern Sie nicht an einem einzelnen Teil, sonst passten die Teile nicht mehr zusammen. Löschen Sie alle Teile und erfassen Sie die Rechnung neu mit „Aufteilen und speichern“.`)
   }
   if (after.key === 'amounts' && before.key !== 'amounts') throw new PeriodError(splitBlocker(after) ?? `${what}Nach Einzelbeträgen verteilt Mietfuchs sie nicht.`)
-  if (after.operatingPower !== undefined && before.operatingPower === undefined) {
+  if (after.operatingPower !== before.operatingPower) {
     throw new PeriodError(`${what}Als Betriebsstrom (Abzug oder Stromrechnung) lässt sich ein einzelner Teil nicht verbuchen; erfassen Sie die Rechnung dafür ohne Aufteilen.`)
   }
 }
@@ -2618,7 +2618,7 @@ async function splitBase(db: Database, propertyId: string | null, body: unknown,
   if (currentId !== null && !current) throw new PeriodError('Diese Kostenposition gibt es nicht (mehr). Bitte laden Sie die Seite neu.')
   // Ein schon aufgeteilter Teil ist nicht die ganze Rechnung (Durchsicht von #226, C1): Ihn noch
   // einmal aufzuteilen, verteilte seinen Anteil ein zweites Mal über beide Zeiträume.
-  if (current && isSplitPart(await rulesForProperty(db, current.propertyId), current)) throw new PeriodError(splitPartMessage(current))
+  if (current && (current.sourceId !== undefined || isSplitPart(await rulesForProperty(db, current.propertyId), current))) throw new PeriodError(splitPartMessage(current))
   const base = mergeCostItem(current ?? emptyCostItem(currentId ?? 'vorschau'), current ? body : { ...Object(body), propertyId })
   if (base.category === HEATING_CATEGORY) {
     throw new PeriodError('Heizkosten teilt Mietfuchs nicht nach Tagen auf: Sie müssen den Verbrauch im Abrechnungszeitraum abbilden (BGH VIII ZR 156/11).')
@@ -2680,8 +2680,6 @@ export async function saveCostItemSplit(db: Database, propertyId: string | null,
       period: p.period, amountCents: p.amountCents, labor35aCents: p.labor35aCents, description: p.description,
       taxYear: p.needsTaxYear ? base.taxYear ?? null : null,
     })), newId, currentId, { splitPart: true }, sourceId)
-    // Zeigte die aufgeteilte Position schon auf eine Quelle, ist sie jetzt womöglich leer.
-    await dropEmptySource(tx, current?.sourceId)
     return written
   })
   const all = await readCostItems(db)
