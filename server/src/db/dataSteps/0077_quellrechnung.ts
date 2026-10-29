@@ -74,7 +74,7 @@ function touchesSeveralPeriods(r: Rhythm, from: string, to: string): boolean {
   return nextStart(r, first) <= indexOfDate(to)
 }
 
-// shared/splitPart.ts, `baseDescription` und `splitFamilyKey`.
+// shared/splitPart.ts, `baseDescription` und `splitFamilyKey` (Stand 0.13.1).
 const baseDescription = (description: string): string => description.replace(SPLIT_SUFFIX, '')
 const familyKey = (c: CostItemRow): string =>
   [c.category, baseDescription(c.description), c.serviceFrom, c.serviceTo, c.vendor ?? '', c.invoiceFile ?? '', c.key].join('\u0000')

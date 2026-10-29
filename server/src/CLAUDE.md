@@ -149,7 +149,8 @@ Register, Belegabdeckung und Belegmappe folgen ihm, der Posteingang bleibt beim 
   (`path.basename`), ein Abbruch löscht ihn nicht.
 - **Zuordnen an eine bestehende Position** (`attachChoices`, `amountCheckBody`): passende Positionen
   oben, danach „Betrag prüfen“ (eine übernommene Position trägt einen Schätzbetrag). Bei `amounts`,
-  `external` oder einem Lohnanteil über dem neuen Betrag nur „Position öffnen“; ein vorhandener
+  `external`, einem Teil einer aufgeteilten Rechnung (`amountCheckIsPart`, #455: sein Betrag ist nur der Anteil des
+  Zeitraums) oder einem Lohnanteil über dem neuen Betrag nur „Position öffnen“; ein vorhandener
   §35a-Anteil wird genannt. Dateinamen vor `matchCategory` mit NFC normalisieren.
 - **Löschen** gesperrt, solange irgendeine Position irgendeines Objekts auf den Beleg zeigt
   (`invoiceFilesInUse`).
@@ -423,6 +424,13 @@ Schnappschuss trägt `receiptedSources`, weil er sonst nur seinen Zeitraum sieht
 Abzeichen, Cockpit und Belegmappe (`isItemCovered` mit `partsBySource`); „Hier beheben“ führt nie zu einem Teil einer
 belegten Rechnung. Die Kostenliste zeigt unter einem Teil „Teil von N“. Bei der Belegbuchung ist ein Teil kein Ziel zum
 Verknüpfen (`formOnly`, `part`): Die Zeile wird verworfen, wenn der Teil stimmt. Das Steuer-ZIP bleibt je Position.
+
+Ist eine aufgeteilte Rechnung an der Gruppe beteiligt, richtet sich der Rat nach der Quelle, nicht nach der Zahl der
+Teile im Zeitraum (die übrigen sieht die Gruppe nicht): nie „setzen Sie ihren Betrag auf den der Rechnung“, gelöscht
+wird eine aufgeteilte Rechnung nur mit allen Teilen, auch denen in anderen Zeiträumen. Ohne Quelle bleibt der Wortlaut.
+Zwei Positionen, deren Leistungszeiträume beide angegeben sind und sich nicht überschneiden, verbindet
+`possibleDuplicates` nicht (die Versicherung Juli bis Juni, zwei Jahre nacheinander); `sameCostCandidates` und damit
+Kostenformular und Belegbuchung fragen weiter ohne Leistungszeitraum.
 
 ## Belegbuchung (#170)
 

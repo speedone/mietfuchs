@@ -16,7 +16,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
     Cockpit und Belegmappe zählt die Rechnung einmal und belegt, sobald ein Teil den Beleg trägt, auch einer in einem
     anderen Zeitraum; die Belegkopien der Abrechnung nehmen den Beleg der Rechnung mit.
   - Der Hinweis auf doppelte Positionen zählt je Rechnung: Zwei Teile derselben Rechnung gelten nicht als Doppelung, und
-    ein Teil heißt nicht „ohne Beleg“, wenn die Rechnung anderswo belegt ist.
+    ein Teil heißt nicht „ohne Beleg“, wenn die Rechnung anderswo belegt ist. Ist eine aufgeteilte Rechnung beteiligt,
+    rät er, sie nur ganz zu löschen, mit den Teilen in anderen Zeiträumen, und nie, ihren Betrag auf den der Rechnung zu
+    setzen. Zwei Rechnungen, deren Leistungszeiträume sich nicht überschneiden, gelten nicht als Doppelung.
+  - „Betrag prüfen“ im Belegordner bietet bei einem Teil kein Feld für den Betrag des Belegs an, denn der Teil trägt nur
+    den Anteil seines Zeitraums; der Betrag wird im Formular geprüft.
   - An einem Teil ändern Sie weder Kostenart noch Einzelbeträge noch Betriebsstrom; die Meldung nennt den Weg (alle Teile
     löschen und neu erfassen, oder je Abrechnungszeitraum eine Position). Bei der Belegbuchung wird ein Teil nur geöffnet,
     nicht verknüpft; der Hinweis sagt, die Zeile zu verwerfen, wenn der Teil stimmt.

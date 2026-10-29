@@ -4825,7 +4825,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const unreceipted = invoices.find((inv) => !inv.hasReceipt)
     const first = unreceipted?.parts[0] ?? group[0]
     if (!first) continue
-    const manyParts = (unreceipted?.parts.length ?? 0) > 1
+    // Ist eine aufgeteilte Rechnung beteiligt (Durchsicht von PR 3, I1), richtet sich der Rat nach der Quelle, nicht nach
+    // der Zahl der Teile im Zeitraum: Ihre Teile in anderen Zeiträumen sieht die Gruppe nicht. Den Betrag eines Teils
+    // auf den der Rechnung zu setzen, zählte sie doppelt; gelöscht wird eine aufgeteilte Rechnung nur ganz.
+    const isSourced = (inv: { parts: SnapshotCostItem[] } | undefined) => !!inv?.parts.some((p) => p.sourceId)
+    const anySourced = invoices.some(isSourced)
     const list = invoices.map(({ parts, hasReceipt }) => {
       const head = parts[0]
       const amount = parts.length > 1
@@ -4836,8 +4840,13 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const named = andList(list)
     warn('cost.possible-duplicate',
       `${named} stehen ${list.length === 2 ? `beide ${at.label}` : `${at.label} alle`} unter „${first.category}“. ${list.length === 2 ? 'Ist das dieselbe Rechnung' : 'Ist darunter dieselbe Rechnung zweimal'}, etwa einmal aus dem Vorjahr übernommen und einmal aus dem Beleg erfasst, wird sie zweimal verteilt. ` +
-      (manyParts
-        ? 'Dann bitte die Teile dieser Rechnung löschen, alle und nicht einen einzelnen, in der Regel die Rechnung ohne Beleg. '
+      (isSourced(unreceipted)
+        ? `Dann bitte die Rechnung ohne Beleg löschen, mit allen ihren Teilen, auch denen in anderen Zeiträumen, nicht nur einen einzelnen. Soll sie bleiben, löschen Sie stattdessen die ${list.length === 2 ? 'andere Position' : 'doppelt erfasste andere Position'}; ihren Betrag auf den der Rechnung zu setzen, zählte ihre übrigen Teile doppelt. `
+        : anySourced
+        ? (list.length === 2
+          ? 'Dann bitte die Position ohne Beleg löschen und die aufgeteilte Rechnung mit allen ihren Teilen stehen lassen. '
+          : 'Dann bitte die doppelt erfasste Position löschen, in der Regel die ohne Beleg; eine aufgeteilte Rechnung nur ganz, mit allen ihren Teilen, auch denen in anderen Zeiträumen. ') +
+          'Einen ihrer Teile auf den Betrag der ganzen Rechnung zu setzen oder einzeln zu löschen, zählte die Rechnung falsch. '
         : list.length === 2
         ? 'Dann bitte eine der beiden Positionen löschen, in der Regel die ohne Beleg. Soll die ohne Beleg bleiben, setzen Sie ihren Betrag auf den der Rechnung und löschen die andere. '
         : 'Dann bitte die doppelt erfasste Position löschen, in der Regel die ohne Beleg. ') +

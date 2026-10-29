@@ -13,7 +13,7 @@ import { closedCheckPath, filedUnderSettlement, type PlantPeriods } from '../cos
 import { isCalendarRules, periodContaining, periodLabel, periodsBetween, rulesOf, startYearOf } from '../../../shared/period.ts'
 import { renderInvoicePages, renderThumbnail } from '../pdfPreview'
 import { buildTenantFolderPdf, isIndividualAmounts, planTenantFolder, type TenantFolderPlan } from '../tenantFolder'
-import { amountCheckBody, amountCheckMode, attachChoices, buildFolder, coverage, filesByItem, duplicateHints, inboxFor, inboxOf, inboxPage, INBOX_STEP, matchesQuery, partsBySource, receiptCards, registerCount, receiptName, yearSections, type CategoryGroup, type FolderFilter, type ReceiptCard, type ReceiptUpload } from '../receipts'
+import { amountCheckBody, amountCheckFormReason, amountCheckIsPart, amountCheckMode, attachChoices, buildFolder, coverage, filesByItem, duplicateHints, inboxFor, inboxOf, inboxPage, INBOX_STEP, matchesQuery, partsBySource, receiptCards, registerCount, receiptName, yearSections, type CategoryGroup, type FolderFilter, type ReceiptCard, type ReceiptUpload } from '../receipts'
 import { previewWhenVisible } from '../previewQueue'
 import { useFocusFirstNew } from '../focusNew'
 import Field from '../components/Field'
@@ -398,6 +398,9 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
   // Die Teile je Rechnung (#455): Der Beleg eines Teils belegt auch die übrigen.
   const parts = useMemo(() => partsBySource(costItems), [costItems])
   const propertyName = (id: string) => properties.find((p) => p.id === id)?.name || 'Ohne Namen'
+  // „Betrag prüfen“: die Regeln des Objekts der Position, damit auch ein alter Teil ohne Quelle als Teil zählt (#455).
+  const checkRules = amountCheck ? rulesOf(properties.find((p) => p.id === amountCheck.item.propertyId)) : undefined
+  const checkIsPart = amountCheck ? amountCheckIsPart(amountCheck.item, checkRules) : false
   const showProperty = filter.propertyId === 'all' && properties.length > 1
   // Mappen gibt es je Objekt und Jahr; bei einem einzigen Objekt ist es dieses.
   const packProperty = filter.propertyId !== 'all' ? filter.propertyId : properties.length === 1 ? properties[0]?.id ?? null : null
@@ -683,7 +686,8 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
         <div role="status" aria-label="Betrag prüfen"><NoticeBox level="warning" className="stack no-print">
           Beleg an „{amountCheck.item.description}“ angehängt. Betrag der Position: <strong>{fmtEuro(amountCheck.item.amountCents)}</strong>.
           {amountCheck.closed && <div>{closedPeriodNotice(labelOfKey(rulesOf(properties.find((p) => p.id === amountCheck.item.propertyId)), amountCheck.item.period))}</div>}
-          {' '}Stimmt er mit dem Beleg überein? Eine aus dem Vorjahr übernommene Position trägt oft noch einen geschätzten Betrag.{' '}
+          {/* Ein Teil trägt nur den Anteil seines Zeitraums; mit dem Beleg verglichen, lüde der Satz zum Fehler ein (#455). */}
+          {!checkIsPart && <>{' '}Stimmt er mit dem Beleg überein? Eine aus dem Vorjahr übernommene Position trägt oft noch einen geschätzten Betrag.</>}{' '}
           <a href={`/uploads/${encodeURIComponent(amountCheck.file)}`} target="_blank" rel="noreferrer">Beleg ansehen</a>
           {/* Ein geschätzter Lohnanteil gelangte sonst still in die Anlage V (dritte Durchsicht). */}
           {(amountCheck.item.labor35aCents ?? 0) > 0 && (
@@ -692,9 +696,9 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
               {onOpenItem && <button className="btn small ghost" onClick={() => { const it = amountCheck.item; leaveCheck(() => onOpenItem(it)) }}>Lohnanteil im Formular prüfen</button>}
             </div>
           )}
-          {amountCheckMode(amountCheck.item) === 'form' ? (
+          {amountCheckMode(amountCheck.item, checkRules) === 'form' ? (
             <div className="row center">
-              <span>Bei dieser Position prüfen Sie den Betrag im Formular: Er hängt an weiteren Angaben (Einzelbeträge oder Kosten der Gemeinschaft).</span>
+              <span>{amountCheckFormReason(amountCheck.item, checkRules)}</span>
               {onOpenItem && <button className="btn small" onClick={() => { const it = amountCheck.item; leaveCheck(() => onOpenItem(it)) }}>Position öffnen</button>}
               <button className="btn small ghost" onClick={() => setAmountCheck(null)}>Schließen</button>
             </div>

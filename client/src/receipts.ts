@@ -12,13 +12,14 @@
 // Der Belegordner gliedert nach Kalenderjahren, denn Belege tragen Kalenderjahre (#208, Entwurf 5.2:
 // `uploads.year` bleibt); das Jahr einer Position ist das Jahr, in dem ihr Zeitraum beginnt. Für das Objekt der
 // Seitenleiste gilt bei einem anderen Rhythmus der gewählte Zeitraum (`FolderFilter.period`, #346 Schritt 12).
-import type { CostItem, PeriodKey, UploadInfo, UploadLinks } from './types'
+import type { CostItem, PeriodKey, PeriodRules, UploadInfo, UploadLinks } from './types'
 import { CATEGORIES, matchCategory } from './types'
 import { fmtEuro, parseEuro } from './api'
 import { amountProblem } from './costForm'
 import { invoiceOf, sameCostCandidates } from '../../shared/duplicates.ts'
 import { countOf } from '../../shared/wording.ts'
 import { startYearOf } from '../../shared/period.ts'
+import { isInvoicePart } from '../../shared/splitPart.ts'
 
 // Ein Beleg, wie GET /api/uploads ihn liefert. Die Angaben der Belegbuchung (#170) fehlen bei
 // einem älteren Server und in Tests, die sie nicht brauchen.
@@ -371,8 +372,23 @@ export function attachChoices(u: UploadInfo, candidates: readonly CostItem[]): {
 
 // Bei Einzelbeträgen je Mieter und „laut Gemeinschaftsabrechnung“ hängt der Betrag an weiteren
 // Angaben (Einzelbeträge, Kosten der Gemeinschaft); ihn allein zu ändern, ließe sie auseinanderlaufen.
-export function amountCheckMode(item: CostItem): 'field' | 'form' {
+// Ein Teil einer aufgeteilten Rechnung (#455, Durchsicht von PR 3, I2) trägt nur den Anteil seines Zeitraums; ein Feld
+// „Betrag laut Beleg“ lüde dazu ein, den Betrag der ganzen Rechnung einzutragen, und sie zählte doppelt. Im Formular
+// wird der Betrag der Rechnung aufgeteilt.
+// Ohne die Regeln des Objekts zählt nur die Quelle.
+export const amountCheckIsPart = (item: CostItem, rules?: PeriodRules): boolean => (rules ? isInvoicePart(rules, item) : !!item.sourceId)
+
+export function amountCheckMode(item: CostItem, rules?: PeriodRules): 'field' | 'form' {
+  if (amountCheckIsPart(item, rules)) return 'form'
   return item.key === 'amounts' || item.key === 'external' ? 'form' : 'field'
+}
+
+// Warum „Betrag prüfen“ ins Formular führt.
+export function amountCheckFormReason(item: CostItem, rules?: PeriodRules): string {
+  if (amountCheckIsPart(item, rules)) {
+    return 'Diese Position ist ein Teil einer aufgeteilten Rechnung; der Betrag ist nur der Anteil dieses Zeitraums, nicht der Betrag des Belegs. Prüfen Sie den Betrag der Rechnung bitte im Formular.'
+  }
+  return 'Bei dieser Position prüfen Sie den Betrag im Formular: Er hängt an weiteren Angaben (Einzelbeträge oder Kosten der Gemeinschaft).'
 }
 
 // „Betrag prüfen“ nach dem Zuordnen: Eine aus dem Vorjahr übernommene Position trägt einen

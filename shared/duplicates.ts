@@ -13,7 +13,7 @@ import type { PeriodContext } from './period.ts'
 import { BROAD_CATEGORIES } from './allocation.ts'
 
 export type DuplicateItem = Pick<CostItem, 'id' | 'period' | 'category' | 'description'> &
-  Partial<Pick<CostItem, 'propertyId' | 'vendor' | 'invoiceFile' | 'amountCents' | 'sourceId'>>
+  Partial<Pick<CostItem, 'propertyId' | 'vendor' | 'invoiceFile' | 'amountCents' | 'sourceId' | 'serviceFrom' | 'serviceTo'>>
 
 export type CostQuery = {
   propertyId?: string | null
@@ -83,6 +83,15 @@ export function sameCostCandidates<T extends DuplicateItem>(items: readonly T[],
 
 const isCredit = (i: DuplicateItem): boolean => (i.amountCents ?? 0) < 0
 
+// Zwei Rechnungen, deren Leistungszeiträume sich nicht überschneiden, sind zwei Rechnungen (#455, Durchsicht von PR 3,
+// I3): die Versicherung von Juli bis Juni, zwei Jahre nacheinander, jede in zwei Teile geteilt. Jeder Teil trägt den
+// ganzen Leistungszeitraum seiner Rechnung, der Teil im Zeitraum genügt also. Fehlt einer der beiden der
+// Leistungszeitraum, bleibt es bei der Regel oben.
+function separateService(a: DuplicateItem, b: DuplicateItem): boolean {
+  if (!a.serviceFrom || !a.serviceTo || !b.serviceFrom || !b.serviceTo) return false
+  return a.serviceTo < b.serviceFrom || b.serviceTo < a.serviceFrom
+}
+
 // Die Rechnung, zu der eine Position gehört (#455): Die Teile einer Quelle sind eine Rechnung, jede andere Position
 // ist ihre eigene.
 export const invoiceOf = (i: DuplicateItem): string => (i.sourceId ? `q:${i.sourceId}` : `p:${i.id}`)
@@ -135,7 +144,7 @@ export function possibleDuplicates<T extends DuplicateItem>(items: readonly T[],
     // mit einer Rechnung zu einer Gruppe (N1 der Durchsicht von #201). Sie zählt zur Seite der
     // Rechnungen, denn so steht eine aus dem Vorjahr übernommene Schätzung ohne Betrag da.
     const linked = sameCostCandidates(own, queryOf(i))
-      .filter((c) => isCredit(c) === isCredit(i))
+      .filter((c) => isCredit(c) === isCredit(i) && !separateService(c, i))
       .map((c) => groupOf.get(c.id)).filter((g): g is T[] => !!g)
     const target = linked[0] ?? []
     if (!linked[0]) groups.push(target)

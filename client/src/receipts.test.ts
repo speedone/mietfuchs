@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { calendarPeriod, periodKey } from '../../shared/period.ts'
-import type { CostItem, UploadInfo } from './types'
-import { amountCheckBody, amountCheckMode, attachChoices, buildFolder, coverage, coverageCheck, duplicateHints, filesByItem, inboxFor, inboxOf, inboxPage, INBOX_STEP, isItemCovered, matchesQuery, partsBySource, receiptCards, registerCount, yearSections } from './receipts'
+import type { CostItem, PeriodRules, UploadInfo } from './types'
+import { amountCheckBody, amountCheckFormReason, amountCheckMode, attachChoices, buildFolder, coverage, coverageCheck, duplicateHints, filesByItem, inboxFor, inboxOf, inboxPage, INBOX_STEP, isItemCovered, matchesQuery, partsBySource, receiptCards, registerCount, yearSections } from './receipts'
 
 const upload = (file: string, extra: Partial<UploadInfo> = {}): UploadInfo => ({
   file, size: 10, mtime: '2026-01-02T10:00:00.000Z', originalName: file.replace(/^\d+_/, ''),
@@ -324,6 +324,19 @@ describe('Posteingang: einer Position zuordnen', () => {
     expect(amountCheckMode(item('a', { key: 'amounts', tenancyAmounts: { t1: 100 } }))).toBe('form')
     expect(amountCheckMode(item('e', { key: 'external' }))).toBe('form')
     expect(amountCheckMode(item('g'))).toBe('field')
+  })
+  // #455, Durchsicht von PR 3 (I2): Der Betrag eines Teils ist nur der Anteil seines Zeitraums. Ein Feld „Betrag laut
+  // Beleg“ lüde dazu ein, den Betrag der ganzen Rechnung einzutragen, und die Rechnung zählte doppelt.
+  it('Betrag prüfen: ein Teil einer aufgeteilten Rechnung im Formular, mit eigenem Satz', () => {
+    const rules: PeriodRules = { startMonth: 1, changes: [] }
+    const teil = item('t', { sourceId: 'q1' })
+    expect(amountCheckMode(teil, rules)).toBe('form')
+    expect(amountCheckFormReason(teil, rules)).toMatch(/Teil einer aufgeteilten Rechnung; der Betrag ist nur der Anteil dieses Zeitraums/)
+    // Ein alter Teil ohne Quelle, dessen Leistungszeitraum zwei Zeiträume berührt, ebenso.
+    const alt = item('alt', { serviceFrom: '2025-07-01', serviceTo: '2026-06-30' })
+    expect(amountCheckMode(alt, rules)).toBe('form')
+    expect(amountCheckMode(item('g', { serviceFrom: '2025-01-01', serviceTo: '2025-12-31' }), rules)).toBe('field')
+    expect(amountCheckFormReason(item('e', { key: 'external' }), rules)).toMatch(/Einzelbeträge oder Kosten der Gemeinschaft/)
   })
   it('Betrag prüfen: ein Lohnanteil über dem neuen Betrag verweist ins Formular', () => {
     expect(amountCheckBody('500,00', item('g', { labor35aCents: 80000 }))).toEqual({
