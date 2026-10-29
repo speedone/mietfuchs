@@ -32,24 +32,72 @@ function byDays(total: number, weights: number[], keys: string[]): number[] {
   return largestRemainder(abs, weights.map((w) => (abs * w) / sum), keys).map((c) => sign * c || 0)
 }
 
-export function splitByService(rules: PeriodRules, item: SplitItem): ServicePart[] {
-  const periods = periodsBetween(rules, item.serviceFrom, item.serviceTo)
-  const spans = periods.map((p) => ({ from: p.from > item.serviceFrom ? p.from : item.serviceFrom, to: p.to < item.serviceTo ? p.to : item.serviceTo }))
-  const weights = spans.map((s) => days(s.from, s.to))
-  const keys = periods.map((p) => `${item.id}|${p.key}`)
-  const amounts = byDays(item.amountCents, weights, keys)
+// Eine Rechnung, die nach Tagen auf die Zeiträume verteilt wird: beim Speichern die ganze Rechnung mit ihrem
+// Leistungszeitraum, beim Wechsel des Rhythmus die Summe der bewegten Teile mit deren Spannen (#455).
+// `marked`: Es bleiben Teile derselben Quelle stehen, also trägt auch ein einziges Ergebnis den Zusatz.
+export type SourceInvoice = {
+  tieId: string
+  description: string
+  amountCents: number
+  labor35aCents?: number
+  spans: readonly { from: string; to: string }[]
+  marked: boolean
+}
+
+const maxDay = (a: string, b: string): string => (a > b ? a : b)
+const minDay = (a: string, b: string): string => (a < b ? a : b)
+
+// Die Spannen als Vereinigung: sortiert, Überlappendes und Aneinanderstoßendes nicht doppelt gezählt.
+function unionOf(spans: readonly { from: string; to: string }[]): { from: string; to: string }[] {
+  const sorted = spans.filter((s) => s.from <= s.to).map((s) => ({ ...s })).sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0))
+  const merged: { from: string; to: string }[] = []
+  for (const s of sorted) {
+    const last = merged[merged.length - 1]
+    if (last && s.from <= last.to) last.to = maxDay(last.to, s.to)
+    else merged.push(s)
+  }
+  return merged
+}
+
+export function deriveSourceParts(rules: PeriodRules, invoice: SourceInvoice): ServicePart[] {
+  const union = unionOf(invoice.spans)
+  const first = union[0]
+  const last = union[union.length - 1]
+  if (!first || !last) return []
+  // Je Zeitraum die Tage der Vereinigung; wo keine liegen (Lücke), kommt nichts hin.
+  const rows = periodsBetween(rules, first.from, last.to).flatMap((period) => {
+    const overlaps = union
+      .map((s) => ({ from: maxDay(s.from, period.from), to: minDay(s.to, period.to) }))
+      .filter((o) => o.from <= o.to)
+    const first = overlaps[0]
+    const last = overlaps[overlaps.length - 1]
+    if (!first || !last) return []
+    return [{ period, span: { from: first.from, to: last.to }, weight: overlaps.reduce((a, o) => a + days(o.from, o.to), 0) }]
+  })
+  const weights = rows.map((r) => r.weight)
+  const keys = rows.map((r) => `${invoice.tieId}|${r.period.key}`)
+  const amounts = byDays(invoice.amountCents, weights, keys)
   // §35a nur an einer Rechnung, nicht an einer Gutschrift (amountProblem in shared/costItem.ts).
-  const labor = item.labor35aCents && item.amountCents > 0 ? byDays(item.labor35aCents, weights, keys) : null
-  const base = baseDescription(item.description)
-  return periods.map((period, i) => {
-    const span = spans[i] ?? { from: period.from, to: period.to }
-    return {
-      period,
-      days: weights[i] ?? 0,
-      amountCents: amounts[i] ?? 0,
-      labor35aCents: labor ? labor[i] ?? 0 : null,
-      description: periods.length > 1 ? `${base} (anteilig ${formatDayRange(span.from, span.to)})` : item.description,
-    }
+  const labor = invoice.labor35aCents && invoice.amountCents > 0 ? byDays(invoice.labor35aCents, weights, keys) : null
+  const base = baseDescription(invoice.description)
+  const suffixed = rows.length > 1 || invoice.marked
+  return rows.map((row, i) => ({
+    period: row.period,
+    days: row.weight,
+    amountCents: amounts[i] ?? 0,
+    labor35aCents: labor ? labor[i] ?? 0 : null,
+    description: suffixed ? `${base} (anteilig ${formatDayRange(row.span.from, row.span.to)})` : invoice.description,
+  }))
+}
+
+export function splitByService(rules: PeriodRules, item: SplitItem): ServicePart[] {
+  return deriveSourceParts(rules, {
+    tieId: item.id,
+    description: item.description,
+    amountCents: item.amountCents,
+    ...(item.labor35aCents !== undefined ? { labor35aCents: item.labor35aCents } : {}),
+    spans: [{ from: item.serviceFrom, to: item.serviceTo }],
+    marked: false,
   })
 }
 

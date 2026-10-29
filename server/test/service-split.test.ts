@@ -3,8 +3,10 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { baseDescription, splitByService, splitDeductionsAlike, type ServicePart } from '../src/serviceSplit.ts'
+import { baseDescription, deriveSourceParts, splitByService, splitDeductionsAlike, type ServicePart } from '../src/serviceSplit.ts'
 import type { PeriodRules } from '../../shared/types.ts'
+import { periodsBetween, formatDayRange } from '../../shared/period.ts'
+import { largestRemainder } from '../src/calc.ts'
 
 const MAI: PeriodRules = { startMonth: 5, changes: [] }
 const WECHSEL: PeriodRules = { startMonth: 1, changes: ['2025-05'] }
@@ -130,4 +132,91 @@ test('Teilschritt 2 nach dem Rest, nicht nach dem ursprünglichen Betrag: drei T
   const [d0, d1] = splitDeductionsAlike([{ id: 'd0', description: 'Abzug', amountCents: -1 }, { id: 'd1', description: 'Abzug', amountCents: -1 }], teile([1, 1, 1]))
   assert.deepEqual(d0?.map((p) => p.amountCents), [-1, 0, 0])
   assert.deepEqual(d1?.map((p) => p.amountCents), [0, -1, 0])
+})
+
+// Eingefrorene Kopie von splitByService vor #455 (nur im Test), gegen die ein Span geprüft wird.
+function frozenSplit(rules: PeriodRules, item: { id: string; description: string; amountCents: number; labor35aCents?: number; serviceFrom: string; serviceTo: string }): ServicePart[] {
+  const dayCount = (f: string, t: string): number => Math.round((Date.parse(`${t}T00:00:00Z`) - Date.parse(`${f}T00:00:00Z`)) / 86400000) + 1
+  const periods = periodsBetween(rules, item.serviceFrom, item.serviceTo)
+  const spans = periods.map((p) => ({ from: p.from > item.serviceFrom ? p.from : item.serviceFrom, to: p.to < item.serviceTo ? p.to : item.serviceTo }))
+  const weights = spans.map((s) => dayCount(s.from, s.to))
+  const keys = periods.map((p) => `${item.id}|${p.key}`)
+  const split = (total: number): number[] => {
+    const sum = weights.reduce((a, w) => a + w, 0)
+    const sign = total < 0 ? -1 : 1
+    const abs = Math.abs(total)
+    return largestRemainder(abs, weights.map((w) => (abs * w) / sum), keys).map((c) => sign * c || 0)
+  }
+  const amounts = split(item.amountCents)
+  const labor = item.labor35aCents && item.amountCents > 0 ? split(item.labor35aCents) : null
+  const base = baseDescription(item.description)
+  return periods.map((period, i) => ({
+    period,
+    days: weights[i] ?? 0,
+    amountCents: amounts[i] ?? 0,
+    labor35aCents: labor ? labor[i] ?? 0 : null,
+    description: periods.length > 1 ? `${base} (anteilig ${formatDayRange(spans[i]?.from ?? '', spans[i]?.to ?? '')})` : item.description,
+  }))
+}
+
+test('deriveSourceParts: Ein Span ergibt genau splitByService (F18 und 300 Zufallsfälle)', () => {
+  const f18 = { id: 'g', description: 'Grundsteuer 2025', amountCents: 48000, serviceFrom: '2025-01-01', serviceTo: '2025-12-31' }
+  assert.deepEqual(splitByService(MAI, f18), frozenSplit(MAI, f18))
+  assert.deepEqual(splitByService(WECHSEL, f18), frozenSplit(WECHSEL, f18))
+  let seed = 455455
+  const next = (n: number): number => {
+    seed = (seed * 1103515245 + 12345) % 2147483648
+    return seed % n
+  }
+  const ruleSets: PeriodRules[] = [MAI, WECHSEL, { startMonth: 1, changes: [] }, { startMonth: 7, changes: ['2026-01'] }]
+  for (let i = 0; i < 300; i++) {
+    const rules = ruleSets[next(ruleSets.length)] ?? MAI
+    const from = new Date(Date.UTC(2024, 0, 1) + next(900) * 86400000)
+    const to = new Date(from.getTime() + next(900) * 86400000)
+    const iso = (d: Date): string => d.toISOString().slice(0, 10)
+    const sign = next(4) === 0 ? -1 : 1
+    const item = {
+      id: `p${next(1000)}`,
+      description: next(2) ? 'Grundsteuer' : 'Hauswart (anteilig 01.01.–30.04.2025)',
+      amountCents: sign * (1 + next(500000)),
+      ...(next(2) ? { labor35aCents: next(100000) } : {}),
+      serviceFrom: iso(from),
+      serviceTo: iso(to),
+    }
+    const expected = frozenSplit(rules, item)
+    assert.deepEqual(splitByService(rules, item), expected)
+    assert.deepEqual(
+      deriveSourceParts(rules, { tieId: item.id, description: item.description, amountCents: item.amountCents, ...('labor35aCents' in item ? { labor35aCents: item.labor35aCents } : {}), spans: [{ from: item.serviceFrom, to: item.serviceTo }], marked: false }),
+      expected,
+    )
+  }
+})
+
+test('deriveSourceParts: Spannen mit Lücke, die Lücke bekommt nichts', () => {
+  const rules: PeriodRules = { startMonth: 1, changes: ['2025-05', '2025-09'] }
+  const parts = deriveSourceParts(rules, {
+    tieId: 'q',
+    description: 'Grundsteuer 2025',
+    amountCents: 100000,
+    spans: [{ from: '2025-01-01', to: '2025-04-30' }, { from: '2025-09-01', to: '2025-12-31' }],
+    marked: true,
+  })
+  assert.deepEqual(parts.map((p) => p.period.key), ['2025-01', '2025-09'])
+  assert.deepEqual(parts.map((p) => p.days), [120, 122])
+  assert.equal(parts.reduce((a, p) => a + p.amountCents, 0), 100000)
+})
+
+test('deriveSourceParts: marked trägt den Zusatz auch an einem einzigen Ergebnis', () => {
+  const invoice = { tieId: 'm', description: 'Wasser', amountCents: 9000, spans: [{ from: '2025-05-01', to: '2025-12-31' }] }
+  assert.equal(deriveSourceParts(MAI, { ...invoice, marked: false })[0]?.description, 'Wasser')
+  assert.equal(deriveSourceParts(MAI, { ...invoice, marked: true })[0]?.description, 'Wasser (anteilig 01.05.–31.12.2025)')
+})
+
+test('deriveSourceParts: Gutschrift und Lohnanteil wie splitByService', () => {
+  const spans = [{ from: '2025-01-01', to: '2025-12-31' }]
+  const credit = deriveSourceParts(MAI, { tieId: 'gs', description: 'Gutschrift', amountCents: -10001, labor35aCents: 5000, spans, marked: false })
+  assert.ok(credit.every((p) => p.amountCents < 0 && p.labor35aCents === null))
+  assert.equal(credit.reduce((a, p) => a + p.amountCents, 0), -10001)
+  const labor = deriveSourceParts(MAI, { tieId: 'h', description: 'Hauswart', amountCents: 100000, labor35aCents: 60000, spans: [{ from: '2025-03-01', to: '2025-06-30' }], marked: false })
+  assert.deepEqual(labor.map((p) => [p.amountCents, p.labor35aCents]), [[50000, 30000], [50000, 30000]])
 })
