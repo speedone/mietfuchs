@@ -12,7 +12,7 @@ import { eq } from 'drizzle-orm'
 import type { OpenedDatabase } from '../src/db/open.ts'
 import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { applyPeriodChange, previewPeriodChange } from '../src/db/periodChange.ts'
-import { createEntity, listCollection, saveCostItemSplit } from '../src/db/repository.ts'
+import { createEntity, listCollection, saveCostItemSplit, updateEntity } from '../src/db/repository.ts'
 import { costItems, costSources } from '../src/db/schema.ts'
 import { storedOutflowYear } from '../src/outflow.ts'
 import { FLOW_COUNT, runFlows, type Flow, type FlowStep } from '../testing/periodChangeFlows.ts'
@@ -74,6 +74,8 @@ test('Golden: je Zeitraum dieselben Summen wie vor dem Umbau', { timeout: 600000
       if (parts.length < 2) checks.push(`${where}: nur ein Teil`)
       // Invariante 1: dasselbe Objekt, dieselbe Kostenart, derselbe Leistungszeitraum.
       if (new Set(parts.map((c) => [c.propertyId, c.category, c.serviceFrom, c.serviceTo].join('|'))).size > 1) checks.push(`${where}: Teile verschieden`)
+      // Invariante 1: dasselbe Zahlungsdatum (oder keines) in jedem Teil.
+      if (new Set(parts.map((c) => c.paidOn ?? '')).size > 1) checks.push(`${where}: verschiedene Zahlungsdaten`)
       // Invariante 2: kein zweiter Teil im selben Zeitraum mit demselben Jahr der Zahlung und Zahlungsdatum.
       const keys = parts.map((c) => `${c.period}|${c.paidOn ?? ''}|${storedOutflowYear(c)}`)
       if (new Set(keys).size < keys.length) checks.push(`${where}: zwei Teile im selben Zeitraum und Jahr`)
@@ -107,7 +109,7 @@ test('Golden: je Zeitraum dieselben Summen wie vor dem Umbau', { timeout: 600000
       const before = was.steps[k] ?? assert.fail(`Ablauf ${i}, Wechsel ${k} fehlt`)
       const where = `Ablauf ${i}, Wechsel ${k}`
       assert.deepEqual([step.rules, step.error], [before.rules, before.error], where)
-      assert.equal(before.corrected, undefined, 'die Datei von vor dem Umbau kennt keine Berichtigung')
+      assert.equal(before.correctedCents, undefined, 'die Datei von vor dem Umbau kennt keine Berichtigung')
       assert.deepEqual(Object.keys(step.periods).sort(), Object.keys(before.periods).sort(), `${where}: dieselben Zeiträume`)
       assert.deepEqual(totals(step), totals(before), `${where}: je Rechnung über alle Zeiträume dieselbe Summe`)
       for (const [period, byBase] of Object.entries(before.periods)) {
@@ -115,13 +117,19 @@ test('Golden: je Zeitraum dieselben Summen wie vor dem Umbau', { timeout: 600000
           const now = step.periods[period]?.[base] ?? assert.fail(`${where}: ${base} fehlt in ${period}`)
           assert.ok(now.rows <= s.rows, `${where}: ${base} in ${period} hat mehr Zeilen als vorher (${now.rows} statt ${s.rows})`)
           // Nach einer Berichtigung legte der Weg je Teil sie in dessen Spanne, das Teilen als Ganzes verteilt sie über
-          // alle bewegten Tage (wie `wholeInvoice` vorher bei einer erkannten Familie); dann gilt nur die Summe oben.
-          const tolerance = was.wholeThroughout ? 0 : step.corrected ? Infinity : s.rows
+          // alle bewegten Tage (wie `wholeInvoice` vorher bei einer erkannten Familie); je Zeitraum wandert dann
+          // höchstens, was bis hierher berichtigt wurde, dazu je Zeile ein Cent Rundung.
+          const tolerance = was.wholeThroughout ? 0 : s.rows + (step.correctedCents ?? 0)
           assert.ok(Math.abs(now.amountCents - s.amountCents) <= tolerance, `${where}: ${base} in ${period}: ${now.amountCents} statt ${s.amountCents}`)
           assert.ok(Math.abs(now.labor35aCents - s.labor35aCents) <= tolerance, `${where}: Lohnanteil ${base} in ${period}: ${now.labor35aCents} statt ${s.labor35aCents}`)
         }
       }
       if (was.wholeThroughout) assert.deepEqual(step.taxYears, before.taxYears, `${where}: je Jahr der Zahlung`)
+      else {
+        // Sonst kann eine Rechnung das Jahr anders auf ihre Teile legen, über alle Jahre bleibt ihre Summe.
+        const overYears = (t: FlowStep['taxYears']) => Object.fromEntries(Object.entries(t).map(([base, y]) => [base, Object.values(y).reduce((a, b) => a + b, 0)]))
+        assert.deepEqual(overYears(step.taxYears), overYears(before.taxYears), `${where}: je Rechnung über alle Jahre der Zahlung dieselbe Summe`)
+      }
     }
   }
   assert.ok(whole >= 80, `genug Abläufe, die vorher als Ganzes geteilt wurden (${whole})`)
@@ -283,5 +291,44 @@ test('Ein Teil mit Beleg, der ganz zum stehenden Teil kommt, gibt den Beleg an i
     await change(opened, KALENDER)
     const nachher = await items(opened)
     assert.deepEqual(nachher.map((c) => [c.id, c.amountCents, c.invoiceFile]), [[erster.id, 36500, 'gs.pdf']])
+  })
+})
+
+// Durchsicht von PR 2 zu #455, M1: Zusammengefasst wird nur, was danach gleich verteilt würde. Ist der stehende Teil
+// einzeln berichtigt (anderer Schlüssel, andere Teilnehmer), verteilte er den hinzukommenden Anteil anders als die
+// Rechnung, aus der er stammt; das verschöbe Geld zwischen Mietern, ohne dass jemand es gewählt hat (§ 556a BGB: die
+// Verteilung folgt dem vereinbarten Schlüssel). Dann bleibt der Anteil eine eigene Zeile im selben Zeitraum.
+for (const [was, korrektur] of [
+  ['Schlüssel nach Personen', { key: 'persons' }],
+  ['nur das EG beteiligt', { participantUnitIds: ['u1'] }],
+] as const) {
+  test(`M1: Stehender Teil einzeln berichtigt (${was}): kein Zusammenfassen, der Anteil bleibt nach Fläche`, async () => {
+    await withDatabase(async (opened) => {
+      await opened.write((db) => createEntity(db, 'costItems', 'gs', grundsteuer))
+      await change(opened, MAI_AB_2025)
+      const rumpf = (await items(opened)).find((c) => c.period === '2025-01') ?? assert.fail('kein Teil im Rumpf')
+      await opened.write((db) => updateEntity(db, 'costItems', rumpf.id, korrektur))
+      const v = await change(opened, KALENDER)
+      assert.deepEqual(v.moves.flatMap((m) => m.parts.map((p) => p.mergedInto)), [undefined], 'die Vorschau kündigt kein Zusammenfassen an')
+      const nachher = await items(opened)
+      const stehend = nachher.find((c) => c.id === rumpf.id) ?? assert.fail('stehender Teil fehlt')
+      assert.equal(stehend.amountCents, 12000)
+      const bewegt = nachher.filter((c) => c.id !== rumpf.id)
+      assert.deepEqual(bewegt.map((c) => [c.period, c.amountCents, c.key, c.participantUnitIds ?? null]), [['2025-01', 24500, 'area', null]])
+      assert.equal(nachher.reduce((a, c) => a + c.amountCents, 0), 36500)
+      assert.equal(new Set(nachher.map((c) => c.sourceId)).size, 1, 'beide Zeilen bleiben Teile derselben Quelle')
+      assert.notEqual(stehend.sourceId, undefined)
+    })
+  })
+}
+
+test('M1: Ein berichtigter Rechnungssteller verhindert das Zusammenfassen nicht (verteilt wird gleich)', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createEntity(db, 'costItems', 'gs', grundsteuer))
+    await change(opened, MAI_AB_2025)
+    const rumpf = (await items(opened)).find((c) => c.period === '2025-01') ?? assert.fail('kein Teil im Rumpf')
+    await opened.write((db) => updateEntity(db, 'costItems', rumpf.id, { vendor: 'Stadtkasse' }))
+    await change(opened, KALENDER)
+    assert.deepEqual(await rows(opened), [['2025-01', 36500]])
   })
 })

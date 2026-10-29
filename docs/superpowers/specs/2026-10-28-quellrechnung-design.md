@@ -83,7 +83,7 @@ eindeutige Zuordnung.
 1. Alle Teile einer Quelle haben dasselbe Objekt, dieselbe Kostenart und denselben Leistungszeitraum.
    Sie sind kalt, nicht `amounts` und kein Abzug beim Betriebsstrom.
 2. Ein Wechsel legt keinen **zweiten** Teil einer Quelle in einen Zeitraum, in dem schon einer steht,
-   solange beide dasselbe Jahr der Zahlung haben (unten, „Zusammenfassen“). Mehrere im selben Zeitraum
+   solange beide dasselbe Jahr der Zahlung und dieselbe Verteilung haben (unten, „Zusammenfassen“). Mehrere im selben Zeitraum
    gibt es sonst nur aus Beständen vor dieser Version (Fall aus dem Issue).
 3. Jede Quelle hat mindestens einen Teil. Ergibt ein Wechsel nur noch einen Teil (der Leistungszeitraum
    liegt danach ganz in einem Zeitraum), entfällt die Quelle, und der Teil ist eine gewöhnliche
@@ -152,6 +152,13 @@ Abzüge beim Betriebsstrom (`follows`, Gruppen mit Abzügen) bekommen keine.
   **zu diesem Teil hinzu**, statt eine zweite Zeile anzulegen. Das geschieht nur, wenn beide nach dem
   Wechsel dasselbe Jahr der Zahlung haben (`storedOutflowYear` bzw. die Antwort der Vorschau) und
   dasselbe `paidOn`; sonst bleibt es eine eigene Zeile, damit keine Werbungskosten das Jahr wechseln.
+  Ebenso nur bei **derselben Verteilung** (Durchsicht von PR 2, M1; `sameAllocation`): Jedes Feld, das
+  nicht je Teil gesetzt wird (`part` in `SPLIT_FIELDS`), muss beim stehenden Teil und beim führenden
+  bewegten gleich sein, ausgenommen Objekt, Leistungszeitraum, Quelle, Zahlungsdatum, Rechnungssteller und
+  Beleg; Listen zählen als Mengen, leer wie nicht angegeben. Ist der stehende Teil einzeln berichtigt
+  (anderer Schlüssel, andere Teilnehmer, Direktzuordnung, nicht vereinbart …), verteilte er den
+  hinzukommenden Anteil sonst nach seiner Berichtigung statt nach der Rechnung (§ 556a BGB), und Geld
+  wanderte zwischen Mietern, ohne dass jemand es gewählt hat; der Anteil bleibt dann eine eigene Zeile.
   Je Zeitraum ändert das keinen Cent der Summe. Weil eine Zeile statt zweier verteilt wird, kann sich
   bei den Mietern ein Restcent verschieben. Das ist gewollt (das Issue nennt die Rundung je Zeile als
   Problem). Die Vorschau sagt es („wird mit dem Teil … zusammengefasst“). Ist der stehende Teil der

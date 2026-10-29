@@ -46,10 +46,10 @@ export type FlowStep = {
   // je Basisbeschreibung, je Jahr der Zahlung
   taxYears: Record<string, Record<string, number>>
 }
-// `corrected` (nicht in der Datei von vor dem Umbau): Vor diesem Wechsel wurde ein Betrag berichtigt. Dann sind die
-// Teile einer Rechnung nicht mehr nach Tagen verteilt, und wer sie einzeln statt als Ganzes neu teilt, legt die
-// Berichtigung in andere Zeiträume.
-export type Flow = { index: number; wholeThroughout: boolean; steps: (FlowStep & { corrected?: boolean })[] }
+// `correctedCents` (nicht in der Datei von vor dem Umbau): Summe der Beträge, um die bis zu diesem Wechsel berichtigt
+// wurde. Dann sind die Teile einer Rechnung nicht mehr nach Tagen verteilt, und wer sie einzeln statt als Ganzes neu
+// teilt, legt die Berichtigung in andere Zeiträume; je Zeitraum höchstens um diese Summe.
+export type Flow = { index: number; wholeThroughout: boolean; steps: (FlowStep & { correctedCents?: number })[] }
 
 const pick = <T>(rng: Rng, list: readonly T[]): T => {
   const v = list[Math.floor(rng() * list.length)]
@@ -208,7 +208,7 @@ export async function runFlow(index: number, onStep?: StepCheck): Promise<Flow> 
       }
     })
     let whole = true
-    let corrected = false
+    let correctedCents = 0
     const steps: Flow['steps'] = []
     const changes = int(rng, 2, 5)
     for (let step = 0; step < changes; step++) {
@@ -223,7 +223,7 @@ export async function runFlow(index: number, onStep?: StepCheck): Promise<Flow> 
           const row = items.filter((c) => `${c.period}\u0000${baseDescription(c.description)}` === chosen).sort((a, b) => (a.id < b.id ? -1 : 1))[0]
           // Lehnt die Schreibprüfung ab (etwa ein Jahr der Zahlung, das ein früherer Wechsel stehen ließ), bleibt der
           // Betrag; der Ablauf geht weiter.
-          if (row !== undefined && (await updateEntity(db, 'costItems', row.id, { amountCents: row.amountCents + Math.sign(row.amountCents || 1) * delta }).catch(() => null)) !== null) corrected = true
+          if (row !== undefined && (await updateEntity(db, 'costItems', row.id, { amountCents: row.amountCents + Math.sign(row.amountCents || 1) * delta }).catch(() => null)) !== null) correctedCents += delta
         })
       }
       const result = await opened.write(async (db) => {
@@ -245,7 +245,7 @@ export async function runFlow(index: number, onStep?: StepCheck): Promise<Flow> 
         return { next, error, items: (await readCostItems(db)).filter((c) => c.propertyId === P) }
       })
       onStep?.(result.items, { index, step })
-      steps.push({ rules: result.next, error: result.error, ...sumsOf(result.items), ...(corrected ? { corrected } : {}) })
+      steps.push({ rules: result.next, error: result.error, ...sumsOf(result.items), ...(correctedCents > 0 ? { correctedCents } : {}) })
     }
     return { index, wholeThroughout: whole, steps }
   } finally {

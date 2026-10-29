@@ -2606,6 +2606,10 @@ export async function rewriteCostItemFamily(tx: Executor, members: readonly Cost
     if (keep !== undefined) {
       await tx.update(assessmentLines).set({ costItemId: keep.id }).where(eq(assessmentLines.costItemId, m.id))
       if (m.invoiceFile !== undefined && keep.invoiceFile === undefined) await tx.update(costItems).set({ invoiceFile: m.invoiceFile }).where(eq(costItems.id, keep.id))
+      // Durchsicht von PR 2 zu #455, I1: Ein Abzug beim Betriebsstrom, der noch auf den gelöschten Teil zeigt, wandert
+      // vorläufig zum verbleibenden; den Teil seines Zeitraums setzt danach `settleOperatingPowerLinks`. Sonst lehnte
+      // das Löschen ab, obwohl der Abzug seiner Rechnung im selben Wechsel folgt.
+      await tx.update(costItems).set({ operatingPowerGeneralId: keep.id }).where(eq(costItems.operatingPowerGeneralId, m.id))
     }
     await costItemCollection.remove(tx, m.id)
   }

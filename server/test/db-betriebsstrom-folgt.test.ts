@@ -518,3 +518,38 @@ test('#267 (T6b): Prüffall über den Zeitraumwechsel: je Steuerjahr Strom gleic
     assert.ok(Object.keys(await abzugsjahreStimmen(opened)).length >= 2)
   })
 })
+
+// Durchsicht von PR 2 zu #455, I1: Hin und zurück. Nach „Mai ab 2025“ hat der Hausstrom zwei Teile einer Quelle
+// (32.877 / 67.123), jeder mit seinem Abzug. Zurück zum Kalenderjahr kommt der Teil aus 2025/26 zum stehenden Teil des
+// Rumpfs und wird gelöscht; sein Abzug zeigte dabei noch auf ihn, und das Löschen scheiterte mit 409 („Zu dieser
+// Position gehört der Abzug …“). Danach steht alles wieder wie vorher: eine Stromrechnung, Abzüge zusammen −10.000, je Mieter
+// dieselbe Summe wie vor dem ersten Wechsel.
+test('I1 (#455): hin und zurück zum Kalenderjahr mit Abzug am geteilten Hausstrom', async () => {
+  await withDatabase(async (opened) => {
+    await haus(opened, { strom: { serviceFrom: '2025-01-01', serviceTo: '2025-12-31' } })
+    const soll = await jeMieter(opened, ['2025-01'])
+    const vorher = await items(opened)
+    const erster = await wechsel(opened, MAI_AB_2025, 'split', '2025-05')
+    if (!erster.r || 'error' in erster.r) return assert.fail(erster.r ? erster.r.error : 'kein Objekt')
+    verweiseStimmen(await items(opened))
+    const zurueck = await wechsel(opened, { startMonth: 1, changes: [] }, '2025-01', '2025-01')
+    assert.deepEqual(zurueck.preview.blocked, [])
+    // Die Vorschau kündigt das Zusammenfassen an (Hausstrom und die in der kalten Gruppe geteilte Müllabfuhr).
+    const merged = zurueck.preview.moves.flatMap((m) => m.parts.flatMap((p) => p.mergedInto === undefined ? [] : [p.mergedInto]))
+    assert.deepEqual(merged.sort(), ['Hausstrom (anteilig 01.01.–30.04.2025)', 'Müll (anteilig 01.01.–30.04.2025)'])
+    if (!zurueck.r || 'error' in zurueck.r) return assert.fail(zurueck.r ? zurueck.r.error : 'kein Objekt')
+    const nachher = await items(opened)
+    verweiseStimmen(nachher)
+    assert.equal(sum(nachher), sum(vorher))
+    const strom = nachher.filter((c) => c.category === 'Beleuchtung/Allgemeinstrom')
+    assert.deepEqual(strom.filter((c) => c.operatingPower === undefined).map((c) => [c.period, c.amountCents, c.sourceId]), [['2025-01', 100000, undefined]])
+    assert.equal(sum(strom.filter((c) => c.operatingPower === 'deduction')), -10000)
+    assert.ok(strom.every((c) => c.period === '2025-01'))
+    // Je Mieter wie vor diesem Umbau (Stand 373c37d2, dort zwei Zeilen Hausstrom 32.877 / 67.123 mit je ihrem Abzug):
+    // A 4.530,00, B1 483,30, B2 986,70. Gegenüber vor dem ersten Wechsel wandert ein Cent zwischen B1 und B2, weil die
+    // beiden Abzüge (−3.288, −6.712) je für sich gerundet werden; die Summe bleibt.
+    const je = await jeMieter(opened, ['2025-01'])
+    assert.deepEqual(je, { 'Mieter A': 453000, 'Mieter B1': 48330, 'Mieter B2': 98670 })
+    assert.equal(Object.values(je).reduce((a, b) => a + b, 0), Object.values(soll).reduce((a, b) => a + b, 0))
+  })
+})

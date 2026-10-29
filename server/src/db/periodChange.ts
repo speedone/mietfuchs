@@ -26,7 +26,7 @@
 import crypto from 'node:crypto'
 import { and, eq, inArray } from 'drizzle-orm'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
-import { splitBlocker } from '../../../shared/splitPart.ts'
+import { SPLIT_FIELDS, splitBlocker } from '../../../shared/splitPart.ts'
 import { plantRules, settledSeparately } from '../../../shared/heatingPeriod.ts'
 import {
   formatDayRange, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, settlementDeadline, spansTwoYears,
@@ -140,6 +140,27 @@ const keepsTaxYear = (item: Pick<CostItem, 'operatingPower' | 'paidOn'>): boolea
 // geteilt über seinen Teil des Leistungszeitraums wie bisher; `newSource`, wenn er dabei mehrere Teile ergibt.
 type Split = { item: CostItem; parts: ServicePart[]; family?: CostItem[]; standing?: CostItem[]; sourceId?: string; newSource?: boolean }
 
+// Felder, die beim Zusammenfassen nicht zählen (#455, M1): je Teil gesetzt (`part` in SPLIT_FIELDS), in einer Quelle
+// gleich (Objekt, Leistungszeitraum, Quelle), schon geprüft (Zahlungsdatum) oder ohne Einfluss auf die Verteilung
+// (Rechnungssteller, Beleg; den Beleg übernimmt der stehende Teil, `heir`). Jedes übrige Feld, auch ein neues, muss
+// gleich sein: Schlüssel, Teilnehmer, Direktzuordnung, Zählertyp, vereinbarte Anteile, nicht vereinbart, Einzelbeträge,
+// Gemeinschaftsabrechnung, Heizung und Betriebsstrom.
+const MERGE_IGNORED = new Set<string>(['propertyId', 'serviceFrom', 'serviceTo', 'sourceId', 'paidOn', 'vendor', 'invoiceFile'])
+const ALLOCATION_FIELDS = (Object.keys(SPLIT_FIELDS) as (keyof typeof SPLIT_FIELDS)[])
+  .filter((f) => SPLIT_FIELDS[f] !== 'part' && !MERGE_IGNORED.has(f))
+
+// Gleich heißt hier: derselbe Wert, Listen als Mengen (Reihenfolge ohne Bedeutung), leer wie nicht angegeben.
+const allocationValue = (v: unknown): unknown => {
+  if (v === null || v === undefined) return undefined
+  if (Array.isArray(v)) return v.length === 0 ? undefined : JSON.stringify([...v].map((x) => JSON.stringify(x)).sort())
+  if (typeof v === 'object') {
+    const entries = Object.entries(v).filter(([, x]) => x !== undefined && x !== null).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    return entries.length === 0 ? undefined : JSON.stringify(entries)
+  }
+  return v
+}
+const sameAllocation = (a: CostItem, b: CostItem): boolean => ALLOCATION_FIELDS.every((f) => allocationValue(a[f]) === allocationValue(b[f]))
+
 type YearIn = (target: BillingPeriod, item: CostItem) => number | null
 
 // Der stehende Teil, zu dem ein Ergebnis kommt, statt eine zweite Zeile im selben Zeitraum anzulegen (#455,
@@ -147,11 +168,13 @@ type YearIn = (target: BillingPeriod, item: CostItem) => number | null
 // wechselten Werbungskosten das Jahr. Das Jahr eines stehenden Teils ist die Antwort, wenn die Vorschau es fragt (ein
 // Zeitraum, der wächst und danach über zwei Kalenderjahre reicht), sonst das gespeicherte; das des Ergebnisses die
 // Antwort für den führenden Teil, sonst das Jahr, das es ohne Angabe hätte (Zahlungsdatum oder Beginn des Zeitraums).
+// Durchsicht von PR 2 zu #455, M1: dazu dieselbe Verteilung (`sameAllocation`), sonst verteilte ein einzeln berichtigter
+// Teil den hinzukommenden Anteil nach seinem Schlüssel und nicht nach dem der Rechnung.
 function mergeTargetOf(split: Split, part: ServicePart, yearIn: YearIn): CostItem | undefined {
   const lead = split.item
   const movedYear = yearIn(part.period, lead) ?? storedOutflowYear({ ...lead, period: part.period.key, taxYear: undefined })
   return (split.standing ?? [])
-    .filter((s) => s.period === part.period.key && s.paidOn === lead.paidOn && (yearIn(part.period, s) ?? storedOutflowYear(s)) === movedYear)
+    .filter((s) => s.period === part.period.key && s.paidOn === lead.paidOn && (yearIn(part.period, s) ?? storedOutflowYear(s)) === movedYear && sameAllocation(s, lead))
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))[0]
 }
 
@@ -870,7 +893,12 @@ async function writeChangeIn(
       await writeCostItemParts(tx, now, [{ period: now.period, amountCents: now.amountCents + part.amountCents, labor35aCents: labor, description: now.description, taxYear: now.taxYear ?? null }], newId, now.id, guard)
     }
     // Folge-PR zu #252 (Geld-K1, -H1): Die Abzüge auf eine Rechnung mit Leistungszeitraum folgen deren Teilen.
-    for (const { item, parts } of plan.follows) {
+    // Gelesen nach dem Zusammenfassen (Durchsicht von PR 2 zu #455, I1): Wurde der Teil der Rechnung, auf den ein Abzug
+    // zeigte, gelöscht, zeigt der Abzug jetzt auf den verbleibenden (`rewriteCostItemFamily`); der Stand aus dem Plan
+    // nennte noch den gelöschten.
+    const current = new Map((await readCostItems(tx)).map((c) => [c.id, c]))
+    for (const { item: planned, parts } of plan.follows) {
+      const item = current.get(planned.id) ?? planned
       remember(item, parts.map((p) => p.period.key), await writeCostItemParts(tx, item, parts.map((p) => ({
         period: p.period.key, amountCents: p.amountCents, labor35aCents: null, description: p.description, taxYear: taxYearIn(p.period, item),
       })), newId, item.id, guard))
