@@ -26,7 +26,7 @@
 import crypto from 'node:crypto'
 import { and, eq, inArray } from 'drizzle-orm'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
-import { SPLIT_FIELDS, splitBlocker } from '../../../shared/splitPart.ts'
+import { SPLIT_FIELDS, SPLIT_SUFFIX, splitBlocker } from '../../../shared/splitPart.ts'
 import { plantRules, settledSeparately } from '../../../shared/heatingPeriod.ts'
 import {
   formatDayRange, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, settlementDeadline, spansTwoYears,
@@ -212,6 +212,74 @@ function mergeCandidates(split: Split, part: ServicePart, earlier: readonly Cost
   return [...(split.standing ?? []).filter(fits).sort(byId), ...earlier.filter(fits)]
 }
 
+// Befund 3 zu #455: Der Name eines stehenden Teils, zu dem Anteile kommen. Vorher behielt er seinen Zusatz, und nach hin
+// und zurück hieß eine Zeile über 10/2025–06/2026 „Gebäudeversicherung (anteilig 01.10.–31.12.2025)“. Der Zusatz nennt
+// danach, was die Zeile trägt: ihre bisherige Spanne (Leistungszeitraum im bisherigen Zeitraum) und die jedes Anteils
+// (`span`). Stoßen die Spannen aneinander oder überlappen sie, eine Spanne vom ersten bis zum letzten Tag wie bei einem
+// frisch geteilten Teil; liegt eine Lücke dazwischen (ein Teil wurde gelöscht, Durchsicht M1), jede für sich
+// („01.01.–30.04. und 01.09.–31.12.2025“), sonst nennte der Zusatz Tage, die die Zeile nicht trägt.
+//
+// Je Wechsel ein Namensgeber, denn mehrere Rechnungen derselben Quelle können zum selben Teil kommen; Vorschau und
+// Schreiben rufen ihn in derselben Reihenfolge. Eine Zeile, die eine frühere Rechnung derselben Quelle in diesem Wechsel
+// erst anlegt (`earlier`, Durchsicht M2), hat keinen bisherigen Zeitraum; ihre Spanne meldet `seed` beim Anlegen. Eine
+// Zeile ohne bekannte Spanne und eine ohne Zusatz (von Hand umbenannt) behalten ihren Namen. Trägt die Zeile danach als
+// einzige die ganze Rechnung, streicht das Schreiben den Zusatz ohnehin (#471). `record: false` fragt nur
+// (`mergeWithYear`: zusammengefasst erst mit anderem Jahr) und merkt sich nichts, denn mit dem vorbelegten Jahr kommt der
+// Anteil nicht dazu.
+type Span = { from: string; to: string }
+type MergedNamer = {
+  name: (target: CostItem, part: ServicePart, description?: string, record?: boolean) => string
+  seed: (id: string, period: PeriodKey, span: Span | undefined) => void
+}
+function mergedNamer(before: PeriodRules, standingIds: ReadonlySet<string>): MergedNamer {
+  const spans = new Map<string, Span[]>()
+  const keyOf = (id: string, period: PeriodKey): string => `${id}|${period}`
+  const ownSpan = (target: CostItem): Span | undefined => {
+    if (!standingIds.has(target.id)) return undefined
+    const old = periodOfKey(before, target.period)
+    if (old === null || target.serviceFrom === undefined || target.serviceTo === undefined) return undefined
+    return target.serviceFrom <= old.to && target.serviceTo >= old.from
+      ? { from: target.serviceFrom > old.from ? target.serviceFrom : old.from, to: target.serviceTo < old.to ? target.serviceTo : old.to }
+      : { from: target.serviceFrom, to: target.serviceTo }
+  }
+  return {
+    seed: (id, period, span) => {
+      if (span !== undefined) spans.set(keyOf(id, period), [span])
+    },
+    name: (target, part, description = target.description, record = true) => {
+      const key = keyOf(target.id, target.period)
+      const first = ownSpan(target)
+      const own = spans.get(key) ?? (first === undefined ? undefined : [first])
+      if (own === undefined || part.span === undefined || !SPLIT_SUFFIX.test(description)) return description
+      const merged = unionSpans([...own, part.span])
+      if (record) spans.set(key, merged)
+      return `${baseDescription(description)} (anteilig ${spansText(merged)})`
+    },
+  }
+}
+
+// Spannen sortiert und zusammengefasst, wo sie überlappen oder aneinanderstoßen.
+function unionSpans(list: readonly Span[]): Span[] {
+  const out: Span[] = []
+  for (const s of [...list].sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0))) {
+    const last = out[out.length - 1]
+    if (last !== undefined && s.from <= dayAfter(last.to)) last.to = s.to > last.to ? s.to : last.to
+    else out.push({ ...s })
+  }
+  return out
+}
+
+// „01.01.–30.04. und 01.09.–31.12.2025“: jede Spanne wie `formatDayRange`; liegen alle in einem Jahr, steht es nur am Ende.
+function spansText(list: readonly Span[]): string {
+  const texts = list.map((s) => formatDayRange(s.from, s.to))
+  const first = list[0]
+  const last = list[list.length - 1]
+  const year = last?.to.slice(0, 4)
+  const oneYear = first !== undefined && year !== undefined && first.from.slice(0, 4) === year
+  const shown = texts.map((t, i) => (oneYear && i < texts.length - 1 && t.endsWith(year) ? t.slice(0, -year.length) : t))
+  return shown.length <= 1 ? shown.join('') : `${shown.slice(0, -1).join(', ')} und ${shown[shown.length - 1]}`
+}
+
 // Die eigene Zeile, die ein Teil ergibt, für die Vorschau: Felder des führenden Teils, Zeitraum, Betrag und Beschreibung
 // des Teils, das Jahr der Zahlung aus `yearIn`. Mit der Kennung des führenden Teils findet `yearIn` dessen Frage.
 function producedRow(lead: CostItem, part: ServicePart, yearIn: YearIn): CostItem {
@@ -373,6 +441,57 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
     }
     const first = family[0]
     const wholeFamily = first !== undefined && coversService(first, family.flatMap((m) => spanIn(m, periodOfKey(before, m.period))))
+    // Befund 4 zu #455 (hin und zurück wandert ein Cent): Kommt ein Anteil zu einem stehenden Teil eines wachsenden
+    // Zeitraums, behielt dieser seine Rundung, und der Anteil rundete ein zweites Mal. Nach „Januar ab 2026“ und zurück
+    // stand eine Gutschrift mit −92,34/−31,11 statt −92,33/−31,12 da. Sind die bewegten Teile und dieser stehende Teil
+    // zusammen eine unveränderte Teilung nach Tagen (im bisherigen Rhythmus aus ihrer Summe und ihren Spannen genau so
+    // geteilt), wird ihre Summe als eine Rechnung im neuen Rhythmus geteilt; der Anteil ist dann, was dem stehenden Teil zu
+    // seinem neuen Betrag fehlt. Kehren die Regeln zurück, kehren so auch die Beträge zurück, centgenau und bei jedem Hin
+    // und Zurück gleich, denn eine Teilung nach Tagen hängt nur an Summe, Tagen und Zeiträumen (der Entscheid beim
+    // Restcent am Schlüssel des Zeitraums, serviceSplit.ts).
+    //
+    // Was nicht neu geteilt wird: Teile in Zeiträumen, die bleiben (sie gehören keiner geänderten Abrechnung an, und ein
+    // abgeschlossener Zeitraum ist immer einer davon, sonst sperrte `blocked`), und ein einzeln berichtigter Teil (die
+    // Prüfung im bisherigen Rhythmus schlägt dann fehl): Eine Berichtigung bleibt an ihrem Teil (server/src/CLAUDE.md),
+    // und es kommt wie bisher der Anteil der bewegten Teile dazu. Ebenso, wenn die bewegten Teile in mehreren Rechnungen je
+    // Jahr der Zahlung stehen (`poolOf`): Welcher davon zum stehenden Teil kommt, entscheidet erst das Jahr.
+    const withStandingShare = (plain: ServicePart[], moving: readonly CostItem[], standing: readonly CostItem[], tieId: string): ServicePart[] => {
+      const lead = moving[0]
+      if (lead === undefined) return plain
+      const byId = (a: CostItem, b: CostItem): number => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+      const absorbed = plain.flatMap((p) => {
+        const s = standing
+          .filter((x) => x.period === p.period.key && changed(x.period)?.status === 'grows' && x.paidOn === lead.paidOn && sameAllocation(x, lead))
+          .sort(byId)[0]
+        return s === undefined ? [] : [s]
+      })
+      if (absorbed.length === 0) return plain
+      const pool = [...moving, ...absorbed]
+      const sum = (rows: readonly CostItem[], f: (c: CostItem) => number): number => rows.reduce((a, c) => a + f(c), 0)
+      const poolLabor = sum(pool, (c) => c.labor35aCents ?? 0)
+      const invoice = (rules: PeriodRules) => deriveSourceParts(rules, {
+        tieId, description: baseDescription(lead.description), amountCents: sum(pool, (c) => c.amountCents),
+        ...(poolLabor ? { labor35aCents: poolLabor } : {}), spans: pool.flatMap((m) => spanIn(m, periodOfKey(before, m.period))), marked: true,
+      })
+      const was = invoice(before)
+      const keys = new Set(pool.map((m) => m.period))
+      const untouched = was.length === keys.size && was.every((w) => {
+        const rows = pool.filter((m) => m.period === w.period.key)
+        return w.amountCents === sum(rows, (c) => c.amountCents) && (w.labor35aCents ?? 0) === sum(rows, (c) => c.labor35aCents ?? 0)
+      })
+      if (!untouched) return plain
+      const now = invoice(next)
+      if (now.length !== plain.length || now.some((n, i) => n.period.key !== plain[i]?.period.key)) return plain
+      const parts = plain.map((p, i): ServicePart => {
+        const n = now[i] ?? p
+        const s = absorbed.find((x) => x.period === p.period.key)
+        const amountCents = n.amountCents - (s?.amountCents ?? 0)
+        const labor = (n.labor35aCents ?? 0) - (s?.labor35aCents ?? 0)
+        return { ...p, amountCents, labor35aCents: p.labor35aCents === null && labor === 0 ? null : labor }
+      })
+      // Ein Anteil mit anderem Vorzeichen als der bewegte Betrag wäre keine Rundung mehr.
+      return parts.some((x, i) => Math.sign(x.amountCents) * Math.sign(plain[i]?.amountCents ?? 0) < 0) ? plain : parts
+    }
     return [...pools.values()].flatMap((moving) => {
       const lead = moving[0]
       if (lead === undefined) return []
@@ -386,8 +505,9 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
         return [from <= to ? { from, to } : { from: m.serviceFrom, to: m.serviceTo }]
       })
       const labor = moving.reduce((sum, c) => sum + (c.labor35aCents ?? 0), 0)
-      const parts = deriveSourceParts(next, {
-        tieId: family.map((c) => c.id).sort()[0] ?? lead.id,
+      const tieId = family.map((c) => c.id).sort()[0] ?? lead.id
+      const plain = deriveSourceParts(next, {
+        tieId,
         description: baseDescription(lead.description),
         amountCents: moving.reduce((sum, c) => sum + c.amountCents, 0),
         ...(labor ? { labor35aCents: labor } : {}),
@@ -397,6 +517,7 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
         // ist auch eine einzige Zeile nur ein Anteil der Rechnung.
         marked: family.length > moving.length || !coversService(lead, spans),
       })
+      const parts = pools.size === 1 ? withStandingShare(plain, moving, standing, tieId) : plain
       return [{ item: lead, parts, family: moving, standing, sourceId, wholeFamily }]
     })
   }
@@ -658,14 +779,17 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
   // Ankündigung nur für das vorbelegte Jahr, und die Vorschau sagt das (Integrationsdurchsicht zu #455, M1).
   const suggestedYear: YearIn = (target, item) => taxEntries.get(taxKey(item, target))?.suggested ?? null
   const produced = new Map<string, CostItem[]>()
+  const namer = mergedNamer(before, new Set(splits.flatMap((sp) => (sp.standing ?? []).map((c) => c.id))))
   const ownRows = new Map<ServicePart, CostItem>()
   preview.moves = splits.map((split) => {
     const earlier = split.sourceId === undefined ? [] : produced.get(split.sourceId) ?? []
     const own: CostItem[] = []
     const parts = split.parts.map((p) => {
       const target = split.family ? mergeTargetOf(split, p, suggestedYear, earlier) : undefined
+      const mergedAs = target === undefined ? undefined : namer.name(target, p)
       if (split.family && target === undefined) {
         const row = producedRow(split.item, p, suggestedYear)
+        namer.seed(row.id, row.period, p.span)
         own.push(row)
         ownRows.set(p, row)
       }
@@ -678,10 +802,15 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
       const sibling = split.family && target === undefined
         ? mergeCandidates(split, p, earlier).find((s) => isAsked(split.item) || isAsked(s))
         : undefined
+      const siblingAs = sibling === undefined ? undefined : namer.name(sibling, p, sibling.description, false)
       const withYear = sibling === undefined ? undefined
-        : { into: sibling.description, year: isAsked(split.item) ? yearOf(p, sibling, suggestedYear) : movedYearOf(split, p, suggestedYear) }
+        : {
+          into: sibling.description, year: isAsked(split.item) ? yearOf(p, sibling, suggestedYear) : movedYearOf(split, p, suggestedYear),
+          ...(siblingAs !== undefined && siblingAs !== sibling.description ? { mergedAs: siblingAs } : {}),
+        }
       return {
         period: p.period.key, label: periodLabel(p.period), amountCents: p.amountCents, ...(target ? { mergedInto: target.description } : {}),
+        ...(mergedAs !== undefined && mergedAs !== target?.description ? { mergedAs } : {}),
         ...(asked ? { mergeDependsOnYear: true as const } : {}), ...(withYear ? { mergeWithYear: withYear } : {}),
       }
     })
@@ -729,10 +858,14 @@ function sourceMovesOf(
       if (p.mergeWithYear === undefined || rest === undefined || own === undefined) return p
       const left = rest.filter((r) => r !== own)
       const renamed = left.length === 1 && left[0]?.description === p.mergeWithYear.into ? renamedOf(left[0], split) : undefined
-      return renamed === undefined ? p : { ...p, mergeWithYear: { ...p.mergeWithYear, renamedTo: renamed } }
+      if (renamed === undefined) return p
+      const { mergedAs: _as, ...withYear } = p.mergeWithYear
+      return { ...p, mergeWithYear: { ...withYear, renamedTo: renamed } }
     })
     const renamed = rest?.length === 1 && m.parts.some((p) => p.mergedInto !== undefined) ? renamedOf(rest[0], split) : undefined
-    return { ...m, parts, ...(renamed === undefined ? {} : { renamedTo: renamed }) }
+    // Streicht `renamedTo` den Zusatz ganz, nennt der Anteil keinen neuen Zusatz (`mergedAs`).
+    const named = renamed === undefined ? parts : parts.map(({ mergedAs: _as, ...p }) => p)
+    return { ...m, parts: named, ...(renamed === undefined ? {} : { renamedTo: renamed }) }
   })
 }
 
@@ -964,6 +1097,8 @@ async function writeChangeIn(
     // Zusammenfassen (#455): Ergebnisse, die zu einem stehenden Teil kommen, werden erst nach den Positionen eines
     // wachsenden Zeitraums geschrieben (`regrows`), denn die schreiben ihren Betrag aus dem Plan.
     const merges: { target: CostItem; part: ServicePart }[] = []
+    // Derselbe Namensgeber wie in der Vorschau, mit den eigenen Zeilen, sobald sie geschrieben sind (`seed`).
+    const namer = mergedNamer(plan.before, new Set(plan.splits.flatMap((sp) => (sp.standing ?? []).map((c) => c.id))))
     const sources = new Set<string>()
     const partial = new Set<string>()
     // Integrationsdurchsicht zu #455, I1: die eigenen Zeilen jeder Quelle, die frühere Rechnungen derselben Quelle mit
@@ -986,6 +1121,10 @@ async function writeChangeIn(
         const own = parts.filter((_, i) => targets[i] === undefined)
         const heir = targets.find((t) => t !== undefined)
         const ids = await rewriteCostItemFamily(tx, family, own.map(write), newId, guard, heir)
+        own.forEach((p, k) => {
+          const id = ids[k]
+          if (id !== undefined) namer.seed(id, p.period.key, p.span)
+        })
         if (split.sourceId !== undefined) {
           const left = (poolsLeft.get(split.sourceId) ?? 1) - 1
           poolsLeft.set(split.sourceId, left)
@@ -1039,7 +1178,7 @@ async function writeChangeIn(
       const now = (await readCostItems(tx)).find((c) => c.id === target.id)
       if (now === undefined) throw new Error(`Der stehende Teil ${target.id} fehlt im Wechsel`)
       const labor = now.labor35aCents === undefined && part.labor35aCents === null ? null : (now.labor35aCents ?? 0) + (part.labor35aCents ?? 0)
-      await writeCostItemParts(tx, now, [{ period: now.period, amountCents: now.amountCents + part.amountCents, labor35aCents: labor, description: now.description, taxYear: now.taxYear ?? null }], newId, now.id, guard)
+      await writeCostItemParts(tx, now, [{ period: now.period, amountCents: now.amountCents + part.amountCents, labor35aCents: labor, description: namer.name(target, part, now.description), taxYear: now.taxYear ?? null }], newId, now.id, guard)
     }
     // Folge-PR zu #252 (Geld-K1, -H1): Die Abzüge auf eine Rechnung mit Leistungszeitraum folgen deren Teilen.
     // Gelesen nach dem Zusammenfassen (Durchsicht von PR 2 zu #455, I1): Wurde der Teil der Rechnung, auf den ein Abzug
