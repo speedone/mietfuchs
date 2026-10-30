@@ -25,6 +25,14 @@
 //   Beschreibung (verschiedene Spannen), nach Schritt 4 im Betrag (Anteile verschieden großer Teile). Gleichen sich
 //   dort ausnahmsweise beide (zwei gleich große Teile), bleibt auch dieser Fall ohne Quelle: Im Zweifel keine, die
 //   alten Teile behalten dann das Verhalten von 0.13.1 (`isSplitPart`).
+// - Beleg an nur einem Teil: Hängte der Vermieter in 0.13.1 den Beleg nachträglich an einen Teil, trennt der Beleg im
+//   Familienschlüssel die Teile, und keiner bekäme eine Quelle; Steuer-ZIP und Belegkopien nennten den übrigen Teil
+//   „kein Beleg“. 0.13.1 nahm sie beim Wechsel auch nicht als eine Rechnung (`familyOf` über `splitFamilyKey` mit dem
+//   Beleg). Eindeutig eine Rechnung sind sie trotzdem, wenn genau eine Familie mit Beleg und genau eine ohne Beleg
+//   denselben Schlüssel ohne Beleg haben und zusammen jedes Mitglied in einem anderen Zeitraum steht: So legt sie
+//   „Aufteilen und speichern“ an, und nur der Beleg kam hinzu. Dann eine Familie. Zwei verschiedene Belege bleiben
+//   getrennt, und stehen zwei im selben Zeitraum (eine zweimal erfasste Rechnung, einmal mit Beleg), bleibt jede
+//   Familie, wie sie ist.
 // - Die Kennung der Quelle ist die kleinste ihrer Teile; der Schritt ist damit reproduzierbar.
 //
 // **Der einzige Eingriff** ist `INSERT INTO cost_sources` und `UPDATE cost_items SET source_id`: kein Betrag, keine
@@ -87,6 +95,9 @@ function touchesSeveralPeriods(r: Rhythm, from: string, to: string): boolean {
 const baseDescription = (description: string): string => description.replace(SPLIT_SUFFIX, '')
 const familyKey = (c: CostItemRow): string =>
   [c.category, baseDescription(c.description), c.serviceFrom, c.serviceTo, c.vendor ?? '', c.invoiceFile ?? '', c.key].join('\u0000')
+// Derselbe Schlüssel ohne den Beleg (Beleg an nur einem Teil, siehe oben).
+const keyWithoutReceipt = (c: CostItemRow): string =>
+  [c.category, baseDescription(c.description), c.serviceFrom, c.serviceTo, c.vendor ?? '', c.key].join('\u0000')
 
 // ---------- Lesen ----------
 
@@ -179,6 +190,25 @@ export function assignSources(connection: Connection): void {
     if (!touchesSeveralPeriods(rhythm, item.serviceFrom, item.serviceTo) && !SPLIT_SUFFIX.test(item.description)) continue
     const key = `${item.propertyId}\u0000${familyKey(item)}`
     families.set(key, [...(families.get(key) ?? []), item])
+  }
+
+  // Beleg an nur einem Teil: genau eine Familie mit Beleg und eine ohne, zusammen je Mitglied ein anderer Zeitraum.
+  const byKeyWithoutReceipt = new Map<string, string[]>()
+  for (const [key, members] of families) {
+    const first = members[0]
+    if (first === undefined) continue
+    const loose = `${first.propertyId}\u0000${keyWithoutReceipt(first)}`
+    byKeyWithoutReceipt.set(loose, [...(byKeyWithoutReceipt.get(loose) ?? []), key])
+  }
+  for (const keys of byKeyWithoutReceipt.values()) {
+    if (keys.length !== 2) continue
+    const withReceipt = keys.find((k) => (families.get(k)?.[0]?.invoiceFile ?? null) !== null)
+    const without = keys.find((k) => (families.get(k)?.[0]?.invoiceFile ?? null) === null)
+    if (withReceipt === undefined || without === undefined) continue
+    const union = [...(families.get(withReceipt) ?? []), ...(families.get(without) ?? [])]
+    if (new Set(union.map((m) => m.period)).size < union.length) continue
+    families.set(withReceipt, union)
+    families.delete(without)
   }
 
   const sublistColumns = SUBLISTS.map((table) => ({ table, columns: columnsOf(connection, table).filter((c) => c !== 'cost_item_id') }))

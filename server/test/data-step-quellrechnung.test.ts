@@ -310,6 +310,53 @@ test('Zweimal erfasste aufgeteilte Rechnung: keine Quelle, der Hinweis bleibt, e
   }
 })
 
+test('Beleg an nur einem Teil: eine Quelle, der Beleg gilt für die Rechnung', async () => {
+  // In 0.13.1 aufgeteilt gespeichert, danach den Beleg an den Teil 2024 gehängt. Der Teil 2025 bleibt ohne Beleg.
+  const { before, after } = await afterStep((c) => {
+    insertUnits(c)
+    insertCostItem(c, { ...versicherung('a1', '2024-01'), invoice_file: 'versicherung.pdf' })
+    insertCostItem(c, versicherung('a2', '2025-01'))
+  })
+  assert.deepEqual(after.sources, [['a1', P, 'days']])
+  assert.deepEqual(after.items, [['a1', 'a1'], ['a2', 'a1']])
+  assert.deepEqual(after.amounts, before.amounts)
+})
+
+test('Zwei verschiedene Belege an den Teilen: keine Quelle', async () => {
+  const { after } = await afterStep((c) => {
+    insertUnits(c)
+    insertCostItem(c, { ...versicherung('a1', '2024-01'), invoice_file: 'versicherung-2024.pdf' })
+    insertCostItem(c, { ...versicherung('a2', '2025-01'), invoice_file: 'versicherung-2025.pdf' })
+  })
+  assert.deepEqual(after.sources, [])
+})
+
+test('Zweimal erfasst, einmal mit Beleg: zwei Rechnungen, nicht eine', async () => {
+  // Der klassische Doppelfall: aus dem Vorjahr übernommen und aus dem Beleg erfasst. Jede Fassung ist für sich eine
+  // Rechnung (je ein Teil je Zeitraum); zusammen nie.
+  const { after } = await afterStep((c) => {
+    insertUnits(c)
+    insertCostItem(c, { ...versicherung('a1', '2024-01'), invoice_file: 'versicherung.pdf' })
+    insertCostItem(c, { ...versicherung('a2', '2025-01'), invoice_file: 'versicherung.pdf' })
+    insertCostItem(c, versicherung('b1', '2024-01'))
+    insertCostItem(c, versicherung('b2', '2025-01'))
+  })
+  assert.deepEqual(after.sources, [['a1', P, 'days'], ['b1', P, 'days']])
+  assert.deepEqual(after.items, [['a1', 'a1'], ['a2', 'a1'], ['b1', 'b1'], ['b2', 'b1']])
+})
+
+test('Beleg an einem Teil, ein Teil doppelt: keine Quelle über beide Fassungen', async () => {
+  // Die beiden Teile 2025 ohne Beleg sind eine zweimal erfasste Rechnung; zu welcher der Teil mit Beleg gehört, ist
+  // offen.
+  const { after } = await afterStep((c) => {
+    insertUnits(c)
+    insertCostItem(c, { ...versicherung('a1', '2024-01'), invoice_file: 'versicherung.pdf' })
+    insertCostItem(c, versicherung('a2', '2025-01'))
+    insertCostItem(c, versicherung('b2', '2025-01'))
+  })
+  assert.deepEqual(after.sources, [])
+})
+
 test('Ohne Position mit Leistungszeitraum bleibt der Schritt still', async () => {
   const { after } = await afterStep((c) => {
     insertUnits(c)

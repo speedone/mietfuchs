@@ -128,7 +128,7 @@ test('Wächter: jeder Datenschritt gehört zu einer Migration', async () => {
 // ändern darf, hängt an seiner Prüfsumme. Zeilenenden werden vereinheitlicht, weil Git unter Windows auf CRLF umstellt.
 test('Wächter: jeder Datenschritt hängt an seiner Prüfsumme', () => {
   const PINNED: Record<string, string> = {
-    '0077_quellrechnung.ts': '699cc0f31e70f8f7377b8751615269b4dfd4908a0a85907d905193cfcf7b4965',
+    '0077_quellrechnung.ts': 'c232efebf2edcdfa16455bd6b5ee9f8de467352a488eaf6ce370e94b29392bad',
   }
   const folder = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'db', 'dataSteps')
   const steps = fs.readdirSync(folder).filter((f) => f.endsWith('.ts') && f !== 'index.ts').sort()

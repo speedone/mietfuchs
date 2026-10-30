@@ -11,8 +11,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - Aufgeteilte Rechnungen sind jetzt eine Rechnung ([#455](https://github.com/speedone/mietfuchs/issues/455)): Reicht der Leistungszeitraum einer Rechnung über mehrere
   Abrechnungszeiträume, stehen weiter Teile je Zeitraum da, aber jeder Teil verweist auf seine Rechnung. Beim Update
   bekommen bestehende Teile, die eindeutig zusammengehören, diese Kennung von selbst, auch die aus einem eingespielten
-  Backup. Eine zweimal erfasste Rechnung bleibt dabei zwei Rechnungen, und der Hinweis auf doppelte Positionen meldet
-  sie weiter. Keine Zahl ändert sich, auch keine abgeschlossene Abrechnung.
+  Backup und auch, wenn der Beleg nur an einem Teil hängt; der Beleg gilt dann für die ganze Rechnung. Eine zweimal
+  erfasste Rechnung bleibt dabei zwei Rechnungen, und der Hinweis auf doppelte Positionen meldet sie weiter. Keine
+  Zahl ändert sich, auch keine abgeschlossene Abrechnung.
   - In der Kostenliste steht unter einem Teil „Teil von 2 · Rechnung gesamt …“. Die Belegabdeckung in Belegordner,
     Cockpit und Belegmappe zählt die Rechnung einmal und belegt, sobald ein Teil den Beleg trägt, auch einer in einem
     anderen Zeitraum; die Belegkopien der Abrechnung nehmen den Beleg der Rechnung mit.
