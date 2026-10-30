@@ -675,8 +675,9 @@ test('Vorschaubilder: gerendert wird erst, was in die Nähe des sichtbaren Berei
     </PeriodProvider>,
   )
   await screen.findByText('Wasser/Abwasser')
-  // Alle Bilder sind angemeldet, mit Vorlauf, aber keins ist angefragt
-  expect(FakeObserver.all.some((o) => o.observed.has(thumbOf('wasser.pdf')))).toBe(true)
+  // Alle Bilder sind angemeldet, mit Vorlauf, aber keins ist angefragt. Angemeldet wird im Effekt nach dem Einhängen;
+  // hängt ein späterer Abruf das Bild neu ein, steht der Link schon da, bevor sein Effekt lief (wackelte in der CI).
+  await waitFor(() => expect(FakeObserver.all.some((o) => o.observed.has(thumbOf('wasser.pdf')))).toBe(true))
   expect(FakeObserver.all[0]?.options?.rootMargin).toMatch(/px/)
   expect(asked).toEqual([])
 
