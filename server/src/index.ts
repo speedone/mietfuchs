@@ -89,7 +89,7 @@ import { describeFile, describeFolder, hashFile, mimeTypeOf, uploadedAtOf } from
 import { acceptIban, IbanRefusal } from './iban.ts'
 import { IBAN_LABELS } from '../../shared/iban.ts'
 import { exportFilename, frozenExportable, settlementExportCsv, settlementExportJson, type ExportableSettlement } from './settlementExport.ts'
-import { derivedTaxLines, planTaxArchive, taxArchiveItems } from './taxReceipts.ts'
+import { derivedTaxLines, partsBySource, planTaxArchive, taxArchiveItems } from './taxReceipts.ts'
 import { createPriorVersion, mayCreatePriorVersion, PRIOR_CHECK_INTERVAL_MS, PRIOR_DIR, priorVersionsBlocked } from './db/priorVersions.ts'
 import { changeGroups, costItems as costItemsTable } from './db/schema.ts'
 import { addBarrier, isJournalKind, journalGroup, listJournal, pruneJournal, unjournaled, type JournalBarrier, type JournalMeta } from './db/journal.ts'
@@ -2259,7 +2259,7 @@ app.delete('/api/uploads/:file', async (req, res) => {
 app.get('/api/receipts/tax/:year', async (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
-  const { items, property, rows, links, split, derived } = await readData(async (db) => {
+  const { items, property, rows, links, split, derived, sourceParts } = await readData(async (db) => {
     const propertyId = await propertyOf(db, req)
     const whole = await readStock(db)
     const stock = narrowToProperty(whole, propertyId)
@@ -2274,13 +2274,15 @@ app.get('/api/receipts/tax/:year', async (req, res) => {
     // #268 und Heizung PR 19 (N-4): Zeilen der Übersicht ohne Position (Ausgleich beim Betriebsstrom, ausgezahlte
     // CO₂-Erstattung).
     const derived = derivedTaxLines(report)
-    return { items, property, rows: await uploadRows(db), links: await uploadLinks(db), split, derived }
+    // #469: die Teile je Quelle über alle Zeiträume des Objekts, für den Beleg eines Teils, der selbst keinen trägt.
+    const sourceParts = partsBySource(stock.costItems)
+    return { items, property, rows: await uploadRows(db), links: await uploadLinks(db), split, derived, sourceParts }
   })
   const booked = new Map<string, string[]>()
   for (const [file, l] of links) for (const id of l.bookedItemIds) booked.set(id, [...(booked.get(id) ?? []), file])
   const names = new Map<string, string>()
   for (const u of describeFolder(UPLOAD_DIR, rows)) names.set(u.file, u.originalName)
-  const plan = planTaxArchive(items, names, booked, split, derived)
+  const plan = planTaxArchive(items, names, booked, split, derived, sourceParts)
   const out = createZip()
   for (const { zipPath, file } of plan.files) out.addBufferFile(path.join(UPLOAD_DIR, file), zipPath)
   out.zip.addBuffer(Buffer.from(plan.overviewCsv, 'utf8'), 'Übersicht.csv')

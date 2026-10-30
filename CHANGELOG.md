@@ -15,6 +15,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   - In der Kostenliste steht unter einem Teil „Teil von 2 · Rechnung gesamt …“. Die Belegabdeckung in Belegordner,
     Cockpit und Belegmappe zählt die Rechnung einmal und belegt, sobald ein Teil den Beleg trägt, auch einer in einem
     anderen Zeitraum; die Belegkopien der Abrechnung nehmen den Beleg der Rechnung mit.
+  - Im ZIP „Belege für die Steuer“ nennt ein Teil ohne eigenen Beleg in `Übersicht.csv` den Beleg seiner Rechnung statt
+    „kein Beleg“, und die Datei liegt im ZIP, auch wenn der Teil mit dem Beleg in einem anderen Steuerjahr steht
+    ([#469](https://github.com/speedone/mietfuchs/issues/469)). Kein Betrag ändert sich.
   - Der Hinweis auf doppelte Positionen zählt je Rechnung: Zwei Teile derselben Rechnung gelten nicht als Doppelung, und
     ein Teil heißt nicht „ohne Beleg“, wenn die Rechnung anderswo belegt ist. Ist eine aufgeteilte Rechnung beteiligt,
     rät er, sie nur ganz zu löschen, mit den Teilen in anderen Zeiträumen, und nie, ihren Betrag auf den der Rechnung zu

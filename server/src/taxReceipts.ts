@@ -50,6 +50,13 @@ export function taxArchiveItems<C extends Pick<CostItem, 'id'>>(costItems: reado
   return costItems.filter((c) => ids.has(c.id))
 }
 
+// Die Teile je Quelle (#455); Positionen ohne Quelle fehlen. Wie `partsBySource` in client/src/receipts.ts.
+export function partsBySource<C extends Pick<CostItem, 'sourceId'>>(items: readonly C[]): Map<string, C[]> {
+  const out = new Map<string, C[]>()
+  for (const c of items) if (c.sourceId) out.set(c.sourceId, [...(out.get(c.sourceId) ?? []), c])
+  return out
+}
+
 export type TaxArchivePlan = {
   files: { zipPath: string, file: string }[]
   overviewCsv: string
@@ -90,12 +97,26 @@ export const derivedTaxLines = (report: Pick<TaxReport, 'expenses'>): TaxExpense
 const derivedNote = (d: TaxExpenseItem | undefined): string =>
   d?.co2RefundPaidOut ? 'kein eigener Beleg (Auszahlung an den Mieter, Nachweis über den Kontoauszug)' : 'kein eigener Beleg (Teil der Stromrechnung)'
 
+//
+// `parts`: die Teile je Quelle (#455) über alle Zeiträume des Objekts, auch die anderer Steuerjahre. Ein Teil einer
+// aufgeteilten Rechnung ohne eigenen Beleg (keiner seiner Verweise liegt im Belegordner) nennt den Beleg seiner
+// Rechnung, also die Dateien der anderen Teile derselben Quelle, und nimmt sie mit ins Archiv (#469); dieselbe Regel wie
+// `isItemCovered` im Belegordner (client/src/receipts.ts), sonst hieße ein Teil dort belegt und hier „kein Beleg“.
+// Liegt die Datei schon in der Gruppe, kommt sie nicht ein zweites Mal hinein. Kein Betrag ändert sich.
 export function planTaxArchive(
   items: CostItem[], names: Map<string, string>, booked: ReadonlyMap<string, readonly string[]> = new Map(),
   split: ReadonlyMap<string, TaxSplitOfItem> = new Map(), derived: readonly TaxExpenseItem[] = [],
+  parts: ReadonlyMap<string, readonly Pick<CostItem, 'id' | 'invoiceFile'>[]> = new Map(),
 ): TaxArchivePlan {
   const rank = (group: string) => GROUPS.indexOf(group)
-  type Row = { c: Pick<CostItem, 'id' | 'category' | 'description' | 'vendor' | 'amountCents' | 'invoiceFile' | 'labor35aCents'>; derived: boolean }
+  type Row = { c: Pick<CostItem, 'id' | 'category' | 'description' | 'vendor' | 'amountCents' | 'invoiceFile' | 'labor35aCents' | 'sourceId'>; derived: boolean }
+  const filesOf = (x: Pick<CostItem, 'id' | 'invoiceFile'>): string[] => [x.invoiceFile, ...(booked.get(x.id) ?? [])].filter((f): f is string => !!f)
+  const receiptsOf = (c: Row['c']): string[] => {
+    const own = filesOf(c)
+    if (!c.sourceId || own.some((f) => names.has(f))) return own
+    const siblings = (parts.get(c.sourceId) ?? []).filter((x) => x.id !== c.id).flatMap(filesOf).filter((f) => names.has(f))
+    return [...own, ...siblings]
+  }
   const all: Row[] = [
     ...items.map((c) => ({ c, derived: false })),
     ...derived.map((d) => ({ c: { id: d.costItemId, category: d.category, description: d.description, amountCents: d.amountCents }, derived: true })),
@@ -126,7 +147,7 @@ export function planTaxArchive(
       continue
     }
     const parts: string[] = []
-    for (const file of new Set([c.invoiceFile, ...(booked.get(c.id) ?? [])].filter((f): f is string => !!f))) {
+    for (const file of new Set(receiptsOf(c))) {
       const original = names.get(file)
       if (original === undefined) {
         parts.push('Datei fehlt')

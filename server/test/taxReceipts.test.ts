@@ -232,3 +232,37 @@ test('Steuer-Belege: mit verbilligter Vermietung (#257) eine Spalte „unentgelt
   assert.equal(zeilen[0], 'Gruppe;Kostenart;Beschreibung;Rechnungssteller;Betrag (EUR);privat (EUR);unentgeltlich § 21 Abs. 2 EStG (EUR);abziehbar (EUR);Lohnanteil § 35a (EUR);Beleg;Jahr der Zahlung')
   assert.equal(zeilen[1], 'Verwaltung & Instandhaltung;Nicht umlagefähig;Position d;;100,00;0,00;46,67;53,33;;kein Beleg;')
 })
+
+// #469: Ein Teil einer aufgeteilten Rechnung (#455) ohne eigenen Beleg ist belegt, wenn ein anderer Teil derselben
+// Quelle ihn trägt (wie `isItemCovered` im Belegordner). Die Übersicht nennt dann den Beleg der Rechnung, und die Datei
+// liegt im ZIP, auch wenn der Teil mit dem Beleg in einem anderen Steuerjahr steht; einmal, nicht je Teil.
+test('Steuer-Belege (#469): ein Teil ohne eigenen Beleg nennt den Beleg seiner Rechnung, die Datei liegt einmal im ZIP', () => {
+  const a = item('a', { category: 'Gartenpflege', description: 'Garten (anteilig 1/2)', sourceId: 'q1', invoiceFile: '1_gs.pdf', amountCents: 5000 })
+  const b = item('b', { category: 'Gartenpflege', description: 'Garten (anteilig 2/2)', sourceId: 'q1', amountCents: 5000 })
+  const fremd = item('f', { category: 'Gartenpflege', description: 'Anderer Garten', sourceId: 'q2' })
+  const parts = new Map([['q1', [a, b]], ['q2', [fremd]]])
+  // Beide Teile im selben Jahr: dieselbe Datei, einmal im ZIP, in beiden Zeilen genannt.
+  const both = planTaxArchive([a, b, fremd], names, new Map(), new Map(), [], parts)
+  assert.deepEqual(both.files.map((f) => [f.zipPath, f.file]), [['2 Laufende Betriebskosten/Gartenpflege - Bescheid Grundsteuer.pdf', '1_gs.pdf']])
+  const zeilen = both.overviewCsv.replace(/^﻿/, '').trim().split('\r\n')
+  assert.ok(zeilen.includes('Laufende Betriebskosten;Gartenpflege;Garten (anteilig 2/2);;50,00;;;;2 Laufende Betriebskosten/Gartenpflege - Bescheid Grundsteuer.pdf;'), zeilen.join('\n'))
+  assert.ok(zeilen.includes('Laufende Betriebskosten;Gartenpflege;Anderer Garten;;100,00;;;;kein Beleg;'), 'eine andere Quelle ohne Beleg bleibt ohne')
+  // Nur der Teil ohne Beleg in diesem Jahr: Die Datei kommt trotzdem mit.
+  const alone = planTaxArchive([b], names, new Map(), new Map(), [], parts)
+  assert.deepEqual(alone.files.map((f) => f.file), ['1_gs.pdf'])
+  assert.ok(!alone.overviewCsv.includes('kein Beleg'), alone.overviewCsv)
+  // Auch ein Beleg, der nur an einer gebuchten Zeile des anderen Teils hängt.
+  const a2: CostItem = { ...a, id: 'a2' }
+  delete a2.invoiceFile
+  const viaBooked = planTaxArchive([b], names, new Map([['a2', ['2_wasser.pdf']]]), new Map(), [], new Map([['q1', [a2, b]]]))
+  assert.deepEqual(viaBooked.files.map((f) => f.file), ['2_wasser.pdf'])
+  // Der eigene Beleg geht vor: Trägt der Teil einen, kommt der des anderen Teils nicht dazu.
+  const own = planTaxArchive([{ ...b, invoiceFile: '2_wasser.pdf' }], names, new Map(), new Map(), [], parts)
+  assert.deepEqual(own.files.map((f) => f.file), ['2_wasser.pdf'])
+  // Ohne Quelle (alter Teil) bleibt es wie bisher.
+  const old: CostItem = { ...b }
+  delete old.sourceId
+  const plain = planTaxArchive([old], names, new Map(), new Map(), [], parts)
+  assert.deepEqual(plain.files, [])
+  assert.match(plain.overviewCsv, /;kein Beleg;/)
+})

@@ -170,7 +170,10 @@ Register, Belegabdeckung und Belegmappe folgen ihm, der Posteingang bleibt beim 
   bricht die Mappe nicht ab, das Deckblatt nennt ihn. Nur WinAnsi (`winAnsiSafe`).
 - **Belege für die Steuer** ([taxReceipts.ts](taxReceipts.ts)): ZIP aus dem Speicher, Ordner je
   `ANLAGE_V_GROUP` in der Reihenfolge der Steuerübersicht, `Übersicht.csv` (BOM, Semikolon) mit jeder
-  Position; Textfelder mit = + - @ am Anfang bekommen einen Apostroph (Formel-Einschleusung).
+  Position; Textfelder mit = + - @ am Anfang bekommen einen Apostroph (Formel-Einschleusung). Ein Teil
+  einer aufgeteilten Rechnung ohne eigenen Beleg nennt den seiner Rechnung und nimmt die Datei mit, auch
+  wenn der belegte Teil in einem anderen Steuerjahr steht (#469, `parts` aus `partsBySource`, Regel wie
+  `isItemCovered`); einmal je Gruppe, kein Betrag ändert sich.
 
 ## API
 
@@ -423,7 +426,7 @@ einander nicht. Belegt ist eine Rechnung, wenn ein Teil in irgendeinem Zeitraum 
 Schnappschuss trägt `receiptedSources`, weil er sonst nur seinen Zeitraum sieht). Dieselbe Regel gilt für Belegabdeckung,
 Abzeichen, Cockpit und Belegmappe (`isItemCovered` mit `partsBySource`); „Hier beheben“ führt nie zu einem Teil einer
 belegten Rechnung. Die Kostenliste zeigt unter einem Teil „Teil von N“. Bei der Belegbuchung ist ein Teil kein Ziel zum
-Verknüpfen (`formOnly`, `part`): Die Zeile wird verworfen, wenn der Teil stimmt. Lösen lässt seinen Betrag stehen. Das Steuer-ZIP bleibt je Position.
+Verknüpfen (`formOnly`, `part`): Die Zeile wird verworfen, wenn der Teil stimmt. Lösen lässt seinen Betrag stehen. Das Steuer-ZIP folgt derselben Regel (#469, siehe Belegordner).
 
 Ist eine aufgeteilte Rechnung an der Gruppe beteiligt, richtet sich der Rat nach der Quelle, nicht nach der Zahl der
 Teile im Zeitraum (die übrigen sieht die Gruppe nicht): nie „setzen Sie ihren Betrag auf den der Rechnung“, gelöscht
