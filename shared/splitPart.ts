@@ -61,6 +61,8 @@ export const SPLIT_FIELDS = {
   participantUnitIds: 'same', notAgreedTenancyIds: 'same', namedTenancyIds: 'same', invoiceFile: 'same',
   heatingPlantId: 'same', fuelDeliveryId: 'same', operatingPower: 'same', operatingPowerItemId: 'same',
   operatingPowerBasis: 'same', operatingPowerGeneralId: 'same', operatingPowerReported: 'same',
+  // Die Quelle (#455): Jeder Teil verweist auf dieselbe Rechnung.
+  sourceId: 'same',
   externalBasis: 'whole',
   // Einzelbeträge hängen am Mieter, beim Messdienst schon nach Nutzerwechsel getrennt. Welcher davon in welchen
   // Zeitraum gehört, weiß nur dessen Abrechnung; nach Tagen geteilt fiele der Betrag eines Mieters, der im zweiten

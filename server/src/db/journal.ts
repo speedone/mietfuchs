@@ -484,6 +484,17 @@ const LABEL: Record<string, (row: Image) => string | null> = {
   closed_settlements: (r) => text(r.period),
 }
 
+// Eine aufgeteilte Rechnung (#455) hat keine eigene Bezeichnung: Sie heißt wie einer ihrer Teile, gesucht zuerst in der
+// eigenen Gruppe (auch ein gelöschter Teil), dann im Bestand.
+async function rowLabel(table: string, image: Image, resolver: Resolver, own: Map<string, Image>): Promise<string | null> {
+  if (table === 'cost_sources') {
+    const part = await resolver.row('cost_items', 'source_id', image.id, own)
+    return part ? text(part.description) : null
+  }
+  return LABEL[table]?.(image) ?? null
+}
+const hasLabel = (table: string): boolean => table === 'cost_sources' || table in LABEL
+
 function text(value: unknown): string | null {
   return typeof value === 'string' && value.trim() !== '' ? value.trim() : null
 }
@@ -492,8 +503,7 @@ function text(value: unknown): string | null {
 // der Gruppe (ein Mietverhältnis, an dem sich nur eine Staffel geändert hat), kommt sie über den
 // Verweis einer Zeile darunter (K5).
 export async function groupTitle(description: string, subjectTable: string | null, rows: LogRow[], resolver: Resolver): Promise<string> {
-  const label = subjectTable ? LABEL[subjectTable] : undefined
-  if (!label || !subjectTable) return description
+  if (!subjectTable || !hasLabel(subjectTable)) return description
   const own = ownImages(rows)
   const direct = rows.find((r) => r.tableName === subjectTable)
   let image = direct ? (parseRow(direct.after) ?? parseRow(direct.before)) : null
@@ -506,7 +516,7 @@ export async function groupTitle(description: string, subjectTable: string | nul
       if (image) break
     }
   }
-  const name = image ? label(image) : null
+  const name = image ? await rowLabel(subjectTable, image, resolver, own) : null
   return name ? `${description}: ${name}` : description
 }
 
@@ -520,7 +530,7 @@ export const TABLE_KINDS: Readonly<Record<string, JournalKind>> = {
   tenancy_direct_charges: 'units', base_rents: 'units', prepayment_overrides: 'units', unit_no_connection: 'units',
   unit_local_rents: 'units', unit_usage_changes: 'units',
   cost_items: 'costs', cost_item_shares: 'costs', cost_item_participants: 'costs', cost_item_amounts: 'costs',
-  cost_item_contract: 'costs', cost_item_self_amounts: 'costs',
+  cost_item_contract: 'costs', cost_item_self_amounts: 'costs', cost_sources: 'costs',
   meters: 'meters', readings: 'meters', interim_reading_gaps: 'meters',
   payments: 'payments',
   heating_plants: 'heating', heating_plant_units: 'heating', heating_periods: 'heating', heating_period_changes: 'heating',
@@ -764,7 +774,7 @@ export async function journalGroup(db: Executor, schema: JournalSchema, id: numb
       for (const value of values) {
         if (value === null || value === undefined) continue
         const up = await resolver.row(parent.table, parent.to, value, own)
-        const name = up ? LABEL[parent.table]?.(up) : null
+        const name = up ? await rowLabel(parent.table, up, resolver, own) : null
         if (name) refs[`${parent.column}=${String(value)}`] = name
       }
     }

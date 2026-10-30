@@ -294,7 +294,7 @@ export const CLOSING_STEPS: readonly Step[] = [
 
 // Routen mit Satz, die der Generator nicht nimmt, je mit Grund. Nur kürzer werden lassen.
 export const UNCOVERED_ROUTES: Readonly<Record<string, string>> = {
-  'POST /api/costItems/split': 'Braucht einen Zeitraum über zwei Kalenderjahre; der Generator rechnet im Kalenderjahr. Zeilen wie jede Kostenposition.',
+  'POST /api/costItems/split': 'Braucht einen Zeitraum über zwei Kalenderjahre; der Generator rechnet im Kalenderjahr. Legt neben den Teilen eine Zeile in cost_sources an (#455); den Rücksprung darüber prüft api-ruecksprung.test.ts.',
   'PUT /api/costItems/:id/split': 'Wie POST /api/costItems/split.',
   'POST /api/heating-plants/:id/operating-power': 'Braucht eine Allgemeinstrom-Position mit Heizanteil; Zeilen wie jede Kostenposition.',
   'PUT /api/heating-plants/:id/periods/:period/service-values': 'Werte des Ablesedienstes, nur bei Erfassung durch den Messdienst; Zeilen wie die Schätzung.',

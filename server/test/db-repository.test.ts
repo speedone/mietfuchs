@@ -482,6 +482,9 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
         // Die drei Spalten der Angaben einer Gemeinschaft stehen im Modell als ein Wert
         // `externalBasis`; dass jede davon ankommt, prüft der Vergleich darunter.
         if (coll === 'costItems' && EXTERNAL_COLUMNS.has(spalte)) continue
+        // Die Quelle (#455) kommt bewusst nie aus dem Rumpf, nur von den Schreibwegen der Teile; das und ihre Rundreise
+        // prüft db-quelle.test.ts („Ein Rumpf setzt keine Quelle“).
+        if (coll === 'costItems' && spalte === 'sourceId') continue
         assert.ok(
           proben.some((p) => p.coll === coll && Object.hasOwn(p.body, spalte)),
           `${coll}: Die Probe belegt die Spalte „${spalte}" nicht, der Test bewacht sie deshalb nicht`,

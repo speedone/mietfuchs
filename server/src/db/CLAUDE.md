@@ -100,6 +100,12 @@ beim Start, denn wer auf sie wartet, hält den Server für fertig.
   Datenanweisungen: Braucht eine neue Pflichtspalte Werte, wird sie zuerst ohne Pflicht erzeugt, die
   Daten werden an diesen Schritt angehängt, ein zweiter erzeugter Schritt zieht die Pflicht nach (nur
   vor der Veröffentlichung; [../../drizzle/README.md](../../drizzle/README.md)).
+- **Datenschritte in TypeScript** (#455): Reicht SQL nicht, steht unter dem `tag` des Schrittes eine
+  Funktion in [dataSteps/index.ts](dataSteps/index.ts) (`DATA_STEPS`); `applyMigrations` ruft sie nach
+  den Anweisungen, vor der Marke, in derselben Transaktion (wirft sie, rollt der Schritt zurück). Eingefroren
+  wie SQL: rohes SQL über `connection`, nur `import type` aus `../client.ts`, nie schema.ts, shared/ oder
+  Repository (Wächter in data-steps.test.ts); nach der Veröffentlichung nie geändert
+  ([../../drizzle/README.md](../../drizzle/README.md)).
 - **Ein Schritt wird nie gelöscht und nie geändert**, ein Fehler wird mit einem neuen Schritt
   geradegerückt; ein Test hält die Marke jedes veröffentlichten Schrittes fest.
 - Für die Programmdatei bettet [scripts/embed-migrations.mjs](../../../scripts/embed-migrations.mjs)

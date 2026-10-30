@@ -310,6 +310,8 @@ export async function readCostItems(db: Executor): Promise<CostItem[]> {
       ...(c.operatingPowerBasis !== null ? { operatingPowerBasis: c.operatingPowerBasis } : {}),
       ...(c.operatingPowerGeneralId !== null ? { operatingPowerGeneralId: c.operatingPowerGeneralId } : {}),
       ...(c.operatingPowerReported !== null ? { operatingPowerReported: c.operatingPowerReported } : {}),
+      // Die aufgeteilte Rechnung (#455), ebenso nur, wenn es sie gibt.
+      ...(c.sourceId !== null ? { sourceId: c.sourceId } : {}),
     }
   })
 }

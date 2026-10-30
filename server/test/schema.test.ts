@@ -290,6 +290,7 @@ test('Migration lässt sich anwenden und legt alle Tabellen an', async () => {
       'cost_item_self_amounts',
       'cost_item_shares',
       'cost_items',
+      'cost_sources',
       'degree_day_values',
       'flat_rates',
       'fuel_carry_frozen',

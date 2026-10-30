@@ -88,6 +88,40 @@ test('Rücksprung: Eine gelöschte Ablesung aus der Mitte steht danach wieder an
   }
 })
 
+// #455: Mit dem letzten Teil fällt seine Quelle im selben Vorgang weg. Der Rücksprung legt beide wieder an, die Quelle
+// vor dem Teil, der auf sie zeigt (Fremdschlüssel). Die Quelle setzt hier die Datei selbst, denn eine Route, die eine
+// anlegt, kommt erst mit dem Aufteilen beim Speichern.
+test('Rücksprung über das Löschen des letzten Teils stellt Quelle und Teil wieder her', async () => {
+  const s = await startServerIn(tmp())
+  try {
+    const teil = { propertyId: 'objekt-1', period: '2024-01', category: 'Grundsteuer', amountCents: 20000, key: 'area', serviceFrom: '2024-01-01', serviceTo: '2024-12-31' }
+    const a = await post<{ id: string }>(s, '/api/costItems', { ...teil, description: 'Grundsteuer (Teil 1)' })
+    const b = await post<{ id: string }>(s, '/api/costItems', { ...teil, description: 'Grundsteuer (Teil 2)' })
+    const c = await besideServer(s.dataDir)
+    try {
+      c.exec("INSERT INTO cost_sources (id, property_id, rule) VALUES ('q1', 'objekt-1', 'days')")
+      c.exec(`UPDATE cost_items SET source_id = 'q1' WHERE id IN ('${a.id}', '${b.id}')`)
+    } finally {
+      c.close()
+    }
+    assert.equal((await send(s, 'DELETE', `/api/costItems/${a.id}`)).status, 200)
+    const before = await dumpStock(s.dataDir)
+    assert.equal(before.cost_sources?.length, 1)
+    assert.equal((await send(s, 'DELETE', `/api/costItems/${b.id}`)).status, 200)
+    const gone = await dumpStock(s.dataDir)
+    assert.deepEqual([gone.cost_sources, gone.cost_items], [[], []])
+    const top = await newest(s)
+    const detail = await jsonOf<{ changes: { table: string, op: string, refs: Record<string, string> }[] }>(await fetch(`${s.base}/api/journal/${top.id}`))
+    assert.deepEqual(detail.changes.map((ch) => [ch.table, ch.op]).sort(), [['cost_items', 'delete'], ['cost_sources', 'delete']])
+    // Im Verlauf heißt die Quelle wie ihr Teil, auch wenn beide gelöscht sind.
+    assert.equal(detail.changes.find((ch) => ch.table === 'cost_items')?.refs['source_id=q1'], 'Grundsteuer (Teil 2)')
+    await revert(s, top.id)
+    assert.deepEqual(await dumpStock(s.dataDir), before)
+  } finally {
+    s.stop()
+  }
+})
+
 test('Rücksprung: „Stand vor“ nimmt den Eintrag und alles danach zurück, „Stand nach“ nur alles danach', async () => {
   const s = await startServerIn(tmp())
   try {
