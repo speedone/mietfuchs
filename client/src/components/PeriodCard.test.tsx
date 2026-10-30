@@ -103,6 +103,12 @@ describe('Wechsel nach Quelle (#455)', () => {
     ] }]} />)
     expect(screen.getByText(/Der Anteil für 2025\/2026 wird mit dem Teil „Gebäudeversicherung \(anteilig 01\.10\.–31\.12\.2025\)“ zusammengefasst; die Zeile heißt danach „Gebäudeversicherung \(anteilig 01\.10\.2025–30\.06\.2026\)“\./)).toBeTruthy()
   })
+  test('nennt den neuen Namen auch, wenn erst ein anderes Jahr zusammenfasst', () => {
+    render(<MoveList moves={[{ costItemId: 'gs', description: 'Grundsteuer 2025', amountCents: 3935, parts: [
+      { period: periodKey('2025-05'), label: '2025/2026', amountCents: 3935, mergeWithYear: { into: 'Grundsteuer 2025 (anteilig 01.05.–31.12.2025)', year: 2025, mergedAs: 'Grundsteuer 2025 (anteilig 01.05.2025–30.04.2026)' } },
+    ] }]} />)
+    expect(screen.getByText(/mit dem Jahr 2025 für beide wird er mit dem Teil „Grundsteuer 2025 \(anteilig 01\.05\.–31\.12\.2025\)“ zusammengefasst; die Zeile heißt dann „Grundsteuer 2025 \(anteilig 01\.05\.2025–30\.04\.2026\)“\./)).toBeTruthy()
+  })
   // #471: der umgekehrte Fall, das Zusammenfassen entsteht erst mit einem anderen Jahr.
   test('nennt das Jahr, mit dem erst zusammengefasst wird', () => {
     render(<MoveList moves={[{ costItemId: 'gs-2', description: 'Grundsteuer 2025', amountCents: 12000, parts: [

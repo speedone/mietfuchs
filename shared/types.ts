@@ -445,10 +445,10 @@ export type PeriodChangePreview = {
   // Jahr `year` für beide käme er zur Zeile `into` (die dann `renamedTo` hieße). `renamedTo` (#471): Der Quelle bleibt eine Zeile, die die ganze
   // Rechnung trägt; sie verliert den Zusatz „(anteilig …)“ und heißt danach so. `mergedAs` (Befund 3 zu #455): der Name
   // der Zeile `mergedInto` nach dem Zusammenfassen, wenn ihr Zusatz „(anteilig …)“ danach eine längere Spanne nennt (nicht
-  // neben `renamedTo`, das ihn ganz streicht).
+  // neben `renamedTo`, das ihn ganz streicht); ebenso `mergeWithYear.mergedAs` für das Zusammenfassen mit dem Jahr `year`.
   moves: {
     costItemId: string; description: string; amountCents: number; renamedTo?: string
-    parts: { period: PeriodKey; label: string; amountCents: number; mergedInto?: string; mergedAs?: string; mergeDependsOnYear?: true; mergeWithYear?: { into: string; year: number; renamedTo?: string } }[]
+    parts: { period: PeriodKey; label: string; amountCents: number; mergedInto?: string; mergedAs?: string; mergeDependsOnYear?: true; mergeWithYear?: { into: string; year: number; renamedTo?: string; mergedAs?: string } }[]
   }[]
   // Je bisherigem Zeitraum eine Gruppe für kalte Kosten und eine für Heizkosten (Laienprobe B2);
   // geantwortet wird unter `id`. Kalte Kosten ohne Leistungszeitraum lassen sich nach Tagen auf die

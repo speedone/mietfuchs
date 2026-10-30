@@ -85,8 +85,8 @@ Schlüssel** `PeriodKey` (`'JJJJ-MM'`, Monat des Beginns, Markentyp), kein Jahr:
   Wiederholung. Teile in Zeiträumen, die bleiben (auch jeder abgeschlossene), ein einzeln berichtigter Teil und bewegte
   Teile in mehreren Rechnungen je Jahr (`poolOf`) werden nicht neu geteilt; dort kommt wie bisher der Anteil der bewegten
   Teile dazu. Gegen den Golden-Stand von vor #455 (db-wechsel-quelle.test.ts) weicht das in einem von 200 Abläufen um einen
-  Cent je Zeitraum ab, die Summe der Rechnung nicht; der Test lässt das nur für eine Rechnung mit zusammengefasster Zeile
-  zu. Ein Teil
+  Cent je Zeitraum ab, die Summe der Rechnung nicht; der Test nennt diese Abweichung ausdrücklich (`GOLDEN_DEVIATIONS`),
+  jede andere und jede nicht mehr eintretende scheitert. Ein Teil
   ohne Quelle wird über seinen eigenen Teil des Leistungszeitraums geteilt und bekommt dann eine. Löschen geht je Teil wie
   bisher; der letzte Teil nimmt die Quelle mit. Ein Datenschritt (0077, dataSteps) hat bestehende Teile zusammengeführt: Kandidat
   ist `isSplitPart` oder eine Beschreibung mit dem Zusatz „(anteilig …)“, zusammen nur bei gleichem Familienschlüssel des Schritts. Heizkosten nie

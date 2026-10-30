@@ -59,6 +59,17 @@ async function change(opened: OpenedDatabase, rules: PeriodRules, given: { group
 
 const grundsteuer = { propertyId: P, period: '2025-01', category: 'Grundsteuer', description: 'Grundsteuer 2025', amountCents: 36500, key: 'area', serviceFrom: '2025-01-01', serviceTo: '2025-12-31' }
 
+// Die einzigen Abweichungen vom Golden-Stand, je Ablauf, Wechsel, Rechnung und Zeitraum in Cent (Befund 4 zu #455): Kommt
+// ein Anteil zu einem stehenden Teil eines wachsenden Zeitraums, teilt der Wechsel eine unveränderte Teilung nach Tagen aus
+// ihrer Summe neu (`withStandingShare`). Der Code von vorher ließ den stehenden Teil mit seiner Rundung stehen und rundete
+// den Anteil ein zweites Mal; hin und zurück wanderte so ein Cent. Hier sind die neuen Zahlen die Teilung der ganzen
+// Rechnung nach Tagen (46.442 und 113.766 statt 46.441 und 113.767); Lohnanteil, Summe über die Zeiträume und je Jahr der
+// Zahlung bleiben gleich. Jede andere Abweichung, und jede hier genannte, die nicht mehr eintritt, lässt den Test scheitern.
+const GOLDEN_DEVIATIONS: Readonly<Record<string, number>> = {
+  '87|1|Schornsteinfeger 87-1|2023-12': 1,
+  '87|1|Schornsteinfeger 87-1|2024-06': -1,
+}
+
 // Die Datei entstand mit dem Code vor dem Umbau (8ac85ec0, NKA_WRITE_GOLDEN=1) und wird nie neu geschrieben, um grün
 // zu werden. Behandelte der Code von früher in jedem Schritt jede Rechnung als Ganzes (`wholeThroughout`), ist je
 // Zeitraum centgenau dasselbe zu erwarten, auch je Jahr der Zahlung; nur die Zahl der Zeilen sinkt, wo zusammengefasst
@@ -102,6 +113,7 @@ test('Golden: je Zeitraum dieselben Summen wie vor dem Umbau', { timeout: 600000
     return t
   }
   let whole = 0
+  const seen = new Set<string>()
   for (const [i, flow] of flows.entries()) {
     const was = golden[i] ?? assert.fail(`Ablauf ${i} fehlt in der Datei`)
     // `wholeThroughout` gilt aus der Datei: Der Generator fragt es am Bestand, und der hat nach dem Umbau weniger Zeilen.
@@ -114,14 +126,6 @@ test('Golden: je Zeitraum dieselben Summen wie vor dem Umbau', { timeout: 600000
       assert.equal(before.correctedCents, undefined, 'die Datei von vor dem Umbau kennt keine Berichtigung')
       assert.deepEqual(Object.keys(step.periods).sort(), Object.keys(before.periods).sort(), `${where}: dieselben Zeiträume`)
       assert.deepEqual(totals(step), totals(before), `${where}: je Rechnung über alle Zeiträume dieselbe Summe`)
-      // Befund 4 zu #455: Kommt ein Anteil zu einem stehenden Teil (weniger Zeilen als vorher), teilt der Wechsel eine
-      // unveränderte Teilung nach Tagen jetzt aus ihrer Summe neu (`withStandingShare`); der Code von vorher ließ den
-      // stehenden Teil mit seiner Rundung stehen und rundete den Anteil ein zweites Mal, so dass hin und zurück ein Cent
-      // wanderte. Für diese Rechnung darf je Zeitraum und je Jahr der Zahlung ein Cent anders liegen, ihre Summe nicht
-      // (oben). In den 200 Abläufen trifft das genau Ablauf 87, Wechsel 1 (Schornsteinfeger: 46.442 statt 46.441 in
-      // 2023-12, 113.766 statt 113.767 in 2024-06; die neuen Zahlen sind die Teilung der ganzen Rechnung nach Tagen).
-      const rederived = new Set(Object.entries(before.periods).flatMap(([period, byBase]) =>
-        Object.entries(byBase).filter(([base, s]) => (step.periods[period]?.[base]?.rows ?? 0) < s.rows).map(([base]) => base)))
       for (const [period, byBase] of Object.entries(before.periods)) {
         for (const [base, s] of Object.entries(byBase)) {
           const now = step.periods[period]?.[base] ?? assert.fail(`${where}: ${base} fehlt in ${period}`)
@@ -129,28 +133,27 @@ test('Golden: je Zeitraum dieselben Summen wie vor dem Umbau', { timeout: 600000
           // Nach einer Berichtigung legte der Weg je Teil sie in dessen Spanne, das Teilen als Ganzes verteilt sie über
           // alle bewegten Tage (wie `wholeInvoice` vorher bei einer erkannten Familie); je Zeitraum wandert dann
           // höchstens, was bis hierher berichtigt wurde, dazu je Zeile ein Cent Rundung.
-          const tolerance = was.wholeThroughout ? (rederived.has(base) ? 1 : 0) : s.rows + (step.correctedCents ?? 0)
-          assert.ok(Math.abs(now.amountCents - s.amountCents) <= tolerance, `${where}: ${base} in ${period}: ${now.amountCents} statt ${s.amountCents}`)
+          const tolerance = was.wholeThroughout ? 0 : s.rows + (step.correctedCents ?? 0)
+          const key = `${i}|${k}|${base}|${period}`
+          const expected = s.amountCents + (GOLDEN_DEVIATIONS[key] ?? 0)
+          if (key in GOLDEN_DEVIATIONS) {
+            seen.add(key)
+            assert.equal(now.amountCents, expected, `${where}: ${base} in ${period}, erwartete Abweichung`)
+          }
+          assert.ok(Math.abs(now.amountCents - expected) <= tolerance, `${where}: ${base} in ${period}: ${now.amountCents} statt ${expected}`)
           assert.ok(Math.abs(now.labor35aCents - s.labor35aCents) <= tolerance, `${where}: Lohnanteil ${base} in ${period}: ${now.labor35aCents} statt ${s.labor35aCents}`)
         }
       }
-      if (was.wholeThroughout) {
-        const exact = (t: FlowStep['taxYears']) => Object.fromEntries(Object.entries(t).filter(([base]) => !rederived.has(base)))
-        assert.deepEqual(exact(step.taxYears), exact(before.taxYears), `${where}: je Jahr der Zahlung`)
-        for (const base of rederived) {
-          const now = step.taxYears[base] ?? {}
-          const then = before.taxYears[base] ?? {}
-          assert.deepEqual(Object.keys(now).sort(), Object.keys(then).sort(), `${where}: ${base} in denselben Jahren der Zahlung`)
-          for (const [year, cents] of Object.entries(then)) assert.ok(Math.abs((now[year] ?? 0) - cents) <= 1, `${where}: ${base} im Jahr ${year}: ${now[year]} statt ${cents}`)
-        }
-      }
-      {
+      if (was.wholeThroughout) assert.deepEqual(step.taxYears, before.taxYears, `${where}: je Jahr der Zahlung`)
+      else {
         // Sonst kann eine Rechnung das Jahr anders auf ihre Teile legen, über alle Jahre bleibt ihre Summe.
         const overYears = (t: FlowStep['taxYears']) => Object.fromEntries(Object.entries(t).map(([base, y]) => [base, Object.values(y).reduce((a, b) => a + b, 0)]))
         assert.deepEqual(overYears(step.taxYears), overYears(before.taxYears), `${where}: je Rechnung über alle Jahre der Zahlung dieselbe Summe`)
       }
     }
   }
+  // Jede erwartete Abweichung muss auch eintreten; sonst veraltet die Liste unbemerkt.
+  assert.deepEqual([...seen].sort(), Object.keys(GOLDEN_DEVIATIONS).sort(), 'erwartete Abweichungen, die nicht eingetreten sind')
   assert.ok(whole >= 80, `genug Abläufe, die vorher als Ganzes geteilt wurden (${whole})`)
 })
 
@@ -544,5 +547,24 @@ test('Befund 4 zu #455: Ein berichtigter stehender Teil behält seine Berichtigu
     const nachher = (await items(opened)).filter((c) => c.description.startsWith('Gebäudeversicherung'))
     assert.equal(nachher.find((c) => c.id === rumpf.id)?.amountCents, rumpf.amountCents + 1000 + anteil)
     assert.equal(nachher.reduce((a, c) => a + c.amountCents, 0), rumpf.amountCents + 1000 + bewegt.amountCents)
+  })
+})
+
+// Befund 3 zu #455, auch für `mergeWithYear`: Entsteht das Zusammenfassen erst mit einem anderen Jahr der Zahlung und trägt
+// die Zeile danach nicht die ganze Rechnung, nennt die Vorschau den neuen Zusatz, und genau so heißt die Zeile mit diesem
+// Jahr. Die Rechnung über 05/2025–08/2026 steht in „Mai ab 2025, Januar ab 2026“ mit 05–12/2025 (Jahr 2025) und 01–08/2026
+// (Jahr 2026); zurück bei „Mai ab 2025“ kommt 01–04/2026 nach 2025-05, 05–08/2026 bleibt eine eigene Zeile in 2026-05.
+test('Befund 3 zu #455: Zusammenfassen erst mit anderem Jahr nennt den neuen Zusatz', async () => {
+  await withDatabase(async (opened) => {
+    await change(opened, { startMonth: 1, changes: ['2025-05', '2026-01'] })
+    const teile = await opened.write((db) => saveCostItemSplit(db, P, { ...grundsteuer, period: '2025-05', serviceFrom: '2025-05-01', serviceTo: '2026-08-31' }, null, ids))
+    const stehend = teile.find((c) => c.period === '2025-05') ?? assert.fail('kein Teil 2025-05')
+    const bewegt = teile.find((c) => c.period === '2026-01') ?? assert.fail('kein Teil 2026-01')
+    const v = await preview(opened, MAI_AB_2025)
+    const zu = v.moves.flatMap((m) => m.parts).find((p) => p.period === '2025-05') ?? assert.fail('kein Anteil für 2025-05')
+    assert.deepEqual(zu.mergeWithYear, { into: stehend.description, year: 2025, mergedAs: 'Grundsteuer 2025 (anteilig 01.05.2025–30.04.2026)' })
+    await change(opened, MAI_AB_2025, { taxYears: { [`${stehend.id}|2025-05`]: 2025, [`${bewegt.id}|2025-05`]: 2025 } })
+    const nachher = (await items(opened)).find((c) => c.id === stehend.id) ?? assert.fail('stehender Teil fehlt')
+    assert.equal(nachher.description, zu.mergeWithYear?.mergedAs)
   })
 })

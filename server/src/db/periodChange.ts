@@ -218,10 +218,11 @@ function mergeCandidates(split: Split, part: ServicePart, earlier: readonly Cost
 // (Leistungszeitraum im bisherigen Zeitraum) und die jedes Anteils (`span`). Je Wechsel ein Namensgeber, denn mehrere
 // Rechnungen derselben Quelle können zum selben Teil kommen; Vorschau und Schreiben rufen ihn in derselben Reihenfolge.
 // Ohne Zusatz (von Hand umbenannt) bleibt der Name. Trägt die Zeile danach als einzige die ganze Rechnung, streicht das
-// Schreiben den Zusatz ohnehin (#471).
-function mergedNamer(before: PeriodRules): (target: CostItem, part: ServicePart, description?: string) => string {
+// Schreiben den Zusatz ohnehin (#471). `record: false` fragt nur (`mergeWithYear`: zusammengefasst erst mit anderem Jahr)
+// und merkt sich die Spanne nicht, denn mit dem vorbelegten Jahr kommt der Anteil nicht dazu.
+function mergedNamer(before: PeriodRules): (target: CostItem, part: ServicePart, description?: string, record?: boolean) => string {
   const spans = new Map<string, { from: string; to: string }>()
-  return (target, part, description = target.description) => {
+  return (target, part, description = target.description, record = true) => {
     const old = periodOfKey(before, target.period)
     const own = spans.get(target.id) ?? (old === null || target.serviceFrom === undefined || target.serviceTo === undefined ? undefined
       : target.serviceFrom <= old.to && target.serviceTo >= old.from
@@ -229,7 +230,7 @@ function mergedNamer(before: PeriodRules): (target: CostItem, part: ServicePart,
         : { from: target.serviceFrom, to: target.serviceTo })
     if (own === undefined || part.span === undefined || !SPLIT_SUFFIX.test(description)) return description
     const span = { from: own.from < part.span.from ? own.from : part.span.from, to: own.to > part.span.to ? own.to : part.span.to }
-    spans.set(target.id, span)
+    if (record) spans.set(target.id, span)
     return `${baseDescription(description)} (anteilig ${formatDayRange(span.from, span.to)})`
   }
 }
@@ -755,8 +756,12 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
       const sibling = split.family && target === undefined
         ? mergeCandidates(split, p, earlier).find((s) => isAsked(split.item) || isAsked(s))
         : undefined
+      const siblingAs = sibling === undefined ? undefined : nameOf(sibling, p, sibling.description, false)
       const withYear = sibling === undefined ? undefined
-        : { into: sibling.description, year: isAsked(split.item) ? yearOf(p, sibling, suggestedYear) : movedYearOf(split, p, suggestedYear) }
+        : {
+          into: sibling.description, year: isAsked(split.item) ? yearOf(p, sibling, suggestedYear) : movedYearOf(split, p, suggestedYear),
+          ...(siblingAs !== undefined && siblingAs !== sibling.description ? { mergedAs: siblingAs } : {}),
+        }
       return {
         period: p.period.key, label: periodLabel(p.period), amountCents: p.amountCents, ...(target ? { mergedInto: target.description } : {}),
         ...(mergedAs !== undefined && mergedAs !== target?.description ? { mergedAs } : {}),
@@ -807,7 +812,9 @@ function sourceMovesOf(
       if (p.mergeWithYear === undefined || rest === undefined || own === undefined) return p
       const left = rest.filter((r) => r !== own)
       const renamed = left.length === 1 && left[0]?.description === p.mergeWithYear.into ? renamedOf(left[0], split) : undefined
-      return renamed === undefined ? p : { ...p, mergeWithYear: { ...p.mergeWithYear, renamedTo: renamed } }
+      if (renamed === undefined) return p
+      const { mergedAs: _as, ...withYear } = p.mergeWithYear
+      return { ...p, mergeWithYear: { ...withYear, renamedTo: renamed } }
     })
     const renamed = rest?.length === 1 && m.parts.some((p) => p.mergedInto !== undefined) ? renamedOf(rest[0], split) : undefined
     // Streicht `renamedTo` den Zusatz ganz, nennt der Anteil keinen neuen Zusatz (`mergedAs`).
