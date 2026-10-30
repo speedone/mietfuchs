@@ -27,7 +27,7 @@ import { applyPeriodChange, previewPeriodChange } from '../src/db/periodChange.t
 import { closeSettlement, createEntity, createProperty, PeriodConflict, PeriodError, saveCostItemSplit } from '../src/db/repository.ts'
 import { computeSettlement, consumptionOverview, rentLedger, taxReportFor } from '../src/calc.ts'
 import { snapshotFor } from '../src/snapshot.ts'
-import { calendarYearPeriod, periodContaining, periodsBetween, rulesOf, startYearOf } from '../../shared/period.ts'
+import { calendarYearPeriod, periodContaining, periodsBetween, previousPeriod, rulesOf, startYearOf } from '../../shared/period.ts'
 import type { CostItem, PeriodRules } from '../../shared/types.ts'
 import { finishChain, migrateUpTo } from '../testing/migrateUpTo.ts'
 import { openFreshDatabase } from '../testing/freshDatabase.ts'
@@ -35,6 +35,7 @@ import { besideServer, restore, startServer } from '../testing/api.ts'
 
 const STEP = '0077_quellrechnung'
 const P = 'objekt-1'
+const TODAY = '2026-10-05'
 const tempDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-quelle-'))
 
 // ---------- Rohe Zeilen auf dem Stand 0076 ----------
@@ -250,6 +251,205 @@ test('Zwei gleiche Rechnungen eines Kalenderobjekts ohne Zusatz „(anteilig …
   assert.deepEqual(after.sources, [])
 })
 
+// Versicherung Juli 2024 bis Juni 2025, 1.200,00 €, ohne Beleg, in 0.13.1 zweimal mit „Aufteilen und speichern“
+// erfasst: Je Zeitraum stehen zwei Teile, gleich bis auf die Kennung. 0.13.1 nahm sie nie als eine Rechnung
+// (`familyOf` verlangt verschiedene Zeiträume) und meldete sie als doppelt.
+const versicherung = (id: string, period: '2024-01' | '2025-01'): RawCostItem => ({
+  id, period, category: 'Sach- und Haftpflichtversicherung', key: 'area', service_from: '2024-07-01', service_to: '2025-06-30',
+  ...(period === '2024-01'
+    ? { description: 'Versicherung (anteilig 01.07.–31.12.2024)', amount_cents: 60493 }
+    : { description: 'Versicherung (anteilig 01.01.–30.06.2025)', amount_cents: 59507 }),
+})
+
+test('Zweimal erfasste aufgeteilte Rechnung: keine Quelle, der Hinweis bleibt, ein Wechsel legt sie nicht zusammen', async () => {
+  const dir = tempDir()
+  try {
+    const c = await migrateUpTo(dir, STEP)
+    try {
+      insertUnits(c)
+      for (const id of ['a1', 'b1']) insertCostItem(c, versicherung(id, '2024-01'))
+      for (const id of ['a2', 'b2']) insertCostItem(c, versicherung(id, '2025-01'))
+      // Das Vorjahr hatte eine Versicherung; sonst meldet der Hinweis zwei Positionen ohne Beleg nicht.
+      insertCostItem(c, { id: 'v0', period: '2023-01', category: 'Sach- und Haftpflichtversicherung', description: 'Versicherung 2023', amount_cents: 100000, key: 'area' })
+      const duplicateHints = async (year: number): Promise<number> => {
+        const stock = await readStock(c.db)
+        return computeSettlement(snapshotFor(stock, P, calendarYearPeriod(year)), { asOf: TODAY }).notices.filter((n) => n.code === 'cost.possible-duplicate').length
+      }
+      assert.equal(await finishChain(c), 1, 'nur der Schritt 0077 fehlte')
+      assert.deepEqual(outcome(c).sources, [], 'zwei Rechnungen sind keine Quelle')
+      // Wie in 0.13.1 meldet der Hinweis die beiden Rechnungen in 2024. In 2025 nicht, weil im Vorzeitraum schon zwei
+      // standen (Bedingung b des Hinweises), auch das wie in 0.13.1.
+      assert.deepEqual([await duplicateHints(2024), await duplicateHints(2025)], [1, 0], 'der Hinweis bleibt')
+
+      // Danach ein Wechsel auf Juli bis Juni: Die Rechnung liegt dann ganz in einem Zeitraum. Ohne Quelle zieht jeder Teil
+      // für sich um wie in 0.13.1; zusammengelegt würden sie eine Rechnung über 2.400,00 € für eine über 1.200,00 €.
+      const rules = { startMonth: 7, changes: [] }
+      const preview = (await previewPeriodChange(c.db, P, rules, TODAY)) ?? assert.fail('keine Vorschau')
+      assert.deepEqual(preview.blocked, [])
+      let n = 0
+      await applyPeriodChange(c.db, P, rules, {
+        understood: true, token: preview.token,
+        groups: Object.fromEntries(preview.groups.map((g) => [g.id, g.suggested || (g.options[0]?.key ?? '')])),
+        taxYears: Object.fromEntries(preview.taxYears.map((t) => [t.key, t.suggested])),
+      }, () => `neu-${++n}`, TODAY)
+      const rows = c.rows("SELECT id, period, source_id, amount_cents FROM cost_items WHERE description LIKE 'Versicherung (%' ORDER BY id")
+      assert.equal(rows.reduce((sum, r) => sum + Number(r[3]), 0), 240000, `zusammen zwei Rechnungen: ${JSON.stringify(rows)}`)
+      const perSource = new Map<string, number>()
+      for (const [, , source, amount] of rows) if (source !== null) perSource.set(String(source), (perSource.get(String(source)) ?? 0) + Number(amount))
+      for (const [source, sum] of perSource) assert.ok(sum <= 120000, `Quelle ${source} hält ${sum} Cent für eine Rechnung über 120000: ${JSON.stringify(rows)}`)
+      const stock = await readStock(c.db)
+      const period = periodContaining(rulesOf(stock.properties[0]), '2024-07-01')
+      assert.equal(period.key, '2024-07')
+      const notices = computeSettlement(snapshotFor(stock, P, period), { asOf: TODAY }).notices
+      assert.ok(notices.some((x) => x.code === 'cost.possible-duplicate' && x.text.includes('Versicherung (anteilig')), 'der Hinweis meldet sie auch danach')
+    } finally {
+      c.close()
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('Beleg an nur einem Teil: eine Quelle, der Beleg gilt für die Rechnung', async () => {
+  // In 0.13.1 aufgeteilt gespeichert, danach den Beleg an den Teil 2024 gehängt. Der Teil 2025 bleibt ohne Beleg.
+  const { before, after } = await afterStep((c) => {
+    insertUnits(c)
+    insertCostItem(c, { ...versicherung('a1', '2024-01'), invoice_file: 'versicherung.pdf' })
+    insertCostItem(c, versicherung('a2', '2025-01'))
+  })
+  assert.deepEqual(after.sources, [['a1', P, 'days']])
+  assert.deepEqual(after.items, [['a1', 'a1'], ['a2', 'a1']])
+  assert.deepEqual(after.amounts, before.amounts)
+})
+
+test('Zwei verschiedene Belege an den Teilen: keine Quelle', async () => {
+  const { after } = await afterStep((c) => {
+    insertUnits(c)
+    insertCostItem(c, { ...versicherung('a1', '2024-01'), invoice_file: 'versicherung-2024.pdf' })
+    insertCostItem(c, { ...versicherung('a2', '2025-01'), invoice_file: 'versicherung-2025.pdf' })
+  })
+  assert.deepEqual(after.sources, [])
+})
+
+test('Zweimal erfasst, einmal mit Beleg: zwei Rechnungen, nicht eine', async () => {
+  // Der klassische Doppelfall: aus dem Vorjahr übernommen und aus dem Beleg erfasst. Jede Fassung ist für sich eine
+  // Rechnung (je ein Teil je Zeitraum); zusammen nie.
+  const { after } = await afterStep((c) => {
+    insertUnits(c)
+    insertCostItem(c, { ...versicherung('a1', '2024-01'), invoice_file: 'versicherung.pdf' })
+    insertCostItem(c, { ...versicherung('a2', '2025-01'), invoice_file: 'versicherung.pdf' })
+    insertCostItem(c, versicherung('b1', '2024-01'))
+    insertCostItem(c, versicherung('b2', '2025-01'))
+  })
+  assert.deepEqual(after.sources, [['a1', P, 'days'], ['b1', P, 'days']])
+  assert.deepEqual(after.items, [['a1', 'a1'], ['a2', 'a1'], ['b1', 'b1'], ['b2', 'b1']])
+})
+
+test('Beleg an einem Teil, ein Teil doppelt: keine Quelle über beide Fassungen', async () => {
+  // Die beiden Teile 2025 ohne Beleg sind eine zweimal erfasste Rechnung; zu welcher der Teil mit Beleg gehört, ist
+  // offen.
+  const { after } = await afterStep((c) => {
+    insertUnits(c)
+    insertCostItem(c, { ...versicherung('a1', '2024-01'), invoice_file: 'versicherung.pdf' })
+    insertCostItem(c, versicherung('a2', '2025-01'))
+    insertCostItem(c, versicherung('b2', '2025-01'))
+  })
+  assert.deepEqual(after.sources, [])
+})
+
+test('Zweimal erfasst, Beleg an einem Teil, der anderen Fassung fehlt ein Teil: keine Quelle über beide Fassungen', async () => {
+  // Fassung A: a1 (2024, mit Beleg), a2 (2025); Fassung B: nur noch b1 (2024). Ohne Beleg stehen a2 und b1 in
+  // verschiedenen Zeiträumen; eine Quelle über sie verbände zwei Fassungen, und der Hinweis auf doppelte Positionen
+  // riete 2024, b1 „mit allen Teilen“ zu löschen, also auch a2, den echten Teil 2025.
+  const { after } = await afterStep((c) => {
+    insertUnits(c)
+    insertCostItem(c, { ...versicherung('a1', '2024-01'), invoice_file: 'versicherung.pdf' })
+    insertCostItem(c, versicherung('a2', '2025-01'))
+    insertCostItem(c, versicherung('b1', '2024-01'))
+  })
+  assert.deepEqual(after.sources, [])
+})
+
+test('Zweimal erfasst mit verschiedenem Betrag, ohne Wechsel des Rhythmus: keine Quelle', async () => {
+  // 1.200,00 € und 1.200,02 €: Je Zeitraum gleiche Beschreibung, verschiedener Betrag, also kein Zwilling. Zwei Teile
+  // mit gleicher Beschreibung im selben Zeitraum legt aber nur ein Wechsel des Rhythmus an (Schritt 4 aus #455), und
+  // dieses Objekt hatte keinen.
+  const { after } = await afterStep((c) => {
+    insertUnits(c)
+    insertCostItem(c, versicherung('a1', '2024-01'))
+    insertCostItem(c, versicherung('a2', '2025-01'))
+    insertCostItem(c, { ...versicherung('b1', '2024-01'), amount_cents: 60494 })
+    insertCostItem(c, { ...versicherung('b2', '2025-01'), amount_cents: 59508 })
+  })
+  assert.deepEqual(after.sources, [])
+})
+
+test('Schritt 4 mit Beleg nur am ersten Teil: eine Quelle über alle sechs Zeilen', async () => {
+  // Ohne den Beleg im Vergleich: Sonst bekämen die fünf Zeilen ohne Beleg eine Quelle für sich, und der Hinweis auf
+  // doppelte Positionen riete, diese „Rechnung ohne Beleg“ mit allen Teilen zu löschen (5/6 einer echten Rechnung).
+  const { after } = await afterStep((c) => {
+    insertUnits(c)
+    insertPeriodChanges(c, ['2025-03', '2025-05'])
+    insertCostItem(c, { ...grundsteuer('gs', '2025-01', 1940, '01.01.–28.02.2025'), invoice_file: 'grundsteuer.pdf' })
+    insertCostItem(c, grundsteuer('neu-1', '2025-01', 3960, '01.01.–28.02.2025'))
+    insertCostItem(c, grundsteuer('neu-4', '2025-03', 2005, '01.03.–30.04.2025'))
+    insertCostItem(c, grundsteuer('neu-5', '2025-03', 4095, '01.03.–30.04.2025'))
+    insertCostItem(c, grundsteuer('neu-2', '2025-05', 8055, '01.05.–31.12.2025', 2025))
+    insertCostItem(c, grundsteuer('neu-3', '2025-05', 16445, '01.05.–31.12.2025', 2025))
+  })
+  assert.deepEqual(after.sources, [['gs', P, 'days']])
+  assert.deepEqual(after.items.map(([, s]) => s), ['gs', 'gs', 'gs', 'gs', 'gs', 'gs'])
+})
+
+test('Schritt 4 mit Beleg nur am ersten Teil, aber verschiedenem Zahlungsdatum: gar keine Quelle, auch keine teilweise', async () => {
+  const { after } = await afterStep((c) => {
+    insertUnits(c)
+    insertPeriodChanges(c, ['2025-03', '2025-05'])
+    insertCostItem(c, { ...grundsteuer('gs', '2025-01', 1940, '01.01.–28.02.2025'), invoice_file: 'grundsteuer.pdf' })
+    insertCostItem(c, grundsteuer('neu-1', '2025-01', 3960, '01.01.–28.02.2025'))
+    insertCostItem(c, grundsteuer('neu-4', '2025-03', 2005, '01.03.–30.04.2025'))
+    insertCostItem(c, grundsteuer('neu-5', '2025-03', 4095, '01.03.–30.04.2025'))
+    insertCostItem(c, grundsteuer('neu-2', '2025-05', 8055, '01.05.–31.12.2025', 2025))
+    insertCostItem(c, grundsteuer('neu-3', '2025-05', 16445, '01.05.–31.12.2025', 2025))
+    c.exec("UPDATE cost_items SET paid_on = '2025-02-15' WHERE id = 'gs'")
+  })
+  assert.deepEqual(after.sources, [])
+})
+
+test('Beleg an nur einem Teil, aber verschieden in einer Angabe oder Unterliste: keine Quelle', async () => {
+  const paidOn = await afterStep((c) => {
+    insertUnits(c)
+    insertCostItem(c, { ...versicherung('a1', '2024-01'), invoice_file: 'versicherung.pdf' })
+    insertCostItem(c, versicherung('a2', '2025-01'))
+    c.exec("UPDATE cost_items SET paid_on = '2025-02-15' WHERE id = 'a2'")
+  })
+  assert.deepEqual(paidOn.after.sources, [])
+  const participants = await afterStep((c) => {
+    insertUnits(c)
+    insertCostItem(c, { ...versicherung('a1', '2024-01'), invoice_file: 'versicherung.pdf', participants_limited: 1 })
+    insertParticipants(c, 'a1', ['u1'])
+    insertCostItem(c, { ...versicherung('a2', '2025-01'), participants_limited: 1 })
+    insertParticipants(c, 'a2', ['u2'])
+  })
+  assert.deepEqual(participants.after.sources, [])
+})
+
+test('Ein leerer Beleg gilt wie keiner', async () => {
+  // 0.13.1 nahm im Familienschlüssel '' und NULL gleich (`invoiceFile ?? ''`); der Schritt ebenso, auch im Vergleich.
+  const withReceipt = await afterStep((c) => {
+    insertUnits(c)
+    insertCostItem(c, { ...versicherung('a1', '2024-01'), invoice_file: 'versicherung.pdf' })
+    insertCostItem(c, { ...versicherung('a2', '2025-01'), invoice_file: '' })
+  })
+  assert.deepEqual(withReceipt.after.sources, [['a1', P, 'days']])
+  const samePeriod = await afterStep((c) => {
+    insertUnits(c)
+    insertCostItem(c, { ...grundsteuer('gs', '2025-01', 12000, '01.01.–30.04.2025'), invoice_file: '' })
+    insertCostItem(c, grundsteuer('neu-1', '2025-01', 24500, '01.05.–31.12.2025'))
+  })
+  assert.deepEqual(samePeriod.after.sources, [['gs', P, 'days']])
+})
+
 test('Ohne Position mit Leistungszeitraum bleibt der Schritt still', async () => {
   const { after } = await afterStep((c) => {
     insertUnits(c)
@@ -271,7 +471,6 @@ function rng(seed: number): () => number {
   }
 }
 
-const TODAY = '2026-10-05'
 const COLD = ['Grundsteuer', 'Müllabfuhr', 'Sach- und Haftpflichtversicherung', 'Gartenpflege', 'Hausreinigung'] as const
 const SPANS: readonly (readonly [string, string] | null)[] = [
   ['2024-07-01', '2025-06-30'], ['2025-01-01', '2025-12-31'], ['2025-03-01', '2026-02-28'], ['2024-01-01', '2024-12-31'], ['2025-04-01', '2025-09-30'], null,
@@ -426,6 +625,9 @@ test('Der Schritt ändert keinen Betrag', async () => {
   let sourced = 0
   let samePeriod = 0
   let unsourcedParts = 0
+  let twiceReported = 0
+  let receiptMerged = 0
+  let incompleteCopies = 0
   for (const seed of [455, 4551, 4552]) {
     const dir = tempDir()
     try {
@@ -447,6 +649,36 @@ test('Der Schritt ändert keinen Betrag', async () => {
           // Seit #471 entfällt der Zusatz dabei, über die Routen entsteht so ein Teil also nicht mehr; der Schritt lässt
           // ihn ohne Quelle.
           insertCostItem(c, { id: `allein-${property.id}`, property_id: property.id, period, category: 'Gartenpflege', description: 'Garten (anteilig 01.07.–31.07.2025)', amount_cents: 900, key: 'area', service_from: '2025-07-01', service_to: '2025-07-31' })
+          // Ein Teil, in 0.13.1 zweimal erfasst: zwei Zeilen im selben Zeitraum, gleich bis auf die Kennung. Das sind zwei
+          // Rechnungen; der Hinweis auf doppelte Positionen meldet sie vor und nach dem Schritt (im Vorzeitraum eine
+          // Reinigung, sonst meldet er zwei Positionen ohne Beleg nicht).
+          for (const i of [1, 2]) {
+            insertCostItem(c, { id: `zweimal-${property.id}-${i}`, property_id: property.id, period, category: 'Hausreinigung', description: 'Reinigung Juli (anteilig 01.07.–31.07.2025)', amount_cents: 3000, key: 'area', service_from: '2025-07-01', service_to: '2025-07-31' })
+          }
+          const previous = previousPeriod(rulesOf(property), periodContaining(rulesOf(property), '2025-07-01')).key
+          insertCostItem(c, { id: `reinigung-vorher-${property.id}`, property_id: property.id, period: previous, category: 'Hausreinigung', description: 'Reinigung', amount_cents: 3000, key: 'area' })
+          // Eine aufgeteilte Rechnung, deren Beleg in 0.13.1 nur an den ersten Teil gehängt wurde. Über die Routen
+          // bekommen die Teile gleich ihre Quelle, deshalb von Hand.
+          const spanned = periodsBetween(rulesOf(property), '2025-07-01', '2026-06-30')
+          if (spanned.length > 1) {
+            spanned.forEach((p, i) => {
+              insertCostItem(c, {
+                id: `beleg-${property.id}-${i}`, property_id: property.id, period: p.key, category: 'Müllabfuhr', description: `Müll mit Beleg (anteilig ${i + 1}. Teil)`,
+                amount_cents: 1000 + i, key: 'area', service_from: '2025-07-01', service_to: '2026-06-30', ...(i === 0 ? { invoice_file: 'muell.pdf' } : {}),
+              })
+            })
+            // Zweimal erfasst, Beleg nur am ersten Teil der ersten Fassung, der zweiten fehlen alle Teile außer dem
+            // ersten. Keine Quelle verbindet Teile beider Fassungen; hier bekommt keine Zeile eine.
+            spanned.forEach((p, i) => {
+              for (const copy of i === 0 ? ['a', 'b'] : ['a']) {
+                insertCostItem(c, {
+                  id: `fassung-${property.id}-${copy}${i}`, property_id: property.id, period: p.key, category: 'Sach- und Haftpflichtversicherung',
+                  description: `Police (anteilig ${i + 1}. Teil)`, amount_cents: 2000 + i, key: 'area', service_from: '2025-07-01', service_to: '2026-06-30',
+                  ...(copy === 'a' && i === 0 ? { invoice_file: 'police.pdf' } : {}),
+                })
+              }
+            })
+          }
         }
         const before = await readStock(c.db)
         const frozenBefore = await frozenOf(c)
@@ -463,14 +695,51 @@ test('Der Schritt ändert keinen Betrag', async () => {
         const nachher = splitDuplicateHints(everything(after))
         const difference = firstDifference(vorher.rest, nachher.rest)
         assert.equal(difference, null, `Startwert ${seed}: ${JSON.stringify(difference)}`)
-        for (const [key, count] of nachher.hints) {
-          assert.ok(count <= (vorher.hints.get(key) ?? 0), `Startwert ${seed}: ${key} meldet nach dem Schritt mehr doppelte Positionen`)
-        }
-
         const bySource = new Map<string, CostItem[]>()
         for (const item of after.costItems) if (item.sourceId) bySource.set(item.sourceId, [...(bySource.get(item.sourceId) ?? []), item])
         sourced += bySource.size
-        for (const parts of bySource.values()) if (new Set(parts.map((p) => p.period)).size < parts.length) samePeriod++
+        // Wo der Schritt zwei Teile eines Zeitraums zu einer Rechnung macht, darf ein Hinweis verschwinden. Wo er Teile
+        // mit und ohne Beleg zu einer Rechnung macht, gilt der Teil ohne Beleg danach als belegt: Dort darf sich die
+        // Zahl der Hinweise in beide Richtungen ändern (ein Hinweis nach Bedingung a kann entstehen, einer über den
+        // Teil „ohne Beleg“ verschwinden). Sonst ändert eine Quelle mit je einem Teil je Zeitraum an keinem Zeitraum, wie
+        // viele Rechnungen dort stehen und welche belegt sind.
+        const joined = new Set<string>()
+        const receiptJoined = new Set<string>()
+        for (const parts of bySource.values()) {
+          for (const part of parts) {
+            if (parts.filter((p) => p.period === part.period).length > 1) joined.add(`${part.propertyId} ${part.period}`)
+          }
+          if (new Set(parts.map((p) => p.period)).size < parts.length) samePeriod++
+          if (new Set(parts.map((p) => p.invoiceFile ?? null)).size > 1) {
+            receiptMerged++
+            for (const part of parts) receiptJoined.add(`${part.propertyId} ${part.period}`)
+          }
+        }
+        for (const key of new Set([...vorher.hints.keys(), ...nachher.hints.keys()])) {
+          const [propertyId, kind, period] = key.split(' ')
+          const before = vorher.hints.get(key) ?? 0
+          const now = nachher.hints.get(key) ?? 0
+          const at = `${propertyId} ${period}`
+          if ((kind === 'Abrechnung' || kind === 'Verbrauch') && receiptJoined.has(at)) {
+            // Beide Richtungen erlaubt, siehe oben.
+          } else if ((kind === 'Abrechnung' || kind === 'Verbrauch') && joined.has(at)) {
+            assert.ok(now <= before, `Startwert ${seed}: ${key} meldet nach dem Schritt mehr doppelte Positionen`)
+          } else {
+            assert.equal(now, before, `Startwert ${seed}: ${key} meldet nach dem Schritt ${now} statt ${before} doppelte Positionen`)
+          }
+        }
+        // Die zweimal erfasste Reinigung meldet der Hinweis nach dem Schritt, wo er sie vorher meldete.
+        const reportsTwice = (stock: Stock, propertyId: string, rules: PeriodRules): boolean =>
+          computeSettlement(snapshotFor(stock, propertyId, periodContaining(rules, '2025-07-01')), { asOf: TODAY }).notices
+            .some((n) => n.code === DUPLICATE_HINT && n.text.includes('Reinigung Juli'))
+        for (const property of after.properties) {
+          const was = reportsTwice(before, property.id, rulesOf(property))
+          assert.equal(reportsTwice(after, property.id, rulesOf(property)), was, `Startwert ${seed}: ${property.id} meldet die zweimal erfasste Reinigung nicht mehr`)
+          if (was) twiceReported++
+        }
+        const copies = after.costItems.filter((i) => i.id.startsWith('fassung-'))
+        assert.ok(copies.every((i) => !i.sourceId), `Startwert ${seed}: Quelle über Teile zweier Fassungen: ${JSON.stringify(copies.map((i) => [i.id, i.sourceId]))}`)
+        incompleteCopies += copies.length
         unsourcedParts += after.costItems.filter((i) => !i.sourceId && /\(anteilig /.test(i.description)).length
       } finally {
         c.close()
@@ -484,6 +753,9 @@ test('Der Schritt ändert keinen Betrag', async () => {
   assert.ok(sourced > 0, 'keine Quelle entstanden')
   assert.ok(samePeriod > 0, 'keine Quelle mit zwei Teilen im selben Zeitraum')
   assert.ok(unsourcedParts > 0, 'kein Teil ohne Quelle')
+  assert.ok(twiceReported > 0, 'der Hinweis meldet die zweimal erfasste Reinigung nie')
+  assert.ok(receiptMerged > 0, 'keine Quelle aus Teilen mit und ohne Beleg')
+  assert.ok(incompleteCopies > 0, 'keine unvollständige Fassung im Bestand')
 })
 
 // ---------- Backup aus 0.13.1 ----------

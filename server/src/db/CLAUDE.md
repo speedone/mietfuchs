@@ -82,7 +82,10 @@ beim Start, denn wer auf sie wartet, hält den Server für fertig.
   im Repository mit). In der erzeugten Datenbank steht dieser Fremdschlüssel bis zu einem späteren Schritt, der
   `cost_items` neu baut, als NO ACTION (drizzle lässt ON DELETE bei ALTER ADD weg); unter `defer_foreign_keys`
   (Rücksprung) wird er erst beim Festschreiben geprüft. Aufs Objekt verweist die Quelle mit `RESTRICT`. Bestehende Teile hat der Datenschritt 0077 (TypeScript,
-  siehe Migrationen) einer Quelle zugeordnet; Backups älterer Stände laufen beim Einspielen durch dieselbe Kette.
+  siehe Migrationen) einer Quelle zugeordnet: was 0.13.1 als eine Rechnung behandelte, was ein Wechsel von 0.13.1 aus
+  einer machte, und, darüber hinaus, Teile einer Rechnung, an deren einem Teil der Beleg hängt; nie eine zweimal
+  erfasste Rechnung mit gleichem Betrag als eine, und von zwei solchen Fassungen jede für sich nur, wenn jede
+  vollständig ist (Regel und bekannte Grenze im Kopf des Schrittes, server/src/CLAUDE.md); Backups älterer Stände laufen beim Einspielen durch dieselbe Kette.
 - **Prüfbedingungen je Feld entschieden**: bewusst ohne Bedingung `cost_items.amount_cents`
   (Gutschrift), `labor_35a_cents` (calc.ts erklärt einen ungültigen Lohnanteil) und
   `payments.amount_cents` (Rücklastschrift). Aufzählungen bekommen Bedingungen, denn

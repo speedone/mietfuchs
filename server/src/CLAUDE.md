@@ -77,10 +77,31 @@ Schlüssel** `PeriodKey` (`'JJJJ-MM'`, Monat des Beginns, Markentyp), kein Jahr:
   jeder in einem anderen Zeitraum, bleibt es eine (Golden). Bleibt ein Teil, entfällt die Quelle; trägt er die ganze Rechnung
   (Leistungszeitraum ganz in seinem Zeitraum, `carriesWholeInvoice`, und alle Teile der Quelle decken ihn, `wholeFamily`),
   entfällt auch der Zusatz „(anteilig …)“, Vorschau `renamedTo`, auch an `mergeWithYear` (#471). Decken die bewegten Teile den Leistungszeitraum nicht (ein Teil wurde gelöscht), behält auch eine
-  einzige Zeile den Zusatz (`coversService`). Ein Teil
+  einzige Zeile den Zusatz (`coversService`). Kommt ein Anteil zu einem stehenden Teil, nennt dessen Zusatz danach seine
+  bisherige Spanne samt der des Anteils, bei einer Lücke (gelöschter Teil) beide getrennt („01.01.–30.04. und
+  01.09.–31.12.2025“); eine Zeile, die der Wechsel eben erst anlegt, zählt mit ihrer eigenen Spanne (`mergedNamer`, `seed`,
+  Vorschau `mergedAs`, auch an `mergeWithYear`; Befund 3 zu #455). Steht dieser Teil in einem
+  wachsenden Zeitraum und bilden er und die bewegten Teile zusammen eine unveränderte Teilung nach Tagen (im bisherigen
+  Rhythmus aus Summe und Spannen genau so geteilt), wird ihre Summe als eine Rechnung neu geteilt und der Anteil ist, was ihm
+  zum neuen Betrag fehlt (`withStandingShare`, Befund 4): So ergibt hin und zurück centgenau den Ausgangsstand, bei jeder
+  Wiederholung. Teile in Zeiträumen, die bleiben (auch jeder abgeschlossene), ein einzeln berichtigter Teil und bewegte
+  Teile in mehreren Rechnungen je Jahr (`poolOf`) werden nicht neu geteilt; dort kommt wie bisher der Anteil der bewegten
+  Teile dazu. Gegen den Golden-Stand von vor #455 (db-wechsel-quelle.test.ts) weicht das in einem von 200 Abläufen um einen
+  Cent je Zeitraum ab, die Summe der Rechnung nicht; der Test nennt diese Abweichung ausdrücklich (`GOLDEN_DEVIATIONS`):
+  eine nicht mehr eintretende scheitert, ebenso jede andere in einem Ablauf, der durchgehend als Ganzes geteilt wurde
+  (`wholeThroughout`); die übrigen Abläufe behalten ihre Toleranz. Ein Teil
   ohne Quelle wird über seinen eigenen Teil des Leistungszeitraums geteilt und bekommt dann eine. Löschen geht je Teil wie
   bisher; der letzte Teil nimmt die Quelle mit. Ein Datenschritt (0077, dataSteps) hat bestehende Teile zusammengeführt: Kandidat
-  ist `isSplitPart` oder eine Beschreibung mit dem Zusatz „(anteilig …)“, zusammen nur bei gleichem Familienschlüssel des Schritts. Heizkosten nie
+  ist `isSplitPart` oder eine Beschreibung mit dem Zusatz „(anteilig …)“, zusammen nur bei gleichem Familienschlüssel des
+  Schritts (der von 0.13.1, ein leerer Beleg wie keiner). Stehen zwei davon im selben Zeitraum, nur wenn alle in jeder
+  übrigen Angabe und Unterliste gleich sind, keine zwei im selben Zeitraum in Betrag und Beschreibung übereinstimmen
+  (eine zweimal erfasste Rechnung, die 0.13.1 als doppelt meldete) und zwei mit gleicher Beschreibung im selben Zeitraum
+  nur bei einem Objekt mit Wechsel des Rhythmus (nur ein Wechsel legt so etwas an). Bekannte Grenze: Mit Wechsel wird eine
+  zweimal erfasste aufgeteilte Rechnung, die nur im Betrag abweicht, eine Quelle (Begründung im Kopf des Schrittes).
+  Über 0.13.1 hinaus führt der Schritt genau eine Familie mit Beleg und genau eine ohne zusammen, wenn sie bis auf den
+  Beleg gleich sind und zusammen eine Rechnung nach denselben Regeln; ist es keine, bekommt keine der beiden eine Quelle,
+  außer bei einer zweimal erfassten Rechnung, deren Fassungen beide vollständig sind (dann jede für sich). Im Zweifel keine Quelle, ein alter Teil verhält
+  sich dann nach `isSplitPart`. Heizkosten nie
   (VIII ZR 156/11), dort warnt `period.heating-mismatch`.
 - **Jahr der Steuer**: `tax_year` ist das Jahr der Zahlung, Pflicht nur bei einem Zeitraum über zwei
   Kalenderjahre. Welches Jahr eine Position für die Steuer hat, sagt allein `outflowShares`
