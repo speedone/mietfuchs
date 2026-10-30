@@ -426,7 +426,8 @@ test('#471: Entsteht das Zusammenfassen erst mit einem anderen als dem vorbelegt
   await withDatabase(async (opened) => {
     const { stehend } = await zweiJahre(opened)
     const v = await preview(opened, MAI_AB_2025)
-    assert.deepEqual(v.moves.flatMap((m) => m.parts.map((p) => [p.mergedInto, p.mergeWithYear])), [[undefined, { into: stehend.description, year: 2025 }]])
+    // Durchsicht, M2: Mit dem Jahr trüge die Zeile danach die ganze Rechnung; die Vorschau nennt auch den neuen Namen.
+    assert.deepEqual(v.moves.flatMap((m) => m.parts.map((p) => [p.mergedInto, p.mergeWithYear])), [[undefined, { into: stehend.description, year: 2025, renamedTo: 'Grundsteuer 2025' }]])
   })
   await withDatabase(async (opened) => {
     // Ohne Frage nach dem Jahr gibt es keinen solchen Satz.
@@ -434,5 +435,34 @@ test('#471: Entsteht das Zusammenfassen erst mit einem anderen als dem vorbelegt
     await change(opened, MAI_AB_2025)
     const v = await preview(opened, KALENDER)
     assert.deepEqual(v.moves.flatMap((m) => m.parts.map((p) => p.mergeWithYear)), [undefined])
+  })
+})
+
+// Durchsicht zu #471, I1: Ob die verbleibende Zeile die ganze Rechnung trägt, entscheidet die ganze Familie (stehende und
+// bewegte Teile), nicht nur ihr Leistungszeitraum. Fehlt ein Teil, bleibt der Zusatz, und die Vorschau kündigt nichts an.
+test('I1 zu #471: Fehlt ein Teil, behält die verbleibende Zeile den Zusatz, auch wenn sie danach allein steht', async () => {
+  // A: Mai ab 2025, der Teil 2025-01 gelöscht, dann zurück zum Kalenderjahr.
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createEntity(db, 'costItems', 'gs', grundsteuer))
+    await change(opened, MAI_AB_2025)
+    const frueh = (await items(opened)).find((c) => c.period === '2025-01') ?? assert.fail('kein Teil 2025-01')
+    await opened.write((db) => removeEntity(db, 'costItems', frueh.id))
+    const v = await change(opened, KALENDER)
+    assert.deepEqual(v.moves.map((m) => m.renamedTo), [undefined])
+    const nachher = await items(opened)
+    assert.deepEqual(nachher.map((c) => c.amountCents), [24500])
+    assert.match(nachher[0]?.description ?? '', /\(anteilig /)
+  })
+  // B: Mai und September ab 2025, der Teil 2025-09 gelöscht, dann zurück zum Kalenderjahr.
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createEntity(db, 'costItems', 'gs', grundsteuer))
+    await change(opened, { startMonth: 1, changes: ['2025-05', '2025-09'] })
+    const spaet = (await items(opened)).find((c) => c.period === '2025-09') ?? assert.fail('kein Teil 2025-09')
+    await opened.write((db) => removeEntity(db, 'costItems', spaet.id))
+    const v = await change(opened, KALENDER)
+    assert.deepEqual(v.moves.map((m) => m.renamedTo), [undefined])
+    const nachher = await items(opened)
+    assert.equal(nachher.length, 1)
+    assert.match(nachher[0]?.description ?? '', /\(anteilig /)
   })
 })

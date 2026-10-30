@@ -75,8 +75,8 @@ Schlüssel** `PeriodKey` (`'JJJJ-MM'`, Monat des Beginns, Markentyp), kein Jahr:
   gefragtem Jahr `mergeDependsOnYear`; entsteht es erst mit einem anderen als dem vorbelegten Jahr, `mergeWithYear`, #471). Stehen bewegte Teile im selben Zeitraum, zählen sie nur bei gleichem Jahr der
   Zahlung und Zahlungsdatum zusammen, sonst je Jahr eine Rechnung mit eigener Frage (`sourceSplit`, `poolOf`); liegt
   jeder in einem anderen Zeitraum, bleibt es eine (Golden). Bleibt ein Teil, entfällt die Quelle; trägt er die ganze Rechnung
-  (Leistungszeitraum ganz in seinem Zeitraum, `carriesWholeInvoice`), entfällt auch der Zusatz „(anteilig …)“, Vorschau
-  `renamedTo` (#471). Decken die bewegten Teile den Leistungszeitraum nicht (ein Teil wurde gelöscht), behält auch eine
+  (Leistungszeitraum ganz in seinem Zeitraum, `carriesWholeInvoice`, und alle Teile der Quelle decken ihn, `wholeFamily`),
+  entfällt auch der Zusatz „(anteilig …)“, Vorschau `renamedTo`, auch an `mergeWithYear` (#471). Decken die bewegten Teile den Leistungszeitraum nicht (ein Teil wurde gelöscht), behält auch eine
   einzige Zeile den Zusatz (`coversService`). Ein Teil
   ohne Quelle wird über seinen eigenen Teil des Leistungszeitraums geteilt und bekommt dann eine. Löschen geht je Teil wie
   bisher; der letzte Teil nimmt die Quelle mit. Ein Datenschritt (0077, dataSteps) hat bestehende Teile zusammengeführt: Kandidat

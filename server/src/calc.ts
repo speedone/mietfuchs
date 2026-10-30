@@ -4830,7 +4830,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const fitting = invoices.find((inv) => !inv.hasReceipt && pairsWithAll(inv))
     const unreceipted = fitting ?? invoices.find((inv) => !inv.hasReceipt)
     // #471: Passt keine zu allen und gibt es mehrere ohne Beleg, ist „die Rechnung ohne Beleg“ mehrdeutig.
-    const ambiguous = fitting === undefined && invoices.filter((inv) => !inv.hasReceipt).length > 1
+    const withoutReceipt = invoices.filter((inv) => !inv.hasReceipt)
+    const ambiguous = fitting === undefined && withoutReceipt.length > 1
+    // Durchsicht zu #471, M1: Dass sie untereinander keine Doppelung sind, gilt nur bei paarweise getrennten Leistungszeiträumen.
+    const apart = withoutReceipt.every((inv, i) => withoutReceipt.slice(i + 1).every((o) => o.parts.some((p) => inv.parts.some((q) => separateService(p, q)))))
     const first = unreceipted?.parts[0] ?? group[0]
     if (!first) continue
     // Ist eine aufgeteilte Rechnung beteiligt (Durchsicht von PR 3, I1), richtet sich der Rat nach der Quelle, nicht nach
@@ -4853,7 +4856,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       `${named} stehen ${list.length === 2 ? `beide ${at.label}` : `${at.label} alle`} unter „${first.category}“. ${list.length === 2 ? 'Ist das dieselbe Rechnung' : 'Ist darunter dieselbe Rechnung zweimal'}, etwa einmal aus dem Vorjahr übernommen und einmal aus dem Beleg erfasst, wird sie zweimal verteilt. ` +
       (isSourced(unreceipted)
         ? (ambiguous
-          ? 'Dann bitte eine der Rechnungen ohne Beleg löschen, die doppelt erfasste, mit allen ihren Teilen, auch denen in anderen Zeiträumen, nicht nur einen einzelnen; welche es ist, zeigt der Vergleich mit den übrigen Rechnungen, denn untereinander sind sie keine Doppelung (ihre Leistungszeiträume sind getrennt). '
+          ? 'Dann bitte eine der Rechnungen ohne Beleg löschen, die doppelt erfasste, mit allen ihren Teilen, auch denen in anderen Zeiträumen, nicht nur einen einzelnen' +
+            (apart ? '; welche es ist, zeigt der Vergleich mit den übrigen Rechnungen, denn untereinander sind sie keine Doppelung (ihre Leistungszeiträume sind getrennt). ' : '. ')
           : 'Dann bitte die Rechnung ohne Beleg löschen, mit allen ihren Teilen, auch denen in anderen Zeiträumen, nicht nur einen einzelnen. ') +
           `Soll sie bleiben, löschen Sie stattdessen die ${list.length === 2 ? 'andere Rechnung' : 'doppelt erfasste andere Rechnung'}${otherSourced ? ', ebenfalls mit allen ihren Teilen, auch denen in anderen Zeiträumen' : ''}. Den Betrag eines Teils auf den der ganzen Rechnung zu setzen, zählte die übrigen Teile doppelt. `
         : anySourced

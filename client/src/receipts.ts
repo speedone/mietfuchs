@@ -389,7 +389,7 @@ function oldPartsWhere(item: CostItem, rules?: PeriodRules): string {
   if (labels.length < 2) return ''
   const base = baseDescription(item.description)
   const name = base === item.description ? `„${base}“` : `„${base} …“`
-  return `, also die Teile mit der Beschreibung ${name} in den Abrechnungszeiträumen ${andList(labels)} auf der Seite Kosten`
+  return `, also der Teile mit der Beschreibung ${name} in den Abrechnungszeiträumen ${andList(labels)} auf der Seite Kosten`
 }
 
 // Warum „Betrag prüfen“ ins Formular führt.

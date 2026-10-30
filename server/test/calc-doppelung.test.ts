@@ -273,3 +273,19 @@ test('#471: Passt keine Rechnung ohne Beleg zu allen, ist der Rat nicht mehrdeut
   assert.equal(plain.length, 1)
   assert.match(plain[0]?.text ?? '', /\. Dann bitte die doppelt erfasste Position löschen, in der Regel die ohne Beleg\. Nur den Beleg zuzuordnen genügt nicht/)
 })
+
+// Durchsicht zu #471, M1: „untereinander sind sie keine Doppelung“ nur, wenn die Rechnungen ohne Beleg paarweise getrennte
+// Leistungszeiträume haben. Überschneiden sich zwei davon, könnten gerade sie dieselbe Rechnung sein.
+test('M1 zu #471: Überschneiden sich Rechnungen ohne Beleg, sagt der Rat nicht, sie seien keine Doppelung', () => {
+  const S = { category: 'Sachversicherung', description: 'Versicherung (anteilig)' }
+  const found = dupes([
+    item({ id: 'a26', period: calendarPeriod(2026), ...S, amountCents: 30000, sourceId: 'qa', serviceFrom: '2025-07-01', serviceTo: '2026-06-30' }),
+    item({ id: 'b', period: calendarPeriod(2026), ...S, amountCents: 30000, serviceFrom: '2026-01-01', serviceTo: '2026-06-30' }),
+    item({ id: 'c26', period: calendarPeriod(2026), ...S, amountCents: 31000, sourceId: 'qc', serviceFrom: '2026-07-01', serviceTo: '2027-06-30', invoiceFile: 'c.pdf' }),
+    item({ id: 'd', period: calendarPeriod(2026), ...S, amountCents: 61000, invoiceFile: 'd.pdf' }),
+  ])
+  assert.equal(found.length, 1)
+  const text = found[0]?.text ?? ''
+  assert.match(text, /Dann bitte eine der Rechnungen ohne Beleg löschen, die doppelt erfasste/)
+  assert.doesNotMatch(text, /untereinander sind sie keine Doppelung/)
+})

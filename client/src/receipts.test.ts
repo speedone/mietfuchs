@@ -342,7 +342,7 @@ describe('Posteingang: einer Position zuordnen', () => {
     // #471: Ohne Quelle gibt es kein „Rechnung gesamt“; der Satz sagt, wo die übrigen Teile stehen.
     const altText = amountCheckFormReason({ ...alt, description: 'Grundsteuer (anteilig 01.07.–31.12.2025)' }, rules)
     expect(altText).not.toMatch(/Rechnung gesamt/)
-    expect(altText).toMatch(/die Teile mit der Beschreibung „Grundsteuer …“ in den Abrechnungszeiträumen 2025 und 2026 auf der Seite Kosten/)
+    expect(altText).toMatch(/also der Teile mit der Beschreibung „Grundsteuer …“ in den Abrechnungszeiträumen 2025 und 2026 auf der Seite Kosten/)
     expect(amountCheckFormReason(item('e', { key: 'external' }), rules)).toMatch(/Einzelbeträge oder Kosten der Gemeinschaft/)
   })
   it('Betrag prüfen: ein Lohnanteil über dem neuen Betrag verweist ins Formular', () => {
