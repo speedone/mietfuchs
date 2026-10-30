@@ -45,6 +45,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Zusammenfassen erst mit einem anderen als dem vorbelegten Jahr der Zahlung, sagt die Vorschau auch das. Der Hinweis auf
   doppelte Positionen ist nicht mehr mehrdeutig, wenn mehrere aufgeteilte Rechnungen ohne Beleg beteiligt sind, und
   „Betrag prüfen“ im Belegordner sagt bei einem alten Teil ohne Verweis auf seine Rechnung, wo die übrigen Teile stehen.
+- Wechsel des Abrechnungszeitraums mit einer Gutschrift im Objekt ([#468](https://github.com/speedone/mietfuchs/issues/468)):
+  Stand irgendeine Kostenposition mit negativem Betrag im Objekt, lehnte jeder Wechsel des Rhythmus ab („mehr
+  abgezogen, als die Rechnung beträgt“), obwohl an der Gutschrift kein Abzug hing. Geprüft werden jetzt nur
+  Stromrechnungen, aus denen ein Abzug für den Betriebsstrom gerechnet ist; ein Abzug über dem Betrag seiner
+  Rechnung wird weiter abgelehnt.
 
 ## [0.13.1] – 2026-10-27
 

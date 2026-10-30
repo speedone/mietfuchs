@@ -13,7 +13,7 @@ import { applyPeriodChange, previewPeriodChange } from '../src/db/periodChange.t
 import { createHeatingPlant } from '../src/db/heating.ts'
 import { bookOperatingPower } from '../src/db/operatingPower.ts'
 import { readCostItems, readStock } from '../src/db/read.ts'
-import { createEntity, saveCostItemSplit, updateEntity } from '../src/db/repository.ts'
+import { createEntity, PeriodError, saveCostItemSplit, settleOperatingPowerLinks, updateEntity } from '../src/db/repository.ts'
 import { eq } from 'drizzle-orm'
 import { costItems, properties } from '../src/db/schema.ts'
 import type { CostItem } from '../../shared/types.ts'
@@ -256,5 +256,39 @@ test('#454: Abzug beim Betriebsstrom geht mit Hausstrom nach Einzelbeträgen in 
     const nachher = await items(opened)
     assert.deepEqual(nachher.filter((c) => c.category === 'Beleuchtung/Allgemeinstrom').map((c) => [c.operatingPower ?? 'rechnung', c.period, c.amountCents]).sort(),
       [['deduction', '2025-05', -10000], ['rechnung', '2025-05', 100000]])
+  })
+})
+
+// #468: Die Summenregel des Endstands gilt nur für Stromrechnungen, an denen ein Abzug hängt. Eine Gutschrift
+// ohne Abzüge (0 abgezogen, Betrag negativ) sperrte vorher jeden Wechsel des Abrechnungszeitraums.
+for (const kalt of ['2025-01', '2025-05', 'split']) {
+  test(`#468: Gutschrift im Objekt sperrt den Wechsel des Abrechnungszeitraums nicht (Antwort ${kalt}); sie bleibt erhalten`, async () => {
+    await withDatabase(async (opened) => {
+      await bestand(opened, 'manual')
+      await opened.write((db) => createEntity(db, 'costItems', 'gs', { propertyId: 'objekt-1', period: '2025-01', category: 'Müllabfuhr', description: 'Gutschrift Müllabfuhr', amountCents: -5000, key: 'area' }))
+      const vorher = await items(opened)
+      const r = await wechsel(opened, kalt)
+      if (!r || 'error' in r) return assert.fail(r ? r.error : 'kein Objekt')
+      const nachher = await items(opened)
+      assert.equal(sum(nachher), sum(vorher))
+      // Beim Aufteilen nach Tagen tragen die Teile „(anteilig …)“ im Namen.
+      const gutschrift = nachher.filter((c) => c.description.startsWith('Gutschrift Müllabfuhr'))
+      assert.equal(gutschrift.length, kalt === 'split' ? 2 : 1)
+      assert.equal(sum(gutschrift), -5000)
+    })
+  })
+}
+
+test('#468, Gegenprobe: ein Abzug über dem Betrag seiner Stromrechnung lehnt der Endstand weiter ab', async () => {
+  await withDatabase(async (opened) => {
+    await bestand(opened, 'manual')
+    await opened.write(async (db) => {
+      // Am Formular vorbei kleiner gemacht: Hausstrom 50 €, Abzug 100 €.
+      await db.update(costItems).set({ amountCents: 5000 }).where(eq(costItems.id, 'hs'))
+    })
+    await assert.rejects(
+      opened.write((db) => settleOperatingPowerLinks(db, 'objekt-1', new Map())),
+      (e: unknown) => e instanceof PeriodError && /mehr abgezogen, als die Rechnung beträgt/.test(e.message),
+    )
   })
 })
