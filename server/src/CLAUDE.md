@@ -88,7 +88,7 @@ Schlüssel** `PeriodKey` (`'JJJJ-MM'`, Monat des Beginns, Markentyp), kein Jahr:
   zweimal erfasste aufgeteilte Rechnung, die nur im Betrag abweicht, eine Quelle (Begründung im Kopf des Schrittes).
   Über 0.13.1 hinaus führt der Schritt genau eine Familie mit Beleg und genau eine ohne zusammen, wenn sie bis auf den
   Beleg gleich sind und zusammen eine Rechnung nach denselben Regeln; ist es keine, bekommt keine der beiden eine Quelle,
-  außer bei einer zweimal erfassten Rechnung (dann jede Fassung für sich). Im Zweifel keine Quelle, ein alter Teil verhält
+  außer bei einer zweimal erfassten Rechnung, deren Fassungen beide vollständig sind (dann jede für sich). Im Zweifel keine Quelle, ein alter Teil verhält
   sich dann nach `isSplitPart`. Heizkosten nie
   (VIII ZR 156/11), dort warnt `period.heating-mismatch`.
 - **Jahr der Steuer**: `tax_year` ist das Jahr der Zahlung, Pflicht nur bei einem Zeitraum über zwei

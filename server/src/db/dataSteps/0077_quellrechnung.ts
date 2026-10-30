@@ -33,8 +33,8 @@
 //   der irrte in beide Richtungen. Der Fall verlangt zwei Fassungen, die in Beschreibung, Leistungszeitraum,
 //   Rechnungssteller, Beleg, Schlüssel und jeder übrigen Angabe übereinstimmen und nur im Betrag abweichen, in einem
 //   Objekt, das den Rhythmus gewechselt hat; das hält der Schritt für seltener als die Teile nach Schritt 4, deren
-//   Hinweis auf doppelte Positionen sonst bliebe. Gleichen sich bei Teilen nach
-//   Schritt 4 ausnahmsweise Betrag und Beschreibung (zwei gleich große Teile), bleibt der Fall ohne Quelle.
+//   Hinweis auf doppelte Positionen sonst bliebe. Gleichen sich bei Teilen nach Schritt 4 ausnahmsweise Betrag und
+//   Beschreibung (zwei gleich große Teile), bleibt der Fall ohne Quelle.
 //   Im Zweifel keine Quelle: Die alten Teile behalten dann das Verhalten von 0.13.1 (`isSplitPart`).
 // - Beleg an nur einem Teil: Hängte der Vermieter in 0.13.1 den Beleg nachträglich an einen Teil, trennt der Beleg im
 //   Familienschlüssel die Teile, und keiner bekäme eine Quelle; Steuer-ZIP und Belegkopien nennten den übrigen Teil
@@ -43,10 +43,12 @@
 //   mit Beleg und genau eine ohne denselben Schlüssel ohne den Beleg, werden sie zusammen entschieden wie eine Familie,
 //   nur ohne den Beleg im Vergleich, und in jedem Fall in jeder übrigen Angabe und Unterliste gleich (auch in
 //   verschiedenen Zeiträumen). Ist das zusammen eine zweimal erfasste Rechnung (gleicher Betrag und Beschreibung),
-//   wird jede Fassung für sich entschieden; jede ist dann eine ganze Rechnung. Sonst, wenn es zusammen keine Rechnung
-//   ist, bekommt keine der beiden eine Quelle: Ein Ausschnitt einer Rechnung mit eigener Quelle hieße im Hinweis auf
-//   doppelte Positionen „Rechnung ohne Beleg“, und der Rat, sie mit allen Teilen zu löschen, nähme fünf Sechstel einer
-//   echten Rechnung weg (Schritt 4 mit Beleg nur am ersten Teil). Zwei verschiedene Belege bleiben getrennt.
+//   wird jede Fassung für sich entschieden, aber nur, wenn jede vollständig ist: für sich ohne Zwilling und in
+//   denselben Zeiträumen wie die andere. Sonst, und wenn es zusammen keine Rechnung ist, bekommt keine der beiden eine
+//   Quelle: Ein Ausschnitt einer Rechnung mit eigener Quelle hieße im Hinweis auf doppelte Positionen „Rechnung ohne
+//   Beleg“, und der Rat, sie mit allen Teilen zu löschen, nähme fünf Sechstel einer echten Rechnung weg (Schritt 4 mit
+//   Beleg nur am ersten Teil); fehlt einer Fassung ein Teil, verbände die Familie ohne Beleg Teile beider Fassungen, und
+//   derselbe Rat nähme den echten Teil der anderen mit. Zwei verschiedene Belege bleiben getrennt.
 // - Die Kennung der Quelle ist die kleinste ihrer Teile; der Schritt ist damit reproduzierbar.
 //
 // **Der einzige Eingriff** ist `INSERT INTO cost_sources` und `UPDATE cost_items SET source_id`: kein Betrag, keine
@@ -275,6 +277,11 @@ export function assignSources(connection: Connection): void {
     const loose = `${first.propertyId}\u0000${keyWithoutReceipt(first)}`
     byKeyWithoutReceipt.set(loose, [...(byKeyWithoutReceipt.get(loose) ?? []), key])
   }
+  // Zwei Fassungen einer zweimal erfassten Rechnung, jede vollständig: jede für sich ohne Zwilling, beide in denselben
+  // Zeiträumen.
+  const periodsOf = (members: readonly CostItemRow[]): string => [...new Set(members.map((m) => m.period))].sort().join(' ')
+  const completeCopies = (a: readonly CostItemRow[], b: readonly CostItemRow[]): boolean =>
+    !hasTwins(a) && !hasTwins(b) && periodsOf(a) === periodsOf(b)
   const decided: CostItemRow[][] = []
   const settled = new Set<string>()
   for (const keys of byKeyWithoutReceipt.values()) {
@@ -287,12 +294,13 @@ export function assignSources(connection: Connection): void {
     if (result === 'source') {
       decided.push(union)
       settled.add(withReceipt).add(without)
-    } else if (result === 'no') {
+    } else if (result === 'no' || !completeCopies(families.get(withReceipt) ?? [], families.get(without) ?? [])) {
       // Weder eine Rechnung noch zwei vollständige Fassungen: Keine der beiden bekommt eine Quelle, sonst bekäme ein
-      // Ausschnitt einer Rechnung eine eigene, und der Hinweis auf doppelte Positionen riete, ihn ganz zu löschen.
+      // Ausschnitt einer Rechnung eine eigene (oder eine Quelle verbände Teile zweier Fassungen), und der Hinweis auf
+      // doppelte Positionen riete, sie ganz zu löschen, mit einem echten Teil darin.
       settled.add(withReceipt).add(without)
     }
-    // `twins`: zweimal erfasst, einmal mit Beleg; jede Fassung wird für sich entschieden.
+    // Sonst zweimal erfasst, einmal mit Beleg, und jede Fassung vollständig: Jede wird für sich entschieden.
   }
   for (const [key, members] of families) {
     if (!settled.has(key) && verdict(members, false) === 'source') decided.push(members)

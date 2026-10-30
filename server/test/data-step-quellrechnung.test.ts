@@ -357,6 +357,19 @@ test('Beleg an einem Teil, ein Teil doppelt: keine Quelle über beide Fassungen'
   assert.deepEqual(after.sources, [])
 })
 
+test('Zweimal erfasst, Beleg an einem Teil, der anderen Fassung fehlt ein Teil: keine Quelle über beide Fassungen', async () => {
+  // Fassung A: a1 (2024, mit Beleg), a2 (2025); Fassung B: nur noch b1 (2024). Ohne Beleg stehen a2 und b1 in
+  // verschiedenen Zeiträumen; eine Quelle über sie verbände zwei Fassungen, und der Hinweis auf doppelte Positionen
+  // riete 2024, b1 „mit allen Teilen“ zu löschen, also auch a2, den echten Teil 2025.
+  const { after } = await afterStep((c) => {
+    insertUnits(c)
+    insertCostItem(c, { ...versicherung('a1', '2024-01'), invoice_file: 'versicherung.pdf' })
+    insertCostItem(c, versicherung('a2', '2025-01'))
+    insertCostItem(c, versicherung('b1', '2024-01'))
+  })
+  assert.deepEqual(after.sources, [])
+})
+
 test('Zweimal erfasst mit verschiedenem Betrag, ohne Wechsel des Rhythmus: keine Quelle', async () => {
   // 1.200,00 € und 1.200,02 €: Je Zeitraum gleiche Beschreibung, verschiedener Betrag, also kein Zwilling. Zwei Teile
   // mit gleicher Beschreibung im selben Zeitraum legt aber nur ein Wechsel des Rhythmus an (Schritt 4 aus #455), und
@@ -614,6 +627,7 @@ test('Der Schritt ändert keinen Betrag', async () => {
   let unsourcedParts = 0
   let twiceReported = 0
   let receiptMerged = 0
+  let incompleteCopies = 0
   for (const seed of [455, 4551, 4552]) {
     const dir = tempDir()
     try {
@@ -652,6 +666,17 @@ test('Der Schritt ändert keinen Betrag', async () => {
                 id: `beleg-${property.id}-${i}`, property_id: property.id, period: p.key, category: 'Müllabfuhr', description: `Müll mit Beleg (anteilig ${i + 1}. Teil)`,
                 amount_cents: 1000 + i, key: 'area', service_from: '2025-07-01', service_to: '2026-06-30', ...(i === 0 ? { invoice_file: 'muell.pdf' } : {}),
               })
+            })
+            // Zweimal erfasst, Beleg nur am ersten Teil der ersten Fassung, der zweiten fehlen alle Teile außer dem
+            // ersten. Keine Quelle verbindet Teile beider Fassungen; hier bekommt keine Zeile eine.
+            spanned.forEach((p, i) => {
+              for (const copy of i === 0 ? ['a', 'b'] : ['a']) {
+                insertCostItem(c, {
+                  id: `fassung-${property.id}-${copy}${i}`, property_id: property.id, period: p.key, category: 'Sach- und Haftpflichtversicherung',
+                  description: `Police (anteilig ${i + 1}. Teil)`, amount_cents: 2000 + i, key: 'area', service_from: '2025-07-01', service_to: '2026-06-30',
+                  ...(copy === 'a' && i === 0 ? { invoice_file: 'police.pdf' } : {}),
+                })
+              }
             })
           }
         }
@@ -712,6 +737,9 @@ test('Der Schritt ändert keinen Betrag', async () => {
           assert.equal(reportsTwice(after, property.id, rulesOf(property)), was, `Startwert ${seed}: ${property.id} meldet die zweimal erfasste Reinigung nicht mehr`)
           if (was) twiceReported++
         }
+        const copies = after.costItems.filter((i) => i.id.startsWith('fassung-'))
+        assert.ok(copies.every((i) => !i.sourceId), `Startwert ${seed}: Quelle über Teile zweier Fassungen: ${JSON.stringify(copies.map((i) => [i.id, i.sourceId]))}`)
+        incompleteCopies += copies.length
         unsourcedParts += after.costItems.filter((i) => !i.sourceId && /\(anteilig /.test(i.description)).length
       } finally {
         c.close()
@@ -727,6 +755,7 @@ test('Der Schritt ändert keinen Betrag', async () => {
   assert.ok(unsourcedParts > 0, 'kein Teil ohne Quelle')
   assert.ok(twiceReported > 0, 'der Hinweis meldet die zweimal erfasste Reinigung nie')
   assert.ok(receiptMerged > 0, 'keine Quelle aus Teilen mit und ohne Beleg')
+  assert.ok(incompleteCopies > 0, 'keine unvollständige Fassung im Bestand')
 })
 
 // ---------- Backup aus 0.13.1 ----------
