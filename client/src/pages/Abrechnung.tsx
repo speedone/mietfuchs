@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useId, useRef, useState } from 'react'
 import { startPrint } from '../printJob'
-import type { CostItem, HeatingSettlementInfo, LetterTemplates, Notice, NoticeSubject, PeriodKey, Settings, Settlement, SettlementRow, Statement, Tenancy, TenancyLetter, Unit } from '../types'
+import type { CostItem, HeatingSettlementInfo, LetterTemplates, Notice, NoticeSubject, PeriodKey, Settings, Settlement, SettlementRow, Statement, Tenancy, TenancyLetter, Unit, UploadEntry } from '../types'
 import {
   heatingChoices, heatingOnlyNote, heatingOverridesWith, prepaymentLabel, prepaymentSplit, recommendedDeadlineText, settlementPaths, settlementTitle, totalLabel,
 } from '../heatingSettlementView'
@@ -8,7 +8,8 @@ import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { invoiceLabel, renderInvoicePages } from '../pdfPreview'
 import { usePeriod } from '../period'
 import { useFocusTarget } from '../focus'
-import { invoiceFileOf, settledInvoiceFiles, type PlantPeriods } from '../costPeriods'
+import { itemsOfFile, settledInvoiceFiles, statementInvoiceFiles, type BookedFiles, type PlantPeriods } from '../costPeriods'
+import { filesByItem } from '../receipts'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import { keepDraft, useConfirmDiscard, useDraft } from '../useDraft'
 import { useSaving } from '../useSaving'
@@ -117,6 +118,8 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
   // Die Korrektur der gezahlten Vorauszahlung hängt an einem Mietverhältnis dieses Objekts (#145).
   useOpenForm(ppEdit !== null)
   const [costItems, setCostItems] = useState<CostItem[]>([])
+  // Belege, die über gebuchte Zeilen an einer Position hängen (#470). Leer, solange die Liste fehlt.
+  const [bookedFiles, setBookedFiles] = useState<BookedFiles>(new Map())
   // Für die Belegkopien einer Position über 0 €: zu welcher Abrechnung sie gehört (Durchsicht N3).
   const [plants, setPlants] = useState<PlantPeriods[]>([])
   useEffect(() => {
@@ -222,6 +225,8 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
         api<Record<string, TenancyLetter>>(withProperty(`${paths.load}/letters`, propertyId)).then(setTenancyLetters).catch(() => setTenancyLetters({})),
         // Ein älterer Server ohne die Route: ohne Logo und Briefpapier.
         api<unknown>(withProperty('/api/letter-design', propertyId)).then((d) => setDesigns(asLetterDesigns(d))).catch(() => setDesigns(null)),
+        // Belege der gebuchten Zeilen (#470). Fehlt die Liste, druckt die Seite die Belege aus `invoiceFile`.
+        api<UploadEntry[]>('/api/uploads').then((list) => setBookedFiles(filesByItem(list))).catch(() => setBookedFiles(new Map())),
       ]))
       .then(() => api<HeatingSettlementInfo[]>(withProperty('/api/heating-settlements', propertyId)).then(setHeatingList).catch(() => setHeatingList([])))
   }, [paths.load, paths.history, propertyId])
@@ -243,12 +248,12 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
 
   // Beleg-Dateien der gezeigten Abrechnung (in Erfassungsreihenfolge, ohne Duplikate), auch die der
   // Heizperiode, die darin abgerechnet wird
-  const invoiceFiles = useMemo(() => (data ? settledInvoiceFiles(data, costItems, rules, plants) : []), [data, costItems, rules, plants])
+  const invoiceFiles = useMemo(() => (data ? settledInvoiceFiles(data, costItems, rules, plants, bookedFiles) : []), [data, costItems, rules, plants, bookedFiles])
 
   // Sprechende Anlagen-Beschriftung aus den verknüpften Kostenpositionen
   // (Rechnungssteller + Kostenarten) statt des technischen Dateinamens.
   function fileLabel(f: string): string {
-    const linked = costItems.filter((c) => c.invoiceFile === f && invoiceFiles.includes(f))
+    const linked = invoiceFiles.includes(f) ? itemsOfFile(f, costItems, bookedFiles) : []
     const vendor = linked.find((c) => c.vendor)?.vendor
     const cats = [...new Set(linked.map((c) => c.category))].join(', ')
     if (vendor && cats) return `${vendor} — ${cats}`
@@ -590,11 +595,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
               const legacy = !!data.closed && !data.letters
               const tenancy = tenancies.find((t) => t.id === st.tenancyId)
               // Belege, die in dieser Abrechnung tatsächlich vorkommen (für die Anlage)
-              const stFiles = printAttachments
-                ? [...new Set(st.rows
-                    .map((r) => { const c = costItems.find((x) => x.id === r.costItemId); return c ? invoiceFileOf(c, costItems) : undefined })
-                    .filter((f): f is string => !!f))]
-                : []
+              const stFiles = printAttachments ? statementInvoiceFiles(st.rows, costItems, bookedFiles) : []
               const attachmentsReady = stFiles.every((f) => attachmentPages[f])
               // Positionen nach Kostenart gruppieren — mit Zwischensumme, sobald eine
               // Kostenart mehrere Positionen hat (erleichtert den Abgleich mit dem Bescheid).

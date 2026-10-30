@@ -4,7 +4,7 @@
 import { afterEach, assert, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { PeriodProvider } from '../period'
-import type { Notice, NoticeSubject, Settings, Settlement, Statement, Tenancy } from '../types'
+import type { CostItem, Notice, NoticeSubject, Settings, Settlement, Statement, Tenancy, UploadEntry } from '../types'
 import type { NoticeTab } from '../notices'
 import { PropertyProvider } from '../property'
 import { UIProvider } from '../components/feedback'
@@ -953,4 +953,38 @@ test('Zu prüfen: gleicher Hinweis bei vier Mietern steht in einem Kasten, jeder
   expect(fixes.map((k) => document.getElementById(k.getAttribute('aria-describedby') ?? '')?.textContent)).toEqual(Array(4).fill('Rückstand im Mietkonto'))
   fireEvent.click(fixes[2] ?? assert.fail('kein dritter Knopf'))
   expect(nav).toHaveBeenCalledWith('mietkonto', { kind: 'rentLedger', id: 't3' })
+})
+
+// #470: Ein Beleg, der nur über eine gebuchte Zeile an der Position hängt, liegt den Belegkopien bei; die Seite lädt dafür
+// GET /api/uploads. Scheitert das, druckt sie weiter, mit den Belegen aus `invoiceFile`.
+const GRUNDSTEUER: CostItem = {
+  id: 'k1', propertyId: 'objekt-1', period: calendarPeriod(YEAR), category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 60000, key: 'area', vendor: 'Stadtkasse',
+}
+const BESCHEID: UploadEntry = {
+  file: '2_bescheid.pdf', size: 10, mtime: '2026-01-02T10:00:00.000Z', originalName: 'bescheid.pdf', mimeType: 'application/pdf', uploadedAt: '2026-01-02T10:00:00.000Z',
+  sha256: 'sha', propertyId: null, year: null, invoiceDate: null, kind: 'receipt', bookedItemIds: ['k1'], bookedCents: { k1: 60000 }, assessment: null,
+}
+function stubReceipts(uploads: 'fail' | UploadEntry[], item: CostItem = GRUNDSTEUER) {
+  const before = globalThis.fetch
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+    const path = url.split('?')[0] ?? url
+    if (path === '/api/costItems') return json([item])
+    if (path === '/api/uploads') return uploads === 'fail' ? json({ error: 'Liste kaputt' }, 500) : json(uploads)
+    return before(url, init)
+  })
+}
+
+test('Belegkopien: ein nur über eine gebuchte Zeile verknüpfter Beleg liegt bei (#470)', async () => {
+  stubReceipts([BESCHEID])
+  showWithSettings({ ...SETTINGS, printAttachments: true }, async () => {})
+  expect(await screen.findByText('Anlage beim Druck: Stadtkasse — Grundsteuer', {}, SLOW)).toBeTruthy()
+})
+
+test('Belegkopien: scheitert die Liste der Belege, bleibt der Beleg der Position, ohne Fehler (#470)', async () => {
+  stubReceipts('fail', { ...GRUNDSTEUER, invoiceFile: '1_eigen.pdf' })
+  showWithSettings({ ...SETTINGS, printAttachments: true }, async () => {})
+  expect(await screen.findByText('Anlage beim Druck: Stadtkasse — Grundsteuer', {}, SLOW)).toBeTruthy()
+  expect(screen.getByRole('button', { name: /Drucken \/ PDF/ })).toBeTruthy()
+  expect(screen.queryByText(/Liste kaputt/)).toBeNull()
 })

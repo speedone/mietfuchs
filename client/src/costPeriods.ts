@@ -62,12 +62,26 @@ export function periodCosts(items: readonly (Positioned & { category: string; am
   return [...rows.values()].sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
 }
 
-// Der Beleg einer Position für die Belegkopien: ihr eigener, sonst bei einem Teil einer aufgeteilten Rechnung (#455) der
-// eines anderen Teils derselben Quelle, gleich in welchem Zeitraum. `items` sind alle Positionen des Objekts.
+// Je Position die Belege, die über gebuchte Zeilen ihrer Auswertungen an ihr hängen (`filesByItem`
+// in receipts.ts aus GET /api/uploads). Leer, wenn die Liste nicht geladen ist: dann zählt nur
+// `invoiceFile`, wie vor #470.
+export type BookedFiles = ReadonlyMap<string, readonly string[]>
+
+// Die Belege einer Position für die Belegkopien, nach derselben Regel wie `isItemCovered` in receipts.ts: ihr
+// eigener und die ihrer gebuchten Zeilen (Belegbuchung, #470); hat sie keinen, bei einem Teil einer aufgeteilten
+// Rechnung (#455) die eines anderen Teils derselben Quelle, gleich in welchem Zeitraum. `items` sind alle Positionen
+// des Objekts.
 type FileItem = { id: string; invoiceFile?: string; sourceId?: string }
+export function filesOfItem(c: FileItem, items: readonly FileItem[], booked: BookedFiles = new Map()): string[] {
+  const own = (x: FileItem) => [x.invoiceFile, ...(booked.get(x.id) ?? [])].filter((f): f is string => !!f)
+  const mine = own(c)
+  const files = mine.length > 0 || !c.sourceId ? mine : items.filter((o) => o.id !== c.id && o.sourceId === c.sourceId).flatMap(own)
+  return [...new Set(files)]
+}
+
+// Der erste Beleg einer Position (ohne gebuchte Zeilen), wie vor #470.
 export function invoiceFileOf(c: FileItem, items: readonly FileItem[]): string | undefined {
-  if (c.invoiceFile || !c.sourceId) return c.invoiceFile
-  return items.find((o) => o.id !== c.id && o.sourceId === c.sourceId && o.invoiceFile)?.invoiceFile
+  return filesOfItem(c, items)[0]
 }
 
 // Die Belegkopien zu einer Abrechnung, in der Reihenfolge der erfassten Positionen und ohne Doppelte:
@@ -85,6 +99,7 @@ export function settledInvoiceFiles(
   items: readonly { id: string; invoiceFile?: string; sourceId?: string; amountCents?: number; period?: PeriodKey; heatingPlantId?: string | null }[],
   objectRules: PeriodRules = CALENDAR_RULES,
   plants: readonly PlantPeriods[] = [],
+  booked: BookedFiles = new Map(),
 ): string[] {
   const ids = new Set([...s.statements.flatMap((st) => st.rows), ...s.landlord.rows].map((r) => r.costItemId))
   const zeroHere = (c: (typeof items)[number]): boolean => {
@@ -93,7 +108,23 @@ export function settledInvoiceFiles(
     const k = settlementKeyOf({ period: c.period, heatingPlantId: c.heatingPlantId ?? null }, objectRules, plants)
     return k.key === s.period.key && !k.separate
   }
-  return [...new Set(items.filter((c) => ids.has(c.id) || zeroHere(c)).map((c) => invoiceFileOf(c, items)).filter((f): f is string => !!f))]
+  return [...new Set(items.filter((c) => ids.has(c.id) || zeroHere(c)).flatMap((c) => filesOfItem(c, items, booked)))]
+}
+
+// Die Belegkopien einer Mieterabrechnung: die Belege der Positionen ihrer Zeilen, in der Reihenfolge
+// der Zeilen, ohne Doppelte.
+export function statementInvoiceFiles(
+  rows: readonly { costItemId: string }[],
+  items: readonly FileItem[],
+  booked: BookedFiles = new Map(),
+): string[] {
+  const byId = new Map(items.map((c) => [c.id, c]))
+  return [...new Set(rows.flatMap((r) => { const c = byId.get(r.costItemId); return c ? filesOfItem(c, items, booked) : [] }))]
+}
+
+// Die Positionen, an denen ein Beleg hängt, für die Beschriftung seiner Anlage.
+export function itemsOfFile<T extends FileItem>(file: string, items: readonly T[], booked: BookedFiles = new Map()): T[] {
+  return items.filter((c) => filesOfItem(c, items, booked).includes(file))
 }
 
 // Welche Abrechnung sagt, ob die Position abgeschlossen ist (Durchsicht N2): nach Weg d die
