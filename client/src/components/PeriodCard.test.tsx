@@ -95,6 +95,14 @@ describe('Wechsel nach Quelle (#455)', () => {
     ] }]} />)
     expect(screen.getByText(/Bleibt es beim vorbelegten Jahr der Zahlung, wird der Anteil für 2025\/2026 mit dem Teil „Grundsteuer 2025 \(anteilig 01\.05\.–31\.12\.2025\)“ zusammengefasst; mit einem anderen Jahr bleibt er eine eigene Zeile\./)).toBeTruthy()
   })
+  // Befund 3 zu #455: Nennt der Zusatz der zusammengefassten Zeile danach eine längere Spanne, sagt die Vorschau den
+  // neuen Namen.
+  test('nennt den neuen Namen der zusammengefassten Zeile', () => {
+    render(<MoveList moves={[{ costItemId: 'gv', description: 'Gebäudeversicherung', amountCents: 97182, parts: [
+      { period: periodKey('2025-07'), label: '2025/2026', amountCents: 72167, mergedInto: 'Gebäudeversicherung (anteilig 01.10.–31.12.2025)', mergedAs: 'Gebäudeversicherung (anteilig 01.10.2025–30.06.2026)' },
+    ] }]} />)
+    expect(screen.getByText(/Der Anteil für 2025\/2026 wird mit dem Teil „Gebäudeversicherung \(anteilig 01\.10\.–31\.12\.2025\)“ zusammengefasst; die Zeile heißt danach „Gebäudeversicherung \(anteilig 01\.10\.2025–30\.06\.2026\)“\./)).toBeTruthy()
+  })
   // #471: der umgekehrte Fall, das Zusammenfassen entsteht erst mit einem anderen Jahr.
   test('nennt das Jahr, mit dem erst zusammengefasst wird', () => {
     render(<MoveList moves={[{ costItemId: 'gs-2', description: 'Grundsteuer 2025', amountCents: 12000, parts: [

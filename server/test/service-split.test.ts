@@ -159,10 +159,13 @@ function frozenSplit(rules: PeriodRules, item: { id: string; description: string
   }))
 }
 
+// Die Spanne eines Teils (`span`, Befund 3 zu #455) kannte der eingefrorene Stand nicht; verglichen wird ohne sie.
+const bare = (parts: ServicePart[]): ServicePart[] => parts.map(({ span: _span, ...p }) => p)
+
 test('deriveSourceParts: Ein Span ergibt genau splitByService (F18 und 300 Zufallsfälle)', () => {
   const f18 = { id: 'g', description: 'Grundsteuer 2025', amountCents: 48000, serviceFrom: '2025-01-01', serviceTo: '2025-12-31' }
-  assert.deepEqual(splitByService(MAI, f18), frozenSplit(MAI, f18))
-  assert.deepEqual(splitByService(WECHSEL, f18), frozenSplit(WECHSEL, f18))
+  assert.deepEqual(bare(splitByService(MAI, f18)), frozenSplit(MAI, f18))
+  assert.deepEqual(bare(splitByService(WECHSEL, f18)), frozenSplit(WECHSEL, f18))
   let seed = 455455
   const next = (n: number): number => {
     seed = (seed * 1103515245 + 12345) % 2147483648
@@ -184,9 +187,9 @@ test('deriveSourceParts: Ein Span ergibt genau splitByService (F18 und 300 Zufal
       serviceTo: iso(to),
     }
     const expected = frozenSplit(rules, item)
-    assert.deepEqual(splitByService(rules, item), expected)
+    assert.deepEqual(bare(splitByService(rules, item)), expected)
     assert.deepEqual(
-      deriveSourceParts(rules, { tieId: item.id, description: item.description, amountCents: item.amountCents, ...('labor35aCents' in item ? { labor35aCents: item.labor35aCents } : {}), spans: [{ from: item.serviceFrom, to: item.serviceTo }], marked: false }),
+      bare(deriveSourceParts(rules, { tieId: item.id, description: item.description, amountCents: item.amountCents, ...('labor35aCents' in item ? { labor35aCents: item.labor35aCents } : {}), spans: [{ from: item.serviceFrom, to: item.serviceTo }], marked: false })),
       expected,
     )
   }

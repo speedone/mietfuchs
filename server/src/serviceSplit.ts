@@ -16,7 +16,10 @@ import type { BillingPeriod, PeriodRules } from '../../shared/types.ts'
 export { baseDescription, isSplitPart } from '../../shared/splitPart.ts'
 import { baseDescription, SPLIT_SUFFIX } from '../../shared/splitPart.ts'
 
-export type ServicePart = { period: BillingPeriod; days: number; amountCents: number; labor35aCents: number | null; description: string }
+// `span` (Befund 3 zu #455): die Tage des Leistungszeitraums, die der Teil trägt, vom ersten bis zum letzten; daraus der
+// Zusatz „(anteilig …)“. Kommt der Teil beim Wechsel des Rhythmus zu einem stehenden Teil, nennt dessen neuer Zusatz beide
+// Spannen (`mergedDescription` in db/periodChange.ts).
+export type ServicePart = { period: BillingPeriod; days: number; amountCents: number; labor35aCents: number | null; description: string; span?: { from: string; to: string } }
 
 type SplitItem = { id: string; description: string; amountCents: number; labor35aCents?: number; serviceFrom: string; serviceTo: string }
 
@@ -87,6 +90,7 @@ export function deriveSourceParts(rules: PeriodRules, invoice: SourceInvoice): S
     amountCents: amounts[i] ?? 0,
     labor35aCents: labor ? labor[i] ?? 0 : null,
     description: suffixed ? `${base} (anteilig ${formatDayRange(row.span.from, row.span.to)})` : invoice.description,
+    span: row.span,
   }))
 }
 

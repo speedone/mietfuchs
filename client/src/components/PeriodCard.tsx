@@ -71,9 +71,13 @@ const balance = (cents: number): string => (cents >= 0 ? `Guthaben ${fmtEuro(cen
 // derselben Rechnung, der im Zeitraum stehen bleibt, sagt es ein Satz (#455): Dort entsteht keine zweite Zeile.
 // Integrationsdurchsicht zu #455, M1: Hängt das Zusammenfassen am Jahr der Zahlung, das die Vorschau unten fragt, gilt
 // der Satz nur für die vorbelegten Jahre.
-const mergeText = (label: string, into: string, dependsOnYear: boolean): string => dependsOnYear
-  ? ` Bleibt es beim vorbelegten Jahr der Zahlung, wird der Anteil für ${label} mit dem Teil „${into}“ zusammengefasst; mit einem anderen Jahr bleibt er eine eigene Zeile.`
-  : ` Der Anteil für ${label} wird mit dem Teil „${into}“ zusammengefasst.`
+// Befund 3 zu #455: Nennt der Zusatz „(anteilig …)“ der Zeile danach eine längere Spanne, sagt der Satz ihren neuen Namen.
+const mergeText = (label: string, into: string, dependsOnYear: boolean, as?: string): string => {
+  const named = as === undefined ? '' : `; die Zeile heißt danach „${as}“`
+  return dependsOnYear
+    ? ` Bleibt es beim vorbelegten Jahr der Zahlung, wird der Anteil für ${label} mit dem Teil „${into}“ zusammengefasst${named}; mit einem anderen Jahr bleibt er eine eigene Zeile.`
+    : ` Der Anteil für ${label} wird mit dem Teil „${into}“ zusammengefasst${named}.`
+}
 
 // #471: der umgekehrte Fall, zusammengefasst wird erst mit einem anderen als dem vorbelegten Jahr.
 // Durchsicht, M2: Trüge die Zeile dann die ganze Rechnung, nennt der Satz auch ihren neuen Namen.
@@ -91,7 +95,7 @@ export function MoveList({ moves }: { moves: PeriodChangePreview['moves'] }) {
   return moves.map((m) => (
     <p key={m.costItemId}>
       „{m.description}“ ({fmtEuro(m.amountCents)}) wird nach Tagen aufgeteilt: {m.parts.map((p) => `${p.label}: ${fmtEuro(p.amountCents)}`).join(', ')}.
-      {m.parts.flatMap((p) => (p.mergedInto !== undefined ? [mergeText(p.label, p.mergedInto, p.mergeDependsOnYear === true)]
+      {m.parts.flatMap((p) => (p.mergedInto !== undefined ? [mergeText(p.label, p.mergedInto, p.mergeDependsOnYear === true, p.mergedAs)]
         : p.mergeWithYear !== undefined ? [mergeWithYearText(p.label, p.mergeWithYear.into, p.mergeWithYear.year, p.mergeWithYear.renamedTo)] : [])).join('')}
       {m.renamedTo === undefined ? '' : renameText(m.renamedTo, m.parts.some((p) => p.mergedInto !== undefined && p.mergeDependsOnYear === true))}
     </p>

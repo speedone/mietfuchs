@@ -114,6 +114,14 @@ test('Golden: je Zeitraum dieselben Summen wie vor dem Umbau', { timeout: 600000
       assert.equal(before.correctedCents, undefined, 'die Datei von vor dem Umbau kennt keine Berichtigung')
       assert.deepEqual(Object.keys(step.periods).sort(), Object.keys(before.periods).sort(), `${where}: dieselben Zeiträume`)
       assert.deepEqual(totals(step), totals(before), `${where}: je Rechnung über alle Zeiträume dieselbe Summe`)
+      // Befund 4 zu #455: Kommt ein Anteil zu einem stehenden Teil (weniger Zeilen als vorher), teilt der Wechsel eine
+      // unveränderte Teilung nach Tagen jetzt aus ihrer Summe neu (`withStandingShare`); der Code von vorher ließ den
+      // stehenden Teil mit seiner Rundung stehen und rundete den Anteil ein zweites Mal, so dass hin und zurück ein Cent
+      // wanderte. Für diese Rechnung darf je Zeitraum und je Jahr der Zahlung ein Cent anders liegen, ihre Summe nicht
+      // (oben). In den 200 Abläufen trifft das genau Ablauf 87, Wechsel 1 (Schornsteinfeger: 46.442 statt 46.441 in
+      // 2023-12, 113.766 statt 113.767 in 2024-06; die neuen Zahlen sind die Teilung der ganzen Rechnung nach Tagen).
+      const rederived = new Set(Object.entries(before.periods).flatMap(([period, byBase]) =>
+        Object.entries(byBase).filter(([base, s]) => (step.periods[period]?.[base]?.rows ?? 0) < s.rows).map(([base]) => base)))
       for (const [period, byBase] of Object.entries(before.periods)) {
         for (const [base, s] of Object.entries(byBase)) {
           const now = step.periods[period]?.[base] ?? assert.fail(`${where}: ${base} fehlt in ${period}`)
@@ -121,13 +129,22 @@ test('Golden: je Zeitraum dieselben Summen wie vor dem Umbau', { timeout: 600000
           // Nach einer Berichtigung legte der Weg je Teil sie in dessen Spanne, das Teilen als Ganzes verteilt sie über
           // alle bewegten Tage (wie `wholeInvoice` vorher bei einer erkannten Familie); je Zeitraum wandert dann
           // höchstens, was bis hierher berichtigt wurde, dazu je Zeile ein Cent Rundung.
-          const tolerance = was.wholeThroughout ? 0 : s.rows + (step.correctedCents ?? 0)
+          const tolerance = was.wholeThroughout ? (rederived.has(base) ? 1 : 0) : s.rows + (step.correctedCents ?? 0)
           assert.ok(Math.abs(now.amountCents - s.amountCents) <= tolerance, `${where}: ${base} in ${period}: ${now.amountCents} statt ${s.amountCents}`)
           assert.ok(Math.abs(now.labor35aCents - s.labor35aCents) <= tolerance, `${where}: Lohnanteil ${base} in ${period}: ${now.labor35aCents} statt ${s.labor35aCents}`)
         }
       }
-      if (was.wholeThroughout) assert.deepEqual(step.taxYears, before.taxYears, `${where}: je Jahr der Zahlung`)
-      else {
+      if (was.wholeThroughout) {
+        const exact = (t: FlowStep['taxYears']) => Object.fromEntries(Object.entries(t).filter(([base]) => !rederived.has(base)))
+        assert.deepEqual(exact(step.taxYears), exact(before.taxYears), `${where}: je Jahr der Zahlung`)
+        for (const base of rederived) {
+          const now = step.taxYears[base] ?? {}
+          const then = before.taxYears[base] ?? {}
+          assert.deepEqual(Object.keys(now).sort(), Object.keys(then).sort(), `${where}: ${base} in denselben Jahren der Zahlung`)
+          for (const [year, cents] of Object.entries(then)) assert.ok(Math.abs((now[year] ?? 0) - cents) <= 1, `${where}: ${base} im Jahr ${year}: ${now[year]} statt ${cents}`)
+        }
+      }
+      {
         // Sonst kann eine Rechnung das Jahr anders auf ihre Teile legen, über alle Jahre bleibt ihre Summe.
         const overYears = (t: FlowStep['taxYears']) => Object.fromEntries(Object.entries(t).map(([base, y]) => [base, Object.values(y).reduce((a, b) => a + b, 0)]))
         assert.deepEqual(overYears(step.taxYears), overYears(before.taxYears), `${where}: je Rechnung über alle Jahre der Zahlung dieselbe Summe`)
@@ -463,6 +480,69 @@ test('I1 zu #471: Fehlt ein Teil, behält die verbleibende Zeile den Zusatz, auc
     assert.deepEqual(v.moves.map((m) => m.renamedTo), [undefined])
     const nachher = await items(opened)
     assert.equal(nachher.length, 1)
-    assert.match(nachher[0]?.description ?? '', /\(anteilig /)
+    // Die Zeile trägt danach 01.01.–31.08.2025, den gelöschten Teil nicht (Befund 3 unten).
+    assert.equal(nachher[0]?.description, 'Grundsteuer 2025 (anteilig 01.01.–31.08.2025)')
+  })
+})
+
+// Befunde 3 und 4 aus dem Upgrade-Szenario zu #455: hin und zurück. Erst „Juli ab 2025“ (2025-07 ist 07/2025–06/2026), die
+// Rechnungen über 10/2025–09/2026 stehen mit 273 und 92 Tagen darin. Dann zusätzlich „Januar ab 2026“: 2025-07 schrumpft
+// auf 07–12/2025, 2026-07 entfällt. Dann wieder nur „Juli ab 2025“: 2025-07 wächst und bleibt stehen, der Teil aus 2026-01
+// kommt dazu. Vorher hieß die zusammengefasste Zeile weiter „(anteilig 01.10.–31.12.2025)“, obwohl sie 10/2025–06/2026
+// trägt (die Vorschau versprach denselben Namen), und die Gutschrift stand mit −92,34/−31,11 statt −92,33/−31,12 da: Der
+// stehende Teil behielt seine Rundung, der bewegte rundete ein zweites Mal. Beide mit Zahlungsdatum, damit das Jahr der
+// Zahlung in jedem Zeitraum gleich bleibt und zusammengefasst wird (ohne bekäme der Teil 10–12/2025 im Kalenderjahr 2025
+// das Jahr 2025 und bliebe danach eine eigene Zeile, Entwurf 3.10).
+const JULI_AB_2025: PeriodRules = { startMonth: 1, changes: ['2025-07'] }
+const JULI_UND_JANUAR: PeriodRules = { startMonth: 1, changes: ['2025-07', '2026-01'] }
+const versicherung = { propertyId: P, period: '2025-07', category: 'Sach- und Haftpflichtversicherung', key: 'area', serviceFrom: '2025-10-01', serviceTo: '2026-09-30', taxYear: 2026 }
+const byText = (a: unknown, b: unknown): number => (String(a) < String(b) ? -1 : String(a) > String(b) ? 1 : 0)
+const teile = async (opened: OpenedDatabase) => (await items(opened)).map((c) => [c.period, c.amountCents, c.description]).sort(byText)
+
+async function hinUndZurueck(opened: OpenedDatabase): Promise<(string | number)[][]> {
+  await change(opened, JULI_AB_2025)
+  await opened.write((db) => saveCostItemSplit(db, P, { ...versicherung, description: 'Gebäudeversicherung', amountCents: 145531, paidOn: '2025-10-02', confirmPaidOn: true }, null, ids))
+  await opened.write((db) => saveCostItemSplit(db, P, { ...versicherung, description: 'Beitragsrückerstattung', amountCents: -12345, paidOn: '2025-11-14', confirmPaidOn: true }, null, ids))
+  return teile(opened)
+}
+
+test('Befund 3 und 4 zu #455: Hin und zurück ergibt dieselben Zeilen, Beträge und Beschreibungen', async () => {
+  await withDatabase(async (opened) => {
+    const vorher = await hinUndZurueck(opened)
+    assert.deepEqual(vorher, [
+      ['2025-07', -9233, 'Beitragsrückerstattung (anteilig 01.10.2025–30.06.2026)'],
+      ['2025-07', 108849, 'Gebäudeversicherung (anteilig 01.10.2025–30.06.2026)'],
+      ['2026-07', -3112, 'Beitragsrückerstattung (anteilig 01.07.–30.09.2026)'],
+      ['2026-07', 36682, 'Gebäudeversicherung (anteilig 01.07.–30.09.2026)'],
+    ])
+    for (let runde = 1; runde <= 2; runde++) {
+      await change(opened, JULI_UND_JANUAR)
+      const v = await preview(opened, JULI_AB_2025)
+      // Die Vorschau nennt den Namen, den die zusammengefasste Zeile danach trägt.
+      const gv = v.moves.find((m) => m.description === 'Gebäudeversicherung') ?? assert.fail('keine Gebäudeversicherung in der Vorschau')
+      const zu = gv.parts.find((p) => p.period === '2025-07') ?? assert.fail('kein Anteil für 2025-07')
+      assert.equal(zu.mergedInto, 'Gebäudeversicherung (anteilig 01.10.–31.12.2025)')
+      assert.equal(zu.mergedAs, 'Gebäudeversicherung (anteilig 01.10.2025–30.06.2026)')
+      await change(opened, JULI_AB_2025)
+      assert.deepEqual(await teile(opened), vorher, `Runde ${runde}`)
+    }
+  })
+})
+
+// Ein einzeln berichtigter Betrag bleibt an seinem Teil (server/src/CLAUDE.md, Abrechnungszeitraum): Nur eine unveränderte
+// Teilung nach Tagen wird aus der Summe neu geteilt; sonst kommt wie bisher der Anteil der bewegten Teile dazu.
+test('Befund 4 zu #455: Ein berichtigter stehender Teil behält seine Berichtigung', async () => {
+  await withDatabase(async (opened) => {
+    await hinUndZurueck(opened)
+    await change(opened, JULI_UND_JANUAR)
+    const rumpf = (await items(opened)).find((c) => c.period === '2025-07' && c.description.startsWith('Gebäudeversicherung')) ?? assert.fail('kein Teil 2025-07')
+    const bewegt = (await items(opened)).find((c) => c.period === '2026-01' && c.description.startsWith('Gebäudeversicherung')) ?? assert.fail('kein Teil 2026-01')
+    await opened.write((db) => updateEntity(db, 'costItems', rumpf.id, { amountCents: rumpf.amountCents + 1000 }))
+    const v = await change(opened, JULI_AB_2025)
+    const gv = v.moves.find((m) => m.description === 'Gebäudeversicherung') ?? assert.fail('keine Gebäudeversicherung in der Vorschau')
+    const anteil = gv.parts.find((p) => p.period === '2025-07')?.amountCents ?? assert.fail('kein Anteil für 2025-07')
+    const nachher = (await items(opened)).filter((c) => c.description.startsWith('Gebäudeversicherung'))
+    assert.equal(nachher.find((c) => c.id === rumpf.id)?.amountCents, rumpf.amountCents + 1000 + anteil)
+    assert.equal(nachher.reduce((a, c) => a + c.amountCents, 0), rumpf.amountCents + 1000 + bewegt.amountCents)
   })
 })
