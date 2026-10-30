@@ -88,6 +88,9 @@ zeigt sie live). Rechtswerte in [shared/law/co2kostaufg.ts](../shared/law/co2kos
   und Eigenbeträge ≤ S + NE · 2 ct. **Scheitert sie, wird nichts gebucht** (`co2.sum-check`, error);
   mit „Ich finde diese Zeile nicht“ ist S geschätzt (`co2.sum-check-approx`), und scheitert die Probe
   dann, wird ebenso nichts gebucht.
+  Fehlt im Topf jede Messdienstposition (Heizkosten z. B. nach Fläche oder Zähler verteilt), nennt
+  `co2.sum-check` statt „0,00 €“ den Grund und die Positionen mit ihrem Schlüssel, und die Hinweise
+  `co2.pool-foreign-item` entfallen; die Probe im Formular sagt dasselbe.
 - **Vorwegabzug**: In der Position, in der L steckt (`carrierId`), steht L_self exakt in `selfUse`
   (nie über `take()`), der Rest von L als Grund `co2Share` dahinter; die Mieter zahlen ihre
   Einzelbeträge unverändert (#209: Werbungskosten sind das Bezahlte, L_self privat). Kappt `take()`,

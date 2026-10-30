@@ -75,6 +75,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Warnung; eine Anpassung der Vorauszahlungen nach § 560 Abs. 4 BGB braucht Textform, und dafür muss der Erklärende
   genannt sein (§ 126b BGB). Gedruckt wird weiterhin.
 
+- CO₂-Kosten: Sind die Heizkosten einer Anlage nicht mit dem Schlüssel „Einzelbeträge je Mieter (z. B. Messdienst)“
+  erfasst, sondern etwa nach Wohnfläche oder Verbrauch verteilt, meldete die Probe der CO₂-Angaben „Ihre Positionen:
+  0,00 €“. Formular und Hinweis nennen jetzt den Grund, die erfassten Positionen mit ihrem Schlüssel und den Weg:
+  die Einzelbeträge laut Messdienst an der Position übernehmen. Gebucht wird wie bisher nichts, solange die Probe
+  nicht aufgeht.
+
 ## [0.13.1] – 2026-10-27
 
 ### Behoben

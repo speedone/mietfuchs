@@ -6623,7 +6623,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       let booked = false
       const printed = new Map<string, { cents: number; approximated: boolean }>()
       if (pot.probe) {
-        for (const c of pot.foreign) {
+        // Keine Messdienstposition im Topf (Praxistest): Die Probe kann nicht aufgehen, und `co2.sum-check` nennt dann
+        // die Positionen mit ihrem Schlüssel; der Hinweis je Position stünde daneben noch einmal.
+        const noServiceItems = pot.serviceItems.length === 0 && pot.foreign.length > 0 && !pot.probe.ok && settledHere
+        for (const c of noServiceItems ? [] : pot.foreign) {
           warn('co2.pool-foreign-item',
             `${where}: „${c.description}“ gehört zur Heizanlage, ist aber keine Position mit Einzelbeträgen des Messdienstes. Die Probe der CO₂-Angaben zählt sie nicht mit; verteilt wird sie wie bisher nach ihrem Schlüssel. ` +
               'Eine Gutschrift des Versorgers oder eine Wartung darf so daneben stehen. Gehört sie zu den Kosten, die der Messdienst verteilt hat, übernehmen Sie sie als Einzelbeträge.',
@@ -6641,20 +6644,32 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         const landlordName = homeowners ? 'den CO₂-Anteil des Vermieters für Ihre Wohnung' : 'den CO₂-Anteil des Vermieters'
         if (!pot.probe.ok && settledHere) {
           const names = andList(pot.serviceItems.map((c) => `„${c.description}“`))
-          const lines = `${pot.serviceItems.length === 1 ? 'Ihre Position' : 'Ihre Positionen'} ${names} ${pot.serviceItems.length === 1 ? 'hat' : 'haben zusammen'} ${fmtCents(pot.probe.itemsCents)}. ` +
-            `Mit Abzugszeile muss der Betrag ${usersName} (${fmtCents(S)}) plus ${landlordName} (${fmtCents(L)}) sein, also ${fmtCents(S + L)}; ohne Abzugszeile genau ${usersName}, ${fmtCents(S)}.` +
-            (homeowners ? ' Gemeint ist der Anteil Ihrer Wohnung aus der Hausgeldabrechnung, nicht die Summe des ganzen Hauses.' : '')
+          // Ohne Position mit Einzelbeträgen stand hier „Ihre Positionen  haben zusammen 0,00 €“ (Praxistest): Die Probe
+          // vergleicht nur Messdienstpositionen (W9). Deshalb der Grund und die Positionen mit ihrem Schlüssel, als Satzteil
+          // wie im Formular („nach Wohnfläche“). Den Namen der Auswahl für Einzelbeträge nennt calc.ts wörtlich, es kennt
+          // nur die Drucktexte (Wächter in client/src/co2Form.test.ts).
+          const others = andList(pot.foreign.map((c) => `„${c.description}“ (${KEY_PHRASES[c.key]})`))
+          const amountsKey = '„Einzelbeträge je Mieter (z. B. Messdienst)“'
+          const advice = homeowners
+            ? `Übernehmen Sie an der Position den Betrag Ihrer Wohnung aus der Einzelabrechnung (Heizung) mit dem Schlüssel ${amountsKey}.`
+            : 'Übernehmen Sie an der Position die Einzelbeträge je Mieter aus der Abrechnung des Messdienstes.'
+          const lines = noServiceItems
+            ? `Keine Heizposition dieser Anlage ist mit dem Schlüssel ${amountsKey} erfasst; ${pot.foreign.length === 1 ? 'erfasst ist' : 'erfasst sind'} ${others}. ` +
+              'Die Probe vergleicht die CO₂-Angaben nur mit Positionen, die die Einzelbeträge laut Abrechnung tragen, und kann so nicht aufgehen. ' + advice
+            : `${pot.serviceItems.length === 1 ? 'Ihre Position' : 'Ihre Positionen'} ${names} ${pot.serviceItems.length === 1 ? 'hat' : 'haben zusammen'} ${fmtCents(pot.probe.itemsCents)}. ` +
+              `Mit Abzugszeile muss der Betrag ${usersName} (${fmtCents(S)}) plus ${landlordName} (${fmtCents(L)}) sein, also ${fmtCents(S + L)}; ohne Abzugszeile genau ${usersName}, ${fmtCents(S)}.` +
+              (homeowners ? ' Gemeint ist der Anteil Ihrer Wohnung aus der Hausgeldabrechnung, nicht die Summe des ganzen Hauses.' : '')
           const entered = pot.probe.enteredOk
             ? ''
             : ` Die eingetragenen Einzel- und Eigenbeträge ergeben zusammen ${fmtCents(pot.probe.enteredCents)}, mehr als ${usersName} und der Rundungsspielraum von ${fmtCents(pot.probe.toleranceCents)}; steht der CO₂-Anteil Ihrer Wohnung schon im Eigenbetrag, tragen Sie dort nur den Betrag der Abrechnung ein.`
           const cut = law(co2CutMissing, { period: hPeriod }, lawLog)
           warn('co2.sum-check',
-            `${where}: Die Probe der CO₂-Angaben geht nicht auf.${approxText} ${lines}${entered} Bis das geklärt ist, bucht Mietfuchs keine CO₂-Aufteilung, und die Mieter tragen ihre Einzelbeträge wie eingetragen. ` +
+            `${where}: Die Probe der CO₂-Angaben geht nicht auf.${noServiceItems ? '' : approxText} ${lines}${entered} Bis das geklärt ist, bucht Mietfuchs keine CO₂-Aufteilung, und ${noServiceItems ? 'die Heizkosten werden nach ihrem Schlüssel verteilt' : 'die Mieter tragen ihre Einzelbeträge wie eingetragen'}. ` +
               (st.method === 'serviceShown'
                 ? `Stimmt Ihre Antwort, dass die Abrechnung die CO₂-Kosten nur ausweist, tragen die Mieter auch den CO₂-Anteil des Vermieters von ${fmtCents(L)} mit; den dürfen Sie nicht auf sie umlegen, eine Vereinbarung, nach der der Mieter mehr als seinen Anteil trägt, ist unwirksam (§ 5 Abs. 2, § 6 Abs. 1 CO2KostAufG). `
                 : '') +
               `Fehlt die Aufteilung auch in ${homeowners ? 'der Einzelabrechnung (Heizung) Ihrer Wohnung,' : 'der Abrechnung des Messdienstes, die die Mieter bekommen,'} darf jeder Mieter seinen Anteil an den Heizkosten um ${cut} % kürzen (§ 7 Abs. 4 CO2KostAufG)${cutsOn(ids, cut)}. ` +
-              'Prüfen Sie den Betrag der Position (bezahlt, also vor „Abzüglich CO₂-Kosten Vermieter“) und Ihre Antwort auf die Frage nach der Abzugszeile.',
+              (noServiceItems ? '' : 'Prüfen Sie den Betrag der Position (bezahlt, also vor „Abzüglich CO₂-Kosten Vermieter“) und Ihre Antwort auf die Frage nach der Abzugszeile.'),
             plantSubject)
         } else if (pot.probe.ok && st.serviceUsersTotalApprox) {
           warn('co2.sum-check-approx',
