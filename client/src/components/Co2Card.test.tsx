@@ -85,6 +85,14 @@ test('B20: Geht die Probe nicht auf, fragt Speichern nach, statt still zu speich
   await waitFor(() => expect(sent).toHaveLength(1))
 })
 
+test('Rückfrage zur Probe: Endet die Probe mit einem Punkt, folgt kein zweiter', async () => {
+  render(<UIProvider><Co2Card view={view({ ...shown, serviceUsersTotalCents: 100000 })} tenancies={TENANCIES} unitsCount={1} onSaved={() => {}} /></UIProvider>)
+  fireEvent.click(screen.getByText('CO₂-Angaben speichern'))
+  const message = (await screen.findByText(/Solange die Probe nicht aufgeht/)).textContent ?? ''
+  expect(message).toMatch(/auf der Seite Kosten\. Solange/)
+  expect(message).not.toMatch(/\.\./)
+})
+
 test('B21: Ohne Ausstoß insgesamt und Fläche sagt die Karte, dass sie für den Ausweis nötig sind', () => {
   render(<Co2Card view={view(shown)} tenancies={TENANCIES} unitsCount={1} onSaved={() => {}} />)
   expect(screen.getByText(/Für den Ausweis in der Abrechnung mindestens nötig: der CO₂-Ausstoß insgesamt \(kg\) und die Wohnfläche/)).toBeTruthy()
