@@ -684,7 +684,12 @@ Hinweise: `allocation.not-agreed` (nur Info), `allocation.other-unanswered` (fä
 
 `rentLedger`: Kaltmiete + Vorauszahlung (+ Heizstaffel, Pauschale) ergeben das monatliche Soll;
 Mietzahlungen werden Jan→Dez FIFO auf die Monate verteilt. Im angebrochenen Monat anteilig
-(`rateInMonth`, die Zeile trägt `share`). #281 (Übertrag, Tilgung nach § 366 BGB) baut darauf auf.
+(`rateInMonth`, die Zeile trägt `share`; das Soll je Bestandteil aus `monthSoll` in shared/monthRate.ts). Die Tilgung
+nach § 366 BGB (BGH VIII ZR 84/17 Rn. 56/57: Monat laut Verwendungszweck, sonst zuerst offene Vorauszahlungen, dann
+Kaltmiete und Pauschale, je die ältesten zuerst; Rücklastschrift nimmt die jüngste Zuordnung zurück) steht als reine
+Funktion in [rentAllocation.ts](rentAllocation.ts) (`allocateRentPayments`, `monthCoverage`, `openingBalance`, #312
+PR 1), noch ohne Verbraucher; #281 stellt das Mietkonto darauf um, #312 PR 2 die Steuer. Sie importiert nichts aus
+calc.ts (Zyklus; Wächter in rentAllocation.test.ts), Rest-Cent und `compareText` kommen aus apportion.ts.
 
 - **Nur die Miete** (#280): `payments.kind` ist `rent` oder `settlement` (fehlend: Miete,
   `isRentPayment`). Nachzahlungen und Guthaben (negativ) aus der Abrechnung verteilt das Mietkonto
