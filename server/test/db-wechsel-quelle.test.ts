@@ -12,7 +12,7 @@ import { eq } from 'drizzle-orm'
 import type { OpenedDatabase } from '../src/db/open.ts'
 import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { applyPeriodChange, previewPeriodChange } from '../src/db/periodChange.ts'
-import { createEntity, listCollection, saveCostItemSplit, updateEntity } from '../src/db/repository.ts'
+import { createEntity, listCollection, removeEntity, saveCostItemSplit, updateEntity } from '../src/db/repository.ts'
 import { costItems, costSources } from '../src/db/schema.ts'
 import { storedOutflowYear } from '../src/outflow.ts'
 import { taxReportFor } from '../src/calc.ts'
@@ -153,6 +153,9 @@ test('Fall aus #455: hin, zurück, wieder hin und zwei Wechsel ergeben je Zeitra
     const [ganz] = await items(opened)
     assert.equal(ganz?.sourceId, undefined)
     assert.equal(await sourceCount(opened), 0)
+    // #471: Die Zeile trägt die ganze Rechnung; der Zusatz „(anteilig …)“ entfällt, und die Vorschau nennt es.
+    assert.equal(ganz?.description, 'Grundsteuer 2025')
+    assert.deepEqual(zurueck.moves.map((m) => m.renamedTo), ['Grundsteuer 2025'])
 
     await change(opened, MAI_AB_2025)
     assert.deepEqual(await rows(opened), [['2025-01', 12000], ['2025-05', 24500]])
@@ -209,7 +212,9 @@ test('Zusammenfassen nur bei gleichem Jahr der Zahlung', async () => {
     const { stehend, bewegt } = await zweiJahre(opened)
     await change(opened, MAI_AB_2025, { taxYears: { [`${stehend.id}|2025-05`]: 2025, [`${bewegt.id}|2025-05`]: 2025 } })
     const nachher = await items(opened)
-    assert.deepEqual(nachher.map((c) => [c.id, c.period, c.amountCents, c.taxYear, c.description]), [[stehend.id, '2025-05', 36500, 2025, stehend.description]])
+    // #471: Die Zeile trägt die ganze Rechnung, ohne den Zusatz „(anteilig …)“.
+    assert.notEqual(stehend.description, 'Grundsteuer 2025', 'Vorbedingung: der stehende Teil trägt den Zusatz')
+    assert.deepEqual(nachher.map((c) => [c.id, c.period, c.amountCents, c.taxYear, c.description]), [[stehend.id, '2025-05', 36500, 2025, 'Grundsteuer 2025']])
     assert.equal(nachher[0]?.sourceId, undefined)
     assert.equal(await sourceCount(opened), 0)
   })
@@ -397,5 +402,37 @@ test('M1: Hängt das Zusammenfassen an einer Frage nach dem Jahr der Zahlung, sa
     await change(opened, MAI_AB_2025)
     const v = await preview(opened, KALENDER)
     assert.deepEqual(v.moves.flatMap((m) => m.parts.map((p) => [p.mergedInto !== undefined, p.mergeDependsOnYear])), [[true, undefined]], 'ohne Frage gilt die Ankündigung ohne Bedingung')
+  })
+})
+
+// #471: Bleibt einer Quelle ein Teil, der nicht die ganze Rechnung trägt (ein Teil wurde früher gelöscht), behält er den
+// Zusatz „(anteilig …)“; sein Betrag ist weiter nur der Anteil.
+test('#471: Der Zusatz „(anteilig …)“ entfällt nur, wenn die verbleibende Zeile die ganze Rechnung trägt', async () => {
+  await withDatabase(async (opened) => {
+    const teile = await opened.write((db) => saveCostItemSplit(db, P, { ...grundsteuer, period: '2024-01', serviceFrom: '2024-07-01', serviceTo: '2025-06-30' }, null, ids))
+    const frueh = teile.find((c) => c.period === '2024-01') ?? assert.fail('kein Teil 2024')
+    const spaet = teile.find((c) => c.period === '2025-01') ?? assert.fail('kein Teil 2025')
+    await opened.write((db) => removeEntity(db, 'costItems', frueh.id))
+    const v = await change(opened, { startMonth: 1, changes: ['2025-07'] })
+    assert.deepEqual(v.moves.map((m) => m.renamedTo), [undefined])
+    const nachher = await items(opened)
+    assert.deepEqual(nachher.map((c) => [c.period, c.amountCents, c.description]), [['2025-01', spaet.amountCents, spaet.description]])
+  })
+})
+
+// #471: Die Vorschau rechnet mit den vorbelegten Jahren. Entsteht ein Zusammenfassen erst mit einem anderen Jahr, sagt
+// sie auch das; vorher kündigte sie zwei Zeilen an, und geschrieben wurde eine.
+test('#471: Entsteht das Zusammenfassen erst mit einem anderen als dem vorbelegten Jahr, sagt die Vorschau es', async () => {
+  await withDatabase(async (opened) => {
+    const { stehend } = await zweiJahre(opened)
+    const v = await preview(opened, MAI_AB_2025)
+    assert.deepEqual(v.moves.flatMap((m) => m.parts.map((p) => [p.mergedInto, p.mergeWithYear])), [[undefined, { into: stehend.description, year: 2025 }]])
+  })
+  await withDatabase(async (opened) => {
+    // Ohne Frage nach dem Jahr gibt es keinen solchen Satz.
+    await opened.write((db) => createEntity(db, 'costItems', 'gs', grundsteuer))
+    await change(opened, MAI_AB_2025)
+    const v = await preview(opened, KALENDER)
+    assert.deepEqual(v.moves.flatMap((m) => m.parts.map((p) => p.mergeWithYear)), [undefined])
   })
 })

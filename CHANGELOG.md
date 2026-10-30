@@ -39,6 +39,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Rechnung mit verschiedenem Jahr der Zahlung im selben Zeitraum, teilt der nächste Wechsel sie getrennt und fragt das
   Jahr für jeden; vorher bekamen beide das Jahr des ersten, und Werbungskosten wechselten das Steuerjahr. Die Summe je
   Zeitraum ändert sich dadurch nicht.
+- Kleinere Anzeigepunkte zur aufgeteilten Rechnung ([#471](https://github.com/speedone/mietfuchs/issues/471)): Fasst
+  der Wechsel des Abrechnungszeitraums alle Teile einer Rechnung zu einer Zeile zusammen, die die ganze Rechnung trägt,
+  verliert ihre Beschreibung den Zusatz „(anteilig …)“; die Vorschau nennt die neue Beschreibung. Entsteht das
+  Zusammenfassen erst mit einem anderen als dem vorbelegten Jahr der Zahlung, sagt die Vorschau auch das. Der Hinweis auf
+  doppelte Positionen ist nicht mehr mehrdeutig, wenn mehrere aufgeteilte Rechnungen ohne Beleg beteiligt sind, und
+  „Betrag prüfen“ im Belegordner sagt bei einem alten Teil ohne Verweis auf seine Rechnung, wo die übrigen Teile stehen.
 
 ## [0.13.1] – 2026-10-27
 
