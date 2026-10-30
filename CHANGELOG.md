@@ -11,7 +11,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - Aufgeteilte Rechnungen sind jetzt eine Rechnung ([#455](https://github.com/speedone/mietfuchs/issues/455)): Reicht der Leistungszeitraum einer Rechnung über mehrere
   Abrechnungszeiträume, stehen weiter Teile je Zeitraum da, aber jeder Teil verweist auf seine Rechnung. Beim Update
   bekommen bestehende Teile, die eindeutig zusammengehören, diese Kennung von selbst, auch die aus einem eingespielten
-  Backup. Keine Zahl ändert sich, auch keine abgeschlossene Abrechnung.
+  Backup. Eine zweimal erfasste Rechnung bleibt dabei zwei Rechnungen, und der Hinweis auf doppelte Positionen meldet
+  sie weiter. Keine Zahl ändert sich, auch keine abgeschlossene Abrechnung.
   - In der Kostenliste steht unter einem Teil „Teil von 2 · Rechnung gesamt …“. Die Belegabdeckung in Belegordner,
     Cockpit und Belegmappe zählt die Rechnung einmal und belegt, sobald ein Teil den Beleg trägt, auch einer in einem
     anderen Zeitraum; die Belegkopien der Abrechnung nehmen den Beleg der Rechnung mit.
@@ -55,31 +56,24 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   in den Anlagen der gedruckten Abrechnung, obwohl Belegordner, Belegmappe, Cockpit und Steuer-ZIP ihn als
   verknüpft zählten. Er liegt jetzt bei, jede Datei einmal, auch als Beleg eines anderen Teils einer aufgeteilten
   Rechnung. Lässt sich die Liste der Belege nicht laden, druckt die Seite wie bisher die Belege der Positionen.
-
 - Verlauf: Die Rückfrage vor „Rückgängig“ sagt bei einem Eintrag mit mehreren Änderungen jetzt
   „Zurückgenommen werden 4 Änderungen“ statt „Zurückgenommen wird 4 Änderungen“.
-
 - Heizkosten: Die Rückfrage „Die Probe geht nicht auf“ beim Speichern der CO₂-Angaben setzt nach der Probe
   keinen doppelten Punkt mehr („… auf der Seite Kosten.. Solange …“).
-
 - Heizkosten, CO₂-Angaben: „Nutzeinheiten laut Abrechnung“ ist mit den Wohnungen an der Heizung vorbelegt. Bisher
   zählten Wohnungen ohne Wärmeanschluss mit (etwa eine Garage), obwohl die Karte „Heizung“ sie ausnimmt. Ebenso beim
   Übernehmen aus der Messdienstabrechnung, wenn diese keine Zahl nennt. Gespeicherte Angaben bleiben, wie sie sind;
   wer die Vorbelegung übernommen hat, prüft die Zahl gegen die Abrechnung des Messdienstes.
-
 - Mietkonto: Ein Monat mit offenem Betrag öffnet die Zahlung jetzt auch per Tastatur (Tab, Enter) und wird von
   Vorlesern als „Zahlung erfassen“ angesagt. Bisher ließ er sich nur mit der Maus anklicken.
-
 - Zählerwechsel: Im Fenster „Neue Ablesung“ der Seite Zähler lässt sich beim Wechsel jetzt das Eichjahr des neuen Zählers eintragen
   („Neuer Zähler geeicht bis Ende (Jahr)“). Bisher blieb nach dem Wechsel die Warnung „Eichfrist abgelaufen“ des
   ausgebauten Zählers stehen, bis man das Jahr eigens über „Zähler bearbeiten“ änderte. Leer gelassen bleibt das
   bisherige Jahr stehen.
-
 - Abrechnung: Ist kein Name des Vermieters hinterlegt, nennt „Zu prüfen“ (und das Fenster „Drucken“) jetzt „Absender
   fehlt“ mit Weg in die Einstellungen. Bisher druckte das Anschreiben ohne Absender und ohne Unterschrift, ohne
   Warnung; eine Anpassung der Vorauszahlungen nach § 560 Abs. 4 BGB braucht Textform, und dafür muss der Erklärende
   genannt sein (§ 126b BGB). Gedruckt wird weiterhin.
-
 - CO₂-Kosten: Sind die Heizkosten einer Anlage nicht mit dem Schlüssel „Einzelbeträge je Mieter (z. B. Messdienst)“
   erfasst, sondern etwa nach Wohnfläche oder Verbrauch verteilt, meldete die Probe der CO₂-Angaben „Ihre Positionen:
   0,00 €“. Formular und Hinweis nennen jetzt den Grund, die erfassten Positionen mit ihrem Schlüssel und den Weg:

@@ -80,7 +80,10 @@ Schlüssel** `PeriodKey` (`'JJJJ-MM'`, Monat des Beginns, Markentyp), kein Jahr:
   einzige Zeile den Zusatz (`coversService`). Ein Teil
   ohne Quelle wird über seinen eigenen Teil des Leistungszeitraums geteilt und bekommt dann eine. Löschen geht je Teil wie
   bisher; der letzte Teil nimmt die Quelle mit. Ein Datenschritt (0077, dataSteps) hat bestehende Teile zusammengeführt: Kandidat
-  ist `isSplitPart` oder eine Beschreibung mit dem Zusatz „(anteilig …)“, zusammen nur bei gleichem Familienschlüssel des Schritts. Heizkosten nie
+  ist `isSplitPart` oder eine Beschreibung mit dem Zusatz „(anteilig …)“, zusammen nur bei gleichem Familienschlüssel des Schritts.
+  Stehen zwei davon im selben Zeitraum, nur wenn alle in jeder übrigen Angabe und Unterliste gleich sind und keine zwei im
+  selben Zeitraum in Betrag und Beschreibung übereinstimmen: Das wäre eine zweimal erfasste Rechnung, die 0.13.1 als
+  doppelt meldete; sie bleibt ohne Quelle. Im Zweifel keine Quelle, ein alter Teil verhält sich dann nach `isSplitPart`. Heizkosten nie
   (VIII ZR 156/11), dort warnt `period.heating-mismatch`.
 - **Jahr der Steuer**: `tax_year` ist das Jahr der Zahlung, Pflicht nur bei einem Zeitraum über zwei
   Kalenderjahre. Welches Jahr eine Position für die Steuer hat, sagt allein `outflowShares`

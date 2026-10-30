@@ -15,7 +15,16 @@
 // - Mindestens zwei Mitglieder, alle in verschiedenen Zeiträumen: eine Quelle. Genau diese Familien teilt der
 //   Wechsel des Rhythmus bis 0.13.1 als Ganzes (`familyOf` in periodChange.ts).
 // - Zwei oder mehr im selben Zeitraum: eine Quelle nur, wenn alle Mitglieder in jeder Angabe gleich sind (alle
-//   Spalten außer denen, die je Teil gesetzt werden, und die Zeilen der Unterlisten). Sonst keine, wie heute.
+//   Spalten außer denen, die je Teil gesetzt werden, und die Zeilen der Unterlisten) und keine zwei im selben
+//   Zeitraum in Betrag und Beschreibung übereinstimmen. Sonst keine, wie heute.
+//   Zwei solche Teile sind das Zeichen einer zweimal erfassten Rechnung: Wer in 0.13.1 dieselbe Rechnung zweimal mit
+//   „Aufteilen und speichern“ sichert, bekommt je Zeitraum zwei Zeilen, gleich bis auf die Kennung. 0.13.1 nahm sie
+//   nie als eine Rechnung (`familyOf`), und der Hinweis auf doppelte Positionen meldete sie; eine Quelle ließe ihn
+//   verstummen, und der nächste Wechsel des Rhythmus zählte beide als eine Rechnung über den doppelten Betrag. Die
+//   Teile aus #455 unterscheiden sich im selben Zeitraum dagegen in einem von beiden: nach Schritt 2 in der
+//   Beschreibung (verschiedene Spannen), nach Schritt 4 im Betrag (Anteile verschieden großer Teile). Gleichen sich
+//   dort ausnahmsweise beide (zwei gleich große Teile), bleibt auch dieser Fall ohne Quelle: Im Zweifel keine, die
+//   alten Teile behalten dann das Verhalten von 0.13.1 (`isSplitPart`).
 // - Die Kennung der Quelle ist die kleinste ihrer Teile; der Schritt ist damit reproduzierbar.
 //
 // **Der einzige Eingriff** ist `INSERT INTO cost_sources` und `UPDATE cost_items SET source_id`: kein Betrag, keine
@@ -93,6 +102,7 @@ type CostItemRow = {
   period: string
   category: string
   description: string
+  amountCents: number
   vendor: string | null
   invoiceFile: string | null
   key: string
@@ -150,6 +160,7 @@ export function assignSources(connection: Connection): void {
       period: String(row[at('period')]),
       category: String(row[at('category')]),
       description: String(row[at('description')]),
+      amountCents: Number(row[at('amount_cents')]),
       vendor: textOrNull(row[at('vendor')]),
       invoiceFile: textOrNull(row[at('invoice_file')]),
       key: String(row[at('key')]),
@@ -191,6 +202,9 @@ export function assignSources(connection: Connection): void {
       const [first, ...rest] = members
       if (first === undefined) continue
       if (rest.some((m) => m.shape !== first.shape)) continue
+      // Zwei im selben Zeitraum mit gleichem Betrag und gleicher Beschreibung: eine zweimal erfasste Rechnung.
+      const twins = new Set(members.map((m) => [m.period, m.amountCents, m.description].join('\u0000')))
+      if (twins.size < members.length) continue
       const lists = sublistsOf(first.id)
       if (rest.some((m) => sublistsOf(m.id) !== lists)) continue
     }

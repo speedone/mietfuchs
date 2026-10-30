@@ -27,7 +27,7 @@ import { applyPeriodChange, previewPeriodChange } from '../src/db/periodChange.t
 import { closeSettlement, createEntity, createProperty, PeriodConflict, PeriodError, saveCostItemSplit } from '../src/db/repository.ts'
 import { computeSettlement, consumptionOverview, rentLedger, taxReportFor } from '../src/calc.ts'
 import { snapshotFor } from '../src/snapshot.ts'
-import { calendarYearPeriod, periodContaining, periodsBetween, rulesOf, startYearOf } from '../../shared/period.ts'
+import { calendarYearPeriod, periodContaining, periodsBetween, previousPeriod, rulesOf, startYearOf } from '../../shared/period.ts'
 import type { CostItem, PeriodRules } from '../../shared/types.ts'
 import { finishChain, migrateUpTo } from '../testing/migrateUpTo.ts'
 import { openFreshDatabase } from '../testing/freshDatabase.ts'
@@ -35,6 +35,7 @@ import { besideServer, restore, startServer } from '../testing/api.ts'
 
 const STEP = '0077_quellrechnung'
 const P = 'objekt-1'
+const TODAY = '2026-10-05'
 const tempDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-quelle-'))
 
 // ---------- Rohe Zeilen auf dem Stand 0076 ----------
@@ -250,6 +251,65 @@ test('Zwei gleiche Rechnungen eines Kalenderobjekts ohne Zusatz „(anteilig …
   assert.deepEqual(after.sources, [])
 })
 
+// Versicherung Juli 2024 bis Juni 2025, 1.200,00 €, ohne Beleg, in 0.13.1 zweimal mit „Aufteilen und speichern“
+// erfasst: Je Zeitraum stehen zwei Teile, gleich bis auf die Kennung. 0.13.1 nahm sie nie als eine Rechnung
+// (`familyOf` verlangt verschiedene Zeiträume) und meldete sie als doppelt.
+const versicherung = (id: string, period: '2024-01' | '2025-01'): RawCostItem => ({
+  id, period, category: 'Sach- und Haftpflichtversicherung', key: 'area', service_from: '2024-07-01', service_to: '2025-06-30',
+  ...(period === '2024-01'
+    ? { description: 'Versicherung (anteilig 01.07.–31.12.2024)', amount_cents: 60493 }
+    : { description: 'Versicherung (anteilig 01.01.–30.06.2025)', amount_cents: 59507 }),
+})
+
+test('Zweimal erfasste aufgeteilte Rechnung: keine Quelle, der Hinweis bleibt, ein Wechsel legt sie nicht zusammen', async () => {
+  const dir = tempDir()
+  try {
+    const c = await migrateUpTo(dir, STEP)
+    try {
+      insertUnits(c)
+      for (const id of ['a1', 'b1']) insertCostItem(c, versicherung(id, '2024-01'))
+      for (const id of ['a2', 'b2']) insertCostItem(c, versicherung(id, '2025-01'))
+      // Das Vorjahr hatte eine Versicherung; sonst meldet der Hinweis zwei Positionen ohne Beleg nicht.
+      insertCostItem(c, { id: 'v0', period: '2023-01', category: 'Sach- und Haftpflichtversicherung', description: 'Versicherung 2023', amount_cents: 100000, key: 'area' })
+      const duplicateHints = async (year: number): Promise<number> => {
+        const stock = await readStock(c.db)
+        return computeSettlement(snapshotFor(stock, P, calendarYearPeriod(year)), { asOf: TODAY }).notices.filter((n) => n.code === 'cost.possible-duplicate').length
+      }
+      assert.equal(await finishChain(c), 1, 'nur der Schritt 0077 fehlte')
+      assert.deepEqual(outcome(c).sources, [], 'zwei Rechnungen sind keine Quelle')
+      // Wie in 0.13.1 meldet der Hinweis die beiden Rechnungen in 2024. In 2025 nicht, weil im Vorzeitraum schon zwei
+      // standen (Bedingung b des Hinweises), auch das wie in 0.13.1.
+      assert.deepEqual([await duplicateHints(2024), await duplicateHints(2025)], [1, 0], 'der Hinweis bleibt')
+
+      // Danach ein Wechsel auf Juli bis Juni: Die Rechnung liegt dann ganz in einem Zeitraum. Ohne Quelle zieht jeder Teil
+      // für sich um wie in 0.13.1; zusammengelegt würden sie eine Rechnung über 2.400,00 € für eine über 1.200,00 €.
+      const rules = { startMonth: 7, changes: [] }
+      const preview = (await previewPeriodChange(c.db, P, rules, TODAY)) ?? assert.fail('keine Vorschau')
+      assert.deepEqual(preview.blocked, [])
+      let n = 0
+      await applyPeriodChange(c.db, P, rules, {
+        understood: true, token: preview.token,
+        groups: Object.fromEntries(preview.groups.map((g) => [g.id, g.suggested || (g.options[0]?.key ?? '')])),
+        taxYears: Object.fromEntries(preview.taxYears.map((t) => [t.key, t.suggested])),
+      }, () => `neu-${++n}`, TODAY)
+      const rows = c.rows("SELECT id, period, source_id, amount_cents FROM cost_items WHERE description LIKE 'Versicherung (%' ORDER BY id")
+      assert.equal(rows.reduce((sum, r) => sum + Number(r[3]), 0), 240000, `zusammen zwei Rechnungen: ${JSON.stringify(rows)}`)
+      const perSource = new Map<string, number>()
+      for (const [, , source, amount] of rows) if (source !== null) perSource.set(String(source), (perSource.get(String(source)) ?? 0) + Number(amount))
+      for (const [source, sum] of perSource) assert.ok(sum <= 120000, `Quelle ${source} hält ${sum} Cent für eine Rechnung über 120000: ${JSON.stringify(rows)}`)
+      const stock = await readStock(c.db)
+      const period = periodContaining(rulesOf(stock.properties[0]), '2024-07-01')
+      assert.equal(period.key, '2024-07')
+      const notices = computeSettlement(snapshotFor(stock, P, period), { asOf: TODAY }).notices
+      assert.ok(notices.some((x) => x.code === 'cost.possible-duplicate' && x.text.includes('Versicherung (anteilig')), 'der Hinweis meldet sie auch danach')
+    } finally {
+      c.close()
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('Ohne Position mit Leistungszeitraum bleibt der Schritt still', async () => {
   const { after } = await afterStep((c) => {
     insertUnits(c)
@@ -271,7 +331,6 @@ function rng(seed: number): () => number {
   }
 }
 
-const TODAY = '2026-10-05'
 const COLD = ['Grundsteuer', 'Müllabfuhr', 'Sach- und Haftpflichtversicherung', 'Gartenpflege', 'Hausreinigung'] as const
 const SPANS: readonly (readonly [string, string] | null)[] = [
   ['2024-07-01', '2025-06-30'], ['2025-01-01', '2025-12-31'], ['2025-03-01', '2026-02-28'], ['2024-01-01', '2024-12-31'], ['2025-04-01', '2025-09-30'], null,
@@ -426,6 +485,7 @@ test('Der Schritt ändert keinen Betrag', async () => {
   let sourced = 0
   let samePeriod = 0
   let unsourcedParts = 0
+  let twiceReported = 0
   for (const seed of [455, 4551, 4552]) {
     const dir = tempDir()
     try {
@@ -447,6 +507,14 @@ test('Der Schritt ändert keinen Betrag', async () => {
           // Seit #471 entfällt der Zusatz dabei, über die Routen entsteht so ein Teil also nicht mehr; der Schritt lässt
           // ihn ohne Quelle.
           insertCostItem(c, { id: `allein-${property.id}`, property_id: property.id, period, category: 'Gartenpflege', description: 'Garten (anteilig 01.07.–31.07.2025)', amount_cents: 900, key: 'area', service_from: '2025-07-01', service_to: '2025-07-31' })
+          // Ein Teil, in 0.13.1 zweimal erfasst: zwei Zeilen im selben Zeitraum, gleich bis auf die Kennung. Das sind zwei
+          // Rechnungen; der Hinweis auf doppelte Positionen meldet sie vor und nach dem Schritt (im Vorzeitraum eine
+          // Reinigung, sonst meldet er zwei Positionen ohne Beleg nicht).
+          for (const i of [1, 2]) {
+            insertCostItem(c, { id: `zweimal-${property.id}-${i}`, property_id: property.id, period, category: 'Hausreinigung', description: 'Reinigung Juli (anteilig 01.07.–31.07.2025)', amount_cents: 3000, key: 'area', service_from: '2025-07-01', service_to: '2025-07-31' })
+          }
+          const previous = previousPeriod(rulesOf(property), periodContaining(rulesOf(property), '2025-07-01')).key
+          insertCostItem(c, { id: `reinigung-vorher-${property.id}`, property_id: property.id, period: previous, category: 'Hausreinigung', description: 'Reinigung', amount_cents: 3000, key: 'area' })
         }
         const before = await readStock(c.db)
         const frozenBefore = await frozenOf(c)
@@ -463,14 +531,37 @@ test('Der Schritt ändert keinen Betrag', async () => {
         const nachher = splitDuplicateHints(everything(after))
         const difference = firstDifference(vorher.rest, nachher.rest)
         assert.equal(difference, null, `Startwert ${seed}: ${JSON.stringify(difference)}`)
-        for (const [key, count] of nachher.hints) {
-          assert.ok(count <= (vorher.hints.get(key) ?? 0), `Startwert ${seed}: ${key} meldet nach dem Schritt mehr doppelte Positionen`)
-        }
-
         const bySource = new Map<string, CostItem[]>()
         for (const item of after.costItems) if (item.sourceId) bySource.set(item.sourceId, [...(bySource.get(item.sourceId) ?? []), item])
         sourced += bySource.size
-        for (const parts of bySource.values()) if (new Set(parts.map((p) => p.period)).size < parts.length) samePeriod++
+        // Wo der Schritt zwei Teile eines Zeitraums zu einer Rechnung macht, darf ein Hinweis verschwinden; nur dort.
+        // Eine Quelle mit je einem Teil je Zeitraum ändert an keinem Zeitraum, wie viele Rechnungen dort stehen.
+        const joined = new Set<string>()
+        for (const parts of bySource.values()) {
+          for (const part of parts) {
+            if (parts.filter((p) => p.period === part.period).length > 1) joined.add(`${part.propertyId} ${part.period}`)
+          }
+          if (new Set(parts.map((p) => p.period)).size < parts.length) samePeriod++
+        }
+        for (const key of new Set([...vorher.hints.keys(), ...nachher.hints.keys()])) {
+          const [propertyId, kind, period] = key.split(' ')
+          const before = vorher.hints.get(key) ?? 0
+          const now = nachher.hints.get(key) ?? 0
+          if ((kind === 'Abrechnung' || kind === 'Verbrauch') && joined.has(`${propertyId} ${period}`)) {
+            assert.ok(now <= before, `Startwert ${seed}: ${key} meldet nach dem Schritt mehr doppelte Positionen`)
+          } else {
+            assert.equal(now, before, `Startwert ${seed}: ${key} meldet nach dem Schritt ${now} statt ${before} doppelte Positionen`)
+          }
+        }
+        // Die zweimal erfasste Reinigung meldet der Hinweis nach dem Schritt, wo er sie vorher meldete.
+        const reportsTwice = (stock: Stock, propertyId: string, rules: PeriodRules): boolean =>
+          computeSettlement(snapshotFor(stock, propertyId, periodContaining(rules, '2025-07-01')), { asOf: TODAY }).notices
+            .some((n) => n.code === DUPLICATE_HINT && n.text.includes('Reinigung Juli'))
+        for (const property of after.properties) {
+          const was = reportsTwice(before, property.id, rulesOf(property))
+          assert.equal(reportsTwice(after, property.id, rulesOf(property)), was, `Startwert ${seed}: ${property.id} meldet die zweimal erfasste Reinigung nicht mehr`)
+          if (was) twiceReported++
+        }
         unsourcedParts += after.costItems.filter((i) => !i.sourceId && /\(anteilig /.test(i.description)).length
       } finally {
         c.close()
@@ -484,6 +575,7 @@ test('Der Schritt ändert keinen Betrag', async () => {
   assert.ok(sourced > 0, 'keine Quelle entstanden')
   assert.ok(samePeriod > 0, 'keine Quelle mit zwei Teilen im selben Zeitraum')
   assert.ok(unsourcedParts > 0, 'kein Teil ohne Quelle')
+  assert.ok(twiceReported > 0, 'der Hinweis meldet die zweimal erfasste Reinigung nie')
 })
 
 // ---------- Backup aus 0.13.1 ----------
