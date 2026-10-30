@@ -62,6 +62,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Übernehmen aus der Messdienstabrechnung, wenn diese keine Zahl nennt. Gespeicherte Angaben bleiben, wie sie sind;
   wer die Vorbelegung übernommen hat, prüft die Zahl gegen die Abrechnung des Messdienstes.
 
+- Mietkonto: Ein Monat mit offenem Betrag öffnet die Zahlung jetzt auch per Tastatur (Tab, Enter) und wird von
+  Vorlesern als „Zahlung erfassen“ angesagt. Bisher ließ er sich nur mit der Maus anklicken.
+
 ## [0.13.1] – 2026-10-27
 
 ### Behoben

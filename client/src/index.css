@@ -336,9 +336,9 @@ label.checkline span.term { display: inline; }
 
 /* ---------- Mietkonto: Monatsraster ---------- */
 .rent-grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 6px; margin: 6px 0 var(--space-1); }
-.rent-month { border: 1px solid var(--line); border-radius: var(--radius-m); padding: 6px var(--space-1); text-align: center; font-size: var(--text-xs); cursor: default; }
-.rent-month .m { color: var(--muted); font-weight: var(--weight-strong); text-transform: uppercase; letter-spacing: 0.3px; }
-.rent-month .a { font-size: 11px; margin-top: 2px; }
+.rent-month { border: 1px solid var(--line); border-radius: var(--radius-m); padding: 6px var(--space-1); text-align: center; font: inherit; font-size: var(--text-xs); cursor: default; width: 100%; background: transparent; color: inherit; }
+.rent-month .m { display: block; color: var(--muted); font-weight: var(--weight-strong); text-transform: uppercase; letter-spacing: 0.3px; }
+.rent-month .a { display: block; font-size: 11px; margin-top: 2px; }
 .rent-month.paid { background: var(--green-soft); border-color: var(--green-soft); color: var(--green); }
 .rent-month.partial { background: var(--amber-soft); border-color: var(--amber-soft); color: var(--amber); cursor: pointer; }
 .rent-month.open { background: var(--red-soft); border-color: var(--red-soft); color: var(--red); cursor: pointer; }

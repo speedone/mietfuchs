@@ -287,16 +287,33 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
                   {r.months.map((mo) => {
                     const cls = mo.sollCents === 0 ? 'none' : mo.status
                     const partial = shareText(mo)
+                    const detail = mo.sollCents === 0 ? 'kein Mietverhältnis' : `Soll ${fmtEuro(mo.sollCents)}${partial ? ` (${partial})` : ''} · gezahlt ${fmtEuro(mo.paidCents)}${mo.status === 'notDue' ? ' · zählt noch nicht als Rückstand' : ''}`
+                    const content = (
+                      <>
+                        <span className="m">{MONTHS[mo.month - 1]}</span>
+                        <span className="a">{mo.sollCents === 0 ? '—' : fmtEuro(mo.sollCents)}</span>
+                        {partial && mo.sollCents !== 0 && <span className="m">{partial}</span>}
+                      </>
+                    )
+                    // Ein Monat mit offenem Rest ist ein Knopf, damit er auch per Tastatur die Zahlung
+                    // öffnet; der Zusatz steht unsichtbar hinter dem sichtbaren Text (WCAG 2.5.3).
+                    if (mo.sollCents - mo.paidCents > 0) {
+                      return (
+                        <button
+                          type="button"
+                          key={mo.month}
+                          className={`rent-month ${cls}`}
+                          title={detail}
+                          onClick={() => bookMonth(r.tenancyId, mo)}
+                        >
+                          {content}
+                          <span className="sr-only">{`: gezahlt ${fmtEuro(mo.paidCents)}${mo.status === 'notDue' ? ', zählt noch nicht als Rückstand' : ''}, Zahlung erfassen`}</span>
+                        </button>
+                      )
+                    }
                     return (
-                      <div
-                        key={mo.month}
-                        className={`rent-month ${cls}`}
-                        title={mo.sollCents === 0 ? 'kein Mietverhältnis' : `Soll ${fmtEuro(mo.sollCents)}${partial ? ` (${partial})` : ''} · gezahlt ${fmtEuro(mo.paidCents)}${mo.status === 'notDue' ? ' · zählt noch nicht als Rückstand' : ''}`}
-                        onClick={() => bookMonth(r.tenancyId, mo)}
-                      >
-                        <div className="m">{MONTHS[mo.month - 1]}</div>
-                        <div className="a">{mo.sollCents === 0 ? '—' : fmtEuro(mo.sollCents)}</div>
-                        {partial && mo.sollCents !== 0 && <div className="m">{partial}</div>}
+                      <div key={mo.month} className={`rent-month ${cls}`} title={detail}>
+                        {content}
                       </div>
                     )
                   })}

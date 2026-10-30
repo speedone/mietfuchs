@@ -177,3 +177,21 @@ test('Mietkonto: ausgezogener Mieter unter „Abrechnung“ gewählt, zurück au
   await waitFor(() => expect(sent).toHaveLength(1))
   expect(sent[0]?.body).toMatchObject({ tenancyId: 't0', kind: 'rent', amountCents: 80000 })
 })
+
+// Praxistest: Ein offener Monat öffnet per Klick die Zahlung mit dem Restbetrag. Er muss auch per
+// Tastatur erreichbar sein (WCAG 2.1.1), also ein Knopf mit Namen; ein bezahlter Monat ist keiner.
+test('Mietkonto: ein offener Monat ist ein Knopf und öffnet die Zahlung mit dem Restbetrag', async () => {
+  ledger = { ...LEDGER, rows: LEDGER.rows.map((r) => ({ ...r, months: r.months.map((m) => m.month === 3 ? { ...m, paidCents: 30000, status: 'partial' as const } : m) })) }
+  shell()
+  const march = await screen.findByRole('button', { name: /^Mär\s?800,00\s€: gezahlt 300,00\s€, Zahlung erfassen$/ })
+  // Der Zusatz steht unsichtbar hinter dem sichtbaren Text, nicht als aria-label (client/CLAUDE.md, WCAG 2.5.3).
+  expect(march.getAttribute('aria-label')).toBeNull()
+  expect(march.textContent).toContain('800,00')
+  expect(screen.queryByRole('button', { name: /^Jan / })).toBeNull()
+  fireEvent.click(march)
+  const dialog = await screen.findByRole('dialog')
+  const amount = within(dialog).getByLabelText(/Betrag/)
+  if (!(amount instanceof HTMLInputElement)) return expect.fail('kein Betragsfeld')
+  expect(amount.value).toBe('500,00')
+})
+
