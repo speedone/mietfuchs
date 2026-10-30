@@ -2999,9 +2999,13 @@ export async function settleOperatingPowerLinks(tx: Executor, propertyId: string
       throw new PeriodError(`Nach dem Wechsel stünde der Abzug „${d.description}“ ohne seine Stromrechnung im selben Zeitraum. Löschen Sie den Abzug vor dem Wechsel und legen Sie ihn danach neu an.`)
     }
   }
+  // #468: nur Rechnungen, an denen ein Abzug hängt. Ohne Abzüge ist 0 abgezogen, und jede Gutschrift
+  // (negativer Betrag) sperrte sonst den Wechsel.
   for (const g of byId.values()) {
     if (g.operatingPower !== undefined) continue
-    const deducted = -deductions.filter((d) => d.operatingPowerGeneralId === g.id).reduce((a, d) => a + d.amountCents, 0)
+    const from = deductions.filter((d) => d.operatingPowerGeneralId === g.id)
+    if (from.length === 0) continue
+    const deducted = -from.reduce((a, d) => a + d.amountCents, 0)
     if (deducted > g.amountCents) {
       throw new PeriodError(`Nach dem Wechsel wäre aus „${g.description}“ mehr abgezogen, als die Rechnung beträgt. Löschen Sie die Abzüge vor dem Wechsel und legen Sie sie danach neu an.`)
     }
