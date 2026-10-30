@@ -98,7 +98,7 @@ export function revertQuestion(preview: RevertPreview): RevertQuestion {
       ? `Zum Stand vor „${preview.entry.title}“ (${when}) zurückkehren?`
       : `Zum Stand nach „${preview.entry.title}“ (${when}) zurückkehren?`
   const intro = single
-    ? `Zurückgenommen wird ${changes(preview.changes)}.`
+    ? `Zurückgenommen ${preview.changes === 1 ? 'wird' : 'werden'} ${changes(preview.changes)}.`
     : `Zurückgenommen ${preview.entries.length === 1 ? 'wird' : 'werden'} ${entriesText(preview.entries.length)} mit zusammen ${changes(preview.changes)}, die neueste zuerst:`
   const notes: string[] = []
   if (preview.files.restore > 0) notes.push(preview.files.restore === 1 ? 'Ein Beleg oder Logo kommt aus dem Papierkorb zurück.' : `${preview.files.restore} Belege oder Logos kommen aus dem Papierkorb zurück.`)

@@ -51,6 +51,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Stromrechnungen, aus denen ein Abzug für den Betriebsstrom gerechnet ist; ein Abzug über dem Betrag seiner
   Rechnung wird weiter abgelehnt.
 
+- Verlauf: Die Rückfrage vor „Rückgängig“ sagt bei einem Eintrag mit mehreren Änderungen jetzt
+  „Zurückgenommen werden 4 Änderungen“ statt „Zurückgenommen wird 4 Änderungen“.
+
 ## [0.13.1] – 2026-10-27
 
 ### Behoben
