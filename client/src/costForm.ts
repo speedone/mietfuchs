@@ -16,6 +16,7 @@ import { CREDIT_WITH_AMOUNTS, costItemBody, euro, type CostItemBody, inBasis, pc
 import { etwByStatement, lastExternalBasis, type KeyContext } from '../../shared/assessment.ts'
 import { calendarContext, calendarPeriod, calendarYearPeriod, spansTwoYears } from '../../shared/period.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
+import { partShare } from '../../shared/splitPart.ts'
 // Seit der Belegbuchung (#170) in shared/, weil der Server dieselben Prüfungen und Vorschläge braucht.
 export { amountProblem, showsTaxUnitField, type BuildResult } from '../../shared/costItem.ts'
 import { amountProblem } from '../../shared/costItem.ts'
@@ -204,7 +205,8 @@ export function externalHint(form: ItemForm, units: Unit[], part: PartShare = nu
   if (share === null) return ''
   if (typeof share === 'string') return share
   const { own, total, expected, amount } = share
-  const days = part ? ` · ${part.days} von ${part.of} Tagen des Leistungszeitraums${part.othersCents ? `, mit den übrigen Teilen dieser Rechnung im Zeitraum (${fmtCentsInput(part.othersCents)} €)` : ''}` : ''
+  const others = part?.othersCents ? `mit den übrigen Teilen dieser Rechnung im Zeitraum (${fmtCentsInput(part.othersCents)} €)` : ''
+  const days = part && 'days' in part ? ` · ${part.days} von ${part.of} Tagen des Leistungszeitraums${others ? `, ${others}` : ''}` : others ? ` · ${others}` : ''
   const text = `Rechnerischer Anteil: ${fmtPct(own)} von ${fmtPct(total)} ${MEASURE_LABELS[form.externalMeasure]}${days} = ${fmtCentsInput(expected)} €`
   if (amount === null || !isMismatch(expected, amount)) return text
   return `${text} — weicht um ${fmtCentsInput(Math.abs(expected - amount))} € vom Betrag ab. Bitte die Angaben aus der Gemeinschaftsabrechnung prüfen; verteilt wird der eingetragene Betrag.`
@@ -219,10 +221,32 @@ export function externalMismatch(form: ItemForm, units: Unit[], part: PartShare 
 }
 const isMismatch = (expected: number, amount: number) => Math.abs(expected - amount) > 100
 
+// Die übrigen Teile derselben Rechnung im Zeitraum eines gespeicherten Teils, in Cent (`othersCents`). Welche
+// Positionen dazugehören, sagt die Quelle (#455), nicht die Ähnlichkeit der Felder; ohne Quelle gibt es keine. Wie
+// beim Hinweis `external.amount-mismatch` in server/src/calc.ts zählen nur Teile, die nach der Gemeinschaftsabrechnung
+// verteilt sind.
+export function othersOfSourceCents(items: readonly CostItem[], stored: CostItem): number {
+  const source = stored.sourceId
+  if (!source) return 0
+  return items.filter((o) => o.id !== stored.id && o.period === stored.period && o.key === 'external' && o.sourceId === source)
+    .reduce((a, o) => a + o.amountCents, 0)
+}
+
+// Was das Formular über einen gespeicherten Teil wissen muss (`part` von `externalHint`/`externalMismatch`): den
+// Tagesanteil (`partShare`), wenn der Leistungszeitraum über den Zeitraum hinausreicht, und die übrigen Teile derselben
+// Quelle im Zeitraum. Ein Teil mit Quelle trägt auch ohne Tagesanteil nur einen Teil der Rechnung (Datenschritt von
+// #455, Durchsicht von Task 7, I1); die Berechnung misst ihn dann wie hier mit den übrigen Teilen zusammen. `null`:
+// weder Tagesanteil noch Quelle, die Position trägt die ganze Rechnung.
+export function formPartOf(items: readonly CostItem[], stored: CostItem, period: { from: string; to: string }): PartShare {
+  const share = partShare(stored, period)
+  if (share) return { ...share, othersCents: othersOfSourceCents(items, stored) }
+  return stored.sourceId ? { othersCents: othersOfSourceCents(items, stored) } : null
+}
+
 // Der rechnerische Anteil, eine Erklärung, warum es keinen gibt, oder `null`, solange Angaben fehlen.
 // `othersCents`: die übrigen Teile derselben Rechnung im Zeitraum (nach zwei Wechseln möglich, Durchsicht von #454); der
-// Tagesanteil gilt für alle zusammen.
-type PartShare = { days: number; of: number; othersCents?: number } | null
+// Tagesanteil gilt für alle zusammen. Ohne `days` (Quelle ohne Tagesanteil) zählt die ganze Rechnung.
+type PartShare = { days: number; of: number; othersCents?: number } | { othersCents: number } | null
 
 function externalShare(form: ItemForm, units: Unit[], part: PartShare): { own: number, total: number, expected: number, amount: number | null } | string | null {
   const total = parseAmountNumber(form.externalTotal)
@@ -233,7 +257,7 @@ function externalShare(form: ItemForm, units: Unit[], part: PartShare): { own: n
   const own = basisUnitsOf(units).filter((u) => form.participants === null || form.participants.includes(u.id)).reduce((a, u) => a + valueOf(u), 0)
   if (!(own > 0)) return form.externalMeasure === 'mea' ? 'Für die Wohnungen sind noch keine Miteigentumsanteile hinterlegt (Stammdaten).' : null
   const amount = parseEuro(form.amount)
-  return { own, total, expected: Math.round((totalCents * own * (part ? part.days / part.of : 1)) / total), amount: amount === null ? null : amount + (part?.othersCents ?? 0) }
+  return { own, total, expected: Math.round((totalCents * own * (part && 'days' in part ? part.days / part.of : 1)) / total), amount: amount === null ? null : amount + (part?.othersCents ?? 0) }
 }
 
 // Die Wohnungen, für die ein Eigenbetrag (#104) gilt: selbstgenutzt und, wenn die Position auf

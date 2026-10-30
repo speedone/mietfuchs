@@ -13,7 +13,7 @@ import { closedCheckPath, filedUnderSettlement, type PlantPeriods } from '../cos
 import { isCalendarRules, periodContaining, periodLabel, periodsBetween, rulesOf, startYearOf } from '../../../shared/period.ts'
 import { renderInvoicePages, renderThumbnail } from '../pdfPreview'
 import { buildTenantFolderPdf, isIndividualAmounts, planTenantFolder, type TenantFolderPlan } from '../tenantFolder'
-import { amountCheckBody, amountCheckMode, attachChoices, buildFolder, coverage, filesByItem, duplicateHints, inboxFor, inboxOf, inboxPage, INBOX_STEP, isItemCovered, matchesQuery, receiptCards, receiptName, yearSections, type CategoryGroup, type FolderFilter, type ReceiptCard, type ReceiptUpload } from '../receipts'
+import { amountCheckBody, amountCheckFormReason, amountCheckIsPart, amountCheckMode, attachChoices, buildFolder, coverage, filesByItem, duplicateHints, inboxFor, inboxOf, inboxPage, INBOX_STEP, matchesQuery, partsBySource, receiptCards, registerCount, receiptName, yearSections, type CategoryGroup, type FolderFilter, type ReceiptCard, type ReceiptUpload } from '../receipts'
 import { previewWhenVisible } from '../previewQueue'
 import { useFocusFirstNew } from '../focusNew'
 import Field from '../components/Field'
@@ -133,6 +133,8 @@ function FolderPacks({ propertyId, propertyName, year, chosen, rules, uploads, c
 }) {
   const [open, setOpen] = useState(false)
   const [settlement, setSettlement] = useState<Settlement | null>(null)
+  // Die Teile je Rechnung über alle Zeiträume (#455): Ein Teil ohne eigenen Beleg bekommt den seiner Rechnung.
+  const parts = useMemo(() => partsBySource(costItems), [costItems])
   const [includeIndividual, setIncludeIndividual] = useState(false)
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState('')
@@ -151,8 +153,8 @@ function FolderPacks({ propertyId, propertyName, year, chosen, rules, uploads, c
   }, [open, param, propertyId])
 
   const plan = useMemo(
-    () => (settlement ? planTenantFolder(settlement, costItems.filter((c) => c.propertyId === propertyId && c.period === period.key), uploads, { includeIndividual }) : null),
-    [settlement, costItems, uploads, includeIndividual, propertyId, period.key],
+    () => (settlement ? planTenantFolder(settlement, costItems.filter((c) => c.propertyId === propertyId && c.period === period.key), uploads, { includeIndividual }, parts) : null),
+    [settlement, costItems, uploads, includeIndividual, propertyId, period.key, parts],
   )
   const count = (status: string) => plan?.entries.filter((e) => e.status === status).length ?? 0
   const individual = plan?.entries.filter((e) => isIndividualAmounts(e.item) && e.upload).length ?? 0
@@ -393,7 +395,12 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
   const [uploading, setUploading] = useState(0)
   const present = useMemo(() => new Set(uploads.map((u) => u.file)), [uploads])
   const booked = useMemo(() => filesByItem(uploads), [uploads])
+  // Die Teile je Rechnung (#455): Der Beleg eines Teils belegt auch die übrigen.
+  const parts = useMemo(() => partsBySource(costItems), [costItems])
   const propertyName = (id: string) => properties.find((p) => p.id === id)?.name || 'Ohne Namen'
+  // „Betrag prüfen“: die Regeln des Objekts der Position, damit auch ein alter Teil ohne Quelle als Teil zählt (#455).
+  const checkRules = amountCheck ? rulesOf(properties.find((p) => p.id === amountCheck.item.propertyId)) : undefined
+  const checkIsPart = amountCheck ? amountCheckIsPart(amountCheck.item, checkRules) : false
   const showProperty = filter.propertyId === 'all' && properties.length > 1
   // Mappen gibt es je Objekt und Jahr; bei einem einzigen Objekt ist es dieses.
   const packProperty = filter.propertyId !== 'all' ? filter.propertyId : properties.length === 1 ? properties[0]?.id ?? null : null
@@ -621,15 +628,16 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
   // Ein Register: eine Kostenart eines Jahres, mit den Belegen und den Positionen ohne Beleg
   const renderGroup = (g: CategoryGroup) => {
     // Wie die Belegabdeckung: auch ein Beleg über eine gebuchte Zeile deckt die Position (Durchsicht von PR #449, K2).
-    const ohne = g.items.filter((c) => !isItemCovered(c, present, booked)).length
+    // Je Rechnung wie die Belegabdeckung (#455): Die Teile einer Quelle zählen als eine Position.
+    const { positions, without: ohne } = registerCount(g, present, booked, parts)
     return (
       <details key={g.key} className="card receipt-group" open>
         <summary>
           <span className="receipt-group-title">{g.category}</span>
           <span className="num">{fmtEuro(g.sumCents)}</span>
           {ohne === 0
-            ? <span className="badge green">✓ {g.items.length === 1 ? 'Beleg vorhanden' : 'alle Belege vorhanden'}</span>
-            : <span className="badge amber">⚠ {ohne} von {g.items.length} Position{g.items.length > 1 ? 'en' : ''} ohne Beleg</span>}
+            ? <span className="badge green">✓ {positions === 1 ? 'Beleg vorhanden' : 'alle Belege vorhanden'}</span>
+            : <span className="badge amber">⚠ {ohne} von {positions} Position{positions > 1 ? 'en' : ''} ohne Beleg</span>}
         </summary>
         {g.cards.length > 0 && <ul className="receipt-list">{g.cards.map(renderCard)}</ul>}
         {g.missing.length > 0 && (
@@ -678,7 +686,8 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
         <div role="status" aria-label="Betrag prüfen"><NoticeBox level="warning" className="stack no-print">
           Beleg an „{amountCheck.item.description}“ angehängt. Betrag der Position: <strong>{fmtEuro(amountCheck.item.amountCents)}</strong>.
           {amountCheck.closed && <div>{closedPeriodNotice(labelOfKey(rulesOf(properties.find((p) => p.id === amountCheck.item.propertyId)), amountCheck.item.period))}</div>}
-          {' '}Stimmt er mit dem Beleg überein? Eine aus dem Vorjahr übernommene Position trägt oft noch einen geschätzten Betrag.{' '}
+          {/* Ein Teil trägt nur den Anteil seines Zeitraums; mit dem Beleg verglichen, lüde der Satz zum Fehler ein (#455). */}
+          {!checkIsPart && <>{' '}Stimmt er mit dem Beleg überein? Eine aus dem Vorjahr übernommene Position trägt oft noch einen geschätzten Betrag.</>}{' '}
           <a href={`/uploads/${encodeURIComponent(amountCheck.file)}`} target="_blank" rel="noreferrer">Beleg ansehen</a>
           {/* Ein geschätzter Lohnanteil gelangte sonst still in die Anlage V (dritte Durchsicht). */}
           {(amountCheck.item.labor35aCents ?? 0) > 0 && (
@@ -687,9 +696,9 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
               {onOpenItem && <button className="btn small ghost" onClick={() => { const it = amountCheck.item; leaveCheck(() => onOpenItem(it)) }}>Lohnanteil im Formular prüfen</button>}
             </div>
           )}
-          {amountCheckMode(amountCheck.item) === 'form' ? (
+          {amountCheckMode(amountCheck.item, checkRules) === 'form' ? (
             <div className="row center">
-              <span>Bei dieser Position prüfen Sie den Betrag im Formular: Er hängt an weiteren Angaben (Einzelbeträge oder Kosten der Gemeinschaft).</span>
+              <span>{amountCheckFormReason(amountCheck.item, checkRules)}</span>
               {onOpenItem && <button className="btn small" onClick={() => { const it = amountCheck.item; leaveCheck(() => onOpenItem(it)) }}>Position öffnen</button>}
               <button className="btn small ghost" onClick={() => setAmountCheck(null)}>Schließen</button>
             </div>

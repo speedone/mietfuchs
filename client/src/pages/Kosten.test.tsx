@@ -778,3 +778,18 @@ test('#258: die Liste der Positionen nennt den Mieter, der nicht trägt', async 
   render(<PeriodProvider><PropertyProvider><Kosten units={UNITS_258} settings={null} tenancies={mieter258()} /></PropertyProvider></PeriodProvider>)
   expect(await screen.findByText('trägt nicht: Anna Becker (Vertrag)')).toBeTruthy()
 })
+
+test('#455: Die Zeile eines Teils nennt die Zahl der Teile und die ganze Rechnung, über die Zeiträume hinweg', async () => {
+  const jahr = new Date().getFullYear() - 1
+  costItems = [
+    { id: 't1', propertyId: 'objekt-1', period: calendarPeriod(jahr), category: 'Grundsteuer', description: 'Grundsteuer (anteilig)', amountCents: 12000, key: 'area', sourceId: 'q1' },
+    { id: 't2', propertyId: 'objekt-1', period: calendarPeriod(jahr + 1), category: 'Grundsteuer', description: 'Grundsteuer (anteilig)', amountCents: 24500, key: 'area', sourceId: 'q1' },
+    { id: 'c1', propertyId: 'objekt-1', period: calendarPeriod(jahr), category: 'Aufzug', description: 'Wartung Aufzug', amountCents: 10000, key: 'area' },
+  ]
+  render(<PeriodProvider><PropertyProvider><Kosten units={UNITS} settings={null} /></PropertyProvider></PeriodProvider>)
+  const zeile = (await screen.findByText('Grundsteuer (anteilig)')).closest('tr') ?? expect.fail('keine Zeile')
+  expect(zeile.textContent?.replace(/ /g, ' ')).toContain('Teil von 2 · Rechnung gesamt 365,00 €')
+  // Eine Position ohne Quelle trägt nichts davon
+  const aufzug = screen.getByText('Wartung Aufzug').closest('tr') ?? expect.fail('keine Zeile')
+  expect(aufzug.textContent).not.toContain('Teil von')
+})

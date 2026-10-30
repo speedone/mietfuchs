@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { calendarPeriod, calendarYearPeriod, settlementPeriod } from '../../shared/period.ts'
 import { PDFDocument } from 'pdf-lib'
 import type { CostItem, Settlement, SettlementRow, UploadInfo } from './types'
-import type { ReceiptUpload } from './receipts'
+import { partsBySource, type ReceiptUpload } from './receipts'
 import { buildTenantFolderPdf, coverPageCount, pageRows, planTenantFolder, UNREADABLE_TEXT, winAnsiSafe } from './tenantFolder'
 
 const upload = (file: string, mimeType = 'application/pdf'): UploadInfo => ({
@@ -204,5 +204,20 @@ describe('Belegmappe für Mieter (#170): Belege über gebuchte Zeilen', () => {
     const plan = planTenantFolder(settlement([['st']]), [item('st')], [rest], { includeIndividual: false })
     expect(plan.entries.map((e) => e.status)).toEqual(['ok'])
     expect(plan.documents.map((d) => d.upload.file)).toEqual(['2_rest.pdf'])
+  })
+})
+
+// #455, Durchsicht von Task 8 (I2): Der Beleg einer aufgeteilten Rechnung hängt oft nur an einem Teil, auch an einem im
+// Vorzeitraum. Die Belegabdeckung zählt den Teil dieses Zeitraums deshalb als belegt; die Mappe muss den Beleg dann
+// auch enthalten, sonst sagte das Cockpit „alle Belege vorhanden“ und der Mieter bekäme ihn nicht.
+describe('Belegmappe für Mieter (#455): Teile einer aufgeteilten Rechnung', () => {
+  it('ein Teil ohne eigenen Beleg bekommt den Beleg seiner Rechnung, auch aus einem anderen Zeitraum', () => {
+    const vorher = item('t0', { period: calendarPeriod(2024), sourceId: 'q1', invoiceFile: '1_gs.pdf' })
+    const teil = item('t1', { sourceId: 'q1' })
+    const ohne = planTenantFolder(settlement([['t1']]), [teil], [upload('1_gs.pdf')], { includeIndividual: false })
+    expect(ohne.entries.map((e) => e.status)).toEqual(['none'])
+    const plan = planTenantFolder(settlement([['t1']]), [teil], [upload('1_gs.pdf')], { includeIndividual: false }, partsBySource([vorher, teil]))
+    expect(plan.entries.map((e) => [e.item.id, e.status, e.upload?.file])).toEqual([['t1', 'ok', '1_gs.pdf']])
+    expect(plan.documents).toEqual([{ upload: upload('1_gs.pdf'), itemIds: ['t1'] }])
   })
 })

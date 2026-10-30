@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { calendarPeriod, periodKey } from '../../shared/period.ts'
-import type { CostItem, UploadInfo } from './types'
-import { amountCheckBody, amountCheckMode, attachChoices, buildFolder, coverage, coverageCheck, duplicateHints, filesByItem, inboxFor, inboxOf, inboxPage, INBOX_STEP, isItemCovered, matchesQuery, receiptCards, yearSections } from './receipts'
+import type { CostItem, PeriodRules, UploadInfo } from './types'
+import { amountCheckBody, amountCheckFormReason, amountCheckMode, attachChoices, buildFolder, coverage, coverageCheck, duplicateHints, filesByItem, inboxFor, inboxOf, inboxPage, INBOX_STEP, isItemCovered, matchesQuery, partsBySource, receiptCards, registerCount, yearSections } from './receipts'
 
 const upload = (file: string, extra: Partial<UploadInfo> = {}): UploadInfo => ({
   file, size: 10, mtime: '2026-01-02T10:00:00.000Z', originalName: file.replace(/^\d+_/, ''),
@@ -161,6 +161,63 @@ describe('Belegabdeckung', () => {
     expect(cov.missing.map((c) => c.id)).toEqual(['b', 'c'])
   })
 
+  // #455: Die Teile einer aufgeteilten Rechnung tragen eine Quelle. Der Beleg ist die ganze Rechnung; er hängt oft
+  // nur am ersten Teil.
+  it('Belegabdeckung zählt eine aufgeteilte Rechnung einmal, belegt, wenn ein Teil den Beleg trägt', () => {
+    const teile = [
+      item('t1', { amountCents: 12000, sourceId: 'q1', invoiceFile: '1_a.pdf' }),
+      item('t2', { amountCents: 24500, sourceId: 'q1' }),
+      item('b', { amountCents: 30000 }),
+    ]
+    const cov = coverage(teile, { propertyId: 'p1', year: 2025 }, new Set(['1_a.pdf']))
+    expect(cov.positions).toBe(2)
+    expect(cov.covered).toBe(1)
+    expect(cov.totalCents).toBe(66500)
+    expect(cov.coveredCents).toBe(36500)
+    expect(cov.percent).toBe(54)
+    expect(cov.missing.map((c) => c.id)).toEqual(['b'])
+    // Liegt der Teil mit Beleg in einem anderen Jahr, deckt er den Teil dieses Jahres trotzdem
+    const ueberJahre = [
+      item('t0', { period: calendarPeriod(2024), amountCents: 12000, sourceId: 'q1', invoiceFile: '1_a.pdf' }),
+      item('t2', { amountCents: 24500, sourceId: 'q1' }),
+    ]
+    expect(coverage(ueberJahre, { propertyId: 'p1', year: 2025 }, new Set(['1_a.pdf'])))
+      .toMatchObject({ positions: 1, covered: 1, coveredCents: 24500, percent: 100 })
+    // Ohne Beleg an irgendeinem Teil fehlt die Rechnung einmal, mit allen ihren Teilen
+    const ohne = coverage(teile.map((c) => ({ ...c, invoiceFile: undefined })), { propertyId: 'p1', year: 2025 }, null)
+    expect(ohne).toMatchObject({ positions: 2, covered: 0 })
+    expect(ohne.missing.map((c) => c.id)).toEqual(['t1', 't2', 'b'])
+    expect(coverageCheck(teile.map((c) => ({ ...c, invoiceFile: undefined }))).detail).toMatch(/^2 von 2 Positionen ohne Beleg/)
+  })
+
+  // Dieselbe Regel für das Abzeichen am Register und die Liste ohne Beleg im Belegordner (K2)
+  it('ein Teil, dessen Rechnung über einen anderen Teil belegt ist, steht im Belegordner nicht als ohne Beleg', () => {
+    const teile = [
+      item('t0', { period: calendarPeriod(2024), amountCents: 12000, sourceId: 'q1', invoiceFile: '1_a.pdf' }),
+      item('t2', { amountCents: 24500, sourceId: 'q1' }),
+    ]
+    const t2 = teile[1] ?? expect.fail('t2 fehlt')
+    const present = new Set(['1_a.pdf'])
+    expect(isItemCovered(t2, present, new Map())).toBe(false)
+    expect(isItemCovered(t2, present, new Map(), partsBySource(teile))).toBe(true)
+    expect(isItemCovered(t2, new Set<string>(), new Map(), partsBySource(teile))).toBe(false)
+    const folder = buildFolder([upload('1_a.pdf')], teile, { propertyId: 'p1', year: 2025 }, '')
+    expect(folder.groups[0]?.missing).toEqual([])
+    expect(folder.groups[0]?.cards.map((c) => c.upload.file)).toEqual(['1_a.pdf'])
+  })
+
+  // Durchsicht von Task 8 (M1): Das Abzeichen am Register zählt wie die Belegabdeckung je Rechnung.
+  it('das Abzeichen am Register zählt eine aufgeteilte Rechnung einmal', () => {
+    const teile = [
+      item('t1', { amountCents: 12000, sourceId: 'q1' }),
+      item('t2', { amountCents: 24500, sourceId: 'q1' }),
+      item('b', { amountCents: 30000, invoiceFile: '1_b.pdf' }),
+    ]
+    const folder = buildFolder([upload('1_b.pdf')], teile, { propertyId: 'p1', year: 2025 }, '')
+    const g = folder.groups[0] ?? expect.fail('kein Register')
+    expect(registerCount(g, new Set(['1_b.pdf']), new Map(), partsBySource(teile))).toEqual({ positions: 2, without: 1 })
+  })
+
   it('zeigt 100 % nur, wenn wirklich nichts fehlt', () => {
     const viele = [item('a', { amountCents: 999999, invoiceFile: 'x' }), item('b', { amountCents: 1 })]
     expect(coverage(viele, { propertyId: 'p1', year: 2025 }, null).percent).toBe(99)
@@ -267,6 +324,22 @@ describe('Posteingang: einer Position zuordnen', () => {
     expect(amountCheckMode(item('a', { key: 'amounts', tenancyAmounts: { t1: 100 } }))).toBe('form')
     expect(amountCheckMode(item('e', { key: 'external' }))).toBe('form')
     expect(amountCheckMode(item('g'))).toBe('field')
+  })
+  // #455, Durchsicht von PR 3 (I2): Der Betrag eines Teils ist nur der Anteil seines Zeitraums. Ein Feld „Betrag laut
+  // Beleg“ lüde dazu ein, den Betrag der ganzen Rechnung einzutragen, und die Rechnung zählte doppelt.
+  it('Betrag prüfen: ein Teil einer aufgeteilten Rechnung im Formular, mit eigenem Satz', () => {
+    const rules: PeriodRules = { startMonth: 1, changes: [] }
+    const teil = item('t', { sourceId: 'q1' })
+    expect(amountCheckMode(teil, rules)).toBe('form')
+    expect(amountCheckFormReason(teil, rules)).toMatch(/Teil einer aufgeteilten Rechnung; der Betrag ist nur der Anteil dieses Zeitraums/)
+    // Zweite Durchsicht (R4): Das Formular zeigt nur den Betrag des Teils; die Summe steht in der Kostenliste.
+    expect(amountCheckFormReason(teil, rules)).toMatch(/„Rechnung gesamt“ unter dem Teil in der Kostenliste/)
+    expect(amountCheckFormReason(teil, rules)).not.toMatch(/Betrag der Rechnung bitte im Formular/)
+    // Ein alter Teil ohne Quelle, dessen Leistungszeitraum zwei Zeiträume berührt, ebenso.
+    const alt = item('alt', { serviceFrom: '2025-07-01', serviceTo: '2026-06-30' })
+    expect(amountCheckMode(alt, rules)).toBe('form')
+    expect(amountCheckMode(item('g', { serviceFrom: '2025-01-01', serviceTo: '2025-12-31' }), rules)).toBe('field')
+    expect(amountCheckFormReason(item('e', { key: 'external' }), rules)).toMatch(/Einzelbeträge oder Kosten der Gemeinschaft/)
   })
   it('Betrag prüfen: ein Lohnanteil über dem neuen Betrag verweist ins Formular', () => {
     expect(amountCheckBody('500,00', item('g', { labor35aCents: 80000 }))).toEqual({

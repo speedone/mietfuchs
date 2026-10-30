@@ -98,3 +98,152 @@ test('M1 Integrationsdurchsicht: der Rat führt nicht zum bloßen Zuordnen, das 
   assert.equal(dupes(zugeordnet).length, 0)
   assert.equal(settle(zugeordnet).totalCostsCents, 300000)
 })
+
+// #455, Durchsicht von Task 8 (I1): Die Teile einer aufgeteilten Rechnung im selben Zeitraum sind eine Rechnung. Trägt
+// ein Teil den Beleg, ist die Rechnung belegt; der andere Teil darf weder „ohne Beleg“ heißen noch der Ort von „Hier
+// beheben“ sein, sonst löschte der Vermieter einen echten Teil der Rechnung.
+test('Teile einer Rechnung im selben Zeitraum: als eine Rechnung genannt, belegt über einen Teil, nicht Ziel des Rats', () => {
+  const found = dupes([
+    item({ id: 'vj', period: calendarPeriod(2025) }),
+    item({ id: 'teil1', period: calendarPeriod(2026), description: 'Grundsteuer (anteilig)', amountCents: 12000, sourceId: 'q1', invoiceFile: 'gs.pdf' }),
+    item({ id: 'teil2', period: calendarPeriod(2026), description: 'Grundsteuer (anteilig)', amountCents: 24500, sourceId: 'q1', key: 'persons' }),
+    item({ id: 'schaetzung', period: calendarPeriod(2026), amountCents: 61000 }),
+  ])
+  assert.equal(found.length, 1)
+  const n = found[0]
+  assert.deepEqual(n?.subject, { kind: 'costItem', id: 'schaetzung' })
+  const text = n?.text ?? ''
+  assert.match(text, /„Grundsteuer \(anteilig\)“ \(2 Teile einer Rechnung, zusammen 365,00 €\) und „Grundsteuer 2026“ \(610,00 €, ohne Beleg\) stehen beide 2026 unter „Grundsteuer“/)
+  assert.doesNotMatch(text, /365,00 €, ohne Beleg/)
+  // Durchsicht von PR 3 (I1): nicht mehr „Soll die ohne Beleg bleiben, setzen Sie ihren Betrag …“, das hieße, einen
+  // Teil der belegten Rechnung zu löschen.
+  assert.match(text, /die Position ohne Beleg löschen und die aufgeteilte Rechnung mit allen ihren Teilen stehen lassen/)
+})
+
+// #455, Re-Durchsicht von Task 8 (N1): Eine Rechnung ist belegt, wenn ein Teil in irgendeinem Zeitraum den Beleg trägt
+// (so zählen Belegabdeckung, Abzeichen und Cockpit). Der Hinweis sah nur die Gruppe des Zeitraums und nannte den Teil
+// ohne Beleg trotzdem „ohne Beleg“, obwohl die Rechnung gedeckt ist.
+test('Teil einer Rechnung, deren Beleg an einem Teil in einem anderen Zeitraum hängt: nicht „ohne Beleg“, kein Hinweis', () => {
+  const found = dupes([
+    item({ id: 'a1', period: calendarPeriod(2025), description: 'Versicherung (anteilig)', category: 'Sachversicherung', amountCents: 30000, sourceId: 'qa', invoiceFile: 'a.pdf' }),
+    item({ id: 'a2', period: calendarPeriod(2026), description: 'Versicherung (anteilig)', category: 'Sachversicherung', amountCents: 60000, sourceId: 'qa' }),
+    item({ id: 'b1', period: calendarPeriod(2026), description: 'Versicherung Haftpflicht', category: 'Sachversicherung', amountCents: 40000, sourceId: 'qb', invoiceFile: 'b.pdf' }),
+  ])
+  assert.deepEqual(found, [])
+})
+
+test('Fehlt der Beleg einer Rechnung aus mehreren Teilen, spricht der Rat von den Teilen dieser Rechnung', () => {
+  const found = dupes([
+    item({ id: 'vj', period: calendarPeriod(2025) }),
+    item({ id: 'teil1', period: calendarPeriod(2026), description: 'Grundsteuer (anteilig)', amountCents: 12000, sourceId: 'q1' }),
+    item({ id: 'teil2', period: calendarPeriod(2026), description: 'Grundsteuer (anteilig)', amountCents: 24500, sourceId: 'q1' }),
+    item({ id: 'beleg', period: calendarPeriod(2026), amountCents: 61000, invoiceFile: 'gs.pdf' }),
+  ])
+  assert.equal(found.length, 1)
+  const text = found[0]?.text ?? ''
+  assert.match(text, /die Rechnung ohne Beleg löschen, mit allen ihren Teilen/)
+  assert.doesNotMatch(text, /eine der beiden Positionen löschen/)
+  assert.doesNotMatch(text, /setzen Sie ihren Betrag/)
+})
+
+// #455, Durchsicht von PR 3 (I1): Ist an der Gruppe eine aufgeteilte Rechnung beteiligt, darf der Rat nie lauten, den
+// Betrag eines Teils auf den der Rechnung zu setzen: Die Teile in anderen Zeiträumen zählten dann doppelt (Grundsteuer
+// 600 €, je 300 € in 2025 und 2026, dazu der Bescheid über 600 € in 2026: befolgt stünden 900 € da).
+test('Teil ohne Beleg gegen eine belegte Position: kein Rat, den Betrag auf den der Rechnung zu setzen', () => {
+  const found = dupes([
+    item({ id: 'p25', period: calendarPeriod(2025), description: 'Grundsteuer (anteilig)', amountCents: 30000, sourceId: 'q1', serviceFrom: '2025-07-01', serviceTo: '2026-06-30' }),
+    item({ id: 'p26', period: calendarPeriod(2026), description: 'Grundsteuer (anteilig)', amountCents: 30000, sourceId: 'q1', serviceFrom: '2025-07-01', serviceTo: '2026-06-30' }),
+    item({ id: 'bescheid', period: calendarPeriod(2026), description: 'Grundsteuerbescheid', amountCents: 60000, invoiceFile: 'gs.pdf' }),
+  ])
+  assert.equal(found.length, 1)
+  const n = found[0]
+  assert.deepEqual(n?.subject, { kind: 'costItem', id: 'p26' })
+  const text = n?.text ?? ''
+  assert.doesNotMatch(text, /setzen Sie ihren Betrag/)
+  assert.match(text, /mit allen ihren Teilen, auch denen in anderen Zeiträumen/)
+  assert.match(text, /Soll sie bleiben, löschen Sie stattdessen die andere Rechnung\. /)
+})
+
+test('Belegte aufgeteilte Rechnung gegen eine Position ohne Beleg: die ohne Beleg löschen, die Rechnung bleibt ganz', () => {
+  const found = dupes([
+    item({ id: 'vj', period: calendarPeriod(2025) }),
+    item({ id: 'teil1', period: calendarPeriod(2026), description: 'Grundsteuer (anteilig)', amountCents: 12000, sourceId: 'q1', invoiceFile: 'gs.pdf' }),
+    item({ id: 'teil2', period: calendarPeriod(2026), description: 'Grundsteuer (anteilig)', amountCents: 24500, sourceId: 'q1' }),
+    item({ id: 'schaetzung', period: calendarPeriod(2026), amountCents: 61000 }),
+  ])
+  const text = found[0]?.text ?? ''
+  assert.doesNotMatch(text, /setzen Sie ihren Betrag/)
+  assert.match(text, /die Position ohne Beleg löschen und die aufgeteilte Rechnung mit allen ihren Teilen stehen lassen/)
+})
+
+// #455, Durchsicht von PR 3 (I3): Zwei aufgeteilte Rechnungen derselben Kostenart, deren Leistungszeiträume sich nicht
+// überschneiden (Versicherung Juli bis Juni, zwei Jahre nacheinander), sind zwei Rechnungen. Der Hinweis riet sonst,
+// die frühere zu löschen.
+test('Zwei Rechnungen mit getrennten Leistungszeiträumen sind keine Doppelung', () => {
+  const vers = { category: 'Sachversicherung', description: 'Gebäudeversicherung (anteilig)' }
+  const found = dupes([
+    item({ id: 'a25', period: calendarPeriod(2025), ...vers, amountCents: 30000, sourceId: 'qa', serviceFrom: '2025-07-01', serviceTo: '2026-06-30' }),
+    item({ id: 'a26', period: calendarPeriod(2026), ...vers, amountCents: 30000, sourceId: 'qa', serviceFrom: '2025-07-01', serviceTo: '2026-06-30' }),
+    item({ id: 'b26', period: calendarPeriod(2026), ...vers, amountCents: 31000, sourceId: 'qb', serviceFrom: '2026-07-01', serviceTo: '2027-06-30', invoiceFile: 'b.pdf' }),
+    item({ id: 'b27', period: calendarPeriod(2027), ...vers, amountCents: 31000, sourceId: 'qb', serviceFrom: '2026-07-01', serviceTo: '2027-06-30' }),
+  ])
+  assert.deepEqual(found, [])
+  // Überschneiden sie sich, bleibt der Hinweis.
+  const overlap = dupes([
+    item({ id: 'a26', period: calendarPeriod(2026), ...vers, amountCents: 30000, serviceFrom: '2026-01-01', serviceTo: '2026-12-31' }),
+    item({ id: 'b26', period: calendarPeriod(2026), ...vers, amountCents: 31000, serviceFrom: '2026-06-01', serviceTo: '2026-12-31', invoiceFile: 'b.pdf' }),
+  ])
+  assert.equal(overlap.length, 1)
+  // Hat nur eine der beiden einen Leistungszeitraum, bleibt alles wie bisher.
+  const oneSided = dupes([
+    item({ id: 'a26', period: calendarPeriod(2026), ...vers, amountCents: 30000 }),
+    item({ id: 'b26', period: calendarPeriod(2026), ...vers, amountCents: 31000, serviceFrom: '2026-07-01', serviceTo: '2027-06-30', sourceId: 'qb', invoiceFile: 'b.pdf' }),
+  ])
+  assert.equal(oneSided.length, 1)
+})
+
+// #455, zweite Durchsicht von PR 3 (R1): Sind beide Rechnungen aufgeteilt, gilt auch für die andere: gelöscht wird sie
+// nur mit allen Teilen. „Löschen Sie stattdessen die andere Position“ ließe ihren Teil im anderen Zeitraum allein stehen.
+test('Beide Rechnungen aufgeteilt: auch die andere wird nur mit allen ihren Teilen gelöscht', () => {
+  const S = { category: 'Sachversicherung', serviceFrom: '2025-07-01', serviceTo: '2026-06-30' }
+  const found = dupes([
+    item({ id: 'a25', period: calendarPeriod(2025), ...S, description: 'Versicherung (anteilig)', amountCents: 30000, sourceId: 'qa' }),
+    item({ id: 'a26', period: calendarPeriod(2026), ...S, description: 'Versicherung (anteilig)', amountCents: 30000, sourceId: 'qa' }),
+    item({ id: 'b25', period: calendarPeriod(2025), ...S, description: 'Versicherung Gebäude', amountCents: 30000, sourceId: 'qb', invoiceFile: 'b.pdf' }),
+    item({ id: 'b26', period: calendarPeriod(2026), ...S, description: 'Versicherung Gebäude', amountCents: 30000, sourceId: 'qb' }),
+  ])
+  assert.equal(found.length, 1)
+  const text = found[0]?.text ?? ''
+  assert.deepEqual(found[0]?.subject, { kind: 'costItem', id: 'a26' })
+  assert.doesNotMatch(text, /löschen Sie stattdessen die andere Position/)
+  assert.match(text, /Soll sie bleiben, löschen Sie stattdessen die andere Rechnung, ebenfalls mit allen ihren Teilen, auch denen in anderen Zeiträumen/)
+  assert.match(text, /Den Betrag eines Teils auf den der ganzen Rechnung zu setzen, zählte die übrigen Teile doppelt/)
+})
+
+// R2: Eine Position ohne Leistungszeitraum verbindet zwei getrennte Rechnungen zu einer Gruppe. „Hier beheben“ führt
+// dann zu der Position ohne Beleg, die zu allen anderen passt, nicht zur früheren Versicherung.
+test('Über eine dritte Position verbunden: „Hier beheben“ an der Position, die zu allen passt', () => {
+  const S = { category: 'Sachversicherung', description: 'Versicherung (anteilig)' }
+  const found = dupes([
+    item({ id: 'vj', period: calendarPeriod(2025), ...S }),
+    item({ id: 'a26', period: calendarPeriod(2026), ...S, amountCents: 30000, sourceId: 'qa', serviceFrom: '2025-07-01', serviceTo: '2026-06-30' }),
+    item({ id: 'c', period: calendarPeriod(2026), ...S, amountCents: 50000 }),
+    item({ id: 'b26', period: calendarPeriod(2026), ...S, amountCents: 31000, sourceId: 'qb', serviceFrom: '2026-07-01', serviceTo: '2027-06-30', invoiceFile: 'b.pdf' }),
+  ])
+  assert.equal(found.length, 1)
+  assert.deepEqual(found[0]?.subject, { kind: 'costItem', id: 'c' })
+})
+
+// R3: Ein alter Teil ohne Quelle (Leistungszeitraum über zwei Zeiträume, `isSplitPart`) ist ebenso ein Teil; Szenario A
+// endete sonst bei 900 € für eine Rechnung über 600 €.
+test('Alter Teil ohne Quelle: kein Rat, den Betrag auf den der Rechnung zu setzen', () => {
+  const found = dupes([
+    item({ id: 'p25', period: calendarPeriod(2025), description: 'Grundsteuer (anteilig)', amountCents: 30000, serviceFrom: '2025-07-01', serviceTo: '2026-06-30' }),
+    item({ id: 'p26', period: calendarPeriod(2026), description: 'Grundsteuer (anteilig)', amountCents: 30000, serviceFrom: '2025-07-01', serviceTo: '2026-06-30' }),
+    item({ id: 'bescheid', period: calendarPeriod(2026), description: 'Grundsteuerbescheid', amountCents: 60000, invoiceFile: 'gs.pdf' }),
+  ])
+  assert.equal(found.length, 1)
+  const text = found[0]?.text ?? ''
+  assert.doesNotMatch(text, /setzen Sie ihren Betrag/)
+  assert.match(text, /mit allen ihren Teilen, auch denen in anderen Zeiträumen/)
+})

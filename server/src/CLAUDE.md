@@ -64,7 +64,10 @@ Schlüssel** `PeriodKey` (`'JJJJ-MM'`, Monat des Beginns, Markentyp), kein Jahr:
   verschoben wird über dieselbe Schreibprüfung wie beim Speichern.
 - **Kalte Rechnungen mit Leistungszeitraum über zwei Zeiträume werden beim Speichern nach Tagen
   aufgeteilt** ([serviceSplit.ts](serviceSplit.ts), Leistungsprinzip); jeder Teil trägt den ganzen
-  Leistungszeitraum, und ein Teil wird danach nur berichtigt (`isSplitPart`). Jeder Weg, der so teilt, legt eine
+  Leistungszeitraum, und ein Teil wird danach nur berichtigt. Ob eine Position ein Teil ist, sagt die Quelle
+  (`isInvoicePart`, shared/splitPart.ts: `sourceId`, für alte Teile ohne Quelle `isSplitPart`), nicht der Zeitraum: Ein Teil kann
+  ganz in einem Zeitraum liegen. Auf Teile mit Quelle ändert sich nichts an Kostenart, Einzelbeträgen und Betriebsstrom
+  (`requireSourcePartStays`); Objekt wechseln sie nie. Jeder Weg, der so teilt, legt eine
   Quelle an (#455, `cost_sources`). Der Wechsel des Rhythmus teilt nach Quelle (`sourceId`): Teile in Zeiträumen,
   die bleiben oder wachsen, stehen; die übrigen werden als eine Rechnung über ihre Spannen neu geteilt
   (`deriveSourceParts`), und ein Ergebnis kommt zum stehenden Teil seines Zeitraums bei gleichem Zahlungsdatum,
@@ -72,7 +75,9 @@ Schlüssel** `PeriodKey` (`'JJJJ-MM'`, Monat des Beginns, Markentyp), kein Jahr:
   gefragtem Jahr `mergeDependsOnYear`). Stehen bewegte Teile im selben Zeitraum, zählen sie nur bei gleichem Jahr der
   Zahlung und Zahlungsdatum zusammen, sonst je Jahr eine Rechnung mit eigener Frage (`sourceSplit`, `poolOf`); liegt
   jeder in einem anderen Zeitraum, bleibt es eine (Golden). Bleibt ein Teil, entfällt die Quelle. Ein Teil
-  ohne Quelle wird über seinen eigenen Teil des Leistungszeitraums geteilt und bekommt dann eine. Heizkosten nie
+  ohne Quelle wird über seinen eigenen Teil des Leistungszeitraums geteilt und bekommt dann eine. Löschen geht je Teil wie
+  bisher; der letzte Teil nimmt die Quelle mit. Ein Datenschritt (0077, dataSteps) hat bestehende Teile zusammengeführt: Kandidat
+  ist `isSplitPart` oder eine Beschreibung mit dem Zusatz „(anteilig …)“, zusammen nur bei gleichem Familienschlüssel des Schritts. Heizkosten nie
   (VIII ZR 156/11), dort warnt `period.heating-mismatch`.
 - **Jahr der Steuer**: `tax_year` ist das Jahr der Zahlung, Pflicht nur bei einem Zeitraum über zwei
   Kalenderjahre. Welches Jahr eine Position für die Steuer hat, sagt allein `outflowShares`
@@ -144,7 +149,8 @@ Register, Belegabdeckung und Belegmappe folgen ihm, der Posteingang bleibt beim 
   (`path.basename`), ein Abbruch löscht ihn nicht.
 - **Zuordnen an eine bestehende Position** (`attachChoices`, `amountCheckBody`): passende Positionen
   oben, danach „Betrag prüfen“ (eine übernommene Position trägt einen Schätzbetrag). Bei `amounts`,
-  `external` oder einem Lohnanteil über dem neuen Betrag nur „Position öffnen“; ein vorhandener
+  `external`, einem Teil einer aufgeteilten Rechnung (`amountCheckIsPart`, #455: sein Betrag ist nur der Anteil des
+  Zeitraums) oder einem Lohnanteil über dem neuen Betrag nur „Position öffnen“; ein vorhandener
   §35a-Anteil wird genannt. Dateinamen vor `matchCategory` mit NFC normalisieren.
 - **Löschen** gesperrt, solange irgendeine Position irgendeines Objekts auf den Beleg zeigt
   (`invoiceFilesInUse`).
@@ -412,6 +418,22 @@ angehakt), das Kostenformular beim Anlegen („Stattdessen … bearbeiten“) un
 mehr davon hat. Gezählt wird
 im Jahr des Belegs (`detected_year`), nicht im gewählten.
 
+Gezählt wird **je Rechnung** (#455): Die Teile einer Quelle sind eine Rechnung (`invoiceOf`), im selben Zeitraum melden sie
+einander nicht. Belegt ist eine Rechnung, wenn ein Teil in irgendeinem Zeitraum den Beleg trägt (`receiptedSources`; der
+Schnappschuss trägt `receiptedSources`, weil er sonst nur seinen Zeitraum sieht). Dieselbe Regel gilt für Belegabdeckung,
+Abzeichen, Cockpit und Belegmappe (`isItemCovered` mit `partsBySource`); „Hier beheben“ führt nie zu einem Teil einer
+belegten Rechnung. Die Kostenliste zeigt unter einem Teil „Teil von N“. Bei der Belegbuchung ist ein Teil kein Ziel zum
+Verknüpfen (`formOnly`, `part`): Die Zeile wird verworfen, wenn der Teil stimmt. Lösen lässt seinen Betrag stehen. Das Steuer-ZIP bleibt je Position.
+
+Ist eine aufgeteilte Rechnung an der Gruppe beteiligt, richtet sich der Rat nach der Quelle, nicht nach der Zahl der
+Teile im Zeitraum (die übrigen sieht die Gruppe nicht): nie „setzen Sie ihren Betrag auf den der Rechnung“, gelöscht
+wird eine aufgeteilte Rechnung nur mit allen Teilen, auch denen in anderen Zeiträumen, das gilt für beide Seiten. Als
+aufgeteilt zählt `isInvoicePart`, also auch ein alter Teil ohne Quelle. Ohne Teil in der Gruppe bleibt der Wortlaut.
+Zwei Positionen, deren Leistungszeiträume beide angegeben sind und sich nicht überschneiden, verbindet
+`possibleDuplicates` nicht (`separateService`; die Versicherung Juli bis Juni, zwei Jahre nacheinander); verbindet sie
+eine dritte ohne Leistungszeitraum, führt „Hier beheben“ zu der Rechnung ohne Beleg, die zu allen anderen passt.
+`sameCostCandidates` und damit Kostenformular und Belegbuchung fragen weiter ohne Leistungszeitraum.
+
 ## Belegbuchung (#170)
 
 Entwurf: [docs/superpowers/specs/2026-10-02-belegbuchung-design.md](../../docs/superpowers/specs/2026-10-02-belegbuchung-design.md).
@@ -442,7 +464,8 @@ Eine Rechnung landet genau einmal in den Kosten, weil **der Server bucht, nicht 
   Kandidat jeder seiner Zeilen, gleich welcher Kostenart (`lineCandidates`): rot, Anlegen nur mit
   Bestätigung. Derselbe Beleg kann nicht zweimal an dieselbe Position.
 - Beim Lösen einer Zeile wechselt der Beleg der Position nur, wenn der gelöste ihr Beleg war.
-  Verwerfen ergibt einen Hinweis je Zeile.
+  Verwerfen ergibt einen Hinweis je Zeile. **Ein Teil einer aufgeteilten Rechnung** (`isInvoicePart`) behält beim
+  Lösen seinen Betrag (die Summe der übrigen Zeilen wäre die ganze Rechnung); die Vorschau sagt es.
 - **Eine Zeile wird nie zweimal gebucht**: „genau so gebucht“ ist Erfolg ohne Änderung
   (Doppelklick, Wiederholung), **jede Abweichung 409 mit aktuellem Stand**. Die Vorschau trägt eine
   Marke (`token`, SHA-256 über `tokenSource`); weicht der Stand ab, 409 mit neuer Vorschau. Gebucht

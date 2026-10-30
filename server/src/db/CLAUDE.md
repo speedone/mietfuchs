@@ -77,6 +77,12 @@ beim Start, denn wer auf sie wartet, hält den Server für fertig.
   `cost_items.direct_unit_id` ist **`SET NULL`**: die Rechnung gehört weiter in ihre Abrechnung.
   Aufs Objekt verweisen Wurzeln mit `RESTRICT`. Eine Wohnung mit Rechnungen einer Etagenheizung
   löscht die Route nicht (409, `dependents.fuelDeliveries`).
+- **Quellen aufgeteilter Rechnungen** (#455): `cost_sources` (Objekt, Regel `days`); `cost_items.source_id` verweist darauf mit
+  **`RESTRICT`**: Eine Quelle mit Teilen wird nicht gelöscht, die Teile gehen zuerst (der letzte Teil löscht die Quelle
+  im Repository mit). In der erzeugten Datenbank steht dieser Fremdschlüssel bis zu einem späteren Schritt, der
+  `cost_items` neu baut, als NO ACTION (drizzle lässt ON DELETE bei ALTER ADD weg); unter `defer_foreign_keys`
+  (Rücksprung) wird er erst beim Festschreiben geprüft. Aufs Objekt verweist die Quelle mit `RESTRICT`. Bestehende Teile hat der Datenschritt 0077 (TypeScript,
+  siehe Migrationen) einer Quelle zugeordnet; Backups älterer Stände laufen beim Einspielen durch dieselbe Kette.
 - **Prüfbedingungen je Feld entschieden**: bewusst ohne Bedingung `cost_items.amount_cents`
   (Gutschrift), `labor_35a_cents` (calc.ts erklärt einen ungültigen Lohnanteil) und
   `payments.amount_cents` (Rücklastschrift). Aufzählungen bekommen Bedingungen, denn

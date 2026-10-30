@@ -283,6 +283,21 @@ test('Review Runde 2: Teil einer geteilten Rechnung ist formOnly und kein Ziel v
   })
   const c = view.lines[0]?.suggestion?.candidates.find((x) => x.id === 'teil') ?? assert.fail('Teil fehlt unter den Kandidaten')
   assert.equal(c.formOnly, true)
+  assert.equal(c.part, true, 'die Ansicht sagt, dass es ein Teil einer Rechnung ist')
   assert.equal(replacedByLinking([teil], line, calendarPeriod(2026), [], rules), null)
   assert.equal(replacedByLinking([grundsteuer({ id: 'ganz' })], line, calendarPeriod(2026), [], CALENDAR_RULES)?.id, 'ganz')
+})
+
+// Durchsicht von Task 7, I2 (#455): Ein Teil mit Quelle aus dem Datenschritt liegt mit seinem Leistungszeitraum in einem
+// einzigen Zeitraum, `isSplitPart` erkennt ihn nicht. Ob er Teil einer Rechnung ist, sagt die Quelle.
+test('#455: ein Teil mit Quelle in einem Zeitraum ist formOnly und kein Ziel von replacedByLinking', () => {
+  const teil = grundsteuer({ id: 'teil', period: calendarPeriod(2026), serviceFrom: '2026-01-01', serviceTo: '2026-12-31', amountCents: 24700, sourceId: 'q' })
+  const line = stored({ description: 'Grundsteuer 2026', category: 'Grundsteuer', amountCents: 51240 })
+  const view = describeAssessment({ assessment: assessmentOf(), lines: [line] }, {
+    items: [teil], units: UNITS3, meters: [], propertyKind: null, rules: CALENDAR_RULES, originalName: 'grundsteuer.pdf', twinOf: null, twinNames: new Map(), booked: [],
+  })
+  const c = view.lines[0]?.suggestion?.candidates.find((x) => x.id === 'teil') ?? assert.fail('Teil fehlt unter den Kandidaten')
+  assert.equal(c.formOnly, true)
+  assert.equal(c.part, true)
+  assert.equal(replacedByLinking([teil], line, calendarPeriod(2026), [], CALENDAR_RULES), null)
 })

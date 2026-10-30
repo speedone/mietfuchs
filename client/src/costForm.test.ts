@@ -24,6 +24,8 @@ import {
   amountsSumText,
   externalHint,
   externalMismatch,
+  othersOfSourceCents,
+  formPartOf,
   tenanciesForAmounts,
   categoryNotice,
   selfAmountUnits,
@@ -311,6 +313,43 @@ describe('Teilnehmer, Gemeinschaftsabrechnung und Einzelbeträge (#94)', () => {
     // Durchsicht, Befund 2: ein zweiter Teil derselben Rechnung im Zeitraum zählt mit.
     expect(externalMismatch(form({ ...angaben, amount: '50,00' }), wohnungen, { ...part, othersCents: 3598 })).toBe(false)
     expect(externalHint(form({ ...angaben, amount: '50,00' }), wohnungen, { ...part, othersCents: 3598 })).toMatch(/mit den übrigen Teilen dieser Rechnung im Zeitraum \(35,98 €\)/)
+  })
+
+  test('Gemeinschaft: die übrigen Teile im Zeitraum zählen nach Quelle, nicht nach gleichen Feldern (#455)', () => {
+    const teil = (id: string, amountCents: number, sourceId?: string, period = periodKey('2025-01')): CostItemOf => ({ id, propertyId: 'o', period,
+      category: 'Hauswart', description: 'Hausmeister (anteilig …)', amountCents, key: 'external', serviceFrom: '2025-01-01', serviceTo: '2025-12-31',
+      ...(sourceId === undefined ? {} : { sourceId }) })
+    const a = teil('a', 15781, 'q')
+    // zwei Teile derselben Quelle im selben Zeitraum werden zusammen gemessen
+    expect(othersOfSourceCents([a, teil('b', 8022, 'q')], a)).toBe(8022)
+    // ein Teil derselben Quelle in einem anderen Zeitraum zählt nicht, einer einer anderen Quelle auch nicht
+    expect(othersOfSourceCents([a, teil('b', 8022, 'q', periodKey('2025-07')), teil('c', 500, 'r')], a)).toBe(0)
+    // zwei Positionen mit gleichem Familienschlüssel ohne gemeinsame Quelle werden einzeln gemessen
+    const ohne = teil('a', 15781)
+    expect(othersOfSourceCents([ohne, teil('b', 8022)], ohne)).toBe(0)
+    expect(othersOfSourceCents([a, teil('b', 8022)], a)).toBe(0)
+  })
+
+  test('Gemeinschaft: Quelle, kein Tagesanteil, zwei Teile im Zeitraum → kein Hinweis (#455, Durchsicht I1)', () => {
+    // Zwei Teile einer Quelle aus dem Datenschritt, Leistungszeitraum ganz im Zeitraum 2025: kein Tagesanteil, aber
+    // zusammen die Rechnung. 2.000 € · 50/1.000 = 100 €, je Teil 50 €. Die Berechnung misst beide zusammen.
+    const wohnungen = [unit('u1', { mea: 50 })]
+    const angaben = { key: 'external' as const, externalMeasure: 'mea' as const, externalTotal: '1000', externalTotalAmount: '2.000,00' }
+    const teil = (id: string, sourceId?: string): CostItemOf => ({ id, propertyId: 'o', period: periodKey('2025-01'), category: 'Hausgeld',
+      description: `Hausgeld (Teil ${id})`, amountCents: 5000, key: 'external', serviceFrom: '2025-01-01', serviceTo: '2025-12-31',
+      ...(sourceId === undefined ? {} : { sourceId }) })
+    const jahr2025 = { from: '2025-01-01', to: '2025-12-31' }
+    const a = teil('a', 'q')
+    const part = formPartOf([a, teil('b', 'q')], a, jahr2025)
+    expect(part).toEqual({ othersCents: 5000 })
+    expect(externalMismatch(form({ ...angaben, amount: '50,00' }), wohnungen, part)).toBe(false)
+    expect(externalHint(form({ ...angaben, amount: '50,00' }), wohnungen, part)).toBe('Rechnerischer Anteil: 50 von 1.000 MEA · mit den übrigen Teilen dieser Rechnung im Zeitraum (50,00 €) = 100,00 €')
+    // Ohne Quelle und ohne Tagesanteil gibt es keinen Teil; mit Tagesanteil wie bisher.
+    const ohne = teil('a')
+    expect(formPartOf([ohne, teil('b')], ohne, jahr2025)).toBeNull()
+    expect(externalMismatch(form({ ...angaben, amount: '50,00' }), wohnungen, formPartOf([ohne, teil('b')], ohne, jahr2025))).toBe(true)
+    const rumpf = { ...a, period: periodKey('2025-07') }
+    expect(formPartOf([rumpf], rumpf, { from: '2025-07-01', to: '2025-12-31' })).toEqual({ days: 184, of: 365, othersCents: 0 })
   })
 
   test('Einzelbeträge: je Mietverhältnis des Jahres, die Summe darf den Betrag nicht übersteigen', () => {

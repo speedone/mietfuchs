@@ -13,7 +13,7 @@ import type { PeriodContext } from './period.ts'
 import { BROAD_CATEGORIES } from './allocation.ts'
 
 export type DuplicateItem = Pick<CostItem, 'id' | 'period' | 'category' | 'description'> &
-  Partial<Pick<CostItem, 'propertyId' | 'vendor' | 'invoiceFile' | 'amountCents'>>
+  Partial<Pick<CostItem, 'propertyId' | 'vendor' | 'invoiceFile' | 'amountCents' | 'sourceId' | 'serviceFrom' | 'serviceTo'>>
 
 export type CostQuery = {
   propertyId?: string | null
@@ -83,18 +83,58 @@ export function sameCostCandidates<T extends DuplicateItem>(items: readonly T[],
 
 const isCredit = (i: DuplicateItem): boolean => (i.amountCents ?? 0) < 0
 
+// Zwei Rechnungen, deren Leistungszeiträume sich nicht überschneiden, sind zwei Rechnungen (#455, Durchsicht von PR 3,
+// I3): die Versicherung von Juli bis Juni, zwei Jahre nacheinander, jede in zwei Teile geteilt. Jeder Teil trägt den
+// ganzen Leistungszeitraum seiner Rechnung, der Teil im Zeitraum genügt also. Fehlt einer der beiden der
+// Leistungszeitraum, bleibt es bei der Regel oben.
+export function separateService(a: DuplicateItem, b: DuplicateItem): boolean {
+  if (!a.serviceFrom || !a.serviceTo || !b.serviceFrom || !b.serviceTo) return false
+  return a.serviceTo < b.serviceFrom || b.serviceTo < a.serviceFrom
+}
+
+// Die Rechnung, zu der eine Position gehört (#455): Die Teile einer Quelle sind eine Rechnung, jede andere Position
+// ist ihre eigene.
+export const invoiceOf = (i: DuplicateItem): string => (i.sourceId ? `q:${i.sourceId}` : `p:${i.id}`)
+const invoiceCount = (items: readonly DuplicateItem[]): number => new Set(items.map(invoiceOf)).size
+// Eine Rechnung gilt als belegt, wenn einer ihrer Teile den Beleg trägt.
+const withReceipt = (items: readonly DuplicateItem[], receipted: ReadonlySet<string> = new Set()): Set<string> =>
+  new Set(items.filter((i) => i.invoiceFile || (i.sourceId && receipted.has(i.sourceId))).map(invoiceOf))
+
+// Die Quellen, von denen irgendein Teil, gleich in welchem Zeitraum, einen Beleg trägt.
+export function receiptedSources(items: readonly DuplicateItem[]): Set<string> {
+  return new Set(items.filter((i) => i.sourceId && i.invoiceFile).map((i) => i.sourceId as string))
+}
+
+// Eine Gruppe möglicher Doppelungen je Rechnung (#455), für den Text des Hinweises: die Teile jeder Rechnung in der
+// Reihenfolge der Gruppe, und ob sie belegt ist (ein Teil trägt den Beleg).
+//
+// `receipted` sind die Quellen, deren Beleg in irgendeinem Zeitraum hängt (`receiptedSources`): Eine Rechnung ist belegt,
+// wenn ein Teil in einem anderen Zeitraum den Beleg trägt, so zählen auch Belegabdeckung und Abzeichen.
+export function invoicesOf<T extends DuplicateItem>(group: readonly T[], receipted: ReadonlySet<string> = new Set()): { parts: T[]; hasReceipt: boolean }[] {
+  const out = new Map<string, { parts: T[]; hasReceipt: boolean }>()
+  for (const i of group) {
+    const key = invoiceOf(i)
+    const inv = out.get(key) ?? { parts: [], hasReceipt: false }
+    inv.parts.push(i)
+    inv.hasReceipt ||= !!i.invoiceFile || (!!i.sourceId && receipted.has(i.sourceId))
+    out.set(key, inv)
+  }
+  return [...out.values()]
+}
+
 const queryOf = (i: DuplicateItem, period: PeriodKey = i.period): CostQuery => ({
   propertyId: i.propertyId, period, category: i.category, description: i.description, vendor: i.vendor, amountCents: i.amountCents, excludeId: i.id,
 })
 
 // Die Gruppen möglicher Doppelungen eines Zeitraums, für den Hinweis der Abrechnung: zwei oder mehr
-// Positionen, die nach der Regel oben zusammengehören, mindestens eine davon ohne Beleg, und dazu
-// (a) mindestens eine mit Beleg, also der Fall „übernommen und dann aus dem Beleg erfasst“, oder
-// (b) ein Vorzeitraum mit Positionen dieser Art, und in diesem sind es mehr. Ohne Vorzeitraum und ganz
-// ohne Belege bleibt es still: Zwei von Hand erfasste Versicherungen sind zwei Rechnungen, und der
-// Hinweis färbte die Ampel sonst dauerhaft (zweite Durchsicht). Ebenso still bleiben Restmüll und
-// Biomüll, beide aus dem Vorjahr übernommen: Das ist die Gliederung des Hauses.
-export function possibleDuplicates<T extends DuplicateItem>(items: readonly T[], at: PeriodContext, previous: readonly DuplicateItem[] = []): T[][] {
+// Rechnungen (die Teile einer Quelle zählen als eine, #455), die nach der Regel oben zusammengehören,
+// mindestens eine davon ohne Beleg, und dazu (a) mindestens eine mit Beleg, also der Fall „übernommen
+// und dann aus dem Beleg erfasst“, oder (b) ein Vorzeitraum mit Positionen dieser Art, und in diesem
+// sind es mehr. Ohne Vorzeitraum und ganz ohne Belege bleibt es still: Zwei von Hand erfasste
+// Versicherungen sind zwei Rechnungen, und der Hinweis färbte die Ampel sonst dauerhaft (zweite
+// Durchsicht). Ebenso still bleiben Restmüll und Biomüll, beide aus dem Vorjahr übernommen: Das ist
+// die Gliederung des Hauses.
+export function possibleDuplicates<T extends DuplicateItem>(items: readonly T[], at: PeriodContext, previous: readonly DuplicateItem[] = [], receipted: ReadonlySet<string> = new Set()): T[][] {
   const own = items.filter((i) => i.period === at.key)
   const groupOf = new Map<string, T[]>()
   const groups: T[][] = []
@@ -104,7 +144,7 @@ export function possibleDuplicates<T extends DuplicateItem>(items: readonly T[],
     // mit einer Rechnung zu einer Gruppe (N1 der Durchsicht von #201). Sie zählt zur Seite der
     // Rechnungen, denn so steht eine aus dem Vorjahr übernommene Schätzung ohne Betrag da.
     const linked = sameCostCandidates(own, queryOf(i))
-      .filter((c) => isCredit(c) === isCredit(i))
+      .filter((c) => isCredit(c) === isCredit(i) && !separateService(c, i))
       .map((c) => groupOf.get(c.id)).filter((g): g is T[] => !!g)
     const target = linked[0] ?? []
     if (!linked[0]) groups.push(target)
@@ -117,12 +157,17 @@ export function possibleDuplicates<T extends DuplicateItem>(items: readonly T[],
     target.push(i)
     groupOf.set(i.id, target)
   }
+  // Gezählt wird je Rechnung (#455): Die Teile einer Quelle im selben Zeitraum melden einander nicht, und eine
+  // Rechnung ist belegt, wenn einer ihrer Teile den Beleg trägt. Gemeldet wird eine Gruppe mit allen ihren Positionen.
   return groups
-    .filter((g) => g.length >= 2 && g.some((i) => !i.invoiceFile))
+    .filter((g) => {
+      const belegt = withReceipt(g, receipted)
+      return invoiceCount(g) >= 2 && g.some((i) => !belegt.has(invoiceOf(i)))
+    })
     .map((g) => own.filter((i) => g.includes(i)))
     .filter((g) => {
-      if (g.some((i) => i.invoiceFile)) return true
+      if (g.some((i) => i.invoiceFile || (i.sourceId && receipted.has(i.sourceId)))) return true
       const before = previous.filter((p) => g.some((i) => sameCostCandidates([p], queryOf(i, at.previous)).length > 0))
-      return before.length > 0 && g.length > before.length
+      return before.length > 0 && invoiceCount(g) > invoiceCount(before)
     })
 }

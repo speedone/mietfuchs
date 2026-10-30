@@ -161,3 +161,27 @@ test('Doppelungen: nur innerhalb eines Zeitraums, der Vorzeitraum nach Schlüsse
   const vorjahr = [item({ period: periodKey('2024-05'), category: 'Grundsteuer', description: 'Grundsteuer 2024' })]
   assert.deepEqual(possibleDuplicates([a, b, fremd], at, vorjahr).map((g) => g.map((i) => i.id)), [[a.id, b.id]])
 })
+
+// #455: Eine Rechnung, die auf zwei Teile im selben Zeitraum verteilt steht (aus Beständen vor der Quellrechnung, mit
+// abweichender Verteilung je Teil), ist eine Rechnung. Ihre Teile melden einander nicht, und im Vergleich mit dem
+// Vorjahr zählen die Teile einer Quelle als eine Rechnung, auf beiden Seiten.
+test('Teile derselben Quelle im selben Zeitraum melden einander nicht und zählen im Vergleich mit dem Vorjahr als eine', () => {
+  const p = calendarPeriod(2026)
+  const teil1 = item({ period: p, category: 'Grundsteuer', description: 'Grundsteuer (anteilig)', sourceId: 'q1', amountCents: 12000 })
+  const teil2 = item({ period: p, category: 'Grundsteuer', description: 'Grundsteuer (anteilig)', sourceId: 'q1', amountCents: 24500 })
+  const vorjahr = [item({ period: calendarPeriod(2025), category: 'Grundsteuer', description: 'Grundsteuer 2025' })]
+  // Ohne Beleg, mit Vorjahr: früher „mehr als im Vorjahr“, jetzt eine Rechnung wie im Vorjahr
+  assert.deepEqual(possibleDuplicates([teil1, teil2], calendarContext(2026), vorjahr), [])
+  // Einer der Teile trägt den Beleg: Die Rechnung ist belegt, kein Paar „mit und ohne Beleg“
+  assert.deepEqual(possibleDuplicates([{ ...teil1, invoiceFile: 'gs.pdf' }, teil2], calendarContext(2026), vorjahr), [])
+  // Eine zweite Position daneben bleibt eine mögliche Doppelung, gemeldet mit allen Teilen
+  const schaetzung = item({ period: p, category: 'Grundsteuer', description: 'Grundsteuer 2026' })
+  assert.deepEqual(possibleDuplicates([teil1, teil2, schaetzung], calendarContext(2026), vorjahr).map((g) => g.map((i) => i.id)),
+    [[teil1.id, teil2.id, schaetzung.id]])
+  // Im Vorjahr zwei Teile einer Quelle sind eine Rechnung: Zwei Rechnungen jetzt sind mehr
+  const vorjahrTeile = [
+    item({ period: calendarPeriod(2025), category: 'Grundsteuer', description: 'Grundsteuer 2025', sourceId: 'q0' }),
+    item({ period: calendarPeriod(2025), category: 'Grundsteuer', description: 'Grundsteuer 2025', sourceId: 'q0' }),
+  ]
+  assert.equal(possibleDuplicates([teil1, schaetzung], calendarContext(2026), vorjahrTeile).length, 1)
+})

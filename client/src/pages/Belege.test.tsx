@@ -380,6 +380,23 @@ test('„Betrag prüfen“ bei einer Position laut Gemeinschaftsabrechnung: kein
   expect(onOpenItem).toHaveBeenCalledWith(expect.objectContaining({ id: 'hg' }))
 })
 
+// #455, Durchsicht von PR 3 (I2): Der Betrag eines Teils ist nur der Anteil seines Zeitraums; ein Feld lüde dazu ein,
+// den Betrag der ganzen Rechnung einzutragen.
+test('„Betrag prüfen“ bei einem Teil einer aufgeteilten Rechnung: kein Feld, eigener Satz, „Position öffnen“', async () => {
+  extraItems = [{ id: 'teil', propertyId: 'p1', period: calendarPeriod(YEAR), category: 'Sachversicherung', description: 'Gebäudeversicherung (anteilig)', amountCents: 30000, key: 'area', sourceId: 'q1', serviceFrom: `${YEAR}-07-01`, serviceTo: `${YEAR + 1}-06-30` }]
+  const onOpenItem = vi.fn()
+  renderWithOpen(onOpenItem)
+  await screen.findByText('Wasser/Abwasser')
+  fireEvent.change(screen.getByLabelText('lose.pdf einer Position zuordnen'), { target: { value: 'teil' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern (Position für lose.pdf)' }))
+  const check = await screen.findByRole('status', { name: 'Betrag prüfen' })
+  expect(within(check).queryByLabelText('Betrag laut Beleg')).toBeNull()
+  expect(check.textContent).toMatch(/Teil einer aufgeteilten Rechnung; der Betrag ist nur der Anteil dieses Zeitraums/)
+  expect(check.textContent).not.toMatch(/Stimmt er mit dem Beleg überein/)
+  fireEvent.click(within(check).getByRole('button', { name: 'Position öffnen' }))
+  expect(onOpenItem).toHaveBeenCalledWith(expect.objectContaining({ id: 'teil' }))
+})
+
 test('„Betrag prüfen“: liegt der Lohnanteil über dem neuen Betrag, ins Formular', async () => {
   extraItems = [{ id: 'gp', propertyId: 'p1', period: calendarPeriod(YEAR), category: 'Gartenpflege', description: 'Garten', amountCents: 100000, labor35aCents: 80000, key: 'area' }]
   const onOpenItem = vi.fn()

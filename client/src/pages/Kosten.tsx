@@ -48,6 +48,7 @@ import {
   type KeyContext,
   costMeterTypes,
   costFieldProblems,
+  formPartOf,
   type CostField,
 } from '../costForm'
 import { notAgreedText, openWhy, untickedChoices, withParticipant } from '../contractAgreement'
@@ -59,6 +60,7 @@ import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { hotWaterOf } from '../../../shared/heatingPeriod.ts'
 import { serviceReceivesOperatingPower } from '../../../shared/operatingPower.ts'
 import { paidOnYear, splitPaidOnQuestions } from '../../../shared/paidOn.ts'
+import { sourceLabels } from '../costSource'
 import { alreadyCarried, carryKeyDetails, carryOverBody, carryOverForm, carryOverRows, withCarryAmount, type CarryRow } from '../carryOver'
 import { api, ApiError, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { aiSummary } from '../aiForm'
@@ -66,7 +68,6 @@ import { useEvaluationQueue } from '../evaluationQueue'
 import AssessmentReview from '../components/AssessmentReview'
 import Co2RefundsCard from '../components/Co2RefundsCard'
 import { usePeriod } from '../period'
-import { partShare, splitFamilyKey } from '../../../shared/splitPart.ts'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import Drawer from '../components/Drawer'
 import { useSaving } from '../useSaving'
@@ -194,12 +195,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   // Ein gespeicherter Teil einer aufgeteilten Rechnung (#454): Sein Betrag gilt nur für die Tage seines Zeitraums. Gefragt
   // wird am gespeicherten Stand, denn eine neue Rechnung über zwei Zeiträume trägt im Formular noch den ganzen Betrag.
   const storedItem = form?.id ? items.find((i) => i.id === form.id) : undefined
-  const formShare = storedItem ? partShare(storedItem, period) : null
-  const formPart = storedItem && formShare ? {
-    ...formShare,
-    othersCents: items.filter((o) => o.id !== storedItem.id && o.period === storedItem.period && o.key === 'external' && splitFamilyKey(o) === splitFamilyKey(storedItem))
-      .reduce((a, o) => a + o.amountCents, 0),
-  } : null
+  const formPart = storedItem ? formPartOf(items, storedItem, period) : null
   // Die Jahre des Zeitraums der Position für die übliche Spanne des Zahlungsdatums (#255 PR 3, R-4): bei einer
   // Heizposition unter eigener Heizperiode deren Jahre, sonst die des Abrechnungszeitraums.
   const paidOnSpanOfForm = heatingOption
@@ -271,6 +267,8 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
 
   // Die Positionen des Zeitraums und die Heizpositionen der Heizperioden, die darin enden (Heizung PR 5).
   const heatingKeysText = JSON.stringify(heatingKeys)
+  // #455: „Teil von N · Rechnung gesamt …“ je Teil, einmal für alle Zeilen
+  const partLabels = useMemo(() => sourceLabels(items), [items])
   const yearItems = useMemo(() => itemsOfPeriod(items, key, JSON.parse(heatingKeysText) as { plantId: string; key: string }[]), [items, key, heatingKeysText])
   // Woraus eine neue Position ihren Schlüssel vorgeschlagen bekommt (#141): die Positionen des
   // Objekts, das Jahr und die Art des Objekts.
@@ -812,6 +810,8 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                   <td data-label="Beschreibung">
                     {i.description}
                     {!i.invoiceFile && i.vendor && <div className="muted">{i.vendor}</div>}
+                    {/* #455: ein Teil einer aufgeteilten Rechnung, die Summe über alle Zeiträume */}
+                    {partLabels.get(i.id) && <div className="muted">{partLabels.get(i.id)}</div>}
                   </td>
                   <td data-label="Umlageschlüssel">
                     {/* Nicht umlagefähig (#142): kein Schlüssel, die Position trägt der Vermieter. */}

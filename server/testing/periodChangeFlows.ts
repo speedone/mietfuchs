@@ -27,7 +27,6 @@ import { storedOutflowYear } from '../src/outflow.ts'
 import { baseDescription } from '../src/serviceSplit.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { periodContaining, periodOfKey, periodsBetween, rulesOf } from '../../shared/period.ts'
-import { splitFamilyKey } from '../../shared/splitPart.ts'
 import type { CostItem, PeriodKey, PeriodRules } from '../../shared/types.ts'
 import { openFreshDatabase } from './freshDatabase.ts'
 import { rngOf, type Rng } from './revertFlows.ts'
@@ -152,12 +151,17 @@ function sumsOf(items: readonly CostItem[]): Pick<FlowStep, 'periods' | 'taxYear
   return { periods, taxYears }
 }
 
+// Die Heuristik des Codes vor dem Umbau (`splitFamilyKey`, bis #455 in shared/splitPart.ts), eingefroren, denn sie
+// beschreibt, was der Code damals als eine Rechnung sah; in der Anwendung gibt es sie nicht mehr.
+const familyKeyBefore = (c: CostItem): string =>
+  [c.category, baseDescription(c.description), c.serviceFrom, c.serviceTo, c.vendor ?? '', c.invoiceFile ?? '', c.key].join('\u0000')
+
 // Ob der Code vor dem Umbau jede Familie dieses Wechsels als Ganzes teilte (siehe oben).
 function treatedWhole(items: readonly CostItem[], before: PeriodRules, next: PeriodRules): boolean {
   const families = new Map<string, CostItem[]>()
   for (const c of items) {
     if (c.category === HEATING_CATEGORY || c.serviceFrom === undefined || c.serviceTo === undefined) continue
-    families.set(splitFamilyKey(c), [...(families.get(splitFamilyKey(c)) ?? []), c])
+    families.set(familyKeyBefore(c), [...(families.get(familyKeyBefore(c)) ?? []), c])
   }
   const moving = (key: PeriodKey): { from: string; to: string } | null => {
     const old = periodOfKey(before, key)

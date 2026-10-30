@@ -113,17 +113,50 @@ test('Invariante (#454): ein Teil meldet nichts, was die ungeteilte Rechnung nic
 // Durchsicht von #454, Befund 2: Nach zwei Wechseln stehen zwei Teile derselben Rechnung im selben Zeitraum (so gewollt,
 // db-wechsel.test.ts „Ein schon aufgeteilter Teil …“): 157,81 € für Januar bis April und 80,22 € für Mai und Juni,
 // beide mit dem Leistungszeitraum 2025. Gemessen werden sie zusammen, 238,03 € gegen 480,00 € · 181/365 = 238,03 €.
-test('#454: zwei Teile derselben Rechnung im selben Zeitraum werden zusammen gemessen', () => {
-  const juli: PeriodRules = { startMonth: 1, changes: ['2025-07'] }
-  const teil = (id: string, amountCents: number, anteil: string): SnapshotCostItem => ({ id, period: periodKey('2025-01'), category: 'Hauswart',
-    description: `Hausmeister (anteilig ${anteil})`, amountCents, key: 'external', externalBasis: { measure: 'mea', total: 1000, totalCents: 960000 },
-    serviceFrom: '2025-01-01', serviceTo: '2025-12-31' })
-  const units: SnapshotUnit[] = [{ id: 'w', name: 'ETW', areaM2: 60, participates: true, mea: 50 }]
-  const s = settleIn(juli, '2025-01', source(units, [tenancy('t', 'w')], [teil('a', 15781, '01.01.–30.04.2025'), teil('b', 8022, '01.05.–30.06.2025')]))
-  assert.deepEqual(s.notices.filter((n) => n.code === 'external.amount-mismatch'), [])
+// Seit #455 entscheidet die Quelle, welche Teile zusammengehören, nicht mehr die Ähnlichkeit der Felder.
+const juli: PeriodRules = { startMonth: 1, changes: ['2025-07'] }
+const hausmeisterTeil = (id: string, amountCents: number, anteil: string, sourceId?: string): SnapshotCostItem => ({ id, period: periodKey('2025-01'),
+  category: 'Hauswart', description: `Hausmeister (anteilig ${anteil})`, amountCents, key: 'external',
+  externalBasis: { measure: 'mea', total: 1000, totalCents: 960000 }, serviceFrom: '2025-01-01', serviceTo: '2025-12-31',
+  ...(sourceId === undefined ? {} : { sourceId }) })
+const etwUnits: SnapshotUnit[] = [{ id: 'w', name: 'ETW', areaM2: 60, participates: true, mea: 50 }]
+const mismatches = (s: ComputedSettlement): string[] => s.notices.filter((n) => n.code === 'external.amount-mismatch').map((n) => n.text)
+
+test('#454: zwei Teile derselben Quelle im selben Zeitraum werden zusammen gemessen', () => {
+  const s = settleIn(juli, '2025-01', source(etwUnits, [tenancy('t', 'w')],
+    [hausmeisterTeil('a', 15781, '01.01.–30.04.2025', 'q'), hausmeisterTeil('b', 8022, '01.05.–30.06.2025', 'q')]))
+  assert.deepEqual(mismatches(s), [])
   assert.doesNotMatch(JSON.stringify(s.statements), /angesetzt laut Hausgeldabrechnung/)
-  // Eine andere Rechnung derselben Kostenart (andere Beschreibung) zählt nicht mit.
-  const fremd = { ...teil('c', 23803, '01.01.–30.06.2025'), description: 'Winterdienst' }
-  const t = settleIn(juli, '2025-01', source(units, [tenancy('t', 'w')], [teil('a', 15781, '01.01.–30.04.2025'), fremd]))
-  assert.deepEqual(t.notices.filter((n) => n.code === 'external.amount-mismatch').map((n) => n.text.slice(0, 20)), ['„Hausmeister (anteil'])
+  // Ein Teil einer anderen Quelle zählt nicht mit, auch wenn alle Felder gleich sind.
+  const t = settleIn(juli, '2025-01', source(etwUnits, [tenancy('t', 'w')],
+    [hausmeisterTeil('a', 15781, '01.01.–30.04.2025', 'q'), hausmeisterTeil('c', 8022, '01.05.–30.06.2025', 'r')]))
+  assert.equal(mismatches(t).length, 2)
+  assert.ok(mismatches(t).every((x) => !x.includes('mit den übrigen Teilen')), 'jeder Teil allein gemessen')
+})
+
+test('#455: zwei Positionen mit gleichem Familienschlüssel ohne gemeinsame Quelle werden einzeln gemessen', () => {
+  // Gleiche Kostenart, Beschreibung ohne Zusatz, Leistungszeitraum, Rechnungssteller, Beleg und Schlüssel, aber keine Quelle:
+  // Die frühere Heuristik hätte sie zusammengezählt und den Fehler beider verdeckt.
+  const s = settleIn(juli, '2025-01', source(etwUnits, [tenancy('t', 'w')],
+    [hausmeisterTeil('a', 15781, '01.01.–30.04.2025'), hausmeisterTeil('b', 8022, '01.05.–30.06.2025')]))
+  const [erster, zweiter, ...rest] = mismatches(s)
+  assert.deepEqual(rest, [])
+  assert.match(erster ?? assert.fail('kein Hinweis zum ersten Teil'), /^„Hausmeister \(anteilig 01\.01\.–30\.04\.2025\)“: der Betrag 157,81 € passt nicht zum rechnerischen Anteil 238,03 €/)
+  assert.match(zweiter ?? assert.fail('kein Hinweis zum zweiten Teil'), /^„Hausmeister \(anteilig 01\.05\.–30\.06\.2025\)“: der Betrag 80,22 € passt nicht zum rechnerischen Anteil 238,03 €/)
+  // Eine Quelle nur am einen Teil: Er wird allein gemessen, der andere ebenso.
+  const t = settleIn(juli, '2025-01', source(etwUnits, [tenancy('t', 'w')],
+    [hausmeisterTeil('a', 15781, '01.01.–30.04.2025', 'q'), hausmeisterTeil('b', 8022, '01.05.–30.06.2025')]))
+  assert.equal(mismatches(t).length, 2)
+})
+
+// Durchsicht von Task 7, I1: Zwei Teile einer Quelle ohne Tagesanteil (Datenschritt, Leistungszeitraum ganz im Zeitraum)
+// werden zusammen an der ganzen Rechnung gemessen, wie im Formular.
+test('#455: Quelle, kein Tagesanteil, zwei Teile im Zeitraum werden zusammen an der ganzen Rechnung gemessen', () => {
+  const teil = (id: string, sourceId?: string): SnapshotCostItem => ({ id, period: calendarPeriod(2025), category: 'Hausgeld', description: `Hausgeld (Teil ${id})`,
+    amountCents: 5000, key: 'external', externalBasis: { measure: 'mea', total: 1000, totalCents: 200000 }, serviceFrom: '2025-01-01', serviceTo: '2025-12-31',
+    ...(sourceId === undefined ? {} : { sourceId }) })
+  const mit = computeSettlement(snapshotOf(source(etwUnits, [tenancy('t', 'w')], [teil('a', 'q'), teil('b', 'q')]), 2025))
+  assert.deepEqual(mismatches(mit), [])
+  const ohne = computeSettlement(snapshotOf(source(etwUnits, [tenancy('t', 'w')], [teil('a'), teil('b')]), 2025))
+  assert.equal(mismatches(ohne).length, 2)
 })

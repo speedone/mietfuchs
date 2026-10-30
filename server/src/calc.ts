@@ -82,12 +82,12 @@ import { heatingInfoOf, heatingRulesOf, planByConsumption, type RuleRow } from '
 import { co2ExemptionOf, co2OffByExemptionOf, exemptionScopeFor, exemptionText as exemptionTextOf } from './co2Exemption.ts'
 import { AGREED_FIXED_SELF_TEXT, INFO_CONTACTS, INFO_CONTACTS_CHECKED } from '../../shared/heatingInfo.ts'
 import { practiceReadingOffWarning, practiceVacancyPersons } from '../../shared/law/practice.ts'
-import { partShare, splitFamilyKey } from '../../shared/splitPart.ts'
+import { isInvoicePart, partShare } from '../../shared/splitPart.ts'
 import { HEATING_CATEGORY, heatingByConsumption, heatingFindings, mayAgreeOtherwise, PART_OF_POT, POT_OF_PART } from '../../shared/heating.ts'
 import { andList, meterTypeLabel, plural } from '../../shared/wording.ts'
 import type { TermId } from '../../shared/glossary.ts'
 import { allocationOf, comparablePrevious, sameAllocation, sameUnits } from '../../shared/allocation.ts'
-import { possibleDuplicates } from '../../shared/duplicates.ts'
+import { invoicesOf, possibleDuplicates, receiptedSources, separateService } from '../../shared/duplicates.ts'
 import { commonPeriod, tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
 import { baseUsage, unitAsOf, usageChangesWithin, usageDays, usageFlags, usageSpans, type UsageSpan } from '../../shared/unitUsage.ts'
 import type { UnitUsage } from '../../shared/types.ts'
@@ -4816,14 +4816,46 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // dieselbe Rechnung noch einmal aus dem Beleg. Nur ein Hinweis, verteilt wird wie erfasst. Der Rat
   // lautet „löschen“ und nicht „Beleg zuordnen“: Zugeordnet verstummt der Hinweis (er verlangt eine
   // Position ohne Beleg), die Summe bliebe aber doppelt (Integrationsdurchsicht M1).
-  for (const group of possibleDuplicates(items, at, snapshot.comparableCostItems ?? snapshot.previousCostItems ?? [])) {
-    const first = group.find((i) => !i.invoiceFile) ?? group[0]
+  // Gezählt und genannt wird je Rechnung (#455): Die Teile einer Quelle stehen als eine Rechnung da, belegt, wenn einer
+  // von ihnen den Beleg trägt; „Hier beheben“ führt nie zu einem Teil einer belegten Rechnung.
+  // Belegt ist eine Rechnung auch, wenn ein Teil in einem anderen Zeitraum den Beleg trägt (N1 der Durchsicht von Task 8).
+  const receipted = new Set([...receiptedSources(snapshot.costItems), ...(snapshot.receiptedSources ?? [])])
+  for (const group of possibleDuplicates(items, at, snapshot.comparableCostItems ?? snapshot.previousCostItems ?? [], receipted)) {
+    const invoices = invoicesOf(group, receipted)
+    // Eine Position ohne Leistungszeitraum kann zwei Rechnungen mit getrennten Leistungszeiträumen zu einer Gruppe
+    // verbinden (zweite Durchsicht von PR 3, R2). Ziel des Rats ist dann die Rechnung ohne Beleg, die zu allen anderen
+    // passt; nur wenn keine das tut, die erste ohne Beleg.
+    const pairsWithAll = (inv: (typeof invoices)[number]) =>
+      invoices.every((o) => o === inv || !o.parts.some((p) => inv.parts.some((q) => separateService(p, q))))
+    const unreceipted = invoices.find((inv) => !inv.hasReceipt && pairsWithAll(inv)) ?? invoices.find((inv) => !inv.hasReceipt)
+    const first = unreceipted?.parts[0] ?? group[0]
     if (!first) continue
-    const list = group.map((i) => `„${i.description}“ (${fmtCents(i.amountCents)}${i.invoiceFile ? '' : ', ohne Beleg'})`)
+    // Ist eine aufgeteilte Rechnung beteiligt (Durchsicht von PR 3, I1), richtet sich der Rat nach der Quelle, nicht nach
+    // der Zahl der Teile im Zeitraum: Ihre Teile in anderen Zeiträumen sieht die Gruppe nicht. Den Betrag eines Teils
+    // auf den der Rechnung zu setzen, zählte sie doppelt; gelöscht wird eine aufgeteilte Rechnung nur ganz. Ein alter
+    // Teil ohne Quelle (`isSplitPart`) zählt ebenso (R3).
+    const isSourced = (inv: { parts: SnapshotCostItem[] } | undefined) => !!inv?.parts.some((p) => isInvoicePart(objectRules, p))
+    const anySourced = invoices.some(isSourced)
+    // Ist auch eine andere Rechnung aufgeteilt, wird auch sie nur ganz gelöscht (R1).
+    const otherSourced = invoices.some((inv) => inv !== unreceipted && isSourced(inv))
+    const list = invoices.map(({ parts, hasReceipt }) => {
+      const head = parts[0]
+      const amount = parts.length > 1
+        ? `${parts.length} Teile einer Rechnung, zusammen ${fmtCents(parts.reduce((a, i) => a + i.amountCents, 0))}`
+        : fmtCents(head?.amountCents ?? 0)
+      return `„${head?.description ?? ''}“ (${amount}${hasReceipt ? '' : ', ohne Beleg'})`
+    })
     const named = andList(list)
     warn('cost.possible-duplicate',
       `${named} stehen ${list.length === 2 ? `beide ${at.label}` : `${at.label} alle`} unter „${first.category}“. ${list.length === 2 ? 'Ist das dieselbe Rechnung' : 'Ist darunter dieselbe Rechnung zweimal'}, etwa einmal aus dem Vorjahr übernommen und einmal aus dem Beleg erfasst, wird sie zweimal verteilt. ` +
-      (list.length === 2
+      (isSourced(unreceipted)
+        ? `Dann bitte die Rechnung ohne Beleg löschen, mit allen ihren Teilen, auch denen in anderen Zeiträumen, nicht nur einen einzelnen. Soll sie bleiben, löschen Sie stattdessen die ${list.length === 2 ? 'andere Rechnung' : 'doppelt erfasste andere Rechnung'}${otherSourced ? ', ebenfalls mit allen ihren Teilen, auch denen in anderen Zeiträumen' : ''}. Den Betrag eines Teils auf den der ganzen Rechnung zu setzen, zählte die übrigen Teile doppelt. `
+        : anySourced
+        ? (list.length === 2
+          ? 'Dann bitte die Position ohne Beleg löschen und die aufgeteilte Rechnung mit allen ihren Teilen stehen lassen. '
+          : 'Dann bitte die doppelt erfasste Position löschen, in der Regel die ohne Beleg; eine aufgeteilte Rechnung nur ganz, mit allen ihren Teilen, auch denen in anderen Zeiträumen. ') +
+          'Einen ihrer Teile auf den Betrag der ganzen Rechnung zu setzen oder einzeln zu löschen, zählte die Rechnung falsch. '
+        : list.length === 2
         ? 'Dann bitte eine der beiden Positionen löschen, in der Regel die ohne Beleg. Soll die ohne Beleg bleiben, setzen Sie ihren Betrag auf den der Rechnung und löschen die andere. '
         : 'Dann bitte die doppelt erfasste Position löschen, in der Regel die ohne Beleg. ') +
       'Nur den Beleg zuzuordnen genügt nicht: Die Rechnung stünde weiter zweimal in der Summe. Sind es verschiedene Rechnungen, ist nichts zu tun.',
@@ -5061,10 +5093,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           const share = partShare(item, { from: yFrom, to: yTo })
           const expected = Math.round((eb.totalCents * own * (share ? share.days / share.of : 1)) / eb.total)
           // Nach zwei Wechseln können zwei Teile derselben Rechnung im Zeitraum stehen (Durchsicht, Befund 2); der
-          // Tagesanteil gilt für beide zusammen, also werden sie zusammen gemessen.
-          const family = share ? splitFamilyKey(item) : null
-          const measured = family === null ? item.amountCents
-            : items.filter((o) => o.key === 'external' && splitFamilyKey(o) === family).reduce((a, o) => a + o.amountCents, 0)
+          // Tagesanteil gilt für beide zusammen, also werden sie zusammen gemessen. Welche Teile zusammengehören, sagt
+          // die Quelle (#455); ohne Quelle zählt nur die Position selbst.
+          const source = item.sourceId
+          const measured = !source ? item.amountCents
+            : items.filter((o) => o.key === 'external' && o.sourceId === source).reduce((a, o) => a + o.amountCents, 0)
           if (Math.abs(expected - measured) > 100) {
             const days = share ? `, davon ${share.days} von ${share.of} Tagen des Leistungszeitraums` : ''
             const together = measured !== item.amountCents ? ' mit den übrigen Teilen dieser Rechnung im Zeitraum' : ''

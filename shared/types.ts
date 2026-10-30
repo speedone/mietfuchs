@@ -1671,8 +1671,9 @@ export type LineDecision =
   | { idx: number; action: 'release' }
 
 // Eine Position, die dieselbe Rechnung sein könnte (shared/duplicates.ts). `formOnly`: Ihr Betrag
-// hängt an weiteren Angaben (Einzelbeträge, Gemeinschaft), sie wird im Formular gepflegt.
-export type LineCandidate = { id: string; description: string; amountCents: number; invoiceFile: string | null; key: CostKey; formOnly: boolean }
+// hängt an weiteren Angaben (Einzelbeträge, Gemeinschaft, Teil einer aufgeteilten Rechnung), sie wird im Formular gepflegt.
+// `part`: Sie ist ein Teil einer aufgeteilten Rechnung (#455), ihr Betrag nur der Anteil ihres Zeitraums.
+export type LineCandidate = { id: string; description: string; amountCents: number; invoiceFile: string | null; key: CostKey; formOnly: boolean; part?: boolean }
 
 export type LineSuggestion = {
   fields: LineFields

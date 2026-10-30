@@ -9,7 +9,7 @@ import path from 'node:path'
 import { eq } from 'drizzle-orm'
 import type { OpenedDatabase } from '../src/db/open.ts'
 import { openFreshDatabase } from '../testing/freshDatabase.ts'
-import { closeSettlement, createEntity, listCollection, PeriodConflict, PeriodError, previewCostItemSplit, saveCostItemSplit, updateEntity } from '../src/db/repository.ts'
+import { closeSettlement, createEntity, listCollection, PeriodConflict, PeriodError, previewCostItemSplit, removeEntity, saveCostItemSplit, updateEntity } from '../src/db/repository.ts'
 import { costItems as costItemsTable, costSources, periodChanges, properties } from '../src/db/schema.ts'
 import { periodKey } from '../../shared/period.ts'
 import type { CostItem } from '../../shared/types.ts'
@@ -180,7 +180,7 @@ test('#455: An einem Teil mit Quelle lehnt der Wächter ab: andere Kostenart, Sc
     assert.ok(teil)
     const update = (body: object) => opened.write((db) => updateEntity(db, 'costItems', teil.id, body))
     await assert.rejects(update({ category: 'Gartenpflege' }), (e) => e instanceof PeriodError && /ein Teil einer aufgeteilten Rechnung.*Kostenart/.test(e.message))
-    await assert.rejects(update({ key: 'amounts', tenancyAmounts: {} }), (e) => e instanceof PeriodError && e.message === (splitBlocker({ key: 'amounts', description: teil.description }) ?? ''))
+    await assert.rejects(update({ key: 'amounts', tenancyAmounts: {} }), (e) => e instanceof PeriodError && e.message.includes(splitBlocker({ key: 'amounts', description: teil.description }) ?? assert.fail('kein Satz')))
     await assert.rejects(update({ operatingPower: 'deduction' }), (e) => e instanceof PeriodError && /Betriebsstrom/.test(e.message))
     const nach = (await costItems(opened)).find((c) => c.id === teil.id)
     assert.deepEqual([nach?.category, nach?.key, nach?.operatingPower], ['Grundsteuer', 'area', undefined])
@@ -237,5 +237,38 @@ test('#455: Am Betriebsstrom eines Teils mit Quelle ändert sich nichts, auch ke
     await einzeitraumQuelle(opened)
     await opened.write(async (db) => { await db.update(costItemsTable).set({ operatingPower: 'deduction', category: 'Beleuchtung/Allgemeinstrom', amountCents: -500, operatingPowerGeneralId: 'b' }).where(eq(costItemsTable.id, 'a')) })
     await assert.rejects(opened.write((db) => updateEntity(db, 'costItems', 'a', { operatingPower: null })), (e) => e instanceof PeriodError && /Betriebsstrom/.test(e.message))
+  })
+})
+
+// Durchsicht von PR 2, M3: Sind die Geschwister gelöscht, bleibt der letzte Teil ein Teil mit Quelle und gesperrt
+// (Spec: „Löschen je Teil wie heute“). Jeder Satz der Sperre nennt den Ausweg, der wirklich geht: alle Teile löschen und
+// die Rechnung neu erfassen. Der Ausweg wird hier auch gegangen.
+test('#455: Ein Teil ohne Geschwister bleibt gesperrt, jeder Satz nennt Löschen und neu Erfassen, und das geht', async () => {
+  await withDatabase(async (opened) => {
+    await setRules(opened, 1, ['2025-05'])
+    const [teil, geschwister] = await opened.write((db) => saveCostItemSplit(db, 'objekt-1', grundsteuer, null, ids))
+    if (!teil || !geschwister) return assert.fail('zwei Teile erwartet')
+    assert.equal(await opened.write((db) => removeEntity(db, 'costItems', geschwister.id)), true)
+    const update = (body: object) => opened.write((db) => updateEntity(db, 'costItems', teil.id, body))
+    // Der Ausweg im Wortlaut je Sperre (Durchsicht von Task 7, M1–M3): Er muss zum Speichern passen, das danach kommt.
+    // Wer nicht aufteilt, erfasst je Zeitraum eine Position; der Schritt „löschen“ steht vor dem Erfassen.
+    const zeitraum = /für einen anderen Leistungs- oder Abrechnungszeitraum löschen Sie alle Teile und erfassen die Rechnung neu mit „Aufteilen und speichern“/
+    const sperren: [string, object, RegExp][] = [
+      ['Leistungszeitraum', { serviceFrom: '2025-01-01', serviceTo: '2025-04-30' }, zeitraum],
+      ['Zeitraum', { period: '2025-05', taxYear: 2025 }, zeitraum],
+      ['Kostenart', { category: 'Gartenpflege' }, /Löschen Sie alle Teile und erfassen Sie die Rechnung neu mit „Aufteilen und speichern“, oder, ohne Aufteilen, je Abrechnungszeitraum eine Position\./],
+      ['Betriebsstrom', { operatingPower: 'deduction' }, /Löschen Sie dafür alle Teile und erfassen Sie die Rechnung neu, je Abrechnungszeitraum eine Position mit dem Leistungszeitraum in diesem Zeitraum\.$/],
+      ['Einzelbeträge', { key: 'amounts', tenancyAmounts: {} }, /ist ein Teil einer aufgeteilten Rechnung\. Um nach Einzelbeträgen zu verteilen, löschen Sie zuerst alle Teile\. „[^“]*“ ist nach Einzelbeträgen verteilt\..*Erfassen Sie die Rechnung je Abrechnungszeitraum/],
+    ]
+    for (const [was, body, ausweg] of sperren) {
+      await assert.rejects(update(body), (e) => e instanceof PeriodError && ausweg.test(e.message), was)
+    }
+    await assert.rejects(opened.read((db) => previewCostItemSplit(db, null, { serviceTo: '2026-06-30' }, teil.id)), (e) => e instanceof PeriodError && zeitraum.test(e.message), 'erneut aufteilen')
+    assert.deepEqual(await sourceIdsOf(opened), [teil.sourceId], 'der Teil behält seine Quelle')
+    // Der Ausweg: den letzten Teil löschen (die Quelle fällt mit), dann neu erfassen, hier ohne Aufteilen in einem Zeitraum.
+    assert.equal(await opened.write((db) => removeEntity(db, 'costItems', teil.id)), true)
+    assert.deepEqual(await opened.read((db) => db.select().from(costSources)), [])
+    await opened.write((db) => createEntity(db, 'costItems', 'neu', { ...grundsteuer, propertyId: 'objekt-1', serviceFrom: '2025-01-01', serviceTo: '2025-04-30', category: 'Gartenpflege' }))
+    assert.deepEqual((await costItems(opened)).map((c) => [c.id, c.category, c.sourceId]), [['neu', 'Gartenpflege', undefined]])
   })
 })

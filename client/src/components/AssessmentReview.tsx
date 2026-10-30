@@ -266,7 +266,7 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
       </div>
       {a.lines.flatMap((l) => (l.state === 'open' ? (l.suggestion?.candidates ?? []).filter((c) => c.formOnly).map((c) => (
         <div key={`${l.idx}-${c.id}`} className="warn">
-          „{l.description}“: „{c.description}“ wird {c.key === 'amounts' ? 'mit Einzelbeträgen je Mieter' : 'laut Gemeinschaftsabrechnung'} verteilt; ihren Betrag pflegen Sie im Formular. Haben Sie die Position dort aktualisiert, verwerfen Sie diese Zeile hier danach, damit der Beleg nicht offen bleibt.{' '}
+          „{l.description}“: „{c.description}“ {c.part ? 'ist ein Teil einer aufgeteilten Rechnung' : `wird ${c.key === 'amounts' ? 'mit Einzelbeträgen je Mieter' : 'laut Gemeinschaftsabrechnung'} verteilt`}; ihren Betrag pflegen Sie im Formular. Haben Sie die Position dort aktualisiert, verwerfen Sie diese Zeile hier danach, damit der Beleg nicht offen bleibt.{' '}
           {onOpenItem && <button className="btn small" onClick={() => onOpenItem(c.id)}>Position öffnen</button>}
         </div>
       )) : []))}

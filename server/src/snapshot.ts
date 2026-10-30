@@ -123,7 +123,8 @@ export type SnapshotCostItem = Pick<
   | 'operatingPowerGeneralId'
   // #270: ob ein Abzug ohne Verweis dem Messdienst gemeldet ist (Steuer und Hinweis; verteilt wird nicht danach).
   | 'operatingPowerReported'
-  // Die aufgeteilte Rechnung (#455): für den Hinweis „Betrag passt nicht zum Anteil“; verteilt wird nicht danach.
+  // Die aufgeteilte Rechnung (#455): für die Hinweise „Betrag passt nicht zum Anteil“ und auf doppelte Positionen;
+  // verteilt wird nicht danach.
   | 'sourceId'
 >
 
@@ -492,6 +493,10 @@ export type Snapshot = {
   // anderen Schlüssel hat als dieselbe Kostenart im Vorjahr. Verteilt wird nichts davon. Fehlt
   // die Angabe, etwa in einem von Hand gebauten Schnappschuss, entfällt nur der Hinweis.
   previousCostItems?: SnapshotCostItem[]
+  // Quellen aufgeteilter Rechnungen (#455), von denen irgendein Teil in irgendeinem Zeitraum einen Beleg trägt: Der
+  // Hinweis auf Doppelte nennt einen Teil ohne Beleg nur, wenn die Rechnung nirgends belegt ist. Fehlt die Angabe,
+  // zählt der Beleg im Zeitraum selbst.
+  receiptedSources?: string[]
   // Nur in der Teilrechnung einer Heizperiode: womit der Vergleich mit dem Vorjahr statt mit
   // `previousCostItems` rechnet (`SnapshotHeatingPart.comparableItems`). `previousCostItems` bleibt
   // die Vorperiode der Heizung, denn mit ihr rechnet der Vorschlag nach § 560 einen Rumpf hoch.
@@ -1160,6 +1165,7 @@ export function snapshotOfPeriod(source: SnapshotSource, period: BillingPeriod, 
   // aus und wäre falsch, und das ist der schlimmere der beiden Ausgänge. Ein Test in
   // calc.test.ts hält das fest.
   const closed = source.closedSettlements.find((c) => c.period === period.key)
+  const receipted = [...new Set(source.costItems.filter((c) => c.sourceId && c.invoiceFile).map((c) => c.sourceId as string))]
   return {
     period,
     previousPeriod: previous,
@@ -1171,6 +1177,7 @@ export function snapshotOfPeriod(source: SnapshotSource, period: BillingPeriod, 
     // Der Vorzeitraum nur für den Vergleich der Schlüssel (#141) und der Doppelungen; dieselbe
     // Eingrenzung nach dem Feld `period`, deshalb hier und nicht in `snapshotFor`.
     previousCostItems: source.costItems.filter((c) => c.period === previous.key),
+    ...(receipted.length > 0 ? { receiptedSources: receipted } : {}),
     meters: source.meters,
     readings: source.readings,
     payments: source.payments,

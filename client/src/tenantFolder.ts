@@ -48,6 +48,9 @@ export function planTenantFolder(
   items: CostItem[],
   uploads: ReceiptUpload[],
   { includeIndividual }: { includeIndividual: boolean },
+  // Die Teile je Rechnung über alle Zeiträume (#455, `partsBySource`): Ein Teil ohne eigenen Beleg bekommt den Beleg
+  // seiner Rechnung, wie in der Belegabdeckung.
+  parts: ReadonlyMap<string, readonly CostItem[]> = new Map(),
 ): TenantFolderPlan {
   // Reihenfolge der Abrechnung: wie die Zeilen der Mieter stehen, über alle Mieter vereinigt.
   // Nur, was dort steht, ist umgelegt; der Vermieteranteil und nicht Umlagefähiges gehören in
@@ -63,15 +66,19 @@ export function planTenantFolder(
     if (!item || isNotAllocable(item.category)) continue
     // Der Beleg der Position und die Belege, die über gebuchte Zeilen ihrer Auswertungen an ihr
     // hängen (Belegbuchung): Abschlag und Restrechnung gehören beide in die Mappe.
-    const named = [item.invoiceFile, ...uploads.filter((u) => u.bookedItemIds?.includes(item.id)).map((u) => u.file)]
-    const files = [...new Set(named.filter((f): f is string => !!f))]
+    const filesOf = (c: CostItem) => [c.invoiceFile, ...uploads.filter((u) => u.bookedItemIds?.includes(c.id)).map((u) => u.file)]
+      .filter((f): f is string => !!f)
+    let files = [...new Set(filesOf(item))]
+    // Ein Teil ohne eigenen Beleg (#455): die Belege der übrigen Teile seiner Rechnung, die ganze Rechnung.
+    const siblings = files.length === 0 && item.sourceId ? (parts.get(item.sourceId) ?? []).filter((c) => c.id !== item.id) : []
+    if (siblings.length > 0) files = [...new Set(siblings.flatMap(filesOf))]
     const present = files.flatMap((f) => byFile.get(f) ?? [])
     const upload = present[0] ?? null
     // Ein Beleg, der einzelne Mieter betrifft, kommt ohne ausdrückliche Wahl nie in die Mappe;
     // diese Prüfung geht deshalb vor „missing“, sonst landete ein Zeilenbeleg doch darin.
     // Fehlt sonst die Datei des invoiceFile, steht „missing“, auch wenn ein Zeilenbeleg da ist; der
     // kommt trotzdem in die Mappe.
-    const gone = !!item.invoiceFile && !byFile.has(item.invoiceFile)
+    const gone = siblings.length > 0 ? files.every((f) => !byFile.has(f)) : !!item.invoiceFile && !byFile.has(item.invoiceFile)
     const status: FolderEntryStatus =
       files.length === 0 ? 'none' : isIndividualAmounts(item) && !includeIndividual ? 'excluded' : !upload || gone ? 'missing' : 'ok'
     entries.push({ item, status, upload })

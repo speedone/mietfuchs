@@ -6,7 +6,7 @@ import { localToday } from '../periodForm'
 import { isNotAllocable, usageOf } from '../types'
 import { rentedWithin, usageAt } from '../../../shared/unitUsage.ts'
 import { cockpitSubtitle, itemsDetail, meterTypesInUse, tenanciesDetail, usesUnitBasis, countsByUnits, missingSincePrevious, condoWithoutHousingMoney } from '../cockpitChecks'
-import { coverageCheck, filesByItem } from '../receipts'
+import { coverageCheck, filesByItem, partsBySource } from '../receipts'
 import { api, fmtEuro, fmtDate } from '../api'
 import { andList } from '../../../shared/wording.ts'
 import { hkvCutNotByConsumption } from '../../../shared/law/heizkostenv.ts'
@@ -103,6 +103,8 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
   // ---------- Kennzahlen des Jahres ----------
   // Mit den Heizpositionen, deren Heizperiode in diesem Zeitraum endet, wie Kosten und Abrechnung.
   const yearItems = useMemo(() => itemsOfSettlement(costItems, key, rules, plants), [costItems, key, rules, plants])
+  // Die Teile je Rechnung über alle Zeiträume (#455), für die Belegabdeckung
+  const sourceParts = useMemo(() => partsBySource(costItems), [costItems])
   const itemsSum = useMemo(() => yearItems.reduce((a, c) => a + c.amountCents, 0), [yearItems])
   const invoiceFileCount = useMemo(() => new Set(yearItems.filter((c) => c.invoiceFile).map((c) => c.invoiceFile)).size, [yearItems])
   const participating = useMemo(() => units.filter((u) => u.participates), [units])
@@ -171,7 +173,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
     }
 
     // 2b. Belege vollständig (#170): höchstens gelb, ein fehlender Beleg ändert keine Zahl
-    const belege = coverageCheck(yearItems, uploadFiles, bookedFiles)
+    const belege = coverageCheck(yearItems, uploadFiles, bookedFiles, sourceParts)
     list.push({ title: 'Belege vollständig', level: belege.level, detail: belege.detail,
       ...(belege.level === 'gelb' ? { tab: 'belege', cta: 'Belege nachreichen' } : {}) })
 
@@ -323,7 +325,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
     }
 
     return list
-  }, [property, heatingList, rules, switchPeriod, onNavigate, settlement, participating, units, yearItems, itemsSum, invoiceFileCount, meters, consumption, tenancies, notable, daysLeft, label, calendar, period, at.previousLabel, uploadFiles, bookedFiles])
+  }, [property, heatingList, rules, switchPeriod, onNavigate, settlement, participating, units, yearItems, itemsSum, invoiceFileCount, meters, consumption, tenancies, notable, daysLeft, label, calendar, period, at.previousLabel, uploadFiles, bookedFiles, sourceParts])
 
   const relevant = checks.filter((c) => c.level !== 'leer' && !c.hint)
   const greenCount = relevant.filter((c) => c.level === 'gruen').length
