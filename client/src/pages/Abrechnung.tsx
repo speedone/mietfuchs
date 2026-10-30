@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useId, useRef, useState } from 'react'
 import { startPrint } from '../printJob'
-import type { CostItem, HeatingSettlementInfo, LetterTemplates, Notice, NoticeSubject, PeriodKey, Settings, Settlement, SettlementRow, Statement, Tenancy, TenancyLetter, Unit } from '../types'
+import type { CostItem, HeatingSettlementInfo, LetterTemplates, Notice, NoticeSubject, PeriodKey, Settings, Settlement, SettlementRow, Statement, Tenancy, TenancyLetter, Unit, UploadEntry } from '../types'
 import {
   heatingChoices, heatingOnlyNote, heatingOverridesWith, prepaymentLabel, prepaymentSplit, recommendedDeadlineText, settlementPaths, settlementTitle, totalLabel,
 } from '../heatingSettlementView'
@@ -8,7 +8,8 @@ import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { invoiceLabel, renderInvoicePages } from '../pdfPreview'
 import { usePeriod } from '../period'
 import { useFocusTarget } from '../focus'
-import { invoiceFileOf, settledInvoiceFiles, type PlantPeriods } from '../costPeriods'
+import { itemsOfFile, settledInvoiceFiles, statementInvoiceFiles, type BookedFiles, type PlantPeriods } from '../costPeriods'
+import { filesByItem } from '../receipts'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import { keepDraft, useConfirmDiscard, useDraft } from '../useDraft'
 import { useSaving } from '../useSaving'
@@ -83,6 +84,8 @@ export const LETTER_CHOICE_NOTE = 'Anschreiben: gilt nur für diesen Druck. Die 
 const PAPER_BROWSER_TEXT = 'Dieser Browser (etwa Safari) kann die Ränder nicht je Druckseite unterscheiden; mit Briefpapier stünde der Text der Folgeseiten im Kopf oder Fuß des Papiers. Gedruckt wird deshalb wie ohne Briefpapier: mit Seitenrand und Absender oben, die Fußzeile mit Kontakt und Bank nur, wenn sie eingeschaltet ist. Mit Briefpapier drucken Sie in einem aktuellen Chrome, Edge oder Firefox.'
 const LETTER_LONG_TEXT = 'Das Anschreiben ist voraussichtlich länger als eine Seite und druckt auf der nächsten weiter. Soll es auf eine Seite passen, kürzen Sie die Texte über „Anschreiben bearbeiten“.'
 const returnLineText = (line: string) => `Die Rücksendeangabe über der Anschrift hat ${line.trim().length} Zeichen; im Fensterfeld passen rund ${RETURN_LINE_MAX} in zwei kleine Zeilen, der Rest würde abgeschnitten. Kürzen Sie den Namen oder die Anschrift des Vermieters (Einstellungen bzw. beim Objekt).`
+// Eine Liste für „keine gebuchten Belege“, damit die Memos daran nicht bei jedem Rendern neu rechnen (#470).
+const NO_BOOKED_FILES: BookedFiles = new Map()
 
 export default function Abrechnung({ settings, units, tenancies, reload, onNavigate, focus, onFocusDone }: Props) {
   const { key, label, param, calendar, period, rules } = usePeriod()
@@ -117,6 +120,10 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
   // Die Korrektur der gezahlten Vorauszahlung hängt an einem Mietverhältnis dieses Objekts (#145).
   useOpenForm(ppEdit !== null)
   const [costItems, setCostItems] = useState<CostItem[]>([])
+  // Belege, die über gebuchte Zeilen an einer Position hängen (#470). `null`, solange die Liste unterwegs ist; bis
+  // dahin wartet der Druck mit Belegkopien. Scheitert sie, bleibt sie leer und die Seite druckt die Belege aus `invoiceFile`.
+  const [bookedList, setBookedList] = useState<BookedFiles | null>(null)
+  const bookedFiles = bookedList ?? NO_BOOKED_FILES
   // Für die Belegkopien einer Position über 0 €: zu welcher Abrechnung sie gehört (Durchsicht N3).
   const [plants, setPlants] = useState<PlantPeriods[]>([])
   useEffect(() => {
@@ -227,6 +234,10 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
   }, [paths.load, paths.history, propertyId])
 
   useEffect(() => { void load() }, [load])
+  // Für den ganzen Bestand, deshalb nicht in `load()`: Die Heizkostenliste wartet nicht darauf, und Speichern lädt sie nicht neu.
+  useEffect(() => {
+    api<UploadEntry[]>('/api/uploads').then((list) => setBookedList(filesByItem(list))).catch(() => setBookedList(NO_BOOKED_FILES))
+  }, [])
 
   // Ein Speichern, das der Server ablehnt (#146), meldet sich oben auf der Seite, statt nur in
   // der Konsole zu stehen. Ergibt true, wenn es geklappt hat.
@@ -243,12 +254,12 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
 
   // Beleg-Dateien der gezeigten Abrechnung (in Erfassungsreihenfolge, ohne Duplikate), auch die der
   // Heizperiode, die darin abgerechnet wird
-  const invoiceFiles = useMemo(() => (data ? settledInvoiceFiles(data, costItems, rules, plants) : []), [data, costItems, rules, plants])
+  const invoiceFiles = useMemo(() => (data ? settledInvoiceFiles(data, costItems, rules, plants, bookedFiles) : []), [data, costItems, rules, plants, bookedFiles])
 
   // Sprechende Anlagen-Beschriftung aus den verknüpften Kostenpositionen
   // (Rechnungssteller + Kostenarten) statt des technischen Dateinamens.
   function fileLabel(f: string): string {
-    const linked = costItems.filter((c) => c.invoiceFile === f && invoiceFiles.includes(f))
+    const linked = invoiceFiles.includes(f) ? itemsOfFile(f, costItems, bookedFiles) : []
     const vendor = linked.find((c) => c.vendor)?.vendor
     const cats = [...new Set(linked.map((c) => c.category))].join(', ')
     if (vendor && cats) return `${vendor} — ${cats}`
@@ -590,11 +601,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
               const legacy = !!data.closed && !data.letters
               const tenancy = tenancies.find((t) => t.id === st.tenancyId)
               // Belege, die in dieser Abrechnung tatsächlich vorkommen (für die Anlage)
-              const stFiles = printAttachments
-                ? [...new Set(st.rows
-                    .map((r) => { const c = costItems.find((x) => x.id === r.costItemId); return c ? invoiceFileOf(c, costItems) : undefined })
-                    .filter((f): f is string => !!f))]
-                : []
+              const stFiles = printAttachments ? statementInvoiceFiles(st.rows, costItems, bookedFiles) : []
               const attachmentsReady = stFiles.every((f) => attachmentPages[f])
               // Positionen nach Kostenart gruppieren — mit Zwischensumme, sobald eine
               // Kostenart mehrere Positionen hat (erleichtert den Abgleich mit dem Bescheid).
@@ -705,7 +712,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
 
   // Was gedruckt würde und ob es schon geht.
   const printViews = printDrawer ? (printDrawer.scope === 'all' ? views : views.filter((v) => v.st.tenancyId === printDrawer.scope)) : []
-  const printBlocked = printAttachments && !printViews.every((v) => v.attachmentsReady)
+  const printBlocked = printAttachments && (bookedList === null || !printViews.every((v) => v.attachmentsReady))
     ? 'Belegkopien werden noch vorbereitet …'
     : !design.ready ? 'Logo und Briefpapier werden noch vorbereitet …' : null
   const printWarnings = uniqueChecks(printViews.flatMap(pageChecks))

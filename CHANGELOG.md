@@ -50,6 +50,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   abgezogen, als die Rechnung beträgt“), obwohl an der Gutschrift kein Abzug hing. Geprüft werden jetzt nur
   Stromrechnungen, aus denen ein Abzug für den Betriebsstrom gerechnet ist; ein Abzug über dem Betrag seiner
   Rechnung wird weiter abgelehnt.
+- Belegkopien zur Abrechnung ([#470](https://github.com/speedone/mietfuchs/issues/470)): Ein Beleg, der nur über
+  eine gebuchte Zeile einer Auswertung an einer Position hängt (etwa die Restrechnung neben dem Abschlag), fehlte
+  in den Anlagen der gedruckten Abrechnung, obwohl Belegordner, Belegmappe, Cockpit und Steuer-ZIP ihn als
+  verknüpft zählten. Er liegt jetzt bei, jede Datei einmal, auch als Beleg eines anderen Teils einer aufgeteilten
+  Rechnung. Lässt sich die Liste der Belege nicht laden, druckt die Seite wie bisher die Belege der Positionen.
 
 - Verlauf: Die Rückfrage vor „Rückgängig“ sagt bei einem Eintrag mit mehreren Änderungen jetzt
   „Zurückgenommen werden 4 Änderungen“ statt „Zurückgenommen wird 4 Änderungen“.

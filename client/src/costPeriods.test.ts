@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest'
-import { closedCheckPath, filedUnderSettlement, heatingRowTarget, invoiceFileOf, itemsOfSettlement, periodCosts, settledInvoiceFiles, settlementKeyOf } from './costPeriods'
+import { closedCheckPath, filedUnderSettlement, heatingRowTarget, invoiceFileOf, itemsOfFile, itemsOfSettlement, periodCosts, settledInvoiceFiles, settlementKeyOf, statementInvoiceFiles } from './costPeriods'
+import { filesByItem, type ReceiptUpload } from './receipts'
 import { CALENDAR_RULES, periodKey as k } from '../../shared/period.ts'
 import type { CostItem, HeatingPlant, HeatingSettlementInfo, PeriodRules } from './types'
 
@@ -122,5 +123,51 @@ describe('Belegkopien mit einer 0-€-Position (N3)', () => {
     const other = item('2024-01', 0, { invoiceFile: 'alt.pdf' })
     const s = { statements: [], landlord: { rows: [] }, period: { key: k('2025-01') } }
     expect(settledInvoiceFiles(s, [null0, other], CALENDAR_RULES, [plant()])).toEqual(['null.pdf'])
+  })
+})
+
+// #470: Ein Beleg, der nur über eine gebuchte Zeile einer Auswertung an der Position hängt, gehört
+// zu den Belegkopien, wie im Belegordner, in der Belegmappe und im Cockpit.
+describe('Belegkopien mit gebuchten Zeilen (#470)', () => {
+  const row = (costItemId: string) => ({ costItemId, category: 'x', description: 'x', totalCents: 1, keyLabel: 'x', shareCents: 1 })
+  const upload = (file: string, bookedItemIds: string[]): ReceiptUpload => ({
+    file, size: 10, mtime: '2026-01-02T10:00:00.000Z', originalName: file, mimeType: 'application/pdf', uploadedAt: '2026-01-02T10:00:00.000Z',
+    sha256: `sha-${file}`, propertyId: null, year: null, invoiceDate: null, kind: 'receipt', bookedItemIds,
+  })
+  const abschlag = item('2025-01', 120000, { invoiceFile: '1_abschlag.pdf' })
+  const rest = item('2025-01', 30000)
+  // Eine Position eines anderen Objekts, die in dieser Abrechnung nicht steht
+  const fremd = item('2025-01', 50000, { propertyId: 'objekt-2' })
+  const all = [abschlag, rest, fremd]
+  const booked = filesByItem([upload('1_abschlag.pdf', [abschlag.id]), upload('2_rest.pdf', [abschlag.id, rest.id]), upload('3_fremd.pdf', [fremd.id])])
+  const rows = [row(abschlag.id), row(rest.id)]
+  const s = { statements: [{ rows }], landlord: { rows: [] } }
+
+  test('der nur gebuchte Beleg steht in den Kopien, ohne Doppelte, ohne den einer fremden Position', () => {
+    expect(settledInvoiceFiles(s, all, CALENDAR_RULES, [], booked)).toEqual(['1_abschlag.pdf', '2_rest.pdf'])
+    expect(statementInvoiceFiles(rows, all, booked)).toEqual(['1_abschlag.pdf', '2_rest.pdf'])
+  })
+
+  test('ohne Liste der Belege (Laden fehlgeschlagen) bleibt es bei invoiceFile', () => {
+    expect(settledInvoiceFiles(s, all, CALENDAR_RULES, [])).toEqual(['1_abschlag.pdf'])
+    expect(statementInvoiceFiles(rows, all)).toEqual(['1_abschlag.pdf'])
+  })
+
+  test('die Beschriftung der Anlage kennt auch die Positionen der gebuchten Zeilen', () => {
+    expect(itemsOfFile('2_rest.pdf', all, booked).map((c) => c.id)).toEqual([abschlag.id, rest.id])
+    expect(itemsOfFile('1_abschlag.pdf', all, booked).map((c) => c.id)).toEqual([abschlag.id])
+  })
+
+  // Wie `isItemCovered`: Ein Teil einer aufgeteilten Rechnung (#455) ohne eigenen Beleg bekommt die Belege der übrigen
+  // Teile, auch die ihrer gebuchten Zeilen; hat er selbst einen, bleibt es bei seinem.
+  test('Teile einer aufgeteilten Rechnung: auch der nur gebuchte Beleg eines anderen Teils (#455, #470)', () => {
+    const vorher = item('2025-01', 1, { sourceId: 'q2' })
+    const teil = item('2025-01', 1, { sourceId: 'q2' })
+    const eigen = item('2025-01', 1, { sourceId: 'q2', invoiceFile: 'eigen.pdf' })
+    const parts = [vorher, teil, eigen]
+    const b = filesByItem([upload('4_gebucht.pdf', [vorher.id])])
+    expect(statementInvoiceFiles([row(teil.id)], parts, b)).toEqual(['4_gebucht.pdf', 'eigen.pdf'])
+    expect(statementInvoiceFiles([row(eigen.id)], parts, b)).toEqual(['eigen.pdf'])
+    expect(invoiceFileOf(teil, parts)).toBe('eigen.pdf')
   })
 })

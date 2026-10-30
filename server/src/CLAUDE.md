@@ -487,7 +487,8 @@ Eine Rechnung landet genau einmal in den Kosten, weil **der Server bucht, nicht 
 - **Routen**: `/api/extract` und `/api/intake` liefern `assessment`; `GET /api/assessments`,
   `GET`/`PUT …/:id`, `POST …/plan`, `POST …/book`. `GET /api/uploads` nennt `bookedItemIds` und
   `bookedCents`; ein nur über eine gebuchte Zeile verknüpfter Beleg zählt als verknüpft
-  (Posteingang, Abdeckung, Mappe, Steuer-ZIP, Löschsperre). Fehlt die Datei einer Auswertung, fehlt
+  (Posteingang, Abdeckung, Mappe, Steuer-ZIP, Löschsperre, Belegkopien der Abrechnung über
+  `filesOfItem` in client/src/costPeriods.ts, #470). Fehlt die Datei einer Auswertung, fehlt
   sie in der Liste, und `plan`, `book`, `PUT` antworten 404.
 - **Oberfläche**: eine Komponente für Schnellerfassung und Kostenseite
   ([AssessmentReview.tsx](../../client/src/components/AssessmentReview.tsx), Logik in
