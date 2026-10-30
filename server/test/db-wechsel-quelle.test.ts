@@ -15,6 +15,7 @@ import { applyPeriodChange, previewPeriodChange } from '../src/db/periodChange.t
 import { createEntity, listCollection, removeEntity, saveCostItemSplit, updateEntity } from '../src/db/repository.ts'
 import { costItems, costSources } from '../src/db/schema.ts'
 import { storedOutflowYear } from '../src/outflow.ts'
+import { baseDescription } from '../src/serviceSplit.ts'
 import { taxReportFor } from '../src/calc.ts'
 import { readStock } from '../src/db/read.ts'
 import { FLOW_COUNT, runFlows, type Flow, type FlowStep } from '../testing/periodChangeFlows.ts'
@@ -64,7 +65,9 @@ const grundsteuer = { propertyId: P, period: '2025-01', category: 'Grundsteuer',
 // ihrer Summe neu (`withStandingShare`). Der Code von vorher ließ den stehenden Teil mit seiner Rundung stehen und rundete
 // den Anteil ein zweites Mal; hin und zurück wanderte so ein Cent. Hier sind die neuen Zahlen die Teilung der ganzen
 // Rechnung nach Tagen (46.442 und 113.766 statt 46.441 und 113.767); Lohnanteil, Summe über die Zeiträume und je Jahr der
-// Zahlung bleiben gleich. Jede andere Abweichung, und jede hier genannte, die nicht mehr eintritt, lässt den Test scheitern.
+// Zahlung bleiben gleich. Eine hier genannte Abweichung muss genau so und überhaupt eintreten. Exakt verglichen werden nur
+// Abläufe, die durchgehend als Ganzes geteilt wurden (`wholeThroughout`, wie Ablauf 87): Dort lässt jede andere Abweichung
+// den Test scheitern. Die übrigen Abläufe behalten ihre Toleranz (unten), eine Abweichung darin fiele nur über sie auf.
 const GOLDEN_DEVIATIONS: Readonly<Record<string, number>> = {
   '87|1|Schornsteinfeger 87-1|2023-12': 1,
   '87|1|Schornsteinfeger 87-1|2024-06': -1,
@@ -566,5 +569,39 @@ test('Befund 3 zu #455: Zusammenfassen erst mit anderem Jahr nennt den neuen Zus
     await change(opened, MAI_AB_2025, { taxYears: { [`${stehend.id}|2025-05`]: 2025, [`${bewegt.id}|2025-05`]: 2025 } })
     const nachher = (await items(opened)).find((c) => c.id === stehend.id) ?? assert.fail('stehender Teil fehlt')
     assert.equal(nachher.description, zu.mergeWithYear?.mergedAs)
+  })
+})
+
+// Durchsicht, M1: Fehlt zwischen dem stehenden Teil und dem Anteil ein gelöschter Teil, nennt der Zusatz beide Spannen und
+// nicht die Lücke dazwischen. Grundsteuer 2025 in „Mai und September ab 2025“: 120/123/122 Tage, der Teil 05–08/2025
+// gelöscht, dann zurück zum Kalenderjahr.
+test('M1 zu Befund 3: Mit Lücke nennt der Zusatz beide Spannen', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createEntity(db, 'costItems', 'gs', grundsteuer))
+    await change(opened, { startMonth: 1, changes: ['2025-05', '2025-09'] })
+    const mitte = (await items(opened)).find((c) => c.period === '2025-05') ?? assert.fail('kein Teil 2025-05')
+    await opened.write((db) => removeEntity(db, 'costItems', mitte.id))
+    const v = await preview(opened, KALENDER)
+    const name = 'Grundsteuer 2025 (anteilig 01.01.–30.04. und 01.09.–31.12.2025)'
+    assert.equal(baseDescription(name), 'Grundsteuer 2025', 'der Zusatz bleibt als solcher erkennbar')
+    assert.deepEqual(v.moves.flatMap((m) => m.parts.map((p) => p.mergedAs)), [name])
+    await change(opened, KALENDER)
+    assert.deepEqual((await items(opened)).map((c) => [c.period, c.amountCents, c.description]), [['2025-01', 24200, name]])
+  })
+})
+
+// Durchsicht, M2: Kommt der Anteil einer späteren Rechnung derselben Quelle (anderes bisheriges Jahr, `poolOf`) zu einer
+// Zeile, die eine frühere in diesem Wechsel erst angelegt hat, gilt deren eigene Spanne, nicht ihr bisheriger Zeitraum
+// (den es für sie nicht gibt). Mit 2025 für beide liegen gA und gB in 05–10/2025 in einer Zeile.
+test('M2 zu Befund 3: Zusammengefasst in eine eben angelegte Zeile gilt deren Spanne', async () => {
+  await withDatabase(async (opened) => {
+    await zweiJahreImZeitraum(opened)
+    const v = await preview(opened, NOVEMBER_AB_2025)
+    assert.deepEqual(v.moves.flatMap((m) => m.parts.map((p) => p.mergedAs)).filter((x) => x !== undefined), [], 'der Name ändert sich nicht')
+    await change(opened, NOVEMBER_AB_2025, { taxYears: { 'gB|2025-11': 2025 } })
+    assert.deepEqual((await items(opened)).map((c) => [c.period, c.amountCents, c.description]).sort(byText), [
+      ['2025-05', 18400, 'Grundsteuer 2025/26 (anteilig 01.05.–31.10.2025)'],
+      ['2025-11', 18100, 'Grundsteuer 2025/26 (anteilig 01.11.2025–30.04.2026)'],
+    ])
   })
 })

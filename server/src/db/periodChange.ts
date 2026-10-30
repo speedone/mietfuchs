@@ -214,25 +214,70 @@ function mergeCandidates(split: Split, part: ServicePart, earlier: readonly Cost
 
 // Befund 3 zu #455: Der Name eines stehenden Teils, zu dem Anteile kommen. Vorher behielt er seinen Zusatz, und nach hin
 // und zurück hieß eine Zeile über 10/2025–06/2026 „Gebäudeversicherung (anteilig 01.10.–31.12.2025)“. Der Zusatz nennt
-// danach, wie bei einem frisch geteilten Teil, vom ersten bis zum letzten Tag, was die Zeile trägt: ihre bisherige Spanne
-// (Leistungszeitraum im bisherigen Zeitraum) und die jedes Anteils (`span`). Je Wechsel ein Namensgeber, denn mehrere
-// Rechnungen derselben Quelle können zum selben Teil kommen; Vorschau und Schreiben rufen ihn in derselben Reihenfolge.
-// Ohne Zusatz (von Hand umbenannt) bleibt der Name. Trägt die Zeile danach als einzige die ganze Rechnung, streicht das
-// Schreiben den Zusatz ohnehin (#471). `record: false` fragt nur (`mergeWithYear`: zusammengefasst erst mit anderem Jahr)
-// und merkt sich die Spanne nicht, denn mit dem vorbelegten Jahr kommt der Anteil nicht dazu.
-function mergedNamer(before: PeriodRules): (target: CostItem, part: ServicePart, description?: string, record?: boolean) => string {
-  const spans = new Map<string, { from: string; to: string }>()
-  return (target, part, description = target.description, record = true) => {
+// danach, was die Zeile trägt: ihre bisherige Spanne (Leistungszeitraum im bisherigen Zeitraum) und die jedes Anteils
+// (`span`). Stoßen die Spannen aneinander oder überlappen sie, eine Spanne vom ersten bis zum letzten Tag wie bei einem
+// frisch geteilten Teil; liegt eine Lücke dazwischen (ein Teil wurde gelöscht, Durchsicht M1), jede für sich
+// („01.01.–30.04. und 01.09.–31.12.2025“), sonst nennte der Zusatz Tage, die die Zeile nicht trägt.
+//
+// Je Wechsel ein Namensgeber, denn mehrere Rechnungen derselben Quelle können zum selben Teil kommen; Vorschau und
+// Schreiben rufen ihn in derselben Reihenfolge. Eine Zeile, die eine frühere Rechnung derselben Quelle in diesem Wechsel
+// erst anlegt (`earlier`, Durchsicht M2), hat keinen bisherigen Zeitraum; ihre Spanne meldet `seed` beim Anlegen. Eine
+// Zeile ohne bekannte Spanne und eine ohne Zusatz (von Hand umbenannt) behalten ihren Namen. Trägt die Zeile danach als
+// einzige die ganze Rechnung, streicht das Schreiben den Zusatz ohnehin (#471). `record: false` fragt nur
+// (`mergeWithYear`: zusammengefasst erst mit anderem Jahr) und merkt sich nichts, denn mit dem vorbelegten Jahr kommt der
+// Anteil nicht dazu.
+type Span = { from: string; to: string }
+type MergedNamer = {
+  name: (target: CostItem, part: ServicePart, description?: string, record?: boolean) => string
+  seed: (id: string, period: PeriodKey, span: Span | undefined) => void
+}
+function mergedNamer(before: PeriodRules, standingIds: ReadonlySet<string>): MergedNamer {
+  const spans = new Map<string, Span[]>()
+  const keyOf = (id: string, period: PeriodKey): string => `${id}|${period}`
+  const ownSpan = (target: CostItem): Span | undefined => {
+    if (!standingIds.has(target.id)) return undefined
     const old = periodOfKey(before, target.period)
-    const own = spans.get(target.id) ?? (old === null || target.serviceFrom === undefined || target.serviceTo === undefined ? undefined
-      : target.serviceFrom <= old.to && target.serviceTo >= old.from
-        ? { from: target.serviceFrom > old.from ? target.serviceFrom : old.from, to: target.serviceTo < old.to ? target.serviceTo : old.to }
-        : { from: target.serviceFrom, to: target.serviceTo })
-    if (own === undefined || part.span === undefined || !SPLIT_SUFFIX.test(description)) return description
-    const span = { from: own.from < part.span.from ? own.from : part.span.from, to: own.to > part.span.to ? own.to : part.span.to }
-    if (record) spans.set(target.id, span)
-    return `${baseDescription(description)} (anteilig ${formatDayRange(span.from, span.to)})`
+    if (old === null || target.serviceFrom === undefined || target.serviceTo === undefined) return undefined
+    return target.serviceFrom <= old.to && target.serviceTo >= old.from
+      ? { from: target.serviceFrom > old.from ? target.serviceFrom : old.from, to: target.serviceTo < old.to ? target.serviceTo : old.to }
+      : { from: target.serviceFrom, to: target.serviceTo }
   }
+  return {
+    seed: (id, period, span) => {
+      if (span !== undefined) spans.set(keyOf(id, period), [span])
+    },
+    name: (target, part, description = target.description, record = true) => {
+      const key = keyOf(target.id, target.period)
+      const first = ownSpan(target)
+      const own = spans.get(key) ?? (first === undefined ? undefined : [first])
+      if (own === undefined || part.span === undefined || !SPLIT_SUFFIX.test(description)) return description
+      const merged = unionSpans([...own, part.span])
+      if (record) spans.set(key, merged)
+      return `${baseDescription(description)} (anteilig ${spansText(merged)})`
+    },
+  }
+}
+
+// Spannen sortiert und zusammengefasst, wo sie überlappen oder aneinanderstoßen.
+function unionSpans(list: readonly Span[]): Span[] {
+  const out: Span[] = []
+  for (const s of [...list].sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0))) {
+    const last = out[out.length - 1]
+    if (last !== undefined && s.from <= dayAfter(last.to)) last.to = s.to > last.to ? s.to : last.to
+    else out.push({ ...s })
+  }
+  return out
+}
+
+// „01.01.–30.04. und 01.09.–31.12.2025“: jede Spanne wie `formatDayRange`; liegen alle in einem Jahr, steht es nur am Ende.
+function spansText(list: readonly Span[]): string {
+  const texts = list.map((s) => formatDayRange(s.from, s.to))
+  const first = list[0]
+  const last = list[list.length - 1]
+  const year = last?.to.slice(0, 4)
+  const oneYear = first !== undefined && year !== undefined && first.from.slice(0, 4) === year
+  const shown = texts.map((t, i) => (oneYear && i < texts.length - 1 && t.endsWith(year) ? t.slice(0, -year.length) : t))
+  return shown.length <= 1 ? shown.join('') : `${shown.slice(0, -1).join(', ')} und ${shown[shown.length - 1]}`
 }
 
 // Die eigene Zeile, die ein Teil ergibt, für die Vorschau: Felder des führenden Teils, Zeitraum, Betrag und Beschreibung
@@ -734,16 +779,17 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
   // Ankündigung nur für das vorbelegte Jahr, und die Vorschau sagt das (Integrationsdurchsicht zu #455, M1).
   const suggestedYear: YearIn = (target, item) => taxEntries.get(taxKey(item, target))?.suggested ?? null
   const produced = new Map<string, CostItem[]>()
-  const nameOf = mergedNamer(before)
+  const namer = mergedNamer(before, new Set(splits.flatMap((sp) => (sp.standing ?? []).map((c) => c.id))))
   const ownRows = new Map<ServicePart, CostItem>()
   preview.moves = splits.map((split) => {
     const earlier = split.sourceId === undefined ? [] : produced.get(split.sourceId) ?? []
     const own: CostItem[] = []
     const parts = split.parts.map((p) => {
       const target = split.family ? mergeTargetOf(split, p, suggestedYear, earlier) : undefined
-      const mergedAs = target === undefined ? undefined : nameOf(target, p)
+      const mergedAs = target === undefined ? undefined : namer.name(target, p)
       if (split.family && target === undefined) {
         const row = producedRow(split.item, p, suggestedYear)
+        namer.seed(row.id, row.period, p.span)
         own.push(row)
         ownRows.set(p, row)
       }
@@ -756,7 +802,7 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
       const sibling = split.family && target === undefined
         ? mergeCandidates(split, p, earlier).find((s) => isAsked(split.item) || isAsked(s))
         : undefined
-      const siblingAs = sibling === undefined ? undefined : nameOf(sibling, p, sibling.description, false)
+      const siblingAs = sibling === undefined ? undefined : namer.name(sibling, p, sibling.description, false)
       const withYear = sibling === undefined ? undefined
         : {
           into: sibling.description, year: isAsked(split.item) ? yearOf(p, sibling, suggestedYear) : movedYearOf(split, p, suggestedYear),
@@ -1051,6 +1097,8 @@ async function writeChangeIn(
     // Zusammenfassen (#455): Ergebnisse, die zu einem stehenden Teil kommen, werden erst nach den Positionen eines
     // wachsenden Zeitraums geschrieben (`regrows`), denn die schreiben ihren Betrag aus dem Plan.
     const merges: { target: CostItem; part: ServicePart }[] = []
+    // Derselbe Namensgeber wie in der Vorschau, mit den eigenen Zeilen, sobald sie geschrieben sind (`seed`).
+    const namer = mergedNamer(plan.before, new Set(plan.splits.flatMap((sp) => (sp.standing ?? []).map((c) => c.id))))
     const sources = new Set<string>()
     const partial = new Set<string>()
     // Integrationsdurchsicht zu #455, I1: die eigenen Zeilen jeder Quelle, die frühere Rechnungen derselben Quelle mit
@@ -1073,6 +1121,10 @@ async function writeChangeIn(
         const own = parts.filter((_, i) => targets[i] === undefined)
         const heir = targets.find((t) => t !== undefined)
         const ids = await rewriteCostItemFamily(tx, family, own.map(write), newId, guard, heir)
+        own.forEach((p, k) => {
+          const id = ids[k]
+          if (id !== undefined) namer.seed(id, p.period.key, p.span)
+        })
         if (split.sourceId !== undefined) {
           const left = (poolsLeft.get(split.sourceId) ?? 1) - 1
           poolsLeft.set(split.sourceId, left)
@@ -1122,12 +1174,11 @@ async function writeChangeIn(
     }
     for (const { item, target } of plan.regrows) await move(item, target)
     // Der Betrag (und Lohnanteil) eines Ergebnisses kommt zum stehenden Teil, gelesen nach allen übrigen Schreibvorgängen.
-    const nameOf = mergedNamer(plan.before)
     for (const { target, part } of merges) {
       const now = (await readCostItems(tx)).find((c) => c.id === target.id)
       if (now === undefined) throw new Error(`Der stehende Teil ${target.id} fehlt im Wechsel`)
       const labor = now.labor35aCents === undefined && part.labor35aCents === null ? null : (now.labor35aCents ?? 0) + (part.labor35aCents ?? 0)
-      await writeCostItemParts(tx, now, [{ period: now.period, amountCents: now.amountCents + part.amountCents, labor35aCents: labor, description: nameOf(target, part, now.description), taxYear: now.taxYear ?? null }], newId, now.id, guard)
+      await writeCostItemParts(tx, now, [{ period: now.period, amountCents: now.amountCents + part.amountCents, labor35aCents: labor, description: namer.name(target, part, now.description), taxYear: now.taxYear ?? null }], newId, now.id, guard)
     }
     // Folge-PR zu #252 (Geld-K1, -H1): Die Abzüge auf eine Rechnung mit Leistungszeitraum folgen deren Teilen.
     // Gelesen nach dem Zusammenfassen (Durchsicht von PR 2 zu #455, I1): Wurde der Teil der Rechnung, auf den ein Abzug

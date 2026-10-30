@@ -36,9 +36,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   einen Zeitraum mit einem Teil derselben Rechnung fällt, kommt zu diesem Teil, wenn beide dasselbe Jahr der Zahlung
   haben und gleich verteilt werden (ein einzeln berichtigter Schlüssel oder Teilnehmerkreis bleibt eine eigene Zeile);
   die Vorschau sagt es vorher, und hängt es am gefragten Jahr der Zahlung, sagt sie auch das. Der Zusatz „(anteilig …)“
-  dieses Teils nennt danach die ganze Spanne, die er trägt, in der Vorschau wie in der Abrechnung, und wer den Zeitraum
-  hin und wieder zurück stellt, bekommt centgenau die Beträge von vorher (ein einzeln berichtigter Betrag bleibt an
-  seinem Teil). Stehen zwei Teile einer
+  dieses Teils nennt danach die Tage, die er trägt, in der Vorschau wie in der Abrechnung, und wer den Zeitraum
+  hin und wieder zurück stellt, bekommt bei unveränderter Teilung nach Tagen centgenau die Beträge von vorher (ein einzeln
+  berichtigter Betrag bleibt an seinem Teil). Stehen zwei Teile einer
   Rechnung mit verschiedenem Jahr der Zahlung im selben Zeitraum, teilt der nächste Wechsel sie getrennt und fragt das
   Jahr für jeden; vorher bekamen beide das Jahr des ersten, und Werbungskosten wechselten das Steuerjahr. Die Summe je
   Zeitraum ändert sich dadurch nicht.
