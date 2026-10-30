@@ -443,6 +443,10 @@ test('Der Schritt ändert keinen Betrag', async () => {
           for (const [i, amount] of [[1, 1200], [2, 2450]] as const) {
             insertCostItem(c, { id: `dup-${property.id}-${i}`, property_id: property.id, period, category: 'Grundsteuer', description: `Grundsteuer Juli (anteilig ${i}. Teil)`, amount_cents: amount, key: 'area', service_from: '2025-07-01', service_to: '2025-07-31' })
           }
+          // Ein Teil, der allein mit dem Zusatz stehen blieb (0.13.1 nahm ihn beim Entfernen eines Wechsels nicht weg).
+          // Seit #471 entfällt der Zusatz dabei, über die Routen entsteht so ein Teil also nicht mehr; der Schritt lässt
+          // ihn ohne Quelle.
+          insertCostItem(c, { id: `allein-${property.id}`, property_id: property.id, period, category: 'Gartenpflege', description: 'Garten (anteilig 01.07.–31.07.2025)', amount_cents: 900, key: 'area', service_from: '2025-07-01', service_to: '2025-07-31' })
         }
         const before = await readStock(c.db)
         const frozenBefore = await frozenOf(c)

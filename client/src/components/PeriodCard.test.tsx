@@ -95,6 +95,34 @@ describe('Wechsel nach Quelle (#455)', () => {
     ] }]} />)
     expect(screen.getByText(/Bleibt es beim vorbelegten Jahr der Zahlung, wird der Anteil für 2025\/2026 mit dem Teil „Grundsteuer 2025 \(anteilig 01\.05\.–31\.12\.2025\)“ zusammengefasst; mit einem anderen Jahr bleibt er eine eigene Zeile\./)).toBeTruthy()
   })
+  // #471: der umgekehrte Fall, das Zusammenfassen entsteht erst mit einem anderen Jahr.
+  test('nennt das Jahr, mit dem erst zusammengefasst wird', () => {
+    render(<MoveList moves={[{ costItemId: 'gs-2', description: 'Grundsteuer 2025', amountCents: 12000, parts: [
+      { period: periodKey('2025-05'), label: '2025/2026', amountCents: 12000, mergeWithYear: { into: 'Grundsteuer 2025 (anteilig 01.05.2025–31.12.2025)', year: 2025 } },
+    ] }]} />)
+    expect(screen.getByText(/Mit dem vorbelegten Jahr der Zahlung bleibt der Anteil für 2025\/2026 eine eigene Zeile; mit dem Jahr 2025 für beide wird er mit dem Teil „Grundsteuer 2025 \(anteilig 01\.05\.2025–31\.12\.2025\)“ zusammengefasst\./)).toBeTruthy()
+  })
+  // #471: Trägt die verbleibende Zeile die ganze Rechnung, nennt die Vorschau ihre neue Beschreibung.
+  test('nennt die neue Beschreibung, wenn die Zeile die ganze Rechnung trägt', () => {
+    render(<MoveList moves={[{ costItemId: 'gs-2', description: 'Grundsteuer 2025', amountCents: 24500, renamedTo: 'Grundsteuer 2025', parts: [
+      { period: periodKey('2025-01'), label: '2025', amountCents: 24500, mergedInto: 'Grundsteuer 2025 (anteilig 01.01.–30.04.2025)' },
+    ] }]} />)
+    expect(screen.getByText(/zusammengefasst\. Die Zeile trägt danach die ganze Rechnung und heißt „Grundsteuer 2025“\./)).toBeTruthy()
+  })
+  // Durchsicht zu #471, M2: Hängt das Zusammenfassen am vorbelegten Jahr, gilt auch der neue Name nur dann; und entsteht es
+  // erst mit einem anderen Jahr, nennt der Satz dazu den neuen Namen.
+  test('der neue Name unter derselben Bedingung wie das Zusammenfassen', () => {
+    const { container } = render(<MoveList moves={[{ costItemId: 'gs-2', description: 'Grundsteuer 2025', amountCents: 12000, renamedTo: 'Grundsteuer 2025', parts: [
+      { period: periodKey('2025-05'), label: '2025/2026', amountCents: 12000, mergedInto: 'Grundsteuer 2025 (anteilig 01.05.–31.12.2025)', mergeDependsOnYear: true },
+    ] }]} />)
+    expect(container.textContent).toMatch(/eine eigene Zeile\. Bleibt es beim vorbelegten Jahr, trägt die Zeile danach die ganze Rechnung und heißt „Grundsteuer 2025“\./)
+    expect(container.textContent).not.toMatch(/ Die Zeile trägt danach/)
+    cleanup()
+    const mirror = render(<MoveList moves={[{ costItemId: 'gs-3', description: 'Grundsteuer 2025', amountCents: 12000, parts: [
+      { period: periodKey('2025-05'), label: '2025/2026', amountCents: 12000, mergeWithYear: { into: 'Grundsteuer 2025 (anteilig 01.05.2025–31.12.2025)', year: 2025, renamedTo: 'Grundsteuer 2025' } },
+    ] }]} />)
+    expect(mirror.container.textContent).toMatch(/zusammengefasst; die Zeile trägt dann die ganze Rechnung und heißt „Grundsteuer 2025“\./)
+  })
 })
 
 describe('Laienprobe (B2, B3, B4)', () => {

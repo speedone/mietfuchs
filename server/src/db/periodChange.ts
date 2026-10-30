@@ -138,7 +138,10 @@ const keepsTaxYear = (item: Pick<CostItem, 'operatingPower' | 'paidOn'>): boolea
 // Rhythmus“). Mit Quelle: `family` sind die bewegten Teile (Zeitraum `shrinks` oder `gone`), `standing` die übrigen
 // Teile derselben Quelle (`same` oder `grows`), `parts` die Teile der bewegten Summe. Ohne Quelle: der Teil allein,
 // geteilt über seinen Teil des Leistungszeitraums wie bisher; `newSource`, wenn er dabei mehrere Teile ergibt.
-type Split = { item: CostItem; parts: ServicePart[]; family?: CostItem[]; standing?: CostItem[]; sourceId?: string; newSource?: boolean }
+// `wholeFamily` (#471, Durchsicht I1): Alle Teile der Quelle, stehende und bewegte, decken zusammen den Leistungszeitraum
+// (je Teil sein Leistungszeitraum im bisherigen Zeitraum). Nur dann trägt eine einzige verbleibende Zeile die ganze
+// Rechnung; fehlt ein früher gelöschter Teil, bleibt der Zusatz „(anteilig …)“.
+type Split = { item: CostItem; parts: ServicePart[]; family?: CostItem[]; standing?: CostItem[]; sourceId?: string; newSource?: boolean; wholeFamily?: boolean }
 
 // Felder, die beim Zusammenfassen nicht zählen (#455, M1): je Teil gesetzt (`part` in SPLIT_FIELDS), in einer Quelle
 // gleich (Objekt, Leistungszeitraum, Quelle), schon geprüft (Zahlungsdatum) oder ohne Einfluss auf die Verteilung
@@ -163,6 +166,25 @@ const sameAllocation = (a: CostItem, b: CostItem): boolean => ALLOCATION_FIELDS.
 
 type YearIn = (target: BillingPeriod, item: CostItem) => number | null
 
+const dayAfter = (iso: string): string => new Date(Date.parse(`${iso}T00:00:00Z`) + 86400000).toISOString().slice(0, 10)
+// Ob die Spannen den ganzen Leistungszeitraum der Rechnung lückenlos decken (#471).
+function coversService(c: Pick<CostItem, 'serviceFrom' | 'serviceTo'>, spans: readonly { from: string; to: string }[]): boolean {
+  if (c.serviceFrom === undefined || c.serviceTo === undefined) return true
+  let next = c.serviceFrom
+  for (const s of [...spans].sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0))) {
+    if (s.from > next) return false
+    if (s.to >= next) next = dayAfter(s.to)
+  }
+  return next > c.serviceTo
+}
+
+// Ob eine Zeile die ganze Rechnung trägt (#471): Ihr Leistungszeitraum liegt ganz in ihrem Zeitraum. Dann gehört der
+// Zusatz „(anteilig …)“ nicht mehr an die Beschreibung, wenn ihr die Quelle als einzige Zeile bleibt.
+function carriesWholeInvoice(rules: PeriodRules, c: { period: PeriodKey; serviceFrom?: string | null; serviceTo?: string | null }): boolean {
+  const p = periodOfKey(rules, c.period)
+  return p !== null && typeof c.serviceFrom === 'string' && typeof c.serviceTo === 'string' && c.serviceFrom >= p.from && c.serviceTo <= p.to
+}
+
 // Der stehende Teil, zu dem ein Ergebnis kommt, statt eine zweite Zeile im selben Zeitraum anzulegen (#455,
 // „Zusammenfassen“): derselbe Zeitraum, dasselbe Zahlungsdatum und nach dem Wechsel dasselbe Jahr der Zahlung, sonst
 // wechselten Werbungskosten das Jahr. Das Jahr eines stehenden Teils ist die Antwort, wenn die Vorschau es fragt (ein
@@ -175,12 +197,19 @@ type YearIn = (target: BillingPeriod, item: CostItem) => number | null
 // anderem bisherigem Jahr (`poolOf`) in diesem Wechsel schon anlegt. Haben sie danach dasselbe Jahr, kommt der Anteil
 // zu ihnen; so gibt es auch dann je Zeitraum und Jahr nur eine Zeile (Invariante 2).
 function mergeTargetOf(split: Split, part: ServicePart, yearIn: YearIn, earlier: readonly CostItem[] = []): CostItem | undefined {
+  const movedYear = movedYearOf(split, part, yearIn)
+  return mergeCandidates(split, part, earlier).find((s) => yearOf(part, s, yearIn) === movedYear)
+}
+const movedYearOf = (split: Split, part: ServicePart, yearIn: YearIn): number =>
+  yearIn(part.period, split.item) ?? storedOutflowYear({ ...split.item, period: part.period.key, taxYear: undefined })
+const yearOf = (part: ServicePart, s: CostItem, yearIn: YearIn): number => yearIn(part.period, s) ?? storedOutflowYear(s)
+// Die Zeilen derselben Quelle, zu denen der Anteil kommen könnte, ohne Rücksicht auf das Jahr der Zahlung: stehende Teile
+// nach Kennung, dann die eigenen Zeilen einer früheren Rechnung derselben Quelle.
+function mergeCandidates(split: Split, part: ServicePart, earlier: readonly CostItem[]): CostItem[] {
   const lead = split.item
-  const movedYear = yearIn(part.period, lead) ?? storedOutflowYear({ ...lead, period: part.period.key, taxYear: undefined })
-  const fits = (s: CostItem): boolean =>
-    s.period === part.period.key && s.paidOn === lead.paidOn && (yearIn(part.period, s) ?? storedOutflowYear(s)) === movedYear && sameAllocation(s, lead)
+  const fits = (s: CostItem): boolean => s.period === part.period.key && s.paidOn === lead.paidOn && sameAllocation(s, lead)
   const byId = (a: CostItem, b: CostItem): number => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
-  return (split.standing ?? []).filter(fits).sort(byId)[0] ?? earlier.find(fits)
+  return [...(split.standing ?? []).filter(fits).sort(byId), ...earlier.filter(fits)]
 }
 
 // Die eigene Zeile, die ein Teil ergibt, für die Vorschau: Felder des führenden Teils, Zeitraum, Betrag und Beschreibung
@@ -336,6 +365,14 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
     const poolOf = (m: CostItem): string => (shared ? `${m.paidOn ?? ''}|${storedOutflowYear(m)}` : '')
     const pools = new Map<string, CostItem[]>()
     for (const m of allMoving) pools.set(poolOf(m), [...(pools.get(poolOf(m)) ?? []), m])
+    const spanIn = (m: CostItem, old: BillingPeriod | null | undefined): { from: string; to: string }[] => {
+      if (old === undefined || old === null || m.serviceFrom === undefined || m.serviceTo === undefined) return []
+      const from = m.serviceFrom > old.from ? m.serviceFrom : old.from
+      const to = m.serviceTo < old.to ? m.serviceTo : old.to
+      return [from <= to ? { from, to } : { from: m.serviceFrom, to: m.serviceTo }]
+    }
+    const first = family[0]
+    const wholeFamily = first !== undefined && coversService(first, family.flatMap((m) => spanIn(m, periodOfKey(before, m.period))))
     return [...pools.values()].flatMap((moving) => {
       const lead = moving[0]
       if (lead === undefined) return []
@@ -355,10 +392,12 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
         amountCents: moving.reduce((sum, c) => sum + c.amountCents, 0),
         ...(labor ? { labor35aCents: labor } : {}),
         spans,
-        // Es bleiben Teile stehen, oder es gibt neben diesem Jahr noch ein anderes: Die Teile tragen den Zusatz.
-        marked: family.length > moving.length,
+        // Es bleiben Teile stehen, oder es gibt neben diesem Jahr noch ein anderes: Die Teile tragen den Zusatz. Ebenso,
+        // wenn die bewegten Teile den Leistungszeitraum nicht ganz decken (ein Teil wurde früher gelöscht, #471): Dann
+        // ist auch eine einzige Zeile nur ein Anteil der Rechnung.
+        marked: family.length > moving.length || !coversService(lead, spans),
       })
-      return [{ item: lead, parts, family: moving, standing, sourceId }]
+      return [{ item: lead, parts, family: moving, standing, sourceId, wholeFamily }]
     })
   }
   // Folge-PR zu #252 (Geld-K1, -H1): Ein Abzug des Betriebsstroms folgt immer seiner Stromrechnung. Hat sie einen
@@ -619,14 +658,32 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
   // Ankündigung nur für das vorbelegte Jahr, und die Vorschau sagt das (Integrationsdurchsicht zu #455, M1).
   const suggestedYear: YearIn = (target, item) => taxEntries.get(taxKey(item, target))?.suggested ?? null
   const produced = new Map<string, CostItem[]>()
+  const ownRows = new Map<ServicePart, CostItem>()
   preview.moves = splits.map((split) => {
     const earlier = split.sourceId === undefined ? [] : produced.get(split.sourceId) ?? []
     const own: CostItem[] = []
     const parts = split.parts.map((p) => {
       const target = split.family ? mergeTargetOf(split, p, suggestedYear, earlier) : undefined
-      if (split.family && target === undefined) own.push(producedRow(split.item, p, suggestedYear))
-      const asked = target !== undefined && (taxEntries.has(taxKey(split.item, p.period)) || taxEntries.has(taxKey(target, p.period)))
-      return { period: p.period.key, label: periodLabel(p.period), amountCents: p.amountCents, ...(target ? { mergedInto: target.description } : {}), ...(asked ? { mergeDependsOnYear: true as const } : {}) }
+      if (split.family && target === undefined) {
+        const row = producedRow(split.item, p, suggestedYear)
+        own.push(row)
+        ownRows.set(p, row)
+      }
+      const isAsked = (c: CostItem): boolean => taxEntries.has(taxKey(c, p.period))
+      const asked = target !== undefined && (isAsked(split.item) || isAsked(target))
+      // #471, der umgekehrte Fall: Mit den vorbelegten Jahren kein Zusammenfassen, aber im Zeitraum steht eine Zeile
+      // derselben Rechnung und Verteilung, und eines der Jahre ist gefragt. Mit demselben Jahr für beide käme der Anteil
+      // dazu; die Vorschau nennt das Jahr, das ihn zusammenfasst (das der anderen Zeile, ist sie nicht gefragt, das des
+      // Anteils).
+      const sibling = split.family && target === undefined
+        ? mergeCandidates(split, p, earlier).find((s) => isAsked(split.item) || isAsked(s))
+        : undefined
+      const withYear = sibling === undefined ? undefined
+        : { into: sibling.description, year: isAsked(split.item) ? yearOf(p, sibling, suggestedYear) : movedYearOf(split, p, suggestedYear) }
+      return {
+        period: p.period.key, label: periodLabel(p.period), amountCents: p.amountCents, ...(target ? { mergedInto: target.description } : {}),
+        ...(asked ? { mergeDependsOnYear: true as const } : {}), ...(withYear ? { mergeWithYear: withYear } : {}),
+      }
     })
     if (split.sourceId !== undefined) produced.set(split.sourceId, [...earlier, ...own])
     return {
@@ -634,12 +691,49 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
       amountCents: (split.family ?? [split.item]).reduce((sum, c) => sum + c.amountCents, 0),
       parts,
     }
-  }).concat(follows.map(({ item, parts }) => ({
+  })
+  // #471: Bleibt einer Quelle mit den vorbelegten Jahren eine einzige Zeile und trägt sie die ganze Rechnung, verliert sie
+  // den Zusatz „(anteilig …)“ (wie beim Schreiben); die Vorschau nennt die neue Beschreibung an jeder Rechnung der Quelle,
+  // deren Anteil zu ihr kommt.
+  const remaining = new Map<string, CostItem[]>()
+  for (const split of splits) {
+    if (!split.family || split.sourceId === undefined || remaining.has(split.sourceId)) continue
+    remaining.set(split.sourceId, [...(split.standing ?? []), ...(produced.get(split.sourceId) ?? [])])
+  }
+  const sourceMoves = sourceMovesOf(splits, remaining, ownRows, next, preview.moves)
+  preview.moves = sourceMoves.concat(follows.map(({ item, parts }) => ({
     costItemId: item.id, description: item.description, amountCents: item.amountCents,
     parts: parts.map((p) => ({ period: p.period.key, label: periodLabel(p.period), amountCents: p.amountCents })),
   })))
   preview.token = tokenOf(preview)
   return { preview, splits, groups, overrideRekeys, overrideAsks: [...asks.values()], assessmentMoves, letterDocs, regrows, follows, taxEntries, next, before }
+}
+
+// Die Rechnungen mit Quelle in der Vorschau, mit `renamedTo` an denen, deren Anteil zur einzigen verbleibenden Zeile ihrer
+// Quelle kommt, wenn diese danach die ganze Rechnung trägt (#471). Ebenso am Anteil mit `mergeWithYear` (Durchsicht, M2):
+// Fiele mit dem genannten Jahr seine eigene Zeile weg und bliebe dann nur die andere, die die ganze Rechnung trägt, steht
+// ihr neuer Name dort.
+function sourceMovesOf(
+  splits: readonly Split[], remaining: ReadonlyMap<string, CostItem[]>, ownRows: ReadonlyMap<ServicePart, CostItem>, next: PeriodRules, moves: PeriodChangePreview['moves'],
+): PeriodChangePreview['moves'] {
+  const renamedOf = (row: CostItem | undefined, split: Split | undefined): string | undefined => {
+    if (row === undefined || split?.wholeFamily !== true || !carriesWholeInvoice(next, row)) return undefined
+    const renamed = baseDescription(row.description)
+    return renamed === row.description ? undefined : renamed
+  }
+  return moves.map((m, i) => {
+    const split = splits[i]
+    const rest = split?.sourceId === undefined ? undefined : remaining.get(split.sourceId)
+    const parts = m.parts.map((p, j) => {
+      const own = split?.parts[j] === undefined ? undefined : ownRows.get(split.parts[j])
+      if (p.mergeWithYear === undefined || rest === undefined || own === undefined) return p
+      const left = rest.filter((r) => r !== own)
+      const renamed = left.length === 1 && left[0]?.description === p.mergeWithYear.into ? renamedOf(left[0], split) : undefined
+      return renamed === undefined ? p : { ...p, mergeWithYear: { ...p.mergeWithYear, renamedTo: renamed } }
+    })
+    const renamed = rest?.length === 1 && m.parts.some((p) => p.mergedInto !== undefined) ? renamedOf(rest[0], split) : undefined
+    return { ...m, parts, ...(renamed === undefined ? {} : { renamedTo: renamed }) }
+  })
 }
 
 // Warum das Aufteilen einer Gruppe nicht vorbelegt wird (Review der Laienprobe, Runde 1): Eine
@@ -871,6 +965,7 @@ async function writeChangeIn(
     // wachsenden Zeitraums geschrieben (`regrows`), denn die schreiben ihren Betrag aus dem Plan.
     const merges: { target: CostItem; part: ServicePart }[] = []
     const sources = new Set<string>()
+    const partial = new Set<string>()
     // Integrationsdurchsicht zu #455, I1: die eigenen Zeilen jeder Quelle, die frühere Rechnungen derselben Quelle mit
     // anderem bisherigem Jahr schon geschrieben haben (`mergeTargetOf`, `earlier`); gelesen nur, wo eine weitere folgt.
     const produced = new Map<string, CostItem[]>()
@@ -882,7 +977,10 @@ async function writeChangeIn(
         period: p.period.key, amountCents: p.amountCents, labor35aCents: p.labor35aCents, description: p.description, taxYear: taxYearIn(p.period, item),
       })
       if (family) {
-        if (split.sourceId !== undefined) sources.add(split.sourceId)
+        if (split.sourceId !== undefined) {
+          sources.add(split.sourceId)
+          if (split.wholeFamily !== true) partial.add(split.sourceId)
+        }
         const earlier = split.sourceId === undefined ? [] : produced.get(split.sourceId) ?? []
         const targets = parts.map((p) => mergeTargetOf(split, p, taxYearIn, earlier))
         const own = parts.filter((_, i) => targets[i] === undefined)
@@ -970,8 +1068,14 @@ async function writeChangeIn(
     await dropLetterDocs(tx, plan.letterDocs)
     // Invariante 3 (#455): Bleibt einer Quelle ein einziger Teil, ist er eine gewöhnliche Position, und die Quelle entfällt.
     for (const sourceId of sources) {
-      const rest = await tx.select({ id: costItems.id }).from(costItems).where(eq(costItems.sourceId, sourceId))
-      if (rest.length === 1) await tx.update(costItems).set({ sourceId: null }).where(eq(costItems.sourceId, sourceId))
+      const rest = await tx.select({ id: costItems.id, period: costItems.period, description: costItems.description, serviceFrom: costItems.serviceFrom, serviceTo: costItems.serviceTo })
+        .from(costItems).where(eq(costItems.sourceId, sourceId))
+      const only = rest.length === 1 ? rest[0] : undefined
+      if (only !== undefined) {
+        // #471: Trägt die Zeile danach die ganze Rechnung, entfällt auch der Zusatz „(anteilig …)“.
+        const whole = !partial.has(sourceId) && carriesWholeInvoice(next, only)
+        await tx.update(costItems).set({ sourceId: null, ...(whole ? { description: baseDescription(only.description) } : {}) }).where(eq(costItems.sourceId, sourceId))
+      }
       await dropEmptySource(tx, sourceId)
     }
     await settleOperatingPowerLinks(tx, propertyId, written)

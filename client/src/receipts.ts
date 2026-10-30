@@ -17,9 +17,9 @@ import { CATEGORIES, matchCategory } from './types'
 import { fmtEuro, parseEuro } from './api'
 import { amountProblem } from './costForm'
 import { invoiceOf, sameCostCandidates } from '../../shared/duplicates.ts'
-import { countOf } from '../../shared/wording.ts'
-import { startYearOf } from '../../shared/period.ts'
-import { isInvoicePart } from '../../shared/splitPart.ts'
+import { andList, countOf } from '../../shared/wording.ts'
+import { periodLabel, periodsBetween, startYearOf } from '../../shared/period.ts'
+import { baseDescription, isInvoicePart } from '../../shared/splitPart.ts'
 
 // Ein Beleg, wie GET /api/uploads ihn liefert. Die Angaben der Belegbuchung (#170) fehlen bei
 // einem älteren Server und in Tests, die sie nicht brauchen.
@@ -383,13 +383,24 @@ export function amountCheckMode(item: CostItem, rules?: PeriodRules): 'field' | 
   return item.key === 'amounts' || item.key === 'external' ? 'form' : 'field'
 }
 
+function oldPartsWhere(item: CostItem, rules?: PeriodRules): string {
+  if (!rules || item.serviceFrom === undefined || item.serviceTo === undefined) return ''
+  const labels = periodsBetween(rules, item.serviceFrom, item.serviceTo).map(periodLabel)
+  if (labels.length < 2) return ''
+  const base = baseDescription(item.description)
+  const name = base === item.description ? `„${base}“` : `„${base} …“`
+  return `, also der Teile mit der Beschreibung ${name} in den Abrechnungszeiträumen ${andList(labels)} auf der Seite Kosten`
+}
+
 // Warum „Betrag prüfen“ ins Formular führt.
 export function amountCheckFormReason(item: CostItem, rules?: PeriodRules): string {
   if (amountCheckIsPart(item, rules)) {
     // Das Formular zeigt nur den Betrag des Teils (zweite Durchsicht, R4); die Summe der Teile steht in der Kostenliste,
-    // bei einem alten Teil ohne Quelle nicht.
+    // bei einem alten Teil ohne Quelle nicht. Dann sagt der Satz, wo die übrigen Teile stehen (#471): in den
+    // Abrechnungszeiträumen, die der Leistungszeitraum berührt, mit derselben Beschreibung ohne den Zusatz.
+    const where = item.sourceId ? ' („Rechnung gesamt“ unter dem Teil in der Kostenliste)' : oldPartsWhere(item, rules)
     return 'Diese Position ist ein Teil einer aufgeteilten Rechnung; der Betrag ist nur der Anteil dieses Zeitraums, nicht der Betrag des Belegs. ' +
-      `Mit dem Beleg vergleichen Sie die Summe aller Teile${item.sourceId ? ' („Rechnung gesamt“ unter dem Teil in der Kostenliste)' : ''}; im Formular setzen Sie einen Teil nie auf den Betrag des Belegs.`
+      `Mit dem Beleg vergleichen Sie die Summe aller Teile${where}; im Formular setzen Sie einen Teil nie auf den Betrag des Belegs.`
   }
   return 'Bei dieser Position prüfen Sie den Betrag im Formular: Er hängt an weiteren Angaben (Einzelbeträge oder Kosten der Gemeinschaft).'
 }

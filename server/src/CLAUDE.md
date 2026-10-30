@@ -72,9 +72,12 @@ Schlüssel** `PeriodKey` (`'JJJJ-MM'`, Monat des Beginns, Markentyp), kein Jahr:
   die bleiben oder wachsen, stehen; die übrigen werden als eine Rechnung über ihre Spannen neu geteilt
   (`deriveSourceParts`), und ein Ergebnis kommt zum stehenden Teil seines Zeitraums bei gleichem Zahlungsdatum,
   gleichem Jahr der Zahlung und gleicher Verteilung (`mergeTargetOf`, `sameAllocation`, Vorschau `mergedInto`, bei
-  gefragtem Jahr `mergeDependsOnYear`). Stehen bewegte Teile im selben Zeitraum, zählen sie nur bei gleichem Jahr der
+  gefragtem Jahr `mergeDependsOnYear`; entsteht es erst mit einem anderen als dem vorbelegten Jahr, `mergeWithYear`, #471). Stehen bewegte Teile im selben Zeitraum, zählen sie nur bei gleichem Jahr der
   Zahlung und Zahlungsdatum zusammen, sonst je Jahr eine Rechnung mit eigener Frage (`sourceSplit`, `poolOf`); liegt
-  jeder in einem anderen Zeitraum, bleibt es eine (Golden). Bleibt ein Teil, entfällt die Quelle. Ein Teil
+  jeder in einem anderen Zeitraum, bleibt es eine (Golden). Bleibt ein Teil, entfällt die Quelle; trägt er die ganze Rechnung
+  (Leistungszeitraum ganz in seinem Zeitraum, `carriesWholeInvoice`, und alle Teile der Quelle decken ihn, `wholeFamily`),
+  entfällt auch der Zusatz „(anteilig …)“, Vorschau `renamedTo`, auch an `mergeWithYear` (#471). Decken die bewegten Teile den Leistungszeitraum nicht (ein Teil wurde gelöscht), behält auch eine
+  einzige Zeile den Zusatz (`coversService`). Ein Teil
   ohne Quelle wird über seinen eigenen Teil des Leistungszeitraums geteilt und bekommt dann eine. Löschen geht je Teil wie
   bisher; der letzte Teil nimmt die Quelle mit. Ein Datenschritt (0077, dataSteps) hat bestehende Teile zusammengeführt: Kandidat
   ist `isSplitPart` oder eine Beschreibung mit dem Zusatz „(anteilig …)“, zusammen nur bei gleichem Familienschlüssel des Schritts. Heizkosten nie
@@ -170,7 +173,10 @@ Register, Belegabdeckung und Belegmappe folgen ihm, der Posteingang bleibt beim 
   bricht die Mappe nicht ab, das Deckblatt nennt ihn. Nur WinAnsi (`winAnsiSafe`).
 - **Belege für die Steuer** ([taxReceipts.ts](taxReceipts.ts)): ZIP aus dem Speicher, Ordner je
   `ANLAGE_V_GROUP` in der Reihenfolge der Steuerübersicht, `Übersicht.csv` (BOM, Semikolon) mit jeder
-  Position; Textfelder mit = + - @ am Anfang bekommen einen Apostroph (Formel-Einschleusung).
+  Position; Textfelder mit = + - @ am Anfang bekommen einen Apostroph (Formel-Einschleusung). Ein Teil
+  einer aufgeteilten Rechnung ohne eigenen Beleg nennt den seiner Rechnung und nimmt die Datei mit, auch
+  wenn der belegte Teil in einem anderen Steuerjahr steht (#469, `parts` aus `partsBySource`, Regel wie
+  `isItemCovered`); einmal je Gruppe, kein Betrag ändert sich.
 
 ## API
 
@@ -423,7 +429,7 @@ einander nicht. Belegt ist eine Rechnung, wenn ein Teil in irgendeinem Zeitraum 
 Schnappschuss trägt `receiptedSources`, weil er sonst nur seinen Zeitraum sieht). Dieselbe Regel gilt für Belegabdeckung,
 Abzeichen, Cockpit und Belegmappe (`isItemCovered` mit `partsBySource`); „Hier beheben“ führt nie zu einem Teil einer
 belegten Rechnung. Die Kostenliste zeigt unter einem Teil „Teil von N“. Bei der Belegbuchung ist ein Teil kein Ziel zum
-Verknüpfen (`formOnly`, `part`): Die Zeile wird verworfen, wenn der Teil stimmt. Lösen lässt seinen Betrag stehen. Das Steuer-ZIP bleibt je Position.
+Verknüpfen (`formOnly`, `part`): Die Zeile wird verworfen, wenn der Teil stimmt. Lösen lässt seinen Betrag stehen. Das Steuer-ZIP folgt derselben Regel (#469, siehe Belegordner).
 
 Ist eine aufgeteilte Rechnung an der Gruppe beteiligt, richtet sich der Rat nach der Quelle, nicht nach der Zahl der
 Teile im Zeitraum (die übrigen sieht die Gruppe nicht): nie „setzen Sie ihren Betrag auf den der Rechnung“, gelöscht
@@ -431,7 +437,10 @@ wird eine aufgeteilte Rechnung nur mit allen Teilen, auch denen in anderen Zeitr
 aufgeteilt zählt `isInvoicePart`, also auch ein alter Teil ohne Quelle. Ohne Teil in der Gruppe bleibt der Wortlaut.
 Zwei Positionen, deren Leistungszeiträume beide angegeben sind und sich nicht überschneiden, verbindet
 `possibleDuplicates` nicht (`separateService`; die Versicherung Juli bis Juni, zwei Jahre nacheinander); verbindet sie
-eine dritte ohne Leistungszeitraum, führt „Hier beheben“ zu der Rechnung ohne Beleg, die zu allen anderen passt.
+eine dritte ohne Leistungszeitraum, führt „Hier beheben“ zu der Rechnung ohne Beleg, die zu allen anderen passt;
+passt keine und gibt es mehrere ohne Beleg, zur ersten, und der Rat sagt bei einer aufgeteilten „eine der Rechnungen ohne
+Beleg“ statt „die Rechnung ohne Beleg“ (#471; ohne Teil bleibt der Wortlaut). „Betrag prüfen“ im Belegordner nennt bei
+einem alten Teil ohne Quelle die Zeiträume und die Beschreibung, unter denen die übrigen Teile stehen.
 `sameCostCandidates` und damit Kostenformular und Belegbuchung fragen weiter ohne Leistungszeitraum.
 
 ## Belegbuchung (#170)

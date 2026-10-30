@@ -209,6 +209,29 @@ test('Belege für die Steuer (#170): ein ZIP je Objekt und Jahr nach Gruppen der
   })
 })
 
+// #469: Die Teile einer aufgeteilten Rechnung (#455) stehen in zwei Steuerjahren, der Beleg hängt nur am ersten. Das ZIP
+// des anderen Jahres nimmt ihn trotzdem mit und nennt ihn in der Übersicht, statt „kein Beleg“.
+test('Belege für die Steuer (#469): ein Teil ohne eigenen Beleg bekommt den Beleg seiner Rechnung aus einem anderen Jahr', async () => {
+  await withProperties(async (s) => {
+    const datei = await uploadBelegFile(s, '%PDF-garten', 'Garten.pdf')
+    const teile = await jsonOf<CostItem[]>(await postJson(s, '/api/costItems/split', {
+      propertyId: 'objekt-1', period: '2024-01', category: 'Gartenpflege', description: 'Garten', amountCents: 48000, key: 'area',
+      serviceFrom: '2024-07-01', serviceTo: '2025-06-30',
+    }))
+    const [erster, zweiter] = [teile.find((t) => t.period === '2024-01'), teile.find((t) => t.period !== '2024-01')]
+    if (!erster || !zweiter) return assert.fail(`Teile: ${JSON.stringify(teile)}`)
+    assert.equal((await putJson(s, `/api/costItems/${erster.id}`, { ...erster, invoiceFile: datei })).status, 200)
+    const zip = new AdmZip(Buffer.from(await (await fetch(`${s.base}/api/receipts/tax/2025?property=objekt-1`)).arrayBuffer()))
+    const pfad = '2 Laufende Betriebskosten/Gartenpflege - Garten.pdf'
+    assert.deepEqual(zip.getEntries().map((e) => e.entryName).sort(), [pfad, 'Übersicht.csv'])
+    assert.equal(zip.readAsText(pfad), '%PDF-garten')
+    const zeile = zip.readAsText('Übersicht.csv').split('\r\n').find((z) => z.includes(zweiter.description))
+    assert.ok(zeile?.includes(`;${pfad};`), zeile)
+    // Kein Betrag ändert sich: Die Zeile trägt den Betrag des Teils.
+    assert.ok(zeile?.includes(`;${(zweiter.amountCents / 100).toFixed(2).replace('.', ',')};`), zeile)
+  })
+})
+
 // Vor dem Wechsel von adm-zip zu yazl auf demselben Bestand abgelesen: die Übersicht wortgleich,
 // samt Byte-Order-Mark. Ein Steuerberater öffnet sie in Excel, und ohne BOM stünden dort statt
 // der Umlaute Zeichensalat.

@@ -15,6 +15,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   - In der Kostenliste steht unter einem Teil „Teil von 2 · Rechnung gesamt …“. Die Belegabdeckung in Belegordner,
     Cockpit und Belegmappe zählt die Rechnung einmal und belegt, sobald ein Teil den Beleg trägt, auch einer in einem
     anderen Zeitraum; die Belegkopien der Abrechnung nehmen den Beleg der Rechnung mit.
+  - Im ZIP „Belege für die Steuer“ nennt ein Teil ohne eigenen Beleg in `Übersicht.csv` den Beleg seiner Rechnung statt
+    „kein Beleg“, und die Datei liegt im ZIP, auch wenn der Teil mit dem Beleg in einem anderen Steuerjahr steht
+    ([#469](https://github.com/speedone/mietfuchs/issues/469)). Kein Betrag ändert sich.
   - Der Hinweis auf doppelte Positionen zählt je Rechnung: Zwei Teile derselben Rechnung gelten nicht als Doppelung, und
     ein Teil heißt nicht „ohne Beleg“, wenn die Rechnung anderswo belegt ist. Ist eine aufgeteilte Rechnung beteiligt,
     rät er, sie nur ganz zu löschen, mit den Teilen in anderen Zeiträumen, und nie, ihren Betrag auf den der Rechnung zu
@@ -36,6 +39,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Rechnung mit verschiedenem Jahr der Zahlung im selben Zeitraum, teilt der nächste Wechsel sie getrennt und fragt das
   Jahr für jeden; vorher bekamen beide das Jahr des ersten, und Werbungskosten wechselten das Steuerjahr. Die Summe je
   Zeitraum ändert sich dadurch nicht.
+- Kleinere Anzeigepunkte zur aufgeteilten Rechnung ([#471](https://github.com/speedone/mietfuchs/issues/471)): Fasst
+  der Wechsel des Abrechnungszeitraums alle Teile einer Rechnung zu einer Zeile zusammen, die die ganze Rechnung trägt,
+  verliert ihre Beschreibung den Zusatz „(anteilig …)“; die Vorschau nennt die neue Beschreibung. Entsteht das
+  Zusammenfassen erst mit einem anderen als dem vorbelegten Jahr der Zahlung, sagt die Vorschau auch das. Der Hinweis auf
+  doppelte Positionen ist nicht mehr mehrdeutig, wenn mehrere aufgeteilte Rechnungen ohne Beleg beteiligt sind, und
+  „Betrag prüfen“ im Belegordner sagt bei einem alten Teil ohne Verweis auf seine Rechnung, wo die übrigen Teile stehen.
 
 ## [0.13.1] – 2026-10-27
 
