@@ -80,11 +80,16 @@ Schlüssel** `PeriodKey` (`'JJJJ-MM'`, Monat des Beginns, Markentyp), kein Jahr:
   einzige Zeile den Zusatz (`coversService`). Ein Teil
   ohne Quelle wird über seinen eigenen Teil des Leistungszeitraums geteilt und bekommt dann eine. Löschen geht je Teil wie
   bisher; der letzte Teil nimmt die Quelle mit. Ein Datenschritt (0077, dataSteps) hat bestehende Teile zusammengeführt: Kandidat
-  ist `isSplitPart` oder eine Beschreibung mit dem Zusatz „(anteilig …)“, zusammen nur bei gleichem Familienschlüssel des Schritts
-  (hängt der Beleg nur an einem Teil, zählt er nicht mit, solange zusammen jeder Teil in einem anderen Zeitraum steht).
-  Stehen zwei davon im selben Zeitraum, nur wenn alle in jeder übrigen Angabe und Unterliste gleich sind und keine zwei im
-  selben Zeitraum in Betrag und Beschreibung übereinstimmen: Das wäre eine zweimal erfasste Rechnung, die 0.13.1 als
-  doppelt meldete; sie bleibt ohne Quelle. Im Zweifel keine Quelle, ein alter Teil verhält sich dann nach `isSplitPart`. Heizkosten nie
+  ist `isSplitPart` oder eine Beschreibung mit dem Zusatz „(anteilig …)“, zusammen nur bei gleichem Familienschlüssel des
+  Schritts (der von 0.13.1, ein leerer Beleg wie keiner). Stehen zwei davon im selben Zeitraum, nur wenn alle in jeder
+  übrigen Angabe und Unterliste gleich sind, keine zwei im selben Zeitraum in Betrag und Beschreibung übereinstimmen
+  (eine zweimal erfasste Rechnung, die 0.13.1 als doppelt meldete) und zwei mit gleicher Beschreibung im selben Zeitraum
+  nur bei einem Objekt mit Wechsel des Rhythmus (nur ein Wechsel legt so etwas an). Bekannte Grenze: Mit Wechsel wird eine
+  zweimal erfasste aufgeteilte Rechnung, die nur im Betrag abweicht, eine Quelle (Begründung im Kopf des Schrittes).
+  Über 0.13.1 hinaus führt der Schritt genau eine Familie mit Beleg und genau eine ohne zusammen, wenn sie bis auf den
+  Beleg gleich sind und zusammen eine Rechnung nach denselben Regeln; ist es keine, bekommt keine der beiden eine Quelle,
+  außer bei einer zweimal erfassten Rechnung (dann jede Fassung für sich). Im Zweifel keine Quelle, ein alter Teil verhält
+  sich dann nach `isSplitPart`. Heizkosten nie
   (VIII ZR 156/11), dort warnt `period.heating-mismatch`.
 - **Jahr der Steuer**: `tax_year` ist das Jahr der Zahlung, Pflicht nur bei einem Zeitraum über zwei
   Kalenderjahre. Welches Jahr eine Position für die Steuer hat, sagt allein `outflowShares`

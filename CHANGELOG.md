@@ -12,8 +12,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Abrechnungszeiträume, stehen weiter Teile je Zeitraum da, aber jeder Teil verweist auf seine Rechnung. Beim Update
   bekommen bestehende Teile, die eindeutig zusammengehören, diese Kennung von selbst, auch die aus einem eingespielten
   Backup und auch, wenn der Beleg nur an einem Teil hängt; der Beleg gilt dann für die ganze Rechnung. Eine zweimal
-  erfasste Rechnung bleibt dabei zwei Rechnungen, und der Hinweis auf doppelte Positionen meldet sie weiter. Keine
-  Zahl ändert sich, auch keine abgeschlossene Abrechnung.
+  mit „Aufteilen und speichern“ erfasste Rechnung bleibt dabei zwei Rechnungen, und der Hinweis auf doppelte
+  Positionen meldet sie weiter; nur wenn das Objekt einmal den Abrechnungszeitraum gewechselt hat und die beiden
+  Fassungen allein im Betrag abweichen, werden sie eine (prüfen Sie dann in der Kostenliste, ob „Rechnung gesamt …“
+  die doppelte Summe nennt). Keine Zahl ändert sich, auch keine abgeschlossene Abrechnung.
   - In der Kostenliste steht unter einem Teil „Teil von 2 · Rechnung gesamt …“. Die Belegabdeckung in Belegordner,
     Cockpit und Belegmappe zählt die Rechnung einmal und belegt, sobald ein Teil den Beleg trägt, auch einer in einem
     anderen Zeitraum; die Belegkopien der Abrechnung nehmen den Beleg der Rechnung mit.
