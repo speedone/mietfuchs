@@ -82,7 +82,8 @@ export function noticeClass(level: NoticeLevel): 'error' | 'notice' | 'hint' {
   return level === 'error' ? 'error' : level === 'warning' ? 'notice' : 'hint'
 }
 
-export type NoticeTab = 'kosten' | 'stammdaten' | 'zaehler' | 'mietkonto' | 'heizkosten' | 'abrechnung' | 'schnellerfassung'
+// `einstellungen`: nur die Prüfung „Absender fehlt“ der Seite Abrechnung führt dorthin (Praxistest).
+export type NoticeTab = 'kosten' | 'stammdaten' | 'zaehler' | 'mietkonto' | 'heizkosten' | 'abrechnung' | 'schnellerfassung' | 'einstellungen'
 const TARGETS: Record<NoticeSubject['kind'], { tab: NoticeTab, page: string }> = {
   costItem: { tab: 'kosten', page: 'Kosten' },
   unit: { tab: 'stammdaten', page: 'Stammdaten' },

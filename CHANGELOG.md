@@ -70,6 +70,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   ausgebauten Zählers stehen, bis man das Jahr eigens über „Zähler bearbeiten“ änderte. Leer gelassen bleibt das
   bisherige Jahr stehen.
 
+- Abrechnung: Ist kein Name des Vermieters hinterlegt, nennt „Zu prüfen“ (und das Fenster „Drucken“) jetzt „Absender
+  fehlt“ mit Weg in die Einstellungen. Bisher druckte das Anschreiben ohne Absender und ohne Unterschrift, ohne
+  Warnung; eine Anpassung der Vorauszahlungen nach § 560 Abs. 4 BGB braucht Textform, und dafür muss der Erklärende
+  genannt sein (§ 126b BGB). Gedruckt wird weiterhin.
+
 ## [0.13.1] – 2026-10-27
 
 ### Behoben
