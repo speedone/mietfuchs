@@ -83,7 +83,7 @@ eindeutige Zuordnung.
 1. Alle Teile einer Quelle haben dasselbe Objekt, dieselbe Kostenart und denselben Leistungszeitraum.
    Sie sind kalt, nicht `amounts` und kein Abzug beim Betriebsstrom.
 2. Ein Wechsel legt keinen **zweiten** Teil einer Quelle in einen Zeitraum, in dem schon einer steht,
-   solange beide dasselbe Jahr der Zahlung haben (unten, „Zusammenfassen“). Mehrere im selben Zeitraum
+   solange beide dasselbe Jahr der Zahlung und dieselbe Verteilung haben (unten, „Zusammenfassen“). Mehrere im selben Zeitraum
    gibt es sonst nur aus Beständen vor dieser Version (Fall aus dem Issue).
 3. Jede Quelle hat mindestens einen Teil. Ergibt ein Wechsel nur noch einen Teil (der Leistungszeitraum
    liegt danach ganz in einem Zeitraum), entfällt die Quelle, und der Teil ist eine gewöhnliche
@@ -152,6 +152,13 @@ Abzüge beim Betriebsstrom (`follows`, Gruppen mit Abzügen) bekommen keine.
   **zu diesem Teil hinzu**, statt eine zweite Zeile anzulegen. Das geschieht nur, wenn beide nach dem
   Wechsel dasselbe Jahr der Zahlung haben (`storedOutflowYear` bzw. die Antwort der Vorschau) und
   dasselbe `paidOn`; sonst bleibt es eine eigene Zeile, damit keine Werbungskosten das Jahr wechseln.
+  Ebenso nur bei **derselben Verteilung** (Durchsicht von PR 2, M1; `sameAllocation`): Jedes Feld, das
+  nicht je Teil gesetzt wird (`part` in `SPLIT_FIELDS`), muss beim stehenden Teil und beim führenden
+  bewegten gleich sein, ausgenommen Objekt, Leistungszeitraum, Quelle, Zahlungsdatum, Rechnungssteller und
+  Beleg; Listen zählen als Mengen, leer wie nicht angegeben. Ist der stehende Teil einzeln berichtigt
+  (anderer Schlüssel, andere Teilnehmer, Direktzuordnung, nicht vereinbart …), verteilte er den
+  hinzukommenden Anteil sonst nach seiner Berichtigung statt nach der Rechnung (§ 556a BGB), und Geld
+  wanderte zwischen Mietern, ohne dass jemand es gewählt hat; der Anteil bleibt dann eine eigene Zeile.
   Je Zeitraum ändert das keinen Cent der Summe. Weil eine Zeile statt zweier verteilt wird, kann sich
   bei den Mietern ein Restcent verschieben. Das ist gewollt (das Issue nennt die Rundung je Zeile als
   Problem). Die Vorschau sagt es („wird mit dem Teil … zusammengefasst“). Ist der stehende Teil der
@@ -163,8 +170,18 @@ Abzüge beim Betriebsstrom (`follows`, Gruppen mit Abzügen) bekommen keine.
   (`rewriteCostItemFamily`, unverändert samt Umhängen gebuchter Belegzeilen und des Belegs). Das ist
   das Verhalten von heute; ein abweichender Schlüssel eines Zeitraums (§ 556a Abs. 2 BGB) bleibt an
   seinem Teil.
-- **Mehrere Teile im selben Zeitraum** (aus Beständen vor dieser Version): Stehen sie, bleiben beide
-  Zeilen. Werden sie bewegt, zählen sie zusammen und ergeben je neuem Zeitraum eine Zeile.
+- **Mehrere Teile im selben Zeitraum** (aus Beständen vor dieser Version, oder das Zusammenfassen ließ sie wegen
+  verschiedener Jahre getrennt): Stehen sie, bleiben beide Zeilen. Werden sie bewegt, zählen sie zusammen und ergeben
+  je neuem Zeitraum eine Zeile, **aber nur bei gleichem Jahr der Zahlung (`storedOutflowYear`) und Zahlungsdatum**
+  (Integrationsdurchsicht, I1). Sonst wird je Jahr und Zahlungsdatum eine eigene Rechnung geteilt, mit eigenem
+  führendem Teil und eigener Frage nach dem Jahr; zusammengezählt hätten alle das Jahr des ersten bekommen, und
+  Werbungskosten wechselten das Jahr. Die Ergebnisse einer späteren solchen Rechnung kommen zu einer eigenen Zeile
+  einer früheren derselben Quelle, wenn sie danach dasselbe Jahr haben (wie beim Zusammenfassen), so bleibt es je
+  Zeitraum und Jahr eine Zeile. Liegt jeder bewegte Teil in einem anderen Zeitraum, bleibt es eine Rechnung wie bei
+  `wholeInvoice` (Invariante 4); dort gilt die Vorbelegung des führenden Teils weiter.
+- **Vorschau des Zusammenfassens**: gerechnet mit den vorbelegten Jahren. Fragt die Vorschau in dem Zeitraum ein
+  Jahr der Zahlung (des bewegten oder des stehenden Teils), trägt der Teil `mergeDependsOnYear`, und der Satz sagt,
+  dass das Zusammenfassen nur beim vorbelegten Jahr gilt.
 - Ergibt der Wechsel für eine Quelle nur noch einen Teil, entfällt die Quelle (Invariante 3).
 - **Teile ohne Quelle** (alter Bestand, unten) behalten den bisherigen Weg: geteilt über den eigenen
   Teil des Leistungszeitraums. Die Teile, die dabei entstehen, bekommen **eine neue Quelle**, denn sie

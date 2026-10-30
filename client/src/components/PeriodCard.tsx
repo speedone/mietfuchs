@@ -67,6 +67,23 @@ export function RhythmFields({ form, onChange, fromField }: { form: RhythmForm; 
 // und dem Betrag. Auch die Vorschau der Heizung nutzt die Liste.
 const balance = (cents: number): string => (cents >= 0 ? `Guthaben ${fmtEuro(cents)}` : `Nachzahlung ${fmtEuro(-cents)}`)
 
+// Kalte Rechnungen mit Leistungszeitraum, nach Tagen auf die neuen Zeiträume geteilt. Kommt ein Anteil zu einem Teil
+// derselben Rechnung, der im Zeitraum stehen bleibt, sagt es ein Satz (#455): Dort entsteht keine zweite Zeile.
+// Integrationsdurchsicht zu #455, M1: Hängt das Zusammenfassen am Jahr der Zahlung, das die Vorschau unten fragt, gilt
+// der Satz nur für die vorbelegten Jahre.
+const mergeText = (label: string, into: string, dependsOnYear: boolean): string => dependsOnYear
+  ? ` Bleibt es beim vorbelegten Jahr der Zahlung, wird der Anteil für ${label} mit dem Teil „${into}“ zusammengefasst; mit einem anderen Jahr bleibt er eine eigene Zeile.`
+  : ` Der Anteil für ${label} wird mit dem Teil „${into}“ zusammengefasst.`
+
+export function MoveList({ moves }: { moves: PeriodChangePreview['moves'] }) {
+  return moves.map((m) => (
+    <p key={m.costItemId}>
+      „{m.description}“ ({fmtEuro(m.amountCents)}) wird nach Tagen aufgeteilt: {m.parts.map((p) => `${p.label}: ${fmtEuro(p.amountCents)}`).join(', ')}.
+      {m.parts.flatMap((p) => (p.mergedInto === undefined ? [] : [mergeText(p.label, p.mergedInto, p.mergeDependsOnYear === true)])).join('')}
+    </p>
+  ))
+}
+
 export function EffectsList({ effects, earliest }: { effects: PeriodEffect[]; earliest?: string }) {
   if (effects.length === 0) return null
   return (
@@ -366,9 +383,7 @@ export default function PeriodCard({ onChanged }: { onChanged?: () => Promise<vo
                 </div>
               )}
               {preview.blocked.map((b) => <NoticeBox key={b} level="error" action={b} />)}
-              {preview.moves.map((m) => (
-                <p key={m.costItemId}>„{m.description}“ ({fmtEuro(m.amountCents)}) wird nach Tagen aufgeteilt: {m.parts.map((p) => `${p.label}: ${fmtEuro(p.amountCents)}`).join(', ')}.</p>
-              ))}
+              <MoveList moves={preview.moves} />
               {preview.assessments.map((a) => <p key={a.assessmentId} className="muted">Belegauswertung „{a.file}“: künftig {a.toLabel}.</p>)}
               {/* Integrationsdurchsicht zu #415: eigene Anschreiben je Mieter eines Zeitraums, der sich ändert, entfallen. */}
               {(preview.letters ?? []).map((t) => <p key={t} className="muted">{t}</p>)}

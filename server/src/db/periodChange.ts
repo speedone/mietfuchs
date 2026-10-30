@@ -26,20 +26,19 @@
 import crypto from 'node:crypto'
 import { and, eq, inArray } from 'drizzle-orm'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
-import { splitBlocker, splitFamilyKey } from '../../../shared/splitPart.ts'
+import { SPLIT_FIELDS, splitBlocker } from '../../../shared/splitPart.ts'
 import { plantRules, settledSeparately } from '../../../shared/heatingPeriod.ts'
 import {
   formatDayRange, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, settlementDeadline, spansTwoYears,
 } from '../../../shared/period.ts'
-import { dayAfter } from '../../../shared/law/register.ts'
 import type { BillingPeriod, CostItem, PeriodChangePreview, PeriodEffect, PeriodKey, PeriodRules, Property, Tenancy } from '../../../shared/types.ts'
-import { baseDescription, splitByService, splitDeductionsAlike, type ServicePart } from '../serviceSplit.ts'
+import { baseDescription, deriveSourceParts, splitByService, splitDeductionsAlike, type ServicePart } from '../serviceSplit.ts'
 import type { Database, Transaction } from './client.ts'
 import { readClosedSettlements, readCostItems, readFuelDeliveries, readHeatingPlants, readProperties, readStock, readTenancies, readUnits } from './read.ts'
 import { tenancyMonths } from '../calc.ts'
 import { dryRun, earliestTenancyStart, lostClaims, outcomeOf } from './dryRun.ts'
-import { HeatingError, PeriodConflict, PeriodError, rewriteCostItemFamily, settleOperatingPowerLinks, writeCostItemParts } from './repository.ts'
-import { assessmentLines, assessments, closedSettlementHistory, periodChanges, prepaymentOverrides, properties } from './schema.ts'
+import { dropEmptySource, HeatingError, insertCostSource, PeriodConflict, PeriodError, rewriteCostItemFamily, settleOperatingPowerLinks, writeCostItemParts } from './repository.ts'
+import { assessmentLines, assessments, closedSettlementHistory, costItems, periodChanges, prepaymentOverrides, properties } from './schema.ts'
 import { GENERAL_POWER_CATEGORY } from '../../../shared/operatingPower.ts'
 import { droppedLettersText, dropLetterDocs, letterDocPrefix, letterDocsWithPrefix } from './letters.ts'
 import { euro } from '../../../shared/costItem.ts'
@@ -135,12 +134,69 @@ const followsBill = (item: Pick<CostItem, 'operatingPower'>): boolean => item.op
 // Verschiebung an und wählt die Vorgabe nicht danach (Durchsicht von PR 3, S1).
 const keepsTaxYear = (item: Pick<CostItem, 'operatingPower' | 'paidOn'>): boolean => followsBill(item) || item.paidOn !== undefined
 
+// Eine kalte Rechnung mit Leistungszeitraum, die der Wechsel nach Tagen neu teilt (#455, Entwurf „Wechsel des
+// Rhythmus“). Mit Quelle: `family` sind die bewegten Teile (Zeitraum `shrinks` oder `gone`), `standing` die übrigen
+// Teile derselben Quelle (`same` oder `grows`), `parts` die Teile der bewegten Summe. Ohne Quelle: der Teil allein,
+// geteilt über seinen Teil des Leistungszeitraums wie bisher; `newSource`, wenn er dabei mehrere Teile ergibt.
+type Split = { item: CostItem; parts: ServicePart[]; family?: CostItem[]; standing?: CostItem[]; sourceId?: string; newSource?: boolean }
+
+// Felder, die beim Zusammenfassen nicht zählen (#455, M1): je Teil gesetzt (`part` in SPLIT_FIELDS), in einer Quelle
+// gleich (Objekt, Leistungszeitraum, Quelle), schon geprüft (Zahlungsdatum) oder ohne Einfluss auf die Verteilung
+// (Rechnungssteller, Beleg; den Beleg übernimmt der stehende Teil, `heir`). Jedes übrige Feld, auch ein neues, muss
+// gleich sein: Schlüssel, Teilnehmer, Direktzuordnung, Zählertyp, vereinbarte Anteile, nicht vereinbart, Einzelbeträge,
+// Gemeinschaftsabrechnung, Heizung und Betriebsstrom.
+const MERGE_IGNORED = new Set<string>(['propertyId', 'serviceFrom', 'serviceTo', 'sourceId', 'paidOn', 'vendor', 'invoiceFile'])
+const ALLOCATION_FIELDS = (Object.keys(SPLIT_FIELDS) as (keyof typeof SPLIT_FIELDS)[])
+  .filter((f) => SPLIT_FIELDS[f] !== 'part' && !MERGE_IGNORED.has(f))
+
+// Gleich heißt hier: derselbe Wert, Listen als Mengen (Reihenfolge ohne Bedeutung), leer wie nicht angegeben.
+const allocationValue = (v: unknown): unknown => {
+  if (v === null || v === undefined) return undefined
+  if (Array.isArray(v)) return v.length === 0 ? undefined : JSON.stringify([...v].map((x) => JSON.stringify(x)).sort())
+  if (typeof v === 'object') {
+    const entries = Object.entries(v).filter(([, x]) => x !== undefined && x !== null).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    return entries.length === 0 ? undefined : JSON.stringify(entries)
+  }
+  return v
+}
+const sameAllocation = (a: CostItem, b: CostItem): boolean => ALLOCATION_FIELDS.every((f) => allocationValue(a[f]) === allocationValue(b[f]))
+
+type YearIn = (target: BillingPeriod, item: CostItem) => number | null
+
+// Der stehende Teil, zu dem ein Ergebnis kommt, statt eine zweite Zeile im selben Zeitraum anzulegen (#455,
+// „Zusammenfassen“): derselbe Zeitraum, dasselbe Zahlungsdatum und nach dem Wechsel dasselbe Jahr der Zahlung, sonst
+// wechselten Werbungskosten das Jahr. Das Jahr eines stehenden Teils ist die Antwort, wenn die Vorschau es fragt (ein
+// Zeitraum, der wächst und danach über zwei Kalenderjahre reicht), sonst das gespeicherte; das des Ergebnisses die
+// Antwort für den führenden Teil, sonst das Jahr, das es ohne Angabe hätte (Zahlungsdatum oder Beginn des Zeitraums).
+// Durchsicht von PR 2 zu #455, M1: dazu dieselbe Verteilung (`sameAllocation`), sonst verteilte ein einzeln berichtigter
+// Teil den hinzukommenden Anteil nach seinem Schlüssel und nicht nach dem der Rechnung.
+//
+// Integrationsdurchsicht zu #455, I1: `earlier` sind die eigenen Zeilen, die eine frühere Rechnung derselben Quelle mit
+// anderem bisherigem Jahr (`poolOf`) in diesem Wechsel schon anlegt. Haben sie danach dasselbe Jahr, kommt der Anteil
+// zu ihnen; so gibt es auch dann je Zeitraum und Jahr nur eine Zeile (Invariante 2).
+function mergeTargetOf(split: Split, part: ServicePart, yearIn: YearIn, earlier: readonly CostItem[] = []): CostItem | undefined {
+  const lead = split.item
+  const movedYear = yearIn(part.period, lead) ?? storedOutflowYear({ ...lead, period: part.period.key, taxYear: undefined })
+  const fits = (s: CostItem): boolean =>
+    s.period === part.period.key && s.paidOn === lead.paidOn && (yearIn(part.period, s) ?? storedOutflowYear(s)) === movedYear && sameAllocation(s, lead)
+  const byId = (a: CostItem, b: CostItem): number => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+  return (split.standing ?? []).filter(fits).sort(byId)[0] ?? earlier.find(fits)
+}
+
+// Die eigene Zeile, die ein Teil ergibt, für die Vorschau: Felder des führenden Teils, Zeitraum, Betrag und Beschreibung
+// des Teils, das Jahr der Zahlung aus `yearIn`. Mit der Kennung des führenden Teils findet `yearIn` dessen Frage.
+function producedRow(lead: CostItem, part: ServicePart, yearIn: YearIn): CostItem {
+  const { taxYear: _was, ...rest } = lead
+  const year = yearIn(part.period, lead)
+  const row = { ...rest, period: part.period.key, amountCents: part.amountCents, description: part.description }
+  return year === null ? row : { ...row, taxYear: year }
+}
+
 type OverrideAsk = { tenancy: Tenancy; drop: Set<PeriodKey>; from: { key: PeriodKey; label: string; cents: number }[]; ask: Map<PeriodKey, { period: BillingPeriod; months: string[] }> }
 
 type Plan = {
   preview: PeriodChangePreview
-  // `family`: die bisherigen Teile einer aufgeteilten Rechnung, die als Ganzes neu geteilt wird.
-  splits: { item: CostItem; parts: ServicePart[]; family?: CostItem[] }[]
+  splits: Split[]
   // Je Gruppe (Laienprobe B2): kalte Kosten und Heizkosten eines bisherigen Zeitraums getrennt, die
   // kalten mit den Teilen, in die sie nach Tagen aufgeteilt würden.
   groups: Map<string, Group>
@@ -255,54 +311,55 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
   const splits: Plan['splits'] = []
   const groups: Plan['groups'] = new Map()
   const regrows: Plan['regrows'] = []
-  // Die Teile einer aufgeteilten Rechnung (Nachprüfung von #226, 2): gleiche Kostenart, Beschreibung
-  // ohne den Zusatz „(anteilig …)“, Leistungszeitraum, Rechnungssteller, Beleg und Schlüssel, je in
-  // einem anderen Zeitraum. Sie werden beim Wechsel als Ganzes neu geteilt; jeden Teil einzeln zu
-  // teilen, summierte die Rundungen, und nach einigen Wechseln stand ein Cent im falschen Zeitraum.
-  const familyKey = splitFamilyKey
-  const families = new Map<string, CostItem[]>()
-  for (const c of items) {
-    if (c.category === HEATING_CATEGORY || c.serviceFrom === undefined || c.serviceTo === undefined) continue
-    families.set(familyKey(c), [...(families.get(familyKey(c)) ?? []), c])
-  }
-  const familyOf = (c: CostItem): CostItem[] => {
-    const f = families.get(familyKey(c)) ?? [c]
-    return new Set(f.map((m) => m.period)).size === f.length ? f : [c]
-  }
-  // Die Teile, die der Wechsel betrifft, als eine Rechnung über die Tage, die sie im bisherigen Zeitraum
-  // abdecken. Bleibt ein Teil in einem Zeitraum, der sich nicht ändert, steht er fest, und nur der
-  // Rest wird geteilt. `null`: keine Rechnung aus mehreren Teilen, oder die betroffenen Teile decken
-  // keine zusammenhängende Spanne ab; dann gilt die Regel für einen einzelnen Teil darunter.
-  const wholeInvoice = (item: CostItem, family: CostItem[]): { family: CostItem[]; parts: ServicePart[] | null } | null => {
-    if (family.length < 2 || item.serviceFrom === undefined || item.serviceTo === undefined) return null
-    const moving = family.filter((m) => {
+  // Die Teile einer Quelle (#455): Die Familie sagt allein `sourceId`, gleich in welchem Zeitraum. Teile in einem
+  // Zeitraum, der bleibt oder wächst, stehen fest (ein berichtigter Betrag bleibt so an seinem Teil); die übrigen
+  // gehen mit ihrer Summe und ihren Spannen (Leistungszeitraum im bisherigen Zeitraum) in `deriveSourceParts`, als
+  // eine Rechnung. Jeden Teil einzeln zu teilen, summierte die Rundungen (Nachprüfung von #226, 2), und Teile in einem
+  // Zeitraum ergäben je eine eigene Zeile (die Zeilenvermehrung aus #455).
+  const bySource = new Map<string, CostItem[]>()
+  for (const c of items) if (c.sourceId !== undefined) bySource.set(c.sourceId, [...(bySource.get(c.sourceId) ?? []), c])
+  // Integrationsdurchsicht zu #455, I1: Stehen bewegte Teile im selben Zeitraum (aus dem Datenschritt, oder das
+  // Zusammenfassen ließ sie wegen verschiedener Jahre getrennt), zählen sie nur zusammen, wenn sie dasselbe Jahr der
+  // Zahlung und dasselbe Zahlungsdatum haben. Sonst bekämen alle das Jahr des führenden Teils (gefragt wird nur nach
+  // ihm), und Werbungskosten wechselten das Jahr, ohne dass sich an der Zahlung etwas ändert. Je Jahr und Zahlungsdatum
+  // dann eine eigene Rechnung mit eigenem führendem Teil und eigener Frage. Liegt jeder bewegte Teil in einem anderen
+  // Zeitraum, bleibt es eine Rechnung wie vor dem Umbau (`wholeInvoice`, Invariante 4).
+  const sourceSplit = (sourceId: string): Split[] => {
+    const family = bySource.get(sourceId) ?? []
+    const isMoving = (m: CostItem): boolean => {
       const am = changed(m.period)
       return am !== null && am.status !== 'grows'
-    }).sort((x, y) => (x.period < y.period ? -1 : 1))
-    const spans: { from: string; to: string }[] = []
-    for (const m of moving) {
-      const old = changed(m.period)?.old
-      if (!old) return null
-      const from = (m.serviceFrom ?? '') > old.from ? m.serviceFrom ?? old.from : old.from
-      const to = (m.serviceTo ?? '') < old.to ? m.serviceTo ?? old.to : old.to
-      if (from > to) return null
-      const last = spans[spans.length - 1]
-      if (last !== undefined && dayAfter(last.to) !== from) return null
-      spans.push({ from, to })
     }
-    const first = spans[0]
-    const last = spans[spans.length - 1]
-    if (first === undefined || last === undefined) return { family: moving, parts: null }
-    const lead = moving[0] ?? item
-    const fixed = family.length > moving.length
-    const total = moving.reduce((sum, c) => sum + c.amountCents, 0)
-    const labor = moving.reduce((sum, c) => sum + (c.labor35aCents ?? 0), 0)
-    const base = baseDescription(lead.description)
-    const parts = splitByService(next, {
-      id: [...family].map((c) => c.id).sort()[0] ?? lead.id, description: base, amountCents: total, labor35aCents: labor || undefined,
-      serviceFrom: first.from, serviceTo: last.to,
-    }).map((p) => (fixed && p.description === base ? { ...p, description: `${base} (anteilig ${formatDayRange(first.from, last.to)})` } : p))
-    return { family: moving, parts }
+    const allMoving = family.filter(isMoving).sort((x, y) => (x.period < y.period ? -1 : x.period > y.period ? 1 : x.id < y.id ? -1 : 1))
+    const standing = family.filter((m) => !isMoving(m))
+    const shared = new Set(allMoving.map((m) => m.period)).size < allMoving.length
+    const poolOf = (m: CostItem): string => (shared ? `${m.paidOn ?? ''}|${storedOutflowYear(m)}` : '')
+    const pools = new Map<string, CostItem[]>()
+    for (const m of allMoving) pools.set(poolOf(m), [...(pools.get(poolOf(m)) ?? []), m])
+    return [...pools.values()].flatMap((moving) => {
+      const lead = moving[0]
+      if (lead === undefined) return []
+      const spans = moving.flatMap((m) => {
+        const old = changed(m.period)?.old
+        if (old === undefined || m.serviceFrom === undefined || m.serviceTo === undefined) return []
+        const from = m.serviceFrom > old.from ? m.serviceFrom : old.from
+        const to = m.serviceTo < old.to ? m.serviceTo : old.to
+        // Liegt der Leistungszeitraum ganz außerhalb des Zeitraums (erlaubt, die Abrechnung warnt), zählt er ganz, wie
+        // beim Teil ohne Quelle unten.
+        return [from <= to ? { from, to } : { from: m.serviceFrom, to: m.serviceTo }]
+      })
+      const labor = moving.reduce((sum, c) => sum + (c.labor35aCents ?? 0), 0)
+      const parts = deriveSourceParts(next, {
+        tieId: family.map((c) => c.id).sort()[0] ?? lead.id,
+        description: baseDescription(lead.description),
+        amountCents: moving.reduce((sum, c) => sum + c.amountCents, 0),
+        ...(labor ? { labor35aCents: labor } : {}),
+        spans,
+        // Es bleiben Teile stehen, oder es gibt neben diesem Jahr noch ein anderes: Die Teile tragen den Zusatz.
+        marked: family.length > moving.length,
+      })
+      return [{ item: lead, parts, family: moving, standing, sourceId }]
+    })
   }
   // Folge-PR zu #252 (Geld-K1, -H1): Ein Abzug des Betriebsstroms folgt immer seiner Stromrechnung. Hat sie einen
   // Leistungszeitraum, steht ihr Endzustand schon im Plan fest; der Abzug geht dann in keine Gruppe und wird nicht
@@ -346,10 +403,9 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
         else if (parts[0] !== undefined && parts[0].period.key !== item.period) splits.push({ item, parts })
         continue
       }
-      const whole = wholeInvoice(item, familyOf(item))
-      if (whole !== null) {
-        for (const m of whole.family) done.add(m.id)
-        if (whole.parts !== null) splits.push({ item: whole.family[0] ?? item, parts: whole.parts, family: whole.family })
+      if (item.sourceId !== undefined) {
+        splits.push(...sourceSplit(item.sourceId))
+        for (const m of bySource.get(item.sourceId) ?? [item]) done.add(m.id)
         continue
       }
       // Geteilt wird der Teil des Leistungszeitraums, der im bisherigen Zeitraum liegt: Ein schon
@@ -362,7 +418,9 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
       const own = from <= to ? { serviceFrom: from, serviceTo: to } : { serviceFrom: item.serviceFrom, serviceTo: item.serviceTo }
       const parts = splitByService(next, { ...item, ...own })
       if (parts.length === 1 && parts[0]?.period.key === item.period) continue
-      splits.push({ item, parts })
+      // Teile ohne Quelle (alter Bestand oder eine gewöhnliche Position) behalten diesen Weg; was dabei mehrere Teile
+      // ergibt, ist danach eine Rechnung mit Quelle (#455).
+      splits.push({ item, parts, ...(parts.length > 1 ? { newSource: true } : {}) })
       continue
     }
     // Laienprobe B2: Kalte Kosten ohne Leistungszeitraum standen im bisherigen Zeitraum und sind nach
@@ -482,14 +540,9 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
     periods: periods.map((p) => ({ key: p.key, label: periodLabel(p), short: p.short })),
     newShort: periods.filter((p) => p.short && !wasShort(p)).map((p) => ({ key: p.key, label: periodLabel(p) })),
     blocked: [...blocked],
-    moves: splits.map(({ item, parts, family }) => ({
-      costItemId: item.id, description: family ? baseDescription(item.description) : item.description,
-      amountCents: (family ?? [item]).reduce((sum, c) => sum + c.amountCents, 0),
-      parts: parts.map((p) => ({ period: p.period.key, label: periodLabel(p.period), amountCents: p.amountCents })),
-    })).concat(follows.map(({ item, parts }) => ({
-      costItemId: item.id, description: item.description, amountCents: item.amountCents,
-      parts: parts.map((p) => ({ period: p.period.key, label: periodLabel(p.period), amountCents: p.amountCents })),
-    }))),
+    // Erst mit den Fragen nach dem Jahr der Zahlung bekannt, ob ein Ergebnis mit einem stehenden Teil zusammengefasst
+    // wird (unten).
+    moves: [],
     groups: [...groups.entries()].map(([id, g]) => {
       const a = changed(g.from) ?? noFinding(g.from)
       const yearIn = (item: CostItem, p: BillingPeriod): number => (spansTwoYears(p) ? taxEntry(item, p).suggested : Number(p.from.slice(0, 4)))
@@ -561,6 +614,30 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
   // gleicht die Steuerübersicht je Steuerjahr aus (Σ Abzüge − Σ Heizpositionen `included`): Jedes Jahr zeigt die in ihm
   // bezahlten Rechnungen, es verschiebt sich nichts, und der Satz entfällt.
   preview.taxYears = [...taxEntries.values()]
+  // Die Vorschau sagt, welches Ergebnis zu einem stehenden Teil kommt (#455), gerechnet mit den vorbelegten Jahren.
+  // Hängt das Zusammenfassen an einer Frage nach dem Jahr der Zahlung (des bewegten oder des stehenden Teils), gilt die
+  // Ankündigung nur für das vorbelegte Jahr, und die Vorschau sagt das (Integrationsdurchsicht zu #455, M1).
+  const suggestedYear: YearIn = (target, item) => taxEntries.get(taxKey(item, target))?.suggested ?? null
+  const produced = new Map<string, CostItem[]>()
+  preview.moves = splits.map((split) => {
+    const earlier = split.sourceId === undefined ? [] : produced.get(split.sourceId) ?? []
+    const own: CostItem[] = []
+    const parts = split.parts.map((p) => {
+      const target = split.family ? mergeTargetOf(split, p, suggestedYear, earlier) : undefined
+      if (split.family && target === undefined) own.push(producedRow(split.item, p, suggestedYear))
+      const asked = target !== undefined && (taxEntries.has(taxKey(split.item, p.period)) || taxEntries.has(taxKey(target, p.period)))
+      return { period: p.period.key, label: periodLabel(p.period), amountCents: p.amountCents, ...(target ? { mergedInto: target.description } : {}), ...(asked ? { mergeDependsOnYear: true as const } : {}) }
+    })
+    if (split.sourceId !== undefined) produced.set(split.sourceId, [...earlier, ...own])
+    return {
+      costItemId: split.item.id, description: split.family ? baseDescription(split.item.description) : split.item.description,
+      amountCents: (split.family ?? [split.item]).reduce((sum, c) => sum + c.amountCents, 0),
+      parts,
+    }
+  }).concat(follows.map(({ item, parts }) => ({
+    costItemId: item.id, description: item.description, amountCents: item.amountCents,
+    parts: parts.map((p) => ({ period: p.period.key, label: periodLabel(p.period), amountCents: p.amountCents })),
+  })))
   preview.token = tokenOf(preview)
   return { preview, splits, groups, overrideRekeys, overrideAsks: [...asks.values()], assessmentMoves, letterDocs, regrows, follows, taxEntries, next, before }
 }
@@ -790,20 +867,67 @@ async function writeChangeIn(
     await tx.update(properties).set({ periodStartMonth: next.startMonth }).where(eq(properties.id, propertyId))
     await tx.delete(periodChanges).where(eq(periodChanges.propertyId, propertyId))
     if (next.changes.length > 0) await tx.insert(periodChanges).values(next.changes.map((fromMonth) => ({ propertyId, fromMonth })))
-    for (const { item, parts, family } of plan.splits) {
-      const writes = parts.map((p) => ({
+    // Zusammenfassen (#455): Ergebnisse, die zu einem stehenden Teil kommen, werden erst nach den Positionen eines
+    // wachsenden Zeitraums geschrieben (`regrows`), denn die schreiben ihren Betrag aus dem Plan.
+    const merges: { target: CostItem; part: ServicePart }[] = []
+    const sources = new Set<string>()
+    // Integrationsdurchsicht zu #455, I1: die eigenen Zeilen jeder Quelle, die frühere Rechnungen derselben Quelle mit
+    // anderem bisherigem Jahr schon geschrieben haben (`mergeTargetOf`, `earlier`); gelesen nur, wo eine weitere folgt.
+    const produced = new Map<string, CostItem[]>()
+    const poolsLeft = new Map<string, number>()
+    for (const s of plan.splits) if (s.family && s.sourceId !== undefined) poolsLeft.set(s.sourceId, (poolsLeft.get(s.sourceId) ?? 0) + 1)
+    for (const split of plan.splits) {
+      const { item, parts, family } = split
+      const write = (p: ServicePart) => ({
         period: p.period.key, amountCents: p.amountCents, labor35aCents: p.labor35aCents, description: p.description, taxYear: taxYearIn(p.period, item),
-      }))
-      const ids = family ? await rewriteCostItemFamily(tx, family, writes, newId, guard) : await writeCostItemParts(tx, item, writes, newId, item.id, guard)
-      remember(item, writes.map((w) => w.period), ids)
+      })
+      if (family) {
+        if (split.sourceId !== undefined) sources.add(split.sourceId)
+        const earlier = split.sourceId === undefined ? [] : produced.get(split.sourceId) ?? []
+        const targets = parts.map((p) => mergeTargetOf(split, p, taxYearIn, earlier))
+        const own = parts.filter((_, i) => targets[i] === undefined)
+        const heir = targets.find((t) => t !== undefined)
+        const ids = await rewriteCostItemFamily(tx, family, own.map(write), newId, guard, heir)
+        if (split.sourceId !== undefined) {
+          const left = (poolsLeft.get(split.sourceId) ?? 1) - 1
+          poolsLeft.set(split.sourceId, left)
+          if (left > 0 && ids.length > 0) {
+            const fresh = new Set(ids)
+            produced.set(split.sourceId, [...earlier, ...(await readCostItems(tx)).filter((c) => fresh.has(c.id))])
+          }
+        }
+        parts.forEach((p, i) => {
+          const target = targets[i]
+          if (target !== undefined) merges.push({ target, part: p })
+        })
+        // Jeder bisherige Teil kennt danach die Teile der Rechnung je Zeitraum, auch ein zusammengefasster (Abzüge
+        // beim Betriebsstrom finden so den Teil ihres Zeitraums, `settleOperatingPowerLinks`).
+        let k = 0
+        const all = parts.map((p, i) => ({ id: targets[i]?.id ?? ids[k++] ?? item.id, period: p.period.key }))
+        for (const m of family) written.set(m.id, all)
+        continue
+      }
+      let sourceId: string | null = null
+      if (split.newSource) {
+        sourceId = newId()
+        await insertCostSource(tx, propertyId, sourceId)
+      }
+      remember(item, parts.map((p) => p.period.key), await writeCostItemParts(tx, item, parts.map(write), newId, item.id, guard, sourceId))
     }
     for (const [id, g] of plan.groups) {
       if (answers.groups[id] === 'split' && g.split !== null) {
         for (const item of g.items) {
           const parts = g.split.get(item.id) ?? []
+          // Laienprobe B2: Die Teile tragen danach den bisherigen Zeitraum als Leistungszeitraum und sind eine Rechnung
+          // mit Quelle (#455); ein Abzug beim Betriebsstrom ist nie Teil einer Quelle, er folgt seiner Stromrechnung.
+          let sourceId: string | null = null
+          if (parts.length > 1 && item.operatingPower !== 'deduction') {
+            sourceId = newId()
+            await insertCostSource(tx, propertyId, sourceId)
+          }
           remember(item, parts.map((p) => p.period.key), await writeCostItemParts(tx, { ...item, serviceFrom: g.old.from, serviceTo: g.old.to }, parts.map((p) => ({
             period: p.period.key, amountCents: p.amountCents, labor35aCents: p.labor35aCents, description: p.description, taxYear: taxYearIn(p.period, item),
-          })), newId, item.id, guard))
+          })), newId, item.id, guard, sourceId))
         }
         continue
       }
@@ -812,8 +936,20 @@ async function writeChangeIn(
       for (const item of g.items) await move(item, target)
     }
     for (const { item, target } of plan.regrows) await move(item, target)
+    // Der Betrag (und Lohnanteil) eines Ergebnisses kommt zum stehenden Teil, gelesen nach allen übrigen Schreibvorgängen.
+    for (const { target, part } of merges) {
+      const now = (await readCostItems(tx)).find((c) => c.id === target.id)
+      if (now === undefined) throw new Error(`Der stehende Teil ${target.id} fehlt im Wechsel`)
+      const labor = now.labor35aCents === undefined && part.labor35aCents === null ? null : (now.labor35aCents ?? 0) + (part.labor35aCents ?? 0)
+      await writeCostItemParts(tx, now, [{ period: now.period, amountCents: now.amountCents + part.amountCents, labor35aCents: labor, description: now.description, taxYear: now.taxYear ?? null }], newId, now.id, guard)
+    }
     // Folge-PR zu #252 (Geld-K1, -H1): Die Abzüge auf eine Rechnung mit Leistungszeitraum folgen deren Teilen.
-    for (const { item, parts } of plan.follows) {
+    // Gelesen nach dem Zusammenfassen (Durchsicht von PR 2 zu #455, I1): Wurde der Teil der Rechnung, auf den ein Abzug
+    // zeigte, gelöscht, zeigt der Abzug jetzt auf den verbleibenden (`rewriteCostItemFamily`); der Stand aus dem Plan
+    // nennte noch den gelöschten.
+    const current = new Map((await readCostItems(tx)).map((c) => [c.id, c]))
+    for (const { item: planned, parts } of plan.follows) {
+      const item = current.get(planned.id) ?? planned
       remember(item, parts.map((p) => p.period.key), await writeCostItemParts(tx, item, parts.map((p) => ({
         period: p.period.key, amountCents: p.amountCents, labor35aCents: null, description: p.description, taxYear: taxYearIn(p.period, item),
       })), newId, item.id, guard))
@@ -832,6 +968,12 @@ async function writeChangeIn(
     }
     for (const m of plan.assessmentMoves) await tx.update(assessments).set({ requestedPeriod: m.to }).where(eq(assessments.id, m.id))
     await dropLetterDocs(tx, plan.letterDocs)
+    // Invariante 3 (#455): Bleibt einer Quelle ein einziger Teil, ist er eine gewöhnliche Position, und die Quelle entfällt.
+    for (const sourceId of sources) {
+      const rest = await tx.select({ id: costItems.id }).from(costItems).where(eq(costItems.sourceId, sourceId))
+      if (rest.length === 1) await tx.update(costItems).set({ sourceId: null }).where(eq(costItems.sourceId, sourceId))
+      await dropEmptySource(tx, sourceId)
+    }
     await settleOperatingPowerLinks(tx, propertyId, written)
   }
 }

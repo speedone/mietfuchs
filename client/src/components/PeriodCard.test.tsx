@@ -2,7 +2,7 @@
 // Die Auswahlfelder der Karte „Abrechnungszeitraum“ zeigen den gewählten Wert (CLAUDE.md, Tests Ebene 3).
 import { afterEach, describe, expect, test } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { EffectsList, PreviewAnswers, RhythmFields } from './PeriodCard'
+import { EffectsList, MoveList, PreviewAnswers, RhythmFields } from './PeriodCard'
 import { answersOf, initialAnswers } from '../periodForm'
 import { periodKey } from '../../../shared/period.ts'
 import type { PeriodChangePreview } from '../types'
@@ -76,6 +76,24 @@ describe('Jahr des Betriebsstroms: kein Satz zur Verschiebung (#268)', () => {
       expect(container.textContent).not.toMatch(/verschiebt sich/)
       cleanup()
     }
+  })
+})
+
+// #455: Kommt ein Anteil zum stehenden Teil derselben Rechnung, entsteht keine zweite Zeile, und die Vorschau sagt es.
+describe('Wechsel nach Quelle (#455)', () => {
+  test('zeigt, mit welchem Teil zusammengefasst wird', () => {
+    render(<MoveList moves={[{ costItemId: 'gs-2', description: 'Grundsteuer 2025', amountCents: 24500, parts: [
+      { period: periodKey('2025-01'), label: '2025', amountCents: 24500, mergedInto: 'Grundsteuer 2025 (anteilig 01.01.–30.04.2025)' },
+    ] }, { costItemId: 'ws', description: 'Wasser', amountCents: 15000, parts: [{ period: periodKey('2025-02'), label: '2025/2026', amountCents: 15000 }] }]} />)
+    expect(screen.getByText(/„Grundsteuer 2025“ \(245,00 €\) wird nach Tagen aufgeteilt: 2025: 245,00 €\. Der Anteil für 2025 wird mit dem Teil „Grundsteuer 2025 \(anteilig 01\.01\.–30\.04\.2025\)“ zusammengefasst\./)).toBeTruthy()
+    expect(screen.getByText(/„Wasser“/).textContent).not.toMatch(/zusammengefasst/)
+  })
+  // Integrationsdurchsicht zu #455, M1: Hängt das Zusammenfassen am gefragten Jahr der Zahlung, gilt der Satz nur dafür.
+  test('mit Frage nach dem Jahr der Zahlung nur unter Bedingung', () => {
+    render(<MoveList moves={[{ costItemId: 'gs-2', description: 'Grundsteuer 2025', amountCents: 12000, parts: [
+      { period: periodKey('2025-05'), label: '2025/2026', amountCents: 12000, mergedInto: 'Grundsteuer 2025 (anteilig 01.05.–31.12.2025)', mergeDependsOnYear: true },
+    ] }]} />)
+    expect(screen.getByText(/Bleibt es beim vorbelegten Jahr der Zahlung, wird der Anteil für 2025\/2026 mit dem Teil „Grundsteuer 2025 \(anteilig 01\.05\.–31\.12\.2025\)“ zusammengefasst; mit einem anderen Jahr bleibt er eine eigene Zeile\./)).toBeTruthy()
   })
 })
 

@@ -64,8 +64,15 @@ Schlüssel** `PeriodKey` (`'JJJJ-MM'`, Monat des Beginns, Markentyp), kein Jahr:
   verschoben wird über dieselbe Schreibprüfung wie beim Speichern.
 - **Kalte Rechnungen mit Leistungszeitraum über zwei Zeiträume werden beim Speichern nach Tagen
   aufgeteilt** ([serviceSplit.ts](serviceSplit.ts), Leistungsprinzip); jeder Teil trägt den ganzen
-  Leistungszeitraum, und ein Teil wird danach nur berichtigt (`isSplitPart`), bei einem weiteren
-  Wechsel nur über seinen eigenen Teil neu geteilt (`needsSplitCheck`). Heizkosten nie
+  Leistungszeitraum, und ein Teil wird danach nur berichtigt (`isSplitPart`). Jeder Weg, der so teilt, legt eine
+  Quelle an (#455, `cost_sources`). Der Wechsel des Rhythmus teilt nach Quelle (`sourceId`): Teile in Zeiträumen,
+  die bleiben oder wachsen, stehen; die übrigen werden als eine Rechnung über ihre Spannen neu geteilt
+  (`deriveSourceParts`), und ein Ergebnis kommt zum stehenden Teil seines Zeitraums bei gleichem Zahlungsdatum,
+  gleichem Jahr der Zahlung und gleicher Verteilung (`mergeTargetOf`, `sameAllocation`, Vorschau `mergedInto`, bei
+  gefragtem Jahr `mergeDependsOnYear`). Stehen bewegte Teile im selben Zeitraum, zählen sie nur bei gleichem Jahr der
+  Zahlung und Zahlungsdatum zusammen, sonst je Jahr eine Rechnung mit eigener Frage (`sourceSplit`, `poolOf`); liegt
+  jeder in einem anderen Zeitraum, bleibt es eine (Golden). Bleibt ein Teil, entfällt die Quelle. Ein Teil
+  ohne Quelle wird über seinen eigenen Teil des Leistungszeitraums geteilt und bekommt dann eine. Heizkosten nie
   (VIII ZR 156/11), dort warnt `period.heating-mismatch`.
 - **Jahr der Steuer**: `tax_year` ist das Jahr der Zahlung, Pflicht nur bei einem Zeitraum über zwei
   Kalenderjahre. Welches Jahr eine Position für die Steuer hat, sagt allein `outflowShares`

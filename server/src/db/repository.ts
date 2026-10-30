@@ -1194,7 +1194,7 @@ async function requireServiceAndTax(db: Executor, before: CostItem | null, after
   // anderen Leistungszeitraum oder Zeitraum stimmte sein Anteil nicht mehr zum Schnitt nach Tagen,
   // und die Geschwisterteile blieben stehen. Den Wechsel des Rhythmus (`splitPart`) betrifft das nicht.
   // Auch nicht zur Heizposition (Nachprüfung von #226): Heizkosten werden nie nach Tagen geteilt.
-  if (before !== null && !options.splitPart && isSplitPart(rules, before) &&
+  if (before !== null && !options.splitPart && (before.sourceId !== undefined || isSplitPart(rules, before)) &&
     (before.serviceFrom !== from || before.serviceTo !== to || before.period !== after.period || after.category === HEATING_CATEGORY)) {
     throw new PeriodError(splitPartMessage(before))
   }
@@ -1382,11 +1382,28 @@ async function guardMeter(db: Executor, before: Meter | null, after: Meter): Pro
   }
 }
 
+// Was an einem Teil mit Quelle (#455) nicht geändert wird, denn die Teile teilen Kostenart und Verteilung der Rechnung:
+// keine andere Kostenart, nicht Einzelbeträge (die teilt Mietfuchs nicht nach Tagen, `splitBlocker`), kein Betriebsstrom.
+// Entschieden wird allein nach `sourceId`, nicht nach `isSplitPart`: Eine Quelle kann Teile haben, die in einem einzigen
+// Zeitraum liegen. `splitPart` und `periodChange` kommen nur aus der Ableitung der Teile und lassen die Prüfung aus.
+function requireSourcePartStays(before: CostItem | null, after: CostItem, options: CostItemGuardOptions): void {
+  if (!before?.sourceId || options.splitPart || options.periodChange) return
+  const what = `„${after.description}“ ist ein Teil einer aufgeteilten Rechnung. `
+  if (after.category !== before.category) {
+    throw new PeriodError(`${what}Die Kostenart ändern Sie nicht an einem einzelnen Teil, sonst passten die Teile nicht mehr zusammen. Löschen Sie alle Teile und erfassen Sie die Rechnung neu mit „Aufteilen und speichern“.`)
+  }
+  if (after.key === 'amounts' && before.key !== 'amounts') throw new PeriodError(splitBlocker(after) ?? `${what}Nach Einzelbeträgen verteilt Mietfuchs sie nicht.`)
+  if (after.operatingPower !== before.operatingPower) {
+    throw new PeriodError(`${what}Als Betriebsstrom (Abzug oder Stromrechnung) lässt sich ein einzelner Teil nicht verbuchen; erfassen Sie die Rechnung dafür ohne Aufteilen.`)
+  }
+}
+
 async function guardCostItem(db: Executor, before: CostItem | null, after: CostItem, body: unknown, options: CostItemGuardOptions = {}): Promise<void> {
   // Die Teile einer aufgeteilten Rechnung (#455) gehören zusammen und damit zu einem Objekt.
   if (before?.sourceId && after.propertyId !== before.propertyId) {
     throw new CrossPropertyError(`„${after.description}“ ist Teil einer aufgeteilten Rechnung; die Teile gehören zusammen und können nicht in ein anderes Objekt wechseln. Erfassen Sie die Rechnung im anderen Objekt neu.`)
   }
+  requireSourcePartStays(before, after, options)
   // Der Zeitraum (#208) muss zum Objekt gehören, bei einer Heizposition mit eigener Heizperiode zur
   // Anlage (Heizung PR 5). `year` ohne `period` schickt nur ein alter Tab.
   const heating = after.heatingPlantId ? await heatingRulesOf(db, after.heatingPlantId) : null
@@ -2551,8 +2568,9 @@ export async function writeCostItemParts(tx: Executor, base: CostItem, parts: re
 // sonst die eines übrigen; was übrig bleibt, wird gelöscht. Vorher wandern die gebuchten Zeilen
 // einer Belegauswertung und der Beleg auf einen verbleibenden Teil derselben Rechnung: Mit
 // `SET NULL` stünde die schon gebuchte Rechnung sonst wieder offen im Posteingang und ließe sich ein
-// zweites Mal buchen (#184). Ohne Transaktion, der Aufrufer läuft in einer.
-export async function rewriteCostItemFamily(tx: Executor, members: readonly CostItem[], parts: readonly PartWrite[], newId: () => string, guardOptions: CostItemGuardOptions = { splitPart: true }): Promise<string[]> {
+// zweites Mal buchen (#184). Ohne Transaktion, der Aufrufer läuft in einer. `heir` (#455): ein stehender Teil derselben
+// Quelle, zu dem ein Teil zusammengefasst wird; er übernimmt Belegzeilen und Beleg, wenn kein neuer Teil bleibt.
+export async function rewriteCostItemFamily(tx: Executor, members: readonly CostItem[], parts: readonly PartWrite[], newId: () => string, guardOptions: CostItemGuardOptions = { splitPart: true }, heir?: CostItem): Promise<string[]> {
   const first = members[0]
   if (first === undefined) return []
   const unused = [...members]
@@ -2579,7 +2597,7 @@ export async function rewriteCostItemFamily(tx: Executor, members: readonly Cost
       written.push(id)
     }
   }
-  const keep = chosen.find((m) => m !== undefined)
+  const keep = chosen.find((m) => m !== undefined) ?? heir
   for (const m of unused) {
     const booked = await tx.select({ idx: assessmentLines.idx }).from(assessmentLines).where(eq(assessmentLines.costItemId, m.id))
     if (keep === undefined && (booked.length > 0 || m.invoiceFile !== undefined)) {
@@ -2588,6 +2606,10 @@ export async function rewriteCostItemFamily(tx: Executor, members: readonly Cost
     if (keep !== undefined) {
       await tx.update(assessmentLines).set({ costItemId: keep.id }).where(eq(assessmentLines.costItemId, m.id))
       if (m.invoiceFile !== undefined && keep.invoiceFile === undefined) await tx.update(costItems).set({ invoiceFile: m.invoiceFile }).where(eq(costItems.id, keep.id))
+      // Durchsicht von PR 2 zu #455, I1: Ein Abzug beim Betriebsstrom, der noch auf den gelöschten Teil zeigt, wandert
+      // vorläufig zum verbleibenden; den Teil seines Zeitraums setzt danach `settleOperatingPowerLinks`. Sonst lehnte
+      // das Löschen ab, obwohl der Abzug seiner Rechnung im selben Wechsel folgt.
+      await tx.update(costItems).set({ operatingPowerGeneralId: keep.id }).where(eq(costItems.operatingPowerGeneralId, m.id))
     }
     await costItemCollection.remove(tx, m.id)
   }
@@ -2601,7 +2623,7 @@ async function splitBase(db: Database, propertyId: string | null, body: unknown,
   if (currentId !== null && !current) throw new PeriodError('Diese Kostenposition gibt es nicht (mehr). Bitte laden Sie die Seite neu.')
   // Ein schon aufgeteilter Teil ist nicht die ganze Rechnung (Durchsicht von #226, C1): Ihn noch
   // einmal aufzuteilen, verteilte seinen Anteil ein zweites Mal über beide Zeiträume.
-  if (current && isSplitPart(await rulesForProperty(db, current.propertyId), current)) throw new PeriodError(splitPartMessage(current))
+  if (current && (current.sourceId !== undefined || isSplitPart(await rulesForProperty(db, current.propertyId), current))) throw new PeriodError(splitPartMessage(current))
   const base = mergeCostItem(current ?? emptyCostItem(currentId ?? 'vorschau'), current ? body : { ...Object(body), propertyId })
   if (base.category === HEATING_CATEGORY) {
     throw new PeriodError('Heizkosten teilt Mietfuchs nicht nach Tagen auf: Sie müssen den Verbrauch im Abrechnungszeitraum abbilden (BGH VIII ZR 156/11).')
@@ -2655,10 +2677,16 @@ export async function saveCostItemSplit(db: Database, propertyId: string | null,
     const questions = splitPaidOnQuestions(current, base, parts)
     if (questions.length > 0) throw new PaidOnQuestion(questions.join(' '))
   }
-  const ids = await db.transaction((tx) => writeCostItemParts(tx, base, parts.map((p) => ({
-    period: p.period, amountCents: p.amountCents, labor35aCents: p.labor35aCents, description: p.description,
-    taxYear: p.needsTaxYear ? base.taxYear ?? null : null,
-  })), newId, currentId))
+  const ids = await db.transaction(async (tx) => {
+    // Die Quelle entsteht vor den Teilen, die auf sie zeigen (Fremdschlüssel), und fällt mit einer Ablehnung weg.
+    const sourceId = newId()
+    await insertCostSource(tx, base.propertyId, sourceId)
+    const written = await writeCostItemParts(tx, base, parts.map((p) => ({
+      period: p.period, amountCents: p.amountCents, labor35aCents: p.labor35aCents, description: p.description,
+      taxYear: p.needsTaxYear ? base.taxYear ?? null : null,
+    })), newId, currentId, { splitPart: true }, sourceId)
+    return written
+  })
   const all = await readCostItems(db)
   return ids.map((id) => all.find((c) => c.id === id)).filter((c): c is CostItem => c !== undefined)
 }
@@ -2946,7 +2974,9 @@ export async function sharesForUnit(db: Database, unitId: string): Promise<numbe
 export async function settleOperatingPowerLinks(tx: Executor, propertyId: string, parts: ReadonlyMap<string, readonly { id: string; period: PeriodKey }[]>): Promise<void> {
   const all = (await readCostItems(tx)).filter((c) => c.propertyId === propertyId)
   const byId = new Map(all.map((c) => [c.id, c]))
-  const familyOf = (id: string) => [...parts.values()].find((list) => list.some((p) => p.id === id)) ?? []
+  // Je bisheriger Position ihre Teile; ein Teil, der im Wechsel zusammengefasst und gelöscht wurde, findet sie unter seiner
+  // eigenen Kennung (#455).
+  const familyOf = (id: string) => parts.get(id) ?? [...parts.values()].find((list) => list.some((p) => p.id === id)) ?? []
   for (const d of all) {
     if (d.operatingPower !== 'deduction' || d.operatingPowerGeneralId === undefined) continue
     const g = byId.get(d.operatingPowerGeneralId)

@@ -122,6 +122,60 @@ test('Rücksprung über das Löschen des letzten Teils stellt Quelle und Teil wi
   }
 })
 
+// #455: Das Aufteilen legt Quelle und Teile in einem Vorgang an; der Rücksprung nimmt beide zurück.
+test('Rücksprung über ein Aufteilen entfernt Quelle und Teile', async () => {
+  const s = await startServerIn(tmp())
+  try {
+    const before = await dumpStock(s.dataDir)
+    const teile = await post<{ id: string, sourceId?: string }[]>(s, '/api/costItems/split', {
+      propertyId: 'objekt-1', period: '2024-01', category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 48000, key: 'area',
+      serviceFrom: '2024-07-01', serviceTo: '2025-06-30', taxYear: 2024,
+    })
+    assert.equal(teile.length, 2)
+    assert.equal(new Set(teile.map((t) => t.sourceId)).size, 1)
+    const after = await dumpStock(s.dataDir)
+    assert.equal(after.cost_sources?.length, 1)
+    assert.equal(after.cost_items?.length, 2)
+    const top = await newest(s)
+    await revert(s, top.id)
+    const gone = await dumpStock(s.dataDir)
+    assert.deepEqual([gone.cost_sources, gone.cost_items], [[], []])
+    assert.deepEqual(gone, before)
+  } finally {
+    s.stop()
+  }
+})
+
+// #455: Der Wechsel des Rhythmus legt eine Quelle an (Aufteilen nach Tagen) und nimmt sie beim Zusammenfassen wieder
+// weg. Der Rücksprung über jeden der beiden Wechsel stellt Quellen und Teile wieder her.
+test('Rücksprung über einen Wechsel stellt Quellen und Teile wieder her', async () => {
+  const s = await startServerIn(tmp())
+  try {
+    const wechsel = async (rules: unknown) => {
+      const preview = await post<{ token: string }>(s, '/api/properties/objekt-1/period/preview', { rules })
+      const res = await send(s, 'PUT', '/api/properties/objekt-1/period', { rules, answers: { groups: {}, overrides: {}, taxYears: {}, token: preview.token, understood: true } })
+      assert.equal(res.status, 200, await res.clone().text())
+    }
+    await post(s, '/api/costItems', { propertyId: 'objekt-1', period: '2025-01', category: 'Grundsteuer', description: 'Grundsteuer 2025', amountCents: 36500, key: 'area', serviceFrom: '2025-01-01', serviceTo: '2025-12-31' })
+    const vorher = await dumpStock(s.dataDir)
+    await wechsel({ startMonth: 1, changes: ['2025-05'] })
+    const geteilt = await dumpStock(s.dataDir)
+    assert.equal(geteilt.cost_sources?.length, 1)
+    assert.equal(geteilt.cost_items?.length, 2)
+    const teilung = await newest(s)
+    await wechsel({ startMonth: 1, changes: [] })
+    const zusammen = await dumpStock(s.dataDir)
+    assert.deepEqual([zusammen.cost_sources?.length, zusammen.cost_items?.length], [0, 1])
+
+    await revert(s, (await newest(s)).id)
+    assert.deepEqual(await dumpStock(s.dataDir), geteilt, 'Quelle und beide Teile wieder da')
+    await revert(s, teilung.id, 'including')
+    assert.deepEqual(await dumpStock(s.dataDir), vorher)
+  } finally {
+    s.stop()
+  }
+})
+
 test('Rücksprung: „Stand vor“ nimmt den Eintrag und alles danach zurück, „Stand nach“ nur alles danach', async () => {
   const s = await startServerIn(tmp())
   try {

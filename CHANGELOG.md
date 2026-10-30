@@ -14,6 +14,17 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   zusammengehören, diese Kennung von selbst, auch die aus einem eingespielten Backup. Keine Zahl ändert sich, auch keine abgeschlossene
   Abrechnung.
 
+### Behoben
+
+- Nach mehreren Wechseln des Abrechnungszeitraums stand eine Rechnung mehrfach im selben Zeitraum
+  ([#455](https://github.com/speedone/mietfuchs/issues/455)). Jetzt gibt es eine Zeile je Zeitraum: Ein Anteil, der in
+  einen Zeitraum mit einem Teil derselben Rechnung fällt, kommt zu diesem Teil, wenn beide dasselbe Jahr der Zahlung
+  haben und gleich verteilt werden (ein einzeln berichtigter Schlüssel oder Teilnehmerkreis bleibt eine eigene Zeile);
+  die Vorschau sagt es vorher, und hängt es am gefragten Jahr der Zahlung, sagt sie auch das. Stehen zwei Teile einer
+  Rechnung mit verschiedenem Jahr der Zahlung im selben Zeitraum, teilt der nächste Wechsel sie getrennt und fragt das
+  Jahr für jeden; vorher bekamen beide das Jahr des ersten, und Werbungskosten wechselten das Steuerjahr. Die Summe je
+  Zeitraum ändert sich dadurch nicht.
+
 ## [0.13.1] – 2026-10-27
 
 ### Behoben

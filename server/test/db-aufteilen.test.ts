@@ -9,11 +9,11 @@ import path from 'node:path'
 import { eq } from 'drizzle-orm'
 import type { OpenedDatabase } from '../src/db/open.ts'
 import { openFreshDatabase } from '../testing/freshDatabase.ts'
-import { closeSettlement, createEntity, listCollection, PeriodConflict, PeriodError, previewCostItemSplit, saveCostItemSplit } from '../src/db/repository.ts'
-import { periodChanges, properties } from '../src/db/schema.ts'
+import { closeSettlement, createEntity, listCollection, PeriodConflict, PeriodError, previewCostItemSplit, saveCostItemSplit, updateEntity } from '../src/db/repository.ts'
+import { costItems as costItemsTable, costSources, periodChanges, properties } from '../src/db/schema.ts'
 import { periodKey } from '../../shared/period.ts'
 import type { CostItem } from '../../shared/types.ts'
-import { SPLIT_FIELDS } from '../../shared/splitPart.ts'
+import { SPLIT_FIELDS, splitBlocker } from '../../shared/splitPart.ts'
 
 async function withDatabase(work: (opened: OpenedDatabase) => Promise<void>): Promise<void> {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-aufteilen-'))
@@ -145,5 +145,97 @@ test('#454: Einzelbeträge mit Leistungszeitraum in einem Zeitraum: Vorschau ein
     assert.deepEqual(vorschau.map((p) => [p.period, p.amountCents]), [['2025-01', 12000]])
     await opened.write((db) => createEntity(db, 'costItems', 'k', { ...kabel, propertyId: 'objekt-1' }))
     assert.deepEqual((await costItems(opened)).map((c) => [c.id, c.amountCents]), [['k', 12000]])
+  })
+})
+
+// #455: Das Aufteilen legt die Quelle an, alle Teile verweisen darauf; der Wächter lässt an einem Teil mit Quelle
+// nur zu, was die Teile zusammenhält.
+const sourceIdsOf = async (opened: OpenedDatabase) => (await costItems(opened)).map((c) => c.sourceId)
+
+test('#455: Aufteilen legt eine Quelle an, alle Teile verweisen darauf', async () => {
+  await withDatabase(async (opened) => {
+    await setRules(opened, 1, ['2025-05'])
+    const teile = await opened.write((db) => saveCostItemSplit(db, 'objekt-1', grundsteuer, null, ids))
+    const sourceId = teile[0]?.sourceId
+    assert.ok(sourceId, 'der erste Teil hat eine Quelle')
+    assert.deepEqual(teile.map((c) => c.sourceId), [sourceId, sourceId])
+    const quellen = await opened.read((db) => db.select().from(costSources))
+    assert.deepEqual(quellen.map((q) => [q.id, q.propertyId, q.rule]), [[sourceId, 'objekt-1', 'days']])
+  })
+})
+
+test('#455: Ablehnen beim Aufteilen lässt keine Quelle zurück', async () => {
+  await withDatabase(async (opened) => {
+    await setRules(opened, 1, ['2025-05'])
+    const { taxYear: _ohne, ...ohneJahr } = grundsteuer
+    await assert.rejects(opened.write((db) => saveCostItemSplit(db, 'objekt-1', ohneJahr, null, ids)), PeriodError)
+    assert.deepEqual(await opened.read((db) => db.select().from(costSources)), [])
+  })
+})
+
+test('#455: An einem Teil mit Quelle lehnt der Wächter ab: andere Kostenart, Schlüssel Einzelbeträge, Betriebsstrom', async () => {
+  await withDatabase(async (opened) => {
+    await setRules(opened, 1, ['2025-05'])
+    const [teil] = await opened.write((db) => saveCostItemSplit(db, 'objekt-1', grundsteuer, null, ids))
+    assert.ok(teil)
+    const update = (body: object) => opened.write((db) => updateEntity(db, 'costItems', teil.id, body))
+    await assert.rejects(update({ category: 'Gartenpflege' }), (e) => e instanceof PeriodError && /ein Teil einer aufgeteilten Rechnung.*Kostenart/.test(e.message))
+    await assert.rejects(update({ key: 'amounts', tenancyAmounts: {} }), (e) => e instanceof PeriodError && e.message === (splitBlocker({ key: 'amounts', description: teil.description }) ?? ''))
+    await assert.rejects(update({ operatingPower: 'deduction' }), (e) => e instanceof PeriodError && /Betriebsstrom/.test(e.message))
+    const nach = (await costItems(opened)).find((c) => c.id === teil.id)
+    assert.deepEqual([nach?.category, nach?.key, nach?.operatingPower], ['Grundsteuer', 'area', undefined])
+  })
+})
+
+test('#455: Betrag, Rechnungssteller, Beleg und Schlüssel (nicht Einzelbeträge) lassen sich je Teil berichtigen', async () => {
+  await withDatabase(async (opened) => {
+    await setRules(opened, 1, ['2025-05'])
+    const [teil] = await opened.write((db) => saveCostItemSplit(db, 'objekt-1', grundsteuer, null, ids))
+    assert.ok(teil)
+    await opened.write((db) => updateEntity(db, 'costItems', teil.id, { amountCents: 15000, vendor: 'Stadt', invoiceFile: 'neu.pdf', key: 'persons' }))
+    const nach = (await costItems(opened)).find((c) => c.id === teil.id)
+    assert.deepEqual([nach?.amountCents, nach?.vendor, nach?.invoiceFile, nach?.key, nach?.sourceId], [15000, 'Stadt', 'neu.pdf', 'persons', teil.sourceId])
+    assert.deepEqual(await sourceIdsOf(opened), [teil.sourceId, teil.sourceId])
+  })
+})
+
+// #455 Schritt 2: Teile mit Quelle, die in einem einzigen Zeitraum liegen (Jahresobjekt, Leistungszeitraum 2025).
+async function einzeitraumQuelle(opened: OpenedDatabase): Promise<void> {
+  await opened.write(async (db) => {
+    await db.insert(costSources).values({ id: 'q1', propertyId: 'objekt-1', rule: 'days' })
+  })
+  const teil = { propertyId: 'objekt-1', period: '2025-01', category: 'Grundsteuer', key: 'area', serviceFrom: '2025-01-01', serviceTo: '2025-12-31', taxYear: 2025 }
+  await opened.write((db) => createEntity(db, 'costItems', 'a', { ...teil, description: 'G (Teil 1)', amountCents: 12000 }))
+  await opened.write((db) => createEntity(db, 'costItems', 'b', { ...teil, description: 'G (Teil 2)', amountCents: 24500 }))
+  await opened.write(async (db) => {
+    await db.update(costItemsTable).set({ sourceId: 'q1' })
+  })
+}
+
+test('#455: Ein Teil mit Quelle in einem Zeitraum wird nicht noch einmal aufgeteilt (Vorschau und Speichern)', async () => {
+  await withDatabase(async (opened) => {
+    await einzeitraumQuelle(opened)
+    const body = { serviceTo: '2026-06-30' }
+    await assert.rejects(opened.read((db) => previewCostItemSplit(db, null, body, 'a')), (e) => e instanceof PeriodError && /ein Teil einer aufgeteilten Rechnung/.test(e.message))
+    await assert.rejects(opened.write((db) => saveCostItemSplit(db, null, body, 'a', ids)), (e) => e instanceof PeriodError)
+    assert.deepEqual((await costItems(opened)).map((c) => [c.id, c.sourceId, c.amountCents]), [['a', 'q1', 12000], ['b', 'q1', 24500]])
+  })
+})
+
+test('#455: Ein Teil mit Quelle im selben Zeitraum wechselt weder Zeitraum noch Leistungszeitraum', async () => {
+  await withDatabase(async (opened) => {
+    await einzeitraumQuelle(opened)
+    await assert.rejects(opened.write((db) => updateEntity(db, 'costItems', 'a', { period: '2026-01', serviceFrom: '2026-01-01', serviceTo: '2026-12-31', taxYear: 2026 })),
+      (e) => e instanceof PeriodError && /ein Teil einer aufgeteilten Rechnung/.test(e.message))
+    await assert.rejects(opened.write((db) => updateEntity(db, 'costItems', 'a', { serviceTo: '2025-06-30' })), PeriodError)
+    assert.deepEqual((await costItems(opened)).map((c) => [c.period, c.serviceTo]), [['2025-01', '2025-12-31'], ['2025-01', '2025-12-31']])
+  })
+})
+
+test('#455: Am Betriebsstrom eines Teils mit Quelle ändert sich nichts, auch kein Aufheben', async () => {
+  await withDatabase(async (opened) => {
+    await einzeitraumQuelle(opened)
+    await opened.write(async (db) => { await db.update(costItemsTable).set({ operatingPower: 'deduction', category: 'Beleuchtung/Allgemeinstrom', amountCents: -500, operatingPowerGeneralId: 'b' }).where(eq(costItemsTable.id, 'a')) })
+    await assert.rejects(opened.write((db) => updateEntity(db, 'costItems', 'a', { operatingPower: null })), (e) => e instanceof PeriodError && /Betriebsstrom/.test(e.message))
   })
 })

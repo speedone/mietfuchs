@@ -438,7 +438,10 @@ export type PeriodChangePreview = {
   periods: { key: PeriodKey; label: string; short: boolean }[]
   newShort: { key: PeriodKey; label: string }[]
   blocked: string[]
-  moves: { costItemId: string; description: string; amountCents: number; parts: { period: PeriodKey; label: string; amountCents: number }[] }[]
+  // `mergedInto` (#455): Das Ergebnis kommt zum stehenden Teil derselben Rechnung im Zeitraum (seine Beschreibung),
+  // statt dort eine zweite Zeile anzulegen. `mergeDependsOnYear`: Die Vorschau fragt in diesem Zeitraum ein Jahr der
+  // Zahlung, und zusammengefasst wird nur mit den vorbelegten Jahren (bei verschiedenen bleibt es eine eigene Zeile).
+  moves: { costItemId: string; description: string; amountCents: number; parts: { period: PeriodKey; label: string; amountCents: number; mergedInto?: string; mergeDependsOnYear?: true }[] }[]
   // Je bisherigem Zeitraum eine Gruppe für kalte Kosten und eine für Heizkosten (Laienprobe B2);
   // geantwortet wird unter `id`. Kalte Kosten ohne Leistungszeitraum lassen sich nach Tagen auf die
   // neuen Zeiträume aufteilen (`split`, Antwort 'split', Vorgabe): Die Rechnung stand im bisherigen

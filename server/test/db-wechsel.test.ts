@@ -218,7 +218,8 @@ test('Nach einem Wechsel lässt sich jedes Mietverhältnis und jede Position spe
     assert.ok(zurueck && 'property' in zurueck, zurueck && 'error' in zurueck ? zurueck.error : 'kein Objekt')
     await everythingSaves(opened)
     const grundsteuer = (await items(opened)).filter((c) => c.category === 'Grundsteuer')
-    assert.deepEqual(grundsteuer.map((c) => c.period), ['2025-01', '2025-01'])
+    // #455: Der Teil aus 2025/2026 kommt zum stehenden Teil des Rumpfs, eine Zeile.
+    assert.deepEqual(grundsteuer.map((c) => c.period), ['2025-01'])
     assert.equal(grundsteuer.reduce((a, c) => a + c.amountCents, 0), 48000)
   })
 })
@@ -235,8 +236,9 @@ test('Ein schon aufgeteilter Teil wird beim nächsten Wechsel nur über seinen e
     }, token: (await previewPeriodChange(db, 'objekt-1', { startMonth: 1, changes: ['2025-07'] }, TODAY))?.token }, ids, TODAY))
     assert.ok(juli && 'property' in juli, juli && 'error' in juli ? juli.error : 'kein Objekt')
     const grundsteuer = (await items(opened)).filter((c) => c.category === 'Grundsteuer').map((c) => [c.period, c.amountCents]).sort()
-    // Mai und Juni: 61 von 245 Tagen des Teils über 32.219 Cent.
-    assert.deepEqual(grundsteuer, [['2025-01', 15781], ['2025-01', 8022], ['2025-07', 24197]])
+    // Mai und Juni: 61 von 245 Tagen des Teils über 32.219 Cent (8.022), seit #455 zum stehenden Teil des Rumpfs
+    // (15.781) zusammengefasst.
+    assert.deepEqual(grundsteuer, [['2025-01', 23803], ['2025-07', 24197]])
     await everythingSaves(opened)
   })
 })

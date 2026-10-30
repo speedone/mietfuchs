@@ -15,7 +15,7 @@ import { bookOperatingPower } from '../src/db/operatingPower.ts'
 import { readCostItems, readStock } from '../src/db/read.ts'
 import { createEntity, saveCostItemSplit, updateEntity } from '../src/db/repository.ts'
 import { eq } from 'drizzle-orm'
-import { properties } from '../src/db/schema.ts'
+import { costItems, properties } from '../src/db/schema.ts'
 import type { CostItem } from '../../shared/types.ts'
 import { computeSettlement } from '../src/calc.ts'
 import { snapshotFor } from '../src/snapshot.ts'
@@ -119,9 +119,10 @@ test('G4-K1: großer Abzug einer Rechnung mit Leistungszeitraum teilt sich wie s
   })
 })
 
-// Auch eine Prüfung, die erst beim Schreiben scheitert (hier: ein Teil der Rechnung fällt weg, an dem ein Abzug
-// hängt), ist ein Konflikt mit dem Bestand: 409 mit Vorschau, keine nackte 400.
-test('G2-N-W1: ein Wechsel, der den Teil einer Rechnung mit Abzug entfernt, antwortet mit Vorschau und Satz', async () => {
+// Bis zur Durchsicht von PR 2 zu #455 (I1) lehnte dieser Wechsel ab: Beide Teile der Rechnung wandern zusammen in das
+// Kalenderjahr 2025, einer fällt dabei weg, und an ihm hing ein Abzug. Seit dem Wechsel nach Quelle folgen die Abzüge
+// ihrer Rechnung auch dann: eine Zeile Hausstrom 1.000 €, beide Abzüge darauf, die Summe unverändert.
+test('G2-N-W1/I1: ein Wechsel, der den Teil einer Rechnung mit Abzug entfernt, legt den Abzug auf den verbleibenden', async () => {
   await withDatabase(async (opened) => {
     await opened.write(async (db) => { await db.update(properties).set({ periodStartMonth: 5 }).where(eq(properties.id, 'objekt-1')) })
     const teile = await opened.write((db) => saveCostItemSplit(db, 'objekt-1', {
@@ -135,8 +136,34 @@ test('G2-N-W1: ein Wechsel, der den Teil einer Rechnung mit Abzug entfernt, antw
     const preview = (await opened.read((db) => previewPeriodChange(db, 'objekt-1', kalender, TODAY))) ?? assert.fail('kein Objekt')
     const groups = Object.fromEntries(preview.groups.map((g) => [g.id, g.options[0]?.key ?? '']))
     const r = await opened.write((db) => applyPeriodChange(db, 'objekt-1', kalender, { understood: true, groups, token: preview.token }, ids, TODAY))
+    if (!r || 'error' in r) return assert.fail(r ? r.error : 'kein Objekt')
+    const nachher = await items(opened)
+    assert.equal(sum(nachher), sum(vorher))
+    const rechnung = nachher.filter((c) => c.operatingPower === undefined)
+    assert.deepEqual(rechnung.map((c) => [c.period, c.amountCents]), [['2025-01', 100000]])
+    const abzuege = nachher.filter((c) => c.operatingPower === 'deduction')
+    assert.deepEqual(abzuege.map((c) => [c.period, c.amountCents, c.operatingPowerGeneralId]), [['2025-01', -1000, rechnung[0]?.id], ['2025-01', -1000, rechnung[0]?.id]])
+  })
+})
+
+// Auch eine Prüfung des Betriebsstroms, die erst beim Schreiben scheitert, ist ein Konflikt mit dem Bestand: 409 mit
+// Vorschau und Satz, keine nackte 400. Der Bestand ist hier von Hand verdorben (ein Abzug zeigt auf eine Müllrechnung,
+// was die Routen ablehnen); beim Verschieben prüft `guardDeductionSource` und wirft einen `HeatingError`.
+test('G2-N-W1: eine Prüfung des Betriebsstroms, die beim Schreiben scheitert, antwortet mit Vorschau und Satz', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      await createEntity(db, 'costItems', 'hs', { propertyId: 'objekt-1', period: '2025-01', category: 'Beleuchtung/Allgemeinstrom', description: 'Hausstrom', amountCents: 100000, key: 'area' })
+      await createEntity(db, 'costItems', 'mu', { propertyId: 'objekt-1', period: '2025-01', category: 'Müllabfuhr', description: 'Müll', amountCents: 30000, key: 'area' })
+      await createEntity(db, 'costItems', 'ab', { propertyId: 'objekt-1', period: '2025-01', category: 'Beleuchtung/Allgemeinstrom', description: 'Abzug', amountCents: -1000, key: 'area', operatingPower: 'deduction', operatingPowerGeneralId: 'hs' })
+      await db.update(costItems).set({ operatingPowerGeneralId: 'mu' }).where(eq(costItems.id, 'ab'))
+    })
+    const vorher = await items(opened)
+    const mai = { startMonth: 5, changes: [] }
+    const preview = (await opened.read((db) => previewPeriodChange(db, 'objekt-1', mai, TODAY))) ?? assert.fail('kein Objekt')
+    const groups = Object.fromEntries(preview.groups.map((g) => [g.id, g.options[0]?.key ?? '']))
+    const r = await opened.write((db) => applyPeriodChange(db, 'objekt-1', mai, { understood: true, groups, token: preview.token }, ids, TODAY))
     if (!r || !('error' in r)) return assert.fail('angenommen')
-    assert.match(r.error, /Abzug/)
+    assert.match(r.error, /keine Stromrechnung des Allgemeinstroms/)
     assert.match(r.error, /Gespeichert wurde nichts/)
     assert.ok('preview' in r && r.preview, 'Vorschau fehlt')
     assert.deepEqual(await items(opened), vorher)
