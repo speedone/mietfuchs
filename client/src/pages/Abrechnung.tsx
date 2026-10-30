@@ -84,6 +84,8 @@ export const LETTER_CHOICE_NOTE = 'Anschreiben: gilt nur für diesen Druck. Die 
 const PAPER_BROWSER_TEXT = 'Dieser Browser (etwa Safari) kann die Ränder nicht je Druckseite unterscheiden; mit Briefpapier stünde der Text der Folgeseiten im Kopf oder Fuß des Papiers. Gedruckt wird deshalb wie ohne Briefpapier: mit Seitenrand und Absender oben, die Fußzeile mit Kontakt und Bank nur, wenn sie eingeschaltet ist. Mit Briefpapier drucken Sie in einem aktuellen Chrome, Edge oder Firefox.'
 const LETTER_LONG_TEXT = 'Das Anschreiben ist voraussichtlich länger als eine Seite und druckt auf der nächsten weiter. Soll es auf eine Seite passen, kürzen Sie die Texte über „Anschreiben bearbeiten“.'
 const returnLineText = (line: string) => `Die Rücksendeangabe über der Anschrift hat ${line.trim().length} Zeichen; im Fensterfeld passen rund ${RETURN_LINE_MAX} in zwei kleine Zeilen, der Rest würde abgeschnitten. Kürzen Sie den Namen oder die Anschrift des Vermieters (Einstellungen bzw. beim Objekt).`
+// Eine Liste für „keine gebuchten Belege“, damit die Memos daran nicht bei jedem Rendern neu rechnen (#470).
+const NO_BOOKED_FILES: BookedFiles = new Map()
 
 export default function Abrechnung({ settings, units, tenancies, reload, onNavigate, focus, onFocusDone }: Props) {
   const { key, label, param, calendar, period, rules } = usePeriod()
@@ -118,8 +120,10 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
   // Die Korrektur der gezahlten Vorauszahlung hängt an einem Mietverhältnis dieses Objekts (#145).
   useOpenForm(ppEdit !== null)
   const [costItems, setCostItems] = useState<CostItem[]>([])
-  // Belege, die über gebuchte Zeilen an einer Position hängen (#470). Leer, solange die Liste fehlt.
-  const [bookedFiles, setBookedFiles] = useState<BookedFiles>(new Map())
+  // Belege, die über gebuchte Zeilen an einer Position hängen (#470). `null`, solange die Liste unterwegs ist; bis
+  // dahin wartet der Druck mit Belegkopien. Scheitert sie, bleibt sie leer und die Seite druckt die Belege aus `invoiceFile`.
+  const [bookedList, setBookedList] = useState<BookedFiles | null>(null)
+  const bookedFiles = bookedList ?? NO_BOOKED_FILES
   // Für die Belegkopien einer Position über 0 €: zu welcher Abrechnung sie gehört (Durchsicht N3).
   const [plants, setPlants] = useState<PlantPeriods[]>([])
   useEffect(() => {
@@ -225,13 +229,15 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
         api<Record<string, TenancyLetter>>(withProperty(`${paths.load}/letters`, propertyId)).then(setTenancyLetters).catch(() => setTenancyLetters({})),
         // Ein älterer Server ohne die Route: ohne Logo und Briefpapier.
         api<unknown>(withProperty('/api/letter-design', propertyId)).then((d) => setDesigns(asLetterDesigns(d))).catch(() => setDesigns(null)),
-        // Belege der gebuchten Zeilen (#470). Fehlt die Liste, druckt die Seite die Belege aus `invoiceFile`.
-        api<UploadEntry[]>('/api/uploads').then((list) => setBookedFiles(filesByItem(list))).catch(() => setBookedFiles(new Map())),
       ]))
       .then(() => api<HeatingSettlementInfo[]>(withProperty('/api/heating-settlements', propertyId)).then(setHeatingList).catch(() => setHeatingList([])))
   }, [paths.load, paths.history, propertyId])
 
   useEffect(() => { void load() }, [load])
+  // Für den ganzen Bestand, deshalb nicht in `load()`: Die Heizkostenliste wartet nicht darauf, und Speichern lädt sie nicht neu.
+  useEffect(() => {
+    api<UploadEntry[]>('/api/uploads').then((list) => setBookedList(filesByItem(list))).catch(() => setBookedList(NO_BOOKED_FILES))
+  }, [])
 
   // Ein Speichern, das der Server ablehnt (#146), meldet sich oben auf der Seite, statt nur in
   // der Konsole zu stehen. Ergibt true, wenn es geklappt hat.
@@ -706,7 +712,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
 
   // Was gedruckt würde und ob es schon geht.
   const printViews = printDrawer ? (printDrawer.scope === 'all' ? views : views.filter((v) => v.st.tenancyId === printDrawer.scope)) : []
-  const printBlocked = printAttachments && !printViews.every((v) => v.attachmentsReady)
+  const printBlocked = printAttachments && (bookedList === null || !printViews.every((v) => v.attachmentsReady))
     ? 'Belegkopien werden noch vorbereitet …'
     : !design.ready ? 'Logo und Briefpapier werden noch vorbereitet …' : null
   const printWarnings = uniqueChecks(printViews.flatMap(pageChecks))

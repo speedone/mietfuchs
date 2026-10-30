@@ -964,13 +964,13 @@ const BESCHEID: UploadEntry = {
   file: '2_bescheid.pdf', size: 10, mtime: '2026-01-02T10:00:00.000Z', originalName: 'bescheid.pdf', mimeType: 'application/pdf', uploadedAt: '2026-01-02T10:00:00.000Z',
   sha256: 'sha', propertyId: null, year: null, invoiceDate: null, kind: 'receipt', bookedItemIds: ['k1'], bookedCents: { k1: 60000 }, assessment: null,
 }
-function stubReceipts(uploads: 'fail' | UploadEntry[], item: CostItem = GRUNDSTEUER) {
+function stubReceipts(uploads: 'fail' | UploadEntry[] | Promise<UploadEntry[]>, item: CostItem = GRUNDSTEUER) {
   const before = globalThis.fetch
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
     const path = url.split('?')[0] ?? url
     if (path === '/api/costItems') return json([item])
-    if (path === '/api/uploads') return uploads === 'fail' ? json({ error: 'Liste kaputt' }, 500) : json(uploads)
+    if (path === '/api/uploads') return uploads === 'fail' ? json({ error: 'Liste kaputt' }, 500) : json(await uploads)
     return before(url, init)
   })
 }
@@ -987,4 +987,18 @@ test('Belegkopien: scheitert die Liste der Belege, bleibt der Beleg der Position
   expect(await screen.findByText('Anlage beim Druck: Stadtkasse — Grundsteuer', {}, SLOW)).toBeTruthy()
   expect(screen.getByRole('button', { name: /Drucken \/ PDF/ })).toBeTruthy()
   expect(screen.queryByText(/Liste kaputt/)).toBeNull()
+})
+
+// Durchsicht zu #470: Solange die Liste der Belege fehlt, fehlten den Belegkopien die gebuchten Belege, und der Druck
+// lief trotzdem. Jetzt wartet „Drucken“, bis die Liste da ist (oder gescheitert).
+test('Belegkopien: Drucken wartet auf die Liste der gebuchten Belege (#470)', async () => {
+  let release: (list: UploadEntry[]) => void = () => assert.fail('Liste nicht angefragt')
+  stubReceipts(new Promise<UploadEntry[]>((resolve) => { release = resolve }), { ...GRUNDSTEUER, invoiceFile: '1_eigen.pdf' })
+  showWithSettings({ ...SETTINGS, printAttachments: true }, async () => {})
+  await openPrintSettings()
+  const knopf = within(await printDrawer()).getByRole('button', { name: 'Drucken' }) as HTMLButtonElement
+  expect(knopf.disabled).toBe(true)
+  expect(within(await printDrawer()).getByText('Belegkopien werden noch vorbereitet …')).toBeTruthy()
+  release([BESCHEID])
+  expect(await screen.findByText('Anlage beim Druck: Stadtkasse — Grundsteuer', {}, SLOW)).toBeTruthy()
 })
