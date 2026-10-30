@@ -4,7 +4,7 @@ import Field from '../components/Field'
 import YearField from '../components/YearField'
 import type { HeatingPlant, HeatingRole, Meter, MeterType, Notice, Reading, Unit } from '../types'
 import { METER_TYPE_LABELS } from '../types'
-import { buildReadingBody, EMPTY_READING, type ReadingField, type ReadingForm } from '../readingForm'
+import { asksReplacementCalibration, buildReadingBody, EMPTY_READING, replacementCalibrationHint, type ReadingField, type ReadingForm } from '../readingForm'
 import { asksCalibration, asksRemote, CALIBRATION_MARK_HELP, calibrationSuggestion, emptyMeterForm, hasKnownUnits, HEATING_ROLE_HELP, heatingRoleLabel, heatingRoleOptions, meterBody, meterPlantId, meterToForm, meterUnitHint, meterUnitOptions, oldEndText, readingDigits, readingText, REMOTE_RULE_TEXT, withMeterType, type MeterField, type MeterForm, type RemoteAnswer } from '../meterForm'
 import { plantOptions } from '../heatingForm'
 import { api, errorText, fmtDate } from '../api'
@@ -135,7 +135,8 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
   }
 
   async function saveReading(meterId: string) {
-    const built = buildReadingBody(readingForm, meterId)
+    const meter = meters.find((m) => m.id === meterId)
+    const built = buildReadingBody(readingForm, meterId, meter !== undefined && asksReplacementCalibration(meter))
     if ('problems' in built) {
       readingError.report(built.problems)
       return
@@ -278,6 +279,18 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
             <Field label={`Endstand alter Zähler${readingMeter.unit ? ` (${readingMeter.unit})` : ''}`} hint="Leer lassen, wenn er fehlt." {...readingError.field('oldEndValue')}>
               <input value={readingForm.oldEndValue} inputMode="decimal" onChange={(e) => setReadingForm({ ...readingForm, oldEndValue: e.target.value })} className="input-num" />
             </Field>
+          )}
+          {/* Praxistest: Das Eichjahr gilt für das heutige Gerät; ohne neues Jahr bliebe die Warnung des ausgebauten stehen. */}
+          {readingForm.replacement && asksReplacementCalibration(readingMeter) && (
+            <YearField
+              label="Neuer Zähler geeicht bis Ende (Jahr)"
+              hint={<>{replacementCalibrationHint(readingMeter)} Die <Term id="meterCalibration">Eichfrist</Term> endet mit dem Ende dieses Jahres; das Jahr steht in der Mitteilung des Messdienstes oder auf dem Eichschein.</>}
+              // Blättern beginnt beim Jahr des Wechsels, nicht bei heute (Durchsicht).
+              today={readingForm.date || undefined}
+              value={readingForm.newCalibratedUntil}
+              onChange={(newCalibratedUntil) => setReadingForm({ ...readingForm, newCalibratedUntil })}
+              {...readingError.field('newCalibratedUntil')}
+            />
           )}
           <Field label="Hinweis">
             <input value={readingForm.note} onChange={(e) => setReadingForm({ ...readingForm, note: e.target.value })} placeholder="z. B. Zwischenablesung Auszug Müller" />

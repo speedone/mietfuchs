@@ -2,8 +2,8 @@ import { describe, expect, test } from 'vitest'
 import { buildReadingBody, EMPTY_READING, type ReadingForm } from './readingForm'
 
 const form = (patch: Partial<ReadingForm>): ReadingForm => ({ ...EMPTY_READING, date: '2025-12-31', value: '123', ...patch })
-const bodyOf = (f: ReadingForm) => {
-  const r = buildReadingBody(f, 'm1')
+const bodyOf = (f: ReadingForm, asksYear = false) => {
+  const r = buildReadingBody(f, 'm1', asksYear)
   if ('problems' in r) throw new Error(`unerwartete Meldung: ${r.problems.map((p) => p.text).join(' ')}`)
   return r.body
 }
@@ -47,3 +47,18 @@ describe('Ablesung (#149)', () => {
     expect(bodyOf(form({ oldEndValue: '5' }))).toEqual({ meterId: 'm1', date: '2025-12-31', value: 123, replacement: undefined, oldEndValue: undefined, note: undefined })
   })
 })
+
+describe('Eichjahr des neuen Zählers beim Wechsel (Praxistest)', () => {
+  test('nur beim Wechsel und an einem eichpflichtigen Zähler; leer heißt: nichts senden', () => {
+    expect(bodyOf(form({ replacement: true, newCalibratedUntil: '2031' }), true)).toMatchObject({ newCalibratedUntil: 2031 })
+    expect(bodyOf(form({ replacement: true, newCalibratedUntil: '' }), true)).not.toHaveProperty('newCalibratedUntil')
+    expect(bodyOf(form({ replacement: false, newCalibratedUntil: '2031' }), true)).not.toHaveProperty('newCalibratedUntil')
+    expect(bodyOf(form({ replacement: true, newCalibratedUntil: '2031' }), false)).not.toHaveProperty('newCalibratedUntil')
+  })
+
+  test('ein unlesbares Jahr ist eine Meldung am Feld', () => {
+    const r = buildReadingBody(form({ replacement: true, newCalibratedUntil: '31' }), 'm1', true)
+    expect('problems' in r && r.problems.map((p) => p.field)).toEqual(['newCalibratedUntil'])
+  })
+})
+
