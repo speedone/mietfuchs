@@ -4,7 +4,8 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
-import { allocateRentPayments, monthCoverage, openingBalance, type AllocationSlice, type RentComponent } from '../src/rentAllocation.ts'
+import { allocateRentPayments, monthCoverage, openingBalance, type AllocationSlice, type MonthCoverage, type RentComponent } from '../src/rentAllocation.ts'
+import { monthSoll } from '../../shared/monthRate.ts'
 import { rentPayment, rentTenancy, monthsBetween } from '../testing/rentStock.ts'
 
 // 600 € Kaltmiete und 200 € Vorauszahlung ab Januar 2025, also 800 € im Monat.
@@ -18,6 +19,12 @@ const standard = (over: Parameters<typeof rentTenancy>[0] = {}) => rentTenancy({
 const short = (s: AllocationSlice): string => `${s.paymentId} ${s.paidOn} ${s.month ?? '—'} ${s.component} ${s.cents}`
 const sumOf = (slices: readonly AllocationSlice[], component: RentComponent, pick: (s: AllocationSlice) => boolean = () => true): number =>
   slices.filter((s) => s.component === component && pick(s)).reduce((a, s) => a + s.cents, 0)
+// Die Deckung eines Monats, ausdrücklich gesucht statt mit `?.` behauptet.
+const coverageOf = (list: readonly MonthCoverage[], month: string): MonthCoverage => {
+  const found = list.find((c) => c.month === month)
+  if (!found) assert.fail(`Monat ${month} fehlt in der Deckung (${list.map((c) => c.month).join(', ')})`)
+  return found
+}
 const monthly = (months: readonly string[], cents: number, day = '03') => months.map((m, k) => rentPayment(`p${String(k).padStart(2, '0')}`, `${m}-${day}`, cents))
 
 test('Tilgung: volle Monatsmiete jeden Monat ergibt je Monat genau das Soll je Bestandteil', () => {
@@ -159,9 +166,9 @@ test('Tilgung: im angebrochenen Monat gilt das Soll nach Tagen (rateInMonth, #31
     'p 2025-01-20 2025-01 baseRent 30968',
     'p 2025-01-20 2025-02 prepayment 100',
   ])
-  const [jan] = monthCoverage(t, slices, ['2025-01'], '2025-01-31')
-  assert.deepEqual(jan?.soll, { prepayment: 10323, heatingPrepayment: 0, baseRent: 30968, flatRate: 0 })
-  assert.equal(jan?.covered, true)
+  const jan = coverageOf(monthCoverage(t, slices, ['2025-01'], '2025-01-31'), '2025-01')
+  assert.deepEqual(jan.soll, { prepayment: 10323, heatingPrepayment: 0, baseRent: 30968, flatRate: 0 })
+  assert.equal(jan.covered, true)
 })
 
 test('Tilgung: Zahlungen aus der Abrechnung gehen nicht durch die Tilgung (#280)', () => {
@@ -186,8 +193,81 @@ test('Tilgung: endet die Staffel bei 0 im offenen Mietverhältnis, ist der Rest 
   assert.deepEqual(slices.map(short), ['p 2025-01-03 2025-01 baseRent 60000', 'p 2025-01-03 2025-02 baseRent 60000', 'p 2025-01-03 — unallocated 380000'])
   // Ohne Ende reicht eine Vorauszahlung höchstens 120 Monate nach dem Monat der Zahlung.
   const far = allocateRentPayments(standard(), [rentPayment('p', '2025-01-03', 80000 * 130)])
-  assert.equal(far.filter((s) => s.month !== null).at(-1)?.month, '2035-01')
+  const lastFar = far.filter((s) => s.month !== null).at(-1)
+  if (!lastFar) assert.fail('keine Zuordnung zu einem Monat')
+  assert.equal(lastFar.month, '2035-01')
+  // Mit bekanntem Ende gilt die Grenze nicht: bis zum Ende des Mietverhältnisses (Durchsicht M3).
+  const ended = allocateRentPayments(standard({ end: '2036-12-31' }), [rentPayment('p', '2025-01-03', 80000 * 130)])
+  const lastEnded = ended.filter((s) => s.month !== null).at(-1)
+  if (!lastEnded) assert.fail('keine Zuordnung zu einem Monat')
+  assert.equal(lastEnded.month, '2035-10')
+  assert.equal(sumOf(ended, 'unallocated'), 0)
   assert.equal(sumOf(far, 'unallocated'), 80000 * 9)
+})
+
+test('Tilgung: am selben Tag zuerst die negative Zahlung, dann nach Kennung (Durchsicht M1)', () => {
+  // Eine Rücklastschrift gehört zu einer früheren Zahlung; käme die Zahlung desselben Tages zuerst, nähme die
+  // Rücklastschrift deren Zuordnung zurück statt der älteren.
+  const payments = [rentPayment('jan', '2025-01-03', 80000), rentPayment('a', '2025-02-03', 80000), rentPayment('b', '2025-02-03', -80000)]
+  const slices = allocateRentPayments(standard(), payments)
+  assert.deepEqual(slices.filter((s) => s.paymentId !== 'jan').map(short), [
+    'b 2025-02-03 2025-01 baseRent -60000',
+    'b 2025-02-03 2025-01 prepayment -20000',
+    'a 2025-02-03 2025-01 prepayment 20000',
+    'a 2025-02-03 2025-02 prepayment 20000',
+    'a 2025-02-03 2025-01 baseRent 40000',
+  ])
+})
+
+test('Tilgung: eine Teil-Rücklastschrift nimmt innerhalb einer Klasse verhältnismäßig zurück (Durchsicht M2)', () => {
+  // 500 € auf 600 € Kaltmiete, 50 € Pauschale und 200 € Vorauszahlung: 200 € Vorauszahlung, 300 € auf Kaltmiete und
+  // Pauschale im Verhältnis 600 : 50 (276,923 € und 23,077 €, gerundet 276,92 € und 23,08 €). Eine Rücklastschrift über 10 €
+  // nimmt aus dieser Klasse im selben Verhältnis zurück, nicht alles aus der Pauschale.
+  const t = standard({ flatRates: [{ from: '2025-01', monthlyCents: 5000 }] })
+  const slices = allocateRentPayments(t, [rentPayment('p', '2025-01-03', 50000), rentPayment('r', '2025-01-10', -1000)])
+  assert.deepEqual(slices.map(short), [
+    'p 2025-01-03 2025-01 prepayment 20000',
+    'p 2025-01-03 2025-01 baseRent 27692',
+    'p 2025-01-03 2025-01 flatRate 2308',
+    // 10 € × 276,92/300 = 9,2307 €, 10 € × 23,08/300 = 0,7693 €: der Rest-Cent an den größeren Nachkommaanteil.
+    'r 2025-01-10 2025-01 baseRent -923',
+    'r 2025-01-10 2025-01 flatRate -77',
+  ])
+})
+
+test('Negatives Soll: Tilgung, Deckung und Saldo klemmen es gleich auf 0 (Durchsicht M4)', () => {
+  // 600 € Kaltmiete und eine Staffel der Vorauszahlung von −50 €: keine Forderung über 550 €, sondern 600 € Kaltmiete;
+  // 550 € gezahlt lassen 50 € offen, in der Tilgung wie in Deckung und Saldo.
+  const t = standard({ prepayments: [{ from: '2025-01', monthlyCents: -5000 }] })
+  const payments = [rentPayment('p', '2025-01-03', 55000)]
+  const slices = allocateRentPayments(t, payments)
+  assert.deepEqual(slices.map(short), ['p 2025-01-03 2025-01 baseRent 55000'])
+  const jan = coverageOf(monthCoverage(t, slices, ['2025-01'], '2025-01-31'), '2025-01')
+  assert.deepEqual(jan.soll, { prepayment: 0, heatingPrepayment: 0, baseRent: 60000, flatRate: 0 })
+  assert.equal(jan.covered, false)
+  assert.equal(openingBalance(t, payments, '2025-02-01'), -5000)
+})
+
+test('monthSoll: feste Werte je Bestandteil, mit Teilmonaten, Stufen, Heizstaffel und Pauschale (Durchsicht M5)', () => {
+  const t = rentTenancy({
+    start: '2025-01-16', end: '2025-06-10',
+    baseRents: [{ from: '2025-01', monthlyCents: 60000 }, { from: '2025-04', monthlyCents: 65000 }],
+    prepayments: [{ from: '2025-01', monthlyCents: 20000 }],
+    heatingPrepayments: [{ from: '2025-03', monthlyCents: 10000 }],
+    flatRates: [{ from: '2025-02', monthlyCents: 3000 }],
+  })
+  const rows = ['2024-12', '2025-01', '2025-02', '2025-03', '2025-04', '2025-06', '2025-07'].map((m) => [m, monthSoll(t, m)])
+  assert.deepEqual(rows, [
+    ['2024-12', { prepayment: 0, heatingPrepayment: 0, baseRent: 0, flatRate: 0 }],
+    // 16 von 31 Tagen: 600 € × 16/31 = 309,68 €, 200 € × 16/31 = 103,23 €.
+    ['2025-01', { prepayment: 10323, heatingPrepayment: 0, baseRent: 30968, flatRate: 0 }],
+    ['2025-02', { prepayment: 20000, heatingPrepayment: 0, baseRent: 60000, flatRate: 3000 }],
+    ['2025-03', { prepayment: 20000, heatingPrepayment: 10000, baseRent: 60000, flatRate: 3000 }],
+    ['2025-04', { prepayment: 20000, heatingPrepayment: 10000, baseRent: 65000, flatRate: 3000 }],
+    // 10 von 30 Tagen, je Staffel gerundet: 216,67 €, 66,67 €, 33,33 €, 10,00 €.
+    ['2025-06', { prepayment: 6667, heatingPrepayment: 3333, baseRent: 21667, flatRate: 1000 }],
+    ['2025-07', { prepayment: 0, heatingPrepayment: 0, baseRent: 0, flatRate: 0 }],
+  ])
 })
 
 test('monthCoverage: bezahlt, teilweise, offen; bezahlt am … für einen später gedeckten Monat; Stichtag schneidet ab', () => {
@@ -208,10 +288,9 @@ test('monthCoverage: bezahlt, teilweise, offen; bezahlt am … für einen späte
     ['2025-03', false, 20000, 40000],
     ['2025-04', false, 20000, 0],
   ])
-  assert.deepEqual(april[0]?.soll, { prepayment: 20000, heatingPrepayment: 0, baseRent: 60000, flatRate: 0 })
+  assert.deepEqual(coverageOf(april, '2025-01').soll, { prepayment: 20000, heatingPrepayment: 0, baseRent: 60000, flatRate: 0 })
   // Ein Monat ohne Soll ist gedeckt (wie im Mietkonto).
-  const [before] = monthCoverage(t, slices, ['2024-12'], '2025-04-30')
-  assert.equal(before?.covered, true)
+  assert.equal(coverageOf(monthCoverage(t, slices, ['2024-12'], '2025-04-30'), '2024-12').covered, true)
 })
 
 test('openingBalance: Rückstand aus dem Dezember und Vorauszahlung vom 28.12., beide gleich der Summe der Teile', () => {

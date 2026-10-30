@@ -85,7 +85,8 @@ test('Tilgung: je Monat und Bestandteil 0 ≤ Σ getilgt ≤ Soll, nach jeder Za
       const leftover = own.find((s) => s.component === 'unallocated' && s.cents > 0)
       if (!leftover) continue
       const paidMonth = leftover.paidOn.slice(0, 7)
-      const upTo = [tenancy.end?.slice(0, 7) ?? addMonths(paidMonth, FUTURE_MONTHS), addMonths(paidMonth, FUTURE_MONTHS)].reduce((a, b) => (a < b ? a : b))
+      // Bis zum Ende des Mietverhältnisses, bei offenem Ende bis zur Grenze nach dem Monat der Zahlung.
+      const upTo = tenancy.end?.slice(0, 7) ?? addMonths(paidMonth, FUTURE_MONTHS)
       for (const m of monthsBetween(tenancy.start.slice(0, 7), upTo)) {
         for (const c of COMPONENTS) {
           assert.equal(running.get(`${m} ${c}`) ?? 0, Math.max(0, monthSoll(tenancy, m)[c]), `Startwert ${seed}: ${m} ${c} offen trotz Teil ohne Forderung am ${leftover.paidOn}`)
@@ -162,9 +163,11 @@ test('monthCoverage: ein später gedeckter Monat ist am Tag von paidLaterOn gede
     for (const c of monthCoverage(tenancy, slices, months, `${tenancy.start.slice(0, 4)}-12-31`)) {
       if (c.paidLaterOn === null) continue
       const [then] = monthCoverage(tenancy, slices, [c.month], c.paidLaterOn)
-      assert.equal(then?.covered, true, `Startwert ${seed}, ${c.month} am ${c.paidLaterOn}`)
+      if (!then) assert.fail(`Startwert ${seed}: keine Deckung für ${c.month}`)
+      assert.equal(then.covered, true, `Startwert ${seed}, ${c.month} am ${c.paidLaterOn}`)
       const [everAfter] = monthCoverage(tenancy, slices, [c.month], '9999-12-31')
-      assert.equal(everAfter?.covered, true, `Startwert ${seed}, ${c.month} zuletzt`)
+      if (!everAfter) assert.fail(`Startwert ${seed}: keine Deckung für ${c.month}`)
+      assert.equal(everAfter.covered, true, `Startwert ${seed}, ${c.month} zuletzt`)
     }
   }
 })
