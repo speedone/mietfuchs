@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { noInfoView } from '../testing/heatingView'
 import { periodKey } from '../../../shared/period.ts'
-import type { HeatingPeriodView } from '../types'
+import type { HeatingPeriodView, Unit } from '../types'
 import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
 import { UIProvider } from '../components/feedback'
@@ -156,4 +156,32 @@ test('das Blatt für den Messdienst fragt bei einer offenen Eingabe vorher', asy
   fireEvent.click(within(frage.closest('.dialog') as HTMLElement).getByRole('button', { name: 'Abbrechen' }))
   await waitFor(() => expect(screen.queryByText('Ungespeicherte Änderungen verwerfen?')).toBeNull())
   expect((screen.getByLabelText(/monatliche Verbrauchsinformation anders/) as HTMLInputElement).checked).toBe(true)
+})
+
+// Praxistest: Ohne Liste versorgt die Anlage nur Wohnungen mit Wärmeanschluss (servesUnit). Die Vorbelegung der
+// Nutzeinheiten zählte auch die Garage ohne Anschluss mit.
+test('CO₂-Angaben: Nutzeinheiten vorbelegt mit den Wohnungen an der Heizung, ohne Wohnung ohne Wärmeanschluss', async () => {
+  const periodView: HeatingPeriodView = {
+    plantId: 'hp1', period: periodKey('2025-01'), label: '2025', from: '2025-01-01', to: '2025-12-31', short: false, closed: false,
+    ...noInfoView(), hotWater: { dhwMethod: null, dhwUnmeasurable: null, dhwHeatKwh: null, totalHeatKwh: null, dhwVolumeM3: null, dhwTempC: null },
+    hotWaterBasis: { volumeFromMetersM3: null, volumeMissing: null, running: null, suppliedAreaM2: 0 }, co2: null, stock: null, items: [],
+  }
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    const path = url.split('?')[0]
+    const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
+    if ((init?.method ?? 'GET') !== 'GET') return json({})
+    if (path === '/api/properties') return json([{ id: 'objekt-1', name: 'Haus', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }])
+    if (path === '/api/heating-plants') return json([{ ...PLANT, method: 'service' }])
+    if (path === '/api/heating-plants/hp1/periods') return json([periodView])
+    return json([])
+  })
+  const units: Unit[] = [
+    { id: 'u1', propertyId: 'objekt-1', name: 'EG', areaM2: 70, participates: true },
+    { id: 'u2', propertyId: 'objekt-1', name: 'OG', areaM2: 80, participates: true },
+    { id: 'g', propertyId: 'objekt-1', name: 'Garage', areaM2: 0, participates: true, noConnection: ['waerme'] },
+  ]
+  render(<PeriodProvider><PropertyProvider><UIProvider><Heizkosten units={units} tenancies={[]} /></UIProvider></PropertyProvider></PeriodProvider>)
+  const frage = await screen.findByLabelText('Abzugszeile', undefined, { timeout: 5000 })
+  fireEvent.change(frage, { target: { value: 'shown' } })
+  expect((await screen.findByLabelText(/^Nutzeinheiten laut Abrechnung/) as HTMLInputElement).value).toBe('2')
 })

@@ -163,7 +163,7 @@ export default function Heizkosten({ units, tenancies, onTenanciesChanged }: { u
                   <ServiceImportCard plant={plant} view={v} object={period.period} tenancies={tenancies} units={units} items={data?.items ?? []} co2={v.from >= first} onSaved={() => void load()} />
                 )}
                 {plant.method === 'service' && (v.from >= first ? (
-                  <Co2Card key={`${v.period}:${v.co2?.method ?? ''}`} view={v} tenancies={tenancies} unitsCount={plant.units?.length ?? units.length} hasSelfUsed={units.some((u) => selfUsedWithin(u, v.from, v.to))} homeowners={plant.source === 'homeowners'} onSaved={() => void load()} />
+                  <Co2Card key={`${v.period}:${v.co2?.method ?? ''}`} view={v} tenancies={tenancies} unitsCount={units.filter((u) => servesUnit(plant, u)).length} hasSelfUsed={units.some((u) => selfUsedWithin(u, v.from, v.to))} homeowners={plant.source === 'homeowners'} onSaved={() => void load()} />
                 ) : (
                   <div className="card"><p className="muted">Für Heizperioden, die vor dem {germanDate(first)} beginnen, sind die CO₂-Kosten nicht aufzuteilen.</p></div>
                 ))}

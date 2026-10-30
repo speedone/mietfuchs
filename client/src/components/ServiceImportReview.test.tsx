@@ -180,3 +180,13 @@ test('Durchsicht S3: scheitert ein späterer Block, legt ein zweiter Klick den a
   await waitFor(() => expect(sent.filter((s) => s.method === 'POST' && s.body.category === 'Wasser/Abwasser').length).toBe(2))
   expect(sent.filter((s) => s.method === 'POST' && s.body.category === 'Heizung und Warmwasser').length).toBe(1)
 })
+
+// Praxistest: Nennt die Abrechnung keine Nutzeinheiten, zählen die Wohnungen an der Heizung, nicht alle des Objekts.
+test('ohne Nutzeinheiten in der Abrechnung gehen die Wohnungen an der Heizung in die CO₂-Angaben', async () => {
+  const items = [{ id: 'hz', description: 'Messdienst', amountCents: 196985, key: 'amounts' as const, tenancyAmounts: { t1: 118025 } }]
+  const mitGarage: ImportContext = { ...ctx, existingAmountItems: 1, units: [...ctx.units, { id: 'g', name: 'Garage', participates: true, selfUsed: false }], servedUnitsCount: 2 }
+  render(<ServiceImportReview x={{ ...x, unitsCount: null }} file="beleg.pdf" ctx={mitGarage} view={view(items)} onDone={() => {}} />)
+  fireEvent.change(select('Steht in der Kostenaufstellung eine Abzugszeile?'), { target: { value: 'deducted' } })
+  fireEvent.click(screen.getByText('CO₂-Angaben übernehmen'))
+  await waitFor(() => expect(sent.find((s) => s.url.endsWith('/co2'))?.body).toMatchObject({ serviceUnitsCount: 2 }))
+})
