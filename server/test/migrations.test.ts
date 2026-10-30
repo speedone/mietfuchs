@@ -201,6 +201,9 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // vor dem Merge ein anderer PR davor eingereiht, werden beide Schritte neu erzeugt und die Marken ersetzt.
   '0073_anpassung_ab': '90ae182e62dce87a4d834055f0f36b919d0d92c6bd359002fc937fadb6be364c',
   '0074_anpassung_ab_bedingung': 'c69cb4611b76c351f193316e74cd2da764fa9aded2d1049cf0a9a3f8827933c0',
+  // #318, Schritte 4 und 5 (veröffentlicht mit 0.13.0): Rücksprung und Papierkorb, danach die Bedingung.
+  '0075_verlauf_ruecksprung': '33fe6d87cd312b6cf4bf00c92b164b74f105a14f6b5b82287b5c886cf86aeda1',
+  '0076_verlauf_ruecksprung_bedingung': '5a8b6435478cb0030e3ef5a79e24aac47bb03e0bdbe394e98b800cccf9d88936',
   // #455: Quellen aufgeteilter Rechnungen (cost_sources, cost_items.source_id); der Datenschritt in TypeScript ist in
   // data-steps.test.ts festgehalten. Wird vor dem Merge ein anderer PR davor eingereiht, wird der Schritt neu erzeugt
   // und die Marke ersetzt.
