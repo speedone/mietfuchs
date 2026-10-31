@@ -16,6 +16,12 @@ für die Anlage V. Ob ein Mehrfamilienhaus, mehrere Häuser, eine vermietete Eig
 das eigene Haus mit Einliegerwohnung: Alle Daten liegen in einer lokalen Datenbank bei dir,
 ohne Cloud und ohne Konto.
 
+<p align="center">
+  <a href="https://apps.microsoft.com/detail/9PMHZ0ZJPZDZ?referrer=appbadge&mode=direct"><img src="https://get.microsoft.com/images/de%20dark.svg" width="240" alt="Mietfuchs im Microsoft Store herunterladen"></a>
+</p>
+<p align="center"><b>Unter Windows am einfachsten aus dem Microsoft Store:</b> ein Klick zum Installieren,<br>
+Updates kommen von selbst. Für macOS und Linux siehe <a href="#herunterladen--starten-ohne-installation">Herunterladen &amp; starten</a>.</p>
+
 ### Highlights
 
 - 🔒 **100 % lokal:** keine Cloud, kein Tracking, kein externer Dienst (außer der Update-Prüfung, wenn du sie erlaubst); Backup = Ordner kopieren
@@ -61,6 +67,26 @@ ohne Cloud und ohne Konto.
 
 <sub>Weitere Ansichten: [Stammdaten](docs/screenshots/stammdaten.png), [Hilfe mit Anleitungen je Vermietungsart](docs/screenshots/hilfe.png).</sub>
 
+## Windows: aus dem Microsoft Store (empfohlen)
+
+[![Mietfuchs im Microsoft Store herunterladen](https://get.microsoft.com/images/de%20dark.svg)](https://apps.microsoft.com/detail/9PMHZ0ZJPZDZ?referrer=appbadge&mode=direct)
+
+Unter Windows 10 (1809) und 11 ist der Microsoft Store der bequemste Weg, für Intel/AMD wie
+für ARM-Rechner (z. B. Snapdragon):
+
+- **Keine Sicherheitswarnung:** Microsoft prüft und signiert das Paket, der Hinweis „Der
+  Computer wurde durch Windows geschützt“ entfällt.
+- **Updates kommen von selbst:** Der Store installiert jede neue Version im Hintergrund.
+- **Wie jedes andere Programm:** Eintrag im Startmenü, kein schwarzes Konsolenfenster, Start
+  auch über `mietfuchs` in der Eingabeaufforderung. Beenden über *Mietfuchs beenden* unten in
+  der Seitenleiste.
+- **Deine Daten liegen in `%USERPROFILE%\Mietfuchs`** (z. B. `C:\Users\Name\Mietfuchs`) und
+  bleiben auch beim Deinstallieren erhalten. Backup = diesen Ordner kopieren.
+
+Kommst du von der heruntergeladenen `mietfuchs-win.exe`, nimmst du deinen Bestand per Backup
+mit: in der alten Fassung unter *Einstellungen* auf *Backup herunterladen (ZIP)*, in der
+Store-Fassung dort auf *Backup wiederherstellen …*.
+
 ## Herunterladen & starten (ohne Installation)
 
 Der einfachste Weg, **keine Installation und kein Node nötig**. Ein Klick lädt immer die
@@ -70,7 +96,8 @@ neueste Fassung:
 [![macOS herunterladen](https://img.shields.io/badge/macOS-herunterladen-111111?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/speedone/mietfuchs/releases/latest/download/mietfuchs-macos-apple-silicon.zip)
 [![Linux herunterladen](https://img.shields.io/badge/Linux-herunterladen-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://github.com/speedone/mietfuchs/releases/latest/download/mietfuchs-linux.tar.gz)
 
-Der macOS-Knopf gilt für Macs mit Apple-Chip (M1 bis M4). Für einen älteren Mac mit
+Unter Windows ist der [Microsoft Store](#windows-aus-dem-microsoft-store-empfohlen) bequemer,
+die Programmdatei bleibt für alle, die ohne Store arbeiten. Der macOS-Knopf gilt für Macs mit Apple-Chip (M1 bis M4). Für einen älteren Mac mit
 Intel-Prozessor, für ARM-Rechner wie den Raspberry Pi oder für ein Linux-Installationspaket
 steht alles in den beiden Tabellen. Jeder Dateiname führt direkt zur neuesten Fassung:
 
@@ -97,7 +124,8 @@ Beim ersten Start meldet sich das Betriebssystem, weil die Datei nicht kostenpfl
 signiert ist:
 
 - **Windows:** „Der Computer wurde durch Windows geschützt" → *Weitere Informationen* →
-  *Trotzdem ausführen*.
+  *Trotzdem ausführen*. Ohne diese Warnung geht es über den
+  [Microsoft Store](#windows-aus-dem-microsoft-store-empfohlen).
 - **macOS:** der erste Start wird blockiert: Dialog schließen, dann in
   *Systemeinstellungen → Datenschutz & Sicherheit* unten bei der Mietfuchs-Meldung auf
   *Dennoch öffnen* klicken und den Start wiederholen. Bis macOS 14 geht stattdessen
@@ -495,7 +523,9 @@ Bei der heruntergeladenen Programmdatei liegt er **neben der Datei**, beim Start
 Quellcode unter `server/data/`. Aus einem Linux-Paket installiert, liegen die Daten in
 `~/.local/share/mietfuchs` (unter macOS in `~/Library/Application Support/Mietfuchs`, unter
 Windows in `%LOCALAPPDATA%\Mietfuchs`), weil das Programm dann an einem Ort liegt, an dem es
-nicht schreiben darf. Backup = diesen Ordner kopieren. `NKA_DATA_DIR` legt ihn frei fest.
+nicht schreiben darf. Aus dem Microsoft Store installiert, liegen sie in `%USERPROFILE%\Mietfuchs`,
+außerhalb des Pakets, damit sie eine Deinstallation überstehen. Backup = diesen Ordner kopieren.
+`NKA_DATA_DIR` legt ihn frei fest.
 
 Bis einschließlich Version 0.7.1 lag alles in einer Datei `db.json`. Kommst du von dort, ziehen
 deine Daten beim ersten Start von selbst in
