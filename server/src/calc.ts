@@ -73,6 +73,7 @@ import { compareText, largestRemainder } from './apportion.ts'
 import { monthShare, monthSoll, overlapDays as rangeOverlapDays, rateAtMonth, rateInMonth, type MonthlySchedule, type SollComponent } from '../../shared/monthRate.ts'
 import { allocateRentPayments, ledgerTenancy, monthCoverage, recordingStart, openingBalance, type AllocationSlice, type MonthCoverage } from './rentAllocation.ts'
 import { estgShortPeriodDays } from '../../shared/law/estg.ts'
+import { bgbRentDueAtStart } from '../../shared/law/bgb-betrkv.ts'
 import { applicableRanges, blendedPermille, halfAmounts, halfSplitStatus, intersect as intersectRange, termsFromDeliveries, termsFromPieces, termsWeight, tightMarketIn, twoFamilyOf, type HalfDelivery, type HalfSplitStatus, type HalfSplitTerm, type Piece, type TwoFamily } from './halfSplit.ts'
 import { CO2_RELIEF_LABEL } from '../../shared/co2Probe.ts'
 import { ausweisGaps, CO2_FUELS, co2Assessment, co2Required, NO_CO2_FUELS, co2DeductionsOf, FORMULA_METHODS, co2PotsOf, itemBasisUnits, L_TOLERANCE_CENTS, perUnitClassification, perUnitExceeding, perUnitReliefs, gmodgKeyOf, HALF_SPLIT_TOLERANCE_PERMILLE, reliefKeysOf, reliefsByShare, spanningPlants, type PerUnitFuel, restage, selfSplit, SERVICE_FUEL_TOLERANCE_CENTS, shownReliefs, stageRanges, tableFactor, tenantLines as co2TenantLines, type Co2Pot, type ReliefShare } from './co2.ts'
@@ -1460,21 +1461,35 @@ export type TaxReportOptions = { linkable?: readonly SnapshotCostItem[]; foreign
 // Entwurf docs/superpowers/specs/2026-10-30-steuer-zufluss-design.md, E1, E4 bis E11. Jede Mietzahlung eines
 // Mietverhältnisses wird mit `allocateRentPayments` auf Monat und Bestandteil verteilt, **mit demselben geführten
 // Mietverhältnis wie das Mietkonto** (`ledgerTenancy` mit allen Zahlungen des Objekts), damit beide dieselben Teile haben
-// (Kreuz-Invariante X9 a). Jeder Teil zählt im Jahr seines Datums (§ 11 Abs. 1 Satz 1 EStG); so ist die Summe immer
-// `paidCents`, und es gibt keine zweite Abgrenzung des Zuflusses (E1). Zuordnung zu den Zeilen (E4):
+// (Kreuz-Invariante X9 a). Jeder Teil zählt im Jahr seines Datums (§ 11 Abs. 1 Satz 1 EStG), mit der einen Ausnahme der
+// Zehn-Tage-Regel unten; die Summe ist deshalb `paidCents` − `forwardCents` + `fromPreviousCents`. Zuordnung zu den
+// Zeilen (E4):
 // - Monat im Jahr oder später: Kaltmiete in Zeile 15/18 (`rentCents`), Vorauszahlung, Heizvorauszahlung und Pauschale in
 //   Zeile 20 (`allocationsCents`). Die Pauschale bei Zeile 20 ist Auslegung (gesondert vereinbart, § 556 Abs. 2 BGB).
 // - Monat vor dem Jahr: Zeile 25, brutto (Auslegung: Der Vordruck sagt dort nicht „ohne Umlagen“), die Umlagen daneben.
 // - Ohne Forderung (`unallocated`): Zeile 15/18 (Auslegung: Für sie ist keine Umlage vereinbart).
 // - Zahlungen aus der Abrechnung gehen nie durch die Tilgung (#280), sie bleiben Zeile 21 wie bisher.
-// Zehn-Tage-Regel (§ 11 Abs. 1 Satz 2 EStG, E8): **nur beziffert, nichts verschoben**, denn sie hängt an der vertraglichen
-// Fälligkeit (BFH X R 2/21), die Mietfuchs nicht kennt. Vorwärts: Teil mit Datum in den letzten `estg.short-period-days`
-// Tagen des Jahres für den Januar des Folgejahres. Keine Prüfung über `rentDueDate`: Nach § 556b Abs. 1 BGB ist die
-// Januarmiete spätestens am dritten Werktag fällig; ohne Samstag und mit den Feiertagen 01.01. und (je Land) 06.01. ist
-// das höchstens der 07.01., also immer in den zehn Tagen (Test in invariant-tilgung.test.ts über alle Länder und
-// 1995 bis 2100). Rückwärts: Teil mit Datum in den ersten Tagen des Jahres für den Dezember des Vorjahres; nach § 556b
-// ist der Dezember Anfang Dezember fällig, die Regel griffe nur bei Fälligkeit zum Monatsende (Altvertrag, § 551 BGB
-// a. F.), deshalb nur als Auskunft (`lateDecemberCents`).
+// **Zehn-Tage-Regel** (§ 11 Abs. 1 Satz 2 EStG, Entwurf E8 nach der Durchsicht): Regelmäßig wiederkehrende Einnahmen, die
+// kurze Zeit vor Beginn oder nach Ende des Kalenderjahres zufließen, zu dem sie wirtschaftlich gehören, gelten als in
+// diesem bezogen. Die Vorschrift ist zwingend, kein Wahlrecht. Kurze Zeit sind bis zu zehn Tage
+// (`estg.short-period-days`), und **Zahlung und Fälligkeit** müssen beide darin liegen (H 11 EStH; BFH, Urteil vom
+// 24.07.1986, IV R 309/84, BStBl 1987 II S. 16; tragend BFH, Urteil vom 16.02.2022, X R 2/21, BStBl 2022 II S. 448).
+// Die Fälligkeit hängt am Vertrag (`bgb.rent-due-at-start`):
+// - **Mietverhältnis, das am 01.09.2001 nicht bestand** (§ 556b Abs. 1 BGB: zu Beginn, spätestens am dritten Werktag):
+//   Die Januarmiete ist spätestens am 07.01. fällig (ohne Samstag, mit 01.01. und je Land 06.01.; Test in
+//   invariant-tilgung.test.ts über alle Länder 1995 bis 2100), also in den zehn Tagen. Ein Teil, gezahlt in den letzten
+//   zehn Tagen des Dezembers für den Januar, **zählt im Folgejahr** (`forwardCents` im Jahr der Zahlung,
+//   `fromPreviousCents` im Folgejahr, dort in Zeile 15/20). Die Dezembermiete ist Anfang Dezember fällig, außerhalb der
+//   zehn Tage: Anfang Januar gezahlt bleibt sie im neuen Jahr (Zeile 25), `lateDecemberCents` ist 0.
+// - **Mietverhältnis, das am 01.09.2001 bestand** (Art. 229 § 3 Abs. 1 Nr. 7 EGBGB, § 551 BGB a. F.: Miete am
+//   Monatsende): Die Januarmiete ist Ende Januar fällig, die Regel greift vorwärts nicht; nichts wird verschoben,
+//   beziffert als `forwardOldLeaseCents`. Die Dezembermiete ist am 31.12. fällig: Anfang Januar gezahlt, gehörte sie
+//   nach der Regel ins Vorjahr. Auch das wird **nicht** verschoben, nur beziffert (`lateDecemberCents`), mit dem Vorbehalt
+//   „nur wenn laut Vertrag am Monatsende fällig“, denn ein Altvertrag wird oft auf Zahlung zu Beginn umgestellt sein.
+// **Bewusste Grenze**: Eine vertraglich abweichende Fälligkeit (§ 556b und § 551 a. F. sind abdingbar) kennt Mietfuchs
+// nicht; es gibt am Mietverhältnis kein Feld dafür. Ein Wochenende oder Feiertag verlängert die zehn Tage nicht (BFH,
+// Urteil vom 11.11.2014, VIII R 34/12, BStBl 2015 II S. 285, und vom 27.06.2018, X R 44/16, BStBl 2018 II S. 781:
+// § 108 Abs. 3 AO gilt nicht; X R 44/16 lässt die Frage der Fälligkeit offen, Rn. 12).
 type ReceivedInput = {
   snapshot: Pick<Snapshot, 'units' | 'tenancies' | 'payments'>
   year: number
@@ -1482,6 +1497,15 @@ type ReceivedInput = {
   // Die kurze Zeit um den Jahreswechsel in Tagen, für das Kalenderjahr, zu dem eine Zahlung wirtschaftlich gehört
   // (Zeitregel `periodStart` von `estg.short-period-days`).
   shortDays: (year: number) => number
+}
+
+// Ist die Miete dieses Mietverhältnisses zu Beginn des Monats fällig (§ 556b Abs. 1 BGB)? Maßgeblich ist, ob es am
+// 01.09.2001 bestand (Art. 229 § 3 Abs. 1 Nr. 7 EGBGB): gefragt mit dem früheren von Vertragsdatum und Beginn
+// (Auslegung: Ein Mietverhältnis besteht ab dem Vertrag).
+function rentDueAtStartOf(t: Pick<SnapshotTenancy, 'start' | 'contractDate'>): boolean {
+  const contract = typeof t.contractDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(t.contractDate) ? t.contractDate : null
+  const date = contract !== null && compareText(contract, t.start) < 0 ? contract : t.start
+  return law(bgbRentDueAtStart, { date }, createLawLog())
 }
 
 const emptyTenancyReceived = (): Omit<TaxReceivedTenancy, 'tenancyId' | 'unitId' | 'tenantName' | 'unitName' | 'start' | 'end' | 'relative'> => ({
@@ -1509,7 +1533,7 @@ function receivedIncome({ snapshot, year, inclusive, shortDays }: ReceivedInput)
 
   const out: TaxReceived = {
     rentCents: 0, inclusiveRentCents: 0, unallocatedCents: 0, allocationsCents: 0, flatRateCents: 0, formerYearsCents: 0, formerYearsAllocationsCents: 0,
-    turnOfYear: { forwardCents: 0, forwardAllocationsCents: 0, fromPreviousCents: 0, fromPreviousAllocationsCents: 0, lateDecemberCents: 0 },
+    turnOfYear: { forwardCents: 0, forwardAllocationsCents: 0, fromPreviousCents: 0, fromPreviousAllocationsCents: 0, forwardOldLeaseCents: 0, lateDecemberCents: 0 },
     byUnit: [], byTenancy: [], relatives: { rentCents: 0, allocationsCents: 0, settlementCents: 0 }, possibleDeposits: [],
   }
   const unitById = new Map(snapshot.units.map((u) => [u.id, u]))
@@ -1521,13 +1545,25 @@ function receivedIncome({ snapshot, year, inclusive, shortDays }: ReceivedInput)
     const slices = allocateRentPayments(tracked, own)
     const row = emptyTenancyReceived()
     const isInclusive = inclusive(t)
+    const dueAtStart = rentDueAtStartOf(t)
+    let movedIn = false
     for (const s of slices) {
-      // Aus dem Vorjahr: in den letzten Tagen des Dezembers gezahlt, getilgt der Januar dieses Jahres (steht im Vorjahr).
+      // Zehn-Tage-Regel vorwärts (§ 556b): Ende Dezember gezahlt für den Januar, zählt im Folgejahr.
+      const forward = s.month === nextJanuary && s.paidOn >= forwardFrom && s.paidOn <= yTo
       if (s.paidOn >= previousForwardFrom && s.paidOn < yFrom && s.month === firstMonth) {
+        if (!dueAtStart) continue
+        // Aus dem Vorjahr hierher: zählt in diesem Jahr wie ein Teil mit Datum im Jahr.
+        movedIn = true
         out.turnOfYear.fromPreviousCents += s.cents
         if (isAllocation(s.component)) out.turnOfYear.fromPreviousAllocationsCents += s.cents
+      } else if (!inYear(s.paidOn)) {
+        continue
+      } else if (forward && dueAtStart) {
+        row.forwardCents += s.cents
+        out.turnOfYear.forwardCents += s.cents
+        if (isAllocation(s.component)) out.turnOfYear.forwardAllocationsCents += s.cents
+        continue
       }
-      if (!inYear(s.paidOn)) continue
       if (s.month === null || s.component === 'unallocated') {
         row.rentCents += s.cents
         row.unallocatedCents += s.cents
@@ -1536,7 +1572,7 @@ function receivedIncome({ snapshot, year, inclusive, shortDays }: ReceivedInput)
       if (s.month < firstMonth) {
         row.formerYearsCents += s.cents
         if (isAllocation(s.component)) out.formerYearsAllocationsCents += s.cents
-        if (s.month === lastDecember && s.paidOn <= lateTo) out.turnOfYear.lateDecemberCents += s.cents
+        if (!dueAtStart && s.month === lastDecember && s.paidOn <= lateTo) out.turnOfYear.lateDecemberCents += s.cents
         continue
       }
       if (isAllocation(s.component)) {
@@ -1546,15 +1582,12 @@ function receivedIncome({ snapshot, year, inclusive, shortDays }: ReceivedInput)
         row.rentCents += s.cents
         if (isInclusive) row.inclusiveRentCents += s.cents
       }
-      if (s.month === nextJanuary && s.paidOn >= forwardFrom) {
-        row.forwardCents += s.cents
-        out.turnOfYear.forwardCents += s.cents
-        if (isAllocation(s.component)) out.turnOfYear.forwardAllocationsCents += s.cents
-      }
+      // Altvertrag (§ 551 a. F.): Die Januarmiete war Ende Januar fällig, die Regel greift nicht; nur beziffert.
+      if (forward && !dueAtStart) out.turnOfYear.forwardOldLeaseCents += s.cents
     }
     row.settlementCents = own.filter((p) => !isRentPayment(p) && inYear(p.date)).reduce((a, p) => a + p.amountCents, 0)
     out.possibleDeposits.push(...possibleDepositsOf(t, own, slices, inYear))
-    if (!own.some((p) => inYear(p.date))) continue
+    if (!own.some((p) => inYear(p.date)) && !movedIn) continue
     const relative = relativeForHousing(t, t.start, t.end ?? (compareText(yTo, t.start) >= 0 ? yTo : t.start))
     out.byTenancy.push({ tenancyId: t.id, unitId: t.unitId, tenantName: t.tenantName, unitName: unitById.get(t.unitId)?.name ?? '—', start: t.start, end: t.end, relative, ...row })
   }

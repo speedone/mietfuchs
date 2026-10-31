@@ -778,18 +778,25 @@ Grundmenge ist das ganze Gebäude), Überschuss. Beschreibende Gruppen statt fes
 - **Zugeflossenes nach Zeilen** (`income.received`, `receivedIncome` in calc.ts): jeder Teil einer Mietzahlung im Jahr
   seines Datums; Monat im Jahr oder später: Kaltmiete Zeile 15/18, Vorauszahlungen und Pauschale Zeile 20; Monat davor:
   Zeile 25 brutto (Auslegung); ohne Forderung Zeile 15/18 (`unallocatedCents`). Zeile 21 wie bisher aus den Zahlungen
-  der Abrechnung. Es gilt Zeile 15/18 + 20 + 25 + 21 = `paidCents`. Je Mietverhältnis (`byTenancy`, auch ohne Zeile im
+  der Abrechnung. Es gilt Zeile 15/18 + 20 + 25 + 21 = `paidCents` − `forwardCents` + `fromPreviousCents`. Je Mietverhältnis (`byTenancy`, auch ohne Zeile im
   Mietkonto) und Wohnung (`byUnit`); `relatives` sind die Teilsummen der Mietverhältnisse an Angehörige (Zeilen 19, 22,
   23), die Summen umfassen alle. Inklusivmiete nach demselben Modell wie `costModels` (`tenancyCostModel`).
   `possibleDeposits`: Mietzahlung gleich der Kaution bis 31 Tage um den Beginn, nicht gleich dem Soll des ersten vollen
   Monats, ohne Rückstand zu tilgen. Option `received: false` (Rückgriffe nur auf Werbungskosten) lässt die Tilgung weg,
   alle übrigen Felder bleiben. `received` steht nicht in tax-golden.json (`incomeFingerprint`), sondern in
   tax-received-golden.json (Generator `withPaymentVariety`).
-- **Zehn-Tage-Regel** (§ 11 Abs. 1 Satz 2 EStG): **beziffert, nicht verschoben**, denn sie hängt an der vertraglichen
-  Fälligkeit (BFH X R 2/21). `received.turnOfYear` nennt Teile vom 22.12. bis 31.12. für den Januar des Folgejahres
-  (ohne `rentDueDate`: die Januarmiete ist nach § 556b Abs. 1 BGB in jedem Land spätestens am 07.01. fällig) und
-  Anfang Januar für den Dezember (greift nur bei Fälligkeit zum Monatsende). Die Zahl der Tage steht im Register
-  (`estg.short-period-days`), auch für den Hinweis am Zahlungsdatum der Kostenposition (`tenDayWindow`).
+- **Zehn-Tage-Regel** (§ 11 Abs. 1 Satz 2 EStG, zwingend): Zahlung **und** Fälligkeit müssen in den zehn Tagen um den
+  Jahreswechsel liegen (H 11 EStH; BFH IV R 309/84; tragend BFH X R 2/21). Mietfuchs kennt die Fälligkeit nur aus dem
+  Gesetz (`bgb.rent-due-at-start`): **Mietverhältnis, das am 01.09.2001 nicht bestand** (§ 556b Abs. 1 BGB, die
+  Januarmiete ist in jedem Land spätestens am 07.01. fällig): Am 22.12. bis 31.12. für Januar Gezahltes **zählt im
+  Folgejahr** (`forwardCents`, dort `fromPreviousCents`, in Zeile 15/20); die Dezembermiete war Anfang Dezember fällig,
+  Anfang Januar gezahlt bleibt sie im neuen Jahr (Zeile 25), `lateDecemberCents` = 0. **Mietverhältnis, das am
+  01.09.2001 bestand** (Art. 229 § 3 Abs. 1 Nr. 7 EGBGB, § 551 BGB a. F.: Monatsende; Vertragsdatum, sonst Beginn):
+  nichts verschoben, nur beziffert (`forwardOldLeaseCents`, `lateDecemberCents`) mit dem Vorbehalt „nur wenn laut Vertrag
+  am Monatsende fällig“. **Bewusste Grenze**: Eine vertraglich abweichende Fälligkeit kennt Mietfuchs nicht (kein Feld am
+  Mietverhältnis). Die Zahl der Tage steht im Register (`estg.short-period-days`, gefragt für das Jahr, zu dem die
+  Zahlung gehört), auch für den Hinweis am Zahlungsdatum der Kostenposition (`tenDayWindow`). Das Mietkonto verschiebt
+  nie, es bleibt beim Datum.
 - **Vorauszahlungen**: `taxReport` führt `prepaymentSollCents` und `prepaymentSettlementCents`
   (aus der Abrechnung, bei Abschluss eingefroren, nie ein zweites Mal ausgelegt). Die Oberfläche
   erklärt einen Abstand, **ohne ihm eine Ursache zuzuschreiben** (Jahreskorrektur und

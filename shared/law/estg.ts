@@ -128,14 +128,21 @@ export function yearsWord(years: number): string {
 //   Beendigung des Kalenderjahres, zu dem sie wirtschaftlich gehören, zugeflossen sind, gelten als in diesem
 //   Kalenderjahr bezogen.“
 // Das Gesetz nennt keine Zahl. „Kurze Zeit“ sind nach ständiger Rechtsprechung bis zu zehn Tage (BFH, Urteil vom
-// 24.07.1986, IV R 309/84, BStBl II 1987, 16; wiedergegeben in H 11 EStH). Zahlung **und** Fälligkeit müssen in diesem
-// Zeitraum liegen (BFH, Urteil vom 27.06.2018, X R 44/16; Urteil vom 16.02.2022, X R 2/21). Der Wortlaut von H 11 EStH
-// ist nicht selbst gelesen (das Amtliche Handbuch war am 31.10.2026 nicht erreichbar), deshalb `adopted` aus dem Entwurf
-// docs/superpowers/specs/2026-10-30-steuer-zufluss-design.md (Rechtslage, E8); Rang `court`, denn die Zahl stammt aus der
-// Rechtsprechung, wie `bgb.rent-due-saturday`.
+// 24.07.1986, IV R 309/84, BStBl 1987 II S. 16). H 11 EStH („Kurze Zeit“), gelesen am 31.10.2026 in der Wiedergabe der
+// EStH 2020 bei Haufe (sekundär, das Amtliche Handbuch war nicht erreichbar):
+//   „Kurze Zeit bei regelmäßig wiederkehrenden Einnahmen ist in der Regel ein Zeitraum bis zu zehn Tagen. Innerhalb
+//   dieses Zeitraums müssen die Zahlungen fällig und geleistet worden sein“
+//   https://www.haufe.de/id/norm/einkommensteuer-richtlinien-amtliche-hinweise-2020-h-11-vereinnahmung-und-verausgabung-HI14448519_p11.html
+// Tragend für die Fälligkeit: BFH, Urteil vom 16.02.2022, X R 2/21, BStBl 2022 II S. 448 („nicht nur gezahlt, sondern
+// auch fällig geworden“; Datum und Fundstelle über dejure.org, Volltext nicht selbst gelesen). Nicht als Beleg der
+// Fälligkeit: BFH, Urteil vom 27.06.2018, X R 44/16, BStBl 2018 II S. 781, lässt sie offen (Rn. 12). Ein Wochenende
+// verlängert die zehn Tage nicht, § 108 Abs. 3 AO gilt nicht (BFH, Urteil vom 11.11.2014, VIII R 34/12, BStBl 2015 II
+// S. 285; ebenso X R 44/16). Weil H 11 EStH nur in der Wiedergabe gelesen ist, bleibt der Wert `adopted`; Rang `court`,
+// denn die Zahl stammt aus der Rechtsprechung, wie `bgb.rent-due-saturday`.
 //
-// Mietfuchs **verschiebt nichts** (Entwurf E8): Die Steuerübersicht nennt nur die Beträge, für die die Regel nach den
-// Daten greift (`received.turnOfYear`), und das Formular der Kostenposition weist auf sie hin.
+// Die Regel ist zwingend, kein Wahlrecht. Die Steuerübersicht wendet sie an, wo Mietfuchs die Fälligkeit kennt (Miete zu
+// Beginn des Monats nach § 556b Abs. 1 BGB, `bgb.rent-due-at-start`), und beziffert sie sonst nur (calc.ts,
+// `receivedIncome`); das Formular der Kostenposition weist auf sie hin (`tenDayWindow`, shared/paidOn.ts).
 //
 // Zeitregel `periodStart`: Gefragt wird für ein Kalenderjahr (Veranlagungszeitraum), mit seinem 1. Januar. Eine
 // Fassung ohne Beginn, denn die Rechtsprechung legt das Gesetz aus und ändert es nicht.
@@ -149,7 +156,7 @@ export const estgShortPeriodDays: LawParam<number, 'periodStart'> = {
       value: 10,
       source: {
         rank: 'court',
-        cite: '§ 11 Abs. 1 Satz 2 EStG; BFH, Urteil vom 24.07.1986, IV R 309/84, BStBl II 1987, 16; H 11 EStH; Wortlaut von H 11 EStH nicht selbst gelesen',
+        cite: '§ 11 Abs. 1 Satz 2 EStG; BFH, Urteil vom 24.07.1986, IV R 309/84, BStBl 1987 II S. 16; H 11 EStH („Kurze Zeit“), gelesen in der Wiedergabe der EStH 2020 bei Haufe, nicht amtlich; BFH, Urteil vom 16.02.2022, X R 2/21, BStBl 2022 II S. 448',
         url: 'https://www.gesetze-im-internet.de/estg/__11.html',
         retrieved: '2026-10-31',
         checked: 'adopted',

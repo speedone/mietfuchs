@@ -158,7 +158,8 @@ test('Monat laut Verwendungszweck ändert Abrechnung und Steuer nicht (X9 g)', (
     const { received: ra, ...ia } = ta.income
     const { received: rb, ...ib } = tb.income
     assert.deepEqual({ ...ta, income: ia }, { ...tb, income: ib }, `Startwert ${seed}: Steuer`)
-    const lines = (r: typeof ra): number => (r ? r.rentCents + r.allocationsCents + r.formerYearsCents : assert.fail('received fehlt'))
+    // Zehn-Tage-Regel (#312 E8): Was nach § 11 Abs. 1 Satz 2 EStG ins Nachbarjahr wandert, zählt hier wieder dazu.
+    const lines = (r: typeof ra): number => (r ? r.rentCents + r.allocationsCents + r.formerYearsCents + r.turnOfYear.forwardCents - r.turnOfYear.fromPreviousCents : assert.fail('received fehlt'))
     assert.equal(lines(ra), lines(rb), `Startwert ${seed}: Summe der Zeilen`)
   }
 })

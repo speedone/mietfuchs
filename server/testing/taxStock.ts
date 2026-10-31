@@ -166,7 +166,8 @@ export function withSecondProperty(stock: TaxStock, rnd: () => number): TaxStock
 // vom 22. bis 31. des Vormonats (Jahreswechsel vorwärts), Zahlung am 1. bis 10. des Folgemonats (Dezembermiete im
 // Januar), Rücklastschriften (auch nach Auszug im Folgejahr), ein Monat laut Verwendungszweck, Überzahlung nach Auszug und
 // Zahlungen aus der Abrechnung.
-// Am Mietverhältnis: ein Auszug, Pauschale, Inklusivmiete, Heizvorauszahlung, Angehörige. `exact`: nur die Zahlung genau
+// Am Mietverhältnis: ein Auszug, Pauschale, Inklusivmiete kalt oder warm, Heizvorauszahlung, Angehörige (auch ohne
+// Bewohner), ein Altvertrag von 1999 und ein späterer Beginn mit Kaution. `exact`: nur die Zahlung genau
 // des Monats-Solls im Monat, ohne Abrechnung (der Fall „wer jeden Monat genau zahlt“).
 export function withPaymentVariety(source: TaxSource, seed: number, options: { exact?: boolean } = {}): TaxSource {
   const rnd = makeRng(seed * 7919 + 17)
@@ -188,8 +189,15 @@ export function withPaymentVariety(source: TaxSource, seed: number, options: { e
       ...(r >= 0.2 && r < 0.35 ? { costModel: 'inclusive' as const, prepayments: [] } : {}),
       ...(rnd() < 0.2 ? { heatingPrepayments: [{ from: '2020-01', monthlyCents: int(3000, 12000) }, { from: `${int(2024, 2027)}-${pad(int(1, 12))}`, monthlyCents: int(3000, 12000) }] } : {}),
       ...(rnd() < 0.3 ? { relative: true } : {}),
+      // Durchsicht S2: Warmmiete inklusiv (zählt nur mit Heizposition im Jahr), Angehörige ohne Bewohner (Garage),
+      // ein Mietverhältnis, das am 01.09.2001 bestand (Vertrag von 1999, § 551 BGB a. F.), und ein späterer Beginn mit
+      // Kaution (teils als Miete erfasst, unten).
+      ...(rnd() < 0.15 ? { heatingModel: 'inclusive' as const } : {}),
+      ...(rnd() < 0.15 ? { relative: true, persons: 0, personHistory: [{ from: '2020-01-01', persons: 0 }] } : {}),
+      ...(rnd() < 0.2 ? { contractDate: `1999-${pad(int(1, 12))}-${pad(int(1, 28))}` } : {}),
+      ...(rnd() < 0.25 ? { start: `${int(2023, 2026)}-${pad(int(1, 12))}-${rnd() < 0.5 ? '01' : '15'}`, depositCents: int(150000, 300000) } : {}),
     }
-  })
+  }).map((t) => (t.end !== null && t.end < t.start ? { ...t, end: null } : t))
   let n = 0
   const payments: TaxSource['payments'] = []
   for (const t of tenancies) {
@@ -197,7 +205,13 @@ export function withPaymentVariety(source: TaxSource, seed: number, options: { e
       payments.push({ id: `${t.id}-v${String(++n).padStart(5, '0')}`, tenancyId: t.id, date, amountCents, kind: 'rent', ...over })
     }
     const last = t.end === null ? '2029-12' : t.end.slice(0, 7)
-    for (let m = '2023-01'; m <= last; m = addMonths(m, 1)) {
+    const firstMonth = t.start.slice(0, 7) > '2023-01' ? t.start.slice(0, 7) : '2023-01'
+    // Die Kaution als Mietzahlung bis 20 Tage um den Beginn (E9).
+    if (!options.exact && t.depositCents !== undefined && rnd() < 0.6) {
+      const d = new Date(Date.UTC(Number(t.start.slice(0, 4)), Number(t.start.slice(5, 7)) - 1, Number(t.start.slice(8, 10)) + int(-20, 20)))
+      add(d.toISOString().slice(0, 10), t.depositCents)
+    }
+    for (let m = firstMonth; m <= last; m = addMonths(m, 1)) {
       const s = monthSoll(t, m)
       const soll = s.baseRent + s.prepayment + s.heatingPrepayment + s.flatRate
       if (soll <= 0) continue

@@ -49,36 +49,44 @@ const isAllocation = (c: AllocationSlice['component']): boolean => c === 'prepay
 const sum = <T>(list: readonly T[], f: (x: T) => number): number => list.reduce((a, x) => a + f(x), 0)
 
 // Das Orakel: die Zeilen aus den Teilen nach der Tabelle in E4, unabhängig von calc.ts geschrieben, mit derselben Tilgung
-// (`allocateRentPayments` auf dem geführten Mietverhältnis, wie das Mietkonto). Die Zehn-Tage-Regel mit 22.12. und 10.01.
+// (`allocateRentPayments` auf dem geführten Mietverhältnis, wie das Mietkonto). Zehn-Tage-Regel (E8 nach der
+// Durchsicht): 22.12. bis 31.12. für Januar zählt im Folgejahr, wenn das Mietverhältnis am 01.09.2001 nicht bestand
+// (§ 556b BGB); sonst nur beziffert, ebenso Anfang Januar (bis 10.01.) für Dezember.
 type Oracle = Pick<TaxReceived, 'rentCents' | 'unallocatedCents' | 'allocationsCents' | 'flatRateCents' | 'formerYearsCents' | 'formerYearsAllocationsCents' | 'turnOfYear'>
 function oracle(source: TaxSource, pid: string, year: number): { lines: Oracle; slicesOf: Map<string, AllocationSlice[]> } {
   const snap = snapshotFor(source, pid, calendarYearPeriod(year))
-  const lines: Oracle = { rentCents: 0, unallocatedCents: 0, allocationsCents: 0, flatRateCents: 0, formerYearsCents: 0, formerYearsAllocationsCents: 0, turnOfYear: { forwardCents: 0, forwardAllocationsCents: 0, fromPreviousCents: 0, fromPreviousAllocationsCents: 0, lateDecemberCents: 0 } }
+  const lines: Oracle = { rentCents: 0, unallocatedCents: 0, allocationsCents: 0, flatRateCents: 0, formerYearsCents: 0, formerYearsAllocationsCents: 0, turnOfYear: { forwardCents: 0, forwardAllocationsCents: 0, fromPreviousCents: 0, fromPreviousAllocationsCents: 0, forwardOldLeaseCents: 0, lateDecemberCents: 0 } }
   const slicesOf = new Map<string, AllocationSlice[]>()
   const y = String(year)
   for (const t of snap.tenancies) {
     const slices = allocateRentPayments(ledgerTenancy(t, snap.payments, year), snap.payments.filter((p) => p.tenancyId === t.id))
     slicesOf.set(t.id, slices)
+    const since = t.contractDate !== undefined && t.contractDate < t.start ? t.contractDate : t.start
+    const newLaw = since >= '2001-09-01'
+    const forwardOf = (s: AllocationSlice): boolean => s.month === `${Number(s.paidOn.slice(0, 4)) + 1}-01` && s.paidOn.slice(5) >= '12-22'
     for (const s of slices) {
-      if (s.paidOn >= `${year - 1}-12-22` && s.paidOn <= `${year - 1}-12-31` && s.month === `${y}-01`) {
+      const moved = newLaw && forwardOf(s)
+      const counts = moved ? Number(s.paidOn.slice(0, 4)) + 1 === year : s.paidOn.slice(0, 4) === y
+      if (moved && s.paidOn.slice(0, 4) === y) {
+        lines.turnOfYear.forwardCents += s.cents
+        if (isAllocation(s.component)) lines.turnOfYear.forwardAllocationsCents += s.cents
+      }
+      if (moved && counts) {
         lines.turnOfYear.fromPreviousCents += s.cents
         if (isAllocation(s.component)) lines.turnOfYear.fromPreviousAllocationsCents += s.cents
       }
-      if (s.paidOn.slice(0, 4) !== y) continue
+      if (!newLaw && forwardOf(s) && s.paidOn.slice(0, 4) === y) lines.turnOfYear.forwardOldLeaseCents += s.cents
+      if (!counts) continue
       if (s.month === null) { lines.rentCents += s.cents; lines.unallocatedCents += s.cents; continue }
       if (s.month.slice(0, 4) < y) {
         lines.formerYearsCents += s.cents
         if (isAllocation(s.component)) lines.formerYearsAllocationsCents += s.cents
-        if (s.month === `${year - 1}-12` && s.paidOn <= `${y}-01-10`) lines.turnOfYear.lateDecemberCents += s.cents
+        if (!newLaw && s.month === `${year - 1}-12` && s.paidOn <= `${y}-01-10`) lines.turnOfYear.lateDecemberCents += s.cents
         continue
       }
       if (isAllocation(s.component)) lines.allocationsCents += s.cents
       else lines.rentCents += s.cents
       if (s.component === 'flatRate') lines.flatRateCents += s.cents
-      if (s.month === `${year + 1}-01` && s.paidOn >= `${y}-12-22`) {
-        lines.turnOfYear.forwardCents += s.cents
-        if (isAllocation(s.component)) lines.turnOfYear.forwardAllocationsCents += s.cents
-      }
     }
   }
   return { lines, slicesOf }
@@ -99,7 +107,7 @@ test('Invariante: Zeilen = Orakel, Summe = paidCents, Teilsummen stimmen, Mietko
   const fails: string[] = []
   let compared = 0
   let goldenChecked = 0
-  const seen = { formerYears: 0, negativeFormer: 0, unallocated: 0, forward: 0, fromPrevious: 0, lateDecember: 0, relatives: 0, flatRate: 0, inclusive: 0, closed: 0 }
+  const seen = { formerYears: 0, negativeFormer: 0, unallocated: 0, forward: 0, fromPrevious: 0, forwardOldLease: 0, lateDecember: 0, relatives: 0, relativeWithoutResident: 0, flatRate: 0, inclusive: 0, warmInclusive: 0, possibleDeposits: 0, closed: 0 }
   for (const seed of SEEDS) {
     const { source, objects } = stockOf(seed)
     const closed = withClosed(source, objects, seed)
@@ -128,9 +136,9 @@ test('Invariante: Zeilen = Orakel, Summe = paidCents, Teilsummen stimmen, Mietko
           try {
             assert.deepEqual({ rentCents: x.rentCents, unallocatedCents: x.unallocatedCents, allocationsCents: x.allocationsCents, flatRateCents: x.flatRateCents, formerYearsCents: x.formerYearsCents, formerYearsAllocationsCents: x.formerYearsAllocationsCents, turnOfYear: x.turnOfYear }, lines)
           } catch (e) { fail(`Orakel: ${(e as Error).message.slice(0, 400)}`) }
-          // X9 (b), auf den Feldern: Zeilen 15/18 + 20 + 25 + 21 = paidCents.
+          // X9 (b), auf den Feldern: Zeilen 15/18 + 20 + 25 + 21 = paidCents − forward + fromPrevious (Zehn-Tage-Regel).
           const saldo = r.income.settlementBackPaymentsCents - r.income.settlementRefundsCents
-          if (x.rentCents + x.allocationsCents + x.formerYearsCents + saldo !== r.income.paidCents) fail('Summe der Zeilen ≠ paidCents')
+          if (x.rentCents + x.allocationsCents + x.formerYearsCents + saldo !== r.income.paidCents - x.turnOfYear.forwardCents + x.turnOfYear.fromPreviousCents) fail('Summe der Zeilen ≠ paidCents − forward + fromPrevious')
           // Σ byTenancy = Felder, Σ byUnit = Felder, Σ byTenancy mit `relative` = relatives.
           for (const k of ['rentCents', 'inclusiveRentCents', 'allocationsCents', 'formerYearsCents', 'unallocatedCents'] as const) {
             if (sum(x.byTenancy, (b) => b[k]) !== x[k]) fail(`Σ byTenancy.${k} ≠ ${k}`)
@@ -176,6 +184,11 @@ test('Invariante: Zeilen = Orakel, Summe = paidCents, Teilsummen stimmen, Mietko
           if (x.relatives.rentCents !== 0) seen.relatives++
           if (x.flatRateCents !== 0) seen.flatRate++
           if (x.inclusiveRentCents !== 0) seen.inclusive++
+          if (x.turnOfYear.forwardOldLeaseCents !== 0) seen.forwardOldLease++
+          if (x.possibleDeposits.length > 0) seen.possibleDeposits++
+          const tenancyOf = (id: string) => s.tenancies.find((t) => t.id === id)
+          if (x.byTenancy.some((b) => b.inclusiveRentCents !== 0 && tenancyOf(b.tenancyId)?.costModel !== 'inclusive')) seen.warmInclusive++
+          if (x.byTenancy.some((b) => !b.relative && tenancyOf(b.tenancyId)?.relative === true && tenancyOf(b.tenancyId)?.persons === 0)) seen.relativeWithoutResident++
         }
       }
     }

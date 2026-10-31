@@ -1264,8 +1264,9 @@ export type TaxExpenseCategory = { category: string; amountCents: number; labor3
 // Das Zugeflossene eines Kalenderjahres nach Zeilen der Anlage V (#312 PR 2, Entwurf
 // docs/superpowers/specs/2026-10-30-steuer-zufluss-design.md, E4). Jede Mietzahlung mit Datum im Jahr ist nach der
 // gesetzlichen Tilgungsreihenfolge (§ 366 BGB, BGH VIII ZR 84/17 Rn. 56, 57) auf Monat und Bestandteil verteilt; die
-// Teile zählen im Jahr ihres Datums (§ 11 Abs. 1 Satz 1 EStG). Es gilt
-// rentCents + allocationsCents + formerYearsCents + (settlementBackPaymentsCents − settlementRefundsCents) = paidCents.
+// Teile zählen im Jahr ihres Datums (§ 11 Abs. 1 Satz 1 EStG), außer nach der Zehn-Tage-Regel (`turnOfYear`). Es gilt
+// rentCents + allocationsCents + formerYearsCents + (settlementBackPaymentsCents − settlementRefundsCents)
+//   = paidCents − turnOfYear.forwardCents + turnOfYear.fromPreviousCents.
 // Die Summenfelder umfassen alle Mietverhältnisse, `relatives` dieselben nur über die an Angehörige (Zeilen 19, 22, 23).
 export type TaxReceived = {
   rentCents: number // Zeilen 15/18: Kaltmiete und Inklusivmiete des Jahres und später, dazu Überzahlung ohne Forderung
@@ -1275,13 +1276,19 @@ export type TaxReceived = {
   flatRateCents: number // davon Pauschalen
   formerYearsCents: number // Zeile 25: Mieten für frühere Jahre, brutto
   formerYearsAllocationsCents: number // davon Umlagen, nur Auskunft
-  // Die Zehn-Tage-Regel (§ 11 Abs. 1 Satz 2 EStG), nur beziffert, nie verschoben (Entwurf E8).
+  // Die Zehn-Tage-Regel (§ 11 Abs. 1 Satz 2 EStG, Entwurf E8): Zahlung und Fälligkeit in den zehn Tagen um den
+  // Jahreswechsel. Bei Fälligkeit zu Beginn des Monats (§ 556b Abs. 1 BGB, Mietverhältnisse ab 01.09.2001) zählt die Ende
+  // Dezember gezahlte Januarmiete im Folgejahr; bei älteren Mietverhältnissen (§ 551 BGB a. F., Monatsende) wird nichts
+  // verschoben, nur beziffert.
   turnOfYear: {
-    forwardCents: number // im Dezember dieses Jahres eingegangen, getilgt der Januar des Folgejahres
+    forwardCents: number // Ende Dezember dieses Jahres für den Januar gezahlt, zählt im Folgejahr (nicht in den Zeilen hier)
     forwardAllocationsCents: number // davon Umlagen
-    fromPreviousCents: number // im Dezember des Vorjahres eingegangen, getilgt der Januar dieses Jahres (steht im Vorjahr)
+    fromPreviousCents: number // Ende Dezember des Vorjahres für den Januar gezahlt, zählt hier (in Zeile 15/20 enthalten)
     fromPreviousAllocationsCents: number // davon Umlagen
-    lateDecemberCents: number // Anfang Januar eingegangen, getilgt der Dezember des Vorjahres (nur bei Fälligkeit zum Monatsende)
+    forwardOldLeaseCents: number // wie forwardCents bei Mietverhältnissen vor 01.09.2001: bleibt in diesem Jahr, Vorbehalt
+    // Anfang Januar für den Dezember des Vorjahres gezahlt, nur bei Mietverhältnissen vor 01.09.2001 (sonst 0): bleibt in
+    // diesem Jahr (Zeile 25); ins Vorjahr gehörte er nur, wenn die Miete laut Vertrag am Monatsende fällig ist.
+    lateDecemberCents: number
   }
   byUnit: TaxReceivedUnit[]
   byTenancy: TaxReceivedTenancy[]

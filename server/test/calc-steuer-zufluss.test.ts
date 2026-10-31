@@ -110,33 +110,68 @@ test('Überzahlung nach Auszug: ohne Forderung, in Zeile 15 und eigens genannt',
   assert.equal(x.byTenancy[0]?.unallocatedCents, 80000)
 })
 
-test('Zehn-Tage-Regel vorwärts: am 22.12. für Januar gezahlt, im Folgejahr dieselben Cent als „aus dem Vorjahr“', () => {
-  const s = source([tenancy('t', 'eg')], [...monthly('t', '2025-01', '2025-12', 80000), pay('t', '2025-12-22', 80000), ...monthly('t', '2026-02', '2026-12', 80000)])
-  const y25 = received(s, 2025)
-  assert.deepEqual(y25.turnOfYear, { forwardCents: 80000, forwardAllocationsCents: 20000, fromPreviousCents: 0, fromPreviousAllocationsCents: 0, lateDecemberCents: 0 })
-  assert.equal(y25.rentCents, 13 * 60000, 'die vorausgezahlte Januarmiete zählt im Jahr der Zahlung (Zeile 15)')
-  assert.equal(y25.allocationsCents, 13 * 20000)
+// Zehn-Tage-Regel (§ 11 Abs. 1 Satz 2 EStG; H 11 EStH: Zahlung **und** Fälligkeit in der kurzen Zeit; BFH, Urteil vom
+// 16.02.2022, X R 2/21). Die Vorschrift ist zwingend. Unter § 556b Abs. 1 BGB (Mietverhältnisse ab 01.09.2001) ist die
+// Januarmiete spätestens am dritten Werktag fällig, also in den zehn Tagen: Am 22. bis 31.12. für Januar Gezahltes zählt
+// im Folgejahr. Für ältere Mietverhältnisse gilt § 551 BGB a. F. (Fälligkeit am Monatsende, Art. 229 § 3 Abs. 1 Nr. 7
+// EGBGB): nicht verschoben, nur beziffert.
+const alt = (id: string, unitId: string, over: Partial<SnapshotTenancy> = {}): SnapshotTenancy => tenancy(id, unitId, {
+  start: '1999-01-01', personHistory: [{ from: '1999-01-01', persons: 1 }], prepayments: [{ from: '1999-01', monthlyCents: 20000 }], baseRents: [{ from: '1999-01', monthlyCents: 60000 }], ...over,
+})
+
+test('Zehn-Tage-Regel vorwärts (§ 556b BGB): am 28.12.2025 gezahlte Januarmiete zählt 2026 in Zeile 15/20, nicht 2025', () => {
+  const s = source([tenancy('t', 'eg')], [...monthly('t', '2025-01', '2025-12', 80000), pay('t', '2025-12-28', 80000), ...monthly('t', '2026-02', '2026-12', 80000)])
+  const r25 = taxReportFor(s, 'objekt-1', 2025)
+  const y25 = r25.income.received ?? assert.fail('received fehlt')
+  assert.deepEqual(y25.turnOfYear, { forwardCents: 80000, forwardAllocationsCents: 20000, fromPreviousCents: 0, fromPreviousAllocationsCents: 0, forwardOldLeaseCents: 0, lateDecemberCents: 0 })
+  assert.equal(r25.income.paidCents, 13 * 80000, 'der Zufluss nach Datum bleibt')
+  assert.equal(y25.rentCents, 12 * 60000, 'die Januarmiete steht im Folgejahr')
+  assert.equal(y25.allocationsCents, 12 * 20000)
   assert.equal(y25.byTenancy[0]?.forwardCents, 80000)
-  const y26 = received(s, 2026)
+  const r26 = taxReportFor(s, 'objekt-1', 2026)
+  const y26 = r26.income.received ?? assert.fail('received fehlt')
   assert.equal(y26.turnOfYear.fromPreviousCents, 80000)
   assert.equal(y26.turnOfYear.fromPreviousAllocationsCents, 20000)
   assert.equal(y26.turnOfYear.forwardCents, 0)
-  // Der 21.12. liegt elf Tage vor dem Jahreswechsel: keine kurze Zeit mehr.
+  assert.equal(y26.rentCents, 12 * 60000, 'Januar (aus dem Dezember) und Februar bis Dezember')
+  assert.equal(y26.allocationsCents, 12 * 20000)
+  assert.equal(r26.income.paidCents, 11 * 80000)
+  // Der 21.12. liegt elf Tage vor dem Jahreswechsel: keine kurze Zeit mehr, die Zahlung bleibt 2025.
   const früh = source([tenancy('t', 'eg')], [...monthly('t', '2025-01', '2025-12', 80000), pay('t', '2025-12-21', 80000)])
   assert.equal(received(früh, 2025).turnOfYear.forwardCents, 0)
+  assert.equal(received(früh, 2025).rentCents, 13 * 60000)
   assert.equal(received(früh, 2026).turnOfYear.fromPreviousCents, 0)
 })
 
-test('Dezembermiete nach Auszug am 10.01.: Zeile 25, als „Anfang Januar für Dezember“ genannt; am 11.01. nicht mehr', () => {
+test('Zehn-Tage-Regel vorwärts, Mietverhältnis von 1999 (§ 551 BGB a. F.): bleibt 2025, nur beziffert', () => {
+  const s = source([alt('t', 'eg')], [...monthly('t', '2025-01', '2025-12', 80000), pay('t', '2025-12-28', 80000)])
+  const y25 = received(s, 2025)
+  assert.deepEqual(y25.turnOfYear, { forwardCents: 0, forwardAllocationsCents: 0, fromPreviousCents: 0, fromPreviousAllocationsCents: 0, forwardOldLeaseCents: 80000, lateDecemberCents: 0 })
+  assert.equal(y25.rentCents, 13 * 60000)
+  assert.equal(received(s, 2026).turnOfYear.fromPreviousCents, 0)
+  // Maßgeblich ist der Bestand am 01.09.2001: ein Vertrag vom August 2001 mit Beginn im Oktober ist alt.
+  const august = tenancy('t', 'eg', { start: '2001-10-01', contractDate: '2001-08-15' })
+  assert.equal(received(source([august], [...monthly('t', '2025-01', '2025-12', 80000), pay('t', '2025-12-28', 80000)]), 2025).turnOfYear.forwardOldLeaseCents, 80000)
+})
+
+test('Dezembermiete am 05.01.2026 (Beginn 2024): Zeile 25 in 2026, lateDecemberCents 0, denn sie war Anfang Dezember fällig', () => {
   const t = tenancy('t', 'eg', { end: '2025-12-31' })
-  const s = source([t], [...monthly('t', '2025-01', '2025-11', 80000), pay('t', '2026-01-10', 80000)])
+  const s = source([t], [...monthly('t', '2025-01', '2025-11', 80000), pay('t', '2026-01-05', 80000)])
   const r = taxReportFor(s, 'objekt-1', 2026)
   const x = r.income.received ?? assert.fail('received fehlt')
   assert.equal(r.income.paidCents, 80000)
   assert.equal(x.formerYearsCents, 80000)
-  assert.equal(x.turnOfYear.lateDecemberCents, 80000)
+  assert.equal(x.turnOfYear.lateDecemberCents, 0)
   // Ohne Zeile im Mietkonto 2026 steht das Mietverhältnis trotzdem da (E1).
   assert.deepEqual(x.byTenancy.map((b) => [b.tenancyId, b.start, b.end, b.formerYearsCents]), [['t', '2024-01-01', '2025-12-31', 80000]])
+})
+
+test('Dezembermiete am 05.01.2026 (Beginn 1999): Zeile 25 in 2026, beziffert als lateDecemberCents; am 11.01. nicht mehr', () => {
+  const t = alt('t', 'eg', { end: '2025-12-31' })
+  const s = source([t], [...monthly('t', '2025-01', '2025-11', 80000), pay('t', '2026-01-05', 80000)])
+  const x = received(s, 2026)
+  assert.equal(x.formerYearsCents, 80000)
+  assert.equal(x.turnOfYear.lateDecemberCents, 80000)
   const später = source([t], [...monthly('t', '2025-01', '2025-11', 80000), pay('t', '2026-01-11', 80000)])
   assert.equal(received(später, 2026).turnOfYear.lateDecemberCents, 0)
   assert.equal(received(später, 2026).formerYearsCents, 80000)

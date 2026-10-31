@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { coversDate, createLawLog, dayAfter, dayBefore, daysIn, eventPeriodEnd, germanDate, law, LAW_AS_OF, lawOverridable, onlyVersion, recordVersionAt, shiftMonths, valueAt, versionAt, versionsIn, yearStart, type LawParam } from '../../shared/law/register.ts'
 import { LAW_PARAMS } from '../../shared/law/params.ts'
 import * as rulesModule from '../../shared/law/rules.ts'
-import { betrkvGenerationPower, betrkvTvSignal, bgbDeadlineMonths, bgbDeadlineOnWorkday, bgbHeatDeliverySwitch, bgbMaxPeriodMonths, bgbRentDueSaturday, bgbRentDueWorkday } from '../../shared/law/bgb-betrkv.ts'
+import { betrkvGenerationPower, betrkvTvSignal, bgbDeadlineMonths, bgbDeadlineOnWorkday, bgbHeatDeliverySwitch, bgbMaxPeriodMonths, bgbRentDueAtStart, bgbRentDueSaturday, bgbRentDueWorkday } from '../../shared/law/bgb-betrkv.ts'
 import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvExemptions, hkvGenerationPower, hkvHeatingValues, hkvHeatPumpCapture, hkvInfoDistrict, hkvMonthlyInfo, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo } from '../../shared/law/heizkostenv.ts'
 import { practiceEvaporatorWindow, practiceReadingOffWarning, practiceVacancyPersons } from '../../shared/law/practice.ts'
 import { ustgGasHeatNetworkRate, ustgSmallBusiness, ustgStandardRate } from '../../shared/law/ustg.ts'
@@ -182,7 +182,7 @@ test('Register: jede Konstante vom Typ LawParam in shared/law/ steht in LAW_PARA
     .flatMap((f) => [...fs.readFileSync(path.join(dir, f), 'utf8').matchAll(/^export const (\w+): LawParam</gm)].map((m) => m[1]))
   assert.ok(declared.length >= 7, `nur ${declared.length} Parameter gefunden`)
   const listed = new Set<unknown>(LAW_PARAMS)
-  const modules = { betrkvGenerationPower, betrkvTvSignal, bgbDeadlineMonths, bgbHeatDeliverySwitch, bgbMaxPeriodMonths, co2ApplicableFrom, co2CostsBefore, co2CutMissing, co2DistrictEtsNew, co2EbevFactors, co2HalfSplit, co2HalfSplitEmergency, co2HalfSplitNewBuildings, co2HalfSplitTwoFamily, co2NonResidential, co2Price, co2SelfSupply, co2PriceEts, co2Restriction, co2RoundingDecimals, co2StageTable, gmodgHeating43, hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvExemptions, hkvGenerationPower, hkvHeatingValues, hkvHeatPumpCapture, hkvInfoDistrict, hkvMonthlyInfo, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo, practiceEvaporatorWindow, practiceReadingOffWarning, practiceVacancyPersons, ustgGasHeatNetworkRate, ustgStandardRate, messevCalibrationYears, holidayNewYear, holidayGoodFriday, holidayEasterMonday, holidayLabourDay, holidayAscension, holidayWhitMonday, holidayChristmas, holidayBoxingDay, holidayEpiphany, holidayWomensDay, holidayEasterSunday, holidayWhitSunday, holidayLiberationDay, holidayCorpusChristi, holidayUprising1953, holidayAugsburgPeace, holidayAssumption, holidayChildrensDay, holidayUnityDay, holidayReformation, holidayAllSaints, holidayRepentance, bgbRentDueWorkday, bgbRentDueSaturday, bgbDeadlineOnWorkday, estgCheapRent, estgAcquisitionRelated, estgShortPeriodDays, ustgSmallBusiness }
+  const modules = { betrkvGenerationPower, betrkvTvSignal, bgbDeadlineMonths, bgbHeatDeliverySwitch, bgbMaxPeriodMonths, co2ApplicableFrom, co2CostsBefore, co2CutMissing, co2DistrictEtsNew, co2EbevFactors, co2HalfSplit, co2HalfSplitEmergency, co2HalfSplitNewBuildings, co2HalfSplitTwoFamily, co2NonResidential, co2Price, co2SelfSupply, co2PriceEts, co2Restriction, co2RoundingDecimals, co2StageTable, gmodgHeating43, hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvExemptions, hkvGenerationPower, hkvHeatingValues, hkvHeatPumpCapture, hkvInfoDistrict, hkvMonthlyInfo, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo, practiceEvaporatorWindow, practiceReadingOffWarning, practiceVacancyPersons, ustgGasHeatNetworkRate, ustgStandardRate, messevCalibrationYears, holidayNewYear, holidayGoodFriday, holidayEasterMonday, holidayLabourDay, holidayAscension, holidayWhitMonday, holidayChristmas, holidayBoxingDay, holidayEpiphany, holidayWomensDay, holidayEasterSunday, holidayWhitSunday, holidayLiberationDay, holidayCorpusChristi, holidayUprising1953, holidayAugsburgPeace, holidayAssumption, holidayChildrensDay, holidayUnityDay, holidayReformation, holidayAllSaints, holidayRepentance, bgbRentDueWorkday, bgbRentDueSaturday, bgbRentDueAtStart, bgbDeadlineOnWorkday, estgCheapRent, estgAcquisitionRelated, estgShortPeriodDays, ustgSmallBusiness }
   for (const name of declared) {
     assert.ok(name && Object.hasOwn(modules, name), `${name} fehlt in diesem Test`)
     assert.ok(listed.has(Reflect.get(modules, name)), `${name} fehlt in LAW_PARAMS`)
@@ -776,4 +776,13 @@ test('estg.short-period-days: zehn Tage, ohne Beginn, nach Kalenderjahr gefragt,
   assert.equal(v.source.retrieved, '2026-10-31')
   assert.match(v.source.cite, /IV R 309\/84/)
   assert.equal(estgShortPeriodDays.describe(10), 'kurze Zeit vor Beginn oder nach Ende des Kalenderjahres: bis zu 10 Tage')
+})
+
+// #312 PR 2 (Durchsicht, Nachtrag): Fälligkeit zu Beginn nur für Mietverhältnisse, die am 01.09.2001 nicht bestanden.
+test('bgb.rent-due-at-start: bis 31.08.2001 Monatsende (Art. 229 § 3 Abs. 1 Nr. 7 EGBGB), ab 01.09.2001 zu Beginn (§ 556b)', () => {
+  assert.equal(valueAt(bgbRentDueAtStart, '2001-08-31'), false)
+  assert.equal(valueAt(bgbRentDueAtStart, '2001-09-01'), true)
+  assert.equal(valueAt(bgbRentDueAtStart, '1970-01-01'), false)
+  assert.equal(bgbRentDueAtStart.timing, 'eventDate')
+  assert.ok(bgbRentDueAtStart.versions.every((v) => v.source.checked === 'checked'))
 })
