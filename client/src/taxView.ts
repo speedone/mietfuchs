@@ -22,6 +22,7 @@ import type { Property, PropertyKind, TaxExpenseItem, TaxMovedOut, TaxOutflow, T
 import { andList } from '../../shared/wording.ts'
 import { fmtDate, fmtEuro } from './api'
 import { anlageVLines } from './anlageV'
+import { receivedTotalCents } from './taxIncome'
 import { RESERVE_WITHDRAWAL_CATEGORY } from '../../shared/categories.ts'
 import { fileNumberDigits } from './propertyForm'
 import { LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
@@ -44,7 +45,8 @@ export const DEFAULT_BASIS: Basis = 'ist'
 // er erscheint; wer hier einen hinzufügt, bekommt dort einen Übersetzungsfehler, solange er ihn
 // nicht einträgt.
 export const TAX_HINTS = [
-  'sollIsNotTaxBasis', 'paymentsMissing', 'turnOfYear', 'inclusiveLine24', 'inclusiveLine24Mixed', 'flatRateLine20',
+  'sollIsNotTaxBasis', 'paymentsMissing', 'turnOfYear', 'turnOfYearOldLease', 'lateDecember', 'unallocatedPayment', 'possibleDeposit',
+  'formerYears', 'inclusiveLine24', 'inclusiveLine24Mixed', 'flatRateLine20',
   'reserveContribution', 'reserveSuspected', 'etwHousingMoney', 'maintenanceLines', 'reserveWithdrawalSuspected', 'specialLevy',
   'acquisitionRelated',
   'mixedUseSplit', 'mixedUseKeyNotArea', 'mixedUseAreaMissing', 'mixedUseDirectOutside', 'mixedUseChangedInYear',
@@ -75,8 +77,18 @@ export type TaxHint = (typeof TAX_HINTS)[number]
 //                        die Seite aus den beiden Zahlen; das ist dieselbe Auskunft ohne die
 //                        falsche Ursache.
 //
-//   `turnOfYear`         Der Vorbehalt zur Zehn-Tage-Regel, der nur auf der Ist-Grundlage etwas
-//                        bedeutet.
+//   `turnOfYear`         Die Zehn-Tage-Regel (§ 11 Abs. 1 Satz 2 EStG), **nur mit Betrag** (#312 PR 3, Entwurf E8): Ende
+//                        Dezember für den Januar Gezahltes, das Mietfuchs ins Folgejahr stellt (`forwardCents`), oder
+//                        aus dem Vorjahr hierher (`fromPreviousCents`). Vorher stand der Hinweis bei jedem Bericht, als
+//                        Vorbehalt ohne Anlass; ein Hinweis ohne Anlass lehrt, Hinweise zu übersehen.
+//   `turnOfYearOldLease` Dasselbe bei einem Mietverhältnis, das am 01.09.2001 bestand (§ 551 BGB a. F.): nicht
+//                        verschoben, mit Vorbehalt (`forwardOldLeaseCents`).
+//   `lateDecember`       Anfang Januar gezahlte Dezembermiete eines solchen Mietverhältnisses (`lateDecemberCents`): ein
+//                        ruhiger Satz ohne Titel, er bleibt in diesem Jahr.
+//   `unallocatedPayment` Zahlung ohne vereinbarte Miete (`unallocatedCents`): im Mietkonto prüfen.
+//   `possibleDeposit`    Eine Mietzahlung sieht aus wie die Kaution (`possibleDeposits`, Entwurf E9).
+//   `formerYears`        Mieten für frühere Jahre (Zeile 25), negativ mit dem Satz zur Rücklastschrift.
+//                        Alle fünf und `turnOfYear` nur auf der Ist-Grundlage; die Sätze stehen in taxIncome.ts.
 //
 //   `inclusiveLine24`    Alle Mietverhältnisse sind kalt und warm inklusiv (#96): Zeile 24 der
 //                        Anlage V („Nebenkosten nicht gesondert vereinbart“). Auf beiden Grundlagen.
@@ -212,7 +224,16 @@ export function taxHints(report: TaxReport, basis: Basis, propertyKind?: Propert
   // und eine Ermahnung für etwas, das es nicht gibt, lehrt nur, Hinweise zu übersehen.
   const { tenanciesWithSoll, tenanciesWithoutPayment } = report.income
   if (tenanciesWithSoll > 0 && tenanciesWithoutPayment > 0) hints.push('paymentsMissing')
-  hints.push('turnOfYear')
+  const received = report.income.received
+  if (received) {
+    const t = received.turnOfYear
+    if (t.forwardCents !== 0 || t.fromPreviousCents !== 0) hints.push('turnOfYear')
+    if (t.forwardOldLeaseCents !== 0) hints.push('turnOfYearOldLease')
+    if (t.lateDecemberCents !== 0) hints.push('lateDecember')
+    if (received.unallocatedCents !== 0) hints.push('unallocatedPayment')
+    if (received.possibleDeposits.length > 0) hints.push('possibleDeposit')
+    if (received.formerYearsCents !== 0) hints.push('formerYears')
+  }
   return hints
 }
 
@@ -266,12 +287,16 @@ export function settlementSourcesText(report: TaxReport): string | null {
 
 // Die angesetzten Einnahmen und die Einkünfte, je nach Grundlage. Beides steht hier, damit die
 // Seite nicht an zwei Stellen dieselbe Fallunterscheidung trifft.
+//
+// **Auf der Ist-Grundlage die Summe der Zeilen** (Zeile 32, #312 PR 3): der Zufluss nach Datum, um die Zehn-Tage-Regel
+// berichtigt (§ 11 Abs. 1 Satz 2 EStG ist zwingend). Der Server führt `paidCents` und `surplusPaidCents` weiter nach Datum
+// (Prüfsummen in tax-golden.json, Entwurf E8); ohne Zahlung am Jahreswechsel ist beides dasselbe.
 export function incomeCentsFor(report: TaxReport, basis: Basis): number {
-  return basis === 'soll' ? report.income.sollCents : report.income.paidCents
+  return basis === 'soll' ? report.income.sollCents : receivedTotalCents(report)
 }
 
 export function surplusCentsFor(report: TaxReport, basis: Basis): number {
-  return basis === 'soll' ? report.surplusSollCents : report.surplusPaidCents
+  return basis === 'soll' ? report.surplusSollCents : report.surplusPaidCents + receivedTotalCents(report) - report.income.paidCents
 }
 
 // ---------- Teilweise Eigennutzung (#163) ----------

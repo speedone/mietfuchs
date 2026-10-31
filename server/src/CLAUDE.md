@@ -785,6 +785,12 @@ Grundmenge ist das ganze Gebäude), Überschuss. Beschreibende Gruppen statt fes
   Monats, ohne Rückstand zu tilgen. Option `received: false` (Rückgriffe nur auf Werbungskosten) lässt die Tilgung weg,
   alle übrigen Felder bleiben. `received` steht nicht in tax-golden.json (`incomeFingerprint`), sondern in
   tax-received-golden.json (Generator `withPaymentVariety`).
+  **Oberfläche** (#312 PR 3, [client/src/taxIncome.ts](../../client/src/taxIncome.ts)): `incomeTable` ordnet `received` den
+  Zeilen aus `anlageVLines` zu (mit Angehörigen 19, 22, 23 eigens, das Soll bei 15/18 und 20 mit Vermerk; Inklusivmiete
+  als „davon“ bei 15/18, beide Spalten), Summe = Zeile 32. Auf der Ist-Grundlage rechnen KPI und Überschuss der Seite mit
+  dieser Summe (`incomeCentsFor`/`surplusCentsFor`), der Server führt `paidCents`/`surplusPaidCents` weiter nach Datum.
+  Hinweise nur mit Betrag (`turnOfYear`, `turnOfYearOldLease`, `lateDecember` als Satz ohne Titel, `unallocatedPayment`,
+  `possibleDeposit`, `formerYears`). Das Steuer-ZIP trägt `Einnahmen.csv` (`incomeCsv` in taxReceipts.ts, je `byTenancy`).
 - **Zehn-Tage-Regel** (§ 11 Abs. 1 Satz 2 EStG, zwingend): Zahlung **und** Fälligkeit müssen in den zehn Tagen um den
   Jahreswechsel liegen (H 11 EStH; BFH IV R 309/84; tragend BFH X R 2/21). Mietfuchs kennt die Fälligkeit nur aus dem
   Gesetz (`bgb.rent-due-at-start`): **Mietverhältnis, das am 01.09.2001 nicht bestand** (§ 556b Abs. 1 BGB, die

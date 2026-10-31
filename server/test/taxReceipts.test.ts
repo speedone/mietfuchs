@@ -4,8 +4,8 @@ import { CALENDAR_RULES, calendarPeriod } from '../../shared/period.ts'
 import { taxReportFor } from '../src/calc.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import type { CostItem } from '../../shared/types.ts'
-import { derivedTaxLines, planTaxArchive } from '../src/taxReceipts.ts'
+import type { CostItem, TaxReceivedTenancy } from '../../shared/types.ts'
+import { derivedTaxLines, incomeCsv, planTaxArchive } from '../src/taxReceipts.ts'
 
 const item = (id: string, extra: Partial<CostItem> = {}): CostItem => ({
   id, propertyId: 'p1', period: calendarPeriod(2025), category: 'Grundsteuer', description: `Position ${id}`, amountCents: 10000, key: 'area', ...extra,
@@ -318,4 +318,38 @@ test('Steuer-Belege (#262): Spalte „verteilt § 82b EStDV“ und die Rate des 
   // Ohne Verteilung keine Spalte.
   const ohne = planTaxArchive([item('gs')], names, new Map(), new Map([['gs', { privateCents: 0, deductibleCents: 10000 }]])).overviewCsv
   assert.equal(ohne.includes('verteilt'), false)
+})
+
+// #312 PR 3: `Einnahmen.csv` neben der Übersicht, gleiche Form (BOM, `;`, CRLF, Euro wie `euro()`), eine Zeile je
+// Mietverhältnis aus `income.received.byTenancy`, Summenzeile am Ende.
+const rentRow = (over: Partial<TaxReceivedTenancy> = {}): TaxReceivedTenancy => ({
+  tenancyId: 't1', unitId: 'u1', tenantName: 'Meyer', unitName: 'EG', start: '2020-03-01', end: null, relative: false,
+  rentCents: 720000, inclusiveRentCents: 0, allocationsCents: 240000, settlementCents: 15000, formerYearsCents: 0, unallocatedCents: 0, forwardCents: 0,
+  ...over,
+})
+const INCOME_HEAD = 'Wohnung;Mieter;Beginn;Ende;Miete ohne Umlagen (EUR);davon Inklusivmiete (EUR);Umlagen laufend (EUR);Abrechnung Nachzahlung/Erstattung (EUR);Mieten für frühere Jahre (EUR);ohne vereinbarte Miete (EUR);Zufluss gesamt (EUR);Zehn-Tage-Regel Folgejahr (EUR)'
+
+test('Einnahmen.csv: Kopf, eine Zeile je Mietverhältnis, Summe, BOM und CRLF (#312)', () => {
+  const csv = incomeCsv([
+    rentRow(),
+    rentRow({ tenancyId: 't2', unitName: 'OG', tenantName: '=Schulz; Anna', start: '2025-07-01', end: '2025-12-31', rentCents: 300000, inclusiveRentCents: 300000, allocationsCents: 0, settlementCents: -5000, formerYearsCents: 0, unallocatedCents: 2000, forwardCents: 80000 }),
+  ])
+  assert.ok(csv.startsWith('﻿'), 'Byte-Order-Mark')
+  assert.ok(csv.endsWith('\r\n'))
+  const lines = csv.slice(1).split('\r\n')
+  assert.equal(lines.pop(), '')
+  assert.deepEqual(lines, [
+    INCOME_HEAD,
+    'EG;Meyer;01.03.2020;;7200,00;0,00;2400,00;150,00;0,00;0,00;9750,00;0,00',
+    // Ein Name, der mit = beginnt, wird entschärft; das Semikolon steht in Anführungszeichen.
+    `OG;"'=Schulz; Anna";01.07.2025;31.12.2025;3000,00;3000,00;0,00;-50,00;0,00;20,00;2950,00;800,00`,
+    'Summe;;;;10200,00;3000,00;2400,00;100,00;0,00;20,00;12700,00;800,00',
+  ])
+  // Zufluss gesamt = Miete + Umlagen + Abrechnung + frühere Jahre; die Zehn-Tage-Regel steht daneben und zählt nicht mit.
+  assert.equal(720000 + 240000 + 15000, 975000)
+  assert.equal(300000 - 5000, 295000)
+})
+
+test('Einnahmen.csv ohne Mietverhältnis: Kopf und Summe 0 (#312)', () => {
+  assert.equal(incomeCsv([]), `﻿${INCOME_HEAD}\r\nSumme;;;;0,00;0,00;0,00;0,00;0,00;0,00;0,00;0,00\r\n`)
 })

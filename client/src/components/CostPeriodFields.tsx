@@ -3,6 +3,12 @@ import Term from './Term'
 import { isNotAllocable } from '../types'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { RESERVE_WITHDRAWAL_CATEGORY } from '../../../shared/categories.ts'
+import { LAW_AS_OF, valueAt } from '../../../shared/law/register.ts'
+import { estgShortPeriodDays } from '../../../shared/law/estg.ts'
+import { countOf } from '../../../shared/wording.ts'
+
+// Die kurze Zeit um den Jahreswechsel (§ 11 Abs. 1 Satz 2 EStG) aus dem Rechtsregister, zum Rechtsstand (#312 PR 3, K3).
+const SHORT_PERIOD = countOf(valueAt(estgShortPeriodDays, LAW_AS_OF), 'Tag', 'Tage')
 
 // Leistungszeitraum, Jahr der Zahlung und „Brennstoff/Energie“ einer Kostenposition (#208).
 // Steht unter „Weitere Angaben“, denn wer im Kalenderjahr abrechnet und Rechnungen für das
@@ -100,7 +106,7 @@ export default function CostPeriodFields({ form, onChange, showTaxYear, years, e
           <small className="muted">
             Haben Sie die Rechnung in Abschlägen über zwei Kalenderjahre bezahlt, etwa monatlich für Gas, Wasser oder Müll, gehört jeder Abschlag
             in das Jahr, in dem Sie ihn gezahlt haben, und die Nachzahlung in das Jahr ihrer Zahlung. Ein regelmäßig wiederkehrender Abschlag, der um den
-            Jahreswechsel (bis zehn Tage davor oder danach) fällig ist und in dieser Zeit gezahlt wird, zählt zu dem Jahr, zu dem er gehört
+            Jahreswechsel (bis {SHORT_PERIOD} davor oder danach) fällig ist und in dieser Zeit gezahlt wird, zählt zu dem Jahr, zu dem er gehört
             (§ 11 Abs. 2 Satz 2 in Verbindung mit Abs. 1 Satz 2 EStG). Mietfuchs ordnet eine
             Position nur einem Jahr zu: Wählen Sie das Jahr, in dem Sie den größten Teil gezahlt haben, und tragen Sie in Ihrer Steuererklärung den Rest
             aus diesem Jahr heraus und in das andere Jahr ein.
@@ -125,8 +131,8 @@ export default function CostPeriodFields({ form, onChange, showTaxYear, years, e
           </small>
           {paidOnTenDayHint(form) && (
             <small className="muted">
-              Zahlung um den Jahreswechsel: Eine regelmäßig wiederkehrende Zahlung, etwa ein Abschlag oder, nach herrschender Auslegung, auch ein jährlicher Versicherungsbeitrag, die bis zehn Tage
-              vor oder nach dem Jahreswechsel fällig ist und in dieser Zeit gezahlt wurde, zählt zu dem Jahr, zu dem sie gehört (§ 11 Abs. 2 Satz 2 in
+              Zahlung um den Jahreswechsel: Eine regelmäßig wiederkehrende Zahlung, etwa ein Abschlag oder, nach herrschender Auslegung, auch ein jährlicher Versicherungsbeitrag, die bis {SHORT_PERIOD} vor
+              oder nach dem Jahreswechsel fällig ist und in dieser Zeit gezahlt wurde, zählt zu dem Jahr, zu dem sie gehört (§ 11 Abs. 2 Satz 2 in
               Verbindung mit Abs. 1 Satz 2 EStG). Mietfuchs rechnet das nicht, denn es kennt die Fälligkeit nicht. Trifft es zu, tragen Sie die Zahlung in
               Ihrer Steuererklärung in dem Jahr ein, zu dem sie gehört, nicht im Jahr des Datums.
             </small>

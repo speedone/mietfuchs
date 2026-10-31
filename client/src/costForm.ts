@@ -833,7 +833,8 @@ export function taxYearChange(before: Pick<CostItem, 'taxYear'> | null, body: { 
   return taxYearQuestions(before, body, span)
 }
 
-// Der Hinweis zur Zehn-Tage-Regel (R-8), wenn das Datum zwischen dem 22.12. und dem 10.01. liegt; nie bei Grundsteuer.
+// Der Hinweis zur Zehn-Tage-Regel (R-8), wenn das Datum in der kurzen Zeit um den Jahreswechsel liegt (die Zahl der Tage
+// aus dem Rechtsregister, `tenDayWindow` in shared/paidOn.ts); nie bei Grundsteuer.
 export const paidOnTenDayHint = (form: Pick<ItemForm, 'paidOn' | 'category'>): boolean => form.paidOn !== '' && tenDayWindow(form.paidOn, form.category)
 
 // Die Angaben der Kostenposition, die ein eigenes Feld haben, alle auf einmal (#346, Schritt 3, Durchsicht S1):

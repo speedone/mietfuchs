@@ -19,8 +19,8 @@
 
 import { afterEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import type { Property, PropertyKind, TaxExpenseItem, TaxReport } from '../types'
-import { settlementLine, TAX_HINTS, type Basis, type TaxHint } from '../taxView'
+import type { Property, PropertyKind, TaxExpenseItem, TaxReceived, TaxReceivedTenancy, TaxReport } from '../types'
+import { TAX_HINTS, type Basis, type TaxHint } from '../taxView'
 import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
 import Steuer from './Steuer'
@@ -68,6 +68,27 @@ const REPORT = (over: Partial<TaxReport> = {}, income: Partial<TaxReport['income
   settlementPeriods: [],
   ...over,
 })
+
+// #312 PR 3: das Zugeflossene nach Zeilen; die Summen aus `byTenancy` wie in calc.ts.
+const MIETER = (over: Partial<TaxReceivedTenancy> = {}): TaxReceivedTenancy => ({
+  tenancyId: 't1', unitId: 'u1', tenantName: 'Meyer', unitName: 'EG', start: '2020-01-01', end: null, relative: false,
+  rentCents: 960000, inclusiveRentCents: 0, allocationsCents: 240000, settlementCents: 0, formerYearsCents: 0, unallocatedCents: 0, forwardCents: 0,
+  ...over,
+})
+const RECEIVED = (byTenancy: TaxReceivedTenancy[] = [MIETER()], over: Partial<TaxReceived> = {}, turn: Partial<TaxReceived['turnOfYear']> = {}): TaxReceived => {
+  const sum = (f: (t: TaxReceivedTenancy) => number, only: (t: TaxReceivedTenancy) => boolean = () => true) => byTenancy.filter(only).reduce((a, t) => a + f(t), 0)
+  return {
+    rentCents: sum((t) => t.rentCents), inclusiveRentCents: sum((t) => t.inclusiveRentCents), unallocatedCents: sum((t) => t.unallocatedCents),
+    allocationsCents: sum((t) => t.allocationsCents), flatRateCents: 0, formerYearsCents: sum((t) => t.formerYearsCents), formerYearsAllocationsCents: 0,
+    turnOfYear: { forwardCents: sum((t) => t.forwardCents), forwardAllocationsCents: 0, fromPreviousCents: 0, fromPreviousAllocationsCents: 0, forwardOldLeaseCents: 0, lateDecemberCents: 0, ...turn },
+    byUnit: byTenancy.map((t) => ({ unitId: t.unitId, unitName: t.unitName, areaM2: 80, rentCents: t.rentCents, allocationsCents: t.allocationsCents, settlementCents: t.settlementCents, formerYearsCents: t.formerYearsCents })),
+    byTenancy,
+    relatives: { rentCents: sum((t) => t.rentCents, (t) => t.relative), allocationsCents: sum((t) => t.allocationsCents, (t) => t.relative), settlementCents: sum((t) => t.settlementCents, (t) => t.relative) },
+    possibleDeposits: [],
+    ...over,
+  }
+}
+const MIT = (received: TaxReceived, income: Partial<TaxReport['income']> = {}, over: Partial<TaxReport> = {}): TaxReport => REPORT(over, { received, ...income })
 
 // Eine Position der Steuerübersicht (#163) und ein Bericht mit eigener Wohnung.
 const POS = (over: Partial<TaxExpenseItem> = {}): TaxExpenseItem => ({
@@ -124,7 +145,7 @@ const zeige = async (report: TaxReport, basis: Basis = 'ist', kind?: PropertyKin
       </PropertyProvider>
     </PeriodProvider>,
   )
-  await waitFor(() => expect(screen.getByText(/Angesetzte Einnahmen/i)).toBeTruthy())
+  await waitFor(() => expect(screen.getByText(/Summe der Einnahmen/i)).toBeTruthy())
   if (basis === 'soll') {
     fireEvent.change(screen.getByLabelText(/Einnahmen ansetzen als/i), { target: { value: 'soll' } })
   }
@@ -153,10 +174,30 @@ const LAGEN: Record<TaxHint, Lage> = {
     report: REPORT({}, { paidCents: 0, tenanciesWithSoll: 2, tenanciesWithoutPayment: 2 }),
     text: /keine einzige Mietzahlung erfasst/i,
   },
-  // Genau dieser Block war schon einmal weg.
+  // Genau dieser Block war schon einmal weg. Seit #312 PR 3 nur mit Betrag.
   turnOfYear: {
-    report: REPORT(),
-    text: /Am Jahreswechsel bitte prüfen/i,
+    report: MIT(RECEIVED([MIETER({ forwardCents: 80000 })])),
+    text: /zählen nach § 11 Abs\. 1 Satz 2 EStG im Jahr \d{4} und stehen dort/,
+  },
+  turnOfYearOldLease: {
+    report: MIT(RECEIVED([MIETER()], {}, { forwardOldLeaseCents: 80000 })),
+    text: /Januarmiete Ende Dezember: Fälligkeit laut Vertrag prüfen/,
+  },
+  lateDecember: {
+    report: MIT(RECEIVED([MIETER()], {}, { lateDecemberCents: 80000 })),
+    text: /Dezembermiete sind Anfang Januar eingegangen und stehen in diesem Jahr/,
+  },
+  unallocatedPayment: {
+    report: MIT(RECEIVED([MIETER({ rentCents: 980000, unallocatedCents: 20000 })])),
+    text: /sind ohne vereinbarte Miete eingegangen/,
+  },
+  possibleDeposit: {
+    report: MIT(RECEIVED([MIETER()], { possibleDeposits: [{ tenancyId: 't1', tenantName: 'Meyer', paidOn: `${JAHR}-03-05`, cents: 240000 }] })),
+    text: /Ist das die Kaution\?/,
+  },
+  formerYears: {
+    report: MIT(RECEIVED([MIETER({ formerYearsCents: 80000 })])),
+    text: /Miete für frühere Jahre sind \d{4} eingegangen/,
   },
   // #96: Die beiden Kopfzeilen der Anlage V, die am Mietmodell hängen.
   inclusiveLine24: {
@@ -249,7 +290,7 @@ for (const hint of TAX_HINTS) {
 
 test('Der Soll-Vorbehalt nennt den Paragraphen und steht nicht auf der Ist-Grundlage', async () => {
   await zeige(REPORT(), 'soll')
-  expect(screen.getByText(/§ 11 Abs. 1 Satz 1 EStG/i)).toBeTruthy()
+  expect(screen.getByText(/Diese Ansicht rechnet mit dem vereinbarten Soll/i).closest('.notice-item')?.textContent).toMatch(/§ 11 Abs. 1 Satz 1 EStG/)
   cleanup()
   await zeige(REPORT())
   expect(screen.queryByText(/Diese Ansicht rechnet mit dem vereinbarten Soll/i)).toBeNull()
@@ -334,17 +375,20 @@ test('Eine saldiert negative Rücklage heißt nicht „Zuführung“ (#143, Inte
 
 // ---------- #142: Inklusivmiete und Zeile 24 ----------
 
-test('Die Inklusivmiete steht nicht unter „ohne Umlagen (Kaltmiete)“, sondern eigens; die Summe bleibt (#142)', async () => {
-  await zeige(REPORT({}, { baseRentSollCents: 960000, inclusiveRentSollCents: 840000 }))
-  const kalt = screen.getByText(/Mieteinnahmen ohne Umlagen/i).closest('tr')
-  expect(kalt?.textContent).toMatch(/1\.200,00/)
-  // Auch eine Miete, die nur kalt oder nur warm inklusiv ist, steht hier (Durchsicht).
-  const inklusiv = screen.getByText(/Inklusivmieten \(ganz oder teilweise/i).closest('tr')
-  expect(inklusiv?.textContent).toMatch(/8\.400,00/)
-  expect(screen.getByText(/Summe Soll/i).closest('tr')?.textContent).toMatch(/12\.000,00/)
+// #142, seit #312 PR 3 mit der Tabelle nach Zeilen: Die Inklusivmiete gehört ganz zu den Mieteinnahmen (Zeile 24,
+// `inclusiveLine24`) und steht dort als „davon“, in beiden Spalten; die Summe bleibt.
+test('Die Inklusivmiete steht als „davon“ bei den Mieteinnahmen ohne Umlagen; die Summe bleibt (#142, #312)', async () => {
+  await zeige(MIT(RECEIVED([MIETER({ inclusiveRentCents: 840000 })]), { baseRentSollCents: 960000, inclusiveRentSollCents: 840000 }))
+  const kalt = zeile('homes')
+  expect(kalt.textContent).toMatch(/Mieteinnahmen ohne Umlagen/)
+  expect(kalt.textContent).toMatch(/9\.600,00.*9\.600,00/)
+  const inklusiv = zeile('inclusive')
+  expect(inklusiv.textContent).toMatch(/davon Inklusivmieten/)
+  expect(inklusiv.textContent).toMatch(/8\.400,00.*8\.400,00/)
+  expect(zeile('total').textContent).toMatch(/12\.000,00.*12\.000,00/)
   cleanup()
-  await zeige(REPORT())
-  expect(screen.queryByText(/Inklusivmieten/i)).toBeNull()
+  await zeige(MIT(RECEIVED()))
+  expect(zeilen()).not.toContain('inclusive')
 })
 
 test('Der Hinweis zu Zeile 24 bei gemischten Verträgen liest sich als ein Satz (#142)', async () => {
@@ -452,57 +496,129 @@ test('„Nicht umlagefähig“ ohne Zuordnung: kein Hinweis', async () => {
   expect(screen.queryByText(/bestimmten Einheiten zugeordnet/)).toBeNull()
 })
 
-// ---------- Zahlungen aus der Abrechnung (#280) ----------
+// ---------- Einnahmen nach Zeilen der Anlage V (#312 PR 3; Zahlungen aus der Abrechnung seit #280) ----------
 
-test('Nachzahlungen und Erstattungen aus der Nebenkostenabrechnung: Saldo gesondert, mit Zeile nur, wo nachgesehen (N3)', async () => {
-  await zeige(REPORT({}, { paidCents: 1200000 + 15000 - 20000, settlementBackPaymentsCents: 15000, settlementRefundsCents: 20000 }))
-  const saldo = screen.getByText(/davon Saldo der Nebenkostenabrechnung/).closest('tr')
-  expect(saldo?.textContent).toMatch(/Nachzahlungen 150,00\s€ minus erstattete Guthaben 200,00\s€/)
-  expect(saldo?.textContent).toMatch(/[−-]50,00\s€/)
-  const satz = screen.getByText(/sind im Zufluss\s+enthalten/)
-  expect(satz.textContent).toMatch(/[−-]50,00\s€/)
-  // Das Jahr der Seite ist das Vorjahr; welche Zeile gilt, entscheidet dieselbe Tabelle wie auf der Seite.
-  const line = settlementLine(JAHR)
-  if (line) {
-    expect(satz.textContent).toMatch(/Anlage V, Zeile 21 \(Kennzahl 11\)/)
-    expect(satz.textContent).toMatch(/Vermietung an Angehörige gilt stattdessen Zeile 23 \(Kennzahl 12\)/)
+// Eine Zeile der Einnahmentabelle über ihre Kennung.
+const zeile = (key: string): HTMLElement => {
+  const tr = document.querySelector<HTMLElement>(`tr[data-row="${key}"]`)
+  if (!tr) return expect.unreachable(`Zeile ${key} fehlt`)
+  return tr
+}
+const zeilen = (): string[] => [...document.querySelectorAll<HTMLElement>('tbody tr[data-row]')].map((tr) => tr.dataset.row ?? '')
+const LINES = anlageVLines(JAHR)?.income
+
+test('Die Zeilen der Tabelle sind die des Berichts, auf der Ist-Grundlage eingegangen vorn, vereinbart zum Abgleich', async () => {
+  // 12 × 800 € (600 Kalt, 200 Vorauszahlung), 150 € Nachzahlung, 200 € Guthaben erstattet, 300 € Rückstand aus dem Vorjahr.
+  const report = MIT(RECEIVED([MIETER({ rentCents: 720000, allocationsCents: 240000, settlementCents: -5000, formerYearsCents: 30000 })]),
+    { baseRentSollCents: 720000, sollCents: 960000, paidCents: 985000, settlementBackPaymentsCents: 15000, settlementRefundsCents: 20000 })
+  await zeige(report)
+  expect(zeilen()).toEqual(['homes', 'allocations', 'settlement', 'formerYears'])
+  const heads = screen.getAllByRole('columnheader').map((h) => h.textContent)
+  expect(heads.slice(-2)).toEqual(['eingegangen (Ist)', 'vereinbart (Soll), zum Abgleich'])
+  expect(zeile('homes').textContent).toMatch(/7\.200,00\s€.*7\.200,00\s€/)
+  expect(zeile('allocations').textContent).toMatch(/2\.400,00\s€.*2\.400,00\s€/)
+  expect(zeile('settlement').textContent).toMatch(/[−-]50,00\s€.*–/)
+  expect(zeile('formerYears').textContent).toMatch(/300,00\s€.*–/)
+  expect(zeile('total').textContent).toMatch(/9\.850,00\s€.*9\.600,00\s€/)
+  // Die Kennzahl in der Spalte „Zeile“ nur, wo der Vordruck des Jahres gelesen ist (JAHR folgt der Uhr).
+  if (LINES?.formerYears) {
+    expect(zeile('homes').textContent).toMatch(/15, 18Kennzahl 01, 02/)
+    expect(zeile('formerYears').textContent).toMatch(/25Kennzahl 06/)
+    expect(zeile('total').textContent).toMatch(/32/)
+    expect(screen.getByRole('columnheader', { name: 'Zeile' })).toBeTruthy()
   } else {
-    expect(satz.textContent).not.toMatch(/Zeile \d/)
-    expect(satz.textContent).toMatch(/im Vordruck für \d{4} nach/)
+    expect(screen.queryByRole('columnheader', { name: 'Zeile' })).toBeNull()
   }
+  // Die angesetzten Einnahmen sind die Summe der Zeilen.
+  expect(screen.getByText(`Einnahmen ${JAHR}`).closest('.kpi')?.textContent).toMatch(/9\.850,00/)
+  // Auf der Soll-Grundlage tauschen nur die Spalten.
+  fireEvent.change(screen.getByLabelText(/Einnahmen ansetzen als/i), { target: { value: 'soll' } })
+  const sollHeads = screen.getAllByRole('columnheader').map((h) => h.textContent)
+  expect(sollHeads.slice(-2)).toEqual(['vereinbart (Soll)', 'eingegangen (Ist), zum Abgleich'])
+  expect(zeilen()).toEqual(['homes', 'allocations', 'settlement', 'formerYears'])
+  expect(zeile('total').textContent).toMatch(/9\.600,00\s€.*9\.850,00\s€/)
 })
 
-// Durchsicht speedone zu #328: Wer den Zufluss in die Zeilen der Mieten und Umlagen und den Saldo
-// zusätzlich in Zeile 21 einträgt, zählt den Saldo doppelt. Die Seite nennt deshalb den Zufluss ohne
-// Abrechnung als eigene Zahl, und beide Teile ergeben zusammen den Zufluss.
-test('Zufluss ohne Abrechnung und Saldo getrennt: 12 × 800 € Miete, 200 € Guthaben erstattet', async () => {
-  await zeige(REPORT({}, { paidCents: 940000, settlementBackPaymentsCents: 0, settlementRefundsCents: 20000 }))
-  expect(screen.getByText(/Tatsächlich eingegangen/).closest('tr')?.textContent).toMatch(/9\.400,00\s€/)
-  const ohne = screen.getByText(/davon Mieten und laufende Umlagen ohne Abrechnung/).closest('tr')
-  expect(ohne?.textContent).toMatch(/9\.600,00\s€/)
-  const saldo = screen.getByText(/davon Saldo der Nebenkostenabrechnung/).closest('tr')
-  expect(saldo?.textContent).toMatch(/[−-]200,00\s€/)
-  const satz = screen.getByText(/sind im Zufluss\s+enthalten/)
-  expect(satz.textContent).toMatch(/9\.600,00\s€/)
-  expect(satz.textContent).toMatch(/nicht zusätzlich/)
-  if (settlementLine(JAHR)) expect(satz.textContent).toMatch(/Zeilen 15 und 18 sowie Zeile 20/)
+test('Tabelle am Handy gestapelt: jede Betragszelle trägt ihre Beschriftung', async () => {
+  await zeige(MIT(RECEIVED()))
+  const table = screen.getByRole('table', { name: 'Einnahmen nach Zeilen der Anlage V' })
+  expect(table.classList.contains('stacked')).toBe(true)
+  for (const td of zeile('homes').querySelectorAll('td.num')) expect(td.getAttribute('data-label')).toMatch(/eingegangen|vereinbart/)
 })
 
-test('Auf Soll-Basis erscheint der Hinweis zu Zeile 21 nicht (Durchsicht zu #328)', async () => {
-  await zeige(REPORT({}, { paidCents: 940000, settlementRefundsCents: 20000 }), 'soll')
-  expect(screen.queryByText(/sind im Zufluss\s+enthalten/)).toBeNull()
-  expect(screen.queryByText(/Zeile 21/)).toBeNull()
+test('Mit Angehörigen: Zeilen 19, 22, 23 eigens, das Soll bei 15/18 und 20 mit Vermerk', async () => {
+  const r = RECEIVED([
+    MIETER({ rentCents: 720000, allocationsCents: 240000 }),
+    MIETER({ tenancyId: 't2', unitId: 'u2', unitName: 'OG', tenantName: 'Tochter', relative: true, rentCents: 360000, allocationsCents: 120000, settlementCents: 3000 }),
+  ])
+  await zeige(MIT(r, { paidCents: 1443000, settlementBackPaymentsCents: 3000 }, { costModels: { tenancies: 2, inclusive: 0, partlyInclusive: 0, flatRate: 0, relativeTenancies: 1 } }))
+  expect(zeilen()).toEqual(['homes', 'relatives', 'allocations', 'relativesAllocations', 'relativesSettlement'])
+  expect(zeile('relatives').textContent).toMatch(/3\.600,00\s€/)
+  expect(zeile('relativesSettlement').textContent).toMatch(/30,00\s€/)
+  expect(zeile('homes').textContent).toMatch(LINES?.relatives ? /einschließlich Zeile 19/ : /einschließlich der Angehörigen/)
+  expect(zeile('total').textContent).toMatch(/14\.430,00\s€/)
 })
 
-test('Ohne Zahlungen aus der Abrechnung erscheint davon nichts', async () => {
-  await zeige(REPORT())
-  expect(screen.queryByText(/aus der Nebenkostenabrechnung/)).toBeNull()
+test('Unter der Tabelle: jede Zeile einzeln, Vergleich nur in der Summe, „Mehr dazu“ mit Tilgung und Abrechnungsreife', async () => {
+  await zeige(MIT(RECEIVED()))
+  expect(screen.getByText(/Tragen Sie jede Zeile einzeln ein/).textContent).toMatch(LINES?.total ? /in Zeile 32/ : /ergibt sich daraus/)
+  expect(screen.getByText(/lassen sich nur in der Summe vergleichen/)).toBeTruthy()
+  const reife = screen.getByText(/Vorauszahlungen eines schon abgerechneten Zeitraums nach/)
+  // Eingeklappt am Bildschirm, im Druck offen.
+  const box = reife.closest('[hidden]')
+  expect(box?.classList.contains('print:block')).toBe(true)
+  expect(screen.getByText(/VIII ZR 84\/17, Rn\. 53 und 57/)).toBeTruthy()
+  fireEvent.click(screen.getAllByRole('button', { name: 'Mehr dazu' }).find((b) => b.getAttribute('aria-controls') === box?.id) ?? expect.unreachable('Knopf fehlt'))
+  expect(reife.closest('[hidden]')).toBeNull()
 })
 
-test('Nur eine Nachzahlung aus der Abrechnung erfasst: der Hinweis sagt „keine Mietzahlung“, nicht „keine Zahlung“ (#280, Durchsicht)', async () => {
-  await zeige(REPORT({}, { paidCents: 15000, settlementBackPaymentsCents: 15000, tenanciesWithSoll: 1, tenanciesWithoutPayment: 1 }))
-  expect(screen.getByText(/keine einzige Mietzahlung erfasst/)).toBeTruthy()
-  expect(screen.queryByText(/keine einzige Zahlung erfasst/)).toBeNull()
+test('Je Wohnung für die Zeilen 13 und 14: aufklappbar, im Druck offen', async () => {
+  await zeige(MIT(RECEIVED([MIETER({ rentCents: 720000 }), MIETER({ tenancyId: 't2', unitId: 'u2', unitName: 'OG', relative: true, rentCents: 360000 })]), {}, { costModels: { tenancies: 2, inclusive: 0, partlyInclusive: 0, flatRate: 0, relativeTenancies: 1 } }))
+  const table = screen.getByRole('table', { name: 'Einnahmen je Wohnung', hidden: true })
+  const box = table.closest('[hidden]')
+  expect(box?.classList.contains('print:block')).toBe(true)
+  expect(table.textContent).toMatch(/EG.*80\s?m².*7\.200,00/)
+  expect(table.textContent).toMatch(/OGan Angehörige vermietet/)
+  const knopf = screen.getByRole('button', { name: LINES?.perUnit ? 'Je Wohnung (für die Zeilen 13 und 14)' : 'Je Wohnung' })
+  fireEvent.click(knopf)
+  expect(table.closest('[hidden]')).toBeNull()
+  expect(screen.getByRole('button', { name: 'Je Wohnung schließen' })).toBeTruthy()
+})
+
+test('Zehn-Tage-Regel: vorwärts und aus dem Vorjahr mit Beträgen; ohne Betrag kein Hinweis; rückwärts ohne Titel', async () => {
+  await zeige(MIT(RECEIVED([MIETER({ forwardCents: 80000 })], {}, { forwardCents: 80000, fromPreviousCents: 80000, fromPreviousAllocationsCents: 20000 })))
+  const box = screen.getByText(/am Jahreswechsel/).closest('.notice-item')
+  expect(box?.textContent).toContain(`im Jahr ${JAHR + 1} und stehen dort`)
+  expect(box?.textContent).toMatch(new RegExp(`aus dem Dezember ${JAHR - 1} stehen nach § 11 Abs\\. 1 Satz 2 EStG in diesem Jahr`))
+  expect(box?.textContent).toMatch(/bis zu 10 Tage/)
+  expect(box?.textContent).not.toMatch(/steht hier aber im alten/)
+  cleanup()
+  await zeige(MIT(RECEIVED()))
+  expect(screen.queryByText(/am Jahreswechsel/)).toBeNull()
+  cleanup()
+  await zeige(MIT(RECEIVED([MIETER()], {}, { lateDecemberCents: 80000 })))
+  const satz = screen.getByText(/Dezembermiete sind Anfang Januar eingegangen/)
+  expect(satz.closest('.notice-item')).toBeNull()
+  expect(satz.textContent).toContain(`gehören sie ins Jahr ${JAHR - 1}`)
+})
+
+test('Mieten für frühere Jahre negativ: der Satz zur Rücklastschrift', async () => {
+  await zeige(MIT(RECEIVED([MIETER({ formerYearsCents: -30000 })])))
+  expect(screen.getByText(/Eine Rücklastschrift nimmt eine früher verbuchte Miete zurück; tragen Sie den Betrag mit Minus ein/)).toBeTruthy()
+})
+
+test('Mögliche Kaution: Datum, Betrag und Mieter im Hinweis, auch im Druck', async () => {
+  await zeige(MIT(RECEIVED([MIETER()], { possibleDeposits: [{ tenancyId: 't1', tenantName: 'Meyer', paidOn: `${JAHR}-03-05`, cents: 240000 }] })))
+  const box = screen.getByText(/Ist das die Kaution\?/).closest('.notice-item')
+  expect(box?.textContent).toMatch(new RegExp(`Zahlung vom 05\\.03\\.${JAHR} über 2\\.400,00\\s€ \\(Meyer\\)`))
+  expect(box?.closest('.no-print')).toBeNull()
+})
+
+test('Ohne `received` (älterer Bericht): Ist je Zeile „–“, die Summe ist der Zufluss', async () => {
+  await zeige(REPORT({}, { paidCents: 940000, settlementRefundsCents: 20000 }))
+  expect(zeile('homes').textContent).toMatch(/–/)
+  expect(zeile('settlement').textContent).toMatch(/[−-]200,00\s€/)
+  expect(zeile('total').textContent).toMatch(/9\.400,00\s€/)
 })
 
 // ---------- #255, PR 4: was zwischen den Jahren verschoben ist ----------
@@ -568,6 +684,8 @@ test('Reihenfolge der Steuerseite: Einnahmen, Werbungskosten mit Erhaltungsaufwa
   const blocks = [
     screen.getByRole('heading', { name: 'Kopf der Anlage V' }),
     screen.getByRole('heading', { name: 'Einnahmen' }),
+    // #312 PR 3: die Einnahmentabelle (13 bis 32) zwischen Kopf und Werbungskosten.
+    screen.getByRole('table', { name: 'Einnahmen nach Zeilen der Anlage V' }),
     screen.getByRole('heading', { name: 'Werbungskosten' }),
     await screen.findByText(/Anlage V \d{4}: Zeile 55\./),
     screen.getByText(/Verbilligte Vermietung: DG/),

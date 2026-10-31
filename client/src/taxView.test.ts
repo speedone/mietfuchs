@@ -107,11 +107,18 @@ describe('Steuerübersicht: Grundlage und Hinweise (#70)', () => {
     expect(hints).not.toContain('paymentsMissing')
   })
 
-  it('nennt den Vorbehalt zum Jahreswechsel auf der Ist-Grundlage', () => {
+  it('nennt die Zehn-Tage-Regel nur mit Betrag und nur auf der Ist-Grundlage (#312 PR 3, E8)', () => {
     // Er stand als Bedingung in der Seite und war damit ungeprüft, obwohl der CHANGELOG ihn als
-    // eigenes Verhalten führt.
-    expect(taxHints(report({}), 'ist')).toContain('turnOfYear')
-    expect(taxHints(report({}), 'soll')).not.toContain('turnOfYear')
+    // eigenes Verhalten führt. Seit #312 PR 3 rechnet Mietfuchs die Regel; ein Vorbehalt ohne Anlass entfällt
+    // (weitere Lagen in taxIncome.test.ts).
+    expect(taxHints(report({}), 'ist')).not.toContain('turnOfYear')
+    const turn = { forwardCents: 80000, forwardAllocationsCents: 0, fromPreviousCents: 0, fromPreviousAllocationsCents: 0, forwardOldLeaseCents: 0, lateDecemberCents: 0 }
+    const received: NonNullable<TaxReport['income']['received']> = {
+      rentCents: 0, inclusiveRentCents: 0, unallocatedCents: 0, allocationsCents: 0, flatRateCents: 0, formerYearsCents: 0, formerYearsAllocationsCents: 0,
+      turnOfYear: turn, byUnit: [], byTenancy: [], relatives: { rentCents: 0, allocationsCents: 0, settlementCents: 0 }, possibleDeposits: [],
+    }
+    expect(taxHints(report({ received }), 'ist')).toContain('turnOfYear')
+    expect(taxHints(report({ received }), 'soll')).not.toContain('turnOfYear')
   })
 })
 

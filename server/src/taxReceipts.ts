@@ -15,7 +15,7 @@
 // (`taxReport(...).expenses.items`) und nicht hier ein zweites Mal gerechnet: Die Summen der
 // beiden Spalten sind deshalb genau die der Übersicht. Die Zuführung zur Rücklage steht dort nicht
 // in den Werbungskosten und hat hier leere Felder.
-import type { CostItem, TaxExpenseItem, TaxReport } from '../../shared/types.ts'
+import type { CostItem, TaxExpenseItem, TaxReceivedTenancy, TaxReport } from '../../shared/types.ts'
 import { ANLAGE_V_GROUP, ANLAGE_V_GROUP_ORDER, validLabor35aCents, type TaxPart } from './calc.ts'
 import { outflowShares } from './outflow.ts'
 import { startYearOf } from '../../shared/period.ts'
@@ -197,4 +197,32 @@ export function planTaxArchive(
   }
   const header = `Gruppe;Kostenart;Beschreibung;Rechnungssteller;Betrag (EUR);privat (EUR);${withGratuitous ? 'unentgeltlich § 21 Abs. 2 EStG (EUR);' : ''}${withDeferred ? 'verteilt § 82b EStDV (EUR);' : ''}abziehbar (EUR);Lohnanteil § 35a (EUR);Beleg;Jahr der Zahlung`
   return { files, overviewCsv: `﻿${[header, ...rows].join('\r\n')}\r\n` }
+}
+
+// ---------- Einnahmen.csv (#312 PR 3) ----------
+//
+// Das Zugeflossene je Mietverhältnis nach den Zeilen der Anlage V, aus der Steuerübersicht (`income.received.byTenancy`,
+// calc.ts `receivedIncome`) und nicht hier ein zweites Mal gerechnet. Gleiche Form wie die Übersicht (BOM, `;`, CRLF,
+// Euro wie `euro()`), Summenzeile am Ende. „Zufluss gesamt“ ist, was in diesem Jahr zählt: Miete ohne Umlagen (samt
+// Inklusivmiete und Zahlungen ohne vereinbarte Miete), Umlagen, Abrechnung und Mieten für frühere Jahre; was nach der
+// Zehn-Tage-Regel im Folgejahr zählt, steht daneben und nicht darin. Mieternamen stehen schon in der Steuerübersicht, das
+// Archiv geht an den Steuerberater (Entwurf, „Steuer-ZIP“).
+const INCOME_COLUMNS = [
+  'Miete ohne Umlagen (EUR)', 'davon Inklusivmiete (EUR)', 'Umlagen laufend (EUR)', 'Abrechnung Nachzahlung/Erstattung (EUR)',
+  'Mieten für frühere Jahre (EUR)', 'ohne vereinbarte Miete (EUR)', 'Zufluss gesamt (EUR)', 'Zehn-Tage-Regel Folgejahr (EUR)',
+] as const
+const incomeAmounts = (t: Pick<TaxReceivedTenancy, 'rentCents' | 'inclusiveRentCents' | 'allocationsCents' | 'settlementCents' | 'formerYearsCents' | 'unallocatedCents' | 'forwardCents'>): number[] => [
+  t.rentCents, t.inclusiveRentCents, t.allocationsCents, t.settlementCents, t.formerYearsCents, t.unallocatedCents,
+  t.rentCents + t.allocationsCents + t.settlementCents + t.formerYearsCents, t.forwardCents,
+]
+export function incomeCsv(rows: readonly TaxReceivedTenancy[]): string {
+  const header = ['Wohnung', 'Mieter', 'Beginn', 'Ende', ...INCOME_COLUMNS].join(';')
+  const sums = INCOME_COLUMNS.map(() => 0)
+  const lines = rows.map((t) => {
+    const amounts = incomeAmounts(t)
+    amounts.forEach((c, k) => { sums[k] = (sums[k] ?? 0) + c })
+    return [textField(t.unitName), textField(t.tenantName), fmtDay(t.start), t.end ? fmtDay(t.end) : '', ...amounts.map((c) => csvField(euro(c)))].join(';')
+  })
+  const total = ['Summe', '', '', '', ...sums.map((c) => csvField(euro(c)))].join(';')
+  return `\uFEFF${[header, ...lines, total].join('\r\n')}\r\n`
 }

@@ -13,7 +13,7 @@ describe('anlageVLines', () => {
       perUnit: [13, 14],
       homes: { line: 15, code: 1 }, otherRooms: { line: 18, code: 2 }, relatives: { line: 19, code: 3 }, allocations: { line: 20, code: 4 },
       settlement: { line: 21, code: 11 }, relativesAllocations: { line: 22, code: 5 }, relativesSettlement: { line: 23, code: 12 },
-      notAgreed: { line: 24, code: 13 }, formerYears: { line: 25, code: 6 }, total: 32,
+      notAgreed: { line: 24, code: 13 }, formerYears: { line: 25, code: 6 }, garages: { line: 26, code: 7 }, total: 32,
     })
     expect(l.maintenance).toEqual({
       direct: { line: 55, code: 36 }, proportional: { line: 56, code: 37 },
@@ -40,11 +40,22 @@ describe('anlageVLines', () => {
     expect(l.income.settlement).toEqual({ line: 21, code: 11 })
   })
 
+  // #312 PR 3: Seite 1 und 2 des Vordrucks 2024AnlV101NET gelesen (Zeilen 13/14, 24, 25, 26, 32), wie 2025.
+  test('2024: Einnahmen samt Zeilen 13/14, 24, 25, 26 und 32 laut Vordruck 2024AnlV101NET', () => {
+    const l = anlageVLines(2024) ?? expect.unreachable('2024 fehlt')
+    expect(l.source).toMatch(/2024AnlV101NET \(September 2024\), Seiten 1 und 2/)
+    expect(l.income).toEqual(anlageVLines(2025)?.income)
+  })
+
   test('2023: nur die Einnahmen, die bisher an `settlementLine` belegt waren', () => {
     const l = anlageVLines(2023) ?? expect.unreachable('2023 fehlt')
     expect(l.header).toBeUndefined()
     expect(l.maintenance).toBeUndefined()
     expect(l.income.settlement).toEqual({ line: 21, code: 11 })
+    // Seite 2 (Zeile 25 bis 32) ist für 2023 nicht gelesen: keine Nummer.
+    expect(l.income.formerYears).toBeUndefined()
+    expect(l.income.total).toBeUndefined()
+    expect(l.income.perUnit).toBeUndefined()
   })
 
   test('2026 und andere Jahre ohne gelesenen Vordruck: null', () => {

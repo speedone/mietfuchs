@@ -9,7 +9,7 @@ import { useProperty, withProperty } from '../property'
 import { effectiveLandlord, letterhead } from '../landlord'
 import PageHeader from '../components/PageHeader'
 import Table from '../components/Table'
-import { acquisitionRelated, acquisitionRelatedText, ACQUISITION_RELATED_MORE, ACQUISITION_RELATED_TITLE, headerRows, allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, operatingPowerBalanceText, paidWithoutSettlementCents, prepaymentNote, settlementBalanceCents, settlementLine, settlementSourcesText, showsSplit, stockCarryNote, surplusCentsFor, taxHints, maintenanceLineText, withdrawalLinesText, usageChangeTouchesWithdrawal, withdrawalSuspectDated, ETW_WITHDRAWAL_TEXT, type Basis, movedInLines, movedInText, movedOutLabels, movedOutLines, unstatedText, type ShiftLine } from '../taxView'
+import { acquisitionRelated, acquisitionRelatedText, ACQUISITION_RELATED_MORE, ACQUISITION_RELATED_TITLE, headerRows, allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, operatingPowerBalanceText, prepaymentNote, settlementSourcesText, showsSplit, stockCarryNote, surplusCentsFor, taxHints, maintenanceLineText, withdrawalLinesText, usageChangeTouchesWithdrawal, withdrawalSuspectDated, ETW_WITHDRAWAL_TEXT, type Basis, movedInLines, movedInText, movedOutLabels, movedOutLines, unstatedText, type ShiftLine } from '../taxView'
 import { StepList } from '../components/CalcSteps'
 import DisclosureButton from '../components/DisclosureButton'
 import Term from '../components/Term'
@@ -20,6 +20,7 @@ import { andList } from '../../../shared/wording.ts'
 import { OPERATING_POWER_KEPT, OPERATING_POWER_REPORTED } from '../../../shared/operatingPower.ts'
 import { anlageVLines } from '../anlageV'
 import type { NoticeTab } from '../notices'
+import { formerYearsText, incomeMore, incomeTable, lateDecemberText, OLD_LEASE_MORE, oldLeaseForwardText, possibleDepositText, TURN_OF_YEAR_MORE, turnOfYearLines, unallocatedText, unitRows } from '../taxIncome'
 
 // `onNavigate`: der Sprung in die Stammdaten bei einer nicht eingetragenen Kopfangabe (#96 PR 2).
 type Props = { settings: Settings | null; onNavigate?: (tab: NoticeTab) => void }
@@ -178,107 +179,68 @@ export default function Steuer({ settings, onNavigate }: Props) {
             </div>
 
             <h3>Einnahmen</h3>
-            <Table>
-              <tbody>
-                {/* Die Inklusivmiete enthält die Nebenkosten und steht deshalb nicht unter „ohne
-                    Umlagen“, sondern eigens (#142). Die Summe bleibt dieselbe. */}
-                <tr>
-                  <td>Mieteinnahmen ohne Umlagen (Kaltmiete, vereinbart)</td>
-                  <td className="num">{fmtEuro(data.income.baseRentSollCents - data.income.inclusiveRentSollCents)}</td>
-                </tr>
-                {data.income.inclusiveRentSollCents !== 0 && (
-                  <tr>
-                    <td>Inklusivmieten (ganz oder teilweise), Nebenkosten eingeschlossen (vereinbart)</td>
-                    <td className="num">{fmtEuro(data.income.inclusiveRentSollCents)}</td>
-                  </tr>
-                )}
-                <tr>
-                  <td>Umlagen / Nebenkosten-Vorauszahlungen (vereinbart)</td>
-                  <td className="num">{fmtEuro(data.income.prepaymentSollCents)}</td>
-                </tr>
-                {data.income.flatRateSollCents > 0 && (
-                  <tr>
-                    <td>Betriebskostenpauschalen (vereinbart)</td>
-                    <td className="num">{fmtEuro(data.income.flatRateSollCents)}</td>
-                  </tr>
-                )}
-                <tr className="subtotal">
-                  <td><strong>Summe Soll (brutto)</strong></td>
-                  <td className="num"><strong>{fmtEuro(data.income.sollCents)}</strong></td>
-                </tr>
-                <tr>
-                  {/* **Kein „davon“ mehr.** Seit das Zugeflossene nach Datum summiert wird und
-                      nicht mehr über die Zeilen des Mietkontos, ist es kein Teil des Solls: Eine
-                      Zahlung kann zu einem Mietverhältnis gehören, das im Jahr gar keine Zeile
-                      hat. Gemessen steht dann Soll 0,00 € und eingegangen 800,00 €. Aus demselben
-                      Grund fehlt hier „(Rückstand offen)“: Es verglich zwei verschiedene
-                      Grundmengen. Wer wissen will, wer im Rückstand ist, fragt das Mietkonto. */}
-                  <td>Tatsächlich eingegangen {year} (Zufluss)</td>
-                  <td className="num">{fmtEuro(data.income.paidCents)}</td>
-                </tr>
-                {/* #280: Nachzahlungen und Erstattungen aus der Nebenkostenabrechnung sind Einnahmen
-                    nach dem Zuflussprinzip und stecken im Zufluss; gesondert genannt, weil die
-                    Anlage V sie bei den Umlagen als Saldo abfragt. **Beide Teile stehen als eigene
-                    Zahl da und ergeben zusammen den Zufluss** (Durchsicht zu #328): Stünde nur der
-                    Saldo daneben, trüge mancher den ganzen Zufluss in die Zeilen der Mieten und den
-                    Saldo zusätzlich in Zeile 21 ein und zählte ihn doppelt. Die Zeile nennt die Seite
-                    nur für Jahre, in denen sie im amtlichen Vordruck nachgesehen ist
-                    (`settlementLine` in taxView.ts). */}
-                {(data.income.settlementBackPaymentsCents !== 0 || data.income.settlementRefundsCents !== 0) && (
-                  <>
-                    <tr>
-                      <td className="muted">davon Mieten und laufende Umlagen ohne Abrechnung</td>
-                      <td className="num muted">{fmtEuro(paidWithoutSettlementCents(data))}</td>
-                    </tr>
-                    <tr>
-                      <td className="muted">
-                        davon Saldo der Nebenkostenabrechnung (Nachzahlungen {fmtEuro(data.income.settlementBackPaymentsCents)}{' '}
-                        minus erstattete Guthaben {fmtEuro(data.income.settlementRefundsCents)})
-                      </td>
-                      <td className="num muted">{fmtEuro(settlementBalanceCents(data))}</td>
-                    </tr>
-                  </>
-                )}
-              </tbody>
-              <tfoot>
-                <tr>
-                  <td>Angesetzte Einnahmen ({basis === 'soll' ? 'Soll' : 'Ist'})</td>
-                  <td className="num">{fmtEuro(incomeCents)}</td>
-                </tr>
-              </tfoot>
-            </Table>
+            {/* #312 PR 3: eine Tabelle nach Zeilen der Anlage V mit zwei Betragsspalten, eingegangen (Ist) und vereinbart
+                (Soll). Die Spalte der gewählten Grundlage steht vorn, die andere heißt „zum Abgleich“. Zeilen, Beträge
+                und Bedingungen kommen aus taxIncome.ts; die Seite rendert nur. Am Handy `stacked`. */}
+            <IncomeTableView report={data} basis={basis} />
+            <p className="muted fine">
+              Tragen Sie jede Zeile einzeln ein; die Summe ergibt sich {anlageVLines(year)?.income.total !== undefined ? `in Zeile ${anlageVLines(year)?.income.total}` : 'daraus'}.
+              Eingegangen und vereinbart lassen sich nur in der Summe vergleichen: Ein Rückstand oder eine Vorauszahlung
+              verschiebt Beträge zwischen den Zeilen und Jahren, und Nachzahlungen aus der Abrechnung und Mieten für frühere
+              Jahre haben kein vereinbartes Gegenstück.
+            </p>
+            <IncomeMore year={year} />
+            <UnitIncome report={data} year={year} />
 
-            {/* Nur auf der Ist-Grundlage: Das Soll enthält weder Nachzahlungen noch Guthaben, ein
-                Hinweis auf Zeile 21 neben ihm führte in die Irre (Durchsicht zu #328). */}
-            {basis === 'ist' && (data.income.settlementBackPaymentsCents !== 0 || data.income.settlementRefundsCents !== 0) && (() => {
-              const line = settlementLine(year)
-              const balance = fmtEuro(settlementBalanceCents(data))
-              const without = fmtEuro(paidWithoutSettlementCents(data))
-              const paid = fmtEuro(data.income.paidCents)
-              return (
-                <p className="muted fine">
-                  Nachzahlungen und erstattete Guthaben aus der Nebenkostenabrechnung sind im Zufluss
-                  enthalten (§ 11 Abs. 1 EStG), im vereinbarten Soll nicht.{' '}
-                  {line
-                    ? <>
-                        In die Anlage V gehören beide Teile getrennt: <strong>{without}</strong> in die Zeilen der
-                        Mieten und laufenden Umlagen (Zeilen {line.rentLines[0]} und {line.rentLines[1]} sowie
-                        Zeile {line.prepaymentLine}) und der Saldo in die{' '}
-                        <strong>Anlage V, Zeile {line.line} (Kennzahl {line.code})</strong>:{' '}
-                        <strong>{balance}</strong> (Nachzahlungen minus Erstattungen, ein negativer Betrag mit Minuszeichen).
-                        Bei Vermietung an Angehörige gilt stattdessen Zeile {line.relativesLine} (Kennzahl {line.relativesCode}),
-                        die Miete und laufenden Umlagen dort in den Zeilen {line.relativesRentLine} und {line.relativesPrepaymentLine}.
-                        Tragen Sie den Zufluss ({paid}) nicht zusätzlich ein, er ist die Summe beider Teile.
-                      </>
-                    : <>
-                        Zusammen ergeben sie {balance}. Die Anlage V fragt sie bei den Umlagen gesondert ab; die
-                        Zeile sehen Sie bitte im Vordruck für {year} nach. Bei den Mieten und laufenden Umlagen
-                        steht dann der Zufluss ohne Abrechnung ({without}). Tragen Sie den Zufluss ({paid})
-                        nicht zusätzlich ein, er ist die Summe beider Teile.
-                      </>}
-                </p>
-              )
-            })()}
+            {/* #312 PR 3 (E8 nach der Durchsicht von PR 2): die Zehn-Tage-Regel nur mit Betrag. Mietfuchs wendet sie an, wo
+                die Fälligkeit aus dem Gesetz folgt (§ 556b Abs. 1 BGB); vorwärts ruhig, ohne Vorbehalt. Nie ein Satz, der
+                eine Verschiebung ins alte Jahr nahelegt, wenn die Fälligkeit außerhalb der kurzen Zeit lag. */}
+            {hints.includes('turnOfYear') && (
+              <NoticeBox
+                level="hint"
+                title={<><Term id="tenDayRule">Zehn-Tage-Regel</Term> am Jahreswechsel</>}
+                action={<>{turnOfYearLines(data).map((l) => <span key={l} className="block">{l}</span>)}</>}
+                more={TURN_OF_YEAR_MORE}
+              />
+            )}
+            {hints.includes('turnOfYearOldLease') && (
+              <NoticeBox
+                level="hint"
+                title="Januarmiete Ende Dezember: Fälligkeit laut Vertrag prüfen"
+                action={oldLeaseForwardText(data)}
+                more={OLD_LEASE_MORE}
+              />
+            )}
+            {hints.includes('lateDecember') && <p className="muted fine">{lateDecemberText(data)}</p>}
+            {hints.includes('unallocatedPayment') && (
+              <NoticeBox
+                level="hint"
+                title={unallocatedText(data)}
+                action={<>
+                  Prüfen Sie im <em>Mietkonto</em>, wofür die Zahlung war, etwa eine Kaution, eine Zahlung nach dem Auszug oder
+                  nach dem Ende einer Staffel. Mietfuchs zählt den Betrag zu den Mieten ohne Umlagen.
+                </>}
+              />
+            )}
+            {hints.includes('possibleDeposit') && (
+              <NoticeBox
+                level="warning"
+                title="Ist das die Kaution?"
+                context={possibleDepositText(data)}
+                action={<>
+                  Prüfen Sie im <em>Mietkonto</em> Art und Betrag. Ist es die Kaution, löschen Sie die Zahlung dort; die Kaution
+                  steht am Mietverhältnis und ist keine Einnahme, solange Sie sie nicht mit Forderungen verrechnen.
+                </>}
+                more="Der Vermieter legt die Kaution getrennt von seinem Vermögen an (§ 551 Abs. 3 BGB). Eine verrechnete Kaution ist eine Einnahme bei den Mieten für frühere Jahre und verrechneten Mietkautionen."
+              />
+            )}
+            {hints.includes('formerYears') && (
+              <NoticeBox
+                level="hint"
+                title={<><Term id="formerYearsRent">Mieten für frühere Jahre</Term></>}
+                action={formerYearsText(data)}
+              />
+            )}
 
             {hints.includes('paymentsMissing') && (
               <NoticeBox
@@ -578,20 +540,6 @@ export default function Steuer({ settings, onNavigate }: Props) {
             {/* Heizung PR 8 (N8): Brennstoff aus dem Vorrat; Abrechnung nach Verbrauch, Steuer nach Bezahltem. */}
             {stockCarryNote(data) && <p className="muted">{stockCarryNote(data)}</p>}
 
-            {/* **Hinweis statt Automatik**, und zwar bewusst. Die Zuordnung hängt an der
-                vertraglichen Fälligkeit des einzelnen Mietverhältnisses, und der BFH verlangt,
-                dass Fälligkeit und Zahlung beide in den kurzen Zeitraum fallen. Mietfuchs kennt
-                die Fälligkeit nicht, und ein Feld dafür einzuführen hieße, eine Zahl der
-                Steuererklärung davon abhängig zu machen, dass jeder Nutzer es richtig ausfüllt.
-                Die Aufteilung gemischt genutzter Gebäude (#163) rechnet dagegen, weil alle Angaben
-                dafür im Bestand stehen.
-                **Das Beispiel ist bewusst die Januarmiete und nicht die Dezembermiete.** Die
-                Dezembermiete ist nach § 556b Abs. 1 BGB im Dezember fällig; geht sie im Januar
-                ein, liegt die Fälligkeit weit außerhalb des kurzen Zeitraums, und die Regel
-                greift gerade nicht. Der häufige und für Mietfuchs ungünstige Fall ist der
-                umgekehrte: der Dauerauftrag, der die Januarmiete Ende Dezember bucht. Dort liegen
-                Fälligkeit und Zahlung beide im Zeitraum, und die Einnahme des alten Jahres ist zu
-                hoch. */}
             {/* #96: Kopfzeilen der Anlage V, die am Mietmodell hängen. Belegt am Vordruck 2025 und der
                 Anleitung 2024; die Pauschale nennt die Anleitung nicht ausdrücklich. */}
             {hints.includes('inclusiveLine24') && (
@@ -630,23 +578,6 @@ export default function Steuer({ settings, onNavigate }: Props) {
                 </>}
               />
             )}
-            {hints.includes('turnOfYear') && (
-              <NoticeBox
-                level="hint"
-                title="Am Jahreswechsel bitte prüfen."
-                action="Prüfen Sie Mieten, die kurz vor oder nach dem Jahreswechsel eingegangen sind; Mietfuchs entscheidet das nicht selbst."
-                more={<>
-                  Mietfuchs ordnet jede Zahlung dem Jahr
-                  ihres Eingangs zu. Für regelmäßig wiederkehrende Einnahmen wie die Miete gibt es davon
-                  eine Ausnahme: Fließen sie kurze Zeit — nach der Rechtsprechung bis zu zehn Tage — vor
-                  oder nach dem Jahreswechsel und sind sie in dieser Zeit auch fällig, gehören sie in das
-                  Jahr, zu dem sie wirtschaftlich zählen (§ 11 Abs. 1 Satz 2 EStG). Am häufigsten trifft
-                  das die Januarmiete, die ein Dauerauftrag schon Ende Dezember bucht: Sie gehört ins
-                  neue Jahr, steht hier aber im alten.
-                </>}
-              />
-            )}
-
             {/* **Zwei verschiedene Lagen, zwei verschiedene Sätze** (#68). Vorher gab es nur
                 einen, und er fragte das zweiwertige „nicht vermietet“ ab; damit schlug eine
                 ausdrücklich ausgenommene Wohnung als Eigennutzung durch, und der Vermieter sollte
@@ -995,5 +926,106 @@ function ShiftList({ lines }: { lines: ShiftLine[] }) {
         </li>
       ))}
     </ul>
+  )
+}
+
+// Die Einnahmen nach Zeilen der Anlage V (#312 PR 3). Zwei Betragsspalten; die der gewählten Grundlage steht vorn und
+// fett, die andere gedämpft „zum Abgleich“. Die Spalte „Zeile“ nur, wenn der Vordruck des Jahres eine Nummer kennt.
+function IncomeTableView({ report, basis }: { report: TaxReport; basis: Basis }) {
+  const t = incomeTable(report)
+  const cents = (c: number | null) => (c === null ? '–' : fmtEuro(c))
+  const cols = basis === 'ist'
+    ? [{ key: 'ist', head: 'eingegangen (Ist)', value: (r: { paidCents: number | null }) => r.paidCents, total: t.paidTotalCents, main: true },
+       { key: 'soll', head: 'vereinbart (Soll), zum Abgleich', value: (r: { sollCents: number | null }) => r.sollCents, total: t.sollTotalCents, main: false }]
+    : [{ key: 'soll', head: 'vereinbart (Soll)', value: (r: { sollCents: number | null }) => r.sollCents, total: t.sollTotalCents, main: true },
+       { key: 'ist', head: 'eingegangen (Ist), zum Abgleich', value: (r: { paidCents: number | null }) => r.paidCents, total: t.paidTotalCents, main: false }]
+  return (
+    <Table className="stacked" aria-label="Einnahmen nach Zeilen der Anlage V">
+      <thead>
+        <tr>
+          <th>Einnahme</th>
+          {t.showsLines && <th>Zeile</th>}
+          {cols.map((c) => <th key={c.key} className={`num${c.main ? '' : ' muted'}`}>{c.head}</th>)}
+        </tr>
+      </thead>
+      <tbody>
+        {t.rows.map((r) => {
+          const soll = r.sollNote && r.sollCents !== null ? <>{cents(r.sollCents)}<div className="muted cell-sub">{r.sollNote}</div></> : cents(r.sollCents)
+          return (
+            <tr key={r.key} data-row={r.key}>
+              <td className={r.sub ? 'muted' : undefined}>{r.label}</td>
+              {t.showsLines && <td data-label="Zeile">{r.line ?? ''}{r.line !== null && r.code !== null && <div className="muted cell-sub">Kennzahl {r.code}</div>}</td>}
+              {cols.map((c) => (
+                <td key={c.key} data-label={c.head} className={`num${c.main && !r.sub ? ' font-strong' : ''}${c.main && !r.sub ? '' : ' muted'}`}>
+                  {c.key === 'soll' ? soll : cents(c.value(r))}
+                </td>
+              ))}
+            </tr>
+          )
+        })}
+      </tbody>
+      <tfoot>
+        <tr data-row="total">
+          <td>Summe der Einnahmen</td>
+          {t.showsLines && <td data-label="Zeile">{t.totalLine ?? ''}</td>}
+          {cols.map((c) => <td key={c.key} data-label={c.head} className={`num${c.main ? '' : ' muted'}`}>{fmtEuro(c.total)}</td>)}
+        </tr>
+      </tfoot>
+    </Table>
+  )
+}
+
+// „Mehr dazu“ unter der Tabelle: nur Begründungen mit Fundstelle, eingeklappt, im Druck offen (wie im Hinweis).
+function IncomeMore({ year }: { year: number }) {
+  const [open, setOpen] = useState(false)
+  const id = useId()
+  return (
+    <>
+      <div className="print:block" id={id} hidden={!open}>
+        {incomeMore(year).map((m) => <p key={m} className="muted fine">{m}</p>)}
+      </div>
+      <div className="print:hidden">
+        <DisclosureButton open={open} onToggle={() => setOpen((o) => !o)} closedLabel="Mehr dazu" openLabel="Weniger" controls={id} className="btn ghost small" />
+      </div>
+    </>
+  )
+}
+
+// Je Wohnung für die Zeilen 13 und 14 (Wohnfläche und Miete ohne Umlagen), aufklappbar, im Druck offen.
+function UnitIncome({ report, year }: { report: TaxReport; year: number }) {
+  const [open, setOpen] = useState(false)
+  const id = useId()
+  const rows = unitRows(report)
+  if (rows.length === 0) return null
+  const i = anlageVLines(year)?.income
+  const lines = i?.perUnit ? ` (für die Zeilen ${i.perUnit[0]} und ${i.perUnit[1]})` : ''
+  return (
+    <>
+      <div className="print:hidden">
+        <DisclosureButton open={open} onToggle={() => setOpen((o) => !o)} closedLabel={`Je Wohnung${lines}`} openLabel="Je Wohnung schließen" controls={id} className="btn ghost small" />
+      </div>
+      <div className="print:block" id={id} hidden={!open}>
+        <h4>Je Wohnung{lines}</h4>
+        <Table className="stacked" aria-label="Einnahmen je Wohnung">
+          <thead>
+            <tr><th>Wohnung</th><th className="num">Wohnfläche</th><th className="num">Miete ohne Umlagen</th></tr>
+          </thead>
+          <tbody>
+            {rows.map((u) => (
+              <tr key={u.unitId}>
+                <td>{u.unitName}{u.relative && <div className="muted cell-sub">an Angehörige vermietet{i?.relatives ? `: Zeile ${i.relatives.line}` : ''}</div>}</td>
+                <td data-label="Wohnfläche" className="num">{u.areaM2 === null ? '–' : fmtArea(u.areaM2)}</td>
+                <td data-label="Miete ohne Umlagen" className="num">{fmtEuro(u.rentCents)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+        <p className="muted fine">
+          Andere Räume als Wohnungen gehören zu den Einnahmen für andere Räume{i?.otherRooms ? ` (Summe in Zeile ${i.otherRooms.line})` : ''}, gesondert vermietete
+          Garagen {i?.garages ? `in Zeile ${i.garages.line}` : 'zu den Einnahmen aus Garagen'}; Mietfuchs unterscheidet sie nicht von Wohnungen.
+          Die Miete enthält Inklusivmieten und Zahlungen ohne vereinbarte Miete, nicht die Mieten für frühere Jahre.
+        </p>
+      </div>
+    </>
   )
 }

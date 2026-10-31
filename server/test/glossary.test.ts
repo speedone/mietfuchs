@@ -8,7 +8,7 @@ import { OPERATING_POWER_HANDLING_LABELS, OPERATING_POWER_HANDLING_QUESTION } fr
 import { NOTICE_KINDS } from '../src/calc.ts'
 import { co2HalfSplit, halfSplitFirstDay } from '../../shared/law/co2kostaufg.ts'
 import { LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
-import { estgAcquisitionRelated } from '../../shared/law/estg.ts'
+import { estgAcquisitionRelated, estgShortPeriodDays } from '../../shared/law/estg.ts'
 import { ustgSmallBusiness } from '../../shared/law/ustg.ts'
 
 test('Lexikon: jeder Eintrag ist vollständig, und jedes Beispiel rechnet mit Zahlen', () => {
@@ -603,4 +603,59 @@ test('Anschaffungsnahe Herstellungskosten: Wortlaut von § 6 Abs. 1 Nr. 1a EStG,
   assert.match(t.needed, /taggenau/)
   assert.match(t.needed, /weder abgeschlossen noch bezahlt/)
   assert.match(GLOSSARY.reserveFund.needed, /Anschaffungsnahe Herstellungskosten/)
+})
+
+// #312 PR 3: Zehn-Tage-Regel (Entwurf E8), Tilgungsreihenfolge und Mieten für frühere Jahre, je mit nachgerechnetem
+// Beispiel und Thema; die Zahl der Tage aus dem Rechtsregister (Nachdurchsicht K3).
+test('Zehn-Tage-Regel: Zahl aus dem Register, Fälligkeit und Zahlung, angewandt nur nach § 556b, bei Altverträgen und Kosten nur genannt (#312)', () => {
+  const t = GLOSSARY.tenDayRule
+  assert.equal(t.topic, 'tax')
+  assert.equal(t.title, 'Zehn-Tage-Regel')
+  const days = valueAt(estgShortPeriodDays, LAW_AS_OF)
+  const all = `${t.short} ${t.example} ${t.needed}`
+  assert.match(all, new RegExp(`bis zu ${days} Tage`))
+  assert.match(all, /fällig/)
+  assert.match(t.norm, /§ 11 Abs\. 1 Satz 2 EStG/)
+  assert.match(t.norm, /X R 2\/21/)
+  assert.match(t.norm, /§ 556b Abs\. 1 BGB/)
+  assert.match(all, /01\.09\.2001/)
+  assert.match(t.needed, /Kostenposition/)
+  // Beispiel: Dauerauftrag 800 € am 28.12.2025 für Januar 2026 zählt 2026; die Dezembermiete 2025 am 05.01.2026 bleibt 2026.
+  assert.match(t.example, /800 €.*28\.12\.2025.*2026/s)
+  assert.match(t.example, /05\.01\.2026.*bleibt/s)
+  // Der 28.12. liegt in den letzten zehn Tagen (ab dem 22.12.), der 05.01. in den ersten zehn.
+  assert.ok(Date.UTC(2026, 0, 1) - Date.UTC(2025, 11, 28) <= days * 86400000)
+  // Keine feste Zahl der Tage im Text, nur die des Registers.
+  assert.doesNotMatch(all.replaceAll(`${days} Tage`, ''), /zehn Tage/)
+})
+
+test('Tilgungsreihenfolge (#281): 300 € auf 600 € Kalt und 200 € Vorauszahlung sind 200 € und 100 €; seit #312 auch für die Steuer', () => {
+  const t = GLOSSARY.paymentOrder
+  assert.equal(t.title, 'Tilgungsreihenfolge')
+  assert.match(t.norm, /§ 366 BGB/)
+  assert.match(t.norm, /VIII ZR 84\/17, Rn\. 53 bis 57/)
+  assert.match(t.example, /600 € Kaltmiete und 200 € Vorauszahlung.*300 €.*200 € tilgen die Vorauszahlung, 100 € die Kaltmiete.*500 € Kaltmiete/s)
+  // Erst die Vorauszahlung ganz (200), der Rest auf die Kaltmiete (100); offen bleiben 600 − 100.
+  assert.equal(Math.min(300, 200), 200)
+  assert.equal(300 - 200, 100)
+  assert.equal(600 - 100, 500)
+  assert.match(t.needed, /Für Monat/)
+  assert.match(t.needed, /Steuerübersicht.*Zeilen der Anlage V/s)
+})
+
+test('Mieten für frühere Jahre: Zeile 25, brutto, Beispiel nachgerechnet (#312)', () => {
+  const t = GLOSSARY.formerYearsRent
+  assert.equal(t.topic, 'tax')
+  assert.equal(t.title, 'Mieten für frühere Jahre')
+  assert.match(t.norm, /§ 11 Abs\. 1 Satz 1 EStG/)
+  assert.match(`${t.short} ${t.needed}`, /Zeile 25/)
+  assert.match(`${t.short} ${t.needed}`, /Auslegung/)
+  // Dezembermiete 2025 über 800 € (600 Kalt, 200 Vorauszahlung), gezahlt am 15.01.2026: 800 € in Zeile 25 für 2026.
+  assert.match(t.example, /800 €.*15\.01\.2026.*2026.*800 €.*200 € Umlagen/s)
+})
+
+test('Zahlungsdatum: die Zehn-Tage-Regel verweist auf den Begriff und nennt keine feste Zahl (#312, K3)', () => {
+  const t = GLOSSARY.paymentDate
+  assert.match(t.needed, /Zehn-Tage-Regel/)
+  assert.doesNotMatch(`${t.short} ${t.example} ${t.needed}`, /zehn Tage/)
 })
