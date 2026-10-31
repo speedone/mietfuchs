@@ -386,6 +386,7 @@ const GUIDE_DATA = {
       'Beim Personenschlüssel zählt eine leerstehende Wohnung je Leerstandstag mit einer Person, und auch diesen Anteil trägt der Vermieter. Wie eine leere Wohnung dort anzusetzen ist, ist nicht abschließend geklärt; die eine Person ist eine Auslegung von Mietfuchs.',
       'Beim Verbrauch teilt eine Zwischenablesung genau auf; ohne sie verteilt Mietfuchs den Verbrauch zwischen zwei Ablesungen tagesanteilig.',
       'Für ein Mietverhältnis, das im Jahr endet, schlägt die Abrechnung keine neue Vorauszahlung vor.',
+      'Bleibt nach dem Auszug ein Rückstand offen, führt das Mietkonto ihn in den Folgejahren unter „Offene Salden früherer Mietverhältnisse“ weiter.',
       'Im Auszugs- und Einzugsmonat setzt Mietfuchs Miete und Vorauszahlung anteilig nach Kalendertagen an, im Mietkonto wie in der Abrechnung; das ist eine Auslegung von Mietfuchs, und ein Hinweis nennt den angesetzten Betrag.',
       'Mit einem Nutzungswechsel rechnet Mietfuchs jeden Abschnitt nach seinen Tagen: In der Zeit der Eigennutzung ist der Anteil Ihr Eigenanteil, eine Zeit ohne Mieter in der vermieteten Zeit ist Leerstand. Dass die Kosten gleichmäßig über das Jahr anfallen, ist eine Auslegung von Mietfuchs.',
     ],
@@ -416,6 +417,7 @@ const GUIDE_DATA = {
       'Vor dem Wechsel entsteht ein Rumpfzeitraum. Seine Abrechnung muss zwölf Monate nach seinem Ende zugehen.',
       'Im Rumpfzeitraum rechnet der Vorschlag für die neue Vorauszahlung kalte Kosten nach Tagen hoch und Brennstoff nach Gradtagen, wenn die Brennstoffrechnung als „Brennstoff/Energie“ gekennzeichnet ist und einen Leistungszeitraum hat.',
       'Mietkonto und Steuer bleiben beim Kalenderjahr; die Steuerübersicht nimmt die Eigenanteile aus den Abrechnungen, die das Jahr berühren.',
+      'Eine Position mit Zahlungsdatum oder angegebenem Jahr der Zahlung behält beim Wechsel ihr Steuerjahr; die Vorschau nennt, was danach für die Steuer als verschoben steht. Nur eine Position ohne beides bekommt das Jahr des neuen Zeitraums.',
     ],
     example: 'Umstellung ab Mai 2025: Der Rumpfzeitraum läuft vom 01.01. bis 30.04.2025 und muss bis 30.04.2026 abgerechnet sein. Die Grundsteuer 2025 über 480 € teilt Mietfuchs in 157,81 € für den Rumpf und 322,19 € für 2025/2026.',
     caveats: [
