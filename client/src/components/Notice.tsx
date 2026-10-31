@@ -14,6 +14,7 @@ import { NOTICE_LEVEL_LABELS, noticeClass } from '../notices'
 import { splitNoticeText } from '../noticeText'
 import { memberLine, type NoticeItem } from '../noticeGroups'
 import Term from './Term'
+import DisclosureButton from './DisclosureButton'
 
 // Zeichen je Stufe, mit U+FE0E als Text und nicht als buntes Emoji.
 export const NOTICE_SYMBOLS: Record<NoticeLevel, string> = {
@@ -59,9 +60,7 @@ export function NoticeBox({ level, title, context, action, children, more, fix, 
             <button type="button" className="btn secondary notice-action" aria-describedby={title ? titleId : undefined} onClick={fix.onClick}>{fix.label}</button>
           )}
           {more && (
-            <button type="button" className="btn ghost notice-action" aria-expanded={open} aria-controls={moreId} onClick={() => setOpen((o) => !o)}>
-              Mehr dazu
-            </button>
+            <DisclosureButton open={open} onToggle={() => setOpen((o) => !o)} closedLabel="Mehr dazu" openLabel="Weniger" controls={moreId} describedBy={title ? titleId : undefined} className="btn ghost notice-action" />
           )}
         </div>
       )}

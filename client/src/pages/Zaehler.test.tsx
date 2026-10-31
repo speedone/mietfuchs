@@ -327,3 +327,27 @@ test('Ablesung: das Fenster nennt den letzten Stand des Zählers', async () => {
   const box = screen.getByRole('dialog', { name: /Neue Ablesung/ })
   expect(within(box).getByText('Letzter Stand: 1.234,5 m³ am 31.12.2024')).toBeTruthy()
 })
+
+// Aufklappen einheitlich (Durchsicht M1): „Ablesungen (N)“ klappt die Ablesungen auf wie jeder Aufklapper, mit Pfeil
+// (`disclosure`), aria-expanded und einem Text, der sagt, was der nächste Klick tut.
+test('„Ablesungen (N)“ ist ein Aufklapper: Pfeil, aria-expanded, aria-controls, offen „Ablesungen schließen“', async () => {
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <Zaehler units={UNITS} />
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  const knopf = await screen.findByRole('button', { name: 'Ablesungen (0)' }, { timeout: 5000 })
+  expect(knopf.classList.contains('disclosure')).toBe(true)
+  expect(knopf.getAttribute('aria-expanded')).toBe('false')
+  fireEvent.click(knopf)
+  expect(knopf.getAttribute('aria-expanded')).toBe('true')
+  expect(screen.getByRole('button', { name: 'Ablesungen schließen' })).toBe(knopf)
+  const panel = screen.getByRole('button', { name: '+ Ablesung anlegen' }).closest('tr')
+  if (!panel) return expect.fail('keine Zeile mit den Ablesungen')
+  expect(panel.id).toBeTruthy()
+  expect(knopf.getAttribute('aria-controls')).toBe(panel.id)
+  fireEvent.click(knopf)
+  expect(screen.getByRole('button', { name: 'Ablesungen (0)' })).toBe(knopf)
+})

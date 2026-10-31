@@ -190,9 +190,15 @@ h3 { font-size: var(--text-s); font-weight: var(--weight-strong); margin: 0 0 va
    der Fokus zeigt sich am sichtbaren Knopf bzw. an der Ablagefläche. */
 :is(label.btn, .dropzone):focus-within { outline: none; box-shadow: var(--focus-ring); }
 
-/* Aufklappbare Bereiche (S8): eine Gestaltung für jede Zusammenfassung. Eigene Gestaltungen haben
-   nur die Register des Belegordners und die Anleitungen der Hilfe; sie stehen weiter unten. */
-details > summary { cursor: pointer; color: var(--accent-text); font-size: var(--text-m); font-weight: var(--weight-strong); user-select: none; width: fit-content; max-width: 100%; }
+/* Aufklappbare Bereiche (S8): eine Gestaltung für jede Zusammenfassung (Sonderfälle weiter unten). Ein Pfeil für alles,
+   was aufklappt (S33): ▸ zu, ▾ offen, gedämpft, statt des Markers des Browsers, für Vorleser leer; dieselbe Regel zeichnet
+   ihn vor einem Knopf aus DisclosureButton (`.disclosure`, offen über aria-expanded). */
+details > summary { position: relative; padding-inline-start: calc(0.9em + var(--space-1)); cursor: pointer; list-style: none; color: var(--accent-text); font-size: var(--text-m); font-weight: var(--weight-strong); user-select: none; width: fit-content; max-width: 100%; }
+details > summary::-webkit-details-marker { display: none; }
+:is(details > summary, .disclosure)::before { content: '▸'; content: '▸' / ''; position: absolute; inset-inline-start: 0; width: 0.9em; color: var(--muted); font-weight: var(--weight-normal); }
+:is(details[open] > summary, .disclosure[aria-expanded='true'])::before { content: '▾'; content: '▾' / ''; }
+:is(.receipt-group > summary, .disclosure)::before { position: static; margin-right: 0; }
+.btn.disclosure { gap: var(--space-1); }
 details > summary:hover { text-decoration: underline; text-underline-offset: 3px; }
 /* „Weitere Angaben“ in einem Formular: dazu eine gestrichelte Linie darüber */
 .extra-details { border-top: 1px dashed var(--line); padding-top: 10px; }
@@ -327,7 +333,6 @@ label.checkline span.term { display: inline; }
 .notice-item .notice-level { text-transform: uppercase; font-size: 11px; letter-spacing: 0.04em; opacity: 0.85; }
 .notice-item .notice-action { min-height: 0; padding: var(--space-1) 10px; font-size: var(--text-xs); }
 .legal-basis { font-size: var(--text-s); color: var(--muted); margin: var(--space-1) 0 var(--space-4); }
-.legal-basis summary { cursor: pointer; }
 .legal-basis ul { margin: 6px 0 0 18px; padding: 0; }
 
 /* ---------- Schnellerfassung: Ampel-Triage ---------- */
@@ -682,10 +687,8 @@ input:is([type='checkbox'], [type='radio']):focus-visible { box-shadow: var(--fo
 .preview { border-top: 1px dashed var(--control-border); padding-top: 14px; }
 .card.inset { box-shadow: none; background: var(--bg); padding: 14px var(--space-4); margin-bottom: 0; }
 .heating-plant ul.facts { margin: 0; padding-left: 20px; }
-.heating-ways ol { margin: 0; padding-left: 0; list-style: none; display: grid; gap: 8px; }
-.heating-ways li { border: 1px solid var(--line); border-radius: var(--radius-m); padding: var(--space-2) var(--space-3); background: var(--card); }
-.heating-ways ol { counter-reset: way; }
-.heating-ways li { counter-increment: way; }
+.heating-ways ol { margin: 0; padding-left: 0; list-style: none; display: grid; gap: 8px; counter-reset: way; }
+.heating-ways li { border: 1px solid var(--line); border-radius: var(--radius-m); padding: var(--space-2) var(--space-3); background: var(--card); counter-increment: way; }
 .heating-ways .way-title::before { content: counter(way) '. '; font-weight: 600; }
 .heating-plant > ul.facts + .heating-period { margin-top: 2px; }
 .heating-ways li > details > summary { font-size: 13px; }
@@ -767,6 +770,8 @@ td.reading-panel { background: var(--bg); }
 .print-only { display: none; }
 
 @media print {
+  :is(details > summary, .disclosure)::before { display: none; } /* der Pfeil ist Bedienung (S33) */
+  details > summary { padding-inline-start: 0; }
   /* Gedruckt wird immer hell, unabhängig vom gewählten Design: Die dunklen Tokens gelten nur am
      Bildschirm (`@media not print` oben), hier wird nur der Grund weiß. */
   :root { --bg: #ffffff; }
@@ -814,7 +819,6 @@ td.reading-panel { background: var(--bg); }
 .glossary-entry p { margin: 4px 0; }
 .help-section { margin: var(--space-6) 0 10px; font-size: var(--text-l); }
 /* Anleitungen je Vermietungsart (#164): zugeklappt nur der Titel, aufgeklappt die fünf Abschnitte. */
-.guide > summary { cursor: pointer; list-style-position: outside; margin-left: 18px; }
 .guide .guide-title { display: inline; margin: 0; font-weight: var(--weight-strong); font-size: var(--text-base); color: var(--text); text-transform: none; letter-spacing: normal; }
 .guide[open] > summary { margin-bottom: 6px; }
 .guide h3 { margin: 14px 0 var(--space-1); font-size: var(--text-s); color: var(--muted); }
@@ -831,7 +835,7 @@ td.reading-panel { background: var(--bg); }
 
 /* Rechenweg auf Klick (#114, E43): ein kleiner Textverweis statt eines Knopfes, der jede Zeile höher
    macht; die Schritte als nummerierte Liste auf abgesetzter Fläche */
-button.btn.calc-toggle, button.btn.calc-toggle:hover { display: inline; min-height: 0; margin-top: var(--space-1); padding: 2px 0; background: none; border: none; box-shadow: none; color: var(--accent-text); font-size: var(--text-xs); font-weight: var(--weight-medium); }
+button.btn.calc-toggle, button.btn.calc-toggle:hover { display: inline-flex; align-items: baseline; text-align: start; min-height: 0; margin-top: var(--space-1); padding: 2px 0; background: none; border: none; box-shadow: none; color: var(--accent-text); font-size: var(--text-xs); font-weight: var(--weight-medium); }
 button.btn.calc-toggle:hover { text-decoration: underline; text-underline-offset: 3px; }
 tr.calc-steps td { background: var(--hover); }
 .calc-steps-list { margin: var(--space-1) 0 var(--space-1) var(--space-5); padding: 0; font-size: var(--text-s); }
@@ -843,7 +847,6 @@ tr.calc-steps td { background: var(--hover); }
 
 /* Frühere Abschlüsse (#56, Teil 2) */
 .settlement-history { font-size: var(--text-s); margin: 4px 0 16px; }
-.settlement-history summary { cursor: pointer; }
 .settlement-history-entry { margin-top: 8px; }
 .settlement-history-entry ul { margin: 4px 0 0 18px; padding: 0; }
 
@@ -853,10 +856,7 @@ fieldset.no-connection { border: 0; padding: 0; margin-inline: 0; min-width: 0; 
 
 /* ---------- Belegordner (#170) ---------- */
 .receipt-filters { flex-wrap: wrap; gap: 12px; align-items: flex-end; }
-.receipt-group > summary { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; cursor: pointer; list-style: none; }
-.receipt-group > summary::-webkit-details-marker { display: none; }
-.receipt-group > summary::before { content: '▸'; color: var(--muted); }
-.receipt-group[open] > summary::before { content: '▾'; }
+.receipt-group > summary { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding-inline-start: 0; }
 .receipt-group-title { font-weight: 600; flex: 1 1 auto; min-width: 0; }
 .receipt-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 10px; }
 .receipt-card { display: flex; gap: 12px; align-items: flex-start; border: 1px solid var(--line); border-radius: var(--radius-m); padding: 10px; min-width: 0; }
@@ -881,7 +881,7 @@ fieldset.no-connection { border: 0; padding: 0; margin-inline: 0; min-width: 0; 
 .receipt-inbox-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .receipt-inbox-controls select { flex: 0 1 auto; min-width: 0; max-width: 100%; }
 .receipt-packs details { margin-top: 12px; }
-.receipt-packs summary { cursor: pointer; font-weight: 600; }
+.receipt-packs summary { font-weight: 600; }
 
 /* Informationen nach § 6a HeizkostenV (Heizung PR 14): der witterungsbereinigte Vergleich als Balken. Die Balken
    werden mitgedruckt (print-color-adjust), sonst ließe der Browser die Farbe beim Drucken weg. */
@@ -901,5 +901,4 @@ fieldset.no-connection { border: 0; padding: 0; margin-inline: 0; min-width: 0; 
 }
 
 /* Fälligkeit des laufenden Monats im Mietkonto (#290): eine Zeile, Einzelheiten zum Aufklappen */
-.rent-due summary { cursor: pointer; }
 .rent-due p { margin: 4px 0 0; }

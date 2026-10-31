@@ -82,6 +82,7 @@ test('jeder Hinweis zeigt Stufe, Titel und Text; nur die Fundstelle liegt unter 
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
     fireEvent.click(toggle)
     expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(toggle.textContent).toBe('Weniger')
     expect(within(box).getByText(GROUND).closest('[hidden]')).toBeNull()
   }
 })

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useId, useState } from 'react'
 import { useFormError } from '../components/ErrorSummary'
 import Field from '../components/Field'
 import YearField from '../components/YearField'
@@ -11,6 +11,7 @@ import { api, errorText, fmtDate } from '../api'
 import { usePeriod } from '../period'
 import { useProperty, withProperty } from '../property'
 import Drawer from '../components/Drawer'
+import DisclosureButton from '../components/DisclosureButton'
 import ReadingSheetDrawer from '../components/ReadingSheetDrawer'
 import { SheetPrinter } from '../components/ReadingSheet'
 import { todayIso, type ReadingSheet } from '../readingSheet'
@@ -452,6 +453,7 @@ function FragmentRow(props: {
 }) {
   const { meter: m, focused, cons, open, readings, unitName, consumptionLabel, onToggle, onEdit, onDelete, onNewReading, onDeleteReading, onSaved } = props
   const digits = readingDigits(readings)
+  const panelId = useId()
   return (
     <>
       <tr className={focused ? 'focus-target' : undefined}>
@@ -476,14 +478,14 @@ function FragmentRow(props: {
           {cons && cons.readingCount >= 2 && ratedText(m, cons.consumption) && <div className="muted">{ratedText(m, cons.consumption)}</div>}
         </td>
         <td className="actions no-print">
-          <button className="btn small secondary" onClick={onToggle}>{open ? 'Schließen' : `Ablesungen (${readings.length})`}</button>
+          <DisclosureButton open={open} onToggle={onToggle} closedLabel={`Ablesungen (${readings.length})`} openLabel="Ablesungen schließen" controls={panelId} className="btn small secondary" />
           {' '}
           <button className="icon-btn" title="Bearbeiten" aria-label="Zähler bearbeiten" onClick={onEdit}>✎</button>
           <button className="icon-btn danger" title="Löschen" aria-label="Zähler löschen" onClick={onDelete}>🗑</button>
         </td>
       </tr>
       {open && (
-        <tr>
+        <tr id={panelId}>
           <td colSpan={5} className="stack reading-panel">
             {/* Die Listenaktion steht oben rechts im Kopf der Liste (#346 Schritt 7b), vorher unter ihr. */}
             <CardHeader level={3} title={`Ablesungen ${m.name}`} aside={<button className="btn secondary" onClick={onNewReading}>+ Ablesung anlegen</button>} />
