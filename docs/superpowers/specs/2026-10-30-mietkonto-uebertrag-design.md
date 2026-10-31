@@ -154,6 +154,16 @@ als Folgenutzer) über eine nicht mehr geschuldete Vorauszahlung ist rechtlich a
 sondern womöglich verloren. Deshalb drei Gründe mit eigenem Satz, und nur der erste sagt „enthalten“. (4) Die
 Tilgung bleibt unberührt, damit Mietkonto und Steuer reproduzierbar dieselben Teile haben.
 
+**Bekannte Grenze** (Durchsicht, Befund 5; bewusst nicht geändert). Die Tilgung fragt nie nach Frist oder Versand. Eine
+Zahlung nach Eintritt der Abrechnungsreife tilgt deshalb weiter zuerst die offenen Vorauszahlungen des abgerechneten
+Zeitraums, obwohl der Vermieter sie nicht mehr einzeln verlangen kann (VIII ZR 84/17 Rn. 53). Szenario: Der Dezember
+2024 ist offen (200 € Vorauszahlung, 600 € Kaltmiete), die Abrechnung 2024 ist im März 2025 erteilt, im April 2025 gehen
+800 € ohne Verwendungszweck ein. Mietfuchs rechnet 200 € auf die Vorauszahlung Dezember 2024 an und 600 € auf die
+Kaltmiete; rechtlich naheliegender wäre, die erloschene Vorauszahlung zu überspringen und 800 € auf Kaltmiete und
+spätere Monate anzurechnen. So bleibt die Tilgung stichtagsunabhängig, und Mietkonto und Steuer haben reproduzierbar
+dieselben Teile; die Anzeige ordnet den Betrag über die Abrechnungsreife ein, und wer den Monat kennt, trägt ihn an der
+Zahlung ein (§ 366 Abs. 1 BGB).
+
 **Datenquelle.** `rentLedger(snapshot, { asOf, statements })`: `statements` sind die Abrechnungen des Objekts (je
 Zeitraum bzw. Heizperiode: Grenzen, Frist, `sentAt`, eingefrorene Anrechnung je Mietverhältnis), gelesen in index.ts
 aus den Abschlusstabellen und der Berechnung der Zeiträume. calc.ts bleibt rein. Ohne `statements` (direkte Aufrufe in

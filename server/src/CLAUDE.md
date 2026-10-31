@@ -746,7 +746,10 @@ importiert nichts aus calc.ts (Zyklus; Wächter in rentAllocation.test.ts). Die 
   `creditedAsPaid`, `deadlinePassed`), nicht in `arrearsCents`; Kaltmiete und Pauschale nie. Die Tilgung fragt nie
   nach Frist oder Versand. Die Abrechnungen kommen als `statements` aus der Route ([ledgerStatements.ts](ledgerStatements.ts)
   baut sie aus Schnappschuss und Abschlüssen; Heizvorauszahlung bei Weg d über `separateOwner`); ohne sie keine
-  Klassifikation (Tests, Regression).
+  Klassifikation (Tests, Regression). **Bekannte Grenze** (Durchsicht, Befund 5, bewusst so): Eine Zahlung nach
+  Abrechnungsreife tilgt weiter zuerst die nicht mehr einzeln verlangbaren Vorauszahlungen (VIII ZR 84/17 Rn. 53),
+  etwa 800 € im April 2025 zuerst die offene Vorauszahlung Dezember 2024 einer im März erteilten Abrechnung. Die
+  Tilgung bleibt stichtagsunabhängig, damit Mietkonto und Steuer dieselben Teile haben (Entwurf E5).
 - **Monat laut Verwendungszweck**: nur an `rent` und nur für einen Monat des Mietverhältnisses (400 in `guardPayment`,
   repository.ts); fällt er später heraus (Beginn oder Ende geändert), bleibt er stehen, wirkt wie keine Bestimmung und
   steht in `designatedOutside`. Kontoauszug-Import und KI setzen ihn nie.
