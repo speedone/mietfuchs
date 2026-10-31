@@ -3,7 +3,7 @@
 import { describe, expect, test } from 'vitest'
 import type { CostItem, Unit } from './types'
 import { calendarContext, calendarPeriod } from '../../shared/period.ts'
-import { carryOverRows } from './carryOver'
+import { carryOverForm, carryOverRows } from './carryOver'
 import { EMPTY_ITEM_FORM, costFieldProblems } from './costForm'
 import { adoptPrevious, categoryFromName, receiptItemForm, vendorPrevious } from './receiptForm'
 
@@ -99,5 +99,21 @@ describe('Angaben aus dem Vorjahr über den Rechnungssteller', () => {
     expect(next).toMatchObject({ category: 'Müllabfuhr', description: 'Müll 2025', key: 'persons', amount: '512,00', labor35a: '12,00', vendor: 'awb köln', invoiceFile: '7_scan.pdf', paidOn: '2025-03-01' })
     // Danach steht der Hinweis nicht mehr da
     expect(vendorPrevious(rows, next.vendor, next)).toEqual([])
+  })
+})
+
+// Integrationsdurchsicht M2 (#262, E-9): Eine Übernahme ist ein neuer Aufwand; die Verteilung nach § 82b der Vorlage
+// wandert nicht still mit, weder über „Im Formular öffnen“ noch über „Übernehmen“ am Rechnungssteller.
+describe('Übernahme aus dem Vorjahr ohne Verteilung', () => {
+  const rows = carryOverRows([
+    item({ period: calendarPeriod(2024), category: 'Nicht umlagefähig', description: 'Dach 2024', vendor: 'Dachdecker Beispiel', amountCents: 1200000, spreadYears: 3 }),
+  ], calendarContext(2025))
+  const row = rows[0] ?? expect.fail('keine Vorlage')
+  test('carryOverForm', () => {
+    expect(carryOverForm(row).spreadYears).toBe('')
+  })
+  test('adoptPrevious', () => {
+    const form = { ...receiptItemForm({ file: 'x.pdf', originalName: 'x.pdf' }, UNITS, []), vendor: 'Dachdecker Beispiel' }
+    expect(adoptPrevious(form, row).spreadYears).toBe('')
   })
 })
