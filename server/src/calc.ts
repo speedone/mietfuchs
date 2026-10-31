@@ -64,7 +64,8 @@ import { rulesFor } from '../../shared/law/rules.ts'
 import { co2ApplicableFrom, co2CostsBefore, co2CostsCountedFrom, co2CostsExcludedUntil, co2CutMissing, co2DistrictEtsNew, co2FirstPeriodStart, co2HalfSplit, co2HalfSplitEmergency, co2HalfSplitNewBuildings, co2HalfSplitTwoFamily, co2NonResidential, co2Restriction, co2RoundingDecimals, co2SelfSupply, co2StageTable, halfSplitBioFirstDay, halfSplitEnactedOn, halfSplitFirstDay } from '../../shared/law/co2kostaufg.ts'
 import { gmodgHeating43 } from '../../shared/law/gmodg.ts'
 // rangeOverlapDays: Überlappung zweier Zeiträume in Tagen, eine Stelle mit der Monatsregel.
-import { monthShare, overlapDays as rangeOverlapDays, rateAtMonth, rateInMonth, type MonthlySchedule } from '../../shared/monthRate.ts'
+import { compareText, largestRemainder } from './apportion.ts'
+import { monthShare, monthSoll, overlapDays as rangeOverlapDays, rateAtMonth, rateInMonth, type MonthlySchedule } from '../../shared/monthRate.ts'
 import { applicableRanges, blendedPermille, halfAmounts, halfSplitStatus, intersect as intersectRange, termsFromDeliveries, termsFromPieces, termsWeight, tightMarketIn, twoFamilyOf, type HalfDelivery, type HalfSplitStatus, type HalfSplitTerm, type Piece, type TwoFamily } from './halfSplit.ts'
 import { CO2_RELIEF_LABEL } from '../../shared/co2Probe.ts'
 import { ausweisGaps, CO2_FUELS, co2Assessment, co2Required, NO_CO2_FUELS, co2DeductionsOf, FORMULA_METHODS, co2PotsOf, itemBasisUnits, L_TOLERANCE_CENTS, perUnitClassification, perUnitExceeding, perUnitReliefs, gmodgKeyOf, HALF_SPLIT_TOLERANCE_PERMILLE, reliefKeysOf, reliefsByShare, spanningPlants, type PerUnitFuel, restage, selfSplit, SERVICE_FUEL_TOLERANCE_CENTS, shownReliefs, stageRanges, tableFactor, tenantLines as co2TenantLines, type Co2Pot, type ReliefShare } from './co2.ts'
@@ -189,13 +190,8 @@ export function occupiedDays(tenancies: { start: string, end: string | null }[],
 // Formatieren von Zahlen weiter unten, das ausdrücklich `'de-DE'` verlangt. Welche der beiden
 // Funktionen gilt, entscheidet, wofür die Reihenfolge da ist.
 
-// **Trägt die Reihenfolge eine Bedeutung**, wird Zeichen für Zeichen verglichen: der Rest-Cent
-// in `largestRemainder`, die Ablesungen und die Staffeln, bei denen sie entscheidet, welcher
-// von zwei Einträgen zum selben Stichtag der spätere ist (siehe schedule.ts). Hier wäre eine
-// Sprache die falsche Frage: Verglichen werden Kennungen und ISO-Daten, keine Wörter.
-export function compareText(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0
-}
+// **Trägt die Reihenfolge eine Bedeutung**, wird Zeichen für Zeichen verglichen (`compareText`, mit
+// `largestRemainder` in apportion.ts, damit die Tilgung in rentAllocation.ts sie ohne calc.ts nutzen kann, #312).
 
 // **Steht die Reihenfolge in einer Liste, die ein Mensch liest**, gilt deutsche Sortierung, und
 // zwar fest eingestellt. Zeichenweise verglichen landete „Älter“ hinter „Zaun“, weil das Ä einen
@@ -855,6 +851,8 @@ export function consumptionOverview(snapshot: Snapshot): ConsumptionOverviewRow[
 // Die Monatsregel (#311) steht in shared/monthRate.ts, damit das Formular des Mietverhältnisses
 // denselben Anteil zeigt, den Abrechnung und Mietkonto rechnen.
 export { monthShare, rateInMonth }
+// Rest-Cent und Reihenfolge mit Bedeutung stehen in apportion.ts (#312); die übrigen Module importieren sie weiter von hier.
+export { compareText, largestRemainder }
 
 // Die Monate eines Zeitraums, die nach der Monatsregel zum Mietverhältnis gehören (`days > 0`), auch
 // der angebrochene Ein- und Auszugsmonat. Die Rückfragen beim Wechsel des Zeitraums, der Heizperiode
@@ -1015,20 +1013,18 @@ export function ledgerRows(
   return source.tenancies
     .filter((t) => rangeOverlapDays(t.start, t.end, span.from, span.to) > 0)
     .map((t) => {
-      const baseSchedule: MonthlySchedule[] = Array.isArray(t.baseRents) ? t.baseRents : []
-      const ppSchedule: MonthlySchedule[] = Array.isArray(t.prepayments) ? t.prepayments : []
-      const flatSchedule: MonthlySchedule[] = Array.isArray(t.flatRates) ? t.flatRates : []
       // Die Heizstaffel (Heizung PR 5, Entwurf 3.11): im Soll neben der übrigen Vorauszahlung. Die
       // Felder dazu stehen nur in Zeilen mit Heizstaffel, damit sich ohne sie nichts ändert.
-      const heatingSchedule: MonthlySchedule[] = Array.isArray(t.heatingPrepayments) ? t.heatingPrepayments : []
-      const withHeating = heatingSchedule.length > 0
+      const withHeating = Array.isArray(t.heatingPrepayments) && t.heatingPrepayments.length > 0
       const rowMonths = months.map((mm): RentMonth => {
-        // Dieselbe Monatsregel wie die Abrechnung (#311): im angebrochenen Monat anteilig.
+        // Dieselbe Monatsregel wie die Abrechnung (#311): im angebrochenen Monat anteilig. Das Soll je
+        // Bestandteil kommt aus `monthSoll` (shared/monthRate.ts), derselben Stelle wie die Tilgung (#312).
         const share = monthShare(t, mm)
-        const baseRentCents = rateInMonth(baseSchedule, t, mm)
-        const prepaymentCents = rateInMonth(ppSchedule, t, mm)
-        const flatRateCents = rateInMonth(flatSchedule, t, mm)
-        const heatingPrepaymentCents = withHeating ? rateInMonth(heatingSchedule, t, mm) : 0
+        const soll = monthSoll(t, mm)
+        const baseRentCents = soll.baseRent
+        const prepaymentCents = soll.prepayment
+        const flatRateCents = soll.flatRate
+        const heatingPrepaymentCents = withHeating ? soll.heatingPrepayment : 0
         return {
           month: Number(mm.slice(5, 7)),
           ...(share.days > 0 && share.days < share.of ? { share } : {}),
@@ -2498,23 +2494,6 @@ export type AllocationTrace = {
   laborCents: number
   forced: boolean
   lines: { recipient: string, landlord: boolean, exact: number, cents: number, laborExact: number, laborCents: number }[]
-}
-
-// Verteilt totalCents exakt auf die gegebenen (float) Rohanteile (Hare/largest remainder).
-// `keys` enthält je Rohanteil eine stabile Kennung (die ID des Mietverhältnisses). Sie
-// entscheidet, wer bei gleichem Nachkommaanteil den Rest-Cent bekommt — sonst hinge das an
-// der Reihenfolge in der Datei, und dieselben Daten könnten anders abgerechnet werden.
-export function largestRemainder(totalCents: number, raws: number[], keys: string[]): number[] {
-  if (raws.length === 0) return []
-  const floors = raws.map((r) => Math.floor(r))
-  let rest = totalCents - floors.reduce((a, b) => a + b, 0)
-  const byKey = (i: number, j: number) => compareText(keys[i], keys[j])
-  const order = raws
-    .map((r, i): [number, number] => [r - Math.floor(r), i])
-    .sort((a, b) => b[0] - a[0] || byKey(a[1], b[1]))
-  for (let k = 0; rest > 0; k++, rest--) floors[order[k % order.length][1]]++
-  for (let k = 0; rest < 0; k++, rest++) floors[order[order.length - 1 - (k % order.length)][1]]--
-  return floors
 }
 
 function fmtNum(n: number): string {

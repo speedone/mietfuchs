@@ -64,3 +64,26 @@ export function rateInMonth(schedule: readonly MonthlySchedule[], t: { start: st
   if (days >= of) return rate
   return Math.sign(rate) * Math.round(Math.abs(rate) * days / of)
 }
+
+// Die Bestandteile des Monats-Solls (#312): Klasse A (Vorauszahlung, Heizvorauszahlung) und Klasse B (Kaltmiete,
+// Pauschale) der Tilgung nach § 366 BGB in server/src/rentAllocation.ts.
+export type SollComponent = 'prepayment' | 'heatingPrepayment' | 'baseRent' | 'flatRate'
+export type MonthSoll = Record<SollComponent, number>
+
+// Was ein Mietverhältnis in einem Monat schuldet, je Bestandteil nach der Monatsregel (`rateInMonth` je Staffel, im
+// angebrochenen Monat nach Tagen, #311). **Eine Stelle für Mietkonto und Steuer** (#312 E3): `ledgerRows` in calc.ts
+// rechnet das Soll seiner Monate hiermit, die Tilgung in rentAllocation.ts ebenso, damit beide nie zwei
+// Staffelauslegungen haben. Hier und nicht in calc.ts, weil calc.ts die Tilgung importiert und rentAllocation.ts
+// sonst calc.ts (ESM-Zyklus). Eine fehlende Staffel ist 0 (eine Heizstaffel fehlt meist).
+export function monthSoll(
+  t: { start: string, end: string | null, baseRents?: readonly MonthlySchedule[], prepayments?: readonly MonthlySchedule[], flatRates?: readonly MonthlySchedule[], heatingPrepayments?: readonly MonthlySchedule[] },
+  month: string,
+): MonthSoll {
+  const rate = (schedule: readonly MonthlySchedule[] | undefined): number => rateInMonth(Array.isArray(schedule) ? schedule : [], t, month)
+  return {
+    prepayment: rate(t.prepayments),
+    heatingPrepayment: rate(t.heatingPrepayments),
+    baseRent: rate(t.baseRents),
+    flatRate: rate(t.flatRates),
+  }
+}
