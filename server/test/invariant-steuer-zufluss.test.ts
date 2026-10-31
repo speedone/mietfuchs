@@ -52,6 +52,9 @@ const sum = <T>(list: readonly T[], f: (x: T) => number): number => list.reduce(
 // (`allocateRentPayments` auf dem geführten Mietverhältnis, wie das Mietkonto). Zehn-Tage-Regel (E8 nach der
 // Durchsicht): 22.12. bis 31.12. für Januar zählt im Folgejahr, wenn das Mietverhältnis am 01.09.2001 nicht bestand
 // (§ 556b BGB); sonst nur beziffert, ebenso Anfang Januar (bis 10.01.) für Dezember.
+// Wie oft das Orakel die Fälle der Nachdurchsicht sieht (M1: Januar-Abschnitt nicht in der kurzen Zeit fällig; S1:
+// Rücknahme in der kurzen Zeit einer Zahlung von davor).
+const oracleSeen = { januaryStartKept: 0, reversalKept: 0 }
 type Oracle = Pick<TaxReceived, 'rentCents' | 'unallocatedCents' | 'allocationsCents' | 'flatRateCents' | 'formerYearsCents' | 'formerYearsAllocationsCents' | 'turnOfYear'>
 function oracle(source: TaxSource, pid: string, year: number): { lines: Oracle; slicesOf: Map<string, AllocationSlice[]> } {
   const snap = snapshotFor(source, pid, calendarYearPeriod(year))
@@ -62,10 +65,19 @@ function oracle(source: TaxSource, pid: string, year: number): { lines: Oracle; 
     const slices = allocateRentPayments(ledgerTenancy(t, snap.payments, year), snap.payments.filter((p) => p.tenancyId === t.id))
     slicesOf.set(t.id, slices)
     const since = t.contractDate !== undefined && t.contractDate < t.start ? t.contractDate : t.start
-    const newLaw = since >= '2001-09-01'
-    const forwardOf = (s: AllocationSlice): boolean => s.month === `${Number(s.paidOn.slice(0, 4)) + 1}-01` && s.paidOn.slice(5) >= '12-22'
+    const newLaw = since > '2001-09-01' // ein am 01.09.2001 beginnendes Mietverhältnis bestand an diesem Tag
+    // Der Januar-Abschnitt sicher in der kurzen Zeit fällig (Nachdurchsicht M1): Mietverhältnis spätestens ab 01.01.; eine
+    // Rücknahme nur, wenn die zurückgenommene Zahlung ebenfalls ab dem 22.12. kam (S1).
+    const januaryDue = (y: number): boolean => t.start <= `${y}-01-01`
+    const forwardOf = (s: AllocationSlice): boolean => {
+      const y = Number(s.paidOn.slice(0, 4))
+      return s.month === `${y + 1}-01` && s.paidOn.slice(5) >= '12-22' && (s.reversesPaidOn === undefined || s.reversesPaidOn >= `${y}-12-22`)
+    }
+    const movable = (s: AllocationSlice): boolean => forwardOf(s) && januaryDue(Number(s.paidOn.slice(0, 4)) + 1)
     for (const s of slices) {
-      const moved = newLaw && forwardOf(s)
+      const moved = newLaw && movable(s)
+      if (newLaw && s.paidOn.slice(0, 4) === y && forwardOf(s) && !moved) oracleSeen.januaryStartKept++
+      if (newLaw && s.paidOn.slice(0, 4) === y && s.reversesPaidOn !== undefined && s.month === `${year + 1}-01` && s.paidOn.slice(5) >= '12-22' && !forwardOf(s)) oracleSeen.reversalKept++
       const counts = moved ? Number(s.paidOn.slice(0, 4)) + 1 === year : s.paidOn.slice(0, 4) === y
       if (moved && s.paidOn.slice(0, 4) === y) {
         lines.turnOfYear.forwardCents += s.cents
@@ -210,7 +222,7 @@ test('Invariante: Zeilen = Orakel, Summe = paidCents, Teilsummen stimmen, Mietko
   if (GOLDEN_WRITE) fs.writeFileSync(GOLDEN_FILE, `${JSON.stringify(Object.fromEntries(Object.entries(golden).sort(([a], [b]) => Number(a) - Number(b))), null, 1)}\n`)
   // Der Generator muss jede Lage erzeugen, sonst prüft die Invariante sie nicht.
   if (SEEDS.length >= 20) {
-    for (const [k, v] of Object.entries(seen)) assert.ok(v > 0, `keine Lage ${k}`)
+    for (const [k, v] of Object.entries({ ...seen, ...oracleSeen })) assert.ok(v > 0, `keine Lage ${k}`)
     if (!GOLDEN_WRITE) assert.ok(goldenChecked >= 20, `nur ${goldenChecked} Startwerte gegen tax-received-golden.json geprüft`)
   }
   assert.ok(compared > 0)

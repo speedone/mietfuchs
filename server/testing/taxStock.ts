@@ -195,7 +195,7 @@ export function withPaymentVariety(source: TaxSource, seed: number, options: { e
       ...(rnd() < 0.15 ? { heatingModel: 'inclusive' as const } : {}),
       ...(rnd() < 0.15 ? { relative: true, persons: 0, personHistory: [{ from: '2020-01-01', persons: 0 }] } : {}),
       ...(rnd() < 0.2 ? { contractDate: `1999-${pad(int(1, 12))}-${pad(int(1, 28))}` } : {}),
-      ...(rnd() < 0.25 ? { start: `${int(2023, 2026)}-${pad(int(1, 12))}-${rnd() < 0.5 ? '01' : '15'}`, depositCents: int(150000, 300000) } : {}),
+      ...(rnd() < 0.25 ? { start: `${int(2023, 2026)}-${pad(rnd() < 0.3 ? 1 : int(1, 12))}-${rnd() < 0.5 ? '01' : '15'}`, depositCents: int(150000, 300000) } : {}),
     }
   }).map((t) => (t.end !== null && t.end < t.start ? { ...t, end: null } : t))
   let n = 0
@@ -211,6 +211,9 @@ export function withPaymentVariety(source: TaxSource, seed: number, options: { e
       const d = new Date(Date.UTC(Number(t.start.slice(0, 4)), Number(t.start.slice(5, 7)) - 1, Number(t.start.slice(8, 10)) + int(-20, 20)))
       add(d.toISOString().slice(0, 10), t.depositCents)
     }
+    // Bei späterem Beginn im Januar oft schon Ende Dezember die erste Miete (Nachdurchsicht M1: ab dem 15.01. nicht in der
+    // kurzen Zeit fällig, bleibt im Jahr der Zahlung).
+    if (!options.exact && t.depositCents !== undefined && t.start.slice(5, 7) === '01' && rnd() < 0.7) add(`${Number(t.start.slice(0, 4)) - 1}-12-${pad(int(22, 31))}`, int(50000, 120000))
     for (let m = firstMonth; m <= last; m = addMonths(m, 1)) {
       const s = monthSoll(t, m)
       const soll = s.baseRent + s.prepayment + s.heatingPrepayment + s.flatRate

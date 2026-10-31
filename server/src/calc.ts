@@ -1508,6 +1508,16 @@ function rentDueAtStartOf(t: Pick<SnapshotTenancy, 'start' | 'contractDate'>): b
   return law(bgbRentDueAtStart, { date }, createLawLog())
 }
 
+// Ist der Januar-Abschnitt des Jahres `year` sicher in der kurzen Zeit fällig (Nachdurchsicht M1)? Nach § 556b Abs. 1
+// BGB ist die Miete zu Beginn des Zeitabschnitts, spätestens am dritten Werktag fällig. Beginnt der Abschnitt am 01.01.
+// (Mietverhältnis spätestens ab 01.01.), ist das in jedem Land spätestens der 07.01. (Test über alle Länder 1995 bis 2100
+// in invariant-tilgung.test.ts), also in der Frist. Beginnt das Mietverhältnis im Januar, beginnt der erste Abschnitt
+// mit ihm (Auslegung), und ob sein dritter Werktag bis zum 10.01. reicht, hängt an Wochentag und Feiertagen des Landes.
+// Mit Feiertagen darf der Server erst rechnen, wenn alle Landesgesetze amtlich gelesen sind (Auflage aus #290,
+// holidays.test.ts); bis dahin wird ein Mietverhältnis mit Beginn nach dem 01.01. **nicht** verschoben (bekannte
+// Grenze, im Zweifel nach dem Datum der Zahlung). Bei Beginn am 15.01. ist die erste Miete ohnehin erst ab dem 15.01. fällig.
+const januaryDueInWindow = (t: Pick<SnapshotTenancy, 'start'>, year: number): boolean => compareText(t.start, `${year}-01-01`) <= 0
+
 const emptyTenancyReceived = (): Omit<TaxReceivedTenancy, 'tenancyId' | 'unitId' | 'tenantName' | 'unitName' | 'start' | 'end' | 'relative'> => ({
   rentCents: 0, inclusiveRentCents: 0, allocationsCents: 0, settlementCents: 0, formerYearsCents: 0, unallocatedCents: 0, forwardCents: 0,
 })
@@ -1546,19 +1556,24 @@ function receivedIncome({ snapshot, year, inclusive, shortDays }: ReceivedInput)
     const row = emptyTenancyReceived()
     const isInclusive = inclusive(t)
     const dueAtStart = rentDueAtStartOf(t)
+    // Verschoben wird nur, was nach § 556b in der kurzen Zeit fällig war (M1); eine Rücknahme folgt der zurückgenommenen
+    // Zahlung (S1): Sie wird nur verschoben, wenn deren Datum ebenfalls in der kurzen Zeit vor dem Jahreswechsel liegt.
+    const movesForward = dueAtStart && januaryDueInWindow(t, year + 1)
+    const movedFromPrevious = dueAtStart && januaryDueInWindow(t, year)
+    const originInWindow = (s: AllocationSlice, from: string, to: string): boolean => s.reversesPaidOn === undefined || (s.reversesPaidOn >= from && s.reversesPaidOn <= to)
     let movedIn = false
     for (const s of slices) {
       // Zehn-Tage-Regel vorwärts (§ 556b): Ende Dezember gezahlt für den Januar, zählt im Folgejahr.
-      const forward = s.month === nextJanuary && s.paidOn >= forwardFrom && s.paidOn <= yTo
-      if (s.paidOn >= previousForwardFrom && s.paidOn < yFrom && s.month === firstMonth) {
-        if (!dueAtStart) continue
+      const forward = s.month === nextJanuary && s.paidOn >= forwardFrom && s.paidOn <= yTo && originInWindow(s, forwardFrom, yTo)
+      if (s.paidOn >= previousForwardFrom && s.paidOn < yFrom && s.month === firstMonth && originInWindow(s, previousForwardFrom, shiftIsoDay(yFrom, -1))) {
+        if (!movedFromPrevious) continue
         // Aus dem Vorjahr hierher: zählt in diesem Jahr wie ein Teil mit Datum im Jahr.
         movedIn = true
         out.turnOfYear.fromPreviousCents += s.cents
         if (isAllocation(s.component)) out.turnOfYear.fromPreviousAllocationsCents += s.cents
       } else if (!inYear(s.paidOn)) {
         continue
-      } else if (forward && dueAtStart) {
+      } else if (forward && movesForward) {
         row.forwardCents += s.cents
         out.turnOfYear.forwardCents += s.cents
         if (isAllocation(s.component)) out.turnOfYear.forwardAllocationsCents += s.cents
@@ -1588,7 +1603,12 @@ function receivedIncome({ snapshot, year, inclusive, shortDays }: ReceivedInput)
     row.settlementCents = own.filter((p) => !isRentPayment(p) && inYear(p.date)).reduce((a, p) => a + p.amountCents, 0)
     out.possibleDeposits.push(...possibleDepositsOf(t, own, slices, inYear))
     if (!own.some((p) => inYear(p.date)) && !movedIn) continue
-    const relative = relativeForHousing(t, t.start, t.end ?? (compareText(yTo, t.start) >= 0 ? yTo : t.start))
+    // Im Kalenderjahr gemessen, wenn das Mietverhältnis darin besteht (wie Kennzahl 62, Nachdurchsicht K1); sonst über
+    // seine Dauer, damit die Nachzahlung einer ausgezogenen Angehörigen in Zeile 23 bleibt.
+    const overlaps = rangeOverlapDays(t.start, t.end, yFrom, yTo) > 0
+    const relative = overlaps
+      ? relativeForHousing(t, yFrom, yTo)
+      : relativeForHousing(t, t.start, t.end ?? (compareText(yTo, t.start) >= 0 ? yTo : t.start))
     out.byTenancy.push({ tenancyId: t.id, unitId: t.unitId, tenantName: t.tenantName, unitName: unitById.get(t.unitId)?.name ?? '—', start: t.start, end: t.end, relative, ...row })
   }
   // Eine Mietzahlung an ein Mietverhältnis, das der Schnappschuss nicht führt, gibt es nach `snapshotFor` nicht; geschähe

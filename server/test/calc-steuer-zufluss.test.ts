@@ -323,3 +323,58 @@ test('Zehn-Tage-Fenster am Zahlungsdatum: die Fassung des Jahres, zu dem die Zah
   assert.equal(tenDayWindow('2027-01-06', 'Müllabfuhr', probe), false)
   assert.equal(tenDayWindow('2027-01-05', 'Müllabfuhr', probe), true)
 })
+
+// Nachdurchsicht M1: Verschoben wird nur, wenn der Januar-Abschnitt in der kurzen Zeit fällig ist. Beginnt das
+// Mietverhältnis am 15.01., ist die erste Miete frühestens am 15.01. fällig (§ 556b Abs. 1 BGB: zu Beginn des
+// Zeitabschnitts, spätestens am dritten Werktag), also nach dem 10.01.: Die Zahlung vom 28.12. bleibt im Jahr der Zahlung.
+test('Zehn-Tage-Regel: Beginn am 15.01.2026, Zahlung am 28.12.2025 bleibt 2025; Beginn 01.01. wird verschoben', () => {
+  const t = tenancy('t', 'eg', { start: '2026-01-15', personHistory: [{ from: '2026-01-15', persons: 1 }], prepayments: [{ from: '2026-01', monthlyCents: 20000 }], baseRents: [{ from: '2026-01', monthlyCents: 60000 }] })
+  const s = source([t], [pay('t', '2025-12-28', 80000)])
+  const r25 = taxReportFor(s, 'objekt-1', 2025)
+  const y25 = r25.income.received ?? assert.fail('received fehlt')
+  assert.equal(y25.turnOfYear.forwardCents, 0)
+  assert.equal(y25.rentCents + y25.allocationsCents + y25.formerYearsCents, r25.income.paidCents)
+  assert.equal(received(s, 2026).turnOfYear.fromPreviousCents, 0)
+  const jan = tenancy('t', 'eg', { start: '2026-01-01', personHistory: [{ from: '2026-01-01', persons: 1 }], prepayments: [{ from: '2026-01', monthlyCents: 20000 }], baseRents: [{ from: '2026-01', monthlyCents: 60000 }] })
+  const s1 = source([jan], [pay('t', '2025-12-28', 80000)])
+  assert.equal(received(s1, 2025).turnOfYear.forwardCents, 80000)
+  assert.equal(received(s1, 2026).turnOfYear.fromPreviousCents, 80000)
+  // Bekannte Grenze: Beginn am 05.01. Ob der dritte Werktag ab Beginn bis zum 10.01. reicht, hängt an den Feiertagen des
+  // Landes, mit denen der Server noch nicht rechnen darf (#290); im Zweifel bleibt die Zahlung im Jahr ihres Datums.
+  const fünf = tenancy('t', 'eg', { start: '2026-01-05', personHistory: [{ from: '2026-01-05', persons: 1 }], prepayments: [{ from: '2026-01', monthlyCents: 20000 }], baseRents: [{ from: '2026-01', monthlyCents: 60000 }] })
+  assert.equal(received(source([fünf], [pay('t', '2025-12-28', 80000)]), 2025).turnOfYear.forwardCents, 0)
+})
+
+// Nachdurchsicht S1: Eine Rücknahme folgt der zurückgenommenen Zahlung. Sonde F: Dezember bezahlt, 15.12. +800 € für
+// Januar (außerhalb der kurzen Zeit, bleibt 2025), 29.12. −800 € nimmt genau diese Zuordnung zurück, 03.01. +800 €.
+test('Zehn-Tage-Regel: eine Rücklastschrift in der kurzen Zeit folgt der zurückgenommenen Zahlung (Sonden F, E, L)', () => {
+  const base = monthly('t', '2025-01', '2025-12', 80000)
+  const lines = (r: TaxReport): number => {
+    const x = r.income.received ?? assert.fail('received fehlt')
+    return x.rentCents + x.allocationsCents + x.formerYearsCents + settlementSaldo(r)
+  }
+  const f = source([tenancy('t', 'eg')], [...base, pay('t', '2025-12-15', 80000), pay('t', '2025-12-29', -80000), pay('t', '2026-01-03', 80000)])
+  assert.equal(lines(taxReportFor(f, 'objekt-1', 2025)), 960000)
+  assert.equal(lines(taxReportFor(f, 'objekt-1', 2026)), 80000)
+  // E: 28.12. +800 € (verschoben), Rücklastschrift am 05.01.: beides 2026, netto 0.
+  const e = source([tenancy('t', 'eg')], [...base, pay('t', '2025-12-28', 80000), pay('t', '2026-01-05', -80000)])
+  assert.equal(lines(taxReportFor(e, 'objekt-1', 2025)), 960000)
+  assert.equal(lines(taxReportFor(e, 'objekt-1', 2026)), 0)
+  // L: 28.12. +800 €, Rücklastschrift am 30.12.: beide verschoben, netto 0 in beiden Jahren über den Dezember hinaus.
+  const l = source([tenancy('t', 'eg')], [...base, pay('t', '2025-12-28', 80000), pay('t', '2025-12-30', -80000)])
+  assert.equal(lines(taxReportFor(l, 'objekt-1', 2025)), 960000)
+  assert.equal(lines(taxReportFor(l, 'objekt-1', 2026)), 0)
+})
+
+// Nachdurchsicht K1, Sonde M: Angehörige, ab 2025 ohne Bewohner (Personen 0). Im Jahr des Mietverhältnisses zählt das
+// Jahr: Zeilen 19/22 und Kennzahl 62 passen zusammen.
+test('Angehörige, ab 2025 ohne Bewohner: 2025 weder Zeile 19/22 noch Kennzahl 62, 2024 beides', () => {
+  const t = tenancy('t', 'eg', { relative: true, personHistory: [{ from: '2024-01-01', persons: 1 }, { from: '2025-01-01', persons: 0 }] })
+  const s = source([t], [...monthly('t', '2024-01', '2024-12', 80000), ...monthly('t', '2025-01', '2025-12', 80000)])
+  const r25 = taxReportFor(s, 'objekt-1', 2025)
+  assert.deepEqual(r25.income.received?.relatives, { rentCents: 0, allocationsCents: 0, settlementCents: 0 })
+  assert.equal('relativeTenancies' in r25.costModels, false)
+  const r24 = taxReportFor(s, 'objekt-1', 2024)
+  assert.equal(r24.income.received?.relatives.rentCents, 720000)
+  assert.equal(r24.costModels.relativeTenancies, 1)
+})

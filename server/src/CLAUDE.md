@@ -789,7 +789,9 @@ Grundmenge ist das ganze Gebäude), Überschuss. Beschreibende Gruppen statt fes
   Jahreswechsel liegen (H 11 EStH; BFH IV R 309/84; tragend BFH X R 2/21). Mietfuchs kennt die Fälligkeit nur aus dem
   Gesetz (`bgb.rent-due-at-start`): **Mietverhältnis, das am 01.09.2001 nicht bestand** (§ 556b Abs. 1 BGB, die
   Januarmiete ist in jedem Land spätestens am 07.01. fällig): Am 22.12. bis 31.12. für Januar Gezahltes **zählt im
-  Folgejahr** (`forwardCents`, dort `fromPreviousCents`, in Zeile 15/20); die Dezembermiete war Anfang Dezember fällig,
+  Folgejahr** (`forwardCents`, dort `fromPreviousCents`, in Zeile 15/20), sofern der Januar-Abschnitt in der Frist fällig
+  ist (Mietverhältnis spätestens ab 01.01.; bei Beginn im Januar nicht, solange der Server nicht mit Feiertagen rechnen darf, #290); eine Rücklastschrift folgt der
+  zurückgenommenen Zahlung (`reversesPaidOn`); die Dezembermiete war Anfang Dezember fällig,
   Anfang Januar gezahlt bleibt sie im neuen Jahr (Zeile 25), `lateDecemberCents` = 0. **Mietverhältnis, das am
   01.09.2001 bestand** (Art. 229 § 3 Abs. 1 Nr. 7 EGBGB, § 551 BGB a. F.: Monatsende; Vertragsdatum, sonst Beginn):
   nichts verschoben, nur beziffert (`forwardOldLeaseCents`, `lateDecemberCents`) mit dem Vorbehalt „nur wenn laut Vertrag

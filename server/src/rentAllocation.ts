@@ -60,6 +60,10 @@ export type AllocationSlice = {
   month: string | null // 'JJJJ-MM' der getilgten Forderung, null bei unallocated
   component: RentComponent
   cents: number // mit Vorzeichen (Rücknahme negativ)
+  // Nur an einer Rücknahme: das Datum der Zahlung, deren Zuordnung sie zurücknimmt (bzw. des Teils ohne Forderung). Die
+  // Steuer behandelt die Rücknahme wie diese Zahlung (Zehn-Tage-Regel, #312 PR 2, Nachdurchsicht S1); das Mietkonto liest
+  // es nicht.
+  reversesPaidOn?: string
 }
 
 // Eingabe: Zahlungen nur dieses Mietverhältnisses; die Art filtert die Funktion selbst (fehlend heißt Miete, wie
@@ -147,15 +151,16 @@ export function allocateRentPayments(t: AllocationTenancy, payments: readonly Al
   const out: AllocationSlice[] = []
   // Der Stapel der Zuordnungen für Rücknahmen (zuletzt zuerst): je Zahlung, Monat und Klasse ein Eintrag mit seinen
   // noch nicht zurückgenommenen Teilen.
-  const stack: { month: number | null, components: RentComponent[], parts: number[] }[] = []
-  const emit = (p: AllocationPayment, k: number | null, component: RentComponent, cents: number): void => {
+  const stack: { month: number | null, components: RentComponent[], parts: number[], paidOn: string }[] = []
+  const emit = (p: AllocationPayment, k: number | null, component: RentComponent, cents: number, reversesPaidOn?: string): void => {
     if (cents === 0) return
     if (k !== null && component !== 'unallocated') allocatedOf(k)[component] += cents
     const month = k === null ? null : monthAt(k)
-    // Folgen in einer Zahlung zwei Teile derselben Forderung aufeinander (Rücknahme über zwei Einträge), ein Teil.
+    // Folgen in einer Zahlung zwei Teile derselben Forderung aufeinander (Rücknahme über zwei Einträge derselben
+    // zurückgenommenen Zahlung), ein Teil.
     const prev = out.at(-1)
-    if (prev && prev.paymentId === p.id && prev.month === month && prev.component === component && Math.sign(prev.cents) === Math.sign(cents)) prev.cents += cents
-    else out.push({ paymentId: p.id, paidOn: p.date, month, component, cents })
+    if (prev && prev.paymentId === p.id && prev.month === month && prev.component === component && Math.sign(prev.cents) === Math.sign(cents) && prev.reversesPaidOn === reversesPaidOn) prev.cents += cents
+    else out.push({ paymentId: p.id, paidOn: p.date, month, component, cents, ...(reversesPaidOn !== undefined ? { reversesPaidOn } : {}) })
   }
 
   // Tilgt aus `rest` die offenen Teile einer Klasse in einem Monat, verhältnismäßig; gibt den Rest zurück.
@@ -167,7 +172,7 @@ export function allocateRentPayments(t: AllocationTenancy, payments: readonly Al
     const take = Math.min(rest, open)
     const parts = take === open ? opens : largestRemainder(take, opens.map((o) => (take * o) / open), [...comps])
     for (const [i, c] of comps.entries()) emit(p, k, c, parts[i] ?? 0)
-    stack.push({ month: k, components: [...comps], parts: comps.map((_, i) => parts[i] ?? 0) })
+    stack.push({ month: k, components: [...comps], parts: comps.map((_, i) => parts[i] ?? 0), paidOn: p.date })
     return rest - take
   }
 
@@ -196,7 +201,7 @@ export function allocateRentPayments(t: AllocationTenancy, payments: readonly Al
     // 4. Ohne Forderung.
     if (rest > 0) {
       emit(p, null, 'unallocated', rest)
-      stack.push({ month: null, components: ['unallocated'], parts: [rest] })
+      stack.push({ month: null, components: ['unallocated'], parts: [rest], paidOn: p.date })
     }
   }
 
@@ -211,7 +216,7 @@ export function allocateRentPayments(t: AllocationTenancy, payments: readonly Al
       const back = take === held ? top.parts : largestRemainder(take, top.parts.map((x) => (take * x) / held), top.components)
       for (const [i, c] of top.components.entries()) {
         const cents = back[i] ?? 0
-        emit(p, top.month, c, -cents)
+        emit(p, top.month, c, -cents, top.paidOn)
         top.parts[i] = (top.parts[i] ?? 0) - cents
       }
       if (take === held) stack.pop()

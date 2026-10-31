@@ -1277,7 +1277,7 @@ export type TaxReceived = {
   formerYearsCents: number // Zeile 25: Mieten für frühere Jahre, brutto
   formerYearsAllocationsCents: number // davon Umlagen, nur Auskunft
   // Die Zehn-Tage-Regel (§ 11 Abs. 1 Satz 2 EStG, Entwurf E8): Zahlung und Fälligkeit in den zehn Tagen um den
-  // Jahreswechsel. Bei Fälligkeit zu Beginn des Monats (§ 556b Abs. 1 BGB, Mietverhältnisse ab 01.09.2001) zählt die Ende
+  // Jahreswechsel. Bei Fälligkeit zu Beginn des Monats (§ 556b Abs. 1 BGB, Mietverhältnisse ab 02.09.2001) zählt die Ende
   // Dezember gezahlte Januarmiete im Folgejahr; bei älteren Mietverhältnissen (§ 551 BGB a. F., Monatsende) wird nichts
   // verschoben, nur beziffert.
   turnOfYear: {
@@ -1285,8 +1285,8 @@ export type TaxReceived = {
     forwardAllocationsCents: number // davon Umlagen
     fromPreviousCents: number // Ende Dezember des Vorjahres für den Januar gezahlt, zählt hier (in Zeile 15/20 enthalten)
     fromPreviousAllocationsCents: number // davon Umlagen
-    forwardOldLeaseCents: number // wie forwardCents bei Mietverhältnissen vor 01.09.2001: bleibt in diesem Jahr, Vorbehalt
-    // Anfang Januar für den Dezember des Vorjahres gezahlt, nur bei Mietverhältnissen vor 01.09.2001 (sonst 0): bleibt in
+    forwardOldLeaseCents: number // wie forwardCents bei Mietverhältnissen, die am 01.09.2001 bestanden: bleibt hier, Vorbehalt
+    // Anfang Januar für den Dezember des Vorjahres gezahlt, nur bei Mietverhältnissen, die am 01.09.2001 bestanden (sonst 0): bleibt in
     // diesem Jahr (Zeile 25); ins Vorjahr gehörte er nur, wenn die Miete laut Vertrag am Monatsende fällig ist.
     lateDecemberCents: number
   }

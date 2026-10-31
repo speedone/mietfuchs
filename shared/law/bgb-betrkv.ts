@@ -115,6 +115,10 @@ export const bgbRentDueWorkday: LawParam<number, 'eventDate'> = {
 // späteren Mietverhältnisse gilt § 556b Abs. 1 BGB (zu Beginn, spätestens am dritten Werktag). Beides ist abdingbar; eine
 // vertragliche Abweichung kennt Mietfuchs nicht (bewusste Grenze).
 // `eventDate`: gefragt wird mit dem Tag, ab dem das Mietverhältnis besteht (Vertrag, sonst Beginn).
+// **Grenzfall 01.09.2001 (Auslegung)**: Ein Mietverhältnis, das an diesem Tag beginnt oder geschlossen wird, „besteht“ am
+// 01.09.2001; die alte Fassung gilt deshalb einschließlich dieses Tages, § 556b erst ab dem 02.09.2001.
+// Fassung 1 ist `adopted`: Art. 229 § 3 ist gelesen, der Wortlaut von § 551 a. F. (Fälligkeit nach Ablauf des
+// Zeitabschnitts) nicht amtlich.
 export const bgbRentDueAtStart: LawParam<boolean, 'eventDate'> = {
   id: 'bgb.rent-due-at-start',
   title: 'Miete zu Beginn des Monats fällig',
@@ -122,13 +126,13 @@ export const bgbRentDueAtStart: LawParam<boolean, 'eventDate'> = {
   timing: 'eventDate',
   versions: [
     {
-      validTo: '2001-08-31',
+      validTo: '2001-09-01',
       value: false,
-      source: { rank: 'law', cite: 'Art. 229 § 3 Abs. 1 Nr. 7 EGBGB mit § 551 BGB a. F.', url: 'https://www.gesetze-im-internet.de/bgbeg/art_229__3.html', retrieved: '2026-10-31', checked: 'checked' },
+      source: { rank: 'law', cite: 'Art. 229 § 3 Abs. 1 Nr. 7 EGBGB mit § 551 BGB a. F.; Wortlaut von § 551 a. F. nicht amtlich gelesen', url: 'https://www.gesetze-im-internet.de/bgbeg/art_229__3.html', retrieved: '2026-10-31', checked: 'adopted' },
       enacted: '§ 551 BGB in der bis zum 01.09.2001 geltenden Fassung, fortgeltend nach Art. 229 § 3 Abs. 1 Nr. 7 EGBGB (Wortlaut von § 551 a. F. nicht amtlich gelesen)',
     },
     {
-      validFrom: '2001-09-01',
+      validFrom: '2001-09-02',
       value: true,
       source: { rank: 'law', cite: '§ 556b Abs. 1 BGB', url: 'https://www.gesetze-im-internet.de/bgb/__556b.html', retrieved: '2026-10-31', checked: 'checked' },
       enacted: '§ 556b Abs. 1 BGB, eingefügt durch das Mietrechtsreformgesetz vom 19.06.2001, in Kraft am 01.09.2001',

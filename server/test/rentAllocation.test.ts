@@ -329,3 +329,13 @@ test('Wächter: rentAllocation.ts importiert nichts aus calc.ts, auch nicht übe
   assert.ok(seen.size > 1, 'der Wächter findet keine Importe; ist das Muster veraltet?')
   assert.equal([...seen].find((f) => path.basename(f) === 'calc.ts'), undefined, `Importkette: ${[...seen].map((f) => path.relative(path.dirname(start), f)).join(', ')}`)
 })
+
+// #312 PR 2, Nachdurchsicht S1: Ein zurückgenommener Teil nennt das Datum der Zahlung, deren Zuordnung er zurücknimmt,
+// damit die Steuer ihn wie diese behandelt (Zehn-Tage-Regel). Für das Mietkonto ändert das nichts.
+test('Tilgung: ein zurückgenommener Teil trägt das Datum der zurückgenommenen Zahlung (reversesPaidOn)', () => {
+  const t = rentTenancy({ start: '2025-12-01', prepayments: [{ from: '2025-12', monthlyCents: 20000 }], baseRents: [{ from: '2025-12', monthlyCents: 60000 }] })
+  const slices = allocateRentPayments(t, [rentPayment('dez', '2025-12-01', 80000), rentPayment('jan', '2025-12-15', 80000), rentPayment('rl', '2025-12-29', -80000)])
+  const back = slices.filter((s) => s.paymentId === 'rl')
+  assert.deepEqual(back.map((s) => [s.month, s.component, s.cents, s.reversesPaidOn]), [['2026-01', 'baseRent', -60000, '2025-12-15'], ['2026-01', 'prepayment', -20000, '2025-12-15']])
+  assert.ok(slices.filter((s) => s.cents > 0).every((s) => s.reversesPaidOn === undefined))
+})

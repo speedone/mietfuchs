@@ -779,10 +779,13 @@ test('estg.short-period-days: zehn Tage, ohne Beginn, nach Kalenderjahr gefragt,
 })
 
 // #312 PR 2 (Durchsicht, Nachtrag): Fälligkeit zu Beginn nur für Mietverhältnisse, die am 01.09.2001 nicht bestanden.
-test('bgb.rent-due-at-start: bis 31.08.2001 Monatsende (Art. 229 § 3 Abs. 1 Nr. 7 EGBGB), ab 01.09.2001 zu Beginn (§ 556b)', () => {
+test('bgb.rent-due-at-start: bis 01.09.2001 Monatsende (Art. 229 § 3 Abs. 1 Nr. 7 EGBGB), ab 02.09.2001 zu Beginn (§ 556b)', () => {
   assert.equal(valueAt(bgbRentDueAtStart, '2001-08-31'), false)
-  assert.equal(valueAt(bgbRentDueAtStart, '2001-09-01'), true)
+  // Grenzfall (Nachdurchsicht K2, Auslegung): Ein Mietverhältnis, das am 01.09.2001 beginnt, bestand an diesem Tag.
+  assert.equal(valueAt(bgbRentDueAtStart, '2001-09-01'), false)
+  assert.equal(valueAt(bgbRentDueAtStart, '2001-09-02'), true)
   assert.equal(valueAt(bgbRentDueAtStart, '1970-01-01'), false)
   assert.equal(bgbRentDueAtStart.timing, 'eventDate')
-  assert.ok(bgbRentDueAtStart.versions.every((v) => v.source.checked === 'checked'))
+  assert.equal(versionAt(bgbRentDueAtStart, '2001-08-31').source.checked, 'adopted', 'Wortlaut von § 551 a. F. nicht amtlich gelesen')
+  assert.equal(versionAt(bgbRentDueAtStart, '2001-09-02').source.checked, 'checked')
 })

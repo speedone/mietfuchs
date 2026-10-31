@@ -315,10 +315,19 @@ Rechtsregister, eventDate = früheres von Vertragsdatum und Beginn):
   - *Vorwärts*: Die Januarmiete ist spätestens am 07.01. fällig (ohne Samstag, mit 01.01. und je Land 06.01.; Test über
     alle 16 Länder und 1995 bis 2100 in invariant-tilgung.test.ts, ohne dass die Rechnung `rentDueDate` liest). Ein Teil
     mit Zahlung vom 22.12. bis 31.12. des Jahres Y für den Januar Y+1 **zählt in Y+1** (Zeile 15/20 dort), nicht in Y.
-    Beziffert bleibt er für den Hinweis: `forwardCents` in Y, `fromPreviousCents` in Y+1.
+    Beziffert bleibt er für den Hinweis: `forwardCents` in Y, `fromPreviousCents` in Y+1. Nur, wenn der Januar-Abschnitt
+    in den zehn Tagen fällig ist (Nachdurchsicht M1): Beginnt das Mietverhältnis im Januar, beginnt der erste Abschnitt
+    mit ihm (Auslegung von „zu Beginn … der einzelnen Zeitabschnitte“), und die erste Miete ist am dritten Werktag ab
+    Beginn fällig; bei Beginn am 15.01. also nicht in der Frist, die Zahlung vom 28.12. bleibt im Jahr der Zahlung. Ob der
+    dritte Werktag bei Beginn vom 02.01. bis 10.01. noch in die Frist fällt, hängt an Wochentag und Feiertagen des Landes;
+    mit Feiertagen darf der Server erst nach amtlicher Lesung aller Landesgesetze rechnen (Auflage aus #290). Bis dahin
+    wird nur verschoben, wenn das Mietverhältnis spätestens am 01.01. beginnt (bekannte Grenze). Eine
+    Rücklastschrift folgt der Zahlung, die sie zurücknimmt (`reversesPaidOn` am Teil, Nachdurchsicht S1): nur verschoben,
+    wenn auch diese in den letzten zehn Tagen des Dezembers kam.
   - *Rückwärts*: Die Dezembermiete ist Anfang Dezember fällig, außerhalb der zehn Tage. Eine Zahlung Anfang Januar bleibt
     im neuen Jahr (Zeile 25), `lateDecemberCents` ist 0.
-- **Mietverhältnis, das am 01.09.2001 bestand** (Art. 229 § 3 Abs. 1 Nr. 7 EGBGB, gelesen am 31.10.2026: § 551 BGB a. F.,
+- **Mietverhältnis, das am 01.09.2001 bestand** (einschließlich Beginn an diesem Tag, Auslegung; Art. 229 § 3 Abs. 1
+  Nr. 7 EGBGB, gelesen am 31.10.2026: § 551 BGB a. F.,
   Miete am Ende des Monats). Vorwärts ist die Januarmiete Ende Januar fällig, die Regel greift nicht; rückwärts ist die
   Dezembermiete am 31.12. fällig und eine Zahlung bis 10.01. gehörte ins Vorjahr. Weil solche Verträge oft auf Zahlung zu
   Beginn umgestellt sind, wird hier **nichts verschoben**, nur beziffert: `forwardOldLeaseCents` (bleibt in Y) und
@@ -397,8 +406,8 @@ received: {
     forwardAllocationsCents: number
     fromPreviousCents: number    // dasselbe aus dem Vorjahr: zählt hier (in Zeile 15/20 enthalten)
     fromPreviousAllocationsCents: number
-    forwardOldLeaseCents: number // wie forwardCents bei Mietverhältnissen vor 01.09.2001: bleibt hier, Vorbehalt
-    lateDecemberCents: number    // bis 10.01. für Dezember gezahlt, nur vor 01.09.2001 (sonst 0): bleibt hier, Vorbehalt
+    forwardOldLeaseCents: number // wie forwardCents bei Mietverhältnissen, die am 01.09.2001 bestanden: bleibt hier, Vorbehalt
+    lateDecemberCents: number    // bis 10.01. für Dezember gezahlt, nur wenn am 01.09.2001 bestehend (sonst 0): bleibt hier
   }
   byUnit: { unitId: string; unitName: string; areaM2: number | null; rentCents: number; allocationsCents: number; settlementCents: number; formerYearsCents: number }[]
   byTenancy: { tenancyId: string; tenantName: string; unitName: string; start: string; end: string | null;
@@ -689,8 +698,12 @@ ist), CHANGELOG.md.
 5. **Test** taxReceipts: `incomeCsv` Kopf, Zeilen, Summe, Euro-Format, BOM/CRLF; api-belege: ZIP enthält
    `Einnahmen.csv` und unverändert `Übersicht.csv`. **Code**.
 6. Lexikon: „Tilgungsreihenfolge“ (Beispiel 300 € → 200/100, nachgerechnet; Fundstelle VIII ZR 84/17 Rn. 53/57),
-   „Mieten für frühere Jahre“; „Zehn-Tage-Regel“ anpassen („Mietfuchs nennt den Betrag, verschiebt aber
-   nichts“). glossary.test.ts.
+   „Mieten für frühere Jahre“; „Zehn-Tage-Regel“ an E8 anpassen: Bei Mietverhältnissen nach § 556b BGB zählt die Ende
+   Dezember gezahlte Januarmiete im Folgejahr, wenn sie in den zehn Tagen fällig war; bei Altverträgen (am 01.09.2001
+   bestehend) und bei Kostenpositionen nennt Mietfuchs den Betrag nur. glossary.test.ts.
+   **Aufgabe für PR 3 (Nachdurchsicht K3)**: Die festen Zehn-Tage-Texte der Oberfläche (etwa Steuer.tsx „bis zu zehn
+   Tage“, Kosten.tsx „bis zehn Tage davor oder danach“, glossary.ts) aufs Register umstellen (`estg.short-period-days`,
+   `valueAt(…, LAW_AS_OF)`).
 7. CHANGELOG „Unveröffentlicht“: siehe Release-Plan (Wortlaut dort).
 8. `npm run typecheck`, `npm test`, `npm run browser-check` (neue Tabelle am Handy), Bildschirmfotos, wenn die
    Steuerseite im README steht.
