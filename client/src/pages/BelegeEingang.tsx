@@ -684,19 +684,19 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
             : <span className="badge green">✓ übernommen</span>}
           {/* Das Jahr, in das gebucht wird (nach einer Änderung von Hand nicht mehr das des Belegs) */}
           {(v.targetPeriod ?? calendarPeriod(v.year)) !== key && <span className="badge gray">{calendar ? `Jahr ${v.year}` : v.targetLabel ?? `Jahr ${v.year}`}</span>}
-          <div className="grow" />
-          {v.open && (
+        </div>
+        {/* Beide Aufklapper in einer Zeile: Am Handy kostete jeder sonst eine eigene (Nachdurchsicht, Fotos vom Handy) */}
+        {v.open && (
+          <div className="flex flex-wrap items-center gap-2">
             <DisclosureButton open={shown} onToggle={() => toggleBeside(v.id)} closedLabel="Beleg daneben zeigen" openLabel="Beleg ausblenden"
               controls={`beleg-${v.id}`} className="btn small ghost" />
-          )}
-        </div>
-        {own && (
-          <div>
-            <DisclosureButton open={placingOpen} onToggle={() => togglePlacing(v.id)} closedLabel="Beleg einordnen oder löschen" openLabel="Einordnen schließen"
-              controls={`einordnen-${v.id}`} className="btn small ghost" />
-            {placingOpen && <ul id={`einordnen-${v.id}`} className="receipt-list">{renderInbox(own, v)}</ul>}
+            {own && (
+              <DisclosureButton open={placingOpen} onToggle={() => togglePlacing(v.id)} closedLabel="Beleg einordnen oder löschen" openLabel="Einordnen schließen"
+                controls={`einordnen-${v.id}`} className="btn small ghost" />
+            )}
           </div>
         )}
+        {own && placingOpen && <ul id={`einordnen-${v.id}`} className="receipt-list">{renderInbox(own, v)}</ul>}
         <div className={shown ? 'flex flex-col xl:flex-row-reverse xl:items-start gap-4' : undefined}>
           {shown && (
             <iframe id={`beleg-${v.id}`} className="w-full xl:w-96 h-112 shrink-0 border border-line bg-card"
