@@ -40,7 +40,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
-- Ein Wechsel des Abrechnungszeitraums überschrieb das angegebene Jahr der Zahlung von Positionen ohne
+- Ein Wechsel des Abrechnungszeitraums oder der Heizperiode überschrieb das angegebene Jahr der Zahlung von Positionen ohne
   Zahlungsdatum, sobald ein Teil in einen Zeitraum innerhalb eines Kalenderjahres kam; es bleibt jetzt erhalten, und
   hin und zurück ergibt die ursprünglichen Jahre. Die Vorschau sagt, welche Position danach für die Steuer als
   verschoben steht ([#478](https://github.com/speedone/mietfuchs/issues/478)). **Wer seit 0.12 den Zeitraum gewechselt

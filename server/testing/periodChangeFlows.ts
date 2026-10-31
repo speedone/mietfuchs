@@ -52,7 +52,8 @@ export type FlowStep = {
 // `correctedCents` (nicht in der Datei von vor dem Umbau): Summe der Beträge, um die bis zu diesem Wechsel berichtigt
 // wurde. Dann sind die Teile einer Rechnung nicht mehr nach Tagen verteilt, und wer sie einzeln statt als Ganzes neu
 // teilt, legt die Berichtigung in andere Zeiträume; je Zeitraum höchstens um diese Summe.
-export type Flow = { index: number; wholeThroughout: boolean; steps: (FlowStep & { correctedCents?: number })[] }
+// `correctedByBase` (#478, ebenfalls nicht in der Datei): dieselbe Summe je Basisbeschreibung.
+export type Flow = { index: number; wholeThroughout: boolean; steps: (FlowStep & { correctedCents?: number; correctedByBase?: Record<string, number> })[] }
 
 const pick = <T>(rng: Rng, list: readonly T[]): T => {
   const v = list[Math.floor(rng() * list.length)]
@@ -218,6 +219,7 @@ export async function runFlow(index: number, onStep?: StepCheck): Promise<Flow> 
     })
     let whole = true
     let correctedCents = 0
+    const correctedByBase: Record<string, number> = {}
     const steps: Flow['steps'] = []
     const changes = int(rng, 2, 5)
     for (let step = 0; step < changes; step++) {
@@ -232,7 +234,11 @@ export async function runFlow(index: number, onStep?: StepCheck): Promise<Flow> 
           const row = items.filter((c) => `${c.period}\u0000${baseDescription(c.description)}` === chosen).sort((a, b) => (a.id < b.id ? -1 : 1))[0]
           // Lehnt die Schreibprüfung ab (etwa ein Jahr der Zahlung, das ein früherer Wechsel stehen ließ), bleibt der
           // Betrag; der Ablauf geht weiter.
-          if (row !== undefined && (await updateEntity(db, 'costItems', row.id, { amountCents: row.amountCents + Math.sign(row.amountCents || 1) * delta }).catch(() => null)) !== null) correctedCents += delta
+          if (row !== undefined && (await updateEntity(db, 'costItems', row.id, { amountCents: row.amountCents + Math.sign(row.amountCents || 1) * delta }).catch(() => null)) !== null) {
+            correctedCents += delta
+            const base = baseDescription(row.description)
+            correctedByBase[base] = (correctedByBase[base] ?? 0) + delta
+          }
         })
       }
       const result = await opened.write(async (db) => {
@@ -254,7 +260,7 @@ export async function runFlow(index: number, onStep?: StepCheck): Promise<Flow> 
         return { next, error, rules: error === null ? next : before, items: (await readCostItems(db)).filter((c) => c.propertyId === P) }
       })
       onStep?.(result.items, { index, step, rules: result.rules })
-      steps.push({ rules: result.next, error: result.error, ...sumsOf(result.items), ...(correctedCents > 0 ? { correctedCents } : {}) })
+      steps.push({ rules: result.next, error: result.error, ...sumsOf(result.items), ...(correctedCents > 0 ? { correctedCents, correctedByBase: { ...correctedByBase } } : {}) })
     }
     return { index, wholeThroughout: whole, steps }
   } finally {

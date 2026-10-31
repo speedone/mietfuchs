@@ -5,6 +5,7 @@
 import { fmtDate } from './api'
 import { hasOwnRhythm, heatingPeriodsEndingIn, plantRules, servesUnit } from '../../shared/heatingPeriod.ts'
 import { formatDayRange, paymentYear, periodLabel } from '../../shared/period.ts'
+import { taxYearOptions } from './costForm'
 import type { BillingPeriod, HeatingPlant, HeatingPrepaymentOverride, HeatingSettlementInfo, PeriodKey, PeriodRules, Settlement, Statement, Tenancy, Unit } from './types'
 
 const sameDays = (a: Pick<BillingPeriod, 'from' | 'to'>, b: Pick<BillingPeriod, 'from' | 'to'>): boolean => a.from === b.from && a.to === b.to
@@ -127,14 +128,16 @@ export function separateHeatingPlant(unit: Pick<Unit, 'id' | 'noConnection'>, pl
 }
 
 // Das Jahr der Zahlung einer Heizposition unter ihrer Heizperiode (Entwurf 3.10, Durchsicht von #231):
-// Reicht die Heizperiode über zwei Kalenderjahre, ist es Pflicht und liegt zwischen ihrem ersten Jahr
-// und dem Jahr nach ihrem Ende, wie der Server prüft; vorbelegt nach `paymentYear`. Liegt sie in
+// Reicht die Heizperiode über zwei Kalenderjahre, ist es Pflicht; vorbelegt nach `paymentYear`. Liegt sie in
 // einem Kalenderjahr, gibt es kein Feld, auch wenn der Abrechnungszeitraum des Objekts über zwei
-// Jahre reicht: Ein Wert aus dessen Spanne lehnte der Server ab.
-export function heatingTaxYear(h: { startYear: number; endYear: number }, taxYear: string, invoiceDate?: string | null): { show: boolean; years: number[]; fallback: string; valid: boolean } {
-  if (h.startYear === h.endYear) return { show: false, years: [], fallback: '', valid: true }
-  const years: number[] = []
-  for (let y = h.startYear; y <= h.endYear + 1; y++) years.push(y)
+// Jahre reicht. Seit #478 (E2, E4, Durchsicht Befund 5) wie im übrigen Formular: zur Wahl die übliche Spanne
+// (`taxYearOptions`, wie der Server prüft) samt einem gespeicherten Jahr außerhalb, und ein gespeichertes Jahr, das vom
+// Kalenderjahr der Heizperiode abweicht, ist sichtbar; leer heißt dort „wie die Heizperiode“.
+export function heatingTaxYear(h: { startYear: number; endYear: number }, taxYear: string, invoiceDate?: string | null, stored: number | null = null): { show: boolean; years: number[]; fallback: string; valid: boolean } {
+  const calendar = h.startYear === h.endYear
+  if (calendar && (stored === null || stored === h.startYear)) return { show: false, years: [], fallback: '', valid: true }
+  const years = taxYearOptions(h, stored)
+  if (calendar) return { show: true, years, fallback: '', valid: taxYear === '' || years.includes(Number(taxYear)) }
   // Vorbelegt nur mit dem Rechnungsdatum des Belegs (Entwurf 3.10), nach derselben Regel wie
   // Belegbuchung und Repository (`paymentYear`), geklemmt. Ohne Beleg bleibt das Feld leer
   // (Laienprobe B15): Ein still vorbelegtes Jahr des Endes stellte Abschläge, die im Jahr des Beginns

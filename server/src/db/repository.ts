@@ -2718,6 +2718,13 @@ export async function saveCostItemSplit(db: Database, propertyId: string | null,
     const questions = splitPaidOnQuestions(current, base, parts)
     if (questions.length > 0) throw new PaidOnQuestion(questions.join(' '))
   }
+  // Ebenso das Jahr der Zahlung (#478, Durchsicht Befund 2): Es gilt für jeden Teil über zwei Kalenderjahre, gefragt wird
+  // einmal mit den Sätzen aller Teile, wenn es außerhalb der üblichen Spanne eines Teils liegt.
+  if (raw(body, 'confirmTaxYear') !== true) {
+    const questions = [...new Set(parts.filter((p) => p.needsTaxYear).flatMap((p) =>
+      taxYearQuestions(current !== null && current.period === p.period ? current : null, { taxYear: base.taxYear ?? null, period: p.period }, p)))]
+    if (questions.length > 0) throw new TaxYearQuestion(questions.join(' '))
+  }
   const ids = await db.transaction(async (tx) => {
     // Die Quelle entsteht vor den Teilen, die auf sie zeigen (Fremdschlüssel), und fällt mit einer Ablehnung weg.
     const sourceId = newId()

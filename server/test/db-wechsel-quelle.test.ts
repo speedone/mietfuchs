@@ -12,7 +12,7 @@ import { eq } from 'drizzle-orm'
 import type { OpenedDatabase } from '../src/db/open.ts'
 import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { applyPeriodChange, previewPeriodChange } from '../src/db/periodChange.ts'
-import { createEntity, listCollection, removeEntity, saveCostItemSplit, updateEntity } from '../src/db/repository.ts'
+import { createEntity, listCollection, removeEntity, saveCostItemSplit, TaxYearQuestion, updateEntity } from '../src/db/repository.ts'
 import { costItems, costSources } from '../src/db/schema.ts'
 import { storedOutflowYear } from '../src/outflow.ts'
 import { baseDescription } from '../src/serviceSplit.ts'
@@ -90,7 +90,7 @@ const GOLDEN_DEVIATIONS: Readonly<Record<string, number>> = {}
 // Von diesem Wechsel an (danach laufen die Bestände auseinander) gilt für diese Rechnung:
 // Die Summe über alle Zeiträume und über alle Jahre bleibt exakt; je Zeitraum darf es mehr Zeilen geben, und eine
 // Berichtigung trifft dann einen anderen Teil (gewählt wird die erste Zeile des Zeitraums), also weicht der Betrag je
-// Zeitraum höchstens um die Berichtigungen bis hierher und je Zeile einen Cent Rundung ab; je Jahr darf sich die Summe
+// Zeitraum höchstens um die Berichtigungen dieser Rechnung bis hierher und je Zeile einen Cent Rundung ab; je Jahr darf sich die Summe
 // verteilen, wie die gehaltenen Jahre es verlangen. Jede andere Rechnung bleibt so streng wie vorher.
 test('Golden: je Zeitraum dieselben Summen wie vor dem Umbau', { timeout: 600000 }, async () => {
   const checks: string[] = []
@@ -170,7 +170,7 @@ test('Golden: je Zeitraum dieselben Summen wie vor dem Umbau', { timeout: 600000
           }
           if (kept(base)) {
             keptChecked.add(`${i}|${base}`)
-            const tolerance = Math.max(now.rows, s.rows) + (step.correctedCents ?? 0)
+            const tolerance = Math.max(now.rows, s.rows) + (step.correctedByBase?.[base] ?? 0)
             assert.ok(Math.abs(now.amountCents - expected) <= tolerance, `${where}: ${base} in ${period} (Jahr gehalten): ${now.amountCents} statt ${expected}`)
             assert.ok(Math.abs(now.labor35aCents - s.labor35aCents) <= tolerance, `${where}: Lohnanteil ${base} in ${period} (Jahr gehalten): ${now.labor35aCents} statt ${s.labor35aCents}`)
             continue
@@ -730,5 +730,19 @@ test('#478: Teile verschiedener Jahre im selben Zeitraum: je Zeitraum nach Tagen
     }
     assert.deepEqual(byPeriod, { '2025-01': 73041, '2026-01': 87420 })
     assert.deepEqual(byYear, { 2025: 73041, 2026: 87420 })
+  })
+})
+
+// Durchsicht #478, Befund 2: Beim Aufteilen fragt der Wächter der Teile nicht (`splitPart`); gefragt wird vorher für
+// die ganze Rechnung, wie beim Zahlungsdatum. Vorher lehnte die Schreibprüfung ein Jahr außerhalb ab; ohne diese Frage
+// würde es still gespeichert.
+test('#478: Aufteilen mit einem Jahr der Zahlung außerhalb der Spanne fragt nach, bestätigt wird gespeichert', async () => {
+  await withDatabase(async (opened) => {
+    await change(opened, MAI_AB_2025)
+    const body = { ...grundsteuer, period: '2025-05', description: 'Versicherung', category: 'Sach- und Haftpflichtversicherung', serviceFrom: '2025-05-01', serviceTo: '2026-08-31', taxYear: 2040 }
+    await assert.rejects(opened.write((db) => saveCostItemSplit(db, P, body, null, ids)), (e: unknown) => e instanceof TaxYearQuestion && /2040/.test(e.message))
+    assert.deepEqual(await items(opened), [])
+    const teile = await opened.write((db) => saveCostItemSplit(db, P, { ...body, confirmTaxYear: true }, null, ids))
+    assert.deepEqual(teile.map((c) => [c.period, c.taxYear]), [['2025-05', 2040], ['2026-05', 2040]])
   })
 })
