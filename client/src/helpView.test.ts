@@ -70,15 +70,18 @@ describe('Suche über Anleitungen und Begriffe', () => {
     expect(r.guides[0]?.id).toBe('tenantChange')
   })
 
-  test('innerhalb derselben Stufe Anleitungen in der Reihenfolge der Daten, Begriffe nach dem Alphabet', () => {
+  test('innerhalb derselben Stufe im Titel der kürzere Titel zuerst; im Text Anleitungen wie in den Daten, Begriffe nach dem Alphabet', () => {
     const r = searchHelp('heiz')
     const ranks = r.terms.map((t) => t.rank)
     expect(ranks).toEqual([...ranks].sort((a, b) => b - a))
-    const top = r.terms.filter((t) => t.rank === ranks[0]).map((t) => GLOSSARY[t.id].title)
-    expect(top).toEqual([...top].sort((a, b) => a.localeCompare(b, 'de')))
+    const top = r.terms.filter((t) => t.rank === ranks[0]).map((t) => GLOSSARY[t.id].title.length)
+    expect(top).toEqual([...top].sort((a, b) => a - b))
+    const inText = r.terms.filter((t) => t.rank === 1).map((t) => GLOSSARY[t.id].title)
+    expect(inText.length).toBeGreaterThan(1)
+    expect(inText).toEqual([...inText].sort((a, b) => a.localeCompare(b, 'de')))
     const order = Object.keys(GUIDES)
-    const sameRank = r.guides.filter((g) => g.rank === r.guides[0]?.rank).map((g) => order.indexOf(g.id))
-    expect(sameRank).toEqual([...sameRank].sort((a, b) => a - b))
+    const textGuides = r.guides.filter((g) => g.rank === 1).map((g) => order.indexOf(g.id))
+    expect(textGuides).toEqual([...textGuides].sort((a, b) => a - b))
   })
 
   test('Paragrafen und Issue-Nummern werden gefunden, Leerraum allein findet nichts', () => {
@@ -86,6 +89,20 @@ describe('Suche über Anleitungen und Begriffe', () => {
     expect(searchHelp('#96').guides.map((g) => g.id)).toEqual(['properties'])
     expect(searchHelp('  ')).toEqual({ guides: [], terms: [] })
     expect(searchHelp('gibt es nicht')).toEqual({ guides: [], terms: [] })
+  })
+
+  // Durchsicht von #488, S4: „CO2“ fand „CO₂“ nicht, „§556“ nicht „§ 556“.
+  test('tiefgestellte Ziffern und ein Paragraf ohne Leerzeichen werden gefunden und markiert', () => {
+    expect(searchHelp('CO2').guides.map((g) => g.id)).toContain('co2Costs')
+    const co2 = searchHelp('co2')
+    expect(co2.terms[0]?.id).toBe('co2Split')
+    expect(hits(co2.terms[0]?.title ?? [])).toEqual(['CO₂'])
+    const para = searchHelp('§556')
+    expect(para.terms.map((t) => t.id)).toContain('settlementDeadline')
+    const deadline = para.terms.find((t) => t.id === 'settlementDeadline') ?? expect.fail('Abrechnungsfrist fehlt')
+    expect(hits(deadline.excerpt)).toContain('§ 556')
+    // Die Markierung behält den Text, wie er dasteht
+    expect(plain(highlight('Die CO₂-Kosten', 'co2'))).toBe('Die CO₂-Kosten')
   })
 
   test('die Trefferzahl für Vorleser, in Einzahl und Mehrzahl', () => {
@@ -111,6 +128,12 @@ describe('Gruppen und Themen', () => {
     for (const c of counts) expect(c.count, c.topic).toBeGreaterThan(0)
     expect(counts.reduce((a, c) => a + c.count, 0)).toBe(Object.keys(GLOSSARY).length)
     for (const t of TERM_TOPICS) expect(TERM_TOPIC_LABELS[t]).toBeTruthy()
+  })
+
+  // Durchsicht von #488, K5: Heizperiode und getrennte Heizkostenabrechnung gehören zur Heizung.
+  test('Heizperiode und getrennte Heizkostenabrechnung stehen bei der Heizung', () => {
+    expect(GLOSSARY.heatingPeriod.topic).toBe('heating')
+    expect(GLOSSARY.separateHeatingSettlement.topic).toBe('heating')
   })
 
   test('ein Thema zeigt nur seine Begriffe, alphabetisch; ohne Thema alle', () => {

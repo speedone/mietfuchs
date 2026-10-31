@@ -819,7 +819,7 @@ export const GLOSSARY = {
   },
   // Heizung PR 5 (#217): BGH, Urteil vom 30.04.2008, VIII ZR 240/07, Leitsätze nachgelesen (Entwurf 3.1).
   heatingPeriod: {
-    topic: 'period',
+    topic: 'heating',
     title: 'Eigene Heizperiode',
     short: 'Die Heizkosten werden für einen anderen Zeitraum abgerechnet als die übrigen Betriebskosten, meist für den des Messdienstes, etwa Mai bis April.',
     example: 'Die Betriebskostenabrechnung 2026 umfasst Januar bis Dezember 2026, darin die Heizkosten der Heizperiode 01.05.2025–30.04.2026. Ein Mieter, der am 31.10.2025 ausgezogen ist, bekommt für 2026 eine Abrechnung nur mit seinen Heizkosten vom 01.05. bis 31.10.2025: Rechnet der Messdienst für die Wohnung 1.000,00 € ab, davon 412,30 € bis zum Auszug und 587,70 € für den Nachmieter, sind das 412,30 €.',
@@ -828,7 +828,7 @@ export const GLOSSARY = {
   },
 
   separateHeatingSettlement: {
-    topic: 'period',
+    topic: 'heating',
     title: 'Getrennte Heizkostenabrechnung',
     short: 'Die Heizkosten werden mit einer eigenen Heizkostenvorauszahlung in einer eigenen Abrechnung je Heizperiode abgerechnet, getrennt von den übrigen Betriebskosten.',
     example: 'Der Mieter zahlt 300,00 € im Monat, davon 123,00 € Heizkostenvorauszahlung und 177,00 € für die übrigen Nebenkosten. Die Heizkostenabrechnung 01.05.2025–30.04.2026 rechnet 12 × 123,00 € = 1.476,00 € gegen Heizkosten von 1.500,00 € an: Nachzahlung 24,00 €, zuzustellen bis 30.04.2027. Die Betriebskostenabrechnung rechnet nur die 177,00 € im Monat an.',

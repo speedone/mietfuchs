@@ -10,6 +10,7 @@ import { countOf } from '../../shared/wording.ts'
 import { GUIDE_GROUPS, type GuideGroup, type GuideId } from '../../shared/guides.ts'
 import { filterTerms, sortedTerms, type TermEntry } from './glossaryView'
 import { allGuides, filterGuides, guideTexts, type GuideEntry } from './guideView'
+import { searchQuery, searchText } from './searchText'
 
 export const TERM_TOPIC_LABELS: Record<TermTopic, string> = {
   costs: 'Kosten und Verteilung',
@@ -34,13 +35,11 @@ export const POPULAR_SEARCHES = ['Garage', 'Leerstand', 'Hausgeld', 'Heizöl', '
 // Ein Stück Text, `hit` ist die gesuchte Stelle (gezeigt als <mark>).
 export type Segment = { text: string; hit: boolean }
 
-const lower = (s: string) => s.toLocaleLowerCase('de')
-
 export function highlight(text: string, query: string): Segment[] {
-  const q = lower(query.trim())
-  const l = lower(text)
-  // Ändert das Kleinschreiben die Länge (im Deutschen nicht), stimmten die Stellen nicht mehr: dann ohne Markierung.
-  if (!q || l.length !== text.length) return [{ text, hit: false }]
+  const q = searchQuery(query)
+  // `searchText` erhält die Länge; die Stellen im verglichenen Text sind also die im Original.
+  const l = searchText(text)
+  if (!q) return [{ text, hit: false }]
   const out: Segment[] = []
   let from = 0
   for (let i = l.indexOf(q); i >= 0; i = l.indexOf(q, i + q.length)) {
@@ -59,8 +58,8 @@ const AFTER = 90
 const MAX = BEFORE + AFTER + 20
 export function excerpt(text: string, query: string): Segment[] {
   if (text.length <= MAX) return highlight(text, query)
-  const q = lower(query.trim())
-  const at = q ? lower(text).indexOf(q) : -1
+  const q = searchQuery(query)
+  const at = q ? searchText(text).indexOf(q) : -1
   let start = at < 0 ? 0 : Math.max(0, at - BEFORE)
   let end = Math.min(text.length, (at < 0 ? 0 : at + q.length) + AFTER)
   if (start > 0) {
@@ -93,29 +92,36 @@ export type HelpResults = { guides: GuideHit[]; terms: TermHit[] }
 
 // 3: der Titel beginnt mit dem Wort, 2: er enthält es, 1: nur der Text.
 function rankOf(title: string, q: string): number {
-  const t = lower(title)
+  const t = searchText(title)
   return t.startsWith(q) ? 3 : t.includes(q) ? 2 : 1
 }
 
 // Der Ausschnitt: Steht das Wort im Titel, der Anfang der Erklärung; sonst der erste Text, in dem es steht.
 function excerptOf(texts: readonly string[], first: string, query: string, inTitle: boolean): Segment[] {
-  const q = lower(query.trim())
-  const found = inTitle ? first : texts.find((t) => lower(t).includes(q)) ?? first
+  const q = searchQuery(query)
+  const found = inTitle ? first : texts.find((t) => searchText(t).includes(q)) ?? first
   return excerpt(found, query)
 }
 
 export function searchHelp(query: string, guides: GuideEntry[] = allGuides(), terms: TermEntry[] = sortedTerms()): HelpResults {
-  const q = lower(query.trim())
+  const q = searchQuery(query)
   if (!q) return { guides: [], terms: [] }
-  const byRank = <T extends { rank: number }>(list: T[]) => list.map((x, i) => ({ x, i })).sort((a, b) => b.x.rank - a.x.rank || a.i - b.i).map(({ x }) => x)
+  // In derselben Stufe (Titel) zuerst der kürzere Titel: Das Wort macht mehr von ihm aus („CO₂-Kostenaufteilung“ vor
+  // „CO₂-Erstattung, wenn der Mieter selbst heizt“). Sonst die Reihenfolge der Liste: Anleitungen wie in den Daten,
+  // Begriffe nach dem Alphabet.
+  const byRank = <T extends { rank: number }>(list: { hit: T; title: string }[]): T[] => list.map((x, i) => ({ ...x, i }))
+    .sort((a, b) => b.hit.rank - a.hit.rank || (a.hit.rank > 1 ? a.title.length - b.title.length : 0) || a.i - b.i)
+    .map((x) => x.hit)
   return {
-    guides: byRank(filterGuides(guides, query).map((g): GuideHit => {
+    guides: byRank(filterGuides(guides, query).map((g) => {
       const rank = rankOf(g.title, q)
-      return { kind: 'guide', id: g.id, rank, title: highlight(g.title, query), excerpt: excerptOf(guideTexts(g).slice(1), firstSentence(g.applies), query, rank > 1) }
+      const hit: GuideHit = { kind: 'guide', id: g.id, rank, title: highlight(g.title, query), excerpt: excerptOf(guideTexts(g).slice(1), firstSentence(g.applies), query, rank > 1) }
+      return { hit, title: g.title }
     })),
-    terms: byRank(filterTerms(terms, query).map((t): TermHit => {
+    terms: byRank(filterTerms(terms, query).map((t) => {
       const rank = rankOf(t.title, q)
-      return { kind: 'term', id: t.id, topic: t.topic, rank, title: highlight(t.title, query), excerpt: excerptOf([t.short, t.norm ?? ''], t.short, query, rank > 1) }
+      const hit: TermHit = { kind: 'term', id: t.id, topic: t.topic, rank, title: highlight(t.title, query), excerpt: excerptOf([t.short, t.norm ?? ''], t.short, query, rank > 1) }
+      return { hit, title: t.title }
     })),
   }
 }
