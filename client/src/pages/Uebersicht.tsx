@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { NavTarget } from '../nav'
 import type { CostItem, HeatingPlant, Settlement } from '../types'
 import { api, fmtEuro } from '../api'
 import { usePeriod } from '../period'
@@ -13,7 +14,7 @@ import Card from '../components/Card'
 // Mieter dürfen Belege einsehen — größere Sprünge sollte man erklären können.
 const NOTABLE_CHANGE_PCT = 25
 
-type Props = { onNavigate: (tab: string) => void }
+type Props = { onNavigate: (tab: NavTarget) => void }
 
 export default function Uebersicht({ onNavigate }: Props) {
   const { key, label, param, at, rules } = usePeriod()
@@ -141,7 +142,7 @@ export default function Uebersicht({ onNavigate }: Props) {
         {categories.length === 0 ? (
           <div className="empty">
             Für {label} sind noch keine Kosten erfasst —{' '}
-            <a href="#" onClick={(e) => { e.preventDefault(); onNavigate('kosten') }}>jetzt Belege erfassen</a>.
+            <a href="#" onClick={(e) => { e.preventDefault(); onNavigate('belege:eingang') }}>jetzt Belege erfassen</a>.
           </div>
         ) : (
           <Table className="chart-table sticky-first">

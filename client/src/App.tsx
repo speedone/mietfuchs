@@ -437,16 +437,16 @@ function Shell() {
             Warteschlange der KI-Auswertung liegt darüber (App), sie überlebt den Wechsel (#490). */}
         <Fragment key={`${propertyId ?? ''}:${periodKeyNow}`}>
         {tab === 'cockpit' && (
-          <Cockpit units={units} tenancies={tenancies} settings={settings} updateStatus={update.status} reload={reload} onNavigate={(t, f) => void navigate(t as NavTarget, f ?? null)} />
+          <Cockpit units={units} tenancies={tenancies} settings={settings} updateStatus={update.status} reload={reload} onNavigate={(t, f) => void navigate(t, f ?? null)} />
         )}
-        {tab === 'uebersicht' && <Uebersicht onNavigate={(t) => void navigate(t as Tab)} />}
+        {tab === 'uebersicht' && <Uebersicht onNavigate={(t) => void navigate(t)} />}
         {tab === 'stammdaten' && (
           <Stammdaten units={units} tenancies={tenancies} settings={settings} reload={reload} focus={focus} onFocusDone={clearFocus} />
         )}
         {tab === 'kosten' && <Kosten units={units} settings={settings} tenancies={tenancies} focus={focus} onFocusDone={clearFocus} onOpenReceipt={openReceipt} onOpenAiSettings={openAiSettings} onOpenMeters={openMeters} />}
         {tab === 'mietkonto' && <Mietkonto focus={focus} onFocusDone={clearFocus} />}
         {tab === 'zaehler' && <Zaehler units={units} focus={focus} onFocusDone={clearFocus} />}
-        {tab === 'belege' && <Belege units={units} settings={settings} onNavigate={(t, f) => void navigate(t as NavTarget, f ?? null)}
+        {tab === 'belege' && <Belege units={units} settings={settings} onNavigate={(t, f) => void navigate(t, f ?? null)}
           onOpenItem={(item) => void openCostItem(item)} onOpenAiSettings={openAiSettings} onOpenMeters={openMeters}
           view={belegeView} onViewChange={setBelegeView} focusFile={receiptFocus} onOpenReceipt={openReceipt} onFocusDone={() => setReceiptFocus(null)} />}
         {tab === 'abrechnung' && (

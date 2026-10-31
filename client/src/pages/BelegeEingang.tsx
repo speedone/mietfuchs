@@ -33,6 +33,7 @@ import { useFocusFirstNew } from '../focusNew'
 import { attachChoices, duplicateHints, inboxOf, inboxPage, INBOX_STEP, receiptCards, receiptName, type FolderFilter, type ReceiptCard, type ReceiptUpload } from '../receipts'
 import { aiMode, elsewhereGroups, periodKeyOfYear, SKIPPED_FILES, splitFiles, withoutPosition } from '../belegeView'
 import type { ReceiptStock } from '../receiptStock'
+import type { NavTarget } from '../nav'
 import { AmountCheckBox, AttachPicker, InboxPlacement, PLACEMENT_FIRST, ReceiptItem, useAttach, useDeleteReceipt, useHighlight } from '../components/ReceiptParts'
 
 type Props = {
@@ -40,7 +41,7 @@ type Props = {
   units: Unit[]
   settings: Settings | null
   // Mit Ziel: die Position auf der Seite öffnen, etwa zum Pflegen im Formular
-  onNavigate: (tab: string, focus?: NoticeSubject) => void
+  onNavigate: (tab: NavTarget, focus?: NoticeSubject) => void
   // Eine Position im Formular der Seite Kosten öffnen („Betrag prüfen“), auch in einem anderen Objekt
   onOpenItem?: (item: CostItem) => void
   // Fehler mit Ausweg (#487): die KI-Einstellungen öffnen; bei einem Zählerfoto, dessen Ablesen gescheitert ist, die

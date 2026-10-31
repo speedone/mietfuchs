@@ -5,7 +5,7 @@
 // (Regel 2). Welche Ansicht offen ist, hält App.tsx (gemerkt je Sitzung, belegeView.ts).
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import type { CostItem, NoticeSubject, Settings, Unit } from '../types'
-import { BELEGE_VIEWS, type BelegeView } from '../nav'
+import { BELEGE_VIEWS, type BelegeView, type NavTarget } from '../nav'
 import { receiptCards, receiptName } from '../receipts'
 import { periodKeyOfYear, placeOf } from '../belegeView'
 import { useProperty } from '../property'
@@ -24,7 +24,7 @@ type Props = {
   units: Unit[]
   settings: Settings | null
   // Mit Ziel: die Position auf der Seite öffnen, etwa zum Pflegen im Formular
-  onNavigate: (tab: string, focus?: NoticeSubject) => void
+  onNavigate: (tab: NavTarget, focus?: NoticeSubject) => void
   // Eine Position im Formular der Seite Kosten öffnen, auch in einem anderen Objekt (App.tsx schaltet dann um)
   onOpenItem?: (item: CostItem) => void
   onOpenAiSettings?: () => void
