@@ -89,6 +89,12 @@ const MIXED = (items: TaxExpenseItem[] = [POS()], over: Partial<TaxReport> = {})
   })
 }
 
+// #96 PR 1: eine Entnahme aus der Erhaltungsrücklage in ihrer Gruppe.
+const ENTNAHME = POS({
+  costItemId: 'e', category: 'Entnahme Erhaltungsrücklage', group: 'Erhaltungsaufwand', description: 'Dachsanierung laut Hausgeldabrechnung',
+  amountCents: 124000, privateCents: 0, deductibleCents: 124000, deductiblePercent: 100,
+})
+
 // #255, PR 4: die beiden Fälle des Mitwirkenden (R-9). Grundsteuer der Abrechnung des Vorjahres, in diesem Jahr bezahlt;
 // und eine Position dieses Jahres, schon vor Beginn bezahlt.
 const GS_IN = POS({
@@ -181,6 +187,16 @@ const LAGEN: Record<TaxHint, Lage> = {
     report: REPORT(),
     kind: 'etw',
     text: /Hausgeld-Vorschüsse/i,
+  },
+  // #96 PR 1: die Gruppe „Erhaltungsaufwand“ mit ihren Zeilen, eine vermutete Entnahme und die Sonderumlage.
+  maintenanceLines: { report: MIXED([ENTNAHME]), text: /Zeile 55, bei teilweiser Eigennutzung Zeile 56/ },
+  reserveWithdrawalSuspected: {
+    report: REPORT({ reserveWithdrawalSuspects: [{ costItemId: 'a', description: 'Dach aus der Rücklage', amountCents: 50000, paidOn: `${JAHR}-03-01` }] }),
+    text: /nicht das Ihrer eigenen Hausgeldzahlung/,
+  },
+  specialLevy: {
+    report: REPORT({ specialLevySuspects: [{ costItemId: 's', description: 'Sonderumlage Dach', amountCents: 300000, category: 'Nicht umlagefähig' }] }),
+    text: /Ihre eigene Zahlung an die Gemeinschaft zählt nicht/,
   },
   // #163: teilweise Eigennutzung.
   mixedUseSplit: { report: MIXED(), text: /durch direkte Zuordnung ermittelt/ },
@@ -525,3 +541,38 @@ test('verbilligte Vermietung: der Satz zur Totalüberschussprognose steht druckb
   expect(satz.closest('.no-print')).toBeNull()
   expect(screen.getAllByText(/Mietspiegel Musterstadt/).some((e) => e.closest('.no-print') === null)).toBe(true)
 })
+
+// Reihenfolge der Steuerseite wie der Vordruck (#96 PR 1, Durchsicht Abschnitt 8): Kopf → Einnahmen (13–32) →
+// Werbungskosten mit Erhaltung (55–72) → übrige → 87/88 → Gesamtsicht. Angelegt mit den Blöcken, die es gibt; der Kopf
+// der Anlage V (#96 PR 2), die Einnahmentabelle (#312), der verteilte Erhaltungsaufwand (#262) und die Gesamtsicht
+// (#96 PR 3) tragen sich hier ein.
+test('Reihenfolge der Steuerseite: Einnahmen, Werbungskosten mit Erhaltungsaufwand, Kürzung nach Zeilen 87/88', async () => {
+  const report = MIXED([ENTNAHME], {
+    cheapRent: {
+      law: { split: 50, paid: 66, cite: '§ 21 Abs. 2 Satz 1 und 2 EStG', text: '' },
+      units: [{
+        unitId: 'a', unitName: 'DG', paidFactor: 1, gratuitousCents: 0, unallocated: [], sources: [{ from: `${JAHR}-01`, monthlyCents: 90000, source: 'Mietspiegel', sourceDate: `${JAHR - 1}-04-01` }],
+        tenancies: [{ tenancyId: 't', tenantName: 'Tochter', days: 365, baseRentCents: 660000, chargesCents: 0, chargesSource: 'settlement', directChargesCents: 0, entgeltCents: 660000, comparisonCents: 1080000, quotePercent: 61.11, verdict: 'forecast', missingMonths: [] }],
+      }],
+    },
+  })
+  await zeige(report)
+  const blocks = [
+    screen.getByRole('heading', { name: 'Einnahmen' }),
+    screen.getByRole('heading', { name: 'Werbungskosten' }),
+    await screen.findByText(/Zeile 55, bei teilweiser Eigennutzung Zeile 56/),
+    screen.getByText(/Verbilligte Vermietung: DG/),
+  ]
+  for (let i = 1; i < blocks.length; i++) {
+    const before = blocks[i - 1] ?? expect.unreachable('Block fehlt')
+    const after = blocks[i] ?? expect.unreachable('Block fehlt')
+    expect(before.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING, `Block ${i}`).toBeTruthy()
+  }
+})
+
+test('Entnahme: Nutzungswechsel nennt den Tag der Ausgabe, die Eigentumswohnung den Satz zur Entnahme (#96, A4.5, A4.6)', async () => {
+  await zeige(MIXED([ENTNAHME], { usageChangedUnits: ['EG'] }), 'ist', 'etw')
+  expect(await screen.findByText(/streng genommen die Nutzung am Tag/)).toBeTruthy()
+  expect(screen.getByText(/Entnahmen aus der Erhaltungsrücklage zählen abweichend im Jahr/)).toBeTruthy()
+})
+

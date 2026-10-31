@@ -240,3 +240,15 @@ describe('Review Runde 1', () => {
     expect(screen.getByText(/kämen für die Steuer 365,00 € aus dem Jahr der Zahlung 2025 nach 2024/)).toBeTruthy()
   })
 })
+
+// #96 PR 1 (A6): Fragt die Vorschau nach dem Jahr einer Entnahme aus der Erhaltungsrücklage, trägt die Frage die
+// Beschriftung des Formulars; der angezeigte Wert ist der vorbelegte.
+test('Entnahme Erhaltungsrücklage: die Frage nach dem Jahr heißt wie im Formular', () => {
+  const preview: PeriodChangePreview = {
+    rules: { startMonth: 5, changes: [] }, periods: [], newShort: [], blocked: [], moves: [], effects: [], overrides: [], assessments: [], token: 't', groups: [], keptTaxYears: [],
+    taxYears: [{ key: 'dach|2025-05', costItemId: 'dach', description: 'Dachsanierung', period: periodKey('2025-05'), label: '2025/2026', suggested: 2025, options: [2025, 2026, 2027], reserveWithdrawal: true }],
+  }
+  render(<PreviewAnswers preview={preview} answers={initialAnswers(preview)} onChange={() => {}} />)
+  const select = screen.getByRole('combobox', { name: 'Jahr, in dem die Gemeinschaft bezahlt hat (Steuer) für „Dachsanierung“ in 2025/2026' }) as HTMLSelectElement
+  expect([select.value, select.selectedOptions[0]?.textContent]).toEqual(['2025', '2025'])
+})

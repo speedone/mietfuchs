@@ -21,6 +21,8 @@
 import type { PropertyKind, TaxExpenseItem, TaxMovedOut, TaxOutflow, TaxReport } from './types'
 import { andList } from '../../shared/wording.ts'
 import { fmtDate, fmtEuro } from './api'
+import { anlageVLines } from './anlageV'
+import { RESERVE_WITHDRAWAL_CATEGORY } from '../../shared/categories.ts'
 
 export type Basis = 'soll' | 'ist'
 
@@ -40,7 +42,7 @@ export const DEFAULT_BASIS: Basis = 'ist'
 // nicht einträgt.
 export const TAX_HINTS = [
   'sollIsNotTaxBasis', 'paymentsMissing', 'turnOfYear', 'inclusiveLine24', 'inclusiveLine24Mixed', 'flatRateLine20',
-  'reserveContribution', 'reserveSuspected', 'etwHousingMoney',
+  'reserveContribution', 'reserveSuspected', 'etwHousingMoney', 'maintenanceLines', 'reserveWithdrawalSuspected', 'specialLevy',
   'mixedUseSplit', 'mixedUseKeyNotArea', 'mixedUseAreaMissing', 'mixedUseDirectOutside', 'mixedUseChangedInYear',
   'mixedUseClosedChanged', 'mixedUseLabor35a', 'mixedUseNotCalculated', 'mixedUseExcludedArea', 'mixedUseClosedItemsChanged',
   'mixedUseAssignedUnits', 'usageChangedInYear',
@@ -95,6 +97,18 @@ export type TaxHint = (typeof TAX_HINTS)[number]
 //                        Hausgeld-Vorschüsse des Jahres und eine Nachzahlung aus dem Vorjahr, nicht
 //                        die Beträge der Hausgeldabrechnung (§ 11 Abs. 2 Satz 1 EStG). Rechnen
 //                        lässt sich das erst mit erfassten Hausgeldzahlungen (#96).
+//                        Seit #96 mit dem Satz zur Entnahme (`ETW_WITHDRAWAL_TEXT`).
+//
+// Entnahme aus der Erhaltungsrücklage (#96 PR 1, Entwurf A4), alle nur Auskunft:
+//
+//   `maintenanceLines`   Es gibt Positionen der Gruppe „Erhaltungsaufwand“. Die Seite nennt die Zeilen 55/56 aus
+//                        `anlageVLines`, für verteilte Positionen (#262) die Zeilen 57 bis 72, für Jahre ohne
+//                        gelesenen Vordruck keine Nummer (`maintenanceLineText`).
+//   `reserveWithdrawalSuspected` Eine Position „Nicht umlagefähig“ sieht nach einer Entnahme aus; die Seite rät zur
+//                        Kostenart „Entnahme Erhaltungsrücklage“. Die Beträge bleiben, nur die Zeile der Anlage V hängt
+//                        daran. Mit Zahlungsdatum ein Satz zum Jahr (`withdrawalSuspectDated`).
+//   `specialLevy`        Eine Sonderumlage mit dem Datum der eigenen Zahlung oder als Zuführung erfasst: Die eigene
+//                        Zahlung zählt nicht, erst die Ausgabe durch die Gemeinschaft. Mietfuchs stellt nichts um.
 //
 // Teilweise Eigennutzung (#163), alle nur, wenn es eine selbstgenutzte Wohnung gibt:
 //
@@ -154,6 +168,9 @@ export function taxHints(report: TaxReport, basis: Basis, propertyKind?: Propert
   if ((report.operatingPowerAmbiguous ?? []).length > 0) hints.push('operatingPowerAmbiguous')
   if ((report.unmarkedPowerCredits ?? []).length > 0) hints.push('unmarkedPowerCredits')
   if (propertyKind === 'etw') hints.push('etwHousingMoney')
+  if (report.expenses.groups.some((g) => g.group === MAINTENANCE_GROUP) || report.expenses.items.some((x) => x.group === MAINTENANCE_GROUP)) hints.push('maintenanceLines')
+  if ((report.reserveWithdrawalSuspects ?? []).length > 0) hints.push('reserveWithdrawalSuspected')
+  if ((report.specialLevySuspects ?? []).length > 0) hints.push('specialLevy')
   if (movedInLines(report).length > 0) hints.push('movedIn')
   if (report.movedOut.length > 0) hints.push('movedOut')
   if (report.expenses.unstatedCount > 0) hints.push('unstated')
@@ -376,20 +393,12 @@ export function stockCarryNote(report: TaxReport): string | null {
 
 // ---------- Nachzahlungen und Erstattungen aus der Nebenkostenabrechnung (#280) ----------
 
-// Wo die Anlage V sie abfragt, nur für Jahre, in denen es im amtlichen Vordruck selbst nachgesehen
-// ist. In allen drei Jahren Seite 1, Zeile 21, Kennzahl 11: „auf die Zeilen 15 und 18 entfallende und
-// im Jahr … erhaltene Nachzahlungen / geleistete Erstattungen (negativen Betrag mit vorangestelltem
-// Minuszeichen eintragen)“, also eine saldierte Zeile; Zeile 23 (Kennzahl 12) ist dasselbe für Zeile 19,
-// die an Angehörige vermieteten Wohnungen. Die laufenden Mieten stehen in den Summenzeilen 15
-// (Kennzahl 01) und 18 (Kennzahl 02), an Angehörige Zeile 19 (Kennzahl 03), die laufenden Umlagen in
-// Zeile 20 (Kennzahl 04), an Angehörige Zeile 22 (Kennzahl 05). Quellen:
-// - 2023: Formular-Management-System der Bundesfinanzverwaltung, „080 – Anlage V (2023)“, Vordruck
-//   „2023AnlV101NET – September 2023 –“, https://www.formulare-bfinv.de/ffw/action/invoke.do?id=034032_23, Seite 1.
-// - 2024: ebenda, „080 – Anlage V (2024)“, Vordruck „2024AnlV101NET – September 2024 –“,
-//   https://www.formulare-bfinv.de/ffw/action/invoke.do?id=034032_24, Seite 1.
-// - 2025: Finanzverwaltung NRW, Vordruck „2025AnlV101 – September 2025 –“,
-//   https://www.finanzamt.nrw.de/dokumente/anlage-v-einkuenfte-aus-vermietungverpachtung-bebauter-grundstuecke-2025, Seite 1.
-// Für andere Jahre nennt die Seite keine Zeile; eine erfundene wäre schlimmer als keine.
+// Wo die Anlage V sie abfragt, nur für Jahre, in denen es im amtlichen Vordruck selbst nachgesehen ist: Zeile 21
+// (Kennzahl 11) als saldierte Zeile der Nachzahlungen und Erstattungen, Zeile 23 (Kennzahl 12) dasselbe für die an
+// Angehörige vermieteten Wohnungen, dazu die Zeilen der laufenden Mieten und Umlagen. **Seit #96 (A5, Durchsicht X5) liest
+// diese Funktion aus der einen Tabelle `anlageVLines`** (client/src/anlageV.ts, dort die Fundstellen); Name und Rückgabe
+// bleiben, damit nichts umbenannt wird. Für andere Jahre nennt die Seite keine Zeile; eine erfundene wäre schlimmer als
+// keine.
 export type SettlementLine = {
   line: number
   code: number
@@ -402,18 +411,14 @@ export type SettlementLine = {
   relativesPrepaymentLine: number
 }
 
-const LINES_2023_TO_2025: SettlementLine = {
-  line: 21, code: 11, relativesLine: 23, relativesCode: 12, rentLines: [15, 18], prepaymentLine: 20, relativesRentLine: 19, relativesPrepaymentLine: 22,
-}
-
-const SETTLEMENT_LINES: Readonly<Record<number, SettlementLine>> = {
-  2023: LINES_2023_TO_2025,
-  2024: LINES_2023_TO_2025,
-  2025: LINES_2023_TO_2025,
-}
-
 export function settlementLine(year: number): SettlementLine | null {
-  return SETTLEMENT_LINES[year] ?? null
+  const i = anlageVLines(year)?.income
+  if (!i?.settlement?.code || !i.relativesSettlement?.code || !i.homes || !i.otherRooms || !i.allocations || !i.relatives || !i.relativesAllocations) return null
+  return {
+    line: i.settlement.line, code: i.settlement.code, relativesLine: i.relativesSettlement.line, relativesCode: i.relativesSettlement.code,
+    rentLines: [i.homes.line, i.otherRooms.line], prepaymentLine: i.allocations.line, relativesRentLine: i.relatives.line,
+    relativesPrepaymentLine: i.relativesAllocations.line,
+  }
 }
 
 // Der Betrag für diese Zeile: Nachzahlungen minus Erstattungen, eine Zahl mit Vorzeichen.
@@ -481,3 +486,45 @@ export function unstatedText(report: TaxReport): string | null {
     : `Bei ${n} Positionen dieses Jahres ist nicht angegeben, wann sie bezahlt wurden; sie stehen im Jahr ihrer Abrechnung.`
   return `${head} Haben Sie eine davon in einem anderen Jahr bezahlt, etwa als Nachzahlung im Folgejahr oder schon im Vorjahr, tragen Sie unter Kosten bei der Position „Bezahlt am (für die Steuer)“ ein.`
 }
+
+// ---------- Entnahme aus der Erhaltungsrücklage (#96 PR 1, A4) ----------
+
+// Die Gruppe der Steuerübersicht (`ANLAGE_V_GROUP` in server/src/calc.ts).
+export const MAINTENANCE_GROUP = 'Erhaltungsaufwand'
+
+// A4.1: Wohin die Gruppe „Erhaltungsaufwand“ in der Anlage V gehört. **Die Zeilen 55/56 gelten nur für unverteilte
+// Positionen** (Durchsicht X7): Eine nach § 82b EStDV verteilte (#262) steht im Block „zu verteilender
+// Erhaltungsaufwand“, im ersten Jahr 57 bis 60, in den Folgejahren 61 bis 72. `isSpread` sagt, welche Position verteilt
+// ist; bis #262 gibt es keine. Für ein Jahr ohne gelesenen Vordruck (`anlageVLines`) ohne Nummer.
+export function maintenanceLineText(report: TaxReport, isSpread: (item: TaxExpenseItem) => boolean = () => false): { unspread: string | null; spread: string | null } {
+  const items = report.expenses.items.filter((x) => x.group === MAINTENANCE_GROUP)
+  const lines = anlageVLines(report.year)
+  const m = lines?.maintenance
+  const spreadItems = items.filter(isSpread)
+  const hasUnspread = items.length > spreadItems.length || (items.length === 0 && report.expenses.groups.some((g) => g.group === MAINTENANCE_GROUP))
+  const notAllocated = lines?.notAllocated
+  const unspread = !hasUnspread ? null
+    : m
+      ? `Anlage V ${report.year}: Zeile ${m.direct.line}, bei teilweiser Eigennutzung Zeile ${m.proportional.line} (Gesamtbetrag und abzugsfähiger Anteil).` +
+        (notAllocated ? ` Nicht in die Zeilen ${notAllocated[0]} bis ${notAllocated[1]}, die gelten „ohne Erhaltungsrücklage“.` : '')
+      : `Anlage V ${report.year}: bei den Erhaltungsaufwendungen, einschließlich Entnahmen aus der Erhaltungsrücklage; die Zeile sehen Sie bitte im Vordruck für ${report.year} nach.`
+  const last = m?.spreadFromPriorYears?.at(-1)?.sum.line
+  const spread = spreadItems.length === 0 ? null
+    : m?.spread && last !== undefined
+      ? `Verteilter Erhaltungsaufwand: siehe Zeilen ${m.spread.total} bis ${last}.`
+      : `Verteilter Erhaltungsaufwand: bei den auf bis zu fünf Jahre zu verteilenden Erhaltungsaufwendungen; die Zeilen sehen Sie bitte im Vordruck für ${report.year} nach.`
+  return { unspread, spread }
+}
+
+// A4.2: Trägt eine vermutete Entnahme ein Zahlungsdatum? Dann sagt die Seite, dass das Jahr der Ausgabe durch die
+// Gemeinschaft zählt, nicht das der eigenen Hausgeldzahlung (R1, R4).
+export const withdrawalSuspectDated = (report: TaxReport): boolean => (report.reserveWithdrawalSuspects ?? []).some((x) => x.paidOn !== undefined)
+
+// A4.5: Wechselt die Nutzung im Jahr und ist eine Entnahme betroffen? Streng genommen zählt die Nutzung am Tag der
+// Ausgabe durch die Gemeinschaft (R1); ohne dieses Datum teilt Mietfuchs nach Tagen wie bei jeder Position (Auslegung).
+export const usageChangeTouchesWithdrawal = (report: TaxReport): boolean =>
+  (report.usageChangedUnits ?? []).length > 0 && report.expenses.items.some((x) => x.category === RESERVE_WITHDRAWAL_CATEGORY)
+
+// A4.6: der Satz zur Entnahme im Hinweis `etwHousingMoney` (R1, R4).
+export const ETW_WITHDRAWAL_TEXT = 'Entnahmen aus der Erhaltungsrücklage zählen abweichend im Jahr, in dem die Gemeinschaft sie ausgibt, also nach der Hausgeldabrechnung dieses Jahres; die Zuführung, die in den gezahlten Vorschüssen steckt, ziehen Sie ab.'
+

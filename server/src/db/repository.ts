@@ -43,7 +43,7 @@ import { hasKnownUnits, unitKey, unitLabel, unitProblem } from '../../../shared/
 import { CALENDAR_RULES, calendarPeriod, paymentYear, formatDayRange, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, spansTwoYears, startYearOf } from '../../../shared/period.ts'
 import { heatingPeriodsEndingIn, isObjectPeriod, plantRules, plantSpan, servesUnit, spanOf } from '../../../shared/heatingPeriod.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
-import { isNotAllocable } from '../../../shared/categories.ts'
+import { isNotAllocable, isReserveCategory } from '../../../shared/categories.ts'
 import { isFederalState } from '../../../shared/states.ts'
 import { euro as operatingPowerEuro, GENERAL_POWER_CATEGORY, POWER_GENERATED } from '../../../shared/operatingPower.ts'
 import { billingEnergy } from '../../../shared/heatDelivery.ts'
@@ -1275,7 +1275,12 @@ const splitPartMessage = (c: CostItem): string =>
 // ganze Rechnung schon gefragt.
 async function requirePaidOn(db: Executor, before: CostItem | null, after: CostItem, body: unknown, options: CostItemGuardOptions): Promise<void> {
   if (after.paidOn === undefined && before?.paidOn === undefined) return
-  if (after.paidOn !== undefined && !allowsPaidOn(after)) {
+  // #96 A3: An der Erhaltungsrücklage gibt es kein Datum; der Server leert nichts still. Ein Wechsel des Zeitraums trägt
+  // nur ein Datum weiter, das schon dasteht (aus der Zeit vor #96, über die API gesetzt), und bleibt deshalb möglich.
+  if (after.paidOn !== undefined && isReserveCategory(after.category) && !options.periodChange) {
+    throw new PeriodError(`„${after.description}“: An Zuführung und Entnahme der Erhaltungsrücklage gibt es kein Zahlungsdatum. Für die Steuer zählt das Jahr, in dem die Gemeinschaft das Geld ausgibt (laut Hausgeldabrechnung dieses Jahres), nicht Ihre eigene Hausgeldzahlung; geben Sie bei Bedarf das Jahr der Zahlung an und lassen Sie das Datum leer.`)
+  }
+  if (after.paidOn !== undefined && !allowsPaidOn(after) && !isReserveCategory(after.category)) {
     throw new PeriodError(`„${after.description}“ ist laut Gemeinschaftsabrechnung verteilt; ein Zahlungsdatum gibt es dort nicht. Für die Steuer zählen die Vorschüsse im Jahr ihrer Zahlung, eine Nachzahlung oder ein Guthaben im Jahr der Zahlung bzw. Gutschrift. Bitte lassen Sie das Feld leer.`)
   }
   if (options.splitPart || options.periodChange || raw(body, 'confirmPaidOn') === true) return

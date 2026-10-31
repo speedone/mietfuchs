@@ -10,6 +10,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 - Mietkonto: An einer Zahlung lässt sich der Monat laut Verwendungszweck eintragen
   ([#281](https://github.com/speedone/mietfuchs/issues/281)).
+- Kostenart „Entnahme Erhaltungsrücklage“: zählt im Jahr, in dem die Gemeinschaft das Geld ausgibt, in eigener Gruppe
+  „Erhaltungsaufwand“ ([#96](https://github.com/speedone/mietfuchs/issues/96)). Statt eines Zahlungsdatums gibt es
+  das Jahr, in dem die Gemeinschaft bezahlt hat; die Steuerübersicht nennt die Zeilen 55 und 56 der Anlage V und weist
+  auf Positionen „Nicht umlagefähig“ hin, die nach einer Entnahme aussehen, sowie auf eine Sonderumlage mit dem Datum
+  der eigenen Zahlung.
 
 ### Geändert
 

@@ -48,6 +48,13 @@ test('Kandidaten: „Nicht umlagefähig“ gilt als breite Kostenart', () => {
   assert.deepEqual(sameCostCandidates(items, { period: calendarPeriod(2026), category: 'Nicht umlagefähig', description: 'Verwaltergebühr 2026' }).map((i) => i.id), [verwalter.id])
 })
 
+// #96 PR 1: Entnahmen aus der Rücklage sind wie „Nicht umlagefähig“ oft mehrere Maßnahmen im Jahr (Dach, Fassade).
+test('Kandidaten: „Entnahme Erhaltungsrücklage“ gilt als breite Kostenart', () => {
+  const dach = item({ period: calendarPeriod(2026), category: 'Entnahme Erhaltungsrücklage', description: 'Dachsanierung' })
+  assert.deepEqual(sameCostCandidates([dach], { period: calendarPeriod(2026), category: 'Entnahme Erhaltungsrücklage', description: 'Fassadenanstrich' }), [])
+  assert.deepEqual(sameCostCandidates([dach], { period: calendarPeriod(2026), category: 'Entnahme Erhaltungsrücklage', description: 'Dachsanierung 2026' }).map((i) => i.id), [dach.id])
+})
+
 test('Kandidaten: anderes Objekt und die Position selbst zählen nicht', () => {
   const a = { ...item({ period: calendarPeriod(2026), category: 'Grundsteuer' }), propertyId: 'p1' }
   const b = { ...item({ period: calendarPeriod(2026), category: 'Grundsteuer' }), propertyId: 'p2' }

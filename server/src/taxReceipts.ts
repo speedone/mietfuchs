@@ -5,7 +5,9 @@
 // Instandhaltung ebenso wie die umgelegten Betriebskosten; gerade sie fehlen in einer Mappe, die
 // nur aus der Abrechnung entsteht. Die Gruppen sind dieselben wie in der Steuerübersicht
 // (`ANLAGE_V_GROUP` in calc.ts), damit Ordner und Übersicht zusammenpassen. Die Zuführung zur
-// Erhaltungsrücklage steht dort gesondert (#143) und hier in einem eigenen Ordner.
+// Erhaltungsrücklage steht dort gesondert (#143) und hier in einem eigenen Ordner; die Entnahme
+// aus der Rücklage (#96) in ihrer Gruppe „Erhaltungsaufwand“, deren Ordner vor „Verwaltung &
+// Instandhaltung“ steht (die Nummern der folgenden Ordner rücken deshalb seit #96 um eins).
 //
 // Daneben eine Übersicht als CSV mit jeder Position, auch denen ohne Beleg: Was fehlt, soll der
 // Steuerberater sehen und nicht erst vermissen. Bei teilweiser Eigennutzung trägt jede Position

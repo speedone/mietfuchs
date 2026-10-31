@@ -86,3 +86,20 @@ describe('Bezahlt am (für die Steuer, #255 PR 3)', () => {
     expect(screen.getByText(/IX R 19\/24/)).toBeTruthy()
   })
 })
+
+// #96 PR 1 (R-G): Bei der Entnahme aus der Erhaltungsrücklage heißt das Feld nach dem, was zählt, mit Hilfe für Laien;
+// ein Zahlungsdatum gibt es nicht, und der angezeigte Wert ist der gespeicherte.
+describe('Entnahme Erhaltungsrücklage (#96)', () => {
+  test('Jahr, in dem die Gemeinschaft bezahlt hat: Beschriftung, Hilfe, gespeichertes Jahr; kein Datumsfeld', () => {
+    render(<CostPeriodFields form={{ ...EMPTY_ITEM_FORM, category: 'Entnahme Erhaltungsrücklage', taxYear: '2026' }} onChange={() => {}} showTaxYear years={[2024, 2025, 2026, 2027, 2028]} emptyLabel="wie Abrechnungsjahr (2025)" droppedPaidOn="Das Zahlungsdatum 10.02.2026 entfällt, die Position bleibt für die Steuer im Jahr 2026." />)
+    const select = screen.getByRole('combobox', { name: /Jahr, in dem die Gemeinschaft bezahlt hat/ }) as HTMLSelectElement
+    expect(select.value).toBe('2026')
+    expect(select.selectedOptions[0]?.textContent).toBe('2026')
+    expect(screen.getByText(/Steht in der Hausgeldabrechnung dieses Jahres \(Entnahmen aus der Erhaltungsrücklage\)\. Ohne Angabe gilt das Jahr der Abrechnung\./)).toBeTruthy()
+    expect(screen.getByText(/nicht als Entnahme/)).toBeTruthy()
+    expect(screen.getByRole('status').textContent).toBe('Das Zahlungsdatum 10.02.2026 entfällt, die Position bleibt für die Steuer im Jahr 2026.')
+    expect(screen.queryByLabelText('Bezahlt am (für die Steuer)')).toBeNull()
+    expect(screen.queryByText(/Maßgeblich ist, wann Sie gezahlt haben/)).toBeNull()
+  })
+})
+

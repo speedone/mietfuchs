@@ -25,6 +25,7 @@
 
 import crypto from 'node:crypto'
 import { and, eq, inArray } from 'drizzle-orm'
+import { RESERVE_WITHDRAWAL_CATEGORY } from '../../../shared/categories.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { SPLIT_FIELDS, SPLIT_SUFFIX, splitBlocker } from '../../../shared/splitPart.ts'
 import { plantRules, settledSeparately } from '../../../shared/heatingPeriod.ts'
@@ -353,6 +354,8 @@ function taxEntry(item: CostItem, p: BillingPeriod): PeriodChangePreview['taxYea
   return {
     key: taxKey(item, p), costItemId: item.id, description: item.description, period: p.key, label: periodLabel(p),
     suggested: Math.min(Math.max(was, start), end), options: Array.from({ length: end - start + 1 }, (_, i) => start + i),
+    // #96 (A6): Bei der Entnahme aus der Erhaltungsrücklage fragt die Vorschau mit der Beschriftung des Formulars.
+    ...(item.category === RESERVE_WITHDRAWAL_CATEGORY ? { reserveWithdrawal: true as const } : {}),
   }
 }
 
@@ -409,7 +412,8 @@ function keptTaxYearsOf(splits: readonly Split[], groups: ReadonlyMap<string, Gr
       : ''
     out.set(key, {
       costItemId: item.id, description, taxYear: year, period: target.key, label,
-      text: `„${description}“ behält das Jahr der Zahlung ${year}; im Zeitraum ${label} steht sie für die Steuer deshalb als verschoben.${outside}`,
+      // #96 (A6): die Entnahme mit der Beschriftung des Formulars.
+      text: `„${description}“ behält ${item.category === RESERVE_WITHDRAWAL_CATEGORY ? `das Jahr, in dem die Gemeinschaft bezahlt hat (${year})` : `das Jahr der Zahlung ${year}`}; im Zeitraum ${label} steht sie für die Steuer deshalb als verschoben.${outside}`,
     })
   }
   for (const split of splits) for (const p of split.parts) note(split.item, p.period, split.family ? baseDescription(split.item.description) : split.item.description)

@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from 'vitest'
 import type { TaxExpenseItem, TaxReport } from './types'
-import { allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, operatingPowerBalanceText, paidWithoutSettlementCents, prepaymentNote, settlementBalanceCents, settlementLine, settlementSourcesText, showsSplit, stockCarryNote, surplusCentsFor, taxHints, movedInLines, movedInText, movedOutLines, unstatedText } from './taxView'
+import { allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, operatingPowerBalanceText, paidWithoutSettlementCents, prepaymentNote, settlementBalanceCents, settlementLine, settlementSourcesText, showsSplit, stockCarryNote, surplusCentsFor, taxHints, maintenanceLineText, usageChangeTouchesWithdrawal, withdrawalSuspectDated, ETW_WITHDRAWAL_TEXT, movedInLines, movedInText, movedOutLines, unstatedText } from './taxView'
 import { fmtEuro } from './api'
 import { periodKey } from '../../shared/period.ts'
 
@@ -453,5 +453,68 @@ describe('Steuerübersicht: Verschiebung zwischen den Jahren (#255)', () => {
     expect(unstatedText(drei)).toMatch(/„Bezahlt am \(für die Steuer\)“/)
     expect(taxHints(drei, 'soll')).toContain('unstated')
     expect(taxHints(drei, 'ist')).toContain('unstated')
+  })
+})
+
+// #96 PR 1 (A4): Hinweise zur Entnahme aus der Erhaltungsrücklage, alle nur Auskunft.
+describe('Entnahme Erhaltungsrücklage (#96)', () => {
+  const entnahme = (over: Partial<TaxExpenseItem> = {}): TaxExpenseItem => ({
+    costItemId: 'e', category: 'Entnahme Erhaltungsrücklage', group: 'Erhaltungsaufwand', description: 'Dachsanierung',
+    amountCents: 124000, privateCents: 0, deductibleCents: 124000, labor35aCents: 0,
+    allocation: 'area', deductiblePercent: 100, areaPrivateCents: null, settlementPrivateCents: null, taxUnits: null, steps: [],
+    ...over,
+  })
+  const mit = (items: TaxExpenseItem[], year = 2025, rest: Partial<TaxReport> = {}): TaxReport => report({}, {
+    year,
+    expenses: {
+      groups: [{ group: 'Erhaltungsaufwand', amountCents: 124000, labor35aCents: 0, privateCents: 0, deductibleCents: 124000, categories: [] }],
+      totalCents: 124000, privateCents: 0, deductibleCents: 124000, labor35aCents: 0, items, unstatedCount: 0,
+    },
+    ...rest,
+  })
+
+  test('A4.1: Zeilen 55/56 nur für unverteilte Positionen, für 2025 mit Nummern', () => {
+    const r = mit([entnahme()])
+    expect(taxHints(r, 'ist')).toContain('maintenanceLines')
+    expect(taxHints(report({}), 'ist')).not.toContain('maintenanceLines')
+    expect(maintenanceLineText(r)).toEqual({
+      unspread: 'Anlage V 2025: Zeile 55, bei teilweiser Eigennutzung Zeile 56 (Gesamtbetrag und abzugsfähiger Anteil). Nicht in die Zeilen 76 bis 78, die gelten „ohne Erhaltungsrücklage“.',
+      spread: null,
+    })
+  })
+
+  test('A4.1 (Durchsicht X7): eine nachgebildete verteilte Position steht in den Zeilen 57 bis 72, nicht in 55/56', () => {
+    const r = mit([entnahme(), entnahme({ costItemId: 'v', description: 'Fassade, verteilt' })])
+    const text = maintenanceLineText(r, (x) => x.costItemId === 'v')
+    expect(text.spread).toBe('Verteilter Erhaltungsaufwand: siehe Zeilen 57 bis 72.')
+    expect(text.unspread).toMatch(/^Anlage V 2025: Zeile 55/)
+    expect(maintenanceLineText(mit([entnahme({ costItemId: 'v' })]), () => true)).toEqual({ unspread: null, spread: 'Verteilter Erhaltungsaufwand: siehe Zeilen 57 bis 72.' })
+  })
+
+  test('A4.1: Jahre ohne belegten Vordruck ohne Nummer', () => {
+    expect(maintenanceLineText(mit([entnahme()], 2026))).toEqual({
+      unspread: 'Anlage V 2026: bei den Erhaltungsaufwendungen, einschließlich Entnahmen aus der Erhaltungsrücklage; die Zeile sehen Sie bitte im Vordruck für 2026 nach.',
+      spread: null,
+    })
+  })
+
+  test('A4.2 und A4.3: Hinweise nur mit Treffer', () => {
+    expect(taxHints(report({}, { reserveWithdrawalSuspects: [{ costItemId: 'a', description: 'Entnahme Rücklage', amountCents: 1 }] }), 'ist')).toContain('reserveWithdrawalSuspected')
+    expect(taxHints(report({}, { specialLevySuspects: [{ costItemId: 'a', description: 'Sonderumlage', amountCents: 1, category: 'Nicht umlagefähig' }] }), 'ist')).toContain('specialLevy')
+    expect(taxHints(report({}), 'ist')).not.toContain('reserveWithdrawalSuspected')
+    expect(taxHints(report({}), 'ist')).not.toContain('specialLevy')
+    expect(withdrawalSuspectDated(report({}, { reserveWithdrawalSuspects: [{ costItemId: 'a', description: 'x', amountCents: 1 }] }))).toBe(false)
+    expect(withdrawalSuspectDated(report({}, { reserveWithdrawalSuspects: [{ costItemId: 'a', description: 'x', amountCents: 1, paidOn: '2025-03-01' }] }))).toBe(true)
+  })
+
+  test('A4.5: Nutzungswechsel mit Entnahme bekommt den Satz zum Tag der Ausgabe', () => {
+    expect(usageChangeTouchesWithdrawal(mit([entnahme()], 2025, { usageChangedUnits: ['EG'] }))).toBe(true)
+    expect(usageChangeTouchesWithdrawal(mit([entnahme()]))).toBe(false)
+    expect(usageChangeTouchesWithdrawal(report({}, { usageChangedUnits: ['EG'] }))).toBe(false)
+  })
+
+  test('A4.6: der Satz zum Hausgeld bei einer Eigentumswohnung nennt die Entnahme', () => {
+    expect(taxHints(report({}), 'ist', 'etw')).toContain('etwHousingMoney')
+    expect(ETW_WITHDRAWAL_TEXT).toBe('Entnahmen aus der Erhaltungsrücklage zählen abweichend im Jahr, in dem die Gemeinschaft sie ausgibt, also nach der Hausgeldabrechnung dieses Jahres; die Zuführung, die in den gezahlten Vorschüssen steckt, ziehen Sie ab.')
   })
 })

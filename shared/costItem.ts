@@ -9,7 +9,7 @@
 import type { CostKey, ExternalBasis, ExternalMeasure, HeatingPart, HeatingTarget, MeterType, PeriodKey, Unit } from './types.ts'
 import { HEATING_CATEGORY } from './heating.ts'
 import { PARTICIPANT_KEYS } from './allocation.ts'
-import { isNotAllocable } from './categories.ts'
+import { isNotAllocable, RESERVE_WITHDRAWAL_CATEGORY } from './categories.ts'
 import { allowsPaidOn, isPaidOnDate } from './paidOn.ts'
 
 // Ein Betrag wie in der Oberfläche (client/src/api.ts, fmtEuro): „612,40 €“.
@@ -125,11 +125,12 @@ export type CostItemBody = {
 // die Position trägt der Vermieter. Für die Steuer zählt, wen sie betrifft: Eine Badrenovierung in
 // der vermieteten Wohnung ist ganz abziehbar, eine in der eigenen gar nicht, und eine Reparatur am
 // Dach wird nach Fläche aufgeteilt. Gespeichert wird das als Direktzuordnung, die Berechnung der
-// Abrechnung liest den Schlüssel weiterhin nicht. Nur „Nicht umlagefähig“: Die Zuführung zur
-// Erhaltungsrücklage ist keine Werbungskosten des Jahres (#143), dort gibt es nichts zuzuordnen.
+// Abrechnung liest den Schlüssel weiterhin nicht. „Nicht umlagefähig“ und seit #96 die Entnahme aus der
+// Erhaltungsrücklage (eine Maßnahme am Gemeinschaftseigentum, die eine eigene Wohnung ebenso betreffen kann); nicht die
+// Zuführung: Sie ist keine Werbungskosten des Jahres (#143), dort gibt es nichts zuzuordnen.
 // Die Regel steht hier und nicht im Formular, weil auch „Aus dem Vorjahr übernehmen“ und die
 // Belegbuchung auf dem Server Positionen durch `costItemBody` anlegen.
-export const showsTaxUnitField = (category: string): boolean => category === 'Nicht umlagefähig'
+export const showsTaxUnitField = (category: string): boolean => category === 'Nicht umlagefähig' || category === RESERVE_WITHDRAWAL_CATEGORY
 export const taxUnitOf = (item: { category: string; key: CostKey; directUnitId?: string | null }): string | null =>
   showsTaxUnitField(item.category) && item.key === 'direct' && item.directUnitId ? item.directUnitId : null
 // Oder mehrere bestimmte Einheiten (etwa das Dach des Hinterhauses; Durchsicht), gespeichert als

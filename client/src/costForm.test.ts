@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest'
 import { OPERATING_POWER_KEPT } from '../../shared/operatingPower.ts'
 import { deductionTaxYear, generalChoices, withGeneralChoice, deductionChoiceOf, deductionChoices, itemToForm as itemToFormOf, OPERATING_POWER_OPTIONS, showsDeductionLink, showsOperatingPower, withDeductionChoice, withOperatingPower, buildCostItemBody as buildBody } from './costForm'
 import type { CostItem as CostItemOf } from './types'
-import { calendarPeriod, periodKey } from '../../shared/period.ts'
+import { calendarPeriod, calendarYearPeriod, periodKey } from '../../shared/period.ts'
 import { euro } from '../../shared/costItem.ts'
 import type { CostKey, Meter, MeterType, SplitPreviewPart, Unit } from './types'
 import { KEY_LABELS, matchCategory } from './types'
@@ -39,6 +39,9 @@ import {
   withTaxUnit,
   withKey,
   withCategory,
+  keepPaidOnYear,
+  droppedPaidOnText,
+  showsPaidOn,
   type ItemForm,
   costMeterTypes,
 } from './costForm'
@@ -919,4 +922,54 @@ test('Betriebsstrom: Strom zur Wärmeerzeugung bei Wärmepumpe und Stromheizung 
   const built = buildBody({ ...wp, amount: '600,00', description: 'Strom der Wärmepumpe' }, [], 2025, undefined, 'heatPump')
   if ('error' in built) throw new Error(built.error)
   expect(built.body.operatingPower).toBe('included')
+})
+
+// #96 PR 1 (A3, Durchsicht R-B, R-G): An der Entnahme aus der Erhaltungsrücklage gibt es kein Zahlungsdatum. Wer eine
+// datierte Position umstellt, behält ihr Steuerjahr: Das Jahr des Datums geht in das Jahr der Zahlung, im
+// Formularzustand und damit **vor** `costItemBody`, das das Datum danach leert. Eine Zahl wandert dadurch nicht.
+describe('Entnahme Erhaltungsrücklage (#96)', () => {
+  const P2025 = { from: '2025-01-01', to: '2025-12-31' }
+  test('Umstellen einer datierten Position: das abweichende Jahr des Datums wird zum Jahr der Zahlung, costItemBody schickt es ohne Datum', () => {
+    const datiert = form({ category: 'Nicht umlagefähig', amount: '1.240,00', paidOn: '2026-02-10' })
+    const umgestellt = keepPaidOnYear(datiert, withCategory(datiert, 'Entnahme Erhaltungsrücklage', UNITS, []), P2025)
+    expect(umgestellt).toMatchObject({ category: 'Entnahme Erhaltungsrücklage', taxYear: '2026' })
+    expect(droppedPaidOnText(umgestellt, P2025)).toBe('Das Zahlungsdatum 10.02.2026 entfällt, die Position bleibt für die Steuer im Jahr 2026.')
+    const built = buildCostItemBody(umgestellt, UNITS, calendarYearPeriod(2025))
+    if ('error' in built) return expect.unreachable(built.error)
+    expect(built.body).toMatchObject({ category: 'Entnahme Erhaltungsrücklage', taxYear: 2026, paidOn: null })
+  })
+  test('gleiches Jahr: kein Jahr der Zahlung, das Datum entfällt ohne Folge', () => {
+    const datiert = form({ category: 'Nicht umlagefähig', paidOn: '2025-06-01' })
+    const umgestellt = keepPaidOnYear(datiert, withCategory(datiert, 'Entnahme Erhaltungsrücklage', UNITS, []), P2025)
+    expect(umgestellt.taxYear).toBe('')
+    expect(droppedPaidOnText(umgestellt, P2025)).toBe('Das Zahlungsdatum 01.06.2025 entfällt, die Position bleibt für die Steuer im Jahr 2025.')
+    const built = buildCostItemBody(umgestellt, UNITS, calendarYearPeriod(2025))
+    if ('error' in built) return expect.unreachable(built.error)
+    expect(built.body).toMatchObject({ taxYear: null, paidOn: null })
+  })
+  test('Zeitraum über zwei Kalenderjahre: das Jahr des Datums wird immer übernommen, denn dort ist es Pflicht', () => {
+    const p = { from: '2025-05-01', to: '2026-04-30' }
+    const datiert = form({ category: 'Nicht umlagefähig', paidOn: '2025-09-01', taxYear: '2026' })
+    expect(keepPaidOnYear(datiert, withCategory(datiert, 'Entnahme Erhaltungsrücklage', UNITS, []), p).taxYear).toBe('2025')
+  })
+  test('ohne Datum oder zu einer anderen Kostenart: nichts übertragen, kein Satz', () => {
+    const ohne = form({ category: 'Nicht umlagefähig' })
+    expect(keepPaidOnYear(ohne, withCategory(ohne, 'Entnahme Erhaltungsrücklage', UNITS, []), P2025).taxYear).toBe('')
+    const datiert = form({ category: 'Nicht umlagefähig', paidOn: '2026-02-10' })
+    expect(keepPaidOnYear(datiert, withCategory(datiert, 'Grundsteuer', UNITS, []), P2025)).toMatchObject({ taxYear: '', paidOn: '2026-02-10' })
+    expect(droppedPaidOnText(datiert, P2025)).toBeNull()
+  })
+  test('kein Datumsfeld, das Jahr ist auch im Kalenderzeitraum sichtbar; Zuordnung für die Steuer wie „Nicht umlagefähig“', () => {
+    const e = form({ category: 'Entnahme Erhaltungsrücklage' })
+    expect(showsPaidOn(e)).toBe(false)
+    expect(showsPaidOn(form({ category: 'Zuführung Erhaltungsrücklage' }))).toBe(false)
+    expect(showsTaxYear(P2025, false, null, 'Entnahme Erhaltungsrücklage')).toBe(true)
+    expect(showsTaxYear(P2025, false, null, 'Zuführung Erhaltungsrücklage')).toBe(false)
+    expect(showsTaxYear(P2025, false, null, 'Nicht umlagefähig')).toBe(false)
+    expect(showsTaxUnitField('Entnahme Erhaltungsrücklage')).toBe(true)
+    expect(showsKeyFields('Entnahme Erhaltungsrücklage')).toBe(false)
+    // Wie „Nicht umlagefähig“ ein erlaubter §35a-Lohnanteil (für den Vermieter ohne Wirkung, nur durchgereicht).
+    expect(amountProblem(124000, 30000, 'Entnahme Erhaltungsrücklage')).toBeNull()
+    expect(matchCategory('Dachsanierung aus der Rücklage')).toBe('Entnahme Erhaltungsrücklage')
+  })
 })

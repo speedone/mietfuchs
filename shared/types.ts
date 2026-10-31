@@ -533,7 +533,9 @@ export type PeriodChangePreview = {
   // Jahr, in die erlaubte Spanne geklemmt. Bei einer Gruppe steht je wählbarem Zeitraum ein Eintrag.
   // Den Satz `notes` je Jahr (Folge-PR zu #252, Geld H2: ein Teil eines Abzugs bleibt in einem festen Steuerjahr) gibt
   // es seit #268 nicht mehr: Die Steuerübersicht gleicht je Steuerjahr aus, in der Anlage V verschiebt sich nichts.
-  taxYears: { key: string; costItemId: string; description: string; period: PeriodKey; label: string; suggested: number; options: number[] }[]
+  // `reserveWithdrawal`: die Position ist eine Entnahme aus der Erhaltungsrücklage (#96); gefragt wird dann nach dem Jahr,
+  // in dem die Gemeinschaft bezahlt hat.
+  taxYears: { key: string; costItemId: string; description: string; period: PeriodKey; label: string; suggested: number; options: number[]; reserveWithdrawal?: true }[]
   // Positionen mit angegebenem Jahr der Zahlung, das sie behalten (#478, E1), und das danach außerhalb der Kalenderjahre
   // ihres Zeitraums liegt: Für die Steuer stehen sie dann als verschoben. Je Position und Zeitraum (bei einer Gruppe je
   // wählbarem Zeitraum) ein Eintrag mit dem Satz der Vorschau (`text`).
@@ -1403,6 +1405,12 @@ export type TaxReport = {
   // Positionen „Nicht umlagefähig“, deren Beschreibung nach Rücklage aussieht; sie stehen weiter
   // in den Werbungskosten, die Seite rät zur eigenen Kostenart.
   reserveSuspects: { costItemId: string; description: string; amountCents: number }[]
+  // Positionen „Nicht umlagefähig“, deren Beschreibung nach einer Entnahme aus der Rücklage aussieht (#96); die Seite rät
+  // zur Kostenart „Entnahme Erhaltungsrücklage“. `paidOn`, wenn die Position ein Zahlungsdatum trägt. Fehlt ohne Treffer.
+  reserveWithdrawalSuspects?: { costItemId: string; description: string; amountCents: number; paidOn?: string }[]
+  // Sonderumlagen unter „Nicht umlagefähig“ mit Zahlungsdatum oder als Zuführung erfasst (#96): Die eigene Zahlung zählt
+  // nicht, erst die Ausgabe durch die Gemeinschaft. Fehlt ohne Treffer.
+  specialLevySuspects?: { costItemId: string; description: string; amountCents: number; category: string }[]
   // Gesamtfläche des Gebäudes und der selbstgenutzte Teil davon, in Quadratmetern. Genau die
   // beiden Zahlen fragt die Anlage V im Kopf ab. Gemessen wird das **Private** und nicht das
   // Vermietete: Nur das ist eindeutig, denn ob eine Wohnung außerhalb der Abrechnungseinheit

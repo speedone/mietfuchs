@@ -779,10 +779,23 @@ Grundmenge ist das ganze Gebäude), Überschuss. Beschreibende Gruppen statt fes
   erklärt einen Abstand, **ohne ihm eine Ursache zuzuschreiben** (Jahreskorrektur und
   unterschiedliche Grundmengen tragen beide bei).
 - **Zeilen**: Nummern nur, wo der amtliche Vordruck sie belegt (2025: 11, 12, 33/34, 87/88; Zeile 21
-  für 2023 bis 2025, Fundstellen an `settlementLine` in taxView.ts). Die Seite zeigt den Zufluss in
+  für 2023 bis 2025). **Die eine Tabelle ist `anlageVLines(year)`** ([client/src/anlageV.ts](../../client/src/anlageV.ts),
+  #96, Durchsicht X5): Kopf, Einnahmen, Erhaltungsaufwand (55/56, verteilt 57 bis 72), 76 bis 78, je Jahr mit
+  Fundstelle; ein nicht gelesenes Jahr ist `null`, ein nicht nachgesehener Block fehlt. `settlementLine` in taxView.ts
+  liest daraus. Die Seite zeigt den Zufluss in
   zwei Teilen, die zusammen den Zufluss ergeben (`paidWithoutSettlementCents`,
   `settlementBalanceCents`), sonst zählte mancher den Saldo doppelt. Kopfzeilen am Mietmodell (#96):
   `costModels` zählt ganz/teilweise inklusiv und Pauschale; die Pauschale bei Zeile 20 ist Auslegung.
+- **Erhaltungsrücklage** (#143, #96, Entwurf
+  [2026-10-30-steuer-objekt-ruecklage-design.md](../../docs/superpowers/specs/2026-10-30-steuer-objekt-ruecklage-design.md)):
+  Die Zuführung ist keine Werbungskosten (`ANLAGE_V_GROUP` = `null`, daneben `reserveContributionCents`); die
+  **Entnahme** („Entnahme Erhaltungsrücklage“) ist Erhaltungsaufwand im Jahr der Ausgabe durch die Gemeinschaft (BFH
+  IX R 19/24), eigene Gruppe „Erhaltungsaufwand“ vor „Verwaltung & Instandhaltung“ (deren Name steht in den
+  Prüfsummen), sonst in allem wie „Nicht umlagefähig“ (Abrechnung, Zuordnung für die Steuer, Kürzung, lose Kostenart).
+  An beiden gibt es kein Zahlungsdatum (`allowsPaidOn`, 400 am Server, außer beim Zeitraumwechsel eines alten Datums);
+  ihr Jahr ist das angegebene Jahr der Zahlung, sonst das der Abrechnung (`outflowShares` ohne Sonderfall). Das
+  Formular überträgt beim Umstellen auf die Entnahme das Jahr eines Datums vor `costItemBody` (`keepPaidOnYear`).
+  Hinweise ohne Rechnung: `reserveSuspects`, `reserveWithdrawalSuspects`, `specialLevySuspects`.
 - **Teilweise Eigennutzung** (#163, `splitForTax`, Entwurf
   [docs/superpowers/specs/2026-10-02-steuer-eigennutzung-design.md](../../docs/superpowers/specs/2026-10-02-steuer-eigennutzung-design.md)):
   jede Position in privat und abziehbar. Direkt zugeordnet ganz zu ihrer Einheit; nicht umlagefähig
@@ -837,7 +850,8 @@ Grundmenge ist das ganze Gebäude), Überschuss. Beschreibende Gruppen statt fes
   Jahr ändert, `taxYear` widerspricht oder außerhalb Beginn − 1 bis Ende + 3 liegt, braucht
   `confirmPaidOn` (409 `question: 'paidOn'`), beim Aufteilen je Teil (`splitPaidOnQuestions`).
   Datierte Positionen und solche mit angegebenem Jahr behalten beim Zeitraumwechsel ihr Jahr (`keepsTaxYear`, #478). Kein Datum bei
-  `external` und am Abzug beim Betriebsstrom (er folgt seiner Stromrechnung, Quelle `bill`, #267).
+  `external`, an Zuführung und Entnahme der Erhaltungsrücklage (#96) und am Abzug beim Betriebsstrom (er folgt seiner
+  Stromrechnung, Quelle `bill`, #267).
   Die Belegbuchung belegt es nie vor (Rechnungsdatum ≠ Zahlungsdatum). Teilzahlungen kommen mit
   #292 über dieselbe Funktion. Über alle Jahre ändert ein Datum weder Summe noch privaten Teil
   (invariant-steuer-summe-zahlungsdatum.test.ts).

@@ -213,7 +213,7 @@ export function PreviewAnswers({ preview, answers, onChange }: { preview: Period
       {shownKept.map((k) => <div key={`${k.costItemId}|${k.period}`} className="warn">{k.text}</div>)}
       {shownTax.map((t) => (
         <label key={t.key} className="field">
-          Jahr der Zahlung (Steuer) für „{t.description}“ in {t.label}
+          {t.reserveWithdrawal ? 'Jahr, in dem die Gemeinschaft bezahlt hat (Steuer)' : 'Jahr der Zahlung (Steuer)'} für „{t.description}“ in {t.label}
           <select value={answers.taxYears[t.key] ?? String(t.suggested)} onChange={(e) => onChange({ ...answers, taxYears: { ...answers.taxYears, [t.key]: e.target.value } })}>
             {t.options.map((y) => <option key={y} value={String(y)}>{y}</option>)}
           </select>

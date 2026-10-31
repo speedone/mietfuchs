@@ -8,7 +8,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { CATEGORIES, NOT_ALLOCABLE as CLIENT_NOT_ALLOCABLE, matchCategory } from '../../client/src/types.ts'
-import { ANLAGE_V_GROUP, HEATING_CATEGORY, NOT_ALLOCABLE_CATEGORIES, RESERVE_CATEGORY, isNotAllocable, looksLikeReserveContribution } from '../src/calc.ts'
+import { ANLAGE_V_GROUP, ANLAGE_V_GROUP_ORDER, HEATING_CATEGORY, NOT_ALLOCABLE_CATEGORIES, RESERVE_CATEGORY, RESERVE_WITHDRAWAL_CATEGORY, isNotAllocable, looksLikeReserveContribution } from '../src/calc.ts'
 import { EXTRACT_CATEGORIES } from '../src/extract.ts'
 import { GENERAL_POWER_CATEGORY } from '../../shared/operatingPower.ts'
 
@@ -42,13 +42,34 @@ test('die Erhaltungsrücklage ist eine eigene Kostenart und nicht umlagefähig, 
   assert.notEqual(matchCategory('Dachreparatur aus der Rücklage'), RESERVE_CATEGORY)
   assert.equal(matchCategory('Zuführung zur Rücklage'), RESERVE_CATEGORY)
   assert.equal(matchCategory('Zuführung zur Rücklage aus dem Hausgeld'), RESERVE_CATEGORY)
-  // Zweite Browserabnahme: Eine Entnahme aus der Rücklage ist eine bezahlte Erhaltungsmaßnahme, also
-  // nicht umlagefähig (und Werbungskosten), nicht „Sonstige Betriebskosten“.
-  assert.equal(matchCategory('Entnahme aus der Erhaltungsrücklage'), 'Nicht umlagefähig')
-  assert.equal(matchCategory('Dachreparatur aus der Rücklage'), 'Nicht umlagefähig')
+  // Zweite Browserabnahme, seit #96 mit eigener Kostenart: Eine Entnahme aus der Rücklage ist eine bezahlte
+  // Erhaltungsmaßnahme, also nicht umlagefähig (und Werbungskosten), nicht „Sonstige Betriebskosten“.
+  assert.equal(matchCategory('Entnahme aus der Erhaltungsrücklage'), RESERVE_WITHDRAWAL_CATEGORY)
+  assert.equal(matchCategory('Dachreparatur aus der Rücklage'), RESERVE_WITHDRAWAL_CATEGORY)
   for (const text of ['Entnahme aus der Instandhaltungsrücklage', 'Dachreparatur aus der Rücklage', 'Zuführung zur Rücklage', 'Instandhaltungsrücklage', 'Zuführung zur Rücklage aus dem Hausgeld']) {
     assert.equal(matchCategory(text) === RESERVE_CATEGORY, looksLikeReserveContribution(text), text)
   }
+})
+
+// #96 PR 1 (A1, A2): Die Entnahme aus der Erhaltungsrücklage ist eine eigene Kostenart, nicht umlagefähig und steuerlich
+// Erhaltungsaufwand (Anlage V 2025, Zeilen 55/56 „einschließlich Entnahmen aus der Erhaltungsrücklage“).
+test('die Entnahme aus der Erhaltungsrücklage ist eine eigene Kostenart, in allen drei Listen (#96)', () => {
+  assert.equal(RESERVE_WITHDRAWAL_CATEGORY, 'Entnahme Erhaltungsrücklage')
+  assert.ok(CATEGORIES.includes(RESERVE_WITHDRAWAL_CATEGORY), 'Oberfläche')
+  assert.ok(EXTRACT_CATEGORIES.includes(RESERVE_WITHDRAWAL_CATEGORY), 'KI-Schema')
+  assert.equal(ANLAGE_V_GROUP[RESERVE_WITHDRAWAL_CATEGORY], 'Erhaltungsaufwand', 'Anlage V')
+  assert.ok(isNotAllocable(RESERVE_WITHDRAWAL_CATEGORY))
+  assert.ok(CLIENT_NOT_ALLOCABLE.includes(RESERVE_WITHDRAWAL_CATEGORY))
+  // Eine neue Gruppe vor „Verwaltung & Instandhaltung“; diese bleibt, wie sie ist (ihr Name steht in den Prüfsummen).
+  assert.deepEqual(ANLAGE_V_GROUP_ORDER, ['Grundsteuer & öffentliche Abgaben', 'Laufende Betriebskosten', 'Versicherungen', 'Erhaltungsaufwand', 'Verwaltung & Instandhaltung', 'Sonstige Werbungskosten'])
+  assert.equal(ANLAGE_V_GROUP['Nicht umlagefähig'], 'Verwaltung & Instandhaltung')
+  assert.equal(matchCategory('Entnahme aus Erhaltungsrücklage Dachreparatur'), RESERVE_WITHDRAWAL_CATEGORY)
+  assert.equal(matchCategory('Fassadenanstrich, aus der Rücklage bezahlt'), RESERVE_WITHDRAWAL_CATEGORY)
+  assert.equal(matchCategory('Entnahme Erhaltungsrücklage'), RESERVE_WITHDRAWAL_CATEGORY)
+  // Die Regel der Zuführung bleibt wortgleich.
+  assert.equal(matchCategory('Instandhaltungsrücklage'), RESERVE_CATEGORY)
+  assert.equal(matchCategory('Zuführung zur Rücklage aus dem Hausgeld'), RESERVE_CATEGORY)
+  assert.equal(matchCategory('Reparatur Dachrinne'), 'Nicht umlagefähig')
 })
 
 test('Betriebsstrom: die Kostenart des Abzugs steht in der Liste der Kostenarten (Heizung PR 15)', () => {
