@@ -1207,3 +1207,16 @@ test('S31: Karten mit Überschrift nur über den Baustein Card', () => {
   const found = files.filter((f) => f !== './components/Card.tsx').map((f) => [f, manualCardHeads(sources[f] ?? '').length] as const).filter(([, n]) => n > 0)
   expect(found.filter(([f]) => !CARD_EXCEPTIONS.has(f)).map(([f, n]) => `${f}: ${n}`)).toEqual([])
 })
+
+// S32 (Durchsicht von #488, S1): Ein Eingabefeld zeigt seinen Fokus über `box-shadow` (input:focus in index.css, Schicht
+// legacy). Ein Schatten als Utility (`shadow-2`) steht darüber und nahm dem Suchfeld der Hilfe den Fokusring. Ein Feld
+// mit eigenem Schatten braucht deshalb ein Gegenstück für den Fokus (`focus:shadow-…`).
+const fieldShadows = (src: string): string[] => [...src.matchAll(/<(?:input|select|textarea)\b[^<]*?className="([^"]*)"/g)]
+  .filter((m) => /(?<![\w:-])shadow-/.test(m[1] ?? '') && !/(?<![\w-])focus:shadow-/.test(m[1] ?? ''))
+  .map((m) => m[0].slice(0, 120))
+test('S32: ein Feld mit eigenem Schatten behält seinen Fokusring', () => {
+  expect(fieldShadows('<input value={q} onChange={(e) => set(e)} className="w-full shadow-2" />')).toHaveLength(1)
+  expect(fieldShadows('<input className="w-full shadow-2 focus:shadow-pop" />')).toEqual([])
+  expect(fieldShadows('<div className="shadow-2"><input className="w-full" /></div>')).toEqual([])
+  expect(files.flatMap((f) => fieldShadows(sources[f] ?? '').map((m) => `${f}: ${m}`))).toEqual([])
+})

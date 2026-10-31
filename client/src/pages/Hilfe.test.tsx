@@ -2,8 +2,11 @@
 // Die Seite „Hilfe & Begriffe“ (#488): Startansicht mit Suche, Anleitungen als Kacheln in Gruppen, Themen des Lexikons;
 // Anleitung und Begriffe als eigene Ansichten; der Sprung aus einer Begriffserklärung (#346).
 import { afterEach, expect, test, vi } from 'vitest'
+import { useState } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import Hilfe from './Hilfe'
+import { TermHelp } from '../components/Term'
+import type { TermId } from '../../../shared/glossary.ts'
 import { GUIDES } from '../../../shared/guides.ts'
 import { GLOSSARY, TERM_TOPICS } from '../../../shared/glossary.ts'
 import { TERM_TOPIC_LABELS } from '../helpView'
@@ -15,6 +18,17 @@ const type = (value: string) => fireEvent.change(searchBox(), { target: { value 
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const tile = (title: string) => screen.getByRole('button', { name: new RegExp(`^${escape(title)}`) })
 const optionTitles = (list: HTMLElement) => within(list).getAllByRole('option').map((o) => o.querySelector('.font-strong')?.textContent)
+
+// Wie in der App: „Mehr in ‚Hilfe & Begriffe‘ →“ aus einer Erklärung setzt `focusTerm`, die Seite meldet den Sprung zurück.
+let seq = 0
+function WithHelp() {
+  const [focusTerm, setFocusTerm] = useState<{ id: TermId; seq: number } | null>(null)
+  return (
+    <TermHelp.Provider value={(id) => setFocusTerm({ id, seq: ++seq })}>
+      <Hilfe onNavigate={() => {}} focusTerm={focusTerm} onFocusTermDone={() => setFocusTerm(null)} />
+    </TermHelp.Provider>
+  )
+}
 
 test('Startansicht: Anleitungen als Kacheln in drei Gruppen, mit erstem Satz und Zahl der Schritte, darunter die Themen', () => {
   render(<Hilfe onNavigate={() => {}} />)
@@ -67,8 +81,8 @@ test('ein Sprung führt auf die Seite des Schritts und an den Anfang der Seite',
 test('die Suche zeigt beim Tippen Anleitungen und Begriffe getrennt, mit Zahl, markierter Fundstelle und Ansage', () => {
   render(<Hilfe onNavigate={() => {}} />)
   type('garage')
-  const guides = screen.getByRole('listbox', { name: 'Anleitungen 2' })
-  const terms = screen.getByRole('listbox', { name: 'Begriffe 2' })
+  const guides = screen.getByRole('group', { name: 'Anleitungen 2' })
+  const terms = screen.getByRole('group', { name: 'Begriffe 2' })
   expect(optionTitles(guides)).toEqual([GUIDES.garage.title, GUIDES.properties.title])
   expect(optionTitles(terms)).toEqual([GLOSSARY.garageVat.title, GLOSSARY.noConnection.title])
   // Die Fundstelle ist markiert, auch im Ausschnitt; das Thema steht beim Begriff
@@ -82,21 +96,31 @@ test('die Suche zeigt beim Tippen Anleitungen und Begriffe getrennt, mit Zahl, m
   expect(screen.queryByText('Häufig gesucht:')).toBeNull()
   // Seit #208 nennt der Begriff „Gradtagszahlen“ § 9b HeizkostenV; die Suche findet ihn neben den Anleitungen.
   type('§ 9b')
-  expect(optionTitles(screen.getByRole('listbox', { name: /^Anleitungen/ }))).toEqual([GUIDES.meteringService.title, GUIDES.heatingSelf.title, GUIDES.tenantChange.title])
-  expect(optionTitles(screen.getByRole('listbox', { name: /^Begriffe/ }))).toContain(GLOSSARY.degreeDays.title)
+  expect(optionTitles(screen.getByRole('group', { name: /^Anleitungen/ }))).toEqual([GUIDES.meteringService.title, GUIDES.heatingSelf.title, GUIDES.tenantChange.title])
+  expect(optionTitles(screen.getByRole('group', { name: /^Begriffe/ }))).toContain(GLOSSARY.degreeDays.title)
 })
 
-test('Pfeiltasten wählen über beide Listen, Enter öffnet den Treffer', async () => {
+test('Pfeiltasten wählen über beide Gruppen, Enter öffnet den Treffer', async () => {
   render(<Hilfe onNavigate={() => {}} />)
   type('garage')
   const box = searchBox()
   expect(box.getAttribute('aria-expanded')).toBe('true')
   const selected = () => document.getElementById(searchBox().getAttribute('aria-activedescendant') ?? '')
-  expect(selected()?.textContent).toContain(GUIDES.garage.title)
+  // Durchsicht von #488, S2: Beim Tippen bleibt der Vorleser im Feld; erst die Pfeiltasten gehen in die Liste.
+  expect(box.getAttribute('aria-activedescendant')).toBeNull()
+  // Der erste Treffer ist trotzdem sichtbar markiert, Enter öffnete ihn
+  expect(screen.getAllByRole('option')[0]?.getAttribute('aria-selected')).toBe('true')
+  fireEvent.keyDown(box, { key: 'ArrowDown' })
+  expect(selected()).toBe(screen.getAllByRole('option')[1])
   expect(selected()?.getAttribute('aria-selected')).toBe('true')
   fireEvent.keyDown(box, { key: 'ArrowDown' })
-  fireEvent.keyDown(box, { key: 'ArrowDown' })
   expect(selected()?.textContent).toContain(GLOSSARY.garageVat.title)
+  // Weitertippen verlässt die Liste wieder
+  type('garag')
+  expect(box.getAttribute('aria-activedescendant')).toBeNull()
+  type('garage')
+  fireEvent.keyDown(box, { key: 'ArrowDown' })
+  fireEvent.keyDown(box, { key: 'ArrowDown' })
   for (let i = 0; i < 3; i++) fireEvent.keyDown(box, { key: 'ArrowUp' })
   // Über den Anfang hinaus geht es unten weiter
   expect(selected()?.textContent).toContain(GLOSSARY.noConnection.title)
@@ -124,7 +148,7 @@ test('ein Klick auf einen Treffer öffnet ihn, „Häufig gesucht“ füllt die 
   fireEvent.click(screen.getByRole('button', { name: 'Hausgeld' }))
   expect(searchBox().value).toBe('Hausgeld')
   expect(document.activeElement).toBe(searchBox())
-  fireEvent.click(within(screen.getByRole('listbox', { name: /^Anleitungen/ })).getAllByRole('option')[0]!)
+  fireEvent.click(within(screen.getByRole('group', { name: /^Anleitungen/ })).getAllByRole('option')[0]!)
   expect(await screen.findByRole('heading', { name: GUIDES.condo.title, level: 2 })).toBeTruthy()
 })
 
@@ -212,4 +236,64 @@ test('passt nichts zur Suche, steht das als schlichter Satz mit dem Weg ins Lexi
   expect(screen.getByRole('status').textContent).toBe('Nichts gefunden.')
   fireEvent.click(within(text).getByRole('button', { name: 'Alle Begriffe von A bis Z' }))
   expect(await screen.findByRole('heading', { name: /^Alle Begriffe von A bis Z/, level: 2 })).toBeTruthy()
+})
+
+// Durchsicht von #488, S5: eine Liste mit zwei Gruppen; aria-controls zeigt nur auf Vorhandenes.
+test('die Treffer stehen in einer Liste mit zwei Gruppen, jede Option benannt nach ihrem sichtbaren Text', () => {
+  render(<Hilfe onNavigate={() => {}} />)
+  expect(searchBox().getAttribute('aria-controls')).toBeNull()
+  type('Leerstand')
+  const ids = (searchBox().getAttribute('aria-controls') ?? '').split(/\s+/).filter(Boolean)
+  expect(ids.length).toBeGreaterThan(0)
+  for (const id of ids) expect(document.getElementById(id), id).toBeTruthy()
+  const lists = screen.getAllByRole('listbox')
+  expect(lists).toHaveLength(1)
+  const list = lists[0] ?? expect.fail('Liste fehlt')
+  expect(ids).toContain(list.id)
+  expect(within(list).getAllByRole('group').map((g) => g.getAttribute('aria-labelledby') && document.getElementById(g.getAttribute('aria-labelledby') ?? '')?.textContent)).toEqual([expect.stringMatching(/^Anleitungen/), expect.stringMatching(/^Begriffe/)])
+  expect(within(list).getAllByRole('option').length).toBe(screen.getAllByRole('option').length)
+  // Der Name ist der sichtbare Text, vorne der Titel (WCAG 2.5.3; Titel allein als Name meldet axe als Verstoß)
+  const option = within(list).getAllByRole('option')[0] ?? expect.fail('Option fehlt')
+  expect(within(list).getByRole('option', { name: `${GUIDES.tenantChange.title} ${GUIDES.tenantChange.applies}` })).toBe(option)
+  expect(option.getAttribute('aria-labelledby')).toBeNull()
+  type('gibt es nicht')
+  expect(searchBox().getAttribute('aria-controls')).toBeNull()
+})
+
+// Durchsicht von #488, S3: In der offenen Erklärung eines Begriffs gehört „/“ nicht der Suche.
+test('in einer offenen Begriffserklärung springt „/“ nicht in die Suche', async () => {
+  render(<WithHelp />)
+  fireEvent.click(tile(GUIDES.granny.title))
+  const guide = await waitFor(() => document.getElementById('anleitung-granny') ?? expect.fail('Anleitung fehlt'))
+  fireEvent.click(within(guide).getByRole('button', { name: 'Einliegerwohnung' }))
+  const more = within(screen.getByRole('dialog', { name: 'Einliegerwohnung' })).getByRole('link', { name: 'Mehr in „Hilfe & Begriffe“ →' })
+  more.focus()
+  const ev = new KeyboardEvent('keydown', { key: '/', bubbles: true, cancelable: true })
+  more.dispatchEvent(ev)
+  expect(ev.defaultPrevented).toBe(false)
+  await new Promise((r) => setTimeout(r, 0))
+  expect(document.getElementById('anleitung-granny')).toBeTruthy()
+})
+
+// Durchsicht von #488, K3: Die App hängt die Hilfe mit dem Sprung frisch ein.
+test('frisch mit einem Sprung eingehängt, steht der Fokus auf dem Begriff', async () => {
+  render(<Hilfe onNavigate={() => {}} focusTerm={{ id: 'mea', seq: 1 }} />)
+  await waitFor(() => expect(document.activeElement?.closest('details')?.id).toBe('begriff-mea'))
+  expect((document.getElementById('begriff-mea') as HTMLDetailsElement).open).toBe(true)
+})
+
+// Durchsicht von #488, K4: Wer aus einer Anleitung zu einem Begriff springt, kommt mit „Zurück“ in die Anleitung, und
+// von dort wie gewohnt zur Kachel.
+test('„Zurück“ nach dem Sprung aus einer Anleitung führt in diese Anleitung', async () => {
+  render(<WithHelp />)
+  fireEvent.click(tile(GUIDES.granny.title))
+  const guide = await waitFor(() => document.getElementById('anleitung-granny') ?? expect.fail('Anleitung fehlt'))
+  fireEvent.click(within(guide).getByRole('button', { name: 'Einliegerwohnung' }))
+  fireEvent.click(within(screen.getByRole('dialog', { name: 'Einliegerwohnung' })).getByRole('link', { name: 'Mehr in „Hilfe & Begriffe“ →' }))
+  await waitFor(() => expect(document.activeElement?.closest('details')?.id).toBe('begriff-granny'))
+  fireEvent.click(screen.getByRole('button', { name: '← Zurück zu Hilfe & Begriffe' }))
+  const heading = await screen.findByRole('heading', { name: GUIDES.granny.title, level: 2 })
+  await waitFor(() => expect(document.activeElement).toBe(heading))
+  fireEvent.click(screen.getByRole('button', { name: '← Zurück zu Hilfe & Begriffe' }))
+  await waitFor(() => expect(document.activeElement).toBe(tile(GUIDES.granny.title)))
 })

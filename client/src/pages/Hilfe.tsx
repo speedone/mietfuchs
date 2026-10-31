@@ -29,9 +29,15 @@ const SEARCH = 'search'
 // (Durchsicht S1).
 export default function Hilfe({ onNavigate, focusTerm, onFocusTermDone }: { onNavigate: (page: GuidePage) => void; focusTerm?: { id: TermId; seq: number } | null; onFocusTermDone?: () => void }) {
   const [view, setView] = useState<View>({ kind: 'home' })
-  const [from, setFrom] = useState<string>(SEARCH)
+  // Der Weg zurück: je geöffnete Ansicht die vorige und ihr Auslöser (`data-help-key`, das Suchfeld oder, bei einer
+  // Anleitung, ihre Überschrift). So führt „Zurück“ nach einem Sprung aus einer Anleitung zu einem Begriff wieder in die
+  // Anleitung und von dort zur Kachel (Durchsicht von #488, K4).
+  const [trail, setTrail] = useState<{ view: View; key: string | null }[]>([])
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
+  // Erst die Pfeiltasten führen den Vorleser in die Liste (`aria-activedescendant`); beim Tippen bleibt er im Feld, die
+  // optische Markierung des Treffers für Enter bleibt (Durchsicht von #488, S2).
+  const [inList, setInList] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
   // Was nach dem Zeichnen der neuen Ansicht geschieht (den Fokus setzen); `tick` sorgt dafür, dass gezeichnet wird.
   const pending = useRef<(() => void) | null>(null)
@@ -48,40 +54,43 @@ export default function Hilfe({ onNavigate, focusTerm, onFocusTermDone }: { onNa
   }, [tick])
 
   const focusHeading = () => document.getElementById('hilfe-ansicht')?.focus()
-  const openGuide = (id: GuideId, origin: string) => {
-    setFrom(origin)
-    show({ kind: 'guide', id }, focusHeading)
+  const open = (next: View, key: string | null, then: () => void) => {
+    setTrail((t) => [...t, { view, key }])
+    show(next, then)
   }
-  const openTerms = (topic: TermTopic | null, origin: string) => {
-    setFrom(origin)
-    show({ kind: 'terms', topic }, focusHeading)
+  const openGuide = (id: GuideId, origin: string) => open({ kind: 'guide', id }, origin, focusHeading)
+  const openTerms = (topic: TermTopic | null, origin: string) => open({ kind: 'terms', topic }, origin, focusHeading)
+  const openTerm = (id: TermId, origin: string) => open({ kind: 'terms', topic: null }, origin, () => focusEntry(id))
+  const back = () => {
+    const last = trail.at(-1) ?? { view: { kind: 'home' } as View, key: SEARCH }
+    setTrail((t) => t.slice(0, -1))
+    show(last.view, () => {
+      if (last.view.kind !== 'home') return focusHeading()
+      const target = last.key === SEARCH || last.key === null ? null : document.querySelector<HTMLElement>(`[data-help-key="${last.key}"]`)
+      ;(target ?? searchRef.current)?.focus()
+    })
   }
-  const openTerm = (id: TermId, origin: string) => {
-    setFrom(origin)
-    show({ kind: 'terms', topic: null }, () => focusEntry(id))
-  }
-  const back = () => show({ kind: 'home' }, () => {
-    const target = from === SEARCH ? null : document.querySelector<HTMLElement>(`[data-help-key="${from}"]`)
-    ;(target ?? searchRef.current)?.focus()
-  })
 
   useEffect(() => {
     if (!focusTerm) return
-    setFrom(SEARCH)
-    show({ kind: 'terms', topic: null }, () => {
+    const then = () => {
       focusEntry(focusTerm.id)
       onFocusTermDone?.()
-    })
+    }
+    if (view.kind === 'terms') show({ kind: 'terms', topic: null }, then)
+    else open({ kind: 'terms', topic: null }, view.kind === 'home' ? SEARCH : null, then)
   }, [focusTerm])
 
-  // Die Taste „/“ springt in die Suche, außer beim Schreiben in einem Feld und in einem Dialog (Erklärung am Handy,
-  // Menüblatt).
+  // Die Taste „/“ springt in die Suche, außer beim Schreiben in einem Feld und in einem Dialog: dem Menüblatt, einer
+  // Rückfrage und der Erklärung eines Begriffs (ein Popover mit der Rolle eines Dialogs, am Handy ein Blatt; Durchsicht
+  // von #488, S3). `[role$=…]` trifft dialog und alertdialog.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return
       const t = e.target
-      if (t instanceof HTMLElement && (t.isContentEditable || t.closest('input, textarea, select, dialog'))) return
+      if (t instanceof HTMLElement && (t.isContentEditable || t.closest('input, textarea, select, dialog, [role$="dialog"]'))) return
       e.preventDefault()
+      setTrail([])
       show({ kind: 'home' }, () => searchRef.current?.focus())
     }
     document.addEventListener('keydown', onKey)
@@ -93,19 +102,22 @@ export default function Hilfe({ onNavigate, focusTerm, onFocusTermDone }: { onNa
   const q = query.trim()
   const openHit = (hit: Hit) => (hit.kind === 'guide' ? openGuide(hit.id, SEARCH) : openTerm(hit.id, SEARCH))
   useEffect(() => {
-    if (q) document.getElementById(optionId(active))?.scrollIntoView?.({ block: 'nearest' })
-  }, [active])
+    if (inList) document.getElementById(optionId(active))?.scrollIntoView?.({ block: 'nearest' })
+  }, [active, inList])
 
   const search = (value: string) => {
     setQuery(value)
     setActive(0)
+    setInList(false)
   }
   // Pfeiltasten wählen einen Treffer, Enter öffnet ihn (ohne Wahl den ersten), Esc leert die Suche.
   const onSearchKey = (e: ReactKeyboardEvent<HTMLInputElement>) => {
     if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && hits.length > 0) {
       e.preventDefault()
       const step = e.key === 'ArrowDown' ? 1 : -1
+      // Der erste Druck auf ↓ geht vom markierten ersten Treffer zum zweiten, wie die Markierung es zeigt.
       setActive((a) => (a + step + hits.length) % hits.length)
+      setInList(true)
     } else if (e.key === 'Enter') {
       const hit = hits[active]
       if (hit) {
@@ -179,13 +191,13 @@ export default function Hilfe({ onNavigate, focusTerm, onFocusTermDone }: { onNa
           autoComplete="off"
           aria-autocomplete="list"
           aria-expanded={hits.length > 0}
-          aria-controls={hits.length > 0 ? 'hilfe-anleitungen hilfe-begriffe' : undefined}
-          aria-activedescendant={hits.length > 0 ? optionId(active) : undefined}
+          aria-controls={hits.length > 0 ? 'hilfe-treffer' : undefined}
+          aria-activedescendant={inList && hits.length > 0 ? optionId(active) : undefined}
           value={query}
           onChange={(e) => search(e.target.value)}
           onKeyDown={onSearchKey}
-          placeholder="z. B. Garage, Mieterwechsel oder § 556"
-          className="w-full text-l px-4 py-3 rounded-l shadow-2"
+          placeholder="z. B. Garage oder § 556"
+          className="w-full text-l px-4 py-3 rounded-l"
         />
       </label>
       {/* Die Trefferzahl für Vorleser; die Liste selbst sagen sie erst, wenn man mit den Pfeiltasten hineingeht. */}
@@ -206,8 +218,13 @@ export default function Hilfe({ onNavigate, focusTerm, onFocusTermDone }: { onNa
           <button type="button" className="btn ghost small" onClick={() => openTerms(null, SEARCH)}>Alle Begriffe von A bis Z</button> nach.
         </p>
       )}
-      {q !== '' && <ResultList title="Anleitungen" id="hilfe-anleitungen" hits={results.guides} offset={0} active={active} onOpen={openHit} />}
-      {q !== '' && <ResultList title="Begriffe" id="hilfe-begriffe" hits={results.terms} offset={results.guides.length} active={active} onOpen={openHit} />}
+      {q !== '' && hits.length > 0 && (
+        // Eine Liste mit zwei Gruppen (Durchsicht von #488, S5): Eine Combobox steuert genau eine Liste.
+        <div role="listbox" id="hilfe-treffer" aria-label="Treffer">
+          <ResultGroup title="Anleitungen" id="hilfe-anleitungen" hits={results.guides} offset={0} active={active} onOpen={openHit} />
+          <ResultGroup title="Begriffe" id="hilfe-begriffe" hits={results.terms} offset={results.guides.length} active={active} onOpen={openHit} />
+        </div>
+      )}
 
       {q === '' && (
         <>
@@ -253,31 +270,36 @@ function Marked({ segments }: { segments: readonly Segment[] }) {
   return <>{segments.map((s, i) => (s.hit ? <mark key={i} className="bg-mark text-text rounded-s">{s.text}</mark> : <Fragment key={i}>{s.text}</Fragment>))}</>
 }
 
-// Eine Gruppe von Treffern als Liste (`role="listbox"`). Ihre Einträge wählt man mit den Pfeiltasten im Suchfeld
-// (`aria-activedescendant`, über beide Listen hinweg gezählt) oder klickt sie an; sie sind selbst nicht fokussierbar,
-// der Fokus bleibt im Suchfeld.
-function ResultList({ title, id, hits, offset, active, onOpen }: { title: string; id: string; hits: readonly Hit[]; offset: number; active: number; onOpen: (hit: Hit) => void }) {
+// Eine Gruppe von Treffern in der Liste (`role="group"`, benannt nach ihrer Überschrift). Ihre Einträge wählt man mit den
+// Pfeiltasten im Suchfeld (`aria-activedescendant`, über beide Gruppen hinweg gezählt) oder klickt sie an; sie sind
+// selbst nicht fokussierbar, der Fokus bleibt im Suchfeld. Der Name eines Eintrags ist sein ganzer sichtbarer Text
+// (Thema, Titel, Ausschnitt): Nur den Titel als Namen und den Ausschnitt als Beschreibung (K1 der Durchsicht) wertet axe
+// als `label-content-name-mismatch` (WCAG 2.5.3, serious), auch mit Thema und Titel als Name.
+function ResultGroup({ title, id, hits, offset, active, onOpen }: { title: string; id: string; hits: readonly Hit[]; offset: number; active: number; onOpen: (hit: Hit) => void }) {
   if (hits.length === 0) return null
   return (
-    <>
-      <h2 className="help-section" id={`${id}-titel`}>{title} <span className="text-s text-muted font-normal">{hits.length}</span></h2>
-      <div role="listbox" id={id} aria-labelledby={`${id}-titel`} className="bg-card border border-line rounded-l overflow-hidden">
-        {hits.map((hit, k) => (
-          <div
-            key={`${hit.kind}-${hit.id}`}
-            role="option"
-            id={optionId(offset + k)}
-            aria-selected={active === offset + k}
-            onClick={() => onOpen(hit)}
-            className="flex flex-col gap-1 px-4 py-3 border-b border-line last:border-b-0 border-l-4 border-l-transparent cursor-pointer hover:bg-hover aria-selected:bg-accent-soft aria-selected:border-l-accent"
-          >
-            {hit.kind === 'term' && <span className="text-xs text-muted font-bold uppercase tracking-wide">{TERM_TOPIC_LABELS[hit.topic]}</span>}
-            <span className="font-strong"><Marked segments={hit.title} /></span>
-            <span className="text-s text-muted wrap-anywhere"><Marked segments={hit.excerpt} /></span>
-          </div>
-        ))}
+    <div role="group" id={id} aria-labelledby={`${id}-titel`}>
+      <div className="help-section font-bold" id={`${id}-titel`}>{title} <span className="text-s text-muted font-normal">{hits.length}</span></div>
+      <div className="bg-card border border-line rounded-l overflow-hidden">
+        {hits.map((hit, k) => {
+          const oid = optionId(offset + k)
+          return (
+            <div
+              key={`${hit.kind}-${hit.id}`}
+              role="option"
+              id={oid}
+              aria-selected={active === offset + k}
+              onClick={() => onOpen(hit)}
+              className="flex flex-col gap-1 px-4 py-3 border-b border-line last:border-b-0 border-l-4 border-l-transparent cursor-pointer hover:bg-hover aria-selected:bg-accent-soft aria-selected:border-l-accent"
+            >
+              {hit.kind === 'term' && <span className="text-xs text-muted font-bold uppercase tracking-wide">{TERM_TOPIC_LABELS[hit.topic]}</span>}{' '}
+              <span className="font-strong"><Marked segments={hit.title} /></span>{' '}
+              <span className="text-s text-muted wrap-anywhere"><Marked segments={hit.excerpt} /></span>
+            </div>
+          )
+        })}
       </div>
-    </>
+    </div>
   )
 }
 
