@@ -185,12 +185,11 @@ export function spreadRestText(report: Pick<TaxReport, 'year' | 'expenses'>): st
 // Die Fundstellen dazu, eingeklappt. Die Schenkung ist Auslegung (Lexikon `spread82b`, Hilfe am Feld).
 export const SPREAD_REST_MORE = 'Der noch nicht abgezogene Teil ist im Jahr des Verkaufs, der Einlage in ein Betriebsvermögen oder des Endes der Vermietung abzuziehen (§ 82b Abs. 2 EStDV). Im Erbfall zieht ihn der Verstorbene im Todesjahr ab, die Erben führen die Verteilung nicht fort (BFH, Urteil vom 10.11.2020, IX R 31/19). Bei einer Schenkung ist das Ende im Jahr der Schenkung eine Auslegung: Nach R 21.1 Abs. 6 EStR 2012 führt der Beschenkte die Verteilung fort, eine Regel, die der BFH für den Erbfall verworfen hat; zur Schenkung gibt es kein Urteil. Fragen Sie im Zweifel Ihren Steuerberater.'
 
-// `spreadRestBeforeStart`: Das Ende liegt im Jahr der Zahlung oder davor; die Position wird nicht verteilt (E-7).
+// `spreadRestBeforeStart`: Das Ende liegt im Jahr der Zahlung; die Position wird nicht verteilt (E-7). Ein Ende davor
+// wirkt auf die Position nicht (Durchsicht S2) und kommt hier nicht vor.
 export function spreadRestBeforeStartText(report: Pick<TaxReport, 'year' | 'spreadRestBeforeStart'>): string {
-  const list = report.spreadRestBeforeStart ?? []
-  const restYear = list[0]?.restYear ?? report.year
-  const names = list.map((x) => quoted(x.description)).join(', ')
-  return `${names}: Das Jahr des Endes (${restYear}) liegt im Jahr der Zahlung oder davor; die Position wird nicht verteilt und zählt ganz in ${report.year}. Stimmt das Jahr nicht, berichtigen Sie es in den Stammdaten beim Objekt (${REST_FIELD}).`
+  const names = (report.spreadRestBeforeStart ?? []).map((x) => quoted(x.description)).join(', ')
+  return `${names}: Die Verteilung endet im Jahr der Zahlung (${report.year}); die Position wird nicht verteilt und zählt ganz in ${report.year}. Stimmt das Jahr nicht, berichtigen Sie es in den Stammdaten beim Objekt (${REST_FIELD}).`
 }
 
 // `spreadUsageChanged`: Die Nutzung einer Einheit wechselt, während eine Verteilung läuft. Mietfuchs ändert die Anteile

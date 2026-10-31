@@ -217,12 +217,13 @@ describe('Hinweise zum vorzeitigen Ende (§ 82b Abs. 2 EStDV)', () => {
     expect(SPREAD_REST_MORE).toMatch(/Schenkung.*Auslegung.*R 21\.1 Abs\. 6 EStR 2012/s)
   })
 
-  test('spreadRestBeforeStart: Ende im Jahr der Zahlung oder davor, nicht verteilt', () => {
+  test('spreadRestBeforeStart: Ende im Jahr der Zahlung, nicht verteilt', () => {
     const r = report([pos()], { spreadRestBeforeStart: [{ costItemId: 'dach', description: 'Dachsanierung', restYear: 2025 }] }, null)
     expect(taxHints(r, 'ist')).toContain('spreadRestBeforeStart')
     expect(taxHints(report([pos()], {}, null), 'ist')).not.toContain('spreadRestBeforeStart')
-    expect(spreadRestBeforeStartText(r)).toMatch(/„Dachsanierung“: Das Jahr des Endes \(2025\) liegt im Jahr der Zahlung oder davor; die Position wird nicht verteilt und zählt ganz in 2025\./)
-    expect(spreadRestBeforeStartText(report([pos()], { spreadRestBeforeStart: [{ costItemId: 'dach', description: 'Dachsanierung', restYear: 2024 }] }, null))).toMatch(/\(2024\)/)
+    // Durchsicht S2: nur ein Ende im Jahr der Zahlung; eines davor wirkt nicht und kommt hier nicht vor.
+    expect(spreadRestBeforeStartText(r)).toMatch(/„Dachsanierung“: Die Verteilung endet im Jahr der Zahlung \(2025\); die Position wird nicht verteilt und zählt ganz in 2025\./)
+    expect(spreadRestBeforeStartText(r)).not.toMatch(/davor/)
   })
 
   test('spreadUsageChanged: Nutzungswechsel bei laufender Verteilung, ohne Rest in diesem Jahr', () => {

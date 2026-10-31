@@ -149,14 +149,15 @@ test('deductionPlan: wo nicht verteilt werden kann, zählt die Wahl nicht (Heizp
   assert.deepEqual(deductionPlan(repair({ spreadYears: 2, category: 'Entnahme Erhaltungsrücklage' }), { from: '2026-01-01' })[0]?.years, [2026, 2027])
 })
 
-test('deductionPlan: das vorzeitige Ende (§ 82b Abs. 2) kürzt die Jahre; davor oder im ersten Jahr wird nicht verteilt', () => {
+test('deductionPlan: das vorzeitige Ende (§ 82b Abs. 2) kürzt die Jahre; im ersten Jahr wird nicht verteilt, davor wirkt es nicht', () => {
   assert.deepEqual(deductionPlan(repair({ spreadYears: 5 }), { from: '2026-01-01' }, [], 2027), [{ outflowYear: 2026, years: [2026, 2027], of: 5, restYear: 2027 }])
   // Ende nach dem letzten Jahr: ohne Wirkung.
   assert.deepEqual(deductionPlan(repair({ spreadYears: 3 }), { from: '2026-01-01' }, [], 2030), [{ outflowYear: 2026, years: [2026, 2027, 2028], of: 3, restYear: null }])
   assert.deepEqual(deductionPlan(repair({ spreadYears: 3 }), { from: '2026-01-01' }, [], 2028)[0]?.restYear, null, 'Ende im letzten Jahr: nichts vorzeitig')
-  for (const rest of [2025, 2026]) {
-    assert.deepEqual(deductionPlan(repair({ spreadYears: 3 }), { from: '2026-01-01' }, [], rest), [{ outflowYear: 2026, years: [2026], of: 1, restYear: rest }], `Ende ${rest}`)
-  }
+  // Ende im Jahr der Zahlung: nicht verteilt. Ein Ende davor wirkt auf diese Position nicht (Durchsicht S2: Aufwand nach
+  // dem Ereignis, etwa der Erbin oder nach Wiedervermietung, verteilt normal).
+  assert.deepEqual(deductionPlan(repair({ spreadYears: 3 }), { from: '2026-01-01' }, [], 2026), [{ outflowYear: 2026, years: [2026], of: 1, restYear: 2026 }])
+  assert.deepEqual(deductionPlan(repair({ spreadYears: 3 }), { from: '2026-01-01' }, [], 2025), [{ outflowYear: 2026, years: [2026, 2027, 2028], of: 3, restYear: null }])
 })
 
 test('deductionPlan bricht bei mehreren Anteilen ab, wie paidWhollyIn (bis #292)', () => {

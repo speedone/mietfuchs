@@ -376,3 +376,16 @@ test('Ende 2028 über drei Verteilungen: Rest aus zwei Jahren, eine im Jahr des 
   // Ohne Ende kein Eintrag.
   assert.equal('spreadRestBeforeStart' in report(house(src.costItems), 2028), false)
 })
+
+// Durchsicht S2 (Abweichung von E-7): Ein Ende vor dem Jahr der Zahlung wirkt auf die Position nicht. Ende 2027, Fenster
+// 2029 für 10.000 € auf 5 Jahre: 2029 ein Fünftel (2.000 €), 2030 der zweite Anteil, kein Hinweis „nicht verteilt“.
+test('Ende vor dem Jahr der Zahlung: die Position verteilt normal', () => {
+  const src = house([item({ id: 'fenster', description: 'Fenster', period: periodKey('2029-01'), spreadYears: 5 })], { restYear: 2027 })
+  const r29 = report(src, 2029)
+  assert.equal(row(r29, 'fenster').deductibleCents, 200_000)
+  assert.equal(row(r29, 'fenster').deferredCents, 800_000)
+  assert.equal('spreadRestBeforeStart' in r29, false)
+  const d = row(report(src, 2030), 'spread:fenster:2029')
+  assert.deepEqual([d.deductibleCents, d.spreadFrom?.rest, d.spreadFrom?.index], [200_000, undefined, 2])
+  assert.equal(row(report(src, 2033), 'spread:fenster:2029').deductibleCents, 200_000)
+})

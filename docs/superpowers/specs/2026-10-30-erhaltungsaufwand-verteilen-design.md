@@ -252,8 +252,10 @@ und Hilfe am Feld kennzeichnen sie so. IX R 22/17 wird nur für das zitiert, was
 
 - **Am Objekt und nicht an der Position**, weil das Ereignis das Gebäude bzw. den Eigentümer betrifft und für alle
   Verteilungen zugleich gilt. Eine Angabe statt einer je Position.
-- `deductionPlan` kürzt `years` auf `≤ restYear`. Das letzte Jahr bekommt den Rest. Ist `restYear ≤ Y0`, wird
-  nicht verteilt (alles in Y0), mit Hinweis `spreadRestBeforeStart`.
+- `deductionPlan` kürzt `years` auf `≤ restYear`. Das letzte Jahr bekommt den Rest. Ist `restYear = Y0`, wird
+  nicht verteilt (alles in Y0), mit Hinweis `spreadRestBeforeStart`. **Abweichung (Durchsicht von PR 4, S2):** Ein Ende
+  vor Y0 wirkt auf die Position nicht. Der Aufwand entstand nach dem Ereignis (die Erbin führt die Vermietung fort, die
+  Wohnung wird wieder vermietet) und ist eine eigene Wahl; ursprünglich stand hier `restYear ≤ Y0`.
 - **Beschriftung** (Durchsicht V7): „Verkauft, verschenkt, vererbt oder Vermietung beendet im Jahr“, ein Jahresfeld
   (wie `taxYear`, 1900 bis 2200), nur sichtbar, wenn das Objekt eine verteilte Position hat. Hilfe am Feld: „Der noch
   nicht abgezogene Teil des verteilten Erhaltungsaufwands wird in diesem Jahr abgezogen (§ 82b Abs. 2 EStDV). Wer erbt
@@ -272,7 +274,7 @@ und Hilfe am Feld kennzeichnen sie so. IX R 22/17 wird nur für das zitiert, was
 | `spreadUsageChanged` | im Verteilungszeitraum wechselt die Nutzung einer Einheit (`usageChangedUnits`, Selbstnutzung) | Prüfen, ob § 82b Abs. 2 greift (Vermietung beendet); die Raten bleiben, wie sie sind |
 | `spreadNothingDeductible` | D = 0 (direkt der selbstgenutzten Wohnung zugeordnet) | Die Verteilung hat keine Wirkung |
 | `spreadRest` | `restYear` = dieses Jahr, mit Rest | Rest nach § 82b Abs. 2 |
-| `spreadRestBeforeStart` | `restYear ≤ Y0` | nichts verteilt |
+| `spreadRestBeforeStart` | `restYear = Y0` (ein Ende davor wirkt nicht, Durchsicht S2) | nichts verteilt |
 | `spreadIgnored` | `spreadYears` an einer Position, für die `allowsSpread` nicht gilt (Ablage von Hand, wiederhergestellt) | nicht verteilt, mit Name der Position |
 
 `specialLevySuspects` (#96 A4.3) gilt auch für eine Position „Nicht umlagefähig“ mit „Sonderumlage“ in der

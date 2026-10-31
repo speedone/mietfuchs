@@ -122,8 +122,9 @@ export function storedOutflowYear(item: OutflowItem & Pick<CostItem, 'id'> & { p
 //   gleichmäßig verteilen“). Ohne Wahl, oder wo `allowsSpread` nicht gilt (Ablage von Hand, „krumm, nicht kaputt“),
 //   nur Y0, und `of` ist 1; eine Wahl, die so nicht zählt, kennzeichnet `ignored` (Hinweis `spreadIgnored`).
 // - `restYear` (§ 82b Abs. 2 EStDV, am Objekt): Endet die Verteilung vorzeitig, ist der noch nicht berücksichtigte Teil
-//   in diesem Jahr abzusetzen. Die Jahre enden dann dort, und `restYear` steht im Plan. Liegt es im Jahr Y0 oder davor,
-//   wird nicht verteilt (alles in Y0, E-7), auch dann steht es im Plan. Ein Ende im letzten Jahr oder danach wirkt nicht.
+//   in diesem Jahr abzusetzen. Die Jahre enden dann dort, und `restYear` steht im Plan. Liegt es im Jahr Y0, wird nicht
+//   verteilt (alles in Y0, E-7), auch dann steht es im Plan. Ein Ende im letzten Jahr oder danach wirkt nicht, ebenso
+//   eines vor Y0 (Durchsicht S2): Der Aufwand entstand nach dem Ereignis.
 export type DeductionPlan = { outflowYear: number; years: number[]; of: 1 | SpreadYears; restYear: number | null; ignored?: true }
 
 type PlanItem = OutflowItem & Partial<Pick<CostItem, 'category'>> & { spreadYears?: SpreadYears | null }
@@ -143,7 +144,10 @@ export function deductionPlan(
       return { outflowYear: y0, years: [y0], of: 1, restYear: null, ignored: true }
     }
     const last = y0 + chosen - 1
-    if (restYear !== null && restYear <= y0) return { outflowYear: y0, years: [y0], of: 1, restYear }
+    // Ein Ende vor dem Jahr der Zahlung betrifft diese Position nicht (Durchsicht S2, Abweichung von E-7): Aufwand nach
+    // dem Ereignis, etwa der Erbin oder nach Wiedervermietung, verteilt normal.
+    if (restYear !== null && restYear < y0) return { outflowYear: y0, years: Array.from({ length: chosen }, (_, k) => y0 + k), of: chosen, restYear: null }
+    if (restYear === y0) return { outflowYear: y0, years: [y0], of: 1, restYear }
     const end = restYear !== null && restYear < last ? restYear : last
     return { outflowYear: y0, years: Array.from({ length: end - y0 + 1 }, (_, k) => y0 + k), of: chosen, restYear: end < last ? end : null }
   })

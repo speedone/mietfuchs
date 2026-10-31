@@ -142,7 +142,7 @@ export type TaxHint = (typeof TAX_HINTS)[number]
 //   `spreadNothingDeductible` Eine Verteilung ohne abziehbaren Teil (D = 0): ohne Wirkung.
 //   `spreadIgnored`      Eine gespeicherte Wahl an einer Position, an der nicht verteilt werden kann.
 //   `spreadRest`         (#262 PR 4) Das Ende am Objekt (§ 82b Abs. 2) liegt in diesem Jahr: der ganze Rest.
-//   `spreadRestBeforeStart` Das Ende liegt im Jahr der Zahlung oder davor: nicht verteilt.
+//   `spreadRestBeforeStart` Das Ende liegt im Jahr der Zahlung: nicht verteilt (eines davor wirkt nicht).
 //   `spreadUsageChanged` Die Nutzung einer Einheit wechselt, während eine Verteilung läuft, ohne Ende in diesem Jahr:
 //                        prüfen, ob Abs. 2 greift; die Anteile bleiben, wie sie sind.
 //

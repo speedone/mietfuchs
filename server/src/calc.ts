@@ -1903,7 +1903,7 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
   // Vermietung wird nicht vor dem Verteilen, sondern jede Rate im Jahr ihres Abzugs (unten bei `cheapRentOf`).
   const restYear = options.restYear ?? null
   const spreadIgnored: { costItemId: string; description: string }[] = []
-  // Ende im Jahr der Zahlung oder davor (§ 82b Abs. 2, E-7): nicht verteilt, Hinweis `spreadRestBeforeStart`.
+  // Ende im Jahr der Zahlung (§ 82b Abs. 2, E-7): nicht verteilt, Hinweis `spreadRestBeforeStart`; ein Ende davor wirkt nicht.
   const spreadRestBeforeStart: { costItemId: string; description: string; restYear: number }[] = []
   const spreadStarted: TaxSpread['started'] = []
   // Der Bruttoanteil der ersten Rate je verteilter Position: Grundlage ihrer Kürzung bei verbilligter Vermietung (unten).

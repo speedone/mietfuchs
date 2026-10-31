@@ -126,11 +126,12 @@ export const spreadSpan = (c: Spreadable & { spreadYears: SpreadYears }): { from
 
 type RestItem = Spreadable & { description: string }
 // Der Abzug einer Position bei einem Ende `rest` in Worten, wie `deductionPlan` ihn rechnet: Ende im letzten Jahr oder
-// danach wirkt nicht, Ende im ersten Jahr oder davor heißt nicht verteilt.
+// danach oder vor dem ersten wirkt nicht, Ende im ersten Jahr heißt nicht verteilt.
 const restSpanText = (c: RestItem & { spreadYears: SpreadYears }, rest: number | null): string => {
   const { from, to } = spreadSpan(c)
-  if (rest === null || rest >= to) return range(from, to)
-  if (rest <= from) return `ganz ${from}`
+  // Ein Ende vor dem Beginn betrifft die Position nicht (Durchsicht S2), eines im ersten Jahr heißt nicht verteilt.
+  if (rest === null || rest >= to || rest < from) return range(from, to)
+  if (rest === from) return `ganz ${from}`
   return `${range(from, rest)} (Rest ${rest})`
 }
 const counted = (c: RestItem): c is RestItem & { spreadYears: SpreadYears } => c.spreadYears != null && !neverCounted(c)
@@ -145,7 +146,7 @@ export function spreadRestQuestions(before: number | null, after: number | null,
     return was === now ? [] : [`${quoted(c.description)}: Abzug ${now} statt ${was}.`]
   })
   if (changed.length === 0) return []
-  const ends = after !== null && items.filter(counted).some((c) => after < spreadSpan(c).to)
+  const ends = after !== null && items.filter(counted).some((c) => after < spreadSpan(c).to && after >= spreadSpan(c).from)
   const lead = after === null
     ? 'Ohne dieses Jahr laufen die Verteilungen wie gewählt.'
     : ends

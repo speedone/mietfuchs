@@ -184,6 +184,9 @@ test('spreadRestQuestions: Setzen, Ändern und Entfernen des Endes nennen je Pos
     'Im Jahr 2030 endet keine Verteilung vorzeitig; sie laufen wie gewählt.',
     '„Dach“: Abzug 2026 bis 2030 statt 2026 bis 2027 (Rest 2027).',
   ])
+  // Durchsicht S2: Ein Ende vor dem Beginn betrifft die Position nicht; das Fenster ab 2027 läuft bei Ende 2026 weiter.
+  assert.deepEqual(spreadRestQuestions(null, 2026, [fenster]), [])
+  assert.deepEqual(spreadRestQuestions(null, 2026, [dach, fenster]).slice(1, -1), ['„Dach“: Abzug ganz 2026 statt 2026 bis 2030.'])
   // Nichts betroffen: keine Rückfrage.
   assert.deepEqual(spreadRestQuestions(null, 2030, [dach]), [])
   assert.deepEqual(spreadRestQuestions(null, 2031, [dach, plain, krumm]), [])

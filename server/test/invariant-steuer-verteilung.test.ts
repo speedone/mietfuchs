@@ -79,6 +79,7 @@ test('I-1 bis I-4: Summen über alle Jahre, Zeilen je Jahr, verschobener Teil je
   let carriedRows = 0
   let withCheapCut = 0
   let withRest = 0
+  let withEarlierEnd = 0
   for (let seed = FROM; seed <= TO; seed++) {
     const s = stock(seed)
     const at = `Startwert ${seed}`
@@ -132,7 +133,12 @@ test('I-1 bis I-4: Summen über alle Jahre, Zeilen je Jahr, verschobener Teil je
           assert.equal(restRate.year, s.restYear, `${at} ${y} ${i.costItemId}: Rest im Jahr des Endes`)
           assert.equal(sp.rates[sp.rates.length - 1], restRate)
         }
-        if (s.restYear !== null) assert.ok(sp.rates.every((q) => q.year <= (s.restYear ?? 0)), `${at} ${y} ${i.costItemId}: Rate nach dem Ende`)
+        if (s.restYear !== null && s.restYear >= y) assert.ok(sp.rates.every((q) => q.year <= (s.restYear ?? 0)), `${at} ${y} ${i.costItemId}: Rate nach dem Ende`)
+        // Durchsicht S2: Ein Ende vor dem Jahr der Zahlung wirkt nicht; verteilt wird auf alle gewählten Jahre, ohne Rest.
+        if (s.restYear !== null && s.restYear < y) {
+          withEarlierEnd++
+          assert.ok(sp.rates.length === sp.years && !restRate, `${at} ${y} ${i.costItemId}: Ende ${s.restYear} vor dem Jahr der Zahlung`)
+        }
         // Jede weitere Rate über 0 steht im Jahr ihres Abzugs als abgeleitete Zeile, und nur dort.
         for (const q of sp.rates.slice(1)) {
           const later = spread.get(q.year)?.expenses.items.filter((x) => x.costItemId === `spread:${i.costItemId}:${y}`) ?? []
@@ -157,6 +163,7 @@ test('I-1 bis I-4: Summen über alle Jahre, Zeilen je Jahr, verschobener Teil je
   assert.ok(carriedRows > 60, `zu wenige Anteile aus Vorjahren (${carriedRows})`)
   assert.ok(withCheapCut > 5, `zu wenige gekürzte Anteile aus Vorjahren (${withCheapCut})`)
   assert.ok(withRest > 2, `zu wenige Verteilungen mit vorzeitigem Ende (${withRest})`)
+  assert.ok(withEarlierEnd > 2, `zu wenige Verteilungen mit Ende vor dem Jahr der Zahlung (${withEarlierEnd})`)
 })
 
 test('I-7: ein Jahr des Abflusses, mit und ohne Verteilung', () => {

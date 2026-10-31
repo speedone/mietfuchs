@@ -915,8 +915,8 @@ Grundmenge ist das ganze Gebäude), Überschuss. Beschreibende Gruppen statt fes
   der Rest als `deferredCents`; in jedem Folgejahr eine abgeleitete Zeile `spread:<Position>:<Y0>` mit Betrag 0,
   `deferredCents` = −Rate, Kostenart, Gruppe und Einheiten der Position (`spreadFrom`). Je Zeile, Kategorie, Gruppe und
   Summe gilt Betrag = privat + unentgeltlich + verschoben + abziehbar. Raten nach `spreadRates` (Rest-Cent vorn), dazu
-  der Bruttoanteil (`grossCents`, Zeile 57/59); mit Ende am Objekt trägt das Jahr des Endes den Rest, liegt es in Y0 oder
-  davor, wird nicht verteilt. **Verbilligte Vermietung**: jede Rate im Jahr ihres Abzugs mit der Quote dieses Jahres,
+  der Bruttoanteil (`grossCents`, Zeile 57/59); mit Ende am Objekt trägt das Jahr des Endes den Rest, liegt es in Y0,
+  wird nicht verteilt, liegt es davor, wirkt es nicht. **Verbilligte Vermietung**: jede Rate im Jahr ihres Abzugs mit der Quote dieses Jahres,
   gerechnet wie eine Position dieses Jahres über den Bruttoanteil, geklemmt auf die Rate (Anleitung zur Anlage V: Kürzung
   nur in 87/88). Die Folgejahre holt `taxReportFor` (`carriedRates`): je Y0 einmal der Bericht jenes Jahres mit
   `carried: false, received: false`, ohne verteilte Position gar nichts; eine Rate von 0 ergibt keine Zeile. Der Block
@@ -946,8 +946,8 @@ Grundmenge ist das ganze Gebäude), Überschuss. Beschreibende Gruppen statt fes
   nach, wenn sich der Abzug einer verteilten Position dadurch ändert (`spreadRestQuestions` in shared/spread.ts,
   `requireSpreadRest` in repository.ts, 409 `question: 'spread'`, bestätigt mit `confirmSpread`); das Formular
   (Stammdaten, „Objekt bearbeiten“ unter „Für die Steuer (Anlage V)“, `SpreadRestField`) zeigt das Feld nur mit einer
-  verteilten Position oder einem gespeicherten Jahr und stellt dieselbe Rückfrage. Liegt das Ende im Jahr der Zahlung oder
-  davor, nennt der Bericht die Position in `spreadRestBeforeStart`. Hinweise `spreadRest`, `spreadRestBeforeStart`,
+  verteilten Position oder einem gespeicherten Jahr und stellt dieselbe Rückfrage. Liegt das Ende im Jahr der Zahlung, nennt der
+  Bericht die Position in `spreadRestBeforeStart`; ein Ende davor wirkt auf die Position nicht (Durchsicht S2). Hinweise `spreadRest`, `spreadRestBeforeStart`,
   `spreadUsageChanged` (Nutzungswechsel bei laufender Verteilung ohne Ende in diesem Jahr). Erbfall nach BFH IX R 31/19
   (Rest beim Erblasser); Schenkung als Auslegung gekennzeichnet (R 21.1 Abs. 6 EStR 2012 lässt den Beschenkten fortführen).
 - **Verschiebung anzeigen** (`shiftNotes`, nur Auskunft): Jede Position trägt `outflow`; liegt das
