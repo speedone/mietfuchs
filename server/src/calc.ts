@@ -1,5 +1,6 @@
 // Berechnungs-Engine für die Nebenkostenabrechnung.
 // Alle Beträge werden in Cent (Integer) gerechnet, um Gleitkomma-Fehler zu vermeiden.
+import { compareName } from '../../shared/compareName.ts'
 import type {
   AppliedValue,
   BillingPeriod,
@@ -205,12 +206,9 @@ export function occupiedDays(tenancies: { start: string, end: string | null }[],
 // **Steht die Reihenfolge in einer Liste, die ein Mensch liest**, gilt deutsche Sortierung, und
 // zwar fest eingestellt. Zeichenweise verglichen landete „Älter“ hinter „Zaun“, weil das Ä einen
 // höheren Zeichenwert hat als das Z — richtig wäre das nie, und einem Vermieter mit Umlauten im
-// Haus fiele es sofort auf. Die Sprache steht hier und kommt nicht aus der Umgebung.
-const NAME_COLLATOR = new Intl.Collator('de-DE')
-
-export function compareName(a: string, b: string): number {
-  return NAME_COLLATOR.compare(a, b)
-}
+// Haus fiele es sofort auf. Die Sprache steht fest in shared/compareName.ts (seit #490 PR 3 dort, weil die Oberfläche
+// dieselbe Reihenfolge braucht) und kommt nicht aus der Umgebung.
+export { compareName }
 
 // ---------- Personen-Staffel ----------
 

@@ -11,13 +11,15 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - **Belege von Hand erfassen**: „Von Hand erfassen“ steht an jedem Beleg unter „Ohne Position“ im Eingang, auch ohne
   KI (dann als erster Weg), und an jedem gespeicherten, nicht ausgewerteten Beleg in Eingang und Kosten. Es öffnet
   das Kostenformular mit dem Beleg: oben Vorschau und „Beleg in neuem Tab öffnen“, die Kostenart aus dem Dateinamen
-  vorgeschlagen (ohne Treffer bleibt sie leer und wird abgefragt). Nennt man einen Rechnungssteller, den es im Vorjahr
+  gelb als Vorschlag (nennt der Name keine oder mehrere, bleibt sie leer und wird abgefragt; Straßennamen zählen nicht). Nennt man einen Rechnungssteller, den es im Vorjahr
   gab, lassen sich Kostenart, Beschreibung und Umlageschlüssel von dort übernehmen, nie der Betrag. Nach „Anlegen“ hängt
   der Beleg an der Position, „Zum Eingang“ führt zurück
   ([#490](https://github.com/speedone/mietfuchs/issues/490), [#487](https://github.com/speedone/mietfuchs/issues/487)).
-- Kostenformular: Feld „Rechnungsdatum“ am angehängten Beleg. Ohne gespeichertes Datum liest Mietfuchs es aus dem Text
+- Kostenformular: Feld „Rechnungsdatum“ am angehängten Beleg; ein korrigiertes Datum gilt auch für die KI-Auswertung
+  desselben Belegs. Legen Sie eine neue Position an und hat der Beleg noch kein Datum, liest Mietfuchs es aus dem Text
   einer PDF, ohne KI, und setzt es als gelb markierten Vorschlag ein; gespeichert wird es nur, wenn Sie es stehen lassen
-  und anlegen. Beträge liest Mietfuchs dabei nicht ([#487](https://github.com/speedone/mietfuchs/issues/487)).
+  oder bestätigen. Das Jahr der Zahlung einer Heizposition richtet sich erst nach einem bestätigten Datum. Beträge liest
+  Mietfuchs dabei nicht ([#487](https://github.com/speedone/mietfuchs/issues/487)).
 - **Mietfuchs im Microsoft Store** für Windows (x64 und ARM64): installieren und aktualisieren über den Store,
   gestartet wird aus dem Startmenü ohne Konsolenfenster, beendet über „Mietfuchs beenden“ in der Seitenleiste. Die
   Daten liegen in `%USERPROFILE%\Mietfuchs` und bleiben bei einer Deinstallation erhalten. Wer bisher die

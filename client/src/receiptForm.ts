@@ -10,14 +10,33 @@ import { normalizedText } from '../../shared/duplicates.ts'
 
 const FALLBACK = 'Sonstige Betriebskosten'
 
-// Die Kostenart, die der Dateiname nennt (dieselbe Lesart wie `attachChoices` in receipts.ts), sonst leer: Der Rückfall
-// von matchCategory auf „Sonstige Betriebskosten“ wäre ein stiller Vorschlag ohne Grund, und das Auswahlfeld zeigte
-// eine Kostenart, die niemand gewählt hat.
+// Die Kostenart, die der Dateiname nennt (die Regeln von matchCategory, je Wort), sonst leer. Leer auch, wenn der Name
+// mehr als eine Kostenart nennt („Wasser und Müll“), und ein Straßenname zählt nicht („Gartenstraße“, „Am Kanal 3“,
+// Durchsicht S2): Der Rückfall von matchCategory auf „Sonstige Betriebskosten“ oder ein Treffer im Teil eines Worts wäre
+// ein stiller Vorschlag ohne Grund, und das Auswahlfeld zeigte eine Kostenart, die niemand gewählt hat.
+const STREET = /(?:stra(?:ß|ss)e|str\.?|weg|allee|platz|gasse|ring|damm|ufer|chaussee|pfad|steig|markt)$/i
+const PLACE_WORDS = new Set(['am', 'an', 'auf', 'im', 'in', 'zum', 'zur', 'hinter', 'unter', 'vor', 'bei', 'der', 'dem', 'den', 'die'])
 export function categoryFromName(name: string): string {
   // NFC: macOS liefert Dateinamen zerlegt („u“ und Trema), matchCategory sucht das „ü“.
-  const text = name.normalize('NFC').replace(/\.[a-z0-9]+$/i, '').replace(/[_-]+/g, ' ')
-  const category = matchCategory(text)
-  return category === FALLBACK && !/sonstig/i.test(text) ? '' : category
+  const words = name.normalize('NFC').replace(/\.[a-z0-9]+$/i, '').split(/[\s_]+/).filter(Boolean)
+  const found = new Set<string>()
+  const kept: string[] = []
+  let afterPlace = false
+  for (const word of words) {
+    const lower = word.toLowerCase()
+    if (PLACE_WORDS.has(lower)) { afterPlace = true; continue }
+    // Das Wort nach „Am“, „An der“ … ist ein Ort, ebenso ein Wort auf „-straße“, „-weg“ …
+    if (afterPlace) { afterPlace = false; continue }
+    if (STREET.test(lower)) continue
+    kept.push(word)
+    const category = matchCategory(word.replace(/-+/g, ' '))
+    if (category !== FALLBACK || /sonstig/i.test(word)) found.add(category)
+  }
+  if (found.size === 1) return [...found][0] ?? ''
+  if (found.size > 1) return ''
+  // Was nur mehrere Wörter zusammen nennen („nicht umlagefähig“)
+  const whole = matchCategory(kept.join(' '))
+  return whole === FALLBACK ? '' : whole
 }
 
 // Das Formular einer neuen Position aus einem Beleg: der Beleg angehängt, die Kostenart samt dem Schlüssel, den das

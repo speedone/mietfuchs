@@ -172,3 +172,55 @@ test('Von Hand erfassen an „Gespeichert, nicht ausgewertet“ im Eingang: nach
   expect(created).toEqual([expect.objectContaining({ invoiceFile: '9_fremd.jpg' })])
   await waitFor(() => expect(screen.queryByText('Gespeichert, nicht ausgewertet')).toBeNull())
 })
+
+// ---------- Durchsicht von #490 PR 3 ----------
+
+const keptUpload = (over: Record<string, unknown>) => ({ file: '9_fremd.jpg', size: 4, mtime: '2026-01-01T00:00:00.000Z', originalName: 'fremd.jpg', mimeType: 'image/jpeg', uploadedAt: '2026-01-01T00:00:00.000Z', sha256: 'x', propertyId: 'objekt-1', year: new Date().getFullYear() - 1, invoiceDate: null, kind: 'receipt', ...over })
+async function manualFromCosts() {
+  render(<App />)
+  fireEvent.click(within(await screen.findByRole('navigation', { name: 'Hauptnavigation' })).getByRole('button', { name: /\sKosten$/ }))
+  const input = await waitFor(() => document.querySelector('main input[type="file"][multiple]') as HTMLInputElement ?? expect.fail('kein Dateifeld'))
+  fireEvent.change(input, { target: { files: [new File(['JPEG'], 'fremd.jpg', { type: 'image/jpeg' })] } })
+  fireEvent.click(await screen.findByRole('button', { name: 'Von Hand erfassen' }))
+}
+const periodChoice = () => (screen.getByRole('combobox', { name: /^Abrechnungs(jahr|zeitraum)$/ }) as HTMLSelectElement).selectedOptions[0]?.textContent ?? ''
+
+test('S4: Beleg eines anderen Jahres: erst in dessen Jahr, dann das Formular', async () => {
+  const year = new Date().getFullYear() - 2
+  uploads = [keptUpload({ year })]
+  await manualFromCosts()
+  await screen.findByRole('dialog', { name: 'Neue Kostenposition' })
+  await waitFor(() => expect(periodChoice()).toBe(String(year)))
+})
+
+test('S4: Objekt mit Zeitraum Mai bis April: der Zeitraum, der im Jahr des Belegs beginnt', async () => {
+  const year = new Date().getFullYear() - 1
+  properties = [{ ...PROPERTIES[0], periodRules: { startMonth: 5, changes: [] } } as Property]
+  uploads = [keptUpload({ year: year - 1 })]
+  await manualFromCosts()
+  await screen.findByRole('dialog', { name: 'Neue Kostenposition' })
+  await waitFor(() => expect(periodChoice()).toMatch(new RegExp(`${year - 1}.*${year}`)))
+})
+
+test('K1: das Objekt des Belegs gibt es nicht mehr: eine Meldung, kein Formular in einem anderen Objekt', async () => {
+  properties = [...PROPERTIES, { id: 'objekt-2', name: 'Gartenstraße 3', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }]
+  uploads = [keptUpload({ propertyId: 'objekt-weg' })]
+  await manualFromCosts()
+  expect((await screen.findAllByText(/gehört zu einem Objekt, das es nicht mehr gibt/)).length).toBeGreaterThan(0)
+  expect(screen.queryByRole('dialog', { name: 'Neue Kostenposition' })).toBeNull()
+})
+
+test('S4: offene Zuordnung im Eingang: „Von Hand erfassen“ fragt, „Abbrechen“ bleibt im Eingang', async () => {
+  const year = new Date().getFullYear() - 1
+  created = [{ id: 'w1', propertyId: 'objekt-1', period: `${year}-01`, category: 'Müllabfuhr', description: 'Müll', amountCents: 1000, key: 'area' }]
+  uploads = [keptUpload({ file: '9_Müllabfuhr.pdf', originalName: 'Müllabfuhr.pdf', mimeType: 'application/pdf', propertyId: null, year: null })]
+  render(<App />)
+  fireEvent.click(within(await screen.findByRole('navigation', { name: 'Hauptnavigation' })).getByRole('button', { name: /Belege$/ }))
+  fireEvent.change(await screen.findByLabelText('Müllabfuhr.pdf einer Position zuordnen'), { target: { value: 'w1' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Müllabfuhr.pdf von Hand erfassen' }))
+  const ask = await screen.findByRole('alertdialog', { name: 'Ungespeicherte Änderungen verwerfen?' })
+  fireEvent.click(within(ask).getByRole('button', { name: 'Abbrechen' }))
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+  expect(screen.getByRole('heading', { level: 1, name: 'Belege' })).toBeTruthy()
+  expect(screen.queryByRole('dialog', { name: 'Neue Kostenposition' })).toBeNull()
+})

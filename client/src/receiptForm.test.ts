@@ -25,6 +25,19 @@ describe('Kostenart aus dem Dateinamen', () => {
     expect(categoryFromName('Müllabfuhr.pdf')).toBe('Müllabfuhr')
     expect(categoryFromName('Schornsteinfeger Rechnung.jpg')).toBe('Schornsteinfeger')
   })
+  // Durchsicht S2: mehr als eine Kostenart oder nur ein Teil eines Straßennamens: leer
+  test('mehrere Kostenarten im Namen: leer', () => {
+    expect(categoryFromName('Rechnung Wasser und Müll.pdf')).toBe('')
+    expect(categoryFromName('Wasser Abwasser 2025.pdf')).toBe('Wasser/Abwasser')
+  })
+  test('Straßennamen zählen nicht', () => {
+    expect(categoryFromName('Gartenstraße 5 Hausmeister.pdf')).toBe('Hauswart')
+    expect(categoryFromName('Am Kanal 3 Versicherung.pdf')).toBe('Sach- und Haftpflichtversicherung')
+    expect(categoryFromName('Wasserturmstraße 2.pdf')).toBe('')
+    expect(categoryFromName('Rechnung_Gartenweg_12.pdf')).toBe('')
+    expect(categoryFromName('Am Kanal 3.pdf')).toBe('')
+    expect(categoryFromName('Nicht umlagefähig Am Kanal.pdf')).toBe('Nicht umlagefähig')
+  })
   test('ohne Treffer leer, nicht still „Sonstige Betriebskosten“', () => {
     expect(categoryFromName('Rechnung_4711.pdf')).toBe('')
     expect(categoryFromName('scan0001.jpg')).toBe('')
@@ -67,6 +80,17 @@ describe('Angaben aus dem Vorjahr über den Rechnungssteller', () => {
     expect(vendorPrevious(rows, 'Grün GmbH')).toEqual([])
     expect(vendorPrevious(rows, 'AWB')).toEqual([])
     expect(vendorPrevious(rows, '')).toEqual([])
+  })
+  // Durchsicht S4: zwei Positionen desselben Rechnungsstellers im Vorjahr, beide angeboten; übernommen ist nur die eine
+  test('zwei Vorjahrespositionen desselben Rechnungsstellers', () => {
+    const two = carryOverRows([
+      ...items,
+      item({ period: calendarPeriod(2024), category: 'Wasser/Abwasser', description: 'Abwasser 2024', vendor: 'Stadtwerke', key: 'units' }),
+    ], calendarContext(2025))
+    expect(vendorPrevious(two, 'Stadtwerke').map((r) => r.source.description)).toEqual(['Wasser 2024', 'Abwasser 2024'])
+    const abwasser = vendorPrevious(two, 'Stadtwerke')[1] ?? expect.fail('keine Vorlage')
+    const next = adoptPrevious({ ...receiptItemForm({ file: 'x.pdf', originalName: 'x.pdf' }, UNITS, []), vendor: 'Stadtwerke' }, abwasser)
+    expect(vendorPrevious(two, 'Stadtwerke', next).map((r) => r.source.description)).toEqual(['Wasser 2024'])
   })
   test('übernommen werden Kostenart, Beschreibung und Schlüssel, nie der Betrag; Beleg und Datum bleiben', () => {
     const row = vendorPrevious(rows, 'AWB Köln')[0] ?? expect.fail('keine Vorlage')

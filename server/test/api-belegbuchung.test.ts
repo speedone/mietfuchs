@@ -765,3 +765,19 @@ test('Wechsel des Zeitraums (#208): hin und zurück steht die Rechnung wieder ex
     s.stop()
   }
 })
+
+// Durchsicht von #490 PR 3, K3: Ein am Beleg korrigiertes Rechnungsdatum (Kostenformular) zieht in seine Auswertung mit;
+// deren offene Zeilen buchen sonst mit dem alten Datum ins Jahr der Zahlung.
+test('Belegbuchung: das Rechnungsdatum am Beleg zieht in die Auswertung mit, geleert ebenso', async () => {
+  await withOllama(async (s) => {
+    const a = assessmentOf(await evaluate(s, 'GRUNDSTEUER', { propertyId: 'objekt-1' }))
+    assert.equal((await putJson(s, `/api/uploads/${a.file}`, { invoiceDate: '2025-03-03' })).status, 200)
+    assert.equal((await s.api<AssessmentView>(`/api/assessments/${a.id}`)).invoiceDate, '2025-03-03')
+    assert.equal((await putJson(s, `/api/uploads/${a.file}`, { invoiceDate: null })).status, 200)
+    assert.equal((await s.api<AssessmentView>(`/api/assessments/${a.id}`)).invoiceDate, null)
+    // Jahr und Objekt allein lassen das Datum stehen
+    assert.equal((await putJson(s, `/api/uploads/${a.file}`, { invoiceDate: '2025-04-04' })).status, 200)
+    assert.equal((await putJson(s, `/api/uploads/${a.file}`, { year: 2025 })).status, 200)
+    assert.equal((await s.api<AssessmentView>(`/api/assessments/${a.id}`)).invoiceDate, '2025-04-04')
+  }, { invoices: RECHNUNGEN })
+})

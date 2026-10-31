@@ -295,10 +295,16 @@ function Shell() {
   // des Belegs (ein Beleg ohne Zuordnung bleibt im gewählten), und dort das Formular „Neue Kostenposition“ mit dem Beleg.
   // Wechselt dabei das Objekt oder der Zeitraum, hat dessen Rückfrage schon gefragt; sonst fragt der Seitenwechsel.
   const switchTo = useSwitchTo()
+  const toastShell = useToast()
   const [receiptStart, setReceiptStart] = useState<ReceiptStart | null>(null)
   const openNewCostItem = async (u: ReceiptStart) => {
     const there = placeOf(u, { propertyId: properties.length > 1 ? property?.id ?? null : null, year: periodYear })
     const dest = there ? properties.find((p) => p.id === (there.propertyId ?? property?.id)) : undefined
+    // Gehört der Beleg einem Objekt, das es nicht mehr gibt, nicht still ins gewählte (Durchsicht K1)
+    if (there && !dest) {
+      toastShell(`„${u.originalName || u.file}“ gehört zu einem Objekt, das es nicht mehr gibt. Ordnen Sie ihn auf der Seite Belege einem Objekt zu.`, 'error')
+      return
+    }
     if (there && dest) {
       if (!(await switchTo(there.propertyId ?? undefined, periodKeyOfYear(rulesOf(dest), there.year ?? periodYear)))) return
       setTab('kosten')

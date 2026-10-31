@@ -96,14 +96,19 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   und Aufteilen, Heizanlagen und Heizperioden, Zähler, abgeschlossene Abrechnung, Vorjahr); herausgelöst hätte die Seite
   Belege alles doppelt geladen, und der Zeitraum des Formulars ist der gewählte, nicht der des Ordners. Der Sprung kostet
   einen Seitenwechsel, „Zum Eingang“ führt nach dem Anlegen zurück. Im Formular: `ReceiptPreview` (ReceiptParts.tsx) oben,
-  die Kostenart aus `categoryFromName` (kein Treffer: leer, die Auswahl zeigt die leere Wahl wie das Feld „Ziel“, Pflicht und gemeldet);
+  die Kostenart aus `categoryFromName` (je Wort; Straßennamen und das Wort nach „Am“, „An der“ … zählen nicht; keine oder
+  mehrere Kostenarten: leer, die Auswahl zeigt die leere Wahl wie das Feld „Ziel“, Pflicht und gemeldet; ein Treffer
+  steht gelb mit „Vorschlag aus dem Dateinamen“);
   `vendorPrevious` über die Vorlagen von `carryOverRows` (ganzer Name ohne Schreibweise, kein Präfix), „Übernehmen“ setzt
   `adoptPrevious` (Kostenart, Beschreibung, Schlüssel; Betrag, Lohnanteil, Beleg, Datum bleiben), dazu die
   Rechnungssteller des Vorjahres als `datalist`. **Rechnungsdatum** gehört zum Beleg (`PUT /api/uploads/:file`), nicht
-  zur Position: Feld im Abschnitt „Beleg“, Teil von `value`; ohne gespeichertes Datum liest `receiptText` (pdfIntake.ts)
-  die ersten zwei Seiten, `invoiceDateFromText` ([invoiceDateText.ts](src/invoiceDateText.ts)) nimmt ein beschriftetes
-  Datum („Rechnungsdatum“ vor „Datum“), sonst nur das einzige, und es steht gelb mit „Vorschlag aus dem Beleg“ da, bis
-  jemand es ändert; nie ein Betrag. Nach „Anlegen“ `forgetFile` (der Eintrag der Warteschlange ist erledigt), eine
+  zur Position: Feld im Abschnitt „Beleg“, Teil von `value`; nur beim Anlegen und ohne gespeichertes Datum liest
+  `receiptText` (pdfIntake.ts) die ersten zwei Seiten, `invoiceDateFromText` ([invoiceDateText.ts](src/invoiceDateText.ts))
+  nimmt ein beschriftetes Datum („Rechnungsdatum“ vor „Datum“), nie ein fremd beschriftetes („fällig“, „bis“, „Stand“,
+  „Leistungszeitraum“ …), sonst nur das einzige, und es steht gelb mit „Vorschlag aus dem Beleg“ und „Bestätigen“ da, bis
+  jemand es ändert; nie ein Betrag. **Das Jahr der Zahlung** einer Heizposition richtet sich nur nach einem bestätigten
+  oder gespeicherten Datum, nie nach einem Vorschlag; nur vorbelegt (`autoTaxYear`) folgt es jeder Änderung des Datums,
+  gewählt bleibt es. Der Server zieht ein am Beleg geändertes Datum in dessen Auswertung mit (`followInvoiceDate`). Nach „Anlegen“ `forgetFile` (der Eintrag der Warteschlange ist erledigt), eine
   Bestätigung `div.ok` mit Fokus auf „Zum Eingang“.
 - **Handy** ([MobileNav.tsx](src/components/MobileNav.tsx)): unter 900 px (`MOBILE_QUERY`) statt der
   Seitenleiste ein angehefteter Kopf (☰, Titel, „Objekt · Zeitraum“, ⇅), ein Menüblatt als

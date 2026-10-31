@@ -106,6 +106,7 @@ import { receiptText } from '../pdfIntake'
 import { invoiceDateFromText } from '../invoiceDateText'
 import { adoptPrevious, receiptItemForm, vendorPrevious, type ReceiptStart } from '../receiptForm'
 import { receiptName } from '../receipts'
+import { compareName } from '../../../shared/compareName.ts'
 
 // `tenancies` für die Einzelbeträge je Mietverhältnis (#94); ohne sie gibt es dort nur keine Felder.
 // `onOpenReceipt`, `onOpenAiSettings`: Auswege eines gespeicherten, nicht ausgewerteten Belegs (#487)
@@ -228,8 +229,9 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   const invoiceDates = useMemo(() => new Map((uploads ?? []).flatMap((u) => (u.invoiceDate ? [[u.file, u.invoiceDate] as const] : []))), [uploads])
   // Das Rechnungsdatum des angehängten Belegs im Formular (#490 PR 3). Es gehört zum Beleg, nicht zur Position, und
   // wird mit „Anlegen“/„Speichern“ am Beleg gespeichert. `suggested`: gelesen aus der Textschicht der PDF, ohne KI
-  // (#487, 3B), gelb markiert, bis jemand es ändert; nur ein Datum, nie ein Betrag.
-  const [dateDraft, setDateDraft] = useState<{ file: string; value: string; stored: string; suggested: boolean } | null>(null)
+  // (#487, 3B), gelb markiert, bis jemand es ändert oder bestätigt; nur ein Datum, nie ein Betrag, und nur beim Anlegen
+  // (Durchsicht S3). `touched`: von Hand gesetzt, auch geleert; ein später ankommender Vorschlag überschreibt es nicht.
+  const [dateDraft, setDateDraft] = useState<{ file: string; value: string; stored: string; suggested: boolean; touched: boolean } | null>(null)
   const formKey = form ? form.id ?? 'neu' : null
   const formFile = form?.invoiceFile
   const uploadsReady = uploads !== null
@@ -237,26 +239,36 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     if (!formKey || !formFile || !uploadsReady) { setDateDraft(null); return }
     const u = uploads?.find((x) => x.file === formFile)
     const stored = u?.invoiceDate ?? ''
-    setDateDraft({ file: formFile, value: stored, stored, suggested: false })
-    if (stored) return
+    setDateDraft({ file: formFile, value: stored, stored, suggested: false, touched: false })
+    if (stored || formKey !== 'neu') return
     let alive = true
     readReceiptText(formFile, u?.mimeType ?? '').then((text) => {
       const date = alive ? invoiceDateFromText(text) : null
-      if (date) setDateDraft((d) => (d && d.file === formFile && d.value === '' ? { ...d, value: date, suggested: true } : d))
+      if (date) setDateDraft((d) => (d && d.file === formFile && d.value === '' && !d.touched ? { ...d, value: date, suggested: true } : d))
     }, () => { /* ohne lesbaren Text kein Vorschlag */ })
     return () => { alive = false }
   // Nur beim Öffnen und bei einem anderen Beleg, nicht bei jeder neu geladenen Ablage
   }, [formKey, formFile, uploadsReady])
-  const formInvoiceDate = form?.invoiceFile && dateDraft?.file === form.invoiceFile && dateDraft.value ? dateDraft.value : form?.invoiceFile ? invoiceDates.get(form.invoiceFile) : undefined
+  // Das Datum, nach dem sich das Jahr der Zahlung richtet (Durchsicht M1): ein bestätigtes oder gespeichertes, nie ein
+  // ungeprüfter Vorschlag aus dem Text; absichtlich geleert gilt keins (K4).
+  const draftOfForm = form?.invoiceFile && dateDraft?.file === form.invoiceFile ? dateDraft : null
+  const formInvoiceDate = draftOfForm
+    ? (draftOfForm.suggested ? draftOfForm.stored : draftOfForm.value) || undefined
+    : form?.invoiceFile ? invoiceDates.get(form.invoiceFile) : undefined
   // #478 (Durchsicht, Befund 5): mit dem gespeicherten Jahr, damit es sichtbar bleibt und in der Auswahl steht.
   const heatTax = heatingOption && form
     ? heatingTaxYear(heatingOption, form.taxYear, formInvoiceDate, form.id ? items.find((i) => i.id === form.id)?.taxYear ?? null : null)
     : null
-  // Vorbelegt wird nur, solange kein gültiges Jahr dasteht: Ein vom Vermieter gewähltes Jahr bleibt,
-  // auch wenn das Rechnungsdatum später ein anderes nahelegt.
+  // Vorbelegt wird, solange kein gültiges Jahr dasteht. Ein vom Vermieter gewähltes Jahr bleibt, auch wenn das
+  // Rechnungsdatum später ein anderes nahelegt; ein nur vorbelegtes (`autoTaxYear`, Durchsicht M1) folgt dem Datum.
+  const [autoTaxYear, setAutoTaxYear] = useState<string | null>(null)
+  useEffect(() => { setAutoTaxYear(null) }, [formKey])
   useEffect(() => {
-    if (form && heatTax?.show && !heatTax.valid && form.taxYear !== heatTax.fallback) setForm({ ...form, taxYear: heatTax.fallback })
-  }, [form, heatTax?.show, heatTax?.valid, heatTax?.fallback])
+    if (!form || !heatTax?.show || form.taxYear === heatTax.fallback) return
+    if (heatTax.valid && form.taxYear !== autoTaxYear) return
+    setForm({ ...form, taxYear: heatTax.fallback })
+    setAutoTaxYear(heatTax.fallback)
+  }, [form, heatTax?.show, heatTax?.valid, heatTax?.fallback, autoTaxYear])
 
   // Ein gespeicherter Teil einer aufgeteilten Rechnung (#454): Sein Betrag gilt nur für die Tage seines Zeitraums. Gefragt
   // wird am gespeicherten Stand, denn eine neue Rechnung über zwei Zeiträume trägt im Formular noch den ganzen Betrag.
@@ -291,7 +303,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   // Ob die Positionen dieses Objekts da sind: Erst dann schlägt das Formular aus dem Beleg den gemerkten Schlüssel vor.
   const [itemsLoaded, setItemsLoaded] = useState(false)
   useEffect(() => {
-    load().then(() => { if (propertyId) setItemsLoaded(true) }).catch(() => setError('Server nicht erreichbar — läuft `npm run dev`?'))
+    load().then(() => { if (propertyId) setItemsLoaded(true) }).catch(() => { setItemsFailed(true); setError('Server nicht erreichbar — läuft `npm run dev`?') })
     api<Meter[]>(withProperty('/api/meters', propertyId)).then((m) => { setMeters(m); setMeterData('ok') }, () => setMeterData('failed'))
     // Neu laden, wenn das Objekt wechselt (#92).
   }, [propertyId])
@@ -314,15 +326,28 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   // `fromReceipt`: der Beleg, aus dem das offene Formular stammt; nach dem Anlegen sagt die Seite, dass er gebucht ist.
   const [fromReceipt, setFromReceipt] = useState<string | null>(null)
   const [bookedNote, setBookedNote] = useState<{ text: string; itemId: string | null } | null>(null)
+  // Die Kostenart aus dem Dateinamen ist ein Vorschlag (Durchsicht S2): gelb, solange sie dasteht
+  const [categoryHint, setCategoryHint] = useState<string | null>(null)
   const openFromReceipt = (u: ReceiptStart) => {
     setError('')
     setBookedNote(null)
-    setForm(receiptItemForm(u, units, meters, keyCtx))
+    const next = receiptItemForm(u, units, meters, keyCtx)
+    setForm(next)
     setFromReceipt(u.file)
+    setCategoryHint(next.category || null)
   }
+  const [itemsFailed, setItemsFailed] = useState(false)
   const startDone = useRef<ReceiptStart | null>(null)
   useEffect(() => {
-    if (!receiptStart || startDone.current === receiptStart || !itemsLoaded || meterData === 'loading' || uploads === null) return
+    if (!receiptStart || startDone.current === receiptStart) return
+    // Ohne Objekt oder ohne Positionen kein Formular, aber ein Satz (Durchsicht K2), statt still nichts zu öffnen
+    if (!propertyId || itemsFailed) {
+      startDone.current = receiptStart
+      setError(`Das Formular zum Beleg „${receiptName(receiptStart)}“ ließ sich nicht öffnen: ${propertyId ? 'Die Kosten dieses Objekts sind nicht geladen. Laden Sie die Seite neu.' : 'Legen Sie zuerst ein Objekt an.'}`)
+      onReceiptStartDone?.()
+      return
+    }
+    if (!itemsLoaded || meterData === 'loading' || uploads === null) return
     startDone.current = receiptStart
     // Die Ablage kennt den Beleg vielleicht noch nicht (eben hochgeladen); dann zählt, was der Sprung mitbringt.
     if (!uploads.some((u) => u.file === receiptStart.file)) setUploads((list) => [...(list ?? []), { ...receiptStart, size: 0, mtime: '', uploadedAt: '', sha256: '', kind: 'receipt', bookedItemIds: [], bookedCents: {}, assessment: null }])
@@ -339,7 +364,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     else openFromReceipt(u)
   }
   // Ein anderes Formular nimmt die Bestätigung weg; geschlossen, stammt kein Formular mehr aus dem Beleg
-  useEffect(() => { if (form) setBookedNote(null); else setFromReceipt(null) }, [form])
+  useEffect(() => { if (form) setBookedNote(null); else { setFromReceipt(null); setCategoryHint(null) } }, [form])
   // Nach dem Anlegen aus dem Beleg: der Fokus auf „Zum Eingang“, sonst auf die neue Position
   const bookedRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -509,8 +534,9 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   const newForm = !!form && !form.id
   const previousRows = useMemo(() => (newForm ? carryOverRows(items, at, period, { rules: view.rules, plants }, { units, tenancies }) : []),
     [newForm, items, at, period, view.rules, plants, units, tenancies])
-  const previousVendors = useMemo(() => [...new Set(previousRows.map((r) => r.source.vendor?.trim() ?? '').filter(Boolean))].sort((a, b) => a.localeCompare(b, 'de')), [previousRows])
+  const previousVendors = useMemo(() => [...new Set(previousRows.map((r) => r.source.vendor?.trim() ?? '').filter(Boolean))].sort(compareName), [previousRows])
   const vendorRows = form && newForm ? vendorPrevious(previousRows, form.vendor, form) : []
+  const categorySuggested = !!form && !!fromReceipt && categoryHint !== null && form.category === categoryHint
   function adoptRow(r: CarryRow) {
     if (!form) return
     setForm(adoptPrevious(form, r))
@@ -683,18 +709,19 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     const desc = form.description.trim()
     if (!editing && formCarryId) removeCarried(new Set([formCarryId]))
     const createdId = typeof created.item === 'object' && created.item !== null && 'id' in created.item && typeof created.item.id === 'string' ? created.item.id : null
-    await afterSaved(form, editing, createdId)
+    const noted = await afterSaved(form, editing, createdId)
     setForm(null)
     await load()
-    toast(editing ? `„${desc}“ gespeichert.` : `„${desc}“ angelegt.`)
+    // Aus dem Beleg angelegt, sagt es die Bestätigung oben (Durchsicht K6)
+    if (!noted) toast(editing ? `„${desc}“ gespeichert.` : `„${desc}“ angelegt.`)
   }
 
   // Nach dem Speichern einer Position mit Beleg (#490 PR 3): das Rechnungsdatum am Beleg, wenn es sich geändert hat (ein
   // Vorschlag aus dem Beleg, der stehen blieb, ebenso). Eine neue Position nimmt den Beleg aus der Warteschlange
   // („Gespeichert, nicht ausgewertet“ ist erledigt); aus dem Beleg geöffnet, sagt die Seite danach, dass er gebucht ist.
-  async function afterSaved(saved: ItemForm, editing: boolean, createdId: string | null) {
+  async function afterSaved(saved: ItemForm, editing: boolean, createdId: string | null): Promise<boolean> {
     const file = saved.invoiceFile
-    if (file && dateDraft?.file === file && dateDraft.value !== dateDraft.stored) {
+    if (file && dateDraft?.file === file && dateDraft.value !== dateDraft.stored && !(editing && dateDraft.suggested)) {
       try {
         await api(`/api/uploads/${encodeURIComponent(file)}`, { method: 'PUT', body: JSON.stringify({ invoiceDate: dateDraft.value || null }) })
         void loadUploads()
@@ -705,7 +732,9 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     if (!editing && file) forgetFile(file)
     if (!editing && file && fromReceipt === file) {
       setBookedNote({ text: `„${saved.description.trim()}“ ist angelegt, der Beleg „${receiptName(uploadOf(file) ?? { file, originalName: '' })}“ hängt daran.`, itemId: createdId })
+      return true
     }
+    return false
   }
 
   async function deleteItem(i: CostItem) {
@@ -1158,8 +1187,9 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
           <div className="row">
             {/* Leer nur aus einem Beleg, dessen Name keine Kostenart nennt: Die Auswahl zeigt das ehrlich, statt still die
                 erste Kostenart (angezeigt = gespeichert) */}
-            <Field label="Kostenart" required={form.category === ''} {...formErrors.field('category')}>
-              <select value={form.category} onChange={(e) => setForm(keepSpread(keepPaidOnYear(form, withCategory(form, e.target.value, units, meters, keyCtx), period)))}>
+            <Field label={<>Kostenart{categorySuggested && <> <span className="badge amber">Vorschlag aus dem Dateinamen</span></>}</>}
+              required={form.category === ''} {...formErrors.field('category')}>
+              <select value={form.category} className={categorySuggested ? 'bg-amber-soft border-signal-amber' : undefined} onChange={(e) => setForm(keepSpread(keepPaidOnYear(form, withCategory(form, e.target.value, units, meters, keyCtx), period)))}>
                 {form.category === '' && <option value="">— bitte wählen —</option>}
                 {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
               </select>
@@ -1196,8 +1226,10 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
               <datalist id="kosten-vorjahr-lieferanten">{previousVendors.map((v) => <option key={v} value={v} />)}</datalist>
             )}
             {/* Derselbe Rechnungssteller im Vorjahr (#487, 2A): Kostenart, Beschreibung und Schlüssel übernehmbar, nie der Betrag */}
+            {/* Der Live-Bereich steht immer da (Durchsicht K5), leer unsichtbar ohne Lücke; nur sein Inhalt kommt und geht */}
+            <div className={vendorRows.length > 0 ? 'basis-full stack tight' : 'sr-only'} aria-live="polite" data-vendor-hint>
             {vendorRows.length > 0 && (
-              <div className="basis-full stack tight" aria-live="polite">
+              <>
                 {vendorRows.map((r) => (
                   <div key={r.source.id} className="flex flex-wrap items-center gap-2">
                     <span>Im Vorjahr: „{r.source.description}“, {r.source.category}, {fmtEuro(r.source.amountCents)}.</span>
@@ -1207,8 +1239,9 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                   </div>
                 ))}
                 <small className="muted">Übernimmt Kostenart, Beschreibung und Umlageschlüssel, nicht den Betrag.</small>
-              </div>
+              </>
             )}
+            </div>
             {/* #139: Eine Gutschrift senkt die Kosten des Jahres und wird verteilt wie eine Rechnung. */}
             <Field label="Betrag €" required hint="Eine Gutschrift mit Minus eintragen, z. B. -54,00." {...formErrors.field('amount')}>
               <input value={form.amount} inputMode="decimal" onChange={(e) => setForm({ ...form, amount: e.target.value })} placeholder="z. B. 480,00" />
@@ -1483,11 +1516,24 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                 </div>
                 {/* Das Rechnungsdatum gehört zum Beleg (#490 PR 3); ohne KI ein Vorschlag aus dem Text der PDF (#487, 3B) */}
                 {dateDraft?.file === form.invoiceFile && (
+                  <>
                   <Field label={<>Rechnungsdatum{dateDraft.suggested && <> <span className="badge amber">Vorschlag aus dem Beleg</span></>}</>}
-                    hint={dateDraft.suggested ? 'Aus dem Text des Belegs gelesen. Stimmt es, lassen Sie es stehen.' : undefined}>
+                    hint={[
+                      dateDraft.suggested ? 'Aus dem Text des Belegs gelesen. Stimmt es, lassen Sie es stehen oder bestätigen Sie es.' : '',
+                      // Durchsicht K7: Wer das Datum korrigiert, soll wissen, dass es das Jahr der Zahlung mitnimmt
+                      heatTax?.show ? 'Bestimmt das Jahr der Zahlung unter „Weitere Angaben“, solange Sie dort keines wählen.' : '',
+                    ].filter(Boolean).join(' ') || undefined}>
                     <input type="date" value={dateDraft.value} className={dateDraft.suggested ? 'bg-amber-soft border-signal-amber' : undefined}
-                      onChange={(e) => setDateDraft({ ...dateDraft, value: e.target.value, suggested: false })} />
+                      onChange={(e) => setDateDraft({ ...dateDraft, value: e.target.value, suggested: false, touched: true })} />
                   </Field>
+                  {dateDraft.suggested && (
+                    <div>
+                      <button type="button" className="btn small secondary" onClick={() => setDateDraft({ ...dateDraft, suggested: false, touched: true })}>
+                        Bestätigen<span className="sr-only"> (Rechnungsdatum)</span>
+                      </button>
+                    </div>
+                  )}
+                  </>
                 )}
                 </>
               ) : (

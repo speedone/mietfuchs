@@ -27,23 +27,41 @@ const upload = (file: string, over: Partial<UploadInfo> = {}): UploadInfo => ({
 let items: CostItem[]
 let uploads: UploadInfo[]
 let sent: { url: string; method: string; body: Record<string, unknown> }[]
+let plants: unknown[]
+// Antworten, die einzelne Tests vorgeben: Anlegen abgelehnt, Datum am Beleg scheitert, Positionen nicht ladbar
+let postError: string | null
+let putUploadError: string | null
+let itemsFail: boolean
 
 beforeEach(() => {
   sent = []
   items = []
   uploads = []
+  plants = []
+  postError = null
+  putUploadError = null
+  itemsFail = false
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const method = init?.method ?? 'GET'
     const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
     if (method !== 'GET') {
       const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
       sent.push({ url, method, body })
+      if (url.includes('/split/preview')) {
+        return json({ parts: [
+          { period: `${YEAR}-01`, label: String(YEAR), days: 184, amountCents: 30247, labor35aCents: null, description: 'Versicherung', needsTaxYear: false, closed: false, startYear: YEAR, endYear: YEAR },
+          { period: `${YEAR + 1}-01`, label: String(YEAR + 1), days: 181, amountCents: 29753, labor35aCents: null, description: 'Versicherung', needsTaxYear: false, closed: false, startYear: YEAR + 1, endYear: YEAR + 1 },
+        ] })
+      }
+      if (method === 'POST' && url.startsWith('/api/costItems') && postError) return json({ error: postError }, 400)
+      if (method === 'PUT' && url.startsWith('/api/uploads/') && putUploadError) return json({ error: putUploadError }, 500)
       if (method === 'POST' && url.startsWith('/api/costItems')) return json({ ...body, id: 'neu-1', propertyId: 'objekt-1' }, 201)
       return json({ ok: true })
     }
     const path = url.split('?')[0] ?? url
     if (path === '/api/properties') return json([{ id: 'objekt-1', name: 'Haus', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }])
-    if (path === '/api/costItems') return json(items)
+    if (path === '/api/costItems') return itemsFail ? json({ error: 'Datenbank nicht lesbar' }, 500) : json(items)
+    if (path === '/api/heating-plants') return json(plants)
     if (path === '/api/uploads') return json(uploads.map((u) => ({ ...u, bookedItemIds: [], bookedCents: {}, assessment: null })))
     return json([])
   })
@@ -60,7 +78,7 @@ function renderPage(start: ReceiptStart, opts: { text?: string; onOpenInbox?: ()
     <PeriodProvider>
       <PropertyProvider>
         <UIProvider>
-          <Kosten units={UNITS} settings={null} receiptStart={start} onReceiptStartDone={onDone} onOpenInbox={opts.onOpenInbox}
+          <Kosten units={UNITS} settings={null} receiptStart={start} onReceiptStartDone={onDone} onOpenInbox={opts.onOpenInbox ?? (() => {})}
             renderThumb={() => Promise.resolve('data:image/jpeg;base64,AA==')} readReceiptText={readText} />
         </UIProvider>
       </PropertyProvider>
@@ -202,4 +220,163 @@ test('ein anderer Rechnungssteller als im Vorjahr: kein Hinweis', async () => {
   const box = await drawer()
   fireEvent.change(screen.getByLabelText(/Rechnungssteller/i), { target: { value: 'Grün' } })
   expect(within(box).queryByText(/^Im Vorjahr:/)).toBeNull()
+})
+
+// ---------- Durchsicht ----------
+
+const HEATING_PLANT = {
+  id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'gas', supply: 'central', method: 'service', separateSettlement: null,
+  devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
+  warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: 5, periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null,
+}
+
+// M1: Ein ungeprüfter Vorschlag aus dem Text speist nie das Jahr der Zahlung; ein bestätigtes Datum schon, und ein nur
+// vorbelegtes Jahr folgt jeder späteren Änderung des Datums (auch dem Leeren, K4), ein gewähltes nicht. K7: Das
+// Datumsfeld sagt, dass es das Jahr der Zahlung bestimmt.
+test('M1: Jahr der Zahlung einer Heizperiode über zwei Jahre nur aus einem bestätigten Datum, vorbelegt folgt es dem Datum', async () => {
+  plants = [HEATING_PLANT]
+  const u = upload('9_Heizung.pdf')
+  uploads = [u]
+  const heizperiodeText = async () => (await waitFor(() => select(/^Heizperiode$/))).selectedOptions[0]?.textContent ?? ''
+  renderPage(u, { text: `Rechnungsdatum: 20.12.${PREV}` })
+  const box = await drawer()
+  expect(select(/Kostenart/i).value).toBe('Heizung und Warmwasser')
+  const [, beginn, ende] = /(\d{4})\/(\d{4})/.exec(await heizperiodeText()) ?? []
+  if (!beginn || !ende) throw new Error('keine Heizperiode über zwei Jahre')
+  const date = await waitFor(() => screen.getByLabelText(/^Rechnungsdatum/) as HTMLInputElement)
+  await waitFor(() => expect(date.value).toBe(`${PREV}-12-20`))
+  const jahr = await waitFor(() => select(/Jahr der Zahlung/i))
+  expect(jahr.value).toBe('')
+  expect(within(box).getByText(/Bestimmt das Jahr der Zahlung/)).toBeTruthy()
+  fireEvent.click(within(box).getByRole('button', { name: /^Bestätigen/ }))
+  await waitFor(() => expect(jahr.value).toBe(beginn))
+  fireEvent.change(date, { target: { value: `${ende}-01-12` } })
+  await waitFor(() => expect(jahr.value).toBe(ende))
+  // K4: absichtlich geleert, gilt kein Datum mehr, und das vorbelegte Jahr geht mit
+  fireEvent.change(date, { target: { value: '' } })
+  await waitFor(() => expect(jahr.value).toBe(''))
+  fireEvent.change(date, { target: { value: `${ende}-01-12` } })
+  await waitFor(() => expect(jahr.value).toBe(ende))
+  // Selbst gewählt, bleibt das Jahr
+  fireEvent.change(jahr, { target: { value: beginn } })
+  fireEvent.change(date, { target: { value: `${ende}-02-01` } })
+  await new Promise((r) => setTimeout(r, 50))
+  expect(jahr.value).toBe(beginn)
+})
+
+// S2: die Kostenart aus dem Dateinamen ist ein Vorschlag, gelb gekennzeichnet wie das Datum
+test('S2: die Kostenart aus dem Dateinamen steht gelb als Vorschlag, bis jemand sie ändert', async () => {
+  const u = upload('7_Müllabfuhr.pdf')
+  uploads = [u]
+  renderPage(u)
+  const box = await drawer()
+  expect(within(box).getByText('Vorschlag aus dem Dateinamen').className).toContain('badge amber')
+  expect(select(/Kostenart/i).className).toContain('bg-amber-soft')
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Gartenpflege' } })
+  expect(within(box).queryByText('Vorschlag aus dem Dateinamen')).toBeNull()
+})
+
+// S3: Beim Bearbeiten keine Lesung aus dem Text; Speichern einer Änderung schickt kein Datum an den Beleg.
+test('S3: eine bestehende Position bearbeiten: kein Vorschlag, kein Datum an den Beleg', async () => {
+  items = [{ id: 'k1', propertyId: 'objekt-1', period: calendarPeriod(YEAR), category: 'Gartenpflege', description: 'Garten', amountCents: 10000, key: 'area', invoiceFile: '5_garten.pdf' }]
+  uploads = [upload('5_garten.pdf')]
+  const readText = vi.fn(async () => 'Rechnungsdatum: 14.02.2025')
+  render(
+    <PeriodProvider><PropertyProvider><UIProvider>
+      <Kosten units={UNITS} settings={null} renderThumb={() => Promise.resolve('')} readReceiptText={readText} />
+    </UIProvider></PropertyProvider></PeriodProvider>,
+  )
+  fireEvent.click(await screen.findByRole('button', { name: 'Kostenposition bearbeiten' }))
+  const box = await screen.findByRole('dialog', { name: 'Kostenposition bearbeiten' })
+  fireEvent.change(within(box).getByLabelText(/^Betrag/), { target: { value: '120,00' } })
+  await new Promise((r) => setTimeout(r, 50))
+  expect(readText).not.toHaveBeenCalled()
+  expect(within(box).queryByText('Vorschlag aus dem Beleg')).toBeNull()
+  fireEvent.click(within(box).getByRole('button', { name: /^Speichern$/ }))
+  await waitFor(() => expect(sent.some((r) => r.url === '/api/costItems/k1')).toBe(true))
+  expect(sent.some((r) => r.url.startsWith('/api/uploads/'))).toBe(false)
+})
+
+// S4: Der Beleg ist inzwischen gelöscht: Der Satz des Servers steht im Formular, es bleibt offen.
+test('S4: gelöschter Beleg: der Satz des Servers im offenen Formular', async () => {
+  const u = upload('7_Müllabfuhr.pdf')
+  uploads = [u]
+  postError = 'Den Beleg „7_Müllabfuhr.pdf“ gibt es unter „Belege“ nicht (mehr). Bitte wählen Sie ihn neu oder laden Sie ihn hoch.'
+  renderPage(u)
+  const box = await drawer()
+  fireEvent.change(within(box).getByLabelText(/Beschreibung/), { target: { value: 'Müll' } })
+  fireEvent.change(within(box).getByLabelText(/^Betrag/), { target: { value: '10,00' } })
+  fireEvent.click(within(box).getByRole('button', { name: /^Anlegen$/ }))
+  expect(await within(box).findByText(/gibt es unter „Belege“ nicht \(mehr\)/)).toBeTruthy()
+  expect(screen.getByRole('dialog', { name: 'Neue Kostenposition' })).toBe(box)
+  expect(screen.queryByRole('button', { name: 'Zum Eingang' })).toBeNull()
+})
+
+// S4: Das Datum lässt sich nicht am Beleg speichern: Die Position bleibt angelegt, eine Meldung sagt es.
+test('S4: Datum am Beleg scheitert: Meldung, die Position ist angelegt', async () => {
+  const u = upload('9_Wasser.pdf')
+  uploads = [u]
+  putUploadError = 'Platte voll'
+  renderPage(u, { text: 'Rechnungsdatum: 14.02.2025' })
+  const box = await drawer()
+  await waitFor(() => expect((screen.getByLabelText(/^Rechnungsdatum/) as HTMLInputElement).value).toBe('2025-02-14'))
+  fireEvent.change(within(box).getByLabelText(/Beschreibung/), { target: { value: 'Wasser' } })
+  fireEvent.change(within(box).getByLabelText(/^Betrag/), { target: { value: '10,00' } })
+  fireEvent.click(within(box).getByRole('button', { name: /^Anlegen$/ }))
+  expect(await screen.findAllByText(/Das Rechnungsdatum wurde nicht am Beleg gespeichert: Platte voll/)).not.toHaveLength(0)
+  expect(sent.filter((r) => r.method === 'POST' && r.url.startsWith('/api/costItems'))).toHaveLength(1)
+  expect(await screen.findByRole('button', { name: 'Zum Eingang' })).toBeTruthy()
+})
+
+// S4: Aufteilen über zwei Zeiträume aus dem Beleg: alle Teile tragen den Beleg, danach die Bestätigung.
+test('S4: Aufteilen aus dem Beleg: die Teile tragen den Beleg', async () => {
+  const u = upload('6_Versicherung.pdf')
+  uploads = [u]
+  renderPage(u)
+  const box = await drawer()
+  fireEvent.change(within(box).getByLabelText(/Beschreibung/), { target: { value: 'Versicherung' } })
+  fireEvent.change(within(box).getByLabelText(/^Betrag/), { target: { value: '600,00' } })
+  fireEvent.change(within(box).getByLabelText(/Leistungszeitraum/), { target: { value: `${YEAR}-07-01` } })
+  fireEvent.change(within(box).getByLabelText(/^bis$/), { target: { value: `${YEAR + 1}-06-30` } })
+  fireEvent.click(within(box).getByRole('button', { name: /^Anlegen$/ }))
+  fireEvent.click(within(await screen.findByRole('alertdialog', { name: 'Rechnung aufteilen?' })).getByRole('button', { name: 'Aufteilen und speichern' }))
+  await waitFor(() => expect(sent.some((r) => r.url.startsWith('/api/costItems/split?') || r.url === '/api/costItems/split')).toBe(true))
+  expect(sent.find((r) => /\/api\/costItems\/split(\?|$)/.test(r.url))?.body).toMatchObject({ invoiceFile: '6_Versicherung.pdf' })
+  expect(await screen.findByRole('button', { name: 'Zum Eingang' })).toBeTruthy()
+})
+
+// K2: Lassen sich die Positionen nicht laden, öffnet das Formular nicht still nie, sondern die Seite sagt es.
+test('K2: Positionen nicht ladbar: eine Meldung statt eines Formulars, der Sprung ist erledigt', async () => {
+  itemsFail = true
+  const u = upload('7_Müllabfuhr.pdf')
+  uploads = [u]
+  const { onDone } = renderPage(u)
+  expect(await screen.findByText(/Das Formular zum Beleg „Müllabfuhr.pdf“ ließ sich nicht öffnen/)).toBeTruthy()
+  expect(onDone).toHaveBeenCalledTimes(1)
+  expect(screen.queryByRole('dialog', { name: 'Neue Kostenposition' })).toBeNull()
+})
+
+// K5: Der Hinweis auf das Vorjahr erscheint in einem Live-Bereich, der schon vorher da ist (sonst sagt ihn kein Vorleser an).
+test('K5: der Live-Bereich des Vorjahres-Hinweises steht vor dem Tippen da', async () => {
+  const u = upload('8_scan0001.pdf')
+  uploads = [u]
+  renderPage(u)
+  const box = await drawer()
+  const live = box.querySelector('[data-vendor-hint][aria-live="polite"]')
+  expect(live).not.toBeNull()
+  expect(live?.textContent).toBe('')
+})
+
+// K6: Nach dem Anlegen aus dem Beleg sagt es die Bestätigung, nicht noch eine Mitteilung dazu.
+test('K6: kein doppelter Erfolg nach dem Anlegen aus dem Beleg', async () => {
+  const u = upload('7_Müllabfuhr.pdf')
+  uploads = [u]
+  renderPage(u)
+  const box = await drawer()
+  fireEvent.change(within(box).getByLabelText(/Beschreibung/), { target: { value: 'Müll' } })
+  fireEvent.change(within(box).getByLabelText(/^Betrag/), { target: { value: '10,00' } })
+  fireEvent.click(within(box).getByRole('button', { name: /^Anlegen$/ }))
+  await screen.findByRole('button', { name: 'Zum Eingang' })
+  await new Promise((r) => setTimeout(r, 50))
+  expect(screen.queryByText('„Müll“ angelegt.')).toBeNull()
 })

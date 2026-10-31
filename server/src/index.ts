@@ -13,7 +13,7 @@ import { cleanRestoreLeftovers, diskFullMessage, freeBytes, moveIntoPlace, resto
 import type { AiFailure, AiSettings, AiSlotName, AiStatus, AssessmentView, Extraction, Settings, UploadEntry, UploadLinks } from '../../shared/types.ts'
 import { detectedYear, linesFromExtraction } from './assessment.ts'
 import { bookingResponse, parseDecisions } from './bookingPlan.ts'
-import { forgetAssessment, placeAssessment, readAssessment, readAssessmentOfFile, saveAssessment, uploadLinks } from './db/assessments.ts'
+import { followInvoiceDate, forgetAssessment, placeAssessment, readAssessment, readAssessmentOfFile, saveAssessment, uploadLinks } from './db/assessments.ts'
 import { BookingRefusal, bookAssessment, previewBooking, viewAssessment, viewAssessments, viewRecord } from './db/booking.ts'
 import { newId, UPLOAD_DIR, DATA_DIR } from './store.ts'
 import { DEFAULT_SETTINGS } from './defaults.ts'
@@ -2276,6 +2276,7 @@ app.put('/api/uploads/:file', async (req, res) => {
       if (typeof changes.year === 'number') follow.year = changes.year
       if (changes.propertyId !== undefined) follow.propertyId = changes.propertyId
       await placeAssessment(db, assessment.assessment.id, follow)
+      if (changes.invoiceDate !== undefined) await followInvoiceDate(db, assessment.assessment.id, changes.invoiceDate)
     }
     return placed
   })

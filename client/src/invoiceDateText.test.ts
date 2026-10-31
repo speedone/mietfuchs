@@ -47,4 +47,19 @@ describe('Rechnungsdatum aus dem Text', () => {
   test('Beträge und Nummern sind kein Datum', () => {
     expect(invoiceDateFromText('Summe 1.234,56 €\nKundennr. 12.345.678')).toBeNull()
   })
+  // Durchsicht S1: ein Datum mit fremder Beschriftung ist nie das Rechnungsdatum, auch nicht als einziges Datum
+  test('fremd beschriftet: nie ein Vorschlag', () => {
+    expect(invoiceDateFromText('Bitte zahlen Sie bis zum 15.02.2025')).toBeNull()
+    expect(invoiceDateFromText('fällig am 15.02.2025')).toBeNull()
+    expect(invoiceDateFromText('Fälligkeit: 15.02.2025')).toBeNull()
+    expect(invoiceDateFromText('Lieferdatum: 01.02.2025')).toBeNull()
+    expect(invoiceDateFromText('Leistungszeitraum: 01.01.2024')).toBeNull()
+    expect(invoiceDateFromText('Zählerstand vom 31.12.2024, Stand: 31.12.2024')).toBeNull()
+    expect(invoiceDateFromText('Geburtsdatum 01.01.1960')).toBeNull()
+    expect(invoiceDateFromText('Abrechnung bis 31.12.2024')).toBeNull()
+    expect(invoiceDateFromText('Zeitraum 01.01.2024')).toBeNull()
+  })
+  test('fremd beschriftete Daten neben einem einzigen unbeschrifteten: das unbeschriftete', () => {
+    expect(invoiceDateFromText('Hamburg, 14.02.2025\nfällig am 28.02.2025')).toBe('2025-02-14')
+  })
 })

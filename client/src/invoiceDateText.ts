@@ -1,7 +1,8 @@
 // Das Rechnungsdatum aus der Textschicht einer PDF lesen, ohne KI (#487, Entscheidung 3B). Gelesen wird nur ein Datum,
 // nie ein Betrag: Ein falsch gelesener Betrag ginge still in die Abrechnung, ein Datum steht sichtbar als Vorschlag am
 // Feld. Ein beschriftetes Datum („Rechnungsdatum“, „Rechnung vom“ vor einem bloßen „Datum“) gewinnt; ohne Beschriftung
-// nur, wenn im Text genau ein Datum steht. Bleibt eine Wahl offen, gibt es keinen Vorschlag.
+// nur, wenn im Text genau ein unbeschriftetes Datum steht. Ein fremd beschriftetes („fällig“, „bis“, „Stand“ …) zählt
+// nie. Bleibt eine Wahl offen, gibt es keinen Vorschlag.
 import { MONTH_NAMES, MONTH_SHORT, YEAR_MAX, YEAR_MIN } from './monthText'
 
 // Monatsnamen aus monthText.ts (S14): ausgeschrieben, kurz mit oder ohne Punkt, „Maerz“ für Text ohne Umlaute
@@ -21,6 +22,9 @@ const DATE = new RegExp(
 // Beschriftungen, stark vor schwach. „Datum“ nur als eigenes Wort: „Fälligkeitsdatum“ und „Lieferdatum“ zählen nicht.
 const STRONG = /(?:rechnungs-?datum|belegdatum|ausstellungsdatum|datum der rechnung|rechnung vom)[\s:]*$/iu
 const WEAK = /(?<![\p{L}-])datum[\s:]*$/iu
+// Fremde Beschriftungen (Durchsicht S1): fällig, Fälligkeit, Liefer-, Leistungs-, Zeitraum, Stand, Geburts-, „bis“ (auch
+// „Abrechnung bis“, „zahlen bis zum“). Ein so beschriftetes Datum ist nie das Rechnungsdatum, auch nicht das einzige.
+const FOREIGN = /(?:f[äa]llig\p{L}*|liefer\p{L}*|leistungs\p{L}*|\p{L}*zeitraum|\p{L}*stand|geburts\p{L}*|(?<!\p{L})bis)(?:\s+(?:am|zum|vom))?[\s:.]*$/iu
 
 function isoOf(m: RegExpExecArray): string | null {
   let day: number, month: number, year: number
@@ -47,17 +51,18 @@ const only = (dates: Set<string>): string | null => (dates.size === 1 ? [...date
 export function invoiceDateFromText(text: string): string | null {
   const strong = new Set<string>()
   const weak = new Set<string>()
-  const all = new Set<string>()
+  const free = new Set<string>()
   for (const m of text.matchAll(DATE)) {
     const iso = isoOf(m)
     if (!iso) continue
-    all.add(iso)
     // Die Beschriftung steht unmittelbar davor, höchstens durch Leerraum und Doppelpunkt getrennt
     const before = text.slice(Math.max(0, (m.index ?? 0) - 40), m.index)
     if (STRONG.test(before)) strong.add(iso)
+    else if (FOREIGN.test(before)) continue
     else if (WEAK.test(before)) weak.add(iso)
+    else free.add(iso)
   }
   if (strong.size > 0) return only(strong)
   if (weak.size > 0) return only(weak)
-  return only(all)
+  return only(free)
 }
