@@ -157,7 +157,9 @@ export default function Hilfe({ onFollow, focusTerm, onFocusTermDone, openGuide:
   // zur Startansicht.
   const previous = trail.at(-1)?.view
   const previousGuide = previous?.kind === 'guide' ? allGuides().find((x) => x.id === previous.id) : undefined
-  const backButton = <button type="button" className="btn ghost small mb-4" onClick={back}>{previousGuide ? '← Zurück zur Anleitung' : '← Zurück zu Hilfe & Begriffe'}</button>
+  // Das Ziel des Wegs zurück steht im Text; kein Aufklapper, auch wenn der Text vom Zustand abhängt (S33)
+  const backLabel = previousGuide ? '← Zurück zur Anleitung' : '← Zurück zu Hilfe & Begriffe'
+  const backButton = <button type="button" className="btn ghost small mb-4" onClick={back}>{backLabel}</button>
 
   if (view.kind === 'guide') {
     const g = allGuides().find((x) => x.id === view.id)
