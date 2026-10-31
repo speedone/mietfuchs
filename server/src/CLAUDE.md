@@ -59,9 +59,14 @@ Schlüssel** `PeriodKey` (`'JJJJ-MM'`, Monat des Beginns, Markentyp), kein Jahr:
   `POST /api/properties/:id/period/preview`, `PUT …/period`), mit Marke (`token`; stimmt sie nicht
   mehr: 409 mit neuer Vorschau). Ändert sich ein abgeschlossener Zeitraum: 409. Jahreskorrekturen
   werden neu erfasst, wenn ein Mietverhältnis Monate in anders geschnittenen Zeiträumen bekommt
-  (eine gezahlte Summe lässt sich nicht verteilen). Das Jahr der Zahlung jeder Position, die in
-  einen Zeitraum über zwei Kalenderjahre gelangt, fragt die Vorschau, vorbelegt und geklemmt;
-  verschoben wird über dieselbe Schreibprüfung wie beim Speichern.
+  (eine gezahlte Summe lässt sich nicht verteilen). **Datierte Positionen und solche mit angegebenem Jahr behalten beim
+  Zeitraumwechsel ihr Jahr** (`keepsTaxYear`, `keptTaxYear`, #478): Alle drei Stellen, die das Jahr im Ziel bestimmen
+  (Vorschau, Probelauf, Schreiben), fragen zuerst `keptTaxYear`; gleich dem Kalenderjahr des Ziels bleibt es trotzdem
+  gespeichert. Liegt es danach außerhalb der Kalenderjahre des Ziels, nennt die Vorschau es (`keptTaxYears`, Satz mit
+  Spanne, in der Marke). Nur eine Position ohne Datum und ohne Jahr fragt die Vorschau, wenn sie in einen Zeitraum über
+  zwei Kalenderjahre gelangt, vorbelegt und geklemmt; wechselt sie das Steuerjahr, nennt es jeder Weg (`taxShifts`,
+  `splitNotes`, `moves[].taxShift`). Verschoben wird über dieselbe Schreibprüfung wie beim Speichern (ohne Rückfrage,
+  `periodChange`). Invarianten: invariant-wechsel-steuerjahr.test.ts (`runRoundTrip`, hin und zurück).
 - **Kalte Rechnungen mit Leistungszeitraum über zwei Zeiträume werden beim Speichern nach Tagen
   aufgeteilt** ([serviceSplit.ts](serviceSplit.ts), Leistungsprinzip); jeder Teil trägt den ganzen
   Leistungszeitraum, und ein Teil wird danach nur berichtigt. Ob eine Position ein Teil ist, sagt die Quelle
@@ -71,10 +76,13 @@ Schlüssel** `PeriodKey` (`'JJJJ-MM'`, Monat des Beginns, Markentyp), kein Jahr:
   Quelle an (#455, `cost_sources`). Der Wechsel des Rhythmus teilt nach Quelle (`sourceId`): Teile in Zeiträumen,
   die bleiben oder wachsen, stehen; die übrigen werden als eine Rechnung über ihre Spannen neu geteilt
   (`deriveSourceParts`), und ein Ergebnis kommt zum stehenden Teil seines Zeitraums bei gleichem Zahlungsdatum,
-  gleichem Jahr der Zahlung und gleicher Verteilung (`mergeTargetOf`, `sameAllocation`, Vorschau `mergedInto`, bei
+  gleichem wirksamem Jahr der Zahlung (leer und gespeichert gleich dem Startjahr eines Kalenderzeitraums sind dasselbe,
+  `storedOutflowYear`) und gleicher Verteilung (`mergeTargetOf`, `sameAllocation`, Vorschau `mergedInto`, bei
   gefragtem Jahr `mergeDependsOnYear`; entsteht es erst mit einem anderen als dem vorbelegten Jahr, `mergeWithYear`, #471). Stehen bewegte Teile im selben Zeitraum, zählen sie nur bei gleichem Jahr der
   Zahlung und Zahlungsdatum zusammen, sonst je Jahr eine Rechnung mit eigener Frage (`sourceSplit`, `poolOf`); liegt
-  jeder in einem anderen Zeitraum, bleibt es eine (Golden). Bleibt ein Teil, entfällt die Quelle; trägt er die ganze Rechnung
+  jeder in einem anderen Zeitraum, bleibt es eine (Golden), außer bewegte Teile mit Datum oder Jahr haben verschiedene
+  Jahre (`keptApart`, #478: sonst bekämen alle das Jahr des führenden Teils); führend ist ein Teil mit angegebenem Jahr. Bekommt ein stehender Teil ohne Angabe mit der Antwort das Jahr eines
+  anderen Teils derselben Quelle im selben Zeitraum, werden beide eine Zeile (`namer.fold`, Invariante 2). Bleibt ein Teil, entfällt die Quelle; trägt er die ganze Rechnung
   (Leistungszeitraum ganz in seinem Zeitraum, `carriesWholeInvoice`, und alle Teile der Quelle decken ihn, `wholeFamily`),
   entfällt auch der Zusatz „(anteilig …)“, Vorschau `renamedTo`, auch an `mergeWithYear` (#471). Decken die bewegten Teile den Leistungszeitraum nicht (ein Teil wurde gelöscht), behält auch eine
   einzige Zeile den Zusatz (`coversService`). Kommt ein Anteil zu einem stehenden Teil, nennt dessen Zusatz danach seine
@@ -104,7 +112,12 @@ Schlüssel** `PeriodKey` (`'JJJJ-MM'`, Monat des Beginns, Markentyp), kein Jahr:
   sich dann nach `isSplitPart`. Heizkosten nie
   (VIII ZR 156/11), dort warnt `period.heating-mismatch`.
 - **Jahr der Steuer**: `tax_year` ist das Jahr der Zahlung, Pflicht nur bei einem Zeitraum über zwei
-  Kalenderjahre. Welches Jahr eine Position für die Steuer hat, sagt allein `outflowShares`
+  Kalenderjahre, angegeben in beiden Arten erlaubt (auch ein anderes als das Kalenderjahr eines Kalenderzeitraums, #478).
+  Dieselbe übliche Spanne wie beim Datum (`paidOnSpan`); außerhalb **Rückfrage statt Ablehnung** (`requireTaxYear`,
+  `taxYearQuestions` in shared/paidOn.ts, 409 `question: 'taxYear'`, bestätigt mit `confirmTaxYear`), nur wenn sich das
+  Jahr ändert, nicht beim Aufteilen und beim Wechsel des Zeitraums. Das Formular zeigt ein gespeichertes abweichendes Jahr
+  (`showsTaxYear`, `taxYearOptions` enthält es auch außerhalb der Spanne). Die Steuerübersicht sucht eine Position mit
+  angegebenem Jahr auch in Zeiträumen fern ihres Jahres (`taxPartsFor`, wie beim Datum). Welches Jahr eine Position für die Steuer hat, sagt allein `outflowShares`
   ([outflow.ts](outflow.ts), siehe Steuer). Die Steuerübersicht schöpft aus allen Abrechnungen,
   die das Jahr berühren (`taxPartsFor`), das Steuer-ZIP aus denselben (`taxArchiveItems`).
   Referenz: Prüfsummen in `server/test/fixtures/tax-golden.json` ([outflow.test.ts](../test/outflow.test.ts)).
@@ -788,7 +801,7 @@ Grundmenge ist das ganze Gebäude), Überschuss. Beschreibende Gruppen statt fes
   keine veröffentlichte Zahl wandert; Prüfsummen in outflow.test.ts). Ein Datum, das das wirksame
   Jahr ändert, `taxYear` widerspricht oder außerhalb Beginn − 1 bis Ende + 3 liegt, braucht
   `confirmPaidOn` (409 `question: 'paidOn'`), beim Aufteilen je Teil (`splitPaidOnQuestions`).
-  Datierte Positionen behalten beim Zeitraumwechsel ihr Jahr (`keepsTaxYear`). Kein Datum bei
+  Datierte Positionen und solche mit angegebenem Jahr behalten beim Zeitraumwechsel ihr Jahr (`keepsTaxYear`, #478). Kein Datum bei
   `external` und am Abzug beim Betriebsstrom (er folgt seiner Stromrechnung, Quelle `bill`, #267).
   Die Belegbuchung belegt es nie vor (Rechnungsdatum ≠ Zahlungsdatum). Teilzahlungen kommen mit
   #292 über dieselbe Funktion. Über alle Jahre ändert ein Datum weder Summe noch privaten Teil

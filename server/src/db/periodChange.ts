@@ -43,6 +43,7 @@ import { GENERAL_POWER_CATEGORY } from '../../../shared/operatingPower.ts'
 import { droppedLettersText, dropLetterDocs, letterDocPrefix, letterDocsWithPrefix } from './letters.ts'
 import { euro } from '../../../shared/costItem.ts'
 import { storedOutflowYear } from '../outflow.ts'
+import { paidOnSpan } from '../../../shared/paidOn.ts'
 
 const MONTH_NAMES = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']
 const monthName = (key: string): string => `${MONTH_NAMES[Number(key.slice(5, 7)) - 1] ?? key.slice(5, 7)} ${key.slice(0, 4)}`
@@ -132,7 +133,19 @@ const followsBill = (item: Pick<CostItem, 'operatingPower'>): boolean => item.op
 // Eine Position mit Zahlungsdatum (#255 PR 3) behält ihr Steuerjahr in jedem Zeitraum: Das Datum bleibt beim Wechsel
 // stehen und geht dem Jahr der Zahlung vor (outflow.ts). Die Vorschau fragt für sie kein Jahr, kündigt keine
 // Verschiebung an und wählt die Vorgabe nicht danach (Durchsicht von PR 3, S1).
-const keepsTaxYear = (item: Pick<CostItem, 'operatingPower' | 'paidOn'>): boolean => followsBill(item) || item.paidOn !== undefined
+//
+// #478: Ebenso eine Position mit angegebenem Jahr der Zahlung. Das Jahr ist eine Tatsache über die Zahlung (§ 11 Abs. 2
+// Satz 1 EStG, bei einer Gutschrift der Zufluss nach Abs. 1 Satz 1), am Abrechnungszeitraum hängt es nicht. Vorher bekam
+// ein Teil in einem Zeitraum innerhalb eines Kalenderjahres still dessen Jahr, und hin und zurück kehrte es nicht wieder.
+const keepsTaxYear = (item: Pick<CostItem, 'operatingPower' | 'paidOn' | 'taxYear'>): boolean =>
+  followsBill(item) || item.paidOn !== undefined || item.taxYear !== undefined
+
+// Das gehaltene Jahr der Zahlung (#478): das gespeicherte, wenn eines angegeben ist, sonst `null`. Alle drei Stellen,
+// die das Jahr im Ziel bestimmen (Vorschau, Probelauf, Schreiben), fragen zuerst hier; erst danach die Antwort der
+// Vorschau bzw. ihre Vorgabe. Gleich dem Kalenderjahr des Ziels bleibt es trotzdem gespeichert: Es ist eine Angabe des
+// Vermieters, und Zurückwechseln braucht sie. Beim Abzug beim Betriebsstrom keines (#267, `mergeCostItem` leert es).
+const keptTaxYear = (item: Pick<CostItem, 'operatingPower' | 'taxYear'>): number | null =>
+  followsBill(item) ? null : item.taxYear ?? null
 
 // Eine kalte Rechnung mit Leistungszeitraum, die der Wechsel nach Tagen neu teilt (#455, Entwurf „Wechsel des
 // Rhythmus“). Mit Quelle: `family` sind die bewegten Teile (Zeitraum `shrinks` oder `gone`), `standing` die übrigen
@@ -230,6 +243,8 @@ type Span = { from: string; to: string }
 type MergedNamer = {
   name: (target: CostItem, part: ServicePart, description?: string, record?: boolean) => string
   seed: (id: string, period: PeriodKey, span: Span | undefined) => void
+  // #478: Zwei Zeilen derselben Quelle im selben Zeitraum werden eine; der Zusatz nennt die Spannen beider.
+  fold: (target: CostItem, other: CostItem, description: string) => string
 }
 function mergedNamer(before: PeriodRules, standingIds: ReadonlySet<string>): MergedNamer {
   const spans = new Map<string, Span[]>()
@@ -242,9 +257,21 @@ function mergedNamer(before: PeriodRules, standingIds: ReadonlySet<string>): Mer
       ? { from: target.serviceFrom > old.from ? target.serviceFrom : old.from, to: target.serviceTo < old.to ? target.serviceTo : old.to }
       : { from: target.serviceFrom, to: target.serviceTo }
   }
+  const spansOf = (c: CostItem): Span[] | undefined => {
+    const first = ownSpan(c)
+    return spans.get(keyOf(c.id, c.period)) ?? (first === undefined ? undefined : [first])
+  }
   return {
     seed: (id, period, span) => {
       if (span !== undefined) spans.set(keyOf(id, period), [span])
+    },
+    fold: (target, other, description) => {
+      const a = spansOf(target)
+      const b = spansOf(other)
+      if (a === undefined || b === undefined || !SPLIT_SUFFIX.test(description)) return description
+      const merged = unionSpans([...a, ...b])
+      spans.set(keyOf(target.id, target.period), merged)
+      return `${baseDescription(description)} (anteilig ${spansText(merged)})`
     },
     name: (target, part, description = target.description, record = true) => {
       const key = keyOf(target.id, target.period)
@@ -313,10 +340,11 @@ type Plan = {
 }
 
 // Das Jahr der Zahlung einer Position in einem Zeitraum über zwei Kalenderjahre (Entwurf 3.10,
-// Durchsicht von #226, I1): erlaubt ist vom Jahr des Beginns bis ein Jahr nach dem Ende, dieselbe
-// Spanne wie in repository.ts. Vorbelegt wird das bisherige Jahr, sonst das Kalenderjahr, in dem
-// ihr bisheriger Zeitraum begann, und zwar in die Spanne geklemmt. Ohne Klemme verschwände eine
-// Position, deren Jahr außerhalb liegt, aus jeder Steuerübersicht.
+// Durchsicht von #226, I1): zur Wahl steht vom Jahr des Beginns bis ein Jahr nach dem Ende. Gefragt
+// wird seit #478 nur für Positionen ohne Datum und ohne Jahr; die Schreibprüfung in repository.ts
+// lässt die weitere übliche Spanne zu (`paidOnSpan`), die Auswahl hier bleibt die engere. Vorbelegt
+// wird das bisherige Jahr, sonst das Kalenderjahr, in dem ihr bisheriger Zeitraum begann, und zwar in
+// die Auswahl geklemmt.
 const taxKey = (item: Pick<CostItem, 'id'>, p: Pick<BillingPeriod, 'key'>): string => `${item.id}|${p.key}`
 function taxEntry(item: CostItem, p: BillingPeriod): PeriodChangePreview['taxYears'][number] {
   const start = Number(p.from.slice(0, 4))
@@ -331,7 +359,63 @@ function taxEntry(item: CostItem, p: BillingPeriod): PeriodChangePreview['taxYea
 // Die Marke einer Vorschau (M2): alles, was der Wechsel schreibt oder fragt. Der Zeitraum der Liste
 // hängt am heutigen Tag und gehört nicht dazu.
 function tokenOf(p: Omit<PeriodChangePreview, 'token' | 'periods'>): string {
-  return crypto.createHash('sha256').update(JSON.stringify([p.rules, p.newShort, p.blocked, p.moves, p.groups, p.overrides, p.assessments, p.taxYears, p.letters ?? []])).digest('hex')
+  return crypto.createHash('sha256').update(JSON.stringify([p.rules, p.newShort, p.blocked, p.moves, p.groups, p.overrides, p.assessments, p.taxYears, p.letters ?? [], p.keptTaxYears])).digest('hex')
+}
+
+// Was zwischen Steuerjahren wechselt (#478, E3): je Jahr der Betrag vorher und nachher; was in einem Jahr fehlt, kommt
+// in ein Jahr, das mehr hat, in der Folge der Jahre. `null`, wenn jedes Jahr seinen Betrag behält.
+function yearShiftText(was: ReadonlyMap<number, number>, now: ReadonlyMap<number, number>): string | null {
+  const years = [...new Set([...was.keys(), ...now.keys()])].sort((a, b) => a - b)
+  const out = years.flatMap((y) => {
+    const d = (was.get(y) ?? 0) - (now.get(y) ?? 0)
+    return d > 0 ? [{ year: y, cents: d }] : []
+  })
+  const into = years.flatMap((y) => {
+    const d = (now.get(y) ?? 0) - (was.get(y) ?? 0)
+    return d > 0 ? [{ year: y, cents: d }] : []
+  })
+  const moves: string[] = []
+  for (const from of out) {
+    for (const to of into) {
+      const cents = Math.min(from.cents, to.cents)
+      if (cents <= 0) continue
+      moves.push(`${euro(cents)} aus dem Jahr der Zahlung ${from.year} nach ${to.year}`)
+      from.cents -= cents
+      to.cents -= cents
+    }
+  }
+  return moves.length === 0 ? null
+    : `Für die Steuer kämen ${moves.join(', ')}, obwohl sich an der Zahlung nichts ändert. Prüfen Sie danach das Jahr der Zahlung der Teile.`
+}
+
+// Positionen, die ihr angegebenes Jahr der Zahlung behalten (#478, E1) und danach in einem Zeitraum stehen, dessen
+// Kalenderjahre es nicht enthalten: In der Steuerübersicht stehen sie dann als verschoben (`shiftNotes`), und die
+// Vorschau sagt es vorher. Liegt das Jahr außerhalb der üblichen Spanne des Ziels (`paidOnSpan`), sagt der Satz das
+// dazu; gefragt wird beim Wechsel nicht (E2). Bei einer Gruppe je wählbarem Zeitraum ein Eintrag (wie `taxYears`).
+function keptTaxYearsOf(splits: readonly Split[], groups: ReadonlyMap<string, Group>, regrows: readonly { item: CostItem; target: BillingPeriod }[]): PeriodChangePreview['keptTaxYears'] {
+  const out = new Map<string, PeriodChangePreview['keptTaxYears'][number]>()
+  const note = (item: CostItem, target: BillingPeriod, description: string) => {
+    const year = keptTaxYear(item)
+    if (year === null || item.paidOn !== undefined) return
+    const startYear = Number(target.from.slice(0, 4))
+    const endYear = Number(target.to.slice(0, 4))
+    if (year >= startYear && year <= endYear) return
+    const key = taxKey(item, target)
+    if (out.has(key)) return
+    const label = periodLabel(target)
+    const span = paidOnSpan({ startYear, endYear })
+    const outside = year < span.from || year > span.to
+      ? ` Das Jahr liegt außerhalb der üblichen Spanne von ${span.from} bis ${span.to} für diesen Zeitraum; bitte prüfen Sie es.`
+      : ''
+    out.set(key, {
+      costItemId: item.id, description, taxYear: year, period: target.key, label,
+      text: `„${description}“ behält das Jahr der Zahlung ${year}; im Zeitraum ${label} steht sie für die Steuer deshalb als verschoben.${outside}`,
+    })
+  }
+  for (const split of splits) for (const p of split.parts) note(split.item, p.period, split.family ? baseDescription(split.item.description) : split.item.description)
+  for (const g of groups.values()) for (const o of g.options) for (const item of g.items) note(item, o, item.description)
+  for (const { item, target } of regrows) note(item, target, item.description)
+  return [...out.values()]
 }
 
 // Eine Stromrechnung mit Leistungszeitraum, die der Wechsel nicht teilt, bleibt ganz in ihrem Zeitraum (K1).
@@ -430,9 +514,21 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
     const allMoving = family.filter(isMoving).sort((x, y) => (x.period < y.period ? -1 : x.period > y.period ? 1 : x.id < y.id ? -1 : 1))
     const standing = family.filter((m) => !isMoving(m))
     const shared = new Set(allMoving.map((m) => m.period)).size < allMoving.length
-    const poolOf = (m: CostItem): string => (shared ? `${m.paidOn ?? ''}|${storedOutflowYear(m)}` : '')
+    // #478: Ebenso, wenn bewegte Teile mit Datum oder angegebenem Jahr verschiedene Jahre haben (etwa zwei Abschläge,
+    // 2025 und 2026 bezahlt): Als eine Rechnung bekämen alle Teile das gehaltene Jahr des führenden Teils, und ein
+    // angegebenes Jahr wanderte.
+    const yearKey = (m: CostItem): string => `${m.paidOn ?? ''}|${storedOutflowYear(m)}`
+    const keptApart = allMoving.some(keepsTaxYear) && new Set(allMoving.map(yearKey)).size > 1
+    const poolOf = (m: CostItem): string => (shared || keptApart ? yearKey(m) : '')
     const pools = new Map<string, CostItem[]>()
     for (const m of allMoving) pools.set(poolOf(m), [...(pools.get(poolOf(m)) ?? []), m])
+    // Führend ist in jeder Rechnung ein Teil mit angegebenem Jahr, wenn es einen gibt (#478): Sein Jahr hält die ganze
+    // Rechnung, und es ist das wirksame Jahr jedes ihrer Teile (gleiches Jahr je Rechnung, oben). Mit einem Teil ohne
+    // Angabe vorn bekäme ein Teil im anderen Kalenderjahr dessen Jahr statt des angegebenen.
+    for (const [key, list] of pools) {
+      const held = list.find((m) => keptTaxYear(m) !== null)
+      if (held !== undefined && held !== list[0]) pools.set(key, [held, ...list.filter((m) => m !== held)])
+    }
     const spanIn = (m: CostItem, old: BillingPeriod | null | undefined): { from: string; to: string }[] => {
       if (old === undefined || old === null || m.serviceFrom === undefined || m.serviceTo === undefined) return []
       const from = m.serviceFrom > old.from ? m.serviceFrom : old.from
@@ -753,6 +849,7 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
     assessments: assessmentPreview,
     letters: lettersPreview,
     taxYears: [],
+    keptTaxYears: [],
     token: '',
   }
   const taxEntries: Plan['taxEntries'] = new Map()
@@ -777,7 +874,8 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
   // Die Vorschau sagt, welches Ergebnis zu einem stehenden Teil kommt (#455), gerechnet mit den vorbelegten Jahren.
   // Hängt das Zusammenfassen an einer Frage nach dem Jahr der Zahlung (des bewegten oder des stehenden Teils), gilt die
   // Ankündigung nur für das vorbelegte Jahr, und die Vorschau sagt das (Integrationsdurchsicht zu #455, M1).
-  const suggestedYear: YearIn = (target, item) => taxEntries.get(taxKey(item, target))?.suggested ?? null
+  // #478: zuerst das gehaltene Jahr (`keptTaxYear`), dann die Vorgabe der Frage.
+  const suggestedYear: YearIn = (target, item) => keptTaxYear(item) ?? taxEntries.get(taxKey(item, target))?.suggested ?? null
   const produced = new Map<string, CostItem[]>()
   const namer = mergedNamer(before, new Set(splits.flatMap((sp) => (sp.standing ?? []).map((c) => c.id))))
   const ownRows = new Map<ServicePart, CostItem>()
@@ -815,10 +913,21 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
       }
     })
     if (split.sourceId !== undefined) produced.set(split.sourceId, [...earlier, ...own])
+    // #478 (E3): Wechselt Geld dieser Rechnung das Steuerjahr (nur bei Teilen ohne Datum und ohne Jahr möglich), sagt
+    // die Vorschau es mit Betrag, altem und neuem Jahr, gerechnet mit den vorbelegten Jahren.
+    const was = new Map<number, number>()
+    for (const m of split.family ?? [split.item]) was.set(storedOutflowYear(m), (was.get(storedOutflowYear(m)) ?? 0) + m.amountCents)
+    const now = new Map<number, number>()
+    for (const p of split.parts) {
+      const year = movedYearOf(split, p, suggestedYear)
+      now.set(year, (now.get(year) ?? 0) + p.amountCents)
+    }
+    const taxShift = yearShiftText(was, now)
     return {
       costItemId: split.item.id, description: split.family ? baseDescription(split.item.description) : split.item.description,
       amountCents: (split.family ?? [split.item]).reduce((sum, c) => sum + c.amountCents, 0),
       parts,
+      ...(taxShift === null ? {} : { taxShift }),
     }
   })
   // #471: Bleibt einer Quelle mit den vorbelegten Jahren eine einzige Zeile und trägt sie die ganze Rechnung, verliert sie
@@ -834,6 +943,7 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
     costItemId: item.id, description: item.description, amountCents: item.amountCents,
     parts: parts.map((p) => ({ period: p.period.key, label: periodLabel(p.period), amountCents: p.amountCents })),
   })))
+  preview.keptTaxYears = keptTaxYearsOf(splits, groups, regrows)
   preview.token = tokenOf(preview)
   return { preview, splits, groups, overrideRekeys, overrideAsks: [...asks.values()], assessmentMoves, letterDocs, regrows, follows, taxEntries, next, before }
 }
@@ -946,6 +1056,8 @@ async function withEffects(db: Database, propertyId: string, plan: Plan, today: 
     token: plan.preview.token,
   }
   const taxYearIn = (target: BillingPeriod, item: CostItem): number | null => {
+    const kept = keptTaxYear(item)
+    if (kept !== null) return kept
     const entry = plan.taxEntries.get(taxKey(item, target))
     if (entry === undefined) return null
     const chosen = answers.taxYears[entry.key]
@@ -1040,9 +1152,11 @@ export async function applyPeriodChange(
   if (passed.length > 0 && answers.understood !== true) {
     return { error: `${passedDeadlineText(passed.map((e) => e.label))} Bitte bestätigen Sie das in der Vorschau; gespeichert wurde nichts.`, preview: checked }
   }
-  // Das Jahr der Zahlung im neuen Zeitraum: die Antwort, sonst der Vorschlag; in einem Zeitraum in
-  // einem Kalenderjahr keines (Entwurf 3.10).
+  // Das Jahr der Zahlung im neuen Zeitraum: ein angegebenes bleibt (#478, `keptTaxYear`), sonst die Antwort, sonst der
+  // Vorschlag; ohne Angabe in einem Zeitraum in einem Kalenderjahr keines (Entwurf 3.10).
   const taxYearIn = (target: BillingPeriod, item: CostItem): number | null => {
+    const kept = keptTaxYear(item)
+    if (kept !== null) return kept
     const entry = plan.taxEntries.get(taxKey(item, target))
     if (entry === undefined) return null
     const given = answers.taxYears[entry.key]
@@ -1179,6 +1293,29 @@ async function writeChangeIn(
       if (now === undefined) throw new Error(`Der stehende Teil ${target.id} fehlt im Wechsel`)
       const labor = now.labor35aCents === undefined && part.labor35aCents === null ? null : (now.labor35aCents ?? 0) + (part.labor35aCents ?? 0)
       await writeCostItemParts(tx, now, [{ period: now.period, amountCents: now.amountCents + part.amountCents, labor35aCents: labor, description: namer.name(target, part, now.description), taxYear: now.taxYear ?? null }], newId, now.id, guard)
+    }
+    // #478: Ein stehender Teil ohne Angabe in einem Zeitraum, der auf zwei Kalenderjahre wächst, bekommt mit der Antwort
+    // ein Jahr; stimmt es mit dem gehaltenen Jahr eines anderen Teils derselben Quelle im selben Zeitraum überein, gäbe es
+    // zwei Zeilen je Zeitraum und Jahr (Invariante 2 aus #455). Sie werden eine: Betrag und Lohnanteil zusammen, Beleg
+    // und gebuchte Zeilen an der Zeile mit der kleineren Kennung (`rewriteCostItemFamily`).
+    for (const sourceId of sources) {
+      const rows = (await readCostItems(tx)).filter((c) => c.sourceId === sourceId).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+      const folded = new Set<string>()
+      for (const keep of rows) {
+        if (folded.has(keep.id)) continue
+        const twins = rows.filter((c) => c !== keep && !folded.has(c.id) && c.period === keep.period && c.paidOn === keep.paidOn &&
+          storedOutflowYear(c) === storedOutflowYear(keep) && sameAllocation(c, keep))
+        if (twins.length === 0) continue
+        let description = keep.description
+        for (const t of twins) description = namer.fold(keep, t, description)
+        const sumLabor = [keep, ...twins].every((c) => c.labor35aCents === undefined) ? null : [keep, ...twins].reduce((a, c) => a + (c.labor35aCents ?? 0), 0)
+        await rewriteCostItemFamily(tx, [keep, ...twins], [{
+          period: keep.period, amountCents: [keep, ...twins].reduce((a, c) => a + c.amountCents, 0), labor35aCents: sumLabor, description, taxYear: keep.taxYear ?? null,
+        }], newId, guard)
+        for (const t of twins) folded.add(t.id)
+        const gone = new Set(twins.map((t) => t.id))
+        for (const [id, list] of written) written.set(id, list.map((w) => (gone.has(w.id) ? { ...w, id: keep.id } : w)))
+      }
     }
     // Folge-PR zu #252 (Geld-K1, -H1): Die Abzüge auf eine Rechnung mit Leistungszeitraum folgen deren Teilen.
     // Gelesen nach dem Zusammenfassen (Durchsicht von PR 2 zu #455, I1): Wurde der Teil der Rechnung, auf den ein Abzug

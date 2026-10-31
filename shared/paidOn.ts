@@ -84,6 +84,20 @@ function paidOnFindings(before: Dated | null, after: Dated, span: YearSpan): str
   return out
 }
 
+// Die Rückfrage zum Jahr der Zahlung (#478, E2): Ein Jahr ist eine gröbere Angabe als ein Datum und bekommt dieselbe
+// übliche Spanne (`paidOnSpan`) und dieselbe Haltung: außerhalb nachfragen statt ablehnen, denn § 11 Abs. 2 EStG kennt
+// keine Grenze. Gefragt wird nur, wenn sich das Jahr ändert (wer nur den Betrag berichtigt, bestätigt nichts erneut),
+// in beiden Arten von Zeiträumen gleich. Ein Jahr innerhalb der Spanne, das das wirksame Jahr ändert, fragt nicht; die
+// Steuerübersicht nennt die Position dann als verschoben. Server (`requireTaxYear`, 409 `question: 'taxYear'`) und
+// Formular fragen beide hier.
+export function taxYearQuestions(before: { taxYear?: number | null } | null, after: { taxYear?: number | null; period: string }, span: YearSpan): string[] {
+  const now = after.taxYear ?? null
+  if (now === null || (before?.taxYear ?? null) === now) return []
+  const s = paidOnSpan(span)
+  if (now >= s.from && now <= s.to) return []
+  return withAdvice([`Als Jahr der Zahlung ist ${now} angegeben; das liegt außerhalb der üblichen Spanne von ${s.from} bis ${s.to} für diesen Abrechnungszeitraum. Bitte prüfen Sie das Jahr.`])
+}
+
 // Dieselbe Frage beim Aufteilen einer Rechnung über mehrere Abrechnungszeiträume (#208, Durchsicht von PR 3, M1): Das
 // Datum gilt für die ganze Rechnung, also für jeden Teil, und jeder Teil zählt mit seinem eigenen Zeitraum. Ein Teil in
 // einem anderen Kalenderjahr hätte ohne Datum sein eigenes Jahr; das Datum kann also das Steuerjahr eines Teils ändern,

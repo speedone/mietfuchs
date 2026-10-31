@@ -3,7 +3,7 @@
 import { describe, expect, test } from 'vitest'
 import { buildCostItemBody, EMPTY_ITEM_FORM, itemToForm, paidOnChange, paidOnTenDayHint, showsPaidOn, deductionTaxYear } from './costForm'
 import { calendarYearPeriod, periodKey } from '../../shared/period.ts'
-import { splitPaidOnQuestions } from '../../shared/paidOn.ts'
+import { splitPaidOnQuestions, taxYearQuestions } from '../../shared/paidOn.ts'
 import type { CostItem, Unit } from './types'
 
 const UNITS: Unit[] = [{ id: 'a', propertyId: 'p', name: 'A', areaM2: 80, participates: true }]
@@ -84,5 +84,29 @@ describe('Bezahlt am (für die Steuer)', () => {
   test('der Abzug für Betriebsstrom nennt das Jahr seiner Stromrechnung, auch aus ihrem Datum (#267)', () => {
     const bill: CostItem = { id: 'hs', propertyId: 'p', period: periodKey('2026-01'), category: 'Beleuchtung/Allgemeinstrom', description: 'Hausstrom', amountCents: 100000, key: 'units', paidOn: '2027-01-20' }
     expect(deductionTaxYear({ operatingPower: 'deduction', operatingPowerGeneralId: 'hs' }, [bill])).toBe(2027)
+  })
+})
+
+// #478 (E2): Das Jahr der Zahlung hat dieselbe übliche Spanne wie das Datum; außerhalb fragt Mietfuchs nach, und nur,
+// wenn sich das Jahr ändert. Dieselben Sätze im Formular und am Server (409 `question: 'taxYear'`).
+describe('Jahr der Zahlung außerhalb der üblichen Spanne', () => {
+  const kalender = { startYear: 2025, endYear: 2025 }
+  test('in der Spanne keine Frage, auch nicht im Kalenderzeitraum mit anderem Jahr', () => {
+    expect(taxYearQuestions(null, { period: '2025-01', taxYear: 2026 }, kalender)).toEqual([])
+    expect(taxYearQuestions(null, { period: '2025-01', taxYear: 2024 }, kalender)).toEqual([])
+    expect(taxYearQuestions(null, { period: '2025-01', taxYear: 2028 }, kalender)).toEqual([])
+    expect(taxYearQuestions(null, { period: '2025-01', taxYear: null }, kalender)).toEqual([])
+  })
+  test('außerhalb ein Satz mit der Spanne und dem Rat zur abgegebenen Erklärung', () => {
+    expect(taxYearQuestions(null, { period: '2025-01', taxYear: 2029 }, kalender)).toEqual([
+      'Als Jahr der Zahlung ist 2029 angegeben; das liegt außerhalb der üblichen Spanne von 2024 bis 2028 für diesen Abrechnungszeitraum. Bitte prüfen Sie das Jahr.',
+      'Haben Sie die Steuererklärung eines betroffenen Jahres schon abgegeben, besprechen Sie die Änderung mit Ihrem Steuerberater oder Finanzamt.',
+    ])
+    expect(taxYearQuestions(null, { period: '2025-05', taxYear: 2023 }, { startYear: 2025, endYear: 2026 })[0]).toMatch(/von 2024 bis 2029/)
+  })
+  test('gefragt wird nur, wenn sich das Jahr ändert', () => {
+    const gespeichert = { period: '2025-01', taxYear: 2030 }
+    expect(taxYearQuestions(gespeichert, { period: '2025-01', taxYear: 2030 }, kalender)).toEqual([])
+    expect(taxYearQuestions(gespeichert, { period: '2025-01', taxYear: 2031 }, kalender)).toHaveLength(2)
   })
 })

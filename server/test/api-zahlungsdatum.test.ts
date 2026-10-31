@@ -4,7 +4,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { startServer } from '../testing/api.ts'
 import type { CostItem, SplitPreviewPart } from '../../shared/types.ts'
-import { splitPaidOnQuestions } from '../../shared/paidOn.ts'
+import { splitPaidOnQuestions, taxYearQuestions } from '../../shared/paidOn.ts'
 
 test('Route: 409 mit question paidOn, mit Bestätigung gespeichert; Aufteilen über den Jahreswechsel ebenso', async () => {
   const s = await startServer()
@@ -38,6 +38,34 @@ test('Route: 409 mit question paidOn, mit Bestätigung gespeichert; Aufteilen ü
     assert.equal(r4.status, 201)
     const parts = await r4.json() as CostItem[]
     assert.deepEqual(parts.map((p) => [p.period, p.paidOn]), [['2025-01', '2025-07-01'], ['2026-01', '2025-07-01']])
+  } finally {
+    s.stop()
+  }
+})
+
+// #478 (E2): Ein Jahr der Zahlung ist auch im Kalenderzeitraum möglich; die übliche Spanne ist dieselbe wie beim Datum
+// (`paidOnSpan`), außerhalb fragt der Server nach (409 `question: 'taxYear'`), statt abzulehnen.
+test('Route: Jahr der Zahlung im Kalenderzeitraum, außerhalb der Spanne 409 mit question taxYear', async () => {
+  const s = await startServer()
+  try {
+    const send = (route: string, method: string, body: unknown) => fetch(`${s.base}${route}`, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    await send('/api/units', 'POST', { name: 'EG', areaM2: 80, participates: true })
+    const base = { period: '2025-01', category: 'Gartenpflege', description: 'Gartenpflege', amountCents: 22766, key: 'area' }
+    const r1 = await send('/api/costItems', 'POST', { ...base, taxYear: 2026 })
+    assert.equal(r1.status, 201, await r1.clone().text())
+    assert.equal((await r1.json() as CostItem).taxYear, 2026)
+    const r2 = await send('/api/costItems', 'POST', { ...base, taxYear: 2030 })
+    assert.equal(r2.status, 409)
+    const b2 = await r2.json() as { error: string; question: string }
+    assert.equal(b2.question, 'taxYear')
+    assert.equal(b2.error, taxYearQuestions(null, { period: '2025-01', taxYear: 2030 }, { startYear: 2025, endYear: 2025 }).join(' '))
+    assert.match(b2.error, /außerhalb der üblichen Spanne von 2024 bis 2028/)
+    const r3 = await send('/api/costItems', 'POST', { ...base, taxYear: 2030, confirmTaxYear: true })
+    assert.equal(r3.status, 201)
+    // Nur der Betrag berichtigt: Das Jahr ändert sich nicht, gefragt wird nicht.
+    const saved = await r3.json() as CostItem
+    const r4 = await send(`/api/costItems/${saved.id}`, 'PUT', { amountCents: 30000 })
+    assert.equal(r4.status, 200, await r4.clone().text())
   } finally {
     s.stop()
   }

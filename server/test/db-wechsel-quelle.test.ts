@@ -16,6 +16,7 @@ import { createEntity, listCollection, removeEntity, saveCostItemSplit, updateEn
 import { costItems, costSources } from '../src/db/schema.ts'
 import { storedOutflowYear } from '../src/outflow.ts'
 import { baseDescription } from '../src/serviceSplit.ts'
+import { periodKey } from '../../shared/period.ts'
 import { taxReportFor } from '../src/calc.ts'
 import { readStock } from '../src/db/read.ts'
 import { FLOW_COUNT, runFlows, type Flow, type FlowStep } from '../testing/periodChangeFlows.ts'
@@ -370,11 +371,11 @@ test('M1: Ein berichtigter Rechnungssteller verhindert das Zusammenfassen nicht 
 const MAI: PeriodRules = { startMonth: 5, changes: [] }
 const NOVEMBER_AB_2025: PeriodRules = { startMonth: 5, changes: ['2025-11'] }
 const anteilig = { ...grundsteuer, period: '2025-05', description: 'Grundsteuer 2025/26 (anteilig 01.05.2025–30.04.2026)', serviceFrom: '2025-05-01', serviceTo: '2026-04-30' }
-async function zweiJahreImZeitraum(opened: OpenedDatabase): Promise<void> {
+async function zweiJahreImZeitraum(opened: OpenedDatabase, jahrB = 2026): Promise<void> {
   await change(opened, MAI)
   await opened.write(async (db) => {
     await createEntity(db, 'costItems', 'gA', { ...anteilig, amountCents: 24500, taxYear: 2025 })
-    await createEntity(db, 'costItems', 'gB', { ...anteilig, amountCents: 12000, taxYear: 2026 })
+    await createEntity(db, 'costItems', 'gB', { ...anteilig, amountCents: 12000, taxYear: jahrB })
     await db.insert(costSources).values({ id: 'gA', propertyId: P, rule: 'days' })
     await db.update(costItems).set({ sourceId: 'gA' })
   })
@@ -384,26 +385,29 @@ const steuer = async (opened: OpenedDatabase): Promise<number[]> => {
   return [2025, 2026].map((year) => taxReportFor(stock, P, year).expenses.items.filter((i) => i.category === 'Grundsteuer').reduce((a, i) => a + i.amountCents, 0))
 }
 
-test('I1: Teile eines Zeitraums mit verschiedenem Jahr der Zahlung werden je Jahr geteilt, je Jahr eine Frage', async () => {
+// Seit #478 behalten beide ihr angegebenes Jahr: keine Frage mehr (vorher je Jahr eine, vorbelegt 2025 und 2026), je Jahr
+// eine Rechnung in jedem Zeitraum, und die Werbungskosten bleiben je Jahr centgenau (vorher wanderten 6049 € nach 2025).
+test('I1/#478: Teile eines Zeitraums mit verschiedenem Jahr der Zahlung werden je Jahr geteilt und behalten ihr Jahr', async () => {
   await withDatabase(async (opened) => {
     await zweiJahreImZeitraum(opened)
     assert.deepEqual(await steuer(opened), [24500, 12000])
     const v = await change(opened, NOVEMBER_AB_2025)
-    assert.deepEqual(v.taxYears.map((t) => [t.costItemId, t.period, t.suggested]).sort(), [['gA', '2025-11', 2025], ['gB', '2025-11', 2026]])
-    // 05–10/2025 liegt in einem Kalenderjahr (keine Frage, Entwurf 3.10): beide Anteile mit 2025, eine Zeile. 11/2025–
-    // 10/2026: je Jahr ein Teil.
+    assert.deepEqual(v.taxYears, [])
+    assert.deepEqual(v.keptTaxYears.map((k) => [k.costItemId, k.period, k.taxYear]).sort(byText), [['gB', '2025-05', 2026]])
     const nachher = await items(opened)
-    assert.deepEqual(nachher.map((c) => [c.period, c.amountCents, storedOutflowYear(c)]).sort(), [['2025-05', 18400, 2025], ['2025-11', 12149, 2025], ['2025-11', 5951, 2026]])
-    assert.deepEqual(await steuer(opened), [30549, 5951])
+    assert.deepEqual(nachher.map((c) => [c.period, c.amountCents, storedOutflowYear(c)]).sort(byText), [['2025-05', 12351, 2025], ['2025-05', 6049, 2026], ['2025-11', 12149, 2025], ['2025-11', 5951, 2026]])
+    assert.deepEqual(await steuer(opened), [24500, 12000])
     assert.equal(new Set(nachher.map((c) => c.sourceId)).size, 1, 'alle bleiben Teile derselben Quelle')
     assert.notEqual(nachher[0]?.sourceId, undefined)
   })
 })
 
+// Vorher: mit der Antwort 2025 für gB. Seit #478 fragt der Wechsel nicht mehr; dasselbe Jahr steht hier schon vorher an
+// beiden Teilen.
 test('I1: Mit demselben Jahr für beide kommen die Anteile in eine Zeile', async () => {
   await withDatabase(async (opened) => {
-    await zweiJahreImZeitraum(opened)
-    await change(opened, NOVEMBER_AB_2025, { taxYears: { 'gB|2025-11': 2025 } })
+    await zweiJahreImZeitraum(opened, 2025)
+    await change(opened, NOVEMBER_AB_2025)
     const nachher = await items(opened)
     assert.deepEqual(nachher.map((c) => [c.period, c.amountCents, storedOutflowYear(c)]).sort(), [['2025-05', 18400, 2025], ['2025-11', 18100, 2025]])
     assert.deepEqual(await steuer(opened), [36500, 0])
@@ -595,13 +599,72 @@ test('M1 zu Befund 3: Mit Lücke nennt der Zusatz beide Spannen', async () => {
 // (den es für sie nicht gibt). Mit 2025 für beide liegen gA und gB in 05–10/2025 in einer Zeile.
 test('M2 zu Befund 3: Zusammengefasst in eine eben angelegte Zeile gilt deren Spanne', async () => {
   await withDatabase(async (opened) => {
-    await zweiJahreImZeitraum(opened)
+    // Seit #478 steht dasselbe Jahr schon vorher an beiden Teilen (vorher: Antwort 2025 für gB am Ziel 2025-11).
+    await zweiJahreImZeitraum(opened, 2025)
     const v = await preview(opened, NOVEMBER_AB_2025)
     assert.deepEqual(v.moves.flatMap((m) => m.parts.map((p) => p.mergedAs)).filter((x) => x !== undefined), [], 'der Name ändert sich nicht')
-    await change(opened, NOVEMBER_AB_2025, { taxYears: { 'gB|2025-11': 2025 } })
+    await change(opened, NOVEMBER_AB_2025)
     assert.deepEqual((await items(opened)).map((c) => [c.period, c.amountCents, c.description]).sort(byText), [
       ['2025-05', 18400, 'Grundsteuer 2025/26 (anteilig 01.05.–31.10.2025)'],
       ['2025-11', 18100, 'Grundsteuer 2025/26 (anteilig 01.11.2025–30.04.2026)'],
     ])
+  })
+})
+
+// #478: Grundsteuer 2025 im Rhythmus „Juli ab 2025“, aufgeteilt in 01–06/2025 (Kalenderzeitraum, ohne Jahr) und
+// 07/2025–06/2026 (Jahr der Zahlung angegeben). Zurück zum Kalenderjahr wächst 2025-01 und bleibt stehen, der Teil aus
+// 2025-07 kommt hinein.
+async function juliTeile(opened: OpenedDatabase, taxYear: number): Promise<void> {
+  await change(opened, JULI_AB_2025)
+  const teile = await opened.write((db) => saveCostItemSplit(db, P, { ...grundsteuer, taxYear }, null, ids))
+  assert.deepEqual(teile.map((c) => [c.period, c.amountCents, c.taxYear ?? null]), [['2025-01', 18100, null], ['2025-07', 18400, taxYear]])
+}
+
+test('#478: Der bewegte Teil einer Quelle behält sein Jahr der Zahlung und kommt nicht zu einem Teil anderen Jahres', async () => {
+  await withDatabase(async (opened) => {
+    await juliTeile(opened, 2026)
+    const v = await change(opened, KALENDER)
+    assert.deepEqual(v.taxYears, [])
+    assert.deepEqual(v.keptTaxYears.map((k) => [k.period, k.taxYear]), [['2025-01', 2026]])
+    assert.deepEqual(v.moves.flatMap((m) => m.parts.map((p) => p.mergedInto)), [undefined], 'kein Zusammenfassen: verschiedene Jahre')
+    // Vorher bekam der Teil im Kalenderzeitraum 2025 kein Jahr, kam zum stehenden Teil, und 184 € zählten zu 2025.
+    assert.deepEqual((await items(opened)).map((c) => [c.period, c.amountCents, storedOutflowYear(c)]).sort(byText), [['2025-01', 18100, 2025], ['2025-01', 18400, 2026]])
+    assert.equal(new Set((await items(opened)).map((c) => c.sourceId)).size, 1, 'beide bleiben Teile derselben Quelle')
+  })
+})
+
+test('#478: Leer und gespeichert gleich dem Startjahr des Kalenderzeitraums gelten beim Zusammenfassen als dasselbe Jahr', async () => {
+  await withDatabase(async (opened) => {
+    await juliTeile(opened, 2025)
+    const v = await change(opened, KALENDER)
+    assert.deepEqual(v.keptTaxYears, [], 'das gehaltene Jahr liegt im Kalenderjahr des Ziels')
+    assert.deepEqual(v.moves.flatMap((m) => m.parts.map((p) => p.mergedInto)), ['Grundsteuer 2025 (anteilig 01.01.–30.06.2025)'])
+    assert.deepEqual((await items(opened)).map((c) => [c.period, c.amountCents, storedOutflowYear(c)]), [['2025-01', 36500, 2025]])
+    assert.equal(await sourceCount(opened), 0)
+  })
+})
+
+// #478, gefunden vom Golden (Ablauf 29): Ein Teil mit gehaltenem Jahr 2026 steht in einem Kalenderzeitraum neben einem
+// Teil ohne Angabe. Wächst der Zeitraum auf zwei Kalenderjahre, wird der Teil ohne Angabe gefragt; mit der Antwort 2026
+// stünden zwei Zeilen derselben Quelle mit demselben Jahr im Zeitraum (Invariante 2). Sie werden eine.
+test('#478: Bekommt ein stehender Teil das Jahr eines anderen Teils im selben Zeitraum, werden beide eine Zeile', async () => {
+  await withDatabase(async (opened) => {
+    await change(opened, { startMonth: 2, changes: ['2025-10'] })
+    const schornstein = { propertyId: P, category: 'Schornsteinfeger', key: 'area' as const, serviceFrom: '2025-03-10', serviceTo: '2026-08-12', sourceId: 'q' }
+    // Roh eingefügt: so steht es nach einem Wechsel; der Weg zum Anlegen verlangte das Aufteilen.
+    await opened.write(async (db) => {
+      await db.insert(costSources).values({ id: 'q', propertyId: P, rule: 'days' })
+      await db.insert(costItems).values({ id: 'a', ...schornstein, period: periodKey('2025-02'), description: 'Schornsteinfeger (anteilig 10.03.–31.03.2025)', amountCents: 3704, taxYear: 2026 })
+      await db.insert(costItems).values({ id: 'b', ...schornstein, period: periodKey('2025-02'), description: 'Schornsteinfeger (anteilig 01.04.–30.09.2025)', amountCents: 34947 })
+      await db.insert(costItems).values({ id: 'c', ...schornstein, period: periodKey('2025-10'), description: 'Schornsteinfeger (anteilig 01.10.2025–12.08.2026)', amountCents: 53204, taxYear: 2025 })
+    })
+    const v = await change(opened, { startMonth: 2, changes: ['2026-05'] }, { taxYears: { 'b|2025-02': 2026 } })
+    assert.deepEqual(v.taxYears.map((t) => t.key), ['b|2025-02'])
+    const nachher = (await items(opened)).filter((c) => c.period === '2025-02')
+    assert.deepEqual(nachher.map((c) => [c.amountCents, storedOutflowYear(c), c.description]).sort(byText), [
+      [20709, 2025, 'Schornsteinfeger (anteilig 01.10.2025–31.01.2026)'],
+      [38651, 2026, 'Schornsteinfeger (anteilig 10.03.–30.09.2025)'],
+    ])
+    assert.equal((await items(opened)).reduce((a, c) => a + c.amountCents, 0), 3704 + 34947 + 53204)
   })
 })

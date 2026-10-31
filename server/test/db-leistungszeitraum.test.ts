@@ -11,7 +11,7 @@ import { eq } from 'drizzle-orm'
 import { applyMigrations, connect, loadMigrations, type Connection } from '../src/db/client.ts'
 import type { OpenedDatabase } from '../src/db/open.ts'
 import { openFreshDatabase } from '../testing/freshDatabase.ts'
-import { createEntity, findEntity, PeriodError, updateEntity } from '../src/db/repository.ts'
+import { createEntity, findEntity, PeriodError, TaxYearQuestion, updateEntity } from '../src/db/repository.ts'
 import { periodChanges, properties } from '../src/db/schema.ts'
 import { formatDayRange, spansTwoYears } from '../../shared/period.ts'
 
@@ -90,10 +90,15 @@ test('Kalenderobjekt: ein Leistungszeitraum im eigenen Jahr wird gespeichert, oh
   await withDatabase(async (opened) => {
     const gespeichert = await opened.write((db) => createEntity(db, 'costItems', 'w', item({ category: 'Wasser/Abwasser', description: 'Wasser 2025', serviceFrom: '2025-01-01', serviceTo: '2025-12-31' })))
     assert.deepEqual([fieldOf(gespeichert, 'serviceFrom'), fieldOf(gespeichert, 'serviceTo'), fieldOf(gespeichert, 'taxYear')], ['2025-01-01', '2025-12-31', undefined])
-    // Ein Jahr der Zahlung, das dem Kalenderjahr gleicht, ist erlaubt; ein anderes nicht (Entwurf 3.10: „ist es dieses“).
+    // Ein Jahr der Zahlung, das dem Kalenderjahr gleicht, ist erlaubt; seit #478 (E2) auch ein anderes in der üblichen
+    // Spanne (2024 bis 2028), etwa eine Rechnung für 2025, bezahlt 2026. Vorher: „liegt im Kalenderjahr 2025“ (400).
     await opened.write((db) => updateEntity(db, 'costItems', 'w', { taxYear: 2025 }))
-    await assert.rejects(opened.write((db) => updateEntity(db, 'costItems', 'w', { taxYear: 2026 })),
-      (err: unknown) => err instanceof PeriodError && /liegt im Kalenderjahr 2025/.test(err.message))
+    await opened.write((db) => updateEntity(db, 'costItems', 'w', { taxYear: 2026 }))
+    assert.equal(fieldOf(await opened.read((db) => findEntity(db, 'costItems', 'w')), 'taxYear'), 2026)
+    // Außerhalb fragt Mietfuchs nach, mit `confirmTaxYear` wird gespeichert.
+    await assert.rejects(opened.write((db) => updateEntity(db, 'costItems', 'w', { taxYear: 2029 })),
+      (err: unknown) => err instanceof TaxYearQuestion && /außerhalb der üblichen Spanne von 2024 bis 2028/.test(err.message))
+    await opened.write((db) => updateEntity(db, 'costItems', 'w', { taxYear: 2029, confirmTaxYear: true }))
     // Ohne Leistungszeitraum ändert sich nichts gegenüber heute.
     const ohne = await opened.write((db) => createEntity(db, 'costItems', 'g', item({})))
     assert.equal(fieldOf(ohne, 'serviceFrom'), undefined)
@@ -127,13 +132,20 @@ test('Brennstoff/Energie nur bei der Kostenart „Heizung und Warmwasser“', as
   })
 })
 
-test('Mai bis April: Das Jahr der Zahlung ist Pflicht und liegt zwischen Beginn und Ende + 1', async () => {
+test('Mai bis April: Das Jahr der Zahlung ist Pflicht; außerhalb der üblichen Spanne fragt Mietfuchs nach (#478)', async () => {
   await withDatabase(async (opened) => {
     await setRules(opened, 5, [])
     await assert.rejects(opened.write((db) => createEntity(db, 'costItems', 'a', item({ period: '2025-05' }))),
       (err: unknown) => err instanceof PeriodError && /reicht über zwei Kalenderjahre/.test(err.message) && /Jahr der Zahlung/.test(err.message))
-    await assert.rejects(opened.write((db) => createEntity(db, 'costItems', 'b', item({ period: '2025-05', taxYear: 2028 }))),
-      (err: unknown) => err instanceof PeriodError && /zwischen 2025 und 2027/.test(err.message))
+    // Seit #478 dieselbe Spanne wie beim Datum: Beginn − 1 bis Ende + 3 (2024 bis 2029). Vorher 400 außerhalb 2025–2027.
+    for (const [id, taxYear] of [['b', 2024], ['b2', 2028], ['b3', 2029]] as const) {
+      const ok = await opened.write((db) => createEntity(db, 'costItems', id, item({ period: '2025-05', taxYear })))
+      assert.equal(fieldOf(ok, 'taxYear'), taxYear)
+    }
+    await assert.rejects(opened.write((db) => createEntity(db, 'costItems', 'd', item({ period: '2025-05', taxYear: 2030 }))),
+      (err: unknown) => err instanceof TaxYearQuestion && /außerhalb der üblichen Spanne von 2024 bis 2029/.test(err.message))
+    const bestaetigt = await opened.write((db) => createEntity(db, 'costItems', 'd', item({ period: '2025-05', taxYear: 2030, confirmTaxYear: true })))
+    assert.equal(fieldOf(bestaetigt, 'taxYear'), 2030)
     const ok = await opened.write((db) => createEntity(db, 'costItems', 'c', item({ period: '2025-05', taxYear: 2026 })))
     assert.equal(fieldOf(ok, 'taxYear'), 2026)
   })

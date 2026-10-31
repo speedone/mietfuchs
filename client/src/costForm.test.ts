@@ -716,11 +716,19 @@ describe('Leistungszeitraum, Jahr der Zahlung, Brennstoff (#208)', () => {
     }
   })
 
-  test('Jahr der Zahlung: nur bei zwei Kalenderjahren, Auswahl vom Beginn bis ein Jahr nach dem Ende', () => {
+  test('Jahr der Zahlung: bei zwei Kalenderjahren oder einem gespeicherten anderen Jahr, Auswahl über die übliche Spanne (#478)', () => {
     expect(showsTaxYear({ from: '2025-05-01', to: '2026-04-30' }, false)).toBe(true)
     expect(showsTaxYear({ from: '2025-01-01', to: '2025-12-31' }, false)).toBe(false)
     expect(showsTaxYear({ from: '2025-01-01', to: '2025-12-31' }, true)).toBe(true)
-    expect(taxYearOptions(2025)).toEqual([2025, 2026, 2027])
+    // Ein gespeichertes Jahr, das vom Kalenderjahr abweicht (etwa nach einem Wechsel des Zeitraums), bleibt sichtbar.
+    expect(showsTaxYear({ from: '2025-01-01', to: '2025-12-31' }, false, 2026)).toBe(true)
+    expect(showsTaxYear({ from: '2025-01-01', to: '2025-12-31' }, false, 2025)).toBe(false)
+    expect(showsTaxYear({ from: '2025-01-01', to: '2025-12-31' }, false, null)).toBe(false)
+    // Dieselbe Spanne wie beim Datum (Beginn − 1 bis Ende + 3), ein gespeichertes Jahr außerhalb kommt dazu.
+    expect(taxYearOptions({ startYear: 2025, endYear: 2026 })).toEqual([2024, 2025, 2026, 2027, 2028, 2029])
+    expect(taxYearOptions({ startYear: 2025, endYear: 2025 }, 2031)).toEqual([2024, 2025, 2026, 2027, 2028, 2031])
+    expect(taxYearOptions({ startYear: 2025, endYear: 2025 }, 2020)).toEqual([2020, 2024, 2025, 2026, 2027, 2028])
+    expect(taxYearOptions({ startYear: 2025, endYear: 2025 }, 2026)).toEqual([2024, 2025, 2026, 2027, 2028])
   })
 })
 

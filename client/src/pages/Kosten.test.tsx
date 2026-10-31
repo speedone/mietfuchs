@@ -565,6 +565,60 @@ test('Seitenfenster: nur die Heizanlage geändert, Esc fragt „Änderungen verw
   expect(await screen.findByRole('alertdialog', { name: 'Änderungen verwerfen?' })).toBeTruthy()
 })
 
+// #478 (E4): Ein gespeichertes Jahr der Zahlung, das vom Kalenderjahr des Zeitraums abweicht (etwa nach einem Wechsel des
+// Abrechnungszeitraums), zeigt das Formular, und das Auswahlfeld zeigt genau den gespeicherten Wert, auch außerhalb der
+// üblichen Spanne. Stünde er nicht in den Optionen, zeigte der Browser den ersten Eintrag und speicherte ihn (CLAUDE.md).
+test('Jahr der Zahlung: das Auswahlfeld zeigt das gespeicherte Jahr, auch im Kalenderzeitraum und außerhalb der Spanne', async () => {
+  const year = new Date().getFullYear() - 1
+  for (const stored of [year + 1, year + 7]) {
+    costItems = [{ id: 'g1', propertyId: 'objekt-1', period: calendarPeriod(year), category: 'Gartenpflege', description: 'Gartenpflege', amountCents: 22766, key: 'area', taxYear: stored }]
+    render(<PeriodProvider><PropertyProvider><UIProvider><Kosten units={UNITS} settings={null} /></UIProvider></PropertyProvider></PeriodProvider>)
+    fireEvent.click(await screen.findByRole('button', { name: 'Kostenposition bearbeiten' }))
+    const field = await waitFor(() => select(/Jahr der Zahlung \(Steuer\)/))
+    expect(field.value).toBe(String(stored))
+    expect(field.selectedOptions[0]?.textContent).toBe(String(stored))
+    // Der Leerwert heißt im Kalenderzeitraum „wie Abrechnungsjahr“.
+    expect([...field.options].map((o) => o.textContent)[0]).toBe(`wie Abrechnungsjahr (${year})`)
+    // Unverändert gespeichert geht das Jahr so hinaus, ohne Rückfrage.
+    fireEvent.click(screen.getByRole('button', { name: /^Speichern$/ }))
+    await waitFor(() => expect(sent).toHaveLength(1))
+    expect(sent[0]?.body).toMatchObject({ taxYear: stored })
+    expect(sent[0]?.body.confirmTaxYear).toBeUndefined()
+    cleanup()
+    sent = []
+  }
+})
+
+// #478 (E2): Antwortet der Server mit seiner Rückfrage zum Jahr der Zahlung (409 `question: 'taxYear'`, etwa weil sich
+// der Bestand seit dem Laden geändert hat), wird sie zur Rückfrage der Seite; bestätigt geht derselbe Rumpf mit
+// `confirmTaxYear` noch einmal hinaus.
+test('Jahr der Zahlung: Rückfrage des Servers, gespeichert mit Bestätigung', async () => {
+  const year = new Date().getFullYear() - 1
+  costItems = [{ id: 'g1', propertyId: 'objekt-1', period: calendarPeriod(year), category: 'Gartenpflege', description: 'Gartenpflege', amountCents: 22766, key: 'area', taxYear: year + 1 }]
+  const question = `Als Jahr der Zahlung ist ${year + 3} angegeben; das liegt außerhalb der üblichen Spanne.`
+  const answer = (body: unknown, status: number) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    const method = init?.method ?? 'GET'
+    if (method !== 'GET') {
+      const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+      sent.push({ url, method, body })
+      return body.confirmTaxYear === true ? answer({ ok: true }, 200) : answer({ error: question, question: 'taxYear' }, 409)
+    }
+    const path = url.split('?')[0]
+    return answer(path === '/api/costItems' ? costItems : path === '/api/properties' ? [{ id: 'objekt-1', name: 'Haus', kind: 'mfh', address: '' }] : [], 200)
+  })
+  render(<PeriodProvider><PropertyProvider><UIProvider><Kosten units={UNITS} settings={null} /></UIProvider></PropertyProvider></PeriodProvider>)
+  fireEvent.click(await screen.findByRole('button', { name: 'Kostenposition bearbeiten' }))
+  const field = await waitFor(() => select(/Jahr der Zahlung \(Steuer\)/))
+  fireEvent.change(field, { target: { value: String(year + 3) } })
+  fireEvent.click(screen.getByRole('button', { name: /^Speichern$/ }))
+  const dialog = await screen.findByRole('alertdialog', { name: 'Steuerjahr ändert sich' })
+  expect(dialog.textContent).toContain(question)
+  fireEvent.click(within(dialog).getByRole('button', { name: 'So speichern' }))
+  await waitFor(() => expect(sent).toHaveLength(2))
+  expect(sent[1]?.body).toMatchObject({ taxYear: year + 3, confirmTaxYear: true })
+})
+
 // Durchsicht M2: Im Kostenformular erreicht Tab jedes Feld, auch hinter „Weitere Angaben“, und den Knopf
 // zum Anlegen. Ein eigener Tab-Ring sperrte die Tastatur vor dem geschlossenen <details> ein.
 test('Seitenfenster: Tab erreicht im Kostenformular Umlageschlüssel, Beleg, „Weitere Angaben“ und „Anlegen“', async () => {

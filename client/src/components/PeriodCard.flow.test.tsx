@@ -37,6 +37,7 @@ const preview = (token: string, extra: Partial<PeriodChangePreview> = {}): Perio
   effects: [],
   overrides: [{ tenancyId: 't1', tenantName: 'Müller', from: [{ key: periodKey('2027-01'), label: '2027', cents: 180000 }], ask: [{ period: periodKey('2027-01'), label: 'Rumpf', months: 'Januar bis April 2027' }] }],
   assessments: [],
+  keptTaxYears: [],
   taxYears: [{ key: 'c1|2027-05', costItemId: 'c1', description: 'Grundsteuer', period: periodKey('2027-05'), label: '2027/2028', suggested: 2027, options: [2027, 2028] }],
   token,
   ...extra,

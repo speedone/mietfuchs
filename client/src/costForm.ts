@@ -20,7 +20,7 @@ import { partShare } from '../../shared/splitPart.ts'
 // Seit der Belegbuchung (#170) in shared/, weil der Server dieselben Prüfungen und Vorschläge braucht.
 export { amountProblem, showsTaxUnitField, type BuildResult } from '../../shared/costItem.ts'
 import { amountProblem } from '../../shared/costItem.ts'
-import { allowsPaidOn, paidOnQuestions, statedOutflowYear, tenDayWindow, type YearSpan } from '../../shared/paidOn.ts'
+import { allowsPaidOn, paidOnQuestions, paidOnSpan, statedOutflowYear, taxYearQuestions, tenDayWindow, type YearSpan } from '../../shared/paidOn.ts'
 import type { Problem } from './formProblems'
 import { allowsContractAnswer, contractTenancies, openWhy } from './contractAgreement'
 export { aiPositionDefaults, aiPositionPreselect, lastExternalBasis, type AiPositionKey, type KeyContext } from '../../shared/assessment.ts'
@@ -768,12 +768,21 @@ export function splitDecision(parts: readonly SplitPreviewPart[], taxYear: strin
   return { message: `Die Rechnung betrifft ${parts.length} Abrechnungszeiträume. Mietfuchs legt je Zeitraum eine Position an: ${parts.map((p) => `${p.label}: ${euro(p.amountCents)}`).join(', ')}.` }
 }
 
-// Das Jahr der Zahlung zeigt das Formular nur, wenn der Zeitraum über zwei Kalenderjahre reicht oder
-// ein Teil einer aufgeteilten Rechnung dorthin gehört (Entwurf 3.10, 11.4).
-export const showsTaxYear = (period: Pick<BillingPeriod, 'from' | 'to'>, needsTaxYear: boolean): boolean => needsTaxYear || spansTwoYears(period)
+// Das Jahr der Zahlung zeigt das Formular, wenn der Zeitraum über zwei Kalenderjahre reicht oder
+// ein Teil einer aufgeteilten Rechnung dorthin gehört (Entwurf 3.10, 11.4), und seit #478 (E4), wenn die gespeicherte
+// Position ein anderes Jahr als das Kalenderjahr ihres Zeitraums trägt (etwa nach einem Wechsel des Zeitraums): Sonst
+// stünde ein Jahr, das für die Steuer gilt, unsichtbar in der Position.
+export const showsTaxYear = (period: Pick<BillingPeriod, 'from' | 'to'>, needsTaxYear: boolean, stored: number | null = null): boolean =>
+  needsTaxYear || spansTwoYears(period) || (stored !== null && stored !== Number(period.from.slice(0, 4)))
 
-// Vom Jahr des Beginns bis ein Jahr nach dem Ende (dieselbe Spanne prüft der Server).
-export const taxYearOptions = (startYear: number): number[] => [startYear, startYear + 1, startYear + 2]
+// Die Jahre der üblichen Spanne (`paidOnSpan`, Beginn − 1 bis Ende + 3, dieselbe wie beim Datum und am Server, #478 E2),
+// dazu ein gespeichertes Jahr außerhalb: **Der angezeigte Wert entspricht immer dem gespeicherten**; stünde er nicht in
+// den Optionen, zeigte der Browser den ersten Eintrag und speicherte ihn (CLAUDE.md, Tests Ebene 3).
+export function taxYearOptions(span: YearSpan, stored: number | null = null): number[] {
+  const s = paidOnSpan(span)
+  const years = Array.from({ length: s.to - s.from + 1 }, (_, i) => s.from + i)
+  return stored === null || years.includes(stored) ? years : [...years, stored].sort((a, b) => a - b)
+}
 
 // ---------- Bezahlt am (für die Steuer, #255 PR 3) ----------
 
@@ -787,6 +796,12 @@ export const showsPaidOn = (form: Pick<ItemForm, 'key' | 'operatingPower' | 'cat
 // zu bestätigen. Dieselben Sätze, mit denen der Server ohne Bestätigung ablehnt (shared/paidOn.ts).
 export function paidOnChange(before: Pick<CostItem, 'paidOn' | 'taxYear' | 'period'> | null, body: { paidOn: string | null; taxYear: number | null; period: string }, span: YearSpan): string[] {
   return paidOnQuestions(before, body, span)
+}
+
+// Was ein gewähltes Jahr der Zahlung außerhalb der üblichen Spanne bedeutet (#478, E2), als Sätze für die Rückfrage vor
+// dem Speichern; dieselben, mit denen der Server ohne `confirmTaxYear` nachfragt (shared/paidOn.ts).
+export function taxYearChange(before: Pick<CostItem, 'taxYear'> | null, body: { taxYear: number | null; period: string }, span: YearSpan): string[] {
+  return taxYearQuestions(before, body, span)
 }
 
 // Der Hinweis zur Zehn-Tage-Regel (R-8), wenn das Datum zwischen dem 22.12. und dem 10.01. liegt; nie bei Grundsteuer.

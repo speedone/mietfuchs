@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import type { PeriodChangePreview, PeriodEffect, Property } from '../types'
 import { api, errorText, fmtDate, fmtEuro } from '../api'
 import { useProperty } from '../property'
@@ -94,12 +94,16 @@ const renameText = (renamedTo: string, dependsOnYear: boolean): string => depend
 
 export function MoveList({ moves }: { moves: PeriodChangePreview['moves'] }) {
   return moves.map((m) => (
-    <p key={m.costItemId}>
+    <Fragment key={m.costItemId}>
+    <p>
       „{m.description}“ ({fmtEuro(m.amountCents)}) wird nach Tagen aufgeteilt: {m.parts.map((p) => `${p.label}: ${fmtEuro(p.amountCents)}`).join(', ')}.
       {m.parts.flatMap((p) => (p.mergedInto !== undefined ? [mergeText(p.label, p.mergedInto, p.mergeDependsOnYear === true, p.mergedAs)]
         : p.mergeWithYear !== undefined ? [mergeWithYearText(p.label, p.mergeWithYear.into, p.mergeWithYear.year, p.mergeWithYear.renamedTo, p.mergeWithYear.mergedAs)] : [])).join('')}
       {m.renamedTo === undefined ? '' : renameText(m.renamedTo, m.parts.some((p) => p.mergedInto !== undefined && p.mergeDependsOnYear === true))}
     </p>
+    {/* #478 (E3): Wechselt beim Teilen Geld das Steuerjahr (nur bei Teilen ohne Datum und ohne Jahr), der Satz dazu. */}
+    {m.taxShift !== undefined && <div className="warn">{m.taxShift}</div>}
+    </Fragment>
   ))
 }
 
@@ -144,12 +148,15 @@ export function PreviewAnswers({ preview, answers, onChange }: { preview: Period
   // Das Jahr der Zahlung einer Position einer Gruppe nur für den gewählten Zeitraum (I1).
   const groupOf = new Map(preview.groups.flatMap((g) => g.items.map((i) => [i.costItemId, g] as const)))
   const chosenOf = (g: PeriodChangePreview['groups'][number]): string => answers.groups[g.id] ?? g.suggested
-  const shownTax = preview.taxYears.filter((t) => {
+  const forChosen = (t: { costItemId: string; period: string }): boolean => {
     const g = groupOf.get(t.costItemId)
     if (g === undefined) return true
     const chosen = chosenOf(g)
     return chosen === 'split' ? true : chosen === t.period
-  })
+  }
+  const shownTax = preview.taxYears.filter(forChosen)
+  // #478 (E3): ein gehaltenes Jahr der Zahlung außerhalb der Kalenderjahre des Ziels, ebenso nur für den gewählten Zeitraum.
+  const shownKept = preview.keptTaxYears.filter(forChosen)
   return (
     <>
       {preview.groups.map((g) => {
@@ -203,6 +210,7 @@ export function PreviewAnswers({ preview, answers, onChange }: { preview: Period
           </div>
         )
       })}
+      {shownKept.map((k) => <div key={`${k.costItemId}|${k.period}`} className="warn">{k.text}</div>)}
       {shownTax.map((t) => (
         <label key={t.key} className="field">
           Jahr der Zahlung (Steuer) für „{t.description}“ in {t.label}

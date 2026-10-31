@@ -372,8 +372,10 @@ test('Review Runde 2: Grundsteuer 4.200 €, Vorauszahlung 100 €, Wechsel ab 0
   })
 })
 
-// Review Runde 2: Die Verschiebung zwischen Steuerjahren nennt je Position ihr eigenes Jahr.
-test('Review Runde 2: taxShifts mit zwei Positionen verschiedener Jahre der Zahlung', async () => {
+// Review Runde 2: Die Verschiebung zwischen Steuerjahren nannte je Position ihr eigenes Jahr. Seit #478 behalten
+// Positionen mit angegebenem Jahr dieses Jahr; statt einer Verschiebung (vorher: „Müll B“ von 2024 nach 2025, „Müll A“
+// von 2025 nach 2024) nennt die Vorschau je Position und Zeitraum das gehaltene Jahr.
+test('Review Runde 2/#478: zwei Positionen verschiedener Jahre der Zahlung behalten ihr Jahr', async () => {
   await withDatabase(async (opened) => {
     await opened.write(async (db) => {
       await db.update(properties).set({ periodStartMonth: 5 }).where(eq(properties.id, 'objekt-1'))
@@ -383,11 +385,11 @@ test('Review Runde 2: taxShifts mit zwei Positionen verschiedener Jahre der Zahl
     })
     const v = await preview(opened, { startMonth: 5, changes: ['2025-01'] })
     const g = v.groups[0] ?? assert.fail('keine Gruppe')
-    const nach2025 = g.taxShifts.find((t) => t.key === '2025-01') ?? assert.fail(JSON.stringify(g.taxShifts))
-    assert.match(nach2025.text, /„Müll B“ 200,00.€ von 2024 nach 2025/)
-    assert.doesNotMatch(nach2025.text, /Müll A/)
-    const rumpf = g.taxShifts.find((t) => t.key === '2024-05') ?? assert.fail('Rumpf fehlt')
-    assert.match(rumpf.text, /„Müll A“ 100,00.€ von 2025 nach 2024/)
+    assert.deepEqual(g.taxShifts, [], JSON.stringify(g.taxShifts))
+    assert.deepEqual(v.taxYears, [])
+    const gehalten = v.keptTaxYears.map((k) => `${k.costItemId}|${k.period}|${k.taxYear}`).sort()
+    assert.ok(gehalten.includes('a|2024-05|2025'), JSON.stringify(gehalten))
+    assert.ok(gehalten.includes('b|2025-01|2024'), JSON.stringify(gehalten))
   })
 })
 
