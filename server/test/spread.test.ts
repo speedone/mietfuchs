@@ -3,7 +3,7 @@
 // E-4, E-9.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { allowsSpread, isSpreadYears, SPREAD_YEARS, spreadOptions, spreadQuestions, spreadRates } from '../../shared/spread.ts'
+import { allowsSpread, isSpreadYears, SPREAD_YEARS, spreadOptions, spreadQuestions, spreadRates, spreadRestQuestions, spreadSpan } from '../../shared/spread.ts'
 import { joinQuestions } from '../../shared/paidOn.ts'
 import { largestRemainder } from '../src/apportion.ts'
 import { rngOf } from '../testing/revertFlows.ts'
@@ -154,4 +154,65 @@ test('spreadQuestions: eine nie gerechnete Wahl entfällt ohne „Anteile entfal
   assert.deepEqual(spreadQuestions(krumm, null), entfernt)
   // Eine verteilbare Position bleibt bei den bisherigen Sätzen.
   assert.match(spreadQuestions({ ...krumm, category: 'Nicht umlagefähig' }, null)[0] ?? '', /entfallen damit/)
+})
+
+// #262 PR 4 (E-7): das Jahr des vorzeitigen Endes am Objekt. Die Rückfrage nennt je betroffener Position den Zeitraum des
+// Abzugs vorher und nachher; ohne betroffene Position ist nichts zu bestätigen.
+test('spreadRestQuestions: Setzen, Ändern und Entfernen des Endes nennen je Position den Abzug vorher und nachher', () => {
+  const dach = { description: 'Dach', period: '2026-01', spreadYears: 5 as const, category: 'Nicht umlagefähig', amountCents: 1_000_000 }
+  const fenster = { description: 'Fenster', period: '2027-01', spreadYears: 2 as const, category: 'Nicht umlagefähig', amountCents: 300_000 }
+  const plain = { description: 'Grundsteuer', period: '2026-01', category: 'Grundsteuer', amountCents: 60_000 }
+  const krumm = { description: 'Krumm', period: '2026-01', spreadYears: 3 as const, category: 'Grundsteuer', amountCents: 60_000 }
+  assert.deepEqual(spreadSpan(dach), { from: 2026, to: 2030 })
+  assert.deepEqual(spreadSpan({ ...dach, taxYear: 2025 }), { from: 2025, to: 2029 })
+  const set = spreadRestQuestions(null, 2027, [dach, fenster, plain, krumm])
+  assert.deepEqual(set, [
+    'Im Jahr 2027 wird der noch nicht abgezogene Teil des verteilten Erhaltungsaufwands auf einmal abgezogen (§ 82b Abs. 2 EStDV).',
+    '„Dach“: Abzug 2026 bis 2027 (Rest 2027) statt 2026 bis 2030.',
+    '„Fenster“: Abzug ganz 2027 statt 2027 bis 2028.',
+    ADVICE,
+  ])
+  // Ein späteres Jahr betrifft das Fenster nicht mehr (Ende im letzten Jahr wirkt nicht).
+  assert.deepEqual(spreadRestQuestions(2027, 2028, [dach, fenster]).slice(1, -1), ['„Dach“: Abzug 2026 bis 2028 (Rest 2028) statt 2026 bis 2027 (Rest 2027).', '„Fenster“: Abzug 2027 bis 2028 statt ganz 2027.'])
+  assert.deepEqual(spreadRestQuestions(2027, null, [dach]), [
+    'Ohne dieses Jahr laufen die Verteilungen wie gewählt.',
+    '„Dach“: Abzug 2026 bis 2030 statt 2026 bis 2027 (Rest 2027).',
+    ADVICE,
+  ])
+  // Ein Jahr, in dem keine Verteilung vorzeitig endet, sagt das statt „auf einmal abgezogen“.
+  assert.deepEqual(spreadRestQuestions(2027, 2030, [dach]).slice(0, 2), [
+    'Im Jahr 2030 endet keine Verteilung vorzeitig; sie laufen wie gewählt.',
+    '„Dach“: Abzug 2026 bis 2030 statt 2026 bis 2027 (Rest 2027).',
+  ])
+  // Durchsicht S2: Ein Ende vor dem Beginn betrifft die Position nicht; das Fenster ab 2027 läuft bei Ende 2026 weiter.
+  assert.deepEqual(spreadRestQuestions(null, 2026, [fenster]), [])
+  assert.deepEqual(spreadRestQuestions(null, 2026, [dach, fenster]).slice(1, -1), ['„Dach“: Abzug ganz 2026 statt 2026 bis 2030.'])
+  // Nichts betroffen: keine Rückfrage.
+  assert.deepEqual(spreadRestQuestions(null, 2030, [dach]), [])
+  assert.deepEqual(spreadRestQuestions(null, 2031, [dach, plain, krumm]), [])
+  assert.deepEqual(spreadRestQuestions(2027, 2027, [dach]), [])
+  assert.deepEqual(spreadRestQuestions(null, 2027, []), [])
+})
+
+// Durchsicht S3: Die Rückfrage an der Position kennt das Ende am Objekt; ändert die Wahl dadurch nichts, fragt sie nicht.
+test('spreadQuestions mit Ende am Objekt: Abzug mit Rest, keine Frage, wo sich nichts ändert', () => {
+  assert.deepEqual(spreadQuestions(stored({ spreadYears: 5 }), stored({ spreadYears: 3 }), [], 2027), [
+    'Für die Steuer wird die Position dann auf 3 statt 5 Jahre verteilt: Abzug 2026 bis 2027 (Rest 2027).', BOUND, ADVICE,
+  ])
+  assert.deepEqual(spreadQuestions(stored({ spreadYears: undefined }), stored({ spreadYears: 5 }), [], 2027), [
+    'Für die Steuer wird die Position dann auf 5 Jahre verteilt: Abzug 2026 bis 2027 (Rest 2027) statt ganz 2026.', BOUND, ADVICE,
+  ])
+  assert.deepEqual(spreadQuestions(stored({ spreadYears: 5 }), stored({ spreadYears: undefined }), [], 2027)[0],
+    'Ohne Verteilung zählt die Position für die Steuer ganz im Jahr 2026; der Anteil 2027 entfällt.')
+  assert.deepEqual(spreadQuestions(stored({ spreadYears: 5 }), null, [], 2027)[0], 'Der Anteil 2027 entfällt damit.')
+  // Ende im Jahr der Zahlung: verteilt wird ohnehin nicht, keine Frage.
+  assert.deepEqual(spreadQuestions(stored({ spreadYears: 5 }), stored({ spreadYears: 3 }), [], 2026), [])
+  assert.deepEqual(spreadQuestions(stored({ spreadYears: undefined }), stored({ spreadYears: 3 }), [], 2026), [])
+  assert.deepEqual(spreadQuestions(stored({ spreadYears: 5 }), null, [], 2026), [])
+  // Ein Ende vor dem Jahr der Zahlung wirkt nicht (S2).
+  assert.deepEqual(spreadQuestions(stored({ spreadYears: 5 }), stored({ spreadYears: 2 }), [], 2025),
+    spreadQuestions(stored({ spreadYears: 5 }), stored({ spreadYears: 2 })))
+  // Ein anderes Jahr der Zahlung: beide Abzüge mit dem Ende.
+  assert.deepEqual(spreadQuestions(stored({ spreadYears: 5, taxYear: 2026 }), stored({ spreadYears: 5, taxYear: 2027 }), [], 2028)[0],
+    'Die Verteilung beginnt dann 2027 statt 2026: Abzug 2027 bis 2028 (Rest 2028) statt 2026 bis 2028 (Rest 2028).')
 })

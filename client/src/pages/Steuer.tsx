@@ -20,7 +20,7 @@ import { andList } from '../../../shared/wording.ts'
 import { OPERATING_POWER_KEPT, OPERATING_POWER_REPORTED } from '../../../shared/operatingPower.ts'
 import { anlageVLines } from '../anlageV'
 import type { NoticeTab } from '../notices'
-import { DEFERRED_COLUMN_NOTE, deferredCellText, deferredParts, deferredSumText, isSpreadItem, showsDeferred, spreadBlock, spreadCarriedText, spreadConditionsText, spreadIgnoredText, spreadItemText, spreadNothingDeductibleText, SPREAD_BLOCK_READING, SPREAD_CARRIED_MORE } from '../taxSpread'
+import { DEFERRED_COLUMN_NOTE, deferredCellText, deferredParts, deferredSumText, isSpreadItem, showsDeferred, spreadBlock, spreadCarriedText, spreadConditionsText, spreadIgnoredText, spreadItemText, spreadNothingDeductibleText, SPREAD_BLOCK_READING, SPREAD_CARRIED_MORE, spreadRestBeforeStartText, spreadRestText, SPREAD_REST_MORE, spreadUsageChangedText } from '../taxSpread'
 import { formerYearsText, incomeMore, incomeTable, lateDecemberText, OLD_LEASE_MORE, oldLeaseForwardText, possibleDepositText, TURN_OF_YEAR_MORE, turnOfYearLines, unallocatedText, unitRows } from '../taxIncome'
 
 // `onNavigate`: der Sprung in die Stammdaten bei einer nicht eingetragenen Kopfangabe (#96 PR 2).
@@ -377,6 +377,14 @@ export default function Steuer({ settings, onNavigate }: Props) {
             {hints.includes('spreadIgnored') && (
               <NoticeBox level="warning" title="Verteilung gespeichert, aber nicht gerechnet" action={spreadIgnoredText(data)} />
             )}
+            {/* #262 PR 4 (E-7): vorzeitiges Ende nach § 82b Abs. 2 EStDV am Objekt. */}
+            {hints.includes('spreadRest') && (
+              <NoticeBox level="hint" title={<>Rest der <Term id="spread82b">Verteilung</Term> in diesem Jahr (§ 82b Abs. 2 EStDV)</>} action={spreadRestText(data)} more={SPREAD_REST_MORE} />
+            )}
+            {hints.includes('spreadRestBeforeStart') && (
+              <NoticeBox level="hint" title="Verteilung endet im Jahr der Zahlung" action={spreadRestBeforeStartText(data)} />
+            )}
+
             {/* #96 PR 2 (A4.4, Durchsicht X6): anschaffungsnahe Herstellungskosten, auch im Druck. */}
             {hints.includes('acquisitionRelated') && acquisition && (
               <NoticeBox
@@ -751,6 +759,8 @@ export default function Steuer({ settings, onNavigate }: Props) {
                   {/* #96 (A4.5), Auslegung: ohne Datum der Gemeinschaft die bestmögliche Aufteilung. */}
                   {usageChangeTouchesWithdrawal(data) && <> Bei einer Entnahme aus der Erhaltungsrücklage zählt streng genommen die Nutzung am Tag,
                   an dem die Gemeinschaft bezahlt; ohne dieses Datum teilt Mietfuchs auch sie nach Tagen.</>}
+                  {/* #262 (Durchsicht K2): Vermietung endet bei laufender Verteilung, § 82b Abs. 2. */}
+                  {spreadUsageChangedText(data) !== null && <> {spreadUsageChangedText(data)}</>}
                 </>}
                 more={<>
                   Aufwendungen für eine zunächst selbst bewohnte, danach leer stehende und noch nicht vermietete Wohnung sind nur

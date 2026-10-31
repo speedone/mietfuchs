@@ -473,7 +473,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     const spreadQuestions = spreadChange(stored, {
       period: 'period' in heating && heating.period ? heating.period : key, paidOn: built.body.paidOn,
       taxYear: 'taxYear' in heating ? heating.taxYear ?? null : built.body.taxYear, spreadYears: built.body.spreadYears,
-    }, otherParts)
+    }, otherParts, property?.spreadRestYear ?? null)
     const questions = joinQuestions(paidOnQuestions, taxYearQuestions, spreadQuestions)
     const titleOf = (onlySpread: boolean): string => (onlySpread ? 'Verteilung für die Steuer ändert sich' : 'Steuerjahr ändert sich')
     let confirmPaidOn = false
@@ -588,7 +588,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     const ok = await confirm({
       title: `Kostenposition löschen?`,
       // #262 PR 3 (E-9): Bei einer verteilten Position entfallen die Anteile der Folgejahre.
-      message: `„${i.description}“ (${fmtEuro(i.amountCents)}) wird gelöscht.${spreadDeleteText(i) ? ` ${spreadDeleteText(i)}` : ''}`,
+      message: `„${i.description}“ (${fmtEuro(i.amountCents)}) wird gelöscht.${spreadDeleteText(i, property?.spreadRestYear ?? null) ? ` ${spreadDeleteText(i, property?.spreadRestYear ?? null)}` : ''}`,
       confirmLabel: 'Löschen',
       danger: true,
     })
@@ -1075,7 +1075,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
               <summary>Weitere Angaben — Leistungszeitraum{showTaxYear ? ', Jahr der Zahlung' : ''}{showsPaidOn(form) ? ', Bezahlt am' : ''}{showsSpread(form) ? ', Verteilung' : ''}{form.category === HEATING_CATEGORY ? ', Brennstoff/Energie' : ''} (optional)</summary>
               <CostPeriodFields form={form} onChange={setForm} showTaxYear={showTaxYear} years={heatTax?.show ? heatTax.years : taxYearOptions(periodSpan, storedTaxYear, form.taxYear !== '' ? Number(form.taxYear) : null)} emptyLabel={heatTax ? (heatTax.show && heatingOption && heatingOption.startYear === heatingOption.endYear ? `wie Heizperiode (${heatingOption.startYear})` : undefined) : spansTwoYears(period) ? undefined : `wie Abrechnungsjahr (${year})`} billTaxYear={deductionTaxYear(form, items)} paidOnChanges={livePaidOnChanges} droppedPaidOn={droppedPaidOnText(form, period)} />
               {/* #262 PR 3 (E-9): Verteilung nach § 82b EStDV neben „Bezahlt am“, nur wo der Server sie annimmt. */}
-              {showsSpread(form) && <SpreadField form={form} period={period} onChange={setForm} />}
+              {showsSpread(form) && <SpreadField form={form} period={period} restYear={property?.spreadRestYear ?? null} onChange={setForm} />}
               {droppedSpreadText(storedItem, form) && <p className="muted" role="status">{droppedSpreadText(storedItem, form)}</p>}
             </details>
             {/* Nicht umlagefähig (#142): nichts zu verteilen, also keine Auswahl, die etwas anderes verspräche. */}

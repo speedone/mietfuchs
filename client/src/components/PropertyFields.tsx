@@ -1,6 +1,7 @@
 import type { PropertyKind } from '../types'
 import { PROPERTY_KIND_LABELS } from '../types'
-import { CABLE_LABELS, GROUND_TAX_FILE_NUMBER_MAX, TAX_HEADER_FIELDS, TAX_HEADER_LABELS, type CableAnswer, type PropertyField, type PropertyForm } from '../propertyForm'
+import { CABLE_LABELS, GROUND_TAX_FILE_NUMBER_MAX, showsSpreadRest, TAX_HEADER_FIELDS, TAX_HEADER_LABELS, type CableAnswer, type PropertyField, type PropertyForm, type SpreadRestItem } from '../propertyForm'
+import SpreadRestField from './SpreadRestField'
 import Term from './Term'
 import TightMarketField from './TightMarketField'
 import FederalStateField from './FederalStateField'
@@ -13,13 +14,16 @@ import { estgAcquisitionRelated, yearsWord } from '../../../shared/law/estg.ts'
 // Die Felder eines Objekts, dieselben im Seitenfenster „Neues Objekt“ (NewPropertyDrawer) und „Objekt bearbeiten“
 // (PropertyCard), wie bei Wohnungen und Mietverhältnissen ein Formular für beides. Vorher legte ein schmales
 // Fenster nur Name, Art und Adresse an, in anderer Reihenfolge und mit „Name“ statt „Bezeichnung“.
-export default function PropertyFields({ form, setForm, errors, storedIban }: {
+export default function PropertyFields({ form, setForm, errors, storedIban, spreadItems = [] }: {
   form: PropertyForm
   setForm: (form: PropertyForm) => void
   errors: FormErrors<PropertyField>
   // Die gespeicherte IBAN des Objekts; ein neues hat keine.
   storedIban: string | null
+  // Die Kosten des Objekts, für das Ende der Verteilung (#262 PR 4); ein neues Objekt hat keine.
+  spreadItems?: readonly SpreadRestItem[]
 }) {
+  const showsRest = showsSpreadRest(spreadItems, form.spreadRestSaved)
   return (
     <>
       <div className="field-grid">
@@ -46,7 +50,7 @@ export default function PropertyFields({ form, setForm, errors, storedIban }: {
         <TightMarketField value={form.tightMarket} from={form.tightMarketFrom} to={form.tightMarketTo} onChange={(c) => setForm({ ...form, ...c })} />
       </div>
       {/* #96 PR 2 (Entwurf B3): Kopf der Anlage V, zugeklappt, solange nichts eingetragen ist. */}
-      <details className="extra-details" open={TAX_HEADER_FIELDS.some((f) => form.taxSaved[f] !== '')}>
+      <details className="extra-details" open={TAX_HEADER_FIELDS.some((f) => form.taxSaved[f] !== '') || form.spreadRestSaved !== ''}>
         <summary>Für die Steuer (Anlage V)</summary>
         <p className="muted">
           Alles freiwillig; die Steuerübersicht zeigt es im Kopf der Anlage V. Liegen die Gebäude dieses Objekts auf
@@ -64,6 +68,8 @@ export default function PropertyFields({ form, setForm, errors, storedIban }: {
             </Field>
           ))}
         </div>
+        {/* #262 PR 4 (E-7): nur mit einer verteilten Position oder einem gespeicherten Jahr. */}
+        {showsRest && <SpreadRestField value={form.spreadRestYear} saved={form.spreadRestSaved} items={spreadItems} onChange={(spreadRestYear) => setForm({ ...form, spreadRestYear })} />}
       </details>
       <details className="extra-details" open={form.own}>
         <summary>Abweichender Vermieter oder Bankverbindung</summary>

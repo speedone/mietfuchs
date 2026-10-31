@@ -98,7 +98,7 @@ import type { TermId } from '../../shared/glossary.ts'
 import { allocationOf, comparablePrevious, sameAllocation, sameUnits } from '../../shared/allocation.ts'
 import { invoicesOf, possibleDuplicates, receiptedSources, separateService } from '../../shared/duplicates.ts'
 import { commonPeriod, tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
-import { baseUsage, unitAsOf, usageChangesWithin, usageDays, usageFlags, usageSpans, type UsageSpan } from '../../shared/unitUsage.ts'
+import { baseUsage, leavesRentalWithin, unitAsOf, usageChangesWithin, usageDays, usageFlags, usageSpans, type UsageSpan } from '../../shared/unitUsage.ts'
 import type { TaxSpread, UnitUsage } from '../../shared/types.ts'
 import { knownUnit, metersByUnitText, unitLabel, unitScale, type UnitScale } from '../../shared/meterUnits.ts'
 import { CALENDAR_RULES, calendarYearPeriod, contextOf, formatDayRange, periodContaining, periodDays, periodLabel, periodMonths, periodOfKey, periodsBetween, previousPeriod, rulesOf, settlementDeadline, settlementPeriod, spansTwoYears, startYearOf, type PeriodContext } from '../../shared/period.ts'
@@ -1870,6 +1870,7 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
     items: new Map(splits.flatMap((s) => [...s.items.entries()])),
     selfUseChangedInYear: splits.some((s) => s.selfUseChangedInYear),
     usageChangedUnits: [...new Set(splits.flatMap((s) => s.usageChangedUnits))],
+    usageLeftRentalUnits: [...new Set(splits.flatMap((s) => s.usageLeftRentalUnits))],
     closedSelfUseDiffers: splits.some((s) => s.closedSelfUseDiffers),
     closedItemsChanged: splits.reduce((a, s) => a + s.closedItemsChanged, 0),
   }
@@ -1903,6 +1904,8 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
   // Vermietung wird nicht vor dem Verteilen, sondern jede Rate im Jahr ihres Abzugs (unten bei `cheapRentOf`).
   const restYear = options.restYear ?? null
   const spreadIgnored: { costItemId: string; description: string }[] = []
+  // Ende im Jahr der Zahlung (§ 82b Abs. 2, E-7): nicht verteilt, Hinweis `spreadRestBeforeStart`; ein Ende davor wirkt nicht.
+  const spreadRestBeforeStart: { costItemId: string; description: string; restYear: number }[] = []
   const spreadStarted: TaxSpread['started'] = []
   // Der Bruttoanteil der ersten Rate je verteilter Position: Grundlage ihrer Kürzung bei verbilligter Vermietung (unten).
   const grossFirst = new Map<string, number>()
@@ -1913,6 +1916,7 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
       const [plan] = deductionPlan(c, p.snapshot.period, p.items, restYear)
       if (plan === undefined) continue
       if (plan.ignored) spreadIgnored.push({ costItemId: c.id, description: c.description })
+      if (plan.of === 1 && plan.restYear !== null && plan.outflowYear === year) spreadRestBeforeStart.push({ costItemId: c.id, description: c.description, restYear: plan.restYear })
       const base = entry.amountCents - entry.privateCents
       const of = plan.of
       if (of === 1 || plan.outflowYear !== year || base < 0) continue
@@ -2280,6 +2284,7 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
     settlementPeriods: used.map((p) => ({ key: p.snapshot.period.key, label: p.snapshot.scope?.kind === 'heating' ? `Heizkosten ${periodLabel(p.snapshot.period)}` : periodLabel(p.snapshot.period) })),
     selfUseChangedInYear: split.selfUseChangedInYear,
     ...(split.usageChangedUnits.length > 0 ? { usageChangedUnits: split.usageChangedUnits } : {}),
+    ...(split.usageLeftRentalUnits.length > 0 ? { usageLeftRentalUnits: split.usageLeftRentalUnits } : {}),
     closedSelfUseDiffers: split.closedSelfUseDiffers,
     closedItemsChanged: split.closedItemsChanged,
     reserveContributionCents,
@@ -2287,6 +2292,7 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
     ...(reserveWithdrawalSuspects.length > 0 ? { reserveWithdrawalSuspects } : {}),
     ...(specialLevySuspects.length > 0 ? { specialLevySuspects } : {}),
     ...(spreadIgnored.length > 0 ? { spreadIgnored } : {}),
+    ...(spreadRestBeforeStart.length > 0 ? { spreadRestBeforeStart } : {}),
     totalAreaM2: totalArea,
     selfUsedAreaM2,
     selfOccupiedExists,
@@ -2603,7 +2609,7 @@ const roundHalfAway = (x: number): number => (Math.sign(x) * Math.round(Math.abs
 // oder gemessenem Verbrauch. Für sie rechnet die Übersicht zum Vergleich nach Fläche.
 const KEYS_NOT_AREA: readonly CostKey[] = ['persons', 'units', 'custom', 'external']
 
-type TaxSplit = { items: Map<string, TaxExpenseItem>, selfUseChangedInYear: boolean, usageChangedUnits: string[], closedSelfUseDiffers: boolean, closedItemsChanged: number }
+type TaxSplit = { items: Map<string, TaxExpenseItem>, selfUseChangedInYear: boolean, usageChangedUnits: string[], usageLeftRentalUnits: string[], closedSelfUseDiffers: boolean, closedItemsChanged: number }
 
 // `calendar`: das Steuerjahr. Ein Zeitraum wie Mai bis April reicht über zwei; seine Hinweise gelten nur für den Teil darin.
 // Die Nutzung der Einheiten in [from, to] (ein Zeitraum, nie leer) für die Steuer (#259): Anteil der Tage
@@ -2833,7 +2839,9 @@ function splitForTax(snapshot: Snapshot, items: SnapshotCostItem[], settlement: 
   const selfIds = new Set(units.filter(isSelf).filter((u) => !usageChangedIds.has(u.id)).map((u) => u.id))
   const selfUseChangedInYear = from <= to && snapshot.tenancies.some((t) => selfIds.has(t.unitId) && rangeOverlapDays(t.start, t.end, from, to) > 0)
   const usageChangedUnits = snapshot.units.filter((u) => usageChangedIds.has(u.id)).map((u) => u.name)
-  return { items: result, selfUseChangedInYear, usageChangedUnits, closedSelfUseDiffers, closedItemsChanged }
+  // Davon die, deren Nutzung von „vermietet“ weg wechselt (#262, Durchsicht K2): nur dort kann § 82b Abs. 2 greifen.
+  const usageLeftRentalUnits = snapshot.units.filter((u) => usageChangedIds.has(u.id) && leavesRentalWithin(u, snapshot.period.from, snapshot.period.to)).map((u) => u.name)
+  return { items: result, selfUseChangedInYear, usageChangedUnits, usageLeftRentalUnits, closedSelfUseDiffers, closedItemsChanged }
 }
 
 // ---------- Ausgleich beim Betriebsstrom in der Steuer (#268) ----------
@@ -2930,7 +2938,7 @@ function operatingPowerBalanceItem(
 
   // Eigenanteil an den Heizkosten einer Anlage in einem Teil, wie diese Übersicht die Heizpositionen aufteilt.
   const extraSplits = new Map<number, TaxSplit>()
-  const empty: TaxSplit = { items: new Map(), selfUseChangedInYear: false, usageChangedUnits: [], closedSelfUseDiffers: false, closedItemsChanged: 0 }
+  const empty: TaxSplit = { items: new Map(), selfUseChangedInYear: false, usageChangedUnits: [], usageLeftRentalUnits: [], closedSelfUseDiffers: false, closedItemsChanged: 0 }
   const heatQuota = (part: number, plant: string | null, y0: number): HeatQuota => {
     const p = used[part]
     const s = splits[part]

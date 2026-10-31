@@ -805,6 +805,7 @@ const S18_EXCEPTIONS: Array<[file: string, label: string, reason: string]> = [
   ['./components/AssessmentReview.tsx', 'Jahr der Buchung', 'In welches Jahr eine Auswertung bucht, eine Eigenschaft des Belegs, kein Filter (Spezifikation Abschnitt 2)'],
   ['./components/TaxYearSelect.tsx', 'aria-label={label}', 'Jahr der Zahlung (Steuer) einer Kostenposition'],
   ['./components/CostPeriodFields.tsx', 'value={form.taxYear}', 'Jahr der Zahlung (Steuer) einer Kostenposition im Formular'],
+  ['./components/SpreadRestField.tsx', 'SPREAD_REST_NONE', 'Jahr des vorzeitigen Endes nach § 82b Abs. 2 EStDV, eine Angabe am Objekt (#262 PR 4), kein Filter'],
 ]
 const periodSelects = (src: string): string[] => [...src.matchAll(/<select\b[\s\S]*?<\/select>/g)].map((m) => m[0]).filter((s) => PERIOD_OR_PROPERTY.test(s))
 // Durchsicht zu Schritt 8, S2: Im Modus erzwungener Farben (Windows-Kontrast) entfernt der Browser `box-shadow` und

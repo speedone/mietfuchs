@@ -635,23 +635,31 @@ export function droppedSpreadText(stored: Pick<CostItem, 'spreadYears'> | undefi
 // Unter dem Feld: in welchen Jahren und mit welchen Raten abgezogen wird. Das Jahr wie in `spreadQuestions`
 // (Zahlungsdatum, dann Jahr der Zahlung, sonst Beginn des Zeitraums); die Raten vom ganzen Betrag, denn den privaten Teil
 // kennt erst die Steuerübersicht.
-export function spreadPreview(form: ItemForm, period: Pick<BillingPeriod, 'from'>): string | null {
+// `restYear`: das Ende am Objekt (§ 82b Abs. 2, Durchsicht S3), mit den Raten bis dahin und dem Rest im Jahr des Endes;
+// im Jahr der Zahlung heißt es nicht verteilt, davor wirkt es nicht (S2), wie `deductionPlan`.
+export function spreadPreview(form: ItemForm, period: Pick<BillingPeriod, 'from'>, restYear: number | null = null): string | null {
   const n = Number(form.spreadYears)
   const cents = parseEuro(form.amount)
   if (!showsSpread(form) || !isSpreadYears(n) || cents === null || cents <= 0) return null
   const from = isPaidOnDate(form.paidOn) && showsPaidOn(form) ? paidOnYear(form.paidOn) : form.taxYear !== '' ? Number(form.taxYear) : Number(period.from.slice(0, 4))
-  const rates = spreadRates(cents, n)
+  const last = from + n - 1
+  if (restYear === from) return `Nicht verteilt: Die Verteilung endet am Objekt ${from}, im Jahr der Zahlung; Abzug ganz ${from}.`
+  const all = spreadRates(cents, n)
+  const ends = restYear !== null && restYear > from && restYear < last
+  const kept = ends ? all.slice(0, restYear - from) : all
+  const rates = ends ? [...kept, cents - kept.reduce((a, r) => a + r, 0)] : all
   const amounts = rates.every((r) => r === rates[0]) ? `je ${fmtEuro(rates[0] ?? 0)}` : andList(rates.map(fmtEuro))
-  return `Abzug ${from} bis ${from + n - 1}: ${amounts}, vom ganzen Betrag gerechnet; ein privater Teil geht vorher ab, die Steuerübersicht nennt die Raten.`
+  return `Abzug ${from} bis ${ends ? `${restYear} (Rest ${restYear})` : last}: ${amounts}, vom ganzen Betrag gerechnet; ein privater Teil geht vorher ab, die Steuerübersicht nennt die Raten.`
 }
 
 // Die Rückfrage beim Speichern, dieselbe wie am Server (409 `question: 'spread'`); `otherParts` sind die Zeiträume der
 // übrigen Teile derselben Rechnung, an die der Server die Wahl mitschreibt.
 type SpreadSaved = NonNullable<Parameters<typeof spreadQuestions>[0]>
-export const spreadChange = (before: SpreadSaved | null, body: SpreadSaved, otherParts: readonly string[] = []): string[] => spreadQuestions(before, body, otherParts)
+export const spreadChange = (before: SpreadSaved | null, body: SpreadSaved, otherParts: readonly string[] = [], restYear: number | null = null): string[] =>
+  spreadQuestions(before, body, otherParts, restYear)
 
 // Beim Löschen einer verteilten Position: welche Anteile entfallen (leer ohne Verteilung).
-export const spreadDeleteText = (item: SpreadSaved): string => spreadQuestions(item, null).join(' ')
+export const spreadDeleteText = (item: SpreadSaved, restYear: number | null = null): string => spreadQuestions(item, null, [], restYear).join(' ')
 
 // Die Kennungen der Mietverträge (#258): nur die Mietverhältnisse, die im Zeitraum bestehen und an der Position
 // teilnehmen, und nur bei Kostenarten, die es zulassen; sonst `null`, das eine alte Angabe leert (die Route lässt

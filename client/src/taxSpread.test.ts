@@ -2,13 +2,15 @@
 // E-5, E-8, E-13): die Spalte „verteilt“, der Block der Zeilen 57 bis 72 aus `anlageVLines` und die Hinweise.
 import { describe, expect, test } from 'vitest'
 import type { TaxExpenseItem, TaxReport, TaxSpread } from './types'
-import { acquisitionRelated, acquisitionRelatedText, maintenanceLineText, showsSplit, taxHints } from './taxView'
-import { isSpreadItem, showsDeferred, spreadBlock, spreadCarriedText as carriedRaw, spreadConditionsText, spreadIgnoredText, spreadItemText as itemRaw, spreadNothingDeductibleText, SPREAD_CARRIED_MORE } from './taxSpread'
+import { GLOSSARY } from '../../shared/glossary.ts'
+import { acquisitionRelated, acquisitionRelatedText, maintenanceLineText, showsSplit, TAX_HINTS, taxHints } from './taxView'
+import { isSpreadItem, showsDeferred, spreadBlock, spreadCarriedText as carriedRaw, spreadConditionsText, spreadIgnoredText, spreadItemText as itemRaw, spreadNothingDeductibleText, SPREAD_CARRIED_MORE, spreadRestBeforeStartText, spreadRestText as restRaw, SPREAD_REST_MORE, spreadUsageChangedText } from './taxSpread'
 
 // fmtEuro setzt ein geschütztes Leerzeichen vor das €.
 const plain = (s: string | null): string | null => (s === null ? null : s.replace(/\u00a0/g, ' '))
 const spreadItemText = (x: TaxExpenseItem) => plain(itemRaw(x))
 const spreadCarriedText = (r: TaxReport) => plain(carriedRaw(r)) ?? ''
+const spreadRestText = (r: TaxReport) => plain(restRaw(r)) ?? ''
 
 const pos = (over: Partial<TaxExpenseItem> = {}): TaxExpenseItem => ({
   costItemId: 'dach', category: 'Nicht umlagefähig', group: 'Verwaltung & Instandhaltung', description: 'Dachsanierung',
@@ -197,5 +199,57 @@ describe('Hinweise der Verteilung (E-8)', () => {
     expect(acquisitionRelated(report([FOLGE], {}, { ...BLOCK, started: [] }), null)).toBeNull()
     // Mit Datum gilt die Frist wie bisher, auch für den übernommenen Anteil.
     expect(acquisitionRelated(report([FOLGE], {}, { ...BLOCK, started: [] }), { ownershipTransferOn: '2023-07-01' })).toMatchObject({ basis: 'transfer' })
+  })
+})
+
+// #262 PR 4 (E-7, E-8): vorzeitiges Ende nach § 82b Abs. 2 EStDV am Objekt.
+describe('Hinweise zum vorzeitigen Ende (§ 82b Abs. 2 EStDV)', () => {
+  const REST: TaxSpread = { started: [], carried: [{ ...BLOCK.carried[0]!, index: 2, rateCents: 400_000, rest: true }, BLOCK.carried[1]!], thisYearCents: 500_000 }
+  test('spreadRest nur mit einem Rest in diesem Jahr; nennt Position, Jahr der Zahlung und Betrag', () => {
+    expect(taxHints(report([FOLGE], {}, REST), 'ist')).toContain('spreadRest')
+    expect(taxHints(report([FOLGE], {}, BLOCK), 'ist')).not.toContain('spreadRest')
+    const t = spreadRestText(report([FOLGE], {}, REST))
+    expect(t).toMatch(/In 2025 endet die Verteilung vorzeitig/)
+    expect(t).toMatch(/„Fassade“ aus 2023: 4\.000,00 €/)
+    expect(t).not.toMatch(/Fenster/)
+    expect(t).toMatch(/Verkauft, verschenkt, vererbt oder Vermietung beendet im Jahr/)
+    expect(SPREAD_REST_MORE).toMatch(/§ 82b Abs\. 2 EStDV/)
+    expect(SPREAD_REST_MORE).toMatch(/BFH, Urteil vom 10\.11\.2020, IX R 31\/19/)
+    expect(SPREAD_REST_MORE).toMatch(/Schenkung.*Auslegung/s)
+  })
+
+  // Durchsicht S1: Die Richtlinie, nach der ein Rechtsnachfolger fortführt, gilt als überholt; kein Rat, ihr zu folgen.
+  test('Schenkung: R 21.1 Abs. 6 Sätze 2 und 3 EStR 2012 überholt, FG Münster lehnt die Übertragung ab; Lexikon ebenso', () => {
+    for (const t of [SPREAD_REST_MORE, GLOSSARY.spread82b.needed]) {
+      expect(t).toMatch(/R 21\.1 Abs\. 6 Sätze 2 und 3 EStR 2012/)
+      expect(t).toMatch(/überholt/)
+      expect(t).toMatch(/FG Münster, Urteil vom 15\.04\.2016, 4 K 422\/15 E/)
+      expect(t).not.toMatch(/führt (dagegen )?der Beschenkte die Verteilung fort|Feld leer|kein Urteil/)
+    }
+    expect(GLOSSARY.spread82b.norm).toMatch(/BStBl 2021 II S\. 474/)
+  })
+
+  test('spreadRestBeforeStart: Ende im Jahr der Zahlung, nicht verteilt', () => {
+    const r = report([pos()], { spreadRestBeforeStart: [{ costItemId: 'dach', description: 'Dachsanierung', restYear: 2025 }] }, null)
+    expect(taxHints(r, 'ist')).toContain('spreadRestBeforeStart')
+    expect(taxHints(report([pos()], {}, null), 'ist')).not.toContain('spreadRestBeforeStart')
+    // Durchsicht S2: nur ein Ende im Jahr der Zahlung; eines davor wirkt nicht und kommt hier nicht vor.
+    expect(spreadRestBeforeStartText(r)).toMatch(/„Dachsanierung“: Die Verteilung endet im Jahr der Zahlung \(2025\); die Position wird nicht verteilt und zählt ganz in 2025\./)
+    expect(spreadRestBeforeStartText(r)).not.toMatch(/davor/)
+  })
+
+  // Durchsicht K2: kein eigener Hinweis mehr, sondern ein Satz im Hinweis zum Nutzungswechsel, nur bei einem Wechsel weg von
+  // der Vermietung, laufender Verteilung und ohne Ende in diesem Jahr.
+  test('Satz zum Nutzungswechsel: nur weg von der Vermietung, mit laufender Verteilung, ohne Rest in diesem Jahr', () => {
+    expect(TAX_HINTS).not.toContain('spreadUsageChanged')
+    const t = spreadUsageChangedText(report([Y0], { usageChangedUnits: ['EG', 'OG'], usageLeftRentalUnits: ['EG'] }))
+    expect(t).toMatch(/Die Vermietung von EG endet in diesem Jahr, und Erhaltungsaufwand ist nach § 82b EStDV verteilt/)
+    expect(t).toMatch(/Mietfuchs rechnet die Anteile weiter wie gewählt/)
+    expect(t).toMatch(/§ 82b Abs\. 2 EStDV/)
+    expect(spreadUsageChangedText(report([Y0], { usageChangedUnits: ['EG'], usageLeftRentalUnits: ['EG'] }, { ...BLOCK, started: [] }))).not.toBeNull()
+    // Nur hin zur Vermietung, ohne Verteilung oder mit Rest in diesem Jahr: kein Satz.
+    expect(spreadUsageChangedText(report([Y0], { usageChangedUnits: ['OG'] }))).toBeNull()
+    expect(spreadUsageChangedText(report([Y0], { usageChangedUnits: ['EG'], usageLeftRentalUnits: ['EG'] }, null))).toBeNull()
+    expect(spreadUsageChangedText(report([FOLGE], { usageChangedUnits: ['EG'], usageLeftRentalUnits: ['EG'] }, REST))).toBeNull()
   })
 })

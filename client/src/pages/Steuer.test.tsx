@@ -285,6 +285,12 @@ const LAGEN: Record<TaxHint, Lage> = {
     text: /die Verteilung hat keine Wirkung/,
   },
   spreadIgnored: { report: REPORT({ spreadIgnored: [{ costItemId: 'gs', description: 'Grundsteuer' }] }), text: /an dieser Position wird aber nicht verteilt/ },
+  // #262 PR 4: vorzeitiges Ende nach § 82b Abs. 2 EStDV am Objekt.
+  spreadRest: {
+    report: (() => { const r = VERTEILT([FASSADE]); r.expenses.spread!.carried[0]!.rest = true; return r })(),
+    text: /endet die Verteilung vorzeitig/,
+  },
+  spreadRestBeforeStart: { report: REPORT({ spreadRestBeforeStart: [{ costItemId: 'dach', description: 'Dachsanierung', restYear: JAHR }] }), text: /die Position wird nicht verteilt und zählt ganz in/ },
   // #163: teilweise Eigennutzung.
   mixedUseSplit: { report: MIXED(), text: /durch direkte Zuordnung ermittelt/ },
   mixedUseKeyNotArea: {
@@ -848,6 +854,18 @@ test('„Was diese Übersicht nicht rechnet“ nennt die Verteilung nicht mehr a
 test('Anschaffungsnahe Herstellungskosten ohne Datum: mit beginnender Verteilung fragt der Hinweis nach dem Eigentumsübergang', async () => {
   await zeige(VERTEILT([DACH]), 'ist', 'mfh', { name: 'Objekt' })
   expect(await screen.findByText(/Sie verteilen in diesem Jahr Erhaltungsaufwand/)).toBeTruthy()
+})
+
+// #262, Durchsicht K2: Der Satz zur Verteilung steht im Hinweis zum Nutzungswechsel, nicht als eigener Hinweis.
+test('Nutzungswechsel weg von der Vermietung bei laufender Verteilung: ein Hinweis mit dem Satz zu § 82b Abs. 2', async () => {
+  await zeige(VERTEILT([DACH], { usageChangedUnits: ['EG'], usageLeftRentalUnits: ['EG'] }))
+  const titel = await screen.findByText(/Die Nutzung wechselt in diesem Jahr: EG/)
+  expect(titel.closest('.notice-item')?.textContent).toMatch(/Mietfuchs rechnet die Anteile weiter wie gewählt/)
+  expect(screen.getAllByText(/Mietfuchs rechnet die Anteile weiter wie gewählt/)).toHaveLength(1)
+  cleanup()
+  await zeige(VERTEILT([DACH], { usageChangedUnits: ['EG'] }))
+  await screen.findByText(/Die Nutzung wechselt in diesem Jahr: EG/)
+  expect(screen.queryByText(/Mietfuchs rechnet die Anteile weiter wie gewählt/)).toBeNull()
 })
 
 // Durchsicht S1: Im Folgejahr ist der Anteil kein „verschobener“ Betrag, sondern einer aus einem Vorjahr; die Spalte erklärt

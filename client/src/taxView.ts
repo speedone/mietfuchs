@@ -49,7 +49,7 @@ export const TAX_HINTS = [
   'formerYears', 'inclusiveLine24', 'inclusiveLine24Mixed', 'flatRateLine20',
   'reserveContribution', 'reserveSuspected', 'etwHousingMoney', 'maintenanceLines', 'reserveWithdrawalSuspected', 'specialLevy',
   'acquisitionRelated',
-  'spreadConditions', 'spreadCarried', 'spreadNothingDeductible', 'spreadIgnored',
+  'spreadConditions', 'spreadCarried', 'spreadNothingDeductible', 'spreadIgnored', 'spreadRest', 'spreadRestBeforeStart',
   'mixedUseSplit', 'mixedUseKeyNotArea', 'mixedUseAreaMissing', 'mixedUseDirectOutside', 'mixedUseChangedInYear',
   'mixedUseClosedChanged', 'mixedUseLabor35a', 'mixedUseNotCalculated', 'mixedUseExcludedArea', 'mixedUseClosedItemsChanged',
   'mixedUseAssignedUnits', 'usageChangedInYear',
@@ -141,6 +141,10 @@ export type TaxHint = (typeof TAX_HINTS)[number]
 //   `spreadCarried`      Anteile aus Vorjahren: gehören in die Erklärung dieses Jahres, Grundlage je Position.
 //   `spreadNothingDeductible` Eine Verteilung ohne abziehbaren Teil (D = 0): ohne Wirkung.
 //   `spreadIgnored`      Eine gespeicherte Wahl an einer Position, an der nicht verteilt werden kann.
+//   `spreadRest`         (#262 PR 4) Das Ende am Objekt (§ 82b Abs. 2) liegt in diesem Jahr: der ganze Rest.
+//   `spreadRestBeforeStart` Das Ende liegt im Jahr der Zahlung: nicht verteilt (eines davor wirkt nicht).
+//   (Nutzungswechsel weg von der Vermietung bei laufender Verteilung: ein Satz in `usageChangedInYear`,
+//                        `spreadUsageChangedText`, Durchsicht K2.)
 //
 // Teilweise Eigennutzung (#163), alle nur, wenn es eine selbstgenutzte Wohnung gibt:
 //
@@ -209,6 +213,9 @@ export function taxHints(report: TaxReport, basis: Basis, propertyKind?: Propert
   if ((spread?.carried.length ?? 0) > 0) hints.push('spreadCarried')
   if ((spread?.started ?? []).some((x) => x.baseCents === 0)) hints.push('spreadNothingDeductible')
   if ((report.spreadIgnored ?? []).length > 0) hints.push('spreadIgnored')
+  const rest = (spread?.carried ?? []).some((x) => x.rest)
+  if (rest) hints.push('spreadRest')
+  if ((report.spreadRestBeforeStart ?? []).length > 0) hints.push('spreadRestBeforeStart')
   if (movedInLines(report).length > 0) hints.push('movedIn')
   if (report.movedOut.length > 0) hints.push('movedOut')
   if (report.expenses.unstatedCount > 0) hints.push('unstated')

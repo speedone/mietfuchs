@@ -7,10 +7,11 @@ import type { BillingPeriod } from '../types'
 // Die Wahl der Verteilung nach § 82b EStDV im Kostenformular (#262 PR 3, Entwurf E-9). Sichtbar bleibt nur, was die Wahl
 // bewirkt (die Vorschau der Jahre und Raten); Voraussetzungen und Grenzen stehen eingeklappt unter „Mehr dazu“ (S33) und
 // im Begriff. Der Knopf steht außerhalb des `<label>`, sonst nähme er dem Auswahlfeld die Beschriftung.
-export default function SpreadField({ form, period, onChange }: { form: ItemForm; period: Pick<BillingPeriod, 'from'>; onChange: (next: ItemForm) => void }) {
+export default function SpreadField({ form, period, restYear = null, onChange }: { form: ItemForm; period: Pick<BillingPeriod, 'from'>; restYear?: number | null; onChange: (next: ItemForm) => void }) {
   const [open, setOpen] = useState(false)
   const moreId = useId()
-  const preview = spreadPreview(form, period)
+  // Mit dem Ende am Objekt (§ 82b Abs. 2, Durchsicht S3).
+  const preview = spreadPreview(form, period, restYear)
   return (
     <div>
       <label className="field">

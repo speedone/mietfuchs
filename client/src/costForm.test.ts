@@ -1048,6 +1048,12 @@ describe('Verteilung nach § 82b EStDV (#262 PR 3)', () => {
     expect(spreadPreview(form({ category: 'Entnahme Erhaltungsrücklage', amount: '1.000,00', spreadYears: '5', taxYear: '2027' }), P2026)).toMatch(/^Abzug 2027 bis 2031: je 200,00\s€/)
     expect(spreadPreview(form({ category: 'Nicht umlagefähig', amount: '1.000,00', spreadYears: '' }), P2026)).toBeNull()
     expect(spreadPreview(form({ category: 'Grundsteuer', amount: '1.000,00', spreadYears: '2' }), P2026)).toBeNull()
+    // Durchsicht S3: mit dem Ende am Objekt die Raten bis dahin und der Rest; im Jahr der Zahlung nicht verteilt.
+    expect(spreadPreview(form({ category: 'Nicht umlagefähig', amount: '10.000,00', spreadYears: '5' }), P2026, 2027)?.replace(/\u00a0/g, ' '))
+      .toMatch(/^Abzug 2026 bis 2027 \(Rest 2027\): 2\.000,00 € und 8\.000,00 €, vom ganzen Betrag/)
+    expect(spreadPreview(form({ category: 'Nicht umlagefähig', amount: '10.000,00', spreadYears: '5' }), P2026, 2026)?.replace(/\u00a0/g, ' '))
+      .toMatch(/^Nicht verteilt: Die Verteilung endet am Objekt 2026, im Jahr der Zahlung; Abzug ganz 2026\./)
+    expect(spreadPreview(form({ category: 'Nicht umlagefähig', amount: '10.000,00', spreadYears: '2' }), P2026, 2025)).toMatch(/^Abzug 2026 bis 2027: je 5\.000,00\s€/)
   })
   test('Rückfragen wie der Server: beim Ändern ja, beim Anlegen nein, beim Löschen mit den entfallenden Anteilen', () => {
     const stored = { period: KEY, spreadYears: 3 as const }

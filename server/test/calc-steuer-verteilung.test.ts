@@ -351,3 +351,57 @@ test('U-1: Position gelöscht oder Kostenart geändert: Folgejahr ohne ihre Zeil
   assert.deepEqual([row(r26, 'dach').deductibleCents, 'spread' in row(r26, 'dach')], [1_000_000, false])
   assert.deepEqual(r26.spreadIgnored, [{ costItemId: 'dach', description: 'Dachsanierung' }])
 })
+
+// #262 PR 4: Ende 2028 bei drei Verteilungen, von Hand gerechnet. Dach 2026: 10.000,03 € auf 5 Jahre, Raten 2.000,01 €
+// 2026 und 2027, Rest 2028 = 10.000,03 − 4.000,02 = 6.000,01 €. Fenster 2027: 3.000 € auf 3 Jahre, 1.000 € in 2027,
+// Rest 2028 = 2.000 €. Heizung 2028: 900 € auf 2 Jahre, das Ende liegt im Jahr der Zahlung, also nicht verteilt (900 €).
+// 2028 zusammen 6.000,01 + 2.000 + 900 = 8.900,01 €; 2029 nichts mehr.
+test('Ende 2028 über drei Verteilungen: Rest aus zwei Jahren, eine im Jahr des Endes gar nicht verteilt (Handrechnung)', () => {
+  const src = house([
+    item({ id: 'dach', spreadYears: 5, amountCents: 1_000_003 }),
+    item({ id: 'fenster', description: 'Fenster', period: periodKey('2027-01'), spreadYears: 3, amountCents: 300_000 }),
+    item({ id: 'heizung', description: 'Heizung', period: periodKey('2028-01'), spreadYears: 2, amountCents: 90_000 }),
+  ], { restYear: 2028 })
+  const r27 = report(src, 2027)
+  assert.equal(r27.expenses.deductibleCents, 200_001 + 100_000)
+  assert.equal('spreadRestBeforeStart' in r27, false)
+  const r28 = report(src, 2028)
+  balanced(r28)
+  assert.equal(r28.expenses.deductibleCents, 890_001)
+  assert.deepEqual(r28.expenses.spread?.carried.map((x) => [x.costItemId, x.rateCents, x.rest ?? false, x.remainingCents]), [['dach', 600_001, true, 0], ['fenster', 200_000, true, 0]])
+  assert.deepEqual(r28.expenses.spread?.started, [])
+  assert.deepEqual(r28.spreadRestBeforeStart, [{ costItemId: 'heizung', description: 'Heizung', restYear: 2028 }])
+  assert.equal(row(r28, 'heizung').deductibleCents, 90_000)
+  assert.equal(report(src, 2029).expenses.items.length, 0)
+  // Ohne Ende kein Eintrag.
+  assert.equal('spreadRestBeforeStart' in report(house(src.costItems), 2028), false)
+})
+
+// Durchsicht S2 (Abweichung von E-7): Ein Ende vor dem Jahr der Zahlung wirkt auf die Position nicht. Ende 2027, Fenster
+// 2029 für 10.000 € auf 5 Jahre: 2029 ein Fünftel (2.000 €), 2030 der zweite Anteil, kein Hinweis „nicht verteilt“.
+test('Ende vor dem Jahr der Zahlung: die Position verteilt normal', () => {
+  const src = house([item({ id: 'fenster', description: 'Fenster', period: periodKey('2029-01'), spreadYears: 5 })], { restYear: 2027 })
+  const r29 = report(src, 2029)
+  assert.equal(row(r29, 'fenster').deductibleCents, 200_000)
+  assert.equal(row(r29, 'fenster').deferredCents, 800_000)
+  assert.equal('spreadRestBeforeStart' in r29, false)
+  const d = row(report(src, 2030), 'spread:fenster:2029')
+  assert.deepEqual([d.deductibleCents, d.spreadFrom?.rest, d.spreadFrom?.index], [200_000, undefined, 2])
+  assert.equal(row(report(src, 2033), 'spread:fenster:2029').deductibleCents, 200_000)
+})
+
+// Durchsicht K2: Nur ein Wechsel weg von der Vermietung kann § 82b Abs. 2 auslösen; der Bericht nennt diese Einheiten
+// eigens. Ein Einzug von Mietern in eine bisher selbstgenutzte Wohnung zählt nicht.
+test('Nutzungswechsel weg von der Vermietung: usageLeftRentalUnits nennt nur diese Einheiten', () => {
+  const src = house([item({ id: 'dach', spreadYears: 3 })], {
+    units: [
+      unit('eg', 40, { usageChanges: [{ from: '2027-07-01', usage: 'eigen' }] }),
+      unit('og', 60, { participates: false, selfUsed: true, selfPersons: 1, usageChanges: [{ from: '2027-07-01', usage: 'vermietet' }] }),
+    ],
+    tenancies: [tenancy('a', 'eg', { end: '2027-06-30' }), tenancy('b', 'og', { start: '2027-07-01' })],
+  })
+  const r = report(src, 2027)
+  assert.deepEqual(r.usageChangedUnits, ['eg', 'og'])
+  assert.deepEqual(r.usageLeftRentalUnits, ['eg'])
+  assert.equal('usageLeftRentalUnits' in report(src, 2026), false)
+})

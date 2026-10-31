@@ -1,11 +1,12 @@
 // Die Karte „Objekt“ (#92): Was aus dem Formular in den Rumpf von PUT /api/properties wird.
 import { expect, test } from 'vitest'
 import type { Property } from './types'
-import { EMPTY_PROPERTY_FORM, fileNumberDigits, hasTaxHeader, headerDateText, propertyBody, propertySummary, propertyToForm, STATE_OPTIONS, STATE_UNKNOWN_LABEL, stateFromSelect, stateNote, type PropertyForm } from './propertyForm'
+import { periodKey } from '../../shared/period.ts'
+import { EMPTY_PROPERTY_FORM, fileNumberDigits, SPREAD_REST_LABEL, showsSpreadRest, spreadRestChange, spreadRestOptions, hasTaxHeader, headerDateText, propertyBody, propertySummary, propertyToForm, STATE_OPTIONS, STATE_UNKNOWN_LABEL, stateFromSelect, stateNote, type PropertyForm } from './propertyForm'
 
 const form = (over: Partial<PropertyForm>): PropertyForm => ({
   name: 'Haus', address: 'Weg 1', kind: 'mfh', own: false, landlordName: '', iban: '', paymentDeadlineDays: '', landlordAddress: '', landlordContact: '', cable: 'unbekannt', tightMarket: 'unbekannt', tightMarketFrom: '', tightMarketTo: '', state: '',
-  groundTaxFileNumber: '', purchaseContractOn: '', ownershipTransferOn: '', buildingApplicationOn: '', completedOn: '', taxSaved: EMPTY_PROPERTY_FORM.taxSaved, ...over,
+  groundTaxFileNumber: '', purchaseContractOn: '', ownershipTransferOn: '', buildingApplicationOn: '', completedOn: '', taxSaved: EMPTY_PROPERTY_FORM.taxSaved, spreadRestYear: '', spreadRestSaved: '', ...over,
 })
 
 test('ohne Haken gilt für alle drei die Vorgabe', () => {
@@ -196,4 +197,39 @@ test('Kopf der Anlage V: das Aktenzeichen ohne Sonderzeichen, wie der Vordruck e
   expect(propertySummary({ ...OBJEKT, groundTaxFileNumber: '2141/123/45678', ownershipTransferOn: '2023-07-01' })).toContainEqual({
     label: 'Für die Steuer (Anlage V)', value: 'Aktenzeichen 2141/123/45678, Eigentumsübergang am 01.07.2023',
   })
+})
+
+// #262 PR 4 (E-7): das Jahr des vorzeitigen Endes nach § 82b Abs. 2 EStDV am Objekt.
+const DACH = { description: 'Dach', period: periodKey('2026-01'), spreadYears: 5 as const, category: 'Nicht umlagefähig', amountCents: 1_000_000 }
+const FENSTER = { description: 'Fenster', period: periodKey('2028-01'), spreadYears: 3 as const, category: 'Nicht umlagefähig', amountCents: 300_000 }
+
+test('Ende der Verteilung: nur gesendet, wenn geändert; leer heißt null; Beschriftung und Zusammenfassung', () => {
+  expect(SPREAD_REST_LABEL).toBe('Verkauft, verschenkt, vererbt oder Vermietung beendet im Jahr')
+  expect('spreadRestYear' in (propertyBody(form({})) as object)).toBe(false)
+  expect(propertyBody(form({ spreadRestYear: '2027' }))).toMatchObject({ spreadRestYear: 2027 })
+  expect(propertyBody(form({ spreadRestYear: '', spreadRestSaved: '2027' }))).toMatchObject({ spreadRestYear: null })
+  expect('spreadRestYear' in (propertyBody(form({ spreadRestYear: '2027', spreadRestSaved: '2027' })) as object)).toBe(false)
+  const p: Property = { id: 'p', name: 'Haus', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null, spreadRestYear: 2027 }
+  expect(propertyToForm(p)).toMatchObject({ spreadRestYear: '2027', spreadRestSaved: '2027' })
+  expect(propertySummary(p)).toContainEqual({ label: SPREAD_REST_LABEL, value: '2027' })
+  expect(propertySummary({ ...p, spreadRestYear: null }).some((r) => r.label === SPREAD_REST_LABEL)).toBe(false)
+})
+
+test('Ende der Verteilung: Feld nur bei einer verteilten Position oder einem gespeicherten Jahr; Jahre vom ersten Beginn bis zum letzten Ende', () => {
+  const plain = { description: 'Grundsteuer', period: periodKey('2026-01'), category: 'Grundsteuer', amountCents: 60_000 }
+  expect(showsSpreadRest([plain], '')).toBe(false)
+  expect(showsSpreadRest([], '2027')).toBe(true)
+  expect(showsSpreadRest([DACH], '')).toBe(true)
+  // Eine Wahl, die nie gerechnet wird (Kostenart ohne Verteilung), zählt nicht.
+  expect(showsSpreadRest([{ ...plain, spreadYears: 2 as const }], '')).toBe(false)
+  expect(spreadRestOptions([DACH, FENSTER], '')).toEqual([2026, 2027, 2028, 2029, 2030])
+  // Der angezeigte Wert ist immer der gespeicherte: Ein Jahr außerhalb steht mit in der Auswahl.
+  expect(spreadRestOptions([DACH], '2035')).toEqual([2026, 2027, 2028, 2029, 2030, 2035])
+  expect(spreadRestOptions([], '2027')).toEqual([2027])
+})
+
+test('Ende der Verteilung: die Rückfrage ist die des Servers (spreadRestQuestions)', () => {
+  expect(spreadRestChange('', { spreadRestYear: 2027 }, [DACH]).join(' ')).toMatch(/„Dach“: Abzug 2026 bis 2027 \(Rest 2027\) statt 2026 bis 2030\./)
+  expect(spreadRestChange('2027', {}, [DACH])).toEqual([])
+  expect(spreadRestChange('', { spreadRestYear: 2031 }, [DACH])).toEqual([])
 })

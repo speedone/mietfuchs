@@ -167,3 +167,38 @@ export function spreadIgnoredText(report: Pick<TaxReport, 'spreadIgnored'>): str
   const names = (report.spreadIgnored ?? []).map((x) => quoted(x.description)).join(', ')
   return `${names}: Für die Steuer ist eine Verteilung gespeichert, an dieser Position wird aber nicht verteilt; verteilen lässt sich nur „Nicht umlagefähig“ oder „Entnahme Erhaltungsrücklage“ mit einem Betrag über 0 €. Die Übersicht zählt den Betrag ganz im Jahr der Zahlung. Speichern Sie die Position unter Kosten einmal; dann entfällt die Angabe.`
 }
+
+// ---------- Vorzeitiges Ende (§ 82b Abs. 2 EStDV, #262 PR 4, E-7) ----------
+//
+// „Wird das Gebäude während des Verteilungszeitraums veräußert, ist der noch nicht berücksichtigte Teil des
+// Erhaltungsaufwands im Jahr der Veräußerung als Werbungskosten abzusetzen. Das Gleiche gilt, wenn ein Gebäude in ein
+// Betriebsvermögen eingebracht oder nicht mehr zur Einkunftserzielung genutzt wird.“ Das Jahr steht am Objekt
+// (`Property.spreadRestYear`, Stammdaten), gerechnet wird in `deductionPlan` (server/src/outflow.ts).
+const REST_FIELD = '„Verkauft, verschenkt, vererbt oder Vermietung beendet im Jahr“'
+
+// `spreadRest`: Im Jahr des Endes trägt der letzte Anteil den ganzen Rest.
+export function spreadRestText(report: Pick<TaxReport, 'year' | 'expenses'>): string {
+  const list = (report.expenses.spread?.carried ?? []).filter((x) => x.rest)
+  const rests = list.map((x) => `${quoted(x.description)} aus ${x.outflowYear}: ${fmtEuro(x.rateCents)}`).join('; ')
+  return `In ${report.year} endet die Verteilung vorzeitig (Stammdaten, Objekt: ${REST_FIELD}). Abgezogen wird der ganze noch offene Rest: ${rests}. Er steht bei den Anteilen aus Vorjahren; danach folgt nichts mehr.`
+}
+// Die Fundstellen dazu, eingeklappt. Die Schenkung ist Auslegung (Lexikon `spread82b`, Hilfe am Feld).
+export const SPREAD_REST_MORE = 'Der noch nicht abgezogene Teil ist im Jahr des Verkaufs, der Einlage in ein Betriebsvermögen oder des Endes der Vermietung abzuziehen (§ 82b Abs. 2 EStDV). Im Erbfall zieht ihn der Verstorbene im Todesjahr ab, die Erben führen die Verteilung nicht fort (BFH, Urteil vom 10.11.2020, IX R 31/19, BStBl 2021 II S. 474). Bei einer Schenkung ist das eine Auslegung: Wer geschenkt bekommt, führt die Verteilung nicht fort (FG Münster, Urteil vom 15.04.2016, 4 K 422/15 E). R 21.1 Abs. 6 Sätze 2 und 3 EStR 2012, nach denen er fortführen durfte, sind durch das Urteil von 2020 überholt. Fragen Sie im Zweifel Ihren Steuerberater.'
+
+// `spreadRestBeforeStart`: Das Ende liegt im Jahr der Zahlung; die Position wird nicht verteilt (E-7). Ein Ende davor
+// wirkt auf die Position nicht (Durchsicht S2) und kommt hier nicht vor.
+export function spreadRestBeforeStartText(report: Pick<TaxReport, 'year' | 'spreadRestBeforeStart'>): string {
+  const names = (report.spreadRestBeforeStart ?? []).map((x) => quoted(x.description)).join(', ')
+  return `${names}: Die Verteilung endet im Jahr der Zahlung (${report.year}); die Position wird nicht verteilt und zählt ganz in ${report.year}. Stimmt das Jahr nicht, berichtigen Sie es in den Stammdaten beim Objekt (${REST_FIELD}).`
+}
+
+// Im Hinweis `usageChangedInYear` (Durchsicht K2: kein eigener Hinweis): Die Vermietung einer Einheit endet, während eine
+// Verteilung läuft, und das Ende am Objekt liegt nicht in diesem Jahr. Mietfuchs ändert die Anteile nicht (der private
+// Teil steht im Jahr der Zahlung fest, E-3); ob das Ende nach Abs. 2 eintritt, entscheidet der Vermieter. Sonst `null`.
+export function spreadUsageChangedText(report: Pick<TaxReport, 'usageLeftRentalUnits' | 'expenses'>): string | null {
+  const units = report.usageLeftRentalUnits ?? []
+  const spread = report.expenses.spread
+  const runs = (spread?.started.length ?? 0) + (spread?.carried.length ?? 0) > 0
+  if (units.length === 0 || !runs || (spread?.carried ?? []).some((x) => x.rest)) return null
+  return `Die Vermietung von ${units.join(', ')} endet in diesem Jahr, und Erhaltungsaufwand ist nach § 82b EStDV verteilt. Mietfuchs rechnet die Anteile weiter wie gewählt. Vermieten Sie das Gebäude nicht mehr, ist der Rest in diesem Jahr abzuziehen (§ 82b Abs. 2 EStDV): Tragen Sie das Jahr in den Stammdaten beim Objekt ein (${REST_FIELD}).`
+}

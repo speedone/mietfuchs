@@ -1523,6 +1523,9 @@ export type TaxReport = {
   // Einheiten, deren Nutzung im Jahr wechselt (#259). Umlagefähige Kosten folgen dem Eigenanteil der Abrechnung
   // und sind tagesgenau; was nach Fläche geteilt wird, gilt noch nach der Nutzung am Jahresende. Fehlt ohne Wechsel.
   usageChangedUnits?: string[]
+  // Davon die Einheiten, deren Nutzung von „vermietet“ weg wechselt (#262, Durchsicht K2); nur sie können bei verteiltem
+  // Erhaltungsaufwand das Ende nach § 82b Abs. 2 EStDV auslösen. Fehlt ohne Treffer.
+  usageLeftRentalUnits?: string[]
   // Abgeschlossene Abrechnung, deren eingefrorene Eigenanteile von der heutigen Rechnung abweichen
   // oder je Position gar nicht vorliegen (Archivstück von vor #142).
   closedSelfUseDiffers: boolean
@@ -1544,6 +1547,10 @@ export type TaxReport = {
   // Positionen mit einer Wahl nach § 82b EStDV, an denen nicht verteilt werden kann (`allowsSpread`, etwa aus einer
   // Ablage von Hand): nicht verteilt (#262, E-8 `spreadIgnored`). Fehlt ohne Treffer.
   spreadIgnored?: { costItemId: string; description: string }[]
+  // Positionen mit einer Wahl nach § 82b EStDV, die in diesem Jahr abgeflossen sind, während das Ende am Objekt
+  // (`Property.spreadRestYear`, § 82b Abs. 2) in diesem Jahr liegt: nicht verteilt, ganz in diesem Jahr
+  // (#262 PR 4, E-8 `spreadRestBeforeStart`). Fehlt ohne Treffer.
+  spreadRestBeforeStart?: { costItemId: string; description: string; restYear: number }[]
   // Gesamtfläche des Gebäudes und der selbstgenutzte Teil davon, in Quadratmetern. Genau die
   // beiden Zahlen fragt die Anlage V im Kopf ab. Gemessen wird das **Private** und nicht das
   // Vermietete: Nur das ist eindeutig, denn ob eine Wohnung außerhalb der Abrechnungseinheit

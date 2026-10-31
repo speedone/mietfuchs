@@ -247,13 +247,17 @@ und das Gewicht für die Kürzung.
 abgezogene Rest aller verteilten Positionen des Objekts abgezogen wird. Abs. 2 nennt Veräußerung, Einlage in ein
 Betriebsvermögen und das Ende der Nutzung zur Einkunftserzielung; der **Tod** ist durch BFH IX R 31/19 gleichgestellt.
 **Schenkung** (unentgeltliche Übertragung zu Lebzeiten) ist **Auslegung**: Der Schenker nutzt das Gebäude nicht mehr zur
-Einkunftserzielung, also greift der dritte Fall des Abs. 2; eine Entscheidung eigens dazu ist nicht bekannt. Lexikon
+Einkunftserzielung, also greift der dritte Fall des Abs. 2. R 21.1 Abs. 6 Sätze 2 und 3 EStR 2012 (Fortführung durch den
+Rechtsnachfolger bei unentgeltlicher Übertragung) gelten nach BFH IX R 31/19 (BStBl 2021 II S. 474) als überholt; FG Münster,
+Urteil vom 15.04.2016, 4 K 422/15 E, lehnt die Übertragung auf einen Einzelrechtsnachfolger ab (Durchsicht von PR 4, S1). Lexikon
 und Hilfe am Feld kennzeichnen sie so. IX R 22/17 wird nur für das zitiert, was es sagt (Nießbrauch, Tabelle oben).
 
 - **Am Objekt und nicht an der Position**, weil das Ereignis das Gebäude bzw. den Eigentümer betrifft und für alle
   Verteilungen zugleich gilt. Eine Angabe statt einer je Position.
-- `deductionPlan` kürzt `years` auf `≤ restYear`. Das letzte Jahr bekommt den Rest. Ist `restYear ≤ Y0`, wird
-  nicht verteilt (alles in Y0), mit Hinweis `spreadRestBeforeStart`.
+- `deductionPlan` kürzt `years` auf `≤ restYear`. Das letzte Jahr bekommt den Rest. Ist `restYear = Y0`, wird
+  nicht verteilt (alles in Y0), mit Hinweis `spreadRestBeforeStart`. **Abweichung (Durchsicht von PR 4, S2):** Ein Ende
+  vor Y0 wirkt auf die Position nicht. Der Aufwand entstand nach dem Ereignis (die Erbin führt die Vermietung fort, die
+  Wohnung wird wieder vermietet) und ist eine eigene Wahl; ursprünglich stand hier `restYear ≤ Y0`.
 - **Beschriftung** (Durchsicht V7): „Verkauft, verschenkt, vererbt oder Vermietung beendet im Jahr“, ein Jahresfeld
   (wie `taxYear`, 1900 bis 2200), nur sichtbar, wenn das Objekt eine verteilte Position hat. Hilfe am Feld: „Der noch
   nicht abgezogene Teil des verteilten Erhaltungsaufwands wird in diesem Jahr abgezogen (§ 82b Abs. 2 EStDV). Wer erbt
@@ -269,10 +273,10 @@ und Hilfe am Feld kennzeichnen sie so. IX R 22/17 wird nur für das zitiert, was
 | `spreadConditions` | eine Verteilung beginnt in diesem Jahr | Voraussetzungen: Privatvermögen; überwiegend Wohnzwecke nach Grundfläche (mehr als die Hälfte der Nutzfläche), Garagen bis ein Pkw je Wohnung zählen mit, weitere Stellplätze nicht; keine Ferienwohnung mit wechselnden Gästen; die Wahl gehört in die Erklärung dieses Jahres und bindet die Folgejahre; Miteigentümer verteilen gleich (Abs. 3); Denkmal und Sanierungsgebiet (§§ 11a, 11b EStG) rechnet Mietfuchs nicht. Immer als Warnung, nur im ersten Jahr (Entscheidung zu PR 3: Betriebsvermögen und die Nutzung jeder Fläche kennt Mietfuchs nicht); bei `kind: 'sonstiges'` mit dem Satz „Mietfuchs kennt die Nutzung der Flächen nicht“. Bei `kind: 'etw'` der Satz aus E-10. |
 | `acquisitionRelated` | gemeinsamer Hinweis aus #96 PR 2 (Durchsicht X6): Datum der Anschaffung am Objekt bekannt → nur, wenn das Jahr in die drei Jahre nach dem Übergang fällt und es eine Verteilung oder Positionen der Erhaltung gibt; Datum unbekannt → nur, wenn in diesem Jahr eine Verteilung beginnt | anschaffungsnahe Herstellungskosten (§ 6 Abs. 1 Nr. 1a EStG): drei Jahre, 15 % netto, dann AfA statt Erhaltungsaufwand. Dieser Entwurf legt keinen eigenen Code an; er erweitert nur die Bedingung um „Verteilung beginnt“. |
 | `spreadCarried` | Raten aus Vorjahren | „Diese Anteile gehören in die Erklärung dieses Jahres. Ein vergessener Anteil lässt sich nicht nachholen.“ (H 21.1 EStH) Nennt die Grundlage D je Position, damit der Vermieter sie mit seinem Bescheid Y0 vergleicht; weicht sie ab (Fläche berichtigt), gilt für die Erklärung der Wert des Bescheids. |
-| `spreadUsageChanged` | im Verteilungszeitraum wechselt die Nutzung einer Einheit (`usageChangedUnits`, Selbstnutzung) | Prüfen, ob § 82b Abs. 2 greift (Vermietung beendet); die Raten bleiben, wie sie sind |
+| `spreadUsageChanged` | im Verteilungszeitraum wechselt eine Einheit weg von der Vermietung (`usageLeftRentalUnits`), ohne Ende in diesem Jahr; seit der Durchsicht von PR 4 (K2) ein Satz im Hinweis `usageChangedInYear`, kein eigener Hinweis | Prüfen, ob § 82b Abs. 2 greift (Vermietung beendet); die Raten bleiben, wie sie sind |
 | `spreadNothingDeductible` | D = 0 (direkt der selbstgenutzten Wohnung zugeordnet) | Die Verteilung hat keine Wirkung |
 | `spreadRest` | `restYear` = dieses Jahr, mit Rest | Rest nach § 82b Abs. 2 |
-| `spreadRestBeforeStart` | `restYear ≤ Y0` | nichts verteilt |
+| `spreadRestBeforeStart` | `restYear = Y0` (ein Ende davor wirkt nicht, Durchsicht S2) | nichts verteilt |
 | `spreadIgnored` | `spreadYears` an einer Position, für die `allowsSpread` nicht gilt (Ablage von Hand, wiederhergestellt) | nicht verteilt, mit Name der Position |
 
 `specialLevySuspects` (#96 A4.3) gilt auch für eine Position „Nicht umlagefähig“ mit „Sonderumlage“ in der
