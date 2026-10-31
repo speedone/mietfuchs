@@ -250,7 +250,49 @@ async function dropIfNoChange(db: Database, id: number): Promise<void> {
   const update = await db.select({ id: changeLog.id }).from(changeLog).where(and(eq(changeLog.groupId, id), eq(changeLog.op, 'update'))).limit(1).get()
   if (update) return
   const rows = await db.select().from(changeLog).where(eq(changeLog.groupId, id)).orderBy(changeLog.id).all()
-  if (rows.length > 0 && collapse(rows).length === 0) await db.delete(changeGroups).where(eq(changeGroups.id, id))
+  if (rows.length === 0 || collapse(rows).length > 0) return
+  await db.transaction(async (tx) => {
+    if (await restoreRowids(tx, rows)) await tx.delete(changeGroups).where(eq(changeGroups.id, id))
+  })
+}
+
+// Eine Gruppe ohne Änderung hinterlässt auch keine andere `rowid` (#494). Eine unverändert gelöschte und neu eingefügte
+// Zeile bekommt eine neue, oft die einer eben gelöschten, und mit der Gruppe fiele die einzige Spur davon weg. Ein
+// späterer Rücksprung, der eine früher gelöschte Zeile mit ihrer alten `rowid` wieder einfügt, träfe dann auf die
+// verschobene Zeile („UNIQUE constraint failed: ….rowid“, schon die Vorschau scheitert), und ein Rücksprung vor die
+// Gruppe ergäbe nicht mehr zeilengleich den Stand. Deshalb bekommt jede solche Zeile ihre alte `rowid` zurück, erst
+// eine freie und dann die alte, denn zwei Zeilen können ihre Plätze getauscht haben. Die Trigger schreiben nichts mit
+// (`journal_current` ist schon leer). Eine Tabelle mit INTEGER PRIMARY KEY behält sie ohnehin, ihr Inhalt ist gleich.
+// **Nur bei derselben Reihenfolge** (Durchsicht S1): Stehen die neu eingefügten Zeilen untereinander anders als vorher
+// (dieselbe Unterliste umsortiert), ist das eine Änderung, denn gelesen wird nach `rowid`, und die Antwort der Anfrage
+// zeigt schon die neue Reihenfolge. Dann bleibt alles, wie es ist, auch die Gruppe (`false`): Das Journal kennt jede
+// `rowid`, ein Rücksprung stellt die alte Reihenfolge her. Die Staffeln eines Mietverhältnisses schreibt
+// `writeTenancyChildren` deshalb sortiert, dort entsteht so ein Fall nicht.
+async function restoreRowids(db: Executor, rows: LogRow[]): Promise<boolean> {
+  const first = new Map<string, { table: string, key: Image, rowid: unknown }>()
+  const last = new Map<string, unknown>()
+  for (const row of rows) {
+    const id = `${row.tableName}\u0000${row.rowKey}`
+    if (!first.has(id)) first.set(id, { table: row.tableName, key: parseRow(row.rowKey) ?? {}, rowid: row.op === 'insert' ? null : parseRow(row.before)?.[ROWID] })
+    last.set(id, row.op === 'delete' ? null : parseRow(row.after)?.[ROWID])
+  }
+  const moves = [...first].flatMap(([id, f]) => {
+    const now = last.get(id)
+    return typeof f.rowid === 'number' && typeof now === 'number' && f.rowid !== now ? [{ table: f.table, key: f.key, rowid: f.rowid, now }] : []
+  })
+  const tables = new Set(moves.map((m) => m.table))
+  for (const table of tables) {
+    const mine = moves.filter((m) => m.table === table)
+    const order = (rowid: (m: (typeof mine)[number]) => number) => mine.slice().sort((x, y) => rowid(x) - rowid(y)).map((m) => asJson(m.key)).join('\n')
+    if (order((m) => m.rowid) !== order((m) => m.now)) return false
+  }
+  const where = (key: Image) => sql.join(Object.entries(key).map(([c, v]) => (c === 'rowid' ? sql`rowid = ${v}` : sql`${sql.identifier(c)} = ${v}`)), sql` AND `)
+  for (const m of moves) {
+    const table = sql.identifier(m.table)
+    await db.run(sql`UPDATE ${table} SET rowid = (SELECT max(rowid) + 1 FROM ${table}) WHERE ${where(m.key)}`)
+  }
+  for (const m of moves) await db.run(sql`UPDATE ${sql.identifier(m.table)} SET rowid = ${m.rowid} WHERE ${where(m.key)}`)
+  return true
 }
 
 // Die Kennung der laufenden Gruppe, `null` ohne. Die Gruppe selbst gibt es erst mit ihrer ersten Zeile.

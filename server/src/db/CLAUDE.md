@@ -265,7 +265,15 @@ Route, Zahl der Migrationsschritte) und `change_log` (je Zeile Tabelle, Schlüss
   Kennung und Angaben nur in die TEMP-Tabelle `journal_current` (keine Festschreibung), jeder Trigger fügt die Gruppe
   ein, **wenn es sie noch nicht gibt** (nicht `INSERT OR IGNORE`: im Rumpf eines Triggers gilt die Konfliktregel des
   äußeren Befehls, ein Upsert machte daraus ABORT). Zurückgerollt oder ohne Änderung entsteht keine; eine Gruppe, die
-  nach `collapse` nichts ändert (Unterliste gelöscht und gleich wieder eingefügt), entfernt `endGroup` gleich wieder.
+  nach `collapse` nichts ändert (Unterliste gelöscht und gleich wieder eingefügt), entfernt `endGroup` gleich wieder,
+  **und gibt jeder dabei neu eingefügten Zeile ihre alte `rowid` zurück** (`restoreRowids`, #494): Sonst trüge eine
+  verschobene Zeile die `rowid`, die ein späterer Rücksprung für eine früher gelöschte braucht („UNIQUE constraint
+  failed: ….rowid“, schon in der Vorschau), und der Stand vor der Gruppe wäre nicht mehr zeilengleich herzustellen.
+  Nur wenn die Zeilen untereinander in derselben Reihenfolge stehen; eine umsortierte Unterliste ist eine Änderung
+  (gelesen wird nach `rowid`, die Antwort zeigt schon die neue Reihenfolge), dann bleibt die Gruppe stehen. **Die
+  Reihenfolge einer ganz ersetzten Unterliste ist kein Inhalt**: Die Staffeln und Korrekturen eines Mietverhältnisses
+  schreibt `writeTenancyChildren` nach Stichtag bzw. Zeitraum sortiert (gerechnet wird ohnehin sortiert), damit ergibt
+  dieselbe Staffel in anderer Reihenfolge keinen Eintrag, und Antwort und Bestand laufen nie auseinander.
   `endGroup` leert zuerst `journal_current` und **wirft nie**. Vorher kosteten Anlegen und Objekt zwei Festschreibungen
   je Anfrage und verdoppelten 300 `PUT` (Durchsicht von PR #430).
 - **Ohne `journal` wird nichts erfasst** (Systemarbeit). `writeData` in index.ts reicht `journal` aus der laufenden
@@ -318,8 +326,12 @@ bräuchte eine Abhängigkeitsregel, deren Fehler einen nie geprüften Bestand er
   `kind: 'journal'`. Geht der Rücksprung Schritt für Schritt nicht, trägt aber eine Sicherung genau den Stand, antwortet
   dieselbe Route mit der Vorschau `kind: 'snapshot'` (siehe „Sicherungspunkte im Verlauf“).
 - **Gegenstück je Zeile** (`inverse`): Einfügen wird gelöscht, Löschen mit Vorher-Bild **samt `rowid`** wieder eingefügt
-  (die Trigger schreiben sie als `$rowid` ins Bild, `collapse` blendet sie aus; read.ts liest `ORDER BY rowid`),
-  Änderung bekommt ihr Vorher-Bild. `defer_foreign_keys`, weil eine Kaskade Eltern und Kinder in der Reihenfolge von
+  (die Trigger schreiben sie als `$rowid` ins Bild, `collapse` blendet sie aus; read.ts liest `ORDER BY rowid`); trägt
+  eine Zeile mit anderem Schlüssel diese `rowid`, rückt sie ans Ende (#494). Das ist eine, deren `rowid` das Journal
+  nicht kennt: ohne Journal entstanden (`unjournaled`) oder von einer Gruppe ohne Änderung in 0.13 verschoben, bevor
+  `restoreRowids` es verhinderte; ein schon betroffener Verlauf heilt so. **Grenze**: Dieses Verschieben wird nicht
+  erfasst, nach der Rücknahme des Rücksprungs steht die Zeile nicht wieder auf ihrer alten `rowid` (harmlos, nur die
+  Reihenfolge). Eine Änderung bekommt ihr Vorher-Bild. `defer_foreign_keys`, weil eine Kaskade Eltern und Kinder in der Reihenfolge von
   SQLite meldet. Danach das **Sicherheitsnetz**: `PRAGMA foreign_key_check`, `crossPropertyViolations`,
   `orphanPeriodKeys`, `heatingPlantViolations` (dieselben wie beim Wiederherstellen); ein Verstoß rollt alles zurück
   (409). Durch die Bauart greift es nicht; ein Test verfälscht das Journal, um es auszulösen.
@@ -364,7 +376,9 @@ bräuchte eine Abhängigkeitsregel, deren Fehler einen nie geprüften Bestand er
   insgesamt ist (nur dann „Rückgängig“).
 - **Invariante** (invariant-ruecksprung.test.ts, Generator in server/testing/revertFlows.ts): Zufallsabläufe über die
   Routen samt Heizung, Stand nach jedem Eintrag gemerkt; Rücksprung vor bzw. nach einen Eintrag ergibt ihn zeilengleich
-  (mit `rowid`), die Rücknahme den Endstand, mit Abschluss im Bereich die Ablehnung. Jede Route mit Satz steht im
+  (mit `rowid`), die Rücknahme den Endstand, mit Abschluss im Bereich die Ablehnung. Ein Schritt ohne Eintrag ändert den
+  Bestand nicht, auch keine `rowid`; Schritte mit `unchanged` speichern Vorhandenes erneut und müssen das in den Läufen
+  wirklich tun (#494, feste Fälle in api-ruecksprung-rowid.test.ts). Jede Route mit Satz steht im
   Generator oder mit Grund in `UNCOVERED_ROUTES` (nur kürzer werden lassen).
 - **Kosten**: rund 0,4 ms je Zeile des Journals (Trigger und Drizzle). Ein Rücksprung über einen früheren Rücksprung nimmt
   dessen Zeilen mit; ein Bereich mit 10.000 Zeilen dauert Sekunden.

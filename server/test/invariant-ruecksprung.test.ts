@@ -27,7 +27,12 @@ async function top(s: Server): Promise<number> {
   return g?.id ?? 0
 }
 
-// Ein Lauf: erst jeder Schritt einmal (Abdeckung), dann zufällige; nach jedem neuen Eintrag der Stand.
+// Die Schritte mit `unchanged`, die in den Läufen ohne Eintrag geblieben sind (#494).
+const unchangedHits = new Set<string>()
+
+// Ein Lauf: erst jeder Schritt einmal (Abdeckung), dann zufällige; nach jedem neuen Eintrag der Stand. Ein Schritt ohne
+// Eintrag ändert den Bestand nicht, auch keine `rowid` (#494): Sonst stimmte der gemerkte Stand nicht mehr, und ein
+// späterer Rücksprung, der eine gelöschte Zeile mit ihrer alten `rowid` wieder einfügt, träfe auf eine andere.
 async function run(s: Server, seed: number, randomSteps: number, withClosing: boolean): Promise<Mark[]> {
   const rng = rngOf(seed)
   const ctx: Ctx = { s, rng, units: [], tenancies: [], meters: [], readings: [], payments: [], costItems: [], plants: [], deliveries: [], refunds: [], uploads: [], properties: [] }
@@ -42,7 +47,11 @@ async function run(s: Server, seed: number, randomSteps: number, withClosing: bo
     if (process.env.NKA_TEST_REVERT_DEBUG) console.error(`Schritt: ${step.name}`)
     await step.run(ctx)
     const id = await top(s)
-    if (id === last) continue
+    if (id === last) {
+      assert.deepEqual(await stateOf(s), state, `${step.name}: ohne Eintrag, aber mit Änderung am Bestand`)
+      if (step.unchanged) unchangedHits.add(step.name)
+      continue
+    }
     const after = await stateOf(s)
     const added = (await journalOf(s, '?limit=50')).filter((g) => g.id > last)
     // Ob der Schritt wirklich abgeschlossen, wieder geöffnet oder das Versanddatum geändert hat: an der Route der Gruppen.
@@ -156,6 +165,9 @@ for (const [seed, withClosing] of SEEDS) {
 test('Abdeckung: Jede Route der Schritte hat in den Läufen wirklich eine Gruppe ergeben', () => {
   const routes = [...new Set([...STEPS, ...CLOSING_STEPS].flatMap((st) => st.routes)), REVERT_ROUTE]
   assert.deepEqual(routes.filter((r) => !hitRoutes.has(r)), [], 'Diese Routen hat der Generator nicht erreicht')
+  const unchanged = STEPS.filter((st) => st.unchanged).map((st) => st.name)
+  assert.ok(unchanged.length > 0)
+  assert.deepEqual(unchanged.filter((n) => !unchangedHits.has(n)), [], 'Diese Schritte haben nie unverändert gespeichert')
 })
 
 // Durchsicht von #262, K-a: Der Schritt „Kostenposition ändern“ setzt die Verteilung nur an einer Position, die sie

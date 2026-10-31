@@ -2387,41 +2387,46 @@ const paymentRow = (p: Payment) => ({
   designatedMonth: orNull(p.designatedMonth),
 })
 
-// Die Untertabellen eines Mietverhältnisses, ganz ersetzt. Siehe die Begründung am Kopf.
+// Die Untertabellen eines Mietverhältnisses, ganz ersetzt. Siehe die Begründung am Kopf. Die Staffeln stehen nach
+// Stichtag sortiert in der Datei (#494, Durchsicht S1): Ihre Reihenfolge ist kein Inhalt (der Stichtag ist Teil des
+// Schlüssels, gerechnet wird nach Stichtag sortiert, `monthRate`, `personHistoryOf`), und so ergibt dieselbe Staffel
+// in anderer Reihenfolge keine Änderung und keinen Eintrag im Verlauf.
+const byFrom = <T extends { from: string }>(entries: readonly T[]): T[] => entries.slice().sort((a, b) => compareText(a.from, b.from))
 async function writeTenancyChildren(db: Executor, t: Tenancy): Promise<void> {
   await db.delete(personHistory).where(eq(personHistory.tenancyId, t.id))
   await db.delete(prepayments).where(eq(prepayments.tenancyId, t.id))
   await db.delete(tenancyDirectCharges).where(eq(tenancyDirectCharges.tenancyId, t.id))
-  const direkt = t.directCharges ?? []
+  const direkt = byFrom(t.directCharges ?? [])
   if (direkt.length > 0) await db.insert(tenancyDirectCharges).values(direkt.map((e) => ({ tenancyId: t.id, from: e.from, monthlyCents: e.monthlyCents })))
   await db.delete(flatRates).where(eq(flatRates.tenancyId, t.id))
-  const pauschalen = t.flatRates ?? []
+  const pauschalen = byFrom(t.flatRates ?? [])
   if (pauschalen.length > 0) {
     await db.insert(flatRates).values(pauschalen.map((e) => ({ tenancyId: t.id, from: e.from, monthlyCents: e.monthlyCents })))
   }
   await db.delete(baseRents).where(eq(baseRents.tenancyId, t.id))
   await db.delete(prepaymentOverrides).where(eq(prepaymentOverrides.tenancyId, t.id))
   await db.delete(heatingPrepayments).where(eq(heatingPrepayments.tenancyId, t.id))
-  const heizstaffel = t.heatingPrepayments ?? []
+  const heizstaffel = byFrom(t.heatingPrepayments ?? [])
   if (heizstaffel.length > 0) {
     await db.insert(heatingPrepayments).values(heizstaffel.map((e) => ({ tenancyId: t.id, from: e.from, monthlyCents: e.monthlyCents })))
   }
   await db.delete(heatingPrepaymentOverrides).where(eq(heatingPrepaymentOverrides.tenancyId, t.id))
-  const heizkorrekturen = t.heatingPrepaymentOverrides ?? []
+  const heizkorrekturen = (t.heatingPrepaymentOverrides ?? []).slice().sort((a, b) => compareText(a.plantId, b.plantId) || compareText(a.period, b.period))
   if (heizkorrekturen.length > 0) await db.insert(heatingPrepaymentOverrides).values(heizkorrekturen.map((o) => ({ tenancyId: t.id, ...o })))
   if (t.personHistory.length > 0) {
-    await db.insert(personHistory).values(t.personHistory.map((e) => ({ tenancyId: t.id, from: e.from, persons: e.persons })))
+    await db.insert(personHistory).values(byFrom(t.personHistory).map((e) => ({ tenancyId: t.id, from: e.from, persons: e.persons })))
   }
   if (t.prepayments.length > 0) {
-    await db.insert(prepayments).values(t.prepayments.map((e) => ({ tenancyId: t.id, from: e.from, monthlyCents: e.monthlyCents })))
+    await db.insert(prepayments).values(byFrom(t.prepayments).map((e) => ({ tenancyId: t.id, from: e.from, monthlyCents: e.monthlyCents })))
   }
   if (t.baseRents.length > 0) {
-    await db.insert(baseRents).values(t.baseRents.map((e) => ({ tenancyId: t.id, from: e.from, monthlyCents: e.monthlyCents })))
+    await db.insert(baseRents).values(byFrom(t.baseRents).map((e) => ({ tenancyId: t.id, from: e.from, monthlyCents: e.monthlyCents })))
   }
   const korrekturen = Object.entries(t.prepaymentOverrides).flatMap(([schluessel, betrag]) => {
     const period = parsePeriodKey(schluessel)
     return period === null ? [] : [{ tenancyId: t.id, period, amountCents: betrag }]
   })
+  korrekturen.sort((a, b) => compareText(a.period, b.period))
   if (korrekturen.length > 0) await db.insert(prepaymentOverrides).values(korrekturen)
 }
 
