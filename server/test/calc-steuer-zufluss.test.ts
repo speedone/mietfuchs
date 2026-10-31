@@ -13,6 +13,7 @@ import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { estgShortPeriodDays } from '../../shared/law/estg.ts'
 import type { LawParam } from '../../shared/law/register.ts'
 import { tenDayWindow } from '../../shared/paidOn.ts'
+import { derivedTaxLines, incomeCsv, planTaxArchive } from '../src/taxReceipts.ts'
 
 type Pay = TaxSource['payments'][number]
 let seq = 0
@@ -430,4 +431,34 @@ test('Zahlung ohne Mietverhältnis im Schnappschuss: als unassignedCents gesonde
   const x = r.income.received ?? assert.fail('received fehlt')
   assert.equal(x.unassignedCents, 12345)
   assert.equal(received(s, 2025).unassignedCents, 0)
+})
+
+// Umstellung auf #503 (#262 PR 2): Verteilung nach § 82b EStDV ab 2026 und die am 28.12.2025 gezahlte Januarmiete
+// zusammen. Der Überschuss aus Zeile 32 zieht die abziehbaren Werbungskosten nach den Raten ab, Einnahmen.csv ergibt Zeile 32,
+// und die Übersicht.csv (mit der Spalte „verteilt“) ergibt die abziehbaren Werbungskosten desselben Jahres.
+test('Zehn-Tage-Regel und § 82b zusammen: surplusReceivedCents = totalCents − deductibleCents, beide CSV passen', () => {
+  const s = source([tenancy('t', 'eg')], [...monthly('t', '2025-01', '2025-12', 80000), pay('t', '2025-12-28', 80000), ...monthly('t', '2026-02', '2026-12', 80000)])
+  s.costItems = [{ id: 'dach', propertyId: 'objekt-1', period: calendarPeriod(2026), category: 'Nicht umlagefähig', description: 'Dach', amountCents: 900000, key: 'area', spreadYears: 3 }] as TaxSource['costItems']
+  const cents = (v: string | undefined) => Math.round(Number((v ?? '').replace(',', '.')) * 100)
+  let spread = 0
+  for (const year of [2025, 2026, 2027]) {
+    const r = taxReportFor(s, 'objekt-1', year)
+    const x = r.income.received ?? assert.fail('received fehlt')
+    assert.equal(r.surplusReceivedCents, x.totalCents - r.expenses.deductibleCents, String(year))
+    if ((r.expenses.deferredCents ?? 0) !== 0) spread++
+    const einnahmen = incomeCsv(r).replace(/^﻿/, '').trim().split('\r\n').at(-1)?.split(';') ?? []
+    assert.equal(cents(einnahmen[12]), x.totalCents, `${year}: Einnahmen.csv = Zeile 32`)
+    const split = new Map(r.expenses.items.map((i) => [i.costItemId, i]))
+    const items = s.costItems.filter((c) => r.expenses.items.some((i) => i.costItemId === c.id))
+    const lines = planTaxArchive(items, new Map(), new Map(), split, derivedTaxLines(r)).overviewCsv.replace(/^﻿/, '').trim().split('\r\n')
+    const head = (lines[0] ?? '').split(';')
+    const col = head.indexOf('abziehbar (EUR)')
+    assert.equal(lines.slice(1).reduce((a, z) => a + cents(z.split(';')[col]), 0), r.expenses.deductibleCents, `${year}: Übersicht.csv = abziehbar`)
+  }
+  assert.equal(received(s, 2026).turnOfYear.fromPreviousCents, 80000)
+  assert.ok(spread > 0, 'Verteilung wirkt nicht')
+  // 2026: 12 × 800 € Einnahmen (Januar aus dem Dezember), abziehbar nur die erste Rate.
+  const r26 = taxReportFor(s, 'objekt-1', 2026)
+  assert.equal(r26.income.received?.totalCents, 12 * 80000)
+  assert.ok(r26.expenses.deductibleCents < 900000)
 })
