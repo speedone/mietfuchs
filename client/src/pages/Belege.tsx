@@ -238,6 +238,10 @@ type Props = {
   onContinue?: (upload: ReceiptUpload) => void
   // Eine Position im Formular der Seite Kosten öffnen, etwa um Betrag und §35a dort zu pflegen
   onOpenItem?: (item: CostItem) => void
+  // Ein Beleg, zu dem die Seite springen soll (Fehler mit Ausweg, #487: „Von Hand erfassen“ aus Schnellerfassung
+  // oder Kosten). Steht er im gewählten Ausschnitt nicht, zeigt die Seite alle Objekte und Jahre.
+  focusFile?: string | null
+  onFocusDone?: () => void
   // Für Tests: die Belegmappe erzeugen, ohne pdf.js und Download
   makeTenantFolder?: (plan: TenantFolderPlan, meta: FolderMeta) => Promise<string[] | void>
 }
@@ -266,6 +270,8 @@ function AttachPicker({ label, what, placeholder, scope, values, onSave, childre
     </>
   )
 }
+
+const JUMP_HIGHLIGHT_MS = 4000
 
 export const PLACEMENT_FIRST = 'Erst Objekt und Jahr speichern oder verwerfen.'
 
@@ -313,13 +319,15 @@ function InboxPlacement({ upload, properties, yearOptions, onSave, children }: {
   )
 }
 
-export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onContinue, onOpenItem, makeTenantFolder = downloadTenantFolder }: Props) {
+export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onContinue, onOpenItem, focusFile, onFocusDone, makeTenantFolder = downloadTenantFolder }: Props) {
   const toast = useToast()
   const confirm = useConfirm()
   const { year: currentYear, calendarYearOptions, calendar, key: periodKeyNow, period: periodNow, label: periodLabelNow } = usePeriod()
   const { property, properties } = useProperty()
   const [uploads, setUploads] = useState<UploadEntry[]>([])
   const [loadedItems, setLoadedItems] = useState<CostItem[]>([])
+  // Ob die Liste einmal geladen ist (für den Sprung zu einem Beleg, #487)
+  const [loadedOnce, setLoadedOnce] = useState(false)
   const [plantsBy, setPlantsBy] = useState<Map<string, PlantPeriods[]>>(new Map())
   const [error, setError] = useState('')
   // Nach dem Zuordnen eines Belegs: Betrag der Position prüfen (Befund C). Eine aus dem Vorjahr
@@ -359,11 +367,46 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
         setLoadedItems(c.flatMap((x) => x.items))
         setPlantsBy(new Map(c.map((x) => [x.id, x.plants])))
         setError('')
+        setLoadedOnce(true)
       })
       .catch((e) => setError(String((e as Error).message)))
   }, [])
 
   useEffect(() => { void load() }, [load])
+
+  // Zum angesprungenen Beleg (#487): erst wenn die Liste da ist; steht er nicht im Ausschnitt, einmal alle Objekte
+  // und Jahre zeigen. Fehlt er ganz, ist der Sprung trotzdem erledigt.
+  const widenedForFocus = useRef(false)
+  const focusedFile = useRef<string | null>(null)
+  // Der angesprungene Beleg steht ein paar Sekunden hervorgehoben da, damit man sieht, wohin der Sprung ging
+  const [jumped, setJumped] = useState<string | null>(null)
+  useEffect(() => {
+    if (!jumped) return
+    const t = setTimeout(() => setJumped(null), JUMP_HIGHLIGHT_MS)
+    return () => clearTimeout(t)
+  }, [jumped])
+  useEffect(() => {
+    if (!focusFile || !loadedOnce || focusedFile.current === focusFile) return
+    const done = () => {
+      focusedFile.current = focusFile
+      widenedForFocus.current = false
+      onFocusDone?.()
+    }
+    const card = [...document.querySelectorAll<HTMLElement>('li.receipt-card[data-file]')].find((li) => li.dataset.file === focusFile)
+    if (card) {
+      // Ein Zählerfoto steht in den zugeklappten „Zählerfotos“ (Durchsicht #487)
+      const folded = card.closest('details')
+      if (folded && !folded.open) folded.open = true
+      card.scrollIntoView?.({ block: 'center' })
+      card.querySelector<HTMLElement>('a')?.focus()
+      setJumped(focusFile)
+      done()
+    } else if (!widenedForFocus.current && uploads.some((u) => u.file === focusFile)) {
+      widenedForFocus.current = true
+      setAllProperties(true)
+      setAllYears(true)
+    } else done()
+  })
   // Die Positionen mit dem Schlüssel ihrer Abrechnung (E32): Register, Belegabdeckung, Posteingang
   // und Belegmappe ordnen danach, wie Kosten und Abrechnung. Geschrieben wird nur mit der Kennung.
   const costItems = useMemo(
@@ -560,7 +603,8 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
     const { upload } = card
     const dup = hints.get(upload.file)
     return (
-      <li key={upload.file} className="receipt-card">
+      <li key={upload.file} className={`receipt-card${jumped === upload.file ? ' bg-accent-soft border-accent' : ''}`}
+        data-file={upload.file} data-jumped={jumped === upload.file ? 'true' : undefined}>
         <Thumb upload={upload} render={renderThumb} />
         <div className="receipt-body">
           <div className="receipt-title">

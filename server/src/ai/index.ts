@@ -31,6 +31,7 @@ import { ollamaProvider, type Provider, type ProviderRequest, type ProviderResul
 import { openaiProvider } from './openai.ts'
 import { slotFor, consentProblem, isExternalUrl } from './settings.ts'
 import { getKey } from '../secrets.ts'
+import { providerError } from './errors.ts'
 
 // Die Typen der Anbieter-Schnittstelle selbst kommen aus ollama.ts (dort definiert, weil
 // ollama.ts als erstes der beiden Provider-Module auf TypeScript umgestellt wurde). Hier nur
@@ -75,7 +76,11 @@ export function aiProvider(ai: AiSettings, { images = false }: { images?: boolea
       // Zweifel darf nichts hinausgehen, deshalb scheitert die Auswertung, wenn sie scheitert.
       const remoteModel = !isExternalUrl(config.url) && provider.isRemoteModel ? await provider.isRemoteModel(request.signal) : false
       const problem = consentProblem(config, { remoteModel })
-      if (problem) throw new Error(problem)
+      if (problem) {
+        // Der Dienst steht für die Oberfläche dabei („Die Übermittlung an … ist noch nicht bestätigt.“)
+        const service = isExternalUrl(config.url) ? new URL(config.url).host : 'den Cloud-Dienst von Ollama'
+        throw providerError(problem, { reason: 'consent', service })
+      }
       return provider.json(request)
     },
   }

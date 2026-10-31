@@ -63,6 +63,18 @@ Vorschläge**, übernommen wird erst nach Prüfung durch den Menschen. Gilt auch
   Schließen des Tabs per `sendBeacon`) und zusätzlich über das Schließen der Verbindung; die Kennung
   ist der verlässliche Weg (Proxys, ältere Bun). Ein Abbruch stoppt die Anfrage und löscht den eben
   hochgeladenen Beleg. Client: [client/src/aiRequest.ts](../../../client/src/aiRequest.ts).
+- **Fehler mit Ausweg** (#487): Scheitert die KI, bleibt der Beleg gespeichert; die Fehlerantwort aller vier Routen
+  (`failureOf` in index.ts) trägt `reason` (`AiFailureReason` in shared/types.ts), `kept: true`, `file` und bei
+  fehlender Bestätigung `service`, bei „nicht erreichbar“ `provider` (der Satz nennt Ollama nur bei Ollama), im
+  Schuhkarton nach einem erkannten Zählerfoto `meterPhoto` („Von Hand erfassen“ führt dann zur Seite Zähler). Erkennt
+  ein neuer Versuch eine Rechnung, wird ein als Zählerfoto gekennzeichneter Beleg wieder einer (`unmarkMeterPhoto`).
+  Schickt die Meldung in die Einstellungen (Adresse, Kontext, Höchstlänge, Kontingent), trägt sie einen Grund, bei dem
+  die Oberfläche „KI-Einstellungen öffnen“ anbietet (`offersAiSettings`). Den Grund setzt, wer die Meldung schreibt (`providerError(…, { reason })` in
+  openai.ts, ollama.ts, index.ts; `reasonOf` in errors.ts, ohne Angabe `unreachable` bzw. `other`). Wer eine neue
+  Meldung übersetzt, gibt ihr den passenden Grund. Ein neuer Versuch schickt `existingFile`, ohne Kopie. Die
+  Oberfläche: client/src/aiFailure.ts, components/KeptReceipt.tsx, Status `gespeichert` in evaluationQueue.ts; in den
+  Heizkosten FuelCard („Von Hand erfassen“ öffnet eine neue Lieferung) und ServiceImportCard (kein eigenes Formular,
+  also in den Belegordner, der den Beleg kurz hervorhebt), neuer Versuch über `asStored` (aiUpload.ts).
 - **Messdienst- und Lieferantenrechnung** ([../extractHeating.ts](../extractHeating.ts), #103):
   `POST /api/heating-plants/:id/service-statement` (nur bei Messdienst) und `…/fuel-invoice`, derselbe
   Strom. Je Belegart **ein** Ausgang (`toServiceExtraction`, `toFuelExtraction`), Netto-Teilmengen mit

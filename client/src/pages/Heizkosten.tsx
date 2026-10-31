@@ -46,7 +46,11 @@ import { NoticeBox } from '../components/Notice'
 // `items`: alle Positionen des Objekts aus allen Zeiträumen, für die Karte „Betriebsstrom“ (Heizung PR 15).
 type Loaded = { items: CostItem[]; plants: HeatingPlant[]; views: Record<string, HeatingPeriodView[]>; deliveries: Record<string, FuelDelivery[]>; degreeDays: DegreeDayValue[]; heating: HeatingStatement[]; findings: Record<string, Record<string, string[]>> }
 
-export default function Heizkosten({ units, tenancies, onTenanciesChanged }: { units: Unit[]; tenancies: Tenancy[]; onTenanciesChanged?: () => Promise<void> | void }) {
+// `onOpenReceipt`, `onOpenAiSettings`: Auswege, wenn die KI an einer Rechnung oder Abrechnung scheitert (#487)
+export default function Heizkosten({ units, tenancies, onTenanciesChanged, onOpenReceipt, onOpenAiSettings }: {
+  units: Unit[]; tenancies: Tenancy[]; onTenanciesChanged?: () => Promise<void> | void
+  onOpenReceipt?: (file: string) => void; onOpenAiSettings?: () => void
+}) {
   const { property } = useProperty()
   const period = usePeriod()
   const [data, setData] = useState<Loaded | null>(null)
@@ -160,7 +164,8 @@ export default function Heizkosten({ units, tenancies, onTenanciesChanged }: { u
                 <h2 className="section-title">{plant.name || 'Heizanlage'}, Heizperiode {v.label}</h2>
                 {/* Heizung PR 20 (#103): die Abrechnung des Messdienstes mit der KI auslesen; übernommen wird in der Prüfansicht. */}
                 {plant.method === 'service' && (
-                  <ServiceImportCard plant={plant} view={v} object={period.period} tenancies={tenancies} units={units} items={data?.items ?? []} co2={v.from >= first} onSaved={() => void load()} />
+                  <ServiceImportCard plant={plant} view={v} object={period.period} tenancies={tenancies} units={units} items={data?.items ?? []} co2={v.from >= first} onSaved={() => void load()}
+                    onOpenReceipt={onOpenReceipt} onOpenAiSettings={onOpenAiSettings} />
                 )}
                 {plant.method === 'service' && (v.from >= first ? (
                   <Co2Card key={`${v.period}:${v.co2?.method ?? ''}`} view={v} tenancies={tenancies} unitsCount={units.filter((u) => servesUnit(plant, u)).length} hasSelfUsed={units.some((u) => selfUsedWithin(u, v.from, v.to))} homeowners={plant.source === 'homeowners'} onSaved={() => void load()} />
@@ -171,7 +176,7 @@ export default function Heizkosten({ units, tenancies, onTenanciesChanged }: { u
                 {(plant.method === 'service' || (plant.method === 'self' && (v.selfHotWater ?? plant.hotWater) === 'combined')) && (
                   <HotWaterCard key={`hw:${v.period}:${JSON.stringify(v.hotWater)}:${plant.heatGeneration ?? ''}`} view={v} plant={plant} onSaved={() => void load()} />
                 )}
-                <FuelCard plant={plant} view={v} deliveries={ownedBy(data?.deliveries[plant.id] ?? [], v)} allDeliveries={data?.deliveries[plant.id] ?? []} allItems={data?.items ?? []} units={units} findings={data?.findings[`${plant.id}:${v.period}`] ?? {}} onSaved={() => void load()} />
+                <FuelCard plant={plant} view={v} deliveries={ownedBy(data?.deliveries[plant.id] ?? [], v)} allDeliveries={data?.deliveries[plant.id] ?? []} allItems={data?.items ?? []} units={units} findings={data?.findings[`${plant.id}:${v.period}`] ?? {}} onSaved={() => void load()} onOpenAiSettings={onOpenAiSettings} />
                 <OperatingPowerCard plant={plant} view={v} rules={period.rules} items={data?.items ?? []} onBooked={() => void load()} />
                 {showsStockCard(plant, v) && <StockCard key={`stock:${v.period}:${JSON.stringify(v.stock?.row ?? null)}`} view={v} co2Fields={asksCo2Facts(plant)} energy={billingEnergy(plant)} onSaved={() => void load()} />}
                 {v.from >= first && asksCo2Facts(plant) && <Co2FactsCard plant={plant} view={v} servedAreaM2={servedArea(plant)} onSaved={() => void load()} />}

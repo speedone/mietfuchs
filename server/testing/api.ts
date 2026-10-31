@@ -76,6 +76,13 @@ export type UploadBody = {
   reading?: MeterReadingExtraction
   stats?: AiStat[]
   error?: string
+  // Bei einem Fehler der KI (Fehler mit Ausweg): warum, ob der Beleg gespeichert blieb, und bei fehlender
+  // Bestätigung der Dienst
+  reason?: string
+  kept?: boolean
+  service?: string
+  provider?: string
+  meterPhoto?: boolean
 }
 
 // Eine Zeile des Stroms (Accept: application/x-ndjson): `type` sagt, was sie bedeutet, die
@@ -90,6 +97,9 @@ export type StreamLine = {
   completed?: number
   error?: string
   file?: string
+  reason?: string
+  kept?: boolean
+  service?: string
   data?: UploadBody
 }
 
@@ -239,6 +249,18 @@ export const removeDataDir = (dir: string): void => {
 export async function startServer() {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-'))
   return startServerIn(dataDir)
+}
+
+// Startet den Server neben einem nachgebauten Dienst (Ollama, OpenAI, GitHub). Scheitert der Start, etwa unter Last
+// nach dem Zeitlimit von readStartUrl, wird der Dienst gestoppt und der Fehler weitergereicht: Sonst hielte sein offener
+// Port die Testdatei für immer offen (gefunden bei #487, api-belegbuchung.test.ts hing so).
+export async function startServerBeside(service: { stop: () => void }, dataDir: string, env: NodeJS.ProcessEnv = {}): Promise<Server> {
+  try {
+    return await startServerIn(dataDir, env)
+  } catch (err) {
+    service.stop()
+    throw err
+  }
 }
 
 // Liest die Adresse aus der Startmeldung „Mietfuchs-Server läuft auf …“. Wirft, wenn der Prozess
@@ -480,8 +502,10 @@ export async function fakeOllama({ models = [{ name: 'test:latest', capabilities
   const requests: OllamaRequest[] = []
   const open = new Set<http.ServerResponse>()
   const state: { closedEarly: number, lastInvoice: FakeInvoice | null } = { closedEarly: 0, lastInvoice: null }
-  // Steuert den nachgebauten Dienst während eines Tests, etwa für den Abbruch beim Laden
-  const control = { pullHangs: false }
+  // Steuert den nachgebauten Dienst während eines Tests, etwa für den Abbruch beim Laden. Fehler mit Ausweg (#487):
+  // `docType` legt die Belegart fest, `meterFails` lässt das Ablesen scheitern, `tooMany` antwortet wie Ollama Cloud
+  // mit aufgebrauchtem Kontingent (429).
+  const control: { pullHangs: boolean, docType?: 'zaehlerstand' | 'rechnung', meterFails?: boolean, tooMany?: boolean } = { pullHangs: false }
   const findModel = (name = '') => models.find((m) => m.name === (name.includes(':') ? name : `${name}:latest`))
   const modelOf = (body: OllamaBody): string => body.model ?? ''
   const server = http.createServer((req, res) => {
@@ -523,6 +547,8 @@ export async function fakeOllama({ models = [{ name: 'test:latest', capabilities
         return m ? send(200, { capabilities: m.capabilities, remote_host: m.remote_host }) : notFound()
       }
       if (!findModel(modelOf(json))) return notFound()
+      if (control.tooMany) return send(429, { error: 'you have reached your weekly usage limit' })
+      if (control.meterFails && json.format?.properties?.meterNumber) return send(500, { error: 'model runner has unexpectedly stopped' })
       // Eine Rechnung mit Nettopositionen und dem Lohnanteil als Gesamtbetrag (#34)
       if (chat === 'netto' && !json.format?.properties?.categories) {
         const netto = {
@@ -557,7 +583,7 @@ export async function fakeOllama({ models = [{ name: 'test:latest', capabilities
           : json.format?.properties?.parts
             ? FAKE_FUEL
         : json.format?.properties?.docType
-          ? { docType: chat === 'meter' ? 'zaehlerstand' : 'rechnung' }
+          ? { docType: control.docType ?? (chat === 'meter' ? 'zaehlerstand' : 'rechnung') }
           : json.format?.properties?.meterNumber
             ? { meterNumber: '4711', value: 123.4, dateOnImage: null }
         : json.format?.properties?.categories
@@ -623,7 +649,7 @@ export type WithOllamaOptions = { models?: FakeModel[], model?: string, chat?: F
 
 export async function withOllama(fn: (s: Server, ollama: Ollama) => Promise<void>, { models, model = 'test', chat, env = {}, invoices }: WithOllamaOptions = {}) {
   const ollama = await fakeOllama({ models, chat, invoices })
-  const s = await startServerIn(fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-')), env)
+  const s = await startServerBeside(ollama, fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-')), env)
   try {
     await s.api<ClientSettings>('/api/settings', { method: 'PUT', body: JSON.stringify({ ollamaUrl: ollama.url, ollamaModel: model }) })
     await fn(s, ollama)

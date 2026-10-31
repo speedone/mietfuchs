@@ -293,6 +293,40 @@ test('Posteingang: einer Position zuordnen und per KI auswerten', async () => {
   expect(onEvaluate).toHaveBeenCalledWith([expect.objectContaining({ file: '4_lose.pdf' })])
 })
 
+// Fehler mit Ausweg (#487): „Von Hand erfassen“ springt aus Schnellerfassung oder Kosten zum gespeicherten Beleg.
+test('Posteingang: ein angesprungener Beleg bekommt den Fokus, die Seite meldet es einmal', async () => {
+  const onFocusDone = vi.fn()
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <Belege renderThumb={() => Promise.resolve('')} focusFile="4_lose.pdf" onFocusDone={onFocusDone} />
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  await waitFor(() => expect(onFocusDone).toHaveBeenCalledTimes(1))
+  const card = document.activeElement?.closest('li.receipt-card')
+  expect(card?.getAttribute('data-file')).toBe('4_lose.pdf')
+  // Kurz hervorgehoben, damit man sieht, wohin der Sprung ging
+  expect(card?.getAttribute('data-jumped')).toBe('true')
+  expect(card?.className).toMatch(/\bbg-accent-soft\b/)
+})
+
+test('Posteingang: ein angesprungenes Zählerfoto öffnet die zugeklappten „Zählerfotos“ (Durchsicht #487)', async () => {
+  extraUploads = [{ ...up('9_zaehler.jpg'), kind: 'meterPhoto', mimeType: 'image/jpeg' }]
+  const onFocusDone = vi.fn()
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <Belege renderThumb={() => Promise.resolve('')} focusFile="9_zaehler.jpg" onFocusDone={onFocusDone} />
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  await waitFor(() => expect(onFocusDone).toHaveBeenCalledTimes(1))
+  const card = document.activeElement?.closest('li.receipt-card')
+  expect(card?.getAttribute('data-file')).toBe('9_zaehler.jpg')
+  expect(card?.closest('details')?.open).toBe(true)
+})
+
 test('Mappen: „Belege für die Steuer“ lädt das ZIP des gewählten Objekts und Jahres', async () => {
   renderPage()
   await screen.findByText('Wasser/Abwasser')

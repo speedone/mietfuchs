@@ -599,3 +599,36 @@ test('Belegbuchung: PUT auf die Auswertung eines gelöschten Belegs antwortet 40
     assert.deepEqual(row.filter((r) => r.file === a.file).map((r) => r.year), [2025], 'die Zeile des Belegs ist nicht verschoben')
   }, { invoices: RECHNUNGEN })
 })
+
+// Fehler mit Ausweg (#487, Durchsicht): Scheitert nach der Erkennung „Zählerfoto“ das Ablesen und erkennt der neue
+// Versuch eine Rechnung, gehört der Beleg wieder in den Posteingang: Art „receipt“, Objekt und Jahr des Formulars.
+test('Schuhkarton: ein als Zählerfoto erkannter Beleg wird beim neuen Versuch als Rechnung wieder ein Beleg im Posteingang', async () => {
+  await withOllama(async (s, ollama) => {
+    ollama.control.docType = 'zaehlerstand'
+    ollama.control.meterFails = true
+    const first = new FormData()
+    // Ein Foto: Nur bei Bildern fragt der Schuhkarton das Modell nach der Belegart
+    first.append('file', new Blob([Buffer.from('JPEG-Foto')], { type: 'image/jpeg' }), 'beleg.jpg')
+    first.append('propertyId', 'objekt-1')
+    first.append('year', '2025')
+    const failed = await fetch(`${s.base}/api/intake`, { method: 'POST', body: first })
+    assert.equal(failed.status, 502)
+    const body = await jsonOf<UploadBody>(failed)
+    assert.deepEqual([body.kept, body.meterPhoto], [true, true])
+    const file = fileOf(body)
+    const photo = (await s.api<UploadInfo[]>('/api/uploads')).find((u) => u.file === file)
+    assert.deepEqual([photo?.kind, photo?.propertyId], ['meterPhoto', null])
+
+    ollama.control.docType = 'rechnung'
+    ollama.control.meterFails = false
+    const again = new FormData()
+    again.append('existingFile', file)
+    again.append('propertyId', 'objekt-1')
+    again.append('year', '2025')
+    const res = await fetch(`${s.base}/api/intake`, { method: 'POST', body: again })
+    assert.equal(res.status, 200)
+    assert.equal((await jsonOf<UploadBody>(res)).kind, 'rechnung')
+    const receipt = (await s.api<UploadInfo[]>('/api/uploads')).find((u) => u.file === file)
+    assert.deepEqual([receipt?.kind, receipt?.propertyId, receipt?.year], ['receipt', 'objekt-1', 2025])
+  })
+})

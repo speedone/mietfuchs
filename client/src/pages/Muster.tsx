@@ -14,6 +14,8 @@ import { OtherPropertiesView } from '../components/OtherPropertiesCard'
 import { PropertySwitcher } from '../property'
 import { ErrorSummary, useFormError } from '../components/ErrorSummary'
 import { CalcNoticeGroup, NoticeBox, NoticeGroup, TextNotice } from '../components/Notice'
+import { KeptReceipt } from '../components/KeptReceipt'
+import { TakenOff } from '../components/TakenOff'
 import { groupNotices, noticePeople } from '../noticeGroups'
 import { useConfirm, useToast } from '../components/feedback'
 import { useDraft } from '../useDraft'
@@ -154,6 +156,9 @@ export default function Muster() {
         <NoticeBox level="error" title="Fehler" action="Eine Position wird nicht verteilt, weil Angaben fehlen." fix={{ label: 'Hier beheben →', onClick: () => toast('Sprung zur Stelle.') }} />
         <NoticeBox level="warning" title="Warnung" action="Geld landet anders als vermutlich gewollt." more="Begründung aus einer Fundstelle (BGH VIII ZR 156/11)." />
         <NoticeBox level="hint" title="Hinweis" action="Bitte prüfen, ohne sicheren Fehler." />
+        <KeptReceipt failure={{ error: 'OpenAI lehnt den Schlüssel ab. Bitte den Schlüssel in den Einstellungen prüfen.', file: 'beleg.pdf', reason: 'key', kept: true }}
+          onManual={() => toast('Sprung in den Belegordner.')} onRetry={() => toast('Neuer Versuch.')} onOpenSettings={() => toast('KI-Einstellungen.')} />
+        <TakenOff fileName="beleg.pdf" onShow={() => toast('Sprung in den Belegordner.')} />
         <TextNotice level="info" text="Eine Auskunft als fertiger Text. Sie wird in Sätze zerlegt." />
         {/* „Zu prüfen“ auf der Seite Abrechnung: stille Hinweise (ohne Betrag, Kürzung, Aufforderung) in einer Zeile. */}
         <NoticeGroup level="hint" summary="2 Hinweise (Erster, Zweiter)">

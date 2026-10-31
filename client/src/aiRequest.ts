@@ -3,6 +3,7 @@
 // Lebenszeichen, zuletzt Ergebnis oder Fehler, je eine JSON-Zeile. So bricht Firefox eine
 // minutenlange Auswertung nicht nach fünf Minuten ab, und die Oberfläche kann zeigen, dass das
 // Modell arbeitet. Geprüft in client/src/aiRequest.test.ts.
+import { withFailure } from './aiFailure'
 
 // 'serviceStatement' und 'fuelInvoice': Messdienstabrechnung und Lieferantenrechnung (Heizung PR 20)
 export type AiStep = 'extraction' | 'classification' | 'docType' | 'meterReading' | 'serviceStatement' | 'fuelInvoice'
@@ -17,7 +18,7 @@ type StreamMessage =
   | ({ type: 'progress' } & StreamProgress)
   | { type: 'heartbeat' }
   | { type: 'result'; data: unknown }
-  | { type: 'error'; error: string }
+  | { type: 'error'; error: string; file?: string; reason?: string; kept?: boolean; service?: string }
 
 const NDJSON = 'application/x-ndjson'
 
@@ -111,7 +112,7 @@ async function readAnswer<T>(res: Response, onProgress?: (progress: StreamProgre
     } catch {
       throw new Error(`Mietfuchs lieferte eine unerwartete Antwort (${res.status} ${res.statusText}).`)
     }
-    if (!res.ok) throw new Error(data.error || `${res.status} ${res.statusText}`)
+    if (!res.ok) throw withFailure(data.error || `${res.status} ${res.statusText}`, data)
     return data as T
   }
   for await (const line of lines(res.body)) {
@@ -121,7 +122,7 @@ async function readAnswer<T>(res: Response, onProgress?: (progress: StreamProgre
       onProgress?.(progress as StreamProgress)
     }
     else if (message.type === 'result') return message.data as T
-    else if (message.type === 'error') throw new Error(message.error)
+    else if (message.type === 'error') throw withFailure(message.error, message)
   }
   throw new Error('Die Verbindung zu Mietfuchs brach ab, bevor die Auswertung fertig war.')
 }

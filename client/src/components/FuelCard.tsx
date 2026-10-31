@@ -2,7 +2,7 @@
 // Versorgers, die in dieser Heizperiode enden, und bei freien Schlüsseln die Verknüpfung der Positionen.
 // Mietfuchs teilt jede Rechnung auf die Heizperioden auf; die Abrechnung zeigt, wie.
 import Card from '../components/Card'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { api, errorText, fmtEuro } from '../api'
 import { useConfirm, useToast } from './feedback'
 import Term from './Term'
@@ -10,13 +10,15 @@ import DraftActions from './DraftActions'
 import { useDraft } from '../useDraft'
 import { asksCo2Facts, fuelRequiredProblems, STOCK_BIO_ONLY_ZERO, GAS_BASIS_LABEL, GAS_BASIS_MISSING, gasBasisMissing, defaultGrade, deliveryLine, deliveryOptions, deliveryUnitId, emptyFuelForm, fuelBody, fuelToForm, GAS_BASIS_OPTIONS, gradeOptions, METERED_QUANTITY_OPTIONS, STOCK_QUANTITY_OPTIONS, stockFuelBody, unitWordFor, type FuelField, type FuelForm, type FuelPartForm } from '../fuelForm'
 import { aiRequest, progressText, type AiProgress } from '../aiRequest'
-import { heatingUpload } from '../aiUpload'
+import { asStored, heatingUpload } from '../aiUpload'
+import { failureOf } from '../aiFailure'
+import { KeptReceipt } from './KeptReceipt'
 import { fuelChecks, fuelFormFromExtraction } from '../fuelImport'
 import { CREDIT_ANSWERS, CREDIT_QUESTION, creditAction, creditOnlyOf, creditTargetOptions, emptyReassignForm, PAYMENT_GUIDE, reassignBody, RETURNED_HINT, RETURNED_QUESTION, STANDALONE_DONE, type CreditAnswer, type ReassignForm } from '../fuelCredit'
 import { isStockEnergy } from '../../../shared/fuelStock.ts'
 import { billingEnergy } from '../../../shared/heatDelivery.ts'
 import { startYearOf } from '../../../shared/period.ts'
-import type { FuelDelivery, FuelExtractResult, HeatingEnergy, HeatingMethod, HeatingPeriodView, HeatingPlant, Unit } from '../types'
+import type { AiFailure, FuelDelivery, FuelExtractResult, HeatingEnergy, HeatingMethod, HeatingPeriodView, HeatingPlant, Unit } from '../types'
 import { ErrorSummary, useFormError } from './ErrorSummary'
 import Drawer from './Drawer'
 import { useSaving } from '../useSaving'
@@ -32,7 +34,7 @@ const PART_FIELDS: readonly { key: keyof FuelPartForm; label: string }[] = [
 ]
 const EMPTY_PART: FuelPartForm = { from: '', to: '', energyKwh: '', amount: '', fixed: '', emissionsKg: '', co2Cost: '' }
 
-export default function FuelCard({ plant, view, deliveries, allDeliveries, allItems, units = [], findings = {}, onSaved }: {
+export default function FuelCard({ plant, view, deliveries, allDeliveries, allItems, units = [], findings = {}, onSaved, onOpenAiSettings }: {
   plant: { id: string; method: HeatingMethod; energy?: HeatingEnergy } & Partial<Pick<HeatingPlant, 'supply' | 'units' | 'contracting' | 'heatGeneration' | 'gmodg43InstalledOn' | 'propertyId'>>
   view: HeatingPeriodView
   deliveries: FuelDelivery[]
@@ -46,6 +48,8 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
   // den Messdienst, also aus derselben Prüfung wie die Abrechnung.
   findings?: Readonly<Record<string, readonly string[]>>
   onSaved: () => void
+  // Fehler mit Ausweg (#487): die KI-Einstellungen öffnen
+  onOpenAiSettings?: () => void
 }) {
   // Die Lieferung im Seitenfenster (#346 Schritt 7): 'neu' oder die Kennung der Lieferung, `null` ohne Fenster.
   const [editing, setEditing] = useState<string | null>(null)
@@ -62,6 +66,13 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
   // Heizung PR 20: die Prüfungen einer mit der KI gelesenen Rechnung und der Fortschritt beim Lesen.
   const [checks, setChecks] = useState<string[]>([])
   const [reading, setReading] = useState<AiProgress | null | 'start'>(null)
+  // Fehler mit Ausweg (#487): Die KI ist gescheitert, die Rechnung liegt im Belegordner. Die Datei bleibt für einen neuen
+  // Versuch im Browser, an den Server geht dann nur ihr Name.
+  // „Von Hand erfassen“ lässt ihn stehen: Wer das Fenster ohne Speichern schließt, hat den Ausweg wieder vor sich; erst
+  // eine angelegte Lieferung erledigt ihn (Durchsicht #487).
+  const [kept, setKept] = useState<{ failure: AiFailure; file: File } | null>(null)
+  // Der Bereich des Auslesens behält den Fokus nach „Erneut versuchen“, sonst fiele er auf body (Durchsicht #487)
+  const aiArea = useRef<HTMLDivElement>(null)
   // #251: die offene Frage zu einer Gutschrift ohne Rechnung.
   const [credit, setCredit] = useState<{ id: string; answer: CreditAnswer } | null>(null)
   const [reassign, setReassign] = useState<ReassignForm>(emptyReassignForm)
@@ -104,11 +115,13 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
 
   // Heizung PR 20 (#103): Die KI liest die Rechnung, das Formular einer neuen Lieferung ist damit vorbelegt;
   // gespeichert wird erst mit „Anlegen“. Der Beleg liegt mit Objekt und Jahr im Belegordner.
-  async function readInvoice(file: File) {
+  async function readInvoice(file: File, stored?: string) {
     setReading('start')
     setError('')
+    setKept(null)
     try {
-      const fd = plant.propertyId ? await heatingUpload(file, { propertyId: plant.propertyId, year: startYearOf(view.period) }) : await heatingUpload(file, null)
+      const upload = plant.propertyId ? await heatingUpload(file, { propertyId: plant.propertyId, year: startYearOf(view.period) }) : await heatingUpload(file, null)
+      const fd = stored ? asStored(upload, stored) : upload
       const r = await aiRequest<FuelExtractResult>(`/api/heating-plants/${plant.id}/fuel-invoice`, fd, { onProgress: setReading })
       // Durchsicht S1: nur vorbelegen, was die Karte unten zeigt (CO₂-Felder, Bezug der kWh bei Gas).
       const co2 = plant.energy === undefined || asksCo2Facts({ energy: plant.energy, contracting: plant.contracting, heatGeneration: plant.heatGeneration ?? null })
@@ -119,7 +132,9 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
       setEditing('neu')
       setFromAi(true)
     } catch (e) {
-      setError(errorText(e))
+      const failure = failureOf(e)
+      if (failure) setKept({ failure, file })
+      else setError(errorText(e))
     } finally {
       setReading(null)
     }
@@ -148,6 +163,7 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
       if (editing === 'neu') await api(`/api/heating-plants/${plant.id}/deliveries`, { method: 'POST', body: JSON.stringify(body) })
       else await api(`/api/fuel-deliveries/${editing}`, { method: 'PUT', body: JSON.stringify(body) })
       const created = editing === 'neu'
+      if (created) setKept(null)
       close()
       setError('')
       toast(created ? 'Lieferung angelegt.' : 'Lieferung gespeichert.')
@@ -457,6 +473,7 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
           )}
         </Drawer>
       )}
+      <div ref={aiArea} tabIndex={-1}>
       {!view.closed && editing === null && (
         <div className="row">
           {reading === null ? (
@@ -467,6 +484,13 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
           ) : <span className="muted">{progressText(reading === 'start' ? null : reading)}</span>}
         </div>
       )}
+      {/* „Von Hand erfassen“ öffnet das Formular einer neuen Lieferung: Die Karte hat es selbst, und eine Lieferung
+          trägt keinen Beleg; die Rechnung bleibt im Belegordner. */}
+      {!view.closed && editing === null && reading === null && kept && (
+        <KeptReceipt failure={kept.failure} onManual={() => open(null)} onOpenSettings={onOpenAiSettings}
+          onRetry={() => { aiArea.current?.focus(); void readInvoice(kept.file, kept.failure.file) }} />
+      )}
+      </div>
     </Card>
   )
 }

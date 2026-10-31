@@ -14,6 +14,9 @@ import { AiProgressBadge } from '../components/AiProgress'
 import { plural } from '../../../shared/wording.ts'
 import PageHeader from '../components/PageHeader'
 import { NoticeBox } from '../components/Notice'
+import { KeptReceipt } from '../components/KeptReceipt'
+import { TakenOff } from '../components/TakenOff'
+import { useRetryFocus } from '../retryFocus'
 
 // Sichtprüfung E30: Die Kennzeichnung offener Zeilen trägt die Farbe der schlechtesten Ampel,
 // nicht Grün für „bitte prüfen“.
@@ -31,6 +34,12 @@ type Props = {
   // schon im Ordner und gehen nur mit ihrem Namen an den Server.
   handoff?: UploadInfo[]
   onHandoffTaken?: () => void
+  // Fehler mit Ausweg (#487): einen gespeicherten, nicht ausgewerteten Beleg im Belegordner zeigen, die
+  // KI-Einstellungen öffnen
+  onOpenReceipt?: (file: string) => void
+  onOpenAiSettings?: () => void
+  // Bei einem Zählerfoto, dessen Ablesen gescheitert ist: die Seite Zähler (Ablesung von Hand)
+  onOpenMeters?: () => void
 }
 
 type ReadingCandidate = {
@@ -67,7 +76,7 @@ const quantityInput = (n: number): string => n.toLocaleString('de-DE', { useGrou
 
 const NOT_SAVED = 'Die Auswertung ließ sich nicht speichern. Bitte versuchen Sie es noch einmal; gebucht wurde nichts.'
 
-export default function Schnellerfassung({ units, settings, onNavigate, handoff, onHandoffTaken }: Props) {
+export default function Schnellerfassung({ units, settings, onNavigate, handoff, onHandoffTaken, onOpenReceipt, onOpenAiSettings, onOpenMeters }: Props) {
   // Wohin die Belege zur Auswertung gehen (siehe aiForm.ts)
   const ai = aiSummary(settings)
   // Das Kalenderjahr, in dem der gewählte Zeitraum beginnt (#208): Ein Beleg ohne erkanntes Jahr
@@ -102,7 +111,7 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
     // Neu laden, wenn das Objekt wechselt (#92).
   }, [propertyId])
 
-  const { queue, patchEntry, addFiles, addStored, remove, cancel } = useEvaluationQueue<IntakeResult, Evaluated>({
+  const { queue, patchEntry, addFiles, addStored, remove, cancel, retry, takeOff } = useEvaluationQueue<IntakeResult, Evaluated>({
     endpoint: '/api/intake',
     pageImageEdge: settings?.ai?.pageImageEdge ?? undefined,
     // Objekt und Jahr für die Auswertung (#170); ein neuer Beleg steht damit im Posteingang
@@ -140,6 +149,7 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
       return { status: 'fertig', data: { kind: 'rechnung', serverFile: res.file, assessmentId: res.assessment.id } }
     },
   })
+  const focusAfterRetry = useRetryFocus(queue)
   // Was beim Objektwechsel verloren ginge (#145): laufende Auswertungen und ein erkannter, noch
   // nicht übernommener Zählerstand. Eine ausgewertete Rechnung ist gespeichert und bleibt.
   useOpenForm(queue.some((x) => x.status === 'wartend' || x.status === 'läuft' || (x.status === 'fertig' && x.data.kind === 'zaehler')))
@@ -380,9 +390,13 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
       {queue.map((entry) => {
         // Eine ausgewertete Rechnung steht als Karte ihrer Auswertung da (unten).
         if (entry.data.kind === 'rechnung' && entry.status === 'fertig') return null
+        if (entry.status === 'abgelegt') {
+          const stored = entry.failure?.file
+          return <TakenOff key={entry.id} fileName={entry.fileName} onShow={stored && onOpenReceipt ? () => onOpenReceipt(stored) : undefined} />
+        }
         const rs = readingScores.get(entry.id)
         return (
-          <div className="card no-print" key={entry.id}>
+          <div className="card no-print" key={entry.id} data-queue-entry={entry.id} tabIndex={-1}>
             <div className="row center">
               <strong>{entry.data.kind === 'zaehler' ? '🔢 ' : '🧾 '}{entry.fileName}</strong>
               {entry.status === 'wartend' && <span className="badge gray">wartet …</span>}
@@ -396,14 +410,21 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
               {entry.status === 'fertig' && entry.data.kind === 'zaehler' && <span className="badge green">Zählerstand erkannt</span>}
               {entry.status === 'übernommen' && <span className="badge green">✓ übernommen</span>}
               {entry.status === 'fehler' && <span className="badge red">Fehler</span>}
+              {entry.status === 'gespeichert' && <span className="badge amber">im Belegordner</span>}
               {entry.status === 'abgebrochen' && <span className="badge gray">abgebrochen</span>}
               <div className="grow" />
               {entry.status !== 'läuft' && (
-                <button className="btn small ghost" onClick={() => remove(entry.id)}>Entfernen</button>
+                entry.status === 'gespeichert'
+                  ? <button className="btn small ghost" onClick={() => takeOff(entry.id)}>Aus der Liste nehmen{' '}<span className="sr-only">({entry.fileName})</span></button>
+                  : <button className="btn small ghost" onClick={() => remove(entry.id)}>Entfernen</button>
               )}
             </div>
 
             {entry.status === 'fehler' && <NoticeBox level="error" action={entry.error} />}
+            {entry.status === 'gespeichert' && entry.failure && (
+              <KeptReceipt failure={entry.failure} onManual={entry.failure.meterPhoto ? (onOpenMeters && (() => onOpenMeters())) : onOpenReceipt}
+                onRetry={() => { focusAfterRetry(entry.id); retry(entry.id) }} onOpenSettings={onOpenAiSettings} />
+            )}
 
             {/* ---------- Zählerstand ---------- */}
             {entry.status === 'fertig' && entry.data.kind === 'zaehler' && entry.data.reading && (

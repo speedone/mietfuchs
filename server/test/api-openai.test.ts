@@ -11,7 +11,7 @@ import os from 'node:os'
 import path from 'node:path'
 import type { AiPreset, AiRecommendations, AiSlotName, AiStatus } from '../../shared/types.ts'
 import {
-  type ClientSettings, EXTERNAL, LONG_TEXT, type OpenAiContentPart, type OpenAiMessage, type OpenAiRequest, type OpenAiService, type Server, type WithOpenAiOptions, errorFrom, errorOf, fakeOllama, fakeOpenAi, jsonOf, lastLine, listening, messageOf, ollamaSlot, parseLine, photoForm, portOf, putAi, putKey, startServer, startServerIn, storedSettings, until, uploadPdf, withEnv, withOllama,
+  type ClientSettings, EXTERNAL, LONG_TEXT, type OpenAiContentPart, type OpenAiMessage, type OpenAiRequest, type OpenAiService, type Server, type WithOpenAiOptions, errorFrom, errorOf, fakeOllama, fakeOpenAi, jsonOf, lastLine, listening, messageOf, ollamaSlot, parseLine, photoForm, portOf, putAi, putKey, startServer, startServerBeside, startServerIn, storedSettings, until, uploadPdf, withEnv, withOllama,
 } from '../testing/api.ts'
 
 let srv: Awaited<ReturnType<typeof startServerIn>>
@@ -43,7 +43,7 @@ const completionOf = (service: OpenAiService, n: number): OpenAiRequest => {
 
 async function withOpenAi(fn: (s: Server, service: OpenAiService) => Promise<void>, { rules = {}, preset = 'openai-compatible', model = 'modell-a', vision = null, key = null, ai = {}, env = {} }: WithOpenAiOptions = {}) {
   const service = await fakeOpenAi(rules)
-  const s = await startServerIn(fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-')), env)
+  const s = await startServerBeside(service, fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-')), env)
   try {
     if (key) await putKey(s, { slot: 'text', key })
     await putAi(s, { text: { provider: 'openai', preset, url: service.url, model, vision }, ...ai })
@@ -106,7 +106,9 @@ test('OpenAI-kompatibel: Fotos gehen als data-URL, außer das Modell versteht la
   await withOpenAi(async (s, service) => {
     const res = await fetch(`${s.base}/api/extract`, { method: 'POST', body: photoForm() })
     assert.equal(res.status, 502)
-    assert.match(await errorFrom(res), /versteht das Modell „modell-a“ keine Bilder/)
+    const body = await jsonOf<{ error?: string, reason?: string }>(res)
+    assert.match(body.error ?? '', /versteht das Modell „modell-a“ keine Bilder/)
+    assert.equal(body.reason, 'model')
     assert.equal(service.completions().length, 0)
   }, { vision: false })
 })
@@ -156,9 +158,11 @@ test('OpenAI-kompatibel: Schlüssel als Bearer, verständliche Meldungen ohne de
   await withOpenAi(async (s, service) => {
     const without = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
     assert.match(errorOf(without.body), /verlangt einen Schlüssel/)
+    assert.deepEqual([without.body.reason, without.body.kept], ['key', true])
     await putKey(s, { slot: 'text', key: 'sk-test-falsch-0987654321' })
     const wrong = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
     assert.match(errorOf(wrong.body), /lehnt den Schlüssel ab/)
+    assert.equal(wrong.body.reason, 'key')
     assert.ok(!errorOf(wrong.body).includes('sk-test-falsch'))
     await putKey(s, { slot: 'text', key: KEY })
     assert.equal((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).status, 200)
@@ -188,20 +192,37 @@ test('OpenAI-kompatibel: aufgebrauchtes Guthaben wird nicht wiederholt', async (
     const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
     assert.equal(r.status, 502)
     assert.match(errorOf(r.body), /Guthaben oder Budget/)
+    assert.equal(r.body.reason, 'quota')
     assert.equal(service.completions().length, 1)
   }, { rules: { quota: true } })
 })
 
 test('OpenAI-kompatibel: abgeschnittene Antwort, unbekanntes Modell, Zeitlimit', async () => {
   await withOpenAi(async (s) => {
-    assert.match(errorOf((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).body), /Höchstlänge von 16384 Token.*„Erweitert“/)
+    const cut = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
+    assert.match(errorOf(cut.body), /Höchstlänge von 16384 Token.*„Erweitert“/)
+    assert.equal(cut.body.reason, 'model')
   }, { rules: { finish: 'length' } })
   await withOpenAi(async (s) => {
-    assert.match(errorOf((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).body), /kennt das Modell „gibt-es-nicht“ nicht/)
+    const unknown = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
+    assert.match(errorOf(unknown.body), /kennt das Modell „gibt-es-nicht“ nicht/)
+    assert.equal(unknown.body.reason, 'model')
   }, { model: 'gibt-es-nicht' })
   await withOpenAi(async (s) => {
-    assert.match(errorOf((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).body), /nicht innerhalb von 2 Sekunden geantwortet/)
+    const slow = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
+    assert.match(errorOf(slow.body), /nicht innerhalb von 2 Sekunden geantwortet/)
+    assert.equal(slow.body.reason, 'timeout')
   }, { rules: { hang: true }, env: { NKA_AI_TIMEOUT: '2' } })
+})
+
+// Fehler mit Ausweg (#487): Schickt die Meldung in die Einstellungen (falsche Adresse), bietet die Oberfläche sie an.
+test('Fehler mit Ausweg: ohne Chat-Schnittstelle unter der Adresse ist der Grund „address“', async () => {
+  await withOpenAi(async (s, service) => {
+    await putAi(s, { text: { provider: 'openai', preset: 'openai-compatible', url: `${service.url}/falsch`, model: 'modell-a', vision: null } })
+    const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
+    assert.match(errorOf(r.body), /keine Chat-Schnittstelle/)
+    assert.deepEqual([r.body.reason, r.body.kept], ['address', true])
+  })
 })
 
 test('OpenAI-kompatibel: auch am Stück und mit Denktext davor kommt das Ergebnis an', async () => {
@@ -304,7 +325,7 @@ test('Schlüssel: auch ein Fehler mitten im Strom zeigt ihn nicht', async () => 
 test('Schlüssel: auch Ollama hinter einem Proxy zeigt ihn nicht', async () => {
   const KEY = 'ollama-proxy-schluessel-1234'
   const ollama = await fakeOllama({ echoKey: true })
-  const s = await startServerIn(fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-')))
+  const s = await startServerBeside(ollama, fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-')))
   try {
     await putAi(s, { text: ollamaSlot(ollama.url) })
     await putKey(s, { slot: 'text', key: KEY })
@@ -323,7 +344,7 @@ test('Schlüssel: auch Ollama hinter einem Proxy zeigt ihn nicht', async () => {
 test('Schlüssel: eine unlesbare Antwort von Ollama zeigt ihn nicht', async () => {
   const KEY = 'ollama-status-schluessel-1234'
   const ollama = await fakeOllama({ garbledShow: true })
-  const s = await startServerIn(fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-')))
+  const s = await startServerBeside(ollama, fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-')))
   try {
     await putAi(s, { text: ollamaSlot(ollama.url) })
     await putKey(s, { slot: 'text', key: KEY })

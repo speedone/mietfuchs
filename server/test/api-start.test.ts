@@ -22,7 +22,7 @@ import { LAW_AS_OF } from '../../shared/law/register.ts'
 import { calendarPeriod } from '../../shared/period.ts'
 import type { CostItem, Settlement, TaxReport, Tenancy, Unit, UpdateStatus } from '../../shared/types.ts'
 import {
-  type ClientSettings, type GitHub, type HealthReport, type Server, dataDirAtBaseline, databaseOfV080, errorFrom, fakeGitHub, inDatabase, jsonOf, listenInTestRange, listening, portOf, removeDataDir, restore, serverRoot, startServer, startServerIn, startServerRaw, storedDb, waitForExit,
+  type ClientSettings, type GitHub, type HealthReport, type Server, dataDirAtBaseline, databaseOfV080, errorFrom, fakeGitHub, fakeOllama, startServerBeside, until, withOllama, inDatabase, jsonOf, listenInTestRange, listening, portOf, removeDataDir, restore, serverRoot, startServer, startServerIn, startServerRaw, storedDb, waitForExit,
 } from '../testing/api.ts'
 
 let srv: Awaited<ReturnType<typeof startServerIn>>
@@ -882,7 +882,7 @@ const serverVersion: string = JSON.parse(fs.readFileSync(path.join(serverRoot, '
 async function withUpdateServer(env: NodeJS.ProcessEnv, fn: (s: Server, github: GitHub) => Promise<void>) {
   const github = await fakeGitHub()
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-update-'))
-  const s = await startServerIn(dataDir, { NKA_UPDATE_URL: github.url, ...env })
+  const s = await startServerBeside(github, dataDir, { NKA_UPDATE_URL: github.url, ...env })
   try {
     await fn(s, github)
   } finally {
@@ -1172,4 +1172,29 @@ test('Start: Die Verbindung von inDatabase wartet auf eine Sperre, statt sofort 
   } finally {
     s.stop()
   }
+})
+
+// ---------- Helfer: ein nachgebauter Dienst neben dem Server (gefunden bei #487) ----------
+// Scheitert der Start des Servers (unter Last nach 20 s, hier mit einem ungültigen Wert, der den Start verhindert),
+// muss der nachgebaute Dienst wieder zu sein. Sonst hält sein offener Port die Testdatei für immer offen; so hing
+// api-belegbuchung.test.ts in einem Lauf unter Last.
+const listeningServers = (): number => process.getActiveResourcesInfo().filter((r) => r === 'TCPServerWrap').length
+// Geschlossen ist ein Server erst eine Runde der Ereignisschleife nach close(); kurz darauf warten.
+const closedAgain = (count: number): Promise<boolean> => until(() => listeningServers() === count, 5000)
+
+test('Helfer: scheitert der Start des Servers, ist der nachgebaute Dienst danach gestoppt', { timeout: 60_000 }, async () => {
+  const before = listeningServers()
+  const ollama = await fakeOllama()
+  assert.equal(listeningServers(), before + 1)
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-'))
+  await assert.rejects(startServerBeside(ollama, dataDir, { NKA_AI_TIMEOUT: 'kein-wert' }), /Server hat sich beendet/)
+  assert.ok(await closedAgain(before), 'der nachgebaute Dienst lauscht noch')
+})
+
+test('Helfer: withOllama stoppt den nachgebauten Dienst auch, wenn der Server nicht startet', { timeout: 60_000 }, async () => {
+  const before = listeningServers()
+  let ran = false
+  await assert.rejects(withOllama(async () => { ran = true }, { env: { NKA_AI_TIMEOUT: 'kein-wert' } }), /Server hat sich beendet/)
+  assert.equal(ran, false)
+  assert.ok(await closedAgain(before), 'der nachgebaute Dienst lauscht noch')
 })

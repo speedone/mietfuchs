@@ -63,7 +63,8 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
 
 - **Jeder Hinweis über den Baustein `Notice`** ([Notice.tsx](src/components/Notice.tsx)): Stufe als
   Zeichen und Wort, Titel, Text, „Hier beheben →“; unter „Mehr dazu“ (eingeklappt, im Druck offen)
-  **nur Begründungen aus Fundstellen**. Der Text des Servers wird nur in Sätze zerlegt
+  **nur Begründungen aus Fundstellen** (Ausnahme: der Satz des Servers zu einem gespeicherten, nicht ausgewerteten
+  Beleg, [KeptReceipt.tsx](src/components/KeptReceipt.tsx), #487; der Grund steht offen davor). Der Text des Servers wird nur in Sätze zerlegt
   ([noticeText.ts](src/noticeText.ts)), **sichtbar bleibt grundsätzlich alles**. Eingeklappt wird nur
   ein Satz, der nach Abzug seiner Fundstellen weder Prozent, Betrag, Datum, Kürzung, Aufforderung
   noch Folge trägt (`isCitationSentence`); ein `error` steht ganz offen. Geprüft gegen echte Texte

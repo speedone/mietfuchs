@@ -13,7 +13,7 @@ import path from 'node:path'
 import AdmZip from 'adm-zip'
 import type { AiKeyInfo, AiSlotName, OllamaStatus } from '../../shared/types.ts'
 import {
-  type ClientSettings, EXTERNAL, LONG_TEXT, type Ollama, chatOptions, chatRequests, errorFrom, errorOf, fakeOllama, jsonOf, messageOf, ollamaSlot, photoForm, putAi, putKey, removeDataDir, restore, serverRoot, startServerIn, storedSettings, uploadPdf, withEnv, withOllama,
+  type ClientSettings, EXTERNAL, LONG_TEXT, type Ollama, chatOptions, chatRequests, errorFrom, errorOf, fakeOllama, jsonOf, messageOf, ollamaSlot, photoForm, putAi, putKey, removeDataDir, restore, serverRoot, startServerBeside, startServerIn, storedSettings, uploadPdf, withEnv, withOllama,
 } from '../testing/api.ts'
 
 // ---------- API-Schlüssel externer KI-Dienste (#18) ----------
@@ -304,7 +304,7 @@ test('Anbieterwahl: Fotos gehen an den eigenen Bilder-Anbieter, Text an den Stan
 test('Anbieterwahl: Ollama mit Schlüssel schickt ihn als Bearer, ohne ihn anzuzeigen', async () => {
   const KEY = 'ollama-schluessel-1234567890'
   const ollama = await fakeOllama({ key: KEY })
-  const s = await startServerIn(fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-')))
+  const s = await startServerBeside(ollama, fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-')))
   try {
     await putAi(s, { text: ollamaSlot(ollama.url) })
     // Ohne Schlüssel: verständliche Meldung statt 401
@@ -368,6 +368,7 @@ test('Bestätigung: ohne sie gehen keine Belege an einen externen Dienst', async
     const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
     assert.equal(r.status, 502)
     assert.match(errorOf(r.body), /192\.0\.2\.1:11434.*bestätigt/s)
+    assert.deepEqual([r.body.reason, r.body.kept, r.body.service], ['consent', true, '192.0.2.1:11434'])
     assert.ok(Date.now() - started < 1500, 'ohne Bestätigung darf keine Verbindung versucht werden')
     // Nach der Bestätigung versucht Mietfuchs es, der Dienst ist nur eben nicht erreichbar
     const confirmed = await s.api<ClientSettings>('/api/ai/consent', { method: 'POST', body: JSON.stringify({ slot: 'text' }) })
@@ -399,6 +400,7 @@ test('Bestätigung: ein Cloud-Modell über das lokale Ollama braucht sie auch', 
     const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
     assert.equal(r.status, 502)
     assert.match(errorOf(r.body), /gpt-oss:120b-cloud.*Cloud/s)
+    assert.equal(r.body.reason, 'consent')
     assert.equal(chatRequests(ollama).length, 0)
     await s.api<ClientSettings>('/api/ai/consent', { method: 'POST', body: JSON.stringify({ slot: 'text' }) })
     assert.equal((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).status, 200)
