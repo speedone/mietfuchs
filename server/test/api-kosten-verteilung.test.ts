@@ -332,3 +332,25 @@ test('Route: Ende am Objekt ohne verteilte Position ohne Rückfrage, mit einer 4
     s.stop()
   }
 })
+
+// Durchsicht S3: Die Rückfrage an der Position kennt das Ende am Objekt. Ende im Jahr der Zahlung: eine andere Wahl
+// ändert nichts und fragt nicht; Ende im Folgejahr: gefragt mit dem Abzug samt Rest, derselbe Text wie im Formular.
+test('Route: die Rückfrage an der Position rechnet mit dem Ende am Objekt', async () => {
+  const s = await startServer()
+  try {
+    const send = sender(s)
+    await send('/api/units', 'POST', { name: 'EG', areaM2: 80, participates: true })
+    const item = await (await send('/api/costItems', 'POST', { ...dach, spreadYears: 4 })).json() as CostItem
+    assert.equal((await send('/api/properties/objekt-1', 'PUT', { spreadRestYear: 2025, confirmSpread: true })).status, 200)
+    const r1 = await send(`/api/costItems/${item.id}`, 'PUT', { spreadYears: 2 })
+    assert.equal(r1.status, 200, await r1.clone().text())
+    assert.equal((await send('/api/properties/objekt-1', 'PUT', { spreadRestYear: 2026, confirmSpread: true })).status, 200)
+    const r2 = await send(`/api/costItems/${item.id}`, 'PUT', { spreadYears: 3 })
+    assert.equal(r2.status, 409)
+    const b2 = await r2.json() as { error: string }
+    assert.equal(b2.error, spreadQuestions({ ...item, spreadYears: 2 }, { ...item, spreadYears: 3 }, [], 2026).join(' '))
+    assert.match(b2.error, /auf 3 Jahre verteilt: Abzug 2025 bis 2026 \(Rest 2026\) statt 2025 bis 2026\./)
+  } finally {
+    s.stop()
+  }
+})

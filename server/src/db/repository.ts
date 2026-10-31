@@ -1367,7 +1367,13 @@ async function requireSpread(db: Executor, before: CostItem | null, after: CostI
   // werden, wird vor der Rückfrage abgelehnt (Durchsicht S2), nicht erst nach ihrer Bestätigung.
   if (after.spreadYears !== undefined && after.spreadYears !== before.spreadYears) await requireSiblingsSpread(db, after)
   if (raw(body, 'confirmSpread') === true) return []
-  return spreadQuestions(before, after, await otherPartLabels(db, before))
+  return spreadQuestions(before, after, await otherPartLabels(db, before), await spreadRestYearOf(db, after.propertyId))
+}
+
+// Das Ende am Objekt (§ 82b Abs. 2 EStDV): Die Rückfrage an der Position rechnet damit (Durchsicht S3).
+async function spreadRestYearOf(db: Executor, propertyId: string): Promise<number | null> {
+  const [row] = await db.select({ year: properties.spreadRestYear }).from(properties).where(eq(properties.id, propertyId))
+  return row?.year ?? null
 }
 
 async function requireSiblingsSpread(db: Executor, c: CostItem): Promise<void> {
@@ -2945,7 +2951,7 @@ export async function saveCostItemSplit(db: Database, propertyId: string | null,
     const blocked = parts.find((p) => !allowsSpread({ ...base, amountCents: p.amountCents }))
     if (blocked !== undefined) throw new PeriodError(spreadRefusal({ ...base, amountCents: blocked.amountCents }))
   }
-  const spread = current === null || raw(body, 'confirmSpread') === true ? [] : spreadQuestions(current, base)
+  const spread = current === null || raw(body, 'confirmSpread') === true ? [] : spreadQuestions(current, base, [], await spreadRestYearOf(db, current.propertyId))
   // Alle in einer Rückfrage (Durchsicht S1).
   askOnce({ paidOn, taxYear, spread })
   const ids = await db.transaction(async (tx) => {

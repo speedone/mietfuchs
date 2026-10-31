@@ -80,26 +80,45 @@ const neverCounted = (c: Spreadable): boolean =>
 // und wenn sich an einer verteilten Position das Jahr der Zahlung ändert. `otherParts`: die Zeiträume der übrigen
 // Teile derselben Rechnung, an die der Server die Wahl mit schreibt (E-11). Server (409 `question: 'spread'`, bestätigt
 // mit `confirmSpread`) und Formular fragen beide hier.
-export function spreadQuestions(before: Spreadable | null, after: Spreadable | null, otherParts: readonly string[] = []): string[] {
+export function spreadQuestions(before: Spreadable | null, after: Spreadable | null, otherParts: readonly string[] = [], restYear: number | null = null): string[] {
   if (before === null) return []
   const was = before.spreadYears ?? null
   if (neverCounted(before) && (after === null || (after.spreadYears ?? null) !== was)) return [NEVER]
+  // Mit dem Ende am Objekt (§ 82b Abs. 2, Durchsicht S3) zählt, was tatsächlich abgezogen wird: Endet die Verteilung im
+  // Jahr der Zahlung, wird ohnehin nicht verteilt; endet sie davor, wirkt das Ende nicht (S2).
+  const effective = (c: Spreadable): SpreadYears | null => (c.spreadYears != null && restYear !== startYear(c) ? c.spreadYears : null)
+  const spanOf = (c: Spreadable): string => {
+    const n = effective(c)
+    return n === null ? `ganz ${startYear(c)}` : restSpanText({ ...c, spreadYears: n }, restYear)
+  }
+  // Das letzte Jahr eines Abzugs (mit Ende am Objekt das Jahr des Endes).
+  const lastOf = (c: Spreadable): number => {
+    const n = effective(c)
+    if (n === null) return startYear(c)
+    const { from, to } = spreadSpan({ ...c, spreadYears: n })
+    return restYear !== null && restYear >= from && restYear < to ? restYear : to
+  }
   const out: string[] = []
   if (after === null) {
-    if (was === null) return []
+    if (effective(before) === null) return []
     const y = startYear(before)
-    out.push(`${capital(dropped(y + 1, y + was - 1, ' damit'))}.`)
+    out.push(`${capital(dropped(y + 1, lastOf(before), ' damit'))}.`)
   } else {
     const now = after.spreadYears ?? null
     const from = startYear(before)
     const to = startYear(after)
-    if (was === now && (now === null || from === to)) return []
+    const effWas = effective(before)
+    const effNow = effective(after)
+    if (effWas === null && effNow === null) return []
+    if (was === now && from === to) return []
     if (was === now) {
-      out.push(`Die Verteilung beginnt dann ${to} statt ${from}: Abzug ${span(after)} statt ${span(before)}.`)
-    } else if (now === null && was !== null) {
-      out.push(`Ohne Verteilung zählt die Position für die Steuer ganz im Jahr ${to}; ${dropped(from + 1, from + was - 1, '')}.`)
+      out.push(`Die Verteilung beginnt dann ${to} statt ${from}: Abzug ${spanOf(after)} statt ${spanOf(before)}.`)
+    } else if (effNow === null && effWas !== null) {
+      out.push(`Ohne Verteilung zählt die Position für die Steuer ganz im Jahr ${to}; ${dropped(from + 1, lastOf(before), '')}.`)
+    } else if (spanOf(after) === spanOf(before) && effWas !== null) {
+      out.push(`Für die Steuer wird die Position dann auf ${now} statt ${was} Jahre verteilt: Abzug ${spanOf(after)}.`)
     } else {
-      out.push(`Für die Steuer wird die Position dann auf ${now} Jahre verteilt: Abzug ${span(after)} statt ${span(before)}.`)
+      out.push(`Für die Steuer wird die Position dann auf ${now} Jahre verteilt: Abzug ${spanOf(after)} statt ${spanOf(before)}.`)
     }
     if (otherParts.length > 0 && was !== now) {
       out.push(`Die Wahl gilt für die ganze Rechnung und wird auch an den übrigen Teilen (${otherParts.join(', ')}) gespeichert.`)
@@ -128,7 +147,7 @@ export const spreadSpan = (c: Spreadable & { spreadYears: SpreadYears }): { from
 type RestItem = Spreadable & { description: string }
 // Der Abzug einer Position bei einem Ende `rest` in Worten, wie `deductionPlan` ihn rechnet: Ende im letzten Jahr oder
 // danach oder vor dem ersten wirkt nicht, Ende im ersten Jahr heißt nicht verteilt.
-const restSpanText = (c: RestItem & { spreadYears: SpreadYears }, rest: number | null): string => {
+const restSpanText = (c: Spreadable & { spreadYears: SpreadYears }, rest: number | null): string => {
   const { from, to } = spreadSpan(c)
   // Ein Ende vor dem Beginn betrifft die Position nicht (Durchsicht S2), eines im ersten Jahr heißt nicht verteilt.
   if (rest === null || rest >= to || rest < from) return range(from, to)

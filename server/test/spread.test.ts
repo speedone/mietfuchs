@@ -193,3 +193,26 @@ test('spreadRestQuestions: Setzen, Ändern und Entfernen des Endes nennen je Pos
   assert.deepEqual(spreadRestQuestions(2027, 2027, [dach]), [])
   assert.deepEqual(spreadRestQuestions(null, 2027, []), [])
 })
+
+// Durchsicht S3: Die Rückfrage an der Position kennt das Ende am Objekt; ändert die Wahl dadurch nichts, fragt sie nicht.
+test('spreadQuestions mit Ende am Objekt: Abzug mit Rest, keine Frage, wo sich nichts ändert', () => {
+  assert.deepEqual(spreadQuestions(stored({ spreadYears: 5 }), stored({ spreadYears: 3 }), [], 2027), [
+    'Für die Steuer wird die Position dann auf 3 statt 5 Jahre verteilt: Abzug 2026 bis 2027 (Rest 2027).', BOUND, ADVICE,
+  ])
+  assert.deepEqual(spreadQuestions(stored({ spreadYears: undefined }), stored({ spreadYears: 5 }), [], 2027), [
+    'Für die Steuer wird die Position dann auf 5 Jahre verteilt: Abzug 2026 bis 2027 (Rest 2027) statt ganz 2026.', BOUND, ADVICE,
+  ])
+  assert.deepEqual(spreadQuestions(stored({ spreadYears: 5 }), stored({ spreadYears: undefined }), [], 2027)[0],
+    'Ohne Verteilung zählt die Position für die Steuer ganz im Jahr 2026; der Anteil 2027 entfällt.')
+  assert.deepEqual(spreadQuestions(stored({ spreadYears: 5 }), null, [], 2027)[0], 'Der Anteil 2027 entfällt damit.')
+  // Ende im Jahr der Zahlung: verteilt wird ohnehin nicht, keine Frage.
+  assert.deepEqual(spreadQuestions(stored({ spreadYears: 5 }), stored({ spreadYears: 3 }), [], 2026), [])
+  assert.deepEqual(spreadQuestions(stored({ spreadYears: undefined }), stored({ spreadYears: 3 }), [], 2026), [])
+  assert.deepEqual(spreadQuestions(stored({ spreadYears: 5 }), null, [], 2026), [])
+  // Ein Ende vor dem Jahr der Zahlung wirkt nicht (S2).
+  assert.deepEqual(spreadQuestions(stored({ spreadYears: 5 }), stored({ spreadYears: 2 }), [], 2025),
+    spreadQuestions(stored({ spreadYears: 5 }), stored({ spreadYears: 2 })))
+  // Ein anderes Jahr der Zahlung: beide Abzüge mit dem Ende.
+  assert.deepEqual(spreadQuestions(stored({ spreadYears: 5, taxYear: 2026 }), stored({ spreadYears: 5, taxYear: 2027 }), [], 2028)[0],
+    'Die Verteilung beginnt dann 2027 statt 2026: Abzug 2027 bis 2028 (Rest 2028) statt 2026 bis 2028 (Rest 2028).')
+})
