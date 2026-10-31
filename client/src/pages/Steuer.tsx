@@ -9,7 +9,7 @@ import { useProperty, withProperty } from '../property'
 import { effectiveLandlord, letterhead } from '../landlord'
 import PageHeader from '../components/PageHeader'
 import Table from '../components/Table'
-import { acquisitionRelated, acquisitionRelatedText, ACQUISITION_RELATED_MORE, ACQUISITION_RELATED_TITLE, headerRows, allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, operatingPowerBalanceText, prepaymentNote, settlementSourcesText, showsSplit, stockCarryNote, surplusCentsFor, taxHints, maintenanceLineText, withdrawalLinesText, usageChangeTouchesWithdrawal, withdrawalSuspectDated, ETW_WITHDRAWAL_TEXT, type Basis, movedInLines, movedInText, movedOutLabels, movedOutLines, unstatedText, type ShiftLine } from '../taxView'
+import { costModelLineTexts, acquisitionRelated, acquisitionRelatedText, ACQUISITION_RELATED_MORE, ACQUISITION_RELATED_TITLE, headerRows, allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, operatingPowerBalanceText, prepaymentNote, settlementSourcesText, showsSplit, stockCarryNote, surplusCentsFor, taxHints, maintenanceLineText, withdrawalLinesText, usageChangeTouchesWithdrawal, withdrawalSuspectDated, ETW_WITHDRAWAL_TEXT, type Basis, movedInLines, movedInText, movedOutLabels, movedOutLines, unstatedText, type ShiftLine } from '../taxView'
 import { StepList } from '../components/CalcSteps'
 import DisclosureButton from '../components/DisclosureButton'
 import Term from '../components/Term'
@@ -540,20 +540,20 @@ export default function Steuer({ settings, onNavigate }: Props) {
             {/* Heizung PR 8 (N8): Brennstoff aus dem Vorrat; Abrechnung nach Verbrauch, Steuer nach Bezahltem. */}
             {stockCarryNote(data) && <p className="muted">{stockCarryNote(data)}</p>}
 
-            {/* #96: Kopfzeilen der Anlage V, die am Mietmodell hängen. Belegt am Vordruck 2025 und der
-                Anleitung 2024; die Pauschale nennt die Anleitung nicht ausdrücklich. */}
+            {/* #96: Kopfzeilen der Anlage V, die am Mietmodell hängen; die Nummern nur aus `anlageVLines` (K4, taxView.ts).
+                Die Pauschale nennt die Anleitung nicht ausdrücklich. */}
             {hints.includes('inclusiveLine24') && (
               <NoticeBox
                 level="hint"
-                title="Zeile 24 der Anlage V."
-                action="Tragen Sie dort eine 1 ein; die ganze Miete gehört dann zu den Mieteinnahmen, und für diese Mietverhältnisse sind keine Umlagen in den Zeilen 20 und 21 einzutragen."
+                title={costModelLineTexts(year).inclusiveTitle}
+                action={costModelLineTexts(year).inclusiveAction}
                 more="Bei einer Inklusivmiete sind die Nebenkosten nicht gesondert vereinbart."
               />
             )}
             {hints.includes('inclusiveLine24Mixed') && (
               <NoticeBox
                 level="hint"
-                title="Zeile 24 der Anlage V."
+                title={costModelLineTexts(year).inclusiveTitle}
                 action="Bei gemischten Verträgen klären Sie den Eintrag am besten mit Ihrem Steuerberater."
                 more="Eine Inklusivmiete gilt hier nur für einen Teil der Mietverhältnisse oder nur für einen Teil der Nebenkosten (nur kalt oder nur die Heizung). Die Zeile fragt für das ganze Objekt, ob Nebenkosten gesondert vereinbart sind."
               />
@@ -561,9 +561,9 @@ export default function Steuer({ settings, onNavigate }: Props) {
             {hints.includes('flatRateLine20') && (
               <NoticeBox
                 level="hint"
-                title="Zeile 20 der Anlage V."
+                title={costModelLineTexts(year).flatRateTitle}
                 action="Eine Betriebskostenpauschale ist eine Einnahme wie die Miete."
-                more="Nach dem Wortlaut gehört sie zu den laufend vereinnahmten Umlagen in Zeile 20; ausdrücklich nennt die Anleitung die Pauschale nicht."
+                more={costModelLineTexts(year).flatRateMore}
               />
             )}
             {hints.includes('etwHousingMoney') && (

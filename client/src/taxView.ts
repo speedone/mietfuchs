@@ -469,6 +469,22 @@ export function paidWithoutSettlementCents(report: Pick<TaxReport, 'income'>): n
   return report.income.paidCents - settlementBalanceCents(report)
 }
 
+// ---------- Zeilen am Mietmodell: Zeile 24 und Pauschale (#96; Durchsicht von #312 PR 3, K4) ----------
+//
+// Die Nummern nur aus `anlageVLines` (`notAgreed`, `allocations`, `settlement`); für ein Jahr ohne gelesenen Vordruck
+// nennen die Hinweise die Angabe in Worten, wie S2 bei Zeile 25.
+export type CostModelLineTexts = { inclusiveTitle: string; inclusiveAction: string; flatRateTitle: string; flatRateMore: string }
+export function costModelLineTexts(year: number): CostModelLineTexts {
+  const i = anlageVLines(year)?.income
+  const umlagen = i?.allocations && i.settlement ? `keine Umlagen in den Zeilen ${i.allocations.line} und ${i.settlement.line}` : 'keine Umlagen und keine Nachzahlungen oder Erstattungen aus der Abrechnung'
+  return {
+    inclusiveTitle: i?.notAgreed ? `Zeile ${i.notAgreed.line} der Anlage V.` : 'Anlage V: Nebenkosten nicht gesondert vereinbart.',
+    inclusiveAction: `Tragen Sie dort eine 1 ein; die ganze Miete gehört dann zu den Mieteinnahmen, und für diese Mietverhältnisse sind ${umlagen} einzutragen.`,
+    flatRateTitle: i?.allocations ? `Zeile ${i.allocations.line} der Anlage V.` : 'Anlage V: laufende Umlagen.',
+    flatRateMore: `Nach dem Wortlaut gehört sie zu den laufend vereinnahmten Umlagen${i?.allocations ? ` in Zeile ${i.allocations.line}` : ''}; ausdrücklich nennt die Anleitung die Pauschale nicht.`,
+  }
+}
+
 // ---------- Zwischen den Jahren verschoben (#255, PR 4) ----------
 //
 // Die Sätze nennen nur, was in den Daten steht: das eingetragene Datum, das angegebene Jahr oder dass ein Abzug beim

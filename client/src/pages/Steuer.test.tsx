@@ -216,7 +216,7 @@ const LAGEN: Record<TaxHint, Lage> = {
   },
   flatRateLine20: {
     report: REPORT({ costModels: { tenancies: 2, inclusive: 0, partlyInclusive: 0, flatRate: 1 } }),
-    text: /Zeile 20 der Anlage V/i,
+    text: /Eine Betriebskostenpauschale ist eine Einnahme wie die Miete/,
   },
   // #143: Die Zuführung zur Erhaltungsrücklage steht neben den Werbungskosten, nicht darin.
   reserveContribution: {

@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from 'vitest'
 import type { TaxExpenseItem, TaxReport } from './types'
-import { allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, operatingPowerBalanceText, paidWithoutSettlementCents, prepaymentNote, settlementBalanceCents, settlementLine, settlementSourcesText, showsSplit, stockCarryNote, surplusCentsFor, taxHints, maintenanceLineText, withdrawalLinesText, usageChangeTouchesWithdrawal, withdrawalSuspectDated, ETW_WITHDRAWAL_TEXT, movedInLines, movedInText, movedOutLines, unstatedText, headerRows, acquisitionRelated, acquisitionRelatedText, ACQUISITION_RELATED_MORE, type TaxHeaderProperty } from './taxView'
+import { costModelLineTexts, allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, operatingPowerBalanceText, paidWithoutSettlementCents, prepaymentNote, settlementBalanceCents, settlementLine, settlementSourcesText, showsSplit, stockCarryNote, surplusCentsFor, taxHints, maintenanceLineText, withdrawalLinesText, usageChangeTouchesWithdrawal, withdrawalSuspectDated, ETW_WITHDRAWAL_TEXT, movedInLines, movedInText, movedOutLines, unstatedText, headerRows, acquisitionRelated, acquisitionRelatedText, ACQUISITION_RELATED_MORE, type TaxHeaderProperty } from './taxView'
 import { fmtEuro } from './api'
 import { periodKey } from '../../shared/period.ts'
 
@@ -633,5 +633,29 @@ describe('Kopf der Anlage V (#96 PR 2)', () => {
     expect(t).toMatch(/Besitz, Nutzen und Lasten.*Kaufvertrag vom 10\.05\.2023/s)
     expect(t).toMatch(/bis 10\.05\.2027, ein Jahr länger/)
     expect(t).toMatch(/Eigentumsübergang ein/)
+  })
+})
+
+// Durchsicht von #312 PR 3, K4: Die Hinweise zum Mietmodell nennen Zeilen nur aus `anlageVLines`, sonst ohne Nummer.
+describe('Hinweise zu Inklusivmiete und Pauschale: Zeilen nur aus anlageVLines (K4)', () => {
+  test('2025: Zeile 24, Zeilen 20 und 21, Zeile 20', () => {
+    const t = costModelLineTexts(2025)
+    expect(t.inclusiveTitle).toBe('Zeile 24 der Anlage V.')
+    expect(t.inclusiveAction).toBe('Tragen Sie dort eine 1 ein; die ganze Miete gehört dann zu den Mieteinnahmen, und für diese Mietverhältnisse sind keine Umlagen in den Zeilen 20 und 21 einzutragen.')
+    expect(t.flatRateTitle).toBe('Zeile 20 der Anlage V.')
+    expect(t.flatRateMore).toBe('Nach dem Wortlaut gehört sie zu den laufend vereinnahmten Umlagen in Zeile 20; ausdrücklich nennt die Anleitung die Pauschale nicht.')
+  })
+  test('2026 (Vordruck nicht gelesen): keine Nummer', () => {
+    const t = costModelLineTexts(2026)
+    for (const v of Object.values(t)) expect(v).not.toMatch(/Zeilen? \d/)
+    expect(t.inclusiveTitle).toBe('Anlage V: Nebenkosten nicht gesondert vereinbart.')
+    expect(t.inclusiveAction).toBe('Tragen Sie dort eine 1 ein; die ganze Miete gehört dann zu den Mieteinnahmen, und für diese Mietverhältnisse sind keine Umlagen und keine Nachzahlungen oder Erstattungen aus der Abrechnung einzutragen.')
+    expect(t.flatRateTitle).toBe('Anlage V: laufende Umlagen.')
+  })
+  test('2023: Zeile 24 nicht gelesen, Zeilen 20 und 21 schon', () => {
+    const t = costModelLineTexts(2023)
+    expect(t.inclusiveTitle).toBe('Anlage V: Nebenkosten nicht gesondert vereinbart.')
+    expect(t.inclusiveAction).toMatch(/in den Zeilen 20 und 21 einzutragen/)
+    expect(t.flatRateTitle).toBe('Zeile 20 der Anlage V.')
   })
 })
