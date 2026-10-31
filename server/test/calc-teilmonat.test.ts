@@ -30,9 +30,7 @@ const tenancy = (over: Partial<SnapshotTenancy> & Pick<SnapshotTenancy, 'start'>
   prepayments: [{ from: '2020-01', monthlyCents: 15000 }], prepaymentOverrides: {},
   baseRents: [{ from: '2020-01', monthlyCents: 50000 }], ...over,
 })
-// Beginn 2025: Seit #281 rechnet das Mietkonto ab Beginn; Jahre ohne erfasste Zahlung stünden sonst im Rückstand, und
-// die Zahlungen 2025 tilgten nach § 366 BGB zuerst die ältesten Vorauszahlungen.
-const nachbar = (): SnapshotTenancy => tenancy({ id: 'n', unitId: 'b', tenantName: 'N', start: '2025-01-01' })
+const nachbar = (): SnapshotTenancy => tenancy({ id: 'n', unitId: 'b', tenantName: 'N', start: '2020-01-01' })
 
 const source = (tenancies: SnapshotTenancy[], over: Partial<SnapshotSource> = {}): SnapshotSource => ({
   units: [{ id: 'a', name: 'EG', areaM2: 50, participates: true }, { id: 'b', name: 'OG', areaM2: 50, participates: true }],

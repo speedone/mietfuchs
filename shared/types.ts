@@ -270,6 +270,9 @@ export type RentLedgerRow = {
   closingBalanceCents: number
   // Zahlungen, deren Monat laut Verwendungszweck außerhalb des Mietverhältnisses liegt (wirkt wie keine Bestimmung).
   designatedOutside?: string[]
+  // Geführt ab (#281): Beginn des Kontos, wenn er nach dem Mietbeginn liegt (01.01. des Jahres der ersten erfassten
+  // Mietzahlung). Frühere Monate sind nicht erfasst und weder Soll noch offen.
+  ledgerStart?: string
 }
 
 // Ein Mietverhältnis ohne Tag im Jahr, das zum 31.12. noch schuldet (#281): Sein Rückstand verschwindet nicht.

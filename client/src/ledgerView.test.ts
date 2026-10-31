@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { RentLedgerRow, RentMonth, RentMonthStatus } from './types'
-import { bookingDate, carriedText, carryText, closingLines, newPaymentDate, notDemandableNotes, openPartsText, paidLaterText, rentDueApplies, rentDueNote, rowStanding, shareText } from './ledgerView'
+import { bookingDate, carriedText, ledgerStartText, carryText, closingLines, newPaymentDate, notDemandableNotes, openPartsText, paidLaterText, rentDueApplies, rentDueNote, rowStanding, shareText } from './ledgerView'
 
 const month = (m: number, sollCents: number, status: RentMonthStatus): RentMonth => ({
   month: m, baseRentCents: sollCents, prepaymentCents: 0, flatRateCents: 0, sollCents, paidCents: status === 'paid' ? sollCents : 0, status,
@@ -72,6 +72,12 @@ describe('Mietkonto: Übertrag, Stand zum Jahresende und offene Teile (#281)', (
     expect(plain(notes[1]?.text)).toBe('Die Abrechnung 2024 rechnet 200,00 € Vorauszahlung als gezahlt an, die nicht eingegangen sind. Einzeln verlangen lässt sich die Vorauszahlung nicht mehr. Ob eine berichtigte Abrechnung den Betrag noch einfordern kann, hängt an der Abrechnungsfrist (§ 556 Abs. 3 Satz 3 BGB); besprechen Sie das im Zweifel mit einer Beratung.')
     expect(plain(notes[2]?.text)).toBe('Die Abrechnungsfrist für 2022 ist abgelaufen. Die Vorauszahlung (300,00 €) lässt sich nicht mehr einzeln verlangen, nur noch über die Abrechnung.')
     expect(notes.filter((n) => n.text.includes('enthalten'))).toHaveLength(1)
+  })
+
+  it('geführt ab der ersten erfassten Mietzahlung: eine gedämpfte Zeile, nur wenn nach dem Mietbeginn', () => {
+    expect(ledgerStartText({ ...row(month(12, 100000, 'paid')), ledgerStart: '2025-01-01' }))
+      .toBe('Mietkonto geführt ab Januar 2025 (erste erfasste Mietzahlung); frühere Monate sind nicht erfasst.')
+    expect(ledgerStartText(row(month(12, 100000, 'paid')))).toBeNull()
   })
 
   it('ein Ausgezogener mit offenem Saldo', () => {

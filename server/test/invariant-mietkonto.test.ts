@@ -16,7 +16,7 @@ import { computeSettlement, rentLedger, taxReport, type LedgerStatement } from '
 import { snapshotOf, type SnapshotPayment, type SnapshotSource, type SnapshotTenancy } from '../src/snapshot.ts'
 import { calendarYearPeriod, calendarPeriod } from '../../shared/period.ts'
 import { monthSoll, type SollComponent } from '../../shared/monthRate.ts'
-import { allocateRentPayments, monthCoverage } from '../src/rentAllocation.ts'
+import { allocateRentPayments, ledgerTenancy, monthCoverage } from '../src/rentAllocation.ts'
 import { fifoLedgerRows } from '../testing/fifoLedger.ts'
 import { addMonths, makeRng, monthsBetween, randomRentStock, type RentStock } from '../testing/rentStock.ts'
 import type { RentLedgerRow, RentMonth } from '../../shared/types.ts'
@@ -75,9 +75,11 @@ test('Übertrag: Endsaldo eines Jahres = Anfangssaldo des nächsten; getilgt je 
     const stock = randomRentStock(makeRng(seed))
     const payments = snapshotPayments(stock)
     const { tenancy } = stock
-    const slices = allocateRentPayments(tenancy, stock.payments)
+    // Geführt ab der ersten erfassten Mietzahlung (`ledgerStart`); davor zählt jedes Jahr für sich.
+    const tracked = ledgerTenancy(tenancy, stock.payments, 9999)
+    const slices = allocateRentPayments(tracked, stock.payments)
     const last = addMonths(lastPaidMonth(stock), 12)
-    for (const year of yearsBetween(tenancy.start, last)) {
+    for (const year of yearsBetween(tracked.start, last)) {
       const a = rowIn(tenancy, payments, year, { asOf: `${year + 1}-01-15` })
       if (!a) continue
       const b = rowIn(tenancy, payments, year + 1, { asOf: `${year + 2}-01-15` })
@@ -123,10 +125,11 @@ test('Abrechnungsreife: Rückstand + nicht einforderbar = offene Teile fälliger
       assert.equal(classified.arrearsCents + classified.notDemandableCents, plain.arrearsCents, at)
       assert.equal(classified.notDemandable.reduce((a, n) => a + n.cents, 0), classified.notDemandableCents, `${at}: Gründe`)
       // Nur A-Teile: höchstens die offenen Vorauszahlungen aller Monate bis zum Jahr.
-      const slices = allocateRentPayments(tenancy, stock.payments)
+      const tracked = ledgerTenancy(tenancy, stock.payments, year)
+      const slices = allocateRentPayments(tracked, stock.payments)
       const until = `${year}-12-31`
       let openA = 0
-      for (const m of monthsBetween(tenancy.start.slice(0, 7), `${year}-12`)) {
+      for (const m of monthsBetween(tracked.start.slice(0, 7), `${year}-12`)) {
         const soll = monthSoll(tenancy, m)
         const paidA = slices.filter((s) => s.month === m && s.paidOn <= until && (s.component === 'prepayment' || s.component === 'heatingPrepayment')).reduce((a, s) => a + s.cents, 0)
         openA += Math.max(0, soll.prepayment) + Math.max(0, soll.heatingPrepayment) - paidA
@@ -168,7 +171,8 @@ test('Hinweis prepayment.arrears: genau bei offenen Vorauszahlungen fälliger Mo
     const st = s.statements.find((x) => x.tenancyId === tenancy.id)
     const ledgerInUse = payments.some((p) => (p.kind ?? 'rent') === 'rent' && p.date.startsWith(`${year}-`))
     const due = monthsBetween(`${year}-01`, `${year}-12`).filter((m) => m < asOf.slice(0, 7))
-    const coverage = monthCoverage(tenancy, allocateRentPayments(tenancy, stock.payments), due, asOf)
+    const tracked = ledgerTenancy(tenancy, stock.payments, year)
+    const coverage = monthCoverage(tracked, allocateRentPayments(tracked, stock.payments), due, asOf)
     const openA = coverage.reduce((a, c) => a + c.soll.prepayment - c.paid.prepayment + c.soll.heatingPrepayment - c.paid.heatingPrepayment, 0)
     const at = `Startwert ${seed}, ${year}`
     if (!st || st.prepaymentOverridden || st.prepaymentCents <= 0 || !ledgerInUse || openA <= 0) {
@@ -180,4 +184,32 @@ test('Hinweis prepayment.arrears: genau bei offenen Vorauszahlungen fälliger Mo
     assert.ok(notices[0]?.text.includes(`sind ${euro(openA)} nicht gezahlt`), `${at}: ${notices[0]?.text}`)
   }
   assert.ok(seen > 10, `nur ${seen} Fälle mit Hinweis`)
+})
+
+test('Zahlungen erst ab einem späteren Jahr erfasst: dieses Jahr zeigt dieselben Zahlen wie vor #281, Anfangssaldo 0 (geführt ab)', () => {
+  let compared = 0
+  for (const seed of seeds()) {
+    const shape = randomRentStock(makeRng(seed)).tenancy
+    const exact = randomRentStock(makeRng(seed), { exact: (m) => sollTotal(shape, m) })
+    const { tenancy } = exact
+    // Erfasst erst ab dem zweiten Kalenderjahr nach Beginn; die Jahre davor sind nicht erfasst.
+    const year = Number(tenancy.start.slice(0, 4)) + 1 + (seed % 2)
+    const payments = snapshotPayments(exact).filter((p) => Number(p.date.slice(0, 4)) >= year)
+    if (!payments.some((p) => p.date.startsWith(`${year}-`)) || `${year}-12` > lastPaidMonth(exact)) continue
+    for (const asOf of [undefined, `${year}-07-15`, `${year + 1}-02-01`]) {
+      const options = asOf === undefined ? {} : { asOf }
+      const [old] = fifoLedgerRows(sourceOf(tenancy, payments), calendarYearPeriod(year), options)
+      const row = rowIn(tenancy, payments, year, options)
+      if (!old || !row) { assert.equal(row, old, `Startwert ${seed}: Zeile`); continue }
+      const at = `Startwert ${seed}, ${year}, Stichtag ${asOf ?? '–'}`
+      assert.equal(row.openingBalanceCents, 0, `${at}: Anfangssaldo`)
+      assert.equal(row.ledgerStart, `${year}-01-01`, `${at}: geführt ab`)
+      assert.deepEqual(row.months.map((m) => [m.status, m.paidCents]), old.months.map((m) => [m.status, m.paidCents]), `${at}: Monate`)
+      assert.equal(row.arrearsCents, old.arrearsCents, `${at}: Rückstand`)
+      assert.equal(row.openMonths, old.openMonths, `${at}: offene Monate`)
+      assert.equal(row.balanceCents, old.balanceCents, `${at}: Saldo`)
+      compared++
+    }
+  }
+  assert.ok(compared > 50, `nur ${compared} Vergleiche`)
 })

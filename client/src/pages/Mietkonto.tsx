@@ -5,7 +5,7 @@ import { usePeriod } from '../period'
 import { periodSpanText } from '../periodForm'
 import { CalendarYearSelect } from '../components/PeriodSelect'
 import { useProperty, withProperty } from '../property'
-import { bookingDate, carriedText, carryText, closingLines, newPaymentDate, notDemandableNotes, openPartsText, paidLaterText, rentDueApplies, rentDueNote, rowStanding, shareText } from '../ledgerView'
+import { bookingDate, carriedText, carryText, ledgerStartText, closingLines, newPaymentDate, notDemandableNotes, openPartsText, paidLaterText, rentDueApplies, rentDueNote, rowStanding, shareText } from '../ledgerView'
 import { DESIGNATED_MONTH_HINT, emptyPaymentForm, hasSettlementPayments, kindChangeQuestion, newPaymentForm, noRentYearText, PAYMENT_KIND_LABELS, PAYMENT_KIND_OPTIONS, paymentBody, paymentChangeBody, paymentFormHints, paymentTenancyOptions, rentWithoutRow, rentWithoutRowQuestion, savedText, type PaymentDraft, type PaymentField, type PaymentForm } from '../paymentForm'
 import { keepDraft, useDraft } from '../useDraft'
 import DraftActions from '../components/DraftActions'
@@ -297,6 +297,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
             ) : (
               <>
                 {carry && <p className={r.openingBalanceCents < 0 ? 'text-red' : 'muted'}><strong>{carry}</strong></p>}
+                {ledgerStartText(r) && <p className="muted">{ledgerStartText(r)}</p>}
                 <div className="rent-grid">
                   {r.months.map((mo) => {
                     const cls = mo.sollCents === 0 ? 'none' : mo.status

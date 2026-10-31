@@ -98,6 +98,27 @@ const claimOf = (t: AllocationTenancy, month: string): MonthSoll => {
   return { prepayment: Math.max(0, soll.prepayment), heatingPrepayment: Math.max(0, soll.heatingPrepayment), baseRent: Math.max(0, soll.baseRent), flatRate: Math.max(0, soll.flatRate) }
 }
 
+// **Geführt ab** (#281, Entscheidung nach der Durchsicht): Fehlende Erfassung ist keine Nichtzahlung. Wer das Mietkonto
+// erst seit einem Jahr führt, aber einen älteren Mietbeginn eingetragen hat, sähe sonst jeden Monat davor als
+// Rückstand, und seine Zahlungen tilgten nach § 366 Abs. 2 BGB zuerst diese nie erfassten Monate. Das Konto beginnt
+// deshalb am 01.01. des Jahres der ersten erfassten Mietzahlung, frühestens mit dem Mietbeginn. Im ersten erfassten Jahr
+// sieht der Vermieter so dieselben Zahlen wie bis 0.13 („wer ein Haus vermietet, merkt nichts“); der Übertrag beginnt
+// erst danach. Ohne jede erfasste Mietzahlung, und für ein angezeigtes Jahr vor der ersten, zählt das angezeigte Jahr
+// für sich (das bisherige Verhalten). Eine Zahlung vor Mietbeginn (28.12. für Januar) ändert nichts: Dann ist der
+// Mietbeginn der Anfang, und sie steht als positiver Anfangssaldo da. Eine Stelle für Mietkonto und Steuer (#312 PR 2).
+export function ledgerStart(t: Pick<AllocationTenancy, 'start'>, payments: readonly AllocationPayment[], year: number): string {
+  const firstYear = payments.filter(isRent).reduce((a, p) => Math.min(a, Number(p.date.slice(0, 4))), year)
+  const from = `${String(firstYear).padStart(4, '0')}-01-01`
+  return compareText(from, t.start) > 0 ? from : t.start
+}
+
+// Das Mietverhältnis, wie die Tilgung es sieht: Beginn auf `ledgerStart` gesetzt. Monate davor gibt es weder als Soll
+// noch als offen. Weil `ledgerStart` ein Mietbeginn oder ein 01.01. ist, entsteht kein angebrochener Monat.
+export function ledgerTenancy<T extends AllocationTenancy>(t: T, payments: readonly AllocationPayment[], year: number): T {
+  const start = ledgerStart(t, payments, year)
+  return start === t.start ? t : { ...t, start }
+}
+
 export function allocateRentPayments(t: AllocationTenancy, payments: readonly AllocationPayment[]): AllocationSlice[] {
   const first = monthIndex(t.start)
   const last = t.end === null ? null : monthIndex(t.end)

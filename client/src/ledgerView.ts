@@ -38,6 +38,14 @@ export function carryText(row: Pick<RentLedgerRow, 'openingBalanceCents'>, year:
   return `Übertrag aus ${year - 1}: ${c < 0 ? `Rückstand ${fmtEuro(-c)}` : `vorausbezahlt ${fmtEuro(c)}`}`
 }
 
+// Geführt ab (#281): Liegt der Beginn des Kontos nach dem Mietbeginn (erste erfasste Mietzahlung), sagt eine gedämpfte
+// Zeile, dass frühere Monate nicht erfasst und deshalb weder Soll noch offen sind.
+export function ledgerStartText(row: Pick<RentLedgerRow, 'ledgerStart'>): string | null {
+  if (!row.ledgerStart) return null
+  const month = MONTH_NAMES[Number(row.ledgerStart.slice(5, 7)) - 1] ?? row.ledgerStart.slice(5, 7)
+  return `Mietkonto geführt ab ${month} ${row.ledgerStart.slice(0, 4)} (erste erfasste Mietzahlung); frühere Monate sind nicht erfasst.`
+}
+
 // Das Zeilenende: „Stand 31.12.{Y}“ (Endsaldo), darunter getrennt der Rückstand und der nicht mehr einzeln
 // einforderbare Teil, jeweils nur, wenn nicht 0. `tone` wählt die Farbe (rot nur für einen Rückstand).
 export type ClosingLine = { label: string, cents: number, tone: 'red' | 'green' | 'muted' }

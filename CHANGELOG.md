@@ -16,7 +16,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - **Mietkonto rechnet fortlaufend ab Beginn des Mietverhältnisses**: Ein Rückstand aus dem Vorjahr steht als Übertrag
   da, eine im Dezember gezahlte Januarmiete deckt den Januar. Zahlungen werden nach § 366 BGB verteilt: zuerst die
   offenen Vorauszahlungen, dann die Miete, jeweils die ältesten zuerst. **Bei Rückständen, Teilzahlungen oder
-  vorausbezahlten Monaten zeigt das Mietkonto deshalb andere Monate als offen als bisher.** Nicht gezahlte
+  vorausbezahlten Monaten zeigt das Mietkonto deshalb andere Monate als offen als bisher.** Das Mietkonto beginnt mit
+  dem 1. Januar des Jahres, in dem Sie die erste Mietzahlung erfasst haben (frühestens mit dem Mietbeginn); frühere
+  Monate gelten als nicht erfasst und nicht als Rückstand. Nicht gezahlte
   Vorauszahlungen eines abgerechneten Zeitraums stehen gesondert als „nicht mehr einzeln einforderbar“ und zählen
   nicht zum Rückstand ([#281](https://github.com/speedone/mietfuchs/issues/281)).
 - **Hinweis „Rückstand im Mietkonto“ in der Abrechnung** nennt jetzt den nicht gezahlten Betrag der Vorauszahlungen

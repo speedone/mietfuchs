@@ -140,12 +140,10 @@ test('Durchsicht S-1: ausgezahlt heißt Werbungskosten im Jahr der Auszahlung, o
   const zeile = mit.expenses.groups.flatMap((g) => g.categories).find((c) => c.category === 'CO₂-Erstattung an Mieter (§ 6 Abs. 2 CO2KostAufG)') ?? assert.fail('keine Zeile')
   assert.deepEqual([zeile.amountCents, zeile.privateCents, zeile.deductibleCents], [5000, 0, 5000])
   assert.equal(mit.income.paidCents, 12 * 100000, 'die Einnahmen bleiben die Mieten')
-  // Mietkonto: kein zusätzlicher Rückstand, kein Saldo. Das Mietverhältnis läuft seit 2020 ohne erfasste Zahlungen davor;
-  // seit #281 steht dieser Übertrag im Rückstand, mit und ohne Erstattung gleich.
-  const rowIn = (l: ReturnType<typeof rentLedger>) => l.rows.find((r) => r.tenancyId === 't') ?? assert.fail('keine Zeile')
-  const row = rowIn(rentLedger(snap([ausgezahlt], [], voll)))
-  const plain = rowIn(rentLedger(snap([], [], voll)))
-  assert.deepEqual([row.arrearsCents, row.balanceCents, row.closingBalanceCents], [plain.arrearsCents, 0, plain.closingBalanceCents])
+  // Mietkonto: kein Rückstand, kein Saldo.
+  const konto = rentLedger(snap([ausgezahlt], [], voll))
+  const row = konto.rows.find((r) => r.tenancyId === 't') ?? assert.fail('keine Zeile')
+  assert.deepEqual([row.arrearsCents, row.balanceCents], [0, 0])
   // Im Folgejahr ausgezahlt: nicht in 2025. Verrechnet: nicht doppelt, sie wirkt über die Abrechnung.
   assert.equal(taxReport(snap([refund({ settlePeriod: null, paidOutOn: '2026-01-10' })], [], voll)).expenses.deductibleCents, ohne.expenses.deductibleCents)
   assert.equal(taxReport(snap([refund()], VERSANDT_2024, voll)).expenses.deductibleCents, ohne.expenses.deductibleCents)

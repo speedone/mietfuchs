@@ -5,7 +5,8 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { rentLedger, type LedgerStatement } from '../src/calc.ts'
+import { computeSettlement, rentLedger, type LedgerStatement } from '../src/calc.ts'
+import { calendarPeriod } from '../../shared/period.ts'
 import { snapshotOf, type SnapshotPayment, type SnapshotSource, type SnapshotTenancy } from '../src/snapshot.ts'
 import type { RentLedger, RentLedgerRow, RentMonth } from '../../shared/types.ts'
 import { monthsBetween } from '../testing/rentStock.ts'
@@ -226,4 +227,50 @@ test('E5: carriedOnly nennt den nicht einforderbaren Teil getrennt', () => {
   assert.deepEqual(l.carriedOnly, [{ tenancyId: 't', tenantName: 'Mieter', unitName: 'EG', end: '2024-12-31', openCents: 60000, notDemandableCents: 20000, notDemandable: [{ reason: 'deadlinePassed', label: '2024', cents: 20000 }] }])
   assert.equal(l.totals.openCents, 60000)
   assert.equal(l.totals.notDemandableCents, 20000)
+})
+
+// ---------- Geführt ab der ersten erfassten Mietzahlung (#281, Entscheidung nach der Durchsicht) ----------
+// Fehlende Erfassung ist keine Nichtzahlung: Das Konto beginnt am 01.01. des Jahres der ersten erfassten Mietzahlung,
+// frühestens mit dem Mietbeginn. Im ersten erfassten Jahr sieht der Vermieter dieselben Zahlen wie bis 0.13.
+
+const since2020 = (over: Partial<SnapshotTenancy> = {}): SnapshotTenancy => tenancy({
+  start: '2020-04-01', prepayments: [{ from: '2020-04', monthlyCents: 20000 }], baseRents: [{ from: '2020-04', monthlyCents: 60000 }], ...over,
+})
+
+test('Geführt ab: Mietbeginn 2020, Zahlungen erst ab 2025 erfasst: 2025 ohne Übertrag, ab dann fortlaufend', () => {
+  const payments = [...monthly('2025-01', '2025-11'), ...monthly('2026-01', '2026-03')]
+  const y2025 = rowOf(ledger({ tenancies: [since2020()], payments }, 2025, { asOf: '2026-04-10' }))
+  assert.equal(y2025.ledgerStart, '2025-01-01')
+  assert.equal(y2025.openingBalanceCents, 0, 'die Jahre 2020 bis 2024 sind nicht erfasst, nicht unbezahlt')
+  assert.equal(y2025.arrearsCents, 80000, 'nur der Dezember 2025')
+  assert.equal(y2025.closingBalanceCents, -80000)
+  const y2026 = rowOf(ledger({ tenancies: [since2020()], payments }, 2026, { asOf: '2026-04-10' }))
+  assert.equal(y2026.openingBalanceCents, -80000, 'ab dem ersten erfassten Jahr läuft der Übertrag')
+  assert.equal(y2026.ledgerStart, '2025-01-01')
+})
+
+test('Geführt ab: ohne jede erfasste Mietzahlung zählt das angezeigte Jahr für sich, wie bisher', () => {
+  const r = rowOf(ledger({ tenancies: [since2020()], payments: [] }, 2025, { asOf: '2025-03-10' }))
+  assert.equal(r.openingBalanceCents, 0)
+  assert.equal(r.arrearsCents, 160000, 'Januar und Februar 2025')
+  // Ein Ausgezogener ohne erfasste Zahlung bekommt keinen Übertrag ins Folgejahr.
+  assert.deepEqual(ledger({ tenancies: [since2020({ end: '2024-06-30' })], payments: [] }, 2025, { asOf: '2025-03-10' }).carriedOnly, [])
+})
+
+test('Geführt ab: beginnt das Mietverhältnis im Jahr der ersten Zahlung, gilt der Mietbeginn, und es gibt keinen Zusatz', () => {
+  const r = rowOf(ledger({ payments: monthly('2024-01', '2024-12') }, 2024))
+  assert.equal(r.ledgerStart, undefined)
+  // Eine Zahlung vor Beginn bleibt ein positiver Anfangssaldo (siehe oben).
+})
+
+test('Geführt ab: der Hinweis prepayment.arrears zählt frühere, nicht erfasste Jahre nicht mit', () => {
+  // Seit 2020, März bis November 2025 gezahlt: offen ist nur die Vorauszahlung Dezember 2025 (wie bis 0.13).
+  const s = computeSettlement(snapshotOf(source({
+    tenancies: [since2020()],
+    costItems: [{ id: 'g', period: calendarPeriod(2025), category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 73056, key: 'area' }],
+    payments: monthly('2025-01', '2025-11'),
+  }), 2025))
+  const n = s.notices.filter((x) => x.code === 'prepayment.arrears')
+  assert.equal(n.length, 1)
+  assert.match(n[0]?.text ?? '', /sind 200,00 € nicht gezahlt\./)
 })

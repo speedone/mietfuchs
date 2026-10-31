@@ -99,8 +99,7 @@ test('Schaltjahr: 01.05.2027–30.04.2028 hat 366 Tage, ein Auszug zum 29.02.202
 test('Rumpf 01.01.–30.04.2025: 120 Tage, vier Vorauszahlungsmonate, Vorschlag nach Tagen, Rückstand nur über den Zeitraum', () => {
   // Review Focus 5.
   const src = haus({
-    // Beginn 2025: Seit #281 rechnet das Mietkonto ab Beginn; ein Jahr 2024 ohne Zahlung stünde sonst mit im Rückstand.
-    tenancies: [tenancy('t1', 'u1', '2025-01-01', null), tenancy('t2', 'u2', '2025-01-01', null)],
+    tenancies: [tenancy('t1', 'u1', '2024-01-01', null), tenancy('t2', 'u2', '2024-01-01', null)],
     costItems: [grundsteuer('2025-01', 40000)],
     payments: [{ id: pid(), tenancyId: 't1', date: '2025-01-03', amountCents: 20000 }, { id: pid(), tenancyId: 't1', date: '2025-02-03', amountCents: 20000 }],
   })

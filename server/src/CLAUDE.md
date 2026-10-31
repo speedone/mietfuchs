@@ -728,6 +728,11 @@ zuerst (BGH VIII ZR 84/17 Rn. 56/57); Rücklastschrift nimmt die jüngste Zuordn
 Salden nur über `monthCoverage` und `openingBalance` (`tenancyAccount`), keine zweite Regel; rentAllocation.ts
 importiert nichts aus calc.ts (Zyklus; Wächter in rentAllocation.test.ts). Die Steuer liest die Teile ab #312 PR 2.
 
+- **Geführt ab** (`ledgerStart`/`ledgerTenancy` in rentAllocation.ts, eine Stelle für Mietkonto und Steuer): 01.01. des
+  Jahres der ersten erfassten Mietzahlung, frühestens der Mietbeginn; ohne erfasste Zahlung und für ein Jahr davor zählt
+  das angezeigte Jahr für sich. Fehlende Erfassung ist keine Nichtzahlung: Im ersten erfassten Jahr stehen dieselben
+  Zahlen wie bis 0.13, der Übertrag beginnt danach. Monate davor sind für Tilgung, Salden, Rückstand, Abrechnungsreife
+  und `prepayment.arrears` weder Soll noch offen; das Soll der Zeile (Steuer) bleibt. Die Zeile trägt dann `ledgerStart`.
 - **Jahr mit Übertrag**: `openingBalanceCents` (01.01.) und `closingBalanceCents` (31.12.), Endsaldo(Y) =
   Anfangssaldo(Y+1). Ein Monat zählt Teile mit Datum bis zum 31.12. (eine Dezemberzahlung für Januar deckt den
   Januar), `paidLaterOn` nennt die spätere Deckung. `paidYearCents` und `balanceCents` bleiben das Jahr allein
