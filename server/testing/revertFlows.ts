@@ -6,6 +6,7 @@
 // `UNCOVERED_ROUTES`. Der Test prüft beides am Ende eines Laufs gegen die Routen, die wirklich eine Gruppe ergeben
 // haben (sie stehen im Verlauf). Die Ausnahmeliste soll nur kürzer werden (`UNCOVERED_MAX`).
 import type { Server } from './api.ts'
+import { allowsSpread } from '../../shared/spread.ts'
 
 export type Rng = () => number
 
@@ -148,14 +149,19 @@ export const STEPS: readonly Step[] = [
       propertyId: P, period: '2025-01', category: pick(rng, ['Grundsteuer', 'Müllabfuhr', 'Hauswart', 'Wasser/Abwasser', 'Nicht umlagefähig']), description: `Rechnung ${word(rng)}`, amountCents: int(rng, 50, 2000) * 100, key: pick(rng, ['area', 'units', 'persons']),
     }),
   },
-  // Die Verteilung nach § 82b EStDV (#262) wird mitgesetzt und geleert, bestätigt; an einer umlagefähigen Kostenart
-  // lehnt der Server ab (400), das ist dann eben keine Änderung.
+  // Die Verteilung nach § 82b EStDV (#262) wird mitgesetzt und geleert, bestätigt, aber nur an einer Position, die sie
+  // erlaubt (`allowsSpread` mit dem neuen Betrag): Sonst lehnte der Server ab (400), und die Änderung des Betrags fiele
+  // mit weg (Durchsicht K-a).
   { name: 'Kostenposition ändern', routes: ['PUT /api/costItems/:id'], run: async (ctx) => {
     const c = pick(ctx.rng, ctx.costItems)
     if (!c) return
+    // Gezogen wird in derselben Reihenfolge wie vorher, damit die Abläufe der festen Startwerte gleich bleiben.
     const choice = int(ctx.rng, 0, 2)
-    const spread = choice === 0 ? { spreadYears: int(ctx.rng, 2, 5), confirmSpread: true } : choice === 1 ? { spreadYears: null, confirmSpread: true } : {}
-    await send(ctx.s, 'PUT', `/api/costItems/${c.id}`, { amountCents: int(ctx.rng, 50, 2000) * 100, ...spread })
+    const wanted = choice === 0 ? { spreadYears: int(ctx.rng, 2, 5), confirmSpread: true } : choice === 1 ? { spreadYears: null, confirmSpread: true } : {}
+    const amountCents = int(ctx.rng, 50, 2000) * 100
+    const spreadable = typeof c.category === 'string' && allowsSpread({ category: c.category, amountCents, operatingPower: c.operatingPower === 'deduction' ? 'deduction' : undefined })
+    const spread = spreadable ? wanted : {}
+    await send(ctx.s, 'PUT', `/api/costItems/${c.id}`, { amountCents, ...spread })
   } },
   { name: 'Kostenposition löschen', routes: ['DELETE /api/costItems/:id'], run: async (ctx) => { const c = pick(ctx.rng, ctx.costItems); if (c) await send(ctx.s, 'DELETE', `/api/costItems/${c.id}`) } },
   { name: 'Einstellungen ändern', routes: ['PUT /api/settings'], run: ({ s, rng }) => send(s, 'PUT', '/api/settings', { landlordName: `Vermieter ${word(rng)}`, paymentDeadlineDays: int(rng, 14, 30) }) },
