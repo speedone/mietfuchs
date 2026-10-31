@@ -1933,6 +1933,7 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
           label: 'Verteilung nach § 82b EStDV',
           value: `abziehbar ${fmtCents(base)} auf ${of} Jahre (${year} bis ${last}): je ${fmtCents(Math.floor(base / of))} (Restcent in den ersten Jahren); in diesem Jahr ${fmtCents(first)}, in die Folgejahre verschoben ${fmtCents(base - first)}`
             + (restRate ? `; vorzeitiges Ende (§ 82b Abs. 2 EStDV): der Rest von ${fmtCents(restRate.cents)} im Jahr ${last}` : ''),
+          term: 'spread82b',
         }],
       })
       spreadStarted.push({
@@ -1967,6 +1968,7 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
         label: 'Verteilung nach § 82b EStDV',
         value: `Anteil ${cr.index} von ${of} aus ${cr.outflowYear}: abziehbar ${fmtCents(cr.from.spread.baseCents)} auf ${of} Jahre, in diesem Jahr ${fmtCents(cr.rate.cents)}`
           + (cr.rate.rest ? ' (der Rest, vorzeitiges Ende nach § 82b Abs. 2 EStDV)' : '') + `; danach noch ${fmtCents(cr.restAfterCents)}. Der Beleg gehört zum Jahr ${cr.outflowYear}.`,
+        term: 'spread82b',
       }],
       taxUnits: cr.from.taxUnits,
       spreadFrom: {

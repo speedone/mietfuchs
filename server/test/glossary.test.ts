@@ -10,6 +10,7 @@ import { co2HalfSplit, halfSplitFirstDay } from '../../shared/law/co2kostaufg.ts
 import { LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
 import { estgAcquisitionRelated, estgShortPeriodDays } from '../../shared/law/estg.ts'
 import { ustgSmallBusiness } from '../../shared/law/ustg.ts'
+import { spreadRates } from '../../shared/spread.ts'
 
 test('Lexikon: jeder Eintrag ist vollständig, und jedes Beispiel rechnet mit Zahlen', () => {
   const entries = Object.entries(GLOSSARY)
@@ -663,4 +664,41 @@ test('Zahlungsdatum: die Zehn-Tage-Regel verweist auf den Begriff und nennt kein
   const t = GLOSSARY.paymentDate
   assert.match(t.needed, /Zehn-Tage-Regel/)
   assert.doesNotMatch(`${t.short} ${t.example} ${t.needed}`, /zehn Tage/)
+})
+
+// #262 PR 3 (E-13 und Aufgaben aus der Durchsicht von PR 2): Verteilung nach § 82b EStDV mit nachgerechnetem Beispiel. Der
+// private Teil steht im Jahr der Zahlung fest (E-3), die Quote der verbilligten Vermietung gilt je Jahr des Anteils (V1);
+// eine Wahl je Rechnung (U-2) mit ihrer Grenze; §§ 11a, 11b EStG nur als Grenze (U-3); anschaffungsnahe Herstellungskosten
+// als gemeinsamer Begriff (X6).
+test('Verteilung nach § 82b EStDV: Voraussetzungen, Wahl und Bindung, Beispiel nachgerechnet, Grenzen (#262)', () => {
+  const t = GLOSSARY.spread82b
+  assert.equal(t.topic, 'tax')
+  assert.match(t.norm, /§ 82b EStDV/)
+  const all = `${t.short} ${t.example} ${t.needed}`
+  assert.match(all, /zwei bis fünf Jahre/)
+  assert.match(all, /überwiegend Wohnzwecken/)
+  assert.match(all, /Betriebsvermögen/)
+  assert.match(all, /mehr als die Hälfte der (gesamten )?Nutzfläche/)
+  assert.match(all, /Erklärung des (ersten )?Jahres/)
+  assert.match(all, /eine Wahl je Rechnung|für die ganze Rechnung/i)
+  assert.match(all, /§§ 11a(,| und) 11b EStG/)
+  assert.match(all, /Verwaltung.*Zinsen|Zinsen.*Verwaltung/s, '„Nicht umlagefähig“ umfasst auch, was kein Erhaltungsaufwand ist')
+  assert.match(all, /anschaffungsnahe\w* Herstellungskosten/i)
+  assert.match(all, /Jahr der Zahlung fest/, 'privater Teil im Jahr des Abflusses fest (E-3)')
+  assert.match(all, /Quote (dieses|des jeweiligen) Jahres/, 'verbilligte Vermietung je Jahr des Anteils (V1)')
+  // 10.000 € auf 3 Jahre: 3.333,34 + 3.333,33 + 3.333,33; mit 40 % privat 4.000 €, verteilt 6.000 € zu je 2.000 €.
+  assert.deepEqual(spreadRates(1_000_000, 3), [333_334, 333_333, 333_333])
+  assert.deepEqual(spreadRates(1_000_000 - 400_000, 3), [200_000, 200_000, 200_000])
+  assert.match(t.example, /10\.000 €.*3\.333,34 €.*3\.333,33 €.*4\.000 €.*6\.000 €.*2\.000 €/s)
+})
+
+// Durchsicht von #262 PR 3, K8 und K9: Garagen nach dem Wortlaut von § 82b Abs. 1 Satz 3 EStDV, Ferienwohnung mit Urteil,
+// die Ausnahme nach BFH IX R 152/89 (im Jahr der Zahlung weder abgezogen noch verteilt) als nicht gerechnet genannt.
+test('Verteilung nach § 82b EStDV: Garagen nach dem Wortlaut, Ferienwohnung mit Urteil, Ausnahme IX R 152/89 (#262, K8, K9)', () => {
+  const t = GLOSSARY.spread82b
+  const all = `${t.short} ${t.example} ${t.needed}`
+  assert.match(all, /ohne Rücksicht auf ihre tatsächliche Nutzung/)
+  assert.match(all, /nicht mehr als ein Personenkraftwagen für jede Wohnung untergestellt werden kann/)
+  assert.match(all, /Ferienwohnung.*BFH, Urteil vom 04\.09\.2000, IX R 75\/99/s)
+  assert.match(all, /weder abgezogen noch verteilt.*ohne den Anteil des ersten Jahres.*IX R 152\/89.*rechnet Mietfuchs nicht/s)
 })

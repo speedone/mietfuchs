@@ -11,7 +11,9 @@
 //   https://www.formulare-bfinv.de/ffw/action/invoke.do?id=034032_24, Seite 1 (Zeilen 15 bis 23); Seiten 1 und 2 (Zeilen 13
 //   bis 32) gelesen in der Kopie desselben Vordrucks (Kennung „2024AnlV101NET – September 2024 –“) bei steuern.de,
 //   https://www.steuern.de/fileadmin/user_upload/Steuerformulare_2024/Anlage_V_steuern.de_01.pdf, am 31.10.2026 (#312
-//   PR 3: Zeile 24 Kennzahl 13, Zeile 25 Kennzahl 06, Zeile 26 Kennzahl 07, Zeile 32 wie 2025); Anleitung zur Anlage V
+//   PR 3: Zeile 24 Kennzahl 13, Zeile 25 Kennzahl 06, Zeile 26 Kennzahl 07, Zeile 32 wie 2025); Seiten 4 und 5 derselben
+//   Kopie am 31.10.2026 für #262 PR 3 (Durchsicht K7): Kennzahlen 36/37 bei 55/56, 38 bis 42 bei 60, 63, 66, 69, 72, die
+//   Ursprungsjahre „aus 2020“ bis „aus 2023“; Anleitung zur Anlage V
 //   2024 (September 2024), Kopie http://www.steuerhexe.de/wp-content/uploads/2025/05/Anlage-V-2024-Anleitung.pdf
 //   (Zeile 6, Zeilen 55 bis 72, 76 bis 78).
 // - 2025: Vordruck „2025AnlV101 – September 2025 –“, Finanzverwaltung NRW,
@@ -26,7 +28,7 @@
 // Angehörige Zeile 19 (Kennzahl 03), die laufenden Umlagen in Zeile 20 (Kennzahl 04), an Angehörige Zeile 22 (Kennzahl 05).
 //
 // **Bewusst leer**, weil nicht selbst nachgesehen: für 2023 die Zeilen 13/14, 24, 25, 26 und 32 (Seite 2 des Vordrucks 2023
-// war für #312 PR 3 nicht zu bekommen; die Seite nennt dort keine Nummer), für 2024 die Kennzahlen der Werbungskosten und die Kopfzeilen 7 und 10 bis 12
+// war für #312 PR 3 nicht zu bekommen; die Seite nennt dort keine Nummer), für 2024 die Kennzahlen der übrigen Werbungskosten und die Kopfzeilen 7 und 10 bis 12
 // (der Kopf 2024 zählt anders, die Anleitung nennt „Zeile 10 bis 12“ nur zusammen), für 2023 Kopf und Werbungskosten.
 
 // Eine Zeile, mit Kennzahl, wo der Vordruck eine nennt.
@@ -74,7 +76,7 @@ const ANLAGE_V: Readonly<Record<number, AnlageVLines>> = {
     },
   },
   2024: {
-    source: 'Vordruck 2024AnlV101NET (September 2024), Seiten 1 und 2 (Einnahmen); Anleitung zur Anlage V 2024 (September 2024), Zeile 6 und Zeilen 55 bis 78',
+    source: 'Vordruck 2024AnlV101NET (September 2024), Seiten 1 und 2 (Einnahmen), Seiten 4 und 5 (Zeilen 55 bis 72 mit Kennzahlen); Anleitung zur Anlage V 2024 (September 2024), Zeile 6 und Zeilen 55 bis 78',
     header: { groundTaxFile: 6 },
     income: {
       perUnit: [13, 14],
@@ -83,13 +85,13 @@ const ANLAGE_V: Readonly<Record<number, AnlageVLines>> = {
       notAgreed: { line: 24, code: 13 }, formerYears: { line: 25, code: 6 }, garages: { line: 26, code: 7 }, total: 32,
     },
     maintenance: {
-      direct: { line: 55 }, proportional: { line: 56 },
-      spread: { total: 57, direct: 58, proportional: 59, sum: { line: 60 } },
+      direct: { line: 55, code: 36 }, proportional: { line: 56, code: 37 },
+      spread: { total: 57, direct: 58, proportional: 59, sum: { line: 60, code: 38 } },
       spreadFromPriorYears: [
-        { fromYear: 2020, direct: 61, proportional: 62, sum: { line: 63 } },
-        { fromYear: 2021, direct: 64, proportional: 65, sum: { line: 66 } },
-        { fromYear: 2022, direct: 67, proportional: 68, sum: { line: 69 } },
-        { fromYear: 2023, direct: 70, proportional: 71, sum: { line: 72 } },
+        { fromYear: 2020, direct: 61, proportional: 62, sum: { line: 63, code: 39 } },
+        { fromYear: 2021, direct: 64, proportional: 65, sum: { line: 66, code: 40 } },
+        { fromYear: 2022, direct: 67, proportional: 68, sum: { line: 69, code: 41 } },
+        { fromYear: 2023, direct: 70, proportional: 71, sum: { line: 72, code: 42 } },
       ],
     },
     notAllocated: [76, 78],

@@ -42,6 +42,13 @@ import {
   keepPaidOnYear,
   droppedPaidOnText,
   showsPaidOn,
+  showsSpread,
+  keepSpread,
+  droppedSpreadText,
+  spreadPreview,
+  spreadChange,
+  spreadDeleteText,
+  spreadOptions,
   type ItemForm,
   costMeterTypes,
 } from './costForm'
@@ -989,5 +996,71 @@ describe('Jahr der Zahlung nach dem Umstellen (#96, Durchsicht)', () => {
     expect(umgestellt.taxYear).toBe('2030')
     expect(taxYearOptions({ startYear: 2025, endYear: 2025 }, null, Number(umgestellt.taxYear))).toEqual([2024, 2025, 2026, 2027, 2028, 2030])
     expect(taxYearOptions({ startYear: 2025, endYear: 2025 }, 2031, 2030)).toEqual([2024, 2025, 2026, 2027, 2028, 2030, 2031])
+  })
+})
+
+// #262 PR 3 (Entwurf E-9): die Wahl der Verteilung nach § 82b EStDV im Kostenformular. Das Feld nur, wo `allowsSpread`
+// gilt (shared/spread.ts); sonst schickt der Rumpf `null`, damit ein Wechsel der Kostenart nicht in eine Ablehnung (400)
+// läuft. Die Rückfragen sind die des Servers (`spreadQuestions`).
+describe('Verteilung nach § 82b EStDV (#262 PR 3)', () => {
+  const P2026 = calendarYearPeriod(2026)
+  const KEY = calendarPeriod(2026)
+  test('das Feld nur bei „Nicht umlagefähig“ und „Entnahme Erhaltungsrücklage“ mit einem Betrag über 0', () => {
+    expect(showsSpread(form({ category: 'Nicht umlagefähig' }))).toBe(true)
+    expect(showsSpread(form({ category: 'Entnahme Erhaltungsrücklage' }))).toBe(true)
+    expect(showsSpread(form({ category: 'Zuführung Erhaltungsrücklage' }))).toBe(false)
+    expect(showsSpread(form({ category: 'Grundsteuer' }))).toBe(false)
+    expect(showsSpread(form({ category: 'Nicht umlagefähig', amount: '-50,00' }))).toBe(false)
+    expect(showsSpread(form({ category: 'Nicht umlagefähig', amount: '0' }))).toBe(false)
+    // Solange noch kein Betrag dasteht, bleibt das Feld (es flackert nicht beim Tippen).
+    expect(showsSpread(form({ category: 'Nicht umlagefähig', amount: '' }))).toBe(true)
+  })
+  test('Optionen: der gespeicherte Wert steht in der Auswahl, angezeigt wie gespeichert', () => {
+    const f = itemToForm({ id: 'x', propertyId: 'p', period: KEY, category: 'Nicht umlagefähig', description: 'Dach', amountCents: 1_000_000, key: 'area', spreadYears: 3 } as CostItemOf)
+    expect(f.spreadYears).toBe('3')
+    expect(spreadOptions.map((o) => o.value)).toContain(f.spreadYears)
+    expect(spreadOptions.find((o) => o.value === f.spreadYears)?.label).toBe('auf 3 Jahre')
+    expect(itemToForm({ id: 'y', propertyId: 'p', period: KEY, category: 'Grundsteuer', description: 'GS', amountCents: 1, key: 'area' } as CostItemOf).spreadYears).toBe('')
+  })
+  test('costItemBody schickt die Wahl als Zahl, ohne Wahl und wo nicht verteilt werden kann `null`', () => {
+    const b = (f: ItemForm) => { const r = buildCostItemBody(f, UNITS, P2026); if ('error' in r) return expect.unreachable(r.error); return r.body }
+    expect(b(form({ category: 'Nicht umlagefähig', spreadYears: '3' })).spreadYears).toBe(3)
+    expect(b(form({ category: 'Nicht umlagefähig', spreadYears: '' })).spreadYears).toBeNull()
+    expect(b(form({ category: 'Grundsteuer', spreadYears: '3' })).spreadYears).toBeNull()
+    expect(b(form({ category: 'Nicht umlagefähig', amount: '-10,00', spreadYears: '3' })).spreadYears).toBeNull()
+  })
+  test('Wechsel der Kostenart leert die Wahl und sagt es', () => {
+    const verteilt = form({ id: 'x', category: 'Nicht umlagefähig', spreadYears: '4' })
+    const um = keepSpread(withCategory(verteilt, 'Grundsteuer', UNITS, []))
+    expect(um.spreadYears).toBe('')
+    expect(keepSpread(withCategory(verteilt, 'Entnahme Erhaltungsrücklage', UNITS, [])).spreadYears).toBe('4')
+    const stored = { spreadYears: 4 as const, category: 'Nicht umlagefähig' }
+    expect(droppedSpreadText(stored, um)).toBe('Die Verteilung auf 4 Jahre entfällt: Die Kostenart „Grundsteuer“ lässt sich für die Steuer nicht verteilen. Vor dem Speichern fragt Mietfuchs nach.')
+    expect(droppedSpreadText(stored, form({ category: 'Nicht umlagefähig', amount: '-5,00', spreadYears: '4' }))).toBe('Die Verteilung auf 4 Jahre entfällt: Eine Gutschrift wird nicht verteilt, sie mindert die Werbungskosten im Jahr, in dem sie eingeht. Vor dem Speichern fragt Mietfuchs nach.')
+    expect(droppedSpreadText(stored, verteilt)).toBeNull()
+    expect(droppedSpreadText(undefined, um)).toBeNull()
+  })
+  test('Vorschau der Jahre aus Zahlungsdatum, Jahr der Zahlung und Zeitraum, mit den Raten auf den Cent', () => {
+    expect(spreadPreview(form({ category: 'Nicht umlagefähig', amount: '10.000,00', spreadYears: '3' }), P2026)?.replace(/\u00a0/g, ' '))
+      .toBe('Abzug 2026 bis 2028: 3.333,34 €, 3.333,33 € und 3.333,33 €, vom ganzen Betrag gerechnet; ein privater Teil geht vorher ab, die Steuerübersicht nennt die Raten.')
+    expect(spreadPreview(form({ category: 'Nicht umlagefähig', amount: '10.000,00', spreadYears: '2', paidOn: '2027-01-15' }), P2026))
+      .toMatch(/^Abzug 2027 bis 2028: je 5\.000,00\s€/)
+    expect(spreadPreview(form({ category: 'Entnahme Erhaltungsrücklage', amount: '1.000,00', spreadYears: '5', taxYear: '2027' }), P2026)).toMatch(/^Abzug 2027 bis 2031: je 200,00\s€/)
+    expect(spreadPreview(form({ category: 'Nicht umlagefähig', amount: '1.000,00', spreadYears: '' }), P2026)).toBeNull()
+    expect(spreadPreview(form({ category: 'Grundsteuer', amount: '1.000,00', spreadYears: '2' }), P2026)).toBeNull()
+  })
+  test('Rückfragen wie der Server: beim Ändern ja, beim Anlegen nein, beim Löschen mit den entfallenden Anteilen', () => {
+    const stored = { period: KEY, spreadYears: 3 as const }
+    expect(spreadChange(null, { period: KEY, paidOn: null, taxYear: null, spreadYears: 3 })).toEqual([])
+    const asked = spreadChange(stored, { period: KEY, paidOn: null, taxYear: null, spreadYears: null })
+    expect(asked[0]).toBe('Ohne Verteilung zählt die Position für die Steuer ganz im Jahr 2026; die Anteile 2027 bis 2028 entfallen.')
+    expect(asked).toContain('Die Wahl ist an die Erklärung des ersten Jahres gebunden.')
+    expect(spreadChange(stored, { period: KEY, paidOn: null, taxYear: null, spreadYears: 3 })).toEqual([])
+    expect(spreadChange(stored, { period: KEY, paidOn: '2027-02-01', taxYear: null, spreadYears: 3 })[0]).toBe('Die Verteilung beginnt dann 2027 statt 2026: Abzug 2027 bis 2029 statt 2026 bis 2028.')
+    expect(spreadChange(stored, { period: KEY, paidOn: null, taxYear: null, spreadYears: 5 }, ['01.01.–30.06.2027'])).toContain('Die Wahl gilt für die ganze Rechnung und wird auch an den übrigen Teilen (01.01.–30.06.2027) gespeichert.')
+    expect(spreadDeleteText(stored)).toMatch(/^Die Anteile 2027 bis 2028 entfallen damit\. Die Wahl ist an die Erklärung des ersten Jahres gebunden\./)
+    expect(spreadDeleteText({ period: KEY })).toBe('')
+    // K2: eine nie gerechnete Wahl (Ablage von Hand an einer Grundsteuer) nennt keine entfallenden Anteile.
+    expect(spreadDeleteText({ period: KEY, spreadYears: 3, category: 'Grundsteuer', amountCents: 60_000 })).toMatch(/^An dieser Position war eine Verteilung gespeichert, die Mietfuchs nie gerechnet hat/)
   })
 })

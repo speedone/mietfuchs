@@ -1,11 +1,11 @@
 // „Belege für die Steuer“ (#170): ein ZIP je Objekt und Jahr, geordnet nach den Gruppen der
 // Anlage V, mit allen Positionen, auch den nicht umlagefähigen.
 import { CALENDAR_RULES, calendarPeriod } from '../../shared/period.ts'
-import { taxReportFor } from '../src/calc.ts'
+import { taxPartsFor, taxReportFor } from '../src/calc.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import type { CostItem, TaxReceived, TaxReceivedTenancy, TaxReport } from '../../shared/types.ts'
-import { derivedTaxLines, incomeCsv, planTaxArchive } from '../src/taxReceipts.ts'
+import { derivedTaxLines, incomeCsv, planTaxArchive, taxArchiveItems } from '../src/taxReceipts.ts'
 
 const item = (id: string, extra: Partial<CostItem> = {}): CostItem => ({
   id, propertyId: 'p1', period: calendarPeriod(2025), category: 'Grundsteuer', description: `Position ${id}`, amountCents: 10000, key: 'area', ...extra,
@@ -318,6 +318,34 @@ test('Steuer-Belege (#262): Spalte „verteilt § 82b EStDV“ und die Rate des 
   // Ohne Verteilung keine Spalte.
   const ohne = planTaxArchive([item('gs')], names, new Map(), new Map([['gs', { privateCents: 0, deductibleCents: 10000 }]])).overviewCsv
   assert.equal(ohne.includes('verteilt'), false)
+})
+
+// #262 PR 3 (E-12, I-8): Der Beleg einer verteilten Position liegt nur im Archiv des Jahres der Zahlung, die Folgejahre
+// legen ihn nicht noch einmal bei; Einnahmen.csv (#312 PR 3) bleibt mit und ohne Verteilung zeichengleich, denn die Wahl
+// betrifft nur die Werbungskosten.
+test('Steuer-Belege (#262): Beleg nur im Archiv des Jahres der Zahlung, Einnahmen.csv unberührt von der Verteilung', () => {
+  const mieter = { id: 't2', unitId: 'u2', tenantName: 'Meyer', persons: 1, personHistory: [{ from: '2020-01-01', persons: 1 }], start: '2020-01-01', end: null,
+    prepayments: [{ from: '2020-01', monthlyCents: 10_000 }], prepaymentOverrides: {}, baseRents: [{ from: '2020-01', monthlyCents: 50_000 }] }
+  const zahlungen = [2026, 2027].flatMap((y) => Array.from({ length: 12 }, (_, m) => ({
+    id: `z${y}-${m}`, tenancyId: 't2', date: `${y}-${String(m + 1).padStart(2, '0')}-03`, amountCents: 60_000, kind: 'rent' as const,
+  })))
+  const source = (spreadYears?: 3) => ({
+    properties: [{ id: 'p1', kind: 'mfh' as const, cableBuiltBeforeDec2021: null, periodRules: CALENDAR_RULES }],
+    units: [{ id: 'u2', propertyId: 'p1', name: 'OG', areaM2: 60, participates: true }],
+    tenancies: [mieter],
+    costItems: [item('dach', { category: 'Nicht umlagefähig', description: 'Dachsanierung', period: calendarPeriod(2026), amountCents: 900_000, invoiceFile: '5_dach.pdf', ...(spreadYears ? { spreadYears } : {}) })],
+    meters: [], readings: [], payments: zahlungen, closedSettlements: [],
+  })
+  for (const year of [2026, 2027]) {
+    const mit = taxReportFor(source(3), 'p1', year)
+    const ohne = taxReportFor(source(), 'p1', year)
+    assert.ok((mit.income.received?.totalCents ?? 0) > 0, `${year}: Einnahmen`)
+    assert.equal(incomeCsv(mit), incomeCsv(ohne), `${year}: Einnahmen.csv`)
+    const archiv = taxArchiveItems(source(3).costItems, taxPartsFor(source(3), 'p1', year))
+    const plan = planTaxArchive(archiv, names, new Map(), new Map(mit.expenses.items.map((i) => [i.costItemId, i])), derivedTaxLines(mit))
+    assert.deepEqual(plan.files.map((f) => f.file), year === 2026 ? ['5_dach.pdf'] : [], `${year}: Belege`)
+    if (year === 2027) assert.match(plan.overviewCsv, /Anteil 2 von 3 aus 2026: Dachsanierung;;0,00;.*kein eigener Beleg \(Anteil 2 von 3 aus 2026, Beleg im Steuer-ZIP 2026\)/)
+  }
 })
 
 // #312 PR 3: `Einnahmen.csv` neben der Übersicht, gleiche Form (BOM, `;`, CRLF, Euro wie `euro()`), eine Zeile je

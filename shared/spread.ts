@@ -50,7 +50,8 @@ export function spreadRates(totalCents: number, years: number): number[] {
   return Array.from({ length: years }, (_, i) => (i < rest ? base + 1 : base))
 }
 
-type Spreadable = { period: string; paidOn?: string | null; taxYear?: number | null; spreadYears?: SpreadYears | null }
+// `category`, `amountCents`, `operatingPower`: wo bekannt, erkennt die Rückfrage eine nie gerechnete Wahl (K2).
+type Spreadable = { period: string; paidOn?: string | null; taxYear?: number | null; spreadYears?: SpreadYears | null; category?: string; amountCents?: number; operatingPower?: CostItem['operatingPower'] | null }
 
 // Das Jahr, in dem die Verteilung beginnt, wie das Formular es ohne die Steuerübersicht kennt: aus Zahlungsdatum oder
 // Jahr der Zahlung, sonst das Jahr des Beginns des Zeitraums (wie `effectiveYear` in shared/paidOn.ts). Gerechnet wird
@@ -68,6 +69,10 @@ const dropped = (from: number, to: number, suffix: string): string =>
 const capital = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1)
 
 const BOUND = 'Die Wahl ist an die Erklärung des ersten Jahres gebunden.'
+const NEVER = 'An dieser Position war eine Verteilung gespeichert, die Mietfuchs nie gerechnet hat, weil sie sich nicht verteilen lässt; sie entfällt, an den Zahlen der Steuer ändert sich nichts.'
+// Eine gespeicherte Wahl, die die Steuer nie gerechnet hat (`spreadIgnored`, Durchsicht von #262 PR 3, K2).
+const neverCounted = (c: Spreadable): boolean =>
+  c.spreadYears != null && c.category !== undefined && c.amountCents !== undefined && !allowsSpread({ category: c.category, amountCents: c.amountCents, operatingPower: c.operatingPower ?? null })
 
 // Was eine Änderung an einer gespeicherten Position für die Verteilung bedeutet (E-9), als Sätze für die Rückfrage;
 // leer heißt: nichts zu bestätigen. `before` ist die gespeicherte Position (`null` beim Anlegen: nicht gefragt),
@@ -78,6 +83,7 @@ const BOUND = 'Die Wahl ist an die Erklärung des ersten Jahres gebunden.'
 export function spreadQuestions(before: Spreadable | null, after: Spreadable | null, otherParts: readonly string[] = []): string[] {
   if (before === null) return []
   const was = before.spreadYears ?? null
+  if (neverCounted(before) && (after === null || (after.spreadYears ?? null) !== was)) return [NEVER]
   const out: string[] = []
   if (after === null) {
     if (was === null) return []

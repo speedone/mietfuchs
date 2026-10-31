@@ -20,6 +20,7 @@ import { andList } from '../../../shared/wording.ts'
 import { OPERATING_POWER_KEPT, OPERATING_POWER_REPORTED } from '../../../shared/operatingPower.ts'
 import { anlageVLines } from '../anlageV'
 import type { NoticeTab } from '../notices'
+import { DEFERRED_COLUMN_NOTE, deferredCellText, deferredParts, deferredSumText, isSpreadItem, showsDeferred, spreadBlock, spreadCarriedText, spreadConditionsText, spreadIgnoredText, spreadItemText, spreadNothingDeductibleText, SPREAD_BLOCK_READING, SPREAD_CARRIED_MORE } from '../taxSpread'
 import { formerYearsText, incomeMore, incomeTable, lateDecemberText, OLD_LEASE_MORE, oldLeaseForwardText, possibleDepositText, TURN_OF_YEAR_MORE, turnOfYearLines, unallocatedText, unitRows } from '../taxIncome'
 
 // `onNavigate`: der Sprung in die Stammdaten bei einer nicht eingetragenen Kopfangabe (#96 PR 2).
@@ -106,11 +107,14 @@ export default function Steuer({ settings, onNavigate }: Props) {
             <div className="kpi">
               <div className="v">{fmtEuro(data.expenses.deductibleCents)}</div>
               <div className="l">{split ? 'Werbungskosten (abziehbar)' : 'Werbungskosten'}</div>
-              {split && (data.expenses.privateCents !== 0 || data.expenses.gratuitousCents) && (
+              {split && (data.expenses.privateCents !== 0 || data.expenses.gratuitousCents || data.expenses.deferredCents) && (
                 <div className="muted" style={{ fontSize: 12 }}>
                   gesamt {fmtEuro(data.expenses.totalCents)}
                   {data.expenses.privateCents !== 0 && <> · davon privat {fmtEuro(data.expenses.privateCents)}</>}
                   {data.expenses.gratuitousCents ? <> · unentgeltlich {fmtEuro(data.expenses.gratuitousCents)}</> : null}
+                  {/* #262 PR 3, Durchsicht S1: nach Vorzeichen getrennt benannt, nie ein negatives „verschoben“. */}
+                  {deferredParts(data).outCents > 0 && <> · in Folgejahre verschoben {fmtEuro(deferredParts(data).outCents)}</>}
+                  {deferredParts(data).inCents > 0 && <> · aus Vorjahren {fmtEuro(deferredParts(data).inCents)}</>}
                 </div>
               )}
             </div>
@@ -344,7 +348,7 @@ export default function Steuer({ settings, onNavigate }: Props) {
             {/* #96 PR 1 (A4.1): die Zeilen des Erhaltungsaufwands, auch im Druck. Vor der Kürzung nach den Zeilen 87/88, in
                 der Reihenfolge des Vordrucks (Test in Steuer.test.tsx). */}
             {hints.includes('maintenanceLines') && (() => {
-              const t = maintenanceLineText(data)
+              const t = maintenanceLineText(data, isSpreadItem)
               return (
                 <NoticeBox
                   level="hint"
@@ -354,6 +358,25 @@ export default function Steuer({ settings, onNavigate }: Props) {
                 />
               )
             })()}
+            {/* #262 PR 3 (E-5): der Block der Zeilen 57 bis 72 nach 55/56 und vor der Kürzung (87/88), auch im Druck. */}
+            <SpreadBlockView report={data} />
+            {hints.includes('spreadConditions') && (
+              <NoticeBox
+                level="warning"
+                title={<><Term id="spread82b">Verteilung nach § 82b EStDV</Term>: Voraussetzungen prüfen</>}
+                action={spreadConditionsText(data, property?.kind).action}
+                more={spreadConditionsText(data, property?.kind).more}
+              />
+            )}
+            {hints.includes('spreadCarried') && (
+              <NoticeBox level="hint" title="Anteile verteilten Erhaltungsaufwands aus Vorjahren" action={spreadCarriedText(data)} more={SPREAD_CARRIED_MORE} />
+            )}
+            {hints.includes('spreadNothingDeductible') && (
+              <NoticeBox level="hint" title="Verteilung ohne abziehbaren Teil" action={spreadNothingDeductibleText(data)} />
+            )}
+            {hints.includes('spreadIgnored') && (
+              <NoticeBox level="warning" title="Verteilung gespeichert, aber nicht gerechnet" action={spreadIgnoredText(data)} />
+            )}
             {/* #96 PR 2 (A4.4, Durchsicht X6): anschaffungsnahe Herstellungskosten, auch im Druck. */}
             {hints.includes('acquisitionRelated') && acquisition && (
               <NoticeBox
@@ -765,11 +788,10 @@ export default function Steuer({ settings, onNavigate }: Props) {
               <NoticeBox
                 level="hint"
                 title="Was diese Übersicht nicht rechnet"
-                action="Abschreibung, Schuldzinsen und die Verteilung nach § 82b EStDV tragen Sie selbst ein; diese Angaben kennt Mietfuchs nicht. Die Kürzung bei verbilligter Vermietung rechnet Mietfuchs für die erfassten Kosten, wenn Sie unten die ortsübliche Miete eintragen."
+                action="Abschreibung und Schuldzinsen tragen Sie selbst ein; diese Angaben kennt Mietfuchs nicht. Größeren Erhaltungsaufwand verteilt Mietfuchs, wenn Sie es an der Position wählen (§ 82b EStDV). Die Kürzung bei verbilligter Vermietung rechnet Mietfuchs für die erfassten Kosten, wenn Sie unten die ortsübliche Miete eintragen."
                 more={<>
                   Nicht gerechnet werden: die Abschreibung (AfA) des Gebäudes, die ebenfalls nur anteilig abziehbar
-                  ist (Zeilen 33 und 34); Schuldzinsen, die der Zuordnung des Darlehens folgen und nicht der Fläche; die
-                  Verteilung größeren Erhaltungsaufwands auf mehrere Jahre nach § 82b EStDV; und bei verbilligter
+                  ist (Zeilen 33 und 34); Schuldzinsen, die der Zuordnung des Darlehens folgen und nicht der Fläche; und bei verbilligter
                   Vermietung die Kürzung von Abschreibung und Schuldzinsen. Wo der Vordruck die Kürzung bei verbilligter
                   Vermietung abfragt (bisher in den Zeilen 87 und 88 genannt, am Vordruck noch nicht geprüft), sehen Sie bitte im
                   Vordruck des Jahres nach; die Spalte „abziehbar“ dieser Übersicht ist schon gekürzt und darf nicht ein zweites
@@ -851,65 +873,129 @@ export default function Steuer({ settings, onNavigate }: Props) {
 function SplitTable({ report }: { report: TaxReport }) {
   const order = report.expenses.groups.map((g) => g.group)
   const items = [...report.expenses.items].sort((a, b) => order.indexOf(a.group) - order.indexOf(b.group))
-  // #257: die Spalte nur, wenn es einen unentgeltlichen Teil gibt.
+  // #257: die Spalte nur, wenn es einen unentgeltlichen Teil gibt; #262 PR 3 ebenso „verteilt“ (§ 82b EStDV). Am Handy
+  // je Position eine Karte statt seitlichem Wischen (`stacked`, S23); der Rechenweg bleibt aufklappbar.
   const gratuitous = !!report.expenses.gratuitousCents
+  const deferred = showsDeferred(report)
   return (
-    <Table>
-      <thead>
-        <tr>
-          <th>Position</th>
-          <th className="num">Gesamt</th>
-          <th className="num">privat</th>
-          {gratuitous && <th className="num">unentgeltlich</th>}
-          <th className="num">abziehbar</th>
-          <th>Zuordnung</th>
-          <th className="no-print" />
-        </tr>
-      </thead>
-      <tbody>
-        {items.map((x) => <SplitRow key={x.costItemId} item={x} gratuitous={gratuitous} />)}
-      </tbody>
-      <tfoot>
-        <tr>
-          <td>Summe Werbungskosten</td>
-          <td className="num">{fmtEuro(report.expenses.totalCents)}</td>
-          <td className="num">{fmtEuro(report.expenses.privateCents)}</td>
-          {gratuitous && <td className="num">{fmtEuro(report.expenses.gratuitousCents ?? 0)}</td>}
-          <td className="num">{fmtEuro(report.expenses.deductibleCents)}</td>
-          <td />
-          <td className="no-print" />
-        </tr>
-      </tfoot>
-    </Table>
+    <>
+      <Table className="stacked" aria-label="Werbungskosten je Position">
+        <thead>
+          <tr>
+            <th>Position</th>
+            <th className="num">Gesamt</th>
+            <th className="num">privat</th>
+            {gratuitous && <th className="num">unentgeltlich</th>}
+            {deferred && <th className="num">verteilt</th>}
+            <th className="num">abziehbar</th>
+            <th>Zuordnung</th>
+            <th className="no-print" />
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((x) => <SplitRow key={x.costItemId} item={x} gratuitous={gratuitous} deferred={deferred} />)}
+        </tbody>
+        <tfoot>
+          <tr className="subtotal">
+            <td data-label="Position">Summe Werbungskosten</td>
+            <td data-label="Gesamt" className="num">{fmtEuro(report.expenses.totalCents)}</td>
+            <td data-label="privat" className="num">{fmtEuro(report.expenses.privateCents)}</td>
+            {gratuitous && <td data-label="unentgeltlich" className="num">{fmtEuro(report.expenses.gratuitousCents ?? 0)}</td>}
+            {deferred && <td data-label="verteilt" className="num">{deferredSumText(report)}</td>}
+            <td data-label="abziehbar" className="num">{fmtEuro(report.expenses.deductibleCents)}</td>
+            <td data-label="Zuordnung" />
+            <td className="actions no-print" />
+          </tr>
+        </tfoot>
+      </Table>
+      {deferred && <p className="muted fine">{DEFERRED_COLUMN_NOTE}</p>}
+    </>
   )
 }
 
-function SplitRow({ item, gratuitous }: { item: TaxExpenseItem; gratuitous: boolean }) {
+function SplitRow({ item, gratuitous, deferred }: { item: TaxExpenseItem; gratuitous: boolean; deferred: boolean }) {
   const [open, setOpen] = useState(false)
   const stepsId = useId()
   return (
     <>
       <tr>
-        <td>
+        <td data-label="Position">
           {/* M8: die Beschreibung vorn, Gruppe und Kostenart darunter statt einer Brotkrumenzeile davor */}
           <span>{item.description}</span>
           <div className="muted cell-sub">{item.group} · {item.category}</div>
           {movedInText(item) && <div className="muted fine">{movedInText(item)}</div>}
+          {spreadItemText(item) && <div className="muted fine">{spreadItemText(item)}</div>}
         </td>
-        <td className="num">{fmtEuro(item.amountCents)}</td>
-        <td className="num">{fmtEuro(item.privateCents)}</td>
-        {gratuitous && <td className="num">{fmtEuro(item.gratuitousCents ?? 0)}</td>}
-        <td className="num">{fmtEuro(item.deductibleCents)}</td>
-        <td>{allocationLabel(item)}</td>
-        <td className="no-print">
+        <td data-label="Gesamt" className="num">{fmtEuro(item.amountCents)}</td>
+        <td data-label="privat" className="num">{fmtEuro(item.privateCents)}</td>
+        {gratuitous && <td data-label="unentgeltlich" className="num">{fmtEuro(item.gratuitousCents ?? 0)}</td>}
+        {deferred && <td data-label="verteilt" className="num">{deferredCellText(item)}</td>}
+        <td data-label="abziehbar" className="num">{fmtEuro(item.deductibleCents)}</td>
+        <td data-label="Zuordnung">{allocationLabel(item)}</td>
+        <td className="actions no-print">
           <DisclosureButton open={open} onToggle={() => setOpen((o) => !o)} closedLabel="Rechenweg" openLabel="Rechenweg schließen" controls={stepsId} className="btn small secondary calc-toggle" />
         </td>
       </tr>
       {open && (
         <tr id={stepsId} className="calc-steps no-print">
-          <td colSpan={gratuitous ? 7 : 6}><StepList steps={item.steps} /></td>
+          <td colSpan={6 + (gratuitous ? 1 : 0) + (deferred ? 1 : 0)}><StepList steps={item.steps} /></td>
         </tr>
       )}
+    </>
+  )
+}
+
+// Der Block „Auf bis zu 5 Jahre zu verteilende Erhaltungsaufwendungen“ (#262 PR 3, E-5), gegliedert wie die Zeilen 57 bis
+// 72 der Anlage V; Zeilen, Beträge und Beschriftungen aus taxSpread.ts. Die Spalte „Zeile“ nur, wo der Vordruck des Jahres
+// eine Nummer kennt. Am Handy `stacked`.
+function SpreadBlockView({ report }: { report: TaxReport }) {
+  const b = spreadBlock(report)
+  if (b === null) return null
+  const thisYear = `in ${report.year} abzuziehen`
+  // Durchsicht K3: je Abschnitt eine eigene Tabelle mit Überschrift, damit am Handy keine leere Karte für den Titel
+  // entsteht; die Beschriftung jeder Zelle folgt dem Vordruck (Zeile 57: Gesamtaufwand und davon abzuziehen).
+  return (
+    <>
+      <h4><Term id="spread82b">Zu verteilender Erhaltungsaufwand</Term></h4>
+      {b.sections.map((sec) => (
+        <Fragment key={sec.key}>
+          <p className="font-strong">{sec.title}</p>
+          <Table className="stacked" aria-label={`Zu verteilender Erhaltungsaufwand: ${sec.title}`}>
+            <thead>
+              <tr>
+                {b.showsLines && <th>Zeile</th>}
+                <th>Angabe</th>
+                <th className="num">Gesamtbetrag</th>
+                <th className="num">abzugsfähiger Anteil</th>
+                <th className="num">{thisYear}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sec.rows.map((r) => {
+                const total = r.kind === 'total'
+                return (
+                  <tr key={r.key} data-row={r.key} className={r.kind === 'sum' ? 'subtotal' : undefined}>
+                    {b.showsLines && <td data-label="Zeile">{r.line ?? ''}{r.code !== undefined && <div className="muted cell-sub">Kennzahl {r.code}</div>}</td>}
+                    <td data-label="Angabe">{r.label}</td>
+                    <td data-label={total ? 'Gesamtaufwand' : 'Gesamtbetrag'} className="num">{r.grossCents === null ? '' : fmtEuro(r.grossCents)}</td>
+                    <td data-label="abzugsfähiger Anteil" className="num">{r.percent === null ? '' : `${r.percent.toLocaleString('de-DE', { maximumFractionDigits: 2 })} %`}</td>
+                    <td data-label={total ? `davon ${thisYear}` : thisYear} className="num">{fmtEuro(r.cents)}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </Table>
+        </Fragment>
+      ))}
+      <p data-row="this-year" className="flex justify-between gap-x-4 font-strong">
+        <span>In {report.year} abzuziehen, vor der Kürzung bei verbilligter Vermietung</span>
+        <span>{fmtEuro(b.thisYearCents)}</span>
+      </p>
+      <p className="muted fine">
+        Verteilte Positionen tragen Sie nur in diese Zeilen ein, nicht zusätzlich beim sofort abziehbaren Aufwand. Gekürzt bei
+        verbilligter Vermietung wird nicht hier, sondern wie jede andere Ausgabe des Jahres bei der Kürzung der Werbungskosten.
+        {' '}{SPREAD_BLOCK_READING}
+      </p>
     </>
   )
 }
@@ -952,7 +1038,7 @@ function IncomeTableView({ report, basis }: { report: TaxReport; basis: Basis })
         {t.rows.map((r) => {
           return (
             <tr key={r.key} data-row={r.key}>
-              <td className={r.sub ? 'muted' : undefined}>{r.label}</td>
+              <td data-label="Einnahme" className={r.sub ? 'muted' : undefined}>{r.label}</td>
               {t.showsLines && <td data-label="Zeile">{r.line ?? ''}{r.line !== null && r.code !== null && <div className="muted cell-sub">Kennzahl {r.code}</div>}</td>}
               {cols.map((c) => (
                 <td key={c.key} data-label={c.head} className={`num${c.main && !r.sub ? ' font-strong' : ''}${c.main && !r.sub ? '' : ' muted'}`}>
@@ -965,7 +1051,7 @@ function IncomeTableView({ report, basis }: { report: TaxReport; basis: Basis })
       </tbody>
       <tfoot>
         <tr data-row="total">
-          <td>Summe der Einnahmen</td>
+          <td data-label="Einnahme">Summe der Einnahmen</td>
           {t.showsLines && <td data-label="Zeile">{t.totalLine ?? ''}</td>}
           {cols.map((c) => <td key={c.key} data-label={c.head} className={`num${c.main ? '' : ' muted'}`}>{fmtEuro(c.total)}</td>)}
         </tr>
@@ -1012,7 +1098,7 @@ function UnitIncome({ report, year }: { report: TaxReport; year: number }) {
           <tbody>
             {rows.map((u) => (
               <tr key={u.unitId}>
-                <td>{u.unitName}{u.relative && <div className="muted cell-sub">an Angehörige vermietet{i?.relatives ? `: Zeile ${i.relatives.line}` : ''}</div>}</td>
+                <td data-label="Wohnung">{u.unitName}{u.relative && <div className="muted cell-sub">an Angehörige vermietet{i?.relatives ? `: Zeile ${i.relatives.line}` : ''}</div>}</td>
                 <td data-label="Wohnfläche" className="num">{u.areaM2 === null ? '–' : fmtArea(u.areaM2)}</td>
                 <td data-label="Miete ohne Umlagen" className="num">{fmtEuro(u.rentCents)}</td>
               </tr>

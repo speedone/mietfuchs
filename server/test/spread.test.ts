@@ -144,3 +144,14 @@ test('joinQuestions: Sätze nacheinander, doppelte einmal, der Rat einmal am End
   assert.deepEqual(joinQuestions([], []), [])
   assert.deepEqual(joinQuestions(['A.']), ['A.'])
 })
+
+// Durchsicht von #262 PR 3, K2: Eine gespeicherte Wahl an einer Position, an der nicht verteilt werden kann (Ablage von
+// Hand, `spreadIgnored`), hat Mietfuchs nie gerechnet. Entfernen oder Löschen nennt dann keine entfallenden Anteile.
+test('spreadQuestions: eine nie gerechnete Wahl entfällt ohne „Anteile entfallen“, mit eigenem Satz', () => {
+  const krumm = { period: '2026-01', spreadYears: 3 as const, category: 'Grundsteuer', amountCents: 60_000 }
+  const entfernt = spreadQuestions(krumm, { ...krumm, spreadYears: null })
+  assert.deepEqual(entfernt, ['An dieser Position war eine Verteilung gespeichert, die Mietfuchs nie gerechnet hat, weil sie sich nicht verteilen lässt; sie entfällt, an den Zahlen der Steuer ändert sich nichts.'])
+  assert.deepEqual(spreadQuestions(krumm, null), entfernt)
+  // Eine verteilbare Position bleibt bei den bisherigen Sätzen.
+  assert.match(spreadQuestions({ ...krumm, category: 'Nicht umlagefähig' }, null)[0] ?? '', /entfallen damit/)
+})

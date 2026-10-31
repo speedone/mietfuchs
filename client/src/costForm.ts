@@ -1,7 +1,7 @@
 // Entscheidungslogik des Kostenposition-Formulars, bewusst getrennt von der Darstellung:
 // Auswahllisten, Validierung und der Rumpf, der an die API geht. Diese Stelle bestimmt, was
 // tatsächlich gespeichert wird — sie ist in client/src/costForm.test.ts geprüft.
-import type { BillingPeriod, CostItem, CostKey, ExternalMeasure, HeatingEnergy, HeatingPart, HeatingTarget, HotWater, Meter, MeterType, PeriodKey, SplitPreviewPart, Tenancy, Unit } from './types'
+import type { BillingPeriod, CostItem, CostKey, SpreadYears, ExternalMeasure, HeatingEnergy, HeatingPart, HeatingTarget, HotWater, Meter, MeterType, PeriodKey, SplitPreviewPart, Tenancy, Unit } from './types'
 import { CATEGORIES, KEY_LABELS, defaultKeyFor, isNotAllocable } from './types'
 import { PARTICIPANT_KEYS as SHARED_PARTICIPANT_KEYS, allocationOf, comparablePrevious, previousAllocation, sameAllocation, type Allocation } from '../../shared/allocation.ts'
 import { fmtDate, fmtEuro, parseEuro } from './api'
@@ -22,6 +22,8 @@ export { amountProblem, showsTaxUnitField, type BuildResult } from '../../shared
 import { amountProblem } from '../../shared/costItem.ts'
 import { allowsPaidOn, isPaidOnDate, paidOnQuestions, paidOnSpan, paidOnYear, statedOutflowYear, taxYearQuestions, tenDayWindow, type YearSpan } from '../../shared/paidOn.ts'
 import { RESERVE_WITHDRAWAL_CATEGORY } from '../../shared/categories.ts'
+import { allowsSpread, isSpreadYears, spreadOptions, spreadQuestions, spreadRates } from '../../shared/spread.ts'
+import { andList } from '../../shared/wording.ts'
 import type { Problem } from './formProblems'
 import { allowsContractAnswer, contractTenancies, openWhy } from './contractAgreement'
 export { aiPositionDefaults, aiPositionPreselect, lastExternalBasis, type AiPositionKey, type KeyContext } from '../../shared/assessment.ts'
@@ -78,6 +80,8 @@ export type ItemForm = {
   named: string[]
   // Wohnungen, die in diesem Fenster abgewählt und noch nicht beantwortet sind; wird nicht gesendet.
   pendingWhy: string[]
+  // Verteilung nach § 82b EStDV (#262 PR 3) als Wert der Auswahl (`spreadOptions`), leer heißt „nicht verteilen“.
+  spreadYears: '' | `${SpreadYears}`
 }
 
 export const EMPTY_ITEM_FORM: ItemForm = {
@@ -110,6 +114,7 @@ export const EMPTY_ITEM_FORM: ItemForm = {
   notAgreed: [],
   named: [],
   pendingWhy: [],
+  spreadYears: '',
 }
 
 // Formular aus einer gespeicherten Position füllen
@@ -148,6 +153,7 @@ export function itemToForm(i: CostItem): ItemForm {
     notAgreed: i.notAgreedTenancyIds ?? [],
     named: i.namedTenancyIds ?? [],
     pendingWhy: [],
+    spreadYears: isSpreadYears(i.spreadYears) ? `${i.spreadYears}` : '',
   }
 }
 
@@ -580,7 +586,10 @@ function draftOf(form: ItemForm, units: Unit[], tenancies: Tenancy[] | undefined
 // Validiert das Formular und baut den API-Rumpf, mit derselben Prüfung wie der Server
 // (shared/costItem.ts).
 // `plantEnergy`: die Energie der Anlage der Heizposition, für die Kennzeichnung des Stroms zur Wärmeerzeugung (R-W2).
-export function buildCostItemBody(form: ItemForm, units: Unit[], period: number | BillingPeriod, tenancies?: Tenancy[], plantEnergy?: HeatingEnergy): BuildResult | { error: string, problems: Problem<'participants'>[] } {
+// Der Rumpf des Formulars: der gemeinsame aus shared/costItem.ts und dazu die Verteilung nach § 82b EStDV (#262 PR 3), die
+// Belegbuchung und KI-Auswertung nie vorbelegen.
+export type FormBody = CostItemBody & { spreadYears: SpreadYears | null }
+export function buildCostItemBody(form: ItemForm, units: Unit[], period: number | BillingPeriod, tenancies?: Tenancy[], plantEnergy?: HeatingEnergy): { error: string } | { body: FormBody } | { error: string, problems: Problem<'participants'>[] } {
   // Eine Jahreszahl ist das Kalenderjahr (Tests, Kalenderobjekt); sonst der gewählte Zeitraum (#208).
   const p = typeof period === 'number' ? calendarYearPeriod(period) : period
   // Eine abgewählte Wohnung ohne Antwort (#258): „Speichern“ meldet es am Feld, wie jede Pflichtangabe.
@@ -590,8 +599,59 @@ export function buildCostItemBody(form: ItemForm, units: Unit[], period: number 
     return { error: problems.map((x) => x.text).join(' '), problems }
   }
   const result = costItemBody(draftOf(form, units, tenancies, p), units, p.key)
-  return 'body' in result ? { body: withContractAgreement(withOperatingPower(result.body, form, plantEnergy), form, units, tenancies, p) } : result
+  return 'body' in result ? { body: withSpread(withContractAgreement(withOperatingPower(result.body, form, plantEnergy), form, units, tenancies, p), form) } : result
 }
+
+// ---------- Verteilung nach § 82b EStDV (#262 PR 3, Entwurf E-9) ----------
+
+export { spreadOptions }
+
+// Das Feld nur, wo der Server die Wahl annimmt (`allowsSpread`, shared/spread.ts). Ohne lesbaren Betrag bleibt es stehen,
+// damit es beim Tippen nicht verschwindet; ein Betrag bis 0 € (Gutschrift) blendet es aus.
+export const showsSpread = (form: Pick<ItemForm, 'category' | 'amount' | 'operatingPower'>): boolean => {
+  const cents = parseEuro(form.amount)
+  return allowsSpread({ category: form.category, amountCents: cents ?? 1, operatingPower: form.operatingPower === '' ? null : form.operatingPower })
+}
+
+// Die Wahl im Rumpf: als Zahl, wo das Feld steht; sonst `null`, das eine gespeicherte Wahl leert. So läuft ein Wechsel der
+// Kostenart nicht in die Ablehnung des Servers (400), sondern in seine Rückfrage, die sagt, welche Anteile entfallen.
+function withSpread<B extends object>(body: B, form: ItemForm): B & { spreadYears: SpreadYears | null } {
+  const n = Number(form.spreadYears)
+  return { ...body, spreadYears: showsSpread(form) && isSpreadYears(n) ? n : null }
+}
+
+// Beim Wechsel der Kostenart: Lässt die neue sich nicht verteilen, wird die Wahl geleert (`droppedSpreadText` sagt es).
+export const keepSpread = (after: ItemForm): ItemForm => (showsSpread(after) || after.spreadYears === '' ? after : { ...after, spreadYears: '' })
+
+// Der Satz am Feld, wenn eine gespeicherte Verteilung mit dem Formular entfällt.
+export function droppedSpreadText(stored: Pick<CostItem, 'spreadYears'> | undefined, form: ItemForm): string | null {
+  if (!stored?.spreadYears || showsSpread(form)) return null
+  const why = (parseEuro(form.amount) ?? 1) <= 0
+    ? 'Eine Gutschrift wird nicht verteilt, sie mindert die Werbungskosten im Jahr, in dem sie eingeht.'
+    : `Die Kostenart „${form.category}“ lässt sich für die Steuer nicht verteilen.`
+  return `Die Verteilung auf ${stored.spreadYears} Jahre entfällt: ${why} Vor dem Speichern fragt Mietfuchs nach.`
+}
+
+// Unter dem Feld: in welchen Jahren und mit welchen Raten abgezogen wird. Das Jahr wie in `spreadQuestions`
+// (Zahlungsdatum, dann Jahr der Zahlung, sonst Beginn des Zeitraums); die Raten vom ganzen Betrag, denn den privaten Teil
+// kennt erst die Steuerübersicht.
+export function spreadPreview(form: ItemForm, period: Pick<BillingPeriod, 'from'>): string | null {
+  const n = Number(form.spreadYears)
+  const cents = parseEuro(form.amount)
+  if (!showsSpread(form) || !isSpreadYears(n) || cents === null || cents <= 0) return null
+  const from = isPaidOnDate(form.paidOn) && showsPaidOn(form) ? paidOnYear(form.paidOn) : form.taxYear !== '' ? Number(form.taxYear) : Number(period.from.slice(0, 4))
+  const rates = spreadRates(cents, n)
+  const amounts = rates.every((r) => r === rates[0]) ? `je ${fmtEuro(rates[0] ?? 0)}` : andList(rates.map(fmtEuro))
+  return `Abzug ${from} bis ${from + n - 1}: ${amounts}, vom ganzen Betrag gerechnet; ein privater Teil geht vorher ab, die Steuerübersicht nennt die Raten.`
+}
+
+// Die Rückfrage beim Speichern, dieselbe wie am Server (409 `question: 'spread'`); `otherParts` sind die Zeiträume der
+// übrigen Teile derselben Rechnung, an die der Server die Wahl mitschreibt.
+type SpreadSaved = NonNullable<Parameters<typeof spreadQuestions>[0]>
+export const spreadChange = (before: SpreadSaved | null, body: SpreadSaved, otherParts: readonly string[] = []): string[] => spreadQuestions(before, body, otherParts)
+
+// Beim Löschen einer verteilten Position: welche Anteile entfallen (leer ohne Verteilung).
+export const spreadDeleteText = (item: SpreadSaved): string => spreadQuestions(item, null).join(' ')
 
 // Die Kennungen der Mietverträge (#258): nur die Mietverhältnisse, die im Zeitraum bestehen und an der Position
 // teilnehmen, und nur bei Kostenarten, die es zulassen; sonst `null`, das eine alte Angabe leert (die Route lässt
