@@ -106,7 +106,7 @@ async function uploadOn(page: RegExp, name = 'foto.jpg') {
 }
 
 test('Seitenwechsel: die Auswertung läuft weiter, ohne Rückfrage, und ihr Ergebnis steht bei der Rückkehr da', async () => {
-  await uploadOn(/Schnellerfassung/)
+  await uploadOn(/Belege$/)
   go(/Cockpit/)
   // Keine Rückfrage, denn nichts geht verloren
   await waitFor(() => expect(within(sidebar()).getByRole('button', { name: /Cockpit/ }).getAttribute('aria-current')).toBe('page'))
@@ -114,16 +114,16 @@ test('Seitenwechsel: die Auswertung läuft weiter, ohne Rückfrage, und ihr Erge
   expect(cancelled()).toBe(false)
   pending[0]?.resolve(reading(1234))
   await new Promise((resolve) => setTimeout(resolve, 20))
-  go(/Schnellerfassung/)
+  go(/Belege$/)
   expect(await screen.findByText('Zählerstand erkannt', {}, { timeout: 5000 })).toBeTruthy()
   expect((screen.getByLabelText(/^Stand/) as HTMLInputElement).value).toBe('1234')
 })
 
 test('wer zurückkehrt, während sie noch läuft, sieht sie laufen und kann abbrechen', async () => {
-  await uploadOn(/Schnellerfassung/)
+  await uploadOn(/Belege$/)
   go(/Cockpit/)
   await waitFor(() => expect(question()).toBeNull())
-  go(/Schnellerfassung/)
+  go(/Belege$/)
   fireEvent.click(await screen.findByRole('button', { name: 'Abbrechen' }))
   expect(await screen.findByText('abgebrochen')).toBeTruthy()
   await waitFor(() => expect(cancelled()).toBe(true))
@@ -138,20 +138,20 @@ const leave = () => {
 // Durchsicht S3: Der Zählerstand steht in der Warteschlange der App und geht beim Seitenwechsel nicht verloren; die
 // Rückfrage („wird geschlossen, ohne zu speichern“) stimmte nicht mehr. Beim Schließen des Tabs ginge er verloren.
 test('ein erkannter, nicht übernommener Zählerstand: keine Rückfrage beim Seitenwechsel, aber beim Schließen des Tabs', async () => {
-  await uploadOn(/Schnellerfassung/)
+  await uploadOn(/Belege$/)
   pending[0]?.resolve(reading(1234))
   await screen.findByText('Zählerstand erkannt', {}, { timeout: 5000 })
   go(/Cockpit/)
   await waitFor(() => expect(within(sidebar()).getByRole('button', { name: /Cockpit/ }).getAttribute('aria-current')).toBe('page'))
   expect(question()).toBeNull()
   expect(leave()).toBe(true)
-  go(/Schnellerfassung/)
+  go(/Belege$/)
   expect((await screen.findByLabelText(/^Stand/, {}, { timeout: 5000 }) as HTMLInputElement).value).toBe('1234')
 })
 
 test('Objektwechsel: die Auswertung läuft im Objekt weiter, in dem sie begann; die Seite nennt sie mit Sprung dorthin', async () => {
   properties = [objekt('objekt-1', 'Lindenweg 12'), objekt('objekt-2', 'Gartenstraße 3')]
-  await uploadOn(/Schnellerfassung/)
+  await uploadOn(/Belege$/)
   expect(pending[0]?.form.get('propertyId')).toBe('objekt-1')
   fireEvent.change(screen.getByLabelText('Objekt wählen'), { target: { value: 'objekt-2' } })
   // Keine Rückfrage, denn die Auswertung geht nicht verloren
@@ -170,7 +170,7 @@ test('Objektwechsel: die Auswertung läuft im Objekt weiter, in dem sie begann; 
 })
 
 test('eine Auswertung aus der Schnellerfassung erscheint auch auf der Seite Kosten', async () => {
-  await uploadOn(/Schnellerfassung/)
+  await uploadOn(/Belege$/)
   go(/\sKosten$/)
   await waitFor(() => expect(question()).toBeNull())
   expect(await screen.findByText('foto.jpg')).toBeTruthy()
@@ -192,7 +192,7 @@ const elsewhere = () => screen.queryByText('In Arbeit an anderer Stelle:')
 // Durchsicht S1: Wird eine Auswertung anderswo gebucht (hier: Der Server führt sie nicht mehr als offen), gilt ihr
 // Eintrag als übernommen; „In Arbeit an anderer Stelle“ bleibt nicht dauerhaft stehen.
 test('eine anderswo gebuchte Auswertung steht nicht mehr als „in Arbeit“', async () => {
-  await uploadOn(/Schnellerfassung/, 'rechnung.jpg')
+  await uploadOn(/Belege$/, 'rechnung.jpg')
   const answer = invoice('srv-rechnung.jpg')
   pending[0]?.resolve(answer)
   await screen.findByText('Stadtwerke', { exact: false }, { timeout: 5000 })
@@ -207,7 +207,7 @@ test('eine anderswo gebuchte Auswertung steht nicht mehr als „in Arbeit“', a
 // Durchsicht K4: Eine offene Auswertung steht in der Schnellerfassung jedes Jahres als Karte; sie zählt dann nicht
 // zusätzlich als „in Arbeit an anderer Stelle“.
 test('eine offene Auswertung eines anderen Jahres steht als Karte, nicht zugleich in der Zeile', async () => {
-  await uploadOn(/Schnellerfassung/, 'rechnung.jpg')
+  await uploadOn(/Belege$/, 'rechnung.jpg')
   const answer = invoice('srv-rechnung.jpg')
   pending[0]?.resolve(answer)
   await screen.findByText('Stadtwerke', { exact: false }, { timeout: 5000 })
@@ -221,7 +221,7 @@ test('eine offene Auswertung eines anderen Jahres steht als Karte, nicht zugleic
 // Durchsicht S2: Einträge eines gelöschten Objekts nennt die Zeile nicht, und es gibt keinen Sprung dorthin.
 test('Einträge eines Objekts, das es nicht mehr gibt, stehen nicht in der Zeile', async () => {
   properties = [objekt('objekt-1', 'Lindenweg 12'), objekt('objekt-2', 'Gartenstraße 3')]
-  await uploadOn(/Schnellerfassung/)
+  await uploadOn(/Belege$/)
   pending[0]?.resolve(reading(5))
   await screen.findByText('Zählerstand erkannt', {}, { timeout: 5000 })
   // Objekt 1 wird gelöscht; die Liste kommt beim Wechsel neu
@@ -248,7 +248,7 @@ test('useSwitchTo: ein unbekanntes Objekt ist kein Ziel, es bleibt beim gewählt
 // Durchsicht K5: Die Zahl steht in einer Region, die Vorleser ansagen.
 test('die Zeile „In Arbeit an anderer Stelle“ steht in einer aria-live-Region', async () => {
   properties = [objekt('objekt-1', 'Lindenweg 12'), objekt('objekt-2', 'Gartenstraße 3')]
-  await uploadOn(/Schnellerfassung/)
+  await uploadOn(/Belege$/)
   fireEvent.change(screen.getByLabelText('Objekt wählen'), { target: { value: 'objekt-2' } })
   const jump = await screen.findByRole('button', { name: /1 Beleg.*Lindenweg 12/ })
   expect(jump.closest('[aria-live="polite"]')).not.toBeNull()
@@ -258,7 +258,7 @@ test('die Zeile „In Arbeit an anderer Stelle“ steht in einer aria-live-Regio
 // übernommen.
 test('Objektwechsel: in B kein Vorschlag aus A; zurück in A geht die Ablesung an den Zähler von A', async () => {
   properties = [objekt('objekt-1', 'Lindenweg 12'), objekt('objekt-2', 'Gartenstraße 3')]
-  await uploadOn(/Schnellerfassung/)
+  await uploadOn(/Belege$/)
   fireEvent.change(screen.getByLabelText('Objekt wählen'), { target: { value: 'objekt-2' } })
   const jump = await screen.findByRole('button', { name: /1 Beleg.*Lindenweg 12/ })
   pending[0]?.resolve(reading(42))
@@ -275,18 +275,18 @@ test('Objektwechsel: in B kein Vorschlag aus A; zurück in A geht die Ablesung a
 })
 
 // Testlücke: „Gespeichert, nicht ausgewertet“ überlebt Seiten- und Objektwechsel; „Erneut versuchen“ schickt danach
-// das ursprüngliche Objekt und nur den Namen im Belegordner.
+// das ursprüngliche Objekt und nur den Namen des gespeicherten Belegs.
 test('„gespeichert“ überlebt den Wechsel; „Erneut versuchen“ nennt das Objekt des Hochladens', async () => {
   properties = [objekt('objekt-1', 'Lindenweg 12'), objekt('objekt-2', 'Gartenstraße 3')]
-  await uploadOn(/Schnellerfassung/)
+  await uploadOn(/Belege$/)
   pending[0]?.fail({ error: 'Ollama ist nicht erreichbar.', reason: 'unreachable', kept: true, file: 'srv-foto.jpg' })
-  await screen.findByText('im Belegordner', {}, { timeout: 5000 })
+  await screen.findByText('gespeichert', {}, { timeout: 5000 })
   go(/Cockpit/)
   fireEvent.change(screen.getByLabelText('Objekt wählen'), { target: { value: 'objekt-2' } })
   await waitFor(() => expect((screen.getByLabelText('Objekt wählen') as HTMLSelectElement).value).toBe('objekt-2'))
   fireEvent.change(screen.getByLabelText('Objekt wählen'), { target: { value: 'objekt-1' } })
   await waitFor(() => expect((screen.getByLabelText('Objekt wählen') as HTMLSelectElement).value).toBe('objekt-1'))
-  go(/Schnellerfassung/)
+  go(/Belege$/)
   fireEvent.click(await screen.findByRole('button', { name: /Erneut versuchen/ }, { timeout: 5000 }))
   await waitFor(() => expect(pending).toHaveLength(2))
   expect([pending[1]?.form.get('propertyId'), pending[1]?.form.get('existingFile'), pending[1]?.form.get('file')]).toEqual(['objekt-1', 'srv-foto.jpg', null])
@@ -309,20 +309,20 @@ test('Erledigtes verschwindet, wenn man die Seite verlässt', async () => {
 // sobald sie da sind.
 test('ohne Zähler wird der Vorschlag nicht festgehalten; mit ihnen bekommt er die Zuordnung', async () => {
   metersFail = true
-  await uploadOn(/Schnellerfassung/)
+  await uploadOn(/Belege$/)
   pending[0]?.resolve(reading(7))
   await screen.findByText('Zählerstand erkannt', {}, { timeout: 5000 })
   metersFail = false
   go(/Cockpit/)
   await waitFor(() => expect(question()).toBeNull())
-  go(/Schnellerfassung/)
+  go(/Belege$/)
   await waitFor(() => expect(screen.getByDisplayValue(/Wasser DG/)).toBeTruthy(), { timeout: 5000 })
 })
 
 // Durchsicht S4: Hat das Modell eine Rechnung für ein Zählerfoto gehalten, wertet „Als Rechnung auswerten“ den Beleg
-// ohne Frage nach der Belegart neu aus, mit seinem Namen im Belegordner.
+// ohne Frage nach der Belegart neu aus, mit dem Namen des gespeicherten Belegs.
 test('„Als Rechnung auswerten“ an einem erkannten Zählerfoto', async () => {
-  await uploadOn(/Schnellerfassung/)
+  await uploadOn(/Belege$/)
   pending[0]?.resolve(reading(7))
   fireEvent.click(await screen.findByRole('button', { name: 'Als Rechnung auswerten' }, { timeout: 5000 }))
   await waitFor(() => expect(pending).toHaveLength(2))
@@ -333,21 +333,20 @@ test('„Als Rechnung auswerten“ an einem erkannten Zählerfoto', async () => 
   expect(screen.queryByText('Zählerstand erkannt')).toBeNull()
 })
 
-// Testlücke: „Per KI auswerten“ im Belegordner für einen Beleg eines anderen Objekts wechselt dorthin und legt genau
-// einen Eintrag an, mit dem Objekt des Belegs.
-test('Übergabe aus dem Belegordner mit Objektwechsel: ein Eintrag mit dem richtigen Ziel', async () => {
+// Testlücke: Ein Beleg ohne Position eines anderen Objekts steht im Eingang als Zeile mit Sprung (#490, Abschnitt
+// „Filter“); dort wertet „Per KI auswerten“ ihn mit genau einem Eintrag und dem Objekt des Belegs aus.
+test('Beleg ohne Position eines anderen Objekts: Sprung dorthin, „Per KI auswerten“ mit dem richtigen Ziel', async () => {
   properties = [objekt('objekt-1', 'Lindenweg 12'), objekt('objekt-2', 'Gartenstraße 3')]
   uploads = [{
     file: '1767225600000_foto.jpg', size: 4, mtime: '2026-01-01T00:00:00.000Z', originalName: 'foto.jpg', mimeType: 'image/jpeg',
     uploadedAt: '2026-01-01T00:00:00.000Z', sha256: 'x', propertyId: 'objekt-2', year: YEAR, invoiceDate: null, kind: 'receipt',
   }]
   render(<App />)
-  fireEvent.click(within(await screen.findByRole('navigation', { name: 'Hauptnavigation' })).getByRole('button', { name: /Belegordner/ }))
-  const all = await screen.findByLabelText(/Belege aller Objekte zeigen/, {}, { timeout: 5000 })
-  fireEvent.click(all)
-  fireEvent.click(await screen.findByRole('button', { name: /per KI auswerten/ }, { timeout: 5000 }))
+  fireEvent.click(within(await screen.findByRole('navigation', { name: 'Hauptnavigation' })).getByRole('button', { name: /Belege$/ }))
+  fireEvent.click(await screen.findByRole('button', { name: '1 Beleg bei „Gartenstraße 3“ →' }, { timeout: 5000 }))
+  await waitFor(() => expect((screen.getByLabelText('Objekt wählen') as HTMLSelectElement).value).toBe('objekt-2'))
+  fireEvent.click(await screen.findByRole('button', { name: 'foto.jpg per KI auswerten' }, { timeout: 5000 }))
   await waitFor(() => expect(pending).toHaveLength(1), { timeout: 5000 })
-  expect((screen.getByLabelText('Objekt wählen') as HTMLSelectElement).value).toBe('objekt-2')
   expect([pending[0]?.form.get('propertyId'), pending[0]?.form.get('existingFile')]).toEqual(['objekt-2', '1767225600000_foto.jpg'])
   await new Promise((resolve) => setTimeout(resolve, 100))
   expect(pending).toHaveLength(1)

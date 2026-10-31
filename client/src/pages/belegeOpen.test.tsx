@@ -1,8 +1,7 @@
 // @vitest-environment jsdom
-// „Position öffnen“ aus dem Belegordner (#170) bei einer Position eines anderen Objekts: Der
-// Belegordner zeigt alle Objekte, die Seite Kosten nur das gewählte. Ohne Umschalten öffnete sich
-// dort nichts. Jetzt schaltet die App erst auf das Objekt der Position um, wie beim Auswerten aus
-// dem Posteingang, und öffnet dann die Position im Formular.
+// „Position öffnen“ aus dem Ordner der Seite Belege (#170, #490) bei einer Position eines anderen Objekts: Der
+// Ordner zeigt alle Objekte, die Seite Kosten nur das gewählte. Ohne Umschalten öffnete sich dort nichts. Jetzt
+// schaltet die App erst auf das Objekt der Position um und öffnet dann die Position im Formular.
 import { calendarPeriod } from '../../../shared/period.ts'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -48,15 +47,16 @@ afterEach(() => {
 
 test('„Position öffnen“ bei einer Position eines anderen Objekts schaltet erst auf dieses Objekt um', async () => {
   render(<App />)
-  fireEvent.click(await screen.findByRole('button', { name: /Belegordner/ }, SLOW))
+  fireEvent.click(await screen.findByRole('button', { name: /Belege$/ }, SLOW))
   await waitFor(() => expect((screen.getByLabelText('Objekt wählen') as HTMLSelectElement).value).toBe('objekt-1'), SLOW)
-  // Im Belegordner Belege aller Objekte, gewählt bleibt Haus A
+  // Im Ordner Belege aller Objekte, gewählt bleibt Haus A
+  fireEvent.click(await screen.findByRole('tab', { name: 'Ordner' }, SLOW))
   fireEvent.click(await screen.findByRole('checkbox', { name: 'Belege aller Objekte zeigen' }, SLOW))
-  fireEvent.change(await screen.findByLabelText('hausgeld.pdf einer Position zuordnen', {}, SLOW), { target: { value: 'hg' } })
-  fireEvent.click(screen.getByRole('button', { name: 'Speichern (Position für hausgeld.pdf)' }))
+  fireEvent.change(await screen.findByLabelText('Vorhandenen Beleg für Hauswart laut Hausgeld zuordnen', {}, SLOW), { target: { value: '5_hausgeld.pdf' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern (Beleg für Hauswart laut Hausgeld)' }))
   const check = await screen.findByRole('status', { name: 'Betrag prüfen' }, SLOW)
   // Bis das Speichern fertig ist, zählt die Wahl als offener Entwurf (#309).
-  await waitFor(() => expect(screen.queryByRole('button', { name: /^Speich.*\(Position für hausgeld\.pdf\)$/ })).toBeNull(), SLOW)
+  await waitFor(() => expect(screen.queryByRole('button', { name: /^Speich.*\(Beleg für Hauswart laut Hausgeld\)$/ })).toBeNull(), SLOW)
   fireEvent.click(within(check).getByRole('button', { name: 'Position öffnen' }))
   await waitFor(() => expect((screen.getByLabelText('Objekt wählen') as HTMLSelectElement).value).toBe('objekt-2'), SLOW)
   await waitFor(() => expect((screen.getByLabelText(/Beschreibung/) as HTMLInputElement).value).toBe('Hauswart laut Hausgeld'), SLOW)

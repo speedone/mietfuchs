@@ -284,7 +284,7 @@ describe('Cockpit-Zeile mit Dateiliste (Durchsicht)', () => {
     const check = coverageCheck(items, new Set(['1_da.pdf']))
     expect(check.level).toBe('gelb')
     expect(check.detail).toMatch(/1 von 2 Positionen ohne Beleg/)
-    expect(check.detail).toMatch(/bei 1 fehlt die Datei im Belegordner/)
+    expect(check.detail).toMatch(/bei 1 fehlt die Datei\)/)
     expect(coverageCheck(items, new Set(['1_da.pdf', '2_weg.pdf'])).level).toBe('gruen')
   })
 })

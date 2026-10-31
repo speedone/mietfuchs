@@ -11,7 +11,7 @@ import { PropertyProvider } from '../property'
 import { UIProvider } from '../components/feedback'
 import Abrechnung from './Abrechnung'
 import Kosten from './Kosten'
-import Schnellerfassung from './Schnellerfassung'
+import Belege from './Belege'
 
 vi.setConfig({ testTimeout: 20000 })
 const SLOW = { timeout: 5000 }
@@ -116,14 +116,15 @@ test('Kosten: die Karte zur KI-Auswertung nennt kein Modell', async () => {
   expect(card.textContent).toContain('hochladen — die KI schlägt Kostenpositionen vor')
 })
 
-test('Schnellerfassung: der Seitentext sagt „Mietfuchs“ und nennt kein Modell', async () => {
-  wrap(<Schnellerfassung units={UNITS} settings={LOCAL_AI} onNavigate={() => {}} />)
-  const header = (await screen.findByRole('heading', { name: 'Schnellerfassung' }, SLOW)).closest('.page-head')
-  if (!(header instanceof HTMLElement)) return expect.fail('Kein Seitenkopf')
-  expect(header.textContent).not.toContain('Das Tool')
-  expect(header.textContent).not.toContain('qwen3.5:4b')
-  expect(header.textContent).toContain('Mietfuchs erkennt')
-  expect(header.textContent).toContain('Alles bleibt lokal.')
+test('Belege: der Text der Ablage sagt „Mietfuchs“ und nennt kein Modell', async () => {
+  wrap(<Belege view="eingang" units={UNITS} settings={LOCAL_AI} onNavigate={() => {}} />)
+  await screen.findByRole('heading', { name: 'Belege' }, SLOW)
+  const drop = (await screen.findByText('Rechnungen und Zählerfotos hierher ziehen', {}, SLOW)).closest('.dropzone')
+  if (!(drop instanceof HTMLElement)) return expect.fail('Keine Ablage')
+  expect(drop.textContent).not.toContain('Das Tool')
+  expect(drop.textContent).not.toContain('qwen3.5:4b')
+  expect(drop.textContent).toContain('Mietfuchs speichert jeden Beleg')
+  expect(drop.textContent).toContain('Alles bleibt lokal.')
 })
 
 test('Kosten: der Lohnanteil in der Tabelle trägt seinen Begriff', async () => {

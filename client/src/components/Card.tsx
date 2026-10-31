@@ -26,7 +26,7 @@ export default function Card({ title, level, aside, className, children, ...rest
   /** Weitere Klassen der Karte, etwa `no-print`. */
   className?: string
   children: ReactNode
-  // Weitere Angaben an der Karte, etwa die Handler zum Hineinziehen im Posteingang des Belegordners
+  // Weitere Angaben an der Karte, etwa die Handler zum Hineinziehen im Eingang der Seite Belege
 } & Omit<ComponentProps<'section'>, 'title' | 'className' | 'children'>) {
   return (
     <section className={className ? `card ${className}` : 'card'} {...rest}>

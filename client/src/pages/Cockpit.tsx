@@ -167,7 +167,7 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, relo
 
     // 2. Belege & Kosten erfasst
     if (yearItems.length === 0) {
-      list.push({ title: 'Belege erfasst', level: 'rot', tab: 'schnellerfassung', cta: 'Belege erfassen',
+      list.push({ title: 'Belege erfasst', level: 'rot', tab: 'belege:eingang', cta: 'Belege erfassen',
         detail: `Für ${label} sind noch keine Kosten erfasst.` })
     } else {
       list.push({ title: 'Belege erfasst', level: 'gruen',
@@ -177,12 +177,12 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, relo
     // 2b. Belege vollständig (#170): höchstens gelb, ein fehlender Beleg ändert keine Zahl
     const belege = coverageCheck(yearItems, uploadFiles, bookedFiles, sourceParts)
     list.push({ title: 'Belege vollständig', level: belege.level, detail: belege.detail,
-      ...(belege.level === 'gelb' ? { tab: 'belege', cta: 'Belege nachreichen' } : {}) })
+      ...(belege.level === 'gelb' ? { tab: 'belege:ordner', cta: 'Belege nachreichen' } : {}) })
 
     // 2c. Hausgeldabrechnung (#409): Bei einer Eigentumswohnung mit nur der Grundsteuer fehlt sie fast sicher.
     // Höchstens gelb: Ob alle Rechnungen vorliegen, beantwortet der Vermieter beim Abschließen.
     if (condoWithoutHousingMoney(property?.kind, yearItems)) {
-      list.push({ title: 'Hausgeldabrechnung', level: 'gelb', tab: 'schnellerfassung', cta: 'Belege erfassen',
+      list.push({ title: 'Hausgeldabrechnung', level: 'gelb', tab: 'belege:eingang', cta: 'Belege erfassen',
         detail: `Erfasst ist nur die Grundsteuer. Die übrigen umlagefähigen Kosten stehen in der Hausgeldabrechnung der Gemeinschaft; übernehmen Sie sie, sobald sie vorliegt. Die Frist nach § 556 Abs. 3 BGB läuft auch, solange sie fehlt.` })
     }
 

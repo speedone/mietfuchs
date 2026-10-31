@@ -8,7 +8,7 @@ import type { Unit } from '../types'
 import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
 import Kosten from './Kosten'
-import Schnellerfassung from './Schnellerfassung'
+import Belege from './Belege'
 
 const UNITS: Unit[] = [{ id: 'u1', propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true }]
 const YEAR = new Date().getFullYear() - 1
@@ -62,7 +62,7 @@ test('Kosten: die KI-Auswertung schickt Objekt und Jahr mit', async () => {
 })
 
 test('Schnellerfassung: ebenso, auch für einen Beleg aus dem Posteingang', async () => {
-  const { container } = render(<PeriodProvider><PropertyProvider><Schnellerfassung units={UNITS} settings={null} onNavigate={() => {}} /></PropertyProvider></PeriodProvider>)
+  const { container } = render(<PeriodProvider><PropertyProvider><Belege view="eingang" units={UNITS} settings={null} onNavigate={() => {}} /></PropertyProvider></PeriodProvider>)
   await upload(container)
   expect(sent[0]?.get('propertyId')).toBe('objekt-1')
   expect(sent[0]?.get('year')).toBe(String(YEAR))
@@ -78,7 +78,17 @@ test('Kosten: die Auswertung geht an den Schuhkarton, als Rechnung', async () =>
 })
 
 test('Schnellerfassung: ohne Angabe der Belegart, damit Zählerfotos erkannt werden', async () => {
-  const { container } = render(<PeriodProvider><PropertyProvider><Schnellerfassung units={UNITS} settings={null} onNavigate={() => {}} /></PropertyProvider></PeriodProvider>)
+  const { container } = render(<PeriodProvider><PropertyProvider><Belege view="eingang" units={UNITS} settings={null} onNavigate={() => {}} /></PropertyProvider></PeriodProvider>)
   await upload(container)
   expect(sent[0]?.get('docType')).toBeNull()
+})
+
+// #490: Andere Dateien als PDF und Bild fielen in Schnellerfassung und Kosten still weg; jetzt sagt es jede Ablage mit
+// demselben Satz.
+test('Kosten: eine Datei, die weder PDF noch Bild ist, wird übergangen und genannt', async () => {
+  const { container } = render(<PeriodProvider><PropertyProvider><Kosten units={UNITS} settings={null} /></PropertyProvider></PeriodProvider>)
+  const input = await waitFor(() => container.querySelector('input[type="file"][multiple]') as HTMLInputElement ?? expect.fail('kein Dateifeld'))
+  fireEvent.change(input, { target: { files: [new File(['x'], 'brief.docx', { type: 'application/msword' })] } })
+  expect(await screen.findByText('Nur PDFs und Bilder lassen sich als Beleg hochladen; die übrigen Dateien wurden übergangen.')).toBeTruthy()
+  expect(sent).toHaveLength(0)
 })

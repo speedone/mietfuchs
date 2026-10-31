@@ -102,7 +102,7 @@ export default function ServiceImportCard({ plant, view, object, tenancies, unit
       <p className="muted">
         Laden Sie die Heiz- und Warmwasserkostenabrechnung Ihres Messdienstes hoch. Mietfuchs liest Nutzerbeträge, Summen, CO₂-Angaben und
         die Ermittlung des Warmwassers und schlägt sie vor; gespeichert wird erst, wenn Sie übernehmen. Bei gescannten Abrechnungen liest
-        Mietfuchs höchstens die ersten vier Seiten. Der Beleg liegt im Belegordner, bis Sie die Positionen anlegen.
+        Mietfuchs höchstens die ersten vier Seiten. Der Beleg liegt auf der Seite Belege, bis Sie die Positionen anlegen.
       </p>
       {!busy && (
         <label className="field">

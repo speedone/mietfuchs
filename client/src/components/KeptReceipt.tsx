@@ -1,13 +1,13 @@
-// Ein Beleg, an dem die KI gescheitert ist, der aber im Belegordner liegt (Fehler mit Ausweg, #487): kein roter
+// Ein Beleg, an dem die KI gescheitert ist, der aber gespeichert ist (Fehler mit Ausweg, #487): kein roter
 // Fehler, sondern der Grund in einem Satz, der Ausweg und drei Knöpfe. Der genaue Satz des Servers steht unter
-// „Mehr dazu“. Gemeinsam für die Warteschlangen von Schnellerfassung und Kosten; Sätze in aiFailure.ts.
+// „Mehr dazu“. Gemeinsam für den Eingang der Seite Belege und die Kosten; Sätze in aiFailure.ts.
 import type { AiFailure } from '../types'
 import { KEPT_NEXT, KEPT_TITLE, failureSentence, offersAiSettings } from '../aiFailure'
 import { NoticeBox } from './Notice'
 
 type Props = {
   failure: AiFailure
-  // Von Hand erfassen: vorerst der Sprung in den Belegordner zum Beleg
+  // Von Hand erfassen: vorerst zur Karte des Belegs im Eingang (Zuordnen), ins Kostenformular mit #490 PR 3
   onManual?: (file: string) => void
   onRetry: () => void
   onOpenSettings?: () => void

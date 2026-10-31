@@ -1,4 +1,4 @@
-// Ein erkannter Zählerstand zur Prüfung (Schuhkarton, #149), in der Schnellerfassung und auf der Seite Kosten (#490):
+// Ein erkannter Zählerstand zur Prüfung (Schuhkarton, #149), im Eingang der Seite Belege und auf der Seite Kosten (#490):
 // Foto, Zähler, Stand, Datum, Zählerwechsel, Ampel mit Gründen und „Ablesung übernehmen“.
 import type { Meter, Unit } from '../types'
 import { parseNum, type ReadingCandidate, type scoreCandidate } from '../readingCandidate'

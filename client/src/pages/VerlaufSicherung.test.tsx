@@ -39,7 +39,7 @@ beforeEach(() => {
     group(5, 'Wohnung angelegt: alt', { readOnly: true }),
   ]
   previewBody = snapshotPreview()
-  restoreAnswer = { status: 200, body: { ok: true, notes: ['Ein Beleg, auf den dieser Stand verweist, fehlt im Belegordner, weil er seither gelöscht wurde: a.pdf.'] } }
+  restoreAnswer = { status: 200, body: { ok: true, notes: ['Ein Beleg, auf den dieser Stand verweist, fehlt unter „Belege“, weil er seither gelöscht wurde: a.pdf.'] } }
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const body: unknown = init?.body ? JSON.parse(String(init.body)) : undefined
     sent.push({ url, method: init?.method ?? 'GET', body })
@@ -109,11 +109,11 @@ test('Zurückkehren: Vorschau, Rückfrage mit Gefahr und Startfokus „Abbrechen
   // Nach dem Neuladen stehen die Hinweise einmal da.
   cleanup()
   page()
-  expect(await screen.findByText(/fehlt im Belegordner/)).toBeTruthy()
+  expect(await screen.findByText(/fehlt unter „Belege“/)).toBeTruthy()
   cleanup()
   page()
   await screen.findByText('Wöchentliche Sicherung')
-  expect(screen.queryByText(/fehlt im Belegordner/)).toBeNull()
+  expect(screen.queryByText(/fehlt unter „Belege“/)).toBeNull()
 })
 
 test('Abbrechen schickt nichts außer der Vorschau', async () => {

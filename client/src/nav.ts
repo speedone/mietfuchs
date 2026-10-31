@@ -3,10 +3,10 @@
 // und „Einrichten“ (Objekt, Einstellungen, Hilfe). Eigene Datei, damit die Anleitungen der Hilfe (#164) ihre Sprünge
 // gegen dieselben Kennungen prüfen können.
 
-import type { GuidePage } from '../../shared/guides.ts'
+import type { GuidePage, GuideView } from '../../shared/guides.ts'
 
 export type Tab =
-  | 'cockpit' | 'schnellerfassung' | 'zaehler' | 'kosten' | 'mietkonto'
+  | 'cockpit' | 'zaehler' | 'kosten' | 'mietkonto'
   | 'heizkosten' | 'abrechnung' | 'uebersicht' | 'steuer'
   | 'stammdaten' | 'belege' | 'einstellungen' | 'verlauf' | 'hilfe'
 
@@ -18,11 +18,12 @@ export const NAV: { section?: string; items: NavItem[] }[] = [
   {
     section: 'Sammeln',
     items: [
-      { id: 'schnellerfassung', label: 'Schnellerfassung', icon: '📥', short: 'Erfassen' },
+      // Die Seite „Belege“ (#490) mit den Ansichten Eingang (Ablage und Arbeitsliste) und Ordner (Register je
+      // Kostenart); sie ersetzt Schnellerfassung und Belegordner. Am Handy heißt sie in der unteren Leiste „Erfassen“
+      // und öffnet dort immer den Eingang.
+      { id: 'belege', label: 'Belege', icon: '📥', short: 'Erfassen' },
       { id: 'zaehler', label: 'Zähler & Stände', icon: '🔢', short: 'Zähler' },
       { id: 'kosten', label: 'Kosten', icon: '🧾' },
-      // Der Belegordner (#170) gehört zum laufenden Sammeln: Dort landen neue Belege im Posteingang.
-      { id: 'belege', label: 'Belegordner', icon: '📁' },
       { id: 'mietkonto', label: 'Mietkonto', icon: '💶' },
     ],
   },
@@ -48,6 +49,16 @@ export const NAV: { section?: string; items: NavItem[] }[] = [
   },
 ]
 
+// Die beiden Ansichten der Seite Belege (#490). Ein Sprung kann eine davon nennen (`belege:eingang`); ohne Ansicht
+// öffnet die Seite die zuletzt benutzte.
+export type BelegeView = GuideView
+export const BELEGE_VIEWS: readonly BelegeView[] = ['eingang', 'ordner']
+export type NavTarget = Tab | `belege:${BelegeView}`
+export function splitTarget(target: NavTarget): { tab: Tab; view: BelegeView | null } {
+  const [tab, view] = target.split(':') as [Tab, BelegeView | undefined]
+  return { tab, view: view ?? null }
+}
+
 // Jede Seite einer Anleitung ist eine Seite der Navigation; sonst übersetzt diese Zeile nicht.
 const guidePageAsTab = (p: GuidePage): Tab => p
 
@@ -65,7 +76,7 @@ export function navFor(hasHeatingPlant: boolean): typeof NAV {
 // Die untere Leiste am Handy (#346, Schritt 9): die Wege, die man vor Ort mit dem Handy geht
 // (Zähler ablesen, Beleg fotografieren), dazu „Mehr“ für das Menüblatt. Die Einträge kommen aus NAV,
 // damit es keine zweite Liste gibt; ein Wächter in uiRules.test.ts verbietet sie anderswo.
-export const BOTTOM_TABS: readonly Tab[] = ['cockpit', 'schnellerfassung', 'zaehler', 'stammdaten']
+export const BOTTOM_TABS: readonly Tab[] = ['cockpit', 'belege', 'zaehler', 'stammdaten']
 
 export function bottomNav(): NavItem[] {
   const items = NAV.flatMap((g) => g.items)

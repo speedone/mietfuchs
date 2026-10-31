@@ -53,10 +53,10 @@ const go = async (name: RegExp, heading: RegExp) => {
 const PAGES: [RegExp, RegExp][] = [
   [/Abrechnung$/, /^Abrechnung/],
   [/Kosten$/, /^Kosten$/],
-  [/Schnellerfassung/, /^Schnellerfassung/],
+  // Die Seite Belege (#490) öffnet die zuletzt benutzte Ansicht, hier den Eingang; der Ordner kommt unten dazu.
+  [/Belege$/, /^Belege$/],
   [/Kostenvergleich/, /^Kostenvergleich/],
   [/Zähler/, /^Zähler/],
-  [/Belegordner/, /^Belegordner/],
   [/Mietkonto/, /^Mietkonto/],
   [/Steuer/, /^Steuer/],
 ]
@@ -92,6 +92,12 @@ test('kein Auswahlfeld im Inhalt bietet Jahre, Zeiträume oder Objekte an', asyn
     })
     expect(offending.map((s) => s.getAttribute('aria-label') ?? s.closest('label')?.textContent), String(nav)).toEqual([])
   }
+  // Der Ordner der Seite Belege: ebenso kein Auswahlfeld für Objekt oder Jahr (vorher hatte der Belegordner eines)
+  await go(/Belege$/, /^Belege$/)
+  fireEvent.click(screen.getByRole('tab', { name: 'Ordner' }))
+  const main = screen.getByRole('main')
+  expect(within(main).queryAllByRole('combobox').filter((s) => [...(s as HTMLSelectElement).options].some((o) => names.includes(o.text.trim())))).toEqual([])
+  expect(context()).toBe(`Haus A · Abrechnungsjahr ${YEAR}`)
 })
 
 // Durchsicht S1: Gedruckt nennt der Seitenkopf weiter, für welches Objekt und welches Jahr die Seite gilt.

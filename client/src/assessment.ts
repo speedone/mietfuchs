@@ -219,3 +219,10 @@ export async function bookDecisions(id: string, decisions: readonly LineDecision
   if (typeof changed !== 'boolean' || !isAssessment(assessment) || !isPreview(preview)) throw new Error(UNREADABLE)
   return { kind: 'done', changed, assessment, preview }
 }
+
+// Sichtprüfung E30: Die Kennzeichnung offener Zeilen trägt die Farbe der schlechtesten Ampel, nicht Grün für „bitte
+// prüfen“; im Eingang wie auf der Seite Kosten (#490, dort vorher immer gelb).
+export function openBadgeClass(v: Pick<AssessmentView, 'lines'>): 'badge red' | 'badge amber' | 'badge green' {
+  const levels = v.lines.filter((l) => l.state === 'open').map((l) => l.suggestion?.level)
+  return levels.includes('rot') ? 'badge red' : levels.includes('gelb') ? 'badge amber' : 'badge green'
+}

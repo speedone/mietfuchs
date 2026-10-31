@@ -1,7 +1,7 @@
 // „Auswertung prüfen“ (Belegbuchung, #170): die Zeilen eines ausgewerteten Belegs mit Ampel,
 // Vorschlag und Kandidaten, die Vorschau des Servers und das Buchen genau dieser Vorschau.
-// Schnellerfassung und KI auf der Kostenseite benutzen sie; der Posteingang führt mit „Weiter
-// prüfen“ in die Schnellerfassung. Die Entscheidungslogik steht in client/src/assessment.ts.
+// Der Eingang der Seite Belege und die KI auf der Kostenseite benutzen sie; „Weiter prüfen“ an einem Beleg ohne
+// Position springt zu ihr (#490). Die Entscheidungslogik steht in client/src/assessment.ts.
 import { useEffect, useRef, useState } from 'react'
 import type { AssessmentView, BookingPreview, Unit } from '../types'
 import { errorText, fmtEuro } from '../api'
@@ -25,7 +25,7 @@ type Props = {
   onChange: (next: AssessmentView) => void
   onOpenItem?: (costItemId: string) => void
   // Ob das Jahr der Buchung einen ungespeicherten Entwurf hat (Durchsicht zu #309, MUSS 1): „Alle grünen
-  // übernehmen“ der Schnellerfassung bucht eine solche Auswertung nicht.
+  // übernehmen“ im Eingang bucht eine solche Auswertung nicht.
   onYearDraft?: (assessmentId: string, dirty: boolean) => void
 }
 
@@ -166,7 +166,7 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
         <DraftActions draft={year} onSave={saveYear} what="Jahr der Buchung" />
       </div>
       {a.propertyId === null && (
-        <div className="warn">Zu welchem Objekt gehört dieser Beleg? Wählen Sie es bitte im Posteingang; gebucht wird nur innerhalb eines Objekts.</div>
+        <div className="warn">Zu welchem Objekt gehört dieser Beleg? Wählen Sie es bitte am Beleg unter „Ohne Position“; gebucht wird nur innerhalb eines Objekts.</div>
       )}
       {a.sumWarning && <div className="warn">⚠ {a.sumWarning}</div>}
       {/* Gerechnetes benennen, damit es geprüft werden kann (#34) */}

@@ -1,7 +1,7 @@
 // Die Entscheidungen der Komponente „Auswertung prüfen“ (Belegbuchung, #170), ohne DOM.
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AssessmentLine, AssessmentView, BookingPreview, LineCandidate, LineSuggestion } from './types'
-import { bookDecisions, categoryOptions, decisionsOf, greenDecisions, initialRow, initialRows, isAssessment, isGreen, isPreview, linkChoices, previewLines, shownRow, withConfirmed, type RowDraft } from './assessment'
+import { bookDecisions, openBadgeClass, categoryOptions, decisionsOf, greenDecisions, initialRow, initialRows, isAssessment, isGreen, isPreview, linkChoices, previewLines, shownRow, withConfirmed, type RowDraft } from './assessment'
 import { CATEGORIES } from './types'
 import { calendarPeriod } from '../../shared/period.ts'
 
@@ -134,4 +134,12 @@ describe('Antwort der Buchung lesen, ohne sie zu behaupten', () => {
     reply(200, { changed: true, assessment: { id: 'a1' }, preview: PREVIEW })
     await expect(bookDecisions('a1', [], 't')).rejects.toThrow(/unlesbar/)
   })
+})
+
+// #490: „N offen“ trägt im Eingang wie auf der Seite Kosten die Farbe der schlechtesten offenen Ampel.
+it('openBadgeClass: rot vor gelb vor grün, nur offene Zeilen zählen', () => {
+  const line = (state: 'open' | 'created', level: 'gruen' | 'gelb' | 'rot') => ({ state, suggestion: { level } }) as never
+  expect(openBadgeClass({ lines: [line('open', 'gruen'), line('open', 'gelb')] })).toBe('badge amber')
+  expect(openBadgeClass({ lines: [line('open', 'gelb'), line('open', 'rot')] })).toBe('badge red')
+  expect(openBadgeClass({ lines: [line('created', 'rot'), line('open', 'gruen')] })).toBe('badge green')
 })

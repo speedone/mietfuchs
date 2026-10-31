@@ -101,16 +101,18 @@ test('Anleitungen: offene Lücken verweisen auf ihr Issue, darunter die Heizkost
   for (const id of ids) assert.doesNotMatch(JSON.stringify(GUIDES[id]), /Belegarchiv/, `${id} nennt das Belegarchiv`)
 })
 
-test('Anleitungen: Belegordner, Vorjahr und Steuer-ZIP stehen dort, wo man sie braucht', () => {
+test('Anleitungen: Belege, Vorjahr und Steuer-ZIP stehen dort, wo man sie braucht', () => {
   const text = (id: GuideId) => JSON.stringify(GUIDES[id])
-  // Mehrere Objekte: Der Belegordner zeigt das gewählte Objekt und lässt sich umschalten.
-  assert.match(text('properties'), /Belegordner/)
-  assert.match(text('properties'), /„alle Objekte“/)
+  // Mehrere Objekte: Der Ordner der Seite Belege (#490) zeigt das gewählte Objekt und lässt sich umschalten.
+  assert.match(text('properties'), /Ordner auf der Seite Belege/)
+  assert.match(text('properties'), /„Belege aller Objekte zeigen“/)
+  // Die Seiten Schnellerfassung und Belegordner gibt es seit #490 nicht mehr.
+  for (const id of ids) assert.doesNotMatch(text(id), /Schnellerfassung|Belegordner|Posteingang/, `${id} nennt eine alte Seite`)
   // Wer jedes Jahr dieselben Positionen hat, übernimmt sie aus dem Vorjahr.
   for (const id of ['multiFamily', 'condo'] as const) assert.match(text(id), /Vorjahr/, `${id} ohne Übernahme aus dem Vorjahr`)
-  // Belege kommen über den Posteingang; die Steuer bekommt ihr ZIP.
-  assert.ok(GUIDES.multiFamily.steps.some((s) => s.page === 'belege' && s.text.includes('„Posteingang“')), 'Posteingang fehlt')
-  assert.ok(GUIDES.granny.steps.some((s) => s.page === 'belege' && s.text.includes('„Belege für die Steuer“')), 'Steuer-ZIP fehlt')
+  // Belege kommen über den Eingang; die Steuer bekommt ihr ZIP aus dem Ordner. Der Sprung öffnet die richtige Ansicht.
+  assert.ok(GUIDES.multiFamily.steps.some((s) => s.page === 'belege' && s.view === 'eingang' && s.text.includes('„Ohne Position“')), 'Eingang fehlt')
+  assert.ok(GUIDES.granny.steps.some((s) => s.page === 'belege' && s.view === 'ordner' && s.text.includes('„Belege für die Steuer“')), 'Steuer-ZIP fehlt')
 })
 
 // ---------- Bedienangaben wörtlich ----------

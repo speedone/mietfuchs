@@ -403,7 +403,7 @@ test('S9: Links im Fließtext sind unterstrichen', () => {
 // S11: Der Titel einer Seite heißt wie ihr Eintrag in der Navigation.
 test('S11: Seitentitel beginnt mit dem Namen in der Navigation', () => {
   const fileOf: Record<string, string> = {
-    cockpit: 'Cockpit', schnellerfassung: 'Schnellerfassung', zaehler: 'Zaehler', kosten: 'Kosten', belege: 'Belege',
+    cockpit: 'Cockpit', zaehler: 'Zaehler', kosten: 'Kosten', belege: 'Belege',
     mietkonto: 'Mietkonto', heizkosten: 'Heizkosten', abrechnung: 'Abrechnung', uebersicht: 'Uebersicht', steuer: 'Steuer',
     stammdaten: 'Stammdaten', einstellungen: 'Einstellungen', verlauf: 'Verlauf', hilfe: 'Hilfe',
   }
@@ -800,8 +800,8 @@ const SIDEBAR_SWITCHERS: Array<[RegExp, Set<string>]> = [
 ]
 const PERIOD_OR_PROPERTY = /\bproperties\.map\b|\bswitch(?:Period|Property|Year)\b|\bcalendarYearOptions\b|\byearOptions\b|\byears\.map\b|\b(?:view|period)\.options\b/
 const S18_EXCEPTIONS: Array<[file: string, label: string, reason: string]> = [
-  ['./pages/Belege.tsx', 'Objekt für', 'Objekt eines Belegs im Posteingang, eine Eigenschaft des Belegs (Entwurf mit Speichern)'],
-  ['./pages/Belege.tsx', 'Jahr für', 'Jahr eines Belegs im Posteingang, eine Eigenschaft des Belegs (Entwurf mit Speichern)'],
+  ['./components/ReceiptParts.tsx', 'Objekt für', 'Objekt eines Belegs ohne Position im Eingang, eine Eigenschaft des Belegs (Entwurf mit Speichern)'],
+  ['./components/ReceiptParts.tsx', 'Jahr für', 'Jahr eines Belegs ohne Position im Eingang, eine Eigenschaft des Belegs (Entwurf mit Speichern)'],
   ['./components/AssessmentReview.tsx', 'Jahr der Buchung', 'In welches Jahr eine Auswertung bucht, eine Eigenschaft des Belegs, kein Filter (Spezifikation Abschnitt 2)'],
   ['./components/TaxYearSelect.tsx', 'aria-label={label}', 'Jahr der Zahlung (Steuer) einer Kostenposition'],
   ['./components/CostPeriodFields.tsx', 'value={form.taxYear}', 'Jahr der Zahlung (Steuer) einer Kostenposition im Formular'],

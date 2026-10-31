@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
-// Belege aus dem Posteingang per KI auswerten (#170): Die Schnellerfassung übernimmt sie aus dem
-// Belegordner, ohne sie ein zweites Mal hochzuladen. Der Server bekommt nur den Namen
-// (`existingFile`); eine Kopie im Ordner wäre ein Doppelter, den die Prüfsumme danach meldet.
+// Belege ohne Position per KI auswerten (#170): „Per KI auswerten“ an der Karte im Eingang (#490, vorher ein Sprung
+// aus dem Belegordner in die Schnellerfassung) wertet sie aus, ohne sie ein zweites Mal hochzuladen. Der Server bekommt
+// nur den Namen (`existingFile`); eine Kopie wäre ein Doppelter, den die Prüfsumme danach meldet.
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { CostItem, Extraction, Unit, UploadInfo } from '../types'
 import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
-import Schnellerfassung from './Schnellerfassung'
+import Belege from './Belege'
 import { fakeBooking } from '../testing/fakeBooking'
 
 const UNITS: Unit[] = [{ id: 'u1', propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true }]
@@ -46,7 +46,8 @@ beforeEach(() => {
       sent.push({ url, method, body: JSON.parse(String(init?.body ?? '{}')) })
       return json({ ok: true })
     }
-    return json(url.split('?')[0] === '/api/costItems' ? items : [])
+    const path = url.split('?')[0]
+    return json(path === '/api/costItems' ? items : path === '/api/uploads' && intake.length === 0 ? [IMAGE] : [])
   })
 })
 
@@ -55,21 +56,22 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-test('ein Beleg aus dem Posteingang geht als Name an die Auswertung, nicht als neue Datei', async () => {
-  const taken = vi.fn()
+test('ein Beleg ohne Position geht als Name an die Auswertung, nicht als neue Datei, und bleibt im Eingang', async () => {
   render(
     <PeriodProvider>
       <PropertyProvider>
-        <Schnellerfassung units={UNITS} settings={null} onNavigate={() => {}} handoff={[IMAGE]} onHandoffTaken={taken} />
+        <Belege view="eingang" units={UNITS} settings={null} onNavigate={() => {}} renderThumb={() => Promise.resolve('')} />
       </PropertyProvider>
     </PeriodProvider>,
   )
+  // Kein Seitensprung: Der Knopf steht an der Karte, und die Auswertung erscheint auf derselben Seite
+  fireEvent.click(await screen.findByRole('button', { name: 'foto.jpg per KI auswerten' }))
   await waitFor(() => expect(intake).toHaveLength(1), { timeout: 5000 })
   const fd = intake[0]
   expect(fd.get('existingFile')).toBe(IMAGE.file)
   expect(fd.get('file')).toBeNull()
   expect(fetched).toEqual([`/uploads/${encodeURIComponent(IMAGE.file)}`])
-  expect(taken).toHaveBeenCalled()
-  // Ausgewertet steht der Beleg mit seinem Rechnungssteller in der Liste
-  expect((await screen.findAllByText(/Stadtwerke/, {}, { timeout: 5000 })).length).toBeGreaterThan(0)
+  // Ausgewertet steht der Beleg mit seinem Rechnungssteller unter „Zu prüfen“
+  const group = await screen.findByRole('region', { name: 'Zu prüfen' }, { timeout: 5000 })
+  expect(group.textContent).toMatch(/Stadtwerke/)
 })

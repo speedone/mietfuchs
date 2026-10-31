@@ -1,4 +1,4 @@
-// Anzeige einer laufenden KI-Auswertung in den Warteschlangen von Kosten und Schnellerfassung:
+// Anzeige einer laufenden KI-Auswertung in den Warteschlangen von Kosten und dem Eingang der Seite Belege:
 // was das Modell gerade tut, wie lange es schon dauert, und ein Knopf zum Abbrechen.
 import { useEffect, useState } from 'react'
 import { fmtElapsed, progressText, type AiProgress } from '../aiRequest'

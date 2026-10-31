@@ -335,7 +335,7 @@ label.checkline span.term { display: inline; }
 .legal-basis { font-size: var(--text-s); color: var(--muted); margin: var(--space-1) 0 var(--space-4); }
 .legal-basis ul { margin: 6px 0 0 18px; padding: 0; }
 
-/* ---------- Schnellerfassung: Ampel-Triage ---------- */
+/* ---------- Eingang der Belege: Ampel-Triage ---------- */
 .ampel { display: inline-block; width: 11px; height: 11px; border-radius: 99px; vertical-align: middle; }
 .ampel.gruen { background: var(--green); }
 .ampel.gelb { background: var(--signal-amber); }
@@ -851,7 +851,7 @@ tr.calc-steps td { background: var(--hover); }
 fieldset.no-connection { border: 0; padding: 0; margin-inline: 0; min-width: 0; }
 .field-legend { font-size: var(--text-s); font-weight: var(--weight-strong); color: var(--text); padding: 0; margin-bottom: 6px; }
 
-/* ---------- Belegordner (#170) ---------- */
+/* ---------- Belege: Ordner und Eingang (#170, #490) ---------- */
 .receipt-filters { flex-wrap: wrap; gap: 12px; align-items: flex-end; }
 .receipt-group > summary { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding-inline-start: 0; }
 .receipt-group-title { font-weight: 600; flex: 1 1 auto; min-width: 0; }

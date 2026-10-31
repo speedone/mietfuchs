@@ -163,8 +163,8 @@ export default function Muster() {
         <NoticeBox level="warning" title="Warnung" action="Geld landet anders als vermutlich gewollt." more="Begründung aus einer Fundstelle (BGH VIII ZR 156/11)." />
         <NoticeBox level="hint" title="Hinweis" action="Bitte prüfen, ohne sicheren Fehler." />
         <KeptReceipt failure={{ error: 'OpenAI lehnt den Schlüssel ab. Bitte den Schlüssel in den Einstellungen prüfen.', file: 'beleg.pdf', reason: 'key', kept: true }}
-          onManual={() => toast('Sprung in den Belegordner.')} onRetry={() => toast('Neuer Versuch.')} onOpenSettings={() => toast('KI-Einstellungen.')} />
-        <TakenOff fileName="beleg.pdf" onShow={() => toast('Sprung in den Belegordner.')} />
+          onManual={() => toast('Sprung auf die Seite Belege.')} onRetry={() => toast('Neuer Versuch.')} onOpenSettings={() => toast('KI-Einstellungen.')} />
+        <TakenOff fileName="beleg.pdf" onShow={() => toast('Sprung auf die Seite Belege.')} />
         <TextNotice level="info" text="Eine Auskunft als fertiger Text. Sie wird in Sätze zerlegt." />
         {/* „Zu prüfen“ auf der Seite Abrechnung: stille Hinweise (ohne Betrag, Kürzung, Aufforderung) in einer Zeile. */}
         <NoticeGroup level="hint" summary="2 Hinweise (Erster, Zweiter)">

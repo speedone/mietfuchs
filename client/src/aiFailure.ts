@@ -5,7 +5,7 @@
 import type { AiFailure, AiFailureReason } from './types'
 
 export const KEPT_TITLE = 'Gespeichert, nicht ausgewertet'
-export const KEPT_NEXT = 'Ihr Beleg liegt im Belegordner. Sie können ihn jetzt von Hand erfassen oder es später erneut versuchen.'
+export const KEPT_NEXT = 'Ihr Beleg ist gespeichert und steht auf der Seite Belege. Sie können ihn jetzt von Hand erfassen oder es später erneut versuchen.'
 
 const REASONS: readonly AiFailureReason[] = ['unreachable', 'address', 'model', 'key', 'quota', 'consent', 'timeout', 'other']
 

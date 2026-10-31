@@ -329,7 +329,7 @@ export function coverageCheck(yearItems: CostItem[], present: Set<string> | null
   const ohne = cov.positions - cov.covered
   return {
     level: 'gelb',
-    detail: `${ohne} von ${countOf(cov.positions, 'Position', 'Positionen')} ohne Beleg${fileGone > 0 ? ` (bei ${fileGone} fehlt die Datei im Belegordner)` : ''} · ${cov.percent} % der Kosten belegt. Das ändert keine Zahl der Abrechnung, aber Mieter dürfen die Belege einsehen.`,
+    detail: `${ohne} von ${countOf(cov.positions, 'Position', 'Positionen')} ohne Beleg${fileGone > 0 ? ` (bei ${fileGone} fehlt die Datei)` : ''} · ${cov.percent} % der Kosten belegt. Das ändert keine Zahl der Abrechnung, aber Mieter dürfen die Belege einsehen.`,
   }
 }
 

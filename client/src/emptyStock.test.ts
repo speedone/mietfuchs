@@ -10,7 +10,7 @@ test('erst die Wohnung, dann das Mietverhältnis, dann die Belege', () => {
   expect(startStep([], [], '2025', true)).toMatchObject({ label: 'Wohnung anlegen', tab: 'stammdaten' })
   expect(startStep([unit], [], '2025', true)).toMatchObject({ label: 'Mietverhältnis anlegen', tab: 'stammdaten' })
   const late = startStep([unit], [tenancy], '05/2025–04/2026', false)
-  expect(late).toMatchObject({ label: 'Belege erfassen', tab: 'schnellerfassung' })
+  expect(late).toMatchObject({ label: 'Belege erfassen', tab: 'belege:eingang' })
   expect(late.text).toMatch(/den Zeitraum 05\/2025–04\/2026/)
 })
 
