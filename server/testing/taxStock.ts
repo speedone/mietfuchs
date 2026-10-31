@@ -135,9 +135,13 @@ export function randomTaxStock(rnd: () => number): TaxStock {
 // genau der Bestand ohne es bleibt. Ein Objekt teilt sich mit dem anderen keine Wohnung, keinen Zähler und keine Anlage.
 export const TAX_STOCK_SECOND = 'objekt-2'
 export function withSecondProperty(stock: TaxStock, rnd: () => number): TaxStock & { second: TaxStock } {
+  return withExtraProperty(stock, rnd, TAX_STOCK_SECOND, 'b-')
+}
+
+// Dasselbe für ein weiteres Objekt mit eigener Kennung und eigenem Vorsatz (Gesamtsicht, #96 PR 3: mehr als zwei Objekte).
+export function withExtraProperty(stock: TaxStock, rnd: () => number, P: string, prefix: string): TaxStock & { second: TaxStock } {
   const b = randomTaxStock(rnd)
-  const id = (x: string) => `b-${x}`
-  const P = TAX_STOCK_SECOND
+  const id = (x: string) => `${prefix}${x}`
   const s = b.source
   const items = s.costItems.map((c) => ({
     ...c, id: id(c.id), propertyId: P,

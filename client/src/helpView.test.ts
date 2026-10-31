@@ -86,7 +86,7 @@ describe('Suche über Anleitungen und Begriffe', () => {
 
   test('Paragrafen und Issue-Nummern werden gefunden, Leerraum allein findet nichts', () => {
     expect(searchHelp('§ 35a').terms.map((t) => t.id)).toContain('labor35a')
-    expect(searchHelp('#96').guides.map((g) => g.id)).toEqual(['properties'])
+    expect(searchHelp('#95').guides.map((g) => g.id)).toEqual(['properties', 'garage'])
     expect(searchHelp('  ')).toEqual({ guides: [], terms: [] })
     expect(searchHelp('gibt es nicht')).toEqual({ guides: [], terms: [] })
   })

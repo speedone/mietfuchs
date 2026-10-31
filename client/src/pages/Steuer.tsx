@@ -1,11 +1,13 @@
 import { Fragment, useCallback, useEffect, useId, useRef, useState } from 'react'
 import { startPrint, type PrintJob } from '../printJob'
-import type { Settings, TaxExpenseItem, TaxReport } from '../types'
+import type { Settings, TaxExpenseItem, TaxOverview, TaxReport } from '../types'
 import { api, fmtArea, fmtDate, fmtEuro } from '../api'
 import { localToday } from '../periodForm'
 import { usePeriod } from '../period'
 import { CalendarYearSelect } from '../components/PeriodSelect'
-import { useProperty, withProperty } from '../property'
+import { useProperty, useSwitchProperty, withProperty } from '../property'
+import Card from '../components/Card'
+import { OVERVIEW_NOTE, overviewMore, overviewView, showsOverview } from '../taxOverview'
 import { effectiveLandlord, letterhead } from '../landlord'
 import PageHeader from '../components/PageHeader'
 import Table from '../components/Table'
@@ -872,6 +874,8 @@ export default function Steuer({ settings, onNavigate }: Props) {
       )}
       {/* #257: die ortsübliche Warmmiete je Wohnung und die Quote; gekürzt wird in der Übersicht oben. */}
       <CheapRentCard propertyId={propertyId} year={year} report={data?.cheapRent} onSaved={() => void load()} />
+      {/* #96 PR 3: die Gesamtsicht zuletzt, erst ab zwei Objekten; neu geladen mit dem Bericht des Objekts. */}
+      <OverviewCard year={year} basis={basis} refresh={data} />
     </>
   )
 }
@@ -1122,5 +1126,100 @@ function UnitIncome({ report, year }: { report: TaxReport; year: number }) {
         </p>
       </div>
     </>
+  )
+}
+
+// Gesamtsicht über alle Objekte (#96 PR 3, Entwurf Teil C): installationsweit vom Server (`/api/tax/overview`), dieselben
+// Zahlen wie die Steuerübersicht je Objekt; Auswahl und Texte in taxOverview.ts. Nicht im Druck: Das Blatt ist die
+// Anlage V eines Objekts, und eine Summe über alle wäre dort eine Zahl, die in kein Feld gehört.
+function OverviewCard({ year, basis, refresh }: { year: number; basis: Basis; refresh: unknown }) {
+  const { properties, property } = useProperty()
+  const switchProperty = useSwitchProperty()
+  const shows = showsOverview(properties.length)
+  const [overview, setOverview] = useState<TaxOverview | null>(null)
+  const [error, setError] = useState('')
+  const [open, setOpen] = useState(false)
+  const moreId = useId()
+  useEffect(() => {
+    if (!shows) return
+    let current = true
+    api<TaxOverview>(`/api/tax/overview?year=${year}`)
+      .then((d) => { if (current) { setOverview(d); setError('') } })
+      .catch((e) => { if (current) setError(String((e as Error).message)) })
+    return () => { current = false }
+  }, [shows, year, refresh])
+  if (!shows) return null
+  const v = overview && overview.year === year ? overviewView(overview, basis, property?.id) : null
+  const amountCols = 4 + (v?.showsPrivate ? 1 : 0)
+  const known = new Set(properties.map((p) => p.id))
+  const jump = async (id: string) => {
+    if (await switchProperty(id)) window.scrollTo(0, 0)
+  }
+  return (
+    <Card title={`Alle Objekte ${year}`} className="no-print">
+      {error && <NoticeBox level="error" action={error} />}
+      <p className="muted">{OVERVIEW_NOTE}</p>
+      {v && (
+        <>
+          <Table className="stacked" aria-label={v.title}>
+            <thead>
+              <tr>
+                <th>Objekt</th>
+                <th className="num">Nr. der Anlage</th>
+                <th className="num">{v.incomeHead}</th>
+                <th className="num">Werbungskosten (abziehbar)</th>
+                {v.showsPrivate && <th className="num">privat, nicht abziehbar</th>}
+                <th className="num">Überschuss</th>
+                <th><span className="sr-only">Aktion</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {v.lines.map((l) => (
+                <tr key={l.propertyId} data-row={l.propertyId}>
+                  <td data-label="Objekt">
+                    {l.name}
+                    {l.current && <div className="muted cell-sub">dieses Objekt</div>}
+                  </td>
+                  {l.state === 'rental' ? (
+                    <>
+                      <td data-label="Nr. der Anlage" className="num">{l.number}</td>
+                      <td data-label={v.incomeHead} className="num">{fmtEuro(l.incomeCents)}</td>
+                      <td data-label="Werbungskosten (abziehbar)" className="num">{fmtEuro(l.deductibleCents)}</td>
+                      {v.showsPrivate && <td data-label="privat, nicht abziehbar" className="num muted">{fmtEuro(l.privateCents)}</td>}
+                      <td data-label="Überschuss" className="num font-strong" style={{ color: l.surplusCents >= 0 ? 'var(--green)' : 'var(--red)' }}>{fmtEuro(l.surplusCents)}</td>
+                    </>
+                  ) : (
+                    <td colSpan={amountCols} className={l.state === 'neutral' ? 'muted' : 'text-red'}>{l.text}</td>
+                  )}
+                  <td className="actions no-print">
+                    {/* Kurz sichtbar, damit die Tabelle am Rechner nicht breiter als die Karte wird; der Name steht für
+                        Vorleser dahinter (WCAG 2.5.3: der Name beginnt mit dem sichtbaren Wort). */}
+                    {!l.current && known.has(l.propertyId) && (
+                      <button type="button" className="btn small ghost" onClick={() => void jump(l.propertyId)}>Öffnen{' '}<span className="sr-only">{l.name}</span></button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr data-row="total">
+                <td data-label="Objekt">Summe zur Kontrolle</td>
+                <td data-label="Nr. der Anlage" className="num"></td>
+                <td data-label={v.incomeHead} className="num">{fmtEuro(v.totals.incomeCents)}</td>
+                <td data-label="Werbungskosten (abziehbar)" className="num">{fmtEuro(v.totals.deductibleCents)}</td>
+                {v.showsPrivate && <td data-label="privat, nicht abziehbar" className="num muted">{fmtEuro(v.totals.privateCents)}</td>}
+                <td data-label="Überschuss" className="num font-strong">{fmtEuro(v.totals.surplusCents)}</td>
+                <td className="actions no-print"></td>
+              </tr>
+            </tfoot>
+          </Table>
+          {v.failedText && <p className="fine">{v.failedText}</p>}
+          <div id={moreId} hidden={!open}>
+            {overviewMore(year).map((m) => <p key={m} className="muted fine">{m}</p>)}
+          </div>
+          <DisclosureButton open={open} onToggle={() => setOpen((o) => !o)} closedLabel="Mehr dazu" openLabel="Weniger" controls={moreId} className="btn ghost small" />
+        </>
+      )}
+    </Card>
   )
 }

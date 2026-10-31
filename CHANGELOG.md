@@ -33,6 +33,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   6, 7 und 10 und weist in den drei Jahren nach dem Eigentumsübergang und im Jahr danach auf die Grenze für
   anschaffungsnahe Herstellungskosten hin (BMF-Schreiben vom 26.01.2026), mit neuem Lexikonbegriff
   ([#96](https://github.com/speedone/mietfuchs/issues/96)).
+- Steuer: Mit mehreren Objekten steht unten auf der Seite eine Gesamtsicht „Alle Objekte“: je Objekt Einnahmen
+  (Zeile 32), abziehbare Werbungskosten, privater Teil und Überschuss mit der laufenden Nummer der Anlage V, dazu die
+  Summe zur Kontrolle und ein Sprung in das Objekt. Ein Objekt ohne Einnahmen und Werbungskosten steht ohne Nummer da,
+  eine leer stehende Wohnung mit Werbungskosten bekommt eine ([#96](https://github.com/speedone/mietfuchs/issues/96)).
 
 ### Geändert
 

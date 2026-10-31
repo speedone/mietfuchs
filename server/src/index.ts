@@ -19,6 +19,7 @@ import { newId, UPLOAD_DIR, DATA_DIR } from './store.ts'
 import { DEFAULT_SETTINGS } from './defaults.ts'
 import { compareWithFrozen } from './settlementDiff.ts'
 import { computeSettlement, consumptionOverview, rentLedger, taxPartsFor, taxReportFor, type ComputedSettlement } from './calc.ts'
+import { taxOverview } from './taxOverview.ts'
 import { ledgerStatementsFor } from './ledgerStatements.ts'
 import { heatingSnapshotFor, narrowToProperty, snapshotFor } from './snapshot.ts'
 import { calendarYearPeriod, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodOfKey, resolvePeriodParam, rulesOf, settlementDeadline, settlementPeriod, startYearOf } from '../../shared/period.ts'
@@ -1635,6 +1636,15 @@ app.get('/api/taxreport/:year', async (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
   res.json(await readData(async (db) => taxReportFor(await readStock(db), await propertyOf(db, req), year)))
+})
+
+// Gesamtsicht über alle Objekte (#96 PR 3): installationsweit wie Belege und Backup, ohne `?property=`. Je Objekt
+// derselbe Bericht wie oben, summiert in taxOverview.ts; die Route liest nur.
+app.get('/api/tax/overview', async (req, res) => {
+  const raw = req.query.year
+  const year = typeof raw === 'string' && /^\d{4}$/.test(raw) ? Number(raw) : NaN
+  if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
+  res.json(await readData(async (db) => taxOverview(await readStock(db), await listProperties(db), year)))
 })
 
 // ---------- Belege & KI-Auswertung ----------
