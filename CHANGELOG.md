@@ -23,6 +23,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Geändert
 
+- **Hilfe & Begriffe beginnt mit einer Suche**: Treffer erscheinen beim Tippen, getrennt nach Anleitungen und Begriffen
+  und mit der Fundstelle; darunter stehen die Anleitungen als Kacheln in drei Gruppen und die Begriffe nach Themen
+  ([#488](https://github.com/speedone/mietfuchs/issues/488)).
 - **Mietkonto rechnet fortlaufend ab Beginn des Mietverhältnisses**: Ein Rückstand aus dem Vorjahr steht als Übertrag
   da, eine im Dezember gezahlte Januarmiete deckt den Januar. Zahlungen werden nach § 366 BGB verteilt: zuerst die
   offenen Vorauszahlungen, dann die Miete, jeweils die ältesten zuerst. **Bei Rückständen, Teilzahlungen oder

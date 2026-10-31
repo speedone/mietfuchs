@@ -82,6 +82,7 @@
   --color-input-bg: var(--input-bg);
   --color-input-border: var(--input-border);
   --color-chip: var(--chip);
+  --color-mark: var(--mark);
   --color-notice-border: var(--notice-border);
   --color-error-border: var(--error-border);
   --color-ok-border: var(--ok-border);

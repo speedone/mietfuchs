@@ -1,6 +1,7 @@
 // Die Anleitungen der Seite „Hilfe & Begriffe“ (#164): Reihenfolge und Suche, ohne DOM prüfbar.
 
 import { GUIDES, type Guide, type GuideId } from '../../shared/guides.ts'
+import { searchQuery, searchText } from './searchText'
 
 export type GuideEntry = Guide & { id: GuideId }
 
@@ -11,17 +12,20 @@ export function allGuides(): GuideEntry[] {
 
 // Gesucht wird im ganzen Text einer Anleitung, auch in Rechtsgrundlagen und Issue-Nummern („#99“).
 export function filterGuides(entries: GuideEntry[], query: string): GuideEntry[] {
-  const q = query.trim().toLocaleLowerCase('de')
+  const q = searchQuery(query)
   if (!q) return entries
-  return entries.filter((g) => textOf(g).toLocaleLowerCase('de').includes(q))
+  return entries.filter((g) => searchText(guideTexts(g).join('\n')).includes(q))
 }
 
-function textOf(g: GuideEntry): string {
+// Die Texte einer Anleitung, vorne der Titel, dann in der Reihenfolge der Seite; die Suche zeigt den ersten, in dem das
+// gesuchte Wort steht, als Ausschnitt (helpView.ts).
+export function guideTexts(g: GuideEntry): string[] {
   return [
-    g.title, g.applies, g.example,
+    g.title, g.applies,
     ...g.steps.map((s) => s.text),
     ...g.result,
+    g.example,
     ...g.caveats.flatMap((c) => [c.text, c.norm ?? '']),
     ...g.gaps.flatMap((x) => [x.text, x.issue ? `#${x.issue}` : '']),
-  ].join('\n')
+  ].filter((t) => t !== '')
 }

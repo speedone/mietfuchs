@@ -2,6 +2,7 @@
 // prüfbar.
 
 import { GLOSSARY, type Term, type TermId } from '../../shared/glossary.ts'
+import { searchQuery, searchText } from './searchText'
 
 export type TermEntry = Term & { id: TermId }
 
@@ -13,9 +14,9 @@ export function sortedTerms(): TermEntry[] {
 }
 
 export function filterTerms(entries: TermEntry[], query: string): TermEntry[] {
-  const q = query.trim().toLocaleLowerCase('de')
+  const q = searchQuery(query)
   if (!q) return entries
-  return entries.filter((t) => [t.title, t.short, t.norm ?? ''].some((text) => text.toLocaleLowerCase('de').includes(q)))
+  return entries.filter((t) => [t.title, t.short, t.norm ?? ''].some((text) => searchText(text).includes(q)))
 }
 
 // Die Buchstabenleiste der Begriffe (N10 aus #341): je Anfangsbuchstabe der erste Begriff. Umlaute stehen beim

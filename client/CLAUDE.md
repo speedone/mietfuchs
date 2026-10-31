@@ -283,6 +283,16 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   Beschrieben wird nur, was Mietfuchs auf dem Stand des Zweigs kann; eigene Auslegungen werden als
   solche genannt.
 
+- **Seite „Hilfe & Begriffe“** (#488, [pages/Hilfe.tsx](src/pages/Hilfe.tsx), Logik in [helpView.ts](src/helpView.ts)):
+  Startansicht mit Suche (Combobox mit einer `listbox` aus zwei `group`, `aria-activedescendant` erst nach einer
+  Pfeiltaste, Trefferzahl in einer `role="status"`; Rangfolge Titelanfang vor Titel vor Text, in der Stufe der kürzere
+  Titel; was passt, entscheiden weiter `filterGuides`/`filterTerms`, alle drei vergleichen über `searchText`/`searchQuery`
+  in [searchText.ts](src/searchText.ts): „CO2“ findet „CO₂“, „§556“ findet „§ 556“). Taste „/“ springt hinein (nicht aus
+  einem Feld, einem Dialog oder der Erklärung eines Begriffs). Ohne Suche die Anleitungen als Kacheln je `group` und die
+  Themen des Lexikons (`topic`, Pflichtfeld; Beschriftungen in helpView.ts). Anleitung und Begriffsliste sind eigene
+  Ansichten im Zustand der Seite (kein Router), Fokus auf ihre Überschrift, beim Zurück auf den Auslöser; „Zurück“ geht
+  den Weg rückwärts (`trail`), auch aus dem Begriff zurück in die Anleitung, aus der man gesprungen ist.
+
 ## Formulare und Meldungen
 
 - **Eine Meldung steht am Feld und in der Sammelmeldung** (nach GOV.UK): `useFormError<F>()` mit

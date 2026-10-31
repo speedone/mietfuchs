@@ -49,7 +49,14 @@ export type GuideGap = {
   // Das Issue, in dem es geplant ist, wo es eines gibt.
   issue?: number
 }
+// Die Gruppen der Anleitungen auf der Startseite der Hilfe: das Objekt, Ereignisse im Abrechnungsjahr, die Heizung.
+// Die Beschriftungen stehen im Client (client/src/helpView.ts).
+export const GUIDE_GROUPS = ['property', 'year', 'heating'] as const
+export type GuideGroup = (typeof GUIDE_GROUPS)[number]
+
 export type Guide = {
+  // die Gruppe, unter der die Anleitung in der Hilfe steht
+  group: GuideGroup
   title: string
   // „Trifft das auf Sie zu?“
   applies: string
@@ -69,6 +76,7 @@ export type Guide = {
 
 const GUIDE_DATA = {
   granny: {
+    group: 'property',
     title: 'Haus mit Einliegerwohnung oder Zweifamilienhaus mit Eigennutzung',
     applies: 'Sie wohnen selbst im Haus und vermieten eine zweite Wohnung darin, etwa eine Einliegerwohnung. Mietfuchs rechnet dann nur mit Ihrer Mietpartei ab, Ihren eigenen Anteil tragen Sie selbst.',
     steps: [
@@ -102,6 +110,7 @@ const GUIDE_DATA = {
     terms: ['granny', 'ownShare', 'mixedUse', 'mainMeter', 'heatingCostOrdinance'],
   },
   multiFamily: {
+    group: 'property',
     title: 'Mehrfamilienhaus, ganz vermietet oder mit eigener Wohnung',
     applies: 'Ihr Haus hat drei oder mehr Wohnungen, die Sie vermieten; vielleicht wohnen Sie selbst in einer davon.',
     steps: [
@@ -138,6 +147,7 @@ const GUIDE_DATA = {
     terms: ['allocationKey', 'distributionBasis', 'billingUnit', 'participants', 'ownShare', 'heatingCostOrdinance', 'operatingPower'],
   },
   condo: {
+    group: 'property',
     title: 'Vermietete Eigentumswohnung mit Hausgeldabrechnung',
     applies: 'Sie vermieten eine Eigentumswohnung. Die Kosten des Hauses rechnet die Eigentümergemeinschaft ab, Sie bekommen jedes Jahr die Hausgeldabrechnung und geben die umlagefähigen Kosten an Ihre Mieter weiter.',
     steps: [
@@ -171,6 +181,7 @@ const GUIDE_DATA = {
     terms: ['mea', 'homeownersStatement', 'homeownersFee', 'reserveFund', 'notAllocable'],
   },
   properties: {
+    group: 'property',
     title: 'Mehrere Häuser oder Wohnungen (mehrere Objekte)',
     applies: 'Sie vermieten an mehr als einer Adresse, etwa zwei Häuser, ein Haus und eine Eigentumswohnung oder einen Garagenhof, und rechnen sie getrennt ab.',
     steps: [
@@ -200,6 +211,7 @@ const GUIDE_DATA = {
     terms: ['billingUnit', 'settlementDeadline'],
   },
   garage: {
+    group: 'property',
     title: 'Garage oder Stellplatz, mitvermietet oder separat',
     applies: 'Sie vermieten eine Garage oder einen Stellplatz, an einen Mieter im Haus oder an jemand anderen.',
     steps: [
@@ -228,6 +240,7 @@ const GUIDE_DATA = {
     terms: ['noConnection', 'participants', 'inclusiveRent', 'distributionBasis', 'garageVat'],
   },
   flatRate: {
+    group: 'property',
     title: 'Pauschale oder Inklusivmiete',
     applies: 'Ihr Mietvertrag sieht für die Nebenkosten keine Vorauszahlung mit Abrechnung vor, sondern einen festen Betrag (Pauschale) oder die Nebenkosten stecken in der Miete (Inklusivmiete), ganz oder nur für die Heizung.',
     steps: [
@@ -256,6 +269,7 @@ const GUIDE_DATA = {
     terms: ['flatRate', 'inclusiveRent', 'prepayment', 'heatingCostOrdinance'],
   },
   meteringService: {
+    group: 'heating',
     title: 'Fertige Abrechnung eines Messdienstes übernehmen',
     applies: 'Ein Messdienst wie Techem, ista, Brunata oder Minol rechnet Heizung und Warmwasser ab und nennt für jede Wohnung oder jeden Nutzer einen Betrag.',
     steps: [
@@ -290,6 +304,7 @@ const GUIDE_DATA = {
     terms: ['individualAmounts', 'heatingCostOrdinance', 'ownShare', 'labor35a', 'co2Deducted', 'operatingPower'],
   },
   co2Costs: {
+    group: 'heating',
     title: 'CO₂-Kosten der Heizung aufteilen',
     applies: `Sie heizen mit Gas, Heizöl, Flüssiggas oder Kohle, oder Ihr Wärmelieferant weist CO₂-Kosten aus, und ein Messdienst oder die Hausverwaltung erstellt die Heizkostenabrechnung. Für Abrechnungszeiträume, die am oder nach dem ${CO2_FROM} beginnen, sind die CO₂-Kosten zwischen Ihnen und den Mietern aufzuteilen.`,
     steps: [
@@ -321,6 +336,7 @@ const GUIDE_DATA = {
   },
   // Heizung PR 10 (#99, Entwurf 11.4): die eigene Heizkostenabrechnung. Beispiel nachgerechnet in guides.test.ts.
   heatingSelf: {
+    group: 'heating',
     title: 'Heizkosten selbst abrechnen',
     applies: 'Ihr Haus hat eine Zentralheizung, und Sie lesen die Wärmezähler oder die elektronischen Heizkostenverteiler (und, wenn die Heizung auch das Warmwasser bereitet, die Warmwasserzähler) jeder Wohnung selbst ab, oder ein Ablesedienst nennt Ihnen die Werte je Wohnung, und Sie rechnen selbst ab. Mietfuchs verteilt dann nach der Heizkostenverordnung in Grund- und Verbrauchskosten.',
     steps: [
@@ -370,6 +386,7 @@ const GUIDE_DATA = {
     terms: ['heatingCostOrdinance', 'baseCosts', 'consumptionCosts', 'interimReading', 'heatMeter', 'heatCostAllocator', 'hotWaterShare', 'degreeDays', 'heatingEstimate'],
   },
   tenantChange: {
+    group: 'year',
     title: 'Mieterwechsel und Leerstand im Jahr',
     applies: 'Ein Mieter zieht im Laufe des Jahres aus, und die Wohnung wird gleich oder erst später wieder vermietet.',
     steps: [
@@ -404,6 +421,7 @@ const GUIDE_DATA = {
   },
   // #208: Abrechnungszeitraum, der vom Kalenderjahr abweicht (Entwurf 11.4).
   periodMayApril: {
+    group: 'year',
     title: 'Abrechnungszeitraum Mai bis April',
     applies: 'Ihr Messdienst rechnet die Heizkosten von Mai bis April ab, oder Ihr Mietvertrag nennt einen anderen Abrechnungszeitraum als das Kalenderjahr.',
     steps: [
@@ -431,6 +449,7 @@ const GUIDE_DATA = {
   },
   // Heizung PR 7 (#97, Durchsicht von #233): eine Versorgerrechnung über die Heizperiode hinaus.
   supplierInvoice: {
+    group: 'heating',
     title: 'Gasrechnung über die Heizperiode hinaus',
     applies: 'Ihr Versorger rechnet Gas, Fernwärme oder den Strom der Wärmepumpe über einen anderen Zeitraum ab als Ihre Heizperiode, etwa von März bis März, und Sie verteilen die Heizkosten selbst nach einem Schlüssel.',
     steps: [
@@ -457,6 +476,7 @@ const GUIDE_DATA = {
   },
   // Heizung PR 8 (#97, #99, Durchsicht von #237): Brennstoff mit Vorrat.
   stockFuel: {
+    group: 'heating',
     title: 'Heizöl, Flüssiggas, Pellets oder Holz mit Tank oder Lager',
     applies: 'Sie heizen mit Heizöl, Flüssiggas, Pellets, Holz oder Kohle, kaufen den Brennstoff in Lieferungen und verteilen die Heizkosten selbst nach einem Schlüssel. Nicht jede Lieferung wird im selben Jahr verbraucht.',
     steps: [
@@ -484,6 +504,7 @@ const GUIDE_DATA = {
   },
   // Heizung PR 9 (Durchsicht von #238, Recht I6): zweite Heizanlage, Etagenheizung, Heizung erneuert.
   heatingRenewed: {
+    group: 'heating',
     title: 'Heizung erneuert, zweite Heizanlage oder Etagenheizung',
     applies: 'Die Heizung wurde im Lauf eines Abrechnungszeitraums erneuert, etwa Öl gegen Gas; oder im Objekt heizen zwei Anlagen, etwa die Zentralheizung und eine Gastherme im Dachgeschoss; oder Thermen in den Wohnungen laufen über Ihren Gasvertrag.',
     steps: [

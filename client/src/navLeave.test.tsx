@@ -223,9 +223,8 @@ test('Sprung aus einer Begriffserklärung gilt einmal; danach öffnet die Hilfe 
   render(<App />)
   const nav = await screen.findByRole('navigation', { name: 'Hauptnavigation' })
   fireEvent.click(within(nav).getByRole('button', { name: /Hilfe & Begriffe/ }))
-  const guide = (await screen.findByText(GUIDES.granny.title)).closest('details')
-  if (!guide) throw new Error('Anleitung fehlt')
-  guide.open = true
+  fireEvent.click((await screen.findByText(GUIDES.granny.title)).closest('button') ?? (() => { throw new Error('Anleitung fehlt') })())
+  const guide = await waitFor(() => document.getElementById('anleitung-granny') ?? (() => { throw new Error('Anleitung fehlt') })())
   fireEvent.click(within(guide).getByRole('button', { name: 'Einliegerwohnung' }))
   fireEvent.click(screen.getByRole('link', { name: 'Mehr in „Hilfe & Begriffe“ →' }))
   await waitFor(() => expect(document.activeElement?.closest('details')?.id).toBe('begriff-granny'))

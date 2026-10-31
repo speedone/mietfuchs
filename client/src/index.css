@@ -36,6 +36,7 @@
   --input-border: #8e8e96;
   --control-border: #d4d4d8;
   --chip: #f4f4f5;
+  --mark: #fde68a; /* Fundstelle einer Suche (<mark>), Schrift --text darauf (S6) */
   --notice-border: #fde68a;
   --error-border: #fecaca;
   --ok-border: #bbf7d0;
@@ -106,6 +107,7 @@
     --input-border: #63636b;
     --control-border: #3f3f46;
     --chip: #27272a;
+    --mark: #5c4a12;
     --notice-border: #4a3b14;
     --error-border: #4c1d1f;
     --ok-border: #173a24;
@@ -815,7 +817,7 @@ td.reading-panel { background: var(--bg); }
 .guide > summary { cursor: pointer; list-style-position: outside; margin-left: 18px; }
 .guide .guide-title { display: inline; margin: 0; font-weight: var(--weight-strong); font-size: var(--text-base); color: var(--text); text-transform: none; letter-spacing: normal; }
 .guide[open] > summary { margin-bottom: 6px; }
-.guide h4 { margin: 14px 0 var(--space-1); font-size: var(--text-s); color: var(--muted); }
+.guide h3 { margin: 14px 0 var(--space-1); font-size: var(--text-s); color: var(--muted); }
 .guide p, .guide li { overflow-wrap: anywhere; }
 .guide ol, .guide ul { margin: 4px 0; padding-left: 22px; }
 .guide li { margin: 4px 0; line-height: 1.45; }

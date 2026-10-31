@@ -152,14 +152,12 @@ async function shoot(browser, base) {
   await tall(1000)
   await save('auswertung-pruefen')
 
-  // Eine Anleitung je Vermietungsart aufgeklappt
+  // Die Startansicht der Hilfe (#488): Suche, Anleitungen je Vermietungsart als Kacheln, Themen des Lexikons
   // Die gewählte Aktion der Auswertung ist ein offener Entwurf (#355): Der Seitenwechsel fragt seit #356
   // nach, und die Aufnahme verwirft ihn ausdrücklich, statt dass die Rückfrage das Skript ausbremst.
   await go('Hilfe & Begriffe', { discard: true })
-  const guide = page.locator('summary', { hasText: 'Haus mit Einliegerwohnung' }).first()
-  await guide.click()
+  await page.getByRole('heading', { name: 'Ihr Objekt' }).waitFor()
   await settle()
-  await scrollTo(guide, 80)
   await save('hilfe')
 
   // Die Musterseite (#346 Schritt 12): alle Bausteine, hell und dunkel, als ganze Seite. Nicht über `save`, denn eine
