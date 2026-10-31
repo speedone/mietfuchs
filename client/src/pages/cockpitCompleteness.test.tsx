@@ -3,7 +3,7 @@
 // Eigentumswohnung mit nur der Grundsteuer fragt es nach der Hausgeldabrechnung, und eine Kostenart des
 // Vorjahres, die im Jahr fehlt, fällt in der Plausibilität auf.
 import { afterEach, expect, test, vi } from 'vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { CostItem, PropertyKind, Settings, Settlement, Unit } from '../types'
 import { PeriodProvider } from '../period'
 import { calendarPeriod, calendarYearPeriod, settlementPeriod } from '../../../shared/period.ts'
@@ -90,4 +90,54 @@ test('fehlende Kostenart des Vorjahres zählt nicht als offener Punkt (#409)', a
   expect(row.textContent).toMatch(/darf sie fehlen/)
   expect(screen.getByText(/Punkte? offen\.$/).textContent).toBe(ohne)
   expect(screen.queryByRole('button', { name: /Nächster Schritt: Kosten erfassen/ })).toBeNull()
+})
+
+// Durchsicht S4 (#490): Die Zeilen des Cockpits führen in die richtige Ansicht der Seite Belege.
+const pageWith = (onNavigate: (tab: string) => void) => render(
+  <PeriodProvider>
+    <PropertyProvider>
+      <UIProvider>
+        <Cockpit units={UNITS} tenancies={[]} settings={{ landlordName: 'Erika', iban: '', paymentDeadlineDays: 30 } as Settings} reload={async () => {}} onNavigate={onNavigate} />
+      </UIProvider>
+    </PropertyProvider>
+  </PeriodProvider>,
+)
+const rowOf = async (title: string) => (await screen.findByText(title, { selector: '.check-title' }, SLOW)).closest('.check-row') as HTMLElement
+
+test('Cockpit: ein leerer Zeitraum mit Mietverhältnis führt mit „Belege erfassen“ in den Eingang', async () => {
+  stub('mfh', [])
+  const empty = { ...SETTLEMENT, totalCostsCents: 0 }
+  const inner = globalThis.fetch
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => (url.split('?')[0] === `/api/settlement/${YEAR}`
+    ? new Response(JSON.stringify(empty), { status: 200, headers: { 'content-type': 'application/json' } })
+    : inner(url, init)))
+  const navigate = vi.fn()
+  const tenancy = { id: 't1', unitId: 'u1', tenantName: 'Müller', persons: 1, personHistory: [{ from: '2020-01-01', persons: 1 }], start: '2020-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [] }
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <UIProvider>
+          <Cockpit units={UNITS} tenancies={[tenancy] as never} settings={{ landlordName: 'Erika', iban: '', paymentDeadlineDays: 30 } as Settings} reload={async () => {}} onNavigate={navigate} />
+        </UIProvider>
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  fireEvent.click(await screen.findByRole('button', { name: 'Belege erfassen' }, SLOW))
+  expect(navigate).toHaveBeenCalledWith('belege:eingang')
+})
+
+test('Cockpit: „Belege vollständig“ mit Positionen ohne Beleg führt in den Ordner („Belege nachreichen“)', async () => {
+  stub('mfh', [item('g', YEAR, 'Grundsteuer', { invoiceFile: undefined })])
+  const navigate = vi.fn()
+  pageWith(navigate)
+  fireEvent.click(await rowOf('Belege vollständig'))
+  expect(navigate).toHaveBeenCalledWith('belege:ordner')
+})
+
+test('Cockpit: die Zeile „Hausgeldabrechnung“ führt in den Eingang', async () => {
+  stub('etw', [item('g', YEAR, 'Grundsteuer')])
+  const navigate = vi.fn()
+  pageWith(navigate)
+  fireEvent.click(await rowOf('Hausgeldabrechnung'))
+  expect(navigate).toHaveBeenCalledWith('belege:eingang')
 })

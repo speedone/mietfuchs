@@ -8,7 +8,7 @@ import type { Property } from './types'
 import App from './App'
 import { GUIDES } from '../../shared/guides.ts'
 import { MOBILE_QUERY } from './components/MobileNav'
-import { splitTarget } from './nav'
+import { splitTarget, type NavTarget } from './nav'
 
 const PROPERTIES: Property[] = [{ id: 'objekt-1', name: 'Lindenweg 12', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }]
 
@@ -54,6 +54,10 @@ test('Ziele: eine Ansicht der Seite Belege steht hinter dem Doppelpunkt', () => 
   expect(splitTarget('belege:eingang')).toEqual({ tab: 'belege', view: 'eingang' })
   expect(splitTarget('belege:ordner')).toEqual({ tab: 'belege', view: 'ordner' })
   expect(splitTarget('kosten')).toEqual({ tab: 'kosten', view: null })
+  // Ungültiges (ein Tippfehler im Ziel) fällt auf, statt still die falsche Seite zu öffnen
+  expect(() => splitTarget('kosten:eingang' as NavTarget)).toThrow()
+  expect(() => splitTarget('belege:posteingang' as NavTarget)).toThrow()
+  expect(() => splitTarget('schnellerfassung' as NavTarget)).toThrow()
 })
 
 test('Seitenleiste: „Belege“ öffnet zuerst den Eingang, danach die zuletzt benutzte Ansicht', async () => {

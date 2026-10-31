@@ -51,8 +51,8 @@ for (const [lage, units, tenancies, button] of [
     expect(document.querySelector('[data-empty-state]')).toBeTruthy()
     expect(screen.queryByText('Entwurf')).toBeNull()
     expect(screen.queryByText(/Frist in \d+ Tagen/)).toBeNull()
-    // Kein Knopf in die Schnellerfassung, solange die Voraussetzung fehlt (N12).
-    expect(screen.queryByRole('button', { name: /Schnellerfassung/ })).toBeNull()
+    // Kein Knopf zum Erfassen der Belege, solange die Voraussetzung fehlt (N12).
+    expect(screen.queryByRole('button', { name: /Belege erfassen/ })).toBeNull()
   })
 
   test(`Abrechnung ${lage}: der erste Schritt mit Knopf statt „bitte Stammdaten prüfen“`, async () => {

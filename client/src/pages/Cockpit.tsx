@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { CostItem, HeatingPlant, HeatingSettlementInfo, Meter, Notice, NoticeSubject, PeriodKey, Settings, Settlement, Tenancy, Unit, UpdateStatus, UploadEntry } from '../types'
+import type { NavTarget } from '../nav'
 import { cockpitHeatingRows } from '../heatingSettlementView'
 import { heatingRowTarget, itemsOfSettlement } from '../costPeriods'
 import { localToday } from '../periodForm'
@@ -35,7 +36,7 @@ type Props = {
   updateStatus: UpdateStatus | null
   reload: () => Promise<void>
   // `focus` öffnet auf der Zielseite den betroffenen Eintrag (#142), etwa ein Mietverhältnis.
-  onNavigate: (tab: string, focus?: NoticeSubject) => void
+  onNavigate: (tab: NavTarget, focus?: NoticeSubject) => void
 }
 
 // Verbrauchsangaben des Servers (gleiche Form wie auf der Zähler-Seite)
@@ -51,7 +52,7 @@ type Check = {
   // Sichtprüfung S12/E54: mehrere Einträge als Liste statt als ein Absatz
   lines?: string[]
   level: Level
-  tab?: string
+  tab?: NavTarget
   cta?: string
   // Statt nur zur Seite zu wechseln (E45: erst in den Zeitraum der Heizkostenabrechnung)
   go?: () => void

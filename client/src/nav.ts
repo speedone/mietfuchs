@@ -54,9 +54,16 @@ export const NAV: { section?: string; items: NavItem[] }[] = [
 export type BelegeView = GuideView
 export const BELEGE_VIEWS: readonly BelegeView[] = ['eingang', 'ordner']
 export type NavTarget = Tab | `belege:${BelegeView}`
+
+// Ein Ziel ist eine Seite der Navigation, auf der Seite Belege mit Ansicht. Ungültiges wirft: Ein Tippfehler fiele sonst
+// still auf die falsche Seite (Durchsicht S4).
 export function splitTarget(target: NavTarget): { tab: Tab; view: BelegeView | null } {
-  const [tab, view] = target.split(':') as [Tab, BelegeView | undefined]
-  return { tab, view: view ?? null }
+  const [tab, view, ...rest] = target.split(':')
+  const known = NAV.some((g) => g.items.some((i) => i.id === tab))
+  if (!known || rest.length > 0 || (view !== undefined && (tab !== 'belege' || !BELEGE_VIEWS.includes(view as BelegeView)))) {
+    throw new Error(`Unbekanntes Ziel: ${target}`)
+  }
+  return { tab: tab as Tab, view: (view as BelegeView | undefined) ?? null }
 }
 
 // Jede Seite einer Anleitung ist eine Seite der Navigation; sonst übersetzt diese Zeile nicht.
