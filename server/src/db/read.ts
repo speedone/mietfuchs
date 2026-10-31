@@ -17,6 +17,7 @@
 // zwar in aller Regel die rowid-Reihenfolge, zugesichert ist das aber nicht; sobald ein Index
 // die Abfrage bedient, kann es anders kommen.
 
+import { isSpreadYears } from '../../../shared/spread.ts'
 import { asc, eq, sql } from 'drizzle-orm'
 import type { AiConsent, AiSettings, AiSlot, Co2Refund, Co2Statement, CostItem, DegreeDayValue, FrozenFuelCarry, FuelDelivery, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingServiceValue, InterimGap, LawOverride, Meter, MonthlyInfoRow, Payment, PeriodKey, Property, Reading, Settings, Tenancy, Unit } from '../../../shared/types.ts'
 import { readLawOverrides } from './lawOverrides.ts'
@@ -149,6 +150,8 @@ export async function readProperties(db: Executor): Promise<Property[]> {
     ...(p.ownershipTransferOn === null ? {} : { ownershipTransferOn: p.ownershipTransferOn }),
     ...(p.buildingApplicationOn === null ? {} : { buildingApplicationOn: p.buildingApplicationOn }),
     ...(p.completedOn === null ? {} : { completedOn: p.completedOn }),
+    // Vorzeitiges Ende der Verteilungen nach § 82b Abs. 2 EStDV (#262); `null` heißt keines.
+    spreadRestYear: p.spreadRestYear,
     // Der Rhythmus (#208). Immer mitgeliefert, damit niemand ihn erraten muss.
     periodRules: { startMonth: p.periodStartMonth, changes: changes.get(p.id) ?? [] },
   }))
@@ -305,6 +308,9 @@ export async function readCostItems(db: Executor): Promise<CostItem[]> {
       ...(c.serviceTo !== null ? { serviceTo: c.serviceTo } : {}),
       ...(c.taxYear !== null ? { taxYear: c.taxYear } : {}),
       ...(c.paidOn !== null ? { paidOn: c.paidOn } : {}),
+      // Die Verteilung nach § 82b EStDV (#262), nur wenn gewählt; ein Wert außerhalb 2 bis 5 kann es wegen der Bedingung
+      // nicht geben, `isSpreadYears` sagt das dem Übersetzer.
+      ...(isSpreadYears(c.spreadYears) ? { spreadYears: c.spreadYears } : {}),
       ...(c.heatingPart !== null ? { heatingPart: c.heatingPart } : {}),
       // Das Ziel bei Heizkosten (Heizung PR 10), ebenso nur, wenn es gesetzt ist.
       ...(c.heatingTarget !== null ? { heatingTarget: c.heatingTarget } : {}),

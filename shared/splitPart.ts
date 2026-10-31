@@ -64,6 +64,8 @@ export const SPLIT_FIELDS = {
   operatingPowerBasis: 'same', operatingPowerGeneralId: 'same', operatingPowerReported: 'same',
   // Die Quelle (#455): Jeder Teil verweist auf dieselbe Rechnung.
   sourceId: 'same',
+  // Die Verteilung nach § 82b EStDV (#262, E-11): eine Wahl je Rechnung, jeder Teil trägt sie.
+  spreadYears: 'same',
   externalBasis: 'whole',
   // Einzelbeträge hängen am Mieter, beim Messdienst schon nach Nutzerwechsel getrennt. Welcher davon in welchen
   // Zeitraum gehört, weiß nur dessen Abrechnung; nach Tagen geteilt fiele der Betrag eines Mieters, der im zweiten

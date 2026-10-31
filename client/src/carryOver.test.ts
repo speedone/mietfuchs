@@ -294,6 +294,15 @@ test('Die Übernahme aus dem Vorjahr nimmt kein Zahlungsdatum mit (#255 PR 3, T1
   expect(built.body.paidOn).toBeNull()
 })
 
+// § 82b EStDV (#262, E-9): Die Wahl gilt je Aufwand; die Übernahme ist ein neuer Aufwand und wird nicht verteilt.
+test('Die Übernahme aus dem Vorjahr nimmt keine Verteilung mit (#262)', () => {
+  const [row] = carryOverRows([item({ period: calendarPeriod(2024), category: 'Nicht umlagefähig', description: 'Dachrinne', amountCents: 480000, key: 'area', spreadYears: 3 })], 2025)
+  if (!row) return expect.unreachable('keine Zeile')
+  const built = carryOverBody(withCarryAmount(row, '4.800,00'), UNITS, 2025)
+  if ('error' in built) return expect.unreachable(built.error)
+  expect(built.body.spreadYears).toBeNull()
+})
+
 describe('Mieterwechsel beim Übernehmen (#258)', () => {
   const TENANCIES = [
     { id: 't1', unitId: 'u1', tenantName: 'Max Muster', start: '2020-01-01', end: '2025-12-31' },

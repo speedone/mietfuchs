@@ -61,8 +61,18 @@ export function paidOnQuestions(before: Dated | null, after: Dated, span: YearSp
   return withAdvice(paidOnFindings(before, after, span))
 }
 
-const ADVICE = 'Haben Sie die Steuererklärung eines betroffenen Jahres schon abgegeben, besprechen Sie die Änderung mit Ihrem Steuerberater oder Finanzamt.'
+// Der Rat bei jeder Rückfrage, die das Jahr einer Position für die Steuer ändert; auch in shared/spread.ts (#262).
+export const ADVICE = 'Haben Sie die Steuererklärung eines betroffenen Jahres schon abgegeben, besprechen Sie die Änderung mit Ihrem Steuerberater oder Finanzamt.'
 const withAdvice = (findings: string[]): string[] => (findings.length > 0 ? [...findings, ADVICE] : [])
+
+// Mehrere Rückfragen eines Speicherns als eine (Durchsicht von #262, S1): Zahlungsdatum, Jahr der Zahlung und Verteilung
+// nacheinander, jeder Satz einmal, der Rat einmal am Ende. Der Server stellt so eine Rückfrage statt mehrerer
+// hintereinander (`askOnce` in db/repository.ts); das Formular kann seine Sätze ebenso zusammenführen.
+export function joinQuestions(...lists: readonly (readonly string[])[]): string[] {
+  const all = lists.flat()
+  const findings = all.filter((q, i) => q !== ADVICE && all.indexOf(q) === i)
+  return all.includes(ADVICE) ? [...findings, ADVICE] : findings
+}
 
 function paidOnFindings(before: Dated | null, after: Dated, span: YearSpan): string[] {
   const was = before?.paidOn ?? null

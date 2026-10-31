@@ -865,6 +865,22 @@ Grundmenge ist das ganze Gebäude), Überschuss. Beschreibende Gruppen statt fes
   Die Belegbuchung belegt es nie vor (Rechnungsdatum ≠ Zahlungsdatum). Teilzahlungen kommen mit
   #292 über dieselbe Funktion. Über alle Jahre ändert ein Datum weder Summe noch privaten Teil
   (invariant-steuer-summe-zahlungsdatum.test.ts).
+- **Verteilung nach § 82b EStDV** (#262, Entwurf `2026-10-30-erhaltungsaufwand-verteilen-design.md`): Die Wahl steht
+  an der Position (`spreadYears`, 2 bis 5, fehlend = nicht verteilen), das vorzeitige Ende (Abs. 2) am Objekt
+  (`spreadRestYear`). Bis PR 1 nur Datenmodell und Schreibweg, keine Zahl ändert sich; die Jahre des Abzugs rechnet
+  später allein outflow.ts (`deductionPlan`), aufbauend auf `outflowShares`, das unverändert bleibt. Wo verteilt werden
+  kann, sagt `allowsSpread` ([shared/spread.ts](../../shared/spread.ts)): „Nicht umlagefähig“ oder „Entnahme
+  Erhaltungsrücklage“, Betrag über 0, kein Abzug beim Betriebsstrom, `external` erlaubt; sonst 400 (`requireSpread`),
+  außer eine so gespeicherte Wahl bleibt unverändert stehen (krumm, nicht kaputt) oder der Wechsel des Zeitraums trägt
+  sie weiter. Setzen, Ändern, Entfernen an einer gespeicherten Position und ein anderes Jahr an einer verteilten fragen
+  nach (`spreadQuestions`, 409 `question: 'spread'`, bestätigt mit `confirmSpread`), nicht beim Anlegen und beim Wechsel
+  des Zeitraums; beim Aufteilen einer gespeicherten Position einmal. Zahlungsdatum, Jahr der Zahlung und Verteilung
+  fragen **in einer** Rückfrage (`askOnce`, `joinQuestions` in shared/paidOn.ts: alle Sätze, der Rat einmal am Ende,
+  `question` das erste noch fehlende Kennzeichen); bestätigt wird jedes Kennzeichen für sich, das Formular schickt nach
+  einer Rückfrage alle mit. Abgelehnt wird vor jeder Rückfrage, auch wenn ein anderer Teil der Rechnung die Wahl nicht
+  tragen kann (`requireSiblingsSpread`). **Eine Wahl je Rechnung**: An einem Teil geändert,
+  schreibt `syncSourceSpread` sie an alle Teile der Quelle, in derselben Transaktion (`afterReplace` der Sammlung).
+  Die Übernahme aus dem Vorjahr leert sie (carryOver.ts). Die Abrechnung liest beide Felder nie.
 - **Verschiebung anzeigen** (`shiftNotes`, nur Auskunft): Jede Position trägt `outflow`; liegt das
   Jahr außerhalb der Kalenderjahre ihres Zeitraums, heißt sie verschoben (`settlementPeriod`,
   `movedOut`), und jede Verschiebung steht auf jeder Seite genau einmal. `unstatedCount` nur, wo das

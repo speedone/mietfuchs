@@ -157,3 +157,32 @@ test('Abdeckung: Jede Route der Schritte hat in den Läufen wirklich eine Gruppe
   const routes = [...new Set([...STEPS, ...CLOSING_STEPS].flatMap((st) => st.routes)), REVERT_ROUTE]
   assert.deepEqual(routes.filter((r) => !hitRoutes.has(r)), [], 'Diese Routen hat der Generator nicht erreicht')
 })
+
+// Durchsicht von #262, K-a: Der Schritt „Kostenposition ändern“ setzt die Verteilung nur an einer Position, die sie
+// erlaubt. Sonst lehnte der Server an einer umlagefähigen ab (400), und mit der Wahl fiel auch die Änderung des Betrags
+// weg, die der Schritt eigentlich prüfen soll.
+test('Generator: „Kostenposition ändern“ wird an einer umlagefähigen Position nie abgelehnt', async () => {
+  const s = await startServerIn(tmp())
+  const step = STEPS.find((x) => x.name === 'Kostenposition ändern') ?? assert.fail('Schritt fehlt')
+  const statuses: number[] = []
+  const realFetch = globalThis.fetch
+  globalThis.fetch = async (input, init) => {
+    const res = await realFetch(input, init)
+    if (init?.method === 'PUT' && String(input).includes('/api/costItems/')) statuses.push(res.status)
+    return res
+  }
+  try {
+    await realFetch(`${s.base}/api/units`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ propertyId: 'objekt-1', name: 'EG', areaM2: 50, participates: true }) })
+    await realFetch(`${s.base}/api/costItems`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ propertyId: 'objekt-1', period: '2025-01', category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 48_000, key: 'area' }) })
+    const ctx: Ctx = { s, rng: rngOf(262), units: [], tenancies: [], meters: [], readings: [], payments: [], costItems: [], plants: [], deliveries: [], refunds: [], uploads: [], properties: [] }
+    for (let i = 0; i < 12; i++) {
+      await refresh(ctx)
+      await step.run(ctx)
+    }
+    assert.equal(statuses.length, 12)
+    assert.deepEqual(statuses.filter((x) => x !== 200), [])
+  } finally {
+    globalThis.fetch = realFetch
+    s.stop()
+  }
+})
