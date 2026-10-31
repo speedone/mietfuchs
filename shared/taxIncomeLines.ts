@@ -1,6 +1,6 @@
 // Die Beträge der Einnahmenzeilen der Anlage V aus `income.received` (#312 PR 3, Durchsicht S1): **eine Rechnung** für die
 // Steuerseite (client/src/taxIncome.ts, mit Beschriftungen und Zeilennummern), `Einnahmen.csv` (server/src/taxReceipts.ts)
-// und später die Gesamtsicht (#96 PR 3). Ohne Beschriftungen, ohne Zeilennummern (die stehen je Jahr in
+// und die Gesamtsicht (#96 PR 3, server/src/taxOverview.ts). Ohne Beschriftungen, ohne Zeilennummern (die stehen je Jahr in
 // client/src/anlageV.ts) und ohne eigene Auslegung: Die Zuordnung der Teile zu den Zeilen hat der Server schon getroffen
 // (calc.ts, `receivedIncome`); hier wird nur nach Angehörigen getrennt und summiert.
 //

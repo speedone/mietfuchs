@@ -5,6 +5,7 @@
 
 import type { TermId } from './glossary.ts'
 import type { Allocation } from './allocation.ts'
+import type { IncomeLineAmounts } from './taxIncomeLines.ts'
 
 // Beteiligung einer Wohnung an der Kostenverteilung:
 //   'vermietet'  → participates: true — Anteil trägt der Mieter
@@ -1598,6 +1599,35 @@ export type TaxReport = {
   // welche gibt.
   unmarkedPowerCredits?: { costItemId: string; description: string; amountCents: number }[]
 }
+
+// Gesamtsicht über alle Objekte (#96 PR 3, Entwurf 2026-10-30-steuer-objekt-ruecklage-design.md, Teil C): summiert die
+// Steuerübersichten je Objekt, rechnet nichts Neues. **Dieselben Felder wie die Seite je Objekt** (Durchsicht S1):
+// Einnahmen = Zeile 32 (`income.received.totalCents`, Zehn-Tage-Regel angewandt), Werbungskosten nach Raten
+// (`expenses.deductibleCents`, § 82b EStDV), Überschuss `surplusReceivedCents`; nie `paidCents` oder `surplusPaidCents`
+// (nach Datum). Gerechnet in server/src/taxOverview.ts, gezeigt unten auf der Steuerseite.
+export type TaxOverviewSums = {
+  incomeCents: number // Zeile 32
+  incomeLines: IncomeLineAmounts // die Zeilen dazu (shared/taxIncomeLines.ts), Summe = `incomeCents`
+  sollCents: number // vereinbart, nur zum Abgleich
+  expensesTotalCents: number // Bruttosumme der Werbungskosten
+  privateCents: number
+  gratuitousCents: number // verbilligte Vermietung (#257)
+  deferredCents: number // § 82b EStDV, mit Vorzeichen (+ in Folgejahre, − aus Vorjahren)
+  deductibleCents: number // abziehbar, nach Raten und Kürzung
+  reserveContributionCents: number // Zuführung zur Erhaltungsrücklage, keine Werbungskosten
+  surplusCents: number // `surplusReceivedCents`
+  surplusSollCents: number
+}
+export type TaxOverviewRow = { propertyId: string; name: string; kind: PropertyKind } & (
+  // `number`: laufende Nummer der Anlage V, nur mit `hasRental` (Mietverhältnis im Jahr, Einnahmen nach Zeile 32 oder
+  // abziehbare Werbungskosten, auch bei Leerstand) und nur vor dem ersten Objekt mit Fehler; ohne `hasRental` steht das
+  // Objekt neutral in der Liste und zählt nicht in `totals`.
+  | { ok: true; hasRental: boolean; number: number | null; sums: TaxOverviewSums }
+  // Die Steuerübersicht des Objekts ist gescheitert: Die Zeile nennt die Meldung und zählt nicht in die Summe.
+  | { ok: false; error: string }
+)
+// `totals`: Summe der Objekte mit `hasRental` ohne Fehler, also genau der Zeilen mit Beträgen.
+export type TaxOverview = { year: number; rows: TaxOverviewRow[]; totals: TaxOverviewSums }
 
 // Verbilligte Vermietung (#257). `verdict` je Mietverhältnis:
 //   `split`        Quote unter der Grenze von § 21 Abs. 2 Satz 1 EStG: Mietfuchs kürzt die Werbungskosten der Wohnung

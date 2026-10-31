@@ -196,6 +196,7 @@ const GUIDE_DATA = {
       { page: 'einstellungen', text: 'Vermieter, IBAN und Zahlungsfrist unter „Vermieter & Zahlung“ gelten für alle Objekte als Vorgabe.' },
       { page: 'stammdaten', text: 'Gehört ein Objekt jemand anderem oder hat es ein eigenes Konto, etwa das Haus der Eltern, klicken Sie in der Karte „Objekt“ auf „Bearbeiten“ und setzen Sie unter „Abweichender Vermieter oder Bankverbindung“ den Haken „Für dieses Objekt abweichend“.' },
       { page: 'abrechnung', text: 'Abrechnung, Mietkonto und Steuerübersicht gelten jeweils für das gewählte Objekt.' },
+      { page: 'steuer', text: 'Unten auf der Seite Steuer stehen unter „Alle Objekte“ Einnahmen, Werbungskosten und Überschuss jedes Objekts mit der laufenden Nummer seiner Anlage V; „Öffnen“ wechselt in das Objekt.' },
     ],
     result: [
       'Jedes Objekt hat eigene Wohnungen, Zähler, Kosten und Abrechnungen, und jede Berechnung sieht nur ihr Objekt.',
@@ -211,7 +212,6 @@ const GUIDE_DATA = {
     ],
     gaps: [
       { text: 'Eine Rechnung für mehrere Objekte einmal erfassen und automatisch vorverteilen.', issue: 95 },
-      { text: 'Eine Steuer-Gesamtsicht über alle Objekte und weitere Kopfangaben der Anlage V je Objekt.', issue: 96 },
     ],
     terms: ['billingUnit', 'settlementDeadline'],
   },

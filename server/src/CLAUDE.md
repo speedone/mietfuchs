@@ -25,7 +25,7 @@ vorverteilt (#95), die Flexibilität steckt in der Kostenposition (#94).
 - **Abschlüsse sind eindeutig je (Objekt, Zeitraum).**
 - **Routen nehmen `?property=`**, beim Anlegen einer Wurzel `propertyId` im Rumpf (`propertyOf`).
   **Fehlt die Angabe und gibt es genau ein Objekt, gilt dieses**; bei mehreren 400 statt still
-  alle. Belege und Backup sind installationsweit.
+  alle. Belege, Backup und die Gesamtsicht der Steuer (`/api/tax/overview`) sind installationsweit.
 - **Einstellungen**: Name und Adresse gehören zum Objekt (`settings.house_name`/`address` stehen
   nur noch für den eingefrorenen Eingang da). Vermieter, IBAN und Zahlungsfrist sind in `settings`
   die Vorgabe, am Objekt `null` = „Vorgabe gilt“ (`effectiveLandlord` in client/src/landlord.ts).
@@ -952,6 +952,20 @@ Grundmenge ist das ganze Gebäude), Überschuss. Beschreibende Gruppen statt fes
   Satz im Hinweis `usageChangedInYear` (`spreadUsageChangedText`, Durchsicht K2). Erbfall nach BFH IX R 31/19
   (Rest beim Erblasser); R 21.1 Abs. 6 Sätze 2 und 3 EStR 2012 gelten danach als überholt. Schenkung als Auslegung
   gekennzeichnet (wie Abs. 2; FG Münster 4 K 422/15 E lehnt die Übertragung auf einen Einzelrechtsnachfolger ab).
+- **Gesamtsicht über alle Objekte** (#96 PR 3, Entwurf Teil C, [taxOverview.ts](taxOverview.ts)): `GET
+  /api/tax/overview?year=`, installationsweit wie Belege und Backup. Je Objekt **ein** `taxReportFor` (derselbe Bericht
+  wie `/api/taxreport`, die Rückgriffe der Verteilung mit `received: false`) und daraus dieselben Felder: Einnahmen =
+  Zeile 32 (`received.totalCents`, Zeilen aus `incomeLines`), Werbungskosten nach Raten (`deductibleCents`, dazu privat,
+  unentgeltlich, `deferredCents`), Rücklage, Überschuss `surplusReceivedCents`, Soll zum Abgleich; nie `paidCents` oder
+  `surplusPaidCents`. Typ `TaxOverview` in shared/types.ts (Auslegung gegen den Entwurf: beide Seiten brauchen genau
+  diesen Typ, wie `TaxReport`). `hasRental` = Mietverhältnis im Jahr, Einnahmen nach Zeile 32 oder abziehbare
+  Werbungskosten (Leerstand, R-C); eine Zahlung, die nach der Zehn-Tage-Regel ins andere Jahr gehört, zählt nicht
+  (§ 11 Abs. 1 Satz 2 EStG). Nur dann eine laufende Nummer, in der Reihenfolge der Objekte, und nur diese Objekte zählen
+  in `totals` (Summe der sichtbaren Beträge). Ein Objekt ohne steht neutral da, ohne Aussage über die Pflicht zur
+  Anlage V. Scheitert ein Bericht, trägt die Zeile die Meldung und zählt nicht in die Summe; ab ihr bekommt kein Objekt
+  mehr eine Nummer, bis der Fehler behoben ist. Oberfläche: Karte „Alle Objekte {Jahr}“ zuletzt auf der Steuerseite, erst ab zwei
+  Objekten, nicht im Druck ([client/src/taxOverview.ts](../../client/src/taxOverview.ts)). Invariante I4:
+  invariant-steuer-gesamt.test.ts (auch die Schranke von einer Sekunde bei zehn Objekten mit Verteilung).
 - **Verschiebung anzeigen** (`shiftNotes`, nur Auskunft): Jede Position trägt `outflow`; liegt das
   Jahr außerhalb der Kalenderjahre ihres Zeitraums, heißt sie verschoben (`settlementPeriod`,
   `movedOut`), und jede Verschiebung steht auf jeder Seite genau einmal. `unstatedCount` nur, wo das

@@ -19,7 +19,7 @@
 
 import { afterEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import type { Property, PropertyKind, TaxExpenseItem, TaxReceived, TaxReceivedTenancy, TaxReport } from '../types'
+import type { Property, PropertyKind, TaxExpenseItem, TaxOverview, TaxOverviewSums, TaxReceived, TaxReceivedTenancy, TaxReport } from '../types'
 import { TAX_HINTS, type Basis, type TaxHint } from '../taxView'
 import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
@@ -163,15 +163,25 @@ const VERTEILT = (items: TaxExpenseItem[] = [DACH, FASSADE], over: Partial<TaxRe
   })
 }
 
-const zeige = async (report: TaxReport, basis: Basis = 'ist', kind?: PropertyKind, over: Partial<Property> = {}) => {
+// Die Abrufe des letzten `zeige`, für Tests, die prüfen, wohin die Seite fragt (Gesamtsicht, #96 PR 3).
+let requests: string[] = []
+const OBJEKT = (id: string, name: string, kind: PropertyKind = 'mfh', over: Partial<Property> = {}): Property =>
+  ({ id, name, kind, address: '', landlordName: null, iban: null, paymentDeadlineDays: null, ...over })
+
+const zeige = async (report: TaxReport, basis: Basis = 'ist', kind?: PropertyKind, over: Partial<Property> = {}, overview?: TaxOverview) => {
   // Die Objekte sind meist gleichgültig: ohne Objekt gilt auf dem Server das einzige (#92). Nur
   // die Art des Objekts entscheidet über den Satz zum Hausgeld (#143), die Kopfangaben über den Kopf der Anlage V und den
-  // Hinweis zu anschaffungsnahen Herstellungskosten (#96 PR 2).
-  const properties: Property[] = kind || Object.keys(over).length > 0
-    ? [{ id: 'p', name: 'Objekt', kind: kind ?? 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null, ...over }]
+  // Hinweis zu anschaffungsnahen Herstellungskosten (#96 PR 2). Mit `overview` gibt es ein zweites Objekt, und die Seite
+  // fragt die Gesamtsicht (#96 PR 3).
+  const properties: Property[] = kind || Object.keys(over).length > 0 || overview
+    ? [OBJEKT('p', 'Objekt', kind ?? 'mfh', over), ...(overview ? [OBJEKT('q', 'Haus B')] : [])]
     : []
-  vi.stubGlobal('fetch', async (url: string) =>
-    new Response(JSON.stringify(url === '/api/properties' ? properties : report), { status: 200, headers: { 'content-type': 'application/json' } }))
+  requests = []
+  vi.stubGlobal('fetch', async (url: string) => {
+    requests.push(url)
+    const body = url === '/api/properties' ? properties : url.startsWith('/api/tax/overview') ? overview : report
+    return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
+  })
   render(
     <PeriodProvider>
       <PropertyProvider>
@@ -740,7 +750,7 @@ test('Reihenfolge der Steuerseite: Einnahmen, Werbungskosten mit Erhaltungsaufwa
     },
   })
   report.expenses.spread = VERTEILT([DACH]).expenses.spread
-  await zeige(report, 'ist', 'mfh', { ownershipTransferOn: `${JAHR - 1}-07-01` })
+  await zeige(report, 'ist', 'mfh', { ownershipTransferOn: `${JAHR - 1}-07-01` }, GESAMT())
   const blocks = [
     screen.getByRole('heading', { name: 'Kopf der Anlage V' }),
     screen.getByRole('heading', { name: 'Einnahmen' }),
@@ -751,6 +761,8 @@ test('Reihenfolge der Steuerseite: Einnahmen, Werbungskosten mit Erhaltungsaufwa
     // #262 PR 3: der Block der Zeilen 57 bis 72 nach 55/56, vor der Kürzung.
     screen.getByRole('heading', { name: 'Zu verteilender Erhaltungsaufwand' }),
     screen.getByText(/Verbilligte Vermietung: DG/),
+    // #96 PR 3: die Gesamtsicht zuletzt, nach der Karte zur ortsüblichen Miete.
+    await screen.findByRole('heading', { name: `Alle Objekte ${JAHR}` }),
   ]
   for (let i = 1; i < blocks.length; i++) {
     const before = blocks[i - 1] ?? expect.unreachable('Block fehlt')
@@ -883,4 +895,102 @@ test('Folgejahr nur mit Anteil aus einem Vorjahr: „aus Vorjahren“ statt eine
   cleanup()
   await zeige(VERTEILT())
   expect(plain(screen.getByText(/Werbungskosten \(abziehbar\)/).closest('.kpi'))).toMatch(/in Folgejahre verschoben 6\.666,66 €.*aus Vorjahren 2\.000,00 €/)
+})
+
+// ---------- Gesamtsicht über alle Objekte (#96 PR 3) ----------
+
+const SUMME = (over: Partial<TaxOverviewSums> = {}): TaxOverviewSums => ({
+  incomeCents: 1200000,
+  incomeLines: { homes: 1200000, inclusive: 0, unallocated: 0, relatives: 0, allocations: 0, flatRate: 0, settlement: 0, relativesAllocations: 0, relativesSettlement: 0, formerYears: 0, formerYearsAllocations: 0, totalCents: 1200000 },
+  sollCents: 1100000, expensesTotalCents: 300000, privateCents: 0, gratuitousCents: 0, deferredCents: 0, deductibleCents: 300000,
+  reserveContributionCents: 0, surplusCents: 900000, surplusSollCents: 800000, ...over,
+})
+const GESAMT = (): TaxOverview => ({
+  year: JAHR,
+  rows: [
+    { propertyId: 'p', name: 'Objekt', kind: 'mfh', ok: true, hasRental: true, number: 1, sums: SUMME() },
+    // Selbst bewohnt: privater Teil ohne Vermietung, zählt nicht (Durchsicht S1).
+    { propertyId: 'g', name: 'Garagenhof', kind: 'sonstiges', ok: true, hasRental: false, number: null, sums: SUMME({ incomeCents: 0, sollCents: 0, deductibleCents: 0, surplusCents: 0, surplusSollCents: 0, expensesTotalCents: 25000, privateCents: 25000 }) },
+    { propertyId: 'q', name: 'Haus B', kind: 'etw', ok: true, hasRental: true, number: 2, sums: SUMME({ incomeCents: 0, sollCents: 0, deductibleCents: 120000, privateCents: 40000, surplusCents: -120000, surplusSollCents: -120000 }) },
+    { propertyId: 'x', name: 'Haus X', kind: 'mfh', ok: false, error: 'Die Position y ist nur mit einem Teilbetrag abgeflossen.' },
+  ],
+  totals: SUMME({ deductibleCents: 420000, privateCents: 40000, surplusCents: 780000, surplusSollCents: 680000 }),
+})
+
+test('Gesamtsicht: fehlt bei einem Objekt und wird dann auch nicht abgefragt', async () => {
+  await zeige(REPORT(), 'ist', 'mfh')
+  expect(screen.queryByRole('heading', { name: /Alle Objekte/ })).toBeNull()
+  expect(requests.some((u) => u.startsWith('/api/tax/overview'))).toBe(false)
+})
+
+test('Gesamtsicht ab zwei Objekten: installationsweit abgefragt, je Objekt eine Zeile, Summe, neutraler Satz, Fehler, privat daneben', async () => {
+  await zeige(REPORT(), 'ist', 'mfh', {}, GESAMT())
+  const table = await screen.findByRole('table', { name: `Alle Objekte ${JAHR}` })
+  expect(requests).toContain(`/api/tax/overview?year=${JAHR}`)
+  const rows = [...table.querySelectorAll('tbody tr')]
+  expect(rows.map((r) => r.getAttribute('data-row'))).toEqual(['p', 'g', 'q', 'x'])
+  expect(rows[0]?.textContent).toMatch(/Objekt/)
+  expect(rows[0]?.textContent).toMatch(/dieses Objekt/)
+  expect(rows[0]?.textContent).toContain(fmtEuro(1200000))
+  expect(rows[1]?.textContent).toContain(`Keine Einnahmen und keine Werbungskosten in ${JAHR}.`)
+  expect(rows[2]?.textContent).toContain(fmtEuro(40000))
+  expect(rows[2]?.textContent).toContain(fmtEuro(-120000))
+  expect(rows[3]?.textContent).toMatch(/Nicht gerechnet: Die Position y/)
+  const foot = table.querySelector('tfoot')?.textContent ?? ''
+  expect(foot).toContain(fmtEuro(420000))
+  expect(foot).toContain(fmtEuro(780000))
+  // Die Fußzeile „privat“ ist die Summe der angezeigten Zellen (Durchsicht S1).
+  const cells = [...table.querySelectorAll('tbody td[data-label="privat, nicht abziehbar"]')].map((td) => td.textContent)
+  expect(cells).toEqual([fmtEuro(0), fmtEuro(40000)])
+  expect(table.querySelector('tfoot td[data-label="privat, nicht abziehbar"]')?.textContent).toBe(fmtEuro(40000))
+  expect(screen.getByText(/zählt nicht in die Summe/)).toBeTruthy()
+  expect(screen.getByText('Kein Formular: Die Summe dient nur Ihrer Kontrolle.')).toBeTruthy()
+  // Am Handy gestapelt; der Kopf nennt Zeile 32, die Nummer der Anlage steht je Zeile.
+  expect(table.classList.contains('stacked')).toBe(true)
+  expect([...table.querySelectorAll('thead th')].map((t) => t.textContent)).toContain('Einnahmen (Zeile 32)')
+  expect(rows[2]?.querySelector('[data-label="Nr. der Anlage"]')?.textContent).toBe('2')
+  // Nicht im Druck: Das Blatt ist die Anlage eines Objekts.
+  expect(table.closest('.no-print')).not.toBeNull()
+})
+
+test('Gesamtsicht auf Soll: Einnahmen und Überschuss vereinbart, mit Vermerk', async () => {
+  await zeige(REPORT(), 'soll', 'mfh', {}, GESAMT())
+  const table = await screen.findByRole('table', { name: `Alle Objekte ${JAHR}` })
+  expect([...table.querySelectorAll('thead th')].map((t) => t.textContent)).toContain('Einnahmen vereinbart (Soll)')
+  expect(table.querySelector('tbody tr')?.textContent).toContain(fmtEuro(1100000))
+  // K3: der Vermerk zum Soll steht auch in der Karte.
+  const card = table.closest('section') ?? expect.unreachable('Karte')
+  expect(card.textContent).toMatch(/Diese Ansicht rechnet mit dem vereinbarten Soll/)
+})
+
+test('Gesamtsicht auf Ist: kein Vermerk zum Soll in der Karte', async () => {
+  await zeige(REPORT(), 'ist', 'mfh', {}, GESAMT())
+  const table = await screen.findByRole('table', { name: `Alle Objekte ${JAHR}` })
+  expect(table.closest('section')?.textContent).not.toMatch(/vereinbarten Soll/)
+})
+
+// K4: Scheitert der Abruf, steht die Meldung in der Karte; die Seite des Objekts bleibt.
+test('Gesamtsicht: Fehler beim Abruf steht in der Karte', async () => {
+  const properties = [OBJEKT('p', 'Objekt'), OBJEKT('q', 'Haus B')]
+  vi.stubGlobal('fetch', async (url: string) => {
+    if (url.startsWith('/api/tax/overview')) return new Response(JSON.stringify({ error: 'Die Datenbank ist gerade nicht erreichbar.' }), { status: 500, headers: { 'content-type': 'application/json' } })
+    return new Response(JSON.stringify(url === '/api/properties' ? properties : REPORT()), { status: 200, headers: { 'content-type': 'application/json' } })
+  })
+  render(<PeriodProvider><PropertyProvider><Steuer settings={null} /></PropertyProvider></PeriodProvider>)
+  const heading = await screen.findByRole('heading', { name: `Alle Objekte ${JAHR}` })
+  const card = heading.closest('section') ?? expect.unreachable('Karte')
+  await waitFor(() => expect(card.textContent).toMatch(/Die Datenbank ist gerade nicht erreichbar/))
+  expect(screen.getByText(/Summe der Einnahmen/i)).toBeTruthy()
+})
+
+test('Gesamtsicht: der Sprung wechselt in das Objekt und lädt dessen Steuerübersicht', async () => {
+  vi.stubGlobal('scrollTo', () => {})
+  await zeige(REPORT(), 'ist', 'mfh', {}, GESAMT())
+  await screen.findByRole('table', { name: `Alle Objekte ${JAHR}` })
+  // Kein Sprung für das gewählte Objekt und für eines, das es in der Liste nicht gibt.
+  expect(screen.getAllByRole('button', { name: /^Öffnen / }).map((b) => b.textContent)).toEqual(['Öffnen Haus B'])
+  fireEvent.click(screen.getByRole('button', { name: 'Öffnen Haus B' }))
+  await waitFor(() => expect(requests).toContain(`/api/taxreport/${JAHR}?property=q`))
+  // Danach ist Haus B das gewählte, und der Sprung zurück steht beim ersten Objekt.
+  expect(await screen.findByRole('button', { name: 'Öffnen Objekt' })).toBeTruthy()
 })

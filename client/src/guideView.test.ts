@@ -25,7 +25,7 @@ describe('Anleitungen (#164)', () => {
     expect(ids('EINLIEGER')).toContain('granny')
     expect(ids('§ 9b')).toEqual(['meteringService', 'heatingSelf', 'tenantChange'])
     expect(ids('+ Zähler anlegen')).toContain('granny')
-    expect(ids('#96')).toEqual(['properties'])
+    expect(ids('#95')).toEqual(['properties', 'garage'])
     expect(ids('  ')).toHaveLength(allGuides().length)
     expect(ids('gibt es nicht')).toEqual([])
   })
