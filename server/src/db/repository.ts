@@ -133,6 +133,13 @@ export const asNullableFilled = (value: unknown): string | null => {
 }
 
 export const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+// Ein Kalendertag in der Form JJJJ-MM-TT, den es gibt (Durchsicht #96 PR 2, K2): `Date` rollt den 31.02. auf den 03.03.,
+// deshalb der Vergleich mit dem Zurückgeschriebenen; ein Monat 13 ergibt kein Datum. Wie `headerDateText` im Formular.
+const isCalendarDay = (v: string): boolean => {
+  if (!ISO_DATE.test(v)) return false
+  const d = new Date(`${v}T00:00:00Z`)
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v
+}
 
 // Eines der 16 Kürzel oder leer (shared/holidays.ts); sonst ein Satz statt eines Datenbankfehlers.
 // HeatingError, weil die Fehlerbehandlung ihren Status weitergibt, wie bei isoDateOrNull.
@@ -142,10 +149,10 @@ function federalStateOrNull(v: unknown): FederalState | null {
   throw new HeatingError(400, 'Das Bundesland ist unbekannt. Bitte wählen Sie es aus der Liste oder lassen Sie es leer.')
 }
 
-// Ein ISO-Datum oder leer; sonst ein Satz statt eines Datenbankfehlers (Heizung PR 18).
+// Ein Kalendertag oder leer; sonst ein Satz statt eines Datenbankfehlers (Heizung PR 18; den Tag prüft es seit K2).
 function isoDateOrNull(v: unknown, what: string): string | null {
   const text = asNullableFilled(v)
-  if (text !== null && !ISO_DATE.test(text)) throw new HeatingError(400, `${what} ist kein Datum. Bitte wählen Sie ihn im Kalender.`)
+  if (text !== null && !isCalendarDay(text)) throw new HeatingError(400, `${what} ist kein Datum. Bitte wählen Sie ihn im Kalender.`)
   return text
 }
 
@@ -2117,7 +2124,7 @@ function groundTaxFileNumberOrNull(v: unknown): string | null {
 }
 function headerDateOrNull(v: unknown, what: string): string | null {
   if (v === null || v === undefined || v === '') return null
-  if (typeof v !== 'string' || !ISO_DATE.test(v)) throw new HeatingError(400, `${what} ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie ihn im Kalender.`)
+  if (typeof v !== 'string' || !isCalendarDay(v)) throw new HeatingError(400, `${what} ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie ihn im Kalender.`)
   return v
 }
 

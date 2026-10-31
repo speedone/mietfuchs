@@ -288,6 +288,10 @@ test('Kopf der Anlage V (#96): Aktenzeichen und Daten am Objekt hin und zurück,
     for (const [body, satz] of [
       [{ purchaseContractOn: '10.05.2023' }, /Kaufvertrag.*kein Datum/],
       [{ completedOn: '2020-11' }, /Fertigstellung.*kein Datum/],
+      // Durchsicht K2: ein Tag, den es nicht gibt, wie im Formular (`headerDateText`), auch bei der Verordnung (isoDateOrNull).
+      [{ completedOn: '2023-02-31' }, /Fertigstellung.*kein Datum/],
+      [{ ownershipTransferOn: '2023-13-01' }, /Eigentumsübergangs.*kein Datum/],
+      [{ tightMarket: true, tightMarketFrom: '2023-02-29' }, /Beginn der Verordnung.*kein Datum/],
       [{ groundTaxFileNumber: '1'.repeat(41) }, /Aktenzeichen.*höchstens 40 Zeichen/],
     ] as const) {
       const r = await put(body)
