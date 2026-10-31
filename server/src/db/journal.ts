@@ -252,8 +252,7 @@ async function dropIfNoChange(db: Database, id: number): Promise<void> {
   const rows = await db.select().from(changeLog).where(eq(changeLog.groupId, id)).orderBy(changeLog.id).all()
   if (rows.length === 0 || collapse(rows).length > 0) return
   await db.transaction(async (tx) => {
-    await restoreRowids(tx, rows)
-    await tx.delete(changeGroups).where(eq(changeGroups.id, id))
+    if (await restoreRowids(tx, rows)) await tx.delete(changeGroups).where(eq(changeGroups.id, id))
   })
 }
 
@@ -264,7 +263,12 @@ async function dropIfNoChange(db: Database, id: number): Promise<void> {
 // Gruppe ergäbe nicht mehr zeilengleich den Stand. Deshalb bekommt jede solche Zeile ihre alte `rowid` zurück, erst
 // eine freie und dann die alte, denn zwei Zeilen können ihre Plätze getauscht haben. Die Trigger schreiben nichts mit
 // (`journal_current` ist schon leer). Eine Tabelle mit INTEGER PRIMARY KEY behält sie ohnehin, ihr Inhalt ist gleich.
-async function restoreRowids(db: Executor, rows: LogRow[]): Promise<void> {
+// **Nur bei derselben Reihenfolge** (Durchsicht S1): Stehen die neu eingefügten Zeilen untereinander anders als vorher
+// (dieselbe Unterliste umsortiert), ist das eine Änderung, denn gelesen wird nach `rowid`, und die Antwort der Anfrage
+// zeigt schon die neue Reihenfolge. Dann bleibt alles, wie es ist, auch die Gruppe (`false`): Das Journal kennt jede
+// `rowid`, ein Rücksprung stellt die alte Reihenfolge her. Die Staffeln eines Mietverhältnisses schreibt
+// `writeTenancyChildren` deshalb sortiert, dort entsteht so ein Fall nicht.
+async function restoreRowids(db: Executor, rows: LogRow[]): Promise<boolean> {
   const first = new Map<string, { table: string, key: Image, rowid: unknown }>()
   const last = new Map<string, unknown>()
   for (const row of rows) {
@@ -274,14 +278,21 @@ async function restoreRowids(db: Executor, rows: LogRow[]): Promise<void> {
   }
   const moves = [...first].flatMap(([id, f]) => {
     const now = last.get(id)
-    return typeof f.rowid === 'number' && typeof now === 'number' && f.rowid !== now ? [{ table: f.table, key: f.key, rowid: f.rowid }] : []
+    return typeof f.rowid === 'number' && typeof now === 'number' && f.rowid !== now ? [{ table: f.table, key: f.key, rowid: f.rowid, now }] : []
   })
+  const tables = new Set(moves.map((m) => m.table))
+  for (const table of tables) {
+    const mine = moves.filter((m) => m.table === table)
+    const order = (rowid: (m: (typeof mine)[number]) => number) => mine.slice().sort((x, y) => rowid(x) - rowid(y)).map((m) => asJson(m.key)).join('\n')
+    if (order((m) => m.rowid) !== order((m) => m.now)) return false
+  }
   const where = (key: Image) => sql.join(Object.entries(key).map(([c, v]) => (c === 'rowid' ? sql`rowid = ${v}` : sql`${sql.identifier(c)} = ${v}`)), sql` AND `)
   for (const m of moves) {
     const table = sql.identifier(m.table)
     await db.run(sql`UPDATE ${table} SET rowid = (SELECT max(rowid) + 1 FROM ${table}) WHERE ${where(m.key)}`)
   }
   for (const m of moves) await db.run(sql`UPDATE ${sql.identifier(m.table)} SET rowid = ${m.rowid} WHERE ${where(m.key)}`)
+  return true
 }
 
 // Die Kennung der laufenden Gruppe, `null` ohne. Die Gruppe selbst gibt es erst mit ihrer ersten Zeile.

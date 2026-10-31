@@ -269,6 +269,11 @@ Route, Zahl der Migrationsschritte) und `change_log` (je Zeile Tabelle, Schlüss
   **und gibt jeder dabei neu eingefügten Zeile ihre alte `rowid` zurück** (`restoreRowids`, #494): Sonst trüge eine
   verschobene Zeile die `rowid`, die ein späterer Rücksprung für eine früher gelöschte braucht („UNIQUE constraint
   failed: ….rowid“, schon in der Vorschau), und der Stand vor der Gruppe wäre nicht mehr zeilengleich herzustellen.
+  Nur wenn die Zeilen untereinander in derselben Reihenfolge stehen; eine umsortierte Unterliste ist eine Änderung
+  (gelesen wird nach `rowid`, die Antwort zeigt schon die neue Reihenfolge), dann bleibt die Gruppe stehen. **Die
+  Reihenfolge einer ganz ersetzten Unterliste ist kein Inhalt**: Die Staffeln und Korrekturen eines Mietverhältnisses
+  schreibt `writeTenancyChildren` nach Stichtag bzw. Zeitraum sortiert (gerechnet wird ohnehin sortiert), damit ergibt
+  dieselbe Staffel in anderer Reihenfolge keinen Eintrag, und Antwort und Bestand laufen nie auseinander.
   `endGroup` leert zuerst `journal_current` und **wirft nie**. Vorher kosteten Anlegen und Objekt zwei Festschreibungen
   je Anfrage und verdoppelten 300 `PUT` (Durchsicht von PR #430).
 - **Ohne `journal` wird nichts erfasst** (Systemarbeit). `writeData` in index.ts reicht `journal` aus der laufenden
@@ -322,8 +327,11 @@ bräuchte eine Abhängigkeitsregel, deren Fehler einen nie geprüften Bestand er
   dieselbe Route mit der Vorschau `kind: 'snapshot'` (siehe „Sicherungspunkte im Verlauf“).
 - **Gegenstück je Zeile** (`inverse`): Einfügen wird gelöscht, Löschen mit Vorher-Bild **samt `rowid`** wieder eingefügt
   (die Trigger schreiben sie als `$rowid` ins Bild, `collapse` blendet sie aus; read.ts liest `ORDER BY rowid`); trägt
-  eine Zeile mit anderem Schlüssel diese `rowid` (nur eine ohne Journal entstandene, `unjournaled`), rückt sie ans Ende
-  (#494). Eine Änderung bekommt ihr Vorher-Bild. `defer_foreign_keys`, weil eine Kaskade Eltern und Kinder in der Reihenfolge von
+  eine Zeile mit anderem Schlüssel diese `rowid`, rückt sie ans Ende (#494). Das ist eine, deren `rowid` das Journal
+  nicht kennt: ohne Journal entstanden (`unjournaled`) oder von einer Gruppe ohne Änderung in 0.13 verschoben, bevor
+  `restoreRowids` es verhinderte; ein schon betroffener Verlauf heilt so. **Grenze**: Dieses Verschieben wird nicht
+  erfasst, nach der Rücknahme des Rücksprungs steht die Zeile nicht wieder auf ihrer alten `rowid` (harmlos, nur die
+  Reihenfolge). Eine Änderung bekommt ihr Vorher-Bild. `defer_foreign_keys`, weil eine Kaskade Eltern und Kinder in der Reihenfolge von
   SQLite meldet. Danach das **Sicherheitsnetz**: `PRAGMA foreign_key_check`, `crossPropertyViolations`,
   `orphanPeriodKeys`, `heatingPlantViolations` (dieselben wie beim Wiederherstellen); ein Verstoß rollt alles zurück
   (409). Durch die Bauart greift es nicht; ein Test verfälscht das Journal, um es auszulösen.

@@ -80,7 +80,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   unverändert erneut gespeichert worden war (etwa die Antwort zu einer fehlenden Zwischenablesung oder ein
   Mietverhältnis) und dieselbe Tabelle eine gelöschte Zeile zurückbekommen sollte; ebenso nach dem Löschen eines Belegs,
   wenn danach ein von Hand in den Belegordner gelegter Beleg bearbeitet wurde
-  ([#494](https://github.com/speedone/mietfuchs/issues/494)). An den Daten ging nichts verloren.
+  ([#494](https://github.com/speedone/mietfuchs/issues/494)). Das gelingt jetzt auch, wenn der Verlauf schon betroffen
+  war. An den Daten ging nichts verloren.
 
 - Ein Wechsel des Abrechnungszeitraums oder der Heizperiode überschrieb das angegebene Jahr der Zahlung von Positionen ohne
   Zahlungsdatum, sobald ein Teil in einen Zeitraum innerhalb eines Kalenderjahres kam; es bleibt jetzt erhalten, und

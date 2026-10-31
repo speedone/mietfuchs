@@ -337,10 +337,14 @@ async function inverse(db: Executor, row: LogRow): Promise<void> {
   const columns = Object.keys(before).filter((c) => c !== ROWID)
   if (row.op === 'delete') {
     const rowid = before[ROWID]
-    // Trägt eine andere Zeile die alte `rowid`, rückt sie ans Ende (#494). Das kann nur eine sein, die ohne Journal
-    // entstanden ist (`unjournaled`: die Zeile eines Belegs ohne Zeile), denn jede erfasste ist vorher schon
-    // zurückgenommen; sie bekam die `rowid`, die das Löschen frei gemacht hatte. Eine Zeile mit demselben Schlüssel
-    // bleibt, wo sie ist (bei INTEGER PRIMARY KEY ist die `rowid` der Schlüssel), und das Einfügen scheitert wie bisher.
+    // Trägt eine Zeile mit anderem Schlüssel die alte `rowid`, rückt sie ans Ende (#494). Jede erfasste Zeile danach
+    // ist schon zurückgenommen; dort steht also eine, deren `rowid` das Journal nicht kennt: eine ohne Journal
+    // entstandene (`unjournaled`, die Zeile eines Belegs ohne Zeile) oder eine, die in 0.13 eine Gruppe ohne Änderung
+    // verschoben hat, bevor `restoreRowids` sie zurückgab. Das heilt auch einen schon betroffenen Verlauf. Das
+    // Verschieben selbst wird nicht erfasst (nur die `rowid` ändert sich, der Trigger sieht keine Spalte): Nach der
+    // Rücknahme des Rücksprungs steht die Zeile nicht wieder auf ihrer alten `rowid`, harmlos, es betrifft nur die
+    // Reihenfolge. Eine Zeile mit demselben Schlüssel bleibt, wo sie ist (bei INTEGER PRIMARY KEY ist die `rowid` der
+    // Schlüssel), und das Einfügen scheitert wie bisher.
     if (typeof rowid === 'number') {
       await db.run(sql`UPDATE ${table} SET rowid = (SELECT max(rowid) + 1 FROM ${table}) WHERE rowid = ${rowid} AND NOT (${keyCondition(row.tableName, key)})`)
     }

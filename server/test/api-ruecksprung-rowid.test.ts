@@ -7,7 +7,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import type { Unit } from '../../shared/types.ts'
-import { startServerIn, uploadBelegFile, type Server } from '../testing/api.ts'
+import { besideServer, startServerIn, uploadBelegFile, waitForExit, type Server } from '../testing/api.ts'
 import { dumpStock, newest, revert, revertRaw, previewOf } from '../testing/revert.ts'
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-'))
@@ -106,6 +106,76 @@ test('#494: Unverändert gespeichertes Mietverhältnis lässt auch die rowid sei
     await ok(send(s, 'PUT', `/api/tenancies/${t.id}`, { prepayments: body.prepayments }))
     assert.equal((await newest(s)).id, mark.id, 'keine Änderung, kein Eintrag')
     assert.deepEqual(await dumpStock(s.dataDir), state)
+  } finally {
+    s.stop()
+  }
+})
+
+// Durchsicht S1: Dieselben Staffeln in anderer Reihenfolge sind keine Änderung. Antwort und gespeicherter Stand dürfen
+// nicht auseinanderlaufen (vorher zeigte die Antwort die neue Reihenfolge, der nächste Aufruf die alte).
+test('#494 S1: Staffeln umgekehrt gespeichert: Antwort und Bestand zeigen dieselbe Reihenfolge', async () => {
+  const s = await startServerIn(tmp())
+  try {
+    const u = await unit(s, 'Nord 1')
+    const prepayments = [{ from: '2024-01', monthlyCents: 10000 }, { from: '2025-01', monthlyCents: 12000 }]
+    const t = (await (await ok(send(s, 'POST', '/api/tenancies', { unitId: u, tenantName: 'Mieter Eins', persons: 2, start: '2024-01-01', prepayments }))).json()) as { id: string }
+    await ok(send(s, 'POST', '/api/tenancies', { unitId: await unit(s, 'Nord 2'), tenantName: 'Mieter Zwei', persons: 1, start: '2024-01-01', prepayments }))
+    const mark = await newest(s)
+    const state = await dumpStock(s.dataDir)
+    const put = (await (await ok(send(s, 'PUT', `/api/tenancies/${t.id}`, { prepayments: [...prepayments].reverse() }))).json()) as { prepayments: unknown }
+    // Die Staffel wird sortiert geschrieben: keine Änderung, kein Eintrag, der Bestand zeilengleich.
+    assert.equal((await newest(s)).id, mark.id, 'umsortiert ist keine Änderung')
+    assert.deepEqual(await dumpStock(s.dataDir), state)
+    const all = (await (await ok(send(s, 'GET', '/api/tenancies?property=objekt-1'))).json()) as { id: string, prepayments: unknown }[]
+    const got = all.find((x) => x.id === t.id) ?? assert.fail('Mietverhältnis fehlt')
+    assert.deepEqual(put.prepayments, got.prepayments)
+  } finally {
+    s.stop()
+  }
+})
+
+// Durchsicht S1, allgemein: Eine ganz ersetzte Unterliste, die nicht sortiert geschrieben wird (Teilnehmer einer
+// Kostenposition), in anderer Reihenfolge. Die Reihenfolge bleibt dann, wie die Anfrage sie geschickt hat, und
+// Antwort und Bestand stimmen überein; das Journal kennt jede rowid.
+test('#494 S1: Umsortierte Teilnehmer einer Kostenposition: Antwort und Bestand gleich', async () => {
+  const s = await startServerIn(tmp())
+  try {
+    const ids = [await unit(s, 'Nord 1'), await unit(s, 'Nord 2'), await unit(s, 'Nord 3')]
+    const body = { propertyId: 'objekt-1', period: '2025-01', category: 'Hauswart', description: 'Hauswart', amountCents: 60000, key: 'area' }
+    const c = (await (await ok(send(s, 'POST', '/api/costItems', { ...body, participantUnitIds: ids.slice(0, 2) }))).json()) as { id: string }
+    await ok(send(s, 'POST', '/api/costItems', { ...body, participantUnitIds: ids.slice(1) }))
+    const put = (await (await ok(send(s, 'PUT', `/api/costItems/${c.id}`, { participantUnitIds: [ids[1], ids[0]] }))).json()) as { participantUnitIds: unknown }
+    const all = (await (await ok(send(s, 'GET', '/api/costItems?property=objekt-1'))).json()) as { id: string, participantUnitIds: unknown }[]
+    const got = all.find((x) => x.id === c.id) ?? assert.fail('Kostenposition fehlt')
+    assert.deepEqual(put.participantUnitIds, [ids[1], ids[0]])
+    assert.deepEqual(got.participantUnitIds, put.participantUnitIds)
+  } finally {
+    s.stop()
+  }
+})
+
+// Durchsicht S2: Ein Verlauf, den 0.13 schon verschoben hat (eine Gruppe ohne Änderung fiel weg und nahm die einzige Spur
+// der neuen rowid mit). Nachgestellt ohne Trigger neben dem gestoppten Server; „Rückgängig“ des Löschens gelingt
+// trotzdem, die verschobene Zeile rückt ans Ende.
+test('#494 S2: Rückgängig heilt einen schon verschobenen Verlauf', async () => {
+  let s = await startServerIn(tmp())
+  try {
+    const ids = [await unit(s, 'Nord 1'), await unit(s, 'Nord 2'), await unit(s, 'Nord 3')]
+    for (const id of ids) await gap(s, id)
+    const state = await gapRows(s)
+    await ok(send(s, 'DELETE', `/api/units/${ids[2]}/interim-gaps/${DATE}`))
+    const removal = await newest(s)
+    s.child.kill()
+    await waitForExit(s.child)
+    const c = await besideServer(s.dataDir)
+    c.exec(`UPDATE interim_reading_gaps SET rowid = 3 WHERE unit_id = '${ids[0]}'`)
+    c.close()
+    s = await startServerIn(s.dataDir)
+    await revert(s, removal.id, 'including')
+    const after = await gapRows(s)
+    assert.deepEqual(after.slice(0, 2), state.slice(1), 'die beiden anderen auf ihrer rowid')
+    assert.equal(after.length, 3)
+    assert.ok(after.some((r) => r.startsWith(`[4,"${ids[0]}"`)), `die verschobene am Ende: ${after.join(' | ')}`)
   } finally {
     s.stop()
   }
