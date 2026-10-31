@@ -244,6 +244,67 @@ async function clippedSelfTest(page) {
   return cut === 3 && full === 1 ? null : `Die Messung abgeschnittener Felder findet ${cut} statt 3 zu schmale und ${full} statt 1 voll breites Probefeld.`
 }
 
+// ---------- Pfeil der Aufklapper (S32, client/CLAUDE.md „Aufklappen“) ----------
+// Der Pfeil (`::before`) jedes sichtbaren Aufklappers steht neben der ersten Textzeile, nicht darüber (Durchsicht M2: der
+// Knopf „Rechenweg“ mit `display: inline` brach den Pfeil in eine eigene Zeile). Ein Pseudo-Element hat kein Rechteck;
+// gemessen wird ein Stellvertreter mit den berechneten Angaben des `::before`, während das echte ausgeblendet ist.
+async function arrowsBesideText(page, scope) {
+  return page.evaluate((sel) => {
+    const win = /** @type {any} */ (globalThis)
+    const doc = win.document
+    const out = []
+    const style = doc.createElement('style')
+    style.textContent = '.bc-arrow-off::before { content: none !important; }'
+    doc.head.appendChild(style)
+    for (const el of doc.querySelectorAll(`${sel} :is(details > summary, .disclosure)`)) {
+      const box = el.getBoundingClientRect()
+      if (box.width === 0 || box.height === 0) continue
+      const pseudo = win.getComputedStyle(el, '::before')
+      if (pseudo.content === 'none' || pseudo.display === 'none') continue
+      const walker = doc.createTreeWalker(el, 4)
+      let text = null
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) if (n.textContent.trim()) { text = n; break }
+      if (!text) continue
+      const probe = doc.createElement('span')
+      for (const prop of ['display', 'position', 'inset-inline-start', 'top', 'width', 'margin-right', 'font-size', 'font-family', 'font-weight', 'line-height', 'vertical-align']) probe.style.setProperty(prop, pseudo.getPropertyValue(prop))
+      probe.textContent = '▸'
+      el.classList.add('bc-arrow-off')
+      el.insertBefore(probe, el.firstChild)
+      const range = doc.createRange()
+      range.selectNodeContents(text)
+      const first = range.getClientRects()[0]
+      const arrow = probe.getBoundingClientRect()
+      probe.remove()
+      el.classList.remove('bc-arrow-off')
+      if (!first) continue
+      const fontSize = parseFloat(win.getComputedStyle(el).fontSize) || 16
+      const off = Math.abs((arrow.top + arrow.height / 2) - (first.top + first.height / 2))
+      if (off > fontSize * 0.5) out.push(`„${el.textContent.trim().slice(0, 50)}“: Pfeil ${Math.round(off)} px neben der ersten Textzeile versetzt`)
+    }
+    style.remove()
+    return out
+  }, scope)
+}
+
+// Ein umbrechender Titel im <summary> steht mit hängendem Einzug neben dem Pfeil (Durchsicht S1): In einem schmalen
+// <details> beginnen alle Zeilen des Titels an derselben Stelle. Gemessen an einem eingefügten Probe-<details>.
+async function summaryIndent(page) {
+  return page.evaluate(() => {
+    const doc = /** @type {any} */ (globalThis).document
+    const box = doc.createElement('details')
+    box.id = 'bc-summary-probe'
+    box.style.width = '160px'
+    box.innerHTML = '<summary>Weitere Angaben zum Leistungszeitraum und zum Jahr der Zahlung (optional)</summary><p>x</p>'
+    doc.querySelector('main')?.appendChild(box)
+    const range = doc.createRange()
+    range.selectNodeContents(box.querySelector('summary').firstChild)
+    const lefts = [...range.getClientRects()].map((r) => Math.round(r.left))
+    box.remove()
+    if (lefts.length < 2) return 'Die Probe des hängenden Einzugs bricht nicht um; sie misst nichts.'
+    return lefts.every((l) => Math.abs(l - lefts[0]) <= 1) ? null : `Ein umbrechender Titel im <summary> beginnt nicht jede Zeile an derselben Stelle (x = ${lefts.join(', ')}).`
+  })
+}
+
 // ---------- Ausnahmen „voll breit“ ----------
 // Je Eintrag Seite (Kennung wie im Bericht, für Seitenfenster mit „:fenster“), der Anfang des Feldnamens und der
 // Grund; optional `ansicht`. Ein Eintrag, den ein vollständiger Lauf nicht mehr sieht, ist ein Befund, bis er aus der
@@ -344,6 +405,8 @@ async function checkCombination(browser, base, combo, AxeBuilder, navLabels) {
   if (!labels?.length) throw new Error('Die Navigation hat keine Einträge.')
   const selfTest = await clippedSelfTest(page)
   if (selfTest) add('start', 'Messung', selfTest)
+  const indent = await summaryIndent(page)
+  if (indent) add('start', 'Aufklappen', indent)
   /** @param {string} pageId @param {Clipped[]} list @param {string} [prefix] */
   const reportClipped = (pageId, list, prefix = '') => {
     for (const f of list) {
@@ -420,6 +483,7 @@ async function checkCombination(browser, base, combo, AxeBuilder, navLabels) {
       await settle(page)
     }
     for (const text of await visibleErrors(page)) add(id, 'Fehlermeldung', text)
+    for (const text of await arrowsBesideText(page, 'main')) add(id, 'Aufklappen', text)
     const clippedClosed = await clippedFields(page, 'main')
     reportClipped(id, clippedClosed)
     reportClipped(id, clippedOpen.filter((f) => !clippedClosed.some((c) => c.name === f.name && c.text === f.text)), 'aufgeklappt: ')
@@ -445,6 +509,7 @@ async function checkCombination(browser, base, combo, AxeBuilder, navLabels) {
       const wide = await overflow(page)
       if (wide) add('muster', 'Breite', `Seite ${wide.scroll} px breit bei ${wide.width} px Fenster${wide.elements.length ? `: ${wide.elements.join('; ')}` : ''}`)
       reportClipped('muster', await clippedFields(page, 'main'))
+      for (const text of await arrowsBesideText(page, 'main')) add('muster', 'Aufklappen', text)
       await runAxe('muster')
       await page.screenshot({ path: path.join(dir, 'muster.png'), fullPage: true }).catch(() => {})
       // Die Zustände, die erst nach einem Klick erscheinen, je mit axe und Foto (Durchsicht der Musterseite):

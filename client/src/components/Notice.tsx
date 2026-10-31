@@ -60,7 +60,7 @@ export function NoticeBox({ level, title, context, action, children, more, fix, 
             <button type="button" className="btn secondary notice-action" aria-describedby={title ? titleId : undefined} onClick={fix.onClick}>{fix.label}</button>
           )}
           {more && (
-            <DisclosureButton open={open} onToggle={() => setOpen((o) => !o)} closedLabel="Mehr dazu" openLabel="Weniger" controls={moreId} className="btn ghost notice-action" />
+            <DisclosureButton open={open} onToggle={() => setOpen((o) => !o)} closedLabel="Mehr dazu" openLabel="Weniger" controls={moreId} describedBy={title ? titleId : undefined} className="btn ghost notice-action" />
           )}
         </div>
       )}

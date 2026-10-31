@@ -412,15 +412,21 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
 
 - **Ein Pfeil für alles, was aufklappt**, ▸ zu und ▾ offen, gedämpft, vor dem Text: zentral in index.css über
   `summary::before` (der Marker des Browsers ist aus, `list-style: none`) und für Knöpfe über die Klasse `disclosure`
-  mit `aria-expanded`. Für Vorleser ist der Pfeil leer (`content: '▸' / ''`), im Druck fehlt er. Keine Sonderregel
-  zeichnet einen eigenen Pfeil oder Marker; ein Flex-`summary` (Register im Belegordner) bekommt ihn als erstes Kind.
+  mit `aria-expanded`. Für Vorleser ist der Pfeil leer (`content: '▸' / ''`), im Druck fehlt er. In Safari < 17.4 und
+  Firefox < 128 ist diese Schreibweise ungültig; dann gilt die Rückfalldeklaration davor, und der Vorleser liest den Pfeil
+  mit (bewusst hingenommen). Im `summary` steht der Pfeil absolut am Anfang, ein umbrechender Titel hat hängenden Einzug
+  (`padding-inline-start`, kein `text-indent`, das sich auf Plaketten vererbte). Keine Sonderregel zeichnet einen eigenen
+  Pfeil oder Marker; ein Flex-`summary` (Register im Belegordner) und ein Knopf tragen ihn als erstes Flex-Kind.
 - **Ein `<summary>` behält seinen Titel**, den Zustand zeigt der Pfeil (Titel zitieren die Anleitungen, guides.test.ts).
 - **Ein Knopf, der etwas in der Seite auf- und zuklappt, ist `DisclosureButton`**
   ([components/DisclosureButton.tsx](src/components/DisclosureButton.tsx): `open`, `onToggle`, `closedLabel`,
-  `openLabel`, `controls`, `className`). Sein Text nennt, was der Klick tut: „Mehr dazu“/„Weniger“ (Hinweise),
-  „Mehr“/„Weniger“ (Kopfzeile der Abrechnung), „Rechenweg“/„Rechenweg schließen“. Kein Pfeil im Text. Menüs und Popover
+  `openLabel`, `controls`, `className`, `describedBy`). Sein Text nennt, was der Klick tut: „Mehr dazu“/„Weniger“
+  (Hinweise, beschrieben durch ihren Titel), „Mehr“/„Weniger“ (Kopfzeile der Abrechnung), „Rechenweg“/„Rechenweg
+  schließen“, „Ablesungen (N)“/„Ablesungen schließen“ (Zähler). Kein Pfeil im Text. Ein Knopf, dessen Text an einem
+  Zustand hängt (`{open ? '…' : …}`), gilt als Aufklapper und ist ohne den Baustein ein Befund. Menüs und Popover
   (MobileNav, popover.tsx) sind keine Aufklapper; ein Knopf, der nur nachlädt („Ältere anzeigen (N)“ im Posteingang), auch
-  nicht. Wächter S32 in uiRules.test.ts.
+  nicht. Wächter S32 in uiRules.test.ts; der Browserlauf misst, dass der Pfeil neben der ersten Textzeile steht und ein
+  umbrechender Titel jede Zeile an derselben Stelle beginnt.
 
 ## Knöpfe, Karten, Anlegen
 

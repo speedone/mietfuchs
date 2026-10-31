@@ -40,3 +40,11 @@ test('die Klassen werden durchgereicht, der Pfeil hängt an `disclosure`, ohne a
   expect([...knopf.classList]).toEqual(expect.arrayContaining(['disclosure', 'btn', 'ghost']))
   expect(knopf.hasAttribute('aria-controls')).toBe(false)
 })
+
+test('describedBy setzt aria-describedby, ohne bleibt es weg', () => {
+  render(<DisclosureButton open={false} onToggle={() => {}} closedLabel="A" openLabel="B" describedBy="titel" />)
+  expect(screen.getByRole('button', { name: 'A' }).getAttribute('aria-describedby')).toBe('titel')
+  cleanup()
+  render(<DisclosureButton open={false} onToggle={() => {}} closedLabel="A" openLabel="B" />)
+  expect(screen.getByRole('button', { name: 'A' }).hasAttribute('aria-describedby')).toBe(false)
+})

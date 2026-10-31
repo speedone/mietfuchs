@@ -269,7 +269,7 @@ test('kleine Knöpfe haben am Handy die volle Tippfläche', () => {
 // Die heutigen Namensgleichheiten bleiben, weil tw.css sie aus der Suche nimmt (`@source not
 // inline`); jede von ihnen steht deshalb auch dort.
 const LEGACY_UTILITY_NAMES = new Set(['sr-only', 'grow', 'grow-2'])
-const INDEX_CSS_MAX_LINES = 813
+const INDEX_CSS_MAX_LINES = 812
 test('S20: keine neue Klasse und keine Animation in index.css mit einem Namen aus Tailwind, und index.css wächst nicht', () => {
   expect(definedClasses.size).toBeGreaterThan(100)
   const clashes = tailwindUtilities(definedClasses)
@@ -1224,8 +1224,16 @@ test('S32: ein Feld mit eigenem Schatten behält seinen Fokusring', () => {
 // S32 (Aufklappen einheitlich): Alles, was etwas aufklappt, trägt denselben Pfeil davor, ▸ zu und ▾ offen, gedämpft und
 // im Druck weg. Bei <details> zeichnet ihn die Regel für jedes <summary> (der Marker des Browsers ist aus), bei einem Knopf
 // dieselbe Regel über `.disclosure`; den Knopf baut nur DisclosureButton, der auch den Text wechselt („Mehr dazu“ →
-// „Weniger“). Ausgenommen sind Menüs und Popover (MobileNav, popover.tsx): Sie klappen nichts in der Seite auf.
-const DISCLOSURE_OWNERS = new Set(['./components/DisclosureButton.tsx', './components/popover.tsx', './components/MobileNav.tsx'])
+// „Weniger“). Ein umbrechender Titel steht mit hängendem Einzug neben dem Pfeil (Durchsicht S1).
+// Wer `aria-expanded` selbst setzt, mit Grund und Zahl der Stellen; die Liste wird nur kürzer.
+const DISCLOSURE_OWNERS = new Map<string, { count: number, why: string }>([
+  ['./components/DisclosureButton.tsx', { count: 1, why: 'der Baustein selbst' }],
+  ['./components/popover.tsx', { count: 2, why: 'Popover (Begriffe, Menüs) öffnen eine Ebene über der Seite und klappen nichts in ihr auf' }],
+  ['./components/MobileNav.tsx', { count: 3, why: 'Menüblatt am Handy, ein <dialog> und kein Aufklapper' }],
+])
+// Ohne Kommentare: Dort darf vom Pfeil die Rede sein.
+const withoutJsxComments = (src: string) => src.replace(/\{\/\*[\s\S]*?\*\/\}/g, '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '').replace(/\s\/\/ .*$/gm, '')
+const cssNoComments = css.replace(/\/\*[\s\S]*?\*\//g, '')
 test('S32: ein Pfeil für alles, was aufklappt; Knöpfe mit aria-expanded nur über DisclosureButton', () => {
   expect(css).toMatch(/details > summary \{[^}]*list-style: none/)
   expect(css).toMatch(/details > summary::-webkit-details-marker \{ display: none; \}/)
@@ -1233,11 +1241,33 @@ test('S32: ein Pfeil für alles, was aufklappt; Knöpfe mit aria-expanded nur ü
   expect(css).toMatch(/:is\(details\[open\] > summary, \.disclosure\[aria-expanded='true'\]\)::before \{ content: '▾'; content: '▾' \/ ''; \}/)
   expect(css).toMatch(/@media print \{[^@]*:is\(details > summary, \.disclosure\)::before \{ display: none; \}/)
   // Kein zweiter Pfeil und kein Marker des Browsers an einer Sonderregel
-  expect(css).not.toMatch(/list-style-position/)
-  expect([...css.matchAll(/summary::before \{ content:/g)]).toHaveLength(0)
+  expect(cssNoComments).not.toMatch(/list-style-position/)
+  expect(cssNoComments).not.toMatch(/summary::(?:after|marker)/)
+  expect([...cssNoComments.matchAll(/content: '▸'/g)]).toHaveLength(2)
+  expect([...cssNoComments.matchAll(/content: '▾'/g)]).toHaveLength(2)
+  expect([...cssNoComments.matchAll(/summary::before \{ content:/g)]).toHaveLength(0)
+  expect([...cssNoComments.matchAll(/\.disclosure[^{,)]*::before \{[^}]*content/g)]).toHaveLength(0)
   expect(sources['./components/DisclosureButton.tsx']).toMatch(/aria-expanded=\{open\}/)
-  const handmade = files.filter((f) => !DISCLOSURE_OWNERS.has(f) && /aria-expanded/.test(sources[f] ?? ''))
-  expect(handmade).toEqual([])
-  // Der Pfeil steht nur im CSS, nicht noch einmal im Text eines Knopfs
-  expect(offenders(/[▸▾▴]\s*'?\s*\}?\s*<\/button>/g)).toEqual([])
+  const owners = files.map((f) => [f, [...withoutJsxComments(sources[f] ?? '').matchAll(/aria-expanded/g)].length] as const).filter(([, n]) => n > 0)
+  expect(owners.filter(([f, n]) => DISCLOSURE_OWNERS.get(f)?.count !== n).map(([f, n]) => `${f}: ${n}`)).toEqual([])
+  for (const [f] of DISCLOSURE_OWNERS) expect(owners.some(([o]) => o === f), `${f} setzt kein aria-expanded mehr; aus der Liste nehmen`).toBe(true)
+  // Ein Knopf, dessen Text an einem Zustand hängt, klappt etwas auf (Durchsicht M1: „Ablesungen (N)“/„Schließen“)
+  const stateful = /<button[^>]*>\s*\{\w+ \? ['`]/g
+  expect('<button className="btn" onClick={onToggle}>{open ? \'Schließen\' : `Ablesungen (${n})`}</button>').toMatch(stateful)
+  expect(offenders(stateful)).toEqual([])
+  // Der Pfeil steht nur im CSS, nicht im Text (◀ in Co2Block markiert eine Tabellenzeile und ist kein Aufklapper)
+  const arrows = files.flatMap((f) => [...withoutJsxComments(sources[f] ?? '').matchAll(/[▸▾▴▶▼►]/g)].map((m) => `${f}: ${m[0]}`))
+  expect(arrows).toEqual([])
+})
+
+// Durchsicht M2 und S1: Der Pfeil steht neben der ersten Zeile, auch wenn der Text umbricht. Ein `display: inline` am
+// Knopf „Rechenweg“ ließ den Pfeil über dem Text stehen; ein Titel im <summary> umbricht mit hängendem Einzug.
+test('S32: der Pfeil steht neben der ersten Zeile, umbrechende Titel mit hängendem Einzug', () => {
+  expect(cssNoComments).not.toMatch(/\.calc-toggle[^{]*\{[^}]*display: inline;/)
+  expect(cssNoComments).toMatch(/button\.btn\.calc-toggle[^{]*\{[^}]*display: inline-flex; align-items: baseline;/)
+  expect(cssNoComments).toMatch(/details > summary \{[^}]*position: relative;[^}]*padding-inline-start: calc\(0\.9em \+ var\(--space-1\)\)/)
+  expect(cssNoComments).toMatch(/:is\(details > summary, \.disclosure\)::before \{[^}]*position: absolute; inset-inline-start: 0;[^}]*width: 0\.9em/)
+  expect(cssNoComments).toMatch(/:is\(\.receipt-group > summary, \.disclosure\)::before \{ position: static; margin-right: 0; \}/)
+  expect(cssNoComments).toMatch(/\.receipt-group > summary \{[^}]*padding-inline-start: 0/)
+  expect(cssNoComments).not.toMatch(/summary[^{]*\{[^}]*text-indent/)
 })
