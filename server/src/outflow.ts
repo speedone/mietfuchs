@@ -35,9 +35,16 @@
 // Kein Anteil entsteht aus einer Abbuchung, solange #292 nicht entschieden hat, wie verknüpfte Abbuchungen zählen
 // (R-1): Eine verknüpfte Abbuchung ist ein Nachweis und keine zusätzliche Zahlung, und weicht sie vom Datum ab, wird
 // nichts still umgestellt. #292 erweitert genau diese Funktion.
-import type { BillingPeriod, CostItem, PeriodKey } from '../../shared/types.ts'
+//
+// **Die Jahre des Abzugs** (§ 82b EStDV, #262 PR 2) stehen ebenfalls hier und nur hier: `deductionPlan` baut auf
+// `outflowShares` auf, das sich dafür nicht ändert. Die Verteilung ist kein zweiter Abfluss; die Position fließt genau
+// einmal ab, in dem Jahr, das `outflowShares` nennt, und nur ihr Abzug in der Steuerübersicht reicht über bis zu fünf
+// Jahre. `planRates` legt einen Betrag auf diese Jahre. Gelesen werden beide von `taxReport`/`taxReportFor` in calc.ts;
+// die Abrechnung liest die Wahl nie (Wächter in calc-steuer-verteilung.test.ts).
+import type { BillingPeriod, CostItem, PeriodKey, SpreadYears } from '../../shared/types.ts'
 import { startYearOf } from '../../shared/period.ts'
 import { statedOutflowYear } from '../../shared/paidOn.ts'
+import { allowsSpread, spreadRates } from '../../shared/spread.ts'
 
 // Das angegebene Steuerjahr ohne Rückfall auf den Zeitraum, für die Schreibwege, die selbst vorbelegen (Heizposition
 // aus der Belegbuchung in db/repository.ts). Dieselbe Rangfolge wie unten.
@@ -102,4 +109,55 @@ export function soleOutflowYear(item: OutflowItem & Pick<CostItem, 'id'>, period
 // des Beginns steht im Schlüssel, auch bei einer Heizperiode.
 export function storedOutflowYear(item: OutflowItem & Pick<CostItem, 'id'> & { period: PeriodKey }, items: readonly (OutflowItem & { period: PeriodKey })[] = []): number {
   return soleOutflowYear(item, { from: `${startYearOf(item.period)}-01-01` }, items.filter((c) => c.period === item.period))
+}
+
+// ---------- Die Jahre des Abzugs (§ 82b EStDV, #262 PR 2) ----------
+//
+// Entwurf docs/superpowers/specs/2026-10-30-erhaltungsaufwand-verteilen-design.md, E-2, E-4, E-7. Je Anteil aus
+// `outflowShares` ein Plan: Die Wahl gilt je Aufwand, und wird ein Aufwand in zwei Jahren bezahlt, entstehen zwei
+// Verteilungszeiträume, jeder ab seinem Jahr (#292). Bis dahin gibt es genau einen Anteil; mehrere brechen hier ab wie in
+// `paidWhollyIn`, statt still dem ersten zu folgen.
+//
+// - `years`: das Jahr des Abflusses Y0 und die N − 1 Folgejahre (§ 82b Abs. 1 Satz 1 EStDV: „auf zwei bis fünf Jahre
+//   gleichmäßig verteilen“). Ohne Wahl, oder wo `allowsSpread` nicht gilt (Ablage von Hand, „krumm, nicht kaputt“),
+//   nur Y0, und `of` ist 1; eine Wahl, die so nicht zählt, kennzeichnet `ignored` (Hinweis `spreadIgnored`).
+// - `restYear` (§ 82b Abs. 2 EStDV, am Objekt): Endet die Verteilung vorzeitig, ist der noch nicht berücksichtigte Teil
+//   in diesem Jahr abzusetzen. Die Jahre enden dann dort, und `restYear` steht im Plan. Liegt es im Jahr Y0 oder davor,
+//   wird nicht verteilt (alles in Y0, E-7), auch dann steht es im Plan. Ein Ende im letzten Jahr oder danach wirkt nicht.
+export type DeductionPlan = { outflowYear: number; years: number[]; of: 1 | SpreadYears; restYear: number | null; ignored?: true }
+
+type PlanItem = OutflowItem & Partial<Pick<CostItem, 'category'>> & { spreadYears?: SpreadYears | null }
+
+export function deductionPlan(
+  item: PlanItem, period: Pick<BillingPeriod, 'from'>, items: readonly OutflowItem[] = [], restYear: number | null = null,
+  shares: readonly OutflowShare[] = outflowShares(item, period, items),
+): DeductionPlan[] {
+  if (shares.length !== 1) {
+    throw new Error(`Die Position ${item.id ?? ''} ist in mehreren Jahren abgeflossen; die Verteilung nach § 82b EStDV rechnet die Steuerübersicht dafür noch nicht.`)
+  }
+  return shares.map((share) => {
+    const y0 = share.year
+    const chosen = item.spreadYears ?? null
+    if (chosen === null) return { outflowYear: y0, years: [y0], of: 1, restYear: null }
+    if (item.category === undefined || !allowsSpread({ category: item.category, amountCents: item.amountCents, operatingPower: item.operatingPower ?? null })) {
+      return { outflowYear: y0, years: [y0], of: 1, restYear: null, ignored: true }
+    }
+    const last = y0 + chosen - 1
+    if (restYear !== null && restYear <= y0) return { outflowYear: y0, years: [y0], of: 1, restYear }
+    const end = restYear !== null && restYear < last ? restYear : last
+    return { outflowYear: y0, years: Array.from({ length: end - y0 + 1 }, (_, k) => y0 + k), of: chosen, restYear: end < last ? end : null }
+  })
+}
+
+// Ein Betrag auf die Jahre eines Plans (E-4): die Raten aus `spreadRates` (gleich, der Rest-Cent in den ersten Jahren);
+// endet die Verteilung vorzeitig (§ 82b Abs. 2), trägt das letzte Jahr den ganzen Rest (`rest`). Ohne Verteilung eine
+// Rate über den ganzen Betrag. Die Summe ist immer genau der Betrag.
+export function planRates(plan: DeductionPlan, totalCents: number): { year: number; cents: number; rest?: true }[] {
+  const [first] = plan.years
+  if (plan.of === 1 || first === undefined || plan.years.length === 1) return [{ year: plan.outflowYear, cents: totalCents }]
+  const rates = spreadRates(totalCents, plan.of)
+  return plan.years.map((year, k) => {
+    if (plan.restYear === null || k < plan.years.length - 1) return { year, cents: rates[k] ?? 0 }
+    return { year, cents: totalCents - rates.slice(0, k).reduce((a, r) => a + r, 0), rest: true as const }
+  })
 }

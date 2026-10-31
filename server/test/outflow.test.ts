@@ -10,7 +10,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { taxPartsFor, taxReport, taxReportFor, type TaxPart } from '../src/calc.ts'
-import { outflowShares, paidWhollyIn, soleOutflowYear } from '../src/outflow.ts'
+import { deductionPlan, outflowShares, paidWhollyIn, planRates, soleOutflowYear } from '../src/outflow.ts'
 import { frozenSettlementOf, heatingSnapshotFor, narrowToProperty, snapshotFor, wayOf } from '../src/snapshot.ts'
 import { computeSettlement } from '../src/calc.ts'
 import { derivedTaxLines, planTaxArchive, taxArchiveItems } from '../src/taxReceipts.ts'
@@ -122,6 +122,71 @@ test('outflowShares: ein leeres Jahr (null aus einer Ablage) gilt als nicht ange
   Reflect.set(src.costItems[0] ?? assert.fail('keine Position'), 'taxYear', null)
   assert.deepEqual(inYear(src, 2025), ['vers'])
   assert.deepEqual(inZip(src, 2025), ['vers'])
+})
+
+// ---------- Die Jahre des Abzugs (§ 82b EStDV, #262 PR 2) ----------
+
+const repair = (over: Partial<Pick<CostItem, 'paidOn' | 'taxYear' | 'spreadYears' | 'category' | 'amountCents'>> = {}) =>
+  ({ id: 'dach', category: 'Nicht umlagefähig', amountCents: 1_000_000, ...over })
+
+test('deductionPlan: ohne Wahl genau das Jahr des Abflusses', () => {
+  assert.deepEqual(deductionPlan(repair(), { from: '2026-01-01' }), [{ outflowYear: 2026, years: [2026], of: 1, restYear: null }])
+  assert.deepEqual(deductionPlan(repair({ paidOn: '2027-02-03' }), { from: '2026-01-01' }), [{ outflowYear: 2027, years: [2027], of: 1, restYear: null }])
+})
+
+test('deductionPlan: mit Wahl N Jahre ab dem Jahr aus Zahlungsdatum, Jahr der Zahlung oder Zeitraum', () => {
+  assert.deepEqual(deductionPlan(repair({ spreadYears: 3 }), { from: '2026-01-01' }), [{ outflowYear: 2026, years: [2026, 2027, 2028], of: 3, restYear: null }])
+  assert.deepEqual(deductionPlan(repair({ spreadYears: 2, paidOn: '2027-01-08' }), { from: '2026-01-01' })[0]?.years, [2027, 2028])
+  // Mai bis April, Jahr der Zahlung angegeben: die Verteilung beginnt im angegebenen Jahr.
+  assert.deepEqual(deductionPlan(repair({ spreadYears: 5, taxYear: 2026 }), { from: '2025-05-01' })[0]?.years, [2026, 2027, 2028, 2029, 2030])
+})
+
+test('deductionPlan: wo nicht verteilt werden kann, zählt die Wahl nicht (Heizposition, Gutschrift, umlagefähig)', () => {
+  for (const over of [{ category: 'Heizung' }, { category: 'Grundsteuer' }, { amountCents: -5000 }] as const) {
+    assert.deepEqual(deductionPlan(repair({ spreadYears: 4, ...over }), { from: '2026-01-01' }), [{ outflowYear: 2026, years: [2026], of: 1, restYear: null, ignored: true }], JSON.stringify(over))
+  }
+  // Entnahme aus der Rücklage lässt sich verteilen.
+  assert.deepEqual(deductionPlan(repair({ spreadYears: 2, category: 'Entnahme Erhaltungsrücklage' }), { from: '2026-01-01' })[0]?.years, [2026, 2027])
+})
+
+test('deductionPlan: das vorzeitige Ende (§ 82b Abs. 2) kürzt die Jahre; davor oder im ersten Jahr wird nicht verteilt', () => {
+  assert.deepEqual(deductionPlan(repair({ spreadYears: 5 }), { from: '2026-01-01' }, [], 2027), [{ outflowYear: 2026, years: [2026, 2027], of: 5, restYear: 2027 }])
+  // Ende nach dem letzten Jahr: ohne Wirkung.
+  assert.deepEqual(deductionPlan(repair({ spreadYears: 3 }), { from: '2026-01-01' }, [], 2030), [{ outflowYear: 2026, years: [2026, 2027, 2028], of: 3, restYear: null }])
+  assert.deepEqual(deductionPlan(repair({ spreadYears: 3 }), { from: '2026-01-01' }, [], 2028)[0]?.restYear, null, 'Ende im letzten Jahr: nichts vorzeitig')
+  for (const rest of [2025, 2026]) {
+    assert.deepEqual(deductionPlan(repair({ spreadYears: 3 }), { from: '2026-01-01' }, [], rest), [{ outflowYear: 2026, years: [2026], of: 1, restYear: rest }], `Ende ${rest}`)
+  }
+})
+
+test('deductionPlan bricht bei mehreren Anteilen ab, wie paidWhollyIn (bis #292)', () => {
+  // Mehrere Anteile liefert `outflowShares` erst mit #292; die Prüfung steht trotzdem, über die vorgegebenen Anteile: eine
+  // Liste mit zwei Anteilen wird nicht still zur ersten.
+  assert.throws(() => deductionPlan(repair({ spreadYears: 2 }), { from: '2026-01-01' }, [], null, [{ year: 2026, cents: 500_000, source: 'paid' }, { year: 2027, cents: 500_000, source: 'paid' }]), /mehreren Jahren/)
+})
+
+test('planRates: Raten nach spreadRates, mit vorzeitigem Ende trägt das letzte Jahr den Rest', () => {
+  const plan = (over: Partial<Pick<CostItem, 'spreadYears'>>, rest: number | null = null) => deductionPlan(repair(over), { from: '2026-01-01' }, [], rest)[0] ?? assert.fail('kein Plan')
+  assert.deepEqual(planRates(plan({ spreadYears: 3 }), 1_000_000), [{ year: 2026, cents: 333_334 }, { year: 2027, cents: 333_333 }, { year: 2028, cents: 333_333 }])
+  assert.deepEqual(planRates(plan({}), 1_000_000), [{ year: 2026, cents: 1_000_000 }])
+  assert.deepEqual(planRates(plan({ spreadYears: 5 }, 2027), 1_000_003), [{ year: 2026, cents: 200_001 }, { year: 2027, cents: 800_002, rest: true }])
+  assert.deepEqual(planRates(plan({ spreadYears: 5 }, 2026), 1_000_003), [{ year: 2026, cents: 1_000_003 }])
+})
+
+// I-5 (#262 PR 2): Ohne Wahl ändert sich nichts, auch wenn jede Position das Feld leer trägt (`undefined` aus dem
+// Formular, `null` aus einer Ablage von Hand); die Prüfsummen unten bleiben damit centgenau.
+test('I-5: spreadYears leer (undefined oder null) an jeder Position ergibt dieselbe Steuerübersicht', () => {
+  for (const seed of SEEDS.slice(0, 15)) {
+    const { source } = randomTaxStock(makeRng(seed))
+    // `null` kennt der Typ nicht; es kommt wie aus einer Ablage von Hand über JSON hinein.
+    const variants: [string, TaxSource][] = [
+      ['undefined', { ...source, costItems: source.costItems.map((c) => ({ ...c, spreadYears: undefined })) }],
+      ['null', { ...source, costItems: source.costItems.map((c) => Object.assign({ ...c }, JSON.parse('{"spreadYears":null}'))) }],
+    ]
+    for (const [label, blank] of variants) {
+      for (const year of TAX_STOCK_YEARS) assert.deepEqual(taxReportFor(blank, TAX_STOCK_PROPERTY, year), taxReportFor(source, TAX_STOCK_PROPERTY, year), `Startwert ${seed} ${year} (${label})`)
+    }
+  }
 })
 
 // Die Prüfsummen der heutigen Steuerübersicht je Startwert (Durchsicht K3, testing/taxGolden.ts).

@@ -843,7 +843,7 @@ Grundmenge ist das ganze Gebäude), Überschuss. Beschreibende Gruppen statt fes
   (`closedItemsChanged`). `abziehbar = Betrag − privat`; **der Überschuss rechnet mit
   `deductibleCents`**. Ohne Eigennutzung ändert sich keine Zahl (Invariante). „Nicht umlagefähig“
   lässt sich für die Steuer Einheiten zuordnen (`key: 'direct'`, `participantUnitIds`); die
-  Abrechnung liest das nicht. AfA, Schuldzinsen und § 82b EStDV werden nur genannt; einen Nutzungswechsel (#259)
+  Abrechnung liest das nicht. AfA und Schuldzinsen werden nur genannt (§ 82b EStDV unten); einen Nutzungswechsel (#259)
   rechnet die Übersicht nach Tagen (`taxUsage`, siehe Verteilen).
 - **Verbilligte Vermietung** (#257, [cheapRent.ts](cheapRent.ts), Grenzen in `estg.cheap-rent`,
   [shared/law/estg.ts](../../shared/law/estg.ts)): Die ortsübliche Warmmiete steht **an der Wohnung**
@@ -872,7 +872,8 @@ Grundmenge ist das ganze Gebäude), Überschuss. Beschreibende Gruppen statt fes
   genommen und darauf geklemmt, der private bleibt (keine Doppelkürzung); `deductibleCents` = Brutto − privat −
   unentgeltlich. Abgeleitete Zeilen (Betriebsstrom, CO₂-Erstattung), ein Abzug des Betriebsstroms, den die Ausgleichszeile aufhebt
   (selbst getragen oder verknüpft), und eine Heizposition `included` (Ausschnitte der Stromrechnung, die mit ihrem
-  Gewicht gekürzt wird, #268) und Positionen ohne Fläche (`unallocated`) bleiben ungekürzt. Ein Abzug, der als dem
+  Gewicht gekürzt wird, #268) und Positionen ohne Fläche (`unallocated`) bleiben ungekürzt; die Ausnahme ist der Anteil einer
+  Verteilung nach § 82b EStDV (`spread:`, unten), denn er ist der Werbungskostenanteil einer gewöhnlichen Position. Ein Abzug, der als dem
   Messdienst gemeldet gilt (`balance.reported`, Regel `deductionReported`), steht als eigene negative Position in der
   Steuer und wird wie jede Position gekürzt (Integrationsdurchsicht 0.13.0, M1). Die Übersicht.csv des Steuer-ZIP bekommt die Spalte „unentgeltlich“ nur mit
   einem unentgeltlichen Teil. Ohne Eintrag fehlt `cheapRent`, und keine Zahl ändert sich (Prüfsummen tax-golden.json).
@@ -884,7 +885,9 @@ Grundmenge ist das ganze Gebäude), Überschuss. Beschreibende Gruppen statt fes
   keine veröffentlichte Zahl wandert; Prüfsummen in outflow.test.ts). Ein Datum, das das wirksame
   Jahr ändert, `taxYear` widerspricht oder außerhalb Beginn − 1 bis Ende + 3 liegt, braucht
   `confirmPaidOn` (409 `question: 'paidOn'`), beim Aufteilen je Teil (`splitPaidOnQuestions`).
-  Datierte Positionen und solche mit angegebenem Jahr behalten beim Zeitraumwechsel ihr Jahr (`keepsTaxYear`, #478). Kein Datum bei
+  Datierte Positionen und solche mit angegebenem Jahr behalten beim Zeitraumwechsel ihr Jahr (`keepsTaxYear`, #478).
+  Die Jahre des **Abzugs** einer verteilten Position (§ 82b EStDV) nennt `deductionPlan` in derselben Datei, aufbauend
+  auf diesem einen Jahr des Abflusses. Kein Datum bei
   `external`, an Zuführung und Entnahme der Erhaltungsrücklage (#96) und am Abzug beim Betriebsstrom (er folgt seiner
   Stromrechnung, Quelle `bill`, #267).
   Die Belegbuchung belegt es nie vor (Rechnungsdatum ≠ Zahlungsdatum). Teilzahlungen kommen mit
@@ -892,8 +895,21 @@ Grundmenge ist das ganze Gebäude), Überschuss. Beschreibende Gruppen statt fes
   (invariant-steuer-summe-zahlungsdatum.test.ts).
 - **Verteilung nach § 82b EStDV** (#262, Entwurf `2026-10-30-erhaltungsaufwand-verteilen-design.md`): Die Wahl steht
   an der Position (`spreadYears`, 2 bis 5, fehlend = nicht verteilen), das vorzeitige Ende (Abs. 2) am Objekt
-  (`spreadRestYear`). Bis PR 1 nur Datenmodell und Schreibweg, keine Zahl ändert sich; die Jahre des Abzugs rechnet
-  später allein outflow.ts (`deductionPlan`), aufbauend auf `outflowShares`, das unverändert bleibt. Wo verteilt werden
+  (`spreadRestYear`). **Die Jahre des Abzugs rechnet allein outflow.ts** (`deductionPlan`, Raten mit `planRates`),
+  aufbauend auf `outflowShares`, das unverändert bleibt: Die Position fließt genau einmal ab, nur ihr Abzug reicht über
+  bis zu fünf Jahre. `taxReport` verteilt **D = Betrag − privat** (Eigennutzung im Jahr des Abflusses Y0): Rate 1 in Y0,
+  der Rest als `deferredCents`; in jedem Folgejahr eine abgeleitete Zeile `spread:<Position>:<Y0>` mit Betrag 0,
+  `deferredCents` = −Rate, Kostenart, Gruppe und Einheiten der Position (`spreadFrom`). Je Zeile, Kategorie, Gruppe und
+  Summe gilt Betrag = privat + unentgeltlich + verschoben + abziehbar. Raten nach `spreadRates` (Rest-Cent vorn), dazu
+  der Bruttoanteil (`grossCents`, Zeile 57/59); mit Ende am Objekt trägt das Jahr des Endes den Rest, liegt es in Y0 oder
+  davor, wird nicht verteilt. **Verbilligte Vermietung**: jede Rate im Jahr ihres Abzugs mit der Quote dieses Jahres,
+  gerechnet wie eine Position dieses Jahres über den Bruttoanteil, geklemmt auf die Rate (Anleitung zur Anlage V: Kürzung
+  nur in 87/88). Die Folgejahre holt `taxReportFor` (`carriedRates`): je Y0 einmal der Bericht jenes Jahres mit
+  `carried: false, received: false`, ohne verteilte Position gar nichts; eine Rate von 0 ergibt keine Zeile. Der Block
+  `expenses.spread` (Zeilen 57 bis 72: `started`, `carried`, `thisYearCents`) und `spreadIgnored` (Wahl, wo nicht
+  verteilt werden kann) sind Auskunft für die Seite. Die Übersicht.csv des Steuer-ZIP hat dann die
+  Spalte „verteilt § 82b EStDV“ und die Raten aus Vorjahren als Zeilen ohne eigenen Beleg (`derivedTaxLines`); die
+  Steuerseite zeigt sie erst mit PR 3 (#262). Invarianten: invariant-steuer-verteilung.test.ts. Wo verteilt werden
   kann, sagt `allowsSpread` ([shared/spread.ts](../../shared/spread.ts)): „Nicht umlagefähig“ oder „Entnahme
   Erhaltungsrücklage“, Betrag über 0, kein Abzug beim Betriebsstrom, `external` erlaubt; sonst 400 (`requireSpread`),
   außer eine so gespeicherte Wahl bleibt unverändert stehen (krumm, nicht kaputt) oder der Wechsel des Zeitraums trägt

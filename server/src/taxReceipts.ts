@@ -74,7 +74,7 @@ export type TaxArchivePlan = {
 // `split`: je Position privat und abziehbar aus der Steuerübersicht (#163).
 // Dazu das Jahr der Zahlung samt Quelle und bei einer verschobenen Position ihre Abrechnung (#255, PR 4), ebenfalls aus
 // der Steuerübersicht; die Spalte „Jahr der Zahlung“ sagt dem Steuerberater, warum eine Position in diesem Jahr steht.
-export type TaxSplitOfItem = Pick<TaxExpenseItem, 'privateCents' | 'deductibleCents'> & Partial<Pick<TaxExpenseItem, 'outflow' | 'settlementPeriod' | 'outsideSpan' | 'gratuitousCents'>>
+export type TaxSplitOfItem = Pick<TaxExpenseItem, 'privateCents' | 'deductibleCents'> & Partial<Pick<TaxExpenseItem, 'outflow' | 'settlementPeriod' | 'outsideSpan' | 'gratuitousCents' | 'deferredCents' | 'spread'>>
 const fmtDay = (iso: string): string => iso.split('-').reverse().join('.')
 function reserveOutflow(c: Pick<CostItem, 'period' | 'amountCents' | 'taxYear' | 'paidOn'>): Pick<TaxSplitOfItem, 'outflow'> {
   const share = outflowShares(c, { from: `${startYearOf(c.period)}-01-01` })[0]
@@ -87,17 +87,23 @@ export function outflowText(part: Partial<TaxSplitOfItem> | undefined): string {
     : o.source === 'stated' ? 'als Jahr der Zahlung angegeben'
       : o.source === 'bill' ? 'wie die Stromrechnung'
         : 'Jahr der Abrechnung (ohne Angabe)'
+  // Verteilt nach § 82b EStDV (#262, E-12): der Zeitraum des Abzugs, wie ihn die Steuerübersicht rechnet.
+  const years = part?.spread?.rates.map((r) => r.year) ?? []
+  const spread = part?.spread ? [`auf ${part.spread.years} Jahre verteilt, ${years[0]}${years.length > 1 ? ` bis ${years[years.length - 1]}` : ''}`] : []
   return [String(o.year), why, ...(part?.settlementPeriod ? [`aus Abrechnung ${part.settlementPeriod.label}`] : []),
-    ...(part?.outsideSpan ? ['außerhalb der üblichen Spanne, bitte prüfen'] : [])].join(', ')
+    ...(part?.outsideSpan ? ['außerhalb der üblichen Spanne, bitte prüfen'] : []), ...spread].join(', ')
 }
 // `derived`: Zeilen der Steuerübersicht, die keine Position sind: der Ausgleich beim Betriebsstrom (#268), dessen Beleg
 // die Stromrechnung ist, und die an einen Selbstversorger ausgezahlte CO₂-Erstattung (Heizung PR 19, Nachprüfung N-4),
 // belegt durch die Auszahlung. Sie stehen in der Übersicht mit ihrem Betrag und ihrer Aufteilung, aber ohne Beleg.
+// Dazu der Anteil einer Verteilung nach § 82b EStDV aus einem Vorjahr (#262, E-12): Sein Beleg liegt im Archiv des Jahres
+// des Abflusses und wird hier nicht noch einmal beigelegt.
 // Damit ergibt die Übersicht in jeder Spalte die Summe der Steuerübersicht.
 export const derivedTaxLines = (report: Pick<TaxReport, 'expenses'>): TaxExpenseItem[] =>
-  report.expenses.items.filter((i) => i.operatingPowerBalance || i.co2RefundPaidOut)
+  report.expenses.items.filter((i) => i.operatingPowerBalance || i.co2RefundPaidOut || i.spreadFrom)
 const derivedNote = (d: TaxExpenseItem | undefined): string =>
-  d?.co2RefundPaidOut ? 'kein eigener Beleg (Auszahlung an den Mieter, Nachweis über den Kontoauszug)' : 'kein eigener Beleg (Teil der Stromrechnung)'
+  d?.spreadFrom ? `kein eigener Beleg (Anteil ${d.spreadFrom.index} von ${d.spreadFrom.of} aus ${d.spreadFrom.outflowYear}, Beleg im Steuer-ZIP ${d.spreadFrom.outflowYear})`
+    : d?.co2RefundPaidOut ? 'kein eigener Beleg (Auszahlung an den Mieter, Nachweis über den Kontoauszug)' : 'kein eigener Beleg (Teil der Stromrechnung)'
 
 //
 // `parts`: die Teile je Quelle (#455) über alle Zeiträume des Objekts, auch die anderer Steuerjahre. Ein Teil einer
@@ -137,14 +143,18 @@ export function planTaxArchive(
   // Betrag − privat ≠ abziehbar unerklärt. Ohne ihn ist die Übersicht wie vorher.
   const withGratuitous = [...split.values()].some((p) => p.gratuitousCents)
   const gratuitousCol = (p: TaxSplitOfItem | undefined): string[] => (withGratuitous ? [p?.gratuitousCents ? csvField(euro(p.gratuitousCents)) : ''] : [])
+  // Ebenso die Spalte „verteilt“ (#262, E-12): im Jahr des Abflusses der verschobene Teil, in Folgejahren der übernommene
+  // mit Minus; dann gilt je Zeile Betrag = privat + unentgeltlich + verteilt + abziehbar.
+  const withDeferred = [...split.values(), ...derived].some((p) => p.deferredCents)
+  const deferredCol = (p: TaxSplitOfItem | undefined): string[] => (withDeferred ? [p?.deferredCents ? csvField(euro(p.deferredCents)) : ''] : [])
   for (const { c, derived: isDerived } of sorted) {
     const group = taxGroupOf(c.category)
     if (isDerived) {
       const part = derived.find((d) => d.costItemId === c.id)
       rows.push([
         textField(group), textField(c.category), textField(c.description), '', csvField(euro(c.amountCents)),
-        part ? csvField(euro(part.privateCents)) : '', ...gratuitousCol(undefined), part ? csvField(euro(part.deductibleCents)) : '', '',
-        textField(derivedNote(part)), '',
+        part ? csvField(euro(part.privateCents)) : '', ...gratuitousCol(part), ...deferredCol(part), part ? csvField(euro(part.deductibleCents)) : '', '',
+        textField(derivedNote(part)), textField(part?.spreadFrom ? `${part.spreadFrom.outflowYear}, Anteil ${part.spreadFrom.index} von ${part.spreadFrom.of}` : ''),
       ].join(';'))
       continue
     }
@@ -181,10 +191,10 @@ export function planTaxArchive(
     const labor = validLabor35aCents(c) ?? 0
     rows.push([
       textField(group), textField(c.category), textField(c.description), textField(c.vendor ?? ''), csvField(euro(c.amountCents)),
-      part ? csvField(euro(part.privateCents)) : '', ...gratuitousCol(part), part ? csvField(euro(part.deductibleCents)) : '',
+      part ? csvField(euro(part.privateCents)) : '', ...gratuitousCol(part), ...deferredCol(part), part ? csvField(euro(part.deductibleCents)) : '',
       csvField(labor ? euro(labor) : ''), textField(beleg), textField(outflowText(outflowPart)),
     ].join(';'))
   }
-  const header = `Gruppe;Kostenart;Beschreibung;Rechnungssteller;Betrag (EUR);privat (EUR);${withGratuitous ? 'unentgeltlich § 21 Abs. 2 EStG (EUR);' : ''}abziehbar (EUR);Lohnanteil § 35a (EUR);Beleg;Jahr der Zahlung`
+  const header = `Gruppe;Kostenart;Beschreibung;Rechnungssteller;Betrag (EUR);privat (EUR);${withGratuitous ? 'unentgeltlich § 21 Abs. 2 EStG (EUR);' : ''}${withDeferred ? 'verteilt § 82b EStDV (EUR);' : ''}abziehbar (EUR);Lohnanteil § 35a (EUR);Beleg;Jahr der Zahlung`
   return { files, overviewCsv: `﻿${[header, ...rows].join('\r\n')}\r\n` }
 }

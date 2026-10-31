@@ -92,6 +92,9 @@ export type SnapshotCostItem = Pick<
   | 'taxYear'
   // Das Zahlungsdatum für die Steuer (#255, PR 3); die Abrechnung liest es nicht.
   | 'paidOn'
+  // Die Verteilung nach § 82b EStDV (#262), nur für die Steuer über `deductionPlan` (outflow.ts); die Abrechnung liest
+  // sie nie (Wächter in calc-steuer-verteilung.test.ts).
+  | 'spreadYears'
   | 'heatingPart'
   // Ziel bei der eigenen Heizkostenabrechnung und „nur Heizung“ bei freien Schlüsseln (Heizung PR 10).
   | 'heatingTarget'
@@ -990,7 +993,8 @@ export function deductionsOf(
 
 export function snapshotFor(
   source: PropertyScopedSource & {
-    properties?: (SnapshotProperty & { id: string, periodRules?: PeriodRules })[]
+    // `spreadRestYear` (§ 82b Abs. 2 EStDV, #262) liest nur `taxReportFor`; in den Schnappschuss kommt es nicht.
+    properties?: (SnapshotProperty & { id: string, periodRules?: PeriodRules, spreadRestYear?: number | null })[]
     heatingPlants?: (SnapshotHeatingPlant & { propertyId: string })[]
     // CO₂-Angaben und Zeilen der Heizperioden (Heizung PR 6); sie erben das Objekt über die Anlage.
     co2Statements?: Co2Statement[]

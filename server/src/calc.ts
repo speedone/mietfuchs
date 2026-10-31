@@ -99,7 +99,7 @@ import { allocationOf, comparablePrevious, sameAllocation, sameUnits } from '../
 import { invoicesOf, possibleDuplicates, receiptedSources, separateService } from '../../shared/duplicates.ts'
 import { commonPeriod, tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
 import { baseUsage, unitAsOf, usageChangesWithin, usageDays, usageFlags, usageSpans, type UsageSpan } from '../../shared/unitUsage.ts'
-import type { UnitUsage } from '../../shared/types.ts'
+import type { TaxSpread, UnitUsage } from '../../shared/types.ts'
 import { knownUnit, metersByUnitText, unitLabel, unitScale, type UnitScale } from '../../shared/meterUnits.ts'
 import { CALENDAR_RULES, calendarYearPeriod, contextOf, formatDayRange, periodContaining, periodDays, periodLabel, periodMonths, periodOfKey, periodsBetween, previousPeriod, rulesOf, settlementDeadline, settlementPeriod, spansTwoYears, startYearOf, type PeriodContext } from '../../shared/period.ts'
 import { allowsPaidOn, paidOnSpan, paidOnYear, statedOutflowYear } from '../../shared/paidOn.ts'
@@ -107,7 +107,7 @@ import { RESERVE_CONTRIBUTION_CATEGORY, RESERVE_WITHDRAWAL_CATEGORY } from '../.
 import { generatorEnergy, noCo2Supplier } from '../../shared/heatDelivery.ts'
 import { lineRoot, unitBasisOf, monthSpanText, plantRules, plantSpan, recommendedDeadline, requestMonth, sameBuilding, sameFuelLine, sameLine, sameSpan, separateOwner, servesUnit, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { heatingSnapshotFor, selfAt, snapshotFor, wayOf } from './snapshot.ts'
-import { outflowShares, paidWhollyIn, storedOutflowYear } from './outflow.ts'
+import { deductionPlan, outflowShares, paidWhollyIn, planRates, storedOutflowYear } from './outflow.ts'
 import { deliveryShare, notInvoiceDeliveries, plantFuel, rangeOf, type FuelCarry, type FuelResult, type ShareContext } from './fuel.ts'
 import { co2Plausibility, etsExempt as etsExemptPlant, plausibilityText } from './co2Plausibility.ts'
 import { billMissingText, deductionMissingText, generationPowerText, notReportedDeductions, notReportedText, selfSupplyPowerText, missingOperatingPowerText, missingPowerFindings, operatingPowerBalance, operatingPowerFindings, operatingPowerText, unmarkedPowerCredits, type OperatingPowerBalance } from './operatingPower.ts'
@@ -1454,7 +1454,22 @@ const shiftIsoDay = (iso: string, days: number): string => {
 
 // Optionen der Steuerübersicht. `received: false` (#312 E11): ohne Tilgung und ohne `income.received`, für Rückgriffe,
 // die nur Werbungskosten brauchen; alle übrigen Felder sind dieselben (Test in calc-steuer-zufluss.test.ts).
-export type TaxReportOptions = { linkable?: readonly SnapshotCostItem[]; foreignQuota?: ForeignHeatQuota; received?: boolean }
+// `restYear` und `carriedRates` (§ 82b EStDV, #262 PR 2) reicht `taxReportFor` herein: das vorzeitige Ende am Objekt
+// (Abs. 2) und die Anteile aus Vorjahren (`carriedRates`). Ohne sie rechnet die Übersicht nur die Verteilungen, die in
+// diesem Jahr beginnen (E-6).
+export type TaxReportOptions = { linkable?: readonly SnapshotCostItem[]; foreignQuota?: ForeignHeatQuota; received?: boolean; restYear?: number | null; carriedRates?: readonly CarriedRate[] }
+
+// Ein Anteil einer Verteilung aus dem Jahr ihres Abflusses (#262 PR 2, E-6): die Zeile der Position in der Übersicht
+// jenes Jahres (`from`, mit `spread`), die Position selbst (Schlüssel und Einheiten für die Kürzung bei verbilligter
+// Vermietung in diesem Jahr) und der Anteil dieses Jahres.
+export type CarriedRate = {
+  item: SnapshotCostItem
+  from: TaxExpenseItem & { spread: NonNullable<TaxExpenseItem['spread']> }
+  outflowYear: number
+  index: number
+  rate: NonNullable<TaxExpenseItem['spread']>['rates'][number]
+  restAfterCents: number
+}
 
 // ---------- Das Zugeflossene nach Zeilen der Anlage V (#312 PR 2) ----------
 //
@@ -1848,6 +1863,91 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
   const ambiguous = balance.ambiguous
   const reportedIds = new Set(balance.reported.map((x) => x.costItemId))
   const unmarked = unmarkedPowerCredits(balanceParts)
+
+  // ---------- Verteilung nach § 82b EStDV (#262 PR 2) ----------
+  //
+  // Entwurf docs/superpowers/specs/2026-10-30-erhaltungsaufwand-verteilen-design.md, E-3 bis E-6. Die Jahre des Abzugs
+  // nennt allein `deductionPlan` (outflow.ts); hier wird nur der Betrag darauf gelegt. Verteilt wird **D = Betrag − privat**
+  // (Eigennutzung im Jahr des Abflusses, `splitForTax`): Werbungskosten ist nur der Teil, der auf die Vermietung entfällt
+  // (§ 9 Abs. 1, § 12 Nr. 1 EStG), und § 82b verschiebt den Zeitpunkt des Abzugs, nicht den Betrag. Die erste Rate zählt
+  // in diesem Jahr, der Rest steht als `deferredCents` da; in den Folgejahren je eine abgeleitete Zeile mit Betrag 0
+  // (`carriedRates`). So bleibt über alle Jahre die Summe der Ausgaben das Abgeflossene. Gekürzt bei verbilligter
+  // Vermietung wird nicht vor dem Verteilen, sondern jede Rate im Jahr ihres Abzugs (unten bei `cheapRentOf`).
+  const restYear = options.restYear ?? null
+  const spreadIgnored: { costItemId: string; description: string }[] = []
+  const spreadStarted: TaxSpread['started'] = []
+  // Der Bruttoanteil der ersten Rate je verteilter Position: Grundlage ihrer Kürzung bei verbilligter Vermietung (unten).
+  const grossFirst = new Map<string, number>()
+  for (const p of used) {
+    for (const c of p.items) {
+      const entry = split.items.get(c.id)
+      if (entry === undefined || groupOf(c.category) === null) continue
+      const [plan] = deductionPlan(c, p.snapshot.period, p.items, restYear)
+      if (plan === undefined) continue
+      if (plan.ignored) spreadIgnored.push({ costItemId: c.id, description: c.description })
+      const base = entry.amountCents - entry.privateCents
+      const of = plan.of
+      if (of === 1 || plan.outflowYear !== year || base < 0) continue
+      const rates = planRates(plan, base)
+      const gross = planRates(plan, entry.amountCents)
+      const first = rates[0]?.cents ?? base
+      const last = plan.years[plan.years.length - 1] ?? year
+      const restRate = rates.find((r) => r.rest)
+      grossFirst.set(c.id, gross[0]?.cents ?? entry.amountCents)
+      const direct = entry.privateCents === 0
+      const deductiblePercent = direct || entry.amountCents === 0 ? null : Math.floor(base * 10000 / entry.amountCents) / 100
+      split.items.set(c.id, {
+        ...entry,
+        deductibleCents: first,
+        deferredCents: base - first,
+        spread: { years: of, baseCents: base, rates: rates.map((r, i) => ({ year: r.year, cents: r.cents, grossCents: gross[i]?.cents ?? 0, ...(r.rest ? { rest: true as const } : {}) })) },
+        steps: [...entry.steps, {
+          label: 'Verteilung nach § 82b EStDV',
+          value: `abziehbar ${fmtCents(base)} auf ${of} Jahre (${year} bis ${last}): je ${fmtCents(Math.floor(base / of))} (Restcent in den ersten Jahren); in diesem Jahr ${fmtCents(first)}, in die Folgejahre verschoben ${fmtCents(base - first)}`
+            + (restRate ? `; vorzeitiges Ende (§ 82b Abs. 2 EStDV): der Rest von ${fmtCents(restRate.cents)} im Jahr ${last}` : ''),
+        }],
+      })
+      spreadStarted.push({
+        costItemId: c.id, description: c.description, amountCents: entry.amountCents, privateCents: entry.privateCents, baseCents: base, deductiblePercent,
+        years: of, grossRateCents: gross[0]?.cents ?? entry.amountCents, rateCents: first, remainingCents: base - first, direct,
+      })
+    }
+  }
+  // Die Anteile aus Vorjahren: je eine abgeleitete Zeile mit Betrag 0, Kostenart, Gruppe, Zuordnung und Einheiten der
+  // Position, damit die Kürzung bei verbilligter Vermietung sie wie eine Position dieses Jahres trifft (E-5).
+  const carried = options.carriedRates ?? []
+  const carriedIds = new Map<string, CarriedRate>()
+  for (const cr of carried) {
+    const id = `spread:${cr.item.id}:${cr.outflowYear}`
+    const of = cr.from.spread.years
+    carriedIds.set(id, cr)
+    split.items.set(id, {
+      costItemId: id,
+      category: cr.from.category,
+      group: cr.from.group,
+      description: `Anteil ${cr.index} von ${of} aus ${cr.outflowYear}: ${cr.from.description}`,
+      amountCents: 0,
+      privateCents: 0,
+      deferredCents: -cr.rate.cents,
+      deductibleCents: cr.rate.cents,
+      labor35aCents: 0,
+      allocation: cr.from.allocation,
+      deductiblePercent: null,
+      areaPrivateCents: null,
+      settlementPrivateCents: null,
+      steps: [{
+        label: 'Verteilung nach § 82b EStDV',
+        value: `Anteil ${cr.index} von ${of} aus ${cr.outflowYear}: abziehbar ${fmtCents(cr.from.spread.baseCents)} auf ${of} Jahre, in diesem Jahr ${fmtCents(cr.rate.cents)}`
+          + (cr.rate.rest ? ' (der Rest, vorzeitiges Ende nach § 82b Abs. 2 EStDV)' : '') + `; danach noch ${fmtCents(cr.restAfterCents)}. Der Beleg gehört zum Jahr ${cr.outflowYear}.`,
+      }],
+      taxUnits: cr.from.taxUnits,
+      spreadFrom: {
+        costItemId: cr.item.id, outflowYear: cr.outflowYear, index: cr.index, of, baseCents: cr.from.spread.baseCents, grossRateCents: cr.rate.grossCents,
+        restAfterCents: cr.restAfterCents, ...(cr.rate.rest ? { rest: true as const } : {}),
+      },
+    })
+  }
+
   // Verbilligte Vermietung (#257, Regeln in cheapRent.ts): der unentgeltliche Teil, aus dem abziehbaren Teil nach der
   // Aufteilung bei Eigennutzung herausgenommen, nie aus dem privaten. Ohne eingetragene ortsübliche Miete gibt es
   // nichts, und keine Zahl ändert sich. Die Umlagen kommen aus der Abrechnung des Kalenderjahres, heute gerechnet; der
@@ -1862,8 +1962,18 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
     // C stecken, sind keine eigene Zahlung und zählen nicht. Ein Abzug, der als dem Messdienst gemeldet gilt
     // (`balance.reported`, dieselbe Regel `deductionReported` wie die Steuer), steht dagegen als eigene negative Position
     // da und wird mitgekürzt.
-    items: items.filter((c) => groupOf(c.category) !== null && c.operatingPower !== 'included'
-      && (c.operatingPower !== 'deduction' || reportedIds.has(c.id))),
+    // Verteilung (#262, V1): gekürzt wird je Jahr die Rate, mit der Quote dieses Jahres, wie eine Position dieses Jahres
+    // über den Bruttoanteil (Zeile 57/59 „Gesamtbetrag“) mit denselben Einheiten, geklemmt auf die Rate. Die abgeleitete
+    // Zeile `spread:` ist damit die eine abgeleitete Zeile, die gekürzt wird: Sie ist der Werbungskostenanteil einer
+    // gewöhnlichen Position in diesem Jahr (Anleitung zur Anlage V 2024: Kürzung nur in den Zeilen 87 und 88).
+    items: [
+      ...items.filter((c) => groupOf(c.category) !== null && c.operatingPower !== 'included'
+        && (c.operatingPower !== 'deduction' || reportedIds.has(c.id))).map((c) => {
+        const g = grossFirst.get(c.id)
+        return g === undefined ? c : { ...c, amountCents: g }
+      }),
+      ...[...carriedIds].map(([id, cr]) => ({ ...cr.item, id, amountCents: cr.rate.grossCents })),
+    ],
     deductible: (id) => split.items.get(id)?.deductibleCents,
     // Durchsicht von PR #422, S1: der Anteil laut Abrechnung des Kalenderjahres, nur für Positionen, die genau diese
     // Abrechnung verteilt, und nur, wo sie ihn dem Mietverhältnis zubucht.
@@ -1881,11 +1991,14 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
     const entry = split.items.get(id)
     if (!entry) continue
     const deductibleCents = entry.deductibleCents - cut.cents
+    const spreadNote = entry.spread !== undefined || entry.spreadFrom !== undefined
+      ? [{ label: 'Hinweis', value: 'Gekürzt wird jeder Anteil im Jahr seines Abzugs mit der Quote dieses Jahres (Anleitung zur Anlage V, Zeilen 87 und 88).', term: 'cheapRent' as const }]
+      : []
     split.items.set(id, {
       ...entry,
       deductibleCents,
       gratuitousCents: cut.cents,
-      steps: [...entry.steps, ...cut.steps, { label: 'abziehbar nach Kürzung', value: fmtCents(deductibleCents) }],
+      steps: [...entry.steps, ...cut.steps, ...spreadNote, { label: 'abziehbar nach Kürzung', value: fmtCents(deductibleCents) }],
     })
   }
   const byGroup = new Map<string, Map<string, TaxExpenseCategory>>()
@@ -1908,6 +2021,7 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
     prev.privateCents += share?.privateCents ?? 0
     prev.deductibleCents += share?.deductibleCents ?? item.amountCents
     if (share?.gratuitousCents) prev.gratuitousCents = (prev.gratuitousCents ?? 0) + share.gratuitousCents
+    if (share?.deferredCents) prev.deferredCents = (prev.deferredCents ?? 0) + share.deferredCents
     // Nur ein gültiger Lohnanteil, dieselbe Regel wie in der Abrechnung (#148).
     prev.labor35aCents += validLabor35aCents(item) ?? 0
     cats.set(item.category, prev)
@@ -1962,9 +2076,23 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
     prev.deductibleCents += paidOutCents
     cats.set(CO2_REFUND_TAX_CATEGORY, prev)
   }
+  // Die Anteile aus Vorjahren (#262): Betrag 0, abziehbar die Rate (nach der Kürzung), verschoben −Rate.
+  for (const id of carriedIds.keys()) {
+    const share = split.items.get(id)
+    if (share === undefined) continue
+    const cats = byGroup.get(share.group) ?? new Map<string, TaxExpenseCategory>()
+    byGroup.set(share.group, cats)
+    const prev = cats.get(share.category) ?? { category: share.category, amountCents: 0, labor35aCents: 0, privateCents: 0, deductibleCents: 0 }
+    prev.deductibleCents += share.deductibleCents
+    prev.deferredCents = (prev.deferredCents ?? 0) + (share.deferredCents ?? 0)
+    if (share.gratuitousCents) prev.gratuitousCents = (prev.gratuitousCents ?? 0) + share.gratuitousCents
+    cats.set(share.category, prev)
+  }
   const groups: TaxExpenseGroup[] = [...byGroup.entries()]
     .map(([group, cats]) => {
-      const categories = [...cats.values()].sort((a, b) => b.amountCents - a.amountCents)
+      // Der verschobene Teil (#262) nur, wo er nicht 0 ist; ohne Verteilung fehlt er überall.
+      const categories = [...cats.values()].map(({ deferredCents, ...c }): TaxExpenseCategory => (deferredCents ? { ...c, deferredCents } : c)).sort((a, b) => b.amountCents - a.amountCents)
+      const deferred = categories.reduce((a, c) => a + (c.deferredCents ?? 0), 0)
       return {
         group,
         amountCents: categories.reduce((a, c) => a + c.amountCents, 0),
@@ -1972,6 +2100,7 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
         privateCents: categories.reduce((a, c) => a + c.privateCents, 0),
         deductibleCents: categories.reduce((a, c) => a + c.deductibleCents, 0),
         ...(categories.some((c) => c.gratuitousCents) ? { gratuitousCents: categories.reduce((a, c) => a + (c.gratuitousCents ?? 0), 0) } : {}),
+        ...(deferred !== 0 ? { deferredCents: deferred } : {}),
         categories,
       }
     })
@@ -1984,7 +2113,18 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
   const privateCents = groups.reduce((a, g) => a + g.privateCents, 0)
   // Als Differenz, damit privat, unentgeltlich (#257) und abziehbar zusammen immer die Bruttosumme ergeben.
   const gratuitousCents = groups.reduce((a, g) => a + (g.gratuitousCents ?? 0), 0)
-  const deductibleCents = totalCents - privateCents - gratuitousCents
+  // Ebenso der verschobene Teil der Verteilung nach § 82b EStDV (#262): Betrag = privat + unentgeltlich + verschoben +
+  // abziehbar, je Zeile, Kategorie, Gruppe und Summe.
+  const deferredCents = groups.reduce((a, g) => a + (g.deferredCents ?? 0), 0)
+  const deductibleCents = totalCents - privateCents - gratuitousCents - deferredCents
+  const spreadCarried: TaxSpread['carried'] = carried.map((cr) => ({
+    costItemId: cr.item.id, description: cr.from.description, outflowYear: cr.outflowYear, index: cr.index, of: cr.from.spread.years, baseCents: cr.from.spread.baseCents,
+    deductiblePercent: cr.from.privateCents === 0 || cr.from.amountCents === 0 ? null : Math.floor(cr.from.spread.baseCents * 10000 / cr.from.amountCents) / 100,
+    grossRateCents: cr.rate.grossCents, rateCents: cr.rate.cents, remainingCents: cr.restAfterCents, direct: cr.from.privateCents === 0, ...(cr.rate.rest ? { rest: true as const } : {}),
+  }))
+  const spread: TaxSpread | null = spreadStarted.length + spreadCarried.length > 0
+    ? { started: spreadStarted, carried: spreadCarried, thisYearCents: [...spreadStarted, ...spreadCarried].reduce((a, x) => a + x.rateCents, 0) }
+    : null
   const labor35aCents = groups.reduce((a, g) => a + g.labor35aCents, 0)
   // Positionen „Nicht umlagefähig“, die nach Rücklage aussehen (#143). Gerechnet wird wie
   // erfasst; die Steuerübersicht rät nur, die Kostenart zu ändern. Der Hinweis gehört hierher und
@@ -2000,9 +2140,11 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
     .filter((c) => c.category === 'Nicht umlagefähig' && looksLikeReserveWithdrawal(c.description))
     .map((c) => ({ costItemId: c.id, description: c.description, amountCents: c.amountCents, ...(c.paidOn != null ? { paidOn: c.paidOn } : {}) }))
   // Eine Sonderumlage (#96, A4.3, R5) mit dem Datum der eigenen Zahlung oder als Zuführung erfasst: Abziehbar ist sie erst,
-  // wenn die Gemeinschaft das Geld für eine Maßnahme ausgibt. Mietfuchs stellt nichts um.
+  // wenn die Gemeinschaft das Geld für eine Maßnahme ausgibt. Mietfuchs stellt nichts um. Ebenso unter „Nicht umlagefähig“
+  // mit gewählter Verteilung (#262, Durchsicht X3): Die eigene Zahlung an die Gemeinschaft ist nicht das Jahr des Abzugs.
+  const spreadIds = new Set(spreadStarted.map((x) => x.costItemId))
   const specialLevySuspects = items
-    .filter((c) => SPECIAL_LEVY.test(c.description) && ((c.category === 'Nicht umlagefähig' && c.paidOn != null) || c.category === RESERVE_CONTRIBUTION_CATEGORY))
+    .filter((c) => SPECIAL_LEVY.test(c.description) && ((c.category === 'Nicht umlagefähig' && (c.paidOn != null || spreadIds.has(c.id))) || c.category === RESERVE_CONTRIBUTION_CATEGORY))
     .map((c) => ({ costItemId: c.id, description: c.description, amountCents: c.amountCents, category: c.category }))
 
   // ---------- Gemischte Nutzung: gemessen wird das Private (#68) ----------
@@ -2099,7 +2241,11 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
       tenanciesWithoutPayment,
       ...(received ? { received } : {}),
     },
-    expenses: { groups, totalCents, privateCents, deductibleCents, labor35aCents, ...(gratuitousCents !== 0 ? { gratuitousCents } : {}), ...(stockCarrySelf !== 0 ? { stockCarrySelfCents: stockCarrySelf } : {}), items: [...split.items.values()], unstatedCount: shifts.unstatedCount },
+    expenses: {
+      groups, totalCents, privateCents, deductibleCents, labor35aCents, ...(gratuitousCents !== 0 ? { gratuitousCents } : {}),
+      ...(deferredCents !== 0 ? { deferredCents } : {}), ...(spread ? { spread } : {}),
+      ...(stockCarrySelf !== 0 ? { stockCarrySelfCents: stockCarrySelf } : {}), items: [...split.items.values()], unstatedCount: shifts.unstatedCount,
+    },
     movedOut: shifts.movedOut,
     settlementPeriods: used.map((p) => ({ key: p.snapshot.period.key, label: p.snapshot.scope?.kind === 'heating' ? `Heizkosten ${periodLabel(p.snapshot.period)}` : periodLabel(p.snapshot.period) })),
     selfUseChangedInYear: split.selfUseChangedInYear,
@@ -2110,6 +2256,7 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
     reserveSuspects,
     ...(reserveWithdrawalSuspects.length > 0 ? { reserveWithdrawalSuspects } : {}),
     ...(specialLevySuspects.length > 0 ? { specialLevySuspects } : {}),
+    ...(spreadIgnored.length > 0 ? { spreadIgnored } : {}),
     totalAreaM2: totalArea,
     selfUsedAreaM2,
     selfOccupiedExists,
@@ -2305,12 +2452,56 @@ export function taxPartsFor(source: Parameters<typeof snapshotFor>[0], propertyI
 
 // `parts`: die Teile aus `taxPartsFor`, wenn der Aufrufer sie ohnehin braucht (das Steuer-ZIP wählt mit denselben
 // Teilen aus, Durchsicht von #255 PR 1, K5); sonst rechnet sie die Funktion selbst.
-export function taxReportFor(source: Parameters<typeof snapshotFor>[0], propertyId: string, year: number, parts: readonly TaxPart[] = taxPartsFor(source, propertyId, year), options: Pick<TaxReportOptions, 'received'> = {}): TaxReport {
+// `carried: false` (#262, E-6): ohne die Anteile aus Vorjahren, für den Rückgriff auf das Jahr des Abflusses.
+export function taxReportFor(source: Parameters<typeof snapshotFor>[0], propertyId: string, year: number, parts: readonly TaxPart[] = taxPartsFor(source, propertyId, year), options: Pick<TaxReportOptions, 'received'> & { carried?: false } = {}): TaxReport {
   const calendar = snapshotFor(source, propertyId, calendarYearPeriod(year))
   // Durchsicht M1 zu #268: Ein Abzug kann auf eine Heizposition in einem anderen Steuerjahr zeigen; der Schnappschuss
   // kennt nur die Positionen seines Zeitraums. Deshalb bekommt die Übersicht alle Positionen des Objekts für Verweise.
   const all = source.costItems.filter((c) => c.propertyId === propertyId)
-  return taxReport(calendar, parts, { linkable: all, foreignQuota: foreignHeatQuota(source, propertyId, year, all), ...options })
+  // Das vorzeitige Ende der Verteilungen (§ 82b Abs. 2 EStDV, #262) steht am Objekt und gilt für alle seine Positionen.
+  const restYear = source.properties?.find((p) => p.id === propertyId)?.spreadRestYear ?? null
+  const { carried, ...rest } = options
+  const carriedRatesOf = carried === false ? [] : carriedRates(source, propertyId, year, all, restYear)
+  return taxReport(calendar, parts, {
+    linkable: all, foreignQuota: foreignHeatQuota(source, propertyId, year, all), restYear, ...(carriedRatesOf.length > 0 ? { carriedRates: carriedRatesOf } : {}), ...rest,
+  })
+}
+
+// Die Anteile aus Vorjahren, die in diesem Jahr abgezogen werden (§ 82b EStDV, #262 PR 2, E-6). Gesucht wird unter den
+// Positionen des Objekts, deren Plan (`deductionPlan`) dieses Jahr nach dem Jahr des Abflusses Y0 enthält. Für jedes
+// solche Y0 rechnet die Übersicht **einmal** den Bericht jenes Jahres, ohne eigene Vorjahre (`carried: false`, keine
+// Rekursion über eine Stufe) und ohne Tilgung der Einnahmen (`received: false`, Durchsicht X10), und übernimmt aus der
+// Zeile der Position die Rate dieses Jahres. **Eine Zahl, eine Stelle**: Die Rate ist dieselbe, die die Übersicht Y0
+// nennt; ändert sich D (Fläche berichtigt), wandern alle Raten mit (kein Einfrieren abgegebener Jahre, Entscheidung U-1).
+// Ohne verteilte Position passiert nichts, auch keine zusätzliche Rechnung. Eine Rate von 0 (D = 0, oder ein Rest-Cent,
+// der nicht bis hierher reicht) ergibt keine Zeile: Es gibt nichts abzuziehen. `reportOf` ist die Naht für den Test, der
+// die Rückgriffe zählt (calc-steuer-verteilung.test.ts); sonst immer `taxReportFor`.
+export function carriedRates(
+  source: Parameters<typeof snapshotFor>[0], propertyId: string, year: number, all: readonly SnapshotCostItem[], restYear: number | null,
+  reportOf: typeof taxReportFor = taxReportFor,
+): CarriedRate[] {
+  const byOutflow = new Map<number, SnapshotCostItem[]>()
+  for (const c of all) {
+    // Das Jahr des Abflusses aus dem Beginn des Zeitraums laut Schlüssel, wie `storedOutflowYear`; für jede Position, an
+    // der verteilt werden kann (keine Heizposition, kein Abzug beim Betriebsstrom), dasselbe wie in der Übersicht.
+    const [plan] = deductionPlan(c, { from: `${startYearOf(c.period)}-01-01` }, [], restYear)
+    if (plan === undefined || plan.of === 1 || plan.outflowYear >= year || !plan.years.includes(year)) continue
+    byOutflow.set(plan.outflowYear, [...(byOutflow.get(plan.outflowYear) ?? []), c])
+  }
+  const out: CarriedRate[] = []
+  for (const [y0, list] of [...byOutflow].sort(([a], [b]) => a - b)) {
+    const origin = reportOf(source, propertyId, y0, undefined, { carried: false, received: false })
+    for (const item of list) {
+      const from = origin.expenses.items.find((x) => x.costItemId === item.id)
+      if (from?.spread === undefined) continue
+      const k = from.spread.rates.findIndex((r) => r.year === year)
+      const rate = from.spread.rates[k]
+      if (rate === undefined || rate.cents === 0) continue
+      const restAfterCents = from.spread.baseCents - from.spread.rates.slice(0, k + 1).reduce((a, r) => a + r.cents, 0)
+      out.push({ item, from: { ...from, spread: from.spread }, outflowYear: y0, index: k + 1, rate, restAfterCents })
+    }
+  }
+  return out
 }
 
 // Durchsicht von #255 PR 2, M1: der Heizanteil der Anlage in dem Teil, in dem eine Heizposition steht, wenn sie in einem

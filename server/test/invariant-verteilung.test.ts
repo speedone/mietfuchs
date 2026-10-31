@@ -2,8 +2,10 @@
 // Kalenderjahr, Mai bis April, Wechsel des Rhythmus, Heizanlagen, Eigennutzung, Gutschriften, Rücklage) und über den
 // Prüfkatalog der Abrechnung.
 //
-// V1 PR 1 ändert keine Zahl (Durchsicht K-b): Mit einer Wahl an jeder Position, die sie erlaubt, sind Steuerbericht
-//    jedes Jahres und jede Abrechnung gleich wie ohne; der Prüfkatalog bleibt centgenau bei seiner Handrechnung.
+// V1 Die Abrechnung liest die Wahl nie (Durchsicht K-b, seit PR 2 I-6 des Entwurfs): Mit einer Wahl an jeder Position,
+//    auch an solchen, die sie nicht erlauben (Ablage von Hand), und einem Ende am Objekt sind jede Abrechnung, das
+//    Mietkonto und die Verbrauchsübersicht gleich wie ohne; der Prüfkatalog bleibt centgenau bei seiner Handrechnung.
+//    Die Steuer rechnet die Wahl seit PR 2 (invariant-steuer-verteilung.test.ts).
 // V2 Die Rückfrage nennt das Jahr, das die Steuer nimmt (Durchsicht K-c): Das erste Jahr der Verteilung in den Sätzen
 //    von `spreadQuestions` ist für jede Position, die verteilt werden kann, das Jahr aus `outflowShares` mit dem
 //    wirklichen Zeitraum der Position, auch bei Zeiträumen, die nicht dem Kalenderjahr folgen.
@@ -11,7 +13,7 @@
 // Startwerte über INV_FROM/INV_TO, Vorgabe 1 bis 60.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { computeSettlement, taxReportFor } from '../src/calc.ts'
+import { computeSettlement, consumptionOverview, rentLedger } from '../src/calc.ts'
 import { outflowShares } from '../src/outflow.ts'
 import { snapshotFor } from '../src/snapshot.ts'
 import { allowsSpread, spreadQuestions } from '../../shared/spread.ts'
@@ -22,30 +24,31 @@ import { makeRng, randomTaxStock, TAX_STOCK_PROPERTY, TAX_STOCK_YEARS, type TaxS
 const FROM = Number(process.env.INV_FROM ?? 1)
 const TO = Number(process.env.INV_TO ?? 60)
 
-const ALL_YEARS = Array.from({ length: 13 }, (_, i) => 2020 + i)
 const YEARS: readonly SpreadYears[] = [2, 3, 4, 5]
 
-const spread = <S extends { costItems: readonly Pick<CostItem, 'category' | 'amountCents' | 'operatingPower'>[] }>(src: S, seed: number): { src: S; count: number } => {
+const spread = <S extends { costItems: readonly Pick<CostItem, 'category' | 'amountCents' | 'operatingPower'>[] }>(src: S, seed: number, all = false): { src: S; count: number } => {
   let count = 0
   const costItems = src.costItems.map((c, i) => {
-    if (!allowsSpread(c)) return c
+    if (!all && !allowsSpread(c)) return c
     count++
     return { ...c, spreadYears: YEARS[(seed + i) % YEARS.length] }
   })
   return { src: { ...src, costItems }, count }
 }
 
-test('V1: eine Wahl an jeder Position, die sie erlaubt, ändert weder Steuerbericht noch Abrechnung', () => {
+test('V1: eine Wahl an jeder Position und ein Ende am Objekt ändern weder Abrechnung noch Mietkonto noch Verbrauch', () => {
   let spreadCount = 0
   for (let seed = FROM; seed <= TO; seed++) {
     const { source, periods } = randomTaxStock(makeRng(seed * 7919))
-    const { src: after, count } = spread<TaxSource>(source, seed)
+    const { src, count } = spread<TaxSource>(source, seed, true)
+    const after = { ...src, properties: (src.properties ?? []).map((p) => ({ ...p, spreadRestYear: 2025 + (seed % 4) })) }
     spreadCount += count
-    for (const year of [...new Set([...TAX_STOCK_YEARS, ...ALL_YEARS])]) {
-      assert.deepEqual(taxReportFor(after, TAX_STOCK_PROPERTY, year), taxReportFor(source, TAX_STOCK_PROPERTY, year), `Startwert ${seed}, ${year}`)
-    }
     for (const p of periods) {
-      assert.deepEqual(computeSettlement(snapshotFor(after, TAX_STOCK_PROPERTY, p)), computeSettlement(snapshotFor(source, TAX_STOCK_PROPERTY, p)), `Startwert ${seed}, ${p.key}`)
+      const a = snapshotFor(after, TAX_STOCK_PROPERTY, p)
+      const b = snapshotFor(source, TAX_STOCK_PROPERTY, p)
+      assert.deepEqual(computeSettlement(a), computeSettlement(b), `Startwert ${seed}, ${p.key}`)
+      assert.deepEqual(rentLedger(a), rentLedger(b), `Startwert ${seed}, ${p.key}: Mietkonto`)
+      assert.deepEqual(consumptionOverview(a), consumptionOverview(b), `Startwert ${seed}, ${p.key}: Verbrauch`)
     }
   }
   assert.ok(spreadCount > 20, `zu wenige verteilte Positionen (${spreadCount})`)

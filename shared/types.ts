@@ -1260,7 +1260,10 @@ export type SettlementComparison = {
 // selbstgenutzte Wohnung ist `privateCents` 0.
 // `gratuitousCents` (#257): der unentgeltliche Teil bei verbilligter Vermietung nach § 21 Abs. 2 EStG, nicht abziehbar
 // und nicht privat. Fehlt das Feld, gibt es keinen. Abziehbar ist Betrag − privat − unentgeltlich.
-export type TaxExpenseCategory = { category: string; amountCents: number; labor35aCents: number; privateCents: number; deductibleCents: number; gratuitousCents?: number }
+// `deferredCents` (§ 82b EStDV, #262): der in Folgejahre verschobene Teil einer verteilten Position, mit Vorzeichen (im Jahr
+// des Abflusses positiv, in den Folgejahren der übernommene Anteil negativ). Fehlt das Feld, ist er 0. Dann gilt
+// Betrag = privat + unentgeltlich + verschoben + abziehbar.
+export type TaxExpenseCategory = { category: string; amountCents: number; labor35aCents: number; privateCents: number; deductibleCents: number; gratuitousCents?: number; deferredCents?: number }
 // Das Zugeflossene eines Kalenderjahres nach Zeilen der Anlage V (#312 PR 2, Entwurf
 // docs/superpowers/specs/2026-10-30-steuer-zufluss-design.md, E4). Jede Mietzahlung mit Datum im Jahr ist nach der
 // gesetzlichen Tilgungsreihenfolge (§ 366 BGB, BGH VIII ZR 84/17 Rn. 56, 57) auf Monat und Bestandteil verteilt; die
@@ -1315,6 +1318,7 @@ export type TaxExpenseGroup = {
   privateCents: number
   deductibleCents: number
   gratuitousCents?: number // #257, wie bei TaxExpenseCategory
+  deferredCents?: number // #262, wie bei TaxExpenseCategory
   categories: TaxExpenseCategory[]
 }
 
@@ -1377,6 +1381,33 @@ export type TaxExpenseItem = {
   // Der unentgeltliche Teil bei verbilligter Vermietung (§ 21 Abs. 2 EStG, #257), schon aus `deductibleCents`
   // herausgenommen. Fehlt das Feld, gibt es keinen.
   gratuitousCents?: number
+  // Verteilung nach § 82b EStDV (#262, Entwurf 2026-10-30-erhaltungsaufwand-verteilen-design.md, E-5). Im Jahr des
+  // Abflusses: der in Folgejahre verschobene Teil (D − erste Rate) und die Verteilung selbst. In einem Folgejahr steht
+  // die Position als abgeleitete Zeile `spread:<Position>:<Jahr des Abflusses>` mit Betrag 0, `deferredCents` = −Rate
+  // und `spreadFrom`. Fehlen die Felder, wird nicht verteilt.
+  deferredCents?: number
+  spread?: TaxItemSpread
+  spreadFrom?: TaxSpreadFrom
+}
+// Die Verteilung einer Position im Jahr ihres Abflusses: `baseCents` = D = Betrag − privat, `years` die gewählte Zahl
+// der Jahre, je Jahr die Rate von D (`cents`, vor der Kürzung bei verbilligter Vermietung) und der Bruttoanteil
+// (`grossCents`, Betrag auf dieselben Jahre, den Zeile 57/59 als Gesamtbetrag fragt); `rest` am Jahr eines vorzeitigen
+// Endes nach § 82b Abs. 2 EStDV, das den ganzen Rest trägt.
+export type TaxItemSpread = { years: SpreadYears; baseCents: number; rates: { year: number; cents: number; grossCents: number; rest?: true }[] }
+// Die Herkunft einer abgeleiteten Zeile eines Folgejahres: Anteil `index` von `of` aus dem Jahr `outflowYear`, die
+// Grundlage D, der Bruttoanteil dieses Jahres und was danach noch abzuziehen bleibt.
+export type TaxSpreadFrom = { costItemId: string; outflowYear: number; index: number; of: SpreadYears; baseCents: number; grossRateCents: number; restAfterCents: number; rest?: true }
+// Der Block der Anlage V „Auf bis zu 5 Jahre zu verteilende Erhaltungsaufwendungen“ (Zeilen 57 bis 72, E-5): die in
+// diesem Jahr begonnenen Verteilungen (57 bis 60) und die Anteile aus Vorjahren (61 bis 72, je Ursprungsjahr). `direct`
+// = kein privater Teil (die erste der Zeilen eines Ursprungsjahres), sonst verhältnismäßig mit Gesamtbetrag
+// (`grossRateCents`) und abzugsfähigem Anteil in Prozent, auf zwei Stellen abgeschnitten. Die Kürzung bei verbilligter
+// Vermietung steht nicht hier, sondern wie jede andere bei den Zeilen 87/88; `thisYearCents` ist vor ihr.
+export type TaxSpread = {
+  started: { costItemId: string; description: string; amountCents: number; privateCents: number; baseCents: number; deductiblePercent: number | null; years: SpreadYears;
+    grossRateCents: number; rateCents: number; remainingCents: number; direct: boolean }[]
+  carried: { costItemId: string; description: string; outflowYear: number; index: number; of: SpreadYears; baseCents: number; deductiblePercent: number | null;
+    grossRateCents: number; rateCents: number; remainingCents: number; direct: boolean; rest?: true }[]
+  thisYearCents: number
 }
 export type TaxOutflowSource = 'paid' | 'stated' | 'period' | 'bill'
 export type TaxOutflow = { year: number; source: TaxOutflowSource; paidOn?: string }
@@ -1447,6 +1478,11 @@ export type TaxReport = {
     // Der unentgeltliche Teil bei verbilligter Vermietung (#257). `deductibleCents` = Bruttosumme − privat − dieser
     // Teil. Fehlt das Feld, gibt es keinen.
     gratuitousCents?: number
+    // In Folgejahre verschoben, mit Vorzeichen (§ 82b EStDV, #262). `deductibleCents` = Bruttosumme − privat −
+    // unentgeltlich − dieser Teil. Fehlt das Feld, ist er 0.
+    deferredCents?: number
+    // Der Block der Zeilen 57 bis 72, nur, wenn in diesem Jahr ein Anteil einer Verteilung abgezogen wird.
+    spread?: TaxSpread
     // Heizung PR 8: Eigenanteil am Übertrag aus dem Brennstoffvorrat in den Abrechnungen dieses Jahres.
     // Die Abrechnung zeigt den Verbrauch, die Steuerübersicht das Bezahlte (Entwurf 8.2, N8); um diesen
     // Betrag liegen beide beim Eigenanteil auseinander. Fehlt das Feld, gibt es keinen Übertrag.
@@ -1484,9 +1520,12 @@ export type TaxReport = {
   // Positionen „Nicht umlagefähig“, deren Beschreibung nach einer Entnahme aus der Rücklage aussieht (#96); die Seite rät
   // zur Kostenart „Entnahme Erhaltungsrücklage“. `paidOn`, wenn die Position ein Zahlungsdatum trägt. Fehlt ohne Treffer.
   reserveWithdrawalSuspects?: { costItemId: string; description: string; amountCents: number; paidOn?: string }[]
-  // Sonderumlagen unter „Nicht umlagefähig“ mit Zahlungsdatum oder als Zuführung erfasst (#96): Die eigene Zahlung zählt
-  // nicht, erst die Ausgabe durch die Gemeinschaft. Fehlt ohne Treffer.
+  // Sonderumlagen unter „Nicht umlagefähig“ mit Zahlungsdatum oder gewählter Verteilung (#262) oder als Zuführung erfasst
+  // (#96): Die eigene Zahlung zählt nicht, erst die Ausgabe durch die Gemeinschaft. Fehlt ohne Treffer.
   specialLevySuspects?: { costItemId: string; description: string; amountCents: number; category: string }[]
+  // Positionen mit einer Wahl nach § 82b EStDV, an denen nicht verteilt werden kann (`allowsSpread`, etwa aus einer
+  // Ablage von Hand): nicht verteilt (#262, E-8 `spreadIgnored`). Fehlt ohne Treffer.
+  spreadIgnored?: { costItemId: string; description: string }[]
   // Gesamtfläche des Gebäudes und der selbstgenutzte Teil davon, in Quadratmetern. Genau die
   // beiden Zahlen fragt die Anlage V im Kopf ab. Gemessen wird das **Private** und nicht das
   // Vermietete: Nur das ist eindeutig, denn ob eine Wohnung außerhalb der Abrechnungseinheit
