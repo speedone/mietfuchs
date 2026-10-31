@@ -213,7 +213,8 @@ test('Invariante: Zahlungen aus der Abrechnung verschieben im Mietkonto nichts u
       const r = x.received ?? assert.fail('received fehlt')
       // Ein Mietverhältnis mit nur Zahlungen aus der Abrechnung steht mit ihnen allein da (und mit ihm seine Wohnung).
       const byTenancy = r.byTenancy.filter((t) => rent.some((p) => p.tenancyId === t.tenancyId))
-      return { ...x, paidCents: 0, settlementBackPaymentsCents: 0, settlementRefundsCents: 0, received: { ...r,
+      // Zeile 32 (Durchsicht von PR 3, S1) enthält den Saldo der Abrechnung, sonst nichts davon.
+      return { ...x, paidCents: 0, settlementBackPaymentsCents: 0, settlementRefundsCents: 0, received: { ...r, totalCents: r.totalCents - (x.settlementBackPaymentsCents - x.settlementRefundsCents),
         byTenancy: byTenancy.map((t) => ({ ...t, settlementCents: 0 })),
         byUnit: r.byUnit.filter((u) => byTenancy.some((t) => t.unitId === u.unitId)).map((u) => ({ ...u, settlementCents: 0 })), relatives: { ...r.relatives, settlementCents: 0 } } }
     }

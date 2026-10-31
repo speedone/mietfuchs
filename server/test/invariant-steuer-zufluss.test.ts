@@ -16,6 +16,8 @@ import { monthSoll } from '../../shared/monthRate.ts'
 import type { TaxReceived, TaxReport } from '../../shared/types.ts'
 import { makeRng, randomTaxStock, TAX_STOCK_PROPERTY, TAX_STOCK_SECOND, TAX_STOCK_YEARS, withPaymentVariety, withSecondProperty, type TaxSource } from '../testing/taxStock.ts'
 import { sha256 } from '../testing/taxGolden.ts'
+import { incomeLines } from '../../shared/taxIncomeLines.ts'
+import { incomeCsv } from '../src/taxReceipts.ts'
 
 const FROM = Number(process.env.INV_FROM ?? 1)
 const TO = Number(process.env.INV_TO ?? 24)
@@ -105,10 +107,13 @@ function oracle(source: TaxSource, pid: string, year: number): { lines: Oracle; 
 }
 
 // `received` ohne Namen für die Prüfsumme: Ein anderer Wortlaut soll sie nicht ändern, eine andere Zahl schon.
+// Die Felder aus der Durchsicht von PR 3 (S1, S4) bleiben draußen, damit die Referenz zeigt, dass sich keine bestehende
+// Zahl geändert hat; geprüft werden sie über die Invarianten oben.
 const unnamed = (x: TaxReceived): unknown => ({
-  ...x,
+  ...(({ totalCents: _t, unassignedCents: _u, ...rest }) => rest)(x),
+  relatives: { rentCents: x.relatives.rentCents, allocationsCents: x.relatives.allocationsCents, settlementCents: x.relatives.settlementCents },
   byUnit: x.byUnit.map(({ unitName: _, ...rest }) => rest),
-  byTenancy: x.byTenancy.map(({ tenantName: _, unitName: __, ...rest }) => rest),
+  byTenancy: x.byTenancy.map(({ tenantName: _, unitName: __, flatRateCents: _f, fromPreviousCents: _p, ...rest }) => rest),
   possibleDeposits: x.possibleDeposits.map(({ tenantName: _, ...rest }) => rest),
 })
 
@@ -161,7 +166,24 @@ test('Invariante: Zeilen = Orakel, Summe = paidCents, Teilsummen stimmen, Mietko
             if (sum(x.byUnit, (b) => b[k]) !== sum(x.byTenancy, (b) => b[k])) fail(`Σ byUnit.${k} ≠ Σ byTenancy`)
           }
           const rel = x.byTenancy.filter((b) => b.relative)
-          if (JSON.stringify(x.relatives) !== JSON.stringify({ rentCents: sum(rel, (b) => b.rentCents), allocationsCents: sum(rel, (b) => b.allocationsCents), settlementCents: sum(rel, (b) => b.settlementCents) })) fail('relatives ≠ Σ byTenancy mit relative')
+          for (const k of ['rentCents', 'allocationsCents', 'settlementCents', 'inclusiveRentCents', 'unallocatedCents', 'flatRateCents'] as const) {
+            if (x.relatives[k] !== sum(rel, (b) => b[k])) fail(`relatives.${k} ≠ Σ byTenancy mit relative`)
+          }
+          // Durchsicht von PR 3 (S1, S4): Zeile 32 vom Server, die Zeilen aus der gemeinsamen Rechnung (shared/taxIncomeLines.ts)
+          // ergeben sie; Pauschale und Zehn-Tage-Regel je Mietverhältnis; Überschuss aus Zeile 32.
+          if (x.totalCents !== r.income.paidCents - x.turnOfYear.forwardCents + x.turnOfYear.fromPreviousCents) fail('totalCents ≠ paidCents − forward + fromPrevious')
+          const z = incomeLines(r) ?? assert.fail('keine Zeilen')
+          if (z.homes + z.relatives + z.allocations + z.relativesAllocations + z.settlement + z.relativesSettlement + z.formerYears !== x.totalCents) fail('Σ Zeilen (incomeLines) ≠ totalCents')
+          if (z.totalCents !== x.totalCents) fail('incomeLines.totalCents ≠ totalCents')
+          if (z.homes !== x.rentCents - x.relatives.rentCents || z.flatRate !== x.flatRateCents - x.relatives.flatRateCents) fail('incomeLines ≠ Felder ohne Angehörige')
+          // Einnahmen.csv: Summe der Einnahmen = Zeile 32, Summe „gezahlt“ = Zufluss nach Datum.
+          const total = incomeCsv(r).replace(/^\uFEFF/, '').trim().split('\r\n').at(-1)?.split(';') ?? []
+          const cents = (v: string | undefined) => Math.round(Number((v ?? '').replace(',', '.')) * 100)
+          if (cents(total[12]) !== x.totalCents || cents(total[15]) !== r.income.paidCents) fail(`Einnahmen.csv: Summe ${total[12]} / gezahlt ${total[15]}`)
+          if (sum(x.byTenancy, (b) => b.flatRateCents) !== x.flatRateCents) fail('Σ byTenancy.flatRateCents ≠ flatRateCents')
+          if (sum(x.byTenancy, (b) => b.fromPreviousCents) !== x.turnOfYear.fromPreviousCents) fail('Σ byTenancy.fromPreviousCents ≠ fromPreviousCents')
+          if (r.surplusReceivedCents !== x.totalCents - r.expenses.deductibleCents) fail('surplusReceivedCents ≠ totalCents − abziehbare Werbungskosten')
+          if (x.relatives.sollRentCents > r.income.baseRentSollCents || x.relatives.sollAllocationsCents > r.income.prepaymentSollCents + r.income.flatRateSollCents) fail('Soll der Angehörigen größer als das ganze Soll')
           // fromPrevious(Y) = forward(Y − 1).
           if (year > (TAX_STOCK_YEARS[0] ?? year)) {
             const before = receivedOf(reportOf(year - 1))
@@ -255,12 +277,13 @@ test('Invariante: ohne Angehörige sind die Teilsummen 0; alle übrigen Felder g
     for (const pid of objects) for (const year of [2024, 2026, 2028]) {
       const at = `Startwert ${seed} (${pid}) ${year}`
       const x = receivedOf(taxReportFor(strangers, pid, year))
-      assert.deepEqual(x.relatives, { rentCents: 0, allocationsCents: 0, settlementCents: 0 }, at)
+      assert.deepEqual([x.relatives.rentCents, x.relatives.allocationsCents, x.relatives.settlementCents, x.relatives.sollRentCents], [0, 0, 0, 0], at)
       assert.ok(x.byTenancy.every((b) => !b.relative), at)
       const mit = taxReportFor(source, pid, year)
       const ohne = taxReportFor(source, pid, year, undefined, { received: false })
       const { received: _, ...income } = mit.income
-      assert.deepEqual({ ...mit, income }, ohne, at)
+      const { surplusReceivedCents: __, ...rest } = mit
+      assert.deepEqual({ ...rest, income }, ohne, at)
     }
   }
 })

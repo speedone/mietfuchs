@@ -68,12 +68,14 @@ test('Angehörige: ohne Kennzeichen fehlt das Feld, und Steuer und Abrechnung si
   assert.equal(relativeTenancies, 1)
   const { costModels: restOhne, ...ohneRest } = r
   assert.deepEqual(restMit, restOhne)
+  const NO_RELATIVES = { rentCents: 0, allocationsCents: 0, settlementCents: 0, inclusiveRentCents: 0, unallocatedCents: 0, flatRateCents: 0, sollRentCents: 0, sollInclusiveRentCents: 0, sollAllocationsCents: 0, sollFlatRateCents: 0 }
   // Das Zugeflossene (#312 PR 2) nennt die Angehörigen eigens (Zeilen 19, 22, 23); sonst ist alles gleich.
   const withoutRelatives = (x: typeof r): typeof r => {
     const received = x.income.received ?? assert.fail('received fehlt')
-    return { ...x, income: { ...x.income, received: { ...received, relatives: { rentCents: 0, allocationsCents: 0, settlementCents: 0 }, byTenancy: received.byTenancy.map((b) => ({ ...b, relative: false })) } } }
+    return { ...x, income: { ...x.income, received: { ...received, relatives: NO_RELATIVES, byTenancy: received.byTenancy.map((b) => ({ ...b, relative: false })) } } }
   }
-  assert.deepEqual(mitRest.income.received?.relatives, { rentCents: 50000, allocationsCents: 10000, settlementCents: 0 })
+  const rel = mitRest.income.received?.relatives ?? assert.fail('received fehlt')
+  assert.deepEqual([rel.rentCents, rel.allocationsCents, rel.settlementCents], [50000, 10000, 0])
   assert.deepEqual(withoutRelatives({ ...mitRest, costModels: restMit }), withoutRelatives({ ...ohneRest, costModels: restOhne }))
   // Die Abrechnung liest das Kennzeichen nicht.
   const p = periodOfKey(CALENDAR_RULES, calendarPeriod(2025)) ?? assert.fail('kein Zeitraum 2025')

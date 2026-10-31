@@ -13,7 +13,7 @@
 // Rechtszahlen kommen aus dem Rechtsregister (shared/law/, Heizung PR 1), und zwar in der Fassung
 // von `LAW_AS_OF`: Das Lexikon erklärt das geltende Recht. Die Zahlen einer Beispielrechnung („70 %
 // nach Verbrauch“) sind gewählt und bleiben stehen.
-import { bgbHeatDeliverySwitch } from './law/bgb-betrkv.ts'
+import { bgbHeatDeliverySwitch, bgbRentDueAtStart } from './law/bgb-betrkv.ts'
 import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit } from './law/heizkostenv.ts'
 import { dayBefore as dayBeforeIso, germanDate, LAW_AS_OF, onlyVersion, valueAt } from './law/register.ts'
 import { practiceEvaporatorWindow } from './law/practice.ts'
@@ -21,7 +21,7 @@ import { messevCalibrationYears } from './law/messev.ts'
 import { OPERATING_POWER_HANDLING_LABELS, OPERATING_POWER_HANDLING_QUESTION } from './operatingPower.ts'
 import { co2CutMissing, co2DistrictEtsNew, co2EbevFactors, co2FirstPeriodStart, co2HalfSplit, co2HalfSplitTwoFamily, co2NonResidential, co2Restriction, co2RoundingDecimals, co2SelfSupply, co2StageTable, halfSplitBioFirstDay, halfSplitEnactedOn, halfSplitFirstDay } from './law/co2kostaufg.ts'
 import { bioCapFrom, gmodgHeating43 } from './law/gmodg.ts'
-import { estgAcquisitionRelated, estgCheapRent, yearsWord } from './law/estg.ts'
+import { estgAcquisitionRelated, estgCheapRent, estgShortPeriodDays, yearsWord } from './law/estg.ts'
 import { ustgSmallBusiness } from './law/ustg.ts'
 
 // Hälftige Teilung nach § 5a (Heizung PR 18): Stichtage, Grenze beim Biobrennstoff, Zweifamilienhaus und § 43 GModG.
@@ -36,6 +36,9 @@ const CHEAP = valueAt(estgCheapRent, LAW_AS_OF)
 const ACQ = valueAt(estgAcquisitionRelated, LAW_AS_OF)
 const ACQ_YEARS = yearsWord(ACQ.years)
 const acqDe = (euro: number): string => euro.toLocaleString('de-DE', { maximumFractionDigits: 0 })
+// Zehn-Tage-Regel (#312 PR 3): die kurze Zeit in Tagen und der Stichtag der Fälligkeit am Monatsende.
+const SHORT_DAYS = valueAt(estgShortPeriodDays, LAW_AS_OF)
+const OLD_LEASE_UNTIL = germanDate(bgbRentDueAtStart.versions.find((v) => v.value === false)?.validTo ?? '')
 // Garage und Umsatzsteuer (#323): die Grenzen der Kleinunternehmerregelung nach § 19 Abs. 1 UStG.
 const SMALL = valueAt(ustgSmallBusiness, LAW_AS_OF)
 
@@ -306,7 +309,7 @@ export const GLOSSARY = {
     short: 'Zahlt ein Mieter nicht genau die Monatsmiete, bestimmt § 366 BGB, welche Schuld die Zahlung tilgt: der Monat, den der Mieter angibt, sonst zuerst die offenen Vorauszahlungen, dann Kaltmiete und Pauschale, jeweils die ältesten zuerst.',
     example: 'Offen sind 600 € Kaltmiete und 200 € Vorauszahlung für Januar. Der Mieter überweist 300 € ohne Verwendungszweck: 200 € tilgen die Vorauszahlung, 100 € die Kaltmiete; offen bleiben 500 € Kaltmiete. Schreibt er „Miete Februar“, tilgt die Zahlung zuerst die Vorauszahlung und dann die Kaltmiete des Februars.',
     norm: '§ 366 BGB; BGH, Urteil vom 21.03.2018, VIII ZR 84/17, Rn. 53 bis 57 (Vorauszahlung ist die unsicherere Forderung, Anrechnung auf die ältesten Rückstände). Dass die Pauschale wie die Kaltmiete zur sichereren Klasse zählt, ist eine Auslegung von Mietfuchs, denn über sie wird nie abgerechnet.',
-    needed: 'Ja, sobald Sie Zahlungen im Mietkonto erfassen. Nennt der Mieter in der Überweisung einen Monat, tragen Sie ihn an der Zahlung bei „Für Monat (laut Verwendungszweck)“ ein; einen Dauerauftrag über genau die Monatsmiete wertet Mietfuchs nicht als solche Angabe. Ist die Abrechnung eines Zeitraums erteilt oder ihre Frist abgelaufen, lassen sich offene Vorauszahlungen daraus nicht mehr einzeln verlangen, nur noch der Saldo der Abrechnung; das Mietkonto zeigt sie dann gesondert. Haben Sie Zahlungen erst ab einem bestimmten Monat erfasst, beginnt das Mietkonto im Monat der ersten im Objekt erfassten Mietzahlung; frühere Monate gelten als nicht erfasst und nicht als offen, danach zählt jeder Monat.',
+    needed: 'Ja, sobald Sie Zahlungen im Mietkonto erfassen. Nennt der Mieter in der Überweisung einen Monat, tragen Sie ihn an der Zahlung bei „Für Monat (laut Verwendungszweck)“ ein; einen Dauerauftrag über genau die Monatsmiete wertet Mietfuchs nicht als solche Angabe. Ist die Abrechnung eines Zeitraums erteilt oder ihre Frist abgelaufen, lassen sich offene Vorauszahlungen daraus nicht mehr einzeln verlangen, nur noch der Saldo der Abrechnung; das Mietkonto zeigt sie dann gesondert. Haben Sie Zahlungen erst ab einem bestimmten Monat erfasst, beginnt das Mietkonto im Monat der ersten im Objekt erfassten Mietzahlung; frühere Monate gelten als nicht erfasst und nicht als offen, danach zählt jeder Monat. Nach derselben Reihenfolge teilt die Steuerübersicht das Zugeflossene auf die Zeilen der Anlage V auf: Mieten ohne Umlagen, Umlagen und Mieten für frühere Jahre.',
   },
   // #311: Der Hinweis „Vorauszahlung im angebrochenen Monat“ verweist hierher. Die Monatsregel ist eine
   // Auslegung von Mietfuchs (Entscheidung R-1); die Alternative 1/30 steht ausdrücklich daneben.
@@ -861,7 +864,27 @@ export const GLOSSARY = {
     short: 'Für die Steuer zählen Werbungskosten in dem Kalenderjahr, in dem Sie sie bezahlt haben, nicht im Jahr der Abrechnung und nicht am Rechnungsdatum. Bei einer Überweisung ist das der Tag, an dem Ihr Auftrag bei Ihrer Bank einging (Konto gedeckt), bei einer Lastschrift der Tag des Einzugs, bar der Tag der Übergabe. Eine Erstattung zählt im Jahr, in dem sie Ihnen zufließt; Mietfuchs mindert damit vereinfachend die Kosten derselben Art, am Überschuss ändert das nichts. Ohne Datum gilt ein angegebenes Jahr der Zahlung, sonst stellt Mietfuchs eine Position in das Jahr ihrer Abrechnung.',
     example: 'Grundsteuer 2025 über 600,00 €, bezahlt am 20.02.2026 nach einem späten Bescheid: Mit diesem Datum steht sie in der Steuerübersicht 2026 und fehlt in 2025. Die Abrechnung 2025 für die Mieter bleibt, wie sie ist.',
     norm: '§ 11 Abs. 2 Satz 1 EStG; H 11 EStH 2024 („Überweisung“); BFH, Beschluss vom 08.03.2016, VIII B 58/15 (Lastschrift); BFH, Urteil vom 22.09.1994, IX R 13/93 (Erstattung); Zehn-Tage-Regel: § 11 Abs. 2 Satz 2 EStG, BFH, Urteil vom 16.02.2022, X R 2/21',
-    needed: 'Nur wenn Sie eine Rechnung in einem anderen Jahr bezahlt haben als im Jahr ihrer Abrechnung, etwa eine Nachzahlung im Folgejahr oder eine Versicherung, die Sie schon im Dezember für das nächste Jahr gezahlt haben. Tragen Sie es an der Kostenposition unter „Weitere Angaben“ ein. Bei Abschlägen lassen Sie es leer, das Datum steht immer für die ganze Position. Um den Jahreswechsel kann eine regelmäßig wiederkehrende Zahlung zum Vorjahr oder Folgejahr gehören (Zehn-Tage-Regel); Mietfuchs weist darauf hin, rechnet es aber nicht. Bei der Grundsteuer greift die Regel nicht, denn ihre Fälligkeiten (§ 28 GrStG) liegen nie in dieser Zeit.',
+    needed: 'Nur wenn Sie eine Rechnung in einem anderen Jahr bezahlt haben als im Jahr ihrer Abrechnung, etwa eine Nachzahlung im Folgejahr oder eine Versicherung, die Sie schon im Dezember für das nächste Jahr gezahlt haben. Tragen Sie es an der Kostenposition unter „Weitere Angaben“ ein. Bei Abschlägen lassen Sie es leer, das Datum steht immer für die ganze Position. Um den Jahreswechsel kann eine regelmäßig wiederkehrende Zahlung zum Vorjahr oder Folgejahr gehören (Zehn-Tage-Regel); bei Kostenpositionen weist Mietfuchs darauf hin, rechnet es aber nicht. Bei der Grundsteuer greift die Regel nicht, denn ihre Fälligkeiten (§ 28 GrStG) liegen nie in dieser Zeit.',
+  },
+  // #312 PR 3: die Zehn-Tage-Regel (Entwurf E8), die Zahl aus dem Register (`estg.short-period-days`, Nachdurchsicht K3),
+  // der Stichtag der alten Fälligkeit aus `bgb.rent-due-at-start`. Beispiel: 28.12.2025 liegt in den letzten Tagen vor dem
+  // 01.01.2026, die Januarmiete ist spätestens am dritten Werktag fällig.
+  tenDayRule: {
+    topic: 'tax',
+    title: 'Zehn-Tage-Regel',
+    short: `Regelmäßig wiederkehrende Einnahmen und Ausgaben, etwa die Miete, zählen in dem Jahr, zu dem sie gehören, wenn sie bis zu ${SHORT_DAYS} Tage vor oder nach dem Jahreswechsel gezahlt werden und in dieser Zeit auch fällig sind. Sonst zählt das Jahr der Zahlung.`,
+    example: 'Ein Dauerauftrag bucht die Januarmiete 2026 über 800 € schon am 28.12.2025. Sie ist Anfang Januar fällig und zählt deshalb 2026, nicht 2025. Die Dezembermiete 2025, gezahlt am 05.01.2026, war Anfang Dezember fällig und bleibt 2026.',
+    norm: `§ 11 Abs. 1 Satz 2 EStG, für Ausgaben § 11 Abs. 2 Satz 2 EStG; H 11 EStH („Kurze Zeit“); BFH, Urteil vom 24.07.1986, IV R 309/84; BFH, Urteil vom 16.02.2022, X R 2/21; Fälligkeit der Miete: § 556b Abs. 1 BGB, für Mietverhältnisse, die am ${OLD_LEASE_UNTIL} bestanden, § 551 BGB a. F. (Art. 229 § 3 Abs. 1 Nr. 7 EGBGB)`,
+    needed: `Sie müssen nichts tun. Bei der Miete wendet Mietfuchs die Regel in der Steuerübersicht an: Ende Dezember für den Januar Gezahltes steht im Folgejahr, mit einem Hinweis in beiden Jahren. Das gilt für Mietverhältnisse, deren Miete zu Beginn des Monats fällig ist (§ 556b Abs. 1 BGB). Bei Mietverhältnissen, die schon am ${OLD_LEASE_UNTIL} bestanden, ist die Miete ohne andere Vereinbarung am Monatsende fällig; dort verschiebt Mietfuchs nichts und nennt nur den Betrag. Eine abweichende Fälligkeit im Mietvertrag kennt Mietfuchs nicht. Beginnt ein Mietverhältnis erst im Januar, hängt die Fälligkeit der ersten Miete von Wochentag und Feiertagen ab; dann verschiebt Mietfuchs nichts und bleibt beim Jahr nach dem Datum der Zahlung (bekannte Grenze). Bei einer Kostenposition weist Mietfuchs am Zahlungsdatum auf die Regel hin, rechnet sie aber nicht. Das Mietkonto bleibt immer beim Datum der Zahlung.`,
+  },
+  // #312 PR 3: Zeile 25 der Anlage V (Vordruck 2024 und 2025); brutto ist eine Auslegung (Entwurf E4).
+  formerYearsRent: {
+    topic: 'tax',
+    title: 'Mieten für frühere Jahre',
+    short: 'Miete, die in diesem Jahr für einen Monat eines früheren Jahres eingeht, etwa ein Rückstand oder die Dezembermiete nach dem Auszug. Sie zählt im Jahr der Zahlung und steht in der Anlage V gesondert (Zeile 25 in den Vordrucken 2024 und 2025).',
+    example: 'Die Dezembermiete 2025 über 800 € (600 € Kaltmiete, 200 € Vorauszahlung) geht am 15.01.2026 ein; die Januarmiete 2026 ist schon bezahlt. In der Steuerübersicht 2026 stehen 800 € bei den Mieten für frühere Jahre, davon 200 € Umlagen.',
+    norm: '§ 11 Abs. 1 Satz 1 EStG; Anlage V 2024 und 2025, Zeile 25',
+    needed: 'Mietfuchs ordnet das selbst zu. Zeile 25 nimmt den ganzen Betrag samt Umlagen auf; das ist eine Auslegung von Mietfuchs, denn der Vordruck sagt dort nicht „ohne Umlagen“. Eine verrechnete Kaution gehört ebenfalls dorthin. Ist der Betrag negativ, hat eine Rücklastschrift eine früher verbuchte Miete zurückgenommen; tragen Sie ihn mit Minus ein.',
   },
   // #208: Gradtage, für den Vorschlag nach § 560 BGB im Rumpf. Werte aus dem Register
   // (`hkv.degree-days`), Herkunft dort.

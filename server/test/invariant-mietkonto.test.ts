@@ -157,7 +157,11 @@ test('Monat laut Verwendungszweck ändert Abrechnung und Steuer nicht (X9 g)', (
     const tb = taxReport(b)
     const { received: ra, ...ia } = ta.income
     const { received: rb, ...ib } = tb.income
-    assert.deepEqual({ ...ta, income: ia }, { ...tb, income: ib }, `Startwert ${seed}: Steuer`)
+    // `surplusReceivedCents` folgt Zeile 32 und damit der Zehn-Tage-Regel, die der Monat verschieben kann (wie `received`).
+    const { surplusReceivedCents: sa, ...restA } = ta
+    const { surplusReceivedCents: sb, ...restB } = tb
+    assert.deepEqual({ ...restA, income: ia }, { ...restB, income: ib }, `Startwert ${seed}: Steuer`)
+    assert.equal((sa ?? 0) - (ra?.totalCents ?? 0), (sb ?? 0) - (rb?.totalCents ?? 0), `Startwert ${seed}: Überschuss aus Zeile 32`)
     // Zehn-Tage-Regel (#312 E8): Was nach § 11 Abs. 1 Satz 2 EStG ins Nachbarjahr wandert, zählt hier wieder dazu.
     const lines = (r: typeof ra): number => (r ? r.rentCents + r.allocationsCents + r.formerYearsCents + r.turnOfYear.forwardCents - r.turnOfYear.fromPreviousCents : assert.fail('received fehlt'))
     assert.equal(lines(ra), lines(rb), `Startwert ${seed}: Summe der Zeilen`)

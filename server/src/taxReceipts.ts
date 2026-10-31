@@ -16,6 +16,7 @@
 // beiden Spalten sind deshalb genau die der Übersicht. Die Zuführung zur Rücklage steht dort nicht
 // in den Werbungskosten und hat hier leere Felder.
 import type { CostItem, TaxExpenseItem, TaxReport } from '../../shared/types.ts'
+import { tenancyIncome, unassignedIncome, type TenancyIncome } from '../../shared/taxIncomeLines.ts'
 import { ANLAGE_V_GROUP, ANLAGE_V_GROUP_ORDER, validLabor35aCents, type TaxPart } from './calc.ts'
 import { outflowShares } from './outflow.ts'
 import { startYearOf } from '../../shared/period.ts'
@@ -197,4 +198,40 @@ export function planTaxArchive(
   }
   const header = `Gruppe;Kostenart;Beschreibung;Rechnungssteller;Betrag (EUR);privat (EUR);${withGratuitous ? 'unentgeltlich § 21 Abs. 2 EStG (EUR);' : ''}${withDeferred ? 'verteilt § 82b EStDV (EUR);' : ''}abziehbar (EUR);Lohnanteil § 35a (EUR);Beleg;Jahr der Zahlung`
   return { files, overviewCsv: `﻿${[header, ...rows].join('\r\n')}\r\n` }
+}
+
+// ---------- Einnahmen.csv (#312 PR 3) ----------
+//
+// Das Zugeflossene je Mietverhältnis nach den Zeilen der Anlage V, aus der Steuerübersicht (`income.received.byTenancy`)
+// und **mit derselben Rechnung wie die Steuerseite** (`tenancyIncome`/`unassignedIncome` in shared/taxIncomeLines.ts,
+// Durchsicht S1). Gleiche Form wie die Übersicht (BOM, `;`, CRLF, Euro wie `euro()`), Summenzeile am Ende.
+// „Einnahmen {Jahr}“ ist, was in diesem Jahr zählt: die Summe der Zeilen (Zeile 32 in den gelesenen Vordrucken; die Nummer
+// steht hier nicht, denn die Zeilen je Jahr kennt nur client/src/anlageV.ts). Daneben die Zehn-Tage-Regel in beide
+// Richtungen und „gezahlt“ nach Datum, das zum Kontoauszug passt (Durchsicht S5). Eine Zahlung ohne Mietverhältnis der Liste
+// steht als eigene Zeile, damit die Summe Zeile 32 bleibt. Mieternamen stehen schon in der Steuerübersicht, das Archiv
+// geht an den Steuerberater (Entwurf, „Steuer-ZIP“).
+const incomeColumns = (year: number): string[] => [
+  'Miete ohne Umlagen (EUR)', 'davon Inklusivmiete (EUR)', 'davon ohne vereinbarte Miete (EUR)', 'Umlagen laufend (EUR)', 'davon Pauschale (EUR)',
+  'Abrechnung Nachzahlung/Erstattung (EUR)', 'Mieten für frühere Jahre (EUR)', `Einnahmen ${year}, Summe der Zeilen (EUR)`,
+  'darin aus dem Vorjahr nach der Zehn-Tage-Regel (EUR)', 'nicht darin, zählt im Folgejahr nach der Zehn-Tage-Regel (EUR)',
+  `gezahlt ${year} laut Datum, zum Abgleich mit dem Kontoauszug (EUR)`,
+]
+const incomeAmounts = (x: TenancyIncome): number[] => [
+  x.rentCents, x.inclusiveRentCents, x.unallocatedCents, x.allocationsCents, x.flatRateCents, x.settlementCents, x.formerYearsCents,
+  x.totalCents, x.fromPreviousCents, x.forwardCents, x.paidInYearCents,
+]
+export function incomeCsv(report: Pick<TaxReport, 'year' | 'income'>): string {
+  const columns = incomeColumns(report.year)
+  const header = ['Wohnung', 'Mieter', 'Beginn', 'Ende', 'an Angehörige vermietet', ...columns].join(';')
+  const sums = columns.map(() => 0)
+  const add = (amounts: number[]): string[] => {
+    amounts.forEach((c, k) => { sums[k] = (sums[k] ?? 0) + c })
+    return amounts.map((c) => csvField(euro(c)))
+  }
+  const lines = (report.income.received?.byTenancy ?? []).map((t) =>
+    [textField(t.unitName), textField(t.tenantName), fmtDay(t.start), t.end ? fmtDay(t.end) : '', t.relative ? 'ja' : 'nein', ...add(incomeAmounts(tenancyIncome(t)))].join(';'))
+  const rest = unassignedIncome(report)
+  if (rest) lines.push(['ohne Mietverhältnis', '', '', '', '', ...add(incomeAmounts(rest))].join(';'))
+  const total = ['Summe', '', '', '', '', ...sums.map((c) => csvField(euro(c)))].join(';')
+  return `\uFEFF${[header, ...lines, total].join('\r\n')}\r\n`
 }

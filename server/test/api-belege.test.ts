@@ -200,6 +200,8 @@ test('Belege für die Steuer (#170): ein ZIP je Objekt und Jahr nach Gruppen der
     assert.deepEqual(namen, [
       '1 Grundsteuer & öffentliche Abgaben/Grundsteuer - Grundsteuer.pdf',
       '5 Verwaltung & Instandhaltung/Nicht umlagefähig - Verwaltung.pdf',
+      // #312 PR 3: die Einnahmen je Mietverhältnis, hier ohne Mietverhältnis nur Kopf und Summe.
+      'Einnahmen.csv',
       'Übersicht.csv',
     ])
     assert.equal(zip.readAsText('1 Grundsteuer & öffentliche Abgaben/Grundsteuer - Grundsteuer.pdf'), '%PDF-gs')
@@ -223,7 +225,7 @@ test('Belege für die Steuer (#469): ein Teil ohne eigenen Beleg bekommt den Bel
     assert.equal((await putJson(s, `/api/costItems/${erster.id}`, { ...erster, invoiceFile: datei })).status, 200)
     const zip = new AdmZip(Buffer.from(await (await fetch(`${s.base}/api/receipts/tax/2025?property=objekt-1`)).arrayBuffer()))
     const pfad = '2 Laufende Betriebskosten/Gartenpflege - Garten.pdf'
-    assert.deepEqual(zip.getEntries().map((e) => e.entryName).sort(), [pfad, 'Übersicht.csv'])
+    assert.deepEqual(zip.getEntries().map((e) => e.entryName).sort(), [pfad, 'Einnahmen.csv', 'Übersicht.csv'])
     assert.equal(zip.readAsText(pfad), '%PDF-garten')
     const zeile = zip.readAsText('Übersicht.csv').split('\r\n').find((z) => z.includes(zweiter.description))
     assert.ok(zeile?.includes(`;${pfad};`), zeile)
@@ -263,6 +265,7 @@ test('Belege für die Steuer: Inhalt, Namen und Übersicht sind mit yazl dieselb
       '1 Grundsteuer & öffentliche Abgaben/Grundsteuer - Grundsteuerbescheid_Müll.pdf',
       '5 Verwaltung & Instandhaltung/Nicht umlagefähig - Dachrinne_Übertrag.pdf',
       'Übersicht.csv',
+      'Einnahmen.csv',
     ])
     assert.ok(entries[0].getData().equals(fs.readFileSync(path.join(dir, files.gs))))
     assert.ok(entries[1].getData().equals(fs.readFileSync(path.join(dir, files.dach))))
@@ -683,5 +686,47 @@ test('Schuhkarton (#490): ein erkanntes Zählerfoto lässt sich als Rechnung aus
     assert.equal(docTypeAsked(ollama), asked)
     const receipt = (await s.api<UploadInfo[]>('/api/uploads')).find((u) => u.file === file)
     assert.deepEqual([receipt?.kind, receipt?.propertyId, receipt?.year], ['receipt', 'objekt-1', 2025])
+  })
+})
+
+// #312 PR 3: Das Steuer-ZIP trägt neben der unveränderten Übersicht `Einnahmen.csv`, je Mietverhältnis aus derselben
+// Steuerübersicht, mit der Zehn-Tage-Regel in eigener Spalte. Nur Mietverhältnisse des Objekts.
+test('Belege für die Steuer: Einnahmen.csv je Mietverhältnis, Übersicht unverändert, nur dieses Objekt (#312)', async () => {
+  await withProperties(async (s, b) => {
+    const post = <T>(route: string, body: unknown) => s.api<T>(route, { method: 'POST', body: JSON.stringify(body) })
+    const eg = await post<Unit>('/api/units?property=objekt-1', { name: 'EG', areaM2: 80, participates: true })
+    const fremd = await post<Unit>(`/api/units?property=${b.id}`, { name: 'Fremd', areaM2: 50, participates: true })
+    const t = await post<{ id: string }>('/api/tenancies', {
+      unitId: eg.id, tenantName: 'Meyer', persons: 1, start: '2025-01-01', end: null,
+      prepayments: [{ from: '2025-01', monthlyCents: 20000 }], prepaymentOverrides: {}, baseRents: [{ from: '2025-01', monthlyCents: 60000 }],
+    })
+    const tf = await post<{ id: string }>('/api/tenancies', {
+      unitId: fremd.id, tenantName: 'Fremder', persons: 1, start: '2025-01-01', end: null,
+      prepayments: [{ from: '2025-01', monthlyCents: 0 }], prepaymentOverrides: {}, baseRents: [{ from: '2025-01', monthlyCents: 50000 }],
+    })
+    // Jeden Monat 800 €, dazu die Januarmiete 2026 per Dauerauftrag am 28.12.2025; 150 € Nachzahlung.
+    for (let m = 1; m <= 12; m++) await post('/api/payments', { tenancyId: t.id, date: `2025-${String(m).padStart(2, '0')}-03`, amountCents: 80000 })
+    await post('/api/payments', { tenancyId: t.id, date: '2025-12-28', amountCents: 80000 })
+    await post('/api/payments', { tenancyId: t.id, date: '2025-06-15', amountCents: 15000, kind: 'settlement' })
+    await post('/api/payments', { tenancyId: tf.id, date: '2025-03-03', amountCents: 50000 })
+    await post('/api/costItems?property=objekt-1', { year: 2025, key: 'area', amountCents: 10000, category: 'Grundsteuer', description: 'GS' })
+
+    const tax = await s.api<TaxReport>('/api/taxreport/2025?property=objekt-1')
+    const row = tax.income.received?.byTenancy[0] ?? assert.fail('kein Mietverhältnis im Bericht')
+    const zip = new AdmZip(Buffer.from(await (await fetch(`${s.base}/api/receipts/tax/2025?property=objekt-1`)).arrayBuffer()))
+    assert.deepEqual(zip.getEntries().map((e) => e.entryName), ['Übersicht.csv', 'Einnahmen.csv'])
+    const csv = zip.getEntries()[1]?.getData() ?? assert.fail('Einnahmen.csv fehlt')
+    assert.deepEqual([...csv.subarray(0, 3)], [0xef, 0xbb, 0xbf], 'Byte-Order-Mark')
+    const lines = csv.toString('utf8').replace(/^﻿/, '').split('\r\n')
+    assert.equal(lines[0], 'Wohnung;Mieter;Beginn;Ende;an Angehörige vermietet;Miete ohne Umlagen (EUR);davon Inklusivmiete (EUR);davon ohne vereinbarte Miete (EUR);Umlagen laufend (EUR);davon Pauschale (EUR);Abrechnung Nachzahlung/Erstattung (EUR);Mieten für frühere Jahre (EUR);Einnahmen 2025, Summe der Zeilen (EUR);darin aus dem Vorjahr nach der Zehn-Tage-Regel (EUR);nicht darin, zählt im Folgejahr nach der Zehn-Tage-Regel (EUR);gezahlt 2025 laut Datum, zum Abgleich mit dem Kontoauszug (EUR)')
+    // 12 × 600 Kalt und 12 × 200 Umlagen, 150 Nachzahlung; die Zahlung vom 28.12. für Januar 2026 zählt dort (§ 556b).
+    // gezahlt nach Datum: 13 × 800 + 150 = 10550 = 9750 + 800 (Folgejahr)
+    assert.equal(lines[1], 'EG;Meyer;01.01.2025;;nein;7200,00;0,00;0,00;2400,00;0,00;150,00;0,00;9750,00;0,00;800,00;10550,00')
+    assert.equal(lines[2], 'Summe;;;;;7200,00;0,00;0,00;2400,00;0,00;150,00;0,00;9750,00;0,00;800,00;10550,00')
+    assert.equal(tax.income.received?.totalCents, 975000)
+    assert.equal(lines.length, 4)
+    assert.equal(row.rentCents + row.allocationsCents + row.settlementCents + row.formerYearsCents, 975000)
+    assert.equal(row.forwardCents, 80000)
+    assert.ok(!csv.toString('utf8').includes('Fremder'))
   })
 })

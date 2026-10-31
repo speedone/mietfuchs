@@ -476,6 +476,11 @@ vergleichen: Ein Rückstand oder eine Vorauszahlung verschiebt Beträge zwischen
 und 25 haben kein vereinbartes Gegenstück.“ Die Angehörigen-Zeilen (19, 22, 23) erscheinen nur mit solchen
 Mietverhältnissen. Ist Zeile 25 negativ, steht der Satz zur Rücklastschrift aus E2, Schritt 5, dabei.
 
+**Bewusste Abweichung (Durchsicht von PR 3, K6):** Die Spalte „Zeile“ steht nach „Einnahme“, nicht davor. Am Handy
+(`stacked`) wird die erste Zelle zum Titel der Karte; dort ist die Einnahme der bessere Titel als eine Nummer. Ebenso aus
+der Durchsicht (K4): Auch die bestehenden Hinweise zu Zeile 24 und zur Pauschale nennen Nummern nur aus `anlageVLines`
+(`costModelLineTexts` in taxView.ts), für Jahre ohne gelesenen Vordruck in Worten.
+
 Darunter, aufklappbar „Je Wohnung (für die Zeilen 13 und 14)“: `byUnit` mit Bezeichnung, Fläche und Miete ohne
 Umlagen; mit dem Satz, dass andere Räume in die Zeilen 16–18 und gesondert vermietete Garagen in Zeile 26
 gehören, was Mietfuchs nicht unterscheidet. Im Druck offen.

@@ -13,6 +13,7 @@ import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { estgShortPeriodDays } from '../../shared/law/estg.ts'
 import type { LawParam } from '../../shared/law/register.ts'
 import { tenDayWindow } from '../../shared/paidOn.ts'
+import { derivedTaxLines, incomeCsv, planTaxArchive } from '../src/taxReceipts.ts'
 
 type Pay = TaxSource['payments'][number]
 let seq = 0
@@ -43,6 +44,8 @@ const source = (tenancies: SnapshotTenancy[], payments: Pay[], rules: PeriodRule
 }) as TaxSource
 
 const received = (s: TaxSource, year: number): TaxReceived => taxReportFor(s, 'objekt-1', year).income.received ?? assert.fail('received fehlt')
+// Die drei Teilsummen der Zeilen 19, 22, 23 (seit der Durchsicht von PR 3 trägt `relatives` mehr).
+const sums = (r: TaxReceived['relatives'] | undefined) => ({ rentCents: r?.rentCents, allocationsCents: r?.allocationsCents, settlementCents: r?.settlementCents })
 const settlementSaldo = (r: TaxReport): number => r.income.settlementBackPaymentsCents - r.income.settlementRefundsCents
 
 test('Issue-Beispiel: Januar bis November je 800 €, Dezember nichts, 150 € Nachzahlung', () => {
@@ -59,7 +62,7 @@ test('Issue-Beispiel: Januar bis November je 800 €, Dezember nichts, 150 € N
   assert.equal(x.flatRateCents, 0)
   assert.deepEqual(x.byTenancy.map((b) => [b.tenancyId, b.unitId, b.unitName, b.rentCents, b.allocationsCents, b.settlementCents, b.relative]), [['t', 'eg', 'EG', 660000, 220000, 15000, false]])
   assert.deepEqual(x.byUnit, [{ unitId: 'eg', unitName: 'EG', areaM2: 60, rentCents: 660000, allocationsCents: 220000, settlementCents: 15000, formerYearsCents: 0 }])
-  assert.deepEqual(x.relatives, { rentCents: 0, allocationsCents: 0, settlementCents: 0 })
+  assert.deepEqual(sums(x.relatives), { rentCents: 0, allocationsCents: 0, settlementCents: 0 })
   assert.deepEqual(x.possibleDeposits, [])
 })
 
@@ -202,7 +205,7 @@ test('Angehörige: die Teilsummen für die Zeilen 19, 22 und 23; die Summen umfa
     ...monthly('fremd', '2025-01', '2025-12', 80000), pay('fremd', '2025-05-10', 12000, { kind: 'settlement' }),
   ])
   const x = received(s, 2025)
-  assert.deepEqual(x.relatives, { rentCents: 720000, allocationsCents: 240000, settlementCents: -5000 })
+  assert.deepEqual(sums(x.relatives), { rentCents: 720000, allocationsCents: 240000, settlementCents: -5000 })
   assert.equal(x.rentCents, 1440000)
   assert.equal(x.allocationsCents, 480000)
   assert.deepEqual(x.byTenancy.map((b) => [b.tenancyId, b.relative, b.settlementCents]), [['tochter', true, -5000], ['fremd', false, 12000]])
@@ -260,7 +263,8 @@ test('Option received: false: keine Tilgung, alle übrigen Felder gleich', () =>
   const ohne = taxReportFor(s, 'objekt-1', 2025, undefined, { received: false })
   assert.equal('received' in ohne.income, false)
   const { received: _, ...rest } = mit.income
-  assert.deepEqual({ ...mit, income: rest }, ohne)
+  const { surplusReceivedCents: __, ...mitRest } = mit
+  assert.deepEqual({ ...mitRest, income: rest }, ohne)
   const snap = snapshotFor(s, 'objekt-1', calendarYearPeriod(2025))
   assert.equal('received' in taxReport(snap, undefined, { received: false }).income, false)
 })
@@ -272,7 +276,7 @@ test('Angehörige ohne Bewohner (Garage): keine Teilsummen für die Zeilen 19, 2
   const s = source([garage, tenancy('fremd', 'eg')], [...monthly('garage', '2025-01', '2025-12', 80000), ...monthly('fremd', '2025-01', '2025-12', 80000)])
   const r = taxReportFor(s, 'objekt-1', 2025)
   const x = r.income.received ?? assert.fail('received fehlt')
-  assert.deepEqual(x.relatives, { rentCents: 0, allocationsCents: 0, settlementCents: 0 })
+  assert.deepEqual(sums(x.relatives), { rentCents: 0, allocationsCents: 0, settlementCents: 0 })
   assert.equal(x.byTenancy.find((b) => b.tenancyId === 'garage')?.relative, false)
   assert.equal('relativeTenancies' in r.costModels, false)
 })
@@ -282,7 +286,7 @@ test('Angehörige ohne Bewohner (Garage): keine Teilsummen für die Zeilen 19, 2
 test('Angehörige nach Auszug: die Nachzahlung im Folgejahr gehört zu Zeile 23', () => {
   const tochter = tenancy('tochter', 'eg', { relative: true, end: '2024-12-31' })
   const s = source([tochter], [...monthly('tochter', '2024-01', '2024-12', 80000), pay('tochter', '2025-04-10', 9000, { kind: 'settlement' })])
-  assert.deepEqual(received(s, 2025).relatives, { rentCents: 0, allocationsCents: 0, settlementCents: 9000 })
+  assert.deepEqual(sums(received(s, 2025).relatives), { rentCents: 0, allocationsCents: 0, settlementCents: 9000 })
 })
 
 // Durchsicht S2: Warmmiete inklusiv (Heizung in der Miete, Nebenkosten abgerechnet) mit Heizposition im Jahr: Die
@@ -372,9 +376,89 @@ test('Angehörige, ab 2025 ohne Bewohner: 2025 weder Zeile 19/22 noch Kennzahl 6
   const t = tenancy('t', 'eg', { relative: true, personHistory: [{ from: '2024-01-01', persons: 1 }, { from: '2025-01-01', persons: 0 }] })
   const s = source([t], [...monthly('t', '2024-01', '2024-12', 80000), ...monthly('t', '2025-01', '2025-12', 80000)])
   const r25 = taxReportFor(s, 'objekt-1', 2025)
-  assert.deepEqual(r25.income.received?.relatives, { rentCents: 0, allocationsCents: 0, settlementCents: 0 })
+  assert.deepEqual(sums(r25.income.received?.relatives), { rentCents: 0, allocationsCents: 0, settlementCents: 0 })
   assert.equal('relativeTenancies' in r25.costModels, false)
   const r24 = taxReportFor(s, 'objekt-1', 2024)
   assert.equal(r24.income.received?.relatives.rentCents, 720000)
   assert.equal(r24.costModels.relativeTenancies, 1)
+})
+
+// Durchsicht von #312 PR 3, S1: eine Quelle für die maßgebliche Summe. `received.totalCents` ist Zeile 32 (Zufluss nach
+// Datum, um die Zehn-Tage-Regel berichtigt), `surplusReceivedCents` der Überschuss daraus; beide nur mit `received`.
+test('Zeile 32 und Überschuss aus dem Server: totalCents = paidCents − forward + fromPrevious, surplusReceivedCents passend', () => {
+  const s = source([tenancy('t', 'eg')], [...monthly('t', '2025-01', '2025-12', 80000), pay('t', '2025-12-28', 80000), ...monthly('t', '2026-02', '2026-12', 80000)])
+  for (const year of [2025, 2026]) {
+    const r = taxReportFor(s, 'objekt-1', year)
+    const x = r.income.received ?? assert.fail('received fehlt')
+    assert.equal(x.totalCents, r.income.paidCents - x.turnOfYear.forwardCents + x.turnOfYear.fromPreviousCents, String(year))
+    assert.equal(r.surplusReceivedCents, r.surplusPaidCents - x.turnOfYear.forwardCents + x.turnOfYear.fromPreviousCents, String(year))
+  }
+  assert.equal(received(s, 2025).totalCents, 12 * 80000)
+  assert.equal(received(s, 2026).totalCents, 12 * 80000)
+  // je Mietverhältnis: aus dem Vorjahr hierher
+  assert.equal(received(s, 2026).byTenancy[0]?.fromPreviousCents, 80000)
+  assert.equal(received(s, 2025).byTenancy[0]?.fromPreviousCents, 0)
+  const ohne = taxReportFor(s, 'objekt-1', 2025, undefined, { received: false })
+  assert.equal(ohne.surplusReceivedCents, undefined)
+})
+
+// S4: die „davon“-Zeilen der Nicht-Angehörigen brauchen Pauschale, Inklusivmiete und Soll der Angehörigen vom Server.
+test('Angehörige: Pauschale, Inklusivmiete, Überzahlung und Soll je Teilsumme; Pauschale auch je Mietverhältnis', () => {
+  const flat = { costModel: 'flatRate' as const, prepayments: [], flatRates: [{ from: '2024-01', monthlyCents: 10000 }], baseRents: [{ from: '2024-01', monthlyCents: 50000 }] }
+  const s = source([tenancy('tochter', 'eg', { relative: true, end: '2025-12-31', ...flat }), tenancy('fremd', 'og')], [
+    ...monthly('tochter', '2025-01', '2025-12', 60000), pay('tochter', '2025-12-20', 5000),
+    ...monthly('fremd', '2025-01', '2025-12', 80000),
+  ])
+  const r = taxReportFor(s, 'objekt-1', 2025)
+  const x = r.income.received ?? assert.fail('received fehlt')
+  assert.equal(x.flatRateCents, 120000)
+  assert.deepEqual(x.byTenancy.map((b) => [b.tenancyId, b.flatRateCents]), [['tochter', 120000], ['fremd', 0]])
+  // 12 × 500 Kalt und die Überzahlung von 50 € (ohne Forderung, Zeile 19), 12 × 100 Pauschale; Soll ohne Überzahlung.
+  assert.deepEqual(x.relatives, {
+    rentCents: 605000, allocationsCents: 120000, settlementCents: 0, inclusiveRentCents: 0, unallocatedCents: 5000, flatRateCents: 120000,
+    sollRentCents: 600000, sollInclusiveRentCents: 0, sollAllocationsCents: 120000, sollFlatRateCents: 120000,
+  })
+  assert.equal(r.income.baseRentSollCents, 600000 + 720000)
+  assert.equal(r.income.flatRateSollCents, 120000)
+})
+
+// S1/S5: Eine Mietzahlung an ein Mietverhältnis, das der Schnappschuss nicht führt, steht gesondert, damit die Zeilen je
+// Mietverhältnis plus dieser Betrag die Summe ergeben.
+test('Zahlung ohne Mietverhältnis im Schnappschuss: als unassignedCents gesondert', () => {
+  const s = source([tenancy('t', 'eg')], monthly('t', '2025-01', '2025-12', 80000))
+  const snap = snapshotFor(s, 'objekt-1', calendarYearPeriod(2025))
+  const r = taxReport({ ...snap, payments: [...snap.payments, pay('fremd', '2025-04-01', 12345)] })
+  const x = r.income.received ?? assert.fail('received fehlt')
+  assert.equal(x.unassignedCents, 12345)
+  assert.equal(received(s, 2025).unassignedCents, 0)
+})
+
+// Umstellung auf #503 (#262 PR 2): Verteilung nach § 82b EStDV ab 2026 und die am 28.12.2025 gezahlte Januarmiete
+// zusammen. Der Überschuss aus Zeile 32 zieht die abziehbaren Werbungskosten nach den Raten ab, Einnahmen.csv ergibt Zeile 32,
+// und die Übersicht.csv (mit der Spalte „verteilt“) ergibt die abziehbaren Werbungskosten desselben Jahres.
+test('Zehn-Tage-Regel und § 82b zusammen: surplusReceivedCents = totalCents − deductibleCents, beide CSV passen', () => {
+  const s = source([tenancy('t', 'eg')], [...monthly('t', '2025-01', '2025-12', 80000), pay('t', '2025-12-28', 80000), ...monthly('t', '2026-02', '2026-12', 80000)])
+  s.costItems = [{ id: 'dach', propertyId: 'objekt-1', period: calendarPeriod(2026), category: 'Nicht umlagefähig', description: 'Dach', amountCents: 900000, key: 'area', spreadYears: 3 }] as TaxSource['costItems']
+  const cents = (v: string | undefined) => Math.round(Number((v ?? '').replace(',', '.')) * 100)
+  let spread = 0
+  for (const year of [2025, 2026, 2027]) {
+    const r = taxReportFor(s, 'objekt-1', year)
+    const x = r.income.received ?? assert.fail('received fehlt')
+    assert.equal(r.surplusReceivedCents, x.totalCents - r.expenses.deductibleCents, String(year))
+    if ((r.expenses.deferredCents ?? 0) !== 0) spread++
+    const einnahmen = incomeCsv(r).replace(/^﻿/, '').trim().split('\r\n').at(-1)?.split(';') ?? []
+    assert.equal(cents(einnahmen[12]), x.totalCents, `${year}: Einnahmen.csv = Zeile 32`)
+    const split = new Map(r.expenses.items.map((i) => [i.costItemId, i]))
+    const items = s.costItems.filter((c) => r.expenses.items.some((i) => i.costItemId === c.id))
+    const lines = planTaxArchive(items, new Map(), new Map(), split, derivedTaxLines(r)).overviewCsv.replace(/^﻿/, '').trim().split('\r\n')
+    const head = (lines[0] ?? '').split(';')
+    const col = head.indexOf('abziehbar (EUR)')
+    assert.equal(lines.slice(1).reduce((a, z) => a + cents(z.split(';')[col]), 0), r.expenses.deductibleCents, `${year}: Übersicht.csv = abziehbar`)
+  }
+  assert.equal(received(s, 2026).turnOfYear.fromPreviousCents, 80000)
+  assert.ok(spread > 0, 'Verteilung wirkt nicht')
+  // 2026: 12 × 800 € Einnahmen (Januar aus dem Dezember), abziehbar nur die erste Rate.
+  const r26 = taxReportFor(s, 'objekt-1', 2026)
+  assert.equal(r26.income.received?.totalCents, 12 * 80000)
+  assert.ok(r26.expenses.deductibleCents < 900000)
 })

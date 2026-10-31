@@ -1535,6 +1535,7 @@ const januaryDueInWindow = (t: Pick<SnapshotTenancy, 'start'>, year: number): bo
 
 const emptyTenancyReceived = (): Omit<TaxReceivedTenancy, 'tenancyId' | 'unitId' | 'tenantName' | 'unitName' | 'start' | 'end' | 'relative'> => ({
   rentCents: 0, inclusiveRentCents: 0, allocationsCents: 0, settlementCents: 0, formerYearsCents: 0, unallocatedCents: 0, forwardCents: 0,
+  flatRateCents: 0, fromPreviousCents: 0,
 })
 
 // Die Fläche für die Zeilen 13/14: eine fehlende Wohnfläche wie 0 m² (Geraderücken in validate.ts), ohne Einheit keine.
@@ -1559,7 +1560,7 @@ function receivedIncome({ snapshot, year, inclusive, shortDays }: ReceivedInput)
   const out: TaxReceived = {
     rentCents: 0, inclusiveRentCents: 0, unallocatedCents: 0, allocationsCents: 0, flatRateCents: 0, formerYearsCents: 0, formerYearsAllocationsCents: 0,
     turnOfYear: { forwardCents: 0, forwardAllocationsCents: 0, fromPreviousCents: 0, fromPreviousAllocationsCents: 0, forwardOldLeaseCents: 0, lateDecemberCents: 0 },
-    byUnit: [], byTenancy: [], relatives: { rentCents: 0, allocationsCents: 0, settlementCents: 0 }, possibleDeposits: [],
+    byUnit: [], byTenancy: [], relatives: emptyRelatives(), possibleDeposits: [], totalCents: 0, unassignedCents: 0,
   }
   const unitById = new Map(snapshot.units.map((u) => [u.id, u]))
   const known = new Set(snapshot.tenancies.map((t) => t.id))
@@ -1584,6 +1585,7 @@ function receivedIncome({ snapshot, year, inclusive, shortDays }: ReceivedInput)
         if (!movedFromPrevious) continue
         // Aus dem Vorjahr hierher: zählt in diesem Jahr wie ein Teil mit Datum im Jahr.
         movedIn = true
+        row.fromPreviousCents += s.cents
         out.turnOfYear.fromPreviousCents += s.cents
         if (isAllocation(s.component)) out.turnOfYear.fromPreviousAllocationsCents += s.cents
       } else if (!inYear(s.paidOn)) {
@@ -1607,7 +1609,7 @@ function receivedIncome({ snapshot, year, inclusive, shortDays }: ReceivedInput)
       }
       if (isAllocation(s.component)) {
         row.allocationsCents += s.cents
-        if (s.component === 'flatRate') out.flatRateCents += s.cents
+        if (s.component === 'flatRate') row.flatRateCents += s.cents
       } else {
         row.rentCents += s.cents
         if (isInclusive) row.inclusiveRentCents += s.cents
@@ -1631,6 +1633,7 @@ function receivedIncome({ snapshot, year, inclusive, shortDays }: ReceivedInput)
   const stray = snapshot.payments.filter((p) => !known.has(p.tenancyId) && isRentPayment(p) && inYear(p.date)).reduce((a, p) => a + p.amountCents, 0)
   out.rentCents += stray
   out.unallocatedCents += stray
+  out.unassignedCents = stray
   out.byTenancy.sort((a, b) => compareName(a.unitName, b.unitName) || compareName(a.tenantName, b.tenantName))
   const units = new Map<string, TaxReceivedUnit>()
   for (const b of out.byTenancy) {
@@ -1639,10 +1642,14 @@ function receivedIncome({ snapshot, year, inclusive, shortDays }: ReceivedInput)
     out.unallocatedCents += b.unallocatedCents
     out.allocationsCents += b.allocationsCents
     out.formerYearsCents += b.formerYearsCents
+    out.flatRateCents += b.flatRateCents
     if (b.relative) {
       out.relatives.rentCents += b.rentCents
       out.relatives.allocationsCents += b.allocationsCents
       out.relatives.settlementCents += b.settlementCents
+      out.relatives.inclusiveRentCents += b.inclusiveRentCents
+      out.relatives.unallocatedCents += b.unallocatedCents
+      out.relatives.flatRateCents += b.flatRateCents
     }
     const u = units.get(b.unitId) ?? { unitId: b.unitId, unitName: b.unitName, areaM2: areaOf(unitById.get(b.unitId)), rentCents: 0, allocationsCents: 0, settlementCents: 0, formerYearsCents: 0 }
     u.rentCents += b.rentCents
@@ -1653,8 +1660,16 @@ function receivedIncome({ snapshot, year, inclusive, shortDays }: ReceivedInput)
   }
   out.byUnit = [...units.values()].sort((a, b) => compareName(a.unitName, b.unitName) || compareText(a.unitId, b.unitId))
   out.possibleDeposits.sort((a, b) => compareText(a.paidOn, b.paidOn) || compareName(a.tenantName, b.tenantName))
+  // Zeile 32 (Durchsicht von PR 3, S1): jede Zahlung mit Datum im Jahr, um die Zehn-Tage-Regel berichtigt.
+  const paidInYear = snapshot.payments.filter((p) => inYear(p.date)).reduce((a, p) => a + p.amountCents, 0)
+  out.totalCents = paidInYear - out.turnOfYear.forwardCents + out.turnOfYear.fromPreviousCents
   return out
 }
+
+const emptyRelatives = (): TaxReceived['relatives'] => ({
+  rentCents: 0, allocationsCents: 0, settlementCents: 0, inclusiveRentCents: 0, unallocatedCents: 0, flatRateCents: 0,
+  sollRentCents: 0, sollInclusiveRentCents: 0, sollAllocationsCents: 0, sollFlatRateCents: 0,
+})
 
 // Eine als Miete erfasste Kaution (E9): Mietfuchs kann das nicht sicher erkennen, prüft aber den häufigen Fall. Eine
 // Mietzahlung im Jahr bis `DEPOSIT_WINDOW_DAYS` Tage vor oder nach Beginn, deren Betrag der vereinbarten Kaution gleicht,
@@ -1777,6 +1792,19 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
     inclusive: (t) => isInclusiveModel(tenancyCostModel(t, heatingBilled)),
     shortDays: (y) => law(estgShortPeriodDays, { period: calendarYearPeriod(y) }, createLawLog()),
   })
+  // Das Soll der Angehörigen (Durchsicht von PR 3, S4), aus denselben Zeilen des Mietkontos wie das Soll oben und mit
+  // derselben Lesart „an Angehörige zu Wohnzwecken“ wie Kennzahl 62.
+  if (received) {
+    ledger.rows.forEach((r, i) => {
+      const t = tenancyById.get(r.tenancyId)
+      if (t === undefined || !relativeForHousing(t, calendar.from, calendar.to)) return
+      const m = models[i]
+      received.relatives.sollRentCents += r.baseRentYearCents
+      if (m && isInclusiveModel(m)) received.relatives.sollInclusiveRentCents += r.baseRentYearCents
+      received.relatives.sollAllocationsCents += r.prepaymentYearCents + (r.heatingPrepaymentYearCents ?? 0) + r.flatRateYearCents
+      received.relatives.sollFlatRateCents += r.flatRateYearCents
+    })
+  }
 
   // Die Abrechnung desselben Jahres, einmal gerechnet. Aus ihr kommen zwei Angaben, und beide
   // werden ihr **entnommen** statt neu hergeleitet: Eine zweite Auslegung der Staffel oder eine
@@ -2272,6 +2300,8 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
     // Bruttosumme, und die Zahl bleibt, wie sie war.
     surplusSollCents: sollCents - deductibleCents,
     surplusPaidCents: paidCents - deductibleCents,
+    // Maßgeblich (Durchsicht von #312 PR 3, S1): der Überschuss aus Zeile 32, nur mit `received`.
+    ...(received ? { surplusReceivedCents: received.totalCents - deductibleCents } : {}),
   }
 }
 

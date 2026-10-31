@@ -4,6 +4,8 @@ import { afterEach, describe, expect, test } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import CostPeriodFields from './CostPeriodFields'
 import { EMPTY_ITEM_FORM } from '../costForm'
+import { LAW_AS_OF, valueAt } from '../../../shared/law/register.ts'
+import { estgShortPeriodDays } from '../../../shared/law/estg.ts'
 
 
 afterEach(cleanup)
@@ -79,6 +81,14 @@ describe('Bezahlt am (für die Steuer, #255 PR 3)', () => {
     expect(screen.queryByText(/Zahlung um den Jahreswechsel/)).toBeTruthy()
     rerender(<CostPeriodFields form={{ ...EMPTY_ITEM_FORM, category: 'Grundsteuer', paidOn: '2025-12-28' }} onChange={() => {}} showTaxYear={false} years={[]} />)
     expect(screen.queryByText(/Zahlung um den Jahreswechsel/)).toBeNull()
+  })
+  // #312 PR 3 (Nachdurchsicht K3): die Zahl der Tage aus dem Rechtsregister, nicht fest im Text.
+  test('Zehn-Tage-Texte lesen die Zahl der Tage aus dem Register', () => {
+    const days = valueAt(estgShortPeriodDays, LAW_AS_OF)
+    render(<CostPeriodFields form={{ ...EMPTY_ITEM_FORM, category: 'Müllabfuhr', paidOn: '2025-12-28', taxYear: '2025' }} onChange={() => {}} showTaxYear years={[2025, 2026]} />)
+    expect(screen.getByText(/Zahlung um den Jahreswechsel/).textContent).toContain(`bis ${days} Tage vor oder nach dem Jahreswechsel`)
+    expect(screen.getByText(/Abschlägen über zwei Kalenderjahre/).textContent).toContain(`(bis ${days} Tage davor oder danach)`)
+    expect(document.body.textContent).not.toMatch(/zehn Tage/)
   })
   test('bei Hausgeld laut Gemeinschaftsabrechnung kein Feld, sondern der Hinweis (R-6)', () => {
     render(<CostPeriodFields form={{ ...EMPTY_ITEM_FORM, key: 'external' }} onChange={() => {}} showTaxYear={false} years={[]} />)

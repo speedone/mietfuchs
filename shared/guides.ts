@@ -87,7 +87,7 @@ const GUIDE_DATA = {
       { page: 'kosten', text: 'Erfassen Sie die Rechnungen mit „+ Kostenposition anlegen“. Das Wasser verteilen Sie mit dem Umlageschlüssel „nach Verbrauch (Zähler)“ und dem Zählertyp „Kaltwasser“.' },
       { page: 'kosten', text: 'Reparaturen erfassen Sie als „Nicht umlagefähig“. Unter „Betrifft (für die Steuer)“ ordnen Sie eine Reparatur, die nur eine Wohnung betrifft, dieser Wohnung zu; für Dach, Fassade oder Heizung bleibt „das ganze Gebäude (nach Fläche)“ stehen.' },
       { page: 'steuer', text: 'Für die Anlage V drucken Sie die Steuerübersicht mit „🖨 Drucken / PDF“.' },
-      { page: 'belege', text: 'Die Belege dazu lädt der Belegordner mit „Belege für die Steuer“ als ZIP, geordnet nach den Gruppen der Anlage V; die Übersicht darin nennt je Position den privaten und den abziehbaren Teil wie die Steuerübersicht.' },
+      { page: 'belege', text: 'Die Belege dazu lädt der Belegordner mit „Belege für die Steuer“ als ZIP, geordnet nach den Gruppen der Anlage V; die Übersicht darin nennt je Position den privaten und den abziehbaren Teil wie die Steuerübersicht, eine zweite Tabelle die Einnahmen je Mietverhältnis nach den Zeilen der Anlage V.' },
     ],
     result: [
       'Ihre Wohnung zählt in die Verteilbasis. Nach Fläche, Wohneinheiten und Personen trägt die Mieterin nur ihren Teil, der Rest ist Ihr Eigenanteil. Er steht auf der Seite Abrechnung in der Karte „Kontrolle“ unter „Vermieteranteil (nicht umgelegt)“ mit dem Grund „Eigennutzung“.',

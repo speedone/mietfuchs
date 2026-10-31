@@ -8,7 +8,10 @@
 // - 2023: Formular-Management-System der Bundesfinanzverwaltung, „080 – Anlage V (2023)“, Vordruck „2023AnlV101NET –
 //   September 2023 –“, https://www.formulare-bfinv.de/ffw/action/invoke.do?id=034032_23, Seite 1 (Zeilen 15 bis 23).
 // - 2024: ebenda, „080 – Anlage V (2024)“, Vordruck „2024AnlV101NET – September 2024 –“,
-//   https://www.formulare-bfinv.de/ffw/action/invoke.do?id=034032_24, Seite 1 (Zeilen 15 bis 23); Anleitung zur Anlage V
+//   https://www.formulare-bfinv.de/ffw/action/invoke.do?id=034032_24, Seite 1 (Zeilen 15 bis 23); Seiten 1 und 2 (Zeilen 13
+//   bis 32) gelesen in der Kopie desselben Vordrucks (Kennung „2024AnlV101NET – September 2024 –“) bei steuern.de,
+//   https://www.steuern.de/fileadmin/user_upload/Steuerformulare_2024/Anlage_V_steuern.de_01.pdf, am 31.10.2026 (#312
+//   PR 3: Zeile 24 Kennzahl 13, Zeile 25 Kennzahl 06, Zeile 26 Kennzahl 07, Zeile 32 wie 2025); Anleitung zur Anlage V
 //   2024 (September 2024), Kopie http://www.steuerhexe.de/wp-content/uploads/2025/05/Anlage-V-2024-Anleitung.pdf
 //   (Zeile 6, Zeilen 55 bis 72, 76 bis 78).
 // - 2025: Vordruck „2025AnlV101 – September 2025 –“, Finanzverwaltung NRW,
@@ -22,7 +25,8 @@
 // Angehörige vermieteten Wohnungen. Die laufenden Mieten in den Summenzeilen 15 (Kennzahl 01) und 18 (Kennzahl 02), an
 // Angehörige Zeile 19 (Kennzahl 03), die laufenden Umlagen in Zeile 20 (Kennzahl 04), an Angehörige Zeile 22 (Kennzahl 05).
 //
-// **Bewusst leer**, weil nicht selbst nachgesehen: für 2023 und 2024 die Zeilen 13/14, 24, 25 und 32 (liest #312 PR 3 nach), für 2024 die Kennzahlen der Werbungskosten und die Kopfzeilen 7 und 10 bis 12
+// **Bewusst leer**, weil nicht selbst nachgesehen: für 2023 die Zeilen 13/14, 24, 25, 26 und 32 (Seite 2 des Vordrucks 2023
+// war für #312 PR 3 nicht zu bekommen; die Seite nennt dort keine Nummer), für 2024 die Kennzahlen der Werbungskosten und die Kopfzeilen 7 und 10 bis 12
 // (der Kopf 2024 zählt anders, die Anleitung nennt „Zeile 10 bis 12“ nur zusammen), für 2023 Kopf und Werbungskosten.
 
 // Eine Zeile, mit Kennzahl, wo der Vordruck eine nennt.
@@ -45,6 +49,8 @@ export type AnlageVLines = {
     relativesSettlement?: Line
     notAgreed?: Line
     formerYears?: Line
+    // Zeile 26: Garagen, Werbeflächen, Grund und Boden; Mietfuchs unterscheidet sie nicht von Wohnungen (#312, E4).
+    garages?: Line
     total?: number
   }
   // Erhaltungsaufwand „einschließlich Entnahmen aus der Erhaltungsrücklage“: 55 direkt, 56 verhältnismäßig; verteilt
@@ -68,11 +74,13 @@ const ANLAGE_V: Readonly<Record<number, AnlageVLines>> = {
     },
   },
   2024: {
-    source: 'Vordruck 2024AnlV101NET (September 2024), Seite 1 (Einnahmen); Anleitung zur Anlage V 2024 (September 2024), Zeile 6 und Zeilen 55 bis 78',
+    source: 'Vordruck 2024AnlV101NET (September 2024), Seiten 1 und 2 (Einnahmen); Anleitung zur Anlage V 2024 (September 2024), Zeile 6 und Zeilen 55 bis 78',
     header: { groundTaxFile: 6 },
     income: {
+      perUnit: [13, 14],
       homes: { line: 15, code: 1 }, otherRooms: { line: 18, code: 2 }, relatives: { line: 19, code: 3 }, allocations: { line: 20, code: 4 },
       settlement: { line: 21, code: 11 }, relativesAllocations: { line: 22, code: 5 }, relativesSettlement: { line: 23, code: 12 },
+      notAgreed: { line: 24, code: 13 }, formerYears: { line: 25, code: 6 }, garages: { line: 26, code: 7 }, total: 32,
     },
     maintenance: {
       direct: { line: 55 }, proportional: { line: 56 },
@@ -93,7 +101,7 @@ const ANLAGE_V: Readonly<Record<number, AnlageVLines>> = {
       perUnit: [13, 14],
       homes: { line: 15, code: 1 }, otherRooms: { line: 18, code: 2 }, relatives: { line: 19, code: 3 }, allocations: { line: 20, code: 4 },
       settlement: { line: 21, code: 11 }, relativesAllocations: { line: 22, code: 5 }, relativesSettlement: { line: 23, code: 12 },
-      notAgreed: { line: 24, code: 13 }, formerYears: { line: 25, code: 6 }, total: 32,
+      notAgreed: { line: 24, code: 13 }, formerYears: { line: 25, code: 6 }, garages: { line: 26, code: 7 }, total: 32,
     },
     maintenance: {
       direct: { line: 55, code: 36 }, proportional: { line: 56, code: 37 },

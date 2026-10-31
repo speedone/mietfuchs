@@ -12,6 +12,8 @@ import { PropertyProvider } from '../property'
 import { UIProvider } from '../components/feedback'
 import { press, tabbables } from '../testing/keys'
 import Kosten from './Kosten'
+import { LAW_AS_OF, valueAt } from '../../../shared/law/register.ts'
+import { estgShortPeriodDays } from '../../../shared/law/estg.ts'
 
 const UNITS: Unit[] = [
   { id: 'u1', propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: false, selfUsed: true, selfPersons: 2 },
@@ -274,7 +276,8 @@ test('Heizposition mit eigener Heizperiode (Durchsicht von #231, Laienprobe B15)
   // #478 (E2, E4): die übliche Spanne wie am Server, Beginn − 1 bis Ende + 3.
   expect([...jahr.options].map((o) => o.value).filter(Boolean)).toEqual([Number(beginn) - 1, Number(beginn), Number(ende), Number(ende) + 1, Number(ende) + 2, Number(ende) + 3].map(String))
   expect(screen.getByText(/in Abschlägen über zwei Kalenderjahre bezahlt/)).toBeTruthy()
-  expect(screen.getByText(/der um den\s+Jahreswechsel \(bis zehn Tage davor oder danach\) fällig ist und in dieser Zeit gezahlt wird, zählt zu dem Jahr, zu dem er gehört/)).toBeTruthy()
+  // #312 PR 3 (K3): die Zahl der Tage aus dem Rechtsregister.
+  expect(screen.getByText(new RegExp(`der um den\\s+Jahreswechsel \\(bis ${valueAt(estgShortPeriodDays, LAW_AS_OF)} Tage davor oder danach\\) fällig ist und in dieser Zeit gezahlt wird, zählt zu dem Jahr, zu dem er gehört`))).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/i }))
   expect(await screen.findByText(/Bitte geben Sie das Jahr der Zahlung an/)).toBeTruthy()
   expect(sent).toHaveLength(0)

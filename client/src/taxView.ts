@@ -44,7 +44,8 @@ export const DEFAULT_BASIS: Basis = 'ist'
 // er erscheint; wer hier einen hinzufügt, bekommt dort einen Übersetzungsfehler, solange er ihn
 // nicht einträgt.
 export const TAX_HINTS = [
-  'sollIsNotTaxBasis', 'paymentsMissing', 'turnOfYear', 'inclusiveLine24', 'inclusiveLine24Mixed', 'flatRateLine20',
+  'sollIsNotTaxBasis', 'paymentsMissing', 'turnOfYear', 'turnOfYearOldLease', 'lateDecember', 'unallocatedPayment', 'possibleDeposit',
+  'formerYears', 'inclusiveLine24', 'inclusiveLine24Mixed', 'flatRateLine20',
   'reserveContribution', 'reserveSuspected', 'etwHousingMoney', 'maintenanceLines', 'reserveWithdrawalSuspected', 'specialLevy',
   'acquisitionRelated',
   'mixedUseSplit', 'mixedUseKeyNotArea', 'mixedUseAreaMissing', 'mixedUseDirectOutside', 'mixedUseChangedInYear',
@@ -75,8 +76,18 @@ export type TaxHint = (typeof TAX_HINTS)[number]
 //                        die Seite aus den beiden Zahlen; das ist dieselbe Auskunft ohne die
 //                        falsche Ursache.
 //
-//   `turnOfYear`         Der Vorbehalt zur Zehn-Tage-Regel, der nur auf der Ist-Grundlage etwas
-//                        bedeutet.
+//   `turnOfYear`         Die Zehn-Tage-Regel (§ 11 Abs. 1 Satz 2 EStG), **nur mit Betrag** (#312 PR 3, Entwurf E8): Ende
+//                        Dezember für den Januar Gezahltes, das Mietfuchs ins Folgejahr stellt (`forwardCents`), oder
+//                        aus dem Vorjahr hierher (`fromPreviousCents`). Vorher stand der Hinweis bei jedem Bericht, als
+//                        Vorbehalt ohne Anlass; ein Hinweis ohne Anlass lehrt, Hinweise zu übersehen.
+//   `turnOfYearOldLease` Dasselbe bei einem Mietverhältnis, das am 01.09.2001 bestand (§ 551 BGB a. F.): nicht
+//                        verschoben, mit Vorbehalt (`forwardOldLeaseCents`).
+//   `lateDecember`       Anfang Januar gezahlte Dezembermiete eines solchen Mietverhältnisses (`lateDecemberCents`): ein
+//                        ruhiger Satz ohne Titel, er bleibt in diesem Jahr.
+//   `unallocatedPayment` Zahlung ohne vereinbarte Miete (`unallocatedCents`): im Mietkonto prüfen.
+//   `possibleDeposit`    Eine Mietzahlung sieht aus wie die Kaution (`possibleDeposits`, Entwurf E9).
+//   `formerYears`        Mieten für frühere Jahre (Zeile 25), negativ mit dem Satz zur Rücklastschrift.
+//                        Alle fünf und `turnOfYear` nur auf der Ist-Grundlage; die Sätze stehen in taxIncome.ts.
 //
 //   `inclusiveLine24`    Alle Mietverhältnisse sind kalt und warm inklusiv (#96): Zeile 24 der
 //                        Anlage V („Nebenkosten nicht gesondert vereinbart“). Auf beiden Grundlagen.
@@ -212,7 +223,16 @@ export function taxHints(report: TaxReport, basis: Basis, propertyKind?: Propert
   // und eine Ermahnung für etwas, das es nicht gibt, lehrt nur, Hinweise zu übersehen.
   const { tenanciesWithSoll, tenanciesWithoutPayment } = report.income
   if (tenanciesWithSoll > 0 && tenanciesWithoutPayment > 0) hints.push('paymentsMissing')
-  hints.push('turnOfYear')
+  const received = report.income.received
+  if (received) {
+    const t = received.turnOfYear
+    if (t.forwardCents !== 0 || t.fromPreviousCents !== 0) hints.push('turnOfYear')
+    if (t.forwardOldLeaseCents !== 0) hints.push('turnOfYearOldLease')
+    if (t.lateDecemberCents !== 0) hints.push('lateDecember')
+    if (received.unallocatedCents !== 0) hints.push('unallocatedPayment')
+    if (received.possibleDeposits.length > 0) hints.push('possibleDeposit')
+    if (received.formerYearsCents !== 0) hints.push('formerYears')
+  }
   return hints
 }
 
@@ -266,12 +286,17 @@ export function settlementSourcesText(report: TaxReport): string | null {
 
 // Die angesetzten Einnahmen und die Einkünfte, je nach Grundlage. Beides steht hier, damit die
 // Seite nicht an zwei Stellen dieselbe Fallunterscheidung trifft.
+//
+// **Auf der Ist-Grundlage die Summe der Zeilen** (Zeile 32, #312 PR 3): der Zufluss nach Datum, um die Zehn-Tage-Regel
+// berichtigt (§ 11 Abs. 1 Satz 2 EStG ist zwingend). Gerechnet nur vom Server (`received.totalCents`, `surplusReceivedCents`,
+// Durchsicht S1); `paidCents` und `surplusPaidCents` bleiben nach Datum (Prüfsummen in tax-golden.json) und gelten nur ohne
+// `received`.
 export function incomeCentsFor(report: TaxReport, basis: Basis): number {
-  return basis === 'soll' ? report.income.sollCents : report.income.paidCents
+  return basis === 'soll' ? report.income.sollCents : report.income.received?.totalCents ?? report.income.paidCents
 }
 
 export function surplusCentsFor(report: TaxReport, basis: Basis): number {
-  return basis === 'soll' ? report.surplusSollCents : report.surplusPaidCents
+  return basis === 'soll' ? report.surplusSollCents : report.surplusReceivedCents ?? report.surplusPaidCents
 }
 
 // ---------- Teilweise Eigennutzung (#163) ----------
@@ -442,6 +467,22 @@ export function settlementBalanceCents(report: Pick<TaxReport, 'income'>): numbe
 // wer stattdessen den ganzen Zufluss dort einträgt und den Saldo zusätzlich in Zeile 21, zählt ihn doppelt.
 export function paidWithoutSettlementCents(report: Pick<TaxReport, 'income'>): number {
   return report.income.paidCents - settlementBalanceCents(report)
+}
+
+// ---------- Zeilen am Mietmodell: Zeile 24 und Pauschale (#96; Durchsicht von #312 PR 3, K4) ----------
+//
+// Die Nummern nur aus `anlageVLines` (`notAgreed`, `allocations`, `settlement`); für ein Jahr ohne gelesenen Vordruck
+// nennen die Hinweise die Angabe in Worten, wie S2 bei Zeile 25.
+export type CostModelLineTexts = { inclusiveTitle: string; inclusiveAction: string; flatRateTitle: string; flatRateMore: string }
+export function costModelLineTexts(year: number): CostModelLineTexts {
+  const i = anlageVLines(year)?.income
+  const umlagen = i?.allocations && i.settlement ? `keine Umlagen in den Zeilen ${i.allocations.line} und ${i.settlement.line}` : 'keine Umlagen und keine Nachzahlungen oder Erstattungen aus der Abrechnung'
+  return {
+    inclusiveTitle: i?.notAgreed ? `Zeile ${i.notAgreed.line} der Anlage V.` : 'Anlage V: Nebenkosten nicht gesondert vereinbart.',
+    inclusiveAction: `Tragen Sie dort eine 1 ein; die ganze Miete gehört dann zu den Mieteinnahmen, und für diese Mietverhältnisse sind ${umlagen} einzutragen.`,
+    flatRateTitle: i?.allocations ? `Zeile ${i.allocations.line} der Anlage V.` : 'Anlage V: laufende Umlagen.',
+    flatRateMore: `Nach dem Wortlaut gehört sie zu den laufend vereinnahmten Umlagen${i?.allocations ? ` in Zeile ${i.allocations.line}` : ''}; ausdrücklich nennt die Anleitung die Pauschale nicht.`,
+  }
 }
 
 // ---------- Zwischen den Jahren verschoben (#255, PR 4) ----------
