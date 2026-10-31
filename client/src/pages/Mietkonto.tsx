@@ -248,7 +248,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
       {/* Sichtprüfung E34: einmal über den Karten statt in jeder */}
       {ledger && ledger.rows.some((r) => r.sollYearCents > 0) && (
         <>
-          <p className="muted">Grün heißt bezahlt, Gelb teilweise bezahlt, Rot offen; gestrichelte Monate zählen noch nicht als Rückstand. Klick auf einen roten oder gelben Monat bucht den offenen Restbetrag vor.</p>
+          <p className="muted">Grün heißt bezahlt, Gelb teilweise bezahlt, Rot offen; gestrichelte Monate zählen noch nicht als Rückstand. Klick auf einen roten oder gelben Monat bucht den offenen Restbetrag vor. Eine Zahlung ohne Monat im Verwendungszweck tilgt die älteste offene Forderung, nicht unbedingt den angeklickten Monat (§ 366 BGB).</p>
           {/* #281: Das Konto läuft ab Beginn des Mietverhältnisses, verteilt nach § 366 BGB (Entwurf E4). */}
           <NoticeBox level="hint"
             action={<>Das Mietkonto rechnet ab Beginn des Mietverhältnisses: Ein Rückstand aus dem Vorjahr steht als Übertrag da, eine im Dezember gezahlte Januarmiete deckt den Januar. Zahlungen verteilt Mietfuchs nach der <Term id="paymentOrder">Tilgungsreihenfolge</Term>.</>}
@@ -322,7 +322,8 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
                     )
                     // Ein Monat mit offenem Rest ist ein Knopf, damit er auch per Tastatur die Zahlung
                     // öffnet; der Zusatz steht unsichtbar hinter dem sichtbaren Text (WCAG 2.5.3).
-                    if (!notRecorded && mo.sollCents - mo.paidCents > 0) {
+                    // Später bezahlt (`paidLaterOn`): nichts mehr zu buchen, also kein Knopf (Durchsicht, Befund 4).
+                    if (!notRecorded && !mo.paidLaterOn && mo.sollCents - mo.paidCents > 0) {
                       return (
                         <button
                           type="button"

@@ -262,3 +262,12 @@ test('Mietkonto: Monate vor der Erfassung heißen „nicht erfasst“ und sind k
   expect(screen.queryByRole('button', { name: /^Jan/ })).toBeNull()
   expect(screen.getAllByText('nicht erfasst').length).toBe(9)
 })
+
+test('Durchsicht Befund 4: ein später bezahlter Monat ist kein Buchungsknopf; die Hilfe nennt die Tilgung nach § 366 BGB', async () => {
+  const row = LEDGER.rows[0] ?? expect.fail('keine Zeile')
+  ledger = { ...LEDGER, rows: [{ ...row, months: row.months.map((m) => m.month === 12 ? { ...m, paidCents: 0, status: 'open' as const, openRentCents: 60000, openPrepaymentCents: 20000, paidLaterOn: `${YEAR + 1}-01-05` } : m) }] }
+  shell()
+  expect(await screen.findByText(`bezahlt am 05.01.${YEAR + 1}`)).toBeTruthy()
+  expect(screen.queryByRole('button', { name: /^Dez/ })).toBeNull()
+  expect(screen.getByText(/Eine Zahlung ohne Monat im Verwendungszweck tilgt die älteste offene Forderung/)).toBeTruthy()
+})
