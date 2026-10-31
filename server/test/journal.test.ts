@@ -472,3 +472,15 @@ test('Journal: alte Sätze zu umbenannten Seiten erscheinen im neuen Wortlaut, g
   ])
   assert.deepEqual((await allGroups(opened)).map((g) => g.description), ['Beleg in der Schnellerfassung ausgewertet', 'Beleg im Posteingang geändert'])
 }))
+
+// Nachdurchsicht S-C: Die Suche findet ältere Einträge auch unter dem neuen Wortlaut.
+test('Journal: die Suche nach dem neuen Wortlaut findet auch Einträge mit dem alten Satz', () => withDb(async (opened) => {
+  await opened.write(async (db) => {
+    await db.insert(units).values({ id: 'u1', propertyId: 'objekt-1', name: 'EG', areaM2: 60, participates: true, selfUsed: false })
+  }, { ...meta('Beleg in der Schnellerfassung ausgewertet'), route: '/api/intake' })
+  await opened.write(async (db) => {
+    await db.update(units).set({ name: 'EG links' }).where(eq(units.id, 'u1'))
+  }, meta('Wohnung geändert'))
+  const found = await opened.read((db) => listJournal(db, opened.journalSchema, { propertyId: null, before: null, limit: 50, q: 'mit KI', schemaSteps: opened.schemaSteps }))
+  assert.deepEqual(found.map((g) => g.description), ['Beleg mit KI ausgewertet'])
+}))
