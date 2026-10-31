@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
 import { useConfirm } from './components/feedback'
 import { anchorOf, localToday, periodView, type PeriodChoice, type PeriodView } from './periodForm'
-import { useHasOpenForm, useOptionalProperty } from './property'
+import { useHasOpenForm, useOptionalProperty, useProperty } from './property'
 import { rulesOf } from '../../shared/period.ts'
 
 // Der Abrechnungszeitraum ist der rote Faden der App (#208): die ganze Oberfläche ist immer „in“
@@ -87,4 +87,33 @@ export function useSwitchCalendarYear(): (year: number) => Promise<boolean> {
     setCalendarYear(year)
     return true
   }, [view.calendar, switchPeriod, setCalendarYear])
+}
+
+// Objekt und Zeitraum auf einmal wechseln, etwa zu einem Beleg der Warteschlange, der in einem anderen hochgeladen
+// wurde (#490). Gefragt wird einmal, wie beim Wechsel über die Seitenleiste; der Zeitraum gilt nach den Regeln des
+// Zielobjekts. Ergibt, ob gewechselt wurde.
+export function useSwitchTo(): (propertyId: string | undefined, periodKey: string | undefined) => Promise<boolean> {
+  const view = usePeriod()
+  const { setAnchor } = useChoice()
+  const { properties, property, setPropertyId, hasOpenForm } = useProperty()
+  const confirm = useConfirm()
+  return useCallback(async (propertyId: string | undefined, periodKey: string | undefined) => {
+    const target = properties.find((p) => p.id === propertyId) ?? property
+    const anchor = periodKey ? anchorOf(rulesOf(target), periodKey) : null
+    const otherProperty = !!target && target.id !== property?.id
+    const otherPeriod = anchor !== null && periodKey !== view.key
+    if (!otherProperty && !otherPeriod) return true
+    if (hasOpenForm()) {
+      const ok = await confirm({
+        title: 'Offene Eingaben verwerfen?',
+        message: 'Sie haben ein Formular offen oder Eingaben noch nicht übernommen. Beim Wechsel wird das geschlossen, ohne zu speichern.',
+        confirmLabel: 'Wechseln',
+        cancelLabel: 'Abbrechen',
+      })
+      if (!ok) return false
+    }
+    if (otherProperty && target) setPropertyId(target.id)
+    if (anchor !== null) setAnchor(anchor)
+    return true
+  }, [view.key, setAnchor, properties, property, setPropertyId, hasOpenForm, confirm])
 }

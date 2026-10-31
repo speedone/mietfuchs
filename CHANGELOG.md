@@ -32,6 +32,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Heizkosten ([#487](https://github.com/speedone/mietfuchs/issues/487)).
 - **Aufklappen einheitlich**: Alles, was sich aufklappen lässt, trägt denselben Pfeil davor (▸ zu, ▾ offen), und Knöpfe
   nennen, was der nächste Klick tut, etwa „Mehr dazu“ und aufgeklappt „Weniger“ oder „Rechenweg schließen“.
+- **Die KI-Auswertung läuft weiter, wenn Sie die Seite, das Objekt oder den Zeitraum wechseln**: Schnellerfassung und
+  Kosten teilen sich eine Warteschlange, das Ergebnis steht da, wenn Sie zurückkehren, und auf Kosten wird ein
+  Zählerfoto jetzt als Zählerstand erkannt ([#490](https://github.com/speedone/mietfuchs/issues/490)).
 - **Mietkonto rechnet fortlaufend ab Beginn des Mietverhältnisses**: Ein Rückstand aus dem Vorjahr steht als Übertrag
   da, eine im Dezember gezahlte Januarmiete deckt den Januar. Zahlungen werden nach § 366 BGB verteilt: zuerst die
   offenen Vorauszahlungen, dann die Miete, jeweils die ältesten zuerst. **Bei Rückständen, Teilzahlungen oder

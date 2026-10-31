@@ -2012,7 +2012,9 @@ app.post('/api/extract', fileWithPages, async (req: Request, res: Response) => {
 
 // Universeller Eingang (Schuhkarton): erkennt automatisch, ob die Datei eine Rechnung oder
 // ein Zählerfoto ist, und liefert die passende KI-Auswertung. Antwort ist eine diskriminierte
-// Union über `kind`. `/api/extract` bleibt für die (rein rechnungsbezogene) Kosten-Seite.
+// Union über `kind`. Schnellerfassung und Kosten werten beide hierüber aus (#490); für eine Rechnung antwortet die
+// Route wie `/api/extract` (api-ki-beleg.test.ts), ein Bild fragt vorher nach der Belegart. `/api/extract` bleibt
+// für ältere Tabs.
 app.post('/api/intake', fileWithPages, async (req: Request, res: Response) => {
   const file = await documentOf(req, res)
   if (!file) return

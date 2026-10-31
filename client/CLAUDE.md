@@ -50,6 +50,13 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   Formular fragt er „Ungespeicherte Änderungen verwerfen?“. Navigation nur aus
   [src/nav.ts](src/nav.ts) (`Tab`, `NAV`, `BOTTOM_TABS`; S22). Nach dem Wechsel in ein Objekt ohne
   Wohnungen steht „Zurück zu …“.
+- **Eine Warteschlange der KI-Auswertung für die App** (#490, [evaluationQueue.ts](src/evaluationQueue.ts)):
+  `EvaluationQueueProvider` liegt in App.tsx außerhalb des Fragment-Schlüssels, eine Auswertung überlebt also Seiten-,
+  Objekt- und Zeitraumwechsel. Jeder Eintrag trägt Objekt, Jahr und Zeitraum des Hochladens; Schnellerfassung und
+  Kosten zeigen die ihres Objekts und Zeitraums (`belongsTo`), die übrigen nennt `OtherQueueEntries` mit Sprung
+  (`useSwitchTo`). Beide werten über `/api/intake` aus. Eine laufende Auswertung meldet sich nicht bei `useOpenForm`
+  (Seitenwechsel fragen nicht), aber beim Schließen des Tabs (`busy`); ein erkannter, nicht übernommener Zählerstand
+  meldet sich. Ohne Provider (Seitentests) hat die Seite eine eigene Schlange.
 - **Handy** ([MobileNav.tsx](src/components/MobileNav.tsx)): unter 900 px (`MOBILE_QUERY`) statt der
   Seitenleiste ein angehefteter Kopf (☰, Titel, „Objekt · Zeitraum“, ⇅), ein Menüblatt als
   `<dialog>` mit `showModal()` und eine untere Leiste. Gezeichnet nach `matchMedia`, nicht nur per

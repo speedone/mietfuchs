@@ -318,3 +318,35 @@ test('Ollama: NKA_OLLAMA_NUM_CTX ändert die Kontextgröße', async () => {
     ollama.stop()
   }
 })
+
+// #490: Schnellerfassung und Kosten werten beide über den Schuhkarton aus. Für eine Rechnung muss er sich verhalten
+// wie /api/extract: dieselbe Auswertung, dieselben Zeilen, dieselbe gespeicherte Belegbuchung, nur mit `kind`.
+// Ein PDF fragt das Modell nicht nach der Belegart (nur ein Bild tut das), also dieselben Anfragen.
+test('KI-Auswertung: der Schuhkarton antwortet auf eine Rechnung wie /api/extract', async () => {
+  type Answer = UploadBody & { assessment?: { propertyId: string | null; year: number; open: boolean; lines: { description: string; amountCents: number | null; state: string }[] } | null }
+  const send = async (s: Parameters<typeof uploadPdf>[0], route: string) => {
+    const fd = new FormData()
+    fd.append('file', new Blob([PDF], { type: 'application/pdf' }), 'rechnung.pdf')
+    fd.append('pdfText', LONG_TEXT)
+    fd.append('year', '2025')
+    const res = await fetch(`${s.base}${route}`, { method: 'POST', body: fd })
+    return { status: res.status, body: await jsonOf<Answer>(res) }
+  }
+  await withOllama(async (s, ollama) => {
+    const extract = await send(s, '/api/extract')
+    const asked = chatRequests(ollama).length
+    const intake = await send(s, '/api/intake')
+    assert.equal(extract.status, 200)
+    assert.equal(intake.status, 200)
+    assert.equal(intake.body.kind, 'rechnung')
+    assert.equal(chatRequests(ollama).length - asked, asked)
+    assert.deepEqual(intake.body.extraction, extract.body.extraction)
+    const lines = (b: Answer) => b.assessment?.lines.map(({ description, amountCents, state }) => ({ description, amountCents, state }))
+    assert.ok(extract.body.assessment, 'die Auswertung ist gespeichert')
+    assert.ok((lines(extract.body)?.length ?? 0) > 0, 'die Auswertung hat Zeilen')
+    assert.deepEqual(lines(intake.body), lines(extract.body))
+    assert.deepEqual([intake.body.assessment?.propertyId, intake.body.assessment?.year, intake.body.assessment?.open], [extract.body.assessment?.propertyId, extract.body.assessment?.year, extract.body.assessment?.open])
+    // Beide Belege liegen im Posteingang
+    assert.equal((await s.api<UploadInfo[]>('/api/uploads')).length, 2)
+  })
+})

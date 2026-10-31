@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { AssessmentView, CostItem, IntakeResult, Meter, NoticeSubject, Reading, Settings, Unit, UploadInfo } from '../types'
+import type { AssessmentView, CostItem, NoticeSubject, Reading, Settings, Unit, UploadInfo, Meter } from '../types'
 import { calendarPeriod, periodContext, periodOfKey } from '../../../shared/period.ts'
 import { api, errorText } from '../api'
 import { aiSummary } from '../aiForm'
-import { autoMatchMeter, scoreReading } from '../triage'
-import { parseQuantity, type KeyContext } from '../costForm'
+import { type KeyContext } from '../costForm'
 import { bookDecisions, greenDecisions, loadOpenAssessments, planDecisions } from '../assessment'
-import { useEvaluationQueue, type QueueEntry as BaseEntry, type QueuePatch } from '../evaluationQueue'
+import { assessmentOf, belongsTo, useEvaluationQueue, type QueueEntry, type QueueTarget } from '../evaluationQueue'
+import { initialCandidate, readingBody, scoreCandidate, type ReadingCandidate } from '../readingCandidate'
 import AssessmentReview from '../components/AssessmentReview'
 import { usePeriod } from '../period'
 import { useOpenForm, useProperty, withProperty } from '../property'
@@ -16,6 +16,8 @@ import PageHeader from '../components/PageHeader'
 import { NoticeBox } from '../components/Notice'
 import { KeptReceipt } from '../components/KeptReceipt'
 import { TakenOff } from '../components/TakenOff'
+import { ReadingReview } from '../components/ReadingReview'
+import { OtherQueueEntries } from '../components/OtherQueueEntries'
 import { useRetryFocus } from '../retryFocus'
 
 // Sichtprüfung E30: Die Kennzeichnung offener Zeilen trägt die Farbe der schlechtesten Ampel,
@@ -42,40 +44,6 @@ type Props = {
   onOpenMeters?: () => void
 }
 
-type ReadingCandidate = {
-  meterNumber: string
-  value: string
-  date: string // YYYY-MM-DD
-  hasDate: boolean
-  matchedMeterId: string
-  replacement: boolean
-  oldEndValue: string
-  checked: boolean
-}
-
-// Was ein Eintrag der Warteschlange (evaluationQueue.ts) nach der Auswertung trägt: bei einer
-// Rechnung die Kennung der gespeicherten Auswertung (sie steht dann als Karte „Auswertung prüfen“
-// da), bei einem Zählerfoto den erkannten Stand.
-type Evaluated = {
-  kind: 'rechnung' | 'zaehler'
-  serverFile: string
-  exifDate: string | null
-  reading: ReadingCandidate
-  assessmentId: string
-}
-type QueueEntry = BaseEntry<Evaluated>
-
-const todayISO = () => new Date().toISOString().slice(0, 10)
-
-// Zählerstände lesen wie jede Menge (#149): „1.234“ ist 1234 und nicht 1,234. Ein leeres Feld ist
-// kein Wert.
-const parseNum = (s: string): number | null => parseQuantity(s)
-// Und so ins Feld schreiben, dass dasselbe wieder herauskommt: Als „1.234“ stünde 1,234 m³ da und
-// würde als 1234 gelesen.
-const quantityInput = (n: number): string => n.toLocaleString('de-DE', { useGrouping: false, maximumFractionDigits: 6 })
-
-const NOT_SAVED = 'Die Auswertung ließ sich nicht speichern. Bitte versuchen Sie es noch einmal; gebucht wurde nichts.'
-
 export default function Schnellerfassung({ units, settings, onNavigate, handoff, onHandoffTaken, onOpenReceipt, onOpenAiSettings, onOpenMeters }: Props) {
   // Wohin die Belege zur Auswertung gehen (siehe aiForm.ts)
   const ai = aiSummary(settings)
@@ -87,6 +55,8 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
   const [existingItems, setExistingItems] = useState<CostItem[]>([])
   const [meters, setMeters] = useState<Meter[]>([])
   const [readings, setReadings] = useState<Reading[]>([])
+  // Ob Zähler und Ablesungen einmal geantwortet haben: Erst dann entsteht der Vorschlag zu einem Zählerfoto.
+  const [loaded, setLoaded] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const [error, setError] = useState('')
   // Was nach „Alle grünen übernehmen“ noch zu prüfen bleibt (#139)
@@ -101,8 +71,9 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
 
   const loadData = () => Promise.all([
     api<CostItem[]>(withProperty('/api/costItems', propertyId)).then(setExistingItems),
-    api<Meter[]>(withProperty('/api/meters', propertyId)).then(setMeters),
-    api<Reading[]>(withProperty('/api/readings', propertyId)).then(setReadings),
+    Promise.all([api<Meter[]>(withProperty('/api/meters', propertyId)), api<Reading[]>(withProperty('/api/readings', propertyId))])
+      .then(([m, r]) => { setMeters(m); setReadings(r) })
+      .finally(() => setLoaded(true)),
     loadOpenAssessments(propertyId).then((open) =>
       setAssessments((list) => [...list.filter((x) => !x.open && !open.some((o) => o.id === x.id)), ...open])),
   ])
@@ -111,48 +82,49 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
     // Neu laden, wenn das Objekt wechselt (#92).
   }, [propertyId])
 
-  const { queue, patchEntry, addFiles, addStored, remove, cancel, retry, takeOff } = useEvaluationQueue<IntakeResult, Evaluated>({
-    endpoint: '/api/intake',
-    pageImageEdge: settings?.ai?.pageImageEdge ?? undefined,
-    // Objekt und Jahr für die Auswertung (#170); ein neuer Beleg steht damit im Posteingang
-    // dieses Objekts, falls er ungebucht bleibt.
-    propertyId,
-    year,
-    period: key,
-    finish: async (res, file): Promise<QueuePatch<Evaluated>> => {
-      if (res.kind === 'zaehler') {
-        const exifDate = await readExifDate(file)
-        const r = res.reading
-        const matchedMeterId = autoMatchMeter(r.meterNumber ?? null, meters) ?? ''
-        const value = r.value ?? null
-        const sc = scoreReading({
-          meterNumber: r.meterNumber ?? null,
-          value,
-          hasDate: !!(r.dateOnImage || exifDate),
-          matchedMeterId: matchedMeterId || null,
-          readings,
-        })
-        const reading: ReadingCandidate = {
-          meterNumber: r.meterNumber ?? '',
-          value: value != null ? quantityInput(value) : '',
-          date: r.dateOnImage || exifDate || todayISO(),
-          hasDate: !!(r.dateOnImage || exifDate),
-          matchedMeterId,
-          replacement: sc.replacementGuess,
-          oldEndValue: sc.suggestedOldEndValue != null ? quantityInput(sc.suggestedOldEndValue) : '',
-          checked: sc.level !== 'rot',
-        }
-        return { status: 'fertig', data: { kind: 'zaehler', serverFile: res.file, exifDate, reading } }
-      }
-      if (!res.assessment) return { status: 'fehler', error: NOT_SAVED }
-      upsert(res.assessment)
-      return { status: 'fertig', data: { kind: 'rechnung', serverFile: res.file, assessmentId: res.assessment.id } }
-    },
-  })
+  // Die eine Warteschlange der App (#490): Sie läuft weiter, wenn man die Seite, das Objekt oder den Zeitraum wechselt.
+  // Die Seite zeigt die Einträge ihres Objekts und Zeitraums, die übrigen nennt eine Zeile (OtherQueueEntries).
+  const { queue: all, patchEntry, addFiles, addStored, remove, cancel, retry, takeOff } = useEvaluationQueue()
+  // Objekt und Jahr für die Auswertung (#170); ein neuer Beleg steht damit im Posteingang dieses Objekts, falls er
+  // ungebucht bleibt.
+  const target: QueueTarget = { propertyId, year, period: key, pageImageEdge: settings?.ai?.pageImageEdge ?? undefined }
+  const queue = useMemo(() => all.filter((x) => belongsTo(x, propertyId, key)), [all, propertyId, key])
+  const isReading = (x: QueueEntry) => x.status === 'fertig' && x.result?.kind === 'zaehler'
+  const isInvoice = (x: QueueEntry) => x.result?.kind === 'rechnung'
+  // Der Zählerstand eines Eintrags: nach der ersten Eingabe der eigene, sonst der Vorschlag aus der Antwort mit den
+  // Zählern dieses Objekts (erst wenn sie geladen sind, sonst fehlte die Zuordnung).
+  const readingOf = (x: QueueEntry): ReadingCandidate | null =>
+    x.data.reading ?? (x.result?.kind === 'zaehler' && loaded ? initialCandidate(x.result.reading, x.exifDate ?? null, meters, readings) : null)
   const focusAfterRetry = useRetryFocus(queue)
-  // Was beim Objektwechsel verloren ginge (#145): laufende Auswertungen und ein erkannter, noch
-  // nicht übernommener Zählerstand. Eine ausgewertete Rechnung ist gespeichert und bleibt.
-  useOpenForm(queue.some((x) => x.status === 'wartend' || x.status === 'läuft' || (x.status === 'fertig' && x.data.kind === 'zaehler')))
+  // Der Vorschlag gilt ab dem Augenblick, in dem er entsteht (wie vor #490 mit der Antwort): Er bleibt am Eintrag, auch
+  // wenn neue Ablesungen die Ampel ändern, und die andere Seite zeigt denselben.
+  useEffect(() => {
+    for (const x of queue) {
+      if (x.data.reading || x.result?.kind !== 'zaehler') continue
+      const r = readingOf(x)
+      if (r) patchEntry(x.id, { data: { reading: r } })
+    }
+  })
+  // Was beim Wechsel verloren ginge (#145, #490): ein erkannter, noch nicht übernommener Zählerstand. Eine laufende
+  // Auswertung läuft in der Warteschlange der App weiter, eine ausgewertete Rechnung ist gespeichert.
+  useOpenForm(queue.some(isReading))
+
+  // Ausgewertete Rechnungen kommen zu den Auswertungen der Seite, auch wenn die Antwort kam, während die Seite
+  // nicht offen war. Je Eintrag einmal; danach gilt, was die Seite daraus macht (Buchen).
+  const absorbed = useRef(new Set<number>())
+  useEffect(() => {
+    for (const x of queue) {
+      const v = assessmentOf(x)
+      if (!isInvoice(x) || !v || absorbed.current.has(x.id)) continue
+      absorbed.current.add(x.id)
+      upsert(v)
+    }
+  }, [queue])
+
+  // Nach einer Buchung steht die neue Fassung auch am Eintrag, damit die Seite Kosten dasselbe zeigt.
+  const keepInQueue = (next: AssessmentView) => {
+    for (const x of queue) if (assessmentOf(x)?.id === next.id) patchEntry(x.id, { status: next.open ? 'fertig' : 'übernommen', data: { assessment: next } })
+  }
 
   // Übernahme aus dem Posteingang (#170). Der Browser holt die Datei aus dem Ordner, denn ein PDF
   // liest er vor der Auswertung selbst (pdfIntake.ts); an den Server geht danach nur ihr Name.
@@ -174,7 +146,7 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
           setError(`„${u.originalName || u.file}“ ließ sich nicht aus dem Belegordner holen: ${errorText(e)}`)
         }
       }
-      addStored(list)
+      addStored(list, target)
     })()
   }, [handoff])
 
@@ -185,22 +157,20 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
     return target ? { items: existingItems, year: v.year, at: periodContext(rules, target), propertyKind: property?.kind ?? null } : { items: existingItems, year: v.year, propertyKind: property?.kind ?? null }
   }
 
-  function updateReading(entryId: number, patch: Partial<ReadingCandidate>) {
-    const entry = queue.find((x) => x.id === entryId)
-    const reading = entry?.data.reading
-    if (reading) patchEntry(entryId, { data: { reading: { ...reading, ...patch } } })
+  function updateReading(entry: QueueEntry, patch: Partial<ReadingCandidate>) {
+    const reading = readingOf(entry)
+    if (reading) patchEntry(entry.id, { data: { reading: { ...reading, ...patch } } })
   }
 
   // ---------- Live-Bewertung der Zählerstände (re-scort bei jeder Eingabe) ----------
   const readingScores = useMemo(() => {
-    const map = new Map<number, ReturnType<typeof scoreReading>>()
+    const map = new Map<number, ReturnType<typeof scoreCandidate>>()
     for (const entry of queue) {
-      if (entry.status !== 'fertig' || entry.data.kind !== 'zaehler' || !entry.data.reading) continue
-      const r = entry.data.reading
-      map.set(entry.id, scoreReading({ meterNumber: r.meterNumber || null, value: parseNum(r.value), hasDate: r.hasDate, matchedMeterId: r.matchedMeterId || null, readings }))
+      const r = isReading(entry) ? readingOf(entry) : null
+      if (r) map.set(entry.id, scoreCandidate(r, readings))
     }
     return map
-  }, [queue, readings])
+  }, [queue, readings, meters, loaded])
 
   // Ampel-Zählung: offene Zeilen der Auswertungen (Vorschlag des Servers) und Zählerstände
   const tally = useMemo(() => {
@@ -213,7 +183,7 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
   // Grün im Sinne von „Alle grünen übernehmen“: dieselbe Bedingung für die Zählung und die
   // Übernahme, damit nie mehr angeboten wird, als gebucht würde.
   const readingReady = (entry: QueueEntry): boolean =>
-    entry.status === 'fertig' && entry.data.kind === 'zaehler' && !!entry.data.reading?.checked && readingScores.get(entry.id)?.level === 'gruen'
+    isReading(entry) && !!readingOf(entry)?.checked && readingScores.get(entry.id)?.level === 'gruen'
   // Auswertungen, deren Jahr der Buchung einen ungespeicherten Entwurf hat (Durchsicht zu #309, MUSS 1). Ihre Karte
   // zeigt ein anderes Jahr, als gebucht würde; „Alle grünen übernehmen“ lässt sie deshalb aus, bis das Jahr
   // gespeichert oder verworfen ist. Gesperrt wird nicht der ganze Knopf, damit die übrigen Belege weiterlaufen.
@@ -252,22 +222,10 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
 
   // ---------- Übernehmen ----------
   async function postReading(entry: QueueEntry) {
-    const r = entry.data.reading
-    if (!r) return false
-    const value = parseNum(r.value)
-    if (!r.matchedMeterId || value == null) return false
-    const oldEnd = r.replacement ? parseNum(r.oldEndValue) : null
-    if (r.replacement && oldEnd == null) return false
-    await api('/api/readings', {
-      method: 'POST',
-      body: JSON.stringify({
-        meterId: r.matchedMeterId,
-        date: r.date,
-        value,
-        replacement: r.replacement || undefined,
-        oldEndValue: r.replacement ? oldEnd : undefined,
-      }),
-    })
+    const r = readingOf(entry)
+    const body = r ? readingBody(r) : null
+    if (!body) return false
+    await api('/api/readings', { method: 'POST', body: JSON.stringify(body) })
     return true
   }
 
@@ -329,7 +287,6 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
     await loadData()
   })
 
-  const unitName = (id: string | null) => (id ? units.find((u) => u.id === id)?.name ?? '?' : 'Haus (Hauptzähler)')
   const hasAdopted = queue.some((x) => x.status === 'übernommen') || assessments.some((v) => v.lines.some((l) => l.state === 'created' || l.state === 'linked'))
 
   return (
@@ -360,7 +317,7 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
           onClick={() => fileInputRef.current?.click()}
           onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
           onDragLeave={() => setDragOver(false)}
-          onDrop={(e) => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files) }}
+          onDrop={(e) => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files, target) }}
         >
           <strong>Den ganzen Stapel hierher ziehen</strong> oder klicken — Rechnungen und Zählerfotos gemischt.
           <div className="muted">Sie werden nacheinander ausgewertet (kann je Beleg 1–2 Min. dauern).</div>
@@ -371,7 +328,7 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
             multiple
             aria-label="Belege und Zählerfotos auswählen"
             className="sr-only"
-            onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = '' }}
+            onChange={(e) => { if (e.target.files) addFiles(e.target.files, target); e.target.value = '' }}
           />
         </div>
 
@@ -387,18 +344,21 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
         )}
       </div>
 
+      <OtherQueueEntries queue={all} propertyId={propertyId} period={key} />
+
       {queue.map((entry) => {
         // Eine ausgewertete Rechnung steht als Karte ihrer Auswertung da (unten).
-        if (entry.data.kind === 'rechnung' && entry.status === 'fertig') return null
+        if (isInvoice(entry) && (entry.status === 'fertig' || entry.status === 'übernommen')) return null
         if (entry.status === 'abgelegt') {
           const stored = entry.failure?.file
           return <TakenOff key={entry.id} fileName={entry.fileName} onShow={stored && onOpenReceipt ? () => onOpenReceipt(stored) : undefined} />
         }
-        const rs = readingScores.get(entry.id)
+        const meter = entry.result?.kind === 'zaehler'
+        const reading = isReading(entry) ? readingOf(entry) : null
         return (
           <div className="card no-print" key={entry.id} data-queue-entry={entry.id} tabIndex={-1}>
             <div className="row center">
-              <strong>{entry.data.kind === 'zaehler' ? '🔢 ' : '🧾 '}{entry.fileName}</strong>
+              <strong>{meter ? '🔢 ' : '🧾 '}{entry.fileName}</strong>
               {entry.status === 'wartend' && <span className="badge gray">wartet …</span>}
               {entry.status === 'läuft' && (
                 <AiProgressBadge
@@ -407,7 +367,7 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
                   onCancel={() => cancel(entry.id)}
                 />
               )}
-              {entry.status === 'fertig' && entry.data.kind === 'zaehler' && <span className="badge green">Zählerstand erkannt</span>}
+              {isReading(entry) && <span className="badge green">Zählerstand erkannt</span>}
               {entry.status === 'übernommen' && <span className="badge green">✓ übernommen</span>}
               {entry.status === 'fehler' && <span className="badge red">Fehler</span>}
               {entry.status === 'gespeichert' && <span className="badge amber">im Belegordner</span>}
@@ -426,61 +386,9 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
                 onRetry={() => { focusAfterRetry(entry.id); retry(entry.id) }} onOpenSettings={onOpenAiSettings} />
             )}
 
-            {/* ---------- Zählerstand ---------- */}
-            {entry.status === 'fertig' && entry.data.kind === 'zaehler' && entry.data.reading && (
-              <div className="row start">
-                {entry.data.serverFile && (
-                  <a href={`/uploads/${entry.data.serverFile}`} target="_blank" rel="noreferrer">
-                    <img src={`/uploads/${entry.data.serverFile}`} alt="Zählerfoto" className="meter-photo" />
-                  </a>
-                )}
-                <div className="grow stack">
-                  <div className="row center">
-                    <span className={`ampel ${rs?.level ?? 'gruen'}`} />
-                    <label className="field">
-                      Zähler
-                      <select value={entry.data.reading.matchedMeterId} onChange={(e) => updateReading(entry.id, { matchedMeterId: e.target.value })}>
-                        <option value="">— zuordnen —</option>
-                        {meters.map((m) => (
-                          <option key={m.id} value={m.id}>{m.name} · {unitName(m.unitId)}{m.meterNumber ? ` · Nr. ${m.meterNumber}` : ''}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="field">
-                      Stand
-                      <input inputMode="decimal" value={entry.data.reading.value} onChange={(e) => updateReading(entry.id, { value: e.target.value })} className="input-num" />
-                    </label>
-                    <label className="field">
-                      Datum
-                      <input type="date" value={entry.data.reading.date} onChange={(e) => updateReading(entry.id, { date: e.target.value, hasDate: true })} />
-                    </label>
-                    <label className="field checkline">
-                      <span>
-                        <input type="checkbox" checked={entry.data.reading.replacement} onChange={(e) => updateReading(entry.id, { replacement: e.target.checked })} />
-                        Zählerwechsel
-                      </span>
-                    </label>
-                    {entry.data.reading.replacement && (
-                      <label className="field">
-                        Endstand alt
-                        <input inputMode="decimal" value={entry.data.reading.oldEndValue} onChange={(e) => updateReading(entry.id, { oldEndValue: e.target.value })} className="input-num" />
-                      </label>
-                    )}
-                  </div>
-                  {entry.data.reading.meterNumber && <div className="muted">Gelesene Zählernummer: {entry.data.reading.meterNumber}</div>}
-                  {rs && rs.level !== 'gruen' && (
-                    <div>
-                      {rs.reasons.map((r, j) => <span key={j} className={`chip ${rs.level}`}>{r}</span>)}
-                    </div>
-                  )}
-                  <div className="row">
-                    <div className="grow" />
-                    <button className="btn" onClick={() => void adoptReading(entry)} disabled={adopting || !entry.data.reading.matchedMeterId || parseNum(entry.data.reading.value) === null}>
-                      Ablesung übernehmen
-                    </button>
-                  </div>
-                </div>
-              </div>
+            {reading && (
+              <ReadingReview reading={reading} serverFile={entry.result?.file} score={readingScores.get(entry.id)} meters={meters} units={units}
+                adopting={adopting} onChange={(patch) => updateReading(entry, patch)} onAdopt={() => void adoptReading(entry)} />
             )}
           </div>
         )
@@ -497,7 +405,7 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
             {(v.targetPeriod ?? calendarPeriod(v.year)) !== key && <span className="badge gray">{calendar ? `Jahr ${v.year}` : v.targetLabel ?? `Jahr ${v.year}`}</span>}
           </div>
           <AssessmentReview assessment={v} units={units} keyContext={keyCtx(v)}
-            onChange={(next) => { upsert(next); void loadData() }}
+            onChange={(next) => { upsert(next); keepInQueue(next); void loadData() }}
             onOpenItem={(id) => onNavigate('kosten', { kind: 'costItem', id })} onYearDraft={onYearDraft} />
         </div>
       ))}
@@ -514,64 +422,4 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
       )}
     </>
   )
-}
-
-// ---------- EXIF-Datum (best effort) ----------
-// Liest das Aufnahmedatum (DateTimeOriginal) aus dem JPEG, damit der Nutzer das Ablesedatum nicht
-// tippen muss. Schlägt es fehl, greift im Aufrufer der Fallback „heute“. Bewusst minimal gehalten.
-async function readExifDate(file: File): Promise<string | null> {
-  if (!/jpe?g/i.test(file.type)) return null
-  try {
-    const buf = await file.slice(0, 256 * 1024).arrayBuffer()
-    const view = new DataView(buf)
-    if (view.getUint16(0) !== 0xffd8) return null
-    let offset = 2
-    while (offset + 4 < view.byteLength) {
-      const marker = view.getUint16(offset)
-      if ((marker & 0xff00) !== 0xff00) break
-      const size = view.getUint16(offset + 2)
-      if (marker === 0xffe1 && view.getUint32(offset + 4) === 0x45786966 /* 'Exif' */) {
-        return parseExifDate(view, offset + 10)
-      }
-      offset += 2 + size
-    }
-  } catch {
-    /* best effort — Datum ist optional */
-  }
-  return null
-}
-
-function parseExifDate(view: DataView, tiffStart: number): string | null {
-  const little = view.getUint16(tiffStart) === 0x4949
-  const u16 = (o: number) => view.getUint16(o, little)
-  const u32 = (o: number) => view.getUint32(o, little)
-  const findTag = (ifd: number, tag: number): number | null => {
-    const count = u16(ifd)
-    for (let i = 0; i < count; i++) {
-      const entry = ifd + 2 + i * 12
-      if (u16(entry) === tag) return entry
-    }
-    return null
-  }
-  const readAscii = (entry: number): string => {
-    const len = u32(entry + 4)
-    const at = len > 4 ? tiffStart + u32(entry + 8) : entry + 8
-    let s = ''
-    for (let i = 0; i < len - 1; i++) s += String.fromCharCode(view.getUint8(at + i))
-    return s
-  }
-  const ifd0 = tiffStart + u32(tiffStart + 4)
-  const candidates: number[] = []
-  const exifPtr = findTag(ifd0, 0x8769) // ExifIFD-Zeiger
-  if (exifPtr) {
-    const dto = findTag(tiffStart + u32(exifPtr + 8), 0x9003) // DateTimeOriginal
-    if (dto) candidates.push(dto)
-  }
-  const dt = findTag(ifd0, 0x0132) // DateTime
-  if (dt) candidates.push(dt)
-  for (const c of candidates) {
-    const m = readAscii(c).match(/^(\d{4}):(\d{2}):(\d{2})/) // "YYYY:MM:DD HH:MM:SS"
-    if (m) return `${m[1]}-${m[2]}-${m[3]}`
-  }
-  return null
 }

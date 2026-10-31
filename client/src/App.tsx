@@ -32,6 +32,7 @@ import Heizkosten from './pages/Heizkosten'
 import { TermHelp } from './components/Term'
 import type { TermId } from '../../shared/glossary.ts'
 import Muster from './pages/Muster'
+import { EvaluationQueueProvider, useEvaluationQueueStore } from './evaluationQueue'
 
 // ---------- Dark Mode ----------
 type ThemeChoice = 'system' | 'light' | 'dark'
@@ -191,16 +192,19 @@ function Shell() {
   const openHelp = useCallback((id: TermId) => {
     void navigate('hilfe').then((done) => { if (done) setHelpTerm((h) => ({ id, seq: (h?.seq ?? 0) + 1 })) })
   }, [navigate])
-  // Schließen oder Neuladen des Tabs mit offenem Formular: Der Browser fragt mit seinem eigenen Satz nach.
+  // Schließen oder Neuladen des Tabs mit offenem Formular: Der Browser fragt mit seinem eigenen Satz nach. Ebenso,
+  // solange eine KI-Auswertung läuft oder wartet (#490): Die Belege sind gespeichert, wartende aber noch nicht
+  // hochgeladen, und die laufende bricht ab.
+  const evaluations = useEvaluationQueueStore()
   useEffect(() => {
     const onLeave = (e: BeforeUnloadEvent) => {
-      if (!hasOpenForm()) return
+      if (!hasOpenForm() && !evaluations?.busy()) return
       e.preventDefault()
       e.returnValue = ''
     }
     window.addEventListener('beforeunload', onLeave)
     return () => window.removeEventListener('beforeunload', onLeave)
-  }, [hasOpenForm])
+  }, [hasOpenForm, evaluations])
   // Ausgewertet wird im Objekt, dem der Beleg zugedacht ist; ohne Zuordnung im gewählten.
   // Wechselt dabei das Objekt, hat dessen Rückfrage schon gefragt (die Seite wird ohnehin neu aufgestellt);
   // sonst fragt der Seitenwechsel.
@@ -376,7 +380,8 @@ function Shell() {
           />
         )}
         {/* Je Objekt und Jahr neu aufgestellt (#145, Durchsicht zu #141): Formulare und
-            Zwischenstände einer Seite gehören zu dem Objekt und Jahr, in dem sie entstanden sind. */}
+            Zwischenstände einer Seite gehören zu dem Objekt und Jahr, in dem sie entstanden sind. Die
+            Warteschlange der KI-Auswertung liegt darüber (App), sie überlebt den Wechsel (#490). */}
         <Fragment key={`${propertyId ?? ''}:${periodKeyNow}`}>
         {tab === 'cockpit' && (
           <Cockpit units={units} tenancies={tenancies} settings={settings} reload={reload} onNavigate={(t, f) => void navigate(t as Tab, f ?? null)} />
@@ -389,7 +394,7 @@ function Shell() {
         {tab === 'stammdaten' && (
           <Stammdaten units={units} tenancies={tenancies} settings={settings} reload={reload} focus={focus} onFocusDone={clearFocus} />
         )}
-        {tab === 'kosten' && <Kosten units={units} settings={settings} tenancies={tenancies} focus={focus} onFocusDone={clearFocus} onOpenReceipt={openReceipt} onOpenAiSettings={openAiSettings} />}
+        {tab === 'kosten' && <Kosten units={units} settings={settings} tenancies={tenancies} focus={focus} onFocusDone={clearFocus} onOpenReceipt={openReceipt} onOpenAiSettings={openAiSettings} onOpenMeters={openMeters} />}
         {tab === 'mietkonto' && <Mietkonto focus={focus} onFocusDone={clearFocus} />}
         {tab === 'zaehler' && <Zaehler units={units} focus={focus} onFocusDone={clearFocus} />}
         {tab === 'belege' && <Belege onEvaluate={(list) => void evaluateFromInbox(list)} onContinue={(u) => void continueAssessment(u)} onOpenItem={(item) => void openCostItem(item)}
@@ -428,7 +433,10 @@ export default function App() {
       <PropertyProvider>
         <UIProvider>
           <NewPropertyProvider>
-            <Shell />
+            {/* Eine Warteschlange der KI-Auswertung für die ganze App (#490), außerhalb der Seiten */}
+            <EvaluationQueueProvider>
+              <Shell />
+            </EvaluationQueueProvider>
           </NewPropertyProvider>
         </UIProvider>
       </PropertyProvider>
