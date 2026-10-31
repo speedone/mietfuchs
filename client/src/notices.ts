@@ -82,8 +82,9 @@ export function noticeClass(level: NoticeLevel): 'error' | 'notice' | 'hint' {
   return level === 'error' ? 'error' : level === 'warning' ? 'notice' : 'hint'
 }
 
-// `einstellungen`: nur die Prüfung „Absender fehlt“ der Seite Abrechnung führt dorthin (Praxistest).
-export type NoticeTab = 'kosten' | 'stammdaten' | 'zaehler' | 'mietkonto' | 'heizkosten' | 'abrechnung' | 'schnellerfassung' | 'einstellungen'
+// `einstellungen`: nur die Prüfung „Absender fehlt“ der Seite Abrechnung führt dorthin (Praxistest). `belege:eingang`: der
+// Leerzustand („Belege erfassen“, emptyStock.ts) öffnet den Eingang der Seite Belege (#490).
+export type NoticeTab = 'kosten' | 'stammdaten' | 'zaehler' | 'mietkonto' | 'heizkosten' | 'abrechnung' | 'einstellungen' | 'belege:eingang'
 const TARGETS: Record<NoticeSubject['kind'], { tab: NoticeTab, page: string }> = {
   costItem: { tab: 'kosten', page: 'Kosten' },
   unit: { tab: 'stammdaten', page: 'Stammdaten' },

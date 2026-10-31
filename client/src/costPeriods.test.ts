@@ -49,7 +49,7 @@ describe('Zu welcher Abrechnung eine Position gehört (E32, E48)', () => {
     expect(itemsOfSettlement(items, k('2025-01'), CALENDAR_RULES, [plant()]).map((c) => c.amountCents)).toEqual([856560, 480000])
   })
 
-  test('der Belegordner führt eine Heizposition im Jahr ihrer Abrechnung', () => {
+  test('der Ordner der Belege führt eine Heizposition im Jahr ihrer Abrechnung', () => {
     const filed = filedUnderSettlement(items, () => CALENDAR_RULES, () => [plant()])
     expect(filed.map((c) => c.period)).toEqual(['2024-01', '2024-01', '2025-01', '2025-01', '2026-01'])
     // Alles andere bleibt, wie es ist
@@ -105,7 +105,7 @@ describe('Cockpit → Heizkostenabrechnung (E45)', () => {
   })
 })
 
-// Durchsicht N2: „Betrag prüfen“ im Belegordner fragt, ob die Abrechnung der Position abgeschlossen
+// Durchsicht N2: „Betrag prüfen“ im Ordner der Seite Belege fragt, ob die Abrechnung der Position abgeschlossen
 // ist. Für eine Heizposition nach Weg d ist das ihre Heizkostenabrechnung, nicht die des Objekts.
 describe('Welche Abrechnung „abgeschlossen“ beantwortet (N2)', () => {
   test('Weg d: die Heizkostenabrechnung der Heizperiode, sonst die Abrechnung des Zeitraums', () => {
@@ -127,7 +127,7 @@ describe('Belegkopien mit einer 0-€-Position (N3)', () => {
 })
 
 // #470: Ein Beleg, der nur über eine gebuchte Zeile einer Auswertung an der Position hängt, gehört
-// zu den Belegkopien, wie im Belegordner, in der Belegmappe und im Cockpit.
+// zu den Belegkopien, wie im Ordner der Seite Belege, in der Belegmappe und im Cockpit.
 describe('Belegkopien mit gebuchten Zeilen (#470)', () => {
   const row = (costItemId: string) => ({ costItemId, category: 'x', description: 'x', totalCents: 1, keyLabel: 'x', shareCents: 1 })
   const upload = (file: string, bookedItemIds: string[]): ReceiptUpload => ({

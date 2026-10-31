@@ -51,6 +51,8 @@ export function fakeBooking(start: { items: CostItem[]; units: Unit[]; meters?: 
 
   return {
     get items(): CostItem[] { return items },
+    // Die gespeicherten Auswertungen, wie die Route sie zeigt
+    get assessments(): AssessmentView[] { return records.map(view) },
     requests,
     patchItem(id: string, patch: Partial<CostItem>): void {
       items = items.map((i) => (i.id === id ? { ...i, ...patch } : i))

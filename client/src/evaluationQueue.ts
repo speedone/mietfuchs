@@ -15,11 +15,12 @@ import { errorText } from './api'
 import { failureOf } from './aiFailure'
 import { readExifDate, type ReadingCandidate } from './readingCandidate'
 import type { AiFailure, AssessmentView, IntakeResult } from './types'
+import { splitFiles } from './belegeView'
 
-// 'gespeichert': Die KI ist gescheitert, der Beleg liegt aber im Belegordner (Fehler mit Ausweg, #487); `failure`
+// 'gespeichert': Die KI ist gescheitert, der Beleg ist aber gespeichert (Fehler mit Ausweg, #487); `failure`
 // sagt warum, und `retry` wertet ihn erneut aus, ohne ihn noch einmal hochzuladen.
 // 'abgelegt': ein gespeicherter Eintrag, den der Nutzer aus der Liste genommen hat; an seiner Stelle steht, dass der
-// Beleg weiter im Belegordner liegt (`failure` bleibt für den Weg dorthin).
+// Beleg weiter auf der Seite Belege liegt (`failure` bleibt für den Weg dorthin).
 export type QueueStatus = 'wartend' | 'läuft' | 'fertig' | 'fehler' | 'gespeichert' | 'abgelegt' | 'abgebrochen' | 'übernommen'
 
 // Wofür ein Beleg ausgewertet wird: Ein ungebuchter Beleg steht im Posteingang dieses Objekts, und nennt er kein
@@ -57,6 +58,9 @@ export type QueueEntry = QueueBase & {
   // die Antwort des Servers und, bei einem Zählerfoto, das Aufnahmedatum aus der Datei
   result?: IntakeResult
   exifDate?: string | null
+  // Der Name des Belegs in der Ablage, sobald es ihn gibt (ein Beleg aus dem Eingang, nach der Antwort, nach einem
+  // Scheitern mit gespeichertem Beleg): Daran erkennt der Eingang, dass seine Karte schon anderswo steht (#490).
+  file?: string
   data: QueueData
 }
 export type QueuePatch = Partial<Omit<QueueEntry, 'id' | 'fileName' | 'data'>> & { data?: QueueData }
@@ -66,9 +70,9 @@ const NOT_SAVED = 'Die Auswertung ließ sich nicht speichern. Bitte versuchen Si
 // Was aus einer Antwort wird. Ein Zählerfoto liest sein Aufnahmedatum jetzt, solange die Datei noch da ist; den
 // Vorschlag (Zähler, Ampel) bildet die Seite mit ihren Zählern (readingCandidate.ts).
 async function settle(res: IntakeResult, file: File): Promise<QueuePatch> {
-  if (res.kind === 'zaehler') return { status: 'fertig', result: res, exifDate: await readExifDate(file) }
+  if (res.kind === 'zaehler') return { status: 'fertig', result: res, file: res.file, exifDate: await readExifDate(file) }
   if (!res.assessment) return { status: 'fehler', error: NOT_SAVED }
-  return { status: res.assessment.open ? 'fertig' : 'übernommen', result: res }
+  return { status: res.assessment.open ? 'fertig' : 'übernommen', result: res, file: res.file }
 }
 
 // Die Auswertung, wie sie gerade steht: nach einer Buchung die neue Fassung, sonst die der Antwort.
@@ -136,14 +140,17 @@ export class EvaluationQueue {
       if (stored) this.stored.set(id, stored)
       if (target.pageImageEdge !== undefined) this.edges.set(id, target.pageImageEdge)
       if (target.docType) this.docTypes.set(id, target.docType)
-      added.push({ id, fileName: file.name, status: 'wartend', propertyId: target.propertyId, year: target.year, period: target.period, data: {} })
+      added.push({ id, fileName: file.name, status: 'wartend', propertyId: target.propertyId, year: target.year, period: target.period, file: stored, data: {} })
     }
     if (added.length) this.set([...this.entries, ...added])
   }
 
-  // Neue Dateien: nur PDF und Bilder.
-  addFiles = (files: Iterable<File>, target: QueueTarget): void =>
-    this.enqueue([...files].filter((f) => /^(application\/pdf|image\/)/.test(f.type)).map((file) => ({ file })), target)
+  // Neue Dateien: nur PDF und Bilder. Ergibt, wie viele übergangen wurden; die Seite sagt es (SKIPPED_FILES).
+  addFiles = (files: Iterable<File>, target: QueueTarget): number => {
+    const { ok, skipped } = splitFiles(files)
+    this.enqueue(ok.map((file) => ({ file })), target)
+    return skipped
+  }
   // Belege aus dem Belegordner: An den Server geht nur ihr Name, sonst lägen sie danach doppelt dort.
   addStored = (list: { file: File; stored: string }[], target: QueueTarget): void => this.enqueue(list, target)
 
@@ -160,6 +167,15 @@ export class EvaluationQueue {
     this.set(this.entries.filter((x) => x.id !== id))
   }
   cancel = (id: number): void => { this.aborts.get(id)?.abort() }
+  // Ein Beleg ist gelöscht, zugeordnet oder samt Auswertung in ein anderes Objekt verschoben: Was die Schlange zu ihm
+  // noch zeigt (gespeichert, ausgewertet, erkannt), ist erledigt und verschwindet, statt als „übernommen“ oder mit
+  // „Erneut versuchen“ stehen zu bleiben (Durchsicht S3, S-A, S-D). Was gerade läuft oder wartet, bleibt.
+  forgetFile = (file: string): void => {
+    const gone = this.entries.filter((x) => !isBusy(x) && ((x.failure?.file ?? x.file ?? x.result?.file) === file))
+    if (gone.length === 0) return
+    for (const x of gone) this.forget(x.id)
+    this.set(this.entries.filter((x) => !gone.includes(x)))
+  }
   // Einen gespeicherten Eintrag aus der Liste nehmen: Der Beleg bleibt im Belegordner, der Browser vergisst die Datei.
   takeOff = (id: number): void => {
     this.forget(id)
@@ -251,7 +267,7 @@ export class EvaluationQueue {
         if (failure) {
           kept = true
           this.stored.set(id, failure.file)
-          this.patch(id, { status: 'gespeichert', failure })
+          this.patch(id, { status: 'gespeichert', failure, file: failure.file })
         } else this.patch(id, { status: 'fehler', error: errorText(e) })
       }
     } finally {
@@ -266,7 +282,7 @@ export class EvaluationQueue {
 
 async function fetchStored(name: string, fileName: string, signal: AbortSignal): Promise<File> {
   const res = await fetch(`/uploads/${encodeURIComponent(name)}`, { signal })
-  if (!res.ok) throw new Error(`„${fileName}“ ließ sich nicht aus dem Belegordner holen (HTTP ${res.status}).`)
+  if (!res.ok) throw new Error(`„${fileName}“ ließ sich nicht aus der Ablage der Belege holen (HTTP ${res.status}).`)
   const blob = await res.blob()
   return new File([blob], fileName, { type: blob.type })
 }
@@ -299,6 +315,7 @@ export function useEvaluationQueue() {
     addStored: queue.addStored,
     patchEntry: queue.patch,
     remove: queue.remove,
+    forgetFile: queue.forgetFile,
     cancel: queue.cancel,
     retry: queue.retry,
     takeOff: queue.takeOff,

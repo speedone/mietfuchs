@@ -1,6 +1,5 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
-import type { ReceiptUpload } from './receipts'
-import type { CostItem, HeatingPlant, NoticeSubject, Settings, Tenancy, Unit, UploadInfo } from './types'
+import type { CostItem, HeatingPlant, NoticeSubject, Settings, Tenancy, Unit } from './types'
 import { api } from './api'
 import { PeriodProvider, usePeriod } from './period'
 import { PeriodSelect } from './components/PeriodSelect'
@@ -15,7 +14,6 @@ import { emptyPropertyNotice, propertyName } from './propertyView'
 import { canQuit, hintVisible } from './update'
 import Cockpit from './pages/Cockpit'
 import Uebersicht from './pages/Uebersicht'
-import Schnellerfassung from './pages/Schnellerfassung'
 import Stammdaten from './pages/Stammdaten'
 import Kosten from './pages/Kosten'
 import Mietkonto from './pages/Mietkonto'
@@ -26,7 +24,8 @@ import Hilfe from './pages/Hilfe'
 import Verlauf from './pages/Verlauf'
 import Steuer from './pages/Steuer'
 import Einstellungen from './pages/Einstellungen'
-import { navFor, tabLabel, type Tab } from './nav'
+import { navFor, splitTarget, tabLabel, type BelegeView, type NavTarget, type Tab } from './nav'
+import { readView, writeView } from './belegeView'
 import MobileNav, { MOBILE_QUERY, useMediaQuery } from './components/MobileNav'
 import Heizkosten from './pages/Heizkosten'
 import { TermHelp } from './components/Term'
@@ -156,9 +155,10 @@ function Shell() {
   }, [])
   const clearFocus = useCallback(() => setFocus(null), [])
   const [stopped, setStopped] = useState(false)
-  // Belege aus dem Posteingang, die die Schnellerfassung auswerten soll (#170)
-  const [handoff, setHandoff] = useState<UploadInfo[] | null>(null)
-  // Der Beleg, zu dem der Belegordner springen soll (Fehler mit Ausweg, #487: „Von Hand erfassen“)
+  // Die offene Ansicht der Seite Belege (#490), gemerkt je Sitzung: Die Seitenleiste öffnet die zuletzt benutzte.
+  const [belegeView, setBelegeViewState] = useState<BelegeView>(readView)
+  const setBelegeView = useCallback((v: BelegeView) => { writeView(v); setBelegeViewState(v) }, [])
+  // Der Beleg, zu dem die Seite Belege springen soll (Fehler mit Ausweg, #487)
   const [receiptFocus, setReceiptFocus] = useState<string | null>(null)
   const [units, setUnits] = useState<Unit[]>([])
   // Zu welchem Objekt `units` gehört (#157): Bis die Wohnungen eines eben gewählten Objekts da
@@ -196,7 +196,10 @@ function Shell() {
   // still weg. Das gilt für die Navigation (Seitenleiste, Menüblatt, untere Leiste) wie für Sprünge aus
   // einer Seite („Hier beheben →“, „Position öffnen“, „Weiter prüfen“, die Anleitung zum Update).
   // Startfokus auf „Abbrechen“. Ergibt, ob gewechselt wurde.
-  const navigate = useCallback(async (t: Tab, f: NoticeSubject | null = null, th?: GuideThreadState | null): Promise<boolean> => {
+  // Ein Ziel kann eine Ansicht der Seite Belege nennen (`belege:eingang`, nav.ts); der Wechsel der Ansicht allein fragt
+  // nicht, denn beide Ansichten bleiben eingehängt.
+  const navigate = useCallback(async (target: NavTarget, f: NoticeSubject | null = null, th?: GuideThreadState | null): Promise<boolean> => {
+    const { tab: t, view } = splitTarget(target)
     if (t !== tab && hasOpenForm()) {
       const ok = await confirmLeave({
         title: 'Ungespeicherte Änderungen verwerfen?',
@@ -207,11 +210,12 @@ function Shell() {
       })
       if (!ok) return false
     }
+    if (view) setBelegeView(view)
     setTab(t, f, th)
     return true
-  }, [tab, hasOpenForm, confirmLeave, setTab])
+  }, [tab, hasOpenForm, confirmLeave, setTab, setBelegeView])
   // Die Navigation selbst (Seitenleiste, Menüblatt, untere Leiste) beendet den Faden.
-  const navigateFromNav = useCallback((t: Tab) => navigate(t, null, null), [navigate])
+  const navigateFromNav = useCallback((t: NavTarget) => navigate(t, null, null), [navigate])
   // Nach dem Sprung aus der Anleitung steht der Fokus auf dem Titel der Zielseite (Durchsicht von PR 2, S1); `seq`
   // zählt die Sprünge, der Effekt läuft, wenn die neue Seite gezeichnet ist.
   const [titleFocus, setTitleFocus] = useState(0)
@@ -219,9 +223,11 @@ function Shell() {
   // „Zu {Seite} →“ in einer Anleitung und „Nächster Schritt“ im Faden: auf die Seite des Schritts, mit dem Faden. Eine
   // neue Seite beginnt oben, nicht auf der Höhe, auf der die Anleitung stand. Aus der Leiste bleibt der Fokus dort.
   const followStep = useCallback(async (guide: GuideId, step: number, focusTitle = false): Promise<boolean> => {
-    const page = GUIDES[guide].steps[step]?.page
+    const s = GUIDES[guide].steps[step]
+    const page = s?.page
     if (!page) return false
-    const done = await navigate(page, null, { guide, step })
+    // Ein Schritt auf der Seite Belege kann die Ansicht nennen (Eingang oder Ordner, #490)
+    const done = await navigate(page === 'belege' && s.view ? `belege:${s.view}` : page, null, { guide, step })
     if (done && page !== tab) window.scrollTo(0, 0)
     if (done && focusTitle) setTitleFocus((n) => n + 1)
     return done
@@ -270,23 +276,16 @@ function Shell() {
     }
     return navigate(t, f)
   }
-  const evaluateFromInbox = async (list: UploadInfo[]) => {
-    if (await goViaProperty(list.find((u) => u.propertyId)?.propertyId, 'schnellerfassung')) setHandoff(list)
-  }
-  // „Weiter prüfen“ (#170): Die Schnellerfassung zeigt die offenen Auswertungen des Objekts; dazu
-  // erst auf das Objekt der Auswertung umschalten, wie beim Auswerten.
-  const continueAssessment = async (u: ReceiptUpload) => {
-    await goViaProperty(u.assessment?.propertyId, 'schnellerfassung')
-  }
-  // „Position öffnen“ aus dem Belegordner: Der zeigt alle Objekte, die Seite Kosten nur das
-  // gewählte. Gehört die Position zu einem anderen, wird erst umgeschaltet, wie oben.
-  // Fehler mit Ausweg (#487): ein gespeicherter, nicht ausgewerteter Beleg im Belegordner, bzw. die KI-Einstellungen
+  // Fehler mit Ausweg (#487): ein gespeicherter Beleg auf der Seite Belege (ohne Position im Eingang, sonst im
+  // Ordner), bzw. die KI-Einstellungen
   const openReceipt = (file: string) => {
     void navigate('belege').then((done) => { if (done) setReceiptFocus(file) })
   }
   const openAiSettings = () => { void navigate('einstellungen') }
   // Ein Zählerfoto, dessen Ablesen gescheitert ist: die Ablesung von Hand auf der Seite Zähler
   const openMeters = () => { void navigate('zaehler') }
+  // „Position öffnen“ von der Seite Belege: Die zeigt alle Objekte, die Seite Kosten nur das
+  // gewählte. Gehört die Position zu einem anderen, wird erst umgeschaltet, wie oben.
   const openCostItem = async (item: CostItem) => {
     await goViaProperty(item.propertyId, 'kosten', { kind: 'costItem', id: item.id })
   }
@@ -411,7 +410,7 @@ function Shell() {
   return (
     <TermHelp.Provider value={openHelp}>
       {mobile ? (
-        <MobileNav tab={tab} context={contextLine} onNavigate={(t) => void navigateFromNav(t)} sheet={(close) => <nav className="sidebar" aria-label="Hauptnavigation">{sidebar(close)}</nav>} />
+        <MobileNav tab={tab} context={contextLine} onNavigate={(t) => void navigateFromNav(t === 'belege' ? 'belege:eingang' : t)} sheet={(close) => <nav className="sidebar" aria-label="Hauptnavigation">{sidebar(close)}</nav>} />
       ) : (
         <nav className="sidebar" aria-label="Hauptnavigation">{sidebar(null)}</nav>
       )}
@@ -438,21 +437,18 @@ function Shell() {
             Warteschlange der KI-Auswertung liegt darüber (App), sie überlebt den Wechsel (#490). */}
         <Fragment key={`${propertyId ?? ''}:${periodKeyNow}`}>
         {tab === 'cockpit' && (
-          <Cockpit units={units} tenancies={tenancies} settings={settings} updateStatus={update.status} reload={reload} onNavigate={(t, f) => void navigate(t as Tab, f ?? null)} />
+          <Cockpit units={units} tenancies={tenancies} settings={settings} updateStatus={update.status} reload={reload} onNavigate={(t, f) => void navigate(t, f ?? null)} />
         )}
-        {tab === 'schnellerfassung' && (
-          <Schnellerfassung units={units} settings={settings} onNavigate={(t, f) => void navigate(t as Tab, f ?? null)}
-            handoff={handoff ?? undefined} onHandoffTaken={() => setHandoff(null)} onOpenReceipt={openReceipt} onOpenAiSettings={openAiSettings} onOpenMeters={openMeters} />
-        )}
-        {tab === 'uebersicht' && <Uebersicht onNavigate={(t) => void navigate(t as Tab)} />}
+        {tab === 'uebersicht' && <Uebersicht onNavigate={(t) => void navigate(t)} />}
         {tab === 'stammdaten' && (
           <Stammdaten units={units} tenancies={tenancies} settings={settings} reload={reload} focus={focus} onFocusDone={clearFocus} />
         )}
         {tab === 'kosten' && <Kosten units={units} settings={settings} tenancies={tenancies} focus={focus} onFocusDone={clearFocus} onOpenReceipt={openReceipt} onOpenAiSettings={openAiSettings} onOpenMeters={openMeters} />}
         {tab === 'mietkonto' && <Mietkonto focus={focus} onFocusDone={clearFocus} />}
         {tab === 'zaehler' && <Zaehler units={units} focus={focus} onFocusDone={clearFocus} />}
-        {tab === 'belege' && <Belege onEvaluate={(list) => void evaluateFromInbox(list)} onContinue={(u) => void continueAssessment(u)} onOpenItem={(item) => void openCostItem(item)}
-          focusFile={receiptFocus} onFocusDone={() => setReceiptFocus(null)} />}
+        {tab === 'belege' && <Belege units={units} settings={settings} onNavigate={(t, f) => void navigate(t, f ?? null)}
+          onOpenItem={(item) => void openCostItem(item)} onOpenAiSettings={openAiSettings} onOpenMeters={openMeters}
+          view={belegeView} onViewChange={setBelegeView} focusFile={receiptFocus} onOpenReceipt={openReceipt} onFocusDone={() => setReceiptFocus(null)} />}
         {tab === 'abrechnung' && (
           <Abrechnung settings={settings} units={units} tenancies={tenancies} reload={reload} onNavigate={(t, f) => void navigate(t, f ?? null)} focus={focus} onFocusDone={clearFocus} />
         )}

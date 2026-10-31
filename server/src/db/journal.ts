@@ -31,6 +31,7 @@ import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm'
 import type { Connection, Database, Executor } from './client.ts'
 import { changeGroups, changeLog, type JOURNAL_BARRIERS } from './schema.ts'
 import { isJournalKind, JOURNAL_KINDS, type JournalKind } from '../../../shared/journal.ts'
+import { currentDescription, RENAMED_SENTENCES } from '../journalRoutes.ts'
 
 export { isJournalKind, JOURNAL_KINDS, type JournalKind }
 
@@ -544,7 +545,9 @@ function text(value: unknown): string | null {
 // Die Überschrift: Satz der Route und Bezeichnung der Zeile, um die es geht. Steht sie selbst nicht in
 // der Gruppe (ein Mietverhältnis, an dem sich nur eine Staffel geändert hat), kommt sie über den
 // Verweis einer Zeile darunter (K5).
-export async function groupTitle(description: string, subjectTable: string | null, rows: LogRow[], resolver: Resolver): Promise<string> {
+export async function groupTitle(stored: string, subjectTable: string | null, rows: LogRow[], resolver: Resolver): Promise<string> {
+  // Ein Satz von vor einer Umbenennung erscheint im neuen Wortlaut (journalRoutes.ts, #490)
+  const description = currentDescription(stored)
   if (!subjectTable || !hasLabel(subjectTable)) return description
   const own = ownImages(rows)
   const direct = rows.find((r) => r.tableName === subjectTable)
@@ -635,7 +638,10 @@ async function candidates(db: Executor, options: JournalQuery, before: number | 
   }
   if (options.q) {
     const like = likeText(options.q)
-    where.push(sql`(g.description LIKE ${like} ESCAPE '\\' OR EXISTS (SELECT 1 FROM change_log l JOIN change_groups m ON m.id = l.group_id WHERE ${sameEntry} AND (l.before LIKE ${like} ESCAPE '\\' OR l.after LIKE ${like} ESCAPE '\\')))`)
+    // Ein älterer Satz, dessen neuer Wortlaut den Suchtext enthält, gilt als Treffer (Nachdurchsicht S-C, #490)
+    const renamed = Object.entries(RENAMED_SENTENCES).filter(([, now]) => now.toLowerCase().includes(options.q?.toLowerCase() ?? '')).map(([old]) => old)
+    const oldSentence = renamed.length > 0 ? sql` OR g.description IN (${sql.join(renamed.map((t) => sql`${t}`), sql`, `)})` : sql``
+    where.push(sql`(g.description LIKE ${like} ESCAPE '\\'${oldSentence} OR EXISTS (SELECT 1 FROM change_log l JOIN change_groups m ON m.id = l.group_id WHERE ${sameEntry} AND (l.before LIKE ${like} ESCAPE '\\' OR l.after LIKE ${like} ESCAPE '\\')))`)
   }
   const rows = await db.all<[number, string, string, string, string, string | null, number, string | null, number | null, string | null]>(
     sql`SELECT g.id, g.at, g.method, g.route, g.description, g.subject_table, g.schema_steps, g.request_id, g.reverted_by, g.barrier
@@ -722,7 +728,7 @@ async function entryView(
     at: g.at,
     method: g.method,
     route: g.route,
-    description: g.description,
+    description: currentDescription(g.description),
     title: await groupTitle(g.description, g.subjectTable, rows, resolver),
     propertyIds: props.ids,
     installationWide: props.installationWide,

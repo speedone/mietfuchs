@@ -166,9 +166,15 @@ reine Funktionen in UTC, ohne Uhr und Datenzugriff. Maßgeblich ist das Land des
 - Bewusst nicht: Land aus der Postleitzahl, Sonntage in Hessen, ob § 193 BGB auf eine Frist
   anzuwenden ist (entscheidet der Aufrufer).
 
-## Belegordner (#170)
+## Belege: Eingang und Ordner (#170, #490)
 
-[client/src/pages/Belege.tsx](../../client/src/pages/Belege.tsx), Logik in
+Die Seite „Belege“ ([client/src/pages/Belege.tsx](../../client/src/pages/Belege.tsx), Oberfläche in client/CLAUDE.md)
+mit dem Ordner ([BelegeOrdner.tsx](../../client/src/pages/BelegeOrdner.tsx), vorher Belegordner) und dem Eingang
+([BelegeEingang.tsx](../../client/src/pages/BelegeEingang.tsx), vorher Schnellerfassung und Posteingang). Server und Tests
+sagen weiter „Posteingang“ für Belege an keiner Position, die Oberfläche „Ohne Position“. `GET /api/ai/status` nennt bei
+einem Fehler den Grund (`reason` wie `reasonOf`); nur `unreachable` lässt den Eingang ohne KI ablegen. Ältere
+Verlaufseinträge mit den Sätzen von vorher zeigt der Verlauf im neuen Wortlaut (`RENAMED_SENTENCES` in journalRoutes.ts,
+angewandt in `groupTitle`); gespeichert bleibt der alte. Logik in
 [client/src/receipts.ts](../../client/src/receipts.ts), Entwurf in
 [docs/superpowers/specs/2026-10-02-belegordner-design.md](../../docs/superpowers/specs/2026-10-02-belegordner-design.md).
 Objekt und Jahr kommen aus der Seitenleiste; nur Objekt und Jahr eines Belegs im Posteingang sind
@@ -527,7 +533,7 @@ Eine Rechnung landet genau einmal in den Kosten, weil **der Server bucht, nicht 
   (Posteingang, Abdeckung, Mappe, Steuer-ZIP, Löschsperre, Belegkopien der Abrechnung über
   `filesOfItem` in client/src/costPeriods.ts, #470). Fehlt die Datei einer Auswertung, fehlt
   sie in der Liste, und `plan`, `book`, `PUT` antworten 404.
-- **Oberfläche**: eine Komponente für Schnellerfassung und Kostenseite
+- **Oberfläche**: eine Komponente für den Eingang der Seite Belege und die Kostenseite
   ([AssessmentReview.tsx](../../client/src/components/AssessmentReview.tsx), Logik in
   [client/src/assessment.ts](../../client/src/assessment.ts), Warteschlange `useEvaluationQueue`).
   „Alle grünen übernehmen“ bucht je Auswertung nacheinander. jsdom-Tests rechnen mit dem echten
@@ -713,7 +719,7 @@ Hinweise: `allocation.not-agreed` (nur Info), `allocation.other-unanswered` (fä
   **Beim Zählerwechsel** nimmt `POST /api/readings` mit `replacement: true` ein `newCalibratedUntil` mit
   (`createReading` in db/repository.ts): das Jahr des neuen Geräts, in einer Transaktion mit der Ablesung an den
   Zähler geschrieben und geprüft wie dort (`guardMeter`); ohne Wechsel 400, `null` wie nicht gesendet, im `PUT` einer
-  Ablesung 400. Gefragt wird nur im Fenster der Seite Zähler, nicht in der Schnellerfassung. Das bisherige Jahr wird ersetzt, nicht
+  Ablesung 400. Gefragt wird nur im Fenster der Seite Zähler, nicht im Eingang der Seite Belege. Das bisherige Jahr wird ersetzt, nicht
   aufbewahrt: Für einen Zeitraum, in dem das ausgebaute Gerät schon abgelaufen war, entfällt dessen Warnung
   (bekannte Grenze; das Jahr je Gerät hieße eine Spalte an der Ablesung).
 

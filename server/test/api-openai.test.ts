@@ -275,6 +275,20 @@ test('Status: ein abgelehnter Schlüssel ergibt eine verständliche Meldung', as
   }, { rules: { key: 'sk-test-1234567890abcdef' } })
 })
 
+// #490: Der Eingang der Seite Belege speichert nur, wenn die KI nicht erreichbar ist. Dafür nennt der Status den Grund
+// wie ein gescheiterter Beleg (#487); ein abgelehnter Schlüssel ist kein „nicht erreichbar“.
+test('Status: ein Fehler nennt seinen Grund (unreachable, key)', async () => {
+  await withEnv({ NKA_AI_URL: 'http://127.0.0.1:9', NKA_AI_PROVIDER: 'ollama' }, async (s) => {
+    const status = await s.api<AiStatus>('/api/ai/status?slot=text')
+    assert.equal(status.ok, false)
+    assert.equal(status.reason, 'unreachable')
+  })
+  await withOpenAi(async (s) => {
+    const status = await s.api<AiStatus>('/api/ai/status?slot=text')
+    assert.equal(status.reason, 'key')
+  }, { rules: { key: 'sk-test-1234567890abcdef' } })
+})
+
 test('Status: für Ollama wie bisher, für Bilder nur mit eigenem Anbieter', async () => {
   await withOllama(async (s) => {
     const status = await s.api<AiStatus>('/api/ai/status?slot=text')

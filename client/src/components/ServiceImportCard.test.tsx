@@ -109,8 +109,8 @@ test('ohne Nutzeinheiten in der Abrechnung gehen nur die Wohnungen an der Heizun
 })
 
 // Fehler mit Ausweg (#487): Die Karte hat kein Formular zum Ausfüllen von Hand; „Von Hand erfassen“ führt deshalb in den
-// Belegordner zum Beleg, und „Erneut versuchen“ nennt nur seinen Namen.
-test('Fehler mit Ausweg: Beleg im Belegordner, „Erneut versuchen“ ohne neue Datei, „Von Hand erfassen“ in den Belegordner', async () => {
+// Ordner der Seite Belege zum Beleg, und „Erneut versuchen“ nennt nur seinen Namen.
+test('Fehler mit Ausweg: Beleg gespeichert, „Erneut versuchen“ ohne neue Datei, „Von Hand erfassen“ auf die Seite Belege', async () => {
   const sent: FormData[] = []
   vi.stubGlobal('fetch', async (_url: string, init?: RequestInit) => {
     if (init?.body instanceof FormData) {

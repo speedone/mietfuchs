@@ -9,7 +9,7 @@ import type { Unit } from '../types'
 import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
 import Kosten from './Kosten'
-import Schnellerfassung from './Schnellerfassung'
+import Belege from './Belege'
 
 const UNITS: Unit[] = [{ id: 'u1', propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true }]
 
@@ -59,11 +59,11 @@ test('Kosten: „Abbrechen“ stoppt die Auswertung', async () => {
   await uploadAndCancel(container)
 })
 
-test('Schnellerfassung: „Abbrechen“ stoppt die Auswertung', async () => {
+test('Eingang: „Abbrechen“ stoppt die Auswertung', async () => {
   const { container } = render(
     <PeriodProvider>
       <PropertyProvider>
-        <Schnellerfassung units={UNITS} settings={null} onNavigate={() => {}} />
+        <Belege view="eingang" units={UNITS} settings={null} onNavigate={() => {}} />
       </PropertyProvider>
     </PeriodProvider>,
   )

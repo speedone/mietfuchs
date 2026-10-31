@@ -90,12 +90,12 @@ export const ROUTE_SENTENCES: Readonly<Record<string, RouteSentence>> = {
   // Der Abbruch entfernt den eben hochgeladenen Beleg wieder (`cancel` in index.ts).
   'POST /api/ai/cancel/:id': s('Auswertung eines Belegs abgebrochen', 'uploads'),
   'POST /api/extract': s('Beleg mit KI ausgewertet', 'uploads'),
-  'POST /api/intake': s('Beleg in der Schnellerfassung ausgewertet', 'uploads'),
+  'POST /api/intake': s('Beleg mit KI ausgewertet', 'uploads'),
   'POST /api/heating-plants/:id/service-statement': s('Messdienstabrechnung hochgeladen', 'uploads'),
   'POST /api/heating-plants/:id/fuel-invoice': s('Lieferantenrechnung hochgeladen', 'uploads'),
   'PUT /api/assessments/:id': s('Auswertung eines Belegs geändert'),
   'POST /api/assessments/:id/book': s('Beleg gebucht', 'cost_items'),
-  'PUT /api/uploads/:file': s('Beleg im Posteingang geändert', 'uploads'),
+  'PUT /api/uploads/:file': s('Objekt oder Jahr eines Belegs geändert', 'uploads'),
   'DELETE /api/uploads/:file': s('Beleg gelöscht', 'uploads'),
   // #318, Schritt 4: Der Satz wird nach dem Rücksprung durch den genauen ersetzt („Rückgängig: …“, „Zurückgekehrt zum
   // Stand vor …“, db/revert.ts).
@@ -130,3 +130,12 @@ export const MULTI_WRITE_ROUTES: Readonly<Record<string, string>> = {
 export function routeSentence(method: string, route: string): RouteSentence | null {
   return ROUTE_SENTENCES[`${method} ${route}`] ?? null
 }
+
+// Sätze, die eine Umbenennung abgelöst hat (#490: Schnellerfassung und Belegordner sind die Seite „Belege“). Gespeichert
+// bleibt der alte Satz; der Verlauf zeigt den neuen (`currentDescription`), damit kein Eintrag eine Seite nennt, die es
+// nicht mehr gibt. Die Suche im Verlauf findet ältere Einträge weiter unter dem alten Wortlaut.
+export const RENAMED_SENTENCES: Readonly<Record<string, string>> = {
+  'Beleg in der Schnellerfassung ausgewertet': 'Beleg mit KI ausgewertet',
+  'Beleg im Posteingang geändert': 'Objekt oder Jahr eines Belegs geändert',
+}
+export const currentDescription = (description: string): string => RENAMED_SENTENCES[description] ?? description

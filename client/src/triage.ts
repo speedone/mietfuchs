@@ -1,4 +1,4 @@
-// Ampel-Triage für die Schnellerfassung. Die Ampel einer Rechnungsposition steht seit der
+// Ampel-Triage für den Eingang der Seite Belege. Die Ampel einer Rechnungsposition steht seit der
 // Belegbuchung (#170) in shared/assessment.ts, weil der Server sie mitliefert, und das Verknüpfen
 // mit einer bestehenden Position plant der Server (server/src/bookingPlan.ts); hier bleiben die
 // Zählerstände.

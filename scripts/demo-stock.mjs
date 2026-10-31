@@ -228,7 +228,7 @@ export async function seed(api, pdf) {
     await read(m, `${YEAR}-12-31`, Math.round((start + used) * 10) / 10)
   }
 
-  // Belege hochladen: mit Objekt und Jahr, wie aus dem Belegordner
+  // Belege hochladen: mit Objekt und Jahr, wie aus dem Eingang der Seite Belege
   const upload = async (name, html, property = P, year = YEAR) => {
     const fd = new FormData()
     fd.append('file', new Blob([await pdf(html)], { type: 'application/pdf' }), name)
@@ -274,7 +274,7 @@ export async function seed(api, pdf) {
   const heizung = await upload(`Erdgas ${YEAR}.pdf`, invoice('Energieversorgung Musterstadt', 'Gasstraße 1 · 12345 Musterstadt', `Jahresabrechnung Erdgas ${YEAR}`, `${YEAR}-12-31`, [{ text: 'Erdgas 41.200 kWh', amount: 4380 }, { text: 'Wartung Gasbrennwertkessel', amount: 420 }]))
   await cost({ year: YEAR, category: 'Heizung und Warmwasser', description: 'Erdgas und Wartung Heizung', vendor: 'Energieversorgung Musterstadt', amountCents: 480000, key: 'meter', meterType: 'waerme', invoiceFile: heizung })
   // Ohne Beleg: aus dem Vorjahr übernommen und noch geschätzt. Die Rechnung dazu wartet im
-  // Posteingang, ihre Auswertung schlägt das Verknüpfen vor.
+  // Eingang, ihre Auswertung schlägt das Verknüpfen vor.
   await cost({ year: YEAR, category: 'Gartenpflege', description: 'Gartenpflege Saison', vendor: '', amountCents: 138000, key: 'area' })
   await cost({ year: YEAR, category: 'Beleuchtung/Allgemeinstrom', description: 'Allgemeinstrom Treppenhaus und Keller', vendor: 'Stadtwerke Musterstadt', amountCents: 41890, key: 'area' })
   await cost({ year: YEAR, category: 'Sonstige Betriebskosten', description: 'Rohrreinigung Küchenstrang EG links', vendor: 'Rohrdienst Beispiel', amountCents: 18500, key: 'direct', directUnitId: egL.id })
@@ -284,7 +284,7 @@ export async function seed(api, pdf) {
   // Kostenformular, die Spalte „verteilt“ und den Block der Zeilen 57 bis 72 sehen.
   await cost({ year: YEAR, category: 'Nicht umlagefähig', description: 'Dachsanierung', vendor: 'Dachdeckerei Beispiel', amountCents: 1200000, key: 'area', spreadYears: 3 })
 
-  // Posteingang: ein Beleg ohne Zuordnung und einer mit offener KI-Auswertung (Gartenpflege)
+  // Eingang der Seite Belege: ein Beleg ohne Position und einer mit offener KI-Auswertung (Gartenpflege)
   await upload(`Strom Abschlag Dezember ${YEAR}.pdf`, invoice('Stadtwerke Musterstadt', 'Am Wasserturm 3 · 12345 Musterstadt', 'Abschlagsrechnung Allgemeinstrom', `${YEAR}-12-01`, [{ text: 'Abschlag Dezember', amount: 35 }]))
   const garten = INVOICES.GARTEN
   const gartenFd = new FormData()
@@ -379,10 +379,12 @@ export function textPdf(html) {
 // ---------- Alles zusammen ----------
 // Wegwerf-Ordner, nachgebautes Ollama, Server und Bestand. `pdf` macht aus einem Rechnungsbogen (HTML) die
 // Bytes eines PDFs: beim Fotografieren gedruckt vom Browser, im Browserlauf mit `textPdf`.
-/** @param {{ pdf: (html: string) => Promise<Uint8Array> | Uint8Array, prefix?: string }} options */
-export async function startDemo({ pdf, prefix = 'mietfuchs-demo-' }) {
+// `sequence`: die Antworten des nachgebauten Ollama der Reihe nach (fake-ollama.mjs); vorgegeben die Gartenpflege, die der
+// Beispielbestand selbst auswertet. Bildschirmfotos geben mehr vor, damit nicht jede Rechnung dieselbe ist.
+/** @param {{ pdf: (html: string) => Promise<Uint8Array> | Uint8Array, prefix?: string, sequence?: string[] }} options */
+export async function startDemo({ pdf, prefix = 'mietfuchs-demo-', sequence = ['GARTEN'] }) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), prefix))
-  const ollama = await startFakeOllama({ sequence: ['GARTEN'] })
+  const ollama = await startFakeOllama({ sequence })
   /** @type {{ base: string, stop: () => Promise<unknown>, problem: () => string | null } | null} */
   let server = null
   const stop = async () => {

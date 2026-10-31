@@ -50,7 +50,7 @@ describe('aiRequest', () => {
     await expect(aiRequest('/api/extract', new FormData())).rejects.toThrow('Ollama ist nicht erreichbar.')
   })
 
-  // Fehler mit Ausweg: Der Beleg liegt schon im Belegordner, die Oberfläche bietet einen neuen Versuch ohne Kopie an.
+  // Fehler mit Ausweg: Der Beleg liegt schon im Ordner der Seite Belege, die Oberfläche bietet einen neuen Versuch ohne Kopie an.
   test('ein Fehler mit gespeichertem Beleg trägt Grund und Namen des Belegs, im Strom wie als JSON', async () => {
     const line = { type: 'error', error: 'Ollama ist unter http://127.0.0.1:11434 nicht erreichbar.', file: 'srv-a.pdf', reason: 'unreachable', kept: true }
     serve(() => streamResponse(ndjson(line)))

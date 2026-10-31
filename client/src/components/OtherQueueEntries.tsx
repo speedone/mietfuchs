@@ -10,7 +10,7 @@ import { plural } from '../../../shared/wording.ts'
 
 type Group = { propertyId: string | undefined; period: string | undefined; count: number }
 
-// Ausgelassen wird, was die Seite schon zeigt (`shown`, etwa eine offene Auswertung als Karte der Schnellerfassung)
+// Ausgelassen wird, was die Seite schon zeigt (`shown`, etwa eine offene Auswertung als Karte des Eingangs)
 // und was zu einem Objekt gehört, das es nicht mehr gibt (`known`).
 export function groupOthers(queue: readonly QueueEntry[], propertyId: string | undefined, period: string | undefined,
   { known, shown }: { known?: readonly string[]; shown?: (entry: QueueEntry) => boolean } = {}): Group[] {

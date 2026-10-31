@@ -7,7 +7,7 @@
 //   text   PDF mit Textebene; den Text liest pdf.js wie im Browser (client/src/pdfIntake.ts)
 //   scan   dasselbe PDF ohne Textebene, dazu die Seiten als Bilder (höchstens vier)
 //   photo  die erste Seite als schiefes, unscharfes Handyfoto (nur einseitige Belege), über
-//          /api/intake wie in der Schnellerfassung, also mit Erkennung der Belegart
+//          /api/intake wie im Eingang der Seite Belege, also mit Erkennung der Belegart
 //
 // Aufruf gegen eine laufende Instanz, deren Modell geprüft werden soll:
 //   node scripts/ai-eval.mjs --url http://127.0.0.1:3001 --ollama http://127.0.0.1:11434 \
@@ -121,7 +121,7 @@ async function pdfText(pdfPath) {
 // ---------- Auswertung über Mietfuchs ----------
 
 // Wie der Browser: als Strom (Accept: application/x-ndjson), damit auch Läufe über fünf Minuten
-// ankommen. Fotos gehen wie in der Schnellerfassung an /api/intake, das zuerst die Belegart
+// ankommen. Fotos gehen wie im Eingang der Seite Belege an /api/intake, das zuerst die Belegart
 // erkennt. Liefert Ergebnis oder Fehler, die erkannte Belegart, die Kennzahlen und die Dauer.
 async function extract(baseUrl, { route = '/api/extract', file, mimeType, fileName, text, pages = [] }) {
   const fd = new FormData()
@@ -158,7 +158,7 @@ function modelTable(result) {
   return [
     `### ${result.model}${result.pageEdge && result.pageEdge !== PAGE_EDGE ? ` (Seitenbilder ${result.pageEdge} px)` : ''}`,
     '',
-    `Speicher im Betrieb: ${gb(result.memoryBytes)}, Download: ${gb(result.sizeBytes)}, erstes Laden: ${secs(result.warmupSeconds)}, Ollama ${result.ollamaVersion ?? 'unbekannt'}. Seitenbilder des Scans: ${result.pageEdge ?? PAGE_EDGE} px an der langen Kante. Fotos laufen wie in der Schnellerfassung über /api/intake.`,
+    `Speicher im Betrieb: ${gb(result.memoryBytes)}, Download: ${gb(result.sizeBytes)}, erstes Laden: ${secs(result.warmupSeconds)}, Ollama ${result.ollamaVersion ?? 'unbekannt'}. Seitenbilder des Scans: ${result.pageEdge ?? PAGE_EDGE} px an der langen Kante. Fotos laufen wie im Eingang der Seite Belege über /api/intake.`,
     '',
     '| Beleg | Fassung | Treffer | Dauer | Eingabe-Token | Anmerkung |',
     '|---|---|---|---|---|---|',
@@ -274,7 +274,7 @@ async function evaluate() {
       const run = { case: testCase.name, label: testCase.label, variant, seconds: answer.seconds, stats: answer.stats }
       if (answer.error) run.error = answer.error
       else {
-        // Die Schnellerfassung muss das Foto zuerst als Rechnung erkennen
+        // Der Eingang muss das Foto zuerst als Rechnung erkennen
         run.score = answer.kind === 'zaehler' ? { points: 0, passed: 0, total: 1, failed: ['als Zählerfoto erkannt'] } : scorerOf(testCase)(testCase.expected, answer.extraction)
         run.extraction = answer.extraction
       }

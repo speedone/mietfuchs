@@ -13,7 +13,7 @@ const item = (id: string, extra: Partial<CostItem> = {}): CostItem => ({
   id, propertyId: 'p1', period: calendarPeriod(2025), category: 'Grundsteuer', description: `Position ${id}`, amountCents: 10000, key: 'area', ...extra,
 })
 
-describe('Belegordner: Karten', () => {
+describe('Ordner: Karten', () => {
   it('fasst die Positionen eines Belegs zusammen, über Objekte und Jahre hinweg', () => {
     const cards = receiptCards(
       [upload('1_wasser.pdf'), upload('2_leer.pdf')],
@@ -33,7 +33,7 @@ describe('Belegordner: Karten', () => {
   })
 })
 
-describe('Belegordner: Register nach Kostenart', () => {
+describe('Ordner: Register nach Kostenart', () => {
   const uploads = [upload('1_gs.pdf'), upload('2_wasser.pdf'), upload('3_alt.pdf'), upload('4_fremd.pdf')]
   const items = [
     item('gs', { invoiceFile: '1_gs.pdf', amountCents: 60000 }),
@@ -79,7 +79,7 @@ describe('Belegordner: Register nach Kostenart', () => {
   })
 })
 
-describe('Belegordner: Suche', () => {
+describe('Ordner: Suche', () => {
   const card = receiptCards(
     [upload('1767225600000_Bescheid_Grundsteuer.pdf', { originalName: 'Bescheid Grundsteuer.pdf' })],
     [item('a', { invoiceFile: '1767225600000_Bescheid_Grundsteuer.pdf', vendor: 'Stadt Musterhausen', description: 'Grundsteuer B', amountCents: 12840 })],
@@ -117,7 +117,7 @@ describe('Belegordner: Suche', () => {
   })
 })
 
-describe('Belegordner: Doppelte', () => {
+describe('Ordner: Doppelte', () => {
   it('erkennt gleichen Inhalt an der Prüfsumme, auch unter anderem Namen und ohne Positionen', () => {
     const cards = receiptCards([upload('1_a.pdf', { sha256: 'x' }), upload('2_kopie.pdf', { sha256: 'x' }), upload('3_b.pdf', { sha256: 'y' })], [])
     const hints = duplicateHints(cards)
@@ -190,8 +190,8 @@ describe('Belegabdeckung', () => {
     expect(coverageCheck(teile.map((c) => ({ ...c, invoiceFile: undefined }))).detail).toMatch(/^2 von 2 Positionen ohne Beleg/)
   })
 
-  // Dieselbe Regel für das Abzeichen am Register und die Liste ohne Beleg im Belegordner (K2)
-  it('ein Teil, dessen Rechnung über einen anderen Teil belegt ist, steht im Belegordner nicht als ohne Beleg', () => {
+  // Dieselbe Regel für das Abzeichen am Register und die Liste ohne Beleg im Ordner der Seite Belege (K2)
+  it('ein Teil, dessen Rechnung über einen anderen Teil belegt ist, steht im Ordner nicht als ohne Beleg', () => {
     const teile = [
       item('t0', { period: calendarPeriod(2024), amountCents: 12000, sourceId: 'q1', invoiceFile: '1_a.pdf' }),
       item('t2', { amountCents: 24500, sourceId: 'q1' }),
@@ -279,12 +279,12 @@ describe('Zählerfotos (Durchsicht)', () => {
 })
 
 describe('Cockpit-Zeile mit Dateiliste (Durchsicht)', () => {
-  it('ein verknüpfter Beleg, dessen Datei fehlt, zählt wie im Belegordner als fehlend und wird benannt', () => {
+  it('ein verknüpfter Beleg, dessen Datei fehlt, zählt wie im Ordner als fehlend und wird benannt', () => {
     const items = [item('a', { invoiceFile: '1_da.pdf' }), item('b', { invoiceFile: '2_weg.pdf' })]
     const check = coverageCheck(items, new Set(['1_da.pdf']))
     expect(check.level).toBe('gelb')
     expect(check.detail).toMatch(/1 von 2 Positionen ohne Beleg/)
-    expect(check.detail).toMatch(/bei 1 fehlt die Datei im Belegordner/)
+    expect(check.detail).toMatch(/bei 1 fehlt die Datei\)/)
     expect(coverageCheck(items, new Set(['1_da.pdf', '2_weg.pdf'])).level).toBe('gruen')
   })
 })
@@ -423,7 +423,7 @@ describe('Belegbuchung (#170): Belege, die über eine verknüpfte Zeile an einer
 
 // #346 Schritt 12 (aus den Durchsichten): Nach einem Wechsel des Abrechnungszeitraums beginnen Rumpf und neuer
 // Zeitraum im selben Jahr. Der Ordner zeigt für das gewählte Objekt den gewählten Zeitraum, nicht beide.
-describe('Belegordner bei Rumpfzeiträumen', () => {
+describe('Ordner bei Rumpfzeiträumen', () => {
   const rumpf = item('rumpf', { period: periodKey('2025-01'), description: 'Grundsteuer Rumpf' })
   const neu = item('neu', { period: periodKey('2025-05'), description: 'Grundsteuer neu' })
   const other = item('anders', { propertyId: 'p2', period: periodKey('2025-01'), description: 'Grundsteuer Ahornweg' })
@@ -441,7 +441,7 @@ describe('Belegordner bei Rumpfzeiträumen', () => {
   })
 })
 
-describe('Belegordner gegliedert (Leistungsprüfung, Befund 4)', () => {
+describe('Ordner gegliedert (Leistungsprüfung, Befund 4)', () => {
   const uploads = [upload('1_gs.pdf'), upload('2_wasser.pdf'), upload('3_alt.pdf'), upload('5_alt2.pdf')]
   const items = [
     item('gs', { invoiceFile: '1_gs.pdf', amountCents: 60000 }),

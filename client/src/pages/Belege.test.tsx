@@ -1,16 +1,19 @@
 // @vitest-environment jsdom
-// Der Belegordner (#170): Filter nach Objekt und Jahr, Register je Kostenart, Suche. Die
+// Der Ordner der Seite Belege (#170): Filter nach Objekt und Jahr, Register je Kostenart, Suche. Die
 // Entscheidungslogik prüft receipts.test.ts; hier geht es um das, was nur die Seite zeigt,
 // vor allem darum, dass die Auswahlfelder den Wert anzeigen, nach dem tatsächlich gefiltert wird.
 import { calendarPeriod, periodContaining, periodKey, periodLabel } from '../../../shared/period.ts'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import type { CostItem, Property, UploadInfo } from '../types'
+import type { AssessmentView, CostItem, Property, Settings, UploadInfo } from '../types'
+import { fakeBooking } from '../testing/fakeBooking'
 import { PeriodProvider } from '../period'
 import { PropertyProvider, useHasOpenForm } from '../property'
+import { UIProvider } from '../components/feedback'
 import { useState } from 'react'
 import type { ReceiptUpload } from '../receipts'
-import Belege, { PLACEMENT_FIRST } from './Belege'
+import Belege from './Belege'
+import { PLACEMENT_FIRST } from '../components/ReceiptParts'
 import { PeriodSelect } from '../components/PeriodSelect'
 
 const PROPS: Property[] = [
@@ -47,6 +50,17 @@ let closed: { closedAt: string } | null = null
 let plantsP1: unknown[] = []
 // Für einzelne Tests: Objekte mit eigenem Rhythmus
 let propsOverride: Property[] | null = null
+// Was die KI über sich sagt (GET /api/ai/status) und die offenen Auswertungen des Objekts
+let aiStatus: { ok: boolean; error?: string; reason?: string } = { ok: true }
+// Eine Auswertung, die nicht antwortet (läuft, bis der Test endet)
+let holdIntake = false
+// Die Antwort einer gescheiterten Auswertung, wo der Test sie vorgibt
+let intakeFailure: Record<string, unknown> | null = null
+// Die Pfade aller GET-Anfragen
+let fetched: string[] = []
+// Gelöschte Belege (DELETE /api/uploads/…)
+let deleted = new Set<string>()
+let openAssessments: () => AssessmentView[] = () => []
 
 // Die Abrechnung des Jahres, nur mit dem, was die Belegmappe liest: die Zeilen der Mieter
 const SETTLEMENT = {
@@ -63,6 +77,12 @@ beforeEach(() => {
   closed = null
   plantsP1 = []
   propsOverride = null
+  aiStatus = { ok: true }
+  holdIntake = false
+  intakeFailure = null
+  fetched = []
+  deleted = new Set()
+  openAssessments = () => []
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const u = new URL(url, 'http://x')
     const method = init?.method ?? 'GET'
@@ -70,15 +90,24 @@ beforeEach(() => {
       const body = init?.body instanceof FormData ? Object.fromEntries([...init.body.entries()].map(([k, v]) => [k, typeof v === 'string' ? v : (v as File).name])) : JSON.parse(String(init?.body ?? '{}'))
       sent.push({ url: u.pathname, method, body })
       if (failAssessmentPut && u.pathname.startsWith('/api/assessments/')) return new Response(JSON.stringify({ error: 'Zeilen sind schon gebucht.' }), { status: 409, headers: { 'content-type': 'application/json' } })
+      // Die KI-Auswertung: hier nur, dass sie ankommt (gescheitert, der Beleg bleibt gespeichert)
+      if (u.pathname === '/api/intake' && holdIntake) return new Promise<Response>(() => {})
+      if (u.pathname === '/api/intake' && intakeFailure) return new Response(JSON.stringify(intakeFailure), { status: 502, headers: { 'content-type': 'application/json' } })
+      if (u.pathname === '/api/intake') return new Response(JSON.stringify({ error: 'Ollama antwortet nicht.', file: String(body.existingFile ?? '4_lose.pdf'), reason: 'unreachable', kept: true }), { status: 502, headers: { 'content-type': 'application/json' } })
+      if (method === 'DELETE' && u.pathname.startsWith('/api/uploads/')) deleted.add(decodeURIComponent(u.pathname.slice('/api/uploads/'.length)))
       const answer = u.pathname === '/api/upload' ? { file: '99_nachgereicht.pdf' } : { ok: true }
       return new Response(JSON.stringify(answer), { status: 200, headers: { 'content-type': 'application/json' } })
     }
+    fetched.push(u.pathname)
     let body: unknown = []
     if (u.pathname === '/api/properties') body = propsOverride ?? PROPS
-    else if (u.pathname === '/api/uploads') body = [up('1_gs.pdf'), up('2_wasser.pdf'), up('3_ahorn.pdf'), up('4_lose.pdf', '1_gs.pdf'), ...extraUploads]
+    else if (u.pathname === '/api/uploads') body = [up('1_gs.pdf'), up('2_wasser.pdf'), up('3_ahorn.pdf'), up('4_lose.pdf', '1_gs.pdf'), ...extraUploads].filter((x) => !deleted.has(x.file))
     else if (u.pathname === '/api/costItems') body = [...(ITEMS[u.searchParams.get('property') ?? 'p1'] ?? []), ...(u.searchParams.get('property') === 'p2' ? [] : extraItems)]
     else if (u.pathname === '/api/heating-plants') body = u.searchParams.get('property') === 'p2' ? [] : plantsP1
     else if (u.pathname.startsWith('/api/settlement/')) body = closed ? { ...SETTLEMENT, closed } : SETTLEMENT
+    else if (u.pathname === '/api/ai/status') body = aiStatus
+    else if (u.pathname === '/api/assessments') body = openAssessments()
+    else if (u.pathname.startsWith('/uploads/')) return new Response(new Blob(['%PDF'], { type: 'application/pdf' }), { status: 200 })
     return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
   })
 })
@@ -88,14 +117,26 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-const renderPage = () =>
+// Die Seite Belege (#490) mit beiden Ansichten; ohne Angabe die Ansicht „Ordner“, deren Tests hier stehen. Was früher
+// im Posteingang des Ordners stand, steht im Eingang (`view: 'eingang'`).
+const BASE = { units: [], settings: null, onNavigate: () => {}, view: 'ordner' as const }
+
+const renderPage = (view: 'eingang' | 'ordner' = 'ordner') =>
   render(
     <PeriodProvider>
       <PropertyProvider>
-        <Belege renderThumb={() => Promise.resolve('data:image/gif;base64,R0lGODlhAQABAAAAACw=')} />
+        <Belege {...BASE} view={view} renderThumb={() => Promise.resolve('data:image/gif;base64,R0lGODlhAQABAAAAACw=')} />
       </PropertyProvider>
     </PeriodProvider>,
   )
+
+const renderInbox = () => renderPage('eingang')
+
+// Eine offene Auswertung des ersten Objekts für den Eingang
+const assessmentOf = (id: string, file: string): AssessmentView => ({
+  ...fakeBooking({ items: [], units: [], propertyId: 'p1' }).evaluate(file, { vendor: 'Stadt', invoiceDate: `${YEAR}-03-01`, positions: [{ description: 'Grundsteuer', category: 'Grundsteuer', amountEur: 100 }] } as never, { year: YEAR }),
+  id, propertyId: 'p1',
+})
 
 const context = () => screen.getByTestId('page-context').textContent
 
@@ -146,11 +187,13 @@ test('„aller Jahre“ zeigt auch die Positionen eines früheren Jahres', async
 })
 
 // Durchsicht zu Schritt 8, K3: Der Posteingang sagt, wo die übrigen Belege zu sehen sind.
-test('Posteingang: Belege eines anderen Objekts verweisen auf die Häkchen', async () => {
+test('Eingang: Belege ohne Position eines anderen Objekts nennt eine Zeile mit dem Sprung dorthin', async () => {
   extraUploads = [{ ...up('9_anderswo.pdf'), propertyId: 'p2', year: YEAR }]
-  renderPage()
-  await screen.findByText('Wasser/Abwasser')
-  expect(screen.getByText(/1 weitere ist einem anderen Objekt oder Jahr zugedacht; Sie sehen ihn mit „Belege aller Objekte zeigen“ oder „Belege aller Jahre zeigen“\./)).toBeTruthy()
+  renderInbox()
+  const line = await screen.findByRole('group', { name: 'Belege ohne Position in anderen Objekten und Jahren' })
+  expect(within(line).getByRole('button', { name: '1 Beleg bei „Ahornweg“ →' })).toBeTruthy()
+  // Der Beleg selbst steht im Eingang dieses Objekts nicht
+  expect(document.querySelector('[data-view="eingang"] li[data-file="9_anderswo.pdf"]')).toBeNull()
 })
 
 test('die Suche nach einem Betrag findet die Position ohne Beleg', async () => {
@@ -161,10 +204,12 @@ test('die Suche nach einem Betrag findet die Position ohne Beleg', async () => {
   expect(screen.getByText(/Abwasser · 260,00 €/)).toBeTruthy()
 })
 
-test('ein inhaltsgleicher Beleg wird als doppelt benannt', async () => {
+test('ein inhaltsgleicher Beleg wird als doppelt benannt, im Ordner wie im Eingang', async () => {
   renderPage()
   await screen.findByText('Wasser/Abwasser')
-  expect(screen.getAllByText(/gleicher Inhalt wie/).length).toBe(2)
+  const hint = (view: string, file: string) => document.querySelector(`[data-view="${view}"] li[data-file="${file}"] .receipt-hint`)?.textContent
+  await waitFor(() => expect(hint('eingang', '4_lose.pdf')).toMatch(/gleicher Inhalt wie/))
+  expect(hint('ordner', '1_gs.pdf')).toMatch(/gleicher Inhalt wie/)
 })
 
 test('die Belegabdeckung nennt den Anteil der Kosten mit Beleg', async () => {
@@ -210,21 +255,87 @@ test('„nachreichen“: „Verwerfen“ nimmt die Wahl zurück, ohne zu senden 
   expect(sent).toEqual([])
 })
 
-test('Posteingang: mehrere Belege auf einmal hochladen, mit Objekt und Jahr der Auswahl', async () => {
-  renderPage()
-  await screen.findByText('Wasser/Abwasser')
-  const input = screen.getByLabelText('Belege in den Posteingang hochladen') as HTMLInputElement
+test('Eingang: „Nur ablegen, ohne Auswertung“ speichert mehrere Belege, mit Objekt und Jahr der Auswahl', async () => {
+  renderInbox()
+  await screen.findByLabelText('Jahr für lose.pdf')
+  const input = screen.getByLabelText('Belege nur ablegen, ohne Auswertung') as HTMLInputElement
   expect(input.multiple).toBe(true)
-  fireEvent.change(input, { target: { files: [new File(['%PDF'], 'eins.pdf', { type: 'application/pdf' }), new File(['jpg'], 'zwei.jpg', { type: 'image/jpeg' })] } })
+  fireEvent.change(input, { target: { files: [new File(['%PDF'], 'eins.pdf', { type: 'application/pdf' }), new File(['jpg'], 'zwei.jpg', { type: 'image/jpeg' }), new File(['x'], 'drei.docx', { type: 'application/msword' })] } })
   await waitFor(() => expect(sent.filter((r) => r.url === '/api/upload').length).toBe(2))
   expect(sent.map((r) => r.body)).toEqual([
     { file: 'eins.pdf', propertyId: 'p1', year: String(YEAR) },
     { file: 'zwei.jpg', propertyId: 'p1', year: String(YEAR) },
   ])
+  // Was weder PDF noch Bild ist, fällt nicht still weg (#490: überall derselbe Satz)
+  expect(screen.getByText(/Nur PDFs und Bilder lassen sich als Beleg hochladen/)).toBeTruthy()
+})
+
+// Regel 5 (#490): Sagt die KI, dass sie nicht erreichbar ist, speichert die Ablage nur; jeder Beleg steht danach unter
+// „Ohne Position“, und „Per KI auswerten“ steht weiter an jedem Beleg.
+// Die KI wird erst gefragt, wenn die Einstellungen da sind (ein Dienst im Internet nie); hier ein lokales Ollama.
+const LOCAL = { aiExternal: { text: false, images: false } } as unknown as Settings
+const renderInboxWith = (settings: Settings) => render(
+  <PeriodProvider>
+    <PropertyProvider>
+      <Belege {...BASE} view="eingang" settings={settings} renderThumb={() => Promise.resolve('')} />
+    </PropertyProvider>
+  </PeriodProvider>,
+)
+const dropInto = (container: HTMLElement, files: File[]) =>
+  fireEvent.change(container.querySelector('input[aria-label="Belege und Zählerfotos auswählen"]') as HTMLInputElement, { target: { files } })
+
+test('Eingang ohne KI: die Ablage speichert nur, „Erneut prüfen“ fragt die KI noch einmal', async () => {
+  aiStatus = { ok: false, error: 'nicht erreichbar', reason: 'unreachable' }
+  const { container } = renderInboxWith(LOCAL)
+  expect(await screen.findByText(/Die KI ist gerade nicht erreichbar\. Belege werden nur gespeichert/)).toBeTruthy()
+  expect(screen.queryByLabelText('Belege nur ablegen, ohne Auswertung')).toBeNull()
+  dropInto(container, [new File(['%PDF'], 'eins.pdf', { type: 'application/pdf' })])
+  await waitFor(() => expect(sent).toEqual([{ url: '/api/upload', method: 'POST', body: { file: 'eins.pdf', propertyId: 'p1', year: String(YEAR) } }]))
+  expect(screen.getByRole('button', { name: 'lose.pdf per KI auswerten' })).toBeTruthy()
+  // Läuft die KI wieder, genügt „Erneut prüfen“
+  aiStatus = { ok: true }
+  fireEvent.click(screen.getByRole('button', { name: 'Erneut prüfen' }))
+  await waitFor(() => expect(screen.queryByText(/Die KI ist gerade nicht erreichbar/)).toBeNull())
+  expect(screen.getByLabelText('Belege nur ablegen, ohne Auswertung')).toBeTruthy()
+})
+
+// Durchsicht S2: Nur „nicht erreichbar“ heißt ohne KI. Eine Zeitüberschreitung beim Fragen ist keiner; die Ablage wertet aus.
+test('Eingang: eine Zeitüberschreitung beim Fragen der KI ist kein „ohne KI“, die Ablage wertet aus', async () => {
+  aiStatus = { ok: false, error: 'Zeitüberschreitung', reason: 'timeout' }
+  const { container } = renderInboxWith(LOCAL)
+  await screen.findByLabelText('Jahr für lose.pdf')
+  await waitFor(() => expect(fetched).toContain('/api/ai/status'))
+  expect(screen.queryByText(/Die KI ist gerade nicht erreichbar/)).toBeNull()
+  dropInto(container, [new File(['jpg'], 'zwei.jpg', { type: 'image/jpeg' })])
+  await waitFor(() => expect(sent.some((r) => r.url === '/api/intake')).toBe(true))
+  expect(sent.some((r) => r.url === '/api/upload')).toBe(false)
+})
+
+// Durchsicht S2: Während eine Auswertung läuft, ist die KI offensichtlich erreichbar; kein „nicht erreichbar“ daneben.
+test('Eingang: solange eine Auswertung läuft, steht kein „nicht erreichbar“ da', async () => {
+  aiStatus = { ok: false, error: 'nicht erreichbar', reason: 'unreachable' }
+  holdIntake = true
+  extraUploads = [{ ...up('7_foto.jpg'), mimeType: 'image/jpeg' }]
+  renderInboxWith(LOCAL)
+  expect(await screen.findByText(/Die KI ist gerade nicht erreichbar/)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'foto.jpg per KI auswerten' }))
+  await waitFor(() => expect(sent.some((r) => r.url === '/api/intake')).toBe(true))
+  await waitFor(() => expect(screen.queryByText(/Die KI ist gerade nicht erreichbar/)).toBeNull())
+})
+
+// Ohne Einstellungen (noch nicht geladen) wird die KI nicht gefragt
+test('Eingang: vor den Einstellungen und bei einem Dienst im Internet fragt die Seite die KI nicht', async () => {
+  renderInbox()
+  await screen.findByLabelText('Jahr für lose.pdf')
+  expect(fetched).not.toContain('/api/ai/status')
+  cleanup()
+  renderInboxWith({ aiExternal: { text: true, images: false } } as unknown as Settings)
+  await screen.findByLabelText('Jahr für lose.pdf')
+  expect(fetched).not.toContain('/api/ai/status')
 })
 
 test('Posteingang: Objekt und Jahr eines Belegs zeigen den gespeicherten Wert und lassen sich ändern', async () => {
-  renderPage()
+  renderInbox()
   await screen.findByText('Wasser/Abwasser')
   const objekt = screen.getByLabelText('Objekt für lose.pdf') as HTMLSelectElement
   const jahr = screen.getByLabelText('Jahr für lose.pdf') as HTMLSelectElement
@@ -243,7 +354,7 @@ test('Posteingang: Objekt und Jahr eines Belegs zeigen den gespeicherten Wert un
 })
 
 test('Posteingang: „Verwerfen“ stellt Objekt und Jahr her, ohne zu senden (#309)', async () => {
-  renderPage()
+  renderInbox()
   await screen.findByText('Wasser/Abwasser')
   const jahr = screen.getByLabelText('Jahr für lose.pdf') as HTMLSelectElement
   fireEvent.change(jahr, { target: { value: String(YEAR) } })
@@ -260,7 +371,7 @@ test('Posteingang: scheitert das Speichern, steht der Grund am Knopf und der Ent
     }
     return inner(url, init)
   })
-  renderPage()
+  renderInbox()
   await screen.findByText('Wasser/Abwasser')
   const jahr = screen.getByLabelText('Jahr für lose.pdf') as HTMLSelectElement
   fireEvent.change(jahr, { target: { value: String(YEAR) } })
@@ -271,17 +382,18 @@ test('Posteingang: scheitert das Speichern, steht der Grund am Knopf und der Ent
   expect(jahr.value).toBe(String(YEAR))
 })
 
-test('Posteingang: einer Position zuordnen und per KI auswerten', async () => {
-  const onEvaluate = vi.fn()
+test('Eingang: einer Position zuordnen, und „Per KI auswerten“ am Beleg wertet ihn aus, ohne die Seite zu wechseln', async () => {
+  // Ein Foto: ein PDF liest der Browser vor der Auswertung mit pdf.js, das in jsdom nicht läuft
+  extraUploads = [{ ...up('7_foto.jpg'), mimeType: 'image/jpeg' }]
+  const onNavigate = vi.fn()
   render(
     <PeriodProvider>
       <PropertyProvider>
-        <Belege renderThumb={() => Promise.resolve('')} onEvaluate={onEvaluate} />
+        <Belege {...BASE} view="eingang" onNavigate={onNavigate} renderThumb={() => Promise.resolve('')} />
       </PropertyProvider>
     </PeriodProvider>,
   )
-  await screen.findByText('Wasser/Abwasser')
-  const zuordnen = screen.getByLabelText('lose.pdf einer Position zuordnen') as HTMLSelectElement
+  const zuordnen = await screen.findByLabelText('lose.pdf einer Position zuordnen') as HTMLSelectElement
   expect(zuordnen.value).toBe('')
   // Nur Positionen ohne Beleg stehen zur Wahl
   expect([...zuordnen.options].map((o) => o.value)).toEqual(['', 'w2'])
@@ -289,17 +401,19 @@ test('Posteingang: einer Position zuordnen und per KI auswerten', async () => {
   expect(sent).toEqual([])
   fireEvent.click(screen.getByRole('button', { name: 'Speichern (Position für lose.pdf)' }))
   await waitFor(() => expect(sent).toEqual([{ url: '/api/costItems/w2', method: 'PUT', body: { invoiceFile: '4_lose.pdf' } }]))
-  fireEvent.click(screen.getByRole('button', { name: 'lose.pdf per KI auswerten' }))
-  expect(onEvaluate).toHaveBeenCalledWith([expect.objectContaining({ file: '4_lose.pdf' })])
+  fireEvent.click(await screen.findByRole('button', { name: 'foto.jpg per KI auswerten' }))
+  await waitFor(() => expect(sent.some((r) => r.url === '/api/intake')).toBe(true))
+  expect(sent.find((r) => r.url === '/api/intake')?.body).toMatchObject({ existingFile: '7_foto.jpg', propertyId: 'p1', year: String(YEAR) })
+  expect(onNavigate).not.toHaveBeenCalled()
 })
 
-// Fehler mit Ausweg (#487): „Von Hand erfassen“ springt aus Schnellerfassung oder Kosten zum gespeicherten Beleg.
+// Fehler mit Ausweg (#487): „Von Hand erfassen“ springt aus Eingang oder Kosten zum gespeicherten Beleg.
 test('Posteingang: ein angesprungener Beleg bekommt den Fokus, die Seite meldet es einmal', async () => {
   const onFocusDone = vi.fn()
   render(
     <PeriodProvider>
       <PropertyProvider>
-        <Belege renderThumb={() => Promise.resolve('')} focusFile="4_lose.pdf" onFocusDone={onFocusDone} />
+        <Belege {...BASE} view="eingang" renderThumb={() => Promise.resolve('')} focusFile="4_lose.pdf" onFocusDone={onFocusDone} />
       </PropertyProvider>
     </PeriodProvider>,
   )
@@ -317,7 +431,7 @@ test('Posteingang: ein angesprungenes Zählerfoto öffnet die zugeklappten „Z�
   render(
     <PeriodProvider>
       <PropertyProvider>
-        <Belege renderThumb={() => Promise.resolve('')} focusFile="9_zaehler.jpg" onFocusDone={onFocusDone} />
+        <Belege {...BASE} renderThumb={() => Promise.resolve('')} focusFile="9_zaehler.jpg" onFocusDone={onFocusDone} />
       </PropertyProvider>
     </PeriodProvider>,
   )
@@ -339,7 +453,7 @@ test('Mappen: die Belegmappe für Mieter folgt der Abrechnung und nennt, was feh
   render(
     <PeriodProvider>
       <PropertyProvider>
-        <Belege renderThumb={() => Promise.resolve('')} makeTenantFolder={make} />
+        <Belege {...BASE} renderThumb={() => Promise.resolve('')} makeTenantFolder={make} />
       </PropertyProvider>
     </PeriodProvider>,
   )
@@ -359,7 +473,7 @@ test('Mappen: die Belegmappe für Mieter folgt der Abrechnung und nennt, was feh
 test('Posteingang: passende Kostenart oben, nach dem Zuordnen „Betrag prüfen“', async () => {
   extraUploads = [up('5_Grundsteuerbescheid.pdf')]
   extraItems = [{ id: 'gs2', propertyId: 'p1', period: calendarPeriod(YEAR), category: 'Grundsteuer', description: `Grundsteuer ${YEAR} (Nachtrag)`, amountCents: 61000, key: 'area' }]
-  renderPage()
+  renderInbox()
   await screen.findByText('Wasser/Abwasser')
   const zuordnen = await screen.findByLabelText('Grundsteuerbescheid.pdf einer Position zuordnen') as HTMLSelectElement
   const groups = [...zuordnen.querySelectorAll('optgroup')]
@@ -395,7 +509,7 @@ const renderWithOpen = (onOpenItem: (c: CostItem) => void) =>
   render(
     <PeriodProvider>
       <PropertyProvider>
-        <Belege renderThumb={() => Promise.resolve('')} onOpenItem={onOpenItem} />
+        <Belege {...BASE} view="eingang" renderThumb={() => Promise.resolve('')} onOpenItem={onOpenItem} />
       </PropertyProvider>
     </PeriodProvider>,
   )
@@ -462,47 +576,37 @@ test('„Betrag prüfen“ nennt den Lohnanteil der Position und führt ins Form
   expect(onOpenItem).toHaveBeenCalledWith(expect.objectContaining({ id: 'gp' }))
 })
 
-test('Posteingang (#170): ein Beleg mit offener Auswertung heißt „Weiter prüfen“ und führt zur Prüfung', async () => {
+test('Eingang (#490): ein Beleg mit offener Auswertung steht unter „Zu prüfen“, nicht noch einmal unter „Ohne Position“', async () => {
   extraUploads = [{ ...up('5_offen.pdf'), bookedItemIds: [], assessment: { id: 'a5', propertyId: 'p1', open: true } }]
-  const onContinue = vi.fn()
-  render(
-    <PeriodProvider>
-      <PropertyProvider>
-        <Belege renderThumb={() => Promise.resolve('data:image/gif;base64,R0lGODlhAQABAAAAACw=')} onEvaluate={() => {}} onContinue={onContinue} />
-      </PropertyProvider>
-    </PeriodProvider>,
-  )
-  fireEvent.click(await screen.findByRole('button', { name: 'offen.pdf weiter prüfen' }))
-  expect(onContinue).toHaveBeenCalledWith(expect.objectContaining({ file: '5_offen.pdf' }))
+  openAssessments = () => [assessmentOf('a5', '5_offen.pdf')]
+  renderInbox()
+  const group = await screen.findByRole('region', { name: 'Zu prüfen' })
+  expect(group.querySelector('[data-assessment="a5"]')).not.toBeNull()
+  await screen.findByLabelText('Jahr für lose.pdf')
+  expect(document.querySelector('[data-group="ohne"] li[data-file="5_offen.pdf"]')).toBeNull()
+  // Die Karte des Belegs steht zugeklappt an der Auswertung
+  fireEvent.click(within(group).getByRole('button', { name: 'Beleg einordnen oder löschen' }))
+  expect(document.querySelectorAll('[data-view="eingang"] li[data-file="5_offen.pdf"]')).toHaveLength(1)
   expect(screen.queryByRole('button', { name: 'offen.pdf per KI auswerten' })).toBeNull()
 })
 
-const renderContinue = (onContinue: (u: ReceiptUpload) => void) => render(
-  <PeriodProvider>
-    <PropertyProvider>
-      <Belege renderThumb={() => Promise.resolve('data:image/gif;base64,R0lGODlhAQABAAAAACw=')} onEvaluate={() => {}} onContinue={onContinue} />
-    </PropertyProvider>
-  </PeriodProvider>,
-)
-
-test('Weiter prüfen (#170): eine Auswertung ohne Objekt bekommt zuerst das gewählte Objekt', async () => {
+test('Weiter prüfen (#170, #490): eine Auswertung ohne Objekt bekommt das gewählte, dann springt der Eingang zu ihr und hebt sie hervor', async () => {
   extraUploads = [{ ...up('6_ohne.pdf'), bookedItemIds: [], assessment: { id: 'a6', propertyId: null, open: true } }]
-  const onContinue = vi.fn()
-  renderContinue(onContinue)
+  openAssessments = () => (sent.some((x) => x.url === '/api/assessments/a6') ? [assessmentOf('a6', '6_ohne.pdf')] : [])
+  renderInbox()
   fireEvent.click(await screen.findByRole('button', { name: 'ohne.pdf weiter prüfen' }))
-  await waitFor(() => expect(onContinue).toHaveBeenCalled())
+  await waitFor(() => expect(document.activeElement?.getAttribute('data-assessment')).toBe('a6'))
   expect(sent.filter((x) => x.url === '/api/assessments/a6')).toEqual([{ url: '/api/assessments/a6', method: 'PUT', body: { propertyId: 'p1' } }])
-  expect(onContinue).toHaveBeenCalledWith(expect.objectContaining({ file: '6_ohne.pdf', assessment: expect.objectContaining({ propertyId: 'p1' }) }))
+  expect(document.activeElement?.className).toMatch(/\bbg-accent-soft\b/)
 })
 
-test('Weiter prüfen (#170): scheitert das Zuordnen, steht eine Meldung da und die Seite wechselt nicht', async () => {
+test('Weiter prüfen (#170): scheitert das Zuordnen, steht eine Meldung da und nichts springt', async () => {
   failAssessmentPut = true
   extraUploads = [{ ...up('6_ohne.pdf'), bookedItemIds: [], assessment: { id: 'a6', propertyId: null, open: true } }]
-  const onContinue = vi.fn()
-  renderContinue(onContinue)
+  renderInbox()
   fireEvent.click(await screen.findByRole('button', { name: 'ohne.pdf weiter prüfen' }))
   expect(await screen.findByText(/Zeilen sind schon gebucht/)).toBeTruthy()
-  expect(onContinue).not.toHaveBeenCalled()
+  expect(document.querySelector('[data-assessment]')).toBeNull()
 })
 
 // Integrationsdurchsicht vor 0.10 (N1): „Betrag prüfen“ ändert eine Position. Liegt sie in einem
@@ -510,7 +614,7 @@ test('Weiter prüfen (#170): scheitert das Zuordnen, steht eine Meldung da und d
 test('„Betrag prüfen“ in einem Jahr mit abgeschlossener Abrechnung nennt die Abweichung', async () => {
   extraItems = [{ id: 'gs2', propertyId: 'p1', period: calendarPeriod(YEAR), category: 'Grundsteuer', description: `Grundsteuer ${YEAR} (Nachtrag)`, amountCents: 61000, key: 'area' }]
   closed = { closedAt: `${YEAR + 1}-03-01T00:00:00.000Z` }
-  renderPage()
+  renderInbox()
   await screen.findByText('Wasser/Abwasser')
   fireEvent.change(screen.getByLabelText('lose.pdf einer Position zuordnen'), { target: { value: 'gs2' } })
   fireEvent.click(screen.getByRole('button', { name: 'Speichern (Position für lose.pdf)' }))
@@ -520,7 +624,7 @@ test('„Betrag prüfen“ in einem Jahr mit abgeschlossener Abrechnung nennt di
 
 test('„Betrag prüfen“ in einem offenen Jahr: kein Satz zur abgeschlossenen Abrechnung', async () => {
   extraItems = [{ id: 'gs2', propertyId: 'p1', period: calendarPeriod(YEAR), category: 'Grundsteuer', description: `Grundsteuer ${YEAR} (Nachtrag)`, amountCents: 61000, key: 'area' }]
-  renderPage()
+  renderInbox()
   await screen.findByText('Wasser/Abwasser')
   fireEvent.change(screen.getByLabelText('lose.pdf einer Position zuordnen'), { target: { value: 'gs2' } })
   fireEvent.click(screen.getByRole('button', { name: 'Speichern (Position für lose.pdf)' }))
@@ -541,7 +645,7 @@ test('Posteingang: ein ungespeichertes Jahr zählt als offenes Formular (#309)',
   render(
     <PeriodProvider>
       <PropertyProvider>
-        <Belege renderThumb={() => Promise.resolve('')} />
+        <Belege {...BASE} view="eingang" renderThumb={() => Promise.resolve('')} />
         <Offen />
       </PropertyProvider>
     </PeriodProvider>,
@@ -562,7 +666,7 @@ test('Posteingang: ein ungespeichertes Jahr zählt als offenes Formular (#309)',
 // gewählte Position, die danach nicht mehr zur Wahl steht, darf „Speichern“ nicht trotzdem anhängen.
 test('Posteingang: fällt die gewählte Position aus der Liste, ist die Wahl verworfen (#309)', async () => {
   extraItems = [{ id: 'alt', propertyId: 'p1', period: calendarPeriod(YEAR - 1), category: 'Wasser/Abwasser', description: 'Abwasser alt', amountCents: 25000, key: 'area' }]
-  renderPage()
+  renderInbox()
   await screen.findByText('Wasser/Abwasser')
   const jahr = screen.getByLabelText('Jahr für lose.pdf') as HTMLSelectElement
   fireEvent.change(jahr, { target: { value: String(YEAR) } })
@@ -577,21 +681,14 @@ test('Posteingang: fällt die gewählte Position aus der Liste, ist die Wahl ver
 
 // Durchsicht zu #309, SOLLTE 3: „Per KI auswerten“ nähme Objekt und Jahr, wie sie gespeichert sind.
 test('Posteingang: mit ungespeichertem Objekt oder Jahr ist „Per KI auswerten“ gesperrt, mit Grund (#309)', async () => {
-  const onEvaluate = vi.fn()
-  render(
-    <PeriodProvider>
-      <PropertyProvider>
-        <Belege renderThumb={() => Promise.resolve('')} onEvaluate={onEvaluate} />
-      </PropertyProvider>
-    </PeriodProvider>,
-  )
+  renderInbox()
   await screen.findByText('Wasser/Abwasser')
   fireEvent.change(screen.getByLabelText('Objekt für lose.pdf'), { target: { value: 'p2' } })
   const knopf = screen.getByRole('button', { name: 'lose.pdf per KI auswerten' }) as HTMLButtonElement
   expect(knopf.disabled).toBe(true)
   expect(screen.getByText(PLACEMENT_FIRST)).toBeTruthy()
   fireEvent.click(knopf)
-  expect(onEvaluate).not.toHaveBeenCalled()
+  expect(sent.filter((r) => r.url === '/api/intake')).toEqual([])
   fireEvent.click(screen.getByRole('button', { name: 'Verwerfen (Objekt und Jahr für lose.pdf)' }))
   expect(knopf.disabled).toBe(false)
   expect(screen.queryByText(PLACEMENT_FIRST)).toBeNull()
@@ -603,7 +700,7 @@ test('„Betrag prüfen“ zählt als offenes Formular, „Stimmt so“ nimmt di
   render(
     <PeriodProvider>
       <PropertyProvider>
-        <Belege renderThumb={() => Promise.resolve('')} />
+        <Belege {...BASE} view="eingang" renderThumb={() => Promise.resolve('')} />
         <Offen />
       </PropertyProvider>
     </PeriodProvider>,
@@ -627,7 +724,7 @@ test('„Betrag prüfen“ zählt als offenes Formular, „Stimmt so“ nimmt di
 // Handy, wo er zuerst steht), misst die Bedienprobe „beleg-zuordnen“ im Browserlauf; hier nur die Reihenfolge.
 test('Posteingang: Knöpfe in Höhe der Auswahl, „Beleg nachreichen“ steht hinter der Auswahl', async () => {
   extraUploads = [{ ...up('7_abwasser.pdf'), bookedItemIds: [], assessment: { id: 'a7', propertyId: null, open: true } }]
-  renderContinue(() => {})
+  renderInbox()
   const weiter = await screen.findByRole('button', { name: 'abwasser.pdf weiter prüfen' })
   expect(weiter.classList.contains('small')).toBe(false)
   const picker = await screen.findByLabelText('Vorhandenen Beleg für Abwasser zuordnen')
@@ -637,7 +734,7 @@ test('Posteingang: Knöpfe in Höhe der Auswahl, „Beleg nachreichen“ steht h
   expect(picker.compareDocumentPosition(upload) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 })
 
-// Durchsicht des Belegordners nach Zeitraum (#346 Schritt 12): Nach einem Wechsel auf Mai bis April beginnen Rumpf
+// Durchsicht des Ordners nach Zeitraum (#346 Schritt 12): Nach einem Wechsel auf Mai bis April beginnen Rumpf
 // (Januar bis April 2025) und neuer Zeitraum im selben Jahr. Register, Satz und Belegabdeckung folgen dem Zeitraum der
 // Seitenleiste; vorher stand „die 2025 beginnen“ da, gezeigt wurde aber nur einer von beiden.
 test('Rumpfzeitraum: Register, Satz und Belegabdeckung zeigen den gewählten Zeitraum', async () => {
@@ -650,7 +747,7 @@ test('Rumpfzeitraum: Register, Satz und Belegabdeckung zeigen den gewählten Zei
     <PeriodProvider>
       <PropertyProvider>
         <PeriodSelect />
-        <Belege renderThumb={() => Promise.resolve('data:image/gif;base64,R0lGODlhAQABAAAAACw=')} />
+        <Belege {...BASE} renderThumb={() => Promise.resolve('data:image/gif;base64,R0lGODlhAQABAAAAACw=')} />
       </PropertyProvider>
     </PeriodProvider>,
   )
@@ -704,7 +801,7 @@ test('Vorschaubilder: gerendert wird erst, was in die Nähe des sichtbaren Berei
   render(
     <PeriodProvider>
       <PropertyProvider>
-        <Belege renderThumb={renderThumb} />
+        <Belege {...BASE} renderThumb={renderThumb} />
       </PropertyProvider>
     </PeriodProvider>,
   )
@@ -734,7 +831,7 @@ test('Vorschaubilder: ohne IntersectionObserver (älterer Browser) wird gleich a
   render(
     <PeriodProvider>
       <PropertyProvider>
-        <Belege renderThumb={(file) => { asked.push(file); return Promise.resolve('data:image/gif;base64,R0lGODlhAQABAAAAACw=') }} />
+        <Belege {...BASE} renderThumb={(file) => { asked.push(file); return Promise.resolve('data:image/gif;base64,R0lGODlhAQABAAAAACw=') }} />
       </PropertyProvider>
     </PeriodProvider>,
   )
@@ -767,22 +864,17 @@ test('„alle Jahre“: je Jahr ein Abschnitt mit Anzahl, aufgeklappt nur das ge
   await waitFor(() => expect([...container.querySelectorAll<HTMLDetailsElement>('details[data-year-section]')].map((d) => d.open)).toEqual([true]))
 })
 
-test('Posteingang: die neuesten 20, darunter „Ältere anzeigen (N)“', async () => {
+test('Eingang: unter „Ohne Position“ die neuesten 20, darunter „Ältere anzeigen (N)“', async () => {
   // 30 weitere lose Belege, je später hochgeladen, je weiter oben; dazu der eine aus dem Bestand (4_lose.pdf, der älteste)
   extraUploads = Array.from({ length: 30 }, (_, i) => ({ ...up(`${100 + i}_lose${i}.pdf`), uploadedAt: `2026-02-${String(i + 1).padStart(2, '0')}T10:00:00.000Z` }))
-  const { container } = renderPage()
-  await screen.findByText('📥 Posteingang (31)')
-  const inbox = () => container.querySelector('.receipt-inbox') as HTMLElement
-  const cards = () => [...inbox().querySelectorAll('.receipt-card')]
+  renderInbox()
+  const inbox = await screen.findByRole('region', { name: 'Ohne Position (31)' })
+  const cards = () => [...inbox.querySelectorAll('.receipt-card')]
   expect(cards()).toHaveLength(20)
   expect(within(cards()[0] as HTMLElement).getAllByText('lose29.pdf').length).toBeGreaterThan(0)
-  fireEvent.click(within(inbox()).getByRole('button', { name: 'Ältere anzeigen (11)' }))
+  fireEvent.click(within(inbox).getByRole('button', { name: 'Ältere anzeigen (11)' }))
   expect(cards()).toHaveLength(31)
-  expect(within(inbox()).queryByRole('button', { name: /Ältere anzeigen/ })).toBeNull()
-  // Eine Suche beginnt wieder bei den neuesten 20
-  fireEvent.change(screen.getByRole('searchbox', { name: 'Suche' }), { target: { value: 'lose' } })
-  await waitFor(() => expect(cards()).toHaveLength(20))
-  expect(within(inbox()).getByRole('button', { name: 'Ältere anzeigen (11)' })).toBeTruthy()
+  expect(within(inbox).queryByRole('button', { name: /Ältere anzeigen/ })).toBeNull()
 })
 
 // Durchsicht von PR #449, K2: Eine Position, die über eine Belegbuchung gedeckt ist, steht am Register und in der
@@ -799,15 +891,422 @@ test('Register: eine über eine Belegbuchung gedeckte Position zählt als belegt
 })
 
 // K3: Nach „Ältere anzeigen“ steht der Fokus auf der ersten neu gezeigten Karte, auch wenn der Knopf danach fehlt.
-test('Posteingang: nach „Ältere anzeigen“ hat die erste neue Karte den Fokus', async () => {
+test('Eingang: nach „Ältere anzeigen“ hat die erste neue Karte den Fokus', async () => {
   extraUploads = Array.from({ length: 30 }, (_, i) => ({ ...up(`${100 + i}_lose${i}.pdf`), uploadedAt: `2026-02-${String(i + 1).padStart(2, '0')}T10:00:00.000Z` }))
-  const { container } = renderPage()
-  await screen.findByText('📥 Posteingang (31)')
-  const inbox = container.querySelector('.receipt-inbox') as HTMLElement
+  renderInbox()
+  const inbox = await screen.findByRole('region', { name: 'Ohne Position (31)' })
   const button = within(inbox).getByRole('button', { name: 'Ältere anzeigen (11)' })
   button.focus()
   fireEvent.click(button)
   const cards = [...inbox.querySelectorAll('.receipt-card')]
   expect(cards).toHaveLength(31)
   expect(document.activeElement).toBe(cards[20]?.querySelector('.receipt-title a'))
+})
+
+
+// ---------- Seite Belege (#490): zwei Ansichten über denselben Daten ----------
+
+test('Reiter: „Eingang“ mit der Zahl der offenen Einträge und „Ordner“; Pfeiltasten wechseln', async () => {
+  renderPage('eingang')
+  const eingang = await screen.findByRole('tab', { name: /^Eingang/ })
+  await waitFor(() => expect(eingang.textContent).toBe('Eingang 1 offen'))
+  expect(eingang.getAttribute('aria-selected')).toBe('true')
+  expect(screen.getByRole('tabpanel', { name: /Eingang/ })).toBeTruthy()
+  fireEvent.keyDown(eingang, { key: 'ArrowRight' })
+  const ordner = screen.getByRole('tab', { name: 'Ordner' })
+  expect(ordner.getAttribute('aria-selected')).toBe('true')
+  expect(document.activeElement).toBe(ordner)
+  expect(screen.getByRole('tabpanel', { name: 'Ordner' })).toBeTruthy()
+  expect(screen.queryByRole('tabpanel', { name: /Eingang/ })).toBeNull()
+})
+
+// Regel 2: Ein Wechsel der Ansicht verliert nichts. Beide Ansichten bleiben eingehängt; Zuordnung, Objekt und Jahr eines
+// Belegs, „Betrag prüfen“, geänderte Zeilen einer Auswertung und das Jahr der Buchung stehen nach dem Rückweg da.
+test('Ansichtswechsel verliert nichts: Zuordnung, Objekt und Jahr, „Betrag prüfen“, Zeilen und Jahr einer Auswertung', async () => {
+  extraUploads = [{ ...up('5_offen.pdf'), bookedItemIds: [], assessment: { id: 'a5', propertyId: 'p1', open: true } }, up('6_frei.pdf')]
+  openAssessments = () => [assessmentOf('a5', '5_offen.pdf')]
+  let hasOpenForm = () => false
+  function Probe() {
+    hasOpenForm = useHasOpenForm()
+    return null
+  }
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <Belege {...BASE} view={undefined} renderThumb={() => Promise.resolve('')} />
+        <Probe />
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  // Eingang: Zuordnen, Jahr eines Belegs, Zeile und Jahr der Auswertung als Entwurf
+  const zuordnen = await screen.findByLabelText('lose.pdf einer Position zuordnen') as HTMLSelectElement
+  fireEvent.change(zuordnen, { target: { value: 'w2' } })
+  const jahr = screen.getByLabelText('Jahr für frei.pdf') as HTMLSelectElement
+  fireEvent.change(jahr, { target: { value: String(YEAR) } })
+  const zeile = await screen.findByRole('combobox', { name: 'Was geschieht mit „Grundsteuer“?' }) as HTMLSelectElement
+  fireEvent.change(zeile, { target: { value: 'dismiss' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Jahr ändern' }))
+  const buchungsjahr = screen.getByRole('combobox', { name: 'Jahr der Buchung' }) as HTMLSelectElement
+  fireEvent.change(buchungsjahr, { target: { value: String(YEAR - 1) } })
+  // Ordner: „Beleg nachreichen“ an einer Position, dann „Betrag prüfen“ offen lassen
+  fireEvent.click(screen.getByRole('tab', { name: 'Ordner' }))
+  const nachreichen = screen.getByLabelText('Beleg für Abwasser hochladen') as HTMLInputElement
+  fireEvent.change(nachreichen, { target: { files: [new File(['%PDF'], 'nachgereicht.pdf', { type: 'application/pdf' })] } })
+  const check = await screen.findByRole('status', { name: 'Betrag prüfen' })
+  fireEvent.change(within(check).getByLabelText('Betrag laut Beleg'), { target: { value: '255,00' } })
+  // Zurück in den Eingang und wieder in den Ordner: alles steht noch da, nichts wurde gesendet außer dem Nachreichen
+  fireEvent.click(screen.getByRole('tab', { name: /^Eingang/ }))
+  expect(zuordnen.value).toBe('w2')
+  expect(jahr.value).toBe(String(YEAR))
+  expect(zeile.value).toBe('dismiss')
+  expect(buchungsjahr.value).toBe(String(YEAR - 1))
+  fireEvent.click(screen.getByRole('tab', { name: 'Ordner' }))
+  expect((within(screen.getByRole('status', { name: 'Betrag prüfen' })).getByLabelText('Betrag laut Beleg') as HTMLInputElement).value).toBe('255,00')
+  expect(sent.map((r) => r.url)).toEqual(['/api/upload', '/api/costItems/w2'])
+  // Und alles zählt als offenes Formular: Ein Seitenwechsel fragt
+  expect(hasOpenForm()).toBe(true)
+})
+
+// Fehlender Test aus der Bestandsaufnahme, mit dem richtiggestellten Satz (#490): Der Server legt den Beleg in den
+// Papierkorb, und der Verlauf holt ihn zurück; vorher hieß es „unwiderruflich von der Festplatte“.
+test('Eingang: Löschen fragt mit dem Papierkorb im Satz und löscht erst nach „Löschen“', async () => {
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <UIProvider>
+          <Belege {...BASE} view="eingang" renderThumb={() => Promise.resolve('')} />
+        </UIProvider>
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  fireEvent.click(await screen.findByRole('button', { name: 'Beleg lose.pdf löschen' }))
+  const dialog = await screen.findByRole('alertdialog')
+  expect(dialog.textContent).toMatch(/„lose\.pdf“ wird aus den Belegen entfernt und in den Papierkorb gelegt\. Zurückholen können Sie ihn im Verlauf\./)
+  expect(dialog.textContent).not.toMatch(/unwiderruflich/)
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Abbrechen' }))
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+  expect(sent).toEqual([])
+  fireEvent.click(screen.getByRole('button', { name: 'Beleg lose.pdf löschen' }))
+  fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Löschen' }))
+  await waitFor(() => expect(sent).toEqual([{ url: '/api/uploads/4_lose.pdf', method: 'DELETE', body: {} }]))
+})
+
+// Die Suche im Ordner durchsucht immer alle Objekte und Jahre und nennt beides am Treffer, auch einen Beleg im Eingang.
+test('Ordner: die Suche findet über alle Objekte und Jahre und nennt Objekt und Jahr; ein Beleg ohne Position führt in den Eingang', async () => {
+  extraItems = [{ id: 'alt', propertyId: 'p1', period: calendarPeriod(YEAR - 2), category: 'Grundsteuer', description: 'Grundsteuer alt', amountCents: 55000, key: 'area', invoiceFile: '7_alt.pdf', vendor: 'Stadtkasse' }]
+  extraUploads = [up('7_alt.pdf'), { ...up('8_stadtkasse-mahnung.pdf'), propertyId: 'p2', year: YEAR - 1 }]
+  renderPage()
+  await screen.findByText('Wasser/Abwasser')
+  // Ohne Suche: nur das gewählte Jahr und Objekt
+  expect(document.querySelector('[data-view="ordner"] li[data-file="7_alt.pdf"]')).toBeNull()
+  expect(document.querySelector('[data-view="ordner"] li[data-file="3_ahorn.pdf"]')).toBeNull()
+  fireEvent.change(screen.getByLabelText('Suche'), { target: { value: 'stadt' } })
+  // Ein Jahr zwei Jahre zurück, mit Abschnitt je Jahr
+  const old = await waitFor(() => {
+    const card = document.querySelector('[data-view="ordner"] li[data-file="7_alt.pdf"]')
+    if (!card) throw new Error('nicht gefunden')
+    return card
+  })
+  expect(old.closest('details[data-year-section]')?.getAttribute('data-year-section')).toBe(String(YEAR - 2))
+  expect(old.textContent).toContain('Lindenstraße')
+  // Der Beleg ohne Position im Eingang eines anderen Objekts, mit Ort
+  const inbox = screen.getByRole('heading', { name: 'Im Eingang (1)' }).closest('section') as HTMLElement
+  expect(inbox.textContent).toContain(`Ahornweg · ${YEAR - 1}`)
+  fireEvent.click(within(inbox).getByRole('button', { name: 'Im Eingang zeigen (stadtkasse-mahnung.pdf)' }))
+  // Durchsicht M1: Der Beleg gehört einem anderen Objekt und Jahr; die Seite wechselt dorthin und zeigt ihn
+  await waitFor(() => expect(context()).toBe(`Ahornweg · Abrechnungsjahr ${YEAR - 1}`))
+  await waitFor(() => expect(document.activeElement?.closest('li.receipt-card')?.getAttribute('data-file')).toBe('8_stadtkasse-mahnung.pdf'))
+  expect(screen.getByRole('tab', { name: /^Eingang/ }).getAttribute('aria-selected')).toBe('true')
+})
+
+// Durchsicht M1: Ein Sprung zu einem Beleg ohne Position eines anderen Objekts (etwa „Beleg zeigen“ aus Kosten) wechselt
+// erst dorthin; einen Beleg, den es nicht gibt, nennt die Seite, statt still nichts zu tun.
+test('Sprung zu einem Beleg ohne Position eines anderen Objekts: erst dorthin wechseln, dann zeigen', async () => {
+  extraUploads = [{ ...up('8_anderswo.pdf'), propertyId: 'p2', year: YEAR }]
+  const onFocusDone = vi.fn()
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <Belege {...BASE} view={undefined} renderThumb={() => Promise.resolve('')} focusFile="8_anderswo.pdf" onFocusDone={onFocusDone} />
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  await waitFor(() => expect(context()).toBe(`Ahornweg · Abrechnungsjahr ${YEAR}`))
+  await waitFor(() => expect(onFocusDone).toHaveBeenCalledTimes(1))
+  expect(document.activeElement?.closest('li.receipt-card')?.getAttribute('data-file')).toBe('8_anderswo.pdf')
+})
+
+test('Sprung zu einem Beleg, den es nicht gibt: eine Meldung statt nichts', async () => {
+  const onFocusDone = vi.fn()
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <Belege {...BASE} view={undefined} renderThumb={() => Promise.resolve('')} focusFile="0_weg.pdf" onFocusDone={onFocusDone} />
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  await waitFor(() => expect(onFocusDone).toHaveBeenCalledTimes(1))
+  expect(await screen.findByText(/Diesen Beleg gibt es nicht mehr/)).toBeTruthy()
+})
+
+// Ein Sprung zu einem Beleg (Fehler mit Ausweg, #487) geht in die Ansicht, in der er steht.
+test('Sprung zu einem Beleg: ohne Position in den Eingang, an einer Position in den Ordner', async () => {
+  const onFocusDone = vi.fn()
+  const { rerender } = render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <Belege {...BASE} view={undefined} renderThumb={() => Promise.resolve('')} focusFile="2_wasser.pdf" onFocusDone={onFocusDone} />
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  await waitFor(() => expect(onFocusDone).toHaveBeenCalledTimes(1))
+  expect(screen.getByRole('tab', { name: 'Ordner' }).getAttribute('aria-selected')).toBe('true')
+  expect(document.activeElement?.closest('li.receipt-card')?.getAttribute('data-file')).toBe('2_wasser.pdf')
+  rerender(
+    <PeriodProvider>
+      <PropertyProvider>
+        <Belege {...BASE} view={undefined} renderThumb={() => Promise.resolve('')} focusFile="4_lose.pdf" onFocusDone={onFocusDone} />
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  await waitFor(() => expect(onFocusDone).toHaveBeenCalledTimes(2))
+  expect(screen.getByRole('tab', { name: /^Eingang/ }).getAttribute('aria-selected')).toBe('true')
+  expect(document.activeElement?.closest('li.receipt-card')?.getAttribute('data-file')).toBe('4_lose.pdf')
+})
+
+// #490: Auf Wunsch steht der Beleg neben der Prüfung; der Knopf nennt, was der nächste Klick tut.
+test('Eingang: „Beleg daneben zeigen“ zeigt den Beleg neben der Auswertung, „Beleg ausblenden“ nimmt ihn weg', async () => {
+  extraUploads = [{ ...up('5_offen.pdf'), bookedItemIds: [], assessment: { id: 'a5', propertyId: 'p1', open: true } }]
+  openAssessments = () => [assessmentOf('a5', '5_offen.pdf')]
+  renderInbox()
+  const show = await screen.findByRole('button', { name: 'Beleg daneben zeigen' })
+  expect(document.querySelector('iframe')).toBeNull()
+  fireEvent.click(show)
+  const frame = document.querySelector('iframe')
+  expect(frame?.getAttribute('src')).toBe('/uploads/5_offen.pdf')
+  expect(frame?.getAttribute('title')).toBe('Beleg 5_offen.pdf')
+  expect(show.getAttribute('aria-expanded')).toBe('true')
+  fireEvent.click(screen.getByRole('button', { name: 'Beleg ausblenden' }))
+  expect(document.querySelector('iframe')).toBeNull()
+})
+
+// Durchsicht M2: Ein Beleg mit offener Auswertung steht nur unter „Zu prüfen“. Löschen, Objekt und Jahr und Zuordnen gehen
+// dort an der Karte der Auswertung, wie vorher im Posteingang.
+test('Eingang: an der Auswertung lässt sich der Beleg löschen, einordnen und zuordnen', async () => {
+  extraUploads = [{ ...up('5_offen.pdf'), bookedItemIds: [], assessment: { id: 'a5', propertyId: 'p1', open: true } }]
+  openAssessments = () => [assessmentOf('a5', '5_offen.pdf')]
+  renderInbox()
+  const card = await waitFor(() => document.querySelector('[data-assessment="a5"]') as HTMLElement ?? expect.fail('keine Auswertung'))
+  fireEvent.click(await within(card).findByRole('button', { name: 'Beleg einordnen oder löschen' }))
+  const receipt = await waitFor(() => card.querySelector('[data-file="5_offen.pdf"]') as HTMLElement ?? expect.fail('kein Beleg an der Auswertung'))
+  expect(within(receipt).getByRole('button', { name: 'Beleg offen.pdf löschen' })).toBeTruthy()
+  // Nur das Objekt; das Jahr ist das der Buchung (Nachdurchsicht K2)
+  expect(within(receipt).getByLabelText('Objekt für offen.pdf')).toBeTruthy()
+  expect(within(receipt).queryByLabelText('Jahr für offen.pdf')).toBeNull()
+  const zuordnen = within(receipt).getByLabelText('offen.pdf einer Position zuordnen') as HTMLSelectElement
+  expect([...zuordnen.options].map((o) => o.value)).toEqual(['', 'w2'])
+  // „Weiter prüfen“ und „Per KI auswerten“ braucht es hier nicht: Die Prüfung steht daneben
+  expect(within(receipt).queryByRole('button', { name: /weiter prüfen|per KI auswerten/ })).toBeNull()
+})
+
+// Durchsicht S3: Wird ein gespeicherter, nicht ausgewerteter Beleg gelöscht oder zugeordnet, verschwindet auch sein Eintrag
+// der Warteschlange; sonst bliebe ein Geist mit „Erneut versuchen“.
+async function keptFoto() {
+  extraUploads = [{ ...up('7_foto.jpg'), mimeType: 'image/jpeg' }]
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <UIProvider>
+          <Belege {...BASE} view="eingang" renderThumb={() => Promise.resolve('')} />
+        </UIProvider>
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  fireEvent.click(await screen.findByRole('button', { name: 'foto.jpg per KI auswerten' }))
+  await screen.findByText('Gespeichert, nicht ausgewertet')
+}
+
+test('Eingang: nach dem Löschen eines gespeicherten Belegs bleibt kein „Erneut versuchen“ stehen', async () => {
+  await keptFoto()
+  fireEvent.click(screen.getByRole('button', { name: 'Beleg foto.jpg löschen' }))
+  fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Löschen' }))
+  await waitFor(() => expect(sent.some((r) => r.method === 'DELETE')).toBe(true))
+  await waitFor(() => expect(screen.queryByText('Gespeichert, nicht ausgewertet')).toBeNull())
+  expect(screen.queryByRole('button', { name: 'Erneut versuchen' })).toBeNull()
+})
+
+test('Eingang: nach dem Zuordnen eines gespeicherten Belegs bleibt kein „Erneut versuchen“ stehen', async () => {
+  await keptFoto()
+  fireEvent.change(screen.getByLabelText('foto.jpg einer Position zuordnen'), { target: { value: 'w2' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern (Position für foto.jpg)' }))
+  await waitFor(() => expect(sent.some((r) => r.url === '/api/costItems/w2')).toBe(true))
+  await waitFor(() => expect(screen.queryByText('Gespeichert, nicht ausgewertet')).toBeNull())
+})
+
+// Durchsicht S1: Ein Zählerfoto ohne Position ließ sich im Ordner der Seite Belege löschen; im Ordner geht das weiter.
+test('Ordner: ein Zählerfoto lässt sich löschen, mit derselben Rückfrage', async () => {
+  extraUploads = [{ ...up('9_zaehler.jpg'), kind: 'meterPhoto', mimeType: 'image/jpeg' }]
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <UIProvider>
+          <Belege {...BASE} renderThumb={() => Promise.resolve('')} />
+        </UIProvider>
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  fireEvent.click(await screen.findByRole('button', { name: 'Beleg zaehler.jpg löschen' }))
+  const dialog = await screen.findByRole('alertdialog')
+  expect(dialog.textContent).toMatch(/in den Papierkorb gelegt/)
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Löschen' }))
+  await waitFor(() => expect(sent).toEqual([{ url: '/api/uploads/9_zaehler.jpg', method: 'DELETE', body: {} }]))
+})
+
+// Durchsicht (Kann): „Nur ablegen“ geht auch per Hineinziehen, auf den Knopf selbst.
+test('Eingang: Belege auf „Nur ablegen, ohne Auswertung“ gezogen werden nur gespeichert', async () => {
+  renderInbox()
+  const target = (await screen.findByLabelText('Belege nur ablegen, ohne Auswertung')).closest('label') as HTMLElement
+  fireEvent.drop(target, { dataTransfer: { files: [new File(['%PDF'], 'eins.pdf', { type: 'application/pdf' })] } })
+  await waitFor(() => expect(sent).toEqual([{ url: '/api/upload', method: 'POST', body: { file: 'eins.pdf', propertyId: 'p1', year: String(YEAR) } }]))
+})
+
+// Durchsicht (Kann): Scheitert das Laden der Belege, sagt es auch der Eingang.
+test('Eingang: ein Ladefehler der Belege steht auch im Eingang', async () => {
+  const inner = globalThis.fetch
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => (url === '/api/uploads'
+    ? new Response(JSON.stringify({ error: 'Der Datenordner ist nicht lesbar.' }), { status: 500, headers: { 'content-type': 'application/json' } })
+    : inner(url, init)))
+  renderInbox()
+  const panel = await screen.findByRole('tabpanel', { name: /Eingang/ })
+  expect(await within(panel).findByText(/Der Datenordner ist nicht lesbar/)).toBeTruthy()
+  // Das Paneel lässt sich mit Tab erreichen, auch wenn sein erstes Element nicht fokussierbar ist
+  expect(panel.getAttribute('tabindex')).toBe('0')
+})
+
+// Nachdurchsicht S-B: Ein Beleg eines Objekts mit Zeitraum Mai bis April, im gewählten Kalenderjahr: Der Sprung wechselt
+// auf den Zeitraum, der in diesem Jahr beginnt, nicht auf den, der gerade gilt.
+test('Sprung: nur das Objekt wechselt, bei Mai bis April auf den Zeitraum, der im Jahr des Belegs beginnt', async () => {
+  propsOverride = [PROPS[0] as Property, { ...(PROPS[1] as Property), periodRules: { startMonth: 5, changes: [] } }]
+  extraUploads = [{ ...up('8_anderswo.pdf'), propertyId: 'p2', year: YEAR }]
+  const onFocusDone = vi.fn()
+  const page = (focusFile: string | null) => (
+    <PeriodProvider>
+      <PropertyProvider>
+        <PeriodSelect />
+        <Belege {...BASE} view={undefined} renderThumb={() => Promise.resolve('')} focusFile={focusFile} onFocusDone={onFocusDone} />
+      </PropertyProvider>
+    </PeriodProvider>
+  )
+  const { rerender } = render(page(null))
+  // Das Jahr ausdrücklich gewählt (Seitenleiste): Beginn des Kalenderjahres als Anker
+  const year = await screen.findByRole('combobox', { name: 'Abrechnungsjahr' })
+  fireEvent.change(year, { target: { value: String(YEAR - 1) } })
+  fireEvent.change(year, { target: { value: String(YEAR) } })
+  await waitFor(() => expect(context()).toBe(`Lindenstraße · Abrechnungsjahr ${YEAR}`))
+  rerender(page('8_anderswo.pdf'))
+  await waitFor(() => expect(onFocusDone).toHaveBeenCalledTimes(1))
+  expect(context()).toMatch(new RegExp(`^Ahornweg · Abrechnungszeitraum .*${YEAR}.*${YEAR + 1}`))
+  expect(document.activeElement?.closest('li.receipt-card')?.getAttribute('data-file')).toBe('8_anderswo.pdf')
+})
+
+// Nachdurchsicht S-D: Ein Zählerfoto, dessen Ablesen gescheitert ist, im Ordner gelöscht: Auch sein Eintrag im Eingang
+// verschwindet.
+test('Ordner: ein gelöschtes Zählerfoto nimmt seinen Eintrag aus dem Eingang mit', async () => {
+  extraUploads = [{ ...up('9_zaehler.jpg'), kind: 'meterPhoto', mimeType: 'image/jpeg' }]
+  intakeFailure = { error: 'Ollama antwortet mit 500', file: '9_zaehler.jpg', reason: 'other', kept: true, meterPhoto: true }
+  const { container } = render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <UIProvider>
+          <Belege {...BASE} view={undefined} renderThumb={() => Promise.resolve('')} />
+        </UIProvider>
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  await screen.findByLabelText('Jahr für lose.pdf')
+  fireEvent.change(container.querySelector('input[aria-label="Belege und Zählerfotos auswählen"]') as HTMLInputElement, { target: { files: [new File(['jpg'], 'zaehler.jpg', { type: 'image/jpeg' })] } })
+  await screen.findByText('Gespeichert, nicht ausgewertet')
+  fireEvent.click(screen.getByRole('tab', { name: 'Ordner' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Beleg zaehler.jpg löschen' }))
+  fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Löschen' }))
+  await waitFor(() => expect(sent.some((r) => r.method === 'DELETE')).toBe(true))
+  await waitFor(() => expect(screen.queryByText('Gespeichert, nicht ausgewertet')).toBeNull())
+})
+
+// Nachdurchsicht K4: Wer ohne KI ablegt, sieht, dass Mietfuchs die KI noch einmal fragt; und nur die jüngste Antwort zählt.
+test('Eingang ohne KI: beim Ablegen „Mietfuchs fragt die KI …“, eine verspätete ältere Antwort zählt nicht', async () => {
+  aiStatus = { ok: false, error: 'nicht erreichbar', reason: 'unreachable' }
+  const answers: ((v: Response) => void)[] = []
+  const inner = globalThis.fetch
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => (url === '/api/ai/status' && answers.length < 3
+    ? new Promise<Response>((resolve) => { answers.push(resolve) })
+    : inner(url, init)))
+  const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
+  const { container } = renderInboxWith(LOCAL)
+  await waitFor(() => expect(answers).toHaveLength(1))
+  answers[0]?.(json({ ok: false, reason: 'unreachable' }))
+  expect(await screen.findByText(/Die KI ist gerade nicht erreichbar/)).toBeTruthy()
+  // Zweimal „Erneut prüfen“: Die erste Antwort kommt zuletzt und sagt „nicht erreichbar“; gilt die zweite („läuft“)
+  fireEvent.click(screen.getByRole('button', { name: 'Erneut prüfen' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Erneut prüfen' }))
+  await waitFor(() => expect(answers).toHaveLength(3))
+  answers[2]?.(json({ ok: true }))
+  await waitFor(() => expect(screen.queryByText(/Die KI ist gerade nicht erreichbar/)).toBeNull())
+  answers[1]?.(json({ ok: false, reason: 'unreachable' }))
+  await new Promise((r) => setTimeout(r, 50))
+  expect(screen.queryByText(/Die KI ist gerade nicht erreichbar/)).toBeNull()
+  void container
+})
+
+test('Eingang ohne KI: beim Ablegen steht „Mietfuchs fragt die KI …“, bis die Antwort da ist', async () => {
+  aiStatus = { ok: false, error: 'nicht erreichbar', reason: 'unreachable' }
+  const { container } = renderInboxWith(LOCAL)
+  expect(await screen.findByText(/Die KI ist gerade nicht erreichbar/)).toBeTruthy()
+  let release: ((v: Response) => void) | null = null
+  const inner = globalThis.fetch
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => (url === '/api/ai/status'
+    ? new Promise<Response>((resolve) => { release = resolve })
+    : inner(url, init)))
+  dropInto(container, [new File(['%PDF'], 'eins.pdf', { type: 'application/pdf' })])
+  expect(await screen.findByText('Mietfuchs fragt die KI …')).toBeTruthy()
+  ;(release as ((v: Response) => void) | null)?.(new Response(JSON.stringify({ ok: false, reason: 'unreachable' }), { status: 200, headers: { 'content-type': 'application/json' } }))
+  await waitFor(() => expect(sent.some((r) => r.url === '/api/upload')).toBe(true))
+  expect(screen.queryByText('Mietfuchs fragt die KI …')).toBeNull()
+})
+
+// Nachdurchsicht K5: Gehört ein Beleg einem Objekt, das es nicht mehr gibt, nennt der Sprung den Grund; die Meldung geht
+// beim nächsten Wechsel der Ansicht.
+test('Sprung zu einem Beleg eines gelöschten Objekts: Meldung mit Grund, weg beim Wechsel der Ansicht', async () => {
+  extraUploads = [{ ...up('8_weg.pdf'), propertyId: 'p9', year: YEAR }]
+  const onFocusDone = vi.fn()
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <Belege {...BASE} view={undefined} renderThumb={() => Promise.resolve('')} focusFile="8_weg.pdf" onFocusDone={onFocusDone} />
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  expect(await screen.findByText(/gehört zu einem Objekt, das es nicht mehr gibt/)).toBeTruthy()
+  fireEvent.click(screen.getByRole('tab', { name: 'Ordner' }))
+  expect(screen.queryByText(/gehört zu einem Objekt, das es nicht mehr gibt/)).toBeNull()
+})
+
+// Nachdurchsicht K5: Ein Sprung zu einem Beleg, der an seiner Auswertung steht, findet die Karte, hebt sie hervor und
+// klappt die Bedienung des Belegs auf.
+test('Sprung zu einem Beleg mit offener Auswertung: die Karte der Auswertung, hervorgehoben und aufgeklappt', async () => {
+  extraUploads = [{ ...up('5_offen.pdf'), bookedItemIds: [], assessment: { id: 'a5', propertyId: 'p1', open: true } }]
+  openAssessments = () => [assessmentOf('a5', '5_offen.pdf')]
+  const onFocusDone = vi.fn()
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <Belege {...BASE} view={undefined} renderThumb={() => Promise.resolve('')} focusFile="5_offen.pdf" onFocusDone={onFocusDone} />
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  await waitFor(() => expect(onFocusDone).toHaveBeenCalledTimes(1))
+  const card = document.querySelector('[data-assessment="a5"]') as HTMLElement
+  await waitFor(() => expect(card.contains(document.activeElement)).toBe(true))
+  expect(card.className).toMatch(/\bbg-accent-soft\b/)
+  expect(within(card).getByRole('button', { name: 'Einordnen schließen' })).toBeTruthy()
 })

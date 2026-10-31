@@ -70,7 +70,7 @@ const cases = only ? CASES.filter((c) => only.includes(c.name)) : CASES
 
 // Texte der Oberfläche, die nie im Druck stehen dürfen: Navigation (ganze Zeile), Knöpfe und Hinweise (Teil der Zeile).
 // Nicht dabei sind Wörter, die auch die Abrechnung druckt („Abrechnung“, „Kosten“, „Heizkosten“).
-const UI_LINES = ['Cockpit', 'Schnellerfassung', 'Zähler & Stände', 'Belegordner', 'Mietkonto', 'Kostenvergleich', 'Steuer (Anlage V)', 'Stammdaten', 'Einstellungen', 'Verlauf', 'Hilfe & Begriffe', 'Sammeln', 'Abrechnen', 'Einrichten', 'Zu prüfen', 'Kontrolle', 'Ansehen', 'Mehr']
+const UI_LINES = ['Cockpit', 'Belege', 'Zähler & Stände', 'Mietkonto', 'Kostenvergleich', 'Steuer (Anlage V)', 'Stammdaten', 'Einstellungen', 'Verlauf', 'Hilfe & Begriffe', 'Sammeln', 'Abrechnen', 'Einrichten', 'Zu prüfen', 'Kontrolle', 'Ansehen', 'Mehr']
 const UI_PARTS = ['Drucken / PDF', 'Was drucken?', 'Anschreiben mitdrucken', 'Hier beheben', 'Sicherung vor dem Update', 'Strg+S druckt', 'Rechenweg zeigen', 'Falz- und Lochmarken drucken']
 
 // ---------- Im Browser: Vorspiel und Bedienung ----------

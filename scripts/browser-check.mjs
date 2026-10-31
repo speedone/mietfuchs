@@ -483,17 +483,14 @@ async function checkCombination(browser, base, combo, AxeBuilder, navLabels) {
 
   const dir = path.join(OUT, engine, `${view}-${theme}`)
   fs.mkdirSync(dir, { recursive: true })
-  for (const label of labels) {
-    const id = slug(label)
-    if (PAGES && !PAGES.includes(id)) continue
-    current = id
-    try {
-      await go(page, view, label)
-    } catch (err) {
-      add(id, 'Navigation', `„${label}“ ließ sich nicht öffnen: ${err instanceof Error ? err.message.split('\n')[0] : err}`)
-      continue
+  /** @param {string} id */
+  const measure = async (id) => {
+    // Die Prüfung einer Auswertung (Eingang, Kosten) steht am Handy gestapelt, ohne seitliches Wischen (#490)
+    if (view === 'mobile') {
+      const rolling = await page.evaluate(() => [...(/** @type {any} */ (globalThis)).document.querySelectorAll('main .assessment-table')]
+        .filter((t) => t.parentElement && t.parentElement.scrollWidth > t.parentElement.clientWidth + 1).length)
+      if (rolling > 0) add(id, 'Breite', `${rolling} Prüfung${rolling === 1 ? '' : 'en'} einer Auswertung rollen am Handy seitlich`)
     }
-    checkedPages++
     const wide = await overflow(page)
     if (wide) add(id, 'Breite', `Seite ${wide.scroll} px breit bei ${wide.width} px Fenster${wide.elements.length ? `: ${wide.elements.join('; ')}` : ''}`)
     // Noch einmal mit allem Aufklappbaren offen: Eine zugeklappte Anleitung misst keine Breite, die Hilfe am Handy
@@ -507,7 +504,7 @@ async function checkCombination(browser, base, combo, AxeBuilder, navLabels) {
     let clippedOpen = []
     if (opened > 0) {
       // `toggle` kommt als eigene Aufgabe, und manches zeichnet React erst danach oder lädt es nach (Belegmappe im
-      // Belegordner); deshalb erst warten, dann messen, und nach dem Zuklappen noch einmal (Durchsicht des Zweigs, Befund 3)
+      // Ordner der Belege); deshalb erst warten, dann messen, und nach dem Zuklappen noch einmal (Durchsicht des Zweigs, Befund 3)
       await settle(page)
       const wideOpen = wide ? null : await overflow(page)
       if (wideOpen) add(id, 'Breite', `Aufgeklappt ${wideOpen.scroll} px breit bei ${wideOpen.width} px Fenster${wideOpen.elements.length ? `: ${wideOpen.elements.join('; ')}` : ''}`)
@@ -531,6 +528,29 @@ async function checkCombination(browser, base, combo, AxeBuilder, navLabels) {
     // Die Seitenfenster der Seite öffnen und ihre Felder messen, im ersten Design des Laufs (die Breite hängt nicht
     // am Design)
     if (theme === themes[0]) drawersOpened += await checkDrawers(page, id, dir, add, reportClipped)
+  }
+
+  for (const label of labels) {
+    const id = slug(label)
+    if (PAGES && !PAGES.includes(id)) continue
+    current = id
+    try {
+      await go(page, view, label)
+    } catch (err) {
+      add(id, 'Navigation', `„${label}“ ließ sich nicht öffnen: ${err instanceof Error ? err.message.split('\n')[0] : err}`)
+      continue
+    }
+    checkedPages++
+    await measure(id)
+    // Die Seite Belege (#490) hat zwei Ansichten; die zweite wird ebenso gemessen, als eigene Seite „belege-ordner“
+    if (id === 'belege') {
+      await page.locator('main [role="tab"]').filter({ hasText: 'Ordner' }).click()
+      await settle(page)
+      await page.evaluate(() => /** @type {any} */ (globalThis).scrollTo(0, 0))
+      await measure('belege-ordner')
+      await page.locator('main [role="tab"]').filter({ hasText: 'Eingang' }).click()
+      await settle(page)
+    }
   }
 
   // Der Gang „faden“ (#488, PR 2): aus einer Anleitung auf die Seite eines Schritts, dort die Leiste des Fadens
@@ -769,12 +789,14 @@ async function probeMonth(page, view, snap) {
   await discardDrawer(page, drawer)
 }
 
-// Belegordner, Position ohne Beleg (N7 aus #341): Wer in „Aus dem Posteingang …“ einen Beleg wählt, bekommt
+// Ordner der Seite Belege, Position ohne Beleg (N7 aus #341): Wer in „Aus dem Eingang …“ einen Beleg wählt, bekommt
 // „Speichern“ und „Verwerfen“ dazu; „Beleg nachreichen“ bleibt dabei, wo er war. Danach wird verworfen.
 async function probeAttach(page, view, snap) {
-  await go(page, view, 'Belegordner')
-  const picker = page.locator('main select[aria-label^="Vorhandenen Beleg für"]').first()
-  if (!(await picker.count())) fail('Beleg zuordnen: Im Beispielbestand gibt es keine Position ohne Beleg mit Belegen im Posteingang.')
+  await go(page, view, 'Belege')
+  await page.locator('main [role="tab"]').filter({ hasText: 'Ordner' }).click()
+  await settle(page)
+  const picker = page.locator('main select[aria-label^="Vorhandenen Beleg für"]:visible').first()
+  if (!(await picker.count())) fail('Beleg zuordnen: Im Beispielbestand gibt es keine Position ohne Beleg mit Belegen im Eingang.')
   await picker.evaluate((el) => { const d = el.closest('details'); if (d) d.open = true })
   await picker.scrollIntoViewIfNeeded()
   const group = picker.locator('xpath=ancestor::span[contains(@class, "receipt-attach")]')
@@ -979,7 +1001,7 @@ async function main() {
     // Ein Tippfehler in --pages prüfte sonst keine Seite und meldete grün
     if (PAGES) {
       for (const id of PAGES) {
-        if (id !== 'muster' && id !== 'faden' && !(navLabels ?? []).some((l) => slug(l) === id)) findings.push({ engine: 'alle', view: '–', theme: '–', page: id, kind: 'Aufruf', text: `--pages nennt „${id}“, die Navigation hat keine solche Seite (möglich: ${(navLabels ?? expected).map(slug).join(', ')}).` })
+        if (id !== 'muster' && id !== 'faden' && id !== 'belege-ordner' && !(navLabels ?? []).some((l) => slug(l) === id)) findings.push({ engine: 'alle', view: '–', theme: '–', page: id, kind: 'Aufruf', text: `--pages nennt „${id}“, die Navigation hat keine solche Seite (möglich: ${(navLabels ?? expected).map(slug).join(', ')}).` })
       }
     }
     if (checkedPages === 0 && (PAGES === null || PAGES.length > 0)) {

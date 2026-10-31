@@ -33,7 +33,7 @@ export class BookingRefusal extends Error {
 
 const NOT_FOUND = 'Diese Auswertung gibt es nicht (mehr). Bitte laden Sie die Seite neu.'
 const fileGone = (name: string): string =>
-  `Den Beleg „${name}“ gibt es im Belegordner nicht mehr. Die Auswertung lässt sich deshalb nicht buchen; laden Sie den Beleg bitte erneut hoch.`
+  `Den Beleg „${name}“ gibt es unter „Belege“ nicht mehr. Die Auswertung lässt sich deshalb nicht buchen; laden Sie den Beleg bitte erneut hoch.`
 
 type Context = { stock: Stock; booked: BookedLine[]; uploads: Map<string, UploadRow> }
 

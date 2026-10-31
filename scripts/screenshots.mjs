@@ -113,8 +113,9 @@ async function shoot(browser, base) {
   await go('Stammdaten')
   await save('stammdaten')
 
-  // Posteingang, Belegabdeckung, Mappen und die Register je Kostenart
-  await go('Belegordner')
+  // Seite Belege, Ansicht Ordner (#490): Belegabdeckung, Mappen und die Register je Kostenart
+  await go('Belege')
+  await page.getByRole('tab', { name: 'Ordner' }).click()
   await tall(1500)
   await page.waitForFunction(() => {
     // Im Browser ausgeführt; scripts/tsconfig.json kennt die Typen des DOM nicht
@@ -131,9 +132,9 @@ async function shoot(browser, base) {
   }, undefined, { timeout: 30000 })
   await save('belegordner')
 
-  // Die offene Auswertung aus dem Posteingang: Ampel je Zeile, Vorschlag zum Verknüpfen
-  await go('Schnellerfassung')
-  const review = page.locator('.card', { hasText: 'bitte prüfen' }).first()
+  // Die offene Auswertung im Eingang der Seite Belege: Ampel je Zeile, Vorschlag zum Verknüpfen, der Beleg daneben
+  await page.getByRole('tab', { name: /^Eingang/ }).click()
+  const review = page.locator('[data-view="eingang"] .card', { hasText: 'bitte prüfen' }).first()
   await review.waitFor()
   // Die Rechnung gehört zur Position, die schon aus dem Vorjahr dasteht: verknüpfen statt doppelt
   // anlegen, dann zeigt die Vorschau, was mit der Position geschieht

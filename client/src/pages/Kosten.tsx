@@ -92,6 +92,8 @@ import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
 import { candidateText } from '../triage'
 import { countOf } from '../../../shared/wording.ts'
+import { openBadgeClass } from '../assessment'
+import { SKIPPED_FILES } from '../belegeView'
 import { useFocusTarget, type FocusProps } from '../focus'
 import { NoticeBox } from '../components/Notice'
 import { KeptReceipt } from '../components/KeptReceipt'
@@ -195,7 +197,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   }, [formId])
   // Das Jahr der Zahlung einer Heizposition richtet sich nach ihrer Heizperiode (Durchsicht von #231):
   // Pflicht und vorbelegt, wenn sie über zwei Jahre reicht, sonst kein Feld. Vorbelegt mit dem Jahr
-  // des Rechnungsdatums des angehängten Belegs, wenn der Belegordner eines kennt, sonst mit dem Jahr
+  // des Rechnungsdatums des angehängten Belegs, wenn die Ablage der Belege eines kennt, sonst mit dem Jahr
   // des Endes der Heizperiode; dieselbe Regel wie Belegbuchung und Server (`paymentYear`).
   const [invoiceDates, setInvoiceDates] = useState<Map<string, string>>(new Map())
   useEffect(() => {
@@ -279,7 +281,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   async function uploadInvoice(f: File) {
     const fd = new FormData()
     fd.append('file', f)
-    // Wird die Position nicht gespeichert, steht der Beleg im Posteingang dieses Objekts und
+    // Wird die Position nicht gespeichert, steht der Beleg im Eingang dieses Objekts und
     // Jahres (#170) statt ohne Zuordnung.
     if (property?.id) fd.append('propertyId', property.id)
     fd.append('year', String(year))
@@ -547,7 +549,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
       }
     }
     // Eine neue Position, für die dieselbe Rechnung schon erfasst sein könnte (shared/duplicates.ts):
-    // nachfragen, wie in der Schnellerfassung. Nur beim Neuanlegen; wer bearbeitet, meint diese.
+    // nachfragen, wie im Eingang der Seite Belege. Nur beim Neuanlegen; wer bearbeitet, meint diese.
     if (!editing) {
       const same = sameCostOf(items, { category: form.category, description: form.description, vendor: form.vendor, amountCents: built.body.amountCents }, propertyId, key)
       const first = same[0]
@@ -602,20 +604,21 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     toast(`„${i.description}“ gelöscht.`)
   }
 
-  // KI-Auswertung (#170): Die eine Warteschlange der App (#490) teilt sich die Kostenseite mit der Schnellerfassung;
+  // KI-Auswertung (#170): Die eine Warteschlange der App (#490) teilt sich die Kostenseite mit dem Eingang der Seite Belege;
   // sie zeigt die Einträge dieses Objekts und Zeitraums, auch die dort hochgeladenen. Eine ausgewertete Rechnung ist
   // als Auswertung gespeichert und wird mit „Auswertung prüfen“ gebucht; eine Auswertung läuft weiter, wenn man die
   // Seite verlässt. Was hier hochgeladen wird, gilt als Rechnung (`docType`): Der Server fragt das Modell nicht nach
-  // der Belegart, wie vorher mit /api/extract; Zählerfotos erkennt die Schnellerfassung (Entscheidung zu Regel 4).
+  // der Belegart, wie vorher mit /api/extract; Zählerfotos erkennt der Eingang (Entscheidung zu Regel 4).
   const { queue: all, patchEntry, addFiles, remove, cancel, retry, takeOff, sweep } = useEvaluationQueue()
+  const [skipped, setSkipped] = useState(false)
   // Wer die Seite verlässt, sieht Erledigtes beim nächsten Mal nicht wieder (übernommen, abgebrochen, abgelegt).
   useEffect(() => () => sweep(), [sweep])
-  // Bleibt der Beleg ungebucht, steht er im Posteingang dieses Objekts; nennt er kein Jahr, gilt das gewählte (#170).
+  // Bleibt der Beleg ungebucht, steht er im Eingang dieses Objekts; nennt er kein Jahr, gilt das gewählte (#170).
   const target: QueueTarget = { propertyId, year, period: key, pageImageEdge: settings?.ai?.pageImageEdge ?? undefined, docType: 'rechnung' }
   const queue = useMemo(() => all.filter((x) => belongsTo(x, propertyId, key)), [all, propertyId, key])
   const focusAfterRetry = useRetryFocus(queue)
   const isReading = (x: QueueEntry) => x.status === 'fertig' && x.result?.kind === 'zaehler'
-  // Ein Zählerfoto aus der Schnellerfassung desselben Objekts und Zeitraums steht auch hier. Ablesungen braucht die
+  // Ein Zählerfoto aus dem Eingang desselben Objekts und Zeitraums steht auch hier. Ablesungen braucht die
   // Seite nur für seine Ampel; geladen wird erst, wenn eines da ist.
   const hasReading = queue.some(isReading)
   const [readings, setReadings] = useState<Reading[] | null>(null)
@@ -809,14 +812,14 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
 
       <Card title={<>🤖 Beleg per KI auswerten <span className="badge gray">{ai.where}</span></>} className="no-print">
         <p className="muted">
-          PDF oder Foto der Rechnung hochladen — die KI schlägt Kostenpositionen vor, Sie prüfen und übernehmen sie. Zählerfotos nimmt die Schnellerfassung. {ai.notice ?? 'Es verlässt nichts Ihren Rechner.'}
+          PDF oder Foto der Rechnung hochladen — die KI schlägt Kostenpositionen vor, Sie prüfen und übernehmen sie. Zählerfotos nimmt der Eingang auf der Seite Belege. {ai.notice ?? 'Es verlässt nichts Ihren Rechner.'}
         </p>
         <div
           className={`dropzone ${dragOver ? 'over' : ''}`}
           onClick={() => fileInputRef.current?.click()}
           onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
           onDragLeave={() => setDragOver(false)}
-          onDrop={(e) => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files, target) }}
+          onDrop={(e) => { e.preventDefault(); setDragOver(false); setSkipped(addFiles(e.dataTransfer.files, target) > 0) }}
         >
           <strong>Belege hierher ziehen</strong> oder klicken zum Auswählen — auch mehrere auf einmal.
           <div className="muted">Sie werden nacheinander verarbeitet (PDF oder Foto).</div>
@@ -827,10 +830,12 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             multiple
             aria-label="Belege auswählen"
             className="sr-only"
-            onChange={(e) => { if (e.target.files) addFiles(e.target.files, target); e.target.value = '' }}
+            onChange={(e) => { if (e.target.files) setSkipped(addFiles(e.target.files, target) > 0); e.target.value = '' }}
           />
         </div>
 
+        {/* Andere Dateien als PDF und Bild: derselbe Satz wie im Eingang (#490), statt still zu verschwinden */}
+        {skipped && <NoticeBox level="error" action={SKIPPED_FILES} />}
         <OtherQueueEntries queue={all} propertyId={propertyId} period={key} />
 
         {queue.map((entry) => {
@@ -855,12 +860,12 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                 )}
                 {entry.status === 'fertig' && (meter
                   ? <span className="badge green">Zählerstand erkannt</span>
-                  : <span className="badge amber">{countOf(assessment?.lines.length ?? 0, 'Position', 'Positionen')} erkannt — bitte prüfen</span>)}
+                  : <span className={assessment ? openBadgeClass(assessment) : 'badge amber'}>{countOf(assessment?.lines.length ?? 0, 'Position', 'Positionen')} erkannt — bitte prüfen</span>)}
                 {entry.status === 'übernommen' && <span className="badge green">✓ übernommen</span>}
                 {entry.status === 'fehler' && <span className="badge red">Fehler</span>}
-                {entry.status === 'gespeichert' && <span className="badge amber">im Belegordner</span>}
+                {entry.status === 'gespeichert' && <span className="badge amber">gespeichert</span>}
                 {entry.status === 'abgebrochen' && <span className="badge gray">abgebrochen</span>}
-                {/* Gebucht wird im Jahr des Belegs; weicht es vom gewählten ab, steht es hier, wie in der Schnellerfassung (I1). */}
+                {/* Gebucht wird im Jahr des Belegs; weicht es vom gewählten ab, steht es hier, wie im Eingang der Seite Belege (I1). */}
                 {assessment && (assessment.targetPeriod ?? calendarPeriod(assessment.year)) !== key && <span className="badge gray">{view.calendar ? `Jahr ${assessment.year}` : assessment.targetLabel ?? `Jahr ${assessment.year}`}</span>}
                 <div className="grow" />
                 {entry.status === 'gespeichert' && (

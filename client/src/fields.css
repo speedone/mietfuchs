@@ -61,3 +61,15 @@
     min-width: 0;
   }
 }
+
+/* Die Prüfung einer Auswertung (AssessmentReview, Eingang und Kosten) am Handy (Nutzerrückmeldung zu #490): Unter 640 px
+   ist jede Position ein Block, die Felder stehen untereinander in voller Breite, jedes mit seiner Beschriftung darüber
+   (`data-label`). Vorher musste man die Tabelle seitlich wischen. Am Rechner bleibt die Tabelle. */
+@media screen and (max-width: 640px) {
+  table.assessment-table, table.assessment-table > tbody, table.assessment-table > tbody > tr { display: block; }
+  table.assessment-table > thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  table.assessment-table > tbody { border: 1px solid var(--line); border-radius: var(--radius-m); padding: var(--space-2) var(--space-3); margin-bottom: var(--space-2); }
+  table.assessment-table > tbody > tr > td { display: block; padding: var(--space-1) 0; border: none; text-align: left; white-space: normal; }
+  table.assessment-table > tbody > tr > td[data-label]::before { content: attr(data-label); display: block; color: var(--muted); font-size: var(--text-s); font-weight: var(--weight-medium); }
+  table.assessment-table :is(select, input) { width: 100%; max-width: none; min-width: 0; box-sizing: border-box; }
+}

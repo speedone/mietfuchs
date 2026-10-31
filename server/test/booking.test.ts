@@ -299,7 +299,7 @@ test('Ist die Datei des Belegs gelöscht, gibt es weder Vorschau noch Buchung', 
     const r = await receipt(w, 'weg.pdf', [line('Frischwasser', 'Wasser/Abwasser', 70000)])
     fs.rmSync(path.join(w.uploadDir, 'weg.pdf'))
     const decisions: LineDecision[] = [{ idx: 0, action: 'create', fields: fields('Frischwasser', 'Wasser/Abwasser', 70000) }]
-    const gone = (err: unknown) => err instanceof BookingRefusal && err.status === 404 && /gibt es im Belegordner nicht mehr/.test(err.message)
+    const gone = (err: unknown) => err instanceof BookingRefusal && err.status === 404 && /gibt es unter „Belege“ nicht mehr/.test(err.message)
     await assert.rejects(plan(w, r, decisions), gone)
     await assert.rejects(book(w, r, decisions, 'egal'), gone)
     assert.equal((await items(w)).length, 0)

@@ -66,7 +66,7 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
   // Heizung PR 20: die Prüfungen einer mit der KI gelesenen Rechnung und der Fortschritt beim Lesen.
   const [checks, setChecks] = useState<string[]>([])
   const [reading, setReading] = useState<AiProgress | null | 'start'>(null)
-  // Fehler mit Ausweg (#487): Die KI ist gescheitert, die Rechnung liegt im Belegordner. Die Datei bleibt für einen neuen
+  // Fehler mit Ausweg (#487): Die KI ist gescheitert, die Rechnung ist gespeichert (Seite Belege). Die Datei bleibt für einen neuen
   // Versuch im Browser, an den Server geht dann nur ihr Name.
   // „Von Hand erfassen“ lässt ihn stehen: Wer das Fenster ohne Speichern schließt, hat den Ausweg wieder vor sich; erst
   // eine angelegte Lieferung erledigt ihn (Durchsicht #487).
@@ -114,7 +114,7 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
   }
 
   // Heizung PR 20 (#103): Die KI liest die Rechnung, das Formular einer neuen Lieferung ist damit vorbelegt;
-  // gespeichert wird erst mit „Anlegen“. Der Beleg liegt mit Objekt und Jahr im Belegordner.
+  // gespeichert wird erst mit „Anlegen“. Der Beleg liegt mit Objekt und Jahr auf der Seite Belege.
   async function readInvoice(file: File, stored?: string) {
     setReading('start')
     setError('')
@@ -485,7 +485,7 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
         </div>
       )}
       {/* „Von Hand erfassen“ öffnet das Formular einer neuen Lieferung: Die Karte hat es selbst, und eine Lieferung
-          trägt keinen Beleg; die Rechnung bleibt im Belegordner. */}
+          trägt keinen Beleg; die Rechnung bleibt auf der Seite Belege. */}
       {!view.closed && editing === null && reading === null && kept && (
         <KeptReceipt failure={kept.failure} onManual={() => open(null)} onOpenSettings={onOpenAiSettings}
           onRetry={() => { aiArea.current?.focus(); void readInvoice(kept.file, kept.failure.file) }} />

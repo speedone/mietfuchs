@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// Die Belegbuchung im Browser (#170): Schnellerfassung und Kosten benutzen dieselbe Komponente
+// Die Belegbuchung im Browser (#170): Eingang und Kosten benutzen dieselbe Komponente
 // „Auswertung prüfen“, und die Zahlen kommen vom (nachgebauten) Server mit dem echten Planer.
 // Die vier Abnahmefälle der Spezifikation stehen hier als „Abnahme A“ bis „Abnahme D“.
 import { useLayoutEffect } from 'react'
@@ -9,7 +9,7 @@ import type { AssessmentView, CostItem, Extraction, LineFields, LineSuggestion, 
 import { PeriodProvider } from '../period'
 import { PropertyProvider, useHasOpenForm } from '../property'
 import { UIProvider } from '../components/feedback'
-import Schnellerfassung from './Schnellerfassung'
+import Belege from './Belege'
 import Kosten from './Kosten'
 // Die Auswahl der Seitenleiste (App.tsx): Die Seite selbst wählt das Jahr nicht mehr (#346 Schritt 8).
 import { PeriodSelect } from '../components/PeriodSelect'
@@ -59,7 +59,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-const intake = () => render(<PeriodProvider><PropertyProvider><UIProvider><Schnellerfassung units={UNITS} settings={null} onNavigate={() => {}} /></UIProvider></PropertyProvider></PeriodProvider>)
+const intake = () => render(<PeriodProvider><PropertyProvider><UIProvider><Belege view="eingang" units={UNITS} settings={null} onNavigate={() => {}} /></UIProvider></PropertyProvider></PeriodProvider>)
 const costs = () => render(<PeriodProvider><PropertyProvider><UIProvider><PeriodSelect /><Kosten units={UNITS} settings={null} /></UIProvider></PropertyProvider></PeriodProvider>)
 
 async function upload(container: HTMLElement, count = 1) {
@@ -76,6 +76,10 @@ const actionOf = async (description: string): Promise<HTMLSelectElement> => {
   const el = await screen.findByRole('combobox', { name: `Was geschieht mit „${description}“?` }, SLOW)
   if (!(el instanceof HTMLSelectElement)) throw new Error('kein Auswahlfeld')
   return el
+}
+// „Jahr der Buchung“ steht als Text mit „Jahr ändern“ (#490); das Feld erst nach dem Klick
+function openYears() {
+  for (const b of screen.queryAllByRole('button', { name: 'Jahr ändern' })) fireEvent.click(b)
 }
 async function previewAndBook(): Promise<{ shown: string[] }> {
   fireEvent.click(screen.getByRole('button', { name: 'Vorschau' }))
@@ -282,6 +286,7 @@ test('ein anderes Jahr an der Karte verwirft die sichtbare Vorschau', async () =
   await actionOf('Grundsteuer B')
   fireEvent.click(screen.getByRole('button', { name: 'Vorschau' }))
   await screen.findByLabelText('Vorschau', {}, SLOW)
+  openYears()
   fireEvent.change(screen.getByRole('combobox', { name: 'Jahr der Buchung' }), { target: { value: String(YEAR - 1) } })
   // #309: Schon der Entwurf nimmt die Vorschau weg; sie sah das bisherige Jahr.
   expect(screen.queryByLabelText('Vorschau')).toBeNull()
@@ -302,7 +307,10 @@ function yearPuts(): string[] {
   })
   return puts
 }
-const yearBox = () => screen.getByRole('combobox', { name: 'Jahr der Buchung' }) as HTMLSelectElement
+const yearBox = () => {
+  openYears()
+  return screen.getByRole('combobox', { name: 'Jahr der Buchung' }) as HTMLSelectElement
+}
 
 test('#309: das Jahr der Buchung sendet erst mit „Speichern“, genau einmal', async () => {
   fake = fakeBooking({ items: [], units: UNITS })
@@ -385,6 +393,7 @@ test('während die Vorschau läuft, lässt sich das Jahr der Karte nicht ändern
   let release = () => {}
   hold = new Promise<void>((resolve) => { release = resolve })
   fireEvent.click(screen.getByRole('button', { name: 'Vorschau' }))
+  openYears()
   await waitFor(() => expect(screen.getByRole('combobox', { name: 'Jahr der Buchung' })).toHaveProperty('disabled', true))
   release()
   await screen.findByLabelText('Vorschau', {}, SLOW)
@@ -573,6 +582,7 @@ test('#309: mit einem zweiten Beleg ohne Entwurf bucht „Alle grünen“ nur di
   const { container } = intake()
   await upload(container, 2)
   const karten = await waitFor(() => {
+    openYears()
     const found = screen.getAllByRole('combobox', { name: 'Jahr der Buchung' })
     expect(found).toHaveLength(2)
     return found
@@ -597,7 +607,7 @@ test('7a: eine geänderte Aktion an einer Zeile meldet die Karte an, zurück zum
     probe.open = useHasOpenForm()
     return null
   }
-  const { container } = render(<PeriodProvider><PropertyProvider><UIProvider><Schnellerfassung units={UNITS} settings={null} onNavigate={() => {}} /><Offen /></UIProvider></PropertyProvider></PeriodProvider>)
+  const { container } = render(<PeriodProvider><PropertyProvider><UIProvider><Belege view="eingang" units={UNITS} settings={null} onNavigate={() => {}} /><Offen /></UIProvider></PropertyProvider></PeriodProvider>)
   await upload(container)
   const action = await actionOf('Grundsteuer B')
   const vorher = action.value
@@ -636,4 +646,22 @@ test('nach dem Buchen steht „Gebucht“ als Erfolg, nicht als Warnung', async 
   expect(done.closest('.notice-item')).toBeNull()
   expect(done.getAttribute('role')).toBe('status')
   expect(done.classList.contains('ok')).toBe(true)
+})
+
+// Fehlender Test aus der Bestandsaufnahme (#490): Nach dem Übernehmen führen „→ Kosten ansehen“ und „→ Zur Abrechnung“
+// weiter; vorher gibt es beide nicht.
+test('Eingang: nach dem Buchen führen „→ Kosten ansehen“ und „→ Zur Abrechnung“ weiter', async () => {
+  fake = fakeBooking({ items: [estimate('wa', 'Wasser/Abwasser', 150000)], units: UNITS })
+  extraction = invoice([{ description: 'Frischwasser', category: 'Wasser/Abwasser', amountEur: 700 }])
+  const onNavigate = vi.fn()
+  const { container } = render(<PeriodProvider><PropertyProvider><UIProvider><Belege view="eingang" units={UNITS} settings={null} onNavigate={onNavigate} /></UIProvider></PropertyProvider></PeriodProvider>)
+  await upload(container)
+  fireEvent.change(await actionOf('Frischwasser'), { target: { value: 'link:wa' } })
+  expect(screen.queryByRole('button', { name: '→ Kosten ansehen' })).toBeNull()
+  await previewAndBook()
+  await screen.findByLabelText('Gebucht', {}, SLOW)
+  fireEvent.click(await screen.findByRole('button', { name: '→ Kosten ansehen' }, SLOW))
+  expect(onNavigate).toHaveBeenLastCalledWith('kosten')
+  fireEvent.click(screen.getByRole('button', { name: '→ Zur Abrechnung' }))
+  expect(onNavigate).toHaveBeenLastCalledWith('abrechnung')
 })

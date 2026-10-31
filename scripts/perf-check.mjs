@@ -12,7 +12,7 @@
 // Fotos und Profile gehören nie ins Repo.
 //
 // **Last**: Nur allein auf dem Rechner laufen lassen. Stufe m braucht grob 1 bis 2 GB, l ein Mehrfaches. Der Fall
-// „Belegordner, alle Jahre und alle Objekte“ kann den Rechner lahmlegen (jedes Vorschaubild startet einen eigenen
+// „Ordner der Belege, alle Jahre und alle Objekte“ kann den Rechner lahmlegen (jedes Vorschaubild startet einen eigenen
 // pdf.js-Worker), bis der Fix für die Belegvorschauen gemergt ist; er läuft deshalb zuletzt, `--skip-heavy` lässt ihn
 // weg. Jeder Server bekommt NKA_DATA_DIR, CI=1 und NKA_UPDATE_URL
 // (startPerfServer in perf-stock.mjs). Chromium einmalig: `npx playwright install chromium`.
@@ -410,19 +410,19 @@ async function measureAction(page, name, view, action, limit = 300000, heapMb = 
   }
 }
 
-// Belegordner über alle Jahre und alle Objekte: zuletzt, denn die Vorschaubilder starten je Beleg einen pdf.js-Worker,
+// Der Ordner der Seite Belege über alle Jahre und alle Objekte: zuletzt, denn die Vorschaubilder starten je Beleg einen pdf.js-Worker,
 // das belastet den ganzen Rechner (Last über 100) und kann den Tab zum Absturz bringen; alles danach wäre verfälscht.
 async function heavyReceipts(page, view, heapMb) {
   const main = page.locator('main')
   const long = 600000
   const search = main.locator('input[type=search]')
   const allProps = main.getByLabel(/aller Objekte/)
-  await measureAction(page, 'Belegordner: Häkchen alle Jahre', view, () => main.getByLabel(/aller Jahre/).check(), long, heapMb)
+  await measureAction(page, 'Ordner: Häkchen alle Jahre', view, () => main.getByLabel(/aller Jahre/).check(), long, heapMb)
   await page.evaluate(() => /** @type {any} */ (globalThis).scrollTo(0, 0))
   await page.screenshot({ path: path.join(OUT, `${view}-belegordner-alle-jahre-oben.png`) })
-  await measureAction(page, 'Belegordner: Suche „Stadtwerke“ in allen Jahren', view, () => search.fill('Stadtwerke'), long, heapMb)
-  await measureAction(page, 'Belegordner: Suche leeren in allen Jahren', view, () => search.fill(''), long, heapMb)
-  if (await allProps.count()) await measureAction(page, 'Belegordner: Häkchen alle Objekte', view, () => allProps.check(), long, heapMb)
+  await measureAction(page, 'Ordner: Suche „Stadtwerke“ in allen Jahren', view, () => search.fill('Stadtwerke'), long, heapMb)
+  await measureAction(page, 'Ordner: Suche leeren in allen Jahren', view, () => search.fill(''), long, heapMb)
+  if (await allProps.count()) await measureAction(page, 'Ordner: Häkchen alle Objekte', view, () => allProps.check(), long, heapMb)
   await page.evaluate(() => /** @type {any} */ (globalThis).scrollTo(0, 0))
   await page.screenshot({ path: path.join(OUT, `${view}-belegordner-alle-oben.png`) })
   const shot = path.join(OUT, `${view}-belegordner-alle.png`)
@@ -443,10 +443,13 @@ async function pageActions(page, id, view, heapMb) {
     if (await confirm.isVisible().catch(() => false)) await confirm.getByRole('button', { name: /Verwerfen/ }).click()
     await dialog.waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {})
   }
-  if (id === 'belegordner') {
+  if (id === 'belege') {
+    // Die Ansicht Ordner der Seite Belege (#490); ihre Suche durchsucht immer alle Objekte und Jahre
+    await measureAction(page, 'Belege: Ansicht Ordner', view, () => main.getByRole('tab', { name: 'Ordner' }).click(), 600000, heapMb)
     const search = main.locator('input[type=search]')
-    await measureAction(page, 'Belegordner: Suche „Stadtwerke“', view, () => search.fill('Stadtwerke'), 600000, heapMb)
-    await measureAction(page, 'Belegordner: Suche leeren', view, () => search.fill(''), 600000, heapMb)
+    await measureAction(page, 'Ordner: Suche „Stadtwerke“ (alle Objekte und Jahre)', view, () => search.fill('Stadtwerke'), 600000, heapMb)
+    await measureAction(page, 'Ordner: Suche leeren', view, () => search.fill(''), 600000, heapMb)
+    await measureAction(page, 'Belege: Ansicht Eingang', view, () => main.getByRole('tab', { name: /^Eingang/ }).click(), 600000, heapMb)
   }
   if (id === 'verlauf') {
     await measureAction(page, 'Verlauf: Ältere Änderungen laden', view, () => main.getByRole('button', { name: 'Ältere Änderungen laden' }).click())
@@ -590,16 +593,18 @@ if (!flag('skip-browser')) {
             }
           }
         }
-        // Zuletzt der Belegordner über alle Jahre und Objekte (siehe heavyReceipts); `--skip-heavy` lässt ihn aus
+        // Zuletzt der Ordner der Belege über alle Jahre und Objekte (siehe heavyReceipts); `--skip-heavy` lässt ihn aus
         if (!flag('skip-heavy')) try {
           const target = await navScope()
-          await target.locator('.nav-group button').filter({ hasText: 'Belegordner' }).first().click()
+          await target.locator('.nav-group button').filter({ hasText: 'Belege' }).first().click()
+          await quiet(page, await now(page))
+          await page.locator('main').getByRole('tab', { name: 'Ordner' }).click()
           await quiet(page, await now(page))
           await heavyReceipts(page, view, heapMb)
         } catch (err) {
           const text = err instanceof Error ? err.message.split('\n')[0] : String(err)
-          result.actions.push({ view, name: 'Belegordner alle Jahre/Objekte: abgebrochen', error: text })
-          log(`  ${view} Belegordner alle Jahre/Objekte: abgebrochen (${text})`)
+          result.actions.push({ view, name: 'Ordner alle Jahre/Objekte: abgebrochen', error: text })
+          log(`  ${view} Ordner alle Jahre/Objekte: abgebrochen (${text})`)
         }
         result.browser.push({ view, page: '(Start)', id: 'start', contentMs: round(firstContent), readyMs: round(firstQuiet.doneMs), dom: firstQuiet.dom, longTasks: firstQuiet.longTasks, longTaskMs: round(firstQuiet.longTaskMs), longestTaskMs: round(firstQuiet.longestTaskMs), apiKb: round(firstQuiet.api.reduce((s, a) => s + a[2], 0)), decodedKb: round(firstQuiet.decodedKb), requests: firstQuiet.requests, api: firstQuiet.api })
         await context.close()

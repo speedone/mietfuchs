@@ -800,6 +800,8 @@ export type AiStatus = {
   ok: boolean
   models?: AiModel[]
   error?: string
+  // Warum es nicht geht, wie bei einem gescheiterten Beleg (#487, #490)
+  reason?: AiFailureReason
   found?: string // Adresse, unter der ein lokales Ollama stattdessen antwortet
 }
 // Antwort von /api/ollama/status, bleibt für Tabs von vor #18

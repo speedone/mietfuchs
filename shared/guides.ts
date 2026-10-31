@@ -34,10 +34,15 @@ const HEAT_PUMP_FROM = germanDate(hkvRenewableExemption.versions.find((v) => v.v
 export const GUIDE_PAGES = ['stammdaten', 'zaehler', 'kosten', 'mietkonto', 'heizkosten', 'abrechnung', 'steuer', 'einstellungen', 'belege'] as const
 export type GuidePage = (typeof GUIDE_PAGES)[number]
 
+// Die Ansichten der Seite Belege (#490); dieselben wie `BelegeView` in client/src/nav.ts.
+export type GuideView = 'eingang' | 'ordner'
+
 export type GuideStep = {
   text: string
   // Die Seite, auf der man es tut; ohne Seite, wenn der Schritt in der Seitenleiste liegt.
   page?: GuidePage
+  // Auf der Seite Belege die Ansicht, die der Sprung öffnet; ohne Angabe die zuletzt benutzte
+  view?: GuideView
 }
 export type GuideCaveat = {
   text: string
@@ -87,7 +92,7 @@ const GUIDE_DATA = {
       { page: 'kosten', text: 'Erfassen Sie die Rechnungen mit „+ Kostenposition anlegen“. Das Wasser verteilen Sie mit dem Umlageschlüssel „nach Verbrauch (Zähler)“ und dem Zählertyp „Kaltwasser“.' },
       { page: 'kosten', text: 'Reparaturen erfassen Sie als „Nicht umlagefähig“. Unter „Betrifft (für die Steuer)“ ordnen Sie eine Reparatur, die nur eine Wohnung betrifft, dieser Wohnung zu; für Dach, Fassade oder Heizung bleibt „das ganze Gebäude (nach Fläche)“ stehen.' },
       { page: 'steuer', text: 'Für die Anlage V drucken Sie die Steuerübersicht mit „🖨 Drucken / PDF“.' },
-      { page: 'belege', text: 'Die Belege dazu lädt der Belegordner mit „Belege für die Steuer“ als ZIP, geordnet nach den Gruppen der Anlage V; die Übersicht darin nennt je Position den privaten und den abziehbaren Teil wie die Steuerübersicht, eine zweite Tabelle die Einnahmen je Mietverhältnis nach den Zeilen der Anlage V.' },
+      { page: 'belege', view: 'ordner', text: 'Die Belege dazu lädt der Ordner auf der Seite Belege mit „Belege für die Steuer“ als ZIP, geordnet nach den Gruppen der Anlage V; die Übersicht darin nennt je Position den privaten und den abziehbaren Teil wie die Steuerübersicht, eine zweite Tabelle die Einnahmen je Mietverhältnis nach den Zeilen der Anlage V.' },
     ],
     result: [
       'Ihre Wohnung zählt in die Verteilbasis. Nach Fläche, Wohneinheiten und Personen trägt die Mieterin nur ihren Teil, der Rest ist Ihr Eigenanteil. Er steht auf der Seite Abrechnung in der Karte „Kontrolle“ unter „Vermieteranteil (nicht umgelegt)“ mit dem Grund „Eigennutzung“.',
@@ -118,7 +123,7 @@ const GUIDE_DATA = {
       { page: 'stammdaten', text: 'Legen Sie mit „+ Wohnung anlegen“ alle Wohnungen des Hauses an, auch eine selbstgenutzte („Eigennutzung — Anteil trägt der Vermieter“). Eine Einheit, die gesondert abgerechnet wird, etwa ein Laden, stellen Sie auf „nicht beteiligt — bleibt außen vor“.' },
       { page: 'stammdaten', text: 'Legen Sie je Mieter mit „+ Mietverhältnis anlegen“ ein Mietverhältnis an. Ändert sich später die Personenzahl oder die Vorauszahlung, ergänzen Sie die Staffel mit „+ Änderung ab Datum …“ oder „+ Erhöhung ab Monat …“, statt ein neues Mietverhältnis anzulegen.' },
       { page: 'zaehler', text: 'Legen Sie die Wohnungszähler mit ihrer Wohnung an und, wenn vorhanden, den Hauszähler als „Haus (Hauptzähler)“. Erfassen Sie für jeden Zähler den Stand zu Jahresbeginn (31.12. des Vorjahres) und zum Jahresende (31.12.) mit „+ Ablesung anlegen“. Mit Wohnungszählern steht bei den Kosten der Schlüssel „nach Verbrauch (Zähler)“ zur Wahl.' },
-      { page: 'belege', text: 'Laden Sie Rechnungen im Belegordner mit „Belege hochladen“ hoch. Sie liegen dann im „Posteingang“; von dort ordnen Sie jede einer Position zu oder lassen sie mit „Per KI auswerten“ in Positionen zerlegen.' },
+      { page: 'belege', view: 'eingang', text: 'Legen Sie Rechnungen auf der Seite Belege im Eingang ab, auch mehrere auf einmal. Ist eine KI eingerichtet, zerlegt Mietfuchs jede in Positionen; mit „Nur ablegen, ohne Auswertung“ werden sie nur gespeichert. Gespeicherte Belege stehen unter „Ohne Position“; von dort ordnen Sie jeden einer Position zu oder lassen ihn mit „Per KI auswerten“ in Positionen zerlegen.' },
       { page: 'kosten', text: 'Erfassen Sie jede Rechnung mit Kostenart und Umlageschlüssel. Betrifft eine Rechnung nur einen Teil der Wohnungen, etwa den Aufzug im Hinterhaus, wählen Sie bei der Position „Weitere Optionen: nur bestimmte Wohnungen beteiligen“.' },
       { page: 'kosten', text: 'Ab dem zweiten Jahr übernehmen Sie die Positionen des Vorjahres mit dem Knopf über der Liste (für 2026 heißt er Aus 2025 übernehmen …). Kostenart, Beschreibung und Umlageschlüssel kommen mit, Sie tragen je Zeile nur den neuen Betrag ein.' },
       { page: 'abrechnung', text: 'Prüfen Sie die Hinweise der Abrechnung; „Hier beheben →“ führt zum betroffenen Eintrag. Nach dem Versand schließen Sie die Abrechnung mit dem Knopf mit dem Schloss ab und tragen das Datum bei „versendet am“ ein.' },
@@ -126,7 +131,7 @@ const GUIDE_DATA = {
     result: [
       'Jede Rechnung wird centgenau verteilt; den Rechenweg jeder Zeile zeigt auf der Seite Abrechnung die Vorschau eines Mieters („Ansehen“) mit „Rechenweg zeigen“.',
       'Eine neue Position bekommt den Umlageschlüssel, den dieselbe Kostenart im Vorjahr hatte. Weicht sie davon ab, weisen Formular und Abrechnung darauf hin. Eine Rechnung, die schon als Position erfasst ist, legt die KI-Auswertung nicht still ein zweites Mal an, sondern bietet an, den Beleg mit der Position zu verknüpfen.',
-      'Für die Belegeinsicht Ihrer Mieter erstellt der Belegordner die „Belegmappe für Mieter“ als PDF.',
+      'Für die Belegeinsicht Ihrer Mieter erstellt der Ordner auf der Seite Belege die „Belegmappe für Mieter“ als PDF.',
       'Was nicht auf Mieter entfällt, steht in der Karte „Kontrolle“ unter „Vermieteranteil (nicht umgelegt)“ mit seinem Grund, etwa Eigennutzung, Leerstand oder nicht umlagefähig.',
       'Werden Heizkosten nur nach Fläche verteilt, nennt die Abrechnung je Mieter den Betrag, um den er nach der Heizkostenverordnung kürzen darf.',
       'Wohnen Sie selbst im Haus, teilt die Steuerübersicht die Werbungskosten in privat und abziehbar, wie bei der Einliegerwohnung.',
@@ -195,7 +200,7 @@ const GUIDE_DATA = {
     result: [
       'Jedes Objekt hat eigene Wohnungen, Zähler, Kosten und Abrechnungen, und jede Berechnung sieht nur ihr Objekt.',
       'Ein Zähler, eine Direktzuordnung oder ein Einzelbetrag kann nicht auf eine Wohnung eines anderen Objekts zeigen; Mietfuchs lehnt das beim Speichern ab.',
-      'Der Belegordner zeigt die Belege des gewählten Objekts; mit „alle Objekte“ sehen Sie alle zusammen. Ein Beleg aus dem Posteingang wird nur innerhalb eines Objekts gebucht. Das Backup umfasst alle Objekte gemeinsam.',
+      'Der Ordner auf der Seite Belege zeigt die Belege des gewählten Objekts; mit „Belege aller Objekte zeigen“ sehen Sie alle zusammen, und die Suche durchsucht immer alle Objekte. Ein Beleg aus dem Eingang wird nur innerhalb eines Objekts gebucht. Das Backup umfasst alle Objekte gemeinsam.',
       'Gelöscht werden kann nur ein leeres Objekt, und nie das letzte.',
     ],
     example: 'Eine Gebäudeversicherung über 1.500 € gilt für zwei Häuser mit 300 und 200 m² Wohnfläche. Sie teilen sie vorab selbst nach Fläche auf und erfassen 900 € im ersten und 600 € im zweiten Objekt; dort wird jeder Teil auf die Wohnungen verteilt.',

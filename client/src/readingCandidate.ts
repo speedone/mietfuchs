@@ -1,4 +1,4 @@
-// Ein erkannter Zählerstand aus der KI-Auswertung (Schuhkarton, #149), wie ihn Schnellerfassung und Kosten zur
+// Ein erkannter Zählerstand aus der KI-Auswertung (Schuhkarton, #149), wie ihn der Eingang der Seite Belege und Kosten zur
 // Prüfung zeigen (#490). Der Vorschlag entsteht aus der Antwort des Modells, dem Aufnahmedatum des Fotos und den
 // Zählern des Objekts; erst eine Eingabe des Nutzers macht daraus einen eigenen Stand am Eintrag der Warteschlange.
 import type { Meter, MeterReadingExtraction, Reading } from './types'

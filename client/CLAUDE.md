@@ -43,7 +43,7 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   über den Baustein `Switcher`. Jede Seite zeigt beides in der **Kontextzeile** des `PageHeader`
   (`pageContextLine`; `context`: `period`, `calendar` für Mietkonto und Steuer, `property`, `none`).
   Auf Seiten bleiben nur andere Größen wählbar (Kalenderjahr bei abweichendem Zeitraum über
-  `CalendarYearSelect`, Heizperiode, Jahr der Buchung, Objekt und Jahr eines Belegs im Posteingang,
+  `CalendarYearSelect`, Heizperiode, Jahr der Buchung, Objekt und Jahr eines Belegs ohne Position,
   Jahr der Zahlung). Wächter S18; Seitentests, die den Zeitraum wechseln, stellen `<PeriodSelect />`
   daneben. Auf einer Seite trägt der Umschalter die Beschriftung eines Felds (`switcher-field`, S30).
 - **Seitenwechsel nur über `navigate`** in App.tsx (Navigation wie Sprünge aus Seiten); bei offenem
@@ -52,14 +52,40 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   Wohnungen steht „Zurück zu …“.
 - **Eine Warteschlange der KI-Auswertung für die App** (#490, [evaluationQueue.ts](src/evaluationQueue.ts)):
   `EvaluationQueueProvider` liegt in App.tsx außerhalb des Fragment-Schlüssels, eine Auswertung überlebt also Seiten-,
-  Objekt- und Zeitraumwechsel. Jeder Eintrag trägt Objekt, Jahr und Zeitraum des Hochladens; Schnellerfassung und
-  Kosten zeigen die ihres Objekts und Zeitraums (`belongsTo`), die übrigen nennt `OtherQueueEntries` mit Sprung
-  (`useSwitchTo`; Einträge gelöschter Objekte und was die Seite schon als Karte zeigt, zählen nicht). Beide werten
-  über `/api/intake` aus, Kosten mit `docType=rechnung` (keine Frage nach der Belegart; Zählerfotos erkennt die
-  Schnellerfassung, dort „Als Rechnung auswerten“). Weder eine laufende Auswertung noch ein erkannter Zählerstand
+  Objekt- und Zeitraumwechsel. Jeder Eintrag trägt Objekt, Jahr und Zeitraum des Hochladens und, sobald bekannt, den
+  Namen des Belegs (`file`); Eingang und Kosten zeigen die ihres Objekts und Zeitraums (`belongsTo`), die übrigen nennt
+  `OtherQueueEntries` mit Sprung (`useSwitchTo`; Einträge gelöschter Objekte und was die Seite schon als Karte zeigt,
+  zählen nicht). Beide werten über `/api/intake` aus, Kosten mit `docType=rechnung` (keine Frage nach der Belegart;
+  Zählerfotos erkennt der Eingang, dort „Als Rechnung auswerten“). `addFiles` ergibt die Zahl übergangener Dateien;
+  jede Ablage nennt sie mit `SKIPPED_FILES` (belegeView.ts). Weder eine laufende Auswertung noch ein erkannter Zählerstand
   melden sich bei `useOpenForm`, beides überlebt den Seitenwechsel; beim Schließen des Tabs fragt `unsaved`.
   Verlassen der Seite räumt Erledigtes (`sweep`); die Datei bleibt nur bis zur Auswertung im Browser, ein neuer
-  Versuch holt den Beleg aus dem Belegordner. Ohne Provider (Seitentests) hat die Seite eine eigene Schlange.
+  Versuch holt den gespeicherten Beleg vom Server. Ohne Provider (Seitentests) hat die Seite eine eigene Schlange.
+- **Seite „Belege“** (#490, [pages/Belege.tsx](src/pages/Belege.tsx), Logik in [belegeView.ts](src/belegeView.ts)):
+  Reiter „Eingang“ (mit Zahl der offenen Einträge) und „Ordner“ nach dem Tab-Muster (Pfeiltasten); beide Ansichten
+  bleiben eingehängt und die andere `hidden`, damit kein Entwurf beim Wechsel verloren geht. Den Bestand (Belege und
+  Positionen aller Objekte) lädt die Seite einmal (`useReceiptStock`, [receiptStock.ts](src/receiptStock.ts)); Karte,
+  Vorschaubild, Zuordnen, Objekt und Jahr eines Belegs und „Betrag prüfen“ (`useAttach`) teilen beide aus
+  [ReceiptParts.tsx](src/components/ReceiptParts.tsx). Die offene Ansicht hält App.tsx (`belegeView`, je Sitzung in
+  sessionStorage, `readView`/`writeView`): Die Seitenleiste öffnet die zuletzt benutzte, die untere Leiste am Handy
+  („Erfassen“) immer den Eingang. Ein Sprung nennt die Ansicht im Ziel (`NavTarget` `belege:eingang`/`belege:ordner`,
+  `splitTarget` in nav.ts; Cockpit, Leerzustand, `NoticeTab`, ein Schritt einer Anleitung mit `view`). Ein Sprung zu
+  einem Beleg (`openReceipt`, auch „Im Eingang zeigen“ aus der Suche) geht ohne Position in den Eingang, sonst in den
+  Ordner, und hebt ihn kurz hervor (`useHighlight`); gehört er einem anderen Objekt oder Jahr, wechselt die Seite erst mit
+  `useSwitchTo` dorthin (`placeOf`, `periodKeyOfYear`), sonst nennt eine Meldung den Grund. `splitTarget` wirft bei einem
+  unbekannten Ziel. **Eingang** ([pages/BelegeEingang.tsx](src/pages/BelegeEingang.tsx)): Ablage (meldet
+  `GET /api/ai/status` den Grund `unreachable` und läuft nichts, `aiMode`, speichert sie nur; gefragt wird erst mit den
+  Einstellungen, ein Dienst im Internet nie, beim Ablegen und mit „Erneut prüfen“ noch einmal), daneben „Nur ablegen, ohne Auswertung“; Ampelzählung, klebende Leiste „Alle grünen übernehmen“; Gruppen
+  „Wird ausgewertet“, „Zu prüfen“ (Auswertungen, auf Wunsch mit dem Beleg als `iframe` daneben, „Beleg daneben zeigen“, ab `xl` daneben, sonst darunter; dauernd daneben rollte die Tabelle bei 1440 px seitlich, M10; Zählerstände, Fehler) und
+  „Ohne Position“ (`withoutPosition`: ohne, was läuft oder unter „Zu prüfen“ steht; ein gespeicherter, nicht
+  ausgewerteter Beleg trägt `KeptReceipt` an seiner Karte; gelöscht oder zugeordnet verschwindet sein Eintrag der
+  Warteschlange). Ein Beleg mit offener Auswertung hat seine Karte (Löschen, Objekt und Jahr, Zuordnen) an der
+  Auswertung. „Per KI auswerten“ wertet am Beleg aus (`addStored`),
+  „Weiter prüfen“ springt zur Auswertung (`data-assessment`). Belege ohne Position anderer Objekte oder Jahre nennt eine
+  Zeile mit Sprung (`elsewhereGroups`). **Ordner** ([pages/BelegeOrdner.tsx](src/pages/BelegeOrdner.tsx)): wie früher
+  der Belegordner ohne Posteingang; die Suche gilt immer allen Objekten und Jahren, Treffer ohne Position stehen unter
+  „Im Eingang (N)“ mit Ort (`hitPlace`) und „Im Eingang zeigen“. Die Seite Kosten behält ihre eigene Ablage und Prüfung
+  (Regel 4). sessionStorage leert vitestSetup.ts vor jedem Test.
 - **Handy** ([MobileNav.tsx](src/components/MobileNav.tsx)): unter 900 px (`MOBILE_QUERY`) statt der
   Seitenleiste ein angehefteter Kopf (☰, Titel, „Objekt · Zeitraum“, ⇅), ein Menüblatt als
   `<dialog>` mit `showModal()` und eine untere Leiste. Gezeichnet nach `matchMedia`, nicht nur per
@@ -439,7 +465,7 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   Firefox < 128 ist diese Schreibweise ungültig; dann gilt die Rückfalldeklaration davor, und der Vorleser liest den Pfeil
   mit (bewusst hingenommen). Im `summary` steht der Pfeil absolut am Anfang, ein umbrechender Titel hat hängenden Einzug
   (`padding-inline-start`, kein `text-indent`, das sich auf Plaketten vererbte). Keine Sonderregel zeichnet einen eigenen
-  Pfeil oder Marker; ein Flex-`summary` (Register im Belegordner) und ein Knopf tragen ihn als erstes Flex-Kind.
+  Pfeil oder Marker; ein Flex-`summary` (Register im Ordner der Belege) und ein Knopf tragen ihn als erstes Flex-Kind.
 - **Ein `<summary>` behält seinen Titel**, den Zustand zeigt der Pfeil (Titel zitieren die Anleitungen, guides.test.ts).
 - **Ein Knopf, der etwas in der Seite auf- und zuklappt, ist `DisclosureButton`**
   ([components/DisclosureButton.tsx](src/components/DisclosureButton.tsx): `open`, `onToggle`, `closedLabel`,
@@ -447,7 +473,7 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   (Hinweise, beschrieben durch ihren Titel), „Mehr“/„Weniger“ (Kopfzeile der Abrechnung), „Rechenweg“/„Rechenweg
   schließen“, „Ablesungen (N)“/„Ablesungen schließen“ (Zähler). Kein Pfeil im Text. Ein Knopf, dessen Text an einem
   Zustand hängt (`{open ? '…' : …}`), gilt als Aufklapper und ist ohne den Baustein ein Befund. Menüs und Popover
-  (MobileNav, popover.tsx) sind keine Aufklapper; ein Knopf, der nur nachlädt („Ältere anzeigen (N)“ im Posteingang), auch
+  (MobileNav, popover.tsx) sind keine Aufklapper; ein Knopf, der nur nachlädt („Ältere anzeigen (N)“ unter „Ohne Position“), auch
   nicht. Wächter S33 in uiRules.test.ts; der Browserlauf misst, dass der Pfeil neben der ersten Textzeile steht und ein
   umbrechender Titel jede Zeile an derselben Stelle beginnt.
 
@@ -506,7 +532,7 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   sieht er nicht.
 - **Was an einem gespeicherten Wert vorbei handelt, wartet auf den Entwurf daneben**: Ein
   ungespeichertes Jahr der Buchung sperrt Vorschau und Buchen und nimmt die Auswertung aus „Alle
-  grünen übernehmen“; ein ungespeichertes Objekt oder Jahr im Posteingang sperrt „Per KI auswerten“
+  grünen übernehmen“; ein ungespeichertes Objekt oder Jahr eines Belegs ohne Position sperrt „Per KI auswerten“
   und „Weiter prüfen“.
 
 ## Musterseite und Schreibweisen

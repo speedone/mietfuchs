@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// Zählerstände in der Schnellerfassung (#149): gelesen wie jede Menge, „1.234“ ist 1234. Und der
+// Zählerstände im Eingang der Seite Belege (#149): gelesen wie jede Menge, „1.234“ ist 1234. Und der
 // Wert des Modells wird so ins Feld geschrieben, dass er danach wieder derselbe ist: 1,234 m³ darf
 // nicht als „1.234“ dastehen und als 1234 gespeichert werden.
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
@@ -7,7 +7,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import type { Meter, MeterReadingExtraction, Unit } from '../types'
 import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
-import Schnellerfassung from './Schnellerfassung'
+import Belege from './Belege'
 
 const UNITS: Unit[] = [{ id: 'u1', propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true }]
 const METERS: Meter[] = [{ id: 'm1', propertyId: 'objekt-1', name: 'Wasser EG', unitId: 'u1', type: 'kaltwasser', unit: 'm³', meterNumber: '4711' }]
@@ -42,7 +42,7 @@ async function evaluate() {
   const { container } = render(
     <PeriodProvider>
       <PropertyProvider>
-        <Schnellerfassung units={UNITS} settings={null} onNavigate={() => {}} />
+        <Belege view="eingang" units={UNITS} settings={null} onNavigate={() => {}} />
       </PropertyProvider>
     </PeriodProvider>,
   )

@@ -102,3 +102,11 @@ test('Verlauf: Der Zähler der Schreibvorgänge schlägt bei einem zweiten Schre
   const before = writesPerRoute(source).get('PUT /api/units/:id/interim-gaps/:date') ?? 0
   assert.equal(writesPerRoute(mutated).get('PUT /api/units/:id/interim-gaps/:date'), before + 1)
 })
+
+// #490: Schnellerfassung und Belegordner sind eine Seite „Belege“. Ein Satz im Verlauf nennt keine Seite, die es nicht
+// mehr gibt; ältere Einträge zeigen danach den neuen Satz.
+test('Verlauf: kein Satz nennt Schnellerfassung, Belegordner oder Posteingang', () => {
+  const old = Object.entries(ROUTE_SENTENCES).filter(([, s]) => /Schnellerfassung|Belegordner|Posteingang/.test(s.text))
+  assert.deepEqual(old, [])
+  assert.equal(ROUTE_SENTENCES['POST /api/intake']?.text, 'Beleg mit KI ausgewertet')
+})
