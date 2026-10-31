@@ -1429,6 +1429,12 @@ export function carryShareCents(snapshot: Snapshot, carryCents: number, year: nu
 // `linkable`: Positionen, auf die ein Abzug zeigen kann, auch aus anderen Jahren (#268, Durchsicht M1); nur für die
 // Anlage und die Beschreibung eines Verweises, nie für Beträge.
 // `costModels.relativeTenancies` nur mit mindestens einem Mietverhältnis an Angehörige (#96 PR 2).
+// An Angehörige **zu Wohnzwecken** vermietet (Kz. 62 und Zeilen 19, 22, 23; Durchsicht K3 zu #489, S1 zu #312 PR 2): mit
+// Kennzeichen, und in der Spanne wohnt jemand dort. Mietfuchs kennt keine Art der Einheit, eine Garage oder ein
+// Stellplatz hat 0 Personen (#135); dieselbe Lesart wie `inhabited` in computeSettlement. Eine Stelle für beide.
+function relativeForHousing(t: SnapshotTenancy, from: string, to: string): boolean {
+  return t.relative === true && personDaysInPeriod(t, from, to) > 0
+}
 const relativeTenanciesOf = (n: number): { relativeTenancies?: number } => (n > 0 ? { relativeTenancies: n } : {})
 
 // Das Mietmodell eines Mietverhältnisses für die Kopfzeilen der Anlage V und die Inklusivmiete (#96, #142, #312): kalt aus
@@ -1473,7 +1479,9 @@ type ReceivedInput = {
   snapshot: Pick<Snapshot, 'units' | 'tenancies' | 'payments'>
   year: number
   inclusive: (t: SnapshotTenancy) => boolean
-  shortDays: number
+  // Die kurze Zeit um den Jahreswechsel in Tagen, für das Kalenderjahr, zu dem eine Zahlung wirtschaftlich gehört
+  // (Zeitregel `periodStart` von `estg.short-period-days`).
+  shortDays: (year: number) => number
 }
 
 const emptyTenancyReceived = (): Omit<TaxReceivedTenancy, 'tenancyId' | 'unitId' | 'tenantName' | 'unitName' | 'start' | 'end' | 'relative'> => ({
@@ -1492,9 +1500,11 @@ function receivedIncome({ snapshot, year, inclusive, shortDays }: ReceivedInput)
   const lastDecember = `${year - 1}-12`
   // Die kurze Zeit um den Jahreswechsel, aus dem Rechtsregister: vorwärts ab dem Tag `shortDays` vor dem 01.01. des
   // Folgejahres (bei zehn Tagen der 22.12.), rückwärts bis zum `shortDays`-ten Januar (der 10.01.).
-  const forwardFrom = shiftIsoDay(`${year + 1}-01-01`, -shortDays)
-  const previousForwardFrom = shiftIsoDay(yFrom, -shortDays)
-  const lateTo = shiftIsoDay(yFrom, shortDays - 1)
+  // Je Grenze die Fassung des Jahres, zu dem die Teile gehören: vorwärts das Folgejahr, aus dem Vorjahr dieses Jahr,
+  // Anfang Januar für Dezember das Vorjahr.
+  const forwardFrom = shiftIsoDay(`${year + 1}-01-01`, -shortDays(year + 1))
+  const previousForwardFrom = shiftIsoDay(yFrom, -shortDays(year))
+  const lateTo = shiftIsoDay(yFrom, shortDays(year - 1) - 1)
   const isAllocation = (c: AllocationSlice['component']): boolean => c === 'prepayment' || c === 'heatingPrepayment' || c === 'flatRate'
 
   const out: TaxReceived = {
@@ -1545,7 +1555,7 @@ function receivedIncome({ snapshot, year, inclusive, shortDays }: ReceivedInput)
     row.settlementCents = own.filter((p) => !isRentPayment(p) && inYear(p.date)).reduce((a, p) => a + p.amountCents, 0)
     out.possibleDeposits.push(...possibleDepositsOf(t, own, slices, inYear))
     if (!own.some((p) => inYear(p.date))) continue
-    const relative = t.relative === true
+    const relative = relativeForHousing(t, t.start, t.end ?? (compareText(yTo, t.start) >= 0 ? yTo : t.start))
     out.byTenancy.push({ tenancyId: t.id, unitId: t.unitId, tenantName: t.tenantName, unitName: unitById.get(t.unitId)?.name ?? '—', start: t.start, end: t.end, relative, ...row })
   }
   // Eine Mietzahlung an ein Mietverhältnis, das der Schnappschuss nicht führt, gibt es nach `snapshotFor` nicht; geschähe
@@ -1582,7 +1592,9 @@ function receivedIncome({ snapshot, year, inclusive, shortDays }: ReceivedInput)
 // Mietzahlung im Jahr bis `DEPOSIT_WINDOW_DAYS` Tage vor oder nach Beginn, deren Betrag der vereinbarten Kaution gleicht,
 // wenn die Kaution nicht das Soll des ersten vollen Monats ist (sonst nicht zu unterscheiden) und die Zahlung keinen
 // Rückstand tilgt (keiner ihrer Teile gilt einem Monat vor dem ihres Datums; sonst wäre es eine Nachzahlung mit dem
-// Betrag der Kaution).
+// Betrag der Kaution). Ein angebrochener erster Monat zählt dabei nicht als Rückstand (Durchsicht K2, Auslegung): Bei
+// Beginn am 15.02. ist der anteilige Februar mit der Kaution am 05.03. oft noch offen, und dass die Zahlung ihn deckt,
+// sagt nichts über eine Nachzahlung.
 const DEPOSIT_WINDOW_DAYS = 31
 function possibleDepositsOf(t: SnapshotTenancy, own: readonly SnapshotPayment[], slices: readonly AllocationSlice[], inYear: (d: string) => boolean): TaxReceived['possibleDeposits'] {
   const deposit = t.depositCents
@@ -1595,7 +1607,7 @@ function possibleDepositsOf(t: SnapshotTenancy, own: readonly SnapshotPayment[],
   const to = shiftIsoDay(t.start, DEPOSIT_WINDOW_DAYS)
   return own
     .filter((p) => isRentPayment(p) && inYear(p.date) && p.amountCents === deposit && p.date >= from && p.date <= to)
-    .filter((p) => !slices.some((s) => s.paymentId === p.id && s.month !== null && s.month < p.date.slice(0, 7)))
+    .filter((p) => !slices.some((s) => s.paymentId === p.id && s.month !== null && s.month >= fullMonth && s.month < p.date.slice(0, 7)))
     .map((p) => ({ tenancyId: t.id, tenantName: t.tenantName, paidOn: p.date, cents: p.amountCents }))
 }
 const nextMonthKey = (month: string): string => {
@@ -1679,7 +1691,7 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
     // (#135); dieselbe Lesart wie `inhabited` in computeSettlement.
     ...relativeTenanciesOf(ledger.rows.filter((r) => {
       const t = tenancyById.get(r.tenancyId)
-      return t?.relative === true && personDaysInPeriod(t, calendar.from, calendar.to) > 0
+      return t !== undefined && relativeForHousing(t, calendar.from, calendar.to)
     }).length),
   }
   const tenanciesWithoutPayment = withSoll.filter((r) => !paidTenancies.has(r.tenancyId)).length
@@ -1695,7 +1707,7 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
     snapshot,
     year,
     inclusive: (t) => isInclusiveModel(tenancyCostModel(t, heatingBilled)),
-    shortDays: law(estgShortPeriodDays, { period: calendar }, createLawLog()),
+    shortDays: (y) => law(estgShortPeriodDays, { period: calendarYearPeriod(y) }, createLawLog()),
   })
 
   // Die Abrechnung desselben Jahres, einmal gerechnet. Aus ihr kommen zwei Angaben, und beide

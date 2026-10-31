@@ -6,9 +6,13 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { taxReport, taxReportFor } from '../src/calc.ts'
 import { snapshotFor, type SnapshotTenancy } from '../src/snapshot.ts'
-import { CALENDAR_RULES, calendarYearPeriod } from '../../shared/period.ts'
+import { CALENDAR_RULES, calendarPeriod, calendarYearPeriod } from '../../shared/period.ts'
 import type { PeriodRules, TaxReceived, TaxReport } from '../../shared/types.ts'
 import type { TaxSource } from '../testing/taxStock.ts'
+import { HEATING_CATEGORY } from '../../shared/heating.ts'
+import { estgShortPeriodDays } from '../../shared/law/estg.ts'
+import type { LawParam } from '../../shared/law/register.ts'
+import { tenDayWindow } from '../../shared/paidOn.ts'
 
 type Pay = TaxSource['payments'][number]
 let seq = 0
@@ -224,4 +228,63 @@ test('Option received: false: keine Tilgung, alle übrigen Felder gleich', () =>
   assert.deepEqual({ ...mit, income: rest }, ohne)
   const snap = snapshotFor(s, 'objekt-1', calendarYearPeriod(2025))
   assert.equal('received' in taxReport(snap, undefined, { received: false }).income, false)
+})
+
+// Durchsicht S1: Zeilen 19, 22 und 23 fragen wie Kennzahl 62 nach Vermietung an Angehörige zu Wohnzwecken. Eine Garage
+// an die Tochter (0 Personen, #135) ist keine; dieselbe Lesart wie `costModels.relativeTenancies` (#489, K3).
+test('Angehörige ohne Bewohner (Garage): keine Teilsummen für die Zeilen 19, 22, 23, wie bei Kennzahl 62', () => {
+  const garage = tenancy('garage', 'og', { relative: true, persons: 0, personHistory: [{ from: '2024-01-01', persons: 0 }] })
+  const s = source([garage, tenancy('fremd', 'eg')], [...monthly('garage', '2025-01', '2025-12', 80000), ...monthly('fremd', '2025-01', '2025-12', 80000)])
+  const r = taxReportFor(s, 'objekt-1', 2025)
+  const x = r.income.received ?? assert.fail('received fehlt')
+  assert.deepEqual(x.relatives, { rentCents: 0, allocationsCents: 0, settlementCents: 0 })
+  assert.equal(x.byTenancy.find((b) => b.tenancyId === 'garage')?.relative, false)
+  assert.equal('relativeTenancies' in r.costModels, false)
+})
+
+// Eine Angehörige, die 2024 ausgezogen ist, zahlt 2025 die Nachzahlung: Zeile 23 (ihr Mietverhältnis war eines zu
+// Wohnzwecken), auch ohne Tag im Jahr.
+test('Angehörige nach Auszug: die Nachzahlung im Folgejahr gehört zu Zeile 23', () => {
+  const tochter = tenancy('tochter', 'eg', { relative: true, end: '2024-12-31' })
+  const s = source([tochter], [...monthly('tochter', '2024-01', '2024-12', 80000), pay('tochter', '2025-04-10', 9000, { kind: 'settlement' })])
+  assert.deepEqual(received(s, 2025).relatives, { rentCents: 0, allocationsCents: 0, settlementCents: 9000 })
+})
+
+// Durchsicht S2: Warmmiete inklusiv (Heizung in der Miete, Nebenkosten abgerechnet) mit Heizposition im Jahr: Die
+// Kaltmiete schließt Nebenkosten ein und steht eigens da; an Zeile 15 ändert sich nichts.
+test('Warmmiete inklusiv: inclusiveRentCents = gezahlte Kaltmiete, rentCents unverändert', () => {
+  const heizung = { id: 'heiz', propertyId: 'objekt-1', period: calendarPeriod(2025), category: HEATING_CATEGORY, description: 'Heizöl', amountCents: 200000, key: 'area' as const }
+  const warm = { ...source([tenancy('t', 'eg', { heatingModel: 'inclusive' })], monthly('t', '2025-01', '2025-12', 80000)), costItems: [heizung] } as TaxSource
+  const kalt = { ...source([tenancy('t', 'eg')], monthly('t', '2025-01', '2025-12', 80000)), costItems: [heizung] } as TaxSource
+  const x = received(warm, 2025)
+  assert.equal(x.inclusiveRentCents, 720000)
+  assert.equal(x.rentCents, received(kalt, 2025).rentCents)
+  assert.equal(x.rentCents, 720000)
+  assert.equal(received(kalt, 2025).inclusiveRentCents, 0)
+})
+
+// Durchsicht K2: Beginn mitten im Monat. Der angebrochene erste Monat ist mit der Kaution oft noch offen; dass die Zahlung
+// ihn deckt, ist kein Zeichen einer Nachzahlung.
+test('Kaution bei Beginn am 15.02., als Miete am 05.03. erfasst: Hinweis, obwohl sie den anteiligen Februar deckt', () => {
+  const t = tenancy('t', 'eg', { start: '2025-02-15', depositCents: 180000, prepayments: [{ from: '2025-02', monthlyCents: 20000 }], baseRents: [{ from: '2025-02', monthlyCents: 60000 }] })
+  const nachbarin = tenancy('n', 'og', { start: '2025-01-01' })
+  const s = source([t, nachbarin], [pay('n', '2025-01-03', 80000), pay('t', '2025-03-05', 180000)])
+  assert.deepEqual(received(s, 2025).possibleDeposits, [{ tenancyId: 't', tenantName: 'Mieter t', paidOn: '2025-03-05', cents: 180000 }])
+})
+
+// Durchsicht K5: `estg.short-period-days` hat die Zeitregel `periodStart`. Gefragt wird die Fassung des Kalenderjahres, zu
+// dem die Zahlung wirtschaftlich gehört: für den 22. bis 31.12. das Folgejahr, für Anfang Januar das Vorjahr. Geprüft
+// mit einer gedachten zweiten Fassung (ab 2026 fünf Tage).
+test('Zehn-Tage-Fenster am Zahlungsdatum: die Fassung des Jahres, zu dem die Zahlung gehört (gedachte zweite Fassung)', () => {
+  const v0 = estgShortPeriodDays.versions[0] ?? assert.fail('keine Fassung')
+  const probe: LawParam<number, 'periodStart'> = { ...estgShortPeriodDays, versions: [{ ...v0, validTo: '2025-12-31' }, { ...v0, validFrom: '2026-01-01', value: 5 }] }
+  // Dezember 2025 gehört zu 2026: fünf Tage, ab 27.12.
+  assert.equal(tenDayWindow('2025-12-24', 'Müllabfuhr', probe), false)
+  assert.equal(tenDayWindow('2025-12-27', 'Müllabfuhr', probe), true)
+  // Anfang Januar 2026 gehört zu 2025: zehn Tage, bis 10.01.
+  assert.equal(tenDayWindow('2026-01-08', 'Müllabfuhr', probe), true)
+  assert.equal(tenDayWindow('2026-01-11', 'Müllabfuhr', probe), false)
+  // Januar 2027 gehört zu 2026: fünf Tage.
+  assert.equal(tenDayWindow('2027-01-06', 'Müllabfuhr', probe), false)
+  assert.equal(tenDayWindow('2027-01-05', 'Müllabfuhr', probe), true)
 })

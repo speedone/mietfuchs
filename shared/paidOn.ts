@@ -15,7 +15,7 @@
 import type { CostItem } from './types.ts'
 import { isNotAllocable, isReserveCategory } from './categories.ts'
 import { estgShortPeriodDays } from './law/estg.ts'
-import { valueAt } from './law/register.ts'
+import { valueAt, type LawParam } from './law/register.ts'
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/
 
@@ -140,13 +140,18 @@ export function splitPaidOnQuestions(current: Dated | null, base: Dated, parts: 
 // wenn das Datum in der kurzen Zeit um den Jahreswechsel liegt (bei zehn Tagen vom 22.12. bis zum 10.01.; die Zahl aus
 // dem Rechtsregister, `estg.short-period-days`, #312 PR 2), und nie bei der Grundsteuer: Ihre gesetzlichen Fälligkeiten
 // (§ 28 GrStG) liegen nie in dieser Zeit, und eine Nachzahlung nach § 30 GrStG ist nicht regelmäßig wiederkehrend.
-export function tenDayWindow(paidOn: string, category: string): boolean {
+// Die Zahl hat die Zeitregel `periodStart`: Gefragt wird die Fassung am 1. Januar des Kalenderjahres, zu dem die Zahlung
+// wirtschaftlich gehört, für den Dezember also das Folgejahr, für Anfang Januar das Vorjahr (Durchsicht K5). `param` nur
+// für Tests mit einer gedachten zweiten Fassung.
+export function tenDayWindow(paidOn: string, category: string, param: LawParam<number, 'periodStart'> = estgShortPeriodDays): boolean {
   if (category === 'Grundsteuer' || !isPaidOnDate(paidOn)) return false
-  const days = valueAt(estgShortPeriodDays, paidOn)
   const year = Number(paidOn.slice(0, 4))
   const shift = (iso: string, n: number): string => {
     const [y, m, d] = iso.split('-').map(Number)
     return new Date(Date.UTC(y ?? 0, (m ?? 1) - 1, (d ?? 1) + n)).toISOString().slice(0, 10)
   }
-  return paidOn >= shift(`${year + 1}-01-01`, -days) || paidOn <= shift(`${year}-01-01`, days - 1)
+  const nextStart = `${String(year + 1).padStart(4, '0')}-01-01`
+  const ownStart = `${String(year).padStart(4, '0')}-01-01`
+  const previousStart = `${String(year - 1).padStart(4, '0')}-01-01`
+  return paidOn >= shift(nextStart, -valueAt(param, nextStart)) || paidOn <= shift(ownStart, valueAt(param, previousStart) - 1)
 }
