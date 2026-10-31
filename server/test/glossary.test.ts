@@ -620,6 +620,8 @@ test('Zehn-Tage-Regel: Zahl aus dem Register, Fälligkeit und Zahlung, angewandt
   assert.match(t.norm, /§ 556b Abs\. 1 BGB/)
   assert.match(all, /01\.09\.2001/)
   assert.match(t.needed, /Kostenposition/)
+  // K7: die bekannte Grenze, Beginn nach dem 01.01.
+  assert.match(t.needed, /Beginnt ein Mietverhältnis erst im Januar.*nach dem Datum der Zahlung/s)
   // Beispiel: Dauerauftrag 800 € am 28.12.2025 für Januar 2026 zählt 2026; die Dezembermiete 2025 am 05.01.2026 bleibt 2026.
   assert.match(t.example, /800 €.*28\.12\.2025.*2026/s)
   assert.match(t.example, /05\.01\.2026.*bleibt/s)
@@ -652,6 +654,9 @@ test('Mieten für frühere Jahre: Zeile 25, brutto, Beispiel nachgerechnet (#312
   assert.match(`${t.short} ${t.needed}`, /Auslegung/)
   // Dezembermiete 2025 über 800 € (600 Kalt, 200 Vorauszahlung), gezahlt am 15.01.2026: 800 € in Zeile 25 für 2026.
   assert.match(t.example, /800 €.*15\.01\.2026.*2026.*800 €.*200 € Umlagen/s)
+  // Durchsicht S3: Nur wenn der Januar schon bezahlt ist, geht die ganze Zahlung auf den Dezember; sonst tilgte sie zuerst
+  // auch die offene Vorauszahlung des Januars.
+  assert.match(t.example, /Januarmiete 2026 ist schon bezahlt/)
 })
 
 test('Zahlungsdatum: die Zehn-Tage-Regel verweist auf den Begriff und nennt keine feste Zahl (#312, K3)', () => {

@@ -229,9 +229,9 @@ export default function Steuer({ settings, onNavigate }: Props) {
                 context={possibleDepositText(data)}
                 action={<>
                   Prüfen Sie im <em>Mietkonto</em> Art und Betrag. Ist es die Kaution, löschen Sie die Zahlung dort; die Kaution
-                  steht am Mietverhältnis und ist keine Einnahme, solange Sie sie nicht mit Forderungen verrechnen.
+                  steht am Mietverhältnis.
                 </>}
-                more="Der Vermieter legt die Kaution getrennt von seinem Vermögen an (§ 551 Abs. 3 BGB). Eine verrechnete Kaution ist eine Einnahme bei den Mieten für frühere Jahre und verrechneten Mietkautionen."
+                more="Der Vermieter hat die Kaution getrennt von seinem Vermögen anzulegen (§ 551 Abs. 3 BGB)."
               />
             )}
             {hints.includes('formerYears') && (
@@ -950,14 +950,13 @@ function IncomeTableView({ report, basis }: { report: TaxReport; basis: Basis })
       </thead>
       <tbody>
         {t.rows.map((r) => {
-          const soll = r.sollNote && r.sollCents !== null ? <>{cents(r.sollCents)}<div className="muted cell-sub">{r.sollNote}</div></> : cents(r.sollCents)
           return (
             <tr key={r.key} data-row={r.key}>
               <td className={r.sub ? 'muted' : undefined}>{r.label}</td>
               {t.showsLines && <td data-label="Zeile">{r.line ?? ''}{r.line !== null && r.code !== null && <div className="muted cell-sub">Kennzahl {r.code}</div>}</td>}
               {cols.map((c) => (
                 <td key={c.key} data-label={c.head} className={`num${c.main && !r.sub ? ' font-strong' : ''}${c.main && !r.sub ? '' : ' muted'}`}>
-                  {c.key === 'soll' ? soll : cents(c.value(r))}
+                  {cents(c.value(r))}
                 </td>
               ))}
             </tr>

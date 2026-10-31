@@ -115,7 +115,8 @@ describe('Steuerübersicht: Grundlage und Hinweise (#70)', () => {
     const turn = { forwardCents: 80000, forwardAllocationsCents: 0, fromPreviousCents: 0, fromPreviousAllocationsCents: 0, forwardOldLeaseCents: 0, lateDecemberCents: 0 }
     const received: NonNullable<TaxReport['income']['received']> = {
       rentCents: 0, inclusiveRentCents: 0, unallocatedCents: 0, allocationsCents: 0, flatRateCents: 0, formerYearsCents: 0, formerYearsAllocationsCents: 0,
-      turnOfYear: turn, byUnit: [], byTenancy: [], relatives: { rentCents: 0, allocationsCents: 0, settlementCents: 0 }, possibleDeposits: [],
+      turnOfYear: turn, byUnit: [], byTenancy: [], possibleDeposits: [], totalCents: 0, unassignedCents: 0,
+      relatives: { rentCents: 0, allocationsCents: 0, settlementCents: 0, inclusiveRentCents: 0, unallocatedCents: 0, flatRateCents: 0, sollRentCents: 0, sollInclusiveRentCents: 0, sollAllocationsCents: 0, sollFlatRateCents: 0 },
     }
     expect(taxHints(report({ received }), 'ist')).toContain('turnOfYear')
     expect(taxHints(report({ received }), 'soll')).not.toContain('turnOfYear')

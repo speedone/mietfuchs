@@ -73,6 +73,7 @@ const REPORT = (over: Partial<TaxReport> = {}, income: Partial<TaxReport['income
 const MIETER = (over: Partial<TaxReceivedTenancy> = {}): TaxReceivedTenancy => ({
   tenancyId: 't1', unitId: 'u1', tenantName: 'Meyer', unitName: 'EG', start: '2020-01-01', end: null, relative: false,
   rentCents: 960000, inclusiveRentCents: 0, allocationsCents: 240000, settlementCents: 0, formerYearsCents: 0, unallocatedCents: 0, forwardCents: 0,
+  flatRateCents: 0, fromPreviousCents: 0,
   ...over,
 })
 const RECEIVED = (byTenancy: TaxReceivedTenancy[] = [MIETER()], over: Partial<TaxReceived> = {}, turn: Partial<TaxReceived['turnOfYear']> = {}): TaxReceived => {
@@ -80,11 +81,16 @@ const RECEIVED = (byTenancy: TaxReceivedTenancy[] = [MIETER()], over: Partial<Ta
   return {
     rentCents: sum((t) => t.rentCents), inclusiveRentCents: sum((t) => t.inclusiveRentCents), unallocatedCents: sum((t) => t.unallocatedCents),
     allocationsCents: sum((t) => t.allocationsCents), flatRateCents: 0, formerYearsCents: sum((t) => t.formerYearsCents), formerYearsAllocationsCents: 0,
-    turnOfYear: { forwardCents: sum((t) => t.forwardCents), forwardAllocationsCents: 0, fromPreviousCents: 0, fromPreviousAllocationsCents: 0, forwardOldLeaseCents: 0, lateDecemberCents: 0, ...turn },
+    turnOfYear: { forwardCents: sum((t) => t.forwardCents), forwardAllocationsCents: 0, fromPreviousCents: sum((t) => t.fromPreviousCents), fromPreviousAllocationsCents: 0, forwardOldLeaseCents: 0, lateDecemberCents: 0, ...turn },
     byUnit: byTenancy.map((t) => ({ unitId: t.unitId, unitName: t.unitName, areaM2: 80, rentCents: t.rentCents, allocationsCents: t.allocationsCents, settlementCents: t.settlementCents, formerYearsCents: t.formerYearsCents })),
     byTenancy,
-    relatives: { rentCents: sum((t) => t.rentCents, (t) => t.relative), allocationsCents: sum((t) => t.allocationsCents, (t) => t.relative), settlementCents: sum((t) => t.settlementCents, (t) => t.relative) },
-    possibleDeposits: [],
+    relatives: {
+      rentCents: sum((t) => t.rentCents, (t) => t.relative), allocationsCents: sum((t) => t.allocationsCents, (t) => t.relative), settlementCents: sum((t) => t.settlementCents, (t) => t.relative),
+      inclusiveRentCents: sum((t) => t.inclusiveRentCents, (t) => t.relative), unallocatedCents: sum((t) => t.unallocatedCents, (t) => t.relative), flatRateCents: sum((t) => t.flatRateCents, (t) => t.relative),
+      sollRentCents: 0, sollInclusiveRentCents: 0, sollAllocationsCents: 0, sollFlatRateCents: 0,
+    },
+    possibleDeposits: [], unassignedCents: 0,
+    totalCents: sum((t) => t.rentCents + t.allocationsCents + t.settlementCents + t.formerYearsCents),
     ...over,
   }
 }
@@ -546,16 +552,22 @@ test('Tabelle am Handy gestapelt: jede Betragszelle trägt ihre Beschriftung', a
   for (const td of zeile('homes').querySelectorAll('td.num')) expect(td.getAttribute('data-label')).toMatch(/eingegangen|vereinbart/)
 })
 
-test('Mit Angehörigen: Zeilen 19, 22, 23 eigens, das Soll bei 15/18 und 20 mit Vermerk', async () => {
+test('Mit Angehörigen: Zeilen 19, 22, 23 eigens, das Soll je Zeile vom Server', async () => {
   const r = RECEIVED([
     MIETER({ rentCents: 720000, allocationsCents: 240000 }),
     MIETER({ tenancyId: 't2', unitId: 'u2', unitName: 'OG', tenantName: 'Tochter', relative: true, rentCents: 360000, allocationsCents: 120000, settlementCents: 3000 }),
   ])
+  r.relatives = { ...r.relatives, sollRentCents: 360000, sollAllocationsCents: 120000 }
   await zeige(MIT(r, { paidCents: 1443000, settlementBackPaymentsCents: 3000 }, { costModels: { tenancies: 2, inclusive: 0, partlyInclusive: 0, flatRate: 0, relativeTenancies: 1 } }))
-  expect(zeilen()).toEqual(['homes', 'relatives', 'allocations', 'relativesAllocations', 'relativesSettlement'])
+  // K5: Zeile 21 steht, sobald es eine Nachzahlung gibt, hier 0 € für die übrigen.
+  expect(zeilen()).toEqual(['homes', 'relatives', 'allocations', 'settlement', 'relativesAllocations', 'relativesSettlement'])
   expect(zeile('relatives').textContent).toMatch(/3\.600,00\s€/)
   expect(zeile('relativesSettlement').textContent).toMatch(/30,00\s€/)
-  expect(zeile('homes').textContent).toMatch(LINES?.relatives ? /einschließlich Zeile 19/ : /einschließlich der Angehörigen/)
+  // Soll ohne die Angehörigen: 9.600 − 3.600 = 6.000 und 2.400 − 1.200 = 1.200; deren Soll in 19 und 22.
+  expect(zeile('homes').textContent).toMatch(/7\.200,00\s€.*6\.000,00\s€/)
+  expect(zeile('relatives').textContent).toMatch(/3\.600,00\s€.*3\.600,00\s€/)
+  expect(zeile('allocations').textContent).toMatch(/2\.400,00\s€.*1\.200,00\s€/)
+  expect(zeile('relativesAllocations').textContent).toMatch(/1\.200,00\s€.*1\.200,00\s€/)
   expect(zeile('total').textContent).toMatch(/14\.430,00\s€/)
 })
 
@@ -589,7 +601,9 @@ test('Zehn-Tage-Regel: vorwärts und aus dem Vorjahr mit Beträgen; ohne Betrag 
   await zeige(MIT(RECEIVED([MIETER({ forwardCents: 80000 })], {}, { forwardCents: 80000, fromPreviousCents: 80000, fromPreviousAllocationsCents: 20000 })))
   const box = screen.getByText(/am Jahreswechsel/).closest('.notice-item')
   expect(box?.textContent).toContain(`im Jahr ${JAHR + 1} und stehen dort`)
-  expect(box?.textContent).toMatch(new RegExp(`aus dem Dezember ${JAHR - 1} stehen nach § 11 Abs\\. 1 Satz 2 EStG in diesem Jahr`))
+  expect(box?.textContent).toMatch(new RegExp(`im Dezember ${JAHR - 1} eingegangene Januarmiete stehen nach § 11 Abs\\. 1 Satz 2 EStG in diesem Jahr`))
+  // M1: der Hinweis auf eine Erklärung des Vorjahres mit Mietfuchs bis 0.13, ohne etwas zu verschieben.
+  expect(box?.textContent).toContain(`schon in der Erklärung für ${JAHR - 1} angegeben (Mietfuchs bis Version 0.13 zählte ihn dort), lassen Sie jene berichtigen`)
   expect(box?.textContent).toMatch(/bis zu 10 Tage/)
   expect(box?.textContent).not.toMatch(/steht hier aber im alten/)
   cleanup()
@@ -599,7 +613,7 @@ test('Zehn-Tage-Regel: vorwärts und aus dem Vorjahr mit Beträgen; ohne Betrag 
   await zeige(MIT(RECEIVED([MIETER()], {}, { lateDecemberCents: 80000 })))
   const satz = screen.getByText(/Dezembermiete sind Anfang Januar eingegangen/)
   expect(satz.closest('.notice-item')).toBeNull()
-  expect(satz.textContent).toContain(`gehören sie ins Jahr ${JAHR - 1}`)
+  expect(satz.textContent).toContain(`(so § 551 BGB a. F., sofern der Vertrag nichts anderes bestimmt), gehören sie ins Jahr ${JAHR - 1}`)
 })
 
 test('Mieten für frühere Jahre negativ: der Satz zur Rücklastschrift', async () => {
@@ -612,6 +626,9 @@ test('Mögliche Kaution: Datum, Betrag und Mieter im Hinweis, auch im Druck', as
   const box = screen.getByText(/Ist das die Kaution\?/).closest('.notice-item')
   expect(box?.textContent).toMatch(new RegExp(`Zahlung vom 05\\.03\\.${JAHR} über 2\\.400,00\\s€ \\(Meyer\\)`))
   expect(box?.closest('.no-print')).toBeNull()
+  // K2: keine unbelegte Aussage zur Einnahme, § 551 Abs. 3 BGB bleibt.
+  expect(box?.textContent).not.toMatch(/keine Einnahme|verrechnete Kaution ist eine Einnahme/)
+  expect(box?.textContent).toMatch(/§ 551 Abs\. 3 BGB/)
 })
 
 test('Ohne `received` (älterer Bericht): Ist je Zeile „–“, die Summe ist der Zufluss', async () => {

@@ -11,11 +11,11 @@
 // - Zeile 15/18 zählt die Inklusivmiete mit, beide Spalten: Die ganze Miete gehört dann zu den Mieteinnahmen (Hinweis
 //   `inclusiveLine24`, E5); sie steht als „davon“ darunter. Das Soll dieser Zeile ist deshalb `baseRentSollCents` (in dem
 //   die Inklusivmiete schon steckt), nicht Kaltmiete ohne Inklusivmiete.
-// - Das Soll kennt der Bericht nicht je Mietverhältnis. Mit Angehörigen tragen 15/18 und 20 das ganze Soll, vermerkt
-//   „einschließlich Zeile 19“ bzw. „22“; die Zeilen der Angehörigen haben kein Soll.
-// - Die Pauschale nennt die Tabelle unter Zeile 20 für alle Mietverhältnisse; mit Angehörigen steht sie zusammen für 20 und 22.
+// - Mit Angehörigen zeigen 15/18 und 20 Ist und Soll ohne sie, 19 und 22 ihr Soll (vom Server, `received.relatives`,
+//   Durchsicht S4); jede „davon“-Zeile gehört nur zu ihrer Zeile.
 import type { TaxReceived, TaxReport } from './types'
 import { anlageVLines, type Line } from './anlageV'
+import { incomeLines } from '../../shared/taxIncomeLines.ts'
 import { fmtDate, fmtEuro } from './api'
 import { germanDate, LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
 import { estgShortPeriodDays } from '../../shared/law/estg.ts'
@@ -41,8 +41,6 @@ export type IncomeRow = {
   sollCents: number | null
   // eine „davon“-Zeile
   sub: boolean
-  // ein Vermerk am Soll, wenn es mehr umfasst als die Zeile
-  sollNote?: string
 }
 
 export type IncomeTable = {
@@ -65,53 +63,50 @@ export function hasRelatives(report: Pick<TaxReport, 'income' | 'costModels'>): 
   return (report.costModels.relativeTenancies ?? 0) > 0 || (report.income.received?.byTenancy.some((t) => t.relative) ?? false)
 }
 
-// Die Summe der Zeilen (Zeile 32) auf der Ist-Grundlage: der Zufluss nach Datum, um die Zehn-Tage-Regel berichtigt.
-export function receivedTotalCents(report: Pick<TaxReport, 'income'>): number {
-  const t = report.income.received?.turnOfYear
-  return report.income.paidCents - (t?.forwardCents ?? 0) + (t?.fromPreviousCents ?? 0)
-}
-
 export function incomeTable(report: TaxReport): IncomeTable {
   const i = anlageVLines(report.year)?.income
   const inc = report.income
   const r: TaxReceived | undefined = inc.received
+  // Die Beträge aus der einen Rechnung (shared/taxIncomeLines.ts, Durchsicht S1); hier kommen nur Beschriftung, Zeile und Soll dazu.
+  const L = incomeLines(report)
   const rel = hasRelatives(report)
-  const others = (r?.byTenancy ?? []).filter((t) => !t.relative)
-  const sumOthers = (f: (t: TaxReceived['byTenancy'][number]) => number): number => others.reduce((a, t) => a + f(t), 0)
   const settlement = inc.settlementBackPaymentsCents - inc.settlementRefundsCents
-  const R = r?.relatives ?? { rentCents: 0, allocationsCents: 0, settlementCents: 0 }
-  const make = (key: IncomeRowKey, label: string, paidCents: number | null, sollCents: number | null, sub: boolean, ls: (Line | undefined)[] = [], sollNote?: string): IncomeRow => ({
-    key, label, paidCents, sollCents, sub, line: ls.length > 0 ? lineText(...ls) : null, code: ls.length > 0 ? codeText(...ls) : null, ...(sollNote ? { sollNote } : {}),
+  // Das Soll der Angehörigen vom Server (Durchsicht S4): 15/18 und 20 zeigen das Soll der übrigen.
+  const S = r?.relatives ?? { sollRentCents: 0, sollInclusiveRentCents: 0, sollAllocationsCents: 0, sollFlatRateCents: 0 }
+  const make = (key: IncomeRowKey, label: string, paidCents: number | null, sollCents: number | null, sub: boolean, ls: (Line | undefined)[] = []): IncomeRow => ({
+    key, label, paidCents, sollCents, sub, line: ls.length > 0 ? lineText(...ls) : null, code: ls.length > 0 ? codeText(...ls) : null,
   })
   const rows: IncomeRow[] = [
-    make('homes', 'Mieteinnahmen ohne Umlagen', r ? r.rentCents - R.rentCents : null, inc.baseRentSollCents, false, [i?.homes, i?.otherRooms],
-      rel && i?.relatives ? `einschließlich Zeile ${i.relatives.line}` : rel ? 'einschließlich der Angehörigen' : undefined),
-    make('inclusive', 'davon Inklusivmieten (Nebenkosten eingeschlossen)', r ? (rel ? sumOthers((t) => t.inclusiveRentCents) : r.inclusiveRentCents) : null, inc.inclusiveRentSollCents, true),
-    make('unallocated', 'davon ohne vereinbarte Miete (Überzahlung)', r ? (rel ? sumOthers((t) => t.unallocatedCents) : r.unallocatedCents) : null, null, true),
+    make('homes', 'Mieteinnahmen ohne Umlagen', L ? L.homes : null, inc.baseRentSollCents - S.sollRentCents, false, [i?.homes, i?.otherRooms]),
+    make('inclusive', 'davon Inklusivmieten (Nebenkosten eingeschlossen)', L ? L.inclusive : null, inc.inclusiveRentSollCents - S.sollInclusiveRentCents, true),
+    make('unallocated', 'davon ohne vereinbarte Miete (Überzahlung)', L ? L.unallocated : null, null, true),
   ]
-  if (rel) rows.push(make('relatives', 'Mieteinnahmen ohne Umlagen, an Angehörige vermietet', r ? R.rentCents : null, null, false, [i?.relatives]))
+  if (rel) rows.push(make('relatives', 'Mieteinnahmen ohne Umlagen, an Angehörige vermietet', L ? L.relatives : null, S.sollRentCents, false, [i?.relatives]))
   rows.push(
-    make('allocations', 'Umlagen: laufende Vorauszahlungen und Pauschalen', r ? r.allocationsCents - R.allocationsCents : null, inc.prepaymentSollCents + inc.flatRateSollCents, false, [i?.allocations],
-      rel && i?.relativesAllocations ? `einschließlich Zeile ${i.relativesAllocations.line}` : rel ? 'einschließlich der Angehörigen' : undefined),
-    make('flatRate', rel ? 'davon Betriebskostenpauschalen (mit den Angehörigen)' : 'davon Betriebskostenpauschalen', r ? r.flatRateCents : null, inc.flatRateSollCents, true),
-    make('settlement', 'Nachzahlungen minus erstattete Guthaben aus der Abrechnung', settlement - (r ? R.settlementCents : 0), null, false, [i?.settlement]),
+    make('allocations', 'Umlagen: laufende Vorauszahlungen und Pauschalen', L ? L.allocations : null, inc.prepaymentSollCents + inc.flatRateSollCents - S.sollAllocationsCents, false, [i?.allocations]),
+    make('flatRate', 'davon Betriebskostenpauschalen', L ? L.flatRate : null, inc.flatRateSollCents - S.sollFlatRateCents, true),
+    make('settlement', 'Nachzahlungen minus erstattete Guthaben aus der Abrechnung', L ? L.settlement : settlement, null, false, [i?.settlement]),
   )
   if (rel) {
     rows.push(
-      make('relativesAllocations', 'Umlagen, an Angehörige vermietet', r ? R.allocationsCents : null, null, false, [i?.relativesAllocations]),
-      make('relativesSettlement', 'Nachzahlungen minus Guthaben, an Angehörige vermietet', r ? R.settlementCents : null, null, false, [i?.relativesSettlement]),
+      make('relativesAllocations', 'Umlagen, an Angehörige vermietet', L ? L.relativesAllocations : null, S.sollAllocationsCents, false, [i?.relativesAllocations]),
+      make('relativesSettlement', 'Nachzahlungen minus Guthaben, an Angehörige vermietet', L ? L.relativesSettlement : null, null, false, [i?.relativesSettlement]),
     )
   }
   rows.push(
-    make('formerYears', 'Mieten für frühere Jahre', r ? r.formerYearsCents : null, null, false, [i?.formerYears]),
-    make('formerYearsAllocations', 'davon Umlagen', r ? r.formerYearsAllocationsCents : null, null, true),
+    make('formerYears', 'Mieten für frühere Jahre', L ? L.formerYears : null, null, false, [i?.formerYears]),
+    make('formerYearsAllocations', 'davon Umlagen', L ? L.formerYearsAllocations : null, null, true),
   )
   // Zeilen mit 0 € (oder ohne Wert) in beiden Spalten entfallen, außer 15/18 und 20; mit Angehörigen bleiben 19 und 22.
-  const always: IncomeRowKey[] = ['homes', 'allocations', ...(rel ? (['relatives', 'relativesAllocations'] as const) : [])]
+  // Zeile 21 steht, sobald es eine Nachzahlung oder Erstattung gibt, auch wenn sie sich zu 0 aufheben (K5).
+  const always: IncomeRowKey[] = [
+    'homes', 'allocations', ...(rel ? (['relatives', 'relativesAllocations'] as const) : []),
+    ...(inc.settlementBackPaymentsCents !== 0 || inc.settlementRefundsCents !== 0 ? (['settlement'] as const) : []),
+  ]
   const shown = rows.filter((x) => always.includes(x.key) || (x.paidCents ?? 0) !== 0 || (x.sollCents ?? 0) !== 0)
   return {
     rows: shown,
-    paidTotalCents: r ? receivedTotalCents(report) : inc.paidCents,
+    paidTotalCents: r ? r.totalCents : inc.paidCents,
     sollTotalCents: inc.sollCents,
     totalLine: i?.total ?? null,
     showsLines: shown.some((x) => x.line !== null),
@@ -134,11 +129,13 @@ export function unitRows(report: Pick<TaxReport, 'income'>): UnitIncomeRow[] {
 
 const rentLines = (year: number): { rent: string; allocations: string } | null => {
   const i = anlageVLines(year)?.income
-  return i?.homes && i.otherRooms && i.allocations ? { rent: `Zeile ${i.homes.line}/${i.otherRooms.line}`, allocations: `Zeile ${i.allocations.line}` } : null
+  return i?.homes && i.otherRooms && i.allocations ? { rent: `den Zeilen ${i.homes.line} und ${i.otherRooms.line}`, allocations: `Zeile ${i.allocations.line}` } : null
 }
 
 // `turnOfYear` (E8 nach der Durchsicht von PR 2): nur mit Betrag. Vorwärts ruhig und ohne Vorbehalt, denn Mietfuchs
 // wendet die Regel an; aus dem Vorjahr mit Beträgen je Zeile. Nie ein Satz, der eine Verschiebung ins alte Jahr nahelegt.
+// Durchsicht M1: Wer das Vorjahr mit Mietfuchs bis 0.13 erklärt hat, hatte die Ende Dezember gezahlte Januarmiete dort; ein
+// Satz zeigt dann aufs alte Jahr, ohne etwas zu verschieben (keine Norm, keine Rechnung).
 export function turnOfYearLines(report: Pick<TaxReport, 'year' | 'income' | 'costModels'>): string[] {
   const t = report.income.received?.turnOfYear
   if (!t) return []
@@ -146,10 +143,11 @@ export function turnOfYearLines(report: Pick<TaxReport, 'year' | 'income' | 'cos
   if (t.fromPreviousCents !== 0) {
     const lines = hasRelatives(report) ? null : rentLines(report.year)
     const rent = t.fromPreviousCents - t.fromPreviousAllocationsCents
-    const head = `${fmtEuro(t.fromPreviousCents)} Januarmiete aus dem Dezember ${report.year - 1} stehen nach § 11 Abs. 1 Satz 2 EStG in diesem Jahr`
+    const head = `${fmtEuro(t.fromPreviousCents)} im Dezember ${report.year - 1} eingegangene Januarmiete stehen nach § 11 Abs. 1 Satz 2 EStG in diesem Jahr`
     out.push(lines
       ? `${head}: ${t.fromPreviousAllocationsCents !== 0 ? `${fmtEuro(rent)} in ${lines.rent} und ${fmtEuro(t.fromPreviousAllocationsCents)} in ${lines.allocations}` : `in ${lines.rent}`}.`
       : `${head}${t.fromPreviousAllocationsCents !== 0 ? `, davon ${fmtEuro(t.fromPreviousAllocationsCents)} Umlagen` : ''}.`)
+    out.push(`Haben Sie diesen Betrag schon in der Erklärung für ${report.year - 1} angegeben (Mietfuchs bis Version 0.13 zählte ihn dort), lassen Sie jene berichtigen.`)
   }
   if (t.forwardCents !== 0) {
     out.push(`${fmtEuro(t.forwardCents)} Januarmiete sind Ende Dezember ${report.year} eingegangen; sie zählen nach § 11 Abs. 1 Satz 2 EStG im Jahr ${report.year + 1} und stehen dort.`)
@@ -173,7 +171,7 @@ export const OLD_LEASE_MORE = `Art. 229 § 3 Abs. 1 Nr. 7 EGBGB mit § 551 BGB i
 export function lateDecemberText(report: Pick<TaxReport, 'year' | 'income'>): string | null {
   const c = report.income.received?.turnOfYear.lateDecemberCents ?? 0
   if (c === 0) return null
-  return `${fmtEuro(c)} Dezembermiete sind Anfang Januar eingegangen und stehen in diesem Jahr. Nur wenn die Miete laut Vertrag am Monatsende fällig ist, gehören sie ins Jahr ${report.year - 1}.`
+  return `${fmtEuro(c)} Dezembermiete sind Anfang Januar eingegangen und stehen in diesem Jahr. Nur wenn die Miete am Monatsende fällig ist (so § 551 BGB a. F., sofern der Vertrag nichts anderes bestimmt), gehören sie ins Jahr ${report.year - 1}.`
 }
 
 export function unallocatedText(report: Pick<TaxReport, 'income'>): string | null {
@@ -190,10 +188,11 @@ export function formerYearsText(report: Pick<TaxReport, 'year' | 'income'>): str
   const r = report.income.received
   const c = r?.formerYearsCents ?? 0
   if (!r || c === 0) return null
-  if (c < 0) return `Zeile 25 ist negativ (${fmtEuro(c)}). Eine Rücklastschrift nimmt eine früher verbuchte Miete zurück; tragen Sie den Betrag mit Minus ein.`
   const line = anlageVLines(report.year)?.income.formerYears
+  // S2: die Nummer nur aus `anlageVLines`.
+  if (c < 0) return `${line ? `Zeile ${line.line} ist` : 'Die Mieten für frühere Jahre sind'} negativ (${fmtEuro(c)}). Eine Rücklastschrift nimmt eine früher verbuchte Miete zurück; tragen Sie den Betrag mit Minus ein.`
   const extra = [...(line ? [`Zeile ${line.line}`] : []), ...(r.formerYearsAllocationsCents !== 0 ? [`darin ${fmtEuro(r.formerYearsAllocationsCents)} Umlagen`] : [])]
-  return `${fmtEuro(c)} Miete für frühere Jahre sind ${report.year} eingegangen${extra.length > 0 ? ` (${extra.join(', ')})` : ''}. Bestimmt der Mieter nichts, tilgt eine Zahlung zuerst offene Beträge früherer Monate (§ 366 Abs. 2 BGB). Hat er einen Monat genannt, tragen Sie ihn im Mietkonto an der Zahlung unter „Für Monat“ ein.`
+  return `${fmtEuro(c)} Miete für frühere Jahre sind ${report.year} eingegangen${extra.length > 0 ? ` (${extra.join(', ')})` : ''}. Bestimmt der Mieter nichts, tilgt eine Zahlung zuerst die offenen Vorauszahlungen, dann die Miete, jeweils die ältesten zuerst (§ 366 Abs. 2 BGB); so begleicht sie zuerst Rückstände früherer Monate. Hat er einen Monat genannt, tragen Sie ihn im Mietkonto an der Zahlung unter „Für Monat“ ein.`
 }
 
 // „Mehr dazu“ unter der Tabelle: nur Begründungen mit Fundstelle (Entwurf, Oberfläche). Die Zeile der Abrechnung nur, wo

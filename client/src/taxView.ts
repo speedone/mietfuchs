@@ -22,7 +22,6 @@ import type { Property, PropertyKind, TaxExpenseItem, TaxMovedOut, TaxOutflow, T
 import { andList } from '../../shared/wording.ts'
 import { fmtDate, fmtEuro } from './api'
 import { anlageVLines } from './anlageV'
-import { receivedTotalCents } from './taxIncome'
 import { RESERVE_WITHDRAWAL_CATEGORY } from '../../shared/categories.ts'
 import { fileNumberDigits } from './propertyForm'
 import { LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
@@ -289,14 +288,15 @@ export function settlementSourcesText(report: TaxReport): string | null {
 // Seite nicht an zwei Stellen dieselbe Fallunterscheidung trifft.
 //
 // **Auf der Ist-Grundlage die Summe der Zeilen** (Zeile 32, #312 PR 3): der Zufluss nach Datum, um die Zehn-Tage-Regel
-// berichtigt (§ 11 Abs. 1 Satz 2 EStG ist zwingend). Der Server führt `paidCents` und `surplusPaidCents` weiter nach Datum
-// (Prüfsummen in tax-golden.json, Entwurf E8); ohne Zahlung am Jahreswechsel ist beides dasselbe.
+// berichtigt (§ 11 Abs. 1 Satz 2 EStG ist zwingend). Gerechnet nur vom Server (`received.totalCents`, `surplusReceivedCents`,
+// Durchsicht S1); `paidCents` und `surplusPaidCents` bleiben nach Datum (Prüfsummen in tax-golden.json) und gelten nur ohne
+// `received`.
 export function incomeCentsFor(report: TaxReport, basis: Basis): number {
-  return basis === 'soll' ? report.income.sollCents : receivedTotalCents(report)
+  return basis === 'soll' ? report.income.sollCents : report.income.received?.totalCents ?? report.income.paidCents
 }
 
 export function surplusCentsFor(report: TaxReport, basis: Basis): number {
-  return basis === 'soll' ? report.surplusSollCents : report.surplusPaidCents + receivedTotalCents(report) - report.income.paidCents
+  return basis === 'soll' ? report.surplusSollCents : report.surplusReceivedCents ?? report.surplusPaidCents
 }
 
 // ---------- Teilweise Eigennutzung (#163) ----------

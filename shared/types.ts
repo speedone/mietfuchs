@@ -1296,10 +1296,23 @@ export type TaxReceived = {
   }
   byUnit: TaxReceivedUnit[]
   byTenancy: TaxReceivedTenancy[]
-  // Teilsummen über Mietverhältnisse an Angehörige (`Tenancy.relative`); ohne solche überall 0.
-  relatives: { rentCents: number; allocationsCents: number; settlementCents: number }
+  // Teilsummen über Mietverhältnisse an Angehörige (`Tenancy.relative`); ohne solche überall 0. Dazu die „davon“-Teile und
+  // das Soll derselben Mietverhältnisse (aus dem Mietkonto, Angehörige wie Kennzahl 62), damit die Seite die Zeilen der
+  // übrigen Mietverhältnisse samt Soll ohne die Angehörigen zeigen kann (Durchsicht von #312 PR 3, S4).
+  relatives: TaxReceivedRelatives
+  // Zeile 32: die Summe der Zeilen, `paidCents` − `turnOfYear.forwardCents` + `turnOfYear.fromPreviousCents` (Durchsicht
+  // von #312 PR 3, S1: eine Quelle für die maßgebliche Summe).
+  totalCents: number
+  // Mietzahlungen an ein Mietverhältnis, das der Schnappschuss nicht führt (in `rentCents` und `unallocatedCents`
+  // enthalten, aber in keiner Zeile von `byTenancy`); nach `snapshotFor` immer 0.
+  unassignedCents: number
   // Mietzahlungen, die die Kaution sein könnten (Entwurf E9): Betrag gleich der vereinbarten Kaution, nah am Beginn.
   possibleDeposits: { tenancyId: string; tenantName: string; paidOn: string; cents: number }[]
+}
+export type TaxReceivedRelatives = {
+  rentCents: number; allocationsCents: number; settlementCents: number
+  inclusiveRentCents: number; unallocatedCents: number; flatRateCents: number
+  sollRentCents: number; sollInclusiveRentCents: number; sollAllocationsCents: number; sollFlatRateCents: number
 }
 // Je Wohnung für die Zeilen 13 und 14 (Summe der Mietverhältnisse der Einheit); Fläche die der Einheit.
 export type TaxReceivedUnit = { unitId: string; unitName: string; areaM2: number | null; rentCents: number; allocationsCents: number; settlementCents: number; formerYearsCents: number }
@@ -1310,6 +1323,8 @@ export type TaxReceivedTenancy = {
   relative: boolean
   rentCents: number; inclusiveRentCents: number; allocationsCents: number; settlementCents: number
   formerYearsCents: number; unallocatedCents: number; forwardCents: number
+  // davon Pauschale (in `allocationsCents`); aus dem Vorjahr hierher nach der Zehn-Tage-Regel (in `rentCents`/`allocationsCents`)
+  flatRateCents: number; fromPreviousCents: number
 }
 
 export type TaxExpenseGroup = {
@@ -1542,7 +1557,10 @@ export type TaxReport = {
   selfUsedShareCents: number // auf selbstgenutzte Wohnungen entfallender Kostenanteil (privat)
   // Einkünfte = Einnahmen − abziehbare Werbungskosten (`expenses.deductibleCents`, #163)
   surplusSollCents: number // auf Soll-Basis
-  surplusPaidCents: number // auf Ist-Basis (Zuflussprinzip)
+  // nach Datum, ohne Zehn-Tage-Regel; maßgeblich ist `surplusReceivedCents`
+  surplusPaidCents: number
+  // Überschuss aus Zeile 32 (`income.received.totalCents` − abziehbare Werbungskosten); nur, wenn `received` gerechnet ist
+  surplusReceivedCents?: number
   // Mietverhältnisse des Jahres, davon mit Inklusivmiete und mit Pauschale (#96, Zeilen 24 und 20
   // der Anlage V).
   // `inclusive`: kalt und warm inklusiv; `partlyInclusive`: nur eines von beiden.

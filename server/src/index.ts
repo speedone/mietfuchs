@@ -2335,7 +2335,7 @@ app.get('/api/receipts/tax/:year', async (req, res) => {
     // #469: die Teile je Quelle über alle Zeiträume des Objekts, für den Beleg eines Teils, der selbst keinen trägt.
     const sourceParts = partsBySource(stock.costItems)
     // #312 PR 3: das Zugeflossene je Mietverhältnis aus derselben Steuerübersicht, für `Einnahmen.csv`.
-    const income = report.income.received?.byTenancy ?? []
+    const income = { year: report.year, income: report.income }
     return { items, property, rows: await uploadRows(db), links: await uploadLinks(db), split, derived, sourceParts, income }
   })
   const booked = new Map<string, string[]>()

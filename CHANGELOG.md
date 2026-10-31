@@ -34,7 +34,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - **Steuer: Ende Dezember gezahlte Januarmiete zählt im Folgejahr** (Zehn-Tage-Regel, § 11 Abs. 1 Satz 2 EStG), wenn die
   Miete zu Beginn des Monats fällig ist; die Einnahmen und der Überschuss der Steuerübersicht folgen der Summe der
   Zeilen. Der Hinweis zum Jahreswechsel steht nur noch mit Betrag; bei Mietverhältnissen, die schon am 01.09.2001
-  bestanden, nennt er den Betrag mit Vorbehalt ([#312](https://github.com/speedone/mietfuchs/issues/312)).
+  bestanden, nennt er den Betrag mit Vorbehalt. **Wer das Vorjahr mit Mietfuchs bis 0.13 erklärt hat, hatte eine Ende
+  Dezember gezahlte Januarmiete dort schon angegeben; der Hinweis zum Jahreswechsel des Folgejahres nennt den Betrag.
+  Lassen Sie die Erklärung des Vorjahres dann mit Ihrem Steuerberater oder beim Finanzamt berichtigen**
+  ([#312](https://github.com/speedone/mietfuchs/issues/312)).
 - **Hilfe & Begriffe beginnt mit einer Suche**: Treffer erscheinen beim Tippen, getrennt nach Anleitungen und Begriffen
   und mit der Fundstelle; darunter stehen die Anleitungen als Kacheln in drei Gruppen und die Begriffe nach Themen
   ([#488](https://github.com/speedone/mietfuchs/issues/488)).
