@@ -446,8 +446,10 @@ export type PeriodChangePreview = {
   // Rechnung trägt; sie verliert den Zusatz „(anteilig …)“ und heißt danach so. `mergedAs` (Befund 3 zu #455): der Name
   // der Zeile `mergedInto` nach dem Zusammenfassen, wenn ihr Zusatz „(anteilig …)“ danach eine längere Spanne nennt (nicht
   // neben `renamedTo`, das ihn ganz streicht); ebenso `mergeWithYear.mergedAs` für das Zusammenfassen mit dem Jahr `year`.
+  // `taxShift` (#478, E3): Wechselt mit den vorbelegten Jahren Geld der Rechnung das Steuerjahr (nur Teile ohne Datum
+  // und ohne Jahr), der Satz dazu mit Betrag, altem und neuem Jahr.
   moves: {
-    costItemId: string; description: string; amountCents: number; renamedTo?: string
+    costItemId: string; description: string; amountCents: number; renamedTo?: string; taxShift?: string
     parts: { period: PeriodKey; label: string; amountCents: number; mergedInto?: string; mergedAs?: string; mergeDependsOnYear?: true; mergeWithYear?: { into: string; year: number; renamedTo?: string; mergedAs?: string } }[]
   }[]
   // Je bisherigem Zeitraum eine Gruppe für kalte Kosten und eine für Heizkosten (Laienprobe B2);
@@ -485,6 +487,10 @@ export type PeriodChangePreview = {
   // Den Satz `notes` je Jahr (Folge-PR zu #252, Geld H2: ein Teil eines Abzugs bleibt in einem festen Steuerjahr) gibt
   // es seit #268 nicht mehr: Die Steuerübersicht gleicht je Steuerjahr aus, in der Anlage V verschiebt sich nichts.
   taxYears: { key: string; costItemId: string; description: string; period: PeriodKey; label: string; suggested: number; options: number[] }[]
+  // Positionen mit angegebenem Jahr der Zahlung, das sie behalten (#478, E1), und das danach außerhalb der Kalenderjahre
+  // ihres Zeitraums liegt: Für die Steuer stehen sie dann als verschoben. Je Position und Zeitraum (bei einer Gruppe je
+  // wählbarem Zeitraum) ein Eintrag mit dem Satz der Vorschau (`text`).
+  keptTaxYears: { costItemId: string; description: string; taxYear: number; period: PeriodKey; label: string; text: string }[]
   // Die Marke dieser Vorschau (M2): Stimmt sie beim Wechsel nicht mehr, hat sich der Bestand
   // inzwischen geändert, und der Server antwortet mit 409 und der neuen Vorschau.
   token: string

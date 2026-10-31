@@ -646,28 +646,27 @@ test('Aufteilen (#208): Ein Teil einer aufgeteilten Rechnung wird nur berichtigt
     s.stop()
   }
 })
-test('Wechsel des Zeitraums (#208): Das Jahr der Zahlung bleibt in seiner Spanne, die Vorschau fragt es, eine falsche Angabe ist 409', async () => {
+// Seit #478 (E1) behält eine Position ihr angegebenes Jahr der Zahlung: keine Frage, keine Klemme. Vorher fragte die
+// Vorschau und klemmte 2026 auf 2025; die Werbungskosten wechselten das Jahr, obwohl sich an der Zahlung nichts änderte.
+test('Wechsel des Zeitraums (#208, #478): Das angegebene Jahr der Zahlung bleibt, die Vorschau fragt nicht und nennt es', async () => {
   const s = await startServer()
   try {
     await inDatabase(s, async (db) => { await db.update(propertiesTable).set({ periodStartMonth: 5 }).where(eq(propertiesTable.id, 'objekt-1')) })
-    // 2024/2025, im Jahr 2026 bezahlt (erlaubt: 2024 bis 2026).
+    // 2024/2025, im Jahr 2026 bezahlt.
     const [item] = [await s.api<CostItem>('/api/costItems', { method: 'POST', body: JSON.stringify({ period: '2024-05', category: 'Müllabfuhr', description: 'Müll', amountCents: 10000, key: 'area', taxYear: 2026 }) })]
     const id = (await s.api<{ id: string }[]>('/api/properties'))[0]?.id ?? assert.fail('kein Objekt')
     const regeln = { startMonth: 9, changes: [] }
     const vorschau = await s.api<Vorschau>(`/api/properties/${id}/period/preview`, { method: 'POST', body: JSON.stringify({ rules: regeln }) })
-    const frage = vorschau.taxYears.find((t) => t.key === `${item?.id}|2023-09`) ?? assert.fail('keine Frage nach dem Jahr der Zahlung')
-    // September 2023 bis August 2024: 2023 bis 2025; 2026 wird auf 2025 geklemmt.
-    assert.deepEqual([frage.suggested, frage.options], [2025, [2023, 2024, 2025]])
-    const falsch = await wechsel(s, id, { rules: regeln, answers: { understood: true, token: vorschau.token, groups: { '2024-05': '2023-09' }, taxYears: { [`${item?.id}|2023-09`]: 2026 } } })
-    assert.equal(falsch.status, 409)
-    assert.ok((await jsonOf<{ preview?: unknown }>(falsch)).preview, 'die 409 bringt die Vorschau mit')
+    assert.equal(vorschau.taxYears.find((t) => t.costItemId === item?.id), undefined, 'keine Frage nach dem Jahr der Zahlung')
+    // September 2023 bis August 2024: 2026 liegt außerhalb dieser Kalenderjahre, die Vorschau sagt es.
+    assert.deepEqual(vorschau.keptTaxYears.filter((k) => k.period === '2023-09').map((k) => [k.costItemId, k.taxYear]), [[item?.id, 2026]])
     const ok = await wechsel(s, id, { rules: regeln, answers: { understood: true, token: vorschau.token, groups: { '2024-05': '2023-09' } } })
     assert.equal(ok.status, 200)
     const nachher = (await s.api<CostItem[]>('/api/costItems')).find((c) => c.id === item?.id)
-    assert.deepEqual([nachher?.period, nachher?.taxYear], ['2023-09', 2025])
-    // Sie steht in genau einer Steuerübersicht.
+    assert.deepEqual([nachher?.period, nachher?.taxYear], ['2023-09', 2026])
+    // Sie steht in genau einer Steuerübersicht, der des Jahres ihrer Zahlung.
     const jahre = await Promise.all([2023, 2024, 2025, 2026].map(async (y) => (await s.api<{ expenses: { items: { costItemId: string }[] } }>(`/api/taxreport/${y}`)).expenses.items.some((i) => i.costItemId === item?.id)))
-    assert.deepEqual(jahre, [false, false, true, false])
+    assert.deepEqual(jahre, [false, false, false, true])
   } finally {
     s.stop()
   }

@@ -1031,7 +1031,7 @@ export const PAUSE_MS = 2500
 
 // Durchsicht von #226 (I1, M2, M4): das Jahr der Zahlung beim Wechsel des Rhythmus, und die Marke der
 // Vorschau.
-export type Vorschau = { token: string; taxYears: { key: string; suggested: number; options: number[] }[] }
+export type Vorschau = { token: string; taxYears: { key: string; costItemId: string; suggested: number; options: number[] }[]; keptTaxYears: { costItemId: string; period: string; taxYear: number }[] }
 export const wechsel = async (s: { base: string }, id: string, body: unknown) =>
   fetch(`${s.base}/api/properties/${id}/period`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
 

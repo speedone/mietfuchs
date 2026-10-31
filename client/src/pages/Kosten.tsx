@@ -43,6 +43,7 @@ import {
   deductionTaxYear,
   paidOnChange,
   showsPaidOn,
+  taxYearChange,
   taxYearOptions,
   type ItemForm,
   type KeyContext,
@@ -198,9 +199,14 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   const formPart = storedItem ? formPartOf(items, storedItem, period) : null
   // Die Jahre des Zeitraums der Position für die übliche Spanne des Zahlungsdatums (#255 PR 3, R-4): bei einer
   // Heizposition unter eigener Heizperiode deren Jahre, sonst die des Abrechnungszeitraums.
+  const periodSpan = { startYear: Number(period.from.slice(0, 4)), endYear: Number(period.to.slice(0, 4)) }
   const paidOnSpanOfForm = heatingOption
     ? { startYear: heatingOption.startYear, endYear: heatingOption.endYear }
-    : { startYear: Number(period.from.slice(0, 4)), endYear: Number(period.to.slice(0, 4)) }
+    : periodSpan
+  // #478 (E4): Ein gespeichertes Jahr der Zahlung, das vom Kalenderjahr des Zeitraums abweicht, zeigt das Formular, und
+  // die Auswahl enthält es, auch außerhalb der üblichen Spanne (der angezeigte Wert ist der gespeicherte).
+  const storedTaxYear = storedItem?.taxYear ?? null
+  const showTaxYear = heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear, storedTaxYear)
   // Was das eingetragene Datum ändert, schon beim Eintragen unter dem Feld (R-2).
   const livePaidOnChanges = form && showsPaidOn(form)
     ? paidOnChange(form.id ? items.find((i) => i.id === form.id) ?? null : null, {
@@ -432,13 +438,18 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     // es außerhalb der üblichen Spanne, fragt das Formular nach; der Server verlangt dieselbe Bestätigung.
     const paidOnQuestions = paidOnChange(editing ? items.find((i) => i.id === form.id) ?? null : null,
       { ...built.body, ...('period' in heating ? { period: heating.period } : {}), taxYear: 'taxYear' in heating ? heating.taxYear ?? null : built.body.taxYear }, paidOnSpanOfForm)
+    // #478 (E2): ebenso ein Jahr der Zahlung außerhalb der üblichen Spanne; beide Rückfragen in einer, bestätigt für beide.
+    const taxYearQuestions = taxYearChange(editing ? items.find((i) => i.id === form.id) ?? null : null,
+      { period: 'period' in heating && heating.period ? heating.period : key, taxYear: 'taxYear' in heating ? heating.taxYear ?? null : built.body.taxYear }, paidOnSpanOfForm)
+    const questions = [...paidOnQuestions, ...taxYearQuestions].filter((q, i, all) => all.indexOf(q) === i)
     let confirmPaidOn = false
-    if (paidOnQuestions.length > 0) {
-      const ok = await confirm({ title: 'Steuerjahr ändert sich', message: paidOnQuestions.join(' '), confirmLabel: 'So speichern', cancelLabel: 'Abbrechen' })
+    if (questions.length > 0) {
+      const ok = await confirm({ title: 'Steuerjahr ändert sich', message: questions.join(' '), confirmLabel: 'So speichern', cancelLabel: 'Abbrechen' })
       if (!ok) return
       confirmPaidOn = true
     }
-    const bodyOf = (): string => JSON.stringify({ ...built.body, ...heating, ...(confirmPaidOn ? { confirmPaidOn: true } : {}) })
+    const confirmed = { confirmPaidOn: true, confirmTaxYear: true }
+    const bodyOf = (): string => JSON.stringify({ ...built.body, ...heating, ...(confirmPaidOn ? confirmed : {}) })
     const body = bodyOf()
     // Antwortet der Server dennoch mit seiner Rückfrage (409, `question: 'paidOn'`), weil sich der Bestand seit dem
     // Laden geändert hat, wird sie zur Rückfrage der Seite, mit seinen Sätzen; bestätigt geht derselbe Rumpf mit
@@ -448,10 +459,10 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
         await send(body)
         return true
       } catch (e) {
-        if (!(e instanceof ApiError && e.status === 409 && e.data.question === 'paidOn') || confirmPaidOn) throw e
+        if (!(e instanceof ApiError && e.status === 409 && (e.data.question === 'paidOn' || e.data.question === 'taxYear')) || confirmPaidOn) throw e
         const ok = await confirm({ title: 'Steuerjahr ändert sich', message: e.message, confirmLabel: 'So speichern', cancelLabel: 'Abbrechen' })
         if (!ok) return false
-        await send(JSON.stringify({ ...JSON.parse(body), confirmPaidOn: true }))
+        await send(JSON.stringify({ ...JSON.parse(body), ...confirmed }))
         return true
       }
     }
@@ -655,7 +666,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                   {spansTwoYears(period) && (
                     <td>
                       {r.inline && r.heating && r.taxYear && <span className="muted">{r.taxYear}</span>}
-                      {r.inline && !r.heating && <TaxYearSelect label={`Jahr der Zahlung für ${r.description}`} value={r.taxYear ?? ''} years={taxYearOptions(year)} onChange={(v) => updateCarry(i, { taxYear: v })} />}
+                      {r.inline && !r.heating && <TaxYearSelect label={`Jahr der Zahlung für ${r.description}`} value={r.taxYear ?? ''} years={taxYearOptions(periodSpan, r.taxYear ? Number(r.taxYear) : null)} onChange={(v) => updateCarry(i, { taxYear: v })} />}
                     </td>
                   )}
                   <td><input aria-label="Beschreibung" value={r.description} onChange={(e) => updateCarry(i, { description: e.target.value })} className="input-wide" /></td>
@@ -951,9 +962,9 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             </Field>
             {/* Betriebsstrom (Heizung PR 15): sichtbar ohne Aufklappen, wer ihn braucht. */}
             <OperatingPowerFields form={form} items={items} periodKey={key} plantEnergy={plantOfForm ? billingEnergy(plantOfForm) : undefined} service={serviceReceivesOperatingPower(plants, period)} onChange={setForm} />
-            <details className="extra-details" open={!!(selfPlant || form.serviceFrom || form.serviceTo || form.taxYear || form.paidOn || form.heatingPart !== '' || (heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear)))}>
-              <summary>Weitere Angaben — Leistungszeitraum{(heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear)) ? ', Jahr der Zahlung' : ''}{showsPaidOn(form) ? ', Bezahlt am' : ''}{form.category === HEATING_CATEGORY ? ', Brennstoff/Energie' : ''} (optional)</summary>
-              <CostPeriodFields form={form} onChange={setForm} showTaxYear={heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear)} years={heatTax?.show ? heatTax.years : taxYearOptions(year)} billTaxYear={deductionTaxYear(form, items)} paidOnChanges={livePaidOnChanges} />
+            <details className="extra-details" open={!!(selfPlant || form.serviceFrom || form.serviceTo || form.taxYear || form.paidOn || form.heatingPart !== '' || showTaxYear)}>
+              <summary>Weitere Angaben — Leistungszeitraum{showTaxYear ? ', Jahr der Zahlung' : ''}{showsPaidOn(form) ? ', Bezahlt am' : ''}{form.category === HEATING_CATEGORY ? ', Brennstoff/Energie' : ''} (optional)</summary>
+              <CostPeriodFields form={form} onChange={setForm} showTaxYear={showTaxYear} years={heatTax?.show ? heatTax.years : taxYearOptions(periodSpan, storedTaxYear)} emptyLabel={spansTwoYears(period) || heatTax?.show ? undefined : `wie Abrechnungsjahr (${year})`} billTaxYear={deductionTaxYear(form, items)} paidOnChanges={livePaidOnChanges} />
             </details>
             {/* Nicht umlagefähig (#142): nichts zu verteilen, also keine Auswahl, die etwas anderes verspräche. */}
             {!showsKeyFields(form.category) && (

@@ -10,11 +10,14 @@ import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 // dann gibt es kein Feld, der Abzug hat kein eigenes Jahr (#267).
 // `paidOnChanges`: was das eingetragene Zahlungsdatum für die Steuer ändert (`paidOnChange` in costForm.ts); das
 // Formular zeigt es hier und fragt vor dem Speichern nach (#255 PR 3, R-2).
-export default function CostPeriodFields({ form, onChange, showTaxYear, years, billTaxYear = null, paidOnChanges = [] }: {
+// `emptyLabel` (#478, E4): der Leerwert der Auswahl; im Kalenderzeitraum „wie Abrechnungsjahr (2025)“, denn dort ist leer
+// eine gültige Angabe, sonst „– bitte wählen –“.
+export default function CostPeriodFields({ form, onChange, showTaxYear, years, emptyLabel = '– bitte wählen –', billTaxYear = null, paidOnChanges = [] }: {
   form: ItemForm
   onChange: (next: ItemForm) => void
   showTaxYear: boolean
   years: number[]
+  emptyLabel?: string
   billTaxYear?: number | null
   paidOnChanges?: string[]
 }) {
@@ -59,7 +62,7 @@ export default function CostPeriodFields({ form, onChange, showTaxYear, years, b
         <label className="field">
           Jahr der Zahlung (Steuer)
           <select value={form.taxYear} onChange={(e) => onChange({ ...form, taxYear: e.target.value })}>
-            <option value="">– bitte wählen –</option>
+            <option value="">{emptyLabel}</option>
             {years.map((y) => <option key={y} value={String(y)}>{y}</option>)}
           </select>
           <small className="muted">Maßgeblich ist, wann Sie gezahlt haben (§ 11 Abs. 2 EStG).</small>

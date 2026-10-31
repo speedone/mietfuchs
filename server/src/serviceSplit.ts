@@ -94,6 +94,51 @@ export function deriveSourceParts(rules: PeriodRules, invoice: SourceInvoice): S
   }))
 }
 
+// Mehrere Rechnungen je Jahr der Zahlung aus einer Quelle (#478): Stehen Teile verschiedener Jahre im selben Zeitraum,
+// trägt jeder dort dieselbe Spanne, und welcher Tag mit welchem Jahr bezahlt wurde, weiß der Bestand nicht. Je Jahr für
+// sich nach dieser Spanne geteilt, zählten ihre Tage doppelt, und Geld wanderte zwischen Abrechnungszeiträumen. Deshalb
+// gilt je Zeitraum die Teilung aller bewegten Teile als eine Rechnung nach Tagen (`whole`), und jedes Jahr bekommt davon,
+// was seine Teile im Verhältnis ihres Betrags zu ihrer Spanne beitragen. Je Jahr bleibt die Summe, je Zeitraum die
+// Teilung nach Tagen; den Restcent verteilt `largestRemainder` je Jahr, das letzte Jahr nimmt je Zeitraum den Rest.
+// `null`, wenn die Teile eines Jahres verschiedene Vorzeichen haben (dann bleibt die Teilung je Jahr für sich).
+export type PoolMember = { amountCents: number; labor35aCents: number; span: { from: string; to: string } }
+export function splitPoolsByDays(whole: readonly ServicePart[], pools: readonly { members: readonly PoolMember[]; parts: readonly ServicePart[] }[], tieId: string): ServicePart[][] | null {
+  const signOf = (n: number): number => (n < 0 ? -1 : 1)
+  const shareOf = (m: PoolMember, p: ServicePart): number => {
+    const from = maxDay(m.span.from, p.period.from)
+    const to = minDay(m.span.to, p.period.to)
+    return from <= to ? days(from, to) / days(m.span.from, m.span.to) : 0
+  }
+  const spread = (field: 'amountCents' | 'labor35aCents', total: (p: ServicePart) => number): number[][] | null => {
+    const own: number[][] = []
+    for (const [k, pool] of pools.entries()) {
+      const sum = pool.members.reduce((a, m) => a + m[field], 0)
+      const sign = signOf(sum)
+      if (pool.members.some((m) => m[field] !== 0 && signOf(m[field]) !== sign)) return null
+      const raws = whole.map((p) => pool.members.reduce((a, m) => a + Math.abs(m[field]) * shareOf(m, p), 0))
+      own.push(largestRemainder(Math.abs(sum), raws, whole.map((p) => `${tieId}|${p.period.key}|${k}`)).map((c) => sign * c || 0))
+    }
+    // Das letzte Jahr nimmt je Zeitraum den Rest der Teilung nach Tagen. Kehrte das sein Vorzeichen um (ein einzeln
+    // berichtigter Teil trägt mehr als seine Tage), bleibt jedes Jahr bei seinem Anteil nach seinen Tagen: Die
+    // Berichtigung bleibt dann an ihren Tagen, wie bei einem Teil ohne Quelle.
+    const lastIndex = pools.length - 1
+    const last = whole.map((p, i) => total(p) - own.slice(0, lastIndex).reduce((a, r) => a + (r[i] ?? 0), 0))
+    const lastSign = signOf(pools[lastIndex]?.members.reduce((a, m) => a + m[field], 0) ?? 0)
+    return last.some((c) => c !== 0 && signOf(c) !== lastSign) ? own : [...own.slice(0, lastIndex), last]
+  }
+  const amounts = spread('amountCents', (p) => p.amountCents)
+  const hasLabor = whole.some((p) => p.labor35aCents !== null)
+  const labor = hasLabor ? spread('labor35aCents', (p) => p.labor35aCents ?? 0) : null
+  if (amounts === null || (hasLabor && labor === null)) return null
+  return pools.map((pool, k) => whole.flatMap((w, i) => {
+    const own = pool.parts.find((p) => p.period.key === w.period.key)
+    const amountCents = amounts[k]?.[i] ?? 0
+    const laborCents = labor === null ? null : labor[k]?.[i] ?? 0
+    if (own === undefined) return amountCents === 0 && !laborCents ? [] : [{ ...w, amountCents, labor35aCents: laborCents }]
+    return [{ ...own, amountCents, labor35aCents: own.labor35aCents === null && !laborCents ? null : laborCents }]
+  }))
+}
+
 export function splitByService(rules: PeriodRules, item: SplitItem): ServicePart[] {
   return deriveSourceParts(rules, {
     tieId: item.id,

@@ -33,7 +33,19 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
     nicht verknüpft; der Hinweis sagt, die Zeile zu verwerfen, wenn der Teil stimmt. Lösen Sie eine früher verknüpfte
     Zeile an einem Teil, behält der Teil seinen Betrag; bisher stand danach die ganze Rechnung an ihm.
 
+- Ein Jahr der Zahlung ist jetzt auch in einem Abrechnungszeitraum im Kalenderjahr möglich, etwa für eine Rechnung
+  für 2025, die Sie 2026 bezahlt haben; das Kostenformular zeigt ein solches Jahr an. Es darf in derselben Spanne liegen
+  wie ein Zahlungsdatum (ein Jahr vor dem Beginn bis drei Jahre nach dem Ende des Zeitraums); außerhalb fragt Mietfuchs
+  nach, statt abzulehnen ([#478](https://github.com/speedone/mietfuchs/issues/478)).
+
 ### Behoben
+
+- Ein Wechsel des Abrechnungszeitraums überschrieb das angegebene Jahr der Zahlung von Positionen ohne
+  Zahlungsdatum, sobald ein Teil in einen Zeitraum innerhalb eines Kalenderjahres kam; es bleibt jetzt erhalten, und
+  hin und zurück ergibt die ursprünglichen Jahre. Die Vorschau sagt, welche Position danach für die Steuer als
+  verschoben steht ([#478](https://github.com/speedone/mietfuchs/issues/478)). **Wer seit 0.12 den Zeitraum gewechselt
+  hat, prüft bitte das Jahr der Zahlung von Positionen ohne Zahlungsdatum.** Lag der Wechsel in den letzten zwölf
+  Monaten, steht im Verlauf, welches Jahr vorher galt.
 
 - Nach mehreren Wechseln des Abrechnungszeitraums stand eine Rechnung mehrfach im selben Zeitraum
   ([#455](https://github.com/speedone/mietfuchs/issues/455)). Jetzt gibt es eine Zeile je Zeitraum: Ein Anteil, der in

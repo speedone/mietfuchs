@@ -43,7 +43,7 @@ describe('Karte „Abrechnungszeitraum“ (#208)', () => {
   })
   test('Zuordnung einer Gruppe: der vorgeschlagene Zeitraum steht im Feld', () => {
     const preview: PeriodChangePreview = {
-      rules: { startMonth: 1, changes: ['2025-05'] }, periods: [], newShort: [], blocked: [], moves: [], effects: [], overrides: [], assessments: [], token: 't',
+      rules: { startMonth: 1, changes: ['2025-05'] }, periods: [], newShort: [], blocked: [], moves: [], effects: [], overrides: [], assessments: [], token: 't', keptTaxYears: [],
       taxYears: [
         { key: 'mu|2025-05', costItemId: 'mu', description: 'Müll 2025', period: periodKey('2025-05'), label: '2025/2026', suggested: 2026, options: [2025, 2026, 2027] },
         { key: 'mu|2024-05', costItemId: 'mu', description: 'Müll 2025', period: periodKey('2024-05'), label: '2024/2025', suggested: 2025, options: [2024, 2025, 2026] },
@@ -64,7 +64,7 @@ describe('Karte „Abrechnungszeitraum“ (#208)', () => {
 // Steuerjahr aus, es verschiebt sich nichts, und die Auswahl des Jahres steht ohne Warnung da.
 describe('Jahr des Betriebsstroms: kein Satz zur Verschiebung (#268)', () => {
   const preview: PeriodChangePreview = {
-    rules: { startMonth: 1, changes: ['2025-05'] }, periods: [], newShort: [], blocked: [], moves: [], effects: [], overrides: [], assessments: [], token: 't', groups: [],
+    rules: { startMonth: 1, changes: ['2025-05'] }, periods: [], newShort: [], blocked: [], moves: [], effects: [], overrides: [], assessments: [], token: 't', groups: [], keptTaxYears: [],
     taxYears: [{ key: 'bs|2025-05', costItemId: 'bs', description: 'Betriebsstrom', period: periodKey('2025-05'), label: '2025/2026', suggested: 2025, options: [2025, 2026] }],
   }
   test('bei 2025 und bei 2026 keine Warnung an der Auswahl', () => {
@@ -139,9 +139,33 @@ describe('Wechsel nach Quelle (#455)', () => {
   })
 })
 
+// #478 (E3): Die Vorschau nennt ein gehaltenes Jahr der Zahlung, das danach außerhalb der Kalenderjahre des Zeitraums
+// liegt (bei einer Gruppe nur für den gewählten Zeitraum), und jede Verschiebung zwischen Steuerjahren beim Teilen.
+describe('Gehaltenes Jahr der Zahlung (#478)', () => {
+  const satz = '„Gartenpflege“ behält das Jahr der Zahlung 2025; im Zeitraum 2026 steht sie für die Steuer deshalb als verschoben.'
+  const preview: PeriodChangePreview = {
+    rules: { startMonth: 5, changes: ['2026-01'] }, periods: [], newShort: [], blocked: [], moves: [], effects: [], overrides: [], assessments: [], token: 't', taxYears: [],
+    keptTaxYears: [{ costItemId: 'garten', description: 'Gartenpflege', taxYear: 2025, period: periodKey('2026-01'), label: '2026', text: satz }],
+    groups: [{ id: '2025-05', heating: false, split: { range: '01.05.2025–30.04.2026', items: [], notes: [] }, taxShifts: [], from: periodKey('2025-05'), fromLabel: '2025/2026', items: [{ costItemId: 'garten', description: 'Gartenpflege', amountCents: 68298 }], options: [{ key: periodKey('2025-05'), label: '01.05.–31.12.2025' }, { key: periodKey('2026-01'), label: '2026' }], suggested: 'split' }],
+  }
+  test('beim Teilen und ganz im betroffenen Zeitraum der Satz, ganz in einem anderen nicht', () => {
+    for (const [chosen, shown] of [['split', true], ['2026-01', true], ['2025-05', false]] as const) {
+      const { container } = render(<PreviewAnswers preview={preview} answers={{ ...initialAnswers(preview), groups: { '2025-05': chosen } }} onChange={() => {}} />)
+      expect(container.textContent?.includes(satz), chosen).toBe(shown)
+      cleanup()
+    }
+  })
+  test('eine Verschiebung beim Teilen einer Rechnung steht unter ihr', () => {
+    const { container } = render(<MoveList moves={[{ costItemId: 'gs', description: 'Grundsteuer', amountCents: 36500, taxShift: 'Für die Steuer kämen 120,00 € aus dem Jahr der Zahlung 2024 nach 2025, obwohl sich an der Zahlung nichts ändert. Prüfen Sie danach das Jahr der Zahlung der Teile.', parts: [
+      { period: periodKey('2024-05'), label: '01.05.–31.12.2024', amountCents: 24500 }, { period: periodKey('2025-01'), label: '2025', amountCents: 12000 },
+    ] }]} />)
+    expect(container.querySelector('.warn')?.textContent).toMatch(/Für die Steuer kämen 120,00 € aus dem Jahr der Zahlung 2024 nach 2025/)
+  })
+})
+
 describe('Laienprobe (B2, B3, B4)', () => {
   const basis: PeriodChangePreview = {
-    rules: { startMonth: 1, changes: ['2025-07'] }, newShort: [{ key: periodKey('2025-01'), label: '01.01.–30.06.2025' }], blocked: [], moves: [], effects: [], overrides: [], assessments: [], token: 't', taxYears: [],
+    rules: { startMonth: 1, changes: ['2025-07'] }, newShort: [{ key: periodKey('2025-01'), label: '01.01.–30.06.2025' }], blocked: [], moves: [], effects: [], overrides: [], assessments: [], token: 't', taxYears: [], keptTaxYears: [],
     periods: [{ key: periodKey('2025-01'), label: '01.01.–30.06.2025', short: true }, { key: periodKey('2025-07'), label: '2025/2026', short: false }],
     groups: [
       { id: '2025-01', heating: false, taxShifts: [], from: periodKey('2025-01'), fromLabel: '2025', items: [{ costItemId: 'gs', description: 'Grundsteuer 2025', amountCents: 42000 }],
@@ -199,7 +223,7 @@ describe('Laienprobe (B2, B3, B4)', () => {
 describe('Review Runde 1', () => {
   test('Ohne Vorgabe: „bitte wählen“, die Sätze zum Steuerjahr, und ohne Wahl kein Speichern', () => {
     const p: PeriodChangePreview = {
-      rules: { startMonth: 1, changes: ['2025-01'] }, periods: [], newShort: [], blocked: [], moves: [], effects: [], overrides: [], assessments: [], token: 't', taxYears: [],
+      rules: { startMonth: 1, changes: ['2025-01'] }, periods: [], newShort: [], blocked: [], moves: [], effects: [], overrides: [], assessments: [], token: 't', taxYears: [], keptTaxYears: [],
       groups: [{ id: '2024-05', heating: false, from: periodKey('2024-05'), fromLabel: '2024/2025', items: [{ costItemId: 'mu', description: 'Müll 2024/2025', amountCents: 36500 }],
         options: [{ key: periodKey('2024-05'), label: '01.05.–31.12.2024' }, { key: periodKey('2025-01'), label: '2025' }],
         split: { range: '01.05.2024–30.04.2025', items: [], notes: ['Geteilt kämen für die Steuer 245,00 € aus dem Jahr der Zahlung 2025 nach 2024, obwohl sich an der Zahlung nichts ändert.'] },

@@ -58,7 +58,7 @@ import { compareText } from '../calc.ts'
 import { isSplitPart, splitByService } from '../serviceSplit.ts'
 import { splitBlocker } from '../../../shared/splitPart.ts'
 import { tenancyStamp } from '../../../shared/tenancyStamp.ts'
-import { allowsPaidOn, isPaidOnDate, paidOnQuestions, splitPaidOnQuestions, type YearSpan } from '../../../shared/paidOn.ts'
+import { allowsPaidOn, isPaidOnDate, paidOnQuestions, splitPaidOnQuestions, taxYearQuestions, type YearSpan } from '../../../shared/paidOn.ts'
 import { statedOutflowYear } from '../outflow.ts'
 import type { Database, Executor } from './client.ts'
 import {
@@ -699,6 +699,13 @@ export class PaidOnQuestion extends Error {
   status = 409
 }
 
+// Die Rückfrage zum Jahr der Zahlung (#478, E2): ein Jahr außerhalb der üblichen Spanne (`paidOnSpan`), gespeichert erst
+// mit `confirmTaxYear: true`. Die Route gibt sie als 409 mit `question: 'taxYear'` weiter; die Sätze kommen aus
+// shared/paidOn.ts (`taxYearQuestions`), dieselben wie im Formular.
+export class TaxYearQuestion extends Error {
+  status = 409
+}
+
 // Eine Ablehnung rund um die Heizanlage (Heizung PR 4): 400, wenn eine Angabe nicht passt oder eine
 // Funktion erst mit einer späteren Version kommt; 409, wenn sich der Bestand inzwischen geändert hat
 // oder ein abgeschlossener Zeitraum betroffen ist. Die Meldung ist für den Nutzer geschrieben; die
@@ -1175,7 +1182,7 @@ async function requirePeriods(db: Executor, propertyId: string, keys: readonly s
 // Endstand (`settleOperatingPowerLinks`), nicht für jeden Zwischenschritt.
 export type CostItemGuardOptions = { splitPart?: boolean; periodChange?: boolean }
 
-async function requireServiceAndTax(db: Executor, before: CostItem | null, after: CostItem, options: CostItemGuardOptions): Promise<void> {
+async function requireServiceAndTax(db: Executor, before: CostItem | null, after: CostItem, body: unknown, options: CostItemGuardOptions): Promise<void> {
   const what = `„${after.description}“`
   const from = after.serviceFrom
   const to = after.serviceTo
@@ -1194,7 +1201,7 @@ async function requireServiceAndTax(db: Executor, before: CostItem | null, after
   const period = periodOfKey(rules, after.period)
   // Einen Zeitraum, den es nicht gibt, hat `requirePeriods` schon abgelehnt.
   if (period === null) return
-  requireTaxYear(period, after, what)
+  requireTaxYear(period, before, after, what, body, options)
   // Ein Teil einer aufgeteilten Rechnung wird nur berichtigt (Durchsicht von #226, C1): Mit einem
   // anderen Leistungszeitraum oder Zeitraum stimmte sein Anteil nicht mehr zum Schnitt nach Tagen,
   // und die Geschwisterteile blieben stehen. Den Wechsel des Rhythmus (`splitPart`) betrifft das nicht.
@@ -1254,28 +1261,23 @@ async function yearSpanOf(db: Executor, c: CostItem): Promise<YearSpan> {
   return { startYear, endYear: p === null ? startYear : Number(p.to.slice(0, 4)) }
 }
 
-// Das Jahr der Zahlung (Entwurf 3.10): Liegt der Zeitraum in einem Kalenderjahr, ist es dieses und
-// darf nur leer oder genau dieses sein. Reicht er über zwei, ist es Pflicht und liegt zwischen dem
-// Jahr des Beginns und dem Jahr nach dem Ende (eine Messdienstabrechnung kommt oft erst danach).
-function requireTaxYear(period: BillingPeriod, after: CostItem, what: string): void {
+// Das Jahr der Zahlung (Entwurf 3.10, #478 E2): Pflicht nur, wenn der Zeitraum über zwei Kalenderjahre reicht (oder
+// ein Zahlungsdatum beantwortet es). Angegeben ist es in beiden Arten von Zeiträumen erlaubt, auch ein anderes als das
+// Kalenderjahr eines Kalenderzeitraums (eine Rechnung für 2025, bezahlt 2026); vorher lehnte Mietfuchs das ab, und ein
+// Wechsel des Zeitraums verlor deshalb das Jahr. Außerhalb der üblichen Spanne (`paidOnSpan`, dieselbe wie beim Datum)
+// fragt es nach (`TaxYearQuestion`), nicht beim Aufteilen und nicht beim Wechsel des Zeitraums (`splitPart`,
+// `periodChange`): Dort ändert sich das Jahr nicht, oder es wurde für die ganze Rechnung schon gefragt.
+function requireTaxYear(period: BillingPeriod, before: CostItem | null, after: CostItem, what: string, body: unknown, options: CostItemGuardOptions): void {
   // Ein Abzug beim Betriebsstrom steht im Jahr seiner Stromrechnung (#267, outflow.ts); `mergeCostItem` leert sein Jahr.
   if (after.operatingPower === 'deduction') return
-  const startYear = Number(period.from.slice(0, 4))
-  const endYear = Number(period.to.slice(0, 4))
-  if (!spansTwoYears(period)) {
-    if (after.taxYear !== undefined && after.taxYear !== startYear) {
-      throw new PeriodError(`Der Abrechnungszeitraum ${periodLabel(period)} liegt im Kalenderjahr ${startYear}; für die Steuer zählt ${what} deshalb zu ${startYear}.`)
-    }
-    return
-  }
   // Ein Zahlungsdatum (#255 PR 3) beantwortet die Frage ebenso: Es geht dem Jahr vor (outflow.ts).
   if (after.taxYear === undefined) {
-    if (after.paidOn !== undefined) return
+    if (!spansTwoYears(period) || after.paidOn !== undefined) return
     throw new PeriodError(`Der Abrechnungszeitraum ${periodLabel(period)} reicht über zwei Kalenderjahre. Bitte geben Sie bei ${what} das Jahr der Zahlung oder das Zahlungsdatum an (für die Steuer, § 11 Abs. 2 EStG).`)
   }
-  if (after.taxYear < startYear || after.taxYear > endYear + 1) {
-    throw new PeriodError(`Das Jahr der Zahlung von ${what} muss zwischen ${startYear} und ${endYear + 1} liegen.`)
-  }
+  if (options.splitPart || options.periodChange || raw(body, 'confirmTaxYear') === true) return
+  const questions = taxYearQuestions(before, after, { startYear: Number(period.from.slice(0, 4)), endYear: Number(period.to.slice(0, 4)) })
+  if (questions.length > 0) throw new TaxYearQuestion(questions.join(' '))
 }
 
 async function propertyName(db: Executor, propertyId: string): Promise<string> {
@@ -1419,7 +1421,7 @@ async function guardCostItem(db: Executor, before: CostItem | null, after: CostI
   const heating = after.heatingPlantId ? await heatingRulesOf(db, after.heatingPlantId) : null
   if (heating?.own) requireHeatingPeriod(heating.rules, after)
   else await requirePeriods(db, after.propertyId, [after.period], has(body, 'year') && !has(body, 'period'), 'Die Kostenposition')
-  await requireServiceAndTax(db, before, after, options)
+  await requireServiceAndTax(db, before, after, body, options)
   await requirePaidOn(db, before, after, body, options)
   const vertragsWohnungen = await guardContract(db, after)
   // Die Wohnungen der Einzelbeträge über ihr Mietverhältnis (#94).
