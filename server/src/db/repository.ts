@@ -59,7 +59,7 @@ import { isSplitPart, splitByService } from '../serviceSplit.ts'
 import { splitBlocker } from '../../../shared/splitPart.ts'
 import { tenancyStamp } from '../../../shared/tenancyStamp.ts'
 import { allowsSpread, isSpreadYears, spreadQuestions } from '../../../shared/spread.ts'
-import { allowsPaidOn, isPaidOnDate, paidOnQuestions, splitPaidOnQuestions, taxYearQuestions, type YearSpan } from '../../../shared/paidOn.ts'
+import { allowsPaidOn, isPaidOnDate, joinQuestions, paidOnQuestions, splitPaidOnQuestions, taxYearQuestions, type YearSpan } from '../../../shared/paidOn.ts'
 import { statedOutflowYear } from '../outflow.ts'
 import type { Database, Executor } from './client.ts'
 import {
@@ -1253,7 +1253,8 @@ async function requirePeriods(db: Executor, propertyId: string, keys: readonly s
 // Endstand (`settleOperatingPowerLinks`), nicht für jeden Zwischenschritt.
 export type CostItemGuardOptions = { splitPart?: boolean; periodChange?: boolean }
 
-async function requireServiceAndTax(db: Executor, before: CostItem | null, after: CostItem, body: unknown, options: CostItemGuardOptions): Promise<void> {
+// Liefert die Sätze der Rückfrage zum Jahr der Zahlung (`requireTaxYear`); gestellt wird sie mit den übrigen (`askOnce`).
+async function requireServiceAndTax(db: Executor, before: CostItem | null, after: CostItem, body: unknown, options: CostItemGuardOptions): Promise<string[]> {
   const what = `„${after.description}“`
   const from = after.serviceFrom
   const to = after.serviceTo
@@ -1271,8 +1272,8 @@ async function requireServiceAndTax(db: Executor, before: CostItem | null, after
   const rules = await itemRules(db, after)
   const period = periodOfKey(rules, after.period)
   // Einen Zeitraum, den es nicht gibt, hat `requirePeriods` schon abgelehnt.
-  if (period === null) return
-  requireTaxYear(period, before, after, what, body, options)
+  if (period === null) return []
+  const asked = requireTaxYear(period, before, after, what, body, options)
   // Ein Teil einer aufgeteilten Rechnung wird nur berichtigt (Durchsicht von #226, C1): Mit einem
   // anderen Leistungszeitraum oder Zeitraum stimmte sein Anteil nicht mehr zum Schnitt nach Tagen,
   // und die Geschwisterteile blieben stehen. Den Wechsel des Rhythmus (`splitPart`) betrifft das nicht.
@@ -1281,12 +1282,12 @@ async function requireServiceAndTax(db: Executor, before: CostItem | null, after
     (before.serviceFrom !== from || before.serviceTo !== to || before.period !== after.period || after.category === HEATING_CATEGORY)) {
     throw new PeriodError(splitPartMessage(before))
   }
-  if (from === undefined || to === undefined || after.category === HEATING_CATEGORY || options.splitPart) return
+  if (from === undefined || to === undefined || after.category === HEATING_CATEGORY || options.splitPart) return asked
   // Wird aus einer Heizposition eine kalte, ist das keine unveränderte Position (Nachprüfung von
   // #226): Die Heizposition durfte über zwei Zeiträume reichen, die kalte muss aufgeteilt werden.
   const unchanged = before !== null && before.serviceFrom === from && before.serviceTo === to && before.period === after.period &&
     before.category !== HEATING_CATEGORY
-  if (unchanged) return
+  if (unchanged) return asked
   const touched = periodsBetween(rules, from, to)
   if (touched.length > 1) {
     // Einzelbeträge lassen sich nicht aufteilen (#454); der Rat zum Aufteilen führte dort in die nächste Ablehnung.
@@ -1296,6 +1297,7 @@ async function requireServiceAndTax(db: Executor, before: CostItem | null, after
         (blocker ?? 'Kalte Betriebskosten gehören anteilig in jeden dieser Zeiträume; speichern Sie die Rechnung mit „Aufteilen und speichern“.'),
     )
   }
+  return asked
 }
 
 // Ein Teil einer aufgeteilten Rechnung (#208): eine kalte Position, deren Leistungszeitraum mehr
@@ -1315,8 +1317,9 @@ const splitPartMessage = (c: CostItem): string =>
 // Spanne, braucht es die Bestätigung (`paidOnQuestions`). Nicht gefragt wird beim Aufteilen und beim Wechsel des
 // Zeitraums (`splitPart`, `periodChange`): Dort ändert sich das Datum nicht, oder `saveCostItemSplit` hat für die
 // ganze Rechnung schon gefragt.
-async function requirePaidOn(db: Executor, before: CostItem | null, after: CostItem, body: unknown, options: CostItemGuardOptions): Promise<void> {
-  if (after.paidOn === undefined && before?.paidOn === undefined) return
+// Liefert die Sätze der Rückfrage; gestellt wird sie mit den übrigen (`askOnce`).
+async function requirePaidOn(db: Executor, before: CostItem | null, after: CostItem, body: unknown, options: CostItemGuardOptions): Promise<string[]> {
+  if (after.paidOn === undefined && before?.paidOn === undefined) return []
   // #96 A3: An der Erhaltungsrücklage gibt es kein Datum; der Server leert nichts still. Abgelehnt wird ein neues oder
   // geändertes Datum (Durchsicht K2): Eine Altposition aus der Zeit vor #96 (über die API datiert) lässt sich teilweise
   // ändern, ohne das Datum anzufassen, und ein Wechsel des Zeitraums trägt es nur weiter.
@@ -1326,9 +1329,22 @@ async function requirePaidOn(db: Executor, before: CostItem | null, after: CostI
   if (after.paidOn !== undefined && !allowsPaidOn(after) && !isReserveCategory(after.category)) {
     throw new PeriodError(`„${after.description}“ ist laut Gemeinschaftsabrechnung verteilt; ein Zahlungsdatum gibt es dort nicht. Für die Steuer zählen die Vorschüsse im Jahr ihrer Zahlung, eine Nachzahlung oder ein Guthaben im Jahr der Zahlung bzw. Gutschrift. Bitte lassen Sie das Feld leer.`)
   }
-  if (options.splitPart || options.periodChange || raw(body, 'confirmPaidOn') === true) return
-  const questions = paidOnQuestions(before, after, await yearSpanOf(db, after))
-  if (questions.length > 0) throw new PaidOnQuestion(questions.join(' '))
+  if (options.splitPart || options.periodChange || raw(body, 'confirmPaidOn') === true) return []
+  return paidOnQuestions(before, after, await yearSpanOf(db, after))
+}
+
+// Die Rückfragen eines Speicherns in einer (Durchsicht von #262, S1): Ändert ein Zahlungsdatum an einer verteilten
+// Position Steuerjahr und Beginn der Verteilung, kam sonst erst die eine 409 und nach ihrer Bestätigung die andere, jede
+// mit demselben Rat. Jetzt eine 409 mit allen Sätzen und dem Rat einmal (`joinQuestions`); `question` ist das erste
+// Kennzeichen, das noch fehlt (Zahlungsdatum, Jahr der Zahlung, Verteilung). Bestätigt wird jedes Kennzeichen für sich
+// (`confirmPaidOn`, `confirmTaxYear`, `confirmSpread`); das Formular schickt nach einer Rückfrage alle mit, wie heute
+// `confirmPaidOn` und `confirmTaxYear` (Kosten.tsx), so bestätigt ein Dialog alles, was er gezeigt hat.
+type Asked = { paidOn: readonly string[]; taxYear: readonly string[]; spread: readonly string[] }
+function askOnce(asked: Asked): void {
+  const text = joinQuestions(asked.paidOn, asked.taxYear, asked.spread).join(' ')
+  if (asked.paidOn.length > 0) throw new PaidOnQuestion(text)
+  if (asked.taxYear.length > 0) throw new TaxYearQuestion(text)
+  if (asked.spread.length > 0) throw new SpreadQuestion(text)
 }
 
 // Die Verteilung nach § 82b EStDV (#262, E-1, E-9). **Abgelehnt** (400) wird eine Wahl an einer Position, an der nicht
@@ -1338,29 +1354,48 @@ async function requirePaidOn(db: Executor, before: CostItem | null, after: CostI
 // sagt es (Hinweis `spreadIgnored`, #262 PR 3). **Gefragt** (409) wird an einer gespeicherten Position, wenn sich die
 // Wahl oder an einer verteilten das Jahr der Zahlung ändert; nicht beim Anlegen, Aufteilen (`saveCostItemSplit` fragt
 // selbst) und beim Wechsel des Zeitraums, der die Wahl nur weiterträgt.
-async function requireSpread(db: Executor, before: CostItem | null, after: CostItem, body: unknown, options: CostItemGuardOptions): Promise<void> {
+// Liefert die Sätze der Rückfrage; gestellt wird sie mit den übrigen (`askOnce`), erst nach jeder Ablehnung hier.
+async function requireSpread(db: Executor, before: CostItem | null, after: CostItem, body: unknown, options: CostItemGuardOptions): Promise<string[]> {
   // Der Wechsel des Zeitraums trägt die Wahl nur weiter (`spreadYears: 'same'`), auch an neu entstehende Teile; eine
   // krumme hält ihn nicht auf.
   if (after.spreadYears !== undefined && !allowsSpread(after) && !options.periodChange) {
     const unchanged = before !== null && before.spreadYears === after.spreadYears && !allowsSpread(before)
     if (!unchanged) throw new PeriodError(spreadRefusal(after))
   }
-  if (before === null || options.splitPart || options.periodChange || raw(body, 'confirmSpread') === true) return
-  const questions = spreadQuestions(before, after, await otherPartLabels(db, before))
-  if (questions.length > 0) throw new SpreadQuestion(questions.join(' '))
+  if (before === null || options.splitPart || options.periodChange) return []
+  // Eine Wahl je Rechnung (E-11): Die übrigen Teile bekommen sie mit (`syncSourceSpread`). Kann an einem nicht verteilt
+  // werden, wird vor der Rückfrage abgelehnt (Durchsicht S2), nicht erst nach ihrer Bestätigung.
+  if (after.spreadYears !== undefined && after.spreadYears !== before.spreadYears) await requireSiblingsSpread(db, after)
+  if (raw(body, 'confirmSpread') === true) return []
+  return spreadQuestions(before, after, await otherPartLabels(db, before))
+}
+
+async function requireSiblingsSpread(db: Executor, c: CostItem): Promise<void> {
+  if (c.sourceId === undefined) return
+  // Die Beschreibung eines Teils nennt seinen Anteil (`anteilig 01.07.–31.12.2025`), das genügt als Name.
+  const siblings = await db.select({ description: costItems.description, category: costItems.category, amountCents: costItems.amountCents, operatingPower: costItems.operatingPower })
+    .from(costItems).where(and(eq(costItems.sourceId, c.sourceId), ne(costItems.id, c.id))).orderBy(costItems.period)
+  const blocked = siblings.find((p) => !allowsSpread(p))
+  if (blocked === undefined) return
+  const why = blocked.amountCents <= 0
+    ? `Er hat den Betrag ${operatingPowerEuro(blocked.amountCents)}; verteilen lässt sich nur ein Betrag über 0 €`
+    : blocked.operatingPower === 'deduction'
+      ? 'Er ist ein Abzug beim Betriebsstrom'
+      : `Seine Kostenart „${blocked.category}“ lässt sich nicht verteilen`
+  throw new PeriodError(`Die Wahl gilt für die ganze Rechnung, aber am Teil „${blocked.description}“ lässt sich nicht verteilen. ${why}. Berichtigen Sie zuerst diesen Teil oder wählen Sie „nicht verteilen“; gespeichert wurde nichts.`)
 }
 
 function spreadRefusal(c: CostItem): string {
   const what = `„${c.description}“`
   if (c.category === RESERVE_CONTRIBUTION_CATEGORY) {
-    return `${what}: Die Zuführung zur Erhaltungsrücklage ist keine Werbungskosten und lässt sich nicht verteilen; abziehbar ist erst die Entnahme, wenn die Gemeinschaft das Geld ausgibt (BFH, Urteil vom 14.01.2025, IX R 19/24). Bitte wählen Sie „nicht verteilen“.`
+    return `${what}: Die Zuführung zur Erhaltungsrücklage zählt nicht zu den Werbungskosten und lässt sich nicht verteilen; abziehbar ist erst die Entnahme, wenn die Gemeinschaft das Geld ausgibt (BFH, Urteil vom 14.01.2025, IX R 19/24). Bitte wählen Sie „nicht verteilen“.`
   }
   if (c.category === 'Nicht umlagefähig' || c.category === RESERVE_WITHDRAWAL_CATEGORY) {
     return c.operatingPower === 'deduction'
       ? `${what} ist ein Abzug beim Betriebsstrom; verteilen lässt er sich nicht. Bitte wählen Sie „nicht verteilen“.`
       : `${what} ist eine Gutschrift oder ohne Betrag. Eine Gutschrift mindert die Werbungskosten im Jahr, in dem sie eingeht, und wird nicht verteilt. Bitte wählen Sie „nicht verteilen“.`
   }
-  return `${what}: Verteilen nach § 82b EStDV lässt sich nur „Nicht umlagefähig“ oder „Entnahme Erhaltungsrücklage“, denn Erhaltungsaufwand ist keine Betriebskosten (§ 1 Abs. 2 Nr. 2 BetrKV). Bitte wählen Sie „nicht verteilen“ oder die passende Kostenart.`
+  return `${what}: Verteilen nach § 82b EStDV lässt sich nur „Nicht umlagefähig“ oder „Entnahme Erhaltungsrücklage“, denn Erhaltungsaufwand zählt nicht zu den Betriebskosten (§ 1 Abs. 2 Nr. 2 BetrKV). Bitte wählen Sie „nicht verteilen“ oder die passende Kostenart.`
 }
 
 // Die Zeiträume der übrigen Teile derselben Rechnung (#455), für die Rückfrage: An sie schreibt `syncSourceSpread` die
@@ -1377,17 +1412,10 @@ async function otherPartLabels(db: Executor, c: CostItem): Promise<string[]> {
 }
 
 // Eine Wahl je Rechnung (#262, E-11, Entscheidung U-2): Ändert sich die Wahl an einem Teil einer Quelle, schreibt der
-// Server sie an alle Teile derselben Quelle, in derselben Transaktion und damit in einer Gruppe des Verlaufs. Ein Teil,
-// an dem nicht verteilt werden kann, lehnt das Ganze ab (400), bevor die Arbeit festgeschrieben wird.
+// Server sie an alle Teile derselben Quelle, in derselben Transaktion und damit in einer Gruppe des Verlaufs. Ob jeder
+// Teil sie tragen kann, hat der Wächter schon geprüft (`requireSiblingsSpread`, vor der Rückfrage).
 export async function syncSourceSpread(tx: Executor, before: CostItem, after: CostItem): Promise<void> {
   if (after.sourceId === undefined || before.spreadYears === after.spreadYears) return
-  const siblings = await tx.select({ id: costItems.id, description: costItems.description, category: costItems.category, amountCents: costItems.amountCents, operatingPower: costItems.operatingPower })
-    .from(costItems).where(and(eq(costItems.sourceId, after.sourceId), ne(costItems.id, after.id)))
-  if (after.spreadYears !== undefined) {
-    const blocked = siblings.find((p) => !allowsSpread(p))
-    if (blocked) throw new PeriodError(`Die Wahl gilt für die ganze Rechnung, aber am Teil „${blocked.description}“ lässt sich nicht verteilen (Kostenart oder Betrag). Gespeichert wurde nichts.`)
-  }
-  if (siblings.length === 0) return
   await tx.update(costItems).set({ spreadYears: after.spreadYears ?? null }).where(and(eq(costItems.sourceId, after.sourceId), ne(costItems.id, after.id)))
 }
 
@@ -1404,17 +1432,16 @@ async function yearSpanOf(db: Executor, c: CostItem): Promise<YearSpan> {
 // Wechsel des Zeitraums verlor deshalb das Jahr. Außerhalb der üblichen Spanne (`paidOnSpan`, dieselbe wie beim Datum)
 // fragt es nach (`TaxYearQuestion`), nicht beim Aufteilen und nicht beim Wechsel des Zeitraums (`splitPart`,
 // `periodChange`): Dort ändert sich das Jahr nicht, oder es wurde für die ganze Rechnung schon gefragt.
-function requireTaxYear(period: BillingPeriod, before: CostItem | null, after: CostItem, what: string, body: unknown, options: CostItemGuardOptions): void {
+function requireTaxYear(period: BillingPeriod, before: CostItem | null, after: CostItem, what: string, body: unknown, options: CostItemGuardOptions): string[] {
   // Ein Abzug beim Betriebsstrom steht im Jahr seiner Stromrechnung (#267, outflow.ts); `mergeCostItem` leert sein Jahr.
-  if (after.operatingPower === 'deduction') return
+  if (after.operatingPower === 'deduction') return []
   // Ein Zahlungsdatum (#255 PR 3) beantwortet die Frage ebenso: Es geht dem Jahr vor (outflow.ts).
   if (after.taxYear === undefined) {
-    if (!spansTwoYears(period) || after.paidOn !== undefined) return
+    if (!spansTwoYears(period) || after.paidOn !== undefined) return []
     throw new PeriodError(`Der Abrechnungszeitraum ${periodLabel(period)} reicht über zwei Kalenderjahre. Bitte geben Sie bei ${what} das Jahr der Zahlung oder das Zahlungsdatum an (für die Steuer, § 11 Abs. 2 EStG).`)
   }
-  if (options.splitPart || options.periodChange || raw(body, 'confirmTaxYear') === true) return
-  const questions = taxYearQuestions(before, after, { startYear: Number(period.from.slice(0, 4)), endYear: Number(period.to.slice(0, 4)) })
-  if (questions.length > 0) throw new TaxYearQuestion(questions.join(' '))
+  if (options.splitPart || options.periodChange || raw(body, 'confirmTaxYear') === true) return []
+  return taxYearQuestions(before, after, { startYear: Number(period.from.slice(0, 4)), endYear: Number(period.to.slice(0, 4)) })
 }
 
 async function propertyName(db: Executor, propertyId: string): Promise<string> {
@@ -1558,9 +1585,10 @@ async function guardCostItem(db: Executor, before: CostItem | null, after: CostI
   const heating = after.heatingPlantId ? await heatingRulesOf(db, after.heatingPlantId) : null
   if (heating?.own) requireHeatingPeriod(heating.rules, after)
   else await requirePeriods(db, after.propertyId, [after.period], has(body, 'year') && !has(body, 'period'), 'Die Kostenposition')
-  await requireServiceAndTax(db, before, after, body, options)
-  await requirePaidOn(db, before, after, body, options)
-  await requireSpread(db, before, after, body, options)
+  const taxYear = await requireServiceAndTax(db, before, after, body, options)
+  const paidOn = await requirePaidOn(db, before, after, body, options)
+  const spread = await requireSpread(db, before, after, body, options)
+  askOnce({ paidOn, taxYear, spread })
   const vertragsWohnungen = await guardContract(db, after)
   // Die Wohnungen der Einzelbeträge über ihr Mietverhältnis (#94).
   const mietverhaeltnisse = Object.keys(after.tenancyAmounts ?? {})
@@ -2885,23 +2913,21 @@ export async function saveCostItemSplit(db: Database, propertyId: string | null,
   // aller Teile, bevor etwas geschrieben ist, und mit derselben Regel wie das Formular (`splitPaidOnQuestions`). Der
   // Wächter der Teile fragt danach nicht mehr (`splitPart`).
   const current = currentId === null ? null : (await readCostItems(db)).find((c) => c.id === currentId) ?? null
-  if (raw(body, 'confirmPaidOn') !== true) {
-    const questions = splitPaidOnQuestions(current, base, parts)
-    if (questions.length > 0) throw new PaidOnQuestion(questions.join(' '))
-  }
+  const paidOn = raw(body, 'confirmPaidOn') === true ? [] : splitPaidOnQuestions(current, base, parts)
   // Ebenso das Jahr der Zahlung (#478, Durchsicht Befund 2): Es gilt für jeden Teil über zwei Kalenderjahre, gefragt wird
   // einmal mit den Sätzen aller Teile, wenn es außerhalb der üblichen Spanne eines Teils liegt.
-  if (raw(body, 'confirmTaxYear') !== true) {
-    const questions = [...new Set(parts.filter((p) => p.needsTaxYear).flatMap((p) =>
-      taxYearQuestions(current !== null && current.period === p.period ? current : null, { taxYear: base.taxYear ?? null, period: p.period }, p)))]
-    if (questions.length > 0) throw new TaxYearQuestion(questions.join(' '))
-  }
+  const taxYear = raw(body, 'confirmTaxYear') === true ? [] : parts.filter((p) => p.needsTaxYear).flatMap((p) =>
+    taxYearQuestions(current !== null && current.period === p.period ? current : null, { taxYear: base.taxYear ?? null, period: p.period }, p))
   // Die Verteilung nach § 82b EStDV (#262, E-9): Ändert das Aufteilen einer gespeicherten Position die Wahl, wird einmal
-  // gefragt; die Teile tragen sie danach alle (`spreadYears: 'same'`), ihr Wächter fragt nicht mehr (`splitPart`).
-  if (current !== null && raw(body, 'confirmSpread') !== true) {
-    const questions = spreadQuestions(current, base)
-    if (questions.length > 0) throw new SpreadQuestion(questions.join(' '))
+  // gefragt; die Teile tragen sie danach alle (`spreadYears: 'same'`), ihr Wächter fragt nicht mehr (`splitPart`). Kann
+  // ein Teil sie nicht tragen (Gutschrift, ein Teil ohne Betrag), wird vor der Rückfrage abgelehnt (Durchsicht S2).
+  if (base.spreadYears !== undefined) {
+    const blocked = parts.find((p) => !allowsSpread({ ...base, amountCents: p.amountCents }))
+    if (blocked !== undefined) throw new PeriodError(spreadRefusal({ ...base, amountCents: blocked.amountCents }))
   }
+  const spread = current === null || raw(body, 'confirmSpread') === true ? [] : spreadQuestions(current, base)
+  // Alle in einer Rückfrage (Durchsicht S1).
+  askOnce({ paidOn, taxYear, spread })
   const ids = await db.transaction(async (tx) => {
     // Die Quelle entsteht vor den Teilen, die auf sie zeigen (Fremdschlüssel), und fällt mit einer Ablehnung weg.
     const sourceId = newId()

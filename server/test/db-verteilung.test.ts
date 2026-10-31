@@ -49,6 +49,24 @@ test('Kette: Positionen und Objekte von vor dem Schritt bekommen keine Verteilun
     assert.throws(() => c.exec("UPDATE cost_items SET key = 'unbekannt' WHERE id = 'c1'"), /cost_items_key_known/)
     assert.throws(() => c.exec("UPDATE properties SET state = 'XX' WHERE id = 'objekt-1'"), /properties_state_known/)
     assert.throws(() => c.exec("UPDATE cost_items SET property_id = 'gibt-es-nicht' WHERE id = 'c1'"), /FOREIGN KEY/)
+    // Durchsicht S3: Der Neubau setzt `cost_items.source_id` als RESTRICT (vorher NO ACTION, drizzle ließ ON DELETE bei
+    // ALTER ADD weg). Ohne Aufschub lehnt SQLite das Löschen einer Quelle mit Teil sofort ab. Unter `defer_foreign_keys`
+    // (Rücksprung) schiebt SQLite auch RESTRICT bis zum Festschreiben auf (nachgemessen, entgegen der Vermutung, RESTRICT
+    // greife immer sofort): Das Löschen geht in der Transaktion durch, das COMMIT scheitert, und die Quelle bleibt.
+    assert.deepEqual(c.rows(`SELECT "table", "to", on_delete FROM pragma_foreign_key_list('cost_items') WHERE "from" = 'source_id'`), [['cost_sources', 'id', 'RESTRICT']])
+    c.exec("INSERT INTO cost_sources (id, property_id, rule) VALUES ('q1', 'objekt-1', 'days')")
+    c.exec("UPDATE cost_items SET source_id = 'q1' WHERE id = 'c2'")
+    assert.throws(() => c.exec("DELETE FROM cost_sources WHERE id = 'q1'"), /FOREIGN KEY/)
+    c.exec('BEGIN')
+    try {
+      c.exec('PRAGMA defer_foreign_keys = ON')
+      c.exec("DELETE FROM cost_sources WHERE id = 'q1'")
+      assert.throws(() => c.exec('COMMIT'), /FOREIGN KEY/)
+    } finally {
+      // Ein gescheitertes COMMIT lässt die Transaktion offen.
+      try { c.exec('ROLLBACK') } catch { /* keine Transaktion mehr offen */ }
+    }
+    assert.deepEqual(c.rows('SELECT id FROM cost_sources'), [['q1']])
     c.close()
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
@@ -109,7 +127,7 @@ test('Repository: an einer Kostenart, die nicht verteilt werden kann, an einer G
     }
     const kind = /Verteilen nach § 82b EStDV lässt sich nur „Nicht umlagefähig“ oder „Entnahme Erhaltungsrücklage“/
     await rejects((db) => createEntity(db, 'costItems', 'x', { ...dach, category: 'Grundsteuer', spreadYears: 2 }), kind)
-    await rejects((db) => createEntity(db, 'costItems', 'x', { ...dach, category: 'Zuführung Erhaltungsrücklage', spreadYears: 2 }), /Zuführung/)
+    await rejects((db) => createEntity(db, 'costItems', 'x', { ...dach, category: 'Zuführung Erhaltungsrücklage', spreadYears: 2 }), /Zuführung zur Erhaltungsrücklage zählt nicht zu den Werbungskosten/)
     await rejects((db) => createEntity(db, 'costItems', 'x', { ...dach, amountCents: -5000, spreadYears: 2 }), /Gutschrift/)
     for (const bad of [1, 6, 2.5, '3', 'drei']) {
       await rejects((db) => createEntity(db, 'costItems', 'x', { ...dach, spreadYears: bad }), /auf 2 bis 5 Jahre/)

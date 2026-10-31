@@ -79,9 +79,11 @@ beim Start, denn wer auf sie wartet, hält den Server für fertig.
   löscht die Route nicht (409, `dependents.fuelDeliveries`).
 - **Quellen aufgeteilter Rechnungen** (#455): `cost_sources` (Objekt, Regel `days`); `cost_items.source_id` verweist darauf mit
   **`RESTRICT`**: Eine Quelle mit Teilen wird nicht gelöscht, die Teile gehen zuerst (der letzte Teil löscht die Quelle
-  im Repository mit). In der erzeugten Datenbank steht dieser Fremdschlüssel bis zu einem späteren Schritt, der
-  `cost_items` neu baut, als NO ACTION (drizzle lässt ON DELETE bei ALTER ADD weg); unter `defer_foreign_keys`
-  (Rücksprung) wird er erst beim Festschreiben geprüft. Seit dem Schritt …_verteilung_82b_bedingungen (#262), der `cost_items` neu baut, steht er als `RESTRICT` da. Aufs Objekt verweist die Quelle mit `RESTRICT`. Bestehende Teile hat der Datenschritt 0077 (TypeScript,
+  im Repository mit). In der erzeugten Datenbank stand dieser Fremdschlüssel bis zum Schritt
+  …_verteilung_82b_bedingungen (#262), der `cost_items` neu baut, als NO ACTION (drizzle lässt ON DELETE bei ALTER ADD
+  weg); seitdem steht er als `RESTRICT` da (db-verteilung.test.ts). Unter `defer_foreign_keys` (Rücksprung) prüft
+  SQLite auch `RESTRICT` erst beim Festschreiben, nicht sofort (nachgemessen): Das Löschen einer Quelle mit Teil geht
+  in der Transaktion durch, das COMMIT scheitert. Aufs Objekt verweist die Quelle mit `RESTRICT`. Bestehende Teile hat der Datenschritt 0077 (TypeScript,
   siehe Migrationen) einer Quelle zugeordnet: was 0.13.1 als eine Rechnung behandelte, was ein Wechsel von 0.13.1 aus
   einer machte, und, darüber hinaus, Teile einer Rechnung, an deren einem Teil der Beleg hängt; nie eine zweimal
   erfasste Rechnung mit gleichem Betrag als eine, und von zwei solchen Fassungen jede für sich nur, wenn jede

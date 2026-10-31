@@ -1211,8 +1211,8 @@ export const costItems = sqliteTable(
     operatingPowerReported: integer('operating_power_reported', { mode: 'boolean' }),
     // Die aufgeteilte Rechnung, zu der dieser Teil gehört (#455); NULL heißt keine. Gemeint ist `RESTRICT`: Eine Quelle wird nie
     // gelöscht, solange ein Teil auf sie zeigt. In der erzeugten Datenbank stand der Fremdschlüssel bis zum Neubau von
-    // cost_items im Schritt …_verteilung_82b_bedingungen (#262) als NO ACTION (drizzle lässt ON DELETE bei ALTER ADD weg); unter defer_foreign_keys
-    // (Rücksprung) wird erst beim Festschreiben geprüft. Gesetzt wird der Verweis nur von den Schreibwegen der Teile.
+    // cost_items im Schritt …_verteilung_82b_bedingungen (#262) als NO ACTION (drizzle lässt ON DELETE bei ALTER ADD weg),
+    // seitdem als RESTRICT; unter defer_foreign_keys (Rücksprung) prüft SQLite auch RESTRICT erst beim Festschreiben. Gesetzt wird der Verweis nur von den Schreibwegen der Teile.
     sourceId: text('source_id').references(() => costSources.id, { onDelete: 'restrict' }),
     // Größeren Erhaltungsaufwand für die Steuer verteilen (§ 82b EStDV, #262): auf 2 bis 5 Jahre, NULL heißt nicht
     // verteilen. Wo das geht (Kostenart, Betrag über 0, kein Abzug beim Betriebsstrom), prüft repository.ts über

@@ -191,3 +191,84 @@ test('Wechsel des Zeitraums: die Teile tragen die Wahl, ohne Rückfrage; eine kr
     fs.rmSync(dir, { recursive: true, force: true })
   }
 })
+
+// Durchsicht S1: Ein Zahlungsdatum an einer verteilten Position ändert das Steuerjahr und den Beginn der Verteilung. Eine
+// Rückfrage nennt beides, der Rat steht einmal am Ende; bestätigt im selben Dialog (alle Kennzeichen), wird gespeichert.
+test('Route: ein Zahlungsdatum an einer verteilten Position fragt einmal nach, mit beiden Sätzen und dem Rat einmal', async () => {
+  const s = await startServer()
+  try {
+    const send = sender(s)
+    await send('/api/units', 'POST', { name: 'EG', areaM2: 80, participates: true })
+    const item = await (await send('/api/costItems', 'POST', { ...dach, spreadYears: 3 })).json() as CostItem
+    const r1 = await send(`/api/costItems/${item.id}`, 'PUT', { paidOn: '2026-01-08' })
+    assert.equal(r1.status, 409)
+    const b1 = await r1.json() as { error: string; question: string }
+    assert.equal(b1.question, 'paidOn')
+    assert.equal(b1.error, [
+      'Mit dem Datum 08.01.2026 zählt die Position für die Steuer zu 2026 statt zu 2025.',
+      'Die Verteilung beginnt dann 2026 statt 2025: Abzug 2026 bis 2028 statt 2025 bis 2027.',
+      'Die Wahl ist an die Erklärung des ersten Jahres gebunden.',
+      'Haben Sie die Steuererklärung eines betroffenen Jahres schon abgegeben, besprechen Sie die Änderung mit Ihrem Steuerberater oder Finanzamt.',
+    ].join(' '))
+    const r2 = await send(`/api/costItems/${item.id}`, 'PUT', { paidOn: '2026-01-08', confirmPaidOn: true, confirmTaxYear: true, confirmSpread: true })
+    assert.equal(r2.status, 200, await r2.clone().text())
+    assert.equal((await r2.json() as CostItem).paidOn, '2026-01-08')
+  } finally {
+    s.stop()
+  }
+})
+
+// Durchsicht S2: Ein Teil der Rechnung, an dem nicht verteilt werden kann (Betrag 0), lehnt die Wahl am anderen Teil ab,
+// bevor gefragt wird: sonst erst die Rückfrage und nach der Bestätigung die Ablehnung.
+test('Route: die Wahl an einem Teil, dessen anderer Teil keinen Betrag hat, lehnt sofort ab (400 ohne Rückfrage), mit konkretem Satz', async () => {
+  const s = await startServer()
+  try {
+    const send = sender(s)
+    await send('/api/units', 'POST', { name: 'EG', areaM2: 80, participates: true })
+    const r1 = await send('/api/costItems/split', 'POST', { ...dach, serviceFrom: '2025-07-01', serviceTo: '2026-06-30' })
+    assert.equal(r1.status, 201, await r1.clone().text())
+    const [first, second] = await r1.json() as CostItem[]
+    if (!first || !second) return assert.fail('zwei Teile erwartet')
+    const r2 = await send(`/api/costItems/${first.id}`, 'PUT', { amountCents: 0 })
+    assert.equal(r2.status, 200, await r2.clone().text())
+    const r3 = await send(`/api/costItems/${second.id}`, 'PUT', { spreadYears: 2 })
+    assert.equal(r3.status, 400, await r3.clone().text())
+    const b3 = await r3.json() as { error: string }
+    assert.match(b3.error, /am Teil „Dachsanierung \(anteilig 01\.07\.–31\.12\.2025\)“ lässt sich nicht verteilen/)
+    assert.match(b3.error, /Betrag 0,00 €/)
+    const list = await (await send('/api/costItems?property=objekt-1', 'GET')).json() as CostItem[]
+    assert.deepEqual(list.map((c) => c.spreadYears ?? null), [null, null])
+  } finally {
+    s.stop()
+  }
+})
+
+// Durchsicht K-d: Die Ablehnung an einer umlagefähigen Kostenart ist richtig gebaut.
+test('Route: die Ablehnung an einer umlagefähigen Kostenart sagt, Erhaltungsaufwand zählt nicht zu den Betriebskosten', async () => {
+  const s = await startServer()
+  try {
+    const send = sender(s)
+    await send('/api/units', 'POST', { name: 'EG', areaM2: 80, participates: true })
+    const r = await send('/api/costItems', 'POST', { ...dach, category: 'Gebäudereinigung', spreadYears: 3 })
+    assert.equal(r.status, 400)
+    assert.match((await r.json() as { error: string }).error, /denn Erhaltungsaufwand zählt nicht zu den Betriebskosten \(§ 1 Abs\. 2 Nr\. 2 BetrKV\)/)
+  } finally {
+    s.stop()
+  }
+})
+
+// Durchsicht S2, beim Aufteilen: Eine gespeicherte Gutschrift aufteilen und dabei verteilen lehnt sofort ab (400), statt
+// erst nachzufragen und nach der Bestätigung an den Teilen abzulehnen.
+test('Route: eine Gutschrift aufteilen und dabei verteilen lehnt ohne Rückfrage ab (400)', async () => {
+  const s = await startServer()
+  try {
+    const send = sender(s)
+    await send('/api/units', 'POST', { name: 'EG', areaM2: 80, participates: true })
+    const item = await (await send('/api/costItems', 'POST', { ...dach, description: 'Gutschrift Dachdecker', amountCents: -50_000 })).json() as CostItem
+    const r = await send(`/api/costItems/${item.id}/split`, 'PUT', { serviceFrom: '2025-07-01', serviceTo: '2026-06-30', spreadYears: 3 })
+    assert.equal(r.status, 400, await r.clone().text())
+    assert.match((await r.json() as { error: string }).error, /Gutschrift/)
+  } finally {
+    s.stop()
+  }
+})

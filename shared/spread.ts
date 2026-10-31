@@ -17,9 +17,9 @@ export const SPREAD_YEARS = [2, 3, 4, 5] as const satisfies readonly SpreadYears
 
 export const isSpreadYears = (v: unknown): v is SpreadYears => typeof v === 'number' && (SPREAD_YEARS as readonly number[]).includes(v)
 
-// Die Kostenarten, an denen verteilt werden kann (E-1): Instandhaltung ist nach § 1 Abs. 2 Nr. 2 BetrKV keine
-// Betriebskosten und steht unter „Nicht umlagefähig“; die Entnahme aus der Erhaltungsrücklage nennt Zeile 57 der
-// Anlage V ausdrücklich (#96). Die Zuführung zur Rücklage ist keine Werbungskosten (#143, BFH, Urteil vom 14.01.2025,
+// Die Kostenarten, an denen verteilt werden kann (E-1): Instandhaltung zählt nach § 1 Abs. 2 Nr. 2 BetrKV nicht
+// zu den Betriebskosten und steht unter „Nicht umlagefähig“; die Entnahme aus der Erhaltungsrücklage nennt Zeile 57 der
+// Anlage V ausdrücklich (#96). Die Zuführung zur Rücklage zählt nicht zu den Werbungskosten (#143, BFH, Urteil vom 14.01.2025,
 // IX R 19/24) und lässt sich deshalb nicht verteilen.
 const SPREAD_CATEGORIES: readonly string[] = ['Nicht umlagefähig', RESERVE_WITHDRAWAL_CATEGORY]
 
@@ -53,8 +53,10 @@ export function spreadRates(totalCents: number, years: number): number[] {
 type Spreadable = { period: string; paidOn?: string | null; taxYear?: number | null; spreadYears?: SpreadYears | null }
 
 // Das Jahr, in dem die Verteilung beginnt, wie das Formular es ohne die Steuerübersicht kennt: aus Zahlungsdatum oder
-// Jahr der Zahlung, sonst das Jahr des Beginns des Zeitraums (wie `effectiveYear` in shared/paidOn.ts). Das genaue
-// Jahr des Abflusses rechnet outflow.ts; für die Sätze der Rückfrage genügt dies.
+// Jahr der Zahlung, sonst das Jahr des Beginns des Zeitraums (wie `effectiveYear` in shared/paidOn.ts). Gerechnet wird
+// das Jahr des Abflusses in outflow.ts; für jede Position, an der verteilt werden kann (kein Abzug beim Betriebsstrom,
+// keine Heizposition), ist es dasselbe, auch bei Zeiträumen außerhalb des Kalenderjahres, denn über zwei Kalenderjahre
+// verlangt der Server das Jahr der Zahlung (Durchsicht K-c, festgehalten in invariant-verteilung.test.ts, V2).
 const startYear = (c: Spreadable): number => statedOutflowYear(c) ?? Number(c.period.slice(0, 4))
 const range = (from: number, to: number): string => (from === to ? `${from}` : `${from} bis ${to}`)
 const span = (c: Spreadable): string => {

@@ -874,7 +874,11 @@ Grundmenge ist das ganze Gebäude), Überschuss. Beschreibende Gruppen statt fes
   außer eine so gespeicherte Wahl bleibt unverändert stehen (krumm, nicht kaputt) oder der Wechsel des Zeitraums trägt
   sie weiter. Setzen, Ändern, Entfernen an einer gespeicherten Position und ein anderes Jahr an einer verteilten fragen
   nach (`spreadQuestions`, 409 `question: 'spread'`, bestätigt mit `confirmSpread`), nicht beim Anlegen und beim Wechsel
-  des Zeitraums; beim Aufteilen einer gespeicherten Position einmal. **Eine Wahl je Rechnung**: An einem Teil geändert,
+  des Zeitraums; beim Aufteilen einer gespeicherten Position einmal. Zahlungsdatum, Jahr der Zahlung und Verteilung
+  fragen **in einer** Rückfrage (`askOnce`, `joinQuestions` in shared/paidOn.ts: alle Sätze, der Rat einmal am Ende,
+  `question` das erste noch fehlende Kennzeichen); bestätigt wird jedes Kennzeichen für sich, das Formular schickt nach
+  einer Rückfrage alle mit. Abgelehnt wird vor jeder Rückfrage, auch wenn ein anderer Teil der Rechnung die Wahl nicht
+  tragen kann (`requireSiblingsSpread`). **Eine Wahl je Rechnung**: An einem Teil geändert,
   schreibt `syncSourceSpread` sie an alle Teile der Quelle, in derselben Transaktion (`afterReplace` der Sammlung).
   Die Übernahme aus dem Vorjahr leert sie (carryOver.ts). Die Abrechnung liest beide Felder nie.
 - **Verschiebung anzeigen** (`shiftNotes`, nur Auskunft): Jede Position trägt `outflow`; liegt das

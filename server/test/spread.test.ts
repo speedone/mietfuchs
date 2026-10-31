@@ -4,6 +4,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { allowsSpread, isSpreadYears, SPREAD_YEARS, spreadOptions, spreadQuestions, spreadRates } from '../../shared/spread.ts'
+import { joinQuestions } from '../../shared/paidOn.ts'
 import { largestRemainder } from '../src/apportion.ts'
 import { rngOf } from '../testing/revertFlows.ts'
 import type { CostItem } from '../../shared/types.ts'
@@ -65,9 +66,9 @@ const position = (over: Partial<CostItem> = {}): Pick<CostItem, 'category' | 'am
 test('allowsSpread: „Nicht umlagefähig“ und „Entnahme Erhaltungsrücklage“ ja, Zuführung und umlagefähige Kostenarten nein', () => {
   assert.equal(allowsSpread(position()), true)
   assert.equal(allowsSpread(position({ category: 'Entnahme Erhaltungsrücklage' })), true)
-  // Die Zuführung ist keine Werbungskosten (#143, BFH IX R 19/24).
+  // Die Zuführung zählt nicht zu den Werbungskosten (#143, BFH IX R 19/24).
   assert.equal(allowsSpread(position({ category: 'Zuführung Erhaltungsrücklage' })), false)
-  // Instandhaltung ist keine Betriebskosten (§ 1 Abs. 2 Nr. 2 BetrKV); unter einer umlagefähigen Kostenart wäre sie falsch erfasst.
+  // Instandhaltung zählt nicht zu den Betriebskosten (§ 1 Abs. 2 Nr. 2 BetrKV); unter einer umlagefähigen Kostenart wäre sie falsch erfasst.
   for (const category of ['Grundsteuer', 'Gebäudereinigung', 'Sonstige Betriebskosten', 'Heizung und Warmwasser', 'Beleuchtung/Allgemeinstrom']) {
     assert.equal(allowsSpread(position({ category })), false, category)
   }
@@ -134,4 +135,12 @@ test('spreadQuestions: Teile einer Rechnung werden genannt, denn die Wahl gilt f
     'Die Wahl gilt für die ganze Rechnung und wird auch an den übrigen Teilen (2025, 2026) gespeichert.',
     BOUND, ADVICE,
   ])
+})
+
+// Durchsicht S1: mehrere Rückfragen eines Speicherns als eine, jeder Satz einmal, der Rat einmal am Ende.
+test('joinQuestions: Sätze nacheinander, doppelte einmal, der Rat einmal am Ende; ohne Rat keiner', () => {
+  assert.deepEqual(joinQuestions(['A.', ADVICE], ['B.', BOUND, ADVICE]), ['A.', 'B.', BOUND, ADVICE])
+  assert.deepEqual(joinQuestions(['A.', ADVICE], [], ['A.', ADVICE]), ['A.', ADVICE])
+  assert.deepEqual(joinQuestions([], []), [])
+  assert.deepEqual(joinQuestions(['A.']), ['A.'])
 })
