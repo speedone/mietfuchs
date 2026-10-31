@@ -81,7 +81,7 @@ beim Start, denn wer auf sie wartet, hält den Server für fertig.
   **`RESTRICT`**: Eine Quelle mit Teilen wird nicht gelöscht, die Teile gehen zuerst (der letzte Teil löscht die Quelle
   im Repository mit). In der erzeugten Datenbank steht dieser Fremdschlüssel bis zu einem späteren Schritt, der
   `cost_items` neu baut, als NO ACTION (drizzle lässt ON DELETE bei ALTER ADD weg); unter `defer_foreign_keys`
-  (Rücksprung) wird er erst beim Festschreiben geprüft. Aufs Objekt verweist die Quelle mit `RESTRICT`. Bestehende Teile hat der Datenschritt 0077 (TypeScript,
+  (Rücksprung) wird er erst beim Festschreiben geprüft. Seit dem Schritt …_verteilung_82b_bedingungen (#262), der `cost_items` neu baut, steht er als `RESTRICT` da. Aufs Objekt verweist die Quelle mit `RESTRICT`. Bestehende Teile hat der Datenschritt 0077 (TypeScript,
   siehe Migrationen) einer Quelle zugeordnet: was 0.13.1 als eine Rechnung behandelte, was ein Wechsel von 0.13.1 aus
   einer machte, und, darüber hinaus, Teile einer Rechnung, an deren einem Teil der Beleg hängt; nie eine zweimal
   erfasste Rechnung mit gleichem Betrag als eine, und von zwei solchen Fassungen jede für sich nur, wenn jede

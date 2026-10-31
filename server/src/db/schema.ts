@@ -67,6 +67,7 @@ import type {
   NewDevicesInstall,
   MeterType,
   PeriodKey,
+  SpreadYears,
   PropertyKind,
   Settings,
   StoredAssessment,
@@ -197,6 +198,10 @@ export const properties = sqliteTable(
     ownershipTransferOn: text('ownership_transfer_on'),
     buildingApplicationOn: text('building_application_on'),
     completedOn: text('completed_on'),
+    // Vorzeitiges Ende der Verteilung nach § 82b Abs. 2 EStDV (#262): das Jahr, in dem der noch nicht abgezogene Rest
+    // aller verteilten Positionen des Objekts abgezogen wird (Verkauf, Schenkung, Erbfall, Ende der Vermietung). NULL
+    // heißt kein Ende. Bedingung im zweiten Schritt.
+    spreadRestYear: integer('spread_rest_year'),
   },
   () => [
     oneOf('properties_kind_known', 'kind', PROPERTY_KINDS),
@@ -218,6 +223,8 @@ export const properties = sqliteTable(
     isoDate('properties_ownership_transfer_on_valid', 'ownership_transfer_on'),
     isoDate('properties_building_application_on_valid', 'building_application_on'),
     isoDate('properties_completed_on_valid', 'completed_on'),
+    // § 82b Abs. 2 EStDV (#262): ein Jahr, das es geben kann, wie `cost_items_tax_year_valid`.
+    check('properties_spread_rest_year_valid', sql.raw('"spread_rest_year" IS NULL OR "spread_rest_year" BETWEEN 1900 AND 2200')),
   ],
 )
 
@@ -1203,10 +1210,15 @@ export const costItems = sqliteTable(
     // gilt er wie vor #270 als gemeldet, wo ein Messdienst heizt (shared/operatingPower.ts, `deductionReported`).
     operatingPowerReported: integer('operating_power_reported', { mode: 'boolean' }),
     // Die aufgeteilte Rechnung, zu der dieser Teil gehört (#455); NULL heißt keine. Gemeint ist `RESTRICT`: Eine Quelle wird nie
-    // gelöscht, solange ein Teil auf sie zeigt. In der erzeugten Datenbank steht der Fremdschlüssel aber als NO ACTION
-    // (drizzle lässt ON DELETE bei ALTER ADD weg), bis ein späterer Schritt cost_items neu baut; unter defer_foreign_keys
+    // gelöscht, solange ein Teil auf sie zeigt. In der erzeugten Datenbank stand der Fremdschlüssel bis zum Neubau von
+    // cost_items im Schritt …_verteilung_82b_bedingungen (#262) als NO ACTION (drizzle lässt ON DELETE bei ALTER ADD weg); unter defer_foreign_keys
     // (Rücksprung) wird erst beim Festschreiben geprüft. Gesetzt wird der Verweis nur von den Schreibwegen der Teile.
     sourceId: text('source_id').references(() => costSources.id, { onDelete: 'restrict' }),
+    // Größeren Erhaltungsaufwand für die Steuer verteilen (§ 82b EStDV, #262): auf 2 bis 5 Jahre, NULL heißt nicht
+    // verteilen. Wo das geht (Kostenart, Betrag über 0, kein Abzug beim Betriebsstrom), prüft repository.ts über
+    // `allowsSpread` (shared/spread.ts); die Kostenarten sind Text, eine Bedingung hier müsste bei jeder neuen die
+    // Tabelle neu bauen. Die Abrechnung liest die Spalte nie.
+    spreadYears: integer('spread_years').$type<SpreadYears>(),
   },
   (t) => [
     // Der einzige Filter, den der Schnappschuss wirklich setzt: die Kostenpositionen eines
@@ -1231,6 +1243,8 @@ export const costItems = sqliteTable(
     check('cost_items_tax_year_valid', sql.raw('"tax_year" IS NULL OR "tax_year" BETWEEN 1900 AND 2200')),
     // Das Zahlungsdatum (#255, PR 3) als Datum; den Kalendertag prüft repository.ts.
     check('cost_items_paid_on_valid', sql.raw(`"paid_on" IS NULL OR "paid_on" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
+    // § 82b EStDV (#262): auf 2 bis 5 Jahre; „1 Jahr“ wäre dasselbe wie keine Verteilung und hat keinen eigenen Wert.
+    check('cost_items_spread_years_valid', sql.raw('"spread_years" IS NULL OR "spread_years" BETWEEN 2 AND 5')),
     oneOf('cost_items_heating_part_known', 'heating_part', HEATING_PARTS),
     // Ein Brennstoffmerkmal an Müllabfuhr hätte keine Bedeutung und verwirrte den Vorschlag nach § 560.
     check('cost_items_heating_part_category_valid', sql.raw(`"heating_part" IS NULL OR "category" = 'Heizung und Warmwasser'`)),

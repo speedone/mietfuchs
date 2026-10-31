@@ -146,6 +146,29 @@ test('Rücksprung über ein Aufteilen entfernt Quelle und Teile', async () => {
   }
 })
 
+// #262 (E-11): Die Wahl der Verteilung nach § 82b EStDV, an einem Teil geändert, schreibt der Server an alle Teile der
+// Quelle, in einem Vorgang. Der Rücksprung darüber stellt alle Teile wieder her.
+test('Rücksprung über das Setzen der Verteilung an einem Teil stellt alle Teile wieder her', async () => {
+  const s = await startServerIn(tmp())
+  try {
+    const teile = await post<{ id: string }[]>(s, '/api/costItems/split', {
+      propertyId: 'objekt-1', period: '2024-01', category: 'Nicht umlagefähig', description: 'Dach', amountCents: 3_000_000, key: 'area',
+      serviceFrom: '2024-07-01', serviceTo: '2025-06-30', taxYear: 2024, spreadYears: 2,
+    })
+    assert.equal(teile.length, 2)
+    const before = await dumpStock(s.dataDir)
+    const zweiter = teile[1] ?? assert.fail('zwei Teile erwartet')
+    assert.equal((await send(s, 'PUT', `/api/costItems/${zweiter.id}`, { spreadYears: 5, confirmSpread: true })).status, 200)
+    const changed = await dumpStock(s.dataDir)
+    assert.notDeepEqual(changed, before)
+    const top = await newest(s)
+    await revert(s, top.id)
+    assert.deepEqual(await dumpStock(s.dataDir), before)
+  } finally {
+    s.stop()
+  }
+})
+
 // #455: Der Wechsel des Rhythmus legt eine Quelle an (Aufteilen nach Tagen) und nimmt sie beim Zusammenfassen wieder
 // weg. Der Rücksprung über jeden der beiden Wechsel stellt Quellen und Teile wieder her.
 test('Rücksprung über einen Wechsel stellt Quellen und Teile wieder her', async () => {

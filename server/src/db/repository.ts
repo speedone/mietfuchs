@@ -37,13 +37,13 @@ import { selfActive, selfFromOf } from '../heating.ts'
 import { captureOf, coversPeriod, hotWaterOf } from '../hca.ts'
 import { and, count, desc, eq, inArray, isNotNull, ne, or, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/sqlite-core'
-import type { BillingPeriod, CostItem, ExternalBasis, FederalState, HeatingPlant, HeatingPrepaymentOverride, InterimGapStatus, LocalRentEntry, Meter, MeterType, Payment, PeriodKey, PeriodRules, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, SplitPreviewPart, Tenancy, Unit, UnitDependents, UsageChange } from '../../../shared/types.ts'
+import type { BillingPeriod, CostItem, ExternalBasis, FederalState, HeatingPlant, HeatingPrepaymentOverride, InterimGapStatus, LocalRentEntry, Meter, MeterType, Payment, PeriodKey, PeriodRules, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, SplitPreviewPart, SpreadYears, Tenancy, Unit, UnitDependents, UsageChange } from '../../../shared/types.ts'
 import { usageChangesOf } from '../../../shared/unitUsage.ts'
 import { hasKnownUnits, unitKey, unitLabel, unitProblem } from '../../../shared/meterUnits.ts'
 import { CALENDAR_RULES, calendarPeriod, paymentYear, formatDayRange, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, spansTwoYears, startYearOf } from '../../../shared/period.ts'
 import { heatingPeriodsEndingIn, isObjectPeriod, plantRules, plantSpan, servesUnit, spanOf } from '../../../shared/heatingPeriod.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
-import { isNotAllocable, isReserveCategory } from '../../../shared/categories.ts'
+import { isNotAllocable, isReserveCategory, RESERVE_CONTRIBUTION_CATEGORY, RESERVE_WITHDRAWAL_CATEGORY } from '../../../shared/categories.ts'
 import { isFederalState } from '../../../shared/states.ts'
 import { euro as operatingPowerEuro, GENERAL_POWER_CATEGORY, POWER_GENERATED } from '../../../shared/operatingPower.ts'
 import { billingEnergy } from '../../../shared/heatDelivery.ts'
@@ -58,6 +58,7 @@ import { compareText } from '../calc.ts'
 import { isSplitPart, splitByService } from '../serviceSplit.ts'
 import { splitBlocker } from '../../../shared/splitPart.ts'
 import { tenancyStamp } from '../../../shared/tenancyStamp.ts'
+import { allowsSpread, isSpreadYears, spreadQuestions } from '../../../shared/spread.ts'
 import { allowsPaidOn, isPaidOnDate, paidOnQuestions, splitPaidOnQuestions, taxYearQuestions, type YearSpan } from '../../../shared/paidOn.ts'
 import { statedOutflowYear } from '../outflow.ts'
 import type { Database, Executor } from './client.ts'
@@ -160,6 +161,24 @@ function isoDateOrNull(v: unknown, what: string): string | null {
 function readPaidOn(v: unknown): string | undefined {
   if (v === null || v === undefined || v === '') return undefined
   if (!isPaidOnDate(v)) throw new PeriodError('Das Zahlungsdatum ist kein gültiges Datum. Bitte wählen Sie es im Kalender.')
+  return v
+}
+
+// Die Verteilung nach § 82b EStDV (#262): 2 bis 5 Jahre oder keine Angabe; `null` und leer leeren. Ein anderer Wert
+// wird abgelehnt statt still verworfen (wie das Zahlungsdatum).
+function readSpreadYears(v: unknown): SpreadYears | undefined {
+  if (v === null || v === undefined || v === '') return undefined
+  if (!isSpreadYears(v)) throw new PeriodError('Für die Steuer verteilen lässt sich auf 2 bis 5 Jahre. Bitte wählen Sie einen dieser Werte oder „nicht verteilen“.')
+  return v
+}
+
+// Das Jahr des vorzeitigen Endes nach § 82b Abs. 2 EStDV (#262) am Objekt: eine Jahreszahl wie beim Jahr der Zahlung
+// (1900 bis 2200, Bedingung `properties_spread_rest_year_valid`) oder `null`.
+function readSpreadRestYear(v: unknown): number | null {
+  if (v === null || v === undefined || v === '') return null
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < 1900 || v > 2200) {
+    throw new PeriodError('Das Jahr, in dem das Objekt verkauft, verschenkt oder vererbt oder die Vermietung beendet wurde, ist keine Jahreszahl zwischen 1900 und 2200. Bitte tragen Sie das Jahr vierstellig ein oder lassen Sie das Feld leer.')
+  }
   return v
 }
 
@@ -555,8 +574,13 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
     // Die Quelle (#455) kommt nie aus dem Rumpf: Gesetzt wird sie nur von den Schreibwegen der Teile
     // (`writeCostItemParts`), sonst hängte ein alter Tab eine Position an eine fremde Rechnung.
     ...(current.sourceId !== undefined ? { sourceId: current.sourceId } : {}),
+    // Die Verteilung nach § 82b EStDV (#262); ob sie hier gewählt werden darf, prüft `requireSpread`.
+    ...spreadField(merged(body, 'spreadYears', current.spreadYears, readSpreadYears)),
   }
 }
+
+// Das Feld nur, wenn es eine Wahl gibt: Eine Position ohne Verteilung liest sich Schlüssel für Schlüssel wie vorher.
+const spreadField = (v: SpreadYears | undefined): Pick<CostItem, 'spreadYears'> => (v === undefined ? {} : { spreadYears: v })
 
 // Die Einheit eines Zählers beim Speichern (#342), nach dem Muster der IBAN (#279, iban.ts). **Abgelehnt wird nur
 // eine neue oder geänderte Einheit**, die die Sparte nicht kennt (kWh, MWh, GJ bei Wärme; m³, l bei Wasser; kWh,
@@ -742,6 +766,14 @@ export class PaidOnQuestion extends Error {
 // mit `confirmTaxYear: true`. Die Route gibt sie als 409 mit `question: 'taxYear'` weiter; die Sätze kommen aus
 // shared/paidOn.ts (`taxYearQuestions`), dieselben wie im Formular.
 export class TaxYearQuestion extends Error {
+  status = 409
+}
+
+// Die Rückfrage zur Verteilung nach § 82b EStDV (#262, E-9): Setzen, Ändern oder Entfernen der Wahl an einer
+// gespeicherten Position und ein anderes Jahr der Zahlung an einer verteilten, gespeichert erst mit `confirmSpread:
+// true`. Die Route gibt sie als 409 mit `question: 'spread'` weiter; die Sätze kommen aus shared/spread.ts
+// (`spreadQuestions`), dieselben wie im Formular.
+export class SpreadQuestion extends Error {
   status = 409
 }
 
@@ -1299,6 +1331,66 @@ async function requirePaidOn(db: Executor, before: CostItem | null, after: CostI
   if (questions.length > 0) throw new PaidOnQuestion(questions.join(' '))
 }
 
+// Die Verteilung nach § 82b EStDV (#262, E-1, E-9). **Abgelehnt** (400) wird eine Wahl an einer Position, an der nicht
+// verteilt werden kann (`allowsSpread`), sei es, dass die Wahl neu oder geändert ist, sei es, dass Kostenart, Betrag
+// oder Betriebsstrom einer verteilten Position sich so ändern. Eine so gespeicherte Wahl (Ablage von Hand,
+// wiederhergestellt) bleibt bei anderen Änderungen stehen: krumm, nicht kaputt; die Steuer verteilt dort nicht und
+// sagt es (Hinweis `spreadIgnored`, #262 PR 3). **Gefragt** (409) wird an einer gespeicherten Position, wenn sich die
+// Wahl oder an einer verteilten das Jahr der Zahlung ändert; nicht beim Anlegen, Aufteilen (`saveCostItemSplit` fragt
+// selbst) und beim Wechsel des Zeitraums, der die Wahl nur weiterträgt.
+async function requireSpread(db: Executor, before: CostItem | null, after: CostItem, body: unknown, options: CostItemGuardOptions): Promise<void> {
+  // Der Wechsel des Zeitraums trägt die Wahl nur weiter (`spreadYears: 'same'`), auch an neu entstehende Teile; eine
+  // krumme hält ihn nicht auf.
+  if (after.spreadYears !== undefined && !allowsSpread(after) && !options.periodChange) {
+    const unchanged = before !== null && before.spreadYears === after.spreadYears && !allowsSpread(before)
+    if (!unchanged) throw new PeriodError(spreadRefusal(after))
+  }
+  if (before === null || options.splitPart || options.periodChange || raw(body, 'confirmSpread') === true) return
+  const questions = spreadQuestions(before, after, await otherPartLabels(db, before))
+  if (questions.length > 0) throw new SpreadQuestion(questions.join(' '))
+}
+
+function spreadRefusal(c: CostItem): string {
+  const what = `„${c.description}“`
+  if (c.category === RESERVE_CONTRIBUTION_CATEGORY) {
+    return `${what}: Die Zuführung zur Erhaltungsrücklage ist keine Werbungskosten und lässt sich nicht verteilen; abziehbar ist erst die Entnahme, wenn die Gemeinschaft das Geld ausgibt (BFH, Urteil vom 14.01.2025, IX R 19/24). Bitte wählen Sie „nicht verteilen“.`
+  }
+  if (c.category === 'Nicht umlagefähig' || c.category === RESERVE_WITHDRAWAL_CATEGORY) {
+    return c.operatingPower === 'deduction'
+      ? `${what} ist ein Abzug beim Betriebsstrom; verteilen lässt er sich nicht. Bitte wählen Sie „nicht verteilen“.`
+      : `${what} ist eine Gutschrift oder ohne Betrag. Eine Gutschrift mindert die Werbungskosten im Jahr, in dem sie eingeht, und wird nicht verteilt. Bitte wählen Sie „nicht verteilen“.`
+  }
+  return `${what}: Verteilen nach § 82b EStDV lässt sich nur „Nicht umlagefähig“ oder „Entnahme Erhaltungsrücklage“, denn Erhaltungsaufwand ist keine Betriebskosten (§ 1 Abs. 2 Nr. 2 BetrKV). Bitte wählen Sie „nicht verteilen“ oder die passende Kostenart.`
+}
+
+// Die Zeiträume der übrigen Teile derselben Rechnung (#455), für die Rückfrage: An sie schreibt `syncSourceSpread` die
+// Wahl mit (E-11).
+async function otherPartLabels(db: Executor, c: CostItem): Promise<string[]> {
+  if (c.sourceId === undefined) return []
+  const rows = await db.select({ period: costItems.period }).from(costItems).where(and(eq(costItems.sourceId, c.sourceId), ne(costItems.id, c.id))).orderBy(costItems.period)
+  if (rows.length === 0) return []
+  const rules = await rulesForProperty(db, c.propertyId)
+  return rows.map((r) => {
+    const p = periodOfKey(rules, r.period)
+    return p === null ? r.period : periodLabel(p)
+  })
+}
+
+// Eine Wahl je Rechnung (#262, E-11, Entscheidung U-2): Ändert sich die Wahl an einem Teil einer Quelle, schreibt der
+// Server sie an alle Teile derselben Quelle, in derselben Transaktion und damit in einer Gruppe des Verlaufs. Ein Teil,
+// an dem nicht verteilt werden kann, lehnt das Ganze ab (400), bevor die Arbeit festgeschrieben wird.
+export async function syncSourceSpread(tx: Executor, before: CostItem, after: CostItem): Promise<void> {
+  if (after.sourceId === undefined || before.spreadYears === after.spreadYears) return
+  const siblings = await tx.select({ id: costItems.id, description: costItems.description, category: costItems.category, amountCents: costItems.amountCents, operatingPower: costItems.operatingPower })
+    .from(costItems).where(and(eq(costItems.sourceId, after.sourceId), ne(costItems.id, after.id)))
+  if (after.spreadYears !== undefined) {
+    const blocked = siblings.find((p) => !allowsSpread(p))
+    if (blocked) throw new PeriodError(`Die Wahl gilt für die ganze Rechnung, aber am Teil „${blocked.description}“ lässt sich nicht verteilen (Kostenart oder Betrag). Gespeichert wurde nichts.`)
+  }
+  if (siblings.length === 0) return
+  await tx.update(costItems).set({ spreadYears: after.spreadYears ?? null }).where(and(eq(costItems.sourceId, after.sourceId), ne(costItems.id, after.id)))
+}
+
 // Die Jahre des Zeitraums, in dem eine Position steht, bei einer Heizposition unter eigener Heizperiode deren Jahre.
 async function yearSpanOf(db: Executor, c: CostItem): Promise<YearSpan> {
   const p = periodOfKey(await itemRules(db, c), c.period)
@@ -1468,6 +1560,7 @@ async function guardCostItem(db: Executor, before: CostItem | null, after: CostI
   else await requirePeriods(db, after.propertyId, [after.period], has(body, 'year') && !has(body, 'period'), 'Die Kostenposition')
   await requireServiceAndTax(db, before, after, body, options)
   await requirePaidOn(db, before, after, body, options)
+  await requireSpread(db, before, after, body, options)
   const vertragsWohnungen = await guardContract(db, after)
   // Die Wohnungen der Einzelbeträge über ihr Mietverhältnis (#94).
   const mietverhaeltnisse = Object.keys(after.tenancyAmounts ?? {})
@@ -2099,6 +2192,8 @@ function mergeProperty(current: Property, body: unknown): Property {
     ownershipTransferOn: merged(body, 'ownershipTransferOn', current.ownershipTransferOn ?? null, (v) => headerDateOrNull(v, 'Der Tag des Eigentumsübergangs')),
     buildingApplicationOn: merged(body, 'buildingApplicationOn', current.buildingApplicationOn ?? null, (v) => headerDateOrNull(v, 'Der Tag des Bauantrags, der Bauanzeige oder der Baubeginnsanzeige')),
     completedOn: merged(body, 'completedOn', current.completedOn ?? null, (v) => headerDateOrNull(v, 'Der Tag der Fertigstellung')),
+    // § 82b Abs. 2 EStDV (#262): das Jahr, in dem der Rest aller Verteilungen des Objekts abgezogen wird.
+    spreadRestYear: merged(body, 'spreadRestYear', current.spreadRestYear ?? null, readSpreadRestYear),
   }
   // Die Geltung gehört nur zu „ja“; „nein“ und „unbekannt“ nehmen sie mit (Bedingung
   // properties_tight_market_dates_valid).
@@ -2247,6 +2342,7 @@ const costItemRow = (c: CostItem) => ({
   operatingPowerBasis: orNull(c.operatingPowerBasis), operatingPowerGeneralId: orNull(c.operatingPowerGeneralId),
   operatingPowerReported: orNull(c.operatingPowerReported),
   sourceId: orNull(c.sourceId),
+  spreadYears: orNull(c.spreadYears),
 })
 const meterRow = (m: Meter) => ({
   id: m.id, propertyId: m.propertyId, name: m.name, unitId: m.unitId, type: m.type, meterNumber: orNull(m.meterNumber), unit: m.unit,
@@ -2353,6 +2449,9 @@ type Collection<T extends CollectionEntity> = {
   insert: (db: Executor, entity: T) => Promise<void>
   replace: (db: Executor, entity: T) => Promise<void>
   remove: (db: Executor, id: string) => Promise<void>
+  // Was nach dem Ändern an anderen Zeilen mitgeht, in derselben Transaktion (#262: die Wahl der Verteilung an allen
+  // Teilen einer Quelle).
+  afterReplace?: (db: Executor, before: T, after: T) => Promise<void>
 }
 
 async function writeUnitChildren(db: Executor, u: Unit): Promise<void> {
@@ -2413,6 +2512,7 @@ const tenancyCollection: Collection<Tenancy> = {
 
 const costItemCollection: Collection<CostItem> = {
   guard: guardCostItem,
+  afterReplace: syncSourceSpread,
   read: readCostItems,
   empty: emptyCostItem,
   merge: mergeCostItem,
@@ -2578,6 +2678,7 @@ export async function updateEntity(db: Database, coll: CollectionName, id: strin
     await db.transaction(async (tx) => {
       await c.guard(tx, current, entity, body)
       await c.replace(tx, entity)
+      await c.afterReplace?.(tx, current, entity)
     })
     return true
   })
@@ -2632,6 +2733,7 @@ export async function patchCostItemIn(tx: Executor, current: CostItem, body: unk
   const entity = mergeCostItem(current, body)
   await guardCostItem(tx, current, entity, body)
   await costItemCollection.replace(tx, entity)
+  await syncSourceSpread(tx, current, entity)
 }
 
 // ---------- Eine Rechnung aufteilen (#208, Entwurf 3.4) ----------
@@ -2793,6 +2895,12 @@ export async function saveCostItemSplit(db: Database, propertyId: string | null,
     const questions = [...new Set(parts.filter((p) => p.needsTaxYear).flatMap((p) =>
       taxYearQuestions(current !== null && current.period === p.period ? current : null, { taxYear: base.taxYear ?? null, period: p.period }, p)))]
     if (questions.length > 0) throw new TaxYearQuestion(questions.join(' '))
+  }
+  // Die Verteilung nach § 82b EStDV (#262, E-9): Ändert das Aufteilen einer gespeicherten Position die Wahl, wird einmal
+  // gefragt; die Teile tragen sie danach alle (`spreadYears: 'same'`), ihr Wächter fragt nicht mehr (`splitPart`).
+  if (current !== null && raw(body, 'confirmSpread') !== true) {
+    const questions = spreadQuestions(current, base)
+    if (questions.length > 0) throw new SpreadQuestion(questions.join(' '))
   }
   const ids = await db.transaction(async (tx) => {
     // Die Quelle entsteht vor den Teilen, die auf sie zeigen (Fremdschlüssel), und fällt mit einer Ablehnung weg.

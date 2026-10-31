@@ -145,10 +145,18 @@ export const STEPS: readonly Step[] = [
   {
     name: 'Kostenposition anlegen', routes: ['POST /api/costItems'],
     run: ({ s, rng }) => send(s, 'POST', '/api/costItems', {
-      propertyId: P, period: '2025-01', category: pick(rng, ['Grundsteuer', 'Müllabfuhr', 'Hauswart', 'Wasser/Abwasser']), description: `Rechnung ${word(rng)}`, amountCents: int(rng, 50, 2000) * 100, key: pick(rng, ['area', 'units', 'persons']),
+      propertyId: P, period: '2025-01', category: pick(rng, ['Grundsteuer', 'Müllabfuhr', 'Hauswart', 'Wasser/Abwasser', 'Nicht umlagefähig']), description: `Rechnung ${word(rng)}`, amountCents: int(rng, 50, 2000) * 100, key: pick(rng, ['area', 'units', 'persons']),
     }),
   },
-  { name: 'Kostenposition ändern', routes: ['PUT /api/costItems/:id'], run: async (ctx) => { const c = pick(ctx.rng, ctx.costItems); if (c) await send(ctx.s, 'PUT', `/api/costItems/${c.id}`, { amountCents: int(ctx.rng, 50, 2000) * 100 }) } },
+  // Die Verteilung nach § 82b EStDV (#262) wird mitgesetzt und geleert, bestätigt; an einer umlagefähigen Kostenart
+  // lehnt der Server ab (400), das ist dann eben keine Änderung.
+  { name: 'Kostenposition ändern', routes: ['PUT /api/costItems/:id'], run: async (ctx) => {
+    const c = pick(ctx.rng, ctx.costItems)
+    if (!c) return
+    const choice = int(ctx.rng, 0, 2)
+    const spread = choice === 0 ? { spreadYears: int(ctx.rng, 2, 5), confirmSpread: true } : choice === 1 ? { spreadYears: null, confirmSpread: true } : {}
+    await send(ctx.s, 'PUT', `/api/costItems/${c.id}`, { amountCents: int(ctx.rng, 50, 2000) * 100, ...spread })
+  } },
   { name: 'Kostenposition löschen', routes: ['DELETE /api/costItems/:id'], run: async (ctx) => { const c = pick(ctx.rng, ctx.costItems); if (c) await send(ctx.s, 'DELETE', `/api/costItems/${c.id}`) } },
   { name: 'Einstellungen ändern', routes: ['PUT /api/settings'], run: ({ s, rng }) => send(s, 'PUT', '/api/settings', { landlordName: `Vermieter ${word(rng)}`, paymentDeadlineDays: int(rng, 14, 30) }) },
   { name: 'KI-Übermittlung bestätigen', routes: ['POST /api/ai/consent'], run: ({ s }) => send(s, 'POST', '/api/ai/consent', { slot: 'text' }) },
@@ -163,13 +171,13 @@ export const STEPS: readonly Step[] = [
     },
   },
   // Mit den Kopfangaben der Anlage V (#96 PR 2), gesetzt und geleert; abgeleitet aus der Hausnummer, ohne weiteren Zug
-  // aus `rng` (siehe „Mietverhältnis ändern“).
+  // aus `rng` (siehe „Mietverhältnis ändern“). Ebenso das Jahr des vorzeitigen Endes nach § 82b Abs. 2 EStDV (#262).
   { name: 'Objekt ändern', routes: ['PUT /api/properties/:id'], run: ({ s, rng }) => {
     const n = int(rng, 1, 40)
     const header = n % 3 === 0
       ? { groundTaxFileNumber: `2141/${100 + n}/45678`, ownershipTransferOn: `20${10 + n}-07-01`, completedOn: `19${50 + n}-11-30` }
       : n % 3 === 1 ? { groundTaxFileNumber: null, ownershipTransferOn: null, completedOn: null } : {}
-    return send(s, 'PUT', `/api/properties/${P}`, { name: `Lindenweg ${n}`, ...header })
+    return send(s, 'PUT', `/api/properties/${P}`, { name: `Lindenweg ${n}`, ...header, spreadRestYear: n % 2 === 0 ? null : 2025 + (n % 6) })
   } },
   {
     name: 'Abrechnungszeitraum ändern', routes: ['PUT /api/properties/:id/period'],

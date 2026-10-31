@@ -61,7 +61,8 @@ export function paidOnQuestions(before: Dated | null, after: Dated, span: YearSp
   return withAdvice(paidOnFindings(before, after, span))
 }
 
-const ADVICE = 'Haben Sie die Steuererklärung eines betroffenen Jahres schon abgegeben, besprechen Sie die Änderung mit Ihrem Steuerberater oder Finanzamt.'
+// Der Rat bei jeder Rückfrage, die das Jahr einer Position für die Steuer ändert; auch in shared/spread.ts (#262).
+export const ADVICE = 'Haben Sie die Steuererklärung eines betroffenen Jahres schon abgegeben, besprechen Sie die Änderung mit Ihrem Steuerberater oder Finanzamt.'
 const withAdvice = (findings: string[]): string[] => (findings.length > 0 ? [...findings, ADVICE] : [])
 
 function paidOnFindings(before: Dated | null, after: Dated, span: YearSpan): string[] {

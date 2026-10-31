@@ -261,9 +261,15 @@ export function carryOverForm(row: CarryRow): ItemForm {
 
 // `period`: der Zeitraum, in den übernommen wird (#208); eine Jahreszahl ist das Kalenderjahr.
 // Der Rumpf einer Übernahme; bei einer Heizposition mit eigener Heizperiode dazu die Anlage.
-export type CarryBody = { body: Extract<BuildResult, { body: unknown }>['body'] & { heatingPlantId?: string } } | { error: string }
+// `spreadYears: null` (#262, E-9): Die Verteilung nach § 82b EStDV gilt je Aufwand, eine Übernahme ist ein neuer.
+export type CarryBody = { body: Extract<BuildResult, { body: unknown }>['body'] & { heatingPlantId?: string; spreadYears: null } } | { error: string }
 
 export function carryOverBody(row: CarryRow, units: Unit[], period: number | BillingPeriod, tenancies?: Tenancy[]): CarryBody {
+  const built = carryOverBuilt(row, units, period, tenancies)
+  return 'error' in built ? built : { body: { ...built.body, spreadYears: null } }
+}
+
+function carryOverBuilt(row: CarryRow, units: Unit[], period: number | BillingPeriod, tenancies?: Tenancy[]): { body: Extract<BuildResult, { body: unknown }>['body'] & { heatingPlantId?: string } } | { error: string } {
   if (row.formReason) return { error: row.formReason }
   if (!row.inline) return { error: 'Einzelbeträge je Mieter bitte im Formular eintragen („Im Formular öffnen“).' }
   if (!row.amount.trim()) return { error: 'Betrag fehlt.' }

@@ -99,3 +99,12 @@ describe('Verlauf: jede Spalte hat eine Beschriftung (#281)', () => {
     expect(fieldLabel('relative')).toBe('An Angehörige zu Wohnzwecken vermietet')
   })
 })
+
+describe('Verlauf: die Verteilung nach § 82b EStDV (#262)', () => {
+  test('beide Spalten heißen wie im Entwurf und im Formular', () => {
+    expect(columns).toContain('spread_years')
+    expect(columns).toContain('spread_rest_year')
+    expect(fieldLabel('spread_years')).toBe('Für die Steuer verteilen (§ 82b EStDV)')
+    expect(fieldLabel('spread_rest_year')).toBe('Verkauft, verschenkt, vererbt oder Vermietung beendet im Jahr')
+  })
+})

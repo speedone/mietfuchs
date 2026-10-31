@@ -71,6 +71,10 @@ export type Property = {
   // Der Rhythmus der Abrechnungszeiträume (#208). Der Server liefert ihn immer mit; fehlt er, gilt
   // das Kalenderjahr (`rulesOf` in shared/period.ts). Ändern lässt er sich in dieser Version nicht.
   periodRules?: PeriodRules
+  // Vorzeitiges Ende der Verteilungen nach § 82b Abs. 2 EStDV (#262): das Jahr, in dem der noch nicht abgezogene Rest
+  // aller verteilten Positionen des Objekts abgezogen wird (Verkauf, Schenkung, Erbfall, Ende der Vermietung). `null`
+  // oder fehlend heißt kein Ende. Die Abrechnung liest es nie.
+  spreadRestYear?: number | null
 }
 
 export type Unit = {
@@ -466,7 +470,15 @@ export type CostItem = {
   // dieselbe Kennung. Fehlt sie, ist die Position keine aufgeteilte Rechnung oder ein alter Teil ohne eindeutige
   // Zuordnung. Gesetzt wird sie nur von den Schreibwegen der Teile im Server, nie aus dem Rumpf einer Anfrage.
   sourceId?: string
+  // Größeren Erhaltungsaufwand für die Steuer verteilen (§ 82b EStDV, #262): auf 2 bis 5 Jahre ab dem Jahr des
+  // Abflusses. Fehlt es, wird nicht verteilt. Nur, wo `allowsSpread` gilt (shared/spread.ts: „Nicht umlagefähig“ oder
+  // „Entnahme Erhaltungsrücklage“, Betrag über 0, kein Abzug beim Betriebsstrom); alle Teile einer Quelle tragen
+  // dieselbe Wahl (`syncSourceSpread` in server/src/db/repository.ts). Die Abrechnung liest es nie.
+  spreadYears?: SpreadYears
 }
+
+// Die Jahre einer Verteilung nach § 82b EStDV (#262). „1 Jahr“ ist keine Verteilung und hat keinen eigenen Wert.
+export type SpreadYears = 2 | 3 | 4 | 5
 
 // Ein Teil einer aufgeteilten Rechnung in der Vorschau (#208, Entwurf 3.4). `needsTaxYear`: Der
 // Zeitraum reicht über zwei Kalenderjahre, das Jahr der Zahlung ist dort Pflicht. `closed`: Die

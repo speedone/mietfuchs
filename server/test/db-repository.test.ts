@@ -432,6 +432,11 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
         operatingPower: 'deduction', operatingPowerItemId: 'probe-betriebsstrom', operatingPowerGeneralId: 'probe-strom', operatingPowerBasis: 'Grundlage',
       },
     },
+    // #262: verteilen nach § 82b EStDV lässt sich nur „Nicht umlagefähig“ oder eine Entnahme mit Betrag über 0.
+    {
+      coll: 'costItems', table: costItems, id: 'probe-verteilung',
+      body: { propertyId: 'objekt-1', period: '2024-01', category: 'Nicht umlagefähig', description: 'Dach', amountCents: 1_000_000, key: 'area', spreadYears: 3 },
+    },
     // #270: die Angabe „dem Messdienst gemeldet“ gibt es nur am Abzug ohne Verweis.
     {
       coll: 'costItems', table: costItems, id: 'probe-abzug-messdienst',
@@ -596,6 +601,8 @@ test('Objekt: anlegen, auflisten, ändern', async () => {
       tightMarket: null, tightMarketFrom: null, tightMarketTo: null,
       // Bundesland für Fristen und Feiertage: unbekannt.
       state: null,
+      // Kein vorzeitiges Ende einer Verteilung nach § 82b Abs. 2 EStDV (#262).
+      spreadRestYear: null,
       // Der Rhythmus kommt immer mit (#208); ein neues Objekt rechnet im Kalenderjahr ab.
       periodRules: { startMonth: 1, changes: [] },
     })

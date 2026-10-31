@@ -135,6 +135,9 @@ const FIELD_LABELS: Record<string, string> = {
   service_to: 'Leistung bis',
   tax_year: 'Jahr der Zahlung',
   paid_on: 'Bezahlt am',
+  // #262: die Verteilung nach § 82b EStDV an der Position und ihr vorzeitiges Ende am Objekt (Abs. 2)
+  spread_years: 'Für die Steuer verteilen (§ 82b EStDV)',
+  spread_rest_year: 'Verkauft, verschenkt, vererbt oder Vermietung beendet im Jahr',
   source_id: 'Aufgeteilte Rechnung',
   rule: 'Aufteilung',
   type: 'Zählertyp',
