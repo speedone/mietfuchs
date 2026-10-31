@@ -13,15 +13,18 @@ export function allGuides(): GuideEntry[] {
 export function filterGuides(entries: GuideEntry[], query: string): GuideEntry[] {
   const q = query.trim().toLocaleLowerCase('de')
   if (!q) return entries
-  return entries.filter((g) => textOf(g).toLocaleLowerCase('de').includes(q))
+  return entries.filter((g) => guideTexts(g).join('\n').toLocaleLowerCase('de').includes(q))
 }
 
-function textOf(g: GuideEntry): string {
+// Die Texte einer Anleitung, vorne der Titel, dann in der Reihenfolge der Seite; die Suche zeigt den ersten, in dem das
+// gesuchte Wort steht, als Ausschnitt (helpView.ts).
+export function guideTexts(g: GuideEntry): string[] {
   return [
-    g.title, g.applies, g.example,
+    g.title, g.applies,
     ...g.steps.map((s) => s.text),
     ...g.result,
+    g.example,
     ...g.caveats.flatMap((c) => [c.text, c.norm ?? '']),
     ...g.gaps.flatMap((x) => [x.text, x.issue ? `#${x.issue}` : '']),
-  ].join('\n')
+  ].filter((t) => t !== '')
 }

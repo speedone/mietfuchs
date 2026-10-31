@@ -352,6 +352,7 @@ describe('S6: Kontrast der Farbtöne', () => {
       expect(ratio(t('sidebar-text'), t('hover')), 'Menüpunkt beim Überfahren').toBeGreaterThanOrEqual(4.5)
       expect(ratio(t('muted'), t('hover')), 'Nebentext auf Hover-Fläche').toBeGreaterThanOrEqual(4.5)
       expect(ratio(t('text'), t('hover')), 'Text auf Summen- und Rechenwegzeilen').toBeGreaterThanOrEqual(4.5)
+      expect(ratio(t('text'), t('mark')), 'Fundstelle einer Suche').toBeGreaterThanOrEqual(4.5)
       expect(ratio(t('red'), t('red-soft')), 'Fehlermeldung').toBeGreaterThanOrEqual(4.5)
       expect(ratio(t('amber'), t('amber-soft')), 'Warnung').toBeGreaterThanOrEqual(4.5)
       expect(ratio(t('green'), t('green-soft')), 'Erfolg').toBeGreaterThanOrEqual(4.5)
