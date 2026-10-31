@@ -211,7 +211,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   // #478 (E4): Ein gespeichertes Jahr der Zahlung, das vom Kalenderjahr des Zeitraums abweicht, zeigt das Formular, und
   // die Auswahl enthält es, auch außerhalb der üblichen Spanne (der angezeigte Wert ist der gespeicherte).
   const storedTaxYear = storedItem?.taxYear ?? null
-  const showTaxYear = heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear, storedTaxYear, form?.category)
+  const showTaxYear = heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear, storedTaxYear, form?.category, form?.operatingPower === 'deduction' ? '' : form?.taxYear)
   // Was das eingetragene Datum ändert, schon beim Eintragen unter dem Feld (R-2).
   const livePaidOnChanges = form && showsPaidOn(form)
     ? paidOnChange(form.id ? items.find((i) => i.id === form.id) ?? null : null, {
@@ -969,7 +969,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             <OperatingPowerFields form={form} items={items} periodKey={key} plantEnergy={plantOfForm ? billingEnergy(plantOfForm) : undefined} service={serviceReceivesOperatingPower(plants, period)} onChange={setForm} />
             <details className="extra-details" open={!!(selfPlant || form.serviceFrom || form.serviceTo || form.taxYear || form.paidOn || form.heatingPart !== '' || showTaxYear)}>
               <summary>Weitere Angaben — Leistungszeitraum{showTaxYear ? ', Jahr der Zahlung' : ''}{showsPaidOn(form) ? ', Bezahlt am' : ''}{form.category === HEATING_CATEGORY ? ', Brennstoff/Energie' : ''} (optional)</summary>
-              <CostPeriodFields form={form} onChange={setForm} showTaxYear={showTaxYear} years={heatTax?.show ? heatTax.years : taxYearOptions(periodSpan, storedTaxYear)} emptyLabel={heatTax ? (heatTax.show && heatingOption && heatingOption.startYear === heatingOption.endYear ? `wie Heizperiode (${heatingOption.startYear})` : undefined) : spansTwoYears(period) ? undefined : `wie Abrechnungsjahr (${year})`} billTaxYear={deductionTaxYear(form, items)} paidOnChanges={livePaidOnChanges} droppedPaidOn={droppedPaidOnText(form, period)} />
+              <CostPeriodFields form={form} onChange={setForm} showTaxYear={showTaxYear} years={heatTax?.show ? heatTax.years : taxYearOptions(periodSpan, storedTaxYear, form.taxYear !== '' ? Number(form.taxYear) : null)} emptyLabel={heatTax ? (heatTax.show && heatingOption && heatingOption.startYear === heatingOption.endYear ? `wie Heizperiode (${heatingOption.startYear})` : undefined) : spansTwoYears(period) ? undefined : `wie Abrechnungsjahr (${year})`} billTaxYear={deductionTaxYear(form, items)} paidOnChanges={livePaidOnChanges} droppedPaidOn={droppedPaidOnText(form, period)} />
             </details>
             {/* Nicht umlagefähig (#142): nichts zu verteilen, also keine Auswahl, die etwas anderes verspräche. */}
             {!showsKeyFields(form.category) && (

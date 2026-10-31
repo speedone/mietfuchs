@@ -973,3 +973,21 @@ describe('Entnahme Erhaltungsrücklage (#96)', () => {
     expect(matchCategory('Dachsanierung aus der Rücklage')).toBe('Entnahme Erhaltungsrücklage')
   })
 })
+
+// Durchsicht #96 PR 1, M1 und S1: Was im Formular als Jahr der Zahlung steht, ist sichtbar und steht in der Auswahl,
+// auch nach dem Zurückstellen von der Entnahme und auch außerhalb der üblichen Spanne.
+describe('Jahr der Zahlung nach dem Umstellen (#96, Durchsicht)', () => {
+  const P2025 = { from: '2025-01-01', to: '2025-12-31' }
+  test('M1: ein Jahr im Formular, das vom Kalenderjahr abweicht, hält das Feld sichtbar', () => {
+    expect(showsTaxYear(P2025, false, null, 'Nicht umlagefähig', '2026')).toBe(true)
+    expect(showsTaxYear(P2025, false, null, 'Nicht umlagefähig', '2025')).toBe(false)
+    expect(showsTaxYear(P2025, false, null, 'Nicht umlagefähig', '')).toBe(false)
+  })
+  test('S1: das Jahr im Formular steht in den Optionen, auch außerhalb der Spanne', () => {
+    const datiert = form({ category: 'Nicht umlagefähig', paidOn: '2030-03-10' })
+    const umgestellt = keepPaidOnYear(datiert, withCategory(datiert, 'Entnahme Erhaltungsrücklage', UNITS, []), P2025)
+    expect(umgestellt.taxYear).toBe('2030')
+    expect(taxYearOptions({ startYear: 2025, endYear: 2025 }, null, Number(umgestellt.taxYear))).toEqual([2024, 2025, 2026, 2027, 2028, 2030])
+    expect(taxYearOptions({ startYear: 2025, endYear: 2025 }, 2031, 2030)).toEqual([2024, 2025, 2026, 2027, 2028, 2030, 2031])
+  })
+})

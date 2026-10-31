@@ -29,6 +29,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - **Hinweis „Rückstand im Mietkonto“ in der Abrechnung** nennt jetzt den nicht gezahlten Betrag der Vorauszahlungen
   und den Betrag für „abzüglich geleisteter Vorauszahlungen“; ist nur Kaltmiete offen, entfällt er. Abgeschlossene
   Abrechnungen bleiben unverändert ([#281](https://github.com/speedone/mietfuchs/issues/281)).
+- Die Ordner im ZIP „Belege für die Steuer“ folgen der Reihenfolge der Steuerübersicht; wegen der neuen Gruppe
+  „Erhaltungsaufwand“ zählen sie deshalb ab „Verwaltung & Instandhaltung“ eine Nummer weiter.
+
 - Aufgeteilte Rechnungen sind jetzt eine Rechnung ([#455](https://github.com/speedone/mietfuchs/issues/455)): Reicht der Leistungszeitraum einer Rechnung über mehrere
   Abrechnungszeiträume, stehen weiter Teile je Zeitraum da, aber jeder Teil verweist auf seine Rechnung. Beim Update
   bekommen bestehende Teile, die eindeutig zusammengehören, diese Kennung von selbst, auch die aus einem eingespielten

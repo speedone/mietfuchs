@@ -10,7 +10,7 @@ import { eq } from 'drizzle-orm'
 import type { CostItem, PeriodChangePreview, PeriodRules } from '../../shared/types.ts'
 import type { OpenedDatabase } from '../src/db/open.ts'
 import { openFreshDatabase } from '../testing/freshDatabase.ts'
-import { createEntity } from '../src/db/repository.ts'
+import { createEntity, updateEntity } from '../src/db/repository.ts'
 import { readStock } from '../src/db/read.ts'
 import { costItems, properties } from '../src/db/schema.ts'
 import { applyPeriodChange, previewPeriodChange } from '../src/db/periodChange.ts'
@@ -167,5 +167,23 @@ test('#96: fragt die Vorschau nach dem Jahr einer Entnahme, trägt die Frage der
     assert.ok(asked('dach').length > 0, 'nach dem Jahr der Entnahme gefragt')
     for (const t of asked('dach')) assert.equal(t.reserveWithdrawal, true)
     for (const t of asked('gs')) assert.equal(t.reserveWithdrawal, undefined)
+  } finally { opened.close(); fs.rmSync(dataDir, { recursive: true, force: true }) }
+})
+
+// Durchsicht #96 PR 1, K2: Eine Altposition (Zuführung mit Datum aus der Zeit vor #96) lässt sich teilweise ändern, ohne
+// das Datum anzufassen; erst ein neues oder geändertes Datum ergibt die Ablehnung.
+test('#96: Zuführung mit altem Datum, Teiländerung ohne Datum geht, ein geändertes Datum nicht', async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mf-review-'))
+  const opened = await openFreshDatabase(dataDir)
+  try {
+    await opened.write(async (db) => {
+      await createEntity(db, 'units', 'eg', { propertyId: P, name: 'EG', areaM2: 80, participates: true })
+      await createEntity(db, 'costItems', 'rl', { propertyId: P, period: '2025-01', category: 'Zuführung Erhaltungsrücklage', description: 'Rücklage', amountCents: 90000, key: 'area' })
+      await db.update(costItems).set({ paidOn: '2025-03-01' }).where(eq(costItems.id, 'rl'))
+    })
+    await opened.write((db) => updateEntity(db, 'costItems', 'rl', { description: 'Rücklage 2025' }))
+    const rl = (await all(opened)).find((c) => c.id === 'rl') ?? assert.fail('Rücklage fehlt')
+    assert.deepEqual([rl.description, rl.paidOn], ['Rücklage 2025', '2025-03-01'])
+    await assert.rejects(opened.write((db) => updateEntity(db, 'costItems', 'rl', { paidOn: '2025-04-01' })), /kein Zahlungsdatum/)
   } finally { opened.close(); fs.rmSync(dataDir, { recursive: true, force: true }) }
 })

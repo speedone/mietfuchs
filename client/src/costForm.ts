@@ -773,17 +773,24 @@ export function splitDecision(parts: readonly SplitPreviewPart[], taxYear: strin
 // ein Teil einer aufgeteilten Rechnung dorthin gehört (Entwurf 3.10, 11.4), und seit #478 (E4), wenn die gespeicherte
 // Position ein anderes Jahr als das Kalenderjahr ihres Zeitraums trägt (etwa nach einem Wechsel des Zeitraums): Sonst
 // stünde ein Jahr, das für die Steuer gilt, unsichtbar in der Position. Bei der Entnahme aus der Erhaltungsrücklage (#96,
-// A1) immer: Ein Datum gibt es dort nicht, das Jahr der Ausgabe durch die Gemeinschaft ist die einzige Angabe.
-export const showsTaxYear = (period: Pick<BillingPeriod, 'from' | 'to'>, needsTaxYear: boolean, stored: number | null = null, category?: string): boolean =>
-  needsTaxYear || spansTwoYears(period) || (stored !== null && stored !== Number(period.from.slice(0, 4))) || category === RESERVE_WITHDRAWAL_CATEGORY
+// A1) immer: Ein Datum gibt es dort nicht, das Jahr der Ausgabe durch die Gemeinschaft ist die einzige Angabe. Und wenn
+// im Formular ein anderes Jahr als das Kalenderjahr steht (`current`, Durchsicht #96 M1), etwa nach dem Zurückstellen von
+// der Entnahme: Gespeichert wird, was im Formular steht, also muss es zu sehen sein.
+export const showsTaxYear = (period: Pick<BillingPeriod, 'from' | 'to'>, needsTaxYear: boolean, stored: number | null = null, category?: string, current = ''): boolean => {
+  const startYear = Number(period.from.slice(0, 4))
+  return needsTaxYear || spansTwoYears(period) || (stored !== null && stored !== startYear) || category === RESERVE_WITHDRAWAL_CATEGORY ||
+    (current !== '' && Number(current) !== startYear)
+}
 
 // Die Jahre der üblichen Spanne (`paidOnSpan`, Beginn − 1 bis Ende + 3, dieselbe wie beim Datum und am Server, #478 E2),
 // dazu ein gespeichertes Jahr außerhalb: **Der angezeigte Wert entspricht immer dem gespeicherten**; stünde er nicht in
-// den Optionen, zeigte der Browser den ersten Eintrag und speicherte ihn (CLAUDE.md, Tests Ebene 3).
-export function taxYearOptions(span: YearSpan, stored: number | null = null): number[] {
+// den Optionen, zeigte der Browser den ersten Eintrag und speicherte ihn (CLAUDE.md, Tests Ebene 3). Ebenso das Jahr im
+// Formular (`current`, Durchsicht #96 S1), etwa ein von einem Datum übertragenes.
+export function taxYearOptions(span: YearSpan, stored: number | null = null, current: number | null = null): number[] {
   const s = paidOnSpan(span)
   const years = Array.from({ length: s.to - s.from + 1 }, (_, i) => s.from + i)
-  return stored === null || years.includes(stored) ? years : [...years, stored].sort((a, b) => a - b)
+  const extra = [stored, current].filter((y): y is number => y !== null && Number.isInteger(y) && !years.includes(y))
+  return [...years, ...new Set(extra)].sort((a, b) => a - b)
 }
 
 // ---------- Bezahlt am (für die Steuer, #255 PR 3) ----------

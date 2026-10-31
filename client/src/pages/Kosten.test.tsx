@@ -478,6 +478,44 @@ test('Entnahme Erhaltungsrücklage: Datum wird zum Jahr der Zahlung, angezeigt w
   expect(sent[0].body).toMatchObject({ category: 'Entnahme Erhaltungsrücklage', taxYear: year + 1, paidOn: null })
 })
 
+// Durchsicht #96 PR 1, M1: Nach dem Zurückstellen von der Entnahme bleibt ein gewähltes Jahr sichtbar und wird gespeichert,
+// wie es zu sehen ist; ebenso nach Entnahme mit übertragenem Jahr, Zurückstellen und Löschen des Datums.
+test('Entnahme zurückgestellt: das gewählte Jahr bleibt sichtbar und wird so gespeichert (Durchsicht M1)', async () => {
+  const year = new Date().getFullYear() - 1
+  await openForm()
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Entnahme Erhaltungsrücklage' } })
+  fireEvent.change(select(/Jahr, in dem die Gemeinschaft bezahlt hat/), { target: { value: String(year + 1) } })
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Nicht umlagefähig' } })
+  const jahr = select(/Jahr der Zahlung \(Steuer\)/)
+  expect([jahr.value, jahr.selectedOptions[0]?.textContent]).toEqual([String(year + 1), String(year + 1)])
+  fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/i }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0].body).toMatchObject({ category: 'Nicht umlagefähig', taxYear: year + 1 })
+})
+
+test('Datum, Entnahme, zurück, Datum gelöscht: das übertragene Jahr bleibt sichtbar (Durchsicht M1)', async () => {
+  const year = new Date().getFullYear() - 1
+  await openForm()
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Nicht umlagefähig' } })
+  fireEvent.change(screen.getByLabelText('Bezahlt am (für die Steuer)'), { target: { value: `${year + 1}-02-10` } })
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Entnahme Erhaltungsrücklage' } })
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Nicht umlagefähig' } })
+  fireEvent.change(screen.getByLabelText('Bezahlt am (für die Steuer)'), { target: { value: '' } })
+  const jahr = select(/Jahr der Zahlung \(Steuer\)/)
+  expect(jahr.value).toBe(String(year + 1))
+})
+
+// Durchsicht #96 PR 1, S1: Ein übertragenes Jahr außerhalb der üblichen Spanne steht in der Auswahl.
+test('Entnahme: ein Datum weit nach dem Zeitraum ergibt ein Jahr, das die Auswahl zeigt (Durchsicht S1)', async () => {
+  const year = new Date().getFullYear() - 1
+  await openForm()
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Nicht umlagefähig' } })
+  fireEvent.change(screen.getByLabelText('Bezahlt am (für die Steuer)'), { target: { value: `${year + 5}-03-10` } })
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Entnahme Erhaltungsrücklage' } })
+  const jahr = select(/Jahr, in dem die Gemeinschaft bezahlt hat/)
+  expect([jahr.value, jahr.selectedOptions[0]?.textContent]).toEqual([String(year + 5), String(year + 5)])
+})
+
 // Durchsicht von #255 PR 3, M1: Beim Aufteilen prüft der Server jeden Teil. Eine Jahresversicherung 07/Jahr bis
 // 06/Folgejahr, bezahlt am 01.07., ändert das Steuerjahr des zweiten Teils, obwohl das Datum im Jahr des Formulars liegt.
 // Das Formular fragt deshalb nach der Vorschau mit deren Teilen und derselben Regel wie der Server

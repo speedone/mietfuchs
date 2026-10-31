@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from 'vitest'
 import type { TaxExpenseItem, TaxReport } from './types'
-import { allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, operatingPowerBalanceText, paidWithoutSettlementCents, prepaymentNote, settlementBalanceCents, settlementLine, settlementSourcesText, showsSplit, stockCarryNote, surplusCentsFor, taxHints, maintenanceLineText, usageChangeTouchesWithdrawal, withdrawalSuspectDated, ETW_WITHDRAWAL_TEXT, movedInLines, movedInText, movedOutLines, unstatedText } from './taxView'
+import { allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, operatingPowerBalanceText, paidWithoutSettlementCents, prepaymentNote, settlementBalanceCents, settlementLine, settlementSourcesText, showsSplit, stockCarryNote, surplusCentsFor, taxHints, maintenanceLineText, withdrawalLinesText, usageChangeTouchesWithdrawal, withdrawalSuspectDated, ETW_WITHDRAWAL_TEXT, movedInLines, movedInText, movedOutLines, unstatedText } from './taxView'
 import { fmtEuro } from './api'
 import { periodKey } from '../../shared/period.ts'
 
@@ -477,10 +477,19 @@ describe('Entnahme Erhaltungsrücklage (#96)', () => {
     const r = mit([entnahme()])
     expect(taxHints(r, 'ist')).toContain('maintenanceLines')
     expect(taxHints(report({}), 'ist')).not.toContain('maintenanceLines')
+    // Durchsicht K1: Zeile 56 nur, wenn eine Position verhältnismäßig aufgeteilt ist.
     expect(maintenanceLineText(r)).toEqual({
-      unspread: 'Anlage V 2025: Zeile 55, bei teilweiser Eigennutzung Zeile 56 (Gesamtbetrag und abzugsfähiger Anteil). Nicht in die Zeilen 76 bis 78, die gelten „ohne Erhaltungsrücklage“.',
+      unspread: 'Anlage V 2025: Zeile 55. Nicht in die Zeilen 76 bis 78, die gelten „ohne Erhaltungsrücklage“.',
       spread: null,
     })
+    expect(maintenanceLineText(mit([entnahme(), entnahme({ costItemId: 'p', privateCents: 62000, deductibleCents: 62000, deductiblePercent: 50 })])).unspread)
+      .toBe('Anlage V 2025: Zeile 55, für verhältnismäßig aufgeteilten Aufwand Zeile 56 (Gesamtbetrag und abzugsfähiger Anteil). Nicht in die Zeilen 76 bis 78, die gelten „ohne Erhaltungsrücklage“.')
+  })
+
+  test('Durchsicht S2: der Satz zur vermuteten Entnahme nennt die Zeilen nur, wo der Vordruck gelesen ist', () => {
+    expect(withdrawalLinesText(2025)).toBe('Entnahmen gehören zu den Erhaltungsaufwendungen (Zeilen 55 bis 72), nicht zu den übrigen nicht umgelegten Kosten.')
+    expect(withdrawalLinesText(2023)).toBe('Entnahmen gehören zu den Erhaltungsaufwendungen, nicht zu den übrigen nicht umgelegten Kosten.')
+    expect(withdrawalLinesText(2026)).toBe('Entnahmen gehören zu den Erhaltungsaufwendungen, nicht zu den übrigen nicht umgelegten Kosten.')
   })
 
   test('A4.1 (Durchsicht X7): eine nachgebildete verteilte Position steht in den Zeilen 57 bis 72, nicht in 55/56', () => {

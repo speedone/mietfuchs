@@ -51,7 +51,9 @@ test('Erhaltungsrücklage: die Entnahme mit Jahr der Ausgabe, Zeilen 55/56, Hers
   const all = `${t.short} ${t.example} ${t.needed}`
   assert.match(t.needed, /„Entnahme Erhaltungsrücklage“/)
   assert.match(all, /Jahr, in dem die Gemeinschaft/)
-  assert.match(all, /Zeilen 55 und 56/)
+  assert.match(all, /Zeile 55/)
+  // Durchsicht K1: Zeile 56 allgemein für verhältnismäßig aufgeteilten Aufwand, nicht als Regel der Eigennutzung.
+  assert.match(all, /verhältnismäßig aufgeteilten Aufwand Zeile 56/)
   assert.match(all, /Abschreibung/)
   assert.match(all, /miterworben/)
   assert.match(all, /Sonderumlage/)

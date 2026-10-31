@@ -1275,9 +1275,10 @@ const splitPartMessage = (c: CostItem): string =>
 // ganze Rechnung schon gefragt.
 async function requirePaidOn(db: Executor, before: CostItem | null, after: CostItem, body: unknown, options: CostItemGuardOptions): Promise<void> {
   if (after.paidOn === undefined && before?.paidOn === undefined) return
-  // #96 A3: An der Erhaltungsrücklage gibt es kein Datum; der Server leert nichts still. Ein Wechsel des Zeitraums trägt
-  // nur ein Datum weiter, das schon dasteht (aus der Zeit vor #96, über die API gesetzt), und bleibt deshalb möglich.
-  if (after.paidOn !== undefined && isReserveCategory(after.category) && !options.periodChange) {
+  // #96 A3: An der Erhaltungsrücklage gibt es kein Datum; der Server leert nichts still. Abgelehnt wird ein neues oder
+  // geändertes Datum (Durchsicht K2): Eine Altposition aus der Zeit vor #96 (über die API datiert) lässt sich teilweise
+  // ändern, ohne das Datum anzufassen, und ein Wechsel des Zeitraums trägt es nur weiter.
+  if (after.paidOn !== undefined && isReserveCategory(after.category) && !options.periodChange && after.paidOn !== before?.paidOn) {
     throw new PeriodError(`„${after.description}“: An Zuführung und Entnahme der Erhaltungsrücklage gibt es kein Zahlungsdatum. Für die Steuer zählt das Jahr, in dem die Gemeinschaft das Geld ausgibt (laut Hausgeldabrechnung dieses Jahres), nicht Ihre eigene Hausgeldzahlung; geben Sie bei Bedarf das Jahr der Zahlung an und lassen Sie das Datum leer.`)
   }
   if (after.paidOn !== undefined && !allowsPaidOn(after) && !isReserveCategory(after.category)) {

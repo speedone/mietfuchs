@@ -9,7 +9,7 @@ import { useProperty, withProperty } from '../property'
 import { effectiveLandlord, letterhead } from '../landlord'
 import PageHeader from '../components/PageHeader'
 import Table from '../components/Table'
-import { allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, operatingPowerBalanceText, paidWithoutSettlementCents, prepaymentNote, settlementBalanceCents, settlementLine, settlementSourcesText, showsSplit, stockCarryNote, surplusCentsFor, taxHints, maintenanceLineText, usageChangeTouchesWithdrawal, withdrawalSuspectDated, ETW_WITHDRAWAL_TEXT, type Basis, movedInLines, movedInText, movedOutLabels, movedOutLines, unstatedText, type ShiftLine } from '../taxView'
+import { allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, operatingPowerBalanceText, paidWithoutSettlementCents, prepaymentNote, settlementBalanceCents, settlementLine, settlementSourcesText, showsSplit, stockCarryNote, surplusCentsFor, taxHints, maintenanceLineText, withdrawalLinesText, usageChangeTouchesWithdrawal, withdrawalSuspectDated, ETW_WITHDRAWAL_TEXT, type Basis, movedInLines, movedInText, movedOutLabels, movedOutLines, unstatedText, type ShiftLine } from '../taxView'
 import { StepList } from '../components/CalcSteps'
 import Term from '../components/Term'
 import { NoticeBox, TextNotice } from '../components/Notice'
@@ -420,7 +420,7 @@ export default function Steuer({ settings }: Props) {
                 context={(data.reserveWithdrawalSuspects ?? []).map((r) => `„${r.description}“ (${fmtEuro(r.amountCents)})`).join(', ')}
                 action={<>Stellen Sie unter <em>Kosten</em> die Kostenart „Entnahme Erhaltungsrücklage“ ein; an den Beträgen ändert sich nichts, nur die Zeile der Anlage V.</>}
                 more={<>
-                  Entnahmen gehören zu den Erhaltungsaufwendungen (Zeilen 55 bis 72), nicht zu den übrigen nicht umgelegten Kosten.
+                  {withdrawalLinesText(year)}
                   {withdrawalSuspectDated(data) && <> Für das Jahr zählt, wann die Gemeinschaft das Geld ausgibt, laut ihrer Hausgeldabrechnung,
                   nicht das Ihrer eigenen Hausgeldzahlung; beim Umstellen entfällt das Zahlungsdatum, und sein Jahr bleibt als Jahr der Zahlung stehen.</>}
                 </>}

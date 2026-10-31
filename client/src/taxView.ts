@@ -503,9 +503,12 @@ export function maintenanceLineText(report: TaxReport, isSpread: (item: TaxExpen
   const spreadItems = items.filter(isSpread)
   const hasUnspread = items.length > spreadItems.length || (items.length === 0 && report.expenses.groups.some((g) => g.group === MAINTENANCE_GROUP))
   const notAllocated = lines?.notAllocated
+  // Durchsicht K1: Zeile 56 ist der verhältnismäßig aufgeteilte Aufwand; nur nennen, wenn eine unverteilte Position einen
+  // abziehbaren Anteil zwischen 0 und 100 % hat.
+  const proportional = items.some((x) => !isSpread(x) && x.deductiblePercent !== null && x.deductiblePercent > 0 && x.deductiblePercent < 100)
   const unspread = !hasUnspread ? null
     : m
-      ? `Anlage V ${report.year}: Zeile ${m.direct.line}, bei teilweiser Eigennutzung Zeile ${m.proportional.line} (Gesamtbetrag und abzugsfähiger Anteil).` +
+      ? `Anlage V ${report.year}: Zeile ${m.direct.line}${proportional ? `, für verhältnismäßig aufgeteilten Aufwand Zeile ${m.proportional.line} (Gesamtbetrag und abzugsfähiger Anteil)` : ''}.` +
         (notAllocated ? ` Nicht in die Zeilen ${notAllocated[0]} bis ${notAllocated[1]}, die gelten „ohne Erhaltungsrücklage“.` : '')
       : `Anlage V ${report.year}: bei den Erhaltungsaufwendungen, einschließlich Entnahmen aus der Erhaltungsrücklage; die Zeile sehen Sie bitte im Vordruck für ${report.year} nach.`
   const last = m?.spreadFromPriorYears?.at(-1)?.sum.line
@@ -514,6 +517,14 @@ export function maintenanceLineText(report: TaxReport, isSpread: (item: TaxExpen
       ? `Verteilter Erhaltungsaufwand: siehe Zeilen ${m.spread.total} bis ${last}.`
       : `Verteilter Erhaltungsaufwand: bei den auf bis zu fünf Jahre zu verteilenden Erhaltungsaufwendungen; die Zeilen sehen Sie bitte im Vordruck für ${report.year} nach.`
   return { unspread, spread }
+}
+
+// A4.2 (Durchsicht S2): der Satz zur vermuteten Entnahme, mit den Zeilen des Erhaltungsaufwands nur für Jahre, deren
+// Vordruck gelesen ist (`anlageVLines`).
+export function withdrawalLinesText(year: number): string {
+  const m = anlageVLines(year)?.maintenance
+  const last = m?.spreadFromPriorYears?.at(-1)?.sum.line ?? m?.spread?.sum.line ?? m?.proportional.line
+  return `Entnahmen gehören zu den Erhaltungsaufwendungen${m && last !== undefined ? ` (Zeilen ${m.direct.line} bis ${last})` : ''}, nicht zu den übrigen nicht umgelegten Kosten.`
 }
 
 // A4.2: Trägt eine vermutete Entnahme ein Zahlungsdatum? Dann sagt die Seite, dass das Jahr der Ausgabe durch die

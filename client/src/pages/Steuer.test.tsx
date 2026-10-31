@@ -189,7 +189,7 @@ const LAGEN: Record<TaxHint, Lage> = {
     text: /Hausgeld-Vorschüsse/i,
   },
   // #96 PR 1: die Gruppe „Erhaltungsaufwand“ mit ihren Zeilen, eine vermutete Entnahme und die Sonderumlage.
-  maintenanceLines: { report: MIXED([ENTNAHME]), text: /Zeile 55, bei teilweiser Eigennutzung Zeile 56/ },
+  maintenanceLines: { report: MIXED([ENTNAHME]), text: /Anlage V \d{4}: Zeile 55\./ },
   reserveWithdrawalSuspected: {
     report: REPORT({ reserveWithdrawalSuspects: [{ costItemId: 'a', description: 'Dach aus der Rücklage', amountCents: 50000, paidOn: `${JAHR}-03-01` }] }),
     text: /nicht das Ihrer eigenen Hausgeldzahlung/,
@@ -560,7 +560,7 @@ test('Reihenfolge der Steuerseite: Einnahmen, Werbungskosten mit Erhaltungsaufwa
   const blocks = [
     screen.getByRole('heading', { name: 'Einnahmen' }),
     screen.getByRole('heading', { name: 'Werbungskosten' }),
-    await screen.findByText(/Zeile 55, bei teilweiser Eigennutzung Zeile 56/),
+    await screen.findByText(/Anlage V \d{4}: Zeile 55\./),
     screen.getByText(/Verbilligte Vermietung: DG/),
   ]
   for (let i = 1; i < blocks.length; i++) {
