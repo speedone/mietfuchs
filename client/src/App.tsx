@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import type { CostItem, HeatingPlant, NoticeSubject, Settings, Tenancy, Unit } from './types'
 import { api } from './api'
-import { PeriodProvider, usePeriod } from './period'
+import { PeriodProvider, usePeriod, useSwitchTo } from './period'
 import { PeriodSelect } from './components/PeriodSelect'
 import { PropertyProvider, PropertySwitcher, useProperty, useSwitchProperty, withProperty } from './property'
 import { UIProvider, useConfirm, useToast } from './components/feedback'
@@ -25,7 +25,9 @@ import Verlauf from './pages/Verlauf'
 import Steuer from './pages/Steuer'
 import Einstellungen from './pages/Einstellungen'
 import { navFor, splitTarget, tabLabel, type BelegeView, type NavTarget, type Tab } from './nav'
-import { readView, writeView } from './belegeView'
+import { periodKeyOfYear, placeOf, readView, writeView } from './belegeView'
+import { rulesOf } from '../../shared/period.ts'
+import type { ReceiptStart } from './receiptForm'
 import MobileNav, { MOBILE_QUERY, useMediaQuery } from './components/MobileNav'
 import Heizkosten from './pages/Heizkosten'
 import { TermHelp } from './components/Term'
@@ -173,7 +175,7 @@ function Shell() {
   const [settings, setSettings] = useState<Settings | null>(null)
   const { choice, cycle } = useTheme()
   // Der gewählte Abrechnungszeitraum (#208); die Seiten werden bei seinem Wechsel neu aufgestellt.
-  const { key: periodKeyNow, label: periodLabelNow } = usePeriod()
+  const { key: periodKeyNow, label: periodLabelNow, year: periodYear } = usePeriod()
   // Unter 900 px Kopf, Menüblatt und untere Leiste statt der Seitenleiste (#346, Schritt 9)
   const mobile = useMediaQuery(MOBILE_QUERY)
   const { properties, property, previousId, focusNoticeFor, setFocusNoticeFor, reload: reloadProperties, hasOpenForm } = useProperty()
@@ -288,6 +290,22 @@ function Shell() {
   // gewählte. Gehört die Position zu einem anderen, wird erst umgeschaltet, wie oben.
   const openCostItem = async (item: CostItem) => {
     await goViaProperty(item.propertyId, 'kosten', { kind: 'costItem', id: item.id })
+  }
+  // „Von Hand erfassen“ an einem gespeicherten Beleg (#490 PR 3, #487 Teil 2): auf die Seite Kosten, in Objekt und Zeitraum
+  // des Belegs (ein Beleg ohne Zuordnung bleibt im gewählten), und dort das Formular „Neue Kostenposition“ mit dem Beleg.
+  // Wechselt dabei das Objekt oder der Zeitraum, hat dessen Rückfrage schon gefragt; sonst fragt der Seitenwechsel.
+  const switchTo = useSwitchTo()
+  const [receiptStart, setReceiptStart] = useState<ReceiptStart | null>(null)
+  const openNewCostItem = async (u: ReceiptStart) => {
+    const there = placeOf(u, { propertyId: properties.length > 1 ? property?.id ?? null : null, year: periodYear })
+    const dest = there ? properties.find((p) => p.id === (there.propertyId ?? property?.id)) : undefined
+    if (there && dest) {
+      if (!(await switchTo(there.propertyId ?? undefined, periodKeyOfYear(rulesOf(dest), there.year ?? periodYear)))) return
+      setTab('kosten')
+      setReceiptStart(u)
+      return
+    }
+    if (await navigate('kosten')) setReceiptStart(u)
   }
   const update = useUpdateStatus(settings)
   const propertyId = property?.id
@@ -443,11 +461,12 @@ function Shell() {
         {tab === 'stammdaten' && (
           <Stammdaten units={units} tenancies={tenancies} settings={settings} reload={reload} focus={focus} onFocusDone={clearFocus} />
         )}
-        {tab === 'kosten' && <Kosten units={units} settings={settings} tenancies={tenancies} focus={focus} onFocusDone={clearFocus} onOpenReceipt={openReceipt} onOpenAiSettings={openAiSettings} onOpenMeters={openMeters} />}
+        {tab === 'kosten' && <Kosten units={units} settings={settings} tenancies={tenancies} focus={focus} onFocusDone={clearFocus} onOpenReceipt={openReceipt} onOpenAiSettings={openAiSettings} onOpenMeters={openMeters}
+          receiptStart={receiptStart} onReceiptStartDone={() => setReceiptStart(null)} onNewCostItem={(u) => void openNewCostItem(u)} onOpenInbox={() => void navigate('belege:eingang')} />}
         {tab === 'mietkonto' && <Mietkonto focus={focus} onFocusDone={clearFocus} />}
         {tab === 'zaehler' && <Zaehler units={units} focus={focus} onFocusDone={clearFocus} />}
         {tab === 'belege' && <Belege units={units} settings={settings} onNavigate={(t, f) => void navigate(t, f ?? null)}
-          onOpenItem={(item) => void openCostItem(item)} onOpenAiSettings={openAiSettings} onOpenMeters={openMeters}
+          onOpenItem={(item) => void openCostItem(item)} onOpenAiSettings={openAiSettings} onOpenMeters={openMeters} onNewCostItem={(u) => void openNewCostItem(u)}
           view={belegeView} onViewChange={setBelegeView} focusFile={receiptFocus} onOpenReceipt={openReceipt} onFocusDone={() => setReceiptFocus(null)} />}
         {tab === 'abrechnung' && (
           <Abrechnung settings={settings} units={units} tenancies={tenancies} reload={reload} onNavigate={(t, f) => void navigate(t, f ?? null)} focus={focus} onFocusDone={clearFocus} />

@@ -8,6 +8,16 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Hinzugefügt
 
+- **Belege von Hand erfassen**: „Von Hand erfassen“ steht an jedem Beleg unter „Ohne Position“ im Eingang, auch ohne
+  KI (dann als erster Weg), und an jedem gespeicherten, nicht ausgewerteten Beleg in Eingang und Kosten. Es öffnet
+  das Kostenformular mit dem Beleg: oben Vorschau und „Beleg in neuem Tab öffnen“, die Kostenart aus dem Dateinamen
+  vorgeschlagen (ohne Treffer bleibt sie leer und wird abgefragt). Nennt man einen Rechnungssteller, den es im Vorjahr
+  gab, lassen sich Kostenart, Beschreibung und Umlageschlüssel von dort übernehmen, nie der Betrag. Nach „Anlegen“ hängt
+  der Beleg an der Position, „Zum Eingang“ führt zurück
+  ([#490](https://github.com/speedone/mietfuchs/issues/490), [#487](https://github.com/speedone/mietfuchs/issues/487)).
+- Kostenformular: Feld „Rechnungsdatum“ am angehängten Beleg. Ohne gespeichertes Datum liest Mietfuchs es aus dem Text
+  einer PDF, ohne KI, und setzt es als gelb markierten Vorschlag ein; gespeichert wird es nur, wenn Sie es stehen lassen
+  und anlegen. Beträge liest Mietfuchs dabei nicht ([#487](https://github.com/speedone/mietfuchs/issues/487)).
 - **Mietfuchs im Microsoft Store** für Windows (x64 und ARM64): installieren und aktualisieren über den Store,
   gestartet wird aus dem Startmenü ohne Konsolenfenster, beendet über „Mietfuchs beenden“ in der Seitenleiste. Die
   Daten liegen in `%USERPROFILE%\Mietfuchs` und bleiben bei einer Deinstallation erhalten. Wer bisher die
@@ -40,6 +50,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Geändert
 
+- „Von Hand erfassen“ an einem gespeicherten, nicht ausgewerteten Beleg führt nicht mehr zur Karte des Belegs auf der
+  Seite Belege, sondern ins Kostenformular; auf der Seite Kosten ohne Seitenwechsel, gehört der Beleg einem anderen
+  Objekt oder Jahr, erst dorthin ([#490](https://github.com/speedone/mietfuchs/issues/490)).
 - **Steuer: Ende Dezember gezahlte Januarmiete zählt im Folgejahr** (Zehn-Tage-Regel, § 11 Abs. 1 Satz 2 EStG), wenn die
   Miete zu Beginn des Monats fällig ist; die Einnahmen und der Überschuss der Steuerübersicht folgen der Summe der
   Zeilen. Der Hinweis zum Jahreswechsel steht nur noch mit Betrag; bei Mietverhältnissen, die schon am 01.09.2001

@@ -112,6 +112,14 @@ test('Kostenposition: Beschreibung und Betrag', async () => {
   await requiredMatchesMissing(dialog(), () => fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/ })), ['Beschreibung', 'Betrag €'])
 })
 
+// #490 PR 3: aus einem Beleg, dessen Name keine Kostenart nennt, ist auch die Kostenart Pflicht
+test('Kostenposition aus dem Beleg ohne Kostenart im Namen: Kostenart, Beschreibung und Betrag', async () => {
+  shell(<Kosten units={UNITS} settings={null} renderThumb={() => Promise.resolve('')} readReceiptText={async () => ''}
+    receiptStart={{ file: '1_scan.pdf', originalName: 'scan.pdf', mimeType: 'application/pdf', propertyId: null, year: null, invoiceDate: null }} />)
+  await screen.findByRole('dialog', { name: 'Neue Kostenposition' })
+  await requiredMatchesMissing(dialog(), () => fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/ })), ['Kostenart', 'Beschreibung', 'Betrag €'])
+})
+
 test('Zähler: Name und Einheit (Kaltwasser)', async () => {
   shell(<Zaehler units={UNITS} />)
   fireEvent.click(await screen.findByRole('button', { name: /Zähler anlegen/i }))

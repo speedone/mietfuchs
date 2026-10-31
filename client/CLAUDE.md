@@ -86,6 +86,25 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   der Belegordner ohne Posteingang; die Suche gilt immer allen Objekten und Jahren, Treffer ohne Position stehen unter
   „Im Eingang (N)“ mit Ort (`hitPlace`) und „Im Eingang zeigen“. Die Seite Kosten behält ihre eigene Ablage und Prüfung
   (Regel 4). sessionStorage leert vitestSetup.ts vor jedem Test.
+- **Von Hand erfassen aus dem Beleg** (#490 PR 3, #487 Teil 2, Logik in [receiptForm.ts](src/receiptForm.ts)): „Von Hand
+  erfassen“ steht an jedem Beleg unter „Ohne Position“ (nicht neben „Weiter prüfen“; ohne KI als Primärknopf, gesperrt
+  bei ungespeichertem Objekt oder Jahr) und an `KeptReceipt` in Eingang und Kosten; Zählerfoto (Seite Zähler) und
+  Lieferung („Neue Lieferung“) bleiben, wie sie sind. Es führt über `openNewCostItem` (App.tsx) auf die Seite Kosten,
+  vorher mit `useSwitchTo` in Objekt und Zeitraum des Belegs (`placeOf`); die Seite öffnet `receiptStart`, sobald
+  Positionen, Zähler und Ablage da sind. **Entscheidung: Sprung ins vorhandene Formular statt eines Seitenfensters auf der
+  Seite Belege.** Das Formular hängt an fast allem, was die Seite Kosten lädt (Positionen für gemerkten Schlüssel, Doppel
+  und Aufteilen, Heizanlagen und Heizperioden, Zähler, abgeschlossene Abrechnung, Vorjahr); herausgelöst hätte die Seite
+  Belege alles doppelt geladen, und der Zeitraum des Formulars ist der gewählte, nicht der des Ordners. Der Sprung kostet
+  einen Seitenwechsel, „Zum Eingang“ führt nach dem Anlegen zurück. Im Formular: `ReceiptPreview` (ReceiptParts.tsx) oben,
+  die Kostenart aus `categoryFromName` (kein Treffer: leer, die Auswahl zeigt die leere Wahl wie das Feld „Ziel“, Pflicht und gemeldet);
+  `vendorPrevious` über die Vorlagen von `carryOverRows` (ganzer Name ohne Schreibweise, kein Präfix), „Übernehmen“ setzt
+  `adoptPrevious` (Kostenart, Beschreibung, Schlüssel; Betrag, Lohnanteil, Beleg, Datum bleiben), dazu die
+  Rechnungssteller des Vorjahres als `datalist`. **Rechnungsdatum** gehört zum Beleg (`PUT /api/uploads/:file`), nicht
+  zur Position: Feld im Abschnitt „Beleg“, Teil von `value`; ohne gespeichertes Datum liest `receiptText` (pdfIntake.ts)
+  die ersten zwei Seiten, `invoiceDateFromText` ([invoiceDateText.ts](src/invoiceDateText.ts)) nimmt ein beschriftetes
+  Datum („Rechnungsdatum“ vor „Datum“), sonst nur das einzige, und es steht gelb mit „Vorschlag aus dem Beleg“ da, bis
+  jemand es ändert; nie ein Betrag. Nach „Anlegen“ `forgetFile` (der Eintrag der Warteschlange ist erledigt), eine
+  Bestätigung `div.ok` mit Fokus auf „Zum Eingang“.
 - **Handy** ([MobileNav.tsx](src/components/MobileNav.tsx)): unter 900 px (`MOBILE_QUERY`) statt der
   Seitenleiste ein angehefteter Kopf (☰, Titel, „Objekt · Zeitraum“, ⇅), ein Menüblatt als
   `<dialog>` mit `showModal()` und eine untere Leiste. Gezeichnet nach `matchMedia`, nicht nur per

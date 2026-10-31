@@ -34,6 +34,7 @@ import { attachChoices, duplicateHints, inboxOf, inboxPage, INBOX_STEP, receiptC
 import { aiMode, elsewhereGroups, periodKeyOfYear, SKIPPED_FILES, splitFiles, withoutPosition } from '../belegeView'
 import type { ReceiptStock } from '../receiptStock'
 import type { NavTarget } from '../nav'
+import type { ReceiptStart } from '../receiptForm'
 import { AmountCheckBox, AttachPicker, InboxPlacement, PLACEMENT_FIRST, ReceiptItem, useAttach, useDeleteReceipt, useHighlight } from '../components/ReceiptParts'
 
 type Props = {
@@ -48,6 +49,8 @@ type Props = {
   // Seite Zähler (Ablesung von Hand)
   onOpenAiSettings?: () => void
   onOpenMeters?: () => void
+  // Von Hand erfassen (#490 PR 3, #487 Teil 2): ein Beleg ohne Position ins Kostenformular der Seite Kosten
+  onNewCostItem?: (upload: ReceiptStart) => void
   // Ein Beleg, zu dem die Ansicht springen soll (ein Beleg ohne Position, etwa aus „Im Eingang zeigen“)
   focusFile?: string | null
   onFocusDone?: () => void
@@ -67,7 +70,7 @@ function Group({ id, title, children }: { id: string; title: string; children: R
   )
 }
 
-export default function BelegeEingang({ stock, units, settings, onNavigate, onOpenItem, onOpenAiSettings, onOpenMeters, focusFile, onFocusDone, onCount, renderThumb = renderThumbnail }: Props) {
+export default function BelegeEingang({ stock, units, settings, onNavigate, onOpenItem, onOpenAiSettings, onOpenMeters, onNewCostItem, focusFile, onFocusDone, onCount, renderThumb = renderThumbnail }: Props) {
   // Wohin die Belege zur Auswertung gehen (siehe aiForm.ts)
   const ai = aiSummary(settings)
   // Das Kalenderjahr, in dem der gewählte Zeitraum beginnt (#208): Ein Beleg ohne erkanntes Jahr
@@ -503,8 +506,16 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
 
   const deleteFile = useDeleteReceipt(async (file) => { forgetKept(file); await reloadAll() }, setError)
 
-  // „Von Hand erfassen“ an einem gespeicherten, nicht ausgewerteten Beleg: vorerst zu Zuordnen, Objekt und Jahr seiner
-  // Karte (wie vorher der Sprung in den Belegordner); ins Kostenformular führt es mit #490 PR 3.
+  // „Von Hand erfassen“ (#490 PR 3): ins Kostenformular mit dem Beleg (App.tsx). Ohne diesen Weg (Tests der Seite allein)
+  // zu Zuordnen, Objekt und Jahr seiner Karte, wie vor PR 3. Ein Beleg, den die Ablage noch nicht kennt (eben gespeichert),
+  // geht mit dem Namen aus der Warteschlange und dem gewählten Objekt und Jahr.
+  const manual = (file: string, fileName?: string) => {
+    if (!onNewCostItem) { focusControls(file); return }
+    const u = stock.uploads.find((x) => x.file === file)
+    onNewCostItem(u ?? { file, originalName: fileName ?? '', mimeType: '', propertyId: propertyId ?? null, year, invoiceDate: null })
+  }
+  // Ohne KI ist „Von Hand erfassen“ der erste Weg und trägt den Primärknopf, „Per KI auswerten“ tritt zurück
+  const manualFirst = mode === 'ohne' && !!onNewCostItem
   const focusControls = (file: string) => {
     const card = [...document.querySelectorAll<HTMLElement>('[data-view="eingang"] li.receipt-card')].find((el) => el.dataset.file === file)
     if (!card) return
@@ -547,7 +558,7 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
         onDelete={() => void deleteFile(upload)} entryId={keptEntry?.id}>
         {/* Gespeichert, aber nicht ausgewertet (#487): der Grund und „Erneut versuchen“ an der Karte des Belegs */}
         {keptEntry?.failure && (
-          <KeptReceipt failure={keptEntry.failure} onManual={() => focusControls(upload.file)}
+          <KeptReceipt failure={keptEntry.failure} onManual={() => manual(upload.file)}
             onRetry={() => { focusAfterRetry(keptEntry.id); retry(keptEntry.id) }} onOpenSettings={onOpenAiSettings} />
         )}
         <div className="receipt-inbox-controls">
@@ -577,7 +588,14 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
                 {review ? null : upload.assessment?.open ? (
                   <button className="btn" aria-label={`${receiptName(upload)} weiter prüfen`} disabled={placement.dirty} onClick={() => void continueChecking(upload)}>Weiter prüfen</button>
                 ) : !keptEntry && (
-                  <button className="btn" aria-label={`${receiptName(upload)} per KI auswerten`} disabled={placement.dirty} onClick={() => void evaluate(upload)}>Per KI auswerten</button>
+                  <>
+                    {/* Immer, auch ohne Positionen und ohne KI (#487 Teil 2); ohne KI der erste Weg */}
+                    {onNewCostItem && (
+                      <button className={manualFirst ? 'btn' : 'btn secondary'} aria-label={`${receiptName(upload)} von Hand erfassen`} disabled={placement.dirty}
+                        onClick={() => onNewCostItem(upload)}>Von Hand erfassen</button>
+                    )}
+                    <button className={manualFirst ? 'btn secondary' : 'btn'} aria-label={`${receiptName(upload)} per KI auswerten`} disabled={placement.dirty} onClick={() => void evaluate(upload)}>Per KI auswerten</button>
+                  </>
                 )}
                 {placement.dirty && !review && <span className="muted">{PLACEMENT_FIRST}</span>}
               </>
@@ -648,7 +666,7 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
 
         {entry.status === 'fehler' && <NoticeBox level="error" action={entry.error} />}
         {entry.status === 'gespeichert' && entry.failure && (
-          <KeptReceipt failure={entry.failure} onManual={entry.failure.meterPhoto ? (onOpenMeters && (() => onOpenMeters())) : focusControls}
+          <KeptReceipt failure={entry.failure} onManual={entry.failure.meterPhoto ? (onOpenMeters && (() => onOpenMeters())) : (file) => manual(file, entry.fileName)}
             onRetry={() => { focusAfterRetry(entry.id); retry(entry.id) }} onOpenSettings={onOpenAiSettings} />
         )}
 
@@ -821,7 +839,7 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
             } : undefined} />
           })}
           {freeCards.length > 0 && (
-            <p className="muted">Gespeicherte Belege, die an keiner Kostenposition hängen. Ordnen Sie jeden einer Position zu oder lassen Sie ihn per KI auswerten.</p>
+            <p className="muted">Gespeicherte Belege, die an keiner Kostenposition hängen. Erfassen Sie jeden von Hand, ordnen Sie ihn einer Position zu oder lassen Sie ihn per KI auswerten.</p>
           )}
           {inboxShown.shown.length > 0 && <ul ref={inboxList} className="receipt-list">{inboxShown.shown.map((c) => renderInbox(c))}</ul>}
           {inboxShown.hidden > 0 && (

@@ -94,3 +94,23 @@ export async function buildUpload(file: File, reader: PdfReader = pdfReader, pag
   pages.forEach((s, i) => fd.append('pages', s, `seite-${i + 1}.jpg`))
   return fd
 }
+
+// Die Textschicht eines gespeicherten Belegs, ohne KI (#487, Entscheidung 3B): Die Seite Kosten liest daraus nur ein
+// Rechnungsdatum als Vorschlag (invoiceDateFromText). Die ersten Seiten genügen, das Datum steht im Kopf. Ein Bild hat
+// keine Textschicht; was sich nicht lesen lässt, ergibt keinen Text und damit keinen Vorschlag.
+export const RECEIPT_TEXT_PAGES = 2
+export async function receiptText(file: string, mimeType: string): Promise<string> {
+  if (mimeType !== 'application/pdf' && !/\.pdf$/i.test(file)) return ''
+  const { doc, close } = await openPdf({ url: `/uploads/${encodeURIComponent(file)}` })
+  try {
+    let text = ''
+    for (let n = 1; n <= Math.min(doc.numPages, RECEIPT_TEXT_PAGES); n++) {
+      const page = await doc.getPage(n)
+      text += pageText((await page.getTextContent()).items)
+      page.cleanup()
+    }
+    return text
+  } finally {
+    close()
+  }
+}

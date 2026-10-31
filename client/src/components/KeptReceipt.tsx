@@ -7,7 +7,7 @@ import { NoticeBox } from './Notice'
 
 type Props = {
   failure: AiFailure
-  // Von Hand erfassen: vorerst zur Karte des Belegs im Eingang (Zuordnen), ins Kostenformular mit #490 PR 3
+  // Von Hand erfassen: ins Kostenformular mit dem Beleg (#490 PR 3); bei Zählerfoto und Lieferung das passende Formular
   onManual?: (file: string) => void
   onRetry: () => void
   onOpenSettings?: () => void

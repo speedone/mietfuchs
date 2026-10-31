@@ -15,6 +15,7 @@ import { OtherPropertiesView } from '../components/OtherPropertiesCard'
 import { PropertySwitcher } from '../property'
 import { ErrorSummary, useFormError } from '../components/ErrorSummary'
 import { CalcNoticeGroup, NoticeBox, NoticeGroup, TextNotice } from '../components/Notice'
+import { ReceiptPreview } from '../components/ReceiptParts'
 import { KeptReceipt } from '../components/KeptReceipt'
 import { TakenOff } from '../components/TakenOff'
 import { groupNotices, noticePeople } from '../noticeGroups'
@@ -158,12 +159,17 @@ export default function Muster() {
         <GuideThread guide="garage" step={3} sticky={false} onNext={async () => { toast('Nächster Schritt.'); return true }} onBack={() => toast('Zurück zur Anleitung.')} onClose={() => toast('Leiste geschlossen.')} />
       </Card>
 
+      {/* Der Beleg oben im Kostenformular (#490 PR 3): Vorschaubild und „Beleg in neuem Tab öffnen“ als ein Link */}
+      <Card title="Beleg im Kostenformular">
+        <ReceiptPreview upload={{ file: 'muster-beleg.pdf', originalName: 'Müllabfuhr_2025.pdf', mimeType: 'application/pdf' }} render={() => Promise.reject(new Error('ohne Server'))} />
+      </Card>
+
       <Card title="Hinweise">
         <NoticeBox level="error" title="Fehler" action="Eine Position wird nicht verteilt, weil Angaben fehlen." fix={{ label: 'Hier beheben →', onClick: () => toast('Sprung zur Stelle.') }} />
         <NoticeBox level="warning" title="Warnung" action="Geld landet anders als vermutlich gewollt." more="Begründung aus einer Fundstelle (BGH VIII ZR 156/11)." />
         <NoticeBox level="hint" title="Hinweis" action="Bitte prüfen, ohne sicheren Fehler." />
         <KeptReceipt failure={{ error: 'OpenAI lehnt den Schlüssel ab. Bitte den Schlüssel in den Einstellungen prüfen.', file: 'beleg.pdf', reason: 'key', kept: true }}
-          onManual={() => toast('Sprung auf die Seite Belege.')} onRetry={() => toast('Neuer Versuch.')} onOpenSettings={() => toast('KI-Einstellungen.')} />
+          onManual={() => toast('Kostenformular mit dem Beleg.')} onRetry={() => toast('Neuer Versuch.')} onOpenSettings={() => toast('KI-Einstellungen.')} />
         <TakenOff fileName="beleg.pdf" onShow={() => toast('Sprung auf die Seite Belege.')} />
         <TextNotice level="info" text="Eine Auskunft als fertiger Text. Sie wird in Sätze zerlegt." />
         {/* „Zu prüfen“ auf der Seite Abrechnung: stille Hinweise (ohne Betrag, Kürzung, Aufforderung) in einer Zeile. */}

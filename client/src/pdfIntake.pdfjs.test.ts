@@ -5,6 +5,7 @@
 import { describe, expect, test } from 'vitest'
 import { getDocument, VerbosityLevel } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { pageText } from './pdfIntake'
+import { invoiceDateFromText } from './invoiceDateText'
 
 // Für die Textebene braucht pdf.js keine Schriftdateien. Die Warnung, dass sie fehlen, bleibt
 // deshalb stumm.
@@ -41,6 +42,17 @@ describe('Textebene mit echtem pdf.js (legacy-Fassung)', () => {
       expect(text).toContain('Abfallgebuehren 2025')
       expect(text).toContain('Restmuell 42,50 EUR')
       expect(text).not.toContain('2025Restmuell') // die Zeilen kleben nicht aneinander
+    } finally {
+      await task.destroy()
+    }
+  })
+
+  // #487, 3B: Aus der Textebene, wie pdf.js sie liefert, liest Mietfuchs ohne KI das Rechnungsdatum (nie einen Betrag)
+  test('das Rechnungsdatum aus der Textebene', async () => {
+    const task = openDocument(textPdf(['Stadtwerke', 'Leistungszeitraum 01.01.2024 bis 31.12.2024', 'Rechnungsdatum: 14.02.2025', 'Betrag 480,00 EUR']))
+    try {
+      const page = await (await task.promise).getPage(1)
+      expect(invoiceDateFromText(pageText((await page.getTextContent()).items))).toBe('2025-02-14')
     } finally {
       await task.destroy()
     }

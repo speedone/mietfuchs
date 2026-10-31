@@ -1310,3 +1310,40 @@ test('Sprung zu einem Beleg mit offener Auswertung: die Karte der Auswertung, he
   expect(card.className).toMatch(/\bbg-accent-soft\b/)
   expect(within(card).getByRole('button', { name: 'Einordnen schließen' })).toBeTruthy()
 })
+
+// Von Hand erfassen (#490 PR 3, #487 Teil 2): An jedem Beleg ohne Position, auch ohne Positionen im Jahr und ohne KI,
+// führt „Von Hand erfassen“ ins Kostenformular mit dem Beleg. Ohne KI ist es der erste Weg (Primärknopf).
+test('Ohne Position: „Von Hand erfassen“ an jedem Beleg, ohne KI als erster Weg', async () => {
+  aiStatus = { ok: false, error: 'nicht erreichbar', reason: 'unreachable' }
+  const onNewCostItem = vi.fn()
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <Belege {...BASE} view="eingang" settings={LOCAL} renderThumb={() => Promise.resolve('')} onNewCostItem={onNewCostItem} />
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  const manual = await screen.findByRole('button', { name: 'lose.pdf von Hand erfassen' })
+  await screen.findByText(/Die KI ist gerade nicht erreichbar/)
+  expect(manual.className).toBe('btn')
+  expect(screen.getByRole('button', { name: 'lose.pdf per KI auswerten' }).className).toBe('btn secondary')
+  fireEvent.click(manual)
+  expect(onNewCostItem).toHaveBeenCalledWith(expect.objectContaining({ file: '4_lose.pdf', originalName: 'lose.pdf', mimeType: 'application/pdf' }))
+})
+
+test('Ohne Position: mit KI steht „Von Hand erfassen“ neben „Per KI auswerten“; ein ungespeichertes Objekt sperrt beide', async () => {
+  const onNewCostItem = vi.fn()
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <Belege {...BASE} view="eingang" renderThumb={() => Promise.resolve('')} onNewCostItem={onNewCostItem} />
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  const manual = await screen.findByRole('button', { name: 'lose.pdf von Hand erfassen' })
+  expect(manual.className).toBe('btn secondary')
+  const card = manual.closest('li.receipt-card') ?? expect.fail('keine Karte')
+  fireEvent.change(within(card as HTMLElement).getByLabelText(/Objekt/), { target: { value: 'p2' } })
+  expect((screen.getByRole('button', { name: 'lose.pdf von Hand erfassen' }) as HTMLButtonElement).disabled).toBe(true)
+  expect((screen.getByRole('button', { name: 'lose.pdf per KI auswerten' }) as HTMLButtonElement).disabled).toBe(true)
+})
