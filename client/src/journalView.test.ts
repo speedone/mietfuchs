@@ -96,6 +96,6 @@ describe('Verlauf: jede Spalte hat eine Beschriftung (#281)', () => {
     expect(fieldLabel('ownership_transfer_on')).toBe('Eigentumsübergang am')
     expect(fieldLabel('building_application_on')).toBe('Bauantrag vom')
     expect(fieldLabel('completed_on')).toBe('Fertiggestellt am')
-    expect(fieldLabel('relative')).toBe('An Angehörige vermietet')
+    expect(fieldLabel('relative')).toBe('An Angehörige zu Wohnzwecken vermietet')
   })
 })

@@ -151,7 +151,7 @@ const FIELD_LABELS: Record<string, string> = {
   ownership_transfer_on: 'Eigentumsübergang am',
   building_application_on: 'Bauantrag vom',
   completed_on: 'Fertiggestellt am',
-  relative: 'An Angehörige vermietet',
+  relative: 'An Angehörige zu Wohnzwecken vermietet',
   date: 'Datum',
   value: 'Wert',
   replacement: 'Zählerwechsel',

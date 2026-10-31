@@ -1443,7 +1443,8 @@ export type TaxReport = {
   // Mietverhältnisse des Jahres, davon mit Inklusivmiete und mit Pauschale (#96, Zeilen 24 und 20
   // der Anlage V).
   // `inclusive`: kalt und warm inklusiv; `partlyInclusive`: nur eines von beiden.
-  // `relativeTenancies` (#96 PR 2): **Anzahl** der Mietverhältnisse des Jahres an Angehörige (Zeile 10, Kennzahl 62);
+  // `relativeTenancies` (#96 PR 2): **Anzahl** der Mietverhältnisse des Jahres an Angehörige, in denen im Jahr jemand
+  // wohnt (Zeile 10, Kennzahl 62, „zu Wohnzwecken“; eine Garage hat 0 Personen);
   // fehlt ohne eines (Durchsicht X11: nicht `relatives`, das ist bei #312 ein Betrag in Cent).
   costModels: { tenancies: number; inclusive: number; partlyInclusive: number; flatRate: number; relativeTenancies?: number }
   // Verbilligte Vermietung nach § 21 Abs. 2 EStG (#257), nur wenn an einer vermieteten Wohnung eine ortsübliche

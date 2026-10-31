@@ -824,10 +824,11 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                 <Field label="Vertragsdatum" {...tenErrors.field('contractDate')}>
                   <input type="date" value={tenForm.contractDate} onChange={(e) => setTenForm({ ...tenForm, contractDate: e.target.value })} />
                 </Field>
-                {/* #96 PR 2 (Entwurf B3): Zeile 10 der Anlage V; die eigentliche Folge liegt bei der verbilligten Vermietung. */}
+                {/* #96 PR 2 (Entwurf B3): Zeile 10 der Anlage V; die eigentliche Folge liegt bei der verbilligten Vermietung.
+                    „Zu Wohnzwecken“ wie Kennzahl 62 (Durchsicht K3): Eine Garage zählt nicht, auch wenn der Haken gesetzt ist. */}
                 <label className="checkline">
                   <input type="checkbox" checked={tenForm.relative} onChange={(e) => setTenForm({ ...tenForm, relative: e.target.checked })} />
-                  <span>An Angehörige vermietet (für die Steuer, siehe <Term id="cheapRent">verbilligte Vermietung</Term>)</span>
+                  <span>An Angehörige zu Wohnzwecken vermietet (für die Steuer, siehe <Term id="cheapRent">verbilligte Vermietung</Term>)</span>
                 </label>
                 <Field label="Kaution €" {...tenErrors.field('deposit')}>
                   <input value={tenForm.deposit} inputMode="decimal" placeholder="z. B. 2.400,00" onChange={(e) => setTenForm({ ...tenForm, deposit: e.target.value })} />

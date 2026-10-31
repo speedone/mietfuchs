@@ -799,7 +799,7 @@ Grundmenge ist das ganze Gebäude), Überschuss. Beschreibende Gruppen statt fes
 - **Kopf der Anlage V** (#96 PR 2, Entwurf B): am Objekt `groundTaxFileNumber` (wie eingegeben, ≤ 40 Zeichen, angezeigt
   ohne Sonderzeichen) und vier Tage zu Kauf und Bau (Z. 7 ab 2025), am Mietverhältnis `relative` (gespeichert nur `true`,
   die Abrechnung liest es nicht); Schritte 0080/0081. `costModels.relativeTenancies` ist eine **Anzahl** und fehlt ohne
-  Kennzeichen (Z. 10, Kz. 62). Kopfzeilen und der gemeinsame Hinweis `acquisitionRelated` (§ 6 Abs. 1 Nr. 1a EStG, mit
+  Kennzeichen (Z. 10, Kz. 62); gezählt wird nur, wo im Jahr jemand wohnt (Wohnzwecke, keine Garage nach #135). Kopfzeilen und der gemeinsame Hinweis `acquisitionRelated` (§ 6 Abs. 1 Nr. 1a EStG, mit
   #262) rechnet client/src/taxView.ts aus Bericht und Objekt (`headerRows`, `acquisitionRelated`), kein Feld im Bericht.
   Die Frist läuft allein ab dem Eigentumsübergang (BMF-Schreiben vom 26.01.2026, Rn. 62) und endet nach §§ 187 Abs. 1,
   188 Abs. 2 BGB am Tag gleicher Zahl drei Jahre später; der Hinweis steht auch im Kalenderjahr danach, weil später

@@ -42,6 +42,23 @@ test('Angehörige: gezählt werden nur Mietverhältnisse des Jahres mit Kennzeic
   assert.equal(taxReportFor(stock, 'objekt-1', 2026).costModels.relativeTenancies, 1)
 })
 
+// Durchsicht K3: Kennzahl 62 fragt „an Angehörige zu Wohnzwecken vermietet“. Eine Garage oder ein Stellplatz an die Tochter
+// ist keine Wohnung. Mietfuchs kennt keine Art der Einheit; Wohnzwecke heißt hier: Im Jahr wohnt jemand dort (Personentage),
+// eine Garage hat nach #135 0 Personen.
+test('Angehörige: eine Garage an Angehörige zählt nicht, nur Mietverhältnisse, in denen im Jahr jemand wohnt', () => {
+  const stock = source([
+    tenancy('garage-tochter', 'og', '2025-01-01', null, { relative: true, persons: 0, personHistory: [{ from: '2025-01-01', persons: 0 }] }),
+    tenancy('fremd', 'eg', '2025-01-01', null),
+  ])
+  stock.units = [stock.units[0] ?? assert.fail('keine Einheit EG'), { id: 'og', propertyId: 'objekt-1', name: 'Garage', areaM2: 0, participates: true }]
+  assert.equal('relativeTenancies' in taxReportFor(stock, 'objekt-1', 2025).costModels, false)
+  const mitWohnung = source([
+    tenancy('garage-tochter', 'og', '2025-01-01', null, { relative: true, persons: 0, personHistory: [{ from: '2025-01-01', persons: 0 }] }),
+    tenancy('tochter', 'eg', '2025-01-01', null, { relative: true }),
+  ])
+  assert.equal(taxReportFor(mitWohnung, 'objekt-1', 2025).costModels.relativeTenancies, 1)
+})
+
 test('Angehörige: ohne Kennzeichen fehlt das Feld, und Steuer und Abrechnung sind dieselben wie mit (X9 g)', () => {
   const ohne = source([tenancy('tochter', 'eg', '2025-03-01', null), tenancy('fremd', 'og', '2025-01-01', null)])
   const mit = source([tenancy('tochter', 'eg', '2025-03-01', null, { relative: true }), tenancy('fremd', 'og', '2025-01-01', null, { relative: false })])

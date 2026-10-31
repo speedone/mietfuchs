@@ -1501,9 +1501,14 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
     inclusive: models.filter((m) => m.cold === 'inclusive' && m.heat === 'inclusive').length,
     partlyInclusive: models.filter((m) => (m.cold === 'inclusive') !== (m.heat === 'inclusive')).length,
     flatRate: models.filter((m) => m.cold === 'flatRate' || m.heat === 'flatRate').length,
-    // Zeile 10, Kennzahl 62 (#96 PR 2): die Mietverhältnisse des Jahres an Angehörige, eine Anzahl. Fehlt ohne eines,
-    // damit ein Bestand ohne Kennzeichen denselben Bericht ergibt wie vorher.
-    ...relativeTenanciesOf(ledger.rows.filter((r) => tenancyById.get(r.tenancyId)?.relative === true).length),
+    // Zeile 10, Kennzahl 62 (#96 PR 2): die Mietverhältnisse des Jahres an Angehörige zu Wohnzwecken, eine Anzahl. Fehlt
+    // ohne eines, damit ein Bestand ohne Kennzeichen denselben Bericht ergibt wie vorher. Zu Wohnzwecken (Durchsicht K3):
+    // Im Jahr wohnt jemand dort. Mietfuchs kennt keine Art der Einheit, und eine Garage oder ein Stellplatz hat 0 Personen
+    // (#135); dieselbe Lesart wie `inhabited` in computeSettlement.
+    ...relativeTenanciesOf(ledger.rows.filter((r) => {
+      const t = tenancyById.get(r.tenancyId)
+      return t?.relative === true && personDaysInPeriod(t, calendar.from, calendar.to) > 0
+    }).length),
   }
   const tenanciesWithoutPayment = withSoll.filter((r) => !paidTenancies.has(r.tenancyId)).length
   // Der Teil der Kaltmiete, der Nebenkosten einschließt (#142): Inklusivmiete kalt oder warm, nach
