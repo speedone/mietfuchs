@@ -3434,7 +3434,8 @@ async function aiStatus(slot: AiSlotName): Promise<AiStatus> {
     const models = config.provider === 'openai' ? await listOpenAiModels(config) : await listOllamaModels(config)
     return { ok: true, models }
   } catch (err) {
-    const status: AiStatus = { ok: false, error: messageOf(err) }
+    // Der Grund wie bei einem gescheiterten Beleg (#487): Der Eingang speichert nur bei „nicht erreichbar“ (#490).
+    const status: AiStatus = { ok: false, error: messageOf(err), reason: reasonOf(err) }
     const addressFixed = slot === 'text' && fixedByEnv().includes('ai.text.url')
     if (config.provider === 'ollama' && isProviderError(err) && err.unreachable && !addressFixed && !isExternalUrl(config.url)) {
       const configured = config.url.replace(/\/+$/, '')

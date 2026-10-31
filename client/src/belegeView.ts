@@ -40,13 +40,14 @@ export function splitFiles(files: Iterable<File>): { ok: File[]; skipped: number
   return { ok, skipped: all.length - ok.length }
 }
 
-// Ob die Ablage auswertet oder nur speichert. Sagt die KI ausdrücklich, dass sie nicht erreichbar ist, speichert die
-// Ablage nur, und jeder Beleg steht danach unter „Ohne Position“ (Regel 5 in #490). Ein Dienst im Internet wird dafür
-// nicht gefragt: Das Öffnen einer Seite soll nichts hinausschicken; scheitert dort eine Auswertung, bleibt der Beleg
-// gespeichert (KeptReceipt). Ohne Antwort (noch unterwegs, Server nicht erreichbar) wertet sie aus, wie vorher.
+// Ob die Ablage auswertet oder nur speichert. Nur wenn die KI ausdrücklich „nicht erreichbar“ meldet (Grund wie bei einem
+// gescheiterten Beleg, #487) und gerade nichts läuft, speichert die Ablage nur, und jeder Beleg steht danach unter „Ohne
+// Position“ (Regel 5 in #490). Eine Zeitüberschreitung, ein abgelehnter Schlüssel oder keine Antwort sind kein „ohne KI“:
+// Dann wertet sie aus wie vorher, und scheitert es, bleibt der Beleg gespeichert (KeptReceipt). Ein Dienst im Internet
+// wird dafür nie gefragt (`external`), das Öffnen einer Seite soll nichts hinausschicken.
 export type AiMode = 'ki' | 'ohne'
-export function aiMode(status: Pick<AiStatus, 'ok'> | null, external: boolean): AiMode {
-  return !external && status?.ok === false ? 'ohne' : 'ki'
+export function aiMode(status: Pick<AiStatus, 'ok' | 'reason'> | null, external: boolean, busy = false): AiMode {
+  return !external && !busy && status?.ok === false && status.reason === 'unreachable' ? 'ohne' : 'ki'
 }
 
 // ---------- Eingang: „Ohne Position“ ----------

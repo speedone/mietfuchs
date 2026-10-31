@@ -5,7 +5,7 @@
 import { calendarPeriod, periodContaining, periodKey, periodLabel } from '../../../shared/period.ts'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import type { AssessmentView, CostItem, Property, UploadInfo } from '../types'
+import type { AssessmentView, CostItem, Property, Settings, UploadInfo } from '../types'
 import { fakeBooking } from '../testing/fakeBooking'
 import { PeriodProvider } from '../period'
 import { PropertyProvider, useHasOpenForm } from '../property'
@@ -51,7 +51,11 @@ let plantsP1: unknown[] = []
 // Für einzelne Tests: Objekte mit eigenem Rhythmus
 let propsOverride: Property[] | null = null
 // Was die KI über sich sagt (GET /api/ai/status) und die offenen Auswertungen des Objekts
-let aiStatus: { ok: boolean; error?: string } = { ok: true }
+let aiStatus: { ok: boolean; error?: string; reason?: string } = { ok: true }
+// Eine Auswertung, die nicht antwortet (läuft, bis der Test endet)
+let holdIntake = false
+// Die Pfade aller GET-Anfragen
+let fetched: string[] = []
 let openAssessments: () => AssessmentView[] = () => []
 
 // Die Abrechnung des Jahres, nur mit dem, was die Belegmappe liest: die Zeilen der Mieter
@@ -70,6 +74,8 @@ beforeEach(() => {
   plantsP1 = []
   propsOverride = null
   aiStatus = { ok: true }
+  holdIntake = false
+  fetched = []
   openAssessments = () => []
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const u = new URL(url, 'http://x')
@@ -79,10 +85,12 @@ beforeEach(() => {
       sent.push({ url: u.pathname, method, body })
       if (failAssessmentPut && u.pathname.startsWith('/api/assessments/')) return new Response(JSON.stringify({ error: 'Zeilen sind schon gebucht.' }), { status: 409, headers: { 'content-type': 'application/json' } })
       // Die KI-Auswertung: hier nur, dass sie ankommt (gescheitert, der Beleg bleibt gespeichert)
+      if (u.pathname === '/api/intake' && holdIntake) return new Promise<Response>(() => {})
       if (u.pathname === '/api/intake') return new Response(JSON.stringify({ error: 'Ollama antwortet nicht.', file: '4_lose.pdf', reason: 'unreachable', kept: true }), { status: 502, headers: { 'content-type': 'application/json' } })
       const answer = u.pathname === '/api/upload' ? { file: '99_nachgereicht.pdf' } : { ok: true }
       return new Response(JSON.stringify(answer), { status: 200, headers: { 'content-type': 'application/json' } })
     }
+    fetched.push(u.pathname)
     let body: unknown = []
     if (u.pathname === '/api/properties') body = propsOverride ?? PROPS
     else if (u.pathname === '/api/uploads') body = [up('1_gs.pdf'), up('2_wasser.pdf'), up('3_ahorn.pdf'), up('4_lose.pdf', '1_gs.pdf'), ...extraUploads]
@@ -256,15 +264,66 @@ test('Eingang: „Nur ablegen, ohne Auswertung“ speichert mehrere Belege, mit 
 
 // Regel 5 (#490): Sagt die KI, dass sie nicht erreichbar ist, speichert die Ablage nur; jeder Beleg steht danach unter
 // „Ohne Position“, und „Per KI auswerten“ steht weiter an jedem Beleg.
-test('Eingang ohne KI: die Ablage speichert nur', async () => {
-  aiStatus = { ok: false, error: 'nicht erreichbar' }
-  const { container } = renderInbox()
+// Die KI wird erst gefragt, wenn die Einstellungen da sind (ein Dienst im Internet nie); hier ein lokales Ollama.
+const LOCAL = { aiExternal: { text: false, images: false } } as unknown as Settings
+const renderInboxWith = (settings: Settings) => render(
+  <PeriodProvider>
+    <PropertyProvider>
+      <Belege {...BASE} view="eingang" settings={settings} renderThumb={() => Promise.resolve('')} />
+    </PropertyProvider>
+  </PeriodProvider>,
+)
+const dropInto = (container: HTMLElement, files: File[]) =>
+  fireEvent.change(container.querySelector('input[aria-label="Belege und Zählerfotos auswählen"]') as HTMLInputElement, { target: { files } })
+
+test('Eingang ohne KI: die Ablage speichert nur, „Erneut prüfen“ fragt die KI noch einmal', async () => {
+  aiStatus = { ok: false, error: 'nicht erreichbar', reason: 'unreachable' }
+  const { container } = renderInboxWith(LOCAL)
   expect(await screen.findByText(/Die KI ist gerade nicht erreichbar\. Belege werden nur gespeichert/)).toBeTruthy()
   expect(screen.queryByLabelText('Belege nur ablegen, ohne Auswertung')).toBeNull()
-  const drop = container.querySelector('input[aria-label="Belege und Zählerfotos auswählen"]') as HTMLInputElement
-  fireEvent.change(drop, { target: { files: [new File(['%PDF'], 'eins.pdf', { type: 'application/pdf' })] } })
+  dropInto(container, [new File(['%PDF'], 'eins.pdf', { type: 'application/pdf' })])
   await waitFor(() => expect(sent).toEqual([{ url: '/api/upload', method: 'POST', body: { file: 'eins.pdf', propertyId: 'p1', year: String(YEAR) } }]))
   expect(screen.getByRole('button', { name: 'lose.pdf per KI auswerten' })).toBeTruthy()
+  // Läuft die KI wieder, genügt „Erneut prüfen“
+  aiStatus = { ok: true }
+  fireEvent.click(screen.getByRole('button', { name: 'Erneut prüfen' }))
+  await waitFor(() => expect(screen.queryByText(/Die KI ist gerade nicht erreichbar/)).toBeNull())
+  expect(screen.getByLabelText('Belege nur ablegen, ohne Auswertung')).toBeTruthy()
+})
+
+// Durchsicht S2: Nur „nicht erreichbar“ heißt ohne KI. Eine Zeitüberschreitung beim Fragen ist keiner; die Ablage wertet aus.
+test('Eingang: eine Zeitüberschreitung beim Fragen der KI ist kein „ohne KI“, die Ablage wertet aus', async () => {
+  aiStatus = { ok: false, error: 'Zeitüberschreitung', reason: 'timeout' }
+  const { container } = renderInboxWith(LOCAL)
+  await screen.findByLabelText('Jahr für lose.pdf')
+  await waitFor(() => expect(fetched).toContain('/api/ai/status'))
+  expect(screen.queryByText(/Die KI ist gerade nicht erreichbar/)).toBeNull()
+  dropInto(container, [new File(['jpg'], 'zwei.jpg', { type: 'image/jpeg' })])
+  await waitFor(() => expect(sent.some((r) => r.url === '/api/intake')).toBe(true))
+  expect(sent.some((r) => r.url === '/api/upload')).toBe(false)
+})
+
+// Durchsicht S2: Während eine Auswertung läuft, ist die KI offensichtlich erreichbar; kein „nicht erreichbar“ daneben.
+test('Eingang: solange eine Auswertung läuft, steht kein „nicht erreichbar“ da', async () => {
+  aiStatus = { ok: false, error: 'nicht erreichbar', reason: 'unreachable' }
+  holdIntake = true
+  extraUploads = [{ ...up('7_foto.jpg'), mimeType: 'image/jpeg' }]
+  renderInboxWith(LOCAL)
+  expect(await screen.findByText(/Die KI ist gerade nicht erreichbar/)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'foto.jpg per KI auswerten' }))
+  await waitFor(() => expect(sent.some((r) => r.url === '/api/intake')).toBe(true))
+  await waitFor(() => expect(screen.queryByText(/Die KI ist gerade nicht erreichbar/)).toBeNull())
+})
+
+// Ohne Einstellungen (noch nicht geladen) wird die KI nicht gefragt
+test('Eingang: vor den Einstellungen und bei einem Dienst im Internet fragt die Seite die KI nicht', async () => {
+  renderInbox()
+  await screen.findByLabelText('Jahr für lose.pdf')
+  expect(fetched).not.toContain('/api/ai/status')
+  cleanup()
+  renderInboxWith({ aiExternal: { text: true, images: false } } as unknown as Settings)
+  await screen.findByLabelText('Jahr für lose.pdf')
+  expect(fetched).not.toContain('/api/ai/status')
 })
 
 test('Posteingang: Objekt und Jahr eines Belegs zeigen den gespeicherten Wert und lassen sich ändern', async () => {

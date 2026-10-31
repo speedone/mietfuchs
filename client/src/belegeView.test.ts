@@ -43,11 +43,15 @@ test('Ablage: nur PDF und Bilder, die übrigen werden gezählt und mit einem Sat
   expect(SKIPPED_FILES).toMatch(/übergangen/)
 })
 
-test('Ablage: sagt die KI, dass sie nicht erreichbar ist, speichert sie nur; ein Dienst im Internet wird nicht gefragt', () => {
+test('Ablage: nur „nicht erreichbar“ ohne laufende Auswertung heißt ohne KI; ein Dienst im Internet wird nicht gefragt', () => {
   expect(aiMode(null, false)).toBe('ki')
   expect(aiMode({ ok: true }, false)).toBe('ki')
-  expect(aiMode({ ok: false }, false)).toBe('ohne')
-  expect(aiMode({ ok: false }, true)).toBe('ki')
+  expect(aiMode({ ok: false, reason: 'unreachable' }, false)).toBe('ohne')
+  expect(aiMode({ ok: false, reason: 'timeout' }, false)).toBe('ki')
+  expect(aiMode({ ok: false, reason: 'key' }, false)).toBe('ki')
+  expect(aiMode({ ok: false }, false)).toBe('ki')
+  expect(aiMode({ ok: false, reason: 'unreachable' }, false, true)).toBe('ki')
+  expect(aiMode({ ok: false, reason: 'unreachable' }, true)).toBe('ki')
 })
 
 test('„Ohne Position“ lässt aus, was ausgewertet wird oder unter „Zu prüfen“ steht, und nennt Gespeichertes', () => {

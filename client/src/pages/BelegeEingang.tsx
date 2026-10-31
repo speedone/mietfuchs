@@ -12,7 +12,7 @@ import { api, errorText, fmtEuro } from '../api'
 import { aiSummary } from '../aiForm'
 import { type KeyContext } from '../costForm'
 import { bookDecisions, greenDecisions, loadOpenAssessments, openBadgeClass, planDecisions } from '../assessment'
-import { assessmentOf, belongsTo, useEvaluationQueue, type QueueEntry, type QueueTarget } from '../evaluationQueue'
+import { assessmentOf, belongsTo, isBusy, useEvaluationQueue, type QueueEntry, type QueueTarget } from '../evaluationQueue'
 import { initialCandidate, readingBody, scoreCandidate, type ReadingCandidate } from '../readingCandidate'
 import AssessmentReview from '../components/AssessmentReview'
 import DisclosureButton from '../components/DisclosureButton'
@@ -89,17 +89,6 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
   const fileInputRef = useRef<HTMLInputElement>(null)
   const attach = useAttach(stock, properties, setError)
 
-  // Ob die Ablage auswertet: Ohne erreichbare KI speichert sie nur (Regel 5). Ein Dienst im Internet wird dafür nicht
-  // gefragt (belegeView.ts).
-  const external = !!settings?.aiExternal?.text
-  const [status, setStatus] = useState<AiStatus | null>(null)
-  useEffect(() => {
-    if (external) return
-    let live = true
-    api<AiStatus>('/api/ai/status').then((s) => { if (live) setStatus(s) }, () => { /* ohne Antwort wie vorher: auswerten */ })
-    return () => { live = false }
-  }, [external])
-  const mode = aiMode(status, external)
 
   // Gespeicherte Auswertungen dieses Objekts (#170): die offenen vom Server, dazu die in dieser
   // Sitzung gebuchten, damit „✓ übernommen“ stehen bleibt.
@@ -120,6 +109,25 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
   const queue = useMemo(() => all.filter((x) => belongsTo(x, propertyId, key)), [all, propertyId, key])
   const isReading = (x: QueueEntry) => x.status === 'fertig' && x.result?.kind === 'zaehler'
   const isInvoice = (x: QueueEntry) => x.result?.kind === 'rechnung'
+
+  // Ob die Ablage auswertet (belegeView.ts, `aiMode`): Gefragt wird erst mit den Einstellungen, ein Dienst im Internet nie;
+  // beim Ablegen und mit „Erneut prüfen“ noch einmal. Läuft eine Auswertung, ist die KI erreichbar.
+  const external = !!settings?.aiExternal?.text
+  const askable = settings !== null && !external
+  const [status, setStatus] = useState<AiStatus | null>(null)
+  const checkAi = useCallback(async (): Promise<AiStatus | null> => {
+    if (!askable) return null
+    try {
+      const s = await api<AiStatus>('/api/ai/status')
+      setStatus(s)
+      return s
+    } catch {
+      return null // ohne Antwort wie vorher: auswerten
+    }
+  }, [askable])
+  useEffect(() => { void checkAi() }, [checkAi])
+  const busy = all.some(isBusy)
+  const mode = aiMode(status, external, busy)
 
   // Eine Auswertung, die der Server nicht mehr als offen führt, ist gebucht, auch wenn das anderswo geschah (in
   // einem anderen Jahr, auf der Seite Kosten): Ihr Eintrag gilt dann als übernommen.
@@ -361,10 +369,11 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
     if (done > 0) toast(done === 1 ? 'Ein Beleg ist gespeichert und steht unter „Ohne Position“.' : `${done} Belege sind gespeichert und stehen unter „Ohne Position“.`)
   }
   // Die Ablage: mit KI auswerten, sonst nur speichern
-  function drop(files: Iterable<File>) {
+  async function drop(files: Iterable<File>) {
     const list = [...files]
     if (list.length === 0) return
-    if (mode === 'ohne') { void storeOnly(list); return }
+    // Ohne KI erst noch einmal fragen: Läuft sie inzwischen, wird ausgewertet
+    if (mode === 'ohne' && aiMode(await checkAi(), external, busy) === 'ohne') { void storeOnly(list); return }
     setError(addFiles(list, target) > 0 ? SKIPPED_FILES : '')
   }
 
@@ -687,7 +696,7 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
           onClick={() => fileInputRef.current?.click()}
           onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
           onDragLeave={() => setDragOver(false)}
-          onDrop={(e) => { e.preventDefault(); setDragOver(false); drop(e.dataTransfer.files) }}
+          onDrop={(e) => { e.preventDefault(); setDragOver(false); void drop(e.dataTransfer.files) }}
         >
           <strong>Rechnungen und Zählerfotos hierher ziehen</strong> oder klicken, auch den ganzen Stapel gemischt.
           <div className="muted">
@@ -703,7 +712,7 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
             multiple
             aria-label="Belege und Zählerfotos auswählen"
             className="sr-only"
-            onChange={(e) => { if (e.target.files) drop(e.target.files); e.target.value = '' }}
+            onChange={(e) => { if (e.target.files) void drop([...e.target.files]); e.target.value = '' }}
           />
         </div>
         <div className="row center">
@@ -716,6 +725,7 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
           ) : (
             <>
               <span className="muted">Die KI ist gerade nicht erreichbar. Belege werden nur gespeichert; „Per KI auswerten“ steht an jedem Beleg.</span>
+              <button type="button" className="btn small ghost" onClick={() => void checkAi()}>Erneut prüfen</button>
               {uploading > 0 && <span className="muted">Wird gespeichert … ({uploading})</span>}
               {onOpenAiSettings && <button type="button" className="btn small ghost" onClick={onOpenAiSettings}>KI-Einstellungen öffnen</button>}
             </>
