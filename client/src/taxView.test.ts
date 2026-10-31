@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from 'vitest'
 import type { TaxExpenseItem, TaxReport } from './types'
-import { allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, operatingPowerBalanceText, paidWithoutSettlementCents, prepaymentNote, settlementBalanceCents, settlementLine, settlementSourcesText, showsSplit, stockCarryNote, surplusCentsFor, taxHints, maintenanceLineText, withdrawalLinesText, usageChangeTouchesWithdrawal, withdrawalSuspectDated, ETW_WITHDRAWAL_TEXT, movedInLines, movedInText, movedOutLines, unstatedText } from './taxView'
+import { allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, operatingPowerBalanceText, paidWithoutSettlementCents, prepaymentNote, settlementBalanceCents, settlementLine, settlementSourcesText, showsSplit, stockCarryNote, surplusCentsFor, taxHints, maintenanceLineText, withdrawalLinesText, usageChangeTouchesWithdrawal, withdrawalSuspectDated, ETW_WITHDRAWAL_TEXT, movedInLines, movedInText, movedOutLines, unstatedText, headerRows, acquisitionRelated, acquisitionRelatedText, type TaxHeaderProperty } from './taxView'
 import { fmtEuro } from './api'
 import { periodKey } from '../../shared/period.ts'
 
@@ -525,5 +525,80 @@ describe('Entnahme Erhaltungsrücklage (#96)', () => {
   test('A4.6: der Satz zum Hausgeld bei einer Eigentumswohnung nennt die Entnahme', () => {
     expect(taxHints(report({}), 'ist', 'etw')).toContain('etwHousingMoney')
     expect(ETW_WITHDRAWAL_TEXT).toBe('Entnahmen aus der Erhaltungsrücklage zählen abweichend im Jahr, in dem die Gemeinschaft sie ausgibt, also nach der Hausgeldabrechnung dieses Jahres; die Zuführung, die in den gezahlten Vorschüssen steckt, ziehen Sie ab.')
+  })
+})
+
+// ---------- Kopf der Anlage V (#96 PR 2, Entwurf B1, B3, A4.4) ----------
+
+describe('Kopf der Anlage V (#96 PR 2)', () => {
+  const objekt: TaxHeaderProperty = { groundTaxFileNumber: '2141/123/45678', purchaseContractOn: '2023-05-10', ownershipTransferOn: '2023-07-01', buildingApplicationOn: null, completedOn: null }
+
+  test('2025: Zeilen 6, 7 und 10 mit Nummer, Aktenzeichen ohne Sonderzeichen, Fehlendes „nicht eingetragen“', () => {
+    const rows = headerRows(report({}), objekt, 2025)
+    expect(rows.map((r) => [r.key, r.line])).toEqual([
+      ['groundTaxFile', 6], ['purchaseContract', 7], ['ownershipTransfer', 7], ['buildingApplication', 7], ['completed', 7], ['relatives', 10],
+    ])
+    expect(rows[0]?.value).toBe('214112345678')
+    expect(rows.find((r) => r.key === 'ownershipTransfer')?.value).toBe('01.07.2023')
+    expect(rows.find((r) => r.key === 'completed')?.value).toBeNull()
+    expect(rows.find((r) => r.key === 'relatives')).toMatchObject({ value: '2 = Nein', code: 62 })
+  })
+
+  test('Kennzahl 62: „1 = Ja“, sobald ein Mietverhältnis des Jahres an Angehörige vermietet ist', () => {
+    const r = report({}, { costModels: { tenancies: 2, inclusive: 0, partlyInclusive: 0, flatRate: 0, relativeTenancies: 1 } })
+    expect(headerRows(r, objekt, 2025).find((x) => x.key === 'relatives')?.value).toBe('1 = Ja')
+  })
+
+  test('2024: nur Zeile 6 mit Nummer, Zeile 7 fragt der Vordruck noch nicht; 2026 ohne Nummern', () => {
+    const r24 = headerRows(report({}, { year: 2024 }), objekt, 2024)
+    expect(r24.map((r) => [r.key, r.line])).toEqual([['groundTaxFile', 6], ['relatives', null]])
+    expect(r24.find((r) => r.key === 'relatives')?.code).toBeUndefined()
+    const r26 = headerRows(report({}, { year: 2026 }), null, 2026)
+    expect(r26.map((r) => r.line)).toEqual([null, null, null, null, null, null])
+    expect(r26[0]?.value).toBeNull()
+  })
+
+  // A4.4 (Durchsicht X6): der gemeinsame Hinweis zu anschaffungsnahen Herstellungskosten, § 6 Abs. 1 Nr. 1a EStG.
+  const instand = (over: Partial<TaxExpenseItem> = {}): TaxExpenseItem => ({
+    costItemId: 'i', category: 'Nicht umlagefähig', group: 'Verwaltung & Instandhaltung', description: 'Bad', amountCents: 500000,
+    privateCents: 0, deductibleCents: 500000, labor35aCents: 0, allocation: 'area', deductiblePercent: 100, areaPrivateCents: null,
+    settlementPrivateCents: null, taxUnits: null, steps: [], ...over,
+  })
+  const mit = (year: number, items: TaxExpenseItem[] = [instand()]) => report({}, {
+    year, expenses: { groups: [], totalCents: 0, privateCents: 0, deductibleCents: 0, labor35aCents: 0, items, unstatedCount: 0 },
+  })
+
+  test('mit Datum nur in den drei Jahren nach dem Übergang: Grenzen am Tag vor und nach dem Ablauf', () => {
+    // 02.01.2022: die Frist endet am 01.01.2025, 2025 ist berührt. 01.01.2022: sie endet am 31.12.2024.
+    expect(acquisitionRelated(mit(2025), { ownershipTransferOn: '2022-01-02' })).toMatchObject({ from: '2022-01-02', until: '2025-01-01', basis: 'transfer' })
+    expect(acquisitionRelated(mit(2025), { ownershipTransferOn: '2022-01-01' })).toBeNull()
+    expect(acquisitionRelated(mit(2022), { ownershipTransferOn: '2022-12-31' })).not.toBeNull()
+    expect(acquisitionRelated(mit(2021), { ownershipTransferOn: '2022-01-02' })).toBeNull()
+    // Ersatzweise der Kaufvertrag, wenn kein Übergang eingetragen ist; der Übergang geht vor.
+    expect(acquisitionRelated(mit(2025), { purchaseContractOn: '2023-05-10' })).toMatchObject({ basis: 'contract' })
+    expect(acquisitionRelated(mit(2025), { purchaseContractOn: '2020-05-10', ownershipTransferOn: '2023-07-01' })).toMatchObject({ basis: 'transfer' })
+    // Schaltjahr: der 29.02. endet am 28.02. drei Jahre später.
+    expect(acquisitionRelated(mit(2023), { ownershipTransferOn: '2020-02-29' })).toMatchObject({ until: '2023-02-28' })
+    expect(taxHints(mit(2025), 'ist', 'mfh', { ownershipTransferOn: '2023-07-01' })).toContain('acquisitionRelated')
+  })
+
+  test('nur mit abziehbarem Erhaltungsaufwand oder Instandhaltung; ohne Datum nicht (bis #262 die Verteilung ergänzt)', () => {
+    expect(acquisitionRelated(mit(2025, []), { ownershipTransferOn: '2023-07-01' })).toBeNull()
+    expect(acquisitionRelated(mit(2025, [instand({ group: 'Grundsteuer & öffentliche Abgaben', category: 'Grundsteuer' })]), { ownershipTransferOn: '2023-07-01' })).toBeNull()
+    expect(acquisitionRelated(mit(2025, [instand({ deductibleCents: 0, privateCents: 500000 })]), { ownershipTransferOn: '2023-07-01' })).toBeNull()
+    expect(acquisitionRelated(mit(2025, [instand({ group: 'Erhaltungsaufwand', category: 'Entnahme Erhaltungsrücklage' })]), { ownershipTransferOn: '2023-07-01' })).not.toBeNull()
+    expect(acquisitionRelated(mit(2025), {})).toBeNull()
+    expect(acquisitionRelated(mit(2025), null)).toBeNull()
+    expect(taxHints(mit(2025), 'ist', 'mfh')).not.toContain('acquisitionRelated')
+  })
+
+  test('der Text nennt die Grenze, die Frist mit Datum und dass Mietfuchs die Anschaffungskosten nicht kennt', () => {
+    const info = acquisitionRelated(mit(2025), { purchaseContractOn: '2023-05-10' }) ?? expect.unreachable('kein Hinweis')
+    const t = acquisitionRelatedText(info)
+    expect(t).toMatch(/15 % der Anschaffungskosten des Gebäudes/)
+    expect(t).toMatch(/ohne Umsatzsteuer/)
+    expect(t).toMatch(/bis 09\.05\.2026/)
+    expect(t).toMatch(/kennt die Anschaffungskosten nicht/)
+    expect(t).toMatch(/Kaufvertrag.*Besitz, Nutzen und Lasten/s)
   })
 })

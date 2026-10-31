@@ -1,10 +1,11 @@
 // Die Karte „Objekt“ (#92): Was aus dem Formular in den Rumpf von PUT /api/properties wird.
 import { expect, test } from 'vitest'
 import type { Property } from './types'
-import { EMPTY_PROPERTY_FORM, propertyBody, propertySummary, propertyToForm, STATE_OPTIONS, STATE_UNKNOWN_LABEL, stateFromSelect, stateNote, type PropertyForm } from './propertyForm'
+import { EMPTY_PROPERTY_FORM, fileNumberDigits, hasTaxHeader, headerDateText, propertyBody, propertySummary, propertyToForm, STATE_OPTIONS, STATE_UNKNOWN_LABEL, stateFromSelect, stateNote, type PropertyForm } from './propertyForm'
 
 const form = (over: Partial<PropertyForm>): PropertyForm => ({
-  name: 'Haus', address: 'Weg 1', kind: 'mfh', own: false, landlordName: '', iban: '', paymentDeadlineDays: '', landlordAddress: '', landlordContact: '', cable: 'unbekannt', tightMarket: 'unbekannt', tightMarketFrom: '', tightMarketTo: '', state: '', ...over,
+  name: 'Haus', address: 'Weg 1', kind: 'mfh', own: false, landlordName: '', iban: '', paymentDeadlineDays: '', landlordAddress: '', landlordContact: '', cable: 'unbekannt', tightMarket: 'unbekannt', tightMarketFrom: '', tightMarketTo: '', state: '',
+  groundTaxFileNumber: '', purchaseContractOn: '', ownershipTransferOn: '', buildingApplicationOn: '', completedOn: '', taxSaved: EMPTY_PROPERTY_FORM.taxSaved, ...over,
 })
 
 test('ohne Haken gilt für alle drei die Vorgabe', () => {
@@ -157,4 +158,42 @@ test('Teil 2 von #415: Anschrift und Kontakt des Vermieters am Objekt, wie die �
   expect(propertyToForm(p)).toMatchObject({ own: true, landlordAddress: 'Am Hang 3, 01067 Dresden', landlordContact: '' })
   expect(propertySummary(p)).toContainEqual({ label: 'Anschrift des Vermieters', value: 'Am Hang 3, 01067 Dresden' })
   expect(propertySummary(p)).toContainEqual({ label: 'Kontakt', value: 'wie in den Einstellungen' })
+})
+
+// #96 PR 2 (Entwurf B2, B3): Kopf der Anlage V am Objekt. Gesendet wird nur, was sich gegenüber dem Gespeicherten
+// geändert hat; ein leerer Abschnitt schickt nichts Neues (die Rümpfe oben bleiben wortgleich).
+test('Kopf der Anlage V: leer schickt nichts, Eingetragenes geht mit, Geleertes als null, Unverändertes nicht', () => {
+  expect(EMPTY_PROPERTY_FORM).toMatchObject({ groundTaxFileNumber: '', purchaseContractOn: '', ownershipTransferOn: '', buildingApplicationOn: '', completedOn: '' })
+  expect(propertyBody(form({}))).not.toHaveProperty('groundTaxFileNumber')
+  expect(propertyBody(form({ groundTaxFileNumber: ' 2141/123/45678 ', ownershipTransferOn: '2023-07-01' }))).toMatchObject({ groundTaxFileNumber: '2141/123/45678', ownershipTransferOn: '2023-07-01' })
+  const gespeichert = propertyToForm({ ...OBJEKT, groundTaxFileNumber: '123', completedOn: '2020-11-30' })
+  expect(gespeichert).toMatchObject({ groundTaxFileNumber: '123', completedOn: '2020-11-30' })
+  const unveraendert = propertyBody(gespeichert)
+  expect(unveraendert).not.toHaveProperty('groundTaxFileNumber')
+  expect(unveraendert).not.toHaveProperty('completedOn')
+  expect(propertyBody({ ...gespeichert, groundTaxFileNumber: '', completedOn: '2021-01-15' })).toMatchObject({ groundTaxFileNumber: null, completedOn: '2021-01-15' })
+})
+
+test('Kopf der Anlage V: ein Datum in deutscher Schreibweise wird zu ISO, ein ungültiges an seinem Feld gemeldet', () => {
+  expect(headerDateText('01.07.2023')).toEqual({ date: '2023-07-01' })
+  expect(headerDateText('1.7.2023')).toEqual({ date: '2023-07-01' })
+  expect(headerDateText('2023-07-01')).toEqual({ date: '2023-07-01' })
+  expect(headerDateText(' ')).toEqual({ date: null })
+  expect(headerDateText('31.02.2023')).toHaveProperty('error')
+  expect(headerDateText('Juli 2023')).toHaveProperty('error')
+  expect(propertyBody(form({ purchaseContractOn: '10.05.2023' }))).toMatchObject({ purchaseContractOn: '2023-05-10' })
+  const r = propertyBody(form({ completedOn: '30.11.20', groundTaxFileNumber: '1'.repeat(41) }))
+  expect('problems' in r && r.problems.map((p) => p.field)).toEqual(['groundTaxFileNumber', 'completedOn'])
+})
+
+test('Kopf der Anlage V: das Aktenzeichen ohne Sonderzeichen, wie der Vordruck es verlangt; der Abschnitt ist offen, wenn etwas eingetragen ist', () => {
+  expect(fileNumberDigits('2141/123/45678')).toBe('214112345678')
+  expect(fileNumberDigits(' 65 0 12-345.6 ')).toBe('650123456')
+  expect(fileNumberDigits('Ab-12')).toBe('Ab12')
+  expect(hasTaxHeader(OBJEKT)).toBe(false)
+  expect(hasTaxHeader({ ...OBJEKT, completedOn: '2020-11-30' })).toBe(true)
+  expect(propertySummary(OBJEKT).some((r) => r.label.includes('Anlage V'))).toBe(false)
+  expect(propertySummary({ ...OBJEKT, groundTaxFileNumber: '2141/123/45678', ownershipTransferOn: '2023-07-01' })).toContainEqual({
+    label: 'Für die Steuer (Anlage V)', value: 'Aktenzeichen 2141/123/45678, Eigentumsübergang am 01.07.2023',
+  })
 })

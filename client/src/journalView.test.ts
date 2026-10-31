@@ -86,4 +86,16 @@ describe('Verlauf: jede Spalte hat eine Beschriftung (#281)', () => {
   test('der Monat laut Verwendungszweck heißt wie am Feld', () => {
     expect(fieldLabel('designated_month')).toBe('Für Monat (laut Verwendungszweck)')
   })
+
+  // #96 PR 2 (Entwurf B2, Release-Plan „FIELD_LABELS“): die Kopfangaben der Anlage V und das Kennzeichen am Mietverhältnis.
+  test('die Kopfangaben der Anlage V heißen wie im Plan', () => {
+    expect(columns).toContain('ground_tax_file_number')
+    expect(columns).toContain('relative')
+    expect(fieldLabel('ground_tax_file_number')).toBe('Aktenzeichen (Grundsteuer)')
+    expect(fieldLabel('purchase_contract_on')).toBe('Kaufvertrag vom')
+    expect(fieldLabel('ownership_transfer_on')).toBe('Eigentumsübergang am')
+    expect(fieldLabel('building_application_on')).toBe('Bauantrag vom')
+    expect(fieldLabel('completed_on')).toBe('Fertiggestellt am')
+    expect(fieldLabel('relative')).toBe('An Angehörige vermietet')
+  })
 })

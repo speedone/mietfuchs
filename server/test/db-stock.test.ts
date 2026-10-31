@@ -367,7 +367,10 @@ const NOT_IN_DB_JSON = new Set(['period', 'propertyId', 'mea', 'externalMeasure'
   'sourceId',
   // Den Monat laut Verwendungszweck (#281) kennt die db.json nicht; jede Zahlung bekommt NULL, die Rundreise prüfen
   // db-repository.test.ts und api-zahlungen.test.ts (Backup).
-  'designatedMonth'])
+  'designatedMonth',
+  // „An Angehörige vermietet“ (#96 PR 2) kennt die db.json nicht; jedes Mietverhältnis bekommt NULL, die Rundreise prüfen
+  // db-repository.test.ts, db-steuer-kopf.test.ts und api-objekte.test.ts (Backup).
+  'relative'])
 
 test('Rundreise: die Probe belegt jede Spalte des Schemas', () => {
   // Der Wächter über dem Wächter. Der Test darunter kann nur finden, was in der Probe steht;

@@ -15,6 +15,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   das Jahr, in dem die Gemeinschaft bezahlt hat; die Steuerübersicht nennt die Zeilen 55 und 56 der Anlage V und weist
   auf Positionen „Nicht umlagefähig“ hin, die nach einer Entnahme aussehen, sowie auf eine Sonderumlage mit dem Datum
   der eigenen Zahlung.
+- Kopf der Anlage V: Am Objekt lassen sich das Aktenzeichen laut Grundsteuermessbescheid und die Daten zu Kauf und Bau
+  eintragen, am Mietverhältnis „An Angehörige vermietet“; die Steuerübersicht zeigt sie mit den Zeilen 6, 7 und 10 und
+  weist in den drei Jahren nach dem Kauf auf die Grenze für anschaffungsnahe Herstellungskosten hin, mit neuem
+  Lexikonbegriff ([#96](https://github.com/speedone/mietfuchs/issues/96)).
 
 ### Geändert
 

@@ -453,6 +453,9 @@ function mergeTenancy(current: Tenancy, body: unknown): Tenancy {
     selfSupplyKind: merged(body, 'selfSupplyKind', current.selfSupplyKind, (v) => oneOfOrUndefined(SELF_SUPPLY_KINDS, v)),
     // Mitteilung nach § 5d Abs. 4 CO2KostAufG (Heizung PR 18, Abweichung 3 des Plans).
     halfSplitNoticeOn: merged(body, 'halfSplitNoticeOn', current.halfSplitNoticeOn, (v) => isoDateOrNull(v, 'Der Tag der Mitteilung nach § 5d Abs. 4 CO2KostAufG') ?? undefined),
+    // An Angehörige vermietet (#96 PR 2): gespeichert nur „ja“; „nein“ und leer sind das bisherige Verhalten. Ein anderer
+    // Wert wird abgelehnt und nicht still zu „nein“, sonst fehlte die Angabe in Zeile 10 der Anlage V.
+    relative: merged(body, 'relative', current.relative, (v) => (nullableBoolean(v, 'An Angehörige vermietet') === true ? true : undefined)),
     notes: merged(body, 'notes', current.notes, asOptionalText),
   }
 }
@@ -2083,6 +2086,12 @@ function mergeProperty(current: Property, body: unknown): Property {
     // abgelehnt und nicht still zu „unbekannt“, sonst verlöre eine vertippte Angabe die Feiertage des
     // Landes, ohne dass es jemand merkt.
     state: merged(body, 'state', current.state ?? null, federalStateOrNull),
+    // Kopf der Anlage V (#96 PR 2); leer heißt nicht eingetragen. Das Aktenzeichen bleibt, wie eingegeben (ohne Rand).
+    groundTaxFileNumber: merged(body, 'groundTaxFileNumber', current.groundTaxFileNumber ?? null, groundTaxFileNumberOrNull),
+    purchaseContractOn: merged(body, 'purchaseContractOn', current.purchaseContractOn ?? null, (v) => headerDateOrNull(v, 'Der Tag des Notar- oder Kaufvertrags')),
+    ownershipTransferOn: merged(body, 'ownershipTransferOn', current.ownershipTransferOn ?? null, (v) => headerDateOrNull(v, 'Der Tag des Eigentumsübergangs')),
+    buildingApplicationOn: merged(body, 'buildingApplicationOn', current.buildingApplicationOn ?? null, (v) => headerDateOrNull(v, 'Der Tag des Bauantrags, der Bauanzeige oder der Baubeginnsanzeige')),
+    completedOn: merged(body, 'completedOn', current.completedOn ?? null, (v) => headerDateOrNull(v, 'Der Tag der Fertigstellung')),
   }
   // Die Geltung gehört nur zu „ja“; „nein“ und „unbekannt“ nehmen sie mit (Bedingung
   // properties_tight_market_dates_valid).
@@ -2094,6 +2103,22 @@ function mergeProperty(current: Property, body: unknown): Property {
     throw new HeatingError(400, 'Der Beginn der Verordnung liegt nach dem Ende. Bitte prüfen Sie beide Tage.')
   }
   return next
+}
+
+// Kopf der Anlage V (#96 PR 2): dieselben Sätze wie die Bedingungen in errors.ts. HeatingError, weil die
+// Fehlerbehandlung ihren Status weitergibt (wie bei isoDateOrNull).
+const GROUND_TAX_FILE_NUMBER_MAX = 40
+function groundTaxFileNumberOrNull(v: unknown): string | null {
+  if (v === null || v === undefined) return null
+  if (typeof v !== 'string') throw new HeatingError(400, 'Das Aktenzeichen laut Grundsteuermessbescheid ist ein Text, etwa 2141/123/45678.')
+  const text = v.trim()
+  if (text.length > GROUND_TAX_FILE_NUMBER_MAX) throw new HeatingError(400, `Das Aktenzeichen laut Grundsteuermessbescheid hat höchstens ${GROUND_TAX_FILE_NUMBER_MAX} Zeichen. Bitte prüfen Sie, ob versehentlich mehr eingefügt wurde.`)
+  return text === '' ? null : text
+}
+function headerDateOrNull(v: unknown, what: string): string | null {
+  if (v === null || v === undefined || v === '') return null
+  if (typeof v !== 'string' || !ISO_DATE.test(v)) throw new HeatingError(400, `${what} ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie ihn im Kalender.`)
+  return v
 }
 
 const emptyProperty = (id: string): Property => ({
@@ -2198,6 +2223,7 @@ const tenancyRow = (t: Tenancy) => ({
   costModel: orNull(t.costModel), heatingModel: orNull(t.heatingModel),
   selfSupplyKind: t.heatingModel === 'selfSupply' ? orNull(t.selfSupplyKind) : null,
   halfSplitNoticeOn: orNull(t.halfSplitNoticeOn),
+  relative: t.relative === true ? true : null,
 })
 const costItemRow = (c: CostItem) => ({
   id: c.id, propertyId: c.propertyId, period: c.period, category: c.category, description: c.description, vendor: orNull(c.vendor),

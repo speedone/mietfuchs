@@ -190,6 +190,13 @@ export const properties = sqliteTable(
     // Das Bundesland für Fristen nach Werktagen und die Feiertage am Ort (shared/deadlines.ts); null heißt
     // unbekannt, dann gelten nur die Feiertage aller Länder. Bedingung im zweiten Schritt.
     state: text('state', { enum: FEDERAL_STATES }),
+    // Kopf der Anlage V (#96 PR 2): Aktenzeichen laut Grundsteuermessbescheid (Z. 6) und die vier Daten zu Kauf und Bau
+    // (Z. 7 ab 2025). NULL heißt nicht eingetragen; jeder vorhandene Bestand bekommt NULL. Bedingungen im zweiten Schritt.
+    groundTaxFileNumber: text('ground_tax_file_number'),
+    purchaseContractOn: text('purchase_contract_on'),
+    ownershipTransferOn: text('ownership_transfer_on'),
+    buildingApplicationOn: text('building_application_on'),
+    completedOn: text('completed_on'),
   },
   () => [
     oneOf('properties_kind_known', 'kind', PROPERTY_KINDS),
@@ -204,6 +211,13 @@ export const properties = sqliteTable(
     check('properties_tight_market_to_valid', sql.raw(`"tight_market_to" IS NULL OR "tight_market_to" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
     check('properties_tight_market_order_valid', sql.raw(`"tight_market_from" IS NULL OR "tight_market_to" IS NULL OR "tight_market_from" <= "tight_market_to"`)),
     oneOf('properties_state_known', 'state', FEDERAL_STATES),
+    // Kopf der Anlage V (#96 PR 2): Daten als Tag, das Aktenzeichen höchstens 40 Zeichen (Schutz gegen versehentlich
+    // Eingefügtes; eine Prüfung der Form wäre geraten, die Formate sind je Land verschieden). `length` zählt Zeichen.
+    check('properties_ground_tax_file_number_valid', sql.raw(`"ground_tax_file_number" IS NULL OR length("ground_tax_file_number") <= 40`)),
+    isoDate('properties_purchase_contract_on_valid', 'purchase_contract_on'),
+    isoDate('properties_ownership_transfer_on_valid', 'ownership_transfer_on'),
+    isoDate('properties_building_application_on_valid', 'building_application_on'),
+    isoDate('properties_completed_on_valid', 'completed_on'),
   ],
 )
 
@@ -293,6 +307,9 @@ export const tenancies = sqliteTable(
     selfSupplyKind: text('self_supply_kind', { enum: SELF_SUPPLY_KINDS }),
     // Mitteilung nach § 5d Abs. 4 CO2KostAufG in Textform (Heizung PR 18, Abweichung 3 des Plans).
     halfSplitNoticeOn: text('half_split_notice_on'),
+    // An Angehörige zu Wohnzwecken vermietet (#96 PR 2, Anlage V Z. 10, Kz. 62); NULL heißt nein, wie bisher.
+    // Bedingung im zweiten Schritt.
+    relative: integer('relative', { mode: 'boolean' }),
   },
   (t) => [
     notNegative('tenancies_persons_not_negative', 'persons'),
@@ -307,6 +324,8 @@ export const tenancies = sqliteTable(
     check('tenancies_self_supply_kind_valid', sql.raw(`"self_supply_kind" IS NULL OR "heating_model" IS 'selfSupply'`)),
     // Mitteilung nach § 5d Abs. 4 (Heizung PR 18): ein Datum.
     check('tenancies_half_split_notice_valid', sql.raw(`"half_split_notice_on" IS NULL OR "half_split_notice_on" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
+    // An Angehörige vermietet (#96 PR 2): ja oder nein; `mode: 'boolean'` bindet nur den Übersetzer.
+    check('tenancies_relative_known', sql.raw(`"relative" IS NULL OR "relative" IN (0, 1)`)),
   ],
 )
 
@@ -963,8 +982,9 @@ export const closedHeatingSettlementHistory = sqliteTable(
 
 // Ein Tagesdatum 'JJJJ-MM-TT' oder NULL. Die Endung `_valid` hat in errors.ts je Bedingung einen
 // eigenen Satz, denn die Endung allein spräche von einem Monat.
-const isoDate = (name: string, column: string) =>
-  check(name, sql.raw(`"${column}" IS NULL OR "${column}" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`))
+function isoDate(name: string, column: string) {
+  return check(name, sql.raw(`"${column}" IS NULL OR "${column}" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`))
+}
 
 // Eine Rechnung des Versorgers an der Anlage. `RESTRICT` auf die Anlage: Eine Anlage mit Lieferungen
 // wird nicht still mitgelöscht (removeHeatingPlant lehnt mit einem Satz ab). `unit_id` ist für

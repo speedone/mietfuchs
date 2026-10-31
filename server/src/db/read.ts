@@ -143,6 +143,12 @@ export async function readProperties(db: Executor): Promise<Property[]> {
     tightMarketTo: p.tightMarketTo,
     // Das Bundesland für Fristen und Feiertage; `null` heißt unbekannt.
     state: p.state,
+    // Kopf der Anlage V (#96 PR 2): nur mit Wert, damit ein Objekt ohne Angabe so gelesen wird wie vorher.
+    ...(p.groundTaxFileNumber === null ? {} : { groundTaxFileNumber: p.groundTaxFileNumber }),
+    ...(p.purchaseContractOn === null ? {} : { purchaseContractOn: p.purchaseContractOn }),
+    ...(p.ownershipTransferOn === null ? {} : { ownershipTransferOn: p.ownershipTransferOn }),
+    ...(p.buildingApplicationOn === null ? {} : { buildingApplicationOn: p.buildingApplicationOn }),
+    ...(p.completedOn === null ? {} : { completedOn: p.completedOn }),
     // Der Rhythmus (#208). Immer mitgeliefert, damit niemand ihn erraten muss.
     periodRules: { startMonth: p.periodStartMonth, changes: changes.get(p.id) ?? [] },
   }))
@@ -235,6 +241,8 @@ export async function readTenancies(db: Executor): Promise<Tenancy[]> {
     contractDate: orUndefined(t.contractDate),
     // Mitteilung nach § 5d Abs. 4 CO2KostAufG (Heizung PR 18); nur mit Wert, die db.json kennt das Feld nicht.
     ...(t.halfSplitNoticeOn === null ? {} : { halfSplitNoticeOn: t.halfSplitNoticeOn }),
+    // An Angehörige vermietet (#96 PR 2); nur „ja“, die db.json kennt das Feld nicht.
+    ...(t.relative === true ? { relative: true } : {}),
     depositCents: orUndefined(t.depositCents),
     depositStatus: orUndefined(t.depositStatus),
     // Nur mit Wert, wie die Angaben aus #94: Ein Mietverhältnis aus einer db.json hat sie nicht.

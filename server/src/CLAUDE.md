@@ -796,6 +796,12 @@ Grundmenge ist das ganze Gebäude), Überschuss. Beschreibende Gruppen statt fes
   ihr Jahr ist das angegebene Jahr der Zahlung, sonst das der Abrechnung (`outflowShares` ohne Sonderfall). Das
   Formular überträgt beim Umstellen auf die Entnahme das Jahr eines Datums vor `costItemBody` (`keepPaidOnYear`).
   Hinweise ohne Rechnung: `reserveSuspects`, `reserveWithdrawalSuspects`, `specialLevySuspects`.
+- **Kopf der Anlage V** (#96 PR 2, Entwurf B): am Objekt `groundTaxFileNumber` (wie eingegeben, ≤ 40 Zeichen, angezeigt
+  ohne Sonderzeichen) und vier Tage zu Kauf und Bau (Z. 7 ab 2025), am Mietverhältnis `relative` (gespeichert nur `true`,
+  die Abrechnung liest es nicht); Schritte 0080/0081. `costModels.relativeTenancies` ist eine **Anzahl** und fehlt ohne
+  Kennzeichen (Z. 10, Kz. 62). Kopfzeilen und der gemeinsame Hinweis `acquisitionRelated` (§ 6 Abs. 1 Nr. 1a EStG, mit
+  #262) rechnet client/src/taxView.ts aus Bericht und Objekt (`headerRows`, `acquisitionRelated`), kein Feld im Bericht.
+  Die Frist liest den Eigentumsübergang, ersatzweise den Kaufvertrag (Auslegung); ohne Datum kein Hinweis.
 - **Teilweise Eigennutzung** (#163, `splitForTax`, Entwurf
   [docs/superpowers/specs/2026-10-02-steuer-eigennutzung-design.md](../../docs/superpowers/specs/2026-10-02-steuer-eigennutzung-design.md)):
   jede Position in privat und abziehbar. Direkt zugeordnet ganz zu ihrer Einheit; nicht umlagefähig

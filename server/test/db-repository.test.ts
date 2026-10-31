@@ -396,6 +396,8 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
         email: 'a@b.de', phone: '0123', correspondenceAddress: 'Weg 1', letterSalutation: 'Sehr geehrte Frau A', iban: 'DE89370400440532013000',
         contractDate: '2023-12-01', depositCents: 1000, depositStatus: 'erhalten', notes: 'Notiz',
         costModel: 'flatRate', heatingModel: 'selfSupply', selfSupplyKind: 'central', halfSplitNoticeOn: '2023-12-01',
+        // #96 PR 2: an Angehörige vermietet.
+        relative: true,
       },
     },
     {

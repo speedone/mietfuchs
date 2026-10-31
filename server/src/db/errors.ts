@@ -212,6 +212,13 @@ const OWN_CHECK_MESSAGES: Readonly<Record<string, string>> = {
   properties_tight_market_to_valid: 'Das Ende der Verordnung ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie es im Kalender.',
   properties_tight_market_order_valid: 'Der Beginn der Verordnung liegt nach dem Ende. Bitte prüfen Sie beide Tage.',
   tenancies_half_split_notice_valid: 'Der Tag der Mitteilung nach § 5d Abs. 4 CO2KostAufG ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie ihn im Kalender.',
+  // Kopf der Anlage V (#96 PR 2); repository.ts prüft vorher mit denselben Sätzen.
+  properties_ground_tax_file_number_valid: 'Das Aktenzeichen laut Grundsteuermessbescheid hat höchstens 40 Zeichen. Bitte prüfen Sie, ob versehentlich mehr eingefügt wurde.',
+  properties_purchase_contract_on_valid: 'Der Tag des Notar- oder Kaufvertrags ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie ihn im Kalender.',
+  properties_ownership_transfer_on_valid: 'Der Tag des Eigentumsübergangs ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie ihn im Kalender.',
+  properties_building_application_on_valid: 'Der Tag des Bauantrags, der Bauanzeige oder der Baubeginnsanzeige ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie ihn im Kalender.',
+  properties_completed_on_valid: 'Der Tag der Fertigstellung ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie ihn im Kalender.',
+  tenancies_relative_known: 'An Angehörige vermietet ist ja oder nein. Bitte setzen oder entfernen Sie den Haken.',
   // Rechtswerte des Vermieters (Heizung PR 17); die Route prüft vorher, die Bedingungen sind das Netz darunter.
   law_overrides_valid_from_valid: 'Ein eingetragener Rechtswert gilt immer ab dem 1. Januar eines Jahres. Bitte laden Sie die Seite neu.',
   law_overrides_source_complete: 'Zu einem eingetragenen Rechtswert gehört die Quelle, etwa „UBA, Bekanntmachung vom …“.',

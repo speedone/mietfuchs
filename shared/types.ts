@@ -58,6 +58,16 @@ export type Property = {
   // (shared/holidays.ts, shared/deadlines.ts). `null` oder fehlend heißt unbekannt; dann gelten nur die
   // Feiertage, die in allen Ländern gelten.
   state?: FederalState | null
+  // Kopf der Anlage V (#96, Entwurf 2026-10-30-steuer-objekt-ruecklage-design.md, B2), alle freiwillig; `null` oder
+  // fehlend heißt „nicht eingetragen“. Z. 6: das Aktenzeichen laut Grundsteuermessbescheid, gespeichert wie eingegeben
+  // (höchstens 40 Zeichen), angezeigt ohne Sonderzeichen. Z. 7 (ab dem Vordruck 2025): Notar-/Kaufvertrag vom,
+  // Eigentumsübergang am, Bauantrag/Bauanzeige/Baubeginnsanzeige vom, fertiggestellt am, je 'JJJJ-MM-TT'. Gelesen wird nur
+  // der Eigentumsübergang (ersatzweise der Kaufvertrag) für den Hinweis zu anschaffungsnahen Herstellungskosten.
+  groundTaxFileNumber?: string | null
+  purchaseContractOn?: string | null
+  ownershipTransferOn?: string | null
+  buildingApplicationOn?: string | null
+  completedOn?: string | null
   // Der Rhythmus der Abrechnungszeiträume (#208). Der Server liefert ihn immer mit; fehlt er, gilt
   // das Kalenderjahr (`rulesOf` in shared/period.ts). Ändern lässt er sich in dieser Version nicht.
   periodRules?: PeriodRules
@@ -178,6 +188,9 @@ export type Tenancy = {
   // Tag, an dem dem Mieter die Umstände nach § 5d CO2KostAufG in Textform mitgeteilt wurden (Heizung PR 18,
   // Abweichung 3 des Plans). Je Mieter, denn die Information ist „dem Mieter“ geschuldet (§ 5d Abs. 4 Satz 1, 3).
   halfSplitNoticeOn?: string
+  // An Angehörige zu Wohnzwecken vermietet (#96, Anlage V Zeile 10, Kennzahl 62). Fehlt es, heißt das „nein“, also das
+  // bisherige Verhalten; gespeichert wird nur `true`. Die Abrechnung liest es nicht.
+  relative?: boolean
   depositCents?: number // vereinbarte Kaution
   depositStatus?: DepositStatus // Stand der Kaution
   notes?: string // freie Notiz zum Mietverhältnis
@@ -1430,7 +1443,9 @@ export type TaxReport = {
   // Mietverhältnisse des Jahres, davon mit Inklusivmiete und mit Pauschale (#96, Zeilen 24 und 20
   // der Anlage V).
   // `inclusive`: kalt und warm inklusiv; `partlyInclusive`: nur eines von beiden.
-  costModels: { tenancies: number; inclusive: number; partlyInclusive: number; flatRate: number }
+  // `relativeTenancies` (#96 PR 2): **Anzahl** der Mietverhältnisse des Jahres an Angehörige (Zeile 10, Kennzahl 62);
+  // fehlt ohne eines (Durchsicht X11: nicht `relatives`, das ist bei #312 ein Betrag in Cent).
+  costModels: { tenancies: number; inclusive: number; partlyInclusive: number; flatRate: number; relativeTenancies?: number }
   // Verbilligte Vermietung nach § 21 Abs. 2 EStG (#257), nur wenn an einer vermieteten Wohnung eine ortsübliche
   // Warmmiete eingetragen ist. Regeln in server/src/cheapRent.ts.
   cheapRent?: CheapRentReport

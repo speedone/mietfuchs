@@ -570,3 +570,22 @@ test('#336: vom Mieter übernommene Kosten als Einnahme, mit dem am Volltext gel
   assert.match(t.short, /können zugleich Ihre Werbungskosten sein/)
   assert.match(t.needed, /Abschreibung/)
 })
+
+// #96 PR 2 (Entwurf A4.4, Durchsicht X6): ein Begriff für den gemeinsamen Hinweis `acquisitionRelated`, auf den die
+// Erhaltungsrücklage verweist (#262 ergänzt den Verweis aus `spread82b`).
+test('Anschaffungsnahe Herstellungskosten: Wortlaut von § 6 Abs. 1 Nr. 1a EStG, Frist, 15-%-Grenze ohne Umsatzsteuer, nachgerechnetes Beispiel (#96)', () => {
+  const t = GLOSSARY.acquisitionRelatedCosts
+  assert.equal(t.title, 'Anschaffungsnahe Herstellungskosten')
+  assert.match(t.norm, /§ 6 Abs\. 1 Nr\. 1a EStG/)
+  const all = `${t.short} ${t.example} ${t.needed}`
+  assert.match(all, /drei Jahren nach der Anschaffung/)
+  assert.match(all, /ohne (die )?Umsatzsteuer/)
+  assert.match(all, /Besitz, Nutzen und Lasten/)
+  assert.match(all, /Anschaffungskosten.*nicht/s, 'Mietfuchs kennt die Anschaffungskosten nicht')
+  assert.match(all, /Entnahme/, 'Entnahmen aus der Rücklage zählen mit (IX R 19\/24, Rz. 24)')
+  assert.match(all, /jährlich üblicherweise/)
+  // Beispiel: Gebäude 200.000 €, Grenze 15 % = 30.000 €; 32.000 € netto liegen darüber.
+  assert.match(t.example, /200\.000 €.*30\.000 €.*32\.000 €/s)
+  assert.equal(200000 * 0.15, 30000)
+  assert.match(GLOSSARY.reserveFund.needed, /Anschaffungsnahe Herstellungskosten/)
+})
