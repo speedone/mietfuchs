@@ -455,3 +455,20 @@ test('Wächter: Jede erfasste Tabelle hat einen Bereich für den Filter des Verl
   const unknown = Object.keys(TABLE_KINDS).filter((t) => !opened.journalSchema.has(t))
   assert.deepEqual(unknown, [])
 }))
+
+// Durchsicht S5 (#490): Ein älterer Eintrag trägt den Satz von damals („Beleg in der Schnellerfassung ausgewertet“). Der
+// Verlauf zeigt den neuen, ohne die gespeicherten Daten zu ändern.
+test('Journal: alte Sätze zu umbenannten Seiten erscheinen im neuen Wortlaut, gespeichert bleibt der alte', () => withDb(async (opened) => {
+  await opened.write(async (db) => {
+    await db.insert(units).values({ id: 'u1', propertyId: 'objekt-1', name: 'EG', areaM2: 60, participates: true, selfUsed: false })
+  }, { ...meta('Beleg in der Schnellerfassung ausgewertet'), route: '/api/intake' })
+  await opened.write(async (db) => {
+    await db.update(units).set({ name: 'EG links' }).where(eq(units.id, 'u1'))
+  }, { ...meta('Beleg im Posteingang geändert'), method: 'PUT', route: '/api/uploads/:file' })
+  const shown = (await list(opened, null)).map((g) => [g.description, g.title.replace(/:.*$/, '')])
+  assert.deepEqual(shown, [
+    ['Objekt oder Jahr eines Belegs geändert', 'Objekt oder Jahr eines Belegs geändert'],
+    ['Beleg mit KI ausgewertet', 'Beleg mit KI ausgewertet'],
+  ])
+  assert.deepEqual((await allGroups(opened)).map((g) => g.description), ['Beleg in der Schnellerfassung ausgewertet', 'Beleg im Posteingang geändert'])
+}))

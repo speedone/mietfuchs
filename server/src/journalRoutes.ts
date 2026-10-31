@@ -130,3 +130,12 @@ export const MULTI_WRITE_ROUTES: Readonly<Record<string, string>> = {
 export function routeSentence(method: string, route: string): RouteSentence | null {
   return ROUTE_SENTENCES[`${method} ${route}`] ?? null
 }
+
+// Sätze, die eine Umbenennung abgelöst hat (#490: Schnellerfassung und Belegordner sind die Seite „Belege“). Gespeichert
+// bleibt der alte Satz; der Verlauf zeigt den neuen (`currentDescription`), damit kein Eintrag eine Seite nennt, die es
+// nicht mehr gibt. Die Suche im Verlauf findet ältere Einträge weiter unter dem alten Wortlaut.
+export const RENAMED_SENTENCES: Readonly<Record<string, string>> = {
+  'Beleg in der Schnellerfassung ausgewertet': 'Beleg mit KI ausgewertet',
+  'Beleg im Posteingang geändert': 'Objekt oder Jahr eines Belegs geändert',
+}
+export const currentDescription = (description: string): string => RENAMED_SENTENCES[description] ?? description

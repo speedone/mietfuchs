@@ -31,6 +31,7 @@ import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm'
 import type { Connection, Database, Executor } from './client.ts'
 import { changeGroups, changeLog, type JOURNAL_BARRIERS } from './schema.ts'
 import { isJournalKind, JOURNAL_KINDS, type JournalKind } from '../../../shared/journal.ts'
+import { currentDescription } from '../journalRoutes.ts'
 
 export { isJournalKind, JOURNAL_KINDS, type JournalKind }
 
@@ -544,7 +545,9 @@ function text(value: unknown): string | null {
 // Die Überschrift: Satz der Route und Bezeichnung der Zeile, um die es geht. Steht sie selbst nicht in
 // der Gruppe (ein Mietverhältnis, an dem sich nur eine Staffel geändert hat), kommt sie über den
 // Verweis einer Zeile darunter (K5).
-export async function groupTitle(description: string, subjectTable: string | null, rows: LogRow[], resolver: Resolver): Promise<string> {
+export async function groupTitle(stored: string, subjectTable: string | null, rows: LogRow[], resolver: Resolver): Promise<string> {
+  // Ein Satz von vor einer Umbenennung erscheint im neuen Wortlaut (journalRoutes.ts, #490)
+  const description = currentDescription(stored)
   if (!subjectTable || !hasLabel(subjectTable)) return description
   const own = ownImages(rows)
   const direct = rows.find((r) => r.tableName === subjectTable)
@@ -722,7 +725,7 @@ async function entryView(
     at: g.at,
     method: g.method,
     route: g.route,
-    description: g.description,
+    description: currentDescription(g.description),
     title: await groupTitle(g.description, g.subjectTable, rows, resolver),
     propertyIds: props.ids,
     installationWide: props.installationWide,
