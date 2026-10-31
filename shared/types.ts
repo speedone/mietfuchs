@@ -62,7 +62,7 @@ export type Property = {
   // fehlend heißt „nicht eingetragen“. Z. 6: das Aktenzeichen laut Grundsteuermessbescheid, gespeichert wie eingegeben
   // (höchstens 40 Zeichen), angezeigt ohne Sonderzeichen. Z. 7 (ab dem Vordruck 2025): Notar-/Kaufvertrag vom,
   // Eigentumsübergang am, Bauantrag/Bauanzeige/Baubeginnsanzeige vom, fertiggestellt am, je 'JJJJ-MM-TT'. Gelesen wird nur
-  // der Eigentumsübergang (ersatzweise der Kaufvertrag) für den Hinweis zu anschaffungsnahen Herstellungskosten.
+  // der Eigentumsübergang (fehlt er, großzügig der Kaufvertrag) für den Hinweis zu anschaffungsnahen Herstellungskosten.
   groundTaxFileNumber?: string | null
   purchaseContractOn?: string | null
   ownershipTransferOn?: string | null

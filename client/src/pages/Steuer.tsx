@@ -9,7 +9,7 @@ import { useProperty, withProperty } from '../property'
 import { effectiveLandlord, letterhead } from '../landlord'
 import PageHeader from '../components/PageHeader'
 import Table from '../components/Table'
-import { acquisitionRelated, acquisitionRelatedText, headerRows, allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, operatingPowerBalanceText, paidWithoutSettlementCents, prepaymentNote, settlementBalanceCents, settlementLine, settlementSourcesText, showsSplit, stockCarryNote, surplusCentsFor, taxHints, maintenanceLineText, withdrawalLinesText, usageChangeTouchesWithdrawal, withdrawalSuspectDated, ETW_WITHDRAWAL_TEXT, type Basis, movedInLines, movedInText, movedOutLabels, movedOutLines, unstatedText, type ShiftLine } from '../taxView'
+import { acquisitionRelated, acquisitionRelatedText, ACQUISITION_RELATED_MORE, headerRows, allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, operatingPowerBalanceText, paidWithoutSettlementCents, prepaymentNote, settlementBalanceCents, settlementLine, settlementSourcesText, showsSplit, stockCarryNote, surplusCentsFor, taxHints, maintenanceLineText, withdrawalLinesText, usageChangeTouchesWithdrawal, withdrawalSuspectDated, ETW_WITHDRAWAL_TEXT, type Basis, movedInLines, movedInText, movedOutLabels, movedOutLines, unstatedText, type ShiftLine } from '../taxView'
 import { StepList } from '../components/CalcSteps'
 import Term from '../components/Term'
 import { NoticeBox, TextNotice } from '../components/Notice'
@@ -397,7 +397,7 @@ export default function Steuer({ settings, onNavigate }: Props) {
                 level="hint"
                 title={<><Term id="acquisitionRelatedCosts">Anschaffungsnahe Herstellungskosten</Term>: die 15-%-Grenze prüfen</>}
                 action={acquisitionRelatedText(acquisition)}
-                more="§ 6 Abs. 1 Nr. 1a EStG, für Werbungskosten nach § 9 Abs. 5 Satz 2 EStG. Mit zählen Entnahmen aus der Erhaltungsrücklage (BFH, Urteil vom 14.01.2025, IX R 19/24); nicht mit zählen Erweiterungen und Erhaltungsarbeiten, die jährlich üblicherweise anfallen."
+                more={ACQUISITION_RELATED_MORE}
               />
             )}
             {/* #257: Auch im Druck, denn der Steuerberater braucht Quote und Vergleichsmiete; je Wohnung alle Urteile, auch
