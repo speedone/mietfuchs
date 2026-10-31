@@ -14,6 +14,8 @@
 //   Einzug (BFH VIII B 58/15). Deshalb belegt die Belegbuchung das Feld nie vor.
 import type { CostItem } from './types.ts'
 import { isNotAllocable, isReserveCategory } from './categories.ts'
+import { estgShortPeriodDays } from './law/estg.ts'
+import { valueAt } from './law/register.ts'
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/
 
@@ -135,10 +137,16 @@ export function splitPaidOnQuestions(current: Dated | null, base: Dated, parts: 
 
 // Der Hinweis zur Zehn-Tage-Regel (R-8, § 11 Abs. 2 Satz 2 in Verbindung mit Abs. 1 Satz 2 EStG): nur ein Hinweis,
 // gerechnet wird die Regel nicht, denn sie hängt an der Fälligkeit (BFH X R 2/21), die Mietfuchs nicht kennt. Er kommt,
-// wenn das Datum zwischen dem 22.12. und dem 10.01. liegt, und nie bei der Grundsteuer: Ihre gesetzlichen Fälligkeiten
+// wenn das Datum in der kurzen Zeit um den Jahreswechsel liegt (bei zehn Tagen vom 22.12. bis zum 10.01.; die Zahl aus
+// dem Rechtsregister, `estg.short-period-days`, #312 PR 2), und nie bei der Grundsteuer: Ihre gesetzlichen Fälligkeiten
 // (§ 28 GrStG) liegen nie in dieser Zeit, und eine Nachzahlung nach § 30 GrStG ist nicht regelmäßig wiederkehrend.
 export function tenDayWindow(paidOn: string, category: string): boolean {
   if (category === 'Grundsteuer' || !isPaidOnDate(paidOn)) return false
-  const md = paidOn.slice(5)
-  return md >= '12-22' || md <= '01-10'
+  const days = valueAt(estgShortPeriodDays, paidOn)
+  const year = Number(paidOn.slice(0, 4))
+  const shift = (iso: string, n: number): string => {
+    const [y, m, d] = iso.split('-').map(Number)
+    return new Date(Date.UTC(y ?? 0, (m ?? 1) - 1, (d ?? 1) + n)).toISOString().slice(0, 10)
+  }
+  return paidOn >= shift(`${year + 1}-01-01`, -days) || paidOn <= shift(`${year}-01-01`, days - 1)
 }

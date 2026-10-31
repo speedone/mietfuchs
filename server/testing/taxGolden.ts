@@ -49,9 +49,14 @@ export function deductionsOffBillYear(source: TaxSource): number {
 // Die Einnahmen ohne die Felder, die nach dem Erzeugen der Prüfsummen hinzukamen, solange sie 0 sind: Nachzahlungen
 // und Erstattungen aus der Abrechnung (#280). Der Generator kennt keine Art der Zahlung, jede ist Miete, beide sind dort
 // immer 0; stünde eine Zahl darin, ginge sie wie jede andere in die Prüfsumme ein.
-function incomeFingerprint(income: TaxReport['income']): unknown {
-  const { settlementBackPaymentsCents, settlementRefundsCents, ...rest } = income
-  return settlementBackPaymentsCents === 0 && settlementRefundsCents === 0 ? rest : income
+//
+// **`received` (#312 PR 2) ist immer heraus**, gleich was darin steht: Es ist eine Zerlegung von `paidCents`, das in der
+// Prüfsumme bleibt, und seine Summe prüft die Invariante in invariant-steuer-zufluss.test.ts. Für seine Zahlen gibt es
+// eine eigene Referenz, test/fixtures/tax-received-golden.json.
+export function incomeFingerprint(income: TaxReport['income']): unknown {
+  const { received: _, ...withoutReceived } = income
+  const { settlementBackPaymentsCents, settlementRefundsCents, ...rest } = withoutReceived
+  return settlementBackPaymentsCents === 0 && settlementRefundsCents === 0 ? rest : withoutReceived
 }
 
 // Die Zahlen der Steuerübersicht, ohne Texte, Rechenwege und Felder, die nur Auskunft sind: Ein neues Feld oder ein

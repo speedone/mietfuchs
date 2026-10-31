@@ -120,3 +120,42 @@ export const estgAcquisitionRelated: LawParam<AcquisitionRelatedLimits, 'eventDa
 export function yearsWord(years: number): string {
   return YEARS_WORD[years] ?? String(years)
 }
+
+// ---------- Kurze Zeit um den Jahreswechsel, § 11 Abs. 1 Satz 2 EStG (#312 PR 2, Zehn-Tage-Regel) ----------
+//
+// Gelesen am 31.10.2026 auf gesetze-im-internet.de, § 11 Abs. 1 Satz 2 EStG heute:
+//   „Regelmäßig wiederkehrende Einnahmen, die dem Steuerpflichtigen kurze Zeit vor Beginn oder kurze Zeit nach
+//   Beendigung des Kalenderjahres, zu dem sie wirtschaftlich gehören, zugeflossen sind, gelten als in diesem
+//   Kalenderjahr bezogen.“
+// Das Gesetz nennt keine Zahl. „Kurze Zeit“ sind nach ständiger Rechtsprechung bis zu zehn Tage (BFH, Urteil vom
+// 24.07.1986, IV R 309/84, BStBl II 1987, 16; wiedergegeben in H 11 EStH). Zahlung **und** Fälligkeit müssen in diesem
+// Zeitraum liegen (BFH, Urteil vom 27.06.2018, X R 44/16; Urteil vom 16.02.2022, X R 2/21). Der Wortlaut von H 11 EStH
+// ist nicht selbst gelesen (das Amtliche Handbuch war am 31.10.2026 nicht erreichbar), deshalb `adopted` aus dem Entwurf
+// docs/superpowers/specs/2026-10-30-steuer-zufluss-design.md (Rechtslage, E8); Rang `court`, denn die Zahl stammt aus der
+// Rechtsprechung, wie `bgb.rent-due-saturday`.
+//
+// Mietfuchs **verschiebt nichts** (Entwurf E8): Die Steuerübersicht nennt nur die Beträge, für die die Regel nach den
+// Daten greift (`received.turnOfYear`), und das Formular der Kostenposition weist auf sie hin.
+//
+// Zeitregel `periodStart`: Gefragt wird für ein Kalenderjahr (Veranlagungszeitraum), mit seinem 1. Januar. Eine
+// Fassung ohne Beginn, denn die Rechtsprechung legt das Gesetz aus und ändert es nicht.
+export const estgShortPeriodDays: LawParam<number, 'periodStart'> = {
+  id: 'estg.short-period-days',
+  title: 'Kurze Zeit um den Jahreswechsel',
+  norm: '§ 11 Abs. 1 Satz 2 EStG',
+  timing: 'periodStart',
+  versions: [
+    {
+      value: 10,
+      source: {
+        rank: 'court',
+        cite: '§ 11 Abs. 1 Satz 2 EStG; BFH, Urteil vom 24.07.1986, IV R 309/84, BStBl II 1987, 16; H 11 EStH; Wortlaut von H 11 EStH nicht selbst gelesen',
+        url: 'https://www.gesetze-im-internet.de/estg/__11.html',
+        retrieved: '2026-10-31',
+        checked: 'adopted',
+      },
+      enacted: 'Rechtsprechung des BFH seit 24.07.1986 (IV R 309/84) zu § 11 Abs. 1 Satz 2 EStG',
+    },
+  ],
+  describe: (v) => `kurze Zeit vor Beginn oder nach Ende des Kalenderjahres: bis zu ${v} Tage`,
+}

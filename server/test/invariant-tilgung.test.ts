@@ -8,6 +8,8 @@ import { ledgerRows } from '../src/calc.ts'
 import { calendarYearPeriod } from '../../shared/period.ts'
 import { monthSoll, type SollComponent } from '../../shared/monthRate.ts'
 import { rentDueDate } from '../../shared/deadlines.ts'
+import { estgShortPeriodDays } from '../../shared/law/estg.ts'
+import { valueAt } from '../../shared/law/register.ts'
 import { STATE_CODES } from '../../shared/holidays.ts'
 import { allocateRentPayments, FUTURE_MONTHS, monthCoverage, openingBalance, type AllocationPayment, type AllocationSlice } from '../src/rentAllocation.ts'
 import type { SnapshotTenancy } from '../src/snapshot.ts'
@@ -175,11 +177,12 @@ test('monthCoverage: ein später gedeckter Monat ist am Tag von paidLaterOn gede
 test('Zehn-Tage-Regel (E8): die Januarmiete ist in jedem Land 1995 bis 2100 spätestens am 10.01. fällig', () => {
   // Die Tilgung fragt kein Bundesland; ein Teil vom 22.12. bis 31.12. für Januar liegt deshalb nur dann sicher in den
   // zehn Tagen des § 11 Abs. 1 Satz 2 EStG, wenn der Fälligkeitstag nie nach dem 10.01. liegt. Der Test darf
-  // rentDueDate lesen, die Rechnung nicht.
+  // rentDueDate lesen, die Rechnung nicht. Die zehn Tage aus dem Rechtsregister (`estg.short-period-days`, #312 PR 2).
   for (let year = 1995; year <= 2100; year++) {
+    const days = valueAt(estgShortPeriodDays, `${year}-01-01`)
     for (const state of [...STATE_CODES, null]) {
       const due = rentDueDate(`${year}-01`, state)
-      assert.ok(due <= `${year}-01-10`, `${state ?? 'ohne Land'} ${year}: fällig am ${due}`)
+      assert.ok(due <= `${year}-01-${String(days).padStart(2, '0')}`, `${state ?? 'ohne Land'} ${year}: fällig am ${due}`)
     }
   }
 })

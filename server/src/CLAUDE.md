@@ -726,7 +726,8 @@ Monat anteilig (`rateInMonth`, die Zeile trägt `share`; das Soll je Bestandteil
 (`payments.designated_month`), sonst zuerst offene Vorauszahlungen, dann Kaltmiete und Pauschale, je die ältesten
 zuerst (BGH VIII ZR 84/17 Rn. 56/57); Rücklastschrift nimmt die jüngste Zuordnung zurück. calc.ts liest Status und
 Salden nur über `monthCoverage` und `openingBalance` (`tenancyAccount`), keine zweite Regel; rentAllocation.ts
-importiert nichts aus calc.ts (Zyklus; Wächter in rentAllocation.test.ts). Die Steuer liest die Teile ab #312 PR 2.
+importiert nichts aus calc.ts (Zyklus; Wächter in rentAllocation.test.ts). Die Steuer liest dieselben Teile mit demselben
+`ledgerTenancy` (`income.received`, siehe Steuer; Kreuz-Invariante X9 a in invariant-steuer-zufluss.test.ts).
 
 - **Geführt ab** (`recordingStart`/`ledgerStart`/`ledgerTenancy` in rentAllocation.ts, eine Stelle für Mietkonto und
   Steuer): Monatserster der frühesten erfassten Mietzahlung des **Objekts**, frühestens der Mietbeginn; hat das Objekt
@@ -769,11 +770,26 @@ Grundmenge ist das ganze Gebäude), Überschuss. Beschreibende Gruppen statt fes
 
 - **Maßgeblich ist das Ist** (#70, § 11 Abs. 1 EStG); das Soll bleibt umschaltbar zum Abgleich
   (Logik in [client/src/taxView.ts](../../client/src/taxView.ts)). Ein Soll als Vorgabe wäre unsichtbar
-  falsch, 0 € dagegen sichtbar. **Das Ist kommt nicht aus dem Mietkonto**, sondern zählt jede Zahlung
-  mit Datum im Jahr (sonst fielen die im Januar eingehende Dezembermiete nach Auszug und der
-  vorgezogene Dauerauftrag aus beiden Jahren). Beide Arten zählen; `settlementBackPaymentsCents`
-  und `settlementRefundsCents` stehen daneben. Die Zehn-Tage-Regel (§ 11 Abs. 1 Satz 2) ist nur ein
-  Hinweis, denn sie hängt an der vertraglichen Fälligkeit.
+  falsch, 0 € dagegen sichtbar. **Die Summe zählt jede Zahlung nach Datum** (sonst fielen die im Januar
+  eingehende Dezembermiete nach Auszug und der vorgezogene Dauerauftrag aus beiden Jahren); **ihre Aufteilung
+  kommt aus derselben Tilgung wie das Mietkonto** (rentAllocation.ts, #312, Entwurf
+  docs/superpowers/specs/2026-10-30-steuer-zufluss-design.md). Beide Arten zählen; `settlementBackPaymentsCents`
+  und `settlementRefundsCents` stehen daneben.
+- **Zugeflossenes nach Zeilen** (`income.received`, `receivedIncome` in calc.ts): jeder Teil einer Mietzahlung im Jahr
+  seines Datums; Monat im Jahr oder später: Kaltmiete Zeile 15/18, Vorauszahlungen und Pauschale Zeile 20; Monat davor:
+  Zeile 25 brutto (Auslegung); ohne Forderung Zeile 15/18 (`unallocatedCents`). Zeile 21 wie bisher aus den Zahlungen
+  der Abrechnung. Es gilt Zeile 15/18 + 20 + 25 + 21 = `paidCents`. Je Mietverhältnis (`byTenancy`, auch ohne Zeile im
+  Mietkonto) und Wohnung (`byUnit`); `relatives` sind die Teilsummen der Mietverhältnisse an Angehörige (Zeilen 19, 22,
+  23), die Summen umfassen alle. Inklusivmiete nach demselben Modell wie `costModels` (`tenancyCostModel`).
+  `possibleDeposits`: Mietzahlung gleich der Kaution bis 31 Tage um den Beginn, nicht gleich dem Soll des ersten vollen
+  Monats, ohne Rückstand zu tilgen. Option `received: false` (Rückgriffe nur auf Werbungskosten) lässt die Tilgung weg,
+  alle übrigen Felder bleiben. `received` steht nicht in tax-golden.json (`incomeFingerprint`), sondern in
+  tax-received-golden.json (Generator `withPaymentVariety`).
+- **Zehn-Tage-Regel** (§ 11 Abs. 1 Satz 2 EStG): **beziffert, nicht verschoben**, denn sie hängt an der vertraglichen
+  Fälligkeit (BFH X R 2/21). `received.turnOfYear` nennt Teile vom 22.12. bis 31.12. für den Januar des Folgejahres
+  (ohne `rentDueDate`: die Januarmiete ist nach § 556b Abs. 1 BGB in jedem Land spätestens am 07.01. fällig) und
+  Anfang Januar für den Dezember (greift nur bei Fälligkeit zum Monatsende). Die Zahl der Tage steht im Register
+  (`estg.short-period-days`), auch für den Hinweis am Zahlungsdatum der Kostenposition (`tenDayWindow`).
 - **Vorauszahlungen**: `taxReport` führt `prepaymentSollCents` und `prepaymentSettlementCents`
   (aus der Abrechnung, bei Abschluss eingefroren, nie ein zweites Mal ausgelegt). Die Oberfläche
   erklärt einen Abstand, **ohne ihm eine Ursache zuzuschreiben** (Jahreskorrektur und

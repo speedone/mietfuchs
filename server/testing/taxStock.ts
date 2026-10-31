@@ -12,6 +12,7 @@ import type { snapshotFor } from '../src/snapshot.ts'
 import { CALENDAR_RULES, periodsBetween } from '../../shared/period.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import type { BillingPeriod, CostKey, PeriodRules } from '../../shared/types.ts'
+import { monthSoll } from '../../shared/monthRate.ts'
 
 // Kennungen der Zahlungen (#281: Die Tilgung braucht sie als Nachrang beim Sortieren).
 let paymentSeq = 0
@@ -156,4 +157,72 @@ export function withSecondProperty(stock: TaxStock, rnd: () => number): TaxStock
     heatingPeriodRows: [...(stock.source.heatingPeriodRows ?? []), ...(s.heatingPeriodRows ?? []).map((r) => ({ ...r, plantId: id(r.plantId) }))],
   } as TaxSource
   return { ...stock, source, second: { ...b, source } }
+}
+
+// Zahlungen jeder schiefen Art für die Referenz des Zugeflossenen (#312 PR 2, tax-received-golden.json). **Eine eigene
+// Ableitung, der Generator oben bleibt unverändert**, sonst änderten sich alle Prüfsummen in tax-golden.json. Ersetzt
+// die Mietzahlungen jedes Mietverhältnisses durch Monatszahlungen ab Januar 2023 bis zum Auszug bzw. Ende 2029: meist
+// genau das Monats-Soll am 1. bis 5., dazu Lücken (Rückstand), Teilzahlungen, doppelte Zahlungen (Vorauszahlung), Zahlung
+// vom 22. bis 31. des Vormonats (Jahreswechsel vorwärts), Zahlung am 1. bis 10. des Folgemonats (Dezembermiete im
+// Januar), Rücklastschriften (auch nach Auszug im Folgejahr), ein Monat laut Verwendungszweck, Überzahlung nach Auszug und
+// Zahlungen aus der Abrechnung.
+// Am Mietverhältnis: ein Auszug, Pauschale, Inklusivmiete, Heizvorauszahlung, Angehörige. `exact`: nur die Zahlung genau
+// des Monats-Solls im Monat, ohne Abrechnung (der Fall „wer jeden Monat genau zahlt“).
+export function withPaymentVariety(source: TaxSource, seed: number, options: { exact?: boolean } = {}): TaxSource {
+  const rnd = makeRng(seed * 7919 + 17)
+  const int = (lo: number, hi: number): number => lo + Math.floor(rnd() * (hi - lo + 1))
+  const pad = (n: number): string => String(n).padStart(2, '0')
+  const lastDay = (month: string): number => new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate()
+  const addMonths = (month: string, n: number): string => {
+    const k = Number(month.slice(0, 4)) * 12 + Number(month.slice(5, 7)) - 1 + n
+    return `${Math.floor(k / 12)}-${pad((k % 12) + 1)}`
+  }
+  const tenancies = source.tenancies.map((t) => {
+    const r = rnd()
+    const endMonth = rnd() < 0.3 ? `${int(2024, 2028)}-${pad(int(1, 12))}` : null
+    const end = endMonth === null ? null : `${endMonth}-${pad(rnd() < 0.7 ? lastDay(endMonth) : int(1, lastDay(endMonth)))}`
+    return {
+      ...t,
+      end,
+      ...(r < 0.2 ? { costModel: 'flatRate' as const, flatRates: [{ from: '2020-01', monthlyCents: int(2000, 9000) }] } : {}),
+      ...(r >= 0.2 && r < 0.35 ? { costModel: 'inclusive' as const, prepayments: [] } : {}),
+      ...(rnd() < 0.2 ? { heatingPrepayments: [{ from: '2020-01', monthlyCents: int(3000, 12000) }, { from: `${int(2024, 2027)}-${pad(int(1, 12))}`, monthlyCents: int(3000, 12000) }] } : {}),
+      ...(rnd() < 0.3 ? { relative: true } : {}),
+    }
+  })
+  let n = 0
+  const payments: TaxSource['payments'] = []
+  for (const t of tenancies) {
+    const add = (date: string, amountCents: number, over: { kind?: 'rent' | 'settlement'; designatedMonth?: string } = {}): void => {
+      payments.push({ id: `${t.id}-v${String(++n).padStart(5, '0')}`, tenancyId: t.id, date, amountCents, kind: 'rent', ...over })
+    }
+    const last = t.end === null ? '2029-12' : t.end.slice(0, 7)
+    for (let m = '2023-01'; m <= last; m = addMonths(m, 1)) {
+      const s = monthSoll(t, m)
+      const soll = s.baseRent + s.prepayment + s.heatingPrepayment + s.flatRate
+      if (soll <= 0) continue
+      if (options.exact) {
+        add(`${m}-${pad(int(1, 5))}`, soll)
+        continue
+      }
+      const r = rnd()
+      if (r < 0.62) add(`${m}-${pad(int(1, 5))}`, soll)
+      else if (r < 0.69) { /* nicht gezahlt */ }
+      else if (r < 0.77) add(`${m}-${pad(int(1, 28))}`, Math.round(soll * (0.3 + rnd() * 0.6)))
+      else if (r < 0.81) add(`${m}-${pad(int(1, 5))}`, 2 * soll)
+      else if (r < 0.87) { const prev = addMonths(m, -1); add(`${prev}-${pad(int(22, lastDay(prev)))}`, soll) }
+      else if (r < 0.92) add(`${addMonths(m, 1)}-${pad(int(1, 10))}`, soll)
+      else if (r < 0.96) {
+        add(`${m}-${pad(int(1, 5))}`, soll)
+        if (rnd() < 0.5) add(`${m}-${pad(int(10, 28))}`, -soll)
+        else add(`${addMonths(m, 1)}-${pad(int(1, 9))}`, -soll)
+      } else add(`${m}-${pad(int(1, 28))}`, soll, { designatedMonth: rnd() < 0.5 ? m : addMonths(m, -int(1, 3)) })
+    }
+    if (options.exact) continue
+    if (t.end !== null && rnd() < 0.4) add(`${addMonths(last, 1)}-${pad(int(1, 20))}`, int(5000, 90000))
+    // Rücklastschrift nach Auszug im Folgejahr: nimmt eine Zuordnung des Vorjahres zurück (negative Zeile 25).
+    if (t.end !== null && rnd() < 0.4) add(`${Number(last.slice(0, 4)) + 1}-01-${pad(int(11, 28))}`, -int(5000, 60000))
+    for (let y = 2024; y <= 2029; y++) if (rnd() < 0.4 && `${y}-04` <= last) add(`${y}-${pad(int(4, 6))}-15`, rnd() < 0.6 ? int(1000, 40000) : -int(1000, 40000), { kind: 'settlement' })
+  }
+  return { ...source, tenancies, payments } as TaxSource
 }

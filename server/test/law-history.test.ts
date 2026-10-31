@@ -110,6 +110,8 @@ const SHIPPED: readonly string[] = [
   'estg.cheap-rent|2021-01-01||{"split":50,"paid":66}',
   // Anschaffungsnahe Herstellungskosten (#96 PR 2)
   'estg.acquisition-related|2004-01-01||{"percent":15,"years":3}',
+  // Zehn-Tage-Regel (#312 PR 2)
+  'estg.short-period-days|||10',
   // Garage und Umsatzsteuer (#323)
   'ustg.small-business|2025-01-01||{"previousYearEuro":25000,"currentYearEuro":100000}',
   // Fristen nach Werktagen und die Feiertage der Länder (#290)

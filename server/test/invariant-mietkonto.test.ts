@@ -151,7 +151,15 @@ test('Monat laut Verwendungszweck ändert Abrechnung und Steuer nicht (X9 g)', (
     const b = snapshotOf({ ...sourceOf(stock.tenancy, without), costItems: items }, year)
     const strip = (s: ReturnType<typeof computeSettlement>) => ({ ...s, notices: [], warnings: [] })
     assert.deepEqual(strip(computeSettlement(a)), strip(computeSettlement(b)), `Startwert ${seed}: Abrechnung`)
-    assert.deepEqual(taxReport(a), taxReport(b), `Startwert ${seed}: Steuer`)
+    // Die Steuer bis auf die Aufteilung des Zugeflossenen (#312 PR 2): Der Monat laut Verwendungszweck verschiebt Teile
+    // zwischen den Zeilen 15/18, 20 und 25 (§ 366 Abs. 1 BGB), die Summe bleibt.
+    const ta = taxReport(a)
+    const tb = taxReport(b)
+    const { received: ra, ...ia } = ta.income
+    const { received: rb, ...ib } = tb.income
+    assert.deepEqual({ ...ta, income: ia }, { ...tb, income: ib }, `Startwert ${seed}: Steuer`)
+    const lines = (r: typeof ra): number => (r ? r.rentCents + r.allocationsCents + r.formerYearsCents : assert.fail('received fehlt'))
+    assert.equal(lines(ra), lines(rb), `Startwert ${seed}: Summe der Zeilen`)
   }
 })
 

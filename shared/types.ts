@@ -1261,6 +1261,46 @@ export type SettlementComparison = {
 // `gratuitousCents` (#257): der unentgeltliche Teil bei verbilligter Vermietung nach § 21 Abs. 2 EStG, nicht abziehbar
 // und nicht privat. Fehlt das Feld, gibt es keinen. Abziehbar ist Betrag − privat − unentgeltlich.
 export type TaxExpenseCategory = { category: string; amountCents: number; labor35aCents: number; privateCents: number; deductibleCents: number; gratuitousCents?: number }
+// Das Zugeflossene eines Kalenderjahres nach Zeilen der Anlage V (#312 PR 2, Entwurf
+// docs/superpowers/specs/2026-10-30-steuer-zufluss-design.md, E4). Jede Mietzahlung mit Datum im Jahr ist nach der
+// gesetzlichen Tilgungsreihenfolge (§ 366 BGB, BGH VIII ZR 84/17 Rn. 56, 57) auf Monat und Bestandteil verteilt; die
+// Teile zählen im Jahr ihres Datums (§ 11 Abs. 1 Satz 1 EStG). Es gilt
+// rentCents + allocationsCents + formerYearsCents + (settlementBackPaymentsCents − settlementRefundsCents) = paidCents.
+// Die Summenfelder umfassen alle Mietverhältnisse, `relatives` dieselben nur über die an Angehörige (Zeilen 19, 22, 23).
+export type TaxReceived = {
+  rentCents: number // Zeilen 15/18: Kaltmiete und Inklusivmiete des Jahres und später, dazu Überzahlung ohne Forderung
+  inclusiveRentCents: number // davon Inklusivmiete (Nebenkosten eingeschlossen, kalt oder warm)
+  unallocatedCents: number // davon ohne Forderung (mit Vorzeichen)
+  allocationsCents: number // Zeile 20: Vorauszahlungen, Heizvorauszahlungen und Pauschalen des Jahres und später
+  flatRateCents: number // davon Pauschalen
+  formerYearsCents: number // Zeile 25: Mieten für frühere Jahre, brutto
+  formerYearsAllocationsCents: number // davon Umlagen, nur Auskunft
+  // Die Zehn-Tage-Regel (§ 11 Abs. 1 Satz 2 EStG), nur beziffert, nie verschoben (Entwurf E8).
+  turnOfYear: {
+    forwardCents: number // im Dezember dieses Jahres eingegangen, getilgt der Januar des Folgejahres
+    forwardAllocationsCents: number // davon Umlagen
+    fromPreviousCents: number // im Dezember des Vorjahres eingegangen, getilgt der Januar dieses Jahres (steht im Vorjahr)
+    fromPreviousAllocationsCents: number // davon Umlagen
+    lateDecemberCents: number // Anfang Januar eingegangen, getilgt der Dezember des Vorjahres (nur bei Fälligkeit zum Monatsende)
+  }
+  byUnit: TaxReceivedUnit[]
+  byTenancy: TaxReceivedTenancy[]
+  // Teilsummen über Mietverhältnisse an Angehörige (`Tenancy.relative`); ohne solche überall 0.
+  relatives: { rentCents: number; allocationsCents: number; settlementCents: number }
+  // Mietzahlungen, die die Kaution sein könnten (Entwurf E9): Betrag gleich der vereinbarten Kaution, nah am Beginn.
+  possibleDeposits: { tenancyId: string; tenantName: string; paidOn: string; cents: number }[]
+}
+// Je Wohnung für die Zeilen 13 und 14 (Summe der Mietverhältnisse der Einheit); Fläche die der Einheit.
+export type TaxReceivedUnit = { unitId: string; unitName: string; areaM2: number | null; rentCents: number; allocationsCents: number; settlementCents: number; formerYearsCents: number }
+// Je Mietverhältnis mit einer Zahlung im Jahr, auch ohne Zeile im Mietkonto. `settlementCents`: Saldo der Zahlungen aus
+// der Abrechnung (Nachzahlung plus, Erstattung minus).
+export type TaxReceivedTenancy = {
+  tenancyId: string; unitId: string; tenantName: string; unitName: string; start: string; end: string | null
+  relative: boolean
+  rentCents: number; inclusiveRentCents: number; allocationsCents: number; settlementCents: number
+  formerYearsCents: number; unallocatedCents: number; forwardCents: number
+}
+
 export type TaxExpenseGroup = {
   group: string // Anlage-V-nahe Gruppierung (z. B. „Laufende Betriebskosten“)
   amountCents: number
@@ -1385,6 +1425,10 @@ export type TaxReport = {
     // Erfassung ergibt eine zu niedrige Einnahme, und die fällt sonst niemandem auf.
     tenanciesWithSoll: number
     tenanciesWithoutPayment: number
+    // Das Zugeflossene nach Zeilen der Anlage V (#312 PR 2), aus der Tilgung jeder Mietzahlung nach § 366 BGB
+    // (server/src/rentAllocation.ts, dieselbe wie im Mietkonto). Fehlt nur mit der Option `received: false` der
+    // Berechnung (Rückgriffe, die nur Werbungskosten brauchen).
+    received?: TaxReceived
   }
   expenses: {
     groups: TaxExpenseGroup[]
