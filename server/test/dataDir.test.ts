@@ -7,7 +7,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { chooseDataDir } from '../src/store.ts'
-import { writable } from '../src/paths.ts'
+import { storeLocation, writable } from '../src/paths.ts'
 
 // Die Argumente von chooseDataDir, aus der Funktion selbst abgeleitet: So prüft der Übersetzer
 // die gestellten Werte (etwa `platform: 'linux'`) gegen das, was die Funktion wirklich annimmt,
@@ -138,4 +138,40 @@ test('der Schreibtest sieht auch nach, ob sich der Ordner anlegen ließe', () =>
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true })
   }
+})
+
+// Microsoft Store (#500): Windows legt das Paket schreibgeschützt unter WindowsApps ab, nach dem
+// Verschieben der Apps auch auf einem anderen Laufwerk ganz oben. Die Daten liegen nicht unter
+// AppData (dort lenkt Windows sie ins Paket um und löscht sie beim Deinstallieren), sondern im
+// Benutzerordner selbst, auch wenn der Schreibtest etwas anderes meinte.
+const STORE_PATHS = [
+  'C:\\Program Files\\WindowsApps\\speedone.Mietfuchs_0.14.0.0_x64__bzganrceka4qp\\mietfuchs.exe',
+  'D:\\WindowsApps\\speedone.Mietfuchs_0.14.0.0_arm64__bzganrceka4qp\\mietfuchs.exe',
+]
+
+test('aus dem Microsoft Store liegen die Daten im Benutzerordner, nicht unter AppData', () => {
+  const env = { USERPROFILE: 'C:\\Users\\Erika', LOCALAPPDATA: 'C:\\Users\\Erika\\AppData\\Local' }
+  for (const execPath of STORE_PATHS) {
+    const dir = chooseDataDir(args({ platform: 'win32', env, execPath, canWrite: () => true }))
+    assert.equal(dir, 'C:\\Users\\Erika\\Mietfuchs', execPath)
+  }
+})
+
+test('aus dem Microsoft Store ohne USERPROFILE: Heimatordner, sonst klare Ansage', () => {
+  const execPath = STORE_PATHS[0]
+  assert.equal(chooseDataDir(args({ platform: 'win32', execPath, home: () => 'C:\\Users\\Erika' })), 'C:\\Users\\Erika\\Mietfuchs')
+  // ein relativer Wert hinge am Arbeitsverzeichnis
+  assert.equal(chooseDataDir(args({ platform: 'win32', env: { USERPROFILE: 'Erika' }, execPath, home: () => 'C:\\Users\\Erika' })), 'C:\\Users\\Erika\\Mietfuchs')
+  assert.throws(() => chooseDataDir(args({ platform: 'win32', execPath, home: () => '' })), /NKA_DATA_DIR/)
+})
+
+test('Store-Paket wird am eigenen Paketordner erkannt, nicht am Ordnernamen allein', () => {
+  for (const execPath of STORE_PATHS) assert.equal(storeLocation(execPath, 'win32'), true, execPath)
+  for (const execPath of [
+    'D:\\WindowsApps\\mietfuchs-win.exe',
+    'C:\\Program Files\\WindowsApps\\Microsoft.WindowsNotepad_11.0.0.0_x64__8wekyb3d8bbwe\\notepad.exe',
+    'C:\\Users\\Erika\\Downloads\\speedone.Mietfuchs_0.14.0.0_x64__bzganrceka4qp\\mietfuchs.exe',
+  ]) assert.equal(storeLocation(execPath, 'win32'), false, execPath)
+  // Andere Systeme kennen keine Store-Pakete
+  assert.equal(storeLocation('/WindowsApps/speedone.Mietfuchs_0.14.0.0_x64__x/mietfuchs', 'linux'), false)
 })

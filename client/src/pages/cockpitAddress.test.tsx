@@ -49,7 +49,7 @@ const page = (tenancies: Tenancy[], onNavigate: (tab: string, focus?: unknown) =
   <PeriodProvider>
     <PropertyProvider>
       <UIProvider>
-        <Cockpit units={UNITS} tenancies={tenancies} settings={{ landlordName: 'Erika', iban: '', paymentDeadlineDays: 30 } as Settings} reload={async () => {}} onNavigate={onNavigate} />
+        <Cockpit units={UNITS} tenancies={tenancies} settings={{ landlordName: 'Erika', iban: '', paymentDeadlineDays: 30 } as Settings} updateStatus={null} reload={async () => {}} onNavigate={onNavigate} />
       </UIProvider>
     </PropertyProvider>
   </PeriodProvider>,

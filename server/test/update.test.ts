@@ -10,7 +10,7 @@ import http from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { parseVersion, isNewer, assetFor, createUpdateChecker } from '../src/update.ts'
+import { parseVersion, isNewer, assetFor, createUpdateChecker, mayAskGitHub } from '../src/update.ts'
 import type { UpdateStatus } from '../../shared/types.ts'
 
 // Die Gestalt der abgespeicherten Antwort, so weit die Tests sie anfassen. update.ts beschreibt
@@ -205,6 +205,28 @@ test('Gleiche Version: kein Hinweis', async () => {
   const s = await makeChecker().check({ consent: 'on' })
   assert.equal(s.latest, '0.4.0')
   assert.equal(s.available, false)
+})
+
+test('GitHub nur mit Zustimmung und nie aus dem Microsoft Store, auch nicht für die Modellliste (#500)', () => {
+  // Die Zustimmung kann ein Backup der heruntergeladenen Datei mitbringen; in der Store-App gibt
+  // es kein Häkchen, mit dem sie sich wieder abschalten ließe.
+  assert.equal(mayAskGitHub('binary', 'on'), true)
+  assert.equal(mayAskGitHub('binary', 'off'), false)
+  assert.equal(mayAskGitHub('binary', undefined), false)
+  assert.equal(mayAskGitHub('store', 'on'), false)
+})
+
+test('Aus dem Microsoft Store geht keine Anfrage hinaus, auch mit Zustimmung (#500)', async () => {
+  respond = serve(releaseWith('v0.5.0'))
+  requests.length = 0
+  const checker = makeChecker({ mode: 'store' })
+  for (const force of [false, true]) {
+    const s = await checker.check({ consent: 'on', force })
+    assert.equal(s.enabled, false)
+    assert.equal(s.available, false)
+    assert.equal(s.mode, 'store')
+  }
+  assert.equal(requests.length, 0)
 })
 
 test('Außerhalb der Programmdatei gibt es keinen Download, nur die Release-Seite', async () => {

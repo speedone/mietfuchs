@@ -261,6 +261,15 @@ jobs:
             dist-bin/*.pkg.tar.zst
           if-no-files-found: error
 
+      # Die Windows-Dateien ohne Konsolenfenster für das Store-Paket (#500). Ein eigenes Artefakt,
+      # damit sie nicht ans Release geraten: Dort bleibt die gewohnte Datei mit Fenster.
+      - name: Store-Programmdateien hochladen (Artefakt)
+        uses: actions/upload-artifact@v7
+        with:
+          name: mietfuchs-store-programme
+          path: dist-bin/store/*.exe
+          if-no-files-found: error
+
   # Bun signiert macOS-Programmdateien beim Cross-Kompilieren unter Linux selbst (ad hoc). Diese
   # Signatur war schon mehrfach fehlerhaft, zuletzt bei der Intel-Datei trotz Bun 1.4.2
   # („invalid signature“, siehe oven-sh/bun#32159). Neuere macOS-Versionen beenden solche
@@ -655,3 +664,130 @@ jobs:
           # Das Docker-Image braucht nichts dergleichen: `docker/metadata-action` mit
           # `latest=auto` vergibt `latest` bei einer Vorabversion von sich aus nicht.
           prerelease: ${{ contains(github.ref_name, '-') }}
+
+  # Das Paket für den Microsoft Store (#500): aus den Store-Programmdateien je Architektur ein
+  # .msix, zusammen ein .msixbundle (scripts/package-msix.mjs). Unsigniert, das übernimmt der
+  # Store. Geprüft wird eine Kopie, die ein Wegwerf-Zertifikat mit demselben Herausgeber
+  # signiert: installieren, starten, Prüfskript, Beenden über die Oberfläche, deinstallieren.
+  # Dabei zählt vor allem der Datenordner: Er muss im echten Benutzerordner liegen und die
+  # Deinstallation überstehen. Unter AppData hätte Windows ihn ins Paket umgelenkt und mit ihm
+  # gelöscht.
+  store-paket:
+    name: Store-Paket bauen und prüfen
+    needs: build
+    runs-on: windows-2025
+    env:
+      NKA_PORT: '3001'
+      NKA_UPDATE_URL: http://127.0.0.1:9/kein-internet-im-test
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      # Die Paketversion kommt aus server/package.json, beim Tag also aus dem Tag.
+      - name: Version aus dem Tag übernehmen
+        if: github.ref_type == 'tag'
+        run: node scripts/set-version.mjs
+      - uses: actions/download-artifact@v8
+        with:
+          name: mietfuchs-store-programme
+          path: dist-bin/store
+
+      - name: Paket bauen
+        run: node scripts/package-msix.mjs
+
+      - name: Probehalber signieren, installieren und prüfen
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bundle = Get-ChildItem dist-bin\msix\*.msixbundle | Select-Object -First 1
+          $probe = Join-Path $env:RUNNER_TEMP $bundle.Name
+          Copy-Item $bundle.FullName $probe
+
+          # Wegwerf-Zertifikat mit dem Herausgeber aus dem Manifest, nur für diesen Runner
+          $publisher = ([xml](Get-Content packaging\msix\AppxManifest.xml)).Package.Identity.Publisher
+          $cert = New-SelfSignedCertificate -Type Custom -Subject $publisher -KeyUsage DigitalSignature `
+            -FriendlyName 'Mietfuchs Probe' -CertStoreLocation Cert:\CurrentUser\My `
+            -TextExtension @('2.5.29.37={text}1.3.6.1.5.5.7.3.3', '2.5.29.19={text}')
+          $password = ConvertTo-SecureString -String 'probe' -Force -AsPlainText
+          $pfx = Join-Path $env:RUNNER_TEMP 'probe.pfx'
+          $cer = Join-Path $env:RUNNER_TEMP 'probe.cer'
+          Export-PfxCertificate -Cert $cert -FilePath $pfx -Password $password | Out-Null
+          Export-Certificate -Cert $cert -FilePath $cer | Out-Null
+          Import-Certificate -FilePath $cer -CertStoreLocation Cert:\LocalMachine\TrustedPeople | Out-Null
+          $sdk = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\10.*\x64\signtool.exe' | Sort-Object FullName | Select-Object -Last 1
+          & $sdk.FullName sign /fd SHA256 /f $pfx /p probe $probe
+          if ($LASTEXITCODE -ne 0) { throw 'Signieren der Probe fehlgeschlagen' }
+
+          $data = Join-Path $env:USERPROFILE 'Mietfuchs'
+          if (Test-Path $data) { throw "Der Datenordner $data existiert schon vor dem Start" }
+          Add-AppxPackage -Path $probe
+          $app = Get-AppxPackage -Name speedone.Mietfuchs
+          Write-Host "Installiert: $($app.PackageFullName) in $($app.InstallLocation)"
+
+          # Über den Befehlsalias starten: Nur so erbt Mietfuchs CI und NKA_UPDATE_URL. Er läuft
+          # trotzdem als Store-App, im Paket und mit dessen Umlenkungen.
+          $alias = Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps\mietfuchs.exe'
+          Start-Process -FilePath $alias
+          node scripts/smoke-test.mjs --url "http://127.0.0.1:$env:NKA_PORT" --mode store
+          if ($LASTEXITCODE -ne 0) { throw 'Prüfung des Store-Pakets fehlgeschlagen' }
+
+          # Ohne Konsolenfenster ist die Oberfläche der einzige Weg zum Beenden
+          node -e 'const url = "http://127.0.0.1:" + process.env.NKA_PORT;
+            const gone = async () => { try { await fetch(url + "/healthz"); return false } catch { return true } };
+            (async () => {
+              const antwort = await (await fetch(url + "/api/quit", { method: "POST" })).json();
+              if (!antwort.ok) throw new Error("Unerwartete Antwort: " + JSON.stringify(antwort));
+              for (let i = 0; i < 50; i++) { if (await gone()) return console.log("Mietfuchs hat sich beendet"); await new Promise((r) => setTimeout(r, 200)) }
+              throw new Error("Mietfuchs läuft nach dem Beenden weiter");
+            })()'
+          if ($LASTEXITCODE -ne 0) { throw 'Beenden über die Oberfläche fehlgeschlagen' }
+
+          $db = Join-Path $data 'mietfuchs.sqlite'
+          if (-not (Test-Path $db)) {
+            $umgelenkt = Get-ChildItem (Join-Path $env:LOCALAPPDATA 'Packages') -Recurse -Filter mietfuchs.sqlite -ErrorAction SilentlyContinue
+            throw "Keine Datenbank unter $db. Umgelenkt nach: $($umgelenkt.FullName)"
+          }
+          Remove-AppxPackage -Package $app.PackageFullName
+          if (-not (Test-Path $db)) { throw 'Die Deinstallation hat die Daten gelöscht' }
+          Write-Host "Daten nach der Deinstallation erhalten: $db"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mietfuchs-store
+          path: dist-bin/msix/*.msixbundle
+          if-no-files-found: error
+
+  # Reicht das geprüfte Paket beim Tag im Microsoft Store ein (#500). Die Zertifizierung dauert
+  # danach meist ein bis drei Werktage; erst dann erscheint die Version im Store und kommt per
+  # Update zu den Nutzern. Nie bei einer Vorabversion (Bindestrich im Tag). Erst nach dem Anhängen
+  # ans Release, damit der Store nichts bekommt, was es bei GitHub nicht gibt.
+  #
+  # Schalter: die Repository-Variable MSSTORE_EINREICHEN = an (Settings → Variables). Ohne sie
+  # läuft nichts, denn die Store-CLI kann nur eine App aktualisieren, die schon einmal von Hand
+  # eingereicht und veröffentlicht ist. Zugang über die Microsoft-Entra-Anwendung
+  # „mietfuchs-github“ (Rolle Manager im Partner Center); ihr Secret läuft ab und muss dann in
+  # MSSTORE_CLIENT_SECRET erneuert werden.
+  store-einreichen:
+    name: Im Microsoft Store einreichen
+    needs: [store-paket, veroeffentlichen]
+    if: startsWith(github.ref, 'refs/tags/') && !contains(github.ref_name, '-') && vars.MSSTORE_EINREICHEN == 'an'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: mietfuchs-store
+          path: store
+      - uses: microsoft/setup-msstore-cli@v1.4
+      - name: Anmelden
+        env:
+          TENANT_ID: ${{ secrets.MSSTORE_TENANT_ID }}
+          SELLER_ID: ${{ secrets.MSSTORE_SELLER_ID }}
+          CLIENT_ID: ${{ secrets.MSSTORE_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.MSSTORE_CLIENT_SECRET }}
+        run: msstore reconfigure --tenantId "$TENANT_ID" --sellerId "$SELLER_ID" --clientId "$CLIENT_ID" --clientSecret "$CLIENT_SECRET"
+      # Die Store-ID aus dem Partner Center (Produktidentität). `publish` übernimmt Eintrag und
+      # Bilder der letzten Einreichung und tauscht nur das Paket.
+      - name: Einreichen
+        run: msstore publish store/*.msixbundle -id 9PMHZ0ZJPZDZ

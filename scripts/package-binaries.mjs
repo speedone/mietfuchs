@@ -39,12 +39,22 @@ const TARGETS = {
   linux: { target: 'bun-linux-x64', out: 'mietfuchs-linux', archive: 'tar' },
   'linux-arm64': { target: 'bun-linux-arm64', out: 'mietfuchs-linux-arm64', archive: 'tar' },
 }
+// Für das MSIX-Paket des Microsoft Store (#500) dieselbe Windows-Datei noch einmal, aber ohne
+// Konsolenfenster: Aus dem Startmenü gestartet, stünde sonst ein schwarzes Fenster neben dem
+// Browser, beendet wird über die Oberfläche. Sie landen in dist-bin/store und nicht am Release,
+// denn wer die Datei herunterlädt, beendet Mietfuchs gewohnt durch Schließen des Fensters.
+// `--windows-hide-console` geht als einzige Windows-Angabe von Bun auch beim Bau unter Linux.
+const STORE_TARGETS = {
+  'store-x64': { target: 'bun-windows-x64', out: path.join('store', 'mietfuchs-store-x64.exe') },
+  'store-arm64': { target: 'bun-windows-arm64', out: path.join('store', 'mietfuchs-store-arm64.exe') },
+}
 const only = process.argv[2]
-if (only && !TARGETS[only]) {
-  console.error(`Unbekanntes Ziel "${only}". Erlaubt: ${Object.keys(TARGETS).join(', ')}`)
+const ALL = { ...TARGETS, ...STORE_TARGETS }
+if (only && !ALL[only]) {
+  console.error(`Unbekanntes Ziel "${only}". Erlaubt: ${Object.keys(ALL).join(', ')}`)
   process.exit(1)
 }
-const selected = only ? { [only]: TARGETS[only] } : TARGETS
+const selected = only ? { [only]: ALL[only] } : ALL
 
 console.log('→ Frontend bauen (vite build) …')
 runShell(npm, ['run', 'build'])
@@ -58,7 +68,7 @@ console.log('→ Embed-Modul aus server/drizzle erzeugen …')
 run(process.execPath, ['scripts/embed-migrations.mjs'])
 
 const outDir = path.join(root, 'dist-bin')
-fs.mkdirSync(outDir, { recursive: true })
+fs.mkdirSync(path.join(outDir, 'store'), { recursive: true })
 
 // Binary in dist-bin/ archivieren (Zip bzw. tar.gz, jeweils ohne Pfadanteile).
 // Fehlt das Tool selbst (zip gibt es z. B. auf Windows-Entwicklerrechnern nicht), nur warnen —
@@ -87,6 +97,7 @@ for (const [name, { target, out, archive: kind }] of Object.entries(selected)) {
     '--compile',
     `--target=${target}`,
     'server/src/index.ts',
+    ...(name in STORE_TARGETS ? ['--windows-hide-console'] : []),
     '--outfile',
     path.join(outDir, out),
   ])

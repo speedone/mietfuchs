@@ -4,8 +4,8 @@
 //
 //   node scripts/smoke-test.mjs --url http://127.0.0.1:3001 --mode binary
 //
-// `--mode` ist die erwartete Betriebsart: npm, binary, package (aus einem Linux-Paket, #25)
-// oder docker. Der Test vergleicht sie mit dem, was die Instanz selbst meldet.
+// `--mode` ist die erwartete Betriebsart: npm, binary, package (aus einem Linux-Paket, #25),
+// store (aus dem Microsoft Store, #500) oder docker. Der Test vergleicht sie mit dem, was die Instanz selbst meldet.
 //
 // Die Instanz muss mit einem leeren Datenordner laufen (NKA_DATA_DIR), denn der Test legt Daten
 // an und spielt ein Backup zurück. Ollama ersetzt ein nachgebauter Server, den das Skript selbst

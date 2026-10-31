@@ -2,9 +2,15 @@
 // Die Prüfung selbst macht der Server (server/src/update.ts), und nur mit Zustimmung.
 import type { Settings, UpdateStatus } from './types'
 
+// Aus dem Microsoft Store (#500) aktualisiert der Store selbst, Mietfuchs fragt dort nie bei
+// GitHub nach (server/src/update.ts).
+export const updatedByStore = (st: UpdateStatus | null): boolean => st?.mode === 'store'
+
 // Gefragt wird, bis eine Antwort gespeichert ist. Vor dem Laden der Einstellungen ist
-// unbekannt, ob schon geantwortet wurde, dann bleibt die Frage aus.
-export const consentPending = (s: Settings | null): boolean => s !== null && s.updateCheck === undefined
+// unbekannt, ob schon geantwortet wurde, dann bleibt die Frage aus. Ebenso, solange die
+// Betriebsart unbekannt ist: Aus dem Store wäre die Frage sinnlos.
+export const consentPending = (s: Settings | null, st: UpdateStatus | null): boolean =>
+  s !== null && st !== null && !updatedByStore(st) && s.updateCheck === undefined
 
 // „Später“ gilt nur für die Version, bei der es geklickt wurde.
 export const hintVisible = (st: UpdateStatus | null, s: Settings | null): boolean =>
@@ -16,7 +22,8 @@ export const RELEASES_URL = 'https://github.com/speedone/mietfuchs/releases/late
 // startet Mietfuchs ohne Konsolenfenster, deren Schließen sonst der Weg zum Beenden ist. Im
 // Container und im npm-Betrieb beendet die Umgebung den Dienst, und ein Neustart käme dort von
 // selbst. Die Betriebsart meldet der Server mit dem Update-Stand.
-export const canQuit = (st: UpdateStatus | null): boolean => st?.mode === 'binary' || st?.mode === 'package'
+// Aus dem Microsoft Store (#500) läuft Mietfuchs ebenfalls ohne Konsolenfenster.
+export const canQuit = (st: UpdateStatus | null): boolean => st?.mode === 'binary' || st?.mode === 'package' || st?.mode === 'store'
 
 // Das System ergibt sich aus der Datei, die der Server passend zum Rechner ausgesucht hat
 // (server/src/update.ts). Ohne passende Datei zeigt der Link auf die Release-Seite. `package`
@@ -62,6 +69,7 @@ export const isPrerelease = (version: string): boolean => /^\d+\.\d+\.\d+-/.test
 // Der Stand in der Karte der Einstellungen. Bei einer Vorabversion wäre „aktuelle Version“
 // falsch (#166): Sie ist noch nicht veröffentlicht, und neben ihr steht die letzte fertige.
 export function statusText(s: UpdateStatus): string {
+  if (updatedByStore(s)) return `Installiert ist Version ${s.current}. Neue Versionen installiert der Microsoft Store von selbst.`
   if (!s.enabled) return `Installiert ist Version ${s.current}.`
   const lastChecked = s.checkedAt ? ` Zuletzt geprüft: ${fmtDateTime(s.checkedAt)}.` : ''
   if (s.error) {

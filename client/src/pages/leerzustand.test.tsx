@@ -45,7 +45,7 @@ for (const [lage, units, tenancies, button] of [
 ] as const) {
   test(`Cockpit ${lage}: der erste Schritt mit Knopf, kein Entwurf und keine Frist`, async () => {
     const navigate = vi.fn()
-    wrap(<Cockpit units={[...units]} tenancies={[...tenancies] as Tenancy[]} settings={null} reload={async () => {}} onNavigate={navigate} />)
+    wrap(<Cockpit units={[...units]} tenancies={[...tenancies] as Tenancy[]} settings={null} updateStatus={null} reload={async () => {}} onNavigate={navigate} />)
     fireEvent.click(await screen.findByRole('button', { name: button }, SLOW))
     expect(navigate).toHaveBeenCalledWith('stammdaten')
     expect(document.querySelector('[data-empty-state]')).toBeTruthy()
@@ -82,7 +82,7 @@ test('Cockpit abgeschlossen ohne Versand: Frist als Plakette und in der Unterzei
     if (path === `/api/settlement/${YEAR}`) return json(closed)
     return json([])
   })
-  wrap(<Cockpit units={[UNIT]} tenancies={[]} settings={null} reload={async () => {}} onNavigate={() => {}} />)
+  wrap(<Cockpit units={[UNIT]} tenancies={[]} settings={null} updateStatus={null} reload={async () => {}} onNavigate={() => {}} />)
   expect(await screen.findByText(/^Abgeschlossen, Versanddatum fehlt \(Frist am 31\.12\./, {}, SLOW)).toBeTruthy()
   expect(screen.getByText(/Frist in \d+ Tagen|Frist abgelaufen/)).toBeTruthy()
   expect(screen.queryByText(/noch offen: .*Abgeschlossen & versendet/)).toBeNull()

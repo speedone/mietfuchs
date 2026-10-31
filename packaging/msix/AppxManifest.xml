@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Manifest des MSIX-Pakets für den Microsoft Store (#500). Vorlage: scripts/package-msix.mjs
+     setzt Version, Architektur und Programmdatei ein. Identität aus dem Partner Center
+     (Produktverwaltung, Produktidentität); ändert sie sich dort, hier nachziehen und
+     STORE_PACKAGE_NAME in server/src/paths.ts mit.
+
+     Die Daten liegen im Benutzerordner (%USERPROFILE%\Mietfuchs, chooseDataDir in
+     server/src/store.ts), nicht unter AppData: Dorthin schreibende Store-Apps lenkt Windows in
+     einen Paketordner um, den es beim Deinstallieren löscht. -->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap uap3 desktop rescap">
+
+  <Identity
+    Name="speedone.Mietfuchs"
+    Publisher="CN=45C2852A-E2C8-40E0-9BEA-BE3F6A823F69"
+    Version="{{VERSION}}"
+    ProcessorArchitecture="{{ARCH}}" />
+
+  <Properties>
+    <DisplayName>Mietfuchs</DisplayName>
+    <PublisherDisplayName>speedone</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <Description>Nebenkostenabrechnung für private Vermieter, lokal auf dem eigenen Rechner.</Description>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="de-DE" />
+  </Resources>
+
+  <Applications>
+    <Application Id="Mietfuchs" Executable="{{EXE}}" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="Mietfuchs"
+        Description="Nebenkostenabrechnung für private Vermieter"
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png" />
+      <Extensions>
+        <!-- Startet Mietfuchs auch als „mietfuchs“ aus der Eingabeaufforderung. Die Prüfung im
+             Release-Lauf braucht das: Nur so erbt das Programm Umgebungsvariablen wie CI und
+             NKA_UPDATE_URL; der Start über das Startmenü reicht keine weiter. -->
+        <uap3:Extension Category="windows.appExecutionAlias" Executable="{{EXE}}" EntryPoint="Windows.FullTrustApplication">
+          <uap3:AppExecutionAlias>
+            <desktop:ExecutionAlias Alias="mietfuchs.exe" />
+          </uap3:AppExecutionAlias>
+        </uap3:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>

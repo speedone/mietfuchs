@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Settings, UpdateStatus } from '../types'
 import { api } from '../api'
-import { statusText, updateGuide, type UpdateGuide } from '../update'
+import { statusText, updatedByStore, updateGuide, type UpdateGuide } from '../update'
 import { useToast } from './feedback'
 import DraftActions from './DraftActions'
 import { useDraft } from '../useDraft'
@@ -163,6 +163,15 @@ export function UpdateSettings({ settings, update, reload }: SettingsProps) {
   }
 
   const guide = status?.enabled && status.available ? updateGuide(status) : null
+
+  // Aus dem Microsoft Store (#500): kein Häkchen, kein Knopf, nur der Stand.
+  if (updatedByStore(status)) {
+    return (
+      <Card title="Updates">
+        {status && <p className="update-state">{statusText(status)}</p>}
+      </Card>
+    )
+  }
 
   return (
     <Card title="Updates">

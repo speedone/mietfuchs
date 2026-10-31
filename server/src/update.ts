@@ -163,6 +163,14 @@ type CreateUpdateCheckerOptions = {
 // schon Zustimmung nahelegt — geprüft wird unten genau auf 'on', alles andere heißt nein.
 type CheckOptions = { consent?: unknown, force?: boolean }
 
+// Darf Mietfuchs bei GitHub nachfragen (Versionen und Modellliste, ai/recommendations.ts)? Nur mit
+// Zustimmung, und aus dem Microsoft Store (#500) nie: Dort aktualisiert der Store, seine
+// Richtlinien verbieten, an ihm vorbei auf neue Versionen zu verweisen, und ein Release bei
+// GitHub erscheint Tage vor der Zertifizierung. Eine Zustimmung, die ein eingespieltes Backup
+// der heruntergeladenen Datei mitbringt, zählt dort nicht; die Store-App hat kein Häkchen, mit
+// dem sie sich wieder abschalten ließe.
+export const mayAskGitHub = (mode: UpdateStatus['mode'], consent: unknown): boolean => mode !== 'store' && consent === 'on'
+
 // `mode` ist 'binary' (Programmdatei), 'package' (aus einem Installationspaket), 'docker' oder
 // 'npm' und bestimmt, ob es einen direkten Download gibt. Aus einem Paket gibt es keinen: Welche
 // der drei Paketdateien passt, weiß nur die Distribution des Nutzers, deshalb führt der Hinweis
@@ -248,7 +256,7 @@ export function createUpdateChecker({
   }
 
   async function check({ consent, force = false }: CheckOptions = {}): Promise<UpdateStatus> {
-    if (consent !== 'on') return emptyResult(false)
+    if (!mayAskGitHub(mode, consent)) return emptyResult(false)
     if (pending) return pending
     if (backoff && (now() < backoff.blockedUntil || (!force && now() < backoff.until))) return backoff.result
     if (!force && cached && now() - cached.at < ttlMs) return cached.result

@@ -8,6 +8,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Hinzugefügt
 
+- **Mietfuchs im Microsoft Store** für Windows (x64 und ARM64): installieren und aktualisieren über den Store,
+  gestartet wird aus dem Startmenü ohne Konsolenfenster, beendet über „Mietfuchs beenden“ in der Seitenleiste. Die
+  Daten liegen in `%USERPROFILE%\Mietfuchs` und bleiben bei einer Deinstallation erhalten. Wer bisher die
+  heruntergeladene Datei nutzt, nimmt seinen Bestand per Backup und Wiederherstellen mit
+  ([#500](https://github.com/speedone/mietfuchs/issues/500)).
 - Mietkonto: An einer Zahlung lässt sich der Monat laut Verwendungszweck eintragen
   ([#281](https://github.com/speedone/mietfuchs/issues/281)).
 - Kostenart „Entnahme Erhaltungsrücklage“: zählt im Jahr, in dem die Gemeinschaft das Geld ausgibt, in eigener Gruppe
