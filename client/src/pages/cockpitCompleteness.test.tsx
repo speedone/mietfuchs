@@ -97,7 +97,7 @@ const pageWith = (onNavigate: (tab: string) => void) => render(
   <PeriodProvider>
     <PropertyProvider>
       <UIProvider>
-        <Cockpit units={UNITS} tenancies={[]} settings={{ landlordName: 'Erika', iban: '', paymentDeadlineDays: 30 } as Settings} reload={async () => {}} onNavigate={onNavigate} />
+        <Cockpit units={UNITS} tenancies={[]} settings={{ landlordName: 'Erika', iban: '', paymentDeadlineDays: 30 } as Settings} updateStatus={null} reload={async () => {}} onNavigate={onNavigate} />
       </UIProvider>
     </PropertyProvider>
   </PeriodProvider>,
@@ -117,7 +117,7 @@ test('Cockpit: ein leerer Zeitraum mit Mietverhältnis führt mit „Belege erfa
     <PeriodProvider>
       <PropertyProvider>
         <UIProvider>
-          <Cockpit units={UNITS} tenancies={[tenancy] as never} settings={{ landlordName: 'Erika', iban: '', paymentDeadlineDays: 30 } as Settings} reload={async () => {}} onNavigate={navigate} />
+          <Cockpit units={UNITS} tenancies={[tenancy] as never} settings={{ landlordName: 'Erika', iban: '', paymentDeadlineDays: 30 } as Settings} updateStatus={null} reload={async () => {}} onNavigate={navigate} />
         </UIProvider>
       </PropertyProvider>
     </PeriodProvider>,
