@@ -208,7 +208,8 @@ export type Payment = {
 // ---------- Mietkonto / Zahlungs-Tracking ----------
 
 // `notDue`: im laufenden Jahr ab dem aktuellen Monat, noch nicht fällig und kein Rückstand (#133).
-export type RentMonthStatus = 'paid' | 'partial' | 'open' | 'notDue'
+// `notRecorded` (#281): vor dem Beginn der Erfassung im Objekt (`ledgerStart`), weder bezahlt noch offen.
+export type RentMonthStatus = 'paid' | 'partial' | 'open' | 'notDue' | 'notRecorded'
 
 export type RentMonth = {
   month: number // 1..12

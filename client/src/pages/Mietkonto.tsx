@@ -300,26 +300,29 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
                 {ledgerStartText(r) && <p className="muted">{ledgerStartText(r)}</p>}
                 <div className="rent-grid">
                   {r.months.map((mo) => {
-                    const cls = mo.sollCents === 0 ? 'none' : mo.status
+                    // Vor dem Beginn der Erfassung im Objekt (#281): nicht erfasst, weder bezahlt noch offen, kein Buchungsknopf.
+                    const notRecorded = mo.status === 'notRecorded'
+                    const cls = mo.sollCents === 0 || notRecorded ? 'none' : mo.status
                     const partial = shareText(mo)
                     const later = paidLaterText(mo)
                     const parts = openPartsText(mo)
                     // Nicht mehr einzeln einforderbar (E5): gedämpft gekennzeichnet; der Status bleibt, was die Zahlungen sagen.
                     const via = (mo.notDemandableCents ?? 0) > 0 ? 'Vorauszahlung: über die Abrechnung' : null
                     const extra = [parts, later, via].filter((x) => x !== null).join(' · ')
-                    const detail = mo.sollCents === 0 ? 'kein Mietverhältnis' : `Soll ${fmtEuro(mo.sollCents)}${partial ? ` (${partial})` : ''} · gezahlt ${fmtEuro(mo.paidCents)}${mo.status === 'notDue' ? ' · zählt noch nicht als Rückstand' : ''}${extra ? ` · ${extra}` : ''}`
+                    const detail = mo.sollCents === 0 ? 'kein Mietverhältnis' : notRecorded ? `Soll ${fmtEuro(mo.sollCents)} · nicht erfasst` : `Soll ${fmtEuro(mo.sollCents)}${partial ? ` (${partial})` : ''} · gezahlt ${fmtEuro(mo.paidCents)}${mo.status === 'notDue' ? ' · zählt noch nicht als Rückstand' : ''}${extra ? ` · ${extra}` : ''}`
                     const content = (
                       <>
                         <span className="m">{MONTHS[mo.month - 1]}</span>
                         <span className="a">{mo.sollCents === 0 ? '—' : fmtEuro(mo.sollCents)}</span>
                         {partial && mo.sollCents !== 0 && <span className="m">{partial}</span>}
+                        {notRecorded && mo.sollCents !== 0 && <span className="m">nicht erfasst</span>}
                         {later && <span className="m">{later}</span>}
                         {via && <span className="m">über die Abrechnung</span>}
                       </>
                     )
                     // Ein Monat mit offenem Rest ist ein Knopf, damit er auch per Tastatur die Zahlung
                     // öffnet; der Zusatz steht unsichtbar hinter dem sichtbaren Text (WCAG 2.5.3).
-                    if (mo.sollCents - mo.paidCents > 0) {
+                    if (!notRecorded && mo.sollCents - mo.paidCents > 0) {
                       return (
                         <button
                           type="button"

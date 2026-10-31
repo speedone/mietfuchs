@@ -98,24 +98,32 @@ const claimOf = (t: AllocationTenancy, month: string): MonthSoll => {
   return { prepayment: Math.max(0, soll.prepayment), heatingPrepayment: Math.max(0, soll.heatingPrepayment), baseRent: Math.max(0, soll.baseRent), flatRate: Math.max(0, soll.flatRate) }
 }
 
-// **Geführt ab** (#281, Entscheidung nach der Durchsicht): Fehlende Erfassung ist keine Nichtzahlung. Wer das Mietkonto
-// erst seit einem Jahr führt, aber einen älteren Mietbeginn eingetragen hat, sähe sonst jeden Monat davor als
-// Rückstand, und seine Zahlungen tilgten nach § 366 Abs. 2 BGB zuerst diese nie erfassten Monate. Das Konto beginnt
-// deshalb am 01.01. des Jahres der ersten erfassten Mietzahlung, frühestens mit dem Mietbeginn. Im ersten erfassten Jahr
-// sieht der Vermieter so dieselben Zahlen wie bis 0.13 („wer ein Haus vermietet, merkt nichts“); der Übertrag beginnt
-// erst danach. Ohne jede erfasste Mietzahlung, und für ein angezeigtes Jahr vor der ersten, zählt das angezeigte Jahr
-// für sich (das bisherige Verhalten). Eine Zahlung vor Mietbeginn (28.12. für Januar) ändert nichts: Dann ist der
-// Mietbeginn der Anfang, und sie steht als positiver Anfangssaldo da. Eine Stelle für Mietkonto und Steuer (#312 PR 2).
-export function ledgerStart(t: Pick<AllocationTenancy, 'start'>, payments: readonly AllocationPayment[], year: number): string {
-  const firstYear = payments.filter(isRent).reduce((a, p) => Math.min(a, Number(p.date.slice(0, 4))), year)
-  const from = `${String(firstYear).padStart(4, '0')}-01-01`
-  return compareText(from, t.start) > 0 ? from : t.start
+// **Geführt ab** (#281, Durchsicht): Fehlende Erfassung ist keine Nichtzahlung. Wer das Mietkonto erst seit einem Monat
+// führt, aber ältere Mietverhältnisse eingetragen hat, sähe sonst jeden Monat davor als Rückstand, und die Zahlungen
+// tilgten nach § 366 Abs. 2 BGB zuerst diese nie erfassten Monate. Ein Objekt beginnt die Erfassung einmal, und ab dann
+// gilt jeder Monat: Das Konto eines Mietverhältnisses beginnt im Monat der frühesten erfassten Mietzahlung des
+// **Objekts**, frühestens mit dem Mietbeginn. So hängt die Regel nicht am angezeigten Jahr, und dieselbe Zahlung tilgt in
+// jeder Ansicht dieselben Monate; ein Mieter, der im Objekt nie gezahlt hat, steht trotzdem mit seinem Rückstand da.
+// Hat das Objekt keine einzige Mietzahlung, zählt das angezeigte Jahr für sich (das bisherige Verhalten). Eine Zahlung
+// vor Mietbeginn (28.12. für Januar) ändert nichts: Dann ist der Mietbeginn der Anfang, und sie steht als positiver
+// Anfangssaldo da. Der Beginn ist immer ein Monatserster oder der Mietbeginn; ein angebrochener Monat entsteht nur wie
+// bisher aus dem Mietbeginn. Eine Stelle für Mietkonto und Steuer (#312 PR 2).
+export type RecordingStart = { start: string; fromPayment: boolean }
+
+export function recordingStart(objectPayments: readonly Pick<AllocationPayment, 'date' | 'kind'>[], year: number): RecordingStart {
+  const first = objectPayments.filter(isRent).reduce<string | null>((a, p) => (a === null || compareText(p.date, a) < 0 ? p.date : a), null)
+  return first === null ? { start: `${String(year).padStart(4, '0')}-01-01`, fromPayment: false } : { start: `${first.slice(0, 7)}-01`, fromPayment: true }
+}
+
+export function ledgerStart(t: Pick<AllocationTenancy, 'start'>, objectPayments: readonly Pick<AllocationPayment, 'date' | 'kind'>[], year: number): string {
+  const { start } = recordingStart(objectPayments, year)
+  return compareText(start, t.start) > 0 ? start : t.start
 }
 
 // Das Mietverhältnis, wie die Tilgung es sieht: Beginn auf `ledgerStart` gesetzt. Monate davor gibt es weder als Soll
-// noch als offen. Weil `ledgerStart` ein Mietbeginn oder ein 01.01. ist, entsteht kein angebrochener Monat.
-export function ledgerTenancy<T extends AllocationTenancy>(t: T, payments: readonly AllocationPayment[], year: number): T {
-  const start = ledgerStart(t, payments, year)
+// noch als offen.
+export function ledgerTenancy<T extends AllocationTenancy>(t: T, objectPayments: readonly Pick<AllocationPayment, 'date' | 'kind'>[], year: number): T {
+  const start = ledgerStart(t, objectPayments, year)
   return start === t.start ? t : { ...t, start }
 }
 

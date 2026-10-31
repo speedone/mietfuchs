@@ -94,7 +94,9 @@ test('Zahlungen: Monat laut Verwendungszweck setzen und leeren, 400 an der Abrec
       unitId: eg.id, tenantName: 'A', persons: 1, start: '2025-01-01', end: null,
       prepayments: [{ from: '2025-01', monthlyCents: 20000 }], prepaymentOverrides: {}, baseRents: [{ from: '2025-01', monthlyCents: 60000 }],
     })
-    // Januar nichts, am 03.02. eine Monatsmiete: ohne Bestimmung deckt sie die Vorauszahlungen und die Kaltmiete Januar.
+    // Am 01.01. 100 € (das Objekt erfasst ab Januar, #281), am 03.02. eine Monatsmiete: ohne Bestimmung deckt sie zuerst
+    // die offenen Vorauszahlungen, dann die Kaltmiete Januar; beide Monate bleiben teilweise offen.
+    await post('/api/payments', { tenancyId: t.id, date: '2025-01-01', amountCents: 10000 })
     const feb = await post<Payment>('/api/payments', { tenancyId: t.id, date: '2025-02-03', amountCents: 80000 })
     const guthaben = await post<Payment>('/api/payments', { tenancyId: t.id, date: '2025-06-15', amountCents: -20000, kind: 'settlement' })
     const before = (await s.api<RentLedger>('/api/rentledger/2025')).rows[0]?.months ?? assert.fail('keine Zeile')
@@ -104,7 +106,7 @@ test('Zahlungen: Monat laut Verwendungszweck setzen und leeren, 400 an der Abrec
     assert.equal(set.status, 200)
     assert.equal((await jsonOf<Payment>(set)).designatedMonth, '2025-02')
     const after = (await s.api<RentLedger>('/api/rentledger/2025')).rows[0]?.months ?? assert.fail('keine Zeile')
-    assert.deepEqual([after[0]?.status, after[1]?.status], ['open', 'paid'], 'die Bestimmung gilt (§ 366 Abs. 1 BGB)')
+    assert.deepEqual([after[0]?.status, after[1]?.status], ['partial', 'paid'], 'die Bestimmung gilt (§ 366 Abs. 1 BGB)')
 
     const atSettlement = await put(guthaben.id, { designatedMonth: '2025-06' })
     assert.equal(atSettlement.status, 400)
@@ -123,7 +125,7 @@ test('Zahlungen: Monat laut Verwendungszweck setzen und leeren, 400 an der Abrec
     const r = await restore(s, backup)
     assert.equal(r.status, 200, JSON.stringify(r.body))
     const back = await s.api<Payment[]>('/api/payments')
-    assert.deepEqual(back.map((p) => [p.id, p.designatedMonth ?? null]), [[feb.id, '2025-02'], [guthaben.id, null]])
+    assert.deepEqual(back.filter((p) => p.date !== '2025-01-01').map((p) => [p.id, p.designatedMonth ?? null]), [[feb.id, '2025-02'], [guthaben.id, null]])
   } finally {
     s.stop()
   }

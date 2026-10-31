@@ -229,9 +229,9 @@ test('E5: carriedOnly nennt den nicht einforderbaren Teil getrennt', () => {
   assert.equal(l.totals.notDemandableCents, 20000)
 })
 
-// ---------- Geführt ab der ersten erfassten Mietzahlung (#281, Entscheidung nach der Durchsicht) ----------
-// Fehlende Erfassung ist keine Nichtzahlung: Das Konto beginnt am 01.01. des Jahres der ersten erfassten Mietzahlung,
-// frühestens mit dem Mietbeginn. Im ersten erfassten Jahr sieht der Vermieter dieselben Zahlen wie bis 0.13.
+// ---------- Geführt ab der ersten erfassten Mietzahlung des Objekts (#281, Durchsicht) ----------
+// Fehlende Erfassung ist keine Nichtzahlung: Das Konto beginnt im Monat der frühesten erfassten Mietzahlung des
+// Objekts, frühestens mit dem Mietbeginn. Ein Objekt beginnt die Erfassung einmal, ab dann gilt jeder Monat.
 
 const since2020 = (over: Partial<SnapshotTenancy> = {}): SnapshotTenancy => tenancy({
   start: '2020-04-01', prepayments: [{ from: '2020-04', monthlyCents: 20000 }], baseRents: [{ from: '2020-04', monthlyCents: 60000 }], ...over,
@@ -273,4 +273,61 @@ test('Geführt ab: der Hinweis prepayment.arrears zählt frühere, nicht erfasst
   const n = s.notices.filter((x) => x.code === 'prepayment.arrears')
   assert.equal(n.length, 1)
   assert.match(n[0]?.text ?? '', /sind 200,00 € nicht gezahlt\./)
+})
+
+// Ein zweites Mietverhältnis im Objekt, das ab Januar 2025 jeden Monat zahlt: Das Objekt erfasst ab Januar 2025.
+const other = (): SnapshotTenancy => tenancy({ id: 'o', unitId: 'b', tenantName: 'Andere', start: '2024-01-01' })
+const otherPays = (to = '2026-12'): SnapshotPayment[] => monthly('2025-01', to).map((p) => ({ ...p, tenancyId: 'o' }))
+const twoUnits = (s: Partial<SnapshotSource>): Partial<SnapshotSource> => ({ units: [{ id: 'a', name: 'EG', areaM2: 50, participates: true }, { id: 'b', name: 'OG', areaM2: 50, participates: true }], ...s })
+
+test('Durchsicht (A): Mietnomade ohne jede Zahlung, das Objekt erfasst seit Januar 2025: Rückstand 8.000 €, im Folgejahr in carriedOnly', () => {
+  const t = tenancy({ start: '2025-03-01', end: '2025-12-31', prepayments: [{ from: '2025-03', monthlyCents: 20000 }], baseRents: [{ from: '2025-03', monthlyCents: 60000 }] })
+  const s = twoUnits({ tenancies: [t, other()], payments: otherPays() })
+  const y2025 = rowOf(ledger(s, 2025, { asOf: '2026-10-31' }))
+  assert.equal(y2025.arrearsCents, 800000)
+  assert.equal(y2025.ledgerStart, undefined, 'der Mietbeginn liegt nach dem Beginn der Erfassung')
+  const l = ledger(s, 2026, { asOf: '2026-10-31' })
+  assert.deepEqual(l.carriedOnly.map((r) => [r.tenancyId, r.openCents]), [['t', 800000]])
+})
+
+test('Durchsicht (B): Nachmieter ab Oktober 2025 zahlt erst ab Januar 2026: Oktober bis Dezember in beiden Ansichten gleich getilgt', () => {
+  const t = tenancy({ start: '2025-10-01', prepayments: [{ from: '2025-10', monthlyCents: 20000 }], baseRents: [{ from: '2025-10', monthlyCents: 60000 }] })
+  const s = twoUnits({ tenancies: [t, other()], payments: [...otherPays(), ...monthly('2026-01', '2026-10')] })
+  const y2025 = rowOf(ledger(s, 2025, { asOf: '2026-10-31' }))
+  assert.deepEqual([10, 11, 12].map((m) => monthOf(y2025, m).status), ['open', 'open', 'open'])
+  assert.equal(y2025.closingBalanceCents, -240000)
+  // Die Zahlungen 2026 tilgen die ältesten Forderungen zuerst: Am 03.01. deckt die erste den Oktober 2025.
+  assert.equal(monthOf(y2025, 10).paidLaterOn, '2026-02-03')
+  const y2026 = rowOf(ledger(s, 2026, { asOf: '2026-10-31' }))
+  assert.equal(y2026.openingBalanceCents, -240000, 'Übertrag = Endsaldo 2025')
+  // Fällig sind Oktober 2025 bis September 2026 (9.600 €), gezahlt 8.000 €; die Zahlung vom 03.10. tilgt zuerst die
+  // Vorauszahlung Oktober 2026 (200 €, noch nicht fällig), also bleiben 1.800 € Rückstand.
+  assert.equal(y2026.arrearsCents, 180000)
+})
+
+test('Durchsicht (C): Auszug Juni 2025 ohne Zahlung, Teilzahlung 1.000 € im März 2026: der Rest steht 2026 in carriedOnly', () => {
+  const t = tenancy({ start: '2025-01-01', end: '2025-06-30', prepayments: [{ from: '2025-01', monthlyCents: 20000 }], baseRents: [{ from: '2025-01', monthlyCents: 60000 }] })
+  const s = twoUnits({ tenancies: [t, other()], payments: [...otherPays(), pay('2026-03-01', 100000)] })
+  const l = ledger(s, 2026, { asOf: '2026-10-31' })
+  assert.deepEqual(l.carriedOnly.map((r) => [r.tenancyId, r.openCents]), [['t', 480000 - 100000]])
+})
+
+test('Durchsicht (D): Mietbeginn 2020, Erfassung ab Oktober 2026, jeder Monat genau bezahlt: geführt ab Oktober 2026, kein Rückstand', () => {
+  const payments = monthly('2026-10', '2027-12')
+  const y2026 = rowOf(ledger({ tenancies: [since2020()], payments }, 2026, { asOf: '2028-01-15' }))
+  assert.equal(y2026.ledgerStart, '2026-10-01')
+  assert.deepEqual([10, 11, 12].map((m) => monthOf(y2026, m).status), ['paid', 'paid', 'paid'])
+  assert.deepEqual([1, 9].map((m) => monthOf(y2026, m).status), ['notRecorded', 'notRecorded'], 'vor der Erfassung: nicht erfasst, nicht offen')
+  assert.equal(y2026.arrearsCents, 0)
+  assert.equal(y2026.openMonths, 0)
+  assert.equal(y2026.openingBalanceCents, 0)
+  assert.equal(y2026.closingBalanceCents, 0)
+  assert.equal(y2026.sollYearCents, 12 * 80000, 'das Soll des Jahres bleibt (Steuer)')
+  const y2027 = rowOf(ledger({ tenancies: [since2020()], payments }, 2027, { asOf: '2028-01-15' }))
+  assert.equal(y2027.openingBalanceCents, 0)
+  assert.equal(y2027.arrearsCents, 0)
+  // Ein Jahr ganz vor der Erfassung: alle Monate nicht erfasst, kein Rückstand.
+  const y2025 = rowOf(ledger({ tenancies: [since2020()], payments }, 2025, { asOf: '2028-01-15' }))
+  assert.equal(y2025.arrearsCents, 0)
+  assert.ok(y2025.months.every((m) => m.status === 'notRecorded'))
 })

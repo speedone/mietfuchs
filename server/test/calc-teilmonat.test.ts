@@ -170,7 +170,11 @@ test('Auszugsmonat anteilig gezahlt: kein falscher Rückstandshinweis mehr', () 
 })
 
 test('Einzugsmonat nicht gezahlt: der Rückstand fällt jetzt im März auf, nicht verdeckt im April', () => {
-  const payments: SnapshotPayment[] = Array.from({ length: 9 }, (_, i) => ({ id: pid(), tenancyId: 'm', date: `2025-${String(i + 4).padStart(2, '0')}-03`, amountCents: 65000 }))
+  // Das Objekt erfasst seit Januar (der Nachbar zahlt); sonst begänne das Mietkonto erst mit der ersten Zahlung im April (#281).
+  const payments: SnapshotPayment[] = [
+    { id: pid(), tenancyId: 'n', date: '2025-01-03', amountCents: 65000 },
+    ...Array.from({ length: 9 }, (_, i) => ({ id: pid(), tenancyId: 'm', date: `2025-${String(i + 4).padStart(2, '0')}-03`, amountCents: 65000 })),
+  ]
   const row = rentLedger(snapshotOf(source([einzug], { payments }), 2025)).rows.find((r) => r.tenancyId === 'm') ?? assert.fail('keine Zeile')
   assert.equal(row.arrearsCents, 35645)
 })

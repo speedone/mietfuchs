@@ -68,7 +68,7 @@ import { gmodgHeating43 } from '../../shared/law/gmodg.ts'
 // rangeOverlapDays: Überlappung zweier Zeiträume in Tagen, eine Stelle mit der Monatsregel.
 import { compareText, largestRemainder } from './apportion.ts'
 import { monthShare, monthSoll, overlapDays as rangeOverlapDays, rateAtMonth, rateInMonth, type MonthlySchedule, type SollComponent } from '../../shared/monthRate.ts'
-import { allocateRentPayments, ledgerTenancy, monthCoverage, openingBalance, type MonthCoverage } from './rentAllocation.ts'
+import { allocateRentPayments, ledgerTenancy, monthCoverage, recordingStart, openingBalance, type MonthCoverage } from './rentAllocation.ts'
 import { applicableRanges, blendedPermille, halfAmounts, halfSplitStatus, intersect as intersectRange, termsFromDeliveries, termsFromPieces, termsWeight, tightMarketIn, twoFamilyOf, type HalfDelivery, type HalfSplitStatus, type HalfSplitTerm, type Piece, type TwoFamily } from './halfSplit.ts'
 import { CO2_RELIEF_LABEL } from '../../shared/co2Probe.ts'
 import { ausweisGaps, CO2_FUELS, co2Assessment, co2Required, NO_CO2_FUELS, co2DeductionsOf, FORMULA_METHODS, co2PotsOf, itemBasisUnits, L_TOLERANCE_CENTS, perUnitClassification, perUnitExceeding, perUnitReliefs, gmodgKeyOf, HALF_SPLIT_TOLERANCE_PERMILLE, reliefKeysOf, reliefsByShare, spanningPlants, type PerUnitFuel, restage, selfSplit, SERVICE_FUEL_TOLERANCE_CENTS, shownReliefs, stageRanges, tableFactor, tenantLines as co2TenantLines, type Co2Pot, type ReliefShare } from './co2.ts'
@@ -1156,7 +1156,9 @@ export function ledgerRows(
       const own = source.payments.filter((p) => p.tenancyId === t.id)
       // Geführt ab der ersten erfassten Mietzahlung (rentAllocation.ts, `ledgerStart`); das Soll der Zeile bleibt das des
       // Mietverhältnisses, denn die Steuer liest es.
-      const tracked = ledgerTenancy(t, own, Number(span.from.slice(0, 4)))
+      const year = Number(span.from.slice(0, 4))
+      const tracked = ledgerTenancy(t, source.payments, year)
+      const recorded = recordingStart(source.payments, year)
       const account = tenancyAccount(tracked, own, span, options)
       // Die Heizstaffel (Heizung PR 5, Entwurf 3.11): im Soll neben der übrigen Vorauszahlung. Die
       // Felder dazu stehen nur in Zeilen mit Heizstaffel, damit sich ohne sie nichts ändert.
@@ -1173,6 +1175,8 @@ export function ledgerRows(
         const c = account.coverage.get(mm)
         const paid = c ? c.paid.prepayment + c.paid.heatingPrepayment + c.paid.baseRent + c.paid.flatRate : 0
         const covered = c?.covered ?? true
+        // Vor dem Beginn der Erfassung (`ledgerStart`), aber im Mietverhältnis: nicht erfasst, weder bezahlt noch offen.
+        const notRecorded = share.days > 0 && compareText(mm, tracked.start.slice(0, 7)) < 0
         const notDemandable = account.notDemandableByMonth.get(mm) ?? 0
         return {
           month: Number(mm.slice(5, 7)),
@@ -1182,8 +1186,8 @@ export function ledgerRows(
           ...(withHeating ? { heatingPrepaymentCents } : {}),
           flatRateCents,
           sollCents: baseRentCents + prepaymentCents + heatingPrepaymentCents + flatRateCents,
-          paidCents: paid,
-          status: covered ? 'paid' : k >= dueMonths ? 'notDue' : paid > 0 ? 'partial' : 'open',
+          paidCents: notRecorded ? 0 : paid,
+          status: notRecorded ? 'notRecorded' : covered ? 'paid' : k >= dueMonths ? 'notDue' : paid > 0 ? 'partial' : 'open',
           openPrepaymentCents: c ? c.soll.prepayment - c.paid.prepayment + c.soll.heatingPrepayment - c.paid.heatingPrepayment : 0,
           openRentCents: c ? c.soll.baseRent - c.paid.baseRent + c.soll.flatRate - c.paid.flatRate : 0,
           ...(c?.paidLaterOn ? { paidLaterOn: c.paidLaterOn } : {}),
@@ -1223,7 +1227,7 @@ export function ledgerRows(
         openingBalanceCents: account.openingBalanceCents,
         closingBalanceCents: account.closingBalanceCents,
         ...(designatedOutside.length > 0 ? { designatedOutside } : {}),
-        ...(tracked.start !== t.start ? { ledgerStart: tracked.start } : {}),
+        ...(recorded.fromPayment && tracked.start !== t.start ? { ledgerStart: tracked.start } : {}),
       }
     })
     // Eine Liste, die ein Mensch liest: deutsche Sortierung, fest eingestellt (siehe compareName).
@@ -1265,8 +1269,8 @@ export function rentLedger(snapshot: Snapshot, options: LedgerOptions = {}): Ren
       const end = t.end
       if (end === null) return []
       const own = snapshot.payments.filter((p) => p.tenancyId === t.id)
-      const tracked = ledgerTenancy(t, own, snapshot.year)
-      // Ohne erfasste Mietzahlung bis zum Auszug gibt es kein geführtes Konto, also keinen Übertrag.
+      const tracked = ledgerTenancy(t, snapshot.payments, snapshot.year)
+      // Endete das Mietverhältnis vor dem Beginn der Erfassung im Objekt, gibt es kein geführtes Konto, also keinen Übertrag.
       if (compareText(tracked.start, end) > 0) return []
       const account = tenancyAccount(tracked, own, span, options)
       if (account.arrearsCents <= 0 && account.notDemandableCents <= 0) return []
@@ -8622,7 +8626,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const heatingHere = (m: string): boolean => way === null || separateOwner(way, objectRules, m) === null
       const own = snapshot.payments.filter((p) => p.tenancyId === t.id)
       // Geführt ab der ersten erfassten Mietzahlung, wie das Mietkonto (rentAllocation.ts, `ledgerStart`).
-      const tracked = ledgerTenancy(t, own, snapshot.year)
+      const tracked = ledgerTenancy(t, snapshot.payments, snapshot.year)
       const slices = allocateRentPayments(tracked, own)
       // Ohne Stichtag (Tests, Regression) zählen alle erfassten Zahlungen: bis zur jüngsten, mindestens bis zum Ende.
       const until = options.asOf ?? own.reduce((a, p) => maxText(a, p.date), period.to)

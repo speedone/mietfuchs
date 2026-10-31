@@ -90,7 +90,7 @@ test('Übertrag: Endsaldo eines Jahres = Anfangssaldo des nächsten; getilgt je 
         const own = slices.filter((s) => s.month === m && s.paidOn <= until)
         assert.equal(mo.paidCents, own.reduce((x, s) => x + s.cents, 0), `Startwert ${seed}, ${m}: getilgt`)
         const prepaid = own.filter((s) => s.component === 'prepayment' || s.component === 'heatingPrepayment').reduce((x, s) => x + s.cents, 0)
-        const soll = monthSoll(tenancy, m)
+        const soll = monthSoll(tracked, m)
         assert.equal(mo.openPrepaymentCents, Math.max(0, soll.prepayment) + Math.max(0, soll.heatingPrepayment) - prepaid, `Startwert ${seed}, ${m}: offen A`)
       }
       // Endsaldo + Rückstand = Überzahlung: Teile für Monate nach dem Jahr und ohne Forderung, gezahlt bis zum 31.12.
@@ -186,28 +186,39 @@ test('Hinweis prepayment.arrears: genau bei offenen Vorauszahlungen fälliger Mo
   assert.ok(seen > 10, `nur ${seen} Fälle mit Hinweis`)
 })
 
-test('Zahlungen erst ab einem späteren Jahr erfasst: dieses Jahr zeigt dieselben Zahlen wie vor #281, Anfangssaldo 0 (geführt ab)', () => {
+test('Erfassung beginnt in einem späteren Monat: ab dort dieselben Zahlen wie vor #281, davor nicht erfasst, Anfangssaldo 0 (geführt ab)', () => {
   let compared = 0
   for (const seed of seeds()) {
     const shape = randomRentStock(makeRng(seed)).tenancy
     const exact = randomRentStock(makeRng(seed), { exact: (m) => sollTotal(shape, m) })
     const { tenancy } = exact
-    // Erfasst erst ab dem zweiten Kalenderjahr nach Beginn; die Jahre davor sind nicht erfasst.
+    // Erfasst erst ab dem zweiten oder dritten Kalenderjahr nach Beginn; die Monate davor sind nicht erfasst.
     const year = Number(tenancy.start.slice(0, 4)) + 1 + (seed % 2)
     const payments = snapshotPayments(exact).filter((p) => Number(p.date.slice(0, 4)) >= year)
-    if (!payments.some((p) => p.date.startsWith(`${year}-`)) || `${year}-12` > lastPaidMonth(exact)) continue
+    const first = payments.map((p) => p.date.slice(0, 7)).reduce<string | null>((a, b) => (a === null || b < a ? b : a), null)
+    if (first === null || !first.startsWith(`${year}-`) || `${year}-12` > lastPaidMonth(exact)) continue
+    const clip = `${first}-01` > tenancy.start ? `${first}-01` : tenancy.start
+    // Das Orakel rechnet das Jahr ab dem Beginn der Erfassung (FIFO je Jahr, wie bis 0.13).
+    const oracle: SnapshotTenancy = { ...tenancy, start: clip }
     for (const asOf of [undefined, `${year}-07-15`, `${year + 1}-02-01`]) {
       const options = asOf === undefined ? {} : { asOf }
-      const [old] = fifoLedgerRows(sourceOf(tenancy, payments), calendarYearPeriod(year), options)
+      const [old] = fifoLedgerRows(sourceOf(oracle, payments), calendarYearPeriod(year), options)
       const row = rowIn(tenancy, payments, year, options)
       if (!old || !row) { assert.equal(row, old, `Startwert ${seed}: Zeile`); continue }
       const at = `Startwert ${seed}, ${year}, Stichtag ${asOf ?? '–'}`
       assert.equal(row.openingBalanceCents, 0, `${at}: Anfangssaldo`)
-      assert.equal(row.ledgerStart, `${year}-01-01`, `${at}: geführt ab`)
-      assert.deepEqual(row.months.map((m) => [m.status, m.paidCents]), old.months.map((m) => [m.status, m.paidCents]), `${at}: Monate`)
+      assert.equal(row.ledgerStart, clip === tenancy.start ? undefined : clip, `${at}: geführt ab`)
+      for (const [k, mo] of row.months.entries()) {
+        const m = `${year}-${String(k + 1).padStart(2, '0')}`
+        const o = old.months[k] ?? assert.fail(`${at}: Monat ${m}`)
+        if (m < clip.slice(0, 7)) {
+          if (mo.sollCents > 0) assert.equal(mo.status, 'notRecorded', `${at}: ${m} nicht erfasst`)
+          continue
+        }
+        assert.deepEqual([mo.status, mo.paidCents], [o.status, o.paidCents], `${at}: ${m}`)
+      }
       assert.equal(row.arrearsCents, old.arrearsCents, `${at}: Rückstand`)
       assert.equal(row.openMonths, old.openMonths, `${at}: offene Monate`)
-      assert.equal(row.balanceCents, old.balanceCents, `${at}: Saldo`)
       compared++
     }
   }

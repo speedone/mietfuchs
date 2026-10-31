@@ -728,11 +728,13 @@ zuerst (BGH VIII ZR 84/17 Rn. 56/57); Rücklastschrift nimmt die jüngste Zuordn
 Salden nur über `monthCoverage` und `openingBalance` (`tenancyAccount`), keine zweite Regel; rentAllocation.ts
 importiert nichts aus calc.ts (Zyklus; Wächter in rentAllocation.test.ts). Die Steuer liest die Teile ab #312 PR 2.
 
-- **Geführt ab** (`ledgerStart`/`ledgerTenancy` in rentAllocation.ts, eine Stelle für Mietkonto und Steuer): 01.01. des
-  Jahres der ersten erfassten Mietzahlung, frühestens der Mietbeginn; ohne erfasste Zahlung und für ein Jahr davor zählt
-  das angezeigte Jahr für sich. Fehlende Erfassung ist keine Nichtzahlung: Im ersten erfassten Jahr stehen dieselben
-  Zahlen wie bis 0.13, der Übertrag beginnt danach. Monate davor sind für Tilgung, Salden, Rückstand, Abrechnungsreife
-  und `prepayment.arrears` weder Soll noch offen; das Soll der Zeile (Steuer) bleibt. Die Zeile trägt dann `ledgerStart`.
+- **Geführt ab** (`recordingStart`/`ledgerStart`/`ledgerTenancy` in rentAllocation.ts, eine Stelle für Mietkonto und
+  Steuer): Monatserster der frühesten erfassten Mietzahlung des **Objekts**, frühestens der Mietbeginn; hat das Objekt
+  keine Mietzahlung, zählt das angezeigte Jahr für sich. Fehlende Erfassung ist keine Nichtzahlung; ein Objekt beginnt
+  die Erfassung einmal, ab dann gilt jeder Monat, und dieselbe Zahlung tilgt in jeder Ansicht dieselben Monate. Monate
+  davor sind für Tilgung, Salden, Rückstand, Abrechnungsreife und `prepayment.arrears` weder Soll noch offen (Status
+  `notRecorded`); das Soll der Zeile (Steuer) bleibt. `ledgerStart` steht an der Zeile, wenn er aus einer Zahlung stammt
+  und nach dem Mietbeginn liegt. Endsaldo = Anfangssaldo des Folgejahres gilt ab dem Jahr von `ledgerStart`.
 - **Jahr mit Übertrag**: `openingBalanceCents` (01.01.) und `closingBalanceCents` (31.12.), Endsaldo(Y) =
   Anfangssaldo(Y+1). Ein Monat zählt Teile mit Datum bis zum 31.12. (eine Dezemberzahlung für Januar deckt den
   Januar), `paidLaterOn` nennt die spätere Deckung. `paidYearCents` und `balanceCents` bleiben das Jahr allein

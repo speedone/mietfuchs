@@ -253,3 +253,12 @@ test('Mietkonto: ein offener Monat ist ein Knopf und öffnet die Zahlung mit dem
   expect(amount.value).toBe('500,00')
 })
 
+
+test('Mietkonto: Monate vor der Erfassung heißen „nicht erfasst“ und sind kein Buchungsknopf (#281, Durchsicht)', async () => {
+  const row = LEDGER.rows[0] ?? expect.fail('keine Zeile')
+  ledger = { ...LEDGER, rows: [{ ...row, ledgerStart: `${YEAR}-10-01`, months: row.months.map((m) => m.month < 10 ? { ...m, status: 'notRecorded' as const, paidCents: 0 } : m) }] }
+  shell()
+  expect(await screen.findByText(`Mietkonto geführt ab Oktober ${YEAR} (erste erfasste Mietzahlung); frühere Monate sind nicht erfasst.`)).toBeTruthy()
+  expect(screen.queryByRole('button', { name: /^Jan/ })).toBeNull()
+  expect(screen.getAllByText('nicht erfasst').length).toBe(9)
+})

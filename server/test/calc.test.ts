@@ -2515,7 +2515,8 @@ test('Mietkonto mit Stichtag: künftige Monate sind „noch nicht fällig“ und
     ...emptyDb(),
     units: [{ id: 'a', name: 'EG', areaM2: 50, participates: true }],
     tenancies: [tenancy({ id: 't', unitId: 'a', tenantName: 'M', start: '2020-01-01', end: null, baseRents: [{ from: '2020-01', monthlyCents: 100000 }], prepayments: [] })],
-    payments: [{ id: 'p', tenancyId: 't', date: '2026-09-03', amountCents: 900000 }],
+    // Am 03.01. für neun Monate im Voraus (#281: das Mietkonto beginnt mit der ersten erfassten Zahlung im Objekt).
+    payments: [{ id: 'p', tenancyId: 't', date: '2026-01-03', amountCents: 900000 }],
   }
   const snapshot = snapshotFromDb(db, 2026)
   const heute = rentLedger(snapshot, { asOf: '2026-10-15' })
