@@ -87,7 +87,11 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
   // Was nach „Alle grünen übernehmen“ noch zu prüfen bleibt (#139)
   const [pending, setPending] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const attach = useAttach(stock, properties, setError)
+  // Ein gespeicherter, nicht ausgewerteter Beleg, der gelöscht oder zugeordnet ist: sein Eintrag ist erledigt (Durchsicht S3)
+  const forgetKept = (file: string) => {
+    for (const x of allRef.current) if (x.status === 'gespeichert' && (x.failure?.file ?? x.file) === file) remove(x.id)
+  }
+  const attach = useAttach(stock, properties, setError, forgetKept)
 
 
   // Gespeicherte Auswertungen dieses Objekts (#170): die offenen vom Server, dazu die in dieser
@@ -497,7 +501,8 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
     if (!ok) return
     try {
       await api(`/api/uploads/${encodeURIComponent(f.file)}`, { method: 'DELETE' })
-      await stock.reload()
+      forgetKept(f.file)
+      await reloadAll()
       toast('Beleg gelöscht. Der Verlauf holt ihn aus dem Papierkorb zurück.')
     } catch (e) {
       setError(errorText(e))
@@ -514,7 +519,9 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
     setHighlighted(`f:${file}`)
   }
 
-  const renderInbox = (card: ReceiptCard) => {
+  // `review`: die Karte steht an ihrer Auswertung unter „Zu prüfen“; dort braucht es weder „Weiter prüfen“ noch „Per KI
+  // auswerten“ (Durchsicht M2).
+  const renderInbox = (card: ReceiptCard, review = false) => {
     const { upload } = card
     const keptEntry = kept.get(upload.file)
     return (
@@ -550,12 +557,12 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
                 })()}
                 {/* Auswerten nimmt Objekt und Jahr, wie sie gespeichert sind; mit einem Entwurf daran vorbei landete
                     die Auswertung in einem anderen Objekt (Durchsicht zu #309, SOLLTE 3). */}
-                {upload.assessment?.open ? (
+                {review ? null : upload.assessment?.open ? (
                   <button className="btn" aria-label={`${receiptName(upload)} weiter prüfen`} disabled={placement.dirty} onClick={() => void continueChecking(upload)}>Weiter prüfen</button>
                 ) : !keptEntry && (
                   <button className="btn" aria-label={`${receiptName(upload)} per KI auswerten`} disabled={placement.dirty} onClick={() => void evaluate(upload)}>Per KI auswerten</button>
                 )}
-                {placement.dirty && <span className="muted">{PLACEMENT_FIRST}</span>}
+                {placement.dirty && !review && <span className="muted">{PLACEMENT_FIRST}</span>}
               </>
             )}
           </InboxPlacement>
@@ -643,6 +650,8 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
   const toggleBeside = (id: string) => setBeside((s) => { const next = new Set(s); if (next.has(id)) next.delete(id); else next.add(id); return next })
   const renderAssessment = (v: AssessmentView) => {
     const shown = beside.has(v.id) && v.open
+    // Der Beleg selbst, solange er an keiner Position hängt: löschen, Objekt und Jahr, zuordnen (Durchsicht M2)
+    const own = v.open ? allCards.find((c) => c.upload.file === v.file && c.items.length === 0 && c.upload.kind !== 'meterPhoto') : undefined
     return (
       <div className={`card no-print${highlighted === `a:${v.id}` ? ' bg-accent-soft border-accent' : ''}`} key={v.id} data-assessment={v.id} tabIndex={-1}>
         <div className="row center">
@@ -658,6 +667,7 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
               controls={`beleg-${v.id}`} className="btn small ghost" />
           )}
         </div>
+        {own && <ul className="receipt-list">{renderInbox(own, true)}</ul>}
         <div className={shown ? 'flex flex-col xl:flex-row-reverse xl:items-start gap-4' : undefined}>
           {shown && (
             <iframe id={`beleg-${v.id}`} className="w-full xl:w-96 h-112 shrink-0 border border-line bg-card"
@@ -781,7 +791,7 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
           {freeCards.length > 0 && (
             <p className="muted">Gespeicherte Belege, die an keiner Kostenposition hängen. Ordnen Sie jeden einer Position zu oder lassen Sie ihn per KI auswerten.</p>
           )}
-          {inboxShown.shown.length > 0 && <ul ref={inboxList} className="receipt-list">{inboxShown.shown.map(renderInbox)}</ul>}
+          {inboxShown.shown.length > 0 && <ul ref={inboxList} className="receipt-list">{inboxShown.shown.map((c) => renderInbox(c))}</ul>}
           {inboxShown.hidden > 0 && (
             <div className="row">
               <button type="button" className="btn secondary"

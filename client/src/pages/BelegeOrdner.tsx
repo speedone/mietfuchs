@@ -14,6 +14,7 @@ import { renderInvoicePages, renderThumbnail } from '../pdfPreview'
 import { buildTenantFolderPdf, isIndividualAmounts, planTenantFolder, type TenantFolderPlan } from '../tenantFolder'
 import { buildFolder, coverage, filesByItem, duplicateHints, inboxFor, partsBySource, receiptCards, registerCount, receiptName, yearSections, type CategoryGroup, type FolderFilter, type ReceiptCard } from '../receipts'
 import { hitPlace } from '../belegeView'
+import { useEvaluationQueue } from '../evaluationQueue'
 import type { ReceiptStock } from '../receiptStock'
 import Field from '../components/Field'
 import { useToast } from '../components/feedback'
@@ -207,7 +208,12 @@ export default function BelegeOrdner({ stock, renderThumb = renderThumbnail, onO
   const { property, properties } = useProperty()
   const { uploads, costItems, loadedOnce } = stock
   const [error, setError] = useState('')
-  const attach = useAttach(stock, properties, setError)
+  // Hängt ein gespeicherter, nicht ausgewerteter Beleg jetzt an einer Position, ist sein Eintrag der Warteschlange erledigt
+  // (Durchsicht S3)
+  const { queue, remove } = useEvaluationQueue()
+  const attach = useAttach(stock, properties, setError, (file) => {
+    for (const x of queue) if (x.status === 'gespeichert' && (x.failure?.file ?? x.file) === file) remove(x.id)
+  })
   // Der Ordner zeigt das Objekt und das Jahr der Seitenleiste (#170); gewählt werden beide nur dort (#346
   // Schritt 8, M13). Was der Ordner darüber hinaus kann, ist ein Umfang und keine Wahl: Belege aller Objekte bzw.
   // aller Jahre zeigen. Das Jahr ist das Kalenderjahr, in dem der gewählte Zeitraum beginnt; darunter stehen seine

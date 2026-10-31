@@ -196,7 +196,9 @@ type AmountCheckState = { item: CostItem; file: string; amount: string; problem:
 // prüfen“: Eine aus dem Vorjahr übernommene Position trägt einen geschätzten Betrag, der sonst still stehen bliebe.
 // `closed`: Die Abrechnung des Jahres der Position ist abgeschlossen; eine Änderung erscheint dort als Abweichung
 // (Integrationsdurchsicht vor 0.10). Eingang und Ordner haben je einen eigenen Kasten.
-export function useAttach(stock: ReceiptStock, properties: readonly Property[], onError: (text: string) => void) {
+// `onAttached`: Der Beleg hängt jetzt an einer Position; ein gespeicherter, nicht ausgewerteter Eintrag der Warteschlange
+// dazu ist erledigt (Durchsicht S3).
+export function useAttach(stock: ReceiptStock, properties: readonly Property[], onError: (text: string) => void, onAttached?: (file: string) => void) {
   const toast = useToast()
   const [check, setCheck] = useState<AmountCheckState | null>(null)
   // „Betrag prüfen“ zählt als offenes Formular (#346, 7a): Die Frage zum Schätzbetrag kommt nach einem
@@ -205,6 +207,7 @@ export function useAttach(stock: ReceiptStock, properties: readonly Property[], 
 
   async function attach(c: CostItem, invoiceFile: string) {
     await api(`/api/costItems/${encodeURIComponent(c.id)}`, { method: 'PUT', body: JSON.stringify({ invoiceFile }) })
+    onAttached?.(invoiceFile)
     setCheck({ item: c, file: invoiceFile, amount: '', problem: '' })
     // Ist die Abrechnung des Jahres abgeschlossen, sagt der Kasten es. Scheitert die Frage, fehlt
     // nur der Satz; das Zuordnen ist schon gespeichert. Abgewartet wird sie nicht: Das „Speichern“

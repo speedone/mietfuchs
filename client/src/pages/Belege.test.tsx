@@ -56,6 +56,8 @@ let aiStatus: { ok: boolean; error?: string; reason?: string } = { ok: true }
 let holdIntake = false
 // Die Pfade aller GET-Anfragen
 let fetched: string[] = []
+// Gelöschte Belege (DELETE /api/uploads/…)
+let deleted = new Set<string>()
 let openAssessments: () => AssessmentView[] = () => []
 
 // Die Abrechnung des Jahres, nur mit dem, was die Belegmappe liest: die Zeilen der Mieter
@@ -76,6 +78,7 @@ beforeEach(() => {
   aiStatus = { ok: true }
   holdIntake = false
   fetched = []
+  deleted = new Set()
   openAssessments = () => []
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const u = new URL(url, 'http://x')
@@ -86,14 +89,15 @@ beforeEach(() => {
       if (failAssessmentPut && u.pathname.startsWith('/api/assessments/')) return new Response(JSON.stringify({ error: 'Zeilen sind schon gebucht.' }), { status: 409, headers: { 'content-type': 'application/json' } })
       // Die KI-Auswertung: hier nur, dass sie ankommt (gescheitert, der Beleg bleibt gespeichert)
       if (u.pathname === '/api/intake' && holdIntake) return new Promise<Response>(() => {})
-      if (u.pathname === '/api/intake') return new Response(JSON.stringify({ error: 'Ollama antwortet nicht.', file: '4_lose.pdf', reason: 'unreachable', kept: true }), { status: 502, headers: { 'content-type': 'application/json' } })
+      if (u.pathname === '/api/intake') return new Response(JSON.stringify({ error: 'Ollama antwortet nicht.', file: String(body.existingFile ?? '4_lose.pdf'), reason: 'unreachable', kept: true }), { status: 502, headers: { 'content-type': 'application/json' } })
+      if (method === 'DELETE' && u.pathname.startsWith('/api/uploads/')) deleted.add(decodeURIComponent(u.pathname.slice('/api/uploads/'.length)))
       const answer = u.pathname === '/api/upload' ? { file: '99_nachgereicht.pdf' } : { ok: true }
       return new Response(JSON.stringify(answer), { status: 200, headers: { 'content-type': 'application/json' } })
     }
     fetched.push(u.pathname)
     let body: unknown = []
     if (u.pathname === '/api/properties') body = propsOverride ?? PROPS
-    else if (u.pathname === '/api/uploads') body = [up('1_gs.pdf'), up('2_wasser.pdf'), up('3_ahorn.pdf'), up('4_lose.pdf', '1_gs.pdf'), ...extraUploads]
+    else if (u.pathname === '/api/uploads') body = [up('1_gs.pdf'), up('2_wasser.pdf'), up('3_ahorn.pdf'), up('4_lose.pdf', '1_gs.pdf'), ...extraUploads].filter((x) => !deleted.has(x.file))
     else if (u.pathname === '/api/costItems') body = [...(ITEMS[u.searchParams.get('property') ?? 'p1'] ?? []), ...(u.searchParams.get('property') === 'p2' ? [] : extraItems)]
     else if (u.pathname === '/api/heating-plants') body = u.searchParams.get('property') === 'p2' ? [] : plantsP1
     else if (u.pathname.startsWith('/api/settlement/')) body = closed ? { ...SETTLEMENT, closed } : SETTLEMENT
@@ -575,7 +579,8 @@ test('Eingang (#490): ein Beleg mit offener Auswertung steht unter „Zu prüfen
   const group = await screen.findByRole('region', { name: 'Zu prüfen' })
   expect(group.querySelector('[data-assessment="a5"]')).not.toBeNull()
   await screen.findByLabelText('Jahr für lose.pdf')
-  expect(document.querySelector('[data-view="eingang"] li[data-file="5_offen.pdf"]')).toBeNull()
+  expect(document.querySelector('[data-group="ohne"] li[data-file="5_offen.pdf"]')).toBeNull()
+  expect(document.querySelectorAll('[data-view="eingang"] li[data-file="5_offen.pdf"]')).toHaveLength(1)
   expect(screen.queryByRole('button', { name: 'offen.pdf per KI auswerten' })).toBeNull()
 })
 
@@ -1043,4 +1048,54 @@ test('Eingang: „Beleg daneben zeigen“ zeigt den Beleg neben der Auswertung, 
   expect(show.getAttribute('aria-expanded')).toBe('true')
   fireEvent.click(screen.getByRole('button', { name: 'Beleg ausblenden' }))
   expect(document.querySelector('iframe')).toBeNull()
+})
+
+// Durchsicht M2: Ein Beleg mit offener Auswertung steht nur unter „Zu prüfen“. Löschen, Objekt und Jahr und Zuordnen gehen
+// dort an der Karte der Auswertung, wie vorher im Posteingang.
+test('Eingang: an der Auswertung lässt sich der Beleg löschen, einordnen und zuordnen', async () => {
+  extraUploads = [{ ...up('5_offen.pdf'), bookedItemIds: [], assessment: { id: 'a5', propertyId: 'p1', open: true } }]
+  openAssessments = () => [assessmentOf('a5', '5_offen.pdf')]
+  renderInbox()
+  const card = await waitFor(() => document.querySelector('[data-assessment="a5"]') as HTMLElement ?? expect.fail('keine Auswertung'))
+  const receipt = await waitFor(() => card.querySelector('[data-file="5_offen.pdf"]') as HTMLElement ?? expect.fail('kein Beleg an der Auswertung'))
+  expect(within(receipt).getByRole('button', { name: 'Beleg offen.pdf löschen' })).toBeTruthy()
+  expect(within(receipt).getByLabelText('Jahr für offen.pdf')).toBeTruthy()
+  const zuordnen = within(receipt).getByLabelText('offen.pdf einer Position zuordnen') as HTMLSelectElement
+  expect([...zuordnen.options].map((o) => o.value)).toEqual(['', 'w2'])
+  // „Weiter prüfen“ und „Per KI auswerten“ braucht es hier nicht: Die Prüfung steht daneben
+  expect(within(receipt).queryByRole('button', { name: /weiter prüfen|per KI auswerten/ })).toBeNull()
+})
+
+// Durchsicht S3: Wird ein gespeicherter, nicht ausgewerteter Beleg gelöscht oder zugeordnet, verschwindet auch sein Eintrag
+// der Warteschlange; sonst bliebe ein Geist mit „Erneut versuchen“.
+async function keptFoto() {
+  extraUploads = [{ ...up('7_foto.jpg'), mimeType: 'image/jpeg' }]
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <UIProvider>
+          <Belege {...BASE} view="eingang" renderThumb={() => Promise.resolve('')} />
+        </UIProvider>
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  fireEvent.click(await screen.findByRole('button', { name: 'foto.jpg per KI auswerten' }))
+  await screen.findByText('Gespeichert, nicht ausgewertet')
+}
+
+test('Eingang: nach dem Löschen eines gespeicherten Belegs bleibt kein „Erneut versuchen“ stehen', async () => {
+  await keptFoto()
+  fireEvent.click(screen.getByRole('button', { name: 'Beleg foto.jpg löschen' }))
+  fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Löschen' }))
+  await waitFor(() => expect(sent.some((r) => r.method === 'DELETE')).toBe(true))
+  await waitFor(() => expect(screen.queryByText('Gespeichert, nicht ausgewertet')).toBeNull())
+  expect(screen.queryByRole('button', { name: 'Erneut versuchen' })).toBeNull()
+})
+
+test('Eingang: nach dem Zuordnen eines gespeicherten Belegs bleibt kein „Erneut versuchen“ stehen', async () => {
+  await keptFoto()
+  fireEvent.change(screen.getByLabelText('foto.jpg einer Position zuordnen'), { target: { value: 'w2' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern (Position für foto.jpg)' }))
+  await waitFor(() => expect(sent.some((r) => r.url === '/api/costItems/w2')).toBe(true))
+  await waitFor(() => expect(screen.queryByText('Gespeichert, nicht ausgewertet')).toBeNull())
 })
