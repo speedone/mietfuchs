@@ -7,6 +7,8 @@ import FederalStateField from './FederalStateField'
 import IbanInput from './IbanInput'
 import Field from './Field'
 import type { FormErrors } from './ErrorSummary'
+import { LAW_AS_OF, valueAt } from '../../../shared/law/register.ts'
+import { estgAcquisitionRelated, yearsWord } from '../../../shared/law/estg.ts'
 
 // Die Felder eines Objekts, dieselben im Seitenfenster „Neues Objekt“ (NewPropertyDrawer) und „Objekt bearbeiten“
 // (PropertyCard), wie bei Wohnungen und Mietverhältnissen ein Formular für beides. Vorher legte ein schmales
@@ -57,7 +59,7 @@ export default function PropertyFields({ form, setForm, errors, storedIban }: {
           </Field>
           {TAX_HEADER_FIELDS.filter((f) => f !== 'groundTaxFileNumber').map((f) => (
             <Field key={f} label={TAX_HEADER_LABELS[f]} {...errors.field(f)}
-              hint={f === 'ownershipTransferOn' ? <>Übergang von Besitz, Nutzen und Lasten; ab hier laufen die drei Jahre für <Term id="acquisitionRelatedCosts">anschaffungsnahe Herstellungskosten</Term>.</> : undefined}>
+              hint={f === 'ownershipTransferOn' ? <>Übergang von Besitz, Nutzen und Lasten; ab hier laufen die {yearsWord(valueAt(estgAcquisitionRelated, LAW_AS_OF).years)} Jahre für <Term id="acquisitionRelatedCosts">anschaffungsnahe Herstellungskosten</Term>.</> : undefined}>
               <input type="date" value={form[f]} onChange={(e) => setForm({ ...form, [f]: e.target.value })} />
             </Field>
           ))}

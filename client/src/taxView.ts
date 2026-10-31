@@ -24,6 +24,8 @@ import { fmtDate, fmtEuro } from './api'
 import { anlageVLines } from './anlageV'
 import { RESERVE_WITHDRAWAL_CATEGORY } from '../../shared/categories.ts'
 import { fileNumberDigits } from './propertyForm'
+import { LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
+import { estgAcquisitionRelated, yearsWord } from '../../shared/law/estg.ts'
 
 export type Basis = 'soll' | 'ist'
 
@@ -114,7 +116,7 @@ export type TaxHint = (typeof TAX_HINTS)[number]
 //   `acquisitionRelated` (#96 PR 2, A4.4, Durchsicht X6: der eine Hinweis für #96 und #262) Das Steuerjahr berührt die
 //                        drei Jahre nach dem Eigentumsübergang oder das Kalenderjahr danach (ersatzweise großzügig ab dem
 //                        Kaufvertrag, siehe `acquisitionRelated`), und es gibt abziehbaren
-//                        Erhaltungsaufwand oder Instandhaltung: Die 15-%-Grenze nach § 6 Abs. 1 Nr. 1a EStG gilt, und
+//                        Erhaltungsaufwand oder Instandhaltung: Die Grenze nach § 6 Abs. 1 Nr. 1a EStG gilt, und
 //                        Mietfuchs kennt die Anschaffungskosten nicht (`acquisitionRelated`). Ohne Datum kein Hinweis,
 //                        bis #262 PR 3 den Beginn einer Verteilung ergänzt.
 //
@@ -598,7 +600,9 @@ export type AcquisitionRelated = { from: string; until: string; basis: 'transfer
 // Der Tag des Übergangs zählt nicht mit, die Frist endet mit dem Tag, der durch seine Zahl dem Übergang entspricht
 // (01.07.2023 bis 01.07.2026); fehlt dieser Tag im letzten Monat, mit dessen letztem Tag (§ 188 Abs. 3 BGB, ein 29.02. am
 // 28.02.). Wo die Auslegung einen Tag früher enden ließe, nimmt der Hinweis das spätere Ende: Er soll nicht zu früh schweigen.
-const ACQUISITION_YEARS = 3
+// Grenze und Zeitraum stehen im Rechtsregister (`estg.acquisition-related`); die Seite nennt sie nur, also zum Rechtsstand.
+export const ACQUISITION_LIMITS = valueAt(estgAcquisitionRelated, LAW_AS_OF)
+const ACQUISITION_YEARS = ACQUISITION_LIMITS.years
 // Die Gruppen der Steuerübersicht mit Erhaltung (`ANLAGE_V_GROUP` in server/src/calc.ts).
 const MAINTENANCE_GROUPS: readonly string[] = [MAINTENANCE_GROUP, 'Verwaltung & Instandhaltung']
 
@@ -629,15 +633,18 @@ export function acquisitionRelated(report: Pick<TaxReport, 'year' | 'expenses'>,
   return { from, until, basis: transfer !== null ? 'transfer' : 'contract' }
 }
 
-const ACQUISITION_RULE = 'sind Instandsetzung und Modernisierung Herstellungskosten, wenn sie ohne Umsatzsteuer zusammen mehr als 15 % der Anschaffungskosten des Gebäudes ausmachen; dann wirken sie nur über die Abschreibung.'
+const ACQUISITION_RULE = `sind Instandsetzung und Modernisierung Herstellungskosten, wenn sie ohne Umsatzsteuer zusammen mehr als ${ACQUISITION_LIMITS.percent} % der Anschaffungskosten des Gebäudes ausmachen; dann wirken sie nur über die Abschreibung.`
+const ACQUISITION_SPAN = `In den ${yearsWord(ACQUISITION_YEARS)} Jahren nach`
 const ACQUISITION_UNKNOWN = 'Mietfuchs kennt die Anschaffungskosten nicht und rechnet die Grenze nicht.'
 
 export function acquisitionRelatedText(info: AcquisitionRelated): string {
   if (info.basis === 'transfer') {
-    return `In den drei Jahren nach dem Eigentumsübergang am ${fmtDate(info.from)} (bis ${fmtDate(info.until)}) ${ACQUISITION_RULE} Arbeiten, die bis ${fmtDate(info.until)} ausgeführt wurden, zählen mit, auch wenn sie später bezahlt sind. ${ACQUISITION_UNKNOWN} Die Frist läuft ab dem Übergang von Besitz, Nutzen und Lasten; prüfen Sie bitte das Datum.`
+    return `${ACQUISITION_SPAN} dem Eigentumsübergang am ${fmtDate(info.from)} (bis ${fmtDate(info.until)}) ${ACQUISITION_RULE} Arbeiten, die bis ${fmtDate(info.until)} ausgeführt wurden, zählen mit, auch wenn sie später bezahlt sind. ${ACQUISITION_UNKNOWN} Die Frist läuft ab dem Übergang von Besitz, Nutzen und Lasten; prüfen Sie bitte das Datum.`
   }
-  return `In den drei Jahren nach der Anschaffung ${ACQUISITION_RULE} Die Frist läuft ab dem Übergang von Besitz, Nutzen und Lasten; eingetragen ist nur der Kaufvertrag vom ${fmtDate(info.from)}. Mietfuchs rechnet deshalb großzügig bis ${fmtDate(info.until)}, ein Jahr länger als ab dem Kaufvertrag; tragen Sie bitte den Eigentumsübergang ein. Arbeiten, die bis zum Ende der Frist ausgeführt wurden, zählen mit, auch wenn sie später bezahlt sind. ${ACQUISITION_UNKNOWN}`
+  return `${ACQUISITION_SPAN} der Anschaffung ${ACQUISITION_RULE} Die Frist läuft ab dem Übergang von Besitz, Nutzen und Lasten; eingetragen ist nur der Kaufvertrag vom ${fmtDate(info.from)}. Mietfuchs rechnet deshalb großzügig bis ${fmtDate(info.until)}, ein Jahr länger als ab dem Kaufvertrag; tragen Sie bitte den Eigentumsübergang ein. Arbeiten, die bis zum Ende der Frist ausgeführt wurden, zählen mit, auch wenn sie später bezahlt sind. ${ACQUISITION_UNKNOWN}`
 }
 
 // Der Satz „mehr“ des Hinweises, mit den Fundstellen (K6).
-export const ACQUISITION_RELATED_MORE = '§ 6 Abs. 1 Nr. 1a EStG, für Werbungskosten nach § 9 Abs. 5 Satz 2 EStG; BMF-Schreiben vom 26.01.2026, IV C 1 - S 2253/00082/001/064, Rn. 54, 62 und 63. Mit zählen Entnahmen aus der Erhaltungsrücklage (BFH, Urteil vom 14.01.2025, IX R 19/24); nicht mit zählen Erweiterungen und Erhaltungsarbeiten, die jährlich üblicherweise anfallen.'
+export const ACQUISITION_RELATED_MORE = `${estgAcquisitionRelated.norm}, für Werbungskosten nach § 9 Abs. 5 Satz 2 EStG; BMF-Schreiben vom 26.01.2026, IV C 1 - S 2253/00082/001/064, Rn. 54, 62 und 63. Mit zählen Entnahmen aus der Erhaltungsrücklage (BFH, Urteil vom 14.01.2025, IX R 19/24); nicht mit zählen Erweiterungen und Erhaltungsarbeiten, die jährlich üblicherweise anfallen.`
+// Die Überschrift des Hinweises.
+export const ACQUISITION_RELATED_TITLE = `die ${ACQUISITION_LIMITS.percent}-%-Grenze prüfen`

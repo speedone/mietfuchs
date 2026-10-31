@@ -804,7 +804,8 @@ Grundmenge ist das ganze Gebäude), Überschuss. Beschreibende Gruppen statt fes
   Die Frist läuft allein ab dem Eigentumsübergang (BMF-Schreiben vom 26.01.2026, Rn. 62) und endet nach §§ 187 Abs. 1,
   188 Abs. 2 BGB am Tag gleicher Zahl drei Jahre später; der Hinweis steht auch im Kalenderjahr danach, weil später
   bezahlte Arbeiten mitzählen (Rn. 63). Ist nur der Kaufvertrag eingetragen, rechnet er großzügig vier Jahre ab ihm,
-  denn der Übergang liegt danach; ohne Datum kein Hinweis.
+  denn der Übergang liegt danach; ohne Datum kein Hinweis. Grenze und Zeitraum stehen im Register
+  (`estg.acquisition-related`, Zeitregel `eventDate`: Beginn der Baumaßnahme), gelesen zum `LAW_AS_OF`.
 - **Teilweise Eigennutzung** (#163, `splitForTax`, Entwurf
   [docs/superpowers/specs/2026-10-02-steuer-eigennutzung-design.md](../../docs/superpowers/specs/2026-10-02-steuer-eigennutzung-design.md)):
   jede Position in privat und abziehbar. Direkt zugeordnet ganz zu ihrer Einheit; nicht umlagefähig

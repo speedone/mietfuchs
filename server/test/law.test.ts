@@ -18,7 +18,7 @@ import { RULES, rulesFor } from '../../shared/law/rules.ts'
 import { CALIBRATED_METER_TYPES, messevCalibrationYears } from '../../shared/law/messev.ts'
 import { co2HalfSplit, co2HalfSplitEmergency, co2HalfSplitNewBuildings, co2HalfSplitTwoFamily, co2SelfSupply, halfSplitBioFirstDay, halfSplitEnactedOn, halfSplitFirstDay } from '../../shared/law/co2kostaufg.ts'
 import { bioCapFrom, gmodgHeating43 } from '../../shared/law/gmodg.ts'
-import { estgCheapRent } from '../../shared/law/estg.ts'
+import { estgAcquisitionRelated, estgCheapRent } from '../../shared/law/estg.ts'
 import { degreeDayPermille } from '../../shared/degreeDays.ts'
 import { holidayNewYear, holidayGoodFriday, holidayEasterMonday, holidayLabourDay, holidayAscension, holidayWhitMonday, holidayChristmas, holidayBoxingDay, holidayEpiphany, holidayWomensDay, holidayEasterSunday, holidayWhitSunday, holidayLiberationDay, holidayCorpusChristi, holidayUprising1953, holidayAugsburgPeace, holidayAssumption, holidayChildrensDay, holidayUnityDay, holidayReformation, holidayAllSaints, holidayRepentance, HOLIDAY_PARAMS } from '../../shared/law/feiertagsgesetze.ts'
 
@@ -182,7 +182,7 @@ test('Register: jede Konstante vom Typ LawParam in shared/law/ steht in LAW_PARA
     .flatMap((f) => [...fs.readFileSync(path.join(dir, f), 'utf8').matchAll(/^export const (\w+): LawParam</gm)].map((m) => m[1]))
   assert.ok(declared.length >= 7, `nur ${declared.length} Parameter gefunden`)
   const listed = new Set<unknown>(LAW_PARAMS)
-  const modules = { betrkvGenerationPower, betrkvTvSignal, bgbDeadlineMonths, bgbHeatDeliverySwitch, bgbMaxPeriodMonths, co2ApplicableFrom, co2CostsBefore, co2CutMissing, co2DistrictEtsNew, co2EbevFactors, co2HalfSplit, co2HalfSplitEmergency, co2HalfSplitNewBuildings, co2HalfSplitTwoFamily, co2NonResidential, co2Price, co2SelfSupply, co2PriceEts, co2Restriction, co2RoundingDecimals, co2StageTable, gmodgHeating43, hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvExemptions, hkvGenerationPower, hkvHeatingValues, hkvHeatPumpCapture, hkvInfoDistrict, hkvMonthlyInfo, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo, practiceEvaporatorWindow, practiceReadingOffWarning, practiceVacancyPersons, ustgGasHeatNetworkRate, ustgStandardRate, messevCalibrationYears, holidayNewYear, holidayGoodFriday, holidayEasterMonday, holidayLabourDay, holidayAscension, holidayWhitMonday, holidayChristmas, holidayBoxingDay, holidayEpiphany, holidayWomensDay, holidayEasterSunday, holidayWhitSunday, holidayLiberationDay, holidayCorpusChristi, holidayUprising1953, holidayAugsburgPeace, holidayAssumption, holidayChildrensDay, holidayUnityDay, holidayReformation, holidayAllSaints, holidayRepentance, bgbRentDueWorkday, bgbRentDueSaturday, bgbDeadlineOnWorkday, estgCheapRent, ustgSmallBusiness }
+  const modules = { betrkvGenerationPower, betrkvTvSignal, bgbDeadlineMonths, bgbHeatDeliverySwitch, bgbMaxPeriodMonths, co2ApplicableFrom, co2CostsBefore, co2CutMissing, co2DistrictEtsNew, co2EbevFactors, co2HalfSplit, co2HalfSplitEmergency, co2HalfSplitNewBuildings, co2HalfSplitTwoFamily, co2NonResidential, co2Price, co2SelfSupply, co2PriceEts, co2Restriction, co2RoundingDecimals, co2StageTable, gmodgHeating43, hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvExemptions, hkvGenerationPower, hkvHeatingValues, hkvHeatPumpCapture, hkvInfoDistrict, hkvMonthlyInfo, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo, practiceEvaporatorWindow, practiceReadingOffWarning, practiceVacancyPersons, ustgGasHeatNetworkRate, ustgStandardRate, messevCalibrationYears, holidayNewYear, holidayGoodFriday, holidayEasterMonday, holidayLabourDay, holidayAscension, holidayWhitMonday, holidayChristmas, holidayBoxingDay, holidayEpiphany, holidayWomensDay, holidayEasterSunday, holidayWhitSunday, holidayLiberationDay, holidayCorpusChristi, holidayUprising1953, holidayAugsburgPeace, holidayAssumption, holidayChildrensDay, holidayUnityDay, holidayReformation, holidayAllSaints, holidayRepentance, bgbRentDueWorkday, bgbRentDueSaturday, bgbDeadlineOnWorkday, estgCheapRent, estgAcquisitionRelated, ustgSmallBusiness }
   for (const name of declared) {
     assert.ok(name && Object.hasOwn(modules, name), `${name} fehlt in diesem Test`)
     assert.ok(listed.has(Reflect.get(modules, name)), `${name} fehlt in LAW_PARAMS`)
@@ -750,4 +750,16 @@ test('estg.cheap-rent: bis 2020 Aufteilung unter 66 %, ab 2021 unter 50 % und en
   assert.equal(coversDate(estgCheapRent, '2011-12-31'), false)
   assert.equal(versionAt(estgCheapRent, '2021-01-01').source.checked, 'checked')
   assert.equal(versionAt(estgCheapRent, '2020-01-01').source.checked, 'adopted')
+})
+
+// #96 PR 2 (Durchsicht R): § 6 Abs. 1 Nr. 1a Satz 1 EStG, 15 Prozent und drei Jahre, seit dem StÄndG 2003.
+test('estg.acquisition-related: 15 % der Anschaffungskosten, drei Jahre, ab 2004, Wortlaut heute geprüft', () => {
+  assert.deepEqual(valueAt(estgAcquisitionRelated, '2004-01-01'), { percent: 15, years: 3 })
+  assert.deepEqual(valueAt(estgAcquisitionRelated, LAW_AS_OF), { percent: 15, years: 3 })
+  assert.equal(coversDate(estgAcquisitionRelated, '2003-12-31'), false)
+  assert.equal(estgAcquisitionRelated.timing, 'eventDate')
+  assert.equal(versionAt(estgAcquisitionRelated, LAW_AS_OF).source.checked, 'checked')
+  assert.equal(versionAt(estgAcquisitionRelated, LAW_AS_OF).source.retrieved, '2026-10-31')
+  assert.match(versionAt(estgAcquisitionRelated, LAW_AS_OF).enacted, /Steueränderungsgesetz 2003.*BGBl\. I S\. 2645/)
+  assert.equal(estgAcquisitionRelated.describe({ percent: 15, years: 3 }), 'Herstellungskosten, wenn Instandsetzung und Modernisierung in drei Jahren nach der Anschaffung ohne Umsatzsteuer 15 % der Anschaffungskosten des Gebäudes übersteigen')
 })
