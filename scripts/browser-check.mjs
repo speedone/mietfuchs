@@ -485,6 +485,12 @@ async function checkCombination(browser, base, combo, AxeBuilder, navLabels) {
   fs.mkdirSync(dir, { recursive: true })
   /** @param {string} id */
   const measure = async (id) => {
+    // Die Prüfung einer Auswertung (Eingang, Kosten) steht am Handy gestapelt, ohne seitliches Wischen (#490)
+    if (view === 'mobile') {
+      const rolling = await page.evaluate(() => [...(/** @type {any} */ (globalThis)).document.querySelectorAll('main .assessment-table')]
+        .filter((t) => t.parentElement && t.parentElement.scrollWidth > t.parentElement.clientWidth + 1).length)
+      if (rolling > 0) add(id, 'Breite', `${rolling} Prüfung${rolling === 1 ? '' : 'en'} einer Auswertung rollen am Handy seitlich`)
+    }
     const wide = await overflow(page)
     if (wide) add(id, 'Breite', `Seite ${wide.scroll} px breit bei ${wide.width} px Fenster${wide.elements.length ? `: ${wide.elements.join('; ')}` : ''}`)
     // Noch einmal mit allem Aufklappbaren offen: Eine zugeklappte Anleitung misst keine Breite, die Hilfe am Handy

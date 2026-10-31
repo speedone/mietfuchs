@@ -96,7 +96,8 @@ test('Aufklapper: der Beleg an der Auswertung steht zugeklappt, mit nur einem Ja
   const card = await evaluated()
   expect(card.getByLabelText('Objekt für beleg-1.pdf')).toBeTruthy()
   expect(card.queryByLabelText('Jahr für beleg-1.pdf')).toBeNull()
-  expect(screen.getAllByRole('combobox', { name: /Jahr/ }).map((s) => s.getAttribute('aria-label'))).toEqual(['Jahr der Buchung'])
+  expect(screen.queryAllByRole('combobox', { name: /Jahr/ })).toEqual([])
+  expect(screen.getByText(`Jahr der Buchung: ${YEAR}`)).toBeTruthy()
   expect(screen.getByRole('button', { name: 'Einordnen schließen' }).getAttribute('aria-expanded')).toBe('true')
 })
 
@@ -140,4 +141,18 @@ test('K1: „Abbrechen“ in der Rückfrage ordnet nichts zu, die Wahl bleibt', 
   await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
   expect(sent.filter((r) => r.url === '/api/costItems/gs')).toEqual([])
   expect((card.getByLabelText('beleg-1.pdf einer Position zuordnen') as HTMLSelectElement).value).toBe('gs')
+})
+
+// Nutzerrückmeldung: „Jahr der Buchung“ steht als Text mit „Jahr ändern“; das Feld erst auf Wunsch, mit einem Entwurf
+// oder wenn das Jahr vom gewählten abweicht.
+test('Jahr der Buchung: als Text mit „Jahr ändern“, das Feld auf Wunsch; mit Entwurf bleibt es offen', async () => {
+  await evaluated()
+  expect(screen.getByText(`Jahr der Buchung: ${YEAR}`)).toBeTruthy()
+  expect(screen.queryByRole('combobox', { name: 'Jahr der Buchung' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Jahr ändern' }))
+  const box = screen.getByRole('combobox', { name: 'Jahr der Buchung' }) as HTMLSelectElement
+  expect(document.activeElement).toBe(box)
+  fireEvent.change(box, { target: { value: String(YEAR - 1) } })
+  expect(screen.getByRole('button', { name: 'Speichern (Jahr der Buchung)' })).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Jahr ändern' })).toBeNull()
 })

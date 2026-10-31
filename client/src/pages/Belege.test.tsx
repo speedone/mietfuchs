@@ -945,6 +945,7 @@ test('Ansichtswechsel verliert nichts: Zuordnung, Objekt und Jahr, „Betrag pr�
   fireEvent.change(jahr, { target: { value: String(YEAR) } })
   const zeile = await screen.findByRole('combobox', { name: 'Was geschieht mit „Grundsteuer“?' }) as HTMLSelectElement
   fireEvent.change(zeile, { target: { value: 'dismiss' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Jahr ändern' }))
   const buchungsjahr = screen.getByRole('combobox', { name: 'Jahr der Buchung' }) as HTMLSelectElement
   fireEvent.change(buchungsjahr, { target: { value: String(YEAR - 1) } })
   // Ordner: „Beleg nachreichen“ an einer Position, dann „Betrag prüfen“ offen lassen

@@ -14,6 +14,7 @@ import Table from './Table'
 import { useConfirm } from './feedback'
 import DraftActions from './DraftActions'
 import { useDraft, useOpenWhenDiffers } from '../useDraft'
+import { useOptionalPeriod } from '../period'
 import { ErrorSummary, useFormError } from './ErrorSummary'
 import { NoticeBox } from './Notice'
 
@@ -149,6 +150,18 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
     reportYear.current?.(a.id, year.dirty)
     return () => reportYear.current?.(a.id, false)
   }, [a.id, year.dirty])
+  // Als Text mit „Jahr ändern“, solange es zum gewählten Jahr passt (Nutzerrückmeldung zu #490: am Handy kostete das Feld
+  // je Auswertung eine Zeile). Offen, sobald es abweicht, ein Entwurf besteht oder jemand ändern will.
+  const pageYear = useOptionalPeriod()?.year ?? null
+  const [askYear, setAskYear] = useState(false)
+  const yearOpen = askYear || year.dirty || year.saving || pageYear === null || a.year !== pageYear
+  const yearBox = useRef<HTMLSelectElement>(null)
+  const focusYear = useRef(false)
+  useEffect(() => {
+    if (!focusYear.current || !yearOpen) return
+    focusYear.current = false
+    yearBox.current?.focus()
+  })
   async function saveYear(next: number) {
     setError('')
     onChange(await changeAssessmentYear(a.id, next))
@@ -156,15 +169,22 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
 
   return (
     <div className="stack assessment-review">
-      <div className="row center">
-        <label className="field">
-          Jahr der Buchung
-          <select aria-label="Jahr der Buchung" value={year.value} disabled={busy || year.saving} onChange={(e) => { year.set(Number(e.target.value)); setPreview(null) }}>
-            {years.map((y) => <option key={y} value={y}>{y}</option>)}
-          </select>
-        </label>
-        <DraftActions draft={year} onSave={saveYear} what="Jahr der Buchung" />
-      </div>
+      {yearOpen ? (
+        <div className="row center">
+          <label className="field">
+            Jahr der Buchung
+            <select ref={yearBox} aria-label="Jahr der Buchung" value={year.value} disabled={busy || year.saving} onChange={(e) => { year.set(Number(e.target.value)); setPreview(null) }}>
+              {years.map((y) => <option key={y} value={y}>{y}</option>)}
+            </select>
+          </label>
+          <DraftActions draft={year} onSave={saveYear} what="Jahr der Buchung" />
+        </div>
+      ) : (
+        <div className="row center">
+          <span>Jahr der Buchung: {a.year}</span>
+          <button type="button" className="btn small ghost" onClick={() => { setAskYear(true); focusYear.current = true }}>Jahr ändern</button>
+        </div>
+      )}
       {a.propertyId === null && (
         <div className="warn">Zu welchem Objekt gehört dieser Beleg? Wählen Sie es bitte am Beleg unter „Ohne Position“; gebucht wird nur innerhalb eines Objekts.</div>
       )}
@@ -240,18 +260,18 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
                       {line.state !== 'dismissed' && <option value="dismiss">Verwerfen</option>}
                     </select>
                   </td>
-                  <td className="num"><input aria-label="Betrag €" value={row.amount} onChange={(e) => patch(line.idx, { amount: e.target.value })} className="input-num" /></td>
+                  <td className="num" data-label="Betrag €"><input aria-label="Betrag €" value={row.amount} onChange={(e) => patch(line.idx, { amount: e.target.value })} className="input-num" /></td>
                 </tr>
                 <tr>
-                  <td><input aria-label="Beschreibung" value={row.description} onChange={(e) => patch(line.idx, { description: e.target.value })} className="input-wide" /></td>
-                  <td>
+                  <td data-label="Beschreibung"><input aria-label="Beschreibung" value={row.description} onChange={(e) => patch(line.idx, { description: e.target.value })} className="input-wide" /></td>
+                  <td data-label="Kostenart">
                     <select aria-label="Kostenart" value={row.category}
                       onChange={(e) => patch(line.idx, { category: e.target.value, externalTotalAmount: '', ...aiPositionDefaults(e.target.value, units, [], keyContext, row.description) })}>
                       {categoryOptions(row.category).map((c) => <option key={c}>{c}</option>)}
                     </select>
                   </td>
-                  <td><AiKeyCell position={row} units={units} onChange={(p) => patch(line.idx, p)} /></td>
-                  <td className="num"><input aria-label="§35a-Lohn €" value={row.labor35a} onChange={(e) => patch(line.idx, { labor35a: e.target.value })} className="input-num" placeholder="—" /></td>
+                  <td data-label="Umlageschlüssel"><AiKeyCell position={row} units={units} onChange={(p) => patch(line.idx, p)} /></td>
+                  <td className="num" data-label="§35a-Lohn €"><input aria-label="§35a-Lohn €" value={row.labor35a} onChange={(e) => patch(line.idx, { labor35a: e.target.value })} className="input-num" placeholder="—" /></td>
                 </tr>
               </tbody>
             )

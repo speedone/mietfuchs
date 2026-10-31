@@ -77,6 +77,10 @@ const actionOf = async (description: string): Promise<HTMLSelectElement> => {
   if (!(el instanceof HTMLSelectElement)) throw new Error('kein Auswahlfeld')
   return el
 }
+// „Jahr der Buchung“ steht als Text mit „Jahr ändern“ (#490); das Feld erst nach dem Klick
+function openYears() {
+  for (const b of screen.queryAllByRole('button', { name: 'Jahr ändern' })) fireEvent.click(b)
+}
 async function previewAndBook(): Promise<{ shown: string[] }> {
   fireEvent.click(screen.getByRole('button', { name: 'Vorschau' }))
   const panel = await screen.findByLabelText('Vorschau', {}, SLOW)
@@ -282,6 +286,7 @@ test('ein anderes Jahr an der Karte verwirft die sichtbare Vorschau', async () =
   await actionOf('Grundsteuer B')
   fireEvent.click(screen.getByRole('button', { name: 'Vorschau' }))
   await screen.findByLabelText('Vorschau', {}, SLOW)
+  openYears()
   fireEvent.change(screen.getByRole('combobox', { name: 'Jahr der Buchung' }), { target: { value: String(YEAR - 1) } })
   // #309: Schon der Entwurf nimmt die Vorschau weg; sie sah das bisherige Jahr.
   expect(screen.queryByLabelText('Vorschau')).toBeNull()
@@ -302,7 +307,10 @@ function yearPuts(): string[] {
   })
   return puts
 }
-const yearBox = () => screen.getByRole('combobox', { name: 'Jahr der Buchung' }) as HTMLSelectElement
+const yearBox = () => {
+  openYears()
+  return screen.getByRole('combobox', { name: 'Jahr der Buchung' }) as HTMLSelectElement
+}
 
 test('#309: das Jahr der Buchung sendet erst mit „Speichern“, genau einmal', async () => {
   fake = fakeBooking({ items: [], units: UNITS })
@@ -385,6 +393,7 @@ test('während die Vorschau läuft, lässt sich das Jahr der Karte nicht ändern
   let release = () => {}
   hold = new Promise<void>((resolve) => { release = resolve })
   fireEvent.click(screen.getByRole('button', { name: 'Vorschau' }))
+  openYears()
   await waitFor(() => expect(screen.getByRole('combobox', { name: 'Jahr der Buchung' })).toHaveProperty('disabled', true))
   release()
   await screen.findByLabelText('Vorschau', {}, SLOW)
@@ -573,6 +582,7 @@ test('#309: mit einem zweiten Beleg ohne Entwurf bucht „Alle grünen“ nur di
   const { container } = intake()
   await upload(container, 2)
   const karten = await waitFor(() => {
+    openYears()
     const found = screen.getAllByRole('combobox', { name: 'Jahr der Buchung' })
     expect(found).toHaveLength(2)
     return found
