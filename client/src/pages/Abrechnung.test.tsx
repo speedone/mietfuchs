@@ -667,7 +667,12 @@ test('Export: Knöpfe laden die Datei und speichern sie unter dem Namen aus file
   const calls = exportFetch((_p, q) => new Response('{}', { status: 200, headers: { 'content-disposition': `attachment; filename=x.${q.includes('csv') ? 'csv' : 'json'}; filename*=UTF-8''abrechnung-S%C3%BCd-${YEAR}.${q.includes('csv') ? 'csv' : 'json'}` } }))
   const names = captureDownload()
   show()
-  fireEvent.click(await screen.findByRole('button', { name: /^Mehr/ }, SLOW))
+  const more = await screen.findByRole('button', { name: 'Mehr' }, SLOW)
+  expect(more.classList.contains('disclosure')).toBe(true)
+  fireEvent.click(more)
+  // Aufgeklappt heißt der Knopf „Weniger“; der Pfeil davor kommt aus dem CSS, nicht mehr aus dem Text.
+  expect(screen.getByRole('button', { name: 'Weniger' })).toBe(more)
+  expect(more.getAttribute('aria-expanded')).toBe('true')
   fireEvent.click(await screen.findByRole('button', { name: 'Als CSV exportieren' }, SLOW))
   await waitFor(() => expect(names).toEqual([`abrechnung-Süd-${YEAR}.csv`]), SLOW)
   expect(calls[0]).toContain(`/api/settlement/${YEAR}/export?format=csv`)

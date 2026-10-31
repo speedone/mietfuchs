@@ -368,8 +368,12 @@ test('Mit eigener Wohnung: Hauptzahl abziehbar, „davon privat“ daneben, Übe
   // Ergebnis: abzüglich der abziehbaren Werbungskosten.
   expect(screen.getByText(/abzüglich abziehbarer Werbungskosten/).closest('tr')?.textContent).toMatch(/900,00/)
   // Der Rechenweg ist die gesonderte Aufstellung, zum Aufklappen.
-  fireEvent.click(screen.getByRole('button', { name: 'Rechenweg' }))
+  const rechenweg = screen.getByRole('button', { name: 'Rechenweg' })
+  expect(rechenweg.classList.contains('disclosure')).toBe(true)
+  fireEvent.click(rechenweg)
   expect(screen.getByText(/3\.300,00 € × 120\/165/)).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Rechenweg schließen' }).getAttribute('aria-expanded')).toBe('true')
+  expect(screen.getByText(/3\.300,00 € × 120\/165/).closest('tr')?.id).toBe(rechenweg.getAttribute('aria-controls'))
   // Der alte Satz, die Übersicht nehme die Aufteilung nicht vor, ist weg.
   expect(screen.queryByText(/nimmt die\s+Aufteilung nicht automatisch vor/)).toBeNull()
 })

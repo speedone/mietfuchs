@@ -77,7 +77,7 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   „daher“, „folglich“ …) holt die eingeklappte Begründung davor wieder hervor.
 - **Seite Abrechnung in drei Zonen** ([pages/Abrechnung.tsx](src/pages/Abrechnung.tsx), Logik in
   [settlementOverview.ts](src/settlementOverview.ts)): eine Kopfzeile (Stand und Frist, der eine Primärknopf des Zustands,
-  „🖨 Drucken / PDF“, „Mehr“ als Ausklapper mit Anschreiben, Briefpapier und Export; einen Menü-Baustein gibt es nicht,
+  „🖨 Drucken / PDF“, „Mehr“/„Weniger“ als Ausklapper (`DisclosureButton`) mit Anschreiben, Briefpapier und Export; einen Menü-Baustein gibt es nicht,
   Popover nur über `usePopover`, S12), „Zu prüfen“ (`checkList`: Fehler, Warnungen und Hinweise mit Betrag, Kürzung oder
   Aufforderung offen als `CalcNotice`, eingeklappt nur „Mehr dazu“, „Hier beheben →“ ohne Aufklappen; kein Einzelbetrag im
   Kopf, denn der erste Betrag eines Texts ist oft nur der Anteil des ersten Mieters. Nur stille Hinweise (`isQuietHint`,
@@ -407,6 +407,20 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   (sessionStorage, `keepRestoreNotes`/`readRestoreNotes`, mit try/catch). In den Einstellungen steht an Stelle der
   früheren Karte „Automatische Vorversionen“ nur „Automatische Sicherungen und frühere Stände finden Sie im Verlauf.“
   mit Link (`onNavigate`); das ZIP-Backup bleibt dort.
+
+## Aufklappen
+
+- **Ein Pfeil für alles, was aufklappt**, ▸ zu und ▾ offen, gedämpft, vor dem Text: zentral in index.css über
+  `summary::before` (der Marker des Browsers ist aus, `list-style: none`) und für Knöpfe über die Klasse `disclosure`
+  mit `aria-expanded`. Für Vorleser ist der Pfeil leer (`content: '▸' / ''`), im Druck fehlt er. Keine Sonderregel
+  zeichnet einen eigenen Pfeil oder Marker; ein Flex-`summary` (Register im Belegordner) bekommt ihn als erstes Kind.
+- **Ein `<summary>` behält seinen Titel**, den Zustand zeigt der Pfeil (Titel zitieren die Anleitungen, guides.test.ts).
+- **Ein Knopf, der etwas in der Seite auf- und zuklappt, ist `DisclosureButton`**
+  ([components/DisclosureButton.tsx](src/components/DisclosureButton.tsx): `open`, `onToggle`, `closedLabel`,
+  `openLabel`, `controls`, `className`). Sein Text nennt, was der Klick tut: „Mehr dazu“/„Weniger“ (Hinweise),
+  „Mehr“/„Weniger“ (Kopfzeile der Abrechnung), „Rechenweg“/„Rechenweg schließen“. Kein Pfeil im Text. Menüs und Popover
+  (MobileNav, popover.tsx) sind keine Aufklapper; ein Knopf, der nur nachlädt („Ältere anzeigen (N)“ im Posteingang), auch
+  nicht. Wächter S32 in uiRules.test.ts.
 
 ## Knöpfe, Karten, Anlegen
 

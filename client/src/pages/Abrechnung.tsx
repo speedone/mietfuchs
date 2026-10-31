@@ -32,6 +32,7 @@ import { emptySettlement, startStep } from '../emptyStock'
 import { closeSettlementTitle } from '../propertyView'
 import Term from '../components/Term'
 import CalcSteps from '../components/CalcSteps'
+import DisclosureButton from '../components/DisclosureButton'
 import { totalColumnLabel, totalNote } from '../calcSteps'
 import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
@@ -801,7 +802,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                 <button className="btn secondary" onClick={() => openPrint('all')}>🖨 Drucken / PDF</button>
               )}
               {moreItems && (
-                <button className="btn secondary" aria-expanded={moreOpen} aria-controls={moreId} onClick={() => setMoreOpen((o) => !o)}>Mehr {moreOpen ? '▴' : '▾'}</button>
+                <DisclosureButton open={moreOpen} onToggle={() => setMoreOpen((o) => !o)} closedLabel="Mehr" openLabel="Weniger" controls={moreId} className="btn secondary" />
               )}
               {/* Mit Abstand zu „Speichern“ des Versanddatums, rot beim Überfahren und „…“, weil eine Rückfrage folgt (#346 Schritt 7, M19). */}
               {isClosed && <button className="btn ghost danger-ghost ml-auto" onClick={() => void reopenSettlement()}>Wieder öffnen …</button>}

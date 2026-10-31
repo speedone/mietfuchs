@@ -14,11 +14,17 @@ test('Rechenweg klappt auf und zu, und alles davon ist vom Druck ausgenommen', (
       steps: [{ label: 'Rechnungsbetrag', value: '1.000,00 €' }, { label: 'Anteil an der Verteilbasis', value: '60 von 180 m²', term: 'distributionBasis' }],
     }}>{(toggle) => <tr><td>{toggle}</td></tr>}</CalcSteps></tbody></table>,
   )
-  const knopf = screen.getByRole('button', { name: /Rechenweg/ })
+  const knopf = screen.getByRole('button', { name: 'Rechenweg' })
   expect(knopf.closest('.no-print')).toBeTruthy()
+  expect(knopf.classList.contains('disclosure')).toBe(true)
+  expect(knopf.getAttribute('aria-expanded')).toBe('false')
   expect(screen.queryByText('1.000,00 €')).toBeNull()
   fireEvent.click(knopf)
   expect(screen.getByText('1.000,00 €')).toBeTruthy()
+  // Aufgeklappt nennt der Knopf, was er jetzt tut, und zeigt auf die Zeile mit den Schritten.
+  expect(screen.getByRole('button', { name: 'Rechenweg schließen' })).toBe(knopf)
+  expect(knopf.getAttribute('aria-expanded')).toBe('true')
+  expect(screen.getByText('1.000,00 €').closest('tr')?.id).toBe(knopf.getAttribute('aria-controls'))
   expect(screen.getByRole('button', { name: 'Anteil an der Verteilbasis' })).toBeTruthy()
   for (const tr of container.querySelectorAll('tr.calc-steps')) expect(tr.classList.contains('no-print')).toBe(true)
   fireEvent.click(knopf)

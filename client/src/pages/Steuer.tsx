@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useId, useRef, useState } from 'react'
 import { startPrint, type PrintJob } from '../printJob'
 import type { Settings, TaxExpenseItem, TaxReport } from '../types'
 import { api, fmtArea, fmtDate, fmtEuro } from '../api'
@@ -11,6 +11,7 @@ import PageHeader from '../components/PageHeader'
 import Table from '../components/Table'
 import { acquisitionRelated, acquisitionRelatedText, ACQUISITION_RELATED_MORE, ACQUISITION_RELATED_TITLE, headerRows, allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, operatingPowerBalanceText, paidWithoutSettlementCents, prepaymentNote, settlementBalanceCents, settlementLine, settlementSourcesText, showsSplit, stockCarryNote, surplusCentsFor, taxHints, maintenanceLineText, withdrawalLinesText, usageChangeTouchesWithdrawal, withdrawalSuspectDated, ETW_WITHDRAWAL_TEXT, type Basis, movedInLines, movedInText, movedOutLabels, movedOutLines, unstatedText, type ShiftLine } from '../taxView'
 import { StepList } from '../components/CalcSteps'
+import DisclosureButton from '../components/DisclosureButton'
 import Term from '../components/Term'
 import { NoticeBox, TextNotice } from '../components/Notice'
 import CheapRentCard from '../components/CheapRentCard'
@@ -954,6 +955,7 @@ function SplitTable({ report }: { report: TaxReport }) {
 
 function SplitRow({ item, gratuitous }: { item: TaxExpenseItem; gratuitous: boolean }) {
   const [open, setOpen] = useState(false)
+  const stepsId = useId()
   return (
     <>
       <tr>
@@ -969,13 +971,11 @@ function SplitRow({ item, gratuitous }: { item: TaxExpenseItem; gratuitous: bool
         <td className="num">{fmtEuro(item.deductibleCents)}</td>
         <td>{allocationLabel(item)}</td>
         <td className="no-print">
-          <button type="button" className="btn small secondary calc-toggle" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-            {open ? 'Rechenweg schließen' : 'Rechenweg'}
-          </button>
+          <DisclosureButton open={open} onToggle={() => setOpen((o) => !o)} closedLabel="Rechenweg" openLabel="Rechenweg schließen" controls={stepsId} className="btn small secondary calc-toggle" />
         </td>
       </tr>
       {open && (
-        <tr className="calc-steps no-print">
+        <tr id={stepsId} className="calc-steps no-print">
           <td colSpan={gratuitous ? 7 : 6}><StepList steps={item.steps} /></td>
         </tr>
       )}

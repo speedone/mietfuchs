@@ -1220,3 +1220,24 @@ test('S32: ein Feld mit eigenem Schatten behält seinen Fokusring', () => {
   expect(fieldShadows('<div className="shadow-2"><input className="w-full" /></div>')).toEqual([])
   expect(files.flatMap((f) => fieldShadows(sources[f] ?? '').map((m) => `${f}: ${m}`))).toEqual([])
 })
+
+// S32 (Aufklappen einheitlich): Alles, was etwas aufklappt, trägt denselben Pfeil davor, ▸ zu und ▾ offen, gedämpft und
+// im Druck weg. Bei <details> zeichnet ihn die Regel für jedes <summary> (der Marker des Browsers ist aus), bei einem Knopf
+// dieselbe Regel über `.disclosure`; den Knopf baut nur DisclosureButton, der auch den Text wechselt („Mehr dazu“ →
+// „Weniger“). Ausgenommen sind Menüs und Popover (MobileNav, popover.tsx): Sie klappen nichts in der Seite auf.
+const DISCLOSURE_OWNERS = new Set(['./components/DisclosureButton.tsx', './components/popover.tsx', './components/MobileNav.tsx'])
+test('S32: ein Pfeil für alles, was aufklappt; Knöpfe mit aria-expanded nur über DisclosureButton', () => {
+  expect(css).toMatch(/details > summary \{[^}]*list-style: none/)
+  expect(css).toMatch(/details > summary::-webkit-details-marker \{ display: none; \}/)
+  expect(css).toMatch(/:is\(details > summary, \.disclosure\)::before \{ content: '▸'; content: '▸' \/ '';[^}]*color: var\(--muted\)/)
+  expect(css).toMatch(/:is\(details\[open\] > summary, \.disclosure\[aria-expanded='true'\]\)::before \{ content: '▾'; content: '▾' \/ ''; \}/)
+  expect(css).toMatch(/@media print \{[^@]*:is\(details > summary, \.disclosure\)::before \{ display: none; \}/)
+  // Kein zweiter Pfeil und kein Marker des Browsers an einer Sonderregel
+  expect(css).not.toMatch(/list-style-position/)
+  expect([...css.matchAll(/summary::before \{ content:/g)]).toHaveLength(0)
+  expect(sources['./components/DisclosureButton.tsx']).toMatch(/aria-expanded=\{open\}/)
+  const handmade = files.filter((f) => !DISCLOSURE_OWNERS.has(f) && /aria-expanded/.test(sources[f] ?? ''))
+  expect(handmade).toEqual([])
+  // Der Pfeil steht nur im CSS, nicht noch einmal im Text eines Knopfs
+  expect(offenders(/[▸▾▴]\s*'?\s*\}?\s*<\/button>/g)).toEqual([])
+})

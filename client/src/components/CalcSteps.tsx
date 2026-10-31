@@ -3,27 +3,27 @@
 // Schritten. Beides trägt `no-print`: Der Ausdruck ist das Dokument für den Mieter und bleibt,
 // wie er ist.
 
-import { useState, type ReactNode } from 'react'
+import { useId, useState, type ReactNode } from 'react'
 import { stepsOf } from '../calcSteps'
 import type { CalcStep, SettlementRow } from '../types'
 import Term from './Term'
+import DisclosureButton from './DisclosureButton'
 
 // `open` von außen (Seite Abrechnung: ein Schalter „Rechenweg zeigen“ für die ganze Aufstellung) ersetzt den Knopf je
 // Zeile; `toggle` ist dann leer.
 export default function CalcSteps({ row, colSpan, open: shown, children }: { row: SettlementRow; colSpan: number; open?: boolean; children: (toggle: ReactNode) => ReactNode }) {
   const [own, setOpen] = useState(false)
+  const stepsId = useId()
   const open = shown ?? own
   const { steps, complete } = stepsOf(row)
   const toggle = shown !== undefined ? null : (
-    <button type="button" className="btn small secondary no-print calc-toggle" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-      {open ? 'Rechenweg schließen' : 'Rechenweg'}
-    </button>
+    <DisclosureButton open={open} onToggle={() => setOpen((o) => !o)} closedLabel="Rechenweg" openLabel="Rechenweg schließen" controls={stepsId} className="btn small secondary no-print calc-toggle" />
   )
   return (
     <>
       {children(toggle)}
       {open && (
-        <tr className="calc-steps no-print">
+        <tr id={stepsId} className="calc-steps no-print">
           <td colSpan={colSpan}>
             <ol className="calc-steps-list">
               {steps.map((s, i) => <Step key={i} step={s} />)}
