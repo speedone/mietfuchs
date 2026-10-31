@@ -3,7 +3,7 @@
 // steht dann im Posteingang des richtigen Objekts statt „ohne Objekt“, und die Auswertung bekommt
 // ein Jahr, wenn der Beleg keines nennt.
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { Unit } from '../types'
 import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
@@ -13,15 +13,27 @@ import Schnellerfassung from './Schnellerfassung'
 const UNITS: Unit[] = [{ id: 'u1', propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true }]
 const YEAR = new Date().getFullYear() - 1
 let sent: FormData[]
+let urls: string[]
+let answer: unknown
+let posted: Record<string, unknown>[]
 
 beforeEach(() => {
   sent = []
+  urls = []
+  posted = []
+  answer = { file: 'beleg.jpg', kind: 'rechnung', extraction: { positions: [] }, assessment: null }
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const json = (data: unknown) => new Response(JSON.stringify(data), { status: 200, headers: { 'content-type': 'application/json' } })
     if (url === '/api/extract' || url === '/api/intake') {
+      urls.push(url)
       if (init?.body instanceof FormData) sent.push(init.body)
-      return json({ file: 'beleg.jpg', kind: 'rechnung', extraction: { positions: [] }, assessment: null })
+      return json(answer)
     }
+    if ((init?.method ?? 'GET') === 'POST' && url === '/api/readings') {
+      posted.push(JSON.parse(String(init?.body)))
+      return json({ ok: true })
+    }
+    if (url.split('?')[0] === '/api/meters') return json([{ id: 'm1', propertyId: 'objekt-1', name: 'Wasser EG', unitId: 'u1', type: 'kaltwasser', unit: 'm³', meterNumber: '4711' }])
     if (url.split('?')[0] === '/api/properties') return json([{ id: 'objekt-1', name: 'Haus', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }])
     return json([])
   })
@@ -54,4 +66,19 @@ test('Schnellerfassung: ebenso, auch für einen Beleg aus dem Posteingang', asyn
   await upload(container)
   expect(sent[0]?.get('propertyId')).toBe('objekt-1')
   expect(sent[0]?.get('year')).toBe(String(YEAR))
+})
+
+// #490, Entscheidung zu Regel 4: Die Seite Kosten wertet über den Schuhkarton aus, sagt aber, dass es eine Rechnung
+// ist; der Server fragt dann nicht nach der Belegart (kein zusätzlicher Modellaufruf, keine Verwechslung).
+test('Kosten: die Auswertung geht an den Schuhkarton, als Rechnung', async () => {
+  const { container } = render(<PeriodProvider><PropertyProvider><Kosten units={UNITS} settings={null} /></PropertyProvider></PeriodProvider>)
+  await upload(container)
+  expect(urls).toEqual(['/api/intake'])
+  expect(sent[0]?.get('docType')).toBe('rechnung')
+})
+
+test('Schnellerfassung: ohne Angabe der Belegart, damit Zählerfotos erkannt werden', async () => {
+  const { container } = render(<PeriodProvider><PropertyProvider><Schnellerfassung units={UNITS} settings={null} onNavigate={() => {}} /></PropertyProvider></PeriodProvider>)
+  await upload(container)
+  expect(sent[0]?.get('docType')).toBeNull()
 })

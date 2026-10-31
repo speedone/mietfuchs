@@ -632,3 +632,56 @@ test('Schuhkarton: ein als Zählerfoto erkannter Beleg wird beim neuen Versuch a
     assert.deepEqual([receipt?.kind, receipt?.propertyId, receipt?.year], ['receipt', 'objekt-1', 2025])
   })
 })
+
+// #490: Die Seite Kosten wertet über den Schuhkarton aus und sagt dabei, dass es eine Rechnung ist. Dann fragt der
+// Server das Modell nicht nach der Belegart: kein zusätzlicher Aufruf, keine Verwechslung mit einem Zählerfoto, der
+// Beleg liegt im Posteingang des Objekts wie vorher mit /api/extract.
+const docTypeAsked = (ollama: { requests: { url: string | undefined; body: unknown }[] }) =>
+  ollama.requests.filter((r) => r.url === '/api/chat' && JSON.stringify(r.body).includes('"docType"')).length
+test('Schuhkarton (#490): mit docType=rechnung fragt ein Foto das Modell nicht nach der Belegart', async () => {
+  await withOllama(async (s, ollama) => {
+    // Das Modell hielte das Foto für einen Zähler; gefragt wird es nicht
+    ollama.control.docType = 'zaehlerstand'
+    const fd = new FormData()
+    fd.append('file', new Blob([Buffer.from('JPEG-Foto')], { type: 'image/jpeg' }), 'rechnung.jpg')
+    fd.append('propertyId', 'objekt-1')
+    fd.append('year', '2025')
+    fd.append('docType', 'rechnung')
+    const res = await fetch(`${s.base}/api/intake`, { method: 'POST', body: fd })
+    assert.equal(res.status, 200)
+    const body = await jsonOf<UploadBody>(res)
+    assert.equal(body.kind, 'rechnung')
+    assert.equal(docTypeAsked(ollama), 0)
+    const receipt = (await s.api<UploadInfo[]>('/api/uploads')).find((u) => u.file === fileOf(body))
+    assert.deepEqual([receipt?.kind, receipt?.propertyId], ['receipt', 'objekt-1'])
+  })
+})
+
+// #490: „Als Rechnung auswerten“ an einem erkannten Zählerfoto schickt den Beleg mit Namen und docType=rechnung; der
+// Server führt ihn wieder als Beleg im Posteingang (unmarkMeterPhoto aus #487) und wertet ihn als Rechnung aus.
+test('Schuhkarton (#490): ein erkanntes Zählerfoto lässt sich als Rechnung auswerten', async () => {
+  await withOllama(async (s, ollama) => {
+    ollama.control.docType = 'zaehlerstand'
+    const first = new FormData()
+    first.append('file', new Blob([Buffer.from('JPEG-Foto')], { type: 'image/jpeg' }), 'beleg.jpg')
+    first.append('propertyId', 'objekt-1')
+    first.append('year', '2025')
+    const photo = await fetch(`${s.base}/api/intake`, { method: 'POST', body: first })
+    assert.equal(photo.status, 200)
+    const recognized = await jsonOf<UploadBody>(photo)
+    assert.equal(recognized.kind, 'zaehler')
+    const file = fileOf(recognized)
+    const again = new FormData()
+    again.append('existingFile', file)
+    again.append('propertyId', 'objekt-1')
+    again.append('year', '2025')
+    again.append('docType', 'rechnung')
+    const asked = docTypeAsked(ollama)
+    const res = await fetch(`${s.base}/api/intake`, { method: 'POST', body: again })
+    assert.equal(res.status, 200)
+    assert.equal((await jsonOf<UploadBody>(res)).kind, 'rechnung')
+    assert.equal(docTypeAsked(ollama), asked)
+    const receipt = (await s.api<UploadInfo[]>('/api/uploads')).find((u) => u.file === file)
+    assert.deepEqual([receipt?.kind, receipt?.propertyId, receipt?.year], ['receipt', 'objekt-1', 2025])
+  })
+})

@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import type { AssessmentView, CostItem, CostKey, ExternalMeasure, ExtractResult, HeatingPlant, Meter, MeterType, Settlement, Settings, SplitPreviewPart, Tenancy, Unit, UploadEntry } from '../types'
+import type { AssessmentView, CostItem, CostKey, ExternalMeasure, HeatingPlant, Meter, MeterType, Reading, Settlement, Settings, SplitPreviewPart, Tenancy, Unit, UploadEntry } from '../types'
 import HeatingPeriodSelect from '../components/HeatingPeriodSelect'
 import { heatingItemPeriods, heatingTaxYear, itemsOfPeriod } from '../heatingSettlementView'
 import { plantOptions } from '../heatingForm'
@@ -67,7 +67,10 @@ import { sourceLabels } from '../costSource'
 import { alreadyCarried, carryKeyDetails, carryOverBody, carryOverForm, carryOverRows, withCarryAmount, type CarryRow } from '../carryOver'
 import { api, ApiError, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { aiSummary } from '../aiForm'
-import { useEvaluationQueue } from '../evaluationQueue'
+import { assessmentOf, belongsTo, useEvaluationQueue, type QueueEntry, type QueueTarget } from '../evaluationQueue'
+import { initialCandidate, readingBody, scoreCandidate, type ReadingCandidate } from '../readingCandidate'
+import { ReadingReview } from '../components/ReadingReview'
+import { OtherQueueEntries } from '../components/OtherQueueEntries'
 import AssessmentReview from '../components/AssessmentReview'
 import Co2RefundsCard from '../components/Co2RefundsCard'
 import { usePeriod } from '../period'
@@ -92,23 +95,22 @@ import Card from '../components/Card'
 
 // `tenancies` für die Einzelbeträge je Mietverhältnis (#94); ohne sie gibt es dort nur keine Felder.
 // `onOpenReceipt`, `onOpenAiSettings`: Auswege eines gespeicherten, nicht ausgewerteten Belegs (#487)
-type Props = { units: Unit[]; settings: Settings | null; tenancies?: Tenancy[]; onOpenReceipt?: (file: string) => void; onOpenAiSettings?: () => void } & FocusProps
+type Props = {
+  units: Unit[]; settings: Settings | null; tenancies?: Tenancy[]; onOpenReceipt?: (file: string) => void; onOpenAiSettings?: () => void
+  // Bei einem Zählerfoto, dessen Ablesen gescheitert ist: die Seite Zähler (Ablesung von Hand)
+  onOpenMeters?: () => void
+} & FocusProps
 
 // Maßeinheit der Summe der Anteile, für die Vorlagenliste (#141)
 const EXTERNAL_UNIT_LABELS: Record<ExternalMeasure, string> = { mea: 'MEA', area: 'm²', units: 'Einheiten' }
 
-// Was ein Beleg der KI-Warteschlange (evaluationQueue.ts) nach der Auswertung trägt: die
-// gespeicherte Auswertung, die „Auswertung prüfen“ zeigt (#170).
-type Evaluated = { serverFile: string; assessment: AssessmentView }
-
-const NOT_SAVED = 'Die Auswertung ließ sich nicht speichern. Bitte versuchen Sie es noch einmal; gebucht wurde nichts.'
 
 // Durchsicht von #241, Runde 2, H1: Das gespeicherte Ziel passt nicht zur Warmwasserbereitung der Heizperiode.
 const TARGET_INVALID = 'Ziel: Das gespeicherte Ziel passt nicht dazu, wie die Anlage in dieser Heizperiode das Warmwasser bereitet. Wählen Sie das Ziel neu.'
 const TARGET_SHORT = 'Ziel neu wählen'
 
 
-export default function Kosten({ units, settings, tenancies = [], focus, onFocusDone, onOpenReceipt, onOpenAiSettings }: Props) {
+export default function Kosten({ units, settings, tenancies = [], focus, onFocusDone, onOpenReceipt, onOpenAiSettings, onOpenMeters }: Props) {
   // Wohin die Belege zur Auswertung gehen (siehe aiForm.ts)
   const ai = aiSummary(settings)
   // Der gewählte Abrechnungszeitraum (#208). `year` ist das Kalenderjahr, in dem er beginnt: Belege
@@ -123,6 +125,9 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   const confirm = useConfirm()
   const [items, setItems] = useState<CostItem[]>([])
   const [meters, setMeters] = useState<Meter[]>([])
+  // Ob die Zähler geantwortet haben: Erst dann steht der Vorschlag zu einem Zählerfoto da, und nur mit ihnen ('ok')
+  // wird er festgehalten (Zuordnung).
+  const [meterData, setMeterData] = useState<'loading' | 'ok' | 'failed'>('loading')
   const [form, setForm] = useState<ItemForm | null>(null)
   // Verlangt die Vorschau des Aufteilens das Jahr der Zahlung (#208), zeigt das Formular das Feld
   // auch bei einem Zeitraum in einem Kalenderjahr.
@@ -234,7 +239,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   const load = () => api<CostItem[]>(withProperty('/api/costItems', propertyId)).then(setItems)
   useEffect(() => {
     load().catch(() => setError('Server nicht erreichbar — läuft `npm run dev`?'))
-    api<Meter[]>(withProperty('/api/meters', propertyId)).then(setMeters).catch(() => {})
+    api<Meter[]>(withProperty('/api/meters', propertyId)).then((m) => { setMeters(m); setMeterData('ok') }, () => setMeterData('failed'))
     // Neu laden, wenn das Objekt wechselt (#92).
   }, [propertyId])
   // Ist die Abrechnung des Jahres für dieses Objekt abgeschlossen (#142)? Dann ändert eine
@@ -577,24 +582,67 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     toast(`„${i.description}“ gelöscht.`)
   }
 
-  // KI-Auswertung (#170): Die Warteschlange teilt sich die Kostenseite mit der Schnellerfassung.
-  // Eine ausgewertete Rechnung ist danach als Auswertung gespeichert und wird mit „Auswertung
-  // prüfen“ gebucht; verlässt der Nutzer die Seite, geht sie nicht verloren (Posteingang).
-  const { queue, patchEntry, addFiles, remove, cancel, retry, takeOff } = useEvaluationQueue<ExtractResult, Evaluated>({
-    endpoint: '/api/extract',
-    pageImageEdge: settings?.ai?.pageImageEdge ?? undefined,
-    // Bleibt der Beleg ungebucht, steht er im Posteingang dieses Objekts; nennt er kein Jahr,
-    // gilt das gewählte (#170).
-    propertyId,
-    year,
-    period: key,
-    finish: (res) => (res.assessment
-      ? { status: res.assessment.open ? 'fertig' : 'übernommen', data: { serverFile: res.file, assessment: res.assessment } }
-      : { status: 'fehler', error: NOT_SAVED }),
-  })
+  // KI-Auswertung (#170): Die eine Warteschlange der App (#490) teilt sich die Kostenseite mit der Schnellerfassung;
+  // sie zeigt die Einträge dieses Objekts und Zeitraums, auch die dort hochgeladenen. Eine ausgewertete Rechnung ist
+  // als Auswertung gespeichert und wird mit „Auswertung prüfen“ gebucht; eine Auswertung läuft weiter, wenn man die
+  // Seite verlässt. Was hier hochgeladen wird, gilt als Rechnung (`docType`): Der Server fragt das Modell nicht nach
+  // der Belegart, wie vorher mit /api/extract; Zählerfotos erkennt die Schnellerfassung (Entscheidung zu Regel 4).
+  const { queue: all, patchEntry, addFiles, remove, cancel, retry, takeOff, sweep } = useEvaluationQueue()
+  // Wer die Seite verlässt, sieht Erledigtes beim nächsten Mal nicht wieder (übernommen, abgebrochen, abgelegt).
+  useEffect(() => () => sweep(), [sweep])
+  // Bleibt der Beleg ungebucht, steht er im Posteingang dieses Objekts; nennt er kein Jahr, gilt das gewählte (#170).
+  const target: QueueTarget = { propertyId, year, period: key, pageImageEdge: settings?.ai?.pageImageEdge ?? undefined, docType: 'rechnung' }
+  const queue = useMemo(() => all.filter((x) => belongsTo(x, propertyId, key)), [all, propertyId, key])
   const focusAfterRetry = useRetryFocus(queue)
-  // Nur laufende und wartende Auswertungen gingen beim Objektwechsel verloren (#145).
-  useOpenForm(queue.some((x) => x.status === 'wartend' || x.status === 'läuft'))
+  const isReading = (x: QueueEntry) => x.status === 'fertig' && x.result?.kind === 'zaehler'
+  // Ein Zählerfoto aus der Schnellerfassung desselben Objekts und Zeitraums steht auch hier. Ablesungen braucht die
+  // Seite nur für seine Ampel; geladen wird erst, wenn eines da ist.
+  const hasReading = queue.some(isReading)
+  const [readings, setReadings] = useState<Reading[] | null>(null)
+  const [readingsOk, setReadingsOk] = useState(false)
+  useEffect(() => {
+    if (!hasReading || readings) return
+    api<Reading[]>(withProperty('/api/readings', propertyId))
+      .then((r) => { setReadings(r); setReadingsOk(true) }, () => { setReadings([]); setReadingsOk(false) })
+  }, [hasReading, readings, propertyId])
+  const readingOf = (x: QueueEntry): ReadingCandidate | null =>
+    x.data.reading ?? (x.result?.kind === 'zaehler' && readings && meterData !== 'loading' ? initialCandidate(x.result.reading, x.exifDate ?? null, meters, readings) : null)
+  // Der Vorschlag gilt ab dem Augenblick, in dem er entsteht (wie vor #490 mit der Antwort): Er bleibt am Eintrag, auch
+  // wenn neue Ablesungen die Ampel ändern, und die andere Seite zeigt denselben. Nur mit Zählern und Ablesungen, sonst
+  // bliebe ein Vorschlag ohne Zuordnung stehen.
+  useEffect(() => {
+    if (meterData !== 'ok' || !readingsOk) return
+    for (const x of queue) {
+      if (x.data.reading || x.result?.kind !== 'zaehler') continue
+      const r = readingOf(x)
+      if (r) patchEntry(x.id, { data: { reading: r } })
+    }
+  })
+  // Weder eine laufende Auswertung noch ein erkannter Zählerstand gehen beim Wechsel verloren: Sie stehen in der
+  // Warteschlange der App (#490); beim Schließen des Tabs fragt App.tsx.
+  const [adoptingReading, setAdoptingReading] = useState(false)
+  const adoptingReadingRef = useRef(false)
+  async function adoptReading(entry: QueueEntry) {
+    if (adoptingReadingRef.current) return
+    const r = readingOf(entry)
+    const body = r ? readingBody(r) : null
+    if (!body) {
+      toast('Nicht übernommen: Bitte ordnen Sie einen Zähler zu und geben Sie den Stand an, beim Zählerwechsel auch den Endstand des alten Zählers.', 'error')
+      return
+    }
+    adoptingReadingRef.current = true
+    setAdoptingReading(true)
+    try {
+      await api('/api/readings', { method: 'POST', body: JSON.stringify(body) })
+      patchEntry(entry.id, { status: 'übernommen' })
+      setReadings(null)
+    } catch (e) {
+      toast(`Nicht übernommen: ${errorText(e)}`, 'error')
+    } finally {
+      adoptingReadingRef.current = false
+      setAdoptingReading(false)
+    }
+  }
 
   return (
     <>
@@ -741,14 +789,14 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
 
       <Card title={<>🤖 Beleg per KI auswerten <span className="badge gray">{ai.where}</span></>} className="no-print">
         <p className="muted">
-          PDF oder Foto der Rechnung hochladen — die KI schlägt Kostenpositionen vor, Sie prüfen und übernehmen sie. {ai.notice ?? 'Es verlässt nichts Ihren Rechner.'}
+          PDF oder Foto der Rechnung hochladen — die KI schlägt Kostenpositionen vor, Sie prüfen und übernehmen sie. Zählerfotos nimmt die Schnellerfassung. {ai.notice ?? 'Es verlässt nichts Ihren Rechner.'}
         </p>
         <div
           className={`dropzone ${dragOver ? 'over' : ''}`}
           onClick={() => fileInputRef.current?.click()}
           onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
           onDragLeave={() => setDragOver(false)}
-          onDrop={(e) => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files) }}
+          onDrop={(e) => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files, target) }}
         >
           <strong>Belege hierher ziehen</strong> oder klicken zum Auswählen — auch mehrere auf einmal.
           <div className="muted">Sie werden nacheinander verarbeitet (PDF oder Foto).</div>
@@ -759,53 +807,69 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             multiple
             aria-label="Belege auswählen"
             className="sr-only"
-            onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = '' }}
+            onChange={(e) => { if (e.target.files) addFiles(e.target.files, target); e.target.value = '' }}
           />
         </div>
 
-        {queue.map((entry) => entry.status === 'abgelegt' ? (
-          <TakenOff key={entry.id} fileName={entry.fileName}
-            onShow={entry.failure && onOpenReceipt ? () => { const stored = entry.failure?.file; if (stored) onOpenReceipt(stored) } : undefined} />
-        ) : (
-          <div key={entry.id} className="stack" data-queue-entry={entry.id} tabIndex={-1}>
-            <div className="row center">
-              <strong>{entry.fileName}</strong>
-              {entry.status === 'wartend' && <span className="badge gray">wartet …</span>}
-              {entry.status === 'läuft' && (
-                <AiProgressBadge
-                  progress={entry.progress ?? null}
-                  startedAt={entry.startedAt ?? Date.now()}
-                  onCancel={() => cancel(entry.id)}
-                />
+        <OtherQueueEntries queue={all} propertyId={propertyId} period={key} />
+
+        {queue.map((entry) => {
+          if (entry.status === 'abgelegt') {
+            return <TakenOff key={entry.id} fileName={entry.fileName}
+              onShow={entry.failure && onOpenReceipt ? () => { const stored = entry.failure?.file; if (stored) onOpenReceipt(stored) } : undefined} />
+          }
+          const assessment = assessmentOf(entry)
+          const meter = entry.result?.kind === 'zaehler'
+          const reading = isReading(entry) ? readingOf(entry) : null
+          return (
+            <div key={entry.id} className="stack" data-queue-entry={entry.id} tabIndex={-1}>
+              <div className="row center">
+                <strong>{meter ? '🔢 ' : ''}{entry.fileName}</strong>
+                {entry.status === 'wartend' && <span className="badge gray">wartet …</span>}
+                {entry.status === 'läuft' && (
+                  <AiProgressBadge
+                    progress={entry.progress ?? null}
+                    startedAt={entry.startedAt ?? Date.now()}
+                    onCancel={() => cancel(entry.id)}
+                  />
+                )}
+                {entry.status === 'fertig' && (meter
+                  ? <span className="badge green">Zählerstand erkannt</span>
+                  : <span className="badge amber">{countOf(assessment?.lines.length ?? 0, 'Position', 'Positionen')} erkannt — bitte prüfen</span>)}
+                {entry.status === 'übernommen' && <span className="badge green">✓ übernommen</span>}
+                {entry.status === 'fehler' && <span className="badge red">Fehler</span>}
+                {entry.status === 'gespeichert' && <span className="badge amber">im Belegordner</span>}
+                {entry.status === 'abgebrochen' && <span className="badge gray">abgebrochen</span>}
+                {/* Gebucht wird im Jahr des Belegs; weicht es vom gewählten ab, steht es hier, wie in der Schnellerfassung (I1). */}
+                {assessment && (assessment.targetPeriod ?? calendarPeriod(assessment.year)) !== key && <span className="badge gray">{view.calendar ? `Jahr ${assessment.year}` : assessment.targetLabel ?? `Jahr ${assessment.year}`}</span>}
+                <div className="grow" />
+                {entry.status === 'gespeichert' && (
+                  <button className="btn small ghost" onClick={() => takeOff(entry.id)}>Aus der Liste nehmen{' '}<span className="sr-only">({entry.fileName})</span></button>
+                )}
+                {(entry.status === 'wartend' || entry.status === 'fertig' || entry.status === 'fehler' || entry.status === 'abgebrochen' || entry.status === 'übernommen') && (
+                  <button className="btn small ghost" onClick={() => remove(entry.id)}>
+                    {entry.status === 'fertig' && !meter ? 'Ausblenden' : 'Entfernen'}
+                  </button>
+                )}
+              </div>
+              {entry.status === 'fehler' && <NoticeBox level="error" action={entry.error} />}
+              {entry.status === 'gespeichert' && entry.failure && (
+                <KeptReceipt failure={entry.failure} onManual={entry.failure.meterPhoto ? (onOpenMeters && (() => onOpenMeters())) : onOpenReceipt}
+                  onRetry={() => { focusAfterRetry(entry.id); retry(entry.id) }} onOpenSettings={onOpenAiSettings} />
               )}
-              {entry.status === 'fertig' && <span className="badge amber">{countOf(entry.data.assessment?.lines.length ?? 0, 'Position', 'Positionen')} erkannt — bitte prüfen</span>}
-              {entry.status === 'übernommen' && <span className="badge green">✓ übernommen</span>}
-              {entry.status === 'fehler' && <span className="badge red">Fehler</span>}
-              {entry.status === 'gespeichert' && <span className="badge amber">im Belegordner</span>}
-              {entry.status === 'abgebrochen' && <span className="badge gray">abgebrochen</span>}
-              {/* Gebucht wird im Jahr des Belegs; weicht es vom gewählten ab, steht es hier, wie in der Schnellerfassung (I1). */}
-              {entry.data.assessment && (entry.data.assessment.targetPeriod ?? calendarPeriod(entry.data.assessment.year)) !== key && <span className="badge gray">{view.calendar ? `Jahr ${entry.data.assessment.year}` : entry.data.assessment.targetLabel ?? `Jahr ${entry.data.assessment.year}`}</span>}
-              <div className="grow" />
-              {entry.status === 'gespeichert' && (
-                <button className="btn small ghost" onClick={() => takeOff(entry.id)}>Aus der Liste nehmen{' '}<span className="sr-only">({entry.fileName})</span></button>
+              {reading && (
+                <ReadingReview reading={reading} serverFile={entry.result?.file} score={readings ? scoreCandidate(reading, readings) : undefined}
+                  meters={meters} units={units} adopting={adoptingReading}
+                  onChange={(patch) => patchEntry(entry.id, { data: { reading: { ...reading, ...patch } } })} onAdopt={() => void adoptReading(entry)} />
               )}
-              {(entry.status === 'wartend' || entry.status === 'fertig' || entry.status === 'fehler' || entry.status === 'abgebrochen' || entry.status === 'übernommen') && (
-                <button className="btn small ghost" onClick={() => remove(entry.id)}>
-                  {entry.status === 'fertig' ? 'Ausblenden' : 'Entfernen'}
-                </button>
+              {assessment && !meter && (entry.status === 'fertig' || entry.status === 'übernommen') && (
+                <AssessmentReview assessment={assessment} units={units} keyContext={keyCtxOf(assessment)}
+                  onChange={(next) => { patchEntry(entry.id, { status: next.open ? 'fertig' : 'übernommen', data: { assessment: next } }); void load() }}
+                  onOpenItem={(id) => { const it = items.find((i) => i.id === id); if (it) { setError(''); setForm(itemToForm(it)) } }} />
               )}
             </div>
-            {entry.status === 'fehler' && <NoticeBox level="error" action={entry.error} />}
-            {entry.status === 'gespeichert' && entry.failure && (
-              <KeptReceipt failure={entry.failure} onManual={onOpenReceipt} onRetry={() => { focusAfterRetry(entry.id); retry(entry.id) }} onOpenSettings={onOpenAiSettings} />
-            )}
-            {entry.data.assessment && (entry.status === 'fertig' || entry.status === 'übernommen') && (
-              <AssessmentReview assessment={entry.data.assessment} units={units} keyContext={keyCtxOf(entry.data.assessment)}
-                onChange={(next) => { patchEntry(entry.id, { status: next.open ? 'fertig' : 'übernommen', data: { assessment: next } }); void load() }}
-                onOpenItem={(id) => { const it = items.find((i) => i.id === id); if (it) { setError(''); setForm(itemToForm(it)) } }} />
-            )}
-          </div>
-        ))}
+          )
+        })}
       </Card>
 
       <Card title={<>Kostenpositionen {label}</>}>

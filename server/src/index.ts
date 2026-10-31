@@ -1995,6 +1995,8 @@ async function rememberAssessment(req: Request, file: DocumentSource, extraction
   }
 }
 
+// Nur Rechnungen. Die Oberfläche nutzt die Route seit #490 nicht mehr (Schnellerfassung und Kosten werten über
+// /api/intake aus); sie bleibt für Tabs aus älteren Fassungen und wird später entfernt.
 app.post('/api/extract', fileWithPages, async (req: Request, res: Response) => {
   const file = await documentOf(req, res)
   if (!file) return
@@ -2012,7 +2014,9 @@ app.post('/api/extract', fileWithPages, async (req: Request, res: Response) => {
 
 // Universeller Eingang (Schuhkarton): erkennt automatisch, ob die Datei eine Rechnung oder
 // ein Zählerfoto ist, und liefert die passende KI-Auswertung. Antwort ist eine diskriminierte
-// Union über `kind`. `/api/extract` bleibt für die (rein rechnungsbezogene) Kosten-Seite.
+// Union über `kind`. Schnellerfassung und Kosten werten beide hierüber aus (#490); für eine Rechnung antwortet die
+// Route wie `/api/extract` (api-ki-beleg.test.ts). Ein Bild fragt vorher nach der Belegart, außer der Browser schickt
+// `docType=rechnung` (Seite Kosten, „Als Rechnung auswerten“ an einem erkannten Zählerfoto).
 app.post('/api/intake', fileWithPages, async (req: Request, res: Response) => {
   const file = await documentOf(req, res)
   if (!file) return
@@ -2022,7 +2026,9 @@ app.post('/api/intake', fileWithPages, async (req: Request, res: Response) => {
   try {
     const settings = effectiveSettings()
     const material = { ...aiInput(req), signal, stats, onProgress }
-    const docType = await classifyDocType(file.path, file.mimetype, settings, { signal, stats, onProgress })
+    // Sagt der Browser, dass es eine Rechnung ist (Seite Kosten, „Als Rechnung auswerten“; #490), fragt der Server das
+    // Modell nicht nach der Belegart: kein zusätzlicher Aufruf und keine Verwechslung mit einem Zählerfoto.
+    const docType = bodyObject(req).docType === 'rechnung' ? 'rechnung' : await classifyDocType(file.path, file.mimetype, settings, { signal, stats, onProgress })
     if (docType === 'zaehlerstand') {
       // Ein Zählerfoto belegt keine Kosten: als solches kennzeichnen und ohne Objekt, damit es in
       // keinem Posteingang als Beleg wartet und beim Nachreichen nicht angeboten wird (Durchsicht).
