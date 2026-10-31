@@ -584,6 +584,8 @@ test('Eingang (#490): ein Beleg mit offener Auswertung steht unter „Zu prüfen
   expect(group.querySelector('[data-assessment="a5"]')).not.toBeNull()
   await screen.findByLabelText('Jahr für lose.pdf')
   expect(document.querySelector('[data-group="ohne"] li[data-file="5_offen.pdf"]')).toBeNull()
+  // Die Karte des Belegs steht zugeklappt an der Auswertung
+  fireEvent.click(within(group).getByRole('button', { name: 'Beleg einordnen oder löschen' }))
   expect(document.querySelectorAll('[data-view="eingang"] li[data-file="5_offen.pdf"]')).toHaveLength(1)
   expect(screen.queryByRole('button', { name: 'offen.pdf per KI auswerten' })).toBeNull()
 })
@@ -1094,9 +1096,12 @@ test('Eingang: an der Auswertung lässt sich der Beleg löschen, einordnen und z
   openAssessments = () => [assessmentOf('a5', '5_offen.pdf')]
   renderInbox()
   const card = await waitFor(() => document.querySelector('[data-assessment="a5"]') as HTMLElement ?? expect.fail('keine Auswertung'))
+  fireEvent.click(await within(card).findByRole('button', { name: 'Beleg einordnen oder löschen' }))
   const receipt = await waitFor(() => card.querySelector('[data-file="5_offen.pdf"]') as HTMLElement ?? expect.fail('kein Beleg an der Auswertung'))
   expect(within(receipt).getByRole('button', { name: 'Beleg offen.pdf löschen' })).toBeTruthy()
-  expect(within(receipt).getByLabelText('Jahr für offen.pdf')).toBeTruthy()
+  // Nur das Objekt; das Jahr ist das der Buchung (Nachdurchsicht K2)
+  expect(within(receipt).getByLabelText('Objekt für offen.pdf')).toBeTruthy()
+  expect(within(receipt).queryByLabelText('Jahr für offen.pdf')).toBeNull()
   const zuordnen = within(receipt).getByLabelText('offen.pdf einer Position zuordnen') as HTMLSelectElement
   expect([...zuordnen.options].map((o) => o.value)).toEqual(['', 'w2'])
   // „Weiter prüfen“ und „Per KI auswerten“ braucht es hier nicht: Die Prüfung steht daneben
@@ -1283,4 +1288,24 @@ test('Sprung zu einem Beleg eines gelöschten Objekts: Meldung mit Grund, weg be
   expect(await screen.findByText(/gehört zu einem Objekt, das es nicht mehr gibt/)).toBeTruthy()
   fireEvent.click(screen.getByRole('tab', { name: 'Ordner' }))
   expect(screen.queryByText(/gehört zu einem Objekt, das es nicht mehr gibt/)).toBeNull()
+})
+
+// Nachdurchsicht K5: Ein Sprung zu einem Beleg, der an seiner Auswertung steht, findet die Karte, hebt sie hervor und
+// klappt die Bedienung des Belegs auf.
+test('Sprung zu einem Beleg mit offener Auswertung: die Karte der Auswertung, hervorgehoben und aufgeklappt', async () => {
+  extraUploads = [{ ...up('5_offen.pdf'), bookedItemIds: [], assessment: { id: 'a5', propertyId: 'p1', open: true } }]
+  openAssessments = () => [assessmentOf('a5', '5_offen.pdf')]
+  const onFocusDone = vi.fn()
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <Belege {...BASE} view={undefined} renderThumb={() => Promise.resolve('')} focusFile="5_offen.pdf" onFocusDone={onFocusDone} />
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  await waitFor(() => expect(onFocusDone).toHaveBeenCalledTimes(1))
+  const card = document.querySelector('[data-assessment="a5"]') as HTMLElement
+  await waitFor(() => expect(card.contains(document.activeElement)).toBe(true))
+  expect(card.className).toMatch(/\bbg-accent-soft\b/)
+  expect(within(card).getByRole('button', { name: 'Einordnen schließen' })).toBeTruthy()
 })

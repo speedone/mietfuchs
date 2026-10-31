@@ -6,11 +6,12 @@
 // Der Eingang zeigt alles Offene des gewählten Objekts und Jahres samt Belegen ohne Zuordnung; was anderswo offen ist,
 // nennt je eine Zeile mit dem Sprung dorthin.
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import type { AiStatus, AssessmentView, CostItem, NoticeSubject, Reading, Settings, Unit, UploadInfo, Meter } from '../types'
+import type { AiStatus, AssessmentView, CostItem, LineDecision, NoticeSubject, Reading, Settings, Unit, UploadInfo, Meter } from '../types'
 import { calendarPeriod, periodContext, periodOfKey, rulesOf, startYearOf } from '../../../shared/period.ts'
 import { api, errorText, fmtEuro } from '../api'
 import { aiSummary } from '../aiForm'
 import { type KeyContext } from '../costForm'
+import { keepDraft } from '../useDraft'
 import { bookDecisions, greenDecisions, loadOpenAssessments, openBadgeClass, planDecisions } from '../assessment'
 import { assessmentOf, belongsTo, isBusy, useEvaluationQueue, type QueueEntry, type QueueTarget } from '../evaluationQueue'
 import { initialCandidate, readingBody, scoreCandidate, type ReadingCandidate } from '../readingCandidate'
@@ -511,9 +512,32 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
     setHighlighted(`f:${file}`)
   }
 
+  // Zuordnen an der Karte einer offenen Auswertung (Nachdurchsicht K1): Die Vorschläge der KI zu diesem Beleg würden
+  // sonst neben der Zuordnung weiter angeboten und mit „Buchen“ oder „Alle grünen übernehmen“ ein zweites Mal gebucht.
+  // Nach der Rückfrage werden die offenen Zeilen verworfen (wie „Verwerfen“ in der Prüfung), dann wird zugeordnet.
+  async function attachInstead(v: AssessmentView, itemId: string): Promise<unknown> {
+    const ok = await confirm({
+      title: 'Vorschläge der KI verwerfen?',
+      message: 'Die Vorschläge der KI zu diesem Beleg werden verworfen; der Beleg kommt an die gewählte Position.',
+      confirmLabel: 'Zuordnen',
+      cancelLabel: 'Abbrechen',
+    })
+    if (!ok) return keepDraft
+    const decisions: LineDecision[] = v.lines.filter((l) => l.state === 'open').map((l) => ({ idx: l.idx, action: 'dismiss' }))
+    if (decisions.length > 0) {
+      const preview = await planDecisions(v.id, decisions)
+      const result = await bookDecisions(v.id, decisions, preview.token)
+      if (result.kind !== 'done') throw new Error(result.message)
+    }
+    await attach.attachById(itemId, v.file)
+    setAssessments((list) => list.filter((x) => x.id !== v.id))
+    forgetFile(v.file)
+    return undefined
+  }
+
   // `review`: die Karte steht an ihrer Auswertung unter „Zu prüfen“; dort braucht es weder „Weiter prüfen“ noch „Per KI
-  // auswerten“ (Durchsicht M2).
-  const renderInbox = (card: ReceiptCard, review = false) => {
+  // auswerten“, nur ein Jahr (das der Buchung), und Zuordnen verwirft die Vorschläge (Nachdurchsicht K1, K2).
+  const renderInbox = (card: ReceiptCard, review: AssessmentView | null = null) => {
     const { upload } = card
     const keptEntry = kept.get(upload.file)
     return (
@@ -526,7 +550,7 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
             onRetry={() => { focusAfterRetry(keptEntry.id); retry(keptEntry.id) }} onOpenSettings={onOpenAiSettings} />
         )}
         <div className="receipt-inbox-controls">
-          <InboxPlacement upload={upload} properties={properties} yearOptions={yearOptions} onSave={(changes) => place(upload, changes)}>
+          <InboxPlacement upload={upload} properties={properties} yearOptions={yearOptions} hideYear={review !== null} onSave={(changes) => place(upload, changes)}>
             {(placement) => (
               <>
                 {candidatesFor(placement).length > 0 && (() => {
@@ -537,7 +561,7 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
                   return (
                     <AttachPicker label={`${receiptName(upload)} einer Position zuordnen`} what={`Position für ${receiptName(upload)}`}
                       placeholder="Position wählen …" scope={upload.file} values={candidatesFor(placement).map((c) => c.id)}
-                      onSave={(id) => attach.attachById(id, upload.file)}>
+                      onSave={(id) => (review ? attachInstead(review, id) : attach.attachById(id, upload.file))}>
                       {choices.likely.length > 0 ? (
                         <>
                           <optgroup label={`Passend zu „${choices.category}“`}>{choices.likely.map(option)}</optgroup>
@@ -640,12 +664,18 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
   // darunter.
   const [beside, setBeside] = useState<ReadonlySet<string>>(new Set())
   const toggleBeside = (id: string) => setBeside((s) => { const next = new Set(s); if (next.has(id)) next.delete(id); else next.add(id); return next })
+  // Die Bedienung des Belegs an einer Auswertung steht zugeklappt (am Handy wurde der Eingang sonst sehr lang); nach einem
+  // Sprung zu diesem Beleg steht sie offen.
+  const [placing, setPlacing] = useState<ReadonlySet<string>>(new Set())
+  const togglePlacing = (id: string) => setPlacing((s) => { const next = new Set(s); if (next.has(id)) next.delete(id); else next.add(id); return next })
   const renderAssessment = (v: AssessmentView) => {
     const shown = beside.has(v.id) && v.open
+    const jumpedHere = highlighted === `a:${v.id}` || highlighted === `f:${v.file}`
+    const placingOpen = placing.has(v.id) || highlighted === `f:${v.file}`
     // Der Beleg selbst, solange er an keiner Position hängt: löschen, Objekt und Jahr, zuordnen (Durchsicht M2)
     const own = v.open ? allCards.find((c) => c.upload.file === v.file && c.items.length === 0 && c.upload.kind !== 'meterPhoto') : undefined
     return (
-      <div className={`card no-print${highlighted === `a:${v.id}` ? ' bg-accent-soft border-accent' : ''}`} key={v.id} data-assessment={v.id} tabIndex={-1}>
+      <div className={`card no-print${jumpedHere ? ' bg-accent-soft border-accent' : ''}`} key={v.id} data-assessment={v.id} data-file={own ? v.file : undefined} tabIndex={-1}>
         <div className="row center">
           <strong>🧾 {v.vendor || v.originalName}</strong>
           {v.open
@@ -659,7 +689,13 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
               controls={`beleg-${v.id}`} className="btn small ghost" />
           )}
         </div>
-        {own && <ul className="receipt-list">{renderInbox(own, true)}</ul>}
+        {own && (
+          <div>
+            <DisclosureButton open={placingOpen} onToggle={() => togglePlacing(v.id)} closedLabel="Beleg einordnen oder löschen" openLabel="Einordnen schließen"
+              controls={`einordnen-${v.id}`} className="btn small ghost" />
+            {placingOpen && <ul id={`einordnen-${v.id}`} className="receipt-list">{renderInbox(own, v)}</ul>}
+          </div>
+        )}
         <div className={shown ? 'flex flex-col xl:flex-row-reverse xl:items-start gap-4' : undefined}>
           {shown && (
             <iframe id={`beleg-${v.id}`} className="w-full xl:w-96 h-112 shrink-0 border border-line bg-card"

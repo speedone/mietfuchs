@@ -133,10 +133,13 @@ export const PLACEMENT_FIRST = 'Erst Objekt und Jahr speichern oder verwerfen.'
 // Gesendet wird nur, was sich geändert hat; der Server zieht die Auswertung desselben Belegs nach, solange
 // aus ihr nichts gebucht ist (Belegbuchung).
 type Placement = { propertyId: string; year: string }
-export function InboxPlacement({ upload, properties, yearOptions, onSave, children }: {
+export function InboxPlacement({ upload, properties, yearOptions, hideYear = false, onSave, children }: {
   upload: UploadInfo
   properties: readonly Property[]
   yearOptions: readonly number[]
+  // An der Karte einer Auswertung: Das Jahr bestimmt dort „Jahr der Buchung“, ein zweites Jahresfeld verwirrte
+  // (Nachdurchsicht K2); gesendet wird dann nur das Objekt.
+  hideYear?: boolean
   onSave: (changes: { propertyId?: string | null; year?: number | null }) => Promise<unknown>
   // `dirty`: Objekt oder Jahr sind geändert und nicht gespeichert.
   children: (placement: { propertyId: string | null; year: number | null; dirty: boolean }) => ReactNode
@@ -162,12 +165,14 @@ export function InboxPlacement({ upload, properties, yearOptions, onSave, childr
           {properties.map((p) => <option key={p.id} value={p.id}>{p.name || 'Ohne Namen'}</option>)}
         </select>
       )}
-      <select aria-label={`Jahr für ${name}`} value={draft.value.year} disabled={draft.saving}
-        onChange={(e) => draft.set({ ...draft.value, year: e.target.value })}>
-        <option value="">ohne Jahr</option>
-        {[...new Set([...yearOptions, ...(upload.year === null ? [] : [upload.year])])].sort((a, b) => b - a).map((y) => <option key={y} value={String(y)}>{y}</option>)}
-      </select>
-      <DraftActions draft={draft} onSave={save} what={properties.length > 1 ? `Objekt und Jahr für ${name}` : `Jahr für ${name}`} />
+      {!hideYear && (
+        <select aria-label={`Jahr für ${name}`} value={draft.value.year} disabled={draft.saving}
+          onChange={(e) => draft.set({ ...draft.value, year: e.target.value })}>
+          <option value="">ohne Jahr</option>
+          {[...new Set([...yearOptions, ...(upload.year === null ? [] : [upload.year])])].sort((a, b) => b - a).map((y) => <option key={y} value={String(y)}>{y}</option>)}
+        </select>
+      )}
+      <DraftActions draft={draft} onSave={save} what={hideYear ? `Objekt für ${name}` : properties.length > 1 ? `Objekt und Jahr für ${name}` : `Jahr für ${name}`} />
       {children({ propertyId: draft.value.propertyId || null, year: draft.value.year ? Number(draft.value.year) : null, dirty: draft.dirty || draft.saving })}
     </>
   )
