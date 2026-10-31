@@ -1520,8 +1520,13 @@ export const payments = sqliteTable('payments', {
   // stillschweigend hatte, und keine Zahl ändert sich. Auch der eingefrorene Eingang schreibt ohne
   // die Spalte (Stand 0000) und bekommt sie so.
   kind: text('kind', { enum: PAYMENT_KINDS }).notNull().default('rent'),
+  // Der Monat laut Verwendungszweck (#281, § 366 Abs. 1 BGB), 'JJJJ-MM'; NULL heißt keine Bestimmung, und die Tilgung
+  // folgt § 366 Abs. 2 BGB. Jeder vorhandene Bestand bekommt NULL, also das bisherige Verhalten.
+  designatedMonth: text('designated_month'),
 }, () => [
   oneOf('payments_kind_known', 'kind', PAYMENT_KINDS),
+  // NULL GLOB … ist NULL und damit kein Verstoß: ohne Bestimmung erlaubt.
+  periodKeyCheck('payments_designated_month_valid', 'designated_month'),
 ])
 
 // ---------- Abgeschlossene Abrechnungen ----------

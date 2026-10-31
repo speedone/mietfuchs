@@ -20,6 +20,11 @@ import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { GLOSSARY } from '../../shared/glossary.ts'
 import type { BillingPeriod, PeriodRules, SeparateSpan } from '../../shared/types.ts'
 
+// Kennungen der Zahlungen (#281: Die Tilgung braucht sie als Nachrang beim Sortieren).
+let paymentSeq = 0
+const pid = (): string => `p${String(++paymentSeq).padStart(4, '0')}`
+
+
 const tenancy = (over: Partial<SnapshotTenancy> & Pick<SnapshotTenancy, 'start'>): SnapshotTenancy => ({
   id: 'm', unitId: 'a', tenantName: 'M', persons: 1, personHistory: [], end: null,
   prepayments: [{ from: '2020-01', monthlyCents: 15000 }], prepaymentOverrides: {},
@@ -156,16 +161,16 @@ test('Mietkonto: die Pauschale folgt derselben Regel', () => {
 
 test('Auszugsmonat anteilig gezahlt: kein falscher Rückstandshinweis mehr', () => {
   const payments: SnapshotPayment[] = [
-    ...['01', '02', '03', '04', '05'].map((m) => ({ tenancyId: 'm', date: `2025-${m}-03`, amountCents: 65000 })),
-    { tenancyId: 'm', date: '2025-06-03', amountCents: 32500 },
-    ...Array.from({ length: 12 }, (_, i) => ({ tenancyId: 'n', date: `2025-${String(i + 1).padStart(2, '0')}-03`, amountCents: 65000 })),
+    ...['01', '02', '03', '04', '05'].map((m) => ({ id: pid(), tenancyId: 'm', date: `2025-${m}-03`, amountCents: 65000 })),
+    { id: pid(), tenancyId: 'm', date: '2025-06-03', amountCents: 32500 },
+    ...Array.from({ length: 12 }, (_, i) => ({ id: pid(), tenancyId: 'n', date: `2025-${String(i + 1).padStart(2, '0')}-03`, amountCents: 65000 })),
   ]
   const s = settle([auszug], { payments })
   assert.deepEqual(s.notices.filter((n) => n.code === 'prepayment.arrears'), [])
 })
 
 test('Einzugsmonat nicht gezahlt: der Rückstand fällt jetzt im März auf, nicht verdeckt im April', () => {
-  const payments: SnapshotPayment[] = Array.from({ length: 9 }, (_, i) => ({ tenancyId: 'm', date: `2025-${String(i + 4).padStart(2, '0')}-03`, amountCents: 65000 }))
+  const payments: SnapshotPayment[] = Array.from({ length: 9 }, (_, i) => ({ id: pid(), tenancyId: 'm', date: `2025-${String(i + 4).padStart(2, '0')}-03`, amountCents: 65000 }))
   const row = rentLedger(snapshotOf(source([einzug], { payments }), 2025)).rows.find((r) => r.tenancyId === 'm') ?? assert.fail('keine Zeile')
   assert.equal(row.arrearsCents, 35645)
 })

@@ -9,6 +9,11 @@ import assert from 'node:assert/strict'
 import { computeSettlement, type ComputedSettlement } from '../src/calc.ts'
 import { snapshotOf, type SnapshotPayment, type SnapshotSource, type SnapshotTenancy } from '../src/snapshot.ts'
 
+// Kennungen der Zahlungen (#281: Die Tilgung braucht sie als Nachrang beim Sortieren).
+let paymentSeq = 0
+const pid = (): string => `p${String(++paymentSeq).padStart(4, '0')}`
+
+
 // Der Fall aus dem Issue: ab 01.03.2025, 450 € Kaltmiete und 80 € Vorauszahlung, also 530 € im
 // Monat. Gebucht sind März bis November, der Dezember fehlt.
 const tenancy = (over: Partial<SnapshotTenancy> = {}): SnapshotTenancy => ({
@@ -17,7 +22,7 @@ const tenancy = (over: Partial<SnapshotTenancy> = {}): SnapshotTenancy => ({
   baseRents: [{ from: '2025-03', monthlyCents: 45000 }], ...over,
 })
 const paidMarchToNovember = (tenancyId = 't'): SnapshotPayment[] =>
-  Array.from({ length: 9 }, (_, i) => ({ tenancyId, date: `2025-${String(i + 3).padStart(2, '0')}-03`, amountCents: 53000 }))
+  Array.from({ length: 9 }, (_, i) => ({ id: pid(), tenancyId, date: `2025-${String(i + 3).padStart(2, '0')}-03`, amountCents: 53000 }))
 
 const settle = (s: Partial<SnapshotSource>, asOf?: string): ComputedSettlement => computeSettlement(snapshotOf({
   units: [{ id: 'a', name: 'EG', areaM2: 50, participates: true }],
@@ -51,7 +56,7 @@ test('Rückstand mit gesetzter Jahreskorrektur: kein Hinweis, der Vermieter hat 
 })
 
 test('Mietkonto ausgeglichen: kein Hinweis', () => {
-  const s = settle({ payments: [...paidMarchToNovember(), { tenancyId: 't', date: '2025-12-03', amountCents: 53000 }] })
+  const s = settle({ payments: [...paidMarchToNovember(), { id: pid(), tenancyId: 't', date: '2025-12-03', amountCents: 53000 }] })
   assert.equal(arrears(s).length, 0)
 })
 
@@ -64,7 +69,7 @@ test('Ein Mieter zahlt nichts, der andere ist gebucht: Hinweis für den, der nic
   const s = settle({
     units: [{ id: 'a', name: 'EG', areaM2: 50, participates: true }, { id: 'b', name: 'OG', areaM2: 50, participates: true }],
     tenancies: [tenancy(), tenancy({ id: 'u', unitId: 'b', tenantName: 'Zweiter' })],
-    payments: [...paidMarchToNovember('t'), { tenancyId: 't', date: '2025-12-03', amountCents: 53000 }],
+    payments: [...paidMarchToNovember('t'), { id: pid(), tenancyId: 't', date: '2025-12-03', amountCents: 53000 }],
   })
   const found = arrears(s)
   assert.deepEqual(found.map((n) => n.subject?.id), ['u'])
@@ -100,7 +105,7 @@ test('Gemischtes Modell (kalt pauschal, Heizung abgerechnet): der Text behauptet
 // Laufendes Jahr (#133, Durchsicht): Das Mietkonto führt das Soll für alle zwölf Monate, auch für
 // die noch nicht fälligen. Mit Stichtag zählen nur die Monate vor dem Monat des Stichtags.
 const paidMarchTo = (lastMonth: number): SnapshotPayment[] =>
-  Array.from({ length: lastMonth - 2 }, (_, i) => ({ tenancyId: 't', date: `2025-${String(i + 3).padStart(2, '0')}-03`, amountCents: 53000 }))
+  Array.from({ length: lastMonth - 2 }, (_, i) => ({ id: pid(), tenancyId: 't', date: `2025-${String(i + 3).padStart(2, '0')}-03`, amountCents: 53000 }))
 
 test('Laufendes Jahr, bis zum Vormonat pünktlich gezahlt: kein Hinweis', () => {
   const s = settle({ payments: paidMarchTo(9) }, '2025-10-15')

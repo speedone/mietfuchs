@@ -16,6 +16,11 @@ import {
 import type { BillingPeriod, PeriodKey, PeriodRules } from '../../shared/types.ts'
 import { loadFixtures } from '../testing/fixtures.ts'
 
+// Kennungen der Zahlungen (#281: Die Tilgung braucht sie als Nachrang beim Sortieren).
+let paymentSeq = 0
+const pid = (): string => `p${String(++paymentSeq).padStart(4, '0')}`
+
+
 const of = (rules: PeriodRules, key: string): BillingPeriod => periodOfKey(rules, periodKey(key)) ?? assert.fail(`kein Zeitraum ${key}`)
 const MAI: PeriodRules = { startMonth: 5, changes: [] }
 const WECHSEL: PeriodRules = { startMonth: 1, changes: ['2025-05'] }
@@ -96,7 +101,7 @@ test('Rumpf 01.01.–30.04.2025: 120 Tage, vier Vorauszahlungsmonate, Vorschlag 
   const src = haus({
     tenancies: [tenancy('t1', 'u1', '2024-01-01', null), tenancy('t2', 'u2', '2024-01-01', null)],
     costItems: [grundsteuer('2025-01', 40000)],
-    payments: [{ tenancyId: 't1', date: '2025-01-03', amountCents: 20000 }, { tenancyId: 't1', date: '2025-02-03', amountCents: 20000 }],
+    payments: [{ id: pid(), tenancyId: 't1', date: '2025-01-03', amountCents: 20000 }, { id: pid(), tenancyId: 't1', date: '2025-02-03', amountCents: 20000 }],
   })
   const s = settle(src, WECHSEL, '2025-01', '2025-06-15')
   assert.equal(s.daysInYear, 120)

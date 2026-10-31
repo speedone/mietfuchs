@@ -13,6 +13,11 @@ import { CALENDAR_RULES, periodsBetween } from '../../shared/period.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import type { BillingPeriod, CostKey, PeriodRules } from '../../shared/types.ts'
 
+// Kennungen der Zahlungen (#281: Die Tilgung braucht sie als Nachrang beim Sortieren).
+let paymentSeq = 0
+const pid = (): string => `p${String(++paymentSeq).padStart(4, '0')}`
+
+
 export type TaxSource = Parameters<typeof snapshotFor>[0]
 type Item = TaxSource['costItems'][number]
 type Plant = NonNullable<TaxSource['heatingPlants']>[number]
@@ -117,7 +122,7 @@ export function randomTaxStock(rnd: () => number): TaxStock {
   const source = {
     properties: [{ id: TAX_STOCK_PROPERTY, kind: 'mfh', cableBuiltBeforeDec2021: null, periodRules: rules }],
     units, tenancies, costItems: items, meters: [], readings: [],
-    payments: tenancies.map((t, i) => ({ tenancyId: t.id, date: `${2024 + (i % 4)}-03-01`, amountCents: cents(500, 3000) })),
+    payments: tenancies.map((t, i) => ({ id: pid(), tenancyId: t.id, date: `${2024 + (i % 4)}-03-01`, amountCents: cents(500, 3000) })),
     closedSettlements: [], heatingPlants: plants, heatingPeriodRows,
   } as TaxSource
   return { source, rules, periods, plantMode }

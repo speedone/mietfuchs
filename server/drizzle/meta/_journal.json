@@ -547,6 +547,20 @@
       "when": 1793224678826,
       "tag": "0077_quellrechnung",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "6",
+      "when": 1793406651961,
+      "tag": "0078_bestimmung_monat",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "6",
+      "when": 1793406660689,
+      "tag": "0079_bestimmung_monat_bedingung",
+      "breakpoints": true
     }
   ]
 }

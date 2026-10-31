@@ -10,6 +10,11 @@ import { snapshotOf, type SnapshotCostItem } from '../src/snapshot.ts'
 import { CALENDAR_RULES, periodKey } from '../../shared/period.ts'
 import type { PeriodRules } from '../../shared/types.ts'
 
+// Kennungen der Zahlungen (#281: Die Tilgung braucht sie als Nachrang beim Sortieren).
+let paymentSeq = 0
+const pid = (): string => `p${String(++paymentSeq).padStart(4, '0')}`
+
+
 const MAI: PeriodRules = { startMonth: 5, changes: [] }
 // Ein Haus mit zwei gleich großen Einheiten: oben vermietet, unten selbst bewohnt. Privat ist
 // deshalb die Hälfte jeder Position nach Fläche.
@@ -21,7 +26,7 @@ const source = (rules: PeriodRules, costItems: SnapshotCostItem[]) => ({
   ],
   tenancies: [{ id: 't1', unitId: 'og', tenantName: 'A', persons: 1, personHistory: [{ from: '2024-01-01', persons: 1 }], start: '2024-01-01', end: null, prepayments: [{ from: '2024-01', monthlyCents: 10000 }], prepaymentOverrides: {}, baseRents: [] }],
   costItems: costItems.map((c) => ({ ...c, propertyId: 'objekt-1' })),
-  meters: [], readings: [], payments: [{ tenancyId: 't1', date: '2025-03-01', amountCents: 50000 }],
+  meters: [], readings: [], payments: [{ id: pid(), tenancyId: 't1', date: '2025-03-01', amountCents: 50000 }],
   closedSettlements: [],
 })
 const pos = (id: string, key: string, amountCents: number, taxYear?: number): SnapshotCostItem =>
