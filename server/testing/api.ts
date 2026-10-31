@@ -76,6 +76,11 @@ export type UploadBody = {
   reading?: MeterReadingExtraction
   stats?: AiStat[]
   error?: string
+  // Bei einem Fehler der KI (Fehler mit Ausweg): warum, ob der Beleg gespeichert blieb, und bei fehlender
+  // Bestätigung der Dienst
+  reason?: string
+  kept?: boolean
+  service?: string
 }
 
 // Eine Zeile des Stroms (Accept: application/x-ndjson): `type` sagt, was sie bedeutet, die
@@ -90,6 +95,9 @@ export type StreamLine = {
   completed?: number
   error?: string
   file?: string
+  reason?: string
+  kept?: boolean
+  service?: string
   data?: UploadBody
 }
 

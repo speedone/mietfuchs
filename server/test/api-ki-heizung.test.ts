@@ -56,6 +56,20 @@ test('KI: Lieferantenrechnung; Messdienstabrechnung bei freien Schlüsseln 400; 
   })
 })
 
+test('KI: scheitert das Auslesen, nennt die Antwort den Grund, und der Beleg bleibt im Belegordner (Fehler mit Ausweg)', async () => {
+  await withOllama(async (s) => {
+    const plant = await newPlant(s, { energy: 'gas', method: 'service' })
+    const fuel = await upload(s, `/api/heating-plants/${plant.id}/fuel-invoice`)
+    assert.equal(fuel.status, 502)
+    const body = await jsonOf<{ file?: string, reason?: string, kept?: boolean }>(fuel)
+    assert.deepEqual([body.reason, body.kept], ['model', true])
+    const service = await jsonOf<{ file?: string, reason?: string, kept?: boolean }>(await upload(s, `/api/heating-plants/${plant.id}/service-statement`))
+    assert.deepEqual([service.reason, service.kept], ['model', true])
+    const files = (await s.api<UploadInfo[]>('/api/uploads')).map((u) => u.file).sort()
+    assert.deepEqual(files, [body.file, service.file].sort())
+  }, { model: 'fehlt:4b' })
+})
+
 test('Warmwasser: „Ermittlung übernehmen“ ({ dhwMethod } allein) lässt eine bestätigte Unmessbarkeit derselben Formel stehen (Durchsicht S2)', async () => {
   const s = await startServer()
   try {

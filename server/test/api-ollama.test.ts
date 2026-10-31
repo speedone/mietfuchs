@@ -48,6 +48,7 @@ test('Ollama: das Zeitlimit greift vor der ersten Antwort und heißt auch so (NK
     const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
     assert.equal(r.status, 502)
     assert.match(errorOf(r.body), /nicht innerhalb von 2 Sekunden geantwortet/)
+    assert.deepEqual([r.body.reason, r.body.kept], ['timeout', true])
     assert.ok(Date.now() - start < 15000, 'das Zeitlimit wurde nicht eingehalten')
   }, { chat: 'hang', env: { NKA_AI_TIMEOUT: '2' } })
 })
@@ -164,6 +165,7 @@ test('Strom: ein Fehler kommt als letzte Zeile, samt Beleg', async () => {
     assert.equal(last.type, 'error')
     assert.match(errorOf(last), /nicht installiert/)
     assert.match(fileOf(last), /rechnung\.pdf$/)
+    assert.deepEqual([last.reason, last.kept], ['model', true])
   }, { model: 'fehlt:4b' })
 })
 
@@ -227,12 +229,39 @@ test('Ollama: ist der Server nicht erreichbar, nennen Status und Auswertung die 
   }
 })
 
+// Fehler mit Ausweg: Der Beleg ist vor der Auswertung gespeichert. Scheitert die KI, sagt die Antwort warum
+// (`reason`) und dass er im Posteingang liegt (`kept`); ein neuer Versuch nennt ihn nur und lädt nicht neu hoch.
+test('Fehler mit Ausweg: ist Ollama nicht erreichbar, bleibt der Beleg im Posteingang, und ein neuer Versuch legt keine Kopie an', async () => {
+  const s = await startServer()
+  try {
+    await s.api<ClientSettings>('/api/settings', { method: 'PUT', body: JSON.stringify({ ollamaUrl: UNREACHABLE }) })
+    const r = await uploadPdf(s, '/api/intake', { text: LONG_TEXT })
+    assert.equal(r.status, 502)
+    assert.deepEqual([r.body.reason, r.body.kept], ['unreachable', true])
+    const file = fileOf(r.body)
+    const stored = await s.api<UploadInfo[]>('/api/uploads')
+    assert.deepEqual(stored.map((u) => [u.file, u.kind]), [[file, 'receipt']], 'der Beleg liegt im Belegordner')
+    // Der neue Versuch als Strom, wie der Browser ihn schickt
+    const again = new FormData()
+    again.append('existingFile', file)
+    again.append('pdfText', LONG_TEXT)
+    const res = await fetch(`${s.base}/api/extract`, { method: 'POST', body: again, headers: { accept: 'application/x-ndjson' } })
+    const last = lastLine(await linesOf(res))
+    assert.equal(last.type, 'error')
+    assert.deepEqual([last.reason, last.kept, last.file], ['unreachable', true, file])
+    assert.deepEqual((await s.api<UploadInfo[]>('/api/uploads')).map((u) => u.file), [file], 'keine Kopie im Ordner')
+  } finally {
+    s.stop()
+  }
+})
+
 test('Ollama: ein nicht installiertes Modell nennt den Befehl zum Laden', async () => {
   await withOllama(async (s) => {
     const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
     assert.equal(r.status, 502)
     assert.match(errorOf(r.body), /„fehlt:4b“ ist in Ollama nicht installiert/)
     assert.match(errorOf(r.body), /ollama pull fehlt:4b/)
+    assert.equal(r.body.reason, 'model')
   }, { model: 'fehlt:4b' })
 })
 
@@ -241,6 +270,7 @@ test('Ollama: ein Modell ohne Bildverständnis bekommt keine Bilder, sondern ein
     const scan = await uploadPdf(s, '/api/extract', { pages: [page(1)] })
     assert.equal(scan.status, 502)
     assert.match(errorOf(scan.body), /„text:8b“ versteht keine Bilder/)
+    assert.equal(scan.body.reason, 'model')
     const photo = new FormData()
     photo.append('file', new Blob([Buffer.from('JPEG-Foto')], { type: 'image/jpeg' }), 'zaehler.jpg')
     const intake = await fetch(`${s.base}/api/intake`, { method: 'POST', body: photo })

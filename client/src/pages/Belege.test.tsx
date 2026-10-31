@@ -293,6 +293,21 @@ test('Posteingang: einer Position zuordnen und per KI auswerten', async () => {
   expect(onEvaluate).toHaveBeenCalledWith([expect.objectContaining({ file: '4_lose.pdf' })])
 })
 
+// Fehler mit Ausweg (#487): „Von Hand erfassen“ springt aus Schnellerfassung oder Kosten zum gespeicherten Beleg.
+test('Posteingang: ein angesprungener Beleg bekommt den Fokus, die Seite meldet es einmal', async () => {
+  const onFocusDone = vi.fn()
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <Belege renderThumb={() => Promise.resolve('')} focusFile="4_lose.pdf" onFocusDone={onFocusDone} />
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  await waitFor(() => expect(onFocusDone).toHaveBeenCalledTimes(1))
+  const card = document.activeElement?.closest('li.receipt-card')
+  expect(card?.getAttribute('data-file')).toBe('4_lose.pdf')
+})
+
 test('Mappen: „Belege für die Steuer“ lädt das ZIP des gewählten Objekts und Jahres', async () => {
   renderPage()
   await screen.findByText('Wasser/Abwasser')

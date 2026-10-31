@@ -14,6 +14,7 @@ import { AiProgressBadge } from '../components/AiProgress'
 import { plural } from '../../../shared/wording.ts'
 import PageHeader from '../components/PageHeader'
 import { NoticeBox } from '../components/Notice'
+import { KeptReceipt } from '../components/KeptReceipt'
 
 // Sichtprüfung E30: Die Kennzeichnung offener Zeilen trägt die Farbe der schlechtesten Ampel,
 // nicht Grün für „bitte prüfen“.
@@ -31,6 +32,10 @@ type Props = {
   // schon im Ordner und gehen nur mit ihrem Namen an den Server.
   handoff?: UploadInfo[]
   onHandoffTaken?: () => void
+  // Fehler mit Ausweg (#487): einen gespeicherten, nicht ausgewerteten Beleg im Belegordner zeigen, die
+  // KI-Einstellungen öffnen
+  onOpenReceipt?: (file: string) => void
+  onOpenAiSettings?: () => void
 }
 
 type ReadingCandidate = {
@@ -67,7 +72,7 @@ const quantityInput = (n: number): string => n.toLocaleString('de-DE', { useGrou
 
 const NOT_SAVED = 'Die Auswertung ließ sich nicht speichern. Bitte versuchen Sie es noch einmal; gebucht wurde nichts.'
 
-export default function Schnellerfassung({ units, settings, onNavigate, handoff, onHandoffTaken }: Props) {
+export default function Schnellerfassung({ units, settings, onNavigate, handoff, onHandoffTaken, onOpenReceipt, onOpenAiSettings }: Props) {
   // Wohin die Belege zur Auswertung gehen (siehe aiForm.ts)
   const ai = aiSummary(settings)
   // Das Kalenderjahr, in dem der gewählte Zeitraum beginnt (#208): Ein Beleg ohne erkanntes Jahr
@@ -102,7 +107,7 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
     // Neu laden, wenn das Objekt wechselt (#92).
   }, [propertyId])
 
-  const { queue, patchEntry, addFiles, addStored, remove, cancel } = useEvaluationQueue<IntakeResult, Evaluated>({
+  const { queue, patchEntry, addFiles, addStored, remove, cancel, retry } = useEvaluationQueue<IntakeResult, Evaluated>({
     endpoint: '/api/intake',
     pageImageEdge: settings?.ai?.pageImageEdge ?? undefined,
     // Objekt und Jahr für die Auswertung (#170); ein neuer Beleg steht damit im Posteingang
@@ -396,6 +401,7 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
               {entry.status === 'fertig' && entry.data.kind === 'zaehler' && <span className="badge green">Zählerstand erkannt</span>}
               {entry.status === 'übernommen' && <span className="badge green">✓ übernommen</span>}
               {entry.status === 'fehler' && <span className="badge red">Fehler</span>}
+              {entry.status === 'gespeichert' && <span className="badge amber">im Belegordner</span>}
               {entry.status === 'abgebrochen' && <span className="badge gray">abgebrochen</span>}
               <div className="grow" />
               {entry.status !== 'läuft' && (
@@ -404,6 +410,9 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
             </div>
 
             {entry.status === 'fehler' && <NoticeBox level="error" action={entry.error} />}
+            {entry.status === 'gespeichert' && entry.failure && (
+              <KeptReceipt failure={entry.failure} onManual={onOpenReceipt} onRetry={() => retry(entry.id)} onOpenSettings={onOpenAiSettings} />
+            )}
 
             {/* ---------- Zählerstand ---------- */}
             {entry.status === 'fertig' && entry.data.kind === 'zaehler' && entry.data.reading && (

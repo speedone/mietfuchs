@@ -81,7 +81,7 @@ type ErrorContext = { timeout: AbortSignal; signal?: AbortSignal; timeoutMs: num
 // Übersetzt, was beim Verbinden oder Lesen schiefgeht, in eine verständliche Meldung. Das
 // Zeitlimit hat Vorrang: Es bricht die Verbindung ab, was sonst wie ein Netzfehler aussähe.
 function translateError(err: unknown, { timeout, signal, timeoutMs, base, connected }: ErrorContext): Error {
-  if (timeout.aborted) return providerError(timeoutMessage(timeoutMs))
+  if (timeout.aborted) return providerError(timeoutMessage(timeoutMs), { reason: 'timeout' })
   if (signal?.aborted) {
     const cancelled = new Error('Die Auswertung wurde abgebrochen.')
     cancelled.name = 'AbortError'
@@ -153,16 +153,16 @@ async function request<T>(config: OllamaConfig, path: string, { body, timeoutMs,
     if (!res.ok) {
       // Ein Proxy vor Ollama kann die abgelehnte Anfrage samt Kopfzeilen zurückgeben
       const detail = maskSecret(config.apiKey, errorDetail(await readText(res.body).catch(() => '')))
-      const failWith = (message: string) => providerError(message, { status: res.status, detail })
+      const failWith = (message: string, reason?: 'key' | 'model') => providerError(message, reason ? { status: res.status, detail, reason } : { status: res.status, detail })
       if (res.status === 401 || res.status === 403) {
         throw failWith(config.apiKey
           ? `Ollama unter ${base} lehnt den Schlüssel ab. Bitte den Schlüssel in den Einstellungen prüfen.`
-          : `Ollama unter ${base} verlangt einen Schlüssel. Bitte in den Einstellungen einen eintragen.`)
+          : `Ollama unter ${base} verlangt einen Schlüssel. Bitte in den Einstellungen einen eintragen.`, 'key')
       }
       if (res.status === 404 && body?.model) {
         throw failWith(config.preset === 'ollama-cloud'
           ? `Das Modell „${String(body.model)}“ gibt es bei Ollama Cloud nicht. Bitte in den Einstellungen ein anderes wählen.`
-          : `Das Modell „${String(body.model)}“ ist in Ollama nicht installiert. In den Einstellungen ein installiertes Modell wählen oder es mit „ollama pull ${String(body.model)}“ laden.`)
+          : `Das Modell „${String(body.model)}“ ist in Ollama nicht installiert. In den Einstellungen ein installiertes Modell wählen oder es mit „ollama pull ${String(body.model)}“ laden.`, 'model')
       }
       throw failWith(`Ollama antwortet mit ${res.status}: ${detail.slice(0, 300)}`)
     }
@@ -251,7 +251,7 @@ export function ollamaProvider(config: OllamaConfig): Provider {
         // Kennt Ollama die Fähigkeiten nicht (ältere Version), wird es versucht
         const { capabilities } = await getCapabilities(config, model, signal)
         if (capabilities && !capabilities.includes('vision')) {
-          throw providerError(`Das Modell „${model}“ versteht keine Bilder. Für Fotos und gescannte PDFs in den Einstellungen ein Modell mit Bildverständnis wählen.`)
+          throw providerError(`Das Modell „${model}“ versteht keine Bilder. Für Fotos und gescannte PDFs in den Einstellungen ein Modell mit Bildverständnis wählen.`, { reason: 'model' })
         }
         message.images = images.map((image) => image.data) // Ollama nimmt reines Base64 ohne Typangabe
       }

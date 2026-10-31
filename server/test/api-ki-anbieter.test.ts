@@ -368,6 +368,7 @@ test('Bestätigung: ohne sie gehen keine Belege an einen externen Dienst', async
     const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
     assert.equal(r.status, 502)
     assert.match(errorOf(r.body), /192\.0\.2\.1:11434.*bestätigt/s)
+    assert.deepEqual([r.body.reason, r.body.kept, r.body.service], ['consent', true, '192.0.2.1:11434'])
     assert.ok(Date.now() - started < 1500, 'ohne Bestätigung darf keine Verbindung versucht werden')
     // Nach der Bestätigung versucht Mietfuchs es, der Dienst ist nur eben nicht erreichbar
     const confirmed = await s.api<ClientSettings>('/api/ai/consent', { method: 'POST', body: JSON.stringify({ slot: 'text' }) })
@@ -399,6 +400,7 @@ test('Bestätigung: ein Cloud-Modell über das lokale Ollama braucht sie auch', 
     const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
     assert.equal(r.status, 502)
     assert.match(errorOf(r.body), /gpt-oss:120b-cloud.*Cloud/s)
+    assert.equal(r.body.reason, 'consent')
     assert.equal(chatRequests(ollama).length, 0)
     await s.api<ClientSettings>('/api/ai/consent', { method: 'POST', body: JSON.stringify({ slot: 'text' }) })
     assert.equal((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).status, 200)

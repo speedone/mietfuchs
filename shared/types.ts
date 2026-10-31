@@ -1605,6 +1605,13 @@ export type MeterReadingExtraction = {
   dateOnImage?: string | null
 }
 
+// Fehler mit Ausweg: Scheitert die KI an einem Beleg, der schon im Belegordner liegt, sagt die Antwort neben dem
+// Satz des Servers (`error`) den Grund in einem Wort, damit die Oberfläche den passenden Ausweg anbietet, und dass
+// der Beleg gespeichert ist (`kept`, mit seinem Namen in `file`). `service`: bei fehlender Bestätigung der Dienst,
+// an den die Belege gingen. Gilt für /api/extract, /api/intake und die beiden Routen der Heizung.
+export type AiFailureReason = 'unreachable' | 'model' | 'key' | 'quota' | 'consent' | 'timeout' | 'other'
+export type AiFailure = { error: string; file: string; reason: AiFailureReason; kept: true; service?: string }
+
 // Antwort von /api/extract. `assessment` ist die gespeicherte Auswertung (Belegbuchung, #170);
 // `null`, wenn sie sich nicht speichern ließ.
 export type ExtractResult = { file: string; extraction: Extraction; assessment: AssessmentView | null }

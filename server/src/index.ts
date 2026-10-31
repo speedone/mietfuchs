@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url'
 import yazl from 'yazl'
 import { openZip, ZipRefusal, type ZipItem, type ZipLimits, type ZipReader } from './zipRead.ts'
 import { cleanRestoreLeftovers, diskFullMessage, freeBytes, moveIntoPlace, restoreSpaceNeeded, restoreUploadPath } from './restoreFiles.ts'
-import type { AiSettings, AiSlotName, AiStatus, AssessmentView, Extraction, Settings, UploadEntry, UploadLinks } from '../../shared/types.ts'
+import type { AiFailure, AiSettings, AiSlotName, AiStatus, AssessmentView, Extraction, Settings, UploadEntry, UploadLinks } from '../../shared/types.ts'
 import { detectedYear, linesFromExtraction } from './assessment.ts'
 import { bookingResponse, parseDecisions } from './bookingPlan.ts'
 import { forgetAssessment, placeAssessment, readAssessment, readAssessmentOfFile, saveAssessment, uploadLinks } from './db/assessments.ts'
@@ -39,7 +39,7 @@ import {
 } from './ai/settings.ts'
 import { PRESETS, presetById } from './ai/presets.ts'
 import { providerConfig } from './ai/index.ts'
-import { isProviderError } from './ai/errors.ts'
+import { isProviderError, reasonOf } from './ai/errors.ts'
 import { databaseUnavailable, healthReport, NO_DATABASE, type DatabaseState } from './health.ts'
 import { databaseFile, openDatabase, setAsideName, type OpenedDatabase } from './db/open.ts'
 import { changeoverWithoutDatabase, replaceFile, runChangeover, type ChangeoverResult } from './db/changeover.ts'
@@ -1827,6 +1827,15 @@ function aiResponse(req: Request, res: Response): AiAnswer {
   }
 }
 
+// Fehler mit Ausweg: Scheitert die KI, liegt der Beleg schon im Belegordner (neu hochgeladen mit Zeile in
+// `uploads`, oder aus dem Posteingang); nur ein Abbruch nimmt ihn wieder weg, und der kommt hier nie an. Die
+// Antwort sagt deshalb neben dem Satz den Grund (`reason`, aus ai/errors.ts) und dass er gespeichert ist; mit
+// seinem Namen fragt ein neuer Versuch als `existingFile`, ohne eine Kopie anzulegen.
+function failureOf(file: DocumentSource, err: unknown, stats: AskStats[]): AiFailure & { stats: AskStats[] } {
+  const service = isProviderError(err) ? err.service : undefined
+  return { file: file.filename, error: messageOf(err), reason: reasonOf(err), kept: true, ...(service ? { service } : {}), stats }
+}
+
 app.post('/api/ai/cancel/:id', (req, res) => {
   const cancel = runningAiRequests.get(req.params.id)
   if (!cancel) return res.status(404).json({ error: 'Keine laufende Auswertung mit dieser Kennung.' })
@@ -1976,7 +1985,7 @@ app.post('/api/extract', fileWithPages, async (req: Request, res: Response) => {
     const assessment = await rememberAssessment(req, file, result, signal)
     answer.done({ file: file.filename, extraction: result, assessment, stats })
   } catch (err) {
-    answer.fail({ file: file.filename, error: messageOf(err), stats })
+    answer.fail(failureOf(file, err, stats))
   }
 })
 
@@ -2005,7 +2014,7 @@ app.post('/api/intake', fileWithPages, async (req: Request, res: Response) => {
       answer.done({ file: file.filename, kind: 'rechnung', extraction, assessment, stats })
     }
   } catch (err) {
-    answer.fail({ file: file.filename, error: messageOf(err), stats })
+    answer.fail(failureOf(file, err, stats))
   }
 })
 
@@ -2049,7 +2058,7 @@ app.post('/api/heating-plants/:id/service-statement', fileWithPages, async (req:
     const extraction = await extractServiceStatement(file.path, file.mimetype, effectiveSettings(), { ...aiInput(req), signal, stats, onProgress })
     answer.done({ file: file.filename, extraction, stats })
   } catch (err) {
-    answer.fail({ file: file.filename, error: messageOf(err), stats })
+    answer.fail(failureOf(file, err, stats))
   }
 })
 
@@ -2065,7 +2074,7 @@ app.post('/api/heating-plants/:id/fuel-invoice', fileWithPages, async (req: Requ
     await rememberInvoiceDate(file.filename, extraction.invoiceDate)
     answer.done({ file: file.filename, extraction, stats })
   } catch (err) {
-    answer.fail({ file: file.filename, error: messageOf(err), stats })
+    answer.fail(failureOf(file, err, stats))
   }
 })
 

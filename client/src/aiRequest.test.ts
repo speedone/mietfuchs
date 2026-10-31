@@ -2,6 +2,7 @@
 // jsdom für pagehide und navigator.sendBeacon; fetch, Response und ReadableStream kommen von Node.
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { aiRequest, fmtElapsed, progressText, type AiProgress } from './aiRequest'
+import { failureOf } from './aiFailure'
 
 // Antwort als Strom aus Byte-Stücken. Die Stücke schneiden Zeilen absichtlich mittendurch, so
 // wie ein echter Netzwerkstrom sie liefert.
@@ -47,6 +48,23 @@ describe('aiRequest', () => {
   test('ein Fehler im Strom wird zur Fehlermeldung', async () => {
     serve(() => streamResponse(ndjson({ type: 'error', error: 'Ollama ist nicht erreichbar.', file: 'a.pdf' })))
     await expect(aiRequest('/api/extract', new FormData())).rejects.toThrow('Ollama ist nicht erreichbar.')
+  })
+
+  // Fehler mit Ausweg: Der Beleg liegt schon im Belegordner, die Oberfläche bietet einen neuen Versuch ohne Kopie an.
+  test('ein Fehler mit gespeichertem Beleg trägt Grund und Namen des Belegs, im Strom wie als JSON', async () => {
+    const line = { type: 'error', error: 'Ollama ist unter http://127.0.0.1:11434 nicht erreichbar.', file: 'srv-a.pdf', reason: 'unreachable', kept: true }
+    serve(() => streamResponse(ndjson(line)))
+    const streamed = await aiRequest('/api/extract', new FormData()).catch((e: unknown) => e)
+    expect(failureOf(streamed)).toEqual({ error: line.error, file: 'srv-a.pdf', reason: 'unreachable', kept: true })
+    serve(() => new Response(JSON.stringify({ error: 'Abgelehnt', file: 'srv-b.pdf', reason: 'consent', kept: true, service: 'api.example.com' }), { status: 502, headers: { 'content-type': 'application/json' } }))
+    const plain = await aiRequest('/api/extract', new FormData()).catch((e: unknown) => e)
+    expect(failureOf(plain)).toEqual({ error: 'Abgelehnt', file: 'srv-b.pdf', reason: 'consent', kept: true, service: 'api.example.com' })
+    // Ohne gespeicherten Beleg (etwa eine abgelehnte Datei) bleibt es ein gewöhnlicher Fehler
+    serve(() => new Response(JSON.stringify({ error: 'Keine Datei' }), { status: 400, headers: { 'content-type': 'application/json' } }))
+    expect(failureOf(await aiRequest('/api/extract', new FormData()).catch((e: unknown) => e))).toBeNull()
+    // Ein unbekannter Grund (neuerer Server) zählt als 'other'
+    serve(() => streamResponse(ndjson({ ...line, reason: 'neu' })))
+    expect(failureOf(await aiRequest('/api/extract', new FormData()).catch((e: unknown) => e))?.reason).toBe('other')
   })
 
   test('endet der Strom ohne Ergebnis, gibt es eine klare Meldung', async () => {

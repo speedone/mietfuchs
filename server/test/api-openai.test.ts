@@ -156,9 +156,11 @@ test('OpenAI-kompatibel: Schlüssel als Bearer, verständliche Meldungen ohne de
   await withOpenAi(async (s, service) => {
     const without = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
     assert.match(errorOf(without.body), /verlangt einen Schlüssel/)
+    assert.deepEqual([without.body.reason, without.body.kept], ['key', true])
     await putKey(s, { slot: 'text', key: 'sk-test-falsch-0987654321' })
     const wrong = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
     assert.match(errorOf(wrong.body), /lehnt den Schlüssel ab/)
+    assert.equal(wrong.body.reason, 'key')
     assert.ok(!errorOf(wrong.body).includes('sk-test-falsch'))
     await putKey(s, { slot: 'text', key: KEY })
     assert.equal((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).status, 200)
@@ -188,6 +190,7 @@ test('OpenAI-kompatibel: aufgebrauchtes Guthaben wird nicht wiederholt', async (
     const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
     assert.equal(r.status, 502)
     assert.match(errorOf(r.body), /Guthaben oder Budget/)
+    assert.equal(r.body.reason, 'quota')
     assert.equal(service.completions().length, 1)
   }, { rules: { quota: true } })
 })
@@ -197,10 +200,14 @@ test('OpenAI-kompatibel: abgeschnittene Antwort, unbekanntes Modell, Zeitlimit',
     assert.match(errorOf((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).body), /Höchstlänge von 16384 Token.*„Erweitert“/)
   }, { rules: { finish: 'length' } })
   await withOpenAi(async (s) => {
-    assert.match(errorOf((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).body), /kennt das Modell „gibt-es-nicht“ nicht/)
+    const unknown = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
+    assert.match(errorOf(unknown.body), /kennt das Modell „gibt-es-nicht“ nicht/)
+    assert.equal(unknown.body.reason, 'model')
   }, { model: 'gibt-es-nicht' })
   await withOpenAi(async (s) => {
-    assert.match(errorOf((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).body), /nicht innerhalb von 2 Sekunden geantwortet/)
+    const slow = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
+    assert.match(errorOf(slow.body), /nicht innerhalb von 2 Sekunden geantwortet/)
+    assert.equal(slow.body.reason, 'timeout')
   }, { rules: { hang: true }, env: { NKA_AI_TIMEOUT: '2' } })
 })
 

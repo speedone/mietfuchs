@@ -59,3 +59,22 @@ test('ein Beleg aus dem Ordner geht nur mit seinem Namen; Abbrechen ist kein Feh
   await act(async () => result.current.cancel(id))
   await waitFor(() => expect(result.current.queue[0]?.status).toBe('abgebrochen'))
 })
+
+// Fehler mit Ausweg: Scheitert die KI an einem gespeicherten Beleg, ist der Eintrag „gespeichert“ statt
+// „fehler“, und ein neuer Versuch nennt den Beleg nur mit seinem Namen, statt ihn noch einmal hochzuladen.
+test('ein gespeicherter Beleg ohne Auswertung lässt sich erneut auswerten, ohne neue Kopie', async () => {
+  const { result } = renderHook(() => useEvaluationQueue(options()))
+  act(() => result.current.addFiles([pdf('a.pdf')]))
+  await waitFor(() => expect(pending).toHaveLength(1))
+  const failure = { error: 'Ollama ist nicht erreichbar.', file: 'srv-a.pdf', reason: 'unreachable' as const, kept: true as const }
+  await act(async () => pending[0]?.reject(Object.assign(new Error(failure.error), { failure })))
+  await waitFor(() => expect(result.current.queue[0]).toMatchObject({ status: 'gespeichert', failure }))
+  expect(pending[0]?.form.get('file')).toBeInstanceOf(File)
+  const id = result.current.queue[0]?.id ?? -1
+  act(() => result.current.retry(id))
+  await waitFor(() => expect(pending).toHaveLength(2))
+  expect([pending[1]?.form.get('file'), pending[1]?.form.get('existingFile')]).toEqual([null, 'srv-a.pdf'])
+  expect(result.current.queue[0]?.failure).toBeUndefined()
+  await act(async () => pending[1]?.resolve({ file: 'srv-a.pdf' }))
+  await waitFor(() => expect(result.current.queue[0]).toMatchObject({ status: 'fertig', data: { serverFile: 'srv-a.pdf' } }))
+})

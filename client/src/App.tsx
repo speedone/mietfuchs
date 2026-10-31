@@ -133,6 +133,8 @@ function Shell() {
   const [stopped, setStopped] = useState(false)
   // Belege aus dem Posteingang, die die Schnellerfassung auswerten soll (#170)
   const [handoff, setHandoff] = useState<UploadInfo[] | null>(null)
+  // Der Beleg, zu dem der Belegordner springen soll (Fehler mit Ausweg, #487: „Von Hand erfassen“)
+  const [receiptFocus, setReceiptFocus] = useState<string | null>(null)
   const [units, setUnits] = useState<Unit[]>([])
   // Zu welchem Objekt `units` gehört (#157): Bis die Wohnungen eines eben gewählten Objekts da
   // sind, stehen noch die des vorigen hier.
@@ -220,6 +222,11 @@ function Shell() {
   }
   // „Position öffnen“ aus dem Belegordner: Der zeigt alle Objekte, die Seite Kosten nur das
   // gewählte. Gehört die Position zu einem anderen, wird erst umgeschaltet, wie oben.
+  // Fehler mit Ausweg (#487): ein gespeicherter, nicht ausgewerteter Beleg im Belegordner, bzw. die KI-Einstellungen
+  const openReceipt = (file: string) => {
+    void navigate('belege').then((done) => { if (done) setReceiptFocus(file) })
+  }
+  const openAiSettings = () => { void navigate('einstellungen') }
   const openCostItem = async (item: CostItem) => {
     await goViaProperty(item.propertyId, 'kosten', { kind: 'costItem', id: item.id })
   }
@@ -374,16 +381,17 @@ function Shell() {
         )}
         {tab === 'schnellerfassung' && (
           <Schnellerfassung units={units} settings={settings} onNavigate={(t, f) => void navigate(t as Tab, f ?? null)}
-            handoff={handoff ?? undefined} onHandoffTaken={() => setHandoff(null)} />
+            handoff={handoff ?? undefined} onHandoffTaken={() => setHandoff(null)} onOpenReceipt={openReceipt} onOpenAiSettings={openAiSettings} />
         )}
         {tab === 'uebersicht' && <Uebersicht onNavigate={(t) => void navigate(t as Tab)} />}
         {tab === 'stammdaten' && (
           <Stammdaten units={units} tenancies={tenancies} settings={settings} reload={reload} focus={focus} onFocusDone={clearFocus} />
         )}
-        {tab === 'kosten' && <Kosten units={units} settings={settings} tenancies={tenancies} focus={focus} onFocusDone={clearFocus} />}
+        {tab === 'kosten' && <Kosten units={units} settings={settings} tenancies={tenancies} focus={focus} onFocusDone={clearFocus} onOpenReceipt={openReceipt} onOpenAiSettings={openAiSettings} />}
         {tab === 'mietkonto' && <Mietkonto focus={focus} onFocusDone={clearFocus} />}
         {tab === 'zaehler' && <Zaehler units={units} focus={focus} onFocusDone={clearFocus} />}
-        {tab === 'belege' && <Belege onEvaluate={(list) => void evaluateFromInbox(list)} onContinue={(u) => void continueAssessment(u)} onOpenItem={(item) => void openCostItem(item)} />}
+        {tab === 'belege' && <Belege onEvaluate={(list) => void evaluateFromInbox(list)} onContinue={(u) => void continueAssessment(u)} onOpenItem={(item) => void openCostItem(item)}
+          focusFile={receiptFocus} onFocusDone={() => setReceiptFocus(null)} />}
         {tab === 'abrechnung' && (
           <Abrechnung settings={settings} units={units} tenancies={tenancies} reload={reload} onNavigate={(t, f) => void navigate(t, f ?? null)} focus={focus} onFocusDone={clearFocus} />
         )}
