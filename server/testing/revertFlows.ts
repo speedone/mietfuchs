@@ -155,13 +155,12 @@ export const STEPS: readonly Step[] = [
   { name: 'Kostenposition ändern', routes: ['PUT /api/costItems/:id'], run: async (ctx) => {
     const c = pick(ctx.rng, ctx.costItems)
     if (!c) return
-    // Gezogen wird in derselben Reihenfolge wie vorher, damit die Abläufe der festen Startwerte gleich bleiben.
-    const choice = int(ctx.rng, 0, 2)
-    const wanted = choice === 0 ? { spreadYears: int(ctx.rng, 2, 5), confirmSpread: true } : choice === 1 ? { spreadYears: null, confirmSpread: true } : {}
-    const amountCents = int(ctx.rng, 50, 2000) * 100
-    const spreadable = typeof c.category === 'string' && allowsSpread({ category: c.category, amountCents, operatingPower: c.operatingPower === 'deduction' ? 'deduction' : undefined })
-    const spread = spreadable ? wanted : {}
-    await send(ctx.s, 'PUT', `/api/costItems/${c.id}`, { amountCents, ...spread })
+    // Der neue Betrag liegt immer über 0. An einer Position, die nicht verteilt werden kann, wird nichts weiter aus `rng`
+    // gezogen: Die Abläufe der festen Startwerte bleiben dort wie vor #262.
+    const spreadable = typeof c.category === 'string' && allowsSpread({ category: c.category, amountCents: 1, operatingPower: c.operatingPower === 'deduction' ? 'deduction' : undefined })
+    const choice = spreadable ? int(ctx.rng, 0, 2) : 2
+    const spread = choice === 0 ? { spreadYears: int(ctx.rng, 2, 5), confirmSpread: true } : choice === 1 ? { spreadYears: null, confirmSpread: true } : {}
+    await send(ctx.s, 'PUT', `/api/costItems/${c.id}`, { amountCents: int(ctx.rng, 50, 2000) * 100, ...spread })
   } },
   { name: 'Kostenposition löschen', routes: ['DELETE /api/costItems/:id'], run: async (ctx) => { const c = pick(ctx.rng, ctx.costItems); if (c) await send(ctx.s, 'DELETE', `/api/costItems/${c.id}`) } },
   { name: 'Einstellungen ändern', routes: ['PUT /api/settings'], run: ({ s, rng }) => send(s, 'PUT', '/api/settings', { landlordName: `Vermieter ${word(rng)}`, paymentDeadlineDays: int(rng, 14, 30) }) },
@@ -199,7 +198,7 @@ export const STEPS: readonly Step[] = [
   { name: 'Texte des Anschreibens am Objekt', routes: ['PUT /api/properties/:id/letter-texts'], run: ({ s, rng }) => send(s, 'PUT', `/api/properties/${P}/letter-texts`, { texts: { closing: rng() < 0.5 ? null : `Danke, {Name}. ${word(rng)}` } }) },
   {
     name: 'Anschreiben an einen Mieter', routes: ['PUT /api/settlement/:period/letters/:tenancyId'],
-    run: async (ctx) => { const t = pick(ctx.rng, ctx.tenancies); if (t) await send(ctx.s, 'PUT', `/api/settlement/2025/letters/${t.id}${Q}`, { texts: { greeting: `Bis bald, ${word(ctx.rng)}` } }) },
+    run: async (ctx) => { const t = pick(ctx.rng, ctx.tenancies); if (t) await send(ctx.s, 'PUT', `/api/settlement/2025-01/letters/${t.id}${Q}`, { texts: { greeting: `Bis bald, ${word(ctx.rng)}` } }) },
   },
   {
     name: 'Fehlende Zwischenablesung beantworten und entfernen', routes: ['PUT /api/units/:id/interim-gaps/:date', 'DELETE /api/units/:id/interim-gaps/:date'],
@@ -215,7 +214,8 @@ export const STEPS: readonly Step[] = [
   // Gasheizung, die selbst abrechnet (Schätzung, Warmwasser).
   { name: 'Heizanlage anlegen', routes: ['POST /api/heating-plants'], run: ({ s }) => send(s, 'POST', '/api/heating-plants', { propertyId: P, energy: 'oil', method: 'service' }) },
   { name: 'Heizanlage ändern', routes: ['PUT /api/heating-plants/:id'], run: async (ctx) => { const p = pick(ctx.rng, ctx.plants); if (p) await send(ctx.s, 'PUT', `/api/heating-plants/${p.id}`, { devicesRemote: pick(ctx.rng, ['all', 'none']) }) } },
-  { name: 'Heizanlage entfernen', routes: ['DELETE /api/heating-plants/:id'], run: async (ctx) => { const p = pick(ctx.rng, ctx.plants); if (p && ctx.rng() < 0.3) await send(ctx.s, 'DELETE', `/api/heating-plants/${p.id}`) } },
+  // Ab der zweiten Anlage immer, sonst selten: Die Abdeckung hinge sonst am Zufall des Laufs (#262 verschob die Abläufe).
+  { name: 'Heizanlage entfernen', routes: ['DELETE /api/heating-plants/:id'], run: async (ctx) => { const p = pick(ctx.rng, ctx.plants); if (p && (ctx.plants.length > 1 || ctx.rng() < 0.3)) await send(ctx.s, 'DELETE', `/api/heating-plants/${p.id}`) } },
   { name: 'Eigene Heizkostenabrechnung einrichten', routes: ['PUT /api/heating-plants/:id/self'], run: async (ctx) => { const p = ctx.plants.find((x) => x.method === 'manual' && x.endsOn === null); if (p) await send(ctx.s, 'PUT', `/api/heating-plants/${p.id}/self`, { ...heatingSelf, period: periodOf(p) }) } },
   {
     name: 'Schätzung nach § 9a speichern', routes: ['PUT /api/heating-plants/:id/periods/:period/estimates/:unitId/:part'],
@@ -305,11 +305,14 @@ export const STEPS: readonly Step[] = [
   { name: 'Beleg löschen', routes: ['DELETE /api/uploads/:file'], run: async (ctx) => { const f = pick(ctx.rng, ctx.uploads); if (f) await send(ctx.s, 'DELETE', `/api/uploads/${f}`) } },
 ]
 
+// Die Abrechnungen sprechen den Zeitraum mit seinem Schlüssel an (`2025-01`), nicht mit der Jahreszahl: Hat der Schritt
+// „Abrechnungszeitraum ändern“ den Rhythmus gewechselt, gibt es „2025“ nicht mehr (404), wohl aber den Zeitraum ab Januar
+// 2025 (Kalenderjahr oder Rumpf bis April). Sonst hinge die Abdeckung daran, ob der Wechsel im Lauf früh gelingt.
 // Abschluss und Wiederöffnen: Diese Schritte erzeugen Gruppen, über die kein Rücksprung führt. Der Test kennt sie an
 // ihrem Namen.
 export const CLOSING_STEPS: readonly Step[] = [
-  { name: 'Abrechnung abschließen', routes: ['POST /api/settlement/:period/close'], run: ({ s }) => send(s, 'POST', `/api/settlement/2025/close${Q}`, {}) },
-  { name: 'Versanddatum speichern', routes: ['PUT /api/settlement/:period/close'], run: ({ s, rng }) => send(s, 'PUT', `/api/settlement/2025/close${Q}`, { sentAt: day(rng, 2026) }) },
+  { name: 'Abrechnung abschließen', routes: ['POST /api/settlement/:period/close'], run: ({ s }) => send(s, 'POST', `/api/settlement/2025-01/close${Q}`, {}) },
+  { name: 'Versanddatum speichern', routes: ['PUT /api/settlement/:period/close'], run: ({ s, rng }) => send(s, 'PUT', `/api/settlement/2025-01/close${Q}`, { sentAt: day(rng, 2026) }) },
   // Die Übernahme in die Staffel braucht eine abgeschlossene Abrechnung mit angekündigter Anpassung; der Zufallsbestand hat
   // nicht immer eine. Deshalb legt der Schritt sie für 2024 selbst an (Wohnung, Mieter mit 40 € Vorauszahlung, 600 €
   // Grundsteuer), schließt ab und übernimmt. Die Übernahme ändert Mietverhältnisse, nicht den Abschluss.
@@ -320,17 +323,17 @@ export const CLOSING_STEPS: readonly Step[] = [
       if (!unit) return
       await send(s, 'POST', '/api/tenancies', { unitId: unit.id, tenantName: `Mieter ${word(rng)}`, persons: 1, start: '2024-01-01', prepayments: [{ from: '2024-01', monthlyCents: 4000 }] })
       await send(s, 'POST', '/api/costItems', { propertyId: P, period: '2024-01', category: 'Grundsteuer', description: 'Grundsteuer 2024', amountCents: 60000, key: 'area' })
-      let closed = await send(s, 'POST', `/api/settlement/2024/close${Q}`, {})
+      let closed = await send(s, 'POST', `/api/settlement/2024-01/close${Q}`, {})
       if (closed.status === 409) {
         const question = await json<{ errorToken?: string }>(closed)
-        if (question?.errorToken) closed = await send(s, 'POST', `/api/settlement/2024/close${Q}`, { despiteErrors: question.errorToken })
+        if (question?.errorToken) closed = await send(s, 'POST', `/api/settlement/2024-01/close${Q}`, { despiteErrors: question.errorToken })
       }
-      const plan = await json<{ token: string, items: { tenancyId: string, state: string }[] }>(await send(s, 'POST', `/api/settlement/2024/prepayment-steps/plan${Q}`, {}))
+      const plan = await json<{ token: string, items: { tenancyId: string, state: string }[] }>(await send(s, 'POST', `/api/settlement/2024-01/prepayment-steps/plan${Q}`, {}))
       const ids = plan?.items.filter((i) => i.state === 'pending').map((i) => i.tenancyId) ?? []
-      if (plan && ids.length > 0) await send(s, 'POST', `/api/settlement/2024/prepayment-steps${Q}`, { tenancyIds: ids, token: plan.token })
+      if (plan && ids.length > 0) await send(s, 'POST', `/api/settlement/2024-01/prepayment-steps${Q}`, { tenancyIds: ids, token: plan.token })
     },
   },
-  { name: 'Abrechnung wieder öffnen', routes: ['DELETE /api/settlement/:period/close'], run: ({ s }) => send(s, 'DELETE', `/api/settlement/2025/close${Q}`) },
+  { name: 'Abrechnung wieder öffnen', routes: ['DELETE /api/settlement/:period/close'], run: ({ s }) => send(s, 'DELETE', `/api/settlement/2025-01/close${Q}`) },
 ]
 
 // Routen mit Satz, die der Generator nicht nimmt, je mit Grund. Nur kürzer werden lassen.
