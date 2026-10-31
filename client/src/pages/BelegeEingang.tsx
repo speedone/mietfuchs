@@ -767,7 +767,7 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
             <>
               <span className="muted">Die KI ist gerade nicht erreichbar. Belege werden nur gespeichert; „Per KI auswerten“ steht an jedem Beleg.</span>
               <button type="button" className="btn small ghost" onClick={() => void checkAi()}>Erneut prüfen</button>
-              {checking && <span className="muted" role="status">Prüfe die KI …</span>}
+              {checking && <span className="muted" role="status">Mietfuchs fragt die KI …</span>}
               {uploading > 0 && <span className="muted">Wird gespeichert … ({uploading})</span>}
               {onOpenAiSettings && <button type="button" className="btn small ghost" onClick={onOpenAiSettings}>KI-Einstellungen öffnen</button>}
             </>

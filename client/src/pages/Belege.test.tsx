@@ -1233,7 +1233,7 @@ test('Ordner: ein gelöschtes Zählerfoto nimmt seinen Eintrag aus dem Eingang m
 })
 
 // Nachdurchsicht K4: Wer ohne KI ablegt, sieht, dass Mietfuchs die KI noch einmal fragt; und nur die jüngste Antwort zählt.
-test('Eingang ohne KI: beim Ablegen „Prüfe die KI …“, eine verspätete ältere Antwort zählt nicht', async () => {
+test('Eingang ohne KI: beim Ablegen „Mietfuchs fragt die KI …“, eine verspätete ältere Antwort zählt nicht', async () => {
   aiStatus = { ok: false, error: 'nicht erreichbar', reason: 'unreachable' }
   const answers: ((v: Response) => void)[] = []
   const inner = globalThis.fetch
@@ -1257,7 +1257,7 @@ test('Eingang ohne KI: beim Ablegen „Prüfe die KI …“, eine verspätete ä
   void container
 })
 
-test('Eingang ohne KI: beim Ablegen steht „Prüfe die KI …“, bis die Antwort da ist', async () => {
+test('Eingang ohne KI: beim Ablegen steht „Mietfuchs fragt die KI …“, bis die Antwort da ist', async () => {
   aiStatus = { ok: false, error: 'nicht erreichbar', reason: 'unreachable' }
   const { container } = renderInboxWith(LOCAL)
   expect(await screen.findByText(/Die KI ist gerade nicht erreichbar/)).toBeTruthy()
@@ -1267,10 +1267,10 @@ test('Eingang ohne KI: beim Ablegen steht „Prüfe die KI …“, bis die Antwo
     ? new Promise<Response>((resolve) => { release = resolve })
     : inner(url, init)))
   dropInto(container, [new File(['%PDF'], 'eins.pdf', { type: 'application/pdf' })])
-  expect(await screen.findByText('Prüfe die KI …')).toBeTruthy()
+  expect(await screen.findByText('Mietfuchs fragt die KI …')).toBeTruthy()
   ;(release as ((v: Response) => void) | null)?.(new Response(JSON.stringify({ ok: false, reason: 'unreachable' }), { status: 200, headers: { 'content-type': 'application/json' } }))
   await waitFor(() => expect(sent.some((r) => r.url === '/api/upload')).toBe(true))
-  expect(screen.queryByText('Prüfe die KI …')).toBeNull()
+  expect(screen.queryByText('Mietfuchs fragt die KI …')).toBeNull()
 })
 
 // Nachdurchsicht K5: Gehört ein Beleg einem Objekt, das es nicht mehr gibt, nennt der Sprung den Grund; die Meldung geht
