@@ -135,6 +135,34 @@ const GS_OUT: TaxReport['movedOut'][number] = {
   settlementPeriod: { key: periodKey(`${JAHR}-01`), label: String(JAHR) }, outflow: { year: JAHR - 1, source: 'paid', paidOn: `${JAHR - 1}-12-01` },
 }
 
+
+// #262 PR 3: eine Verteilung nach § 82b EStDV. Im Jahr JAHR beginnt die Dachsanierung (10.000 € auf 3 Jahre, ohne privaten
+// Teil), aus JAHR − 2 kommt der dritte Anteil der Fassade (D = 6.000 €, 60 %).
+const DACH = POS({
+  costItemId: 'dach', description: 'Dachsanierung', amountCents: 1_000_000, privateCents: 0, deductibleCents: 333_334, deferredCents: 666_666, deductiblePercent: 100,
+  spread: { years: 3, baseCents: 1_000_000, rates: [{ year: JAHR, cents: 333_334, grossCents: 333_334 }, { year: JAHR + 1, cents: 333_333, grossCents: 333_333 }, { year: JAHR + 2, cents: 333_333, grossCents: 333_333 }] },
+  steps: [{ label: 'Verteilung nach § 82b EStDV', value: 'abziehbar 10.000,00 € auf 3 Jahre', term: 'spread82b' }],
+})
+const FASSADE = POS({
+  costItemId: `spread:fassade:${JAHR - 2}`, description: `Anteil 3 von 3 aus ${JAHR - 2}: Fassade`, amountCents: 0, privateCents: 0, deferredCents: -200_000, deductibleCents: 200_000, deductiblePercent: null,
+  spreadFrom: { costItemId: 'fassade', outflowYear: JAHR - 2, index: 3, of: 3, baseCents: 600_000, grossRateCents: 333_333, restAfterCents: 0 },
+})
+const VERTEILT = (items: TaxExpenseItem[] = [DACH, FASSADE], over: Partial<TaxReport> = {}): TaxReport => {
+  const sum = (f: (x: TaxExpenseItem) => number) => items.reduce((a, x) => a + f(x), 0)
+  return REPORT({
+    expenses: {
+      groups: [{ group: 'Verwaltung & Instandhaltung', amountCents: sum((x) => x.amountCents), labor35aCents: 0, privateCents: 0, deductibleCents: sum((x) => x.deductibleCents), deferredCents: sum((x) => x.deferredCents ?? 0), categories: [] }],
+      items, totalCents: sum((x) => x.amountCents), privateCents: 0, deductibleCents: sum((x) => x.deductibleCents), deferredCents: sum((x) => x.deferredCents ?? 0), labor35aCents: 0, unstatedCount: 0,
+      spread: {
+        started: items.some((x) => x.spread) ? [{ costItemId: 'dach', description: 'Dachsanierung', amountCents: 1_000_000, privateCents: 0, baseCents: 1_000_000, deductiblePercent: null, years: 3, grossRateCents: 333_334, rateCents: 333_334, remainingCents: 666_666, direct: true }] : [],
+        carried: items.some((x) => x.spreadFrom) ? [{ costItemId: 'fassade', description: 'Fassade', outflowYear: JAHR - 2, index: 3, of: 3, baseCents: 600_000, deductiblePercent: 60, grossRateCents: 333_333, rateCents: 200_000, remainingCents: 0, direct: false }] : [],
+        thisYearCents: sum((x) => x.deductibleCents),
+      },
+    },
+    ...over,
+  })
+}
+
 const zeige = async (report: TaxReport, basis: Basis = 'ist', kind?: PropertyKind, over: Partial<Property> = {}) => {
   // Die Objekte sind meist gleichgültig: ohne Objekt gilt auf dem Server das einzige (#92). Nur
   // die Art des Objekts entscheidet über den Satz zum Hausgeld (#143), die Kopfangaben über den Kopf der Anlage V und den
@@ -249,6 +277,14 @@ const LAGEN: Record<TaxHint, Lage> = {
     report: REPORT({ specialLevySuspects: [{ costItemId: 's', description: 'Sonderumlage Dach', amountCents: 300000, category: 'Nicht umlagefähig' }] }),
     text: /Ihre eigene Zahlung an die Gemeinschaft zählt nicht/,
   },
+  // #262 PR 3: die Verteilung nach § 82b EStDV.
+  spreadConditions: { report: VERTEILT([DACH]), text: /Prüfen Sie die Voraussetzungen/ },
+  spreadCarried: { report: VERTEILT([FASSADE]), text: /Diese Anteile gehören in die Erklärung dieses Jahres/ },
+  spreadNothingDeductible: {
+    report: (() => { const r = VERTEILT([DACH]); r.expenses.spread!.started[0]!.baseCents = 0; return r })(),
+    text: /die Verteilung hat keine Wirkung/,
+  },
+  spreadIgnored: { report: REPORT({ spreadIgnored: [{ costItemId: 'gs', description: 'Grundsteuer' }] }), text: /an dieser Position wird aber nicht verteilt/ },
   // #163: teilweise Eigennutzung.
   mixedUseSplit: { report: MIXED(), text: /durch direkte Zuordnung ermittelt/ },
   mixedUseKeyNotArea: {
@@ -688,7 +724,7 @@ test('verbilligte Vermietung: der Satz zur Totalüberschussprognose steht druckb
 // der Anlage V (#96 PR 2), die Einnahmentabelle (#312), der verteilte Erhaltungsaufwand (#262) und die Gesamtsicht
 // (#96 PR 3) tragen sich hier ein.
 test('Reihenfolge der Steuerseite: Einnahmen, Werbungskosten mit Erhaltungsaufwand, Kürzung nach Zeilen 87/88', async () => {
-  const report = MIXED([ENTNAHME], {
+  const report = MIXED([ENTNAHME, DACH], {
     cheapRent: {
       law: { split: 50, paid: 66, cite: '§ 21 Abs. 2 Satz 1 und 2 EStG', text: '' },
       units: [{
@@ -697,6 +733,7 @@ test('Reihenfolge der Steuerseite: Einnahmen, Werbungskosten mit Erhaltungsaufwa
       }],
     },
   })
+  report.expenses.spread = VERTEILT([DACH]).expenses.spread
   await zeige(report, 'ist', 'mfh', { ownershipTransferOn: `${JAHR - 1}-07-01` })
   const blocks = [
     screen.getByRole('heading', { name: 'Kopf der Anlage V' }),
@@ -705,6 +742,8 @@ test('Reihenfolge der Steuerseite: Einnahmen, Werbungskosten mit Erhaltungsaufwa
     screen.getByRole('table', { name: 'Einnahmen nach Zeilen der Anlage V' }),
     screen.getByRole('heading', { name: 'Werbungskosten' }),
     await screen.findByText(/Anlage V \d{4}: Zeile 55\./),
+    // #262 PR 3: der Block der Zeilen 57 bis 72 nach 55/56, vor der Kürzung.
+    screen.getByRole('heading', { name: 'Zu verteilender Erhaltungsaufwand' }),
     screen.getByText(/Verbilligte Vermietung: DG/),
   ]
   for (let i = 1; i < blocks.length; i++) {
@@ -732,4 +771,71 @@ test('Kopf der Anlage V: Aktenzeichen ohne Sonderzeichen, Eigentumsübergang, Fe
   // Die Nummer nur, solange der Vordruck des Jahres gelesen ist (JAHR folgt der Uhr, siehe oben).
   if (anlageVLines(JAHR)?.header?.use === 10) expect(screen.getByText('Zeile 10, Kennzahl 62')).toBeTruthy()
   else expect(screen.queryByText(/Kennzahl 62/)).toBeNull()
+})
+
+// ---------- #262 PR 3: Verteilung nach § 82b EStDV ----------
+
+const plain = (el: Element | null | undefined): string => (el?.textContent ?? '').replace(/\u00a0/g, ' ')
+
+test('Verteilung: Spalte „verteilt“, je Zeile Betrag = privat + verteilt + abziehbar, Satz an der Zeile, KPI nennt den verschobenen Teil', async () => {
+  await zeige(VERTEILT())
+  expect(screen.getByRole('columnheader', { name: 'verteilt' })).toBeTruthy()
+  const dach = screen.getByText('Dachsanierung').closest('tr')
+  expect(plain(dach)).toMatch(/10\.000,00 €.*0,00 €.*6\.666,66 €.*3\.333,34 €/)
+  expect(plain(dach)).toContain(`auf 3 Jahre verteilt (${JAHR} bis ${JAHR + 2}): in diesem Jahr 3.333,34 €, in die Folgejahre 6.666,66 €`)
+  const fassade = screen.getByText(`Anteil 3 von 3 aus ${JAHR - 2}: Fassade`).closest('tr')
+  expect(plain(fassade)).toMatch(/0,00 €.*0,00 €.*-2\.000,00 €.*2\.000,00 €|0,00 €.*0,00 €.*−2\.000,00 €.*2\.000,00 €/)
+  expect(plain(fassade)).toContain('Grundlage 6.000,00 € abziehbar')
+  const summe = screen.getByText('Summe Werbungskosten').closest('tr')
+  expect(plain(summe)).toMatch(/10\.000,00 €.*0,00 €.*4\.666,66 €.*5\.333,34 €/)
+  expect(plain(screen.getByText(/Werbungskosten \(abziehbar\)/).closest('.kpi'))).toMatch(/gesamt 10\.000,00 €.*in Folgejahre verschoben 4\.666,66 €/)
+  // Rechenweg mit Begriff.
+  fireEvent.click(screen.getAllByRole('button', { name: 'Rechenweg' })[0] ?? expect.unreachable('kein Rechenweg'))
+  const schritt = screen.getByText(/abziehbar 10\.000,00 € auf 3 Jahre/).closest('tr.calc-steps')
+  expect(schritt?.querySelector('[role="button"]')?.textContent).toMatch(/Verteilung nach § 82b EStDV/)
+})
+
+test('Ohne Verteilung: keine Spalte „verteilt“ und kein Block', async () => {
+  await zeige(MIXED())
+  expect(screen.queryByRole('columnheader', { name: 'verteilt' })).toBeNull()
+  expect(screen.queryByRole('heading', { name: /Zu verteilender Erhaltungsaufwand/ })).toBeNull()
+})
+
+test('Block der Zeilen 57 bis 72: Gesamtbetrag, Anteil und Ergebnis in der Reihenfolge des Vordrucks, Folgejahr mit Grundlage', async () => {
+  await zeige(VERTEILT())
+  const table = screen.getByRole('table', { name: 'Zu verteilender Erhaltungsaufwand nach Zeilen der Anlage V' })
+  const heads = [...table.querySelectorAll('th')].map((h) => h.textContent)
+  expect(heads.indexOf('Gesamtbetrag')).toBeLessThan(heads.indexOf('abzugsfähiger Anteil'))
+  expect(heads.indexOf('abzugsfähiger Anteil')).toBeLessThan(heads.indexOf(`in ${JAHR} abzuziehen`))
+  const rows = [...table.querySelectorAll('tbody tr[data-row]')].map((tr) => plain(tr))
+  const lines = anlageVLines(JAHR)?.maintenance
+  if (lines?.spread) {
+    expect(rows[0]).toMatch(new RegExp(`^${lines.spread.total}Gesamtaufwand ${JAHR}, davon ${JAHR} abzuziehen10\\.000,00 €3\\.333,34 €`))
+    expect(rows.some((r) => r.startsWith(`${lines.spread?.direct}Dachsanierung (direkt zugeordnet)`))).toBe(true)
+  }
+  const fassade = rows.find((r) => r.includes('Fassade')) ?? expect.unreachable('Fassade fehlt')
+  expect(fassade).toMatch(/3\.333,33 €.*60 %.*2\.000,00 €/)
+  expect(plain(table.querySelector('tfoot'))).toMatch(new RegExp(`In ${JAHR} abzuziehen.*5\\.333,34 €`))
+  // Druck: Block steht nicht in einem no-print.
+  expect(table.closest('.no-print')).toBeNull()
+})
+
+test('Erhaltungsaufwand: Zeile 55 nur für Unverteiltes, die verteilte Entnahme verweist auf 57 bis 72', async () => {
+  const entnahmeVerteilt = { ...DACH, costItemId: 'ev', category: 'Entnahme Erhaltungsrücklage', group: 'Erhaltungsaufwand', description: 'Dach laut Hausgeldabrechnung' }
+  await zeige(VERTEILT([entnahmeVerteilt]))
+  const box = await screen.findByText(/Verteilter Erhaltungsaufwand/)
+  expect(box.textContent).not.toMatch(/Zeile 55\./)
+})
+
+test('„Was diese Übersicht nicht rechnet“ nennt die Verteilung nicht mehr als fehlend', async () => {
+  await zeige(MIXED())
+  const box = screen.getByText('Was diese Übersicht nicht rechnet').closest('.notice-item')
+  expect(box?.textContent).toMatch(/Größeren Erhaltungsaufwand verteilt Mietfuchs, wenn Sie es an der Position wählen \(§ 82b EStDV\)/)
+  expect(box?.textContent).not.toMatch(/die Verteilung nach § 82b EStDV tragen Sie selbst ein/)
+  expect(box?.textContent).not.toMatch(/Verteilung größeren Erhaltungsaufwands auf mehrere Jahre nach § 82b EStDV;/)
+})
+
+test('Anschaffungsnahe Herstellungskosten ohne Datum: mit beginnender Verteilung fragt der Hinweis nach dem Eigentumsübergang', async () => {
+  await zeige(VERTEILT([DACH]), 'ist', 'mfh', { name: 'Objekt' })
+  expect(await screen.findByText(/Sie verteilen in diesem Jahr Erhaltungsaufwand/)).toBeTruthy()
 })

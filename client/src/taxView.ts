@@ -26,6 +26,7 @@ import { RESERVE_WITHDRAWAL_CATEGORY } from '../../shared/categories.ts'
 import { fileNumberDigits } from './propertyForm'
 import { LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
 import { estgAcquisitionRelated, yearsWord } from '../../shared/law/estg.ts'
+import { isSpreadItem } from './taxSpread'
 
 export type Basis = 'soll' | 'ist'
 
@@ -48,6 +49,7 @@ export const TAX_HINTS = [
   'formerYears', 'inclusiveLine24', 'inclusiveLine24Mixed', 'flatRateLine20',
   'reserveContribution', 'reserveSuspected', 'etwHousingMoney', 'maintenanceLines', 'reserveWithdrawalSuspected', 'specialLevy',
   'acquisitionRelated',
+  'spreadConditions', 'spreadCarried', 'spreadNothingDeductible', 'spreadIgnored',
   'mixedUseSplit', 'mixedUseKeyNotArea', 'mixedUseAreaMissing', 'mixedUseDirectOutside', 'mixedUseChangedInYear',
   'mixedUseClosedChanged', 'mixedUseLabor35a', 'mixedUseNotCalculated', 'mixedUseExcludedArea', 'mixedUseClosedItemsChanged',
   'mixedUseAssignedUnits', 'usageChangedInYear',
@@ -128,8 +130,17 @@ export type TaxHint = (typeof TAX_HINTS)[number]
 //                        drei Jahre nach dem Eigentumsübergang oder das Kalenderjahr danach (ersatzweise großzügig ab dem
 //                        Kaufvertrag, siehe `acquisitionRelated`), und es gibt abziehbaren
 //                        Erhaltungsaufwand oder Instandhaltung: Die Grenze nach § 6 Abs. 1 Nr. 1a EStG gilt, und
-//                        Mietfuchs kennt die Anschaffungskosten nicht (`acquisitionRelated`). Ohne Datum kein Hinweis,
-//                        bis #262 PR 3 den Beginn einer Verteilung ergänzt.
+//                        Mietfuchs kennt die Anschaffungskosten nicht (`acquisitionRelated`).
+//                        Ohne Datum nur, wenn in diesem Jahr eine Verteilung nach § 82b EStDV beginnt (#262 PR 3,
+//                        `basis: 'unknown'`).
+//
+// Verteilung nach § 82b EStDV (#262 PR 3, Entwurf E-8; Texte in taxSpread.ts):
+//
+//   `spreadConditions`   In diesem Jahr beginnt eine Verteilung: Voraussetzungen (Privatvermögen, überwiegend
+//                        Wohnzwecke, § 82b Abs. 1 Satz 1 und 2 EStDV), Bindung an die Wahl. Als Warnung.
+//   `spreadCarried`      Anteile aus Vorjahren: gehören in die Erklärung dieses Jahres, Grundlage je Position.
+//   `spreadNothingDeductible` Eine Verteilung ohne abziehbaren Teil (D = 0): ohne Wirkung.
+//   `spreadIgnored`      Eine gespeicherte Wahl an einer Position, an der nicht verteilt werden kann.
 //
 // Teilweise Eigennutzung (#163), alle nur, wenn es eine selbstgenutzte Wohnung gibt:
 //
@@ -161,7 +172,7 @@ export type TaxHint = (typeof TAX_HINTS)[number]
 //                        räumt es bewusst nicht ab, denn eine bewusste Zuordnung ist am Datensatz
 //                        nicht von einer stehengebliebenen zu unterscheiden; der Hinweis legt sie
 //                        offen. Ohne selbstgenutzte Einheit wirkt die Zuordnung nicht.
-//   `mixedUseNotCalculated` Was Mietfuchs nicht rechnet: AfA, Schuldzinsen, § 82b EStDV; bei
+//   `mixedUseNotCalculated` Was Mietfuchs nicht rechnet: AfA, Schuldzinsen (§ 82b EStDV seit #262 an der Position); bei
 //                        verbilligter Vermietung (#257) nur deren Kürzung, die der erfassten Kosten schon.
 //   `operatingPowerBalance` Abzüge beim Allgemeinstrom und Heizpositionen, die auch in der
 //                        Stromrechnung stecken, gleichen sich im Jahr nicht aus (#268); die Übersicht
@@ -193,6 +204,11 @@ export function taxHints(report: TaxReport, basis: Basis, propertyKind?: Propert
   if ((report.reserveWithdrawalSuspects ?? []).length > 0) hints.push('reserveWithdrawalSuspected')
   if ((report.specialLevySuspects ?? []).length > 0) hints.push('specialLevy')
   if (acquisitionRelated(report, acquisition ?? null) !== null) hints.push('acquisitionRelated')
+  const spread = report.expenses.spread
+  if ((spread?.started.length ?? 0) > 0) hints.push('spreadConditions')
+  if ((spread?.carried.length ?? 0) > 0) hints.push('spreadCarried')
+  if ((spread?.started ?? []).some((x) => x.baseCents === 0)) hints.push('spreadNothingDeductible')
+  if ((report.spreadIgnored ?? []).length > 0) hints.push('spreadIgnored')
   if (movedInLines(report).length > 0) hints.push('movedIn')
   if (report.movedOut.length > 0) hints.push('movedOut')
   if (report.expenses.unstatedCount > 0) hints.push('unstated')
@@ -304,9 +320,11 @@ export function surplusCentsFor(report: TaxReport, basis: Basis): number {
 // Die Spalten privat und abziehbar zeigt die Seite nur, wenn es etwas Privates geben kann. Ohne
 // selbstgenutzte Wohnung wären sie eine Spalte voller Nullen und eine Spalte, die den Betrag
 // wiederholt; eine Unterscheidung, die es nicht gibt, ist schlechter als keine (wie #68).
-// Mit einem unentgeltlichen Teil bei verbilligter Vermietung (#257) ebenso: Dann ist nicht alles abziehbar.
+// Mit einem unentgeltlichen Teil bei verbilligter Vermietung (#257) ebenso: Dann ist nicht alles abziehbar. Und mit einer
+// Verteilung nach § 82b EStDV (#262 PR 3): Dann ist abziehbar nur der Anteil des Jahres, und eine Zeile eines Folgejahres
+// hat den Betrag 0.
 export function showsSplit(report: TaxReport): boolean {
-  return report.selfOccupiedExists || report.expenses.privateCents !== 0 || !!report.expenses.gratuitousCents
+  return report.selfOccupiedExists || report.expenses.privateCents !== 0 || !!report.expenses.gratuitousCents || report.expenses.items.some(isSpreadItem)
 }
 
 // Positionen, deren privater Teil laut Abrechnung von dem nach Fläche abweicht, und um wie viel
@@ -547,7 +565,7 @@ export const MAINTENANCE_GROUP = 'Erhaltungsaufwand'
 // A4.1: Wohin die Gruppe „Erhaltungsaufwand“ in der Anlage V gehört. **Die Zeilen 55/56 gelten nur für unverteilte
 // Positionen** (Durchsicht X7): Eine nach § 82b EStDV verteilte (#262) steht im Block „zu verteilender
 // Erhaltungsaufwand“, im ersten Jahr 57 bis 60, in den Folgejahren 61 bis 72. `isSpread` sagt, welche Position verteilt
-// ist; bis #262 gibt es keine. Für ein Jahr ohne gelesenen Vordruck (`anlageVLines`) ohne Nummer.
+// ist (`isSpreadItem` in taxSpread.ts). Für ein Jahr ohne gelesenen Vordruck (`anlageVLines`) ohne Nummer.
 export function maintenanceLineText(report: TaxReport, isSpread: (item: TaxExpenseItem) => boolean = () => false): { unspread: string | null; spread: string | null } {
   const items = report.expenses.items.filter((x) => x.group === MAINTENANCE_GROUP)
   const lines = anlageVLines(report.year)
@@ -633,7 +651,8 @@ export function headerRows(report: Pick<TaxReport, 'costModels'>, property: TaxH
 // ---------- Anschaffungsnahe Herstellungskosten (#96 PR 2, A4.4; gemeinsam mit #262, Durchsicht X6) ----------
 
 export type AcquisitionDates = Partial<Pick<Property, 'ownershipTransferOn' | 'purchaseContractOn'>>
-export type AcquisitionRelated = { from: string; until: string; basis: 'transfer' | 'contract' }
+// `unknown` (#262 PR 3, Durchsicht X6): kein Datum am Objekt, aber in diesem Jahr beginnt eine Verteilung nach § 82b EStDV.
+export type AcquisitionRelated = { from: string; until: string; basis: 'transfer' | 'contract' } | { basis: 'unknown' }
 
 // § 6 Abs. 1 Nr. 1a Satz 1 EStG: Maßnahmen, „die innerhalb von drei Jahren nach der Anschaffung des Gebäudes durchgeführt
 // werden“. Der Dreijahreszeitraum läuft taggenau ab dem Übergang von Besitz, Gefahr, Nutzungen und Lasten (BMF-Schreiben
@@ -661,13 +680,13 @@ function sameDayYearsLater(from: string, years: number): string {
 // vom 26.01.2026, Rn. 63): Was bis zum Fristende ausgeführt und erst danach bezahlt wurde, zählt mit.
 // Gelesen wird der Eigentumsübergang; maßgeblich ist allein er (Rn. 62). Ist nur der Kaufvertrag eingetragen, liegt der
 // Übergang danach, und eine Frist ab dem Kaufvertrag endete zu früh. Dann rechnet der Hinweis großzügig ein Jahr länger
-// (vier Jahre ab dem Kaufvertrag) und bittet um den Übergang. Ohne Datum `null`; #262 PR 3 ergänzt den Beginn einer
-// Verteilung.
+// (vier Jahre ab dem Kaufvertrag) und bittet um den Übergang. Ohne Datum `null`, außer in diesem Jahr beginnt eine
+// Verteilung nach § 82b EStDV mit abziehbarem Teil (#262 PR 3): Dann fragt der Hinweis nach dem Datum.
 export function acquisitionRelated(report: Pick<TaxReport, 'year' | 'expenses'>, dates: AcquisitionDates | null): AcquisitionRelated | null {
   const transfer = dates?.ownershipTransferOn ?? null
   const contract = dates?.purchaseContractOn ?? null
   const from = transfer ?? contract
-  if (from === null) return null
+  if (from === null) return (report.expenses.spread?.started ?? []).some((x) => x.baseCents > 0) ? { basis: 'unknown' } : null
   const until = sameDayYearsLater(from, transfer !== null ? ACQUISITION_YEARS : ACQUISITION_YEARS + 1)
   if (report.year < Number(from.slice(0, 4)) || report.year > Number(until.slice(0, 4)) + 1) return null
   if (!report.expenses.items.some((x) => MAINTENANCE_GROUPS.includes(x.group) && x.deductibleCents !== 0)) return null
@@ -679,6 +698,9 @@ const ACQUISITION_SPAN = `In den ${yearsWord(ACQUISITION_YEARS)} Jahren nach`
 const ACQUISITION_UNKNOWN = 'Mietfuchs kennt die Anschaffungskosten nicht und rechnet die Grenze nicht.'
 
 export function acquisitionRelatedText(info: AcquisitionRelated): string {
+  if (info.basis === 'unknown') {
+    return `Sie verteilen in diesem Jahr Erhaltungsaufwand. ${ACQUISITION_SPAN} der Anschaffung ${ACQUISITION_RULE} Haben Sie das Gebäude in den letzten ${yearsWord(ACQUISITION_YEARS)} Jahren gekauft, tragen Sie bitte in den Stammdaten den Eigentumsübergang ein; dann nennt Mietfuchs die Frist. ${ACQUISITION_UNKNOWN}`
+  }
   if (info.basis === 'transfer') {
     return `${ACQUISITION_SPAN} dem Eigentumsübergang am ${fmtDate(info.from)} (bis ${fmtDate(info.until)}) ${ACQUISITION_RULE} Arbeiten, die bis ${fmtDate(info.until)} ausgeführt wurden, zählen mit, auch wenn sie später bezahlt sind. ${ACQUISITION_UNKNOWN} Die Frist läuft ab dem Übergang von Besitz, Nutzen und Lasten; prüfen Sie bitte das Datum.`
   }

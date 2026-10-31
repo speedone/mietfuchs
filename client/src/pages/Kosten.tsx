@@ -4,7 +4,7 @@ import HeatingPeriodSelect from '../components/HeatingPeriodSelect'
 import { heatingItemPeriods, heatingTaxYear, itemsOfPeriod } from '../heatingSettlementView'
 import { plantOptions } from '../heatingForm'
 import { filedUnderSettlement } from '../costPeriods'
-import { calendarPeriod, periodContext, periodOfKey, spansTwoYears } from '../../../shared/period.ts'
+import { calendarPeriod, periodContext, periodLabel, periodOfKey, spansTwoYears } from '../../../shared/period.ts'
 import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, isNotAllocable, usageOf } from '../types'
 import { billingEnergy } from '../../../shared/heatDelivery.ts'
 import {
@@ -45,6 +45,13 @@ import {
   deductionTaxYear,
   paidOnChange,
   showsPaidOn,
+  showsSpread,
+  keepSpread,
+  droppedSpreadText,
+  spreadPreview,
+  spreadChange,
+  spreadDeleteText,
+  spreadOptions,
   taxYearChange,
   taxYearOptions,
   type ItemForm,
@@ -62,7 +69,7 @@ import TaxYearSelect from '../components/TaxYearSelect'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { hotWaterOf } from '../../../shared/heatingPeriod.ts'
 import { serviceReceivesOperatingPower } from '../../../shared/operatingPower.ts'
-import { paidOnYear, splitPaidOnQuestions } from '../../../shared/paidOn.ts'
+import { joinQuestions, paidOnYear, splitPaidOnQuestions } from '../../../shared/paidOn.ts'
 import { sourceLabels } from '../costSource'
 import { alreadyCarried, carryKeyDetails, carryOverBody, carryOverForm, carryOverRows, withCarryAmount, type CarryRow } from '../carryOver'
 import { api, ApiError, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
@@ -455,14 +462,27 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     // #478 (E2): ebenso ein Jahr der Zahlung außerhalb der üblichen Spanne; beide Rückfragen in einer, bestätigt für beide.
     const taxYearQuestions = taxYearChange(editing ? items.find((i) => i.id === form.id) ?? null : null,
       { period: 'period' in heating && heating.period ? heating.period : key, taxYear: 'taxYear' in heating ? heating.taxYear ?? null : built.body.taxYear }, paidOnSpanOfForm)
-    const questions = [...paidOnQuestions, ...taxYearQuestions].filter((q, i, all) => all.indexOf(q) === i)
+    // #262 PR 3 (E-9): die Verteilung nach § 82b EStDV, dieselbe Rückfrage wie der Server (`spreadQuestions`), mit den
+    // übrigen Teilen derselben Rechnung, an die er die Wahl mitschreibt. Seit #493 eine Rückfrage für alles (`joinQuestions`).
+    const stored = editing ? items.find((i) => i.id === form.id) ?? null : null
+    const otherParts = stored?.sourceId === undefined ? [] : items
+      .filter((i) => i.sourceId === stored.sourceId && i.id !== stored.id)
+      .sort((a, b) => (a.period < b.period ? -1 : a.period > b.period ? 1 : 0))
+      .map((i) => { const p = periodOfKey(view.rules, i.period); return p === null ? i.period : periodLabel(p) })
+    const spreadQuestions = spreadChange(stored, {
+      period: 'period' in heating && heating.period ? heating.period : key, paidOn: built.body.paidOn,
+      taxYear: 'taxYear' in heating ? heating.taxYear ?? null : built.body.taxYear, spreadYears: built.body.spreadYears,
+    }, otherParts)
+    const questions = joinQuestions(paidOnQuestions, taxYearQuestions, spreadQuestions)
+    const titleOf = (onlySpread: boolean): string => (onlySpread ? 'Verteilung für die Steuer ändert sich' : 'Steuerjahr ändert sich')
     let confirmPaidOn = false
     if (questions.length > 0) {
-      const ok = await confirm({ title: 'Steuerjahr ändert sich', message: questions.join(' '), confirmLabel: 'So speichern', cancelLabel: 'Abbrechen' })
+      const ok = await confirm({ title: titleOf(paidOnQuestions.length + taxYearQuestions.length === 0), message: questions.join(' '), confirmLabel: 'So speichern', cancelLabel: 'Abbrechen' })
       if (!ok) return
       confirmPaidOn = true
     }
-    const confirmed = { confirmPaidOn: true, confirmTaxYear: true }
+    // Ein Dialog bestätigt alles, was er gezeigt hat (Kennzeichen des Servers: `paidOn`, `taxYear`, `spread`).
+    const confirmed = { confirmPaidOn: true, confirmTaxYear: true, confirmSpread: true }
     const bodyOf = (): string => JSON.stringify({ ...built.body, ...heating, ...(confirmPaidOn ? confirmed : {}) })
     const body = bodyOf()
     // Antwortet der Server dennoch mit seiner Rückfrage (409, `question: 'paidOn'`), weil sich der Bestand seit dem
@@ -473,8 +493,8 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
         await send(body)
         return true
       } catch (e) {
-        if (!(e instanceof ApiError && e.status === 409 && (e.data.question === 'paidOn' || e.data.question === 'taxYear')) || confirmPaidOn) throw e
-        const ok = await confirm({ title: 'Steuerjahr ändert sich', message: e.message, confirmLabel: 'So speichern', cancelLabel: 'Abbrechen' })
+        if (!(e instanceof ApiError && e.status === 409 && (e.data.question === 'paidOn' || e.data.question === 'taxYear' || e.data.question === 'spread')) || confirmPaidOn) throw e
+        const ok = await confirm({ title: titleOf(e.data.question === 'spread'), message: e.message, confirmLabel: 'So speichern', cancelLabel: 'Abbrechen' })
         if (!ok) return false
         await send(JSON.stringify({ ...JSON.parse(body), ...confirmed }))
         return true
@@ -566,7 +586,8 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   async function deleteItem(i: CostItem) {
     const ok = await confirm({
       title: `Kostenposition löschen?`,
-      message: `„${i.description}“ (${fmtEuro(i.amountCents)}) wird gelöscht.`,
+      // #262 PR 3 (E-9): Bei einer verteilten Position entfallen die Anteile der Folgejahre.
+      message: `„${i.description}“ (${fmtEuro(i.amountCents)}) wird gelöscht.${spreadDeleteText(i) ? ` ${spreadDeleteText(i)}` : ''}`,
       confirmLabel: 'Löschen',
       danger: true,
     })
@@ -997,7 +1018,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
           <div className="row">
             <label className="field">
               Kostenart
-              <select value={form.category} onChange={(e) => setForm(keepPaidOnYear(form, withCategory(form, e.target.value, units, meters, keyCtx), period))}>
+              <select value={form.category} onChange={(e) => setForm(keepSpread(keepPaidOnYear(form, withCategory(form, e.target.value, units, meters, keyCtx), period)))}>
                 {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
               </select>
             </label>
@@ -1046,9 +1067,27 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             </Field>
             {/* Betriebsstrom (Heizung PR 15): sichtbar ohne Aufklappen, wer ihn braucht. */}
             <OperatingPowerFields form={form} items={items} periodKey={key} plantEnergy={plantOfForm ? billingEnergy(plantOfForm) : undefined} service={serviceReceivesOperatingPower(plants, period)} onChange={setForm} />
-            <details className="extra-details" open={!!(selfPlant || form.serviceFrom || form.serviceTo || form.taxYear || form.paidOn || form.heatingPart !== '' || showTaxYear)}>
-              <summary>Weitere Angaben — Leistungszeitraum{showTaxYear ? ', Jahr der Zahlung' : ''}{showsPaidOn(form) ? ', Bezahlt am' : ''}{form.category === HEATING_CATEGORY ? ', Brennstoff/Energie' : ''} (optional)</summary>
+            <details className="extra-details" open={!!(selfPlant || form.serviceFrom || form.serviceTo || form.taxYear || form.paidOn || form.heatingPart !== '' || showTaxYear || form.spreadYears !== '' || droppedSpreadText(storedItem, form))}>
+              <summary>Weitere Angaben — Leistungszeitraum{showTaxYear ? ', Jahr der Zahlung' : ''}{showsPaidOn(form) ? ', Bezahlt am' : ''}{showsSpread(form) ? ', Verteilung' : ''}{form.category === HEATING_CATEGORY ? ', Brennstoff/Energie' : ''} (optional)</summary>
               <CostPeriodFields form={form} onChange={setForm} showTaxYear={showTaxYear} years={heatTax?.show ? heatTax.years : taxYearOptions(periodSpan, storedTaxYear, form.taxYear !== '' ? Number(form.taxYear) : null)} emptyLabel={heatTax ? (heatTax.show && heatingOption && heatingOption.startYear === heatingOption.endYear ? `wie Heizperiode (${heatingOption.startYear})` : undefined) : spansTwoYears(period) ? undefined : `wie Abrechnungsjahr (${year})`} billTaxYear={deductionTaxYear(form, items)} paidOnChanges={livePaidOnChanges} droppedPaidOn={droppedPaidOnText(form, period)} />
+              {/* #262 PR 3 (E-9): Verteilung nach § 82b EStDV neben „Bezahlt am“, nur wo der Server sie annimmt. */}
+              {showsSpread(form) && (
+                <label className="field">
+                  <span><Term id="spread82b">Für die Steuer verteilen (§ 82b EStDV)</Term></span>
+                  <select value={form.spreadYears} onChange={(e) => setForm({ ...form, spreadYears: spreadOptions.find((o) => o.value === e.target.value)?.value ?? '' })}>
+                    {spreadOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                  <small className="muted">Ohne Verteilung zählt der Betrag ganz im Jahr der Zahlung. Größeren Erhaltungsaufwand dürfen Sie auf zwei bis fünf Jahre verteilen, wenn das Gebäude überwiegend Wohnzwecken dient.</small>
+                  {spreadPreview(form, period) && <small className="muted" role="status">{spreadPreview(form, period)}</small>}
+                  {form.spreadYears !== '' && form.category === 'Nicht umlagefähig' && (
+                    <small className="muted">Verteilen Sie nur Erhaltungsaufwand wie Reparaturen; Verwaltungskosten und Zinsen, die ebenfalls unter „Nicht umlagefähig“ stehen, gehören nicht dazu.</small>
+                  )}
+                  {form.spreadYears !== '' && (
+                    <small className="muted">In den ersten Jahren nach dem Kauf kann eine Reparatur zu den <Term id="acquisitionRelatedCosts">anschaffungsnahen Herstellungskosten</Term> gehören; dann wird sie abgeschrieben und nicht verteilt.</small>
+                  )}
+                </label>
+              )}
+              {droppedSpreadText(storedItem, form) && <p className="muted" role="status">{droppedSpreadText(storedItem, form)}</p>}
             </details>
             {/* Nicht umlagefähig (#142): nichts zu verteilen, also keine Auswahl, die etwas anderes verspräche. */}
             {!showsKeyFields(form.category) && (

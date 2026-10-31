@@ -18,6 +18,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   `Einnahmen.csv` ([#312](https://github.com/speedone/mietfuchs/issues/312)).
 - Mietkonto: An einer Zahlung lässt sich der Monat laut Verwendungszweck eintragen
   ([#281](https://github.com/speedone/mietfuchs/issues/281)).
+- Steuer: Größeren Erhaltungsaufwand auf zwei bis fünf Jahre verteilen (§ 82b EStDV), an der Kostenposition gewählt,
+  mit den Zeilen 57 bis 72 ([#262](https://github.com/speedone/mietfuchs/issues/262)). Die Steuerübersicht zieht je Jahr
+  den Anteil ab, ohne den privaten Teil, und nennt die Voraussetzungen; das Steuer-ZIP führt die Spalte „verteilt“.
 - Kostenart „Entnahme Erhaltungsrücklage“: zählt im Jahr, in dem die Gemeinschaft das Geld ausgibt, in eigener Gruppe
   „Erhaltungsaufwand“ ([#96](https://github.com/speedone/mietfuchs/issues/96)). Statt eines Zahlungsdatums gibt es
   das Jahr, in dem die Gemeinschaft bezahlt hat; die Steuerübersicht nennt die Zeilen 55 und 56 der Anlage V und weist

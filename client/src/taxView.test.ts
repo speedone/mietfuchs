@@ -606,7 +606,7 @@ describe('Kopf der Anlage V (#96 PR 2)', () => {
     expect(acquisitionRelated(mit(2025), { purchaseContractOn: '2020-05-10', ownershipTransferOn: '2023-07-01' })).toMatchObject({ basis: 'transfer', until: '2026-07-01' })
   })
 
-  test('nur mit abziehbarem Erhaltungsaufwand oder Instandhaltung; ohne Datum nicht (bis #262 die Verteilung ergänzt)', () => {
+  test('nur mit abziehbarem Erhaltungsaufwand oder Instandhaltung; ohne Datum nicht, außer eine Verteilung beginnt (taxSpread.test.ts)', () => {
     expect(acquisitionRelated(mit(2025, []), { ownershipTransferOn: '2023-07-01' })).toBeNull()
     expect(acquisitionRelated(mit(2025, [instand({ group: 'Grundsteuer & öffentliche Abgaben', category: 'Grundsteuer' })]), { ownershipTransferOn: '2023-07-01' })).toBeNull()
     expect(acquisitionRelated(mit(2025, [instand({ deductibleCents: 0, privateCents: 500000 })]), { ownershipTransferOn: '2023-07-01' })).toBeNull()

@@ -911,3 +911,112 @@ test('#455: Die Zeile eines Teils nennt die Zahl der Teile und die ganze Rechnun
   const aufzug = screen.getByText('Wartung Aufzug').closest('tr') ?? expect.fail('keine Zeile')
   expect(aufzug.textContent).not.toContain('Teil von')
 })
+
+// ---------- #262 PR 3: Verteilung nach § 82b EStDV (Entwurf E-9) ----------
+
+const SPREAD_LABEL = /Für die Steuer verteilen \(§ 82b EStDV\)/
+const verteilteDach = (year: number, over: Record<string, unknown> = {}) => ({
+  id: 'd1', propertyId: 'objekt-1', period: calendarPeriod(year), category: 'Nicht umlagefähig', description: 'Dachsanierung', amountCents: 1_000_000, key: 'area', spreadYears: 3, ...over,
+})
+const renderStored = async () => {
+  render(<PeriodProvider><PropertyProvider><UIProvider><Kosten units={UNITS} settings={null} /></UIProvider></PropertyProvider></PeriodProvider>)
+  fireEvent.click(await screen.findByRole('button', { name: 'Kostenposition bearbeiten' }))
+}
+
+test('Verteilung: das Feld nur, wo verteilt werden kann; angelegt ohne Rückfrage, mit Vorschau der Jahre', async () => {
+  const year = new Date().getFullYear() - 1
+  await openForm()
+  expect(screen.queryByLabelText(SPREAD_LABEL)).toBeNull()
+  fireEvent.change(screen.getByLabelText(/Betrag/i), { target: { value: '10.000,00' } })
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Nicht umlagefähig' } })
+  const field = select(SPREAD_LABEL)
+  expect([...field.options].map((o) => o.textContent)).toEqual(['nicht verteilen', 'auf 2 Jahre', 'auf 3 Jahre', 'auf 4 Jahre', 'auf 5 Jahre'])
+  expect(field.value).toBe('')
+  fireEvent.change(field, { target: { value: '3' } })
+  expect(field.selectedOptions[0]?.textContent).toBe('auf 3 Jahre')
+  expect(screen.getByText(new RegExp(`Abzug ${year} bis ${year + 2}:`))).toBeTruthy()
+  expect(screen.getByText(/Verwaltungskosten und Zinsen/)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/i }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]?.body).toMatchObject({ category: 'Nicht umlagefähig', spreadYears: 3 })
+  expect(sent[0]?.body.confirmSpread).toBeUndefined()
+  expect(screen.queryByRole('alertdialog')).toBeNull()
+})
+
+test('Verteilung: angezeigt wie gespeichert; unverändert gespeichert ohne Rückfrage', async () => {
+  const year = new Date().getFullYear() - 1
+  costItems = [verteilteDach(year)]
+  await renderStored()
+  const field = await waitFor(() => select(SPREAD_LABEL))
+  expect([field.value, field.selectedOptions[0]?.textContent]).toEqual(['3', 'auf 3 Jahre'])
+  fireEvent.click(screen.getByRole('button', { name: /^Speichern$/ }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]?.body).toMatchObject({ spreadYears: 3 })
+  expect(sent[0]?.body.confirmSpread).toBeUndefined()
+})
+
+test('Verteilung leeren: Rückfrage mit den entfallenden Anteilen, bestätigt mit confirmSpread', async () => {
+  const year = new Date().getFullYear() - 1
+  costItems = [verteilteDach(year)]
+  await renderStored()
+  fireEvent.change(await waitFor(() => select(SPREAD_LABEL)), { target: { value: '' } })
+  fireEvent.click(screen.getByRole('button', { name: /^Speichern$/ }))
+  const dialog = await screen.findByRole('alertdialog', { name: 'Verteilung für die Steuer ändert sich' })
+  expect(dialog.textContent).toContain(`die Anteile ${year + 1} bis ${year + 2} entfallen`)
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Abbrechen' }))
+  await new Promise((r) => setTimeout(r, 20))
+  expect(sent).toHaveLength(0)
+  fireEvent.click(screen.getByRole('button', { name: /^Speichern$/ }))
+  fireEvent.click(within(await screen.findByRole('alertdialog', { name: 'Verteilung für die Steuer ändert sich' })).getByRole('button', { name: 'So speichern' }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]?.body).toMatchObject({ spreadYears: null, confirmSpread: true })
+})
+
+test('Kostenart auf umlagefähig: Feld weg, der Satz sagt es, gespeichert wird `null` mit Rückfrage statt einer Ablehnung', async () => {
+  const year = new Date().getFullYear() - 1
+  costItems = [verteilteDach(year)]
+  await renderStored()
+  await waitFor(() => select(SPREAD_LABEL))
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Gartenpflege' } })
+  expect(screen.queryByLabelText(SPREAD_LABEL)).toBeNull()
+  expect(screen.getByText(/Die Verteilung auf 3 Jahre entfällt: Die Kostenart „Gartenpflege“ lässt sich für die Steuer nicht verteilen/)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: /^Speichern$/ }))
+  fireEvent.click(within(await screen.findByRole('alertdialog', { name: 'Verteilung für die Steuer ändert sich' })).getByRole('button', { name: 'So speichern' }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]?.body).toMatchObject({ category: 'Gartenpflege', spreadYears: null, confirmSpread: true })
+  // Zurück auf „Nicht umlagefähig“ steht die Auswahl leer da: Die Wahl ist geleert, nicht nur versteckt.
+})
+
+test('Verteilung: eine Rückfrage des Servers (409 `spread`) wird zur Rückfrage der Seite, wiederholt mit confirmSpread', async () => {
+  const year = new Date().getFullYear() - 1
+  costItems = [verteilteDach(year, { sourceId: 'q1' })]
+  const question = 'Die Wahl gilt für die ganze Rechnung und wird auch an den übrigen Teilen gespeichert.'
+  const answer = (body: unknown, status: number) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    const method = init?.method ?? 'GET'
+    if (method !== 'GET') {
+      const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+      sent.push({ url, method, body })
+      return body.confirmSpread === true && sent.length > 1 ? answer({ ok: true }, 200) : answer({ error: question, question: 'spread' }, 409)
+    }
+    const path = url.split('?')[0]
+    return answer(path === '/api/costItems' ? costItems : path === '/api/properties' ? [{ id: 'objekt-1', name: 'Haus', kind: 'mfh', address: '' }] : [], 200)
+  })
+  await renderStored()
+  fireEvent.change(await screen.findByLabelText(/Beschreibung/i), { target: { value: 'Dachsanierung neu' } })
+  fireEvent.click(screen.getByRole('button', { name: /^Speichern$/ }))
+  const dialog = await screen.findByRole('alertdialog', { name: 'Verteilung für die Steuer ändert sich' })
+  expect(dialog.textContent).toContain(question)
+  fireEvent.click(within(dialog).getByRole('button', { name: 'So speichern' }))
+  await waitFor(() => expect(sent).toHaveLength(2))
+  expect(sent[1]?.body).toMatchObject({ spreadYears: 3, confirmSpread: true, confirmPaidOn: true, confirmTaxYear: true })
+})
+
+test('Löschen einer verteilten Position: die Rückfrage nennt die entfallenden Anteile', async () => {
+  const year = new Date().getFullYear() - 1
+  costItems = [verteilteDach(year)]
+  render(<PeriodProvider><PropertyProvider><UIProvider><Kosten units={UNITS} settings={null} /></UIProvider></PropertyProvider></PeriodProvider>)
+  fireEvent.click(await screen.findByRole('button', { name: /Kostenposition löschen/ }))
+  const dialog = await screen.findByRole('alertdialog', { name: 'Kostenposition löschen?' })
+  expect(dialog.textContent).toContain(`Die Anteile ${year + 1} bis ${year + 2} entfallen damit.`)
+})

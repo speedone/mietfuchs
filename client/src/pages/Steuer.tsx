@@ -20,6 +20,7 @@ import { andList } from '../../../shared/wording.ts'
 import { OPERATING_POWER_KEPT, OPERATING_POWER_REPORTED } from '../../../shared/operatingPower.ts'
 import { anlageVLines } from '../anlageV'
 import type { NoticeTab } from '../notices'
+import { isSpreadItem, showsDeferred, spreadBlock, spreadCarriedText, spreadConditionsText, spreadIgnoredText, spreadItemText, spreadNothingDeductibleText } from '../taxSpread'
 import { formerYearsText, incomeMore, incomeTable, lateDecemberText, OLD_LEASE_MORE, oldLeaseForwardText, possibleDepositText, TURN_OF_YEAR_MORE, turnOfYearLines, unallocatedText, unitRows } from '../taxIncome'
 
 // `onNavigate`: der Sprung in die Stammdaten bei einer nicht eingetragenen Kopfangabe (#96 PR 2).
@@ -106,11 +107,13 @@ export default function Steuer({ settings, onNavigate }: Props) {
             <div className="kpi">
               <div className="v">{fmtEuro(data.expenses.deductibleCents)}</div>
               <div className="l">{split ? 'Werbungskosten (abziehbar)' : 'Werbungskosten'}</div>
-              {split && (data.expenses.privateCents !== 0 || data.expenses.gratuitousCents) && (
+              {split && (data.expenses.privateCents !== 0 || data.expenses.gratuitousCents || data.expenses.deferredCents) && (
                 <div className="muted" style={{ fontSize: 12 }}>
                   gesamt {fmtEuro(data.expenses.totalCents)}
                   {data.expenses.privateCents !== 0 && <> · davon privat {fmtEuro(data.expenses.privateCents)}</>}
                   {data.expenses.gratuitousCents ? <> · unentgeltlich {fmtEuro(data.expenses.gratuitousCents)}</> : null}
+                  {/* #262 PR 3: mit Vorzeichen; negativ, wenn mehr aus Vorjahren hinzukommt als in Folgejahre geht. */}
+                  {data.expenses.deferredCents ? <> · in Folgejahre verschoben {fmtEuro(data.expenses.deferredCents)}</> : null}
                 </div>
               )}
             </div>
@@ -344,7 +347,7 @@ export default function Steuer({ settings, onNavigate }: Props) {
             {/* #96 PR 1 (A4.1): die Zeilen des Erhaltungsaufwands, auch im Druck. Vor der Kürzung nach den Zeilen 87/88, in
                 der Reihenfolge des Vordrucks (Test in Steuer.test.tsx). */}
             {hints.includes('maintenanceLines') && (() => {
-              const t = maintenanceLineText(data)
+              const t = maintenanceLineText(data, isSpreadItem)
               return (
                 <NoticeBox
                   level="hint"
@@ -354,6 +357,25 @@ export default function Steuer({ settings, onNavigate }: Props) {
                 />
               )
             })()}
+            {/* #262 PR 3 (E-5): der Block der Zeilen 57 bis 72 nach 55/56 und vor der Kürzung (87/88), auch im Druck. */}
+            <SpreadBlockView report={data} />
+            {hints.includes('spreadConditions') && (
+              <NoticeBox
+                level="warning"
+                title={<><Term id="spread82b">Verteilung nach § 82b EStDV</Term>: Voraussetzungen prüfen</>}
+                action={spreadConditionsText(data, property?.kind).action}
+                more={spreadConditionsText(data, property?.kind).more}
+              />
+            )}
+            {hints.includes('spreadCarried') && (
+              <NoticeBox level="hint" title="Anteile verteilten Erhaltungsaufwands aus Vorjahren" action={spreadCarriedText(data)} more="H 21.1 EStH." />
+            )}
+            {hints.includes('spreadNothingDeductible') && (
+              <NoticeBox level="hint" title="Verteilung ohne abziehbaren Teil" action={spreadNothingDeductibleText(data)} />
+            )}
+            {hints.includes('spreadIgnored') && (
+              <NoticeBox level="warning" title="Verteilung gespeichert, aber nicht gerechnet" action={spreadIgnoredText(data)} />
+            )}
             {/* #96 PR 2 (A4.4, Durchsicht X6): anschaffungsnahe Herstellungskosten, auch im Druck. */}
             {hints.includes('acquisitionRelated') && acquisition && (
               <NoticeBox
@@ -765,11 +787,10 @@ export default function Steuer({ settings, onNavigate }: Props) {
               <NoticeBox
                 level="hint"
                 title="Was diese Übersicht nicht rechnet"
-                action="Abschreibung, Schuldzinsen und die Verteilung nach § 82b EStDV tragen Sie selbst ein; diese Angaben kennt Mietfuchs nicht. Die Kürzung bei verbilligter Vermietung rechnet Mietfuchs für die erfassten Kosten, wenn Sie unten die ortsübliche Miete eintragen."
+                action="Abschreibung und Schuldzinsen tragen Sie selbst ein; diese Angaben kennt Mietfuchs nicht. Größeren Erhaltungsaufwand verteilt Mietfuchs, wenn Sie es an der Position wählen (§ 82b EStDV). Die Kürzung bei verbilligter Vermietung rechnet Mietfuchs für die erfassten Kosten, wenn Sie unten die ortsübliche Miete eintragen."
                 more={<>
                   Nicht gerechnet werden: die Abschreibung (AfA) des Gebäudes, die ebenfalls nur anteilig abziehbar
-                  ist (Zeilen 33 und 34); Schuldzinsen, die der Zuordnung des Darlehens folgen und nicht der Fläche; die
-                  Verteilung größeren Erhaltungsaufwands auf mehrere Jahre nach § 82b EStDV; und bei verbilligter
+                  ist (Zeilen 33 und 34); Schuldzinsen, die der Zuordnung des Darlehens folgen und nicht der Fläche; und bei verbilligter
                   Vermietung die Kürzung von Abschreibung und Schuldzinsen. Wo der Vordruck die Kürzung bei verbilligter
                   Vermietung abfragt (bisher in den Zeilen 87 und 88 genannt, am Vordruck noch nicht geprüft), sehen Sie bitte im
                   Vordruck des Jahres nach; die Spalte „abziehbar“ dieser Übersicht ist schon gekürzt und darf nicht ein zweites
@@ -851,8 +872,9 @@ export default function Steuer({ settings, onNavigate }: Props) {
 function SplitTable({ report }: { report: TaxReport }) {
   const order = report.expenses.groups.map((g) => g.group)
   const items = [...report.expenses.items].sort((a, b) => order.indexOf(a.group) - order.indexOf(b.group))
-  // #257: die Spalte nur, wenn es einen unentgeltlichen Teil gibt.
+  // #257: die Spalte nur, wenn es einen unentgeltlichen Teil gibt; #262 PR 3 ebenso „verteilt“ (§ 82b EStDV).
   const gratuitous = !!report.expenses.gratuitousCents
+  const deferred = showsDeferred(report)
   return (
     <Table>
       <thead>
@@ -861,13 +883,14 @@ function SplitTable({ report }: { report: TaxReport }) {
           <th className="num">Gesamt</th>
           <th className="num">privat</th>
           {gratuitous && <th className="num">unentgeltlich</th>}
+          {deferred && <th className="num">verteilt</th>}
           <th className="num">abziehbar</th>
           <th>Zuordnung</th>
           <th className="no-print" />
         </tr>
       </thead>
       <tbody>
-        {items.map((x) => <SplitRow key={x.costItemId} item={x} gratuitous={gratuitous} />)}
+        {items.map((x) => <SplitRow key={x.costItemId} item={x} gratuitous={gratuitous} deferred={deferred} />)}
       </tbody>
       <tfoot>
         <tr>
@@ -875,6 +898,7 @@ function SplitTable({ report }: { report: TaxReport }) {
           <td className="num">{fmtEuro(report.expenses.totalCents)}</td>
           <td className="num">{fmtEuro(report.expenses.privateCents)}</td>
           {gratuitous && <td className="num">{fmtEuro(report.expenses.gratuitousCents ?? 0)}</td>}
+          {deferred && <td className="num">{fmtEuro(report.expenses.deferredCents ?? 0)}</td>}
           <td className="num">{fmtEuro(report.expenses.deductibleCents)}</td>
           <td />
           <td className="no-print" />
@@ -884,7 +908,7 @@ function SplitTable({ report }: { report: TaxReport }) {
   )
 }
 
-function SplitRow({ item, gratuitous }: { item: TaxExpenseItem; gratuitous: boolean }) {
+function SplitRow({ item, gratuitous, deferred }: { item: TaxExpenseItem; gratuitous: boolean; deferred: boolean }) {
   const [open, setOpen] = useState(false)
   const stepsId = useId()
   return (
@@ -895,10 +919,12 @@ function SplitRow({ item, gratuitous }: { item: TaxExpenseItem; gratuitous: bool
           <span>{item.description}</span>
           <div className="muted cell-sub">{item.group} · {item.category}</div>
           {movedInText(item) && <div className="muted fine">{movedInText(item)}</div>}
+          {spreadItemText(item) && <div className="muted fine">{spreadItemText(item)}</div>}
         </td>
         <td className="num">{fmtEuro(item.amountCents)}</td>
         <td className="num">{fmtEuro(item.privateCents)}</td>
         {gratuitous && <td className="num">{fmtEuro(item.gratuitousCents ?? 0)}</td>}
+        {deferred && <td className="num">{fmtEuro(item.deferredCents ?? 0)}</td>}
         <td className="num">{fmtEuro(item.deductibleCents)}</td>
         <td>{allocationLabel(item)}</td>
         <td className="no-print">
@@ -907,9 +933,60 @@ function SplitRow({ item, gratuitous }: { item: TaxExpenseItem; gratuitous: bool
       </tr>
       {open && (
         <tr id={stepsId} className="calc-steps no-print">
-          <td colSpan={gratuitous ? 7 : 6}><StepList steps={item.steps} /></td>
+          <td colSpan={6 + (gratuitous ? 1 : 0) + (deferred ? 1 : 0)}><StepList steps={item.steps} /></td>
         </tr>
       )}
+    </>
+  )
+}
+
+// Der Block „Auf bis zu 5 Jahre zu verteilende Erhaltungsaufwendungen“ (#262 PR 3, E-5), gegliedert wie die Zeilen 57 bis
+// 72 der Anlage V; Zeilen, Beträge und Beschriftungen aus taxSpread.ts. Die Spalte „Zeile“ nur, wo der Vordruck des Jahres
+// eine Nummer kennt. Am Handy `stacked`.
+function SpreadBlockView({ report }: { report: TaxReport }) {
+  const b = spreadBlock(report)
+  if (b === null) return null
+  const thisYear = `in ${report.year} abzuziehen`
+  return (
+    <>
+      <h4><Term id="spread82b">Zu verteilender Erhaltungsaufwand</Term></h4>
+      <Table className="stacked" aria-label="Zu verteilender Erhaltungsaufwand nach Zeilen der Anlage V">
+        <thead>
+          <tr>
+            {b.showsLines && <th>Zeile</th>}
+            <th>Angabe</th>
+            <th className="num">Gesamtbetrag</th>
+            <th className="num">abzugsfähiger Anteil</th>
+            <th className="num">{thisYear}</th>
+          </tr>
+        </thead>
+        {b.sections.map((sec) => (
+          <tbody key={sec.key}>
+            <tr><th colSpan={b.showsLines ? 5 : 4} scope="colgroup">{sec.title}</th></tr>
+            {sec.rows.map((r) => (
+              <tr key={r.key} data-row={r.key} className={r.kind === 'sum' ? 'subtotal' : undefined}>
+                {b.showsLines && <td data-label="Zeile">{r.line ?? ''}{r.code !== undefined && <div className="muted cell-sub">Kennzahl {r.code}</div>}</td>}
+                <td>{r.label}</td>
+                <td data-label="Gesamtbetrag" className="num">{r.grossCents === null ? '' : fmtEuro(r.grossCents)}</td>
+                <td data-label="abzugsfähiger Anteil" className="num">{r.percent === null ? '' : `${r.percent.toLocaleString('de-DE', { maximumFractionDigits: 2 })} %`}</td>
+                <td data-label={thisYear} className="num">{fmtEuro(r.cents)}</td>
+              </tr>
+            ))}
+          </tbody>
+        ))}
+        <tfoot>
+          <tr>
+            {b.showsLines && <td />}
+            <td>In {report.year} abzuziehen, vor der Kürzung bei verbilligter Vermietung</td>
+            <td /><td />
+            <td className="num">{fmtEuro(b.thisYearCents)}</td>
+          </tr>
+        </tfoot>
+      </Table>
+      <p className="muted fine">
+        Verteilte Positionen tragen Sie nur in diese Zeilen ein, nicht zusätzlich beim sofort abziehbaren Aufwand. Gekürzt bei
+        verbilligter Vermietung wird nicht hier, sondern wie jede andere Ausgabe des Jahres bei der Kürzung der Werbungskosten.
+      </p>
     </>
   )
 }
