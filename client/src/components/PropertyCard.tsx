@@ -34,7 +34,11 @@ export default function PropertyCard() {
     errors.clear()
     setForm(propertyToForm(property))
     setItems([])
-    api<CostItem[]>(withProperty('/api/costItems', property.id)).then(setItems, () => setItems([]))
+    // Scheitert das Laden, sagt das Fenster es (K5); der Server fragt beim Speichern trotzdem nach.
+    api<CostItem[]>(withProperty('/api/costItems', property.id)).then(setItems, () => {
+      setItems([])
+      errors.show('Die Kosten des Objekts ließen sich nicht laden. Ob das Jahr des Endes eine verteilte Position betrifft, prüft Mietfuchs beim Speichern.')
+    })
   }
 
   const save = () => saving.run(async () => {

@@ -150,13 +150,14 @@ const spreadOnly = (items: readonly SpreadRestItem[]) =>
 export const showsSpreadRest = (items: readonly SpreadRestItem[], saved: string): boolean => saved !== '' || spreadOnly(items).length > 0
 // Die Jahre der Auswahl: vom ersten Beginn bis zum letzten Ende einer Verteilung. **Der angezeigte Wert entspricht dem
 // gespeicherten**: Ein Jahr außerhalb steht mit da, sonst zeigte der Browser den ersten Eintrag (CLAUDE.md, Tests Ebene 3).
-export function spreadRestOptions(items: readonly SpreadRestItem[], saved: string): number[] {
+// `current`: die Wahl im Formular; ein gespeichertes Jahr außerhalb bleibt auch nach einer anderen Wahl wählbar (K1).
+export function spreadRestOptions(items: readonly SpreadRestItem[], saved: string, current: string = saved): number[] {
   const spans = spreadOnly(items).map(spreadSpan)
   const first = Math.min(...spans.map((x) => x.from))
   const last = Math.max(...spans.map((x) => x.to))
   const years = spans.length === 0 ? [] : Array.from({ length: last - first + 1 }, (_, i) => first + i)
-  const stored = saved === '' ? null : Number(saved)
-  return stored !== null && Number.isInteger(stored) && !years.includes(stored) ? [...years, stored].sort((a, b) => a - b) : years
+  const extra = [saved, current].filter((v) => v !== '').map(Number).filter((y) => Number.isInteger(y) && !years.includes(y))
+  return [...years, ...new Set(extra)].sort((a, b) => a - b)
 }
 // Die Rückfrage beim Speichern, dieselbe wie am Server (409 `question: 'spread'`, bestätigt mit `confirmSpread`); leer,
 // wenn das Jahr nicht mitgeht oder keine Position betroffen ist.

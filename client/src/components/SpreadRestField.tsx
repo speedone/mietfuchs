@@ -8,10 +8,10 @@ import { SPREAD_REST_LABEL, SPREAD_REST_NONE, spreadRestOptions, type SpreadRest
 // „Für die Steuer (Anlage V)“. Knapp am Feld steht, was das Jahr bewirkt; Erbfall, Schenkung (Auslegung) und teilweiser
 // Wechsel der Nutzung stehen eingeklappt unter „Mehr dazu“ (S33). Der Knopf steht außerhalb des `<Field>`, sonst nähme er
 // dem Auswahlfeld die Beschriftung (wie SpreadField).
-export default function SpreadRestField({ value, items, onChange }: { value: string; items: readonly SpreadRestItem[]; onChange: (value: string) => void }) {
+export default function SpreadRestField({ value, saved, items, onChange }: { value: string; saved: string; items: readonly SpreadRestItem[]; onChange: (value: string) => void }) {
   const [open, setOpen] = useState(false)
   const moreId = useId()
-  const years = spreadRestOptions(items, value)
+  const years = spreadRestOptions(items, saved, value)
   return (
     <div>
       <Field label={SPREAD_REST_LABEL} hint={<>In diesem Jahr ziehen Sie den Rest des <Term id="spread82b">verteilten Erhaltungsaufwands</Term> auf einmal ab.</>}>

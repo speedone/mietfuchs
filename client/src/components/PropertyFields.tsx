@@ -69,7 +69,7 @@ export default function PropertyFields({ form, setForm, errors, storedIban, spre
           ))}
         </div>
         {/* #262 PR 4 (E-7): nur mit einer verteilten Position oder einem gespeicherten Jahr. */}
-        {showsRest && <SpreadRestField value={form.spreadRestYear} items={spreadItems} onChange={(spreadRestYear) => setForm({ ...form, spreadRestYear })} />}
+        {showsRest && <SpreadRestField value={form.spreadRestYear} saved={form.spreadRestSaved} items={spreadItems} onChange={(spreadRestYear) => setForm({ ...form, spreadRestYear })} />}
       </details>
       <details className="extra-details" open={form.own}>
         <summary>Abweichender Vermieter oder Bankverbindung</summary>

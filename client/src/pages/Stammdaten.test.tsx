@@ -35,6 +35,9 @@ let answers: Record<string, unknown> = {}
 // #262 PR 4: die Kosten des Objekts (für das Feld zum Ende der Verteilung) und das gespeicherte Jahr.
 let costItems: CostItem[] = []
 let spreadRestYear: number | null = null
+// Antworten auf PUT der Reihe nach (Durchsicht S4, 409 des Servers), danach die gewöhnliche; und ob die Kosten scheitern (K5).
+let putReplies: { status: number; body: unknown }[] = []
+let costItemsFail = false
 
 beforeEach(() => {
   kind = 'mfh'
@@ -45,17 +48,21 @@ beforeEach(() => {
   answers = {}
   costItems = []
   spreadRestYear = null
+  putReplies = []
+  costItemsFail = false
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const path = url.split('?')[0] ?? url
     const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
     if ((init?.method ?? 'GET') !== 'GET') {
       sent.push({ url, method: init?.method ?? '', body: JSON.parse(String(init?.body ?? '{}')) })
+      const reply = init?.method === 'PUT' ? putReplies.shift() : undefined
+      if (reply) return new Response(JSON.stringify(reply.body), { status: reply.status, headers: { 'content-type': 'application/json' } })
       return json(path in answers ? answers[path] : { ok: true })
     }
     if (path === '/api/meters') return json(meters)
     if (path === '/api/heating-plants') return json(plants)
     if (path === '/api/properties') return json([{ id: 'objekt-1', name: 'A', kind, address: '', landlordName: null, iban: propertyIban, paymentDeadlineDays: null, spreadRestYear }])
-    if (path === '/api/costItems') return json(costItems)
+    if (path === '/api/costItems') return costItemsFail ? new Response(JSON.stringify({ error: 'kaputt' }), { status: 500, headers: { 'content-type': 'application/json' } }) : json(costItems)
     if (path === '/api/units/u1/dependents') return json(DEPS)
     return json([])
   })
@@ -471,6 +478,59 @@ test('Ende der Verteilung: abgebrochene Rückfrage sendet nichts; ohne Änderung
   fireEvent.click(within(dialog).getByRole('button', { name: 'Speichern' }))
   await vi.waitFor(() => expect(sent.find((x) => x.method === 'PUT')?.body.address).toBe('Weg 9'))
   expect('spreadRestYear' in (sent.find((x) => x.method === 'PUT')?.body ?? {})).toBe(false)
+})
+
+test('Ende der Verteilung: ein gespeichertes Jahr außerhalb bleibt wählbar, auch nach einer anderen Wahl (K1)', async () => {
+  costItems = [DACH]
+  spreadRestYear = 2035
+  page()
+  fireEvent.click(await screen.findByRole('button', { name: 'Bearbeiten (Objekt)' }, SLOW))
+  const select = await within(screen.getByRole('dialog', { name: 'Objekt bearbeiten' })).findByLabelText(SPREAD_REST, undefined, SLOW) as HTMLSelectElement
+  fireEvent.change(select, { target: { value: '2027' } })
+  expect([...select.options].map((o) => o.value)).toContain('2035')
+  fireEvent.change(select, { target: { value: '2035' } })
+  expect(select.value).toBe('2035')
+})
+
+// Durchsicht S4: Sind die Kosten beim Öffnen nicht (oder leer) geladen, fragt der Server; seine Rückfrage wird die der Seite.
+const serverAsks = { status: 409, body: { error: 'Satz des Servers zur Verteilung.', question: 'spread' } }
+const clearRestYear = async () => {
+  costItems = []
+  spreadRestYear = 2027
+  putReplies = [serverAsks]
+  page()
+  fireEvent.click(await screen.findByRole('button', { name: 'Bearbeiten (Objekt)' }, SLOW))
+  const dialog = screen.getByRole('dialog', { name: 'Objekt bearbeiten' })
+  fireEvent.change(await within(dialog).findByLabelText(SPREAD_REST, undefined, SLOW), { target: { value: '' } })
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Speichern' }))
+  const ask = await screen.findByRole('alertdialog', { name: 'Verteilung für die Steuer ändert sich' }, SLOW)
+  expect(ask.textContent).toMatch(/Satz des Servers zur Verteilung\./)
+  return ask
+}
+
+test('Ende der Verteilung: Rückfrage des Servers (409), „So speichern“ sendet ein zweites PUT mit confirmSpread', async () => {
+  const ask = await clearRestYear()
+  expect(sent.filter((x) => x.method === 'PUT')).toHaveLength(1)
+  expect(sent[0]?.body).toMatchObject({ spreadRestYear: null })
+  expect('confirmSpread' in (sent[0]?.body ?? {})).toBe(false)
+  fireEvent.click(within(ask).getByRole('button', { name: 'So speichern' }))
+  await vi.waitFor(() => expect(sent.filter((x) => x.method === 'PUT')).toHaveLength(2))
+  expect(sent[1]?.body).toMatchObject({ spreadRestYear: null, confirmSpread: true })
+})
+
+test('Ende der Verteilung: Rückfrage des Servers abgebrochen, kein zweites PUT', async () => {
+  const ask = await clearRestYear()
+  fireEvent.click(within(ask).getByRole('button', { name: 'Abbrechen' }))
+  await vi.waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+  await new Promise((r) => setTimeout(r, 50))
+  expect(sent.filter((x) => x.method === 'PUT')).toHaveLength(1)
+})
+
+test('Ende der Verteilung: scheitert das Laden der Kosten, steht eine Meldung da (K5)', async () => {
+  costItemsFail = true
+  page()
+  fireEvent.click(await screen.findByRole('button', { name: 'Bearbeiten (Objekt)' }, SLOW))
+  expect(await within(screen.getByRole('dialog', { name: 'Objekt bearbeiten' })).findByText(/Die Kosten des Objekts ließen sich nicht laden/, undefined, SLOW)).toBeTruthy()
 })
 
 // ---------- Abweichende IBAN des Objekts (#279) ----------
