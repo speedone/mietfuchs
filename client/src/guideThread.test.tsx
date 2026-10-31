@@ -15,12 +15,14 @@ const TENANCIES: Tenancy[] = [{ id: 't-a', unitId: 'u-a', tenantName: 'Müller',
 const ledger = { year: 2025, rows: [{ tenancyId: 't-a', tenantName: 'Müller', unitName: 'DG', months: [], sollYearCents: 0, paidYearCents: 0, balanceCents: 0 }], totals: { sollCents: 0, paidCents: 0, openCents: 0 } }
 
 let scrollTo = vi.fn()
+let mobile = false
 beforeEach(() => {
+  mobile = false
   try { localStorage.clear() } catch { /* ohne Speicher nichts zu räumen */ }
   scrollTo = vi.fn()
   window.scrollTo = scrollTo as unknown as typeof window.scrollTo
   vi.stubGlobal('matchMedia', (query: string) => ({
-    get matches() { return query === MOBILE_QUERY ? false : false },
+    get matches() { return query === MOBILE_QUERY ? mobile : false },
     addEventListener: () => {},
     removeEventListener: () => {},
   }))
@@ -64,6 +66,12 @@ test('„Zu Kosten →“ springt auf Kosten, an den Anfang, und zeigt dort die 
   expect(bar.textContent).toContain(GUIDES.garage.title)
   expect(bar.textContent).toContain(`Schritt 4 von ${GUIDES.garage.steps.length}`)
   expect(scrollTo).toHaveBeenCalledWith(0, 0)
+  // Durchsicht von PR 2, S1: Der Fokus steht auf dem Titel der Zielseite, nicht im Leeren
+  await waitFor(() => expect(document.activeElement?.tagName).toBe('H1'))
+  expect(document.activeElement?.textContent).toBe('Kosten')
+  // K3: „Nächster Schritt“ ist der Primärknopf, „Zurück zur Anleitung“ der zweite
+  expect(within(bar).getByRole('button', { name: 'Nächster Schritt' }).className).not.toMatch(/secondary/)
+  expect(within(bar).getByRole('button', { name: 'Zurück zur Anleitung' }).className).toMatch(/secondary/)
   // Gedruckt wird sie nie
   expect(bar.classList.contains('no-print')).toBe(true)
   expect(within(bar).getByRole('button', { name: 'Nächster Schritt' })).toBeTruthy()
@@ -83,6 +91,8 @@ test('„Nächster Schritt“ springt zur Seite des nächsten Schritts; am letzt
   await waitFor(() => expect(thread()?.textContent).toContain('Schritt 6 von 6'))
   expect(within(thread() ?? expect.fail('Leiste fehlt')).queryByRole('button', { name: 'Nächster Schritt' })).toBeNull()
   await waitFor(() => expect(document.activeElement?.textContent).toBe('Zurück zur Anleitung'))
+  // K3: ohne „Nächster Schritt“ ist „Zurück zur Anleitung“ primär
+  expect((document.activeElement as HTMLElement).className).not.toMatch(/secondary/)
 })
 
 test('„Nächster Schritt“ überspringt Schritte ohne Seite', async () => {
@@ -146,4 +156,53 @@ test('mit offenem Formular fragt der Sprung aus der Leiste; Abbrechen bleibt, Ve
   fireEvent.click(within(again).getByRole('button', { name: 'Verwerfen' }))
   await screen.findByRole('heading', { name: GUIDES.flatRate.title, level: 1 })
   expect(thread()).toBeNull()
+})
+
+// Durchsicht von PR 2, S2: Die Leiste sagt, was zu tun ist, und sagt den Schritt an, auch auf derselben Seite.
+test('die Leiste zeigt den Text des Schritts, voll unter „Was ist zu tun?“, und sagt den Schritt als Status an', async () => {
+  const guide = await openGuide('garage')
+  fireEvent.click(within(guide).getAllByRole('button', { name: 'Zu Stammdaten →' })[0]!)
+  const bar = await waitFor(() => thread() ?? expect.fail('Leiste fehlt'))
+  const status = within(bar).getByRole('status')
+  expect(status.textContent).toBe(`${GUIDES.garage.title} · Schritt 1 von 6`)
+  expect(bar.textContent).toContain(GUIDES.garage.steps[0]!.text)
+  const more = bar.querySelector('details') ?? expect.fail('„Was ist zu tun?“ fehlt')
+  expect(more.querySelector('summary')?.textContent).toBe('Was ist zu tun?')
+  expect(more.textContent).toContain(GUIDES.garage.steps[0]!.text)
+  fireEvent.click(within(bar).getByRole('button', { name: 'Nächster Schritt' }))
+  await waitFor(() => expect(within(thread() ?? expect.fail('Leiste fehlt')).getByRole('status').textContent).toBe(`${GUIDES.garage.title} · Schritt 2 von 6`))
+  expect(current()).toMatch(/Stammdaten$/)
+  expect(thread()?.textContent).toContain(GUIDES.garage.steps[1]!.text)
+  expect(thread()?.textContent).not.toContain(GUIDES.garage.steps[0]!.text)
+})
+
+// Durchsicht von PR 2, K1: Die Anleitung gilt fürs Vorgehen, nicht für ein Objekt oder Jahr.
+test('ein Wechsel des Abrechnungsjahrs behält den Faden', async () => {
+  const guide = await openGuide('garage')
+  fireEvent.click(within(guide).getByRole('button', { name: 'Zu Kosten →' }))
+  await waitFor(() => thread() ?? expect.fail('Leiste fehlt'))
+  const year = within(sidebar()).getByLabelText(/Abrechnungsjahr/) as HTMLSelectElement
+  const other = [...year.options].find((o) => o.value !== year.value) ?? expect.fail('kein anderes Jahr')
+  fireEvent.change(year, { target: { value: other.value } })
+  await waitFor(() => expect((within(sidebar()).getByLabelText(/Abrechnungsjahr/) as HTMLSelectElement).value).toBe(other.value))
+  expect(thread()?.textContent).toContain('Schritt 4 von 6')
+})
+
+// Durchsicht von PR 2, K2: Sprünge aus dem Seiteninhalt behalten den Faden; nur die Navigation beendet ihn.
+test('„Mehr in ‚Hilfe & Begriffe‘ →“ aus einer Erklärung behält den Faden, die untere Leiste am Handy beendet ihn', async () => {
+  mobile = true
+  render(<App />)
+  fireEvent.click(await screen.findByRole('button', { name: /Menü/ }))
+  fireEvent.click(within(document.querySelector('dialog.menu-sheet') as HTMLElement).getByRole('button', { name: /Hilfe & Begriffe/ }))
+  fireEvent.click((await screen.findByText(GUIDES.flatRate.title)).closest('button') ?? expect.fail('Kachel fehlt'))
+  const guide = await waitFor(() => document.getElementById('anleitung-flatRate') ?? expect.fail('Anleitung fehlt'))
+  fireEvent.click(within(guide).getAllByRole('button', { name: 'Zu Stammdaten →' })[0]!)
+  await waitFor(() => thread() ?? expect.fail('Leiste fehlt'))
+  const term = await waitFor(() => document.querySelector<HTMLElement>('main .term[role="button"]') ?? expect.fail('kein Begriff auf der Seite'))
+  fireEvent.click(term)
+  fireEvent.click(screen.getByRole('link', { name: 'Mehr in „Hilfe & Begriffe“ →' }))
+  await screen.findByRole('heading', { name: /^Alle Begriffe von A bis Z/, level: 2 })
+  expect(thread()?.textContent).toContain(`Schritt 1 von ${GUIDES.flatRate.steps.length}`)
+  fireEvent.click(within(screen.getByRole('navigation', { name: 'Schnellzugriff' })).getByRole('button', { name: /Zähler/ }))
+  await waitFor(() => expect(thread()).toBeNull())
 })

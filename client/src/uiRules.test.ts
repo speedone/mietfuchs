@@ -1272,3 +1272,19 @@ test('S33: der Pfeil steht neben der ersten Zeile, umbrechende Titel mit hängen
   expect(cssNoComments).toMatch(/\.receipt-group > summary \{[^}]*padding-inline-start: 0/)
   expect(cssNoComments).not.toMatch(/summary[^{]*\{[^}]*text-indent/)
 })
+
+// S34 (Durchsicht von #488 PR 2, M1): Was unten am Fenster angeheftet ist, verdeckt, was darunter liegt. Ein fokussierter
+// Knopf darf dort nicht verschwinden (WCAG 2.4.11). Jede Utility in tw.css mit `position: sticky` und `bottom` hält deshalb ihre Höhe in `scroll-padding-bottom` frei: eine Regel `html:has(.name)`, die `--thread-h`
+// (bzw. die gemeldete Höhe) einrechnet, und der Baustein meldet die Höhe. Die untere Leiste am Handy hält das in
+// index.css (`--bar-h`) frei; Popover mit `fixed` (Blatt am Handy) liegen im Top-Layer über allem und zählen nicht.
+test('S34: was unten angeheftet ist, hält seine Höhe im scroll-padding frei', () => {
+  const pinned = [...twCss.matchAll(/@utility ([\w-]+) \{([\s\S]*?)\n\}/g)]
+    .filter((m) => /position:\s*sticky/.test(m[2] ?? '') && /(?:^|\n)\s*bottom:/.test(m[2] ?? ''))
+    .map((m) => m[1] ?? '')
+  expect(pinned).toContain('guide-thread-sticky')
+  for (const name of pinned) {
+    const rule = new RegExp(`html:has\\(\\.${name}\\)\\s*\\{[^}]*scroll-padding-bottom:[^;}]*var\\(--thread-h`)
+    expect(twCss, `${name}: keine Regel html:has(.${name}) mit scroll-padding-bottom`).toMatch(rule)
+  }
+  expect(sources['./components/GuideThread.tsx'] ?? '').toMatch(/ResizeObserver[\s\S]*--thread-h/)
+})

@@ -153,7 +153,11 @@ export default function Hilfe({ onFollow, focusTerm, onFocusTermDone, openGuide:
     }
   }
 
-  const backButton = <button type="button" className="btn ghost small mb-4" onClick={back}>← Zurück zu Hilfe & Begriffe</button>
+  // Wohin „Zurück“ führt, sagt der Knopf (Durchsicht von PR 2, S3 und K7): in die Anleitung, aus der man kam, sonst
+  // zur Startansicht.
+  const previous = trail.at(-1)?.view
+  const previousGuide = previous?.kind === 'guide' ? allGuides().find((x) => x.id === previous.id) : undefined
+  const backButton = <button type="button" className="btn ghost small mb-4" onClick={back}>{previousGuide ? '← Zurück zur Anleitung' : '← Zurück zu Hilfe & Begriffe'}</button>
 
   if (view.kind === 'guide') {
     const g = allGuides().find((x) => x.id === view.id)
@@ -161,7 +165,9 @@ export default function Hilfe({ onFollow, focusTerm, onFocusTermDone, openGuide:
     return (
       <>
         {/* Statt des Seitenkopfs der Pfad und der Titel der Anleitung; „Hilfe & Begriffe“ führt zur Startansicht. */}
-        <nav aria-label="Pfad" className="flex flex-wrap items-center gap-2 mb-2 text-s text-muted">
+        {/* Kam man über „Ähnliche Anleitungen“, führt der Weg zurück in die vorige Anleitung (S3). */}
+        {previousGuide && <button type="button" className="btn ghost small mb-2 no-print" onClick={back}>← Zurück zu {previousGuide.title}</button>}
+        <nav aria-label="Pfad" className="no-print flex flex-wrap items-center gap-2 mb-2 text-s text-muted">
           <button type="button" className="btn ghost small" onClick={() => home(`guide:${g.id}`)}>Hilfe & Begriffe</button>
           <span aria-hidden="true">›</span>
           <span>Anleitungen</span>

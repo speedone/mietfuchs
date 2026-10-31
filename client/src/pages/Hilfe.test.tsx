@@ -95,7 +95,9 @@ test('ein Begriff der Anleitung ist ein Knopf und öffnet den Begriff; „Zurüc
   fireEvent.click(within(terms).getByRole('button', { name: GLOSSARY.granny.title }))
   await waitFor(() => expect(document.activeElement?.closest('details')?.id).toBe('begriff-granny'))
   expect((document.getElementById('begriff-granny') as HTMLDetailsElement).open).toBe(true)
-  fireEvent.click(screen.getByRole('button', { name: '← Zurück zu Hilfe & Begriffe' }))
+  // Durchsicht von PR 2, K7: Der Knopf sagt, wohin er führt
+  expect(screen.queryByRole('button', { name: '← Zurück zu Hilfe & Begriffe' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '← Zurück zur Anleitung' }))
   await screen.findByRole('heading', { name: GUIDES.granny.title, level: 1 })
   await waitFor(() => expect(document.activeElement?.textContent).toBe(GLOSSARY.granny.title))
 })
@@ -124,6 +126,12 @@ test('eine ähnliche Anleitung öffnet sich an derselben Stelle', async () => {
   fireEvent.click(first)
   const heading = await screen.findByRole('heading', { name: title, level: 1 })
   await waitFor(() => expect(document.activeElement).toBe(heading))
+  // Durchsicht von PR 2, S3: Der Weg zurück in die vorige Anleitung steht über dem Pfad, der Fokus kommt auf die Kachel
+  fireEvent.click(screen.getByRole('button', { name: `← Zurück zu ${GUIDES.supplierInvoice.title}` }))
+  await screen.findByRole('heading', { name: GUIDES.supplierInvoice.title, level: 1 })
+  await waitFor(() => expect(document.activeElement?.querySelector('.font-strong')?.textContent).toBe(title))
+  // Aus der Startansicht geöffnet, steht kein solcher Knopf da
+  expect(screen.queryByRole('button', { name: /^← Zurück zu/ })).toBeNull()
 })
 
 test('„Zu {Seite} →“ meldet Anleitung und Schritt, damit die App den Faden aufnimmt', () => {
@@ -359,7 +367,7 @@ test('„Zurück“ nach dem Sprung aus einer Anleitung führt in diese Anleitun
   await screen.findByRole('heading', { name: GUIDES.granny.title, level: 1 })
   rerender(<Hilfe onFollow={() => {}} focusTerm={{ id: 'granny', seq: 1 }} />)
   await waitFor(() => expect(document.activeElement?.closest('details')?.id).toBe('begriff-granny'))
-  fireEvent.click(screen.getByRole('button', { name: '← Zurück zu Hilfe & Begriffe' }))
+  fireEvent.click(screen.getByRole('button', { name: '← Zurück zur Anleitung' }))
   const heading = await screen.findByRole('heading', { name: GUIDES.granny.title, level: 1 })
   await waitFor(() => expect(document.activeElement).toBe(heading))
   fireEvent.click(within(screen.getByRole('navigation', { name: 'Pfad' })).getByRole('button', { name: 'Hilfe & Begriffe' }))
