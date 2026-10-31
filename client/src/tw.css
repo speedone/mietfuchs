@@ -501,3 +501,94 @@
 @utility select-wide {
   max-width: calc(2 * var(--field-l));
 }
+
+/* Eine Anleitung als eigene Ansicht (pages/Hilfe.tsx, #488 PR 2): ab 42rem Breite des Inhalts (so schon auf Laptops ab
+   rund 1000 px Fensterbreite neben der Seitenleiste) links die Inhaltsleiste,
+   die beim Rollen stehen bleibt, rechts die Anleitung; schmaler (am Handy) ohne Leiste. Gemessen wird die Breite des
+   Inhalts (`@container` um die Ansicht), nicht die des Fensters, denn daneben steht die Seitenleiste. Unter 900 px
+   liegt oben der angeheftete Kopf; die Leiste bleibt darunter stehen (S24). */
+@utility guide-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: --spacing(6);
+  @container (min-width: 42rem) {
+    grid-template-columns: 12rem minmax(0, 1fr);
+  }
+}
+@utility guide-toc {
+  display: none;
+  @container (min-width: 42rem) {
+    display: flex;
+    flex-direction: column;
+    gap: --spacing(0.5);
+    position: sticky;
+    top: max(var(--space-4), env(safe-area-inset-top));
+    align-self: start;
+  }
+  /* Ruhige Einträge wie im Vorschlag, ohne Rahmen; den Fokusring gibt index.css jedem Knopf. */
+  & > button {
+    min-height: var(--target);
+    padding: --spacing(1) --spacing(2.5);
+    background: transparent;
+    border: 0;
+    border-radius: var(--radius-m);
+    color: var(--muted);
+    font: inherit;
+    font-size: var(--text-m);
+    line-height: 1.35;
+    text-align: left;
+    cursor: pointer;
+  }
+  & > button:hover {
+    background: var(--hover);
+    color: var(--text);
+  }
+  @media screen and (max-width: 899px) {
+    top: calc(var(--head-h) + env(safe-area-inset-top) + var(--space-2));
+  }
+}
+
+/* Die Leiste des Fadens (components/GuideThread.tsx, #488 PR 2): unten am Inhalt angeheftet (`sticky`), solange man
+   einer Anleitung über ihre Seiten folgt. Weil sie im Fluss am Ende der Seite steht, verdeckt sie dort nichts: Am
+   Seitenende liegt sie unter dem letzten Knopf statt darüber. Am Handy steht sie über der unteren Leiste, sonst über
+   dem Rand für den Home-Indikator (S24). Gedruckt wird sie nie (`no-print` am Element).
+   Mitten auf der Seite liegt sie über dem Inhalt. Damit ein Knopf, den die Tabulatortaste erreicht, nicht unter ihr
+   verschwindet (WCAG 2.4.11), meldet GuideThread.tsx ihre Höhe als `--thread-h`, und die Regel darunter hält sie beim
+   Rollen zum Fokus frei (`scroll-padding-bottom`, am Handy zusätzlich die untere Leiste; Wächter S34). */
+@utility guide-thread {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: --spacing(2) --spacing(3);
+  max-width: 44rem;
+  margin: --spacing(8) auto 0;
+  padding: --spacing(3) --spacing(3) --spacing(3) --spacing(4);
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-l);
+  box-shadow: var(--shadow-pop);
+  font-size: var(--text-m);
+}
+@utility guide-thread-sticky {
+  position: sticky;
+  z-index: 20;
+  bottom: max(var(--space-4), env(safe-area-inset-bottom));
+  @media screen and (max-width: 899px) {
+    bottom: calc(var(--bar-h) + env(safe-area-inset-bottom) + var(--space-2));
+  }
+}
+
+/* Solange der Faden läuft, rollt der Browser einen fokussierten Knopf über die Leiste statt darunter (S34). In der
+   Schicht `components`, über der Regel für das Handy in index.css (`legacy`). */
+@layer components {
+  html:has(.guide-thread-sticky) {
+    scroll-padding-bottom: calc(var(--thread-h, 0px) + max(var(--space-4), env(safe-area-inset-bottom)) + var(--space-2));
+  }
+  @media screen and (max-width: 899px) {
+    html:has(.guide-thread-sticky) {
+      scroll-padding-bottom: calc(var(--thread-h, 0px) + var(--bar-h) + env(safe-area-inset-bottom) + var(--space-4));
+    }
+  }
+}

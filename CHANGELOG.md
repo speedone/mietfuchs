@@ -26,6 +26,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - **Hilfe & Begriffe beginnt mit einer Suche**: Treffer erscheinen beim Tippen, getrennt nach Anleitungen und Begriffen
   und mit der Fundstelle; darunter stehen die Anleitungen als Kacheln in drei Gruppen und die Begriffe nach Themen
   ([#488](https://github.com/speedone/mietfuchs/issues/488)).
+- Eine Anleitung in „Hilfe & Begriffe“ ist eine eigene Ansicht mit Inhaltsleiste und Schritten als Karten; nach „Zu
+  Kosten →“ und ähnlichen Sprüngen zeigt die Zielseite unten den Schritt mit „Nächster Schritt“ und „Zurück zur
+  Anleitung“ ([#488](https://github.com/speedone/mietfuchs/issues/488)).
 - Scheitert die KI an einem Beleg (etwa weil Ollama nicht läuft), steht er in Schnellerfassung und Kosten als
   „Gespeichert, nicht ausgewertet“ da, mit dem Grund in einem Satz, „Von Hand erfassen“ und „Erneut versuchen“, das
   keine Kopie mehr im Belegordner anlegt; ebenso beim Auslesen von Lieferantenrechnung und Messdienstabrechnung in den

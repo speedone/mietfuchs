@@ -5,6 +5,7 @@ import Field, { RequiredLegend } from '../components/Field'
 import MonthField from '../components/MonthField'
 import YearField from '../components/YearField'
 import Term from '../components/Term'
+import GuideThread from '../components/GuideThread'
 import Table from '../components/Table'
 import Drawer from '../components/Drawer'
 import DraftActions from '../components/DraftActions'
@@ -150,6 +151,11 @@ export default function Muster() {
         </div>
         <ContractAgreementFields form={why} units={CONTRACT_UNITS} tenancies={CONTRACT_TENANCIES} period={CONTRACT_PERIOD} onChange={setWhy} />
         <ContractAgreementFields form={other} units={CONTRACT_UNITS} tenancies={CONTRACT_TENANCIES} period={CONTRACT_PERIOD} onChange={setOther} />
+      </Card>
+
+      {/* Die Leiste des Fadens einer Anleitung (#488, PR 2); in der App unten angeheftet, hier im Fluss. */}
+      <Card title="Faden einer Anleitung">
+        <GuideThread guide="garage" step={3} sticky={false} onNext={async () => { toast('Nächster Schritt.'); return true }} onBack={() => toast('Zurück zur Anleitung.')} onClose={() => toast('Leiste geschlossen.')} />
       </Card>
 
       <Card title="Hinweise">

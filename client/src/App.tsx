@@ -30,9 +30,22 @@ import { navFor, tabLabel, type Tab } from './nav'
 import MobileNav, { MOBILE_QUERY, useMediaQuery } from './components/MobileNav'
 import Heizkosten from './pages/Heizkosten'
 import { TermHelp } from './components/Term'
+import GuideThread from './components/GuideThread'
 import type { TermId } from '../../shared/glossary.ts'
+import { GUIDES, type GuideId } from '../../shared/guides.ts'
 import Muster from './pages/Muster'
 import { EvaluationQueueProvider, useEvaluationQueueStore } from './evaluationQueue'
+
+// Der Faden einer Anleitung: welcher Schritt welcher Anleitung gerade befolgt wird (#488, PR 2).
+type GuideThreadState = { guide: GuideId; step: number }
+
+// Den Fokus auf den Titel der Seite setzen, ohne zu rollen; der Titel wird dafür fokussierbar (nicht per Tab).
+function focusPageTitle() {
+  const title = document.querySelector<HTMLElement>('main h1')
+  if (!title) return
+  title.tabIndex = -1
+  title.focus({ preventScroll: true })
+}
 
 // ---------- Dark Mode ----------
 type ThemeChoice = 'system' | 'light' | 'dark'
@@ -129,7 +142,18 @@ function Shell() {
   // Der Eintrag, den „Hier beheben →“ auf der Zielseite öffnen soll (#142). Jeder andere
   // Seitenwechsel löscht ihn, und die Seite meldet, wenn sie ihn geöffnet hat.
   const [focus, setFocus] = useState<NoticeSubject | null>(null)
-  const setTab = useCallback((t: Tab, f: NoticeSubject | null = null) => { setFocus(f); setTabState(t) }, [])
+  // Der Faden einer Anleitung (#488, PR 2): Anleitung und Schritt, denen man gerade folgt. Gesetzt vom Sprung aus der
+  // Anleitung und von „Nächster Schritt“, in einem Zug mit der Seite, damit die Leiste zwischen zwei Schritten nicht
+  // kurz verschwindet und den Fokus verliert. Beendet nur von der Navigation (Seitenleiste, Menüblatt, untere Leiste),
+  // von „Zurück zur Anleitung“ und „Leiste schließen“. Sprünge aus dem Seiteninhalt („Hier beheben →“, „Mehr in ‚Hilfe &
+  // Begriffe‘ →“) behalten ihn, ebenso der Wechsel von Objekt und Zeitraum: Die Anleitung gilt fürs Vorgehen, nicht für
+  // ein Objekt oder Jahr (Durchsicht von PR 2, K1 und K2). `undefined` heißt beim Seitenwechsel: Faden behalten.
+  const [thread, setThread] = useState<GuideThreadState | null>(null)
+  const setTab = useCallback((t: Tab, f: NoticeSubject | null = null, th?: GuideThreadState | null) => {
+    setFocus(f)
+    setTabState(t)
+    if (th !== undefined) setThread(th)
+  }, [])
   const clearFocus = useCallback(() => setFocus(null), [])
   const [stopped, setStopped] = useState(false)
   // Belege aus dem Posteingang, die die Schnellerfassung auswerten soll (#170)
@@ -172,7 +196,7 @@ function Shell() {
   // still weg. Das gilt für die Navigation (Seitenleiste, Menüblatt, untere Leiste) wie für Sprünge aus
   // einer Seite („Hier beheben →“, „Position öffnen“, „Weiter prüfen“, die Anleitung zum Update).
   // Startfokus auf „Abbrechen“. Ergibt, ob gewechselt wurde.
-  const navigate = useCallback(async (t: Tab, f: NoticeSubject | null = null): Promise<boolean> => {
+  const navigate = useCallback(async (t: Tab, f: NoticeSubject | null = null, th?: GuideThreadState | null): Promise<boolean> => {
     if (t !== tab && hasOpenForm()) {
       const ok = await confirmLeave({
         title: 'Ungespeicherte Änderungen verwerfen?',
@@ -183,9 +207,39 @@ function Shell() {
       })
       if (!ok) return false
     }
-    setTab(t, f)
+    setTab(t, f, th)
     return true
   }, [tab, hasOpenForm, confirmLeave, setTab])
+  // Die Navigation selbst (Seitenleiste, Menüblatt, untere Leiste) beendet den Faden.
+  const navigateFromNav = useCallback((t: Tab) => navigate(t, null, null), [navigate])
+  // Nach dem Sprung aus der Anleitung steht der Fokus auf dem Titel der Zielseite (Durchsicht von PR 2, S1); `seq`
+  // zählt die Sprünge, der Effekt läuft, wenn die neue Seite gezeichnet ist.
+  const [titleFocus, setTitleFocus] = useState(0)
+  useEffect(() => { if (titleFocus > 0) focusPageTitle() }, [titleFocus])
+  // „Zu {Seite} →“ in einer Anleitung und „Nächster Schritt“ im Faden: auf die Seite des Schritts, mit dem Faden. Eine
+  // neue Seite beginnt oben, nicht auf der Höhe, auf der die Anleitung stand. Aus der Leiste bleibt der Fokus dort.
+  const followStep = useCallback(async (guide: GuideId, step: number, focusTitle = false): Promise<boolean> => {
+    const page = GUIDES[guide].steps[step]?.page
+    if (!page) return false
+    const done = await navigate(page, null, { guide, step })
+    if (done && page !== tab) window.scrollTo(0, 0)
+    if (done && focusTitle) setTitleFocus((n) => n + 1)
+    return done
+  }, [navigate, tab])
+  // „Zurück zur Anleitung“: in die Hilfe, die die Anleitung öffnet und den Fokus auf den Schritt setzt.
+  const [helpGuide, setHelpGuide] = useState<{ id: GuideId; step: number; seq: number } | null>(null)
+  const backToGuide = useCallback(() => {
+    if (!thread) return
+    const { guide, step } = thread
+    void navigate('hilfe', null, null).then((done) => { if (done) setHelpGuide((h) => ({ id: guide, step, seq: (h?.seq ?? 0) + 1 })) })
+  }, [navigate, thread])
+  // „Leiste schließen“: Die Leiste verschwindet mit dem Knopf, der den Fokus hatte; ohne Ziel stünde er danach auf
+  // <body>, und die Tabulatortaste begänne wieder oben in der Seitenleiste. Er geht deshalb an den Titel der Seite, der
+  // dafür `tabIndex = -1` bekommt (Durchsicht von PR 2, K4).
+  const closeThread = useCallback(() => {
+    setThread(null)
+    focusPageTitle()
+  }, [])
   // „Mehr in ‚Hilfe & Begriffe‘ →“ aus einer Begriffserklärung (#346, Schritt 6): über `navigate`, also mit der
   // Rückfrage bei offenem Formular; die Hilfe rollt dann zum Begriff.
   const [helpTerm, setHelpTerm] = useState<{ id: TermId; seq: number } | null>(null)
@@ -335,7 +389,7 @@ function Shell() {
           {group.section && <div className="nav-section">{group.section}</div>}
           {group.items.map((it) => (
             <button key={it.id} className={tab === it.id ? 'active' : ''} aria-current={tab === it.id ? 'page' : undefined}
-              onClick={() => { void navigate(it.id).then((done) => { if (done) close?.() }) }}>
+              onClick={() => { void navigateFromNav(it.id).then((done) => { if (done) close?.() }) }}>
               <span>{it.icon}</span> {it.label}
             </button>
           ))}
@@ -357,7 +411,7 @@ function Shell() {
   return (
     <TermHelp.Provider value={openHelp}>
       {mobile ? (
-        <MobileNav tab={tab} context={contextLine} onNavigate={(t) => void navigate(t)} sheet={(close) => <nav className="sidebar" aria-label="Hauptnavigation">{sidebar(close)}</nav>} />
+        <MobileNav tab={tab} context={contextLine} onNavigate={(t) => void navigateFromNav(t)} sheet={(close) => <nav className="sidebar" aria-label="Hauptnavigation">{sidebar(close)}</nav>} />
       ) : (
         <nav className="sidebar" aria-label="Hauptnavigation">{sidebar(null)}</nav>
       )}
@@ -404,12 +458,16 @@ function Shell() {
         )}
         {tab === 'heizkosten' && <Heizkosten units={units} tenancies={tenancies} onTenanciesChanged={reload} onOpenReceipt={openReceipt} onOpenAiSettings={openAiSettings} />}
         {tab === 'steuer' && <Steuer settings={settings} onNavigate={(t) => void navigate(t, null)} />}
-        {tab === 'hilfe' && <Hilfe onNavigate={(t) => void navigate(t)} focusTerm={helpTerm} onFocusTermDone={() => setHelpTerm(null)} />}
+        {tab === 'hilfe' && <Hilfe onFollow={(g, step) => void followStep(g, step, true)} focusTerm={helpTerm} onFocusTermDone={() => setHelpTerm(null)}
+          openGuide={helpGuide} onOpenGuideDone={() => setHelpGuide(null)} />}
         {tab === 'verlauf' && <Verlauf />}
         {tab === 'einstellungen' && settings && (
           <Einstellungen settings={settings} reload={reload} update={update} onNavigate={(t) => void navigate(t)} />
         )}
         </Fragment>
+        {/* Außerhalb der je Objekt und Jahr neu aufgestellten Seite: Die Leiste bleibt zwischen zwei Schritten dieselbe
+            und behält den Fokus auf „Nächster Schritt“. */}
+        {thread && <GuideThread guide={thread.guide} step={thread.step} onNext={(step) => followStep(thread.guide, step)} onBack={backToGuide} onClose={closeThread} />}
       </main>
     </TermHelp.Provider>
   )

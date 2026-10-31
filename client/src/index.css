@@ -694,7 +694,6 @@ input:is([type='checkbox'], [type='radio']):focus-visible { box-shadow: var(--fo
 .heating-ways li > details > summary { font-size: 13px; }
 .co2-block { margin-top: 16px; }
 .notice-terms { font-size: var(--text-s); }
-.guide-steps { margin: 0; }
 .ai-elapsed { color: var(--muted); font-variant-numeric: tabular-nums; }
 .update-consent-body { flex: 1; min-width: 0; }
 .property-notice-text { min-width: 0; }
@@ -825,8 +824,6 @@ td.reading-panel { background: var(--bg); }
 .guide p, .guide li { overflow-wrap: anywhere; }
 .guide ol, .guide ul { margin: 4px 0; padding-left: 22px; }
 .guide li { margin: 4px 0; line-height: 1.45; }
-.guide .guide-jump { margin-top: 2px; white-space: nowrap; }
-.guide .guide-terms { margin-top: 12px; }
 @media print { .term { text-decoration: none; } }
 /* Ableseergebnis je Wohnung (Durchsicht von #239, I2): gedruckt wird nur diese Karte. */
 @media print {

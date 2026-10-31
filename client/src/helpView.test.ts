@@ -3,7 +3,7 @@
 import { describe, expect, test } from 'vitest'
 import { GLOSSARY, TERM_TOPICS } from '../../shared/glossary.ts'
 import { GUIDES, GUIDE_GROUPS } from '../../shared/guides.ts'
-import { excerpt, firstSentence, GUIDE_GROUP_LABELS, guideGroups, highlight, resultCountText, searchHelp, TERM_TOPIC_LABELS, termsOfTopic, topicCounts, type Segment } from './helpView'
+import { excerpt, firstSentence, GUIDE_GROUP_LABELS, guideGroups, highlight, nextStepWithPage, relatedGuides, resultCountText, searchHelp, TERM_TOPIC_LABELS, termsOfTopic, topicCounts, type Segment } from './helpView'
 import { sortedTerms } from './glossaryView'
 
 const plain = (s: readonly Segment[]) => s.map((x) => x.text).join('')
@@ -144,4 +144,20 @@ describe('Gruppen und Themen', () => {
     expect(heating.map((t) => t.id)).toContain('heatCostAllocator')
     expect(heating.map((t) => t.id)).not.toContain('mea')
   })
+})
+
+// #488, PR 2: „Nächster Schritt“ im Faden und „Ähnliche Anleitungen“
+test('der nächste Schritt mit Seite überspringt Schritte in der Seitenleiste; nach dem letzten gibt es keinen', () => {
+  const steps = GUIDES.properties.steps
+  expect(steps[1]?.page).toBeUndefined()
+  expect(nextStepWithPage(steps, 0)).toBe(2)
+  expect(nextStepWithPage(steps, steps.length - 1)).toBeNull()
+  expect(nextStepWithPage([{ text: 'a', page: 'kosten' }, { text: 'b' }], 0)).toBeNull()
+})
+
+test('ähnliche Anleitungen: höchstens drei aus derselben Gruppe, ohne die offene', () => {
+  const related = relatedGuides('co2Costs')
+  expect(related.length).toBe(3)
+  expect(related.every((g) => g.group === 'heating' && g.id !== 'co2Costs')).toBe(true)
+  expect(relatedGuides('tenantChange').every((g) => g.group === 'year' && g.id !== 'tenantChange')).toBe(true)
 })

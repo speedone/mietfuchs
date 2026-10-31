@@ -25,6 +25,10 @@
 // Dazu je Engine und Ansicht die Bedienproben: Seitenfenster (Esc fragt, Enter auf „Abbrechen“ lässt es
 // offen, „Verwerfen“ schließt), Monatsfeld (Text und Raster per Tastatur), Begriffserklärung (öffnen, Esc),
 // Fehler nach dem Speichern (sichtbar, mit Fokus) und am Handy Menüblatt und untere Leiste.
+// Dazu je Engine, Ansicht und Design der Gang „faden“ (#488, PR 2): Hilfe → Kachel → Anleitung → „Zu Kosten →“, auf
+// Kosten mit der Leiste des Fadens axe, Breite, abgeschnittene Felder und die Tabulatortaste bis in die Leiste, wobei
+// kein fokussiertes Element ganz unter der Leiste liegen darf (WCAG 2.4.11). Er läuft mit `--pages hilfe-begriffe`
+// oder `--pages faden`.
 //
 // Jeder Befund ergibt einen Exit-Code ungleich 0. Der Bericht steht als Markdown in `<out>/bericht.md` und,
 // in GitHub Actions, in der Zusammenfassung des Laufs. Die Fotos je Seite liegen in `<out>/<engine>/…`;
@@ -376,6 +380,38 @@ async function go(page, view, label) {
   await page.evaluate(() => /** @type {any} */ (globalThis).scrollTo(0, 0))
 }
 
+// Mit der Tabulatortaste vom Seitenanfang bis in die Leiste des Fadens: Liegt ein fokussiertes Element in `main` ganz
+// unter der Leiste, sähe man den Fokus nicht (WCAG 2.4.11, Durchsicht von #488 PR 2, M1). WebKit erreicht Knöpfe nur mit
+// Alt+Tab. Höchstens 400 Schritte; gemeldet werden bis zu drei Elemente.
+async function coveredByThread(page, engine) {
+  await page.evaluate(() => {
+    const win = /** @type {any} */ (globalThis)
+    win.scrollTo(0, 0)
+    win.document.activeElement?.blur?.()
+    win.document.querySelector('main h1')?.focus?.({ preventScroll: true })
+  })
+  const out = []
+  for (let i = 0; i < 400 && out.length < 3; i++) {
+    await page.keyboard.press(engine === 'webkit' ? 'Alt+Tab' : 'Tab')
+    const r = await page.evaluate(() => {
+      const doc = /** @type {any} */ (globalThis).document
+      const el = doc.activeElement
+      const bar = doc.querySelector('.guide-thread-sticky')
+      if (!el || !bar) return { done: true }
+      if (bar.contains(el)) return { done: true }
+      if (!el.closest('main')) return { done: false }
+      const a = el.getBoundingClientRect()
+      const b = bar.getBoundingClientRect()
+      const covered = a.height > 0 && a.top >= b.top && a.bottom <= b.bottom && a.left < b.right && a.right > b.left
+      const name = (el.getAttribute('aria-label') ?? el.textContent ?? '').trim().slice(0, 40)
+      return { done: false, covered, text: `${el.tagName.toLowerCase()} „${name}“ (oben ${Math.round(a.top)}, Leiste ${Math.round(b.top)} bis ${Math.round(b.bottom)})` }
+    })
+    if (r.done) break
+    if (r.covered) out.push(`Fokus ganz unter der Leiste des Fadens: ${r.text}`)
+  }
+  return out
+}
+
 // ---------- Eine Kombination ----------
 async function checkCombination(browser, base, combo, AxeBuilder, navLabels) {
   const { engine, view, theme } = combo
@@ -495,6 +531,30 @@ async function checkCombination(browser, base, combo, AxeBuilder, navLabels) {
     // Die Seitenfenster der Seite öffnen und ihre Felder messen, im ersten Design des Laufs (die Breite hängt nicht
     // am Design)
     if (theme === themes[0]) drawersOpened += await checkDrawers(page, id, dir, add, reportClipped)
+  }
+
+  // Der Gang „faden“ (#488, PR 2): aus einer Anleitung auf die Seite eines Schritts, dort die Leiste des Fadens
+  if (PAGES === null || PAGES.includes('hilfe-begriffe') || PAGES.includes('faden')) {
+    current = 'faden'
+    try {
+      await go(page, view, 'Hilfe & Begriffe')
+      await page.getByRole('button', { name: /^Garage oder Stellplatz/ }).first().click()
+      await page.getByRole('heading', { name: /^Garage oder Stellplatz/, level: 1 }).waitFor({ timeout: 5000 })
+      await page.getByRole('button', { name: 'Zu Kosten →' }).first().click()
+      const bar = page.getByRole('region', { name: 'Laufende Anleitung' })
+      await bar.waitFor({ timeout: 5000 })
+      await settle(page)
+      checkedPages++
+      const wide = await overflow(page)
+      if (wide) add('faden', 'Breite', `Seite ${wide.scroll} px breit bei ${wide.width} px Fenster${wide.elements.length ? `: ${wide.elements.join('; ')}` : ''}`)
+      reportClipped('faden', await clippedFields(page, 'main'))
+      await runAxe('faden')
+      await page.screenshot({ path: path.join(dir, 'faden.png') }).catch(() => {})
+      for (const text of await coveredByThread(page, engine)) add('faden', 'Verdeckt', text)
+      await page.screenshot({ path: path.join(dir, 'faden-tab.png') }).catch(() => {})
+    } catch (err) {
+      add('faden', 'Gang', `Der Faden ließ sich nicht prüfen: ${err instanceof Error ? err.message.split('\n')[0] : err}`)
+    }
   }
 
   // Die Musterseite (`?muster`, #346 Schritt 12): alle Bausteine auf einer Seite, mit denselben Prüfungen wie jede Seite
@@ -919,7 +979,7 @@ async function main() {
     // Ein Tippfehler in --pages prüfte sonst keine Seite und meldete grün
     if (PAGES) {
       for (const id of PAGES) {
-        if (id !== 'muster' && !(navLabels ?? []).some((l) => slug(l) === id)) findings.push({ engine: 'alle', view: '–', theme: '–', page: id, kind: 'Aufruf', text: `--pages nennt „${id}“, die Navigation hat keine solche Seite (möglich: ${(navLabels ?? expected).map(slug).join(', ')}).` })
+        if (id !== 'muster' && id !== 'faden' && !(navLabels ?? []).some((l) => slug(l) === id)) findings.push({ engine: 'alle', view: '–', theme: '–', page: id, kind: 'Aufruf', text: `--pages nennt „${id}“, die Navigation hat keine solche Seite (möglich: ${(navLabels ?? expected).map(slug).join(', ')}).` })
       }
     }
     if (checkedPages === 0 && (PAGES === null || PAGES.length > 0)) {

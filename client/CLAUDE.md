@@ -303,6 +303,19 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   Themen des Lexikons (`topic`, Pflichtfeld; Beschriftungen in helpView.ts). Anleitung und Begriffsliste sind eigene
   Ansichten im Zustand der Seite (kein Router), Fokus auf ihre Überschrift, beim Zurück auf den Auslöser; „Zurück“ geht
   den Weg rückwärts (`trail`), auch aus dem Begriff zurück in die Anleitung, aus der man gesprungen ist.
+  Die Anleitung (PR 2): Pfad statt Seitenkopf (über ihm „← Zurück zu {Titel}“, wenn man über „Ähnliche Anleitungen“ kam),
+  `h1` ist ihr Titel, Abschnitte als `section` mit `h2` (`GUIDE_SECTIONS`), ab 42rem Inhaltsbreite die Inhaltsleiste
+  (`guide-layout`/`guide-toc` in tw.css, Container-Abfrage). Begriffe sind Knöpfe auf den Begriff (kein Popover); in der
+  Begriffsliste heißt „Zurück“ dann „← Zurück zur Anleitung“. **Faden** ([GuideThread.tsx](src/components/GuideThread.tsx)):
+  „Zu {Seite} →“ meldet `onFollow(anleitung, schritt)`, die App springt über `navigate` mit dem Faden als drittem
+  Argument und setzt den Fokus auf das `h1` der Zielseite. **Nur die Navigation** (Seitenleiste, Menüblatt, untere Leiste:
+  `navigateFromNav`), „Zurück zur Anleitung“ und „Leiste schließen“ beenden ihn; Sprünge aus dem Seiteninhalt und der
+  Wechsel von Objekt und Zeitraum behalten ihn (die Anleitung gilt fürs Vorgehen). Die Leiste steht in `main` hinter der
+  Seite, `sticky` unten, am Handy über der unteren Leiste; sie nennt den Schritt (eine Zeile, voll unter „Was ist zu
+  tun?“) und sagt „Anleitung · Schritt n von m“ als `status` an. Mitten auf der Seite liegt sie über dem Inhalt; damit
+  der Fokus nicht darunter verschwindet (WCAG 2.4.11), meldet sie ihre Höhe als `--thread-h`, und
+  `html:has(.guide-thread-sticky)` rechnet sie ins `scroll-padding-bottom` (Wächter S34, Browserlauf-Gang „faden“).
+  „Zurück zur Anleitung“ kommt als `openGuide` in die Hilfe (Fokus auf `#schritt-N`), wie `focusTerm`.
 
 ## Formulare und Meldungen
 

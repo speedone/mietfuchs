@@ -7,7 +7,7 @@
 
 import { GLOSSARY, TERM_TOPICS, type TermId, type TermTopic } from '../../shared/glossary.ts'
 import { countOf } from '../../shared/wording.ts'
-import { GUIDE_GROUPS, type GuideGroup, type GuideId } from '../../shared/guides.ts'
+import { GUIDE_GROUPS, type GuideGroup, type GuideId, type GuideStep } from '../../shared/guides.ts'
 import { filterTerms, sortedTerms, type TermEntry } from './glossaryView'
 import { allGuides, filterGuides, guideTexts, type GuideEntry } from './guideView'
 import { searchQuery, searchText } from './searchText'
@@ -142,4 +142,29 @@ export function topicCounts(): { topic: TermTopic; count: number }[] {
 
 export function termsOfTopic(entries: TermEntry[], topic: TermTopic | null): TermEntry[] {
   return topic === null ? entries : entries.filter((t) => t.topic === topic)
+}
+
+// Die Abschnitte einer Anleitung in ihrer Inhaltsleiste (#488, PR 2), in der Reihenfolge der Ansicht. „Trifft das auf
+// Sie zu?“ steht oben und braucht keinen Sprung; „Ähnliche Anleitungen“ ist kein Teil der Anleitung selbst.
+export const GUIDE_SECTIONS = [
+  { id: 'schritte', label: 'So legen Sie es an' },
+  { id: 'ergebnis', label: 'Was Mietfuchs daraus macht' },
+  { id: 'beispiel', label: 'Beispiel' },
+  { id: 'achtung', label: 'Worauf Sie achten müssen' },
+  { id: 'luecken', label: 'Was Mietfuchs (noch) nicht kann' },
+  { id: 'begriffe', label: 'Begriffe' },
+] as const
+export type GuideSection = (typeof GUIDE_SECTIONS)[number]['id']
+
+// Der nächste Schritt nach `from`, der eine Seite hat („Nächster Schritt“ in der Leiste des Fadens). Ein Schritt ohne
+// Seite liegt in der Seitenleiste und wird übersprungen; nach dem letzten gibt es keinen.
+export function nextStepWithPage(steps: readonly GuideStep[], from: number): number | null {
+  for (let i = from + 1; i < steps.length; i++) if (steps[i]?.page) return i
+  return null
+}
+
+// „Ähnliche Anleitungen“: die übrigen aus derselben Gruppe, in der Reihenfolge der Daten, höchstens `max`.
+export function relatedGuides(id: GuideId, guides: GuideEntry[] = allGuides(), max = 3): GuideEntry[] {
+  const group = guides.find((g) => g.id === id)?.group
+  return guides.filter((g) => g.group === group && g.id !== id).slice(0, max)
 }
