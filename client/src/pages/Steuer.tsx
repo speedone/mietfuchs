@@ -9,7 +9,7 @@ import { useProperty, withProperty } from '../property'
 import { effectiveLandlord, letterhead } from '../landlord'
 import PageHeader from '../components/PageHeader'
 import Table from '../components/Table'
-import { allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, operatingPowerBalanceText, paidWithoutSettlementCents, prepaymentNote, settlementBalanceCents, settlementLine, settlementSourcesText, showsSplit, stockCarryNote, surplusCentsFor, taxHints, type Basis, movedInLines, movedInText, movedOutLabels, movedOutLines, unstatedText, type ShiftLine } from '../taxView'
+import { allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, operatingPowerBalanceText, paidWithoutSettlementCents, prepaymentNote, settlementBalanceCents, settlementLine, settlementSourcesText, showsSplit, stockCarryNote, surplusCentsFor, taxHints, maintenanceLineText, withdrawalLinesText, usageChangeTouchesWithdrawal, withdrawalSuspectDated, ETW_WITHDRAWAL_TEXT, type Basis, movedInLines, movedInText, movedOutLabels, movedOutLines, unstatedText, type ShiftLine } from '../taxView'
 import { StepList } from '../components/CalcSteps'
 import Term from '../components/Term'
 import { NoticeBox, TextNotice } from '../components/Notice'
@@ -347,6 +347,19 @@ export default function Steuer({ settings }: Props) {
               </Table>
             )}
 
+            {/* #96 PR 1 (A4.1): die Zeilen des Erhaltungsaufwands, auch im Druck. Vor der Kürzung nach den Zeilen 87/88, in
+                der Reihenfolge des Vordrucks (Test in Steuer.test.tsx). */}
+            {hints.includes('maintenanceLines') && (() => {
+              const t = maintenanceLineText(data)
+              return (
+                <NoticeBox
+                  level="hint"
+                  title="Erhaltungsaufwand, einschließlich Entnahmen aus der Erhaltungsrücklage"
+                  action={<>{t.unspread}{t.unspread && t.spread ? ' ' : ''}{t.spread}</>}
+                  more="Eine Entnahme zählt im Jahr, in dem die Gemeinschaft das Geld für die Maßnahme ausgibt (BFH, Urteil vom 14.01.2025, IX R 19/24); das steht in ihrer Hausgeldabrechnung dieses Jahres."
+                />
+              )
+            })()}
             {/* #257: Auch im Druck, denn der Steuerberater braucht Quote und Vergleichsmiete; je Wohnung alle Urteile, auch
                 Prognose, Untergrenze und fehlende Vergleichsmiete (Durchsicht von PR #422, S2). */}
             {(() => {
@@ -382,7 +395,8 @@ export default function Steuer({ settings }: Props) {
                 more={<>
                   Erst dann steht fest, ob es Erhaltungsaufwand oder Herstellungskosten sind
                   (BFH, Urteil vom 14.01.2025, IX R 19/24). Die Ausgaben aus der Rücklage nennt die Hausgeldabrechnung des
-                  Jahres, in dem die Gemeinschaft sie bezahlt.
+                  Jahres, in dem die Gemeinschaft sie bezahlt; Ihren Anteil daran erfassen Sie dann als „Entnahme
+                  Erhaltungsrücklage“.
                 </>}
               />
             )}
@@ -396,6 +410,34 @@ export default function Steuer({ settings }: Props) {
                   {data.reserveSuspects.length === 1 ? 'Sie steht' : 'Sie stehen'} oben in den Werbungskosten. Abziehbar ist eine
                   Zuführung erst, wenn die Gemeinschaft das Geld ausgibt (BFH, Urteil vom 14.01.2025, IX R 19/24).
                 </>}
+              />
+            )}
+            {/* #96 PR 1 (A4.2): umgekehrt eine Entnahme unter „Nicht umlagefähig“. Die Zahl bleibt, nur die Zeile hängt daran. */}
+            {hints.includes('reserveWithdrawalSuspected') && (
+              <NoticeBox
+                level="hint"
+                title="Vielleicht eine Entnahme aus der Erhaltungsrücklage"
+                context={(data.reserveWithdrawalSuspects ?? []).map((r) => `„${r.description}“ (${fmtEuro(r.amountCents)})`).join(', ')}
+                action={<>Stellen Sie unter <em>Kosten</em> die Kostenart „Entnahme Erhaltungsrücklage“ ein; an den Beträgen ändert sich nichts, nur die Zeile der Anlage V.</>}
+                more={<>
+                  {withdrawalLinesText(year)}
+                  {withdrawalSuspectDated(data) && <> Für das Jahr zählt, wann die Gemeinschaft das Geld ausgibt, laut ihrer Hausgeldabrechnung,
+                  nicht das Ihrer eigenen Hausgeldzahlung; beim Umstellen entfällt das Zahlungsdatum, und sein Jahr bleibt als Jahr der Zahlung stehen.</>}
+                </>}
+              />
+            )}
+            {/* #96 PR 1 (A4.3, R5): Sonderumlage. Auslegung nach derselben Begründung wie bei der Rücklage; nichts wird umgestellt. */}
+            {hints.includes('specialLevy') && (
+              <NoticeBox
+                level="hint"
+                title="Sonderumlage: Ihre eigene Zahlung an die Gemeinschaft zählt nicht"
+                context={(data.specialLevySuspects ?? []).map((r) => `„${r.description}“ (${fmtEuro(r.amountCents)})`).join(', ')}
+                action={<>
+                  Fließt die Sonderumlage in die Rücklage, ist sie eine Zuführung („Zuführung Erhaltungsrücklage“). Hat die Gemeinschaft damit
+                  eine Maßnahme bezahlt, gilt Ihr Anteil laut Jahresabrechnung im Jahr der Ausgabe; erfassen Sie ihn als „Entnahme
+                  Erhaltungsrücklage“ ohne Datum. Mietfuchs stellt nichts um.
+                </>}
+                more="Mietfuchs wendet dieselbe Begründung an wie bei der Erhaltungsrücklage (BFH, Urteil vom 14.01.2025, IX R 19/24): Abziehbar ist, was die Gemeinschaft für die Maßnahme ausgibt, nicht die Zahlung an die Gemeinschaft."
               />
             )}
             {/* #268: Betriebsstrom der Heizung. Die Stromrechnung zählt genau einmal zu den Werbungskosten. */}
@@ -543,6 +585,7 @@ export default function Steuer({ settings }: Props) {
                 more={<>
                   Werbungskosten sind im Jahr der Zahlung anzusetzen (§ 11 Abs. 2 EStG). Das sind die Hausgeld-Vorschüsse dieses
                   Jahres und eine Nachzahlung aus der Abrechnung des Vorjahres, nicht die Beträge der Hausgeldabrechnung dieses Jahres.
+                  {' '}{ETW_WITHDRAWAL_TEXT}
                 </>}
               />
             )}
@@ -710,6 +753,9 @@ export default function Steuer({ settings }: Props) {
                   übrigen nach Fläche und Tagen; auch die selbstgenutzte Fläche oben ist nach Tagen gerechnet. Steht die Wohnung nach
                   Ihrer Eigennutzung leer, bevor Sie sie vermieten, zählt Mietfuchs den Leerstand als abziehbar; das gilt nur, wenn Sie
                   ernsthafte und nachhaltige Vermietungsbemühungen belegen können.
+                  {/* #96 (A4.5), Auslegung: ohne Datum der Gemeinschaft die bestmögliche Aufteilung. */}
+                  {usageChangeTouchesWithdrawal(data) && <> Bei einer Entnahme aus der Erhaltungsrücklage zählt streng genommen die Nutzung am Tag,
+                  an dem die Gemeinschaft bezahlt; ohne dieses Datum teilt Mietfuchs auch sie nach Tagen.</>}
                 </>}
                 more={<>
                   Aufwendungen für eine zunächst selbst bewohnte, danach leer stehende und noch nicht vermietete Wohnung sind nur

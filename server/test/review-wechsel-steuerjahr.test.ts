@@ -10,7 +10,7 @@ import { eq } from 'drizzle-orm'
 import type { CostItem, PeriodChangePreview, PeriodRules } from '../../shared/types.ts'
 import type { OpenedDatabase } from '../src/db/open.ts'
 import { openFreshDatabase } from '../testing/freshDatabase.ts'
-import { createEntity } from '../src/db/repository.ts'
+import { createEntity, updateEntity } from '../src/db/repository.ts'
 import { readStock } from '../src/db/read.ts'
 import { costItems, properties } from '../src/db/schema.ts'
 import { applyPeriodChange, previewPeriodChange } from '../src/db/periodChange.ts'
@@ -132,4 +132,58 @@ test('#478: Eine Position ohne Datum und ohne Jahr nennt die Vorschau auf jedem 
     assert.match(gs.taxShift ?? '', /120,00.€ aus dem Jahr der Zahlung 2024 nach 2025/)
     assert.deepEqual(v.keptTaxYears, [])
   })
+})
+
+// #96 PR 1 (A6): Die Entnahme aus der Erhaltungsrücklage hat nie ein Datum; ihr Jahr hängt über den Wechsel ganz an der
+// Regel aus #478, dass ein angegebenes Jahr bleibt. Die Vorschau nennt es mit der Beschriftung des Formulars, und wo sie
+// nach dem Jahr fragt, sagt sie es ebenso.
+test('#96: die Entnahme behält beim Wechsel das Jahr, in dem die Gemeinschaft bezahlt hat; die Vorschau nennt es so', async () => {
+  await withMay(async (opened) => {
+    await opened.write(async (db) => {
+      await createEntity(db, 'costItems', 'dach', { propertyId: P, period: '2025-05', category: 'Entnahme Erhaltungsrücklage', description: 'Dachsanierung', amountCents: 124000, key: 'area', taxYear: 2025 })
+      await createEntity(db, 'costItems', 'fassade', { propertyId: P, period: '2024-05', category: 'Entnahme Erhaltungsrücklage', description: 'Fassade', amountCents: 50000, key: 'area', taxYear: 2024 })
+    })
+    const vorher = await byYear(opened)
+    const kalender = { startMonth: 5, changes: ['2026-01'] }
+    const v = await preview(opened, kalender)
+    const dach = v.keptTaxYears.find((k) => k.costItemId === 'dach' && k.period === '2026-01') ?? assert.fail('Dach fehlt')
+    assert.equal(dach.text, '„Dachsanierung“ behält das Jahr, in dem die Gemeinschaft bezahlt hat (2025); im Zeitraum 2026 steht sie für die Steuer deshalb als verschoben.')
+    await changeWithDefaults(opened, kalender)
+    assert.deepEqual(await byYear(opened), vorher)
+  })
+})
+
+test('#96: fragt die Vorschau nach dem Jahr einer Entnahme, trägt die Frage deren Beschriftung', async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mf-review-'))
+  const opened = await openFreshDatabase(dataDir)
+  try {
+    await opened.write(async (db) => {
+      await createEntity(db, 'units', 'eg', { propertyId: P, name: 'EG', areaM2: 80, participates: true })
+      await createEntity(db, 'costItems', 'dach', { propertyId: P, period: '2025-01', category: 'Entnahme Erhaltungsrücklage', description: 'Dachsanierung', amountCents: 124000, key: 'area' })
+      await createEntity(db, 'costItems', 'gs', { propertyId: P, period: '2025-01', category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 60000, key: 'area' })
+    })
+    const v = await preview(opened, { startMonth: 5, changes: [] })
+    const asked = (id: string) => v.taxYears.filter((t) => t.costItemId === id)
+    assert.ok(asked('dach').length > 0, 'nach dem Jahr der Entnahme gefragt')
+    for (const t of asked('dach')) assert.equal(t.reserveWithdrawal, true)
+    for (const t of asked('gs')) assert.equal(t.reserveWithdrawal, undefined)
+  } finally { opened.close(); fs.rmSync(dataDir, { recursive: true, force: true }) }
+})
+
+// Durchsicht #96 PR 1, K2: Eine Altposition (Zuführung mit Datum aus der Zeit vor #96) lässt sich teilweise ändern, ohne
+// das Datum anzufassen; erst ein neues oder geändertes Datum ergibt die Ablehnung.
+test('#96: Zuführung mit altem Datum, Teiländerung ohne Datum geht, ein geändertes Datum nicht', async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mf-review-'))
+  const opened = await openFreshDatabase(dataDir)
+  try {
+    await opened.write(async (db) => {
+      await createEntity(db, 'units', 'eg', { propertyId: P, name: 'EG', areaM2: 80, participates: true })
+      await createEntity(db, 'costItems', 'rl', { propertyId: P, period: '2025-01', category: 'Zuführung Erhaltungsrücklage', description: 'Rücklage', amountCents: 90000, key: 'area' })
+      await db.update(costItems).set({ paidOn: '2025-03-01' }).where(eq(costItems.id, 'rl'))
+    })
+    await opened.write((db) => updateEntity(db, 'costItems', 'rl', { description: 'Rücklage 2025' }))
+    const rl = (await all(opened)).find((c) => c.id === 'rl') ?? assert.fail('Rücklage fehlt')
+    assert.deepEqual([rl.description, rl.paidOn], ['Rücklage 2025', '2025-03-01'])
+    await assert.rejects(opened.write((db) => updateEntity(db, 'costItems', 'rl', { paidOn: '2025-04-01' })), /kein Zahlungsdatum/)
+  } finally { opened.close(); fs.rmSync(dataDir, { recursive: true, force: true }) }
 })

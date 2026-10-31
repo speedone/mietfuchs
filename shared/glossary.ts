@@ -136,7 +136,7 @@ export const GLOSSARY = {
     short: 'Kosten, die der Vermieter selbst trägt, vor allem Verwaltung, Reparaturen und Instandhaltung; Mietfuchs rechnet sie ganz dem Vermieter zu.',
     example: 'Reparatur der Heizung 800 € und Kontoführung 60 €: beide 860 € trägt der Vermieter, auf der Abrechnung erscheinen sie nicht beim Mieter.',
     norm: '§ 1 Abs. 2 BetrKV',
-    needed: 'Nur wenn Sie solche Rechnungen trotzdem erfassen, etwa für die Steuer (Anlage V). Die Zuführung zur Erhaltungsrücklage einer Eigentumswohnung erfassen Sie bitte nicht hier, sondern als Kostenart „Zuführung Erhaltungsrücklage“: Sie ist erst abziehbar, wenn die Gemeinschaft das Geld ausgibt.',
+    needed: 'Nur wenn Sie solche Rechnungen trotzdem erfassen, etwa für die Steuer (Anlage V). Die Zuführung zur Erhaltungsrücklage einer Eigentumswohnung erfassen Sie bitte nicht hier, sondern als Kostenart „Zuführung Erhaltungsrücklage“: Sie ist erst abziehbar, wenn die Gemeinschaft das Geld ausgibt. Ihren Anteil an einer Maßnahme, die die Gemeinschaft aus der Rücklage bezahlt hat, erfassen Sie als „Entnahme Erhaltungsrücklage“ (siehe Erhaltungsrücklage).',
   },
   allocationKey: {
     title: 'Umlageschlüssel',
@@ -684,7 +684,7 @@ export const GLOSSARY = {
     short: 'Die Jahresabrechnung der Eigentümergemeinschaft; aus ihr übernehmen Sie für die Nebenkostenabrechnung nur die umlagefähigen Kosten.',
     example: 'Hausgeld 3.600 € im Jahr, davon 1.900 € umlagefähig (Versicherung, Müll, Allgemeinstrom, Hausmeister). Verwaltergebühr 360 € und Reparaturen 440 € tragen Sie selbst und setzen sie als Werbungskosten an. Die Zuführung zur Rücklage von 900 € tragen Sie ebenfalls selbst, abziehbar ist sie aber erst, wenn die Gemeinschaft sie ausgibt (siehe Erhaltungsrücklage). Die Grundsteuer steht nicht darin, sie kommt mit eigenem Bescheid an Sie.',
     norm: '§ 28 WEG, § 556a Abs. 3 BGB',
-    needed: 'Nur bei einer vermieteten Eigentumswohnung.',
+    needed: 'Nur bei einer vermieteten Eigentumswohnung. Weist sie Entnahmen aus der Erhaltungsrücklage aus, erfassen Sie Ihren Anteil daran als „Entnahme Erhaltungsrücklage“ (siehe Erhaltungsrücklage).',
   },
   homeownersFee: {
     title: 'Hausgeld (Vorschuss)',
@@ -698,7 +698,7 @@ export const GLOSSARY = {
     short: 'Ein Teil des Hausgelds einer Eigentumswohnung, den die Gemeinschaft für künftige Reparaturen ansammelt; als Werbungskosten abziehbar ist er erst, wenn und soweit die Gemeinschaft das Geld für Erhaltungsmaßnahmen ausgibt, nicht schon bei der Zahlung.',
     example: 'Hausgeld 3.600 € im Jahr, davon 900 € Zuführung zur Erhaltungsrücklage: Sofort abziehbar sind höchstens 3.600 − 900 = 2.700 €. Bezahlt die Gemeinschaft zwei Jahre später aus der Rücklage eine Dachreparatur, ist Ihr Anteil daran erst in diesem Jahr Werbungskosten.',
     norm: '§ 19 Abs. 2 Nr. 4 WEG; § 9 Abs. 1 EStG; BFH, Urteil vom 14.01.2025, IX R 19/24',
-    needed: 'Nur bei einer vermieteten Eigentumswohnung. Erfassen Sie die Zuführung als Kostenart „Zuführung Erhaltungsrücklage“; Mietfuchs legt sie nicht auf den Mieter um und weist sie in der Steuerübersicht getrennt von den Werbungskosten aus.',
+    needed: 'Nur bei einer vermieteten Eigentumswohnung. Erfassen Sie die Zuführung als Kostenart „Zuführung Erhaltungsrücklage“; Mietfuchs legt sie nicht auf den Mieter um und weist sie in der Steuerübersicht getrennt von den Werbungskosten aus. Bezahlt die Gemeinschaft eine Erhaltungsmaßnahme aus der Rücklage, erfassen Sie Ihren Anteil laut Hausgeldabrechnung als „Entnahme Erhaltungsrücklage“, ohne Zahlungsdatum: Er zählt im Jahr, in dem die Gemeinschaft das Geld ausgibt, nicht wenn Sie Ihr Hausgeld zahlen, und gehört in der Anlage V zu den Erhaltungsaufwendungen (2024 und 2025 Zeile 55, für verhältnismäßig aufgeteilten Aufwand Zeile 56). Das gilt auch für eine Rücklage, die Sie beim Kauf miterworben haben. Geht die Maßnahme über die Erhaltung hinaus, etwa ein neuer Aufzug oder ein Anbau, sind es Herstellungskosten; sie wirken über die Abschreibung, die Mietfuchs nicht rechnet. Eine Sonderumlage zählt nach derselben Begründung erst, wenn die Gemeinschaft sie für die Maßnahme ausgibt.',
   },
   labor35a: {
     title: 'Lohnanteil nach § 35a EStG',

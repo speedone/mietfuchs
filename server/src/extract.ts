@@ -23,7 +23,7 @@ export const EXTRACT_CATEGORIES = [
   'Gebäudereinigung', 'Gartenpflege', 'Beleuchtung/Allgemeinstrom', 'Schornsteinfeger',
   'Sach- und Haftpflichtversicherung', 'Hauswart', 'Aufzug', 'Kabel/Antenne',
   'Niederschlagswasser', 'Heizung und Warmwasser', 'Sonstige Betriebskosten', 'Nicht umlagefähig',
-  'Zuführung Erhaltungsrücklage',
+  'Zuführung Erhaltungsrücklage', 'Entnahme Erhaltungsrücklage',
 ]
 
 const photoOf = (filePath: string, mimetype: string): ProviderImage => ({ mimeType: mimetype, data: fs.readFileSync(filePath).toString('base64') })
@@ -228,7 +228,7 @@ Wichtige Regeln:
   Nur wenn wirklich nichts passt → "Sonstige Betriebskosten".
 - Kosten für Instandhaltung, Reparaturen oder Verwaltung sind "Nicht umlagefähig".
   Die Zuführung zur Erhaltungs- oder Instandhaltungsrücklage ist "Zuführung Erhaltungsrücklage",
-  eine Entnahme aus der Rücklage (daraus bezahlte Erhaltung) ist "Nicht umlagefähig".
+  eine Entnahme aus der Rücklage (daraus bezahlte Erhaltung) ist "Entnahme Erhaltungsrücklage".
 - Beträge in Euro mit Dezimalpunkt, so wie sie auf der Rechnung stehen. Rechne nichts um.
 - Stehen die Positionsbeträge ohne Umsatzsteuer da und taucht die Steuer erst in der Summe auf
   (häufig bei Handwerkern und Schornsteinfegern), setze positionsAreNet auf true. Die Positionen
@@ -259,7 +259,8 @@ const CATEGORY_GUIDE = `- "Grundsteuer": Grundsteuer A/B (Position im Grundbesit
 - "Heizung und Warmwasser": Brennstoff (Heizöl, Gas, Pellets), Fernwärme, Wärmecontracting, Wartung der Heizung, Betriebsstrom der Heizung, Messdienst (Techem, ista, Brunata, Minol), Warmwasser. Reparaturen an der Heizung sind "Nicht umlagefähig"
 - "Sonstige Betriebskosten": andere LAUFENDE Betriebskosten (z. B. Dachrinnenreinigung, Wartung Rauchmelder)
 - "Nicht umlagefähig": Reparaturen, Instandhaltung, Verwaltung, Mahn-/Bankgebühren, einmalige Anschaffungen
-- "Zuführung Erhaltungsrücklage": Zuführung zur Erhaltungs- oder Instandhaltungsrücklage in der Hausgeldabrechnung einer Eigentumswohnung. Eine Entnahme aus der Rücklage, also eine daraus bezahlte Erhaltungsmaßnahme, ist "Nicht umlagefähig"`
+- "Zuführung Erhaltungsrücklage": Zuführung zur Erhaltungs- oder Instandhaltungsrücklage in der Hausgeldabrechnung einer Eigentumswohnung. Eine Entnahme aus der Rücklage, also eine daraus bezahlte Erhaltungsmaßnahme, ist "Entnahme Erhaltungsrücklage"
+- "Entnahme Erhaltungsrücklage": Entnahme aus der Erhaltungs- oder Instandhaltungsrücklage in der Hausgeldabrechnung einer Eigentumswohnung, also eine Erhaltungsmaßnahme, die die Gemeinschaft aus der Rücklage bezahlt hat`
 
 async function classifyPositions(settings: AiCapableSettings, vendor: string | undefined, positions: RawPosition[], options: AskOptions): Promise<RawPosition[]> {
   const schema = {

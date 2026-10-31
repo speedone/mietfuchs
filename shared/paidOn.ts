@@ -13,7 +13,7 @@
 //   Überweisung der Eingang des gedeckten Auftrags bei der Bank (H 11 EStH 2024 „Überweisung“), bei der Lastschrift der
 //   Einzug (BFH VIII B 58/15). Deshalb belegt die Belegbuchung das Feld nie vor.
 import type { CostItem } from './types.ts'
-import { isNotAllocable } from './categories.ts'
+import { isNotAllocable, isReserveCategory } from './categories.ts'
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/
 
@@ -35,8 +35,12 @@ export function statedOutflowYear(item: { paidOn?: string | null; taxYear?: numb
 // Wo es kein Zahlungsdatum gibt (R-6, Abzug #267): Hausgeld laut Gemeinschaftsabrechnung trägt den Anteil eines Jahres
 // laut Abrechnung, keine einzelne Zahlung; der Abzug beim Betriebsstrom fließt mit seiner Stromrechnung ab. Bei einer
 // nicht umlagefähigen Kostenart zählt der Schlüssel nicht (`costItemBody` speichert einen neutralen), ein
-// stehengebliebenes `external` also auch nicht (Durchsicht K1).
+// stehengebliebenes `external` also auch nicht (Durchsicht K1). An Zuführung und Entnahme der Erhaltungsrücklage
+// (#143, #96 A3) auch nicht: Maßgeblich ist, wann die Gemeinschaft das Geld ausgibt (BFH, Urteil vom 14.01.2025,
+// IX R 19/24), und im Feld stünde erfahrungsgemäß die eigene Hausgeldzahlung. Das Jahr genügt, die Hausgeldabrechnung
+// ist eine Jahresrechnung. Server (Ablehnung mit 400) und Formular (kein Feld) fragen beide hier.
 export const allowsPaidOn = (item: Pick<CostItem, 'key'> & { category?: string; operatingPower?: CostItem['operatingPower'] | null }): boolean =>
+  (item.category === undefined || !isReserveCategory(item.category)) &&
   (item.key !== 'external' || (item.category !== undefined && isNotAllocable(item.category))) && item.operatingPower !== 'deduction'
 
 // Die übliche Spanne (R-4): vom Jahr vor dem Beginn (Vorauszahlung im Dezember) bis drei Jahre nach dem Ende (späte

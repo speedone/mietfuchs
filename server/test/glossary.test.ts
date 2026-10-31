@@ -44,6 +44,23 @@ test('Erhaltungsrücklage: eigener Begriff, und die Hilfetexte führen nicht meh
   assert.match(GLOSSARY.notAllocable.needed, /Zuführung Erhaltungsrücklage/)
 })
 
+// #96 PR 1 (A2): Die Entnahme hat eine eigene Kostenart; der Begriff erklärt Jahr, Zeile, Grenze zu den
+// Herstellungskosten, miterworbene Rücklage und Sonderumlage, und die Nachbarbegriffe verweisen darauf.
+test('Erhaltungsrücklage: die Entnahme mit Jahr der Ausgabe, Zeilen 55/56, Herstellungskosten, miterworbener Rücklage und Sonderumlage (#96)', () => {
+  const t = GLOSSARY.reserveFund
+  const all = `${t.short} ${t.example} ${t.needed}`
+  assert.match(t.needed, /„Entnahme Erhaltungsrücklage“/)
+  assert.match(all, /Jahr, in dem die Gemeinschaft/)
+  assert.match(all, /Zeile 55/)
+  // Durchsicht K1: Zeile 56 allgemein für verhältnismäßig aufgeteilten Aufwand, nicht als Regel der Eigennutzung.
+  assert.match(all, /verhältnismäßig aufgeteilten Aufwand Zeile 56/)
+  assert.match(all, /Abschreibung/)
+  assert.match(all, /miterworben/)
+  assert.match(all, /Sonderumlage/)
+  assert.match(GLOSSARY.notAllocable.needed, /„Entnahme Erhaltungsrücklage“/)
+  assert.match(GLOSSARY.homeownersStatement.needed, /„Entnahme Erhaltungsrücklage“/)
+})
+
 test('Gemeinschaftsabrechnung mit mehreren eigenen Wohnungen: das Lexikon empfiehlt für Heizkosten Einzelbeträge (#140, Durchsicht)', () => {
   // Laut Gemeinschaftsabrechnung verteilt Mietfuchs innerhalb der eigenen Wohnungen nach MEA oder
   // Fläche, nicht nach deren Verbrauch.

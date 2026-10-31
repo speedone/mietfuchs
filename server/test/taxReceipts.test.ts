@@ -16,6 +16,7 @@ const names = new Map([
   ['2_wasser.pdf', 'Wasser.pdf'],
   ['3_verwaltung.pdf', 'Verwaltung: Hausverwaltung/2025.pdf'],
   ['4_ruecklage.pdf', 'Rücklage.pdf'],
+  ['5_dach.pdf', 'Dach.pdf'],
 ])
 
 test('Steuer-Belege: Ordner je Gruppe der Anlage V in deren Reihenfolge, nicht umlagefähige eingeschlossen', () => {
@@ -25,6 +26,8 @@ test('Steuer-Belege: Ordner je Gruppe der Anlage V in deren Reihenfolge, nicht u
     item('gs', { invoiceFile: '1_gs.pdf' }),
     item('v', { category: 'Nicht umlagefähig', invoiceFile: '3_verwaltung.pdf' }),
     item('r', { category: 'Zuführung Erhaltungsrücklage', invoiceFile: '4_ruecklage.pdf' }),
+    // #96: Die Entnahme aus der Rücklage ist Erhaltungsaufwand und hat ihren Ordner vor „Verwaltung & Instandhaltung“.
+    item('e', { category: 'Entnahme Erhaltungsrücklage', invoiceFile: '5_dach.pdf' }),
     item('ohne', { category: 'Gartenpflege', amountCents: 5000 }),
     item('weg', { category: 'Müllabfuhr', invoiceFile: '9_fehlt.pdf' }),
   ], names)
@@ -32,13 +35,14 @@ test('Steuer-Belege: Ordner je Gruppe der Anlage V in deren Reihenfolge, nicht u
     ['1 Grundsteuer & öffentliche Abgaben/Grundsteuer - Bescheid Grundsteuer.pdf', '1_gs.pdf'],
     // Ein Beleg für zwei Positionen derselben Gruppe kommt einmal hinein.
     ['2 Laufende Betriebskosten/Wasser-Abwasser - Wasser.pdf', '2_wasser.pdf'],
-    ['4 Verwaltung & Instandhaltung/Nicht umlagefähig - Verwaltung- Hausverwaltung-2025.pdf', '3_verwaltung.pdf'],
+    ['4 Erhaltungsaufwand/Entnahme Erhaltungsrücklage - Dach.pdf', '5_dach.pdf'],
+    ['5 Verwaltung & Instandhaltung/Nicht umlagefähig - Verwaltung- Hausverwaltung-2025.pdf', '3_verwaltung.pdf'],
     // Die Zuführung zur Rücklage ist keine Werbungskosten dieses Jahres und steht für sich.
-    ['6 Erhaltungsrücklage (gesondert)/Zuführung Erhaltungsrücklage - Rücklage.pdf', '4_ruecklage.pdf'],
+    ['7 Erhaltungsrücklage (gesondert)/Zuführung Erhaltungsrücklage - Rücklage.pdf', '4_ruecklage.pdf'],
   ])
   const zeilen = plan.overviewCsv.replace(/^﻿/, '').trim().split('\r\n')
   assert.equal(zeilen[0], 'Gruppe;Kostenart;Beschreibung;Rechnungssteller;Betrag (EUR);privat (EUR);abziehbar (EUR);Lohnanteil § 35a (EUR);Beleg;Jahr der Zahlung')
-  assert.equal(zeilen.length, 8)
+  assert.equal(zeilen.length, 9)
   assert.ok(zeilen.includes('Laufende Betriebskosten;Gartenpflege;Position ohne;;50,00;;;;kein Beleg;'))
   assert.ok(zeilen.includes('Laufende Betriebskosten;Müllabfuhr;Position weg;;100,00;;;;Datei fehlt;'))
   assert.ok(zeilen.includes('Laufende Betriebskosten;Wasser/Abwasser;Abwasser;;100,00;;;;2 Laufende Betriebskosten/Wasser-Abwasser - Wasser.pdf;'))

@@ -4,7 +4,7 @@
 import type { BillingPeriod, CostItem, CostKey, ExternalMeasure, HeatingEnergy, HeatingPart, HeatingTarget, HotWater, Meter, MeterType, PeriodKey, SplitPreviewPart, Tenancy, Unit } from './types'
 import { CATEGORIES, KEY_LABELS, defaultKeyFor, isNotAllocable } from './types'
 import { PARTICIPANT_KEYS as SHARED_PARTICIPANT_KEYS, allocationOf, comparablePrevious, previousAllocation, sameAllocation, type Allocation } from '../../shared/allocation.ts'
-import { fmtEuro, parseEuro } from './api'
+import { fmtDate, fmtEuro, parseEuro } from './api'
 import { changeLabel } from './periodForm'
 import { deductionReported, GENERAL_POWER_CATEGORY, OPERATING_POWER_INCLUDED_YES, OPERATING_POWER_KEPT, OPERATING_POWER_REPORTED, POWER_GENERATED } from '../../shared/operatingPower.ts'
 import { sameCostCandidates, type DuplicateItem } from '../../shared/duplicates.ts'
@@ -20,7 +20,8 @@ import { partShare } from '../../shared/splitPart.ts'
 // Seit der Belegbuchung (#170) in shared/, weil der Server dieselben Prüfungen und Vorschläge braucht.
 export { amountProblem, showsTaxUnitField, type BuildResult } from '../../shared/costItem.ts'
 import { amountProblem } from '../../shared/costItem.ts'
-import { allowsPaidOn, paidOnQuestions, paidOnSpan, statedOutflowYear, taxYearQuestions, tenDayWindow, type YearSpan } from '../../shared/paidOn.ts'
+import { allowsPaidOn, isPaidOnDate, paidOnQuestions, paidOnSpan, paidOnYear, statedOutflowYear, taxYearQuestions, tenDayWindow, type YearSpan } from '../../shared/paidOn.ts'
+import { RESERVE_WITHDRAWAL_CATEGORY } from '../../shared/categories.ts'
 import type { Problem } from './formProblems'
 import { allowsContractAnswer, contractTenancies, openWhy } from './contractAgreement'
 export { aiPositionDefaults, aiPositionPreselect, lastExternalBasis, type AiPositionKey, type KeyContext } from '../../shared/assessment.ts'
@@ -771,26 +772,54 @@ export function splitDecision(parts: readonly SplitPreviewPart[], taxYear: strin
 // Das Jahr der Zahlung zeigt das Formular, wenn der Zeitraum über zwei Kalenderjahre reicht oder
 // ein Teil einer aufgeteilten Rechnung dorthin gehört (Entwurf 3.10, 11.4), und seit #478 (E4), wenn die gespeicherte
 // Position ein anderes Jahr als das Kalenderjahr ihres Zeitraums trägt (etwa nach einem Wechsel des Zeitraums): Sonst
-// stünde ein Jahr, das für die Steuer gilt, unsichtbar in der Position.
-export const showsTaxYear = (period: Pick<BillingPeriod, 'from' | 'to'>, needsTaxYear: boolean, stored: number | null = null): boolean =>
-  needsTaxYear || spansTwoYears(period) || (stored !== null && stored !== Number(period.from.slice(0, 4)))
+// stünde ein Jahr, das für die Steuer gilt, unsichtbar in der Position. Bei der Entnahme aus der Erhaltungsrücklage (#96,
+// A1) immer: Ein Datum gibt es dort nicht, das Jahr der Ausgabe durch die Gemeinschaft ist die einzige Angabe. Und wenn
+// im Formular ein anderes Jahr als das Kalenderjahr steht (`current`, Durchsicht #96 M1), etwa nach dem Zurückstellen von
+// der Entnahme: Gespeichert wird, was im Formular steht, also muss es zu sehen sein.
+export const showsTaxYear = (period: Pick<BillingPeriod, 'from' | 'to'>, needsTaxYear: boolean, stored: number | null = null, category?: string, current = ''): boolean => {
+  const startYear = Number(period.from.slice(0, 4))
+  return needsTaxYear || spansTwoYears(period) || (stored !== null && stored !== startYear) || category === RESERVE_WITHDRAWAL_CATEGORY ||
+    (current !== '' && Number(current) !== startYear)
+}
 
 // Die Jahre der üblichen Spanne (`paidOnSpan`, Beginn − 1 bis Ende + 3, dieselbe wie beim Datum und am Server, #478 E2),
 // dazu ein gespeichertes Jahr außerhalb: **Der angezeigte Wert entspricht immer dem gespeicherten**; stünde er nicht in
-// den Optionen, zeigte der Browser den ersten Eintrag und speicherte ihn (CLAUDE.md, Tests Ebene 3).
-export function taxYearOptions(span: YearSpan, stored: number | null = null): number[] {
+// den Optionen, zeigte der Browser den ersten Eintrag und speicherte ihn (CLAUDE.md, Tests Ebene 3). Ebenso das Jahr im
+// Formular (`current`, Durchsicht #96 S1), etwa ein von einem Datum übertragenes.
+export function taxYearOptions(span: YearSpan, stored: number | null = null, current: number | null = null): number[] {
   const s = paidOnSpan(span)
   const years = Array.from({ length: s.to - s.from + 1 }, (_, i) => s.from + i)
-  return stored === null || years.includes(stored) ? years : [...years, stored].sort((a, b) => a - b)
+  const extra = [stored, current].filter((y): y is number => y !== null && Number.isInteger(y) && !years.includes(y))
+  return [...years, ...new Set(extra)].sort((a, b) => a - b)
 }
 
 // ---------- Bezahlt am (für die Steuer, #255 PR 3) ----------
 
 // Das Feld zeigt das Formular überall außer beim Abzug für Betriebsstrom (er fließt mit seiner Stromrechnung ab, #267),
-// bei „laut Gemeinschaftsabrechnung“ (R-6, dort steht ein Hinweis) und bei der Zuführung zur Erhaltungsrücklage, die
-// erst bei Verwendung durch die Gemeinschaft zählt (BFH IX R 19/24). Dieselbe Regel wie der Server (`allowsPaidOn`).
+// bei „laut Gemeinschaftsabrechnung“ (R-6, dort steht ein Hinweis) und bei Zuführung und Entnahme der
+// Erhaltungsrücklage, die erst bei Verwendung durch die Gemeinschaft zählen (BFH IX R 19/24; #143, #96). Dieselbe Regel
+// wie der Server (`allowsPaidOn`, seit #96 mit beiden Kostenarten der Rücklage).
 export const showsPaidOn = (form: Pick<ItemForm, 'key' | 'operatingPower' | 'category'>): boolean =>
-  allowsPaidOn({ key: form.key, category: form.category, operatingPower: form.operatingPower === '' ? undefined : form.operatingPower }) && form.category !== 'Zuführung Erhaltungsrücklage'
+  allowsPaidOn({ key: form.key, category: form.category, operatingPower: form.operatingPower === '' ? undefined : form.operatingPower })
+
+// Umstellen auf „Entnahme Erhaltungsrücklage“ (#96, A3, Durchsicht R-B): Dort gibt es kein Datum, und `costItemBody`
+// leert es (`allowsPaidOn`). Damit die Position nicht still ins Jahr der Abrechnung wandert, geht das Jahr des Datums
+// **hier im Formularzustand** in das Jahr der Zahlung, also bevor `costItemBody` das Datum leert: wenn es vom Jahr des
+// Zeitraums abweicht, und über zwei Kalenderjahre immer (dort ist das Jahr Pflicht). Sonst entfällt das Datum ohne Folge.
+// Das Datum bleibt im Formular stehen, damit es beim Zurückstellen wieder da ist; gespeichert wird es nicht.
+// `before` ist der Stand vor dem Wechsel, `after` der von `withCategory`.
+export function keepPaidOnYear(before: ItemForm, after: ItemForm, period: Pick<BillingPeriod, 'from' | 'to'>): ItemForm {
+  if (after.category !== RESERVE_WITHDRAWAL_CATEGORY || before.category === after.category || !showsPaidOn(before) || !isPaidOnDate(after.paidOn)) return after
+  const y = paidOnYear(after.paidOn)
+  return { ...after, taxYear: y !== Number(period.from.slice(0, 4)) || spansTwoYears(period) ? String(y) : '' }
+}
+
+// Die sichtbare Zeile dazu: Das Datum entfällt, die Position bleibt im Jahr, das jetzt gilt.
+export function droppedPaidOnText(form: Pick<ItemForm, 'category' | 'paidOn' | 'taxYear'>, period: Pick<BillingPeriod, 'from'>): string | null {
+  if (form.category !== RESERVE_WITHDRAWAL_CATEGORY || !isPaidOnDate(form.paidOn)) return null
+  const year = form.taxYear !== '' ? form.taxYear : period.from.slice(0, 4)
+  return `Das Zahlungsdatum ${fmtDate(form.paidOn)} entfällt, die Position bleibt für die Steuer im Jahr ${year}.`
+}
 
 // Was ein Datum für die Steuer ändert, als Sätze für die Rückfrage vor dem Speichern (R-2, R-4); leer heißt nichts
 // zu bestätigen. Dieselben Sätze, mit denen der Server ohne Bestätigung ablehnt (shared/paidOn.ts).

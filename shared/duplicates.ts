@@ -33,9 +33,10 @@ export type CostQuery = {
 // Kostenarten, unter denen ganz verschiedene Rechnungen stehen. Dort zählt eine Position nur
 // mit ähnlicher Beschreibung oder vom selben Rechnungssteller: Die Wartung der Hebeanlage und die
 // Reinigung der Dachrinne sind beide „Sonstige Betriebskosten“ und doch zwei Rechnungen; ebenso
-// Verwaltergebühr und Heizungsreparatur unter „Nicht umlagefähig“. Bei jeder anderen Kostenart
-// ist eine zweite Position im selben Jahr selten gewollt und deshalb immer eine Rückfrage wert.
-export const LOOSE_CATEGORIES: readonly string[] = [...BROAD_CATEGORIES, 'Nicht umlagefähig']
+// Verwaltergebühr und Heizungsreparatur unter „Nicht umlagefähig“, Dach und Fassade unter „Entnahme
+// Erhaltungsrücklage“ (#96). Bei jeder anderen Kostenart ist eine zweite Position im selben Jahr
+// selten gewollt und deshalb immer eine Rückfrage wert.
+export const LOOSE_CATEGORIES: readonly string[] = [...BROAD_CATEGORIES, 'Nicht umlagefähig', 'Entnahme Erhaltungsrücklage']
 
 // Klein geschrieben, Jahreszahlen und Satzzeichen entfernt: „Grundsteuer 2025“ und „Grundsteuer
 // 2026“ sind dieselbe Beschreibung, so wie die Übernahme aus dem Vorjahr die Jahreszahl ersetzt.

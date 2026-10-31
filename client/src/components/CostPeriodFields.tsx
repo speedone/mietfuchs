@@ -2,6 +2,7 @@ import { HEATING_PART_OPTIONS, paidOnTenDayHint, showsPaidOn, type ItemForm } fr
 import Term from './Term'
 import { isNotAllocable } from '../types'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
+import { RESERVE_WITHDRAWAL_CATEGORY } from '../../../shared/categories.ts'
 
 // Leistungszeitraum, Jahr der Zahlung und „Brennstoff/Energie“ einer Kostenposition (#208).
 // Steht unter „Weitere Angaben“, denn wer im Kalenderjahr abrechnet und Rechnungen für das
@@ -12,7 +13,9 @@ import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 // Formular zeigt es hier und fragt vor dem Speichern nach (#255 PR 3, R-2).
 // `emptyLabel` (#478, E4): der Leerwert der Auswahl; im Kalenderzeitraum „wie Abrechnungsjahr (2025)“, denn dort ist leer
 // eine gültige Angabe, sonst „– bitte wählen –“.
-export default function CostPeriodFields({ form, onChange, showTaxYear, years, emptyLabel = '– bitte wählen –', billTaxYear = null, paidOnChanges = [] }: {
+// `droppedPaidOn` (#96, A3): bei der Entnahme aus der Erhaltungsrücklage der Satz, dass ein eingetragenes Datum entfällt
+// und in welchem Jahr die Position bleibt (`droppedPaidOnText` in costForm.ts).
+export default function CostPeriodFields({ form, onChange, showTaxYear, years, emptyLabel = '– bitte wählen –', billTaxYear = null, paidOnChanges = [], droppedPaidOn = null }: {
   form: ItemForm
   onChange: (next: ItemForm) => void
   showTaxYear: boolean
@@ -20,8 +23,11 @@ export default function CostPeriodFields({ form, onChange, showTaxYear, years, e
   emptyLabel?: string
   billTaxYear?: number | null
   paidOnChanges?: string[]
+  droppedPaidOn?: string | null
 }) {
   const deduction = form.operatingPower === 'deduction'
+  // #96 (A1, Durchsicht R-G): Bei der Entnahme zählt das Jahr, in dem die Gemeinschaft bezahlt, nicht die eigene Zahlung.
+  const withdrawal = form.category === RESERVE_WITHDRAWAL_CATEGORY
   return (
     <>
       <div className="row">
@@ -58,7 +64,23 @@ export default function CostPeriodFields({ form, onChange, showTaxYear, years, e
           wird nicht eigens bezahlt; für die Steuer zählt er deshalb im Jahr, in dem Sie die Stromrechnung bezahlt haben.
         </p>
       )}
-      {showTaxYear && !deduction && (
+      {showTaxYear && !deduction && withdrawal && (
+        <label className="field">
+          <span>Jahr, in dem die Gemeinschaft bezahlt hat (<Term id="reserveFund">Steuer</Term>)</span>
+          <select value={form.taxYear} onChange={(e) => onChange({ ...form, taxYear: e.target.value })}>
+            <option value="">{emptyLabel}</option>
+            {years.map((y) => <option key={y} value={String(y)}>{y}</option>)}
+          </select>
+          <small className="muted">Steht in der Hausgeldabrechnung dieses Jahres (Entnahmen aus der Erhaltungsrücklage). Ohne Angabe gilt das Jahr der Abrechnung.</small>
+          <small className="muted">
+            Maßgeblich ist, wann die Gemeinschaft die Maßnahme aus der Rücklage bezahlt, nicht wann Sie Ihr Hausgeld gezahlt haben (BFH,
+            Urteil vom 14.01.2025, IX R 19/24); ein Zahlungsdatum gibt es deshalb nicht. Eine Maßnahme, die über die Erhaltung hinausgeht, etwa
+            ein neuer Aufzug oder ein Anbau, erfassen Sie bitte nicht als Entnahme: Sie wirkt über die Abschreibung, die Mietfuchs nicht rechnet.
+          </small>
+          {droppedPaidOn !== null && <small className="muted" role="status">{droppedPaidOn}</small>}
+        </label>
+      )}
+      {showTaxYear && !deduction && !withdrawal && (
         <label className="field">
           Jahr der Zahlung (Steuer)
           <select value={form.taxYear} onChange={(e) => onChange({ ...form, taxYear: e.target.value })}>

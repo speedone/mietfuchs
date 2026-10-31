@@ -70,3 +70,32 @@ test('Route: Jahr der Zahlung im Kalenderzeitraum, außerhalb der Spanne 409 mit
     s.stop()
   }
 })
+
+// #96 PR 1 (A3): An der Entnahme und an der Zuführung zur Erhaltungsrücklage gibt es kein Zahlungsdatum. Maßgeblich ist,
+// wann die Gemeinschaft das Geld ausgibt (BFH, Urteil vom 14.01.2025, IX R 19/24), nicht die eigene Hausgeldzahlung; der
+// Server lehnt ein Datum mit Meldung ab und leert nichts still. Das Jahr der Zahlung genügt, auch im Kalenderzeitraum
+// ein anderes als das Startjahr (#478).
+test('Route: Zahlungsdatum an Entnahme und Zuführung der Erhaltungsrücklage ergibt 400, das Jahr der Zahlung geht', async () => {
+  const s = await startServer()
+  try {
+    const send = (route: string, method: string, body: unknown) => fetch(`${s.base}${route}`, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    await send('/api/units', 'POST', { name: 'Wohnung', areaM2: 60, participates: true })
+    for (const category of ['Entnahme Erhaltungsrücklage', 'Zuführung Erhaltungsrücklage']) {
+      const base = { period: '2025-01', category, description: category, amountCents: 124000, key: 'area' }
+      const mit = await send('/api/costItems', 'POST', { ...base, paidOn: '2025-03-01', confirmPaidOn: true })
+      assert.equal(mit.status, 400, category)
+      assert.match((await mit.json() as { error: string }).error, /Erhaltungsrücklage gibt es kein Zahlungsdatum/, category)
+      const ohne = await send('/api/costItems', 'POST', base)
+      assert.equal(ohne.status, 201, `${category}: ${await ohne.clone().text()}`)
+      const saved = await ohne.json() as CostItem
+      // Nachträglich ein Datum setzen geht ebenso wenig.
+      const put = await send(`/api/costItems/${saved.id}`, 'PUT', { paidOn: '2025-03-01' })
+      assert.equal(put.status, 400, category)
+    }
+    const jahr = await send('/api/costItems', 'POST', { period: '2025-01', category: 'Entnahme Erhaltungsrücklage', description: 'Dach', amountCents: 50000, key: 'area', taxYear: 2026 })
+    assert.equal(jahr.status, 201, await jahr.clone().text())
+    assert.equal((await jahr.json() as CostItem).taxYear, 2026)
+  } finally {
+    s.stop()
+  }
+})

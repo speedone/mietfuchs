@@ -98,6 +98,7 @@ import type { UnitUsage } from '../../shared/types.ts'
 import { knownUnit, metersByUnitText, unitLabel, unitScale, type UnitScale } from '../../shared/meterUnits.ts'
 import { CALENDAR_RULES, calendarYearPeriod, contextOf, formatDayRange, periodContaining, periodDays, periodLabel, periodMonths, periodOfKey, periodsBetween, previousPeriod, rulesOf, settlementDeadline, settlementPeriod, spansTwoYears, startYearOf, type PeriodContext } from '../../shared/period.ts'
 import { allowsPaidOn, paidOnSpan, paidOnYear, statedOutflowYear } from '../../shared/paidOn.ts'
+import { RESERVE_CONTRIBUTION_CATEGORY, RESERVE_WITHDRAWAL_CATEGORY } from '../../shared/categories.ts'
 import { generatorEnergy, noCo2Supplier } from '../../shared/heatDelivery.ts'
 import { lineRoot, unitBasisOf, monthSpanText, plantRules, plantSpan, recommendedDeadline, requestMonth, sameBuilding, sameFuelLine, sameLine, sameSpan, separateOwner, servesUnit, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { heatingSnapshotFor, selfAt, snapshotFor, wayOf } from './snapshot.ts'
@@ -1351,12 +1352,18 @@ export const ANLAGE_V_GROUP: Record<string, string | null> = {
   // #143: Die Zuführung zur Erhaltungsrücklage ist erst Werbungskosten, wenn und soweit die
   // Gemeinschaft sie für Erhaltungsmaßnahmen verausgabt (BFH, Urteil vom 14.01.2025, IX R 19/24).
   'Zuführung Erhaltungsrücklage': null,
+  // #96: Die Verausgabung durch die Gemeinschaft ist Erhaltungsaufwand (IX R 19/24, Rz. 21, 23), im Vordruck 2025 in den
+  // Zeilen 55/56 „einschließlich Entnahmen aus der Erhaltungsrücklage“ und ausdrücklich nicht in 76 bis 78 („ohne
+  // Erhaltungsrücklage“). Eine eigene Gruppe statt Umbenennen von „Verwaltung & Instandhaltung“, denn deren Name steht in
+  // den Prüfsummen der Steuerübersicht (tax-golden.json).
+  'Entnahme Erhaltungsrücklage': 'Erhaltungsaufwand',
 }
 // Anzeigereihenfolge der Gruppen in der Auswertung
 export const ANLAGE_V_GROUP_ORDER = [
   'Grundsteuer & öffentliche Abgaben',
   'Laufende Betriebskosten',
   'Versicherungen',
+  'Erhaltungsaufwand',
   'Verwaltung & Instandhaltung',
   'Sonstige Werbungskosten',
 ]
@@ -1731,6 +1738,17 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
   const reserveSuspects = items
     .filter((c) => c.category === 'Nicht umlagefähig' && looksLikeReserveContribution(c.description))
     .map((c) => ({ costItemId: c.id, description: c.description, amountCents: c.amountCents }))
+  // Umgekehrt (#96, A4.2): „Nicht umlagefähig“, das nach einer Entnahme aus der Rücklage aussieht. Die Zahl bleibt; nur
+  // die Zeile der Anlage V hängt an der Kostenart. Mit Zahlungsdatum sagt die Seite dazu, dass das Jahr der Ausgabe durch
+  // die Gemeinschaft zählt, nicht das der eigenen Hausgeldzahlung.
+  const reserveWithdrawalSuspects = items
+    .filter((c) => c.category === 'Nicht umlagefähig' && looksLikeReserveWithdrawal(c.description))
+    .map((c) => ({ costItemId: c.id, description: c.description, amountCents: c.amountCents, ...(c.paidOn != null ? { paidOn: c.paidOn } : {}) }))
+  // Eine Sonderumlage (#96, A4.3, R5) mit dem Datum der eigenen Zahlung oder als Zuführung erfasst: Abziehbar ist sie erst,
+  // wenn die Gemeinschaft das Geld für eine Maßnahme ausgibt. Mietfuchs stellt nichts um.
+  const specialLevySuspects = items
+    .filter((c) => SPECIAL_LEVY.test(c.description) && ((c.category === 'Nicht umlagefähig' && c.paidOn != null) || c.category === RESERVE_CONTRIBUTION_CATEGORY))
+    .map((c) => ({ costItemId: c.id, description: c.description, amountCents: c.amountCents, category: c.category }))
 
   // ---------- Gemischte Nutzung: gemessen wird das Private (#68) ----------
   //
@@ -1834,6 +1852,8 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
     closedItemsChanged: split.closedItemsChanged,
     reserveContributionCents,
     reserveSuspects,
+    ...(reserveWithdrawalSuspects.length > 0 ? { reserveWithdrawalSuspects } : {}),
+    ...(specialLevySuspects.length > 0 ? { specialLevySuspects } : {}),
     totalAreaM2: totalArea,
     selfUsedAreaM2,
     selfOccupiedExists,
@@ -2846,7 +2866,9 @@ export { HEATING_CATEGORY }
 
 // Die Zuführung zur Erhaltungsrücklage einer Eigentumswohnung (#143): nicht umlagefähig wie
 // „Nicht umlagefähig“, aber steuerlich anders (siehe ANLAGE_V_GROUP).
-export const RESERVE_CATEGORY = 'Zuführung Erhaltungsrücklage'
+export const RESERVE_CATEGORY = RESERVE_CONTRIBUTION_CATEGORY
+// Die Entnahme aus der Rücklage (#96): nicht umlagefähig wie „Nicht umlagefähig“, steuerlich Erhaltungsaufwand.
+export { RESERVE_WITHDRAWAL_CATEGORY }
 // Woran eine Beschreibung nach Rücklage aussieht: Rücklage, Instandhaltungs- und
 // Erhaltungsrücklage, auch ohne Umlaut geschrieben.
 // Eine Entnahme oder eine Zahlung „aus der Rücklage“ ist keine Zuführung (Durchsicht): Sie ist in
@@ -2858,10 +2880,15 @@ const RESERVE_WITHDRAWAL = /entnahme|\baus\s+(der|dem)\b/i
 const RESERVE_CONTRIBUTION = /zuf(ü|ue|u)hrung/i
 export const looksLikeReserveContribution = (text: string): boolean =>
   RESERVE_PATTERN.test(text) && (RESERVE_CONTRIBUTION.test(text) || !RESERVE_WITHDRAWAL.test(text))
+// Umgekehrt (#96, A4.2): Rücklage und Entnahme oder „aus der/dem“, und nicht „Zuführung“. Dieselbe Regel, nach der
+// matchCategory die Kostenart „Entnahme Erhaltungsrücklage“ vorschlägt.
+export const looksLikeReserveWithdrawal = (text: string): boolean => RESERVE_PATTERN.test(text) && !looksLikeReserveContribution(text)
+// Eine Sonderumlage (#96, A4.3, R5): erst abziehbar, wenn die Gemeinschaft sie für eine Maßnahme ausgibt.
+const SPECIAL_LEVY = /sonderumlage/i
 
 // Kostenarten, die nie auf Mieter verteilt werden. Dieselbe Menge steht als NOT_ALLOCABLE in
 // client/src/types.ts; categories.test.ts hält beide zusammen.
-export const NOT_ALLOCABLE_CATEGORIES: readonly string[] = ['Nicht umlagefähig', RESERVE_CATEGORY]
+export const NOT_ALLOCABLE_CATEGORIES: readonly string[] = ['Nicht umlagefähig', RESERVE_CATEGORY, RESERVE_WITHDRAWAL_CATEGORY]
 export const isNotAllocable = (category: string): boolean => NOT_ALLOCABLE_CATEGORIES.includes(category)
 
 // Die Zeilen des Vermieters einer verteilten Position (#142, #202), in fester Reihenfolge: Jeder

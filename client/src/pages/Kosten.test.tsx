@@ -456,6 +456,66 @@ test('Bezahlt am: Rückfrage bei anderem Steuerjahr, gespeichert mit Bestätigun
   expect(sent[0].body).toMatchObject({ paidOn: `${year + 1}-02-10`, confirmPaidOn: true })
 })
 
+// #96 PR 1 (A3, R-B): Eine datierte Position auf „Entnahme Erhaltungsrücklage“ umgestellt behält ihr Steuerjahr. Das
+// Auswahlfeld zeigt die neue Kostenart und das übertragene Jahr, und gespeichert wird genau das, ohne Datum.
+test('Entnahme Erhaltungsrücklage: Datum wird zum Jahr der Zahlung, angezeigt wie gespeichert', async () => {
+  const year = new Date().getFullYear() - 1
+  await openForm()
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Nicht umlagefähig' } })
+  fireEvent.change(screen.getByLabelText('Bezahlt am (für die Steuer)'), { target: { value: `${year + 1}-02-10` } })
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Entnahme Erhaltungsrücklage' } })
+  expect(select(/Kostenart/i).value).toBe('Entnahme Erhaltungsrücklage')
+  expect(select(/Kostenart/i).selectedOptions[0]?.textContent).toBe('Entnahme Erhaltungsrücklage')
+  expect(screen.queryByLabelText('Bezahlt am (für die Steuer)')).toBeNull()
+  const jahr = select(/Jahr, in dem die Gemeinschaft bezahlt hat/)
+  expect(jahr.value).toBe(String(year + 1))
+  expect(jahr.selectedOptions[0]?.textContent).toBe(String(year + 1))
+  expect(screen.getByText(new RegExp(`die Position bleibt für die Steuer im Jahr ${year + 1}`))).toBeTruthy()
+  // Die Zuordnung für die Steuer wie bei „Nicht umlagefähig“.
+  expect(select(/Betrifft \(für die Steuer\)/i).value).toBe('')
+  fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/i }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0].body).toMatchObject({ category: 'Entnahme Erhaltungsrücklage', taxYear: year + 1, paidOn: null })
+})
+
+// Durchsicht #96 PR 1, M1: Nach dem Zurückstellen von der Entnahme bleibt ein gewähltes Jahr sichtbar und wird gespeichert,
+// wie es zu sehen ist; ebenso nach Entnahme mit übertragenem Jahr, Zurückstellen und Löschen des Datums.
+test('Entnahme zurückgestellt: das gewählte Jahr bleibt sichtbar und wird so gespeichert (Durchsicht M1)', async () => {
+  const year = new Date().getFullYear() - 1
+  await openForm()
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Entnahme Erhaltungsrücklage' } })
+  fireEvent.change(select(/Jahr, in dem die Gemeinschaft bezahlt hat/), { target: { value: String(year + 1) } })
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Nicht umlagefähig' } })
+  const jahr = select(/Jahr der Zahlung \(Steuer\)/)
+  expect([jahr.value, jahr.selectedOptions[0]?.textContent]).toEqual([String(year + 1), String(year + 1)])
+  fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/i }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0].body).toMatchObject({ category: 'Nicht umlagefähig', taxYear: year + 1 })
+})
+
+test('Datum, Entnahme, zurück, Datum gelöscht: das übertragene Jahr bleibt sichtbar (Durchsicht M1)', async () => {
+  const year = new Date().getFullYear() - 1
+  await openForm()
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Nicht umlagefähig' } })
+  fireEvent.change(screen.getByLabelText('Bezahlt am (für die Steuer)'), { target: { value: `${year + 1}-02-10` } })
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Entnahme Erhaltungsrücklage' } })
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Nicht umlagefähig' } })
+  fireEvent.change(screen.getByLabelText('Bezahlt am (für die Steuer)'), { target: { value: '' } })
+  const jahr = select(/Jahr der Zahlung \(Steuer\)/)
+  expect(jahr.value).toBe(String(year + 1))
+})
+
+// Durchsicht #96 PR 1, S1: Ein übertragenes Jahr außerhalb der üblichen Spanne steht in der Auswahl.
+test('Entnahme: ein Datum weit nach dem Zeitraum ergibt ein Jahr, das die Auswahl zeigt (Durchsicht S1)', async () => {
+  const year = new Date().getFullYear() - 1
+  await openForm()
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Nicht umlagefähig' } })
+  fireEvent.change(screen.getByLabelText('Bezahlt am (für die Steuer)'), { target: { value: `${year + 5}-03-10` } })
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Entnahme Erhaltungsrücklage' } })
+  const jahr = select(/Jahr, in dem die Gemeinschaft bezahlt hat/)
+  expect([jahr.value, jahr.selectedOptions[0]?.textContent]).toEqual([String(year + 5), String(year + 5)])
+})
+
 // Durchsicht von #255 PR 3, M1: Beim Aufteilen prüft der Server jeden Teil. Eine Jahresversicherung 07/Jahr bis
 // 06/Folgejahr, bezahlt am 01.07., ändert das Steuerjahr des zweiten Teils, obwohl das Datum im Jahr des Formulars liegt.
 // Das Formular fragt deshalb nach der Vorschau mit deren Teilen und derselben Regel wie der Server

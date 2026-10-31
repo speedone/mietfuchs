@@ -199,7 +199,7 @@ test('Belege für die Steuer (#170): ein ZIP je Objekt und Jahr nach Gruppen der
     const namen = zip.getEntries().map((e) => e.entryName).sort()
     assert.deepEqual(namen, [
       '1 Grundsteuer & öffentliche Abgaben/Grundsteuer - Grundsteuer.pdf',
-      '4 Verwaltung & Instandhaltung/Nicht umlagefähig - Verwaltung.pdf',
+      '5 Verwaltung & Instandhaltung/Nicht umlagefähig - Verwaltung.pdf',
       'Übersicht.csv',
     ])
     assert.equal(zip.readAsText('1 Grundsteuer & öffentliche Abgaben/Grundsteuer - Grundsteuer.pdf'), '%PDF-gs')
@@ -234,10 +234,11 @@ test('Belege für die Steuer (#469): ein Teil ohne eigenen Beleg bekommt den Bel
 
 // Vor dem Wechsel von adm-zip zu yazl auf demselben Bestand abgelesen: die Übersicht wortgleich,
 // samt Byte-Order-Mark. Ein Steuerberater öffnet sie in Excel, und ohne BOM stünden dort statt
-// der Umlaute Zeichensalat.
+// der Umlaute Zeichensalat. Seit #96 steht die Gruppe „Erhaltungsaufwand“ vor „Verwaltung & Instandhaltung“, deren
+// Ordner trägt deshalb die 5 statt der 4 (die Ordner folgen der Reihenfolge der Steuerübersicht); sonst wortgleich.
 const TAX_OVERVIEW_BEFORE_YAZL = '\uFEFFGruppe;Kostenart;Beschreibung;Rechnungssteller;Betrag (EUR);privat (EUR);abziehbar (EUR);Lohnanteil § 35a (EUR);Beleg;Jahr der Zahlung\r\n'
   + 'Grundsteuer & öffentliche Abgaben;Grundsteuer;Grundsteuer B;;612,40;0,00;612,40;;1 Grundsteuer & öffentliche Abgaben/Grundsteuer - Grundsteuerbescheid_Müll.pdf;2025, Jahr der Abrechnung (ohne Angabe)\r\n'
-  + 'Verwaltung & Instandhaltung;Nicht umlagefähig;Dachrinne;;450,00;0,00;450,00;200,00;4 Verwaltung & Instandhaltung/Nicht umlagefähig - Dachrinne_Übertrag.pdf;2025, Jahr der Abrechnung (ohne Angabe)\r\n'
+  + 'Verwaltung & Instandhaltung;Nicht umlagefähig;Dachrinne;;450,00;0,00;450,00;200,00;5 Verwaltung & Instandhaltung/Nicht umlagefähig - Dachrinne_Übertrag.pdf;2025, Jahr der Abrechnung (ohne Angabe)\r\n'
   + 'Sonstige Werbungskosten;Versicherung;Ohne Beleg;;300,00;0,00;300,00;;kein Beleg;2025, Jahr der Abrechnung (ohne Angabe)\r\n'
 
 test('Belege für die Steuer: Inhalt, Namen und Übersicht sind mit yazl dieselben wie vorher mit adm-zip', async () => {
@@ -260,7 +261,7 @@ test('Belege für die Steuer: Inhalt, Namen und Übersicht sind mit yazl dieselb
     for (const e of entries) assert.equal(e.header.flags & 0x8, 0, `${e.entryName}: mit Datendeskriptor`)
     assert.deepEqual(entries.map((e) => e.entryName), [
       '1 Grundsteuer & öffentliche Abgaben/Grundsteuer - Grundsteuerbescheid_Müll.pdf',
-      '4 Verwaltung & Instandhaltung/Nicht umlagefähig - Dachrinne_Übertrag.pdf',
+      '5 Verwaltung & Instandhaltung/Nicht umlagefähig - Dachrinne_Übertrag.pdf',
       'Übersicht.csv',
     ])
     assert.ok(entries[0].getData().equals(fs.readFileSync(path.join(dir, files.gs))))
