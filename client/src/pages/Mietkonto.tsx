@@ -396,7 +396,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
                 </Table>
                 {notes.map((n) => <NoticeBox key={n.text} level={n.level} action={n.text} />)}
                 {(r.designatedOutside?.length ?? 0) > 0 && (
-                  <NoticeBox level="hint" action={`Bei ${r.designatedOutside?.length === 1 ? 'einer Zahlung' : `${r.designatedOutside?.length} Zahlungen`} liegt der Monat laut Verwendungszweck außerhalb des Mietverhältnisses; Mietfuchs verteilt sie deshalb nach der gesetzlichen Reihenfolge. Prüfen Sie Beginn und Ende des Mietverhältnisses oder den Monat an der Zahlung.`} />
+                  <NoticeBox level="hint" action={`Bei ${r.designatedOutside?.length === 1 ? 'einer Zahlung' : `${r.designatedOutside?.length} Zahlungen`} liegt der Monat laut Verwendungszweck außerhalb des Mietverhältnisses oder vor dem Beginn des Mietkontos; Mietfuchs verteilt sie deshalb nach der gesetzlichen Reihenfolge. Prüfen Sie Beginn und Ende des Mietverhältnisses oder den Monat an der Zahlung.`} />
                 )}
               </>
             )}
@@ -527,7 +527,7 @@ function PaymentRow({ payment: p, tenancyName, outside, onSaved, onDelete }: {
             <MonthField className="no-print" label={<span className="sr-only">Für Monat (laut Verwendungszweck), {what}</span>}
               value={value.month} placeholder="kein Monat" start={p.date}
               onChange={(month) => draft.set({ ...value, month })} />
-            {outside && <span className="muted">außerhalb des Mietverhältnisses, verteilt nach gesetzlicher Reihenfolge</span>}
+            {outside && <span className="muted">außerhalb des Mietverhältnisses oder vor dem Mietkonto, verteilt nach gesetzlicher Reihenfolge</span>}
           </>
         ) : <span className="muted">gilt dem Saldo</span>}
         <DraftActions draft={draft} onSave={save} what={what} />

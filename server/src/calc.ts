@@ -1211,10 +1211,11 @@ export function ledgerRows(
       const settlementYearCents = inSpan.filter((p) => !isRentPayment(p)).reduce((a, p) => a + p.amountCents, 0)
       const sollYearCents = rowMonths.reduce((a, mo) => a + mo.sollCents, 0)
       const dueSollCents = rowMonths.filter((_, k) => k < dueMonths).reduce((a, mo) => a + mo.sollCents, 0)
-      // Ein Monat laut Verwendungszweck, an dem das Mietverhältnis nicht besteht, wirkt wie keine Bestimmung (#312 E2);
+      // Ein Monat laut Verwendungszweck, an dem das Mietverhältnis nicht besteht oder der vor dem Beginn des Mietkontos
+      // liegt (`ledgerStart`), wirkt wie keine Bestimmung (#312 E2);
       // das Mietkonto nennt die Zahlung (krumm, nicht kaputt: Beginn oder Ende können sich später geändert haben).
       const designatedOutside = inSpan
-        .filter((p) => isRentPayment(p) && typeof p.designatedMonth === 'string' && LEDGER_MONTH.test(p.designatedMonth) && monthShare(t, p.designatedMonth).days === 0)
+        .filter((p) => isRentPayment(p) && typeof p.designatedMonth === 'string' && LEDGER_MONTH.test(p.designatedMonth) && monthShare(tracked, p.designatedMonth).days === 0)
         .map((p) => p.id)
       return {
         tenancyId: t.id,

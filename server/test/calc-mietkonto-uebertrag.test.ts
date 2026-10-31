@@ -343,3 +343,10 @@ test('Durchsicht Befund 3: ein Zeitraum, der vor die Erfassung reicht, gilt dort
   assert.equal(r.ledgerStart, '2025-01-01')
   assert.deepEqual(r.notDemandable, [{ reason: 'inStatement', label: '2024/2025', cents: 20000 }])
 })
+
+test('Durchsicht Nebenbefund: ein Monat laut Verwendungszweck vor dem Beginn der Erfassung wird genannt', () => {
+  // Erfassung ab Januar 2025, die Zahlung nennt Dezember 2024: im Mietverhältnis, aber vor dem Mietkonto.
+  const p = pay('2025-02-03', 80000, { designatedMonth: '2024-12' })
+  const r = rowOf(ledger({ tenancies: [since2020()], payments: [...monthly('2025-01', '2025-01'), p] }, 2025, { asOf: '2025-03-01' }))
+  assert.deepEqual(r.designatedOutside, [p.id])
+})
