@@ -1,6 +1,6 @@
 # 🦊 Mietfuchs
 
-**Die Nebenkostenabrechnung für private Vermieter, komplett auf dem eigenen Rechner.
+**Die kostenlose Nebenkostenabrechnung für private Vermieter, komplett auf dem eigenen Rechner.
 Keine Cloud, kein Konto, keine Abogebühren.**
 
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
