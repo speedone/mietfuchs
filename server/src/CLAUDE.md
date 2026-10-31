@@ -958,10 +958,12 @@ Grundmenge ist das ganze Gebäude), Überschuss. Beschreibende Gruppen statt fes
   Zeile 32 (`received.totalCents`, Zeilen aus `incomeLines`), Werbungskosten nach Raten (`deductibleCents`, dazu privat,
   unentgeltlich, `deferredCents`), Rücklage, Überschuss `surplusReceivedCents`, Soll zum Abgleich; nie `paidCents` oder
   `surplusPaidCents`. Typ `TaxOverview` in shared/types.ts (Auslegung gegen den Entwurf: beide Seiten brauchen genau
-  diesen Typ, wie `TaxReport`). `hasRental` = Mietverhältnis im Jahr, Zufluss (Zeile 32 oder nach Datum) oder abziehbare
-  Werbungskosten (Leerstand, R-C); nur dann eine laufende Nummer, in der Reihenfolge der Objekte. Ein Objekt ohne steht
-  neutral da, ohne Aussage über die Pflicht zur Anlage V. Scheitert ein Bericht, trägt die Zeile die Meldung und zählt
-  weder in Summe noch Nummern. Oberfläche: Karte „Alle Objekte {Jahr}“ zuletzt auf der Steuerseite, erst ab zwei
+  diesen Typ, wie `TaxReport`). `hasRental` = Mietverhältnis im Jahr, Einnahmen nach Zeile 32 oder abziehbare
+  Werbungskosten (Leerstand, R-C); eine Zahlung, die nach der Zehn-Tage-Regel ins andere Jahr gehört, zählt nicht
+  (§ 11 Abs. 1 Satz 2 EStG). Nur dann eine laufende Nummer, in der Reihenfolge der Objekte, und nur diese Objekte zählen
+  in `totals` (Summe der sichtbaren Beträge). Ein Objekt ohne steht neutral da, ohne Aussage über die Pflicht zur
+  Anlage V. Scheitert ein Bericht, trägt die Zeile die Meldung und zählt nicht in die Summe; ab ihr bekommt kein Objekt
+  mehr eine Nummer, bis der Fehler behoben ist. Oberfläche: Karte „Alle Objekte {Jahr}“ zuletzt auf der Steuerseite, erst ab zwei
   Objekten, nicht im Druck ([client/src/taxOverview.ts](../../client/src/taxOverview.ts)). Invariante I4:
   invariant-steuer-gesamt.test.ts (auch die Schranke von einer Sekunde bei zehn Objekten mit Verteilung).
 - **Verschiebung anzeigen** (`shiftNotes`, nur Auskunft): Jede Position trägt `outflow`; liegt das

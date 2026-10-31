@@ -7,7 +7,11 @@
 // I4 Je Objekt und Jahr sind die Zahlen der Gesamtsicht genau die der Steuerseite des Objekts (`taxReportFor`, wie die
 //    Route /api/taxreport): Einnahmen = Zeile 32 (`received.totalCents`), die Zeilen dazu, Werbungskosten nach Raten,
 //    privat, unentgeltlich, verschoben, Rücklage, Überschuss `surplusReceivedCents`, Soll. Die Summe ist die Summe der
-//    Objekte. Die laufende Nummer zählt nur Objekte mit Vermietung (`hasRental`), lückenlos in der Reihenfolge der Objekte.
+//    Objekte mit Vermietung (Durchsicht S1: ein Objekt ohne zählt nicht, auch nicht mit privatem Teil). Die laufende
+//    Nummer zählt nur Objekte mit Vermietung (`hasRental`), lückenlos in der Reihenfolge der Objekte. `hasRental` wird
+//    nicht nachgebildet, sondern fachlich geprüft: Zeile 32 ≠ 0, abziehbare Werbungskosten ≠ 0 oder ein Mietverhältnis im
+//    Jahr ergeben Vermietung, ohne sie ist beides 0; eine Zahlung, die nach der Zehn-Tage-Regel ins andere Jahr gehört,
+//    zählt nicht (Durchsicht S2, Test in api-steuer-gesamt.test.ts).
 //
 // Startwerte über INV_FROM/INV_TO, Vorgabe 1 bis 12.
 import { test } from 'node:test'
@@ -47,8 +51,12 @@ function stock(seed: number): Stock {
       { id: VACANT, kind: 'etw', cableBuiltBeforeDec2021: null },
       { id: EMPTY, kind: 'sonstiges', cableBuiltBeforeDec2021: null },
     ],
-    units: [...varied.units, { id: 'leer-u', propertyId: VACANT, name: 'ETW', areaM2: 70, participates: true }],
-    costItems: [...varied.costItems, ...vacantItems].map((c) => (allowsSpread(c) && rnd() < 0.5 ? { ...c, spreadYears: pick(N) } : c)),
+    // Das Objekt ohne Vermietung: selbst bewohnt, mit Grundsteuer (ganz privat, nichts abziehbar; Durchsicht S1).
+    units: [...varied.units, { id: 'leer-u', propertyId: VACANT, name: 'ETW', areaM2: 70, participates: true },
+      { id: 'selbst-u', propertyId: EMPTY, name: 'Eigene Wohnung', areaM2: 90, participates: false, selfUsed: true, selfPersons: 2 }],
+    costItems: [...varied.costItems, ...vacantItems, ...TAX_STOCK_YEARS.map((y) => ({
+      id: `gs-${y}`, propertyId: EMPTY, period: `${y}-01`, category: 'Grundsteuer', description: `Grundsteuer ${y}`, amountCents: 30_000, key: 'area' as const,
+    }))].map((c) => (allowsSpread(c) && rnd() < 0.5 ? { ...c, spreadYears: pick(N) } : c)),
   } as TaxSource
   const ids = [TAX_STOCK_PROPERTY, TAX_STOCK_SECOND, ...(seed % 2 === 0 ? ['objekt-3'] : [])]
   // Die Reihenfolge der Objekte wie in der Datenbank (Anlage); das leere Objekt bewusst in der Mitte, damit die Nummer
@@ -61,6 +69,12 @@ function stock(seed: number): Stock {
   ]
   return { source, properties }
 }
+
+const zero = (): TaxOverviewSums => ({
+  incomeCents: 0,
+  incomeLines: { homes: 0, inclusive: 0, unallocated: 0, relatives: 0, allocations: 0, flatRate: 0, settlement: 0, relativesAllocations: 0, relativesSettlement: 0, formerYears: 0, formerYearsAllocations: 0, totalCents: 0 },
+  sollCents: 0, expensesTotalCents: 0, privateCents: 0, gratuitousCents: 0, deferredCents: 0, deductibleCents: 0, reserveContributionCents: 0, surplusCents: 0, surplusSollCents: 0,
+})
 
 const sumsOf = (r: TaxReport): TaxOverviewSums => {
   const lines = incomeLines(r) ?? assert.fail('ohne Zeilen')
@@ -89,7 +103,7 @@ const addSums = (a: TaxOverviewSums, b: TaxOverviewSums): TaxOverviewSums => {
 }
 
 test('I4: Gesamtsicht je Objekt = Steuerseite des Objekts, Summe = Σ Objekte, Nummer nur mit Vermietung', () => {
-  const seen = { forward: 0, fromPrevious: 0, relatives: 0, deferredOut: 0, deferredIn: 0, vacantNumbered: 0, emptyNeutral: 0, differsByDate: 0 }
+  const seen = { forward: 0, fromPrevious: 0, relatives: 0, deferredOut: 0, deferredIn: 0, vacantNumbered: 0, emptyNeutral: 0, differsByDate: 0, neutralPrivate: 0 }
   for (let seed = FROM; seed <= TO; seed++) {
     const { source, properties } = stock(seed)
     for (const year of TAX_STOCK_YEARS) {
@@ -109,10 +123,14 @@ test('I4: Gesamtsicht je Objekt = Steuerseite des Objekts, Summe = Σ Objekte, N
         assert.deepEqual(row.sums, expected, `${at} ${row.propertyId}`)
         assert.equal(row.sums.incomeLines.totalCents, row.sums.incomeCents, `${at} ${row.propertyId}: Zeilen = Zeile 32`)
         assert.equal(row.sums.surplusCents, row.sums.incomeCents - row.sums.deductibleCents, `${at} ${row.propertyId}: Überschuss`)
-        const hasRental = report.costModels.tenancies > 0 || expected.incomeCents !== 0 || report.income.paidCents !== 0 || expected.deductibleCents !== 0
-        assert.equal(row.hasRental, hasRental, `${at} ${row.propertyId}: hasRental`)
-        assert.equal(row.number, hasRental ? ++number : null, `${at} ${row.propertyId}: laufende Nummer`)
-        total = total === null ? row.sums : addSums(total, row.sums)
+        if (expected.incomeCents !== 0) assert.ok(row.hasRental, `${at} ${row.propertyId}: Einnahmen ohne Vermietung`)
+        if (expected.deductibleCents !== 0) assert.ok(row.hasRental, `${at} ${row.propertyId}: Werbungskosten ohne Vermietung`)
+        if (report.costModels.tenancies > 0) assert.ok(row.hasRental, `${at} ${row.propertyId}: Mietverhältnis ohne Vermietung`)
+        if (!row.hasRental) assert.deepEqual([expected.incomeCents, expected.deductibleCents, report.costModels.tenancies], [0, 0, 0], `${at} ${row.propertyId}: neutral`)
+        if (row.propertyId === EMPTY) assert.equal(row.hasRental, false, `${at}: selbst bewohnt`)
+        assert.equal(row.number, row.hasRental ? ++number : null, `${at} ${row.propertyId}: laufende Nummer`)
+        if (row.hasRental) total = total === null ? row.sums : addSums(total, row.sums)
+        if (row.propertyId === EMPTY && row.sums.privateCents !== 0) seen.neutralPrivate++
         const turn = report.income.received?.turnOfYear
         if (turn && turn.forwardCents !== 0) seen.forward++
         if (turn && turn.fromPreviousCents !== 0) seen.fromPrevious++
@@ -123,17 +141,19 @@ test('I4: Gesamtsicht je Objekt = Steuerseite des Objekts, Summe = Σ Objekte, N
         if (row.propertyId === EMPTY && row.number === null) seen.emptyNeutral++
         if (report.surplusPaidCents !== report.surplusReceivedCents) seen.differsByDate++
       }
-      assert.deepEqual(overview.totals, total, `${at}: Summe`)
+      assert.deepEqual(overview.totals, total ?? zero(), `${at}: Summe der Objekte mit Vermietung`)
     }
   }
   // Die schiefen Fälle kommen wirklich vor, sonst prüfte die Invariante nur den geraden Weg.
   for (const [k, v] of Object.entries(seen)) assert.ok(v > 0, `nie gesehen: ${k}`)
 })
 
-test('Ein Objekt mit Fehler: Zeile mit Meldung, nicht in der Summe, ohne Nummer; die übrigen rechnen weiter', () => {
+// Durchsicht S3: Die Nummer eines Objekts nach dem Fehler hinge davon ab, ob das Objekt mit Fehler eine bekommt; bis zur
+// Behebung trägt deshalb keines danach eine.
+test('Ein Objekt mit Fehler: Zeile mit Meldung, nicht in der Summe, ohne Nummer; danach keine Nummer mehr, die Beträge bleiben', () => {
   const { source, properties } = stock(3)
   const year = 2025
-  const broken = TAX_STOCK_SECOND
+  const broken = TAX_STOCK_PROPERTY
   const reportOf: typeof taxReportFor = (src, pid, y, parts, options) => {
     if (pid === broken) throw new Error('Die Position x ist im Jahr 2025 nur mit einem Teilbetrag abgeflossen; das rechnet die Steuerübersicht noch nicht.')
     return taxReportFor(src, pid, y, parts, options)
@@ -144,9 +164,15 @@ test('Ein Objekt mit Fehler: Zeile mit Meldung, nicht in der Summe, ohne Nummer;
   if (!bad.ok) assert.match(bad.error, /Teilbetrag/)
   const good = overview.rows.flatMap((r) => (r.ok ? [r] : []))
   assert.equal(good.length, properties.length - 1)
-  const expected = good.map((r) => sumsOf(taxReportFor(source, r.propertyId, year))).reduce(addSums)
-  assert.deepEqual(overview.totals, expected)
-  assert.deepEqual(good.filter((r) => r.hasRental).map((r) => r.number), good.filter((r) => r.hasRental).map((_, k) => k + 1), 'lückenlos ohne das Objekt mit Fehler')
+  const rental = good.filter((r) => r.hasRental)
+  const expected = rental.map((r) => sumsOf(taxReportFor(source, r.propertyId, year))).reduce(addSums)
+  assert.deepEqual(overview.totals, expected, 'die Objekte mit Vermietung, auch die nach dem Fehler')
+  const at = overview.rows.indexOf(bad)
+  const before = overview.rows.slice(0, at).flatMap((r) => (r.ok && r.hasRental ? [r.number] : []))
+  assert.deepEqual(before, before.map((_, k) => k + 1), 'vor dem Fehler lückenlos')
+  const after = overview.rows.slice(at + 1).flatMap((r) => (r.ok && r.hasRental ? [r.number] : []))
+  assert.ok(after.length > 0, 'ein Objekt mit Vermietung nach dem Fehler')
+  assert.deepEqual(after, after.map(() => null), 'danach keine Nummer')
 })
 
 test('Ohne Objekt: leere Liste, Summe 0', () => {

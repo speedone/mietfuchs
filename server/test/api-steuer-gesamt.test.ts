@@ -86,3 +86,37 @@ test('Gesamtsicht: je Objekt die Zahlen der Steuerseite (Zeile 32, Raten), Summe
     s.stop()
   }
 })
+
+// Durchsicht S2: Eine Januarmiete, die am 28.12. vor dem Mietbeginn am 01.01. eingeht, gehört nach § 11 Abs. 1 Satz 2
+// EStG ins neue Jahr. Im alten Jahr hat das Objekt dann keine Vermietung und keine Nummer, auch wenn der Kontoauszug die
+// Zahlung dort zeigt.
+test('Gesamtsicht: Januarmiete Ende Dezember vor Mietbeginn ergibt im alten Jahr keine Vermietung', async () => {
+  const s = await startServer()
+  try {
+    const post = <T>(route: string, body: unknown) => s.api<T>(route, { method: 'POST', body: JSON.stringify(body) })
+    const [haus] = await s.api<Property[]>('/api/properties')
+    if (!haus) assert.fail('kein Objekt')
+    const neu = await post<Property>('/api/properties', { name: 'Neubau', kind: 'efh', address: '' })
+    const eg = await post<Unit>('/api/units', { propertyId: neu.id, name: 'Haus', areaM2: 120, participates: true })
+    const t = await post<Tenancy>(`/api/tenancies?property=${neu.id}`, {
+      unitId: eg.id, tenantName: 'Neumann', persons: 2, start: '2026-01-01', end: null, personHistory: [],
+      prepayments: [], prepaymentOverrides: {}, baseRents: [{ from: '2026-01', monthlyCents: 100000 }],
+    })
+    await post(`/api/payments?property=${neu.id}`, { tenancyId: t.id, date: '2025-12-28', amountCents: 100000 })
+    const page2025 = await s.api<TaxReport>(`/api/taxreport/2025?property=${neu.id}`)
+    assert.equal(page2025.income.paidCents, 100000, 'nach Datum 2025')
+    assert.equal(page2025.income.received?.totalCents, 0, 'Zeile 32 2025')
+    const o2025 = await s.api<TaxOverview>('/api/tax/overview?year=2025')
+    const row = o2025.rows.find((r) => r.propertyId === neu.id) ?? assert.fail('Zeile fehlt')
+    if (!row.ok) assert.fail(row.error)
+    assert.equal(row.hasRental, false)
+    assert.equal(row.number, null)
+    const o2026 = await s.api<TaxOverview>('/api/tax/overview?year=2026')
+    const row26 = o2026.rows.find((r) => r.propertyId === neu.id) ?? assert.fail('Zeile fehlt')
+    if (!row26.ok) assert.fail(row26.error)
+    assert.equal(row26.sums.incomeCents, 100000)
+    assert.equal(row26.number, 1, 'das erste Objekt ist leer, das Neubau-Objekt bekommt 2026 die 1')
+  } finally {
+    s.stop()
+  }
+})

@@ -1619,12 +1619,14 @@ export type TaxOverviewSums = {
   surplusSollCents: number
 }
 export type TaxOverviewRow = { propertyId: string; name: string; kind: PropertyKind } & (
-  // `number`: laufende Nummer der Anlage V, nur mit `hasRental` (Mietverhältnis im Jahr, Zufluss oder abziehbare
-  // Werbungskosten, auch bei Leerstand); ohne steht das Objekt neutral in der Liste.
+  // `number`: laufende Nummer der Anlage V, nur mit `hasRental` (Mietverhältnis im Jahr, Einnahmen nach Zeile 32 oder
+  // abziehbare Werbungskosten, auch bei Leerstand) und nur vor dem ersten Objekt mit Fehler; ohne `hasRental` steht das
+  // Objekt neutral in der Liste und zählt nicht in `totals`.
   | { ok: true; hasRental: boolean; number: number | null; sums: TaxOverviewSums }
   // Die Steuerübersicht des Objekts ist gescheitert: Die Zeile nennt die Meldung und zählt nicht in die Summe.
   | { ok: false; error: string }
 )
+// `totals`: Summe der Objekte mit `hasRental` ohne Fehler, also genau der Zeilen mit Beträgen.
 export type TaxOverview = { year: number; rows: TaxOverviewRow[]; totals: TaxOverviewSums }
 
 // Verbilligte Vermietung (#257). `verdict` je Mietverhältnis:

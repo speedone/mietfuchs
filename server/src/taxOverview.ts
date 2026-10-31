@@ -6,13 +6,17 @@
 // `surplusReceivedCents`. `paidCents` und `surplusPaidCents` (nach Datum) liest sie nicht. Die Rückgriffe der Verteilung auf
 // das Jahr des Abflusses rechnet `taxReportFor` selbst mit `received: false` (Durchsicht X10).
 //
-// `hasRental` (Durchsicht R-C): ein Mietverhältnis im Jahr, ein Zufluss (Zeile 32 oder nach Datum) oder abziehbare
-// Werbungskosten; auch bei Leerstand mit Vermietungsabsicht sind Werbungskosten abziehbar. Nur solche Objekte bekommen
-// eine laufende Nummer der Anlage V, in der Reihenfolge der Objekte. Ein Objekt ohne steht neutral in der Liste, ohne
-// Aussage über die Pflicht zur Anlage V (ob eine Vermietungsabsicht besteht, weiß Mietfuchs nicht).
+// `hasRental` (Durchsicht R-C): ein Mietverhältnis im Jahr, Einnahmen nach Zeile 32 oder abziehbare Werbungskosten; auch
+// bei Leerstand mit Vermietungsabsicht sind Werbungskosten abziehbar. Eine Zahlung, die nach der Zehn-Tage-Regel in ein
+// anderes Jahr gehört, zählt nicht (§ 11 Abs. 1 Satz 2 EStG; Durchsicht S2). Nur solche Objekte bekommen eine laufende
+// Nummer der Anlage V, in der Reihenfolge der Objekte, und nur sie zählen in die Summe (Durchsicht S1: die Summe der
+// sichtbaren Beträge; ein selbst bewohntes Objekt brächte sonst seinen privaten Teil hinein). Ein Objekt ohne steht
+// neutral in der Liste, ohne Aussage über die Pflicht zur Anlage V (ob eine Vermietungsabsicht besteht, weiß Mietfuchs
+// nicht).
 //
 // Scheitert der Bericht eines Objekts (etwa die Meldung aus `paidWhollyIn`), steht die Meldung in seiner Zeile, und es
-// zählt weder in die Summe noch in die Nummern; die übrigen Objekte rechnen weiter.
+// zählt nicht in die Summe; die übrigen Objekte rechnen weiter. Ab diesem Objekt bekommt keines mehr eine Nummer
+// (Durchsicht S3), denn ob das Objekt mit Fehler eine trägt, steht erst nach der Behebung fest.
 import type { Property, TaxOverview, TaxOverviewRow, TaxOverviewSums, TaxReport } from '../../shared/types.ts'
 import { incomeLines, type IncomeLineAmounts } from '../../shared/taxIncomeLines.ts'
 import { taxReportFor } from './calc.ts'
@@ -51,7 +55,7 @@ function sumsOf(report: TaxReport): TaxOverviewSums {
 }
 
 function hasRental(report: TaxReport, sums: TaxOverviewSums): boolean {
-  return report.costModels.tenancies > 0 || sums.incomeCents !== 0 || report.income.paidCents !== 0 || sums.deductibleCents !== 0
+  return report.costModels.tenancies > 0 || sums.incomeCents !== 0 || sums.deductibleCents !== 0
 }
 
 function add(a: TaxOverviewSums, b: TaxOverviewSums): TaxOverviewSums {
@@ -79,6 +83,7 @@ export function taxOverview(
   reportOf: typeof taxReportFor = taxReportFor,
 ): TaxOverview {
   let number = 0
+  let failed = false
   let totals = zeroSums()
   const rows: TaxOverviewRow[] = properties.map((p) => {
     const head = { propertyId: p.id, name: p.name, kind: p.kind }
@@ -88,11 +93,12 @@ export function taxOverview(
       report = reportOf(source, p.id, year)
       sums = sumsOf(report)
     } catch (err) {
+      failed = true
       return { ...head, ok: false as const, error: err instanceof Error ? err.message : String(err) }
     }
     const rental = hasRental(report, sums)
-    totals = add(totals, sums)
-    return { ...head, ok: true as const, hasRental: rental, number: rental ? ++number : null, sums }
+    if (rental) totals = add(totals, sums)
+    return { ...head, ok: true as const, hasRental: rental, number: rental && !failed ? ++number : null, sums }
   })
   return { year, rows, totals }
 }
