@@ -47,16 +47,24 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - Eine Anleitung in „Hilfe & Begriffe“ ist eine eigene Ansicht mit Inhaltsleiste und Schritten als Karten; nach „Zu
   Kosten →“ und ähnlichen Sprüngen zeigt die Zielseite unten den Schritt mit „Nächster Schritt“ und „Zurück zur
   Anleitung“ ([#488](https://github.com/speedone/mietfuchs/issues/488)).
-- Scheitert die KI an einem Beleg (etwa weil Ollama nicht läuft), steht er in Schnellerfassung und Kosten als
-  „Gespeichert, nicht ausgewertet“ da, mit dem Grund in einem Satz, „Von Hand erfassen“ und „Erneut versuchen“, das
-  keine Kopie mehr im Belegordner anlegt; ebenso beim Auslesen von Lieferantenrechnung und Messdienstabrechnung in den
+- Scheitert die KI an einem Beleg (etwa weil Ollama nicht läuft), steht er im Eingang der Seite Belege und auf der
+  Seite Kosten als „Gespeichert, nicht ausgewertet“ da, mit dem Grund in einem Satz, „Von Hand erfassen“ und „Erneut
+  versuchen“, das keine Kopie des Belegs mehr anlegt; ebenso beim Auslesen von Lieferantenrechnung und Messdienstabrechnung in den
   Heizkosten ([#487](https://github.com/speedone/mietfuchs/issues/487)).
 - **Aufklappen einheitlich**: Alles, was sich aufklappen lässt, trägt denselben Pfeil davor (▸ zu, ▾ offen), und Knöpfe
   nennen, was der nächste Klick tut, etwa „Mehr dazu“ und aufgeklappt „Weniger“ oder „Rechenweg schließen“.
-- **Die KI-Auswertung läuft weiter, wenn Sie die Seite, das Objekt oder den Zeitraum wechseln**: Schnellerfassung und
-  Kosten teilen sich eine Warteschlange, und das Ergebnis steht da, wenn Sie zurückkehren. Hält die Schnellerfassung
-  eine Rechnung für ein Zählerfoto, wertet „Als Rechnung auswerten“ sie neu aus
-  ([#490](https://github.com/speedone/mietfuchs/issues/490)).
+- **Schnellerfassung und Belegordner sind eine Seite „Belege“** mit den Ansichten „Eingang“ und „Ordner“
+  ([#490](https://github.com/speedone/mietfuchs/issues/490)). Im Eingang legen Sie den ganzen Stapel ab, Rechnungen und
+  Zählerfotos gemischt; mit KI wertet Mietfuchs jeden Beleg aus, mit „Nur ablegen, ohne Auswertung“ oder ohne erreichbare
+  KI speichert er ihn nur. Darunter stehen „Wird ausgewertet“, „Zu prüfen“ (Auswertungen mit dem Beleg daneben,
+  Zählerstände) und „Ohne Position“, der frühere Posteingang: Dort wertet „Per KI auswerten“ ohne Seitenwechsel aus, und
+  „Weiter prüfen“ springt zur Auswertung und hebt sie hervor. Die Auswertung läuft weiter, wenn Sie die Seite, das
+  Objekt oder den Zeitraum wechseln, und auch die Seite Kosten zeigt sie; hält Mietfuchs eine Rechnung für ein
+  Zählerfoto, wertet „Als Rechnung auswerten“ sie neu aus. Die Suche im Ordner durchsucht alle Objekte und Jahre und
+  nennt beides am Treffer. Ein Wechsel zwischen Eingang und Ordner verliert keine Eingabe. Die Seitenleiste öffnet die
+  zuletzt benutzte Ansicht, „Erfassen“ in der unteren Leiste am Handy den Eingang. Andere Dateien als PDF und Bild nennt
+  jetzt jede Ablage, auch die der Seite Kosten, und die Rückfrage beim Löschen sagt richtig, dass der Beleg in den
+  Papierkorb geht und sich im Verlauf zurückholen lässt.
 - **Mietkonto rechnet fortlaufend ab Beginn des Mietverhältnisses**: Ein Rückstand aus dem Vorjahr steht als Übertrag
   da, eine im Dezember gezahlte Januarmiete deckt den Januar. Zahlungen werden nach § 366 BGB verteilt: zuerst die
   offenen Vorauszahlungen, dann die Miete, jeweils die ältesten zuerst. **Bei Rückständen, Teilzahlungen oder

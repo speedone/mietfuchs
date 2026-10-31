@@ -27,7 +27,7 @@ ohne Cloud und ohne Konto.
 - 💡 **Hinweise statt Rätselraten:** Mietfuchs erklärt, was auffällt (z. B. Rückstand, fehlender Endstand beim Zählerwechsel, Heizkostenverordnung), wo es eine gibt mit Rechtsgrundlage, und mit einem Lexikon der Fachbegriffe
 - 💶 **Mietkonto:** Soll/Ist je Monat, fällige Rückstände auf einen Blick
 - 🧾 **Steuer-Übersicht (Anlage V):** Einnahmen nach Zufluss, Werbungskosten und Überschuss aufs Jahr; wohnst du selbst im Haus, ist jede Position in abziehbar und privat aufgeteilt
-- 📁 **Belegordner:** je Objekt, Jahr und Kostenart, mit Posteingang für neue Belege, Belegabdeckung („85 % der Kosten belegt“), einer Belegmappe für Mieter als PDF und allen Belegen für die Steuer als ZIP
+- 📥 **Belege an einem Ort:** im Eingang den ganzen Stapel ablegen, Rechnungen und Zählerfotos gemischt, prüfen und übernehmen; im Ordner je Objekt, Jahr und Kostenart, mit Suche über alle Jahre, Belegabdeckung („85 % der Kosten belegt“), einer Belegmappe für Mieter als PDF und allen Belegen für die Steuer als ZIP
 - 🔁 **Kosten aus dem Vorjahr übernehmen:** Positionen samt Umlageschlüssel übernehmen und nur den neuen Betrag eintragen; den Schlüssel merkt sich Mietfuchs je Kostenart
 - 🧷 **Eine Rechnung landet genau einmal in den Kosten:** jede Zeile eines ausgewerteten Belegs wird neu angelegt, mit einer vorhandenen Position verknüpft oder verworfen, und die Vorschau zeigt vor dem Buchen, was geschieht
 - 🤖 **Optionale KI-Belegauswertung** mit [Ollama](https://ollama.com) auf dem eigenen Rechner oder einem Dienst deiner Wahl
@@ -47,9 +47,9 @@ ohne Cloud und ohne Konto.
 | --- | --- |
 | [![Abrechnung](docs/screenshots/abrechnung.png)](docs/screenshots/abrechnung.png) | [![Mietkonto](docs/screenshots/mietkonto.png)](docs/screenshots/mietkonto.png) |
 
-| Belegordner mit Posteingang | Auswertung prüfen: verknüpfen statt doppelt erfassen |
+| Belege: der Ordner | Auswertung prüfen im Eingang: verknüpfen statt doppelt erfassen |
 | --- | --- |
-| [![Belegordner](docs/screenshots/belegordner.png)](docs/screenshots/belegordner.png) | [![Auswertung prüfen](docs/screenshots/auswertung-pruefen.png)](docs/screenshots/auswertung-pruefen.png) |
+| [![Belege: Ordner](docs/screenshots/belegordner.png)](docs/screenshots/belegordner.png) | [![Auswertung prüfen](docs/screenshots/auswertung-pruefen.png)](docs/screenshots/auswertung-pruefen.png) |
 
 | Kosten | Kostenvergleich |
 | --- | --- |
@@ -200,12 +200,16 @@ legt die Dateien für alle Plattformen in `dist-bin/` ab.
    Eine neue Position bekommt den Schlüssel, den dieselbe Kostenart im Vorjahr hatte, und weicht
    sie davon ab, weisen Formular und Abrechnung darauf hin. Eine Reparatur („Nicht umlagefähig“)
    lässt sich für die Steuer einer Einheit zuordnen.
-3. **Belegordner**: alle Belege je Objekt und Jahr, mit einem Register je Kostenart, Vorschaubild,
-   Betrag und den Positionen, an denen ein Beleg hängt. Neue Belege landen im **Posteingang**
-   (auch mehrere auf einmal oder per Ziehen) und werden von dort einer Position zugeordnet oder
-   per KI ausgewertet. Die **Belegabdeckung** zeigt, welcher Anteil der Kosten belegt ist, und an
-   jeder Position ohne Beleg lässt sich einer nachreichen. Denselben Beleg erkennt Mietfuchs am
-   Inhalt, auch unter anderem Namen. Zum Jahresende packt der Belegordner die **Belegmappe für
+3. **Belege**: eine Seite mit zwei Ansichten. Im **Eingang** legst du neue Belege ab, auch den
+   ganzen Stapel mit Rechnungen und Zählerfotos gemischt. Mit KI wertet Mietfuchs jeden aus (die
+   Auswertung läuft weiter, wenn du die Seite wechselst), ohne KI oder mit „Nur ablegen“ speichert er
+   sie nur. Darunter steht, was zu prüfen ist, und unter „Ohne Position“ jeder gespeicherte Beleg,
+   den du einer Position zuordnest oder per KI auswerten lässt. Der **Ordner** zeigt alle Belege je
+   Objekt und Jahr, mit einem Register je Kostenart, Vorschaubild, Betrag und den Positionen, an
+   denen ein Beleg hängt; seine Suche durchsucht alle Objekte und Jahre. Die **Belegabdeckung**
+   zeigt, welcher Anteil der Kosten belegt ist, und an jeder Position ohne Beleg lässt sich einer
+   nachreichen. Denselben Beleg erkennt Mietfuchs am Inhalt, auch unter anderem Namen. Zum
+   Jahresende packt der Ordner die **Belegmappe für
    Mieter** (eine PDF mit Deckblatt „Position → Beleg, Seite“ für die Belegeinsicht nach § 556
    Abs. 4 BGB; Belege mit Daten anderer Mieter nur auf ausdrückliche Wahl) und die **Belege für die
    Steuer** (ein ZIP nach den Gruppen der Anlage V, mit einer Übersicht als CSV).
@@ -301,7 +305,7 @@ schlägt Positionen, Beträge und Kostenarten vor, übernommen wird erst, was du
 Ohne KI funktioniert Mietfuchs vollständig.
 
 Die Auswertung wird gespeichert und bleibt nach dem Neuladen erhalten; offene Auswertungen stehen
-in der Schnellerfassung, der Posteingang des Belegordners führt mit „Weiter prüfen“ dorthin. Je
+im Eingang der Seite Belege unter „Zu prüfen“, mit dem Beleg daneben. Je
 Zeile entscheidest du: neu anlegen, mit einer vorhandenen Position verknüpfen (etwa der aus dem
 Vorjahr übernommenen mit geschätztem Betrag) oder verwerfen. Eine Ampel markiert, was schon
 erfasst sein könnte, die Vorschau zeigt, was mit jeder Position geschieht, und „Buchen“ tut genau
@@ -329,8 +333,8 @@ Zwei Wege stehen zur Wahl:
    und Abbrechen; ein abgebrochener Download geht später dort weiter, wo er aufgehört hat.
    Lieber im Terminal? Dann `ollama pull qwen3.5:4b` (voreingestellt, 3,4 GB). Den passenden
    Befehl zeigt Mietfuchs auch an.
-4. **Ausprobieren:** unter *Kosten* oder in der *Schnellerfassung* einen Beleg in die Fläche
-   ziehen, oder im *Belegordner* bei einem Beleg im Posteingang „Per KI auswerten“ wählen.
+4. **Ausprobieren:** unter *Kosten* oder im Eingang der Seite *Belege* einen Beleg in die Fläche
+   ziehen, oder dort bei einem Beleg unter „Ohne Position“ „Per KI auswerten“ wählen.
 
 PDFs mit Textebene liest jedes Sprachmodell. Gescannte PDFs und Fotos brauchen ein Modell,
 das Bilder versteht. Bei Scans schickt der Browser die ersten vier Seiten als Bilder mit. Ein

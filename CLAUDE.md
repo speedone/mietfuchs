@@ -174,7 +174,7 @@ Claude Code lädt eine `CLAUDE.md` in einem Unterordner, sobald dort Dateien gel
 - [server/src/db/CLAUDE.md](server/src/db/CLAUDE.md): Datenbank (Treiber, Schlange, Migrationen,
   eingefrorener Eingang, Validator, Backup und Wiederherstellen, ZIP) und Umstieg.
 - [server/src/CLAUDE.md](server/src/CLAUDE.md): Objekte, Abrechnungszeitraum, Fristen und
-  Feiertage, Belegordner, API, Schnappschuss, Hinweise und Rechtsregister, IBAN, Rechenweg,
+  Feiertage, Belege (Eingang und Ordner), API, Schnappschuss, Hinweise und Rechtsregister, IBAN, Rechenweg,
   Schlüssel merken, doppelte Positionen, Belegbuchung, Berechnungs-Engine (Verteilung, Zähler,
   Leerstand, Betriebsstrom, Contracting, § 5a, Mietkonto, Steuer), Update-Hinweis.
 - [docs/heizung.md](docs/heizung.md): Heizanlage, Heizperiode, CO₂, Lieferungen, mehrere Anlagen,
