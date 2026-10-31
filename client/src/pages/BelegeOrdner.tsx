@@ -210,7 +210,7 @@ export default function BelegeOrdner({ stock, renderThumb = renderThumbnail, onO
   const [error, setError] = useState('')
   // Hängt ein gespeicherter, nicht ausgewerteter Beleg jetzt an einer Position, ist sein Eintrag der Warteschlange erledigt
   // (Durchsicht S3)
-  const { queue, remove } = useEvaluationQueue()
+  const { queue, remove, forgetFile } = useEvaluationQueue()
   const attach = useAttach(stock, properties, setError, (file) => {
     for (const x of queue) if (x.status === 'gespeichert' && (x.failure?.file ?? x.file) === file) remove(x.id)
   })
@@ -282,7 +282,8 @@ export default function BelegeOrdner({ stock, renderThumb = renderThumbnail, onO
   }, [costItems, scope, present, booked, properties])
 
   // Ein Zählerfoto an keiner Position lässt sich löschen, wie vorher im Belegordner (Durchsicht S1)
-  const deleteFile = useDeleteReceipt(() => stock.reload(), setError)
+  // Gelöscht: Auch was die Warteschlange zu ihm zeigt, ist erledigt (Nachdurchsicht S-D)
+  const deleteFile = useDeleteReceipt(async (file) => { forgetFile(file); await stock.reload() }, setError)
   const renderCard = (card: ReceiptCard) => (
     <ReceiptItem key={card.upload.file} card={card} renderThumb={renderThumb} jumped={jumped === card.upload.file} hint={hints.get(card.upload.file)}
       place={showProperty && card.propertyIds.length > 0 ? card.propertyIds.map(propertyName).join(', ') : undefined}

@@ -16,6 +16,7 @@ import { useReceiptStock } from '../receiptStock'
 import { renderThumbnail } from '../pdfPreview'
 import type { TenantFolderPlan } from '../tenantFolder'
 import PageHeader from '../components/PageHeader'
+import { EvaluationQueueProvider, useEvaluationQueueStore } from '../evaluationQueue'
 import BelegeEingang from './BelegeEingang'
 import BelegeOrdner, { type FolderMeta } from './BelegeOrdner'
 
@@ -44,7 +45,14 @@ type Props = {
 
 const LABELS: Record<BelegeView, string> = { eingang: 'Eingang', ordner: 'Ordner' }
 
-export default function Belege({ units, settings, onNavigate, onOpenItem, onOpenAiSettings, onOpenMeters, view, onViewChange, focusFile, onOpenReceipt, onFocusDone, renderThumb, makeTenantFolder }: Props) {
+// Eingang und Ordner teilen eine Warteschlange: In App.tsx liegt sie darüber; ohne sie (Tests einzelner Seiten) stellt die
+// Seite eine eigene bereit, damit beide Ansichten dieselbe sehen.
+export default function Belege(props: Props) {
+  const shared = useEvaluationQueueStore()
+  return shared ? <BelegePage {...props} /> : <EvaluationQueueProvider><BelegePage {...props} /></EvaluationQueueProvider>
+}
+
+function BelegePage({ units, settings, onNavigate, onOpenItem, onOpenAiSettings, onOpenMeters, view, onViewChange, focusFile, onOpenReceipt, onFocusDone, renderThumb, makeTenantFolder }: Props) {
   const stock = useReceiptStock()
   const [own, setOwn] = useState<BelegeView>(view ?? 'eingang')
   useEffect(() => { if (view) setOwn(view) }, [view])
@@ -83,8 +91,15 @@ export default function Belege({ units, settings, onNavigate, onOpenItem, onOpen
       const there = placeOf(card.upload, { propertyId: properties.length > 1 ? property?.id ?? null : null, year })
       if (there) {
         switched.current = target
-        const rules = rulesOf(properties.find((p) => p.id === (there.propertyId ?? property?.id)) ?? null)
-        void switchTo(there.propertyId ?? undefined, there.year === null ? undefined : periodKeyOfYear(rules, there.year)).then((ok) => {
+        const dest = properties.find((p) => p.id === (there.propertyId ?? property?.id))
+        if (!dest) {
+          setNotice(`„${receiptName(card.upload)}“ gehört zu einem Objekt, das es nicht mehr gibt. Ordnen Sie ihn im Ordner über die Suche einem Objekt zu.`)
+          focusDone()
+          return
+        }
+        // Immer mit Zeitraum, auch wenn nur das Objekt wechselt: Bei einem anderen Rhythmus (Mai bis April) gälte sonst der
+        // Zeitraum um den bisherigen Anker, und das Jahr des Belegs wäre ein anderes (Nachdurchsicht S-B).
+        void switchTo(there.propertyId ?? undefined, periodKeyOfYear(rulesOf(dest), there.year ?? year)).then((ok) => {
           // Nach dem Wechsel noch einmal leiten (in App.tsx ist die Seite dann neu aufgestellt)
           if (ok) { routed.current = null; setAgain((n) => n + 1); return }
           setNotice(`„${receiptName(card.upload)}“ gehört zu einem anderen Objekt oder Jahr; gewechselt wurde nicht.`)
@@ -117,6 +132,7 @@ export default function Belege({ units, settings, onNavigate, onOpenItem, onOpen
     const next = e.key === 'Home' ? BELEGE_VIEWS[0] : e.key === 'End' ? BELEGE_VIEWS[BELEGE_VIEWS.length - 1]
       : BELEGE_VIEWS[(at + (e.key === 'ArrowRight' ? 1 : BELEGE_VIEWS.length - 1)) % BELEGE_VIEWS.length]
     if (!next) return
+    setNotice('')
     choose(next)
     tabs.current[next]?.focus()
   }
@@ -131,7 +147,7 @@ export default function Belege({ units, settings, onNavigate, onOpenItem, onOpen
       <div role="tablist" aria-label="Ansicht der Belege" className="flex gap-1 border-b border-line mb-4 no-print" onKeyDown={onKey}>
         {BELEGE_VIEWS.map((v) => (
           <button key={v} ref={(el) => { tabs.current[v] = el }} type="button" role="tab" id={`belege-tab-${v}`} aria-controls={`belege-${v}`}
-            aria-selected={shown === v} tabIndex={shown === v ? 0 : -1} onClick={() => choose(v)}
+            aria-selected={shown === v} tabIndex={shown === v ? 0 : -1} onClick={() => { setNotice(''); choose(v) }}
             className="min-h-9 px-4 py-2 -mb-px cursor-pointer border-0 border-b-2 border-solid border-transparent bg-transparent text-m text-muted font-medium hover:text-text aria-selected:border-accent aria-selected:text-text aria-selected:font-strong">
             {LABELS[v]}
             {v === 'eingang' && count > 0 && <> <span className="badge gray">{count}<span className="sr-only"> offen</span></span></>}

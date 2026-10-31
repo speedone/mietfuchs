@@ -167,6 +167,15 @@ export class EvaluationQueue {
     this.set(this.entries.filter((x) => x.id !== id))
   }
   cancel = (id: number): void => { this.aborts.get(id)?.abort() }
+  // Ein Beleg ist gelöscht, zugeordnet oder samt Auswertung in ein anderes Objekt verschoben: Was die Schlange zu ihm
+  // noch zeigt (gespeichert, ausgewertet, erkannt), ist erledigt und verschwindet, statt als „übernommen“ oder mit
+  // „Erneut versuchen“ stehen zu bleiben (Durchsicht S3, S-A, S-D). Was gerade läuft oder wartet, bleibt.
+  forgetFile = (file: string): void => {
+    const gone = this.entries.filter((x) => !isBusy(x) && ((x.failure?.file ?? x.file ?? x.result?.file) === file))
+    if (gone.length === 0) return
+    for (const x of gone) this.forget(x.id)
+    this.set(this.entries.filter((x) => !gone.includes(x)))
+  }
   // Einen gespeicherten Eintrag aus der Liste nehmen: Der Beleg bleibt im Belegordner, der Browser vergisst die Datei.
   takeOff = (id: number): void => {
     this.forget(id)
@@ -306,6 +315,7 @@ export function useEvaluationQueue() {
     addStored: queue.addStored,
     patchEntry: queue.patch,
     remove: queue.remove,
+    forgetFile: queue.forgetFile,
     cancel: queue.cancel,
     retry: queue.retry,
     takeOff: queue.takeOff,

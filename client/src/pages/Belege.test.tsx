@@ -54,6 +54,8 @@ let propsOverride: Property[] | null = null
 let aiStatus: { ok: boolean; error?: string; reason?: string } = { ok: true }
 // Eine Auswertung, die nicht antwortet (läuft, bis der Test endet)
 let holdIntake = false
+// Die Antwort einer gescheiterten Auswertung, wo der Test sie vorgibt
+let intakeFailure: Record<string, unknown> | null = null
 // Die Pfade aller GET-Anfragen
 let fetched: string[] = []
 // Gelöschte Belege (DELETE /api/uploads/…)
@@ -77,6 +79,7 @@ beforeEach(() => {
   propsOverride = null
   aiStatus = { ok: true }
   holdIntake = false
+  intakeFailure = null
   fetched = []
   deleted = new Set()
   openAssessments = () => []
@@ -89,6 +92,7 @@ beforeEach(() => {
       if (failAssessmentPut && u.pathname.startsWith('/api/assessments/')) return new Response(JSON.stringify({ error: 'Zeilen sind schon gebucht.' }), { status: 409, headers: { 'content-type': 'application/json' } })
       // Die KI-Auswertung: hier nur, dass sie ankommt (gescheitert, der Beleg bleibt gespeichert)
       if (u.pathname === '/api/intake' && holdIntake) return new Promise<Response>(() => {})
+      if (u.pathname === '/api/intake' && intakeFailure) return new Response(JSON.stringify(intakeFailure), { status: 502, headers: { 'content-type': 'application/json' } })
       if (u.pathname === '/api/intake') return new Response(JSON.stringify({ error: 'Ollama antwortet nicht.', file: String(body.existingFile ?? '4_lose.pdf'), reason: 'unreachable', kept: true }), { status: 502, headers: { 'content-type': 'application/json' } })
       if (method === 'DELETE' && u.pathname.startsWith('/api/uploads/')) deleted.add(decodeURIComponent(u.pathname.slice('/api/uploads/'.length)))
       const answer = u.pathname === '/api/upload' ? { file: '99_nachgereicht.pdf' } : { ok: true }
@@ -1171,4 +1175,112 @@ test('Eingang: ein Ladefehler der Belege steht auch im Eingang', async () => {
   expect(await within(panel).findByText(/Der Datenordner ist nicht lesbar/)).toBeTruthy()
   // Das Paneel lässt sich mit Tab erreichen, auch wenn sein erstes Element nicht fokussierbar ist
   expect(panel.getAttribute('tabindex')).toBe('0')
+})
+
+// Nachdurchsicht S-B: Ein Beleg eines Objekts mit Zeitraum Mai bis April, im gewählten Kalenderjahr: Der Sprung wechselt
+// auf den Zeitraum, der in diesem Jahr beginnt, nicht auf den, der gerade gilt.
+test('Sprung: nur das Objekt wechselt, bei Mai bis April auf den Zeitraum, der im Jahr des Belegs beginnt', async () => {
+  propsOverride = [PROPS[0] as Property, { ...(PROPS[1] as Property), periodRules: { startMonth: 5, changes: [] } }]
+  extraUploads = [{ ...up('8_anderswo.pdf'), propertyId: 'p2', year: YEAR }]
+  const onFocusDone = vi.fn()
+  const page = (focusFile: string | null) => (
+    <PeriodProvider>
+      <PropertyProvider>
+        <PeriodSelect />
+        <Belege {...BASE} view={undefined} renderThumb={() => Promise.resolve('')} focusFile={focusFile} onFocusDone={onFocusDone} />
+      </PropertyProvider>
+    </PeriodProvider>
+  )
+  const { rerender } = render(page(null))
+  // Das Jahr ausdrücklich gewählt (Seitenleiste): Beginn des Kalenderjahres als Anker
+  const year = await screen.findByRole('combobox', { name: 'Abrechnungsjahr' })
+  fireEvent.change(year, { target: { value: String(YEAR - 1) } })
+  fireEvent.change(year, { target: { value: String(YEAR) } })
+  await waitFor(() => expect(context()).toBe(`Lindenstraße · Abrechnungsjahr ${YEAR}`))
+  rerender(page('8_anderswo.pdf'))
+  await waitFor(() => expect(onFocusDone).toHaveBeenCalledTimes(1))
+  expect(context()).toMatch(new RegExp(`^Ahornweg · Abrechnungszeitraum .*${YEAR}.*${YEAR + 1}`))
+  expect(document.activeElement?.closest('li.receipt-card')?.getAttribute('data-file')).toBe('8_anderswo.pdf')
+})
+
+// Nachdurchsicht S-D: Ein Zählerfoto, dessen Ablesen gescheitert ist, im Ordner gelöscht: Auch sein Eintrag im Eingang
+// verschwindet.
+test('Ordner: ein gelöschtes Zählerfoto nimmt seinen Eintrag aus dem Eingang mit', async () => {
+  extraUploads = [{ ...up('9_zaehler.jpg'), kind: 'meterPhoto', mimeType: 'image/jpeg' }]
+  intakeFailure = { error: 'Ollama antwortet mit 500', file: '9_zaehler.jpg', reason: 'other', kept: true, meterPhoto: true }
+  const { container } = render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <UIProvider>
+          <Belege {...BASE} view={undefined} renderThumb={() => Promise.resolve('')} />
+        </UIProvider>
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  await screen.findByLabelText('Jahr für lose.pdf')
+  fireEvent.change(container.querySelector('input[aria-label="Belege und Zählerfotos auswählen"]') as HTMLInputElement, { target: { files: [new File(['jpg'], 'zaehler.jpg', { type: 'image/jpeg' })] } })
+  await screen.findByText('Gespeichert, nicht ausgewertet')
+  fireEvent.click(screen.getByRole('tab', { name: 'Ordner' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Beleg zaehler.jpg löschen' }))
+  fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Löschen' }))
+  await waitFor(() => expect(sent.some((r) => r.method === 'DELETE')).toBe(true))
+  await waitFor(() => expect(screen.queryByText('Gespeichert, nicht ausgewertet')).toBeNull())
+})
+
+// Nachdurchsicht K4: Wer ohne KI ablegt, sieht, dass Mietfuchs die KI noch einmal fragt; und nur die jüngste Antwort zählt.
+test('Eingang ohne KI: beim Ablegen „Prüfe die KI …“, eine verspätete ältere Antwort zählt nicht', async () => {
+  aiStatus = { ok: false, error: 'nicht erreichbar', reason: 'unreachable' }
+  const answers: ((v: Response) => void)[] = []
+  const inner = globalThis.fetch
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => (url === '/api/ai/status' && answers.length < 3
+    ? new Promise<Response>((resolve) => { answers.push(resolve) })
+    : inner(url, init)))
+  const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
+  const { container } = renderInboxWith(LOCAL)
+  await waitFor(() => expect(answers).toHaveLength(1))
+  answers[0]?.(json({ ok: false, reason: 'unreachable' }))
+  expect(await screen.findByText(/Die KI ist gerade nicht erreichbar/)).toBeTruthy()
+  // Zweimal „Erneut prüfen“: Die erste Antwort kommt zuletzt und sagt „nicht erreichbar“; gilt die zweite („läuft“)
+  fireEvent.click(screen.getByRole('button', { name: 'Erneut prüfen' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Erneut prüfen' }))
+  await waitFor(() => expect(answers).toHaveLength(3))
+  answers[2]?.(json({ ok: true }))
+  await waitFor(() => expect(screen.queryByText(/Die KI ist gerade nicht erreichbar/)).toBeNull())
+  answers[1]?.(json({ ok: false, reason: 'unreachable' }))
+  await new Promise((r) => setTimeout(r, 50))
+  expect(screen.queryByText(/Die KI ist gerade nicht erreichbar/)).toBeNull()
+  void container
+})
+
+test('Eingang ohne KI: beim Ablegen steht „Prüfe die KI …“, bis die Antwort da ist', async () => {
+  aiStatus = { ok: false, error: 'nicht erreichbar', reason: 'unreachable' }
+  const { container } = renderInboxWith(LOCAL)
+  expect(await screen.findByText(/Die KI ist gerade nicht erreichbar/)).toBeTruthy()
+  let release: ((v: Response) => void) | null = null
+  const inner = globalThis.fetch
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => (url === '/api/ai/status'
+    ? new Promise<Response>((resolve) => { release = resolve })
+    : inner(url, init)))
+  dropInto(container, [new File(['%PDF'], 'eins.pdf', { type: 'application/pdf' })])
+  expect(await screen.findByText('Prüfe die KI …')).toBeTruthy()
+  ;(release as ((v: Response) => void) | null)?.(new Response(JSON.stringify({ ok: false, reason: 'unreachable' }), { status: 200, headers: { 'content-type': 'application/json' } }))
+  await waitFor(() => expect(sent.some((r) => r.url === '/api/upload')).toBe(true))
+  expect(screen.queryByText('Prüfe die KI …')).toBeNull()
+})
+
+// Nachdurchsicht K5: Gehört ein Beleg einem Objekt, das es nicht mehr gibt, nennt der Sprung den Grund; die Meldung geht
+// beim nächsten Wechsel der Ansicht.
+test('Sprung zu einem Beleg eines gelöschten Objekts: Meldung mit Grund, weg beim Wechsel der Ansicht', async () => {
+  extraUploads = [{ ...up('8_weg.pdf'), propertyId: 'p9', year: YEAR }]
+  const onFocusDone = vi.fn()
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <Belege {...BASE} view={undefined} renderThumb={() => Promise.resolve('')} focusFile="8_weg.pdf" onFocusDone={onFocusDone} />
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  expect(await screen.findByText(/gehört zu einem Objekt, das es nicht mehr gibt/)).toBeTruthy()
+  fireEvent.click(screen.getByRole('tab', { name: 'Ordner' }))
+  expect(screen.queryByText(/gehört zu einem Objekt, das es nicht mehr gibt/)).toBeNull()
 })

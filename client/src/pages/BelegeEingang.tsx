@@ -88,9 +88,9 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
   const [pending, setPending] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
   // Ein gespeicherter, nicht ausgewerteter Beleg, der gelöscht oder zugeordnet ist: sein Eintrag ist erledigt (Durchsicht S3)
-  const forgetKept = (file: string) => {
-    for (const x of allRef.current) if (x.status === 'gespeichert' && (x.failure?.file ?? x.file) === file) remove(x.id)
-  }
+  // Gelöscht, zugeordnet oder in ein anderes Objekt verschoben: Was die Schlange zu diesem Beleg zeigt, ist erledigt
+  // (Durchsicht S3, Nachdurchsicht S-A); sonst stünde es als „übernommen“ oder mit „Erneut versuchen“ da.
+  const forgetKept = (file: string) => forgetFile(file)
   const attach = useAttach(stock, properties, setError, forgetKept)
 
 
@@ -102,7 +102,7 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
 
   // Die eine Warteschlange der App (#490): Sie läuft weiter, wenn man die Seite, das Objekt oder den Zeitraum wechselt.
   // Der Eingang zeigt die Einträge seines Objekts und Zeitraums, die übrigen nennt eine Zeile (OtherQueueEntries).
-  const { queue: all, patchEntry, addFiles, addStored, remove, cancel, retry, takeOff, asInvoice, sweep } = useEvaluationQueue()
+  const { queue: all, patchEntry, addFiles, addStored, remove, cancel, retry, takeOff, asInvoice, sweep, forgetFile } = useEvaluationQueue()
   const allRef = useRef(all)
   allRef.current = all
   // Wer die Seite verlässt, sieht Erledigtes beim nächsten Mal nicht wieder (übernommen, abgebrochen, abgelegt).
@@ -119,14 +119,22 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
   const external = !!settings?.aiExternal?.text
   const askable = settings !== null && !external
   const [status, setStatus] = useState<AiStatus | null>(null)
+  // Nur die jüngste Frage zählt: Eine ältere Antwort, die später ankommt, überschreibt sie nicht (Nachdurchsicht K4).
+  const asked = useRef(0)
+  const [checking, setChecking] = useState(false)
   const checkAi = useCallback(async (): Promise<AiStatus | null> => {
     if (!askable) return null
+    const seq = ++asked.current
+    setChecking(true)
     try {
       const s = await api<AiStatus>('/api/ai/status')
+      if (seq !== asked.current) return null
       setStatus(s)
       return s
     } catch {
       return null // ohne Antwort wie vorher: auswerten
+    } finally {
+      if (seq === asked.current) setChecking(false)
     }
   }, [askable])
   useEffect(() => { void checkAi() }, [checkAi])
@@ -418,7 +426,9 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
 
   async function place(u: UploadInfo, changes: { propertyId?: string | null; year?: number | null }) {
     await api(`/api/uploads/${encodeURIComponent(u.file)}`, { method: 'PUT', body: JSON.stringify(changes) })
-    await stock.reload()
+    // In ein anderes Objekt verschoben: Die Auswertung geht mit, hier ist sie erledigt (nicht „übernommen“)
+    if (changes.propertyId !== undefined && changes.propertyId !== null && changes.propertyId !== propertyId) forgetFile(u.file)
+    await reloadAll()
   }
 
   // „Per KI auswerten“ direkt am Beleg (#490, vorher ein Sprung in die Schnellerfassung). Der Browser holt die Datei
@@ -574,8 +584,8 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
   const jumpElsewhere = (g: { propertyId: string | null; year: number | null }) => {
     const there = g.propertyId ? properties.find((p) => p.id === g.propertyId) ?? property : property
     const y = g.year ?? year
-    const periodKey = periodKeyOfYear(rulesOf(there ?? null), y)
-    void switchTo(g.propertyId ?? undefined, g.year === null ? undefined : periodKey)
+    // Immer mit Zeitraum, auch beim Wechsel nur des Objekts (Nachdurchsicht S-B)
+    void switchTo(g.propertyId ?? undefined, periodKeyOfYear(rulesOf(there ?? null), y))
   }
 
   // Eine Karte der Warteschlange: wartend, laufend, ein erkannter Zählerstand, ein Fehler, ein gespeicherter Beleg
@@ -720,6 +730,7 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
             <>
               <span className="muted">Die KI ist gerade nicht erreichbar. Belege werden nur gespeichert; „Per KI auswerten“ steht an jedem Beleg.</span>
               <button type="button" className="btn small ghost" onClick={() => void checkAi()}>Erneut prüfen</button>
+              {checking && <span className="muted" role="status">Prüfe die KI …</span>}
               {uploading > 0 && <span className="muted">Wird gespeichert … ({uploading})</span>}
               {onOpenAiSettings && <button type="button" className="btn small ghost" onClick={onOpenAiSettings}>KI-Einstellungen öffnen</button>}
             </>
