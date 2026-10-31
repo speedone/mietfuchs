@@ -69,7 +69,9 @@ const int = (rng: Rng, min: number, max: number) => min + Math.floor(rng() * (ma
 const day = (rng: Rng, year = 2025) => `${year}-${String(int(rng, 1, 12)).padStart(2, '0')}-${String(int(rng, 1, 28)).padStart(2, '0')}`
 const word = (rng: Rng) => pick(rng, ['Nord', 'Süd', 'Ost', 'West', 'Mitte', 'Garten', 'Dach', 'Keller']) ?? 'Mitte'
 
-export type Step = { name: string, routes: string[], run: (ctx: Ctx) => Promise<unknown> }
+// `unchanged`: Der Schritt speichert, was schon dasteht, und soll dann keinen Eintrag ergeben und den Bestand nicht ändern,
+// auch keine `rowid` (#494). Der Test verlangt, dass jeder solche Schritt das in den Läufen wirklich mindestens einmal tut.
+export type Step = { name: string, routes: string[], unchanged?: true, run: (ctx: Ctx) => Promise<unknown> }
 
 const heatingSelf = { period: '2025-01', heatConsumptionPct: 70, waterConsumptionPct: 70, insulationRule: 'notApplies', hotWater: 'combined', capture: 'heatMeter', dhwHeatMeter: true, totalHeatMeter: false }
 const ownPlant = (ctx: Ctx) => ctx.plants.find((p) => p.method === 'self' && p.endsOn === null)
@@ -208,6 +210,17 @@ export const STEPS: readonly Step[] = [
       await send(ctx.s, 'PUT', `/api/units/${u.id}/interim-gaps/2025-06-30`, { status: 'missed', reason: '' })
       if (ctx.rng() < 0.5) await send(ctx.s, 'DELETE', `/api/units/${u.id}/interim-gaps/2025-06-30`)
     },
+  },
+  // Unverändert erneut gespeichert (#494): Die Route löscht die Zeilen und fügt sie neu ein. Ohne Änderung entsteht kein
+  // Eintrag, und die Zeilen behalten ihre `rowid`; sonst scheiterte ein späterer Rücksprung über ein Löschen in derselben
+  // Tabelle. Die erste Wohnung bzw. das älteste Mietverhältnis, damit dahinter Zeilen mit höherer `rowid` stehen.
+  {
+    name: 'Fehlende Zwischenablesung unverändert erneut beantworten', routes: ['PUT /api/units/:id/interim-gaps/:date'], unchanged: true,
+    run: async (ctx) => { const u = ctx.units[0]; if (u) await send(ctx.s, 'PUT', `/api/units/${u.id}/interim-gaps/2025-06-30`, { status: 'missed', reason: '' }) },
+  },
+  {
+    name: 'Mietverhältnis unverändert speichern', routes: ['PUT /api/tenancies/:id'], unchanged: true,
+    run: async (ctx) => { const t = ctx.tenancies[0]; if (t) await send(ctx.s, 'PUT', `/api/tenancies/${t.id}`, { prepayments: t.prepayments }) },
   },
   // ---------- Heizung ----------
   // Eine Linie je Objekt: zuerst eine Ölheizung mit Messdienst (Vorrat, CO₂, eigene Heizperiode), nach dem Kesseltausch eine

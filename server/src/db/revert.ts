@@ -337,6 +337,13 @@ async function inverse(db: Executor, row: LogRow): Promise<void> {
   const columns = Object.keys(before).filter((c) => c !== ROWID)
   if (row.op === 'delete') {
     const rowid = before[ROWID]
+    // Trägt eine andere Zeile die alte `rowid`, rückt sie ans Ende (#494). Das kann nur eine sein, die ohne Journal
+    // entstanden ist (`unjournaled`: die Zeile eines Belegs ohne Zeile), denn jede erfasste ist vorher schon
+    // zurückgenommen; sie bekam die `rowid`, die das Löschen frei gemacht hatte. Eine Zeile mit demselben Schlüssel
+    // bleibt, wo sie ist (bei INTEGER PRIMARY KEY ist die `rowid` der Schlüssel), und das Einfügen scheitert wie bisher.
+    if (typeof rowid === 'number') {
+      await db.run(sql`UPDATE ${table} SET rowid = (SELECT max(rowid) + 1 FROM ${table}) WHERE rowid = ${rowid} AND NOT (${keyCondition(row.tableName, key)})`)
+    }
     const names = [...(typeof rowid === 'number' ? [sql.raw('rowid')] : []), ...columns.map((c) => sql.identifier(c))]
     const values = [...(typeof rowid === 'number' ? [sql`${rowid}`] : []), ...columns.map((c) => sql`${sqlValue(before[c])}`)]
     await db.run(sql`INSERT INTO ${table} (${sql.join(names, sql`, `)}) VALUES (${sql.join(values, sql`, `)})`)
