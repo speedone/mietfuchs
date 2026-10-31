@@ -4,7 +4,7 @@
 // und Kostenseite benutzen sie beide; ihre Seitentests (aiCancel, kostenKiZiel, booking) und appQueue.test.tsx
 // spielen sie durch die echten Seiten.
 import { createElement, type ReactNode } from 'react'
-import { afterEach, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { EvaluationQueueProvider, useEvaluationQueue, type QueueTarget } from './evaluationQueue'
 
@@ -25,8 +25,18 @@ vi.mock('./aiRequest', () => ({
   }),
 }))
 
+// Ein neuer Versuch holt den Beleg aus dem Belegordner (die Datei bleibt nicht im Browser, Durchsicht K2)
+let fetched: string[] = []
+beforeEach(() => {
+  fetched = []
+  vi.stubGlobal('fetch', async (url: string) => {
+    fetched.push(url)
+    return new Response(new Blob(['PDF'], { type: 'application/pdf' }), { status: 200 })
+  })
+})
 afterEach(() => {
   cleanup()
+  vi.unstubAllGlobals()
   pending.length = 0
 })
 
@@ -74,6 +84,8 @@ test('ein gespeicherter Beleg ohne Auswertung lässt sich erneut auswerten, ohne
   act(() => result.current.retry(id))
   await waitFor(() => expect(pending).toHaveLength(2))
   expect([pending[1]?.form.get('file'), pending[1]?.form.get('existingFile')]).toEqual([null, 'srv-a.pdf'])
+  // Die Datei kam aus dem Belegordner, nicht aus dem Speicher des Browsers
+  expect(fetched).toEqual(['/uploads/srv-a.pdf'])
   expect(result.current.queue[0]?.failure).toBeUndefined()
   await act(async () => pending[1]?.resolve(invoice('srv-a.pdf')))
   await waitFor(() => expect(result.current.queue[0]).toMatchObject({ status: 'fertig', result: { file: 'srv-a.pdf' } }))
@@ -136,4 +148,20 @@ test('ein Zählerfoto ist fertig mit der Antwort; die Rechnung ohne gespeicherte
   expect(result.current.queue[0]).toMatchObject({ status: 'fertig', result: { kind: 'zaehler' }, exifDate: null })
   await act(async () => pending[1]?.resolve({ file: 'srv-b.pdf', kind: 'rechnung', extraction: { positions: [] }, assessment: null }))
   await waitFor(() => expect(result.current.queue[1]).toMatchObject({ status: 'fehler', error: expect.stringMatching(/nicht speichern/) }))
+})
+
+// Durchsicht K1/S4: `sweep` räumt Erledigtes, `asInvoice` wertet ein Zählerfoto als Rechnung neu aus.
+test('Erledigtes räumt `sweep`; ein Zählerfoto lässt sich als Rechnung neu auswerten', async () => {
+  const { result } = renderHook(() => useEvaluationQueue())
+  act(() => result.current.addFiles([new File(['JPEG'], 'foto.jpg', { type: 'image/jpeg' }), pdf('b.pdf')], target))
+  await waitFor(() => expect(pending).toHaveLength(1))
+  await act(async () => pending[0]?.resolve({ file: 'srv-foto.jpg', kind: 'zaehler', reading: { meterNumber: null, value: 3, dateOnImage: null } }))
+  await waitFor(() => expect(pending).toHaveLength(2))
+  await act(async () => result.current.cancel(result.current.queue[1]?.id ?? -1))
+  await waitFor(() => expect(result.current.queue[1]?.status).toBe('abgebrochen'))
+  act(() => result.current.sweep())
+  expect(result.current.queue.map((x) => x.fileName)).toEqual(['foto.jpg'])
+  act(() => result.current.asInvoice(result.current.queue[0]?.id ?? -1))
+  await waitFor(() => expect(pending).toHaveLength(3))
+  expect([pending[2]?.form.get('docType'), pending[2]?.form.get('existingFile'), pending[2]?.form.get('file')]).toEqual(['rechnung', 'srv-foto.jpg', null])
 })

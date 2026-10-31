@@ -125,8 +125,9 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   const confirm = useConfirm()
   const [items, setItems] = useState<CostItem[]>([])
   const [meters, setMeters] = useState<Meter[]>([])
-  // Ob die Zähler einmal geantwortet haben: Erst dann entsteht der Vorschlag zu einem Zählerfoto (Zuordnung).
-  const [metersLoaded, setMetersLoaded] = useState(false)
+  // Ob die Zähler geantwortet haben: Erst dann steht der Vorschlag zu einem Zählerfoto da, und nur mit ihnen ('ok')
+  // wird er festgehalten (Zuordnung).
+  const [meterData, setMeterData] = useState<'loading' | 'ok' | 'failed'>('loading')
   const [form, setForm] = useState<ItemForm | null>(null)
   // Verlangt die Vorschau des Aufteilens das Jahr der Zahlung (#208), zeigt das Formular das Feld
   // auch bei einem Zeitraum in einem Kalenderjahr.
@@ -238,7 +239,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   const load = () => api<CostItem[]>(withProperty('/api/costItems', propertyId)).then(setItems)
   useEffect(() => {
     load().catch(() => setError('Server nicht erreichbar — läuft `npm run dev`?'))
-    api<Meter[]>(withProperty('/api/meters', propertyId)).then(setMeters).catch(() => {}).finally(() => setMetersLoaded(true))
+    api<Meter[]>(withProperty('/api/meters', propertyId)).then((m) => { setMeters(m); setMeterData('ok') }, () => setMeterData('failed'))
     // Neu laden, wenn das Objekt wechselt (#92).
   }, [propertyId])
   // Ist die Abrechnung des Jahres für dieses Objekt abgeschlossen (#142)? Dann ändert eine
@@ -582,36 +583,43 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   }
 
   // KI-Auswertung (#170): Die eine Warteschlange der App (#490) teilt sich die Kostenseite mit der Schnellerfassung;
-  // sie zeigt die Einträge dieses Objekts und Zeitraums, auch die dort hochgeladenen, und wertet über denselben
-  // Eingang aus, erkennt also auch ein Zählerfoto (Regel 4). Eine ausgewertete Rechnung ist als Auswertung
-  // gespeichert und wird mit „Auswertung prüfen“ gebucht; eine Auswertung läuft weiter, wenn man die Seite verlässt.
-  const { queue: all, patchEntry, addFiles, remove, cancel, retry, takeOff } = useEvaluationQueue()
+  // sie zeigt die Einträge dieses Objekts und Zeitraums, auch die dort hochgeladenen. Eine ausgewertete Rechnung ist
+  // als Auswertung gespeichert und wird mit „Auswertung prüfen“ gebucht; eine Auswertung läuft weiter, wenn man die
+  // Seite verlässt. Was hier hochgeladen wird, gilt als Rechnung (`docType`): Der Server fragt das Modell nicht nach
+  // der Belegart, wie vorher mit /api/extract; Zählerfotos erkennt die Schnellerfassung (Entscheidung zu Regel 4).
+  const { queue: all, patchEntry, addFiles, remove, cancel, retry, takeOff, sweep } = useEvaluationQueue()
+  // Wer die Seite verlässt, sieht Erledigtes beim nächsten Mal nicht wieder (übernommen, abgebrochen, abgelegt).
+  useEffect(() => () => sweep(), [sweep])
   // Bleibt der Beleg ungebucht, steht er im Posteingang dieses Objekts; nennt er kein Jahr, gilt das gewählte (#170).
-  const target: QueueTarget = { propertyId, year, period: key, pageImageEdge: settings?.ai?.pageImageEdge ?? undefined }
+  const target: QueueTarget = { propertyId, year, period: key, pageImageEdge: settings?.ai?.pageImageEdge ?? undefined, docType: 'rechnung' }
   const queue = useMemo(() => all.filter((x) => belongsTo(x, propertyId, key)), [all, propertyId, key])
   const focusAfterRetry = useRetryFocus(queue)
   const isReading = (x: QueueEntry) => x.status === 'fertig' && x.result?.kind === 'zaehler'
-  // Ablesungen braucht die Seite nur für die Ampel eines Zählerfotos; geladen wird erst, wenn eines da ist.
+  // Ein Zählerfoto aus der Schnellerfassung desselben Objekts und Zeitraums steht auch hier. Ablesungen braucht die
+  // Seite nur für seine Ampel; geladen wird erst, wenn eines da ist.
   const hasReading = queue.some(isReading)
   const [readings, setReadings] = useState<Reading[] | null>(null)
+  const [readingsOk, setReadingsOk] = useState(false)
   useEffect(() => {
     if (!hasReading || readings) return
-    api<Reading[]>(withProperty('/api/readings', propertyId)).then(setReadings).catch(() => setReadings([]))
+    api<Reading[]>(withProperty('/api/readings', propertyId))
+      .then((r) => { setReadings(r); setReadingsOk(true) }, () => { setReadings([]); setReadingsOk(false) })
   }, [hasReading, readings, propertyId])
   const readingOf = (x: QueueEntry): ReadingCandidate | null =>
-    x.data.reading ?? (x.result?.kind === 'zaehler' && readings && metersLoaded ? initialCandidate(x.result.reading, x.exifDate ?? null, meters, readings) : null)
+    x.data.reading ?? (x.result?.kind === 'zaehler' && readings && meterData !== 'loading' ? initialCandidate(x.result.reading, x.exifDate ?? null, meters, readings) : null)
   // Der Vorschlag gilt ab dem Augenblick, in dem er entsteht (wie vor #490 mit der Antwort): Er bleibt am Eintrag, auch
-  // wenn neue Ablesungen die Ampel ändern, und die andere Seite zeigt denselben.
+  // wenn neue Ablesungen die Ampel ändern, und die andere Seite zeigt denselben. Nur mit Zählern und Ablesungen, sonst
+  // bliebe ein Vorschlag ohne Zuordnung stehen.
   useEffect(() => {
+    if (meterData !== 'ok' || !readingsOk) return
     for (const x of queue) {
       if (x.data.reading || x.result?.kind !== 'zaehler') continue
       const r = readingOf(x)
       if (r) patchEntry(x.id, { data: { reading: r } })
     }
   })
-  // Ein erkannter, nicht übernommener Zählerstand ist eine ungespeicherte Eingabe (#145); eine laufende Auswertung
-  // nicht mehr, sie läuft in der Warteschlange der App weiter (#490).
-  useOpenForm(hasReading)
+  // Weder eine laufende Auswertung noch ein erkannter Zählerstand gehen beim Wechsel verloren: Sie stehen in der
+  // Warteschlange der App (#490); beim Schließen des Tabs fragt App.tsx.
   const [adoptingReading, setAdoptingReading] = useState(false)
   const adoptingReadingRef = useRef(false)
   async function adoptReading(entry: QueueEntry) {
@@ -781,7 +789,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
 
       <Card title={<>🤖 Beleg per KI auswerten <span className="badge gray">{ai.where}</span></>} className="no-print">
         <p className="muted">
-          PDF oder Foto der Rechnung hochladen — die KI schlägt Kostenpositionen vor, Sie prüfen und übernehmen sie. Ein Zählerfoto erkennt sie als Zählerstand. {ai.notice ?? 'Es verlässt nichts Ihren Rechner.'}
+          PDF oder Foto der Rechnung hochladen — die KI schlägt Kostenpositionen vor, Sie prüfen und übernehmen sie. Zählerfotos nimmt die Schnellerfassung. {ai.notice ?? 'Es verlässt nichts Ihren Rechner.'}
         </p>
         <div
           className={`dropzone ${dragOver ? 'over' : ''}`}

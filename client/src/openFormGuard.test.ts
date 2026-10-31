@@ -17,6 +17,7 @@ const sources: Record<string, string> = import.meta.glob<string>(['./components/
 
 const EXCEPTIONS: Record<string, string> = {
   './components/ServiceImportReview.tsx': 'Teil von ServiceImportCard, die sich anmeldet, solange der Vorschlag offen ist.',
+  './pages/Schnellerfassung.tsx': 'Der erkannte Zählerstand steht in der Warteschlange der App und überlebt den Wechsel (#490); beim Schließen des Tabs fragt App.tsx (`unsaved`). Jahr und Zeilen einer Auswertung melden sich in AssessmentReview.',
   './pages/Steuer.tsx': 'Nur Auswahl des Jahres und der Ansicht, kein ungespeicherter Stand.',
   './pages/Verlauf.tsx': 'Nur die Filter des Verlaufs, kein ungespeicherter Stand; der Rücksprung fragt vorher.',
 }

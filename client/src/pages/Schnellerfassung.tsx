@@ -9,7 +9,7 @@ import { assessmentOf, belongsTo, useEvaluationQueue, type QueueEntry, type Queu
 import { initialCandidate, readingBody, scoreCandidate, type ReadingCandidate } from '../readingCandidate'
 import AssessmentReview from '../components/AssessmentReview'
 import { usePeriod } from '../period'
-import { useOpenForm, useProperty, withProperty } from '../property'
+import { useProperty, withProperty } from '../property'
 import { AiProgressBadge } from '../components/AiProgress'
 import { plural } from '../../../shared/wording.ts'
 import PageHeader from '../components/PageHeader'
@@ -55,8 +55,9 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
   const [existingItems, setExistingItems] = useState<CostItem[]>([])
   const [meters, setMeters] = useState<Meter[]>([])
   const [readings, setReadings] = useState<Reading[]>([])
-  // Ob Zähler und Ablesungen einmal geantwortet haben: Erst dann entsteht der Vorschlag zu einem Zählerfoto.
-  const [loaded, setLoaded] = useState(false)
+  // Ob Zähler und Ablesungen geantwortet haben: Erst dann steht der Vorschlag zu einem Zählerfoto da, und nur mit
+  // ihnen ('ok') wird er festgehalten.
+  const [meterData, setMeterData] = useState<'loading' | 'ok' | 'failed'>('loading')
   const [dragOver, setDragOver] = useState(false)
   const [error, setError] = useState('')
   // Was nach „Alle grünen übernehmen“ noch zu prüfen bleibt (#139)
@@ -69,61 +70,79 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
   const upsert = (v: AssessmentView) =>
     setAssessments((list) => (list.some((x) => x.id === v.id) ? list.map((x) => (x.id === v.id ? v : x)) : [...list, v]))
 
-  const loadData = () => Promise.all([
-    api<CostItem[]>(withProperty('/api/costItems', propertyId)).then(setExistingItems),
-    Promise.all([api<Meter[]>(withProperty('/api/meters', propertyId)), api<Reading[]>(withProperty('/api/readings', propertyId))])
-      .then(([m, r]) => { setMeters(m); setReadings(r) })
-      .finally(() => setLoaded(true)),
-    loadOpenAssessments(propertyId).then((open) =>
-      setAssessments((list) => [...list.filter((x) => !x.open && !open.some((o) => o.id === x.id)), ...open])),
-  ])
-  useEffect(() => {
-    loadData().catch(() => setError('Server nicht erreichbar — läuft `npm run dev`?'))
-    // Neu laden, wenn das Objekt wechselt (#92).
-  }, [propertyId])
-
   // Die eine Warteschlange der App (#490): Sie läuft weiter, wenn man die Seite, das Objekt oder den Zeitraum wechselt.
   // Die Seite zeigt die Einträge ihres Objekts und Zeitraums, die übrigen nennt eine Zeile (OtherQueueEntries).
-  const { queue: all, patchEntry, addFiles, addStored, remove, cancel, retry, takeOff } = useEvaluationQueue()
+  const { queue: all, patchEntry, addFiles, addStored, remove, cancel, retry, takeOff, asInvoice, sweep } = useEvaluationQueue()
+  const allRef = useRef(all)
+  allRef.current = all
+  // Wer die Seite verlässt, sieht Erledigtes beim nächsten Mal nicht wieder (übernommen, abgebrochen, abgelegt).
+  useEffect(() => () => sweep(), [sweep])
   // Objekt und Jahr für die Auswertung (#170); ein neuer Beleg steht damit im Posteingang dieses Objekts, falls er
   // ungebucht bleibt.
   const target: QueueTarget = { propertyId, year, period: key, pageImageEdge: settings?.ai?.pageImageEdge ?? undefined }
   const queue = useMemo(() => all.filter((x) => belongsTo(x, propertyId, key)), [all, propertyId, key])
   const isReading = (x: QueueEntry) => x.status === 'fertig' && x.result?.kind === 'zaehler'
   const isInvoice = (x: QueueEntry) => x.result?.kind === 'rechnung'
+
+  // Eine Auswertung, die der Server nicht mehr als offen führt, ist gebucht, auch wenn das anderswo geschah (in
+  // einem anderen Jahr dieser Seite, auf der Seite Kosten, im Belegordner): Ihr Eintrag gilt dann als übernommen.
+  const settleBooked = (open: AssessmentView[]) => {
+    for (const x of allRef.current) {
+      const v = assessmentOf(x)
+      if (!isInvoice(x) || x.status !== 'fertig' || !v || (v.propertyId ?? x.propertyId) !== propertyId) continue
+      if (!open.some((o) => o.id === v.id)) patchEntry(x.id, { status: 'übernommen' })
+    }
+  }
+
+  const loadData = () => Promise.all([
+    api<CostItem[]>(withProperty('/api/costItems', propertyId)).then(setExistingItems),
+    Promise.all([api<Meter[]>(withProperty('/api/meters', propertyId)), api<Reading[]>(withProperty('/api/readings', propertyId))])
+      .then(([m, r]) => { setMeters(m); setReadings(r); setMeterData('ok') }, (e: unknown) => { setMeterData('failed'); throw e }),
+    loadOpenAssessments(propertyId).then((open) => {
+      setAssessments((list) => [...list.filter((x) => !x.open && !open.some((o) => o.id === x.id)), ...open])
+      settleBooked(open)
+    }),
+  ])
+  useEffect(() => {
+    loadData().catch(() => setError('Server nicht erreichbar — läuft `npm run dev`?'))
+    // Neu laden, wenn das Objekt wechselt (#92).
+  }, [propertyId])
+
   // Der Zählerstand eines Eintrags: nach der ersten Eingabe der eigene, sonst der Vorschlag aus der Antwort mit den
-  // Zählern dieses Objekts (erst wenn sie geladen sind, sonst fehlte die Zuordnung).
+  // Zählern dieses Objekts (gezeigt, sobald sie geantwortet haben, auch mit einem Fehler).
   const readingOf = (x: QueueEntry): ReadingCandidate | null =>
-    x.data.reading ?? (x.result?.kind === 'zaehler' && loaded ? initialCandidate(x.result.reading, x.exifDate ?? null, meters, readings) : null)
+    x.data.reading ?? (x.result?.kind === 'zaehler' && meterData !== 'loading' ? initialCandidate(x.result.reading, x.exifDate ?? null, meters, readings) : null)
   const focusAfterRetry = useRetryFocus(queue)
   // Der Vorschlag gilt ab dem Augenblick, in dem er entsteht (wie vor #490 mit der Antwort): Er bleibt am Eintrag, auch
-  // wenn neue Ablesungen die Ampel ändern, und die andere Seite zeigt denselben.
+  // wenn neue Ablesungen die Ampel ändern, und die andere Seite zeigt denselben. Erst mit den Zählern, sonst bliebe
+  // ein Vorschlag ohne Zuordnung stehen.
   useEffect(() => {
+    if (meterData !== 'ok') return
     for (const x of queue) {
       if (x.data.reading || x.result?.kind !== 'zaehler') continue
       const r = readingOf(x)
       if (r) patchEntry(x.id, { data: { reading: r } })
     }
   })
-  // Was beim Wechsel verloren ginge (#145, #490): ein erkannter, noch nicht übernommener Zählerstand. Eine laufende
-  // Auswertung läuft in der Warteschlange der App weiter, eine ausgewertete Rechnung ist gespeichert.
-  useOpenForm(queue.some(isReading))
+  // Ein erkannter, nicht übernommener Zählerstand steht in der Warteschlange der App und überlebt den Wechsel der
+  // Seite (#490); beim Schließen des Tabs fragt App.tsx.
 
   // Ausgewertete Rechnungen kommen zu den Auswertungen der Seite, auch wenn die Antwort kam, während die Seite
-  // nicht offen war. Je Eintrag einmal; danach gilt, was die Seite daraus macht (Buchen).
+  // nicht offen war. Je Eintrag einmal; danach gilt, was die Seite daraus macht (Buchen). Gebuchtes nicht.
   const absorbed = useRef(new Set<number>())
   useEffect(() => {
     for (const x of queue) {
       const v = assessmentOf(x)
-      if (!isInvoice(x) || !v || absorbed.current.has(x.id)) continue
+      if (!isInvoice(x) || x.status !== 'fertig' || !v || absorbed.current.has(x.id)) continue
       absorbed.current.add(x.id)
       upsert(v)
     }
   }, [queue])
 
-  // Nach einer Buchung steht die neue Fassung auch am Eintrag, damit die Seite Kosten dasselbe zeigt.
+  // Nach einer Buchung steht die neue Fassung auch am Eintrag, in der ganzen Schlange: Der Beleg kann in einem
+  // anderen Jahr hochgeladen sein, und die Seite Kosten zeigt dann dasselbe.
   const keepInQueue = (next: AssessmentView) => {
-    for (const x of queue) if (assessmentOf(x)?.id === next.id) patchEntry(x.id, { status: next.open ? 'fertig' : 'übernommen', data: { assessment: next } })
+    for (const x of allRef.current) if (assessmentOf(x)?.id === next.id) patchEntry(x.id, { status: next.open ? 'fertig' : 'übernommen', data: { assessment: next } })
   }
 
   // Übernahme aus dem Posteingang (#170). Der Browser holt die Datei aus dem Ordner, denn ein PDF
@@ -170,7 +189,7 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
       if (r) map.set(entry.id, scoreCandidate(r, readings))
     }
     return map
-  }, [queue, readings, meters, loaded])
+  }, [queue, readings, meters, meterData])
 
   // Ampel-Zählung: offene Zeilen der Auswertungen (Vorschlag des Servers) und Zählerstände
   const tally = useMemo(() => {
@@ -344,7 +363,9 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
         )}
       </div>
 
-      <OtherQueueEntries queue={all} propertyId={propertyId} period={key} />
+      {/* Eine offene Auswertung steht hier ohnehin als Karte (alle Jahre des Objekts) */}
+      <OtherQueueEntries queue={all} propertyId={propertyId} period={key}
+        shown={(x) => x.status === 'fertig' && isInvoice(x) && assessments.some((v) => v.id === assessmentOf(x)?.id)} />
 
       {queue.map((entry) => {
         // Eine ausgewertete Rechnung steht als Karte ihrer Auswertung da (unten).
@@ -376,7 +397,11 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
               {entry.status !== 'läuft' && (
                 entry.status === 'gespeichert'
                   ? <button className="btn small ghost" onClick={() => takeOff(entry.id)}>Aus der Liste nehmen{' '}<span className="sr-only">({entry.fileName})</span></button>
-                  : <button className="btn small ghost" onClick={() => remove(entry.id)}>Entfernen</button>
+                  : <>
+                    {/* Hat das Modell eine Rechnung für ein Zählerfoto gehalten (#490) */}
+                    {isReading(entry) && <button className="btn small ghost" onClick={() => asInvoice(entry.id)}>Als Rechnung auswerten</button>}
+                    <button className="btn small ghost" onClick={() => remove(entry.id)}>Entfernen</button>
+                  </>
               )}
             </div>
 

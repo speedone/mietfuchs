@@ -98,9 +98,11 @@ export function useSwitchTo(): (propertyId: string | undefined, periodKey: strin
   const { properties, property, setPropertyId, hasOpenForm } = useProperty()
   const confirm = useConfirm()
   return useCallback(async (propertyId: string | undefined, periodKey: string | undefined) => {
-    const target = properties.find((p) => p.id === propertyId) ?? property
+    // Ein Objekt, das es nicht mehr gibt, ist kein Ziel; ohne Angabe bleibt es beim gewählten.
+    const target = propertyId === undefined ? property : properties.find((p) => p.id === propertyId)
+    if (!target) return false
     const anchor = periodKey ? anchorOf(rulesOf(target), periodKey) : null
-    const otherProperty = !!target && target.id !== property?.id
+    const otherProperty = target.id !== property?.id
     const otherPeriod = anchor !== null && periodKey !== view.key
     if (!otherProperty && !otherPeriod) return true
     if (hasOpenForm()) {
@@ -112,7 +114,7 @@ export function useSwitchTo(): (propertyId: string | undefined, periodKey: strin
       })
       if (!ok) return false
     }
-    if (otherProperty && target) setPropertyId(target.id)
+    if (otherProperty) setPropertyId(target.id)
     if (anchor !== null) setAnchor(anchor)
     return true
   }, [view.key, setAnchor, properties, property, setPropertyId, hasOpenForm, confirm])

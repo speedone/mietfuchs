@@ -30,6 +30,9 @@ export type QueueTarget = {
   period?: string
   // Kantenlänge der Seitenbilder eines Scans (Einstellung „Erweitert“, #35)
   pageImageEdge?: number
+  // 'rechnung': Der Beleg ist eine Rechnung, der Server fragt das Modell nicht nach der Belegart (Seite Kosten, #490,
+  // und „Als Rechnung auswerten“ an einem erkannten Zählerfoto).
+  docType?: 'rechnung'
 }
 
 export type QueueBase = {
@@ -82,14 +85,21 @@ export const isOpenEntry = (entry: QueueEntry): boolean =>
   entry.status !== 'übernommen' && entry.status !== 'abgelegt' && entry.status !== 'abgebrochen'
 
 export const isBusy = (entry: QueueEntry): boolean => entry.status === 'wartend' || entry.status === 'läuft'
+// Ein erkannter Zählerstand, der noch nicht übernommen ist: Er steht nur im Browser.
+export const isOpenReading = (entry: QueueEntry): boolean => entry.status === 'fertig' && entry.result?.kind === 'zaehler'
+// Erledigt: Was so steht, räumt das Verlassen der Seite aus der Anzeige (`sweep`).
+const isDone = (entry: QueueEntry): boolean =>
+  entry.status === 'übernommen' || entry.status === 'abgebrochen' || entry.status === 'abgelegt'
 
 export class EvaluationQueue {
   private entries: readonly QueueEntry[] = []
   private listeners = new Set<() => void>()
+  // Die Datei nur bis zu ihrer Auswertung: Liegt der Beleg danach im Belegordner, holt ein neuer Versuch ihn von dort.
   private files = new Map<number, File>()
   // Belege, die schon im Belegordner liegen (Posteingang): Name im Ordner je Eintrag
   private stored = new Map<number, string>()
   private edges = new Map<number, number>()
+  private docTypes = new Map<number, 'rechnung'>()
   private nextId = 1
   // Abbruch je laufender Auswertung; der Server stoppt dann auch das Modell
   private aborts = new Map<number, AbortController>()
@@ -103,8 +113,9 @@ export class EvaluationQueue {
   }
   getSnapshot = (): readonly QueueEntry[] => this.entries
 
-  // Läuft oder wartet etwas? Dann fragt der Browser beim Schließen des Tabs (App.tsx).
-  busy = (): boolean => this.entries.some(isBusy)
+  // Läuft oder wartet etwas, oder steht ein erkannter Zählerstand noch nicht im Bestand? Dann fragt der Browser beim
+  // Schließen des Tabs (App.tsx); beim Wechsel der Seite geht nichts davon verloren.
+  unsaved = (): boolean => this.entries.some((x) => isBusy(x) || isOpenReading(x))
 
   private set(next: readonly QueueEntry[]) {
     this.entries = next
@@ -124,6 +135,7 @@ export class EvaluationQueue {
       this.files.set(id, file)
       if (stored) this.stored.set(id, stored)
       if (target.pageImageEdge !== undefined) this.edges.set(id, target.pageImageEdge)
+      if (target.docType) this.docTypes.set(id, target.docType)
       added.push({ id, fileName: file.name, status: 'wartend', propertyId: target.propertyId, year: target.year, period: target.period, data: {} })
     }
     if (added.length) this.set([...this.entries, ...added])
@@ -139,6 +151,7 @@ export class EvaluationQueue {
     this.files.delete(id)
     this.stored.delete(id)
     this.edges.delete(id)
+    this.docTypes.delete(id)
     this.kept.delete(id)
   }
 
@@ -156,9 +169,29 @@ export class EvaluationQueue {
   // Auswertung selbst), an den Server geht nur ihr Name im Belegordner.
   retry = (id: number): void => {
     const entry = this.entries.find((x) => x.id === id)
-    if (!entry || entry.status !== 'gespeichert' || !this.files.has(id)) return
+    if (!entry || entry.status !== 'gespeichert' || !this.stored.has(id)) return
     if (entry.failure) this.kept.set(id, entry.failure)
     this.set(this.entries.map((x) => (x.id === id ? { ...x, status: 'wartend', failure: undefined, error: undefined } : x)))
+  }
+
+  // Ein erkanntes Zählerfoto ist eine Rechnung: noch einmal auswerten, ohne nach der Belegart zu fragen. Der Beleg
+  // liegt schon im Belegordner und geht nur mit seinem Namen an den Server, der ihn wieder als Beleg führt.
+  asInvoice = (id: number): void => {
+    const entry = this.entries.find((x) => x.id === id)
+    if (!entry || !isOpenReading(entry) || !entry.result) return
+    this.stored.set(id, entry.result.file)
+    this.docTypes.set(id, 'rechnung')
+    this.set(this.entries.map((x) => (x.id === id
+      ? { ...x, status: 'wartend', result: undefined, exifDate: undefined, data: {}, error: undefined, failure: undefined }
+      : x)))
+  }
+
+  // Erledigtes aus der Anzeige räumen (übernommen, abgebrochen, aus der Liste genommen), wenn man eine Seite verlässt.
+  sweep = (): void => {
+    const done = this.entries.filter(isDone)
+    if (done.length === 0) return
+    for (const x of done) this.forget(x.id)
+    this.set(this.entries.filter((x) => !isDone(x)))
   }
 
   // Bricht alles ab, was läuft (nur beim Aushängen der ganzen Schlange, etwa am Ende eines Tests).
@@ -169,7 +202,7 @@ export class EvaluationQueue {
     const next = this.entries.find((x) => x.status === 'wartend')
     if (!next) return
     const file = this.files.get(next.id)
-    if (!file) {
+    if (!file && !this.stored.has(next.id)) {
       this.patch(next.id, { status: 'fehler', error: 'Die Datei ist nicht mehr da. Bitte laden Sie sie noch einmal hoch.' })
       return
     }
@@ -179,16 +212,19 @@ export class EvaluationQueue {
     void this.run(next, file, controller)
   }
 
-  private async run(entry: QueueEntry, file: File, controller: AbortController) {
+  private async run(entry: QueueEntry, given: File | undefined, controller: AbortController) {
     const id = entry.id
     // Ein neuer Versuch eines gespeicherten Belegs: bei Abbruch zurück zu „gespeichert“
     const before = this.kept.get(id)
     this.kept.delete(id)
     let kept = false
     try {
-      // PDFs liest der Browser selbst und schickt Text oder Seitenbilder mit (pdfIntake.ts)
-      const fd = await buildUpload(file, undefined, this.edges.get(id))
       const stored = this.stored.get(id)
+      // Ein Beleg aus dem Belegordner ohne Datei im Browser (neuer Versuch): von dort holen, denn ein PDF liest der
+      // Browser selbst und schickt Text oder Seitenbilder mit (pdfIntake.ts)
+      const file = given ?? (stored ? await fetchStored(stored, entry.fileName, controller.signal) : null)
+      if (!file) throw new Error('Die Datei ist nicht mehr da. Bitte laden Sie sie noch einmal hoch.')
+      const fd = await buildUpload(file, undefined, this.edges.get(id))
       if (stored) {
         fd.delete('file')
         fd.append('existingFile', stored)
@@ -196,6 +232,8 @@ export class EvaluationQueue {
       if (entry.propertyId) fd.append('propertyId', entry.propertyId)
       fd.append('year', String(entry.year))
       if (entry.period) fd.append('period', entry.period)
+      const docType = this.docTypes.get(id)
+      if (docType) fd.append('docType', docType)
       const res = await aiRequest<IntakeResult>('/api/intake', fd, {
         signal: controller.signal,
         onProgress: (progress) => this.patch(id, { progress }),
@@ -217,15 +255,20 @@ export class EvaluationQueue {
         } else this.patch(id, { status: 'fehler', error: errorText(e) })
       }
     } finally {
-      if (!kept) {
-        this.files.delete(id)
-        this.stored.delete(id)
-      }
+      this.files.delete(id)
+      if (!kept) this.stored.delete(id)
       this.aborts.delete(id)
       // Ein Eintrag, der während der Auswertung entfernt wurde, gibt den Platz frei.
       this.pump()
     }
   }
+}
+
+async function fetchStored(name: string, fileName: string, signal: AbortSignal): Promise<File> {
+  const res = await fetch(`/uploads/${encodeURIComponent(name)}`, { signal })
+  if (!res.ok) throw new Error(`„${fileName}“ ließ sich nicht aus dem Belegordner holen (HTTP ${res.status}).`)
+  const blob = await res.blob()
+  return new File([blob], fileName, { type: blob.type })
 }
 
 const QueueCtx = createContext<EvaluationQueue | null>(null)
@@ -259,5 +302,7 @@ export function useEvaluationQueue() {
     cancel: queue.cancel,
     retry: queue.retry,
     takeOff: queue.takeOff,
+    asInvoice: queue.asInvoice,
+    sweep: queue.sweep,
   }
 }

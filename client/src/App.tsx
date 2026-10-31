@@ -193,12 +193,12 @@ function Shell() {
     void navigate('hilfe').then((done) => { if (done) setHelpTerm((h) => ({ id, seq: (h?.seq ?? 0) + 1 })) })
   }, [navigate])
   // Schließen oder Neuladen des Tabs mit offenem Formular: Der Browser fragt mit seinem eigenen Satz nach. Ebenso,
-  // solange eine KI-Auswertung läuft oder wartet (#490): Die Belege sind gespeichert, wartende aber noch nicht
-  // hochgeladen, und die laufende bricht ab.
+  // solange eine KI-Auswertung läuft oder wartet oder ein erkannter Zählerstand nicht übernommen ist (#490): Wartende
+  // Belege sind noch nicht hochgeladen, die laufende bricht ab, und der Zählerstand steht nur im Browser.
   const evaluations = useEvaluationQueueStore()
   useEffect(() => {
     const onLeave = (e: BeforeUnloadEvent) => {
-      if (!hasOpenForm() && !evaluations?.busy()) return
+      if (!hasOpenForm() && !evaluations?.unsaved()) return
       e.preventDefault()
       e.returnValue = ''
     }

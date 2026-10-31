@@ -68,17 +68,17 @@ test('Schnellerfassung: ebenso, auch für einen Beleg aus dem Posteingang', asyn
   expect(sent[0]?.get('year')).toBe(String(YEAR))
 })
 
-// Regel 4 aus #490: Die Seite Kosten wertet über denselben Eingang aus wie die Schnellerfassung und erkennt damit
-// auch ein Zählerfoto, statt es als Rechnung zu lesen. Der Stand wird vor Ort übernommen.
-test('Kosten: ein Zählerfoto wird als Zählerstand erkannt und lässt sich übernehmen', async () => {
-  answer = { file: 'foto.jpg', kind: 'zaehler', reading: { meterNumber: '4711', value: 512, dateOnImage: '2025-12-31' } }
+// #490, Entscheidung zu Regel 4: Die Seite Kosten wertet über den Schuhkarton aus, sagt aber, dass es eine Rechnung
+// ist; der Server fragt dann nicht nach der Belegart (kein zusätzlicher Modellaufruf, keine Verwechslung).
+test('Kosten: die Auswertung geht an den Schuhkarton, als Rechnung', async () => {
   const { container } = render(<PeriodProvider><PropertyProvider><Kosten units={UNITS} settings={null} /></PropertyProvider></PeriodProvider>)
   await upload(container)
   expect(urls).toEqual(['/api/intake'])
-  expect(await screen.findByText('Zählerstand erkannt', {}, { timeout: 5000 })).toBeTruthy()
-  await waitFor(() => expect(screen.getByDisplayValue(/Wasser EG/)).toBeTruthy())
-  fireEvent.click(screen.getByRole('button', { name: /Ablesung übernehmen/ }))
-  await waitFor(() => expect(posted).toHaveLength(1))
-  expect(posted[0]).toMatchObject({ meterId: 'm1', value: 512, date: '2025-12-31' })
-  expect(await screen.findByText('✓ übernommen')).toBeTruthy()
+  expect(sent[0]?.get('docType')).toBe('rechnung')
+})
+
+test('Schnellerfassung: ohne Angabe der Belegart, damit Zählerfotos erkannt werden', async () => {
+  const { container } = render(<PeriodProvider><PropertyProvider><Schnellerfassung units={UNITS} settings={null} onNavigate={() => {}} /></PropertyProvider></PeriodProvider>)
+  await upload(container)
+  expect(sent[0]?.get('docType')).toBeNull()
 })
