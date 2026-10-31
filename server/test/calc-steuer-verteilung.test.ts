@@ -10,7 +10,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
-import { computeSettlement, RESERVE_WITHDRAWAL_CATEGORY, taxReportFor } from '../src/calc.ts'
+import { carriedRates, computeSettlement, RESERVE_WITHDRAWAL_CATEGORY, taxReportFor } from '../src/calc.ts'
 import { snapshotFor } from '../src/snapshot.ts'
 import { TAX_STOCK_PROPERTY, type TaxSource } from '../testing/taxStock.ts'
 import { CALENDAR_RULES, periodKey, periodOfKey, rulesOf } from '../../shared/period.ts'
@@ -196,6 +196,9 @@ test('vorzeitiges Ende (§ 82b Abs. 2) am Objekt: der Rest im Jahr des Endes, da
   const d = row(report(src, 2027), 'spread:dach:2026')
   assert.deepEqual([d.deductibleCents, d.spreadFrom?.rest, d.spreadFrom?.restAfterCents, d.spreadFrom?.index, d.spreadFrom?.of], [800_002, true, 0, 2, 5])
   assert.equal(report(src, 2028).expenses.items.length, 0)
+  // Der Rechenweg nennt den tatsächlichen Zeitraum des Abzugs, nicht den gewählten.
+  const step = dach.steps.find((x) => x.label === 'Verteilung nach § 82b EStDV') ?? assert.fail('Schritt fehlt')
+  assert.ok(step.value.includes('(2026 bis 2027)') && !step.value.includes('2030'), step.value)
   // Ende im Jahr der Zahlung oder davor: nicht verteilt.
   const early = row(report(house(src.costItems, { restYear: 2026 }), 2026), 'dach')
   assert.deepEqual([early.deductibleCents, 'deferredCents' in early, 'spread' in early], [1_000_003, false, false])
@@ -277,4 +280,72 @@ test('Wächter: spreadYears und spreadRestYear liest in calc.ts nur die Steuerü
   assert.equal(/spreadRestYear/.test(snapshot.replace(/properties\?: \(SnapshotProperty[^\n]*\n/, '')), false, 'der Schnappschuss führt das Ende der Verteilung')
   // Der Rückgriff auf das Jahr des Abflusses rechnet keine Tilgung und sucht selbst keine Vorjahre (E-6).
   assert.match(bodyOf(calc, 'function carriedRates('), /carried: false, received: false/)
+})
+
+// Entwurf PR 2, Test 7 (Durchsicht): Der Rückgriff auf das Jahr des Abflusses rechnet ohne Tilgung der Einnahmen und ohne
+// eigene Vorjahre, je Jahr des Abflusses einmal; ein Bestand ohne Wahl rechnet keinen. Beobachtet über die Naht
+// `reportOf` von `carriedRates` (Vorgabe `taxReportFor`).
+test('Rückgriff: einmal je Jahr des Abflusses, ohne received und ohne Vorjahre; ohne Wahl gar nicht', () => {
+  const calls: { year: number; options: unknown; report: TaxReport }[] = []
+  const spy: typeof taxReportFor = (src, pid, year, parts, options) => {
+    const r = taxReportFor(src, pid, year, parts, options)
+    calls.push({ year, options, report: r })
+    return r
+  }
+  const src = house([item({ id: 'dach', spreadYears: 3 }), item({ id: 'fenster', description: 'Fenster', amountCents: 300_000, spreadYears: 2 })], {
+    tenancies: [tenancy('a', 'eg'), tenancy('b', 'og')],
+  })
+  const withPayments = { ...src, payments: [{ id: 'z1', tenancyId: 'a', date: '2026-03-01', amountCents: 70_000 }] }
+  const all = withPayments.costItems
+  const rates = carriedRates(withPayments, P, 2027, all, null, spy)
+  assert.equal(rates.length, 2)
+  assert.deepEqual(calls.map((c) => [c.year, c.options]), [[2026, { carried: false, received: false }]])
+  assert.equal(calls[0]?.report.income.received, undefined)
+  // Der eigene Bericht des Jahres hat sein Zugeflossenes.
+  assert.notEqual(taxReportFor(withPayments, P, 2026).income.received, undefined)
+  calls.length = 0
+  assert.deepEqual(carriedRates(house([item({ id: 'dach' })]), P, 2027, [item({ id: 'dach' })], null, spy), [])
+  assert.equal(calls.length, 0)
+})
+
+// Eigennutzung und verbilligte Vermietung zugleich (Durchsicht): EG 40 m² selbstgenutzt, OG 60 m² an die Tochter für
+// 200 € kalt, ortsüblich 900 € warm (22,22 %). 10.000 € auf 2 Jahre: privat 4.000 €, D = 6.000 €, Raten 3.000 €,
+// Bruttoanteil 5.000 €. Kürzung je Jahr: 5.000 € × 60/100 × (1 − 2.400/10.800) = 2.333,333… → 2.333,33 €, aus der Rate
+// genommen: abziehbar 666,67 €. Über beide Jahre 4.666,66 € unentgeltlich, unverteilt wären es 4.666,67 € (Rundung je
+// Jahr); Σ abziehbar + unentgeltlich ist in beiden Fällen D.
+test('Eigennutzung und verbilligte Vermietung zugleich: Kürzung je Jahr über den Bruttoanteil, privat fest aus dem Jahr der Zahlung', () => {
+  const src = house([item({ id: 'dach', spreadYears: 2 })], {
+    units: [unit('eg', 40, { participates: false, selfUsed: true, selfPersons: 2 }), unit('og', 60, { localRents: [local(90_000)] })],
+    tenancies: [tenancy('tochter', 'og', { baseRents: [{ from: '2020-01', monthlyCents: 20_000 }] })],
+  })
+  const r26 = report(src, 2026)
+  const dach = row(r26, 'dach')
+  assert.deepEqual([dach.amountCents, dach.privateCents, dach.gratuitousCents, dach.deferredCents, dach.deductibleCents], [1_000_000, 400_000, 233_333, 300_000, 66_667])
+  assert.deepEqual(dach.spread?.rates, [{ year: 2026, cents: 300_000, grossCents: 500_000 }, { year: 2027, cents: 300_000, grossCents: 500_000 }])
+  balanced(r26)
+  const d27 = row(report(src, 2027), 'spread:dach:2026')
+  assert.deepEqual([d27.privateCents, d27.gratuitousCents, d27.deferredCents, d27.deductibleCents], [0, 233_333, -300_000, 66_667])
+  const unverteilt = row(report(house([item({ id: 'dach' })], { units: src.units, tenancies: src.tenancies }), 2026), 'dach')
+  assert.deepEqual([unverteilt.privateCents, unverteilt.gratuitousCents, unverteilt.deductibleCents], [400_000, 466_667, 133_333])
+})
+
+// Kein Einfrieren abgegebener Jahre (Entscheidung U-1): Wird eine verteilte Position nach Y0 gelöscht oder auf eine
+// Kostenart umgestellt, an der nicht verteilt werden kann, entfällt ihr Anteil im Folgejahr; die übrigen Raten und das
+// Jahr Y0 der anderen Position bleiben, wie sie waren.
+test('U-1: Position gelöscht oder Kostenart geändert: Folgejahr ohne ihre Zeile, die andere Verteilung unverändert', () => {
+  const fenster = item({ id: 'fenster', description: 'Fenster', amountCents: 300_000, spreadYears: 2 })
+  const before = house([item({ id: 'dach', spreadYears: 3 }), fenster])
+  assert.equal(row(report(before, 2027), 'spread:dach:2026').deductibleCents, 333_333)
+  const deleted = house([fenster])
+  const changed = house([item({ id: 'dach', category: 'Grundsteuer', spreadYears: 3 }), fenster])
+  for (const [label, src] of [['gelöscht', deleted], ['Kostenart geändert', changed]] as const) {
+    const r27 = report(src, 2027)
+    assert.equal(r27.expenses.items.some((x) => x.costItemId === 'spread:dach:2026'), false, label)
+    assert.deepEqual(row(r27, 'spread:fenster:2026'), row(report(before, 2027), 'spread:fenster:2026'), label)
+    assert.deepEqual(row(report(src, 2026), 'fenster'), row(report(before, 2026), 'fenster'), label)
+  }
+  // Umgestellt: in Y0 ganz abgezogen, als nicht verteilte Wahl genannt.
+  const r26 = report(changed, 2026)
+  assert.deepEqual([row(r26, 'dach').deductibleCents, 'spread' in row(r26, 'dach')], [1_000_000, false])
+  assert.deepEqual(r26.spreadIgnored, [{ costItemId: 'dach', description: 'Dachsanierung' }])
 })

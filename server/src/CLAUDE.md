@@ -907,8 +907,9 @@ Grundmenge ist das ganze Gebäude), Überschuss. Beschreibende Gruppen statt fes
   nur in 87/88). Die Folgejahre holt `taxReportFor` (`carriedRates`): je Y0 einmal der Bericht jenes Jahres mit
   `carried: false, received: false`, ohne verteilte Position gar nichts; eine Rate von 0 ergibt keine Zeile. Der Block
   `expenses.spread` (Zeilen 57 bis 72: `started`, `carried`, `thisYearCents`) und `spreadIgnored` (Wahl, wo nicht
-  verteilt werden kann) sind Auskunft für die Seite. Bis PR 3 (#262) zeigen Seite und Steuer-ZIP die Raten noch nicht
-  eigens. Invarianten: invariant-steuer-verteilung.test.ts. Wo verteilt werden
+  verteilt werden kann) sind Auskunft für die Seite. Die Übersicht.csv des Steuer-ZIP hat dann die
+  Spalte „verteilt § 82b EStDV“ und die Raten aus Vorjahren als Zeilen ohne eigenen Beleg (`derivedTaxLines`); die
+  Steuerseite zeigt sie erst mit PR 3 (#262). Invarianten: invariant-steuer-verteilung.test.ts. Wo verteilt werden
   kann, sagt `allowsSpread` ([shared/spread.ts](../../shared/spread.ts)): „Nicht umlagefähig“ oder „Entnahme
   Erhaltungsrücklage“, Betrag über 0, kein Abzug beim Betriebsstrom, `external` erlaubt; sonst 400 (`requireSpread`),
   außer eine so gespeicherte Wahl bleibt unverändert stehen (krumm, nicht kaputt) oder der Wechsel des Zeitraums trägt

@@ -270,3 +270,52 @@ test('Steuer-Belege (#469): ein Teil ohne eigenen Beleg nennt den Beleg seiner R
   assert.deepEqual(plain.files, [])
   assert.match(plain.overviewCsv, /;kein Beleg;/)
 })
+
+// #262 PR 2 (Durchsicht): Die Übersicht.csv einer Verteilung nach § 82b EStDV. Im Jahr des Abflusses steht die Position
+// mit dem verschobenen Teil in einer eigenen Spalte, in den Folgejahren die Rate als Zeile ohne eigenen Beleg; je Zeile
+// gilt Betrag = privat + unentgeltlich + verteilt + abziehbar, und die Spalten ergeben die Summen der Steuerübersicht.
+test('Steuer-Belege (#262): Spalte „verteilt § 82b EStDV“ und die Rate des Folgejahres ohne eigenen Beleg', () => {
+  const dach = item('dach', { category: 'Nicht umlagefähig', description: 'Dachsanierung', period: calendarPeriod(2026), amountCents: 1_000_000, spreadYears: 3, invoiceFile: '5_dach.pdf' })
+  const mieter = (id: string, unitId: string) => ({
+    id, unitId, tenantName: id, persons: 1, personHistory: [{ from: '2020-01-01', persons: 1 }], start: '2020-01-01', end: null,
+    prepayments: [], prepaymentOverrides: {}, baseRents: [{ from: '2020-01', monthlyCents: 50_000 }],
+  })
+  const source = {
+    properties: [{ id: 'p1', kind: 'mfh' as const, cableBuiltBeforeDec2021: null, periodRules: CALENDAR_RULES }],
+    units: [{ id: 'u1', propertyId: 'p1', name: 'EG', areaM2: 40, participates: false, selfUsed: true }, { id: 'u2', propertyId: 'p1', name: 'OG', areaM2: 60, participates: true }],
+    tenancies: [mieter('t2', 'u2')],
+    costItems: [dach, item('gs', { period: calendarPeriod(2027), amountCents: 60_000 })], meters: [], readings: [], payments: [], closedSettlements: [],
+  }
+  const cents = (s: string | undefined) => Math.round(Number((s ?? '').replace(',', '.')) * 100)
+  for (const year of [2026, 2027]) {
+    const report = taxReportFor(source, 'p1', year)
+    const split = new Map(report.expenses.items.map((i) => [i.costItemId, i]))
+    const items = source.costItems.filter((c) => c.period === calendarPeriod(year))
+    const zeilen = planTaxArchive(items, names, new Map(), split, derivedTaxLines(report)).overviewCsv.replace(/^﻿/, '').trim().split('\r\n')
+    const head = (zeilen[0] ?? '').split(';')
+    assert.ok(head.includes('verteilt § 82b EStDV (EUR)'), zeilen[0])
+    const col = (name: string) => head.indexOf(name)
+    const rows = zeilen.slice(1).map((z) => z.split(';'))
+    const sum = (name: string) => rows.reduce((a, r) => a + cents(r[col(name)]), 0)
+    assert.equal(sum('Betrag (EUR)'), report.expenses.totalCents, `${year}: Betrag`)
+    assert.equal(sum('privat (EUR)'), report.expenses.privateCents, `${year}: privat`)
+    assert.equal(sum('verteilt § 82b EStDV (EUR)'), report.expenses.deferredCents ?? 0, `${year}: verteilt`)
+    assert.equal(sum('abziehbar (EUR)'), report.expenses.deductibleCents, `${year}: abziehbar`)
+    for (const r of rows) {
+      assert.equal(cents(r[col('privat (EUR)')]) + cents(r[col('verteilt § 82b EStDV (EUR)')]) + cents(r[col('abziehbar (EUR)')]), cents(r[col('Betrag (EUR)')]), `${year}: ${r.join(';')}`)
+    }
+    if (year === 2026) {
+      const z = rows.find((r) => r[2] === 'Dachsanierung') ?? assert.fail('Zeile fehlt')
+      assert.deepEqual([z[col('Betrag (EUR)')], z[col('privat (EUR)')], z[col('verteilt § 82b EStDV (EUR)')], z[col('abziehbar (EUR)')]], ['10000,00', '4000,00', '4000,00', '2000,00'])
+      assert.equal(z.at(-1), '2026, Jahr der Abrechnung (ohne Angabe), auf 3 Jahre verteilt, 2026 bis 2028')
+    } else {
+      const z = rows.find((r) => r[2] === 'Anteil 2 von 3 aus 2026: Dachsanierung') ?? assert.fail(`Zeile fehlt: ${zeilen.join('\n')}`)
+      assert.deepEqual([z[col('Betrag (EUR)')], z[col('verteilt § 82b EStDV (EUR)')], z[col('abziehbar (EUR)')]], ['0,00', '-2000,00', '2000,00'])
+      assert.equal(z[col('Beleg')], 'kein eigener Beleg (Anteil 2 von 3 aus 2026, Beleg im Steuer-ZIP 2026)')
+      assert.equal(z.at(-1), '2026, Anteil 2 von 3')
+    }
+  }
+  // Ohne Verteilung keine Spalte.
+  const ohne = planTaxArchive([item('gs')], names, new Map(), new Map([['gs', { privateCents: 0, deductibleCents: 10000 }]])).overviewCsv
+  assert.equal(ohne.includes('verteilt'), false)
+})

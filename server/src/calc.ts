@@ -1903,7 +1903,7 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
         spread: { years: of, baseCents: base, rates: rates.map((r, i) => ({ year: r.year, cents: r.cents, grossCents: gross[i]?.cents ?? 0, ...(r.rest ? { rest: true as const } : {}) })) },
         steps: [...entry.steps, {
           label: 'Verteilung nach § 82b EStDV',
-          value: `abziehbar ${fmtCents(base)} auf ${of} Jahre (${year} bis ${year + of - 1}): je ${fmtCents(Math.floor(base / of))} (Restcent in den ersten Jahren); in diesem Jahr ${fmtCents(first)}, in die Folgejahre verschoben ${fmtCents(base - first)}`
+          value: `abziehbar ${fmtCents(base)} auf ${of} Jahre (${year} bis ${last}): je ${fmtCents(Math.floor(base / of))} (Restcent in den ersten Jahren); in diesem Jahr ${fmtCents(first)}, in die Folgejahre verschoben ${fmtCents(base - first)}`
             + (restRate ? `; vorzeitiges Ende (§ 82b Abs. 2 EStDV): der Rest von ${fmtCents(restRate.cents)} im Jahr ${last}` : ''),
         }],
       })
@@ -2474,8 +2474,12 @@ export function taxReportFor(source: Parameters<typeof snapshotFor>[0], property
 // Zeile der Position die Rate dieses Jahres. **Eine Zahl, eine Stelle**: Die Rate ist dieselbe, die die Übersicht Y0
 // nennt; ändert sich D (Fläche berichtigt), wandern alle Raten mit (kein Einfrieren abgegebener Jahre, Entscheidung U-1).
 // Ohne verteilte Position passiert nichts, auch keine zusätzliche Rechnung. Eine Rate von 0 (D = 0, oder ein Rest-Cent,
-// der nicht bis hierher reicht) ergibt keine Zeile: Es gibt nichts abzuziehen.
-function carriedRates(source: Parameters<typeof snapshotFor>[0], propertyId: string, year: number, all: readonly SnapshotCostItem[], restYear: number | null): CarriedRate[] {
+// der nicht bis hierher reicht) ergibt keine Zeile: Es gibt nichts abzuziehen. `reportOf` ist die Naht für den Test, der
+// die Rückgriffe zählt (calc-steuer-verteilung.test.ts); sonst immer `taxReportFor`.
+export function carriedRates(
+  source: Parameters<typeof snapshotFor>[0], propertyId: string, year: number, all: readonly SnapshotCostItem[], restYear: number | null,
+  reportOf: typeof taxReportFor = taxReportFor,
+): CarriedRate[] {
   const byOutflow = new Map<number, SnapshotCostItem[]>()
   for (const c of all) {
     // Das Jahr des Abflusses aus dem Beginn des Zeitraums laut Schlüssel, wie `storedOutflowYear`; für jede Position, an
@@ -2486,7 +2490,7 @@ function carriedRates(source: Parameters<typeof snapshotFor>[0], propertyId: str
   }
   const out: CarriedRate[] = []
   for (const [y0, list] of [...byOutflow].sort(([a], [b]) => a - b)) {
-    const origin = taxReportFor(source, propertyId, y0, undefined, { carried: false, received: false })
+    const origin = reportOf(source, propertyId, y0, undefined, { carried: false, received: false })
     for (const item of list) {
       const from = origin.expenses.items.find((x) => x.costItemId === item.id)
       if (from?.spread === undefined) continue

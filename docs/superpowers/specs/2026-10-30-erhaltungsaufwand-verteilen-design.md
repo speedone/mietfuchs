@@ -532,6 +532,18 @@ Tests zuerst:
    (Test aus #96 PR 1).
 6. anrede.test.ts (Siezen in neuen Texten), Lexikon-Wächter (jede `term` hat einen Eintrag).
 
+Aufgaben aus der Durchsicht von PR 2 (dort schon erledigt: Spalte „verteilt § 82b EStDV“ und die Zeilen `spreadFrom`
+in der Übersicht.csv, `derivedTaxLines`, Zusatz „auf N Jahre verteilt“ bei „Jahr der Zahlung“):
+- Die Steuerseite kennt `deferredCents` und `spreadFrom` noch nicht: `showsSplit` (client/src/taxView.ts), die Tabelle
+  der Werbungskosten und `SplitTable` in Steuer.tsx und der Satz „… abziehbar“ unter den Summen rechnen ohne den
+  verschobenen Teil; eine Zeile ergibt dort sonst nicht Betrag = privat + unentgeltlich + verschoben + abziehbar.
+- `maintenanceLineText` (Steuer.tsx) unterscheidet verteilte Positionen nicht: Sie gehören in die Zeilen 57 bis 72, nicht
+  in 55/56 (`isSpread` oder Abfrage von `spread`/`spreadFrom`).
+- Lexikon `spread82b`: Der private Teil steht im Jahr des Abflusses fest (E-3), die Quote der verbilligten Vermietung
+  gilt je Jahr der Rate (V1). Dazu `term: 'spread82b'` an den Schritten „Verteilung nach § 82b EStDV“ in calc.ts.
+- Rate von D = 0 bei Bruttoanteil über 0 (direkt der selbstgenutzten Wohnung, `spreadNothingDeductible`) bewusst
+  entscheiden: PR 2 legt dann im Folgejahr keine Zeile an und zeigt die Verteilung nur in Y0.
+
 ### PR 4 (Stapel Nr. 11): Vorzeitiges Ende (§ 82b Abs. 2)
 
 Hängt ab von: Nr. 10. Dateien: Objektformular (client, Objekte-Seite und reines Formularmodul),
