@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import type { Settings, UpdateStatus } from './types'
-import { canQuit, consentPending, hintVisible, isPrerelease, statusText, updateGuide } from './update'
+import { canQuit, consentPending, hintVisible, isPrerelease, statusText, updatedByStore, updateGuide } from './update'
 
 const settings = (patch: Partial<Settings> = {}): Settings => ({
   houseName: '', address: '', landlordName: '', iban: '', paymentDeadlineDays: 30,
@@ -16,14 +16,19 @@ const status = (patch: Partial<UpdateStatus> = {}): UpdateStatus => ({
 
 describe('Einwilligung', () => {
   test('wird gefragt, solange weder zugestimmt noch abgelehnt wurde', () => {
-    expect(consentPending(settings())).toBe(true)
-    expect(consentPending(settings({ updateCheck: 'on' }))).toBe(false)
-    expect(consentPending(settings({ updateCheck: 'off' }))).toBe(false)
+    expect(consentPending(settings(), status())).toBe(true)
+    expect(consentPending(settings({ updateCheck: 'on' }), status())).toBe(false)
+    expect(consentPending(settings({ updateCheck: 'off' }), status())).toBe(false)
   })
 
   test('vor dem Laden der Einstellungen wird nichts gefragt', () => {
     // sonst blitzte die Frage bei jedem Start kurz auf, auch nach einer Antwort
-    expect(consentPending(null)).toBe(false)
+    expect(consentPending(null, status())).toBe(false)
+  })
+
+  test('vor dem Laden der Betriebsart wird nichts gefragt, aus dem Microsoft Store nie (#500)', () => {
+    expect(consentPending(settings(), null)).toBe(false)
+    expect(consentPending(settings(), status({ mode: 'store', enabled: false }))).toBe(false)
   })
 })
 
@@ -105,6 +110,8 @@ describe('Beenden aus der Oberfläche (#45)', () => {
     // Aus einem Linux-Paket gibt es kein Konsolenfenster, dessen Schließen sonst beendet
     expect(canQuit(status({ mode: 'binary' }))).toBe(true)
     expect(canQuit(status({ mode: 'package' }))).toBe(true)
+    // Aus dem Microsoft Store startet Mietfuchs ebenfalls ohne Konsolenfenster (#500)
+    expect(canQuit(status({ mode: 'store' }))).toBe(true)
   })
 
   test('nicht im Container und nicht aus dem Quellcode', () => {
@@ -136,5 +143,18 @@ describe('Stand in den Einstellungen (#166)', () => {
   test('eine fertige Version bleibt die aktuelle', () => {
     const text = statusText(status({ current: '0.5.0', latest: '0.5.0', available: false, checkedAt: null }))
     expect(text).toBe('Sie nutzen die aktuelle Version 0.5.0.')
+  })
+})
+
+describe('Microsoft Store (#500)', () => {
+  test('der Stand nennt den Store als Weg zu neuen Versionen', () => {
+    const st = status({ mode: 'store', enabled: false, latest: null, available: false, releaseUrl: null, downloadUrl: null, checkedAt: null })
+    expect(updatedByStore(st)).toBe(true)
+    expect(statusText(st)).toBe('Installiert ist Version 0.4.0. Neue Versionen installiert der Microsoft Store von selbst.')
+  })
+
+  test('nur aus dem Store', () => {
+    expect(updatedByStore(status())).toBe(false)
+    expect(updatedByStore(null)).toBe(false)
   })
 })

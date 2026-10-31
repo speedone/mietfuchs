@@ -856,7 +856,8 @@ export type DatabaseState = {
 export type UpdateStatus = {
   enabled: boolean // nur mit Zustimmung
   current: string
-  mode: 'binary' | 'package' | 'docker' | 'npm' // 'package': aus einem Linux-Paket installiert
+  // 'package': aus einem Linux-Paket installiert, 'store': aus dem Microsoft Store (#500)
+  mode: 'binary' | 'package' | 'store' | 'docker' | 'npm'
   latest: string | null
   available: boolean
   releaseUrl: string | null

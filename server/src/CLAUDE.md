@@ -949,7 +949,9 @@ Anfrage hinaus. Nach Fehler eine Stunde Pause, bei Rate-Limit bis `retry-after`/
 (höchstens ein Tag). „Jetzt prüfen“ höchstens einmal pro Minute, gleichzeitige Aufrufe teilen eine
 Anfrage; Links nur ins eigene Repo. Kein Selbst-Update (#20), sondern eine Anleitung je Betriebsart
 ([client/src/update.ts](../../client/src/update.ts)). Version aus `server/package.json`
-([version.ts](version.ts)); Betriebsart aus `globalThis.Bun` (`binary`, an Systemort `package`),
-`NKA_RUNTIME=docker`, sonst `npm`. `NKA_UPDATE_URL` lenkt die Abfrage um. SemVer mit Vorabversionen
+([version.ts](version.ts)); Betriebsart aus `globalThis.Bun` (`binary`, an Systemort `package`, im Paketordner
+des Microsoft Store `store`), `NKA_RUNTIME=docker`, sonst `npm`. Bei `store` (#500) fragt der Server nie bei
+GitHub, auch nicht mit Zustimmung, und die Oberfläche fragt nicht danach: Updates bringt der Store, und ein
+GitHub-Release erscheint Tage vor der Zertifizierung. `NKA_UPDATE_URL` lenkt die Abfrage um. SemVer mit Vorabversionen
 (#166): ein Tag mit Vorabversion wird nie angeboten; läuft selbst ein Kandidat, ist die fertige
 Version gleicher Nummer ein Update.

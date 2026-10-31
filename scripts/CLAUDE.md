@@ -141,6 +141,35 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   Hauptversionen die Changelogs gegen unsere Nutzung prüfen (Express 5: `listen`-Callback auch bei
   Fehlern, `res.sendFile` braucht `root` bei Punkt-Ordnern).
 
+## Microsoft Store
+
+- **MSIX** (#500, [package-msix.mjs](package-msix.mjs), Manifest
+  [../packaging/msix/AppxManifest.xml](../packaging/msix/AppxManifest.xml), Symbole in `packaging/msix/Assets`):
+  je Architektur ein `.msix`, zusammen ein `.msixbundle`, unsigniert (der Store signiert). Nur unter Windows
+  (makeappx aus dem Windows SDK). Eingepackt werden eigene Programmdateien aus `dist-bin/store`, die
+  package-binaries.mjs mit `--windows-hide-console` baut (geht als einzige Windows-Angabe von Bun auch beim Bau
+  unter Linux); ans Release gehen sie nicht. Identität aus dem Partner Center (`speedone.Mietfuchs`, Store-ID
+  `9PMHZ0ZJPZDZ`); `STORE_PACKAGE_NAME` in server/src/paths.ts muss dazu passen.
+- **Version**: vier Teile, der erste nicht 0, der vierte immer 0, und der Store nimmt nur höhere an. Deshalb
+  `msixVersion`: Hauptversion plus 1 (0.14.2 wird 1.14.2.0), für immer festgelegt.
+- **Betriebsart `store`** (server/src/version.ts, erkannt am Paketordner unter `WindowsApps`): kein Update-Abgleich
+  mit GitHub, keine Frage danach, Beenden aus der Oberfläche. **Daten in `%USERPROFILE%\Mietfuchs`**, nicht unter
+  AppData: Dorthin schreibende Store-Apps lenkt Windows in einen Paketordner um und löscht ihn beim Deinstallieren.
+  Abschalten ginge nur mit `unvirtualizedResources`, das Microsoft für Spiele vorsieht; außerhalb von AppData lenkt
+  Windows nichts um. Nicht „Dokumente“, weil OneDrive den Ordner oft abgleicht.
+- **Prüfung** (Job „Store-Paket bauen und prüfen“ in release.yml, bei jedem Lauf): signiert eine Kopie mit einem
+  Wegwerf-Zertifikat desselben Herausgebers, installiert sie, startet über den Befehlsalias `mietfuchs.exe` (nur so
+  erbt das Programm `CI` und `NKA_UPDATE_URL`, der Start übers Startmenü reicht nichts weiter), Prüfskript mit
+  `--mode store`, Beenden über `/api/quit`, deinstallieren; die Datenbank muss danach noch in
+  `%USERPROFILE%\Mietfuchs` liegen.
+- **Einreichen** (Job „Im Microsoft Store einreichen“): beim Tag ohne Bindestrich, nach dem Anhängen ans Release,
+  nur mit der Repository-Variable `MSSTORE_EINREICHEN = an`. `msstore publish <bundle> -id 9PMHZ0ZJPZDZ` übernimmt
+  Eintrag und Bilder der letzten Einreichung und tauscht nur das Paket. Die **erste Einreichung geht von Hand** im
+  Partner Center (die CLI aktualisiert nur eine veröffentlichte App), Texte dafür in
+  [../packaging/msix/store-eintrag.md](../packaging/msix/store-eintrag.md). Zugang: Entra-Anwendung
+  `mietfuchs-github` (Rolle Manager), Secrets `MSSTORE_TENANT_ID`, `MSSTORE_SELLER_ID`, `MSSTORE_CLIENT_ID`,
+  `MSSTORE_CLIENT_SECRET`; das Secret läuft ab und wird dann im Partner Center neu erzeugt.
+
 ## Release
 
 - [release.yml](../.github/workflows/release.yml) baut beim `v*`-Tag alle Ziele und hängt sie an:

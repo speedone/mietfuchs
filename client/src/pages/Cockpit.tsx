@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { CostItem, HeatingPlant, HeatingSettlementInfo, Meter, Notice, NoticeSubject, PeriodKey, Settings, Settlement, Tenancy, Unit, UploadEntry } from '../types'
+import type { CostItem, HeatingPlant, HeatingSettlementInfo, Meter, Notice, NoticeSubject, PeriodKey, Settings, Settlement, Tenancy, Unit, UpdateStatus, UploadEntry } from '../types'
 import { cockpitHeatingRows } from '../heatingSettlementView'
 import { heatingRowTarget, itemsOfSettlement } from '../costPeriods'
 import { localToday } from '../periodForm'
@@ -31,6 +31,8 @@ type Props = {
   // Hält App je Objekt aktuell (beim Wechsel und nach jedem reload), wie für Stammdaten und Kosten.
   tenancies: Tenancy[]
   settings: Settings | null
+  // Für die Frage nach Update-Hinweisen: Aus dem Microsoft Store entfällt sie (#500).
+  updateStatus: UpdateStatus | null
   reload: () => Promise<void>
   // `focus` öffnet auf der Zielseite den betroffenen Eintrag (#142), etwa ein Mietverhältnis.
   onNavigate: (tab: string, focus?: NoticeSubject) => void
@@ -61,7 +63,7 @@ type Check = {
 // Ab dieser Abweichung zum Vorjahr gilt eine Kostenart als auffällig (wie in der Übersicht).
 const NOTABLE_CHANGE_PCT = 25
 
-export default function Cockpit({ units, tenancies, settings, reload, onNavigate }: Props) {
+export default function Cockpit({ units, tenancies, settings, updateStatus, reload, onNavigate }: Props) {
   const { key, label, param, at, period, calendar, rules, year } = usePeriod()
   const switchPeriod = useSwitchPeriod()
   const { property } = useProperty()
@@ -375,7 +377,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
 
       {error && <NoticeBox level="error" action={error} />}
 
-      {consentPending(settings) && <UpdateConsent onAnswered={reload} />}
+      {consentPending(settings, updateStatus) && <UpdateConsent onAnswered={reload} />}
 
       {fresh ? (
         <div className="card">

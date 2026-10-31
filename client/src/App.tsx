@@ -438,7 +438,7 @@ function Shell() {
             Warteschlange der KI-Auswertung liegt darüber (App), sie überlebt den Wechsel (#490). */}
         <Fragment key={`${propertyId ?? ''}:${periodKeyNow}`}>
         {tab === 'cockpit' && (
-          <Cockpit units={units} tenancies={tenancies} settings={settings} reload={reload} onNavigate={(t, f) => void navigate(t as Tab, f ?? null)} />
+          <Cockpit units={units} tenancies={tenancies} settings={settings} updateStatus={update.status} reload={reload} onNavigate={(t, f) => void navigate(t as Tab, f ?? null)} />
         )}
         {tab === 'schnellerfassung' && (
           <Schnellerfassung units={units} settings={settings} onNavigate={(t, f) => void navigate(t as Tab, f ?? null)}

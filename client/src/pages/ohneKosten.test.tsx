@@ -62,7 +62,7 @@ const wrap = (node: ReactNode) => render(
 )
 
 test('Cockpit: ohne Kosten im Jahr kein voraussichtliches Guthaben, sondern „Noch keine Kosten erfasst“', async () => {
-  wrap(<Cockpit units={UNITS} tenancies={[]} settings={null} reload={async () => {}} onNavigate={() => {}} />)
+  wrap(<Cockpit units={UNITS} tenancies={[]} settings={null} updateStatus={null} reload={async () => {}} onNavigate={() => {}} />)
   await screen.findByText(`Gesamtkosten ${YEAR}`, {}, SLOW)
   expect(screen.getByText(new RegExp(`Noch keine Kosten für ${YEAR} erfasst`))).toBeTruthy()
   expect(screen.queryByText('2.400,00 €', { exact: false })).toBeNull()
@@ -91,7 +91,7 @@ test('Cockpit: fehlende Belege ergeben „Belege vollständig“ in Gelb, nie in
     { id: 'k3', propertyId: 'objekt-1', period: calendarPeriod(YEAR), category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 100000, key: 'area', invoiceFile: '1_gs.pdf' },
     { id: 'k4', propertyId: 'objekt-1', period: calendarPeriod(YEAR), category: 'Müllabfuhr', description: 'Müll', amountCents: 30000, key: 'units' },
   ]
-  wrap(<Cockpit units={UNITS} tenancies={[]} settings={null} reload={async () => {}} onNavigate={() => {}} />)
+  wrap(<Cockpit units={UNITS} tenancies={[]} settings={null} updateStatus={null} reload={async () => {}} onNavigate={() => {}} />)
   const titel = await screen.findByText('Belege vollständig', {}, SLOW)
   const zeile = titel.closest('.check-row')
   expect(zeile?.className).toMatch(/\bgelb\b/)

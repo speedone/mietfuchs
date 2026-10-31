@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import type { CostItem, CostKey, LegalBasis, Meter, MeterType, Payment, Reading, Settings, Tenancy, Unit } from '../../shared/types.ts'
 import type { ComputedSettlement } from './calc.ts'
 import { migrateLegacy } from './legacy/migrate.ts'
-import { systemLocation, writable } from './paths.ts'
+import { storeLocation, systemLocation, writable } from './paths.ts'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PACKAGED = !!globalThis.Bun
@@ -48,6 +48,23 @@ function userDataHome(env: NodeJS.ProcessEnv, platform: NodeJS.Platform, home: (
   return p.join(fromEnv('XDG_DATA_HOME') || inHome('.local', 'share'), 'mietfuchs')
 }
 
+// Aus dem Microsoft Store (#500) nicht unter AppData: Windows lenkt Schreibzugriffe einer
+// Store-App dorthin in einen Ordner des Pakets um und löscht ihn beim Deinstallieren, eine
+// Neuinstallation stünde vor leerem Bestand. Abschalten ließe sich das nur mit einer
+// eingeschränkten Berechtigung, die Microsoft für Spiele vorsieht. Außerhalb von AppData lenkt
+// Windows nichts um. Bewusst nicht „Dokumente“: Den Ordner gleicht OneDrive oft ab, und eine
+// SQLite-Datei verträgt keinen Abgleich während des Schreibens.
+function storeDataHome(env: NodeJS.ProcessEnv, home: () => string = homeDir): string {
+  const profile = env.USERPROFILE && path.win32.isAbsolute(env.USERPROFILE) ? env.USERPROFILE : home()
+  if (!profile) {
+    throw new Error(
+      'Der Benutzerordner lässt sich nicht bestimmen (USERPROFILE ist nicht gesetzt). ' +
+        'Bitte NKA_DATA_DIR auf einen Ordner setzen, in dem Mietfuchs schreiben darf.',
+    )
+  }
+  return path.win32.join(profile, 'Mietfuchs')
+}
+
 type ChooseDataDirOptions = {
   env?: NodeJS.ProcessEnv
   execPath?: string
@@ -76,6 +93,7 @@ export function chooseDataDir({
 }: ChooseDataDirOptions = {}): string {
   if (env.NKA_DATA_DIR) return path.resolve(env.NKA_DATA_DIR)
   if (!packaged) return path.join(moduleDir, '..', 'data')
+  if (storeLocation(execPath, platform)) return storeDataHome(env, home)
   if (systemLocation(execPath, platform)) return userDataHome(env, platform, home)
   const beside = path.join(path.dirname(execPath), 'data')
   return canWrite(beside) ? beside : userDataHome(env, platform, home)

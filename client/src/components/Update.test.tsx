@@ -150,6 +150,14 @@ test('Einstellungen: ohne Zustimmung nur die installierte Version, Prüfen ist g
   expect((screen.getByRole('button', { name: 'Jetzt prüfen' }) as HTMLButtonElement).disabled).toBe(true)
 })
 
+test('Einstellungen: aus dem Microsoft Store nur der Stand, ohne Häkchen und Knopf (#500)', async () => {
+  response = status({ mode: 'store', enabled: false, latest: null, available: false, releaseUrl: null, downloadUrl: null, checkedAt: null })
+  render(<Card s={settings({ updateCheck: 'on' })} />)
+  await waitFor(() => expect(screen.getByText(/installiert der Microsoft Store von selbst/)).toBeTruthy())
+  expect(screen.queryByLabelText(/nach neuen Versionen schauen/i)).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Jetzt prüfen' })).toBeNull()
+})
+
 // #309: Das Häkchen ist ein Entwurf. Erst „Speichern“ schickt es, „Verwerfen“ stellt es her.
 const writes = () => requests.filter((r) => r.method !== 'GET')
 

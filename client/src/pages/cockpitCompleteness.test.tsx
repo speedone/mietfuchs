@@ -45,7 +45,7 @@ const page = () => render(
   <PeriodProvider>
     <PropertyProvider>
       <UIProvider>
-        <Cockpit units={UNITS} tenancies={[]} settings={{ landlordName: 'Erika', iban: '', paymentDeadlineDays: 30 } as Settings} reload={async () => {}} onNavigate={() => {}} />
+        <Cockpit units={UNITS} tenancies={[]} settings={{ landlordName: 'Erika', iban: '', paymentDeadlineDays: 30 } as Settings} updateStatus={null} reload={async () => {}} onNavigate={() => {}} />
       </UIProvider>
     </PropertyProvider>
   </PeriodProvider>,

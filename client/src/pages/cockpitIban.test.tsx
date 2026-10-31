@@ -47,7 +47,7 @@ const page = (s: Settings, tenancies: Tenancy[], onNavigate: (tab: string, focus
   <PeriodProvider>
     <PropertyProvider>
       <UIProvider>
-        <Cockpit units={UNITS} tenancies={tenancies} settings={s} reload={async () => {}} onNavigate={onNavigate} />
+        <Cockpit units={UNITS} tenancies={tenancies} settings={s} updateStatus={null} reload={async () => {}} onNavigate={onNavigate} />
       </UIProvider>
     </PropertyProvider>
   </PeriodProvider>,

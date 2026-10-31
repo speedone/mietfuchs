@@ -84,7 +84,7 @@ import {
   archiveDatabaseProblem, archiveInfoText, originText, stripJournal, writeDatabaseSnapshot,
 } from './db/backup.ts'
 import { findingsText, validateDb } from './legacy/validate.ts'
-import { createUpdateChecker, UPDATE_URL } from './update.ts'
+import { createUpdateChecker, mayAskGitHub, UPDATE_URL } from './update.ts'
 import { APP_VERSION, RUNTIME, STANDALONE } from './version.ts'
 import { describeFile, describeFolder, hashFile, mimeTypeOf, uploadedAtOf } from './uploads.ts'
 import { acceptIban, IbanRefusal } from './iban.ts'
@@ -3449,7 +3449,7 @@ app.get('/api/ai/status', async (req, res) => res.json(await aiStatus(req.query.
 // beim Update-Hinweis, sonst gilt die mitgelieferte Liste (siehe ai/recommendations.ts).
 const recommendations = createRecommendations()
 app.get('/api/ai/recommendations', async (req, res) => {
-  res.json(await recommendations.get({ consented: storedSettings.updateCheck === 'on' }))
+  res.json(await recommendations.get({ consented: mayAskGitHub(RUNTIME, storedSettings.updateCheck) }))
 })
 
 // Ein Modell über Ollama laden. Nur für ein Ollama auf diesem Rechner oder im Heimnetz: Dienste
@@ -3659,7 +3659,9 @@ function openBrowser(url: string): void {
         ? ['open', [url]]
         : ['xdg-open', [url]]
   try {
-    const child = spawn(cmd, args, { detached: true, stdio: 'ignore' })
+    // windowsHide (#500): Die Store-Fassung hat kein Konsolenfenster, ein Kindprozess cmd.exe
+    // bekäme sonst bei jedem Start ein eigenes, das kurz aufblitzt.
+    const child = spawn(cmd, args, { detached: true, stdio: 'ignore', windowsHide: true })
     // Fehlt das Programm, wirft spawn nicht, sondern meldet 'error' asynchron auf dem
     // Kindprozess — der try/catch greift dann nicht mehr. Ohne Zuhörer wird daraus ein
     // unbehandelter Fehler, der den Server beendet, obwohl er schon lauscht. Auf einem
@@ -4005,7 +4007,7 @@ setInterval(() => void checkPriorVersion(true), PRIOR_CHECK_INTERVAL_MS).unref()
     // Aus einem Linux-Paket startet Mietfuchs ohne Konsolenfenster (Terminal=false), beendet
     // wird dann über die Oberfläche. Beim Doppelklick auf die Programmdatei gibt es das Fenster
     // weiterhin, und dort ist sein Schließen der gewohnte Weg.
-    console.log(RUNTIME === 'package'
+    console.log(RUNTIME === 'package' || RUNTIME === 'store'
       ? 'Zum Beenden in der Seitenleiste auf „Mietfuchs beenden“ klicken.'
       : 'Fenster offen lassen, solange Mietfuchs läuft. Zum Beenden dieses Fenster schließen.')
     // In der CI (GitHub setzt CI=true) prüft ein Skript die Programmdatei; ein Browserfenster
