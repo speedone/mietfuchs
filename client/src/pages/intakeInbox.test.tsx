@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // Belege ohne Position per KI auswerten (#170): „Per KI auswerten“ an der Karte im Eingang (#490, vorher ein Sprung
-// aus dem Belegordner in die Schnellerfassung) wertet sie aus, ohne sie ein zweites Mal hochzuladen. Der Server bekommt
+// aus dem Ordner der Seite Belege in der Eingang) wertet sie aus, ohne sie ein zweites Mal hochzuladen. Der Server bekommt
 // nur den Namen (`existingFile`); eine Kopie wäre ein Doppelter, den die Prüfsumme danach meldet.
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'

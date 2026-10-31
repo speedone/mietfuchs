@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// Der Belegordner (#170): Filter nach Objekt und Jahr, Register je Kostenart, Suche. Die
+// Der Ordner der Seite Belege (#170): Filter nach Objekt und Jahr, Register je Kostenart, Suche. Die
 // Entscheidungslogik prüft receipts.test.ts; hier geht es um das, was nur die Seite zeigt,
 // vor allem darum, dass die Auswahlfelder den Wert anzeigen, nach dem tatsächlich gefiltert wird.
 import { calendarPeriod, periodContaining, periodKey, periodLabel } from '../../../shared/period.ts'
@@ -114,7 +114,7 @@ afterEach(() => {
 })
 
 // Die Seite Belege (#490) mit beiden Ansichten; ohne Angabe die Ansicht „Ordner“, deren Tests hier stehen. Was früher
-// im Posteingang des Belegordners stand, steht im Eingang (`view: 'eingang'`).
+// im Posteingang des Ordners stand, steht im Eingang (`view: 'eingang'`).
 const BASE = { units: [], settings: null, onNavigate: () => {}, view: 'ordner' as const }
 
 const renderPage = (view: 'eingang' | 'ordner' = 'ordner') =>
@@ -403,7 +403,7 @@ test('Eingang: einer Position zuordnen, und „Per KI auswerten“ am Beleg wert
   expect(onNavigate).not.toHaveBeenCalled()
 })
 
-// Fehler mit Ausweg (#487): „Von Hand erfassen“ springt aus Schnellerfassung oder Kosten zum gespeicherten Beleg.
+// Fehler mit Ausweg (#487): „Von Hand erfassen“ springt aus Eingang oder Kosten zum gespeicherten Beleg.
 test('Posteingang: ein angesprungener Beleg bekommt den Fokus, die Seite meldet es einmal', async () => {
   const onFocusDone = vi.fn()
   render(
@@ -728,7 +728,7 @@ test('Posteingang: Knöpfe in Höhe der Auswahl, „Beleg nachreichen“ steht h
   expect(picker.compareDocumentPosition(upload) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 })
 
-// Durchsicht des Belegordners nach Zeitraum (#346 Schritt 12): Nach einem Wechsel auf Mai bis April beginnen Rumpf
+// Durchsicht des Ordners nach Zeitraum (#346 Schritt 12): Nach einem Wechsel auf Mai bis April beginnen Rumpf
 // (Januar bis April 2025) und neuer Zeitraum im selben Jahr. Register, Satz und Belegabdeckung folgen dem Zeitraum der
 // Seitenleiste; vorher stand „die 2025 beginnen“ da, gezeigt wurde aber nur einer von beiden.
 test('Rumpfzeitraum: Register, Satz und Belegabdeckung zeigen den gewählten Zeitraum', async () => {
@@ -1133,7 +1133,7 @@ test('Eingang: nach dem Zuordnen eines gespeicherten Belegs bleibt kein „Erneu
   await waitFor(() => expect(screen.queryByText('Gespeichert, nicht ausgewertet')).toBeNull())
 })
 
-// Durchsicht S1: Ein Zählerfoto ohne Position ließ sich im Belegordner löschen; im Ordner geht das weiter.
+// Durchsicht S1: Ein Zählerfoto ohne Position ließ sich im Ordner der Seite Belege löschen; im Ordner geht das weiter.
 test('Ordner: ein Zählerfoto lässt sich löschen, mit derselben Rückfrage', async () => {
   extraUploads = [{ ...up('9_zaehler.jpg'), kind: 'meterPhoto', mimeType: 'image/jpeg' }]
   render(
@@ -1150,4 +1150,25 @@ test('Ordner: ein Zählerfoto lässt sich löschen, mit derselben Rückfrage', a
   expect(dialog.textContent).toMatch(/in den Papierkorb gelegt/)
   fireEvent.click(within(dialog).getByRole('button', { name: 'Löschen' }))
   await waitFor(() => expect(sent).toEqual([{ url: '/api/uploads/9_zaehler.jpg', method: 'DELETE', body: {} }]))
+})
+
+// Durchsicht (Kann): „Nur ablegen“ geht auch per Hineinziehen, auf den Knopf selbst.
+test('Eingang: Belege auf „Nur ablegen, ohne Auswertung“ gezogen werden nur gespeichert', async () => {
+  renderInbox()
+  const target = (await screen.findByLabelText('Belege nur ablegen, ohne Auswertung')).closest('label') as HTMLElement
+  fireEvent.drop(target, { dataTransfer: { files: [new File(['%PDF'], 'eins.pdf', { type: 'application/pdf' })] } })
+  await waitFor(() => expect(sent).toEqual([{ url: '/api/upload', method: 'POST', body: { file: 'eins.pdf', propertyId: 'p1', year: String(YEAR) } }]))
+})
+
+// Durchsicht (Kann): Scheitert das Laden der Belege, sagt es auch der Eingang.
+test('Eingang: ein Ladefehler der Belege steht auch im Eingang', async () => {
+  const inner = globalThis.fetch
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => (url === '/api/uploads'
+    ? new Response(JSON.stringify({ error: 'Der Datenordner ist nicht lesbar.' }), { status: 500, headers: { 'content-type': 'application/json' } })
+    : inner(url, init)))
+  renderInbox()
+  const panel = await screen.findByRole('tabpanel', { name: /Eingang/ })
+  expect(await within(panel).findByText(/Der Datenordner ist nicht lesbar/)).toBeTruthy()
+  // Das Paneel lässt sich mit Tab erreichen, auch wenn sein erstes Element nicht fokussierbar ist
+  expect(panel.getAttribute('tabindex')).toBe('0')
 })

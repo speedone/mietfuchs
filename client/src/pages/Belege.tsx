@@ -138,12 +138,12 @@ export default function Belege({ units, settings, onNavigate, onOpenItem, onOpen
           </button>
         ))}
       </div>
-      <div role="tabpanel" id="belege-eingang" aria-labelledby="belege-tab-eingang" data-view="eingang" hidden={shown !== 'eingang'}>
+      <div role="tabpanel" id="belege-eingang" aria-labelledby="belege-tab-eingang" data-view="eingang" hidden={shown !== 'eingang'} tabIndex={0}>
         <BelegeEingang stock={stock} units={units} settings={settings} onNavigate={onNavigate} onOpenItem={onOpenItem}
           onOpenAiSettings={onOpenAiSettings} onOpenMeters={onOpenMeters} onCount={setCount} renderThumb={renderThumb}
           focusFile={focus?.view === 'eingang' ? focus.file : null} onFocusDone={focusDone} />
       </div>
-      <div role="tabpanel" id="belege-ordner" aria-labelledby="belege-tab-ordner" data-view="ordner" hidden={shown !== 'ordner'}>
+      <div role="tabpanel" id="belege-ordner" aria-labelledby="belege-tab-ordner" data-view="ordner" hidden={shown !== 'ordner'} tabIndex={0}>
         <BelegeOrdner stock={stock} renderThumb={renderThumb} onOpenItem={onOpenItem} makeTenantFolder={makeTenantFolder}
           focusFile={focus?.view === 'ordner' ? focus.file : null} onFocusDone={focusDone}
           onShowInInbox={showInInbox} />

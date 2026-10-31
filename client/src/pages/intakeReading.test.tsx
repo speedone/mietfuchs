@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// Zählerstände in der Schnellerfassung (#149): gelesen wie jede Menge, „1.234“ ist 1234. Und der
+// Zählerstände im Eingang der Seite Belege (#149): gelesen wie jede Menge, „1.234“ ist 1234. Und der
 // Wert des Modells wird so ins Feld geschrieben, dass er danach wieder derselbe ist: 1,234 m³ darf
 // nicht als „1.234“ dastehen und als 1234 gespeichert werden.
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'

@@ -61,7 +61,7 @@ test('Kosten: die KI-Auswertung schickt Objekt und Jahr mit', async () => {
   expect(sent[0]?.get('year')).toBe(String(YEAR))
 })
 
-test('Schnellerfassung: ebenso, auch für einen Beleg aus dem Posteingang', async () => {
+test('Eingang: ebenso, auch für einen Beleg aus dem Posteingang', async () => {
   const { container } = render(<PeriodProvider><PropertyProvider><Belege view="eingang" units={UNITS} settings={null} onNavigate={() => {}} /></PropertyProvider></PeriodProvider>)
   await upload(container)
   expect(sent[0]?.get('propertyId')).toBe('objekt-1')
@@ -77,13 +77,13 @@ test('Kosten: die Auswertung geht an den Schuhkarton, als Rechnung', async () =>
   expect(sent[0]?.get('docType')).toBe('rechnung')
 })
 
-test('Schnellerfassung: ohne Angabe der Belegart, damit Zählerfotos erkannt werden', async () => {
+test('Eingang: ohne Angabe der Belegart, damit Zählerfotos erkannt werden', async () => {
   const { container } = render(<PeriodProvider><PropertyProvider><Belege view="eingang" units={UNITS} settings={null} onNavigate={() => {}} /></PropertyProvider></PeriodProvider>)
   await upload(container)
   expect(sent[0]?.get('docType')).toBeNull()
 })
 
-// #490: Andere Dateien als PDF und Bild fielen in Schnellerfassung und Kosten still weg; jetzt sagt es jede Ablage mit
+// #490: Andere Dateien als PDF und Bild fielen in Eingang und Kosten still weg; jetzt sagt es jede Ablage mit
 // demselben Satz.
 test('Kosten: eine Datei, die weder PDF noch Bild ist, wird übergangen und genannt', async () => {
   const { container } = render(<PeriodProvider><PropertyProvider><Kosten units={UNITS} settings={null} /></PropertyProvider></PeriodProvider>)

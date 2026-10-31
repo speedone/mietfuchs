@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// Die Belegbuchung im Browser (#170): Schnellerfassung und Kosten benutzen dieselbe Komponente
+// Die Belegbuchung im Browser (#170): Eingang und Kosten benutzen dieselbe Komponente
 // „Auswertung prüfen“, und die Zahlen kommen vom (nachgebauten) Server mit dem echten Planer.
 // Die vier Abnahmefälle der Spezifikation stehen hier als „Abnahme A“ bis „Abnahme D“.
 import { useLayoutEffect } from 'react'

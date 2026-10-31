@@ -389,7 +389,7 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
   const inbox = useMemo(() => inboxOf(allCards, filter), [allCards, filter])
   const shownAssessments = useMemo(() => new Set(assessments.filter((v) => v.open).map((v) => v.id)), [assessments])
   const { cards: freeCards, kept } = useMemo(() => withoutPosition(inbox.here, all, shownAssessments), [inbox.here, all, shownAssessments])
-  const elsewhere = useMemo(() => elsewhereGroups(allCards, filter), [allCards, filter])
+  const elsewhere = useMemo(() => elsewhereGroups(allCards, filter, shownAssessments), [allCards, filter, shownAssessments])
   // Die neuesten 20, darunter „Ältere anzeigen (N)“; ein anderes Objekt oder Jahr beginnt wieder bei 20.
   const inboxScope = `${filter.propertyId}|${filter.year}`
   const [inboxCount, setInboxCount] = useState({ scope: inboxScope, count: INBOX_STEP })
@@ -669,7 +669,7 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
 
   return (
     <>
-      {error && <NoticeBox level="error" action={error} />}
+      {(error || stock.error) && <NoticeBox level="error" action={error || stock.error} />}
       {pending && <div className="warn">{pending}</div>}
       <AmountCheckBox attach={attach} properties={properties} onOpenItem={onOpenItem} />
 
@@ -709,7 +709,9 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
         </div>
         <div className="row center">
           {mode !== 'ohne' ? (
-            <label className="btn secondary">
+            // Auch per Hineinziehen: Belege, die auf diesem Knopf landen, werden nur gespeichert
+            <label className="btn secondary" onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => { e.preventDefault(); const files = [...e.dataTransfer.files]; if (files.length) void storeOnly(files) }}>
               {uploading > 0 ? `Wird gespeichert … (${uploading})` : 'Nur ablegen, ohne Auswertung'}
               <input type="file" multiple className="sr-only" accept="application/pdf,image/*" aria-label="Belege nur ablegen, ohne Auswertung" disabled={uploading > 0}
                 onChange={(e) => { const files = [...(e.target.files ?? [])]; e.target.value = ''; if (files.length) void storeOnly(files) }} />

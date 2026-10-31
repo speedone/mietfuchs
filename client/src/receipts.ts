@@ -1,4 +1,5 @@
-// Der Belegordner (#170), ohne DOM prüfbar (receipts.test.ts). Die Seite Belege.tsx rendert nur.
+// Die Seite Belege, Ordner und „Ohne Position“ (#170, #490), ohne DOM prüfbar (receipts.test.ts). „Posteingang“ heißt
+// hier wie im Server, was die Oberfläche „Ohne Position“ nennt. Die Seiten BelegeOrdner.tsx und BelegeEingang.tsx rendern nur.
 //
 // Vorbild ist der Ordner aus Papier: ein Ordner je Objekt und Jahr, darin ein Register je
 // Kostenart. Was Papier nicht kann, steht ebenfalls hier: suchen, Doppelte erkennen und zeigen,
@@ -9,7 +10,7 @@
 // Wahrheiten, die auseinanderlaufen, sobald jemand die Position verschiebt. Nur ein Beleg im
 // Posteingang (an keiner Position) trägt sie selbst.
 //
-// Der Belegordner gliedert nach Kalenderjahren, denn Belege tragen Kalenderjahre (#208, Entwurf 5.2:
+// Der Ordner gliedert nach Kalenderjahren, denn Belege tragen Kalenderjahre (#208, Entwurf 5.2:
 // `uploads.year` bleibt); das Jahr einer Position ist das Jahr, in dem ihr Zeitraum beginnt. Für das Objekt der
 // Seitenleiste gilt bei einem anderen Rhythmus der gewählte Zeitraum (`FolderFilter.period`, #346 Schritt 12).
 import type { CostItem, PeriodKey, PeriodRules, UploadInfo, UploadLinks } from './types'
@@ -59,7 +60,7 @@ export type Folder = {
 }
 
 // Der Anzeigename eines Belegs: der Originalname, wie er beim Hochladen hieß.
-// Zählerfotos der Schnellerfassung liegen im selben Ordner, belegen aber keine Kosten.
+// Zählerfotos aus dem Eingang liegen in derselben Ablage, belegen aber keine Kosten.
 export const isReceipt = (c: ReceiptCard): boolean => c.upload.kind !== 'meterPhoto'
 
 export const receiptName = (u: Pick<UploadInfo, 'originalName' | 'file'>): string => u.originalName || u.file
@@ -284,7 +285,7 @@ export function filesByItem(uploads: readonly ReceiptUpload[]): Map<string, stri
 // mit ihrem Betrag, sonst höbe sie eine gleich hohe Rechnung auf, und eine Position über 0 €
 // zählt gar nicht: Für sie gibt es nichts zu belegen.
 //
-// `present` sind die Dateien, die im Belegordner liegen. Ein Verweis auf eine Datei, die fehlt,
+// `present` sind die Dateien, die in der Ablage liegen. Ein Verweis auf eine Datei, die fehlt,
 // deckt nichts. Ohne die Liste (Cockpit) zählt der Verweis.
 //
 // Gezählt wird je Rechnung (#455): Die Teile einer Quelle sind eine Position, belegt, wenn einer von ihnen den Beleg
@@ -313,8 +314,8 @@ export function coverage(items: CostItem[], filter: FolderFilter, present: Set<s
 // rot**: Rot heißt dort, die Abrechnung lässt sich so nicht erstellen. Ein fehlender Beleg ändert
 // keine Zahl; er wird erst wichtig, wenn ein Mieter Einsicht verlangt (§ 556 Abs. 4 BGB).
 //
-// `present`: die Dateien im Belegordner. Mit ihr zählt ein Verweis auf eine fehlende Datei wie im
-// Belegordner als fehlend, und die Zeile sagt es; sonst widersprächen Cockpit und Belegordner
+// `present`: die Dateien in der Ablage. Mit ihr zählt ein Verweis auf eine fehlende Datei wie im
+// Ordner als fehlend, und die Zeile sagt es; sonst widersprächen Cockpit und Ordner
 // einander (Durchsicht). Ohne sie (Liste nicht geladen) zählt der Verweis.
 //
 // `parts`: die Teile je Rechnung über alle Zeiträume (#455), damit der Beleg eines Teils im Vorzeitraum auch hier zählt.

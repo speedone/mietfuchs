@@ -92,7 +92,7 @@ test('kein Auswahlfeld im Inhalt bietet Jahre, Zeiträume oder Objekte an', asyn
     })
     expect(offending.map((s) => s.getAttribute('aria-label') ?? s.closest('label')?.textContent), String(nav)).toEqual([])
   }
-  // Der Ordner der Seite Belege: ebenso kein Auswahlfeld für Objekt oder Jahr (vorher hatte der Belegordner eines)
+  // Der Ordner der Seite Belege: ebenso kein Auswahlfeld für Objekt oder Jahr (vorher hatte der Ordner der Seite Belege eines)
   await go(/Belege$/, /^Belege$/)
   fireEvent.click(screen.getByRole('tab', { name: 'Ordner' }))
   const main = screen.getByRole('main')

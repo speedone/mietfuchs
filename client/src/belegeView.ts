@@ -70,10 +70,12 @@ export function withoutPosition(here: readonly ReceiptCard[], queue: readonly Qu
 // Belege ohne Position, die einem anderen Objekt oder Jahr zugedacht sind: je Objekt und Jahr ihre Zahl, für die Zeile
 // mit dem Sprung dorthin. `null` heißt: ohne Angabe, es bleibt beim gewählten.
 export type ElsewhereGroup = { propertyId: string | null; year: number | null; count: number }
-export function elsewhereGroups(cards: readonly ReceiptCard[], filter: FolderFilter): ElsewhereGroup[] {
+// Was schon als Auswertung unter „Zu prüfen“ steht (`shown`), zählt nicht noch einmal.
+export function elsewhereGroups(cards: readonly ReceiptCard[], filter: FolderFilter, shown: ReadonlySet<string> = new Set()): ElsewhereGroup[] {
   const groups: ElsewhereGroup[] = []
   for (const c of cards) {
     if (c.items.length > 0 || !isReceipt(c)) continue
+    if (c.upload.assessment?.open && shown.has(c.upload.assessment.id)) continue
     const { propertyId, year } = c.upload
     const otherProperty = filter.propertyId !== 'all' && propertyId !== null && propertyId !== filter.propertyId
     const otherYear = filter.year !== 'all' && year !== null && year !== filter.year

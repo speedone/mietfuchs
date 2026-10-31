@@ -514,7 +514,7 @@ test('S2: Esc in einer mit der KI vorbelegten Lieferung fragt „Änderungen ver
 })
 
 // ---------- Fehler mit Ausweg (#487) ----------
-// Scheitert die KI, liegt die Rechnung schon im Belegordner: kein roter Fehler, sondern der Ausweg. „Von Hand erfassen“
+// Scheitert die KI, liegt die Rechnung schon im Ordner der Seite Belege: kein roter Fehler, sondern der Ausweg. „Von Hand erfassen“
 // öffnet hier das Formular einer neuen Lieferung (die Karte hat es selbst), „Erneut versuchen“ nennt nur den Beleg.
 const failingThenKept = (reason: string) => {
   const fields: Record<string, string>[] = []
@@ -530,7 +530,7 @@ const failingThenKept = (reason: string) => {
   return fields
 }
 
-test('Fehler mit Ausweg: die Rechnung bleibt im Belegordner, „Erneut versuchen“ ohne neue Datei, „Von Hand erfassen“ öffnet das Formular', async () => {
+test('Fehler mit Ausweg: die Rechnung bleibt gespeichert, „Erneut versuchen“ ohne neue Datei, „Von Hand erfassen“ öffnet das Formular', async () => {
   const fields = failingThenKept('unreachable')
   render(<UIProvider><FuelCard plant={{ id: 'hp', method: 'manual', energy: 'gas', propertyId: 'objekt-1' }} view={view} deliveries={[]} onSaved={() => {}} /></UIProvider>)
   choose()

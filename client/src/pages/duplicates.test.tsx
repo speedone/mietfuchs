@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // Doppelungen im Kostenformular (Befund A): Eine neue Position derselben Kostenart fragt nach,
-// statt still eine zweite anzulegen. Der Weg über die KI-Auswertung (Schnellerfassung und
+// statt still eine zweite anzulegen. Der Weg über die KI-Auswertung (Eingang und
 // Kostenseite) steht seit der Belegbuchung (#170) in booking.test.tsx.
 import { calendarPeriod } from '../../../shared/period.ts'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // Die gemeinsame Warteschlange der KI-Auswertung (#170, eine für die App seit #490): nacheinander, mit Objekt, Jahr
-// und Zeitraum je Eintrag, Belege aus dem Ordner nur mit ihrem Namen, Fehler und Abbruch je Eintrag. Schnellerfassung
+// und Zeitraum je Eintrag, Belege aus dem Ordner nur mit ihrem Namen, Fehler und Abbruch je Eintrag. Eingang
 // und Kostenseite benutzen sie beide; ihre Seitentests (aiCancel, kostenKiZiel, booking) und appQueue.test.tsx
 // spielen sie durch die echten Seiten.
 import { createElement, type ReactNode } from 'react'
@@ -25,7 +25,7 @@ vi.mock('./aiRequest', () => ({
   }),
 }))
 
-// Ein neuer Versuch holt den Beleg aus dem Belegordner (die Datei bleibt nicht im Browser, Durchsicht K2)
+// Ein neuer Versuch holt den Beleg aus dem Ordner der Seite Belege (die Datei bleibt nicht im Browser, Durchsicht K2)
 let fetched: string[] = []
 beforeEach(() => {
   fetched = []
@@ -84,7 +84,7 @@ test('ein gespeicherter Beleg ohne Auswertung lässt sich erneut auswerten, ohne
   act(() => result.current.retry(id))
   await waitFor(() => expect(pending).toHaveLength(2))
   expect([pending[1]?.form.get('file'), pending[1]?.form.get('existingFile')]).toEqual([null, 'srv-a.pdf'])
-  // Die Datei kam aus dem Belegordner, nicht aus dem Speicher des Browsers
+  // Die Datei kam aus dem Ordner der Seite Belege, nicht aus dem Speicher des Browsers
   expect(fetched).toEqual(['/uploads/srv-a.pdf'])
   expect(result.current.queue[0]?.failure).toBeUndefined()
   await act(async () => pending[1]?.resolve(invoice('srv-a.pdf')))

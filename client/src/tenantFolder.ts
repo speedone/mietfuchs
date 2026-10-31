@@ -19,7 +19,7 @@ import type { ReceiptUpload } from './receipts'
 export type FolderEntryStatus =
   | 'ok' // Beleg liegt bei
   | 'none' // die Position hat keinen Beleg
-  | 'missing' // verknüpft, aber die Datei fehlt im Belegordner
+  | 'missing' // verknüpft, aber die Datei fehlt in der Ablage der Belege
   | 'excluded' // Einzelbeträge anderer Mieter, nicht gewählt
 
 export type FolderEntry = { item: CostItem; status: FolderEntryStatus; upload: UploadInfo | null }

@@ -782,7 +782,7 @@ test('S22: Navigationseinträge stehen nur in nav.ts', () => {
 
 // S18 (#346 Schritt 8, UI-Durchsicht #341 M13): Objekt und Abrechnungszeitraum wählt nur die Seitenleiste (am
 // Handy das Menüblatt, beide aus App.tsx); die Seiten zeigen beides in der Kontextzeile des Seitenkopfs an. Vorher
-// hatten fünf Seiten eine eigene Jahresauswahl und der Belegordner eine eigene für Objekt und Jahr. Verboten sind
+// hatten fünf Seiten eine eigene Jahresauswahl und der Ordner der Seite Belege eine eigene für Objekt und Jahr. Verboten sind
 // deshalb außerhalb von App.tsx die Bausteine der Seitenleiste und jedes `<select>`, das Objekte oder Jahre bzw.
 // Zeiträume anbietet oder damit umschaltet. Erlaubt sind andere Größen, jede mit Grund in der Liste:
 // - das Kalenderjahr von Mietkonto und Steuer bei abweichendem Zeitraum, nur über `CalendarYearSelect`;
@@ -826,7 +826,7 @@ test('M15: der Fuß der Seitenleiste ist nicht angeheftet', () => {
 })
 
 test('S18: Objekt und Abrechnungszeitraum nur in der Seitenleiste', () => {
-  // Probe des Prüfers: die frühere Auswahl im Belegordner und die Jahresauswahl, nicht aber ein anderes Feld
+  // Probe des Prüfers: die frühere Auswahl im Ordner der Seite Belege und die Jahresauswahl, nicht aber ein anderes Feld
   expect(periodSelects('<select value={a} onChange={(e) => setA(e.target.value)}>{properties.map((p) => <option key={p.id} />)}</select>')).toHaveLength(1)
   expect(periodSelects('<select value={view.param} onChange={(e) => void switchPeriod(e.target.value)}>{x}</select>')).toHaveLength(1)
   expect(periodSelects('<select value={form.unitId} onChange={(e) => setForm(e.target.value)}>{units.map((u) => <option key={u.id} />)}</select>')).toEqual([])

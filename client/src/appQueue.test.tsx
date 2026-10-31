@@ -169,7 +169,7 @@ test('Objektwechsel: die Auswertung läuft im Objekt weiter, in dem sie begann; 
   expect((screen.getByLabelText(/^Stand/) as HTMLInputElement).value).toBe('77')
 })
 
-test('eine Auswertung aus der Schnellerfassung erscheint auch auf der Seite Kosten', async () => {
+test('eine Auswertung aus dem Eingang erscheint auch auf der Seite Kosten', async () => {
   await uploadOn(/Belege$/)
   go(/\sKosten$/)
   await waitFor(() => expect(question()).toBeNull())
@@ -196,7 +196,7 @@ test('eine anderswo gebuchte Auswertung steht nicht mehr als „in Arbeit“', a
   const answer = invoice('srv-rechnung.jpg')
   pending[0]?.resolve(answer)
   await screen.findByText('Stadtwerke', { exact: false }, { timeout: 5000 })
-  // Gebucht, etwa im Belegordner: nicht mehr offen
+  // Gebucht, etwa im Ordner der Seite Belege: nicht mehr offen
   openViews = []
   choosePeriod(String(YEAR - 1))
   await waitFor(() => expect((screen.getByLabelText('Abrechnungsjahr') as HTMLSelectElement).value).toBe(String(YEAR - 1)))
@@ -204,7 +204,7 @@ test('eine anderswo gebuchte Auswertung steht nicht mehr als „in Arbeit“', a
   expect(elsewhere()).toBeNull()
 })
 
-// Durchsicht K4: Eine offene Auswertung steht in der Schnellerfassung jedes Jahres als Karte; sie zählt dann nicht
+// Durchsicht K4: Eine offene Auswertung steht im Eingang der Seite Belege jedes Jahres als Karte; sie zählt dann nicht
 // zusätzlich als „in Arbeit an anderer Stelle“.
 test('eine offene Auswertung eines anderen Jahres steht als Karte, nicht zugleich in der Zeile', async () => {
   await uploadOn(/Belege$/, 'rechnung.jpg')

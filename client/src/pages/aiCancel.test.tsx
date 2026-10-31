@@ -59,7 +59,7 @@ test('Kosten: „Abbrechen“ stoppt die Auswertung', async () => {
   await uploadAndCancel(container)
 })
 
-test('Schnellerfassung: „Abbrechen“ stoppt die Auswertung', async () => {
+test('Eingang: „Abbrechen“ stoppt die Auswertung', async () => {
   const { container } = render(
     <PeriodProvider>
       <PropertyProvider>

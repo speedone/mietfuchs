@@ -101,3 +101,13 @@ test('Suche: ein Treffer nennt Objekt und Jahr, ein Beleg ohne Position, wem er 
   expect(loose && hitPlace(loose, name, true)).toBe('ohne Objekt · ohne Jahr')
   expect(linked && hitPlace(linked, name, false)).toBe('2024')
 })
+
+// Durchsicht (Kann): Ein Beleg eines anderen Jahres, dessen offene Auswertung schon unter „Zu prüfen“ steht, zählt in der
+// Zeile „Ohne Position an anderer Stelle“ nicht noch einmal.
+test('anderswo: ein Beleg mit gezeigter Auswertung zählt nicht', () => {
+  const cards = receiptCards([
+    up('1_vorjahr.pdf', { propertyId: 'p1', year: 2024, assessment: { id: 'a1', propertyId: 'p1', open: true } }),
+    up('2_vorjahr.pdf', { propertyId: 'p1', year: 2024 }),
+  ], [])
+  expect(elsewhereGroups(cards, { propertyId: 'p1', year: 2025 }, new Set(['a1']))).toEqual([{ propertyId: null, year: 2024, count: 1 }])
+})
