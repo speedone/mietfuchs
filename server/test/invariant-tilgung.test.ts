@@ -113,7 +113,7 @@ test('Tilgung: jeder Monat genau bezahlt ergibt je Monat das Soll und denselben 
     assert.deepEqual(tenancy, shape, `Startwert ${seed}: derselbe Bestand`)
     const slices = allocateRentPayments(tenancy, payments)
     assert.equal(slices.filter((s) => s.component === 'unallocated').length, 0, `Startwert ${seed}`)
-    const ledgerPayments = payments.map((p) => ({ tenancyId: tenancy.id, date: p.date, amountCents: p.amountCents }))
+    const ledgerPayments = payments.map((p) => ({ id: p.id, tenancyId: tenancy.id, date: p.date, amountCents: p.amountCents }))
     for (const year of yearsOf(tenancy.start, lastMonthOf(tenancy, payments))) {
       const [row] = ledgerRows({ units: [], tenancies: [tenancy], payments: ledgerPayments }, calendarYearPeriod(year))
       if (!row) continue

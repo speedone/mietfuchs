@@ -12,6 +12,11 @@ import { frozenSettlementOf, snapshotOf, type SnapshotCostItem, type SnapshotSou
 import type { TaxExpenseItem, TaxReport } from '../../shared/types.ts'
 import { calendarPeriod } from '../../shared/period.ts'
 
+// Kennungen der Zahlungen (#281: Die Tilgung braucht sie als Nachrang beim Sortieren).
+let paymentSeq = 0
+const pid = (): string => `p${String(++paymentSeq).padStart(4, '0')}`
+
+
 const tenancy = (id: string, unitId: string, start = '2020-01-01', end: string | null = null, persons = 1): SnapshotTenancy => ({
   id, unitId, tenantName: id, persons, personHistory: [{ from: start, persons }], start, end,
   prepayments: [], prepaymentOverrides: {}, baseRents: [],
@@ -41,7 +46,7 @@ test('Einliegerwohnung: Grundsteuer laut Abrechnung, Dachreparatur nach Fläche,
   const src = source({
     units: [own('eigen', 120), rented('elw', 45)],
     tenancies: [tenancy('t', 'elw')],
-    payments: [{ tenancyId: 't', date: '2025-06-01', amountCents: 600000 }],
+    payments: [{ id: pid(), tenancyId: 't', date: '2025-06-01', amountCents: 600000 }],
     costItems: [
       // 600 € × 120/165 = 436,3636… → 436,36 € Eigenanteil, die Mieterin trägt 163,64 €.
       item('grundsteuer', { amountCents: 60000 }),
@@ -290,7 +295,7 @@ test('Ohne eigene Wohnung ist nichts privat, und der Überschuss bleibt der bish
   const r = tax(source({
     units: [rented('a', 50), rented('b', 50), { id: 'laden', name: 'Laden', areaM2: 80, participates: false, selfUsed: false }],
     tenancies: [tenancy('t', 'a')],
-    payments: [{ tenancyId: 't', date: '2025-03-01', amountCents: 300000 }],
+    payments: [{ id: pid(), tenancyId: 't', date: '2025-03-01', amountCents: 300000 }],
     costItems: [item('gs', { amountCents: 100000 }), item('dach', { category: 'Nicht umlagefähig', amountCents: 50000 })],
   }))
   assert.equal(r.expenses.privateCents, 0)

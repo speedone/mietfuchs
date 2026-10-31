@@ -2514,7 +2514,8 @@ test('Mietkonto mit Stichtag: künftige Monate sind „noch nicht fällig“ und
   const db: Db = {
     ...emptyDb(),
     units: [{ id: 'a', name: 'EG', areaM2: 50, participates: true }],
-    tenancies: [tenancy({ id: 't', unitId: 'a', tenantName: 'M', start: '2020-01-01', end: null, baseRents: [{ from: '2020-01', monthlyCents: 100000 }], prepayments: [] })],
+    // Beginn im Jahr selbst: Seit #281 rechnet das Mietkonto ab Beginn, frühere Jahre ohne Zahlung stünden im Übertrag.
+    tenancies: [tenancy({ id: 't', unitId: 'a', tenantName: 'M', start: '2026-01-01', end: null, baseRents: [{ from: '2026-01', monthlyCents: 100000 }], prepayments: [] })],
     payments: [{ id: 'p', tenancyId: 't', date: '2026-09-03', amountCents: 900000 }],
   }
   const snapshot = snapshotFromDb(db, 2026)

@@ -1,0 +1,229 @@
+// Mietkonto mit Übertrag und Tilgung nach § 366 BGB (#281, Entwurf
+// docs/superpowers/specs/2026-10-30-mietkonto-uebertrag-design.md): Das Konto rechnet ab Beginn des Mietverhältnisses,
+// zeigt das Jahr mit Anfangs- und Endsaldo und liest Status und Salden aus rentAllocation.ts. Die Abrechnungsreife (E5)
+// klassifiziert offene Vorauszahlungen eines abgerechneten Zeitraums nur in der Anzeige.
+
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { rentLedger, type LedgerStatement } from '../src/calc.ts'
+import { snapshotOf, type SnapshotPayment, type SnapshotSource, type SnapshotTenancy } from '../src/snapshot.ts'
+import type { RentLedger, RentLedgerRow, RentMonth } from '../../shared/types.ts'
+import { monthsBetween } from '../testing/rentStock.ts'
+
+// Ab 01.01.2024, 800 € im Monat: 600 € Kaltmiete und 200 € Vorauszahlung (die Zahlen aus dem Issue).
+const tenancy = (over: Partial<SnapshotTenancy> = {}): SnapshotTenancy => ({
+  id: 't', unitId: 'a', tenantName: 'Mieter', persons: 1, personHistory: [], start: '2024-01-01', end: null,
+  prepayments: [{ from: '2024-01', monthlyCents: 20000 }], prepaymentOverrides: {},
+  baseRents: [{ from: '2024-01', monthlyCents: 60000 }], ...over,
+})
+let seq = 0
+const pay = (date: string, amountCents: number, over: Partial<SnapshotPayment> = {}): SnapshotPayment => ({ id: `p${String(++seq).padStart(4, '0')}`, tenancyId: 't', date, amountCents, kind: 'rent', ...over })
+// Je Monat von `from` bis `to` 800 € am dritten des Monats.
+const monthly = (from: string, to: string, cents = 80000): SnapshotPayment[] => monthsBetween(from, to).map((m) => pay(`${m}-03`, cents))
+
+const source = (s: Partial<SnapshotSource>): SnapshotSource => ({
+  units: [{ id: 'a', name: 'EG', areaM2: 50, participates: true }],
+  tenancies: [tenancy()], costItems: [], meters: [], readings: [], payments: [], closedSettlements: [], ...s,
+})
+const ledger = (s: Partial<SnapshotSource>, year: number, options: Parameters<typeof rentLedger>[1] = {}): RentLedger => rentLedger(snapshotOf(source(s), year), options)
+const rowOf = (l: RentLedger, id = 't'): RentLedgerRow => l.rows.find((r) => r.tenancyId === id) ?? assert.fail(`keine Zeile ${id}`)
+const monthOf = (r: RentLedgerRow, month: number): RentMonth => r.months[month - 1] ?? assert.fail(`kein Monat ${month}`)
+
+test('Issue #281: Dauerauftrag bucht die Januarmiete am 28.12., der Januar ist gedeckt und das Vorjahr nennt den Übertrag', () => {
+  const payments = [...monthly('2024-01', '2024-12'), pay('2024-12-28', 80000), ...monthly('2025-02', '2025-12')]
+  const y2024 = rowOf(ledger({ payments }, 2024, { asOf: '2026-01-15' }))
+  assert.equal(y2024.openingBalanceCents, 0)
+  assert.equal(y2024.closingBalanceCents, 80000, 'vorausbezahlt 800 € zum 31.12.2024')
+  assert.equal(y2024.balanceCents, 80000, 'das Jahr allein: wie bisher')
+  assert.equal(y2024.arrearsCents, 0)
+  const y2025 = rowOf(ledger({ payments }, 2025, { asOf: '2026-01-15' }))
+  assert.equal(y2025.openingBalanceCents, 80000)
+  assert.equal(monthOf(y2025, 1).status, 'paid', 'die Dezemberzahlung deckt den Januar')
+  assert.equal(monthOf(y2025, 1).paidCents, 80000)
+  assert.ok(y2025.months.every((m) => m.status === 'paid'))
+  assert.equal(y2025.closingBalanceCents, 0)
+  assert.equal(y2025.paidYearCents, 880000, 'Zahlungseingänge des Jahres: nach Datum, für den Kontoauszug')
+  assert.equal(y2025.arrearsCents, 0)
+  assert.equal(y2025.openMonths, 0)
+})
+
+test('Issue #281: Ein Dezember-Rückstand steht im Januar noch da (Übertrag), die Zahlungen tilgen zuerst die Vorauszahlungen', () => {
+  const payments = [...monthly('2024-01', '2024-11'), ...monthly('2025-01', '2025-12')]
+  const l = ledger({ payments }, 2025, { asOf: '2026-02-01' })
+  const r = rowOf(l)
+  assert.equal(r.openingBalanceCents, -80000)
+  assert.equal(r.closingBalanceCents, -80000)
+  assert.equal(r.balanceCents, 0, 'das Jahr allein ist ausgeglichen')
+  assert.equal(r.arrearsCents, 80000, 'der Rückstand verschwindet nicht')
+  assert.equal(l.totals.openCents, 80000)
+  // Jede Zahlung tilgt zuerst die Vorauszahlung des Monats, dann die älteste Kaltmiete (VIII ZR 84/17 Rn. 57):
+  // Am Jahresende fehlen 200 € Kaltmiete November und 600 € Kaltmiete Dezember.
+  assert.equal(monthOf(r, 11).status, 'partial')
+  assert.equal(monthOf(r, 11).openRentCents, 20000)
+  assert.equal(monthOf(r, 11).openPrepaymentCents, 0)
+  assert.equal(monthOf(r, 12).status, 'partial')
+  assert.equal(monthOf(r, 12).openRentCents, 60000)
+  assert.equal(monthOf(r, 12).openPrepaymentCents, 0)
+  assert.equal(r.openMonths, 2)
+  // Das Vorjahr: Der Dezember war zum 31.12. offen und ist mit der Zahlung vom 03.02.2025 gedeckt.
+  const y2024 = rowOf(ledger({ payments }, 2024, { asOf: '2026-02-01' }))
+  assert.equal(monthOf(y2024, 12).status, 'open')
+  assert.equal(monthOf(y2024, 12).paidLaterOn, '2025-02-03')
+  assert.equal(monthOf(y2024, 11).paidLaterOn, undefined, 'ein gedeckter Monat trägt keinen Zusatz')
+  assert.equal(y2024.closingBalanceCents, -80000)
+  assert.equal(y2024.arrearsCents, 80000)
+})
+
+test('Teilzahlung von 300 € auf 600 € Kaltmiete und 200 € Vorauszahlung: zuerst die Vorauszahlung', () => {
+  const payments = [...monthly('2024-01', '2024-12'), pay('2025-01-03', 30000)]
+  const r = rowOf(ledger({ payments }, 2025, { asOf: '2025-02-10' }))
+  const jan = monthOf(r, 1)
+  assert.equal(jan.status, 'partial')
+  assert.equal(jan.paidCents, 30000)
+  assert.equal(jan.openPrepaymentCents, 0)
+  assert.equal(jan.openRentCents, 50000)
+  assert.equal(r.arrearsCents, 50000)
+  assert.equal(monthOf(r, 2).status, 'notDue')
+})
+
+test('Zwei offene Monate, dann 800 €: erst beide Vorauszahlungen, dann die älteste Kaltmiete (Rn. 57)', () => {
+  const payments = [...monthly('2024-01', '2024-12'), pay('2025-02-10', 80000)]
+  const r = rowOf(ledger({ payments }, 2025, { asOf: '2025-03-01' }))
+  assert.deepEqual([monthOf(r, 1).openPrepaymentCents, monthOf(r, 1).openRentCents], [0, 20000])
+  assert.deepEqual([monthOf(r, 2).openPrepaymentCents, monthOf(r, 2).openRentCents], [0, 60000])
+  assert.equal(monthOf(r, 1).status, 'partial')
+  assert.equal(monthOf(r, 2).status, 'partial')
+  assert.equal(r.arrearsCents, 80000)
+})
+
+test('Monat laut Verwendungszweck: die Zahlung deckt diesen Monat, der ältere bleibt offen (Rn. 56)', () => {
+  const payments = [...monthly('2024-01', '2024-12'), pay('2025-02-10', 80000, { designatedMonth: '2025-02' })]
+  const r = rowOf(ledger({ payments }, 2025, { asOf: '2025-03-01' }))
+  assert.equal(monthOf(r, 2).status, 'paid')
+  assert.equal(monthOf(r, 1).status, 'open')
+  assert.equal(r.arrearsCents, 80000)
+  assert.equal(r.designatedOutside, undefined)
+})
+
+test('Monat laut Verwendungszweck außerhalb des Mietverhältnisses: wie keine Bestimmung, das Mietkonto nennt die Zahlung', () => {
+  const p = pay('2025-02-10', 80000, { designatedMonth: '2023-05' })
+  const r = rowOf(ledger({ payments: [...monthly('2024-01', '2024-12'), p] }, 2025, { asOf: '2025-03-01' }))
+  assert.deepEqual(r.designatedOutside, [p.id])
+  assert.equal(monthOf(r, 1).openRentCents, 20000, 'verteilt nach gesetzlicher Reihenfolge')
+})
+
+test('Auszug mit Rückstand: im Folgejahr keine Zeile, aber der Rückstand steht in carriedOnly und in der Summe', () => {
+  const t = tenancy({ end: '2024-06-30' })
+  const l = ledger({ tenancies: [t], payments: monthly('2024-01', '2024-05') }, 2025, { asOf: '2025-03-01' })
+  assert.equal(l.rows.length, 0)
+  assert.deepEqual(l.carriedOnly, [{ tenancyId: 't', tenantName: 'Mieter', unitName: 'EG', end: '2024-06-30', openCents: 80000, notDemandableCents: 0, notDemandable: [] }])
+  assert.equal(l.totals.openCents, 80000)
+  // Ausgeglichen: kein Eintrag.
+  assert.deepEqual(ledger({ tenancies: [t], payments: monthly('2024-01', '2024-06') }, 2025, { asOf: '2025-03-01' }).carriedOnly, [])
+})
+
+test('Endsaldo eines Jahres ist der Anfangssaldo des nächsten', () => {
+  const payments = [...monthly('2024-01', '2024-09'), pay('2024-10-20', 50000), pay('2024-12-28', 200000), ...monthly('2025-03', '2025-08'), pay('2025-09-01', -80000)]
+  for (const year of [2024, 2025, 2026]) {
+    const a = rowOf(ledger({ payments }, year, { asOf: '2027-01-10' }))
+    const b = rowOf(ledger({ payments }, year + 1, { asOf: '2027-01-10' }))
+    assert.equal(a.closingBalanceCents, b.openingBalanceCents, `${year}`)
+    assert.equal(a.closingBalanceCents, a.openingBalanceCents + a.paidYearCents - a.sollYearCents, `${year}: Formel`)
+  }
+})
+
+test('Ohne Mietverhältnis vor dem Jahr ist der Anfangssaldo 0, außer eine Zahlung ging vor Beginn ein', () => {
+  const t = tenancy({ start: '2025-01-01', prepayments: [{ from: '2025-01', monthlyCents: 20000 }], baseRents: [{ from: '2025-01', monthlyCents: 60000 }] })
+  assert.equal(rowOf(ledger({ tenancies: [t], payments: monthly('2025-01', '2025-12') }, 2025)).openingBalanceCents, 0)
+  const r = rowOf(ledger({ tenancies: [t], payments: [pay('2024-12-28', 80000), ...monthly('2025-02', '2025-12')] }, 2025, { asOf: '2026-01-10' }))
+  assert.equal(r.openingBalanceCents, 80000)
+  assert.equal(monthOf(r, 1).status, 'paid')
+})
+
+// ---------- Abrechnungsreife (E5) ----------
+
+// Gezahlt Januar bis November 2024, seitdem nichts: Der Dezember 2024 ist ganz offen, 2025 und Januar/Februar 2026 auch.
+const stopped = monthly('2024-01', '2024-11')
+const objectStatement = (year: number, over: Partial<LedgerStatement> = {}): LedgerStatement => ({
+  label: String(year),
+  months: monthsBetween(`${year}-01`, `${year}-12`),
+  deadline: `${year + 1}-12-31`,
+  closed: false,
+  sentAt: null,
+  credited: null,
+  covers: () => true,
+  ...over,
+})
+const statements2024 = (over: Partial<LedgerStatement> = {}): LedgerStatement[] => [objectStatement(2024, over), objectStatement(2025), objectStatement(2026)]
+
+test('E5: Frist abgelaufen ohne erteilte Abrechnung: die Vorauszahlung Dezember 2024 ist nicht mehr einzeln einforderbar', () => {
+  const r = rowOf(ledger({ payments: stopped }, 2026, { asOf: '2026-03-01', statements: statements2024() }))
+  assert.equal(r.notDemandableCents, 20000)
+  assert.deepEqual(r.notDemandable, [{ reason: 'deadlinePassed', label: '2024', cents: 20000 }])
+  // Offen sind Dezember 2024 (800), 2025 (9.600) und Januar/Februar 2026 (1.600); davon 200 € nicht einforderbar.
+  assert.equal(r.arrearsCents, 1200000 - 20000)
+  // Kaltmiete und die Vorauszahlungen 2025 (Frist läuft bis 31.12.2026) bleiben Rückstand.
+})
+
+test('E5: erteilt mit Jahreskorrektur: in der Abrechnung enthalten', () => {
+  const credited = new Map([['t', 220000]])
+  const r = rowOf(ledger({ payments: stopped }, 2025, { asOf: '2025-06-01', statements: statements2024({ closed: true, sentAt: '2025-03-01', credited }) }))
+  assert.deepEqual(r.notDemandable, [{ reason: 'inStatement', label: '2024', cents: 20000 }])
+  assert.equal(r.notDemandableCents, 20000)
+})
+
+test('E5: erteilt ohne Jahreskorrektur: rechnet die nicht gezahlte Vorauszahlung als gezahlt an (Differenz)', () => {
+  const credited = new Map([['t', 240000]])
+  const r = rowOf(ledger({ payments: stopped }, 2025, { asOf: '2025-06-01', statements: statements2024({ closed: true, sentAt: '2025-03-01', credited }) }))
+  assert.deepEqual(r.notDemandable, [{ reason: 'creditedAsPaid', label: '2024', cents: 20000, differenceCents: 20000 }])
+})
+
+test('E5: abgeschlossen ohne Versanddatum, vor Fristablauf: einforderbar; versandt nach dem Stichtag ebenso', () => {
+  const credited = new Map([['t', 240000]])
+  const a = rowOf(ledger({ payments: stopped }, 2025, { asOf: '2025-06-01', statements: statements2024({ closed: true, sentAt: null, credited }) }))
+  assert.equal(a.notDemandableCents, 0)
+  assert.equal(a.arrearsCents, 80000 + 5 * 80000)
+  // Vergangene Jahresansicht: Stichtag ist der 31.12.2024, der Versand am 01.03.2025 liegt danach.
+  const b = rowOf(ledger({ payments: stopped }, 2024, { asOf: '2026-06-01', statements: statements2024({ closed: true, sentAt: '2025-03-01', credited }) }))
+  assert.equal(b.notDemandableCents, 0)
+  assert.equal(b.arrearsCents, 80000)
+})
+
+test('E5: Heizvorauszahlung nach eigener Heizperiode (Weg d) folgt deren Frist, die kalte Vorauszahlung der des Objekts', () => {
+  const t = tenancy({ heatingPrepayments: [{ from: '2024-01', monthlyCents: 10000 }] })
+  const statements: LedgerStatement[] = [
+    objectStatement(2024, { covers: (_t, _m, c) => c === 'prepayment', deadline: '2025-12-31' }),
+    // Heizperiode Mai 2024 bis April 2025, Frist bis 30.04.2026.
+    { label: '01.05.2024–30.04.2025', months: monthsBetween('2024-05', '2025-04'), deadline: '2026-04-30', closed: false, sentAt: null, credited: null, covers: (_t, _m, c) => c === 'heatingPrepayment' },
+    objectStatement(2025, { covers: (_t, _m, c) => c === 'prepayment' }),
+  ]
+  const payments = monthly('2024-01', '2024-11', 90000)
+  const r = rowOf(ledger({ tenancies: [t], payments }, 2026, { asOf: '2026-03-01', statements }))
+  // Kalt 2024 abgelaufen (Dezember 200 €), Heizung Dezember 2024 noch einforderbar (Frist bis 30.04.2026).
+  assert.deepEqual(r.notDemandable, [{ reason: 'deadlinePassed', label: '2024', cents: 20000 }])
+  const later = rowOf(ledger({ tenancies: [t], payments }, 2026, { asOf: '2026-05-10', statements }))
+  assert.deepEqual(later.notDemandable, [
+    { reason: 'deadlinePassed', label: '2024', cents: 20000 },
+    { reason: 'deadlinePassed', label: '01.05.2024–30.04.2025', cents: 50000 },
+  ])
+})
+
+test('E5: Kaltmiete bleibt immer Rückstand, ohne statements gibt es keine Klassifikation', () => {
+  const r = rowOf(ledger({ payments: stopped }, 2026, { asOf: '2026-03-01', statements: statements2024() }))
+  const without = rowOf(ledger({ payments: stopped }, 2026, { asOf: '2026-03-01' }))
+  assert.equal(without.notDemandableCents, 0)
+  assert.deepEqual(without.notDemandable, [])
+  assert.equal(r.arrearsCents + r.notDemandableCents, without.arrearsCents)
+  // Die Monatszelle nennt den nicht einforderbaren Teil; der Status bleibt, was die Zahlungen sagen.
+  const dec = monthOf(rowOf(ledger({ payments: stopped }, 2024, { asOf: '2026-03-01', statements: statements2024() })), 12)
+  assert.equal(dec.status, 'open')
+  assert.equal(dec.notDemandableCents, undefined, 'Ansicht 2024: Stichtag 31.12.2024, noch nicht reif')
+})
+
+test('E5: carriedOnly nennt den nicht einforderbaren Teil getrennt', () => {
+  const t = tenancy({ end: '2024-12-31' })
+  const l = ledger({ tenancies: [t], payments: stopped }, 2026, { asOf: '2026-03-01', statements: statements2024() })
+  assert.deepEqual(l.carriedOnly, [{ tenancyId: 't', tenantName: 'Mieter', unitName: 'EG', end: '2024-12-31', openCents: 60000, notDemandableCents: 20000, notDemandable: [{ reason: 'deadlinePassed', label: '2024', cents: 20000 }] }])
+  assert.equal(l.totals.openCents, 60000)
+  assert.equal(l.totals.notDemandableCents, 20000)
+})

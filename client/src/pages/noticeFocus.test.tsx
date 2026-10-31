@@ -36,13 +36,14 @@ const METERS: Meter[] = [
   { id: 'm1', propertyId: 'objekt-1', name: 'Wasser EG', unitId: 'u1', type: 'kaltwasser', unit: 'm³' },
   { id: 'm2', propertyId: 'objekt-1', name: 'Wasser OG', unitId: 'u2', type: 'kaltwasser', unit: 'm³' },
 ]
-const month = (m: number) => ({ month: m, baseRentCents: 50000, prepaymentCents: 0, flatRateCents: 0, sollCents: 50000, paidCents: 0, status: 'open' as const })
+const month = (m: number) => ({ month: m, baseRentCents: 50000, prepaymentCents: 0, flatRateCents: 0, sollCents: 50000, paidCents: 0, status: 'open' as const, openPrepaymentCents: 0, openRentCents: 50000 })
 const ledgerRow = (id: string, name: string) => ({
   tenancyId: id, tenantName: name, unitName: 'EG', months: Array.from({ length: 12 }, (_, i) => month(i + 1)),
   sollYearCents: 600000, baseRentYearCents: 600000, prepaymentYearCents: 0, flatRateYearCents: 0, paidYearCents: 0, settlementYearCents: 0,
   balanceCents: -600000, dueSollCents: 600000, arrearsCents: 600000, openMonths: 12,
+  notDemandableCents: 0, notDemandable: [], openingBalanceCents: 0, closingBalanceCents: -600000,
 })
-const LEDGER: RentLedger = { year: YEAR, rows: [ledgerRow('t1', 'Meier'), ledgerRow('t2', 'Schulz')], settlementOnly: [], totals: { sollYearCents: 1200000, paidYearCents: 0, settlementYearCents: 0, openCents: 1200000 } }
+const LEDGER: RentLedger = { year: YEAR, rows: [ledgerRow('t1', 'Meier'), ledgerRow('t2', 'Schulz')], settlementOnly: [], carriedOnly: [], totals: { sollYearCents: 1200000, paidYearCents: 0, settlementYearCents: 0, openCents: 1200000, notDemandableCents: 0 } }
 const SETTLEMENT: Settlement = {
   year: YEAR, daysInYear: 365, period: settlementPeriod(calendarYearPeriod(YEAR)), deadline: `${YEAR + 1}-12-31`, statements: [], landlord: { rows: [], totalCents: 0 }, selfUsedShareCents: 0, totalCostsCents: 80000,
   warnings: ['Müll B: Schlüssel prüfen'], notices: [{ code: 'x', level: 'warning', title: 'Schlüssel prüfen', text: 'Müll B: Schlüssel prüfen', subject: { kind: 'costItem', id: 'k2' } }],

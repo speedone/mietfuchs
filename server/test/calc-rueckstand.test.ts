@@ -1,13 +1,19 @@
-// Rückstand im Mietkonto und die angerechnete Vorauszahlung (#133). Die Abrechnung rechnet die
-// Vorauszahlung laut Staffel an, solange keine Jahreskorrektur gesetzt ist. Zeigt das Mietkonto
-// im selben Jahr einen Rückstand, muss die Abrechnung darauf hinweisen; umgerechnet wird nicht,
-// denn welcher Teil einer Zahlung die Vorauszahlung betraf, weiß nur der Vermieter.
+// Nicht gezahlte Vorauszahlung und die angerechnete Vorauszahlung (#133, #281 E6). Die Abrechnung rechnet die
+// Vorauszahlung laut Staffel an, solange keine Jahreskorrektur gesetzt ist. Welcher Teil offen ist, sagt die Tilgung
+// nach § 366 BGB (rentAllocation.ts, BGH VIII ZR 84/17 Rn. 56/57): zuerst die Vorauszahlungen, die ältesten zuerst.
+// Der Hinweis nennt deshalb den offenen Betrag der Vorauszahlungen selbst; ist nur Kaltmiete offen, schweigt er.
+// Umgerechnet wird nicht, die Jahreskorrektur bleibt Sache des Vermieters.
 
 import { calendarPeriod } from '../../shared/period.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement, type ComputedSettlement } from '../src/calc.ts'
 import { snapshotOf, type SnapshotPayment, type SnapshotSource, type SnapshotTenancy } from '../src/snapshot.ts'
+
+// Kennungen der Zahlungen (#281: Die Tilgung braucht sie als Nachrang beim Sortieren).
+let paymentSeq = 0
+const pid = (): string => `p${String(++paymentSeq).padStart(4, '0')}`
+
 
 // Der Fall aus dem Issue: ab 01.03.2025, 450 € Kaltmiete und 80 € Vorauszahlung, also 530 € im
 // Monat. Gebucht sind März bis November, der Dezember fehlt.
@@ -17,7 +23,7 @@ const tenancy = (over: Partial<SnapshotTenancy> = {}): SnapshotTenancy => ({
   baseRents: [{ from: '2025-03', monthlyCents: 45000 }], ...over,
 })
 const paidMarchToNovember = (tenancyId = 't'): SnapshotPayment[] =>
-  Array.from({ length: 9 }, (_, i) => ({ tenancyId, date: `2025-${String(i + 3).padStart(2, '0')}-03`, amountCents: 53000 }))
+  Array.from({ length: 9 }, (_, i) => ({ id: pid(), tenancyId, date: `2025-${String(i + 3).padStart(2, '0')}-03`, amountCents: 53000 }))
 
 const settle = (s: Partial<SnapshotSource>, asOf?: string): ComputedSettlement => computeSettlement(snapshotOf({
   units: [{ id: 'a', name: 'EG', areaM2: 50, participates: true }],
@@ -36,9 +42,11 @@ test('Rückstand im Mietkonto ohne Jahreskorrektur: Hinweis mit offenem Betrag, 
   assert.equal(n.level, 'warning')
   // Der Knopf führt ins Mietkonto, dort steht der Rückstand und lässt sich eine Zahlung nachtragen.
   assert.deepEqual(n.subject, { kind: 'rentLedger', id: 't' })
-  assert.match(n.text, /Ob die Vorauszahlung betroffen ist, sehen Sie im Mietkonto/)
-  assert.match(n.text, /530,00/)
-  assert.match(n.text, /800,00/)
+  // Offen ist der Dezember (530 €); nach § 366 BGB davon die Vorauszahlung 80 €.
+  assert.equal(n.text,
+    'Von den Vorauszahlungen 2025 von Mieter (EG) sind 80,00 € nicht gezahlt. Zahlungen werden nach § 366 BGB zuerst auf die Vorauszahlungen angerechnet, die ältesten zuerst. ' +
+    'Die Abrechnung rechnet die Vorauszahlung laut Vertrag an (800,00 €); maßgeblich ist, was tatsächlich gezahlt wurde. ' +
+    'Fehlt nur eine Buchung, tragen Sie die Zahlung im Mietkonto nach. Sonst tragen Sie bei „abzüglich geleisteter Vorauszahlungen“ mit „✎ anpassen“ 720,00 € ein.')
   assert.ok(n.terms?.includes('prepayment'))
   // Nicht umgerechnet: angerechnet bleibt die Staffel.
   const st = s.statements.find((x) => x.tenancyId === 't')
@@ -51,7 +59,7 @@ test('Rückstand mit gesetzter Jahreskorrektur: kein Hinweis, der Vermieter hat 
 })
 
 test('Mietkonto ausgeglichen: kein Hinweis', () => {
-  const s = settle({ payments: [...paidMarchToNovember(), { tenancyId: 't', date: '2025-12-03', amountCents: 53000 }] })
+  const s = settle({ payments: [...paidMarchToNovember(), { id: pid(), tenancyId: 't', date: '2025-12-03', amountCents: 53000 }] })
   assert.equal(arrears(s).length, 0)
 })
 
@@ -64,7 +72,7 @@ test('Ein Mieter zahlt nichts, der andere ist gebucht: Hinweis für den, der nic
   const s = settle({
     units: [{ id: 'a', name: 'EG', areaM2: 50, participates: true }, { id: 'b', name: 'OG', areaM2: 50, participates: true }],
     tenancies: [tenancy(), tenancy({ id: 'u', unitId: 'b', tenantName: 'Zweiter' })],
-    payments: [...paidMarchToNovember('t'), { tenancyId: 't', date: '2025-12-03', amountCents: 53000 }],
+    payments: [...paidMarchToNovember('t'), { id: pid(), tenancyId: 't', date: '2025-12-03', amountCents: 53000 }],
   })
   const found = arrears(s)
   assert.deepEqual(found.map((n) => n.subject?.id), ['u'])
@@ -90,17 +98,39 @@ test('Gemischtes Modell (kalt pauschal, Heizung abgerechnet): der Text behauptet
   })
   const [n] = arrears(s)
   if (!n) return assert.fail(`kein Hinweis: ${s.notices.map((x) => x.code).join(', ')}`)
-  assert.equal(n.text,
-    'Im Mietkonto 2025 von Mieter (EG) sind 530,00 € offen. Die Abrechnung rechnet die Vorauszahlung laut Vertrag an (800,00 €); maßgeblich ist aber, was tatsächlich gezahlt wurde. ' +
-    'Zahlungen zählen nach ihrem Datum; eine im Dezember vorab gezahlte Januarmiete steht im Vorjahr. ' +
-    'Ob die Vorauszahlung betroffen ist, sehen Sie im Mietkonto: Im Soll stehen auch Kaltmiete und Pauschale, der Rückstand kann ebenso sie betreffen. ' +
-    'Fehlt nur eine Buchung, tragen Sie die Zahlung im Mietkonto nach; hat der Mieter wirklich weniger Vorauszahlung geleistet, tragen Sie den gezahlten Betrag in der Abrechnung bei „abzüglich geleisteter Vorauszahlungen“ mit „✎ anpassen“ ein.')
+  // Offen ist der Dezember; Kaltmiete und Pauschale sind die sicherere Klasse, offen bleibt die Vorauszahlung (80 €).
+  assert.match(n.text, /^Von den Vorauszahlungen 2025 von Mieter \(EG\) sind 80,00 € nicht gezahlt\. /)
+  assert.doesNotMatch(n.text, /Pauschale|Kaltmiete/)
+})
+
+test('Nur Kaltmiete offen: kein Hinweis, die Vorauszahlung ist nach § 366 BGB bezahlt (#281 E6)', () => {
+  // Im Dezember gehen nur 80 € ein: Sie tilgen die Vorauszahlung Dezember, offen bleiben 450 € Kaltmiete.
+  const s = settle({ payments: [...paidMarchToNovember(), { id: pid(), tenancyId: 't', date: '2025-12-03', amountCents: 8000 }] })
+  assert.equal(arrears(s).length, 0, s.notices.map((n) => n.text).join(' | '))
+})
+
+test('Nach Ende des Zeitraums nachgezahlt: die Vorauszahlung ist geleistet, kein Hinweis (#281 E6)', () => {
+  // Die Zahlung vom 10.01.2026 tilgt zuerst die offenen Vorauszahlungen Dezember und Januar, die älteste zuerst.
+  const late = { id: pid(), tenancyId: 't', date: '2026-01-10', amountCents: 53000 }
+  assert.equal(arrears(settle({ payments: [...paidMarchToNovember(), late] }, '2026-02-01')).length, 0)
+  // Zum Stichtag davor war sie noch offen.
+  assert.equal(arrears(settle({ payments: [...paidMarchToNovember(), late] }, '2026-01-05')).length, 1)
+})
+
+test('Zwei Monate offen, dann eine Teilzahlung: offen ist, was die älteste Vorauszahlung zuerst getilgt übrig lässt (Rn. 57)', () => {
+  // März bis September gezahlt, am 03.12. 100 €: Sie tilgen die Vorauszahlungen Oktober (80 €) und November (20 €).
+  const s = settle({ payments: [...paidMarchTo(9), { id: pid(), tenancyId: 't', date: '2025-12-03', amountCents: 10000 }] })
+  const [n] = arrears(s)
+  if (!n) return assert.fail('kein Hinweis')
+  // Offen: Vorauszahlung November 60 € und Dezember 80 €.
+  assert.match(n.text, /sind 140,00 € nicht gezahlt/)
+  assert.match(n.text, /„✎ anpassen“ 660,00 € ein\.$/)
 })
 
 // Laufendes Jahr (#133, Durchsicht): Das Mietkonto führt das Soll für alle zwölf Monate, auch für
 // die noch nicht fälligen. Mit Stichtag zählen nur die Monate vor dem Monat des Stichtags.
 const paidMarchTo = (lastMonth: number): SnapshotPayment[] =>
-  Array.from({ length: lastMonth - 2 }, (_, i) => ({ tenancyId: 't', date: `2025-${String(i + 3).padStart(2, '0')}-03`, amountCents: 53000 }))
+  Array.from({ length: lastMonth - 2 }, (_, i) => ({ id: pid(), tenancyId: 't', date: `2025-${String(i + 3).padStart(2, '0')}-03`, amountCents: 53000 }))
 
 test('Laufendes Jahr, bis zum Vormonat pünktlich gezahlt: kein Hinweis', () => {
   const s = settle({ payments: paidMarchTo(9) }, '2025-10-15')
@@ -111,7 +141,8 @@ test('Laufendes Jahr, ein fälliger Monat fehlt: Hinweis mit genau diesem Betrag
   const s = settle({ payments: paidMarchTo(8) }, '2025-10-15')
   const [n] = arrears(s)
   if (!n) return assert.fail('kein Hinweis')
-  assert.match(n.text, /sind 530,00 € offen/)
+  // September fehlt; offen davon nach § 366 BGB die Vorauszahlung.
+  assert.match(n.text, /sind 80,00 € nicht gezahlt/)
 })
 
 test('Stichtag nach dem Abrechnungsjahr: das ganze Jahr zählt', () => {

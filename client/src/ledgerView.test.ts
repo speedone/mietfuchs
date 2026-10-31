@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { RentLedgerRow, RentMonth, RentMonthStatus } from './types'
-import { bookingDate, newPaymentDate, rentDueApplies, rentDueNote, rowStanding, shareText, showDecemberNote, decemberNote } from './ledgerView'
+import { bookingDate, carriedText, carryText, closingLines, newPaymentDate, notDemandableNotes, openPartsText, paidLaterText, rentDueApplies, rentDueNote, rowStanding, shareText } from './ledgerView'
 
 const month = (m: number, sollCents: number, status: RentMonthStatus): RentMonth => ({
   month: m, baseRentCents: sollCents, prepaymentCents: 0, flatRateCents: 0, sollCents, paidCents: status === 'paid' ? sollCents : 0, status,
+  openPrepaymentCents: 0, openRentCents: status === 'paid' ? 0 : sollCents,
 })
 
 // Eine Zeile mit zwölf Monaten, deren Dezember sich vorgeben lässt. Über den Typ gebaut, damit
@@ -13,92 +14,93 @@ const row = (dezember: RentMonth): RentLedgerRow => ({
   months: [...Array.from({ length: 11 }, (_, i) => month(i + 1, 100000, 'paid')), dezember],
   sollYearCents: 1200000, baseRentYearCents: 1200000, prepaymentYearCents: 0, flatRateYearCents: 0,
   paidYearCents: 1100000, settlementYearCents: 0, balanceCents: -100000, dueSollCents: 1200000, arrearsCents: 100000, openMonths: 1,
+  notDemandableCents: 0, notDemandable: [], openingBalanceCents: 0, closingBalanceCents: -100000,
 })
 
 const heute = new Date('2026-09-22T00:00:00Z')
 
-describe('Mietkonto: der Hinweis zum offenen Dezember (#70)', () => {
-  it('erscheint für ein vergangenes Jahr mit offenem Dezember', () => {
-    expect(showDecemberNote(row(month(12, 100000, 'open')), 2025, heute)).toBe(true)
-    expect(showDecemberNote(row(month(12, 100000, 'partial')), 2025, heute)).toBe(true)
+// **Seit #281 entfällt der Hinweis zum offenen Dezember** (#70): Das Mietkonto rechnet ab Beginn, eine im Januar
+// eingegangene Dezembermiete deckt den Dezember („bezahlt am …“), und ein Rückstand steht im Folgejahr als Übertrag.
+describe('Mietkonto: Übertrag, Stand zum Jahresende und offene Teile (#281)', () => {
+  // fmtEuro setzt ein geschütztes Leerzeichen vor das Eurozeichen.
+  const plain = (t: string | null | undefined): string | null => (t === null || t === undefined ? null : t.replace(/\s/g, ' '))
+  it('der Übertrag aus dem Vorjahr: Rückstand, vorausbezahlt oder nichts', () => {
+    expect(plain(carryText({ ...row(month(12, 100000, 'paid')), openingBalanceCents: -80000 }, 2025))).toBe('Übertrag aus 2024: Rückstand 800,00 €')
+    expect(plain(carryText({ ...row(month(12, 100000, 'paid')), openingBalanceCents: 80000 }, 2025))).toBe('Übertrag aus 2024: vorausbezahlt 800,00 €')
+    expect(plain(carryText({ ...row(month(12, 100000, 'paid')), openingBalanceCents: 0 }, 2025))).toBeNull()
   })
 
-  it('erscheint nicht im laufenden Jahr', () => {
-    // **Der Befund der Durchsicht, gemessen.** `rentLedger` füllt immer alle zwölf Monate, der
-    // Dezember des laufenden Jahres trägt also Soll und steht offen — im Januar genauso wie im
-    // September. Ohne diese Bedingung bekäme jedes laufende Mietverhältnis den Hinweis das ganze
-    // Jahr über, Monate bevor er etwas bedeuten kann.
-    expect(showDecemberNote(row(month(12, 100000, 'open')), 2026, heute)).toBe(false)
-    // Und erst recht nicht für ein künftiges.
-    expect(showDecemberNote(row(month(12, 100000, 'open')), 2027, heute)).toBe(false)
+  it('der Stand zum 31.12. mit Rückstand und nicht mehr einzeln einforderbarem Teil, jeweils nur, wenn nicht 0', () => {
+    const r: RentLedgerRow = { ...row(month(12, 100000, 'open')), closingBalanceCents: -100000, arrearsCents: 80000, notDemandableCents: 20000 }
+    expect(closingLines(r, 2025)).toEqual([
+      { label: 'Stand 31.12.2025', cents: -100000, tone: 'red' },
+      { label: 'davon Rückstand', cents: 80000, tone: 'red' },
+      { label: 'davon nicht mehr einzeln einforderbar', cents: 20000, tone: 'muted' },
+    ])
+    expect(closingLines({ ...r, closingBalanceCents: 30000, arrearsCents: 0, notDemandableCents: 0 }, 2025)).toEqual([
+      { label: 'Stand 31.12.2025', cents: 30000, tone: 'green' },
+    ])
   })
 
-  it('erscheint nicht, wenn der Dezember bezahlt ist oder kein Soll trägt', () => {
-    expect(showDecemberNote(row(month(12, 100000, 'paid')), 2025, heute)).toBe(false)
-    // Kein Soll heißt, das Mietverhältnis lief im Dezember nicht mehr; `rentLedger` setzt den
-    // Monat dann auf „paid", aber auch mit offenem Status gäbe es nichts zu erklären.
-    expect(showDecemberNote(row(month(12, 0, 'open')), 2025, heute)).toBe(false)
+  it('ein teilweise bezahlter Monat nennt, was offen ist, damit die Reihenfolge sichtbar wird', () => {
+    const teil: RentMonth = { ...month(1, 80000, 'partial'), baseRentCents: 60000, prepaymentCents: 20000, paidCents: 30000, openPrepaymentCents: 0, openRentCents: 50000 }
+    expect(plain(openPartsText(teil))).toBe('offen: Vorauszahlung 0,00 €, Kaltmiete 500,00 €')
+    expect(plain(openPartsText({ ...teil, flatRateCents: 5000 }))).toBe('offen: Vorauszahlung 0,00 €, Kaltmiete und Pauschale 500,00 €')
+    expect(plain(openPartsText({ ...teil, baseRentCents: 0, flatRateCents: 60000 }))).toBe('offen: Vorauszahlung 0,00 €, Pauschale 500,00 €')
+    expect(plain(openPartsText(month(1, 80000, 'paid')))).toBeNull()
+    expect(plain(openPartsText(month(1, 80000, 'open')))).toBeNull()
   })
 
-  // **Befund M3 aus #341.** Der Hinweis stand auch bei zwölf offenen Monaten: Dann ist nicht die
-  // Dezembermiete spät gekommen, sondern es fehlt das ganze Jahr. Er hilft nur, wenn allein der
-  // Dezember offen ist.
-  it('erscheint nicht, wenn auch frühere Monate offen sind', () => {
-    const alleOffen: RentLedgerRow = {
+  it('später bezahlt: kleiner Zusatz mit dem Datum', () => {
+    expect(plain(paidLaterText({ ...month(12, 80000, 'open'), paidLaterOn: '2026-02-15' }))).toBe('bezahlt am 15.02.2026')
+    expect(plain(paidLaterText(month(12, 80000, 'open')))).toBeNull()
+  })
+
+  it('je Grund ein eigener Satz mit Zeitraum und Betrag; nur „in der Abrechnung enthalten“ sagt „enthalten“', () => {
+    const r: RentLedgerRow = {
       ...row(month(12, 100000, 'open')),
-      months: Array.from({ length: 12 }, (_, i) => month(i + 1, 100000, 'open')),
+      notDemandableCents: 60000,
+      notDemandable: [
+        { reason: 'inStatement', label: '2023', cents: 10000 },
+        { reason: 'creditedAsPaid', label: '2024', cents: 20000, differenceCents: 20000 },
+        { reason: 'deadlinePassed', label: '2022', cents: 30000 },
+      ],
     }
-    expect(showDecemberNote(alleOffen, 2025, heute)).toBe(false)
-    expect(decemberNote(alleOffen, 2025, heute)).toBe(null)
-    const novemberTeilweise: RentLedgerRow = {
-      ...row(month(12, 100000, 'open')),
-      months: [...Array.from({ length: 10 }, (_, i) => month(i + 1, 100000, 'paid')), month(11, 100000, 'partial'), month(12, 100000, 'open')],
-    }
-    expect(showDecemberNote(novemberTeilweise, 2025, heute)).toBe(false)
+    const notes = notDemandableNotes(r.notDemandable)
+    expect(notes.map((n) => n.level)).toEqual(['hint', 'warning', 'hint'])
+    expect(plain(notes[0]?.text)).toBe('In der Abrechnung 2023 enthalten (100,00 €): Die nicht gezahlte Vorauszahlung steckt im Saldo der Abrechnung; fordern Sie diesen, nicht die Vorauszahlung.')
+    expect(plain(notes[1]?.text)).toBe('Die Abrechnung 2024 rechnet 200,00 € Vorauszahlung als gezahlt an, die nicht eingegangen sind. Einzeln verlangen lässt sich die Vorauszahlung nicht mehr. Ob eine berichtigte Abrechnung den Betrag noch einfordern kann, hängt an der Abrechnungsfrist (§ 556 Abs. 3 Satz 3 BGB); besprechen Sie das im Zweifel mit einer Beratung.')
+    expect(plain(notes[2]?.text)).toBe('Die Abrechnungsfrist für 2022 ist abgelaufen. Die Vorauszahlung (300,00 €) lässt sich nicht mehr einzeln verlangen, nur noch über die Abrechnung.')
+    expect(notes.filter((n) => n.text.includes('enthalten'))).toHaveLength(1)
   })
 
-  it('zählt Monate ohne Soll nicht als offen', () => {
-    // Einzug im Mai: Januar bis April tragen kein Soll und stehen nicht im Weg.
-    const abMai: RentLedgerRow = {
-      ...row(month(12, 100000, 'open')),
-      months: [...Array.from({ length: 4 }, (_, i) => month(i + 1, 0, 'paid')), ...Array.from({ length: 7 }, (_, i) => month(i + 5, 100000, 'paid')), month(12, 100000, 'open')],
-    }
-    expect(showDecemberNote(abMai, 2025, heute)).toBe(true)
-  })
-
-  it('erklärt die Verteilung der Zahlungen der Reihe nach', () => {
-    // Ein zu niedriger November erscheint nach der Verteilung ab Januar als Lücke im Dezember:
-    // Der Satz nennt beide Ursachen und den fehlenden Betrag.
-    const teil: RentMonth = { ...month(12, 100000, 'partial'), paidCents: 40000 }
-    const text = decemberNote(row(teil), 2025, heute)?.replace(/\s/g, ' ')
-    expect(text).toContain('Im Dezember fehlen 600,00 €')
-    expect(text).toContain('der Reihe nach ab Januar')
-    expect(text).toContain('Zahlungseingängen 2026')
-    expect(decemberNote(row(month(12, 100000, 'open')), 2025, heute)?.replace(/\s/g, ' ')).toContain('Im Dezember fehlen 1.000,00 €')
-  })
-
-  it('kommt ohne Dezember-Eintrag nicht ins Straucheln', () => {
-    // Eine Zeile ohne zwölf Monate erzeugt `rentLedger` nicht. Der Zugriff auf `months[11]` wäre
-    // trotzdem ein `undefined`, und darauf eine Eigenschaft zu lesen beendete die Seite.
-    const ohne: RentLedgerRow = { ...row(month(12, 100000, 'open')), months: [] }
-    expect(showDecemberNote(ohne, 2025, heute)).toBe(false)
+  it('ein Ausgezogener mit offenem Saldo', () => {
+    expect(plain(carriedText({ tenancyId: 't', tenantName: 'Schmidt', unitName: 'EG', end: '2024-06-30', openCents: 80000, notDemandableCents: 0, notDemandable: [] })))
+      .toBe('Schmidt, ausgezogen am 30.06.2024: offen 800,00 €')
+    expect(plain(carriedText({ tenancyId: 't', tenantName: 'Schmidt', unitName: 'EG', end: '2024-06-30', openCents: 60000, notDemandableCents: 20000, notDemandable: [] })))
+      .toBe('Schmidt, ausgezogen am 30.06.2024: offen 600,00 €, dazu 200,00 € nicht mehr einzeln einforderbar')
   })
 })
 
-describe('Mietkonto: Stand einer Zeile im laufenden Jahr (#133, zweite Browserabnahme)', () => {
+describe('Mietkonto: Stand einer Zeile (#133, #281: aus Endsaldo und Rückstand)', () => {
   const zeile = (over: Partial<RentLedgerRow>): RentLedgerRow => ({ ...row(month(12, 100000, 'notDue')), ...over })
   it('künftige Monate sind kein Rückstand: „bisher bezahlt“', () => {
-    expect(rowStanding(zeile({ paidYearCents: 900000, balanceCents: -300000, dueSollCents: 900000, arrearsCents: 0 }))).toEqual({ kind: 'paidSoFar', cents: 300000 })
+    expect(rowStanding(zeile({ closingBalanceCents: -300000, arrearsCents: 0 }))).toEqual({ kind: 'paidSoFar', cents: 300000 })
   })
-  it('ein fälliger offener Monat ist ein Rückstand', () => {
-    expect(rowStanding(zeile({ paidYearCents: 800000, balanceCents: -400000, dueSollCents: 900000, arrearsCents: 100000 }))).toEqual({ kind: 'arrears', cents: 100000 })
+  it('ein fälliger offener Monat ist ein Rückstand, auch aus dem Vorjahr', () => {
+    expect(rowStanding(zeile({ closingBalanceCents: -400000, arrearsCents: 100000 }))).toEqual({ kind: 'arrears', cents: 100000 })
+    // Das Jahr allein ausgeglichen, aber ein Übertrag offen: Rückstand, nicht „vollständig bezahlt“.
+    expect(rowStanding(zeile({ balanceCents: 0, openingBalanceCents: -80000, closingBalanceCents: -80000, arrearsCents: 80000 }))).toEqual({ kind: 'arrears', cents: 80000 })
   })
-  it('Überzahlung und ganz bezahlt', () => {
-    expect(rowStanding(zeile({ paidYearCents: 1300000, balanceCents: 100000, dueSollCents: 1200000, arrearsCents: 0 }))).toEqual({ kind: 'credit', cents: 100000 })
-    expect(rowStanding(zeile({ paidYearCents: 1200000, balanceCents: 0, dueSollCents: 1200000, arrearsCents: 0 }))).toEqual({ kind: 'paid', cents: 0 })
+  it('vorausbezahlt und ganz bezahlt nach dem Endsaldo, nicht nach dem Jahr allein', () => {
+    expect(rowStanding(zeile({ balanceCents: 100000, closingBalanceCents: 100000, arrearsCents: 0 }))).toEqual({ kind: 'credit', cents: 100000 })
+    // Im Jahr 800 € mehr gezahlt, die einen Rückstand des Vorjahres tilgen: ausgeglichen, kein Guthaben.
+    expect(rowStanding(zeile({ balanceCents: 80000, openingBalanceCents: -80000, closingBalanceCents: 0, arrearsCents: 0 }))).toEqual({ kind: 'paid', cents: 0 })
+  })
+  it('nur noch über die Abrechnung offen: eigener Stand, kein Rückstand', () => {
+    expect(rowStanding(zeile({ closingBalanceCents: -20000, arrearsCents: 0, notDemandableCents: 20000 }))).toEqual({ kind: 'viaSettlement', cents: 20000 })
   })
 })
-
 describe('Mietkonto: Buchungsdatum beim Klick auf einen Monat (#133, letzte Durchsicht)', () => {
   const heute = new Date(2026, 9, 1)
   it('ein fälliger Monat: der Erste des Monats', () => {

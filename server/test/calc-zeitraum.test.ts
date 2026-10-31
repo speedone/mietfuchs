@@ -16,6 +16,11 @@ import {
 import type { BillingPeriod, PeriodKey, PeriodRules } from '../../shared/types.ts'
 import { loadFixtures } from '../testing/fixtures.ts'
 
+// Kennungen der Zahlungen (#281: Die Tilgung braucht sie als Nachrang beim Sortieren).
+let paymentSeq = 0
+const pid = (): string => `p${String(++paymentSeq).padStart(4, '0')}`
+
+
 const of = (rules: PeriodRules, key: string): BillingPeriod => periodOfKey(rules, periodKey(key)) ?? assert.fail(`kein Zeitraum ${key}`)
 const MAI: PeriodRules = { startMonth: 5, changes: [] }
 const WECHSEL: PeriodRules = { startMonth: 1, changes: ['2025-05'] }
@@ -94,9 +99,10 @@ test('Schaltjahr: 01.05.2027–30.04.2028 hat 366 Tage, ein Auszug zum 29.02.202
 test('Rumpf 01.01.–30.04.2025: 120 Tage, vier Vorauszahlungsmonate, Vorschlag nach Tagen, Rückstand nur über den Zeitraum', () => {
   // Review Focus 5.
   const src = haus({
-    tenancies: [tenancy('t1', 'u1', '2024-01-01', null), tenancy('t2', 'u2', '2024-01-01', null)],
+    // Beginn 2025: Seit #281 rechnet das Mietkonto ab Beginn; ein Jahr 2024 ohne Zahlung stünde sonst mit im Rückstand.
+    tenancies: [tenancy('t1', 'u1', '2025-01-01', null), tenancy('t2', 'u2', '2025-01-01', null)],
     costItems: [grundsteuer('2025-01', 40000)],
-    payments: [{ tenancyId: 't1', date: '2025-01-03', amountCents: 20000 }, { tenancyId: 't1', date: '2025-02-03', amountCents: 20000 }],
+    payments: [{ id: pid(), tenancyId: 't1', date: '2025-01-03', amountCents: 20000 }, { id: pid(), tenancyId: 't1', date: '2025-02-03', amountCents: 20000 }],
   })
   const s = settle(src, WECHSEL, '2025-01', '2025-06-15')
   assert.equal(s.daysInYear, 120)
@@ -109,7 +115,7 @@ test('Rumpf 01.01.–30.04.2025: 120 Tage, vier Vorauszahlungsmonate, Vorschlag 
   assert.deepEqual([st.days, st.periodEnd, st.prepaymentCents, st.suggestedMonthlyCents], [120, '2025-04-30', 80000, 2000])
   assert.ok(s.notices.some((n) => n.code === 'prepayment.annual-assumed'))
   const rueckstand = s.notices.find((n) => n.code === 'prepayment.arrears' && n.subject?.id === 't1') ?? assert.fail('kein Hinweis auf den Rückstand')
-  assert.match(rueckstand.text, /^Im Mietkonto 01\.01\.–30\.04\.2025 von t1 \(EG\) sind 400,00 € offen\./)
+  assert.match(rueckstand.text, /^Von den Vorauszahlungen 01\.01\.–30\.04\.2025 von t1 \(EG\) sind 400,00 € nicht gezahlt\. /)
   // Das Mietkonto selbst bleibt beim Kalenderjahr (Entwurf 3.11).
   const konto = rentLedger(snapshotOf(src, 2025), { asOf: '2025-06-15' }).rows.find((r) => r.tenancyId === 't1') ?? assert.fail('t1 fehlt im Mietkonto')
   assert.deepEqual([konto.months.length, konto.arrearsCents], [12, 60000])

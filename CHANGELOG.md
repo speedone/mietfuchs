@@ -6,8 +6,22 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Hinzugefügt
+
+- Mietkonto: An einer Zahlung lässt sich der Monat laut Verwendungszweck eintragen
+  ([#281](https://github.com/speedone/mietfuchs/issues/281)).
+
 ### Geändert
 
+- **Mietkonto rechnet fortlaufend ab Beginn des Mietverhältnisses**: Ein Rückstand aus dem Vorjahr steht als Übertrag
+  da, eine im Dezember gezahlte Januarmiete deckt den Januar. Zahlungen werden nach § 366 BGB verteilt: zuerst die
+  offenen Vorauszahlungen, dann die Miete, jeweils die ältesten zuerst. **Bei Rückständen, Teilzahlungen oder
+  vorausbezahlten Monaten zeigt das Mietkonto deshalb andere Monate als offen als bisher.** Nicht gezahlte
+  Vorauszahlungen eines abgerechneten Zeitraums stehen gesondert als „nicht mehr einzeln einforderbar“ und zählen
+  nicht zum Rückstand ([#281](https://github.com/speedone/mietfuchs/issues/281)).
+- **Hinweis „Rückstand im Mietkonto“ in der Abrechnung** nennt jetzt den nicht gezahlten Betrag der Vorauszahlungen
+  und den Betrag für „abzüglich geleisteter Vorauszahlungen“; ist nur Kaltmiete offen, entfällt er. Abgeschlossene
+  Abrechnungen bleiben unverändert ([#281](https://github.com/speedone/mietfuchs/issues/281)).
 - Aufgeteilte Rechnungen sind jetzt eine Rechnung ([#455](https://github.com/speedone/mietfuchs/issues/455)): Reicht der Leistungszeitraum einer Rechnung über mehrere
   Abrechnungszeiträume, stehen weiter Teile je Zeitraum da, aber jeder Teil verweist auf seine Rechnung. Beim Update
   bekommen bestehende Teile, die eindeutig zusammengehören, diese Kennung von selbst, auch die aus einem eingespielten

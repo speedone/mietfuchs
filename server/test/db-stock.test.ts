@@ -364,7 +364,10 @@ const NOT_IN_DB_JSON = new Set(['period', 'propertyId', 'mea', 'externalMeasure'
   'letterSalutation',
   // Die Quelle einer aufgeteilten Rechnung (#455) kennt die db.json nicht (keine Leistungszeiträume); ihre Rundreise
   // prüft db-quelle.test.ts.
-  'sourceId'])
+  'sourceId',
+  // Den Monat laut Verwendungszweck (#281) kennt die db.json nicht; jede Zahlung bekommt NULL, die Rundreise prüfen
+  // db-repository.test.ts und api-zahlungen.test.ts (Backup).
+  'designatedMonth'])
 
 test('Rundreise: die Probe belegt jede Spalte des Schemas', () => {
   // Der Wächter über dem Wächter. Der Test darunter kann nur finden, was in der Probe steht;

@@ -513,16 +513,19 @@ test('Geraderücken: der feste Monatsbetrag neben einer leeren Staffel bewegt da
   assert.equal('prepaymentMonthlyCents' in gerade.tenancies[1], false)
 
   // Die Abrechnung bleibt bis auf den Cent gleich, der Verbrauch ohnehin. Ausgenommen ist der
-  // Wortlaut des Hinweises auf einen Rückstand (#133): Er nennt den offenen Betrag des
-  // Mietkontos und bewegt sich deshalb mit ihm; dieselben Hinweise erscheinen vorher wie nachher.
+  // Hinweis auf nicht gezahlte Vorauszahlungen (#133, #281 E6): Er nennt die offenen Vorauszahlungen der Tilgung,
+  // und die liest wie das Mietkonto nur `prepayments`. Vorher hat t2 dort keine Vorauszahlung, also auch keine offene;
+  // nachher nennt der Hinweis sie, wie es zur angerechneten Vorauszahlung der Abrechnung passt.
   const arrearsTexts = new Set(vorher.settlement.notices.concat(nachher.settlement.notices).filter((n) => n.code === 'prepayment.arrears').map((n) => n.text))
-  const ohneWortlaut = (s: typeof vorher.settlement) => ({
+  const ohneHinweis = (s: typeof vorher.settlement) => ({
     ...s,
-    notices: s.notices.map((n) => (n.code === 'prepayment.arrears' ? { ...n, text: '' } : n)),
-    warnings: s.warnings.map((w) => (arrearsTexts.has(w) ? '' : w)),
+    notices: s.notices.filter((n) => n.code !== 'prepayment.arrears'),
+    warnings: s.warnings.filter((w) => !arrearsTexts.has(w)),
   })
-  assert.deepEqual(ohneWortlaut(nachher.settlement), ohneWortlaut(vorher.settlement), 'Abrechnung')
-  assert.ok(vorher.settlement.notices.some((n) => n.code === 'prepayment.arrears'), 'der Bestand zeigt einen Rückstand')
+  assert.deepEqual(ohneHinweis(nachher.settlement), ohneHinweis(vorher.settlement), 'Abrechnung')
+  const arrearsOf = (s: typeof vorher.settlement) => s.notices.filter((n) => n.code === 'prepayment.arrears' && n.subject?.id === 't2')
+  assert.equal(arrearsOf(vorher.settlement).length, 0, 'vorher: keine Vorauszahlung im Mietkonto, also keine offene')
+  assert.equal(arrearsOf(nachher.settlement).length, 1, 'nachher: die nicht gezahlte Vorauszahlung steht im Hinweis')
   assert.deepEqual(nachher.consumption, vorher.consumption, 'Verbrauch')
 
   // Das Mietkonto bewegt sich, und zwar um genau die Vorauszahlung.

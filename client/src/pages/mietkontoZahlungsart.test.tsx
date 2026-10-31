@@ -15,16 +15,18 @@ const tenancy = (id: string, tenantName: string, start: string, end: string | nu
   id, unitId: 'u1', tenantName, persons: 1, personHistory: [], start, end, prepayments: [], prepaymentOverrides: {}, baseRents: [{ from: start.slice(0, 7), monthlyCents: 80000 }],
 })
 const TENANCIES: Tenancy[] = [tenancy('t1', 'Müller', `${YEAR}-01-01`, null), tenancy('t0', 'Schmidt', '2015-01-01', `${YEAR - 1}-12-31`)]
-const month = (m: number): RentMonth => ({ month: m, baseRentCents: 80000, prepaymentCents: 0, flatRateCents: 0, sollCents: 80000, paidCents: 80000, status: 'paid' })
+const month = (m: number): RentMonth => ({ month: m, baseRentCents: 80000, prepaymentCents: 0, flatRateCents: 0, sollCents: 80000, paidCents: 80000, status: 'paid', openPrepaymentCents: 0, openRentCents: 0 })
 const LEDGER: RentLedger = {
   year: YEAR,
   rows: [{
     tenancyId: 't1', tenantName: 'Müller', unitName: 'EG', months: Array.from({ length: 12 }, (_, i) => month(i + 1)),
     sollYearCents: 960000, baseRentYearCents: 960000, prepaymentYearCents: 0, flatRateYearCents: 0,
     paidYearCents: 960000, settlementYearCents: -20000, balanceCents: 0, dueSollCents: 960000, arrearsCents: 0, openMonths: 0,
+    notDemandableCents: 0, notDemandable: [], openingBalanceCents: 0, closingBalanceCents: 0,
   }],
+  carriedOnly: [],
   settlementOnly: [{ tenancyId: 't0', tenantName: 'Schmidt', unitName: 'EG', settlementYearCents: 12345 }],
-  totals: { sollYearCents: 960000, paidYearCents: 960000, settlementYearCents: -20000 + 12345, openCents: 0 },
+  totals: { sollYearCents: 960000, paidYearCents: 960000, settlementYearCents: -20000 + 12345, openCents: 0, notDemandableCents: 0 },
 }
 const PAYMENTS: Payment[] = [
   { id: 'p1', tenancyId: 't1', date: `${YEAR}-06-15`, amountCents: -20000, kind: 'settlement' },
@@ -106,30 +108,85 @@ test('Mietkonto: Abrechnung gesondert in der Zeile, in den Kennzahlen, bei früh
   expect(screen.getAllByText('Miete eingegangen').length).toBeGreaterThan(0)
 })
 
-test('Mietkonto: die Art einer erfassten Zahlung lässt sich umstellen, erst nach Rückfrage, gesendet wird nur die Art (Durchsicht M2)', async () => {
+test('Mietkonto: die Art einer erfassten Zahlung ist ein Entwurf; Speichern fragt nach, gesendet wird nur die Art (Durchsicht M2, #281)', async () => {
   payments = [...PAYMENTS, { id: 'p3', tenancyId: 't1', date: `${YEAR}-03-20`, amountCents: 15000, kind: 'rent' }]
   shell()
   const art = () => select(new RegExp(`Art der Zahlung vom 20\\.03\\.${YEAR}`))
   await waitFor(() => art())
   expect(art().value).toBe('rent')
   expect(shownText(art())).toBe('Miete')
-  // Die Auswahl allein speichert nichts (Durchsicht der Umstellung auf main): Mit den Pfeiltasten
-  // wechselt ein Auswahlfeld seinen Wert schon beim Durchgehen der Tabelle, und jede Umstellung
-  // verschiebt Geld zwischen Mietkonto und „gesondert“. Bis zur Bestätigung zeigt die Auswahl das
-  // Gespeicherte.
+  // Die Auswahl allein speichert nichts (#309): Sie zeigt den Entwurf, daneben „Speichern“ und „Verwerfen“.
   fireEvent.change(art(), { target: { value: 'settlement' } })
+  expect(art().value).toBe('settlement')
+  expect(sent).toHaveLength(0)
+  const speichern = () => screen.getByRole('button', { name: new RegExp(`^Speichern \\(Zahlung vom 20\\.03\\.${YEAR}\\)$`) })
+  // Verwerfen stellt das Gespeicherte her.
+  fireEvent.click(screen.getByRole('button', { name: new RegExp(`^Verwerfen \\(Zahlung vom 20\\.03\\.${YEAR}\\)$`) }))
+  expect(art().value).toBe('rent')
+  fireEvent.change(art(), { target: { value: 'settlement' } })
+  // Speichern fragt vorher; „Abbrechen“ lässt den Entwurf stehen.
+  fireEvent.click(speichern())
   const frage = (await screen.findByText(/Das Mietkonto verteilt sie dann nicht mehr auf die Monate/)).closest('.dialog')
   if (!(frage instanceof HTMLElement)) return expect.fail('keine Rückfrage')
-  expect(sent).toHaveLength(0)
-  expect(art().value).toBe('rent')
   fireEvent.click(within(frage).getByRole('button', { name: /^Abbrechen$/i }))
   await waitFor(() => expect(screen.queryByText(/Das Mietkonto verteilt sie dann nicht mehr/)).toBeNull())
   expect(sent).toHaveLength(0)
-  expect(art().value).toBe('rent')
-  fireEvent.change(art(), { target: { value: 'settlement' } })
+  expect(art().value).toBe('settlement')
+  fireEvent.click(speichern())
   fireEvent.click(await screen.findByRole('button', { name: /^Art umstellen$/ }))
   await waitFor(() => expect(sent).toHaveLength(1))
   expect(sent[0]).toEqual({ url: '/api/payments/p3', method: 'PUT', body: { kind: 'settlement' } })
+})
+
+test('Mietkonto: der Monat laut Verwendungszweck zeigt den gespeicherten Monat und wird als Entwurf gespeichert oder geleert (#281)', async () => {
+  payments = [
+    ...PAYMENTS,
+    { id: 'p3', tenancyId: 't1', date: `${YEAR}-03-20`, amountCents: 80000, kind: 'rent', designatedMonth: `${YEAR}-02` },
+    { id: 'p4', tenancyId: 't1', date: `${YEAR}-04-03`, amountCents: 80000, kind: 'rent' },
+  ]
+  shell()
+  // Das Monatsfeld beschriftet Textfeld und Raster-Knopf; gemeint ist das Textfeld.
+  const monat = (day: string): HTMLInputElement => {
+    const el = screen.getAllByLabelText(new RegExp(`^Für Monat \\(laut Verwendungszweck\\), Zahlung vom ${day}\\.${YEAR}`)).find((x) => x instanceof HTMLInputElement)
+    if (!(el instanceof HTMLInputElement)) return expect.fail('kein Eingabefeld')
+    return el
+  }
+  await waitFor(() => monat('20.03'))
+  // Der angezeigte Wert entspricht dem gespeicherten.
+  expect(monat('20.03').value).toBe(`Februar ${YEAR}`)
+  expect(monat('03.04').value).toBe('')
+  // An einer Zahlung aus der Abrechnung gibt es kein Monatsfeld.
+  expect(screen.queryAllByLabelText(new RegExp(`Für Monat \\(laut Verwendungszweck\\), Zahlung vom 15\\.06\\.${YEAR}`))).toEqual([])
+  fireEvent.change(monat('03.04'), { target: { value: `4.${YEAR}` } })
+  expect(sent).toHaveLength(0)
+  fireEvent.click(screen.getByRole('button', { name: new RegExp(`^Speichern \\(Zahlung vom 03\\.04\\.${YEAR}\\)$`) }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]).toEqual({ url: '/api/payments/p4', method: 'PUT', body: { designatedMonth: `${YEAR}-04` } })
+  // Leeren heißt: nach gesetzlicher Reihenfolge.
+  fireEvent.change(monat('20.03'), { target: { value: '' } })
+  fireEvent.click(screen.getByRole('button', { name: new RegExp(`^Speichern \\(Zahlung vom 20\\.03\\.${YEAR}\\)$`) }))
+  await waitFor(() => expect(sent).toHaveLength(2))
+  expect(sent[1]).toEqual({ url: '/api/payments/p3', method: 'PUT', body: { designatedMonth: null } })
+})
+
+test('Mietkonto: Übertrag, Stand zum 31.12., nicht einforderbare Vorauszahlung und offene Salden Ausgezogener (#281)', async () => {
+  const row = LEDGER.rows[0] ?? expect.fail('keine Zeile')
+  ledger = {
+    ...LEDGER,
+    rows: [{ ...row, openingBalanceCents: -80000, closingBalanceCents: -100000, arrearsCents: 80000, notDemandableCents: 20000,
+      notDemandable: [{ reason: 'creditedAsPaid', label: String(YEAR - 1), cents: 20000, differenceCents: 20000 }] }],
+    carriedOnly: [{ tenancyId: 't0', tenantName: 'Schmidt', unitName: 'EG', end: `${YEAR - 1}-12-31`, openCents: 60000, notDemandableCents: 0, notDemandable: [] }],
+    totals: { ...LEDGER.totals, openCents: 140000, notDemandableCents: 20000 },
+  }
+  shell()
+  expect(await screen.findByText(new RegExp(`^Übertrag aus ${YEAR - 1}: Rückstand 800,00\\s€$`))).toBeTruthy()
+  expect(screen.getByText(`Stand 31.12.${YEAR}`)).toBeTruthy()
+  expect(screen.getByText('davon Rückstand')).toBeTruthy()
+  expect(screen.getAllByText('davon nicht mehr einzeln einforderbar').length).toBe(1)
+  expect(screen.getByText(new RegExp(`Die Abrechnung ${YEAR - 1} rechnet 200,00\\s€ Vorauszahlung als gezahlt an`))).toBeTruthy()
+  expect(screen.getByText('Offene Salden früherer Mietverhältnisse')).toBeTruthy()
+  expect(screen.getByText(new RegExp(`Schmidt, ausgezogen am 31\\.12\\.${YEAR - 1}: offen 600,00\\s€`))).toBeTruthy()
+  expect(screen.getByText('nicht mehr einzeln einforderbar')).toBeTruthy()
 })
 
 test('Mietkonto: +150 € und −150 € aus der Abrechnung heben sich auf und stehen trotzdem da (Durchsicht N1)', async () => {
@@ -145,7 +202,7 @@ test('Mietkonto: +150 € und −150 € aus der Abrechnung heben sich auf und s
 })
 
 test('Mietkonto: ohne Mietverhältnis im Jahr beginnt das Formular mit „Abrechnung“ und sagt warum (Durchsicht M2b)', async () => {
-  ledger = { ...LEDGER, rows: [], totals: { sollYearCents: 0, paidYearCents: 0, settlementYearCents: 12345, openCents: 0 } }
+  ledger = { ...LEDGER, rows: [], totals: { sollYearCents: 0, paidYearCents: 0, settlementYearCents: 12345, openCents: 0, notDemandableCents: 0 } }
   shell()
   const add = await screen.findByRole('button', { name: /Zahlung anlegen/i })
   await waitFor(() => expect((add as HTMLButtonElement).disabled).toBe(false))
@@ -181,9 +238,10 @@ test('Mietkonto: ausgezogener Mieter unter „Abrechnung“ gewählt, zurück au
 // Praxistest: Ein offener Monat öffnet per Klick die Zahlung mit dem Restbetrag. Er muss auch per
 // Tastatur erreichbar sein (WCAG 2.1.1), also ein Knopf mit Namen; ein bezahlter Monat ist keiner.
 test('Mietkonto: ein offener Monat ist ein Knopf und öffnet die Zahlung mit dem Restbetrag', async () => {
-  ledger = { ...LEDGER, rows: LEDGER.rows.map((r) => ({ ...r, months: r.months.map((m) => m.month === 3 ? { ...m, paidCents: 30000, status: 'partial' as const } : m) })) }
+  ledger = { ...LEDGER, rows: LEDGER.rows.map((r) => ({ ...r, months: r.months.map((m) => m.month === 3 ? { ...m, paidCents: 30000, status: 'partial' as const, openRentCents: 50000 } : m) })) }
   shell()
-  const march = await screen.findByRole('button', { name: /^Mär\s?800,00\s€: gezahlt 300,00\s€, Zahlung erfassen$/ })
+  // Seit #281 nennt der Name auch, was offen ist (Reihenfolge der Tilgung).
+  const march = await screen.findByRole('button', { name: /^Mär\s?800,00\s€: gezahlt 300,00\s€, offen: Vorauszahlung 0,00\s€, Kaltmiete 500,00\s€, Zahlung erfassen$/ })
   // Der Zusatz steht unsichtbar hinter dem sichtbaren Text, nicht als aria-label (client/CLAUDE.md, WCAG 2.5.3).
   expect(march.getAttribute('aria-label')).toBeNull()
   expect(march.textContent).toContain('800,00')

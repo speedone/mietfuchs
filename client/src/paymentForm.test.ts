@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { emptyPaymentForm, hasSettlementPayments, newPaymentForm, noRentYearText, PAYMENT_KIND_OPTIONS, paymentBody, paymentFormHints, paymentTenancyOptions, rentWithoutRow, savedText, SETTLEMENT_OFFSET_HINT } from './paymentForm'
+import { emptyPaymentForm, hasSettlementPayments, kindChangeQuestion, newPaymentForm, paymentChangeBody, noRentYearText, PAYMENT_KIND_OPTIONS, paymentBody, paymentFormHints, paymentTenancyOptions, rentWithoutRow, savedText, SETTLEMENT_OFFSET_HINT } from './paymentForm'
 
 const ledger = { rows: [{ tenancyId: 't1', tenantName: 'Müller', unitName: 'EG' }] } as const
 const tenancies = [
@@ -89,5 +89,40 @@ describe('Durchsicht von #280', () => {
     expect(hasSettlementPayments(payments, 2025, 't1')).toBe(true)
     expect(hasSettlementPayments(payments, 2025, 't2')).toBe(false)
     expect(hasSettlementPayments(payments, 2026)).toBe(false)
+  })
+})
+
+describe('Monat laut Verwendungszweck (#281)', () => {
+  test('beim Erfassen: leer heißt nach gesetzlicher Reihenfolge, ein Monat geht mit, Unlesbares wird gemeldet', () => {
+    const base = { ...emptyPaymentForm('t1', '2025-03-03'), amount: '800' }
+    expect(base.designatedMonth).toBe('')
+    expect(paymentBody(base)).toEqual({ body: { tenancyId: 't1', date: '2025-03-03', amountCents: 80000, kind: 'rent', note: undefined } })
+    expect(paymentBody({ ...base, designatedMonth: '2025-02' })).toEqual({
+      body: { tenancyId: 't1', date: '2025-03-03', amountCents: 80000, kind: 'rent', note: undefined, designatedMonth: '2025-02' },
+    })
+    const bad = paymentBody({ ...base, designatedMonth: 'Febr' })
+    expect('problems' in bad ? bad.problems.map((p) => p.field) : []).toEqual(['designatedMonth'])
+    // Eine Zahlung aus der Abrechnung gilt dem Saldo: Ein stehengebliebener Monat geht nicht mit.
+    expect(paymentBody({ ...base, kind: 'settlement', designatedMonth: '2025-02' })).toEqual({
+      body: { tenancyId: 't1', date: '2025-03-03', amountCents: 80000, kind: 'settlement', note: undefined },
+    })
+  })
+
+  test('an einer erfassten Zahlung: nur, was sich geändert hat; leer entfernt den Monat; Abrechnung ohne Monat', () => {
+    const p = { kind: 'rent' as const, designatedMonth: '2025-02' }
+    expect(paymentChangeBody(p, { kind: 'rent', month: '2025-02' })).toEqual({ body: {} })
+    expect(paymentChangeBody(p, { kind: 'rent', month: '3.2025' })).toEqual({ body: { designatedMonth: '2025-03' } })
+    expect(paymentChangeBody(p, { kind: 'rent', month: '' })).toEqual({ body: { designatedMonth: null } })
+    expect(paymentChangeBody(p, { kind: 'settlement', month: '2025-02' })).toEqual({ body: { kind: 'settlement', designatedMonth: null } })
+    expect(paymentChangeBody({ kind: 'rent' }, { kind: 'rent', month: '2025-04' })).toEqual({ body: { designatedMonth: '2025-04' } })
+    expect(paymentChangeBody({ kind: 'settlement' }, { kind: 'rent', month: '' })).toEqual({ body: { kind: 'rent' } })
+    const bad = paymentChangeBody(p, { kind: 'rent', month: '13.2025' })
+    expect('problem' in bad && bad.problem).toMatch(/^Für Monat: /)
+  })
+
+  test('die Rückfrage vor dem Umstellen der Art beschreibt die Tilgung nach § 366 BGB', () => {
+    const q = kindChangeQuestion({ date: '2025-03-03', amountCents: 80000 }, 'rent', '03.03.2025')
+    expect(q.message).toContain('nach § 366 BGB')
+    expect(q.message).not.toContain('von Januar an')
   })
 })

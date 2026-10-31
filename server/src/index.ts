@@ -19,6 +19,7 @@ import { newId, UPLOAD_DIR, DATA_DIR } from './store.ts'
 import { DEFAULT_SETTINGS } from './defaults.ts'
 import { compareWithFrozen } from './settlementDiff.ts'
 import { computeSettlement, consumptionOverview, rentLedger, taxPartsFor, taxReportFor, type ComputedSettlement } from './calc.ts'
+import { ledgerStatementsFor } from './ledgerStatements.ts'
 import { heatingSnapshotFor, narrowToProperty, snapshotFor } from './snapshot.ts'
 import { calendarYearPeriod, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodOfKey, resolvePeriodParam, rulesOf, settlementDeadline, settlementPeriod, startYearOf } from '../../shared/period.ts'
 import type { BillingPeriod, FuelGapQuestion, HeatingPlant, LetterDesigns, LetterTemplates, Notice, PrepaymentStepPlan, StatementLetter, Unit } from '../../shared/types.ts'
@@ -45,7 +46,7 @@ import { changeoverWithoutDatabase, replaceFile, runChangeover, type ChangeoverR
 import { acknowledgeNotice, clearNotice, NOTICE_NAME, noticeKey, readNotice, recordNotice, type MigrationNotice } from './db/migrationNotice.ts'
 import { loadMigrations, type Database, type Executor } from './db/client.ts'
 import { databaseProblem } from './db/errors.ts'
-import { readCostItems, readHeatingPlants, readProperties, readSettings, readStock, readTenancies, readUnits, type Stock } from './db/read.ts'
+import { readCostItems, readHeatingPlants, readProperties, readSettings, readStock, readTenancies, readUnits, type Stock, type StoredClosedHeatingSettlement, type StoredClosedSettlement } from './db/read.ts'
 import { lettersFor, letterDoc } from './letter.ts'
 import { savePropertyPrintLetter, readInstallationLetterTexts, readPropertyLetterTexts, readTenancyLetters, saveInstallationLetterTexts, savePropertyLetterTexts, saveTenancyLetter } from './db/letters.ts'
 import { DEFAULT_LETTER_TEXTS, isMonthKey, lettersOf, parseLetterAdjustment, parseLetterTexts } from '../../shared/letter.ts'
@@ -1602,11 +1603,29 @@ app.get('/api/consumption/:period', async (req, res) => {
 })
 
 // Mietkonto: Soll/Ist je Monat und Mietverhältnis im **Kalenderjahr** (#208, Entwurf 3.11), auch bei
-// einem Objekt mit anderem Rhythmus. Es liest keine Kostenposition, der Zeitraum dient nur dem Jahr.
+// einem Objekt mit anderem Rhythmus. Es liest keine Kostenposition, der Zeitraum dient nur dem Jahr. Die
+// Abrechnungen des Objekts (Grenzen, Frist, Versand, eingefrorene Anrechnung) kommen für die Abrechnungsreife mit
+// (#281 E5, ledgerStatements.ts); calc.ts liest den Speicher nicht selbst.
 app.get('/api/rentledger/:year', async (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
-  res.json(await readData(async (db) => rentLedger(snapshotFor(await readStock(db), await propertyOf(db, req), calendarYearPeriod(year)), { asOf: today() })))
+  res.json(await readData(async (db) => {
+    const stock = await readStock(db)
+    const property = await propertyOf(db, req)
+    const span = calendarYearPeriod(year)
+    const snapshot = snapshotFor(stock, property, span)
+    const plantIds = new Set((snapshot.heatingPlants ?? []).map((p) => p.id))
+    // Ausdrücklich als Abschlüsse der Datenbank gelesen (der Bestand führt sie zugleich als Quelle des Schnappschusses).
+    const closedOfStock: readonly StoredClosedSettlement[] = stock.closedSettlements
+    const closedHeatingOfStock: readonly StoredClosedHeatingSettlement[] = stock.closedHeatingSettlements
+    const statements = ledgerStatementsFor(
+      snapshot,
+      closedOfStock.filter((c) => c.propertyId === property),
+      closedHeatingOfStock.filter((c) => plantIds.has(c.plantId)),
+      span.to,
+    )
+    return rentLedger(snapshot, { asOf: today(), statements })
+  }))
 })
 
 // Steuer-Übersicht (Hilfe für die Anlage V) im Kalenderjahr: Einnahmen, Werbungskosten, Überschuss.

@@ -4,8 +4,10 @@
 import type { Payment, PaymentKind, RentLedgerRow, Tenancy } from './types'
 import type { Checked, Problem } from './formProblems'
 import { fmtEuro, parseEuro } from './api'
+import { parseMonthText } from './monthText'
 
-export type PaymentForm = { tenancyId: string; date: string; amount: string; note: string; kind: PaymentKind }
+// `designatedMonth`: der Monat laut Verwendungszweck (#281), wie im Monatsfeld eingegeben; leer heißt keine Bestimmung.
+export type PaymentForm = { tenancyId: string; date: string; amount: string; note: string; kind: PaymentKind; designatedMonth: string }
 
 // Die Arten einer Zahlung als Auswahl. Wie bei den übrigen Auswahlfeldern (CLAUDE.md, Selects)
 // steht jeder Wert, den das Formular halten kann, in der Liste: Sonst zeigte der Browser den ersten
@@ -82,12 +84,12 @@ export function kindChangeQuestion(p: Pick<Payment, 'date' | 'amountCents'>, kin
       }
     : {
         title: 'Als Miete führen?',
-        message: `${what} gilt dann als Miete. Das Mietkonto verteilt sie dann von Januar an auf die Monate.`,
+        message: `${what} gilt dann als Miete. Das Mietkonto verteilt sie dann nach § 366 BGB auf die offenen Monate: den Monat laut Verwendungszweck, sonst zuerst die Vorauszahlungen, dann die Miete, jeweils die ältesten zuerst.`,
       }
 }
 
 export function emptyPaymentForm(tenancyId: string, date: string): PaymentForm {
-  return { tenancyId, date, amount: '', note: '', kind: 'rent' }
+  return { tenancyId, date, amount: '', note: '', kind: 'rent', designatedMonth: '' }
 }
 
 // Welche Mietverhältnisse das Formular anbietet. Miete: die Zeilen des Mietkontos, also die
@@ -109,12 +111,12 @@ export function paymentTenancyOptions(
   return [...rows, ...others]
 }
 
-export type PaymentBody = Pick<Payment, 'tenancyId' | 'date' | 'amountCents' | 'kind'> & { note?: string }
+export type PaymentBody = Pick<Payment, 'tenancyId' | 'date' | 'amountCents' | 'kind'> & { note?: string; designatedMonth?: string }
 
 // Der Rumpf für POST /api/payments, oder die Angaben, die fehlen, je mit Feld (#346, Schritt 3). Vorher
 // stand dort ein Sammelsatz „Bitte Mietverhältnis, Datum und einen Betrag angeben.“, der nicht sagte, welches
 // Feld gemeint ist (UI-Durchsicht M5).
-export type PaymentField = 'tenancyId' | 'date' | 'amount'
+export type PaymentField = 'tenancyId' | 'date' | 'amount' | 'designatedMonth'
 export function paymentBody(form: PaymentForm): Checked<PaymentBody, PaymentField> {
   const cents = parseEuro(form.amount)
   const problems: Problem<PaymentField>[] = []
@@ -123,8 +125,17 @@ export function paymentBody(form: PaymentForm): Checked<PaymentBody, PaymentFiel
   if (!form.amount.trim()) problems.push({ field: 'amount', short: 'Betrag fehlt', text: 'Betrag: Geben Sie den eingegangenen Betrag ein, etwa 1.000,00.' })
   else if (cents === null) problems.push({ field: 'amount', short: 'Kein Betrag', text: 'Betrag: Geben Sie den Betrag als Zahl ein, etwa 1.000,00.' })
   else if (cents === 0) problems.push({ field: 'amount', short: 'Betrag ist 0', text: 'Betrag: Eine Zahlung über 0,00 € gibt es nicht; geben Sie den eingegangenen Betrag ein.' })
+  // Den Monat laut Verwendungszweck gibt es nur an einer Miete (#281); bei „Abrechnung“ ist das Feld ausgeblendet, und
+  // ein stehengebliebener Wert geht nicht mit (der Server lehnte ihn ab).
+  const month = form.kind === 'rent' ? parseMonthText(form.designatedMonth) : { kind: 'empty' as const }
+  if (month.kind === 'invalid') problems.push({ field: 'designatedMonth', short: month.short, text: `Für Monat: ${month.text}` })
   if (problems.length > 0 || cents === null) return { problems }
-  return { body: { tenancyId: form.tenancyId, date: form.date, amountCents: cents, kind: form.kind, note: form.note.trim() || undefined } }
+  return {
+    body: {
+      tenancyId: form.tenancyId, date: form.date, amountCents: cents, kind: form.kind, note: form.note.trim() || undefined,
+      ...(month.kind === 'month' ? { designatedMonth: month.key } : {}),
+    },
+  }
 }
 
 // Die Bestätigung nach dem Speichern.
@@ -136,3 +147,29 @@ export function savedText(body: Pick<PaymentBody, 'amountCents' | 'kind'>): stri
   }
   return `Zahlung über ${fmtEuro(body.amountCents)} erfasst.`
 }
+
+// Art und Monat laut Verwendungszweck einer erfassten Zahlung als Entwurf (#281, #309): Gesendet wird nur, was sich
+// geändert hat (PUT ergänzt nach Anwesenheit eines Schlüssels); leer entfernt den Monat. Eine Zahlung aus der
+// Abrechnung gilt dem Saldo, nicht einem Monat: Wer auf „Abrechnung“ umstellt, entfernt einen eingetragenen Monat mit.
+export type PaymentDraft = { kind: PaymentKind; month: string }
+export type PaymentChange = { kind?: PaymentKind; designatedMonth?: string | null }
+
+export function paymentChangeBody(p: Pick<Payment, 'kind' | 'designatedMonth'>, draft: PaymentDraft): { body: PaymentChange } | { problem: string } {
+  const saved = p.designatedMonth ?? null
+  const body: PaymentChange = {}
+  if (draft.kind !== p.kind) body.kind = draft.kind
+  if (draft.kind === 'settlement') {
+    if (saved !== null) body.designatedMonth = null
+    return { body }
+  }
+  const month = parseMonthText(draft.month)
+  if (month.kind === 'invalid') return { problem: `Für Monat: ${month.text}` }
+  const next = month.kind === 'month' ? month.key : null
+  if (next !== saved) body.designatedMonth = next
+  return { body }
+}
+
+// Die Hilfe am Feld (Entwurf E3).
+export const DESIGNATED_MONTH_HINT =
+  'Nennt der Mieter in der Überweisung einen Monat, tragen Sie ihn hier ein. Sonst verteilt Mietfuchs die Zahlung nach § 366 BGB: ' +
+  'zuerst offene Vorauszahlungen, dann die Miete, jeweils die ältesten zuerst.'

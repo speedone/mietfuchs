@@ -26,9 +26,8 @@ type Exception = {
   reason: string
 }
 
-const EXCEPTIONS: Exception[] = [
-  { file: './pages/Mietkonto.tsx', via: 'changeKind', count: 1, reason: 'Wird mit #309 umgestellt: Art einer Zahlung (fragt vorher schon nach).' },
-]
+// Leer seit #281: Die Art einer Zahlung im Mietkonto ist mit dem Monat laut Verwendungszweck ein Entwurf.
+const EXCEPTIONS: Exception[] = []
 
 const files = Object.keys(sources).filter((f) => f.endsWith('.tsx'))
 const keyOf = (file: string, via: string) => `${file} → ${via}`

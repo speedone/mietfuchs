@@ -523,6 +523,8 @@ export async function readPayments(db: Executor): Promise<Payment[]> {
     amountCents: p.amountCents,
     note: orUndefined(p.note),
     kind: p.kind,
+    // Der Monat laut Verwendungszweck (#281), nur wenn gesetzt.
+    ...(p.designatedMonth !== null ? { designatedMonth: p.designatedMonth } : {}),
   }))
 }
 

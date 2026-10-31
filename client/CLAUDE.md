@@ -447,8 +447,9 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   `flushSync` vorher. Wächter [openFormGuard.test.ts](src/openFormGuard.test.ts); Karten prüfen ihre
   Anmeldung mit `OpenFormScope`/`hasOpenForm` aus src/testing/openForm.tsx.
 - **Wächter [saveOnChange.test.ts](src/saveOnChange.test.ts)**: Ein `<select>` oder ein `<input>` vom
-  Typ checkbox, radio oder date, dessen `onChange` speichert, ist verboten (einzige Ausnahme heute:
-  die Art einer Zahlung im Mietkonto bis #281). Rückrufe aus Props mit anderem Namen sieht er nicht.
+  Typ checkbox, radio oder date, dessen `onChange` speichert, ist verboten, ohne Ausnahme (seit #281
+  sind auch Art und Monat einer Zahlung im Mietkonto ein Entwurf). Rückrufe aus Props mit anderem Namen
+  sieht er nicht.
 - **Was an einem gespeicherten Wert vorbei handelt, wartet auf den Entwurf daneben**: Ein
   ungespeichertes Jahr der Buchung sperrt Vorschau und Buchen und nimmt die Auswertung aus „Alle
   grünen übernehmen“; ein ungespeichertes Objekt oder Jahr im Posteingang sperrt „Per KI auswerten“

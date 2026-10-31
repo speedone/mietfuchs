@@ -28,12 +28,13 @@ const METERS: Meter[] = [
   { id: 'm1', propertyId: 'objekt-1', name: 'Wasser OG', unitId: 'belegt', type: 'kaltwasser', unit: 'm³' },
   { id: 'm2', propertyId: 'objekt-1', name: 'Wasser DG', unitId: 'frei', type: 'kaltwasser', unit: 'm³' },
 ]
-const month = (m: number) => ({ month: m, baseRentCents: 50000, prepaymentCents: 0, flatRateCents: 0, sollCents: 50000, paidCents: 0, status: 'open' as const })
+const month = (m: number) => ({ month: m, baseRentCents: 50000, prepaymentCents: 0, flatRateCents: 0, sollCents: 50000, paidCents: 0, status: 'open' as const, openPrepaymentCents: 0, openRentCents: 50000 })
 const LEDGER: RentLedger = {
   year: YEAR,
-  rows: [{ tenancyId: 't1', tenantName: 'Meier', unitName: 'OG', months: Array.from({ length: 12 }, (_, i) => month(i + 1)), sollYearCents: 600000, baseRentYearCents: 600000, prepaymentYearCents: 0, flatRateYearCents: 0, paidYearCents: 0, settlementYearCents: 0, balanceCents: -600000, dueSollCents: 600000, arrearsCents: 600000, openMonths: 12 }],
+  rows: [{ tenancyId: 't1', tenantName: 'Meier', unitName: 'OG', months: Array.from({ length: 12 }, (_, i) => month(i + 1)), sollYearCents: 600000, baseRentYearCents: 600000, prepaymentYearCents: 0, flatRateYearCents: 0, paidYearCents: 0, settlementYearCents: 0, balanceCents: -600000, dueSollCents: 600000, arrearsCents: 600000, openMonths: 12, notDemandableCents: 0, notDemandable: [], openingBalanceCents: 0, closingBalanceCents: -600000 }],
   settlementOnly: [],
-  totals: { sollYearCents: 600000, paidYearCents: 0, settlementYearCents: 0, openCents: 600000 },
+  carriedOnly: [],
+  totals: { sollYearCents: 600000, paidYearCents: 0, settlementYearCents: 0, openCents: 600000, notDemandableCents: 0 },
 }
 
 let closed: { closedAt: string, sentAt: string | null } | null

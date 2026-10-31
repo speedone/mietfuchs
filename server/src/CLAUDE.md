@@ -719,15 +719,32 @@ Hinweise: `allocation.not-agreed` (nur Info), `allocation.other-unanswered` (fä
 
 ### Mietkonto
 
-`rentLedger`: Kaltmiete + Vorauszahlung (+ Heizstaffel, Pauschale) ergeben das monatliche Soll;
-Mietzahlungen werden Jan→Dez FIFO auf die Monate verteilt. Im angebrochenen Monat anteilig
-(`rateInMonth`, die Zeile trägt `share`; das Soll je Bestandteil aus `monthSoll` in shared/monthRate.ts). Die Tilgung
-nach § 366 BGB (BGH VIII ZR 84/17 Rn. 56/57: Monat laut Verwendungszweck, sonst zuerst offene Vorauszahlungen, dann
-Kaltmiete und Pauschale, je die ältesten zuerst; Rücklastschrift nimmt die jüngste Zuordnung zurück) steht als reine
-Funktion in [rentAllocation.ts](rentAllocation.ts) (`allocateRentPayments`, `monthCoverage`, `openingBalance`, #312
-PR 1), noch ohne Verbraucher; #281 stellt das Mietkonto darauf um, #312 PR 2 die Steuer. Sie importiert nichts aus
-calc.ts (Zyklus; Wächter in rentAllocation.test.ts), Rest-Cent und `compareText` kommen aus apportion.ts.
+`rentLedger`: Kaltmiete + Vorauszahlung (+ Heizstaffel, Pauschale) ergeben das monatliche Soll, im angebrochenen
+Monat anteilig (`rateInMonth`, die Zeile trägt `share`; das Soll je Bestandteil aus `monthSoll` in shared/monthRate.ts).
+**Tilgung nach § 366 BGB aus [rentAllocation.ts](rentAllocation.ts), fortlaufend ab Beginn des Mietverhältnisses**
+(#281, Entwurf docs/superpowers/specs/2026-10-30-mietkonto-uebertrag-design.md): Monat laut Verwendungszweck
+(`payments.designated_month`), sonst zuerst offene Vorauszahlungen, dann Kaltmiete und Pauschale, je die ältesten
+zuerst (BGH VIII ZR 84/17 Rn. 56/57); Rücklastschrift nimmt die jüngste Zuordnung zurück. calc.ts liest Status und
+Salden nur über `monthCoverage` und `openingBalance` (`tenancyAccount`), keine zweite Regel; rentAllocation.ts
+importiert nichts aus calc.ts (Zyklus; Wächter in rentAllocation.test.ts). Die Steuer liest die Teile ab #312 PR 2.
 
+- **Jahr mit Übertrag**: `openingBalanceCents` (01.01.) und `closingBalanceCents` (31.12.), Endsaldo(Y) =
+  Anfangssaldo(Y+1). Ein Monat zählt Teile mit Datum bis zum 31.12. (eine Dezemberzahlung für Januar deckt den
+  Januar), `paidLaterOn` nennt die spätere Deckung. `paidYearCents` und `balanceCents` bleiben das Jahr allein
+  (Kontoauszug), `arrearsCents` ist der mahnfähige Rückstand fälliger Monate **über alle Jahre**. Ein Mietverhältnis
+  ohne Tag im Jahr mit offenem Saldo steht in `carriedOnly`. Wer jeden Monat genau das Soll zahlt, sieht dieselben
+  Zahlen wie vor #281 (Orakel server/testing/fifoLedger.ts, invariant-mietkonto.test.ts).
+- **Abrechnungsreife nur Anzeige** (E5): Offene Vorauszahlungen eines abgerechneten Zeitraums (erteilt = abgeschlossen
+  mit `sentAt` bis zum Stichtag, oder Frist abgelaufen) zählen in `notDemandableCents` mit Grund (`inStatement`,
+  `creditedAsPaid`, `deadlinePassed`), nicht in `arrearsCents`; Kaltmiete und Pauschale nie. Die Tilgung fragt nie
+  nach Frist oder Versand. Die Abrechnungen kommen als `statements` aus der Route ([ledgerStatements.ts](ledgerStatements.ts)
+  baut sie aus Schnappschuss und Abschlüssen; Heizvorauszahlung bei Weg d über `separateOwner`); ohne sie keine
+  Klassifikation (Tests, Regression).
+- **Monat laut Verwendungszweck**: nur an `rent` und nur für einen Monat des Mietverhältnisses (400 in `guardPayment`,
+  repository.ts); fällt er später heraus (Beginn oder Ende geändert), bleibt er stehen, wirkt wie keine Bestimmung und
+  steht in `designatedOutside`. Kontoauszug-Import und KI setzen ihn nie.
+- **Hinweis `prepayment.arrears`** (E6): Betrag = offene Vorauszahlungen der fälligen Monate des Zeitraums, die diese
+  Abrechnung anrechnet, getilgt durch alle Mietzahlungen bis zum Stichtag; ist nur Kaltmiete offen, kein Hinweis.
 - **Nur die Miete** (#280): `payments.kind` ist `rent` oder `settlement` (fehlend: Miete,
   `isRentPayment`). Nachzahlungen und Guthaben (negativ) aus der Abrechnung verteilt das Mietkonto
   nicht, es führt sie in `settlementYearCents` bzw. `settlementOnly`. `prepayment.arrears` und
