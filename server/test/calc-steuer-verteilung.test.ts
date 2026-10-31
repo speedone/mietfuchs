@@ -229,6 +229,8 @@ test('Rechenweg: die Position nennt die Verteilung, die Zeile des Folgejahres ih
   assert.ok(steps.some((s) => s.label === 'Verteilung nach § 82b EStDV' && s.value.includes('10.000,00 €') && s.value.includes('3 Jahre') && s.value.includes('2026 bis 2028')), JSON.stringify(steps))
   const later = row(report(src, 2027), 'spread:dach:2026').steps
   assert.ok(later.some((s) => s.value.includes('Anteil 2 von 3') && s.value.includes('3.333,33 €')), JSON.stringify(later))
+  // #262 PR 3: Beide Schritte verweisen auf den Begriff im Lexikon.
+  for (const s of [...steps, ...later].filter((x) => x.label === 'Verteilung nach § 82b EStDV')) assert.equal(s.term, 'spread82b', JSON.stringify(s))
 })
 
 test('Sonderumlage unter „Nicht umlagefähig“ mit gewählter Verteilung: Hinweis auch ohne Zahlungsdatum (Durchsicht X3)', () => {
