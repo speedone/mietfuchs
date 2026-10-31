@@ -331,3 +331,15 @@ test('Durchsicht (D): Mietbeginn 2020, Erfassung ab Oktober 2026, jeder Monat ge
   assert.equal(y2025.arrearsCents, 0)
   assert.ok(y2025.months.every((m) => m.status === 'notRecorded'))
 })
+
+test('Durchsicht Befund 3: ein Zeitraum, der vor die Erfassung reicht, gilt dort als so gezahlt, wie die Abrechnung anrechnet', () => {
+  // Zeitraum Juli 2024 bis Juni 2025, Erfassung ab Januar 2025, Juni 2025 nicht gezahlt; versandt mit Jahreskorrektur
+  // (12 × 200 € − die offenen 200 €): Die Abrechnung enthält die nicht gezahlte Vorauszahlung.
+  const st: LedgerStatement = {
+    label: '2024/2025', months: monthsBetween('2024-07', '2025-06'), deadline: '2026-06-30', closed: true, sentAt: '2025-08-01',
+    credited: new Map([['t', 220000]]), covers: () => true,
+  }
+  const r = rowOf(ledger({ tenancies: [since2020()], payments: monthly('2025-01', '2025-05') }, 2025, { asOf: '2025-10-01', statements: [st] }))
+  assert.equal(r.ledgerStart, '2025-01-01')
+  assert.deepEqual(r.notDemandable, [{ reason: 'inStatement', label: '2024/2025', cents: 20000 }])
+})

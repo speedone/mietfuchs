@@ -1032,7 +1032,9 @@ type TenancyAccount = {
 // Mietzahlungen des Mietverhältnisses, Deckung je Monat ab Beginn über `monthCoverage` (Stand: letzter Tag der Spanne),
 // Salden über `openingBalance`. Eine Tilgung für Mietkonto und Steuer, kein zweiter Algorithmus (Entwurf E1); hier steht
 // nur, was das Mietkonto daraus liest: Rückstand fälliger Monate, Abrechnungsreife und Anfangs- und Endsaldo.
-function tenancyAccount(t: SnapshotTenancy, own: readonly SnapshotPayment[], span: Pick<BillingPeriod, 'from' | 'to'>, options: LedgerOptions): TenancyAccount {
+// `t` ist das geführte Mietverhältnis (`ledgerTenancy`), `contract` das vereinbarte: Für die Abrechnungsreife gelten Monate
+// vor der Erfassung als so gezahlt, wie die Abrechnung sie anrechnet (Durchsicht, Befund 3).
+function tenancyAccount(t: SnapshotTenancy, contract: SnapshotTenancy, own: readonly SnapshotPayment[], span: Pick<BillingPeriod, 'from' | 'to'>, options: LedgerOptions): TenancyAccount {
   const slices = allocateRentPayments(t, own)
   const spanMonths = periodMonths(span)
   const spanLast = spanMonths.at(-1) ?? span.to.slice(0, 7)
@@ -1065,8 +1067,16 @@ function tenancyAccount(t: SnapshotTenancy, own: readonly SnapshotPayment[], spa
     if (issued) {
       // Rechnet die erteilte Abrechnung höchstens das tatsächlich Gezahlte an, steckt die offene Vorauszahlung in ihrem
       // Saldo; rechnet sie mehr an (ohne Jahreskorrektur das Soll), fehlt die Differenz dort.
+      // Reicht der Zeitraum vor die Erfassung (`ledgerStart`), gelten die Monate davor als gezahlt, wie vereinbart: Über sie
+      // weiß Mietfuchs nichts, und eine Jahreskorrektur rechnet sie mit (Durchsicht, Befund 3). Verglichen wird also
+      // `credited` mit Soll(ganzer Zeitraum) − offene Vorauszahlungen der erfassten Monate.
       let paid = 0
       for (const m of s.months) {
+        if (compareText(m, first) < 0) {
+          const soll = monthSoll(contract, m)
+          for (const comp of A_COMPONENTS) if (s.covers(t.id, m, comp)) paid += Math.max(0, soll[comp])
+          continue
+        }
         const c = coverage.get(m)
         if (!c) continue
         for (const comp of A_COMPONENTS) if (s.covers(t.id, m, comp)) paid += c.paid[comp]
@@ -1159,7 +1169,7 @@ export function ledgerRows(
       const year = Number(span.from.slice(0, 4))
       const tracked = ledgerTenancy(t, source.payments, year)
       const recorded = recordingStart(source.payments, year)
-      const account = tenancyAccount(tracked, own, span, options)
+      const account = tenancyAccount(tracked, t, own, span, options)
       // Die Heizstaffel (Heizung PR 5, Entwurf 3.11): im Soll neben der übrigen Vorauszahlung. Die
       // Felder dazu stehen nur in Zeilen mit Heizstaffel, damit sich ohne sie nichts ändert.
       const withHeating = Array.isArray(t.heatingPrepayments) && t.heatingPrepayments.length > 0
@@ -1272,7 +1282,7 @@ export function rentLedger(snapshot: Snapshot, options: LedgerOptions = {}): Ren
       const tracked = ledgerTenancy(t, snapshot.payments, snapshot.year)
       // Endete das Mietverhältnis vor dem Beginn der Erfassung im Objekt, gibt es kein geführtes Konto, also keinen Übertrag.
       if (compareText(tracked.start, end) > 0) return []
-      const account = tenancyAccount(tracked, own, span, options)
+      const account = tenancyAccount(tracked, t, own, span, options)
       if (account.arrearsCents <= 0 && account.notDemandableCents <= 0) return []
       return [{
         tenancyId: t.id,
