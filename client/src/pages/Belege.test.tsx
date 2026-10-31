@@ -1132,3 +1132,22 @@ test('Eingang: nach dem Zuordnen eines gespeicherten Belegs bleibt kein „Erneu
   await waitFor(() => expect(sent.some((r) => r.url === '/api/costItems/w2')).toBe(true))
   await waitFor(() => expect(screen.queryByText('Gespeichert, nicht ausgewertet')).toBeNull())
 })
+
+// Durchsicht S1: Ein Zählerfoto ohne Position ließ sich im Belegordner löschen; im Ordner geht das weiter.
+test('Ordner: ein Zählerfoto lässt sich löschen, mit derselben Rückfrage', async () => {
+  extraUploads = [{ ...up('9_zaehler.jpg'), kind: 'meterPhoto', mimeType: 'image/jpeg' }]
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <UIProvider>
+          <Belege {...BASE} renderThumb={() => Promise.resolve('')} />
+        </UIProvider>
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  fireEvent.click(await screen.findByRole('button', { name: 'Beleg zaehler.jpg löschen' }))
+  const dialog = await screen.findByRole('alertdialog')
+  expect(dialog.textContent).toMatch(/in den Papierkorb gelegt/)
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Löschen' }))
+  await waitFor(() => expect(sent).toEqual([{ url: '/api/uploads/9_zaehler.jpg', method: 'DELETE', body: {} }]))
+})

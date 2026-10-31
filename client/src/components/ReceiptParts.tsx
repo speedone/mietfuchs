@@ -17,7 +17,7 @@ import type { ReceiptStock } from '../receiptStock'
 import { useDraft } from '../useDraft'
 import DraftActions from './DraftActions'
 import { NoticeBox } from './Notice'
-import { useToast } from './feedback'
+import { useConfirm, useToast } from './feedback'
 
 export const fmtSize = (b: number) =>
   b >= 1024 * 1024 ? `${(b / 1024 / 1024).toLocaleString('de-DE', { maximumFractionDigits: 1 })} MB` : `${Math.max(1, Math.round(b / 1024))} kB`
@@ -318,4 +318,27 @@ export function AmountCheckBox({ attach, properties, onOpenItem }: {
       )}
     </NoticeBox></div>
   )
+}
+
+// Einen Beleg ohne Position löschen (auch ein Zählerfoto): Der Server legt ihn in den Papierkorb, und der Verlauf holt ihn
+// zurück (#490: vorher hieß es hier „unwiderruflich“). `after` lädt neu und räumt auf.
+export function useDeleteReceipt(after: (file: string) => Promise<unknown>, onError: (text: string) => void) {
+  const confirm = useConfirm()
+  const toast = useToast()
+  return async (f: UploadInfo) => {
+    const ok = await confirm({
+      title: 'Beleg löschen?',
+      message: `„${receiptName(f)}“ wird aus den Belegen entfernt und in den Papierkorb gelegt. Zurückholen können Sie ihn im Verlauf.`,
+      confirmLabel: 'Löschen',
+      danger: true,
+    })
+    if (!ok) return
+    try {
+      await api(`/api/uploads/${encodeURIComponent(f.file)}`, { method: 'DELETE' })
+      await after(f.file)
+      toast('Beleg gelöscht. Der Verlauf holt ihn aus dem Papierkorb zurück.')
+    } catch (e) {
+      onError(errorText(e))
+    }
+  }
 }

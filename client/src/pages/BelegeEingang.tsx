@@ -32,7 +32,7 @@ import { useFocusFirstNew } from '../focusNew'
 import { attachChoices, duplicateHints, inboxOf, inboxPage, INBOX_STEP, receiptCards, receiptName, type FolderFilter, type ReceiptCard, type ReceiptUpload } from '../receipts'
 import { aiMode, elsewhereGroups, periodKeyOfYear, SKIPPED_FILES, splitFiles, withoutPosition } from '../belegeView'
 import type { ReceiptStock } from '../receiptStock'
-import { AmountCheckBox, AttachPicker, InboxPlacement, PLACEMENT_FIRST, ReceiptItem, useAttach, useHighlight } from '../components/ReceiptParts'
+import { AmountCheckBox, AttachPicker, InboxPlacement, PLACEMENT_FIRST, ReceiptItem, useAttach, useDeleteReceipt, useHighlight } from '../components/ReceiptParts'
 
 type Props = {
   stock: ReceiptStock
@@ -489,25 +489,7 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
     onFocusDone?.()
   })
 
-  async function deleteFile(f: UploadInfo) {
-    // Der Server legt den Beleg in den Papierkorb, und der Verlauf holt ihn zurück (#490: vorher hieß es hier
-    // „unwiderruflich“).
-    const ok = await confirm({
-      title: 'Beleg löschen?',
-      message: `„${receiptName(f)}“ wird aus den Belegen entfernt und in den Papierkorb gelegt. Zurückholen können Sie ihn im Verlauf.`,
-      confirmLabel: 'Löschen',
-      danger: true,
-    })
-    if (!ok) return
-    try {
-      await api(`/api/uploads/${encodeURIComponent(f.file)}`, { method: 'DELETE' })
-      forgetKept(f.file)
-      await reloadAll()
-      toast('Beleg gelöscht. Der Verlauf holt ihn aus dem Papierkorb zurück.')
-    } catch (e) {
-      setError(errorText(e))
-    }
-  }
+  const deleteFile = useDeleteReceipt(async (file) => { forgetKept(file); await reloadAll() }, setError)
 
   // „Von Hand erfassen“ an einem gespeicherten, nicht ausgewerteten Beleg: vorerst zu Zuordnen, Objekt und Jahr seiner
   // Karte (wie vorher der Sprung in den Belegordner); ins Kostenformular führt es mit #490 PR 3.

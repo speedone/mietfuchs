@@ -20,7 +20,7 @@ import Field from '../components/Field'
 import { useToast } from '../components/feedback'
 import { NoticeBox } from '../components/Notice'
 import Card from '../components/Card'
-import { AmountCheckBox, AttachPicker, ReceiptItem, useAttach, useHighlight } from '../components/ReceiptParts'
+import { AmountCheckBox, AttachPicker, ReceiptItem, useAttach, useDeleteReceipt, useHighlight } from '../components/ReceiptParts'
 
 // ---------- Mappen packen (#170) ----------
 
@@ -281,9 +281,12 @@ export default function BelegeOrdner({ stock, renderThumb = renderThumbnail, onO
       .filter((r) => r.cov.positions > 0)
   }, [costItems, scope, present, booked, properties])
 
+  // Ein Zählerfoto an keiner Position lässt sich löschen, wie vorher im Belegordner (Durchsicht S1)
+  const deleteFile = useDeleteReceipt(() => stock.reload(), setError)
   const renderCard = (card: ReceiptCard) => (
     <ReceiptItem key={card.upload.file} card={card} renderThumb={renderThumb} jumped={jumped === card.upload.file} hint={hints.get(card.upload.file)}
-      place={showProperty && card.propertyIds.length > 0 ? card.propertyIds.map(propertyName).join(', ') : undefined}>
+      place={showProperty && card.propertyIds.length > 0 ? card.propertyIds.map(propertyName).join(', ') : undefined}
+      onDelete={card.items.length === 0 ? () => void deleteFile(card.upload) : undefined}>
       {card.upload.kind === 'meterPhoto' ? (
         <span className="badge gray">Zählerfoto aus dem Eingang</span>
       ) : (
