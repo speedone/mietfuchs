@@ -29,10 +29,7 @@ export default function SpreadRestField({ value, items, onChange }: { value: str
         </p>
         <p className="muted fine">Im Erbfall zieht der Verstorbene den Rest im Todesjahr ab; die Erben führen die Verteilung nicht fort (BFH, Urteil vom 10.11.2020, IX R 31/19).</p>
         <p className="muted fine">
-          Bei einer Schenkung ist das eine Auslegung: Sie vermieten danach nicht mehr, also zieht Mietfuchs den Rest im Jahr der
-          Schenkung ab. Nach R 21.1 Abs. 6 EStR 2012 führt dagegen der Beschenkte die Verteilung fort; der BFH hat diese Regel für
-          den Erbfall verworfen, zur Schenkung gibt es kein Urteil. Fragen Sie Ihren Steuerberater; folgt Ihr Finanzamt der
-          Richtlinie, lassen Sie das Feld leer.
+          Bei einer Schenkung ist das eine Auslegung: Wer geschenkt bekommt, führt die Verteilung nicht fort (FG Münster, Urteil vom 15.04.2016, 4 K 422/15 E). R 21.1 Abs. 6 Sätze 2 und 3 EStR 2012, nach denen er fortführen durfte, sind durch das Urteil von 2020 überholt. Fragen Sie im Zweifel Ihren Steuerberater.
         </p>
         <p className="muted fine">Wechselt nur die Nutzung einer Wohnung, rechnet Mietfuchs die Anteile weiter wie gewählt; ob dann für einen Teil das Ende gilt, klären Sie bitte mit Ihrem Steuerberater.</p>
       </div>

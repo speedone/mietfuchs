@@ -247,7 +247,9 @@ und das Gewicht für die Kürzung.
 abgezogene Rest aller verteilten Positionen des Objekts abgezogen wird. Abs. 2 nennt Veräußerung, Einlage in ein
 Betriebsvermögen und das Ende der Nutzung zur Einkunftserzielung; der **Tod** ist durch BFH IX R 31/19 gleichgestellt.
 **Schenkung** (unentgeltliche Übertragung zu Lebzeiten) ist **Auslegung**: Der Schenker nutzt das Gebäude nicht mehr zur
-Einkunftserzielung, also greift der dritte Fall des Abs. 2; eine Entscheidung eigens dazu ist nicht bekannt. Lexikon
+Einkunftserzielung, also greift der dritte Fall des Abs. 2. R 21.1 Abs. 6 Sätze 2 und 3 EStR 2012 (Fortführung durch den
+Rechtsnachfolger bei unentgeltlicher Übertragung) gelten nach BFH IX R 31/19 (BStBl 2021 II S. 474) als überholt; FG Münster,
+Urteil vom 15.04.2016, 4 K 422/15 E, lehnt die Übertragung auf einen Einzelrechtsnachfolger ab (Durchsicht von PR 4, S1). Lexikon
 und Hilfe am Feld kennzeichnen sie so. IX R 22/17 wird nur für das zitiert, was es sagt (Nießbrauch, Tabelle oben).
 
 - **Am Objekt und nicht an der Position**, weil das Ereignis das Gebäude bzw. den Eigentümer betrifft und für alle

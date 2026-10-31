@@ -440,6 +440,10 @@ test('Ende der Verteilung: mit verteilter Position das Feld, angezeigt wie gespe
   expect(select.value).toBe('2035')
   expect(select.selectedOptions[0]?.textContent).toBe('2035')
   expect([...select.options].map((o) => o.value)).toEqual(['', '2026', '2027', '2028', '2029', '2030', '2035'])
+  // Durchsicht S1: Schenkung als Auslegung, die Richtlinie überholt, kein Rat, das Feld leer zu lassen.
+  fireEvent.click(within(dialog).getAllByRole('button', { name: 'Mehr dazu' }).at(-1)!)
+  expect(dialog.textContent).toMatch(/R 21\.1 Abs\. 6 Sätze 2 und 3 EStR 2012/)
+  expect(dialog.textContent).not.toMatch(/Feld leer/)
   fireEvent.change(select, { target: { value: '2027' } })
   fireEvent.click(within(dialog).getByRole('button', { name: 'Speichern' }))
   const ask = await screen.findByRole('alertdialog', { name: 'Verteilung für die Steuer ändert sich' }, SLOW)

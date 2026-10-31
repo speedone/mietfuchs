@@ -113,8 +113,9 @@ export function spreadQuestions(before: Spreadable | null, after: Spreadable | n
 // „Wird das Gebäude während des Verteilungszeitraums veräußert, ist der noch nicht berücksichtigte Teil des
 // Erhaltungsaufwands im Jahr der Veräußerung als Werbungskosten abzusetzen. Das Gleiche gilt, wenn ein Gebäude in ein
 // Betriebsvermögen eingebracht oder nicht mehr zur Einkunftserzielung genutzt wird.“ Den Tod stellt BFH, Urteil vom
-// 10.11.2020, IX R 31/19, gleich (Rest beim Erblasser im Todesjahr, entgegen R 21.1 Abs. 6 Satz 2 EStR 2012). Die
-// Schenkung ist Auslegung (Lexikon `spread82b`). Gerechnet wird in outflow.ts (`deductionPlan`); hier steht nur, was die
+// 10.11.2020, IX R 31/19, BStBl 2021 II S. 474, gleich (Rest beim Erblasser im Todesjahr); R 21.1 Abs. 6 Sätze 2 und 3
+// EStR 2012 gelten danach als überholt. Die Schenkung ist Auslegung (Lexikon `spread82b`; FG Münster 4 K 422/15 E lehnt
+// die Übertragung auf einen Einzelrechtsnachfolger ab). Gerechnet wird in outflow.ts (`deductionPlan`); hier steht nur, was die
 // Rückfrage beim Setzen, Ändern und Entfernen des Jahres sagt, an Server (409 `question: 'spread'`, bestätigt mit
 // `confirmSpread`) und Formular gleich.
 

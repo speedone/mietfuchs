@@ -2,6 +2,7 @@
 // E-5, E-8, E-13): die Spalte „verteilt“, der Block der Zeilen 57 bis 72 aus `anlageVLines` und die Hinweise.
 import { describe, expect, test } from 'vitest'
 import type { TaxExpenseItem, TaxReport, TaxSpread } from './types'
+import { GLOSSARY } from '../../shared/glossary.ts'
 import { acquisitionRelated, acquisitionRelatedText, maintenanceLineText, showsSplit, taxHints } from './taxView'
 import { isSpreadItem, showsDeferred, spreadBlock, spreadCarriedText as carriedRaw, spreadConditionsText, spreadIgnoredText, spreadItemText as itemRaw, spreadNothingDeductibleText, SPREAD_CARRIED_MORE, spreadRestBeforeStartText, spreadRestText as restRaw, SPREAD_REST_MORE, spreadUsageChangedText } from './taxSpread'
 
@@ -214,7 +215,18 @@ describe('Hinweise zum vorzeitigen Ende (§ 82b Abs. 2 EStDV)', () => {
     expect(t).toMatch(/Verkauft, verschenkt, vererbt oder Vermietung beendet im Jahr/)
     expect(SPREAD_REST_MORE).toMatch(/§ 82b Abs\. 2 EStDV/)
     expect(SPREAD_REST_MORE).toMatch(/BFH, Urteil vom 10\.11\.2020, IX R 31\/19/)
-    expect(SPREAD_REST_MORE).toMatch(/Schenkung.*Auslegung.*R 21\.1 Abs\. 6 EStR 2012/s)
+    expect(SPREAD_REST_MORE).toMatch(/Schenkung.*Auslegung/s)
+  })
+
+  // Durchsicht S1: Die Richtlinie, nach der ein Rechtsnachfolger fortführt, gilt als überholt; kein Rat, ihr zu folgen.
+  test('Schenkung: R 21.1 Abs. 6 Sätze 2 und 3 EStR 2012 überholt, FG Münster lehnt die Übertragung ab; Lexikon ebenso', () => {
+    for (const t of [SPREAD_REST_MORE, GLOSSARY.spread82b.needed]) {
+      expect(t).toMatch(/R 21\.1 Abs\. 6 Sätze 2 und 3 EStR 2012/)
+      expect(t).toMatch(/überholt/)
+      expect(t).toMatch(/FG Münster, Urteil vom 15\.04\.2016, 4 K 422\/15 E/)
+      expect(t).not.toMatch(/führt (dagegen )?der Beschenkte die Verteilung fort|Feld leer|kein Urteil/)
+    }
+    expect(GLOSSARY.spread82b.norm).toMatch(/BStBl 2021 II S\. 474/)
   })
 
   test('spreadRestBeforeStart: Ende im Jahr der Zahlung, nicht verteilt', () => {
