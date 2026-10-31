@@ -110,11 +110,16 @@ const SHIPPED: readonly string[] = [
   'estg.cheap-rent|2021-01-01||{"split":50,"paid":66}',
   // Anschaffungsnahe Herstellungskosten (#96 PR 2)
   'estg.acquisition-related|2004-01-01||{"percent":15,"years":3}',
+  // Zehn-Tage-Regel (#312 PR 2)
+  'estg.short-period-days|||10',
   // Garage und Umsatzsteuer (#323)
   'ustg.small-business|2025-01-01||{"previousYearEuro":25000,"currentYearEuro":100000}',
   // Fristen nach Werktagen und die Feiertage der Länder (#290)
   'bgb.rent-due-workday|||3',
   'bgb.rent-due-saturday|||false',
+  // Fälligkeit vor und nach der Mietrechtsreform (#312 PR 2)
+  'bgb.rent-due-at-start||2001-09-01|false',
+  'bgb.rent-due-at-start|2001-09-02||true',
   'bgb.deadline-on-workday|||{"saturday":true,"sunday":true,"holiday":true}',
   'holiday.new-year|||{"day":"01-01","states":["BW","BY","BE","BB","HB","HH","HE","MV","NI","NW","RP","SL","SN","ST","SH","TH"],"local":{}}',
   'holiday.epiphany|||{"day":"01-06","states":["BW","BY","ST"],"local":{}}',

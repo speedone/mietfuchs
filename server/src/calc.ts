@@ -41,6 +41,9 @@ import type {
   TaxMovedOut,
   TaxOutflow,
   TaxReport,
+  TaxReceived,
+  TaxReceivedTenancy,
+  TaxReceivedUnit,
   FuelDeliveryLine,
   HeatingTarget,
   HotWater,
@@ -68,7 +71,9 @@ import { gmodgHeating43 } from '../../shared/law/gmodg.ts'
 // rangeOverlapDays: Überlappung zweier Zeiträume in Tagen, eine Stelle mit der Monatsregel.
 import { compareText, largestRemainder } from './apportion.ts'
 import { monthShare, monthSoll, overlapDays as rangeOverlapDays, rateAtMonth, rateInMonth, type MonthlySchedule, type SollComponent } from '../../shared/monthRate.ts'
-import { allocateRentPayments, ledgerTenancy, monthCoverage, recordingStart, openingBalance, type MonthCoverage } from './rentAllocation.ts'
+import { allocateRentPayments, ledgerTenancy, monthCoverage, recordingStart, openingBalance, type AllocationSlice, type MonthCoverage } from './rentAllocation.ts'
+import { estgShortPeriodDays } from '../../shared/law/estg.ts'
+import { bgbRentDueAtStart } from '../../shared/law/bgb-betrkv.ts'
 import { applicableRanges, blendedPermille, halfAmounts, halfSplitStatus, intersect as intersectRange, termsFromDeliveries, termsFromPieces, termsWeight, tightMarketIn, twoFamilyOf, type HalfDelivery, type HalfSplitStatus, type HalfSplitTerm, type Piece, type TwoFamily } from './halfSplit.ts'
 import { CO2_RELIEF_LABEL } from '../../shared/co2Probe.ts'
 import { ausweisGaps, CO2_FUELS, co2Assessment, co2Required, NO_CO2_FUELS, co2DeductionsOf, FORMULA_METHODS, co2PotsOf, itemBasisUnits, L_TOLERANCE_CENTS, perUnitClassification, perUnitExceeding, perUnitReliefs, gmodgKeyOf, HALF_SPLIT_TOLERANCE_PERMILLE, reliefKeysOf, reliefsByShare, spanningPlants, type PerUnitFuel, restage, selfSplit, SERVICE_FUEL_TOLERANCE_CENTS, shownReliefs, stageRanges, tableFactor, tenantLines as co2TenantLines, type Co2Pot, type ReliefShare } from './co2.ts'
@@ -1425,9 +1430,245 @@ export function carryShareCents(snapshot: Snapshot, carryCents: number, year: nu
 // `linkable`: Positionen, auf die ein Abzug zeigen kann, auch aus anderen Jahren (#268, Durchsicht M1); nur für die
 // Anlage und die Beschreibung eines Verweises, nie für Beträge.
 // `costModels.relativeTenancies` nur mit mindestens einem Mietverhältnis an Angehörige (#96 PR 2).
+// An Angehörige **zu Wohnzwecken** vermietet (Kz. 62 und Zeilen 19, 22, 23; Durchsicht K3 zu #489, S1 zu #312 PR 2): mit
+// Kennzeichen, und in der Spanne wohnt jemand dort. Mietfuchs kennt keine Art der Einheit, eine Garage oder ein
+// Stellplatz hat 0 Personen (#135); dieselbe Lesart wie `inhabited` in computeSettlement. Eine Stelle für beide.
+function relativeForHousing(t: SnapshotTenancy, from: string, to: string): boolean {
+  return t.relative === true && personDaysInPeriod(t, from, to) > 0
+}
 const relativeTenanciesOf = (n: number): { relativeTenancies?: number } => (n > 0 ? { relativeTenancies: n } : {})
 
-export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], options: { linkable?: readonly SnapshotCostItem[]; foreignQuota?: ForeignHeatQuota } = {}): TaxReport {
+// Das Mietmodell eines Mietverhältnisses für die Kopfzeilen der Anlage V und die Inklusivmiete (#96, #142, #312): kalt aus
+// `costModel`, warm aus dem Heizmodell, wenn im Jahr eine Heizposition steht, sonst wie kalt (siehe `costModels`). Eine
+// Stelle für Soll und Ist, damit beide dieselben Mietverhältnisse inklusiv nennen.
+function tenancyCostModel(t: Pick<SnapshotTenancy, 'costModel' | 'heatingModel'> | undefined, heatingBilled: boolean): { cold: CostModel; heat: CostModel } {
+  const cold = t?.costModel ?? 'settlement'
+  return { cold, heat: heatingBilled ? allocationModel(t?.heatingModel) : cold }
+}
+const isInclusiveModel = (m: { cold: CostModel; heat: CostModel }): boolean => m.cold === 'inclusive' || m.heat === 'inclusive'
+
+const shiftIsoDay = (iso: string, days: number): string => {
+  const [y, m, d] = iso.split('-').map(Number)
+  return new Date(Date.UTC(y ?? 0, (m ?? 1) - 1, (d ?? 1) + days)).toISOString().slice(0, 10)
+}
+
+// Optionen der Steuerübersicht. `received: false` (#312 E11): ohne Tilgung und ohne `income.received`, für Rückgriffe,
+// die nur Werbungskosten brauchen; alle übrigen Felder sind dieselben (Test in calc-steuer-zufluss.test.ts).
+export type TaxReportOptions = { linkable?: readonly SnapshotCostItem[]; foreignQuota?: ForeignHeatQuota; received?: boolean }
+
+// ---------- Das Zugeflossene nach Zeilen der Anlage V (#312 PR 2) ----------
+//
+// Entwurf docs/superpowers/specs/2026-10-30-steuer-zufluss-design.md, E1, E4 bis E11. Jede Mietzahlung eines
+// Mietverhältnisses wird mit `allocateRentPayments` auf Monat und Bestandteil verteilt, **mit demselben geführten
+// Mietverhältnis wie das Mietkonto** (`ledgerTenancy` mit allen Zahlungen des Objekts), damit beide dieselben Teile haben
+// (Kreuz-Invariante X9 a). Jeder Teil zählt im Jahr seines Datums (§ 11 Abs. 1 Satz 1 EStG), mit der einen Ausnahme der
+// Zehn-Tage-Regel unten; die Summe ist deshalb `paidCents` − `forwardCents` + `fromPreviousCents`. Zuordnung zu den
+// Zeilen (E4):
+// - Monat im Jahr oder später: Kaltmiete in Zeile 15/18 (`rentCents`), Vorauszahlung, Heizvorauszahlung und Pauschale in
+//   Zeile 20 (`allocationsCents`). Die Pauschale bei Zeile 20 ist Auslegung (gesondert vereinbart, § 556 Abs. 2 BGB).
+// - Monat vor dem Jahr: Zeile 25, brutto (Auslegung: Der Vordruck sagt dort nicht „ohne Umlagen“), die Umlagen daneben.
+// - Ohne Forderung (`unallocated`): Zeile 15/18 (Auslegung: Für sie ist keine Umlage vereinbart).
+// - Zahlungen aus der Abrechnung gehen nie durch die Tilgung (#280), sie bleiben Zeile 21 wie bisher.
+// **Zehn-Tage-Regel** (§ 11 Abs. 1 Satz 2 EStG, Entwurf E8 nach der Durchsicht): Regelmäßig wiederkehrende Einnahmen, die
+// kurze Zeit vor Beginn oder nach Ende des Kalenderjahres zufließen, zu dem sie wirtschaftlich gehören, gelten als in
+// diesem bezogen. Die Vorschrift ist zwingend, kein Wahlrecht. Kurze Zeit sind bis zu zehn Tage
+// (`estg.short-period-days`), und **Zahlung und Fälligkeit** müssen beide darin liegen (H 11 EStH; BFH, Urteil vom
+// 24.07.1986, IV R 309/84, BStBl 1987 II S. 16; tragend BFH, Urteil vom 16.02.2022, X R 2/21, BStBl 2022 II S. 448).
+// Die Fälligkeit hängt am Vertrag (`bgb.rent-due-at-start`):
+// - **Mietverhältnis, das am 01.09.2001 nicht bestand** (§ 556b Abs. 1 BGB: zu Beginn, spätestens am dritten Werktag):
+//   Die Januarmiete ist spätestens am 07.01. fällig (ohne Samstag, mit 01.01. und je Land 06.01.; Test in
+//   invariant-tilgung.test.ts über alle Länder 1995 bis 2100), also in den zehn Tagen. Ein Teil, gezahlt in den letzten
+//   zehn Tagen des Dezembers für den Januar, **zählt im Folgejahr** (`forwardCents` im Jahr der Zahlung,
+//   `fromPreviousCents` im Folgejahr, dort in Zeile 15/20). Die Dezembermiete ist Anfang Dezember fällig, außerhalb der
+//   zehn Tage: Anfang Januar gezahlt bleibt sie im neuen Jahr (Zeile 25), `lateDecemberCents` ist 0.
+// - **Mietverhältnis, das am 01.09.2001 bestand** (Art. 229 § 3 Abs. 1 Nr. 7 EGBGB, § 551 BGB a. F.: Miete am
+//   Monatsende): Die Januarmiete ist Ende Januar fällig, die Regel greift vorwärts nicht; nichts wird verschoben,
+//   beziffert als `forwardOldLeaseCents`. Die Dezembermiete ist am 31.12. fällig: Anfang Januar gezahlt, gehörte sie
+//   nach der Regel ins Vorjahr. Auch das wird **nicht** verschoben, nur beziffert (`lateDecemberCents`), mit dem Vorbehalt
+//   „nur wenn laut Vertrag am Monatsende fällig“, denn ein Altvertrag wird oft auf Zahlung zu Beginn umgestellt sein.
+// **Bewusste Grenze**: Eine vertraglich abweichende Fälligkeit (§ 556b und § 551 a. F. sind abdingbar) kennt Mietfuchs
+// nicht; es gibt am Mietverhältnis kein Feld dafür. Ein Wochenende oder Feiertag verlängert die zehn Tage nicht (BFH,
+// Urteil vom 11.11.2014, VIII R 34/12, BStBl 2015 II S. 285, und vom 27.06.2018, X R 44/16, BStBl 2018 II S. 781:
+// § 108 Abs. 3 AO gilt nicht; X R 44/16 lässt die Frage der Fälligkeit offen, Rn. 12).
+type ReceivedInput = {
+  snapshot: Pick<Snapshot, 'units' | 'tenancies' | 'payments'>
+  year: number
+  inclusive: (t: SnapshotTenancy) => boolean
+  // Die kurze Zeit um den Jahreswechsel in Tagen, für das Kalenderjahr, zu dem eine Zahlung wirtschaftlich gehört
+  // (Zeitregel `periodStart` von `estg.short-period-days`).
+  shortDays: (year: number) => number
+}
+
+// Ist die Miete dieses Mietverhältnisses zu Beginn des Monats fällig (§ 556b Abs. 1 BGB)? Maßgeblich ist, ob es am
+// 01.09.2001 bestand (Art. 229 § 3 Abs. 1 Nr. 7 EGBGB): gefragt mit dem früheren von Vertragsdatum und Beginn
+// (Auslegung: Ein Mietverhältnis besteht ab dem Vertrag).
+function rentDueAtStartOf(t: Pick<SnapshotTenancy, 'start' | 'contractDate'>): boolean {
+  const contract = typeof t.contractDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(t.contractDate) ? t.contractDate : null
+  const date = contract !== null && compareText(contract, t.start) < 0 ? contract : t.start
+  return law(bgbRentDueAtStart, { date }, createLawLog())
+}
+
+// Ist der Januar-Abschnitt des Jahres `year` sicher in der kurzen Zeit fällig (Nachdurchsicht M1)? Nach § 556b Abs. 1
+// BGB ist die Miete zu Beginn des Zeitabschnitts, spätestens am dritten Werktag fällig. Beginnt der Abschnitt am 01.01.
+// (Mietverhältnis spätestens ab 01.01.), ist das in jedem Land spätestens der 07.01. (Test über alle Länder 1995 bis 2100
+// in invariant-tilgung.test.ts), also in der Frist. Beginnt das Mietverhältnis im Januar, beginnt der erste Abschnitt
+// mit ihm (Auslegung), und ob sein dritter Werktag bis zum 10.01. reicht, hängt an Wochentag und Feiertagen des Landes.
+// Mit Feiertagen darf der Server erst rechnen, wenn alle Landesgesetze amtlich gelesen sind (Auflage aus #290,
+// holidays.test.ts); bis dahin wird ein Mietverhältnis mit Beginn nach dem 01.01. **nicht** verschoben (bekannte
+// Grenze, im Zweifel nach dem Datum der Zahlung). Bei Beginn am 15.01. ist die erste Miete ohnehin erst ab dem 15.01. fällig.
+const januaryDueInWindow = (t: Pick<SnapshotTenancy, 'start'>, year: number): boolean => compareText(t.start, `${year}-01-01`) <= 0
+
+const emptyTenancyReceived = (): Omit<TaxReceivedTenancy, 'tenancyId' | 'unitId' | 'tenantName' | 'unitName' | 'start' | 'end' | 'relative'> => ({
+  rentCents: 0, inclusiveRentCents: 0, allocationsCents: 0, settlementCents: 0, formerYearsCents: 0, unallocatedCents: 0, forwardCents: 0,
+})
+
+// Die Fläche für die Zeilen 13/14: eine fehlende Wohnfläche wie 0 m² (Geraderücken in validate.ts), ohne Einheit keine.
+const areaOf = (u: Pick<SnapshotUnit, 'areaM2'> | undefined): number | null => (u === undefined ? null : u.areaM2 ?? 0)
+
+function receivedIncome({ snapshot, year, inclusive, shortDays }: ReceivedInput): TaxReceived {
+  const yFrom = `${year}-01-01`
+  const yTo = `${year}-12-31`
+  const inYear = (d: string): boolean => d >= yFrom && d <= yTo
+  const firstMonth = `${year}-01`
+  const nextJanuary = `${year + 1}-01`
+  const lastDecember = `${year - 1}-12`
+  // Die kurze Zeit um den Jahreswechsel, aus dem Rechtsregister: vorwärts ab dem Tag `shortDays` vor dem 01.01. des
+  // Folgejahres (bei zehn Tagen der 22.12.), rückwärts bis zum `shortDays`-ten Januar (der 10.01.).
+  // Je Grenze die Fassung des Jahres, zu dem die Teile gehören: vorwärts das Folgejahr, aus dem Vorjahr dieses Jahr,
+  // Anfang Januar für Dezember das Vorjahr.
+  const forwardFrom = shiftIsoDay(`${year + 1}-01-01`, -shortDays(year + 1))
+  const previousForwardFrom = shiftIsoDay(yFrom, -shortDays(year))
+  const lateTo = shiftIsoDay(yFrom, shortDays(year - 1) - 1)
+  const isAllocation = (c: AllocationSlice['component']): boolean => c === 'prepayment' || c === 'heatingPrepayment' || c === 'flatRate'
+
+  const out: TaxReceived = {
+    rentCents: 0, inclusiveRentCents: 0, unallocatedCents: 0, allocationsCents: 0, flatRateCents: 0, formerYearsCents: 0, formerYearsAllocationsCents: 0,
+    turnOfYear: { forwardCents: 0, forwardAllocationsCents: 0, fromPreviousCents: 0, fromPreviousAllocationsCents: 0, forwardOldLeaseCents: 0, lateDecemberCents: 0 },
+    byUnit: [], byTenancy: [], relatives: { rentCents: 0, allocationsCents: 0, settlementCents: 0 }, possibleDeposits: [],
+  }
+  const unitById = new Map(snapshot.units.map((u) => [u.id, u]))
+  const known = new Set(snapshot.tenancies.map((t) => t.id))
+  for (const t of snapshot.tenancies) {
+    const own = snapshot.payments.filter((p) => p.tenancyId === t.id)
+    if (!own.some((p) => inYear(p.date) || (p.date >= previousForwardFrom && p.date < yFrom))) continue
+    const tracked = ledgerTenancy(t, snapshot.payments, year)
+    const slices = allocateRentPayments(tracked, own)
+    const row = emptyTenancyReceived()
+    const isInclusive = inclusive(t)
+    const dueAtStart = rentDueAtStartOf(t)
+    // Verschoben wird nur, was nach § 556b in der kurzen Zeit fällig war (M1); eine Rücknahme folgt der zurückgenommenen
+    // Zahlung (S1): Sie wird nur verschoben, wenn deren Datum ebenfalls in der kurzen Zeit vor dem Jahreswechsel liegt.
+    const movesForward = dueAtStart && januaryDueInWindow(t, year + 1)
+    const movedFromPrevious = dueAtStart && januaryDueInWindow(t, year)
+    const originInWindow = (s: AllocationSlice, from: string, to: string): boolean => s.reversesPaidOn === undefined || (s.reversesPaidOn >= from && s.reversesPaidOn <= to)
+    let movedIn = false
+    for (const s of slices) {
+      // Zehn-Tage-Regel vorwärts (§ 556b): Ende Dezember gezahlt für den Januar, zählt im Folgejahr.
+      const forward = s.month === nextJanuary && s.paidOn >= forwardFrom && s.paidOn <= yTo && originInWindow(s, forwardFrom, yTo)
+      if (s.paidOn >= previousForwardFrom && s.paidOn < yFrom && s.month === firstMonth && originInWindow(s, previousForwardFrom, shiftIsoDay(yFrom, -1))) {
+        if (!movedFromPrevious) continue
+        // Aus dem Vorjahr hierher: zählt in diesem Jahr wie ein Teil mit Datum im Jahr.
+        movedIn = true
+        out.turnOfYear.fromPreviousCents += s.cents
+        if (isAllocation(s.component)) out.turnOfYear.fromPreviousAllocationsCents += s.cents
+      } else if (!inYear(s.paidOn)) {
+        continue
+      } else if (forward && movesForward) {
+        row.forwardCents += s.cents
+        out.turnOfYear.forwardCents += s.cents
+        if (isAllocation(s.component)) out.turnOfYear.forwardAllocationsCents += s.cents
+        continue
+      }
+      if (s.month === null || s.component === 'unallocated') {
+        row.rentCents += s.cents
+        row.unallocatedCents += s.cents
+        continue
+      }
+      if (s.month < firstMonth) {
+        row.formerYearsCents += s.cents
+        if (isAllocation(s.component)) out.formerYearsAllocationsCents += s.cents
+        if (!dueAtStart && s.month === lastDecember && s.paidOn <= lateTo) out.turnOfYear.lateDecemberCents += s.cents
+        continue
+      }
+      if (isAllocation(s.component)) {
+        row.allocationsCents += s.cents
+        if (s.component === 'flatRate') out.flatRateCents += s.cents
+      } else {
+        row.rentCents += s.cents
+        if (isInclusive) row.inclusiveRentCents += s.cents
+      }
+      // Altvertrag (§ 551 a. F.): Die Januarmiete war Ende Januar fällig, die Regel greift nicht; nur beziffert.
+      if (forward && !dueAtStart) out.turnOfYear.forwardOldLeaseCents += s.cents
+    }
+    row.settlementCents = own.filter((p) => !isRentPayment(p) && inYear(p.date)).reduce((a, p) => a + p.amountCents, 0)
+    out.possibleDeposits.push(...possibleDepositsOf(t, own, slices, inYear))
+    if (!own.some((p) => inYear(p.date)) && !movedIn) continue
+    // Im Kalenderjahr gemessen, wenn das Mietverhältnis darin besteht (wie Kennzahl 62, Nachdurchsicht K1); sonst über
+    // seine Dauer, damit die Nachzahlung einer ausgezogenen Angehörigen in Zeile 23 bleibt.
+    const overlaps = rangeOverlapDays(t.start, t.end, yFrom, yTo) > 0
+    const relative = overlaps
+      ? relativeForHousing(t, yFrom, yTo)
+      : relativeForHousing(t, t.start, t.end ?? (compareText(yTo, t.start) >= 0 ? yTo : t.start))
+    out.byTenancy.push({ tenancyId: t.id, unitId: t.unitId, tenantName: t.tenantName, unitName: unitById.get(t.unitId)?.name ?? '—', start: t.start, end: t.end, relative, ...row })
+  }
+  // Eine Mietzahlung an ein Mietverhältnis, das der Schnappschuss nicht führt, gibt es nach `snapshotFor` nicht; geschähe
+  // es doch, zählt sie ohne Forderung, damit die Summe `paidCents` bleibt. Sie steht in keiner Zeile je Mietverhältnis.
+  const stray = snapshot.payments.filter((p) => !known.has(p.tenancyId) && isRentPayment(p) && inYear(p.date)).reduce((a, p) => a + p.amountCents, 0)
+  out.rentCents += stray
+  out.unallocatedCents += stray
+  out.byTenancy.sort((a, b) => compareName(a.unitName, b.unitName) || compareName(a.tenantName, b.tenantName))
+  const units = new Map<string, TaxReceivedUnit>()
+  for (const b of out.byTenancy) {
+    out.rentCents += b.rentCents
+    out.inclusiveRentCents += b.inclusiveRentCents
+    out.unallocatedCents += b.unallocatedCents
+    out.allocationsCents += b.allocationsCents
+    out.formerYearsCents += b.formerYearsCents
+    if (b.relative) {
+      out.relatives.rentCents += b.rentCents
+      out.relatives.allocationsCents += b.allocationsCents
+      out.relatives.settlementCents += b.settlementCents
+    }
+    const u = units.get(b.unitId) ?? { unitId: b.unitId, unitName: b.unitName, areaM2: areaOf(unitById.get(b.unitId)), rentCents: 0, allocationsCents: 0, settlementCents: 0, formerYearsCents: 0 }
+    u.rentCents += b.rentCents
+    u.allocationsCents += b.allocationsCents
+    u.settlementCents += b.settlementCents
+    u.formerYearsCents += b.formerYearsCents
+    units.set(b.unitId, u)
+  }
+  out.byUnit = [...units.values()].sort((a, b) => compareName(a.unitName, b.unitName) || compareText(a.unitId, b.unitId))
+  out.possibleDeposits.sort((a, b) => compareText(a.paidOn, b.paidOn) || compareName(a.tenantName, b.tenantName))
+  return out
+}
+
+// Eine als Miete erfasste Kaution (E9): Mietfuchs kann das nicht sicher erkennen, prüft aber den häufigen Fall. Eine
+// Mietzahlung im Jahr bis `DEPOSIT_WINDOW_DAYS` Tage vor oder nach Beginn, deren Betrag der vereinbarten Kaution gleicht,
+// wenn die Kaution nicht das Soll des ersten vollen Monats ist (sonst nicht zu unterscheiden) und die Zahlung keinen
+// Rückstand tilgt (keiner ihrer Teile gilt einem Monat vor dem ihres Datums; sonst wäre es eine Nachzahlung mit dem
+// Betrag der Kaution). Ein angebrochener erster Monat zählt dabei nicht als Rückstand (Durchsicht K2, Auslegung): Bei
+// Beginn am 15.02. ist der anteilige Februar mit der Kaution am 05.03. oft noch offen, und dass die Zahlung ihn deckt,
+// sagt nichts über eine Nachzahlung.
+const DEPOSIT_WINDOW_DAYS = 31
+function possibleDepositsOf(t: SnapshotTenancy, own: readonly SnapshotPayment[], slices: readonly AllocationSlice[], inYear: (d: string) => boolean): TaxReceived['possibleDeposits'] {
+  const deposit = t.depositCents
+  if (typeof deposit !== 'number' || deposit <= 0) return []
+  const startMonth = t.start.slice(0, 7)
+  const fullMonth = t.start.slice(8, 10) === '01' ? startMonth : nextMonthKey(startMonth)
+  const soll = monthSoll(t, fullMonth)
+  if (soll.baseRent + soll.prepayment + soll.heatingPrepayment + soll.flatRate === deposit) return []
+  const from = shiftIsoDay(t.start, -DEPOSIT_WINDOW_DAYS)
+  const to = shiftIsoDay(t.start, DEPOSIT_WINDOW_DAYS)
+  return own
+    .filter((p) => isRentPayment(p) && inYear(p.date) && p.amountCents === deposit && p.date >= from && p.date <= to)
+    .filter((p) => !slices.some((s) => s.paymentId === p.id && s.month !== null && s.month >= fullMonth && s.month < p.date.slice(0, 7)))
+    .map((p) => ({ tenancyId: t.id, tenantName: t.tenantName, paidOn: p.date, cents: p.amountCents }))
+}
+const nextMonthKey = (month: string): string => {
+  const k = Number(month.slice(0, 4)) * 12 + Number(month.slice(5, 7))
+  return `${Math.floor(k / 12)}-${String((k % 12) + 1).padStart(2, '0')}`
+}
+
+export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], options: TaxReportOptions = {}): TaxReport {
   const year = snapshot.year
   // Die Steuerübersicht rechnet im Kalenderjahr (§ 11 EStG, #208). Ohne Teile: der Schnappschuss
   // eines Kalenderjahres. Mit Teilen: die Abrechnungen, die das Jahr berühren; `snapshot` liefert
@@ -1491,11 +1732,7 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
   // und das Heizmodell sagt nichts über die Nebenkosten des Vermieters (dritte Durchsicht).
   const tenancyById = new Map(snapshot.tenancies.map((t) => [t.id, t]))
   const heatingBilled = used.some((p) => p.items.some((c) => c.category === HEATING_CATEGORY))
-  const models = ledger.rows.map((r) => {
-    const t = tenancyById.get(r.tenancyId)
-    const cold = t?.costModel ?? 'settlement'
-    return { cold, heat: heatingBilled ? allocationModel(t?.heatingModel) : cold }
-  })
+  const models = ledger.rows.map((r) => tenancyCostModel(tenancyById.get(r.tenancyId), heatingBilled))
   const costModels = {
     tenancies: models.length,
     inclusive: models.filter((m) => m.cold === 'inclusive' && m.heat === 'inclusive').length,
@@ -1507,7 +1744,7 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
     // (#135); dieselbe Lesart wie `inhabited` in computeSettlement.
     ...relativeTenanciesOf(ledger.rows.filter((r) => {
       const t = tenancyById.get(r.tenancyId)
-      return t?.relative === true && personDaysInPeriod(t, calendar.from, calendar.to) > 0
+      return t !== undefined && relativeForHousing(t, calendar.from, calendar.to)
     }).length),
   }
   const tenanciesWithoutPayment = withSoll.filter((r) => !paidTenancies.has(r.tenancyId)).length
@@ -1516,8 +1753,15 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
   // gerade nicht. Eine Auskunft über die Summe darüber, keine neue Zahl.
   const inclusiveRentSollCents = ledger.rows.reduce((a, r, i) => {
     const m = models[i]
-    return m && (m.cold === 'inclusive' || m.heat === 'inclusive') ? a + r.baseRentYearCents : a
+    return m && isInclusiveModel(m) ? a + r.baseRentYearCents : a
   }, 0)
+  // Das Zugeflossene nach Zeilen (#312 PR 2), mit denselben Mietmodellen wie die Kopfzeilen.
+  const received = options.received === false ? undefined : receivedIncome({
+    snapshot,
+    year,
+    inclusive: (t) => isInclusiveModel(tenancyCostModel(t, heatingBilled)),
+    shortDays: (y) => law(estgShortPeriodDays, { period: calendarYearPeriod(y) }, createLawLog()),
+  })
 
   // Die Abrechnung desselben Jahres, einmal gerechnet. Aus ihr kommen zwei Angaben, und beide
   // werden ihr **entnommen** statt neu hergeleitet: Eine zweite Auslegung der Staffel oder eine
@@ -1853,6 +2097,7 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
       settlementRefundsCents,
       tenanciesWithSoll,
       tenanciesWithoutPayment,
+      ...(received ? { received } : {}),
     },
     expenses: { groups, totalCents, privateCents, deductibleCents, labor35aCents, ...(gratuitousCents !== 0 ? { gratuitousCents } : {}), ...(stockCarrySelf !== 0 ? { stockCarrySelfCents: stockCarrySelf } : {}), items: [...split.items.values()], unstatedCount: shifts.unstatedCount },
     movedOut: shifts.movedOut,
@@ -2060,12 +2305,12 @@ export function taxPartsFor(source: Parameters<typeof snapshotFor>[0], propertyI
 
 // `parts`: die Teile aus `taxPartsFor`, wenn der Aufrufer sie ohnehin braucht (das Steuer-ZIP wählt mit denselben
 // Teilen aus, Durchsicht von #255 PR 1, K5); sonst rechnet sie die Funktion selbst.
-export function taxReportFor(source: Parameters<typeof snapshotFor>[0], propertyId: string, year: number, parts: readonly TaxPart[] = taxPartsFor(source, propertyId, year)): TaxReport {
+export function taxReportFor(source: Parameters<typeof snapshotFor>[0], propertyId: string, year: number, parts: readonly TaxPart[] = taxPartsFor(source, propertyId, year), options: Pick<TaxReportOptions, 'received'> = {}): TaxReport {
   const calendar = snapshotFor(source, propertyId, calendarYearPeriod(year))
   // Durchsicht M1 zu #268: Ein Abzug kann auf eine Heizposition in einem anderen Steuerjahr zeigen; der Schnappschuss
   // kennt nur die Positionen seines Zeitraums. Deshalb bekommt die Übersicht alle Positionen des Objekts für Verweise.
   const all = source.costItems.filter((c) => c.propertyId === propertyId)
-  return taxReport(calendar, parts, { linkable: all, foreignQuota: foreignHeatQuota(source, propertyId, year, all) })
+  return taxReport(calendar, parts, { linkable: all, foreignQuota: foreignHeatQuota(source, propertyId, year, all), ...options })
 }
 
 // Durchsicht von #255 PR 2, M1: der Heizanteil der Anlage in dem Teil, in dem eine Heizposition steht, wenn sie in einem

@@ -7,7 +7,7 @@ import assert from 'node:assert/strict'
 import { computeSettlement, rentLedger, taxReport } from '../src/calc.ts'
 import { snapshotOf, type SnapshotPayment, type SnapshotSource, type SnapshotTenancy } from '../src/snapshot.ts'
 import { calendarPeriod } from '../../shared/period.ts'
-import type { RentLedgerRow } from '../../shared/types.ts'
+import type { RentLedgerRow, TaxReport } from '../../shared/types.ts'
 
 // Kennungen der Zahlungen (#281: Die Tilgung braucht sie als Nachrang beim Sortieren).
 let paymentSeq = 0
@@ -207,8 +207,18 @@ test('Invariante: Zahlungen aus der Abrechnung verschieben im Mietkonto nichts u
     assert.equal(tb.income.paidCents - ta.income.paidCents, sum, `Lauf ${run}`)
     assert.equal(tb.income.settlementBackPaymentsCents - tb.income.settlementRefundsCents, sum, `Lauf ${run}`)
     assert.equal(ta.income.settlementBackPaymentsCents + ta.income.settlementRefundsCents, 0, `Lauf ${run}`)
-    assert.deepEqual({ ...tb.income, paidCents: 0, settlementBackPaymentsCents: 0, settlementRefundsCents: 0 },
-      { ...ta.income, paidCents: 0, settlementBackPaymentsCents: 0, settlementRefundsCents: 0 }, `Lauf ${run}`)
+    // Das Zugeflossene nach Zeilen (#312 PR 2): Die Zahlungen aus der Abrechnung gehen nicht durch die Tilgung, sie ändern
+    // nur Zeile 21 (`settlementCents` je Mietverhältnis, Wohnung und Angehörige).
+    const noSettlement = (x: TaxReport['income']): TaxReport['income'] => {
+      const r = x.received ?? assert.fail('received fehlt')
+      // Ein Mietverhältnis mit nur Zahlungen aus der Abrechnung steht mit ihnen allein da (und mit ihm seine Wohnung).
+      const byTenancy = r.byTenancy.filter((t) => rent.some((p) => p.tenancyId === t.tenancyId))
+      return { ...x, paidCents: 0, settlementBackPaymentsCents: 0, settlementRefundsCents: 0, received: { ...r,
+        byTenancy: byTenancy.map((t) => ({ ...t, settlementCents: 0 })),
+        byUnit: r.byUnit.filter((u) => byTenancy.some((t) => t.unitId === u.unitId)).map((u) => ({ ...u, settlementCents: 0 })), relatives: { ...r.relatives, settlementCents: 0 } } }
+    }
+    assert.equal(tb.income.received?.byTenancy.reduce((x, t) => x + t.settlementCents, 0), sum, `Lauf ${run}`)
+    assert.deepEqual(noSettlement(tb.income), noSettlement(ta.income), `Lauf ${run}`)
     assert.deepEqual(tb.expenses, ta.expenses, `Lauf ${run}`)
   }
   // Der Pfad über `settlementOnly` muss wirklich vorkommen, sonst prüfte die Invariante ihn nicht.

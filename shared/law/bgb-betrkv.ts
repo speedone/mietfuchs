@@ -107,6 +107,40 @@ export const bgbRentDueWorkday: LawParam<number, 'eventDate'> = {
   describe: (v) => `spätestens bis zum ${v}. Werktag des Monats`,
 }
 
+// Ob die Miete zu Beginn des Monats fällig ist (#312 PR 2, Zehn-Tage-Regel der Steuer). Art. 229 § 3 Abs. 1 EGBGB, am
+// 31.10.2026 auf gesetze-im-internet.de im Wortlaut gelesen: „Auf ein am 1. September 2001 bestehendes Mietverhältnis oder
+// Pachtverhältnis sind … 7. hinsichtlich der Fälligkeit § 551 des Bürgerlichen Gesetzbuchs in der bis zum 1. September
+// 2001 geltenden Fassung anzuwenden.“ Nach § 551 BGB a. F. ist die nach Zeitabschnitten bemessene Miete nach Ablauf des
+// einzelnen Abschnitts zu entrichten, also am Monatsende (Wortlaut der alten Fassung nicht amtlich gelesen); für alle
+// späteren Mietverhältnisse gilt § 556b Abs. 1 BGB (zu Beginn, spätestens am dritten Werktag). Beides ist abdingbar; eine
+// vertragliche Abweichung kennt Mietfuchs nicht (bewusste Grenze).
+// `eventDate`: gefragt wird mit dem Tag, ab dem das Mietverhältnis besteht (Vertrag, sonst Beginn).
+// **Grenzfall 01.09.2001 (Auslegung)**: Ein Mietverhältnis, das an diesem Tag beginnt oder geschlossen wird, „besteht“ am
+// 01.09.2001; die alte Fassung gilt deshalb einschließlich dieses Tages, § 556b erst ab dem 02.09.2001.
+// Fassung 1 ist `adopted`: Art. 229 § 3 ist gelesen, der Wortlaut von § 551 a. F. (Fälligkeit nach Ablauf des
+// Zeitabschnitts) nicht amtlich.
+export const bgbRentDueAtStart: LawParam<boolean, 'eventDate'> = {
+  id: 'bgb.rent-due-at-start',
+  title: 'Miete zu Beginn des Monats fällig',
+  norm: '§ 556b Abs. 1 BGB; Art. 229 § 3 Abs. 1 Nr. 7 EGBGB',
+  timing: 'eventDate',
+  versions: [
+    {
+      validTo: '2001-09-01',
+      value: false,
+      source: { rank: 'law', cite: 'Art. 229 § 3 Abs. 1 Nr. 7 EGBGB mit § 551 BGB a. F.; Wortlaut von § 551 a. F. nicht amtlich gelesen', url: 'https://www.gesetze-im-internet.de/bgbeg/art_229__3.html', retrieved: '2026-10-31', checked: 'adopted' },
+      enacted: '§ 551 BGB in der bis zum 01.09.2001 geltenden Fassung, fortgeltend nach Art. 229 § 3 Abs. 1 Nr. 7 EGBGB (Wortlaut von § 551 a. F. nicht amtlich gelesen)',
+    },
+    {
+      validFrom: '2001-09-02',
+      value: true,
+      source: { rank: 'law', cite: '§ 556b Abs. 1 BGB', url: 'https://www.gesetze-im-internet.de/bgb/__556b.html', retrieved: '2026-10-31', checked: 'checked' },
+      enacted: '§ 556b Abs. 1 BGB, eingefügt durch das Mietrechtsreformgesetz vom 19.06.2001, in Kraft am 01.09.2001',
+    },
+  ],
+  describe: (v) => (v ? 'die Miete ist zu Beginn des Monats fällig' : 'die Miete ist am Ende des Monats fällig'),
+}
+
 // Ob der Samstag bei dieser Frist als Werktag zählt: nein (BGH, Urteil vom 13.07.2010, VIII ZR 129/09, ebenso
 // VIII ZR 291/09). Die drei Tage sollen dem Mieter ungeschmälert zur Verfügung stehen, und Bankgeschäftstage
 // sind Montag bis Freitag; das gilt für Verträge vor und nach dem 01.09.2001. Gelesen in der Pressemitteilung

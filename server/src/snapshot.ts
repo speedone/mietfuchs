@@ -62,6 +62,8 @@ export type SnapshotTenancy = Pick<
   | 'halfSplitNoticeOn'
   // An Angehörige vermietet (#96 PR 2), nur für den Kopf der Anlage V; die Abrechnung liest es nicht.
   | 'relative'
+  // Die vereinbarte Kaution, nur für den Hinweis der Steuer auf eine als Miete erfasste Kaution (#312 PR 2, E9).
+  | 'depositCents'
   // Heizstaffel und Heizkorrekturen (Heizung PR 5)
   | 'heatingPrepayments'
   | 'heatingPrepaymentOverrides'

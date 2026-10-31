@@ -21,7 +21,7 @@ Zeilen zu.
 
 **Die Summe bleibt, wie sie ist.** `paidCents` zählt weiter jede Zahlung mit Datum im Jahr (§ 11 Abs. 1 Satz 1
 EStG, #70). Neu ist nur, wie sich diese Summe auf die Zeilen verteilt. Die Teile ergeben zusammen genau
-`paidCents` (Invariante). Kein Überschuss, keine Werbungskosten, kein Soll ändert sich, und die Prüfsummen in
+`paidCents`, bis auf die Zehn-Tage-Regel (E8: Ende Dezember gezahlte Januarmiete zählt im Folgejahr; Invariante). Kein Überschuss, keine Werbungskosten, kein Soll ändert sich, und die Prüfsummen in
 `tax-golden.json` bleiben centgenau (siehe „Prüfsummen“).
 
 **Wer ein Haus mit pünktlich zahlenden Mietern hat, sieht nur bessere Zeilen**: Bei vollständig gezahlter
@@ -35,11 +35,13 @@ Monatsmiete ergibt die Aufteilung genau das Soll der Monate des Jahres, also die
   Abschn. 24.2.7).
 - **Zehn-Tage-Regel.** Regelmäßig wiederkehrende Einnahmen, die kurze Zeit vor Beginn oder nach Beendigung des
   Kalenderjahres zufließen, zu dem sie wirtschaftlich gehören, gelten als in diesem Jahr bezogen (§ 11 Abs. 1
-  Satz 2 EStG). „Kurze Zeit“ sind bis zu zehn Tage (BFH, Urteil vom 24.07.1986, IV R 309/84, BStBl II 1987, 16;
-  H 11 EStH). **Zahlung und Fälligkeit** müssen beide in diesem Zeitraum liegen (BFH, Urteil vom 27.06.2018,
-  X R 44/16; BFH, Urteil vom 16.02.2022, X R 2/21). Die Miete ist eine regelmäßig wiederkehrende Einnahme
-  (allgemeine Auffassung; die Fundstelle in H 11 EStH ist in Schritt 3 amtlich nachzusehen und wörtlich zu
-  zitieren, sonst steht der Satz ohne Fundstelle als Auslegung da).
+  Satz 2 EStG, gelesen am 31.10.2026 auf gesetze-im-internet.de). Die Vorschrift ist zwingend, kein Wahlrecht. „Kurze
+  Zeit“ sind bis zu zehn Tage (BFH, Urteil vom 24.07.1986, IV R 309/84, BStBl 1987 II S. 16). H 11 EStH („Kurze
+  Zeit“, gelesen in der Wiedergabe der EStH 2020 bei Haufe): „Innerhalb dieses Zeitraums müssen die Zahlungen fällig
+  und geleistet worden sein“; tragend BFH, Urteil vom 16.02.2022, X R 2/21, BStBl 2022 II S. 448 („nicht nur gezahlt,
+  sondern auch fällig geworden“). BFH, Urteil vom 27.06.2018, X R 44/16, lässt die Fälligkeit offen (Rn. 12) und ist
+  dafür kein Beleg; er und BFH, Urteil vom 11.11.2014, VIII R 34/12, BStBl 2015 II S. 285, sagen, dass ein Wochenende
+  die zehn Tage nicht verlängert (§ 108 Abs. 3 AO gilt nicht). Die Miete ist eine regelmäßig wiederkehrende Einnahme.
 - **Fälligkeit der Miete.** Zu Beginn, spätestens bis zum dritten Werktag des Monats (§ 556b Abs. 1 BGB,
   Samstag kein Werktag: BGH VIII ZR 129/09; in Mietfuchs `rentDueDate`, #290). Für Mietverhältnisse, die am
   01.09.2001 bestanden, gilt weiter § 551 BGB a. F. (Art. 229 § 3 Abs. 1 Nr. 7 EGBGB): Miete **am Ende** des
@@ -301,35 +303,45 @@ Entsteht von selbst aus E2 und E4: Ein Teil mit `month` vor Y und `paidOn` in Y.
 die nach Auszug im Januar eingeht; Rückstand, den der Mieter im Folgejahr begleicht. Ohne Übertrag (#281) gäbe es
 diese Zeile nicht; deshalb ist das fortlaufende Konto Voraussetzung.
 
-### E8: Zehn-Tage-Regel: berechnet und beziffert, nicht verschoben
+### E8: Zehn-Tage-Regel: angewandt, wo die Fälligkeit aus dem Gesetz folgt, sonst beziffert
 
-**Entscheidung.** Mietfuchs stellt keine Zahlung in ein anderes Jahr als das ihres Datums, nennt aber die
-Beträge, für die die Regel nach den Daten greift, mit Zeile und Betrag in beiden Jahren.
+**Stand nach der Durchsicht von PR 2** (ersetzt die frühere Fassung „nur beziffert, nichts verschoben“). § 11 Abs. 1
+Satz 2 EStG ist zwingend; die Zeilen sollen im Regelfall gesetzeskonform sein, nicht nur einen Hinweis tragen.
+Voraussetzung ist, dass Zahlung **und** Fälligkeit in den zehn Tagen liegen (H 11 EStH, BFH X R 2/21, siehe
+Rechtslage). Die Fälligkeit folgt aus dem Gesetz, das für das Mietverhältnis gilt (`bgb.rent-due-at-start` im
+Rechtsregister, eventDate = früheres von Vertragsdatum und Beginn):
 
-Erkannt wird (`turnOfYear` je Teil):
-- **vorwärts**: Teil mit `paidOn` vom 22.12. bis 31.12. des Jahres Y und `month` = Januar Y+1. **Keine Prüfung
-  über `rentDueDate`**: Der Schnappschuss trägt kein Bundesland, und die Tilgung soll nie danach fragen (E3). Nach
-  § 556b Abs. 1 ist die Januarmiete spätestens am dritten Werktag fällig; ohne Samstag und mit den Feiertagen
-  01.01. und (je Land) 06.01. ist das höchstens der 07.01., also immer innerhalb der zehn Tage. Ein Kommentar am
-  Code nennt genau diese Begründung; ein Test prüft mit `rentDueDate` für alle 16 Länder und die Jahre 1995–2100,
-  dass der Tag nie nach dem 10.01. liegt (der Test darf `rentDueDate` lesen, die Rechnung nicht).
-- **rückwärts** (Dezembermiete im Januar): nach § 556b ist die Dezembermiete Anfang Dezember fällig, nicht in den
-  zehn Tagen; die Regel greift **nicht**. Nur bei einer vereinbarten Fälligkeit zum Monatsende (Altvertrag,
-  § 551 a. F.) griffe sie. Die Seite nennt deshalb Teile mit `paidOn` 01.01.–10.01. und `month` = Dezember Y−1
-  mit diesem Vorbehalt.
+- **Mietverhältnis, das am 01.09.2001 nicht bestand** (§ 556b Abs. 1 BGB: zu Beginn, spätestens am dritten Werktag).
+  - *Vorwärts*: Die Januarmiete ist spätestens am 07.01. fällig (ohne Samstag, mit 01.01. und je Land 06.01.; Test über
+    alle 16 Länder und 1995 bis 2100 in invariant-tilgung.test.ts, ohne dass die Rechnung `rentDueDate` liest). Ein Teil
+    mit Zahlung vom 22.12. bis 31.12. des Jahres Y für den Januar Y+1 **zählt in Y+1** (Zeile 15/20 dort), nicht in Y.
+    Beziffert bleibt er für den Hinweis: `forwardCents` in Y, `fromPreviousCents` in Y+1. Nur, wenn der Januar-Abschnitt
+    in den zehn Tagen fällig ist (Nachdurchsicht M1): Beginnt das Mietverhältnis im Januar, beginnt der erste Abschnitt
+    mit ihm (Auslegung von „zu Beginn … der einzelnen Zeitabschnitte“), und die erste Miete ist am dritten Werktag ab
+    Beginn fällig; bei Beginn am 15.01. also nicht in der Frist, die Zahlung vom 28.12. bleibt im Jahr der Zahlung. Ob der
+    dritte Werktag bei Beginn vom 02.01. bis 10.01. noch in die Frist fällt, hängt an Wochentag und Feiertagen des Landes;
+    mit Feiertagen darf der Server erst nach amtlicher Lesung aller Landesgesetze rechnen (Auflage aus #290). Bis dahin
+    wird nur verschoben, wenn das Mietverhältnis spätestens am 01.01. beginnt (bekannte Grenze). Eine
+    Rücklastschrift folgt der Zahlung, die sie zurücknimmt (`reversesPaidOn` am Teil, Nachdurchsicht S1): nur verschoben,
+    wenn auch diese in den letzten zehn Tagen des Dezembers kam.
+  - *Rückwärts*: Die Dezembermiete ist Anfang Dezember fällig, außerhalb der zehn Tage. Eine Zahlung Anfang Januar bleibt
+    im neuen Jahr (Zeile 25), `lateDecemberCents` ist 0.
+- **Mietverhältnis, das am 01.09.2001 bestand** (einschließlich Beginn an diesem Tag, Auslegung; Art. 229 § 3 Abs. 1
+  Nr. 7 EGBGB, gelesen am 31.10.2026: § 551 BGB a. F.,
+  Miete am Ende des Monats). Vorwärts ist die Januarmiete Ende Januar fällig, die Regel greift nicht; rückwärts ist die
+  Dezembermiete am 31.12. fällig und eine Zahlung bis 10.01. gehörte ins Vorjahr. Weil solche Verträge oft auf Zahlung zu
+  Beginn umgestellt sind, wird hier **nichts verschoben**, nur beziffert: `forwardOldLeaseCents` (bleibt in Y) und
+  `lateDecemberCents` (bleibt in Y, Zeile 25), mit dem Vorbehalt „nur wenn laut Vertrag am Monatsende fällig“.
 
-**Begründung.** (1) Die Regel hängt an der vertraglichen Fälligkeit (BFH X R 2/21), und die kennt Mietfuchs nicht:
-§ 556b ist abdingbar, für Altverträge gilt § 551 a. F. (Art. 229 § 3 Abs. 1 Nr. 7 EGBGB). Ein still verschobener
-Betrag wäre bei solchen Verträgen falsch und unsichtbar. (2) Bei einem gleichbleibenden Dauerauftrag hebt sich die
-Wirkung von Jahr zu Jahr auf (jedes Jahr geht eine Januarmiete hinaus und eine herein); sie bleibt in Höhe einer
-Mieterhöhung, eines Ein- oder Auszugs. Der Hinweis beziffert genau das. (3) Die veröffentlichten Zahlen und
-`tax-golden.json` bleiben. Die bisherige Regel „nur ein Hinweis“ (server/src/CLAUDE.md) gilt also weiter, aber
-jetzt mit Betrag statt pauschal.
+**Bewusste Grenze.** § 556b und § 551 a. F. sind abdingbar. Eine vertraglich abweichende Fälligkeit kennt Mietfuchs nicht;
+es gibt am Mietverhältnis kein Feld dafür. Ein Feld „Miete fällig am Monatsende“ wäre ein eigenes Issue.
 
-Die Zehn-Tage-Grenze kommt ins Rechtsregister (`estg.short-period-days`, 10, Fassung ab 1986 mit BFH IV R 309/84,
-`adopted`, bis H 11 EStH wörtlich gelesen ist). Eine spätere Angabe „gehört steuerlich zu Jahr …“ an der Zahlung
-(wie `taxYear` an der Kostenposition, #255) wäre der Weg, die Regel anzuwenden; sie ist **nicht Teil dieses
-Entwurfs** und hätte die Voreinstellung „Jahr des Datums“.
+**Summe.** Für jedes Jahr gilt Zeile 15/18 + 20 + 25 + 21 = `paidCents` − `forwardCents` + `fromPreviousCents`, und
+`fromPreviousCents(Y)` = `forwardCents(Y−1)`; über alle Jahre bleibt die Summe gleich. `paidCents` selbst und
+`tax-golden.json` bleiben (Zufluss nach Datum), ebenso das Mietkonto, das nie verschiebt.
+
+Die Zehn-Tage-Grenze steht im Rechtsregister (`estg.short-period-days`, 10, Rang `court`, `adopted`, bis H 11 EStH
+amtlich gelesen ist), gefragt für das Jahr, zu dem die Zahlung wirtschaftlich gehört (Zeitregel `periodStart`).
 
 ### E9: Kaution
 
@@ -379,7 +391,8 @@ In `shared/types.ts`, `TaxReport['income']`, ein neues Feld; alles Übrige bleib
 
 ```ts
 // Das Zugeflossene nach Zeilen der Anlage V (#312), aus der Tilgung jeder Zahlung (rentAllocation.ts).
-// rentCents + allocationsCents + formerYearsCents + (settlementBackPaymentsCents − settlementRefundsCents) = paidCents.
+// rentCents + allocationsCents + formerYearsCents + (settlementBackPaymentsCents − settlementRefundsCents)
+//   = paidCents − turnOfYear.forwardCents + turnOfYear.fromPreviousCents (Zehn-Tage-Regel, E8).
 received: {
   rentCents: number              // Zeilen 15/18: Kaltmiete und Inklusivmiete, Überzahlung ohne Forderung
   inclusiveRentCents: number     // davon Inklusivmiete
@@ -389,11 +402,12 @@ received: {
   formerYearsCents: number       // Zeile 25: Mieten für frühere Jahre, brutto
   formerYearsAllocationsCents: number // davon Umlagen, Auskunft
   turnOfYear: {
-    forwardCents: number         // im Dezember dieses Jahres eingegangen, Januar des Folgejahres (§ 11 Abs. 1 S. 2)
+    forwardCents: number         // 22.12. bis 31.12. für Januar gezahlt, § 556b: zählt im Folgejahr (nicht in den Zeilen hier)
     forwardAllocationsCents: number
-    fromPreviousCents: number    // im Dezember des Vorjahres eingegangen, Januar dieses Jahres (steht im Vorjahr)
+    fromPreviousCents: number    // dasselbe aus dem Vorjahr: zählt hier (in Zeile 15/20 enthalten)
     fromPreviousAllocationsCents: number
-    lateDecemberCents: number    // Anfang Januar eingegangen, Dezember des Vorjahres (nur bei Fälligkeit zum Monatsende)
+    forwardOldLeaseCents: number // wie forwardCents bei Mietverhältnissen, die am 01.09.2001 bestanden: bleibt hier, Vorbehalt
+    lateDecemberCents: number    // bis 10.01. für Dezember gezahlt, nur wenn am 01.09.2001 bestehend (sonst 0): bleibt hier
   }
   byUnit: { unitId: string; unitName: string; areaM2: number | null; rentCents: number; allocationsCents: number; settlementCents: number; formerYearsCents: number }[]
   byTenancy: { tenancyId: string; tenantName: string; unitName: string; start: string; end: string | null;
@@ -475,11 +489,19 @@ größere Beträge mit Ihrem Steuerberater.“
 
 **Hinweise** (TAX_HINTS, je mit Lage im Komponententest):
 
-- `turnOfYear` **ändert die Bedingung**: nur noch, wenn `forwardCents`, `fromPreviousCents` oder
-  `lateDecemberCents` ≠ 0. Titel „Am Jahreswechsel: X € gehören steuerlich zu {Y+1}.“ bzw. „… zu {Y}“; Text mit
-  Beträgen je Zeile („Zeile 15 dann … €, Zeile 20 dann … €“) und dem Vorbehalt der Fälligkeit laut Vertrag.
-  Ohne solche Teile kein Hinweis mehr (heute steht er immer auf Ist). Begründung: Ein Hinweis ohne Anlass lehrt,
-  Hinweise zu übersehen; der Anlass ist jetzt berechenbar.
+- `turnOfYear` **ändert die Bedingung und den Text** (E8 nach der Durchsicht von PR 2): nur mit Betrag. Vorgaben für PR 3:
+  - *Vorwärts* (`fromPreviousCents` ≠ 0 bzw. im Vorjahr `forwardCents` ≠ 0), ruhig, ohne Vorbehalt: „X € Januarmiete
+    sind Ende Dezember eingegangen; sie zählen nach § 11 Abs. 1 Satz 2 EStG im Jahr {Y+1} und stehen dort.“ Auf der
+    Seite von Y+1 entsprechend „… aus dem Dezember {Y} stehen in diesem Jahr“, mit Beträgen je Zeile.
+  - *Alter Vertrag vorwärts* (`forwardOldLeaseCents` ≠ 0): Vorbehalt „Das Mietverhältnis bestand schon am 01.09.2001;
+    ohne andere Vereinbarung ist die Miete am Monatsende fällig, die Januarmiete also nicht in den zehn Tagen. Mietfuchs
+    lässt X € deshalb im Jahr der Zahlung. Ist laut Vertrag zu Beginn des Monats zu zahlen, gehören sie ins Jahr {Y+1}.“
+  - *Rückwärts* (`lateDecemberCents` ≠ 0, nur bei altem Vertrag): ein ruhiger Satz, **kein Titel „gehören zu“**: „X €
+    Dezembermiete sind Anfang Januar eingegangen und stehen in diesem Jahr. Nur wenn die Miete laut Vertrag am
+    Monatsende fällig ist, gehören sie ins Jahr {Y−1}.“ Bei Mietverhältnissen nach § 556b gibt es keinen Hinweis: Die
+    Dezembermiete war im Dezember fällig und bleibt im neuen Jahr.
+  - Nie nahelegen, eine Zahlung ins alte Jahr zu verschieben, wenn die Fälligkeit außerhalb der zehn Tage lag.
+  Begründung für die Bedingung: Ein Hinweis ohne Anlass lehrt, Hinweise zu übersehen.
 - `unallocatedPayment` (neu): `unallocatedCents` ≠ 0. „X € ohne vereinbarte Miete eingegangen.“ Aktion: im
   Mietkonto prüfen (Kaution? Staffel endet?).
 - `possibleDeposit` (neu): Liste nicht leer. „Ist die Zahlung vom … über … € die Kaution?“ Aktion: Art und
@@ -530,7 +552,7 @@ Entwurf gilt:
 
 ## Nicht in diesem Entwurf
 
-Anwenden der Zehn-Tage-Regel (E8); andere Räume und Garagen (E4); Umsatzsteuer (Zeilen 27/28);
+Anwenden der Zehn-Tage-Regel bei vertraglich abweichender Fälligkeit (E8, bewusste Grenze); andere Räume und Garagen (E4); Umsatzsteuer (Zeilen 27/28);
 Baukostenzuschüsse; Zuschüsse (Zeile 29); Mietvorauszahlungen über mehr als fünf Jahre (§ 11 Abs. 1 Satz 3 EStG,
 nur im Rechenweg genannt, wenn eine Zahlung mehr als 60 Monate im Voraus tilgt); die Anzeige des Mietkontos (#281);
 ein Verweis der Rücklastschrift auf ihre Zahlung (E2, Schritt 5).
@@ -538,8 +560,8 @@ ein Verweis der Rücklastschrift auf ihre Zahlung (E2, Schritt 5).
 ## Entschieden
 
 Keine offenen Fragen. Fachlich entschieden: E2 (Sicherheit vor Alter, Pauschale zu B, Rücklastschrift LIFO; Tilgung
-unabhängig von Abrechnungsreife), E4 (Zeile 25 brutto, Überzahlung in 15), E8 (Zehn-Tage-Regel nur beziffert, ohne
-`rentDueDate`). Alle als Auslegung gekennzeichnet und in der Oberfläche begründet. Vom Lead entschieden: eine
+unabhängig von Abrechnungsreife), E4 (Zeile 25 brutto, Überzahlung in 15), E8 (Zehn-Tage-Regel angewandt bei Fälligkeit nach § 556b,
+sonst beziffert, ohne `rentDueDate`). Alle als Auslegung gekennzeichnet und in der Oberfläche begründet. Vom Lead entschieden: eine
 Tilgungsfunktion für Mietkonto und Steuer im selben Release, `monthSoll` in shared/monthRate.ts, `Tenancy.relative`
 vor PR 2.
 
@@ -633,7 +655,7 @@ Hängt ab von: Nr. 3 (#281: Mietkonto liest dieselben Teile, `designatedMonth`) 
    `designatedMonth` verschiebt Teile zwischen Zeile 20 und 25, Rücklastschrift ergibt negative Zeile 25.
 3. **Option `received: false`**: alle übrigen Felder gleich, `received` fehlt.
 4. **Invarianten** über `taxStock` mit `withPaymentVariety`, je Objekt, Jahr, offen und abgeschlossen:
-   - `rentCents + allocationsCents + formerYearsCents + Saldo Zeile 21 = paidCents` (X9 b).
+   - `rentCents + allocationsCents + formerYearsCents + Saldo Zeile 21 = paidCents − forwardCents + fromPreviousCents` (X9 b, E8).
    - Σ `byTenancy` = Felder; Σ `byUnit` = Felder; Σ `byTenancy` mit `relative` = `relatives`.
    - Ohne `Tenancy.relative` (oder alle `false`): `relatives` überall 0.
    - `fromPreviousCents(Y) = forwardCents(Y−1)`.
@@ -676,8 +698,12 @@ ist), CHANGELOG.md.
 5. **Test** taxReceipts: `incomeCsv` Kopf, Zeilen, Summe, Euro-Format, BOM/CRLF; api-belege: ZIP enthält
    `Einnahmen.csv` und unverändert `Übersicht.csv`. **Code**.
 6. Lexikon: „Tilgungsreihenfolge“ (Beispiel 300 € → 200/100, nachgerechnet; Fundstelle VIII ZR 84/17 Rn. 53/57),
-   „Mieten für frühere Jahre“; „Zehn-Tage-Regel“ anpassen („Mietfuchs nennt den Betrag, verschiebt aber
-   nichts“). glossary.test.ts.
+   „Mieten für frühere Jahre“; „Zehn-Tage-Regel“ an E8 anpassen: Bei Mietverhältnissen nach § 556b BGB zählt die Ende
+   Dezember gezahlte Januarmiete im Folgejahr, wenn sie in den zehn Tagen fällig war; bei Altverträgen (am 01.09.2001
+   bestehend) und bei Kostenpositionen nennt Mietfuchs den Betrag nur. glossary.test.ts.
+   **Aufgabe für PR 3 (Nachdurchsicht K3)**: Die festen Zehn-Tage-Texte der Oberfläche (etwa Steuer.tsx „bis zu zehn
+   Tage“, Kosten.tsx „bis zehn Tage davor oder danach“, glossary.ts) aufs Register umstellen (`estg.short-period-days`,
+   `valueAt(…, LAW_AS_OF)`).
 7. CHANGELOG „Unveröffentlicht“: siehe Release-Plan (Wortlaut dort).
 8. `npm run typecheck`, `npm test`, `npm run browser-check` (neue Tabelle am Handy), Bildschirmfotos, wenn die
    Steuerseite im README steht.
