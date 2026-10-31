@@ -64,6 +64,8 @@ type TenancyForm = {
   letterSalutation: string // Anrede im Brief (#415, Teil 2)
   iban: string
   contractDate: string
+  // An Angehörige vermietet, für die Steuer (#96 PR 2, Anlage V Zeile 10)
+  relative: boolean
   deposit: string
   depositStatus: DepositStatus
   notes: string
@@ -80,7 +82,7 @@ const EMPTY_UNIT: UnitForm = EMPTY_UNIT_FORM
 
 // Leere erweiterte Mieter-Felder — bei „neu“ und (mit Werten) beim Bearbeiten verwendet
 const EMPTY_TENANCY_EXTRA = {
-  email: '', phone: '', correspondenceAddress: '', letterSalutation: '', iban: '', contractDate: '', deposit: '', depositStatus: 'offen' as DepositStatus, notes: '',
+  email: '', phone: '', correspondenceAddress: '', letterSalutation: '', iban: '', contractDate: '', relative: false, deposit: '', depositStatus: 'offen' as DepositStatus, notes: '',
   costModel: 'settlement' as CostModel, heatingModel: 'settlement' as HeatingModel, selfSupplyKind: '' as SelfSupplyKind | '',
   flatRates: [] as { from: string; amount: string }[],
   heatingPrepayments: [] as { from: string; amount: string }[],
@@ -123,6 +125,7 @@ function tenancyToForm(t: Tenancy): TenancyForm {
     letterSalutation: t.letterSalutation ?? '',
     iban: ibanToInput(t.iban),
     contractDate: t.contractDate ?? '',
+    relative: t.relative === true,
     deposit: t.depositCents != null ? (t.depositCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }) : '',
     depositStatus: t.depositStatus ?? 'offen',
     notes: t.notes ?? '',
@@ -336,6 +339,8 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       letterSalutation: tenForm.letterSalutation.trim() || null,
       iban: iban.value || null,
       contractDate: tenForm.contractDate || null,
+      // #96 PR 2: gespeichert nur „ja“; „nein“ ist das bisherige Verhalten.
+      relative: tenForm.relative,
       depositCents,
       depositStatus: depositCents !== null ? tenForm.depositStatus : null,
       notes: tenForm.notes.trim() || null,
@@ -819,6 +824,12 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                 <Field label="Vertragsdatum" {...tenErrors.field('contractDate')}>
                   <input type="date" value={tenForm.contractDate} onChange={(e) => setTenForm({ ...tenForm, contractDate: e.target.value })} />
                 </Field>
+                {/* #96 PR 2 (Entwurf B3): Zeile 10 der Anlage V; die eigentliche Folge liegt bei der verbilligten Vermietung.
+                    „Zu Wohnzwecken“ wie Kennzahl 62 (Durchsicht K3): Eine Garage zählt nicht, auch wenn der Haken gesetzt ist. */}
+                <label className="checkline">
+                  <input type="checkbox" checked={tenForm.relative} onChange={(e) => setTenForm({ ...tenForm, relative: e.target.checked })} />
+                  <span>An Angehörige zu Wohnzwecken vermietet (für die Steuer, siehe <Term id="cheapRent">verbilligte Vermietung</Term>)</span>
+                </label>
                 <Field label="Kaution €" {...tenErrors.field('deposit')}>
                   <input value={tenForm.deposit} inputMode="decimal" placeholder="z. B. 2.400,00" onChange={(e) => setTenForm({ ...tenForm, deposit: e.target.value })} />
                 </Field>

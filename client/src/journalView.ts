@@ -145,6 +145,13 @@ const FIELD_LABELS: Record<string, string> = {
   tenancy_id: 'Mietverhältnis',
   // #281: an der Zahlung, wie das Monatsfeld im Mietkonto
   designated_month: 'Für Monat (laut Verwendungszweck)',
+  // #96 PR 2: Kopf der Anlage V am Objekt und am Mietverhältnis, wie im Formular
+  ground_tax_file_number: 'Aktenzeichen (Grundsteuer)',
+  purchase_contract_on: 'Kaufvertrag vom',
+  ownership_transfer_on: 'Eigentumsübergang am',
+  building_application_on: 'Bauantrag vom',
+  completed_on: 'Fertiggestellt am',
+  relative: 'An Angehörige zu Wohnzwecken vermietet',
   date: 'Datum',
   value: 'Wert',
   replacement: 'Zählerwechsel',

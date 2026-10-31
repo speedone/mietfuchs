@@ -9,7 +9,7 @@ import { useProperty, withProperty } from '../property'
 import { effectiveLandlord, letterhead } from '../landlord'
 import PageHeader from '../components/PageHeader'
 import Table from '../components/Table'
-import { allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, operatingPowerBalanceText, paidWithoutSettlementCents, prepaymentNote, settlementBalanceCents, settlementLine, settlementSourcesText, showsSplit, stockCarryNote, surplusCentsFor, taxHints, maintenanceLineText, withdrawalLinesText, usageChangeTouchesWithdrawal, withdrawalSuspectDated, ETW_WITHDRAWAL_TEXT, type Basis, movedInLines, movedInText, movedOutLabels, movedOutLines, unstatedText, type ShiftLine } from '../taxView'
+import { acquisitionRelated, acquisitionRelatedText, ACQUISITION_RELATED_MORE, ACQUISITION_RELATED_TITLE, headerRows, allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, operatingPowerBalanceText, paidWithoutSettlementCents, prepaymentNote, settlementBalanceCents, settlementLine, settlementSourcesText, showsSplit, stockCarryNote, surplusCentsFor, taxHints, maintenanceLineText, withdrawalLinesText, usageChangeTouchesWithdrawal, withdrawalSuspectDated, ETW_WITHDRAWAL_TEXT, type Basis, movedInLines, movedInText, movedOutLabels, movedOutLines, unstatedText, type ShiftLine } from '../taxView'
 import { StepList } from '../components/CalcSteps'
 import Term from '../components/Term'
 import { NoticeBox, TextNotice } from '../components/Notice'
@@ -17,10 +17,13 @@ import CheapRentCard from '../components/CheapRentCard'
 import { percentText, verdictText } from '../cheapRent'
 import { andList } from '../../../shared/wording.ts'
 import { OPERATING_POWER_KEPT, OPERATING_POWER_REPORTED } from '../../../shared/operatingPower.ts'
+import { anlageVLines } from '../anlageV'
+import type { NoticeTab } from '../notices'
 
-type Props = { settings: Settings | null }
+// `onNavigate`: der Sprung in die Stammdaten bei einer nicht eingetragenen Kopfangabe (#96 PR 2).
+type Props = { settings: Settings | null; onNavigate?: (tab: NoticeTab) => void }
 
-export default function Steuer({ settings }: Props) {
+export default function Steuer({ settings, onNavigate }: Props) {
   // Die Steuer rechnet im Kalenderjahr (#208, Entwurf 3.10).
   const { calendarYear: year } = usePeriod()
   const { property } = useProperty()
@@ -57,7 +60,8 @@ export default function Steuer({ settings }: Props) {
   const sharePct = data && data.totalAreaM2 > 0
     ? Math.round((data.selfUsedAreaM2 / data.totalAreaM2) * 1000) / 10
     : null
-  const hints = data ? taxHints(data, basis, property?.kind) : []
+  const hints = data ? taxHints(data, basis, property?.kind, property) : []
+  const acquisition = data ? acquisitionRelated(data, property ?? null) : null
   const note = data ? prepaymentNote(data) : null
   const sources = data ? settlementSourcesText(data) : null
   // Teilweise Eigennutzung (#163): Spalten privat und abziehbar nur, wenn es etwas Privates gibt.
@@ -144,6 +148,33 @@ export default function Steuer({ settings }: Props) {
                 </>}
               />
             )}
+
+            <h3>Kopf der Anlage V</h3>
+            {/* #96 PR 2 (Entwurf B3): der Kopf der Anlage V, auch im Druck, vor den Einnahmen wie im Vordruck. Der Kommentar
+                steht hinter der Überschrift: davor läse der Wächter S31 (uiRules.test.ts) die Karte als eine mit Überschrift. */}
+            <Table>
+              <tbody>
+                {headerRows(data, property, year).map((r) => (
+                  <tr key={r.key}>
+                    <td>
+                      {r.label}
+                      {r.line !== null && <div className="muted cell-sub">Zeile {r.line}{r.code !== undefined ? `, Kennzahl ${r.code}` : ''}</div>}
+                    </td>
+                    <td className="num">
+                      {r.value ?? <>
+                        <span className="muted">nicht eingetragen</span>
+                        {onNavigate && <> <button className="btn small ghost no-print" onClick={() => onNavigate('stammdaten')}>Hier eintragen → Stammdaten</button></>}
+                      </>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+            <div className="muted">
+              {anlageVLines(year)?.header?.use !== undefined ? `Zeile ${anlageVLines(year)?.header?.use}: ` : ''}Eine Ferienwohnung oder kurzfristige
+              Vermietung rechnet Mietfuchs nicht; dafür gibt es die Anlage V-FeWo. Die <Term id="cheapRent">verbilligte Vermietung</Term> an
+              Angehörige prüft die Übersicht bei den Werbungskosten.
+            </div>
 
             <h3>Einnahmen</h3>
             <Table>
@@ -360,6 +391,15 @@ export default function Steuer({ settings }: Props) {
                 />
               )
             })()}
+            {/* #96 PR 2 (A4.4, Durchsicht X6): anschaffungsnahe Herstellungskosten, auch im Druck. */}
+            {hints.includes('acquisitionRelated') && acquisition && (
+              <NoticeBox
+                level="hint"
+                title={<><Term id="acquisitionRelatedCosts">Anschaffungsnahe Herstellungskosten</Term>: {ACQUISITION_RELATED_TITLE}</>}
+                action={acquisitionRelatedText(acquisition)}
+                more={ACQUISITION_RELATED_MORE}
+              />
+            )}
             {/* #257: Auch im Druck, denn der Steuerberater braucht Quote und Vergleichsmiete; je Wohnung alle Urteile, auch
                 Prognose, Untergrenze und fehlende Vergleichsmiete (Durchsicht von PR #422, S2). */}
             {(() => {

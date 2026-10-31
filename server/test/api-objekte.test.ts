@@ -12,7 +12,7 @@ import AdmZip from 'adm-zip'
 import { applyMigrations, connect, loadMigrations } from '../src/db/client.ts'
 import { tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
 import type {
-  CostItem, Meter, Payment, Property, Reading, Settlement, Tenancy, Unit, UnitDependents,
+  CostItem, Meter, Payment, Property, Reading, Settlement, TaxReport, Tenancy, Unit, UnitDependents,
 } from '../../shared/types.ts'
 import {
   type ClientSettings, type Server, archive, databaseOfV080, errorFrom, jsonOf, restore, startServer, wechsel, withProperties,
@@ -266,6 +266,101 @@ test('Bundesland am Objekt: gespeichert, als Teilrumpf ergänzt, leer heißt unb
     assert.equal((await s.api<Property[]>('/api/properties')).length, 2, 'nichts halb angelegt')
   } finally {
     s.stop()
+  }
+})
+
+// #96 PR 2 (Entwurf 2026-10-30-steuer-objekt-ruecklage-design.md, B2): Kopf der Anlage V am Objekt und „an Angehörige
+// vermietet“ am Mietverhältnis, über die Routen, im Backup erhalten, aus einem älteren Backup leer.
+test('Kopf der Anlage V (#96): Aktenzeichen und Daten am Objekt hin und zurück, als Teilrumpf ergänzt, mit null geleert, Ungültiges 400', async () => {
+  const s = await startServer()
+  try {
+    const [objekt] = await s.api<Property[]>('/api/properties')
+    assert.equal(objekt !== undefined && 'groundTaxFileNumber' in objekt, false, 'ohne Angabe steht nichts in der Antwort')
+    const route = `${s.base}/api/properties/${objekt?.id}`
+    const put = (body: unknown) => fetch(route, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    const kopf = { groundTaxFileNumber: '2141/123/45678', purchaseContractOn: '2023-05-10', ownershipTransferOn: '2023-07-01', buildingApplicationOn: '2019-02-01', completedOn: '2020-11-30' }
+    const set = await put(kopf)
+    assert.equal(set.status, 200)
+    const gespeichert = await jsonOf<Property>(set)
+    assert.deepEqual([gespeichert.groundTaxFileNumber, gespeichert.purchaseContractOn, gespeichert.ownershipTransferOn, gespeichert.buildingApplicationOn, gespeichert.completedOn], Object.values(kopf))
+    const teil = await jsonOf<Property>(await put({ name: 'Haus' }))
+    assert.equal(teil.ownershipTransferOn, '2023-07-01', 'ein Teilrumpf lässt die Angaben stehen')
+    for (const [body, satz] of [
+      [{ purchaseContractOn: '10.05.2023' }, /Kaufvertrag.*kein Datum/],
+      [{ completedOn: '2020-11' }, /Fertigstellung.*kein Datum/],
+      // Durchsicht K2: ein Tag, den es nicht gibt, wie im Formular (`headerDateText`), auch bei der Verordnung (isoDateOrNull).
+      [{ completedOn: '2023-02-31' }, /Fertigstellung.*kein Datum/],
+      [{ ownershipTransferOn: '2023-13-01' }, /Eigentumsübergangs.*kein Datum/],
+      [{ tightMarket: true, tightMarketFrom: '2023-02-29' }, /Beginn der Verordnung.*kein Datum/],
+      [{ groundTaxFileNumber: '1'.repeat(41) }, /Aktenzeichen.*höchstens 40 Zeichen/],
+    ] as const) {
+      const r = await put(body)
+      assert.equal(r.status, 400, JSON.stringify(body))
+      assert.match(await errorFrom(r), satz)
+    }
+    assert.equal((await s.api<Property[]>('/api/properties'))[0]?.completedOn, '2020-11-30', 'nach der Ablehnung bleibt das Gespeicherte')
+    const geleert = await jsonOf<Property>(await put({ groundTaxFileNumber: null, purchaseContractOn: null, ownershipTransferOn: null, buildingApplicationOn: null, completedOn: null }))
+    assert.deepEqual([geleert.groundTaxFileNumber, geleert.purchaseContractOn, geleert.ownershipTransferOn, geleert.buildingApplicationOn, geleert.completedOn].map((v) => v ?? null), [null, null, null, null, null])
+  } finally {
+    s.stop()
+  }
+})
+
+test('Angehörige (#96): das Kennzeichen am Mietverhältnis über die Route, zählt in der Steuerübersicht, 400 bei anderem Wert, im Backup erhalten', async () => {
+  const s = await startServer()
+  try {
+    const u = await s.api<Unit>('/api/units', { method: 'POST', body: JSON.stringify({ name: 'EG', areaM2: 50, participates: true }) })
+    const leer = { personHistory: [], end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [{ from: '2024-01', monthlyCents: 50000 }] }
+    const t = await s.api<Tenancy>('/api/tenancies', { method: 'POST', body: JSON.stringify({ ...leer, unitId: u.id, tenantName: 'Tochter', persons: 1, start: '2025-01-01', relative: true }) })
+    assert.equal(t.relative, true)
+    const fremd = await s.api<Tenancy>('/api/tenancies', { method: 'POST', body: JSON.stringify({ ...leer, unitId: u.id, tenantName: 'Fremd', persons: 1, start: '2024-01-01', end: '2024-12-31' }) })
+    assert.equal(fremd.relative, undefined, 'ohne Angabe: nein, wie bisher')
+    const put = (body: unknown) => fetch(`${s.base}/api/tenancies/${t.id}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    const r = await put({ relative: 2 })
+    assert.equal(r.status, 400)
+    assert.match(await errorFrom(r), /An Angehörige vermietet ist ja oder nein/)
+    assert.equal((await s.api<TaxReport>('/api/taxreport/2025')).costModels.relativeTenancies, 1)
+    assert.equal((await s.api<TaxReport>('/api/taxreport/2024')).costModels.relativeTenancies, undefined, 'nur Mietverhältnisse des Jahres')
+
+    // Im Backup erhalten, mit Kopfangaben am Objekt.
+    const [objekt] = await s.api<Property[]>('/api/properties')
+    await s.api(`/api/properties/${objekt?.id}`, { method: 'PUT', body: JSON.stringify({ groundTaxFileNumber: '123', ownershipTransferOn: '2023-07-01' }) })
+    const backup = Buffer.from(await (await fetch(`${s.base}/api/backup`)).arrayBuffer())
+    assert.equal((await put({ relative: false })).status, 200)
+    await s.api(`/api/properties/${objekt?.id}`, { method: 'PUT', body: JSON.stringify({ groundTaxFileNumber: null, ownershipTransferOn: null }) })
+    const back = await restore(s, backup)
+    assert.equal(back.status, 200, JSON.stringify(back.body))
+    assert.deepEqual((await s.api<Tenancy[]>('/api/tenancies')).map((x) => [x.tenantName, x.relative ?? null]), [['Tochter', true], ['Fremd', null]])
+    const [wieder] = await s.api<Property[]>('/api/properties')
+    assert.deepEqual([wieder?.groundTaxFileNumber, wieder?.ownershipTransferOn], ['123', '2023-07-01'])
+  } finally {
+    s.stop()
+  }
+})
+
+test('Kopf der Anlage V (#96): ein Backup von vor den Schritten 0080/0081 kommt mit leeren Angaben zurück', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-steuer-kopf-backup-'))
+  const s = await startServer()
+  try {
+    const file = path.join(dir, 'mietfuchs.sqlite')
+    const c = await connect(file)
+    const migrations = await loadMigrations()
+    const bis = migrations.findIndex((m) => m.tag.endsWith('_anlage_v_kopf'))
+    if (bis < 0) assert.fail('Schritt …_anlage_v_kopf fehlt')
+    applyMigrations(c, migrations.slice(0, bis))
+    c.exec(`INSERT INTO units (id, property_id, name, area_m2, participates) VALUES ('u', 'objekt-1', 'EG', 50, 1)`)
+    c.exec(`INSERT INTO tenancies (id, unit_id, tenant_name, persons, start) VALUES ('t', 'u', 'Mieter', 1, '2025-01-01')`)
+    c.close()
+    const zip = new AdmZip()
+    zip.addFile('mietfuchs.sqlite', fs.readFileSync(file))
+    const r = await restore(s, zip.toBuffer())
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    const [objekt] = await s.api<Property[]>('/api/properties')
+    assert.deepEqual([objekt?.groundTaxFileNumber, objekt?.purchaseContractOn, objekt?.ownershipTransferOn, objekt?.buildingApplicationOn, objekt?.completedOn].map((v) => v ?? null), [null, null, null, null, null])
+    assert.deepEqual((await s.api<Tenancy[]>('/api/tenancies')).map((t) => t.relative ?? null), [null])
+  } finally {
+    s.stop()
+    fs.rmSync(dir, { recursive: true, force: true })
   }
 })
 

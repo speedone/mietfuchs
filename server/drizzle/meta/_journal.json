@@ -561,6 +561,20 @@
       "when": 1793406660689,
       "tag": "0079_bestimmung_monat_bedingung",
       "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "6",
+      "when": 1793450184966,
+      "tag": "0080_anlage_v_kopf",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "6",
+      "when": 1793450203481,
+      "tag": "0081_anlage_v_kopf_bedingungen",
+      "breakpoints": true
     }
   ]
 }

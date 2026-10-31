@@ -60,6 +60,8 @@ export type SnapshotTenancy = Pick<
   // § 5d Abs. 4 CO2KostAufG (Heizung PR 18), dazu der Tag der Mitteilung nach § 5d Abs. 4.
   | 'contractDate'
   | 'halfSplitNoticeOn'
+  // An Angehörige vermietet (#96 PR 2), nur für den Kopf der Anlage V; die Abrechnung liest es nicht.
+  | 'relative'
   // Heizstaffel und Heizkorrekturen (Heizung PR 5)
   | 'heatingPrepayments'
   | 'heatingPrepaymentOverrides'

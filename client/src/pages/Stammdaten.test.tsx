@@ -397,6 +397,16 @@ test('IBAN: eine gespeicherte ungültige steht als Hinweis da und blockiert das 
   await vi.waitFor(() => expect(sent.find((s) => s.method === 'PUT')?.body.iban).toBe('de00 1111'))
 })
 
+// Durchsicht K3 (#96 PR 2): Kennzahl 62 fragt nach Wohnzwecken; eine Garage an die Tochter zählt nicht.
+test('Angehörige: das Kästchen sagt „zu Wohnzwecken“ und speichert relative', async () => {
+  page([tenancy('t1', 'Müller')])
+  await openTenancy('Müller')
+  const box = screen.getByLabelText<HTMLInputElement>(/An Angehörige zu Wohnzwecken vermietet/)
+  fireEvent.click(box)
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Speichern' }))
+  await vi.waitFor(() => expect(sent.find((s) => s.method === 'PUT')?.body.relative).toBe(true))
+})
+
 // ---------- Abweichende IBAN des Objekts (#279) ----------
 
 test('Objekt: eine gespeicherte ungültige IBAN steht als Hinweis da und blockiert das Speichern nicht', async () => {

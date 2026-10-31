@@ -1,12 +1,14 @@
 import type { PropertyKind } from '../types'
 import { PROPERTY_KIND_LABELS } from '../types'
-import { CABLE_LABELS, type CableAnswer, type PropertyField, type PropertyForm } from '../propertyForm'
+import { CABLE_LABELS, GROUND_TAX_FILE_NUMBER_MAX, TAX_HEADER_FIELDS, TAX_HEADER_LABELS, type CableAnswer, type PropertyField, type PropertyForm } from '../propertyForm'
 import Term from './Term'
 import TightMarketField from './TightMarketField'
 import FederalStateField from './FederalStateField'
 import IbanInput from './IbanInput'
 import Field from './Field'
 import type { FormErrors } from './ErrorSummary'
+import { LAW_AS_OF, valueAt } from '../../../shared/law/register.ts'
+import { estgAcquisitionRelated, yearsWord } from '../../../shared/law/estg.ts'
 
 // Die Felder eines Objekts, dieselben im Seitenfenster „Neues Objekt“ (NewPropertyDrawer) und „Objekt bearbeiten“
 // (PropertyCard), wie bei Wohnungen und Mietverhältnissen ein Formular für beides. Vorher legte ein schmales
@@ -43,6 +45,26 @@ export default function PropertyFields({ form, setForm, errors, storedIban }: {
         {/* Heizung PR 18: § 5d CO2KostAufG, mit der Geltung der Verordnung. */}
         <TightMarketField value={form.tightMarket} from={form.tightMarketFrom} to={form.tightMarketTo} onChange={(c) => setForm({ ...form, ...c })} />
       </div>
+      {/* #96 PR 2 (Entwurf B3): Kopf der Anlage V, zugeklappt, solange nichts eingetragen ist. */}
+      <details className="extra-details" open={TAX_HEADER_FIELDS.some((f) => form.taxSaved[f] !== '')}>
+        <summary>Für die Steuer (Anlage V)</summary>
+        <p className="muted">
+          Alles freiwillig; die Steuerübersicht zeigt es im Kopf der Anlage V. Liegen die Gebäude dieses Objekts auf
+          verschiedenen Grundstücken, geben Sie je Grundstück eine eigene Anlage V ab; teilen Sie die Zahlen dann bitte mit
+          Ihrem Steuerberater auf.
+        </p>
+        <div className="field-grid">
+          <Field label={TAX_HEADER_LABELS.groundTaxFileNumber} width="m" hint="Steht auf dem Grundsteuermessbescheid. In der Anlage V ohne Sonderzeichen." {...errors.field('groundTaxFileNumber')}>
+            <input value={form.groundTaxFileNumber} maxLength={GROUND_TAX_FILE_NUMBER_MAX} onChange={(e) => setForm({ ...form, groundTaxFileNumber: e.target.value })} />
+          </Field>
+          {TAX_HEADER_FIELDS.filter((f) => f !== 'groundTaxFileNumber').map((f) => (
+            <Field key={f} label={TAX_HEADER_LABELS[f]} {...errors.field(f)}
+              hint={f === 'ownershipTransferOn' ? <>Übergang von Besitz, Nutzen und Lasten; ab hier laufen die {yearsWord(valueAt(estgAcquisitionRelated, LAW_AS_OF).years)} Jahre für <Term id="acquisitionRelatedCosts">anschaffungsnahe Herstellungskosten</Term>.</> : undefined}>
+              <input type="date" value={form[f]} onChange={(e) => setForm({ ...form, [f]: e.target.value })} />
+            </Field>
+          ))}
+        </div>
+      </details>
       <details className="extra-details" open={form.own}>
         <summary>Abweichender Vermieter oder Bankverbindung</summary>
         <p className="muted">

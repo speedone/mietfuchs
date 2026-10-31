@@ -29,7 +29,61 @@ export type PropertyForm = {
   tightMarketTo: string
   // Bundesland für Fristen und Feiertage; '' heißt unbekannt.
   state: FederalState | ''
+} & TaxHeaderForm & {
+  // Der gespeicherte Stand des Abschnitts „Für die Steuer (Anlage V)“ (#96 PR 2): Gesendet wird nur, was davon abweicht,
+  // damit ein Speichern ohne Eingabe nichts Neues schickt (client/CLAUDE.md, „nur gesendet, was sich geändert hat“).
+  taxSaved: TaxHeaderForm
 }
+
+// Kopf der Anlage V (#96 PR 2, Entwurf B2): Z. 6 Aktenzeichen, Z. 7 vier Daten. Texte, wie eingegeben.
+export type TaxHeaderForm = {
+  groundTaxFileNumber: string
+  purchaseContractOn: string
+  ownershipTransferOn: string
+  buildingApplicationOn: string
+  completedOn: string
+}
+export type TaxHeaderField = keyof TaxHeaderForm
+export const TAX_HEADER_FIELDS: readonly TaxHeaderField[] = ['groundTaxFileNumber', 'purchaseContractOn', 'ownershipTransferOn', 'buildingApplicationOn', 'completedOn']
+const EMPTY_TAX_HEADER: TaxHeaderForm = { groundTaxFileNumber: '', purchaseContractOn: '', ownershipTransferOn: '', buildingApplicationOn: '', completedOn: '' }
+// Die Beschriftungen am Feld und in der Karte zum Lesen (wie im Verlauf, journalView.ts).
+export const TAX_HEADER_LABELS: Record<TaxHeaderField, string> = {
+  groundTaxFileNumber: 'Aktenzeichen laut Grundsteuermessbescheid',
+  purchaseContractOn: 'Notar- oder Kaufvertrag vom',
+  ownershipTransferOn: 'Eigentumsübergang am',
+  buildingApplicationOn: 'Bauantrag oder Bauanzeige vom',
+  completedOn: 'Fertiggestellt am',
+}
+// Höchstlänge wie die Bedingung `properties_ground_tax_file_number_valid` (Schutz gegen versehentlich Eingefügtes).
+export const GROUND_TAX_FILE_NUMBER_MAX = 40
+
+// Das Aktenzeichen, wie es in Zeile 6 gehört: „ohne Sonderzeichen“, also nur Ziffern und Buchstaben. Gespeichert bleibt
+// es wie eingegeben, denn die Formate sind je Land verschieden und eine Prüfung der Form wäre geraten.
+export const fileNumberDigits = (text: string): string => text.replace(/[^\p{L}\p{N}]/gu, '')
+
+// Ein Tag des Kopfs: leer, 'JJJJ-MM-TT' (Kalenderfeld) oder deutsch 'T.M.JJJJ'; ein Tag, den es nicht gibt, ist ein Fehler.
+export function headerDateText(text: string): { date: string | null } | { error: string } {
+  const t = text.trim()
+  if (t === '') return { date: null }
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(t)
+  const de = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/.exec(t)
+  const [y, m, d] = iso ? [iso[1], iso[2], iso[3]] : de ? [de[3], de[2], de[1]] : []
+  if (y === undefined || m === undefined || d === undefined) return { error: 'kein Datum; bitte als TT.MM.JJJJ oder im Kalender wählen' }
+  const date = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`
+  const check = new Date(`${date}T00:00:00Z`)
+  if (Number.isNaN(check.getTime()) || check.toISOString().slice(0, 10) !== date) return { error: 'diesen Tag gibt es nicht' }
+  return { date }
+}
+
+// Ist am Objekt etwas aus dem Kopf der Anlage V eingetragen? Dann steht der Abschnitt offen.
+export const hasTaxHeader = (p: Property): boolean => TAX_HEADER_FIELDS.some((f) => (p[f] ?? null) !== null)
+const taxHeaderOf = (p: Property): TaxHeaderForm => ({
+  groundTaxFileNumber: p.groundTaxFileNumber ?? '',
+  purchaseContractOn: p.purchaseContractOn ?? '',
+  ownershipTransferOn: p.ownershipTransferOn ?? '',
+  buildingApplicationOn: p.buildingApplicationOn ?? '',
+  completedOn: p.completedOn ?? '',
+})
 
 export type CableAnswer = 'vor' | 'nach' | 'unbekannt'
 export const CABLE_LABELS: Record<CableAnswer, string> = {
@@ -71,6 +125,7 @@ export function stateNote(state: FederalState | '', year: number): string | null
 }
 
 export type PropertyBody = Pick<Property, 'name' | 'address' | 'kind' | 'landlordName' | 'iban' | 'paymentDeadlineDays' | 'landlordAddress' | 'landlordContact' | 'cableBuiltBeforeDec2021' | 'tightMarket' | 'tightMarketFrom' | 'tightMarketTo' | 'state'>
+  & Partial<Pick<Property, TaxHeaderField>>
 
 // Die Vorbelegung der Bezeichnung, wenn das Objekt noch keine hat (Durchsicht zu #346, Schritt 3). Eine frische
 // Installation legt ihr erstes Objekt ohne Namen an (Migration 0001 übernimmt `house_name`, und der ist dort leer).
@@ -99,6 +154,8 @@ export const propertyToForm = (p: Property): PropertyForm => ({
   tightMarketFrom: p.tightMarketFrom ?? '',
   tightMarketTo: p.tightMarketTo ?? '',
   state: p.state ?? '',
+  ...taxHeaderOf(p),
+  taxSaved: taxHeaderOf(p),
 })
 
 // Das leere Formular für ein neues Objekt: dieselben Felder wie beim Bearbeiten, jede Angabe auf ihrer
@@ -106,6 +163,7 @@ export const propertyToForm = (p: Property): PropertyForm => ({
 export const EMPTY_PROPERTY_FORM: PropertyForm = {
   name: '', address: '', kind: 'mfh', own: false, landlordName: '', iban: '', paymentDeadlineDays: '', landlordAddress: '', landlordContact: '',
   cable: 'unbekannt', tightMarket: 'unbekannt', tightMarketFrom: '', tightMarketTo: '', state: '',
+  ...EMPTY_TAX_HEADER, taxSaved: EMPTY_TAX_HEADER,
 }
 
 // **Ein leeres Feld heißt „Vorgabe“, auch mit Haken.** Wer den Haken setzt, um nur eine andere
@@ -117,7 +175,7 @@ export const EMPTY_PROPERTY_FORM: PropertyForm = {
 // Die IBAN wird geprüft (#279), aber nur eine neue oder geänderte: Eine gespeicherte ungültige
 // (`storedIban`) geht unverändert mit, damit die übrigen Angaben trotzdem gespeichert werden.
 // Die Felder der Karte mit Meldung (#346, Schritt 3).
-export type PropertyField = 'name' | 'iban' | 'paymentDeadlineDays'
+export type PropertyField = 'name' | 'iban' | 'paymentDeadlineDays' | TaxHeaderField
 // `problems` nennt alle Angaben auf einmal (#346, Schritt 3); `error`, `field` und `short` sind die erste davon.
 export type PropertyBodyError = { error: string; field?: PropertyField; short?: string; problems: Problem<PropertyField>[] }
 export function propertyBody(form: PropertyForm, storedIban: string | null = null): PropertyBody | PropertyBodyError {
@@ -137,6 +195,24 @@ export function propertyBody(form: PropertyForm, storedIban: string | null = nul
   const tightFrom = yes && form.tightMarketFrom !== '' ? form.tightMarketFrom : null
   const tightTo = yes && form.tightMarketTo !== '' ? form.tightMarketTo : null
   if (tightFrom !== null && tightTo !== null && tightFrom > tightTo) problems.push({ text: 'Der Beginn der Verordnung liegt nach dem Ende. Bitte prüfen Sie beide Tage.' })
+  // Kopf der Anlage V (#96 PR 2): nur, was vom Gespeicherten abweicht; leer heißt `null`.
+  const header: Partial<Pick<Property, TaxHeaderField>> = {}
+  const fileNumber = form.groundTaxFileNumber.trim()
+  if (fileNumber.length > GROUND_TAX_FILE_NUMBER_MAX) {
+    problems.push({ text: `${TAX_HEADER_LABELS.groundTaxFileNumber}: höchstens ${GROUND_TAX_FILE_NUMBER_MAX} Zeichen.`, field: 'groundTaxFileNumber', short: `Höchstens ${GROUND_TAX_FILE_NUMBER_MAX} Zeichen` })
+  } else if (fileNumber !== form.taxSaved.groundTaxFileNumber.trim()) {
+    header.groundTaxFileNumber = fileNumber === '' ? null : fileNumber
+  }
+  for (const field of TAX_HEADER_FIELDS) {
+    if (field === 'groundTaxFileNumber') continue
+    const parsed = headerDateText(form[field])
+    if ('error' in parsed) {
+      problems.push({ text: `${TAX_HEADER_LABELS[field]}: ${parsed.error}.`, field, short: 'Kein Datum' })
+      continue
+    }
+    const saved = headerDateText(form.taxSaved[field])
+    if (parsed.date !== ('date' in saved ? saved.date : null)) header[field] = parsed.date
+  }
   const first = problems[0]
   if (first || 'error' in iban) {
     const head = first ?? { text: '' }
@@ -156,6 +232,7 @@ export function propertyBody(form: PropertyForm, storedIban: string | null = nul
     tightMarketFrom: tightFrom,
     tightMarketTo: tightTo,
     state: form.state === '' ? null : form.state,
+    ...header,
   }
 }
 
@@ -175,6 +252,14 @@ export function propertySummary(p: Property): { label: string; value: string }[]
     { label: 'Kabel- oder Antennenanlage', value: CABLE_LABELS[p.cableBuiltBeforeDec2021 === true ? 'vor' : p.cableBuiltBeforeDec2021 === false ? 'nach' : 'unbekannt'] },
     { label: 'Angespannter Wohnungsmarkt', value: tight === 'ja' && span ? `ja, Verordnung ${span}` : tight },
   ]
+  // Kopf der Anlage V (#96 PR 2), nur wenn etwas eingetragen ist.
+  if (hasTaxHeader(p)) {
+    const parts = [
+      p.groundTaxFileNumber ? `Aktenzeichen ${p.groundTaxFileNumber}` : null,
+      ...TAX_HEADER_FIELDS.filter((f) => f !== 'groundTaxFileNumber').map((f) => { const v = p[f]; return v ? `${TAX_HEADER_LABELS[f]} ${fmtDate(v)}` : null }),
+    ].filter((x): x is string => x !== null)
+    rows.push({ label: 'Für die Steuer (Anlage V)', value: parts.join(', ') })
+  }
   if (!ownLandlord(p)) {
     return [...rows, { label: 'Vermieter und Bankverbindung', value: 'wie in den Einstellungen' }]
   }

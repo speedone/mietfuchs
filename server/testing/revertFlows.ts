@@ -94,7 +94,16 @@ export const STEPS: readonly Step[] = [
       if (u) await send(ctx.s, 'POST', '/api/tenancies', { unitId: u.id, tenantName: `Mieter ${word(ctx.rng)}`, persons: int(ctx.rng, 1, 4), start: day(ctx.rng, 2024), prepayments: [{ from: '2024-01', monthlyCents: int(ctx.rng, 50, 300) * 100 }] })
     },
   },
-  { name: 'Mietverhältnis ändern', routes: ['PUT /api/tenancies/:id'], run: async (ctx) => { const t = pick(ctx.rng, ctx.tenancies); if (t) await send(ctx.s, 'PUT', `/api/tenancies/${t.id}`, { phone: `0${int(ctx.rng, 1000, 9999)}`, persons: int(ctx.rng, 1, 4) }) } },
+  // „An Angehörige vermietet“ (#96 PR 2) wird mitgesetzt und zurückgenommen, abgeleitet aus der Personenzahl: Ein
+  // weiterer Zug aus `rng` verschöbe alle folgenden Abläufe, und die Abdeckung der Routen hängt an ihnen.
+  { name: 'Mietverhältnis ändern', routes: ['PUT /api/tenancies/:id'], run: async (ctx) => {
+    const t = pick(ctx.rng, ctx.tenancies)
+    if (!t) return
+    const phone = `0${int(ctx.rng, 1000, 9999)}`
+    const persons = int(ctx.rng, 1, 4)
+    const relative = persons === 1 ? { relative: true } : persons === 2 ? { relative: false } : {}
+    await send(ctx.s, 'PUT', `/api/tenancies/${t.id}`, { phone, persons, ...relative })
+  } },
   { name: 'Mietverhältnis löschen', routes: ['DELETE /api/tenancies/:id'], run: async (ctx) => { const t = pick(ctx.rng, ctx.tenancies); if (t && ctx.rng() < 0.5) await send(ctx.s, 'DELETE', `/api/tenancies/${t.id}`) } },
   {
     name: 'Mieterwechsel', routes: ['POST /api/tenancies/:id/change'],
@@ -153,7 +162,15 @@ export const STEPS: readonly Step[] = [
       if (rng() < 0.7) await send(s, 'DELETE', `/api/properties/${created.id}`)
     },
   },
-  { name: 'Objekt ändern', routes: ['PUT /api/properties/:id'], run: ({ s, rng }) => send(s, 'PUT', `/api/properties/${P}`, { name: `Lindenweg ${int(rng, 1, 40)}` }) },
+  // Mit den Kopfangaben der Anlage V (#96 PR 2), gesetzt und geleert; abgeleitet aus der Hausnummer, ohne weiteren Zug
+  // aus `rng` (siehe „Mietverhältnis ändern“).
+  { name: 'Objekt ändern', routes: ['PUT /api/properties/:id'], run: ({ s, rng }) => {
+    const n = int(rng, 1, 40)
+    const header = n % 3 === 0
+      ? { groundTaxFileNumber: `2141/${100 + n}/45678`, ownershipTransferOn: `20${10 + n}-07-01`, completedOn: `19${50 + n}-11-30` }
+      : n % 3 === 1 ? { groundTaxFileNumber: null, ownershipTransferOn: null, completedOn: null } : {}
+    return send(s, 'PUT', `/api/properties/${P}`, { name: `Lindenweg ${n}`, ...header })
+  } },
   {
     name: 'Abrechnungszeitraum ändern', routes: ['PUT /api/properties/:id/period'],
     run: async ({ s, rng }) => {

@@ -28,7 +28,8 @@ import { scan } from '../testing/sourceScan.ts'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 
-const PERCENT_PATTERNS = [/um \d+ ?%/g, /\d+ ?% kürzen/g, /\d+ bis \d+ ?%/g, /\d+ und höchstens \d+ ?%/g, /\d+ Prozent/g, /\d+ vom Hundert/g, /\d+–\d+ ?%/g]
+// Die Grenze für anschaffungsnahe Herstellungskosten (#96 PR 2, Durchsicht R): `estg.acquisition-related`.
+const PERCENT_PATTERNS = [/um \d+ ?%/g, /\d+ ?% kürzen/g, /\d+ bis \d+ ?%/g, /\d+ und höchstens \d+ ?%/g, /\d+ Prozent/g, /\d+ vom Hundert/g, /\d+–\d+ ?%/g, /\d+-%-Grenze/g, /\d+ ?% der Anschaffungskosten/g]
 const DATE_PATTERNS = [/\d{4}-\d{2}-\d{2}/g, /\d{2}\.\d{2}\.\d{4}/g]
 const ENGINE_FILES = ['server/src/calc.ts', 'server/src/snapshot.ts', 'shared/heating.ts', 'shared/period.ts', 'shared/heatingPeriod.ts', 'shared/degreeDays.ts', 'server/src/remoteReading.ts', 'server/src/co2.ts', 'server/src/fuel.ts', 'server/src/fuelStock.ts', 'shared/fuelStock.ts', 'server/src/heating.ts', 'server/src/dhw.ts', 'server/src/hca.ts', 'server/src/heatingInfo.ts', 'server/src/co2Plausibility.ts', 'shared/operatingPower.ts', 'server/src/operatingPower.ts', 'server/src/heatDelivery.ts', 'shared/heatDelivery.ts', 'server/src/monthlyInfo.ts', 'server/src/calibration.ts', 'shared/calibration.ts', 'server/src/halfSplit.ts', 'server/src/co2Refund.ts', 'shared/holidays.ts', 'shared/deadlines.ts', 'server/src/cheapRent.ts', 'server/src/rentAllocation.ts', 'server/src/apportion.ts', 'shared/monthRate.ts']
 // Rechtszahlen als Zahl im Code (Durchsicht von #221, I2): Die Muster oben sehen nur Texte, eine

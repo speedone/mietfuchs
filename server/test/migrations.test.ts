@@ -208,6 +208,10 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // data-steps.test.ts festgehalten. Wird vor dem Merge ein anderer PR davor eingereiht, wird der Schritt neu erzeugt
   // und die Marke ersetzt.
   '0077_quellrechnung': '7538641d77fbb6d3e995c8aa3f9f77930edecbd1d47e5eb5b30044322e107cf1',
+  // #96 PR 2: Kopf der Anlage V (Aktenzeichen, vier Daten am Objekt, `tenancies.relative`), danach die Bedingungen. Wird
+  // vor dem Merge ein anderer PR davor eingereiht, werden beide Schritte neu erzeugt und die Marken ersetzt.
+  '0080_anlage_v_kopf': 'b0aa4d93b41fee7484792ae946b2a463b038f39c885429f5b2bfeb5fc13d2a57',
+  '0081_anlage_v_kopf_bedingungen': 'e0a3af39a5a3ca86677db2e5004bd5a3c1426290dea0e09ed062b286a975efbf',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

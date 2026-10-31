@@ -8,6 +8,7 @@ import { OPERATING_POWER_HANDLING_LABELS, OPERATING_POWER_HANDLING_QUESTION } fr
 import { NOTICE_KINDS } from '../src/calc.ts'
 import { co2HalfSplit, halfSplitFirstDay } from '../../shared/law/co2kostaufg.ts'
 import { LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
+import { estgAcquisitionRelated } from '../../shared/law/estg.ts'
 import { ustgSmallBusiness } from '../../shared/law/ustg.ts'
 
 test('Lexikon: jeder Eintrag ist vollständig, und jedes Beispiel rechnet mit Zahlen', () => {
@@ -569,4 +570,37 @@ test('#336: vom Mieter übernommene Kosten als Einnahme, mit dem am Volltext gel
   // Vorsichtig: „können“ Werbungskosten sein, sofort abziehbar nur als Erhaltungsaufwand.
   assert.match(t.short, /können zugleich Ihre Werbungskosten sein/)
   assert.match(t.needed, /Abschreibung/)
+})
+
+// #96 PR 2 (Entwurf A4.4, Durchsicht X6): ein Begriff für den gemeinsamen Hinweis `acquisitionRelated`, auf den die
+// Erhaltungsrücklage verweist (#262 ergänzt den Verweis aus `spread82b`).
+test('Anschaffungsnahe Herstellungskosten: Wortlaut von § 6 Abs. 1 Nr. 1a EStG, Frist, 15-%-Grenze ohne Umsatzsteuer, nachgerechnetes Beispiel (#96)', () => {
+  const t = GLOSSARY.acquisitionRelatedCosts
+  assert.equal(t.title, 'Anschaffungsnahe Herstellungskosten')
+  assert.match(t.norm, /§ 6 Abs\. 1 Nr\. 1a EStG/)
+  const all = `${t.short} ${t.example} ${t.needed}`
+  assert.match(all, /drei Jahren nach der Anschaffung/)
+  assert.match(all, /ohne (die )?Umsatzsteuer/)
+  assert.match(all, /Besitz, Nutzen und Lasten/)
+  assert.match(all, /Anschaffungskosten.*nicht/s, 'Mietfuchs kennt die Anschaffungskosten nicht')
+  assert.match(all, /Entnahme/, 'Entnahmen aus der Rücklage zählen mit (IX R 19\/24, Rz. 24)')
+  assert.match(all, /jährlich üblicherweise/)
+  // Durchsicht K5: Bezugsgröße sind die Anschaffungskosten des Gebäudes samt anteiliger Nebenkosten (Grunderwerbsteuer,
+  // Notar, Grundbuch), nicht der Kaufpreis. Kaufpreis 250.000 €, davon Gebäude 200.000 € (80 %); Nebenkosten 20.000 €,
+  // davon 80 % = 16.000 € auf das Gebäude; Anschaffungskosten 216.000 €, Grenze 15 % = 32.400 €. 34.000 € liegen
+  // darüber (1.600 € mehr), 32.000 € lägen darunter, obwohl sie über 15 % des Kaufpreises des Gebäudes (30.000 €) liegen.
+  assert.match(t.example, /250\.000 €.*200\.000 €.*20\.000 €.*16\.000 €.*216\.000 €.*32\.400 €.*34\.000 €.*1\.600 €.*32\.000 €.*30\.000 €/s)
+  assert.match(t.example, /Grunderwerbsteuer.*Notar/s)
+  assert.match(t.example, /Anschaffungskosten des Gebäudes/)
+  const pct = valueAt(estgAcquisitionRelated, LAW_AS_OF).percent
+  assert.equal(200000 + 20000 * 200000 / 250000, 216000)
+  assert.equal(216000 * pct / 100, 32400)
+  assert.equal(34000 - 32400, 1600)
+  assert.equal(200000 * pct / 100, 30000)
+  assert.match(t.short, /samt (der )?anteiligen Nebenkosten|einschließlich der anteiligen Nebenkosten/)
+  // Durchsicht K6: die Verwaltungsauffassung, Rn. 54, 62, 63; S1: später Bezahltes zählt mit.
+  assert.match(t.norm, /BMF-Schreiben vom 26\.01\.2026, IV C 1 - S 2253\/00082\/001\/064, Rn\. 54, 62 und 63/)
+  assert.match(t.needed, /taggenau/)
+  assert.match(t.needed, /weder abgeschlossen noch bezahlt/)
+  assert.match(GLOSSARY.reserveFund.needed, /Anschaffungsnahe Herstellungskosten/)
 })

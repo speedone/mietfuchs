@@ -18,11 +18,14 @@
 // der Seite, etwa der Kasten zur gemischten Nutzung: Dort entscheidet der Server mit
 // `selfOccupiedExists`, die Seite zeigt ihn nur an.
 
-import type { PropertyKind, TaxExpenseItem, TaxMovedOut, TaxOutflow, TaxReport } from './types'
+import type { Property, PropertyKind, TaxExpenseItem, TaxMovedOut, TaxOutflow, TaxReport } from './types'
 import { andList } from '../../shared/wording.ts'
 import { fmtDate, fmtEuro } from './api'
 import { anlageVLines } from './anlageV'
 import { RESERVE_WITHDRAWAL_CATEGORY } from '../../shared/categories.ts'
+import { fileNumberDigits } from './propertyForm'
+import { LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
+import { estgAcquisitionRelated, yearsWord } from '../../shared/law/estg.ts'
 
 export type Basis = 'soll' | 'ist'
 
@@ -43,6 +46,7 @@ export const DEFAULT_BASIS: Basis = 'ist'
 export const TAX_HINTS = [
   'sollIsNotTaxBasis', 'paymentsMissing', 'turnOfYear', 'inclusiveLine24', 'inclusiveLine24Mixed', 'flatRateLine20',
   'reserveContribution', 'reserveSuspected', 'etwHousingMoney', 'maintenanceLines', 'reserveWithdrawalSuspected', 'specialLevy',
+  'acquisitionRelated',
   'mixedUseSplit', 'mixedUseKeyNotArea', 'mixedUseAreaMissing', 'mixedUseDirectOutside', 'mixedUseChangedInYear',
   'mixedUseClosedChanged', 'mixedUseLabor35a', 'mixedUseNotCalculated', 'mixedUseExcludedArea', 'mixedUseClosedItemsChanged',
   'mixedUseAssignedUnits', 'usageChangedInYear',
@@ -109,6 +113,12 @@ export type TaxHint = (typeof TAX_HINTS)[number]
 //                        daran. Mit Zahlungsdatum ein Satz zum Jahr (`withdrawalSuspectDated`).
 //   `specialLevy`        Eine Sonderumlage mit dem Datum der eigenen Zahlung oder als Zuführung erfasst: Die eigene
 //                        Zahlung zählt nicht, erst die Ausgabe durch die Gemeinschaft. Mietfuchs stellt nichts um.
+//   `acquisitionRelated` (#96 PR 2, A4.4, Durchsicht X6: der eine Hinweis für #96 und #262) Das Steuerjahr berührt die
+//                        drei Jahre nach dem Eigentumsübergang oder das Kalenderjahr danach (ersatzweise großzügig ab dem
+//                        Kaufvertrag, siehe `acquisitionRelated`), und es gibt abziehbaren
+//                        Erhaltungsaufwand oder Instandhaltung: Die Grenze nach § 6 Abs. 1 Nr. 1a EStG gilt, und
+//                        Mietfuchs kennt die Anschaffungskosten nicht (`acquisitionRelated`). Ohne Datum kein Hinweis,
+//                        bis #262 PR 3 den Beginn einer Verteilung ergänzt.
 //
 // Teilweise Eigennutzung (#163), alle nur, wenn es eine selbstgenutzte Wohnung gibt:
 //
@@ -160,7 +170,7 @@ export type TaxHint = (typeof TAX_HINTS)[number]
 //   `unstated`           Positionen ohne Angabe, wann sie bezahlt wurden; sie stehen im Jahr ihrer
 //                        Abrechnung. Ruhig, kein Fehler: Meist stimmt das, und es behauptet keine Ursache.
 
-export function taxHints(report: TaxReport, basis: Basis, propertyKind?: PropertyKind): TaxHint[] {
+export function taxHints(report: TaxReport, basis: Basis, propertyKind?: PropertyKind, acquisition?: AcquisitionDates | null): TaxHint[] {
   const hints: TaxHint[] = []
   if (report.reserveContributionCents !== 0) hints.push('reserveContribution')
   if (report.reserveSuspects.length > 0) hints.push('reserveSuspected')
@@ -171,6 +181,7 @@ export function taxHints(report: TaxReport, basis: Basis, propertyKind?: Propert
   if (report.expenses.groups.some((g) => g.group === MAINTENANCE_GROUP) || report.expenses.items.some((x) => x.group === MAINTENANCE_GROUP)) hints.push('maintenanceLines')
   if ((report.reserveWithdrawalSuspects ?? []).length > 0) hints.push('reserveWithdrawalSuspected')
   if ((report.specialLevySuspects ?? []).length > 0) hints.push('specialLevy')
+  if (acquisitionRelated(report, acquisition ?? null) !== null) hints.push('acquisitionRelated')
   if (movedInLines(report).length > 0) hints.push('movedIn')
   if (report.movedOut.length > 0) hints.push('movedOut')
   if (report.expenses.unstatedCount > 0) hints.push('unstated')
@@ -539,3 +550,101 @@ export const usageChangeTouchesWithdrawal = (report: TaxReport): boolean =>
 // A4.6: der Satz zur Entnahme im Hinweis `etwHousingMoney` (R1, R4).
 export const ETW_WITHDRAWAL_TEXT = 'Entnahmen aus der Erhaltungsrücklage zählen abweichend im Jahr, in dem die Gemeinschaft sie ausgibt, also nach der Hausgeldabrechnung dieses Jahres; die Zuführung, die in den gezahlten Vorschüssen steckt, ziehen Sie ab.'
 
+
+// ---------- Kopf der Anlage V (#96 PR 2, Entwurf B1, B3) ----------
+
+// Die Angaben am Objekt, die der Kopf liest.
+export type TaxHeaderProperty = Pick<Property, 'groundTaxFileNumber' | 'purchaseContractOn' | 'ownershipTransferOn' | 'buildingApplicationOn' | 'completedOn'>
+
+export type HeaderRowKey = 'groundTaxFile' | 'purchaseContract' | 'ownershipTransfer' | 'buildingApplication' | 'completed' | 'relatives'
+// Eine Zeile des Kopfs: Zeile des Vordrucks (oder keine, wo er nicht gelesen ist), Kennzahl, Beschriftung und Wert;
+// `value: null` heißt „nicht eingetragen“, und die Seite springt dann in die Stammdaten.
+export type HeaderRow = { key: HeaderRowKey; line: number | null; code?: number; label: string; value: string | null }
+
+// Ab diesem Jahr fragt der Vordruck in Zeile 7 nach Kauf und Bau (Vordruck 2025AnlV101; die Anleitung 2024 führt in Zeile 7
+// die Veräußerung). Für ein späteres Jahr ohne gelesenen Vordruck stehen die Angaben ohne Nummer da.
+const ACQUISITION_HEADER_FROM = 2025
+
+export function headerRows(report: Pick<TaxReport, 'costModels'>, property: TaxHeaderProperty | null | undefined, year: number): HeaderRow[] {
+  const head = anlageVLines(year)?.header
+  const p = property ?? {}
+  const day = (v: string | null | undefined): string | null => (v ? fmtDate(v) : null)
+  const file = p.groundTaxFileNumber ? fileNumberDigits(p.groundTaxFileNumber) : ''
+  const rows: HeaderRow[] = [{ key: 'groundTaxFile', line: head?.groundTaxFile ?? null, label: 'Aktenzeichen laut Grundsteuermessbescheid (ohne Sonderzeichen)', value: file === '' ? null : file }]
+  if (year >= ACQUISITION_HEADER_FROM) {
+    const line = head?.acquisition ?? null
+    rows.push(
+      { key: 'purchaseContract', line, label: 'Notar- oder Kaufvertrag vom', value: day(p.purchaseContractOn) },
+      { key: 'ownershipTransfer', line, label: 'Eigentumsübergang am', value: day(p.ownershipTransferOn) },
+      { key: 'buildingApplication', line, label: 'Bauantrag, Bauanzeige oder Baubeginnsanzeige vom', value: day(p.buildingApplicationOn) },
+      { key: 'completed', line, label: 'Fertiggestellt am', value: day(p.completedOn) },
+    )
+  }
+  // Zeile 10, Kennzahl 62 (Vordruck 2025): 1 = Ja, 2 = Nein. Die Kennzahl nur, wo die Zeile gelesen ist.
+  const use = head?.use ?? null
+  rows.push({
+    key: 'relatives', line: use, ...(use !== null ? { code: 62 } : {}),
+    label: 'An Angehörige zu Wohnzwecken vermietet', value: (report.costModels.relativeTenancies ?? 0) > 0 ? '1 = Ja' : '2 = Nein',
+  })
+  return rows
+}
+
+// ---------- Anschaffungsnahe Herstellungskosten (#96 PR 2, A4.4; gemeinsam mit #262, Durchsicht X6) ----------
+
+export type AcquisitionDates = Partial<Pick<Property, 'ownershipTransferOn' | 'purchaseContractOn'>>
+export type AcquisitionRelated = { from: string; until: string; basis: 'transfer' | 'contract' }
+
+// § 6 Abs. 1 Nr. 1a Satz 1 EStG: Maßnahmen, „die innerhalb von drei Jahren nach der Anschaffung des Gebäudes durchgeführt
+// werden“. Der Dreijahreszeitraum läuft taggenau ab dem Übergang von Besitz, Gefahr, Nutzungen und Lasten (BMF-Schreiben
+// vom 26.01.2026, IV C 1 - S 2253/00082/001/064, Rn. 62). Gerechnet nach §§ 187 Abs. 1, 188 Abs. 2 BGB (über § 108 AO):
+// Der Tag des Übergangs zählt nicht mit, die Frist endet mit dem Tag, der durch seine Zahl dem Übergang entspricht
+// (01.07.2023 bis 01.07.2026); fehlt dieser Tag im letzten Monat, mit dessen letztem Tag (§ 188 Abs. 3 BGB, ein 29.02. am
+// 28.02.). Wo die Auslegung einen Tag früher enden ließe, nimmt der Hinweis das spätere Ende: Er soll nicht zu früh schweigen.
+// Grenze und Zeitraum stehen im Rechtsregister (`estg.acquisition-related`); die Seite nennt sie nur, also zum Rechtsstand.
+export const ACQUISITION_LIMITS = valueAt(estgAcquisitionRelated, LAW_AS_OF)
+const ACQUISITION_YEARS = ACQUISITION_LIMITS.years
+// Die Gruppen der Steuerübersicht mit Erhaltung (`ANLAGE_V_GROUP` in server/src/calc.ts).
+const MAINTENANCE_GROUPS: readonly string[] = [MAINTENANCE_GROUP, 'Verwaltung & Instandhaltung']
+
+function sameDayYearsLater(from: string, years: number): string {
+  const [y = 0, m = 1, d = 1] = from.split('-').map(Number)
+  const day = new Date(Date.UTC(y + years, m - 1, d))
+  // Ein 29.02.: Date.UTC rollt auf den 01.03.; dann der letzte Tag des Februars.
+  const end = day.getUTCMonth() !== m - 1 ? new Date(Date.UTC(y + years, m, 0)) : day
+  return end.toISOString().slice(0, 10)
+}
+
+// Der Hinweis gilt, wenn das Steuerjahr die drei Jahre oder das Kalenderjahr danach berührt und es abziehbare Positionen
+// der Gruppen „Erhaltungsaufwand“ oder „Verwaltung & Instandhaltung“ gibt. Das Jahr danach, weil Mietfuchs nach Zahlung
+// zuordnet und die Maßnahmen zum Fristende weder abgeschlossen noch abgerechnet noch bezahlt sein müssen (BMF-Schreiben
+// vom 26.01.2026, Rn. 63): Was bis zum Fristende ausgeführt und erst danach bezahlt wurde, zählt mit.
+// Gelesen wird der Eigentumsübergang; maßgeblich ist allein er (Rn. 62). Ist nur der Kaufvertrag eingetragen, liegt der
+// Übergang danach, und eine Frist ab dem Kaufvertrag endete zu früh. Dann rechnet der Hinweis großzügig ein Jahr länger
+// (vier Jahre ab dem Kaufvertrag) und bittet um den Übergang. Ohne Datum `null`; #262 PR 3 ergänzt den Beginn einer
+// Verteilung.
+export function acquisitionRelated(report: Pick<TaxReport, 'year' | 'expenses'>, dates: AcquisitionDates | null): AcquisitionRelated | null {
+  const transfer = dates?.ownershipTransferOn ?? null
+  const contract = dates?.purchaseContractOn ?? null
+  const from = transfer ?? contract
+  if (from === null) return null
+  const until = sameDayYearsLater(from, transfer !== null ? ACQUISITION_YEARS : ACQUISITION_YEARS + 1)
+  if (report.year < Number(from.slice(0, 4)) || report.year > Number(until.slice(0, 4)) + 1) return null
+  if (!report.expenses.items.some((x) => MAINTENANCE_GROUPS.includes(x.group) && x.deductibleCents !== 0)) return null
+  return { from, until, basis: transfer !== null ? 'transfer' : 'contract' }
+}
+
+const ACQUISITION_RULE = `sind Instandsetzung und Modernisierung Herstellungskosten, wenn sie ohne Umsatzsteuer zusammen mehr als ${ACQUISITION_LIMITS.percent} % der Anschaffungskosten des Gebäudes ausmachen; dann wirken sie nur über die Abschreibung.`
+const ACQUISITION_SPAN = `In den ${yearsWord(ACQUISITION_YEARS)} Jahren nach`
+const ACQUISITION_UNKNOWN = 'Mietfuchs kennt die Anschaffungskosten nicht und rechnet die Grenze nicht.'
+
+export function acquisitionRelatedText(info: AcquisitionRelated): string {
+  if (info.basis === 'transfer') {
+    return `${ACQUISITION_SPAN} dem Eigentumsübergang am ${fmtDate(info.from)} (bis ${fmtDate(info.until)}) ${ACQUISITION_RULE} Arbeiten, die bis ${fmtDate(info.until)} ausgeführt wurden, zählen mit, auch wenn sie später bezahlt sind. ${ACQUISITION_UNKNOWN} Die Frist läuft ab dem Übergang von Besitz, Nutzen und Lasten; prüfen Sie bitte das Datum.`
+  }
+  return `${ACQUISITION_SPAN} der Anschaffung ${ACQUISITION_RULE} Die Frist läuft ab dem Übergang von Besitz, Nutzen und Lasten; eingetragen ist nur der Kaufvertrag vom ${fmtDate(info.from)}. Mietfuchs rechnet deshalb großzügig bis ${fmtDate(info.until)}, ein Jahr länger als ab dem Kaufvertrag; tragen Sie bitte den Eigentumsübergang ein. Arbeiten, die bis zum Ende der Frist ausgeführt wurden, zählen mit, auch wenn sie später bezahlt sind. ${ACQUISITION_UNKNOWN}`
+}
+
+// Der Satz „mehr“ des Hinweises, mit den Fundstellen (K6).
+export const ACQUISITION_RELATED_MORE = `${estgAcquisitionRelated.norm}, für Werbungskosten nach § 9 Abs. 5 Satz 2 EStG; BMF-Schreiben vom 26.01.2026, IV C 1 - S 2253/00082/001/064, Rn. 54, 62 und 63. Mit zählen Entnahmen aus der Erhaltungsrücklage (BFH, Urteil vom 14.01.2025, IX R 19/24); nicht mit zählen Erweiterungen und Erhaltungsarbeiten, die jährlich üblicherweise anfallen.`
+// Die Überschrift des Hinweises.
+export const ACQUISITION_RELATED_TITLE = `die ${ACQUISITION_LIMITS.percent}-%-Grenze prüfen`

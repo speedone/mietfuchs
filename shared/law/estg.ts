@@ -64,3 +64,59 @@ export const estgCheapRent: LawParam<CheapRentThresholds, 'periodStart'> = {
     ? `Aufteilung unter ${v.split} % der ortsüblichen Miete`
     : `Aufteilung unter ${v.split} %, entgeltlich ab ${v.paid} % der ortsüblichen Miete`),
 }
+
+// ---------- Anschaffungsnahe Herstellungskosten, § 6 Abs. 1 Nr. 1a EStG (#96 PR 2, mit #262) ----------
+//
+// Gelesen am 31.10.2026 auf gesetze-im-internet.de, § 6 Abs. 1 Nr. 1a Satz 1 EStG heute:
+//   „Zu den Herstellungskosten eines Gebäudes gehören auch Aufwendungen für Instandsetzungs- und
+//   Modernisierungsmaßnahmen, die innerhalb von drei Jahren nach der Anschaffung des Gebäudes durchgeführt
+//   werden, wenn die Aufwendungen ohne die Umsatzsteuer 15 Prozent der Anschaffungskosten des Gebäudes
+//   übersteigen (anschaffungsnahe Herstellungskosten).“
+// Verwaltungsauffassung: BMF-Schreiben vom 26.01.2026, IV C 1 - S 2253/00082/001/064, Rn. 54 bis 68 (ersetzt die
+// BMF-Schreiben vom 18.07.2003 und 20.10.2017, in allen offenen Fällen anzuwenden; BStBl-Fundstelle nicht gefunden,
+// gelesen in einer Kopie des Schreibens). Rn. 62: Der Dreijahreszeitraum läuft taggenau ab dem Übergang von Besitz,
+// Gefahr, Nutzungen und Lasten; Rn. 63: Die Maßnahmen müssen zum Fristende weder abgeschlossen noch abgerechnet noch
+// bezahlt sein.
+//
+// Eingefügt durch Art. 1 Steueränderungsgesetz 2003 vom 15.12.2003 (BGBl. I S. 2645). Anzuwenden nach § 52 Abs. 16
+// Satz 7 bis 9 EStG a. F. „erstmals für Baumaßnahmen anzuwenden, mit denen nach dem 31. Dezember 2003 begonnen wird“;
+// Beginn ist der Bauantrag oder, wo keiner nötig ist, das Einreichen der Bauunterlagen. Diesen Wortlaut gibt nur
+// buzer.de wieder (https://www.buzer.de/gesetz/4499/al15019-0.htm, Fassung bis 29.12.2007), bestätigt durch SenFin
+// Berlin, 20.11.2012, III B - S 2211 - 2/2005 (https://www.iww.de/ssp/quellenmaterial/id/90944); das BGBl. ist nicht
+// amtlich gelesen. Der **Beginn der Fassung ist deshalb übernommen** (adopted), der Wert selbst am Gesetz von heute
+// geprüft (checked); `enacted` hält beides fest.
+//
+// Zeitregel `eventDate`: Die Geltung hängt am Beginn der Baumaßnahme, nicht an der Anschaffung und nicht am
+// Veranlagungszeitraum (§ 52 Abs. 16 Satz 7 EStG a. F.). Mietfuchs kennt den Beginn einer Maßnahme nicht und nennt die
+// Werte nur in Texten (Hinweis `acquisitionRelated` der Steuerübersicht, Lexikon), also mit `valueAt(…, LAW_AS_OF)`.
+// Für die Steuerjahre, die Mietfuchs rechnet, ist der Beginn 2004 ohne Bedeutung; die Fassung davor (§ 6 EStG ohne
+// Nr. 1a, Verwaltungsauffassung nach dem BMF-Schreiben vom 18.07.2003) führt das Register nicht.
+export type AcquisitionRelatedLimits = {
+  // Die Grenze in Prozent der Anschaffungskosten des Gebäudes, ohne Umsatzsteuer.
+  readonly percent: number
+  // Der Zeitraum nach der Anschaffung in Jahren.
+  readonly years: number
+}
+
+const YEARS_WORD: Readonly<Record<number, string>> = { 2: 'zwei', 3: 'drei', 4: 'vier', 5: 'fünf' }
+
+export const estgAcquisitionRelated: LawParam<AcquisitionRelatedLimits, 'eventDate'> = {
+  id: 'estg.acquisition-related',
+  title: 'Anschaffungsnahe Herstellungskosten',
+  norm: '§ 6 Abs. 1 Nr. 1a EStG',
+  timing: 'eventDate',
+  versions: [
+    {
+      validFrom: '2004-01-01',
+      value: { percent: 15, years: 3 },
+      source: { rank: 'law', cite: '§ 6 Abs. 1 Nr. 1a Satz 1 EStG', url: 'https://www.gesetze-im-internet.de/estg/__6.html', retrieved: '2026-10-31', checked: 'checked' },
+      enacted: '§ 6 Abs. 1 Nr. 1a EStG, eingefügt durch Art. 1 Steueränderungsgesetz 2003 vom 15.12.2003 (BGBl. I S. 2645); Beginn nach § 52 Abs. 16 Satz 7 bis 9 EStG a. F. (Baumaßnahmen, begonnen nach dem 31.12.2003) übernommen aus buzer.de und SenFin Berlin, 20.11.2012, III B - S 2211 - 2/2005, BGBl. nicht amtlich gelesen',
+    },
+  ],
+  describe: (v) => `Herstellungskosten, wenn Instandsetzung und Modernisierung in ${yearsWord(v.years)} Jahren nach der Anschaffung ohne Umsatzsteuer ${v.percent} % der Anschaffungskosten des Gebäudes übersteigen`,
+}
+
+// „drei“ statt „3“ im Fließtext; eine Zahl ohne Wort bleibt Ziffer.
+export function yearsWord(years: number): string {
+  return YEARS_WORD[years] ?? String(years)
+}

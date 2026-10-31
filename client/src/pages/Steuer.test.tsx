@@ -26,6 +26,7 @@ import { PropertyProvider } from '../property'
 import Steuer from './Steuer'
 import { periodKey } from '../../../shared/period.ts'
 import { fmtEuro } from '../api'
+import { anlageVLines } from '../anlageV'
 
 // Dasselbe Jahr, das der PeriodProvider von sich aus wählt. Eine feste Jahreszahl wäre eine
 // Zeitbombe: Der erste Entwurf prüfte auf „Die Abrechnung 2025", und das wäre am 1. Januar 2027
@@ -107,11 +108,12 @@ const GS_OUT: TaxReport['movedOut'][number] = {
   settlementPeriod: { key: periodKey(`${JAHR}-01`), label: String(JAHR) }, outflow: { year: JAHR - 1, source: 'paid', paidOn: `${JAHR - 1}-12-01` },
 }
 
-const zeige = async (report: TaxReport, basis: Basis = 'ist', kind?: PropertyKind) => {
+const zeige = async (report: TaxReport, basis: Basis = 'ist', kind?: PropertyKind, over: Partial<Property> = {}) => {
   // Die Objekte sind meist gleichgültig: ohne Objekt gilt auf dem Server das einzige (#92). Nur
-  // die Art des Objekts entscheidet über den Satz zum Hausgeld (#143).
-  const properties: Property[] = kind
-    ? [{ id: 'p', name: 'Objekt', kind, address: '', landlordName: null, iban: null, paymentDeadlineDays: null }]
+  // die Art des Objekts entscheidet über den Satz zum Hausgeld (#143), die Kopfangaben über den Kopf der Anlage V und den
+  // Hinweis zu anschaffungsnahen Herstellungskosten (#96 PR 2).
+  const properties: Property[] = kind || Object.keys(over).length > 0
+    ? [{ id: 'p', name: 'Objekt', kind: kind ?? 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null, ...over }]
     : []
   vi.stubGlobal('fetch', async (url: string) =>
     new Response(JSON.stringify(url === '/api/properties' ? properties : report), { status: 200, headers: { 'content-type': 'application/json' } }))
@@ -137,7 +139,7 @@ afterEach(() => {
 
 // `Record<TaxHint, …>` ist hier die eigentliche Zusicherung: Es zwingt den Übersetzer, für jeden
 // Hinweis eine Lage zu verlangen. Ohne das wäre die Schleife unten nur eine hübsche Form.
-type Lage = { report: TaxReport; basis?: Basis; kind?: PropertyKind; text: RegExp }
+type Lage = { report: TaxReport; basis?: Basis; kind?: PropertyKind; property?: Partial<Property>; text: RegExp }
 
 const LAGEN: Record<TaxHint, Lage> = {
   // Muss auch im Druck stehen: Ein ausgedrucktes Blatt auf Soll-Basis ginge sonst ohne jeden
@@ -190,6 +192,8 @@ const LAGEN: Record<TaxHint, Lage> = {
   },
   // #96 PR 1: die Gruppe „Erhaltungsaufwand“ mit ihren Zeilen, eine vermutete Entnahme und die Sonderumlage.
   maintenanceLines: { report: MIXED([ENTNAHME]), text: /Anlage V \d{4}: Zeile 55\./ },
+  // #96 PR 2 (A4.4): Übergang im Jahr vor dem Steuerjahr, also in der Frist; eine Entnahme ist Erhaltungsaufwand.
+  acquisitionRelated: { report: MIXED([ENTNAHME]), property: { ownershipTransferOn: `${JAHR - 1}-07-01` }, text: /mehr als 15 % der Anschaffungskosten des Gebäudes/ },
   reserveWithdrawalSuspected: {
     report: REPORT({ reserveWithdrawalSuspects: [{ costItemId: 'a', description: 'Dach aus der Rücklage', amountCents: 50000, paidOn: `${JAHR}-03-01` }] }),
     text: /nicht das Ihrer eigenen Hausgeldzahlung/,
@@ -238,7 +242,7 @@ const LAGEN: Record<TaxHint, Lage> = {
 for (const hint of TAX_HINTS) {
   test(`Der Hinweis ${hint} steht auf der Seite`, async () => {
     const lage = LAGEN[hint]
-    await zeige(lage.report, lage.basis, lage.kind)
+    await zeige(lage.report, lage.basis, lage.kind, lage.property)
     await waitFor(() => expect(screen.getByText(lage.text)).toBeTruthy())
   })
 }
@@ -556,8 +560,9 @@ test('Reihenfolge der Steuerseite: Einnahmen, Werbungskosten mit Erhaltungsaufwa
       }],
     },
   })
-  await zeige(report)
+  await zeige(report, 'ist', 'mfh', { ownershipTransferOn: `${JAHR - 1}-07-01` })
   const blocks = [
+    screen.getByRole('heading', { name: 'Kopf der Anlage V' }),
     screen.getByRole('heading', { name: 'Einnahmen' }),
     screen.getByRole('heading', { name: 'Werbungskosten' }),
     await screen.findByText(/Anlage V \d{4}: Zeile 55\./),
@@ -576,3 +581,16 @@ test('Entnahme: Nutzungswechsel nennt den Tag der Ausgabe, die Eigentumswohnung 
   expect(screen.getByText(/Entnahmen aus der Erhaltungsrücklage zählen abweichend im Jahr/)).toBeTruthy()
 })
 
+
+// #96 PR 2 (Entwurf B3): der Kopf der Anlage V mit Zeilen, Aktenzeichen ohne Sonderzeichen und „nicht eingetragen“.
+test('Kopf der Anlage V: Aktenzeichen ohne Sonderzeichen, Eigentumsübergang, Fehlendes „nicht eingetragen“, Kennzahl 62', async () => {
+  const report = REPORT({ costModels: { tenancies: 1, inclusive: 0, partlyInclusive: 0, flatRate: 0, relativeTenancies: 1 } })
+  await zeige(report, 'ist', 'mfh', { groundTaxFileNumber: '2141/123/45678', ownershipTransferOn: '2023-07-01' })
+  expect(await screen.findByText('214112345678')).toBeTruthy()
+  expect(screen.getByText('01.07.2023')).toBeTruthy()
+  expect(screen.getAllByText('nicht eingetragen').length).toBe(3)
+  expect(screen.getByText('1 = Ja')).toBeTruthy()
+  // Die Nummer nur, solange der Vordruck des Jahres gelesen ist (JAHR folgt der Uhr, siehe oben).
+  if (anlageVLines(JAHR)?.header?.use === 10) expect(screen.getByText('Zeile 10, Kennzahl 62')).toBeTruthy()
+  else expect(screen.queryByText(/Kennzahl 62/)).toBeNull()
+})

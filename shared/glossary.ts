@@ -21,7 +21,7 @@ import { messevCalibrationYears } from './law/messev.ts'
 import { OPERATING_POWER_HANDLING_LABELS, OPERATING_POWER_HANDLING_QUESTION } from './operatingPower.ts'
 import { co2CutMissing, co2DistrictEtsNew, co2EbevFactors, co2FirstPeriodStart, co2HalfSplit, co2HalfSplitTwoFamily, co2NonResidential, co2Restriction, co2RoundingDecimals, co2SelfSupply, co2StageTable, halfSplitBioFirstDay, halfSplitEnactedOn, halfSplitFirstDay } from './law/co2kostaufg.ts'
 import { bioCapFrom, gmodgHeating43 } from './law/gmodg.ts'
-import { estgCheapRent } from './law/estg.ts'
+import { estgAcquisitionRelated, estgCheapRent, yearsWord } from './law/estg.ts'
 import { ustgSmallBusiness } from './law/ustg.ts'
 
 // Hälftige Teilung nach § 5a (Heizung PR 18): Stichtage, Grenze beim Biobrennstoff, Zweifamilienhaus und § 43 GModG.
@@ -32,6 +32,10 @@ const HEATING43 = valueAt(gmodgHeating43, LAW_AS_OF)
 const SELF = valueAt(co2SelfSupply, LAW_AS_OF)
 // Verbilligte Vermietung (#257): die Grenzen von § 21 Abs. 2 EStG.
 const CHEAP = valueAt(estgCheapRent, LAW_AS_OF)
+// Anschaffungsnahe Herstellungskosten (#96 PR 2): Grenze und Zeitraum nach § 6 Abs. 1 Nr. 1a EStG.
+const ACQ = valueAt(estgAcquisitionRelated, LAW_AS_OF)
+const ACQ_YEARS = yearsWord(ACQ.years)
+const acqDe = (euro: number): string => euro.toLocaleString('de-DE', { maximumFractionDigits: 0 })
 // Garage und Umsatzsteuer (#323): die Grenzen der Kleinunternehmerregelung nach § 19 Abs. 1 UStG.
 const SMALL = valueAt(ustgSmallBusiness, LAW_AS_OF)
 
@@ -698,7 +702,21 @@ export const GLOSSARY = {
     short: 'Ein Teil des Hausgelds einer Eigentumswohnung, den die Gemeinschaft für künftige Reparaturen ansammelt; als Werbungskosten abziehbar ist er erst, wenn und soweit die Gemeinschaft das Geld für Erhaltungsmaßnahmen ausgibt, nicht schon bei der Zahlung.',
     example: 'Hausgeld 3.600 € im Jahr, davon 900 € Zuführung zur Erhaltungsrücklage: Sofort abziehbar sind höchstens 3.600 − 900 = 2.700 €. Bezahlt die Gemeinschaft zwei Jahre später aus der Rücklage eine Dachreparatur, ist Ihr Anteil daran erst in diesem Jahr Werbungskosten.',
     norm: '§ 19 Abs. 2 Nr. 4 WEG; § 9 Abs. 1 EStG; BFH, Urteil vom 14.01.2025, IX R 19/24',
-    needed: 'Nur bei einer vermieteten Eigentumswohnung. Erfassen Sie die Zuführung als Kostenart „Zuführung Erhaltungsrücklage“; Mietfuchs legt sie nicht auf den Mieter um und weist sie in der Steuerübersicht getrennt von den Werbungskosten aus. Bezahlt die Gemeinschaft eine Erhaltungsmaßnahme aus der Rücklage, erfassen Sie Ihren Anteil laut Hausgeldabrechnung als „Entnahme Erhaltungsrücklage“, ohne Zahlungsdatum: Er zählt im Jahr, in dem die Gemeinschaft das Geld ausgibt, nicht wenn Sie Ihr Hausgeld zahlen, und gehört in der Anlage V zu den Erhaltungsaufwendungen (2024 und 2025 Zeile 55, für verhältnismäßig aufgeteilten Aufwand Zeile 56). Das gilt auch für eine Rücklage, die Sie beim Kauf miterworben haben. Geht die Maßnahme über die Erhaltung hinaus, etwa ein neuer Aufzug oder ein Anbau, sind es Herstellungskosten; sie wirken über die Abschreibung, die Mietfuchs nicht rechnet. Eine Sonderumlage zählt nach derselben Begründung erst, wenn die Gemeinschaft sie für die Maßnahme ausgibt.',
+    needed: `Nur bei einer vermieteten Eigentumswohnung. Erfassen Sie die Zuführung als Kostenart „Zuführung Erhaltungsrücklage“; Mietfuchs legt sie nicht auf den Mieter um und weist sie in der Steuerübersicht getrennt von den Werbungskosten aus. Bezahlt die Gemeinschaft eine Erhaltungsmaßnahme aus der Rücklage, erfassen Sie Ihren Anteil laut Hausgeldabrechnung als „Entnahme Erhaltungsrücklage“, ohne Zahlungsdatum: Er zählt im Jahr, in dem die Gemeinschaft das Geld ausgibt, nicht wenn Sie Ihr Hausgeld zahlen, und gehört in der Anlage V zu den Erhaltungsaufwendungen (2024 und 2025 Zeile 55, für verhältnismäßig aufgeteilten Aufwand Zeile 56). Das gilt auch für eine Rücklage, die Sie beim Kauf miterworben haben. Geht die Maßnahme über die Erhaltung hinaus, etwa ein neuer Aufzug oder ein Anbau, sind es Herstellungskosten; sie wirken über die Abschreibung, die Mietfuchs nicht rechnet. Eine Sonderumlage zählt nach derselben Begründung erst, wenn die Gemeinschaft sie für die Maßnahme ausgibt. In den ${ACQ_YEARS} Jahren nach dem Kauf zählen Entnahmen bei der Grenze für anschaffungsnahe Herstellungskosten mit (siehe Anschaffungsnahe Herstellungskosten).`,
+  },
+  // #96 PR 2 (Entwurf A4.4, Durchsicht X6): der Begriff zum gemeinsamen Hinweis `acquisitionRelated` der Steuerübersicht.
+  // Wortlaut von § 6 Abs. 1 Nr. 1a EStG gelesen am 31.10.2026 auf gesetze-im-internet.de, Grenze und Zeitraum aus dem
+  // Register (`estg.acquisition-related`); dass Entnahmen aus der Rücklage mitzählen: BFH, Urteil vom 14.01.2025,
+  // IX R 19/24, Rz. 24. Verwaltungsauffassung: BMF-Schreiben vom 26.01.2026, IV C 1 - S 2253/00082/001/064 (BStBl-Fundstelle
+  // nicht gefunden, gelesen in einer Kopie), Rn. 54 (Grenze), 62 (taggenau ab dem Übergang), 63 (zum Fristende weder
+  // abgeschlossen noch bezahlt). Bezugsgröße sind die Anschaffungskosten des Gebäudes samt anteiliger Nebenkosten
+  // (Durchsicht K5); das Beispiel teilt Kaufpreis und Nebenkosten im selben Verhältnis auf Gebäude und Boden.
+  acquisitionRelatedCosts: {
+    title: 'Anschaffungsnahe Herstellungskosten',
+    short: `Aufwendungen für Instandsetzung und Modernisierung, die innerhalb von ${ACQ_YEARS} Jahren nach der Anschaffung eines Gebäudes durchgeführt werden und ohne Umsatzsteuer zusammen mehr als ${ACQ.percent} % der Anschaffungskosten des Gebäudes ausmachen, einschließlich der anteiligen Nebenkosten des Kaufs; sie sind dann keine sofort abziehbaren Werbungskosten, sondern Herstellungskosten und wirken nur über die Abschreibung.`,
+    example: `Kaufpreis 250.000 €, davon 200.000 € für das Gebäude und 50.000 € für Grund und Boden. Grunderwerbsteuer, Notar und Grundbuch kosten zusammen 20.000 €; auf das Gebäude entfallen davon ebenso 80 %, also 16.000 €. Die Anschaffungskosten des Gebäudes sind damit 216.000 €, die Grenze ${ACQ.percent} % davon ${acqDe(216000 * ACQ.percent / 100)} €. Werden in den ${ACQ_YEARS} Jahren nach dem Übergang Bad und Fenster für zusammen 34.000 € ohne Umsatzsteuer erneuert, liegen die Aufwendungen über der Grenze: Alle 34.000 € gehören zu den Herstellungskosten, nicht nur die ${acqDe(34000 - 216000 * ACQ.percent / 100)} € darüber. Wären es 32.000 €, blieben sie unter der Grenze und sofort abziehbar, obwohl sie mehr sind als ${ACQ.percent} % des Kaufpreises für das Gebäude allein (${acqDe(200000 * ACQ.percent / 100)} €).`,
+    norm: '§ 6 Abs. 1 Nr. 1a EStG; § 9 Abs. 5 Satz 2 EStG; BMF-Schreiben vom 26.01.2026, IV C 1 - S 2253/00082/001/064, Rn. 54, 62 und 63; BFH, Urteil vom 14.01.2025, IX R 19/24',
+    needed: `Nur wenn Sie das Gebäude oder die Wohnung in den letzten ${ACQ_YEARS} Jahren gekauft haben. Die Frist läuft taggenau ab dem Übergang von Besitz, Nutzen und Lasten laut Kaufvertrag, nicht ab dem Tag des Kaufvertrags; tragen Sie das Datum in den Stammdaten beim Objekt unter „Für die Steuer (Anlage V)“ als Eigentumsübergang ein. Zum Ende der Frist müssen die Arbeiten weder abgeschlossen noch bezahlt sein: Was bis dahin ausgeführt wurde, zählt mit, auch wenn die Rechnung später kommt. Mietfuchs kennt die Anschaffungskosten nicht und rechnet die Grenze deshalb nicht; die Steuerübersicht weist in diesen Jahren und im Jahr nach dem Ende der Frist darauf hin. Mit zählen auch Ihr Anteil an Entnahmen aus der Erhaltungsrücklage und auf mehrere Jahre verteilter Erhaltungsaufwand; nicht mit zählen Erweiterungen und Erhaltungsarbeiten, die jährlich üblicherweise anfallen. Prüfen Sie die Grenze bitte mit Ihrem Steuerberater.`,
   },
   labor35a: {
     title: 'Lohnanteil nach § 35a EStG',
