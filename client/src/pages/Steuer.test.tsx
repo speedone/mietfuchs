@@ -909,7 +909,8 @@ const GESAMT = (): TaxOverview => ({
   year: JAHR,
   rows: [
     { propertyId: 'p', name: 'Objekt', kind: 'mfh', ok: true, hasRental: true, number: 1, sums: SUMME() },
-    { propertyId: 'g', name: 'Garagenhof', kind: 'sonstiges', ok: true, hasRental: false, number: null, sums: SUMME({ incomeCents: 0, sollCents: 0, deductibleCents: 0, surplusCents: 0, surplusSollCents: 0, expensesTotalCents: 0 }) },
+    // Selbst bewohnt: privater Teil ohne Vermietung, zählt nicht (Durchsicht S1).
+    { propertyId: 'g', name: 'Garagenhof', kind: 'sonstiges', ok: true, hasRental: false, number: null, sums: SUMME({ incomeCents: 0, sollCents: 0, deductibleCents: 0, surplusCents: 0, surplusSollCents: 0, expensesTotalCents: 25000, privateCents: 25000 }) },
     { propertyId: 'q', name: 'Haus B', kind: 'etw', ok: true, hasRental: true, number: 2, sums: SUMME({ incomeCents: 0, sollCents: 0, deductibleCents: 120000, privateCents: 40000, surplusCents: -120000, surplusSollCents: -120000 }) },
     { propertyId: 'x', name: 'Haus X', kind: 'mfh', ok: false, error: 'Die Position y ist nur mit einem Teilbetrag abgeflossen.' },
   ],
@@ -938,8 +939,12 @@ test('Gesamtsicht ab zwei Objekten: installationsweit abgefragt, je Objekt eine 
   const foot = table.querySelector('tfoot')?.textContent ?? ''
   expect(foot).toContain(fmtEuro(420000))
   expect(foot).toContain(fmtEuro(780000))
+  // Die Fußzeile „privat“ ist die Summe der angezeigten Zellen (Durchsicht S1).
+  const cells = [...table.querySelectorAll('tbody td[data-label="privat, nicht abziehbar"]')].map((td) => td.textContent)
+  expect(cells).toEqual([fmtEuro(0), fmtEuro(40000)])
+  expect(table.querySelector('tfoot td[data-label="privat, nicht abziehbar"]')?.textContent).toBe(fmtEuro(40000))
   expect(screen.getByText(/zählt nicht in die Summe/)).toBeTruthy()
-  expect(screen.getByText(/das Finanzamt summiert sie selbst/)).toBeTruthy()
+  expect(screen.getByText('Kein Formular: Die Summe dient nur Ihrer Kontrolle.')).toBeTruthy()
   // Am Handy gestapelt; der Kopf nennt Zeile 32, die Nummer der Anlage steht je Zeile.
   expect(table.classList.contains('stacked')).toBe(true)
   expect([...table.querySelectorAll('thead th')].map((t) => t.textContent)).toContain('Einnahmen (Zeile 32)')
@@ -953,6 +958,29 @@ test('Gesamtsicht auf Soll: Einnahmen und Überschuss vereinbart, mit Vermerk', 
   const table = await screen.findByRole('table', { name: `Alle Objekte ${JAHR}` })
   expect([...table.querySelectorAll('thead th')].map((t) => t.textContent)).toContain('Einnahmen vereinbart (Soll)')
   expect(table.querySelector('tbody tr')?.textContent).toContain(fmtEuro(1100000))
+  // K3: der Vermerk zum Soll steht auch in der Karte.
+  const card = table.closest('section') ?? expect.unreachable('Karte')
+  expect(card.textContent).toMatch(/Diese Ansicht rechnet mit dem vereinbarten Soll/)
+})
+
+test('Gesamtsicht auf Ist: kein Vermerk zum Soll in der Karte', async () => {
+  await zeige(REPORT(), 'ist', 'mfh', {}, GESAMT())
+  const table = await screen.findByRole('table', { name: `Alle Objekte ${JAHR}` })
+  expect(table.closest('section')?.textContent).not.toMatch(/vereinbarten Soll/)
+})
+
+// K4: Scheitert der Abruf, steht die Meldung in der Karte; die Seite des Objekts bleibt.
+test('Gesamtsicht: Fehler beim Abruf steht in der Karte', async () => {
+  const properties = [OBJEKT('p', 'Objekt'), OBJEKT('q', 'Haus B')]
+  vi.stubGlobal('fetch', async (url: string) => {
+    if (url.startsWith('/api/tax/overview')) return new Response(JSON.stringify({ error: 'Die Datenbank ist gerade nicht erreichbar.' }), { status: 500, headers: { 'content-type': 'application/json' } })
+    return new Response(JSON.stringify(url === '/api/properties' ? properties : REPORT()), { status: 200, headers: { 'content-type': 'application/json' } })
+  })
+  render(<PeriodProvider><PropertyProvider><Steuer settings={null} /></PropertyProvider></PeriodProvider>)
+  const heading = await screen.findByRole('heading', { name: `Alle Objekte ${JAHR}` })
+  const card = heading.closest('section') ?? expect.unreachable('Karte')
+  await waitFor(() => expect(card.textContent).toMatch(/Die Datenbank ist gerade nicht erreichbar/))
+  expect(screen.getByText(/Summe der Einnahmen/i)).toBeTruthy()
 })
 
 test('Gesamtsicht: der Sprung wechselt in das Objekt und lädt dessen Steuerübersicht', async () => {

@@ -1159,6 +1159,10 @@ function OverviewCard({ year, basis, refresh }: { year: number; basis: Basis; re
     <Card title={`Alle Objekte ${year}`} className="no-print">
       {error && <NoticeBox level="error" action={error} />}
       <p className="muted">{OVERVIEW_NOTE}</p>
+      {/* K3: Auch hier gilt der Vorbehalt zum Soll; die Karte steht weit unter dem Hinweis der Übersicht. */}
+      {basis === 'soll' && (
+        <NoticeBox level="warning" title="Diese Ansicht rechnet mit dem vereinbarten Soll." action={<>Für die Steuererklärung bitte auf <em>tatsächlich gezahlt</em> umschalten.</>} />
+      )}
       {v && (
         <>
           <Table className="stacked" aria-label={v.title}>
@@ -1182,7 +1186,7 @@ function OverviewCard({ year, basis, refresh }: { year: number; basis: Basis; re
                   </td>
                   {l.state === 'rental' ? (
                     <>
-                      <td data-label="Nr. der Anlage" className="num">{l.number}</td>
+                      <td data-label="Nr. der Anlage" className="num">{l.number ?? '–'}</td>
                       <td data-label={v.incomeHead} className="num">{fmtEuro(l.incomeCents)}</td>
                       <td data-label="Werbungskosten (abziehbar)" className="num">{fmtEuro(l.deductibleCents)}</td>
                       {v.showsPrivate && <td data-label="privat, nicht abziehbar" className="num muted">{fmtEuro(l.privateCents)}</td>}

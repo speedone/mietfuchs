@@ -1,7 +1,7 @@
 // Gesamtsicht über alle Objekte (#96 PR 3): was die Seite aus der Antwort des Servers wählt.
 import { expect, test } from 'vitest'
 import type { TaxOverview, TaxOverviewSums } from './types'
-import { neutralText, overviewMore, overviewView, showsOverview } from './taxOverview'
+import { neutralText, OVERVIEW_NOTE, overviewMore, overviewView, showsOverview } from './taxOverview'
 
 const SUMS = (over: Partial<TaxOverviewSums> = {}): TaxOverviewSums => ({
   incomeCents: 600_000,
@@ -37,7 +37,7 @@ test('Ist: Zeile 32 und Überschuss aus `received`, Nummer, neutraler Satz, Fehl
   expect(x).toMatchObject({ text: 'Nicht gerechnet: Die Position y ist im Jahr 2025 nur mit einem Teilbetrag abgeflossen.' })
   expect(v.totals).toEqual({ incomeCents: 600_000, deductibleCents: 460_000, privateCents: 30_000, surplusCents: 140_000 })
   expect(v.showsPrivate).toBe(true)
-  expect(v.failedText).toBe('Ein Objekt zählt nicht in die Summe, weil die Steuerübersicht dort nicht gerechnet werden konnte.')
+  expect(v.failedText).toBe('Ein Objekt zählt nicht in die Summe, weil die Steuerübersicht dort nicht gerechnet werden konnte. Die Nummern der Objekte danach stehen erst fest, wenn der Fehler behoben ist.')
 })
 
 test('Soll: Einnahmen und Überschuss vereinbart, Werbungskosten gleich', () => {
@@ -64,4 +64,28 @@ test('„Mehr dazu“: dieselben Zahlen wie je Objekt, Nummer auch bei Leerstand
   expect(more).toMatch(/leer stehende Wohnung/)
   expect(more).toMatch(/beurteilt Mietfuchs nicht/)
   expect(more).not.toMatch(/—/)
+})
+
+// Durchsicht S1: Ein Objekt ohne Vermietung zeigt keine Beträge; sein privater Teil schaltet die Spalte nicht ein.
+test('Privater Teil nur eines Objekts ohne Vermietung: keine Spalte „privat“', () => {
+  const [a, g] = OVERVIEW.rows
+  if (!a?.ok || !g?.ok) throw new Error('Zeilen')
+  const v = overviewView({ ...OVERVIEW, rows: [a, { ...g, sums: { ...g.sums, privateCents: 30_000 } }] }, 'ist', undefined)
+  expect(v.showsPrivate).toBe(false)
+})
+
+// Durchsicht S3: nach einem Fehler Beträge ohne Nummer.
+test('Objekt mit Vermietung nach einem Fehler: Beträge, Nummer „–“', () => {
+  const [a, , , x] = OVERVIEW.rows
+  if (!a?.ok || !x) throw new Error('Zeilen')
+  const v = overviewView({ ...OVERVIEW, rows: [x, { ...a, number: null }] }, 'ist', undefined)
+  expect(v.lines[1]).toMatchObject({ state: 'rental', number: null, incomeCents: 600_000 })
+})
+
+test('K1/K2: Satz oben knapp; „Mehr dazu“ mit Anlage je Objekt, abweichender Nummerierung und Kürzung bei verbilligter Vermietung', () => {
+  expect(OVERVIEW_NOTE).toBe('Kein Formular: Die Summe dient nur Ihrer Kontrolle.')
+  const more = overviewMore(2025).join(' ')
+  expect(more).toMatch(/In der Regel geben Sie je Objekt eine Anlage V ab/)
+  expect(more).toMatch(/Nummerierung abweichen/)
+  expect(more).toMatch(/§ 21 Abs\. 2 EStG/)
 })
