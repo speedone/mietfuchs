@@ -425,7 +425,7 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   schließen“, „Ablesungen (N)“/„Ablesungen schließen“ (Zähler). Kein Pfeil im Text. Ein Knopf, dessen Text an einem
   Zustand hängt (`{open ? '…' : …}`), gilt als Aufklapper und ist ohne den Baustein ein Befund. Menüs und Popover
   (MobileNav, popover.tsx) sind keine Aufklapper; ein Knopf, der nur nachlädt („Ältere anzeigen (N)“ im Posteingang), auch
-  nicht. Wächter S32 in uiRules.test.ts; der Browserlauf misst, dass der Pfeil neben der ersten Textzeile steht und ein
+  nicht. Wächter S33 in uiRules.test.ts; der Browserlauf misst, dass der Pfeil neben der ersten Textzeile steht und ein
   umbrechender Titel jede Zeile an derselben Stelle beginnt.
 
 ## Knöpfe, Karten, Anlegen

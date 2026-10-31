@@ -1221,7 +1221,7 @@ test('S32: ein Feld mit eigenem Schatten behält seinen Fokusring', () => {
   expect(files.flatMap((f) => fieldShadows(sources[f] ?? '').map((m) => `${f}: ${m}`))).toEqual([])
 })
 
-// S32 (Aufklappen einheitlich): Alles, was etwas aufklappt, trägt denselben Pfeil davor, ▸ zu und ▾ offen, gedämpft und
+// S33 (Aufklappen einheitlich): Alles, was etwas aufklappt, trägt denselben Pfeil davor, ▸ zu und ▾ offen, gedämpft und
 // im Druck weg. Bei <details> zeichnet ihn die Regel für jedes <summary> (der Marker des Browsers ist aus), bei einem Knopf
 // dieselbe Regel über `.disclosure`; den Knopf baut nur DisclosureButton, der auch den Text wechselt („Mehr dazu“ →
 // „Weniger“). Ein umbrechender Titel steht mit hängendem Einzug neben dem Pfeil (Durchsicht S1).
@@ -1230,11 +1230,12 @@ const DISCLOSURE_OWNERS = new Map<string, { count: number, why: string }>([
   ['./components/DisclosureButton.tsx', { count: 1, why: 'der Baustein selbst' }],
   ['./components/popover.tsx', { count: 2, why: 'Popover (Begriffe, Menüs) öffnen eine Ebene über der Seite und klappen nichts in ihr auf' }],
   ['./components/MobileNav.tsx', { count: 3, why: 'Menüblatt am Handy, ein <dialog> und kein Aufklapper' }],
+  ['./pages/Hilfe.tsx', { count: 1, why: 'Suchfeld als combobox (#488): aria-expanded sagt, ob die Trefferliste offen ist' }],
 ])
 // Ohne Kommentare: Dort darf vom Pfeil die Rede sein.
 const withoutJsxComments = (src: string) => src.replace(/\{\/\*[\s\S]*?\*\/\}/g, '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '').replace(/\s\/\/ .*$/gm, '')
 const cssNoComments = css.replace(/\/\*[\s\S]*?\*\//g, '')
-test('S32: ein Pfeil für alles, was aufklappt; Knöpfe mit aria-expanded nur über DisclosureButton', () => {
+test('S33: ein Pfeil für alles, was aufklappt; Knöpfe mit aria-expanded nur über DisclosureButton', () => {
   expect(css).toMatch(/details > summary \{[^}]*list-style: none/)
   expect(css).toMatch(/details > summary::-webkit-details-marker \{ display: none; \}/)
   expect(css).toMatch(/:is\(details > summary, \.disclosure\)::before \{ content: '▸'; content: '▸' \/ '';[^}]*color: var\(--muted\)/)
@@ -1262,7 +1263,7 @@ test('S32: ein Pfeil für alles, was aufklappt; Knöpfe mit aria-expanded nur ü
 
 // Durchsicht M2 und S1: Der Pfeil steht neben der ersten Zeile, auch wenn der Text umbricht. Ein `display: inline` am
 // Knopf „Rechenweg“ ließ den Pfeil über dem Text stehen; ein Titel im <summary> umbricht mit hängendem Einzug.
-test('S32: der Pfeil steht neben der ersten Zeile, umbrechende Titel mit hängendem Einzug', () => {
+test('S33: der Pfeil steht neben der ersten Zeile, umbrechende Titel mit hängendem Einzug', () => {
   expect(cssNoComments).not.toMatch(/\.calc-toggle[^{]*\{[^}]*display: inline;/)
   expect(cssNoComments).toMatch(/button\.btn\.calc-toggle[^{]*\{[^}]*display: inline-flex; align-items: baseline;/)
   expect(cssNoComments).toMatch(/details > summary \{[^}]*position: relative;[^}]*padding-inline-start: calc\(0\.9em \+ var\(--space-1\)\)/)

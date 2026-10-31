@@ -191,7 +191,7 @@ h3 { font-size: var(--text-s); font-weight: var(--weight-strong); margin: 0 0 va
 :is(label.btn, .dropzone):focus-within { outline: none; box-shadow: var(--focus-ring); }
 
 /* Aufklappbare Bereiche (S8): eine Gestaltung für jede Zusammenfassung (Sonderfälle weiter unten). Ein Pfeil für alles,
-   was aufklappt (S32): ▸ zu, ▾ offen, gedämpft, statt des Markers des Browsers, für Vorleser leer; dieselbe Regel zeichnet
+   was aufklappt (S33): ▸ zu, ▾ offen, gedämpft, statt des Markers des Browsers, für Vorleser leer; dieselbe Regel zeichnet
    ihn vor einem Knopf aus DisclosureButton (`.disclosure`, offen über aria-expanded). */
 details > summary { position: relative; padding-inline-start: calc(0.9em + var(--space-1)); cursor: pointer; list-style: none; color: var(--accent-text); font-size: var(--text-m); font-weight: var(--weight-strong); user-select: none; width: fit-content; max-width: 100%; }
 details > summary::-webkit-details-marker { display: none; }
@@ -770,7 +770,7 @@ td.reading-panel { background: var(--bg); }
 .print-only { display: none; }
 
 @media print {
-  :is(details > summary, .disclosure)::before { display: none; } /* der Pfeil ist Bedienung (S32) */
+  :is(details > summary, .disclosure)::before { display: none; } /* der Pfeil ist Bedienung (S33) */
   details > summary { padding-inline-start: 0; }
   /* Gedruckt wird immer hell, unabhängig vom gewählten Design: Die dunklen Tokens gelten nur am
      Bildschirm (`@media not print` oben), hier wird nur der Grund weiß. */

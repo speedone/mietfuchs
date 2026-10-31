@@ -244,7 +244,7 @@ async function clippedSelfTest(page) {
   return cut === 3 && full === 1 ? null : `Die Messung abgeschnittener Felder findet ${cut} statt 3 zu schmale und ${full} statt 1 voll breites Probefeld.`
 }
 
-// ---------- Pfeil der Aufklapper (S32, client/CLAUDE.md „Aufklappen“) ----------
+// ---------- Pfeil der Aufklapper (S33, client/CLAUDE.md „Aufklappen“) ----------
 // Der Pfeil (`::before`) jedes sichtbaren Aufklappers steht neben der ersten Textzeile, nicht darüber (Durchsicht M2: der
 // Knopf „Rechenweg“ mit `display: inline` brach den Pfeil in eine eigene Zeile). Ein Pseudo-Element hat kein Rechteck;
 // gemessen wird ein Stellvertreter mit den berechneten Angaben des `::before`, während das echte ausgeblendet ist.
