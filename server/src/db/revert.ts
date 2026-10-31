@@ -380,7 +380,7 @@ async function applyRange(db: Executor, range: Range, dataDir: string): Promise<
   if (plan.missing.length > 0) {
     const names = plan.missing.slice(0, 3).map(([, name]) => `„${name}“`).join(', ')
     throw new RevertRefused(
-      `Der Stand nennt ${plan.missing.length === 1 ? 'eine Datei' : `${plan.missing.length} Dateien`} (${names}), die weder im Belegordner noch im Papierkorb liegt; ` +
+      `Der Stand nennt ${plan.missing.length === 1 ? 'eine Datei' : `${plan.missing.length} Dateien`} (${names}), die weder unter „Belege“ noch im Papierkorb liegt; ` +
         'ohne sie wäre der Beleg bzw. das Logo verloren. Deshalb ist nichts geändert. Der Papierkorb wird mit dem Verlauf nach zwölf Monaten geleert.',
     )
   }

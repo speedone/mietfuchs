@@ -351,7 +351,7 @@ test('Papierkorb: Ein gelöschter Beleg liegt im Papierkorb, der Rücksprung hol
     // Fehlt die Datei im Papierkorb, wird abgelehnt.
     fs.rmSync(inTrash)
     const missing = await previewOf(s, (await newest(s)).id)
-    assert.match(missing.refusals.join(' '), /weder im Belegordner noch im Papierkorb/)
+    assert.match(missing.refusals.join(' '), /weder unter „Belege“ noch im Papierkorb/)
   } finally {
     s.stop()
   }

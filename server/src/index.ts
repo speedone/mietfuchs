@@ -223,7 +223,7 @@ const existingDocument = (req: Request): DocumentSource | null | undefined => {
   if (!fs.existsSync(full) || !fs.statSync(full).isFile()) return null
   return { path: full, filename: name, mimetype: mimeTypeOf(name) }
 }
-const NO_EXISTING = 'Diesen Beleg gibt es im Belegordner nicht (mehr). Bitte laden Sie die Seite neu.'
+const NO_EXISTING = 'Diesen Beleg gibt es unter „Belege“ nicht (mehr). Bitte laden Sie die Seite neu.'
 const aiInput = (req: Request): { pdfText: string, pages: { mimeType: string, data: string }[] } => {
   const pdfText: unknown = req.body?.pdfText
   return {
@@ -463,7 +463,7 @@ function requireInvoiceFile(body: Record<string, unknown>, current: string | nul
   if (typeof sent !== 'string' || sent === '' || sent === current) return
   const name = path.basename(sent)
   if (name !== sent || !fs.existsSync(path.join(UPLOAD_DIR, name)) || !fs.statSync(path.join(UPLOAD_DIR, name)).isFile()) {
-    throw new RouteProblem(400, `Den Beleg „${sent}“ gibt es im Belegordner nicht (mehr). Bitte wählen Sie ihn neu oder laden Sie ihn hoch.`)
+    throw new RouteProblem(400, `Den Beleg „${sent}“ gibt es unter „Belege“ nicht (mehr). Bitte wählen Sie ihn neu oder laden Sie ihn hoch.`)
   }
 }
 // Die Sammlungen, die ein Objekt tragen; die übrigen erben es über ihre Wurzel (#92).
@@ -2903,7 +2903,7 @@ async function reconcileAfterRestore(): Promise<string[]> {
     const opened = database
     return opened ? await opened.read((db) => reconcileFiles(db, DATA_DIR)) : []
   } catch (err) {
-    console.error(`Belegordner und Papierkorb ließen sich nicht abgleichen: ${messageOf(err)}`)
+    console.error(`Belege und Papierkorb ließen sich nicht abgleichen: ${messageOf(err)}`)
     return []
   }
 }
@@ -3395,7 +3395,7 @@ app.post('/api/prior-versions/:name/restore', async (req, res) => {
         : []
       const missing = files.map((f) => f.file).filter((f): f is string => !!f && !fs.existsSync(path.join(UPLOAD_DIR, path.basename(f))))
       if (missing.length > 0) {
-        notes = [...notes, `${missing.length === 1 ? 'Ein Beleg, auf den dieser Stand verweist, fehlt' : `${missing.length} Belege, auf die dieser Stand verweist, fehlen`} im Belegordner, weil ${missing.length === 1 ? 'er' : 'sie'} seither gelöscht ${missing.length === 1 ? 'wurde' : 'wurden'}: ${missing.slice(0, 5).join(', ')}${missing.length > 5 ? ' …' : ''}.`]
+        notes = [...notes, `${missing.length === 1 ? 'Ein Beleg, auf den dieser Stand verweist, fehlt' : `${missing.length} Belege, auf die dieser Stand verweist, fehlen`} unter „Belege“, weil ${missing.length === 1 ? 'er' : 'sie'} seither gelöscht ${missing.length === 1 ? 'wurde' : 'wurden'}: ${missing.slice(0, 5).join(', ')}${missing.length > 5 ? ' …' : ''}.`]
       }
     } catch {
       // Nur eine Auskunft; das Einspielen ist gelungen.

@@ -101,6 +101,6 @@ export async function reconcileFiles(db: Executor, dataDir: string): Promise<str
   }
   const notes: string[] = []
   if (restored > 0) notes.push(restored === 1 ? 'Ein Beleg oder Logo, auf das der Stand verweist, kam aus dem Papierkorb zurück.' : `${restored} Belege oder Logos, auf die der Stand verweist, kamen aus dem Papierkorb zurück.`)
-  if (refused.length > 0) notes.push(`Aus dem Papierkorb ließ sich nicht zurückholen: ${refused.map((n) => `„${n}“`).join(', ')}. Die Datei liegt dort weiter; legen Sie sie bei Bedarf selbst in den Belegordner.`)
+  if (refused.length > 0) notes.push(`Aus dem Papierkorb ließ sich nicht zurückholen: ${refused.map((n) => `„${n}“`).join(', ')}. Die Datei liegt dort weiter; legen Sie sie bei Bedarf selbst unter „Belege“ ab.`)
   return notes
 }

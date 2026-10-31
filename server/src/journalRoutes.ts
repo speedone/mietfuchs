@@ -90,12 +90,12 @@ export const ROUTE_SENTENCES: Readonly<Record<string, RouteSentence>> = {
   // Der Abbruch entfernt den eben hochgeladenen Beleg wieder (`cancel` in index.ts).
   'POST /api/ai/cancel/:id': s('Auswertung eines Belegs abgebrochen', 'uploads'),
   'POST /api/extract': s('Beleg mit KI ausgewertet', 'uploads'),
-  'POST /api/intake': s('Beleg in der Schnellerfassung ausgewertet', 'uploads'),
+  'POST /api/intake': s('Beleg mit KI ausgewertet', 'uploads'),
   'POST /api/heating-plants/:id/service-statement': s('Messdienstabrechnung hochgeladen', 'uploads'),
   'POST /api/heating-plants/:id/fuel-invoice': s('Lieferantenrechnung hochgeladen', 'uploads'),
   'PUT /api/assessments/:id': s('Auswertung eines Belegs geändert'),
   'POST /api/assessments/:id/book': s('Beleg gebucht', 'cost_items'),
-  'PUT /api/uploads/:file': s('Beleg im Posteingang geändert', 'uploads'),
+  'PUT /api/uploads/:file': s('Objekt oder Jahr eines Belegs geändert', 'uploads'),
   'DELETE /api/uploads/:file': s('Beleg gelöscht', 'uploads'),
   // #318, Schritt 4: Der Satz wird nach dem Rücksprung durch den genauen ersetzt („Rückgängig: …“, „Zurückgekehrt zum
   // Stand vor …“, db/revert.ts).
