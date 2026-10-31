@@ -918,7 +918,7 @@ Grundmenge ist das ganze Gebäude), Überschuss. Beschreibende Gruppen statt fes
   verteilt werden kann) sind Auskunft für die Seite. Die Übersicht.csv des Steuer-ZIP hat dann die
   Spalte „verteilt § 82b EStDV“ und die Raten aus Vorjahren als Zeilen ohne eigenen Beleg (`derivedTaxLines`), der Beleg
   liegt nur im Archiv des Jahres der Zahlung. **Oberfläche** (#262 PR 3, [client/src/taxSpread.ts](../../client/src/taxSpread.ts)):
-  Spalte „verteilt“ (`showsDeferred`, Vorzeichen im Satz unter der Tabelle erklärt; die Kennzahl nennt „in Folgejahre verschoben“ und „aus Vorjahren“ getrennt, `deferredParts`), Satz an der Zeile, Block „Zu verteilender Erhaltungsaufwand“ mit den Zeilen 57 bis 72
+  Spalte „verteilt“ (`showsDeferred`, der Betrag mit Wort statt Vorzeichen: „… in Folgejahre“, „… aus 2025“, die Übersicht.csv behält das Vorzeichen; die Tabelle ist am Handy gestapelt; die Kennzahl nennt „in Folgejahre verschoben“ und „aus Vorjahren“ getrennt, `deferredParts`), Satz an der Zeile, Block „Zu verteilender Erhaltungsaufwand“ mit den Zeilen 57 bis 72
   aus `anlageVLines` (ein Ursprungsjahr, das der Vordruck nicht mehr führt, ohne Nummer; D = 0 steht nicht darin), Hinweise `spreadConditions`
   (Warnung), `spreadCarried`, `spreadNothingDeductible`, `spreadIgnored`, und `acquisitionRelated` auch ohne Datum, wenn eine
   Verteilung beginnt; Lexikon `spread82b` (die Schritte tragen `term`). D = 0 ergibt in den Folgejahren bewusst keine Zeile.

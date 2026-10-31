@@ -935,7 +935,16 @@ test('Verteilung: das Feld nur, wo verteilt werden kann; angelegt ohne Rückfrag
   fireEvent.change(field, { target: { value: '3' } })
   expect(field.selectedOptions[0]?.textContent).toBe('auf 3 Jahre')
   expect(screen.getByText(new RegExp(`Abzug ${year} bis ${year + 2}:`))).toBeTruthy()
-  expect(screen.getByText(/Verwaltungskosten und Zinsen/)).toBeTruthy()
+  // Nachtrag: sichtbar bleibt nur die Vorschau; Voraussetzungen, Verwaltung und Zinsen, anschaffungsnahe Herstellungskosten
+  // stehen eingeklappt unter „Mehr dazu“ (S33).
+  const zinsen = screen.getByText(/Verwaltungskosten und Zinsen/)
+  expect(zinsen.closest('[hidden]')).not.toBeNull()
+  expect(screen.getByText(/anschaffungsnahen Herstellungskosten/).closest('[hidden]')).not.toBeNull()
+  const mehr = screen.getByRole('button', { name: 'Mehr dazu' })
+  expect(mehr.getAttribute('aria-expanded')).toBe('false')
+  fireEvent.click(mehr)
+  expect(zinsen.closest('[hidden]')).toBeNull()
+  expect(screen.getByRole('button', { name: 'Weniger' }).getAttribute('aria-controls')).toBe(zinsen.closest('[id]')?.id)
   fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/i }))
   await waitFor(() => expect(sent).toHaveLength(1))
   expect(sent[0]?.body).toMatchObject({ category: 'Nicht umlagefähig', spreadYears: 3 })

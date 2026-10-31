@@ -850,7 +850,8 @@ test('S18: Objekt und Abrechnungszeitraum nur in der Seitenleiste', () => {
 // (`<Table className="stacked">`), und dort steht jede Spalte als Beschriftung an ihrer Zelle
 // (`data-label`). Ohne sie stünde ein Wert ohne seine Spalte da. Ausgenommen sind die Aktionen und Zeilen
 // mit einer Zelle über mehrere Spalten (Summen, Belegkopf, Ablesungen), die ihre Bedeutung selbst tragen.
-const STACKED_PAGES = ['./pages/Stammdaten.tsx', './pages/Zaehler.tsx', './pages/Kosten.tsx', './pages/Mietkonto.tsx']
+// Steuer.tsx seit #262 PR 3: die Werbungskosten je Position, die Einnahmen und der Block der Zeilen 57 bis 72.
+const STACKED_PAGES = ['./pages/Stammdaten.tsx', './pages/Zaehler.tsx', './pages/Kosten.tsx', './pages/Mietkonto.tsx', './pages/Steuer.tsx']
 /** Der Quelltext ohne die Tabellen, die keine Karten werden (verschachtelte Ablesungen, Zahlenraster). */
 const withoutPlainTables = (src: string): string => {
   let out = ''

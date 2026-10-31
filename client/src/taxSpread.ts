@@ -27,8 +27,19 @@ export function deferredParts(report: Pick<TaxReport, 'expenses'>): { outCents: 
   const d = report.expenses.items.map((x) => x.deferredCents ?? 0)
   return { outCents: d.filter((c) => c > 0).reduce((a, c) => a + c, 0), inCents: -d.filter((c) => c < 0).reduce((a, c) => a + c, 0) }
 }
-export const DEFERRED_COLUMN_TITLE = 'Plus: in Folgejahre verschoben; Minus: Anteil aus einem Vorjahr, in diesem Jahr abgezogen (§ 82b EStDV)'
-export const DEFERRED_COLUMN_NOTE = 'Spalte „verteilt“: mit Plus der Teil, der in Folgejahre verschoben ist (§ 82b EStDV); mit Minus ein Anteil aus einem Vorjahr, der in diesem Jahr abgezogen wird. Jede Zeile ergibt Gesamt = privat + verteilt + abziehbar, bei verbilligter Vermietung dazu unentgeltlich.'
+// Nachtrag zur Durchsicht: In der Spalte „verteilt“ steht der Betrag mit Wort statt mit Vorzeichen, damit kein
+// unerklärtes Minus dasteht (die Übersicht.csv behält das Vorzeichen, dort gilt die Zeilensumme).
+export function deferredCellText(item: Pick<TaxExpenseItem, 'deferredCents' | 'spreadFrom'>): string {
+  const d = item.deferredCents ?? 0
+  if (d > 0) return `${fmtEuro(d)} in Folgejahre`
+  if (d < 0) return `${fmtEuro(-d)} aus ${item.spreadFrom?.outflowYear ?? 'Vorjahren'}`
+  return ''
+}
+export function deferredSumText(report: Pick<TaxReport, 'expenses'>): string {
+  const { outCents, inCents } = deferredParts(report)
+  return [outCents > 0 ? `${fmtEuro(outCents)} in Folgejahre` : '', inCents > 0 ? `${fmtEuro(inCents)} aus Vorjahren` : ''].filter((x) => x !== '').join(' · ')
+}
+export const DEFERRED_COLUMN_NOTE = 'Spalte „verteilt“ (§ 82b EStDV): im Jahr der Zahlung der Teil, der in Folgejahre geht; in einem Folgejahr der Anteil aus dem Jahr der Zahlung, der hier abgezogen wird.'
 
 // Der Satz unter der Beschreibung einer Zeile.
 export function spreadItemText(item: TaxExpenseItem): string | null {

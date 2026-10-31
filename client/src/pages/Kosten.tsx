@@ -48,10 +48,8 @@ import {
   showsSpread,
   keepSpread,
   droppedSpreadText,
-  spreadPreview,
   spreadChange,
   spreadDeleteText,
-  spreadOptions,
   taxYearChange,
   taxYearOptions,
   type ItemForm,
@@ -64,6 +62,7 @@ import {
 import { notAgreedText, openWhy, untickedChoices, withParticipant } from '../contractAgreement'
 import ContractAgreementFields, { WhyQuestion } from '../components/ContractAgreementFields'
 import CostPeriodFields from '../components/CostPeriodFields'
+import SpreadField from '../components/SpreadField'
 import OperatingPowerFields from '../components/OperatingPowerFields'
 import TaxYearSelect from '../components/TaxYearSelect'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
@@ -1071,22 +1070,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
               <summary>Weitere Angaben — Leistungszeitraum{showTaxYear ? ', Jahr der Zahlung' : ''}{showsPaidOn(form) ? ', Bezahlt am' : ''}{showsSpread(form) ? ', Verteilung' : ''}{form.category === HEATING_CATEGORY ? ', Brennstoff/Energie' : ''} (optional)</summary>
               <CostPeriodFields form={form} onChange={setForm} showTaxYear={showTaxYear} years={heatTax?.show ? heatTax.years : taxYearOptions(periodSpan, storedTaxYear, form.taxYear !== '' ? Number(form.taxYear) : null)} emptyLabel={heatTax ? (heatTax.show && heatingOption && heatingOption.startYear === heatingOption.endYear ? `wie Heizperiode (${heatingOption.startYear})` : undefined) : spansTwoYears(period) ? undefined : `wie Abrechnungsjahr (${year})`} billTaxYear={deductionTaxYear(form, items)} paidOnChanges={livePaidOnChanges} droppedPaidOn={droppedPaidOnText(form, period)} />
               {/* #262 PR 3 (E-9): Verteilung nach § 82b EStDV neben „Bezahlt am“, nur wo der Server sie annimmt. */}
-              {showsSpread(form) && (
-                <label className="field">
-                  <span><Term id="spread82b">Für die Steuer verteilen (§ 82b EStDV)</Term></span>
-                  <select value={form.spreadYears} onChange={(e) => setForm({ ...form, spreadYears: spreadOptions.find((o) => o.value === e.target.value)?.value ?? '' })}>
-                    {spreadOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
-                  <small className="muted">Ohne Verteilung zählt der Betrag ganz im Jahr der Zahlung. Größeren Erhaltungsaufwand dürfen Sie auf zwei bis fünf Jahre verteilen, wenn das Gebäude überwiegend Wohnzwecken dient.</small>
-                  {spreadPreview(form, period) && <small className="muted" role="status">{spreadPreview(form, period)}</small>}
-                  {form.spreadYears !== '' && form.category === 'Nicht umlagefähig' && (
-                    <small className="muted">Verteilen Sie nur Erhaltungsaufwand wie Reparaturen; Verwaltungskosten und Zinsen, die ebenfalls unter „Nicht umlagefähig“ stehen, gehören nicht dazu.</small>
-                  )}
-                  {form.spreadYears !== '' && (
-                    <small className="muted">In den ersten Jahren nach dem Kauf kann eine Reparatur zu den <Term id="acquisitionRelatedCosts">anschaffungsnahen Herstellungskosten</Term> gehören; dann wird sie abgeschrieben und nicht verteilt.</small>
-                  )}
-                </label>
-              )}
+              {showsSpread(form) && <SpreadField form={form} period={period} onChange={setForm} />}
               {droppedSpreadText(storedItem, form) && <p className="muted" role="status">{droppedSpreadText(storedItem, form)}</p>}
             </details>
             {/* Nicht umlagefähig (#142): nichts zu verteilen, also keine Auswahl, die etwas anderes verspräche. */}
