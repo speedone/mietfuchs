@@ -379,10 +379,12 @@ export function textPdf(html) {
 // ---------- Alles zusammen ----------
 // Wegwerf-Ordner, nachgebautes Ollama, Server und Bestand. `pdf` macht aus einem Rechnungsbogen (HTML) die
 // Bytes eines PDFs: beim Fotografieren gedruckt vom Browser, im Browserlauf mit `textPdf`.
-/** @param {{ pdf: (html: string) => Promise<Uint8Array> | Uint8Array, prefix?: string }} options */
-export async function startDemo({ pdf, prefix = 'mietfuchs-demo-' }) {
+// `sequence`: die Antworten des nachgebauten Ollama der Reihe nach (fake-ollama.mjs); vorgegeben die Gartenpflege, die der
+// Beispielbestand selbst auswertet. Bildschirmfotos geben mehr vor, damit nicht jede Rechnung dieselbe ist.
+/** @param {{ pdf: (html: string) => Promise<Uint8Array> | Uint8Array, prefix?: string, sequence?: string[] }} options */
+export async function startDemo({ pdf, prefix = 'mietfuchs-demo-', sequence = ['GARTEN'] }) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), prefix))
-  const ollama = await startFakeOllama({ sequence: ['GARTEN'] })
+  const ollama = await startFakeOllama({ sequence })
   /** @type {{ base: string, stop: () => Promise<unknown>, problem: () => string | null } | null} */
   let server = null
   const stop = async () => {

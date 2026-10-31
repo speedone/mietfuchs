@@ -30,6 +30,23 @@ export const INVOICES = {
   },
 }
 
+// Weitere erfundene Rechnungen nur für Bildschirmfotos (#490): verschiedene Lieferanten, Beträge und Kostenarten, damit
+// der Eingang nicht fünfmal dieselbe zeigt. Nur über `sequence` erreichbar; die Reihenfolge der vier oben ändert sich nicht.
+export const MORE_INVOICES = {
+  SCHORNSTEIN: {
+    vendor: 'Bezirksschornsteinfeger Klein', invoiceDate: `${year}-10-14`, totalGrossEur: 95.3,
+    positions: [{ description: 'Feuerstättenschau und Abgasmessung', category: 'Schornsteinreinigung', amountEur: 95.3, labor35aEur: 71.2 }],
+  },
+  HAUSWART: {
+    vendor: 'Hausmeisterservice Weber', invoiceDate: `${year}-12-20`, totalGrossEur: 1980,
+    positions: [{ description: 'Hausmeisterdienst', category: 'Hauswart', amountEur: 1740, labor35aEur: 1740 }, { description: 'Winterdienst', category: 'Hauswart', amountEur: 180, labor35aEur: 180 }],
+  },
+  STROM: {
+    vendor: 'Stadtwerke Musterstadt', invoiceDate: `${year}-12-31`, totalGrossEur: 418.9,
+    positions: [{ description: 'Allgemeinstrom Treppenhaus und Keller', category: 'Beleuchtung/Allgemeinstrom', amountEur: 418.9 }],
+  },
+}
+
 // Heizung PR 20 (#103): die Messdienstabrechnung und die beiden Lieferantenrechnungen des KI-Prüflaufs
 // (scripts/ai-eval/invoices/), so wie ein Modell sie richtig liest. Erkannt am Schema (`blocks`, `parts`);
 // die Heizölrechnung am Namen des Lieferanten im Text (der Prompt selbst nennt Heizöl), sonst die Gasrechnung.
@@ -98,7 +115,8 @@ export function startFakeOllama({ port = 0, sequence = Object.keys(INVOICES) } =
       else {
         const text = JSON.stringify(j.messages ?? [])
         const marker = Object.keys(INVOICES).find((k) => text.includes(k)) ?? sequence[turn++ % sequence.length] ?? 'WASSER'
-        last = INVOICES[/** @type {keyof typeof INVOICES} */ (marker)]
+        const all = /** @type {Record<string, any>} */ ({ ...INVOICES, ...MORE_INVOICES })
+        last = all[marker] ?? INVOICES.WASSER
         answer = last
       }
       res.writeHead(200, { 'content-type': 'application/x-ndjson' })
