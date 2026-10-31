@@ -16,3 +16,11 @@ export async function heatingUpload(file: File, placement: { propertyId: string;
   }
   return fd
 }
+
+// Ein neuer Versuch mit einem Beleg, der schon im Belegordner liegt (Fehler mit Ausweg, #487): Der Browser liest die
+// Datei wie beim ersten Mal (Text, Seitenbilder), an den Server geht statt ihrer nur ihr Name.
+export function asStored(fd: FormData, stored: string): FormData {
+  fd.delete('file')
+  fd.append('existingFile', stored)
+  return fd
+}

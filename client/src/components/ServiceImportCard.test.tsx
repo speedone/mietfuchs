@@ -107,3 +107,30 @@ test('ohne Nutzeinheiten in der Abrechnung gehen nur die Wohnungen an der Heizun
   fireEvent.click(await screen.findByRole('button', { name: 'Trotzdem speichern' }))
   await waitFor(() => expect(sent.find((x) => x.url.endsWith('/co2'))?.body).toMatchObject({ serviceUnitsCount: 1 }))
 })
+
+// Fehler mit Ausweg (#487): Die Karte hat kein Formular zum Ausfüllen von Hand; „Von Hand erfassen“ führt deshalb in den
+// Belegordner zum Beleg, und „Erneut versuchen“ nennt nur seinen Namen.
+test('Fehler mit Ausweg: Beleg im Belegordner, „Erneut versuchen“ ohne neue Datei, „Von Hand erfassen“ in den Belegordner', async () => {
+  const sent: FormData[] = []
+  vi.stubGlobal('fetch', async (_url: string, init?: RequestInit) => {
+    if (init?.body instanceof FormData) {
+      sent.push(init.body)
+      return new Response(JSON.stringify({ error: 'Die Belege gingen an api.example.com …', file: 'srv-abrechnung.jpg', reason: 'consent', kept: true, service: 'api.example.com' }), { status: 502, headers: { 'content-type': 'application/json' } })
+    }
+    return new Response(JSON.stringify({ ai: { pageImageEdge: null } }), { status: 200, headers: { 'content-type': 'application/json' } })
+  })
+  const onOpenReceipt = vi.fn()
+  const onOpenAiSettings = vi.fn()
+  render(<ServiceImportCard plant={{ id: 'hp', propertyId: 'objekt-1', units: null }} view={view()} object={{ key: periodKey('2025-01'), from: '2025-01-01', to: '2025-12-31' }} tenancies={TENANCIES} units={UNITS} onSaved={() => {}}
+    onOpenReceipt={onOpenReceipt} onOpenAiSettings={onOpenAiSettings} />)
+  fireEvent.change(screen.getByLabelText('Messdienstabrechnung wählen'), { target: { files: [new File(['x'], 'abrechnung.jpg', { type: 'image/jpeg' })] } })
+  expect(await screen.findByText('Gespeichert, nicht ausgewertet')).toBeTruthy()
+  expect(screen.getByText(/Die Übermittlung an api\.example\.com ist noch nicht bestätigt\./)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Von Hand erfassen' }))
+  expect(onOpenReceipt).toHaveBeenCalledWith('srv-abrechnung.jpg')
+  fireEvent.click(screen.getByRole('button', { name: 'KI-Einstellungen öffnen' }))
+  expect(onOpenAiSettings).toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: 'Erneut versuchen' }))
+  await waitFor(() => expect(sent).toHaveLength(2))
+  expect([sent[1]?.get('file'), sent[1]?.get('existingFile'), sent[1]?.get('propertyId')]).toEqual([null, 'srv-abrechnung.jpg', 'objekt-1'])
+})

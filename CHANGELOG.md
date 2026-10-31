@@ -28,7 +28,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   ([#488](https://github.com/speedone/mietfuchs/issues/488)).
 - Scheitert die KI an einem Beleg (etwa weil Ollama nicht läuft), steht er in Schnellerfassung und Kosten als
   „Gespeichert, nicht ausgewertet“ da, mit dem Grund in einem Satz, „Von Hand erfassen“ und „Erneut versuchen“, das
-  keine Kopie mehr im Belegordner anlegt ([#487](https://github.com/speedone/mietfuchs/issues/487)).
+  keine Kopie mehr im Belegordner anlegt; ebenso beim Auslesen von Lieferantenrechnung und Messdienstabrechnung in den
+  Heizkosten ([#487](https://github.com/speedone/mietfuchs/issues/487)).
 - **Mietkonto rechnet fortlaufend ab Beginn des Mietverhältnisses**: Ein Rückstand aus dem Vorjahr steht als Übertrag
   da, eine im Dezember gezahlte Januarmiete deckt den Januar. Zahlungen werden nach § 366 BGB verteilt: zuerst die
   offenen Vorauszahlungen, dann die Miete, jeweils die ältesten zuerst. **Bei Rückständen, Teilzahlungen oder

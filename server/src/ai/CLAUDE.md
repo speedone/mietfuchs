@@ -68,7 +68,9 @@ Vorschläge**, übernommen wird erst nach Prüfung durch den Menschen. Gilt auch
   fehlender Bestätigung `service`. Den Grund setzt, wer die Meldung schreibt (`providerError(…, { reason })` in
   openai.ts, ollama.ts, index.ts; `reasonOf` in errors.ts, ohne Angabe `unreachable` bzw. `other`). Wer eine neue
   Meldung übersetzt, gibt ihr den passenden Grund. Ein neuer Versuch schickt `existingFile`, ohne Kopie. Die
-  Oberfläche: client/src/aiFailure.ts, components/KeptReceipt.tsx, Status `gespeichert` in evaluationQueue.ts.
+  Oberfläche: client/src/aiFailure.ts, components/KeptReceipt.tsx, Status `gespeichert` in evaluationQueue.ts; in den
+  Heizkosten FuelCard („Von Hand erfassen“ öffnet eine neue Lieferung) und ServiceImportCard (kein eigenes Formular,
+  also in den Belegordner, der den Beleg kurz hervorhebt), neuer Versuch über `asStored` (aiUpload.ts).
 - **Messdienst- und Lieferantenrechnung** ([../extractHeating.ts](../extractHeating.ts), #103):
   `POST /api/heating-plants/:id/service-statement` (nur bei Messdienst) und `…/fuel-invoice`, derselbe
   Strom. Je Belegart **ein** Ausgang (`toServiceExtraction`, `toFuelExtraction`), Netto-Teilmengen mit

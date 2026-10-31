@@ -306,6 +306,9 @@ test('Posteingang: ein angesprungener Beleg bekommt den Fokus, die Seite meldet 
   await waitFor(() => expect(onFocusDone).toHaveBeenCalledTimes(1))
   const card = document.activeElement?.closest('li.receipt-card')
   expect(card?.getAttribute('data-file')).toBe('4_lose.pdf')
+  // Kurz hervorgehoben, damit man sieht, wohin der Sprung ging
+  expect(card?.getAttribute('data-jumped')).toBe('true')
+  expect(card?.className).toMatch(/\bbg-accent-soft\b/)
 })
 
 test('Mappen: „Belege für die Steuer“ lädt das ZIP des gewählten Objekts und Jahres', async () => {

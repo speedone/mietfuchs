@@ -512,3 +512,45 @@ test('S2: Esc in einer mit der KI vorbelegten Lieferung fragt „Änderungen ver
   await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
   expect(screen.getByRole('dialog', { name: 'Neue Lieferung' })).toBeTruthy()
 })
+
+// ---------- Fehler mit Ausweg (#487) ----------
+// Scheitert die KI, liegt die Rechnung schon im Belegordner: kein roter Fehler, sondern der Ausweg. „Von Hand erfassen“
+// öffnet hier das Formular einer neuen Lieferung (die Karte hat es selbst), „Erneut versuchen“ nennt nur den Beleg.
+const failingThenKept = (reason: string) => {
+  const fields: Record<string, string>[] = []
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (init?.body instanceof FormData) {
+      const f: Record<string, string> = { url, file: init.body.get('file') instanceof File ? 'Datei' : '' }
+      init.body.forEach((v, k) => { if (typeof v === 'string' && k !== 'requestId') f[k] = v })
+      fields.push(f)
+      return new Response(JSON.stringify({ error: 'Ollama ist unter http://127.0.0.1:9 nicht erreichbar.', file: 'srv-gas.jpg', reason, kept: true }), { status: 502, headers: { 'content-type': 'application/json' } })
+    }
+    return new Response(JSON.stringify({ ai: {} }), { status: 200, headers: { 'content-type': 'application/json' } })
+  })
+  return fields
+}
+
+test('Fehler mit Ausweg: die Rechnung bleibt im Belegordner, „Erneut versuchen“ ohne neue Datei, „Von Hand erfassen“ öffnet das Formular', async () => {
+  const fields = failingThenKept('unreachable')
+  render(<UIProvider><FuelCard plant={{ id: 'hp', method: 'manual', energy: 'gas', propertyId: 'objekt-1' }} view={view} deliveries={[]} onSaved={() => {}} /></UIProvider>)
+  choose()
+  expect(await screen.findByText('Gespeichert, nicht ausgewertet')).toBeTruthy()
+  expect(screen.getByText(/Die KI ist gerade nicht erreichbar/)).toBeTruthy()
+  expect(screen.queryByText('Fehler')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Erneut versuchen' }))
+  await waitFor(() => expect(fields).toHaveLength(2))
+  expect([fields[0]?.file, fields[0]?.existingFile]).toEqual(['Datei', undefined])
+  expect([fields[1]?.file, fields[1]?.existingFile, fields[1]?.propertyId]).toEqual(['', 'srv-gas.jpg', 'objekt-1'])
+  fireEvent.click(await screen.findByRole('button', { name: 'Von Hand erfassen' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Neue Lieferung' })
+  await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true))
+})
+
+test('Fehler mit Ausweg: bei einem Schlüssel öffnet „KI-Einstellungen öffnen“ die Einstellungen', async () => {
+  failingThenKept('key')
+  const onOpenAiSettings = vi.fn()
+  render(<UIProvider><FuelCard plant={{ id: 'hp', method: 'manual', energy: 'gas' }} view={view} deliveries={[]} onSaved={() => {}} onOpenAiSettings={onOpenAiSettings} /></UIProvider>)
+  choose()
+  fireEvent.click(await screen.findByRole('button', { name: 'KI-Einstellungen öffnen' }))
+  expect(onOpenAiSettings).toHaveBeenCalled()
+})

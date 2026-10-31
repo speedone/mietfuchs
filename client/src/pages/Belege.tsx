@@ -271,6 +271,8 @@ function AttachPicker({ label, what, placeholder, scope, values, onSave, childre
   )
 }
 
+const JUMP_HIGHLIGHT_MS = 4000
+
 export const PLACEMENT_FIRST = 'Erst Objekt und Jahr speichern oder verwerfen.'
 
 // Objekt und Jahr eines Belegs im Posteingang (#309): ein Entwurf für beide Felder mit einem „Speichern“.
@@ -376,6 +378,13 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
   // und Jahre zeigen. Fehlt er ganz, ist der Sprung trotzdem erledigt.
   const widenedForFocus = useRef(false)
   const focusedFile = useRef<string | null>(null)
+  // Der angesprungene Beleg steht ein paar Sekunden hervorgehoben da, damit man sieht, wohin der Sprung ging
+  const [jumped, setJumped] = useState<string | null>(null)
+  useEffect(() => {
+    if (!jumped) return
+    const t = setTimeout(() => setJumped(null), JUMP_HIGHLIGHT_MS)
+    return () => clearTimeout(t)
+  }, [jumped])
   useEffect(() => {
     if (!focusFile || !loadedOnce || focusedFile.current === focusFile) return
     const done = () => {
@@ -387,6 +396,7 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
     if (card) {
       card.scrollIntoView?.({ block: 'center' })
       card.querySelector<HTMLElement>('a')?.focus()
+      setJumped(focusFile)
       done()
     } else if (!widenedForFocus.current && uploads.some((u) => u.file === focusFile)) {
       widenedForFocus.current = true
@@ -590,7 +600,8 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
     const { upload } = card
     const dup = hints.get(upload.file)
     return (
-      <li key={upload.file} className="receipt-card" data-file={upload.file}>
+      <li key={upload.file} className={`receipt-card${jumped === upload.file ? ' bg-accent-soft border-accent' : ''}`}
+        data-file={upload.file} data-jumped={jumped === upload.file ? 'true' : undefined}>
         <Thumb upload={upload} render={renderThumb} />
         <div className="receipt-body">
           <div className="receipt-title">
