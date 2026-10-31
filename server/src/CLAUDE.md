@@ -947,8 +947,9 @@ Grundmenge ist das ganze Gebäude), Überschuss. Beschreibende Gruppen statt fes
   `requireSpreadRest` in repository.ts, 409 `question: 'spread'`, bestätigt mit `confirmSpread`); das Formular
   (Stammdaten, „Objekt bearbeiten“ unter „Für die Steuer (Anlage V)“, `SpreadRestField`) zeigt das Feld nur mit einer
   verteilten Position oder einem gespeicherten Jahr und stellt dieselbe Rückfrage. Liegt das Ende im Jahr der Zahlung, nennt der
-  Bericht die Position in `spreadRestBeforeStart`; ein Ende davor wirkt auf die Position nicht (Durchsicht S2). Hinweise `spreadRest`, `spreadRestBeforeStart`,
-  `spreadUsageChanged` (Nutzungswechsel bei laufender Verteilung ohne Ende in diesem Jahr). Erbfall nach BFH IX R 31/19
+  Bericht die Position in `spreadRestBeforeStart`; ein Ende davor wirkt auf die Position nicht (Durchsicht S2). Hinweise `spreadRest`, `spreadRestBeforeStart`;
+  bei einem Wechsel weg von der Vermietung (`usageLeftRentalUnits`) während einer Verteilung ohne Ende in diesem Jahr ein
+  Satz im Hinweis `usageChangedInYear` (`spreadUsageChangedText`, Durchsicht K2). Erbfall nach BFH IX R 31/19
   (Rest beim Erblasser); R 21.1 Abs. 6 Sätze 2 und 3 EStR 2012 gelten danach als überholt. Schenkung als Auslegung
   gekennzeichnet (wie Abs. 2; FG Münster 4 K 422/15 E lehnt die Übertragung auf einen Einzelrechtsnachfolger ab).
 - **Verschiebung anzeigen** (`shiftNotes`, nur Auskunft): Jede Position trägt `outflow`; liegt das

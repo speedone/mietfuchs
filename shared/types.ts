@@ -1523,6 +1523,9 @@ export type TaxReport = {
   // Einheiten, deren Nutzung im Jahr wechselt (#259). Umlagefähige Kosten folgen dem Eigenanteil der Abrechnung
   // und sind tagesgenau; was nach Fläche geteilt wird, gilt noch nach der Nutzung am Jahresende. Fehlt ohne Wechsel.
   usageChangedUnits?: string[]
+  // Davon die Einheiten, deren Nutzung von „vermietet“ weg wechselt (#262, Durchsicht K2); nur sie können bei verteiltem
+  // Erhaltungsaufwand das Ende nach § 82b Abs. 2 EStDV auslösen. Fehlt ohne Treffer.
+  usageLeftRentalUnits?: string[]
   // Abgeschlossene Abrechnung, deren eingefrorene Eigenanteile von der heutigen Rechnung abweichen
   // oder je Position gar nicht vorliegen (Archivstück von vor #142).
   closedSelfUseDiffers: boolean

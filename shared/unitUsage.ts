@@ -111,3 +111,10 @@ export function unitAsOf<U extends UsageUnit>(u: U, day: string): U {
   if (usage === baseUsage(u)) return u
   return { ...u, ...usageFlags(usage), usageChanges: [] }
 }
+
+// Wechselt die Nutzung in [from, to] von „vermietet“ weg (Eigennutzung oder ausgenommen)? Nur dann kann bei verteiltem
+// Erhaltungsaufwand das Ende nach § 82b Abs. 2 EStDV eintreten (#262, Durchsicht K2).
+export function leavesRentalWithin(u: UsageUnit, from: string, to: string): boolean {
+  const spans = usageSpans(u, from, to)
+  return spans.some((s, i) => i > 0 && spans[i - 1]?.usage === 'vermietet' && s.usage !== 'vermietet')
+}

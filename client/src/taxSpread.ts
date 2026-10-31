@@ -192,10 +192,13 @@ export function spreadRestBeforeStartText(report: Pick<TaxReport, 'year' | 'spre
   return `${names}: Die Verteilung endet im Jahr der Zahlung (${report.year}); die Position wird nicht verteilt und zählt ganz in ${report.year}. Stimmt das Jahr nicht, berichtigen Sie es in den Stammdaten beim Objekt (${REST_FIELD}).`
 }
 
-// `spreadUsageChanged`: Die Nutzung einer Einheit wechselt, während eine Verteilung läuft. Mietfuchs ändert die Anteile
-// nicht (der private Teil steht im Jahr der Zahlung fest, E-3); ob das Ende nach Abs. 2 eintritt, entscheidet der
-// Vermieter.
-export function spreadUsageChangedText(report: Pick<TaxReport, 'usageChangedUnits'>): string {
-  const units = (report.usageChangedUnits ?? []).join(', ')
-  return `Die Nutzung von ${units} wechselt in diesem Jahr, und Erhaltungsaufwand ist nach § 82b EStDV verteilt. Mietfuchs rechnet die Anteile weiter wie gewählt. Vermieten Sie das Gebäude nicht mehr, etwa weil Sie selbst einziehen, ist der Rest in diesem Jahr abzuziehen (§ 82b Abs. 2 EStDV): Tragen Sie das Jahr in den Stammdaten beim Objekt ein (${REST_FIELD}).`
+// Im Hinweis `usageChangedInYear` (Durchsicht K2: kein eigener Hinweis): Die Vermietung einer Einheit endet, während eine
+// Verteilung läuft, und das Ende am Objekt liegt nicht in diesem Jahr. Mietfuchs ändert die Anteile nicht (der private
+// Teil steht im Jahr der Zahlung fest, E-3); ob das Ende nach Abs. 2 eintritt, entscheidet der Vermieter. Sonst `null`.
+export function spreadUsageChangedText(report: Pick<TaxReport, 'usageLeftRentalUnits' | 'expenses'>): string | null {
+  const units = report.usageLeftRentalUnits ?? []
+  const spread = report.expenses.spread
+  const runs = (spread?.started.length ?? 0) + (spread?.carried.length ?? 0) > 0
+  if (units.length === 0 || !runs || (spread?.carried ?? []).some((x) => x.rest)) return null
+  return `Die Vermietung von ${units.join(', ')} endet in diesem Jahr, und Erhaltungsaufwand ist nach § 82b EStDV verteilt. Mietfuchs rechnet die Anteile weiter wie gewählt. Vermieten Sie das Gebäude nicht mehr, ist der Rest in diesem Jahr abzuziehen (§ 82b Abs. 2 EStDV): Tragen Sie das Jahr in den Stammdaten beim Objekt ein (${REST_FIELD}).`
 }

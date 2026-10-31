@@ -384,9 +384,7 @@ export default function Steuer({ settings, onNavigate }: Props) {
             {hints.includes('spreadRestBeforeStart') && (
               <NoticeBox level="hint" title="Verteilung endet im Jahr der Zahlung" action={spreadRestBeforeStartText(data)} />
             )}
-            {hints.includes('spreadUsageChanged') && (
-              <NoticeBox level="warning" title="Nutzungswechsel bei verteiltem Erhaltungsaufwand" action={spreadUsageChangedText(data)} />
-            )}
+
             {/* #96 PR 2 (A4.4, Durchsicht X6): anschaffungsnahe Herstellungskosten, auch im Druck. */}
             {hints.includes('acquisitionRelated') && acquisition && (
               <NoticeBox
@@ -761,6 +759,8 @@ export default function Steuer({ settings, onNavigate }: Props) {
                   {/* #96 (A4.5), Auslegung: ohne Datum der Gemeinschaft die bestmögliche Aufteilung. */}
                   {usageChangeTouchesWithdrawal(data) && <> Bei einer Entnahme aus der Erhaltungsrücklage zählt streng genommen die Nutzung am Tag,
                   an dem die Gemeinschaft bezahlt; ohne dieses Datum teilt Mietfuchs auch sie nach Tagen.</>}
+                  {/* #262 (Durchsicht K2): Vermietung endet bei laufender Verteilung, § 82b Abs. 2. */}
+                  {spreadUsageChangedText(data) !== null && <> {spreadUsageChangedText(data)}</>}
                 </>}
                 more={<>
                   Aufwendungen für eine zunächst selbst bewohnte, danach leer stehende und noch nicht vermietete Wohnung sind nur

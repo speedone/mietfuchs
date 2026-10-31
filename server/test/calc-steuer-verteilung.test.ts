@@ -389,3 +389,19 @@ test('Ende vor dem Jahr der Zahlung: die Position verteilt normal', () => {
   assert.deepEqual([d.deductibleCents, d.spreadFrom?.rest, d.spreadFrom?.index], [200_000, undefined, 2])
   assert.equal(row(report(src, 2033), 'spread:fenster:2029').deductibleCents, 200_000)
 })
+
+// Durchsicht K2: Nur ein Wechsel weg von der Vermietung kann § 82b Abs. 2 auslösen; der Bericht nennt diese Einheiten
+// eigens. Ein Einzug von Mietern in eine bisher selbstgenutzte Wohnung zählt nicht.
+test('Nutzungswechsel weg von der Vermietung: usageLeftRentalUnits nennt nur diese Einheiten', () => {
+  const src = house([item({ id: 'dach', spreadYears: 3 })], {
+    units: [
+      unit('eg', 40, { usageChanges: [{ from: '2027-07-01', usage: 'eigen' }] }),
+      unit('og', 60, { participates: false, selfUsed: true, selfPersons: 1, usageChanges: [{ from: '2027-07-01', usage: 'vermietet' }] }),
+    ],
+    tenancies: [tenancy('a', 'eg', { end: '2027-06-30' }), tenancy('b', 'og', { start: '2027-07-01' })],
+  })
+  const r = report(src, 2027)
+  assert.deepEqual(r.usageChangedUnits, ['eg', 'og'])
+  assert.deepEqual(r.usageLeftRentalUnits, ['eg'])
+  assert.equal('usageLeftRentalUnits' in report(src, 2026), false)
+})

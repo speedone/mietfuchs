@@ -3,7 +3,7 @@
 import { describe, expect, test } from 'vitest'
 import type { TaxExpenseItem, TaxReport, TaxSpread } from './types'
 import { GLOSSARY } from '../../shared/glossary.ts'
-import { acquisitionRelated, acquisitionRelatedText, maintenanceLineText, showsSplit, taxHints } from './taxView'
+import { acquisitionRelated, acquisitionRelatedText, maintenanceLineText, showsSplit, TAX_HINTS, taxHints } from './taxView'
 import { isSpreadItem, showsDeferred, spreadBlock, spreadCarriedText as carriedRaw, spreadConditionsText, spreadIgnoredText, spreadItemText as itemRaw, spreadNothingDeductibleText, SPREAD_CARRIED_MORE, spreadRestBeforeStartText, spreadRestText as restRaw, SPREAD_REST_MORE, spreadUsageChangedText } from './taxSpread'
 
 // fmtEuro setzt ein geschütztes Leerzeichen vor das €.
@@ -238,16 +238,18 @@ describe('Hinweise zum vorzeitigen Ende (§ 82b Abs. 2 EStDV)', () => {
     expect(spreadRestBeforeStartText(r)).not.toMatch(/davor/)
   })
 
-  test('spreadUsageChanged: Nutzungswechsel bei laufender Verteilung, ohne Rest in diesem Jahr', () => {
-    expect(taxHints(report([Y0], { usageChangedUnits: ['EG'] }), 'ist')).toContain('spreadUsageChanged')
-    expect(taxHints(report([Y0], { usageChangedUnits: ['EG'] }, { ...BLOCK, started: [] }), 'ist')).toContain('spreadUsageChanged')
-    expect(taxHints(report([Y0], { usageChangedUnits: ['EG'] }, null), 'ist')).not.toContain('spreadUsageChanged')
-    expect(taxHints(report([Y0]), 'ist')).not.toContain('spreadUsageChanged')
-    // Ist das Ende in diesem Jahr schon eingetragen, sagt `spreadRest` alles.
-    expect(taxHints(report([FOLGE], { usageChangedUnits: ['EG'] }, REST), 'ist')).not.toContain('spreadUsageChanged')
-    const t = spreadUsageChangedText(report([Y0], { usageChangedUnits: ['EG', 'OG'] }))
-    expect(t).toMatch(/Die Nutzung von EG, OG wechselt in diesem Jahr/)
+  // Durchsicht K2: kein eigener Hinweis mehr, sondern ein Satz im Hinweis zum Nutzungswechsel, nur bei einem Wechsel weg von
+  // der Vermietung, laufender Verteilung und ohne Ende in diesem Jahr.
+  test('Satz zum Nutzungswechsel: nur weg von der Vermietung, mit laufender Verteilung, ohne Rest in diesem Jahr', () => {
+    expect(TAX_HINTS).not.toContain('spreadUsageChanged')
+    const t = spreadUsageChangedText(report([Y0], { usageChangedUnits: ['EG', 'OG'], usageLeftRentalUnits: ['EG'] }))
+    expect(t).toMatch(/Die Vermietung von EG endet in diesem Jahr, und Erhaltungsaufwand ist nach § 82b EStDV verteilt/)
     expect(t).toMatch(/Mietfuchs rechnet die Anteile weiter wie gewählt/)
     expect(t).toMatch(/§ 82b Abs\. 2 EStDV/)
+    expect(spreadUsageChangedText(report([Y0], { usageChangedUnits: ['EG'], usageLeftRentalUnits: ['EG'] }, { ...BLOCK, started: [] }))).not.toBeNull()
+    // Nur hin zur Vermietung, ohne Verteilung oder mit Rest in diesem Jahr: kein Satz.
+    expect(spreadUsageChangedText(report([Y0], { usageChangedUnits: ['OG'] }))).toBeNull()
+    expect(spreadUsageChangedText(report([Y0], { usageChangedUnits: ['EG'], usageLeftRentalUnits: ['EG'] }, null))).toBeNull()
+    expect(spreadUsageChangedText(report([FOLGE], { usageChangedUnits: ['EG'], usageLeftRentalUnits: ['EG'] }, REST))).toBeNull()
   })
 })
