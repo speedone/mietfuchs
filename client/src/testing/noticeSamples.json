@@ -629,7 +629,7 @@
  },
  {
   "code": "prepayment.arrears",
-  "text": "Im Mietkonto 01.01.–30.04.2026 von u3 (W3) sind 2.331,96 € offen. Die Abrechnung rechnet die Vorauszahlung laut Vertrag an (1.046,32 €); maßgeblich ist aber, was tatsächlich gezahlt wurde. Zahlungen zählen nach ihrem Datum; eine im Dezember vorab gezahlte Januarmiete steht im Vorjahr. Ob die Vorauszahlung betroffen ist, sehen Sie im Mietkonto: Im Soll steht auch die Kaltmiete, der Rückstand kann ebenso sie betreffen. Fehlt nur eine Buchung, tragen Sie die Zahlung im Mietkonto nach; hat der Mieter wirklich weniger Vorauszahlung geleistet, tragen Sie den gezahlten Betrag in der Abrechnung bei „abzüglich geleisteter Vorauszahlungen“ mit „✎ anpassen“ ein."
+  "text": "Von den Vorauszahlungen 2025 von u3 (W3) sind 140,00 € nicht gezahlt. Zahlungen werden nach § 366 BGB zuerst auf die Vorauszahlungen angerechnet, die ältesten zuerst. Die Abrechnung rechnet die Vorauszahlung laut Vertrag an (800,00 €); maßgeblich ist, was tatsächlich gezahlt wurde. Fehlt nur eine Buchung, tragen Sie die Zahlung im Mietkonto nach. Sonst tragen Sie bei „abzüglich geleisteter Vorauszahlungen“ mit „✎ anpassen“ 660,00 € ein."
  },
  {
   "code": "prepayment.heating-override-pending",

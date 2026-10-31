@@ -18,16 +18,18 @@ const TENANCIES: Tenancy[] = [{
   id: 't1', unitId: 'u1', tenantName: 'Müller', persons: 1, personHistory: [], start: `${YEAR}-01-01`, end: null,
   prepayments: [], prepaymentOverrides: {}, baseRents: [{ from: `${YEAR}-01`, monthlyCents: 80000 }],
 }]
-const month = (m: number): RentMonth => ({ month: m, baseRentCents: 80000, prepaymentCents: 0, flatRateCents: 0, sollCents: 80000, paidCents: 80000, status: 'paid' })
+const month = (m: number): RentMonth => ({ month: m, baseRentCents: 80000, prepaymentCents: 0, flatRateCents: 0, sollCents: 80000, paidCents: 80000, status: 'paid', openPrepaymentCents: 0, openRentCents: 0 })
 const LEDGER: RentLedger = {
   year: YEAR,
   rows: [{
     tenancyId: 't1', tenantName: 'Müller', unitName: 'EG', months: Array.from({ length: 12 }, (_, i) => month(i + 1)),
     sollYearCents: 960000, baseRentYearCents: 960000, prepaymentYearCents: 0, flatRateYearCents: 0,
     paidYearCents: 960000, settlementYearCents: 0, balanceCents: 0, dueSollCents: 960000, arrearsCents: 0, openMonths: 0,
+    notDemandableCents: 0, notDemandable: [], openingBalanceCents: 0, closingBalanceCents: 0,
   }],
+  carriedOnly: [],
   settlementOnly: [],
-  totals: { sollYearCents: 960000, paidYearCents: 960000, settlementYearCents: 0, openCents: 0 },
+  totals: { sollYearCents: 960000, paidYearCents: 960000, settlementYearCents: 0, openCents: 0, notDemandableCents: 0 },
 }
 const PAYMENTS: Payment[] = [{ id: 'p1', tenancyId: 't1', date: `${YEAR}-06-15`, amountCents: 80000, kind: 'rent' }]
 

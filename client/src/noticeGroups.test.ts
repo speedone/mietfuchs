@@ -18,20 +18,22 @@ const people = noticePeople([
 
 // Der echte Text zu prepayment.arrears, je Mieter mit eigenem Namen und eigenen Beträgen.
 const ARREARS = sample('prepayment.arrears')
-function arrears(id: string, open: string, prepaid: string): Notice {
+// Seit #281 nennt der Text drei Beträge: offen, angerechnet laut Vertrag und den Betrag für „✎ anpassen“.
+function arrears(id: string, open: string, prepaid: string, rest: string): Notice {
   const p = people.get(id) ?? expect.fail(`kein Mieter ${id}`)
   expect(ARREARS).toContain('u3 (W3)')
-  expect(ARREARS).toContain('2.331,96 €')
-  expect(ARREARS).toContain('1.046,32 €')
-  const text = ARREARS.replace('u3 (W3)', `${p.tenantName} (${p.unitName})`).replace('2.331,96 €', open).replace('1.046,32 €', prepaid)
+  expect(ARREARS).toContain('140,00 €')
+  expect(ARREARS).toContain('800,00 €')
+  expect(ARREARS).toContain('660,00 €')
+  const text = ARREARS.replace('u3 (W3)', `${p.tenantName} (${p.unitName})`).replace('140,00 €', open).replace('800,00 €', prepaid).replace('660,00 €', rest)
   return { code: 'prepayment.arrears', level: 'warning', title: 'Rückstand im Mietkonto', text, subject: { kind: 'rentLedger', id }, terms: ['prepayment'] }
 }
 
 const FOUR = [
-  arrears('t1', '374,80 €', '3.672,00 €'),
-  arrears('t2', '408,00 €', '2.892,00 €'),
-  arrears('t3', '180,00 €', '2.628,00 €'),
-  arrears('t4', '200,00 €', '3.000,00 €'),
+  arrears('t1', '374,80 €', '3.672,00 €', '3.297,20 €'),
+  arrears('t2', '408,00 €', '2.892,00 €', '2.484,00 €'),
+  arrears('t3', '180,00 €', '2.628,00 €', '2.448,00 €'),
+  arrears('t4', '200,00 €', '3.000,00 €', '2.800,00 €'),
 ]
 
 // Was ein Kasten zeigt, ergibt je Mieter wieder seinen ganzen Text: die gemeinsamen Sätze an ihrer Stelle, die eigenen
@@ -106,7 +108,7 @@ test('was nicht sicher dasselbe sagt, bleibt einzeln', () => {
   // Der Text nennt den Mieter nicht
   expect(single([a, { ...b, text: b.text.replace('Lena Jansen', 'jemand') }])).toEqual(['single', 'single'])
   // Ein Wort außer Name und Zahl ist anders
-  expect(single([a, { ...b, text: b.text.replace('offen', 'zu viel') }])).toEqual(['single', 'single'])
+  expect(single([a, { ...b, text: b.text.replace('nicht gezahlt', 'zu viel gezahlt') }])).toEqual(['single', 'single'])
   // Kein Satz ist bei allen gleich
   const one = (id: string, name: string): Notice => ({ code: 'c', level: 'warning', title: 'T', text: `${name} schuldet 5,00 €.`, subject: { kind: 'tenancy', id } })
   expect(single([one('t1', 'Laura Gerber'), one('t2', 'Lena Jansen')])).toEqual(['single', 'single'])
@@ -127,7 +129,7 @@ test('jeder echte Text eines Codes, je Mieter eingesetzt, verliert beim Zusammen
 // Durchsicht M1: Zahlen zwei Mieter dieselbe Vorauszahlung, lautet der Satz mit dem Betrag bei beiden gleich. Er gehört
 // trotzdem zum Mieter, sonst stünde unter der Liste ein Betrag ohne Mieter.
 test('ein Satz mit Betrag bleibt beim Mieter, auch wenn er bei allen gleich lautet', () => {
-  const two = [arrears('t1', '374,80 €', '5,00 €'), arrears('t2', '408,00 €', '5,00 €')]
+  const two = [arrears('t1', '374,80 €', '5,00 €', '0,00 €'), arrears('t2', '408,00 €', '5,00 €', '0,00 €')]
   const g = groupNotices(two, people)[0]
   if (g?.kind !== 'group') return expect.fail('kein Kasten')
   expect(g.common).not.toContain('€')
@@ -165,7 +167,7 @@ test('gleicher Name und gleiche Wohnung: die Beschriftung nennt den Zeitraum, nu
     { tenancyId: 'b', tenantName: 'Laura Gerber', unitName: 'Whg. 1.01', periodStart: '2025-07-01', periodEnd: '2025-12-31' },
     { tenancyId: 'c', tenantName: 'Lena Jansen', unitName: 'Whg. 1.02', periodStart: '2025-01-01', periodEnd: '2025-12-31' },
   ])
-  const make = (id: string, open: string): Notice => ({ ...arrears('t1', open, '1,00 €'), subject: { kind: 'rentLedger', id }, text: arrears('t1', open, '1,00 €').text.replace('Laura Gerber (Whg. 1.01)', id === 'c' ? 'Lena Jansen (Whg. 1.02)' : 'Laura Gerber (Whg. 1.01)') })
+  const make = (id: string, open: string): Notice => ({ ...arrears('t1', open, '1,00 €', '0,00 €'), subject: { kind: 'rentLedger', id }, text: arrears('t1', open, '1,00 €', '0,00 €').text.replace('Laura Gerber (Whg. 1.01)', id === 'c' ? 'Lena Jansen (Whg. 1.02)' : 'Laura Gerber (Whg. 1.01)') })
   const g = groupNotices([make('a', '10,00 €'), make('b', '20,00 €'), make('c', '30,00 €')], twins)[0]
   if (g?.kind !== 'group') return expect.fail('kein Kasten')
   expect(g.members.map((m) => m.label)).toEqual([

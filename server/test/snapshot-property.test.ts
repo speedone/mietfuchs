@@ -7,6 +7,11 @@ import assert from 'node:assert/strict'
 import { narrowToProperty, snapshotFor, snapshotOf, type PropertyScopedSource } from '../src/snapshot.ts'
 import { calendarPeriod, calendarYearPeriod } from '../../shared/period.ts'
 
+// Kennungen der Zahlungen (#281: Die Tilgung braucht sie als Nachrang beim Sortieren).
+let paymentSeq = 0
+const pid = (): string => `p${String(++paymentSeq).padStart(4, '0')}`
+
+
 const tenancy = (id: string, unitId: string) => ({
   id, unitId, tenantName: id, persons: 1, personHistory: [], start: '2024-01-01', end: null,
   prepayments: [], prepaymentOverrides: {}, baseRents: [],
@@ -35,8 +40,8 @@ const source: PropertyScopedSource = {
     { meterId: 'b-haupt', date: '2025-12-31', value: 50 },
   ],
   payments: [
-    { tenancyId: 'a-t', date: '2025-01-05', amountCents: 1000 },
-    { tenancyId: 'b-t', date: '2025-01-05', amountCents: 2000 },
+    { id: pid(), tenancyId: 'a-t', date: '2025-01-05', amountCents: 1000 },
+    { id: pid(), tenancyId: 'b-t', date: '2025-01-05', amountCents: 2000 },
   ],
   closedSettlements: [
     { propertyId: 'A', period: calendarPeriod(2024), selfUsedShareCents: 1, prepaymentCents: 10, prepaymentOverridden: false },

@@ -1,12 +1,17 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { Payment, PaymentKind, RentLedger, RentMonth, Tenancy, Unit } from '../types'
+import type { Payment, RentLedger, RentMonth, Tenancy, Unit } from '../types'
 import { api, errorText, fmtDate, fmtEuro } from '../api'
 import { usePeriod } from '../period'
 import { periodSpanText } from '../periodForm'
 import { CalendarYearSelect } from '../components/PeriodSelect'
 import { useProperty, withProperty } from '../property'
-import { bookingDate, newPaymentDate, rentDueApplies, rentDueNote, rowStanding, shareText, decemberNote } from '../ledgerView'
-import { emptyPaymentForm, hasSettlementPayments, kindChangeQuestion, newPaymentForm, noRentYearText, PAYMENT_KIND_LABELS, PAYMENT_KIND_OPTIONS, paymentBody, paymentFormHints, paymentTenancyOptions, rentWithoutRow, rentWithoutRowQuestion, savedText, type PaymentField, type PaymentForm } from '../paymentForm'
+import { bookingDate, carriedText, carryText, ledgerStartText, closingLines, newPaymentDate, notDemandableNotes, openPartsText, paidLaterText, rentDueApplies, rentDueNote, rowStanding, shareText } from '../ledgerView'
+import { DESIGNATED_MONTH_HINT, emptyPaymentForm, hasSettlementPayments, kindChangeQuestion, newPaymentForm, noRentYearText, PAYMENT_KIND_LABELS, PAYMENT_KIND_OPTIONS, paymentBody, paymentChangeBody, paymentFormHints, paymentTenancyOptions, rentWithoutRow, rentWithoutRowQuestion, savedText, type PaymentDraft, type PaymentField, type PaymentForm } from '../paymentForm'
+import { keepDraft, useDraft } from '../useDraft'
+import DraftActions from '../components/DraftActions'
+import MonthField from '../components/MonthField'
+import Term from '../components/Term'
+import { monthLabel } from '../monthText'
 import Drawer from '../components/Drawer'
 import { useSaving } from '../useSaving'
 import Field from '../components/Field'
@@ -84,24 +89,6 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
     setForm(null)
     await load()
     toast(savedText(built.body))
-  }
-
-  // Die Art einer erfassten Zahlung umstellen (Durchsicht M2): etwa ein früher als Miete erfasstes
-  // Guthaben. Erst nach Rückfrage, bis dahin zeigt die Auswahl das Gespeicherte (kindChangeQuestion).
-  // Gesendet wird nur die Art, der Rest bleibt (Zusammenführen nach Anwesenheit).
-  async function changeKind(p: Payment, kind: PaymentKind) {
-    if (kind === p.kind) return
-    const ok = await confirm({ ...kindChangeQuestion(p, kind, fmtDate(p.date)), confirmLabel: 'Art umstellen' })
-    if (!ok) return
-    try {
-      await api(`/api/payments/${p.id}`, { method: 'PUT', body: JSON.stringify({ kind }) })
-    } catch (e) {
-      // Eine Aktion ohne Formular meldet ihren Fehler als Mitteilung, nicht oben auf der Seite (H3).
-      toast(errorText(e), 'error')
-      return
-    }
-    await load()
-    toast(`Zahlung vom ${fmtDate(p.date)} ist jetzt „${PAYMENT_KIND_OPTIONS.find((o) => o.value === kind)?.label ?? kind}“.`)
   }
 
   async function deletePayment(p: Payment) {
@@ -195,6 +182,12 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
             </div>
             <div className="l">offene Rückstände</div>
           </div>
+          {(ledger.totals.notDemandableCents ?? 0) > 0 && (
+            <div className="kpi">
+              <div className="v" style={{ color: 'var(--muted)' }}>{fmtEuro(ledger.totals.notDemandableCents)}</div>
+              <div className="l">nicht mehr einzeln einforderbar</div>
+            </div>
+          )}
         </div>
       )}
 
@@ -237,6 +230,12 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
             <Field label="Notiz">
               <input value={form.note} placeholder="z. B. Überweisung, Abrechnung 2025" onChange={(e) => setForm({ ...form, note: e.target.value })} />
             </Field>
+            {/* Nur an einer Miete (#281): Eine Zahlung aus der Abrechnung gilt dem Saldo, nicht einem Monat. */}
+            {form.kind === 'rent' && (
+              <MonthField label="Für Monat (laut Verwendungszweck)" value={form.designatedMonth} placeholder="kein Monat"
+                hint={DESIGNATED_MONTH_HINT} start={form.date} onChange={(designatedMonth) => setForm({ ...form, designatedMonth })}
+                {...formErrors.field('designatedMonth')} />
+            )}
           </div>
           {paymentFormHints(form).map((h) => <NoticeBox key={h} level="hint" action={h} />)}
         </Drawer>
@@ -248,7 +247,13 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
 
       {/* Sichtprüfung E34: einmal über den Karten statt in jeder */}
       {ledger && ledger.rows.some((r) => r.sollYearCents > 0) && (
-        <p className="muted">Grün heißt bezahlt, Gelb teilweise bezahlt, Rot offen; gestrichelte Monate zählen noch nicht als Rückstand. Klick auf einen roten oder gelben Monat bucht den offenen Restbetrag vor.</p>
+        <>
+          <p className="muted">Grün heißt bezahlt, Gelb teilweise bezahlt, Rot offen; gestrichelte Monate zählen noch nicht als Rückstand. Klick auf einen roten oder gelben Monat bucht den offenen Restbetrag vor. Eine Zahlung ohne Monat im Verwendungszweck tilgt die älteste offene Forderung, nicht unbedingt den angeklickten Monat (§ 366 BGB).</p>
+          {/* #281: Das Konto läuft ab Beginn des Mietverhältnisses, verteilt nach § 366 BGB (Entwurf E4). */}
+          <NoticeBox level="hint"
+            action={<>Das Mietkonto rechnet ab Beginn des Mietverhältnisses: Ein Rückstand aus dem Vorjahr steht als Übertrag da, eine im Dezember gezahlte Januarmiete deckt den Januar. Zahlungen verteilt Mietfuchs nach der <Term id="paymentOrder">Tilgungsreihenfolge</Term>.</>}
+            more={<p>Nennt der Mieter keinen Monat, tilgt eine Zahlung zuerst die offenen Vorauszahlungen, dann Kaltmiete und Pauschale, jeweils die ältesten zuerst. Beispiel: Offen sind 600 € Kaltmiete und 200 € Vorauszahlung, der Mieter zahlt 300 €. Dann sind 200 € auf die Vorauszahlung und 100 € auf die Kaltmiete angerechnet; offen bleiben 500 € Kaltmiete (BGH, Urteil vom 21.03.2018, VIII ZR 84/17, Rn. 56 und 57). Nennt er einen Monat, tragen Sie ihn an der Zahlung bei „Für Monat“ ein.</p>} />
+        </>
       )}
       {/* Nur eine Auskunft: Die Rechnung des Mietkontos ändert sie nicht (#133). */}
       {dueNote && ledger && rentDueApplies(ledger.rows, year, new Date()) && (
@@ -260,7 +265,13 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
       {ledger?.rows.map((r) => {
         const noRent = r.sollYearCents === 0
         const standing = rowStanding(r)
-        const december = decemberNote(r, year, new Date())
+        const carry = carryText(r, year)
+        const partialLines = r.months.flatMap((mo) => {
+          const text = openPartsText(mo)
+          return text ? [`${MONTHS[mo.month - 1]}: ${text}`] : []
+        })
+        // Tolerant gegen eine Antwort ohne die Felder von #281 (älterer Server im offenen Tab), wie `settlementOnly`.
+        const notes = notDemandableNotes(r.notDemandable ?? [])
         // Sichtprüfung E35: Bei Inklusivmiete gibt es keine Vorauszahlung; „0,00 €“ sähe aus wie ein fehlender Betrag.
         const inclusive = tenancies.find((t) => t.id === r.tenancyId)?.costModel === 'inclusive' && r.prepaymentYearCents === 0
         return (
@@ -268,8 +279,10 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
             title={<>{r.tenantName} <span className="muted normal">· {r.unitName}</span></>}
             aside={standing.kind === 'arrears' ? (
               <span className="badge red">{fmtEuro(standing.cents)} offen</span>
+            ) : standing.kind === 'viaSettlement' ? (
+              <span className="badge">über die Abrechnung</span>
             ) : standing.kind === 'credit' ? (
-              <span className="badge green">{fmtEuro(standing.cents)} Guthaben</span>
+              <span className="badge green">{fmtEuro(standing.cents)} vorausbezahlt</span>
             ) : standing.kind === 'paidSoFar' ? (
               <span className="badge green">bisher bezahlt</span>
             ) : !noRent ? (
@@ -283,21 +296,34 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
               </NoticeBox>
             ) : (
               <>
+                {carry && <p className={r.openingBalanceCents < 0 ? 'text-red' : 'muted'}><strong>{carry}</strong></p>}
+                {ledgerStartText(r) && <p className="muted">{ledgerStartText(r)}</p>}
                 <div className="rent-grid">
                   {r.months.map((mo) => {
-                    const cls = mo.sollCents === 0 ? 'none' : mo.status
+                    // Vor dem Beginn der Erfassung im Objekt (#281): nicht erfasst, weder bezahlt noch offen, kein Buchungsknopf.
+                    const notRecorded = mo.status === 'notRecorded'
+                    const cls = mo.sollCents === 0 || notRecorded ? 'none' : mo.status
                     const partial = shareText(mo)
-                    const detail = mo.sollCents === 0 ? 'kein Mietverhältnis' : `Soll ${fmtEuro(mo.sollCents)}${partial ? ` (${partial})` : ''} · gezahlt ${fmtEuro(mo.paidCents)}${mo.status === 'notDue' ? ' · zählt noch nicht als Rückstand' : ''}`
+                    const later = paidLaterText(mo)
+                    const parts = openPartsText(mo)
+                    // Nicht mehr einzeln einforderbar (E5): gedämpft gekennzeichnet; der Status bleibt, was die Zahlungen sagen.
+                    const via = (mo.notDemandableCents ?? 0) > 0 ? 'Vorauszahlung: über die Abrechnung' : null
+                    const extra = [parts, later, via].filter((x) => x !== null).join(' · ')
+                    const detail = mo.sollCents === 0 ? 'kein Mietverhältnis' : notRecorded ? `Soll ${fmtEuro(mo.sollCents)} · nicht erfasst` : `Soll ${fmtEuro(mo.sollCents)}${partial ? ` (${partial})` : ''} · gezahlt ${fmtEuro(mo.paidCents)}${mo.status === 'notDue' ? ' · zählt noch nicht als Rückstand' : ''}${extra ? ` · ${extra}` : ''}`
                     const content = (
                       <>
                         <span className="m">{MONTHS[mo.month - 1]}</span>
                         <span className="a">{mo.sollCents === 0 ? '—' : fmtEuro(mo.sollCents)}</span>
                         {partial && mo.sollCents !== 0 && <span className="m">{partial}</span>}
+                        {notRecorded && mo.sollCents !== 0 && <span className="m">nicht erfasst</span>}
+                        {later && <span className="m">{later}</span>}
+                        {via && <span className="m">über die Abrechnung</span>}
                       </>
                     )
                     // Ein Monat mit offenem Rest ist ein Knopf, damit er auch per Tastatur die Zahlung
                     // öffnet; der Zusatz steht unsichtbar hinter dem sichtbaren Text (WCAG 2.5.3).
-                    if (mo.sollCents - mo.paidCents > 0) {
+                    // Später bezahlt (`paidLaterOn`): nichts mehr zu buchen, also kein Knopf (Durchsicht, Befund 4).
+                    if (!notRecorded && !mo.paidLaterOn && mo.sollCents - mo.paidCents > 0) {
                       return (
                         <button
                           type="button"
@@ -307,7 +333,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
                           onClick={() => bookMonth(r.tenancyId, mo)}
                         >
                           {content}
-                          <span className="sr-only">{`: gezahlt ${fmtEuro(mo.paidCents)}${mo.status === 'notDue' ? ', zählt noch nicht als Rückstand' : ''}, Zahlung erfassen`}</span>
+                          <span className="sr-only">{`: gezahlt ${fmtEuro(mo.paidCents)}${mo.status === 'notDue' ? ', zählt noch nicht als Rückstand' : ''}${parts ? `, ${parts}` : ''}${via ? `, ${via}` : ''}, Zahlung erfassen`}</span>
                         </button>
                       )
                     }
@@ -318,10 +344,8 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
                     )
                   })}
                 </div>
-                {/* **Der überraschende Dezember** (#70). Die Bedingung steht in ledgerView.ts,
-                    damit sie einen Test hat: Der erste Entwurf stand hier und war zweimal falsch,
-                    einmal im laufenden Jahr und einmal in der Aussage, wo das Geld auftaucht. */}
-                {december !== null && <p className="muted">{december}</p>}
+                {/* Was an teilweise bezahlten Monaten offen ist (#281, E4): die Reihenfolge der Tilgung sichtbar. */}
+                {partialLines.length > 0 && <p className="muted">{partialLines.join('; ')}</p>}
                 <Table>
                   <tbody>
                     <tr>
@@ -358,14 +382,22 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
                         <td className="num">{fmtEuro(r.settlementYearCents)}</td>
                       </tr>
                     )}
-                    <tr>
-                      <td>{standing.kind === 'arrears' ? 'offener Rückstand (fällig)' : standing.kind === 'paidSoFar' ? 'noch nicht fällig' : 'Guthaben/Überzahlung'}</td>
-                      <td className="num" style={{ color: standing.kind === 'arrears' ? 'var(--red)' : standing.kind === 'paidSoFar' ? 'var(--muted)' : 'var(--green)' }}>
-                        {fmtEuro(standing.cents)}
-                      </td>
-                    </tr>
+                    {/* Zeilenende (#281, E4): Endsaldo zum 31.12., darunter getrennt Rückstand und nicht mehr einzeln
+                        einforderbarer Teil. */}
+                    {closingLines(r, year).map((line) => (
+                      <tr key={line.label}>
+                        <td>{line.label === `Stand 31.12.${year}` ? <strong>{line.label}</strong> : line.label}</td>
+                        <td className="num" style={{ color: line.tone === 'red' ? 'var(--red)' : line.tone === 'green' ? 'var(--green)' : 'var(--muted)' }}>
+                          {fmtEuro(line.cents)}
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </Table>
+                {notes.map((n) => <NoticeBox key={n.text} level={n.level} action={n.text} />)}
+                {(r.designatedOutside?.length ?? 0) > 0 && (
+                  <NoticeBox level="hint" action={`Bei ${r.designatedOutside?.length === 1 ? 'einer Zahlung' : `${r.designatedOutside?.length} Zahlungen`} liegt der Monat laut Verwendungszweck außerhalb des Mietverhältnisses oder vor dem Beginn des Mietkontos; Mietfuchs verteilt sie deshalb nach der gesetzlichen Reihenfolge. Prüfen Sie Beginn und Ende des Mietverhältnisses oder den Monat an der Zahlung.`} />
+                )}
               </>
             )}
           </Card>
@@ -388,16 +420,33 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
         </Card>
       )}
 
+      {/* Ein Rückstand eines Ausgezogenen verschwindet nicht (#281, E2). */}
+      {ledger && (ledger.carriedOnly?.length ?? 0) > 0 && (
+        <Card title="Offene Salden früherer Mietverhältnisse">
+          <p className="muted">Mietverhältnisse, die vor {year} endeten und zum 31.12.{year} noch offen sind.</p>
+          {(ledger.carriedOnly ?? []).map((r) => (
+            <div key={r.tenancyId}>
+              <p>{carriedText(r)} <span className="muted">· {r.unitName}</span></p>
+              {notDemandableNotes(r.notDemandable ?? []).map((n) => <NoticeBox key={n.text} level={n.level} action={n.text} />)}
+            </div>
+          ))}
+        </Card>
+      )}
+
       <Card title={<>Zahlungseingänge {year}</>}>
         {yearPayments.length === 0 ? (
           <div className="empty">Noch keine Zahlungen für {year} erfasst.</div>
         ) : (
+          <>
+          {/* „Für Monat“ (#281): leer heißt nach gesetzlicher Reihenfolge; die Hilfe steht einmal über der Tabelle. */}
+          <p className="muted">{`Für Monat: ${DESIGNATED_MONTH_HINT} Leer heißt: nach gesetzlicher Reihenfolge.`}</p>
           <Table className="stacked">
             <thead>
               <tr>
                 <th>Datum</th>
                 <th>Mietverhältnis</th>
                 <th>Art</th>
+                <th>Für Monat</th>
                 <th>Notiz</th>
                 <th className="num">Betrag</th>
                 <th className="no-print"></th>
@@ -405,37 +454,89 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
             </thead>
             <tbody>
               {yearPayments.map((p) => (
-                // Mittig, weil die Auswahl „Art“ höher ist als eine Textzeile: oben ausgerichtet stand der Text
-                // über ihrer Mitte (N6 aus #341)
-                <tr key={p.id} className="*:align-middle">
-                  <td data-label="Datum">{fmtDate(p.date)}</td>
-                  <td data-label="Mietverhältnis">{tenancyName(p.tenancyId)}</td>
-                  <td data-label="Art">
-                    {/* Der Wert ist der gespeicherte; ein unbekannter stünde sonst als erster Eintrag da. */}
-                    <span className="print-only">{PAYMENT_KIND_LABELS[p.kind]}</span>
-                    <select
-                      className="no-print"
-                      aria-label={`Art der Zahlung vom ${fmtDate(p.date)}`}
-                      value={p.kind}
-                      onChange={(e) => {
-                        const kind = PAYMENT_KIND_OPTIONS.find((o) => o.value === e.target.value)?.value
-                        if (kind) void changeKind(p, kind)
-                      }}
-                    >
-                      {PAYMENT_KIND_OPTIONS.map((o) => <option key={o.value} value={o.value}>{PAYMENT_KIND_LABELS[o.value]}</option>)}
-                    </select>
-                  </td>
-                  <td className="muted" data-label="Notiz">{p.note ?? ''}</td>
-                  <td className="num" data-label="Betrag">{fmtEuro(p.amountCents)}</td>
-                  <td className="actions no-print">
-                    <button className="icon-btn danger" title="Löschen" aria-label="Zahlung löschen" onClick={() => deletePayment(p)}>🗑</button>
-                  </td>
-                </tr>
+                <PaymentRow key={p.id} payment={p} tenancyName={tenancyName(p.tenancyId)} onSaved={load} onDelete={deletePayment}
+                  outside={ledger?.rows.some((r) => r.designatedOutside?.includes(p.id)) ?? false} />
               ))}
             </tbody>
           </Table>
+          </>
         )}
       </Card>
     </>
+  )
+}
+
+// Eine Zeile der Zahlungseingänge (#281, #309): Art und Monat laut Verwendungszweck sind ein Entwurf mit „Speichern“
+// und „Verwerfen“, wie die übrigen Auswahlfelder; nichts speichert beim Anklicken. Eine Umstellung der Art fragt vor dem
+// Speichern (kindChangeQuestion), denn sie verschiebt den Betrag zwischen den Monaten und „gesondert“. Gesendet wird nur,
+// was sich geändert hat (paymentChangeBody).
+function PaymentRow({ payment: p, tenancyName, outside, onSaved, onDelete }: {
+  payment: Payment
+  tenancyName: string
+  // Der Monat laut Verwendungszweck liegt außerhalb des Mietverhältnisses (wirkt wie keine Bestimmung).
+  outside: boolean
+  onSaved: () => Promise<unknown>
+  onDelete: (p: Payment) => void
+}) {
+  const confirm = useConfirm()
+  const toast = useToast()
+  const saved: PaymentDraft = { kind: p.kind, month: p.designatedMonth ?? '' }
+  const draft = useDraft(saved, { scope: p.id })
+  const value = draft.value
+  const what = `Zahlung vom ${fmtDate(p.date)}`
+  async function save(v: PaymentDraft): Promise<unknown> {
+    const built = paymentChangeBody(p, v)
+    if ('problem' in built) throw new Error(built.problem)
+    if (built.body.kind !== undefined) {
+      const ok = await confirm({ ...kindChangeQuestion(p, built.body.kind, fmtDate(p.date)), confirmLabel: 'Art umstellen' })
+      if (!ok) return keepDraft
+    }
+    if (Object.keys(built.body).length === 0) return undefined
+    await api(`/api/payments/${p.id}`, { method: 'PUT', body: JSON.stringify(built.body) })
+    await onSaved()
+    toast(built.body.kind !== undefined
+      ? `${what} ist jetzt „${PAYMENT_KIND_OPTIONS.find((o) => o.value === built.body.kind)?.label ?? built.body.kind}“.`
+      : `${what} gespeichert.`)
+    return undefined
+  }
+  return (
+    // Mittig, weil die Auswahl „Art“ höher ist als eine Textzeile: oben ausgerichtet stand der Text über ihrer Mitte
+    // (N6 aus #341)
+    <tr className="*:align-middle">
+      <td data-label="Datum">{fmtDate(p.date)}</td>
+      <td data-label="Mietverhältnis">{tenancyName}</td>
+      <td data-label="Art">
+        {/* Der Wert ist der gezeigte; ein unbekannter stünde sonst als erster Eintrag da. */}
+        <span className="print-only">{PAYMENT_KIND_LABELS[p.kind]}</span>
+        <select
+          className="no-print"
+          aria-label={`Art der ${what}`}
+          value={value.kind}
+          onChange={(e) => {
+            const kind = PAYMENT_KIND_OPTIONS.find((o) => o.value === e.target.value)?.value
+            if (kind) draft.set({ ...value, kind })
+          }}
+        >
+          {PAYMENT_KIND_OPTIONS.map((o) => <option key={o.value} value={o.value}>{PAYMENT_KIND_LABELS[o.value]}</option>)}
+        </select>
+      </td>
+      <td data-label="Für Monat">
+        {value.kind === 'rent' ? (
+          <>
+            <span className="print-only">{p.designatedMonth ? monthLabel(p.designatedMonth) : '–'}</span>
+            <MonthField className="no-print" label={<span className="sr-only">Für Monat (laut Verwendungszweck), {what}</span>}
+              value={value.month} placeholder="kein Monat" start={p.date}
+              onChange={(month) => draft.set({ ...value, month })} />
+            {outside && <span className="muted">außerhalb des Mietverhältnisses oder vor dem Mietkonto, verteilt nach gesetzlicher Reihenfolge</span>}
+          </>
+        ) : <span className="muted">gilt dem Saldo</span>}
+        <DraftActions draft={draft} onSave={save} what={what} />
+      </td>
+      <td className="muted" data-label="Notiz">{p.note ?? ''}</td>
+      <td className="num" data-label="Betrag">{fmtEuro(p.amountCents)}</td>
+      <td className="actions no-print">
+        <button className="icon-btn danger" title="Löschen" aria-label="Zahlung löschen" onClick={() => onDelete(p)}>🗑</button>
+      </td>
+    </tr>
   )
 }

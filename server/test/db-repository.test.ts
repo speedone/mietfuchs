@@ -459,6 +459,11 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
       coll: 'payments', table: payments,
       body: { tenancyId: 't1', date: '2024-01-05', amountCents: 1000, note: 'Dauerauftrag', kind: 'settlement' },
     },
+    // #281: den Monat laut Verwendungszweck gibt es nur an einer Mietzahlung; eine zweite Probe belegt ihn.
+    {
+      coll: 'payments', table: payments, id: 'probe-zahlung-monat',
+      body: { tenancyId: 't1', date: '2024-02-05', amountCents: 80000, kind: 'rent', designatedMonth: '2024-02' },
+    },
   ]
 
   await withDatabase(async (opened) => {

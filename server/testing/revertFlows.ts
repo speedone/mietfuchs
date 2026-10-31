@@ -121,7 +121,17 @@ export const STEPS: readonly Step[] = [
   { name: 'Ablesung ändern', routes: ['PUT /api/readings/:id'], run: async (ctx) => { const r = pick(ctx.rng, ctx.readings); if (r) await send(ctx.s, 'PUT', `/api/readings/${r.id}`, { value: int(ctx.rng, 1, 100) }) } },
   { name: 'Ablesung löschen', routes: ['DELETE /api/readings/:id'], run: async (ctx) => { const r = pick(ctx.rng, ctx.readings); if (r) await send(ctx.s, 'DELETE', `/api/readings/${r.id}`) } },
   { name: 'Zahlung anlegen', routes: ['POST /api/payments'], run: async (ctx) => { const t = pick(ctx.rng, ctx.tenancies); if (t) await send(ctx.s, 'POST', '/api/payments', { tenancyId: t.id, date: day(ctx.rng), amountCents: int(ctx.rng, 100, 900) * 100 }) } },
-  { name: 'Zahlung ändern', routes: ['PUT /api/payments/:id'], run: async (ctx) => { const p = pick(ctx.rng, ctx.payments); if (p) await send(ctx.s, 'PUT', `/api/payments/${p.id}`, { amountCents: int(ctx.rng, 100, 900) * 100 }) } },
+  // Der Monat laut Verwendungszweck (#281) wird mitgesetzt und geleert: der Monat des Beginns liegt immer im
+  // Mietverhältnis; eine Zahlung aus der Abrechnung lehnt ihn ab (400), das ist dann eben keine Änderung.
+  { name: 'Zahlung ändern', routes: ['PUT /api/payments/:id'], run: async (ctx) => {
+    const p = pick(ctx.rng, ctx.payments)
+    if (!p) return
+    const t = ctx.tenancies.find((x) => x.id === p.tenancyId)
+    const start = typeof t?.start === 'string' ? t.start.slice(0, 7) : null
+    const choice = int(ctx.rng, 0, 2)
+    const month = choice === 0 && start !== null ? { designatedMonth: start } : choice === 1 ? { designatedMonth: null } : {}
+    await send(ctx.s, 'PUT', `/api/payments/${p.id}`, { amountCents: int(ctx.rng, 100, 900) * 100, ...month })
+  } },
   { name: 'Zahlung löschen', routes: ['DELETE /api/payments/:id'], run: async (ctx) => { const p = pick(ctx.rng, ctx.payments); if (p) await send(ctx.s, 'DELETE', `/api/payments/${p.id}`) } },
   {
     name: 'Kostenposition anlegen', routes: ['POST /api/costItems'],

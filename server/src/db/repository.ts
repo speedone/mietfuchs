@@ -637,8 +637,37 @@ function mergePayment(current: Payment, body: unknown): Payment {
       if (kind === undefined) throw new PaymentError('Unbekannte Art der Zahlung. Erlaubt sind Miete (rent) und Nachzahlung oder Guthaben aus der Abrechnung (settlement).')
       return kind
     }),
+    // Der Monat laut Verwendungszweck (#281, § 366 Abs. 1 BGB): 'JJJJ-MM'; `null` oder leer entfernt ihn. Eine andere
+    // Form wird abgelehnt und nicht still verworfen, denn die Tilgung verteilte die Zahlung dann anders als gemeint.
+    // Ob die Art und das Mietverhältnis dazu passen, prüft `guardPayment` (braucht die Datenbank).
+    designatedMonth: merged(body, 'designatedMonth', current.designatedMonth, (v) => {
+      if (v === null || v === undefined || v === '') return undefined
+      const month = parsePeriodKey(v)
+      if (month === null) throw new PaymentError('Der Monat laut Verwendungszweck braucht die Form JJJJ-MM, etwa 2025-03.')
+      return month
+    }),
   }
 }
+
+// Ein Monat laut Verwendungszweck gilt nur an einer Mietzahlung und nur für einen Monat, an dem das Mietverhältnis
+// besteht (#281, Entwurf E3). Geprüft wird beim Setzen und beim Umstellen von Art oder Mietverhältnis; ändern sich
+// später Beginn oder Ende so, dass der Monat herausfällt, bleibt er stehen (krumm, nicht kaputt): Die Tilgung
+// behandelt ihn wie keine Bestimmung, und das Mietkonto nennt die Zahlung (`designatedOutside`).
+async function guardPayment(db: Executor, before: Payment | null, after: Payment): Promise<void> {
+  const month = after.designatedMonth
+  if (month === undefined || month === null) return
+  if (after.kind === 'settlement') throw new PaymentError('Eine Zahlung aus der Abrechnung gilt dem Saldo, nicht einem Monat. Entfernen Sie den Monat laut Verwendungszweck oder stellen Sie die Art auf Miete.')
+  if (before !== null && before.designatedMonth === month && before.tenancyId === after.tenancyId) return
+  const [t] = await db.select({ start: tenancies.start, end: tenancies.end }).from(tenancies).where(eq(tenancies.id, after.tenancyId))
+  // Ein unbekanntes Mietverhältnis meldet der Fremdschlüssel beim Schreiben.
+  if (!t) return
+  const first = t.start.slice(0, 7)
+  const last = t.end === null ? null : t.end.slice(0, 7)
+  if (compareText(month, first) >= 0 && (last === null || compareText(month, last) <= 0)) return
+  const span = t.end === null ? `seit ${germanDay(t.start)}` : `von ${germanDay(t.start)} bis ${germanDay(t.end)}`
+  throw new PaymentError(`Der Monat laut Verwendungszweck liegt außerhalb des Mietverhältnisses. Das Mietverhältnis besteht ${span}.`)
+}
+const germanDay = (iso: string): string => `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}`
 
 // Eine Zahlung mit einer Angabe, die es nicht gibt (#280). Die Meldung ist für den Nutzer
 // geschrieben; die Route gibt sie mit 400 weiter wie `CrossPropertyError`.
@@ -2192,6 +2221,7 @@ const readingRow = (r: Reading) => ({
 })
 const paymentRow = (p: Payment) => ({
   id: p.id, tenancyId: p.tenancyId, date: p.date, amountCents: p.amountCents, note: orNull(p.note), kind: p.kind,
+  designatedMonth: orNull(p.designatedMonth),
 })
 
 // Die Untertabellen eines Mietverhältnisses, ganz ersetzt. Siehe die Begründung am Kopf.
@@ -2411,7 +2441,7 @@ const readingCollection: Collection<Reading> = {
 }
 
 const paymentCollection: Collection<Payment> = {
-  guard: noGuard,
+  guard: guardPayment,
   read: readPayments,
   empty: emptyPayment,
   merge: mergePayment,

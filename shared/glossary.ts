@@ -268,6 +268,15 @@ export const GLOSSARY = {
     norm: '§ 556 Abs. 2 und 3, § 560 Abs. 4 BGB; BGH, Urteil vom 18.05.2011, VIII ZR 240/10',
     needed: 'Ja, wenn der Mietvertrag Vorauszahlungen vorsieht, der Normalfall. Mietfuchs setzt die vereinbarte Staffel an, im Ein- und Auszugsmonat anteilig nach Kalendertagen. Hat der Mieter anders gezahlt, tragen Sie die gezahlte Summe in der Abrechnung mit „✎ anpassen“ ein. Nach der Abrechnung dürfen Sie die Vorauszahlung angemessen anpassen. Das Anschreiben nennt dazu den Monat, ab dem sie gilt; Vorgabe ist der übernächste Monat nach dem Tag des Briefs. Das ist eine vorsichtige Entscheidung von Mietfuchs, denn § 560 Abs. 4 BGB nennt keine Frist (nach AG Mannheim, Urteil vom 06.02.2008, 8 C 552/06, wirkt die Anpassung schon zum nächsten Fälligkeitstermin). Nach dem Abschluss trägt „In die Staffel übernehmen“ die angekündigte Vorauszahlung als Stufe ein.',
   },
+  // #281: Mietkonto und Hinweis „Rückstand im Mietkonto“ verteilen Zahlungen nach § 366 BGB (server/src/rentAllocation.ts).
+  // #312 PR 3 ergänzt den Eintrag um die Steuer (Anlage V).
+  paymentOrder: {
+    title: 'Tilgungsreihenfolge',
+    short: 'Zahlt ein Mieter nicht genau die Monatsmiete, bestimmt § 366 BGB, welche Schuld die Zahlung tilgt: der Monat, den der Mieter angibt, sonst zuerst die offenen Vorauszahlungen, dann Kaltmiete und Pauschale, jeweils die ältesten zuerst.',
+    example: 'Offen sind 600 € Kaltmiete und 200 € Vorauszahlung für Januar. Der Mieter überweist 300 € ohne Verwendungszweck: 200 € tilgen die Vorauszahlung, 100 € die Kaltmiete; offen bleiben 500 € Kaltmiete. Schreibt er „Miete Februar“, tilgt die Zahlung zuerst die Vorauszahlung und dann die Kaltmiete des Februars.',
+    norm: '§ 366 BGB; BGH, Urteil vom 21.03.2018, VIII ZR 84/17, Rn. 53 bis 57 (Vorauszahlung ist die unsicherere Forderung, Anrechnung auf die ältesten Rückstände). Dass die Pauschale wie die Kaltmiete zur sichereren Klasse zählt, ist eine Auslegung von Mietfuchs, denn über sie wird nie abgerechnet.',
+    needed: 'Ja, sobald Sie Zahlungen im Mietkonto erfassen. Nennt der Mieter in der Überweisung einen Monat, tragen Sie ihn an der Zahlung bei „Für Monat (laut Verwendungszweck)“ ein; einen Dauerauftrag über genau die Monatsmiete wertet Mietfuchs nicht als solche Angabe. Ist die Abrechnung eines Zeitraums erteilt oder ihre Frist abgelaufen, lassen sich offene Vorauszahlungen daraus nicht mehr einzeln verlangen, nur noch der Saldo der Abrechnung; das Mietkonto zeigt sie dann gesondert. Haben Sie Zahlungen erst ab einem bestimmten Monat erfasst, beginnt das Mietkonto im Monat der ersten im Objekt erfassten Mietzahlung; frühere Monate gelten als nicht erfasst und nicht als offen, danach zählt jeder Monat.',
+  },
   // #311: Der Hinweis „Vorauszahlung im angebrochenen Monat“ verweist hierher. Die Monatsregel ist eine
   // Auslegung von Mietfuchs (Entscheidung R-1); die Alternative 1/30 steht ausdrücklich daneben.
   partialMonth: {

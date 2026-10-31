@@ -143,6 +143,8 @@ const FIELD_LABELS: Record<string, string> = {
   unit_id: 'Wohnung',
   meter_id: 'Zähler',
   tenancy_id: 'Mietverhältnis',
+  // #281: an der Zahlung, wie das Monatsfeld im Mietkonto
+  designated_month: 'Für Monat (laut Verwendungszweck)',
   date: 'Datum',
   value: 'Wert',
   replacement: 'Zählerwechsel',

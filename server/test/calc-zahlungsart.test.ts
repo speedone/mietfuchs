@@ -9,6 +9,11 @@ import { snapshotOf, type SnapshotPayment, type SnapshotSource, type SnapshotTen
 import { calendarPeriod } from '../../shared/period.ts'
 import type { RentLedgerRow } from '../../shared/types.ts'
 
+// Kennungen der Zahlungen (#281: Die Tilgung braucht sie als Nachrang beim Sortieren).
+let paymentSeq = 0
+const pid = (): string => `p${String(++paymentSeq).padStart(4, '0')}`
+
+
 // Ab 01.01.2025, 800 € im Monat (650 € kalt, 150 € Vorauszahlung).
 const tenancy = (over: Partial<SnapshotTenancy> = {}): SnapshotTenancy => ({
   id: 't', unitId: 'a', tenantName: 'Mieter', persons: 1, personHistory: [], start: '2025-01-01', end: null,
@@ -16,7 +21,7 @@ const tenancy = (over: Partial<SnapshotTenancy> = {}): SnapshotTenancy => ({
   baseRents: [{ from: '2025-01', monthlyCents: 65000 }], ...over,
 })
 const rentAllYear = (tenancyId = 't', year = 2025): SnapshotPayment[] =>
-  Array.from({ length: 12 }, (_, i) => ({ tenancyId, date: `${year}-${String(i + 1).padStart(2, '0')}-03`, amountCents: 80000, kind: 'rent' }))
+  Array.from({ length: 12 }, (_, i) => ({ id: pid(), tenancyId, date: `${year}-${String(i + 1).padStart(2, '0')}-03`, amountCents: 80000, kind: 'rent' }))
 
 const source = (s: Partial<SnapshotSource>): SnapshotSource => ({
   units: [{ id: 'a', name: 'EG', areaM2: 50, participates: true }],
@@ -27,7 +32,7 @@ const source = (s: Partial<SnapshotSource>): SnapshotSource => ({
 const rowOf = (rows: RentLedgerRow[], id = 't'): RentLedgerRow => rows.find((r) => r.tenancyId === id) ?? assert.fail(`keine Zeile ${id}`)
 
 test('Issue #280: Guthaben −200 € im Juni als Abrechnung, der Dezember bleibt bezahlt', () => {
-  const payments: SnapshotPayment[] = [...rentAllYear(), { tenancyId: 't', date: '2025-06-15', amountCents: -20000, kind: 'settlement' }]
+  const payments: SnapshotPayment[] = [...rentAllYear(), { id: pid(), tenancyId: 't', date: '2025-06-15', amountCents: -20000, kind: 'settlement' }]
   const l = rentLedger(snapshotOf(source({ payments }), 2025))
   const r = rowOf(l.rows)
   assert.equal(r.months[11]?.status, 'paid')
@@ -40,14 +45,14 @@ test('Issue #280: Guthaben −200 € im Juni als Abrechnung, der Dezember bleib
 })
 
 test('Gegenprobe: dasselbe Guthaben als Miete gebucht lässt den Dezember offen (so war es vor #280)', () => {
-  const payments: SnapshotPayment[] = [...rentAllYear(), { tenancyId: 't', date: '2025-06-15', amountCents: -20000, kind: 'rent' }]
+  const payments: SnapshotPayment[] = [...rentAllYear(), { id: pid(), tenancyId: 't', date: '2025-06-15', amountCents: -20000, kind: 'rent' }]
   const r = rowOf(rentLedger(snapshotOf(source({ payments }), 2025)).rows)
   assert.equal(r.months[11]?.status, 'partial')
   assert.equal(r.arrearsCents, 20000)
 })
 
 test('Issue #280: Nachzahlung 150 € im März als Abrechnung ist keine Überzahlung', () => {
-  const payments: SnapshotPayment[] = [...rentAllYear(), { tenancyId: 't', date: '2025-03-20', amountCents: 15000, kind: 'settlement' }]
+  const payments: SnapshotPayment[] = [...rentAllYear(), { id: pid(), tenancyId: 't', date: '2025-03-20', amountCents: 15000, kind: 'settlement' }]
   const r = rowOf(rentLedger(snapshotOf(source({ payments }), 2025)).rows)
   assert.equal(r.balanceCents, 0)
   assert.equal(r.settlementYearCents, 15000)
@@ -57,15 +62,15 @@ test('Issue #280: Nachzahlung 150 € im März als Abrechnung ist keine Überzah
 test('Eine Zahlung ohne Art ist Miete (db.json, eingefrorener Eingang)', () => {
   const ohneArt: SnapshotPayment[] = rentAllYear().map(({ kind: _, ...p }) => p)
   const mitArt = rentAllYear()
-  const a = rentLedger(snapshotOf(source({ payments: [...ohneArt, { tenancyId: 't', date: '2025-06-15', amountCents: -20000 }] }), 2025))
-  const b = rentLedger(snapshotOf(source({ payments: [...mitArt, { tenancyId: 't', date: '2025-06-15', amountCents: -20000, kind: 'rent' }] }), 2025))
+  const a = rentLedger(snapshotOf(source({ payments: [...ohneArt, { id: pid(), tenancyId: 't', date: '2025-06-15', amountCents: -20000 }] }), 2025))
+  const b = rentLedger(snapshotOf(source({ payments: [...mitArt, { id: pid(), tenancyId: 't', date: '2025-06-15', amountCents: -20000, kind: 'rent' }] }), 2025))
   assert.deepEqual(a, b)
   assert.equal(rowOf(a.rows).settlementYearCents, 0)
 })
 
 test('Nachzahlung nach dem Auszug: im Folgejahr gesondert geführt, ohne eigene Zeile', () => {
   const t = tenancy({ end: '2025-12-31' })
-  const payments: SnapshotPayment[] = [...rentAllYear(), { tenancyId: 't', date: '2026-04-10', amountCents: 12345, kind: 'settlement' }]
+  const payments: SnapshotPayment[] = [...rentAllYear(), { id: pid(), tenancyId: 't', date: '2026-04-10', amountCents: 12345, kind: 'settlement' }]
   const l = rentLedger(snapshotOf(source({ tenancies: [t], payments }), 2026))
   assert.equal(l.rows.length, 0)
   assert.deepEqual(l.settlementOnly, [{ tenancyId: 't', tenantName: 'Mieter', unitName: 'EG', settlementYearCents: 12345 }])
@@ -78,8 +83,8 @@ test('Steuer: beide Arten sind Zufluss, die aus der Abrechnung stehen nach Richt
   const t2 = tenancy({ id: 't2', unitId: 'b', tenantName: 'Zweiter' })
   const payments: SnapshotPayment[] = [
     ...rentAllYear(), ...rentAllYear('t2'),
-    { tenancyId: 't', date: '2025-05-02', amountCents: 15000, kind: 'settlement' },
-    { tenancyId: 't2', date: '2025-05-20', amountCents: -20000, kind: 'settlement' },
+    { id: pid(), tenancyId: 't', date: '2025-05-02', amountCents: 15000, kind: 'settlement' },
+    { id: pid(), tenancyId: 't2', date: '2025-05-20', amountCents: -20000, kind: 'settlement' },
   ]
   const units = [{ id: 'a', name: 'EG', areaM2: 50, participates: true }, { id: 'b', name: 'OG', areaM2: 50, participates: true }]
   const r = taxReport(snapshotOf(source({ units, tenancies: [tenancy(), t2], payments }), 2025))
@@ -91,14 +96,14 @@ test('Steuer: beide Arten sind Zufluss, die aus der Abrechnung stehen nach Richt
 })
 
 test('Steuer: Wer nur die Nachzahlung erfasst hat, hat keine Miete erfasst', () => {
-  const payments: SnapshotPayment[] = [{ tenancyId: 't', date: '2025-05-02', amountCents: 15000, kind: 'settlement' }]
+  const payments: SnapshotPayment[] = [{ id: pid(), tenancyId: 't', date: '2025-05-02', amountCents: 15000, kind: 'settlement' }]
   const r = taxReport(snapshotOf(source({ payments }), 2025))
   assert.equal(r.income.tenanciesWithSoll, 1)
   assert.equal(r.income.tenanciesWithoutPayment, 1)
 })
 
 test('Abrechnung: Zahlungen nur aus der Abrechnung führen kein Mietkonto, also kein Hinweis auf Rückstand', () => {
-  const payments: SnapshotPayment[] = [{ tenancyId: 't', date: '2025-05-02', amountCents: 15000, kind: 'settlement' }]
+  const payments: SnapshotPayment[] = [{ id: pid(), tenancyId: 't', date: '2025-05-02', amountCents: 15000, kind: 'settlement' }]
   const s = computeSettlement(snapshotOf(source({ payments }), 2025))
   assert.equal(s.notices.filter((n) => n.code === 'prepayment.arrears').length, 0)
   // Gegenprobe: dieselbe Zahlung als Miete führt das Mietkonto, der Rest ist offen.
@@ -109,11 +114,11 @@ test('Abrechnung: Zahlungen nur aus der Abrechnung führen kein Mietkonto, also 
 test('Zusammenspiel mit #311: Einzug am 15.03., anteiliges Soll im März, Nachzahlung als Abrechnung', () => {
   // 800 € im Monat (650 € kalt, 150 € Vorauszahlung); der März zählt mit 17/31 Tagen.
   const t = tenancy({ start: '2025-03-15' })
-  const march = { tenancyId: 't', date: '2025-03-20', amountCents: 35645 + 8226, kind: 'rent' as const }
+  const march = { id: pid(), tenancyId: 't', date: '2025-03-20', amountCents: 35645 + 8226, kind: 'rent' as const }
   const later: SnapshotPayment[] = Array.from({ length: 9 }, (_, i) => ({
-    tenancyId: 't', date: `2025-${String(i + 4).padStart(2, '0')}-03`, amountCents: 80000, kind: 'rent' as const,
+    id: pid(), tenancyId: 't', date: `2025-${String(i + 4).padStart(2, '0')}-03`, amountCents: 80000, kind: 'rent' as const,
   }))
-  const backPayment: SnapshotPayment = { tenancyId: 't', date: '2025-11-10', amountCents: 15000, kind: 'settlement' }
+  const backPayment: SnapshotPayment = { id: pid(), tenancyId: 't', date: '2025-11-10', amountCents: 15000, kind: 'settlement' }
   const snap = snapshotOf(source({ tenancies: [t], payments: [march, ...later, backPayment] }), 2025)
   const r = rowOf(rentLedger(snap).rows)
   const m = r.months[2] ?? assert.fail('kein März')
@@ -178,10 +183,10 @@ test('Invariante: Zahlungen aus der Abrechnung verschieben im Mietkonto nichts u
     })
     const date = () => `2025-${String(1 + Math.floor(rnd() * 12)).padStart(2, '0')}-${String(1 + Math.floor(rnd() * 28)).padStart(2, '0')}`
     const rent: SnapshotPayment[] = tenancies.flatMap((t) => Array.from({ length: Math.floor(rnd() * 14) }, () => ({
-      tenancyId: t.id, date: date(), amountCents: Math.floor(rnd() * 120000) - 10000, kind: 'rent' as const,
+      id: pid(), tenancyId: t.id, date: date(), amountCents: Math.floor(rnd() * 120000) - 10000, kind: 'rent' as const,
     })))
     const settlement: SnapshotPayment[] = tenancies.flatMap((t) => Array.from({ length: Math.floor(rnd() * 3) }, () => ({
-      tenancyId: t.id, date: date(), amountCents: Math.floor(rnd() * 60000) - 30000, kind: 'settlement' as const,
+      id: pid(), tenancyId: t.id, date: date(), amountCents: Math.floor(rnd() * 60000) - 30000, kind: 'settlement' as const,
     })))
     const without = snapshotOf(source({ tenancies, payments: rent }), 2025)
     const withIt = snapshotOf(source({ tenancies, payments: [...rent, ...settlement] }), 2025)
@@ -216,7 +221,7 @@ test('Steuer: ohne Zahlungen aus der Abrechnung sind Nachzahlungen und Erstattun
   const r = taxReport(snapshotOf(source({ payments: rentAllYear() }), 2025))
   assert.equal(r.income.settlementBackPaymentsCents, 0)
   assert.equal(r.income.settlementRefundsCents, 0)
-  const nurNachzahlung = taxReport(snapshotOf(source({ payments: [...rentAllYear(), { tenancyId: 't', date: '2025-04-01', amountCents: 15000, kind: 'settlement' }] }), 2025))
+  const nurNachzahlung = taxReport(snapshotOf(source({ payments: [...rentAllYear(), { id: pid(), tenancyId: 't', date: '2025-04-01', amountCents: 15000, kind: 'settlement' }] }), 2025))
   assert.equal(nurNachzahlung.income.settlementRefundsCents, 0)
 })
 
@@ -225,8 +230,8 @@ test('Steuer: ohne Zahlungen aus der Abrechnung sind Nachzahlungen und Erstattun
 test('Abrechnung: Zahlungen der Art „Abrechnung“ ändern keinen Betrag von computeSettlement', () => {
   const ohne = computeSettlement(snapshotOf(source({ payments: rentAllYear() }), 2025))
   for (const extra of [
-    [{ tenancyId: 't', date: '2025-06-15', amountCents: -20000, kind: 'settlement' }],
-    [{ tenancyId: 't', date: '2025-03-20', amountCents: 15000, kind: 'settlement' }, { tenancyId: 't', date: '2025-11-02', amountCents: -4711, kind: 'settlement' }],
+    [{ id: pid(), tenancyId: 't', date: '2025-06-15', amountCents: -20000, kind: 'settlement' }],
+    [{ id: pid(), tenancyId: 't', date: '2025-03-20', amountCents: 15000, kind: 'settlement' }, { id: pid(), tenancyId: 't', date: '2025-11-02', amountCents: -4711, kind: 'settlement' }],
   ] satisfies SnapshotPayment[][]) {
     const mit = computeSettlement(snapshotOf(source({ payments: [...rentAllYear(), ...extra] }), 2025))
     assert.deepEqual(mit, ohne)

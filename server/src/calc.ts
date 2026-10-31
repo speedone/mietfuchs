@@ -26,6 +26,8 @@ import type {
   NoticeLevel,
   NoticeSubject,
   PersonEntry,
+  NotDemandable,
+  NotDemandableReason,
   RentLedger,
   RentLedgerRow,
   RentMonth,
@@ -65,7 +67,8 @@ import { co2ApplicableFrom, co2CostsBefore, co2CostsCountedFrom, co2CostsExclude
 import { gmodgHeating43 } from '../../shared/law/gmodg.ts'
 // rangeOverlapDays: Überlappung zweier Zeiträume in Tagen, eine Stelle mit der Monatsregel.
 import { compareText, largestRemainder } from './apportion.ts'
-import { monthShare, monthSoll, overlapDays as rangeOverlapDays, rateAtMonth, rateInMonth, type MonthlySchedule } from '../../shared/monthRate.ts'
+import { monthShare, monthSoll, overlapDays as rangeOverlapDays, rateAtMonth, rateInMonth, type MonthlySchedule, type SollComponent } from '../../shared/monthRate.ts'
+import { allocateRentPayments, ledgerTenancy, monthCoverage, recordingStart, openingBalance, type MonthCoverage } from './rentAllocation.ts'
 import { applicableRanges, blendedPermille, halfAmounts, halfSplitStatus, intersect as intersectRange, termsFromDeliveries, termsFromPieces, termsWeight, tightMarketIn, twoFamilyOf, type HalfDelivery, type HalfSplitStatus, type HalfSplitTerm, type Piece, type TwoFamily } from './halfSplit.ts'
 import { CO2_RELIEF_LABEL } from '../../shared/co2Probe.ts'
 import { ausweisGaps, CO2_FUELS, co2Assessment, co2Required, NO_CO2_FUELS, co2DeductionsOf, FORMULA_METHODS, co2PotsOf, itemBasisUnits, L_TOLERANCE_CENTS, perUnitClassification, perUnitExceeding, perUnitReliefs, gmodgKeyOf, HALF_SPLIT_TOLERANCE_PERMILLE, reliefKeysOf, reliefsByShare, spanningPlants, type PerUnitFuel, restage, selfSplit, SERVICE_FUEL_TOLERANCE_CENTS, shownReliefs, stageRanges, tableFactor, tenantLines as co2TenantLines, type Co2Pot, type ReliefShare } from './co2.ts'
@@ -494,7 +497,7 @@ const noticeKinds = {
   // Heizung PR 17 (Entwurf 4.5, 10.1): ein Rechtswert, den der Vermieter eingetragen hat.
   'law.value-overridden': { level: 'hint', title: 'Selbst eingetragener Rechtswert', terms: ['legalBasis'] },
   'model.prepayment-unsettled': { level: 'warning', title: 'Vorauszahlung ohne Abrechnung', terms: ['prepayment', 'flatRate'] },
-  'prepayment.arrears': { level: 'warning', title: 'Rückstand im Mietkonto', terms: ['prepayment'] },
+  'prepayment.arrears': { level: 'warning', title: 'Rückstand im Mietkonto', terms: ['prepayment', 'paymentOrder'] },
   // #311: ein Hinweis, denn nichts ist falsch erfasst; die Monatsregel ist eine Auslegung und der
   // Vermieter prüft sie am tatsächlich Gezahlten (INFORMATIONAL, färbt die Ampel nicht).
   'prepayment.partial-month': { level: 'hint', title: 'Vorauszahlung im angebrochenen Monat', terms: ['prepayment', 'partialMonth'] },
@@ -986,11 +989,154 @@ export function heatingPrepaymentCents(
 // (Stand 0000) kennen sie nicht, und vor #280 war jede Zahlung Miete.
 export const isRentPayment = (p: Pick<SnapshotPayment, 'kind'>): boolean => (p.kind ?? 'rent') === 'rent'
 
-// Die Monatsrechnung für Abrechnung und Mietkonto (#208): je Mietverhältnis das Soll je Monat
-// (Bruttomiete = Kaltmiete + Vorauszahlung + Pauschale) und die Zahlungen der Spanne, von vorn auf die
-// Monate verteilt; so spiegelt der Status („bezahlt / teilweise / offen“) wider, bis zu welchem Monat
-// das Konto gedeckt ist. Das Mietkonto ruft sie mit den zwölf Monaten des Kalenderjahres, die
-// Abrechnung mit den Monaten ihres Zeitraums: eine Monatsregel und nicht zwei. `month` ist der
+// Die Abrechnungen eines Objekts, wie das Mietkonto sie für die Abrechnungsreife liest (#281, Entwurf E5): je
+// Abrechnungszeitraum bzw. getrennt abgerechneter Heizperiode die Monate, Bezeichnung und Frist, ob sie abgeschlossen
+// ist, ihr Versanddatum und die eingefrorene Anrechnung der Vorauszahlungen je Mietverhältnis. `covers` sagt, ob sie
+// einen Bestandteil der Klasse A eines Monats anrechnet (die Heizvorauszahlung bei Weg d nur die Heizkostenabrechnung).
+// Gelesen in index.ts (`ledgerStatementsFor` in ledgerStatements.ts); calc.ts bleibt rein. Ohne sie gibt es keine
+// Klassifikation, alles Offene ist Rückstand.
+export type PrepaymentComponent = 'prepayment' | 'heatingPrepayment'
+export type LedgerStatement = {
+  label: string
+  months: readonly string[]
+  deadline: string
+  closed: boolean
+  sentAt: string | null
+  credited: ReadonlyMap<string, number> | null
+  covers: (tenancyId: string, month: string, component: PrepaymentComponent) => boolean
+}
+export type LedgerOptions = { asOf?: string, statements?: readonly LedgerStatement[] }
+
+const A_COMPONENTS: readonly PrepaymentComponent[] = ['prepayment', 'heatingPrepayment']
+const B_COMPONENTS: readonly SollComponent[] = ['baseRent', 'flatRate']
+const LEDGER_MONTH = /^\d{4}-(0[1-9]|1[0-2])$/
+const maxText = (a: string, b: string): string => (compareText(a, b) >= 0 ? a : b)
+const minText = (a: string, b: string): string => (compareText(a, b) <= 0 ? a : b)
+const prevMonth = (month: string): string => {
+  const k = Number(month.slice(0, 4)) * 12 + Number(month.slice(5, 7)) - 2
+  return `${Math.floor(k / 12)}-${String((k % 12) + 1).padStart(2, '0')}`
+}
+
+type NotDemandableVerdict = { reason: NotDemandableReason, differenceCents?: number }
+type TenancyAccount = {
+  coverage: Map<string, MonthCoverage>
+  openingBalanceCents: number
+  closingBalanceCents: number
+  arrearsCents: number
+  notDemandableCents: number
+  notDemandable: NotDemandable[]
+  notDemandableByMonth: Map<string, number>
+}
+
+// Das Konto eines Mietverhältnisses zum Stand einer Spanne (#281): Teile aus `allocateRentPayments` über **alle**
+// Mietzahlungen des Mietverhältnisses, Deckung je Monat ab Beginn über `monthCoverage` (Stand: letzter Tag der Spanne),
+// Salden über `openingBalance`. Eine Tilgung für Mietkonto und Steuer, kein zweiter Algorithmus (Entwurf E1); hier steht
+// nur, was das Mietkonto daraus liest: Rückstand fälliger Monate, Abrechnungsreife und Anfangs- und Endsaldo.
+// `t` ist das geführte Mietverhältnis (`ledgerTenancy`), `contract` das vereinbarte: Für die Abrechnungsreife gelten Monate
+// vor der Erfassung als so gezahlt, wie die Abrechnung sie anrechnet (Durchsicht, Befund 3).
+function tenancyAccount(t: SnapshotTenancy, contract: SnapshotTenancy, own: readonly SnapshotPayment[], span: Pick<BillingPeriod, 'from' | 'to'>, options: LedgerOptions): TenancyAccount {
+  const slices = allocateRentPayments(t, own)
+  const spanMonths = periodMonths(span)
+  const spanLast = spanMonths.at(-1) ?? span.to.slice(0, 7)
+  const first = t.start.slice(0, 7)
+  const tenancyLast = t.end === null ? null : t.end.slice(0, 7)
+  // Fällig ist ein Monat vor dem des Stichtags (#133), höchstens bis zum Ende der Spanne.
+  const asOfMonth = options.asOf?.slice(0, 7)
+  const dueEnd = asOfMonth === undefined ? spanLast : minText(spanLast, prevMonth(asOfMonth))
+  const statements = options.statements ?? []
+  // Die Deckung je Monat ab Beginn bis zum Ende der Spanne bzw. zum letzten Monat einer Abrechnung (deren Anrechnung
+  // die Abrechnungsreife mit dem Gezahlten vergleicht), nie über das Ende des Mietverhältnisses; dazu die Monate der
+  // Spanne selbst.
+  let last = statements.reduce((a, s) => maxText(a, s.months.at(-1) ?? a), spanLast)
+  if (tenancyLast !== null) last = minText(last, tenancyLast)
+  const months = compareText(first, last) <= 0 ? periodMonths({ from: `${first}-01`, to: `${last}-01` }) : []
+  const coverage = new Map(monthCoverage(t, slices, months, span.to).map((c) => [c.month, c]))
+  for (const c of monthCoverage(t, slices, spanMonths.filter((m) => !coverage.has(m)), span.to)) coverage.set(c.month, c)
+  const openOf = (c: MonthCoverage, comp: SollComponent): number => c.soll[comp] - c.paid[comp]
+
+  // Abrechnungsreife (E5): Stichtag ist `asOf`, bei einer vergangenen Jahresansicht das Ende der Spanne, wenn es früher
+  // liegt. Reif ist eine Abrechnung, die abgeschlossen und bis zum Stichtag versandt ist („erfolgte Abrechnung“;
+  // Auslegung: der Versand steht für den Zugang), oder deren Frist vor dem Stichtag ablief (VIII ZR 84/17 Rn. 53).
+  const cutoff = options.asOf === undefined ? span.to : minText(options.asOf, span.to)
+  const verdicts = new Map<LedgerStatement, NotDemandableVerdict | null>()
+  const verdictOf = (s: LedgerStatement): NotDemandableVerdict | null => {
+    const known = verdicts.get(s)
+    if (known !== undefined) return known
+    const issued = s.closed && s.sentAt !== null && compareText(s.sentAt, cutoff) <= 0
+    let verdict: NotDemandableVerdict | null = null
+    if (issued) {
+      // Rechnet die erteilte Abrechnung höchstens das tatsächlich Gezahlte an, steckt die offene Vorauszahlung in ihrem
+      // Saldo; rechnet sie mehr an (ohne Jahreskorrektur das Soll), fehlt die Differenz dort.
+      // Reicht der Zeitraum vor die Erfassung (`ledgerStart`), gelten die Monate davor als gezahlt, wie vereinbart: Über sie
+      // weiß Mietfuchs nichts, und eine Jahreskorrektur rechnet sie mit (Durchsicht, Befund 3). Verglichen wird also
+      // `credited` mit Soll(ganzer Zeitraum) − offene Vorauszahlungen der erfassten Monate.
+      let paid = 0
+      for (const m of s.months) {
+        if (compareText(m, first) < 0) {
+          const soll = monthSoll(contract, m)
+          for (const comp of A_COMPONENTS) if (s.covers(t.id, m, comp)) paid += Math.max(0, soll[comp])
+          continue
+        }
+        const c = coverage.get(m)
+        if (!c) continue
+        for (const comp of A_COMPONENTS) if (s.covers(t.id, m, comp)) paid += c.paid[comp]
+      }
+      const credited = s.credited?.get(t.id) ?? 0
+      verdict = credited <= paid ? { reason: 'inStatement' } : { reason: 'creditedAsPaid', differenceCents: credited - paid }
+    } else if (compareText(cutoff, s.deadline) > 0) {
+      verdict = { reason: 'deadlinePassed' }
+    }
+    verdicts.set(s, verdict)
+    return verdict
+  }
+
+  // Rückstand: offene Teile fälliger Monate ab Beginn, über alle Jahre. Offene Vorauszahlungen einer reifen Abrechnung
+  // zählen gesondert (`notDemandable`); Kaltmiete und Pauschale bleiben immer Rückstand (§ 195 BGB, Verjährung prüft
+  // Mietfuchs nicht).
+  let arrearsCents = 0
+  let notDemandableCents = 0
+  const byStatement = new Map<LedgerStatement, number>()
+  const notDemandableByMonth = new Map<string, number>()
+  for (const m of months) {
+    if (compareText(m, dueEnd) > 0) break
+    const c = coverage.get(m)
+    if (!c) continue
+    for (const comp of B_COMPONENTS) arrearsCents += openOf(c, comp)
+    for (const comp of A_COMPONENTS) {
+      const open = openOf(c, comp)
+      if (open <= 0) continue
+      const s = statements.find((x) => x.months.includes(m) && x.covers(t.id, m, comp))
+      if (s !== undefined && verdictOf(s) !== null) {
+        notDemandableCents += open
+        byStatement.set(s, (byStatement.get(s) ?? 0) + open)
+        notDemandableByMonth.set(m, (notDemandableByMonth.get(m) ?? 0) + open)
+      } else {
+        arrearsCents += open
+      }
+    }
+  }
+  const notDemandable = statements.flatMap((s): NotDemandable[] => {
+    const cents = byStatement.get(s)
+    const v = verdictOf(s)
+    if (cents === undefined || v === null) return []
+    return [{ reason: v.reason, label: s.label, cents, ...(v.differenceCents !== undefined ? { differenceCents: v.differenceCents } : {}) }]
+  })
+  return {
+    coverage,
+    openingBalanceCents: openingBalance(t, own, span.from),
+    closingBalanceCents: openingBalance(t, own, dayAfter(span.to)),
+    arrearsCents,
+    notDemandableCents,
+    notDemandable,
+    notDemandableByMonth,
+  }
+}
+
+// Die Monatsrechnung des Mietkontos (#208, #281): je Mietverhältnis der Spanne das Soll je Monat (Bruttomiete =
+// Kaltmiete + Vorauszahlung + Heizvorauszahlung + Pauschale) und was davon nach § 366 BGB getilgt ist
+// (rentAllocation.ts). Das Konto läuft **ab Beginn des Mietverhältnisses**: Ein Rückstand aus dem Vorjahr steht im
+// Anfangssaldo und im Rückstand, eine im Dezember gezahlte Januarmiete deckt den Januar. Ein Monat ist bezahlt, wenn
+// seine Teile mit Datum bis zum Ende der Spanne das Soll erreichen (`monthCoverage`, eine Stelle). `month` ist der
 // Kalendermonat (1..12), in höchstens zwölf aufeinanderfolgenden Monaten also eindeutig.
 //
 // **Fällig ist nur, was vor dem Monat des Stichtags liegt** (#133). Die Miete ist bis zum dritten
@@ -998,25 +1144,36 @@ export const isRentPayment = (p: Pick<SnapshotPayment, 'kind'>): boolean => (p.k
 // ist; den laufenden Monat erst ab einem bestimmten Tag mitzuzählen, hinge an Wochenenden und
 // Feiertagen. Liegt der Stichtag nach der Spanne, ist alles fällig, liegt er davor, nichts. Ohne
 // Stichtag (Steuer, Regression, Tests) gilt die ganze Spanne als fällig. Die Berechnung fragt nie
-// selbst nach „heute“; die Routen reichen den Tag hinein.
+// selbst nach „heute“; die Routen reichen den Tag hinein, und ebenso die Abrechnungen für die
+// Abrechnungsreife (`statements`, E5).
+//
+// Wer jeden Monat genau das Soll im Monat zahlt, sieht dieselben Zahlen wie mit der früheren Verteilung je Jahr
+// (Orakel in server/testing/fifoLedger.ts, invariant-mietkonto.test.ts).
 export function ledgerRows(
   source: Pick<Snapshot, 'units' | 'tenancies' | 'payments'>,
   span: Pick<BillingPeriod, 'from' | 'to'>,
-  options: { asOf?: string } = {},
+  options: LedgerOptions = {},
 ): RentLedgerRow[] {
   const months = periodMonths(span)
   const asOfMonth = options.asOf?.slice(0, 7)
   const dueMonths = asOfMonth === undefined ? months.length : months.filter((m) => m < asOfMonth).length
   const unitById = new Map(source.units.map((u) => [u.id, u]))
-  // Der Schnappschuss führt alle Zahlungen. Welche zur Spanne zählt, entscheidet diese Rechnung
-  // nach ihrem Datum, und diese Regel bleibt bewusst an dieser Stelle.
+  // Der Schnappschuss führt alle Zahlungen. Die Tilgung braucht sie ab Beginn; welche Zahlung zum
+  // Jahr zählt (`paidYearCents`), entscheidet diese Rechnung nach ihrem Datum.
   return source.tenancies
     .filter((t) => rangeOverlapDays(t.start, t.end, span.from, span.to) > 0)
     .map((t) => {
+      const own = source.payments.filter((p) => p.tenancyId === t.id)
+      // Geführt ab der ersten erfassten Mietzahlung (rentAllocation.ts, `ledgerStart`); das Soll der Zeile bleibt das des
+      // Mietverhältnisses, denn die Steuer liest es.
+      const year = Number(span.from.slice(0, 4))
+      const tracked = ledgerTenancy(t, source.payments, year)
+      const recorded = recordingStart(source.payments, year)
+      const account = tenancyAccount(tracked, t, own, span, options)
       // Die Heizstaffel (Heizung PR 5, Entwurf 3.11): im Soll neben der übrigen Vorauszahlung. Die
       // Felder dazu stehen nur in Zeilen mit Heizstaffel, damit sich ohne sie nichts ändert.
       const withHeating = Array.isArray(t.heatingPrepayments) && t.heatingPrepayments.length > 0
-      const rowMonths = months.map((mm): RentMonth => {
+      const rowMonths = months.map((mm, k): RentMonth => {
         // Dieselbe Monatsregel wie die Abrechnung (#311): im angebrochenen Monat anteilig. Das Soll je
         // Bestandteil kommt aus `monthSoll` (shared/monthRate.ts), derselben Stelle wie die Tilgung (#312).
         const share = monthShare(t, mm)
@@ -1025,6 +1182,12 @@ export function ledgerRows(
         const prepaymentCents = soll.prepayment
         const flatRateCents = soll.flatRate
         const heatingPrepaymentCents = withHeating ? soll.heatingPrepayment : 0
+        const c = account.coverage.get(mm)
+        const paid = c ? c.paid.prepayment + c.paid.heatingPrepayment + c.paid.baseRent + c.paid.flatRate : 0
+        const covered = c?.covered ?? true
+        // Vor dem Beginn der Erfassung (`ledgerStart`), aber im Mietverhältnis: nicht erfasst, weder bezahlt noch offen.
+        const notRecorded = share.days > 0 && compareText(mm, tracked.start.slice(0, 7)) < 0
+        const notDemandable = account.notDemandableByMonth.get(mm) ?? 0
         return {
           month: Number(mm.slice(5, 7)),
           ...(share.days > 0 && share.days < share.of ? { share } : {}),
@@ -1033,31 +1196,27 @@ export function ledgerRows(
           ...(withHeating ? { heatingPrepaymentCents } : {}),
           flatRateCents,
           sollCents: baseRentCents + prepaymentCents + heatingPrepaymentCents + flatRateCents,
-          paidCents: 0,
-          status: 'open',
+          paidCents: notRecorded ? 0 : paid,
+          status: notRecorded ? 'notRecorded' : covered ? 'paid' : k >= dueMonths ? 'notDue' : paid > 0 ? 'partial' : 'open',
+          openPrepaymentCents: c ? c.soll.prepayment - c.paid.prepayment + c.soll.heatingPrepayment - c.paid.heatingPrepayment : 0,
+          openRentCents: c ? c.soll.baseRent - c.paid.baseRent + c.soll.flatRate - c.paid.flatRate : 0,
+          ...(c?.paidLaterOn ? { paidLaterOn: c.paidLaterOn } : {}),
+          ...(notDemandable > 0 ? { notDemandableCents: notDemandable } : {}),
         }
       })
-      // Zahlungseingänge der Spanne der Reihe nach auf die Monate verteilen, und zwar nur die Miete
-      // (#280). Eine Nachzahlung aus der Abrechnung deckt kein Monats-Soll, und ein ausgezahltes
-      // Guthaben ist keine Rücklastschrift; verteilt rissen beide eine Lücke in den Dezember oder
-      // erfänden eine Überzahlung. Sie stehen gesondert in `settlementYearCents`.
-      const inSpan = source.payments.filter((p) => p.tenancyId === t.id && p.date >= span.from && p.date <= span.to)
+      // Nur die Miete wird getilgt (#280). Eine Nachzahlung aus der Abrechnung deckt kein Monats-Soll, und ein
+      // ausgezahltes Guthaben ist keine Rücklastschrift; sie stehen gesondert in `settlementYearCents`.
+      const inSpan = own.filter((p) => p.date >= span.from && p.date <= span.to)
       const paidYearCents = inSpan.filter(isRentPayment).reduce((a, p) => a + p.amountCents, 0)
       const settlementYearCents = inSpan.filter((p) => !isRentPayment(p)).reduce((a, p) => a + p.amountCents, 0)
-      let remaining = paidYearCents
-      for (const [k, mo] of rowMonths.entries()) {
-        if (mo.sollCents <= 0) {
-          // kein Soll → als gedeckt behandeln, kein Geld verbrauchen
-          mo.status = 'paid'
-          continue
-        }
-        const applied = Math.max(0, Math.min(remaining, mo.sollCents))
-        mo.paidCents = applied
-        remaining -= applied
-        mo.status = applied >= mo.sollCents ? 'paid' : k >= dueMonths ? 'notDue' : applied > 0 ? 'partial' : 'open'
-      }
       const sollYearCents = rowMonths.reduce((a, mo) => a + mo.sollCents, 0)
       const dueSollCents = rowMonths.filter((_, k) => k < dueMonths).reduce((a, mo) => a + mo.sollCents, 0)
+      // Ein Monat laut Verwendungszweck, an dem das Mietverhältnis nicht besteht oder der vor dem Beginn des Mietkontos
+      // liegt (`ledgerStart`), wirkt wie keine Bestimmung (#312 E2);
+      // das Mietkonto nennt die Zahlung (krumm, nicht kaputt: Beginn oder Ende können sich später geändert haben).
+      const designatedOutside = inSpan
+        .filter((p) => isRentPayment(p) && typeof p.designatedMonth === 'string' && LEDGER_MONTH.test(p.designatedMonth) && monthShare(tracked, p.designatedMonth).days === 0)
+        .map((p) => p.id)
       return {
         tenancyId: t.id,
         tenantName: t.tenantName,
@@ -1072,8 +1231,14 @@ export function ledgerRows(
         settlementYearCents,
         balanceCents: paidYearCents - sollYearCents,
         dueSollCents,
-        arrearsCents: Math.max(0, dueSollCents - paidYearCents),
+        arrearsCents: account.arrearsCents,
+        notDemandableCents: account.notDemandableCents,
+        notDemandable: account.notDemandable,
         openMonths: rowMonths.filter((mo) => mo.status === 'open' || mo.status === 'partial').length,
+        openingBalanceCents: account.openingBalanceCents,
+        closingBalanceCents: account.closingBalanceCents,
+        ...(designatedOutside.length > 0 ? { designatedOutside } : {}),
+        ...(recorded.fromPayment && tracked.start !== t.start ? { ledgerStart: tracked.start } : {}),
       }
     })
     // Eine Liste, die ein Mensch liest: deutsche Sortierung, fest eingestellt (siehe compareName).
@@ -1083,8 +1248,8 @@ export function ledgerRows(
 // Das Mietkonto bleibt im Kalenderjahr (#208, Entwurf 3.11), auch wenn die Abrechnung einen anderen
 // Zeitraum hat: Es ist die Grundlage der Einnahmen in der Steuer. `asOf` wie bei der Abrechnung:
 // Monate ab dem des Stichtags sind „noch nicht fällig“ und kein Rückstand (zweite Browserabnahme).
-// Das Soll bleibt dasselbe, die Steuerübersicht hängt nicht daran.
-export function rentLedger(snapshot: Snapshot, options: { asOf?: string } = {}): RentLedger {
+// Das Soll bleibt dasselbe, die Steuerübersicht hängt nicht daran. `statements` (E5) nur aus der Route.
+export function rentLedger(snapshot: Snapshot, options: LedgerOptions = {}): RentLedger {
   const span = calendarYearPeriod(snapshot.year)
   const rows = ledgerRows(snapshot, span, options)
   // Nachzahlung und Guthaben kommen meist im Folgejahr, oft nach dem Auszug (#280). Ein
@@ -1107,15 +1272,41 @@ export function rentLedger(snapshot: Snapshot, options: { asOf?: string } = {}):
       }]
     })
     .sort((a, b) => compareName(a.unitName, b.unitName) || compareName(a.tenantName, b.tenantName))
+  // Ein Rückstand eines Ausgezogenen verschwindet nicht (#281, E2): Ein Mietverhältnis, das vor dem Jahr endete und zum
+  // 31.12. noch schuldet, steht in einer eigenen Liste, aus demselben Grund wie `settlementOnly` nicht als Zeile.
+  const carriedOnly: RentLedger['carriedOnly'] = snapshot.tenancies
+    .filter((t) => !withRow.has(t.id) && t.end !== null && t.end < span.from)
+    .flatMap((t) => {
+      const end = t.end
+      if (end === null) return []
+      const own = snapshot.payments.filter((p) => p.tenancyId === t.id)
+      const tracked = ledgerTenancy(t, snapshot.payments, snapshot.year)
+      // Endete das Mietverhältnis vor dem Beginn der Erfassung im Objekt, gibt es kein geführtes Konto, also keinen Übertrag.
+      if (compareText(tracked.start, end) > 0) return []
+      const account = tenancyAccount(tracked, t, own, span, options)
+      if (account.arrearsCents <= 0 && account.notDemandableCents <= 0) return []
+      return [{
+        tenancyId: t.id,
+        tenantName: t.tenantName,
+        unitName: unitById.get(t.unitId)?.name ?? '—',
+        end,
+        openCents: account.arrearsCents,
+        notDemandableCents: account.notDemandableCents,
+        notDemandable: account.notDemandable,
+      }]
+    })
+    .sort((a, b) => compareName(a.unitName, b.unitName) || compareName(a.tenantName, b.tenantName))
   return {
     year: snapshot.year,
     rows,
     settlementOnly,
+    carriedOnly,
     totals: {
       sollYearCents: rows.reduce((a, r) => a + r.sollYearCents, 0),
       paidYearCents: rows.reduce((a, r) => a + r.paidYearCents, 0),
       settlementYearCents: rows.reduce((a, r) => a + r.settlementYearCents, 0) + settlementOnly.reduce((a, r) => a + r.settlementYearCents, 0),
-      openCents: rows.reduce((a, r) => a + r.arrearsCents, 0),
+      openCents: rows.reduce((a, r) => a + r.arrearsCents, 0) + carriedOnly.reduce((a, r) => a + r.openCents, 0),
+      notDemandableCents: rows.reduce((a, r) => a + r.notDemandableCents, 0) + carriedOnly.reduce((a, r) => a + r.notDemandableCents, 0),
     },
   }
 }
@@ -8405,13 +8596,15 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     warn('prepayment.partial-month', partialMonthHint(t, partial, own.prepaymentCents, scope === 'heating'), { kind: 'tenancy', id })
   }
 
-  // Rückstand im Mietkonto (#133): Angerechnet wird die Vorauszahlung laut Staffel, solange keine
-  // Jahreskorrektur gesetzt ist. Maßgeblich ist aber das tatsächlich Gezahlte (siehe
-  // computePrepaymentCents); zeigt das Mietkonto einen Rückstand, ging womöglich ein Guthaben
-  // hinaus, das es nicht gibt. Umgerechnet wird nicht: Ob eine Teilzahlung die Kaltmiete oder die
-  // Vorauszahlung betraf, weiß nur der Vermieter. Der Rückstand kommt aus `rentLedger` selbst,
-  // damit Abrechnung und Mietkonto nie Verschiedenes sagen; im angebrochenen Monat rechnen beide
-  // anteilig (`rateInMonth`, #311), und was dort angesetzt ist, nennt `prepayment.partial-month`.
+  // Nicht gezahlte Vorauszahlung (#133, #281 E6): Angerechnet wird die Vorauszahlung laut Staffel, solange keine
+  // Jahreskorrektur gesetzt ist. Maßgeblich ist aber das tatsächlich Gezahlte (VIII ZR 240/10, Rn. 16; siehe
+  // computePrepaymentCents); ging weniger ein, ging womöglich ein Guthaben hinaus, das es nicht gibt. Welcher Teil
+  // offen ist, sagt die Tilgung nach § 366 BGB (rentAllocation.ts, dieselbe wie im Mietkonto): Zahlungen tilgen zuerst
+  // die offenen Vorauszahlungen, die ältesten zuerst (VIII ZR 84/17 Rn. 57). Der Betrag ist deshalb die Summe der
+  // offenen Vorauszahlungen der Monate, die diese Abrechnung anrechnet (die Heizvorauszahlung nur, wenn keine
+  // getrennte Heizkostenabrechnung sie anrechnet), getilgt durch alle Mietzahlungen bis zum Stichtag, auch nach Ende des
+  // Zeitraums: Eine nachgezahlte Vorauszahlung ist geleistet. Ist nur Kaltmiete offen, kein Hinweis. Im angebrochenen
+  // Monat rechnen beide anteilig (`rateInMonth`, #311), und was dort angesetzt ist, nennt `prepayment.partial-month`.
   // **Ohne eine einzige Zahlung des Objekts im Jahr bleibt der Hinweis aus.** Wer keine Zahlungen
   // erfasst, führt das Mietkonto nicht, und dann stünde dort für jedes Mietverhältnis die ganze
   // Jahresmiete als Rückstand; der Hinweis erschiene bei jedem dieser Nutzer an jeder Abrechnung
@@ -8434,26 +8627,31 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   const asOfMonth = options.asOf?.slice(0, 7)
   const anyDue = asOfMonth === undefined || periodMonths(period).some((m) => m < asOfMonth)
   if (scope === 'all' && ledgerInUse && anyDue) {
-    // Dieselbe Monatsrechnung wie das Mietkonto, über die Monate des Zeitraums (#208).
-    const rowsByTenancy = new Map(ledgerRows(snapshot, period, { asOf: options.asOf }).map((r) => [r.tenancyId, r]))
+    const dueInPeriod = periodMonths(period).filter((m) => asOfMonth === undefined || m < asOfMonth)
     for (const st of statements.values()) {
       if (st.prepaymentOverridden || st.prepaymentCents <= 0) continue
-      const row = rowsByTenancy.get(st.tenancyId)
-      if (!row) continue
-      const openCents = row.arrearsCents
+      const t = partTenancies.find((x) => x.id === st.tenancyId)
+      if (!t) continue
+      const plant = plants.find((p) => servesUnit(p, t.unit))
+      const way = plant ? wayOf(plant) : null
+      const heatingHere = (m: string): boolean => way === null || separateOwner(way, objectRules, m) === null
+      const own = snapshot.payments.filter((p) => p.tenancyId === t.id)
+      // Geführt ab der ersten erfassten Mietzahlung, wie das Mietkonto (rentAllocation.ts, `ledgerStart`).
+      const tracked = ledgerTenancy(t, snapshot.payments, snapshot.year)
+      const slices = allocateRentPayments(tracked, own)
+      // Ohne Stichtag (Tests, Regression) zählen alle erfassten Zahlungen: bis zur jüngsten, mindestens bis zum Ende.
+      const until = options.asOf ?? own.reduce((a, p) => maxText(a, p.date), period.to)
+      const openCents = monthCoverage(tracked, slices, dueInPeriod, until).reduce((a, c) =>
+        a + c.soll.prepayment - c.paid.prepayment + (heatingHere(c.month) ? c.soll.heatingPrepayment - c.paid.heatingPrepayment : 0), 0)
       if (openCents <= 0) continue
-      // Der Text behauptet nicht, dass die Vorauszahlung fehlt: Im Soll stehen auch Kaltmiete und
-      // gegebenenfalls die Pauschale (gemischtes Modell, #93), und welcher Teil offen ist, sieht
-      // man erst im Mietkonto.
-      const alsoInSoll = row.baseRentYearCents > 0 && row.flatRateYearCents > 0
-        ? 'stehen auch Kaltmiete und Pauschale'
-        : row.baseRentYearCents > 0 ? 'steht auch die Kaltmiete' : row.flatRateYearCents > 0 ? 'steht auch die Pauschale' : ''
       warn('prepayment.arrears',
-        `Im Mietkonto ${label} von ${st.tenantName} (${st.unitName}) sind ${fmtCents(openCents)} offen. Die Abrechnung rechnet die Vorauszahlung laut Vertrag an (${fmtCents(st.prepaymentCents)}); maßgeblich ist aber, was tatsächlich gezahlt wurde. ` +
-          'Zahlungen zählen nach ihrem Datum; eine im Dezember vorab gezahlte Januarmiete steht im Vorjahr. ' +
-          `Ob die Vorauszahlung betroffen ist, sehen Sie im Mietkonto${alsoInSoll ? `: Im Soll ${alsoInSoll}, der Rückstand kann ebenso sie betreffen` : ''}. ` +
-          'Fehlt nur eine Buchung, tragen Sie die Zahlung im Mietkonto nach; ' +
-          'hat der Mieter wirklich weniger Vorauszahlung geleistet, tragen Sie den gezahlten Betrag in der Abrechnung bei „abzüglich geleisteter Vorauszahlungen“ mit „✎ anpassen“ ein.',
+        // Die Sätze ohne Betrag stehen für sich: Bei mehreren Mietern fasst „Zu prüfen“ sie zu einem Kasten zusammen
+        // (client/src/noticeGroups.ts), und ein Satz mit Betrag bleibt beim Mieter.
+        `Von den Vorauszahlungen ${label} von ${st.tenantName} (${st.unitName}) sind ${fmtCents(openCents)} nicht gezahlt. ` +
+          'Zahlungen werden nach § 366 BGB zuerst auf die Vorauszahlungen angerechnet, die ältesten zuerst. ' +
+          `Die Abrechnung rechnet die Vorauszahlung laut Vertrag an (${fmtCents(st.prepaymentCents)}); maßgeblich ist, was tatsächlich gezahlt wurde. ` +
+          'Fehlt nur eine Buchung, tragen Sie die Zahlung im Mietkonto nach. ' +
+          `Sonst tragen Sie bei „abzüglich geleisteter Vorauszahlungen“ mit „✎ anpassen“ ${fmtCents(Math.max(0, st.prepaymentCents - openCents))} ein.`,
         { kind: 'rentLedger', id: st.tenancyId })
     }
   }

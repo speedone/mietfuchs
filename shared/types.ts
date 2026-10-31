@@ -199,12 +199,17 @@ export type Payment = {
   amountCents: number
   note?: string
   kind: PaymentKind
+  // Der Monat, den der Mieter bei der Zahlung bestimmt hat (Verwendungszweck, § 366 Abs. 1 BGB; #281), als 'JJJJ-MM'.
+  // Fehlt er, verteilt die Tilgung nach § 366 Abs. 2 BGB (server/src/rentAllocation.ts). Nur an Mietzahlungen; `null`
+  // im Rumpf eines PUT entfernt ihn.
+  designatedMonth?: string | null
 }
 
 // ---------- Mietkonto / Zahlungs-Tracking ----------
 
 // `notDue`: im laufenden Jahr ab dem aktuellen Monat, noch nicht fällig und kein Rückstand (#133).
-export type RentMonthStatus = 'paid' | 'partial' | 'open' | 'notDue'
+// `notRecorded` (#281): vor dem Beginn der Erfassung im Objekt (`ledgerStart`), weder bezahlt noch offen.
+export type RentMonthStatus = 'paid' | 'partial' | 'open' | 'notDue' | 'notRecorded'
 
 export type RentMonth = {
   month: number // 1..12
@@ -216,9 +221,25 @@ export type RentMonth = {
   flatRateCents: number // Pauschale (#93)
   heatingPrepaymentCents?: number // Heizvorauszahlung (Heizung PR 5), nur mit Heizstaffel
   sollCents: number // Bruttomiete = Kaltmiete + Vorauszahlung + Heizvorauszahlung + Pauschale
-  paidCents: number // dem Monat zugeordneter Zahlungseingang
+  // Dem Monat nach § 366 BGB zugeordnete Zahlungen mit Datum bis zum 31.12. des Jahres (#281), auch aus Vorjahren: eine
+  // Dezemberzahlung für Januar zählt im Januar.
+  paidCents: number
   status: RentMonthStatus
+  // Offen zum 31.12. des Jahres (#281): Vorauszahlung und Heizvorauszahlung (`openPrepaymentCents`) bzw. Kaltmiete und
+  // Pauschale (`openRentCents`). Die Reihenfolge der Tilgung wird so sichtbar.
+  openPrepaymentCents: number
+  openRentCents: number
+  // Zum 31.12. offen, später gedeckt: der Tag, ab dem der Monat gedeckt ist (nur Auskunft).
+  paidLaterOn?: string
+  // Davon nicht mehr einzeln einforderbare Vorauszahlung (Abrechnungsreife, E5), nur wenn > 0.
+  notDemandableCents?: number
 }
+
+// Warum eine offene Vorauszahlung nicht mehr einzeln einforderbar ist (#281, E5; BGH VIII ZR 84/17 Rn. 53):
+// `inStatement` die erteilte Abrechnung rechnet höchstens das Gezahlte an, `creditedAsPaid` sie rechnet mehr an
+// (`differenceCents`), `deadlinePassed` die Abrechnungsfrist ist ohne erteilte Abrechnung abgelaufen.
+export type NotDemandableReason = 'inStatement' | 'creditedAsPaid' | 'deadlinePassed'
+export type NotDemandable = { reason: NotDemandableReason; label: string; cents: number; differenceCents?: number }
 
 export type RentLedgerRow = {
   tenancyId: string
@@ -238,8 +259,32 @@ export type RentLedgerRow = {
   // Soll der fälligen Monate und was davon offen ist (#133): im laufenden Jahr nur die Monate vor
   // dem aktuellen, sonst das ganze Jahr.
   dueSollCents: number
+  // Mahnfähiger Rückstand zum Stand der Ansicht über alle Jahre ab Beginn (#281): offene Teile fälliger Monate, ohne
+  // die nicht mehr einzeln einforderbaren Vorauszahlungen (`notDemandableCents`, je Grund in `notDemandable`).
   arrearsCents: number
-  openMonths: number // fällige Monate, die nicht bezahlt sind
+  notDemandableCents: number
+  notDemandable: NotDemandable[]
+  openMonths: number // fällige Monate des Jahres, die nicht bezahlt sind
+  // Saldo zum 01.01. und zum 31.12. (#281): Mietzahlungen bis dahin − Soll aller Monate davor; positiv vorausbezahlt,
+  // negativ Rückstand. Endsaldo eines Jahres = Anfangssaldo des nächsten.
+  openingBalanceCents: number
+  closingBalanceCents: number
+  // Zahlungen, deren Monat laut Verwendungszweck außerhalb des Mietverhältnisses liegt (wirkt wie keine Bestimmung).
+  designatedOutside?: string[]
+  // Geführt ab (#281): Beginn des Kontos, wenn er nach dem Mietbeginn liegt (01.01. des Jahres der ersten erfassten
+  // Mietzahlung). Frühere Monate sind nicht erfasst und weder Soll noch offen.
+  ledgerStart?: string
+}
+
+// Ein Mietverhältnis ohne Tag im Jahr, das zum 31.12. noch schuldet (#281): Sein Rückstand verschwindet nicht.
+export type RentLedgerCarried = {
+  tenancyId: string
+  tenantName: string
+  unitName: string
+  end: string
+  openCents: number
+  notDemandableCents: number
+  notDemandable: NotDemandable[]
 }
 
 export type RentLedger = {
@@ -248,11 +293,13 @@ export type RentLedger = {
   // Mietverhältnisse ohne Tag im Jahr, für die eine Zahlung aus der Abrechnung im Jahr erfasst ist
   // (#280): Nachzahlung und Guthaben kommen oft erst nach dem Auszug.
   settlementOnly: { tenancyId: string; tenantName: string; unitName: string; settlementYearCents: number }[]
+  carriedOnly: RentLedgerCarried[]
   totals: {
     sollYearCents: number
     paidYearCents: number
     settlementYearCents: number // Zahlungen aus der Abrechnung (#280)
-    openCents: number // Summe der offenen Rückstände (nur negative Salden)
+    openCents: number // Summe der mahnfähigen Rückstände, auch der Ausgezogenen (`carriedOnly`)
+    notDemandableCents: number // Summe der nicht mehr einzeln einforderbaren Vorauszahlungen
   }
 }
 

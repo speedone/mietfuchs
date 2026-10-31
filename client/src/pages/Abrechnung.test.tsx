@@ -934,7 +934,7 @@ test('Zu prüfen: gleicher Hinweis bei vier Mietern steht in einem Kasten, jeder
   const text = sample('prepayment.arrears')
   settlement.statements = four.map(([id, name, unit]) => ({ ...STATEMENT, tenancyId: id, tenantName: name, unitName: unit }))
   settlement.notices = four.map(([id, name, unit, open]): Notice => ({
-    code: 'prepayment.arrears', level: 'warning', title: 'Rückstand im Mietkonto', text: text.replace('u3 (W3)', `${name} (${unit})`).replace('2.331,96 €', open), subject: { kind: 'rentLedger', id },
+    code: 'prepayment.arrears', level: 'warning', title: 'Rückstand im Mietkonto', text: text.replace('u3 (W3)', `${name} (${unit})`).replace('140,00 €', open), subject: { kind: 'rentLedger', id },
   }))
   const nav = vi.fn()
   showWithNav(nav)

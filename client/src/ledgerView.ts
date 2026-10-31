@@ -1,78 +1,101 @@
-// Was das Mietkonto über einen offenen Dezember sagt (#70).
+// Was das Mietkonto über Stand, Übertrag und offene Teile sagt (#70, #133, #281).
 //
 // Die Entscheidungslogik steht hier ohne DOM, damit sie prüfbar bleibt (ledgerView.test.ts).
 // Sie stand zuerst als Bedingung in der Seite, und die Durchsicht hat genau dort zwei Aussagen
 // gefunden, die nicht stimmten. Eine ungeprüfte Bedingung in einer Komponente ist keine
 // Formalie, sondern die Stelle, an der so etwas sitzt.
 
-import type { FederalState, RentLedgerRow, RentMonth } from './types'
+import type { FederalState, NotDemandable, RentLedgerCarried, RentLedgerRow, RentMonth } from './types'
 import { rentDueDate, rentDueRuleText } from '../../shared/deadlines.ts'
 import { isHoliday, localHolidaysOf, stateName, weekdayOf } from '../../shared/holidays.ts'
 import { MONTH_NAMES } from './monthText'
-import { fmtEuro } from './api'
+import { fmtDate, fmtEuro } from './api'
 
-// **Der überraschende Dezember.** Eine Zahlung zählt zu dem Jahr, in dem sie eingegangen ist.
-// Geht die Dezembermiete erst im Januar ein, bleibt der Dezember im Mietkonto offen, obwohl der
-// Mieter gezahlt hat, und das Geld erscheint unter den Zahlungseingängen des Folgejahres. Das
-// ist richtig gerechnet und trotzdem nicht selbsterklärend.
+// **Übertrag und Stand zum Jahresende (#281).** Das Mietkonto rechnet ab Beginn des Mietverhältnisses und verteilt
+// Zahlungen nach § 366 BGB (server/src/rentAllocation.ts): der Monat laut Verwendungszweck, sonst zuerst die offenen
+// Vorauszahlungen, dann Kaltmiete und Pauschale, je die ältesten zuerst (BGH VIII ZR 84/17 Rn. 56/57). Ein Rückstand
+// aus dem Vorjahr steht deshalb im Januar noch da, und eine im Januar eingegangene Dezembermiete deckt den Dezember
+// („bezahlt am …“). Der frühere Hinweis zum offenen Dezember (#70) beschrieb die Verteilung je Jahr und ist entfallen.
 //
-// Gezeigt wird der Satz nur, wenn der Fall vorliegen **kann**, und das ist enger, als es zuerst
-// aussah:
-//
-//   **Nur für ein vergangenes Jahr.** Im laufenden Jahr hat der Dezember naturgemäß noch nicht
-//   stattgefunden, `rentLedger` füllt aber immer alle zwölf Monate. Ohne diese Bedingung bekäme
-//   jedes laufende Mietverhältnis den Hinweis ab Januar, also Monate bevor er etwas bedeutet.
-//
-//   **Nur wenn der Dezember überhaupt ein Soll hat und nicht gedeckt ist.** Ohne Soll gibt es
-//   nichts zu erklären.
-//
-//   **Nur wenn allein der Dezember offen ist** (Befund M3 aus #341). Stehen auch frühere Monate
-//   offen, bis hin zu allen zwölf, fehlt Geld über das Jahr, und der Satz über eine spät
-//   eingegangene Dezembermiete führte in die Irre. Monate ohne Soll zählen dabei nicht.
-//
-// Der Satz nennt zwei Ursachen, weil das Mietkonto Zahlungen der Reihe nach ab Januar verteilt
-// (`rentLedger`): Ein zu niedriger November wird mit der Dezemberzahlung aufgefüllt, und die Lücke
-// steht dann im Dezember. Steuerlich bleibt es beim Jahr des Eingangs; die Zehn-Tage-Regel des
-// § 11 Abs. 1 Satz 2 EStG greift bei der Dezembermiete nicht, denn sie ist nach § 556b Abs. 1 BGB
-// Anfang Dezember fällig und nicht kurz vor dem Jahreswechsel (siehe Steuer.tsx).
-//
-// Das heutige Datum wird hineingereicht und nicht hier erfragt: Sonst hinge der Test an dem Tag,
-// an dem er läuft, und das ist dieselbe Regel, nach der auch die Plattform hineingereicht wird.
-//
-// Gelesen wird das Jahr **örtlich** und nicht in UTC. Der Nutzer sitzt in seiner Zeitzone, und
-// „das laufende Jahr“ ist seines. Mit `getUTCFullYear` wäre in der Stunde nach Mitternacht am
-// 1. Januar (MEZ) noch das alte Jahr gemeint, und der Hinweis bliebe für das gerade vergangene
-// Jahr aus. Eine Stunde im Jahr, aber es ist derselbe Zonen-Mischfall, vor dem CLAUDE.md warnt.
-export function showDecemberNote(row: RentLedgerRow, year: number, today: Date): boolean {
-  if (year >= today.getFullYear()) return false
-  const dezember = row.months[11]
-  if (!dezember) return false
-  if (!(dezember.sollCents > 0 && dezember.status !== 'paid')) return false
-  return row.months.slice(0, 11).every(m => m.sollCents === 0 || m.status === 'paid')
-}
-
-// Der Satz dazu, oder `null`, wenn er nicht erscheint.
-export function decemberNote(row: RentLedgerRow, year: number, today: Date): string | null {
-  if (!showDecemberNote(row, year, today)) return null
-  const dezember = row.months[11]
-  const missing = dezember.sollCents - dezember.paidCents
-  return `Im Dezember fehlen ${fmtEuro(missing)}. Das kann daran liegen, dass die Dezembermiete ` +
-    `erst im Januar eingegangen ist: Zahlungen zählen zu dem Jahr, in dem sie eingegangen sind, ` +
-    `und erscheinen dann unter den Zahlungseingängen ${year + 1}. Oder in einem früheren Monat ` +
-    `wurde zu wenig gezahlt: Das Mietkonto verteilt die Zahlungen der Reihe nach ab Januar auf ` +
-    `die Monate, ein Fehlbetrag rückt deshalb bis in den Dezember.`
-}
-
-// Der Stand einer Zeile, wie ihn die Karte nennt (#133, zweite Browserabnahme). Ein Rückstand ist
-// nur, was fällig ist (`arrearsCents`, im laufenden Jahr die Monate vor dem aktuellen). Fehlt
-// danach noch Geld für das Jahr, sind das die künftigen Monate: „bisher bezahlt“, kein Rückstand.
-export type RowStanding = { kind: 'arrears' | 'credit' | 'paidSoFar' | 'paid', cents: number }
+// Der Stand einer Zeile (#133, zweite Browserabnahme): Ein Rückstand ist nur, was fällig und einforderbar ist
+// (`arrearsCents`, über alle Jahre ab Beginn). Nicht mehr einzeln einforderbare Vorauszahlungen (Abrechnungsreife,
+// E5) sind kein Rückstand, sondern „über die Abrechnung“. Sonst entscheidet der Endsaldo zum 31.12.: positiv
+// vorausbezahlt, negativ sind es die künftigen Monate („bisher bezahlt“), sonst ausgeglichen.
+export type RowStanding = { kind: 'arrears' | 'credit' | 'paidSoFar' | 'paid' | 'viaSettlement', cents: number }
 
 export function rowStanding(row: RentLedgerRow): RowStanding {
   if (row.arrearsCents > 0) return { kind: 'arrears', cents: row.arrearsCents }
-  if (row.balanceCents > 0) return { kind: 'credit', cents: row.balanceCents }
-  if (row.balanceCents < 0) return { kind: 'paidSoFar', cents: -row.balanceCents }
+  if (row.notDemandableCents > 0) return { kind: 'viaSettlement', cents: row.notDemandableCents }
+  if (row.closingBalanceCents > 0) return { kind: 'credit', cents: row.closingBalanceCents }
+  if (row.closingBalanceCents < 0) return { kind: 'paidSoFar', cents: -row.closingBalanceCents }
   return { kind: 'paid', cents: 0 }
+}
+
+// „Übertrag aus {Y−1}“ oben in der Karte, oder `null` bei 0.
+export function carryText(row: Pick<RentLedgerRow, 'openingBalanceCents'>, year: number): string | null {
+  const c = row.openingBalanceCents
+  if (c === 0) return null
+  return `Übertrag aus ${year - 1}: ${c < 0 ? `Rückstand ${fmtEuro(-c)}` : `vorausbezahlt ${fmtEuro(c)}`}`
+}
+
+// Geführt ab (#281): Liegt der Beginn des Kontos nach dem Mietbeginn (erste erfasste Mietzahlung), sagt eine gedämpfte
+// Zeile, dass frühere Monate nicht erfasst und deshalb weder Soll noch offen sind.
+export function ledgerStartText(row: Pick<RentLedgerRow, 'ledgerStart'>): string | null {
+  if (!row.ledgerStart) return null
+  const month = MONTH_NAMES[Number(row.ledgerStart.slice(5, 7)) - 1] ?? row.ledgerStart.slice(5, 7)
+  return `Mietkonto geführt ab ${month} ${row.ledgerStart.slice(0, 4)} (erste erfasste Mietzahlung); frühere Monate sind nicht erfasst.`
+}
+
+// Das Zeilenende: „Stand 31.12.{Y}“ (Endsaldo), darunter getrennt der Rückstand und der nicht mehr einzeln
+// einforderbare Teil, jeweils nur, wenn nicht 0. `tone` wählt die Farbe (rot nur für einen Rückstand).
+export type ClosingLine = { label: string, cents: number, tone: 'red' | 'green' | 'muted' }
+
+export function closingLines(row: Pick<RentLedgerRow, 'closingBalanceCents' | 'arrearsCents' | 'notDemandableCents'>, year: number): ClosingLine[] {
+  const c = row.closingBalanceCents
+  const lines: ClosingLine[] = [{ label: `Stand 31.12.${year}`, cents: c, tone: c < 0 ? (row.arrearsCents > 0 ? 'red' : 'muted') : 'green' }]
+  if (row.arrearsCents !== 0) lines.push({ label: 'davon Rückstand', cents: row.arrearsCents, tone: 'red' })
+  if (row.notDemandableCents !== 0) lines.push({ label: 'davon nicht mehr einzeln einforderbar', cents: row.notDemandableCents, tone: 'muted' })
+  return lines
+}
+
+// Was an einem teilweise bezahlten Monat offen ist, damit die Reihenfolge der Tilgung sichtbar wird
+// („offen: Vorauszahlung 0,00 €, Kaltmiete 200,00 €“). Kaltmiete und Pauschale sind eine Klasse.
+export function openPartsText(mo: RentMonth): string | null {
+  if (mo.status !== 'partial') return null
+  const rentLabel = mo.flatRateCents > 0 && mo.baseRentCents > 0 ? 'Kaltmiete und Pauschale' : mo.flatRateCents > 0 ? 'Pauschale' : 'Kaltmiete'
+  return `offen: Vorauszahlung ${fmtEuro(mo.openPrepaymentCents)}, ${rentLabel} ${fmtEuro(mo.openRentCents)}`
+}
+
+// Zum 31.12. offen, später gedeckt: ein kleiner Zusatz (nur Auskunft).
+export function paidLaterText(mo: Pick<RentMonth, 'paidLaterOn'>): string | null {
+  return mo.paidLaterOn ? `bezahlt am ${fmtDate(mo.paidLaterOn)}` : null
+}
+
+// Je Grund ein Satz (Entwurf E5). Nur der erste sagt „enthalten“: Rechnet die Abrechnung mehr an als gezahlt, steckt
+// der Betrag nicht in ihrem Saldo, sondern ist womöglich verloren; deshalb dort die Stufe Warnung.
+export type NotDemandableNote = { level: 'hint' | 'warning', text: string }
+
+export function notDemandableNotes(list: readonly NotDemandable[]): NotDemandableNote[] {
+  return list.map((n): NotDemandableNote => {
+    switch (n.reason) {
+      case 'inStatement':
+        return { level: 'hint', text: `In der Abrechnung ${n.label} enthalten (${fmtEuro(n.cents)}): Die nicht gezahlte Vorauszahlung steckt im Saldo der Abrechnung; fordern Sie diesen, nicht die Vorauszahlung.` }
+      case 'creditedAsPaid':
+        return {
+          level: 'warning',
+          text: `Die Abrechnung ${n.label} rechnet ${fmtEuro(n.differenceCents ?? n.cents)} Vorauszahlung als gezahlt an, die nicht eingegangen sind. Einzeln verlangen lässt sich die Vorauszahlung nicht mehr. ` +
+            'Ob eine berichtigte Abrechnung den Betrag noch einfordern kann, hängt an der Abrechnungsfrist (§ 556 Abs. 3 Satz 3 BGB); besprechen Sie das im Zweifel mit einer Beratung.',
+        }
+      case 'deadlinePassed':
+        return { level: 'hint', text: `Die Abrechnungsfrist für ${n.label} ist abgelaufen. Die Vorauszahlung (${fmtEuro(n.cents)}) lässt sich nicht mehr einzeln verlangen, nur noch über die Abrechnung.` }
+    }
+  })
+}
+
+// Ein Ausgezogener ohne Tag im Jahr, der zum 31.12. noch schuldet (`carriedOnly`): Sein Rückstand verschwindet nicht.
+export function carriedText(r: RentLedgerCarried): string {
+  const rest = r.notDemandableCents > 0 ? `, dazu ${fmtEuro(r.notDemandableCents)} nicht mehr einzeln einforderbar` : ''
+  return `${r.tenantName}, ausgezogen am ${fmtDate(r.end)}: offen ${fmtEuro(r.openCents)}${rest}`
 }
 
 // Das Datum, mit dem ein Klick auf einen Monat die Zahlung vorbelegt. Ein fälliger Monat: der Erste

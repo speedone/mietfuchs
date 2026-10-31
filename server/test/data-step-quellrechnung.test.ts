@@ -18,7 +18,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import AdmZip from 'adm-zip'
-import { connect, type Connection } from '../src/db/client.ts'
+import { connect, loadMigrations, type Connection } from '../src/db/client.ts'
 import { assignSources } from '../src/db/dataSteps/0077_quellrechnung.ts'
 import { databaseFile } from '../src/db/open.ts'
 import { readClosedSettlements, readStock, type Stock } from '../src/db/read.ts'
@@ -34,6 +34,13 @@ import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { besideServer, restore, startServer } from '../testing/api.ts'
 
 const STEP = '0077_quellrechnung'
+// Die Schritte ab STEP bis zum Ende der Kette: STEP selbst und alle, die später dazukamen (#281: 0078/0079).
+const stepsFrom = async (tag: string): Promise<number> => {
+  const migrations = await loadMigrations()
+  const at = migrations.findIndex((m) => m.tag === tag)
+  if (at < 0) assert.fail(`Schritt ${tag} fehlt`)
+  return migrations.length - at
+}
 const P = 'objekt-1'
 const TODAY = '2026-10-05'
 const tempDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-quelle-'))
@@ -101,7 +108,7 @@ async function afterStep(build: (c: Connection) => void): Promise<{ before: Outc
     try {
       build(c)
       const before = { sources: [], items: [], amounts: c.rows('SELECT id, period, amount_cents, description, tax_year FROM cost_items ORDER BY id').map((r) => r.map(String)) }
-      assert.equal(await finishChain(c), 1, 'nur der Schritt 0077 fehlte')
+      assert.equal(await finishChain(c), await stepsFrom(STEP), 'nur der Schritt 0077 und die späteren fehlten')
       return { before, after: outcome(c) }
     } finally {
       c.close()
@@ -275,7 +282,7 @@ test('Zweimal erfasste aufgeteilte Rechnung: keine Quelle, der Hinweis bleibt, e
         const stock = await readStock(c.db)
         return computeSettlement(snapshotFor(stock, P, calendarYearPeriod(year)), { asOf: TODAY }).notices.filter((n) => n.code === 'cost.possible-duplicate').length
       }
-      assert.equal(await finishChain(c), 1, 'nur der Schritt 0077 fehlte')
+      assert.equal(await finishChain(c), await stepsFrom(STEP), 'nur der Schritt 0077 und die späteren fehlten')
       assert.deepEqual(outcome(c).sources, [], 'zwei Rechnungen sind keine Quelle')
       // Wie in 0.13.1 meldet der Hinweis die beiden Rechnungen in 2024. In 2025 nicht, weil im Vorzeitraum schon zwei
       // standen (Bedingung b des Hinweises), auch das wie in 0.13.1.
