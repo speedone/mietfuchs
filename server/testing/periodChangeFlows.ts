@@ -78,6 +78,7 @@ type Invoice = {
   serviceTo?: string
   participantUnitIds?: string[]
   paidOn?: string
+  spreadYears?: number
 }
 
 const CATEGORIES = [
@@ -288,12 +289,23 @@ export type RoundTrip = {
   refused: string | null
   years: FlowStep['taxYears'][]
   expenses: { before: Record<string, number>; after: Record<string, number> | null }
+  // Mit `spread` (#262 PR 2, X9 e): je Steuerjahr die abziehbaren Werbungskosten, der verschobene Teil und die Zahl der
+  // Zeilen mit einer Rate (Teile im Jahr des Abflusses und Anteile aus Vorjahren).
+  deductions?: { before: Record<string, [number, number, number]>; after: Record<string, [number, number, number]> | null }
 }
 const TAX_YEARS = Array.from({ length: 10 }, (_, i) => 2022 + i)
 
 async function expensesByYear(db: Database): Promise<Record<string, number>> {
   const stock = await readStock(db)
   return Object.fromEntries(TAX_YEARS.map((y) => [String(y), taxReportFor(stock, P, y).expenses.totalCents]))
+}
+
+async function deductionsByYear(db: Database): Promise<Record<string, [number, number, number]>> {
+  const stock = await readStock(db)
+  return Object.fromEntries(TAX_YEARS.map((y) => {
+    const e = taxReportFor(stock, P, y).expenses
+    return [String(y), [e.deductibleCents, e.deferredCents ?? 0, e.items.filter((i) => i.spread || i.spreadFrom).length]]
+  }))
 }
 
 // Wechselt mit den Vorgaben der Vorschau, wie jemand, der nur „Speichern“ drückt; `null` heißt gewechselt.
@@ -305,7 +317,10 @@ async function changeWithDefaults(db: Database, next: PeriodRules, newId: () => 
   return r === null ? 'kein Objekt' : 'error' in r ? r.error : null
 }
 
-export async function runRoundTrip(index: number): Promise<RoundTrip> {
+// `spread` (#262 PR 2, X9 e): jede Rechnung als „Nicht umlagefähig“ mit einer Verteilung nach § 82b EStDV auf 2 bis 5
+// Jahre (aus einem eigenen Zufall, damit der Ablauf sonst derselbe bleibt); verglichen werden dann zusätzlich je
+// Steuerjahr die abziehbaren Werbungskosten und der verschobene Teil, also die Raten.
+export async function runRoundTrip(index: number, options: { spread?: boolean } = {}): Promise<RoundTrip> {
   const rng = rngOf(ROUND_TRIP_SEED * 1000 + index)
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-hin-zurueck-'))
   const opened = await openFreshDatabase(dataDir)
@@ -314,7 +329,12 @@ export async function runRoundTrip(index: number): Promise<RoundTrip> {
   try {
     const a = nextRules(rng, { startMonth: 1, changes: [] })
     const b = nextRules(rng, a)
-    const invoices = invoicesOf(rng, index)
+    const spreadRng = rngOf(ROUND_TRIP_SEED * 1000 + index + 500_000)
+    const invoices = invoicesOf(rng, index).map((inv): Invoice => {
+      if (!options.spread) return inv
+      const { labor35aCents: _, ...rest } = inv
+      return { ...rest, category: 'Nicht umlagefähig', spreadYears: 2 + Math.floor(spreadRng() * 4) }
+    })
     // Je Rechnung ein Jahr der Zahlung in der üblichen Spanne ihres Zeitraums, wo sie kein Datum hat.
     const years = invoices.map(() => rng())
     const before = await opened.write(async (db) => {
@@ -326,7 +346,7 @@ export async function runRoundTrip(index: number): Promise<RoundTrip> {
         const from = Number(period.from.slice(0, 4)) - 1
         const to = Number(period.to.slice(0, 4)) + 3
         const taxYear = inv.paidOn === undefined ? from + Math.floor((years[i] ?? 0) * (to - from + 1)) : undefined
-        const body = { propertyId: P, period: period.key, key: 'area', ...inv, ...(taxYear === undefined ? {} : { taxYear }), confirmPaidOn: true, confirmTaxYear: true }
+        const body = { propertyId: P, period: period.key, key: 'area', ...inv, ...(taxYear === undefined ? {} : { taxYear }), confirmPaidOn: true, confirmTaxYear: true, ...(options.spread ? { confirmSpread: true } : {}) }
         const written = inv.serviceFrom !== undefined && inv.serviceTo !== undefined && periodsBetween(a, inv.serviceFrom, inv.serviceTo).length > 1
           ? (await saveCostItemSplit(db, P, body, null, newId)).map((c) => c.id)
           : [(await createEntity(db, 'costItems', newId(), body)).id]
@@ -338,21 +358,25 @@ export async function runRoundTrip(index: number): Promise<RoundTrip> {
             const p = periodOfKey(a, c.period)
             const lo = p === null ? from : Number(p.from.slice(0, 4)) - 1
             const hi = p === null ? to : Number(p.to.slice(0, 4)) + 3
-            await updateEntity(db, 'costItems', c.id, { taxYear: own ? lo + Math.floor(rng() * (hi - lo + 1)) : taxYear, confirmTaxYear: true })
+            await updateEntity(db, 'costItems', c.id, { taxYear: own ? lo + Math.floor(rng() * (hi - lo + 1)) : taxYear, confirmTaxYear: true, ...(options.spread ? { confirmSpread: true } : {}) })
           }
         }
       }
-      return { years: sumsOf((await readCostItems(db)).filter((c) => c.propertyId === P)).taxYears, expenses: await expensesByYear(db) }
+      return { years: sumsOf((await readCostItems(db)).filter((c) => c.propertyId === P)).taxYears, expenses: await expensesByYear(db), deductions: options.spread ? await deductionsByYear(db) : null }
     })
-    const trip: RoundTrip = { index, rules: [a, b], refused: null, years: [before.years], expenses: { before: before.expenses, after: null } }
+    const trip: RoundTrip = {
+      index, rules: [a, b], refused: null, years: [before.years], expenses: { before: before.expenses, after: null },
+      ...(before.deductions ? { deductions: { before: before.deductions, after: null } } : {}),
+    }
     for (const next of [b, a]) {
       const step = await opened.write(async (db) => {
         const refused = await changeWithDefaults(db, next, newId)
-        return { refused, years: sumsOf((await readCostItems(db)).filter((c) => c.propertyId === P)).taxYears, expenses: await expensesByYear(db) }
+        return { refused, years: sumsOf((await readCostItems(db)).filter((c) => c.propertyId === P)).taxYears, expenses: await expensesByYear(db), deductions: options.spread ? await deductionsByYear(db) : null }
       })
       if (step.refused !== null) return { ...trip, refused: step.refused }
       trip.years.push(step.years)
       trip.expenses.after = step.expenses
+      if (trip.deductions && step.deductions) trip.deductions.after = step.deductions
     }
     return trip
   } finally {
