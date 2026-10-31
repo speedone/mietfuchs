@@ -20,7 +20,7 @@ import { andList } from '../../../shared/wording.ts'
 import { OPERATING_POWER_KEPT, OPERATING_POWER_REPORTED } from '../../../shared/operatingPower.ts'
 import { anlageVLines } from '../anlageV'
 import type { NoticeTab } from '../notices'
-import { isSpreadItem, showsDeferred, spreadBlock, spreadCarriedText, spreadConditionsText, spreadIgnoredText, spreadItemText, spreadNothingDeductibleText } from '../taxSpread'
+import { DEFERRED_COLUMN_NOTE, DEFERRED_COLUMN_TITLE, deferredParts, isSpreadItem, showsDeferred, spreadBlock, spreadCarriedText, spreadConditionsText, spreadIgnoredText, spreadItemText, spreadNothingDeductibleText, SPREAD_BLOCK_READING, SPREAD_CARRIED_MORE } from '../taxSpread'
 import { formerYearsText, incomeMore, incomeTable, lateDecemberText, OLD_LEASE_MORE, oldLeaseForwardText, possibleDepositText, TURN_OF_YEAR_MORE, turnOfYearLines, unallocatedText, unitRows } from '../taxIncome'
 
 // `onNavigate`: der Sprung in die Stammdaten bei einer nicht eingetragenen Kopfangabe (#96 PR 2).
@@ -112,8 +112,9 @@ export default function Steuer({ settings, onNavigate }: Props) {
                   gesamt {fmtEuro(data.expenses.totalCents)}
                   {data.expenses.privateCents !== 0 && <> · davon privat {fmtEuro(data.expenses.privateCents)}</>}
                   {data.expenses.gratuitousCents ? <> · unentgeltlich {fmtEuro(data.expenses.gratuitousCents)}</> : null}
-                  {/* #262 PR 3: mit Vorzeichen; negativ, wenn mehr aus Vorjahren hinzukommt als in Folgejahre geht. */}
-                  {data.expenses.deferredCents ? <> · in Folgejahre verschoben {fmtEuro(data.expenses.deferredCents)}</> : null}
+                  {/* #262 PR 3, Durchsicht S1: nach Vorzeichen getrennt benannt, nie ein negatives „verschoben“. */}
+                  {deferredParts(data).outCents > 0 && <> · in Folgejahre verschoben {fmtEuro(deferredParts(data).outCents)}</>}
+                  {deferredParts(data).inCents > 0 && <> · aus Vorjahren {fmtEuro(deferredParts(data).inCents)}</>}
                 </div>
               )}
             </div>
@@ -368,7 +369,7 @@ export default function Steuer({ settings, onNavigate }: Props) {
               />
             )}
             {hints.includes('spreadCarried') && (
-              <NoticeBox level="hint" title="Anteile verteilten Erhaltungsaufwands aus Vorjahren" action={spreadCarriedText(data)} more="H 21.1 EStH." />
+              <NoticeBox level="hint" title="Anteile verteilten Erhaltungsaufwands aus Vorjahren" action={spreadCarriedText(data)} more={SPREAD_CARRIED_MORE} />
             )}
             {hints.includes('spreadNothingDeductible') && (
               <NoticeBox level="hint" title="Verteilung ohne abziehbaren Teil" action={spreadNothingDeductibleText(data)} />
@@ -876,35 +877,38 @@ function SplitTable({ report }: { report: TaxReport }) {
   const gratuitous = !!report.expenses.gratuitousCents
   const deferred = showsDeferred(report)
   return (
-    <Table>
-      <thead>
-        <tr>
-          <th>Position</th>
-          <th className="num">Gesamt</th>
-          <th className="num">privat</th>
-          {gratuitous && <th className="num">unentgeltlich</th>}
-          {deferred && <th className="num">verteilt</th>}
-          <th className="num">abziehbar</th>
-          <th>Zuordnung</th>
-          <th className="no-print" />
-        </tr>
-      </thead>
-      <tbody>
-        {items.map((x) => <SplitRow key={x.costItemId} item={x} gratuitous={gratuitous} deferred={deferred} />)}
-      </tbody>
-      <tfoot>
-        <tr>
-          <td>Summe Werbungskosten</td>
-          <td className="num">{fmtEuro(report.expenses.totalCents)}</td>
-          <td className="num">{fmtEuro(report.expenses.privateCents)}</td>
-          {gratuitous && <td className="num">{fmtEuro(report.expenses.gratuitousCents ?? 0)}</td>}
-          {deferred && <td className="num">{fmtEuro(report.expenses.deferredCents ?? 0)}</td>}
-          <td className="num">{fmtEuro(report.expenses.deductibleCents)}</td>
-          <td />
-          <td className="no-print" />
-        </tr>
-      </tfoot>
-    </Table>
+    <>
+      <Table>
+        <thead>
+          <tr>
+            <th>Position</th>
+            <th className="num">Gesamt</th>
+            <th className="num">privat</th>
+            {gratuitous && <th className="num">unentgeltlich</th>}
+            {deferred && <th className="num" title={DEFERRED_COLUMN_TITLE}>verteilt</th>}
+            <th className="num">abziehbar</th>
+            <th>Zuordnung</th>
+            <th className="no-print" />
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((x) => <SplitRow key={x.costItemId} item={x} gratuitous={gratuitous} deferred={deferred} />)}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td>Summe Werbungskosten</td>
+            <td className="num">{fmtEuro(report.expenses.totalCents)}</td>
+            <td className="num">{fmtEuro(report.expenses.privateCents)}</td>
+            {gratuitous && <td className="num">{fmtEuro(report.expenses.gratuitousCents ?? 0)}</td>}
+            {deferred && <td className="num">{fmtEuro(report.expenses.deferredCents ?? 0)}</td>}
+            <td className="num">{fmtEuro(report.expenses.deductibleCents)}</td>
+            <td />
+            <td className="no-print" />
+          </tr>
+        </tfoot>
+      </Table>
+      {deferred && <p className="muted fine">{DEFERRED_COLUMN_NOTE}</p>}
+    </>
   )
 }
 
@@ -947,45 +951,49 @@ function SpreadBlockView({ report }: { report: TaxReport }) {
   const b = spreadBlock(report)
   if (b === null) return null
   const thisYear = `in ${report.year} abzuziehen`
+  // Durchsicht K3: je Abschnitt eine eigene Tabelle mit Überschrift, damit am Handy keine leere Karte für den Titel
+  // entsteht; die Beschriftung jeder Zelle folgt dem Vordruck (Zeile 57: Gesamtaufwand und davon abzuziehen).
   return (
     <>
       <h4><Term id="spread82b">Zu verteilender Erhaltungsaufwand</Term></h4>
-      <Table className="stacked" aria-label="Zu verteilender Erhaltungsaufwand nach Zeilen der Anlage V">
-        <thead>
-          <tr>
-            {b.showsLines && <th>Zeile</th>}
-            <th>Angabe</th>
-            <th className="num">Gesamtbetrag</th>
-            <th className="num">abzugsfähiger Anteil</th>
-            <th className="num">{thisYear}</th>
-          </tr>
-        </thead>
-        {b.sections.map((sec) => (
-          <tbody key={sec.key}>
-            <tr><th colSpan={b.showsLines ? 5 : 4} scope="colgroup">{sec.title}</th></tr>
-            {sec.rows.map((r) => (
-              <tr key={r.key} data-row={r.key} className={r.kind === 'sum' ? 'subtotal' : undefined}>
-                {b.showsLines && <td data-label="Zeile">{r.line ?? ''}{r.code !== undefined && <div className="muted cell-sub">Kennzahl {r.code}</div>}</td>}
-                <td>{r.label}</td>
-                <td data-label="Gesamtbetrag" className="num">{r.grossCents === null ? '' : fmtEuro(r.grossCents)}</td>
-                <td data-label="abzugsfähiger Anteil" className="num">{r.percent === null ? '' : `${r.percent.toLocaleString('de-DE', { maximumFractionDigits: 2 })} %`}</td>
-                <td data-label={thisYear} className="num">{fmtEuro(r.cents)}</td>
+      {b.sections.map((sec) => (
+        <Fragment key={sec.key}>
+          <p className="font-strong">{sec.title}</p>
+          <Table className="stacked" aria-label={`Zu verteilender Erhaltungsaufwand: ${sec.title}`}>
+            <thead>
+              <tr>
+                {b.showsLines && <th>Zeile</th>}
+                <th>Angabe</th>
+                <th className="num">Gesamtbetrag</th>
+                <th className="num">abzugsfähiger Anteil</th>
+                <th className="num">{thisYear}</th>
               </tr>
-            ))}
-          </tbody>
-        ))}
-        <tfoot>
-          <tr>
-            {b.showsLines && <td />}
-            <td>In {report.year} abzuziehen, vor der Kürzung bei verbilligter Vermietung</td>
-            <td /><td />
-            <td className="num">{fmtEuro(b.thisYearCents)}</td>
-          </tr>
-        </tfoot>
-      </Table>
+            </thead>
+            <tbody>
+              {sec.rows.map((r) => {
+                const total = r.kind === 'total'
+                return (
+                  <tr key={r.key} data-row={r.key} className={r.kind === 'sum' ? 'subtotal' : undefined}>
+                    {b.showsLines && <td data-label="Zeile">{r.line ?? ''}{r.code !== undefined && <div className="muted cell-sub">Kennzahl {r.code}</div>}</td>}
+                    <td>{r.label}</td>
+                    <td data-label={total ? 'Gesamtaufwand' : 'Gesamtbetrag'} className="num">{r.grossCents === null ? '' : fmtEuro(r.grossCents)}</td>
+                    <td data-label="abzugsfähiger Anteil" className="num">{r.percent === null ? '' : `${r.percent.toLocaleString('de-DE', { maximumFractionDigits: 2 })} %`}</td>
+                    <td data-label={total ? `davon ${thisYear}` : thisYear} className="num">{fmtEuro(r.cents)}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </Table>
+        </Fragment>
+      ))}
+      <p data-row="this-year" className="flex justify-between gap-x-4 font-strong">
+        <span>In {report.year} abzuziehen, vor der Kürzung bei verbilligter Vermietung</span>
+        <span>{fmtEuro(b.thisYearCents)}</span>
+      </p>
       <p className="muted fine">
         Verteilte Positionen tragen Sie nur in diese Zeilen ein, nicht zusätzlich beim sofort abziehbaren Aufwand. Gekürzt bei
         verbilligter Vermietung wird nicht hier, sondern wie jede andere Ausgabe des Jahres bei der Kürzung der Werbungskosten.
+        {' '}{SPREAD_BLOCK_READING}
       </p>
     </>
   )

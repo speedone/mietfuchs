@@ -1020,3 +1020,41 @@ test('Löschen einer verteilten Position: die Rückfrage nennt die entfallenden 
   const dialog = await screen.findByRole('alertdialog', { name: 'Kostenposition löschen?' })
   expect(dialog.textContent).toContain(`Die Anteile ${year + 1} bis ${year + 2} entfallen damit.`)
 })
+
+// Durchsicht von #262 PR 3 (Testlücke): Eine gespeicherte verteilte Position, beim Bearbeiten über zwei Abrechnungszeiträume
+// aufgeteilt. Die Teile tragen die Wahl (`spreadYears` im Rumpf); fragt der Server beim Aufteilen nach (409 `spread`), wird
+// das zur Rückfrage der Seite, und die Teile gehen einmal mit `confirmSpread` hinaus.
+test('Verteilung beim Aufteilen einer gespeicherten Position: Wahl im Rumpf, Rückfrage des Servers, einmal mit confirmSpread', async () => {
+  const year = new Date().getFullYear() - 1
+  costItems = [verteilteDach(year)]
+  const question = `Die Verteilung beginnt dann ${year} statt ${year}.`
+  const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } })
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    const method = init?.method ?? 'GET'
+    if (method !== 'GET') {
+      const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+      sent.push({ url, method, body })
+      if (url.includes('/split/preview')) {
+        return json({ parts: [
+          { period: `${year}-01`, label: String(year), days: 184, amountCents: 504110, labor35aCents: null, description: 'Dachsanierung', needsTaxYear: false, closed: false, startYear: year, endYear: year },
+          { period: `${year + 1}-01`, label: String(year + 1), days: 181, amountCents: 495890, labor35aCents: null, description: 'Dachsanierung', needsTaxYear: false, closed: false, startYear: year + 1, endYear: year + 1 },
+        ] })
+      }
+      return body.confirmSpread === true ? json([]) : json({ error: question, question: 'spread' }, 409)
+    }
+    const path = url.split('?')[0]
+    return json(path === '/api/costItems' ? costItems : path === '/api/properties' ? [{ id: 'objekt-1', name: 'Haus', kind: 'mfh', address: '' }] : [])
+  })
+  await renderStored()
+  fireEvent.change(await screen.findByLabelText(/Leistungszeitraum/), { target: { value: `${year}-07-01` } })
+  fireEvent.change(screen.getByLabelText(/^bis$/), { target: { value: `${year + 1}-06-30` } })
+  fireEvent.click(screen.getByRole('button', { name: /^Speichern$/ }))
+  fireEvent.click(within(await screen.findByRole('alertdialog', { name: 'Rechnung aufteilen?' })).getByRole('button', { name: 'Aufteilen und speichern' }))
+  const dialog = await screen.findByRole('alertdialog', { name: 'Verteilung für die Steuer ändert sich' })
+  expect(dialog.textContent).toContain(question)
+  fireEvent.click(within(dialog).getByRole('button', { name: 'So speichern' }))
+  const splits = () => sent.filter((r) => r.url.includes('/split') && !r.url.includes('preview'))
+  await waitFor(() => expect(splits()).toHaveLength(2))
+  expect(splits()[0]?.body).toMatchObject({ spreadYears: 3 })
+  expect(splits()[1]?.body).toMatchObject({ spreadYears: 3, confirmSpread: true })
+})

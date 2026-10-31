@@ -11,6 +11,7 @@ import { applyMigrations, connect, loadMigrations } from '../src/db/client.ts'
 import { besideServer, restore, startServer, startServerIn, type Server } from '../testing/api.ts'
 import type { CostItem, Property } from '../../shared/types.ts'
 import { spreadQuestions } from '../../shared/spread.ts'
+import { CALENDAR_RULES, periodLabel, periodOfKey } from '../../shared/period.ts'
 import type { JournalGroupView } from '../src/db/journal.ts'
 
 const sender = (s: Server) => (route: string, method: string, body?: unknown) =>
@@ -268,6 +269,26 @@ test('Route: eine Gutschrift aufteilen und dabei verteilen lehnt ohne Rückfrage
     const r = await send(`/api/costItems/${item.id}/split`, 'PUT', { serviceFrom: '2025-07-01', serviceTo: '2026-06-30', spreadYears: 3 })
     assert.equal(r.status, 400, await r.clone().text())
     assert.match((await r.json() as { error: string }).error, /Gutschrift/)
+  } finally {
+    s.stop()
+  }
+})
+
+// Durchsicht von #262 PR 3: Der Satz der 409 ist genau der, den das Formular vorher selbst zeigt (Kosten.tsx:
+// `spreadChange` mit den übrigen Teilen, beschriftet mit `periodLabel` der Regeln des Objekts). Sonst bestätigte der
+// Vermieter im Formular einen anderen Text, als der Server meint.
+test('Route: der Text der Rückfrage am Teil einer Rechnung ist der des Formulars (spreadQuestions mit periodLabel)', async () => {
+  const s = await startServer()
+  try {
+    const send = sender(s)
+    await send('/api/units', 'POST', { name: 'EG', areaM2: 80, participates: true })
+    const parts = await (await send('/api/costItems/split', 'POST', { ...dach, serviceFrom: '2025-07-01', serviceTo: '2026-06-30', spreadYears: 2 })).json() as CostItem[]
+    const [first, second] = parts
+    if (!first || !second) return assert.fail('zwei Teile erwartet')
+    const r = await send(`/api/costItems/${first.id}`, 'PUT', { spreadYears: null })
+    assert.equal(r.status, 409)
+    const others = parts.filter((p) => p.id !== first.id).map((p) => periodLabel(periodOfKey(CALENDAR_RULES, p.period) ?? assert.fail('Zeitraum')))
+    assert.equal((await r.json() as { error: string }).error, spreadQuestions(first, { ...first, spreadYears: null }, others).join(' '))
   } finally {
     s.stop()
   }

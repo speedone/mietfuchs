@@ -691,3 +691,14 @@ test('Verteilung nach § 82b EStDV: Voraussetzungen, Wahl und Bindung, Beispiel 
   assert.deepEqual(spreadRates(1_000_000 - 400_000, 3), [200_000, 200_000, 200_000])
   assert.match(t.example, /10\.000 €.*3\.333,34 €.*3\.333,33 €.*4\.000 €.*6\.000 €.*2\.000 €/s)
 })
+
+// Durchsicht von #262 PR 3, K8 und K9: Garagen nach dem Wortlaut von § 82b Abs. 1 Satz 3 EStDV, Ferienwohnung mit Urteil,
+// die Ausnahme nach BFH IX R 152/89 (im Jahr der Zahlung weder abgezogen noch verteilt) als nicht gerechnet genannt.
+test('Verteilung nach § 82b EStDV: Garagen nach dem Wortlaut, Ferienwohnung mit Urteil, Ausnahme IX R 152/89 (#262, K8, K9)', () => {
+  const t = GLOSSARY.spread82b
+  const all = `${t.short} ${t.example} ${t.needed}`
+  assert.match(all, /ohne Rücksicht auf ihre tatsächliche Nutzung/)
+  assert.match(all, /nicht mehr als ein Personenkraftwagen für jede Wohnung untergestellt werden kann/)
+  assert.match(all, /Ferienwohnung.*BFH, Urteil vom 04\.09\.2000, IX R 75\/99/s)
+  assert.match(all, /weder abgezogen noch verteilt.*ohne den Anteil des ersten Jahres.*IX R 152\/89.*rechnet Mietfuchs nicht/s)
+})

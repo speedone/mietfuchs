@@ -788,7 +788,7 @@ test('Verteilung: Spalte „verteilt“, je Zeile Betrag = privat + verteilt + a
   expect(plain(fassade)).toContain('Grundlage 6.000,00 € abziehbar')
   const summe = screen.getByText('Summe Werbungskosten').closest('tr')
   expect(plain(summe)).toMatch(/10\.000,00 €.*0,00 €.*4\.666,66 €.*5\.333,34 €/)
-  expect(plain(screen.getByText(/Werbungskosten \(abziehbar\)/).closest('.kpi'))).toMatch(/gesamt 10\.000,00 €.*in Folgejahre verschoben 4\.666,66 €/)
+  expect(plain(screen.getByText(/Werbungskosten \(abziehbar\)/).closest('.kpi'))).toMatch(/gesamt 10\.000,00 €.*in Folgejahre verschoben 6\.666,66 €/)
   // Rechenweg mit Begriff.
   fireEvent.click(screen.getAllByRole('button', { name: 'Rechenweg' })[0] ?? expect.unreachable('kein Rechenweg'))
   const schritt = screen.getByText(/abziehbar 10\.000,00 € auf 3 Jahre/).closest('tr.calc-steps')
@@ -803,21 +803,27 @@ test('Ohne Verteilung: keine Spalte „verteilt“ und kein Block', async () => 
 
 test('Block der Zeilen 57 bis 72: Gesamtbetrag, Anteil und Ergebnis in der Reihenfolge des Vordrucks, Folgejahr mit Grundlage', async () => {
   await zeige(VERTEILT())
-  const table = screen.getByRole('table', { name: 'Zu verteilender Erhaltungsaufwand nach Zeilen der Anlage V' })
-  const heads = [...table.querySelectorAll('th')].map((h) => h.textContent)
+  const started = screen.getByRole('table', { name: `Zu verteilender Erhaltungsaufwand: In ${JAHR} begonnen` })
+  const heads = [...started.querySelectorAll('th')].map((h) => h.textContent)
   expect(heads.indexOf('Gesamtbetrag')).toBeLessThan(heads.indexOf('abzugsfähiger Anteil'))
   expect(heads.indexOf('abzugsfähiger Anteil')).toBeLessThan(heads.indexOf(`in ${JAHR} abzuziehen`))
-  const rows = [...table.querySelectorAll('tbody tr[data-row]')].map((tr) => plain(tr))
+  const rows = [...started.querySelectorAll('tbody tr[data-row]')].map((tr) => plain(tr))
   const lines = anlageVLines(JAHR)?.maintenance
   if (lines?.spread) {
     expect(rows[0]).toMatch(new RegExp(`^${lines.spread.total}Gesamtaufwand ${JAHR}, davon ${JAHR} abzuziehen10\\.000,00 €3\\.333,34 €`))
     expect(rows.some((r) => r.startsWith(`${lines.spread?.direct}Dachsanierung (direkt zugeordnet)`))).toBe(true)
   }
-  const fassade = rows.find((r) => r.includes('Fassade')) ?? expect.unreachable('Fassade fehlt')
+  // K3: am Handy beschriftet jede Zelle nach dem Vordruck, Zeile 57 mit „Gesamtaufwand“.
+  const total = started.querySelector('tbody tr[data-row="started-total"]')
+  expect([...(total?.querySelectorAll('td[data-label]') ?? [])].map((td) => td.getAttribute('data-label'))).toEqual(expect.arrayContaining(['Gesamtaufwand', `davon in ${JAHR} abzuziehen`]))
+  expect(started.querySelector('th[colspan]')).toBeNull()
+  const vorjahr = screen.getByRole('table', { name: `Zu verteilender Erhaltungsaufwand: Anteile aus ${JAHR - 2}` })
+  const fassade = [...vorjahr.querySelectorAll('tbody tr[data-row]')].map((tr) => plain(tr)).find((r) => r.includes('Fassade')) ?? expect.unreachable('Fassade fehlt')
   expect(fassade).toMatch(/3\.333,33 €.*60 %.*2\.000,00 €/)
-  expect(plain(table.querySelector('tfoot'))).toMatch(new RegExp(`In ${JAHR} abzuziehen.*5\\.333,34 €`))
-  // Druck: Block steht nicht in einem no-print.
-  expect(table.closest('.no-print')).toBeNull()
+  expect(plain(document.querySelector('[data-row="this-year"]'))).toMatch(new RegExp(`In ${JAHR} abzuziehen.*5\\.333,34 €`))
+  // K4/K5: die Belegung der Felder als Auslegung, das Prozent abgerundet.
+  expect(screen.getByText(/Die Belegung der Felder ist eine Auslegung/)).toBeTruthy()
+  expect(started.closest('.no-print')).toBeNull()
 })
 
 test('Erhaltungsaufwand: Zeile 55 nur für Unverteiltes, die verteilte Entnahme verweist auf 57 bis 72', async () => {
@@ -838,4 +844,18 @@ test('„Was diese Übersicht nicht rechnet“ nennt die Verteilung nicht mehr a
 test('Anschaffungsnahe Herstellungskosten ohne Datum: mit beginnender Verteilung fragt der Hinweis nach dem Eigentumsübergang', async () => {
   await zeige(VERTEILT([DACH]), 'ist', 'mfh', { name: 'Objekt' })
   expect(await screen.findByText(/Sie verteilen in diesem Jahr Erhaltungsaufwand/)).toBeTruthy()
+})
+
+// Durchsicht S1: Im Folgejahr ist der Anteil kein „verschobener“ Betrag, sondern einer aus einem Vorjahr; die Spalte erklärt
+// ihr Vorzeichen.
+test('Folgejahr nur mit Anteil aus einem Vorjahr: „aus Vorjahren“ statt eines negativen „verschoben“, Spalte erklärt (S1)', async () => {
+  await zeige(VERTEILT([FASSADE]))
+  const kpi = plain(screen.getByText(/Werbungskosten \(abziehbar\)/).closest('.kpi'))
+  expect(kpi).toMatch(/aus Vorjahren 2\.000,00 €/)
+  expect(kpi).not.toMatch(/verschoben/)
+  expect(screen.getByRole('columnheader', { name: 'verteilt' }).getAttribute('title')).toMatch(/Minus/)
+  expect(screen.getByText(/Spalte „verteilt“: mit Plus/)).toBeTruthy()
+  cleanup()
+  await zeige(VERTEILT())
+  expect(plain(screen.getByText(/Werbungskosten \(abziehbar\)/).closest('.kpi'))).toMatch(/in Folgejahre verschoben 6\.666,66 €.*aus Vorjahren 2\.000,00 €/)
 })

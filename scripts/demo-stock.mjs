@@ -280,6 +280,9 @@ export async function seed(api, pdf) {
   await cost({ year: YEAR, category: 'Sonstige Betriebskosten', description: 'Rohrreinigung Küchenstrang EG links', vendor: 'Rohrdienst Beispiel', amountCents: 18500, key: 'direct', directUnitId: egL.id })
   const dach = await upload(`Dachrinne Reparatur ${YEAR}.pdf`, invoice('Dachdeckerei Beispiel', 'Ziegelweg 5 · 12345 Musterstadt', 'Rechnung Reparatur', `${YEAR}-05-22`, [{ text: 'Dachrinne erneuert, 8 m (Arbeitskosten)', amount: 380 }, { text: 'Material', amount: 260 }]))
   await cost({ year: YEAR, category: 'Nicht umlagefähig', description: 'Reparatur Dachrinne', vendor: 'Dachdeckerei Beispiel', amountCents: 64000, key: 'area', invoiceFile: dach })
+  // #262 PR 3 (Durchsicht S4): eine nach § 82b EStDV verteilte Position, damit Browserlauf und Bildschirmfotos das Feld im
+  // Kostenformular, die Spalte „verteilt“ und den Block der Zeilen 57 bis 72 sehen.
+  await cost({ year: YEAR, category: 'Nicht umlagefähig', description: 'Dachsanierung', vendor: 'Dachdeckerei Beispiel', amountCents: 1200000, key: 'area', spreadYears: 3 })
 
   // Posteingang: ein Beleg ohne Zuordnung und einer mit offener KI-Auswertung (Gartenpflege)
   await upload(`Strom Abschlag Dezember ${YEAR}.pdf`, invoice('Stadtwerke Musterstadt', 'Am Wasserturm 3 · 12345 Musterstadt', 'Abschlagsrechnung Allgemeinstrom', `${YEAR}-12-01`, [{ text: 'Abschlag Dezember', amount: 35 }]))

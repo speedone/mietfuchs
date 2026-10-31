@@ -3,7 +3,7 @@
 import { describe, expect, test } from 'vitest'
 import type { TaxExpenseItem, TaxReport, TaxSpread } from './types'
 import { acquisitionRelated, acquisitionRelatedText, maintenanceLineText, showsSplit, taxHints } from './taxView'
-import { isSpreadItem, showsDeferred, spreadBlock, spreadCarriedText as carriedRaw, spreadConditionsText, spreadIgnoredText, spreadItemText as itemRaw, spreadNothingDeductibleText } from './taxSpread'
+import { isSpreadItem, showsDeferred, spreadBlock, spreadCarriedText as carriedRaw, spreadConditionsText, spreadIgnoredText, spreadItemText as itemRaw, spreadNothingDeductibleText, SPREAD_CARRIED_MORE } from './taxSpread'
 
 // fmtEuro setzt ein geschütztes Leerzeichen vor das €.
 const plain = (s: string | null): string | null => (s === null ? null : s.replace(/\u00a0/g, ' '))
@@ -119,6 +119,19 @@ describe('Block der Zeilen 57 bis 72 (E-5)', () => {
     expect(spreadBlock(report([pos()], {}, null))).toBeNull()
   })
 
+  // Durchsicht S3: Eine Verteilung ohne abziehbaren Teil (D = 0) gehört nicht in den Block, auch nicht in die Summe von
+  // Zeile 57; keine Zeile 59 mit 0 %. Der Hinweis `spreadNothingDeductible` bleibt.
+  test('D = 0 steht nicht im Block und nicht in Zeile 57 (S3)', () => {
+    const null0 = { ...BLOCK.started[1]!, costItemId: 'privat', description: 'Bad privat', privateCents: 500_000, baseCents: 0, deductiblePercent: 0, rateCents: 0, remainingCents: 0 }
+    const b = spreadBlock(report([Y0], {}, { ...BLOCK, started: [BLOCK.started[0]!, null0] })) ?? expect.unreachable('kein Block')
+    const started = b.sections[0]?.rows ?? []
+    expect(started.map((r) => r.label)).not.toContain('Bad privat (verhältnismäßig zugeordnet)')
+    expect(started[0]).toMatchObject({ grossCents: 1_000_000, cents: 333_334 })
+    const nur = report([Y0], {}, { started: [null0], carried: [], thisYearCents: 0 })
+    expect(spreadBlock(nur)).toBeNull()
+    expect(taxHints(nur, 'ist')).toContain('spreadNothingDeductible')
+  })
+
   test('vorzeitiges Ende: der Anteil heißt „Rest“', () => {
     const b = spreadBlock(report([FOLGE], {}, { started: [], carried: [{ ...BLOCK.carried[0]!, index: 2, rest: true }], thisYearCents: 200_000 }))
     expect(b?.sections[0]?.rows[0]?.label).toBe('Fassade (Rest aus Anteil 2 von 3, verhältnismäßig zugeordnet)')
@@ -161,7 +174,10 @@ describe('Hinweise der Verteilung (E-8)', () => {
     const t = spreadCarriedText(report([FOLGE]))
     expect(t).toMatch(/„Fassade“ aus 2023: Grundlage 6\.000,00 €/)
     expect(t).toMatch(/„Fenster“ aus 2020: Grundlage 5\.000,00 €/)
-    expect(t).toMatch(/lässt sich nicht nachholen/)
+    // Durchsicht S2: nicht nachholbar in einem späteren Jahr, verloren mit bestandskräftigem Bescheid; Fundstellen im „Mehr dazu“.
+    expect(t).toMatch(/in einem späteren Jahr lässt sich ein vergessener Anteil nicht nachholen, und ist der Bescheid dieses Jahres bestandskräftig, ist er verloren\./)
+    expect(SPREAD_CARRIED_MORE).toMatch(/H 21\.1 EStH \(BFH, Urteil vom 26\.10\.1977, VIII R 111\/74, BStBl 1978 II S\. 367/)
+    expect(SPREAD_CARRIED_MORE).toMatch(/BFH, Urteil vom 27\.10\.1992, IX R 152\/89, Rn\. 12 bis 14/)
     expect(t).toMatch(/gilt für die Erklärung der Wert des Bescheids/)
   })
 

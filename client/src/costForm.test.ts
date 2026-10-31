@@ -1042,7 +1042,7 @@ describe('Verteilung nach § 82b EStDV (#262 PR 3)', () => {
   })
   test('Vorschau der Jahre aus Zahlungsdatum, Jahr der Zahlung und Zeitraum, mit den Raten auf den Cent', () => {
     expect(spreadPreview(form({ category: 'Nicht umlagefähig', amount: '10.000,00', spreadYears: '3' }), P2026)?.replace(/\u00a0/g, ' '))
-      .toBe('Abzug 2026 bis 2028: 3.333,34 €, 3.333,33 € und 3.333,33 €, ohne privaten Teil gerechnet; einen privaten Teil zieht die Steuerübersicht vorher ab.')
+      .toBe('Abzug 2026 bis 2028: 3.333,34 €, 3.333,33 € und 3.333,33 €, vom ganzen Betrag gerechnet; ein privater Teil geht vorher ab, die Steuerübersicht nennt die Raten.')
     expect(spreadPreview(form({ category: 'Nicht umlagefähig', amount: '10.000,00', spreadYears: '2', paidOn: '2027-01-15' }), P2026))
       .toMatch(/^Abzug 2027 bis 2028: je 5\.000,00\s€/)
     expect(spreadPreview(form({ category: 'Entnahme Erhaltungsrücklage', amount: '1.000,00', spreadYears: '5', taxYear: '2027' }), P2026)).toMatch(/^Abzug 2027 bis 2031: je 200,00\s€/)
@@ -1060,5 +1060,7 @@ describe('Verteilung nach § 82b EStDV (#262 PR 3)', () => {
     expect(spreadChange(stored, { period: KEY, paidOn: null, taxYear: null, spreadYears: 5 }, ['01.01.–30.06.2027'])).toContain('Die Wahl gilt für die ganze Rechnung und wird auch an den übrigen Teilen (01.01.–30.06.2027) gespeichert.')
     expect(spreadDeleteText(stored)).toMatch(/^Die Anteile 2027 bis 2028 entfallen damit\. Die Wahl ist an die Erklärung des ersten Jahres gebunden\./)
     expect(spreadDeleteText({ period: KEY })).toBe('')
+    // K2: eine nie gerechnete Wahl (Ablage von Hand an einer Grundsteuer) nennt keine entfallenden Anteile.
+    expect(spreadDeleteText({ period: KEY, spreadYears: 3, category: 'Grundsteuer', amountCents: 60_000 })).toMatch(/^An dieser Position war eine Verteilung gespeichert, die Mietfuchs nie gerechnet hat/)
   })
 })

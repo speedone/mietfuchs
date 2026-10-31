@@ -21,6 +21,15 @@ export const isSpreadItem = (x: TaxExpenseItem): boolean => x.spread !== undefin
 // abziehbar.
 export const showsDeferred = (report: Pick<TaxReport, 'expenses'>): boolean => report.expenses.items.some((x) => (x.deferredCents ?? 0) !== 0)
 
+// Durchsicht S1: der verschobene Teil nach Vorzeichen. Plus ist im Jahr der Zahlung in Folgejahre verschoben, Minus ein
+// Anteil aus einem Vorjahr, der in diesem Jahr abgezogen wird; als ein Saldo hieße ein Folgejahr „-3.333,33 € verschoben“.
+export function deferredParts(report: Pick<TaxReport, 'expenses'>): { outCents: number; inCents: number } {
+  const d = report.expenses.items.map((x) => x.deferredCents ?? 0)
+  return { outCents: d.filter((c) => c > 0).reduce((a, c) => a + c, 0), inCents: -d.filter((c) => c < 0).reduce((a, c) => a + c, 0) }
+}
+export const DEFERRED_COLUMN_TITLE = 'Plus: in Folgejahre verschoben; Minus: Anteil aus einem Vorjahr, in diesem Jahr abgezogen (§ 82b EStDV)'
+export const DEFERRED_COLUMN_NOTE = 'Spalte „verteilt“: mit Plus der Teil, der in Folgejahre verschoben ist (§ 82b EStDV); mit Minus ein Anteil aus einem Vorjahr, der in diesem Jahr abgezogen wird. Jede Zeile ergibt Gesamt = privat + verteilt + abziehbar, bei verbilligter Vermietung dazu unentgeltlich.'
+
 // Der Satz unter der Beschreibung einer Zeile.
 export function spreadItemText(item: TaxExpenseItem): string | null {
   if (item.spread) {
@@ -54,11 +63,18 @@ export type SpreadBlockRow = {
 }
 export type SpreadBlock = { sections: { key: string; title: string; rows: SpreadBlockRow[] }[]; thisYearCents: number; showsLines: boolean }
 
+// Durchsicht K4/K5: Welche Zahl in welches Feld von Zeile 57 und 59 gehört, sagt die Anleitung nicht ausdrücklich.
+export const SPREAD_BLOCK_READING = 'Die Belegung der Felder ist eine Auslegung: Gesamtaufwand und Gesamtbetrag sind der ganze Betrag bzw. sein Anteil an diesem Jahr, das Ergebnis der Anteil des abziehbaren Teils. Der abzugsfähige Anteil ist auf zwei Stellen abgerundet; der Vordruck fragt ganze Euro.'
+
 const how = (direct: boolean): string => (direct ? 'direkt zugeordnet' : 'verhältnismäßig zugeordnet')
 
 export function spreadBlock(report: Pick<TaxReport, 'year' | 'expenses'>): SpreadBlock | null {
-  const s = report.expenses.spread
-  if (!s || s.started.length + s.carried.length === 0) return null
+  const all = report.expenses.spread
+  if (!all) return null
+  // Durchsicht S3: Eine Verteilung ohne abziehbaren Teil (D = 0) gehört nicht in die Zeilen 57 bis 72, auch nicht in den
+  // Gesamtaufwand von Zeile 57; der Hinweis `spreadNothingDeductible` nennt sie. Übernommene Anteile von 0 gibt es nicht.
+  const s = { ...all, started: all.started.filter((x) => x.baseCents > 0) }
+  if (s.started.length + s.carried.length === 0) return null
   const year = report.year
   const m = anlageVLines(year)?.maintenance
   const sections: SpreadBlock['sections'] = []
@@ -111,7 +127,7 @@ export function spreadConditionsText(report: Pick<TaxReport, 'year' | 'expenses'
     action: 'Prüfen Sie die Voraussetzungen: Das Gebäude gehört zu Ihrem Privatvermögen und dient überwiegend Wohnzwecken, das heißt, die Wohnräume haben mehr als die Hälfte der gesamten Nutzfläche (§ 82b Abs. 1 Satz 1 und 2 EStDV).' + where +
       (notAllocable ? ' Verteilen lässt sich nur Erhaltungsaufwand; Verwaltungskosten und Zinsen, die ebenfalls unter „Nicht umlagefähig“ stehen, gehören nicht dazu.' : '') +
       ` Die Wahl gehört in die Erklärung dieses Jahres (${report.year}) und bindet die Folgejahre.`,
-    more: 'Garagen zählen als Wohnräume, soweit in ihnen nicht mehr als ein Pkw je Wohnung untergestellt werden kann; Räume für weitere Kraftwagen zählen nicht (§ 82b Abs. 1 Satz 3 und 4 EStDV). Eine Ferienwohnung für wechselnde Gäste dient nicht Wohnzwecken. Gehört das Gebäude mehreren Eigentümern, verteilen alle auf denselben Zeitraum (§ 82b Abs. 3 EStDV). Für ein Baudenkmal oder ein Gebäude im Sanierungsgebiet gelten eigene Vorschriften mit Bescheinigung (§§ 11a, 11b EStG), die Mietfuchs nicht rechnet.',
+    more: 'Garagen, die zum Gebäude gehören, zählen ohne Rücksicht auf ihre tatsächliche Nutzung als Wohnräume, soweit in ihnen nicht mehr als ein Personenkraftwagen für jede Wohnung untergestellt werden kann; Räume für weitere Kraftwagen zählen nicht (§ 82b Abs. 1 Satz 3 und 4 EStDV). Eine Ferienwohnung für wechselnde Gäste dient nicht Wohnzwecken (BFH, Urteil vom 04.09.2000, IX R 75/99). Gehört das Gebäude mehreren Eigentümern, verteilen alle auf denselben Zeitraum (§ 82b Abs. 3 EStDV). Für ein Baudenkmal oder ein Gebäude im Sanierungsgebiet gelten eigene Vorschriften mit Bescheinigung (§§ 11a, 11b EStG), die Mietfuchs nicht rechnet.',
   }
 }
 
@@ -120,8 +136,11 @@ export function spreadConditionsText(report: Pick<TaxReport, 'year' | 'expenses'
 export function spreadCarriedText(report: Pick<TaxReport, 'expenses'>): string {
   const list = report.expenses.spread?.carried ?? []
   const bases = list.map((x) => `${quoted(x.description)} aus ${x.outflowYear}: Grundlage ${fmtEuro(x.baseCents)}`).join('; ')
-  return `Diese Anteile gehören in die Erklärung dieses Jahres; ein vergessener Anteil lässt sich nicht nachholen. ${bases}. Weicht eine Grundlage von Ihrem Bescheid für das Jahr der Zahlung ab, etwa weil Sie seither eine Fläche berichtigt haben, gilt für die Erklärung der Wert des Bescheids.`
+  return `Diese Anteile gehören in die Erklärung dieses Jahres; in einem späteren Jahr lässt sich ein vergessener Anteil nicht nachholen, und ist der Bescheid dieses Jahres bestandskräftig, ist er verloren. ${bases}. Weicht eine Grundlage von Ihrem Bescheid für das Jahr der Zahlung ab, etwa weil Sie seither eine Fläche berichtigt haben, gilt für die Erklärung der Wert des Bescheids.`
 }
+
+// Die Fundstellen dazu (Durchsicht S2). Das Urteil von 1977 ist nach H 21.1 EStH zitiert, nicht im Volltext gelesen.
+export const SPREAD_CARRIED_MORE = 'Kein Anteil lässt sich in ein anderes Jahr übertragen: H 21.1 EStH (BFH, Urteil vom 26.10.1977, VIII R 111/74, BStBl 1978 II S. 367, zitiert nach den Hinweisen). An die einmal getroffene Wahl ist der Steuerpflichtige gebunden: BFH, Urteil vom 27.10.1992, IX R 152/89, Rn. 12 bis 14.'
 
 // `spreadNothingDeductible`: D = 0, etwa direkt der selbstgenutzten Wohnung zugeordnet. Entschieden (Aufgabe aus der
 // Durchsicht von PR 2): Die Folgejahre bekommen keine Zeile, denn es gibt nichts abzuziehen; die Verteilung steht nur im

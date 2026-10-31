@@ -34,10 +34,19 @@ describe('anlageVLines', () => {
     expect(l.header).toEqual({ groundTaxFile: 6 })
     expect(l.maintenance?.direct.line).toBe(55)
     expect(l.maintenance?.proportional.line).toBe(56)
-    expect(l.maintenance?.spread).toEqual({ total: 57, direct: 58, proportional: 59, sum: { line: 60 } })
+    expect(l.maintenance?.spread).toEqual({ total: 57, direct: 58, proportional: 59, sum: { line: 60, code: 38 } })
     expect(l.maintenance?.spreadFromPriorYears?.map((x) => [x.fromYear, x.direct, x.proportional, x.sum.line])).toEqual([[2020, 61, 62, 63], [2021, 64, 65, 66], [2022, 67, 68, 69], [2023, 70, 71, 72]])
     expect(l.notAllocated).toEqual([76, 78])
     expect(l.income.settlement).toEqual({ line: 21, code: 11 })
+  })
+
+  // Durchsicht von #262 PR 3, K7: Seiten 4 und 5 des Vordrucks 2024AnlV101NET gelesen, Kennzahlen wie 2025.
+  test('2024: Kennzahlen des Erhaltungsaufwands laut Vordruck 2024AnlV101NET (36, 37; 38 bis 42)', () => {
+    const m = anlageVLines(2024)?.maintenance ?? expect.unreachable('2024 ohne Erhaltungsaufwand')
+    expect([m.direct, m.proportional]).toEqual([{ line: 55, code: 36 }, { line: 56, code: 37 }])
+    expect(m.spread?.sum).toEqual({ line: 60, code: 38 })
+    expect(m.spreadFromPriorYears?.map((x) => x.sum)).toEqual([{ line: 63, code: 39 }, { line: 66, code: 40 }, { line: 69, code: 41 }, { line: 72, code: 42 }])
+    expect(anlageVLines(2024)?.source).toMatch(/Seiten 1 bis 5|Seiten 4 und 5/)
   })
 
   // #312 PR 3: Seite 1 und 2 des Vordrucks 2024AnlV101NET gelesen (Zeilen 13/14, 24, 25, 26, 32), wie 2025.

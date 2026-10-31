@@ -642,12 +642,12 @@ export function spreadPreview(form: ItemForm, period: Pick<BillingPeriod, 'from'
   const from = isPaidOnDate(form.paidOn) && showsPaidOn(form) ? paidOnYear(form.paidOn) : form.taxYear !== '' ? Number(form.taxYear) : Number(period.from.slice(0, 4))
   const rates = spreadRates(cents, n)
   const amounts = rates.every((r) => r === rates[0]) ? `je ${fmtEuro(rates[0] ?? 0)}` : andList(rates.map(fmtEuro))
-  return `Abzug ${from} bis ${from + n - 1}: ${amounts}, ohne privaten Teil gerechnet; einen privaten Teil zieht die Steuerübersicht vorher ab.`
+  return `Abzug ${from} bis ${from + n - 1}: ${amounts}, vom ganzen Betrag gerechnet; ein privater Teil geht vorher ab, die Steuerübersicht nennt die Raten.`
 }
 
 // Die Rückfrage beim Speichern, dieselbe wie am Server (409 `question: 'spread'`); `otherParts` sind die Zeiträume der
 // übrigen Teile derselben Rechnung, an die der Server die Wahl mitschreibt.
-type SpreadSaved = { period: string; paidOn?: string | null; taxYear?: number | null; spreadYears?: SpreadYears | null }
+type SpreadSaved = NonNullable<Parameters<typeof spreadQuestions>[0]>
 export const spreadChange = (before: SpreadSaved | null, body: SpreadSaved, otherParts: readonly string[] = []): string[] => spreadQuestions(before, body, otherParts)
 
 // Beim Löschen einer verteilten Position: welche Anteile entfallen (leer ohne Verteilung).
