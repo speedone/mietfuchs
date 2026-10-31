@@ -18,6 +18,8 @@ export type ProviderError = Error & {
   // `unreachable` 'unreachable'. `service`: der Dienst, dessen Bestätigung fehlt.
   reason?: AiFailureReason
   service?: string
+  // Welcher Anbieter nicht erreichbar war, für den Satz der Oberfläche
+  provider?: 'ollama' | 'openai'
 }
 
 // Der Grund eines Fehlers der Auswertung, wie ihn die KI-Routen mitschicken

@@ -7,11 +7,15 @@ import type { AiFailure, AiFailureReason } from './types'
 export const KEPT_TITLE = 'Gespeichert, nicht ausgewertet'
 export const KEPT_NEXT = 'Ihr Beleg liegt im Belegordner. Sie können ihn jetzt von Hand erfassen oder es später erneut versuchen.'
 
-const REASONS: readonly AiFailureReason[] = ['unreachable', 'model', 'key', 'quota', 'consent', 'timeout', 'other']
+const REASONS: readonly AiFailureReason[] = ['unreachable', 'address', 'model', 'key', 'quota', 'consent', 'timeout', 'other']
 
-export function failureSentence({ reason, service }: { reason: AiFailureReason; service?: string }): string {
+// Ollama nennt der Satz nur, wenn der Server sagt, dass es um Ollama geht (`provider`).
+export function failureSentence({ reason, service, provider }: { reason: AiFailureReason; service?: string; provider?: AiFailure['provider'] }): string {
   switch (reason) {
-    case 'unreachable': return 'Die KI ist gerade nicht erreichbar. Ist der Rechner mit der KI eingeschaltet, oder läuft Ollama?'
+    case 'unreachable': return provider === 'ollama'
+      ? 'Die KI ist gerade nicht erreichbar. Ist der Rechner mit der KI eingeschaltet, oder läuft Ollama?'
+      : 'Die KI ist gerade nicht erreichbar. Ist der Dienst unter der eingestellten Adresse erreichbar?'
+    case 'address': return 'Unter der eingestellten Adresse antwortet keine passende KI-Schnittstelle.'
     case 'key': return 'Der Dienst nimmt den Schlüssel nicht an.'
     case 'quota': return 'Das Guthaben oder Kontingent beim Dienst ist aufgebraucht.'
     case 'consent': return `Die Übermittlung an ${service || 'den Dienst'} ist noch nicht bestätigt.`
@@ -21,10 +25,10 @@ export function failureSentence({ reason, service }: { reason: AiFailureReason; 
   }
 }
 
-// Wo die Einstellungen helfen: einen Schlüssel eintragen, Guthaben prüfen, die Übermittlung bestätigen, ein anderes
-// Modell wählen. Bei „nicht erreichbar“ und „zu lange“ liegt es am Rechner der KI oder am Beleg.
+// Wo die Einstellungen helfen: die Adresse berichtigen, einen Schlüssel eintragen, Guthaben prüfen, die Übermittlung
+// bestätigen, ein anderes Modell wählen. Bei „nicht erreichbar“ und „zu lange“ liegt es am Rechner der KI oder am Beleg.
 export const offersAiSettings = (reason: AiFailureReason): boolean =>
-  reason === 'model' || reason === 'key' || reason === 'quota' || reason === 'consent'
+  reason === 'address' || reason === 'model' || reason === 'key' || reason === 'quota' || reason === 'consent'
 
 const isObject = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object'
 
@@ -34,7 +38,13 @@ export function readFailure(data: unknown): AiFailure | null {
   if (!isObject(data) || data.kept !== true || typeof data.file !== 'string' || data.file === '') return null
   const reason = REASONS.find((r) => r === data.reason) ?? 'other'
   const error = typeof data.error === 'string' ? data.error : ''
-  return { error, file: data.file, reason, kept: true, ...(typeof data.service === 'string' && data.service ? { service: data.service } : {}) }
+  const provider = data.provider === 'ollama' || data.provider === 'openai' ? data.provider : undefined
+  return {
+    error, file: data.file, reason, kept: true,
+    ...(typeof data.service === 'string' && data.service ? { service: data.service } : {}),
+    ...(provider ? { provider } : {}),
+    ...(data.meterPhoto === true ? { meterPhoto: true as const } : {}),
+  }
 }
 
 // Der Fehler, den aiRequest wirft, trägt die Angaben als `failure`.

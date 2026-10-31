@@ -21,7 +21,7 @@ export function AiProgressBadge({ progress, startedAt, onCancel }: Props) {
         <span className="spinner" />
         {progressText(progress)} <span className="ai-elapsed">{fmtElapsed(elapsed)}</span>
       </span>
-      <button className="btn small ghost" onClick={onCancel}>Abbrechen</button>
+      <button className="btn small ghost" data-ai-cancel onClick={onCancel}>Abbrechen</button>
       {elapsed >= SLOW_AFTER_MS && (
         <span className="muted">Ohne Grafikkarte kann ein Scan einige Minuten dauern.</span>
       )}

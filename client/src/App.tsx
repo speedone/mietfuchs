@@ -227,6 +227,8 @@ function Shell() {
     void navigate('belege').then((done) => { if (done) setReceiptFocus(file) })
   }
   const openAiSettings = () => { void navigate('einstellungen') }
+  // Ein Zählerfoto, dessen Ablesen gescheitert ist: die Ablesung von Hand auf der Seite Zähler
+  const openMeters = () => { void navigate('zaehler') }
   const openCostItem = async (item: CostItem) => {
     await goViaProperty(item.propertyId, 'kosten', { kind: 'costItem', id: item.id })
   }
@@ -381,7 +383,7 @@ function Shell() {
         )}
         {tab === 'schnellerfassung' && (
           <Schnellerfassung units={units} settings={settings} onNavigate={(t, f) => void navigate(t as Tab, f ?? null)}
-            handoff={handoff ?? undefined} onHandoffTaken={() => setHandoff(null)} onOpenReceipt={openReceipt} onOpenAiSettings={openAiSettings} />
+            handoff={handoff ?? undefined} onHandoffTaken={() => setHandoff(null)} onOpenReceipt={openReceipt} onOpenAiSettings={openAiSettings} onOpenMeters={openMeters} />
         )}
         {tab === 'uebersicht' && <Uebersicht onNavigate={(t) => void navigate(t as Tab)} />}
         {tab === 'stammdaten' && (

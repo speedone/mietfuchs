@@ -21,8 +21,6 @@ type StreamMessage =
   | { type: 'error'; error: string; file?: string; reason?: string; kept?: boolean; service?: string }
 
 const NDJSON = 'application/x-ndjson'
-// Ein Fehler mit gespeichertem Beleg trägt Grund und Namen als `failure` (aiFailure.ts, #487)
-
 
 // Zeilen aus dem Strom. Bewusst über getReader() statt `for await`, das Safari erst seit Kurzem
 // für ReadableStream kann.

@@ -78,3 +78,22 @@ test('ein gespeicherter Beleg ohne Auswertung lässt sich erneut auswerten, ohne
   await act(async () => pending[1]?.resolve({ file: 'srv-a.pdf' }))
   await waitFor(() => expect(result.current.queue[0]).toMatchObject({ status: 'fertig', data: { serverFile: 'srv-a.pdf' } }))
 })
+
+// Durchsicht #487: Ein abgebrochener neuer Versuch stellt den gespeicherten Zustand mit dem alten Grund wieder her.
+test('ein abgebrochener neuer Versuch kehrt zu „gespeichert“ mit dem alten Grund zurück', async () => {
+  const { result } = renderHook(() => useEvaluationQueue(options()))
+  act(() => result.current.addFiles([pdf('a.pdf')]))
+  await waitFor(() => expect(pending).toHaveLength(1))
+  const failure = { error: 'Ollama ist nicht erreichbar.', file: 'srv-a.pdf', reason: 'unreachable' as const, kept: true as const }
+  await act(async () => pending[0]?.reject(Object.assign(new Error(failure.error), { failure })))
+  await waitFor(() => expect(result.current.queue[0]?.status).toBe('gespeichert'))
+  const id = result.current.queue[0]?.id ?? -1
+  act(() => result.current.retry(id))
+  await waitFor(() => expect(pending).toHaveLength(2))
+  await act(async () => result.current.cancel(id))
+  await waitFor(() => expect(result.current.queue[0]).toMatchObject({ status: 'gespeichert', failure }))
+  // und lässt sich danach wieder versuchen, weiter ohne neue Datei
+  act(() => result.current.retry(id))
+  await waitFor(() => expect(pending).toHaveLength(3))
+  expect([pending[2]?.form.get('file'), pending[2]?.form.get('existingFile')]).toEqual([null, 'srv-a.pdf'])
+})

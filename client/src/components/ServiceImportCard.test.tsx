@@ -134,3 +134,25 @@ test('Fehler mit Ausweg: Beleg im Belegordner, „Erneut versuchen“ ohne neue 
   await waitFor(() => expect(sent).toHaveLength(2))
   expect([sent[1]?.get('file'), sent[1]?.get('existingFile'), sent[1]?.get('propertyId')]).toEqual([null, 'srv-abrechnung.jpg', 'objekt-1'])
 })
+
+// Durchsicht #487: Ein abgebrochener neuer Versuch stellt den Ausweg mit dem alten Grund wieder her.
+test('Fehler mit Ausweg: „Abbrechen“ beim neuen Versuch kehrt zu „Gespeichert, nicht ausgewertet“ zurück', async () => {
+  let call = 0
+  vi.stubGlobal('fetch', (_url: string, init?: RequestInit) => {
+    if (init?.body instanceof FormData) {
+      call += 1
+      if (call === 1) return Promise.resolve(new Response(JSON.stringify({ error: 'nicht erreichbar', file: 'srv-abrechnung.jpg', reason: 'unreachable', kept: true, provider: 'ollama' }), { status: 502, headers: { 'content-type': 'application/json' } }))
+      return new Promise((_, reject) => init.signal?.addEventListener('abort', () => reject(new DOMException('abgebrochen', 'AbortError'))))
+    }
+    return Promise.resolve(new Response(JSON.stringify({ ai: { pageImageEdge: null } }), { status: 200, headers: { 'content-type': 'application/json' } }))
+  })
+  render(<ServiceImportCard plant={{ id: 'hp', propertyId: 'objekt-1', units: null }} view={view()} object={{ key: periodKey('2025-01'), from: '2025-01-01', to: '2025-12-31' }} tenancies={TENANCIES} units={UNITS} onSaved={() => {}} />)
+  fireEvent.change(screen.getByLabelText('Messdienstabrechnung wählen'), { target: { files: [new File(['x'], 'abrechnung.jpg', { type: 'image/jpeg' })] } })
+  fireEvent.click(await screen.findByRole('button', { name: 'Erneut versuchen' }))
+  const cancel = await screen.findByRole('button', { name: 'Abbrechen' })
+  // Der Fokus steht auf „Abbrechen“, nicht auf body
+  await waitFor(() => expect(document.activeElement).toBe(cancel))
+  fireEvent.click(cancel)
+  expect(await screen.findByText('Gespeichert, nicht ausgewertet')).toBeTruthy()
+  expect(screen.getByText(/Die KI ist gerade nicht erreichbar\. Ist der Rechner mit der KI eingeschaltet, oder läuft Ollama\?/)).toBeTruthy()
+})

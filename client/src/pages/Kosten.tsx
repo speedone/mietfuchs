@@ -86,6 +86,7 @@ import { countOf } from '../../../shared/wording.ts'
 import { useFocusTarget, type FocusProps } from '../focus'
 import { NoticeBox } from '../components/Notice'
 import { KeptReceipt } from '../components/KeptReceipt'
+import { useRetryFocus } from '../retryFocus'
 import Card from '../components/Card'
 
 // `tenancies` für die Einzelbeträge je Mietverhältnis (#94); ohne sie gibt es dort nur keine Felder.
@@ -590,6 +591,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
       ? { status: res.assessment.open ? 'fertig' : 'übernommen', data: { serverFile: res.file, assessment: res.assessment } }
       : { status: 'fehler', error: NOT_SAVED }),
   })
+  const focusAfterRetry = useRetryFocus(queue)
   // Nur laufende und wartende Auswertungen gingen beim Objektwechsel verloren (#145).
   useOpenForm(queue.some((x) => x.status === 'wartend' || x.status === 'läuft'))
 
@@ -761,7 +763,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
         </div>
 
         {queue.map((entry) => (
-          <div key={entry.id} className="stack">
+          <div key={entry.id} className="stack" data-queue-entry={entry.id} tabIndex={-1}>
             <div className="row center">
               <strong>{entry.fileName}</strong>
               {entry.status === 'wartend' && <span className="badge gray">wartet …</span>}
@@ -782,13 +784,13 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
               <div className="grow" />
               {(entry.status === 'wartend' || entry.status === 'fertig' || entry.status === 'fehler' || entry.status === 'gespeichert' || entry.status === 'abgebrochen' || entry.status === 'übernommen') && (
                 <button className="btn small ghost" onClick={() => remove(entry.id)}>
-                  {entry.status === 'fertig' ? 'Ausblenden' : 'Entfernen'}
+                  {entry.status === 'fertig' || entry.status === 'gespeichert' ? 'Ausblenden' : 'Entfernen'}
                 </button>
               )}
             </div>
             {entry.status === 'fehler' && <NoticeBox level="error" action={entry.error} />}
             {entry.status === 'gespeichert' && entry.failure && (
-              <KeptReceipt failure={entry.failure} onManual={onOpenReceipt} onRetry={() => retry(entry.id)} onOpenSettings={onOpenAiSettings} />
+              <KeptReceipt failure={entry.failure} onManual={onOpenReceipt} onRetry={() => { focusAfterRetry(entry.id); retry(entry.id) }} onOpenSettings={onOpenAiSettings} />
             )}
             {entry.data.assessment && (entry.status === 'fertig' || entry.status === 'übernommen') && (
               <AssessmentReview assessment={entry.data.assessment} units={units} keyContext={keyCtxOf(entry.data.assessment)}

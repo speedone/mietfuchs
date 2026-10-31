@@ -106,7 +106,9 @@ test('OpenAI-kompatibel: Fotos gehen als data-URL, außer das Modell versteht la
   await withOpenAi(async (s, service) => {
     const res = await fetch(`${s.base}/api/extract`, { method: 'POST', body: photoForm() })
     assert.equal(res.status, 502)
-    assert.match(await errorFrom(res), /versteht das Modell „modell-a“ keine Bilder/)
+    const body = await jsonOf<{ error?: string, reason?: string }>(res)
+    assert.match(body.error ?? '', /versteht das Modell „modell-a“ keine Bilder/)
+    assert.equal(body.reason, 'model')
     assert.equal(service.completions().length, 0)
   }, { vision: false })
 })
@@ -197,7 +199,9 @@ test('OpenAI-kompatibel: aufgebrauchtes Guthaben wird nicht wiederholt', async (
 
 test('OpenAI-kompatibel: abgeschnittene Antwort, unbekanntes Modell, Zeitlimit', async () => {
   await withOpenAi(async (s) => {
-    assert.match(errorOf((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).body), /Höchstlänge von 16384 Token.*„Erweitert“/)
+    const cut = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
+    assert.match(errorOf(cut.body), /Höchstlänge von 16384 Token.*„Erweitert“/)
+    assert.equal(cut.body.reason, 'model')
   }, { rules: { finish: 'length' } })
   await withOpenAi(async (s) => {
     const unknown = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
@@ -209,6 +213,16 @@ test('OpenAI-kompatibel: abgeschnittene Antwort, unbekanntes Modell, Zeitlimit',
     assert.match(errorOf(slow.body), /nicht innerhalb von 2 Sekunden geantwortet/)
     assert.equal(slow.body.reason, 'timeout')
   }, { rules: { hang: true }, env: { NKA_AI_TIMEOUT: '2' } })
+})
+
+// Fehler mit Ausweg (#487): Schickt die Meldung in die Einstellungen (falsche Adresse), bietet die Oberfläche sie an.
+test('Fehler mit Ausweg: ohne Chat-Schnittstelle unter der Adresse ist der Grund „address“', async () => {
+  await withOpenAi(async (s, service) => {
+    await putAi(s, { text: { provider: 'openai', preset: 'openai-compatible', url: `${service.url}/falsch`, model: 'modell-a', vision: null } })
+    const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
+    assert.match(errorOf(r.body), /keine Chat-Schnittstelle/)
+    assert.deepEqual([r.body.reason, r.body.kept], ['address', true])
+  })
 })
 
 test('OpenAI-kompatibel: auch am Stück und mit Denktext davor kommt das Ergebnis an', async () => {

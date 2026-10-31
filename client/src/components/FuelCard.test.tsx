@@ -554,3 +554,26 @@ test('Fehler mit Ausweg: bei einem Schlüssel öffnet „KI-Einstellungen öffne
   fireEvent.click(await screen.findByRole('button', { name: 'KI-Einstellungen öffnen' }))
   expect(onOpenAiSettings).toHaveBeenCalled()
 })
+
+// Durchsicht #487: Wer „Von Hand erfassen“ wählt und das Fenster ohne Speichern schließt, hat den Ausweg wieder vor sich.
+test('Fehler mit Ausweg: nach „Von Hand erfassen“ und Schließen ohne Speichern steht der Ausweg wieder da', async () => {
+  failingThenKept('unreachable')
+  render(<UIProvider><FuelCard plant={{ id: 'hp', method: 'manual', energy: 'gas' }} view={view} deliveries={[]} onSaved={() => {}} /></UIProvider>)
+  choose()
+  fireEvent.click(await screen.findByRole('button', { name: 'Von Hand erfassen' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Neue Lieferung' })
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Abbrechen' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expect(screen.getByText('Gespeichert, nicht ausgewertet')).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Erneut versuchen' })).toBeTruthy()
+})
+
+test('Fehler mit Ausweg: nach „Erneut versuchen“ fällt der Fokus nicht auf body', async () => {
+  const fields = failingThenKept('unreachable')
+  render(<UIProvider><FuelCard plant={{ id: 'hp', method: 'manual', energy: 'gas' }} view={view} deliveries={[]} onSaved={() => {}} /></UIProvider>)
+  choose()
+  fireEvent.click(await screen.findByRole('button', { name: 'Erneut versuchen' }))
+  await waitFor(() => expect(fields).toHaveLength(2))
+  await screen.findByRole('button', { name: 'Erneut versuchen' })
+  expect(document.activeElement).not.toBe(document.body)
+})

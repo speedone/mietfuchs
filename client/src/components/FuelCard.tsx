@@ -2,7 +2,7 @@
 // Versorgers, die in dieser Heizperiode enden, und bei freien Schlüsseln die Verknüpfung der Positionen.
 // Mietfuchs teilt jede Rechnung auf die Heizperioden auf; die Abrechnung zeigt, wie.
 import Card from '../components/Card'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { api, errorText, fmtEuro } from '../api'
 import { useConfirm, useToast } from './feedback'
 import Term from './Term'
@@ -68,7 +68,11 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
   const [reading, setReading] = useState<AiProgress | null | 'start'>(null)
   // Fehler mit Ausweg (#487): Die KI ist gescheitert, die Rechnung liegt im Belegordner. Die Datei bleibt für einen neuen
   // Versuch im Browser, an den Server geht dann nur ihr Name.
+  // „Von Hand erfassen“ lässt ihn stehen: Wer das Fenster ohne Speichern schließt, hat den Ausweg wieder vor sich; erst
+  // eine angelegte Lieferung erledigt ihn (Durchsicht #487).
   const [kept, setKept] = useState<{ failure: AiFailure; file: File } | null>(null)
+  // Der Bereich des Auslesens behält den Fokus nach „Erneut versuchen“, sonst fiele er auf body (Durchsicht #487)
+  const aiArea = useRef<HTMLDivElement>(null)
   // #251: die offene Frage zu einer Gutschrift ohne Rechnung.
   const [credit, setCredit] = useState<{ id: string; answer: CreditAnswer } | null>(null)
   const [reassign, setReassign] = useState<ReassignForm>(emptyReassignForm)
@@ -100,7 +104,6 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
     setFromAi(false)
     setChecks([])
     setError('')
-    setKept(null)
     formErrors.clear()
   }
 
@@ -160,6 +163,7 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
       if (editing === 'neu') await api(`/api/heating-plants/${plant.id}/deliveries`, { method: 'POST', body: JSON.stringify(body) })
       else await api(`/api/fuel-deliveries/${editing}`, { method: 'PUT', body: JSON.stringify(body) })
       const created = editing === 'neu'
+      if (created) setKept(null)
       close()
       setError('')
       toast(created ? 'Lieferung angelegt.' : 'Lieferung gespeichert.')
@@ -469,6 +473,7 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
           )}
         </Drawer>
       )}
+      <div ref={aiArea} tabIndex={-1}>
       {!view.closed && editing === null && (
         <div className="row">
           {reading === null ? (
@@ -482,8 +487,10 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
       {/* „Von Hand erfassen“ öffnet das Formular einer neuen Lieferung: Die Karte hat es selbst, und eine Lieferung
           trägt keinen Beleg; die Rechnung bleibt im Belegordner. */}
       {!view.closed && editing === null && reading === null && kept && (
-        <KeptReceipt failure={kept.failure} onManual={() => open(null)} onRetry={() => void readInvoice(kept.file, kept.failure.file)} onOpenSettings={onOpenAiSettings} />
+        <KeptReceipt failure={kept.failure} onManual={() => open(null)} onOpenSettings={onOpenAiSettings}
+          onRetry={() => { aiArea.current?.focus(); void readInvoice(kept.file, kept.failure.file) }} />
       )}
+      </div>
     </Card>
   )
 }

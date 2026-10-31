@@ -333,7 +333,7 @@ function translateError(err: unknown, config: OpenAiConfig, { timeout, signal, t
   }
   if (!isProviderError(err)) {
     if (!connected) {
-      return providerError(`${name} ist unter ${base} nicht erreichbar. Bitte die Adresse in den Einstellungen und die Verbindung prüfen.`, { unreachable: true })
+      return providerError(`${name} ist unter ${base} nicht erreichbar. Bitte die Adresse in den Einstellungen und die Verbindung prüfen.`, { unreachable: true, provider: 'openai' })
     }
     return providerError(`Die Verbindung zu ${name} brach während der Antwort ab (${maskKey(config, err instanceof Error ? err.message : String(err))}).`)
   }
@@ -350,7 +350,7 @@ function translateError(err: unknown, config: OpenAiConfig, { timeout, signal, t
   if (status === 404) {
     return err.param === 'model' || /model/i.test(detail)
       ? providerError(`${name} kennt das Modell „${model}“ nicht. Bitte in den Einstellungen ein anderes wählen.`, { reason: 'model' })
-      : providerError(`Unter ${base} gibt es keine Chat-Schnittstelle. Stimmt die Adresse? Meist endet sie auf /v1.`)
+      : providerError(`Unter ${base} gibt es keine Chat-Schnittstelle. Stimmt die Adresse? Meist endet sie auf /v1.`, { reason: 'address' })
   }
   if (status === 413) return providerError(`Die Anfrage ist für ${name} zu groß, etwa wegen großer Fotos oder vieler Seiten.`)
   if (status === 429) {
@@ -360,7 +360,7 @@ function translateError(err: unknown, config: OpenAiConfig, { timeout, signal, t
   }
   if (status >= 500) return providerError(`${name} ist gerade überlastet oder gestört (Status ${status}). Bitte später noch einmal versuchen.`)
   if (/maximum|too large|exceed|at most|less than or equal/i.test(detail) && /max_tokens|max_completion_tokens/.test(detail)) {
-    return providerError(`Die eingestellte Länge der Antwort ist für das Modell „${model}“ zu groß. In den Einstellungen unter „Erweitert“ einen kleineren Wert eintragen. (${detail})`)
+    return providerError(`Die eingestellte Länge der Antwort ist für das Modell „${model}“ zu groß. In den Einstellungen unter „Erweitert“ einen kleineren Wert eintragen. (${detail})`, { reason: 'model' })
   }
   if (images.length > 0 && /image|vision|multimodal/i.test(detail)) {
     return providerError(`${name} lehnt die Bilder ab. Versteht das Modell „${model}“ Bilder? Sonst in den Einstellungen ein Modell mit Bildverständnis wählen. (${detail})`, { reason: 'model' })
@@ -444,7 +444,7 @@ export function openaiProvider(config: OpenAiConfig): Provider {
     async json({ prompt, images = [], schema, timeoutMs, signal, onProgress }: ProviderRequest): Promise<ProviderResult> {
       onProgress?.({ phase: 'waiting' })
       if (images.length > 0 && config.vision === false) {
-        throw providerError(`Laut Einstellungen versteht das Modell „${config.model}“ keine Bilder. Für Fotos und gescannte PDFs ein Modell mit Bildverständnis wählen.`)
+        throw providerError(`Laut Einstellungen versteht das Modell „${config.model}“ keine Bilder. Für Fotos und gescannte PDFs ein Modell mit Bildverständnis wählen.`, { reason: 'model' })
       }
       const started = Date.now()
       const timeout = AbortSignal.timeout(timeoutMs)
@@ -486,7 +486,7 @@ export function openaiProvider(config: OpenAiConfig): Provider {
 
       const name = serviceName(config)
       if (result.finishReason === 'length') {
-        throw providerError(`Die Antwort von ${name} wurde abgeschnitten, weil die Höchstlänge von ${maxTokens} Token erreicht war. In den Einstellungen unter „Erweitert“ lässt sie sich erhöhen.`)
+        throw providerError(`Die Antwort von ${name} wurde abgeschnitten, weil die Höchstlänge von ${maxTokens} Token erreicht war. In den Einstellungen unter „Erweitert“ lässt sie sich erhöhen.`, { reason: 'model' })
       }
       if (result.finishReason === 'content_filter') throw providerError(`${name} hat die Antwort mit seinem Inhaltsfilter zurückgehalten.`)
       let data = parseJsonContent(result.content)

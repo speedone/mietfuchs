@@ -89,7 +89,7 @@ function translateError(err: unknown, { timeout, signal, timeoutMs, base, connec
   }
   if (isProviderError(err)) return err
   if (!connected) {
-    return providerError(`Ollama ist unter ${base} nicht erreichbar. Läuft Ollama? Die Adresse steht in den Einstellungen.`, { unreachable: true }) // nur dann lohnt die Suche unter anderen Adressen
+    return providerError(`Ollama ist unter ${base} nicht erreichbar. Läuft Ollama? Die Adresse steht in den Einstellungen.`, { unreachable: true, provider: 'ollama' }) // nur dann lohnt die Suche unter anderen Adressen
   }
   return providerError(`Die Verbindung zu Ollama brach während der Antwort ab (${err instanceof Error ? err.message : String(err)}).`)
 }
@@ -153,7 +153,7 @@ async function request<T>(config: OllamaConfig, path: string, { body, timeoutMs,
     if (!res.ok) {
       // Ein Proxy vor Ollama kann die abgelehnte Anfrage samt Kopfzeilen zurückgeben
       const detail = maskSecret(config.apiKey, errorDetail(await readText(res.body).catch(() => '')))
-      const failWith = (message: string, reason?: 'key' | 'model') => providerError(message, reason ? { status: res.status, detail, reason } : { status: res.status, detail })
+      const failWith = (message: string, reason?: 'key' | 'model' | 'quota') => providerError(message, reason ? { status: res.status, detail, reason } : { status: res.status, detail })
       if (res.status === 401 || res.status === 403) {
         throw failWith(config.apiKey
           ? `Ollama unter ${base} lehnt den Schlüssel ab. Bitte den Schlüssel in den Einstellungen prüfen.`
@@ -164,6 +164,8 @@ async function request<T>(config: OllamaConfig, path: string, { body, timeoutMs,
           ? `Das Modell „${String(body.model)}“ gibt es bei Ollama Cloud nicht. Bitte in den Einstellungen ein anderes wählen.`
           : `Das Modell „${String(body.model)}“ ist in Ollama nicht installiert. In den Einstellungen ein installiertes Modell wählen oder es mit „ollama pull ${String(body.model)}“ laden.`, 'model')
       }
+      // Ollama Cloud meldet ein aufgebrauchtes Kontingent mit 429 (#487: Grund „quota“, die Einstellungen helfen)
+      if (res.status === 429) throw failWith(`Ollama unter ${base} lehnt weitere Anfragen ab (429), meist ist das Kontingent aufgebraucht: ${detail.slice(0, 300)}`, 'quota')
       throw failWith(`Ollama antwortet mit ${res.status}: ${detail.slice(0, 300)}`)
     }
     return await consume(res)
@@ -201,7 +203,7 @@ async function readChatStream(
   if (!final) throw providerError('Die Antwort von Ollama brach vorzeitig ab.')
   // Ohne Obergrenze für die Ausgabe endet eine Antwort nur am Kontextende vorzeitig
   if (final.done_reason === 'length') {
-    throw providerError(`Die Antwort von Ollama wurde abgeschnitten, weil der Kontext von ${contextTokens} Token nicht reicht. In den Einstellungen unter „Erweitert“ lässt er sich vergrößern.`)
+    throw providerError(`Die Antwort von Ollama wurde abgeschnitten, weil der Kontext von ${contextTokens} Token nicht reicht. In den Einstellungen unter „Erweitert“ lässt er sich vergrößern.`, { reason: 'model' })
   }
   return { content, final }
 }

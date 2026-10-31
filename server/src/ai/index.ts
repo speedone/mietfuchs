@@ -76,9 +76,11 @@ export function aiProvider(ai: AiSettings, { images = false }: { images?: boolea
       // Zweifel darf nichts hinausgehen, deshalb scheitert die Auswertung, wenn sie scheitert.
       const remoteModel = !isExternalUrl(config.url) && provider.isRemoteModel ? await provider.isRemoteModel(request.signal) : false
       const problem = consentProblem(config, { remoteModel })
-      // Der Dienst steht für die Oberfläche dabei („Die Übermittlung an … ist noch nicht bestätigt.“)
-      const service = isExternalUrl(config.url) ? new URL(config.url).host : 'den Cloud-Dienst von Ollama'
-      if (problem) throw providerError(problem, { reason: 'consent', service })
+      if (problem) {
+        // Der Dienst steht für die Oberfläche dabei („Die Übermittlung an … ist noch nicht bestätigt.“)
+        const service = isExternalUrl(config.url) ? new URL(config.url).host : 'den Cloud-Dienst von Ollama'
+        throw providerError(problem, { reason: 'consent', service })
+      }
       return provider.json(request)
     },
   }

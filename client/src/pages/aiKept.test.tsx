@@ -19,7 +19,7 @@ let answer: () => Record<string, unknown>
 
 beforeEach(() => {
   sent = []
-  answer = () => ({ error: SERVER_TEXT, file: 'srv-foto.jpg', reason: 'unreachable', kept: true })
+  answer = () => ({ error: SERVER_TEXT, file: 'srv-foto.jpg', reason: 'unreachable', kept: true, provider: 'ollama' })
   vi.stubGlobal('fetch', (url: string, init?: RequestInit) => {
     const method = init?.method ?? 'GET'
     if (url === '/api/extract' || url === '/api/intake') {
@@ -50,6 +50,9 @@ async function expectKept(onOpenReceipt: ReturnType<typeof vi.fn>) {
   expect(screen.getByText(/Die KI ist gerade nicht erreichbar\. Ist der Rechner mit der KI eingeschaltet, oder läuft Ollama\?/)).toBeTruthy()
   expect(screen.getByText(/Ihr Beleg liegt im Belegordner\. Sie können ihn jetzt von Hand erfassen oder es später erneut versuchen\./)).toBeTruthy()
   expect(screen.queryByText('Fehler')).toBeNull()
+  // Der Beleg bleibt im Belegordner: Der Knopf am Eintrag blendet ihn nur aus (Durchsicht #487)
+  expect(screen.getByRole('button', { name: 'Ausblenden' })).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Entfernen' })).toBeNull()
   // Bei „nicht erreichbar“ helfen die Einstellungen nicht weiter
   expect(screen.queryByRole('button', { name: 'KI-Einstellungen öffnen' })).toBeNull()
   // Der Satz des Servers steht eingeklappt unter „Mehr dazu“
@@ -65,6 +68,10 @@ async function expectKept(onOpenReceipt: ReturnType<typeof vi.fn>) {
   answer = () => ({ error: 'Der Dienst lehnt den Schlüssel ab.', file: 'srv-foto.jpg', reason: 'key', kept: true })
   fireEvent.click(screen.getByRole('button', { name: 'Erneut versuchen' }))
   await waitFor(() => expect(sent).toHaveLength(2))
+  // Der Fokus fällt nicht auf body, sondern bleibt beim Eintrag (Durchsicht #487)
+  await screen.findByText('Der Dienst nimmt den Schlüssel nicht an.', { exact: false })
+  expect(document.activeElement).not.toBe(document.body)
+  expect(document.activeElement?.closest('[data-queue-entry]')).not.toBeNull()
   expect([sent[0]?.get('file') instanceof File, sent[0]?.get('existingFile')]).toEqual([true, null])
   expect([sent[1]?.get('file'), sent[1]?.get('existingFile')]).toEqual([null, 'srv-foto.jpg'])
   expect(await screen.findByText('Der Dienst nimmt den Schlüssel nicht an.', { exact: false })).toBeTruthy()
@@ -115,4 +122,22 @@ test('ohne gespeicherten Beleg bleibt es ein roter Fehler', async () => {
   expect(await screen.findByText('Ein Seitenbild ist größer als 5 MB.')).toBeTruthy()
   expect(screen.getAllByText('Fehler').length).toBeGreaterThan(0)
   expect(screen.queryByText('Gespeichert, nicht ausgewertet')).toBeNull()
+})
+
+// Durchsicht #487: Scheitert bei einem Zählerfoto das Ablesen, führt „Von Hand erfassen“ zur Seite Zähler.
+test('Schnellerfassung: bei einem Zählerfoto führt „Von Hand erfassen“ zur Ablesung von Hand', async () => {
+  answer = () => ({ error: 'Ollama antwortet mit 500', file: 'srv-zaehler.jpg', reason: 'other', kept: true, meterPhoto: true })
+  const onOpenReceipt = vi.fn()
+  const onOpenMeters = vi.fn()
+  const { container } = render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <Schnellerfassung units={UNITS} settings={null} onNavigate={() => {}} onOpenReceipt={onOpenReceipt} onOpenMeters={onOpenMeters} />
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  await upload(container)
+  fireEvent.click(await screen.findByRole('button', { name: 'Von Hand erfassen' }))
+  expect(onOpenMeters).toHaveBeenCalled()
+  expect(onOpenReceipt).not.toHaveBeenCalled()
 })

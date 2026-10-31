@@ -1831,9 +1831,12 @@ function aiResponse(req: Request, res: Response): AiAnswer {
 // `uploads`, oder aus dem Posteingang); nur ein Abbruch nimmt ihn wieder weg, und der kommt hier nie an. Die
 // Antwort sagt deshalb neben dem Satz den Grund (`reason`, aus ai/errors.ts) und dass er gespeichert ist; mit
 // seinem Namen fragt ein neuer Versuch als `existingFile`, ohne eine Kopie anzulegen.
-function failureOf(file: DocumentSource, err: unknown, stats: AskStats[]): AiFailure & { stats: AskStats[] } {
+// `meterPhoto`: Der Schuhkarton hatte ein Zählerfoto erkannt und ist am Ablesen gescheitert; „Von Hand erfassen“
+// führt dann zur Ablesung statt in den Belegordner.
+function failureOf(file: DocumentSource, err: unknown, stats: AskStats[], { meterPhoto = false } = {}): AiFailure & { stats: AskStats[] } {
   const service = isProviderError(err) ? err.service : undefined
-  return { file: file.filename, error: messageOf(err), reason: reasonOf(err), kept: true, ...(service ? { service } : {}), stats }
+  const provider = isProviderError(err) ? err.provider : undefined
+  return { file: file.filename, error: messageOf(err), reason: reasonOf(err), kept: true, ...(service ? { service } : {}), ...(provider ? { provider } : {}), ...(meterPhoto ? { meterPhoto: true as const } : {}), stats }
 }
 
 app.post('/api/ai/cancel/:id', (req, res) => {
@@ -1877,6 +1880,24 @@ async function rememberInvoiceDate(file: string, value: unknown): Promise<void> 
     await writeData((db) => placeUpload(db, file, { invoiceDate: value }, () => describeFile(UPLOAD_DIR, file, undefined, sha256)))
   } catch (err) {
     console.warn(`Das Rechnungsdatum zu ${file} ließ sich nicht speichern: ${messageOf(err)}`)
+  }
+}
+
+// Erkennt ein neuer Versuch (Fehler mit Ausweg, #487) eine Rechnung, wo der erste ein Zählerfoto sah und dann am
+// Ablesen scheiterte, gehört der Beleg wieder in den Posteingang: Art „receipt“, Objekt und Jahr des Formulars.
+// Nur bei einem als Zählerfoto gekennzeichneten Beleg; sonst bleibt seine Platzierung, wie sie ist.
+async function unmarkMeterPhoto(req: Request, file: string): Promise<void> {
+  const body = bodyObject(req)
+  const year = yearOf(body.year)
+  try {
+    await writeData(async (db) => {
+      const row = (await uploadRows(db)).get(file)
+      if (row?.kind !== 'meterPhoto') return
+      const propertyId = await placementProperty(db, body.propertyId).catch(() => null)
+      await placeUpload(db, file, { kind: 'receipt', propertyId, year: year === false ? null : year }, () => null)
+    })
+  } catch (err) {
+    console.warn(`Der Beleg ${file} ließ sich nicht wieder als Beleg kennzeichnen: ${messageOf(err)}`)
   }
 }
 
@@ -1997,6 +2018,7 @@ app.post('/api/intake', fileWithPages, async (req: Request, res: Response) => {
   if (!file) return
   const answer = aiResponse(req, res)
   const { signal, stats, onProgress } = answer
+  let meterPhoto = false
   try {
     const settings = effectiveSettings()
     const material = { ...aiInput(req), signal, stats, onProgress }
@@ -2004,17 +2026,19 @@ app.post('/api/intake', fileWithPages, async (req: Request, res: Response) => {
     if (docType === 'zaehlerstand') {
       // Ein Zählerfoto belegt keine Kosten: als solches kennzeichnen und ohne Objekt, damit es in
       // keinem Posteingang als Beleg wartet und beim Nachreichen nicht angeboten wird (Durchsicht).
+      meterPhoto = true
       await markMeterPhoto(file.filename)
       const reading = await extractMeterReading(file.path, file.mimetype, settings, material)
       answer.done({ file: file.filename, kind: 'zaehler', reading, stats })
     } else {
+      await unmarkMeterPhoto(req, file.filename)
       const extraction = await extractFromFile(file.path, file.mimetype, settings, material)
       await rememberInvoiceDate(file.filename, extraction.invoiceDate)
       const assessment = await rememberAssessment(req, file, extraction, signal)
       answer.done({ file: file.filename, kind: 'rechnung', extraction, assessment, stats })
     }
   } catch (err) {
-    answer.fail(failureOf(file, err, stats))
+    answer.fail(failureOf(file, err, stats, { meterPhoto }))
   }
 })
 

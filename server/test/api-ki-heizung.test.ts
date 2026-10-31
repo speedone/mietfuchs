@@ -8,7 +8,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { CostItem, FuelExtractResult, HeatingPlant, ServiceExtractResult, UploadInfo } from '../../shared/types.ts'
-import { LONG_TEXT, PDF, type Server, errorFrom, firstMessage, jsonOf, startServer, withOllama } from '../testing/api.ts'
+import { LONG_TEXT, PDF, type Server, chatRequests, errorFrom, firstMessage, jsonOf, startServer, until, withOllama } from '../testing/api.ts'
 
 const send = (s: Server, p: string, init: RequestInit) => fetch(`${s.base}${p}`, { headers: { 'content-type': 'application/json' }, ...init })
 const newPlant = async (s: Server, body: Record<string, unknown>): Promise<HeatingPlant> =>
@@ -68,6 +68,49 @@ test('KI: scheitert das Auslesen, nennt die Antwort den Grund, und der Beleg ble
     const files = (await s.api<UploadInfo[]>('/api/uploads')).map((u) => u.file).sort()
     assert.deepEqual(files, [body.file, service.file].sort())
   }, { model: 'fehlt:4b' })
+})
+
+// Fehler mit Ausweg (#487, Durchsicht): Ein neuer Versuch nennt den Beleg nur (`existingFile`) und legt keine Kopie
+// an; ein Abbruch dieses Versuchs lässt den Beleg liegen, denn er gehörte schon vorher dem Vermieter.
+const retryForm = (file: string, extra: Record<string, string> = {}) => {
+  const fd = new FormData()
+  fd.append('existingFile', file)
+  fd.append('pdfText', LONG_TEXT)
+  for (const [k, v] of Object.entries(extra)) fd.append(k, v)
+  return fd
+}
+
+test('KI: ein neuer Versuch an Lieferanten- und Messdienstrechnung legt keine Kopie an', async () => {
+  await withOllama(async (s) => {
+    const plant = await newPlant(s, { energy: 'gas', method: 'service' })
+    const failed = await jsonOf<{ file?: string, kept?: boolean }>(await upload(s, `/api/heating-plants/${plant.id}/fuel-invoice`))
+    const file = failed.file ?? assert.fail('kein Beleg')
+    for (const route of ['fuel-invoice', 'service-statement']) {
+      const res = await fetch(`${s.base}/api/heating-plants/${plant.id}/${route}`, { method: 'POST', body: retryForm(file) })
+      const body = await jsonOf<{ file?: string, kept?: boolean, reason?: string }>(res)
+      assert.deepEqual([res.status, body.file, body.kept, body.reason], [502, file, true, 'model'], route)
+    }
+    assert.deepEqual((await s.api<UploadInfo[]>('/api/uploads')).map((u) => u.file), [file], 'keine Kopie im Ordner')
+  }, { model: 'fehlt:4b' })
+})
+
+test('KI: ein abgebrochener neuer Versuch lässt den Beleg im Belegordner', async () => {
+  await withOllama(async (s, ollama) => {
+    const plant = await newPlant(s, { energy: 'gas', method: 'service' })
+    const plain = new FormData()
+    plain.append('file', new Blob([PDF], { type: 'application/pdf' }), 'gas.pdf')
+    const file = (await jsonOf<{ file: string }>(await fetch(`${s.base}/api/upload`, { method: 'POST', body: plain }))).file
+    for (const route of ['fuel-invoice', 'service-statement']) {
+      const requestId = route === 'fuel-invoice' ? 'abcdef0123456789abcdef0123456789' : 'fedcba9876543210fedcba9876543210'
+      const before = chatRequests(ollama).length
+      const pending = fetch(`${s.base}/api/heating-plants/${plant.id}/${route}`, { method: 'POST', body: retryForm(file, { requestId }) }).then((r) => r.text()).catch(() => '')
+      assert.ok(await until(() => chatRequests(ollama).length > before, 10_000), 'die Anfrage kam bei Ollama nicht an')
+      assert.equal((await fetch(`${s.base}/api/ai/cancel/${requestId}`, { method: 'POST' })).status, 200, route)
+      await pending
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    assert.deepEqual((await s.api<UploadInfo[]>('/api/uploads')).map((u) => u.file), [file], 'der Beleg ist weg')
+  }, { chat: 'hang' })
 })
 
 test('Warmwasser: „Ermittlung übernehmen“ ({ dhwMethod } allein) lässt eine bestätigte Unmessbarkeit derselben Formel stehen (Durchsicht S2)', async () => {

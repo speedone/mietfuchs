@@ -1,7 +1,7 @@
 // Die Karte „Messdienstabrechnung auslesen“ der Seite Heizkosten (Heizung PR 20, #103): Beleg wählen, KI
 // lesen lassen, Ergebnis prüfen und übernehmen. Gespeichert wird erst in der Prüfansicht.
 import Card from '../components/Card'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useOpenForm } from '../property'
 import { errorText } from '../api'
 import { aiRequest, progressText, type AiProgress } from '../aiRequest'
@@ -46,7 +46,26 @@ export default function ServiceImportCard({ plant, view, object, tenancies, unit
   // Die KI ist gescheitert, der Beleg liegt im Belegordner (#487); die Datei bleibt für einen neuen Versuch.
   const [kept, setKept] = useState<{ failure: AiFailure; file: File } | null>(null)
 
-  async function read(file: File, stored?: string) {
+  // Nach „Erneut versuchen“ geht der Fokus an „Abbrechen“ und danach an den Bereich des Auslesens, nicht auf body
+  // (Durchsicht #487).
+  // 'pending': geklickt, „Abbrechen“ noch nicht da; 'running': läuft. Erst das Ende eines laufenden Versuchs gibt den
+  // Fokus zurück, nicht ein liegengebliebener Effekt des ersten Durchgangs.
+  const retrying = useRef<'pending' | 'running' | null>(null)
+  // „Abbrechen“ bekommt den Fokus beim Erscheinen, wenn es ein neuer Versuch ist
+  const focusCancel = (el: HTMLButtonElement | null) => {
+    if (!el || retrying.current !== 'pending') return
+    el.focus()
+    retrying.current = 'running'
+  }
+  const aiArea = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (busy || retrying.current !== 'running') return
+    retrying.current = null
+    if (!document.activeElement || document.activeElement === document.body) aiArea.current?.focus()
+  }, [busy])
+
+  // `before`: der Ausweg eines gespeicherten Belegs, dessen neuer Versuch das ist; ein Abbruch stellt ihn wieder her.
+  async function read(file: File, stored?: string, before?: { failure: AiFailure; file: File }) {
     setBusy(true)
     setError('')
     setResult(null)
@@ -58,8 +77,11 @@ export default function ServiceImportCard({ plant, view, object, tenancies, unit
       setResult(await aiRequest<ServiceExtractResult>(`/api/heating-plants/${plant.id}/service-statement`, fd, { onProgress: setProgress, signal: abort.current.signal }))
     } catch (e) {
       const failure = failureOf(e)
+      // Selbst abgebrochen: am Signal erkennbar, auch wenn der Abbruch als DOMException ankommt
+      const aborted = abort.current?.signal.aborted === true || (e instanceof Error && e.name === 'AbortError')
       if (failure) setKept({ failure, file })
-      else if (!(e instanceof Error && e.name === 'AbortError')) setError(errorText(e))
+      else if (aborted && before) setKept(before)
+      else if (!aborted) setError(errorText(e))
     } finally {
       setBusy(false)
       setProgress(null)
@@ -88,14 +110,17 @@ export default function ServiceImportCard({ plant, view, object, tenancies, unit
           <input type="file" accept="application/pdf,image/*" aria-label="Messdienstabrechnung wählen" onChange={(e) => { const f = e.target.files?.[0]; if (f) void read(f) }} />
         </label>
       )}
-      {busy && (
-        <p>
-          {progressText(progress)} <button className="btn secondary" onClick={() => abort.current?.abort()}>Abbrechen</button>
-        </p>
-      )}
-      {!busy && kept && (
-        <KeptReceipt failure={kept.failure} onManual={onOpenReceipt} onRetry={() => void read(kept.file, kept.failure.file)} onOpenSettings={onOpenAiSettings} />
-      )}
+      <div ref={aiArea} tabIndex={-1}>
+        {busy && (
+          <p>
+            {progressText(progress)} <button ref={focusCancel} className="btn secondary" onClick={() => abort.current?.abort()}>Abbrechen</button>
+          </p>
+        )}
+        {!busy && kept && (
+          <KeptReceipt failure={kept.failure} onManual={onOpenReceipt} onOpenSettings={onOpenAiSettings}
+            onRetry={() => { retrying.current = 'pending'; aiArea.current?.focus(); void read(kept.file, kept.failure.file, kept) }} />
+        )}
+      </div>
       {result && <ServiceImportReview key={result.file} x={result.extraction} file={result.file} ctx={ctx} view={view} co2={co2} onDone={onSaved} />}
       {result && (
         <div className="row">

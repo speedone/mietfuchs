@@ -54,6 +54,9 @@ export function useEvaluationQueue<R, X extends object>(options: QueueOptions<R,
   const nextIdRef = useRef(1)
   // Abbruch je laufender Auswertung; der Server stoppt dann auch das Modell
   const abortRef = useRef(new Map<number, AbortController>())
+  // Der Grund eines gespeicherten Belegs während seines neuen Versuchs: Wird der abgebrochen, steht der Eintrag
+  // wieder als „gespeichert“ mit diesem Grund da (Durchsicht #487).
+  const keptRef = useRef(new Map<number, AiFailure>())
 
   const patchEntry = (id: number, { data, ...rest }: QueuePatch<X>) =>
     setQueue((q) => q.map((x) => (x.id === id ? { ...x, ...rest, data: { ...x.data, ...data } } : x)))
@@ -78,13 +81,18 @@ export function useEvaluationQueue<R, X extends object>(options: QueueOptions<R,
   function remove(id: number) {
     filesRef.current.delete(id)
     storedRef.current.delete(id)
+    keptRef.current.delete(id)
     setQueue((q) => q.filter((x) => x.id !== id))
   }
   const cancel = (id: number) => abortRef.current.get(id)?.abort()
   // Ein gespeicherter, nicht ausgewerteter Beleg noch einmal: Die Datei bleibt im Browser (ein PDF liest er vor der
   // Auswertung selbst), an den Server geht nur ihr Name im Belegordner.
   const retry = (id: number) =>
-    setQueue((q) => q.map((x) => (x.id === id && x.status === 'gespeichert' && filesRef.current.has(id) ? { ...x, status: 'wartend', failure: undefined, error: undefined } : x)))
+    setQueue((q) => q.map((x) => {
+      if (x.id !== id || x.status !== 'gespeichert' || !filesRef.current.has(id)) return x
+      if (x.failure) keptRef.current.set(id, x.failure)
+      return { ...x, status: 'wartend', failure: undefined, error: undefined }
+    }))
 
   // Wer die Seite verlässt, wartet nicht mehr auf die Auswertung
   useEffect(() => () => { for (const controller of abortRef.current.values()) controller.abort() }, [])
@@ -101,6 +109,9 @@ export function useEvaluationQueue<R, X extends object>(options: QueueOptions<R,
     const controller = new AbortController()
     abortRef.current.set(next.id, controller)
     patchEntry(next.id, { status: 'läuft', startedAt: Date.now(), progress: null })
+    // Ein neuer Versuch eines gespeicherten Belegs: bei Abbruch zurück zu „gespeichert“
+    const before = keptRef.current.get(next.id)
+    keptRef.current.delete(next.id)
     let kept = false
     void (async () => {
       const o = optionsRef.current
@@ -122,8 +133,12 @@ export function useEvaluationQueue<R, X extends object>(options: QueueOptions<R,
         patchEntry(next.id, await optionsRef.current.finish(res, file, next))
       } catch (e) {
         // Selbst abgebrochen ist kein Fehler
-        if (controller.signal.aborted) patchEntry(next.id, { status: 'abgebrochen' })
-        else {
+        if (controller.signal.aborted) {
+          if (before) {
+            kept = true
+            patchEntry(next.id, { status: 'gespeichert', failure: before })
+          } else patchEntry(next.id, { status: 'abgebrochen' })
+        } else {
           const failure = failureOf(e)
           if (failure) {
             kept = true

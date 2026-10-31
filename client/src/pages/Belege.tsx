@@ -394,6 +394,9 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
     }
     const card = [...document.querySelectorAll<HTMLElement>('li.receipt-card[data-file]')].find((li) => li.dataset.file === focusFile)
     if (card) {
+      // Ein Zählerfoto steht in den zugeklappten „Zählerfotos“ (Durchsicht #487)
+      const folded = card.closest('details')
+      if (folded && !folded.open) folded.open = true
       card.scrollIntoView?.({ block: 'center' })
       card.querySelector<HTMLElement>('a')?.focus()
       setJumped(focusFile)

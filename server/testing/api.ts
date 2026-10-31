@@ -81,6 +81,8 @@ export type UploadBody = {
   reason?: string
   kept?: boolean
   service?: string
+  provider?: string
+  meterPhoto?: boolean
 }
 
 // Eine Zeile des Stroms (Accept: application/x-ndjson): `type` sagt, was sie bedeutet, die
@@ -500,8 +502,10 @@ export async function fakeOllama({ models = [{ name: 'test:latest', capabilities
   const requests: OllamaRequest[] = []
   const open = new Set<http.ServerResponse>()
   const state: { closedEarly: number, lastInvoice: FakeInvoice | null } = { closedEarly: 0, lastInvoice: null }
-  // Steuert den nachgebauten Dienst während eines Tests, etwa für den Abbruch beim Laden
-  const control = { pullHangs: false }
+  // Steuert den nachgebauten Dienst während eines Tests, etwa für den Abbruch beim Laden. Fehler mit Ausweg (#487):
+  // `docType` legt die Belegart fest, `meterFails` lässt das Ablesen scheitern, `tooMany` antwortet wie Ollama Cloud
+  // mit aufgebrauchtem Kontingent (429).
+  const control: { pullHangs: boolean, docType?: 'zaehlerstand' | 'rechnung', meterFails?: boolean, tooMany?: boolean } = { pullHangs: false }
   const findModel = (name = '') => models.find((m) => m.name === (name.includes(':') ? name : `${name}:latest`))
   const modelOf = (body: OllamaBody): string => body.model ?? ''
   const server = http.createServer((req, res) => {
@@ -543,6 +547,8 @@ export async function fakeOllama({ models = [{ name: 'test:latest', capabilities
         return m ? send(200, { capabilities: m.capabilities, remote_host: m.remote_host }) : notFound()
       }
       if (!findModel(modelOf(json))) return notFound()
+      if (control.tooMany) return send(429, { error: 'you have reached your weekly usage limit' })
+      if (control.meterFails && json.format?.properties?.meterNumber) return send(500, { error: 'model runner has unexpectedly stopped' })
       // Eine Rechnung mit Nettopositionen und dem Lohnanteil als Gesamtbetrag (#34)
       if (chat === 'netto' && !json.format?.properties?.categories) {
         const netto = {
@@ -577,7 +583,7 @@ export async function fakeOllama({ models = [{ name: 'test:latest', capabilities
           : json.format?.properties?.parts
             ? FAKE_FUEL
         : json.format?.properties?.docType
-          ? { docType: chat === 'meter' ? 'zaehlerstand' : 'rechnung' }
+          ? { docType: control.docType ?? (chat === 'meter' ? 'zaehlerstand' : 'rechnung') }
           : json.format?.properties?.meterNumber
             ? { meterNumber: '4711', value: 123.4, dateOnImage: null }
         : json.format?.properties?.categories

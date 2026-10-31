@@ -67,7 +67,18 @@ test('Ollama: eine am Kontextende abgeschnittene Antwort ergibt eine klare Meldu
     assert.equal(r.status, 502)
     assert.match(errorOf(r.body), /abgeschnitten/)
     assert.match(errorOf(r.body), /Kontext von 16384 Token.*unter „Erweitert“/)
+    assert.equal(r.body.reason, 'model')
   }, { chat: 'length' })
+})
+
+test('Fehler mit Ausweg: meldet Ollama (Cloud) ein aufgebrauchtes Kontingent (429), ist der Grund „quota“', async () => {
+  await withOllama(async (s, ollama) => {
+    ollama.control.tooMany = true
+    const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
+    assert.equal(r.status, 502)
+    assert.match(errorOf(r.body), /429/)
+    assert.deepEqual([r.body.reason, r.body.kept], ['quota', true])
+  })
 })
 
 test('Ollama: ein Fehler mitten im Strom kommt lesbar an', async () => {
@@ -237,7 +248,7 @@ test('Fehler mit Ausweg: ist Ollama nicht erreichbar, bleibt der Beleg im Postei
     await s.api<ClientSettings>('/api/settings', { method: 'PUT', body: JSON.stringify({ ollamaUrl: UNREACHABLE }) })
     const r = await uploadPdf(s, '/api/intake', { text: LONG_TEXT })
     assert.equal(r.status, 502)
-    assert.deepEqual([r.body.reason, r.body.kept], ['unreachable', true])
+    assert.deepEqual([r.body.reason, r.body.kept, r.body.provider], ['unreachable', true, 'ollama'])
     const file = fileOf(r.body)
     const stored = await s.api<UploadInfo[]>('/api/uploads')
     assert.deepEqual(stored.map((u) => [u.file, u.kind]), [[file, 'receipt']], 'der Beleg liegt im Belegordner')
