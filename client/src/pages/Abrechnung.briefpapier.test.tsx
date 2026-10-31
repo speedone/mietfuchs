@@ -49,7 +49,7 @@ beforeEach(() => {
     landlord: { rows: [], totalCents: 0 }, selfUsedShareCents: 0, totalCostsCents: 120000, warnings: [], notices: [], closed: null,
   }
   const property = { id: 'objekt-1', name: 'Lindenweg 12', kind: 'mfh' as const, address: 'Lindenweg 12, 12345 Musterstadt', landlordName: null, iban: null, paymentDeadlineDays: null }
-  settlement = { ...base, letters: lettersOf(base, { settings: SETTINGS, property, tenancies: TENANCIES, installation: {}, propertyTexts: {}, own: {}, asOf: '2026-10-30' }) }
+  settlement = { ...base, letters: lettersOf(base, { settings: SETTINGS, property, tenancies: TENANCIES, installation: {}, propertyTexts: {}, own: {}, asOf: `${YEAR + 1}-10-30` }) }
   puts = []
   ownLetters = {}
   templates = TEMPLATES
