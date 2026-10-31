@@ -3,12 +3,13 @@
 import { describe, expect, test } from 'vitest'
 import type { TaxExpenseItem, TaxReport, TaxSpread } from './types'
 import { acquisitionRelated, acquisitionRelatedText, maintenanceLineText, showsSplit, taxHints } from './taxView'
-import { isSpreadItem, showsDeferred, spreadBlock, spreadCarriedText as carriedRaw, spreadConditionsText, spreadIgnoredText, spreadItemText as itemRaw, spreadNothingDeductibleText, SPREAD_CARRIED_MORE } from './taxSpread'
+import { isSpreadItem, showsDeferred, spreadBlock, spreadCarriedText as carriedRaw, spreadConditionsText, spreadIgnoredText, spreadItemText as itemRaw, spreadNothingDeductibleText, SPREAD_CARRIED_MORE, spreadRestBeforeStartText, spreadRestText as restRaw, SPREAD_REST_MORE, spreadUsageChangedText } from './taxSpread'
 
 // fmtEuro setzt ein geschütztes Leerzeichen vor das €.
 const plain = (s: string | null): string | null => (s === null ? null : s.replace(/\u00a0/g, ' '))
 const spreadItemText = (x: TaxExpenseItem) => plain(itemRaw(x))
 const spreadCarriedText = (r: TaxReport) => plain(carriedRaw(r)) ?? ''
+const spreadRestText = (r: TaxReport) => plain(restRaw(r)) ?? ''
 
 const pos = (over: Partial<TaxExpenseItem> = {}): TaxExpenseItem => ({
   costItemId: 'dach', category: 'Nicht umlagefähig', group: 'Verwaltung & Instandhaltung', description: 'Dachsanierung',
@@ -197,5 +198,43 @@ describe('Hinweise der Verteilung (E-8)', () => {
     expect(acquisitionRelated(report([FOLGE], {}, { ...BLOCK, started: [] }), null)).toBeNull()
     // Mit Datum gilt die Frist wie bisher, auch für den übernommenen Anteil.
     expect(acquisitionRelated(report([FOLGE], {}, { ...BLOCK, started: [] }), { ownershipTransferOn: '2023-07-01' })).toMatchObject({ basis: 'transfer' })
+  })
+})
+
+// #262 PR 4 (E-7, E-8): vorzeitiges Ende nach § 82b Abs. 2 EStDV am Objekt.
+describe('Hinweise zum vorzeitigen Ende (§ 82b Abs. 2 EStDV)', () => {
+  const REST: TaxSpread = { started: [], carried: [{ ...BLOCK.carried[0]!, index: 2, rateCents: 400_000, rest: true }, BLOCK.carried[1]!], thisYearCents: 500_000 }
+  test('spreadRest nur mit einem Rest in diesem Jahr; nennt Position, Jahr der Zahlung und Betrag', () => {
+    expect(taxHints(report([FOLGE], {}, REST), 'ist')).toContain('spreadRest')
+    expect(taxHints(report([FOLGE], {}, BLOCK), 'ist')).not.toContain('spreadRest')
+    const t = spreadRestText(report([FOLGE], {}, REST))
+    expect(t).toMatch(/In 2025 endet die Verteilung vorzeitig/)
+    expect(t).toMatch(/„Fassade“ aus 2023: 4\.000,00 €/)
+    expect(t).not.toMatch(/Fenster/)
+    expect(t).toMatch(/Verkauft, verschenkt, vererbt oder Vermietung beendet im Jahr/)
+    expect(SPREAD_REST_MORE).toMatch(/§ 82b Abs\. 2 EStDV/)
+    expect(SPREAD_REST_MORE).toMatch(/BFH, Urteil vom 10\.11\.2020, IX R 31\/19/)
+    expect(SPREAD_REST_MORE).toMatch(/Schenkung.*Auslegung.*R 21\.1 Abs\. 6 EStR 2012/s)
+  })
+
+  test('spreadRestBeforeStart: Ende im Jahr der Zahlung oder davor, nicht verteilt', () => {
+    const r = report([pos()], { spreadRestBeforeStart: [{ costItemId: 'dach', description: 'Dachsanierung', restYear: 2025 }] }, null)
+    expect(taxHints(r, 'ist')).toContain('spreadRestBeforeStart')
+    expect(taxHints(report([pos()], {}, null), 'ist')).not.toContain('spreadRestBeforeStart')
+    expect(spreadRestBeforeStartText(r)).toMatch(/„Dachsanierung“: Das Jahr des Endes \(2025\) liegt im Jahr der Zahlung oder davor; die Position wird nicht verteilt und zählt ganz in 2025\./)
+    expect(spreadRestBeforeStartText(report([pos()], { spreadRestBeforeStart: [{ costItemId: 'dach', description: 'Dachsanierung', restYear: 2024 }] }, null))).toMatch(/\(2024\)/)
+  })
+
+  test('spreadUsageChanged: Nutzungswechsel bei laufender Verteilung, ohne Rest in diesem Jahr', () => {
+    expect(taxHints(report([Y0], { usageChangedUnits: ['EG'] }), 'ist')).toContain('spreadUsageChanged')
+    expect(taxHints(report([Y0], { usageChangedUnits: ['EG'] }, { ...BLOCK, started: [] }), 'ist')).toContain('spreadUsageChanged')
+    expect(taxHints(report([Y0], { usageChangedUnits: ['EG'] }, null), 'ist')).not.toContain('spreadUsageChanged')
+    expect(taxHints(report([Y0]), 'ist')).not.toContain('spreadUsageChanged')
+    // Ist das Ende in diesem Jahr schon eingetragen, sagt `spreadRest` alles.
+    expect(taxHints(report([FOLGE], { usageChangedUnits: ['EG'] }, REST), 'ist')).not.toContain('spreadUsageChanged')
+    const t = spreadUsageChangedText(report([Y0], { usageChangedUnits: ['EG', 'OG'] }))
+    expect(t).toMatch(/Die Nutzung von EG, OG wechselt in diesem Jahr/)
+    expect(t).toMatch(/Mietfuchs rechnet die Anteile weiter wie gewählt/)
+    expect(t).toMatch(/§ 82b Abs\. 2 EStDV/)
   })
 })

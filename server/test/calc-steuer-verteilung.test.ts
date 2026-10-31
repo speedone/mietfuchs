@@ -351,3 +351,28 @@ test('U-1: Position gelöscht oder Kostenart geändert: Folgejahr ohne ihre Zeil
   assert.deepEqual([row(r26, 'dach').deductibleCents, 'spread' in row(r26, 'dach')], [1_000_000, false])
   assert.deepEqual(r26.spreadIgnored, [{ costItemId: 'dach', description: 'Dachsanierung' }])
 })
+
+// #262 PR 4: Ende 2028 bei drei Verteilungen, von Hand gerechnet. Dach 2026: 10.000,03 € auf 5 Jahre, Raten 2.000,01 €
+// 2026 und 2027, Rest 2028 = 10.000,03 − 4.000,02 = 6.000,01 €. Fenster 2027: 3.000 € auf 3 Jahre, 1.000 € in 2027,
+// Rest 2028 = 2.000 €. Heizung 2028: 900 € auf 2 Jahre, das Ende liegt im Jahr der Zahlung, also nicht verteilt (900 €).
+// 2028 zusammen 6.000,01 + 2.000 + 900 = 8.900,01 €; 2029 nichts mehr.
+test('Ende 2028 über drei Verteilungen: Rest aus zwei Jahren, eine im Jahr des Endes gar nicht verteilt (Handrechnung)', () => {
+  const src = house([
+    item({ id: 'dach', spreadYears: 5, amountCents: 1_000_003 }),
+    item({ id: 'fenster', description: 'Fenster', period: periodKey('2027-01'), spreadYears: 3, amountCents: 300_000 }),
+    item({ id: 'heizung', description: 'Heizung', period: periodKey('2028-01'), spreadYears: 2, amountCents: 90_000 }),
+  ], { restYear: 2028 })
+  const r27 = report(src, 2027)
+  assert.equal(r27.expenses.deductibleCents, 200_001 + 100_000)
+  assert.equal('spreadRestBeforeStart' in r27, false)
+  const r28 = report(src, 2028)
+  balanced(r28)
+  assert.equal(r28.expenses.deductibleCents, 890_001)
+  assert.deepEqual(r28.expenses.spread?.carried.map((x) => [x.costItemId, x.rateCents, x.rest ?? false, x.remainingCents]), [['dach', 600_001, true, 0], ['fenster', 200_000, true, 0]])
+  assert.deepEqual(r28.expenses.spread?.started, [])
+  assert.deepEqual(r28.spreadRestBeforeStart, [{ costItemId: 'heizung', description: 'Heizung', restYear: 2028 }])
+  assert.equal(row(r28, 'heizung').deductibleCents, 90_000)
+  assert.equal(report(src, 2029).expenses.items.length, 0)
+  // Ohne Ende kein Eintrag.
+  assert.equal('spreadRestBeforeStart' in report(house(src.costItems), 2028), false)
+})

@@ -178,13 +178,14 @@ export const STEPS: readonly Step[] = [
     },
   },
   // Mit den Kopfangaben der Anlage V (#96 PR 2), gesetzt und geleert; abgeleitet aus der Hausnummer, ohne weiteren Zug
-  // aus `rng` (siehe „Mietverhältnis ändern“). Ebenso das Jahr des vorzeitigen Endes nach § 82b Abs. 2 EStDV (#262).
+  // aus `rng` (siehe „Mietverhältnis ändern“). Ebenso das Jahr des vorzeitigen Endes nach § 82b Abs. 2 EStDV (#262), bestätigt
+  // (`confirmSpread`), denn mit verteilten Positionen fragte der Server sonst nach und speicherte nichts (#262 PR 4).
   { name: 'Objekt ändern', routes: ['PUT /api/properties/:id'], run: ({ s, rng }) => {
     const n = int(rng, 1, 40)
     const header = n % 3 === 0
       ? { groundTaxFileNumber: `2141/${100 + n}/45678`, ownershipTransferOn: `20${10 + n}-07-01`, completedOn: `19${50 + n}-11-30` }
       : n % 3 === 1 ? { groundTaxFileNumber: null, ownershipTransferOn: null, completedOn: null } : {}
-    return send(s, 'PUT', `/api/properties/${P}`, { name: `Lindenweg ${n}`, ...header, spreadRestYear: n % 2 === 0 ? null : 2025 + (n % 6) })
+    return send(s, 'PUT', `/api/properties/${P}`, { name: `Lindenweg ${n}`, ...header, spreadRestYear: n % 2 === 0 ? null : 2025 + (n % 6), confirmSpread: true })
   } },
   {
     name: 'Abrechnungszeitraum ändern', routes: ['PUT /api/properties/:id/period'],

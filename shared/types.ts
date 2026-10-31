@@ -1544,6 +1544,10 @@ export type TaxReport = {
   // Positionen mit einer Wahl nach § 82b EStDV, an denen nicht verteilt werden kann (`allowsSpread`, etwa aus einer
   // Ablage von Hand): nicht verteilt (#262, E-8 `spreadIgnored`). Fehlt ohne Treffer.
   spreadIgnored?: { costItemId: string; description: string }[]
+  // Positionen mit einer Wahl nach § 82b EStDV, die in diesem Jahr abgeflossen sind, während das Ende am Objekt
+  // (`Property.spreadRestYear`, § 82b Abs. 2) in diesem Jahr oder davor liegt: nicht verteilt, ganz in diesem Jahr
+  // (#262 PR 4, E-8 `spreadRestBeforeStart`). Fehlt ohne Treffer.
+  spreadRestBeforeStart?: { costItemId: string; description: string; restYear: number }[]
   // Gesamtfläche des Gebäudes und der selbstgenutzte Teil davon, in Quadratmetern. Genau die
   // beiden Zahlen fragt die Anlage V im Kopf ab. Gemessen wird das **Private** und nicht das
   // Vermietete: Nur das ist eindeutig, denn ob eine Wohnung außerhalb der Abrechnungseinheit

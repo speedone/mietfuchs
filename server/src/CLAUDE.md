@@ -942,6 +942,14 @@ Grundmenge ist das ganze Gebäude), Überschuss. Beschreibende Gruppen statt fes
   tragen kann (`requireSiblingsSpread`). **Eine Wahl je Rechnung**: An einem Teil geändert,
   schreibt `syncSourceSpread` sie an alle Teile der Quelle, in derselben Transaktion (`afterReplace` der Sammlung).
   Die Übernahme aus dem Vorjahr leert sie (carryOver.ts). Die Abrechnung liest beide Felder nie.
+  **Ende am Objekt** (#262 PR 4): `spreadRestYear` (1900 bis 2200, sonst 400) fragt beim Setzen, Ändern und Entfernen
+  nach, wenn sich der Abzug einer verteilten Position dadurch ändert (`spreadRestQuestions` in shared/spread.ts,
+  `requireSpreadRest` in repository.ts, 409 `question: 'spread'`, bestätigt mit `confirmSpread`); das Formular
+  (Stammdaten, „Objekt bearbeiten“ unter „Für die Steuer (Anlage V)“, `SpreadRestField`) zeigt das Feld nur mit einer
+  verteilten Position oder einem gespeicherten Jahr und stellt dieselbe Rückfrage. Liegt das Ende im Jahr der Zahlung oder
+  davor, nennt der Bericht die Position in `spreadRestBeforeStart`. Hinweise `spreadRest`, `spreadRestBeforeStart`,
+  `spreadUsageChanged` (Nutzungswechsel bei laufender Verteilung ohne Ende in diesem Jahr). Erbfall nach BFH IX R 31/19
+  (Rest beim Erblasser); Schenkung als Auslegung gekennzeichnet (R 21.1 Abs. 6 EStR 2012 lässt den Beschenkten fortführen).
 - **Verschiebung anzeigen** (`shiftNotes`, nur Auskunft): Jede Position trägt `outflow`; liegt das
   Jahr außerhalb der Kalenderjahre ihres Zeitraums, heißt sie verschoben (`settlementPeriod`,
   `movedOut`), und jede Verschiebung steht auf jeder Seite genau einmal. `unstatedCount` nur, wo das

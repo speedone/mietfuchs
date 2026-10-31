@@ -107,3 +107,50 @@ export function spreadQuestions(before: Spreadable | null, after: Spreadable | n
   }
   return [...out, BOUND, ADVICE]
 }
+
+// ---------- Vorzeitiges Ende am Objekt (§ 82b Abs. 2 EStDV, #262 PR 4, E-7) ----------
+//
+// „Wird das Gebäude während des Verteilungszeitraums veräußert, ist der noch nicht berücksichtigte Teil des
+// Erhaltungsaufwands im Jahr der Veräußerung als Werbungskosten abzusetzen. Das Gleiche gilt, wenn ein Gebäude in ein
+// Betriebsvermögen eingebracht oder nicht mehr zur Einkunftserzielung genutzt wird.“ Den Tod stellt BFH, Urteil vom
+// 10.11.2020, IX R 31/19, gleich (Rest beim Erblasser im Todesjahr, entgegen R 21.1 Abs. 6 Satz 2 EStR 2012). Die
+// Schenkung ist Auslegung (Lexikon `spread82b`). Gerechnet wird in outflow.ts (`deductionPlan`); hier steht nur, was die
+// Rückfrage beim Setzen, Ändern und Entfernen des Jahres sagt, an Server (409 `question: 'spread'`, bestätigt mit
+// `confirmSpread`) und Formular gleich.
+
+// Die Jahre einer gewählten Verteilung ohne Ende: Beginn wie `startYear`, Ende nach N Jahren.
+export const spreadSpan = (c: Spreadable & { spreadYears: SpreadYears }): { from: number; to: number } => {
+  const from = startYear(c)
+  return { from, to: from + c.spreadYears - 1 }
+}
+
+type RestItem = Spreadable & { description: string }
+// Der Abzug einer Position bei einem Ende `rest` in Worten, wie `deductionPlan` ihn rechnet: Ende im letzten Jahr oder
+// danach wirkt nicht, Ende im ersten Jahr oder davor heißt nicht verteilt.
+const restSpanText = (c: RestItem & { spreadYears: SpreadYears }, rest: number | null): string => {
+  const { from, to } = spreadSpan(c)
+  if (rest === null || rest >= to) return range(from, to)
+  if (rest <= from) return `ganz ${from}`
+  return `${range(from, rest)} (Rest ${rest})`
+}
+const counted = (c: RestItem): c is RestItem & { spreadYears: SpreadYears } => c.spreadYears != null && !neverCounted(c)
+
+// Was ein anderes Jahr des Endes für die verteilten Positionen des Objekts bedeutet, als Sätze für die Rückfrage; leer
+// heißt: keine Position betroffen, nichts zu bestätigen. `items` sind die Positionen des Objekts mit Wahl.
+export function spreadRestQuestions(before: number | null, after: number | null, items: readonly RestItem[]): string[] {
+  if (before === after) return []
+  const changed = items.filter(counted).flatMap((c) => {
+    const was = restSpanText(c, before)
+    const now = restSpanText(c, after)
+    return was === now ? [] : [`${quoted(c.description)}: Abzug ${now} statt ${was}.`]
+  })
+  if (changed.length === 0) return []
+  const ends = after !== null && items.filter(counted).some((c) => after < spreadSpan(c).to)
+  const lead = after === null
+    ? 'Ohne dieses Jahr laufen die Verteilungen wie gewählt.'
+    : ends
+      ? `Im Jahr ${after} wird der noch nicht abgezogene Teil des verteilten Erhaltungsaufwands auf einmal abgezogen (§ 82b Abs. 2 EStDV).`
+      : `Im Jahr ${after} endet keine Verteilung vorzeitig; sie laufen wie gewählt.`
+  return [lead, ...changed, ADVICE]
+}
+const quoted = (d: string): string => `„${d || 'ohne Beschreibung'}“`

@@ -58,7 +58,7 @@ import { compareText } from '../calc.ts'
 import { isSplitPart, splitByService } from '../serviceSplit.ts'
 import { splitBlocker } from '../../../shared/splitPart.ts'
 import { tenancyStamp } from '../../../shared/tenancyStamp.ts'
-import { allowsSpread, isSpreadYears, spreadQuestions } from '../../../shared/spread.ts'
+import { allowsSpread, isSpreadYears, spreadQuestions, spreadRestQuestions } from '../../../shared/spread.ts'
 import { allowsPaidOn, isPaidOnDate, joinQuestions, paidOnQuestions, splitPaidOnQuestions, taxYearQuestions, type YearSpan } from '../../../shared/paidOn.ts'
 import { statedOutflowYear } from '../outflow.ts'
 import type { Database, Executor } from './client.ts'
@@ -2272,8 +2272,23 @@ export async function updateProperty(db: Database, id: string, body: unknown): P
   const current = await findProperty(db, id)
   if (!current) return null
   const { id: _id, ...rest } = mergeProperty(current, body)
+  await requireSpreadRest(db, id, current.spreadRestYear ?? null, rest.spreadRestYear ?? null, body)
   await db.update(properties).set(rest).where(eq(properties.id, id))
   return (await findProperty(db, id)) ?? null
+}
+
+// Die Rückfrage zum vorzeitigen Ende nach § 82b Abs. 2 EStDV (#262 PR 4, E-7): Ändert sich das Jahr und damit der Abzug
+// einer verteilten Position des Objekts, wird erst mit `confirmSpread: true` gespeichert (409 `question: 'spread'` wie an
+// der Position). Die Sätze kommen aus shared/spread.ts, dieselben wie im Formular. Eine ungültige Jahreszahl hat
+// `mergeProperty` schon vorher abgelehnt (400).
+async function requireSpreadRest(db: Executor, propertyId: string, before: number | null, after: number | null, body: unknown): Promise<void> {
+  if (before === after || raw(body, 'confirmSpread') === true) return
+  const spread = await db.select({
+    description: costItems.description, period: costItems.period, paidOn: costItems.paidOn, taxYear: costItems.taxYear, spreadYears: costItems.spreadYears,
+    category: costItems.category, amountCents: costItems.amountCents, operatingPower: costItems.operatingPower,
+  }).from(costItems).where(and(eq(costItems.propertyId, propertyId), isNotNull(costItems.spreadYears))).orderBy(costItems.period, costItems.description)
+  const questions = spreadRestQuestions(before, after, spread)
+  if (questions.length > 0) throw new SpreadQuestion(questions.join(' '))
 }
 
 // Was das Löschen einer Wohnung mitnähme (#142), damit die Löschfrage es nennen kann. Gezählt wird

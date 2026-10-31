@@ -1,10 +1,11 @@
-import type { FederalState, Property, PropertyKind } from './types'
+import type { CostItem, FederalState, Property, PropertyKind } from './types'
 import { PROPERTY_KIND_LABELS } from './types'
 import { ibanForSave, ibanToInput, storedIbanInvalid } from './ibanField'
 import { fmtDate } from './api'
 import { IBAN_LABELS } from '../../shared/iban.ts'
 import type { Problem } from './formProblems'
 import { isFederalState, localHolidaysOf, STATES, stateName } from '../../shared/holidays.ts'
+import { allowsSpread, spreadRestQuestions, spreadSpan } from '../../shared/spread.ts'
 
 // Die Entscheidungslogik der Karte „Objekt“ (#92), ohne DOM prüfbar wie costForm.ts und
 // unitForm.ts; die Komponente rendert nur.
@@ -33,6 +34,10 @@ export type PropertyForm = {
   // Der gespeicherte Stand des Abschnitts „Für die Steuer (Anlage V)“ (#96 PR 2): Gesendet wird nur, was davon abweicht,
   // damit ein Speichern ohne Eingabe nichts Neues schickt (client/CLAUDE.md, „nur gesendet, was sich geändert hat“).
   taxSaved: TaxHeaderForm
+  // Das Jahr des vorzeitigen Endes nach § 82b Abs. 2 EStDV (#262 PR 4) als Text der Auswahl, '' heißt keines; dazu der
+  // gespeicherte Stand, denn gesendet wird nur eine Änderung (sie löst die Rückfrage aus).
+  spreadRestYear: string
+  spreadRestSaved: string
 }
 
 // Kopf der Anlage V (#96 PR 2, Entwurf B2): Z. 6 Aktenzeichen, Z. 7 vier Daten. Texte, wie eingegeben.
@@ -125,7 +130,40 @@ export function stateNote(state: FederalState | '', year: number): string | null
 }
 
 export type PropertyBody = Pick<Property, 'name' | 'address' | 'kind' | 'landlordName' | 'iban' | 'paymentDeadlineDays' | 'landlordAddress' | 'landlordContact' | 'cableBuiltBeforeDec2021' | 'tightMarket' | 'tightMarketFrom' | 'tightMarketTo' | 'state'>
-  & Partial<Pick<Property, TaxHeaderField>>
+  & Partial<Pick<Property, TaxHeaderField | 'spreadRestYear'>>
+
+// ---------- Vorzeitiges Ende der Verteilung (§ 82b Abs. 2 EStDV, #262 PR 4, Entwurf E-7) ----------
+//
+// Ein Jahr am Objekt für alle verteilten Positionen: Im Jahr des Verkaufs, der Schenkung, des Erbfalls oder des Endes der
+// Vermietung wird der noch nicht abgezogene Rest abgezogen; Mietfuchs rechnet es in der Steuerübersicht (outflow.ts).
+// Dieselbe Beschriftung im Verlauf (`FIELD_LABELS` in journalView.ts).
+export const SPREAD_REST_LABEL = 'Verkauft, verschenkt, vererbt oder Vermietung beendet im Jahr'
+// Der Eintrag ohne Jahr, kurz, damit die Auswahl am Handy nichts abschneidet.
+export const SPREAD_REST_NONE = 'nichts davon'
+// Eine Position, wie die Liste der Kosten sie liefert, so weit die Verteilung sie braucht.
+export type SpreadRestItem = Pick<CostItem, 'description' | 'period' | 'category' | 'amountCents'> & Partial<Pick<CostItem, 'paidOn' | 'taxYear' | 'spreadYears' | 'operatingPower'>>
+const spreadOnly = (items: readonly SpreadRestItem[]) =>
+  items.filter((c): c is SpreadRestItem & { spreadYears: NonNullable<CostItem['spreadYears']> } =>
+    c.spreadYears != null && allowsSpread({ category: c.category, amountCents: c.amountCents, operatingPower: c.operatingPower ?? null }))
+// Das Feld steht nur da, wenn das Objekt eine Position mit gerechneter Verteilung hat, oder wenn ein Jahr gespeichert ist
+// (sonst ließe es sich nicht mehr leeren).
+export const showsSpreadRest = (items: readonly SpreadRestItem[], saved: string): boolean => saved !== '' || spreadOnly(items).length > 0
+// Die Jahre der Auswahl: vom ersten Beginn bis zum letzten Ende einer Verteilung. **Der angezeigte Wert entspricht dem
+// gespeicherten**: Ein Jahr außerhalb steht mit da, sonst zeigte der Browser den ersten Eintrag (CLAUDE.md, Tests Ebene 3).
+export function spreadRestOptions(items: readonly SpreadRestItem[], saved: string): number[] {
+  const spans = spreadOnly(items).map(spreadSpan)
+  const first = Math.min(...spans.map((x) => x.from))
+  const last = Math.max(...spans.map((x) => x.to))
+  const years = spans.length === 0 ? [] : Array.from({ length: last - first + 1 }, (_, i) => first + i)
+  const stored = saved === '' ? null : Number(saved)
+  return stored !== null && Number.isInteger(stored) && !years.includes(stored) ? [...years, stored].sort((a, b) => a - b) : years
+}
+// Die Rückfrage beim Speichern, dieselbe wie am Server (409 `question: 'spread'`, bestätigt mit `confirmSpread`); leer,
+// wenn das Jahr nicht mitgeht oder keine Position betroffen ist.
+export function spreadRestChange(saved: string, body: Pick<PropertyBody, 'spreadRestYear'>, items: readonly SpreadRestItem[]): string[] {
+  if (!('spreadRestYear' in body)) return []
+  return spreadRestQuestions(saved === '' ? null : Number(saved), body.spreadRestYear ?? null, items)
+}
 
 // Die Vorbelegung der Bezeichnung, wenn das Objekt noch keine hat (Durchsicht zu #346, Schritt 3). Eine frische
 // Installation legt ihr erstes Objekt ohne Namen an (Migration 0001 übernimmt `house_name`, und der ist dort leer).
@@ -156,6 +194,8 @@ export const propertyToForm = (p: Property): PropertyForm => ({
   state: p.state ?? '',
   ...taxHeaderOf(p),
   taxSaved: taxHeaderOf(p),
+  spreadRestYear: p.spreadRestYear == null ? '' : String(p.spreadRestYear),
+  spreadRestSaved: p.spreadRestYear == null ? '' : String(p.spreadRestYear),
 })
 
 // Das leere Formular für ein neues Objekt: dieselben Felder wie beim Bearbeiten, jede Angabe auf ihrer
@@ -163,7 +203,7 @@ export const propertyToForm = (p: Property): PropertyForm => ({
 export const EMPTY_PROPERTY_FORM: PropertyForm = {
   name: '', address: '', kind: 'mfh', own: false, landlordName: '', iban: '', paymentDeadlineDays: '', landlordAddress: '', landlordContact: '',
   cable: 'unbekannt', tightMarket: 'unbekannt', tightMarketFrom: '', tightMarketTo: '', state: '',
-  ...EMPTY_TAX_HEADER, taxSaved: EMPTY_TAX_HEADER,
+  ...EMPTY_TAX_HEADER, taxSaved: EMPTY_TAX_HEADER, spreadRestYear: '', spreadRestSaved: '',
 }
 
 // **Ein leeres Feld heißt „Vorgabe“, auch mit Haken.** Wer den Haken setzt, um nur eine andere
@@ -233,6 +273,7 @@ export function propertyBody(form: PropertyForm, storedIban: string | null = nul
     tightMarketTo: tightTo,
     state: form.state === '' ? null : form.state,
     ...header,
+    ...(form.spreadRestYear !== form.spreadRestSaved ? { spreadRestYear: form.spreadRestYear === '' ? null : Number(form.spreadRestYear) } : {}),
   }
 }
 
@@ -260,6 +301,7 @@ export function propertySummary(p: Property): { label: string; value: string }[]
     ].filter((x): x is string => x !== null)
     rows.push({ label: 'Für die Steuer (Anlage V)', value: parts.join(', ') })
   }
+  if (p.spreadRestYear != null) rows.push({ label: SPREAD_REST_LABEL, value: String(p.spreadRestYear) })
   if (!ownLandlord(p)) {
     return [...rows, { label: 'Vermieter und Bankverbindung', value: 'wie in den Einstellungen' }]
   }

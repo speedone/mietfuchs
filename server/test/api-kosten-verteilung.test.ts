@@ -10,7 +10,7 @@ import AdmZip from 'adm-zip'
 import { applyMigrations, connect, loadMigrations } from '../src/db/client.ts'
 import { besideServer, restore, startServer, startServerIn, type Server } from '../testing/api.ts'
 import type { CostItem, Property } from '../../shared/types.ts'
-import { spreadQuestions } from '../../shared/spread.ts'
+import { spreadQuestions, spreadRestQuestions } from '../../shared/spread.ts'
 import { CALENDAR_RULES, periodLabel, periodOfKey } from '../../shared/period.ts'
 import type { JournalGroupView } from '../src/db/journal.ts'
 
@@ -120,7 +120,7 @@ test('Backup: Wahl an der Position und Jahr des vorzeitigen Endes am Objekt komm
     const send = sender(s)
     await send('/api/units', 'POST', { name: 'EG', areaM2: 80, participates: true })
     const item = await (await send('/api/costItems', 'POST', { ...dach, spreadYears: 4 })).json() as CostItem
-    assert.equal((await send('/api/properties/objekt-1', 'PUT', { spreadRestYear: 2027 })).status, 200)
+    assert.equal((await send('/api/properties/objekt-1', 'PUT', { spreadRestYear: 2027, confirmSpread: true })).status, 200)
     const backup = Buffer.from(await (await fetch(`${s.base}/api/backup`)).arrayBuffer())
     assert.equal((await send(`/api/costItems/${item.id}`, 'PUT', { spreadYears: null, confirmSpread: true })).status, 200)
     assert.equal((await send('/api/properties/objekt-1', 'PUT', { spreadRestYear: null })).status, 200)
@@ -289,6 +289,45 @@ test('Route: der Text der Rückfrage am Teil einer Rechnung ist der des Formular
     assert.equal(r.status, 409)
     const others = parts.filter((p) => p.id !== first.id).map((p) => periodLabel(periodOfKey(CALENDAR_RULES, p.period) ?? assert.fail('Zeitraum')))
     assert.equal((await r.json() as { error: string }).error, spreadQuestions(first, { ...first, spreadYears: null }, others).join(' '))
+  } finally {
+    s.stop()
+  }
+})
+
+// #262 PR 4 (E-7): das Jahr des vorzeitigen Endes am Objekt. Ohne verteilte Position wird ohne Rückfrage gespeichert; mit
+// einer, deren Abzug sich dadurch ändert, fragt der Server nach (409 `question: 'spread'`, dieselben Sätze wie im
+// Formular aus `spreadRestQuestions`), bestätigt mit `confirmSpread`. Eine Jahreszahl außerhalb 1900 bis 2200 lehnt er
+// vor der Rückfrage ab (400).
+test('Route: Ende am Objekt ohne verteilte Position ohne Rückfrage, mit einer 409 und bestätigt gespeichert, Ungültiges 400', async () => {
+  const s = await startServer()
+  try {
+    const send = sender(s)
+    await send('/api/units', 'POST', { name: 'EG', areaM2: 80, participates: true })
+    assert.equal((await send('/api/properties/objekt-1', 'PUT', { spreadRestYear: 2026 })).status, 200)
+    assert.equal((await send('/api/properties/objekt-1', 'PUT', { spreadRestYear: null })).status, 200)
+    const item = await (await send('/api/costItems', 'POST', { ...dach, spreadYears: 4 })).json() as CostItem
+    const bad = await send('/api/properties/objekt-1', 'PUT', { spreadRestYear: 1899 })
+    assert.equal(bad.status, 400)
+    const r1 = await send('/api/properties/objekt-1', 'PUT', { name: 'Lindenweg', spreadRestYear: 2026 })
+    assert.equal(r1.status, 409)
+    const b1 = await r1.json() as { error: string; question: string }
+    assert.equal(b1.question, 'spread')
+    assert.equal(b1.error, spreadRestQuestions(null, 2026, [item]).join(' '))
+    assert.match(b1.error, /„Dachsanierung“: Abzug 2025 bis 2026 \(Rest 2026\) statt 2025 bis 2028\./)
+    const unchanged = await (await send('/api/properties', 'GET')).json() as Property[]
+    assert.deepEqual(unchanged.map((p) => [p.name, p.spreadRestYear]), [[unchanged[0]?.name, null]], 'nach der Rückfrage ist nichts gespeichert')
+    assert.notEqual(unchanged[0]?.name, 'Lindenweg')
+    const r2 = await send('/api/properties/objekt-1', 'PUT', { name: 'Lindenweg', spreadRestYear: 2026, confirmSpread: true })
+    assert.equal(r2.status, 200, await r2.clone().text())
+    assert.equal((await r2.json() as Property).spreadRestYear, 2026)
+    // Andere Angaben ohne das Feld fragen nicht; ein Ende nach dem letzten Jahr ändert nichts und fragt deshalb nicht.
+    assert.equal((await send('/api/properties/objekt-1', 'PUT', { address: 'Lindenweg 1' })).status, 200)
+    assert.equal((await send('/api/properties/objekt-1', 'PUT', { spreadRestYear: 2026 })).status, 200)
+    const r3 = await send('/api/properties/objekt-1', 'PUT', { spreadRestYear: null })
+    assert.equal(r3.status, 409)
+    assert.match((await r3.json() as { error: string }).error, /Ohne dieses Jahr laufen die Verteilungen wie gewählt\./)
+    assert.equal((await send('/api/properties/objekt-1', 'PUT', { spreadRestYear: 2028, confirmSpread: true })).status, 200)
+    assert.equal((await send('/api/properties/objekt-1', 'PUT', { spreadRestYear: 2031 })).status, 200)
   } finally {
     s.stop()
   }

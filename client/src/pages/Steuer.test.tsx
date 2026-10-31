@@ -285,6 +285,13 @@ const LAGEN: Record<TaxHint, Lage> = {
     text: /die Verteilung hat keine Wirkung/,
   },
   spreadIgnored: { report: REPORT({ spreadIgnored: [{ costItemId: 'gs', description: 'Grundsteuer' }] }), text: /an dieser Position wird aber nicht verteilt/ },
+  // #262 PR 4: vorzeitiges Ende nach § 82b Abs. 2 EStDV am Objekt.
+  spreadRest: {
+    report: (() => { const r = VERTEILT([FASSADE]); r.expenses.spread!.carried[0]!.rest = true; return r })(),
+    text: /endet die Verteilung vorzeitig/,
+  },
+  spreadRestBeforeStart: { report: REPORT({ spreadRestBeforeStart: [{ costItemId: 'dach', description: 'Dachsanierung', restYear: JAHR }] }), text: /die Position wird nicht verteilt und zählt ganz in/ },
+  spreadUsageChanged: { report: VERTEILT([DACH], { usageChangedUnits: ['EG'] }), text: /Mietfuchs rechnet die Anteile weiter wie gewählt/ },
   // #163: teilweise Eigennutzung.
   mixedUseSplit: { report: MIXED(), text: /durch direkte Zuordnung ermittelt/ },
   mixedUseKeyNotArea: {

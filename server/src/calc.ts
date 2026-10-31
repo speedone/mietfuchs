@@ -1903,6 +1903,8 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
   // Vermietung wird nicht vor dem Verteilen, sondern jede Rate im Jahr ihres Abzugs (unten bei `cheapRentOf`).
   const restYear = options.restYear ?? null
   const spreadIgnored: { costItemId: string; description: string }[] = []
+  // Ende im Jahr der Zahlung oder davor (§ 82b Abs. 2, E-7): nicht verteilt, Hinweis `spreadRestBeforeStart`.
+  const spreadRestBeforeStart: { costItemId: string; description: string; restYear: number }[] = []
   const spreadStarted: TaxSpread['started'] = []
   // Der Bruttoanteil der ersten Rate je verteilter Position: Grundlage ihrer Kürzung bei verbilligter Vermietung (unten).
   const grossFirst = new Map<string, number>()
@@ -1913,6 +1915,7 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
       const [plan] = deductionPlan(c, p.snapshot.period, p.items, restYear)
       if (plan === undefined) continue
       if (plan.ignored) spreadIgnored.push({ costItemId: c.id, description: c.description })
+      if (plan.of === 1 && plan.restYear !== null && plan.outflowYear === year) spreadRestBeforeStart.push({ costItemId: c.id, description: c.description, restYear: plan.restYear })
       const base = entry.amountCents - entry.privateCents
       const of = plan.of
       if (of === 1 || plan.outflowYear !== year || base < 0) continue
@@ -2287,6 +2290,7 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
     ...(reserveWithdrawalSuspects.length > 0 ? { reserveWithdrawalSuspects } : {}),
     ...(specialLevySuspects.length > 0 ? { specialLevySuspects } : {}),
     ...(spreadIgnored.length > 0 ? { spreadIgnored } : {}),
+    ...(spreadRestBeforeStart.length > 0 ? { spreadRestBeforeStart } : {}),
     totalAreaM2: totalArea,
     selfUsedAreaM2,
     selfOccupiedExists,
