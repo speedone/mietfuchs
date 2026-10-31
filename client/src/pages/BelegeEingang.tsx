@@ -20,7 +20,7 @@ import DisclosureButton from '../components/DisclosureButton'
 import { usePeriod, useSwitchTo } from '../period'
 import { useProperty, withProperty } from '../property'
 import { AiProgressBadge } from '../components/AiProgress'
-import { plural } from '../../../shared/wording.ts'
+import { countOf, plural } from '../../../shared/wording.ts'
 import { NoticeBox } from '../components/Notice'
 import { KeptReceipt } from '../components/KeptReceipt'
 import { TakenOff } from '../components/TakenOff'
@@ -725,7 +725,7 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
           <div className="row center">
             <div className="grow" />
             <div className="muted align-right">
-              {totalRecognized} erkannt · <span className="ampel gruen" /> {tally.gruen} · <span className="ampel gelb" /> {tally.gelb} · <span className="ampel rot" /> {tally.rot}
+              {countOf(totalRecognized, 'Vorschlag', 'Vorschläge')} erkannt · <span className="ampel gruen" /> {tally.gruen} · <span className="ampel gelb" /> {tally.gelb} · <span className="ampel rot" /> {tally.rot}
             </div>
           </div>
         )}
