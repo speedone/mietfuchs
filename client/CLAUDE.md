@@ -70,13 +70,17 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   sessionStorage, `readView`/`writeView`): Die Seitenleiste öffnet die zuletzt benutzte, die untere Leiste am Handy
   („Erfassen“) immer den Eingang. Ein Sprung nennt die Ansicht im Ziel (`NavTarget` `belege:eingang`/`belege:ordner`,
   `splitTarget` in nav.ts; Cockpit, Leerzustand, `NoticeTab`, ein Schritt einer Anleitung mit `view`). Ein Sprung zu
-  einem Beleg (`openReceipt`) geht ohne Position in den Eingang, sonst in den Ordner, und hebt ihn kurz hervor
-  (`useHighlight`). **Eingang** ([pages/BelegeEingang.tsx](src/pages/BelegeEingang.tsx)): Ablage (sagt
-  `GET /api/ai/status` ausdrücklich „nicht erreichbar“, `aiMode`, speichert sie nur; ein Dienst im Internet wird nicht
-  gefragt), daneben „Nur ablegen, ohne Auswertung“; Ampelzählung, klebende Leiste „Alle grünen übernehmen“; Gruppen
+  einem Beleg (`openReceipt`, auch „Im Eingang zeigen“ aus der Suche) geht ohne Position in den Eingang, sonst in den
+  Ordner, und hebt ihn kurz hervor (`useHighlight`); gehört er einem anderen Objekt oder Jahr, wechselt die Seite erst mit
+  `useSwitchTo` dorthin (`placeOf`, `periodKeyOfYear`), sonst nennt eine Meldung den Grund. `splitTarget` wirft bei einem
+  unbekannten Ziel. **Eingang** ([pages/BelegeEingang.tsx](src/pages/BelegeEingang.tsx)): Ablage (meldet
+  `GET /api/ai/status` den Grund `unreachable` und läuft nichts, `aiMode`, speichert sie nur; gefragt wird erst mit den
+  Einstellungen, ein Dienst im Internet nie, beim Ablegen und mit „Erneut prüfen“ noch einmal), daneben „Nur ablegen, ohne Auswertung“; Ampelzählung, klebende Leiste „Alle grünen übernehmen“; Gruppen
   „Wird ausgewertet“, „Zu prüfen“ (Auswertungen, auf Wunsch mit dem Beleg als `iframe` daneben, „Beleg daneben zeigen“, ab `xl` daneben, sonst darunter; dauernd daneben rollte die Tabelle bei 1440 px seitlich, M10; Zählerstände, Fehler) und
   „Ohne Position“ (`withoutPosition`: ohne, was läuft oder unter „Zu prüfen“ steht; ein gespeicherter, nicht
-  ausgewerteter Beleg trägt `KeptReceipt` an seiner Karte). „Per KI auswerten“ wertet am Beleg aus (`addStored`),
+  ausgewerteter Beleg trägt `KeptReceipt` an seiner Karte; gelöscht oder zugeordnet verschwindet sein Eintrag der
+  Warteschlange). Ein Beleg mit offener Auswertung hat seine Karte (Löschen, Objekt und Jahr, Zuordnen) an der
+  Auswertung. „Per KI auswerten“ wertet am Beleg aus (`addStored`),
   „Weiter prüfen“ springt zur Auswertung (`data-assessment`). Belege ohne Position anderer Objekte oder Jahre nennt eine
   Zeile mit Sprung (`elsewhereGroups`). **Ordner** ([pages/BelegeOrdner.tsx](src/pages/BelegeOrdner.tsx)): wie früher
   der Belegordner ohne Posteingang; die Suche gilt immer allen Objekten und Jahren, Treffer ohne Position stehen unter

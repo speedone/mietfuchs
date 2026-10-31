@@ -171,7 +171,10 @@ reine Funktionen in UTC, ohne Uhr und Datenzugriff. Maßgeblich ist das Land des
 Die Seite „Belege“ ([client/src/pages/Belege.tsx](../../client/src/pages/Belege.tsx), Oberfläche in client/CLAUDE.md)
 mit dem Ordner ([BelegeOrdner.tsx](../../client/src/pages/BelegeOrdner.tsx), vorher Belegordner) und dem Eingang
 ([BelegeEingang.tsx](../../client/src/pages/BelegeEingang.tsx), vorher Schnellerfassung und Posteingang). Server und Tests
-sagen weiter „Posteingang“ für Belege an keiner Position, die Oberfläche „Ohne Position“. Logik in
+sagen weiter „Posteingang“ für Belege an keiner Position, die Oberfläche „Ohne Position“. `GET /api/ai/status` nennt bei
+einem Fehler den Grund (`reason` wie `reasonOf`); nur `unreachable` lässt den Eingang ohne KI ablegen. Ältere
+Verlaufseinträge mit den Sätzen von vorher zeigt der Verlauf im neuen Wortlaut (`RENAMED_SENTENCES` in journalRoutes.ts,
+angewandt in `groupTitle`); gespeichert bleibt der alte. Logik in
 [client/src/receipts.ts](../../client/src/receipts.ts), Entwurf in
 [docs/superpowers/specs/2026-10-02-belegordner-design.md](../../docs/superpowers/specs/2026-10-02-belegordner-design.md).
 Objekt und Jahr kommen aus der Seitenleiste; nur Objekt und Jahr eines Belegs im Posteingang sind
