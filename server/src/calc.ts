@@ -94,7 +94,7 @@ import { baseUsage, unitAsOf, usageChangesWithin, usageDays, usageFlags, usageSp
 import type { UnitUsage } from '../../shared/types.ts'
 import { knownUnit, metersByUnitText, unitLabel, unitScale, type UnitScale } from '../../shared/meterUnits.ts'
 import { CALENDAR_RULES, calendarYearPeriod, contextOf, formatDayRange, periodContaining, periodDays, periodLabel, periodMonths, periodOfKey, periodsBetween, previousPeriod, rulesOf, settlementDeadline, settlementPeriod, spansTwoYears, startYearOf, type PeriodContext } from '../../shared/period.ts'
-import { allowsPaidOn, paidOnSpan, paidOnYear } from '../../shared/paidOn.ts'
+import { allowsPaidOn, paidOnSpan, paidOnYear, statedOutflowYear } from '../../shared/paidOn.ts'
 import { generatorEnergy, noCo2Supplier } from '../../shared/heatDelivery.ts'
 import { lineRoot, unitBasisOf, monthSpanText, plantRules, plantSpan, recommendedDeadline, requestMonth, sameBuilding, sameFuelLine, sameLine, sameSpan, separateOwner, servesUnit, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { heatingSnapshotFor, selfAt, snapshotFor, wayOf } from './snapshot.ts'
@@ -1804,8 +1804,10 @@ export function taxPartsFor(source: Parameters<typeof snapshotFor>[0], propertyI
   // #255 PR 3: Eine Position mit Zahlungsdatum kann weit vor oder nach ihrem Zeitraum bezahlt sein (vor dem Beginn oder
   // Jahre später, R-4 fragt dann nur nach). Die Suche reicht deshalb zusätzlich über die Zeiträume jeder Position, die in
   // diesem Jahr bezahlt ist, mit einem Jahr Rand für Zeiträume und Heizperioden über zwei Kalenderjahre. Ohne Datum
-  // bleibt das Fenster, wie es war.
-  const dated = source.costItems.filter((c) => c.propertyId === propertyId && c.paidOn != null && paidOnYear(c.paidOn) === year).map((c) => startYearOf(c.period))
+  // bleibt das Fenster, wie es war. #478: ebenso mit angegebenem Jahr der Zahlung, das seither in der ganzen üblichen
+  // Spanne liegen darf (Beginn − 1 bis Ende + 3) und ein Wechsel des Zeitraums stehen lässt; sonst fehlte eine Position,
+  // deren Jahr nicht an ihren Zeitraum grenzt, in jeder Steuerübersicht.
+  const dated = source.costItems.filter((c) => c.propertyId === propertyId && statedOutflowYear(c) === year).map((c) => startYearOf(c.period))
   const von = calendarYearPeriod(Math.min(year - 1, ...dated.map((y) => y - 1))).from
   const bis = calendarYearPeriod(Math.max(ownPlants.length > 0 ? year + 1 : year, ...dated.map((y) => y + 2))).to
   const parts: TaxPart[] = periodsBetween(rules, von, bis).flatMap((p) => {

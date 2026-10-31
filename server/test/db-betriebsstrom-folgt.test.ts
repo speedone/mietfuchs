@@ -365,8 +365,9 @@ test('G-H3/#267: wachsender Zeitraum: Rechnung und Abzug bleiben zusammen, der A
 // Geld H1 (Nachprüfung 10ee3c0): Fall des Prüfers. Nach „Mai ab 2025“ (aufgeteilt, Heizung 2025/26) folgt „Juli ab 2024“
 // mit Heizung 2025-07. Der Betriebsstrom landet in 01.07.2025–30.06.2026 (möglich 2025 bis 2027), seine Abzugsteile in
 // 2024/2025 und 2025/2026. Bis #267 folgten die Abzugsteile dem Betriebsstrom, deshalb bot die Vorschau nur den Schnitt
-// der Spannen an (2025 und 2026). Seit #267 folgen sie ihrer Stromrechnung: Der Betriebsstrom hat seine ganze Spanne.
-test('Geld H1/#267: das Jahr des Betriebsstroms hat seine ganze Spanne, die Abzugsteile folgen ihrer Stromrechnung', async () => {
+// der Spannen an (2025 und 2026). Seit #267 folgen sie ihrer Stromrechnung. Seit #478 behält der Betriebsstrom das Jahr
+// der Zahlung, das ihm der erste Wechsel gab, und wird nicht mehr gefragt (vorher: Frage mit ganzer Spanne, 2027 gewählt).
+test('Geld H1/#267/#478: der Betriebsstrom behält sein Jahr der Zahlung, die Abzugsteile folgen ihrer Stromrechnung', async () => {
   await withDatabase(async (opened) => {
     await haus(opened, { strom: { serviceFrom: '2025-01-01', serviceTo: '2025-12-31' } })
     const erster = await wechsel(opened, MAI_AB_2025, 'split', '2025-05')
@@ -374,15 +375,14 @@ test('Geld H1/#267: das Jahr des Betriebsstroms hat seine ganze Spanne, die Abzu
     const bs = (await items(opened)).find((c) => c.operatingPower === 'included') ?? assert.fail('kein Betriebsstrom')
     const regeln: PeriodRules = { startMonth: 1, changes: ['2024-07'] }
     const preview = (await opened.read((db) => previewPeriodChange(db, 'objekt-1', regeln, TODAY))) ?? assert.fail('kein Objekt')
-    const eintrag = preview.taxYears.find((t) => t.costItemId === bs.id && t.period === '2025-07') ?? assert.fail('Betriebsstrom nicht gefragt')
-    assert.deepEqual(eintrag.options, [2025, 2026, 2027])
-    assert.ok(eintrag.options.includes(eintrag.suggested))
-    // Mit 2027 (bis #267 abgelehnt) wird gespeichert; kein Teil eines Abzugs trägt ein eigenes Jahr.
+    assert.equal(preview.taxYears.find((t) => t.costItemId === bs.id), undefined, 'Betriebsstrom nicht gefragt: sein Jahr ist angegeben')
+    const jahr = bs.taxYear ?? assert.fail('der Betriebsstrom hat nach dem ersten Wechsel ein Jahr der Zahlung')
+    // Kein Teil eines Abzugs trägt ein eigenes Jahr.
     const antworten = Object.fromEntries(preview.taxYears.map((t) => [t.key, t.suggested]))
-    const { r } = await wechsel(opened, regeln, '2025-07', '2025-07', { ...antworten, [`${bs.id}|2025-07`]: 2027 })
+    const { r } = await wechsel(opened, regeln, '2025-07', '2025-07', antworten)
     if (!r || 'error' in r) return assert.fail(r ? r.error : 'kein Objekt')
     const nachher = await items(opened)
-    assert.equal(nachher.find((c) => c.id === bs.id)?.taxYear, 2027)
+    assert.equal(nachher.find((c) => c.id === bs.id)?.taxYear, jahr)
     verweiseStimmen(nachher)
     assert.equal(Object.keys(await abzugsjahreStimmen(opened)).length, 4)
   })
@@ -444,7 +444,9 @@ test('Geld H2 (#268): bei einem anderen Jahr des Betriebsstroms als dem festen J
 // 05–12/2025 (fest 2025) und 2026 (fest 2026); der Abzug folgt dem Hausstrom (Leistungszeitraum 2025/26) nach Tagen,
 // −67,12 € und −32,88 €. Bleiben Betriebsstrom und Gas in 05–12/2025, ändert sich ihr Jahr nicht, die Gruppe hat dort
 // also noch keinen Satz zur Steuer. Bis #268 verschob sich der Teil des Abzugs in 2026 (32,88 €) trotzdem, und das stand
-// am Ziel 2025-05. Seit #268 verschiebt sich nichts mehr (Ausgleich je Steuerjahr); am Ziel 2025-05 steht kein Satz.
+// am Ziel 2025-05. Seit #268 verschiebt sich nichts mehr (Ausgleich je Steuerjahr); am Ziel 2025-05 steht kein Satz. Seit
+// #478 behält Gas sein angegebenes Jahr 2025 auch ganz in 2026: kein Satz zur Verschiebung, die Vorschau nennt das Jahr
+// stattdessen in `keptTaxYears` (vorher: Verschiebung nach 2026 am Ziel 2026-01).
 test('Geld K1 (#268): an einem Ziel, an dem sonst kein Steuerjahr wechselt, kein Satz zur Verschiebung', async () => {
   await withDatabase(async (opened) => {
     await mieter(opened)
@@ -457,8 +459,8 @@ test('Geld K1 (#268): an einem Ziel, an dem sonst kein Steuerjahr wechselt, kein
     await opened.write((db) => bookOperatingPower(db, 'hp', { period: '2025-05', generalItemId: 'hs', ownCents: 10000, basis: 'Bruchteil' }, ids))
     const preview = (await opened.read((db) => previewPeriodChange(db, 'objekt-1', { startMonth: 5, changes: ['2026-01'] }, TODAY))) ?? assert.fail('kein Objekt')
     const heizung = preview.groups.find((g) => g.heating) ?? assert.fail('keine Heizgruppe')
-    assert.deepEqual(heizung.taxShifts.map((t) => t.key).sort(), ['2026-01'])
-    assert.ok(heizung.taxShifts.every((t) => !/verschiebt sich/.test(t.text)), JSON.stringify(heizung.taxShifts))
+    assert.deepEqual(heizung.taxShifts, [])
+    assert.deepEqual(preview.keptTaxYears.filter((k) => k.costItemId === 'gas').map((k) => [k.period, k.taxYear]), [['2026-01', 2025]])
   })
 })
 

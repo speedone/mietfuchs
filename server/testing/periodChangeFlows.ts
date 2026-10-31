@@ -20,8 +20,12 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { eq } from 'drizzle-orm'
 import { applyPeriodChange, checkRules, previewPeriodChange } from '../src/db/periodChange.ts'
-import { readCostItems, readProperties } from '../src/db/read.ts'
+import { readCostItems, readProperties, readStock } from '../src/db/read.ts'
+import { periodChanges, properties } from '../src/db/schema.ts'
+import { taxReportFor } from '../src/calc.ts'
+import type { Database } from '../src/db/client.ts'
 import { createEntity, saveCostItemSplit, updateEntity } from '../src/db/repository.ts'
 import { storedOutflowYear } from '../src/outflow.ts'
 import { baseDescription } from '../src/serviceSplit.ts'
@@ -48,7 +52,8 @@ export type FlowStep = {
 // `correctedCents` (nicht in der Datei von vor dem Umbau): Summe der Beträge, um die bis zu diesem Wechsel berichtigt
 // wurde. Dann sind die Teile einer Rechnung nicht mehr nach Tagen verteilt, und wer sie einzeln statt als Ganzes neu
 // teilt, legt die Berichtigung in andere Zeiträume; je Zeitraum höchstens um diese Summe.
-export type Flow = { index: number; wholeThroughout: boolean; steps: (FlowStep & { correctedCents?: number })[] }
+// `correctedByBase` (#478, ebenfalls nicht in der Datei): dieselbe Summe je Basisbeschreibung.
+export type Flow = { index: number; wholeThroughout: boolean; steps: (FlowStep & { correctedCents?: number; correctedByBase?: Record<string, number> })[] }
 
 const pick = <T>(rng: Rng, list: readonly T[]): T => {
   const v = list[Math.floor(rng() * list.length)]
@@ -186,7 +191,8 @@ function treatedWhole(items: readonly CostItem[], before: PeriodRules, next: Per
 }
 
 // `onStep` sieht nach jedem Wechsel die Positionen des Objekts (Prüfungen, die nicht in der Datei stehen).
-export type StepCheck = (items: readonly CostItem[], step: { index: number; step: number }) => void
+// `rules` sind die Regeln danach (bei Ablehnung die bisherigen).
+export type StepCheck = (items: readonly CostItem[], step: { index: number; step: number; rules: PeriodRules }) => void
 
 export async function runFlow(index: number, onStep?: StepCheck): Promise<Flow> {
   const rng = rngOf(FLOW_SEED * 1000 + index)
@@ -213,6 +219,7 @@ export async function runFlow(index: number, onStep?: StepCheck): Promise<Flow> 
     })
     let whole = true
     let correctedCents = 0
+    const correctedByBase: Record<string, number> = {}
     const steps: Flow['steps'] = []
     const changes = int(rng, 2, 5)
     for (let step = 0; step < changes; step++) {
@@ -227,7 +234,11 @@ export async function runFlow(index: number, onStep?: StepCheck): Promise<Flow> 
           const row = items.filter((c) => `${c.period}\u0000${baseDescription(c.description)}` === chosen).sort((a, b) => (a.id < b.id ? -1 : 1))[0]
           // Lehnt die Schreibprüfung ab (etwa ein Jahr der Zahlung, das ein früherer Wechsel stehen ließ), bleibt der
           // Betrag; der Ablauf geht weiter.
-          if (row !== undefined && (await updateEntity(db, 'costItems', row.id, { amountCents: row.amountCents + Math.sign(row.amountCents || 1) * delta }).catch(() => null)) !== null) correctedCents += delta
+          if (row !== undefined && (await updateEntity(db, 'costItems', row.id, { amountCents: row.amountCents + Math.sign(row.amountCents || 1) * delta }).catch(() => null)) !== null) {
+            correctedCents += delta
+            const base = baseDescription(row.description)
+            correctedByBase[base] = (correctedByBase[base] ?? 0) + delta
+          }
         })
       }
       const result = await opened.write(async (db) => {
@@ -246,10 +257,10 @@ export async function runFlow(index: number, onStep?: StepCheck): Promise<Flow> 
         }))
         const r = await applyPeriodChange(db, P, next, { groups, overrides: {}, taxYears, token: preview.token, understood: true }, newId, TODAY)
         const error = r === null ? 'kein Objekt' : 'error' in r ? r.error : null
-        return { next, error, items: (await readCostItems(db)).filter((c) => c.propertyId === P) }
+        return { next, error, rules: error === null ? next : before, items: (await readCostItems(db)).filter((c) => c.propertyId === P) }
       })
-      onStep?.(result.items, { index, step })
-      steps.push({ rules: result.next, error: result.error, ...sumsOf(result.items), ...(correctedCents > 0 ? { correctedCents } : {}) })
+      onStep?.(result.items, { index, step, rules: result.rules })
+      steps.push({ rules: result.next, error: result.error, ...sumsOf(result.items), ...(correctedCents > 0 ? { correctedCents, correctedByBase: { ...correctedByBase } } : {}) })
     }
     return { index, wholeThroughout: whole, steps }
   } finally {
@@ -262,4 +273,90 @@ export async function runFlows(count = FLOW_COUNT, onStep?: StepCheck): Promise<
   const flows: Flow[] = []
   for (let i = 0; i < count; i++) flows.push(await runFlow(i, onStep))
   return flows
+}
+
+// Hin und zurück (#478, Invarianten „Hin und zurück“ und „Ein angegebenes Jahr wandert nie“): Ein Bestand im Rhythmus A,
+// in dem jede Rechnung ein Zahlungsdatum oder ein Jahr der Zahlung trägt (auch jeder Teil, wie ihn der Vermieter nach
+// dem Aufteilen eintragen kann), wechselt nach B und zurück nach A, jedes Mal mit den Vorgaben der Vorschau. Festgehalten
+// werden je Basisbeschreibung die Summe je wirksamem Steuerjahr nach jedem Schritt und die Werbungskosten der
+// Steuerübersicht je Kalenderjahr vorher und nachher.
+export const ROUND_TRIP_SEED = 478
+export type RoundTrip = {
+  index: number
+  rules: [PeriodRules, PeriodRules]
+  // Satz, wenn ein Wechsel abgelehnt wurde; dann fehlen die späteren Stände.
+  refused: string | null
+  years: FlowStep['taxYears'][]
+  expenses: { before: Record<string, number>; after: Record<string, number> | null }
+}
+const TAX_YEARS = Array.from({ length: 10 }, (_, i) => 2022 + i)
+
+async function expensesByYear(db: Database): Promise<Record<string, number>> {
+  const stock = await readStock(db)
+  return Object.fromEntries(TAX_YEARS.map((y) => [String(y), taxReportFor(stock, P, y).expenses.totalCents]))
+}
+
+// Wechselt mit den Vorgaben der Vorschau, wie jemand, der nur „Speichern“ drückt; `null` heißt gewechselt.
+async function changeWithDefaults(db: Database, next: PeriodRules, newId: () => string): Promise<string | null> {
+  const preview = await previewPeriodChange(db, P, next, TODAY)
+  if (preview === null) return 'keine Vorschau'
+  const groups = Object.fromEntries(preview.groups.map((g) => [g.id, g.suggested || (g.split !== null ? 'split' : g.options[0]?.key ?? '')]))
+  const r = await applyPeriodChange(db, P, next, { groups, overrides: {}, taxYears: {}, token: preview.token, understood: true }, newId, TODAY)
+  return r === null ? 'kein Objekt' : 'error' in r ? r.error : null
+}
+
+export async function runRoundTrip(index: number): Promise<RoundTrip> {
+  const rng = rngOf(ROUND_TRIP_SEED * 1000 + index)
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-hin-zurueck-'))
+  const opened = await openFreshDatabase(dataDir)
+  let n = 0
+  const newId = (): string => `r${String(++n).padStart(5, '0')}`
+  try {
+    const a = nextRules(rng, { startMonth: 1, changes: [] })
+    const b = nextRules(rng, a)
+    const invoices = invoicesOf(rng, index)
+    // Je Rechnung ein Jahr der Zahlung in der üblichen Spanne ihres Zeitraums, wo sie kein Datum hat.
+    const years = invoices.map(() => rng())
+    const before = await opened.write(async (db) => {
+      await db.update(properties).set({ periodStartMonth: a.startMonth }).where(eq(properties.id, P))
+      if (a.changes.length > 0) await db.insert(periodChanges).values(a.changes.map((fromMonth) => ({ propertyId: P, fromMonth })))
+      for (const u of ['u1', 'u2', 'u3']) await createEntity(db, 'units', u, { propertyId: P, name: u, areaM2: 40 + u.length * 7, participates: true })
+      for (const [i, inv] of invoices.entries()) {
+        const period = periodContaining(a, inv.serviceFrom ?? '2025-03-01')
+        const from = Number(period.from.slice(0, 4)) - 1
+        const to = Number(period.to.slice(0, 4)) + 3
+        const taxYear = inv.paidOn === undefined ? from + Math.floor((years[i] ?? 0) * (to - from + 1)) : undefined
+        const body = { propertyId: P, period: period.key, key: 'area', ...inv, ...(taxYear === undefined ? {} : { taxYear }), confirmPaidOn: true, confirmTaxYear: true }
+        const written = inv.serviceFrom !== undefined && inv.serviceTo !== undefined && periodsBetween(a, inv.serviceFrom, inv.serviceTo).length > 1
+          ? (await saveCostItemSplit(db, P, body, null, newId)).map((c) => c.id)
+          : [(await createEntity(db, 'costItems', newId(), body)).id]
+        // Ein Teil in einem Kalenderzeitraum bekommt beim Aufteilen kein Jahr; der Vermieter trägt es nach. Manchmal hat
+        // jeder Teil sein eigenes Jahr (zwei Abschläge, in verschiedenen Jahren bezahlt).
+        if (taxYear !== undefined) {
+          const own = written.length > 1 && rng() < 0.4
+          for (const c of (await readCostItems(db)).filter((x) => written.includes(x.id) && (own || x.taxYear === undefined))) {
+            const p = periodOfKey(a, c.period)
+            const lo = p === null ? from : Number(p.from.slice(0, 4)) - 1
+            const hi = p === null ? to : Number(p.to.slice(0, 4)) + 3
+            await updateEntity(db, 'costItems', c.id, { taxYear: own ? lo + Math.floor(rng() * (hi - lo + 1)) : taxYear, confirmTaxYear: true })
+          }
+        }
+      }
+      return { years: sumsOf((await readCostItems(db)).filter((c) => c.propertyId === P)).taxYears, expenses: await expensesByYear(db) }
+    })
+    const trip: RoundTrip = { index, rules: [a, b], refused: null, years: [before.years], expenses: { before: before.expenses, after: null } }
+    for (const next of [b, a]) {
+      const step = await opened.write(async (db) => {
+        const refused = await changeWithDefaults(db, next, newId)
+        return { refused, years: sumsOf((await readCostItems(db)).filter((c) => c.propertyId === P)).taxYears, expenses: await expensesByYear(db) }
+      })
+      if (step.refused !== null) return { ...trip, refused: step.refused }
+      trip.years.push(step.years)
+      trip.expenses.after = step.expenses
+    }
+    return trip
+  } finally {
+    opened.close()
+    fs.rmSync(dataDir, { recursive: true, force: true })
+  }
 }

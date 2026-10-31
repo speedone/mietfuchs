@@ -163,7 +163,8 @@ test('Zurück zum Zeitraum des Objekts: die Heizposition kommt in den Zeitraum, 
     const r = await wechseln(opened, null, {})
     assert.ok(r && 'plant' in r)
     assert.equal(r.plant.periodStartMonth, null)
-    assert.deepEqual((await items(opened)).map((c) => [c.period, c.taxYear]), [['2026-01', undefined]])
+    // #478: Das angegebene Jahr bleibt; hier zufällig gleich dem Kalenderjahr des Ziels (vorher gelöscht).
+    assert.deepEqual((await items(opened)).map((c) => [c.period, c.taxYear]), [['2026-01', 2026]])
     await assert.rejects(opened.read((db) => previewHeatingPeriodChange(db, 'hp1', null, TODAY)), (e: unknown) => e instanceof PeriodError && /Es ändert sich nichts/.test(e.message))
     assert.equal(await opened.read((db) => previewHeatingPeriodChange(db, 'gibt-es-nicht', MAI, TODAY)), null)
   })
@@ -263,13 +264,17 @@ test('Laienprobe B12: Heizpositionen ohne Leistungszeitraum: Auswahl der Heizper
   })
 })
 
-// Review der Laienprobe, Runde 1: das Jahr der Zahlung wie beim Wechsel des Objektzeitraums geklemmt.
-test('Review Runde 1: Jahr der Zahlung in der neuen Heizperiode in die erlaubte Spanne geklemmt', () => {
+// Review der Laienprobe, Runde 1: das Jahr der Zahlung wie beim Wechsel des Objektzeitraums geklemmt. Seit #478 nur
+// noch ein erschlossenes Jahr (aus dem Zeitraum); ein angegebenes bleibt stehen, auch in einer Heizperiode im
+// Kalenderjahr (Durchsicht #478, Befund 1: vorher bekam die Position still das Jahr der neuen Heizperiode).
+test('Review Runde 1 und #478: Ein angegebenes Jahr der Zahlung bleibt, ein erschlossenes wird geklemmt', () => {
   const h = { from: '2025-05-01', to: '2026-04-30' }
-  assert.equal(taxYearIn(h, { taxYear: 2028, period: periodKey('2026-01') }), 2027)
-  assert.equal(taxYearIn(h, { taxYear: 2023, period: periodKey('2026-01') }), 2025)
+  assert.equal(taxYearIn(h, { taxYear: 2028, period: periodKey('2026-01') }), 2028)
+  assert.equal(taxYearIn(h, { taxYear: 2023, period: periodKey('2026-01') }), 2023)
   assert.equal(taxYearIn(h, { period: periodKey('2026-01') }), 2026)
-  assert.equal(taxYearIn({ from: '2025-01-01', to: '2025-12-31' }, { taxYear: 2026, period: periodKey('2024-05') }), null)
+  assert.equal(taxYearIn(h, { period: periodKey('2024-01') }), 2025)
+  assert.equal(taxYearIn({ from: '2025-01-01', to: '2025-12-31' }, { taxYear: 2026, period: periodKey('2024-05') }), 2026)
+  assert.equal(taxYearIn({ from: '2025-01-01', to: '2025-12-31' }, { period: periodKey('2024-05') }), null)
 })
 
 // Review Runde 2: Der Wechsel der Heizperiode schreibt Positionen über `patchCostItemIn` (Verschmelzung

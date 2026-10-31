@@ -3,7 +3,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { baseDescription, deriveSourceParts, splitByService, splitDeductionsAlike, type ServicePart } from '../src/serviceSplit.ts'
+import { baseDescription, deriveSourceParts, splitByService, splitDeductionsAlike, splitPoolsByDays, type ServicePart } from '../src/serviceSplit.ts'
 import type { PeriodRules } from '../../shared/types.ts'
 import { periodsBetween, formatDayRange } from '../../shared/period.ts'
 import { largestRemainder } from '../src/calc.ts'
@@ -222,4 +222,66 @@ test('deriveSourceParts: Gutschrift und Lohnanteil wie splitByService', () => {
   assert.equal(credit.reduce((a, p) => a + p.amountCents, 0), -10001)
   const labor = deriveSourceParts(MAI, { tieId: 'h', description: 'Hauswart', amountCents: 100000, labor35aCents: 60000, spans: [{ from: '2025-03-01', to: '2025-06-30' }], marked: false })
   assert.deepEqual(labor.map((p) => [p.amountCents, p.labor35aCents]), [[50000, 30000], [50000, 30000]])
+})
+
+// splitPoolsByDays (#478): Teile verschiedener Jahre aus einer Quelle, je Zeitraum nach Tagen als eine Rechnung.
+const POOL_RULES: PeriodRules = { startMonth: 1, changes: [] }
+const HALF_1 = { from: '2025-01-01', to: '2025-06-30' }
+const HALF_2 = { from: '2025-07-01', to: '2025-12-31' }
+
+// Durchsicht #478, Befund 3: Ist die Summe aller Jahre nicht positiv (ein Teil zur Gutschrift berichtigt), trägt die
+// Teilung als Ganzes keinen Lohnanteil (§ 35a nur an einer Rechnung). Dann bleibt jedes Jahr bei seiner eigenen
+// Teilung; vorher verlor ein Jahr mit Lohnanteil diesen ganz.
+test('splitPoolsByDays: Lohnanteil eines Jahres geht nicht verloren, wenn die Summe aller Jahre nicht positiv ist', () => {
+  const invoice = (amountCents: number, labor: number, spans: { from: string; to: string }[]) =>
+    deriveSourceParts(POOL_RULES, { tieId: 'q', description: 'Hausmeister', amountCents, ...(labor ? { labor35aCents: labor } : {}), spans, marked: true })
+  const a = { amountCents: 10000, labor35aCents: 3000, span: HALF_1 }
+  const b = { amountCents: -12000, labor35aCents: 0, span: HALF_2 }
+  const whole = invoice(-2000, 3000, [HALF_1, HALF_2])
+  const pools = [{ members: [a], parts: invoice(10000, 3000, [HALF_1]) }, { members: [b], parts: invoice(-12000, 0, [HALF_2]) }]
+  const out = splitPoolsByDays(whole, pools, 'q')
+  const labor = (out ?? pools.map((p) => p.parts)).flat().reduce((s, p) => s + (p.labor35aCents ?? 0), 0)
+  assert.equal(labor, 3000)
+})
+
+// Durchsicht #478, Befund 7: Haben die Teile eines Jahres verschiedene Vorzeichen, gibt es keine Teilung ohne
+// Vorzeichenwechsel; `null`, der Wechsel bleibt bei der Teilung je Jahr.
+test('splitPoolsByDays: gemischte Vorzeichen in einem Jahr ergeben null', () => {
+  const invoice = (amountCents: number, spans: { from: string; to: string }[]) =>
+    deriveSourceParts(POOL_RULES, { tieId: 'q', description: 'Wasser', amountCents, spans, marked: true })
+  const whole = invoice(5000, [HALF_1, HALF_2])
+  const pools = [
+    { members: [{ amountCents: 8000, labor35aCents: 0, span: HALF_1 }, { amountCents: -1000, labor35aCents: 0, span: HALF_2 }], parts: invoice(7000, [HALF_1, HALF_2]) },
+    { members: [{ amountCents: -2000, labor35aCents: 0, span: HALF_2 }], parts: invoice(-2000, [HALF_2]) },
+  ]
+  assert.equal(splitPoolsByDays(whole, pools, 'q'), null)
+})
+
+test('splitPoolsByDays: je Zeitraum die Teilung nach Tagen, je Jahr die Summe', () => {
+  const invoice = (amountCents: number, spans: { from: string; to: string }[]) =>
+    deriveSourceParts(POOL_RULES, { tieId: 'q', description: 'Wasser', amountCents, spans, marked: true })
+  const span = { from: '2024-11-01', to: '2025-10-31' }
+  const whole = invoice(50001, [span])
+  const pools = [
+    { members: [{ amountCents: 20000, labor35aCents: 0, span }], parts: invoice(20000, [span]) },
+    { members: [{ amountCents: 30001, labor35aCents: 0, span }], parts: invoice(30001, [span]) },
+  ]
+  const out = splitPoolsByDays(whole, pools, 'q') ?? assert.fail('keine Teilung')
+  assert.deepEqual(out.map((parts) => parts.reduce((s, p) => s + p.amountCents, 0)), [20000, 30001])
+  assert.deepEqual(whole.map((w) => out.reduce((s, parts) => s + (parts.find((p) => p.period.key === w.period.key)?.amountCents ?? 0), 0)), whole.map((w) => w.amountCents))
+})
+
+// Durchsicht #478, Befund 6: Verschiedene Sätze je Tag. Jedes Jahr bleibt in den Zeiträumen seiner Tage.
+test('splitPoolsByDays: ein Jahr bekommt kein Geld in einem Zeitraum ohne seine Tage', () => {
+  const halves: PeriodRules = { startMonth: 1, changes: ['2025-07'] }
+  const invoice = (amountCents: number, spans: { from: string; to: string }[]) =>
+    deriveSourceParts(halves, { tieId: 'q', description: 'Wasser', amountCents, spans, marked: true })
+  const whole = invoice(50000, [HALF_1, HALF_2])
+  assert.deepEqual(whole.map((p) => p.period.key), ['2025-01', '2025-07'])
+  const pools = [
+    { members: [{ amountCents: 20000, labor35aCents: 0, span: HALF_1 }], parts: invoice(20000, [HALF_1]) },
+    { members: [{ amountCents: 30000, labor35aCents: 0, span: HALF_2 }], parts: invoice(30000, [HALF_2]) },
+  ]
+  const out = splitPoolsByDays(whole, pools, 'q') ?? assert.fail('keine Teilung')
+  assert.deepEqual(out.map((parts) => parts.filter((p) => p.amountCents !== 0).map((p) => [p.period.key, p.amountCents])), [[['2025-01', 20000]], [['2025-07', 30000]]])
 })

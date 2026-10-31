@@ -63,7 +63,11 @@ const overlapDays = (a: BillingPeriod, b: BillingPeriod): number => {
 // Das bisherige Jahr nach der Rangfolge aus outflow.ts (`statedOutflowYear`, #255 PR 3: Zahlungsdatum vor Jahr der
 // Zahlung, sonst der Beginn); eine Heizposition ist nie ein Abzug beim Betriebsstrom. Das Datum selbst bleibt an der
 // Position stehen und gilt weiter.
+//
+// #478 (Durchsicht, Befund 1): Ein angegebenes Jahr der Zahlung bleibt stehen, wie beim Wechsel des Objektzeitraums
+// (`keptTaxYear` in periodChange.ts); es ist eine Tatsache über die Zahlung. Geklemmt wird nur das erschlossene Jahr.
 export const taxYearIn = (target: Pick<BillingPeriod, 'from' | 'to'>, item: Pick<CostItem, 'taxYear' | 'paidOn' | 'period'>): number | null => {
+  if (item.taxYear !== undefined) return item.taxYear
   if (!spansTwoYears(target)) return null
   const start = Number(target.from.slice(0, 4))
   const end = Number(target.to.slice(0, 4)) + 1

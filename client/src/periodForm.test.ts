@@ -64,7 +64,7 @@ describe('Rhythmus ändern (#208)', () => {
     expect(withoutChange(WECHSEL, '2025-05')).toEqual({ startMonth: 1, changes: [] })
   })
   const vorschau: PeriodChangePreview = {
-    rules: WECHSEL, periods: [], newShort: [], blocked: [], moves: [], effects: [], assessments: [], token: 'marke',
+    rules: WECHSEL, periods: [], newShort: [], blocked: [], moves: [], effects: [], assessments: [], token: 'marke', keptTaxYears: [],
     taxYears: [{ key: 'mu|2025-05', costItemId: 'mu', description: 'Müll 2025', period: periodKey('2025-05'), label: '2025/2026', suggested: 2025, options: [2025, 2026, 2027] }],
     groups: [{ id: '2025-01', heating: false, split: null, taxShifts: [], from: periodKey('2025-01'), fromLabel: '2025', items: [{ costItemId: 'mu', description: 'Müll 2025', amountCents: 30000 }], options: [{ key: periodKey('2025-01'), label: '01.01.–30.04.2025' }, { key: periodKey('2025-05'), label: '2025/2026' }], suggested: periodKey('2025-01') }],
     overrides: [{ tenancyId: 't-a', tenantName: 'A', from: [{ key: periodKey('2025-01'), label: '2025', cents: 220000 }], ask: [{ period: periodKey('2025-01'), label: '01.01.–30.04.2025', months: '01–04/2025' }, { period: periodKey('2025-05'), label: '2025/2026', months: '05/2025–04/2026' }] }],
@@ -96,7 +96,7 @@ describe('Durchsicht von #226 (M2, M5)', () => {
 
 describe('Nachprüfung von #226 (3): Antworten nach einer 409', () => {
   const vorschau = (token: string, extra = false): PeriodChangePreview => ({
-    rules: WECHSEL, periods: [], newShort: [], blocked: [], moves: [], effects: [], assessments: [], token,
+    rules: WECHSEL, periods: [], newShort: [], blocked: [], moves: [], effects: [], assessments: [], token, keptTaxYears: [],
     taxYears: [{ key: 'mu|2025-05', costItemId: 'mu', description: 'Müll', period: periodKey('2025-05'), label: '2025/2026', suggested: 2025, options: [2025, 2026, 2027] }],
     groups: [{ id: '2025-01', heating: false, split: null, taxShifts: [], from: periodKey('2025-01'), fromLabel: '2025', items: [{ costItemId: 'mu', description: 'Müll', amountCents: 1 }, ...(extra ? [{ costItemId: 'wa', description: 'Wasser', amountCents: 2 }] : [])], options: [{ key: periodKey('2025-01'), label: 'R' }, { key: periodKey('2025-05'), label: '2025/2026' }], suggested: periodKey('2025-01') }],
     overrides: [{ tenancyId: 't-a', tenantName: 'A', from: [], ask: [{ period: periodKey('2025-01'), label: 'R', months: '01–04/2025' }] }],
