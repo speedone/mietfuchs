@@ -15,6 +15,7 @@ import { plural } from '../../../shared/wording.ts'
 import PageHeader from '../components/PageHeader'
 import { NoticeBox } from '../components/Notice'
 import { KeptReceipt } from '../components/KeptReceipt'
+import { TakenOff } from '../components/TakenOff'
 import { useRetryFocus } from '../retryFocus'
 
 // Sichtprüfung E30: Die Kennzeichnung offener Zeilen trägt die Farbe der schlechtesten Ampel,
@@ -110,7 +111,7 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
     // Neu laden, wenn das Objekt wechselt (#92).
   }, [propertyId])
 
-  const { queue, patchEntry, addFiles, addStored, remove, cancel, retry } = useEvaluationQueue<IntakeResult, Evaluated>({
+  const { queue, patchEntry, addFiles, addStored, remove, cancel, retry, takeOff } = useEvaluationQueue<IntakeResult, Evaluated>({
     endpoint: '/api/intake',
     pageImageEdge: settings?.ai?.pageImageEdge ?? undefined,
     // Objekt und Jahr für die Auswertung (#170); ein neuer Beleg steht damit im Posteingang
@@ -389,6 +390,10 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
       {queue.map((entry) => {
         // Eine ausgewertete Rechnung steht als Karte ihrer Auswertung da (unten).
         if (entry.data.kind === 'rechnung' && entry.status === 'fertig') return null
+        if (entry.status === 'abgelegt') {
+          const stored = entry.failure?.file
+          return <TakenOff key={entry.id} fileName={entry.fileName} onShow={stored && onOpenReceipt ? () => onOpenReceipt(stored) : undefined} />
+        }
         const rs = readingScores.get(entry.id)
         return (
           <div className="card no-print" key={entry.id} data-queue-entry={entry.id} tabIndex={-1}>
@@ -409,7 +414,9 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
               {entry.status === 'abgebrochen' && <span className="badge gray">abgebrochen</span>}
               <div className="grow" />
               {entry.status !== 'läuft' && (
-                <button className="btn small ghost" onClick={() => remove(entry.id)}>{entry.status === 'gespeichert' ? 'Ausblenden' : 'Entfernen'}</button>
+                entry.status === 'gespeichert'
+                  ? <button className="btn small ghost" onClick={() => takeOff(entry.id)}>Aus der Liste nehmen{' '}<span className="sr-only">({entry.fileName})</span></button>
+                  : <button className="btn small ghost" onClick={() => remove(entry.id)}>Entfernen</button>
               )}
             </div>
 

@@ -86,6 +86,7 @@ import { countOf } from '../../../shared/wording.ts'
 import { useFocusTarget, type FocusProps } from '../focus'
 import { NoticeBox } from '../components/Notice'
 import { KeptReceipt } from '../components/KeptReceipt'
+import { TakenOff } from '../components/TakenOff'
 import { useRetryFocus } from '../retryFocus'
 import Card from '../components/Card'
 
@@ -579,7 +580,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   // KI-Auswertung (#170): Die Warteschlange teilt sich die Kostenseite mit der Schnellerfassung.
   // Eine ausgewertete Rechnung ist danach als Auswertung gespeichert und wird mit „Auswertung
   // prüfen“ gebucht; verlässt der Nutzer die Seite, geht sie nicht verloren (Posteingang).
-  const { queue, patchEntry, addFiles, remove, cancel, retry } = useEvaluationQueue<ExtractResult, Evaluated>({
+  const { queue, patchEntry, addFiles, remove, cancel, retry, takeOff } = useEvaluationQueue<ExtractResult, Evaluated>({
     endpoint: '/api/extract',
     pageImageEdge: settings?.ai?.pageImageEdge ?? undefined,
     // Bleibt der Beleg ungebucht, steht er im Posteingang dieses Objekts; nennt er kein Jahr,
@@ -762,7 +763,10 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
           />
         </div>
 
-        {queue.map((entry) => (
+        {queue.map((entry) => entry.status === 'abgelegt' ? (
+          <TakenOff key={entry.id} fileName={entry.fileName}
+            onShow={entry.failure && onOpenReceipt ? () => { const stored = entry.failure?.file; if (stored) onOpenReceipt(stored) } : undefined} />
+        ) : (
           <div key={entry.id} className="stack" data-queue-entry={entry.id} tabIndex={-1}>
             <div className="row center">
               <strong>{entry.fileName}</strong>
@@ -782,9 +786,12 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
               {/* Gebucht wird im Jahr des Belegs; weicht es vom gewählten ab, steht es hier, wie in der Schnellerfassung (I1). */}
               {entry.data.assessment && (entry.data.assessment.targetPeriod ?? calendarPeriod(entry.data.assessment.year)) !== key && <span className="badge gray">{view.calendar ? `Jahr ${entry.data.assessment.year}` : entry.data.assessment.targetLabel ?? `Jahr ${entry.data.assessment.year}`}</span>}
               <div className="grow" />
-              {(entry.status === 'wartend' || entry.status === 'fertig' || entry.status === 'fehler' || entry.status === 'gespeichert' || entry.status === 'abgebrochen' || entry.status === 'übernommen') && (
+              {entry.status === 'gespeichert' && (
+                <button className="btn small ghost" onClick={() => takeOff(entry.id)}>Aus der Liste nehmen{' '}<span className="sr-only">({entry.fileName})</span></button>
+              )}
+              {(entry.status === 'wartend' || entry.status === 'fertig' || entry.status === 'fehler' || entry.status === 'abgebrochen' || entry.status === 'übernommen') && (
                 <button className="btn small ghost" onClick={() => remove(entry.id)}>
-                  {entry.status === 'fertig' || entry.status === 'gespeichert' ? 'Ausblenden' : 'Entfernen'}
+                  {entry.status === 'fertig' ? 'Ausblenden' : 'Entfernen'}
                 </button>
               )}
             </div>

@@ -51,7 +51,7 @@ async function expectKept(onOpenReceipt: ReturnType<typeof vi.fn>) {
   expect(screen.getByText(/Ihr Beleg liegt im Belegordner\. Sie können ihn jetzt von Hand erfassen oder es später erneut versuchen\./)).toBeTruthy()
   expect(screen.queryByText('Fehler')).toBeNull()
   // Der Beleg bleibt im Belegordner: Der Knopf am Eintrag blendet ihn nur aus (Durchsicht #487)
-  expect(screen.getByRole('button', { name: 'Ausblenden' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Aus der Liste nehmen (foto.jpg)' })).toBeTruthy()
   expect(screen.queryByRole('button', { name: 'Entfernen' })).toBeNull()
   // Bei „nicht erreichbar“ helfen die Einstellungen nicht weiter
   expect(screen.queryByRole('button', { name: 'KI-Einstellungen öffnen' })).toBeNull()
@@ -91,6 +91,7 @@ test('Schnellerfassung: ein gespeicherter Beleg ohne Auswertung bietet die Auswe
   await expectKept(onOpenReceipt)
   fireEvent.click(await screen.findByRole('button', { name: 'KI-Einstellungen öffnen' }))
   expect(onOpenAiSettings).toHaveBeenCalled()
+  await expectTakenOff(onOpenReceipt)
 })
 
 test('Kosten: ein gespeicherter Beleg ohne Auswertung bietet die Auswege an', async () => {
@@ -107,7 +108,20 @@ test('Kosten: ein gespeicherter Beleg ohne Auswertung bietet die Auswege an', as
   await expectKept(onOpenReceipt)
   fireEvent.click(await screen.findByRole('button', { name: 'KI-Einstellungen öffnen' }))
   expect(onOpenAiSettings).toHaveBeenCalled()
+  await expectTakenOff(onOpenReceipt)
 })
+
+// Rückmeldung des Nutzers (#487): „Ausblenden“ war unklar. „Aus der Liste nehmen“ sagt, dass nur der Eintrag geht; an
+// seiner Stelle steht, dass der Beleg weiter im Belegordner liegt, mit dem Weg dorthin.
+async function expectTakenOff(onOpenReceipt: ReturnType<typeof vi.fn>) {
+  onOpenReceipt.mockClear()
+  fireEvent.click(screen.getByRole('button', { name: 'Aus der Liste nehmen (foto.jpg)' }))
+  const status = (await screen.findByText(/liegt weiter im Belegordner/)).closest('[role="status"]')
+  expect(status?.textContent).toContain('„foto.jpg“ liegt weiter im Belegordner.')
+  expect(screen.queryByText('Gespeichert, nicht ausgewertet')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Im Belegordner zeigen' }))
+  expect(onOpenReceipt).toHaveBeenCalledWith('srv-foto.jpg')
+}
 
 test('ohne gespeicherten Beleg bleibt es ein roter Fehler', async () => {
   answer = () => ({ error: 'Ein Seitenbild ist größer als 5 MB.' })

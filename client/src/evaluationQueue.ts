@@ -12,7 +12,9 @@ import type { AiFailure } from './types'
 
 // 'gespeichert': Die KI ist gescheitert, der Beleg liegt aber im Belegordner (Fehler mit Ausweg, #487); `failure`
 // sagt warum, und `retry` wertet ihn erneut aus, ohne ihn noch einmal hochzuladen.
-export type QueueStatus = 'wartend' | 'läuft' | 'fertig' | 'fehler' | 'gespeichert' | 'abgebrochen' | 'übernommen'
+// 'abgelegt': ein gespeicherter Eintrag, den der Nutzer aus der Liste genommen hat; an seiner Stelle steht, dass der
+// Beleg weiter im Belegordner liegt (`failure` bleibt für den Weg dorthin).
+export type QueueStatus = 'wartend' | 'läuft' | 'fertig' | 'fehler' | 'gespeichert' | 'abgelegt' | 'abgebrochen' | 'übernommen'
 
 // Ein Eintrag. Was die Seite dazu führt (`X`), steht getrennt in `data`: Es kommt erst mit der
 // Antwort und ist deshalb optional, und es kann die Felder der Warteschlange nicht überdecken.
@@ -85,6 +87,13 @@ export function useEvaluationQueue<R, X extends object>(options: QueueOptions<R,
     setQueue((q) => q.filter((x) => x.id !== id))
   }
   const cancel = (id: number) => abortRef.current.get(id)?.abort()
+  // Einen gespeicherten Eintrag aus der Liste nehmen: Der Beleg bleibt im Belegordner, der Browser vergisst die Datei.
+  function takeOff(id: number) {
+    filesRef.current.delete(id)
+    storedRef.current.delete(id)
+    keptRef.current.delete(id)
+    setQueue((q) => q.map((x) => (x.id === id && x.status === 'gespeichert' ? { ...x, status: 'abgelegt' } : x)))
+  }
   // Ein gespeicherter, nicht ausgewerteter Beleg noch einmal: Die Datei bleibt im Browser (ein PDF liest er vor der
   // Auswertung selbst), an den Server geht nur ihr Name im Belegordner.
   const retry = (id: number) =>
@@ -156,5 +165,5 @@ export function useEvaluationQueue<R, X extends object>(options: QueueOptions<R,
     })()
   }, [queue])
 
-  return { queue, patchEntry, setQueue, addFiles, addStored, remove, cancel, retry }
+  return { queue, patchEntry, setQueue, addFiles, addStored, remove, cancel, retry, takeOff }
 }
