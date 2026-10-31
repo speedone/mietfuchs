@@ -30,7 +30,9 @@ import { navFor, tabLabel, type Tab } from './nav'
 import MobileNav, { MOBILE_QUERY, useMediaQuery } from './components/MobileNav'
 import Heizkosten from './pages/Heizkosten'
 import { TermHelp } from './components/Term'
+import GuideThread from './components/GuideThread'
 import type { TermId } from '../../shared/glossary.ts'
+import { GUIDES, type GuideId } from '../../shared/guides.ts'
 import Muster from './pages/Muster'
 import { EvaluationQueueProvider, useEvaluationQueueStore } from './evaluationQueue'
 
@@ -129,7 +131,12 @@ function Shell() {
   // Der Eintrag, den „Hier beheben →“ auf der Zielseite öffnen soll (#142). Jeder andere
   // Seitenwechsel löscht ihn, und die Seite meldet, wenn sie ihn geöffnet hat.
   const [focus, setFocus] = useState<NoticeSubject | null>(null)
-  const setTab = useCallback((t: Tab, f: NoticeSubject | null = null) => { setFocus(f); setTabState(t) }, [])
+  // Der Faden einer Anleitung (#488, PR 2): Anleitung und Schritt, deren Seite gerade offen ist. Jeder Seitenwechsel
+  // setzt ihn neu, ein gewöhnlicher also auf keinen; nur der Sprung aus der Anleitung und „Nächster Schritt“ geben ihn
+  // mit. In einem Zug mit der Seite gesetzt, damit die Leiste zwischen zwei Schritten nicht kurz verschwindet und den
+  // Fokus verliert.
+  const [thread, setThread] = useState<{ guide: GuideId; step: number } | null>(null)
+  const setTab = useCallback((t: Tab, f: NoticeSubject | null = null, th: { guide: GuideId; step: number } | null = null) => { setFocus(f); setTabState(t); setThread(th) }, [])
   const clearFocus = useCallback(() => setFocus(null), [])
   const [stopped, setStopped] = useState(false)
   // Belege aus dem Posteingang, die die Schnellerfassung auswerten soll (#170)
@@ -172,7 +179,7 @@ function Shell() {
   // still weg. Das gilt für die Navigation (Seitenleiste, Menüblatt, untere Leiste) wie für Sprünge aus
   // einer Seite („Hier beheben →“, „Position öffnen“, „Weiter prüfen“, die Anleitung zum Update).
   // Startfokus auf „Abbrechen“. Ergibt, ob gewechselt wurde.
-  const navigate = useCallback(async (t: Tab, f: NoticeSubject | null = null): Promise<boolean> => {
+  const navigate = useCallback(async (t: Tab, f: NoticeSubject | null = null, th: { guide: GuideId; step: number } | null = null): Promise<boolean> => {
     if (t !== tab && hasOpenForm()) {
       const ok = await confirmLeave({
         title: 'Ungespeicherte Änderungen verwerfen?',
@@ -183,9 +190,34 @@ function Shell() {
       })
       if (!ok) return false
     }
-    setTab(t, f)
+    setTab(t, f, th)
     return true
   }, [tab, hasOpenForm, confirmLeave, setTab])
+  // „Zu {Seite} →“ in einer Anleitung und „Nächster Schritt“ im Faden: auf die Seite des Schritts, mit dem Faden. Eine
+  // neue Seite beginnt oben, nicht auf der Höhe, auf der die Anleitung stand.
+  const followStep = useCallback(async (guide: GuideId, step: number): Promise<boolean> => {
+    const page = GUIDES[guide].steps[step]?.page
+    if (!page) return false
+    const done = await navigate(page, null, { guide, step })
+    if (done && page !== tab) window.scrollTo(0, 0)
+    return done
+  }, [navigate, tab])
+  // „Zurück zur Anleitung“: in die Hilfe, die die Anleitung öffnet und den Fokus auf den Schritt setzt.
+  const [helpGuide, setHelpGuide] = useState<{ id: GuideId; step: number; seq: number } | null>(null)
+  const backToGuide = useCallback(() => {
+    if (!thread) return
+    const { guide, step } = thread
+    void navigate('hilfe').then((done) => { if (done) setHelpGuide((h) => ({ id: guide, step, seq: (h?.seq ?? 0) + 1 })) })
+  }, [navigate, thread])
+  // „Leiste schließen“: Der Fokus lag in der Leiste und geht an den Titel der Seite, nicht ins Leere.
+  const closeThread = useCallback(() => {
+    setThread(null)
+    const title = document.querySelector<HTMLElement>('main h1')
+    if (title) {
+      title.tabIndex = -1
+      title.focus()
+    }
+  }, [])
   // „Mehr in ‚Hilfe & Begriffe‘ →“ aus einer Begriffserklärung (#346, Schritt 6): über `navigate`, also mit der
   // Rückfrage bei offenem Formular; die Hilfe rollt dann zum Begriff.
   const [helpTerm, setHelpTerm] = useState<{ id: TermId; seq: number } | null>(null)
@@ -404,12 +436,16 @@ function Shell() {
         )}
         {tab === 'heizkosten' && <Heizkosten units={units} tenancies={tenancies} onTenanciesChanged={reload} onOpenReceipt={openReceipt} onOpenAiSettings={openAiSettings} />}
         {tab === 'steuer' && <Steuer settings={settings} onNavigate={(t) => void navigate(t, null)} />}
-        {tab === 'hilfe' && <Hilfe onNavigate={(t) => void navigate(t)} focusTerm={helpTerm} onFocusTermDone={() => setHelpTerm(null)} />}
+        {tab === 'hilfe' && <Hilfe onFollow={(g, step) => void followStep(g, step)} focusTerm={helpTerm} onFocusTermDone={() => setHelpTerm(null)}
+          openGuide={helpGuide} onOpenGuideDone={() => setHelpGuide(null)} />}
         {tab === 'verlauf' && <Verlauf />}
         {tab === 'einstellungen' && settings && (
           <Einstellungen settings={settings} reload={reload} update={update} onNavigate={(t) => void navigate(t)} />
         )}
         </Fragment>
+        {/* Außerhalb der je Objekt und Jahr neu aufgestellten Seite: Die Leiste bleibt zwischen zwei Schritten dieselbe
+            und behält den Fokus auf „Nächster Schritt“. */}
+        {thread && <GuideThread guide={thread.guide} step={thread.step} onNext={(step) => followStep(thread.guide, step)} onBack={backToGuide} onClose={closeThread} />}
       </main>
     </TermHelp.Provider>
   )

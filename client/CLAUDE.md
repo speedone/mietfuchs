@@ -303,6 +303,13 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   Themen des Lexikons (`topic`, Pflichtfeld; Beschriftungen in helpView.ts). Anleitung und Begriffsliste sind eigene
   Ansichten im Zustand der Seite (kein Router), Fokus auf ihre Überschrift, beim Zurück auf den Auslöser; „Zurück“ geht
   den Weg rückwärts (`trail`), auch aus dem Begriff zurück in die Anleitung, aus der man gesprungen ist.
+  Die Anleitung (PR 2): Pfad statt Seitenkopf, `h1` ist ihr Titel, Abschnitte als `section` mit `h2` (`GUIDE_SECTIONS`),
+  ab 52rem Inhaltsbreite die Inhaltsleiste (`guide-layout`/`guide-toc` in tw.css, Container-Abfrage). Begriffe sind Knöpfe
+  auf den Begriff (kein Popover). **Faden** ([GuideThread.tsx](src/components/GuideThread.tsx)): „Zu {Seite} →“ meldet
+  `onFollow(anleitung, schritt)`, die App springt über `navigate` mit dem Faden als drittem Argument; jeder andere
+  Seitenwechsel setzt ihn auf `null`. Die Leiste steht in `main` hinter der Seite, `sticky` unten (am Seitenende im
+  Fluss, verdeckt also keinen Knopf), am Handy über der unteren Leiste. „Zurück zur Anleitung“ kommt als `openGuide`
+  in die Hilfe (Fokus auf `#schritt-N`), wie `focusTerm`.
 
 ## Formulare und Meldungen
 

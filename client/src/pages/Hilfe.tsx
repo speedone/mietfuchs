@@ -1,19 +1,20 @@
 // Die Seite „Hilfe & Begriffe“ (#488): eine Startansicht mit großer Suche, den Anleitungen je Vermietungsart (#164) als
-// Kacheln in drei Gruppen und den Themen des Lexikons (#113). Eine Anleitung öffnet sich als eigene Ansicht, ein Thema
-// als Liste seiner Begriffe; „Zurück zu Hilfe & Begriffe“ führt zur Startansicht. Kein Router: Die Ansicht ist Zustand
-// der Seite und beginnt bei jedem Seitenwechsel wieder auf der Startansicht. Entscheidungen (Suche, Rangfolge,
-// Ausschnitt, Gruppen) stehen in helpView.ts.
+// Kacheln in drei Gruppen und den Themen des Lexikons (#113). Eine Anleitung öffnet sich als eigene Ansicht mit Pfad und
+// Inhaltsleiste (PR 2), ein Thema als Liste seiner Begriffe; „Zurück zu Hilfe & Begriffe“ bzw. der Pfad führt zur
+// Startansicht. Kein Router: Die Ansicht ist Zustand der Seite und beginnt bei jedem Seitenwechsel wieder auf der
+// Startansicht. Entscheidungen (Suche, Rangfolge, Ausschnitt, Gruppen, Abschnitte) stehen in helpView.ts. „Zu {Seite} →“
+// meldet Anleitung und Schritt an die App (`onFollow`), die dort die Leiste des Fadens zeigt (components/GuideThread.tsx);
+// „Zurück zur Anleitung“ kommt als `openGuide` zurück.
 
 import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import PageHeader from '../components/PageHeader'
-import Term from '../components/Term'
 import { sortedTerms, termLetters } from '../glossaryView'
 import { allGuides, type GuideEntry } from '../guideView'
-import { firstSentence, GUIDE_GROUP_LABELS, guideGroups, POPULAR_SEARCHES, resultCountText, searchHelp, TERM_TOPIC_LABELS, termsOfTopic, topicCounts, type GuideHit, type Segment, type TermHit } from '../helpView'
+import { firstSentence, GUIDE_GROUP_LABELS, GUIDE_SECTIONS, guideGroups, POPULAR_SEARCHES, relatedGuides, resultCountText, searchHelp, TERM_TOPIC_LABELS, termsOfTopic, topicCounts, type GuideHit, type GuideSection, type Segment, type TermHit } from '../helpView'
 import { pageLabel } from '../nav'
 import { countOf, plural } from '../../../shared/wording.ts'
-import type { GuideId, GuidePage } from '../../../shared/guides.ts'
-import type { TermId, TermTopic } from '../../../shared/glossary.ts'
+import type { GuideId } from '../../../shared/guides.ts'
+import { GLOSSARY, type TermId, type TermTopic } from '../../../shared/glossary.ts'
 
 const ISSUE_URL = 'https://github.com/speedone/mietfuchs/issues/'
 
@@ -26,8 +27,15 @@ const SEARCH = 'search'
 // `focusTerm`: der Begriff, zu dem „Mehr in ‚Hilfe & Begriffe‘ →“ aus einer Erklärung führt (#346, Schritt 6). Die
 // Seite zeigt dann alle Begriffe, klappt ihn auf und setzt den Fokus darauf. `seq` zählt jeden Sprung. Danach meldet sie
 // `onFocusTermDone`, und die App vergisst den Sprung: Ein späterer gewöhnlicher Wechsel zur Hilfe beginnt oben
-// (Durchsicht S1).
-export default function Hilfe({ onNavigate, focusTerm, onFocusTermDone }: { onNavigate: (page: GuidePage) => void; focusTerm?: { id: TermId; seq: number } | null; onFocusTermDone?: () => void }) {
+// (Durchsicht S1). `openGuide` ist dasselbe für „Zurück zur Anleitung“ aus der Leiste des Fadens: die Anleitung öffnen
+// und den Fokus auf den Schritt setzen, von dem man kam.
+export default function Hilfe({ onFollow, focusTerm, onFocusTermDone, openGuide: guideRequest, onOpenGuideDone }: {
+  onFollow: (guide: GuideId, step: number) => void
+  focusTerm?: { id: TermId; seq: number } | null
+  onFocusTermDone?: () => void
+  openGuide?: { id: GuideId; step: number; seq: number } | null
+  onOpenGuideDone?: () => void
+}) {
   const [view, setView] = useState<View>({ kind: 'home' })
   // Der Weg zurück: je geöffnete Ansicht die vorige und ihr Auslöser (`data-help-key`, das Suchfeld oder, bei einer
   // Anleitung, ihre Überschrift). So führt „Zurück“ nach einem Sprung aus einer Anleitung zu einem Begriff wieder in die
@@ -65,11 +73,26 @@ export default function Hilfe({ onNavigate, focusTerm, onFocusTermDone }: { onNa
     const last = trail.at(-1) ?? { view: { kind: 'home' } as View, key: SEARCH }
     setTrail((t) => t.slice(0, -1))
     show(last.view, () => {
-      if (last.view.kind !== 'home') return focusHeading()
       const target = last.key === SEARCH || last.key === null ? null : document.querySelector<HTMLElement>(`[data-help-key="${last.key}"]`)
-      ;(target ?? searchRef.current)?.focus()
+      if (target) return target.focus()
+      if (last.view.kind !== 'home') return focusHeading()
+      searchRef.current?.focus()
     })
   }
+  // Der Pfad „Hilfe & Begriffe“: zur Startansicht, Fokus auf die Kachel `key` (sonst die Suche).
+  const home = (key: string) => {
+    setTrail([])
+    show({ kind: 'home' }, () => (document.querySelector<HTMLElement>(`[data-help-key="${key}"]`) ?? searchRef.current)?.focus())
+  }
+
+  useEffect(() => {
+    if (!guideRequest) return
+    setTrail([])
+    show({ kind: 'guide', id: guideRequest.id }, () => {
+      focusStep(guideRequest.step)
+      onOpenGuideDone?.()
+    })
+  }, [guideRequest])
 
   useEffect(() => {
     if (!focusTerm) return
@@ -130,28 +153,21 @@ export default function Hilfe({ onNavigate, focusTerm, onFocusTermDone }: { onNa
     }
   }
 
-  // Ein Sprung beginnt oben auf der Zielseite, nicht auf der Höhe, auf der die Anleitung stand.
-  const jump = (page: GuidePage) => {
-    window.scrollTo(0, 0)
-    onNavigate(page)
-  }
-
   const backButton = <button type="button" className="btn ghost small mb-4" onClick={back}>← Zurück zu Hilfe & Begriffe</button>
 
   if (view.kind === 'guide') {
     const g = allGuides().find((x) => x.id === view.id)
+    if (!g) return null
     return (
       <>
-        <PageHeader context="none" title="Hilfe & Begriffe" />
-        {backButton}
-        {g && (
-          <>
-            <h2 id="hilfe-ansicht" tabIndex={-1} className="mt-0 mb-4">{g.title}</h2>
-            <div className="card guide" id={`anleitung-${g.id}`}>
-              <GuideBody guide={g} onNavigate={jump} />
-            </div>
-          </>
-        )}
+        {/* Statt des Seitenkopfs der Pfad und der Titel der Anleitung; „Hilfe & Begriffe“ führt zur Startansicht. */}
+        <nav aria-label="Pfad" className="flex flex-wrap items-center gap-2 mb-2 text-s text-muted">
+          <button type="button" className="btn ghost small" onClick={() => home(`guide:${g.id}`)}>Hilfe & Begriffe</button>
+          <span aria-hidden="true">›</span>
+          <span>Anleitungen</span>
+        </nav>
+        <h1 id="hilfe-ansicht" tabIndex={-1} className="mb-6">{g.title}</h1>
+        <GuideView guide={g} onFollow={(step) => onFollow(g.id, step)} onOpenTerm={(id) => openTerm(id, `term:${id}`)} onOpenGuide={(id) => openGuide(id, `guide:${id}`)} />
       </>
     )
   }
@@ -233,15 +249,7 @@ export default function Hilfe({ onNavigate, focusTerm, onFocusTermDone }: { onNa
             <Fragment key={group}>
               <h3 className="mt-4 mb-2 text-xs text-muted font-bold uppercase tracking-wide">{GUIDE_GROUP_LABELS[group]}</h3>
               <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 list-none m-0 p-0">
-                {guides.map((g) => (
-                  <li key={g.id} className="flex">
-                    <button type="button" data-help-key={`guide:${g.id}`} onClick={() => openGuide(g.id, `guide:${g.id}`)} className="btn secondary flex w-full flex-col items-start justify-start gap-1 p-4 rounded-l text-left font-normal leading-snug">
-                      <span className="font-strong text-base text-text">{g.title}</span>
-                      <span className="text-s text-muted line-clamp-2">{firstSentence(g.applies)}</span>
-                      <span className="text-xs text-muted mt-auto pt-1">{countOf(g.steps.length, 'Schritt', 'Schritte')}</span>
-                    </button>
-                  </li>
-                ))}
+                {guides.map((g) => <GuideTile key={g.id} guide={g} onOpen={() => openGuide(g.id, `guide:${g.id}`)} />)}
               </ul>
             </Fragment>
           ))}
@@ -347,62 +355,132 @@ function TermList({ topic }: { topic: TermTopic | null }) {
   )
 }
 
-// Eine Anleitung als eigene Ansicht. Inhaltsleiste und Faden-Leiste beim Sprung auf andere Seiten folgen (#488,
-// zweiter Schritt).
-function GuideBody({ guide: g, onNavigate }: { guide: GuideEntry; onNavigate: (page: GuidePage) => void }) {
+// Eine Anleitung als Kachel: Titel, erster Satz, Zahl der Schritte (Startansicht und „Ähnliche Anleitungen“).
+function GuideTile({ guide: g, onOpen }: { guide: GuideEntry; onOpen: () => void }) {
   return (
-    <>
-      <h3 className="mt-0">Trifft das auf Sie zu?</h3>
-      <p>{g.applies}</p>
+    <li className="flex">
+      <button type="button" data-help-key={`guide:${g.id}`} onClick={onOpen} className="btn secondary flex w-full flex-col items-start justify-start gap-1 p-4 rounded-l text-left font-normal leading-snug">
+        <span className="font-strong text-base text-text">{g.title}</span>
+        <span className="text-s text-muted line-clamp-2">{firstSentence(g.applies)}</span>
+        <span className="text-xs text-muted mt-auto pt-1">{countOf(g.steps.length, 'Schritt', 'Schritte')}</span>
+      </button>
+    </li>
+  )
+}
 
-      <h3>So legen Sie es an</h3>
-      <ol className="guide-steps">
-        {g.steps.map((s, i) => (
-          <li key={i}>
-            {s.text}
-            {s.page && (
-              <>
-                {' '}
-                <button type="button" className="btn small secondary guide-jump" onClick={() => s.page && onNavigate(s.page)}>
-                  Zu {pageLabel(s.page)} →
-                </button>
-              </>
-            )}
-          </li>
-        ))}
-      </ol>
+const sectionId = (s: GuideSection | 'zutreffen' | 'aehnlich') => `abschnitt-${s}`
 
-      <h3>Was Mietfuchs daraus macht</h3>
-      <ul>
-        {g.result.map((r, i) => <li key={i}>{r}</li>)}
-      </ul>
+// Den Schritt `step` (ab 0) in den Blick rollen und den Fokus darauf setzen: „Zurück zur Anleitung“ aus dem Faden.
+function focusStep(step: number) {
+  const el = document.getElementById(`schritt-${step + 1}`)
+  el?.scrollIntoView?.({ block: 'center' })
+  el?.focus({ preventScroll: true })
+}
 
-      <h3>Beispiel</h3>
-      <p>{g.example}</p>
+// Zum Abschnitt springen (Inhaltsleiste): rollen und den Fokus auf seine Überschrift, damit Tab dort weitergeht.
+function goToSection(id: GuideSection) {
+  const el = document.getElementById(sectionId(id))
+  el?.scrollIntoView?.({ block: 'start' })
+  el?.focus({ preventScroll: true })
+}
 
-      <h3>Worauf Sie achten müssen</h3>
-      <ul>
-        {g.caveats.map((c, i) => (
-          <li key={i}>
-            {c.text}
-            {c.norm && <> <span className="muted">(<span className="guide-norm">{c.norm}</span>)</span></>}
-          </li>
-        ))}
-      </ul>
+// Eine Überschrift eines Abschnitts, Sprungziel der Inhaltsleiste.
+function SectionHeading({ id, children }: { id: GuideSection | 'aehnlich'; children: string }) {
+  return <h2 id={sectionId(id)} tabIndex={-1} className="mt-0 mb-3 text-l">{children}</h2>
+}
 
-      <h3>Was Mietfuchs (noch) nicht kann</h3>
-      <ul>
-        {g.gaps.map((x, i) => (
-          <li key={i}>
-            {x.text}
-            {x.issue && <> <span className="muted">(geplant in <a href={`${ISSUE_URL}${x.issue}`} target="_blank" rel="noreferrer">#{x.issue}</a>)</span></>}
-          </li>
-        ))}
-      </ul>
+// Eine Anleitung als eigene Ansicht (#488, PR 2), Aufbau nach dem freigegebenen Vorschlag: „Trifft das auf Sie zu?“ als
+// hervorgehobener Kasten, die Schritte als nummerierte Karten mit dem Sprung auf ihre Seite, das Beispiel grün und die
+// Hinweise gelb getönt (Rechtsgrundlage als Marke), Begriffe als Knöpfe, darunter ähnliche Anleitungen derselben
+// Gruppe. Ab genügender Breite steht links eine Inhaltsleiste, die beim Rollen stehen bleibt (`guide-layout`,
+// `guide-toc` in tw.css); am Handy fehlt sie.
+function GuideView({ guide: g, onFollow, onOpenTerm, onOpenGuide }: { guide: GuideEntry; onFollow: (step: number) => void; onOpenTerm: (id: TermId) => void; onOpenGuide: (id: GuideId) => void }) {
+  const related = relatedGuides(g.id)
+  return (
+    <div className="@container">
+      <div className="guide-layout">
+        <nav aria-label="Inhalt" className="guide-toc no-print">
+          {GUIDE_SECTIONS.map((s) => (
+            <button key={s.id} type="button" onClick={() => goToSection(s.id)}>{s.label}</button>
+          ))}
+        </nav>
+        <div id={`anleitung-${g.id}`} className="flex flex-col gap-8 min-w-0 wrap-anywhere">
+          <section aria-labelledby={sectionId('zutreffen')} className="bg-accent-soft rounded-l px-4 py-3">
+            <h2 id={sectionId('zutreffen')} className="m-0 mb-1 text-xs font-bold uppercase tracking-wide text-accent-strong">Trifft das auf Sie zu?</h2>
+            <p className="m-0">{g.applies}</p>
+          </section>
 
-      <p className="guide-terms">
-        <em>Begriffe:</em> {g.terms.map((t, k) => <Fragment key={t}>{k > 0 && ', '}<Term id={t} /></Fragment>)}
-      </p>
-    </>
+          <section aria-labelledby={sectionId('schritte')}>
+            <SectionHeading id="schritte">So legen Sie es an</SectionHeading>
+            {/* role="list": Safari nimmt einer Liste ohne Aufzählungszeichen sonst die Rolle. */}
+            <ol role="list" aria-labelledby={sectionId('schritte')} className="list-none m-0 p-0 flex flex-col gap-3">
+              {g.steps.map((s, i) => (
+                <li key={i} id={`schritt-${i + 1}`} tabIndex={-1} className="flex gap-3 bg-card border border-line rounded-l p-4 shadow-1 focus:border-accent">
+                  <span className="flex-none flex items-center justify-center w-7 h-7 rounded-full bg-primary text-primary-text text-s font-bold tabular-nums">{i + 1}</span>
+                  <div className="min-w-0 flex flex-col items-start gap-2">
+                    <p className="m-0">{s.text}</p>
+                    {s.page && <button type="button" className="btn small secondary" onClick={() => onFollow(i)}>Zu {pageLabel(s.page)} →</button>}
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </section>
+
+          <section aria-labelledby={sectionId('ergebnis')}>
+            <SectionHeading id="ergebnis">Was Mietfuchs daraus macht</SectionHeading>
+            <ul className="m-0 pl-6 flex flex-col gap-2">
+              {g.result.map((r, i) => <li key={i}>{r}</li>)}
+            </ul>
+          </section>
+
+          <section aria-labelledby={sectionId('beispiel')} className="bg-green-soft rounded-l px-4 py-3">
+            <h2 id={sectionId('beispiel')} tabIndex={-1} className="m-0 mb-1 text-xs font-bold uppercase tracking-wide text-green">Beispiel</h2>
+            <p className="m-0">{g.example}</p>
+          </section>
+
+          <section aria-labelledby={sectionId('achtung')}>
+            <SectionHeading id="achtung">Worauf Sie achten müssen</SectionHeading>
+            <ul role="list" className="list-none m-0 p-0 flex flex-col gap-2">
+              {g.caveats.map((c, i) => (
+                <li key={i} className="flex flex-col items-start gap-2 bg-amber-soft border border-notice-border rounded-l px-4 py-3">
+                  <span>{c.text}</span>
+                  {c.norm && <span><span className="sr-only">Rechtsgrundlage: </span><span className="guide-norm inline-block text-xs text-muted bg-chip rounded-s px-2 py-0.5">{c.norm}</span></span>}
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <section aria-labelledby={sectionId('luecken')}>
+            <SectionHeading id="luecken">Was Mietfuchs (noch) nicht kann</SectionHeading>
+            <ul className="m-0 pl-6 flex flex-col gap-2">
+              {g.gaps.map((x, i) => (
+                <li key={i}>
+                  {x.text}
+                  {x.issue && <> <span className="muted">(geplant in <a href={`${ISSUE_URL}${x.issue}`} target="_blank" rel="noreferrer">#{x.issue}</a>)</span></>}
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <section aria-labelledby={sectionId('begriffe')}>
+            <SectionHeading id="begriffe">Begriffe</SectionHeading>
+            <ul role="list" className="list-none m-0 p-0 flex flex-wrap gap-2">
+              {g.terms.map((t) => (
+                <li key={t}><button type="button" data-help-key={`term:${t}`} className="btn secondary small" onClick={() => onOpenTerm(t)}>{GLOSSARY[t].title}</button></li>
+              ))}
+            </ul>
+          </section>
+
+          {related.length > 0 && (
+            <section aria-labelledby={sectionId('aehnlich')} className="no-print">
+              <SectionHeading id="aehnlich">Ähnliche Anleitungen</SectionHeading>
+              <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 list-none m-0 p-0">
+                {related.map((r) => <GuideTile key={r.id} guide={r} onOpen={() => onOpenGuide(r.id)} />)}
+              </ul>
+            </section>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }

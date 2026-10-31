@@ -7,7 +7,6 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { Property, Tenancy, Unit } from './types'
 import App from './App'
-import { GUIDES } from '../../shared/guides.ts'
 import { MOBILE_QUERY } from './components/MobileNav'
 import { PropertyProvider, useHasOpenForm } from './property'
 import { UIProvider } from './components/feedback'
@@ -19,13 +18,15 @@ import type { HeatingPeriodView, HeatingPlant } from './types'
 const PROPERTIES: Property[] = [{ id: 'objekt-1', name: 'Lindenweg 12', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }]
 const UNITS: Unit[] = [{ id: 'u-a', propertyId: 'objekt-1', name: 'DG', areaM2: 60, participates: true }]
 const TENANCIES: Tenancy[] = [{ id: 't-a', unitId: 'u-a', tenantName: 'Müller', persons: 1, personHistory: [{ from: '2020-01-01', persons: 1 }], start: '2020-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [] }]
-const ledger = { year: 2025, rows: [{ tenancyId: 't-a', tenantName: 'Müller', unitName: 'DG', months: [], sollYearCents: 0, paidYearCents: 0, balanceCents: 0 }], totals: { sollCents: 0, paidCents: 0, openCents: 0 } }
+let ledgerSoll = 0
+const ledger = () => ({ year: 2025, rows: [{ tenancyId: 't-a', tenantName: 'Müller', unitName: 'DG', months: [], sollYearCents: ledgerSoll, paidYearCents: 0, balanceCents: 0 }], totals: { sollCents: 0, paidCents: 0, openCents: 0 } })
 
 let mobile = false
 let posted: string[] = []
 beforeEach(() => {
   mobile = false
   posted = []
+  ledgerSoll = 0
   try { localStorage.clear() } catch { /* ohne Speicher nichts zu räumen */ }
   vi.stubGlobal('matchMedia', (query: string) => ({
     get matches() { return query === MOBILE_QUERY ? mobile : false },
@@ -40,7 +41,7 @@ beforeEach(() => {
     if (path === '/api/settings') return json({ landlordName: '', iban: '', paymentDeadlineDays: 30 })
     if (path === '/api/units') return json(UNITS)
     if (path === '/api/tenancies') return json(TENANCIES)
-    if (path.startsWith('/api/rentledger/')) return json(ledger)
+    if (path.startsWith('/api/rentledger/')) return json(ledger())
     // Das Cockpit bekommt keine Antwort; hier zählt nur die Navigation.
     if (path.startsWith('/api/settlement/')) return new Promise<Response>(() => {})
     if (path === '/healthz') return json({ ok: true })
@@ -220,18 +221,19 @@ test('„Hier beheben →“ mit ungespeicherter Änderung fragt; Abbrechen blei
 // Durchsicht S1 (#346, Schritt 6): „Mehr in ‚Hilfe & Begriffe‘ →“ springt einmal zum Begriff. Ein späterer gewöhnlicher
 // Wechsel zur Hilfe beginnt oben, ohne Fokus auf dem alten Begriff.
 test('Sprung aus einer Begriffserklärung gilt einmal; danach öffnet die Hilfe ohne Fokus auf dem Begriff', async () => {
+  // Die Erklärung „Tilgungsreihenfolge“ im Mietkonto steht nur bei einer Sollmiete (seit #488 PR 2 sind die Begriffe
+  // einer Anleitung Knöpfe, die den Begriff unmittelbar öffnen)
+  ledgerSoll = 100
   render(<App />)
   const nav = await screen.findByRole('navigation', { name: 'Hauptnavigation' })
-  fireEvent.click(within(nav).getByRole('button', { name: /Hilfe & Begriffe/ }))
-  fireEvent.click((await screen.findByText(GUIDES.granny.title)).closest('button') ?? (() => { throw new Error('Anleitung fehlt') })())
-  const guide = await waitFor(() => document.getElementById('anleitung-granny') ?? (() => { throw new Error('Anleitung fehlt') })())
-  fireEvent.click(within(guide).getByRole('button', { name: 'Einliegerwohnung' }))
+  fireEvent.click(within(nav).getByRole('button', { name: /Mietkonto/ }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Tilgungsreihenfolge' }, { timeout: 5000 }))
   fireEvent.click(screen.getByRole('link', { name: 'Mehr in „Hilfe & Begriffe“ →' }))
-  await waitFor(() => expect(document.activeElement?.closest('details')?.id).toBe('begriff-granny'))
+  await waitFor(() => expect(document.activeElement?.closest('details')?.id).toBe('begriff-paymentOrder'))
   fireEvent.click(within(sidebar()).getByRole('button', { name: /Cockpit/ }))
   await waitFor(() => expect(within(sidebar()).getByRole('button', { name: /Cockpit/ }).getAttribute('aria-current')).toBe('page'))
   fireEvent.click(within(sidebar()).getByRole('button', { name: /Hilfe & Begriffe/ }))
   await screen.findByRole('heading', { name: 'Hilfe & Begriffe', level: 1 })
   await new Promise((r) => setTimeout(r, 30))
-  expect(document.activeElement?.closest('details')?.id).not.toBe('begriff-granny')
+  expect(document.activeElement?.closest('details')?.id).not.toBe('begriff-paymentOrder')
 })

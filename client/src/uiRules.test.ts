@@ -269,7 +269,7 @@ test('kleine Knöpfe haben am Handy die volle Tippfläche', () => {
 // Die heutigen Namensgleichheiten bleiben, weil tw.css sie aus der Suche nimmt (`@source not
 // inline`); jede von ihnen steht deshalb auch dort.
 const LEGACY_UTILITY_NAMES = new Set(['sr-only', 'grow', 'grow-2'])
-const INDEX_CSS_MAX_LINES = 812
+const INDEX_CSS_MAX_LINES = 809
 test('S20: keine neue Klasse und keine Animation in index.css mit einem Namen aus Tailwind, und index.css wächst nicht', () => {
   expect(definedClasses.size).toBeGreaterThan(100)
   const clashes = tailwindUtilities(definedClasses)
