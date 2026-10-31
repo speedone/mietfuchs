@@ -6,7 +6,8 @@
 // `UNCOVERED_ROUTES`. Der Test prüft beides am Ende eines Laufs gegen die Routen, die wirklich eine Gruppe ergeben
 // haben (sie stehen im Verlauf). Die Ausnahmeliste soll nur kürzer werden (`UNCOVERED_MAX`).
 import type { Server } from './api.ts'
-import { allowsSpread } from '../../shared/spread.ts'
+import { allowsSpread, spreadRestQuestions } from '../../shared/spread.ts'
+import type { CostItem, Property } from '../../shared/types.ts'
 
 export type Rng = () => number
 
@@ -178,14 +179,20 @@ export const STEPS: readonly Step[] = [
     },
   },
   // Mit den Kopfangaben der Anlage V (#96 PR 2), gesetzt und geleert; abgeleitet aus der Hausnummer, ohne weiteren Zug
-  // aus `rng` (siehe „Mietverhältnis ändern“). Ebenso das Jahr des vorzeitigen Endes nach § 82b Abs. 2 EStDV (#262), bestätigt
-  // (`confirmSpread`), denn mit verteilten Positionen fragte der Server sonst nach und speicherte nichts (#262 PR 4).
-  { name: 'Objekt ändern', routes: ['PUT /api/properties/:id'], run: ({ s, rng }) => {
+  // aus `rng` (siehe „Mietverhältnis ändern“). Ebenso das Jahr des vorzeitigen Endes nach § 82b Abs. 2 EStDV (#262).
+  { name: 'Objekt ändern', routes: ['PUT /api/properties/:id'], run: async ({ s, rng }) => {
     const n = int(rng, 1, 40)
     const header = n % 3 === 0
       ? { groundTaxFileNumber: `2141/${100 + n}/45678`, ownershipTransferOn: `20${10 + n}-07-01`, completedOn: `19${50 + n}-11-30` }
       : n % 3 === 1 ? { groundTaxFileNumber: null, ownershipTransferOn: null, completedOn: null } : {}
-    return send(s, 'PUT', `/api/properties/${P}`, { name: `Lindenweg ${n}`, ...header, spreadRestYear: n % 2 === 0 ? null : 2025 + (n % 6), confirmSpread: true })
+    // Bestätigt wird nur, wenn die Rückfrage etwas meldet (Durchsicht K4); sonst muss der Server ohne Bestätigung speichern.
+    const rest = n % 2 === 0 ? null : 2025 + (n % 6)
+    const before = (await get<Property[]>(s, '/api/properties', [])).find((p) => p.id === P)?.spreadRestYear ?? null
+    const items = await get<CostItem[]>(s, `/api/costItems${Q}`, [])
+    const asks = spreadRestQuestions(before, rest, items.filter((c) => c.spreadYears != null)).length > 0
+    const res = await send(s, 'PUT', `/api/properties/${P}`, { name: `Lindenweg ${n}`, ...header, spreadRestYear: rest, ...(asks ? { confirmSpread: true } : {}) })
+    if (!asks && res.status !== 200) throw new Error(`Objekt ändern ohne Rückfrage: ${res.status} ${await res.clone().text()}`)
+    return res
   } },
   {
     name: 'Abrechnungszeitraum ändern', routes: ['PUT /api/properties/:id/period'],
