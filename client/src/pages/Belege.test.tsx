@@ -1006,7 +1006,40 @@ test('Ordner: die Suche findet über alle Objekte und Jahre und nennt Objekt und
   const inbox = screen.getByRole('heading', { name: 'Im Eingang (1)' }).closest('section') as HTMLElement
   expect(inbox.textContent).toContain(`Ahornweg · ${YEAR - 1}`)
   fireEvent.click(within(inbox).getByRole('button', { name: 'Im Eingang zeigen (stadtkasse-mahnung.pdf)' }))
+  // Durchsicht M1: Der Beleg gehört einem anderen Objekt und Jahr; die Seite wechselt dorthin und zeigt ihn
+  await waitFor(() => expect(context()).toBe(`Ahornweg · Abrechnungsjahr ${YEAR - 1}`))
+  await waitFor(() => expect(document.activeElement?.closest('li.receipt-card')?.getAttribute('data-file')).toBe('8_stadtkasse-mahnung.pdf'))
   expect(screen.getByRole('tab', { name: /^Eingang/ }).getAttribute('aria-selected')).toBe('true')
+})
+
+// Durchsicht M1: Ein Sprung zu einem Beleg ohne Position eines anderen Objekts (etwa „Beleg zeigen“ aus Kosten) wechselt
+// erst dorthin; einen Beleg, den es nicht gibt, nennt die Seite, statt still nichts zu tun.
+test('Sprung zu einem Beleg ohne Position eines anderen Objekts: erst dorthin wechseln, dann zeigen', async () => {
+  extraUploads = [{ ...up('8_anderswo.pdf'), propertyId: 'p2', year: YEAR }]
+  const onFocusDone = vi.fn()
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <Belege {...BASE} view={undefined} renderThumb={() => Promise.resolve('')} focusFile="8_anderswo.pdf" onFocusDone={onFocusDone} />
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  await waitFor(() => expect(context()).toBe(`Ahornweg · Abrechnungsjahr ${YEAR}`))
+  await waitFor(() => expect(onFocusDone).toHaveBeenCalledTimes(1))
+  expect(document.activeElement?.closest('li.receipt-card')?.getAttribute('data-file')).toBe('8_anderswo.pdf')
+})
+
+test('Sprung zu einem Beleg, den es nicht gibt: eine Meldung statt nichts', async () => {
+  const onFocusDone = vi.fn()
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <Belege {...BASE} view={undefined} renderThumb={() => Promise.resolve('')} focusFile="0_weg.pdf" onFocusDone={onFocusDone} />
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  await waitFor(() => expect(onFocusDone).toHaveBeenCalledTimes(1))
+  expect(await screen.findByText(/Diesen Beleg gibt es nicht mehr/)).toBeTruthy()
 })
 
 // Ein Sprung zu einem Beleg (Fehler mit Ausweg, #487) geht in die Ansicht, in der er steht.

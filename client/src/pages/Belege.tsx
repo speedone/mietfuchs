@@ -6,7 +6,12 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import type { CostItem, NoticeSubject, Settings, Unit } from '../types'
 import { BELEGE_VIEWS, type BelegeView } from '../nav'
-import { receiptCards } from '../receipts'
+import { receiptCards, receiptName } from '../receipts'
+import { periodKeyOfYear, placeOf } from '../belegeView'
+import { useProperty } from '../property'
+import { usePeriod, useSwitchTo } from '../period'
+import { rulesOf } from '../../../shared/period.ts'
+import { NoticeBox } from '../components/Notice'
 import { useReceiptStock } from '../receiptStock'
 import { renderThumbnail } from '../pdfPreview'
 import type { TenantFolderPlan } from '../tenantFolder'
@@ -29,6 +34,8 @@ type Props = {
   // Ein Beleg, zu dem die Seite springen soll (Fehler mit Ausweg, #487). Ein Beleg ohne Position steht im Eingang, einer
   // an Positionen und ein Zählerfoto im Ordner.
   focusFile?: string | null
+  // Einen Beleg zeigen (App.tsx `openReceipt`): ein Sprung, der einen Wechsel von Objekt oder Jahr überlebt
+  onOpenReceipt?: (file: string) => void
   onFocusDone?: () => void
   // Für Tests: ohne pdf.js und ohne Download
   renderThumb?: typeof renderThumbnail
@@ -37,7 +44,7 @@ type Props = {
 
 const LABELS: Record<BelegeView, string> = { eingang: 'Eingang', ordner: 'Ordner' }
 
-export default function Belege({ units, settings, onNavigate, onOpenItem, onOpenAiSettings, onOpenMeters, view, onViewChange, focusFile, onFocusDone, renderThumb, makeTenantFolder }: Props) {
+export default function Belege({ units, settings, onNavigate, onOpenItem, onOpenAiSettings, onOpenMeters, view, onViewChange, focusFile, onOpenReceipt, onFocusDone, renderThumb, makeTenantFolder }: Props) {
   const stock = useReceiptStock()
   const [own, setOwn] = useState<BelegeView>(view ?? 'eingang')
   useEffect(() => { if (view) setOwn(view) }, [view])
@@ -45,22 +52,60 @@ export default function Belege({ units, settings, onNavigate, onOpenItem, onOpen
   const choose = (v: BelegeView) => { setOwn(v); onViewChange?.(v) }
   const [count, setCount] = useState(0)
 
-  // Wohin ein Sprung zu einem Beleg geht: ein Beleg ohne Position in den Eingang, sonst in den Ordner
+  // Wohin ein Sprung zu einem Beleg geht: ein Beleg ohne Position in den Eingang, sonst in den Ordner. Gehört ein Beleg ohne
+  // Position einem anderen Objekt oder Jahr, wird erst dorthin gewechselt, mit der Rückfrage bei offener Eingabe (Durchsicht
+  // M1); in App.tsx stellt das die Seite neu auf, und der Sprung (`focusFile`) geht danach weiter. Geht es nicht, sagt es die
+  // Seite, statt still nichts zu tun. Ein Sprung aus der eigenen Suche („Im Eingang zeigen“) geht über `onOpenReceipt`,
+  // damit er den Wechsel überlebt; ohne (Tests) hält die Seite ihn selbst.
+  const { property, properties } = useProperty()
+  const { year } = usePeriod()
+  const switchTo = useSwitchTo()
+  const [ownFile, setOwnFile] = useState<string | null>(null)
+  const target = focusFile ?? ownFile
   const [focus, setFocus] = useState<{ view: BelegeView; file: string } | null>(null)
+  const [notice, setNotice] = useState('')
   const cards = useMemo(() => receiptCards(stock.uploads, stock.costItems), [stock.uploads, stock.costItems])
   const routed = useRef<string | null>(null)
+  const switched = useRef<string | null>(null)
+  const [, setAgain] = useState(0)
   useEffect(() => {
-    if (!focusFile || !stock.loadedOnce || routed.current === focusFile) return
-    routed.current = focusFile
-    const card = cards.find((c) => c.upload.file === focusFile)
-    const to: BelegeView = card && card.items.length === 0 && card.upload.kind !== 'meterPhoto' ? 'eingang' : 'ordner'
+    if (!target) { routed.current = null; switched.current = null; return }
+    if (!stock.loadedOnce || routed.current === target) return
+    routed.current = target
+    const card = cards.find((c) => c.upload.file === target)
+    if (!card) {
+      setNotice('Diesen Beleg gibt es nicht mehr. Wurde er gelöscht, holt ihn der Verlauf aus dem Papierkorb zurück.')
+      focusDone()
+      return
+    }
+    const free = card.items.length === 0 && card.upload.kind !== 'meterPhoto'
+    if (free && switched.current !== target) {
+      const there = placeOf(card.upload, { propertyId: properties.length > 1 ? property?.id ?? null : null, year })
+      if (there) {
+        switched.current = target
+        const rules = rulesOf(properties.find((p) => p.id === (there.propertyId ?? property?.id)) ?? null)
+        void switchTo(there.propertyId ?? undefined, there.year === null ? undefined : periodKeyOfYear(rules, there.year)).then((ok) => {
+          // Nach dem Wechsel noch einmal leiten (in App.tsx ist die Seite dann neu aufgestellt)
+          if (ok) { routed.current = null; setAgain((n) => n + 1); return }
+          setNotice(`„${receiptName(card.upload)}“ gehört zu einem anderen Objekt oder Jahr; gewechselt wurde nicht.`)
+          focusDone()
+        })
+        return
+      }
+    }
+    setNotice('')
+    const to: BelegeView = free ? 'eingang' : 'ordner'
     choose(to)
-    setFocus({ view: to, file: focusFile })
+    setFocus({ view: to, file: target })
   })
-  const focusDone = () => {
+  function focusDone() {
     setFocus(null)
-    routed.current = null
+    setOwnFile(null)
     onFocusDone?.()
+  }
+  const showInInbox = (file: string) => {
+    if (onOpenReceipt) onOpenReceipt(file)
+    else { routed.current = null; switched.current = null; setOwnFile(file) }
   }
 
   // Reiter nach dem Muster der WAI-ARIA: Pfeiltasten wechseln, Tab geht in die Ansicht
@@ -82,6 +127,7 @@ export default function Belege({ units, settings, onNavigate, onOpenItem, onOpen
         title="Belege"
         subtitle="Neue Belege legen Sie im Eingang ab, Rechnungen und Zählerfotos gemischt. Erfasste stehen im Ordner, je Objekt und Jahr mit einem Register je Kostenart."
       />
+      {notice && <NoticeBox level="error" action={notice} />}
       <div role="tablist" aria-label="Ansicht der Belege" className="flex gap-1 border-b border-line mb-4 no-print" onKeyDown={onKey}>
         {BELEGE_VIEWS.map((v) => (
           <button key={v} ref={(el) => { tabs.current[v] = el }} type="button" role="tab" id={`belege-tab-${v}`} aria-controls={`belege-${v}`}
@@ -100,7 +146,7 @@ export default function Belege({ units, settings, onNavigate, onOpenItem, onOpen
       <div role="tabpanel" id="belege-ordner" aria-labelledby="belege-tab-ordner" data-view="ordner" hidden={shown !== 'ordner'}>
         <BelegeOrdner stock={stock} renderThumb={renderThumb} onOpenItem={onOpenItem} makeTenantFolder={makeTenantFolder}
           focusFile={focus?.view === 'ordner' ? focus.file : null} onFocusDone={focusDone}
-          onShowInInbox={(file) => { choose('eingang'); setFocus({ view: 'eingang', file }) }} />
+          onShowInInbox={showInInbox} />
       </div>
     </>
   )

@@ -7,7 +7,7 @@
 // nennt je eine Zeile mit dem Sprung dorthin.
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { AiStatus, AssessmentView, CostItem, NoticeSubject, Reading, Settings, Unit, UploadInfo, Meter } from '../types'
-import { calendarPeriod, periodContext, periodOfKey, periodsBetween, rulesOf, startYearOf } from '../../../shared/period.ts'
+import { calendarPeriod, periodContext, periodOfKey, rulesOf, startYearOf } from '../../../shared/period.ts'
 import { api, errorText, fmtEuro } from '../api'
 import { aiSummary } from '../aiForm'
 import { type KeyContext } from '../costForm'
@@ -30,7 +30,7 @@ import { useConfirm, useToast } from '../components/feedback'
 import { renderThumbnail } from '../pdfPreview'
 import { useFocusFirstNew } from '../focusNew'
 import { attachChoices, duplicateHints, inboxOf, inboxPage, INBOX_STEP, receiptCards, receiptName, type FolderFilter, type ReceiptCard, type ReceiptUpload } from '../receipts'
-import { aiMode, elsewhereGroups, SKIPPED_FILES, splitFiles, withoutPosition } from '../belegeView'
+import { aiMode, elsewhereGroups, periodKeyOfYear, SKIPPED_FILES, splitFiles, withoutPosition } from '../belegeView'
 import type { ReceiptStock } from '../receiptStock'
 import { AmountCheckBox, AttachPicker, InboxPlacement, PLACEMENT_FIRST, ReceiptItem, useAttach, useHighlight } from '../components/ReceiptParts'
 
@@ -485,7 +485,7 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
       card.scrollIntoView?.({ block: 'center' })
       ;(card.querySelector<HTMLElement>('a') ?? card).focus()
       setHighlighted(`f:${focusFile}`)
-    }
+    } else setError('Dieser Beleg steht nicht mehr im Eingang; vielleicht hängt er inzwischen an einer Position (Ordner).')
     onFocusDone?.()
   })
 
@@ -592,7 +592,7 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
   const jumpElsewhere = (g: { propertyId: string | null; year: number | null }) => {
     const there = g.propertyId ? properties.find((p) => p.id === g.propertyId) ?? property : property
     const y = g.year ?? year
-    const periodKey = periodsBetween(rulesOf(there ?? null), `${y}-01-01`, `${y}-12-31`).find((p) => p.from.startsWith(`${y}-`))?.key ?? calendarPeriod(y)
+    const periodKey = periodKeyOfYear(rulesOf(there ?? null), y)
     void switchTo(g.propertyId ?? undefined, g.year === null ? undefined : periodKey)
   }
 

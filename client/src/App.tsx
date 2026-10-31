@@ -448,7 +448,7 @@ function Shell() {
         {tab === 'zaehler' && <Zaehler units={units} focus={focus} onFocusDone={clearFocus} />}
         {tab === 'belege' && <Belege units={units} settings={settings} onNavigate={(t, f) => void navigate(t as NavTarget, f ?? null)}
           onOpenItem={(item) => void openCostItem(item)} onOpenAiSettings={openAiSettings} onOpenMeters={openMeters}
-          view={belegeView} onViewChange={setBelegeView} focusFile={receiptFocus} onFocusDone={() => setReceiptFocus(null)} />}
+          view={belegeView} onViewChange={setBelegeView} focusFile={receiptFocus} onOpenReceipt={openReceipt} onFocusDone={() => setReceiptFocus(null)} />}
         {tab === 'abrechnung' && (
           <Abrechnung settings={settings} units={units} tenancies={tenancies} reload={reload} onNavigate={(t, f) => void navigate(t, f ?? null)} focus={focus} onFocusDone={clearFocus} />
         )}

@@ -3,7 +3,8 @@
 import type { BelegeView } from './nav'
 import type { QueueEntry } from './evaluationQueue'
 import { isReceipt, type FolderFilter, type ReceiptCard } from './receipts'
-import type { AiStatus } from './types'
+import type { AiStatus, PeriodRules, UploadInfo } from './types'
+import { calendarPeriod, periodsBetween } from '../../shared/period.ts'
 
 // ---------- Zuletzt benutzte Ansicht ----------
 
@@ -96,4 +97,21 @@ export function hitPlace(card: ReceiptCard, nameOf: (propertyId: string) => stri
   const where = manyProperties ? (ids.length > 0 ? ids.map(nameOf).join(', ') : 'ohne Objekt') : null
   const when = years.length > 0 ? years.join(', ') : 'ohne Jahr'
   return [where, when].filter(Boolean).join(' · ')
+}
+
+// ---------- Sprünge ----------
+
+// Wohin ein Beleg ohne Position gehört, wenn nicht ins gewählte Objekt und Jahr: das andere Objekt und/oder Jahr, `null`
+// je Teil, der passt. `null` insgesamt: Er steht im gewählten (auch ohne eigene Angabe). `here.propertyId` null heißt:
+// nur ein Objekt, das Objekt zählt nicht.
+export function placeOf(u: Pick<UploadInfo, 'propertyId' | 'year'>, here: { propertyId: string | null; year: number }):
+  { propertyId: string | null; year: number | null } | null {
+  const propertyId = here.propertyId !== null && u.propertyId !== null && u.propertyId !== here.propertyId ? u.propertyId : null
+  const year = u.year !== null && u.year !== here.year ? u.year : null
+  return propertyId === null && year === null ? null : { propertyId, year }
+}
+
+// Der Zeitraum, der im Kalenderjahr beginnt (wie die Mappe des Ordners), beim Kalenderobjekt das Jahr selbst
+export function periodKeyOfYear(rules: PeriodRules, year: number): string {
+  return periodsBetween(rules, `${year}-01-01`, `${year}-12-31`).find((p) => p.from.startsWith(`${year}-`))?.key ?? calendarPeriod(year)
 }
