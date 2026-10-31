@@ -8,7 +8,9 @@ import type { LetterTemplates, Settings, Settlement, Statement, Tenancy } from '
 import { PropertyProvider } from '../property'
 import { UIProvider } from '../components/feedback'
 import Abrechnung from './Abrechnung'
-import { DEFAULT_LETTER_TEXTS, lettersOf } from '../../../shared/letter.ts'
+import { DEFAULT_LETTER_TEXTS, adjustFromFor, lettersOf } from '../../../shared/letter.ts'
+import { monthLabel } from '../monthText'
+import { localToday } from '../periodForm'
 import { calendarYearPeriod, settlementPeriod } from '../../../shared/period.ts'
 
 vi.setConfig({ testTimeout: 20000 })
@@ -40,7 +42,7 @@ beforeEach(() => {
     landlord: { rows: [], totalCents: 0 }, selfUsedShareCents: 0, totalCostsCents: 120000, warnings: [], notices: [], closed: null,
   }
   const property = { id: 'objekt-1', name: 'Lindenweg 12', kind: 'mfh' as const, address: 'Lindenweg 12, 12345 Musterstadt', landlordName: null, iban: null, paymentDeadlineDays: null }
-  settlement = { ...base, letters: lettersOf(base, { settings: SETTINGS, property, tenancies: TENANCIES, installation: {}, propertyTexts: {}, own: {}, asOf: '2026-10-30' }) }
+  settlement = { ...base, letters: lettersOf(base, { settings: SETTINGS, property, tenancies: TENANCIES, installation: {}, propertyTexts: {}, own: {}, asOf: `${YEAR + 1}-10-30` }) }
   puts = []
   ownLetters = {}
   templates = TEMPLATES
@@ -85,7 +87,7 @@ test('Seite 1 ist das Anschreiben, danach die Aufstellung mit Ergebniskasten und
   expect(text).toContain('Nebenkostenabrechnung')
   expect(text).toContain('Guten Tag Meier,')
   expect(text).toContain('Es ergibt sich eine Nachzahlung von 120,00 €. Bitte überweisen Sie den Betrag innerhalb von 14 Tagen nach Zugang dieser Abrechnung auf das Konto DE02 1203 0000 0000 2020 51 (Max Vermieter).')
-  expect(text).toContain('§ 560 Abs. 4 BGB ab Dezember 2026 auf 50,00 € angepasst')
+  expect(text).toContain(`§ 560 Abs. 4 BGB ab Dezember ${YEAR + 1} auf 50,00 € angepasst`)
   expect(text).toContain('Die zugrunde liegenden Belege können nach Terminvereinbarung eingesehen werden.')
   expect(text).toContain('Mit freundlichen Grüßen')
   expect(within(letter).getByText(/Lindenweg 12, 12345 Musterstadt/, { selector: '.letter-return' })).toBeTruthy()
@@ -228,7 +230,7 @@ test('S2: abgeschlossen nehmen Frist, Absender und Anschrift den eingefrorenen S
 
 test('K3: bei 0 € sagt die Tabelle „ausgeglichen“', async () => {
   settlement = { ...settlement, statements: [{ ...STATEMENT, balanceCents: 0, prepaymentCents: 60000 }] }
-  settlement = { ...settlement, letters: lettersOf(settlement, { settings: SETTINGS, property: null, tenancies: TENANCIES, installation: {}, propertyTexts: {}, own: {}, asOf: '2026-10-30' }) }
+  settlement = { ...settlement, letters: lettersOf(settlement, { settings: SETTINGS, property: null, tenancies: TENANCIES, installation: {}, propertyTexts: {}, own: {}, asOf: `${YEAR + 1}-10-30` }) }
   show()
   const table = (await screen.findByRole('region', { name: 'Anschreiben an Meier' }, SLOW)).closest('.statement')?.querySelector('table')
   expect(plain(table?.textContent)).toMatch(/Ausgeglichen/)
@@ -261,7 +263,9 @@ test('S4 und K6: Vorschau mit dem neuen Betrag aus dem Entwurf, Anpassung auf Vo
   const amount = await within(dialog).findByRole('textbox', { name: /Neue monatliche Vorauszahlung/ }, SLOW)
   expect((amount as HTMLInputElement).value).toBe('70,00')
   fireEvent.change(amount, { target: { value: '80,00' } })
-  expect(plain(dialog.textContent)).toMatch(/Vorschau: Auf Basis dieser Abrechnung wird die monatliche Nebenkostenvorauszahlung gemäß § 560 Abs\. 4 BGB ab Dezember 2026 auf 80,00 € angepasst\./)
+  // Der Entwurf rechnet den Monat vom heutigen Tag aus, nicht vom Tag der festen Briefe oben.
+  const from = monthLabel(adjustFromFor(localToday(), `${YEAR}-12-31`))
+  expect(plain(dialog.textContent)).toContain(`Vorschau: Auf Basis dieser Abrechnung wird die monatliche Nebenkostenvorauszahlung gemäß § 560 Abs. 4 BGB ab ${from} auf 80,00 € angepasst.`)
   fireEvent.click(within(dialog).getByRole('button', { name: /Anpassung auf Vorgabe zurücksetzen/ }))
   expect((within(dialog).getByRole('radio', { name: /Vorschlag von Mietfuchs/ }) as HTMLInputElement).checked).toBe(true)
   fireEvent.click(within(dialog).getByRole('button', { name: 'Speichern' }))
@@ -305,7 +309,7 @@ test('Teil 2: ohne Anschreiben beginnt die Aufstellung mit Anschrift, Datum und 
   const after = [...card.querySelectorAll('p.statement-letter-text')]
   expect(after.map((p) => plain(p.textContent))).toEqual([
     'Es ergibt sich eine Nachzahlung von 120,00 €. Bitte überweisen Sie den Betrag innerhalb von 14 Tagen nach Zugang dieser Abrechnung auf das Konto DE02 1203 0000 0000 2020 51 (Max Vermieter).',
-    'Auf Basis dieser Abrechnung wird die monatliche Nebenkostenvorauszahlung gemäß § 560 Abs. 4 BGB ab Dezember 2026 auf 50,00 € angepasst (ein Zwölftel Ihrer Jahreskosten, gerundet).',
+    `Auf Basis dieser Abrechnung wird die monatliche Nebenkostenvorauszahlung gemäß § 560 Abs. 4 BGB ab Dezember ${YEAR + 1} auf 50,00 € angepasst (ein Zwölftel Ihrer Jahreskosten, gerundet).`,
     'Die zugrunde liegenden Belege können nach Terminvereinbarung eingesehen werden.',
   ])
   for (const p of after) expect(table.compareDocumentPosition(p) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
@@ -516,7 +520,7 @@ test('ohne Namen des Vermieters: „Absender fehlt“ in „Zu prüfen“ mit We
   const noName: Settings = { ...SETTINGS, landlordName: '' }
   // Durchsicht: das Anschreiben aus den Vorgaben, wie der Server es baut; die Unterschrift `{Vermieter}` wird dann leer.
   const property = { id: 'objekt-1', name: 'Lindenweg 12', kind: 'mfh' as const, address: 'Lindenweg 12, 12345 Musterstadt', landlordName: null, iban: null, paymentDeadlineDays: null }
-  settlement = { ...settlement, letters: lettersOf(settlement, { settings: noName, property, tenancies: TENANCIES, installation: {}, propertyTexts: {}, own: {}, asOf: '2026-10-30' }) }
+  settlement = { ...settlement, letters: lettersOf(settlement, { settings: noName, property, tenancies: TENANCIES, installation: {}, propertyTexts: {}, own: {}, asOf: `${YEAR + 1}-10-30` }) }
   render(
     <PeriodProvider>
       <PropertyProvider>
@@ -539,7 +543,7 @@ test('ohne Namen des Vermieters: „Absender fehlt“ in „Zu prüfen“ mit We
 test('abgeschlossen ohne Absender: Hinweis bis zum Versand, mit Wieder öffnen statt Einstellungen', async () => {
   const noName: Settings = { ...SETTINGS, landlordName: '' }
   const property = { id: 'objekt-1', name: 'Lindenweg 12', kind: 'mfh' as const, address: 'Lindenweg 12, 12345 Musterstadt', landlordName: null, iban: null, paymentDeadlineDays: null }
-  const letters = lettersOf(settlement, { settings: noName, property, tenancies: TENANCIES, installation: {}, propertyTexts: {}, own: {}, asOf: '2026-10-30' })
+  const letters = lettersOf(settlement, { settings: noName, property, tenancies: TENANCIES, installation: {}, propertyTexts: {}, own: {}, asOf: `${YEAR + 1}-10-30` })
   settlement = { ...settlement, letters, closed: { closedAt: `${YEAR + 1}-02-01T10:00:00Z`, sentAt: null } }
   show()
   await screen.findAllByText('Absender fehlt', {}, SLOW)
