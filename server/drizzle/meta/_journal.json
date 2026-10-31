@@ -575,6 +575,20 @@
       "when": 1793450203481,
       "tag": "0081_anlage_v_kopf_bedingungen",
       "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "6",
+      "when": 1793457395603,
+      "tag": "0082_verteilung_82b",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "6",
+      "when": 1793457402143,
+      "tag": "0083_verteilung_82b_bedingungen",
+      "breakpoints": true
     }
   ]
 }

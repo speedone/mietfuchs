@@ -212,6 +212,11 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // vor dem Merge ein anderer PR davor eingereiht, werden beide Schritte neu erzeugt und die Marken ersetzt.
   '0080_anlage_v_kopf': 'b0aa4d93b41fee7484792ae946b2a463b038f39c885429f5b2bfeb5fc13d2a57',
   '0081_anlage_v_kopf_bedingungen': 'e0a3af39a5a3ca86677db2e5004bd5a3c1426290dea0e09ed062b286a975efbf',
+  // #262 PR 1: die Verteilung nach § 82b EStDV (cost_items.spread_years, properties.spread_rest_year), danach die
+  // Bedingungen (Neubau beider Tabellen). Wird vor dem Merge ein anderer PR davor eingereiht, werden beide Schritte neu
+  // erzeugt und die Marken ersetzt.
+  '0082_verteilung_82b': '60d0a2823758b911783f46808c4699b28327240dacc9034eb1b5f7b4ef745668',
+  '0083_verteilung_82b_bedingungen': 'c2babce16bbde1323bf14a69d4471e4ca11913f40a5722e22b6bc47e96ff7783',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {
