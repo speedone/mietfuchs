@@ -13,7 +13,7 @@ import path from 'node:path'
 import AdmZip from 'adm-zip'
 import type { AiKeyInfo, AiSlotName, OllamaStatus } from '../../shared/types.ts'
 import {
-  type ClientSettings, EXTERNAL, LONG_TEXT, type Ollama, chatOptions, chatRequests, errorFrom, errorOf, fakeOllama, jsonOf, messageOf, ollamaSlot, photoForm, putAi, putKey, removeDataDir, restore, serverRoot, startServerIn, storedSettings, uploadPdf, withEnv, withOllama,
+  type ClientSettings, EXTERNAL, LONG_TEXT, type Ollama, chatOptions, chatRequests, errorFrom, errorOf, fakeOllama, jsonOf, messageOf, ollamaSlot, photoForm, putAi, putKey, removeDataDir, restore, serverRoot, startServerBeside, startServerIn, storedSettings, uploadPdf, withEnv, withOllama,
 } from '../testing/api.ts'
 
 // ---------- API-Schlüssel externer KI-Dienste (#18) ----------
@@ -304,7 +304,7 @@ test('Anbieterwahl: Fotos gehen an den eigenen Bilder-Anbieter, Text an den Stan
 test('Anbieterwahl: Ollama mit Schlüssel schickt ihn als Bearer, ohne ihn anzuzeigen', async () => {
   const KEY = 'ollama-schluessel-1234567890'
   const ollama = await fakeOllama({ key: KEY })
-  const s = await startServerIn(fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-')))
+  const s = await startServerBeside(ollama, fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-')))
   try {
     await putAi(s, { text: ollamaSlot(ollama.url) })
     // Ohne Schlüssel: verständliche Meldung statt 401

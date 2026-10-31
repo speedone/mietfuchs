@@ -249,6 +249,18 @@ export async function startServer() {
   return startServerIn(dataDir)
 }
 
+// Startet den Server neben einem nachgebauten Dienst (Ollama, OpenAI, GitHub). Scheitert der Start, etwa unter Last
+// nach dem Zeitlimit von readStartUrl, wird der Dienst gestoppt und der Fehler weitergereicht: Sonst hielte sein offener
+// Port die Testdatei für immer offen (gefunden bei #487, api-belegbuchung.test.ts hing so).
+export async function startServerBeside(service: { stop: () => void }, dataDir: string, env: NodeJS.ProcessEnv = {}): Promise<Server> {
+  try {
+    return await startServerIn(dataDir, env)
+  } catch (err) {
+    service.stop()
+    throw err
+  }
+}
+
 // Liest die Adresse aus der Startmeldung „Mietfuchs-Server läuft auf …“. Wirft, wenn der Prozess
 // vorher endet oder die Meldung ausbleibt. Die Ausgabe wird danach weiter gelesen, sonst liefe
 // der Puffer der Pipe voll und der Server bliebe beim nächsten console.log hängen.
@@ -631,7 +643,7 @@ export type WithOllamaOptions = { models?: FakeModel[], model?: string, chat?: F
 
 export async function withOllama(fn: (s: Server, ollama: Ollama) => Promise<void>, { models, model = 'test', chat, env = {}, invoices }: WithOllamaOptions = {}) {
   const ollama = await fakeOllama({ models, chat, invoices })
-  const s = await startServerIn(fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-')), env)
+  const s = await startServerBeside(ollama, fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-')), env)
   try {
     await s.api<ClientSettings>('/api/settings', { method: 'PUT', body: JSON.stringify({ ollamaUrl: ollama.url, ollamaModel: model }) })
     await fn(s, ollama)

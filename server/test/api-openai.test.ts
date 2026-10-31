@@ -11,7 +11,7 @@ import os from 'node:os'
 import path from 'node:path'
 import type { AiPreset, AiRecommendations, AiSlotName, AiStatus } from '../../shared/types.ts'
 import {
-  type ClientSettings, EXTERNAL, LONG_TEXT, type OpenAiContentPart, type OpenAiMessage, type OpenAiRequest, type OpenAiService, type Server, type WithOpenAiOptions, errorFrom, errorOf, fakeOllama, fakeOpenAi, jsonOf, lastLine, listening, messageOf, ollamaSlot, parseLine, photoForm, portOf, putAi, putKey, startServer, startServerIn, storedSettings, until, uploadPdf, withEnv, withOllama,
+  type ClientSettings, EXTERNAL, LONG_TEXT, type OpenAiContentPart, type OpenAiMessage, type OpenAiRequest, type OpenAiService, type Server, type WithOpenAiOptions, errorFrom, errorOf, fakeOllama, fakeOpenAi, jsonOf, lastLine, listening, messageOf, ollamaSlot, parseLine, photoForm, portOf, putAi, putKey, startServer, startServerBeside, startServerIn, storedSettings, until, uploadPdf, withEnv, withOllama,
 } from '../testing/api.ts'
 
 let srv: Awaited<ReturnType<typeof startServerIn>>
@@ -43,7 +43,7 @@ const completionOf = (service: OpenAiService, n: number): OpenAiRequest => {
 
 async function withOpenAi(fn: (s: Server, service: OpenAiService) => Promise<void>, { rules = {}, preset = 'openai-compatible', model = 'modell-a', vision = null, key = null, ai = {}, env = {} }: WithOpenAiOptions = {}) {
   const service = await fakeOpenAi(rules)
-  const s = await startServerIn(fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-')), env)
+  const s = await startServerBeside(service, fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-')), env)
   try {
     if (key) await putKey(s, { slot: 'text', key })
     await putAi(s, { text: { provider: 'openai', preset, url: service.url, model, vision }, ...ai })
@@ -311,7 +311,7 @@ test('Schlüssel: auch ein Fehler mitten im Strom zeigt ihn nicht', async () => 
 test('Schlüssel: auch Ollama hinter einem Proxy zeigt ihn nicht', async () => {
   const KEY = 'ollama-proxy-schluessel-1234'
   const ollama = await fakeOllama({ echoKey: true })
-  const s = await startServerIn(fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-')))
+  const s = await startServerBeside(ollama, fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-')))
   try {
     await putAi(s, { text: ollamaSlot(ollama.url) })
     await putKey(s, { slot: 'text', key: KEY })
@@ -330,7 +330,7 @@ test('Schlüssel: auch Ollama hinter einem Proxy zeigt ihn nicht', async () => {
 test('Schlüssel: eine unlesbare Antwort von Ollama zeigt ihn nicht', async () => {
   const KEY = 'ollama-status-schluessel-1234'
   const ollama = await fakeOllama({ garbledShow: true })
-  const s = await startServerIn(fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-')))
+  const s = await startServerBeside(ollama, fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-')))
   try {
     await putAi(s, { text: ollamaSlot(ollama.url) })
     await putKey(s, { slot: 'text', key: KEY })
