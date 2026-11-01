@@ -184,6 +184,11 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   Store-Pakets. macOS je ein .dmg, ad hoc signiert (`identity: "-"`, ohne Notarisierung), die Programmdatei in
   `Contents/MacOS`; electron-builder nennt die Architektur arm64 und x64, das Skript benennt danach um in
   `Mietfuchs-<Version>-apple-silicon.dmg` und `-intel.dmg` (`userFileName`, wie die Zips der Programmdateien).
+  **Kein Web-Installer** (`nsis-web`, lädt nur das Paket der eigenen Architektur): In electron-builder 26.18 wählt er
+  ARM64 nur, wenn es auch ein 32-Bit-Paket gibt (`installApplicationFiles` in
+  app-builder-lib/templates/nsis/include/installer.nsh und `downloadApplicationFiles` in webPackage.nsh, Zweig
+  ohne `APP_32_NAME`); mit x64 und ARM64 bekäme ein ARM-Rechner das x64-Paket, und eine 32-Bit-Programmdatei des
+  Servers baut Bun nicht. Der gemeinsame Installer wählt richtig (`identify_package` in extractAppPackage.nsh).
 - **Im Release-Lauf** ([release.yml](../.github/workflows/release.yml), Jobs „Programmfenster bauen“ und
   „Programmfenster prüfen auf …“, in jedem Prüfumfang): gebaut aus denselben Programmdateien wie die übrigen Ziele
   (Windows aus dem Artefakt `mietfuchs-store-programme`, macOS aus den neu signierten Zips in `mietfuchs-binaries`),
@@ -215,7 +220,7 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   Windows nichts um. Nicht „Dokumente“, weil OneDrive den Ordner oft abgleicht.
 - **Im Fenster bleibt die Betriebsart `store`** (der Ort zählt vor `NKA_DESKTOP`): Port 17517 wie das Fenster
   ohne Store, Daten in `%USERPROFILE%\Mietfuchs`. Electrons eigener Ordner (`%LOCALAPPDATA%\mietfuchs-fenster`,
-  gemerkter Port, Protokoll des Servers) liegt dagegen unter AppData und landet umgelenkt in
+  gemerkter Port, Zugriff aus dem Heimnetz, Protokoll des Servers) liegt dagegen unter AppData und landet umgelenkt in
   `%LOCALAPPDATA%\Packages\speedone.Mietfuchs_…\LocalCache\Local`; das ist gewollt, beim Deinstallieren geht
   nur er verloren.
 - **Prüfung** (Job „Store-Paket bauen und prüfen“ in release.yml, bei jedem Lauf): signiert eine Kopie mit einem
