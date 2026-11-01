@@ -9,3 +9,4 @@ export function buildSubmission(
   input: { bundle: string, tag: string, listing: { description: string, features: string[], keywords: string[] }, notes: string },
 ): any
 export function commitOutcome(status: { status?: string, statusDetails?: any }): 'wait' | 'ok' | 'failed'
+export function draftHint(message: string): string | null
