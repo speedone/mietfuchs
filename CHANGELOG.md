@@ -6,14 +6,16 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+## [0.14.0] – 2026-11-02
+
 ### Hinzugefügt
 
-- **Belege von Hand erfassen**: „Von Hand erfassen“ steht an jedem Beleg unter „Ohne Position“ im Eingang, auch ohne
-  KI (dann als erster Weg), und an jedem gespeicherten, nicht ausgewerteten Beleg in Eingang und Kosten. Es öffnet
-  das Kostenformular mit dem Beleg: oben Vorschau und „Beleg in neuem Tab öffnen“, die Kostenart aus dem Dateinamen
-  gelb als Vorschlag (nennt der Name keine oder mehrere, bleibt sie leer und wird abgefragt; Straßennamen zählen nicht). Nennt man einen Rechnungssteller, den es im Vorjahr
-  gab, lassen sich Kostenart, Beschreibung und Umlageschlüssel von dort übernehmen, nie der Betrag. Nach „Anlegen“ hängt
-  der Beleg an der Position, „Zum Eingang“ führt zurück
+- **Belege von Hand erfassen**: „Von Hand erfassen“ steht an jedem Beleg unter „Ohne Position“ im Eingang, auch ohne KI
+  (dann als erster Weg), und an jedem gespeicherten, nicht ausgewerteten Beleg in Eingang und Kosten. Es öffnet das
+  Kostenformular mit dem Beleg: oben Vorschau und „Beleg in neuem Tab öffnen“, die Kostenart aus dem Dateinamen gelb als
+  Vorschlag (nennt der Name keine oder mehrere, bleibt sie leer und wird abgefragt; Straßennamen zählen nicht). Nennt
+  man einen Rechnungssteller, den es im Vorjahr gab, lassen sich Kostenart, Beschreibung und Umlageschlüssel von dort
+  übernehmen, nie der Betrag. Nach „Anlegen“ hängt der Beleg an der Position, „Zum Eingang“ führt zurück
   ([#490](https://github.com/speedone/mietfuchs/issues/490), [#487](https://github.com/speedone/mietfuchs/issues/487)).
 - Kostenformular: Feld „Rechnungsdatum“ am angehängten Beleg; ein korrigiertes Datum gilt auch für die KI-Auswertung
   desselben Belegs. Legen Sie eine neue Position an und hat der Beleg noch kein Datum, liest Mietfuchs es aus dem Text
@@ -75,10 +77,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - Eine Anleitung in „Hilfe & Begriffe“ ist eine eigene Ansicht mit Inhaltsleiste und Schritten als Karten; nach „Zu
   Kosten →“ und ähnlichen Sprüngen zeigt die Zielseite unten den Schritt mit „Nächster Schritt“ und „Zurück zur
   Anleitung“ ([#488](https://github.com/speedone/mietfuchs/issues/488)).
-- Scheitert die KI an einem Beleg (etwa weil Ollama nicht läuft), steht er im Eingang der Seite Belege und auf der
-  Seite Kosten als „Gespeichert, nicht ausgewertet“ da, mit dem Grund in einem Satz, „Von Hand erfassen“ und „Erneut
-  versuchen“, das keine Kopie des Belegs mehr anlegt; ebenso beim Auslesen von Lieferantenrechnung und Messdienstabrechnung in den
-  Heizkosten ([#487](https://github.com/speedone/mietfuchs/issues/487)).
+- Scheitert die KI an einem Beleg (etwa weil Ollama nicht läuft), steht er im Eingang der Seite Belege und auf der Seite
+  Kosten als „Gespeichert, nicht ausgewertet“ da, mit dem Grund in einem Satz, „Von Hand erfassen“ und „Erneut
+  versuchen“, das keine Kopie des Belegs mehr anlegt; ebenso beim Auslesen von Lieferantenrechnung und
+  Messdienstabrechnung in den Heizkosten ([#487](https://github.com/speedone/mietfuchs/issues/487)).
 - **Aufklappen einheitlich**: Alles, was sich aufklappen lässt, trägt denselben Pfeil davor (▸ zu, ▾ offen), und Knöpfe
   nennen, was der nächste Klick tut, etwa „Mehr dazu“ und aufgeklappt „Weniger“ oder „Rechenweg schließen“.
 - **Schnellerfassung und Belegordner sind eine Seite „Belege“** mit den Ansichten „Eingang“ und „Ordner“
@@ -98,24 +100,24 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   offenen Vorauszahlungen, dann die Miete, jeweils die ältesten zuerst. **Bei Rückständen, Teilzahlungen oder
   vorausbezahlten Monaten zeigt das Mietkonto deshalb andere Monate als offen als bisher.** Das Mietkonto beginnt im
   Monat der ersten Mietzahlung, die Sie im Objekt erfasst haben (frühestens mit dem Mietbeginn); frühere Monate gelten
-  als nicht erfasst und nicht als Rückstand. Nicht gezahlte
-  Vorauszahlungen eines abgerechneten Zeitraums stehen gesondert als „nicht mehr einzeln einforderbar“ und zählen
-  nicht zum Rückstand ([#281](https://github.com/speedone/mietfuchs/issues/281)).
+  als nicht erfasst und nicht als Rückstand. Nicht gezahlte Vorauszahlungen eines abgerechneten Zeitraums stehen
+  gesondert als „nicht mehr einzeln einforderbar“ und zählen nicht zum Rückstand
+  ([#281](https://github.com/speedone/mietfuchs/issues/281)).
 - **Hinweis „Rückstand im Mietkonto“ in der Abrechnung** nennt jetzt den nicht gezahlten Betrag der Vorauszahlungen
   und den Betrag für „abzüglich geleisteter Vorauszahlungen“; ist nur Kaltmiete offen, entfällt er. Abgeschlossene
   Abrechnungen bleiben unverändert ([#281](https://github.com/speedone/mietfuchs/issues/281)).
 - Die Ordner im ZIP „Belege für die Steuer“ folgen der Reihenfolge der Steuerübersicht; wegen der neuen Gruppe
   „Erhaltungsaufwand“ zählen sie deshalb ab „Verwaltung & Instandhaltung“ eine Nummer weiter.
-
-- Aufgeteilte Rechnungen sind jetzt eine Rechnung ([#455](https://github.com/speedone/mietfuchs/issues/455)): Reicht der Leistungszeitraum einer Rechnung über mehrere
-  Abrechnungszeiträume, stehen weiter Teile je Zeitraum da, aber jeder Teil verweist auf seine Rechnung. Beim Update
-  bekommen bestehende Teile, die eindeutig zusammengehören, diese Kennung von selbst, auch die aus einem eingespielten
-  Backup und auch, wenn der Beleg nur an einem Teil hängt; der Beleg gilt dann für die ganze Rechnung. Eine zweimal
-  mit „Aufteilen und speichern“ erfasste Rechnung bleibt dabei zwei Rechnungen, und der Hinweis auf doppelte
-  Positionen meldet sie weiter; nur wenn das Objekt einmal den Abrechnungszeitraum gewechselt hat und die beiden
-  Fassungen allein im Betrag abweichen, werden sie eine (prüfen Sie dann in der Kostenliste, ob „Rechnung gesamt …“
-  die doppelte Summe nennt). Keine Zahl ändert sich, auch keine abgeschlossene Abrechnung.
-  - In der Kostenliste steht unter einem Teil „Teil von 2 · Rechnung gesamt …“. Die Belegabdeckung in Belegordner,
+- Aufgeteilte Rechnungen sind jetzt eine Rechnung ([#455](https://github.com/speedone/mietfuchs/issues/455)): Reicht der
+  Leistungszeitraum einer Rechnung über mehrere Abrechnungszeiträume, stehen weiter Teile je Zeitraum da, aber jeder
+  Teil verweist auf seine Rechnung. Beim Update bekommen bestehende Teile, die eindeutig zusammengehören, diese Kennung
+  von selbst, auch die aus einem eingespielten Backup und auch, wenn der Beleg nur an einem Teil hängt; der Beleg gilt
+  dann für die ganze Rechnung. Eine zweimal mit „Aufteilen und speichern“ erfasste Rechnung bleibt dabei zwei
+  Rechnungen, und der Hinweis auf doppelte Positionen meldet sie weiter; nur wenn das Objekt einmal den
+  Abrechnungszeitraum gewechselt hat und die beiden Fassungen allein im Betrag abweichen, werden sie eine (prüfen Sie
+  dann in der Kostenliste, ob „Rechnung gesamt …“ die doppelte Summe nennt). Keine Zahl ändert sich, auch keine
+  abgeschlossene Abrechnung.
+  - In der Kostenliste steht unter einem Teil „Teil von 2 · Rechnung gesamt …“. Die Belegabdeckung im Ordner der Seite Belege,
     Cockpit und Belegmappe zählt die Rechnung einmal und belegt, sobald ein Teil den Beleg trägt, auch einer in einem
     anderen Zeitraum; die Belegkopien der Abrechnung nehmen den Beleg der Rechnung mit.
   - Im ZIP „Belege für die Steuer“ nennt ein Teil ohne eigenen Beleg in `Übersicht.csv` den Beleg seiner Rechnung statt
@@ -125,13 +127,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
     ein Teil heißt nicht „ohne Beleg“, wenn die Rechnung anderswo belegt ist. Ist eine aufgeteilte Rechnung beteiligt,
     rät er, sie nur ganz zu löschen, mit den Teilen in anderen Zeiträumen, und nie, ihren Betrag auf den der Rechnung zu
     setzen. Zwei Rechnungen, deren Leistungszeiträume sich nicht überschneiden, gelten nicht als Doppelung.
-  - „Betrag prüfen“ im Belegordner bietet bei einem Teil kein Feld für den Betrag des Belegs an, denn der Teil trägt nur
+  - „Betrag prüfen“ im Ordner der Seite Belege bietet bei einem Teil kein Feld für den Betrag des Belegs an, denn der Teil trägt nur
     den Anteil seines Zeitraums; der Betrag wird im Formular geprüft.
-  - An einem Teil ändern Sie weder Kostenart noch Einzelbeträge noch Betriebsstrom; die Meldung nennt den Weg (alle Teile
-    löschen und neu erfassen, oder je Abrechnungszeitraum eine Position). Bei der Belegbuchung wird ein Teil nur geöffnet,
-    nicht verknüpft; der Hinweis sagt, die Zeile zu verwerfen, wenn der Teil stimmt. Lösen Sie eine früher verknüpfte
-    Zeile an einem Teil, behält der Teil seinen Betrag; bisher stand danach die ganze Rechnung an ihm.
-
+  - An einem Teil ändern Sie weder Kostenart noch Einzelbeträge noch Betriebsstrom; die Meldung nennt den Weg (alle
+    Teile löschen und neu erfassen, oder je Abrechnungszeitraum eine Position). Bei der Belegbuchung wird ein Teil nur
+    geöffnet, nicht verknüpft; der Hinweis sagt, die Zeile zu verwerfen, wenn der Teil stimmt. Lösen Sie eine früher
+    verknüpfte Zeile an einem Teil, behält der Teil seinen Betrag; bisher stand danach die ganze Rechnung an ihm.
 - Ein Jahr der Zahlung ist jetzt auch in einem Abrechnungszeitraum im Kalenderjahr möglich, etwa für eine Rechnung
   für 2025, die Sie 2026 bezahlt haben; das Kostenformular zeigt ein solches Jahr an. Es darf in derselben Spanne liegen
   wie ein Zahlungsdatum (ein Jahr vor dem Beginn bis drei Jahre nach dem Ende des Zeitraums); außerhalb fragt Mietfuchs
@@ -142,42 +143,39 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - Verlauf: „Rückgängig“ und der Rücksprung scheiterten mit „Diesen Datensatz gibt es schon“, wenn vorher etwas
   unverändert erneut gespeichert worden war (etwa die Antwort zu einer fehlenden Zwischenablesung oder ein
   Mietverhältnis) und dieselbe Tabelle eine gelöschte Zeile zurückbekommen sollte; ebenso nach dem Löschen eines Belegs,
-  wenn danach ein von Hand in den Belegordner gelegter Beleg bearbeitet wurde
+  wenn danach ein von Hand in den Ordner gelegter Beleg bearbeitet wurde
   ([#494](https://github.com/speedone/mietfuchs/issues/494)). Das gelingt jetzt auch, wenn der Verlauf schon betroffen
   war. An den Daten ging nichts verloren.
-
-- Ein Wechsel des Abrechnungszeitraums oder der Heizperiode überschrieb das angegebene Jahr der Zahlung von Positionen ohne
-  Zahlungsdatum, sobald ein Teil in einen Zeitraum innerhalb eines Kalenderjahres kam; es bleibt jetzt erhalten, und
-  hin und zurück ergibt die ursprünglichen Jahre. Die Vorschau sagt, welche Position danach für die Steuer als
+- Ein Wechsel des Abrechnungszeitraums oder der Heizperiode überschrieb das angegebene Jahr der Zahlung von Positionen
+  ohne Zahlungsdatum, sobald ein Teil in einen Zeitraum innerhalb eines Kalenderjahres kam; es bleibt jetzt erhalten,
+  und hin und zurück ergibt die ursprünglichen Jahre. Die Vorschau sagt, welche Position danach für die Steuer als
   verschoben steht ([#478](https://github.com/speedone/mietfuchs/issues/478)). **Wer seit 0.12 den Zeitraum gewechselt
   hat, prüft bitte das Jahr der Zahlung von Positionen ohne Zahlungsdatum.** Lag der Wechsel in den letzten zwölf
   Monaten, steht im Verlauf, welches Jahr vorher galt.
-
 - Nach mehreren Wechseln des Abrechnungszeitraums stand eine Rechnung mehrfach im selben Zeitraum
   ([#455](https://github.com/speedone/mietfuchs/issues/455)). Jetzt gibt es eine Zeile je Zeitraum: Ein Anteil, der in
   einen Zeitraum mit einem Teil derselben Rechnung fällt, kommt zu diesem Teil, wenn beide dasselbe Jahr der Zahlung
   haben und gleich verteilt werden (ein einzeln berichtigter Schlüssel oder Teilnehmerkreis bleibt eine eigene Zeile);
   die Vorschau sagt es vorher, und hängt es am gefragten Jahr der Zahlung, sagt sie auch das. Der Zusatz „(anteilig …)“
-  dieses Teils nennt danach die Tage, die er trägt, in der Vorschau wie in der Abrechnung, und wer den Zeitraum
-  hin und wieder zurück stellt, bekommt bei unveränderter Teilung nach Tagen centgenau die Beträge von vorher (ein einzeln
-  berichtigter Betrag bleibt an seinem Teil). Stehen zwei Teile einer
-  Rechnung mit verschiedenem Jahr der Zahlung im selben Zeitraum, teilt der nächste Wechsel sie getrennt und fragt das
-  Jahr für jeden; vorher bekamen beide das Jahr des ersten, und Werbungskosten wechselten das Steuerjahr. Die Summe je
-  Zeitraum ändert sich dadurch nicht.
+  dieses Teils nennt danach die Tage, die er trägt, in der Vorschau wie in der Abrechnung, und wer den Zeitraum hin und
+  wieder zurück stellt, bekommt bei unveränderter Teilung nach Tagen centgenau die Beträge von vorher (ein einzeln
+  berichtigter Betrag bleibt an seinem Teil). Stehen zwei Teile einer Rechnung mit verschiedenem Jahr der Zahlung im
+  selben Zeitraum, teilt der nächste Wechsel sie getrennt und fragt das Jahr für jeden; vorher bekamen beide das Jahr
+  des ersten, und Werbungskosten wechselten das Steuerjahr. Die Summe je Zeitraum ändert sich dadurch nicht.
 - Kleinere Anzeigepunkte zur aufgeteilten Rechnung ([#471](https://github.com/speedone/mietfuchs/issues/471)): Fasst
   der Wechsel des Abrechnungszeitraums alle Teile einer Rechnung zu einer Zeile zusammen, die die ganze Rechnung trägt,
   verliert ihre Beschreibung den Zusatz „(anteilig …)“; die Vorschau nennt die neue Beschreibung. Entsteht das
   Zusammenfassen erst mit einem anderen als dem vorbelegten Jahr der Zahlung, sagt die Vorschau auch das. Der Hinweis auf
   doppelte Positionen ist nicht mehr mehrdeutig, wenn mehrere aufgeteilte Rechnungen ohne Beleg beteiligt sind, und
-  „Betrag prüfen“ im Belegordner sagt bei einem alten Teil ohne Verweis auf seine Rechnung, wo die übrigen Teile stehen.
-- Wechsel des Abrechnungszeitraums mit einer Gutschrift im Objekt ([#468](https://github.com/speedone/mietfuchs/issues/468)):
-  Stand irgendeine Kostenposition mit negativem Betrag im Objekt, lehnte jeder Wechsel des Rhythmus ab („mehr
-  abgezogen, als die Rechnung beträgt“), obwohl an der Gutschrift kein Abzug hing. Geprüft werden jetzt nur
-  Stromrechnungen, aus denen ein Abzug für den Betriebsstrom gerechnet ist; ein Abzug über dem Betrag seiner
-  Rechnung wird weiter abgelehnt.
+  „Betrag prüfen“ im Ordner der Seite Belege sagt bei einem alten Teil ohne Verweis auf seine Rechnung, wo die übrigen Teile stehen.
+- Wechsel des Abrechnungszeitraums mit einer Gutschrift im Objekt
+  ([#468](https://github.com/speedone/mietfuchs/issues/468)): Stand irgendeine Kostenposition mit negativem Betrag im
+  Objekt, lehnte jeder Wechsel des Rhythmus ab („mehr abgezogen, als die Rechnung beträgt“), obwohl an der Gutschrift
+  kein Abzug hing. Geprüft werden jetzt nur Stromrechnungen, aus denen ein Abzug für den Betriebsstrom gerechnet ist;
+  ein Abzug über dem Betrag seiner Rechnung wird weiter abgelehnt.
 - Belegkopien zur Abrechnung ([#470](https://github.com/speedone/mietfuchs/issues/470)): Ein Beleg, der nur über
   eine gebuchte Zeile einer Auswertung an einer Position hängt (etwa die Restrechnung neben dem Abschlag), fehlte
-  in den Anlagen der gedruckten Abrechnung, obwohl Belegordner, Belegmappe, Cockpit und Steuer-ZIP ihn als
+  in den Anlagen der gedruckten Abrechnung, obwohl der Ordner der Seite Belege, Belegmappe, Cockpit und Steuer-ZIP ihn als
   verknüpft zählten. Er liegt jetzt bei, jede Datei einmal, auch als Beleg eines anderen Teils einer aufgeteilten
   Rechnung. Lässt sich die Liste der Belege nicht laden, druckt die Seite wie bisher die Belege der Positionen.
 - Verlauf: Die Rückfrage vor „Rückgängig“ sagt bei einem Eintrag mit mehreren Änderungen jetzt
@@ -190,10 +188,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   wer die Vorbelegung übernommen hat, prüft die Zahl gegen die Abrechnung des Messdienstes.
 - Mietkonto: Ein Monat mit offenem Betrag öffnet die Zahlung jetzt auch per Tastatur (Tab, Enter) und wird von
   Vorlesern als „Zahlung erfassen“ angesagt. Bisher ließ er sich nur mit der Maus anklicken.
-- Zählerwechsel: Im Fenster „Neue Ablesung“ der Seite Zähler lässt sich beim Wechsel jetzt das Eichjahr des neuen Zählers eintragen
-  („Neuer Zähler geeicht bis Ende (Jahr)“). Bisher blieb nach dem Wechsel die Warnung „Eichfrist abgelaufen“ des
-  ausgebauten Zählers stehen, bis man das Jahr eigens über „Zähler bearbeiten“ änderte. Leer gelassen bleibt das
-  bisherige Jahr stehen.
+- Zählerwechsel: Im Fenster „Neue Ablesung“ der Seite Zähler lässt sich beim Wechsel jetzt das Eichjahr des neuen
+  Zählers eintragen („Neuer Zähler geeicht bis Ende (Jahr)“). Bisher blieb nach dem Wechsel die Warnung „Eichfrist
+  abgelaufen“ des ausgebauten Zählers stehen, bis man das Jahr eigens über „Zähler bearbeiten“ änderte. Leer gelassen
+  bleibt das bisherige Jahr stehen.
 - Abrechnung: Ist kein Name des Vermieters hinterlegt, nennt „Zu prüfen“ (und das Fenster „Drucken“) jetzt „Absender
   fehlt“ mit Weg in die Einstellungen. Bisher druckte das Anschreiben ohne Absender und ohne Unterschrift, ohne
   Warnung; eine Anpassung der Vorauszahlungen nach § 560 Abs. 4 BGB braucht Textform, und dafür muss der Erklärende
@@ -3264,7 +3262,8 @@ Verteilung nach Wohnfläche, Personenzahl, Wohneinheiten, Verbrauch oder Direktz
 druckfertige Abrechnung je Mieter, Mietkonto, Steuerübersicht für die Anlage V, optionale
 KI-Belegauswertung gegen eine lokale Ollama-Instanz, Backup und Wiederherstellung.
 
-[Unveröffentlicht]: https://github.com/speedone/mietfuchs/compare/v0.13.1...HEAD
+[Unveröffentlicht]: https://github.com/speedone/mietfuchs/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/speedone/mietfuchs/compare/v0.13.1...v0.14.0
 [0.13.1]: https://github.com/speedone/mietfuchs/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/speedone/mietfuchs/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/speedone/mietfuchs/compare/v0.11.3...v0.12.0
