@@ -1,0 +1,1 @@
+ALTER TABLE `settings` ADD `desktop_hint_dismissed` text;

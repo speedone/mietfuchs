@@ -11,7 +11,7 @@ import Einstellungen from './Einstellungen'
 
 vi.setConfig({ testTimeout: 20000 })
 const SLOW = { timeout: 5000 }
-const STATUS: UpdateStatus = { enabled: false, current: '0.14.1', mode: 'desktop', latest: null, available: false, releaseUrl: null, downloadUrl: null, checkedAt: null, error: null }
+const STATUS: UpdateStatus = { enabled: false, current: '0.14.1', mode: 'desktop', desktopOffer: null, latest: null, available: false, releaseUrl: null, downloadUrl: null, checkedAt: null, error: null }
 const SETTINGS: Settings = { houseName: '', address: '', landlordName: '', iban: '', paymentDeadlineDays: 30, ollamaUrl: '', ollamaModel: '' }
 const ADDRESS = 'http://192.168.178.23:17517'
 

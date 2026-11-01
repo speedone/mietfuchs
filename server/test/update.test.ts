@@ -10,7 +10,7 @@ import http from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { parseVersion, isNewer, assetFor, createUpdateChecker, mayAskGitHub } from '../src/update.ts'
+import { parseVersion, isNewer, assetFor, createUpdateChecker, mayAskGitHub, desktopOfferFor } from '../src/update.ts'
 import type { UpdateStatus } from '../../shared/types.ts'
 
 // Die Gestalt der abgespeicherten Antwort, so weit die Tests sie anfassen. update.ts beschreibt
@@ -128,6 +128,23 @@ test('assetFor: für Systeme ohne eigene Datei gibt es keine', () => {
   assert.equal(assetFor([], 'win32', 'x64'), null)
 })
 
+// ---------- Umstieg auf das Programmfenster (#517) ----------
+
+test('desktopOfferFor: den Umstieg gibt es nur für die Programmdatei unter Windows und macOS', () => {
+  assert.equal(desktopOfferFor('binary', 'win32'), 'windows')
+  assert.equal(desktopOfferFor('package', 'win32'), 'windows')
+  assert.equal(desktopOfferFor('binary', 'darwin'), 'macos')
+  assert.equal(desktopOfferFor('package', 'darwin'), 'macos')
+  // Unter Linux bleibt die Programmdatei der Weg, ein Fenster gibt es dort nicht.
+  assert.equal(desktopOfferFor('binary', 'linux'), null)
+  assert.equal(desktopOfferFor('package', 'linux'), null)
+  // Wer schon im Fenster oder aus dem Store arbeitet, ist umgestiegen; Container und npm laufen ohne Fenster.
+  const others: UpdateStatus['mode'][] = ['desktop', 'store', 'docker', 'npm']
+  for (const mode of others) for (const platform of ['win32', 'darwin', 'linux'] as const) {
+    assert.equal(desktopOfferFor(mode, platform), null, `${mode} unter ${platform}`)
+  }
+})
+
 // ---------- Abfrage bei GitHub ----------
 
 // Nachgebauter GitHub-Server. `respond` lässt sich je Test umstellen; `requests` zählt mit.
@@ -191,6 +208,26 @@ test('Mit Zustimmung: neuere Version mit passendem Download für Windows', async
   assert.equal(s.downloadUrl, 'https://github.com/speedone/mietfuchs/releases/download/v0.5.0/mietfuchs-win.exe')
   assert.equal(s.releaseUrl, 'https://github.com/speedone/mietfuchs/releases/tag/v0.5.0')
   assert.equal(s.error, null)
+})
+
+test('Umstieg (#517): der Stand nennt ihn ohne Zustimmung und ohne eine Anfrage bei GitHub', async () => {
+  const before = requests.length
+  assert.equal((await makeChecker({ platform: 'win32' }).check({})).desktopOffer, 'windows')
+  assert.equal((await makeChecker({ platform: 'darwin', arch: 'arm64' }).check({ consent: 'off' })).desktopOffer, 'macos')
+  assert.equal((await makeChecker({ platform: 'linux' }).check({})).desktopOffer, null)
+  assert.equal((await makeChecker({ mode: 'store' }).check({ consent: 'on' })).desktopOffer, null)
+  assert.equal(requests.length, before)
+})
+
+test('Umstieg (#517): mit Zustimmung steht er auch neben der gefundenen Version und nach einem Fehler', async () => {
+  respond = serve(releaseWith('v0.5.0'))
+  const found = await makeChecker().check({ consent: 'on' })
+  assert.equal(found.available, true)
+  assert.equal(found.desktopOffer, 'windows')
+  respond = serve('kaputt', 500)
+  const failed = await makeChecker({ platform: 'darwin' }).check({ consent: 'on' })
+  errorOf(failed)
+  assert.equal(failed.desktopOffer, 'macos')
 })
 
 test('GitHub verlangt eine Kennung: die Anfrage nennt Mietfuchs als User-Agent', async () => {

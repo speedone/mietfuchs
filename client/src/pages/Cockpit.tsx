@@ -14,11 +14,11 @@ import { hkvCutNotByConsumption } from '../../../shared/law/heizkostenv.ts'
 import { LAW_AS_OF, valueAt } from '../../../shared/law/register.ts'
 import { usePeriod, useSwitchPeriod } from '../period'
 import { useProperty, withProperty } from '../property'
-import { consentPending } from '../update'
+import { consentPending, desktopHintVisible } from '../update'
 import { calibrationDetail, heatingWithoutConsumption, meterReadiness, overdueMeters } from '../meterCheck'
 import { attentionDetail, attentionLevel, attentionLines } from '../notices'
 import { missingAreaCheck, zeroAreaUnits } from '../unitForm'
-import { UpdateConsent } from '../components/Update'
+import { DesktopHint, UpdateConsent } from '../components/Update'
 import PageHeader from '../components/PageHeader'
 import EmptyState from '../components/EmptyState'
 import { startStep } from '../emptyStock'
@@ -379,6 +379,7 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, relo
       {error && <NoticeBox level="error" action={error} />}
 
       {consentPending(settings, updateStatus) && <UpdateConsent onAnswered={reload} />}
+      {updateStatus && desktopHintVisible(updateStatus, settings) && <DesktopHint status={updateStatus} onDismissed={reload} />}
 
       {fresh ? (
         <div className="card">

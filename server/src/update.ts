@@ -171,6 +171,18 @@ type CheckOptions = { consent?: unknown, force?: boolean }
 // dem sie sich wieder abschalten ließe.
 export const mayAskGitHub = (mode: UpdateStatus['mode'], consent: unknown): boolean => mode !== 'store' && consent === 'on'
 
+// Umstieg auf das eigene Programmfenster (#517): Die Programmdatei gibt es ab 0.15 noch einige Releases weiter, unter
+// Windows und macOS weist sie aber auf das neue Programm hin (Store oder Installer, auf dem Mac das Abbild). Unter Linux
+// gibt es kein Fenster; wer im Fenster oder aus dem Store arbeitet, ist schon umgestiegen, und Container und npm laufen
+// ohne. Die Plattform kommt herein (Projektregel), der Stand steht ohne Zustimmung in /api/update, denn er braucht
+// keine Anfrage bei GitHub: Die Oberfläche bildet die Links aus festen Adressen.
+export function desktopOfferFor(mode: UpdateStatus['mode'], platform: string): UpdateStatus['desktopOffer'] {
+  if (mode !== 'binary' && mode !== 'package') return null
+  if (platform === 'win32') return 'windows'
+  if (platform === 'darwin') return 'macos'
+  return null
+}
+
 // `mode` ist 'binary' (Programmdatei), 'package' (aus einem Installationspaket), 'docker' oder
 // 'npm' und bestimmt, ob es einen direkten Download gibt. Aus einem Paket gibt es keinen: Welche
 // der drei Paketdateien passt, weiß nur die Distribution des Nutzers, deshalb führt der Hinweis
@@ -197,6 +209,7 @@ export function createUpdateChecker({
     enabled,
     current: currentVersion,
     mode,
+    desktopOffer: desktopOfferFor(mode, platform),
     latest: null,
     available: false,
     releaseUrl: null,

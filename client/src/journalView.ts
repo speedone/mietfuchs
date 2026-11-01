@@ -110,6 +110,7 @@ const FIELD_LABELS: Record<string, string> = {
   floor: 'Lage',
   notes: 'Notizen',
   note: 'Notiz',
+  desktop_hint_dismissed: 'Hinweis aufs Programmfenster ausgeblendet (Version)',
   tenant_name: 'Mieter',
   persons: 'Personen',
   start: 'Einzug',

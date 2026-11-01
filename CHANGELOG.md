@@ -42,6 +42,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   neue und bietet an, den neueren Stand noch einmal zu übernehmen. Später geht das jederzeit in den Einstellungen unter
   „Daten aus bisherigem Mietfuchs übernehmen …“; vorhandene Daten werden dabei nur nach Rückfrage ersetzt und vorher
   gesichert.
+- **Hinweis auf das neue Programmfenster** ([#517](https://github.com/speedone/mietfuchs/issues/517)): Wer die
+  Programmdatei unter Windows oder macOS nutzt, sieht im Cockpit eine Karte zum Umstieg: unter Windows mit „Aus dem
+  Microsoft Store laden“ (empfohlen) und „Installer herunterladen“, auf dem Mac mit „Neues Mietfuchs herunterladen“,
+  dazu die vier Schritte bis „Daten übernehmen“. „Später“ blendet sie bis zum nächsten Update der Programmdatei aus.
+  Die Anleitung zum Aktualisieren der Programmdatei bleibt und nennt den Umstieg mit. Mietfuchs fragt dafür nirgends
+  nach, die Links sind fest.
 - **Website:** Mietfuchs hat eine eigene Website, [mietfuchs-app.de](https://mietfuchs-app.de), mit Download für jedes
   System und Ratgebern zur Nebenkostenabrechnung. Der Link steht in den Einstellungen unter „Über Mietfuchs“.
 

@@ -13,7 +13,7 @@ import Einstellungen from './Einstellungen'
 
 vi.setConfig({ testTimeout: 20000 })
 const SLOW = { timeout: 5000 }
-const STATUS: UpdateStatus = { enabled: false, current: '0.14.0', mode: 'npm', latest: null, available: false, releaseUrl: null, downloadUrl: null, checkedAt: null, error: null }
+const STATUS: UpdateStatus = { enabled: false, current: '0.14.0', mode: 'npm', desktopOffer: null, latest: null, available: false, releaseUrl: null, downloadUrl: null, checkedAt: null, error: null }
 const SETTINGS: Settings = { houseName: '', address: '', landlordName: '', iban: '', paymentDeadlineDays: 30, ollamaUrl: '', ollamaModel: '' }
 
 afterEach(() => {

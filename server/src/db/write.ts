@@ -42,6 +42,7 @@ export function settingsRow(s: MigratedSettings) {
     landlordContact: orNull(s.landlordContact),
     updateCheck: orNull(s.updateCheck),
     updateDismissed: orNull(s.updateDismissed),
+    desktopHintDismissed: orNull(s.desktopHintDismissed),
     aiTimeoutSeconds: orNull(ai.timeoutSeconds),
     aiNumCtx: orNull(ai.numCtx),
     aiMaxOutputTokens: orNull(ai.maxOutputTokens),
