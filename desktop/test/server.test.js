@@ -2,7 +2,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import http from 'node:http'
-import { DEFAULT_PORT, canListen, dataDirIn, freePort, linkTarget, serverCommand, serverEnv, startUrlIn, whoIsOn } from '../src/server.js'
+import { DEFAULT_PORT, canListen, dataDirIn, freePort, lanUrls, linkTarget, networkState, serverCommand, serverEnv, startUrlIn, whoIsOn } from '../src/server.js'
 
 test('Programmdatei: Windows in resources\\server, Mac neben dem Fenster, beim Entwickeln der Quellcode', () => {
   assert.deepEqual(
@@ -69,4 +69,36 @@ test('Links: eigene Seiten im Fenster, http, https und mailto im Standardprogram
   assert.equal(linkTarget('file:///C:/Windows/system32/calc.exe', origin), 'deny')
   assert.equal(linkTarget('javascript:alert(1)', origin), 'deny')
   assert.equal(linkTarget('ms-settings:', origin), 'deny')
+})
+
+// Zugriff aus dem Heimnetz: die Adressen fürs Handy, aus den Netzwerkkarten des Rechners
+test('Heimnetz: IPv4 der äußeren Netzwerkkarten, ohne Loopback, link-local und IPv6, jede einmal', () => {
+  /** @type {NodeJS.Dict<import('node:os').NetworkInterfaceInfo[]>} */
+  const interfaces = {
+    lo: [{ address: '127.0.0.1', netmask: '255.0.0.0', family: 'IPv4', mac: '00:00:00:00:00:00', internal: true, cidr: '127.0.0.1/8' }],
+    WLAN: [
+      { address: 'fe80::1', netmask: 'ffff:ffff:ffff:ffff::', family: 'IPv6', mac: 'aa:bb:cc:dd:ee:ff', internal: false, cidr: 'fe80::1/64', scopeid: 3 },
+      { address: '192.168.178.23', netmask: '255.255.255.0', family: 'IPv4', mac: 'aa:bb:cc:dd:ee:ff', internal: false, cidr: '192.168.178.23/24' },
+    ],
+    Ethernet: [
+      { address: '169.254.12.7', netmask: '255.255.0.0', family: 'IPv4', mac: '11:22:33:44:55:66', internal: false, cidr: '169.254.12.7/16' },
+      { address: '10.0.0.5', netmask: '255.255.255.0', family: 'IPv4', mac: '11:22:33:44:55:66', internal: false, cidr: '10.0.0.5/24' },
+    ],
+    // Dieselbe Adresse zweimal (etwa eine Brücke) erscheint nur einmal
+    Bruecke: [{ address: '10.0.0.5', netmask: '255.255.255.0', family: 'IPv4', mac: '11:22:33:44:55:67', internal: false, cidr: '10.0.0.5/24' }],
+    leer: undefined,
+  }
+  assert.deepEqual(lanUrls(interfaces, 17517), ['http://192.168.178.23:17517', 'http://10.0.0.5:17517'])
+  assert.deepEqual(lanUrls({ lo: interfaces.lo }, 17517), [])
+  // Ältere Node-Fassungen nannten die Familie als Zahl
+  const numeric = /** @type {any} */ ({ eth0: [{ address: '192.168.1.2', family: 4, internal: false }] })
+  assert.deepEqual(lanUrls(numeric, 4000), ['http://192.168.1.2:4000'])
+})
+
+test('Heimnetz: Stand für die Oberfläche aus Einstellung, Port und Netzwerkkarten', () => {
+  const interfaces = { WLAN: [{ address: '192.168.178.23', netmask: '255.255.255.0', family: /** @type {const} */ ('IPv4'), mac: '', internal: false, cidr: null }] }
+  assert.deepEqual(networkState({ network: true }, 17517, interfaces), { enabled: true, port: 17517, addresses: ['http://192.168.178.23:17517'] })
+  assert.deepEqual(networkState({}, 17517, interfaces), { enabled: false, port: 17517, addresses: ['http://192.168.178.23:17517'] })
+  // Nur ein echtes true schaltet ein (fenster.json ist von Hand änderbar)
+  assert.equal(networkState(/** @type {any} */ ({ network: 'ja' }), 17517, interfaces).enabled, false)
 })

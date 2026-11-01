@@ -153,17 +153,27 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   `npm run desktop` bzw. mit `npx --prefix desktop install-electron`; npm 11 führt Installskripte nur mit Freigabe in
   `allowScripts` aus (desktop/.npmrc, electron-winstaller bleibt aus).
 - **Server im Fenster** (Betriebsart `desktop`, `NKA_DESKTOP=1` vom Fenster, aus dem Store bleibt es `store`): lauscht
-  nur auf 127.0.0.1 (`NKA_HOST`), öffnet keinen Browser, Daten im Benutzerordner (Windows `%USERPROFILE%\Mietfuchs`
+  nur auf 127.0.0.1 (`NKA_HOST`), außer mit Zugriff aus dem Heimnetz (unten), öffnet keinen Browser, Daten im Benutzerordner (Windows `%USERPROFILE%\Mietfuchs`
   wie der Store, macOS `~/Library/Application Support/Mietfuchs`), nie im Installationsordner. **Endet die
   Standardeingabe, beendet er sich**: So bleibt nach einem Absturz des Fensters oder beim Abmelden unter Windows (kein
   SIGTERM) keine Waise, die Port und Datenbank hält. Beenden aus dem Fenster erst über `/api/quit`, nach acht
   Sekunden hart. Electrons eigener Ordner heißt `mietfuchs-fenster`, damit er sich auf dem Mac nie mit dem Datenordner
-  mischt; dort liegen `fenster.json` (gemerkter Port) und das Protokoll des Servers.
+  mischt; dort liegen `fenster.json` (gemerkter Port, Zugriff aus dem Heimnetz) und das Protokoll des Servers.
 - **Port 17517** fest, damit Adresse und damit Entwürfe im Browser-Speicher gleich bleiben; antwortet dort ein
   anderes Programm, nimmt das Fenster einen freien und merkt ihn sich. Die Programmdatei ohne Fenster bleibt bei 3001.
 - **Sicherheit**: Sandbox, `contextIsolation`, kein Node in der Seite; die Brücke ([preload.cjs](../desktop/src/preload.cjs))
-  kennt nur das Drucken. Navigation und neue Fenster bleiben auf der eigenen Adresse, http, https und mailto gehen ans
+  kennt nur das Drucken und den Zugriff aus dem Heimnetz; beides nimmt der Hauptprozess nur von der eigenen Seite an
+  (`linkTarget(event.senderFrame.url, origin) === 'window'`). Navigation und neue Fenster bleiben auf der eigenen Adresse, http, https und mailto gehen ans
   Standardprogramm, alles andere nirgendwohin, Berechtigungen werden abgelehnt. Fuses in desktop/package.json (`build`).
+- **Zugriff aus dem Heimnetz**: Karte in den Einstellungen ([NetworkCard.tsx](../client/src/components/NetworkCard.tsx),
+  Logik in [desktopNetwork.ts](../client/src/desktopNetwork.ts)), nur wenn `window.mietfuchsDesktop.network` da ist,
+  also nie im Browser oder auf dem Handy; der Typ der Brücke steht in client/src/desktop.d.ts. Die Brücke hat `get()`
+  und `set(enabled)`, beide ergeben `{ enabled, port, addresses }` (`networkState`, `lanUrls` in server.js: IPv4 der
+  äußeren Netzwerkkarten ohne 169.254.x.x). `set` schreibt `network` in fenster.json und startet den Server neu, mit
+  `NKA_HOST=0.0.0.0` bzw. `127.0.0.1` und **demselben Port**, damit Origin und Browser-Speicher bleiben; danach lädt
+  das Fenster die Seite neu. Ein absichtlich beendeter Server steht in `retired` und löst weder „unerwartet beendet“
+  noch `app.quit` aus. Scheitert der Start mit der neuen Adresse, gilt wieder die alte. Beim ersten Einschalten fragt
+  unter Windows die Firewall nach der Programmdatei des Servers; die Karte sagt das. Das Häkchen ist ein Entwurf (#309).
 - **Drucken**: `window.print()` druckt in Electron ohne Hintergründe; das Preload leitet es auf `webContents.print`
   mit `printBackground` um. Geprüft mit [safari-print-check.mjs](safari-print-check.mjs) `--engines chromium,electron`
   (unter Linux mit `xvfb-run`): dieselben Fälle im Fenster, Seitenzahl gleich Chromium.
