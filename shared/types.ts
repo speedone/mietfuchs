@@ -292,6 +292,9 @@ export type RentLedgerRow = {
   // Geführt ab (#281): Beginn des Kontos, wenn er nach dem Mietbeginn liegt (01.01. des Jahres der ersten erfassten
   // Mietzahlung). Frühere Monate sind nicht erfasst und weder Soll noch offen.
   ledgerStart?: string
+  // Liegt die erste erfasste Mietzahlung in den letzten zehn Tagen des Vormonats von `ledgerStart` (Dauerauftrag zum
+  // Monatsende, Integrationsdurchsicht 0.14): ihr Datum. Sie gilt als Miete des Monats `ledgerStart`.
+  ledgerStartPaidOn?: string
 }
 
 // Ein Mietverhältnis ohne Tag im Jahr, das zum 31.12. noch schuldet (#281): Sein Rückstand verschwindet nicht.

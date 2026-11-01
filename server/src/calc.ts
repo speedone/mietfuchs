@@ -72,9 +72,8 @@ import { gmodgHeating43 } from '../../shared/law/gmodg.ts'
 // rangeOverlapDays: Überlappung zweier Zeiträume in Tagen, eine Stelle mit der Monatsregel.
 import { compareText, largestRemainder } from './apportion.ts'
 import { monthShare, monthSoll, overlapDays as rangeOverlapDays, rateAtMonth, rateInMonth, type MonthlySchedule, type SollComponent } from '../../shared/monthRate.ts'
-import { allocateRentPayments, ledgerTenancy, monthCoverage, recordingStart, openingBalance, type AllocationSlice, type MonthCoverage } from './rentAllocation.ts'
+import { allocateRentPayments, ledgerTenancy, monthCoverage, recordingStart, openingBalance, rentDueAtStartOf, type AllocationSlice, type MonthCoverage } from './rentAllocation.ts'
 import { estgShortPeriodDays } from '../../shared/law/estg.ts'
-import { bgbRentDueAtStart } from '../../shared/law/bgb-betrkv.ts'
 import { applicableRanges, blendedPermille, halfAmounts, halfSplitStatus, intersect as intersectRange, termsFromDeliveries, termsFromPieces, termsWeight, tightMarketIn, twoFamilyOf, type HalfDelivery, type HalfSplitStatus, type HalfSplitTerm, type Piece, type TwoFamily } from './halfSplit.ts'
 import { CO2_RELIEF_LABEL } from '../../shared/co2Probe.ts'
 import { ausweisGaps, CO2_FUELS, co2Assessment, co2Required, NO_CO2_FUELS, co2DeductionsOf, FORMULA_METHODS, co2PotsOf, itemBasisUnits, L_TOLERANCE_CENTS, perUnitClassification, perUnitExceeding, perUnitReliefs, gmodgKeyOf, HALF_SPLIT_TOLERANCE_PERMILLE, reliefKeysOf, reliefsByShare, spanningPlants, type PerUnitFuel, restage, selfSplit, SERVICE_FUEL_TOLERANCE_CENTS, shownReliefs, stageRanges, tableFactor, tenantLines as co2TenantLines, type Co2Pot, type ReliefShare } from './co2.ts'
@@ -1243,6 +1242,8 @@ export function ledgerRows(
         closingBalanceCents: account.closingBalanceCents,
         ...(designatedOutside.length > 0 ? { designatedOutside } : {}),
         ...(recorded.fromPayment && tracked.start !== t.start ? { ledgerStart: tracked.start } : {}),
+        // Dauerauftrag zum Monatsende (rentAllocation.ts, `recordingStart`): Die erste Zahlung gilt für den Folgemonat.
+        ...(recorded.fromPayment && tracked.start !== t.start && tracked.start === recorded.shiftedStart && recorded.firstPaidOn !== undefined ? { ledgerStartPaidOn: recorded.firstPaidOn } : {}),
       }
     })
     // Eine Liste, die ein Mensch liest: deutsche Sortierung, fest eingestellt (siehe compareName).
@@ -1512,14 +1513,8 @@ type ReceivedInput = {
   shortDays: (year: number) => number
 }
 
-// Ist die Miete dieses Mietverhältnisses zu Beginn des Monats fällig (§ 556b Abs. 1 BGB)? Maßgeblich ist, ob es am
-// 01.09.2001 bestand (Art. 229 § 3 Abs. 1 Nr. 7 EGBGB): gefragt mit dem früheren von Vertragsdatum und Beginn
-// (Auslegung: Ein Mietverhältnis besteht ab dem Vertrag).
-function rentDueAtStartOf(t: Pick<SnapshotTenancy, 'start' | 'contractDate'>): boolean {
-  const contract = typeof t.contractDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(t.contractDate) ? t.contractDate : null
-  const date = contract !== null && compareText(contract, t.start) < 0 ? contract : t.start
-  return law(bgbRentDueAtStart, { date }, createLawLog())
-}
+// Ob die Miete zu Beginn des Monats fällig ist (§ 556b Abs. 1 BGB): `rentDueAtStartOf` in rentAllocation.ts, dieselbe Stelle
+// wie für den Beginn der Erfassung.
 
 // Ist der Januar-Abschnitt des Jahres `year` sicher in der kurzen Zeit fällig (Nachdurchsicht M1)? Nach § 556b Abs. 1
 // BGB ist die Miete zu Beginn des Zeitabschnitts, spätestens am dritten Werktag fällig. Beginnt der Abschnitt am 01.01.

@@ -350,3 +350,26 @@ test('Durchsicht Nebenbefund: ein Monat laut Verwendungszweck vor dem Beginn der
   const r = rowOf(ledger({ tenancies: [since2020()], payments: [...monthly('2025-01', '2025-01'), p] }, 2025, { asOf: '2025-03-01' }))
   assert.deepEqual(r.designatedOutside, [p.id])
 })
+
+// Integrationsdurchsicht 0.14 (M1): Dauerauftrag zum Monatsende für den Folgemonat, erste erfasste Zahlung am 30.12.2023. Das
+// Konto wird ab Januar 2024 geführt; die Zahlung deckt den Januar, und nach dem Auszug Ende Januar 2026 ist nichts offen.
+test('Geführt ab: erste Zahlung in den letzten zehn Tagen eines Monats, Mietverhältnis läuft schon: geführt ab dem Folgemonat', () => {
+  const t = since2020({ end: '2026-01-31', baseRents: [{ from: '2020-01', monthlyCents: 60000 }, { from: '2026-01', monthlyCents: 65000 }] })
+  const payments = [pay('2023-12-30', 80000), ...monthsBetween('2024-01', '2025-12').map((m) => pay(`${m}-${m.endsWith('-02') ? 28 : 30}`, m === '2025-12' ? 85000 : 80000))]
+  const y2024 = rowOf(ledger({ tenancies: [t], payments }, 2024, { asOf: '2026-03-01' }))
+  assert.equal(y2024.ledgerStart, '2024-01-01')
+  assert.equal(y2024.openingBalanceCents, 80000, 'die Zahlung vom 30.12.2023 ist für Januar 2024 vorausbezahlt')
+  assert.equal(monthOf(y2024, 1).status, 'paid')
+  const y2026 = rowOf(ledger({ tenancies: [t], payments }, 2026, { asOf: '2026-03-01' }))
+  assert.equal(monthOf(y2026, 1).status, 'paid', 'der Januar 2026 ist mit der Zahlung vom 30.12.2025 gedeckt')
+  assert.equal(y2026.arrearsCents, 0)
+  assert.equal(y2026.closingBalanceCents, 0)
+  const y2023 = rowOf(ledger({ tenancies: [t], payments }, 2023, { asOf: '2026-03-01' }))
+  assert.ok(y2023.months.every((m) => m.status === 'notRecorded'), 'der Dezember 2023 ist nicht erfasst, nicht offen')
+  assert.equal(y2024.ledgerStartPaidOn, '2023-12-30')
+  // Steht an der ersten Zahlung ihr eigener Monat (Verwendungszweck), gilt sie für Dezember: geführt ab Dezember 2023.
+  const own = [pay('2023-12-30', 80000, { designatedMonth: '2023-12' }), ...payments.slice(1)]
+  const d2024 = rowOf(ledger({ tenancies: [t], payments: own }, 2024, { asOf: '2026-03-01' }))
+  assert.equal(d2024.ledgerStart, '2023-12-01')
+  assert.equal(d2024.ledgerStartPaidOn, undefined)
+})

@@ -210,6 +210,11 @@ test('Erfassung beginnt in einem späteren Monat: ab dort dieselben Zahlen wie v
     const payments = snapshotPayments(exact).filter((p) => Number(p.date.slice(0, 4)) >= year)
     const first = payments.map((p) => p.date.slice(0, 7)).reduce<string | null>((a, b) => (a === null || b < a ? b : a), null)
     if (first === null || !first.startsWith(`${year}-`) || `${year}-12` > lastPaidMonth(exact)) continue
+    // Liegt die erste erfasste Zahlung in den letzten zehn Tagen ihres Monats, beginnt die Erfassung erst mit dem Folgemonat
+    // (Dauerauftrag zum Monatsende, Integrationsdurchsicht 0.14, M1; calc-mietkonto-uebertrag.test.ts). Dann deckt sie den
+    // Folgemonat, und das Orakel (FIFO je Jahr, Zahlung im Monat für den Monat) gilt nicht; hier nur die übrigen.
+    const firstDay = payments.map((p) => p.date).reduce((a, b) => (b < a ? b : a))
+    if (Number(firstDay.slice(8, 10)) > new Date(Date.UTC(Number(firstDay.slice(0, 4)), Number(firstDay.slice(5, 7)), 0)).getUTCDate() - 10) continue
     const clip = `${first}-01` > tenancy.start ? `${first}-01` : tenancy.start
     // Das Orakel rechnet das Jahr ab dem Beginn der Erfassung (FIFO je Jahr, wie bis 0.13).
     const oracle: SnapshotTenancy = { ...tenancy, start: clip }

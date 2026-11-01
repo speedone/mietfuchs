@@ -742,6 +742,14 @@ importiert nichts aus calc.ts (Zyklus; Wächter in rentAllocation.test.ts). Die 
   davor sind für Tilgung, Salden, Rückstand, Abrechnungsreife und `prepayment.arrears` weder Soll noch offen (Status
   `notRecorded`); das Soll der Zeile (Steuer) bleibt. `ledgerStart` steht an der Zeile, wenn er aus einer Zahlung stammt
   und nach dem Mietbeginn liegt. Endsaldo = Anfangssaldo des Folgejahres gilt ab dem Jahr von `ledgerStart`.
+  **Dauerauftrag zum Monatsende** (Integrationsdurchsicht 0.14, M1): Liegt die früheste Mietzahlung in den letzten
+  `estg.short-period-days` Tagen ihres Monats (Fassung des Jahres des Folgemonats), beginnt das Konto eines
+  Mietverhältnisses, das vor diesem Monat begann, nicht in ihm endet und zu Beginn des Monats fällig ist (§ 556b,
+  `rentDueAtStartOf`), mit dem Folgemonat (`shiftedStart`); die Zeile trägt dann `ledgerStartPaidOn`. Sonst galt der Monat
+  der Zahlung als offen, jede Zahlung tilgte den laufenden statt des folgenden Monats, nach dem Auszug stand ein falscher
+  Rückstand, und die Zehn-Tage-Regel griff nie. Ein Monat laut Verwendungszweck gleich dem eigenen Monat an der ersten
+  Zahlung hebt das auf. Kehrseite: Wer zu Beginn der Erfassung den laufenden Monat erst ab dem 22. zahlt, steht einen
+  Monat voraus; dagegen hilft derselbe Verwendungszweck.
 - **Jahr mit Übertrag**: `openingBalanceCents` (01.01.) und `closingBalanceCents` (31.12.), Endsaldo(Y) =
   Anfangssaldo(Y+1). Ein Monat zählt Teile mit Datum bis zum 31.12. (eine Dezemberzahlung für Januar deckt den
   Januar), `paidLaterOn` nennt die spätere Deckung. `paidYearCents` und `balanceCents` bleiben das Jahr allein
