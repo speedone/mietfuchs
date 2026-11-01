@@ -1035,7 +1035,8 @@ test('Löschen einer verteilten Position: die Rückfrage nennt die entfallenden 
 // das zur Rückfrage der Seite, und die Teile gehen einmal mit `confirmSpread` hinaus.
 test('Verteilung beim Aufteilen einer gespeicherten Position: Wahl im Rumpf, Rückfrage des Servers, einmal mit confirmSpread', async () => {
   const year = new Date().getFullYear() - 1
-  costItems = [verteilteDach(year)]
+  // Mit Datum der Zahlung, sonst begännen die Teile ihre Verteilung in zwei Jahren (Integrationsdurchsicht 0.14, S1; unten).
+  costItems = [{ ...verteilteDach(year), paidOn: `${year + 1}-07-15` }]
   const question = `Die Verteilung beginnt dann ${year} statt ${year}.`
   const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } })
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
@@ -1066,4 +1067,34 @@ test('Verteilung beim Aufteilen einer gespeicherten Position: Wahl im Rumpf, Rü
   await waitFor(() => expect(splits()).toHaveLength(2))
   expect(splits()[0]?.body).toMatchObject({ spreadYears: 3 })
   expect(splits()[1]?.body).toMatchObject({ spreadYears: 3, confirmSpread: true })
+})
+
+// Integrationsdurchsicht 0.14 (S1): Ohne Datum der Zahlung flössen die Teile in zwei Jahren ab; das Formular sagt es vor
+// der Rückfrage zum Aufteilen, mit dem Satz des Servers, und schickt nichts.
+test('Verteilung beim Aufteilen ohne Datum der Zahlung, Teile in zwei Kalenderjahren: Satz statt Rückfrage, nichts gesendet', async () => {
+  const year = new Date().getFullYear() - 1
+  costItems = [verteilteDach(year)]
+  const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } })
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    const method = init?.method ?? 'GET'
+    if (method !== 'GET') {
+      sent.push({ url, method, body: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown> })
+      if (url.includes('/split/preview')) {
+        return json({ parts: [
+          { period: `${year}-01`, label: String(year), days: 184, amountCents: 504110, labor35aCents: null, description: 'Dachsanierung', needsTaxYear: false, closed: false, startYear: year, endYear: year },
+          { period: `${year + 1}-01`, label: String(year + 1), days: 181, amountCents: 495890, labor35aCents: null, description: 'Dachsanierung', needsTaxYear: false, closed: false, startYear: year + 1, endYear: year + 1 },
+        ] })
+      }
+      return json([])
+    }
+    const path = url.split('?')[0]
+    return json(path === '/api/costItems' ? costItems : path === '/api/properties' ? [{ id: 'objekt-1', name: 'Haus', kind: 'mfh', address: '' }] : [])
+  })
+  await renderStored()
+  fireEvent.change(await screen.findByLabelText(/Leistungszeitraum/), { target: { value: `${year}-07-01` } })
+  fireEvent.change(screen.getByLabelText(/^bis$/), { target: { value: `${year + 1}-06-30` } })
+  fireEvent.click(screen.getByRole('button', { name: /^Speichern$/ }))
+  expect(await screen.findByText(/Bitte tragen Sie das Datum der Zahlung ein/)).toBeTruthy()
+  expect(screen.queryByRole('alertdialog', { name: 'Rechnung aufteilen?' })).toBeNull()
+  expect(sent.filter((r) => r.url.includes('/split') && !r.url.includes('preview'))).toHaveLength(0)
 })

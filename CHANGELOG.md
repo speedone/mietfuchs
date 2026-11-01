@@ -34,7 +34,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   mit den Zeilen 57 bis 72 ([#262](https://github.com/speedone/mietfuchs/issues/262)). Die Steuerübersicht zieht je Jahr
   den Anteil ab, ohne den privaten Teil, und nennt die Voraussetzungen; das Steuer-ZIP führt die Spalte „verteilt“.
   Endet die Verteilung vorzeitig (verkauft, verschenkt, vererbt oder Vermietung beendet, § 82b Abs. 2 EStDV), tragen Sie
-  das Jahr in den Stammdaten beim Objekt ein; dann zieht die Steuerübersicht dort den ganzen Rest ab.
+  das Jahr in den Stammdaten beim Objekt ein; dann zieht die Steuerübersicht dort den ganzen Rest ab. Eine Rechnung, die
+  auf Abrechnungszeiträume in verschiedenen Kalenderjahren aufgeteilt ist, lässt sich erst mit dem Datum der Zahlung
+  verteilen; sonst begänne jeder Teil seine Verteilung in einem anderen Jahr.
 - Kostenart „Entnahme Erhaltungsrücklage“: zählt im Jahr, in dem die Gemeinschaft das Geld ausgibt, in eigener Gruppe
   „Erhaltungsaufwand“ ([#96](https://github.com/speedone/mietfuchs/issues/96)). Statt eines Zahlungsdatums gibt es
   das Jahr, in dem die Gemeinschaft bezahlt hat; die Steuerübersicht nennt die Zeilen 55 und 56 der Anlage V und weist

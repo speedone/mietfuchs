@@ -3,7 +3,7 @@
 // E-4, E-9.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { allowsSpread, isSpreadYears, SPREAD_YEARS, spreadOptions, spreadQuestions, spreadRates, spreadRestQuestions, spreadSpan } from '../../shared/spread.ts'
+import { allowsSpread, isSpreadYears, partOutflowYears, SPREAD_YEARS, spreadOptions, spreadPartsRefusal, spreadQuestions, spreadRates, spreadRestQuestions, spreadSpan } from '../../shared/spread.ts'
 import { joinQuestions } from '../../shared/paidOn.ts'
 import { largestRemainder } from '../src/apportion.ts'
 import { rngOf } from '../testing/revertFlows.ts'
@@ -215,4 +215,15 @@ test('spreadQuestions mit Ende am Objekt: Abzug mit Rest, keine Frage, wo sich n
   // Ein anderes Jahr der Zahlung: beide Abzüge mit dem Ende.
   assert.deepEqual(spreadQuestions(stored({ spreadYears: 5, taxYear: 2026 }), stored({ spreadYears: 5, taxYear: 2027 }), [], 2028)[0],
     'Die Verteilung beginnt dann 2027 statt 2026: Abzug 2027 bis 2028 (Rest 2028) statt 2026 bis 2028 (Rest 2028).')
+})
+
+// Integrationsdurchsicht 0.14 (S1): eine aufgeteilte Rechnung, ein Jahr des Beginns.
+test('spreadPartsRefusal: Teile in zwei Kalenderjahren ohne Datum lehnen ab; Datum oder gemeinsames Jahr der Zahlung nicht', () => {
+  assert.deepEqual(partOutflowYears([{ period: '2025-01' }, { period: '2026-01' }]), [2025, 2026])
+  const refusal = spreadPartsRefusal('Dach', [{ period: '2025-01' }, { period: '2026-01' }])
+  assert.match(refusal ?? '', /^Bitte tragen Sie das Datum der Zahlung ein, bevor Sie „Dach“ verteilen: .* in den Jahren 2025 und 2026\./)
+  assert.equal(spreadPartsRefusal('Dach', [{ period: '2025-01', paidOn: '2026-02-01' }, { period: '2026-01', paidOn: '2026-02-01' }]), null)
+  // Mai bis April: beide Teile über zwei Kalenderjahre tragen dasselbe Jahr der Zahlung.
+  assert.equal(spreadPartsRefusal('Dach', [{ period: '2025-05', taxYear: 2026 }, { period: '2026-05', taxYear: 2026 }]), null)
+  assert.equal(spreadPartsRefusal('Dach', [{ period: '2025-01' }, { period: '2025-07' }]), null)
 })

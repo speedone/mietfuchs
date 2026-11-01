@@ -69,6 +69,7 @@ import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { hotWaterOf } from '../../../shared/heatingPeriod.ts'
 import { serviceReceivesOperatingPower } from '../../../shared/operatingPower.ts'
 import { joinQuestions, paidOnYear, splitPaidOnQuestions } from '../../../shared/paidOn.ts'
+import { spreadPartsRefusal } from '../../../shared/spread.ts'
 import { sourceLabels } from '../costSource'
 import { alreadyCarried, carryKeyDetails, carryOverBody, carryOverForm, carryOverRows, withCarryAmount, type CarryRow } from '../carryOver'
 import { api, ApiError, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
@@ -274,6 +275,14 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   // wird am gespeicherten Stand, denn eine neue Rechnung über zwei Zeiträume trägt im Formular noch den ganzen Betrag.
   const storedItem = form?.id ? items.find((i) => i.id === form.id) : undefined
   const formPart = storedItem ? formPartOf(items, storedItem, period) : null
+  // Eine Rechnung, ein Jahr des Beginns der Verteilung (Integrationsdurchsicht 0.14, S1): An einem Teil einer aufgeteilten
+  // Rechnung sagt das Feld vor dem Speichern, was der Server ablehnt, mit denselben Sätzen (shared/spread.ts).
+  const spreadProblem = form && storedItem?.sourceId && form.spreadYears !== '' && showsSpread(form)
+    ? spreadPartsRefusal(form.description, [
+      { period: storedItem.period, paidOn: showsPaidOn(form) && form.paidOn !== '' ? form.paidOn : null, taxYear: form.taxYear !== '' ? Number(form.taxYear) : null },
+      ...items.filter((i) => i.sourceId === storedItem.sourceId && i.id !== storedItem.id),
+    ])
+    : null
   // Die Jahre des Zeitraums der Position für die übliche Spanne des Zahlungsdatums (#255 PR 3, R-4): bei einer
   // Heizposition unter eigener Heizperiode deren Jahre, sonst die des Abrechnungszeitraums.
   const periodSpan = { startYear: Number(period.from.slice(0, 4)), endYear: Number(period.to.slice(0, 4)) }
@@ -645,6 +654,14 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
         if ('error' in decision) {
           setNeedsTaxYear(decision.needsTaxYear)
           setError(decision.error)
+          return
+        }
+        // Verteilt (§ 82b EStDV), aber die Teile flössen ohne Datum in verschiedenen Jahren ab (S1): wie der Server, vor der Rückfrage.
+        const refusal = form.spreadYears !== '' && showsSpread(form)
+          ? spreadPartsRefusal(form.description, parts.map((p) => ({ period: p.period, paidOn: showsPaidOn(form) && form.paidOn !== '' ? form.paidOn : null, taxYear: p.needsTaxYear && form.taxYear !== '' ? Number(form.taxYear) : null })))
+          : null
+        if (refusal !== null) {
+          setError(refusal)
           return
         }
         const ok = await confirm({ title: 'Rechnung aufteilen?', message: decision.message, confirmLabel: 'Aufteilen und speichern', cancelLabel: 'Abbrechen' })
@@ -1263,7 +1280,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
               <summary>Weitere Angaben — Leistungszeitraum{showTaxYear ? ', Jahr der Zahlung' : ''}{showsPaidOn(form) ? ', Bezahlt am' : ''}{showsSpread(form) ? ', Verteilung' : ''}{form.category === HEATING_CATEGORY ? ', Brennstoff/Energie' : ''} (optional)</summary>
               <CostPeriodFields form={form} onChange={setForm} showTaxYear={showTaxYear} years={heatTax?.show ? heatTax.years : taxYearOptions(periodSpan, storedTaxYear, form.taxYear !== '' ? Number(form.taxYear) : null)} emptyLabel={heatTax ? (heatTax.show && heatingOption && heatingOption.startYear === heatingOption.endYear ? `wie Heizperiode (${heatingOption.startYear})` : undefined) : spansTwoYears(period) ? undefined : `wie Abrechnungsjahr (${year})`} billTaxYear={deductionTaxYear(form, items)} paidOnChanges={livePaidOnChanges} droppedPaidOn={droppedPaidOnText(form, period)} />
               {/* #262 PR 3 (E-9): Verteilung nach § 82b EStDV neben „Bezahlt am“, nur wo der Server sie annimmt. */}
-              {showsSpread(form) && <SpreadField form={form} period={period} restYear={property?.spreadRestYear ?? null} onChange={setForm} />}
+              {showsSpread(form) && <SpreadField form={form} period={period} restYear={property?.spreadRestYear ?? null} problem={spreadProblem} onChange={setForm} />}
               {droppedSpreadText(storedItem, form) && <p className="muted" role="status">{droppedSpreadText(storedItem, form)}</p>}
             </details>
             {/* Nicht umlagefähig (#142): nichts zu verteilen, also keine Auswahl, die etwas anderes verspräche. */}

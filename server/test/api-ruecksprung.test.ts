@@ -153,7 +153,7 @@ test('Rücksprung über das Setzen der Verteilung an einem Teil stellt alle Teil
   try {
     const teile = await post<{ id: string }[]>(s, '/api/costItems/split', {
       propertyId: 'objekt-1', period: '2024-01', category: 'Nicht umlagefähig', description: 'Dach', amountCents: 3_000_000, key: 'area',
-      serviceFrom: '2024-07-01', serviceTo: '2025-06-30', taxYear: 2024, spreadYears: 2,
+      serviceFrom: '2024-07-01', serviceTo: '2025-06-30', paidOn: '2024-12-15', confirmPaidOn: true, spreadYears: 2,
     })
     assert.equal(teile.length, 2)
     const before = await dumpStock(s.dataDir)
