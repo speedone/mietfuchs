@@ -3,7 +3,7 @@
 import { describe, expect, test } from 'vitest'
 import type { HeatingPlant, Property, Tenancy, Unit } from '../../shared/types.ts'
 import { GUIDES } from '../../shared/guides.ts'
-import { numberWord, suggestGuides, type HelpStock } from './helpSuggestions'
+import { keepIfEqual, numberWord, suggestGuides, type HelpStock } from './helpSuggestions'
 
 const property = (over: Partial<Property> = {}): Property => ({
   id: 'p1', name: 'Lindenweg 12', kind: 'mfh', address: 'Lindenweg 12, 12345 Musterstadt', landlordName: null, iban: null,
@@ -56,6 +56,12 @@ describe('Zahlwörter', () => {
 
 describe('Mieterwechsel und Leerstand im Zeitraum', () => {
   const two = (ts: Tenancy[], over: Partial<HelpStock> = {}) => stock({ units: [unit({ id: 'w1', name: 'EG links' })], tenancies: ts, ...over })
+
+  // Durchsicht von Teil 4, S2: gezählt werden Wechsel, nicht Wohnungen mit Wechsel.
+  test('zwei Wechsel in derselben Wohnung sind zwei', () => {
+    const s = two([tenancy('w1', '2020-01-01', '2025-03-31'), tenancy('w1', '2025-04-01', '2025-08-31'), tenancy('w1', '2025-09-01', null)])
+    expect(reasonOf(s, 'tenantChange')).toBe('Weil 2025 zwei Mieterwechsel erfasst sind')
+  })
 
   test('Auszug und Einzug in derselben Wohnung im Jahr: Mieterwechsel', () => {
     const s = two([tenancy('w1', '2020-01-01', '2025-06-30'), tenancy('w1', '2025-07-01', null)])
@@ -116,6 +122,31 @@ describe('Abrechnungszeitraum', () => {
 
   test('Kalenderjahr: keine Kachel', () => {
     expect(reasonOf(stock({ plants: [plant({ method: 'manual', energy: 'heatPump' })] }), 'periodMayApril')).toBeUndefined()
+  })
+
+  // Durchsicht von Teil 4, M1: entschieden wird am gewählten Zeitraum, nicht an den Regeln des Objekts.
+  test('Objekt mit Wechsel: im Kalenderjahr vor oder nach dem Wechsel keine Kachel, im Rumpf ein eigener Grund', () => {
+    const withRules = (periodRules: Property['periodRules'], period: HelpStock['period']) => {
+      const p = property({ kind: 'efh', periodRules })
+      return reasonOf(stock({ property: p, properties: [p], period }), 'periodMayApril')
+    }
+    expect(withRules({ startMonth: 5, changes: ['2024-01'] }, Y2025)).toBeUndefined()
+    expect(withRules({ startMonth: 1, changes: ['2027-05'] }, Y2025)).toBeUndefined()
+    const rump = { from: '2026-01-01', to: '2026-04-30', label: '01.01.–30.04.2026', calendar: false }
+    expect(withRules({ startMonth: 1, changes: ['2026-05'] }, rump)).toBe('Weil Lindenweg 12 auf einen anderen Abrechnungszeitraum umstellt')
+    const after = { from: '2026-05-01', to: '2027-04-30', label: '2026/2027', calendar: false }
+    expect(withRules({ startMonth: 1, changes: ['2026-05'] }, after)).toBe('Weil Lindenweg 12 von Mai bis April abrechnet')
+  })
+
+  // M2: die Heizperiode aus dem Rhythmus der Anlage (Beginnmonat und Wechsel), die im gewählten Zeitraum endet.
+  test('Heizung mit Wechsel: nach dem Wechsel aufs Kalenderjahr keine Kachel, nach dem Wechsel auf Mai die Kachel', () => {
+    const heat = (over: Partial<HeatingPlant>, period: HelpStock['period'] = Y2025) =>
+      reasonOf(stock({ period, plants: [plant({ method: 'manual', energy: 'heatPump', ...over })] }), 'periodMayApril')
+    expect(heat({ periodStartMonth: 5, periodChanges: ['2024-01'] })).toBeUndefined()
+    expect(heat({ periodStartMonth: 1, periodChanges: ['2025-05'] })).toBe('Weil die Heizung auf eine andere Heizperiode umstellt')
+    expect(heat({ periodStartMonth: 1, periodChanges: ['2025-05'] }, { from: '2026-01-01', to: '2026-12-31', label: '2026', calendar: true }))
+      .toBe('Weil die Heizung von Mai bis April abgerechnet wird')
+    expect(heat({ periodStartMonth: 7 })).toBe('Weil die Heizung von Juli bis Juni abgerechnet wird')
   })
 })
 
@@ -179,6 +210,9 @@ describe('Mietverhältnisse und Objekt', () => {
     const units = [unit({ id: 'w1' }), unit({ id: 'w2' })]
     const ts = [tenancy('w1', '2020-01-01', null, { costModel: 'flatRate' }), tenancy('w2', '2020-01-01', null, { costModel: 'inclusive' })]
     expect(reasonOf(stock({ units, tenancies: ts }), 'flatRate')).toBe('Weil für zwei Mietverhältnisse eine Pauschale oder Inklusivmiete vereinbart ist')
+    // Durchsicht von Teil 4, S3: ohne Namen der allgemeine Satz
+    expect(reasonOf(stock({ tenancies: [tenancy('w1', '2020-01-01', null, { costModel: 'flatRate', tenantName: '  ' })] }), 'flatRate'))
+      .toBe('Weil für ein Mietverhältnis eine Pauschale vereinbart ist')
     // Eine Garage ohne Nebenkosten trägt die Inklusivmiete nach der Anleitung zur Garage; das ist keine Pauschale der Wohnung
     const garage = unit({ id: 'g1', name: 'Garage 1', areaM2: 0 })
     expect(reasonOf(stock({ units: [unit({ id: 'w1' }), garage], tenancies: [tenancy('w1', '2020-01-01', null), tenancy('g1', '2020-01-01', null, { costModel: 'inclusive', heatingModel: 'inclusive' })] }), 'flatRate')).toBeUndefined()
@@ -208,6 +242,16 @@ describe('Mietverhältnisse und Objekt', () => {
     expect(reasonOf(stock({ units: [unit(), unit(), unit({ name: 'Garage 1', areaM2: 0 })] }), 'multiFamily')).toBeUndefined()
     const many = Array.from({ length: 14 }, () => unit())
     expect(reasonOf(stock({ units: many }), 'multiFamily')).toBe('Weil Lindenweg 12 14 Wohnungen hat')
+  })
+
+  // Durchsicht von Teil 4, S1: nur das erste Wort des Namens; „Wohnung über der Garage“ ist eine Wohnung.
+  test('Garage nur, wenn der Name mit ihr beginnt', () => {
+    const units = [unit({ name: 'Wohnung über der Garage' }), unit({ name: 'Garagenhof-Blick EG' }), unit()]
+    expect(reasonOf(stock({ units }), 'garage')).toBeUndefined()
+    expect(reasonOf(stock({ units }), 'multiFamily')).toBe('Weil Lindenweg 12 drei Wohnungen hat')
+    for (const name of ['TG-Stellplatz 3', 'Tiefgarage 2', 'Carport', 'Doppelgarage', 'stellplatz 7', 'Garage1']) {
+      expect(reasonOf(stock({ units: [unit(), unit({ name })] }), 'garage')).toBe(`Weil Lindenweg 12 die Einheit „${name}“ hat`)
+    }
   })
 
   test('Garage oder Stellplatz am Namen der Einheit', () => {
@@ -257,5 +301,17 @@ describe('Reihenfolge und Obergrenze', () => {
 
   test('jede vorgeschlagene Anleitung gibt es', () => {
     for (const s of suggestGuides(full, 99)) expect(GUIDES[s.guideId]).toBeTruthy()
+  })
+})
+
+// Durchsicht von Teil 4, S4: Die App fragt die Heizanlagen bei jedem Seitenwechsel neu ab; ist die Antwort inhaltlich
+// gleich, bleibt die alte Liste, sonst zeichnete die ganze App einmal mehr und die Vorschläge rechneten neu.
+describe('gleiche Liste behalten', () => {
+  test('inhaltlich gleich: die alte Liste, sonst die neue', () => {
+    const a = [plant()]
+    expect(keepIfEqual(a, [plant()])).toBe(a)
+    const b = [plant({ energy: 'oil' })]
+    expect(keepIfEqual(a, b)).toBe(b)
+    expect(keepIfEqual(a, [])).toEqual([])
   })
 })

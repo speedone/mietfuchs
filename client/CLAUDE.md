@@ -367,7 +367,10 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   (Zahl als Wort bis zwölf). Eine Regel nur, wo die Angabe eindeutig ist (lieber keine Kachel); Rang Ereignis des Zeitraums
   vor Abrechnungszeitraum vor Heizung vor Pauschale vor Objektart, zuerst je Gruppe die beste. Kacheln wie die
   Anleitungen mit dem Grund oben (`text-accent-strong`), eigener Schlüssel `suggest:{id}`, damit der Pfad auf diese Kachel
-  zurückführt. Ohne Treffer kein Abschnitt. Eine neue Anleitung bekommt hier eine Regel, wenn sich ihre Lage aus dem
+  zurückführt. Ohne Treffer kein Abschnitt. Zeitraum und Heizperiode entscheiden am gewählten Zeitraum bzw. an den
+  Heizperioden der Anlage, die in ihm enden (`heatingPeriodsEndingIn`), nie an den Regeln allein; ein Rumpf hat einen
+  eigenen Grund. Garagen nur am ersten Wort des Namens. `helpStock` entsteht nur auf der Hilfe, und die Liste der
+  Heizanlagen bleibt bei gleichem Inhalt dieselbe (`keepIfEqual`). Eine neue Anleitung bekommt hier eine Regel, wenn sich ihre Lage aus dem
   Bestand ablesen lässt.
   Das Lexikon (Teil 3): Pfad „Hilfe & Begriffe › Lexikon“ (führt auf die Kachel oder die Suche, mit der der Weg begann),
   `h1` „Lexikon“, Themenfilter als Umschaltknöpfe (`aria-pressed`, „Alle“ vorne, je mit Zahl), darunter ab 44rem

@@ -19,6 +19,8 @@ import { isStockEnergy } from '../../shared/fuelStock.ts'
 import { billingEnergy } from '../../shared/heatDelivery.ts'
 import { usageAt } from '../../shared/unitUsage.ts'
 import { MONTH_NAMES } from './monthText'
+import { CALENDAR_RULES } from '../../shared/period.ts'
+import { hasOwnRhythm, heatingPeriodsEndingIn, plantRules } from '../../shared/heatingPeriod.ts'
 import type { HeatingEnergy, HeatingPlant, Property, Tenancy, Unit } from '../../shared/types.ts'
 
 export type HelpStock = {
@@ -37,14 +39,21 @@ const WORDS = ['null', 'eins', 'zwei', 'drei', 'vier', 'fünf', 'sechs', 'sieben
 // Eine Zahl bis zwölf als Wort, darüber als Ziffer (wie im Satz üblich).
 export const numberWord = (n: number): string => WORDS[n] ?? String(n)
 
-const MONTHS = MONTH_NAMES
-const monthOf = (iso: string): string => MONTHS[Number(iso.slice(5, 7)) - 1] ?? iso.slice(5, 7)
+const monthOf = (iso: string): string => MONTH_NAMES[Number(iso.slice(5, 7)) - 1] ?? iso.slice(5, 7)
 
 const ENERGY_PREFIX: Partial<Record<HeatingEnergy, string>> = { gas: 'Gas', oil: 'Öl', lpg: 'Flüssiggas', coal: 'Kohle' }
 const FUEL_NAMES: Partial<Record<HeatingEnergy, string>> = { oil: 'Heizöl', lpg: 'Flüssiggas', pellets: 'Pellets', wood: 'Holz', coal: 'Kohle' }
 
-// Garage, Stellplatz, Carport: nur am Namen der Einheit erkennbar, eine Art der Einheit gibt es nicht.
-const isParking = (u: Pick<Unit, 'name'>): boolean => /garage|stellplatz|carport|parkplatz/i.test(u.name)
+// Garage, Stellplatz, Carport: nur am Namen der Einheit erkennbar, eine Art der Einheit gibt es nicht. Nur das erste
+// Wort zählt („TG-Stellplatz 3“, „Doppelgarage“), denn „Wohnung über der Garage“ ist eine Wohnung (Durchsicht S1).
+const PARKING_WORD = /^(?:tg-?)?(?:tief|einzel|doppel)?(?:garage|garagen(?:stell)?platz|stellplatz|carport|parkplatz)\d*$/i
+const isParking = (u: Pick<Unit, 'name'>): boolean => PARKING_WORD.test(u.name.trim().split(/\s+/)[0] ?? '')
+
+// Ein Zeitraum ist das Kalenderjahr, wenn er am 01.01. beginnt und am 31.12. desselben Jahres endet; kürzer als zwölf
+// Monate ist ein Rumpf (er entsteht nur bei einem Wechsel des Rhythmus).
+const isCalendarYear = (p: { from: string; to: string }): boolean => p.from.endsWith('-01-01') && p.to === `${p.from.slice(0, 4)}-12-31`
+const monthIndex = (iso: string): number => Number(iso.slice(0, 4)) * 12 + Number(iso.slice(5, 7)) - 1
+const isShort = (p: { from: string; to: string }): boolean => monthIndex(p.to) - monthIndex(p.from) + 1 < 12
 
 const nextDay = (iso: string): string => new Date(Date.parse(`${iso}T00:00:00Z`) + 86400000).toISOString().slice(0, 10)
 const overlaps = (start: string, end: string | null, from: string, to: string): boolean => start <= to && (end === null || end >= from)
@@ -71,10 +80,11 @@ export function suggestGuides(stock: HelpStock | null, max = 3): GuideSuggestion
 
   // Mieterwechsel: in derselben Wohnung endet ein Mietverhältnis vor dem letzten Tag des Zeitraums, und ein späteres
   // beginnt nach seinem ersten Tag. Ein Wechsel genau an der Grenze gehört zum Vorjahr.
-  const changes = units.filter((u) => {
+  // Gezählt wird jeder Wechsel, auch zwei in derselben Wohnung (Durchsicht S2).
+  const changes = units.reduce((sum, u) => {
     const ts = tenancies.filter((t) => t.unitId === u.id)
-    return ts.some((a) => a.end !== null && a.end >= from && a.end < to && ts.some((b) => b.start > a.end! && b.start > from && b.start <= to))
-  }).length
+    return sum + ts.filter((a) => a.end !== null && a.end >= from && a.end < to && ts.some((b) => b.start > a.end! && b.start > from && b.start <= to)).length
+  }, 0)
   // Leerstand: an einem Tag des Zeitraums vermietet, aber ohne Mietverhältnis. Nur Wohnungen mit einem Mietverhältnis im
   // Zeitraum; eine ganz ohne ist eher noch nicht erfasst als leer.
   const vacant = units.filter((u) => {
@@ -107,13 +117,17 @@ export function suggestGuides(stock: HelpStock | null, max = 3): GuideSuggestion
   else if (concurrent > 1) add(HEATING, 'heatingRenewed', `Weil in ${name} ${numberWord(concurrent)} Heizanlagen eingetragen sind`)
   else if (plants.some((p) => p.supply === 'perUnit')) add(HEATING, 'heatingRenewed', `Weil in ${name} Etagenheizungen eingetragen sind`)
 
-  // Abrechnungszeitraum: das Objekt rechnet nicht im Kalenderjahr ab, oder nur die Heizung hat eine eigene Heizperiode.
-  const rules = property.periodRules ?? { startMonth: 1, changes: [] }
-  const ownPeriod = plants.find((p) => p.periodStartMonth !== null && p.periodStartMonth !== 1)
-  if (rules.startMonth !== 1 || rules.changes.length > 0) add(PERIOD, 'periodMayApril', `Weil ${name} von ${monthOf(from)} bis ${monthOf(to)} abrechnet`)
-  else if (ownPeriod?.periodStartMonth) {
-    const start = ownPeriod.periodStartMonth
-    add(PERIOD, 'periodMayApril', `Weil die Heizung von ${MONTHS[start - 1]} bis ${MONTHS[(start + 10) % 12]} abgerechnet wird`)
+  // Abrechnungszeitraum, entschieden am gewählten Zeitraum und nicht an den Regeln (Durchsicht M1): Vor oder nach einem
+  // Wechsel kann er das Kalenderjahr sein. Ein Rumpf bekommt einen eigenen Grund, denn um ihn geht es in der Anleitung
+  // (Vorschau, Frist des Rumpfs, Aufteilen nach Tagen); „von Januar bis April“ läse sich wie der Rhythmus.
+  // Sonst die Heizung: die Heizperioden ihres eigenen Rhythmus (Beginnmonat und Wechsel, `plantRules`), die im gewählten
+  // Zeitraum enden und so in seine Abrechnung gehören (M2).
+  const rules = property.periodRules ?? CALENDAR_RULES
+  const heatingPeriod = plants.filter(hasOwnRhythm).flatMap((p) => heatingPeriodsEndingIn(plantRules(p, rules), period)).find((h) => !isCalendarYear(h))
+  if (!isCalendarYear(period)) {
+    add(PERIOD, 'periodMayApril', isShort(period) ? `Weil ${name} auf einen anderen Abrechnungszeitraum umstellt` : `Weil ${name} von ${monthOf(from)} bis ${monthOf(to)} abrechnet`)
+  } else if (heatingPeriod) {
+    add(PERIOD, 'periodMayApril', heatingPeriod.short ? 'Weil die Heizung auf eine andere Heizperiode umstellt' : `Weil die Heizung von ${monthOf(heatingPeriod.from)} bis ${monthOf(heatingPeriod.to)} abgerechnet wird`)
   }
 
   // CO₂: Gas, Öl, Flüssiggas oder Kohle (auch als Brennstoff eines Wärmelieferanten), die Abrechnung erstellt ein
@@ -136,7 +150,9 @@ export function suggestGuides(stock: HelpStock | null, max = 3): GuideSuggestion
   if (flat.length === 1) {
     const t = flat[0]!
     const what = t.costModel === 'flatRate' || t.heatingModel === 'flatRate' ? 'eine Pauschale' : 'eine Inklusivmiete'
-    add(CONTRACT, 'flatRate', `Weil mit ${t.tenantName} ${what} vereinbart ist`)
+    // Ohne Namen der allgemeine Satz (Durchsicht S3)
+    const who = t.tenantName.trim()
+    add(CONTRACT, 'flatRate', who ? `Weil mit ${who} ${what} vereinbart ist` : `Weil für ein Mietverhältnis ${what} vereinbart ist`)
   } else if (flat.length > 1) add(CONTRACT, 'flatRate', `Weil für ${numberWord(flat.length)} Mietverhältnisse eine Pauschale oder Inklusivmiete vereinbart ist`)
 
   // Art des Objekts. Wohnungen sind die beteiligten Einheiten (vermietet oder selbst genutzt am Ende des Zeitraums) ohne
@@ -159,4 +175,11 @@ export function suggestGuides(stock: HelpStock | null, max = 3): GuideSuggestion
   // Nach dem Auffüllen wieder in der Rangfolge, damit ein Ereignis des Jahres oben steht.
   const chosen = order.slice(0, max).sort((a, b) => a.rank - b.rank || ranked.indexOf(a) - ranked.indexOf(b))
   return chosen.map(({ guideId, reason }) => ({ guideId, reason }))
+}
+
+// Die Heizanlagen fragt die App bei jedem Seitenwechsel neu ab (für die Navigation). Ist die Antwort inhaltlich gleich,
+// bleibt die alte Liste, damit die App nicht einmal mehr zeichnet und die Vorschläge nicht neu rechnen (Durchsicht S4).
+// Verglichen wird der ganze Inhalt: Jedes Feld einer Anlage kann eine Regel ändern, und die Listen sind kurz.
+export function keepIfEqual<T>(prev: T, next: T): T {
+  return JSON.stringify(prev) === JSON.stringify(next) ? prev : next
 }

@@ -21,7 +21,7 @@ import Zaehler from './pages/Zaehler'
 import Belege from './pages/Belege'
 import Abrechnung from './pages/Abrechnung'
 import Hilfe from './pages/Hilfe'
-import type { HelpStock } from './helpSuggestions'
+import { keepIfEqual, type HelpStock } from './helpSuggestions'
 import Verlauf from './pages/Verlauf'
 import Steuer from './pages/Steuer'
 import Einstellungen from './pages/Einstellungen'
@@ -351,22 +351,23 @@ function Shell() {
   const hasHeatingPlant = heatingPlants.length > 0
   useEffect(() => {
     if (!propertyId) {
-      setHeatingPlants([])
+      setHeatingPlants((prev) => keepIfEqual(prev, []))
       return
     }
     let current = true
     api<HeatingPlant[]>(withProperty('/api/heating-plants', propertyId))
-      .then((list) => { if (current) setHeatingPlants(list) })
-      .catch(() => { if (current) setHeatingPlants([]) })
+      .then((list) => { if (current) setHeatingPlants((prev) => keepIfEqual(prev, list)) })
+      .catch(() => { if (current) setHeatingPlants((prev) => keepIfEqual(prev, [])) })
     return () => { current = false }
   }, [propertyId, tab])
 
   // Der Bestand für „Passend zu Ihrem Bestand“: das gewählte Objekt mit seinen Wohnungen, Mietverhältnissen und
-  // Heizanlagen im gewählten Zeitraum. Solange die Wohnungen eines anderen Objekts geladen sind, keiner.
-  const helpStock = useMemo<HelpStock | null>(() => (property && unitsFor === property.id ? {
+  // Heizanlagen im gewählten Zeitraum. Solange die Wohnungen eines anderen Objekts geladen sind, keiner; und nur auf
+  // der Hilfe, sonst braucht ihn niemand.
+  const helpStock = useMemo<HelpStock | null>(() => (tab === 'hilfe' && property && unitsFor === property.id ? {
     properties, property, units, tenancies, plants: heatingPlants,
     period: { from: periodNow.from, to: periodNow.to, label: periodLabelNow, calendar: periodCalendar },
-  } : null), [properties, property, unitsFor, units, tenancies, heatingPlants, periodNow, periodLabelNow, periodCalendar])
+  } : null), [tab, properties, property, unitsFor, units, tenancies, heatingPlants, periodNow, periodLabelNow, periodCalendar])
 
   const contextLine = [property ? propertyName(property) : null, periodLabelNow].filter(Boolean).join(' · ')
 
