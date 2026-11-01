@@ -145,14 +145,18 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
 
 - **Electron nur als Fenster** ([../desktop/](../desktop/), eigenes Paket mit eigenem Lockfile; `npm install` installiert es
   **nicht** mit, das Docker-Image kennt den Ordner nicht, sondern `npm --prefix desktop install`. Ohne Installation
-  überspringt `npm run typecheck` das Fenster mit Hinweis, in der CI ist das ein Fehler): Der Server läuft aus dem
-  Quellcode mit **Electrons eigenem Node als `utilityProcess`** (`serviceName` `Mietfuchs-Server`, Ausgabe über Pipes
-  ins Protokoll), das Fenster zeigt `http://127.0.0.1:17517`. Keine Programmdatei des Servers und kein Bündelschritt:
-  Node streift die Typen ab wie bei `npm start`, `node:sqlite` ist dabei (Electron 45.2 bringt Node 24.22). Ausgeliefert
-  liegt er unter `resources/mietfuchs` in der Anordnung des Repos (`server/src`, Migrationen samt Journal, beide
-  package.json, `server/node_modules` nur mit Produktionsabhängigkeiten, `shared/`, `client/dist`, oben eine
-  package.json mit `"type": "module"`), so stimmen seine relativen Pfade; beim Entwickeln derselbe Weg aus dem Repo,
-  mit `NKA_DATA_DIR` auf server/data. [main.js](../desktop/src/main.js) setzt zusammen, was
+  überspringt `npm run typecheck` das Fenster mit Hinweis, in der CI ist das ein Fehler): Der Server läuft mit
+  **Electrons eigenem Node als `utilityProcess`** (`serviceName` `Mietfuchs-Server`, Ausgabe über Pipes ins
+  Protokoll), das Fenster zeigt `http://127.0.0.1:17517`; `node:sqlite` ist dabei (Electron 45.2 bringt Node 24.22).
+  Keine Programmdatei des Servers. **Ausgeliefert als Bündel**, drei Dateien unter `resources/mietfuchs` in der
+  Anordnung des Repos: `server/server.mjs` (Server, `shared/`, Abhängigkeiten und Migrationen), daneben
+  `server/THIRD-PARTY-LICENSES.txt` und `client/dist.pack` (das Frontend als eine Datei,
+  [clientPack.ts](../server/src/clientPack.ts)). Das Bündel erkennt sich an `IN_BUNDLE`
+  ([bundle.ts](../server/src/bundle.ts), beim Bündeln auf true gesetzt) und nimmt dann Migrationen und Frontend
+  daraus statt von der Platte. Aus den Quellen (rund 470 Dateien, Typen abstreifen) kostete der Start ein bis drei
+  Sekunden mehr, und die Tausende Dateien aus Quellen und node_modules prüft der Echtzeitschutz unter Windows beim
+  Installieren einzeln. **Beim Entwickeln** (`npm run desktop`) läuft der Server aus den Quellen im Repo, ohne
+  Bauschritt, mit `NKA_DATA_DIR` auf server/data. [main.js](../desktop/src/main.js) setzt zusammen, was
   [server.js](../desktop/src/server.js) ohne Electron prüfbar hält (Modul, Umgebung, Port, Startzeile, Links;
   desktop/test). Code bleibt JavaScript, geprüft mit `checkJs` über
   `npm run typecheck` ([typecheck-desktop.mjs](typecheck-desktop.mjs)); die Tests in desktop/test brauchen keine
@@ -193,11 +197,17 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
 - **Drucken**: `window.print()` druckt in Electron ohne Hintergründe; das Preload leitet es auf `webContents.print`
   mit `printBackground` um. Geprüft mit [safari-print-check.mjs](safari-print-check.mjs) `--engines chromium,electron`
   (unter Linux mit `xvfb-run`): dieselben Fälle im Fenster, Seitenzahl gleich Chromium.
-- **Bau** ([package-desktop.mjs](package-desktop.mjs), electron-builder): Vorher `npm run build` (client/dist). Das Skript
-  legt den Server-Ordner unter `dist-desktop-server/` an (`stagedPath` wählt die Dateien, ohne Tests, Doku, eingebettete
-  Dateien der Programmdatei und die Schnappschüsse von drizzle-kit; `npm ci --omit=dev --ignore-scripts` in der Kopie,
-  danach fallen Typdeklarationen und Source-Maps aus node_modules, `prunable`; `checkServerFolder` prüft das Ergebnis),
-  `extraResources` nimmt ihn als `resources/mietfuchs` mit, für jede Architektur derselbe (keine nativen Module).
+- **Bau** ([package-desktop.mjs](package-desktop.mjs), electron-builder): Vorher `npm run build` (client/dist, bringt
+  mit Vite auch rolldown mit) und die Abhängigkeiten des Servers (`npm --prefix server ci --omit=dev` genügt). Das
+  Skript bündelt den Server mit **rolldown aus client/node_modules** (über Vite aufgelöst, kein eigenes Werkzeug; ESM,
+  Ziel node24.22) nach `dist-desktop-server/`. Extern bleiben nur `node:*`, `bun:sqlite` und das eingebettete Frontend
+  der Programmdatei (beide hinter `globalThis.Bun`); jede Abhängigkeit ist bündelbar, ein unaufgelöster Import bricht
+  den Bau ab. Weil `import.meta.url` im Bündel die eine Datei ist, schreibt `rewriteImportMeta` es je Modul auf den
+  Ort im Repo um (so stimmen die Wege nach `client/dist.pack` und, beim Entwickeln, `server/data`); anderes an
+  `import.meta` und Abhängigkeiten, die es nutzen, brechen ab. Die Migrationen kommen über `migrationsFromDisk` ins
+  Bündel, also genau wie unter Node gelesen. Die Lizenzen der gebündelten Pakete schreibt der Bau daneben, sie fehlen
+  sonst mit node_modules. `checkServerFolder` verlangt genau die drei Dateien.
+  `extraResources` nimmt den Ordner als `resources/mietfuchs` mit, für jede Architektur derselbe (keine nativen Module).
   `node scripts/package-desktop.mjs server` legt nur den Ordner an. Windows ein Installer für x64 und ARM64
   zusammen (`Mietfuchs-Setup-<Version>.exe`, NSIS für den Benutzer, ohne Adminrechte; `latest.yml` des Updaters kennt
   keine Architektur). Daneben legt electron-builder je
@@ -226,7 +236,7 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   je Architektur ein `.msix`, zusammen ein `.msixbundle`, unsigniert (der Store signiert). Nur unter Windows
   (makeappx aus dem Windows SDK). **Eingepackt wird das Programmfenster** (#517): der entpackte Ordner aus
   package-desktop.mjs (`dist-desktop/win-unpacked`, `win-arm64-unpacked`), `Executable` im Manifest ist
-  `Mietfuchs.exe`, der Befehlsalias heißt weiter `mietfuchs.exe` und zeigt darauf. Der Server liegt darin als Quellcode
+  `Mietfuchs.exe`, der Befehlsalias heißt weiter `mietfuchs.exe` und zeigt darauf. Der Server liegt darin als Bündel
   unter `resources\mietfuchs` und läuft als utilityProcess von Mietfuchs.exe; eine eigene ausführbare Datei, die ein
   Konsolenfenster öffnen könnte, gibt es nicht mehr. Vor dem Packen prüft `checkWindowFolder` Mietfuchs.exe am PE-Kopf
   (Architektur des Pakets, kein Konsolenfenster) und den Server-Ordner mit `checkServerFolder`. Identität aus dem Partner Center (`speedone.Mietfuchs`, Store-ID

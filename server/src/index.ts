@@ -107,6 +107,8 @@ import { sql } from 'drizzle-orm'
 import { reconcileFiles, trashKeep } from './db/fileRefs.ts'
 import { cleanTrash, moveToTrash } from './trash.ts'
 import { DRY_RUN_ROUTES, routeSentence } from './journalRoutes.ts'
+import { IN_BUNDLE } from './bundle.ts'
+import { openClientPack } from './clientPack.ts'
 import { forgetUpload, placeUpload, recordIfMissing, recordUpload, rowOf, uploadRows, type Placement, type UploadRow } from './db/uploads.ts'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -3690,6 +3692,23 @@ if (PACKAGED) {
     // exakter Treffer, sonst SPA-Fallback auf index.html
     if (sendEmbedded(res, req.path === '/' ? '/index.html' : req.path)) return
     sendEmbedded(res, '/index.html') || res.status(404).send('Nicht gefunden')
+  })
+} else if (IN_BUNDLE) {
+  // Bündel des Programmfensters (#517): das Frontend als eine Datei neben dem Bündel (server/src/clientPack.ts).
+  // Dieselben Regeln wie oben, der Inhaltstyp wie bei express.static nach der Endung.
+  const pack = openClientPack(path.join(__dirname, '..', '..', 'client', 'dist.pack'))
+  app.get(/^(?!\/api|\/uploads).*/, (req, res) => {
+    let urlPath = req.path === '/' ? '/index.html' : req.path
+    try {
+      urlPath = decodeURIComponent(urlPath)
+    } catch {
+      /* bleibt, wie sie kam, und trifft dann nichts */
+    }
+    const hit = pack.read(urlPath)
+    if (hit) return void res.type(path.extname(urlPath) || 'application/octet-stream').send(hit)
+    const index = pack.read('/index.html')
+    if (index) return void res.type('html').send(index)
+    res.status(404).send('Nicht gefunden')
   })
 } else {
   const clientDist = path.join(__dirname, '..', '..', 'client', 'dist')

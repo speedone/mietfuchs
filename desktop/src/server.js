@@ -10,26 +10,30 @@ import path from 'node:path'
 // für ausgehende Verbindungen vergeben. Die Programmdatei ohne Fenster bleibt bei 3001.
 export const DEFAULT_PORT = 17517
 
-// Der Ordner unter resources, in dem der Server ausgeliefert liegt, in der Anordnung des Repos: server/src,
-// server/drizzle, server/package.json, server/node_modules (nur die Produktionsabhängigkeiten), shared/, client/dist und
-// eine package.json mit `"type": "module"` (sonst gälte shared/ als CommonJS). So stimmen die relativen Pfade des
-// Servers wie im Repo. scripts/package-desktop.mjs legt ihn an, desktop/package.json (`extraResources`) nimmt ihn mit.
+// Der Ordner unter resources, in dem der Server ausgeliefert liegt, drei Dateien in der Anordnung des Repos: das Bündel
+// server/server.mjs (Server, shared/, Abhängigkeiten und Migrationen), die Lizenzen der Abhängigkeiten daneben und das
+// Frontend als eine Datei, client/dist.pack. scripts/package-desktop.mjs legt ihn an, desktop/package.json (`extraResources`) nimmt ihn mit.
 export const SERVER_FOLDER = 'mietfuchs'
 
 // Der Name des utilityProcess in app.getAppMetrics() (Speicher in der Selbstprüfung) und in child-process-gone
 export const SERVICE_NAME = 'Mietfuchs-Server'
 
 /**
- * Welches Modul als Server läuft und in welchem Ordner: ausgeliefert unter resources/mietfuchs, beim Entwickeln im
- * Repo. Beides derselbe Weg, `utilityProcess.fork` mit Electrons eigenem Node, ohne Bündelschritt: Node streift die
- * Typen ab wie bei `npm start`.
+ * Welches Modul als Server läuft und in welchem Ordner: ausgeliefert das Bündel unter resources/mietfuchs, beim
+ * Entwickeln die Quellen im Repo (Node streift die Typen ab wie bei `npm start`, ein Bauschritt entfällt). Beides
+ * derselbe Weg, `utilityProcess.fork` mit Electrons eigenem Node. Gebündelt startet der Server rund eine Sekunde
+ * schneller, weil Node eine Datei lädt statt rund 470 und keine Typen abstreift.
  * @param {{ packaged: boolean, platform: NodeJS.Platform, resourcesPath: string, repoRoot: string }} where
  * @returns {{ modulePath: string, cwd: string }}
  */
 export function serverModule({ packaged, platform, resourcesPath, repoRoot }) {
   // Nach der genannten Plattform rechnen, nicht nach der des laufenden Rechners (CLAUDE.md, Konventionen)
   const p = platform === 'win32' ? path.win32 : path.posix
-  const cwd = packaged ? p.join(resourcesPath, SERVER_FOLDER, 'server') : p.join(repoRoot, 'server')
+  if (packaged) {
+    const cwd = p.join(resourcesPath, SERVER_FOLDER, 'server')
+    return { modulePath: p.join(cwd, 'server.mjs'), cwd }
+  }
+  const cwd = p.join(repoRoot, 'server')
   return { modulePath: p.join(cwd, 'src', 'index.ts'), cwd }
 }
 

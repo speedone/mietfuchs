@@ -6,7 +6,10 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { REQUIRED_SERVER_FILES, checkServerFolder, prunable, stagedPath, userFileName } from '../../scripts/package-desktop.mjs'
+import { spawn } from 'node:child_process'
+import { DatabaseSync } from 'node:sqlite'
+import { migrationsFromDisk } from '../src/db/client.ts'
+import { REQUIRED_SERVER_FILES, bundleServer, checkServerFolder, packClient, rewriteImportMeta, userFileName } from '../../scripts/package-desktop.mjs'
 
 test('Programmfenster: .dmg heißen nach Apple Silicon und Intel', () => {
   assert.equal(userFileName('Mietfuchs-0.15.0-arm64.dmg'), 'Mietfuchs-0.15.0-apple-silicon.dmg')
@@ -23,43 +26,125 @@ test('Programmfenster: der Windows-Installer und alles andere behält seinen Nam
   }
 })
 
-// Der Server im Fenster (#517) läuft aus dem Quellcode unter Electrons Node. package-desktop.mjs legt ihn unter
-// resources/mietfuchs in der Anordnung des Repos ab; was der Server zur Laufzeit liest, muss darin stehen, was nur
-// Entwickler brauchen (Tests, Doku, eingebettete Dateien der Programmdatei, der eigene Datenordner, die Schnappschüsse
-// von drizzle-kit, zusammen 12 MB) nicht.
-test('Programmfenster: in den Server-Ordner kommt, was der Server zur Laufzeit braucht', () => {
-  for (const file of ['server/src/index.ts', 'server/src/db/client.ts', 'server/drizzle/0000_ordinary_karnak.sql', 'server/drizzle/meta/_journal.json', 'server/package.json', 'server/package-lock.json', 'shared/types.ts', 'shared/law/register.ts', 'client/dist/index.html', 'client/dist/assets/index-abc.js']) {
-    assert.equal(stagedPath(file), true, file)
-  }
-  for (const file of ['server/test/calc.test.ts', 'server/testing/api.ts', 'server/data/mietfuchs.sqlite', 'server/src/CLAUDE.md', 'server/src/db/CLAUDE.md', 'server/src/embedded-client.js', 'server/src/db/embedded-migrations.js', 'server/node_modules/express/index.js', 'server/scripts/irgendwas.mjs', 'client/src/App.tsx', 'shared/CLAUDE.md', 'server/tsconfig.json', 'server/drizzle.config.ts', 'server/drizzle/meta/0000_snapshot.json']) {
-    assert.equal(stagedPath(file), false, file)
-  }
-  // Auch unter Windows geschriebene Pfade
-  assert.equal(stagedPath('server\\src\\index.ts'), true)
-  assert.equal(stagedPath('server\\test\\calc.test.ts'), false)
-})
-
-test('Programmfenster: ein unvollständiger Server-Ordner bricht ab und nennt, was fehlt', (t) => {
+// Der Server im Fenster (#517) liegt als drei Dateien unter resources/mietfuchs: das Bündel, die Lizenzen der
+// gebündelten Abhängigkeiten und das Frontend als eine Datei. Geänderte Erwartung: Bis zum Bündelschritt lagen dort
+// der Quellcode, shared/, die Migrationen, beide package.json, node_modules und client/dist, Tausende Dateien, die der
+// Echtzeitschutz unter Windows beim Installieren einzeln prüft.
+test('Programmfenster: ein unvollständiger oder überzähliger Server-Ordner bricht ab und nennt, was nicht stimmt', (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-fenster-server-'))
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
-  assert.throws(() => checkServerFolder(dir), /server[\\/]src[\\/]index\.ts fehlt/)
+  assert.deepEqual(REQUIRED_SERVER_FILES, ['server/server.mjs', 'server/THIRD-PARTY-LICENSES.txt', 'client/dist.pack'])
+  assert.throws(() => checkServerFolder(dir), /server[\\/]server\.mjs fehlt/)
   for (const file of REQUIRED_SERVER_FILES) {
     fs.mkdirSync(path.join(dir, path.dirname(file)), { recursive: true })
-    fs.writeFileSync(path.join(dir, file), file === 'package.json' ? '{"type":"module"}' : '')
+    fs.writeFileSync(path.join(dir, file), '')
   }
   assert.doesNotThrow(() => checkServerFolder(dir))
-  // Ohne "type": "module" gälte shared/ als CommonJS, und der Server startete nicht
-  fs.writeFileSync(path.join(dir, 'package.json'), '{}')
-  assert.throws(() => checkServerFolder(dir), /"type": "module"/)
-  fs.writeFileSync(path.join(dir, 'package.json'), '{"type":"module"}')
-  // Ohne Produktionsabhängigkeiten ebenso nicht
-  fs.rmSync(path.join(dir, 'server', 'node_modules'), { recursive: true })
-  assert.throws(() => checkServerFolder(dir), /node_modules/)
+  fs.rmSync(path.join(dir, 'client', 'dist.pack'))
+  assert.throws(() => checkServerFolder(dir), /dist\.pack fehlt/)
+  fs.writeFileSync(path.join(dir, 'client', 'dist.pack'), '')
+  fs.mkdirSync(path.join(dir, 'server', 'node_modules', 'express'), { recursive: true })
+  fs.writeFileSync(path.join(dir, 'server', 'node_modules', 'express', 'package.json'), '{}')
+  assert.throws(() => checkServerFolder(dir), /mehr als vorgesehen: server\/node_modules\/express\/package\.json/)
 })
 
-// Typdeklarationen und Source-Maps der Abhängigkeiten lädt der Server nie, sie machen aber fast die Hälfte von
-// node_modules aus (13 von 30 MB, vor allem drizzle-orm). Lizenzen und Code bleiben.
-test('Programmfenster: aus node_modules fallen nur Typdeklarationen und Source-Maps', () => {
-  for (const file of ['drizzle-orm/index.d.ts', 'drizzle-orm/index.d.cts', 'x/y.d.mts', 'express/lib/a.js.map']) assert.equal(prunable(file), true, file)
-  for (const file of ['drizzle-orm/index.js', 'drizzle-orm/index.cjs', 'express/LICENSE', 'qs/package.json', 'a/types.ts', 'a/d.ts.js']) assert.equal(prunable(file), false, file)
+// Im Bündel zeigt `import.meta.url` auf die eine Datei. Der Server rechnet von dort aus zu client/dist, server/drizzle
+// und (beim Entwickeln) server/data, und zwar je Modul aus einer anderen Tiefe (index.ts aus server/src, client.ts aus
+// server/src/db). Deshalb steht in jedem Modul die Adresse, die es im Repo hätte, relativ zum Bündel.
+test('Programmfenster: import.meta.url im Bündel zeigt auf den Ort des Moduls im Repo', () => {
+  const root = path.resolve('/repo')
+  const out = path.join(root, 'dist-desktop-server', 'server', 'server.mjs')
+  const code = 'const here = path.dirname(fileURLToPath(import.meta.url))'
+  assert.equal(
+    rewriteImportMeta(code, path.join(root, 'server', 'src', 'db', 'client.ts'), { root, bundleFile: out }),
+    'const here = path.dirname(fileURLToPath(new URL("./src/db/client.ts", import.meta.url).href))',
+  )
+  assert.equal(
+    rewriteImportMeta(code, path.join(root, 'shared', 'x.ts'), { root, bundleFile: out }),
+    'const here = path.dirname(fileURLToPath(new URL("./../shared/x.ts", import.meta.url).href))',
+  )
+  // Ohne import.meta bleibt das Modul unberührt, ebenso Hilfsmodule des Bündlers
+  assert.equal(rewriteImportMeta('export const a = 1', path.join(root, 'server', 'src', 'a.ts'), { root, bundleFile: out }), null)
+  assert.equal(rewriteImportMeta(code, '\0rolldown/runtime.js', { root, bundleFile: out }), null)
+  // Was sonst an import.meta hängt, kennt der Schritt nicht und bricht ab, statt still falsch zu rechnen
+  assert.throws(() => rewriteImportMeta('const d = import.meta.dirname', path.join(root, 'server', 'src', 'a.ts'), { root, bundleFile: out }), /import\.meta\.dirname/)
+  assert.throws(() => rewriteImportMeta(code, path.join(root, 'server', 'node_modules', 'x', 'index.js'), { root, bundleFile: out }), /node_modules/)
+})
+
+// Der wirkliche Weg: bündeln, Migrationen und ein Frontend daneben, mit Node starten. Der Server muss die Datenbank
+// anlegen (Migrationen von der Platte) und die Oberfläche aus client/dist ausliefern, beides relativ zum Bündel.
+test('Programmfenster: das Bündel startet ohne Quellen und Migrationen daneben, migriert und liefert die Oberfläche aus', { timeout: 60_000 }, async (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-buendel-'))
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }))
+  const stage = path.join(tmp, 'mietfuchs')
+  const { file, licenses } = await bundleServer(stage)
+  assert.equal(file, path.join(stage, 'server', 'server.mjs'))
+  // Die Lizenzen der gebündelten Abhängigkeiten liegen bei, sie fehlen sonst mit node_modules
+  const licenseText = fs.readFileSync(licenses, 'utf8')
+  assert.match(licenseText, /^express@\S+ \(MIT\)$/m)
+  // Die Lizenz auch aus der alten Schreibweise `licenses: [{ type }]`, und jedes Paket nur einmal
+  assert.match(licenseText, /^busboy@\S+ \(MIT\)$/m)
+  const headers = licenseText.match(/^\S+@\d\S* \(.+\)$/gm) ?? []
+  assert.equal(new Set(headers).size, headers.length, 'ein Paket steht doppelt')
+  // Ein Frontend mit Unterordnern und Binärdateien wie die Zeichentabellen von pdf.js
+  const dist = path.join(tmp, 'dist')
+  fs.mkdirSync(path.join(dist, 'assets'), { recursive: true })
+  fs.mkdirSync(path.join(dist, 'pdfjs', 'cmaps'), { recursive: true })
+  fs.writeFileSync(path.join(dist, 'index.html'), '<!doctype html><title>Bündelprobe</title>')
+  fs.writeFileSync(path.join(dist, 'assets', 'index-abc.js'), 'console.log(1)')
+  fs.writeFileSync(path.join(dist, 'pdfjs', 'cmaps', 'Adobe-Japan1-0.bcmap'), Buffer.from([0, 1, 2, 255]))
+  assert.equal(packClient(dist, stage), 3)
+  // Drei Dateien, mehr nicht: weder Quellcode noch Migrationen noch node_modules
+  assert.doesNotThrow(() => checkServerFolder(stage))
+
+  const dataDir = path.join(tmp, 'daten')
+  const child = spawn(process.execPath, [file], {
+    cwd: path.join(stage, 'server'),
+    env: { ...process.env, NKA_RUNTIME: '', NKA_PORT: '0', NKA_DATA_DIR: dataDir, NKA_UPDATE_URL: 'http://127.0.0.1:9', CI: 'true' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  t.after(() => child.kill())
+  let output = ''
+  const url = await new Promise<string>((resolve, reject) => {
+    const onData = (chunk: Buffer) => {
+      output += chunk
+      const found = output.match(/läuft auf (http:\/\/\S+)/)
+      if (found?.[1]) resolve(found[1])
+    }
+    child.stdout.on('data', onData)
+    child.stderr.on('data', onData)
+    child.once('exit', (code) => reject(new Error(`Bündel beendet (Code ${code}):\n${output}`)))
+  })
+  const health = await fetch(`${url}/healthz`)
+  assert.equal(health.status, 200, await health.clone().text())
+  // Die Migrationen kamen aus dem Bündel: Die Datenbank trägt jeden Schritt des Journals
+  const journal = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', 'drizzle', 'meta', '_journal.json'), 'utf8')) as { entries: unknown[] }
+  const db = new DatabaseSync(path.join(dataDir, 'mietfuchs.sqlite'), { readOnly: true })
+  t.after(() => db.close())
+  const applied = db.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()
+  assert.equal(applied?.n, journal.entries.length)
+  // Und zwar dieselben wie unter Node von der Platte, Marke für Marke
+  const hashes = db.prepare('SELECT hash FROM __drizzle_migrations ORDER BY created_at').all().map((row) => row.hash)
+  assert.deepEqual(hashes, migrationsFromDisk().map((m) => m.hash))
+  // Das Frontend kommt aus dist.pack: Seiten der Oberfläche als index.html, Dateien mit dem Typ nach der Endung
+  const page = await fetch(`${url}/irgendeine/seite`)
+  assert.match(page.headers.get('content-type') ?? '', /^text\/html/)
+  assert.match(await page.text(), /Bündelprobe/)
+  const script = await fetch(`${url}/assets/index-abc.js`)
+  assert.match(script.headers.get('content-type') ?? '', /^text\/javascript/)
+  assert.equal(await script.text(), 'console.log(1)')
+  const cmap = await fetch(`${url}/pdfjs/cmaps/Adobe-Japan1-0.bcmap`)
+  assert.deepEqual(Buffer.from(await cmap.arrayBuffer()), Buffer.from([0, 1, 2, 255]))
+  // Die API bleibt die API, auch wenn es die Adresse nicht gibt
+  const api = await fetch(`${url}/api/gibt-es-nicht`)
+  assert.doesNotMatch(await api.text(), /Bündelprobe/)
+})
+
+// Durchsicht: Der macOS-Job prüft das installierte Fenster mit `test -f …/Resources/mietfuchs/<Datei>`. Jede so
+// geprüfte Datei muss zum Server-Ordner gehören, sonst scheitert der Job an einer Datei, die es nicht mehr gibt.
+test('Programmfenster: release.yml prüft im installierten Fenster nur Dateien des Server-Ordners', () => {
+  const workflow = fs.readFileSync(path.join(import.meta.dirname, '..', '..', '.github', 'workflows', 'release.yml'), 'utf8')
+  const checked = [...workflow.matchAll(/test -f "\$app\/Contents\/Resources\/mietfuchs\/([^"]+)"/g)].map((m) => m[1])
+  assert.ok(checked.length > 0, 'release.yml prüft keine Datei des Server-Ordners mehr')
+  for (const file of checked) assert.ok(REQUIRED_SERVER_FILES.includes(file ?? ''), `release.yml prüft ${file}, das nicht zum Server-Ordner gehört`)
 })

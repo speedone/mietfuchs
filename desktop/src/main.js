@@ -1,7 +1,7 @@
 // Das eigene Programmfenster von Mietfuchs unter Windows und macOS (#517). Electron ist hier nur das Fenster: Der
-// Server läuft aus dem Quellcode mit Electrons eigenem Node als utilityProcess (so empfiehlt es Electron für
-// Hintergrundprozesse mit Node), lauscht auf 127.0.0.1, und das Fenster zeigt seine Oberfläche. Server, Oberfläche und
-// Datenbank wissen davon nur, dass sie keinen Browser öffnen und mit dem Fenster enden (Betriebsart desktop,
+// Server läuft mit Electrons eigenem Node als utilityProcess (so empfiehlt es Electron für Hintergrundprozesse mit Node),
+// ausgeliefert als eine gebündelte Datei, beim Entwickeln aus dem Quellcode. Er lauscht auf 127.0.0.1, und das Fenster
+// zeigt seine Oberfläche. Server, Oberfläche und Datenbank wissen davon nur, dass sie keinen Browser öffnen und mit dem Fenster enden (Betriebsart desktop,
 // server/src/version.ts). Eine eigene Programmdatei für den Server gibt es im Fenster nicht: eine ausführbare Datei
 // weniger, die Virenscanner prüfen und die signiert wird, und rund 100 MB weniger je Architektur.
 //
