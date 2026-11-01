@@ -8,6 +8,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- **Programmfenster unter Windows: Installieren, Aktualisieren und Deinstallieren gehen schneller**
+  ([#517](https://github.com/speedone/mietfuchs/issues/517)): Vor dem Installieren und beim Deinstallieren prüft
+  Mietfuchs, ob es noch läuft. Dafür startete der Installer bis zu dreimal PowerShell, beim Aktualisieren zusammen mit
+  dem alten Deinstallationsprogramm bis zu sechsmal, und das kostet mit dem Virenschutz von Windows jedes Mal
+  Sekunden. Jetzt genügt ein kurzer Blick in die Prozessliste. Außerdem legt der Installer keine 230 MB große Kopie
+  von sich selbst mehr unter `%LOCALAPPDATA%\mietfuchs-updater` ab; eine Kopie früherer Fassungen räumt er weg.
+  Installer und Deinstallationsprogramm schreiben, wie lange jeder Schritt dauert, nach
+  `%TEMP%\mietfuchs-installation.log`.
 - **Programmfenster unter Windows:** Beim ersten Start fragte die Windows-Firewall, ob Mietfuchs ins Netz darf, obwohl
   es nur auf diesem Rechner lauscht. Ins Netz geht Mietfuchs nur mit dem Schalter „Zugriff aus dem Heimnetz“.
 

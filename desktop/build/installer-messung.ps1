@@ -1,20 +1,17 @@
 # Misst Installation, Aktualisierung und Deinstallation des Programmfensters unter Windows (#517), mit dem
 # Echtzeitschutz von Windows Defender. Aufruf aus release.yml (Job „Installer messen“):
 #
-#   pwsh desktop/build/installer-messung.ps1 -Setup paket\Mietfuchs-Setup-x.exe -Variante tasklist -Out messung
+#   pwsh desktop/build/installer-messung.ps1 -Setup paket\Mietfuchs-Setup-x.exe -Out messung
 #
 # Je Lauf: frisch installieren, dieselbe Fassung darüber installieren (Aktualisierung: der Installer ruft das
 # Deinstallationsprogramm der vorigen Fassung auf), deinstallieren. Danach einmal installieren, während Mietfuchs
 # läuft. Quellen der Zeiten:
 #   - das Protokoll des Installers (%TEMP%\mietfuchs-installation.log, desktop/build/installer.nsh), Phasen je Haken
 #   - ein FileSystemWatcher auf %LOCALAPPDATA% (darin %TEMP%): wann welche Datei geschrieben wurde
-#   - die Leistungsaufzeichnung von Defender (wpr mit dem Profil hinter New-MpPerformanceRecording) und
-#     Get-MpPerformanceReport: welche Dateien Defender wie lange geprüft hat
 #   - das Ereignisprotokoll von Defender im Zeitraum der Messung
 # Nur lesen: Eingeschaltet wird allein der Echtzeitschutz, Ausnahmen werden keine eingetragen.
 param(
   [Parameter(Mandatory)] [string] $Setup,
-  [Parameter(Mandatory)] [string] $Variante,
   [string] $Out = 'installer-messung',
   [int] $Runs = 3
 )
@@ -30,7 +27,7 @@ $report = [System.Collections.Generic.List[string]]::new()
 function Note([string] $s) { $report.Add($s); Write-Host $s }
 $messStart = Get-Date
 
-Note "## Installer messen: $Variante auf $env:RUNNER_NAME ($env:PROCESSOR_ARCHITECTURE)"
+Note "## Installer messen auf $env:RUNNER_NAME ($env:PROCESSOR_ARCHITECTURE)"
 Note ''
 Note "Installer: $(Split-Path $Setup -Leaf), $([math]::Round((Get-Item $Setup).Length / 1MB, 1)) MB"
 
@@ -53,38 +50,6 @@ try {
   Note "Defender nicht lesbar: $($_.Exception.Message)"
 }
 Note '```'
-
-# --- Leistungsaufzeichnung von Defender ----------------------------------------------------------------------------
-# New-MpPerformanceRecording wartet auf eine Taste; deshalb wpr mit demselben Profil unmittelbar
-$etl = Join-Path $Out 'defender.etl'
-$wprRunning = $false
-try {
-  # Das Defender-Modul liegt bei Windows PowerShell; pwsh listet es nicht unbedingt
-  # New-MpPerformanceRecording steht im Modul ConfigDefenderPerformance, das Profil liegt daneben
-  $roots = @("$env:SystemRoot\System32\WindowsPowerShell\v1.0\Modules\ConfigDefenderPerformance", "$env:SystemRoot\System32\WindowsPowerShell\v1.0\Modules\Defender", "$env:ProgramFiles\Windows Defender")
-  $roots += @(Get-Module -ListAvailable ConfigDefenderPerformance, Defender -SkipEditionCheck -ErrorAction SilentlyContinue | ForEach-Object { Split-Path $_.Path })
-  $roots = @($roots | Where-Object { $_ -and (Test-Path $_) })
-  $wprp = $roots | ForEach-Object { Get-ChildItem $_ -Filter *.wprp -Recurse -ErrorAction SilentlyContinue } | Select-Object -First 1
-  if (-not $wprp) { throw "kein .wprp in $($roots -join ', ')" }
-  Write-Host "Profil: $($wprp.FullName)"
-  $hint = Get-ChildItem (Split-Path $wprp.FullName) -Filter *.psm1 -Recurse | Select-String -Pattern 'wpr' -SimpleMatch | Select-Object -First 8
-  $hint | ForEach-Object { Write-Host "  $($_.Filename):$($_.LineNumber): $($_.Line.Trim())" }
-  $profiles = ([xml](Get-Content $wprp.FullName)).WindowsPerformanceRecorder.Profiles.Profile
-  $candidates = @()
-  foreach ($p in $profiles) {
-    if ($p.LoggingMode -ne 'File') { continue }
-    $candidates += "$($p.Name).$($p.DetailLevel)"
-    if ($p.Id) { $candidates += $p.Id }
-  }
-  foreach ($c in ($candidates | Select-Object -Unique | Sort-Object { if ($_ -match 'Light') { 0 } else { 1 } })) {
-    & wpr.exe -cancel -instancename MfDefender 2>$null | Out-Null
-    & wpr.exe -start "$($wprp.FullName)!$c" -filemode -instancename MfDefender 2>&1 | Out-Host
-    if ($LASTEXITCODE -eq 0) { $wprRunning = $true; Write-Host "Defender-Aufzeichnung läuft mit $c"; break }
-  }
-  if (-not $wprRunning) { throw "wpr startete mit keinem Profil ($($candidates -join ', '))" }
-} catch {
-  Note "Keine Leistungsaufzeichnung von Defender: $($_.Exception.Message)"
-}
 
 # --- Dateien beobachten --------------------------------------------------------------------------------------------
 Add-Type -TypeDefinition @'
@@ -183,7 +148,6 @@ function Invoke-Measured([string] $kind, [int] $run, [string] $file, [string[]] 
     $end = MarkTime $entries 'Installation' 'ende'
     # NSIS übernimmt beim Schreiben die Zeitstempel aus dem Bau; echt sind die Anlage der Kopien und der Ordner 7z-out
     $unpack = FileTimes $entries 'Ausgepackt'
-    $copyEvents = @($events | Where-Object { $_.Path -match '\\mietfuchs-updater\\installer\.exe' -and $_.Kind -ne 'D' })
     $pkgEvents = @($events | Where-Object { $_.Path -match '\\ns[^\\]*\.tmp\\app-' })
     $unPruef = Seconds (MarkTime $entries 'Deinstallation' 'pruefung-beginn') (MarkTime $entries 'Deinstallation' 'pruefung-ende')
     $row['Bis Start'] = Seconds $t0 $start
@@ -194,7 +158,6 @@ function Invoke-Measured([string] $kind, [int] $run, [string] $file, [string[]] 
     $row['Auspacken nach 7z-out'] = Seconds $unpack[0] $unpack[1]
     $row['Kopieren nach $INSTDIR'] = Seconds $unpack[1] $ext
     $row['Danach bis Ende'] = Seconds $ext $end
-    if ($copyEvents.Count) { $row['davon Kopie des Installers'] = Seconds $copyEvents[0].Time $copyEvents[-1].Time }
     $row['Ende bis Prozessende'] = Seconds $end $t1
   } else {
     $cb = MarkTime $entries 'Deinstallation' 'pruefung-beginn'
@@ -216,11 +179,10 @@ function Invoke-Measured([string] $kind, [int] $run, [string] $file, [string[]] 
   Write-Host ("{0}: {1} s (Code {2})" -f $name, $row.Gesamt, $p.ExitCode)
   if ($p.ExitCode -ne 0) { throw "${name} endete mit Code $($p.ExitCode)" }
   if ($kind -ne 'Deinstallation' -and -not (Test-Path $exe)) { throw "${name}: $exe fehlt" }
-  if ($leftover) {
-    # Die Vorlage übergeht eine gerade geöffnete Datei still; dort ist das ein Befund, kein Abbruch der Messung
-    if ($Variante -ne 'vorlage') { throw "${name}: $dir noch da" }
-    Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
-  }
+  # Keine Kopie des Installers für electron-updater (mfSkipInstallerCopy in installer.nsh)
+  $copy = Join-Path $env:LOCALAPPDATA 'mietfuchs-updater\installer.exe'
+  if (Test-Path $copy) { throw "${name}: $copy angelegt" }
+  if ($leftover) { throw "${name}: $dir noch da" }
 }
 
 if (Test-Path $uninst) { Start-Process $uninst -ArgumentList '/S' -Wait }
@@ -252,7 +214,7 @@ Invoke-Measured 'Deinstallation' 0 $uninst @('/S')
 $columns = @()
 foreach ($r in $rows) { foreach ($n in $r.PSObject.Properties.Name) { if ($columns -notcontains $n) { $columns += $n } } }
 Note ''
-Note "### Phasen in Sekunden ($Variante)"
+Note "### Phasen in Sekunden"
 Note ''
 foreach ($kind in 'Installation', 'Aktualisierung', 'Deinstallation') {
   $sel = @($rows | Where-Object { $_.Lauf -like "* $kind*" })
@@ -264,22 +226,6 @@ foreach ($kind in 'Installation', 'Aktualisierung', 'Deinstallation') {
   Note ''
 }
 $rows | ConvertTo-Json -Depth 3 | Set-Content (Join-Path $Out 'phasen.json')
-
-if ($wprRunning) {
-  & wpr.exe -stop $etl -instancename MfDefender 2>&1 | Out-Host
-  try {
-    $perf = Get-MpPerformanceReport -Path $etl -TopFiles 20 -TopExtensions 10 -TopProcesses 10 -TopScans 20 | Out-String -Width 300
-    $perf | Set-Content (Join-Path $Out 'defender-leistung.txt')
-    Note '<details><summary>Defender: längste Prüfungen (Get-MpPerformanceReport)</summary>'
-    Note ''
-    Note '```'
-    Note $perf.Trim()
-    Note '```'
-    Note '</details>'
-  } catch {
-    Note "Get-MpPerformanceReport: $($_.Exception.Message)"
-  }
-}
 
 try {
   $ev = Get-WinEvent -FilterHashtable @{ LogName = 'Microsoft-Windows-Windows Defender/Operational'; StartTime = $messStart } -ErrorAction Stop |
