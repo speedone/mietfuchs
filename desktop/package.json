@@ -68,7 +68,8 @@
       "buildUniversalInstaller": true,
       "artifactName": "Mietfuchs-Setup-${version}.${ext}",
       "shortcutName": "Mietfuchs",
-      "deleteAppDataOnUninstall": false
+      "deleteAppDataOnUninstall": false,
+      "include": "build/installer.nsh"
     },
     "mac": {
       "target": [
