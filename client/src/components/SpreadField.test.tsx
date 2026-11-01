@@ -9,8 +9,8 @@ describe('SpreadField', () => {
   afterEach(cleanup)
   const form = { ...EMPTY_ITEM_FORM, category: 'Nicht umlagefähig', amount: '1.000,00', spreadYears: '2' as const }
   it('zeigt einen Satz zur Ablehnung statt der Vorschau', () => {
-    render(<SpreadField form={form} period={{ from: '2025-01-01' }} problem="Bitte tragen Sie das Datum der Zahlung ein." onChange={() => {}} />)
-    expect(screen.getByRole('alert').textContent).toContain('Bitte tragen Sie das Datum der Zahlung ein.')
+    render(<SpreadField form={form} period={{ from: '2025-01-01' }} problem="Bitte tragen Sie das Datum der Zahlung an allen Teilen dieser Rechnung ein." onChange={() => {}} />)
+    expect(screen.getByRole('alert').textContent).toContain('Bitte tragen Sie das Datum der Zahlung an allen Teilen dieser Rechnung ein.')
   })
   it('ohne Satz die Vorschau', () => {
     render(<SpreadField form={form} period={{ from: '2025-01-01' }} onChange={() => {}} />)

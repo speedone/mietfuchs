@@ -953,9 +953,13 @@ Grundmenge ist das ganze Gebäude), Überschuss. Beschreibende Gruppen statt fes
   schreibt `syncSourceSpread` sie an alle Teile der Quelle, in derselben Transaktion (`afterReplace` der Sammlung).
   **Ein Jahr des Beginns je Rechnung** (Integrationsdurchsicht 0.14, S1): Flössen die Teile einer Quelle ohne Datum in
   verschiedenen Kalenderjahren ab (`partOutflowYears`), lehnt der Server eine Wahl ab (400, `spreadPartsRefusal` in
-  shared/spread.ts: „Bitte tragen Sie das Datum der Zahlung ein …“), beim Aufteilen (`saveCostItemSplit`) und am Teil,
-  wenn sich Wahl, Zahlungsdatum oder Jahr der Zahlung ändern (`requireSourceOneYear`); das Formular zeigt denselben Satz
-  am Feld (`SpreadField`, `problem`) und vor der Rückfrage zum Aufteilen. Bewusste Grenze: Jeder Teil wird für sich auf
+  shared/spread.ts: „Bitte tragen Sie das Datum der Zahlung an allen Teilen dieser Rechnung ein …, oder an allen dasselbe
+  Jahr der Zahlung“), beim Aufteilen (`saveCostItemSplit`) und am Teil, wenn sich Wahl, Zahlungsdatum oder Jahr der
+  Zahlung ändern (`requireSourceOneYear`); das Formular zeigt denselben Satz am Feld (`SpreadField`, `problem`, nur nach
+  einer Änderung dieser Angaben) und vor der Rückfrage zum Aufteilen. Mit Verteilung und Jahr der Zahlung trägt beim
+  Aufteilen jeder Teil dieses Jahr, auch einer in einem Kalenderjahr (`partTaxYear`). Beim Wechsel des Rhythmus bekommt
+  jeder neue Teil einer verteilten Position ohne Zahlungsdatum ihr bisheriges Jahr der Zahlung als `taxYear`, ohne Frage
+  (`spreadPinned`/`keptTaxYear` in db/periodChange.ts); die Vorschau nennt es, wo ein Teil dadurch als verschoben steht. Bewusste Grenze: Jeder Teil wird für sich auf
   den Cent verteilt, die Raten eines Jahres können deshalb um bis zu (Zahl der Teile − 1) Cent von denen der ganzen
   Rechnung abweichen; Summe und Jahre stimmen.
   Die Übernahme aus dem Vorjahr leert sie (carryOver.ts). Die Abrechnung liest beide Felder nie.

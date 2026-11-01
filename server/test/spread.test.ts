@@ -221,7 +221,7 @@ test('spreadQuestions mit Ende am Objekt: Abzug mit Rest, keine Frage, wo sich n
 test('spreadPartsRefusal: Teile in zwei Kalenderjahren ohne Datum lehnen ab; Datum oder gemeinsames Jahr der Zahlung nicht', () => {
   assert.deepEqual(partOutflowYears([{ period: '2025-01' }, { period: '2026-01' }]), [2025, 2026])
   const refusal = spreadPartsRefusal('Dach', [{ period: '2025-01' }, { period: '2026-01' }])
-  assert.match(refusal ?? '', /^Bitte tragen Sie das Datum der Zahlung ein, bevor Sie „Dach“ verteilen: .* in den Jahren 2025 und 2026\./)
+  assert.match(refusal ?? '', /^Bitte tragen Sie das Datum der Zahlung an allen Teilen dieser Rechnung ein, bevor Sie „Dach“ verteilen, oder an allen dasselbe Jahr der Zahlung: .* in den Jahren 2025 und 2026\./)
   assert.equal(spreadPartsRefusal('Dach', [{ period: '2025-01', paidOn: '2026-02-01' }, { period: '2026-01', paidOn: '2026-02-01' }]), null)
   // Mai bis April: beide Teile über zwei Kalenderjahre tragen dasselbe Jahr der Zahlung.
   assert.equal(spreadPartsRefusal('Dach', [{ period: '2025-05', taxYear: 2026 }, { period: '2026-05', taxYear: 2026 }]), null)

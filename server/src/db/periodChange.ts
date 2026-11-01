@@ -45,6 +45,7 @@ import { droppedLettersText, dropLetterDocs, letterDocPrefix, letterDocsWithPref
 import { euro } from '../../../shared/costItem.ts'
 import { storedOutflowYear } from '../outflow.ts'
 import { paidOnSpan } from '../../../shared/paidOn.ts'
+import { allowsSpread } from '../../../shared/spread.ts'
 
 const MONTH_NAMES = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']
 const monthName = (key: string): string => `${MONTH_NAMES[Number(key.slice(5, 7)) - 1] ?? key.slice(5, 7)} ${key.slice(0, 4)}`
@@ -138,15 +139,22 @@ const followsBill = (item: Pick<CostItem, 'operatingPower'>): boolean => item.op
 // #478: Ebenso eine Position mit angegebenem Jahr der Zahlung. Das Jahr ist eine Tatsache über die Zahlung (§ 11 Abs. 2
 // Satz 1 EStG, bei einer Gutschrift der Zufluss nach Abs. 1 Satz 1), am Abrechnungszeitraum hängt es nicht. Vorher bekam
 // ein Teil in einem Zeitraum innerhalb eines Kalenderjahres still dessen Jahr, und hin und zurück kehrte es nicht wieder.
-const keepsTaxYear = (item: Pick<CostItem, 'operatingPower' | 'paidOn' | 'taxYear'>): boolean =>
-  followsBill(item) || item.paidOn !== undefined || item.taxYear !== undefined
+const keepsTaxYear = (item: CostItem): boolean =>
+  followsBill(item) || item.paidOn !== undefined || item.taxYear !== undefined || spreadPinned(item)
+
+// Eine nach § 82b EStDV verteilte Position ohne Datum der Zahlung (Durchsicht des Zweigs, S5): Jeder neue Teil bekommt das
+// Jahr der Zahlung, das sie vor dem Wechsel hatte (als `taxYear`), ohne Frage. Sonst stünden die Teile in verschiedenen
+// Jahren, jeder begänne seine Verteilung anders (vgl. `spreadPartsRefusal` in shared/spread.ts), und Beginn und Raten
+// wanderten. Die Vorschau sagt es, wo ein Teil dadurch als verschoben steht (`keptTaxYearsOf`).
+const spreadPinned = (item: CostItem): boolean =>
+  item.spreadYears != null && item.paidOn === undefined && !followsBill(item) && allowsSpread(item)
 
 // Das gehaltene Jahr der Zahlung (#478): das gespeicherte, wenn eines angegeben ist, sonst `null`. Alle drei Stellen,
 // die das Jahr im Ziel bestimmen (Vorschau, Probelauf, Schreiben), fragen zuerst hier; erst danach die Antwort der
 // Vorschau bzw. ihre Vorgabe. Gleich dem Kalenderjahr des Ziels bleibt es trotzdem gespeichert: Es ist eine Angabe des
 // Vermieters, und Zurückwechseln braucht sie. Beim Abzug beim Betriebsstrom keines (#267, `mergeCostItem` leert es).
-const keptTaxYear = (item: Pick<CostItem, 'operatingPower' | 'taxYear'>): number | null =>
-  followsBill(item) ? null : item.taxYear ?? null
+const keptTaxYear = (item: CostItem): number | null =>
+  followsBill(item) ? null : item.taxYear ?? (spreadPinned(item) ? effectiveTaxYear(item) : null)
 
 // Eine kalte Rechnung mit Leistungszeitraum, die der Wechsel nach Tagen neu teilt (#455, Entwurf „Wechsel des
 // Rhythmus“). Mit Quelle: `family` sind die bewegten Teile (Zeitraum `shrinks` oder `gone`), `standing` die übrigen
@@ -413,7 +421,7 @@ function keptTaxYearsOf(splits: readonly Split[], groups: ReadonlyMap<string, Gr
     out.set(key, {
       costItemId: item.id, description, taxYear: year, period: target.key, label,
       // #96 (A6): die Entnahme mit der Beschriftung des Formulars.
-      text: `„${description}“ behält ${item.category === RESERVE_WITHDRAWAL_CATEGORY ? `das Jahr, in dem die Gemeinschaft bezahlt hat (${year})` : `das Jahr der Zahlung ${year}`}; im Zeitraum ${label} steht sie für die Steuer deshalb als verschoben.${outside}`,
+      text: `„${description}“ behält ${item.category === RESERVE_WITHDRAWAL_CATEGORY ? `das Jahr, in dem die Gemeinschaft bezahlt hat (${year})` : `das Jahr der Zahlung ${year}`}${item.taxYear === undefined ? ', denn sie ist nach § 82b EStDV verteilt, und Beginn und Raten der Verteilung sollen bleiben' : ''}; im Zeitraum ${label} steht sie für die Steuer deshalb als verschoben.${outside}`,
     })
   }
   for (const split of splits) for (const p of split.parts) note(split.item, p.period, split.family ? baseDescription(split.item.description) : split.item.description)

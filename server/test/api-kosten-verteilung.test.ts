@@ -368,7 +368,7 @@ test('Route: Verteilung an einer aufgeteilten Rechnung mit Teilen in zwei Kalend
     const r1 = await send('/api/costItems/split', 'POST', split)
     assert.equal(r1.status, 400, await r1.clone().text())
     const e1 = (await r1.json() as { error: string }).error
-    assert.match(e1, /Bitte tragen Sie das Datum der Zahlung ein/)
+    assert.match(e1, /Bitte tragen Sie das Datum der Zahlung an allen Teilen dieser Rechnung ein/)
     assert.match(e1, /2025 und 2026/)
     assert.deepEqual(await (await send('/api/costItems?property=objekt-1', 'GET')).json(), [], 'gespeichert wurde nichts')
 
@@ -378,7 +378,7 @@ test('Route: Verteilung an einer aufgeteilten Rechnung mit Teilen in zwei Kalend
     if (!a || !b) return assert.fail('zwei Teile erwartet')
     const r2 = await send(`/api/costItems/${b.id}`, 'PUT', { spreadYears: 2, confirmSpread: true })
     assert.equal(r2.status, 400, await r2.clone().text())
-    assert.match((await r2.json() as { error: string }).error, /Bitte tragen Sie das Datum der Zahlung ein/)
+    assert.match((await r2.json() as { error: string }).error, /Bitte tragen Sie das Datum der Zahlung an allen Teilen dieser Rechnung ein/)
     for (const p of plain) assert.equal((await send(`/api/costItems/${p.id}`, 'DELETE')).status, 200)
 
     // Mit Datum: beide Teile im Jahr 2026, die Verteilung beginnt für die ganze Rechnung dort.
@@ -389,7 +389,28 @@ test('Route: Verteilung an einer aufgeteilten Rechnung mit Teilen in zwei Kalend
     // Das Datum an einem Teil entfernen, solange verteilt ist: wieder zwei Jahre, 400.
     const r4 = await send(`/api/costItems/${parts[0]?.id ?? ''}`, 'PUT', { paidOn: null, confirmPaidOn: true, confirmSpread: true })
     assert.equal(r4.status, 400, await r4.clone().text())
-    assert.match((await r4.json() as { error: string }).error, /Bitte tragen Sie das Datum der Zahlung ein/)
+    assert.match((await r4.json() as { error: string }).error, /Bitte tragen Sie das Datum der Zahlung an allen Teilen dieser Rechnung ein/)
+  } finally {
+    s.stop()
+  }
+})
+
+// Durchsicht des Zweigs (S6a, S6b): Mit Jahr der Zahlung und Verteilung bekommen beim Aufteilen alle Teile dieses Jahr; der
+// Satz der Ablehnung nennt alle Teile und das Jahr der Zahlung als zweiten Weg.
+test('Route: Aufteilen mit Jahr der Zahlung und Verteilung: alle Teile tragen das Jahr (201); die Ablehnung nennt alle Teile und das Jahr', async () => {
+  const s = await startServer()
+  try {
+    const send = sender(s)
+    await send('/api/units', 'POST', { name: 'EG', areaM2: 80, participates: true })
+    const split = { ...dach, serviceFrom: '2025-07-01', serviceTo: '2026-06-30', spreadYears: 2 }
+    const refused = await send('/api/costItems/split', 'POST', split)
+    assert.equal(refused.status, 400)
+    const text = (await refused.json() as { error: string }).error
+    assert.match(text, /an allen Teilen dieser Rechnung/)
+    assert.match(text, /Jahr der Zahlung/)
+    const r = await send('/api/costItems/split', 'POST', { ...split, taxYear: 2026, confirmTaxYear: true, confirmPaidOn: true })
+    assert.equal(r.status, 201, await r.clone().text())
+    assert.deepEqual((await r.json() as CostItem[]).map((p) => [p.period, p.taxYear, p.spreadYears]), [['2025-01', 2026, 2], ['2026-01', 2026, 2]])
   } finally {
     s.stop()
   }

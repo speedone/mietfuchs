@@ -1094,7 +1094,28 @@ test('Verteilung beim Aufteilen ohne Datum der Zahlung, Teile in zwei Kalenderja
   fireEvent.change(await screen.findByLabelText(/Leistungszeitraum/), { target: { value: `${year}-07-01` } })
   fireEvent.change(screen.getByLabelText(/^bis$/), { target: { value: `${year + 1}-06-30` } })
   fireEvent.click(screen.getByRole('button', { name: /^Speichern$/ }))
-  expect(await screen.findByText(/Bitte tragen Sie das Datum der Zahlung ein/)).toBeTruthy()
+  expect(await screen.findByText(/Bitte tragen Sie das Datum der Zahlung an allen Teilen dieser Rechnung ein/)).toBeTruthy()
   expect(screen.queryByRole('alertdialog', { name: 'Rechnung aufteilen?' })).toBeNull()
   expect(sent.filter((r) => r.url.includes('/split') && !r.url.includes('preview'))).toHaveLength(0)
+})
+
+// Durchsicht des Zweigs (K4): Der Satz am Feld steht nur, wenn Verteilung, Zahlungsdatum oder Jahr der Zahlung im Formular
+// geändert sind; eine schon gespeicherte Wahl an einem Teil beanstandet das bloße Öffnen nicht.
+test('Verteilung am Teil einer Rechnung über zwei Jahre: kein Satz beim Öffnen, der Satz erst nach einer Änderung der Wahl', async () => {
+  const year = new Date().getFullYear() - 1
+  costItems = [
+    verteilteDach(year, { sourceId: 'q', description: 'Dachsanierung (anteilig)' }),
+    verteilteDach(year + 1, { id: 'd2', sourceId: 'q', description: 'Dachsanierung (anteilig)' }),
+  ]
+  const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } })
+  vi.stubGlobal('fetch', async (url: string) => {
+    const path = url.split('?')[0]
+    return json(path === '/api/costItems' ? costItems : path === '/api/properties' ? [{ id: 'objekt-1', name: 'Haus', kind: 'mfh', address: '' }] : [])
+  })
+  await renderStored()
+  const field = select(SPREAD_LABEL)
+  expect(field.value).toBe('3')
+  expect(screen.queryByText(/Bitte tragen Sie das Datum der Zahlung an allen Teilen/)).toBeNull()
+  fireEvent.change(field, { target: { value: '2' } })
+  expect(await screen.findByText(/Bitte tragen Sie das Datum der Zahlung an allen Teilen/)).toBeTruthy()
 })

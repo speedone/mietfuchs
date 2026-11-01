@@ -194,5 +194,5 @@ export function spreadPartsRefusal(description: string, parts: readonly PartOutf
   const years = partOutflowYears(parts)
   if (years.length < 2) return null
   const list = years.length === 2 ? `${years[0]} und ${years[1]}` : `${years.slice(0, -1).join(', ')} und ${years[years.length - 1]}`
-  return `Bitte tragen Sie das Datum der Zahlung ein, bevor Sie ${quoted(description)} verteilen: Die Rechnung ist auf Abrechnungszeiträume aufgeteilt, und ohne Datum zählten ihre Teile für die Steuer in den Jahren ${list}. Verteilt wird ab dem Jahr, in dem die Rechnung bezahlt ist, und das ist für die ganze Rechnung eines. Gespeichert wurde nichts.`
+  return `Bitte tragen Sie das Datum der Zahlung an allen Teilen dieser Rechnung ein, bevor Sie ${quoted(description)} verteilen, oder an allen dasselbe Jahr der Zahlung: Die Rechnung ist auf Abrechnungszeiträume aufgeteilt, und so zählten ihre Teile für die Steuer in den Jahren ${list}. Verteilt wird ab dem Jahr, in dem die Rechnung bezahlt ist, und das ist für die ganze Rechnung eines. Gespeichert wurde nichts.`
 }

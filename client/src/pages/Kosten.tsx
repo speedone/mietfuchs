@@ -277,9 +277,15 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   const formPart = storedItem ? formPartOf(items, storedItem, period) : null
   // Eine Rechnung, ein Jahr des Beginns der Verteilung (Integrationsdurchsicht 0.14, S1): An einem Teil einer aufgeteilten
   // Rechnung sagt das Feld vor dem Speichern, was der Server ablehnt, mit denselben Sätzen (shared/spread.ts).
-  const spreadProblem = form && storedItem?.sourceId && form.spreadYears !== '' && showsSpread(form)
+  // Nur, wenn im Formular Verteilung, Zahlungsdatum oder Jahr der Zahlung geändert sind (Durchsicht K4), wie der Server
+  // (`requireSourceOneYear`); an einer unveränderten Wahl steht kein Satz.
+  const formPaidOn = form && showsPaidOn(form) && form.paidOn !== '' ? form.paidOn : null
+  const formTaxYear = form && form.taxYear !== '' ? Number(form.taxYear) : null
+  const spreadTouched = form !== null && storedItem !== undefined && (form.spreadYears !== (storedItem.spreadYears != null ? String(storedItem.spreadYears) : '')
+    || formPaidOn !== (storedItem.paidOn ?? null) || formTaxYear !== (storedItem.taxYear ?? null))
+  const spreadProblem = form && storedItem?.sourceId && spreadTouched && form.spreadYears !== '' && showsSpread(form)
     ? spreadPartsRefusal(form.description, [
-      { period: storedItem.period, paidOn: showsPaidOn(form) && form.paidOn !== '' ? form.paidOn : null, taxYear: form.taxYear !== '' ? Number(form.taxYear) : null },
+      { period: storedItem.period, paidOn: formPaidOn, taxYear: formTaxYear },
       ...items.filter((i) => i.sourceId === storedItem.sourceId && i.id !== storedItem.id),
     ])
     : null
@@ -656,9 +662,10 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
           setError(decision.error)
           return
         }
-        // Verteilt (§ 82b EStDV), aber die Teile flössen ohne Datum in verschiedenen Jahren ab (S1): wie der Server, vor der Rückfrage.
+        // Verteilt (§ 82b EStDV), aber die Teile flössen ohne Datum in verschiedenen Jahren ab (S1): wie der Server, vor der
+        // Rückfrage. Mit Verteilung trägt jeder Teil das Jahr der Zahlung (S6a).
         const refusal = form.spreadYears !== '' && showsSpread(form)
-          ? spreadPartsRefusal(form.description, parts.map((p) => ({ period: p.period, paidOn: showsPaidOn(form) && form.paidOn !== '' ? form.paidOn : null, taxYear: p.needsTaxYear && form.taxYear !== '' ? Number(form.taxYear) : null })))
+          ? spreadPartsRefusal(form.description, parts.map((p) => ({ period: p.period, paidOn: showsPaidOn(form) && form.paidOn !== '' ? form.paidOn : null, taxYear: form.taxYear !== '' ? Number(form.taxYear) : null })))
           : null
         if (refusal !== null) {
           setError(refusal)
