@@ -31,7 +31,10 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   Kontraste nach. Gestaltung „Mittelweg“ (Werte in
   [docs/superpowers/specs/2026-10-18-oberflaeche-gesamtkonzept-design.md](../docs/superpowers/specs/2026-10-18-oberflaeche-gesamtkonzept-design.md)):
   zinc-Flächen, weiße Karten, Indigo nur für Primärknopf, Links, Fortschritt, Fokus, aktiven
-  Menüpunkt und Objekt-Marke. Knöpfe: `.btn`, `.btn.secondary`, `.btn.ghost`, `.btn.danger`.
+  Menüpunkt und Objekt-Marke. Ausnahme nach freigegebenem Entwurf (#488): in „Hilfe & Begriffe“ die Kennzeile des
+  Themas über einem Begriff, die Kästen „Trifft das auf Sie zu?“ und „Brauche ich das?“ (Akzent getönt) und der gewählte
+  Themenfilter; dort trägt die Farbe die Gliederung, die der Nutzer so gesehen und gewollt hat.
+  Knöpfe: `.btn`, `.btn.secondary`, `.btn.ghost`, `.btn.danger`.
 - **Wächter in [src/uiRules.test.ts](src/uiRules.test.ts)** (sie fragen Tailwind selbst): S17 keine
   beliebigen Werte (`p-[13px]`), keine Standardpalette, keine Hex-/rgba-Werte außerhalb `:root`; S20
   keine Klasse in index.css mit Tailwind-Namen, Zahl der Regelzeilen von index.css darf nur sinken.
@@ -350,13 +353,30 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   Titel; was passt, entscheiden weiter `filterGuides`/`filterTerms`, alle drei vergleichen über `searchText`/`searchQuery`
   in [searchText.ts](src/searchText.ts): „CO2“ findet „CO₂“, „§556“ findet „§ 556“). Taste „/“ springt hinein (nicht aus
   einem Feld, einem Dialog oder der Erklärung eines Begriffs). Ohne Suche die Anleitungen als Kacheln je `group` und die
-  Themen des Lexikons (`topic`, Pflichtfeld; Beschriftungen in helpView.ts). Anleitung und Begriffsliste sind eigene
+  Themen des Lexikons (`topic`, Pflichtfeld; Beschriftungen in helpView.ts). Anleitung und Lexikon sind eigene
   Ansichten im Zustand der Seite (kein Router), Fokus auf ihre Überschrift, beim Zurück auf den Auslöser; „Zurück“ geht
-  den Weg rückwärts (`trail`), auch aus dem Begriff zurück in die Anleitung, aus der man gesprungen ist.
+  den Weg rückwärts (`trail`), auch aus dem Begriff zurück in die Anleitung, aus der man gesprungen ist, und aus der
+  Anleitung („Kommt vor in“) zurück zum Begriff („← Zurück zu {Begriff}“, Fokus auf den Knopf).
   Die Anleitung (PR 2): Pfad statt Seitenkopf (über ihm „← Zurück zu {Titel}“, wenn man über „Ähnliche Anleitungen“ kam),
   `h1` ist ihr Titel, Abschnitte als `section` mit `h2` (`GUIDE_SECTIONS`), ab 42rem Inhaltsbreite die Inhaltsleiste
-  (`guide-layout`/`guide-toc` in tw.css, Container-Abfrage). Begriffe sind Knöpfe auf den Begriff (kein Popover); in der
-  Begriffsliste heißt „Zurück“ dann „← Zurück zur Anleitung“. **Faden** ([GuideThread.tsx](src/components/GuideThread.tsx)):
+  (`guide-layout`/`guide-toc` in tw.css, Container-Abfrage). Begriffe sind Knöpfe auf den Begriff (kein Popover); im
+  Lexikon steht dann über dem Pfad „← Zurück zur Anleitung“.
+  Das Lexikon (Teil 3): Pfad „Hilfe & Begriffe › Lexikon“ (führt auf die Kachel oder die Suche, mit der der Weg begann),
+  `h1` „Lexikon“, Themenfilter als Umschaltknöpfe (`aria-pressed`, „Alle“ vorne, je mit Zahl), darunter ab 44rem
+  Inhaltsbreite zwei Spalten (`lexicon-layout`/`lexicon-list` in tw.css): links die Liste (Knöpfe, gewählter mit
+  `aria-current`, Anfangsbuchstaben nur fürs Auge), breit angeheftet und für sich rollend; rechts der Begriff als
+  `article` mit `h2#begriff-{id}`, Beispiel und „Brauche ich das?“, Rechtsgrundlage,
+  „Kommt vor in“ (`guidesWithTerm`) und „Verwandte Begriffe“ (`relatedTerms`: selbes Thema, höchstens acht, gemeinsame
+  Anleitungen zuerst). Schmaler eins von beiden (`data-pane`, `lexiconPane`), über dem Begriff „← Zur Liste“ zurück
+  auf seinen Eintrag; Höhenbegrenzung und eigenes Rollen der Liste nur in der breiten Container-Regel (Wächter in
+  uiRules, Browserlauf-Gang „lexikon“). **Fokus**: Die Liste ist ein Halt der Tabulatortaste (Pfeiltasten, Pos1, Ende
+  bewegen). Breit bleibt er nach der Wahl auf dem Eintrag, eine `status`-Meldung sagt „Rechts angezeigt: {Begriff}“ (eine
+  Live-Region um den ganzen Begriff läse Beispiel und Rechtsgrundlage mit vor); ob breit, fragt die Seite das Element
+  (`checkVisibility`), denn die Container-Abfrage sieht nur CSS. Schmal, bei „Verwandte Begriffe“ und bei Sprüngen von
+  außen geht er auf das `h2`. Wird die Ansicht schmal, während er in der Liste steht (Zoom), holt ein `ResizeObserver`
+  ihn auf das `h2`. Ein Thema wählen hebt die Wahl des Begriffs auf (`chooseTopic`); Thema und Begriff wechseln ohne
+  Schritt im `trail`. Jeder Sprung von außen (`focusTerm`, Suchtreffer, Begriff einer Anleitung) öffnet unter „Alle“
+  (`jumpToTerm`): Er kommt nicht über ein Thema, das Thema nennt die Kennzeile, die Nachbarn „Verwandte Begriffe“. **Faden** ([GuideThread.tsx](src/components/GuideThread.tsx)):
   „Zu {Seite} →“ meldet `onFollow(anleitung, schritt)`, die App springt über `navigate` mit dem Faden als drittem
   Argument und setzt den Fokus auf das `h1` der Zielseite. **Nur die Navigation** (Seitenleiste, Menüblatt, untere Leiste:
   `navigateFromNav`), „Zurück zur Anleitung“ und „Leiste schließen“ beenden ihn; Sprünge aus dem Seiteninhalt und der

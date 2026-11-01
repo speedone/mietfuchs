@@ -8,7 +8,7 @@
 import { GLOSSARY, TERM_TOPICS, type TermId, type TermTopic } from '../../shared/glossary.ts'
 import { countOf } from '../../shared/wording.ts'
 import { GUIDE_GROUPS, type GuideGroup, type GuideId, type GuideStep } from '../../shared/guides.ts'
-import { filterTerms, sortedTerms, type TermEntry } from './glossaryView'
+import { filterTerms, letterOf, sortedTerms, type TermEntry } from './glossaryView'
 import { allGuides, filterGuides, guideTexts, type GuideEntry } from './guideView'
 import { searchQuery, searchText } from './searchText'
 
@@ -167,4 +167,72 @@ export function nextStepWithPage(steps: readonly GuideStep[], from: number): num
 export function relatedGuides(id: GuideId, guides: GuideEntry[] = allGuides(), max = 3): GuideEntry[] {
   const group = guides.find((g) => g.id === id)?.group
   return guides.filter((g) => g.group === group && g.id !== id).slice(0, max)
+}
+
+// Das Lexikon (#488, Teil 3): links die Liste der Begriffe mit Themenfilter, rechts der gewählte Begriff mit „Kommt vor
+// in“ und verwandten Begriffen. Der Zustand ist Thema (null: alle) und gewählter Begriff (null: keiner).
+export type LexiconState = { topic: TermTopic | null; term: TermId | null }
+
+// Die Knöpfe des Themenfilters mit Zahl der Begriffe, vorne „Alle“.
+export function lexiconFilters(): { topic: TermTopic | null; label: string; count: number }[] {
+  const counts = topicCounts()
+  return [
+    { topic: null, label: 'Alle', count: counts.reduce((a, c) => a + c.count, 0) },
+    ...counts.map((c) => ({ topic: c.topic, label: TERM_TOPIC_LABELS[c.topic], count: c.count })),
+  ]
+}
+
+// Die Liste: alphabetisch, am ersten Begriff jedes Anfangsbuchstabens dieser Buchstabe (als Trenner gezeigt).
+export function lexiconEntries(topic: TermTopic | null, terms: TermEntry[] = sortedTerms()): { id: TermId; title: string; letter: string | null }[] {
+  let last = ''
+  return termsOfTopic(terms, topic).map((t) => {
+    const letter = letterOf(t.title)
+    const first = letter !== last
+    last = letter
+    return { id: t.id, title: t.title, letter: first ? letter : null }
+  })
+}
+
+// „Kommt vor in“: die Anleitungen, die den Begriff unter „Begriffe“ nennen, in der Reihenfolge der Daten.
+export function guidesWithTerm(id: TermId, guides: GuideEntry[] = allGuides()): GuideEntry[] {
+  return guides.filter((g) => g.terms.includes(id))
+}
+
+// „Verwandte Begriffe“: die übrigen desselben Themas, höchstens `max`. Zuerst die, die mit ihm in denselben Anleitungen
+// stehen (sie gehören zum selben Vorgang), sonst nach dem Alphabet; nur nach dem Alphabet stünden bei der Heizung mit
+// ihren 27 Begriffen unter jedem Begriff dieselben acht vom Anfang des Alphabets.
+export function relatedTerms(id: TermId, max = 8, terms: TermEntry[] = sortedTerms(), guides: GuideEntry[] = allGuides()): TermEntry[] {
+  const topic = GLOSSARY[id].topic
+  const withIt = guidesWithTerm(id, guides)
+  const shared = (other: TermId) => withIt.filter((g) => g.terms.includes(other)).length
+  return terms
+    .filter((t) => t.topic === topic && t.id !== id)
+    .map((t, i) => ({ t, i, n: shared(t.id) }))
+    .sort((a, b) => b.n - a.n || a.i - b.i)
+    .slice(0, max)
+    .map((x) => x.t)
+}
+
+// Ein Sprung von außen auf einen Begriff (Erklärung im Formular, Suche, Anleitung): Filter „Alle“. Der Sprung kommt
+// nicht über ein Thema, und unter „Alle“ steht der Begriff an seinem Platz im Alphabet wie in der Suche; sein Thema
+// nennt die Kennzeile über dem Titel, die Nachbarn im Thema „Verwandte Begriffe“.
+export function jumpToTerm(id: TermId): LexiconState {
+  return { topic: null, term: id }
+}
+
+// Ein Thema wählen hebt die Wahl des Begriffs auf (wie im Vorschlag): Am Handy erscheint so sofort die gefilterte
+// Liste, statt dass der Begriff stehen bleibt und der Filter scheinbar nichts tut.
+export function chooseTopic(topic: TermTopic | null): LexiconState {
+  return { topic, term: null }
+}
+
+// Einen Begriff wählen (Liste, „Verwandte Begriffe“): Das Thema bleibt, wenn er darin steht, sonst gilt „Alle“, damit
+// der gewählte Begriff in der Liste steht.
+export function chooseTerm(state: LexiconState, id: TermId): LexiconState {
+  return { topic: state.topic === null || GLOSSARY[id].topic === state.topic ? state.topic : null, term: id }
+}
+
+// Schmale Ansicht (am Handy): ohne gewählten Begriff die Liste, mit Begriff nur er und „← Zur Liste“.
+export function lexiconPane(term: TermId | null): 'list' | 'term' {
+  return term === null ? 'list' : 'term'
 }

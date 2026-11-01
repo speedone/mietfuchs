@@ -28,7 +28,8 @@
 // Dazu je Engine, Ansicht und Design der Gang „faden“ (#488, PR 2): Hilfe → Kachel → Anleitung → „Zu Kosten →“, auf
 // Kosten mit der Leiste des Fadens axe, Breite, abgeschnittene Felder und die Tabulatortaste bis in die Leiste, wobei
 // kein fokussiertes Element ganz unter der Leiste liegen darf (WCAG 2.4.11). Er läuft mit `--pages hilfe-begriffe`
-// oder `--pages faden`.
+// oder `--pages faden`. Ebenso der Gang „lexikon“ (#488, Teil 3): Hilfe → „Alle von A bis Z“ (die Liste) und ein
+// Begriff darin, je mit denselben Prüfungen wie eine Seite (`--pages lexikon`).
 //
 // Jeder Befund ergibt einen Exit-Code ungleich 0. Der Bericht steht als Markdown in `<out>/bericht.md` und,
 // in GitHub Actions, in der Zusammenfassung des Laufs. Die Fotos je Seite liegen in `<out>/<engine>/…`;
@@ -577,6 +578,56 @@ async function checkCombination(browser, base, combo, AxeBuilder, navLabels) {
     }
   }
 
+  // Der Gang „lexikon“ (#488, Teil 3): das Lexikon unter „Alle“, dann mit einem Begriff (am Handy steht dann nur er)
+  if (PAGES === null || PAGES.includes('hilfe-begriffe') || PAGES.includes('lexikon')) {
+    current = 'lexikon'
+    try {
+      await go(page, view, 'Hilfe & Begriffe')
+      await page.getByRole('button', { name: /^Alle von A bis Z/ }).click()
+      await page.getByRole('heading', { name: 'Lexikon', level: 1 }).waitFor({ timeout: 5000 })
+      await settle(page)
+      checkedPages++
+      await measure('lexikon')
+      // Integrationsdurchsicht von #488: Ein langer Begriff lief breit über den Rand der Liste und wurde abgeschnitten;
+      // die Seite stand dabei nicht über, deshalb sah die Messung der Seite es nicht.
+      const wide = await page.evaluate(() => {
+        const list = /** @type {any} */ (globalThis).document.querySelector('main .lexicon-list')
+        return list && list.scrollWidth > list.clientWidth + 1 ? `Die Liste der Begriffe rollt waagerecht (${list.scrollWidth} px Inhalt in ${list.clientWidth} px), ein Eintrag wird abgeschnitten` : null
+      })
+      if (wide) add('lexikon', 'Abgeschnitten', wide)
+      // Durchsicht von Teil 3, M1: Am Handy steht die Liste im Fluss der Seite. Ganz heruntergerollt liegt der letzte
+      // Eintrag in seiner Karte und über der unteren Leiste (vorher lief die Liste aus der Karte, er lag unter der Leiste).
+      if (view === 'mobile') {
+        const problem = await page.evaluate(() => {
+          const doc = /** @type {any} */ (globalThis).document
+          const list = doc.querySelector('main .lexicon-list')
+          const items = list ? [...list.querySelectorAll('button[data-lexicon-term]')] : []
+          const last = items.at(-1)
+          if (!list || !last) return 'Die Liste der Begriffe fehlt'
+          // So weit rollen, wie es geht (der Seite rollt je nach Ansicht ein anderes Element); was dann nicht über der
+          // Leiste steht, erreicht niemand
+          last.scrollIntoView({ block: 'end', behavior: 'instant' })
+          const e = last.getBoundingClientRect()
+          const l = list.getBoundingClientRect()
+          const bar = doc.querySelector('nav[aria-label="Schnellzugriff"]')?.getBoundingClientRect()
+          if (e.bottom > l.bottom + 1) return `Der letzte Eintrag „${last.textContent}“ ragt aus der Liste (unten ${Math.round(e.bottom)} px, Liste bis ${Math.round(l.bottom)} px)`
+          if (bar && e.bottom > bar.top + 1) return `Der letzte Eintrag „${last.textContent}“ liegt heruntergerollt unter der unteren Leiste (unten ${Math.round(e.bottom)} px, Leiste ab ${Math.round(bar.top)} px)`
+          return null
+        })
+        if (problem) add('lexikon', 'Erreichbar', problem)
+        await page.evaluate(() => /** @type {any} */ (globalThis).scrollTo(0, 0))
+      }
+      current = 'lexikon-begriff'
+      await page.getByRole('list', { name: 'Begriffe' }).getByRole('button', { name: 'Einheit ohne Anschluss' }).click()
+      await page.getByRole('heading', { name: 'Einheit ohne Anschluss', level: 2 }).waitFor({ timeout: 5000 })
+      await settle(page)
+      checkedPages++
+      await measure('lexikon-begriff')
+    } catch (err) {
+      add(current, 'Gang', `Das Lexikon ließ sich nicht prüfen: ${err instanceof Error ? err.message.split('\n')[0] : err}`)
+    }
+  }
+
   // Die Musterseite (`?muster`, #346 Schritt 12): alle Bausteine auf einer Seite, mit denselben Prüfungen wie jede Seite
   // der Navigation. Sie kommt ohne Server aus und ist deshalb nicht in der Navigation; `--pages muster` prüft sie allein.
   if (PAGES === null || PAGES.includes('muster')) {
@@ -1001,7 +1052,7 @@ async function main() {
     // Ein Tippfehler in --pages prüfte sonst keine Seite und meldete grün
     if (PAGES) {
       for (const id of PAGES) {
-        if (id !== 'muster' && id !== 'faden' && id !== 'belege-ordner' && !(navLabels ?? []).some((l) => slug(l) === id)) findings.push({ engine: 'alle', view: '–', theme: '–', page: id, kind: 'Aufruf', text: `--pages nennt „${id}“, die Navigation hat keine solche Seite (möglich: ${(navLabels ?? expected).map(slug).join(', ')}).` })
+        if (id !== 'muster' && id !== 'faden' && id !== 'lexikon' && id !== 'belege-ordner' && !(navLabels ?? []).some((l) => slug(l) === id)) findings.push({ engine: 'alle', view: '–', theme: '–', page: id, kind: 'Aufruf', text: `--pages nennt „${id}“, die Navigation hat keine solche Seite (möglich: ${(navLabels ?? expected).map(slug).join(', ')}).` })
       }
     }
     if (checkedPages === 0 && (PAGES === null || PAGES.length > 0)) {

@@ -15,6 +15,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Geändert
 
+- Das Lexikon in „Hilfe & Begriffe“ steht in zwei Spalten: links die Begriffe von A bis Z mit Filter nach Thema, rechts
+  der gewählte Begriff mit Beispiel, „Brauche ich das?“, den Anleitungen, in denen er vorkommt, und verwandten
+  Begriffen. Am Handy erst die Liste, dann der Begriff. „Mehr in ‚Hilfe & Begriffe‘ →“ aus einem Formular, ein
+  Suchtreffer und ein Begriff in einer Anleitung öffnen ihn dort unmittelbar
+  ([#488](https://github.com/speedone/mietfuchs/issues/488)).
+
 - Die Programmdatei unter Windows und macOS vermerkt beim Start, wo ihr Datenordner liegt, in einer Datei im
   Benutzerordner. Eine spätere Fassung mit eigenem Programmfenster findet die Daten so und bietet den Umzug selbst an
   ([#517](https://github.com/speedone/mietfuchs/issues/517)). Die Datei verlässt den Rechner nicht.
