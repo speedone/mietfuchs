@@ -809,6 +809,40 @@ jobs:
           trap 'kill $pid 2>/dev/null; echo "--- Ausgabe des Servers"; cat server.log' EXIT
           node scripts/smoke-test.mjs --url http://127.0.0.1:3001 --mode npm --slow-ai 320
 
+  # Der Umzug ins Programmfenster mit echten alten Fassungen (#517, scripts/fenster-umzug-praxislauf.mjs): Die
+  # Linux-Programmdateien von 0.3.1 (db.json) bis 0.14.1 legen je einen Bestand an, der Server von heute übernimmt den
+  # Ordner und das Backup, Abrechnung und Belege werden verglichen. Im vollen Umfang wie die lange KI-Antwort (Tag,
+  # Zeitplan, von Hand, Label „full-check“). Die Programmdateien liegen im Zwischenspeicher der Actions, nie im Repo;
+  # Zeit- und Größengrenzen der Downloads setzt das Skript.
+  fenster-umzug:
+    name: Umzug ins Programmfenster mit alten Fassungen
+    needs: umfang
+    if: needs.umfang.outputs.vollstaendig == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: '**/package-lock.json'
+      - run: npm install
+      - name: Alte Programmdateien aus dem Zwischenspeicher
+        uses: actions/cache@v5
+        with:
+          path: ${{ runner.temp }}/alte-fassungen
+          key: mietfuchs-alte-fassungen-v1-0.3.1-0.7.1-0.9.0-0.12.0-0.14.1
+      - name: Praxislauf
+        run: node scripts/fenster-umzug-praxislauf.mjs --cache "$RUNNER_TEMP/alte-fassungen" --out umzug-bericht
+      - name: Zusammenfassung
+        if: always()
+        run: |
+          {
+            echo "## Umzug ins Programmfenster mit alten Fassungen"
+            cat umzug-bericht/fenster-umzug.md 2>/dev/null || echo "Kein Bericht entstanden."
+          } >> "$GITHUB_STEP_SUMMARY"
+
   # Der Browserlauf (#340, Schritt 11 von #346): jede Seite der Navigation in Chromium, Firefox und
   # WebKit (Safari), am Rechner und am Handy, hell und dunkel, mit axe-core und den Bedienproben
   # (scripts/browser-check.mjs). Er läuft im vollen Umfang wie die lange KI-Antwort, also beim Tag,
@@ -873,11 +907,12 @@ jobs:
   # Programmfenster: Was hier nicht grün ist, wird nicht ans Release gehängt.
   #
   # Zum Programmfenster (Installer und .dmg) bleiben die Programmdateien (.exe, macOS-Zip) vorerst
-  # am Release: Den Umzug der Daten aus dem Ordner neben der Programmdatei in den Benutzerordner
-  # bringt erst PR 3 von #517, bis dahin fänden Nutzer ihre Daten im Fenster nicht.
+  # am Release. Den Umzug der Daten aus dem Ordner neben der Programmdatei in den Benutzerordner
+  # bietet das Fenster seit PR 3 von #517 selbst an; ob die Programmdateien dann wegfallen,
+  # entscheidet PR 4 mit Anleitung und Release-Notes.
   veroeffentlichen:
     name: Ans Release anhängen
-    needs: [pruefen, distributionen, pakete, slow-ai-answer, browserlauf, browserlauf-ausnahmen, fenster-pruefen]
+    needs: [pruefen, distributionen, pakete, slow-ai-answer, browserlauf, browserlauf-ausnahmen, fenster-pruefen, fenster-umzug]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-24.04
     permissions:

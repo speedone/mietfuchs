@@ -29,6 +29,15 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Hinzugefügt
 
+- **Umzug der Daten ins Programmfenster** ([#517](https://github.com/speedone/mietfuchs/issues/517)): Startet das
+  Programmfenster unter Windows oder macOS zum ersten Mal ohne Daten, zeigt es „Ihre bisherigen Daten übernehmen“. Es
+  findet den Ordner `data` neben der bisherigen Programmdatei (über den gemerkten Ort oder in Downloads, Schreibtisch
+  und Dokumente) und nennt Ort, letzte Änderung und Zahl der Objekte und Mietverhältnisse. „Daten übernehmen“ kopiert
+  Datenbank, Belege und Briefpapier, vergleicht die Kopie mit dem Original und schaltet erst dann um; auch eine alte
+  `db.json` aus den ersten Fassungen kommt mit. Läuft das alte Mietfuchs noch, beendet es ein Knopf zuerst. Ohne Fund
+  führt der Bildschirm zum Backup aus dem alten Mietfuchs oder zur Wahl des Ordners. Der alte Ordner bleibt
+  unverändert liegen und bekommt nur einen Vermerk; eine aktuelle Programmdatei zeigt ihn danach nur noch an und nimmt
+  keine Änderungen mehr an.
 - **Website:** Mietfuchs hat eine eigene Website, [mietfuchs-app.de](https://mietfuchs-app.de), mit Download für jedes
   System und Ratgebern zur Nebenkostenabrechnung. Der Link steht in den Einstellungen unter „Über Mietfuchs“.
 
@@ -42,8 +51,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   zu, gedruckt wird mit Briefpapier und „Seite x von y“ auch auf dem Mac. Zum Herunterladen als
   `Mietfuchs-Setup-<Version>.exe` für Windows (x64 und ARM64, Installation ohne Adminrechte) und als
   `Mietfuchs-<Version>-apple-silicon.dmg` bzw. `-intel.dmg` für den Mac. Die bisherigen Programmdateien bleiben
-  vorerst zum Herunterladen; wer schon damit arbeitet, bleibt bis zum Umzug der Daten in einem der nächsten Releases
-  dabei, denn das Fenster legt seine Daten im Benutzerordner an.
+  vorerst zum Herunterladen. Das Fenster legt seine Daten im Benutzerordner an; wer schon mit der Programmdatei
+  arbeitet, übernimmt sie beim ersten Start des Fensters (Umzug der Daten, oben).
 - **Programmfenster: kleiner und schneller installiert** ([#517](https://github.com/speedone/mietfuchs/issues/517)):
   Der Server läuft im Fenster jetzt mit dem Node, das das Fenster ohnehin mitbringt, statt als eigene Programmdatei.
   Der Download ist für Windows 70 MB kleiner (237 statt 307 MB), für den Mac 30 bis 50 MB, installiert sind es 70 bis

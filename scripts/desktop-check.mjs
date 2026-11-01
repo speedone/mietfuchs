@@ -6,6 +6,9 @@
 //   3. Ein zweiter Start holt nur das vorhandene Fenster nach vorn und endet.
 //   4. Beenden aus der Oberfläche (/api/quit): Fenster und Server enden mit 0, der Port ist frei.
 //   5. Absturz des Fensters (hart beendet): Der Server endet von selbst, keine Waise hält Port und Datenbank.
+//   6. Umzug der Daten: Der Bestand aus 1. liegt wie bei der bisherigen Programmdatei in `data/` neben ihr im
+//      Download-Ordner eines nachgestellten Benutzerordners; das Fenster findet ihn mit leerem Datenordner über die
+//      Suche dieses Systems und übernimmt ihn.
 //
 // Der Server läuft als utilityProcess des Fensters (desktop/src/main.js); seine PID nennt die Selbstprüfung. In 4. und
 // 5. muss dieser Prozess weg sein, nicht nur der Port frei.
@@ -70,12 +73,12 @@ async function until(condition, timeoutMs) {
   return false
 }
 
-/** @param {string} name */
-function launch(name) {
+/** @param {string} name @param {NodeJS.ProcessEnv} [extra] */
+function launch(name, extra = {}) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-fenster-'))
   const selftest = path.join(out, name)
   const child = spawn(/** @type {string} */ (app), [], {
-    env: { ...process.env, CI: '1', NKA_DATA_DIR: dataDir, NKA_UPDATE_URL: 'http://127.0.0.1:9/kein-internet-im-test', MIETFUCHS_SELFTEST_OUT: selftest },
+    env: { ...process.env, ...extra, CI: '1', NKA_DATA_DIR: dataDir, NKA_UPDATE_URL: 'http://127.0.0.1:9/kein-internet-im-test', MIETFUCHS_SELFTEST_OUT: selftest },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   let output = ''
@@ -144,7 +147,40 @@ if (await until(() => fs.existsSync(path.join(crash.selftest, 'fenster.json')), 
   crash.child.kill()
 }
 fs.writeFileSync(path.join(out, 'absturz.log'), crash.output())
-for (const dir of [first.dataDir, crash.dataDir]) fs.rmSync(dir, { recursive: true, force: true })
+
+// ---------- 6.: Umzug der Daten (#517) ----------
+// Heimatordner, Suchorte und Port der alten Fassung kommen hinein (NKA_TEST_HOME, NKA_TEST_OLD_PORT ins Leere): Die
+// Prüfung liest nie den echten Benutzerordner des Runners. Gesucht wird mit den Namen dieses Systems.
+const home = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-umzug-heim-'))
+const oldProgram = path.join(home, 'Downloads', 'mietfuchs-alt')
+const oldData = path.join(oldProgram, 'data')
+fs.mkdirSync(oldData, { recursive: true })
+fs.writeFileSync(path.join(oldProgram, process.platform === 'win32' ? 'mietfuchs-win.exe' : 'mietfuchs-macos-apple-silicon'), 'Programmdatei')
+fs.copyFileSync(path.join(first.dataDir, 'mietfuchs.sqlite'), path.join(oldData, 'mietfuchs.sqlite'))
+fs.cpSync(path.join(first.dataDir, 'uploads'), path.join(oldData, 'uploads'), { recursive: true })
+const moving = launch('umzug', { NKA_TEST_HOME: home, NKA_TEST_OLD_PORT: '9' })
+if (await until(() => fs.existsSync(path.join(moving.selftest, 'fenster.json')), 120_000)) {
+  const base = `http://127.0.0.1:${PORT}`
+  const offer = /** @type {any} */ (await (await fetch(`${base}/api/relocation`)).json())
+  check(offer.offered === true, 'Umzug: Das Fenster ohne Bestand bietet ihn an')
+  const list = /** @type {any} */ (await (await fetch(`${base}/api/relocation/candidates`)).json())
+  const found = (list.candidates ?? []).find((/** @type {any} */ c) => String(c.dataDir).toLowerCase() === oldData.toLowerCase())
+  check(Boolean(found), `Umzug: Die Suche findet ${oldData} (${JSON.stringify(list).slice(0, 300)})`)
+  const adopt = await fetch(`${base}/api/relocation/adopt`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ dataDir: found?.dataDir ?? oldData }) })
+  const adopted = /** @type {any} */ (await adopt.json())
+  check(adopt.status === 200, `Umzug: übernommen (${adopt.status} ${JSON.stringify(adopted).slice(0, 300)})`)
+  const tenancies = /** @type {any} */ (await (await fetch(`${base}/api/tenancies`)).json())
+  check(Array.isArray(tenancies) && tenancies.length > 0, `Umzug: Die Mietverhältnisse sind im Fenster (${Array.isArray(tenancies) ? tenancies.length : '?'})`)
+  check(fs.existsSync(path.join(oldData, 'umgezogen.json')), 'Umzug: Vermerk im alten Ordner')
+  report.move = { found: found ?? null, counts: adopted.counts ?? null }
+  await fetch(`${base}/api/quit`, { method: 'POST' }).catch(() => {})
+  check((await exitWithin(moving.exited, 30_000)) === 0, 'Umzug: danach endet das Fenster mit 0')
+} else {
+  check(false, 'Umzug: Fenster mit leerem Datenordner gestartet')
+  moving.child.kill()
+}
+fs.writeFileSync(path.join(out, 'umzug.log'), moving.output())
+for (const dir of [first.dataDir, crash.dataDir, moving.dataDir, home]) fs.rmSync(dir, { recursive: true, force: true })
 
 report.failures = failures
 fs.writeFileSync(path.join(out, 'bericht.json'), `${JSON.stringify(report, null, 2)}\n`)

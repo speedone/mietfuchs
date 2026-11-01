@@ -19,6 +19,7 @@ const EXCEPTIONS: Record<string, string> = {
   './components/ServiceImportReview.tsx': 'Teil von ServiceImportCard, die sich anmeldet, solange der Vorschlag offen ist.',
   './pages/BelegeOrdner.tsx': 'Suche und Umfang („Belege aller … zeigen“) sind keine gespeicherten Werte; „Aus dem Eingang …“ und „Betrag prüfen“ melden sich in ReceiptParts.tsx (`useDraft`, `useAttach`).',
   './pages/Steuer.tsx': 'Nur Auswahl des Jahres und der Ansicht, kein ungespeicherter Stand.',
+  './pages/Umzug.tsx': 'Nur die Wahl der Backup-Datei, die sofort eingespielt wird (#517); kein ungespeicherter Stand.',
   './pages/Verlauf.tsx': 'Nur die Filter des Verlaufs, kein ungespeicherter Stand; der Rücksprung fragt vorher.',
 }
 

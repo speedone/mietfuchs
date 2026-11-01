@@ -176,6 +176,15 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   dem Drucken ([despiteErrors.ts](src/despiteErrors.ts)), und jede Mieterabrechnung trägt im Druck
   „Entwurf, nicht versenden“ (`print-only`, auch bei Strg+P). Eine abgeschlossene nie. Die erste
   Rückfrage zum Abschließen zu denselben Fehlern gilt dann als beantwortet (`sameErrors`).
+- **Umzug ins Programmfenster** (#517, [pages/Umzug.tsx](src/pages/Umzug.tsx), Logik in [relocation.ts](src/relocation.ts)):
+  Nur mit der Brücke des Fensters (`inWindow`) fragt App.tsx einmal `GET /api/relocation`; bis zur Antwort bleibt der
+  Platz der Seite leer, mit `offered` steht auf jeder Seite „Ihre bisherigen Daten übernehmen“ (eine Eingabe dazwischen machte den Umzug unmöglich). Funde als Karte „Gefundene
+  Daten“ (Ort, „Zuletzt geändert am …“, Objekte und Mietverhältnisse, Primärknopf „Daten übernehmen“, denn ein nacktes
+  „Übernehmen“ verbietet S16); läuft das alte Mietfuchs noch, ist der Knopf gesperrt (`aria-describedby` auf den
+  Hinweis) und „Altes Mietfuchs beenden“ steht daneben. Ohne Fund genau ein empfohlener Weg, das Backup (Ablage und
+  „Backup einspielen“ über `/api/restore`), darunter „Ordner der alten Programmdatei wählen …“ (nur mit
+  `chooseFolder` der Brücke) und „Neu anfangen …“ mit Rückfrage. Ein umgezogener Ordner zeigt oben auf jeder Seite
+  „Nur noch zum Ansehen“ (Database.tsx, `moved` aus `/healthz`), ohne „Verstanden“.
 - **Leerzustände** (`EmptyState`, [emptyStock.ts](src/emptyStock.ts)): im leeren Zeitraum der erste
   fehlende Schritt mit Knopf, ohne Entwurf, Frist, Kennzahlen; ein gesperrter Knopf nennt seinen
   Grund (`aria-describedby`). Nach dem Abschluss nennt die Unterzeile des Cockpits Stand und offene

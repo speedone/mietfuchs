@@ -13,6 +13,8 @@ import PropertyNotice from './components/PropertyNotice'
 import { emptyPropertyNotice, propertyName } from './propertyView'
 import { canQuit, hintVisible } from './update'
 import Cockpit from './pages/Cockpit'
+import Umzug from './pages/Umzug'
+import { inWindow } from './relocation'
 import Uebersicht from './pages/Uebersicht'
 import Stammdaten from './pages/Stammdaten'
 import Kosten from './pages/Kosten'
@@ -158,6 +160,16 @@ function Shell() {
   }, [])
   const clearFocus = useCallback(() => setFocus(null), [])
   const [stopped, setStopped] = useState(false)
+  // Umzug der Daten ins Programmfenster (#517): Im Fenster fragt die Oberfläche einmal, ob statt des Cockpits „Ihre
+  // bisherigen Daten übernehmen“ erscheint. Bis die Antwort da ist, bleibt der Platz des Cockpits leer, damit es nicht
+  // kurz aufblitzt; im Browser wird gar nicht gefragt.
+  const [relocation, setRelocation] = useState<'checking' | 'offered' | 'none'>(() => (inWindow() ? 'checking' : 'none'))
+  useEffect(() => {
+    if (relocation !== 'checking') return
+    api<{ offered: boolean }>('/api/relocation')
+      .then((r) => setRelocation(r.offered ? 'offered' : 'none'))
+      .catch(() => setRelocation('none'))
+  }, [relocation])
   // Die offene Ansicht der Seite Belege (#490), gemerkt je Sitzung: Die Seitenleiste öffnet die zuletzt benutzte.
   const [belegeView, setBelegeViewState] = useState<BelegeView>(readView)
   const setBelegeView = useCallback((v: BelegeView) => { writeView(v); setBelegeViewState(v) }, [])
@@ -480,6 +492,9 @@ function Shell() {
             Zwischenstände einer Seite gehören zu dem Objekt und Jahr, in dem sie entstanden sind. Die
             Warteschlange der KI-Auswertung liegt darüber (App), sie überlebt den Wechsel (#490). */}
         <Fragment key={`${propertyId ?? ''}:${periodKeyNow}`}>
+        {/* Solange der Umzug angeboten ist, auf jeder Seite (Durchsicht D4): Eine Eingabe dazwischen machte ihn unmöglich */}
+        {relocation === 'offered' && <Umzug onFresh={() => setRelocation('none')} />}
+        {relocation === 'none' && <>
         {tab === 'cockpit' && (
           <Cockpit units={units} tenancies={tenancies} settings={settings} updateStatus={update.status} reload={reload} onNavigate={(t, f) => void navigate(t, f ?? null)} />
         )}
@@ -505,6 +520,7 @@ function Shell() {
         {tab === 'einstellungen' && settings && (
           <Einstellungen settings={settings} reload={reload} update={update} onNavigate={(t) => void navigate(t)} />
         )}
+        </>}
         </Fragment>
         {/* Außerhalb der je Objekt und Jahr neu aufgestellten Seite: Die Leiste bleibt zwischen zwei Schritten dieselbe
             und behält den Fokus auf „Nächster Schritt“. */}

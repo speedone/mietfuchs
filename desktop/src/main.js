@@ -6,14 +6,14 @@
 // weniger, die Virenscanner prüfen und die signiert wird, und rund 100 MB weniger je Architektur.
 //
 // Sicherheit nach der Checkliste von Electron: Die Seite läuft ohne Node in der Sandbox, die Brücke (preload.cjs)
-// kennt nur das Drucken und den Zugriff aus dem Heimnetz, Navigation und neue Fenster bleiben auf der eigenen Adresse, fremde Links öffnet der
+// kennt nur das Drucken, den Zugriff aus dem Heimnetz und die Wahl des alten Ordners beim Umzug, Navigation und neue Fenster bleiben auf der eigenen Adresse, fremde Links öffnet der
 // Standardbrowser, Berechtigungen (Kamera, Standort …) werden abgelehnt.
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { BrowserWindow, Menu, app, dialog, ipcMain, session, shell, utilityProcess } from 'electron'
-import { DEFAULT_PORT, SERVICE_NAME, blockedFileIn, dataDirIn, findBlockedFile, freePort, linkTarget, networkState, programFiles, serverEnv, serverModule, startFailure, startUrlIn, whoIsOn } from './server.js'
+import { DEFAULT_PORT, SERVICE_NAME, blockedFileIn, dataDirIn, findBlockedFile, freePort, linkTarget, networkState, programFiles, serverEnv, serverModule, startFailure, startUrlIn, whoIsOn, chosenFolder } from './server.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const startedAt = Date.now()
@@ -393,6 +393,14 @@ async function start() {
   ipcMain.handle('mietfuchs:network-get', (event) => {
     if (!fromOwnPage(event)) throw new Error('Nicht erlaubt.')
     return currentNetwork()
+  })
+  // Umzug der Daten (#517): „Ordner der alten Programmdatei wählen …“. Ebenso nur für die eigene Seite; sie bekommt
+  // nur den Pfad, ob dort Daten liegen, prüft der Server.
+  ipcMain.handle('mietfuchs:choose-folder', async (event) => {
+    if (!fromOwnPage(event)) throw new Error('Nicht erlaubt.')
+    const owner = BrowserWindow.fromWebContents(event.sender)
+    const options = { title: 'Ordner der alten Programmdatei wählen', buttonLabel: 'Ordner wählen', properties: /** @type {Array<'openDirectory'>} */ (['openDirectory']) }
+    return chosenFolder(owner ? await dialog.showOpenDialog(owner, options) : await dialog.showOpenDialog(options))
   })
   ipcMain.handle('mietfuchs:network-set', (event, enabled) => {
     if (!fromOwnPage(event)) throw new Error('Nicht erlaubt.')

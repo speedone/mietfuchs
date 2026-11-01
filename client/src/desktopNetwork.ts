@@ -15,6 +15,8 @@ export type NetworkBridge = {
 export type DesktopBridge = {
   print?: () => Promise<unknown>
   network?: NetworkBridge
+  // Umzug der Daten (#517, relocation.ts): der Ordner-Dialog des Systems, ergibt den gewählten Ordner oder null
+  chooseFolder?: () => Promise<string | null>
 }
 
 // Die Brücke, wenn das Fenster sie kennt. Ein Fenster vor dieser Fassung kannte nur das Drucken.
