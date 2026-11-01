@@ -72,7 +72,7 @@ import { gmodgHeating43 } from '../../shared/law/gmodg.ts'
 // rangeOverlapDays: Überlappung zweier Zeiträume in Tagen, eine Stelle mit der Monatsregel.
 import { compareText, largestRemainder } from './apportion.ts'
 import { monthShare, monthSoll, overlapDays as rangeOverlapDays, rateAtMonth, rateInMonth, type MonthlySchedule, type SollComponent } from '../../shared/monthRate.ts'
-import { allocateRentPayments, ledgerTenancy, monthCoverage, recordingStart, openingBalance, rentDueAtStartOf, type AllocationSlice, type MonthCoverage } from './rentAllocation.ts'
+import { allocateRentPayments, ledgerStartOf, ledgerTenancy, monthCoverage, recordingStart, openingBalance, rentDueAtStartOf, type AllocationSlice, type MonthCoverage } from './rentAllocation.ts'
 import { estgShortPeriodDays } from '../../shared/law/estg.ts'
 import { applicableRanges, blendedPermille, halfAmounts, halfSplitStatus, intersect as intersectRange, termsFromDeliveries, termsFromPieces, termsWeight, tightMarketIn, twoFamilyOf, type HalfDelivery, type HalfSplitStatus, type HalfSplitTerm, type Piece, type TwoFamily } from './halfSplit.ts'
 import { CO2_RELIEF_LABEL } from '../../shared/co2Probe.ts'
@@ -1170,7 +1170,8 @@ export function ledgerRows(
       // Geführt ab der ersten erfassten Mietzahlung (rentAllocation.ts, `ledgerStart`); das Soll der Zeile bleibt das des
       // Mietverhältnisses, denn die Steuer liest es.
       const year = Number(span.from.slice(0, 4))
-      const tracked = ledgerTenancy(t, source.payments, year)
+      const startOf = ledgerStartOf(t, source.payments, year)
+      const tracked = startOf.start === t.start ? t : { ...t, start: startOf.start }
       const recorded = recordingStart(source.payments, year)
       const account = tenancyAccount(tracked, t, own, span, options)
       // Die Heizstaffel (Heizung PR 5, Entwurf 3.11): im Soll neben der übrigen Vorauszahlung. Die
@@ -1243,7 +1244,7 @@ export function ledgerRows(
         ...(designatedOutside.length > 0 ? { designatedOutside } : {}),
         ...(recorded.fromPayment && tracked.start !== t.start ? { ledgerStart: tracked.start } : {}),
         // Dauerauftrag zum Monatsende (rentAllocation.ts, `recordingStart`): Die erste Zahlung gilt für den Folgemonat.
-        ...(recorded.fromPayment && tracked.start !== t.start && tracked.start === recorded.shiftedStart && recorded.firstPaidOn !== undefined ? { ledgerStartPaidOn: recorded.firstPaidOn } : {}),
+        ...(recorded.fromPayment && tracked.start !== t.start && startOf.paidOn !== undefined ? { ledgerStartPaidOn: startOf.paidOn } : {}),
       }
     })
     // Eine Liste, die ein Mensch liest: deutsche Sortierung, fest eingestellt (siehe compareName).

@@ -201,6 +201,7 @@ test('Hinweis prepayment.arrears: genau bei offenen Vorauszahlungen fälliger Mo
 
 test('Erfassung beginnt in einem späteren Monat: ab dort dieselben Zahlen wie vor #281, davor nicht erfasst, Anfangssaldo 0 (geführt ab)', () => {
   let compared = 0
+  let shiftedSeen = 0
   for (const seed of seeds()) {
     const shape = randomRentStock(makeRng(seed)).tenancy
     const exact = randomRentStock(makeRng(seed), { exact: (m) => sollTotal(shape, m) })
@@ -210,14 +211,20 @@ test('Erfassung beginnt in einem späteren Monat: ab dort dieselben Zahlen wie v
     const payments = snapshotPayments(exact).filter((p) => Number(p.date.slice(0, 4)) >= year)
     const first = payments.map((p) => p.date.slice(0, 7)).reduce<string | null>((a, b) => (a === null || b < a ? b : a), null)
     if (first === null || !first.startsWith(`${year}-`) || `${year}-12` > lastPaidMonth(exact)) continue
-    // Liegt die erste erfasste Zahlung in den letzten zehn Tagen ihres Monats, beginnt die Erfassung erst mit dem Folgemonat
-    // (Dauerauftrag zum Monatsende, Integrationsdurchsicht 0.14, M1; calc-mietkonto-uebertrag.test.ts). Dann deckt sie den
-    // Folgemonat, und das Orakel (FIFO je Jahr, Zahlung im Monat für den Monat) gilt nicht; hier nur die übrigen.
+    // Dauerauftrag zum Monatsende (Integrationsdurchsicht 0.14, M1; Durchsicht S1 bis S4, K3): Liegt die erste erfasste
+    // Zahlung in den letzten zehn Tagen ihres Monats M, begann das Mietverhältnis vor M, endet es nicht in M und zahlt es in
+    // den ersten zehn Tagen von M + 1 nicht, beginnt das Konto mit M + 1, und jede Zahlung deckt den Folgemonat. Das Orakel
+    // dafür: FIFO je Jahr ab M + 1; die erste Zahlung (in M) tilgt dort den ältesten Monat, also M + 1.
     const firstDay = payments.map((p) => p.date).reduce((a, b) => (b < a ? b : a))
-    if (Number(firstDay.slice(8, 10)) > new Date(Date.UTC(Number(firstDay.slice(0, 4)), Number(firstDay.slice(5, 7)), 0)).getUTCDate() - 10) continue
-    const clip = `${first}-01` > tenancy.start ? `${first}-01` : tenancy.start
+    const nextOf = (month: string): string => addMonths(month, 1)
+    const late = Number(firstDay.slice(8, 10)) > new Date(Date.UTC(Number(firstDay.slice(0, 4)), Number(firstDay.slice(5, 7)), 0)).getUTCDate() - 10
+    const nextMonth = nextOf(first)
+    const shifted = late && tenancy.start < `${first}-01` && (tenancy.end === null || tenancy.end >= `${nextMonth}-01`)
+      && !payments.some((p) => p.amountCents > 0 && p.date >= `${nextMonth}-01` && p.date <= `${nextMonth}-10`)
+    const clip = shifted ? `${nextMonth}-01` : `${first}-01` > tenancy.start ? `${first}-01` : tenancy.start
     // Das Orakel rechnet das Jahr ab dem Beginn der Erfassung (FIFO je Jahr, wie bis 0.13).
     const oracle: SnapshotTenancy = { ...tenancy, start: clip }
+    if (shifted) shiftedSeen++
     for (const asOf of [undefined, `${year}-07-15`, `${year + 1}-02-01`]) {
       const options = asOf === undefined ? {} : { asOf }
       const [old] = fifoLedgerRows(sourceOf(oracle, payments), calendarYearPeriod(year), options)
@@ -241,4 +248,5 @@ test('Erfassung beginnt in einem späteren Monat: ab dort dieselben Zahlen wie v
     }
   }
   assert.ok(compared > 50, `nur ${compared} Vergleiche`)
+  assert.ok(shiftedSeen > 3, `nur ${shiftedSeen} verschobene Bestände`)
 })

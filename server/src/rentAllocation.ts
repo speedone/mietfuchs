@@ -118,30 +118,49 @@ const claimOf = (t: AllocationTenancy, month: string): MonthSoll => {
 // Anfangssaldo da. Der Beginn ist immer ein Monatserster oder der Mietbeginn; ein angebrochener Monat entsteht nur wie
 // bisher aus dem Mietbeginn. Eine Stelle für Mietkonto und Steuer (#312 PR 2).
 //
-// **Dauerauftrag zum Monatsende** (Integrationsdurchsicht 0.14, M1): Liegt die erste erfasste Mietzahlung des Objekts in
-// der kurzen Zeit vor dem Ersten des Folgemonats (die letzten `estg.short-period-days` Tage, bei zehn Tagen ab dem 22.12.;
-// die Fassung des Jahres, in dem der Folgemonat liegt, wie bei der Zehn-Tage-Regel), ist sie üblicherweise die Miete des
-// Folgemonats, und der Monat der Zahlung war schon vorher bezahlt, nur nicht erfasst. Für ein Mietverhältnis, das in diesem
-// Monat schon lief (Beginn vor dem Monat der Zahlung) und dessen Miete zu Beginn des Monats fällig ist (§ 556b Abs. 1 BGB),
-// beginnt das Konto deshalb mit dem Folgemonat (`shiftedStart`). Sonst galt der Monat der Zahlung als offen, jede spätere
-// Zahlung tilgte den laufenden statt des folgenden Monats, das Mietkonto zeigte nach dem Auszug einen Rückstand, und die
-// Zehn-Tage-Regel griff nie. Ein Altvertrag (§ 551 BGB a. F., fällig am Ende des Monats) und ein Mietbeginn im Monat
-// der Zahlung bleiben beim Monat der Zahlung, ebenso ein Mietverhältnis, das in diesem Monat endet, und eine Zahlung, an
-// der ihr eigener Monat als Monat laut Verwendungszweck steht. Eine Einstellung „geführt ab“ von Hand gibt es nicht; käme sie, ginge sie vor.
-export type RecordingStart = { start: string; fromPayment: boolean; shiftedStart?: string; firstPaidOn?: string }
+export type RecordingStart = { start: string; fromPayment: boolean }
+
+export function recordingStart(objectPayments: readonly Pick<AllocationPayment, 'date' | 'kind'>[], year: number): RecordingStart {
+  const first = objectPayments.filter(isRent).reduce<string | null>((a, p) => (a === null || compareText(p.date, a) < 0 ? p.date : a), null)
+  return first === null ? { start: `${String(year).padStart(4, '0')}-01-01`, fromPayment: false } : { start: `${first.slice(0, 7)}-01`, fromPayment: true }
+}
 
 const lastDayOf = (month: string): number => new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate()
 
-export function recordingStart(objectPayments: readonly (Pick<AllocationPayment, 'date' | 'kind'> & Partial<Pick<AllocationPayment, 'designatedMonth'>>)[], year: number): RecordingStart {
-  const firstPayment = objectPayments.filter(isRent).reduce<(typeof objectPayments)[number] | null>((a, p) => (a === null || compareText(p.date, a.date) < 0 ? p : a), null)
-  if (firstPayment === null) return { start: `${String(year).padStart(4, '0')}-01-01`, fromPayment: false }
-  const first = firstPayment.date
-  const month = first.slice(0, 7)
+// **Dauerauftrag zum Monatsende** (Integrationsdurchsicht 0.14, M1; Durchsicht S1 bis S4): Entschieden **je
+// Mietverhältnis**. Beginnt sein Konto im Monat M (Beginn der Erfassung im Objekt, siehe oben) und liegt seine erste eigene
+// positive Mietzahlung in den letzten `estg.short-period-days` Tagen von M (bei zehn Tagen ab dem 22.12.; die Fassung des
+// Jahres des Folgemonats, wie bei der Zehn-Tage-Regel), ist sie üblicherweise die Miete von M + 1, und M war schon vorher
+// bezahlt, nur nicht erfasst. Dann beginnt das Konto mit M + 1, wenn zusätzlich
+//   - das Mietverhältnis vor M begann und nicht in M endet,
+//   - die Miete zu Beginn des Monats fällig ist (§ 556b Abs. 1 BGB; ein Altvertrag nach § 551 a. F. nicht),
+//   - keine seiner Zahlungen an jenem Tag einen Monat laut Verwendungszweck trägt (die Bestimmung des Mieters geht vor),
+//   - es in den ersten ebenso vielen Tagen von M + 1 nicht zahlt (S4: eine verspätete erste Zahlung, danach pünktlich).
+// Sonst galt M als offen, jede Zahlung tilgte den laufenden statt des folgenden Monats, nach dem Auszug stand ein
+// Rückstand, und die Zehn-Tage-Regel griff nie. Gelesen werden nur Datum, Art, Betrag und Verwendungszweck, nie die
+// Reihenfolge der Zahlungen (#70). `paidOn`: die verschobene erste Zahlung, für den Satz an der Zeile des Mietkontos.
+// Zahlungen ohne `tenancyId` gelten als die des Mietverhältnisses (Tilgung eines einzelnen Mietverhältnisses). Eine
+// Einstellung „geführt ab“ von Hand gibt es nicht; käme sie, ginge sie vor.
+type StartPayment = Pick<AllocationPayment, 'date' | 'kind'> & Partial<Pick<AllocationPayment, 'amountCents' | 'designatedMonth'>> & { tenancyId?: string }
+type StartTenancy = Pick<AllocationTenancy, 'start' | 'contractDate'> & Partial<Pick<AllocationTenancy, 'end'>> & { id?: string }
+
+export function ledgerStartOf(t: StartTenancy, objectPayments: readonly StartPayment[], year: number): { start: string; paidOn?: string } {
+  const rec = recordingStart(objectPayments, year)
+  const base = compareText(rec.start, t.start) > 0 ? rec.start : t.start
+  if (!rec.fromPayment || base !== rec.start || compareText(t.start, rec.start) >= 0) return { start: base }
+  const month = base.slice(0, 7)
   const next = `${monthAt(monthIndex(month) + 1)}-01`
+  if (t.end != null && compareText(t.end, next) < 0) return { start: base }
+  const own = objectPayments.filter((p) => isRent(p) && (p.tenancyId === undefined || t.id === undefined || p.tenancyId === t.id) && (p.amountCents ?? 1) > 0)
+  const first = own.reduce<string | null>((a, p) => (a === null || compareText(p.date, a) < 0 ? p.date : a), null)
+  if (first === null || first.slice(0, 7) !== month) return { start: base }
   const days = law(estgShortPeriodDays, { period: calendarYearPeriod(Number(next.slice(0, 4))) }, createLawLog())
-  // Steht an der Zahlung ihr eigener Monat als Monat laut Verwendungszweck, gilt sie für diesen (§ 366 Abs. 1 BGB).
-  const late = Number(first.slice(8, 10)) > lastDayOf(month) - days && firstPayment.designatedMonth !== month
-  return { start: `${month}-01`, fromPayment: true, ...(late ? { shiftedStart: next, firstPaidOn: first } : {}) }
+  if (Number(first.slice(8, 10)) <= lastDayOf(month) - days) return { start: base }
+  if (own.some((p) => p.date === first && p.designatedMonth != null && p.designatedMonth !== '')) return { start: base }
+  const nextEarly = `${next.slice(0, 8)}${String(days).padStart(2, '0')}`
+  if (own.some((p) => compareText(p.date, next) >= 0 && compareText(p.date, nextEarly) <= 0)) return { start: base }
+  if (!rentDueAtStartOf(t)) return { start: base }
+  return { start: next, paidOn: first }
 }
 
 // Ist die Miete dieses Mietverhältnisses zu Beginn des Monats fällig (§ 556b Abs. 1 BGB)? Maßgeblich ist, ob es am
@@ -154,15 +173,13 @@ export function rentDueAtStartOf(t: Pick<AllocationTenancy, 'start' | 'contractD
   return law(bgbRentDueAtStart, { date }, createLawLog())
 }
 
-export function ledgerStart(t: Pick<AllocationTenancy, 'start' | 'contractDate'> & Partial<Pick<AllocationTenancy, 'end'>>, objectPayments: readonly Pick<AllocationPayment, 'date' | 'kind'>[], year: number): string {
-  const rec = recordingStart(objectPayments, year)
-  const start = rec.shiftedStart !== undefined && compareText(t.start, rec.start) < 0 && (t.end == null || compareText(t.end, rec.shiftedStart) >= 0) && rentDueAtStartOf(t) ? rec.shiftedStart : rec.start
-  return compareText(start, t.start) > 0 ? start : t.start
+export function ledgerStart(t: StartTenancy, objectPayments: readonly StartPayment[], year: number): string {
+  return ledgerStartOf(t, objectPayments, year).start
 }
 
 // Das Mietverhältnis, wie die Tilgung es sieht: Beginn auf `ledgerStart` gesetzt. Monate davor gibt es weder als Soll
 // noch als offen.
-export function ledgerTenancy<T extends AllocationTenancy>(t: T, objectPayments: readonly Pick<AllocationPayment, 'date' | 'kind'>[], year: number): T {
+export function ledgerTenancy<T extends AllocationTenancy & { id?: string }>(t: T, objectPayments: readonly StartPayment[], year: number): T {
   const start = ledgerStart(t, objectPayments, year)
   return start === t.start ? t : { ...t, start }
 }

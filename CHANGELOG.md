@@ -64,8 +64,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Dezember gezahlte Januarmiete dort schon angegeben; der Hinweis zum Jahreswechsel des Folgejahres nennt den Betrag.
   Lassen Sie die Erklärung des Vorjahres dann mit Ihrem Steuerberater oder beim Finanzamt berichtigen**
   ([#312](https://github.com/speedone/mietfuchs/issues/312)). Das gilt auch für einen Dauerauftrag zum Monatsende: Liegt
-  die erste erfasste Mietzahlung eines Objekts in den letzten zehn Tagen eines Monats und lief das Mietverhältnis schon,
-  führt das Mietkonto ab dem Folgemonat, und die Zahlung gilt als dessen Miete. Vorher galt der Monat der Zahlung als offen,
+  die erste erfasste Mietzahlung eines Mietverhältnisses in den letzten zehn Tagen eines Monats, lief es schon und zahlt
+  es in den ersten zehn Tagen des Folgemonats nicht, führt das Mietkonto ab dem Folgemonat, und die Zahlung gilt als
+  dessen Miete. Vorher galt der Monat der Zahlung als offen,
   jede Zahlung deckte den laufenden statt des folgenden Monats, und nach dem Auszug stand ein Rückstand da.
 - **Hilfe & Begriffe beginnt mit einer Suche**: Treffer erscheinen beim Tippen, getrennt nach Anleitungen und Begriffen
   und mit der Fundstelle; darunter stehen die Anleitungen als Kacheln in drei Gruppen und die Begriffe nach Themen

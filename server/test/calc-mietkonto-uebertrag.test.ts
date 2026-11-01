@@ -373,3 +373,48 @@ test('Geführt ab: erste Zahlung in den letzten zehn Tagen eines Monats, Mietver
   assert.equal(d2024.ledgerStart, '2023-12-01')
   assert.equal(d2024.ledgerStartPaidOn, undefined)
 })
+
+// Durchsicht des Zweigs (S1 bis S4): Die Verschiebung des Beginns wird je Mietverhältnis entschieden, nach seiner ersten
+// eigenen Zahlung, unabhängig von der Reihenfolge der Zahlungen.
+const ultimoA = (): SnapshotTenancy => since2020()
+const lateEach = (from: string, to: string, tenancyId = 't'): SnapshotPayment[] => monthsBetween(from, to).map((m) => pay(`${m}-25`, 80000, { tenancyId }))
+const onThird = (from: string, to: string, tenancyId: string): SnapshotPayment[] => monthsBetween(from, to).map((m) => pay(`${m}-03`, 80000, { tenancyId }))
+const bSince2020 = (): SnapshotTenancy => since2020({ id: 'o', unitId: 'b', tenantName: 'Andere' })
+
+test('S1: das Ergebnis hängt nicht von der Reihenfolge der Zahlungen ab', () => {
+  // Am selben Tag zahlt A ohne und B mit Monat laut Verwendungszweck (Dezember); vorher entschied die erste Zahlung im
+  // Array über das ganze Objekt.
+  const payments = [...lateEach('2023-12', '2024-12'), pay('2023-12-25', 80000, { tenancyId: 'o', designatedMonth: '2023-12' }), ...lateEach('2024-01', '2024-12', 'o')]
+  const s = (ps: SnapshotPayment[]) => twoUnits({ tenancies: [ultimoA(), bSince2020()], payments: ps })
+  const a = ledger(s(payments), 2024, { asOf: '2025-01-15' })
+  const b = ledger(s([...payments].reverse()), 2024, { asOf: '2025-01-15' })
+  assert.deepEqual(b.rows, a.rows)
+  assert.equal(rowOf(a, 't').ledgerStart, '2024-01-01')
+  assert.equal(rowOf(a, 'o').ledgerStart, '2023-12-01')
+})
+
+test('S2: B zahlt am 3. für den Monat, A am 25. für den Folgemonat: A ist ab dem Folgemonat geführt und ohne Rückstand', () => {
+  const payments = [...onThird('2023-12', '2024-12', 'o'), ...lateEach('2023-12', '2024-12')]
+  const l = ledger(twoUnits({ tenancies: [ultimoA(), bSince2020()], payments }), 2024, { asOf: '2025-01-15' })
+  const a = rowOf(l, 't')
+  assert.equal(a.ledgerStart, '2024-01-01')
+  assert.equal(a.arrearsCents, 0)
+  assert.equal(monthOf(a, 1).status, 'paid')
+  const b = rowOf(l, 'o')
+  assert.equal(b.ledgerStart, '2023-12-01')
+  assert.equal(b.arrearsCents, 0)
+})
+
+test('S3: „erste erfasste Mietzahlung vom …“ steht nur an der Zeile des Mietverhältnisses, das sie hat', () => {
+  const payments = [...onThird('2023-12', '2024-12', 'o'), ...lateEach('2023-12', '2024-12')]
+  const l = ledger(twoUnits({ tenancies: [ultimoA(), bSince2020()], payments }), 2024, { asOf: '2025-01-15' })
+  assert.equal(rowOf(l, 't').ledgerStartPaidOn, '2023-12-25')
+  assert.equal(rowOf(l, 'o').ledgerStartPaidOn, undefined)
+})
+
+test('S4: verspätete erste Zahlung am 25., danach pünktlich am 3.: keine Verschiebung, Endsaldo 0', () => {
+  const payments = [pay('2023-12-25', 80000), ...monthly('2024-01', '2024-12')]
+  const r = rowOf(ledger({ tenancies: [ultimoA()], payments }, 2024, { asOf: '2025-01-15' }))
+  assert.equal(r.closingBalanceCents, 0)
+  assert.equal(r.arrearsCents, 0)
+})
