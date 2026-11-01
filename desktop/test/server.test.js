@@ -29,7 +29,7 @@ test('Server: ausgeliefert unter resources/mietfuchs, beim Entwickeln aus dem Re
 
 test('Umgebung: Fenster, Port, nur 127.0.0.1 ohne Heimnetz, Prüfangaben des Fensters gehen weiter', () => {
   const base = { CI: '1', NKA_DATA_DIR: '/tmp/probe', NKA_UPDATE_URL: 'http://127.0.0.1:9', ELECTRON_RUN_AS_NODE: '1', NKA_RUNTIME: 'docker' }
-  const env = serverEnv(base, { port: DEFAULT_PORT, network: false, packaged: true, windowsStore: false, repoRoot: '/repo' })
+  const env = serverEnv(base, { port: DEFAULT_PORT, network: false, packaged: true, windowsStore: false, repoRoot: '/repo', platform: 'linux' })
   assert.equal(env.NKA_DESKTOP, '1')
   assert.equal(env.NKA_STORE, undefined)
   assert.equal(env.NKA_PORT, '17517')
@@ -41,9 +41,9 @@ test('Umgebung: Fenster, Port, nur 127.0.0.1 ohne Heimnetz, Prüfangaben des Fen
   // Geänderte Erwartung: Den Testgriff NKA_RUNTIME setzt das Fenster beim Entwickeln nicht mehr, und einen geerbten
   // nimmt es heraus. Der Server erkennt das Fenster am utilityProcess mit NKA_DESKTOP, ausgeliefert wie beim Entwickeln.
   assert.equal(env.NKA_RUNTIME, undefined)
-  assert.equal(serverEnv(base, { port: 4000, network: true, packaged: true, windowsStore: false, repoRoot: '/repo' }).NKA_HOST, '0.0.0.0')
+  assert.equal(serverEnv(base, { port: 4000, network: true, packaged: true, windowsStore: false, repoRoot: '/repo', platform: 'linux' }).NKA_HOST, '0.0.0.0')
   // Aus dem Store sagt es das Fenster dem Server ausdrücklich (process.windowsStore)
-  assert.equal(serverEnv(base, { port: 4000, network: false, packaged: true, windowsStore: true, repoRoot: '/repo' }).NKA_STORE, '1')
+  assert.equal(serverEnv(base, { port: 4000, network: false, packaged: true, windowsStore: true, repoRoot: '/repo', platform: 'linux' }).NKA_STORE, '1')
   // Die Umgebung des Fensters selbst bleibt unverändert
   assert.equal(base.ELECTRON_RUN_AS_NODE, '1')
 })
@@ -51,12 +51,14 @@ test('Umgebung: Fenster, Port, nur 127.0.0.1 ohne Heimnetz, Prüfangaben des Fen
 // Beim Entwickeln nie der echte Bestand im Benutzerordner: Wie `npm run dev` arbeitet das Fenster dann mit
 // server/data, außer eine Prüfung gibt NKA_DATA_DIR vor. Ausgeliefert wählt der Server selbst (chooseDataDir).
 test('Umgebung: beim Entwickeln server/data, ausgeliefert entscheidet der Server', () => {
-  const dev = serverEnv({}, { port: 4000, network: false, packaged: false, windowsStore: false, repoRoot: '/repo' })
+  const dev = serverEnv({}, { port: 4000, network: false, packaged: false, windowsStore: false, repoRoot: '/repo', platform: 'linux' })
   assert.equal(dev.NKA_DATA_DIR, '/repo/server/data')
   assert.equal(dev.NKA_DESKTOP, '1')
-  const probe = serverEnv({ NKA_DATA_DIR: '/tmp/probe' }, { port: 4000, network: false, packaged: false, windowsStore: false, repoRoot: '/repo' })
+  const probe = serverEnv({ NKA_DATA_DIR: '/tmp/probe' }, { port: 4000, network: false, packaged: false, windowsStore: false, repoRoot: '/repo', platform: 'linux' })
   assert.equal(probe.NKA_DATA_DIR, '/tmp/probe')
-  assert.equal(serverEnv({}, { port: 4000, network: false, packaged: true, windowsStore: false, repoRoot: '/repo' }).NKA_DATA_DIR, undefined)
+  assert.equal(serverEnv({}, { port: 4000, network: false, packaged: true, windowsStore: false, repoRoot: '/repo', platform: 'linux' }).NKA_DATA_DIR, undefined)
+  // Nach der genannten Plattform, nicht nach der des Rechners, auf dem geprüft wird
+  assert.equal(serverEnv({}, { port: 4000, network: false, packaged: false, windowsStore: false, repoRoot: 'C:\\mietfuchs', platform: 'win32' }).NKA_DATA_DIR, 'C:\\mietfuchs\\server\\data')
 })
 
 test('Startzeile und Datenordner aus der Ausgabe des Servers', () => {

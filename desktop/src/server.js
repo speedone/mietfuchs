@@ -42,10 +42,10 @@ export function serverModule({ packaged, platform, resourcesPath, repoRoot }) {
  * NKA_STORE aus `process.windowsStore`. Beim Entwickeln nimmt das Fenster wie `npm run dev` server/data, damit kein
  * Probelauf den echten Bestand im Benutzerordner öffnet.
  * @param {NodeJS.ProcessEnv} base
- * @param {{ port: number, network: boolean, packaged: boolean, windowsStore: boolean, repoRoot: string }} options
+ * @param {{ port: number, network: boolean, packaged: boolean, windowsStore: boolean, repoRoot: string, platform: NodeJS.Platform }} options
  * @returns {NodeJS.ProcessEnv}
  */
-export function serverEnv(base, { port, network, packaged, windowsStore, repoRoot }) {
+export function serverEnv(base, { port, network, packaged, windowsStore, repoRoot, platform }) {
   /** @type {NodeJS.ProcessEnv} */
   const env = { ...base, NKA_DESKTOP: '1', NKA_PORT: String(port), NKA_HOST: network ? '0.0.0.0' : '127.0.0.1' }
   // Electron setzt das für sich selbst; erbte es der Server, liefe Node darin als nacktes Node
@@ -54,7 +54,8 @@ export function serverEnv(base, { port, network, packaged, windowsStore, repoRoo
   delete env.NKA_RUNTIME
   delete env.NKA_STORE
   if (windowsStore) env.NKA_STORE = '1'
-  if (!packaged && !env.NKA_DATA_DIR) env.NKA_DATA_DIR = path.join(repoRoot, 'server', 'data')
+  const p = platform === 'win32' ? path.win32 : path.posix
+  if (!packaged && !env.NKA_DATA_DIR) env.NKA_DATA_DIR = p.join(repoRoot, 'server', 'data')
   return env
 }
 

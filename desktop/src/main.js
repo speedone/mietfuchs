@@ -125,7 +125,7 @@ async function startServer(settings, fixedPort) {
   // nicht, der utilityProcess ist Electron selbst.
   const child = utilityProcess.fork(modulePath, [], {
     cwd,
-    env: serverEnv(process.env, { port, network: settings.network === true, packaged: app.isPackaged, windowsStore: process.windowsStore === true, repoRoot }),
+    env: serverEnv(process.env, { port, network: settings.network === true, packaged: app.isPackaged, windowsStore: process.windowsStore === true, repoRoot, platform: process.platform }),
     stdio: 'pipe',
     serviceName: SERVICE_NAME,
   })
