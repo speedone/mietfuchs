@@ -6,6 +6,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Hinzugefügt
+
+- **Über Mietfuchs** am Ende der Einstellungen: Version und Updates (bisher eine eigene Karte), dazu der Hinweis, dass
+  Mietfuchs keine Rechts- oder Steuerberatung ersetzt und Ergebnisse vor dem Versand zu prüfen sind, Urheber, Lizenz
+  (AGPL-3.0, ohne Gewähr) und Links zu Lizenz und Quellcode. Derselbe Hinweis steht in der Beschreibung im Microsoft
+  Store.
+
 ## [0.14.0] – 2026-11-01
 
 ### Hinzugefügt

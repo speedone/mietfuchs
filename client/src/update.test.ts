@@ -150,7 +150,8 @@ describe('Microsoft Store (#500)', () => {
   test('der Stand nennt den Store als Weg zu neuen Versionen', () => {
     const st = status({ mode: 'store', enabled: false, latest: null, available: false, releaseUrl: null, downloadUrl: null, checkedAt: null })
     expect(updatedByStore(st)).toBe(true)
-    expect(statusText(st)).toBe('Installiert ist Version 0.4.0. Neue Versionen installiert der Microsoft Store von selbst.')
+    // Windows ersetzt ein Paket nicht, solange es läuft; Mietfuchs läuft im Hintergrund bis „Beenden“
+    expect(statusText(st)).toBe('Installiert ist Version 0.4.0. Neue Versionen installiert der Microsoft Store von selbst, sobald Mietfuchs beendet ist. Sofort geht es im Store unter „Bibliothek“ mit „Updates abrufen“.')
   })
 
   test('nur aus dem Store', () => {

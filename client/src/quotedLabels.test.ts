@@ -23,6 +23,7 @@ const NOT_UI: Record<string, string> = {
   'auf „Mieter heizt selbst“': 'Anfang der Option „Mieter heizt selbst (eigener Vertrag …)“ (tenancyModel.ts), gekürzt zitiert',
   'mit „kein Anschluss: Warmwasser“': 'Angabe an der Wohnung, aus Häkchen und Zählerart zusammengesetzt (unitForm.ts)',
   'mit „auf Anfrage“': 'Text im Deckblatt der Belegmappe, keine Beschriftung',
+  'mit „Updates abrufen“': 'Knopf im Microsoft Store unter „Bibliothek“ (update.ts, Store-Fassung), nicht in Mietfuchs',
 }
 // Beschriftungen, die es seit #346 Schritt 7 nicht mehr gibt (oder nur noch anderswo, etwa „Übernehmen“ bei den
 // KI-Modellen): Sie darf kein Text mehr als Bedienung zitieren, auch nicht, wenn das Wort noch irgendwo steht.
