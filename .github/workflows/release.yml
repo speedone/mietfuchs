@@ -46,6 +46,7 @@ on:
       - package.json
       - package-lock.json
       - .github/workflows/release.yml
+      - .github/workflows/store.yml
   workflow_dispatch:
 
 permissions:
@@ -759,35 +760,22 @@ jobs:
           path: dist-bin/msix/*.msixbundle
           if-no-files-found: error
 
-  # Reicht das geprüfte Paket beim Tag im Microsoft Store ein (#500). Die Zertifizierung dauert
-  # danach meist ein bis drei Werktage; erst dann erscheint die Version im Store und kommt per
-  # Update zu den Nutzern. Nie bei einer Vorabversion (Bindestrich im Tag). Erst nach dem Anhängen
-  # ans Release, damit der Store nichts bekommt, was es bei GitHub nicht gibt.
+  # Reicht das geprüfte Paket beim Tag im Microsoft Store ein (#500), siehe store.yml. Nie bei einer
+  # Vorabversion (Bindestrich im Tag). Erst nach dem Anhängen ans Release, damit der Store nichts
+  # bekommt, was es bei GitHub nicht gibt.
   #
   # Schalter: die Repository-Variable MSSTORE_EINREICHEN = an (Settings → Variables). Ohne sie
   # läuft nichts, denn die Store-CLI kann nur eine App aktualisieren, die schon einmal von Hand
-  # eingereicht und veröffentlicht ist. Zugang über die Microsoft-Entra-Anwendung
-  # „mietfuchs-github“ (Rolle Manager im Partner Center); ihr Secret läuft ab und muss dann in
-  # MSSTORE_CLIENT_SECRET erneuert werden.
+  # eingereicht und veröffentlicht ist.
   store-einreichen:
-    name: Im Microsoft Store einreichen
+    name: Microsoft Store
     needs: [store-paket, veroeffentlichen]
     if: startsWith(github.ref, 'refs/tags/') && !contains(github.ref_name, '-') && vars.MSSTORE_EINREICHEN == 'an'
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/download-artifact@v8
-        with:
-          name: mietfuchs-store
-          path: store
-      - uses: microsoft/setup-msstore-cli@v1.4
-      - name: Anmelden
-        env:
-          TENANT_ID: ${{ secrets.MSSTORE_TENANT_ID }}
-          SELLER_ID: ${{ secrets.MSSTORE_SELLER_ID }}
-          CLIENT_ID: ${{ secrets.MSSTORE_CLIENT_ID }}
-          CLIENT_SECRET: ${{ secrets.MSSTORE_CLIENT_SECRET }}
-        run: msstore reconfigure --tenantId "$TENANT_ID" --sellerId "$SELLER_ID" --clientId "$CLIENT_ID" --clientSecret "$CLIENT_SECRET"
-      # Die Store-ID aus dem Partner Center (Produktidentität). `publish` übernimmt Eintrag und
-      # Bilder der letzten Einreichung und tauscht nur das Paket.
-      - name: Einreichen
-        run: msstore publish store/*.msixbundle -id 9PMHZ0ZJPZDZ
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/store.yml
+    secrets:
+      MSSTORE_TENANT_ID: ${{ secrets.MSSTORE_TENANT_ID }}
+      MSSTORE_CLIENT_ID: ${{ secrets.MSSTORE_CLIENT_ID }}
+      MSSTORE_CLIENT_SECRET: ${{ secrets.MSSTORE_CLIENT_SECRET }}

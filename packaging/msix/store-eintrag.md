@@ -1,7 +1,11 @@
 # Store-Eintrag im Partner Center
 
-Texte für die erste Einreichung von Hand (#500). Danach übernimmt `msstore publish` sie bei jeder
-Einreichung, geändert werden sie im Partner Center. Die Texte siezen, wie die Oberfläche.
+Texte für den Store-Eintrag (#500). Die erste Einreichung ging von Hand; seitdem schreibt
+[scripts/store-submit.mjs](../../scripts/store-submit.mjs) bei jedem Release Beschreibung, Funktionen und
+Suchbegriffe aus dieser Datei in den Store, dazu die Bildschirmfotos aus `docs/screenshots`. **Geändert
+wird hier, nicht im Partner Center**, sonst überschreibt das nächste Release die Änderung. Das Format der
+drei Abschnitte liest das Skript: fette Überschrift, in der Beschreibung Aufzählungen mit „• “ (so
+zeigt sie der Store), unter „Funktionen“ je Zeile ein Punkt mit „- “. Die Texte siezen, wie die Oberfläche.
 
 ## Preise und Verfügbarkeit
 
@@ -45,16 +49,17 @@ Zählerstände ein. Am Jahresende rechnet Mietfuchs jede Kostenart nach dem pass
 druckt für jeden Mieter eine fertige Abrechnung mit Anschreiben.
 
 Mietfuchs läuft vollständig auf Ihrem Rechner. Es gibt kein Konto, keine Anmeldung und keine Cloud;
-Ihre Daten liegen in einem Ordner, den Sie selbst sichern können.
+Ihre Daten liegen im Ordner Mietfuchs in Ihrem Benutzerordner und bleiben auch bei einer Deinstallation
+erhalten.
 
 Was Mietfuchs abdeckt:
-- Verteilung nach Wohnfläche, Personen, Wohneinheiten, Verbrauch oder vereinbarten Anteilen
-- Heizkosten nach Heizkostenverordnung, CO₂-Kostenaufteilung, Abrechnung eines Messdienstes
-- Mieterwechsel und Leerstand innerhalb des Jahres, auf den Tag genau
-- mehrere Häuser und vermietete Eigentumswohnungen
-- Mietkonto, Fristen und Hinweise, wenn etwas fehlt oder rechtlich angreifbar ist
-- Übersicht für die Anlage V der Steuererklärung
-- auf Wunsch KI-Auswertung von Belegen, auf dem eigenen Rechner oder bei einem Dienst Ihrer Wahl
+• Verteilung nach Wohnfläche, Personen, Wohneinheiten, Verbrauch oder vereinbarten Anteilen
+• Heizkosten nach Heizkostenverordnung, CO₂-Kostenaufteilung, Abrechnung eines Messdienstes
+• Mieterwechsel und Leerstand innerhalb des Jahres, auf den Tag genau
+• mehrere Häuser und vermietete Eigentumswohnungen
+• Mietkonto, Fristen und Hinweise, wenn etwas fehlt oder rechtlich angreifbar ist
+• Übersicht für die Anlage V der Steuererklärung
+• auf Wunsch KI-Auswertung von Belegen, auf dem eigenen Rechner oder bei einem Dienst Ihrer Wahl
 
 Mietfuchs ist freie Software (AGPL-3.0) und kostenlos.
 
@@ -65,18 +70,18 @@ herunter und spielen Sie es in der App aus dem Store unter Einstellungen wieder 
 
 - Nebenkostenabrechnung mit Anschreiben für jeden Mieter
 - Heizkosten nach Heizkostenverordnung und CO₂-Aufteilung
-- Belegordner mit optionaler KI-Auswertung
+- Belege mit optionaler KI-Auswertung
 - Mietkonto, Fristen und Hinweise
 - Übersicht für die Anlage V
 - Läuft lokal, ohne Konto und ohne Cloud
 
-**Suchbegriffe**: Nebenkostenabrechnung, Betriebskostenabrechnung, Vermieter, Heizkostenabrechnung,
-Hausverwaltung, Mieter, Anlage V
+**Suchbegriffe**: Nebenkostenabrechnung, Betriebskostenabrechnung, Nebenkosten, Vermieter,
+Heizkostenabrechnung, Mieter, Anlage V
 
 ## Bildschirmfotos
 
-Aus `docs/screenshots` (1440 × 900, erfundener Bestand), mindestens eines, empfohlen vier: Cockpit,
-Kosten, Abrechnung, Belegordner.
+Aus `docs/screenshots` (erfundener Bestand), festgelegt in `SCREENSHOTS` in store-submit.mjs: Cockpit,
+Kosten, Abrechnung, Belege.
 
 ## Paket
 

@@ -162,13 +162,25 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   erbt das Programm `CI` und `NKA_UPDATE_URL`, der Start übers Startmenü reicht nichts weiter), Prüfskript mit
   `--mode store`, Beenden über `/api/quit`, deinstallieren; die Datenbank muss danach noch in
   `%USERPROFILE%\Mietfuchs` liegen.
-- **Einreichen** (Job „Im Microsoft Store einreichen“): beim Tag ohne Bindestrich, nach dem Anhängen ans Release,
-  nur mit der Repository-Variable `MSSTORE_EINREICHEN = an`. `msstore publish <bundle> -id 9PMHZ0ZJPZDZ` übernimmt
-  Eintrag und Bilder der letzten Einreichung und tauscht nur das Paket. Die **erste Einreichung geht von Hand** im
-  Partner Center (die CLI aktualisiert nur eine veröffentlichte App), Texte dafür in
-  [../packaging/msix/store-eintrag.md](../packaging/msix/store-eintrag.md). Zugang: Entra-Anwendung
-  `mietfuchs-github` (Rolle Manager), Secrets `MSSTORE_TENANT_ID`, `MSSTORE_SELLER_ID`, `MSSTORE_CLIENT_ID`,
-  `MSSTORE_CLIENT_SECRET`; das Secret läuft ab und wird dann im Partner Center neu erzeugt.
+- **Einreichen** ([store.yml](../.github/workflows/store.yml), von release.yml aufgerufen): beim Tag ohne Bindestrich,
+  nach dem Anhängen ans Release, nur mit der Repository-Variable `MSSTORE_EINREICHEN = an`.
+  [store-submit.mjs](store-submit.mjs) spricht die Submission-API des Partner Centers unmittelbar an: offenen Entwurf
+  löschen, neue Einreichung als Kopie der veröffentlichten anlegen, umbauen, ein ZIP mit Paket und
+  Bildschirmfotos hochladen, abschicken, auf die Prüfung des Uploads warten. Umgebaut wird nur, was das Skript
+  setzt: das `.msixbundle`, die Bildschirmfotos (`SCREENSHOTS`, aus `docs/screenshots`), Beschreibung, Funktionen
+  und Suchbegriffe aus [../packaging/msix/store-eintrag.md](../packaging/msix/store-eintrag.md), „Neuigkeiten in
+  dieser Version“ (Version und Link aufs Release) und „nach der Zertifizierung sofort veröffentlichen“. Alles
+  andere bleibt, wie es im Partner Center steht, auch Felder, die das Skript nicht kennt. **Texte des Eintrags
+  ändert man deshalb in store-eintrag.md**, eine Änderung im Partner Center überschreibt das nächste Release.
+  Nicht die Store-CLI (`msstore publish`): Die lädt keine Bilder hoch und legt unter Linux die Zugangsdaten im
+  Schlüsselbund ab, den ein Runner nicht hat; daran scheiterte v0.14.0. `--dry-run <Ordner>` liest nur und
+  schreibt die umgebaute Einreichung und das ZIP dorthin.
+  Scheitert die Einreichung beim Tag, startest du store.yml von Hand mit der Nummer des Release-Laufs; das reicht
+  dessen Paket mit Texten und Bildern im Stand von main ein, sofern der Lauf ans Release angehängt hat. Die
+  Variable zählt dann nicht. Die **erste Einreichung geht von Hand** im Partner Center (die API aktualisiert nur
+  eine veröffentlichte App). Zugang: Entra-Anwendung `mietfuchs-github` (Rolle Manager), Secrets
+  `MSSTORE_TENANT_ID`, `MSSTORE_CLIENT_ID`, `MSSTORE_CLIENT_SECRET` (`MSSTORE_SELLER_ID` braucht nur die CLI); das
+  Secret läuft ab und wird dann im Partner Center neu erzeugt.
 
 ## Release
 

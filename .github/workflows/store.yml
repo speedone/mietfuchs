@@ -1,0 +1,94 @@
+name: Microsoft Store
+
+# Reicht das geprüfte Store-Paket im Microsoft Store ein (#500). release.yml ruft diesen Workflow beim
+# Tag auf, nach dem Anhängen ans Release, damit der Store nichts bekommt, was es bei GitHub nicht gibt.
+# Die Zertifizierung dauert danach meist ein bis drei Werktage; erst dann erscheint die Version im Store
+# und kommt per Update zu den Nutzern.
+#
+# Von Hand startbar mit der Nummer eines Release-Laufs (Actions → Release-Binaries → Lauf, Zahl in der
+# Adresse): Dann wird dessen Paket eingereicht, ohne neuen Tag und ohne neuen Bau. Für den Fall, dass
+# die Einreichung beim Tag scheiterte; zugelassen sind nur Läufe von release.yml zu einem Tag ohne
+# Bindestrich, die ans Release angehängt haben. Die Variable MSSTORE_EINREICHEN zählt dabei nicht, der
+# Start ist ja gewollt. Ein Paket, das älter ist als das im Store, lehnt das Partner Center ab.
+#
+# Eingereicht wird mit scripts/store-submit.mjs über die Submission-API des Partner Centers, nicht mit
+# der Store-CLI: Die lädt nur Pakete hoch, Bildschirmfotos gehören aber ins selbe ZIP, und unter Linux
+# legt sie die Zugangsdaten im Schlüsselbund ab, den ein Runner nicht hat (daran scheiterte v0.14.0).
+# Mit dem Paket gehen Beschreibung, Funktionen und Suchbegriffe aus packaging/msix/store-eintrag.md,
+# die Bildschirmfotos aus docs/screenshots und „Neuigkeiten in dieser Version“ in den Store, beim Tag
+# im Stand des Tags, von Hand gestartet im Stand von main. Nach der Zertifizierung veröffentlicht der
+# Store von selbst.
+#
+# Zugang über die Microsoft-Entra-Anwendung „mietfuchs-github“ (Rolle Manager im Partner Center); ihr
+# Secret läuft ab und muss dann in MSSTORE_CLIENT_SECRET erneuert werden.
+on:
+  workflow_call:
+    secrets:
+      MSSTORE_TENANT_ID:
+        required: true
+      MSSTORE_CLIENT_ID:
+        required: true
+      MSSTORE_CLIENT_SECRET:
+        required: true
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Nummer des Release-Laufs, dessen Paket eingereicht wird
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  einreichen:
+    name: Im Microsoft Store einreichen
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Lauf prüfen
+        if: inputs.run_id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.run_id }}
+        run: |
+          read -r path tag < <(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq '"\(.path) \(.head_branch)"')
+          echo "Lauf $RUN_ID: $path, $tag"
+          [ "$path" = .github/workflows/release.yml ] || { echo "::error::Lauf $RUN_ID ist kein Lauf von release.yml"; exit 1; }
+          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Lauf $RUN_ID gehört zu keinem Tag ohne Bindestrich"; exit 1; }
+          # Das Artefakt gibt es auch, wenn Prüfungen rot waren und nichts ans Release ging. Der Lauf
+          # hat über 40 Jobs, deshalb die große Seite.
+          attached=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?per_page=100" --jq '.jobs[] | select(.name == "Ans Release anhängen") | .conclusion')
+          [ "$attached" = success ] || { echo "::error::Lauf $RUN_ID hat nichts ans Release angehängt ($attached)"; exit 1; }
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+      # Skript, Texte und Bildschirmfotos im Stand des Workflows: beim Tag der Tag, von Hand gestartet
+      # main. Nicht der Tag des nachgereichten Laufs, dem fehlte das Skript (v0.14.0) und ein Text, der
+      # seither berichtigt wurde. Vor dem Paket, denn checkout räumt den Arbeitsordner auf.
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        if: inputs.run_id == ''
+        with:
+          name: mietfuchs-store
+          path: store
+      - uses: actions/download-artifact@v8
+        if: inputs.run_id != ''
+        with:
+          name: mietfuchs-store
+          path: store
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Einreichen
+        env:
+          MSSTORE_TENANT_ID: ${{ secrets.MSSTORE_TENANT_ID }}
+          MSSTORE_CLIENT_ID: ${{ secrets.MSSTORE_CLIENT_ID }}
+          MSSTORE_CLIENT_SECRET: ${{ secrets.MSSTORE_CLIENT_SECRET }}
+        run: |
+          shopt -s nullglob
+          bundles=(store/*.msixbundle)
+          [ ${#bundles[@]} -eq 1 ] || { echo "::error::Erwartet genau ein .msixbundle, gefunden: ${#bundles[@]}"; exit 1; }
+          node scripts/store-submit.mjs --bundle "${bundles[0]}" --tag "${TAG:-$GITHUB_REF_NAME}"
