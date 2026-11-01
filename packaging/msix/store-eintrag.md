@@ -63,7 +63,8 @@ Was Mietfuchs abdeckt:
 • Übersicht für die Anlage V der Steuererklärung
 • auf Wunsch KI-Auswertung von Belegen, auf dem eigenen Rechner oder bei einem Dienst Ihrer Wahl
 
-Mietfuchs ist freie Software (AGPL-3.0) und kostenlos.
+Mietfuchs ist freie Software (AGPL-3.0) und kostenlos. Es unterstützt Sie bei der Abrechnung, ersetzt aber
+keine Rechts- oder Steuerberatung; prüfen Sie die Ergebnisse, bevor Sie eine Abrechnung versenden.
 
 Sie nutzen bisher die heruntergeladene Programmdatei? Laden Sie dort unter Einstellungen ein Backup
 herunter und spielen Sie es in der App aus dem Store unter Einstellungen wieder ein.

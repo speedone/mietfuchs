@@ -17,6 +17,9 @@ import Field from '../components/Field'
 import LetterTemplateCard from '../components/LetterTemplateCard'
 import LetterDesignCard from '../components/LetterDesignCard'
 
+const SOURCE_URL = 'https://github.com/speedone/mietfuchs'
+const LICENSE_URL = `${SOURCE_URL}/blob/main/LICENSE`
+
 // `onNavigate`: Sprung auf eine andere Seite (der Link auf den Verlauf, #318).
 type Props = { settings: Settings; reload: () => Promise<void>; update: UpdateState; onNavigate?: (tab: 'verlauf') => void }
 
@@ -154,8 +157,6 @@ export default function Einstellungen({ settings, reload, update, onNavigate }: 
 
       <AiSettings settings={settings} reload={reload} />
 
-      <UpdateSettings settings={settings} update={update} reload={reload} />
-
       <LawOverridesCard />
 
       <Card title={<>Daten &amp; Sicherung</>}>
@@ -204,6 +205,24 @@ export default function Einstellungen({ settings, reload, update, onNavigate }: 
         Automatische Sicherungen und frühere Stände finden Sie{' '}
         <a href="#" onClick={(e) => { e.preventDefault(); onNavigate?.('verlauf') }}>im Verlauf</a>.
       </p>
+
+      {/* Am Ende wie der Abschnitt „Info“ einer Windows-App: Version und Updates, dann Urheber und Lizenz. Wer aus dem
+          Microsoft Store installiert, sieht README und LICENSE nie; die AGPL sieht Urheber, fehlende Gewähr und den Weg
+          zur Lizenz in einer Oberfläche vor („Appropriate Legal Notices“). */}
+      <Card title="Über Mietfuchs">
+        <UpdateSettings settings={settings} update={update} reload={reload} />
+        <p>
+          Mietfuchs unterstützt Sie bei der Nebenkostenabrechnung, ersetzt aber keine Rechts- oder Steuerberatung.
+          Prüfen Sie die Ergebnisse, bevor Sie eine Abrechnung versenden.
+        </p>
+        <p className="muted">
+          © 2026 speedone. Mietfuchs ist freie Software unter der GNU Affero General Public License 3.0 und wird
+          ohne Gewähr bereitgestellt, soweit das Gesetz es zulässt.{' '}
+          <a href={LICENSE_URL} target="_blank" rel="noreferrer">Lizenz</a>
+          {' · '}
+          <a href={SOURCE_URL} target="_blank" rel="noreferrer">Quellcode</a>
+        </p>
+      </Card>
     </>
   )
 }

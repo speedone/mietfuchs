@@ -76,7 +76,9 @@ für ARM-Rechner (z. B. Snapdragon):
 
 - **Keine Sicherheitswarnung:** Microsoft prüft und signiert das Paket, der Hinweis „Der
   Computer wurde durch Windows geschützt“ entfällt.
-- **Updates kommen von selbst:** Der Store installiert jede neue Version im Hintergrund.
+- **Updates kommen von selbst:** Der Store installiert jede neue Version im Hintergrund, sobald
+  Mietfuchs beendet ist (solange es läuft, ersetzt Windows es nicht). Sofort geht es im Store unter
+  *Bibliothek* mit *Updates abrufen*.
 - **Wie jedes andere Programm:** Eintrag im Startmenü, kein schwarzes Konsolenfenster, Start
   auch über `mietfuchs` in der Eingabeaufforderung. Beenden über *Mietfuchs beenden* unten in
   der Seitenleiste.

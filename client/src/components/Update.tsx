@@ -6,12 +6,11 @@ import { useToast } from './feedback'
 import DraftActions from './DraftActions'
 import { useDraft } from '../useDraft'
 import FoxLogo from './Logo'
-import Card from './Card'
 
 // Update-Hinweis in drei Teilen: die einmalige Frage im Cockpit, der Hinweis oben in der
-// Seitenleiste und die Karte in den Einstellungen. Nach GitHub fragt nur der Server, und nur
-// mit Zustimmung (server/src/update.ts). /api/update selbst ist lokal und liefert ohne
-// Zustimmung nur die installierte Version.
+// Seitenleiste und der Abschnitt in der Karte „Über Mietfuchs“ der Einstellungen. Nach GitHub
+// fragt nur der Server, und nur mit Zustimmung (server/src/update.ts). /api/update selbst ist
+// lokal und liefert ohne Zustimmung nur die installierte Version.
 
 const README = 'https://github.com/speedone/mietfuchs#herunterladen--starten-ohne-installation'
 
@@ -133,7 +132,9 @@ export function UpdateHint({ status, onDismissed, onShowGuide }: HintProps) {
   )
 }
 
-// ---------- Karte in den Einstellungen ----------
+// ---------- In der Karte „Über Mietfuchs“ der Einstellungen ----------
+// Ohne eigene Karte: Version und Updates stehen mit Urheber und Lizenz am Ende der Einstellungen, wie der Abschnitt
+// „Info“ einer Windows-App.
 
 type SettingsProps = {
   settings: Settings
@@ -164,17 +165,13 @@ export function UpdateSettings({ settings, update, reload }: SettingsProps) {
 
   const guide = status?.enabled && status.available ? updateGuide(status) : null
 
+  const state = status && <p className="update-state">{statusText(status)}</p>
   // Aus dem Microsoft Store (#500): kein Häkchen, kein Knopf, nur der Stand.
-  if (updatedByStore(status)) {
-    return (
-      <Card title="Updates">
-        {status && <p className="update-state">{statusText(status)}</p>}
-      </Card>
-    )
-  }
+  if (updatedByStore(status)) return state
 
   return (
-    <Card title="Updates">
+    <>
+      {state}
       <div className="row center">
         <label className="update-toggle">
           <input type="checkbox" checked={draft.value} disabled={draft.saving} onChange={(e) => draft.set(e.target.checked)} />
@@ -186,8 +183,6 @@ export function UpdateSettings({ settings, update, reload }: SettingsProps) {
         Dafür fragt Mietfuchs bei GitHub nach. GitHub sieht dabei nur Ihre IP-Adresse und die
         installierte Versionsnummer.
       </p>
-
-      {status && <p className="update-state">{statusText(status)}</p>}
 
       <div className="row">
         {/* Gesperrt ohne gespeicherte Zustimmung und solange sie gespeichert wird: Sonst fragte der
@@ -204,10 +199,10 @@ export function UpdateSettings({ settings, update, reload }: SettingsProps) {
           {guide.kind === 'download'
             ? <Download guide={guide} status={status} />
             : <Commands lines={guide.lines} status={status} />}
-          <p className="muted">Vorher ein Backup herunterzuladen (weiter unten) schadet nie.</p>
+          <p className="muted">Vorher ein Backup herunterzuladen (weiter oben unter „Daten &amp; Sicherung“) schadet nie.</p>
         </div>
       )}
-    </Card>
+    </>
   )
 }
 

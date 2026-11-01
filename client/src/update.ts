@@ -69,7 +69,9 @@ export const isPrerelease = (version: string): boolean => /^\d+\.\d+\.\d+-/.test
 // Der Stand in der Karte der Einstellungen. Bei einer Vorabversion wäre „aktuelle Version“
 // falsch (#166): Sie ist noch nicht veröffentlicht, und neben ihr steht die letzte fertige.
 export function statusText(s: UpdateStatus): string {
-  if (updatedByStore(s)) return `Installiert ist Version ${s.current}. Neue Versionen installiert der Microsoft Store von selbst.`
+  // Windows ersetzt ein Paket nicht, solange es läuft, und Mietfuchs läuft im Hintergrund weiter, bis man es beendet
+  // oder Windows neu startet (MSIX servicing while in use, Microsoft).
+  if (updatedByStore(s)) return `Installiert ist Version ${s.current}. Neue Versionen installiert der Microsoft Store von selbst, sobald Mietfuchs beendet ist. Sofort geht es im Store unter „Bibliothek“ mit „Updates abrufen“.`
   if (!s.enabled) return `Installiert ist Version ${s.current}.`
   const lastChecked = s.checkedAt ? ` Zuletzt geprüft: ${fmtDateTime(s.checkedAt)}.` : ''
   if (s.error) {
