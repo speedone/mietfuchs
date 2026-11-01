@@ -30,10 +30,7 @@
     },
     "files": [
       "src/**",
-      "package.json"
-    ],
-    "asar": true,
-    "extraResources": [
+      "package.json",
       {
         "from": "../dist-desktop-server",
         "to": "mietfuchs",
@@ -42,6 +39,7 @@
         ]
       }
     ],
+    "asar": true,
     "electronFuses": {
       "runAsNode": false,
       "enableCookieEncryption": false,

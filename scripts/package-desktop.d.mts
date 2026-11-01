@@ -8,3 +8,6 @@ export const CLIENT_PACK: string
 export function rewriteImportMeta(code: string, id: string, where: { root: string, bundleFile: string }): string | null
 export function bundleServer(stageDir: string): Promise<{ file: string, licenses: string, modules: number }>
 export function packClient(clientDist: string, stageDir: string): number
+export const ARCHIVE_FOLDER: string
+export function asarFiles(file: string): { path: string, unpacked: boolean, integrity: boolean }[]
+export function checkServerArchive(archive: string): void

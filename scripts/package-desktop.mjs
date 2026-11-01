@@ -7,8 +7,11 @@
 //                                      Bündler von Vite, aus client/node_modules)
 //   server/THIRD-PARTY-LICENSES.txt    die Lizenzen der gebündelten Abhängigkeiten
 //   client/dist.pack                   das gebaute Frontend als eine Datei (server/src/clientPack.ts)
-// electron-builder nimmt den Ordner als resources/mietfuchs mit (desktop/package.json, `extraResources`). Er ist für
-// alle Architekturen derselbe, denn der Server hat keine nativen Module. Warum gebündelt: Aus den Quellen lud der
+// electron-builder nimmt den Ordner als mietfuchs/ in die app.asar mit (desktop/package.json, `files`), nicht offen in
+// den Installationsordner: Dort stufte die Malware-Prävention von HP Wolf Security auf einem echten Rechner das Bündel
+// als Schadcode ein und blockierte es. Im Archiv deckt es die Prüfung der Integrität mit ab (Fuse
+// enableEmbeddedAsarIntegrityValidation), und der utilityProcess lädt es von dort wie der Hauptprozess sein main.js.
+// Der Ordner ist für alle Architekturen derselbe, denn der Server hat keine nativen Module. Warum gebündelt: Aus den Quellen lud der
 // Server rund 470 Dateien und streifte ihre Typen ab, das kostete beim Start ein bis drei Sekunden; und unter Windows
 // prüft der Echtzeitschutz beim Installieren jede Datei einzeln, vorher waren es Tausende (Quellen und node_modules).
 //
@@ -28,7 +31,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { writeClientPack } from '../server/src/clientPack.ts'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-// Wohin der Server-Ordner kommt; `extraResources` in desktop/package.json liest ihn von dort
+// Wohin der Server-Ordner kommt; `files` in desktop/package.json liest ihn von dort
 const stage = path.join(root, 'dist-desktop-server')
 
 // Das Bündel, relativ zum Server-Ordner; desktop/src/server.js (`serverModule`) startet es
@@ -42,7 +45,7 @@ export const CLIENT_PACK = 'client/dist.pack'
 // Woran sich ein vollständiger Server-Ordner erkennen lässt, auch im entpackten Ordner des Fensters (package-msix.mjs)
 export const REQUIRED_SERVER_FILES = [SERVER_BUNDLE, SERVER_LICENSES, CLIENT_PACK]
 
-/** @param {string} dir der Server-Ordner (dist-desktop-server bzw. resources/mietfuchs) */
+/** @param {string} dir der Server-Ordner (dist-desktop-server) */
 export function checkServerFolder(dir) {
   for (const file of REQUIRED_SERVER_FILES) {
     if (!fs.existsSync(path.join(dir, file))) throw new Error(`${path.join(dir, file)} fehlt im Server-Ordner des Fensters`)
@@ -50,6 +53,70 @@ export function checkServerFolder(dir) {
   // Mehr nicht: Jede weitere Datei prüft der Echtzeitschutz unter Windows beim Installieren einzeln
   const extra = listFiles(dir).filter((file) => !REQUIRED_SERVER_FILES.includes(file))
   if (extra.length) throw new Error(`Im Server-Ordner des Fensters liegt mehr als vorgesehen: ${extra.slice(0, 5).join(', ')}${extra.length > 5 ? ' …' : ''}`)
+}
+
+// Wo der Server-Ordner in der app.asar des Fensters liegt (desktop/package.json, `files`; SERVER_FOLDER in
+// desktop/src/server.js)
+export const ARCHIVE_FOLDER = 'mietfuchs'
+
+/**
+ * Die Dateien in einem asar-Archiv, aus seinem Kopf gelesen: ein Pickle mit der Länge des Kopfs, dann der Kopf als
+ * Pickle mit einer Zeichenkette (JSON, Ordner als `files`). Ohne @electron/asar, das nur desktop/node_modules hat;
+ * package-msix.mjs läuft ohne.
+ * @param {string} file
+ * @returns {{ path: string, unpacked: boolean, integrity: boolean }[]}
+ */
+export function asarFiles(file) {
+  if (!fs.existsSync(file)) throw new Error(`${file} fehlt`)
+  const fd = fs.openSync(file, 'r')
+  /** @type {any} */
+  let header
+  try {
+    const size = Buffer.alloc(8)
+    const read = fs.readSync(fd, size, 0, 8, 0)
+    const headerSize = read === 8 && size.readUInt32LE(0) === 4 ? size.readUInt32LE(4) : -1
+    if (headerSize < 8 || headerSize > fs.fstatSync(fd).size) throw new Error('Kopf')
+    const pickle = Buffer.alloc(headerSize)
+    fs.readSync(fd, pickle, 0, headerSize, 8)
+    const length = pickle.readUInt32LE(4)
+    if (length + 8 > headerSize) throw new Error('Kopf')
+    header = JSON.parse(pickle.toString('utf8', 8, 8 + length))
+  } catch {
+    throw new Error(`${file} ist kein asar-Archiv`)
+  } finally {
+    fs.closeSync(fd)
+  }
+  /** @type {{ path: string, unpacked: boolean, integrity: boolean }[]} */
+  const files = []
+  /** @param {any} dir @param {string} rel */
+  const walk = (dir, rel) => {
+    for (const [name, entry] of Object.entries(dir.files ?? {})) {
+      const child = rel ? `${rel}/${name}` : name
+      if (/** @type {any} */ (entry).files) walk(entry, child)
+      else files.push({ path: child, unpacked: /** @type {any} */ (entry).unpacked === true, integrity: Boolean(/** @type {any} */ (entry).integrity) })
+    }
+  }
+  walk(header, '')
+  return files
+}
+
+/**
+ * Der Server in der app.asar des Fensters: genau die drei Dateien unter mietfuchs/, jede im Archiv (entpackt läge sie
+ * wieder offen im Installationsordner) und mit Prüfsummen, denn nur dann deckt die Prüfung der Integrität sie ab.
+ * @param {string} archive der Pfad der app.asar
+ */
+export function checkServerArchive(archive) {
+  const entries = asarFiles(archive)
+  const prefix = `${ARCHIVE_FOLDER}/`
+  const inFolder = entries.filter((entry) => entry.path.startsWith(prefix))
+  for (const rel of REQUIRED_SERVER_FILES) {
+    const entry = inFolder.find((e) => e.path === prefix + rel)
+    if (!entry) throw new Error(`${prefix}${rel} fehlt in ${archive}`)
+    if (entry.unpacked) throw new Error(`${prefix}${rel} liegt entpackt neben ${archive}, nicht im Archiv`)
+    if (!entry.integrity) throw new Error(`${prefix}${rel} ohne Prüfsummen in ${archive}; die Prüfung der Integrität deckte es nicht ab`)
+  }
+  const extra = inFolder.map((e) => e.path).filter((p) => !REQUIRED_SERVER_FILES.includes(p.slice(prefix.length)))
+  if (extra.length) throw new Error(`Im Server-Ordner der app.asar liegt mehr als vorgesehen: ${extra.slice(0, 5).join(', ')}${extra.length > 5 ? ' …' : ''}`)
 }
 
 /**
@@ -236,6 +303,20 @@ export function userFileName(file) {
   return file.replace(/-(arm64|x64)(\.dmg(?:\.blockmap)?)$/, (_all, arch, ext) => `-${MAC_NAMES[/** @type {'arm64' | 'x64'} */ (arch)]}${ext}`)
 }
 
+// Die app.asar der gebauten Fenster: win-unpacked/resources, mac-arm64/Mietfuchs.app/Contents/Resources
+/** @param {string} out */
+function builtArchives(out) {
+  /** @type {string[]} */
+  const found = []
+  for (const entry of fs.readdirSync(out, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue
+    const dir = path.join(out, entry.name)
+    const candidates = [path.join(dir, 'resources', 'app.asar'), ...fs.readdirSync(dir).filter((name) => name.endsWith('.app')).map((app) => path.join(dir, app, 'Contents', 'Resources', 'app.asar'))]
+    found.push(...candidates.filter((file) => fs.existsSync(file)))
+  }
+  return found
+}
+
 async function main() {
   const target = process.argv[2]
   if (target !== 'win' && target !== 'mac' && target !== 'server') {
@@ -257,6 +338,13 @@ async function main() {
     env: { ...process.env, CSC_FOR_PULL_REQUEST: 'true' },
   })
   const out = path.join(root, 'dist-desktop')
+  // Der Server in jeder gebauten app.asar, vor dem Prüflauf auf dem Zielsystem
+  const archives = builtArchives(out)
+  if (!archives.length) throw new Error(`Keine app.asar unter ${out} gefunden`)
+  for (const archive of archives) {
+    checkServerArchive(archive)
+    console.log(`→ Server in ${path.relative(root, archive)} (${(fs.statSync(archive).size / 1e6).toFixed(1)} MB)`)
+  }
   for (const file of fs.readdirSync(out)) {
     const name = userFileName(file)
     if (name !== file) fs.renameSync(path.join(out, file), path.join(out, name))

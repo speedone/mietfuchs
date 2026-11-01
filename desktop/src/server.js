@@ -1,6 +1,7 @@
 // Der Server im Programmfenster (#517): der Server von Mietfuchs aus dem Quellcode, mit Electrons eigenem Node als
 // utilityProcess. Hier steht, was sich ohne Electron prüfen lässt (desktop/test/server.test.js): welches Modul, mit
 // welcher Umgebung, auf welchem Port, und woran man erkennt, dass er bereit ist. main.js setzt es zusammen.
+import fs from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'
 
@@ -10,29 +11,35 @@ import path from 'node:path'
 // für ausgehende Verbindungen vergeben. Die Programmdatei ohne Fenster bleibt bei 3001.
 export const DEFAULT_PORT = 17517
 
-// Der Ordner unter resources, in dem der Server ausgeliefert liegt, drei Dateien in der Anordnung des Repos: das Bündel
+// Der Ordner in der app.asar, in dem der Server ausgeliefert liegt, drei Dateien in der Anordnung des Repos: das Bündel
 // server/server.mjs (Server, shared/, Abhängigkeiten und Migrationen), die Lizenzen der Abhängigkeiten daneben und das
-// Frontend als eine Datei, client/dist.pack. scripts/package-desktop.mjs legt ihn an, desktop/package.json (`extraResources`) nimmt ihn mit.
+// Frontend als eine Datei, client/dist.pack. scripts/package-desktop.mjs legt ihn an, desktop/package.json (`files`)
+// nimmt ihn in die asar mit.
 export const SERVER_FOLDER = 'mietfuchs'
+// Das Archiv der App unter resources, das electron-builder anlegt (`asar: true`)
+export const APP_ARCHIVE = 'app.asar'
 
 // Der Name des utilityProcess in app.getAppMetrics() (Speicher in der Selbstprüfung) und in child-process-gone
 export const SERVICE_NAME = 'Mietfuchs-Server'
 
 /**
- * Welches Modul als Server läuft und in welchem Ordner: ausgeliefert das Bündel unter resources/mietfuchs, beim
- * Entwickeln die Quellen im Repo (Node streift die Typen ab wie bei `npm start`, ein Bauschritt entfällt). Beides
- * derselbe Weg, `utilityProcess.fork` mit Electrons eigenem Node. Gebündelt startet der Server rund eine Sekunde
- * schneller, weil Node eine Datei lädt statt rund 470 und keine Typen abstreift.
+ * Welches Modul als Server läuft und in welchem Ordner: ausgeliefert das Bündel in der app.asar, beim Entwickeln die
+ * Quellen im Repo (Node streift die Typen ab wie bei `npm start`, ein Bauschritt entfällt). Beides derselbe Weg,
+ * `utilityProcess.fork` mit Electrons eigenem Node. Gebündelt startet der Server rund eine Sekunde schneller, weil Node
+ * eine Datei lädt statt rund 470 und keine Typen abstreift.
+ *
+ * Warum in der asar: Offen im Installationsordner stufte die Malware-Prävention von HP Wolf Security das Bündel auf
+ * einem echten Rechner als Schadcode ein und blockierte es. In der asar ist es keine Skriptdatei auf der Platte mehr,
+ * und die Prüfung der Integrität (Fuse enableEmbeddedAsarIntegrityValidation) deckt es mit ab. Der utilityProcess liest
+ * die asar wie der Hauptprozess, ESM eingeschlossen (geprüft mit Electron 45 unter Linux, Windows und macOS). Der
+ * Arbeitsordner kann nicht in einem Archiv liegen, er ist resources; der Server rechnet ohnehin nicht vom Arbeitsordner.
  * @param {{ packaged: boolean, platform: NodeJS.Platform, resourcesPath: string, repoRoot: string }} where
  * @returns {{ modulePath: string, cwd: string }}
  */
 export function serverModule({ packaged, platform, resourcesPath, repoRoot }) {
   // Nach der genannten Plattform rechnen, nicht nach der des laufenden Rechners (CLAUDE.md, Konventionen)
   const p = platform === 'win32' ? path.win32 : path.posix
-  if (packaged) {
-    const cwd = p.join(resourcesPath, SERVER_FOLDER, 'server')
-    return { modulePath: p.join(cwd, 'server.mjs'), cwd }
-  }
+  if (packaged) return { modulePath: p.join(resourcesPath, APP_ARCHIVE, SERVER_FOLDER, 'server', 'server.mjs'), cwd: resourcesPath }
   const cwd = p.join(repoRoot, 'server')
   return { modulePath: p.join(cwd, 'src', 'index.ts'), cwd }
 }
@@ -172,4 +179,117 @@ export function lanUrls(interfaces, port) {
  */
 export function networkState(settings, port, interfaces) {
   return { enabled: settings.network === true, port, addresses: lanUrls(interfaces, port) }
+}
+
+/**
+ * Die Dateien, ohne die der Server nicht startet: ausgeliefert das Bündel und das Frontend in der app.asar, beim
+ * Entwickeln das Modul im Repo. Nach einem gescheiterten Start prüft das Fenster, ob es sie öffnen kann
+ * (`findBlockedFile`).
+ * @param {{ packaged: boolean, platform: NodeJS.Platform, resourcesPath: string, repoRoot: string }} where
+ * @returns {string[]}
+ */
+export function programFiles(where) {
+  const { modulePath } = serverModule(where)
+  if (!where.packaged) return [modulePath]
+  const p = where.platform === 'win32' ? path.win32 : path.posix
+  return [modulePath, p.join(where.resourcesPath, APP_ARCHIVE, SERVER_FOLDER, 'client', 'dist.pack')]
+}
+
+// Woran ein Virenschutz zu erkennen ist: Er sperrt die Datei (EPERM, unter macOS und Linux auch EACCES) oder hat sie
+// in die Quarantäne verschoben (ENOENT)
+const BLOCKED_CODES = new Set(['EPERM', 'EACCES', 'ENOENT'])
+
+/** @typedef {{ code: string, path: string }} BlockedFile */
+
+/**
+ * Die erste der Dateien, die sich nicht öffnen lässt, weil sie gesperrt ist oder fehlt. Die Ausgabe des Servers allein
+ * genügt dafür nicht: Bei einem Fehler im Lesen aus der asar druckt Node erst eine Zeile von Electrons eigenem Quelltext,
+ * rund 8 KB, und unter Linux kam die Meldung danach gar nicht mehr an.
+ * @param {string[]} files
+ * @param {(file: string) => void} [open] wirft wie `fs.openSync`
+ * @returns {BlockedFile | null}
+ */
+export function findBlockedFile(files, open = (file) => fs.closeSync(fs.openSync(file, 'r'))) {
+  for (const file of files) {
+    try {
+      open(file)
+    } catch (err) {
+      const code = /** @type {NodeJS.ErrnoException} */ (err)?.code
+      if (code && BLOCKED_CODES.has(code)) return { code, path: file }
+    }
+  }
+  return null
+}
+
+// Die Meldungen, die Node und Electron dafür drucken: je ein Muster und was daraus Code und Pfad sind
+/** @type {{ re: RegExp, pick: (m: RegExpMatchArray, p: path.PlatformPath) => [string | undefined, string | undefined], escaped?: boolean }[]} */
+const BLOCKED_PATTERNS = [
+  // Node: „Error: EPERM: operation not permitted, open 'C:\…\server.mjs'“; der Pfad bis zum letzten Apostroph der
+  // Zeile, er darf selbst einen enthalten (O'Brien)
+  { re: /\b(EPERM|EACCES|ENOENT): [^,\n]*, \w+ '(.+)'(?= ->|\s*$)/gm, pick: (m) => [m[1], m[2]] },
+  // Electrons asar: „Error: ENOENT, mietfuchs\client\dist.pack not found in C:\…\app.asar“
+  { re: /\b(ENOENT), (.+?) not found in (.+?)\s*$/gm, pick: (m, p) => [m[1], m[3] && m[2] ? p.join(m[3], m[2]) : undefined] },
+  // Electron, wenn sich die asar selbst nicht öffnen lässt: „Invalid package C:\…\app.asar“, ohne Code. Der
+  // Hauptprozess liest sie ja (main.js liegt darin), gesperrt ist sie also für den Server.
+  { re: /Invalid package (.+?\.asar)\b/gi, pick: (m) => ['EPERM', m[1]] },
+  // Der Lader von Node, wenn das Modul fehlt: „Cannot find module 'C:\…\server.mjs' imported from …“
+  { re: /Cannot find (?:module|package) '(.+?)'(?= imported|\s*$)/gm, pick: (m) => ['ENOENT', m[1]] },
+  // Das Fehlerobjekt darunter: „code: 'EPERM', syscall: 'open', path: 'C:\\…'“, die Pfade doppelt maskiert und mit
+  // Apostroph darin in doppelten Anführungszeichen. Electrons NO_ACCESS nennt den vollen Pfad nur hier.
+  { re: /code: '(EPERM|EACCES|ENOENT)',[\s\S]{0,200}?path: (['"])(.+?)\2\s*$/gm, pick: (m) => [m[1], m[3]], escaped: true },
+]
+
+/**
+ * Eine gesperrte oder fehlende Datei des Programms aus der Ausgabe des Servers. Nur Dateien unter dem Programmordner
+ * zählen (unter Windows der Installationsordner, auf dem Mac Mietfuchs.app/Contents): Gesperrte Daten oder ein
+ * belegter Port haben andere Gründe und behalten ihre Meldung.
+ * @param {string} output
+ * @param {string} programDir
+ * @param {NodeJS.Platform} platform
+ * @returns {BlockedFile | null}
+ */
+export function blockedFileIn(output, programDir, platform) {
+  const p = platform === 'win32' ? path.win32 : path.posix
+  // Windows und macOS unterscheiden Groß- und Kleinschreibung in Pfaden nicht
+  const fold = (/** @type {string} */ text) => (platform === 'linux' ? text : text.toLowerCase())
+  const root = fold(p.normalize(programDir + p.sep))
+  for (const { re, pick, escaped } of BLOCKED_PATTERNS) {
+    for (const match of output.matchAll(re)) {
+      let [code, file] = pick(match, p)
+      if (!code || !file) continue
+      if (escaped) file = file.replaceAll('\\\\', '\\')
+      if (fold(p.normalize(file)).startsWith(root)) return { code, path: file }
+    }
+  }
+  return null
+}
+
+// Wie viele Zeichen einer Zeile die Meldung zeigt; das Protokoll hat alles
+const LINE_LIMIT = 300
+
+/**
+ * Was der Dialog sagt, wenn der Server nicht startet. Ist eine Datei des Programms gesperrt oder fehlt, oben knapp der
+ * Grund und was zu tun ist, mit der Datei, wie sie der Virenschutz nennt (die app.asar, nicht der Eintrag darin); die
+ * technische Meldung steht klein darunter. Sonst die technische Meldung wie bisher.
+ * @param {{ found: BlockedFile | null, technical: string, logDir: string, platform: NodeJS.Platform }} failure
+ * @returns {{ message: string, detail: string }}
+ */
+export function startFailure({ found, technical, logDir, platform }) {
+  const text = technical.split('\n').map((line) => (line.length > LINE_LIMIT ? `${line.slice(0, LINE_LIMIT)} …` : line)).join('\n').trim()
+  const log = `Das Protokoll liegt unter ${logDir}.`
+  if (!found) return { message: text, detail: log }
+  const file = fileOnDisk(found.path, platform)
+  const reason = found.code === 'ENOENT'
+    ? 'Eine Datei von Mietfuchs fehlt, vermutlich hat ein Virenschutzprogramm sie entfernt:'
+    : 'Ein Virenschutzprogramm hat eine Datei von Mietfuchs blockiert:'
+  return { message: `${reason}\n${file}\n\nGeben Sie die Datei dort frei oder installieren Sie Mietfuchs neu.`, detail: `${text}\n\n${log}` }
+}
+
+// Ein Eintrag in einem Archiv (…\app.asar\mietfuchs\server\server.mjs) ist auf der Platte das Archiv selbst
+/** @param {string} file @param {NodeJS.Platform} platform */
+function fileOnDisk(file, platform) {
+  const sep = platform === 'win32' ? /[\\/]/ : /\//
+  const parts = file.split(sep)
+  const archive = parts.findIndex((part) => /\.asar$/i.test(part))
+  return archive < 0 ? file : parts.slice(0, archive + 1).join(platform === 'win32' ? '\\' : '/')
 }

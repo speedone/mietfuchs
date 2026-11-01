@@ -1,6 +1,6 @@
 // Das eigene Programmfenster von Mietfuchs unter Windows und macOS (#517). Electron ist hier nur das Fenster: Der
 // Server läuft mit Electrons eigenem Node als utilityProcess (so empfiehlt es Electron für Hintergrundprozesse mit Node),
-// ausgeliefert als eine gebündelte Datei, beim Entwickeln aus dem Quellcode. Er lauscht auf 127.0.0.1, und das Fenster
+// ausgeliefert als eine gebündelte Datei in der app.asar, beim Entwickeln aus dem Quellcode. Er lauscht auf 127.0.0.1, und das Fenster
 // zeigt seine Oberfläche. Server, Oberfläche und Datenbank wissen davon nur, dass sie keinen Browser öffnen und mit dem Fenster enden (Betriebsart desktop,
 // server/src/version.ts). Eine eigene Programmdatei für den Server gibt es im Fenster nicht: eine ausführbare Datei
 // weniger, die Virenscanner prüfen und die signiert wird, und rund 100 MB weniger je Architektur.
@@ -13,7 +13,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { BrowserWindow, Menu, app, dialog, ipcMain, session, shell, utilityProcess } from 'electron'
-import { DEFAULT_PORT, SERVICE_NAME, dataDirIn, freePort, linkTarget, networkState, serverEnv, serverModule, startUrlIn, whoIsOn } from './server.js'
+import { DEFAULT_PORT, SERVICE_NAME, blockedFileIn, dataDirIn, findBlockedFile, freePort, linkTarget, networkState, programFiles, serverEnv, serverModule, startFailure, startUrlIn, whoIsOn } from './server.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const startedAt = Date.now()
@@ -179,6 +179,18 @@ async function startServer(settings, fixedPort) {
 /** @param {string} text */
 const lastLines = (text) => text.trim().split('\n').slice(-12).join('\n')
 
+// Der Start ist gescheitert. Hat ein Virenschutz eine Datei des Programms gesperrt oder entfernt, sagt die Meldung das
+// und was zu tun ist (auf einem echten Rechner blockierte HP Wolf Security das Bündel); die technische Meldung steht
+// klein darunter. Erst die Dateien selbst prüfen, dann die Ausgabe: Die kommt bei einem Fehler in der asar nicht immer an.
+/** @param {string} title @param {unknown} err */
+function showStartFailure(title, err) {
+  const technical = `${err instanceof Error ? err.message : String(err)}\n\n${lastLines(serverOutput)}`
+  const where = { packaged: app.isPackaged, platform: process.platform, resourcesPath: process.resourcesPath, repoRoot: path.resolve(here, '..', '..') }
+  const found = findBlockedFile(programFiles(where)) ?? blockedFileIn(technical, path.dirname(process.resourcesPath), process.platform)
+  const { message, detail } = startFailure({ found, technical, logDir: path.join(app.getPath('userData'), 'protokoll'), platform: process.platform })
+  dialog.showMessageBoxSync({ type: 'error', title, message, detail, buttons: ['OK'] })
+}
+
 // Erst über die Oberfläche beenden, damit der Server seine Schreibvorgänge abschließt; unter Windows kennt ein
 // Kindprozess kein SIGTERM, `kill()` beendete ihn sofort. Ohne Adresse (Fenster während des Starts geschlossen) die
 // Nachricht „quit“ über `process.parentPort`; der Server startet dann zu Ende und beendet sich (server/src/index.ts).
@@ -227,7 +239,7 @@ async function setNetwork(enabled) {
       await startServer(before, port)
     } catch {
       if (!quitting) {
-        dialog.showErrorBox('Mietfuchs ließ sich nicht neu starten', `${err instanceof Error ? err.message : String(err)}\n\n${lastLines(serverOutput)}`)
+        showStartFailure('Mietfuchs ließ sich nicht neu starten', err)
         quitting = true
         app.exit(1)
       }
@@ -403,8 +415,7 @@ async function start() {
   } catch (err) {
     // Fenster während des Starts geschlossen: Das Beenden läuft schon, eine Meldung wäre falsch
     if (quitting) return
-    const message = err instanceof Error ? err.message : String(err)
-    dialog.showErrorBox('Mietfuchs ließ sich nicht starten', `${message}\n\n${lastLines(serverOutput)}`)
+    showStartFailure('Mietfuchs ließ sich nicht starten', err)
     quitting = true
     await stopServer()
     app.exit(1)

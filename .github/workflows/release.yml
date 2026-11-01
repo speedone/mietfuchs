@@ -543,8 +543,8 @@ jobs:
   # Das eigene Programmfenster (#517): unter Windows ein Installer für x64 und ARM64 zusammen
   # (NSIS, für den Benutzer, ohne Adminrechte), auf dem Mac je ein .dmg, ad hoc signiert
   # (scripts/package-desktop.mjs). Eine Programmdatei des Servers ist nicht darin: Er läuft als ein
-  # Bündel (server.mjs, mit rolldown aus Vite) mit Electrons eigenem Node als utilityProcess, unter
-  # resources/mietfuchs samt dem Frontend (eine Datei), das dieser Job selbst baut. Daneben die entpackten
+  # Bündel (server.mjs, mit rolldown aus Vite) mit Electrons eigenem Node als utilityProcess, in der
+  # app.asar unter mietfuchs/ samt dem Frontend (eine Datei), das dieser Job selbst baut. Daneben die entpackten
   # Windows-Ordner, aus denen „Store-Paket bauen und prüfen“ das Store-Paket packt.
   #
   # Bis PR 2 von #517 stand das in einem eigenen Workflow (desktop.yml). Er ist hier aufgegangen:
@@ -679,7 +679,12 @@ jobs:
           if (-not (Test-Path $exe)) { Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Depth 1 | Out-Host; throw "$exe nach der Installation nicht gefunden" }
           "Installiert: $dir, $([math]::Round((Get-ChildItem $dir -Recurse | Measure-Object Length -Sum).Sum / 1MB, 1)) MB" | Tee-Object -Append groessen.txt
           # Die Zahl der Dateien bestimmt, wie lange der Echtzeitschutz beim Installieren prüft
-          "Dateien: $((Get-ChildItem $dir -Recurse -File).Count) installiert, davon $((Get-ChildItem (Join-Path $dir 'resources\mietfuchs') -Recurse -File).Count) unter resources\mietfuchs" | Tee-Object -Append groessen.txt
+          $resources = Join-Path $dir 'resources'
+          "Dateien: $((Get-ChildItem $dir -Recurse -File).Count) installiert; unter resources: $((Get-ChildItem $resources -Recurse -File | ForEach-Object { "$($_.Name) ($([math]::Round($_.Length / 1MB, 1)) MB)" }) -join ', ')" | Tee-Object -Append groessen.txt
+          # Der Server liegt in der app.asar (desktop/package.json, `files`), keine Skriptdatei offen im Ordner
+          if (Test-Path (Join-Path $resources 'mietfuchs')) { throw 'resources\mietfuchs liegt offen im Installationsordner' }
+          node -e "import('./scripts/package-desktop.mjs').then((m) => m.checkServerArchive(process.argv[1]))" (Join-Path $resources 'app.asar')
+          if ($LASTEXITCODE -ne 0) { throw 'Der Server fehlt in der app.asar' }
           # Startet der Installer das Programm danach, belegte es den Port der Prüfung: bis zu 20
           # Sekunden darauf warten und es dann beenden; der Server ist ein Prozess des Fensters (Mietfuchs.exe)
           for ($i = 0; $i -lt 20; $i++) {
@@ -701,14 +706,13 @@ jobs:
           hdiutil detach "$RUNNER_TEMP/abbild"
           app="$RUNNER_TEMP/Programme/Mietfuchs.app"
           echo "Installiert: $(du -sm "$app" | cut -f1) MB" | tee -a groessen.txt
-          echo "Dateien: $(find "$app" -type f | wc -l | tr -d ' ') installiert, davon $(find "$app/Contents/Resources/mietfuchs" -type f | wc -l | tr -d ' ') unter Contents/Resources/mietfuchs" | tee -a groessen.txt
+          echo "Dateien: $(find "$app" -type f | wc -l | tr -d ' ') installiert; app.asar $(du -m "$app/Contents/Resources/app.asar" | cut -f1) MB" | tee -a groessen.txt
           # Ad hoc signiert; ohne gültige Signatur startet auf Apple Silicon nichts. Der Server liegt als
-          # Bündel unter Contents/Resources/mietfuchs und ist von der Signatur der App mit erfasst.
+          # Bündel in der app.asar, die von der Signatur der App und der Prüfung ihrer Integrität erfasst ist.
           codesign --verify --deep --strict --verbose=2 "$app"
           codesign -dv "$app" 2>&1 | grep -E 'Signature|Identifier'
-          test -f "$app/Contents/Resources/mietfuchs/server/server.mjs"
-          test -f "$app/Contents/Resources/mietfuchs/server/THIRD-PARTY-LICENSES.txt"
-          test -f "$app/Contents/Resources/mietfuchs/client/dist.pack"
+          test ! -e "$app/Contents/Resources/mietfuchs"
+          node -e "import('./scripts/package-desktop.mjs').then((m) => m.checkServerArchive(process.argv[1]))" "$app/Contents/Resources/app.asar"
           echo "APP=$app/Contents/MacOS/Mietfuchs" >> "$GITHUB_ENV"
       - name: Starten und prüfen
         run: node scripts/desktop-check.mjs --app "${{ env.APP }}" --out fenster-pruefung
@@ -881,8 +885,8 @@ jobs:
 
   # Das Paket für den Microsoft Store (#500): aus dem Programmfenster (#517) je Architektur ein
   # .msix, zusammen ein .msixbundle (scripts/package-msix.mjs). Hinein kommt der entpackte Ordner
-  # des Fensters aus „Programmfenster bauen (Windows)“, darin der Server als Bündel unter
-  # resources\mietfuchs, den das Fenster als utilityProcess startet. Unsigniert, das übernimmt der Store. Geprüft wird eine
+  # des Fensters aus „Programmfenster bauen (Windows)“, darin der Server als Bündel in der
+  # resources\app.asar, den das Fenster als utilityProcess startet. Unsigniert, das übernimmt der Store. Geprüft wird eine
   # Kopie, die ein Wegwerf-Zertifikat mit demselben Herausgeber signiert: installieren, starten,
   # Prüfskript, Beenden über die Oberfläche, deinstallieren. Dabei zählt vor allem der Datenordner:
   # Er muss im echten Benutzerordner liegen und die Deinstallation überstehen. Unter AppData hätte
@@ -958,7 +962,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'Prüfung des Store-Pakets fehlgeschlagen' }
 
             # Fenster und Server laufen aus dem Paket: beide sind Mietfuchs.exe oben im Paket, der Server als
-            # utilityProcess mit dem Bündel unter resources\mietfuchs
+            # utilityProcess mit dem Bündel in der resources\app.asar
             $fenster = Join-Path $app.InstallLocation 'Mietfuchs.exe'
             $laufend = Get-CimInstance Win32_Process -Filter "Name = 'Mietfuchs.exe'" | Select-Object ProcessId, ExecutablePath, CommandLine
             $laufend | Format-Table ProcessId, ExecutablePath -AutoSize | Out-Host

@@ -1,7 +1,7 @@
 // Baut aus dem Programmfenster (#517) das Paket für den Microsoft Store (#500): je Architektur ein .msix,
 // zusammen ein .msixbundle, das das Partner Center so annimmt. Hinein kommt der Ordner, den electron-builder beim
 // Bau des Installers je Architektur entpackt ablegt (dist-desktop/win-unpacked, win-arm64-unpacked; siehe
-// package-desktop.mjs): das Fenster Mietfuchs.exe und darin unter resources\mietfuchs der Server als ein Bündel,
+// package-desktop.mjs): das Fenster Mietfuchs.exe und in seiner resources\app.asar der Server als ein Bündel,
 // den das Fenster mit Electrons eigenem Node als utilityProcess startet. Den Store erkennt der Server an NKA_STORE vom
 // Fenster (`process.windowsStore`) oder am Paketordner (storeLocation in server/src/paths.ts).
 // Signiert wird nicht: Das übernimmt der Store bei der Zertifizierung. Läuft nur unter Windows, weil makeappx zum
@@ -14,7 +14,7 @@ import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { checkServerFolder } from './package-desktop.mjs'
+import { checkServerArchive } from './package-desktop.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -41,9 +41,9 @@ export const ARCHITECTURES = [
 // Gestartet wird das Fenster (productName in desktop/package.json); der Befehlsalias im Manifest heißt weiter
 // mietfuchs.exe und zeigt darauf.
 export const PACKAGE_EXE = 'Mietfuchs.exe'
-// Der Server-Ordner im Ordner des Fensters (extraResources in desktop/package.json, SERVER_FOLDER in
-// desktop/src/server.js)
-export const SERVER_DIR = 'resources\\mietfuchs'
+// Das Archiv im Ordner des Fensters, darin unter mietfuchs/ der Server (desktop/package.json, `files`; APP_ARCHIVE und
+// SERVER_FOLDER in desktop/src/server.js). Bis zum Fund mit HP Wolf Security lag der Server offen unter resources\mietfuchs.
+export const APP_ARCHIVE = 'resources\\app.asar'
 
 const MACHINES = { 0x8664: 'x64', 0xaa64: 'arm64' }
 const SUBSYSTEMS = { 2: 'gui', 3: 'console' }
@@ -91,7 +91,10 @@ export function checkWindowFolder(dir, arch) {
   }
   if (info.machine !== arch) throw new Error(`${PACKAGE_EXE} ist für ${info.machine} gebaut, nicht für ${arch} (${dir})`)
   if (info.subsystem !== 'gui') throw new Error(`${PACKAGE_EXE} öffnet ein Konsolenfenster (Subsystem ${info.subsystem}) (${dir})`)
-  checkServerFolder(path.join(dir, ...SERVER_DIR.split('\\')))
+  checkServerArchive(path.join(dir, ...APP_ARCHIVE.split('\\')))
+  // Ein übrig gebliebener offener Server-Ordner (alter Bau, `extraResources`) läge wieder als Skript im Installationsordner
+  const open = path.join(dir, 'resources', 'mietfuchs')
+  if (fs.existsSync(open)) throw new Error(`${open} liegt offen im Ordner des Fensters; der Server gehört in die app.asar`)
 }
 
 /** @param {string} template @param {{ version: string, arch: string }} values */

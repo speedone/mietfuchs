@@ -8,6 +8,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- **Programmfenster: Virenschutz blockierte den Server** ([#517](https://github.com/speedone/mietfuchs/issues/517)):
+  Auf einem Rechner mit HP Wolf Security hielt die Malware-Prävention die Datei des Servers für Schadcode, und
+  Mietfuchs zeigte beim Start nur einen Stacktrace. Der Server liegt jetzt im Programmarchiv des Fensters, dessen
+  Echtheit Mietfuchs beim Lesen prüft, statt als offene Skriptdatei im Installationsordner. Sperrt ein Virenschutz
+  trotzdem eine Datei von Mietfuchs oder entfernt sie, sagt die Meldung das, nennt die Datei und rät, sie dort
+  freizugeben oder Mietfuchs neu zu installieren.
 - **Programmfenster unter Windows:** Beim ersten Start fragte die Windows-Firewall, ob Mietfuchs ins Netz darf, obwohl
   es nur auf diesem Rechner lauscht. Ins Netz geht Mietfuchs nur mit dem Schalter „Zugriff aus dem Heimnetz“.
 

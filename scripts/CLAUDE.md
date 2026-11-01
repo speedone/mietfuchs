@@ -148,14 +148,38 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   überspringt `npm run typecheck` das Fenster mit Hinweis, in der CI ist das ein Fehler): Der Server läuft mit
   **Electrons eigenem Node als `utilityProcess`** (`serviceName` `Mietfuchs-Server`, Ausgabe über Pipes ins
   Protokoll), das Fenster zeigt `http://127.0.0.1:17517`; `node:sqlite` ist dabei (Electron 45.2 bringt Node 24.22).
-  Keine Programmdatei des Servers. **Ausgeliefert als Bündel**, drei Dateien unter `resources/mietfuchs` in der
+  Keine Programmdatei des Servers. **Ausgeliefert als Bündel in der `app.asar`**, drei Dateien unter `mietfuchs/` in der
   Anordnung des Repos: `server/server.mjs` (Server, `shared/`, Abhängigkeiten und Migrationen), daneben
   `server/THIRD-PARTY-LICENSES.txt` und `client/dist.pack` (das Frontend als eine Datei,
   [clientPack.ts](../server/src/clientPack.ts)). Das Bündel erkennt sich an `IN_BUNDLE`
   ([bundle.ts](../server/src/bundle.ts), beim Bündeln auf true gesetzt) und nimmt dann Migrationen und Frontend
   daraus statt von der Platte. Aus den Quellen (rund 470 Dateien, Typen abstreifen) kostete der Start ein bis drei
   Sekunden mehr, und die Tausende Dateien aus Quellen und node_modules prüft der Echtzeitschutz unter Windows beim
-  Installieren einzeln. **Beim Entwickeln** (`npm run desktop`) läuft der Server aus den Quellen im Repo, ohne
+  Installieren einzeln. **Warum in der asar** (Fund auf einem echten Rechner): Offen unter `resources/mietfuchs`
+  stufte die Malware-Prävention von HP Wolf Security (KI-Erkennung) `server.mjs` als Schadcode ein und blockierte es,
+  der Start scheiterte mit `EPERM`. Electron empfiehlt beides: „we heavily recommend that you bundle all your code into
+  one single file“ ([Performance, 7. Bundle your code](https://www.electronjs.org/docs/latest/tutorial/performance)),
+  und die asar „to improve the performance of reading files on platforms like Windows“
+  ([Application Distribution](https://www.electronjs.org/docs/latest/tutorial/application-distribution)), „By
+  bundling the app we can mitigate issues around long path names on Windows, speed up `require` and conceal your
+  source code from cursory inspection“ ([ASAR Archives](https://www.electronjs.org/docs/latest/tutorial/asar-archives)).
+  Nicht entpacken (`asarUnpack`): Was Electron in temporäre Dateien auslagert, kann laut derselben Seite Virenscanner
+  auslösen; `fs.open` liefert für Einträge der asar echte Deskriptoren ohne Kopie, so liest `clientPack.ts` das
+  Frontend direkt. Zu `utilityProcess.fork` aus der asar und zu ESM in der asar sagt die Doku nichts
+  ([utilityProcess](https://www.electronjs.org/docs/latest/api/utility-process), [ESM](https://www.electronjs.org/docs/latest/tutorial/esm));
+  geprüft mit Electron 45: Der utilityProcess lädt `app.asar/mietfuchs/server/server.mjs` als ESM und liest
+  `dist.pack` mit `openSync`/`readSync` aus dem Archiv, unter Linux (xvfb-run) und in der CI gepackt mit allen Fuses
+  unter Windows und macOS. Der Arbeitsordner ist `resources`, ein Archiv kann keiner sein. Die Prüfung der Integrität
+  ([ASAR Integrity](https://www.electronjs.org/docs/latest/tutorial/asar-integrity), Windows ab Electron 30, macOS)
+  deckt den Server so mit ab: Electron prüft beim Lesen einer Datei aus dem Archiv ihre Prüfsumme und beendet sich bei
+  Abweichung (`validateBufferIntegrity` in Electrons asar-fs-wrapper). **Blockiert ein Virenschutz trotzdem eine
+  Datei** (`EPERM`, `EACCES`, `ENOENT` auf einer Datei unter dem Programmordner), sagt der Dialog das gesiezt mit der
+  Datei auf der Platte (die `app.asar`, nicht der Eintrag darin) und was zu tun ist, die technische Meldung klein
+  darunter (`findBlockedFile`, `blockedFileIn`, `startFailure` in server.js). Erst werden die Dateien selbst geprüft,
+  dann die Ausgabe: Bei einem Fehler im Lesen aus der asar druckt Node erst eine Zeile von Electrons eigenem
+  Quelltext, rund 8 KB, und die eigentliche Meldung kam unter Linux danach nicht mehr an. Sperrt der Virenschutz die
+  `app.asar` selbst, startet schon das Fenster nicht (main.js liegt darin); dafür gibt es keine eigene Meldung.
+  **Beim Entwickeln** (`npm run desktop`) läuft der Server aus den Quellen im Repo, ohne
   Bauschritt, mit `NKA_DATA_DIR` auf server/data. [main.js](../desktop/src/main.js) setzt zusammen, was
   [server.js](../desktop/src/server.js) ohne Electron prüfbar hält (Modul, Umgebung, Port, Startzeile, Links;
   desktop/test). Code bleibt JavaScript, geprüft mit `checkJs` über
@@ -183,8 +207,8 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   kennt nur das Drucken und den Zugriff aus dem Heimnetz; beides nimmt der Hauptprozess nur von der eigenen Seite an
   (`linkTarget(event.senderFrame.url, origin) === 'window'`). Navigation und neue Fenster bleiben auf der eigenen Adresse, http, https und mailto gehen ans
   Standardprogramm, alles andere nirgendwohin, Berechtigungen werden abgelehnt. Fuses in desktop/package.json (`build`):
-  `runAsNode`, `NODE_OPTIONS` und Inspect aus, Asar-Integrität und `onlyLoadAppFromAsar` an; der utilityProcess läuft
-  damit, obwohl sein Modul außerhalb der asar liegt (geprüft im gepackten Bau: Die Fuses betreffen das Laden der App, nicht `fork`).
+  `runAsNode`, `NODE_OPTIONS` und Inspect aus, Asar-Integrität und `onlyLoadAppFromAsar` an; sein Modul lädt der
+  utilityProcess aus derselben asar, die Integrität deckt es also mit ab.
 - **Zugriff aus dem Heimnetz**: Karte in den Einstellungen ([NetworkCard.tsx](../client/src/components/NetworkCard.tsx),
   Logik in [desktopNetwork.ts](../client/src/desktopNetwork.ts)), nur wenn `window.mietfuchsDesktop.network` da ist,
   also nie im Browser oder auf dem Handy; der Typ der Brücke steht in client/src/desktop.d.ts. Die Brücke hat `get()`
@@ -207,7 +231,10 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   `import.meta` und Abhängigkeiten, die es nutzen, brechen ab. Die Migrationen kommen über `migrationsFromDisk` ins
   Bündel, also genau wie unter Node gelesen. Die Lizenzen der gebündelten Pakete schreibt der Bau daneben, sie fehlen
   sonst mit node_modules. `checkServerFolder` verlangt genau die drei Dateien.
-  `extraResources` nimmt den Ordner als `resources/mietfuchs` mit, für jede Architektur derselbe (keine nativen Module).
+  `files` (FileSet `from: ../dist-desktop-server`, `to: mietfuchs`) nimmt den Ordner in die `app.asar` mit, für jede
+  Architektur derselbe (keine nativen Module). Nach dem Bau prüft `checkServerArchive` jede gebaute asar am Kopf
+  (`asarFiles`, ohne @electron/asar): genau die drei Dateien unter `mietfuchs/`, keine entpackt, jede mit Prüfsummen;
+  release.yml prüft dasselbe am installierten Fenster und dass kein `resources/mietfuchs` mehr offen daliegt.
   `node scripts/package-desktop.mjs server` legt nur den Ordner an. Windows ein Installer für x64 und ARM64
   zusammen (`Mietfuchs-Setup-<Version>.exe`, NSIS für den Benutzer, ohne Adminrechte; `latest.yml` des Updaters kennt
   keine Architektur). Daneben legt electron-builder je
@@ -237,9 +264,10 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   (makeappx aus dem Windows SDK). **Eingepackt wird das Programmfenster** (#517): der entpackte Ordner aus
   package-desktop.mjs (`dist-desktop/win-unpacked`, `win-arm64-unpacked`), `Executable` im Manifest ist
   `Mietfuchs.exe`, der Befehlsalias heißt weiter `mietfuchs.exe` und zeigt darauf. Der Server liegt darin als Bündel
-  unter `resources\mietfuchs` und läuft als utilityProcess von Mietfuchs.exe; eine eigene ausführbare Datei, die ein
+  in `resources\app.asar` und läuft als utilityProcess von Mietfuchs.exe; eine eigene ausführbare Datei, die ein
   Konsolenfenster öffnen könnte, gibt es nicht mehr. Vor dem Packen prüft `checkWindowFolder` Mietfuchs.exe am PE-Kopf
-  (Architektur des Pakets, kein Konsolenfenster) und den Server-Ordner mit `checkServerFolder`. Identität aus dem Partner Center (`speedone.Mietfuchs`, Store-ID
+  (Architektur des Pakets, kein Konsolenfenster), den Server in der asar mit `checkServerArchive` und dass kein offener
+  `resources\mietfuchs` mehr daliegt. Identität aus dem Partner Center (`speedone.Mietfuchs`, Store-ID
   `9PMHZ0ZJPZDZ`); `STORE_PACKAGE_NAME` in server/src/paths.ts muss dazu passen.
 - **Version**: vier Teile, der erste nicht 0, der vierte immer 0, und der Store nimmt nur höhere an. Deshalb
   `msixVersion`: Hauptversion plus 1 (0.14.2 wird 1.14.2.0), für immer festgelegt.
