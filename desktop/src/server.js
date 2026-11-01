@@ -116,3 +116,38 @@ export function linkTarget(target, origin) {
   if (url.protocol === 'https:' || url.protocol === 'http:' || url.protocol === 'mailto:') return 'external'
   return 'deny'
 }
+
+/**
+ * Die Adressen fürs Handy bei Zugriff aus dem Heimnetz: je IPv4 einer äußeren Netzwerkkarte `http://<IP>:<port>`.
+ * Ohne Loopback, ohne IPv6 (Adressen wie fe80::… tippt niemand ab) und ohne link-local 169.254.x.x: Die vergibt sich
+ * eine Karte selbst, wenn kein Router antwortet, und unter ihr erreicht das Handy nichts.
+ * @param {NodeJS.Dict<import('node:os').NetworkInterfaceInfo[]>} interfaces aus `os.networkInterfaces()`
+ * @param {number} port
+ * @returns {string[]}
+ */
+export function lanUrls(interfaces, port) {
+  /** @type {string[]} */
+  const urls = []
+  for (const entries of Object.values(interfaces)) {
+    for (const entry of entries ?? []) {
+      // Node bis 18.0 nannte die Familie als Zahl
+      const ipv4 = entry.family === 'IPv4' || /** @type {unknown} */ (entry.family) === 4
+      if (!ipv4 || entry.internal || entry.address.startsWith('169.254.')) continue
+      const url = `http://${entry.address}:${port}`
+      if (!urls.includes(url)) urls.push(url)
+    }
+  }
+  return urls
+}
+
+/**
+ * Der Stand des Zugriffs aus dem Heimnetz für die Oberfläche (`window.mietfuchsDesktop.network`). Die Adressen stehen
+ * auch bei ausgeschaltetem Zugriff darin; ob sie gezeigt werden, entscheidet die Oberfläche.
+ * @param {{ network?: unknown }} settings aus fenster.json
+ * @param {number} port
+ * @param {NodeJS.Dict<import('node:os').NetworkInterfaceInfo[]>} interfaces
+ * @returns {{ enabled: boolean, port: number, addresses: string[] }}
+ */
+export function networkState(settings, port, interfaces) {
+  return { enabled: settings.network === true, port, addresses: lanUrls(interfaces, port) }
+}

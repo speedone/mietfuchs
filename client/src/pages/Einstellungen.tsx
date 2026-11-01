@@ -16,6 +16,8 @@ import Card from '../components/Card'
 import Field from '../components/Field'
 import LetterTemplateCard from '../components/LetterTemplateCard'
 import LetterDesignCard from '../components/LetterDesignCard'
+import NetworkCard from '../components/NetworkCard'
+import { networkBridge } from '../desktopNetwork'
 
 const SOURCE_URL = 'https://github.com/speedone/mietfuchs'
 const WEBSITE_URL = 'https://mietfuchs-app.de'
@@ -58,6 +60,8 @@ export default function Einstellungen({ settings, reload, update, onNavigate }: 
   const [restoreMsg, setRestoreMsg] = useState('')
   // Die Fehler der Karte „Vermieter & Zahlung“, oben in der Karte (#346, Schritt 3)
   const saveErrors = useFormError<'iban'>()
+  // Nur im Programmfenster (#517): Im Browser und auf dem Handy fehlt die Brücke, und die Karte erscheint nicht.
+  const [network] = useState(() => networkBridge())
 
   async function restore(file: File) {
     const ok = await confirm({
@@ -206,6 +210,8 @@ export default function Einstellungen({ settings, reload, update, onNavigate }: 
         Automatische Sicherungen und frühere Stände finden Sie{' '}
         <a href="#" onClick={(e) => { e.preventDefault(); onNavigate?.('verlauf') }}>im Verlauf</a>.
       </p>
+
+      {network && <NetworkCard bridge={network} />}
 
       {/* Am Ende wie der Abschnitt „Info“ einer Windows-App: Version und Updates, dann Urheber und Lizenz. Wer aus dem
           Microsoft Store installiert, sieht README und LICENSE nie; die AGPL sieht Urheber, fehlende Gewähr und den Weg

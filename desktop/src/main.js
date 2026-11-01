@@ -4,14 +4,15 @@
 // (Betriebsart desktop, server/src/version.ts).
 //
 // Sicherheit nach der Checkliste von Electron: Die Seite läuft ohne Node in der Sandbox, die Brücke (preload.cjs)
-// kennt nur das Drucken, Navigation und neue Fenster bleiben auf der eigenen Adresse, fremde Links öffnet der
+// kennt nur das Drucken und den Zugriff aus dem Heimnetz, Navigation und neue Fenster bleiben auf der eigenen Adresse, fremde Links öffnet der
 // Standardbrowser, Berechtigungen (Kamera, Standort …) werden abgelehnt.
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { BrowserWindow, Menu, app, dialog, ipcMain, session, shell } from 'electron'
-import { DEFAULT_PORT, dataDirIn, freePort, linkTarget, serverCommand, serverEnv, startUrlIn, whoIsOn } from './server.js'
+import { DEFAULT_PORT, dataDirIn, freePort, linkTarget, networkState, serverCommand, serverEnv, startUrlIn, whoIsOn } from './server.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const startedAt = Date.now()
@@ -60,6 +61,13 @@ let origin = null
 /** @type {BrowserWindow | null} */
 let mainWindow = null
 let quitting = false
+// Server, die das Fenster absichtlich beendet (Beenden, Neustart für den Zugriff aus dem Heimnetz): Ihr Ende ist kein
+// Absturz, also weder die Meldung „unerwartet beendet“ noch das Ende des Fensters.
+/** @type {WeakSet<import('node:child_process').ChildProcess>} */
+const retired = new WeakSet()
+// Ein laufender Neustart; ein zweiter wartet, bis er fertig ist (Doppelklick, zweites Fenster eines Belegs).
+/** @type {Promise<unknown>} */
+let restarting = Promise.resolve()
 
 // Die Ausgabe des Servers in eine Datei, damit sich ein gescheiterter Start erklären lässt; die vorige bleibt daneben.
 function openLog() {
@@ -92,9 +100,13 @@ async function choosePort(settings) {
   return port
 }
 
-/** @param {WindowSettings} settings @returns {Promise<string>} */
-async function startServer(settings) {
-  const port = await choosePort(settings)
+/**
+ * @param {WindowSettings} settings
+ * @param {number} [fixedPort] beim Neustart der bisherige Port, damit Adresse und Entwürfe im Browser-Speicher bleiben
+ * @returns {Promise<string>}
+ */
+async function startServer(settings, fixedPort) {
+  const port = fixedPort ?? await choosePort(settings)
   const { command, args } = serverCommand({
     packaged: app.isPackaged,
     platform: process.platform,
@@ -130,9 +142,10 @@ async function startServer(settings) {
     // (Code 0) ohne Meldung.
     child.once('exit', (code) => {
       clearTimeout(slow)
-      server = null
+      // Nach einem Neustart läuft schon der nächste; den nicht vergessen
+      if (server === child) server = null
       if (!ready) return reject(new Error(`Der Server hat sich beim Start beendet (Code ${code}).`))
-      if (quitting) return
+      if (quitting || retired.has(child)) return
       if (code !== 0) {
         dialog.showErrorBox('Mietfuchs wurde unerwartet beendet', `${lastLines(serverOutput)}\n\nDas Protokoll liegt unter ${path.join(app.getPath('userData'), 'protokoll')}.`)
       }
@@ -162,11 +175,57 @@ const lastLines = (text) => text.trim().split('\n').slice(-12).join('\n')
 async function stopServer() {
   const child = server
   if (!child || child.exitCode !== null) return
+  retired.add(child)
   const exited = new Promise((resolve) => child.once('exit', resolve))
   if (origin) await fetch(`${origin}/api/quit`, { method: 'POST', signal: AbortSignal.timeout(3000) }).catch(() => {})
   else child.stdin.end()
   const timeout = new Promise((resolve) => setTimeout(() => resolve('timeout'), QUIT_TIMEOUT_MS))
-  if ((await Promise.race([exited, timeout])) === 'timeout') child.kill()
+  if ((await Promise.race([exited, timeout])) !== 'timeout') return
+  child.kill()
+  // Beim Neustart muss der Port frei sein, bevor der nächste Server ihn bindet
+  await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 2000))])
+}
+
+// Zugriff aus dem Heimnetz: Der Server lauscht dann auf allen Netzwerkkarten statt nur auf 127.0.0.1. Ändern heißt
+// neu starten, mit demselben Port, damit Origin und damit Entwürfe und Einstellungen im Browser-Speicher bleiben.
+// Danach lädt das Fenster die Seite neu. Scheitert der Start mit der neuen Adresse, gilt wieder die alte.
+function currentNetwork() {
+  const port = origin ? Number(new URL(origin).port) : DEFAULT_PORT
+  return networkState(readSettings(), port, os.networkInterfaces())
+}
+
+/** @param {boolean} enabled */
+async function setNetwork(enabled) {
+  if (!server) throw new Error('Mietfuchs läuft hier nicht im Fenster, die Adresse lässt sich nicht ändern.')
+  if (quitting) throw new Error('Mietfuchs wird beendet.')
+  const before = readSettings()
+  if ((before.network === true) === enabled) return currentNetwork()
+  const port = Number(new URL(/** @type {string} */ (origin)).port)
+  writeSettings({ ...before, network: enabled })
+  await stopServer()
+  // Während des Neustarts beendet (Fenster zu): keinen Server mehr starten, der Wunsch bleibt gespeichert
+  if (quitting) throw new Error('Mietfuchs wird beendet.')
+  try {
+    await startServer({ ...before, network: enabled }, port)
+  } catch (err) {
+    if (quitting) throw err
+    // Mit der alten Adresse weiter. Die Seite lädt dann nicht neu, damit sie den Grund am Häkchen zeigt; der Server
+    // läuft unter demselben Origin wie vorher.
+    writeSettings(before)
+    try {
+      await startServer(before, port)
+    } catch {
+      if (!quitting) {
+        dialog.showErrorBox('Mietfuchs ließ sich nicht neu starten', `${err instanceof Error ? err.message : String(err)}\n\n${lastLines(serverOutput)}`)
+        quitting = true
+        app.exit(1)
+      }
+    }
+    throw err
+  }
+  // Erst nach der Antwort an die Seite neu laden, sonst ginge die Antwort ins Leere
+  setImmediate(() => { if (mainWindow && origin && !quitting) void mainWindow.loadURL(origin) })
+  return currentNetwork()
 }
 
 /** @param {string} html */
@@ -297,8 +356,22 @@ async function start() {
   session.defaultSession.setPermissionRequestHandler((_contents, permission, callback) => callback(permission === 'clipboard-sanitized-write'))
   session.defaultSession.setPermissionCheckHandler((_contents, permission) => permission === 'clipboard-sanitized-write')
   // Nur die eigene Seite darf drucken lassen (Durchsicht K9)
+  /** @param {Electron.IpcMainInvokeEvent} event */
+  const fromOwnPage = (event) => Boolean(origin && event.senderFrame && linkTarget(event.senderFrame.url, origin) === 'window')
   ipcMain.handle('mietfuchs:print', (event) => {
-    if (origin && event.senderFrame && linkTarget(event.senderFrame.url, origin) === 'window') printPage(event.sender)
+    if (fromOwnPage(event)) printPage(event.sender)
+  })
+  // Zugriff aus dem Heimnetz, ebenso nur für die eigene Seite: Eine fremde könnte sonst den Server ins Netz stellen.
+  ipcMain.handle('mietfuchs:network-get', (event) => {
+    if (!fromOwnPage(event)) throw new Error('Nicht erlaubt.')
+    return currentNetwork()
+  })
+  ipcMain.handle('mietfuchs:network-set', (event, enabled) => {
+    if (!fromOwnPage(event)) throw new Error('Nicht erlaubt.')
+    if (typeof enabled !== 'boolean') throw new Error('Erwartet wird an oder aus.')
+    const next = restarting.then(() => setNetwork(enabled))
+    restarting = next.catch(() => {})
+    return next
   })
 
   mainWindow = createWindow()
@@ -339,9 +412,9 @@ if (!app.requestSingleInstanceLock()) {
   app.on('before-quit', (event) => {
     if (quitting) return
     quitting = true
-    if (!server) return
     event.preventDefault()
-    void stopServer().finally(() => app.exit(0))
+    // Erst einen laufenden Neustart abwarten (er startet nach `quitting` keinen Server mehr), dann den Server beenden
+    void restarting.then(() => stopServer()).finally(() => app.exit(0))
   })
   // Fenster zu heißt Mietfuchs zu, auch auf dem Mac
   app.on('window-all-closed', () => app.quit())

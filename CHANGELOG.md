@@ -20,6 +20,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Mietfuchs in einem eigenen Fenster statt im Browser, mit Symbol in Taskleiste und Dock. Fenster zu heißt Mietfuchs
   zu, gedruckt wird mit Briefpapier und „Seite x von y“ auch auf dem Mac. Noch nicht in den Downloads; der Bau läuft
   zunächst zur Probe.
+- **Programmfenster: Zugriff aus dem Heimnetz** ([#517](https://github.com/speedone/mietfuchs/issues/517)): In den
+  Einstellungen lässt sich erlauben, Mietfuchs auch auf dem Handy oder einem anderen Rechner im selben WLAN zu öffnen;
+  die Karte nennt dann die Adressen dafür. Ohne dieses Häkchen ist Mietfuchs im Fenster nur auf dem eigenen Rechner
+  erreichbar. Mietfuchs hat kein Passwort, deshalb gilt die Erlaubnis für jeden im Heimnetz.
 - **`NKA_HOST`** legt fest, auf welcher Adresse Mietfuchs lauscht, etwa `127.0.0.1` für nur diesen Rechner.
 
 ### Geändert
