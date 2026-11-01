@@ -15,8 +15,9 @@ name: Microsoft Store
 # der Store-CLI: Die lädt nur Pakete hoch, Bildschirmfotos gehören aber ins selbe ZIP, und unter Linux
 # legt sie die Zugangsdaten im Schlüsselbund ab, den ein Runner nicht hat (daran scheiterte v0.14.0).
 # Mit dem Paket gehen Beschreibung, Funktionen und Suchbegriffe aus packaging/msix/store-eintrag.md,
-# die Bildschirmfotos aus docs/screenshots und „Neuigkeiten in dieser Version“ in den Store, jeweils
-# im Stand des Tags. Nach der Zertifizierung veröffentlicht der Store von selbst.
+# die Bildschirmfotos aus docs/screenshots und „Neuigkeiten in dieser Version“ in den Store, beim Tag
+# im Stand des Tags, von Hand gestartet im Stand von main. Nach der Zertifizierung veröffentlicht der
+# Store von selbst.
 #
 # Zugang über die Microsoft-Entra-Anwendung „mietfuchs-github“ (Rolle Manager im Partner Center); ihr
 # Secret läuft ab und muss dann in MSSTORE_CLIENT_SECRET erneuert werden.
@@ -62,11 +63,10 @@ jobs:
           attached=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?per_page=100" --jq '.jobs[] | select(.name == "Ans Release anhängen") | .conclusion')
           [ "$attached" = success ] || { echo "::error::Lauf $RUN_ID hat nichts ans Release angehängt ($attached)"; exit 1; }
           echo "TAG=$tag" >> "$GITHUB_ENV"
-      # Texte und Bildschirmfotos im Stand des Tags; beim Aufruf aus release.yml ist das der Commit des Laufs. Vor dem Paket,
-      # denn checkout räumt den Arbeitsordner auf.
+      # Skript, Texte und Bildschirmfotos im Stand des Workflows: beim Tag der Tag, von Hand gestartet
+      # main. Nicht der Tag des nachgereichten Laufs, dem fehlte das Skript (v0.14.0) und ein Text, der
+      # seither berichtigt wurde. Vor dem Paket, denn checkout räumt den Arbeitsordner auf.
       - uses: actions/checkout@v7
-        with:
-          ref: ${{ env.TAG || github.sha }}
       - uses: actions/download-artifact@v8
         if: inputs.run_id == ''
         with:

@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { buildSubmission, LANGUAGE, parseListing, releaseNotes, SCREENSHOTS } from '../../scripts/store-submit.mjs'
+import { buildSubmission, commitOutcome, LANGUAGE, parseListing, releaseNotes, SCREENSHOTS } from '../../scripts/store-submit.mjs'
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const md = fs.readFileSync(path.join(root, 'packaging', 'msix', 'store-eintrag.md'), 'utf8')
@@ -84,7 +84,7 @@ const published = () => ({
 })
 const input = {
   bundle: '/tmp/store/Mietfuchs_1.14.0.0.msixbundle',
-  zipFolder: 'mietfuchs-v0.14.0',
+  tag: 'v0.14.0',
   listing: { description: 'neu', features: ['F'], keywords: ['K'] },
   notes: 'N',
 }
@@ -94,11 +94,13 @@ test('Einreichung: altes Bündel zum Löschen, neues hochladen, andere Pakete bl
   assert.deepEqual(next.applicationPackages, [
     { id: 'p1', fileName: 'Mietfuchs_1.13.1.0.msixbundle', fileStatus: 'PendingDelete' },
     { id: 'p0', fileName: 'alt.msix', fileStatus: 'Uploaded' },
-    { fileName: 'mietfuchs-v0.14.0/Mietfuchs_1.14.0.0.msixbundle', fileStatus: 'PendingUpload' },
+    { fileName: 'Mietfuchs_1.14.0.0.msixbundle', fileStatus: 'PendingUpload' },
   ])
 })
 
-test('Einreichung: Bildschirmfotos ersetzt, Logo bleibt, neue Namen im Ordner des Tags', () => {
+// Flaches ZIP: Ob das Partner Center „/“ in Pfaden annimmt, ist nicht belegt (die Doku zeigt „\\“).
+// Die neuen Bilder tragen den Tag im Namen und fallen so nicht mit den alten zusammen.
+test('Einreichung: Bildschirmfotos ersetzt, Logo bleibt, neue Namen mit dem Tag', () => {
   const images = buildSubmission(published(), input).listings[LANGUAGE].baseListing.images
   assert.deepEqual(images.slice(0, 2), [
     { fileName: 'cockpit.png', fileStatus: 'PendingDelete', imageType: 'Screenshot' },
@@ -106,7 +108,7 @@ test('Einreichung: Bildschirmfotos ersetzt, Logo bleibt, neue Namen im Ordner de
   ])
   const added = images.slice(2)
   assert.equal(added.length, SCREENSHOTS.length)
-  assert.ok(added.every((i: any) => i.fileStatus === 'PendingUpload' && i.imageType === 'Screenshot' && i.fileName.startsWith('mietfuchs-v0.14.0/')))
+  assert.ok(added.every((i: any) => i.fileStatus === 'PendingUpload' && i.imageType === 'Screenshot' && i.fileName.startsWith('v0.14.0-') && !i.fileName.includes('/')))
 })
 
 test('Einreichung: Texte, Neuigkeiten und sofort veröffentlichen; Unbekanntes bleibt, Vorlage unberührt', () => {
@@ -124,4 +126,22 @@ test('Einreichung: ohne deutschen Eintrag bricht sie ab', () => {
   const sub = published()
   sub.listings = {} as any
   assert.throws(() => buildSubmission(sub, input), /de-de/)
+})
+
+test('Store-Eintrag: Suchbegriffe zusammen höchstens 21 Wörter', () => {
+  const words = (k: string[]) => k.join(' ').split(/\s+/).length
+  assert.ok(words(parseListing(md).keywords) <= 21)
+  const many = md.replace(/\*\*Suchbegriffe\*\*:[^\n]*\n[^\n]*/, '**Suchbegriffe**: ' + Array(7).fill('a b c d').join(', '))
+  assert.throws(() => parseListing(many), /21 Wörter/)
+})
+
+test('Status nach dem Abschicken: nur die Schritte der Zertifizierung gelten als gut', () => {
+  assert.equal(commitOutcome({ status: 'CommitStarted' }), 'wait')
+  for (const status of ['PreProcessing', 'Certification', 'Release', 'Publishing', 'Published', 'PendingPublication']) {
+    assert.equal(commitOutcome({ status }), 'ok', status)
+  }
+  for (const status of ['CommitFailed', 'PreProcessingFailed', 'CertificationFailed', 'Canceled', 'None', 'PendingCommit']) {
+    assert.equal(commitOutcome({ status }), 'failed', status)
+  }
+  assert.equal(commitOutcome({ status: 'PreProcessing', statusDetails: { errors: [{ code: 'X' }] } }), 'failed')
 })

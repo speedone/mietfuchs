@@ -43,3 +43,13 @@ test('Store: ein PR an store.yml startet release.yml', () => {
   const paths = yml.slice(yml.indexOf('    paths:'), yml.indexOf('  workflow_dispatch:'))
   assert.match(paths, /- \.github\/workflows\/store\.yml/)
 })
+
+// Durchsicht (M1 zum Skript): Beim Nachreichen von Hand lud checkout den Stand des Tags, und dem
+// fehlte das Skript (v0.14.0) samt den Texten aus dem Partner Center. Skript, Texte und Bilder kommen
+// aus dem Stand des Workflows: beim Tag der Tag, von Hand gestartet main.
+test('Store: ausgecheckt wird der Stand des Workflows, nicht der Tag des nachgereichten Laufs', () => {
+  const yml = read('store.yml')
+  const start = yml.indexOf('uses: actions/checkout@')
+  const step = yml.slice(start, yml.indexOf('\n      - ', start))
+  assert.doesNotMatch(step, /ref:/)
+})

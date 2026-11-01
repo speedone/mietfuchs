@@ -6,5 +6,6 @@ export function parseListing(md: string): { description: string, features: strin
 export function releaseNotes(tag: string, repository?: string): string
 export function buildSubmission(
   submission: any,
-  input: { bundle: string, zipFolder: string, listing: { description: string, features: string[], keywords: string[] }, notes: string },
+  input: { bundle: string, tag: string, listing: { description: string, features: string[], keywords: string[] }, notes: string },
 ): any
+export function commitOutcome(status: { status?: string, statusDetails?: any }): 'wait' | 'ok' | 'failed'

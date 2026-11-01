@@ -176,7 +176,7 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   Schlüsselbund ab, den ein Runner nicht hat; daran scheiterte v0.14.0. `--dry-run <Ordner>` liest nur und
   schreibt die umgebaute Einreichung und das ZIP dorthin.
   Scheitert die Einreichung beim Tag, startest du store.yml von Hand mit der Nummer des Release-Laufs; das reicht
-  dessen Paket mit Texten und Bildern im Stand des Tags ein, sofern der Lauf ans Release angehängt hat. Die
+  dessen Paket mit Texten und Bildern im Stand von main ein, sofern der Lauf ans Release angehängt hat. Die
   Variable zählt dann nicht. Die **erste Einreichung geht von Hand** im Partner Center (die API aktualisiert nur
   eine veröffentlichte App). Zugang: Entra-Anwendung `mietfuchs-github` (Rolle Manager), Secrets
   `MSSTORE_TENANT_ID`, `MSSTORE_CLIENT_ID`, `MSSTORE_CLIENT_SECRET` (`MSSTORE_SELLER_ID` braucht nur die CLI); das
