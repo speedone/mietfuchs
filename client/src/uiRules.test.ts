@@ -1290,3 +1290,14 @@ test('S34: was unten angeheftet ist, hält seine Höhe im scroll-padding frei', 
   }
   expect(sources['./components/GuideThread.tsx'] ?? '').toMatch(/ResizeObserver[\s\S]*--thread-h/)
 })
+
+// Das Lexikon der Hilfe (#488, Teil 3): schmal steht Liste oder Begriff (`data-pane`), breit beide nebeneinander.
+test('Lexikon: schmal blendet tw.css Liste oder Begriff aus, breit zwei Spalten ohne „← Alle Begriffe“', () => {
+  const css = twCss
+  const block = css.slice(css.indexOf('@utility lexicon-layout'), css.indexOf('@utility', css.indexOf('@utility lexicon-layout') + 1))
+  expect(block).toMatch(/@container \(min-width: 44rem\)/)
+  expect(block).toMatch(/grid-template-columns/)
+  expect(block).toMatch(/\.lexicon-back \{\s*display: none/)
+  expect(block).toMatch(/\[data-pane="term"\][^{]*lexicon-list[^{]*\{\s*display: none/)
+  expect(block).toMatch(/\[data-pane="list"\][^{]*lexicon-term[^{]*\{\s*display: none/)
+})

@@ -815,15 +815,7 @@ td.reading-panel { background: var(--bg); }
 /* Begriffslexikon (#113): Begriff gestrichelt unterstrichen, dahinter „?“; die Erklärung ist ein Popover (tw.css) */
 .term-wrap { display: inline; }
 .term { text-decoration: underline dotted; text-underline-offset: 3px; cursor: help; color: inherit; }
-.glossary-entry p { margin: 4px 0; }
 .help-section { margin: var(--space-6) 0 10px; font-size: var(--text-l); }
-/* Anleitungen je Vermietungsart (#164): zugeklappt nur der Titel, aufgeklappt die fünf Abschnitte. */
-.guide .guide-title { display: inline; margin: 0; font-weight: var(--weight-strong); font-size: var(--text-base); color: var(--text); text-transform: none; letter-spacing: normal; }
-.guide[open] > summary { margin-bottom: 6px; }
-.guide h3 { margin: 14px 0 var(--space-1); font-size: var(--text-s); color: var(--muted); }
-.guide p, .guide li { overflow-wrap: anywhere; }
-.guide ol, .guide ul { margin: 4px 0; padding-left: 22px; }
-.guide li { margin: 4px 0; line-height: 1.45; }
 @media print { .term { text-decoration: none; } }
 /* Ableseergebnis je Wohnung (Durchsicht von #239, I2): gedruckt wird nur diese Karte. */
 @media print {

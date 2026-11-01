@@ -28,7 +28,8 @@
 // Dazu je Engine, Ansicht und Design der Gang „faden“ (#488, PR 2): Hilfe → Kachel → Anleitung → „Zu Kosten →“, auf
 // Kosten mit der Leiste des Fadens axe, Breite, abgeschnittene Felder und die Tabulatortaste bis in die Leiste, wobei
 // kein fokussiertes Element ganz unter der Leiste liegen darf (WCAG 2.4.11). Er läuft mit `--pages hilfe-begriffe`
-// oder `--pages faden`.
+// oder `--pages faden`. Ebenso der Gang „lexikon“ (#488, Teil 3): Hilfe → „Alle von A bis Z“ (die Liste) und ein
+// Begriff darin, je mit denselben Prüfungen wie eine Seite (`--pages lexikon`).
 //
 // Jeder Befund ergibt einen Exit-Code ungleich 0. Der Bericht steht als Markdown in `<out>/bericht.md` und,
 // in GitHub Actions, in der Zusammenfassung des Laufs. Die Fotos je Seite liegen in `<out>/<engine>/…`;
@@ -577,6 +578,27 @@ async function checkCombination(browser, base, combo, AxeBuilder, navLabels) {
     }
   }
 
+  // Der Gang „lexikon“ (#488, Teil 3): das Lexikon unter „Alle“, dann mit einem Begriff (am Handy steht dann nur er)
+  if (PAGES === null || PAGES.includes('hilfe-begriffe') || PAGES.includes('lexikon')) {
+    current = 'lexikon'
+    try {
+      await go(page, view, 'Hilfe & Begriffe')
+      await page.getByRole('button', { name: /^Alle von A bis Z/ }).click()
+      await page.getByRole('heading', { name: 'Lexikon', level: 1 }).waitFor({ timeout: 5000 })
+      await settle(page)
+      checkedPages++
+      await measure('lexikon')
+      current = 'lexikon-begriff'
+      await page.getByRole('list', { name: 'Begriffe' }).getByRole('button', { name: 'Einheit ohne Anschluss' }).click()
+      await page.getByRole('heading', { name: 'Einheit ohne Anschluss', level: 2 }).waitFor({ timeout: 5000 })
+      await settle(page)
+      checkedPages++
+      await measure('lexikon-begriff')
+    } catch (err) {
+      add(current, 'Gang', `Das Lexikon ließ sich nicht prüfen: ${err instanceof Error ? err.message.split('\n')[0] : err}`)
+    }
+  }
+
   // Die Musterseite (`?muster`, #346 Schritt 12): alle Bausteine auf einer Seite, mit denselben Prüfungen wie jede Seite
   // der Navigation. Sie kommt ohne Server aus und ist deshalb nicht in der Navigation; `--pages muster` prüft sie allein.
   if (PAGES === null || PAGES.includes('muster')) {
@@ -1001,7 +1023,7 @@ async function main() {
     // Ein Tippfehler in --pages prüfte sonst keine Seite und meldete grün
     if (PAGES) {
       for (const id of PAGES) {
-        if (id !== 'muster' && id !== 'faden' && id !== 'belege-ordner' && !(navLabels ?? []).some((l) => slug(l) === id)) findings.push({ engine: 'alle', view: '–', theme: '–', page: id, kind: 'Aufruf', text: `--pages nennt „${id}“, die Navigation hat keine solche Seite (möglich: ${(navLabels ?? expected).map(slug).join(', ')}).` })
+        if (id !== 'muster' && id !== 'faden' && id !== 'lexikon' && id !== 'belege-ordner' && !(navLabels ?? []).some((l) => slug(l) === id)) findings.push({ engine: 'alle', view: '–', theme: '–', page: id, kind: 'Aufruf', text: `--pages nennt „${id}“, die Navigation hat keine solche Seite (möglich: ${(navLabels ?? expected).map(slug).join(', ')}).` })
       }
     }
     if (checkedPages === 0 && (PAGES === null || PAGES.length > 0)) {

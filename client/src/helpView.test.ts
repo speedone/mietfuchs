@@ -3,8 +3,8 @@
 import { describe, expect, test } from 'vitest'
 import { GLOSSARY, TERM_TOPICS } from '../../shared/glossary.ts'
 import { GUIDES, GUIDE_GROUPS } from '../../shared/guides.ts'
-import { excerpt, firstSentence, GUIDE_GROUP_LABELS, guideGroups, highlight, nextStepWithPage, relatedGuides, resultCountText, searchHelp, TERM_TOPIC_LABELS, termsOfTopic, topicCounts, type Segment } from './helpView'
-import { sortedTerms } from './glossaryView'
+import { chooseTerm, chooseTopic, excerpt, firstSentence, GUIDE_GROUP_LABELS, guideGroups, guidesWithTerm, highlight, jumpToTerm, lexiconEntries, lexiconFilters, lexiconPane, nextStepWithPage, relatedGuides, relatedTerms, resultCountText, searchHelp, TERM_TOPIC_LABELS, termsOfTopic, topicCounts, type Segment } from './helpView'
+import { letterOf, sortedTerms } from './glossaryView'
 
 const plain = (s: readonly Segment[]) => s.map((x) => x.text).join('')
 const hits = (s: readonly Segment[]) => s.filter((x) => x.hit).map((x) => x.text)
@@ -160,4 +160,77 @@ test('ähnliche Anleitungen: höchstens drei aus derselben Gruppe, ohne die offe
   expect(related.length).toBe(3)
   expect(related.every((g) => g.group === 'heating' && g.id !== 'co2Costs')).toBe(true)
   expect(relatedGuides('tenantChange').every((g) => g.group === 'year' && g.id !== 'tenantChange')).toBe(true)
+})
+
+// #488, Teil 3: das Lexikon zweispaltig mit Themenfilter, „Kommt vor in“ und verwandten Begriffen
+describe('Lexikon', () => {
+  test('der Themenfilter: vorne „Alle“, dann jedes Thema mit seiner Zahl', () => {
+    const filters = lexiconFilters()
+    expect(filters[0]).toEqual({ topic: null, label: 'Alle', count: Object.keys(GLOSSARY).length })
+    expect(filters.slice(1).map((f) => f.topic)).toEqual([...TERM_TOPICS])
+    for (const f of filters.slice(1)) {
+      expect(f.label).toBe(TERM_TOPIC_LABELS[f.topic ?? expect.fail('Thema fehlt')])
+      expect(f.count).toBe(Object.values(GLOSSARY).filter((t) => t.topic === f.topic).length)
+    }
+  })
+
+  test('die Liste: alphabetisch, der Anfangsbuchstabe am ersten Begriff jedes Buchstabens, Ü bei U', () => {
+    const all = lexiconEntries(null)
+    expect(all.map((e) => e.id)).toEqual(sortedTerms().map((t) => t.id))
+    const letters = all.flatMap((e) => (e.letter ? [e.letter] : []))
+    expect(new Set(letters).size).toBe(letters.length)
+    expect(letters).not.toContain('Ü')
+    expect(all[0]?.letter).toBe('A')
+    // Jeder Begriff ohne eigenen Buchstaben hat denselben wie der vor ihm
+    let current = ''
+    for (const e of all) {
+      current = e.letter ?? current
+      expect(letterOf(e.title), e.title).toBe(current)
+    }
+    const condo = lexiconEntries('condo')
+    expect(condo.map((e) => e.id).sort()).toEqual(Object.entries(GLOSSARY).filter(([, t]) => t.topic === 'condo').map(([id]) => id).sort())
+    expect(condo[0]?.letter).toBeTruthy()
+  })
+
+  test('„Kommt vor in“: die Anleitungen, die den Begriff nennen, in der Reihenfolge der Daten', () => {
+    const ids = guidesWithTerm('ownShare').map((g) => g.id)
+    const expected = Object.entries(GUIDES).filter(([, g]) => (g.terms as readonly string[]).includes('ownShare')).map(([id]) => id)
+    expect(ids).toEqual(expected)
+    expect(ids).toContain('granny')
+    expect(ids.length).toBeGreaterThan(1)
+    const unused = (Object.keys(GLOSSARY) as (keyof typeof GLOSSARY)[]).find((id) => !Object.values(GUIDES).some((g) => (g.terms as readonly string[]).includes(id))) ?? expect.fail('jeder Begriff kommt in einer Anleitung vor')
+    expect(guidesWithTerm(unused)).toEqual([])
+  })
+
+  test('verwandte Begriffe: dasselbe Thema, ohne den Begriff selbst, höchstens acht, gemeinsame Anleitungen zuerst', () => {
+    const related = relatedTerms('heatCostAllocator')
+    expect(related.length).toBe(8)
+    expect(related.every((t) => t.topic === 'heating' && t.id !== 'heatCostAllocator')).toBe(true)
+    const shared = (id: string) => Object.values(GUIDES).filter((g) => (g.terms as readonly string[]).includes(id) && (g.terms as readonly string[]).includes('heatCostAllocator')).length
+    const counts = related.map((t) => shared(t.id))
+    expect(counts).toEqual([...counts].sort((a, b) => b - a))
+    // Bei gleich vielen gemeinsamen Anleitungen nach dem Alphabet
+    for (let i = 1; i < related.length; i++) {
+      const [a, b] = [related[i - 1], related[i]]
+      if (a && b && counts[i - 1] === counts[i]) expect(a.title.localeCompare(b.title, 'de')).toBeLessThan(0)
+    }
+    // Ein Thema mit wenigen Begriffen: alle übrigen
+    const condo = Object.values(GLOSSARY).filter((t) => t.topic === 'condo').length
+    expect(relatedTerms('mea').length).toBe(Math.min(8, condo - 1))
+  })
+
+  test('Sprung auf einen Begriff (Formular, Suche, Anleitung): Filter „Alle“, der Begriff gewählt', () => {
+    expect(jumpToTerm('mea')).toEqual({ topic: null, term: 'mea' })
+  })
+
+  test('ein Thema wählen hebt die Wahl des Begriffs auf; ein Begriff behält das Thema, wenn er darin steht', () => {
+    expect(chooseTopic('condo')).toEqual({ topic: 'condo', term: null })
+    expect(chooseTerm({ topic: 'condo', term: null }, 'reserveFund')).toEqual({ topic: 'condo', term: 'reserveFund' })
+    expect(chooseTerm({ topic: 'condo', term: 'mea' }, 'heatCostAllocator')).toEqual({ topic: null, term: 'heatCostAllocator' })
+  })
+
+  test('schmal: ohne gewählten Begriff die Liste, mit Begriff nur er', () => {
+    expect(lexiconPane(null)).toBe('list')
+    expect(lexiconPane('mea')).toBe('term')
+  })
 })

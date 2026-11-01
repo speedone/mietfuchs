@@ -201,7 +201,7 @@ test('„Mehr in ‚Hilfe & Begriffe‘ →“ aus einer Erklärung behält den 
   const term = await waitFor(() => document.querySelector<HTMLElement>('main .term[role="button"]') ?? expect.fail('kein Begriff auf der Seite'))
   fireEvent.click(term)
   fireEvent.click(screen.getByRole('link', { name: 'Mehr in „Hilfe & Begriffe“ →' }))
-  await screen.findByRole('heading', { name: /^Alle Begriffe von A bis Z/, level: 2 })
+  await screen.findByRole('heading', { name: 'Lexikon', level: 1 })
   expect(thread()?.textContent).toContain(`Schritt 1 von ${GUIDES.flatRate.steps.length}`)
   fireEvent.click(within(screen.getByRole('navigation', { name: 'Schnellzugriff' })).getByRole('button', { name: /Zähler/ }))
   await waitFor(() => expect(thread()).toBeNull())

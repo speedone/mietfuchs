@@ -12,6 +12,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Mietfuchs keine Rechts- oder Steuerberatung ersetzt und Ergebnisse vor dem Versand zu prüfen sind, Urheber, Lizenz
   (AGPL-3.0, ohne Gewähr) und Links zu Lizenz und Quellcode. Derselbe Hinweis steht in der Beschreibung im Microsoft
   Store.
+### Geändert
+
+- Das Lexikon in „Hilfe & Begriffe“ steht in zwei Spalten: links die Begriffe von A bis Z mit Filter nach Thema, rechts
+  der gewählte Begriff mit Beispiel, „Brauche ich das?“, den Anleitungen, in denen er vorkommt, und verwandten
+  Begriffen. Am Handy erst die Liste, dann der Begriff. „Mehr in ‚Hilfe & Begriffe‘ →“ aus einem Formular, ein
+  Suchtreffer und ein Begriff in einer Anleitung öffnen ihn dort unmittelbar
+  ([#488](https://github.com/speedone/mietfuchs/issues/488)).
 
 ### Geändert
 

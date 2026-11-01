@@ -1,34 +1,33 @@
 // Die Seite „Hilfe & Begriffe“ (#488): eine Startansicht mit großer Suche, den Anleitungen je Vermietungsart (#164) als
 // Kacheln in drei Gruppen und den Themen des Lexikons (#113). Eine Anleitung öffnet sich als eigene Ansicht mit Pfad und
-// Inhaltsleiste (PR 2), ein Thema als Liste seiner Begriffe; „Zurück zu Hilfe & Begriffe“ bzw. der Pfad führt zur
-// Startansicht. Kein Router: Die Ansicht ist Zustand der Seite und beginnt bei jedem Seitenwechsel wieder auf der
-// Startansicht. Entscheidungen (Suche, Rangfolge, Ausschnitt, Gruppen, Abschnitte) stehen in helpView.ts. „Zu {Seite} →“
-// meldet Anleitung und Schritt an die App (`onFollow`), die dort die Leiste des Fadens zeigt (components/GuideThread.tsx);
-// „Zurück zur Anleitung“ kommt als `openGuide` zurück.
+// Inhaltsleiste (PR 2), ein Thema oder ein Begriff im Lexikon (Teil 3: Liste mit Themenfilter, daneben der Begriff);
+// der Pfad führt zur Startansicht. Kein Router: Die Ansicht ist Zustand der Seite und beginnt bei jedem Seitenwechsel
+// wieder auf der Startansicht. Entscheidungen (Suche, Rangfolge, Ausschnitt, Gruppen, Abschnitte, Lexikon) stehen in
+// helpView.ts. „Zu {Seite} →“ meldet Anleitung und Schritt an die App (`onFollow`), die dort die Leiste des Fadens zeigt
+// (components/GuideThread.tsx); „Zurück zur Anleitung“ kommt als `openGuide` zurück.
 
 import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import PageHeader from '../components/PageHeader'
-import { sortedTerms, termLetters } from '../glossaryView'
 import { allGuides, type GuideEntry } from '../guideView'
-import { firstSentence, GUIDE_GROUP_LABELS, GUIDE_SECTIONS, guideGroups, POPULAR_SEARCHES, relatedGuides, resultCountText, searchHelp, TERM_TOPIC_LABELS, termsOfTopic, topicCounts, type GuideHit, type GuideSection, type Segment, type TermHit } from '../helpView'
+import { chooseTerm, chooseTopic, firstSentence, GUIDE_GROUP_LABELS, GUIDE_SECTIONS, guideGroups, guidesWithTerm, jumpToTerm, lexiconEntries, lexiconFilters, lexiconPane, POPULAR_SEARCHES, relatedGuides, relatedTerms, resultCountText, searchHelp, TERM_TOPIC_LABELS, topicCounts, type GuideHit, type GuideSection, type LexiconState, type Segment, type TermHit } from '../helpView'
 import { pageLabel } from '../nav'
 import { countOf, plural } from '../../../shared/wording.ts'
 import type { GuideId } from '../../../shared/guides.ts'
-import { GLOSSARY, type TermId, type TermTopic } from '../../../shared/glossary.ts'
+import { GLOSSARY, type Term, type TermId, type TermTopic } from '../../../shared/glossary.ts'
 
 const ISSUE_URL = 'https://github.com/speedone/mietfuchs/issues/'
 
-type View = { kind: 'home' } | { kind: 'guide'; id: GuideId } | { kind: 'terms'; topic: TermTopic | null }
+type View = { kind: 'home' } | { kind: 'guide'; id: GuideId } | ({ kind: 'lexicon' } & LexiconState)
 type Hit = GuideHit | TermHit
 
 // Wer eine Ansicht öffnet, kommt beim Zurück auf ihren Auslöser: eine Kachel (`data-help-key`) oder das Suchfeld.
 const SEARCH = 'search'
 
 // `focusTerm`: der Begriff, zu dem „Mehr in ‚Hilfe & Begriffe‘ →“ aus einer Erklärung führt (#346, Schritt 6). Die
-// Seite zeigt dann alle Begriffe, klappt ihn auf und setzt den Fokus darauf. `seq` zählt jeden Sprung. Danach meldet sie
-// `onFocusTermDone`, und die App vergisst den Sprung: Ein späterer gewöhnlicher Wechsel zur Hilfe beginnt oben
-// (Durchsicht S1). `openGuide` ist dasselbe für „Zurück zur Anleitung“ aus der Leiste des Fadens: die Anleitung öffnen
-// und den Fokus auf den Schritt setzen, von dem man kam.
+// Seite öffnet dann das Lexikon unter „Alle“ auf ihm (`jumpToTerm`) und setzt den Fokus auf seine Überschrift. `seq`
+// zählt jeden Sprung. Danach meldet sie `onFocusTermDone`, und die App vergisst den Sprung: Ein späterer gewöhnlicher
+// Wechsel zur Hilfe beginnt oben (Durchsicht S1). `openGuide` ist dasselbe für „Zurück zur Anleitung“ aus der Leiste
+// des Fadens: die Anleitung öffnen und den Fokus auf den Schritt setzen, von dem man kam.
 export default function Hilfe({ onFollow, focusTerm, onFocusTermDone, openGuide: guideRequest, onOpenGuideDone }: {
   onFollow: (guide: GuideId, step: number) => void
   focusTerm?: { id: TermId; seq: number } | null
@@ -67,8 +66,10 @@ export default function Hilfe({ onFollow, focusTerm, onFocusTermDone, openGuide:
     show(next, then)
   }
   const openGuide = (id: GuideId, origin: string) => open({ kind: 'guide', id }, origin, focusHeading)
-  const openTerms = (topic: TermTopic | null, origin: string) => open({ kind: 'terms', topic }, origin, focusHeading)
-  const openTerm = (id: TermId, origin: string) => open({ kind: 'terms', topic: null }, origin, () => focusEntry(id))
+  const openLexicon = (topic: TermTopic | null, origin: string) => open({ kind: 'lexicon', topic, term: null }, origin, focusHeading)
+  const openTerm = (id: TermId, origin: string) => open({ kind: 'lexicon', ...jumpToTerm(id) }, origin, () => focusTermHeading(id))
+  // Innerhalb des Lexikons wechseln Thema und Begriff ohne neuen Schritt auf dem Weg zurück.
+  const lexicon = (next: LexiconState, then: () => void) => show({ kind: 'lexicon', ...next }, then)
   const back = () => {
     const last = trail.at(-1) ?? { view: { kind: 'home' } as View, key: SEARCH }
     setTrail((t) => t.slice(0, -1))
@@ -80,10 +81,13 @@ export default function Hilfe({ onFollow, focusTerm, onFocusTermDone, openGuide:
     })
   }
   // Der Pfad „Hilfe & Begriffe“: zur Startansicht, Fokus auf die Kachel `key` (sonst die Suche).
-  const home = (key: string) => {
+  const home = (key: string | null) => {
     setTrail([])
     show({ kind: 'home' }, () => (document.querySelector<HTMLElement>(`[data-help-key="${key}"]`) ?? searchRef.current)?.focus())
   }
+  // Aus dem Lexikon: auf den Auslöser in der Startansicht (Kachel oder Suche), mit dem man den Weg begann.
+  const start = trail[0]
+  const homeFromStart = () => home(start?.view.kind === 'home' ? start.key : null)
 
   useEffect(() => {
     if (!guideRequest) return
@@ -97,11 +101,11 @@ export default function Hilfe({ onFollow, focusTerm, onFocusTermDone, openGuide:
   useEffect(() => {
     if (!focusTerm) return
     const then = () => {
-      focusEntry(focusTerm.id)
+      focusTermHeading(focusTerm.id)
       onFocusTermDone?.()
     }
-    if (view.kind === 'terms') show({ kind: 'terms', topic: null }, then)
-    else open({ kind: 'terms', topic: null }, view.kind === 'home' ? SEARCH : null, then)
+    if (view.kind === 'lexicon') lexicon(jumpToTerm(focusTerm.id), then)
+    else open({ kind: 'lexicon', ...jumpToTerm(focusTerm.id) }, view.kind === 'home' ? SEARCH : null, then)
   }, [focusTerm])
 
   // Die Taste „/“ springt in die Suche, außer beim Schreiben in einem Feld und in einem Dialog: dem Menüblatt, einer
@@ -153,13 +157,11 @@ export default function Hilfe({ onFollow, focusTerm, onFocusTermDone, openGuide:
     }
   }
 
-  // Wohin „Zurück“ führt, sagt der Knopf (Durchsicht von PR 2, S3 und K7): in die Anleitung, aus der man kam, sonst
-  // zur Startansicht.
+  // Wohin „Zurück“ führt, sagt der Knopf (Durchsicht von PR 2, S3 und K7): in die Anleitung oder zu dem Begriff, aus
+  // dem man kam. Zur Startansicht führt der Pfad.
   const previous = trail.at(-1)?.view
   const previousGuide = previous?.kind === 'guide' ? allGuides().find((x) => x.id === previous.id) : undefined
-  // Das Ziel des Wegs zurück steht im Text; kein Aufklapper, auch wenn der Text vom Zustand abhängt (S33)
-  const backLabel = previousGuide ? '← Zurück zur Anleitung' : '← Zurück zu Hilfe & Begriffe'
-  const backButton = <button type="button" className="btn ghost small mb-4" onClick={back}>{backLabel}</button>
+  const previousTerm = previous?.kind === 'lexicon' && previous.term ? GLOSSARY[previous.term] : undefined
 
   if (view.kind === 'guide') {
     const g = allGuides().find((x) => x.id === view.id)
@@ -169,6 +171,8 @@ export default function Hilfe({ onFollow, focusTerm, onFocusTermDone, openGuide:
         {/* Statt des Seitenkopfs der Pfad und der Titel der Anleitung; „Hilfe & Begriffe“ führt zur Startansicht. */}
         {/* Kam man über „Ähnliche Anleitungen“, führt der Weg zurück in die vorige Anleitung (S3). */}
         {previousGuide && <button type="button" className="btn ghost small mb-2 no-print" onClick={back}>← Zurück zu {previousGuide.title}</button>}
+        {/* Kam man über „Kommt vor in“, führt der Weg zurück zum Begriff (#488, Teil 3). */}
+        {previousTerm && <button type="button" className="btn ghost small mb-2 no-print" onClick={back}>← Zurück zu {previousTerm.title}</button>}
         <nav aria-label="Pfad" className="no-print flex flex-wrap items-center gap-2 mb-2 text-s text-muted">
           <button type="button" className="btn ghost small" onClick={() => home(`guide:${g.id}`)}>Hilfe & Begriffe</button>
           <span aria-hidden="true">›</span>
@@ -180,12 +184,29 @@ export default function Hilfe({ onFollow, focusTerm, onFocusTermDone, openGuide:
     )
   }
 
-  if (view.kind === 'terms') {
+  if (view.kind === 'lexicon') {
+    const state: LexiconState = { topic: view.topic, term: view.term }
     return (
       <>
-        <PageHeader context="none" title="Hilfe & Begriffe" />
-        {backButton}
-        <TermList topic={view.topic} />
+        {/* Wer aus einer Anleitung kam, kommt in sie zurück; zur Startansicht führt der Pfad. Das Ziel steht im Text,
+            kein Aufklapper (S33). */}
+        {previousGuide && <button type="button" className="btn ghost small mb-2 no-print" onClick={back}>← Zurück zur Anleitung</button>}
+        <nav aria-label="Pfad" className="no-print flex flex-wrap items-center gap-2 mb-2 text-s text-muted">
+          <button type="button" className="btn ghost small" onClick={homeFromStart}>Hilfe & Begriffe</button>
+          <span aria-hidden="true">›</span>
+          <span>Lexikon</span>
+        </nav>
+        <h1 id="hilfe-ansicht" tabIndex={-1} className="mb-4">Lexikon</h1>
+        <LexiconView
+          state={state}
+          onTopic={(topic) => lexicon(chooseTopic(topic), () => {})}
+          onTerm={(id) => lexicon(chooseTerm(state, id), () => focusTermHeading(id))}
+          onList={() => {
+            const was = state.term
+            lexicon({ ...state, term: null }, () => { if (was) focusListEntry(was) })
+          }}
+          onOpenGuide={(id) => openGuide(id, `guide:${id}`)}
+        />
       </>
     )
   }
@@ -239,7 +260,7 @@ export default function Hilfe({ onFollow, focusTerm, onFocusTermDone, openGuide:
       {q !== '' && hits.length === 0 && (
         <p className="mt-6">
           Nichts gefunden zu „{q}“. Versuchen Sie ein anderes Wort, oder sehen Sie unter{' '}
-          <button type="button" className="btn ghost small" onClick={() => openTerms(null, SEARCH)}>Alle Begriffe von A bis Z</button> nach.
+          <button type="button" className="btn ghost small" onClick={() => openLexicon(null, SEARCH)}>Alle Begriffe von A bis Z</button> nach.
         </p>
       )}
       {q !== '' && hits.length > 0 && (
@@ -266,7 +287,7 @@ export default function Hilfe({ onFollow, focusTerm, onFocusTermDone, openGuide:
           <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 list-none m-0 p-0">
             {topicTiles.map((t) => (
               <li key={t.key} className="flex">
-                <button type="button" data-help-key={t.key} onClick={() => openTerms(t.topic, t.key)} className="btn secondary flex w-full justify-between gap-3 px-4 py-3 rounded-l text-left">
+                <button type="button" data-help-key={t.key} onClick={() => openLexicon(t.topic, t.key)} className="btn secondary flex w-full justify-between gap-3 px-4 py-3 rounded-l text-left">
                   <span className="font-strong">{t.label}</span>{' '}
                   <span className="text-xs text-muted bg-chip rounded-s px-2 tabular-nums">{t.count} <span className="sr-only">{plural(t.count, 'Begriff', 'Begriffe')}</span></span>
                 </button>
@@ -319,47 +340,136 @@ function ResultGroup({ title, id, hits, offset, active, onOpen }: { title: strin
   )
 }
 
-// Den Begriff aufklappen, in den Blick rollen und den Fokus auf die Zeile zum Auf- und Zuklappen setzen: Auf dem
-// Kasten selbst klappte Enter nichts auf (Durchsicht von N10).
-function focusEntry(id: TermId) {
-  const entry = document.getElementById(`begriff-${id}`)
-  if (entry instanceof HTMLDetailsElement) entry.open = true
-  entry?.scrollIntoView?.({ block: 'start' })
-  entry?.querySelector('summary')?.focus({ preventScroll: true })
+// Den Begriff in den Blick holen und den Fokus auf seine Überschrift setzen; in der Liste rollt sein Eintrag mit (breit
+// rollt die Liste für sich). Steht der Begriff schon oben im Fenster, rollt die Seite nicht.
+function focusTermHeading(id: TermId) {
+  const heading = document.getElementById(`begriff-${id}`)
+  if (!heading) return
+  scrollListTo(id)
+  const article = heading.closest('article') ?? heading
+  const top = article.getBoundingClientRect().top
+  if (top < 0 || top > window.innerHeight / 2) article.scrollIntoView?.({ block: 'start' })
+  heading.focus({ preventScroll: true })
 }
 
-// Die Begriffe eines Themas oder alle, zugeklappt mit Buchstabenleiste (N10 aus #341). Bis zur zweispaltigen Ansicht
-// des Lexikons (#488, dritter Schritt) die bisherige Liste.
-function TermList({ topic }: { topic: TermTopic | null }) {
-  const terms = useMemo(() => termsOfTopic(sortedTerms(), topic), [topic])
-  const letters = termLetters(terms)
-  const jumpToLetter = (id: TermId) => {
-    const entry = document.getElementById(`begriff-${id}`)
-    entry?.scrollIntoView?.({ block: 'start' })
-    entry?.querySelector('summary')?.focus({ preventScroll: true })
-  }
+// Zurück in die Liste (am Handy „← Alle Begriffe“): Fokus auf den Eintrag des Begriffs, von dem man kam.
+function focusListEntry(id: TermId) {
+  const entry = document.querySelector<HTMLElement>(`[data-lexicon-term="${id}"]`)
+  entry?.scrollIntoView?.({ block: 'center' })
+  entry?.focus({ preventScroll: true })
+}
+
+// Den Eintrag in der für sich rollenden Liste (breit) sichtbar machen, ohne die Seite zu rollen.
+function scrollListTo(id: TermId) {
+  const entry = document.querySelector<HTMLElement>(`[data-lexicon-term="${id}"]`)
+  const list = entry?.closest<HTMLElement>('.lexicon-list')
+  if (!entry || !list || list.scrollHeight <= list.clientHeight) return
+  const e = entry.getBoundingClientRect()
+  const l = list.getBoundingClientRect()
+  if (e.top < l.top || e.bottom > l.bottom) list.scrollTop += e.top - l.top - l.height / 3
+}
+
+// Das Lexikon (#488, Teil 3), Aufbau nach dem freigegebenen Vorschlag: oben der Themenfilter (Umschaltknöpfe mit Zahl),
+// darunter links die Liste mit Anfangsbuchstaben als Trennern, rechts der gewählte Begriff. Schmal steht nur eins von
+// beiden (`data-pane`, tw.css). Entscheidungen (Filter, Reihenfolge, „Kommt vor in“, verwandte Begriffe) in helpView.ts.
+function LexiconView({ state, onTopic, onTerm, onList, onOpenGuide }: {
+  state: LexiconState
+  onTopic: (topic: TermTopic | null) => void
+  onTerm: (id: TermId) => void
+  onList: () => void
+  onOpenGuide: (id: GuideId) => void
+}) {
+  const entries = useMemo(() => lexiconEntries(state.topic), [state.topic])
   return (
-    <>
-      <h2 id="hilfe-ansicht" tabIndex={-1} className="mt-0 mb-4">
-        {topic ? TERM_TOPIC_LABELS[topic] : 'Alle Begriffe von A bis Z'} <span className="text-s text-muted font-normal">{countOf(terms.length, 'Begriff', 'Begriffe')}</span>
-      </h2>
-      {letters.length > 1 && (
-        <nav aria-label="Begriffe nach Anfangsbuchstabe" className="flex flex-wrap gap-2 mb-3">
-          {letters.map((l) => (
-            <button key={l.letter} type="button" className="btn ghost small" aria-label={`Begriffe mit ${l.letter}`} onClick={() => jumpToLetter(l.id)}>{l.letter}</button>
-          ))}
-        </nav>
+    <div className="@container">
+      <div role="group" aria-label="Thema" className="no-print flex flex-wrap gap-2 mb-5">
+        {lexiconFilters().map((f) => (
+          <button
+            key={f.topic ?? 'alle'}
+            type="button"
+            aria-pressed={state.topic === f.topic}
+            onClick={() => onTopic(f.topic)}
+            className="btn secondary small rounded-full aria-pressed:bg-accent-soft aria-pressed:text-accent-strong aria-pressed:border-accent"
+          >
+            {f.label} <span className="tabular-nums">{f.count}</span><span className="sr-only"> {plural(f.count, 'Begriff', 'Begriffe')}</span>
+          </button>
+        ))}
+      </div>
+      <div className="lexicon-layout" data-pane={lexiconPane(state.term)}>
+        <div className="lexicon-list">
+          {/* role="list": Safari nimmt einer Liste ohne Aufzählungszeichen sonst die Rolle. Die Buchstaben trennen nur
+              fürs Auge; Vorleser hören eine Liste der Begriffe. */}
+          <ul role="list" aria-label="Begriffe" className="list-none m-0 p-0 py-1">
+            {entries.map((e) => (
+              <li key={e.id}>
+                {e.letter && <span aria-hidden="true" className="block px-3 pt-2 pb-1 text-xs font-bold text-muted bg-hover">{e.letter}</span>}
+                <button type="button" data-lexicon-term={e.id} aria-current={state.term === e.id ? 'true' : undefined} onClick={() => onTerm(e.id)}>{e.title}</button>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="lexicon-term min-w-0">
+          {state.term ? <TermDetail id={state.term} onTerm={onTerm} onList={onList} onOpenGuide={onOpenGuide} /> : (
+            <p className="m-0 bg-card border border-line rounded-l p-5 text-muted">Wählen Sie einen Begriff aus der Liste.</p>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Ein Begriff im Lexikon: Thema als Kennzeile, Titel (Ziel des Fokus), Erklärung, Beispiel grün und „Brauche ich das?“
+// nebeneinander, Rechtsgrundlage, „Kommt vor in“ (Anleitungen) und verwandte Begriffe desselben Themas.
+function TermDetail({ id, onTerm, onList, onOpenGuide }: { id: TermId; onTerm: (id: TermId) => void; onList: () => void; onOpenGuide: (id: GuideId) => void }) {
+  const t: Term = GLOSSARY[id]
+  const uses = guidesWithTerm(id)
+  const related = relatedTerms(id)
+  return (
+    <article aria-labelledby={`begriff-${id}`} className="@container flex flex-col gap-5 bg-card border border-line rounded-l p-5 shadow-1 wrap-anywhere">
+      <button type="button" className="lexicon-back btn secondary small self-start no-print" onClick={onList}>← Alle Begriffe</button>
+      <div>
+        <p className="m-0 mb-1 text-xs font-bold uppercase tracking-wide text-accent-strong">{TERM_TOPIC_LABELS[t.topic]}</p>
+        <h2 id={`begriff-${id}`} tabIndex={-1} className="m-0 text-xl">{t.title}</h2>
+      </div>
+      <p className="m-0 text-l">{t.short}</p>
+      <div className="lexicon-pair">
+        <section aria-labelledby={`begriff-${id}-beispiel`} className="bg-green-soft rounded-l px-4 py-3">
+          <h3 id={`begriff-${id}-beispiel`} className="m-0 mb-1 text-xs font-bold uppercase tracking-wide text-green">Beispiel</h3>
+          <p className="m-0">{t.example}</p>
+        </section>
+        <section aria-labelledby={`begriff-${id}-brauche`} className="bg-accent-soft rounded-l px-4 py-3">
+          <h3 id={`begriff-${id}-brauche`} className="m-0 mb-1 text-xs font-bold uppercase tracking-wide text-accent-strong">Brauche ich das?</h3>
+          <p className="m-0">{t.needed}</p>
+        </section>
+      </div>
+      {t.norm && (
+        <section aria-labelledby={`begriff-${id}-norm`}>
+          <h3 id={`begriff-${id}-norm`} className="m-0 mb-2 text-m">Rechtsgrundlage</h3>
+          {/* Als Absatz, nicht als Marke wie in der Anleitung: Manche Rechtsgrundlage ist ein ganzer Satz. */}
+          <p className="m-0 text-s text-muted">{t.norm}</p>
+        </section>
       )}
-      {terms.map((t) => (
-        <details key={t.id} className="card guide glossary-entry" id={`begriff-${t.id}`}>
-          <summary><h3 className="guide-title">{t.title}</h3></summary>
-          <p>{t.short}</p>
-          <p><em>Beispiel:</em> {t.example}</p>
-          {t.norm && <p><em>Rechtsgrundlage:</em> {t.norm}</p>}
-          <p><em>Brauche ich das?</em> {t.needed}</p>
-        </details>
-      ))}
-    </>
+      {uses.length > 0 && (
+        <section aria-labelledby={`begriff-${id}-anleitungen`} className="no-print">
+          <h3 id={`begriff-${id}-anleitungen`} className="m-0 mb-2 text-m">Kommt vor in</h3>
+          <ul role="list" className="list-none m-0 p-0 flex flex-wrap gap-2">
+            {uses.map((g) => (
+              <li key={g.id}><button type="button" data-help-key={`guide:${g.id}`} className="btn secondary small text-left" onClick={() => onOpenGuide(g.id)}>{g.title}</button></li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {related.length > 0 && (
+        <section aria-labelledby={`begriff-${id}-verwandt`} className="no-print">
+          <h3 id={`begriff-${id}-verwandt`} className="m-0 mb-2 text-m">Verwandte Begriffe</h3>
+          <ul role="list" className="list-none m-0 p-0 flex flex-wrap gap-2">
+            {related.map((r) => (
+              <li key={r.id}><button type="button" className="btn secondary small text-left" onClick={() => onTerm(r.id)}>{r.title}</button></li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </article>
   )
 }
 
