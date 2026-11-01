@@ -49,5 +49,12 @@ for (const { from, to } of SOURCES[target]) {
 
 // Kein Veröffentlichen aus electron-builder heraus: Ans Release hängt release.yml an, wie alle anderen Dateien.
 const builder = path.join(root, 'desktop', 'node_modules', '.bin', process.platform === 'win32' ? 'electron-builder.cmd' : 'electron-builder')
-execFileSync(builder, [`--${target}`, '--publish', 'never'], { cwd: path.join(root, 'desktop'), stdio: 'inherit', shell: process.platform === 'win32' })
+// Signiert wird auch beim Bau aus einem Pull Request (dort lässt electron-builder es sonst aus): Auf dem Mac ist es nur
+// die Ad-hoc-Signatur ohne Geheimnis, und ohne sie ist die App nach dem Setzen der Fuses ungültig signiert.
+execFileSync(builder, [`--${target}`, '--publish', 'never'], {
+  cwd: path.join(root, 'desktop'),
+  stdio: 'inherit',
+  shell: process.platform === 'win32',
+  env: { ...process.env, CSC_FOR_PULL_REQUEST: 'true' },
+})
 for (const file of fs.readdirSync(path.join(root, 'dist-desktop'))) console.log('   •', file)

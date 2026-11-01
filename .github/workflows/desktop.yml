@@ -114,7 +114,8 @@ jobs:
           "Installer: $($setup.Name), $([math]::Round($setup.Length / 1MB, 1)) MB" | Tee-Object -Append groessen.txt
           # Still installieren, für den Benutzer, ohne Adminrechte
           Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait
-          $dir = "$env:LOCALAPPDATA\Programs\Mietfuchs"
+          # Der Ordner heißt wie das Paket (desktop/package.json, `name`)
+          $dir = "$env:LOCALAPPDATA\Programs\mietfuchs"
           $exe = Join-Path $dir 'Mietfuchs.exe'
           if (-not (Test-Path $exe)) { Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Depth 1 | Out-Host; throw "$exe nach der Installation nicht gefunden" }
           "Installiert: $dir, $([math]::Round((Get-ChildItem $dir -Recurse | Measure-Object Length -Sum).Sum / 1MB, 1)) MB" | Tee-Object -Append groessen.txt
