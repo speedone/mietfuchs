@@ -41,10 +41,11 @@ export const SCREENSHOTS = [
 ]
 
 /**
- * Liest Beschreibung, Funktionen und Suchbegriffe aus packaging/msix/store-eintrag.md. Harte
- * Zeilenumbrüche eines Absatzes werden zusammengezogen, Aufzählungspunkte („• “) bleiben je eine Zeile.
+ * Liest Beschreibung, Funktionen und Suchbegriffe aus packaging/msix/store-eintrag.md, dazu aus den
+ * Eigenschaften Website, Datenschutzrichtlinie und Supportkontakt. Harte Zeilenumbrüche eines Absatzes
+ * werden zusammengezogen, Aufzählungspunkte („• “) bleiben je eine Zeile.
  * @param {string} md
- * @returns {{ description: string, features: string[], keywords: string[] }}
+ * @returns {{ description: string, features: string[], keywords: string[], websiteUrl: string, privacyPolicy: string, supportContact: string }}
  */
 export function parseListing(md) {
   /** @param {string} start @param {string} end */
@@ -80,7 +81,13 @@ export function parseListing(md) {
   if (features.length > 20 || features.some((f) => f.length > 200)) throw new Error('Höchstens 20 Funktionen zu je 200 Zeichen')
   if (keywords.length > 7 || keywords.some((k) => k.length > 40)) throw new Error('Höchstens 7 Suchbegriffe zu je 40 Zeichen')
   if (keywords.join(' ').split(/\s+/).length > 21) throw new Error('Suchbegriffe zusammen höchstens 21 Wörter')
-  return { description, features, keywords }
+  /** @param {string} label */
+  const property = (label) => {
+    const m = new RegExp(`^- ${label}: (https://\\S+)$`, 'm').exec(md)
+    if (!m?.[1]) throw new Error(`„${label}“ fehlt in den Eigenschaften von store-eintrag.md`)
+    return m[1]
+  }
+  return { description, features, keywords, websiteUrl: property('Website'), privacyPolicy: property('Datenschutzrichtlinie'), supportContact: property('Supportkontakt') }
 }
 
 /** @param {string} tag */
@@ -97,7 +104,7 @@ export function releaseNotes(tag, repository = 'speedone/mietfuchs') {
  * fallen so nicht mit den alten zusammen, die im selben Zug gelöscht werden; das Bündel heißt
  * ohnehin je Version anders.
  * @param {any} submission
- * @param {{ bundle: string, tag: string, listing: { description: string, features: string[], keywords: string[] }, notes: string }} input
+ * @param {{ bundle: string, tag: string, listing: { description: string, features: string[], keywords: string[], websiteUrl: string, privacyPolicy: string, supportContact: string }, notes: string }} input
  */
 export function buildSubmission(submission, { bundle, tag, listing, notes }) {
   const next = structuredClone(submission)
@@ -116,6 +123,9 @@ export function buildSubmission(submission, { bundle, tag, listing, notes }) {
   base.description = listing.description
   base.features = listing.features
   base.keywords = listing.keywords
+  base.websiteUrl = listing.websiteUrl
+  base.privacyPolicy = listing.privacyPolicy
+  base.supportContact = listing.supportContact
   base.releaseNotes = notes
 
   next.targetPublishMode = 'Immediate'

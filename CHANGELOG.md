@@ -10,6 +10,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 - **Website:** Mietfuchs hat eine eigene Website, [mietfuchs-app.de](https://mietfuchs-app.de), mit Download für jedes
   System und Ratgebern zur Nebenkostenabrechnung. Der Link steht in den Einstellungen unter „Über Mietfuchs“.
+### Geändert
+
+- **Microsoft Store:** Der Store-Eintrag zeigt die Website mietfuchs-app.de; Website, Datenschutzrichtlinie und
+  Supportkontakt gehen jetzt bei jedem Release mit, und die Beschreibung sagt zusätzlich, dass Mietfuchs ohne
+  Gewähr bereitgestellt wird.
 
 ## [0.14.1] – 2026-11-01
 

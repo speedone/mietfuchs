@@ -2,11 +2,11 @@
 export const APP_ID: string
 export const LANGUAGE: string
 export const SCREENSHOTS: { file: string, description: string }[]
-export function parseListing(md: string): { description: string, features: string[], keywords: string[] }
+export function parseListing(md: string): { description: string, features: string[], keywords: string[], websiteUrl: string, privacyPolicy: string, supportContact: string }
 export function releaseNotes(tag: string, repository?: string): string
 export function buildSubmission(
   submission: any,
-  input: { bundle: string, tag: string, listing: { description: string, features: string[], keywords: string[] }, notes: string },
+  input: { bundle: string, tag: string, listing: { description: string, features: string[], keywords: string[], websiteUrl: string, privacyPolicy: string, supportContact: string }, notes: string },
 ): any
 export function commitOutcome(status: { status?: string, statusDetails?: any }): 'wait' | 'ok' | 'failed'
 export function draftHint(message: string): string | null

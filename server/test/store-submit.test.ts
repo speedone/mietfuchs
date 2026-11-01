@@ -31,6 +31,20 @@ test('Store-Eintrag: Funktionen und Suchbegriffe innerhalb der Grenzen des Partn
   assert.ok(keywords.includes('Anlage V'), 'Suchbegriffe über den Zeilenumbruch hinweg')
 })
 
+test('Store-Eintrag: Website, Datenschutzrichtlinie und Supportkontakt aus den Eigenschaften', () => {
+  const { websiteUrl, privacyPolicy, supportContact } = parseListing(md)
+  assert.equal(websiteUrl, 'https://mietfuchs-app.de')
+  assert.equal(privacyPolicy, 'https://github.com/speedone/mietfuchs/blob/main/docs/datenschutz.md')
+  assert.equal(supportContact, 'https://github.com/speedone/mietfuchs/issues')
+  assert.throws(() => parseListing(md.replace('- Website: ', '- Webseite: ')), /Website/)
+})
+
+test('Store-Eintrag: Hinweis auf fehlende Beratung und Gewähr in der Beschreibung', () => {
+  const { description } = parseListing(md)
+  assert.match(description, /ersetzt aber keine Rechts- oder Steuerberatung/)
+  assert.match(description, /ohne Gewähr/)
+})
+
 test('Store-Eintrag: ein fehlender Abschnitt bricht ab, statt den Store-Text zu leeren', () => {
   assert.throws(() => parseListing(md.replace('**Funktionen**', '**Merkmale**')), /Funktionen/)
 })
@@ -69,7 +83,7 @@ const published = () => ({
     [LANGUAGE]: {
       baseListing: {
         title: 'Mietfuchs',
-        privacyPolicy: 'https://example.invalid/datenschutz',
+        copyrightAndTrademarkInfo: '© speedone',
         description: 'alt',
         releaseNotes: '',
         images: [
@@ -85,9 +99,16 @@ const published = () => ({
 const input = {
   bundle: '/tmp/store/Mietfuchs_1.14.0.0.msixbundle',
   tag: 'v0.14.0',
-  listing: { description: 'neu', features: ['F'], keywords: ['K'] },
+  listing: { description: 'neu', features: ['F'], keywords: ['K'], websiteUrl: 'https://mietfuchs-app.de', privacyPolicy: 'https://example.org/datenschutz', supportContact: 'https://example.org/hilfe' },
   notes: 'N',
 }
+
+test('Einreichung: Website, Datenschutzrichtlinie und Supportkontakt aus dem Store-Eintrag', () => {
+  const base = buildSubmission(published(), input).listings[LANGUAGE].baseListing
+  assert.equal(base.websiteUrl, 'https://mietfuchs-app.de')
+  assert.equal(base.privacyPolicy, 'https://example.org/datenschutz')
+  assert.equal(base.supportContact, 'https://example.org/hilfe')
+})
 
 test('Einreichung: altes Bündel zum Löschen, neues hochladen, andere Pakete bleiben', () => {
   const next = buildSubmission(published(), input)
@@ -117,7 +138,7 @@ test('Einreichung: Texte, Neuigkeiten und sofort veröffentlichen; Unbekanntes b
   const base = next.listings[LANGUAGE].baseListing
   assert.equal(next.targetPublishMode, 'Immediate')
   assert.deepEqual([base.description, base.features, base.keywords, base.releaseNotes], ['neu', ['F'], ['K'], 'N'])
-  assert.equal(base.privacyPolicy, 'https://example.invalid/datenschutz', 'Felder, die das Skript nicht kennt, gehen nicht verloren')
+  assert.equal(base.copyrightAndTrademarkInfo, '© speedone', 'Felder, die das Skript nicht kennt, gehen nicht verloren')
   assert.deepEqual(next.pricing, { priceId: 'Free' })
   assert.deepEqual(before, published(), 'die Vorlage bleibt, wie sie war')
 })
