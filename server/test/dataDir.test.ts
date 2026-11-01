@@ -24,6 +24,8 @@ const args = (over: Args = {}): Args => ({
   home: () => '/home/erika',
   platform: 'linux',
   canWrite: () => false,
+  // Nicht im Programmfenster, unabhängig davon, worin der Test läuft
+  window: false,
   ...over,
 })
 
@@ -176,26 +178,41 @@ test('Store-Paket wird am eigenen Paketordner erkannt, nicht am Ordnernamen alle
   assert.equal(storeLocation('/WindowsApps/speedone.Mietfuchs_0.14.0.0_x64__x/mietfuchs', 'linux'), false)
 })
 
-// Programmfenster (#517): Die Programmdatei liegt im Installationsordner des Fensters, unter Windows ohne Adminrechte
-// in AppData\Local\Programs, wo sie schreiben dürfte. Die Daten gehören trotzdem nicht dorthin, denn ein Update ersetzt
-// den Ordner und das Deinstallieren löscht ihn. Unter Windows derselbe Ordner wie aus dem Store, auf dem Mac der Ort
-// eines Programms im Benutzerordner.
+// Programmfenster (#517): Der Server läuft aus dem Quellcode im Installationsordner des Fensters, unter Windows ohne
+// Adminrechte in AppData\Local\Programs, wo er schreiben dürfte. Die Daten gehören trotzdem nicht dorthin, denn ein
+// Update ersetzt den Ordner und das Deinstallieren löscht ihn. Unter Windows derselbe Ordner wie aus dem Store, auf dem
+// Mac der Ort eines Programms im Benutzerordner.
+//
+// Geänderte Erwartung: Bisher entschied `NKA_DESKTOP` in der Programmdatei (`packaged`, also Bun). Heute läuft der
+// Server im Fenster unter Electrons Node, `packaged` ist dort falsch, und es entscheidet `window` (utilityProcess mit
+// NKA_DESKTOP, siehe inWindow in version.ts). Ohne diese Reihenfolge lägen die Daten in resources\mietfuchs\server\data.
 test('im Programmfenster liegen die Daten im Benutzerordner, nie im Installationsordner', () => {
   const env = { USERPROFILE: 'C:\\Users\\Erika', LOCALAPPDATA: 'C:\\Users\\Erika\\AppData\\Local', NKA_DESKTOP: '1' }
-  const exe = 'C:\\Users\\Erika\\AppData\\Local\\Programs\\Mietfuchs\\resources\\server\\mietfuchs.exe'
-  assert.equal(chooseDataDir(args({ platform: 'win32', env, execPath: exe, canWrite: () => true })), 'C:\\Users\\Erika\\Mietfuchs')
+  const exe = 'C:\\Users\\Erika\\AppData\\Local\\Programs\\mietfuchs\\Mietfuchs.exe'
+  const moduleDir = 'C:\\Users\\Erika\\AppData\\Local\\Programs\\mietfuchs\\resources\\mietfuchs\\server\\src'
+  assert.equal(chooseDataDir(args({ window: true, packaged: false, platform: 'win32', env, execPath: exe, moduleDir, canWrite: () => true })), 'C:\\Users\\Erika\\Mietfuchs')
   assert.equal(
-    chooseDataDir(args({ platform: 'darwin', env: { NKA_DESKTOP: '1' }, execPath: '/Applications/Mietfuchs.app/Contents/MacOS/mietfuchs-server', home: () => '/Users/erika', canWrite: () => true })),
+    chooseDataDir(args({ window: true, packaged: false, platform: 'darwin', env: { NKA_DESKTOP: '1' }, execPath: '/Applications/Mietfuchs.app/Contents/MacOS/Mietfuchs', moduleDir: '/Applications/Mietfuchs.app/Contents/Resources/mietfuchs/server/src', home: () => '/Users/erika', canWrite: () => true })),
     '/Users/erika/Library/Application Support/Mietfuchs',
   )
-  // NKA_DATA_DIR geht weiter vor (Tests, Proben)
-  assert.equal(chooseDataDir(args({ platform: 'win32', env: { ...env, NKA_DATA_DIR: 'C:\\Probe' }, execPath: exe })), path.resolve('C:\\Probe'))
+  // NKA_DATA_DIR geht weiter vor (Tests, Proben, das Fenster beim Entwickeln)
+  assert.equal(chooseDataDir(args({ window: true, packaged: false, platform: 'win32', env: { ...env, NKA_DATA_DIR: 'C:\\Probe' }, execPath: exe })), path.resolve('C:\\Probe'))
 })
 
-test('Store-Paket mit Programmfenster: die Programmdatei liegt tiefer im Paketordner', () => {
-  const exe = 'C:\\Program Files\\WindowsApps\\speedone.Mietfuchs_1.15.0.0_x64__bzganrceka4qp\\resources\\server\\mietfuchs.exe'
+// Geänderte Erwartung: Bisher lagen die Daten mit NKA_DESKTOP in der Programmdatei im Benutzerordner. Die Angabe
+// allein zählt nicht mehr (der Dev-Server soll nie den echten Bestand des Entwicklers öffnen), es zählt `window`.
+test('ohne Fenster ändert NKA_DESKTOP nichts am Ort', () => {
+  assert.equal(chooseDataDir(args({ window: false, packaged: false, env: { NKA_DESKTOP: '1' } })), path.join('/projekt/server/src', '..', 'data'))
+  const exe = '/home/erika/Downloads/mietfuchs-linux'
+  assert.equal(chooseDataDir(args({ window: false, env: { NKA_DESKTOP: '1' }, execPath: exe, canWrite: () => true })), '/home/erika/Downloads/data')
+})
+
+test('Store-Paket mit Programmfenster: das Fenster liegt im Paketordner, die Daten im Benutzerordner', () => {
+  const exe = 'C:\\Program Files\\WindowsApps\\speedone.Mietfuchs_1.15.0.0_x64__bzganrceka4qp\\Mietfuchs.exe'
   assert.equal(storeLocation(exe, 'win32'), true)
-  assert.equal(chooseDataDir(args({ platform: 'win32', env: { USERPROFILE: 'C:\\Users\\Erika', NKA_DESKTOP: '1' }, execPath: exe })), 'C:\\Users\\Erika\\Mietfuchs')
+  assert.equal(chooseDataDir(args({ window: true, packaged: false, platform: 'win32', env: { USERPROFILE: 'C:\\Users\\Erika', NKA_DESKTOP: '1', NKA_STORE: '1' }, execPath: exe })), 'C:\\Users\\Erika\\Mietfuchs')
+  // Die Programmdatei aus dem Store (ohne Fenster) liegt weiter dort
+  assert.equal(chooseDataDir(args({ window: false, platform: 'win32', env: { USERPROFILE: 'C:\\Users\\Erika' }, execPath: exe })), 'C:\\Users\\Erika\\Mietfuchs')
   // Ein Ordner „WindowsApps“ irgendwo und darin kein Paket von Mietfuchs zählt weiter nicht
   assert.equal(storeLocation('C:\\Users\\Erika\\WindowsApps\\resources\\server\\mietfuchs.exe', 'win32'), false)
   assert.equal(storeLocation('C:\\Users\\Erika\\Downloads\\speedone.Mietfuchs_0.14.0.0_x64__b\\resources\\mietfuchs.exe', 'win32'), false)

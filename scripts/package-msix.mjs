@@ -1,8 +1,9 @@
 // Baut aus dem Programmfenster (#517) das Paket für den Microsoft Store (#500): je Architektur ein .msix,
 // zusammen ein .msixbundle, das das Partner Center so annimmt. Hinein kommt der Ordner, den electron-builder beim
 // Bau des Installers je Architektur entpackt ablegt (dist-desktop/win-unpacked, win-arm64-unpacked; siehe
-// package-desktop.mjs): das Fenster Mietfuchs.exe und darin unter resources\server\mietfuchs.exe die Programmdatei
-// des Servers ohne Konsolenfenster. Dort erkennt der Server den Store (storeLocation in server/src/paths.ts).
+// package-desktop.mjs): das Fenster Mietfuchs.exe und darin unter resources\mietfuchs der Server aus dem Quellcode,
+// den das Fenster mit Electrons eigenem Node als utilityProcess startet. Den Store erkennt der Server an NKA_STORE vom
+// Fenster (`process.windowsStore`) oder am Paketordner (storeLocation in server/src/paths.ts).
 // Signiert wird nicht: Das übernimmt der Store bei der Zertifizierung. Läuft nur unter Windows, weil makeappx zum
 // Windows SDK gehört.
 //
@@ -13,6 +14,7 @@ import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { checkServerFolder } from './package-desktop.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -39,9 +41,9 @@ export const ARCHITECTURES = [
 // Gestartet wird das Fenster (productName in desktop/package.json); der Befehlsalias im Manifest heißt weiter
 // mietfuchs.exe und zeigt darauf.
 export const PACKAGE_EXE = 'Mietfuchs.exe'
-// Die Programmdatei des Servers im Ordner des Fensters (extraResources in desktop/package.json, serverCommand in
+// Der Server-Ordner im Ordner des Fensters (extraResources in desktop/package.json, SERVER_FOLDER in
 // desktop/src/server.js)
-export const SERVER_EXE = 'resources\\server\\mietfuchs.exe'
+export const SERVER_DIR = 'resources\\mietfuchs'
 
 const MACHINES = { 0x8664: 'x64', 0xaa64: 'arm64' }
 const SUBSYSTEMS = { 2: 'gui', 3: 'console' }
@@ -73,23 +75,23 @@ function readHead(file) {
   }
 }
 
-// Bevor gepackt wird: Fenster und Server da, beide für die Architektur des Pakets, der Server ohne Konsolenfenster.
-// Ein vertauschter Ordner liefe auf dem falschen Rechner gar nicht oder nur emuliert, und die Datei vom Release
-// stellte neben das Fenster ein schwarzes Konsolenfenster; beides fiele erst bei Nutzern auf.
+// Bevor gepackt wird: Fenster für die Architektur des Pakets und ohne Konsolenfenster, daneben ein vollständiger
+// Server-Ordner. Ein vertauschter Ordner liefe auf dem falschen Rechner gar nicht oder nur emuliert, ein Fenster mit
+// Konsolenfenster stellte ein schwarzes daneben, und ohne Server bliebe das Fenster bei „Mietfuchs startet …“; das
+// fiele alles erst bei Nutzern auf. Der Server selbst hat keine Programmdatei mehr, er läuft in Mietfuchs.exe.
 /** @param {string} dir @param {string} arch */
 export function checkWindowFolder(dir, arch) {
-  for (const name of [PACKAGE_EXE, SERVER_EXE]) {
-    const file = path.join(dir, ...name.split('\\'))
-    if (!fs.existsSync(file)) throw new Error(`${name} fehlt in ${dir}. Zuerst das Fenster bauen: node scripts/package-desktop.mjs win`)
-    let info
-    try {
-      info = peInfo(readHead(file))
-    } catch (err) {
-      throw new Error(`${name} in ${dir}: ${/** @type {Error} */ (err).message}`)
-    }
-    if (info.machine !== arch) throw new Error(`${name} ist für ${info.machine} gebaut, nicht für ${arch} (${dir})`)
-    if (info.subsystem !== 'gui') throw new Error(`${name} öffnet ein Konsolenfenster (Subsystem ${info.subsystem}); ins Paket gehört die Datei aus dist-bin/store (${dir})`)
+  const file = path.join(dir, PACKAGE_EXE)
+  if (!fs.existsSync(file)) throw new Error(`${PACKAGE_EXE} fehlt in ${dir}. Zuerst das Fenster bauen: node scripts/package-desktop.mjs win`)
+  let info
+  try {
+    info = peInfo(readHead(file))
+  } catch (err) {
+    throw new Error(`${PACKAGE_EXE} in ${dir}: ${/** @type {Error} */ (err).message}`)
   }
+  if (info.machine !== arch) throw new Error(`${PACKAGE_EXE} ist für ${info.machine} gebaut, nicht für ${arch} (${dir})`)
+  if (info.subsystem !== 'gui') throw new Error(`${PACKAGE_EXE} öffnet ein Konsolenfenster (Subsystem ${info.subsystem}) (${dir})`)
+  checkServerFolder(path.join(dir, ...SERVER_DIR.split('\\')))
 }
 
 /** @param {string} template @param {{ version: string, arch: string }} values */

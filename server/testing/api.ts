@@ -322,8 +322,8 @@ export async function startServerIn(dataDir: string, env: NodeJS.ProcessEnv = {}
       // damit einen Tab auf einem Zufallsport auf. Siehe die Regel in CLAUDE.md.
       CI: 'true',
     },
-    // Die Standardeingabe offen wie im Programmfenster (#517): Dort heißt ihr Ende „Fenster weg, beenden“, und mit
-    // 'ignore' endete ein Server in der Betriebsart desktop sofort. Alle anderen lesen sie nicht.
+    // Die Standardeingabe offen. Seit der Server im Programmfenster (#517) als utilityProcess läuft, hängt an ihr
+    // nichts mehr (api-fenster.test.ts prüft, dass ihr Ende ihn nicht beendet); der Server liest sie nicht.
     stdio: ['pipe', 'pipe', 'pipe'],
   })
   const stop = () => {
@@ -376,16 +376,17 @@ export const waitForExit = (child: ChildProcess, timeoutMs = 15000): Promise<num
 
 // Startet den Server, ohne auf die Startmeldung zu warten, und sammelt seine Ausgabe. Für die
 // Fälle, in denen der Start gerade nicht gelingen soll.
-export function startServerRaw(dataDir: string, env: NodeJS.ProcessEnv = {}) {
+// `stdin: 'pipe'` für Tests, die dem Server etwas zuschicken (fakeUtilityProcess.ts: „quit“ des Fensters).
+export function startServerRaw(dataDir: string, env: NodeJS.ProcessEnv = {}, { stdin = 'ignore' }: { stdin?: 'ignore' | 'pipe' } = {}) {
   const child = spawn(process.execPath, ['src/index.ts'], {
     cwd: serverRoot,
     // CI hinter `...env`, wie in startServerIn: Kein Aufrufer kann es versehentlich abschalten.
     env: { ...process.env, NKA_UPDATE_URL: 'http://127.0.0.1:9/kein-internet-im-test', NKA_DATA_DIR: dataDir, ...env, CI: 'true' },
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: [stdin, 'pipe', 'pipe'],
   })
   let output = ''
-  child.stdout.on('data', (c: Buffer) => { output += c })
-  child.stderr.on('data', (c: Buffer) => { output += c })
+  child.stdout?.on('data', (c: Buffer) => { output += c })
+  child.stderr?.on('data', (c: Buffer) => { output += c })
   return { child, out: () => output }
 }
 

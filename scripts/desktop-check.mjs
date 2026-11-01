@@ -7,6 +7,9 @@
 //   4. Beenden aus der Oberfläche (/api/quit): Fenster und Server enden mit 0, der Port ist frei.
 //   5. Absturz des Fensters (hart beendet): Der Server endet von selbst, keine Waise hält Port und Datenbank.
 //
+// Der Server läuft als utilityProcess des Fensters (desktop/src/main.js); seine PID nennt die Selbstprüfung. In 4. und
+// 5. muss dieser Prozess weg sein, nicht nur der Port frei.
+//
 //   node scripts/desktop-check.mjs --app <Programm des Fensters> --out <Ordner>
 //
 // Bericht in <out>/bericht.json, Exit 0 nur, wenn alles bestanden ist.
@@ -47,6 +50,16 @@ const portFree = () => new Promise((resolve) => {
   probe.listen(PORT, () => probe.close(() => resolve(true)))
 })
 
+// Läuft der Prozess noch? Signal 0 prüft nur, ob es ihn gibt, auch unter Windows.
+const alive = (/** @type {number} */ pid) => {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (err) {
+    return /** @type {NodeJS.ErrnoException} */ (err).code === 'EPERM'
+  }
+}
+
 /** @param {() => Promise<boolean> | boolean} condition @param {number} timeoutMs */
 async function until(condition, timeoutMs) {
   const deadline = Date.now() + timeoutMs
@@ -79,12 +92,16 @@ const exitWithin = (exited, ms) => Promise.race([exited, sleep(ms).then(() => 'l
 check(await portFree(), `Port ${PORT} ist vor dem Start frei`)
 const t0 = Date.now()
 const first = launch('lauf')
+/** @type {number | null} */
+let serverPid = null
 const ready = await until(() => fs.existsSync(path.join(first.selftest, 'fenster.json')), 120_000)
 check(ready, 'Fenster gestartet, Seite geladen, Selbstprüfung geschrieben')
 if (ready) {
   const selftest = JSON.parse(fs.readFileSync(path.join(first.selftest, 'fenster.json'), 'utf8'))
   report.start = { ...selftest, seenAfterMs: Date.now() - t0 }
   check(selftest.origin === `http://127.0.0.1:${PORT}`, `Oberfläche unter http://127.0.0.1:${PORT}`)
+  serverPid = typeof selftest.serverPid === 'number' ? selftest.serverPid : null
+  check(serverPid !== null && serverPid !== first.child.pid && alive(serverPid), `Der Server läuft als eigener Prozess des Fensters (PID ${serverPid})`)
   const pdf = fs.readFileSync(path.join(first.selftest, 'fenster.pdf'))
   check(pdf.subarray(0, 5).toString() === '%PDF-', 'PDF der ersten Seite erzeugt')
 
@@ -107,6 +124,7 @@ if (ready) {
 const code = await exitWithin(first.exited, 30_000)
 check(code === 0, `Beenden aus der Oberfläche: Fenster endet mit 0 (${code})`)
 check(await until(portFree, 15_000), 'Danach ist der Port frei')
+if (serverPid !== null) check(await until(() => !alive(/** @type {number} */ (serverPid)), 15_000), 'Danach läuft der Server nicht mehr')
 if (code === 'läuft noch') first.child.kill()
 fs.writeFileSync(path.join(out, 'lauf.log'), first.output())
 
@@ -117,7 +135,10 @@ if (await until(() => fs.existsSync(path.join(crash.selftest, 'fenster.json')), 
   if (process.platform === 'win32') execFileSync('taskkill', ['/F', '/PID', String(crash.child.pid)])
   else crash.child.kill('SIGKILL')
   await crash.exited
+  const crashSelftest = JSON.parse(fs.readFileSync(path.join(crash.selftest, 'fenster.json'), 'utf8'))
+  const crashServer = typeof crashSelftest.serverPid === 'number' ? crashSelftest.serverPid : null
   check(await until(portFree, 20_000), 'Nach einem Absturz des Fensters endet der Server von selbst (Port frei)')
+  check(crashServer !== null && await until(() => !alive(crashServer), 20_000), `Nach dem Absturz bleibt keine Waise (PID ${crashServer})`)
 } else {
   check(false, 'Zweiter Lauf für den Absturz gestartet')
   crash.child.kill()

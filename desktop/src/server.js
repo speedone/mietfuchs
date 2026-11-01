@@ -1,6 +1,6 @@
-// Der Server im Programmfenster (#517): die Programmdatei von Mietfuchs als Kindprozess. Hier steht, was sich ohne
-// Electron prüfen lässt (desktop/test/server.test.js): welche Datei, mit welcher Umgebung, auf welchem Port, und woran
-// man erkennt, dass sie bereit ist. main.js setzt es zusammen.
+// Der Server im Programmfenster (#517): der Server von Mietfuchs aus dem Quellcode, mit Electrons eigenem Node als
+// utilityProcess. Hier steht, was sich ohne Electron prüfen lässt (desktop/test/server.test.js): welches Modul, mit
+// welcher Umgebung, auf welchem Port, und woran man erkennt, dass er bereit ist. main.js setzt es zusammen.
 import net from 'node:net'
 import path from 'node:path'
 
@@ -10,36 +10,52 @@ import path from 'node:path'
 // für ausgehende Verbindungen vergeben. Die Programmdatei ohne Fenster bleibt bei 3001.
 export const DEFAULT_PORT = 17517
 
+// Der Ordner unter resources, in dem der Server ausgeliefert liegt, in der Anordnung des Repos: server/src,
+// server/drizzle, server/package.json, server/node_modules (nur die Produktionsabhängigkeiten), shared/, client/dist und
+// eine package.json mit `"type": "module"` (sonst gälte shared/ als CommonJS). So stimmen die relativen Pfade des
+// Servers wie im Repo. scripts/package-desktop.mjs legt ihn an, desktop/package.json (`extraResources`) nimmt ihn mit.
+export const SERVER_FOLDER = 'mietfuchs'
+
+// Der Name des utilityProcess in app.getAppMetrics() (Speicher in der Selbstprüfung) und in child-process-gone
+export const SERVICE_NAME = 'Mietfuchs-Server'
+
 /**
- * Welche Datei als Server läuft. Ausgeliefert die Programmdatei im Paket: unter Windows in resources\server (dort
- * erkennt sie auch den Store), auf dem Mac neben dem Fenster in Contents/MacOS, weil macOS ausführbaren Code dort
- * erwartet und mitsigniert. Beim Entwickeln der Server aus dem Quellcode mit dem Node, das ihn auch sonst startet.
- * @param {{ packaged: boolean, platform: NodeJS.Platform, resourcesPath: string, execPath: string, repoRoot: string }} where
- * @returns {{ command: string, args: string[] }}
+ * Welches Modul als Server läuft und in welchem Ordner: ausgeliefert unter resources/mietfuchs, beim Entwickeln im
+ * Repo. Beides derselbe Weg, `utilityProcess.fork` mit Electrons eigenem Node, ohne Bündelschritt: Node streift die
+ * Typen ab wie bei `npm start`.
+ * @param {{ packaged: boolean, platform: NodeJS.Platform, resourcesPath: string, repoRoot: string }} where
+ * @returns {{ modulePath: string, cwd: string }}
  */
-export function serverCommand({ packaged, platform, resourcesPath, execPath, repoRoot }) {
+export function serverModule({ packaged, platform, resourcesPath, repoRoot }) {
   // Nach der genannten Plattform rechnen, nicht nach der des laufenden Rechners (CLAUDE.md, Konventionen)
   const p = platform === 'win32' ? path.win32 : path.posix
-  if (!packaged) return { command: process.env.MIETFUCHS_NODE || 'node', args: [p.join(repoRoot, 'server', 'src', 'index.ts')] }
-  if (platform === 'win32') return { command: p.join(resourcesPath, 'server', 'mietfuchs.exe'), args: [] }
-  return { command: p.join(p.dirname(execPath), 'mietfuchs-server'), args: [] }
+  const cwd = packaged ? p.join(resourcesPath, SERVER_FOLDER, 'server') : p.join(repoRoot, 'server')
+  return { modulePath: p.join(cwd, 'src', 'index.ts'), cwd }
 }
 
 /**
  * Die Umgebung des Servers: alles vom Fenster (so erreichen CI, NKA_DATA_DIR und NKA_UPDATE_URL einer Prüfung den
- * Server), dazu Betriebsart, Port und Adresse. Ohne Zugriff aus dem Heimnetz nur 127.0.0.1, dann fragt unter Windows
- * auch keine Firewall.
+ * Server), dazu die Angabe des Fensters, Port und Adresse. Ohne Zugriff aus dem Heimnetz nur 127.0.0.1, dann fragt
+ * unter Windows auch keine Firewall.
+ *
+ * Der Server erkennt das Fenster an NKA_DESKTOP im utilityProcess (inWindow in server/src/version.ts), den Store an
+ * NKA_STORE aus `process.windowsStore`. Beim Entwickeln nimmt das Fenster wie `npm run dev` server/data, damit kein
+ * Probelauf den echten Bestand im Benutzerordner öffnet.
  * @param {NodeJS.ProcessEnv} base
- * @param {{ port: number, network: boolean, packaged: boolean }} options
+ * @param {{ port: number, network: boolean, packaged: boolean, windowsStore: boolean, repoRoot: string, platform: NodeJS.Platform }} options
  * @returns {NodeJS.ProcessEnv}
  */
-export function serverEnv(base, { port, network, packaged }) {
+export function serverEnv(base, { port, network, packaged, windowsStore, repoRoot, platform }) {
   /** @type {NodeJS.ProcessEnv} */
   const env = { ...base, NKA_DESKTOP: '1', NKA_PORT: String(port), NKA_HOST: network ? '0.0.0.0' : '127.0.0.1' }
   // Electron setzt das für sich selbst; erbte es der Server, liefe Node darin als nacktes Node
   delete env.ELECTRON_RUN_AS_NODE
-  // Aus dem Quellcode erkennt der Server das Fenster nicht an Bun, sondern an der Angabe
-  if (!packaged) env.NKA_RUNTIME = 'desktop'
+  // Eine geerbte Betriebsart (etwa docker aus einer Shell) gilt im Fenster nicht
+  delete env.NKA_RUNTIME
+  delete env.NKA_STORE
+  if (windowsStore) env.NKA_STORE = '1'
+  const p = platform === 'win32' ? path.win32 : path.posix
+  if (!packaged && !env.NKA_DATA_DIR) env.NKA_DATA_DIR = p.join(repoRoot, 'server', 'data')
   return env
 }
 

@@ -4,8 +4,9 @@ name: Release-Binaries
 # Systems und hängt sie erst dann ans GitHub-Release (#22). Läuft bei einem Tag wie v0.1.2, bei
 # PRs, die Server, Oberfläche, Programmfenster oder Build ändern, und von Hand.
 #
-# Aus denselben Programmdateien entstehen das Programmfenster (#517: Installer für Windows, .dmg
-# für macOS) und das Store-Paket, das seit #517 das Fenster enthält.
+# Daneben entstehen das Programmfenster (#517: Installer für Windows, .dmg für macOS) und das
+# Store-Paket, das seit #517 das Fenster enthält. Im Fenster läuft der Server aus dem Quellcode mit
+# Electrons eigenem Node, ohne Programmdatei.
 #
 # Bun kompiliert alle Ziele von einem einzigen Linux-Runner aus. Ob eine Datei auf ihrem
 # System wirklich startet, zeigt aber erst ein Rechner mit diesem System: Genau so ein Fehler
@@ -541,11 +542,10 @@ jobs:
 
   # Das eigene Programmfenster (#517): unter Windows ein Installer für x64 und ARM64 zusammen
   # (NSIS, für den Benutzer, ohne Adminrechte), auf dem Mac je ein .dmg, ad hoc signiert
-  # (scripts/package-desktop.mjs). Hinein kommen dieselben Programmdateien wie in die übrigen
-  # Ziele: unter Windows die ohne Konsolenfenster aus „Programmdateien bauen“ (Artefakt
-  # mietfuchs-store-programme), auf dem Mac die neu signierten aus den Zips von „macOS-Dateien
-  # signieren“. Daneben die entpackten Windows-Ordner, aus denen „Store-Paket bauen und prüfen“
-  # das Store-Paket packt.
+  # (scripts/package-desktop.mjs). Eine Programmdatei des Servers ist nicht darin: Er läuft aus dem
+  # Quellcode mit Electrons eigenem Node als utilityProcess, unter resources/mietfuchs samt
+  # Produktionsabhängigkeiten und dem Frontend, das dieser Job selbst baut. Daneben die entpackten
+  # Windows-Ordner, aus denen „Store-Paket bauen und prüfen“ das Store-Paket packt.
   #
   # Bis PR 2 von #517 stand das in einem eigenen Workflow (desktop.yml). Er ist hier aufgegangen:
   # Ein PR durch diesen Workflow dauert so lange wie damals der eigene Lauf (rund sechs Minuten),
@@ -557,7 +557,9 @@ jobs:
   # wie die Programmdateien im Job „Prüfen auf …“.
   fenster-bauen:
     name: Programmfenster bauen (${{ matrix.name }})
-    needs: signieren
+    # Hängt an keiner Programmdatei: Der Server läuft im Fenster aus dem Quellcode mit Electrons eigenem Node
+    # (utilityProcess), package-desktop.mjs legt ihn samt Produktionsabhängigkeiten und Frontend daneben. So beginnt
+    # der Bau sofort und wartet nicht auf Bun und das Signieren.
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -571,32 +573,20 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: desktop/package-lock.json
+          cache-dependency-path: |
+            desktop/package-lock.json
+            client/package-lock.json
+            server/package-lock.json
       # Installer und .dmg tragen die Version im Namen, beim Tag die aus dem Tag (set-version.mjs
       # zieht desktop/package.json mit)
       - name: Version aus dem Tag übernehmen
         if: github.ref_type == 'tag'
         run: node scripts/set-version.mjs
-      - name: Programmdateien holen (Windows)
-        if: runner.os == 'Windows'
-        uses: actions/download-artifact@v8
-        with:
-          name: mietfuchs-store-programme
-          path: dist-bin/store
-      - name: Programmdateien holen (macOS)
-        if: runner.os == 'macOS'
-        uses: actions/download-artifact@v8
-        with:
-          name: mietfuchs-binaries
-          path: dist-bin
-      # Aus den Zips, die auch ans Release gehen (zip -j erhält das Ausführungsbit). electron-builder
-      # signiert sie beim Bau samt der App noch einmal ad hoc.
-      - name: macOS-Programmdateien entpacken
-        if: runner.os == 'macOS'
-        working-directory: dist-bin
+      # Das Frontend, das der Server im Fenster aus client/dist ausliefert
+      - name: Frontend bauen
         run: |
-          for archiv in mietfuchs-macos-apple-silicon.zip mietfuchs-macos-intel.zip; do unzip -o "$archiv"; done
-          ls -l mietfuchs-macos-apple-silicon mietfuchs-macos-intel
+          npm --prefix client ci
+          npm --prefix client run build
       - run: npm --prefix desktop ci
       # Die Tests des Fensters auch auf dem System, für das es gebaut wird (Pfade, Ports)
       - run: npm --prefix desktop test
@@ -609,6 +599,16 @@ jobs:
             dist-desktop/*.exe
             dist-desktop/*.dmg
           if-no-files-found: error
+      - name: Größen in die Zusammenfassung
+        shell: bash
+        run: |
+          {
+            echo "## Programmfenster gebaut (${{ matrix.name }})"
+            echo '```'
+            ls -l dist-desktop/*.exe dist-desktop/*.dmg 2>/dev/null || true
+            echo "Server-Ordner: $(du -sm dist-desktop-server | cut -f1) MB"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
       # Die entpackten Ordner, die electron-builder für den Installer anlegt, sind der Inhalt des
       # Store-Pakets (scripts/package-msix.mjs): dieselben Dateien wie im Installer.
       - name: Entpackte Ordner hochladen (Windows)
@@ -656,20 +656,21 @@ jobs:
         run: |
           $setup = Get-ChildItem paket\Mietfuchs-Setup-*.exe | Select-Object -First 1
           "Installer: $($setup.Name), $([math]::Round($setup.Length / 1MB, 1)) MB" | Tee-Object -Append groessen.txt
-          # Still installieren, für den Benutzer, ohne Adminrechte
-          Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait
+          # Still installieren, für den Benutzer, ohne Adminrechte; die Dauer kommt in die Zusammenfassung
+          $dauer = Measure-Command { Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait }
+          "Installation: $([math]::Round($dauer.TotalSeconds, 1)) s" | Tee-Object -Append groessen.txt
           # Der Ordner heißt wie das Paket (desktop/package.json, `name`)
           $dir = "$env:LOCALAPPDATA\Programs\mietfuchs"
           $exe = Join-Path $dir 'Mietfuchs.exe'
           if (-not (Test-Path $exe)) { Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Depth 1 | Out-Host; throw "$exe nach der Installation nicht gefunden" }
           "Installiert: $dir, $([math]::Round((Get-ChildItem $dir -Recurse | Measure-Object Length -Sum).Sum / 1MB, 1)) MB" | Tee-Object -Append groessen.txt
           # Startet der Installer das Programm danach, belegte es den Port der Prüfung: bis zu 20
-          # Sekunden darauf warten und es dann beenden, samt dem Server, den es gestartet hat
+          # Sekunden darauf warten und es dann beenden; der Server ist ein Prozess des Fensters (Mietfuchs.exe)
           for ($i = 0; $i -lt 20; $i++) {
             if (Get-Process Mietfuchs -ErrorAction SilentlyContinue) { break }
             Start-Sleep -Seconds 1
           }
-          Get-Process Mietfuchs, mietfuchs -ErrorAction SilentlyContinue | Stop-Process -Force
+          Get-Process Mietfuchs -ErrorAction SilentlyContinue | Stop-Process -Force
           "APP=$exe" >> $env:GITHUB_ENV
       - name: Installieren wie ein Nutzer (macOS)
         if: runner.os == 'macOS'
@@ -678,14 +679,18 @@ jobs:
           echo "Abbild: $(basename "$dmg"), $(du -m "$dmg" | cut -f1) MB" | tee -a groessen.txt
           hdiutil attach "$dmg" -nobrowse -mountpoint "$RUNNER_TEMP/abbild"
           mkdir -p "$RUNNER_TEMP/Programme"
+          start=$(node -p 'Date.now()')
           cp -R "$RUNNER_TEMP/abbild/Mietfuchs.app" "$RUNNER_TEMP/Programme/"
+          echo "Installation (Kopieren aus dem Abbild): $(node -p "((Date.now() - $start) / 1000).toFixed(1)") s" | tee -a groessen.txt
           hdiutil detach "$RUNNER_TEMP/abbild"
           app="$RUNNER_TEMP/Programme/Mietfuchs.app"
           echo "Installiert: $(du -sm "$app" | cut -f1) MB" | tee -a groessen.txt
-          # Ad hoc signiert, auch die Programmdatei des Servers; ohne gültige Signatur startet auf
-          # Apple Silicon nichts
+          # Ad hoc signiert; ohne gültige Signatur startet auf Apple Silicon nichts. Der Server liegt als
+          # Quellcode unter Contents/Resources/mietfuchs und ist von der Signatur der App mit erfasst.
           codesign --verify --deep --strict --verbose=2 "$app"
-          codesign -dv "$app/Contents/MacOS/mietfuchs-server" 2>&1 | grep -E 'Signature|Identifier'
+          codesign -dv "$app" 2>&1 | grep -E 'Signature|Identifier'
+          test -f "$app/Contents/Resources/mietfuchs/server/src/index.ts"
+          test -f "$app/Contents/Resources/mietfuchs/server/node_modules/express/package.json"
           echo "APP=$app/Contents/MacOS/Mietfuchs" >> "$GITHUB_ENV"
       - name: Starten und prüfen
         run: node scripts/desktop-check.mjs --app "${{ env.APP }}" --out fenster-pruefung
@@ -858,8 +863,8 @@ jobs:
 
   # Das Paket für den Microsoft Store (#500): aus dem Programmfenster (#517) je Architektur ein
   # .msix, zusammen ein .msixbundle (scripts/package-msix.mjs). Hinein kommt der entpackte Ordner
-  # des Fensters aus „Programmfenster bauen (Windows)“, darin die Programmdatei des Servers ohne
-  # Konsolenfenster unter resources\server. Unsigniert, das übernimmt der Store. Geprüft wird eine
+  # des Fensters aus „Programmfenster bauen (Windows)“, darin der Server aus dem Quellcode unter
+  # resources\mietfuchs, den das Fenster als utilityProcess startet. Unsigniert, das übernimmt der Store. Geprüft wird eine
   # Kopie, die ein Wegwerf-Zertifikat mit demselben Herausgeber signiert: installieren, starten,
   # Prüfskript, Beenden über die Oberfläche, deinstallieren. Dabei zählt vor allem der Datenordner:
   # Er muss im echten Benutzerordner liegen und die Deinstallation überstehen. Unter AppData hätte
@@ -917,7 +922,8 @@ jobs:
 
           $data = Join-Path $env:USERPROFILE 'Mietfuchs'
           if (Test-Path $data) { throw "Der Datenordner $data existiert schon vor dem Start" }
-          Add-AppxPackage -Path $probe
+          $dauer = Measure-Command { Add-AppxPackage -Path $probe }
+          "Store-Paket installiert in $([math]::Round($dauer.TotalSeconds, 1)) s" | Tee-Object -Append $env:GITHUB_STEP_SUMMARY
           $app = Get-AppxPackage -Name speedone.Mietfuchs
           Write-Host "Installiert: $($app.PackageFullName) in $($app.InstallLocation)"
           $url = "http://127.0.0.1:$env:FENSTER_PORT"
@@ -928,17 +934,19 @@ jobs:
             # Store-App, im Paket und mit dessen Umlenkungen.
             $alias = Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps\mietfuchs.exe'
             Start-Process -FilePath $alias
-            # Betriebsart store: Der Server erkennt das Paket an seinem Ort, auch mit NKA_DESKTOP vom Fenster
+            # Betriebsart store: Das Fenster sagt es dem Server (NKA_STORE aus process.windowsStore), zur
+            # Sicherheit erkennt er auch den Paketordner; im Protokoll steht, was das Fenster sah (Store ja/nein)
             node scripts/smoke-test.mjs --url $url --mode store
             if ($LASTEXITCODE -ne 0) { throw 'Prüfung des Store-Pakets fehlgeschlagen' }
 
-            # Fenster und Server laufen aus dem Paket: Mietfuchs.exe oben im Paket, der Server unter resources\server
-            $laufend = Get-Process Mietfuchs -ErrorAction SilentlyContinue | Select-Object Id, Path
-            $laufend | Format-Table -AutoSize | Out-Host
+            # Fenster und Server laufen aus dem Paket: beide sind Mietfuchs.exe oben im Paket, der Server als
+            # utilityProcess mit dem Quellcode unter resources\mietfuchs
             $fenster = Join-Path $app.InstallLocation 'Mietfuchs.exe'
-            $server = Join-Path $app.InstallLocation 'resources\server\mietfuchs.exe'
-            if (-not ($laufend | Where-Object { $_.Path -eq $fenster })) { throw "Das Fenster $fenster läuft nicht" }
-            if (-not ($laufend | Where-Object { $_.Path -eq $server })) { throw "Der Server $server läuft nicht" }
+            $laufend = Get-CimInstance Win32_Process -Filter "Name = 'Mietfuchs.exe'" | Select-Object ProcessId, ExecutablePath, CommandLine
+            $laufend | Format-Table ProcessId, ExecutablePath -AutoSize | Out-Host
+            $ausDemPaket = $laufend | Where-Object { $_.ExecutablePath -eq $fenster }
+            if (-not ($ausDemPaket | Where-Object { $_.CommandLine -notmatch '--type=' })) { throw "Das Fenster $fenster läuft nicht" }
+            if (-not ($ausDemPaket | Where-Object { $_.CommandLine -match 'node\.mojom\.NodeService' })) { throw "Der Server läuft nicht als utilityProcess von $fenster" }
 
             # Beenden aus der Oberfläche: Der Server endet, und das Fenster geht mit ihm
             $antwort = Invoke-RestMethod -Method Post -Uri "$url/api/quit"
