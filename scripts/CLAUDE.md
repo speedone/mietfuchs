@@ -246,6 +246,32 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   ARM64 nur, wenn es auch ein 32-Bit-Paket gibt (`installApplicationFiles` in
   app-builder-lib/templates/nsis/include/installer.nsh und `downloadApplicationFiles` in webPackage.nsh, Zweig
   ohne `APP_32_NAME`); mit x64 und ARM64 bekäme ein ARM-Rechner das x64-Paket. Der gemeinsame Installer wählt richtig (`identify_package` in extractAppPackage.nsh).
+- **Eigene Teile des Windows-Installers** ([../desktop/build/installer.nsh](../desktop/build/installer.nsh), über
+  `nsis.include`; electron-builder setzt die Datei in den Kopf des Skripts, vor seine Vorlagen in
+  app-builder-lib/templates/nsis, für Installer und Deinstallationsprogramm derselbe Kopf, dort mit `BUILD_UNINSTALLER`):
+  **Zeitprotokoll** nach `%TEMP%\mietfuchs-installation.log` (UTF-16, Ortszeit mit Millisekunden, Sekunden seit dem
+  Start, je Zeile eine Marke wie `[pruefung-ende]`), an den Haken `customInit`, `customCheckAppRunning`,
+  `customUnInstallCheck` (nach dem Deinstallieren der vorigen Fassung), `customFiles_x64`/`_arm64` (nach dem
+  Auspacken), `customInstall`, `customUnInit`, `customUnInstall` und `unregisterFileAssociations` (nach dem Entfernen
+  der Dateien). Die beiden letzten Haken legt electron-builder selbst nur für vorkomprimierte Dateien bzw.
+  Dateizuordnungen an; käme so etwas dazu, bricht der Bau laut ab. NSIS übernimmt beim Schreiben die Zeitstempel aus
+  dem Bau, echt sind nur Anlagezeiten neuer Kopien. **Prüfung auf ein laufendes Mietfuchs mit tasklist** statt der
+  Vorlage, die bis zu dreimal PowerShell startet (beim Aktualisieren samt altem Deinstallationsprogramm sechsmal):
+  gemessen auf windows-11-arm 7 bis 18 Sekunden je Prüfung, mit tasklist 0,2 bis 1. **Keine Kopie des Installers**
+  nach `%LOCALAPPDATA%\mietfuchs-updater\installer.exe` (230 MB, nur für electron-updater, den das Fenster nicht hat):
+  [installer-copyfile.nsh](../desktop/build/installer-copyfile.nsh) fasst `copyFile` der Vorlage neu, eingebunden aus
+  `customUnInstallCheck`, dem einzigen Haken zwischen der Definition und dem Einfügen von `installApplicationFiles`.
+  Die Deinstallation fasst nach, wenn `RMDir /r` eine gerade geöffnete Datei übergeht (in der CI blieb so
+  Mietfuchs.exe liegen). Prüfen ohne Windows: makensis aus dem Cache von electron-builder läuft unter Linux;
+  `electron-builder --win nsis --x64 --prepackaged <Ordner mit Attrappe>` mit einem `wine`, das nur das
+  Deinstallationsprogramm kopiert, übersetzt beide Durchläufe.
+- **Installer messen** (Job in release.yml, nur im vollen Prüfumfang,
+  [../desktop/build/installer-messung.ps1](../desktop/build/installer-messung.ps1)): dreimal installieren, darüber installieren und deinstallieren, einmal bei laufendem Mietfuchs, auf windows-11-arm
+  und windows-2025; Phasen aus dem Zeitprotokoll, Schreibzugriffe aus einem FileSystemWatcher, Stand und
+  Ereignisprotokoll von Defender. **Defender auf den Runnern ist kein Nutzerrechner:** Auf beiden sind `C:\` und
+  `D:\` ausgenommen, der Cloud-Schutz ist aus (MAPSReporting 0), auf windows-2025 auch der Echtzeitschutz (lässt
+  sich nicht einschalten). Was das Prüfen der Dateien kostet, zeigt nur das Protokoll vom Rechner eines Nutzers. Der
+  Vergleich mit der Prüfung der Vorlage steht in PR #537.
 - **Im Release-Lauf** ([release.yml](../.github/workflows/release.yml), Jobs „Programmfenster bauen“ und
   „Programmfenster prüfen auf …“, in jedem Prüfumfang): Der Bau hängt an keinem Bun-Artefakt und beginnt sofort; er
   baut das Frontend selbst. Installiert wie ein Nutzer und geprüft mit [desktop-check.mjs](desktop-check.mjs) (Start,
