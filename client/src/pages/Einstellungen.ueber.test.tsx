@@ -21,7 +21,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-test('Über Mietfuchs: keine Rechts- oder Steuerberatung, Lizenz ohne Gewähr, Links zu Lizenz und Quellcode', async () => {
+test('Über Mietfuchs: keine Rechts- oder Steuerberatung, Lizenz ohne Gewähr, Links zu Website, Lizenz und Quellcode', async () => {
   vi.stubGlobal('fetch', async () => new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } }))
   render(
     <PropertyProvider>
@@ -44,7 +44,9 @@ test('Über Mietfuchs: keine Rechts- oder Steuerberatung, Lizenz ohne Gewähr, L
   expect(license.getAttribute('href')).toBe('https://github.com/speedone/mietfuchs/blob/main/LICENSE')
   const source = within(card).getByRole('link', { name: 'Quellcode' })
   expect(source.getAttribute('href')).toBe('https://github.com/speedone/mietfuchs')
-  for (const a of [license, source]) expect(a.getAttribute('rel')).toMatch(/noreferrer/)
+  const website = within(card).getByRole('link', { name: 'Website' })
+  expect(website.getAttribute('href')).toBe('https://mietfuchs-app.de')
+  for (const a of [website, license, source]) expect(a.getAttribute('rel')).toMatch(/noreferrer/)
 })
 
 // Aus dem Microsoft Store: Updates spielt der Store ein; die Karte nennt nur die Version, ohne Häkchen und Knopf.

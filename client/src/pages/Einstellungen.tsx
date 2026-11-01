@@ -18,6 +18,7 @@ import LetterTemplateCard from '../components/LetterTemplateCard'
 import LetterDesignCard from '../components/LetterDesignCard'
 
 const SOURCE_URL = 'https://github.com/speedone/mietfuchs'
+const WEBSITE_URL = 'https://mietfuchs-app.de'
 const LICENSE_URL = `${SOURCE_URL}/blob/main/LICENSE`
 
 // `onNavigate`: Sprung auf eine andere Seite (der Link auf den Verlauf, #318).
@@ -218,6 +219,8 @@ export default function Einstellungen({ settings, reload, update, onNavigate }: 
         <p className="muted">
           © 2026 speedone. Mietfuchs ist freie Software unter der GNU Affero General Public License 3.0 und wird
           ohne Gewähr bereitgestellt, soweit das Gesetz es zulässt.{' '}
+          <a href={WEBSITE_URL} target="_blank" rel="noreferrer">Website</a>
+          {' · '}
           <a href={LICENSE_URL} target="_blank" rel="noreferrer">Lizenz</a>
           {' · '}
           <a href={SOURCE_URL} target="_blank" rel="noreferrer">Quellcode</a>
