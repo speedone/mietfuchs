@@ -6,18 +6,21 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+## [0.14.1] – 2026-11-01
+
 ### Hinzugefügt
 
 - **Über Mietfuchs** am Ende der Einstellungen: Version und Updates (bisher eine eigene Karte), dazu der Hinweis, dass
   Mietfuchs keine Rechts- oder Steuerberatung ersetzt und Ergebnisse vor dem Versand zu prüfen sind, Urheber, Lizenz
-  (AGPL-3.0, ohne Gewähr) und Links zu Lizenz und Quellcode. Derselbe Hinweis steht in der Beschreibung im Microsoft
-  Store.
-
+  (AGPL-3.0, ohne Gewähr) und Links zu Lizenz und Quellcode. In der App aus dem Microsoft Store steht dort, dass der
+  Store neue Versionen installiert, sobald Mietfuchs beendet ist. Der Hinweis zur Beratung steht auch in der
+  Beschreibung im Store.
 - **Passend zu Ihrem Bestand** in „Hilfe & Begriffe“: Über den Anleitungen stehen bis zu drei, die zu Ihren Daten
   passen, jede mit dem Grund, etwa „Weil 2025 ein Mieterwechsel erfasst ist“ oder „Weil eine Gas-Zentralheizung
   eingetragen ist“. Mietfuchs leitet sie aus Art und Wohnungen des gewählten Objekts, der Heizung, Mieterwechsel und
   Leerstand, Pauschalen und dem Abrechnungszeitraum ab; passt keine, entfällt der Abschnitt
   ([#488](https://github.com/speedone/mietfuchs/issues/488)).
+
 ### Geändert
 
 - Das Lexikon in „Hilfe & Begriffe“ steht in zwei Spalten: links die Begriffe von A bis Z mit Filter nach Thema, rechts
@@ -25,7 +28,6 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Begriffen. Am Handy erst die Liste, dann der Begriff. „Mehr in ‚Hilfe & Begriffe‘ →“ aus einem Formular, ein
   Suchtreffer und ein Begriff in einer Anleitung öffnen ihn dort unmittelbar
   ([#488](https://github.com/speedone/mietfuchs/issues/488)).
-
 - Die Programmdatei unter Windows und macOS vermerkt beim Start, wo ihr Datenordner liegt, in einer Datei im
   Benutzerordner. Eine spätere Fassung mit eigenem Programmfenster findet die Daten so und bietet den Umzug selbst an
   ([#517](https://github.com/speedone/mietfuchs/issues/517)). Die Datei verlässt den Rechner nicht.
@@ -3286,7 +3288,8 @@ Verteilung nach Wohnfläche, Personenzahl, Wohneinheiten, Verbrauch oder Direktz
 druckfertige Abrechnung je Mieter, Mietkonto, Steuerübersicht für die Anlage V, optionale
 KI-Belegauswertung gegen eine lokale Ollama-Instanz, Backup und Wiederherstellung.
 
-[Unveröffentlicht]: https://github.com/speedone/mietfuchs/compare/v0.14.0...HEAD
+[Unveröffentlicht]: https://github.com/speedone/mietfuchs/compare/v0.14.1...HEAD
+[0.14.1]: https://github.com/speedone/mietfuchs/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/speedone/mietfuchs/compare/v0.13.1...v0.14.0
 [0.13.1]: https://github.com/speedone/mietfuchs/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/speedone/mietfuchs/compare/v0.12.0...v0.13.0
