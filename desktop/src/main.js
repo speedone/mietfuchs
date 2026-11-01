@@ -13,7 +13,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { BrowserWindow, Menu, app, dialog, ipcMain, session, shell, utilityProcess } from 'electron'
-import { DEFAULT_PORT, SERVICE_NAME, blockedFileIn, dataDirIn, findBlockedFile, freePort, linkTarget, networkState, programFiles, serverEnv, serverModule, startFailure, startUrlIn, whoIsOn, chosenFolder } from './server.js'
+import { DEFAULT_PORT, SERVICE_NAME, blockedFileIn, dataDirIn, findBlockedFile, freePort, linkTarget, networkState, programFiles, serverEnv, serverModule, startFailure, startUrlIn, whoIsOn, chosenFolder, folderDialogProperties } from './server.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const startedAt = Date.now()
@@ -125,7 +125,7 @@ async function startServer(settings, fixedPort) {
   // nicht, der utilityProcess ist Electron selbst.
   const child = utilityProcess.fork(modulePath, [], {
     cwd,
-    env: serverEnv(process.env, { port, network: settings.network === true, packaged: app.isPackaged, windowsStore: process.windowsStore === true, repoRoot, platform: process.platform }),
+    env: serverEnv(process.env, { port, network: settings.network === true, packaged: app.isPackaged, windowsStore: process.windowsStore === true, repoRoot, platform: process.platform, searchDirs: knownFolders() }),
     stdio: 'pipe',
     serviceName: SERVICE_NAME,
   })
@@ -174,6 +174,19 @@ async function startServer(settings, fixedPort) {
     }
     child.stdout?.on('data', onData)
   })
+}
+
+// Downloads, Schreibtisch und Dokumente, wie das System sie nennt, für die Suche beim Umzug der Daten (#517). Unter
+// Windows liegen sie oft im OneDrive-Ordner, dessen Name sich nicht ableiten lässt.
+function knownFolders() {
+  /** @type {string[]} */
+  const dirs = []
+  for (const name of /** @type {const} */ (['downloads', 'desktop', 'documents'])) {
+    try {
+      dirs.push(app.getPath(name))
+    } catch { /* gibt es auf diesem System nicht */ }
+  }
+  return dirs
 }
 
 /** @param {string} text */
@@ -399,7 +412,7 @@ async function start() {
   ipcMain.handle('mietfuchs:choose-folder', async (event) => {
     if (!fromOwnPage(event)) throw new Error('Nicht erlaubt.')
     const owner = BrowserWindow.fromWebContents(event.sender)
-    const options = { title: 'Ordner der alten Programmdatei wählen', buttonLabel: 'Ordner wählen', properties: /** @type {Array<'openDirectory'>} */ (['openDirectory']) }
+    const options = { title: 'Alte Programmdatei, ihren Ordner oder ein Backup wählen', buttonLabel: 'Wählen', properties: folderDialogProperties(process.platform) }
     return chosenFolder(owner ? await dialog.showOpenDialog(owner, options) : await dialog.showOpenDialog(options))
   })
   ipcMain.handle('mietfuchs:network-set', (event, enabled) => {

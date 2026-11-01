@@ -177,14 +177,19 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   „Entwurf, nicht versenden“ (`print-only`, auch bei Strg+P). Eine abgeschlossene nie. Die erste
   Rückfrage zum Abschließen zu denselben Fehlern gilt dann als beantwortet (`sameErrors`).
 - **Umzug ins Programmfenster** (#517, [pages/Umzug.tsx](src/pages/Umzug.tsx), Logik in [relocation.ts](src/relocation.ts)):
-  Nur mit der Brücke des Fensters (`inWindow`) fragt App.tsx einmal `GET /api/relocation`; bis zur Antwort bleibt der
-  Platz der Seite leer, mit `offered` steht auf jeder Seite „Ihre bisherigen Daten übernehmen“ (eine Eingabe dazwischen machte den Umzug unmöglich). Funde als Karte „Gefundene
-  Daten“ (Ort, „Zuletzt geändert am …“, Objekte und Mietverhältnisse, Primärknopf „Daten übernehmen“, denn ein nacktes
-  „Übernehmen“ verbietet S16); läuft das alte Mietfuchs noch, ist der Knopf gesperrt (`aria-describedby` auf den
-  Hinweis) und „Altes Mietfuchs beenden“ steht daneben. Ohne Fund genau ein empfohlener Weg, das Backup (Ablage und
-  „Backup einspielen“ über `/api/restore`), darunter „Ordner der alten Programmdatei wählen …“ (nur mit
-  `chooseFolder` der Brücke) und „Neu anfangen …“ mit Rückfrage. Ein umgezogener Ordner zeigt oben auf jeder Seite
-  „Nur noch zum Ansehen“ (Database.tsx, `moved` aus `/healthz`), ohne „Verstanden“.
+  Nur mit der Brücke des Fensters (`inWindow`, auch aus dem Store) fragt App.tsx einmal `GET /api/relocation`; bis zur
+  Antwort bleibt der Platz der Seite leer. Mit `offered` (leerer Bestand, noch nichts entschieden) steht auf jeder Seite
+  genau eine Frage, danach gespeichert: **gefunden** „Wir haben Ihre bisherigen Mietfuchs-Daten gefunden“ mit Karte
+  „Gefundene Daten“ (Ort, „Zuletzt geändert am …“, Objekte und Mietverhältnisse), Primärknopf „Daten übernehmen“ (ein
+  nacktes „Übernehmen“ verbietet S16), klein „Andere Daten wählen …“ und „Nicht übernehmen, neu beginnen“ mit Rückfrage;
+  **nichts gefunden** „Willkommen bei Mietfuchs“, „Haben Sie Mietfuchs schon einmal benutzt?“ mit zwei gleichen Knöpfen
+  „Nein, neu beginnen“ (sofort, ohne Rückfrage) und „Ja, Daten übernehmen“ (Backup mit Ablage und „Backup einspielen“,
+  klein „Ordner der alten Programmdatei wählen …“ über `chooseFolder`, „Erneut suchen“). Läuft das alte Mietfuchs noch,
+  ist „Daten übernehmen“ gesperrt (`aria-describedby`) und „Altes Mietfuchs beenden“ steht daneben. Beim Kopieren
+  Fortschritt mit „Abbrechen“. Dauerhaft in den Einstellungen (Karte „Daten & Sicherung“, nur im Fenster) „Daten aus
+  bisherigem Mietfuchs übernehmen …“: derselbe Bildschirm mit `manual` und „Zurück“; mit eigenem Bestand fragt jede
+  Übernahme „Ihre jetzigen Daten ersetzen?“ (`danger`) und schickt `replace`. Ein umgezogener Ordner zeigt oben „Nur noch
+  zum Ansehen“ (Database.tsx), nach dem Umzug geänderte alte Daten [NewerStock.tsx](src/components/NewerStock.tsx).
 - **Leerzustände** (`EmptyState`, [emptyStock.ts](src/emptyStock.ts)): im leeren Zeitraum der erste
   fehlende Schritt mit Knopf, ohne Entwurf, Frist, Kennzahlen; ein gesperrter Knopf nennt seinen
   Grund (`aria-describedby`). Nach dem Abschluss nennt die Unterzeile des Cockpits Stand und offene

@@ -19,11 +19,21 @@ dem Store; ein Fehler wird nur gemeldet. In docs/datenschutz.md genannt.
 [relocation.ts](relocation.ts) (Fundorte, Suche, Beschreibung, Vermerk, Entscheidung, Vergleich; ohne Server), Routen und
 Ablauf in index.ts („Umzug ins Programmfenster“), Bildschirm client/src/pages/Umzug.tsx.
 
-- **Wann**: nur `RUNTIME === 'desktop'` (nicht `store`), nur unter Windows und macOS (unter Linux nur nachgestellt mit
-  `NKA_RUNTIME=desktop`), Datenbank ohne Bestand (`carriesStock`), keine `db.json` im Datenordner, kein `umzug.json`
-  (Entscheidung: `moved` oder `fresh`), kein Vermerk. `GET /api/relocation` sagt nur `{ offered }` (schnell, beim Start
-  der Oberfläche), `GET /api/relocation/candidates` die Funde. Die Oberfläche fragt nur mit der Brücke des Fensters
-  (`inWindow`); im Browser, am Handy, in Docker erscheint nichts. Alle Routen nur von 127.0.0.1 (`fromThisComputer`).
+- **Wann**: nur im Fenster, `desktop` und `store` (wer von der Programmdatei in den Store wechselt, stünde sonst ohne
+  Daten da), nur unter Windows und macOS (unter Linux nur nachgestellt mit `NKA_RUNTIME=desktop`, der Store zusätzlich
+  mit `NKA_TEST_STORE=1`), nicht in einem umgezogenen Ordner (`relocationAvailable`). **Von selbst genau einmal**
+  (`relocationOffered`): ohne Bestand (`carriesStock`, keine `db.json`) und ohne `umzug.json` (Entscheidung `moved` oder
+  `fresh`); die Oberfläche zeigt dann je nach Fund die Frage oder den Willkommensbildschirm (client/CLAUDE.md).
+  `GET /api/relocation` sagt `{ offered }` (schnell), `GET /api/relocation/candidates` die Funde samt `ownStock` (eine
+  Minute gemerkt, ob die alte Fassung läuft, wird jedes Mal neu gefragt). **Von Hand** (Einstellungen) gehen Funde,
+  Ordnerwahl, Übernahme und Backup auch mit eigenem Bestand, dann nur mit `replace: true` (sonst 409 mit `replace`); der
+  Stand von jetzt wird als `vor-restore` gesichert, die Zustimmungen von jetzt gelten (`AdoptMode` `replace`). Alle
+  Routen nur von 127.0.0.1 (`fromThisComputer`).
+- **Gewählt** (`classifyChoice`, `POST /api/relocation/inspect`): Ordner der Programmdatei, `data`, die Programmdatei
+  selbst, `mietfuchs.sqlite` oder `db.json` (dann deren Ordner; nur `db.json` ist ein gültiger alter Bestand), oder ein
+  Backup (`{ backup }`, dann `POST /api/relocation/restore-backup`: wie `/api/restore`, von der Platte gelesen). Der
+  Dialog lässt unter Windows nur Dateien zu (ein Dialog kann dort nicht beides), auf dem Mac Ordner und Dateien
+  (`folderDialogProperties`).
 - **Fundorte**: zuerst die Einträge der Ortsdatei mit Bestand, ohne Vermerk, ohne den eigenen Ordner
   (`rememberedFolders`), dazu unter Windows der Ausweichort `%LOCALAPPDATA%\Mietfuchs` der Programmdatei
   (`fixedPlaces`; auf dem Mac ist der Ausweichort der Ordner des Fensters selbst). Sonst die Suche
@@ -50,12 +60,25 @@ Ablauf in index.ts („Umzug ins Programmfenster“), Bildschirm client/src/page
   **Zustimmungen kommen mit** (`ConsentRule` `archive`, siehe db/CLAUDE.md), ebenso `secrets.json`, wenn es im neuen
   Ordner keine gibt.
 - **Danach**: Vermerk im alten Ordner (`umgezogen.json` mit `movedTo`, `at`, `appVersion`, daneben `UMGEZOGEN.txt`, beide
-  über Zwischendatei; scheitert er, sagt es ein Hinweis), `umzug.json` im neuen, der neue Ort in der Ortsdatei.
+  über Zwischendatei; scheitert er, sagt es ein Hinweis), `umzug.json` im neuen, der neue Ort in der Ortsdatei (nicht aus
+  dem Store, siehe scripts/CLAUDE.md, „Microsoft Store“).
 - **Vermerk** (`MOVED_AWAY` beim Start, sonst je Anfrage gelesen): Jede Anfrage außer GET, `/api/quit` und `/api/update/check` bekommt 423 mit
   `movedAwayMessage`; `/healthz` nennt `moved`, die Oberfläche zeigt „Nur noch zum Ansehen“ (Database.tsx). Geöffnet wird
   eine **Kopie** in `mietfuchs-umgezogen-*` im Ordner für Zwischendateien (`movedView`; Datenbank, Journal, db.json), damit
   im alten Ordner nichts migriert oder umgestiegen wird; kein Aufräumen, keine Vorversion, kein Hinweis nach dem Update,
   kein Eintrag in der Ortsdatei. Alte Fassungen kennen den Vermerk nicht (bekannt und hingenommen).
+- **Suchorte des Fensters**: Downloads, Schreibtisch und Dokumente nennt das Fenster über `app.getPath` in
+  `NKA_SEARCH_DIRS` (JSON-Liste, `serverEnv` in desktop/src/server.js); sie gehen den abgeleiteten vor, denn unter
+  Windows liegen sie oft in einem OneDrive-Ordner wie „OneDrive - Firma“.
+- **Großer Bestand**: Platz vorher (`restoreSpaceNeeded`, Meldung mit MB), Fortschritt je Datei in
+  `GET /api/relocation/progress` (`copy`, `check`, `switch`), `POST /api/relocation/cancel` bis vor dem Umschalten;
+  abgebrochen heißt 400 und beide Ordner wie vorher.
+- **Später im alten Mietfuchs geändert** (zwei Bestände vermeiden; alte Fassungen kennen den Vermerk nicht): `umzug.json`
+  hält `source` (Art und `stockFingerprint`: SHA-256 über alle Tabellen außer Journal und Migrationen, dazu die jüngste
+  Gruppe des Journals; db.json als Datei). Die Dateizeit zählt nicht, schon ein Start schreibt eine Probe in die Datei.
+  `GET /api/relocation` nennt dann `newer`; die Oberfläche zeigt einen Hinweis (NewerStock.tsx) mit „Neueren Stand
+  übernehmen …“ (Rückfrage, `POST /api/relocation/readopt`: derselbe Weg, Stand von jetzt als `vor-restore`, Zustimmungen
+  von jetzt) und „Nicht übernehmen“ (`/api/relocation/newer/dismiss` merkt sich den Fingerabdruck). Nie von selbst.
 - **Aus der Durchsicht vor dem PR**: Mit liegengebliebenem `-journal` liest `lookIntoDatabase` eine Kopie (nur lesend
   ginge es nicht, und mit db.json daneben hätte der Umzug still die db.json genommen). Belege als Verweis zählen mit
   ihrem Ziel und werden als Datei kopiert. Belege, die schon im neuen Ordner lagen, stören den Vergleich nicht. Kurz vor
@@ -618,6 +641,9 @@ Nur für Tests, ein Nutzer setzt sie nie:
   Prozess bei 1, also nur auf einem leeren, einmal gestarteten Datenordner; die Konsole nennt ihn beim Start. Unter
   `seq` gewinnt bei Gleichstand immer der zuerst angelegte Datensatz, im Betrieb ein zufälliger.
 - `NKA_TEST_START_DELAY_MS`, `NKA_TEST_FREE_BYTES`: siehe scripts/CLAUDE.md bzw. db/CLAUDE.md.
+- **`NKA_TEST_STORE=1`** (Umzug, #517) neben `NKA_RUNTIME=desktop`: der Umzug wie aus dem Store (Ortsdatei nur lesen).
+- **`NKA_TEST_COPY_DELAY_MS`** (Umzug, #517) wartet nach jeder kopierten Datei, damit ein Test Fortschritt und
+  Abbrechen sieht.
 - **`NKA_TEST_HOME`**, **`NKA_TEST_LOCATIONS_FILE`**, **`NKA_TEST_OLD_PORT`** (Umzug, #517): Heimatordner für Suche und
   Ortsdatei, die Ortsdatei selbst und der Port der alten Fassung (sonst 3001). **Mit `CI` und ohne `NKA_TEST_HOME` wird
   weder gesucht noch die Ortsdatei gelesen** (`relocationHome`), damit kein Test den echten Benutzerordner liest.

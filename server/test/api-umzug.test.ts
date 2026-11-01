@@ -469,3 +469,178 @@ test('Durchsicht D1: ein fehlender Vermerk wird beim nächsten Start nachgeholt'
     fs.rmSync(old.home, { recursive: true, force: true })
   }
 })
+
+// Ergänzung 1: die Orte, die das Fenster nennt (OneDrive)
+test('Ergänzung: gesucht wird auch an den Orten, die das Fenster nennt', async () => {
+  const home = tempDir()
+  const old = await oldFolder('database', home)
+  const desk = path.join(home, 'OneDrive - Firma', 'Schreibtisch')
+  fs.mkdirSync(desk, { recursive: true })
+  fs.renameSync(old.program, path.join(desk, 'mietfuchs-0.14'))
+  const s = await startServerIn(tempDir(), desktopEnv(home, { NKA_SEARCH_DIRS: JSON.stringify([desk]) }))
+  try {
+    const [found] = (await s.api<Offer>('/api/relocation/candidates')).candidates ?? []
+    assert.equal(found?.dataDir, path.join(desk, 'mietfuchs-0.14', 'data'))
+  } finally {
+    s.stop()
+    fs.rmSync(home, { recursive: true, force: true })
+  }
+})
+
+// Ergänzung 2: Wurde im alten Mietfuchs nach dem Umzug noch etwas geändert, sagt es das neue und bietet an, den neueren
+// Stand noch einmal zu übernehmen, nie von selbst. Der Stand von jetzt wird dabei gesichert (vor-restore).
+test('Ergänzung: Änderungen im alten Mietfuchs nach dem Umzug werden erkannt und auf Wunsch übernommen', async () => {
+  const old = await oldFolder()
+  const s = await startServerIn(tempDir(), desktopEnv(old.home))
+  try {
+    assert.equal((await post(s.base, '/api/relocation/adopt', { dataDir: old.data })).status, 200)
+    assert.deepEqual(await s.api<{ offered: boolean, newer?: unknown }>('/api/relocation'), { offered: false })
+    // Eine alte Fassung, die den Vermerk nicht kennt, ändert etwas
+    const { DatabaseSync } = await import('node:sqlite')
+    const db = new DatabaseSync(path.join(old.data, 'mietfuchs.sqlite'))
+    db.exec("UPDATE tenancies SET tenant_name = 'Schmidt-Lange' WHERE tenant_name = 'Schmidt'")
+    db.close()
+    const offer = await s.api<{ offered: boolean, newer?: { from: string, modifiedAt: string } }>('/api/relocation')
+    assert.equal(offer.newer?.from, old.data)
+    // Nie von selbst
+    assert.deepEqual((await s.api<Tenancy[]>('/api/tenancies')).map((t) => t.tenantName).sort(), ['Müller', 'Schmidt'])
+    const again = await post(s.base, '/api/relocation/readopt')
+    assert.equal(again.status, 200, JSON.stringify(again.body))
+    assert.deepEqual((await s.api<Tenancy[]>('/api/tenancies')).map((t) => t.tenantName).sort(), ['Müller', 'Schmidt-Lange'])
+    assert.ok(fs.existsSync(path.join(s.dataDir, 'mietfuchs.sqlite.vor-restore')), 'der Stand vorher ist gesichert')
+    assert.deepEqual(await s.api('/api/relocation'), { offered: false })
+    // Abwinken: danach kein Hinweis mehr für diesen Stand
+    const db2 = new DatabaseSync(path.join(old.data, 'mietfuchs.sqlite'))
+    db2.exec("UPDATE tenancies SET tenant_name = 'Müller-Neu' WHERE tenant_name = 'Müller'")
+    db2.close()
+    assert.ok((await s.api<{ newer?: unknown }>('/api/relocation')).newer)
+    assert.equal((await post(s.base, '/api/relocation/newer/dismiss')).status, 200)
+    assert.deepEqual(await s.api('/api/relocation'), { offered: false })
+  } finally {
+    s.stop()
+    fs.rmSync(old.home, { recursive: true, force: true })
+  }
+})
+
+// Ergänzung 4: großer Bestand. Vorher Platz prüfen, beim Kopieren Fortschritt, Abbrechen sicher.
+test('Ergänzung: zu wenig Platz wird vor dem Kopieren gesagt', async () => {
+  const old = await oldFolder()
+  const s = await startServerIn(tempDir(), desktopEnv(old.home, { NKA_TEST_FREE_BYTES: '1000' }))
+  try {
+    const refused = await post(s.base, '/api/relocation/adopt', { dataDir: old.data })
+    assert.equal(refused.status, 400)
+    assert.match(String(refused.body.error), /nicht genug Platz.*MB/)
+    assert.deepEqual(fs.readdirSync(path.join(s.dataDir, 'uploads')), [])
+  } finally {
+    s.stop()
+    fs.rmSync(old.home, { recursive: true, force: true })
+  }
+})
+
+test('Ergänzung: Fortschritt beim Kopieren, Abbrechen lässt beide Ordner, wie sie waren', async () => {
+  const old = await oldFolder()
+  for (let i = 0; i < 8; i++) fs.writeFileSync(path.join(old.data, 'uploads', `beleg-${i}.pdf`), PDF)
+  const before = fingerprint(old.data)
+  const s = await startServerIn(tempDir(), desktopEnv(old.home, { NKA_TEST_COPY_DELAY_MS: '250' }))
+  try {
+    const adopting = post(s.base, '/api/relocation/adopt', { dataDir: old.data })
+    let progress: { phase: string, files: number, totalFiles: number, bytes: number, totalBytes: number } | null = null
+    for (let i = 0; i < 100; i++) {
+      progress = await s.api('/api/relocation/progress')
+      if (progress && progress.files >= 2) break
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+    assert.equal(progress?.phase, 'copy')
+    // Neun Belege und die Datenbank
+    assert.equal(progress?.totalFiles, 10)
+    assert.ok((progress?.totalBytes ?? 0) > 0)
+    assert.equal((await post(s.base, '/api/relocation/cancel')).status, 200)
+    const result = await adopting
+    assert.equal(result.status, 400)
+    assert.match(String(result.body.error), /abgebrochen/)
+    assert.deepEqual(await s.api<Tenancy[]>('/api/tenancies'), [])
+    assert.deepEqual(fs.readdirSync(path.join(s.dataDir, 'uploads')), [])
+    assert.deepEqual(fingerprint(old.data), before)
+    assert.equal((await s.api<{ phase: string }>('/api/relocation/progress')).phase, 'idle')
+  } finally {
+    s.stop()
+    fs.rmSync(old.home, { recursive: true, force: true })
+  }
+})
+
+// Ergänzung: Auch die Store-Fassung bietet den Umzug an (wer von der Programmdatei in den Store wechselt, stünde sonst
+// ohne Daten da). Sie liest die Ortsdatei, schreibt sie aber nicht: Unter AppData lenkt Windows das Schreiben einer
+// Store-App in ihren Paketordner um, die Programmdatei sähe es nie. Nachgestellt mit NKA_TEST_STORE=1 (eine
+// Store-Angabe in NKA_RUNTIME zählt bewusst nicht, runtime.test.ts).
+test('Ergänzung: Store-Fassung übernimmt, liest die Ortsdatei und schreibt sie nicht', async () => {
+  const old = await oldFolder()
+  const locations = path.join(old.home, 'standorte.json')
+  const content = JSON.stringify({ version: 1, locations: [{ dataDir: old.data, exe: path.join(old.program, programName), appVersion: '0.14.1', lastSeen: '2026-11-01T08:00:00.000Z' }] })
+  fs.writeFileSync(locations, content)
+  const s = await startServerIn(tempDir(), desktopEnv(old.home, { NKA_TEST_STORE: '1', NKA_TEST_LOCATIONS_FILE: locations }))
+  try {
+    const offer = await s.api<Offer>('/api/relocation/candidates')
+    assert.deepEqual(offer.candidates?.map((c) => [c.dataDir, c.source]), [[old.data, 'remembered']])
+    assert.equal((await post(s.base, '/api/relocation/adopt', { dataDir: old.data })).status, 200)
+    assert.ok(fs.existsSync(path.join(old.data, 'umgezogen.json')))
+    assert.equal(fs.readFileSync(locations, 'utf8'), content, 'die Ortsdatei bleibt, wie sie war')
+  } finally {
+    s.stop()
+    fs.rmSync(old.home, { recursive: true, force: true })
+  }
+})
+
+// Ergänzung: Wer statt eines Ordners die Programmdatei, die db.json oder ein Backup wählt, kommt trotzdem ans Ziel.
+test('Ergänzung: gewählt werden auch Programmdatei, db.json und Backup; ein Backup wird eingespielt', async () => {
+  const old = await oldFolder('json')
+  // Ein Backup des alten Bestands, wie es „Backup herunterladen“ liefert
+  const source = await startServerIn(tempDir(), {})
+  const zip = path.join(old.home, 'mietfuchs-backup.zip')
+  try {
+    await source.api('/api/units', { method: 'POST', body: JSON.stringify({ name: 'Aus dem Backup', areaM2: 10, participates: true }) })
+    fs.writeFileSync(zip, Buffer.from(await (await fetch(`${source.base}/api/backup`)).arrayBuffer()))
+  } finally {
+    source.stop()
+  }
+  const s = await startServerIn(tempDir(), desktopEnv(tempDir()))
+  try {
+    for (const chosen of [path.join(old.program, programName), path.join(old.data, 'db.json')]) {
+      const r = await post(s.base, '/api/relocation/inspect', { folder: chosen })
+      assert.equal(r.status, 200, `${chosen}: ${JSON.stringify(r.body)}`)
+      assert.equal((r.body.candidate as Candidate).dataDir, old.data)
+    }
+    const asBackup = await post(s.base, '/api/relocation/inspect', { folder: zip })
+    assert.deepEqual(asBackup.body, { backup: zip })
+    const restored = await post(s.base, '/api/relocation/restore-backup', { file: zip })
+    assert.equal(restored.status, 200, JSON.stringify(restored.body))
+    assert.deepEqual((await s.api<{ name: string }[]>('/api/units')).map((u) => u.name), ['Aus dem Backup'])
+    assert.ok(fs.existsSync(zip), 'das Backup selbst bleibt liegen')
+  } finally {
+    s.stop()
+    fs.rmSync(old.home, { recursive: true, force: true })
+  }
+})
+
+// Ergänzung: Von Hand (Einstellungen „Daten aus bisherigem Mietfuchs übernehmen …“) geht der Umzug auch mit eigenem
+// Bestand, aber nur mit ausdrücklichem `replace` (Rückfrage in der Oberfläche); der Stand von jetzt wird gesichert.
+test('Ergänzung: mit eigenem Bestand nur mit replace, der Stand vorher ist gesichert', async () => {
+  const old = await oldFolder()
+  const s = await startServerIn(tempDir(), desktopEnv(old.home))
+  try {
+    await s.api('/api/units', { method: 'POST', body: JSON.stringify({ name: 'Eigene', areaM2: 10, participates: true }) })
+    const list = await s.api<Offer & { ownStock: boolean }>('/api/relocation/candidates')
+    assert.equal(list.offered, false)
+    assert.equal(list.ownStock, true)
+    assert.equal(list.candidates?.[0]?.dataDir, old.data)
+    const refused = await post(s.base, '/api/relocation/adopt', { dataDir: old.data })
+    assert.equal(refused.status, 409)
+    assert.equal(refused.body.replace, true)
+    const replaced = await post(s.base, '/api/relocation/adopt', { dataDir: old.data, replace: true })
+    assert.equal(replaced.status, 200, JSON.stringify(replaced.body))
+    assert.deepEqual((await s.api<{ name: string }[]>('/api/units')).map((u) => u.name).sort(), ['EG', 'OG'])
+    assert.ok(fs.existsSync(path.join(s.dataDir, 'mietfuchs.sqlite.vor-restore')))
+  } finally {
+    s.stop()
+    fs.rmSync(old.home, { recursive: true, force: true })
+  }
+})

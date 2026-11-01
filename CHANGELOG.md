@@ -29,15 +29,19 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Hinzugefügt
 
-- **Umzug der Daten ins Programmfenster** ([#517](https://github.com/speedone/mietfuchs/issues/517)): Startet das
-  Programmfenster unter Windows oder macOS zum ersten Mal ohne Daten, zeigt es „Ihre bisherigen Daten übernehmen“. Es
-  findet den Ordner `data` neben der bisherigen Programmdatei (über den gemerkten Ort oder in Downloads, Schreibtisch
-  und Dokumente) und nennt Ort, letzte Änderung und Zahl der Objekte und Mietverhältnisse. „Daten übernehmen“ kopiert
-  Datenbank, Belege und Briefpapier, vergleicht die Kopie mit dem Original und schaltet erst dann um; auch eine alte
-  `db.json` aus den ersten Fassungen kommt mit. Läuft das alte Mietfuchs noch, beendet es ein Knopf zuerst. Ohne Fund
-  führt der Bildschirm zum Backup aus dem alten Mietfuchs oder zur Wahl des Ordners. Der alte Ordner bleibt
-  unverändert liegen und bekommt nur einen Vermerk; eine aktuelle Programmdatei zeigt ihn danach nur noch an und nimmt
-  keine Änderungen mehr an.
+- **Umzug der Daten ins Programmfenster** ([#517](https://github.com/speedone/mietfuchs/issues/517)): Beim ersten Start
+  des Programmfensters unter Windows oder macOS (auch aus dem Microsoft Store) ohne Daten fragt Mietfuchs genau einmal.
+  Findet es Daten der bisherigen Programmdatei (über den gemerkten Ort oder in Downloads, Schreibtisch und Dokumente,
+  auch in OneDrive), nennt es Ort, letzte Änderung und Zahl der Objekte und Mietverhältnisse und bietet „Daten
+  übernehmen“ an; sonst fragt es „Haben Sie Mietfuchs schon einmal benutzt?“ und führt bei „Ja“ zum Backup aus dem
+  alten Mietfuchs oder zur Wahl des Ordners, bei „Nein“ gleich los. Übernommen wird als Kopie: Datenbank, Belege und
+  Briefpapier, auch eine alte `db.json` aus den ersten Fassungen; die Kopie wird mit dem Original verglichen, erst dann
+  wird umgeschaltet. Läuft das alte Mietfuchs noch, beendet es ein Knopf zuerst; bei großen Beständen zeigt Mietfuchs den
+  Fortschritt und lässt sich abbrechen. Der alte Ordner bleibt unverändert liegen und bekommt nur einen Vermerk; eine
+  aktuelle Programmdatei zeigt ihn danach nur noch an. Wird im alten Mietfuchs trotzdem noch etwas geändert, sagt es das
+  neue und bietet an, den neueren Stand noch einmal zu übernehmen. Später geht das jederzeit in den Einstellungen unter
+  „Daten aus bisherigem Mietfuchs übernehmen …“; vorhandene Daten werden dabei nur nach Rückfrage ersetzt und vorher
+  gesichert.
 - **Website:** Mietfuchs hat eine eigene Website, [mietfuchs-app.de](https://mietfuchs-app.de), mit Download für jedes
   System und Ratgebern zur Nebenkostenabrechnung. Der Link steht in den Einstellungen unter „Über Mietfuchs“.
 

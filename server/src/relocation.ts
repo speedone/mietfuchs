@@ -6,6 +6,7 @@
 //
 // **Plattform, Heimatordner und Umgebung kommen immer hinein** (CLAUDE.md, Konventionen): Die Tests prüfen die Wege
 // unter Windows und macOS auf jedem Rechner, und keiner liest den echten Benutzerordner.
+import crypto from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -34,12 +35,25 @@ export function relocationHome(env: NodeJS.ProcessEnv, home: () => string): stri
 // Wo die Programmdatei meist lag: Downloads, Schreibtisch, Dokumente. Unter Windows lenkt OneDrive Schreibtisch und
 // Dokumente oft in seinen Ordner um; auf der Platte heißen sie dort „Desktop“ und „Documents“, bei manchen deutschen
 // Einrichtungen „Dokumente“.
-export function searchRoots({ platform, home }: { platform: NodeJS.Platform, home: string | null }): string[] {
-  if (!home) return []
+// `given`: die echten Orte, die das Fenster über `app.getPath` nennt (NKA_SEARCH_DIRS); sie gehen vor, denn unter
+// Windows lenkt OneDrive sie oft in Ordner wie „OneDrive - Firma\Schreibtisch“ um, die sich nicht ableiten lassen.
+export function searchRoots({ platform, home, given = [] }: { platform: NodeJS.Platform, home: string | null, given?: readonly string[] }): string[] {
   const p = pathOf(platform)
-  const roots = ['Downloads', 'Desktop', 'Documents'].map((name) => p.join(home, name))
-  if (platform === 'win32') roots.push(...['Desktop', 'Documents', 'Dokumente'].map((name) => p.join(home, 'OneDrive', name)))
+  const derived = home ? ['Downloads', 'Desktop', 'Documents'].map((name) => p.join(home, name)) : []
+  if (home && platform === 'win32') derived.push(...['Desktop', 'Documents', 'Dokumente'].map((name) => p.join(home, 'OneDrive', name)))
+  const roots: string[] = []
+  for (const dir of [...given, ...derived]) if (!roots.some((r) => samePath(r, dir, platform))) roots.push(dir)
   return roots
+}
+
+// Die Orte des Fensters aus NKA_SEARCH_DIRS (eine JSON-Liste, damit kein Trennzeichen in einem Pfad stört).
+export function searchDirsFromEnv(env: NodeJS.ProcessEnv): string[] {
+  try {
+    const raw: unknown = JSON.parse(env.NKA_SEARCH_DIRS ?? '[]')
+    return Array.isArray(raw) ? raw.filter((d): d is string => typeof d === 'string' && d !== '') : []
+  } catch {
+    return []
+  }
 }
 
 // Feste Orte, an denen eine Programmdatei ihre Daten hatte, wenn sie neben sich nicht schreiben durfte (`userDataHome`
@@ -126,6 +140,32 @@ export function folderFromChoice(chosen: string): string | null {
   const beside = path.join(chosen, 'data')
   if (hasStock(beside)) return beside
   return hasStock(chosen) ? chosen : null
+}
+
+// Was jemand bei „Ordner wählen …“ gewählt hat, nachsichtig gelesen: den Ordner der Programmdatei, `data`, die
+// Programmdatei selbst, `mietfuchs.sqlite` oder `db.json` (dann deren Ordner), oder ein Backup (ZIP), das dann
+// eingespielt wird. `null`: nichts davon.
+export function classifyChoice(chosen: string, platform: NodeJS.Platform): { dataDir: string } | { backup: string } | null {
+  let stat: fs.Stats
+  try {
+    stat = fs.statSync(chosen)
+  } catch {
+    return null
+  }
+  if (stat.isDirectory()) {
+    const dataDir = folderFromChoice(chosen)
+    return dataDir ? { dataDir } : null
+  }
+  if (!stat.isFile()) return null
+  const name = path.basename(chosen)
+  if (/\.zip$/i.test(name)) return { backup: chosen }
+  const dir = path.dirname(chosen)
+  if (/^(mietfuchs\.sqlite|db\.json)$/i.test(name)) return hasStock(dir) ? { dataDir: dir } : null
+  if (programFilePattern(platform).test(name)) {
+    const dataDir = folderFromChoice(dir)
+    return dataDir ? { dataDir } : null
+  }
+  return null
 }
 
 const isObject = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v)
@@ -350,13 +390,17 @@ function writeAtomically(file: string, content: string): void {
 
 // ---------- Entscheidung im neuen Ordner ----------
 
-export type RelocationDecision = { version: 1, decision: 'moved' | 'fresh', at: string, from?: string }
+// `source`: Art und Fingerabdruck des übernommenen Bestands, um spätere Änderungen im alten Ordner zu erkennen
+export type RelocationDecision = { version: 1, decision: 'moved' | 'fresh', at: string, from?: string, source?: { kind: StockKind, fingerprint: string } }
 
 export function readDecision(dataDir: string): RelocationDecision | null {
   try {
     const raw: unknown = JSON.parse(fs.readFileSync(path.join(dataDir, DECISION_FILE), 'utf8'))
     if (!isObject(raw) || raw.version !== 1 || (raw.decision !== 'moved' && raw.decision !== 'fresh') || typeof raw.at !== 'string') return null
-    return { version: 1, decision: raw.decision, at: raw.at, ...(typeof raw.from === 'string' ? { from: raw.from } : {}) }
+    const source = isObject(raw.source) && (raw.source.kind === 'database' || raw.source.kind === 'json') && typeof raw.source.fingerprint === 'string'
+      ? { source: { kind: raw.source.kind as StockKind, fingerprint: raw.source.fingerprint } }
+      : {}
+    return { version: 1, decision: raw.decision, at: raw.at, ...(typeof raw.from === 'string' ? { from: raw.from } : {}), ...source }
   } catch {
     return null
   }
@@ -401,4 +445,57 @@ export function copyErrorText(err: unknown): string {
   }
   const message = err instanceof Error ? err.message : String(err)
   return `Die Daten ließen sich nicht kopieren (${message}). ${ADOPT_UNCHANGED}`
+}
+
+// ---------- Später im alten Mietfuchs geändert? ----------
+
+// Ein Fingerabdruck des Inhalts (#517): Alte Fassungen kennen den Vermerk nicht, und mancher startet die angeheftete
+// Programmdatei weiter. Verglichen wird der Inhalt, nicht die Dateizeit: Schon der Start einer Fassung schreibt eine
+// Probe in die Datei. Das Journal selbst zählt nur mit seiner jüngsten Gruppe, denn sein Aufräumen ändert nichts am
+// Bestand. `null`: nicht lesbar.
+const SKIPPED_TABLES = new Set(['__drizzle_migrations', 'change_log', 'change_groups'])
+export async function stockFingerprint(dataDir: string, kind: StockKind): Promise<string | null> {
+  if (kind === 'json') {
+    try {
+      return crypto.createHash('sha256').update(fs.readFileSync(path.join(dataDir, 'db.json'))).digest('hex')
+    } catch {
+      return null
+    }
+  }
+  return withDatabase(path.join(dataDir, DB_FILE_NAME), (rows) => {
+    const hash = crypto.createHash('sha256')
+    const value = (_key: string, v: unknown) => (typeof v === 'bigint' ? v.toString() : v instanceof Uint8Array ? Buffer.from(v).toString('hex') : v)
+    const tables = rows("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").map((r) => String(r[0]))
+    for (const table of tables.filter((t) => !SKIPPED_TABLES.has(t))) {
+      hash.update(`${table}\n`)
+      for (const row of rows(`SELECT * FROM "${table}" ORDER BY rowid`)) hash.update(`${JSON.stringify(row, value)}\n`)
+    }
+    if (tables.includes('change_groups')) hash.update(`journal:${JSON.stringify(rows('SELECT max(id) FROM change_groups'), value)}`)
+    return hash.digest('hex')
+  })
+}
+
+// Eine Datenbank einer früheren Fassung lesen, ohne sie zu ändern: nur lesend, mit liegengebliebenem Journal als Kopie.
+async function withDatabase<T>(file: string, work: (rows: (sql: string) => unknown[][]) => T): Promise<T | null> {
+  const run = async (target: string, readOnly: boolean) => {
+    const connection = await connect(target, { readOnly })
+    try {
+      return work(connection.rows)
+    } finally {
+      connection.close()
+    }
+  }
+  try {
+    if (!fs.existsSync(`${file}-journal`)) return await run(file, true)
+    const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-blick-'))
+    try {
+      fs.copyFileSync(file, path.join(copy, DB_FILE_NAME))
+      fs.copyFileSync(`${file}-journal`, path.join(copy, `${DB_FILE_NAME}-journal`))
+      return await run(path.join(copy, DB_FILE_NAME), false)
+    } finally {
+      fs.rmSync(copy, { recursive: true, force: true })
+    }
+  } catch {
+    return null
+  }
 }

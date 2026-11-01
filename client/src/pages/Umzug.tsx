@@ -4,22 +4,30 @@ import PageHeader from '../components/PageHeader'
 import Card from '../components/Card'
 import { NoticeBox } from '../components/Notice'
 import { useConfirm } from '../components/feedback'
-import { adoptedText, candidateFacts, folderBridge, type AdoptResult, type RelocationCandidate, type RelocationCandidates } from '../relocation'
+import { adoptedText, candidateFacts, folderBridge, progressText, type AdoptProgress, type AdoptResult, type RelocationCandidate, type RelocationCandidates } from '../relocation'
 
-// „Ihre bisherigen Daten übernehmen“ (#517): erscheint im Programmfenster statt des Cockpits, solange kein Bestand da und
-// nichts entschieden ist. Die Entscheidungen stehen in relocation.ts, der Ablauf im Server (index.ts, „Umzug ins
+// Erster Start im Programmfenster (#517), genau einmal bei leerem Bestand: gefunden („Wir haben Ihre bisherigen
+// Mietfuchs-Daten gefunden“, Hauptknopf „Daten übernehmen“, klein „Nicht übernehmen, neu beginnen“ mit Rückfrage) oder
+// nicht („Willkommen bei Mietfuchs. Haben Sie Mietfuchs schon einmal benutzt?“, „Nein, neu beginnen“ ohne Rückfrage,
+// „Ja, Daten übernehmen“ zeigt Backup, Ordnerwahl und neue Suche). Von Hand aus den Einstellungen (`manual`) dieselben
+// Wege mit „Zurück“. Die Entscheidungen stehen in relocation.ts, der Ablauf im Server (index.ts, „Umzug ins
 // Programmfenster“). Übernehmen heißt kopieren; der alte Ordner bleibt, wie er ist, und bekommt nur einen Vermerk.
 
 type Phase =
   | { kind: 'idle' }
-  | { kind: 'busy', what: 'copy' | 'backup' | 'quit' | 'folder' }
+  | { kind: 'busy', what: 'copy' | 'backup' | 'quit' | 'folder' | 'search' }
   | { kind: 'done', text: string, notes: string[] }
 
 const post = <T,>(url: string, body: unknown = {}) => api<T>(url, { method: 'POST', body: JSON.stringify(body) })
 
-export default function Umzug({ onFresh, reloadPage = () => window.location.reload(), chooseFolder = folderBridge() }: {
-  // „Neu anfangen“ ist gespeichert: das Cockpit statt dieses Bildschirms
-  onFresh: () => void
+export default function Umzug({ manual = false, onFresh, onClose, reloadPage = () => window.location.reload(), chooseFolder = folderBridge() }: {
+  // Von Hand aus den Einstellungen geöffnet statt beim ersten Start; dann „Zurück“ statt „neu beginnen“, und mit eigenem
+  // Bestand fragt jede Übernahme vorher, ob sie ihn ersetzen darf
+  manual?: boolean
+  // Beim ersten Start: „neu beginnen“ ist gespeichert, das Cockpit statt dieses Bildschirms
+  onFresh?: () => void
+  // Von Hand: zurück zur vorigen Seite
+  onClose?: () => void
   reloadPage?: () => void
   chooseFolder?: (() => Promise<string | null>) | null
 }) {
@@ -30,9 +38,29 @@ export default function Umzug({ onFresh, reloadPage = () => window.location.relo
   const [error, setError] = useState('')
   const [quitFailed, setQuitFailed] = useState(false)
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' })
-  const [otherWays, setOtherWays] = useState(false)
+  // Die Wege ohne Fund (Backup, Ordner wählen); beim ersten Start nach „Ja, Daten übernehmen“
+  const [importWays, setImportWays] = useState(false)
   const [dragOver, setDragOver] = useState(false)
+  const [progress, setProgress] = useState<AdoptProgress | null>(null)
   const busy = phase.kind === 'busy'
+  const copying = phase.kind === 'busy' && phase.what === 'copy'
+  // Fortschritt beim Kopieren, alle halbe Sekunde gefragt (Ergänzung 4)
+  useEffect(() => {
+    if (!copying) {
+      setProgress(null)
+      return
+    }
+    let stopped = false
+    const ask = () => {
+      api<AdoptProgress>('/api/relocation/progress').then((p) => { if (!stopped) setProgress(p) }).catch(() => {})
+    }
+    ask()
+    const timer = setInterval(ask, 500)
+    return () => {
+      stopped = true
+      clearInterval(timer)
+    }
+  }, [copying])
 
   const load = useCallback(async () => {
     try {
@@ -46,6 +74,7 @@ export default function Umzug({ onFresh, reloadPage = () => window.location.relo
 
   const found = list?.candidates ?? []
   const candidates = chosen ? [chosen, ...found.filter((c) => c.dataDir !== chosen.dataDir)] : found
+  const ownStock = list?.ownStock === true
 
   // Ob ein Fund noch vom alten Mietfuchs benutzt wird, fragt der Server bei jedem Laden neu
   const refresh = async () => {
@@ -57,11 +86,24 @@ export default function Umzug({ onFresh, reloadPage = () => window.location.relo
     }
   }
 
+  // Mit eigenem Bestand (von Hand aus den Einstellungen) ersetzt jede Übernahme ihn: deutlich fragen, gesichert wird vorher
+  async function mayReplace(): Promise<boolean> {
+    if (!ownStock) return true
+    return confirm({
+      title: 'Ihre jetzigen Daten ersetzen?',
+      message: 'Hier liegen schon Daten. Die Übernahme ersetzt sie vollständig durch die bisherigen. Mietfuchs sichert den Stand von jetzt ' +
+        'vorher; er steht danach im Verlauf als „Vor dem Einspielen eines Backups“, und Sie können zu ihm zurückkehren.',
+      confirmLabel: 'Ersetzen',
+      danger: true,
+    })
+  }
+
   async function adopt(c: RelocationCandidate) {
+    if (!(await mayReplace())) return
     setError('')
     setPhase({ kind: 'busy', what: 'copy' })
     try {
-      const result = await post<AdoptResult>('/api/relocation/adopt', { dataDir: c.dataDir })
+      const result = await post<AdoptResult>('/api/relocation/adopt', { dataDir: c.dataDir, ...(ownStock ? { replace: true } : {}) })
       setPhase({ kind: 'done', text: result.counts ? adoptedText(result.counts) : 'Ihre Daten sind übernommen.', notes: result.notes })
     } catch (e) {
       setPhase({ kind: 'idle' })
@@ -86,6 +128,7 @@ export default function Umzug({ onFresh, reloadPage = () => window.location.relo
   }
 
   async function restoreBackup(file: File) {
+    if (!(await mayReplace())) return
     setError('')
     setPhase({ kind: 'busy', what: 'backup' })
     try {
@@ -115,25 +158,47 @@ export default function Umzug({ onFresh, reloadPage = () => window.location.relo
     if (!folder) return
     setPhase({ kind: 'busy', what: 'folder' })
     try {
-      setChosen((await post<{ candidate: RelocationCandidate }>('/api/relocation/inspect', { folder })).candidate)
-      setOtherWays(false)
+      const answer = await post<{ candidate?: RelocationCandidate, backup?: string }>('/api/relocation/inspect', { folder })
+      // Ein Backup statt eines Ordners gewählt: einspielen statt ablehnen
+      if (answer.backup) {
+        if (!(await mayReplace())) {
+          setPhase({ kind: 'idle' })
+          return
+        }
+        const restored = await post<{ notes?: string[] }>('/api/relocation/restore-backup', { file: answer.backup, ...(ownStock ? { replace: true } : {}) })
+        const notes = restored?.notes ?? []
+        if (notes.length === 0) return reloadPage()
+        setPhase({ kind: 'done', text: 'Ihr Backup ist eingespielt.', notes })
+        return
+      }
+      if (answer.candidate) setChosen(answer.candidate)
+      setImportWays(false)
+      setPhase({ kind: 'idle' })
     } catch (e) {
       setError(errorText(e))
-    } finally {
       setPhase({ kind: 'idle' })
     }
   }
 
-  async function startFresh() {
-    const ok = await confirm({
-      title: 'Ohne Ihre bisherigen Daten anfangen?',
-      message: 'Mietfuchs fragt danach nicht mehr nach Ihren alten Daten. Ein Backup können Sie jederzeit in den Einstellungen einspielen.',
-      confirmLabel: 'Neu anfangen',
-    })
-    if (!ok) return
+  async function searchAgain() {
+    setError('')
+    setPhase({ kind: 'busy', what: 'search' })
+    await load()
+    setPhase({ kind: 'idle' })
+  }
+
+  async function startFresh(ask: boolean) {
+    if (ask) {
+      const ok = await confirm({
+        title: 'Ohne Ihre bisherigen Daten beginnen?',
+        message: 'Mietfuchs fragt danach nicht mehr. Übernehmen können Sie Ihre Daten später in den Einstellungen unter „Daten aus bisherigem Mietfuchs übernehmen …“.',
+        confirmLabel: 'Neu beginnen',
+      })
+      if (!ok) return
+    }
     try {
       await post('/api/relocation/decline')
-      onFresh()
+      onFresh?.()
     } catch (e) {
       setError(errorText(e))
     }
@@ -151,6 +216,10 @@ export default function Umzug({ onFresh, reloadPage = () => window.location.relo
           Ab jetzt arbeiten Sie nur noch hier. Starten Sie das alte Mietfuchs nicht mehr: Was Sie dort ändern, fehlt hier.
           Die alte Programmdatei und ihre Verknüpfung können Sie löschen, sobald hier alles da ist.
         </p>
+        <p>
+          Haben Sie Mietfuchs auch vom Handy oder einem zweiten Rechner aus benutzt? Den Zugriff schalten Sie jetzt in den
+          Einstellungen unter „Zugriff aus dem Heimnetz“ ein; dort steht auch die neue Adresse.
+        </p>
         <div className="row">
           <button type="button" className="btn" onClick={reloadPage}>Weiter</button>
         </div>
@@ -158,27 +227,51 @@ export default function Umzug({ onFresh, reloadPage = () => window.location.relo
     )
   }
 
-  const showFound = candidates.length > 0 && !otherWays
+  const showFound = candidates.length > 0 && !importWays
+  // Beim ersten Start ohne Fund zuerst die eine Frage
+  const welcome = !manual && list !== null && candidates.length === 0 && !importWays
+  const title = welcome ? 'Willkommen bei Mietfuchs'
+    : showFound && !manual ? 'Wir haben Ihre bisherigen Mietfuchs-Daten gefunden'
+      : manual ? 'Daten aus bisherigem Mietfuchs übernehmen' : 'Ihre bisherigen Daten übernehmen'
   return (
     <>
-      <PageHeader title="Ihre bisherigen Daten übernehmen" context="none" />
+      <PageHeader title={title} context="none" />
       {loadError && <NoticeBox level="error" title="Die Suche ließ sich nicht starten" action={loadError} />}
       {error && <NoticeBox level="error" title="Nicht übernommen" action={error} />}
       {phase.kind === 'busy' && <p role="status"><span className="spinner" />{BUSY_TEXT[phase.what]}</p>}
+      {copying && progress && progressText(progress) && (
+        <div className="row">
+          <span className="muted">{progressText(progress)}</span>
+          {progress.phase !== 'switch' && (
+            <button type="button" className="btn secondary small" onClick={() => { void post('/api/relocation/cancel').catch(() => {}) }}>Abbrechen</button>
+          )}
+        </div>
+      )}
       {!list && !loadError && <p role="status"><span className="spinner" />Mietfuchs sucht Ihre bisherigen Daten …</p>}
+      {welcome && (
+        <>
+          <p>Haben Sie Mietfuchs schon einmal benutzt?</p>
+          <div className="row">
+            <button type="button" className="btn secondary" disabled={busy} onClick={() => void startFresh(false)}>Nein, neu beginnen</button>
+            <button type="button" className="btn secondary" disabled={busy} onClick={() => setImportWays(true)}>Ja, Daten übernehmen</button>
+          </div>
+        </>
+      )}
       {list && showFound && (
         <>
-          <p>Mietfuchs hat Daten Ihres bisherigen Mietfuchs gefunden. Sie werden hierher kopiert; im alten Ordner bleibt alles, wie es ist.</p>
+          <p>Mietfuchs kopiert sie hierher; im alten Ordner bleibt alles, wie es ist.</p>
           {candidates.map((c) => (
             <CandidateCard key={c.dataDir} candidate={c} busy={busy} quitFailed={quitFailed} onAdopt={() => void adopt(c)} onQuit={() => void quitOld()} onCheck={() => void refresh()} />
           ))}
-          <p className="muted">
-            Nicht die richtigen Daten?{' '}
-            <button type="button" className="btn ghost small" disabled={busy} onClick={() => setOtherWays(true)}>Andere Wege zeigen</button>
-          </p>
+          <div className="row">
+            <button type="button" className="btn ghost small" disabled={busy} onClick={() => setImportWays(true)}>Andere Daten wählen …</button>
+            {manual
+              ? <button type="button" className="btn ghost small" disabled={busy} onClick={onClose}>Zurück</button>
+              : <button type="button" className="btn ghost small" disabled={busy} onClick={() => void startFresh(true)}>Nicht übernehmen, neu beginnen</button>}
+          </div>
         </>
       )}
-      {(list || loadError) && !showFound && (
+      {(list || loadError) && !showFound && !welcome && (
         <>
           {candidates.length === 0 && (
             <p>
@@ -189,7 +282,7 @@ export default function Umzug({ onFresh, reloadPage = () => window.location.relo
           <Card title="Mit einem Backup übernehmen">
             <p>
               Öffnen Sie Ihr bisheriges Mietfuchs noch einmal und klicken Sie in den Einstellungen auf{' '}
-              <strong>Backup herunterladen</strong>. Ziehen Sie die Datei dann hierher oder klicken Sie auf{' '}
+              <strong>Backup herunterladen (ZIP)</strong>. Ziehen Sie die Datei dann hierher oder klicken Sie auf{' '}
               <strong>Backup einspielen</strong>.
             </p>
             <div
@@ -216,18 +309,20 @@ export default function Umzug({ onFresh, reloadPage = () => window.location.relo
               </label>
             </div>
           </Card>
-          {/* Klein darunter: die Wahl des Ordners (nur im Fenster mit Dialog), zuletzt der Neuanfang */}
-          {chooseFolder && (
-            <p className="muted">
-              Wissen Sie, wo die alte Programmdatei liegt?{' '}
+          {/* Klein darunter: die Wahl des Ordners (nur im Fenster mit Dialog) und eine neue Suche */}
+          <div className="row">
+            {chooseFolder && (
               <button type="button" className="btn ghost small" disabled={busy} onClick={() => void pickFolder()}>Ordner der alten Programmdatei wählen …</button>
-            </p>
-          )}
+            )}
+            <button type="button" className="btn ghost small" disabled={busy} onClick={() => void searchAgain()}>Erneut suchen</button>
+          </div>
           <div className="row">
             {candidates.length > 0 && (
-              <button type="button" className="btn ghost small" disabled={busy} onClick={() => setOtherWays(false)}>Zurück zu den gefundenen Daten</button>
+              <button type="button" className="btn ghost small" disabled={busy} onClick={() => setImportWays(false)}>Zurück zu den gefundenen Daten</button>
             )}
-            <button type="button" className="btn ghost small" disabled={busy} onClick={() => void startFresh()}>Neu anfangen …</button>
+            {manual
+              ? <button type="button" className="btn ghost small" disabled={busy} onClick={onClose}>Zurück</button>
+              : candidates.length === 0 && <button type="button" className="btn ghost small" disabled={busy} onClick={() => setImportWays(false)}>Zurück</button>}
           </div>
         </>
       )}
@@ -235,7 +330,8 @@ export default function Umzug({ onFresh, reloadPage = () => window.location.relo
   )
 }
 
-const BUSY_TEXT: Record<'copy' | 'backup' | 'quit' | 'folder', string> = {
+const BUSY_TEXT: Record<'copy' | 'backup' | 'quit' | 'folder' | 'search', string> = {
+  search: 'Mietfuchs sucht Ihre bisherigen Daten …',
   copy: 'Mietfuchs übernimmt Ihre Daten … Bei vielen Belegen dauert das einige Minuten.',
   backup: 'Mietfuchs spielt Ihr Backup ein … Bei vielen Belegen dauert das einige Minuten.',
   quit: 'Das alte Mietfuchs wird beendet …',

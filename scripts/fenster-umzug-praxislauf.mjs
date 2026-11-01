@@ -13,7 +13,8 @@
 //      findet den Ordner über die Suche, beendet die alte Fassung (wo sie /api/quit kennt) und übernimmt.
 //   4. Prüfen: Abrechnung centgenau wie vorher in der alten Fassung und wie der Server von heute auf einer Kopie des
 //      alten Ordners rechnet, Zahlen gleich, Belege mit Inhalt da, Vermerk im alten Ordner, sonst dort nichts verändert.
-//   5. Derselbe Weg über das Backup der alten Fassung, und eine aktuelle Fassung im umgezogenen Ordner nur lesend.
+//   5. Eine aktuelle Fassung im umgezogenen Ordner nur lesend; die alte Fassung ändert danach noch etwas, das Fenster
+//      erkennt es und übernimmt den neueren Stand auf Wunsch. Derselbe Weg über das Backup der alten Fassung.
 //
 // Aufruf:
 //   node scripts/fenster-umzug-praxislauf.mjs                       (alle Fassungen)
@@ -438,6 +439,25 @@ async function runVersion(version, binary) {
     gleich((await send(readOnly.base, '/api/units', 'POST', { name: 'Neu', areaM2: 1, participates: true })).status, 423, `${version}: … und nimmt keine Änderung an`)
     gleich(settlementCore(await get(readOnly.base, '/api/settlement/2024')), before.settlement, `${version}: … zeigt die Daten aber an`)
     await stop(readOnly)
+
+    // 3b. Die alte Fassung kennt den Vermerk nicht: Wer sie weiter startet, ändert dort noch etwas. Das neue Fenster
+    // erkennt es und übernimmt den neueren Stand auf Wunsch noch einmal.
+    const again = await startOld(path.join(program, 'mietfuchs-linux'), oldData, home, oldPort)
+    running.push(again)
+    const late = await send(again.base, '/api/payments', 'POST', { tenancyId: 't1', date: '2024-06-03', amountCents: 12345 })
+    wahr(late.status === 200 || late.status === 201, `${version}: nach dem Umzug in der alten Fassung noch eine Zahlung angelegt`)
+    await stop(again)
+    const deskAgain = await startNew(newData, home, { NKA_RUNTIME: 'desktop', NKA_TEST_HOME: home, NKA_TEST_OLD_PORT: String(oldPort) })
+    running.push(deskAgain)
+    const told = await get(deskAgain.base, '/api/relocation')
+    gleich(told.newer?.from, oldData, `${version}: das Fenster sagt, dass im alten Mietfuchs noch etwas geändert wurde`)
+    gleich((await numbersOf(deskAgain.base)).payments, before.numbers.payments, `${version}: … und übernimmt es nicht von selbst`)
+    const readopted = await send(deskAgain.base, '/api/relocation/readopt', 'POST')
+    gleich(readopted.status, 200, `${version}: neueren Stand noch einmal übernommen`)
+    gleich((await numbersOf(deskAgain.base)).payments, before.numbers.payments + 1, `${version}: die spätere Zahlung ist da`)
+    wahr(fs.existsSync(path.join(newData, 'mietfuchs.sqlite.vor-restore')), `${version}: der Stand davor ist gesichert`)
+    gleich(await get(deskAgain.base, '/api/relocation'), { offered: false }, `${version}: danach kein Hinweis mehr`)
+    await stop(deskAgain)
 
     // 4. Derselbe Weg über das Backup der alten Fassung
     console.log(`▶ ${version}: Backup der alten Fassung im Fenster einspielen`)
