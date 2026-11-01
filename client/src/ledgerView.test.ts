@@ -78,6 +78,9 @@ describe('Mietkonto: Übertrag, Stand zum Jahresende und offene Teile (#281)', (
     expect(ledgerStartText({ ...row(month(12, 100000, 'paid')), ledgerStart: '2025-01-01' }))
       .toBe('Mietkonto geführt ab Januar 2025 (erste erfasste Mietzahlung); frühere Monate sind nicht erfasst.')
     expect(ledgerStartText(row(month(12, 100000, 'paid')))).toBeNull()
+    // Dauerauftrag zum Monatsende (Integrationsdurchsicht 0.14): Die erste Zahlung lag im Vormonat.
+    expect(ledgerStartText({ ...row(month(12, 100000, 'paid')), ledgerStart: '2024-01-01', ledgerStartPaidOn: '2023-12-30' }))
+      .toBe('Mietkonto geführt ab Januar 2024: Die erste erfasste Mietzahlung vom 30.12.2023 gilt als Miete für Januar; frühere Monate sind nicht erfasst. Ist sie die Miete ihres eigenen Monats, tragen Sie diesen Monat an der Zahlung als Monat laut Verwendungszweck ein.')
   })
 
   it('ein Ausgezogener mit offenem Saldo', () => {

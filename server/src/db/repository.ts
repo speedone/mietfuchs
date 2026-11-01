@@ -58,7 +58,7 @@ import { compareText } from '../calc.ts'
 import { isSplitPart, splitByService } from '../serviceSplit.ts'
 import { splitBlocker } from '../../../shared/splitPart.ts'
 import { tenancyStamp } from '../../../shared/tenancyStamp.ts'
-import { allowsSpread, isSpreadYears, spreadQuestions, spreadRestQuestions } from '../../../shared/spread.ts'
+import { allowsSpread, isSpreadYears, spreadPartsRefusal, spreadQuestions, spreadRestQuestions } from '../../../shared/spread.ts'
 import { allowsPaidOn, isPaidOnDate, joinQuestions, paidOnQuestions, splitPaidOnQuestions, taxYearQuestions, type YearSpan } from '../../../shared/paidOn.ts'
 import { statedOutflowYear } from '../outflow.ts'
 import type { Database, Executor } from './client.ts'
@@ -1366,6 +1366,11 @@ async function requireSpread(db: Executor, before: CostItem | null, after: CostI
   // Eine Wahl je Rechnung (E-11): Die übrigen Teile bekommen sie mit (`syncSourceSpread`). Kann an einem nicht verteilt
   // werden, wird vor der Rückfrage abgelehnt (Durchsicht S2), nicht erst nach ihrer Bestätigung.
   if (after.spreadYears !== undefined && after.spreadYears !== before.spreadYears) await requireSiblingsSpread(db, after)
+  // Eine Rechnung, ein Jahr des Beginns (Integrationsdurchsicht 0.14, S1): geprüft, wenn die Wahl oder das Jahr der
+  // Zahlung dieses Teils sich ändert.
+  if (after.spreadYears !== undefined && (after.spreadYears !== before.spreadYears || (before.paidOn ?? null) !== (after.paidOn ?? null) || (before.taxYear ?? null) !== (after.taxYear ?? null))) {
+    await requireSourceOneYear(db, after)
+  }
   if (raw(body, 'confirmSpread') === true) return []
   return spreadQuestions(before, after, await otherPartLabels(db, before), await spreadRestYearOf(db, after.propertyId))
 }
@@ -1374,6 +1379,14 @@ async function requireSpread(db: Executor, before: CostItem | null, after: CostI
 async function spreadRestYearOf(db: Executor, propertyId: string): Promise<number | null> {
   const [row] = await db.select({ year: properties.spreadRestYear }).from(properties).where(eq(properties.id, propertyId))
   return row?.year ?? null
+}
+
+async function requireSourceOneYear(db: Executor, c: CostItem): Promise<void> {
+  if (c.sourceId === undefined) return
+  const siblings = await db.select({ period: costItems.period, paidOn: costItems.paidOn, taxYear: costItems.taxYear })
+    .from(costItems).where(and(eq(costItems.sourceId, c.sourceId), ne(costItems.id, c.id)))
+  const refusal = spreadPartsRefusal(c.description, [c, ...siblings])
+  if (refusal !== null) throw new PeriodError(refusal)
 }
 
 async function requireSiblingsSpread(db: Executor, c: CostItem): Promise<void> {
@@ -2939,6 +2952,9 @@ export async function saveCostItemSplit(db: Database, propertyId: string | null,
   // aller Teile, bevor etwas geschrieben ist, und mit derselben Regel wie das Formular (`splitPaidOnQuestions`). Der
   // Wächter der Teile fragt danach nicht mehr (`splitPart`).
   const current = currentId === null ? null : (await readCostItems(db)).find((c) => c.id === currentId) ?? null
+  // Das Jahr der Zahlung eines Teils: über zwei Kalenderjahre das des Rumpfes; mit Verteilung an jedem Teil, sonst
+  // begänne jeder Teil seine Verteilung in einem anderen Jahr (Durchsicht des Zweigs, S6a).
+  const partTaxYear = (p: { needsTaxYear: boolean }): number | null => (p.needsTaxYear || base.spreadYears !== undefined ? base.taxYear ?? null : null)
   const paidOn = raw(body, 'confirmPaidOn') === true ? [] : splitPaidOnQuestions(current, base, parts)
   // Ebenso das Jahr der Zahlung (#478, Durchsicht Befund 2): Es gilt für jeden Teil über zwei Kalenderjahre, gefragt wird
   // einmal mit den Sätzen aller Teile, wenn es außerhalb der üblichen Spanne eines Teils liegt.
@@ -2950,6 +2966,10 @@ export async function saveCostItemSplit(db: Database, propertyId: string | null,
   if (base.spreadYears !== undefined) {
     const blocked = parts.find((p) => !allowsSpread({ ...base, amountCents: p.amountCents }))
     if (blocked !== undefined) throw new PeriodError(spreadRefusal({ ...base, amountCents: blocked.amountCents }))
+    // Eine Rechnung, ein Jahr des Beginns (Integrationsdurchsicht 0.14, S1), mit dem Datum und dem Jahr der Zahlung, wie
+    // die Teile sie tragen werden.
+    const refusal = spreadPartsRefusal(base.description, parts.map((p) => ({ period: p.period, paidOn: base.paidOn ?? null, taxYear: partTaxYear(p) })))
+    if (refusal !== null) throw new PeriodError(refusal)
   }
   const spread = current === null || raw(body, 'confirmSpread') === true ? [] : spreadQuestions(current, base, [], await spreadRestYearOf(db, current.propertyId))
   // Alle in einer Rückfrage (Durchsicht S1).
@@ -2960,7 +2980,7 @@ export async function saveCostItemSplit(db: Database, propertyId: string | null,
     await insertCostSource(tx, base.propertyId, sourceId)
     const written = await writeCostItemParts(tx, base, parts.map((p) => ({
       period: p.period, amountCents: p.amountCents, labor35aCents: p.labor35aCents, description: p.description,
-      taxYear: p.needsTaxYear ? base.taxYear ?? null : null,
+      taxYear: partTaxYear(p),
     })), newId, currentId, { splitPart: true }, sourceId)
     return written
   })

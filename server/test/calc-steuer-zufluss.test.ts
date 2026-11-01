@@ -462,3 +462,51 @@ test('Zehn-Tage-Regel und § 82b zusammen: surplusReceivedCents = totalCents −
   assert.equal(r26.income.received?.totalCents, 12 * 80000)
   assert.ok(r26.expenses.deductibleCents < 900000)
 })
+
+// Integrationsdurchsicht 0.14 (M1): Ein Mieter mit Dauerauftrag zum Monatsende für den Folgemonat, erfasst ab der Zahlung vom
+// 30.12.2023. Ohne Verschiebung des Beginns der Erfassung galt der Dezember 2023 als offen, jede Zahlung tilgte den
+// laufenden statt den folgenden Monat, und die Zehn-Tage-Regel griff nie: 2023 stand eine Miete zu viel, 2026 fehlte sie.
+// Mietverhältnis seit 2020 bis 31.01.2026, 800 € (600 + 200), ab Januar 2026 850 € (650 + 200).
+const ultimo = (over: Partial<SnapshotTenancy> = {}): SnapshotTenancy => tenancy('t', 'eg', {
+  start: '2020-01-01', end: '2026-01-31', personHistory: [{ from: '2020-01-01', persons: 1 }],
+  prepayments: [{ from: '2020-01', monthlyCents: 20000 }], baseRents: [{ from: '2020-01', monthlyCents: 60000 }, { from: '2026-01', monthlyCents: 65000 }], ...over,
+})
+const ultimoPayments = (): Pay[] => {
+  const out: Pay[] = [pay('t', '2023-12-30', 80000)]
+  for (let y = 2024; y <= 2025; y++) for (let m = 1; m <= 12; m++) {
+    out.push(pay('t', `${y}-${String(m).padStart(2, '0')}-${m === 2 ? 28 : 30}`, y === 2025 && m === 12 ? 85000 : 80000))
+  }
+  return out
+}
+
+test('Zehn-Tage-Regel bei Dauerauftrag zum Monatsende: die erste erfasste Zahlung tilgt den Folgemonat, jede Januarmiete zählt im Folgejahr', () => {
+  const s = source([ultimo()], ultimoPayments())
+  const total = (y: number): number => received(s, y).totalCents
+  assert.equal(total(2023), 0, 'die Januarmiete 2024 vom 30.12.2023 gehört zu 2024')
+  assert.equal(total(2024), 12 * 80000)
+  assert.equal(total(2025), 12 * 80000)
+  assert.equal(total(2026), 85000, 'die Januarmiete 2026 vom 30.12.2025')
+  assert.equal(received(s, 2025).turnOfYear.forwardCents, 85000)
+  assert.equal(received(s, 2024).turnOfYear.fromPreviousCents, 80000)
+  assert.equal(received(s, 2024).formerYearsCents, 0, 'kein Rückstand aus 2023')
+  // Ein Altvertrag (§ 551 BGB a. F.) zahlte Ende des Monats für diesen Monat: Die Erfassung beginnt im Monat der Zahlung.
+  const alt = source([ultimo({ contractDate: '1999-05-01' })], ultimoPayments())
+  assert.equal(received(alt, 2023).totalCents, 80000)
+  assert.equal(received(alt, 2025).turnOfYear.forwardCents, 0)
+  // Am 21.12. liegt die erste Zahlung außerhalb der letzten zehn Tage: wie bisher ab Dezember.
+  const früh = source([ultimo()], [pay('t', '2023-12-21', 80000), ...ultimoPayments().slice(1)])
+  assert.equal(received(früh, 2023).totalCents, 80000)
+})
+
+// Durchsicht des Zweigs (S2): je Mietverhältnis entschieden. B zahlt am 3. für den Monat, A am 25. für den Folgemonat.
+test('Zehn-Tage-Regel je Mietverhältnis: A zahlt am 25. für den Folgemonat, B am 3.; nur As Dezemberzahlung zählt im Folgejahr', () => {
+  const a = ultimo({ end: null })
+  const b = tenancy('b', 'og', { start: '2020-01-01', personHistory: [{ from: '2020-01-01', persons: 1 }], prepayments: [{ from: '2020-01', monthlyCents: 20000 }], baseRents: [{ from: '2020-01', monthlyCents: 60000 }] })
+  const months: string[] = []
+  for (let k = 2023 * 12 + 11; k <= 2024 * 12 + 11; k++) months.push(`${Math.floor(k / 12)}-${String((k % 12) + 1).padStart(2, '0')}`)
+  const s = source([a, b], [...months.map((m) => pay('b', `${m}-03`, 80000)), ...months.map((m) => pay('t', `${m}-25`, 80000))])
+  const y24 = received(s, 2024)
+  assert.equal(y24.turnOfYear.forwardCents, 80000, 'die Zahlung von A am 25.12.2024')
+  assert.equal(y24.turnOfYear.fromPreviousCents, 80000, 'die Zahlung von A am 25.12.2023')
+  assert.equal(y24.formerYearsCents, 0, 'kein Rückstand aus 2023')
+})

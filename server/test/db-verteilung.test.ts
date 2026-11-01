@@ -14,8 +14,13 @@ import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { readCostItems, readProperties } from '../src/db/read.ts'
 import { createEntity, PeriodError, SpreadQuestion, updateEntity, updateProperty } from '../src/db/repository.ts'
 import { eq } from 'drizzle-orm'
-import { costItems } from '../src/db/schema.ts'
+import { costItems, properties } from '../src/db/schema.ts'
 import type { CostItem } from '../../shared/types.ts'
+import crypto from 'node:crypto'
+import { readStock } from '../src/db/read.ts'
+import { taxReportFor } from '../src/calc.ts'
+import { storedOutflowYear } from '../src/outflow.ts'
+import { applyPeriodChange, previewPeriodChange } from '../src/db/periodChange.ts'
 
 const tempDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-verteilung-'))
 
@@ -163,5 +168,58 @@ test('Repository: Jahr des vorzeitigen Endes am Objekt setzen und leeren; außer
     }
     await opened.write((db) => updateProperty(db, 'objekt-1', { spreadRestYear: null }))
     assert.deepEqual(await restYear(), [null])
+  })
+})
+
+// Durchsicht des Zweigs (S5): Beim Wechsel des Rhythmus behält jeder neue Teil einer verteilten Rechnung ohne Datum der
+// Zahlung das Jahr der Zahlung, das sie vorher hatte (als `taxYear`, ohne Frage), damit Beginn und Raten der Verteilung
+// bleiben; die Vorschau sagt es, wo ein Teil dadurch als verschoben steht. Hin und zurück ergibt den Ausgangsstand.
+const TODAY_S5 = '2026-10-05'
+const ratesByYear = async (opened: OpenedDatabase): Promise<number[]> => {
+  const stock = await opened.read((db) => readStock(db))
+  return [2024, 2025, 2026, 2027, 2028].map((y) => taxReportFor(stock, 'objekt-1', y).expenses.deductibleCents)
+}
+const change = async (opened: OpenedDatabase, rules: { startMonth: number; changes: string[] }, taxYears: Record<string, number> = {}) => opened.write(async (db) => {
+  const preview = await previewPeriodChange(db, 'objekt-1', rules, TODAY_S5) ?? assert.fail('keine Vorschau')
+  const groups = Object.fromEntries(preview.groups.map((g) => [g.id, g.suggested || (g.split !== null ? 'split' : g.options[0]?.key ?? '')]))
+  const r = await applyPeriodChange(db, 'objekt-1', rules, { groups, overrides: {}, taxYears, token: preview.token, understood: true }, () => crypto.randomUUID(), TODAY_S5)
+  if (r !== null && 'error' in r) assert.fail(r.error)
+  return preview
+})
+
+test('S5: Wechsel Kalenderjahr → Mai bis April und zurück: eine verteilte Rechnung ohne Datum behält in jedem Teil ihr Jahr, die Raten je Jahr bleiben', async () => {
+  await withStock(async (opened) => {
+    await opened.write((db) => createEntity(db, 'costItems', 'c', { ...dach, period: '2025-01', serviceFrom: '2025-01-01', serviceTo: '2025-12-31', spreadYears: 2 }))
+    const before = await ratesByYear(opened)
+    const preview = await change(opened, { startMonth: 5, changes: [] })
+    assert.deepEqual(preview.taxYears.filter((t) => t.costItemId === 'c'), [], 'nicht gefragt')
+    const parts = await opened.read((db) => readCostItems(db))
+    assert.ok(parts.length > 1, 'aufgeteilt')
+    assert.deepEqual([...new Set(parts.map((p) => storedOutflowYear(p)))], [2025], 'jeder Teil im Jahr 2025')
+    // Jeder Teil wird für sich auf den Cent verteilt (bewusste Grenze, server/src/CLAUDE.md): je Jahr höchstens
+    // (Teile − 1) Cent Abweichung, in der Summe keine.
+    const during = await ratesByYear(opened)
+    during.forEach((c, k) => assert.ok(Math.abs(c - (before[k] ?? 0)) <= parts.length - 1, `Rate ${2024 + k}: ${before[k]} → ${c}`))
+    assert.equal(during.reduce((a, b) => a + b, 0), before.reduce((a, b) => a + b, 0))
+    assert.equal(during.filter((c) => c !== 0).length, 2, 'dieselben zwei Jahre')
+    await change(opened, { startMonth: 1, changes: [] })
+    assert.deepEqual(await ratesByYear(opened), before, 'hin und zurück')
+    const back = await opened.read((db) => readCostItems(db))
+    assert.deepEqual(back.map((c) => [c.period, c.amountCents, c.spreadYears]), [['2025-01', 1_000_000, 2]])
+  })
+})
+
+test('S5: Juli bis Juni 2025/26, zwei Jahre verteilt, Jahr der Zahlung 2026, Wechsel auf das Kalenderjahr: alle Teile 2026', async () => {
+  await withStock(async (opened) => {
+    await opened.write(async (db) => { await db.update(properties).set({ periodStartMonth: 7 }).where(eq(properties.id, 'objekt-1')) })
+    await opened.write((db) => createEntity(db, 'costItems', 'c', { ...dach, period: '2025-07', serviceFrom: '2025-07-01', serviceTo: '2026-06-30', taxYear: 2026, spreadYears: 2, confirmTaxYear: true }))
+    const before = await ratesByYear(opened)
+    await change(opened, { startMonth: 1, changes: [] })
+    const parts = await opened.read((db) => readCostItems(db))
+    assert.ok(parts.length > 1)
+    assert.deepEqual([...new Set(parts.map((p) => storedOutflowYear(p)))], [2026])
+    assert.deepEqual(await ratesByYear(opened), before)
+    await change(opened, { startMonth: 7, changes: [] })
+    assert.deepEqual(await ratesByYear(opened), before)
   })
 })

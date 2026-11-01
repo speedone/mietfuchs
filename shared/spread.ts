@@ -175,3 +175,24 @@ export function spreadRestQuestions(before: number | null, after: number | null,
   return [lead, ...changed, ADVICE]
 }
 const quoted = (d: string): string => `„${d || 'ohne Beschreibung'}“`
+
+// ---------- Eine Rechnung, ein Jahr des Beginns (Integrationsdurchsicht 0.14, S1) ----------
+//
+// Eine aufgeteilte Rechnung (#455, Teile derselben Quelle) ist einmal bezahlt, und mit E-11 trägt jeder Teil dieselbe
+// Wahl. Ohne Datum der Zahlung zählt aber jeder Teil im Jahr seines Zeitraums (`outflowShares`), und Teile in
+// verschiedenen Kalenderjahren begännen ihre Verteilung in verschiedenen Jahren. Dann wird die Wahl abgelehnt, bis ein
+// Datum der Zahlung (oder ein gemeinsames Jahr der Zahlung) die Teile in ein Jahr stellt. Server (400 beim Speichern und
+// Aufteilen) und Formular (Satz am Feld, vor dem Speichern) fragen hier.
+type PartOutflow = { period: string; paidOn?: string | null; taxYear?: number | null }
+
+// Die Jahre, in denen die Teile abfließen, aufsteigend und ohne Doppelte.
+export const partOutflowYears = (parts: readonly PartOutflow[]): number[] =>
+  [...new Set(parts.map((p) => statedOutflowYear(p) ?? Number(p.period.slice(0, 4))))].sort((a, b) => a - b)
+
+// Der Satz der Ablehnung, `null`, wenn die Teile in einem Jahr abfließen.
+export function spreadPartsRefusal(description: string, parts: readonly PartOutflow[]): string | null {
+  const years = partOutflowYears(parts)
+  if (years.length < 2) return null
+  const list = years.length === 2 ? `${years[0]} und ${years[1]}` : `${years.slice(0, -1).join(', ')} und ${years[years.length - 1]}`
+  return `Bitte tragen Sie das Datum der Zahlung an allen Teilen dieser Rechnung ein, bevor Sie ${quoted(description)} verteilen, oder an allen dasselbe Jahr der Zahlung: Die Rechnung ist auf Abrechnungszeiträume aufgeteilt, und so zählten ihre Teile für die Steuer in den Jahren ${list}. Verteilt wird ab dem Jahr, in dem die Rechnung bezahlt ist, und das ist für die ganze Rechnung eines. Gespeichert wurde nichts.`
+}

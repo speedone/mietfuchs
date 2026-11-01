@@ -347,19 +347,29 @@ export async function runRoundTrip(index: number, options: { spread?: boolean } 
         const to = Number(period.to.slice(0, 4)) + 3
         const taxYear = inv.paidOn === undefined ? from + Math.floor((years[i] ?? 0) * (to - from + 1)) : undefined
         const body = { propertyId: P, period: period.key, key: 'area', ...inv, ...(taxYear === undefined ? {} : { taxYear }), confirmPaidOn: true, confirmTaxYear: true, ...(options.spread ? { confirmSpread: true } : {}) }
-        const written = inv.serviceFrom !== undefined && inv.serviceTo !== undefined && periodsBetween(a, inv.serviceFrom, inv.serviceTo).length > 1
-          ? (await saveCostItemSplit(db, P, body, null, newId)).map((c) => c.id)
+        const split = inv.serviceFrom !== undefined && inv.serviceTo !== undefined && periodsBetween(a, inv.serviceFrom, inv.serviceTo).length > 1
+        // Eine aufgeteilte Rechnung lässt sich erst verteilen, wenn ihre Teile in einem Jahr abfließen (Integrationsdurchsicht
+        // 0.14, S1): ohne Datum also erst nach dem Jahr der Zahlung an jedem Teil, unten.
+        const { spreadYears: chosen, ...unspread } = body
+        const written = split
+          ? (await saveCostItemSplit(db, P, inv.paidOn === undefined ? unspread : body, null, newId)).map((c) => c.id)
           : [(await createEntity(db, 'costItems', newId(), body)).id]
         // Ein Teil in einem Kalenderzeitraum bekommt beim Aufteilen kein Jahr; der Vermieter trägt es nach. Manchmal hat
         // jeder Teil sein eigenes Jahr (zwei Abschläge, in verschiedenen Jahren bezahlt).
         if (taxYear !== undefined) {
-          const own = written.length > 1 && rng() < 0.4
+          // Mit Verteilung ein gemeinsames Jahr (S1); der Zufall läuft gleich weiter.
+          const own = written.length > 1 && rng() < 0.4 && !options.spread
           for (const c of (await readCostItems(db)).filter((x) => written.includes(x.id) && (own || x.taxYear === undefined))) {
             const p = periodOfKey(a, c.period)
             const lo = p === null ? from : Number(p.from.slice(0, 4)) - 1
             const hi = p === null ? to : Number(p.to.slice(0, 4)) + 3
             await updateEntity(db, 'costItems', c.id, { taxYear: own ? lo + Math.floor(rng() * (hi - lo + 1)) : taxYear, confirmTaxYear: true, ...(options.spread ? { confirmSpread: true } : {}) })
           }
+        }
+        // Die Wahl an einem Teil gilt für alle (E-11, `syncSourceSpread`).
+        const [firstPart] = written
+        if (split && inv.paidOn === undefined && chosen !== undefined && firstPart !== undefined) {
+          await updateEntity(db, 'costItems', firstPart, { spreadYears: chosen, confirmSpread: true })
         }
       }
       return { years: sumsOf((await readCostItems(db)).filter((c) => c.propertyId === P)).taxYears, expenses: await expensesByYear(db), deductions: options.spread ? await deductionsByYear(db) : null }

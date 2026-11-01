@@ -1,13 +1,16 @@
 import { useId, useState } from 'react'
 import Term from './Term'
 import DisclosureButton from './DisclosureButton'
+import { FieldMessage } from './Field'
 import { spreadOptions, spreadPreview, type ItemForm } from '../costForm'
 import type { BillingPeriod } from '../types'
 
 // Die Wahl der Verteilung nach § 82b EStDV im Kostenformular (#262 PR 3, Entwurf E-9). Sichtbar bleibt nur, was die Wahl
 // bewirkt (die Vorschau der Jahre und Raten); Voraussetzungen und Grenzen stehen eingeklappt unter „Mehr dazu“ (S33) und
 // im Begriff. Der Knopf steht außerhalb des `<label>`, sonst nähme er dem Auswahlfeld die Beschriftung.
-export default function SpreadField({ form, period, restYear = null, onChange }: { form: ItemForm; period: Pick<BillingPeriod, 'from'>; restYear?: number | null; onChange: (next: ItemForm) => void }) {
+// `problem`: ein Satz, den der Server beim Speichern ablehnen würde (eine aufgeteilte Rechnung ohne gemeinsames Jahr der
+// Zahlung, Integrationsdurchsicht 0.14, S1); er steht unter dem Feld, schon vor dem Speichern.
+export default function SpreadField({ form, period, restYear = null, problem = null, onChange }: { form: ItemForm; period: Pick<BillingPeriod, 'from'>; restYear?: number | null; problem?: string | null; onChange: (next: ItemForm) => void }) {
   const [open, setOpen] = useState(false)
   const moreId = useId()
   // Mit dem Ende am Objekt (§ 82b Abs. 2, Durchsicht S3).
@@ -19,7 +22,7 @@ export default function SpreadField({ form, period, restYear = null, onChange }:
         <select value={form.spreadYears} onChange={(e) => onChange({ ...form, spreadYears: spreadOptions.find((o) => o.value === e.target.value)?.value ?? '' })}>
           {spreadOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
-        {preview && <small className="muted" role="status">{preview}</small>}
+        {problem ? <FieldMessage error={problem} announce /> : preview && <small className="muted" role="status">{preview}</small>}
       </label>
       <DisclosureButton open={open} onToggle={() => setOpen((o) => !o)} closedLabel="Mehr dazu" openLabel="Weniger" controls={moreId} className="btn ghost small" />
       <div id={moreId} hidden={!open}>

@@ -40,9 +40,15 @@ export function carryText(row: Pick<RentLedgerRow, 'openingBalanceCents'>, year:
 
 // Geführt ab (#281): Liegt der Beginn des Kontos nach dem Mietbeginn (erste erfasste Mietzahlung), sagt eine gedämpfte
 // Zeile, dass frühere Monate nicht erfasst und deshalb weder Soll noch offen sind.
-export function ledgerStartText(row: Pick<RentLedgerRow, 'ledgerStart'>): string | null {
+// Lag die erste erfasste Zahlung in den letzten Tagen des Vormonats (`ledgerStartPaidOn`), nennt die Zeile sie als Miete des
+// ersten geführten Monats (Dauerauftrag zum Monatsende).
+export function ledgerStartText(row: Pick<RentLedgerRow, 'ledgerStart' | 'ledgerStartPaidOn'>): string | null {
   if (!row.ledgerStart) return null
   const month = MONTH_NAMES[Number(row.ledgerStart.slice(5, 7)) - 1] ?? row.ledgerStart.slice(5, 7)
+  const paidOn = row.ledgerStartPaidOn
+  if (paidOn) {
+    return `Mietkonto geführt ab ${month} ${row.ledgerStart.slice(0, 4)}: Die erste erfasste Mietzahlung vom ${paidOn.split('-').reverse().join('.')} gilt als Miete für ${month}; frühere Monate sind nicht erfasst. Ist sie die Miete ihres eigenen Monats, tragen Sie diesen Monat an der Zahlung als Monat laut Verwendungszweck ein.`
+  }
   return `Mietkonto geführt ab ${month} ${row.ledgerStart.slice(0, 4)} (erste erfasste Mietzahlung); frühere Monate sind nicht erfasst.`
 }
 

@@ -742,6 +742,16 @@ importiert nichts aus calc.ts (Zyklus; Wächter in rentAllocation.test.ts). Die 
   davor sind für Tilgung, Salden, Rückstand, Abrechnungsreife und `prepayment.arrears` weder Soll noch offen (Status
   `notRecorded`); das Soll der Zeile (Steuer) bleibt. `ledgerStart` steht an der Zeile, wenn er aus einer Zahlung stammt
   und nach dem Mietbeginn liegt. Endsaldo = Anfangssaldo des Folgejahres gilt ab dem Jahr von `ledgerStart`.
+  **Dauerauftrag zum Monatsende** (Integrationsdurchsicht 0.14, M1; `ledgerStartOf`), entschieden **je
+  Mietverhältnis**: Beginnt sein Konto im Monat M und liegt seine erste eigene positive Mietzahlung in den letzten
+  `estg.short-period-days` Tagen von M (Fassung des Jahres von M + 1), beginnt das Konto mit M + 1, wenn es vor M begann,
+  nicht in M endet, zu Beginn des Monats fällig ist (§ 556b, `rentDueAtStartOf`), an jenem Tag keine seiner Zahlungen
+  einen Monat laut Verwendungszweck trägt und es in den ersten ebenso vielen Tagen von M + 1 nicht zahlt (eine verspätete
+  erste Zahlung, danach pünktlich). Die Zeile trägt dann `ledgerStartPaidOn`. Unabhängig von der Reihenfolge der
+  Zahlungen. Sonst galt M als offen, jede Zahlung tilgte den laufenden statt des folgenden Monats, nach dem Auszug stand
+  ein falscher Rückstand, und die Zehn-Tage-Regel griff nie. Kehrseite: Wer zu Beginn der Erfassung den laufenden Monat
+  erst ab dem 22. zahlt und auch im Folgemonat erst nach dem 10., steht einen Monat voraus; dagegen hilft der
+  Verwendungszweck an der ersten Zahlung. Orakel: invariant-mietkonto.test.ts (FIFO ab M + 1).
 - **Jahr mit Übertrag**: `openingBalanceCents` (01.01.) und `closingBalanceCents` (31.12.), Endsaldo(Y) =
   Anfangssaldo(Y+1). Ein Monat zählt Teile mit Datum bis zum 31.12. (eine Dezemberzahlung für Januar deckt den
   Januar), `paidLaterOn` nennt die spätere Deckung. `paidYearCents` und `balanceCents` bleiben das Jahr allein
@@ -941,6 +951,17 @@ Grundmenge ist das ganze Gebäude), Überschuss. Beschreibende Gruppen statt fes
   einer Rückfrage alle mit. Abgelehnt wird vor jeder Rückfrage, auch wenn ein anderer Teil der Rechnung die Wahl nicht
   tragen kann (`requireSiblingsSpread`). **Eine Wahl je Rechnung**: An einem Teil geändert,
   schreibt `syncSourceSpread` sie an alle Teile der Quelle, in derselben Transaktion (`afterReplace` der Sammlung).
+  **Ein Jahr des Beginns je Rechnung** (Integrationsdurchsicht 0.14, S1): Flössen die Teile einer Quelle ohne Datum in
+  verschiedenen Kalenderjahren ab (`partOutflowYears`), lehnt der Server eine Wahl ab (400, `spreadPartsRefusal` in
+  shared/spread.ts: „Bitte tragen Sie das Datum der Zahlung an allen Teilen dieser Rechnung ein …, oder an allen dasselbe
+  Jahr der Zahlung“), beim Aufteilen (`saveCostItemSplit`) und am Teil, wenn sich Wahl, Zahlungsdatum oder Jahr der
+  Zahlung ändern (`requireSourceOneYear`); das Formular zeigt denselben Satz am Feld (`SpreadField`, `problem`, nur nach
+  einer Änderung dieser Angaben) und vor der Rückfrage zum Aufteilen. Mit Verteilung und Jahr der Zahlung trägt beim
+  Aufteilen jeder Teil dieses Jahr, auch einer in einem Kalenderjahr (`partTaxYear`). Beim Wechsel des Rhythmus bekommt
+  jeder neue Teil einer verteilten Position ohne Zahlungsdatum ihr bisheriges Jahr der Zahlung als `taxYear`, ohne Frage
+  (`spreadPinned`/`keptTaxYear` in db/periodChange.ts); die Vorschau nennt es, wo ein Teil dadurch als verschoben steht. Bewusste Grenze: Jeder Teil wird für sich auf
+  den Cent verteilt, die Raten eines Jahres können deshalb um bis zu (Zahl der Teile − 1) Cent von denen der ganzen
+  Rechnung abweichen; Summe und Jahre stimmen.
   Die Übernahme aus dem Vorjahr leert sie (carryOver.ts). Die Abrechnung liest beide Felder nie.
   **Ende am Objekt** (#262 PR 4): `spreadRestYear` (1900 bis 2200, sonst 400) fragt beim Setzen, Ändern und Entfernen
   nach, wenn sich der Abzug einer verteilten Position dadurch ändert (`spreadRestQuestions` in shared/spread.ts,
