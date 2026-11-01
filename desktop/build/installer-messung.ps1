@@ -39,7 +39,9 @@ Note ''
 Note '```'
 try {
   $vorher = (Get-MpComputerStatus).RealTimeProtectionEnabled
-  Set-MpPreference -DisableRealtimeMonitoring $false
+  if (-not $vorher) {
+    try { Set-MpPreference -DisableRealtimeMonitoring $false } catch { Note "Echtzeitschutz nicht einschaltbar: $($_.Exception.Message)" }
+  }
   $st = Get-MpComputerStatus
   $pr = Get-MpPreference
   Note "Echtzeitschutz: vorher $vorher, jetzt $($st.RealTimeProtectionEnabled); Zugriffsschutz $($st.OnAccessProtectionEnabled), Downloads (IOAV) $($st.IoavProtectionEnabled), Verhalten $($st.BehaviorMonitorEnabled), Modus $($st.AMRunningMode), Manipulationsschutz $($st.IsTamperProtected)"
@@ -48,7 +50,7 @@ try {
   Note "DisableIOAVProtection $($pr.DisableIOAVProtection), DisableScriptScanning $($pr.DisableScriptScanning), EnableFileHashComputation $($pr.EnableFileHashComputation), ScanAvgCPULoadFactor $($pr.ScanAvgCPULoadFactor)"
   Note "Ausnahmen: Pfade [$(@($pr.ExclusionPath) -join '; ')], Prozesse [$(@($pr.ExclusionProcess) -join '; ')], Endungen [$(@($pr.ExclusionExtension) -join '; ')]"
 } catch {
-  Note "Defender nicht lesbar oder nicht einschaltbar: $($_.Exception.Message)"
+  Note "Defender nicht lesbar: $($_.Exception.Message)"
 }
 Note '```'
 
@@ -57,10 +59,14 @@ Note '```'
 $etl = Join-Path $Out 'defender.etl'
 $wprRunning = $false
 try {
-  $module = Get-Module -ListAvailable Defender | Select-Object -First 1
-  $wprp = Get-ChildItem (Split-Path $module.Path) -Filter *.wprp -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-  if (-not $wprp) { throw 'kein .wprp im Defender-Modul' }
-  $hint = Get-ChildItem (Split-Path $module.Path) -Filter *.psm1 -Recurse | Select-String -Pattern 'wpr' -SimpleMatch | Select-Object -First 8
+  # Das Defender-Modul liegt bei Windows PowerShell; pwsh listet es nicht unbedingt
+  $roots = @("$env:SystemRoot\System32\WindowsPowerShell\v1.0\Modules\Defender", "$env:ProgramFiles\Windows Defender")
+  $roots += @(Get-Module -ListAvailable Defender | ForEach-Object { Split-Path $_.Path })
+  $roots = @($roots | Where-Object { $_ -and (Test-Path $_) })
+  $wprp = $roots | ForEach-Object { Get-ChildItem $_ -Filter *.wprp -Recurse -ErrorAction SilentlyContinue } | Select-Object -First 1
+  if (-not $wprp) { throw "kein .wprp in $($roots -join ', ')" }
+  Write-Host "Profil: $($wprp.FullName)"
+  $hint = Get-ChildItem (Split-Path $wprp.FullName) -Filter *.psm1 -Recurse | Select-String -Pattern 'wpr' -SimpleMatch | Select-Object -First 8
   $hint | ForEach-Object { Write-Host "  $($_.Filename):$($_.LineNumber): $($_.Line.Trim())" }
   $profiles = ([xml](Get-Content $wprp.FullName)).WindowsPerformanceRecorder.Profiles.Profile
   $candidates = @()
@@ -134,7 +140,8 @@ function MarkTime($entries, [string] $run, [string] $mark) {
 # "angelegt 2026-…, zuletzt geschrieben 2026-…" aus einer [datei]-Zeile
 function FileTimes($entries, [string] $label) {
   $e = $entries | Where-Object { $_.Mark -eq 'datei' -and $_.Text.StartsWith("${label}:") } | Select-Object -First 1
-  if ($e -and $e.Text -match 'angelegt (\S+ \S+), zuletzt geschrieben (\S+ \S+)') {
+  $ts = '(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d{3})'
+  if ($e -and $e.Text -match "angelegt $ts, zuletzt geschrieben $ts") {
     return @([datetime]::ParseExact($Matches[1], 'yyyy-MM-dd HH:mm:ss.fff', $null), [datetime]::ParseExact($Matches[2], 'yyyy-MM-dd HH:mm:ss.fff', $null))
   }
   return @($null, $null)
@@ -172,19 +179,19 @@ function Invoke-Measured([string] $kind, [int] $run, [string] $file, [string[]] 
     $old = MarkTime $entries 'Installation' 'alte-fassung'
     $ext = MarkTime $entries 'Installation' 'ausgepackt'
     $end = MarkTime $entries 'Installation' 'ende'
-    $pkg = FileTimes $entries 'Paket'
+    # NSIS übernimmt beim Schreiben die Zeitstempel aus dem Bau; echt sind die Anlage der Kopien und der Ordner 7z-out
+    $unpack = FileTimes $entries 'Ausgepackt'
     $copy = FileTimes $entries 'Kopie des Installers'
+    $pkgEvents = @($events | Where-Object { $_.Path -match '\\ns[^\\]*\.tmp\\app-' })
     $unPruef = Seconds (MarkTime $entries 'Deinstallation' 'pruefung-beginn') (MarkTime $entries 'Deinstallation' 'pruefung-ende')
     $row['Bis Start'] = Seconds $t0 $start
-    $row['Start bis Prüfung'] = Seconds $start $cb
     $row['Prüfung'] = Seconds $cb $ce
-    $row['Alte Fassung'] = Seconds $ce $old
+    $row['Alte Fassung entfernen'] = Seconds $ce $old
     $row['davon Prüfung im alten Deinstallationsprogramm'] = $unPruef
-    $row['Bis Paket angelegt'] = Seconds $old $pkg[0]
-    $row['Paket schreiben'] = Seconds $pkg[0] $pkg[1]
-    $row['Auspacken und kopieren'] = Seconds $pkg[1] $ext
-    $row['Danach (Kopie des Installers u. a.)'] = Seconds $ext $end
-    $row['davon Kopie des Installers'] = Seconds $copy[0] $copy[1]
+    if ($pkgEvents.Count) { $row['Paket nach $PLUGINSDIR'] = Seconds $old $unpack[0] }
+    $row['Auspacken nach 7z-out'] = Seconds $unpack[0] $unpack[1]
+    $row['Kopieren nach $INSTDIR'] = Seconds $unpack[1] $ext
+    $row['Kopie des Installers u. a.'] = Seconds $copy[0] $end
     $row['Ende bis Prozessende'] = Seconds $end $t1
   } else {
     $cb = MarkTime $entries 'Deinstallation' 'pruefung-beginn'
@@ -195,15 +202,6 @@ function Invoke-Measured([string] $kind, [int] $run, [string] $file, [string[]] 
     $row['Prüfung'] = Seconds $cb $ce
     $row['Bis Entfernen'] = Seconds $ce $rm
     $row['Entfernen'] = Seconds $rm $end
-  }
-  # Schreibzugriffe je Ort: erster und letzter, relativ zum Start des Prozesses
-  foreach ($g in @(
-      @{ Name = 'Paket in $PLUGINSDIR'; Pattern = '\\ns[^\\]*\.tmp\\app-' },
-      @{ Name = '7z-out'; Pattern = '\\7z-out\\' },
-      @{ Name = 'Programmordner'; Pattern = '\\Programs\\mietfuchs' },
-      @{ Name = 'mietfuchs-updater'; Pattern = '\\mietfuchs-updater' })) {
-    $hits = @($events | Where-Object { $_.Path -match $g.Pattern })
-    if ($hits.Count) { $row["Dateien $($g.Name)"] = "$(Seconds $t0 $hits[0].Time)–$(Seconds $t0 $hits[-1].Time) s ($($hits.Count))" }
   }
   if (@($events | Where-Object Kind -eq 'E').Count) { $row['Beobachter'] = 'Überlauf' }
   $rows.Add([pscustomobject]$row)
