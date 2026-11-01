@@ -11,6 +11,8 @@ import { GUIDES } from '../../../shared/guides.ts'
 import { GLOSSARY, TERM_TOPICS } from '../../../shared/glossary.ts'
 import { TERM_TOPIC_LABELS } from '../helpView'
 import { pageLabel } from '../nav'
+import type { HelpStock } from '../helpSuggestions'
+import type { Property, Tenancy, Unit } from '../../../shared/types.ts'
 
 afterEach(() => {
   cleanup()
@@ -566,4 +568,61 @@ test('Pfad aus dem Lexikon, wenn der Weg in einer Anleitung begann: Fokus auf di
   await waitFor(() => expect(focusedTerm()).toBe('granny'))
   fireEvent.click(within(screen.getByRole('navigation', { name: 'Pfad' })).getByRole('button', { name: 'Hilfe & Begriffe' }))
   await waitFor(() => expect(document.activeElement).toBe(searchBox()))
+})
+
+// „Passend zu Ihrem Bestand“ (#488, Teil 4): Ein Mehrfamilienhaus mit sechs Wohnungen und einem Mieterwechsel 2025.
+const lindenweg: Property = {
+  id: 'p1', name: 'Lindenweg 12', kind: 'mfh', address: 'Lindenweg 12', landlordName: null, iban: null, paymentDeadlineDays: null,
+  periodRules: { startMonth: 1, changes: [] },
+}
+const flats: Unit[] = Array.from({ length: 6 }, (_, i) => ({ id: `w${i}`, propertyId: 'p1', name: `Wohnung ${i + 1}`, areaM2: 60, participates: true }))
+const lease = (id: string, unitId: string, start: string, end: string | null): Tenancy => ({
+  id, unitId, tenantName: `Mieter ${id}`, persons: 1, personHistory: [{ from: start, persons: 1 }], start, end, prepayments: [], prepaymentOverrides: {}, baseRents: [],
+})
+const myStock: HelpStock = {
+  properties: [lindenweg], property: lindenweg, units: flats,
+  tenancies: [lease('a', 'w0', '2020-01-01', '2025-06-30'), lease('b', 'w0', '2025-07-01', null), ...flats.slice(1).map((u) => lease(`t${u.id}`, u.id, '2020-01-01', null))],
+  plants: [], period: { from: '2025-01-01', to: '2025-12-31', label: '2025', calendar: true },
+}
+const suggestionList = () => {
+  const h = screen.getByRole('heading', { name: 'Passend zu Ihrem Bestand', level: 2 })
+  return within(h.nextElementSibling as HTMLElement)
+}
+
+test('„Passend zu Ihrem Bestand“: Kacheln wie die Anleitungen, oben der Grund, in der Rangfolge', () => {
+  render(<Hilfe onFollow={() => {}} stock={myStock} />)
+  const tiles = suggestionList().getAllByRole('button')
+  expect(tiles.map((b) => b.querySelector('.text-accent-strong')?.textContent)).toEqual(['Weil 2025 ein Mieterwechsel erfasst ist', 'Weil Lindenweg 12 sechs Wohnungen hat'])
+  expect(tiles[0]?.textContent).toContain(GUIDES.tenantChange.title)
+  expect(tiles[0]?.textContent).toContain(`${GUIDES.tenantChange.steps.length} Schritte`)
+  // Der Abschnitt steht zwischen Suche und Anleitungen; die Anleitung bleibt auch in ihrer Gruppe
+  const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)
+  expect(headings.indexOf('Passend zu Ihrem Bestand')).toBeLessThan(headings.findIndex((t) => t?.startsWith('Anleitungen')))
+  expect(tile(GUIDES.tenantChange.title)).toBeTruthy()
+  // Beim Suchen tritt der Abschnitt wie die übrige Startansicht zurück
+  type('Garage')
+  expect(screen.queryByRole('heading', { name: 'Passend zu Ihrem Bestand' })).toBeNull()
+})
+
+test('ohne Bestand oder ohne Treffer entfällt der Abschnitt ganz', () => {
+  const { rerender } = render(<Hilfe onFollow={() => {}} />)
+  expect(screen.queryByRole('heading', { name: 'Passend zu Ihrem Bestand' })).toBeNull()
+  rerender(<Hilfe onFollow={() => {}} stock={{ ...myStock, property: null, properties: [] }} />)
+  expect(screen.queryByRole('heading', { name: 'Passend zu Ihrem Bestand' })).toBeNull()
+  rerender(<Hilfe onFollow={() => {}} stock={{ ...myStock, units: flats.slice(0, 1), tenancies: [lease('x', 'w0', '2020-01-01', null)] }} />)
+  expect(screen.queryByRole('heading', { name: 'Passend zu Ihrem Bestand' })).toBeNull()
+})
+
+test('ein Vorschlag öffnet die Anleitung; der Pfad führt zurück auf die Kachel des Vorschlags', async () => {
+  render(<Hilfe onFollow={() => {}} stock={myStock} />)
+  fireEvent.click(suggestionList().getAllByRole('button')[1]!)
+  const heading = await screen.findByRole('heading', { name: GUIDES.multiFamily.title, level: 1 })
+  await waitFor(() => expect(document.activeElement).toBe(heading))
+  fireEvent.click(within(screen.getByRole('navigation', { name: 'Pfad' })).getByRole('button', { name: 'Hilfe & Begriffe' }))
+  await waitFor(() => expect(document.activeElement).toBe(suggestionList().getAllByRole('button')[1]))
+  // Über die gewöhnliche Kachel geöffnet, führt der Pfad wie bisher auf diese
+  fireEvent.click(tile(GUIDES.multiFamily.title))
+  await screen.findByRole('heading', { name: GUIDES.multiFamily.title, level: 1 })
+  fireEvent.click(within(screen.getByRole('navigation', { name: 'Pfad' })).getByRole('button', { name: 'Hilfe & Begriffe' }))
+  await waitFor(() => expect(document.activeElement).toBe(tile(GUIDES.multiFamily.title)))
 })

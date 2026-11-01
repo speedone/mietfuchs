@@ -4,13 +4,16 @@
 // der Pfad führt zur Startansicht. Kein Router: Die Ansicht ist Zustand der Seite und beginnt bei jedem Seitenwechsel
 // wieder auf der Startansicht. Entscheidungen (Suche, Rangfolge, Ausschnitt, Gruppen, Abschnitte, Lexikon) stehen in
 // helpView.ts. „Zu {Seite} →“ meldet Anleitung und Schritt an die App (`onFollow`), die dort die Leiste des Fadens zeigt
-// (components/GuideThread.tsx); „Zurück zur Anleitung“ kommt als `openGuide` zurück.
+// (components/GuideThread.tsx); „Zurück zur Anleitung“ kommt als `openGuide` zurück. Über den Anleitungen schlägt
+// „Passend zu Ihrem Bestand“ bis zu drei vor, jede mit ihrem Grund (Teil 4, Regeln in helpSuggestions.ts); die App
+// reicht dafür den Bestand des gewählten Objekts herein (`stock`).
 
 import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import PageHeader from '../components/PageHeader'
 import { allGuides, type GuideEntry } from '../guideView'
 import { chooseTerm, chooseTopic, firstSentence, GUIDE_GROUP_LABELS, GUIDE_SECTIONS, guideGroups, guidesWithTerm, jumpToTerm, lexiconEntries, lexiconFilters, lexiconPane, POPULAR_SEARCHES, relatedGuides, relatedTerms, resultCountText, searchHelp, TERM_TOPIC_LABELS, topicCounts, type GuideHit, type GuideSection, type LexiconState, type Segment, type TermHit } from '../helpView'
 import { pageLabel } from '../nav'
+import { suggestGuides, type HelpStock } from '../helpSuggestions'
 import { countOf, plural } from '../../../shared/wording.ts'
 import type { GuideId } from '../../../shared/guides.ts'
 import { GLOSSARY, type Term, type TermId, type TermTopic } from '../../../shared/glossary.ts'
@@ -28,8 +31,9 @@ const SEARCH = 'search'
 // zählt jeden Sprung. Danach meldet sie `onFocusTermDone`, und die App vergisst den Sprung: Ein späterer gewöhnlicher
 // Wechsel zur Hilfe beginnt oben (Durchsicht S1). `openGuide` ist dasselbe für „Zurück zur Anleitung“ aus der Leiste
 // des Fadens: die Anleitung öffnen und den Fokus auf den Schritt setzen, von dem man kam.
-export default function Hilfe({ onFollow, focusTerm, onFocusTermDone, openGuide: guideRequest, onOpenGuideDone }: {
+export default function Hilfe({ onFollow, focusTerm, onFocusTermDone, openGuide: guideRequest, onOpenGuideDone, stock = null }: {
   onFollow: (guide: GuideId, step: number) => void
+  stock?: HelpStock | null
   focusTerm?: { id: TermId; seq: number } | null
   onFocusTermDone?: () => void
   openGuide?: { id: GuideId; step: number; seq: number } | null
@@ -130,6 +134,7 @@ export default function Hilfe({ onFollow, focusTerm, onFocusTermDone, openGuide:
   }, [])
 
   const results = useMemo(() => searchHelp(query), [query])
+  const suggestions = useMemo(() => suggestGuides(stock), [stock])
   const hits: Hit[] = [...results.guides, ...results.terms]
   const q = query.trim()
   const openHit = (hit: Hit) => (hit.kind === 'guide' ? openGuide(hit.id, SEARCH) : openTerm(hit.id, SEARCH))
@@ -179,7 +184,8 @@ export default function Hilfe({ onFollow, focusTerm, onFocusTermDone, openGuide:
         {/* Kam man über „Kommt vor in“, führt der Weg zurück zum Begriff (#488, Teil 3). */}
         {previousTerm && <button type="button" className="btn ghost small mb-2 no-print" onClick={back}>← Zurück zu {previousTerm.title}</button>}
         <nav aria-label="Pfad" className="no-print flex flex-wrap items-center gap-2 mb-2 text-s text-muted">
-          <button type="button" className="btn ghost small" onClick={() => home(`guide:${g.id}`)}>Hilfe & Begriffe</button>
+          {/* Auf die Kachel, mit der der Weg begann, wenn es der Vorschlag dieser Anleitung war; sonst auf ihre Kachel. */}
+          <button type="button" className="btn ghost small" onClick={() => home(start?.view.kind === 'home' && start.key === `suggest:${g.id}` ? start.key : `guide:${g.id}`)}>Hilfe & Begriffe</button>
           <span aria-hidden="true">›</span>
           <span>Anleitungen</span>
         </nav>
@@ -287,6 +293,20 @@ export default function Hilfe({ onFollow, focusTerm, onFocusTermDone, openGuide:
 
       {q === '' && (
         <>
+          {/* Ohne Treffer entfällt der Abschnitt ganz, kein leerer Kasten. Eigener Schlüssel der Kachel (`suggest:`), damit
+              der Weg zurück auf diese Kachel führt und nicht auf dieselbe Anleitung in ihrer Gruppe. */}
+          {suggestions.length > 0 && (
+            <>
+              <h2 className="help-section">Passend zu Ihrem Bestand</h2>
+              <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 list-none m-0 p-0">
+                {suggestions.map((s) => {
+                  const g = allGuides().find((x) => x.id === s.guideId)
+                  return g && <GuideTile key={g.id} guide={g} reason={s.reason} helpKey={`suggest:${g.id}`} onOpen={() => openGuide(g.id, `suggest:${g.id}`)} />
+                })}
+              </ul>
+            </>
+          )}
+
           <h2 className="help-section">Anleitungen <span className="text-s text-muted font-normal">{countOf(allGuides().length, 'Lage', 'Lagen')} der Vermietung, Schritt für Schritt</span></h2>
           {guideGroups().map(({ group, guides }) => (
             <Fragment key={group}>
@@ -535,11 +555,13 @@ function TermDetail({ id, onTerm, onList, onOpenGuide }: { id: TermId; onTerm: (
   )
 }
 
-// Eine Anleitung als Kachel: Titel, erster Satz, Zahl der Schritte (Startansicht und „Ähnliche Anleitungen“).
-function GuideTile({ guide: g, onOpen }: { guide: GuideEntry; onOpen: () => void }) {
+// Eine Anleitung als Kachel: Titel, erster Satz, Zahl der Schritte (Startansicht und „Ähnliche Anleitungen“); als
+// Vorschlag oben der Grund in Akzentfarbe.
+function GuideTile({ guide: g, onOpen, reason, helpKey = `guide:${g.id}` }: { guide: GuideEntry; onOpen: () => void; reason?: string; helpKey?: string }) {
   return (
     <li className="flex">
-      <button type="button" data-help-key={`guide:${g.id}`} onClick={onOpen} className="btn secondary flex w-full flex-col items-start justify-start gap-1 p-4 rounded-l text-left font-normal leading-snug">
+      <button type="button" data-help-key={helpKey} onClick={onOpen} className="btn secondary flex w-full flex-col items-start justify-start gap-1 p-4 rounded-l text-left font-normal leading-snug">
+        {reason && <span className="text-xs font-bold text-accent-strong wrap-anywhere">{reason}</span>}
         <span className="font-strong text-base text-text">{g.title}</span>
         <span className="text-s text-muted line-clamp-2">{firstSentence(g.applies)}</span>
         <span className="text-xs text-muted mt-auto pt-1">{countOf(g.steps.length, 'Schritt', 'Schritte')}</span>

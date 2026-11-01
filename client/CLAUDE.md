@@ -361,6 +361,14 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   `h1` ist ihr Titel, Abschnitte als `section` mit `h2` (`GUIDE_SECTIONS`), ab 42rem Inhaltsbreite die Inhaltsleiste
   (`guide-layout`/`guide-toc` in tw.css, Container-Abfrage). Begriffe sind Knöpfe auf den Begriff (kein Popover); im
   Lexikon steht dann über dem Pfad „← Zurück zur Anleitung“.
+  „Passend zu Ihrem Bestand“ (Teil 4, [helpSuggestions.ts](src/helpSuggestions.ts)): `suggestGuides(stock)` über den
+  Bestand, den die App ohnehin geladen hat (`helpStock` in App.tsx: gewähltes Objekt mit Wohnungen, Mietverhältnissen und
+  Heizanlagen, gewählter Zeitraum; keine eigene Route), höchstens drei, je mit gesiezt formuliertem Grund aus den Daten
+  (Zahl als Wort bis zwölf). Eine Regel nur, wo die Angabe eindeutig ist (lieber keine Kachel); Rang Ereignis des Zeitraums
+  vor Abrechnungszeitraum vor Heizung vor Pauschale vor Objektart, zuerst je Gruppe die beste. Kacheln wie die
+  Anleitungen mit dem Grund oben (`text-accent-strong`), eigener Schlüssel `suggest:{id}`, damit der Pfad auf diese Kachel
+  zurückführt. Ohne Treffer kein Abschnitt. Eine neue Anleitung bekommt hier eine Regel, wenn sich ihre Lage aus dem
+  Bestand ablesen lässt.
   Das Lexikon (Teil 3): Pfad „Hilfe & Begriffe › Lexikon“ (führt auf die Kachel oder die Suche, mit der der Weg begann),
   `h1` „Lexikon“, Themenfilter als Umschaltknöpfe (`aria-pressed`, „Alle“ vorne, je mit Zahl), darunter ab 44rem
   Inhaltsbreite zwei Spalten (`lexicon-layout`/`lexicon-list` in tw.css): links die Liste (Knöpfe, gewählter mit
