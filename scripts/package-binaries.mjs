@@ -39,10 +39,10 @@ const TARGETS = {
   linux: { target: 'bun-linux-x64', out: 'mietfuchs-linux', archive: 'tar' },
   'linux-arm64': { target: 'bun-linux-arm64', out: 'mietfuchs-linux-arm64', archive: 'tar' },
 }
-// Für das MSIX-Paket des Microsoft Store (#500) dieselbe Windows-Datei noch einmal, aber ohne
-// Konsolenfenster: Aus dem Startmenü gestartet, stünde sonst ein schwarzes Fenster neben dem
-// Browser, beendet wird über die Oberfläche. Sie landen in dist-bin/store und nicht am Release,
-// denn wer die Datei herunterlädt, beendet Mietfuchs gewohnt durch Schließen des Fensters.
+// Für das Programmfenster (#517, Installer und Store-Paket #500) dieselbe Windows-Datei noch einmal,
+// aber ohne Konsolenfenster: Sonst stünde neben dem Fenster ein schwarzes, beendet wird über das
+// Fenster. Sie landen in dist-bin/store und nicht roh am Release, denn wer die Datei herunterlädt,
+// beendet Mietfuchs gewohnt durch Schließen des Konsolenfensters.
 // `--windows-hide-console` geht als einzige Windows-Angabe von Bun auch beim Bau unter Linux.
 const STORE_TARGETS = {
   'store-x64': { target: 'bun-windows-x64', out: path.join('store', 'mietfuchs-store-x64.exe') },

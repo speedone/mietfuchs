@@ -178,20 +178,38 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   mit `printBackground` um. Geprüft mit [safari-print-check.mjs](safari-print-check.mjs) `--engines chromium,electron`
   (unter Linux mit `xvfb-run`): dieselben Fälle im Fenster, Seitenzahl gleich Chromium.
 - **Bau** ([package-desktop.mjs](package-desktop.mjs), electron-builder): Windows ein Installer für x64 und ARM64
-  zusammen (NSIS für den Benutzer, ohne Adminrechte; `latest.yml` des Updaters kennt keine Architektur), die
-  Programmdatei ohne Konsolenfenster aus `dist-bin/store`. macOS je ein .dmg, ad hoc signiert (`identity: "-"`,
-  ohne Notarisierung), die Programmdatei in `Contents/MacOS`. Probe in [desktop.yml](../.github/workflows/desktop.yml):
-  bauen, installieren wie ein Nutzer, [desktop-check.mjs](desktop-check.mjs) (Start, smoke-test, zweiter Start,
-  Beenden, Absturz des Fensters), Größen und Startzeit in der Zusammenfassung.
+  zusammen (`Mietfuchs-Setup-<Version>.exe`, NSIS für den Benutzer, ohne Adminrechte; `latest.yml` des Updaters kennt
+  keine Architektur), die Programmdatei ohne Konsolenfenster aus `dist-bin/store`. Daneben legt electron-builder je
+  Architektur den entpackten Ordner ab (`dist-desktop/win-unpacked`, `win-arm64-unpacked`), den Inhalt des
+  Store-Pakets. macOS je ein .dmg, ad hoc signiert (`identity: "-"`, ohne Notarisierung), die Programmdatei in
+  `Contents/MacOS`; electron-builder nennt die Architektur arm64 und x64, das Skript benennt danach um in
+  `Mietfuchs-<Version>-apple-silicon.dmg` und `-intel.dmg` (`userFileName`, wie die Zips der Programmdateien).
+  **Kein Web-Installer** (`nsis-web`, lädt nur das Paket der eigenen Architektur): In electron-builder 26.18 wählt er
+  ARM64 nur, wenn es auch ein 32-Bit-Paket gibt (`installApplicationFiles` in
+  app-builder-lib/templates/nsis/include/installer.nsh und `downloadApplicationFiles` in webPackage.nsh, Zweig
+  ohne `APP_32_NAME`); mit x64 und ARM64 bekäme ein ARM-Rechner das x64-Paket, und eine 32-Bit-Programmdatei des
+  Servers baut Bun nicht. Der gemeinsame Installer wählt richtig (`identify_package` in extractAppPackage.nsh).
+- **Im Release-Lauf** ([release.yml](../.github/workflows/release.yml), Jobs „Programmfenster bauen“ und
+  „Programmfenster prüfen auf …“, in jedem Prüfumfang): gebaut aus denselben Programmdateien wie die übrigen Ziele
+  (Windows aus dem Artefakt `mietfuchs-store-programme`, macOS aus den neu signierten Zips in `mietfuchs-binaries`),
+  installiert wie ein Nutzer und geprüft mit [desktop-check.mjs](desktop-check.mjs) (Start, smoke-test, zweiter
+  Start, Beenden, Absturz des Fensters) auf Windows x64 und ARM64, macOS Apple Silicon und Intel; Größen und
+  Startzeit in der Zusammenfassung. **Kein eigener Workflow mehr**: Das frühere desktop.yml ist in release.yml
+  aufgegangen, weil ein PR dort so lange läuft wie desktop.yml allein (rund sechs Minuten), weil eine Änderung am
+  Fenster jetzt auch das Store-Paket ändert, das nur release.yml prüft, und damit Bau und Prüfung an einer Stelle
+  stehen. Deshalb steht `desktop/**` in der Pfadliste von release.yml.
 
 ## Microsoft Store
 
 - **MSIX** (#500, [package-msix.mjs](package-msix.mjs), Manifest
   [../packaging/msix/AppxManifest.xml](../packaging/msix/AppxManifest.xml), Symbole in `packaging/msix/Assets`):
   je Architektur ein `.msix`, zusammen ein `.msixbundle`, unsigniert (der Store signiert). Nur unter Windows
-  (makeappx aus dem Windows SDK). Eingepackt werden eigene Programmdateien aus `dist-bin/store`, die
-  package-binaries.mjs mit `--windows-hide-console` baut (geht als einzige Windows-Angabe von Bun auch beim Bau
-  unter Linux); ans Release gehen sie nicht. Identität aus dem Partner Center (`speedone.Mietfuchs`, Store-ID
+  (makeappx aus dem Windows SDK). **Eingepackt wird das Programmfenster** (#517): der entpackte Ordner aus
+  package-desktop.mjs (`dist-desktop/win-unpacked`, `win-arm64-unpacked`), `Executable` im Manifest ist
+  `Mietfuchs.exe`, der Befehlsalias heißt weiter `mietfuchs.exe` und zeigt darauf. Der Server liegt darin unter
+  `resources\server\mietfuchs.exe` (dort erkennt `storeLocation` den Store), gebaut von package-binaries.mjs mit
+  `--windows-hide-console` (geht als einzige Windows-Angabe von Bun auch beim Bau unter Linux). Vor dem Packen
+  prüft `checkWindowFolder` beide Dateien am PE-Kopf: Architektur des Pakets und kein Konsolenfenster. Identität aus dem Partner Center (`speedone.Mietfuchs`, Store-ID
   `9PMHZ0ZJPZDZ`); `STORE_PACKAGE_NAME` in server/src/paths.ts muss dazu passen.
 - **Version**: vier Teile, der erste nicht 0, der vierte immer 0, und der Store nimmt nur höhere an. Deshalb
   `msixVersion`: Hauptversion plus 1 (0.14.2 wird 1.14.2.0), für immer festgelegt.
@@ -200,11 +218,17 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   AppData: Dorthin schreibende Store-Apps lenkt Windows in einen Paketordner um und löscht ihn beim Deinstallieren.
   Abschalten ginge nur mit `unvirtualizedResources`, das Microsoft für Spiele vorsieht; außerhalb von AppData lenkt
   Windows nichts um. Nicht „Dokumente“, weil OneDrive den Ordner oft abgleicht.
+- **Im Fenster bleibt die Betriebsart `store`** (der Ort zählt vor `NKA_DESKTOP`): Port 17517 wie das Fenster
+  ohne Store, Daten in `%USERPROFILE%\Mietfuchs`. Electrons eigener Ordner (`%LOCALAPPDATA%\mietfuchs-fenster`,
+  gemerkter Port, Zugriff aus dem Heimnetz, Protokoll des Servers) liegt dagegen unter AppData und landet umgelenkt in
+  `%LOCALAPPDATA%\Packages\speedone.Mietfuchs_…\LocalCache\Local`; das ist gewollt, beim Deinstallieren geht
+  nur er verloren.
 - **Prüfung** (Job „Store-Paket bauen und prüfen“ in release.yml, bei jedem Lauf): signiert eine Kopie mit einem
   Wegwerf-Zertifikat desselben Herausgebers, installiert sie, startet über den Befehlsalias `mietfuchs.exe` (nur so
-  erbt das Programm `CI` und `NKA_UPDATE_URL`, der Start übers Startmenü reicht nichts weiter), Prüfskript mit
-  `--mode store`, Beenden über `/api/quit`, deinstallieren; die Datenbank muss danach noch in
-  `%USERPROFILE%\Mietfuchs` liegen.
+  erbt das Fenster `CI` und `NKA_UPDATE_URL` und reicht sie über `serverEnv` an den Server weiter, der Start übers
+  Startmenü reicht nichts weiter), Prüfskript auf Port 17517 mit `--mode store`, Fenster und Server laufen aus dem
+  Paket, Beenden über `/api/quit` (das Fenster geht mit dem Server), deinstallieren; die Datenbank muss danach noch
+  in `%USERPROFILE%\Mietfuchs` liegen. Scheitert etwas, steht das Protokoll des Servers im Log.
 - **Einreichen** ([store.yml](../.github/workflows/store.yml), von release.yml aufgerufen): beim Tag ohne Bindestrich,
   nach dem Anhängen ans Release, nur mit der Repository-Variable `MSSTORE_EINREICHEN = an`.
   [store-submit.mjs](store-submit.mjs) spricht die Submission-API des Partner Centers unmittelbar an: offenen Entwurf
@@ -231,7 +255,11 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
 
 - [release.yml](../.github/workflows/release.yml) baut beim `v*`-Tag alle Ziele und hängt sie an:
   macOS als Zip, Linux als tar.gz (Ausführungsbit), Windows roh. **Die Namen der x64-Dateien bleiben
-  fest**, der Update-Hinweis älterer Versionen sucht sie.
+  fest**, der Update-Hinweis älterer Versionen sucht sie. Dazu das Programmfenster (#517):
+  `Mietfuchs-Setup-<Version>.exe`, `Mietfuchs-<Version>-apple-silicon.dmg` und `-intel.dmg`. Die
+  Programmdateien bleiben vorerst daneben, bis PR 3 von #517 die Daten aus dem Ordner neben der
+  Programmdatei von selbst in den Benutzerordner umzieht; ohne das fänden Nutzer ihre Daten im Fenster
+  nicht.
 - **Bei jeder Nebenversion kommt ein Eintrag in `RELEASE_STEPS`** ([server/src/db/releaseSteps.ts](../server/src/db/releaseSteps.ts),
   `{ version: 'x.y.0', steps: <Zahl der Dateien server/drizzle/*.sql> }`, #318): Daraus nennt der Verlauf die Sicherung
   „Vor dem Update auf Version …“. Beim Tag prüft es der Schritt „Rechtsregister geprüft?“ in release.yml
@@ -271,7 +299,8 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   lange KI-Antwort, Browserlauf) läuft beim Tag, mittwochs 4:23 UTC auf `main` (das Netz gegen eine
   fehlerhafte Bun-Fassung; nach 60 Tagen ohne Bewegung schaltet GitHub Zeitpläne ab), von Hand und
   mit dem Label `full-check`. Die Bedingung ist als Ausnahme geschrieben (vollständig außer am PR
-  ohne Label), damit ein neuer Auslöser im Zweifel zu breit läuft. Am PR läuft release.yml nur,
-  wenn er Server, Oberfläche, Skripte, Paketierung oder die Datei selbst anfasst. **Eine leere
+  ohne Label), damit ein neuer Auslöser im Zweifel zu breit läuft. Das Programmfenster und das
+  Store-Paket laufen in jedem Umfang. Am PR läuft release.yml nur,
+  wenn er Server, Oberfläche, Programmfenster, Skripte, Paketierung oder die Datei selbst anfasst. **Eine leere
   Matrix erzeugt keinen Job und keinen Fehler**, deshalb bricht „Prüfumfang festlegen“ bei einer
   leeren Liste ab. „Ans Release anhängen“ wartet auf alles, auch auf den Browserlauf.
