@@ -1,7 +1,8 @@
 # Store-Eintrag im Partner Center
 
 Texte für die erste Einreichung von Hand (#500). Danach übernimmt `msstore publish` sie bei jeder
-Einreichung, geändert werden sie im Partner Center. Die Texte siezen, wie die Oberfläche.
+Einreichung, geändert werden sie im Partner Center. Nur „Neuigkeiten in dieser Version“ und die Art der
+Veröffentlichung setzt store.yml selbst. Die Texte siezen, wie die Oberfläche.
 
 ## Preise und Verfügbarkeit
 

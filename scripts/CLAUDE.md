@@ -167,8 +167,11 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   msstore die Zugangsdaten im Schlüsselbund ablegt und ein Linux-Runner keinen hat. Scheitert die Einreichung beim
   Tag, startest du store.yml von Hand mit der Nummer des Release-Laufs; das reicht dessen Paket ohne neuen Tag ein,
   sofern der Lauf ans Release angehängt hat. Die Variable zählt dann nicht.
-  `msstore publish <bundle> -id 9PMHZ0ZJPZDZ` übernimmt Eintrag und Bilder der letzten Einreichung und tauscht nur
-  das Paket; einen offenen Entwurf im Partner Center löscht es dabei. Die **erste Einreichung geht von Hand** im
+  `msstore publish <bundle> -id 9PMHZ0ZJPZDZ --noCommit` übernimmt Eintrag und Bilder der letzten Einreichung und
+  tauscht nur das Paket; einen offenen Entwurf im Partner Center löscht es dabei. Vor dem Abschicken setzt der
+  Workflow zwei Felder: „Nach der Zertifizierung sofort veröffentlichen“ (sonst kopiert der Store „Manual“ der ersten
+  Einreichung, und eine Einstellung im Entwurf ginge mit ihm verloren) und „Neuigkeiten in dieser Version“ (Version
+  und Link aufs Release). Beschreibung und Bildschirmfotos bleiben, wie sie im Partner Center stehen. Die **erste Einreichung geht von Hand** im
   Partner Center (die CLI aktualisiert nur eine veröffentlichte App), Texte dafür in
   [../packaging/msix/store-eintrag.md](../packaging/msix/store-eintrag.md). Zugang: Entra-Anwendung
   `mietfuchs-github` (Rolle Manager), Secrets `MSSTORE_TENANT_ID`, `MSSTORE_SELLER_ID`, `MSSTORE_CLIENT_ID`,

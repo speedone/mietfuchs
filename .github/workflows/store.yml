@@ -63,6 +63,7 @@ jobs:
           # hat über 40 Jobs, deshalb die große Seite.
           attached=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?per_page=100" --jq '.jobs[] | select(.name == "Ans Release anhängen") | .conclusion')
           [ "$attached" = success ] || { echo "::error::Lauf $RUN_ID hat nichts ans Release angehängt ($attached)"; exit 1; }
+          echo "TAG=$tag" >> "$GITHUB_ENV"
       - uses: actions/download-artifact@v8
         if: inputs.run_id == ''
         with:
@@ -83,7 +84,34 @@ jobs:
           CLIENT_ID: ${{ secrets.MSSTORE_CLIENT_ID }}
           CLIENT_SECRET: ${{ secrets.MSSTORE_CLIENT_SECRET }}
         run: msstore reconfigure --tenantId "$TENANT_ID" --sellerId "$SELLER_ID" --clientId "$CLIENT_ID" --clientSecret "$CLIENT_SECRET"
-      # Die Store-ID aus dem Partner Center (Produktidentität). `publish` übernimmt Eintrag und
-      # Bilder der letzten Einreichung und tauscht nur das Paket.
+      # Die Store-ID aus dem Partner Center (Produktidentität). `publish` legt die Einreichung als Kopie
+      # der zuletzt veröffentlichten an, übernimmt Eintrag und Bilder und tauscht nur das Paket; einen
+      # offenen Entwurf löscht es vorher. Kopiert wird auch die Art der Veröffentlichung, und die stand
+      # bei der ersten Einreichung (von Hand) auf „Manual“. Deshalb erst ohne Abschicken hochladen, dann
+      # „Immediate“ setzen (nach der Zertifizierung von selbst veröffentlichen), dann abschicken.
+      # `submission update` ersetzt die ganze Einreichung, also wird die vollständige geholt und nur
+      # diese Felder geändert. Die Statuszeilen gehen nach stderr, das JSON nach stdout; sed hält
+      # trotzdem nur das JSON, falls eine Fassung der CLI anders schreibt. Die Schreibweise der Felder
+      # (camelCase der API, PascalCase der CLI) bleibt offen, deshalb der Vergleich ohne Großschreibung.
+      #
+      # „Neuigkeiten in dieser Version“ (releaseNotes) käme sonst ebenfalls aus der letzten Einreichung
+      # und nennte eine ältere Version: Version und Link aufs Release, die Liste der Änderungen steht dort.
       - name: Einreichen
-        run: msstore publish store/*.msixbundle -id 9PMHZ0ZJPZDZ
+        env:
+          APP_ID: 9PMHZ0ZJPZDZ
+        run: |
+          TAG="${TAG:-$GITHUB_REF_NAME}"
+          notes="Mietfuchs ${TAG#v}. Was neu ist und was beim Update zu beachten ist, steht unter https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG"
+          msstore publish store/*.msixbundle -id "$APP_ID" --noCommit
+          msstore submission get "$APP_ID" > submission.out
+          sed -n '/^{/,$p' submission.out \
+            | jq --arg notes "$notes" '
+                with_entries(if (.key | ascii_downcase) == "targetpublishmode" then .value = "Immediate" else . end)
+                | walk(if type == "object" then with_entries(if (.key | ascii_downcase) == "releasenotes" then .value = $notes else . end) else . end)' \
+            > submission.json
+          jq -e 'to_entries | any((.key | ascii_downcase) == "targetpublishmode" and .value == "Immediate")' submission.json > /dev/null \
+            || { echo "::error::Art der Veröffentlichung nicht in der Einreichung gefunden"; exit 1; }
+          jq -e --arg notes "$notes" '[.. | objects | to_entries[] | select((.key | ascii_downcase) == "releasenotes") | .value == $notes] | length > 0 and all' submission.json > /dev/null \
+            || { echo "::error::Neuigkeiten nicht in der Einreichung gefunden"; exit 1; }
+          msstore submission update "$APP_ID" submission.json
+          msstore submission publish "$APP_ID"

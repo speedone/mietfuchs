@@ -33,3 +33,28 @@ test('Store: ein PR an store.yml startet release.yml', () => {
   const paths = yml.slice(yml.indexOf('    paths:'), yml.indexOf('  workflow_dispatch:'))
   assert.match(paths, /- \.github\/workflows\/store\.yml/)
 })
+
+// Partner Center legt eine neue Einreichung als Kopie der zuletzt veröffentlichten an und übernimmt
+// deren Art der Veröffentlichung; die erste (von Hand) stand auf „Manual“. „Automatisch nach der
+// Zertifizierung“ im offenen Entwurf zu setzen hilft nicht, `msstore publish` löscht den Entwurf.
+// Deshalb setzt der Workflow die Art selbst, bevor er abschickt.
+test('Store: die Einreichung wird nach der Zertifizierung von selbst veröffentlicht', () => {
+  const yml = read('store.yml')
+  assert.match(yml, /msstore publish [^\n]*--noCommit/)
+  assert.match(yml, /"Immediate"/)
+  assert.match(yml, /msstore submission update /)
+  assert.match(yml, /msstore submission publish /)
+  assert.ok(
+    yml.indexOf('msstore submission update ') < yml.indexOf('msstore submission publish '),
+    'erst die Art setzen, dann abschicken',
+  )
+})
+
+// „Neuigkeiten in dieser Version“ kopierte der Store sonst von der letzten Einreichung, also stünde
+// dort der Text einer älteren Version. Der Workflow setzt Version und Link aufs Release.
+test('Store: die Neuigkeiten nennen die Version und verlinken das Release', () => {
+  const yml = read('store.yml')
+  assert.match(yml, /releasenotes/)
+  assert.match(yml, /releases\/tag\/\$TAG/)
+  assert.match(yml, /echo "TAG=\$tag" >> "\$GITHUB_ENV"/)
+})
