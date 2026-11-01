@@ -13,6 +13,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   (AGPL-3.0, ohne Gewähr) und Links zu Lizenz und Quellcode. Derselbe Hinweis steht in der Beschreibung im Microsoft
   Store.
 
+### Geändert
+
+- Die Programmdatei unter Windows und macOS vermerkt beim Start, wo ihr Datenordner liegt, in einer Datei im
+  Benutzerordner. Eine spätere Fassung mit eigenem Programmfenster findet die Daten so und bietet den Umzug selbst an
+  ([#517](https://github.com/speedone/mietfuchs/issues/517)). Die Datei verlässt den Rechner nicht.
+
 ## [0.14.0] – 2026-11-01
 
 ### Hinzugefügt

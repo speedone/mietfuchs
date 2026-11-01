@@ -3,6 +3,17 @@
 Die Heizung steht in [docs/heizung.md](../../docs/heizung.md), die KI-Belegauswertung in
 [ai/CLAUDE.md](ai/CLAUDE.md), die Datenbank in [db/CLAUDE.md](db/CLAUDE.md).
 
+## Ort des Datenordners (#517)
+
+[dataLocations.ts](dataLocations.ts): Die Programmdatei (Bun, `binary`/`package`) unter Windows und macOS schreibt beim
+Start, wenn im Ordner ein Bestand liegt (`mietfuchs.sqlite` oder `db.json`, auch ein nicht zu öffnender), Pfad von Datenordner und Programmdatei, Version und Zeitpunkt nach
+`%LOCALAPPDATA%\mietfuchs-standorte\standorte.json` bzw. `~/Library/Application Support/mietfuchs-standorte/standorte.json` (höchstens
+20 Orte, der zuletzt benutzte zuerst, Pfade unter Windows und macOS ohne Groß/Klein verglichen, über Zwischendatei
+und Umbenennen). Eigener Ordner `mietfuchs-standorte`, weil `Mietfuchs` der Datenordner (Windows ohne Schreibrecht
+neben der Datei) bzw. der Ordner von Electron (macOS) sein kann. Das spätere Programm mit eigenem Fenster
+liest sie für den Umzug der Daten. **Nie mit `CI`**, nie unter Node (auch nicht mit `NKA_RUNTIME=binary`), nie aus
+dem Store; ein Fehler wird nur gemeldet. In docs/datenschutz.md genannt.
+
 ## Objekte (#92)
 
 Eine Installation verwaltet mehrere Objekte (`properties`); **ein Objekt ist zugleich die

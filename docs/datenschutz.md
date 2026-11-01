@@ -1,6 +1,6 @@
 # Datenschutzerklärung für Mietfuchs
 
-Stand: 31. Oktober 2026
+Stand: 1. November 2026
 
 Mietfuchs ist ein Programm für die Nebenkostenabrechnung, das vollständig auf Ihrem eigenen Rechner
 läuft. Diese Erklärung gilt für alle Fassungen: die Programmdatei von GitHub, die Linux-Pakete, das
@@ -16,6 +16,13 @@ einem Ordner auf Ihrem Rechner:
 - Programmdatei: im Ordner `data` neben der Datei, oder im Benutzerordner, wenn Mietfuchs dort nicht
   schreiben darf
 - Linux-Pakete: `~/.local/share/mietfuchs`
+
+Die Programmdatei unter Windows und macOS vermerkt außerdem, wo dieser Ordner liegt, in einer kleinen
+Datei auf Ihrem Rechner (Windows `%LOCALAPPDATA%\mietfuchs-standorte\standorte.json`, macOS
+`~/Library/Application Support/mietfuchs-standorte/standorte.json`): Pfad des Ordners und der Programmdatei,
+Versionsnummer und Zeitpunkt des letzten Starts. So kann eine spätere Fassung Ihre Daten finden und den
+Umzug anbieten. Die Datei verlässt Ihren Rechner nicht. Sie bleibt liegen, wenn Sie den Datenordner
+löschen; löschen Sie sie dann mit.
 
 Beim Deinstallieren der App oder eines Pakets bleibt dieser Ordner erhalten. Löschen Sie ihn selbst,
 wenn Sie die Daten nicht mehr brauchen.

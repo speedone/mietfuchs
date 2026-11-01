@@ -3,6 +3,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import multer from 'multer'
 import path from 'node:path'
 import fs from 'node:fs'
+import os from 'node:os'
 import http from 'node:http'
 import { spawn } from 'node:child_process'
 import { pipeline } from 'node:stream/promises'
@@ -87,6 +88,7 @@ import {
 import { findingsText, validateDb } from './legacy/validate.ts'
 import { createUpdateChecker, mayAskGitHub, UPDATE_URL } from './update.ts'
 import { APP_VERSION, RUNTIME, STANDALONE } from './version.ts'
+import { hasStock, locationsFile, recordDataLocation, shouldRecord } from './dataLocations.ts'
 import { describeFile, describeFolder, hashFile, mimeTypeOf, uploadedAtOf } from './uploads.ts'
 import { acceptIban, IbanRefusal } from './iban.ts'
 import { IBAN_LABELS } from '../../shared/iban.ts'
@@ -3931,6 +3933,13 @@ if (!database) openProblem = openProblem ?? 'nach dem Umstieg nicht wieder geöf
 if (changeover.state === 'done') await markBarrier('changeover')
 // Erst jetzt, denn ob die Sicherung ein Rückweg ist, hängt am Ausgang des Umstiegs.
 const backupOfThisStart = noteAfterChangeover(changeover.state, backupBeforeChangeover)?.file ?? null
+
+// Wo die Daten liegen, für den späteren Umzug ins Programm mit eigenem Fenster (#517); nur wenn dort ein Bestand liegt,
+// auch einer, der sich nicht öffnen ließ (siehe hasStock). Nie in Tests (siehe shouldRecord).
+if (hasStock(DATA_DIR) && shouldRecord({ packaged: !!globalThis.Bun, runtime: RUNTIME, platform: process.platform, env: process.env })) {
+  const file = locationsFile({ platform: process.platform, env: process.env, home: () => { try { return os.homedir() } catch { return '' } } })
+  if (file) recordDataLocation(file, { dataDir: DATA_DIR, exe: process.execPath, appVersion: APP_VERSION, lastSeen: new Date().toISOString() })
+}
 
 // Die Einstellungen in den Arbeitsspeicher holen, siehe die Begründung am Zwischenspeicher.
 // **Nach** dem Umstieg: Vorher stünde dort die leere Zeile einer frischen Datenbank, und der
