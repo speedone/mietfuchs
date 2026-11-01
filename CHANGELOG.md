@@ -6,6 +6,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Hinzugefügt
+
+- **Website:** Mietfuchs hat eine eigene Website, [mietfuchs-app.de](https://mietfuchs-app.de), mit Download für jedes
+  System und Ratgebern zur Nebenkostenabrechnung. Der Link steht in den Einstellungen unter „Über Mietfuchs“.
+
 ## [0.14.1] – 2026-11-01
 
 ### Hinzugefügt
