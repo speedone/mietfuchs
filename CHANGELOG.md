@@ -14,6 +14,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   dem alten Deinstallationsprogramm bis zu sechsmal, und das kostet mit dem Virenschutz von Windows jedes Mal
   Sekunden. Jetzt genügt ein kurzer Blick in die Prozessliste. Außerdem legt der Installer keine 230 MB große Kopie
   von sich selbst mehr unter `%LOCALAPPDATA%\mietfuchs-updater` ab; eine Kopie früherer Fassungen räumt er weg.
+  Hält Windows gleich nach dem Installieren noch eine Datei offen, versucht es das Deinstallationsprogramm noch
+  einige Male, statt den Programmordner halb gelöscht liegen zu lassen.
   Installer und Deinstallationsprogramm schreiben, wie lange jeder Schritt dauert, nach
   `%TEMP%\mietfuchs-installation.log`.
 - **Programmfenster unter Windows:** Beim ersten Start fragte die Windows-Firewall, ob Mietfuchs ins Netz darf, obwohl
