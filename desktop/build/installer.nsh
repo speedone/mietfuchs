@@ -196,9 +196,7 @@ FunctionEnd
     ${Else}
       !insertmacro mfLog "[alte-fassung] Vorige Fassung entfernt (falls vorhanden)"
     ${EndIf}
-    !ifndef MF_CHECK_TEMPLATE
-      !insertmacro mfSkipInstallerCopy
-    !endif
+    !insertmacro mfSkipInstallerCopy
   !macroend
 
   ; Keine Kopie des Installers nach %LOCALAPPDATA%\mietfuchs-updater\installer.exe. installApplicationFiles (Vorlage
@@ -245,12 +243,10 @@ FunctionEnd
     !insertmacro mfLog "[entfernen] Entfernen der Dateien beginnt"
     ; Die Kopie des Installers, die Fassungen bis 0.14 dort hinterlassen haben (siehe mfSkipInstallerCopy); beim
     ; Aktualisieren räumt sie der neue Installer weg
-    !ifndef MF_CHECK_TEMPLATE
-      ${IfNot} ${isUpdated}
-        Delete "$LOCALAPPDATA\${APP_INSTALLER_STORE_FILE}"
-        RMDir "$LOCALAPPDATA\mietfuchs-updater"
-      ${EndIf}
-    !endif
+    ${IfNot} ${isUpdated}
+      Delete "$LOCALAPPDATA\${APP_INSTALLER_STORE_FILE}"
+      RMDir "$LOCALAPPDATA\mietfuchs-updater"
+    ${EndIf}
   !macroend
 
   ; Nach dem Entfernen der Dateien und Verknüpfungen, vor den Registry-Einträgen. electron-builder legt diesen Haken
@@ -258,109 +254,94 @@ FunctionEnd
   !macro unregisterFileAssociations
     ; RMDir /r der Vorlage übergeht eine Datei, die gerade jemand offen hält, still: Gleich nach einer Installation
     ; liest oft noch ein Dienst die neue Mietfuchs.exe (in der CI blieb sie so liegen). Einige Male nachfassen.
-    !ifndef MF_CHECK_TEMPLATE
-      StrCpy $R1 0
-      ${DoWhile} ${FileExists} "$INSTDIR\*.*"
-        ${If} $R1 >= 10
-          !insertmacro mfLog "[entfernen] $INSTDIR ließ sich nicht vollständig entfernen"
-          ${Break}
-        ${EndIf}
-        IntOp $R1 $R1 + 1
-        Sleep 1000
-        RMDir /r $INSTDIR
-      ${Loop}
-      ${If} $R1 > 0
-      ${AndIfNot} ${FileExists} "$INSTDIR\*.*"
-        !insertmacro mfLog "[entfernen] $INSTDIR nach $R1 weiteren Versuchen entfernt"
+    StrCpy $R1 0
+    ${DoWhile} ${FileExists} "$INSTDIR\*.*"
+      ${If} $R1 >= 10
+        !insertmacro mfLog "[entfernen] $INSTDIR ließ sich nicht vollständig entfernen"
+        ${Break}
       ${EndIf}
-    !endif
+      IntOp $R1 $R1 + 1
+      Sleep 1000
+      RMDir /r $INSTDIR
+    ${Loop}
+    ${If} $R1 > 0
+    ${AndIfNot} ${FileExists} "$INSTDIR\*.*"
+      !insertmacro mfLog "[entfernen] $INSTDIR nach $R1 weiteren Versuchen entfernt"
+    ${EndIf}
     !insertmacro mfLog "[ende] Dateien und Verknüpfungen entfernt"
   !macroend
 !endif
 
 ; Prüfung auf ein laufendes Mietfuchs, vor dem Installieren und beim Deinstallieren (CHECK_APP_RUNNING in
-; allowOnlyOneInstallerInstance.nsh). Die Vorlage startet dafür bis zu dreimal PowerShell (Get-CimInstance); ein
-; kalter Start von PowerShell kostet mit dem Echtzeitschutz von Windows Defender Sekunden. Hier stattdessen tasklist,
+; allowOnlyOneInstallerInstance.nsh). Die Vorlage startet dafür bis zu dreimal PowerShell (Get-CimInstance); auf
+; windows-11-arm mit Echtzeitschutz kostete das 7 bis 18 Sekunden je Prüfung, beim Aktualisieren zweimal (Installer und
+; altes Deinstallationsprogramm), mit tasklist 0,2 bis 1 Sekunde. Hier stattdessen tasklist,
 ; gefiltert auf Mietfuchs.exe und den angemeldeten Benutzer, wie der Ausweichweg der Vorlage; Ablauf wie dort: läuft
 ; Mietfuchs, fragen (still: ohne Frage), freundlich beenden, notfalls hart, und wenn auch das nicht geht, bitten, es
 ; selbst zu schließen.
-;
-; MF_CHECK_TEMPLATE (nur für die Messung in release.yml, installer-vorlage.nsh) behält den Weg der Vorlage und
-; misst ihn nur.
-!ifdef MF_CHECK_TEMPLATE
-  !include "getProcessInfo.nsh"
-  Var pid
 
-  !macro customCheckAppRunning
-    !insertmacro mfLog "[pruefung-beginn] Prüfung auf laufendes Mietfuchs beginnt (PowerShell, Vorlage)"
-    !insertmacro IS_POWERSHELL_AVAILABLE
-    !insertmacro _CHECK_APP_RUNNING
-    !insertmacro mfLog "[pruefung-ende] Prüfung auf laufendes Mietfuchs beendet"
-  !macroend
-!else
-  ; $R0 = 0, wenn Mietfuchs.exe für diesen Benutzer läuft (Rückgabe von findstr)
-  !macro mfFindApp
-    nsExec::Exec `"$CmdPath" /C tasklist /FI "USERNAME eq %USERNAME%" /FI "IMAGENAME eq ${APP_EXECUTABLE_FILENAME}" /FO CSV /NH | "$SYSDIR\findstr.exe" /B /I /C:"\"${APP_EXECUTABLE_FILENAME}\""`
-    Pop $R0
-  !macroend
+; $R0 = 0, wenn Mietfuchs.exe für diesen Benutzer läuft (Rückgabe von findstr)
+!macro mfFindApp
+  nsExec::Exec `"$CmdPath" /C tasklist /FI "USERNAME eq %USERNAME%" /FI "IMAGENAME eq ${APP_EXECUTABLE_FILENAME}" /FO CSV /NH | "$SYSDIR\findstr.exe" /B /I /C:"\"${APP_EXECUTABLE_FILENAME}\""`
+  Pop $R0
+!macroend
 
-  ; FORCE: "" oder "/F"
-  !macro mfKillApp FORCE
-    nsExec::Exec `"$CmdPath" /C taskkill ${FORCE} /IM "${APP_EXECUTABLE_FILENAME}" /FI "USERNAME eq %USERNAME%"`
-    Pop $R0
-  !macroend
+; FORCE: "" oder "/F"
+!macro mfKillApp FORCE
+  nsExec::Exec `"$CmdPath" /C taskkill ${FORCE} /IM "${APP_EXECUTABLE_FILENAME}" /FI "USERNAME eq %USERNAME%"`
+  Pop $R0
+!macroend
 
-  !macro customCheckAppRunning
-    !insertmacro mfLog "[pruefung-beginn] Prüfung auf laufendes Mietfuchs beginnt"
-    ; Heißt der Installer selbst wie das Programm (Aktualisierung aus dem Programm heraus), prüft die Vorlage nicht
-    ${If} $EXEFILE != "${APP_EXECUTABLE_FILENAME}"
+!macro customCheckAppRunning
+  !insertmacro mfLog "[pruefung-beginn] Prüfung auf laufendes Mietfuchs beginnt"
+  ; Heißt der Installer selbst wie das Programm (Aktualisierung aus dem Programm heraus), prüft die Vorlage nicht
+  ${If} $EXEFILE != "${APP_EXECUTABLE_FILENAME}"
+    ${If} ${isUpdated}
+      ; dem Programm Zeit geben, sich selbst zu beenden
+      Sleep 300
+    ${EndIf}
+    !insertmacro mfFindApp
+    ${If} $R0 == 0
+      !insertmacro mfLog "[pruefung] Mietfuchs läuft noch"
       ${If} ${isUpdated}
-        ; dem Programm Zeit geben, sich selbst zu beenden
-        Sleep 300
+        Sleep 1000
+      ${ElseIf} $LANGUAGE == 1031
+        MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION "Mietfuchs ist noch geöffnet.$\nKlicken Sie auf »OK«, um es zu schließen und fortzufahren." /SD IDOK IDOK mfStopApp
+        Quit
+      ${Else}
+        MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION "$(appRunning)" /SD IDOK IDOK mfStopApp
+        Quit
       ${EndIf}
-      !insertmacro mfFindApp
-      ${If} $R0 == 0
-        !insertmacro mfLog "[pruefung] Mietfuchs läuft noch"
-        ${If} ${isUpdated}
+      mfStopApp:
+      DetailPrint "$(appClosing)"
+      ; freundlich: schließt die Fenster, Mietfuchs beendet dabei seinen Server
+      !insertmacro mfKillApp ""
+      Sleep 300
+      StrCpy $R1 0
+      mfCheckAgain:
+        IntOp $R1 $R1 + 1
+        !insertmacro mfFindApp
+        ${If} $R0 == 0
           Sleep 1000
-        ${ElseIf} $LANGUAGE == 1031
-          MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION "Mietfuchs ist noch geöffnet.$\nKlicken Sie auf »OK«, um es zu schließen und fortzufahren." /SD IDOK IDOK mfStopApp
-          Quit
-        ${Else}
-          MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION "$(appRunning)" /SD IDOK IDOK mfStopApp
-          Quit
-        ${EndIf}
-        mfStopApp:
-        DetailPrint "$(appClosing)"
-        ; freundlich: schließt die Fenster, Mietfuchs beendet dabei seinen Server
-        !insertmacro mfKillApp ""
-        Sleep 300
-        StrCpy $R1 0
-        mfCheckAgain:
-          IntOp $R1 $R1 + 1
+          !insertmacro mfKillApp "/F"
           !insertmacro mfFindApp
           ${If} $R0 == 0
-            Sleep 1000
-            !insertmacro mfKillApp "/F"
-            !insertmacro mfFindApp
-            ${If} $R0 == 0
-              DetailPrint `Waiting for "${PRODUCT_NAME}" to close.`
-              Sleep 2000
-              ${If} $R1 > 1
-                ${If} $LANGUAGE == 1031
-                  MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "Mietfuchs lässt sich nicht schließen.$\nBitte schließen Sie es selbst und klicken Sie dann auf »Wiederholen«." /SD IDCANCEL IDRETRY mfCheckAgain
-                ${Else}
-                  MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "$(appCannotBeClosed)" /SD IDCANCEL IDRETRY mfCheckAgain
-                ${EndIf}
-                !insertmacro mfLog "[pruefung-ende] Mietfuchs ließ sich nicht schließen, abgebrochen"
-                Quit
+            DetailPrint `Waiting for "${PRODUCT_NAME}" to close.`
+            Sleep 2000
+            ${If} $R1 > 1
+              ${If} $LANGUAGE == 1031
+                MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "Mietfuchs lässt sich nicht schließen.$\nBitte schließen Sie es selbst und klicken Sie dann auf »Wiederholen«." /SD IDCANCEL IDRETRY mfCheckAgain
+              ${Else}
+                MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "$(appCannotBeClosed)" /SD IDCANCEL IDRETRY mfCheckAgain
               ${EndIf}
-              Goto mfCheckAgain
+              !insertmacro mfLog "[pruefung-ende] Mietfuchs ließ sich nicht schließen, abgebrochen"
+              Quit
             ${EndIf}
+            Goto mfCheckAgain
           ${EndIf}
-        !insertmacro mfLog "[pruefung] Mietfuchs geschlossen"
-      ${EndIf}
+        ${EndIf}
+      !insertmacro mfLog "[pruefung] Mietfuchs geschlossen"
     ${EndIf}
-    !insertmacro mfLog "[pruefung-ende] Prüfung auf laufendes Mietfuchs beendet"
-  !macroend
-!endif
+  ${EndIf}
+  !insertmacro mfLog "[pruefung-ende] Prüfung auf laufendes Mietfuchs beendet"
+!macroend
