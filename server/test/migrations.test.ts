@@ -208,6 +208,10 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // data-steps.test.ts festgehalten. Wird vor dem Merge ein anderer PR davor eingereiht, wird der Schritt neu erzeugt
   // und die Marke ersetzt.
   '0077_quellrechnung': '7538641d77fbb6d3e995c8aa3f9f77930edecbd1d47e5eb5b30044322e107cf1',
+  // #281: Monat laut Verwendungszweck an der Zahlung (payments.designated_month), danach die Bedingung. Nachgetragen
+  // beim Release 0.14.0; auf main seit #485.
+  '0078_bestimmung_monat': '4444d12e48e2e08819d086fc01e69187cab656fb232a1699aa269a706dd46339',
+  '0079_bestimmung_monat_bedingung': 'd3088397ed8ba678ba5565f2a979fab92326748bc8120aaba2778edfbbb679be',
   // #96 PR 2: Kopf der Anlage V (Aktenzeichen, vier Daten am Objekt, `tenancies.relative`), danach die Bedingungen. Wird
   // vor dem Merge ein anderer PR davor eingereiht, werden beide Schritte neu erzeugt und die Marken ersetzt.
   '0080_anlage_v_kopf': 'b0aa4d93b41fee7484792ae946b2a463b038f39c885429f5b2bfeb5fc13d2a57',
