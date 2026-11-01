@@ -567,6 +567,9 @@ jobs:
         include:
           - { name: Windows, runner: windows-2025, ziel: win }
           - { name: macOS, runner: macos-15, ziel: mac }
+          # Nur zum Vergleich in „Installer messen“: die Prüfung auf ein laufendes Mietfuchs aus der Vorlage von
+          # electron-builder (PowerShell) statt tasklist, sonst gleich (desktop/build/installer-vorlage.nsh)
+          - { name: Windows (Vorlage), runner: windows-2025, ziel: win, variante: -vorlage }
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -593,11 +596,14 @@ jobs:
       - run: npm --prefix desktop ci
       # Die Tests des Fensters auch auf dem System, für das es gebaut wird (Pfade, Ports)
       - run: npm --prefix desktop test
+      - name: Prüfung der Vorlage einsetzen
+        if: matrix.variante == '-vorlage'
+        run: node -e "const f='desktop/package.json', fs=require('fs'), p=JSON.parse(fs.readFileSync(f)); p.build.nsis.include='build/installer-vorlage.nsh'; fs.writeFileSync(f, JSON.stringify(p, null, 2))"
       - name: Programmfenster bauen
         run: node scripts/package-desktop.mjs ${{ matrix.ziel }}
       - uses: actions/upload-artifact@v7
         with:
-          name: fenster-${{ matrix.ziel }}
+          name: fenster-${{ matrix.ziel }}${{ matrix.variante }}
           path: |
             dist-desktop/*.exe
             dist-desktop/*.dmg
@@ -615,7 +621,7 @@ jobs:
       # Die entpackten Ordner, die electron-builder für den Installer anlegt, sind der Inhalt des
       # Store-Pakets (scripts/package-msix.mjs): dieselben Dateien wie im Installer.
       - name: Entpackte Ordner hochladen (Windows)
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && !matrix.variante
         uses: actions/upload-artifact@v7
         with:
           name: fenster-win-ordner
@@ -673,6 +679,11 @@ jobs:
           # Still installieren, für den Benutzer, ohne Adminrechte; die Dauer kommt in die Zusammenfassung
           $dauer = Measure-Command { Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait }
           "Installation: $([math]::Round($dauer.TotalSeconds, 1)) s" | Tee-Object -Append groessen.txt
+          # Die Zeitstempel des Installers je Schritt (desktop/build/installer.nsh)
+          $protokoll = Join-Path $env:TEMP 'mietfuchs-installation.log'
+          if (-not (Test-Path $protokoll)) { throw "$protokoll fehlt nach der Installation" }
+          "Protokoll des Installers:" | Tee-Object -Append groessen.txt
+          Get-Content $protokoll | Tee-Object -Append groessen.txt
           # Der Ordner heißt wie das Paket (desktop/package.json, `name`)
           $dir = "$env:LOCALAPPDATA\Programs\mietfuchs"
           $exe = Join-Path $dir 'Mietfuchs.exe'
@@ -732,6 +743,46 @@ jobs:
         with:
           name: fenster-pruefung-${{ matrix.runner }}
           path: fenster-pruefung
+          retention-days: 14
+
+  # Wo die Zeit beim Installieren unter Windows bleibt (#517): Installation, Aktualisierung über eine installierte
+  # Fassung und Deinstallation, je dreimal, mit eingeschaltetem Echtzeitschutz von Windows Defender; dazu einmal bei
+  # laufendem Mietfuchs. Phasen aus dem Protokoll des Installers (desktop/build/installer.nsh), Schreibzugriffe und
+  # die Prüfungen von Defender, siehe desktop/build/installer-messung.ps1. Verglichen werden der Installer, wie er
+  # ausgeliefert wird (tasklist), und die Prüfung der Vorlage (PowerShell).
+  installer-messen:
+    name: Installer messen (${{ matrix.name }}, ${{ matrix.variante }})
+    needs: fenster-bauen
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [windows-11-arm, windows-2025]
+        variante: [tasklist, vorlage]
+        include:
+          - { runner: windows-11-arm, name: Windows ARM64 }
+          - { runner: windows-2025, name: Windows x64 }
+          - { variante: tasklist, artefakt: fenster-win }
+          - { variante: vorlage, artefakt: fenster-win-vorlage }
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: desktop/build
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ matrix.artefakt }}
+          path: paket
+      - name: Messen
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem paket\Mietfuchs-Setup-*.exe | Select-Object -First 1
+          ./desktop/build/installer-messung.ps1 -Setup $setup.FullName -Variante ${{ matrix.variante }} -Out messung
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: installer-messung-${{ matrix.runner }}-${{ matrix.variante }}
+          path: messung
           retention-days: 14
 
   # Eine KI-Auswertung auf dem Prozessor kann länger als fünf Minuten dauern. fetch unter Node und
