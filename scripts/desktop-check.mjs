@@ -169,8 +169,14 @@ if (await until(() => fs.existsSync(path.join(moving.selftest, 'fenster.json')),
   const adopt = await fetch(`${base}/api/relocation/adopt`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ dataDir: found?.dataDir ?? oldData }) })
   const adopted = /** @type {any} */ (await adopt.json())
   check(adopt.status === 200, `Umzug: übernommen (${adopt.status} ${JSON.stringify(adopted).slice(0, 300)})`)
-  const tenancies = /** @type {any} */ (await (await fetch(`${base}/api/tenancies`)).json())
-  check(Array.isArray(tenancies) && tenancies.length > 0, `Umzug: Die Mietverhältnisse sind im Fenster (${Array.isArray(tenancies) ? tenancies.length : '?'})`)
+  // Der Bestand aus 1. hat mehrere Objekte; ohne `?property=` antwortet /api/tenancies dann mit 400. Gezählt wird je Objekt.
+  const properties = /** @type {any} */ (await (await fetch(`${base}/api/properties`)).json())
+  let tenancyCount = 0
+  for (const property of Array.isArray(properties) ? properties : []) {
+    const list = /** @type {any} */ (await (await fetch(`${base}/api/tenancies?property=${encodeURIComponent(property.id)}`)).json())
+    tenancyCount += Array.isArray(list) ? list.length : 0
+  }
+  check(tenancyCount > 0 && tenancyCount === adopted.counts?.tenancies, `Umzug: Die Mietverhältnisse sind im Fenster (${tenancyCount} von ${adopted.counts?.tenancies ?? '?'})`)
   check(fs.existsSync(path.join(oldData, 'umgezogen.json')), 'Umzug: Vermerk im alten Ordner')
   report.move = { found: found ?? null, counts: adopted.counts ?? null }
   await fetch(`${base}/api/quit`, { method: 'POST' }).catch(() => {})
