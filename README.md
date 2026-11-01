@@ -8,6 +8,7 @@ Keine Cloud, kein Konto, keine Abogebühren.**
 ![Node ≥ 24.15](https://img.shields.io/badge/Node-%E2%89%A5%2024.15-339933?logo=node.js&logoColor=white)
 ![100% lokal & offline](https://img.shields.io/badge/100%25-lokal%20%26%20offline-2563eb)
 ![Docker ready](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)
+[![Website](https://img.shields.io/badge/Website-mietfuchs--app.de-4f46e5)](https://mietfuchs-app.de)
 
 Mietfuchs nimmt dir die jährliche Betriebskostenabrechnung ab: Kosten und Belege erfassen
 (optional per lokaler KI-Auswertung), Zählerstände pflegen, und am Jahresende eine fertige,
@@ -15,6 +16,9 @@ centgenau verteilte Abrechnung je Mieter ausdrucken, inklusive Mietkonto und Ste
 für die Anlage V. Ob ein Mehrfamilienhaus, mehrere Häuser, eine vermietete Eigentumswohnung oder
 das eigene Haus mit Einliegerwohnung: Alle Daten liegen in einer lokalen Datenbank bei dir,
 ohne Cloud und ohne Konto.
+
+Mehr auf der Website **[mietfuchs-app.de](https://mietfuchs-app.de)**: Funktionen, Download für jedes
+System und Ratgeber zur Nebenkostenabrechnung (Frist, Vorlage, umlagefähige Kosten, Heizkosten, Steuer).
 
 <p align="center">
   <a href="https://apps.microsoft.com/detail/9PMHZ0ZJPZDZ?referrer=appbadge&mode=direct"><img src="https://get.microsoft.com/images/de%20dark.svg" width="240" alt="Mietfuchs im Microsoft Store herunterladen"></a>

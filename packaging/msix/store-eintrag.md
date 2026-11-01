@@ -20,7 +20,7 @@ siezen, wie die Oberfläche.
 
 - Kategorie: Business, Unterkategorie Buchhaltung und Finanzen
 - Datenschutzrichtlinie: https://github.com/speedone/mietfuchs/blob/main/docs/datenschutz.md
-- Website: https://github.com/speedone/mietfuchs
+- Website: https://mietfuchs-app.de
 - Supportkontakt: https://github.com/speedone/mietfuchs/issues
 - Systemanforderungen: Tastatur und Maus empfohlen, 4 GB Arbeitsspeicher
 
