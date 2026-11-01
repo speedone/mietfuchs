@@ -221,16 +221,22 @@ export function findBlockedFile(files, open = (file) => fs.closeSync(fs.openSync
   return null
 }
 
-// Die Meldungen, die Node und Electron dafür drucken, je mit Code und Pfad
+// Die Meldungen, die Node und Electron dafür drucken: je ein Muster und was daraus Code und Pfad sind
+/** @type {{ re: RegExp, pick: (m: RegExpMatchArray, p: path.PlatformPath) => [string | undefined, string | undefined], escaped?: boolean }[]} */
 const BLOCKED_PATTERNS = [
-  // Node: „Error: EPERM: operation not permitted, open 'C:\…\server.mjs'“
-  { re: /\b(EPERM|EACCES|ENOENT): [^,\n]*, \w+ '([^'\n]+)'/g, escaped: false },
+  // Node: „Error: EPERM: operation not permitted, open 'C:\…\server.mjs'“; der Pfad bis zum letzten Apostroph der
+  // Zeile, er darf selbst einen enthalten (O'Brien)
+  { re: /\b(EPERM|EACCES|ENOENT): [^,\n]*, \w+ '(.+)'(?= ->|\s*$)/gm, pick: (m) => [m[1], m[2]] },
   // Electrons asar: „Error: ENOENT, mietfuchs\client\dist.pack not found in C:\…\app.asar“
-  { re: /\b(ENOENT), (.+?) not found in (.+?)\s*$/gm, escaped: false },
+  { re: /\b(ENOENT), (.+?) not found in (.+?)\s*$/gm, pick: (m, p) => [m[1], m[3] && m[2] ? p.join(m[3], m[2]) : undefined] },
+  // Electron, wenn sich die asar selbst nicht öffnen lässt: „Invalid package C:\…\app.asar“, ohne Code. Der
+  // Hauptprozess liest sie ja (main.js liegt darin), gesperrt ist sie also für den Server.
+  { re: /Invalid package (.+?\.asar)\b/gi, pick: (m) => ['EPERM', m[1]] },
   // Der Lader von Node, wenn das Modul fehlt: „Cannot find module 'C:\…\server.mjs' imported from …“
-  { re: /Cannot find (?:module|package) '([^'\n]+)'/g, escaped: false, code: 'ENOENT' },
-  // Das Fehlerobjekt darunter: „code: 'EPERM', syscall: 'open', path: 'C:\\…'“, die Pfade doppelt maskiert
-  { re: /code: '(EPERM|EACCES|ENOENT)',[\s\S]{0,200}?path: '([^'\n]+)'/g, escaped: true },
+  { re: /Cannot find (?:module|package) '(.+?)'(?= imported|\s*$)/gm, pick: (m) => ['ENOENT', m[1]] },
+  // Das Fehlerobjekt darunter: „code: 'EPERM', syscall: 'open', path: 'C:\\…'“, die Pfade doppelt maskiert und mit
+  // Apostroph darin in doppelten Anführungszeichen. Electrons NO_ACCESS nennt den vollen Pfad nur hier.
+  { re: /code: '(EPERM|EACCES|ENOENT)',[\s\S]{0,200}?path: (['"])(.+?)\2\s*$/gm, pick: (m) => [m[1], m[3]], escaped: true },
 ]
 
 /**
@@ -247,12 +253,12 @@ export function blockedFileIn(output, programDir, platform) {
   // Windows und macOS unterscheiden Groß- und Kleinschreibung in Pfaden nicht
   const fold = (/** @type {string} */ text) => (platform === 'linux' ? text : text.toLowerCase())
   const root = fold(p.normalize(programDir + p.sep))
-  for (const { re, escaped, code } of BLOCKED_PATTERNS) {
+  for (const { re, pick, escaped } of BLOCKED_PATTERNS) {
     for (const match of output.matchAll(re)) {
-      let file = code ? match[1] : match[3] ? p.join(match[3], match[2]) : match[2]
-      if (!file) continue
+      let [code, file] = pick(match, p)
+      if (!code || !file) continue
       if (escaped) file = file.replaceAll('\\\\', '\\')
-      if (fold(p.normalize(file)).startsWith(root)) return { code: code ?? match[1], path: file }
+      if (fold(p.normalize(file)).startsWith(root)) return { code, path: file }
     }
   }
   return null

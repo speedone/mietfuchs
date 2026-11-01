@@ -1,6 +1,7 @@
 // Ein Archiv im Format von Electrons asar, für die Prüfungen des Programmfensters (#517) ohne electron-builder. Aufbau
 // wie bei @electron/asar: ein Pickle mit der Länge des Kopfs, der Kopf als Pickle mit einer Zeichenkette (JSON), danach
 // die Dateien hintereinander. Je Datei Größe, Versatz (als Zeichenkette) und auf Wunsch `unpacked` und `integrity`.
+import assert from 'node:assert/strict'
 import fs from 'node:fs'
 
 export type AsarEntry = { content?: string, unpacked?: boolean, integrity?: boolean }
@@ -13,6 +14,8 @@ export function writeAsar(file: string, entries: Record<string, AsarEntry>): voi
   let offset = 0
   for (const [name, entry] of Object.entries(entries)) {
     const parts = name.split('/')
+    const base = parts.at(-1)
+    if (!base) assert.fail(`${name}: kein Dateiname`)
     let dir = root
     for (const part of parts.slice(0, -1)) {
       const next = dir.files[part] ?? { files: {} }
@@ -23,10 +26,10 @@ export function writeAsar(file: string, entries: Record<string, AsarEntry>): voi
     const data = Buffer.from(entry.content ?? '', 'utf8')
     const integrity = entry.integrity === false ? undefined : { algorithm: 'SHA256', hash: '0'.repeat(64), blockSize: 4194304, blocks: ['0'.repeat(64)] }
     if (entry.unpacked) {
-      dir.files[parts.at(-1) as string] = { size: data.length, unpacked: true, ...(integrity ? { integrity } : {}) }
+      dir.files[base] = { size: data.length, unpacked: true, ...(integrity ? { integrity } : {}) }
       continue
     }
-    dir.files[parts.at(-1) as string] = { size: data.length, offset: String(offset), ...(integrity ? { integrity } : {}) }
+    dir.files[base] = { size: data.length, offset: String(offset), ...(integrity ? { integrity } : {}) }
     contents.push(data)
     offset += data.length
   }

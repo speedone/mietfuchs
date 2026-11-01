@@ -198,7 +198,15 @@ Error: EPERM: operation not permitted, open 'C:\\Users\\Anna\\AppData\\Local\\Pr
   assert.deepEqual(blockedFileIn(objectOnly, programDir, 'win32'), { code: 'EPERM', path: 'c:\\users\\anna\\appdata\\local\\programs\\mietfuchs\\resources\\app.asar' })
   // Aus der asar: Electrons Meldungen für fehlende und gesperrte Einträge
   assert.deepEqual(blockedFileIn(`Error: ENOENT, mietfuchs\\client\\dist.pack not found in ${ASAR}`, programDir, 'win32'), { code: 'ENOENT', path: `${ASAR}\\mietfuchs\\client\\dist.pack` })
-  assert.deepEqual(blockedFileIn(`Error: EACCES: permission denied, access '${ASAR}\\mietfuchs\\server\\server.mjs'`, programDir, 'win32'), { code: 'EACCES', path: `${ASAR}\\mietfuchs\\server\\server.mjs` })
+  // Durchsicht: Electrons NO_ACCESS nennt in der Zeile nur den Eintrag im Archiv, den vollen Pfad erst im Objekt darunter
+  const noAccess = `Error: EACCES: permission denied, access 'mietfuchs\\server\\server.mjs'\n    at x {\n  code: 'EACCES',\n  errno: -4092,\n  syscall: 'open',\n  path: '${ASAR.replaceAll('\\', '\\\\')}\\\\mietfuchs\\\\server\\\\server.mjs'\n}`
+  assert.deepEqual(blockedFileIn(noAccess, programDir, 'win32'), { code: 'EACCES', path: `${ASAR}\\mietfuchs\\server\\server.mjs` })
+  // Durchsicht: Kann der utilityProcess die asar selbst nicht öffnen, meldet Electron „Invalid package“ ohne Code
+  assert.deepEqual(blockedFileIn(`Error: Invalid package ${ASAR}\n    at x`, programDir, 'win32'), { code: 'EPERM', path: ASAR })
+  // Durchsicht: ein Apostroph im Benutzernamen; util.inspect setzt den Pfad dann in doppelte Anführungszeichen
+  const obrien = "C:\\Users\\O'Brien\\AppData\\Local\\Programs\\mietfuchs"
+  assert.deepEqual(blockedFileIn(`Error: EPERM: operation not permitted, open '${obrien}\\resources\\app.asar'\n  code: 'EPERM',\n  syscall: 'open',\n  path: "${obrien.replaceAll('\\', '\\\\')}\\\\resources\\\\app.asar"\n}`, obrien, 'win32'), { code: 'EPERM', path: `${obrien}\\resources\\app.asar` })
+  assert.deepEqual(blockedFileIn(`Error: EPERM: operation not permitted, open '${obrien}\\resources\\app.asar'`, obrien, 'win32'), { code: 'EPERM', path: `${obrien}\\resources\\app.asar` })
   // Leerzeichen im Benutzernamen
   const spaced = 'C:\\Users\\Anna Maria\\AppData\\Local\\Programs\\mietfuchs'
   assert.deepEqual(blockedFileIn(`Error: ENOENT, mietfuchs\\client\\dist.pack not found in ${spaced}\\resources\\app.asar\n    at x`, spaced, 'win32'), { code: 'ENOENT', path: `${spaced}\\resources\\app.asar\\mietfuchs\\client\\dist.pack` })
