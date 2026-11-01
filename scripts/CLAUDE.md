@@ -162,9 +162,13 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   erbt das Programm `CI` und `NKA_UPDATE_URL`, der Start übers Startmenü reicht nichts weiter), Prüfskript mit
   `--mode store`, Beenden über `/api/quit`, deinstallieren; die Datenbank muss danach noch in
   `%USERPROFILE%\Mietfuchs` liegen.
-- **Einreichen** (Job „Im Microsoft Store einreichen“): beim Tag ohne Bindestrich, nach dem Anhängen ans Release,
-  nur mit der Repository-Variable `MSSTORE_EINREICHEN = an`. `msstore publish <bundle> -id 9PMHZ0ZJPZDZ` übernimmt
-  Eintrag und Bilder der letzten Einreichung und tauscht nur das Paket. Die **erste Einreichung geht von Hand** im
+- **Einreichen** ([store.yml](../.github/workflows/store.yml), von release.yml aufgerufen): beim Tag ohne Bindestrich,
+  nach dem Anhängen ans Release, nur mit der Repository-Variable `MSSTORE_EINREICHEN = an`. Läuft auf Windows, weil
+  msstore die Zugangsdaten im Schlüsselbund ablegt und ein Linux-Runner keinen hat. Scheitert die Einreichung beim
+  Tag, startest du store.yml von Hand mit der Nummer des Release-Laufs; das reicht dessen Paket ohne neuen Tag ein,
+  sofern der Lauf ans Release angehängt hat. Die Variable zählt dann nicht.
+  `msstore publish <bundle> -id 9PMHZ0ZJPZDZ` übernimmt Eintrag und Bilder der letzten Einreichung und tauscht nur
+  das Paket; einen offenen Entwurf im Partner Center löscht es dabei. Die **erste Einreichung geht von Hand** im
   Partner Center (die CLI aktualisiert nur eine veröffentlichte App), Texte dafür in
   [../packaging/msix/store-eintrag.md](../packaging/msix/store-eintrag.md). Zugang: Entra-Anwendung
   `mietfuchs-github` (Rolle Manager), Secrets `MSSTORE_TENANT_ID`, `MSSTORE_SELLER_ID`, `MSSTORE_CLIENT_ID`,
