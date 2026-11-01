@@ -53,10 +53,12 @@ export function serverModule({ packaged, platform, resourcesPath, repoRoot }) {
  * NKA_STORE aus `process.windowsStore`. Beim Entwickeln nimmt das Fenster wie `npm run dev` server/data, damit kein
  * Probelauf den echten Bestand im Benutzerordner öffnet.
  * @param {NodeJS.ProcessEnv} base
- * @param {{ port: number, network: boolean, packaged: boolean, windowsStore: boolean, repoRoot: string, platform: NodeJS.Platform }} options
+ * `searchDirs`: Downloads, Schreibtisch und Dokumente, wie das System sie nennt (`app.getPath`), für die Suche beim
+ * Umzug der Daten (#517); unter Windows liegen sie oft im OneDrive-Ordner. Eine geerbte Angabe gilt nicht.
+ * @param {{ port: number, network: boolean, packaged: boolean, windowsStore: boolean, repoRoot: string, platform: NodeJS.Platform, searchDirs?: string[] }} options
  * @returns {NodeJS.ProcessEnv}
  */
-export function serverEnv(base, { port, network, packaged, windowsStore, repoRoot, platform }) {
+export function serverEnv(base, { port, network, packaged, windowsStore, repoRoot, platform, searchDirs = [] }) {
   /** @type {NodeJS.ProcessEnv} */
   const env = { ...base, NKA_DESKTOP: '1', NKA_PORT: String(port), NKA_HOST: network ? '0.0.0.0' : '127.0.0.1' }
   // Electron setzt das für sich selbst; erbte es der Server, liefe Node darin als nacktes Node
@@ -64,6 +66,8 @@ export function serverEnv(base, { port, network, packaged, windowsStore, repoRoo
   // Eine geerbte Betriebsart (etwa docker aus einer Shell) gilt im Fenster nicht
   delete env.NKA_RUNTIME
   delete env.NKA_STORE
+  delete env.NKA_SEARCH_DIRS
+  if (searchDirs.length > 0) env.NKA_SEARCH_DIRS = JSON.stringify(searchDirs)
   if (windowsStore) env.NKA_STORE = '1'
   const p = platform === 'win32' ? path.win32 : path.posix
   if (!packaged && !env.NKA_DATA_DIR) env.NKA_DATA_DIR = p.join(repoRoot, 'server', 'data')
@@ -304,4 +308,15 @@ export function chosenFolder(result) {
   if (result.canceled) return null
   const [first] = result.filePaths
   return typeof first === 'string' && first ? first : null
+}
+
+/**
+ * Was der Dialog bei „Ordner der alten Programmdatei wählen …“ zulässt (#517): gewählt werden darf der Ordner, die
+ * Programmdatei, `mietfuchs.sqlite`, `db.json` oder ein Backup; der Server liest jede dieser Antworten. Unter Windows
+ * kann ein Dialog nicht beides, dort Dateien.
+ * @param {NodeJS.Platform} platform
+ * @returns {Array<'openDirectory' | 'openFile'>}
+ */
+export function folderDialogProperties(platform) {
+  return platform === 'darwin' ? ['openDirectory', 'openFile'] : ['openFile']
 }

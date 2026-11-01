@@ -14,7 +14,8 @@ import { emptyPropertyNotice, propertyName } from './propertyView'
 import { canQuit, hintVisible } from './update'
 import Cockpit from './pages/Cockpit'
 import Umzug from './pages/Umzug'
-import { inWindow } from './relocation'
+import { inWindow, type NewerStockInfo } from './relocation'
+import NewerStock from './components/NewerStock'
 import Uebersicht from './pages/Uebersicht'
 import Stammdaten from './pages/Stammdaten'
 import Kosten from './pages/Kosten'
@@ -164,10 +165,19 @@ function Shell() {
   // bisherigen Daten übernehmen“ erscheint. Bis die Antwort da ist, bleibt der Platz des Cockpits leer, damit es nicht
   // kurz aufblitzt; im Browser wird gar nicht gefragt.
   const [relocation, setRelocation] = useState<'checking' | 'offered' | 'none'>(() => (inWindow() ? 'checking' : 'none'))
+  // Nach dem Umzug im bisherigen Mietfuchs noch etwas geändert (Ergänzung 2)
+  const [newerStock, setNewerStock] = useState<NewerStockInfo | null>(null)
+  // Von Hand aus den Einstellungen geöffnet („Daten aus bisherigem Mietfuchs übernehmen …“)
+  const [relocationManual, setRelocationManual] = useState(false)
+  // Ein Seitenwechsel schließt ihn
+  useEffect(() => { setRelocationManual(false) }, [tab])
   useEffect(() => {
     if (relocation !== 'checking') return
-    api<{ offered: boolean }>('/api/relocation')
-      .then((r) => setRelocation(r.offered ? 'offered' : 'none'))
+    api<{ offered: boolean, newer?: NewerStockInfo }>('/api/relocation')
+      .then((r) => {
+        setRelocation(r.offered ? 'offered' : 'none')
+        setNewerStock(r.newer ?? null)
+      })
       .catch(() => setRelocation('none'))
   }, [relocation])
   // Die offene Ansicht der Seite Belege (#490), gemerkt je Sitzung: Die Seitenleiste öffnet die zuletzt benutzte.
@@ -474,6 +484,7 @@ function Shell() {
         {/* Was beim Start mit den Daten geschehen ist (#55). Auf jeder Seite, damit die Meldung
             nicht davon abhängt, wo der Nutzer gerade ist. */}
         <DatabaseNotice />
+        {newerStock && <NewerStock newer={newerStock} onDismissed={() => setNewerStock(null)} />}
         {/* Nach dem Wechsel in ein leeres Objekt (#157), ebenfalls auf jeder Seite: Leere Seiten
             sähen sonst aus, als wären die Daten weg. */}
         {emptyNotice && (
@@ -494,7 +505,8 @@ function Shell() {
         <Fragment key={`${propertyId ?? ''}:${periodKeyNow}`}>
         {/* Solange der Umzug angeboten ist, auf jeder Seite (Durchsicht D4): Eine Eingabe dazwischen machte ihn unmöglich */}
         {relocation === 'offered' && <Umzug onFresh={() => setRelocation('none')} />}
-        {relocation === 'none' && <>
+        {relocation === 'none' && relocationManual && <Umzug manual onClose={() => setRelocationManual(false)} />}
+        {relocation === 'none' && !relocationManual && <>
         {tab === 'cockpit' && (
           <Cockpit units={units} tenancies={tenancies} settings={settings} updateStatus={update.status} reload={reload} onNavigate={(t, f) => void navigate(t, f ?? null)} />
         )}
@@ -518,7 +530,7 @@ function Shell() {
           openGuide={helpGuide} onOpenGuideDone={() => setHelpGuide(null)} stock={helpStock} />}
         {tab === 'verlauf' && <Verlauf />}
         {tab === 'einstellungen' && settings && (
-          <Einstellungen settings={settings} reload={reload} update={update} onNavigate={(t) => void navigate(t)} />
+          <Einstellungen settings={settings} reload={reload} update={update} onNavigate={(t) => void navigate(t)} onOpenRelocation={() => { setRelocationManual(true); window.scrollTo(0, 0) }} />
         )}
         </>}
         </Fragment>

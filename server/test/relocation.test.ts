@@ -11,8 +11,8 @@ import { straightenForDatabase } from '../src/legacy/migrate.ts'
 import { openDatabaseWithStock } from '../testing/database.ts'
 import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import {
-  copyErrorText, copyMismatch, describeCandidate, earlyMietfuchs, fixedPlaces, folderFromChoice, liveDataDir, movedNoteText, programFilePattern,
-  readDecision, readMovedMarker, relocationHome, rememberedFolders, runningFor, samePath, searchProgramFolders,
+  classifyChoice, copyErrorText, copyMismatch, describeCandidate, earlyMietfuchs, fixedPlaces, folderFromChoice, liveDataDir, movedNoteText, programFilePattern,
+  readDecision, readMovedMarker, relocationHome, searchDirsFromEnv, stockFingerprint, rememberedFolders, runningFor, samePath, searchProgramFolders,
   searchRoots, stockKind, writeDecision, writeMovedMarker, type MovedMarker,
 } from '../src/relocation.ts'
 
@@ -349,4 +349,75 @@ test('Durchsicht D12: Fehler beim Kopieren in Worten', () => {
   assert.equal(full.match(/unverändert/g)?.length, 1, full)
   assert.doesNotMatch(full, /Sicherungen im Datenordner/)
   assert.match(copyErrorText(new Error('etwas anderes')), /etwas anderes/)
+})
+
+// Ergänzung 1 (#517): Schreibtisch, Dokumente und Downloads liegen unter Windows oft im OneDrive-Ordner („OneDrive -
+// Firma“, lokalisierte Namen). Die echten Orte nennt das Fenster (app.getPath) in NKA_SEARCH_DIRS; sie gehen vor.
+test('Suchorte: die Orte des Fensters zuerst, danach die abgeleiteten, jeder einmal', () => {
+  const given = searchDirsFromEnv({ NKA_SEARCH_DIRS: JSON.stringify(['C:\\Users\\Anna\\OneDrive - Firma\\Schreibtisch', 'C:\\Users\\Anna\\Downloads', 7, '']) })
+  assert.deepEqual(given, ['C:\\Users\\Anna\\OneDrive - Firma\\Schreibtisch', 'C:\\Users\\Anna\\Downloads'])
+  const roots = searchRoots({ platform: 'win32', home: 'C:\\Users\\Anna', given })
+  assert.equal(roots[0], 'C:\\Users\\Anna\\OneDrive - Firma\\Schreibtisch')
+  assert.equal(roots.filter((r) => r.toLowerCase() === 'c:\\users\\anna\\downloads').length, 1)
+  assert.deepEqual(searchDirsFromEnv({ NKA_SEARCH_DIRS: 'kein json' }), [])
+  assert.deepEqual(searchDirsFromEnv({}), [])
+  // Ohne Heimatordner nur die genannten
+  assert.deepEqual(searchRoots({ platform: 'darwin', home: null, given: ['/Users/anna/Desktop'] }), ['/Users/anna/Desktop'])
+})
+
+// Ergänzung 2 (#517): Ein Fingerabdruck des Bestands, an dem sich zeigt, ob im alten Mietfuchs nach dem Umzug noch
+// etwas geändert wurde. Ein Start der alten Fassung allein (Schreibprobe, Dateizeit) ändert ihn nicht.
+test('Fingerabdruck: ändert sich mit dem Inhalt, nicht mit Dateizeit oder Schreibprobe', async () => {
+  const dir = tempDir()
+  try {
+    const filled = made(path.join(dir, 'gefuellt'))
+    ;(await openDatabaseWithStock(filled, straightenForDatabase(someDb()))).close()
+    const first = await stockFingerprint(filled, 'database')
+    assert.ok(first)
+    const { DatabaseSync } = await import('node:sqlite')
+    const file = path.join(filled, 'mietfuchs.sqlite')
+    const probe = new DatabaseSync(file)
+    const version = Number((probe.prepare('PRAGMA user_version').get() as { user_version: number }).user_version)
+    probe.exec(`PRAGMA user_version = ${version}`)
+    probe.close()
+    const later = new Date(Date.now() + 60_000)
+    fs.utimesSync(file, later, later)
+    assert.equal(await stockFingerprint(filled, 'database'), first)
+    const edit = new DatabaseSync(file)
+    edit.exec("UPDATE cost_items SET amount_cents = amount_cents + 1")
+    edit.close()
+    assert.notEqual(await stockFingerprint(filled, 'database'), first)
+    const json = made(path.join(dir, 'json'))
+    touch(path.join(json, 'db.json'), JSON.stringify(someDb()))
+    const a = await stockFingerprint(json, 'json')
+    touch(path.join(json, 'db.json'), JSON.stringify(someDb(2)))
+    assert.notEqual(await stockFingerprint(json, 'json'), a)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// Ergänzung: „Ordner wählen …“ nachsichtig. Gewählt werden kann der Ordner der Programmdatei, `data`, die Programmdatei
+// selbst, `mietfuchs.sqlite`, `db.json` (ein Ordner nur mit db.json ist ein gültiger alter Bestand) oder ein Backup.
+test('Gewählt: Ordner, Programmdatei, Datenbank, db.json oder Backup', () => {
+  const dir = tempDir()
+  try {
+    const prog = path.join(dir, 'prog')
+    touch(path.join(prog, 'mietfuchs-win.exe'))
+    touch(path.join(prog, 'data', 'db.json'), '{}')
+    const data = path.join(prog, 'data')
+    assert.deepEqual(classifyChoice(prog, 'win32'), { dataDir: data })
+    assert.deepEqual(classifyChoice(data, 'win32'), { dataDir: data })
+    assert.deepEqual(classifyChoice(path.join(prog, 'mietfuchs-win.exe'), 'win32'), { dataDir: data })
+    assert.deepEqual(classifyChoice(path.join(data, 'db.json'), 'win32'), { dataDir: data })
+    touch(path.join(dir, 'neu', 'mietfuchs.sqlite'))
+    assert.deepEqual(classifyChoice(path.join(dir, 'neu', 'mietfuchs.sqlite'), 'win32'), { dataDir: path.join(dir, 'neu') })
+    touch(path.join(dir, 'mietfuchs-backup-2026-10-01.zip'), 'PK')
+    assert.deepEqual(classifyChoice(path.join(dir, 'mietfuchs-backup-2026-10-01.zip'), 'win32'), { backup: path.join(dir, 'mietfuchs-backup-2026-10-01.zip') })
+    touch(path.join(dir, 'brief.pdf'))
+    assert.equal(classifyChoice(path.join(dir, 'brief.pdf'), 'win32'), null)
+    assert.equal(classifyChoice(path.join(dir, 'fehlt'), 'win32'), null)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
 })

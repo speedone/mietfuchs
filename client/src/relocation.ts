@@ -14,7 +14,7 @@ export type RelocationCandidate = {
   source: 'remembered' | 'fixed' | 'search' | 'chosen'
   appVersion: string | null
 }
-export type RelocationCandidates = { offered: boolean, candidates?: RelocationCandidate[], searched?: boolean, complete?: boolean }
+export type RelocationCandidates = { offered: boolean, ownStock?: boolean, candidates?: RelocationCandidate[], searched?: boolean, complete?: boolean }
 export type AdoptCounts = { properties: number, tenancies: number, costItems: number, receipts: number }
 export type AdoptResult = { ok: boolean, notes: string[], counts?: AdoptCounts, error?: string }
 
@@ -58,3 +58,18 @@ export function adoptedText(counts: AdoptCounts): string {
   const last = parts.pop()
   return `Übernommen: ${parts.join(', ')} und ${last}.`
 }
+
+// Fortschritt der Übernahme (Ergänzung 4), wie der Server ihn meldet
+export type AdoptProgress = { phase: 'idle' | 'copy' | 'check' | 'switch', files: number, totalFiles: number, bytes: number, totalBytes: number }
+
+const mb = (bytes: number): string => `${Math.round(bytes / 1024 ** 2).toLocaleString('de-DE')}`
+export function progressText(p: AdoptProgress): string | null {
+  if (p.phase === 'copy') return `${p.files} von ${p.totalFiles} Dateien kopiert (${mb(p.bytes)} von ${mb(p.totalBytes)} MB)`
+  if (p.phase === 'check') return 'Die Kopie wird mit dem Original verglichen …'
+  if (p.phase === 'switch') return 'Die Daten werden umgeschaltet …'
+  return null
+}
+
+// Nach dem Umzug im alten Mietfuchs noch etwas geändert (Ergänzung 2, aus GET /api/relocation)
+export type NewerStockInfo = { from: string, modifiedAt: string | null }
+export const movedLongDate = longDate

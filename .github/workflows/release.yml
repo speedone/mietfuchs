@@ -1029,6 +1029,53 @@ jobs:
             $umgelenkt = Get-ChildItem (Join-Path $env:LOCALAPPDATA 'Packages') -Recurse -Filter mietfuchs.sqlite -ErrorAction SilentlyContinue
             throw "Keine Datenbank unter $db. Umgelenkt nach: $($umgelenkt.FullName)"
           }
+
+          # Umzug in die Store-Fassung (#517): Der Bestand eben wird zum Ordner einer alten Programmdatei im
+          # Download-Ordner, die Ortsdatei nennt ihn (geschrieben von außen, also am echten Ort). Die Store-App liest
+          # beides (Lesen fällt bei MSIX auf den echten Ort durch), übernimmt in %USERPROFILE%\Mietfuchs, legt den
+          # Vermerk in den alten Ordner und schreibt die Ortsdatei nicht. NKA_TEST_HOME, weil mit CI sonst weder
+          # gesucht noch die Ortsdatei gelesen wird; auf dem Runner ist der echte Benutzerordner der Wegwerf-Ordner.
+          $altProgramm = Join-Path $env:USERPROFILE 'Downloads\mietfuchs-alt'
+          $altDaten = Join-Path $altProgramm 'data'
+          New-Item -ItemType Directory -Force $altProgramm | Out-Null
+          Move-Item $data $altDaten
+          Set-Content -Path (Join-Path $altProgramm 'mietfuchs-win.exe') -Value 'Programmdatei'
+          $orte = Join-Path $env:LOCALAPPDATA 'mietfuchs-standorte'
+          New-Item -ItemType Directory -Force $orte | Out-Null
+          $ortsdatei = Join-Path $orte 'standorte.json'
+          @{ version = 1; locations = @(@{ dataDir = $altDaten; exe = (Join-Path $altProgramm 'mietfuchs-win.exe'); appVersion = '0.14.1'; lastSeen = '2026-11-01T08:00:00.000Z' }) } |
+            ConvertTo-Json -Depth 4 | Set-Content -Path $ortsdatei -Encoding utf8
+          $ortsdateiVorher = Get-Content -Raw $ortsdatei
+          $env:NKA_TEST_HOME = $env:USERPROFILE
+          $env:NKA_TEST_OLD_PORT = '9'
+          try {
+            Start-Process -FilePath $alias
+            $bereit = $false
+            for ($i = 0; $i -lt 120; $i++) {
+              try { $gesund = Invoke-RestMethod -Uri "$url/healthz"; if ($gesund.status -ne 'starting') { $bereit = $true; break } } catch {}
+              Start-Sleep -Milliseconds 500
+            }
+            if (-not $bereit) { throw 'Die Store-App startet für den Umzug nicht' }
+            $angebot = Invoke-RestMethod -Uri "$url/api/relocation"
+            if (-not $angebot.offered) { throw 'Die Store-App ohne Bestand bietet den Umzug nicht an' }
+            $funde = Invoke-RestMethod -Uri "$url/api/relocation/candidates"
+            $fund = $funde.candidates | Where-Object { $_.dataDir -eq $altDaten }
+            if (-not $fund) { throw "Der Ordner aus der Ortsdatei fehlt: $($funde | ConvertTo-Json -Compress -Depth 4)" }
+            $ergebnis = Invoke-RestMethod -Method Post -Uri "$url/api/relocation/adopt" -ContentType 'application/json' -Body (@{ dataDir = $altDaten } | ConvertTo-Json)
+            "Umzug in die Store-Fassung: $($ergebnis.counts | ConvertTo-Json -Compress)" | Tee-Object -Append $env:GITHUB_STEP_SUMMARY
+            $mieter = Invoke-RestMethod -Uri "$url/api/tenancies"
+            if (@($mieter).Count -lt 1) { throw 'Nach dem Umzug fehlen die Mietverhältnisse' }
+            if (-not (Test-Path (Join-Path $altDaten 'umgezogen.json'))) { throw 'Kein Vermerk im alten Ordner' }
+            if ((Get-Content -Raw $ortsdatei) -ne $ortsdateiVorher) { throw 'Die Store-App hat die Ortsdatei geändert' }
+            Invoke-RestMethod -Method Post -Uri "$url/api/quit" | Out-Null
+            for ($i = 0; $i -lt 60; $i++) { if (-not (Get-Process Mietfuchs -ErrorAction SilentlyContinue)) { break }; Start-Sleep -Milliseconds 500 }
+          } finally {
+            Get-Process Mietfuchs -ErrorAction SilentlyContinue | Stop-Process -Force
+            Remove-Item Env:NKA_TEST_HOME, Env:NKA_TEST_OLD_PORT -ErrorAction SilentlyContinue
+          }
+          if (-not (Test-Path $db)) { throw "Nach dem Umzug keine Datenbank unter $db" }
+          Write-Host "Umzug in die Store-Fassung: Daten unter $data, Vermerk in $altDaten"
+
           Remove-AppxPackage -Package $app.PackageFullName
           if (-not (Test-Path $db)) { throw 'Die Deinstallation hat die Daten gelöscht' }
           Write-Host "Daten nach der Deinstallation erhalten: $db"

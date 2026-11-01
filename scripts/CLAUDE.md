@@ -316,6 +316,17 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   `MSSTORE_TENANT_ID`, `MSSTORE_CLIENT_ID`, `MSSTORE_CLIENT_SECRET` (`MSSTORE_SELLER_ID` braucht nur die CLI); das
   Secret läuft ab und wird dann im Partner Center neu erzeugt.
 
+- **Umzug der Daten auch im Store** (#517): Die Store-App bietet „Ihre bisherigen Daten übernehmen“ wie das Fenster an.
+  Anders als dort **liest sie die Ortsdatei nur** (`%LOCALAPPDATA%\mietfuchs-standorte\standorte.json`; Lesen fällt bei
+  MSIX auf den echten Ort durch) und vermerkt den neuen Ort nicht: Unter AppData lenkte Windows das Schreiben einer
+  Store-App in ihren Paketordner um, die Programmdatei sähe es nie. Geschrieben wird nur in den Datenordner
+  `%USERPROFILE%\Mietfuchs` (nicht umgelenkt) und der Vermerk in den alten Ordner. Liegt der alte Ordner selbst unter
+  AppData (Ausweichort `%LOCALAPPDATA%\Mietfuchs` der Programmdatei), landete der Vermerk umgelenkt im Paket; dieser Fall
+  ist bekannt und hingenommen. Geprüft in „Store-Paket bauen und prüfen“: Nach der ersten Prüfung wird der Bestand zum
+  Ordner einer alten Programmdatei unter `Downloads\mietfuchs-alt`, die Ortsdatei nennt ihn, die Store-App (mit
+  `NKA_TEST_HOME` auf dem Benutzerordner des Runners) übernimmt; danach Daten in `%USERPROFILE%\Mietfuchs`, Vermerk im
+  alten Ordner, Ortsdatei unverändert. Nachgestellt in api-umzug.test.ts mit `NKA_TEST_STORE=1`.
+
 ## Release
 
 - [release.yml](../.github/workflows/release.yml) baut beim `v*`-Tag alle Ziele und hängt sie an:
@@ -365,7 +376,9 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   an) und holt Abrechnung 2024, Zahlen und Backup. Dann übernimmt der Server von heute als nachgestelltes Fenster den
   Ordner (Suche, laufende alte Fassung erkennen und beenden, vor 0.7 statt dessen ihr Fenster schließen, übernehmen) und prüft: Abrechnung
   centgenau wie in der alten Fassung **und** wie der Server von heute an Ort und Stelle auf einer Kopie, Zahlen, Belege
-  mit Inhalt, Vermerk, alter Ordner sonst byteweise und mit Dateizeit gleich, danach nur lesend. Ebenso über das Backup.
+  mit Inhalt, Vermerk, alter Ordner sonst byteweise und mit Dateizeit gleich, danach nur lesend. Dann legt die alte
+  Fassung, die den Vermerk nicht kennt, noch eine Zahlung an; das Fenster meldet `newer` und übernimmt den neueren Stand
+  erst auf Wunsch. Ebenso über das Backup.
   Beide Mietverhältnisse laufen das ganze Jahr, weil Mietfuchs Leerstand seit 0.3 anders rechnet. Job „Umzug ins
   Programmfenster mit alten Fassungen“ in release.yml im vollen Umfang; `--nur 0.3.1` für eine Fassung, `--out` für den
   Bericht. Nur unter Linux.

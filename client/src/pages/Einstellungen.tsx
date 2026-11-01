@@ -1,3 +1,4 @@
+import { inWindow } from '../relocation'
 import { useEffect, useState } from 'react'
 import { dataFolder, type HealthReport } from '../database'
 import type { Settings } from '../types'
@@ -24,9 +25,10 @@ const WEBSITE_URL = 'https://mietfuchs-app.de'
 const LICENSE_URL = `${SOURCE_URL}/blob/main/LICENSE`
 
 // `onNavigate`: Sprung auf eine andere Seite (der Link auf den Verlauf, #318).
-type Props = { settings: Settings; reload: () => Promise<void>; update: UpdateState; onNavigate?: (tab: 'verlauf') => void }
+// `onOpenRelocation`: „Daten aus bisherigem Mietfuchs übernehmen …“ (#517), nur im Programmfenster
+type Props = { settings: Settings; reload: () => Promise<void>; update: UpdateState; onNavigate?: (tab: 'verlauf') => void; onOpenRelocation?: () => void }
 
-export default function Einstellungen({ settings, reload, update, onNavigate }: Props) {
+export default function Einstellungen({ settings, reload, update, onNavigate, onOpenRelocation }: Props) {
   const { properties } = useProperty()
   const toast = useToast()
   const confirm = useConfirm()
@@ -198,6 +200,13 @@ export default function Einstellungen({ settings, reload, update, onNavigate }: 
           Rechner; der bisherige steht dann nur noch in dieser Sicherung.
         </p>
         {restoreMsg && <div className={restoreMsg.startsWith('Fehler') ? 'error' : 'ok'}>{restoreMsg}</div>}
+        {/* Umzug aus der bisherigen Programmdatei (#517), nur im Fenster; ersetzt einen Bestand nur nach Rückfrage */}
+        {onOpenRelocation && inWindow() && (
+          <p className="muted">
+            Bisher mit der Programmdatei gearbeitet?{' '}
+            <button type="button" className="btn ghost small" onClick={onOpenRelocation}>Daten aus bisherigem Mietfuchs übernehmen …</button>
+          </p>
+        )}
         <p className="muted">
           Beim Wiederherstellen werden die aktuellen Daten <strong>überschrieben</strong> (eine
           Sicherheitskopie des vorherigen Stands bleibt als{' '}

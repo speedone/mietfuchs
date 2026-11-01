@@ -93,7 +93,7 @@ import { APP_VERSION, IN_WINDOW, PARENT_PORT, RUNTIME, STANDALONE } from './vers
 import { checkRequest, guardPolicy } from './requestGuard.ts'
 import { hasStock, locationsFile, recordDataLocation, shouldRecord } from './dataLocations.ts'
 import {
-  ADOPT_UNCHANGED, copyErrorText, copyMismatch, describeCandidate, earlyMietfuchs, fixedPlaces, folderFromChoice, liveDataDir, movedAwayMessage, movedDate, originalCounts, readDecision,
+  ADOPT_UNCHANGED, classifyChoice, copyErrorText, copyMismatch, describeCandidate, earlyMietfuchs, searchDirsFromEnv, stockFingerprint, fixedPlaces, folderFromChoice, liveDataDir, movedAwayMessage, movedDate, originalCounts, readDecision,
   readMovedMarker, relocationHome, rememberedFolders, runningFor, samePath, searchProgramFolders, searchRoots, stockKind,
   writeDecision, writeMovedMarker, type CandidateInfo, type FileSize, type MovedMarker,
 } from './relocation.ts'
@@ -3217,16 +3217,45 @@ function relocationLocationsFile(): string | null {
   return locationsFile({ platform: process.platform, env: process.env.NKA_TEST_HOME ? {} : process.env, home: () => home })
 }
 
-// Nur im Fenster (nicht aus dem Store, dort liegen die Daten schon im Benutzerordner), nur unter Windows und macOS
-// (unter Linux gibt es das Fenster nur beim Entwickeln; nachgestellt mit NKA_RUNTIME=desktop für die Tests), nur ohne
-// Bestand und solange keine Entscheidung gespeichert ist.
-async function relocationOffered(): Promise<boolean> {
-  if (RUNTIME !== 'desktop' || MOVED_AWAY) return false
-  if (process.platform !== 'win32' && process.platform !== 'darwin' && process.env.NKA_RUNTIME !== 'desktop') return false
-  if (readDecision(DATA_DIR) || fs.existsSync(path.join(DATA_DIR, 'db.json'))) return false
+// Nur im Fenster, auch aus dem Store (wer von der Programmdatei in den Store wechselt, stünde sonst ohne Daten da), nur
+// unter Windows und macOS (unter Linux gibt es das Fenster nur beim Entwickeln; nachgestellt mit NKA_RUNTIME=desktop
+// bzw. store für die Tests), nur ohne Bestand und solange keine Entscheidung gespeichert ist.
+const RELOCATION_RUNTIME = RUNTIME === 'desktop' || RUNTIME === 'store'
+// Aus dem Store: die Ortsdatei nur lesen. Nachgestellt mit NKA_TEST_STORE=1 neben NKA_RUNTIME=desktop, denn eine
+// Store-Angabe allein zählt bewusst nicht (version.ts).
+const RELOCATION_FROM_STORE = RUNTIME === 'store' || (process.env.NKA_RUNTIME === 'desktop' && process.env.NKA_TEST_STORE === '1')
+// Darf der Umzug hier überhaupt laufen? Nur im Fenster, unter Windows und macOS, nicht in einem umgezogenen Ordner.
+// Von Hand (Link „Daten übernehmen …“ im Leerzustand und in den Einstellungen) geht er auch mit Bestand, dann nur mit
+// ausdrücklichem `replace` nach Rückfrage in der Oberfläche.
+function relocationAvailable(): boolean {
+  if (!RELOCATION_RUNTIME || MOVED_AWAY) return false
+  return process.platform === 'win32' || process.platform === 'darwin' || process.env.NKA_RUNTIME === 'desktop'
+}
+
+async function hasOwnStock(): Promise<boolean> {
+  if (fs.existsSync(path.join(DATA_DIR, 'db.json'))) return true
   const opened = stockDatabase()
-  if (!opened) return false
-  return !(await opened.read(carriesStock))
+  return opened ? await opened.read(carriesStock) : true
+}
+
+// Kommt der Bildschirm von selbst? Genau einmal: ohne Bestand und solange nichts entschieden ist (`umzug.json`).
+async function relocationOffered(): Promise<boolean> {
+  if (!relocationAvailable() || readDecision(DATA_DIR)) return false
+  return !(await hasOwnStock())
+}
+
+// Die Funde, einmal gesucht und eine Minute lang gemerkt: Der Start fragt `/api/relocation`, der Bildschirm gleich
+// danach `/candidates`, und die Suche dauert bis zu vier Sekunden.
+let foundCache: { at: number, value: { candidates: RelocationCandidate[], searched: boolean, complete: boolean } } | null = null
+async function findCandidates(fresh = false): Promise<{ candidates: RelocationCandidate[], searched: boolean, complete: boolean }> {
+  if (!fresh && foundCache && Date.now() - foundCache.at < 60_000) {
+    // Ob das alte Mietfuchs läuft, ändert sich; das wird jedes Mal neu gefragt
+    const live = await oldInstance()
+    return { ...foundCache.value, candidates: foundCache.value.candidates.map((c) => ({ ...c, running: runningFor(c.dataDir, live, process.platform) })) }
+  }
+  const value = await searchCandidates()
+  foundCache = { at: Date.now(), value }
+  return value
 }
 
 // Die Anfrage kommt von diesem Rechner. Mit Zugriff aus dem Heimnetz soll niemand vom Handy aus einen Ordner auf dem
@@ -3259,11 +3288,21 @@ const usableFolder = (dir: string): boolean => hasStock(dir) && !readMovedMarker
 
 // Ob der Bildschirm erscheint, schnell gefragt; die Funde (mit Suche, bis zu vier Sekunden) holt er danach selbst.
 app.get('/api/relocation', async (req, res) => {
-  res.json({ offered: fromThisComputer(req) && await relocationOffered() })
+  if (!fromThisComputer(req)) return res.json({ offered: false })
+  // Einmal beim ersten Start ohne Bestand: gefunden („Wir haben Ihre bisherigen Mietfuchs-Daten gefunden“) oder nicht
+  // („Willkommen bei Mietfuchs. Haben Sie Mietfuchs schon einmal benutzt?“); die Antwort wird gespeichert
+  const offered = await relocationOffered()
+  // Nach dem Umzug: im alten Mietfuchs noch etwas geändert? (Ergänzung 2)
+  const newer = offered ? null : await newerInOldFolder()
+  res.json(newer ? { offered, newer: { from: newer.from, modifiedAt: newer.modifiedAt } } : { offered })
 })
 
 app.get('/api/relocation/candidates', async (req, res) => {
-  if (!fromThisComputer(req) || !(await relocationOffered())) return res.json({ offered: false })
+  if (!fromThisComputer(req) || !relocationAvailable()) return res.json({ offered: false })
+  res.json({ offered: await relocationOffered(), ownStock: await hasOwnStock(), ...await findCandidates() })
+})
+
+async function searchCandidates(): Promise<{ candidates: RelocationCandidate[], searched: boolean, complete: boolean }> {
   const home = relocationHomeDir()
   const platform = process.platform
   let locations: unknown = null
@@ -3281,7 +3320,7 @@ app.get('/api/relocation/candidates', async (req, res) => {
   let searched = false
   let complete = true
   if (found.length === 0) {
-    const result = await searchProgramFolders(searchRoots({ platform, home }), { platform })
+    const result = await searchProgramFolders(searchRoots({ platform, home, given: searchDirsFromEnv(process.env) }), { platform })
     searched = true
     complete = result.complete
     for (const dataDir of result.folders.filter(usableFolder)) {
@@ -3292,19 +3331,30 @@ app.get('/api/relocation/candidates', async (req, res) => {
   const candidates = await Promise.all(found.map((f) => candidateOf(f.dataDir, f.source, f.appVersion, live)))
   // Der zuletzt geänderte Bestand zuerst
   candidates.sort((a, b) => (b.modifiedAt ?? '').localeCompare(a.modifiedAt ?? ''))
-  res.json({ offered: true, candidates, searched, complete })
-})
+  return { candidates, searched, complete }
+}
+
+// Mit eigenem Bestand ersetzt eine Übernahme ihn: nur mit `replace` (Rückfrage in der Oberfläche), der Stand von jetzt
+// wird dabei gesichert (`mietfuchs.sqlite.vor-restore`, wie beim Wiederherstellen).
+async function replaceRefusal(req: Request): Promise<string | null> {
+  if (!relocationAvailable()) return 'Die Übernahme gibt es nur im Programmfenster.'
+  if (req.body?.replace === true || !(await hasOwnStock())) return null
+  return 'Hier liegen schon Daten. Eine Übernahme ersetzt sie; bitte bestätigen Sie das zuerst.'
+}
 
 // „Ordner der alten Programmdatei wählen …“: Den Ordner wählt der Dialog des Fensters (preload.cjs), hier wird er
 // geprüft und beschrieben.
 app.post('/api/relocation/inspect', async (req, res) => {
   if (!fromThisComputer(req)) return res.status(403).json({ error: 'Nur an diesem Rechner.' })
-  if (!(await relocationOffered())) return res.status(409).json({ error: 'Hier liegen schon Daten; es gibt nichts zu übernehmen.' })
+  if (!relocationAvailable()) return res.status(409).json({ error: 'Die Übernahme gibt es nur im Programmfenster.' })
   const folder = typeof req.body?.folder === 'string' ? req.body.folder : ''
   if (!folder || !path.isAbsolute(folder)) return res.status(400).json({ error: 'Es fehlt, welcher Ordner gewählt wurde.' })
-  const dataDir = folderFromChoice(path.resolve(folder))
+  const choice = classifyChoice(path.resolve(folder), process.platform)
+  // Ein Backup statt eines Ordners: die Oberfläche spielt es ein (/api/relocation/restore-backup)
+  if (choice && 'backup' in choice) return res.json({ backup: choice.backup })
+  const dataDir = choice?.dataDir ?? null
   if (!dataDir || samePath(dataDir, DATA_DIR, process.platform)) {
-    return res.status(404).json({ error: 'In diesem Ordner hat Mietfuchs keine Daten gefunden. Wählen Sie den Ordner, in dem die bisherige Programmdatei liegt; darin liegt ein Ordner „data“.' })
+    return res.status(404).json({ error: 'Dort hat Mietfuchs keine Daten gefunden. Wählen Sie die bisherige Programmdatei, den Ordner, in dem sie liegt (darin liegt ein Ordner „data“), oder ein Backup.' })
   }
   const marker = readMovedMarker(dataDir)
   if (marker) return res.status(409).json({ error: `Die Daten in diesem Ordner sind schon umgezogen (am ${movedDate(marker.at)} nach ${marker.movedTo}).` })
@@ -3325,6 +3375,33 @@ app.post('/api/relocation/quit-old', async (req, res) => {
   res.json({ stopped: false })
 })
 
+// Ein Backup, das jemand bei „Ordner wählen …“ gewählt hat, einspielen wie über /api/restore, nur von der Platte statt
+// hochgeladen. Das Backup selbst wird nur gelesen.
+app.post('/api/relocation/restore-backup', async (req, res) => {
+  if (!fromThisComputer(req)) return res.status(403).json({ error: 'Nur an diesem Rechner.' })
+  const refusal = await replaceRefusal(req)
+  if (refusal) return res.status(409).json({ error: refusal, replace: true })
+  const file = typeof req.body?.file === 'string' ? req.body.file : ''
+  const choice = file && path.isAbsolute(file) ? classifyChoice(path.resolve(file), process.platform) : null
+  if (!choice || !('backup' in choice)) return res.status(400).json({ error: 'Das ist kein Backup.' })
+  if (restoreRunning) return res.status(409).json({ error: 'Es läuft gerade eine Übernahme oder Wiederherstellung. Bitte warten Sie, bis sie fertig ist.' })
+  restoreRunning = true
+  const staging = path.join(DATA_DIR, `restore-${newId()}`)
+  try {
+    let backup: ReadBackup
+    try {
+      fs.mkdirSync(staging)
+      backup = await readBackup(choice.backup, staging)
+    } catch (err) {
+      return void res.status(400).json({ error: messageOf(err) })
+    }
+    await runRestore(backup, res)
+  } finally {
+    restoreRunning = false
+    fs.rmSync(staging, { recursive: true, force: true })
+  }
+})
+
 app.post('/api/relocation/decline', async (req, res) => {
   if (!fromThisComputer(req)) return res.status(403).json({ error: 'Nur an diesem Rechner.' })
   if (!(await relocationOffered())) return res.status(409).json({ error: 'Hier liegen schon Daten; es gibt nichts zu übernehmen.' })
@@ -3337,7 +3414,8 @@ class AdoptRefusal extends Error {}
 
 app.post('/api/relocation/adopt', async (req, res) => {
   if (!fromThisComputer(req)) return res.status(403).json({ error: 'Nur an diesem Rechner.' })
-  if (!(await relocationOffered())) return res.status(409).json({ error: 'Hier liegen schon Daten; es gibt nichts zu übernehmen.' })
+  const refusal = await replaceRefusal(req)
+  if (refusal) return res.status(409).json({ error: refusal, replace: true })
   const raw = typeof req.body?.dataDir === 'string' ? req.body.dataDir : ''
   if (!raw || !path.isAbsolute(raw)) return res.status(400).json({ error: 'Es fehlt, welcher Ordner übernommen werden soll.' })
   const folder = path.resolve(raw)
@@ -3351,13 +3429,67 @@ app.post('/api/relocation/adopt', async (req, res) => {
   if (runningFor(folder, await oldInstance(), process.platform)) {
     return res.status(409).json({ error: 'Das alte Mietfuchs ist noch geöffnet. Bitte beenden Sie es zuerst, damit sich die Daten beim Kopieren nicht ändern.', running: true })
   }
-  if (restoreRunning) return res.status(409).json({ error: 'Es läuft gerade eine Übernahme oder Wiederherstellung. Bitte warten Sie, bis sie fertig ist.' })
+  // Mit eigenem Bestand gelten danach dessen Zustimmungen, ohne die mitgebrachten
+  await runAdopt(res, folder, (await hasOwnStock()) ? 'replace' : 'first')
+})
+
+// Den neueren Stand noch einmal übernehmen (#517): Im alten Mietfuchs wurde nach dem Umzug noch etwas geändert. Nie von
+// selbst, nur auf Klick; derselbe Weg, der Stand von jetzt wird vorher als `mietfuchs.sqlite.vor-restore` gesichert.
+app.post('/api/relocation/readopt', async (req, res) => {
+  if (!fromThisComputer(req)) return res.status(403).json({ error: 'Nur an diesem Rechner.' })
+  const newer = await newerInOldFolder()
+  if (!newer) return res.status(409).json({ error: 'Im bisherigen Mietfuchs hat sich seit dem Umzug nichts geändert.' })
+  if (runningFor(newer.from, await oldInstance(), process.platform)) {
+    return res.status(409).json({ error: 'Das alte Mietfuchs ist noch geöffnet. Bitte beenden Sie es zuerst, damit sich die Daten beim Kopieren nicht ändern.', running: true })
+  }
+  await runAdopt(res, newer.from, 'again')
+})
+
+// „Nicht übernehmen“: Der Hinweis gilt für diesen Stand nicht mehr; ändert sich dort wieder etwas, kommt er wieder.
+app.post('/api/relocation/newer/dismiss', async (req, res) => {
+  if (!fromThisComputer(req)) return res.status(403).json({ error: 'Nur an diesem Rechner.' })
+  const newer = await newerInOldFolder()
+  const decided = readDecision(DATA_DIR)
+  if (newer && decided?.source) writeDecision(DATA_DIR, { ...decided, source: { ...decided.source, fingerprint: newer.fingerprint } })
+  res.json({ ok: true })
+})
+
+// Fortschritt der Übernahme für die Oberfläche (Ergänzung 4) und Abbrechen, solange noch nicht umgeschaltet ist.
+type AdoptProgress = { phase: 'idle' | 'copy' | 'check' | 'switch', files: number, totalFiles: number, bytes: number, totalBytes: number }
+let adoptProgress: AdoptProgress = { phase: 'idle', files: 0, totalFiles: 0, bytes: 0, totalBytes: 0 }
+let adoptCancel = false
+const COPY_DELAY_MS = Number(process.env.NKA_TEST_COPY_DELAY_MS) || 0
+
+app.get('/api/relocation/progress', (req, res) => {
+  res.json(adoptProgress)
+})
+
+app.post('/api/relocation/cancel', (req, res) => {
+  if (!fromThisComputer(req)) return res.status(403).json({ error: 'Nur an diesem Rechner.' })
+  if (adoptProgress.phase !== 'copy' && adoptProgress.phase !== 'check') {
+    return res.status(409).json({ error: adoptProgress.phase === 'switch' ? 'Die Daten werden gerade umgeschaltet; das lässt sich nicht mehr abbrechen.' : 'Es läuft keine Übernahme.' })
+  }
+  adoptCancel = true
+  res.json({ ok: true })
+})
+
+const ADOPT_CANCELLED = `Die Übernahme wurde abgebrochen. ${ADOPT_UNCHANGED}`
+function checkCancel(): void {
+  if (adoptCancel) throw new AdoptRefusal(ADOPT_CANCELLED)
+}
+
+// `first`: in einen leeren Ordner; `replace`: über einen eigenen Bestand (von Hand, nach Rückfrage); `again`: den
+// neueren Stand nach dem Umzug noch einmal
+type AdoptMode = 'first' | 'replace' | 'again'
+async function runAdopt(res: Response, folder: string, mode: AdoptMode): Promise<void> {
+  if (restoreRunning) return void res.status(409).json({ error: 'Es läuft gerade eine Übernahme oder Wiederherstellung. Bitte warten Sie, bis sie fertig ist.' })
   restoreRunning = true
+  adoptCancel = false
   const staging = path.join(DATA_DIR, `restore-${newId()}`)
   const stagedDatabase = `${databaseFile(DATA_DIR)}.restore-${newId()}`
   let switched = false
   try {
-    const result = await adoptFolder(folder, staging, stagedDatabase, () => { switched = true })
+    const result = await adoptFolder(folder, staging, stagedDatabase, () => { switched = true }, mode)
     res.status(result.ok ? 200 : 500).json(result)
   } catch (err) {
     if (err instanceof AdoptRefusal) return void res.status(400).json({ error: err.message })
@@ -3367,11 +3499,26 @@ app.post('/api/relocation/adopt', async (req, res) => {
       : copyErrorText(err) })
   } finally {
     restoreRunning = false
+    adoptCancel = false
+    adoptProgress = { phase: 'idle', files: 0, totalFiles: 0, bytes: 0, totalBytes: 0 }
     fs.rmSync(staging, { recursive: true, force: true })
     // Vor dem Umschalten bleibt die Kopie nicht liegen; danach hat applyBackup sie an ihren Platz bewegt
     if (!switched) for (const suffix of ['', '-journal']) fs.rmSync(`${stagedDatabase}${suffix}`, { force: true })
   }
-})
+}
+
+// Wurde im alten Ordner nach dem Umzug noch etwas geändert? Verglichen wird der Fingerabdruck des Inhalts
+// (stockFingerprint), nicht die Dateizeit; ein Start der alten Fassung allein ändert ihn nicht.
+async function newerInOldFolder(): Promise<{ from: string, modifiedAt: string | null, fingerprint: string } | null> {
+  if (!RELOCATION_RUNTIME || MOVED_AWAY) return null
+  const decided = readDecision(DATA_DIR)
+  if (decided?.decision !== 'moved' || !decided.from || !decided.source || !hasStock(decided.from)) return null
+  const kind = await stockKind(decided.from)
+  if (!kind) return null
+  const fingerprint = await stockFingerprint(decided.from, kind)
+  if (!fingerprint || fingerprint === decided.source.fingerprint) return null
+  return { from: decided.from, modifiedAt: (await describeCandidate(decided.from)).modifiedAt, fingerprint }
+}
 
 // Die Belege (oder das Briefpapier) eines Ordners: nur Dateien direkt darin, wie im Backup.
 function filesIn(dir: string, accept: (name: string) => boolean = () => true): FileSize[] {
@@ -3418,7 +3565,7 @@ async function countsOfDatabase(file: string): Promise<{ tenancies: number, cost
   }
 }
 
-async function adoptFolder(folder: string, staging: string, stagedDatabase: string, onSwitch: () => void): Promise<{ ok: boolean, notes: string[], counts?: Record<string, number>, error?: string }> {
+async function adoptFolder(folder: string, staging: string, stagedDatabase: string, onSwitch: () => void, mode: AdoptMode): Promise<{ ok: boolean, notes: string[], counts?: Record<string, number>, error?: string }> {
   const kind = await stockKind(folder)
   if (!kind) throw new AdoptRefusal(`In diesem Ordner liegen keine Daten, die sich übernehmen lassen. ${ADOPT_UNCHANGED}`)
   const counts = await originalCounts(folder, kind)
@@ -3441,15 +3588,33 @@ async function adoptFolder(folder: string, staging: string, stagedDatabase: stri
     throw new AdoptRefusal(`Auf dem Datenträger ist nicht genug Platz: Die Daten brauchen samt Sicherungen ${Math.ceil(needed / 1024 ** 2)} MB, frei sind ${Math.floor(free / 1024 ** 2)} MB. ${ADOPT_UNCHANGED}`)
   }
 
-  // Kopieren, das Original nur lesen
+  // Der Fingerabdruck des Originals, um später Änderungen im alten Mietfuchs zu erkennen (Ergänzung 2)
+  const fingerprint = await stockFingerprint(folder, kind)
+
+  // Kopieren, das Original nur lesen. Fortschritt je Datei, Abbrechen zwischen zwei Dateien (Ergänzung 4).
+  const sourceSize = fs.statSync(sourceDb).size
+  adoptProgress = {
+    phase: 'copy', files: 0, totalFiles: receipts.length + designs.length + 1, bytes: 0,
+    totalBytes: [...receipts, ...designs].reduce((sum, f) => sum + f.size, 0) + sourceSize,
+  }
+  const copied = async (bytes: number) => {
+    adoptProgress = { ...adoptProgress, files: adoptProgress.files + 1, bytes: adoptProgress.bytes + bytes }
+    if (COPY_DELAY_MS > 0) await new Promise((resolve) => setTimeout(resolve, COPY_DELAY_MS))
+    checkCancel()
+  }
   fs.mkdirSync(staging)
   const files = receipts.map(({ name }, i) => ({ fileName: name, staged: path.join(staging, `beleg-${i}`) }))
-  const copiedSizes: FileSize[] = files.map(({ fileName, staged }) => ({ name: fileName, size: copyWithTime(path.join(folder, 'uploads', fileName), staged) }))
+  const copiedSizes: FileSize[] = []
+  for (const { fileName, staged } of files) {
+    const size = copyWithTime(path.join(folder, 'uploads', fileName), staged)
+    copiedSizes.push({ name: fileName, size })
+    await copied(size)
+  }
   const designFiles: { fileName: string, staged: string }[] = []
   const skippedDesigns: string[] = []
   for (const [i, { name }] of designs.entries()) {
     const staged = path.join(staging, `briefpapier-${i}`)
-    copyWithTime(path.join(designDir(folder), name), staged)
+    await copied(copyWithTime(path.join(designDir(folder), name), staged))
     const head = Buffer.alloc(16)
     const fd = fs.openSync(staged, 'r')
     try {
@@ -3487,6 +3652,8 @@ async function adoptFolder(folder: string, staging: string, stagedDatabase: stri
     if (result.state !== 'done') throw new AdoptRefusal(`Die Datei db.json im alten Ordner ließ sich nicht übernehmen.${reason ? ` ${reason}` : ''} ${ADOPT_UNCHANGED}`)
     fs.renameSync(databaseFile(jsonDir), stagedDatabase)
   }
+  await copied(sourceSize)
+  adoptProgress = { ...adoptProgress, phase: 'check' }
   const problem = await archiveDatabaseProblem(stagedDatabase, 'move')
   if (problem) throw new AdoptRefusal(problem)
 
@@ -3502,12 +3669,16 @@ async function adoptFolder(folder: string, staging: string, stagedDatabase: stri
   if (sourceHash !== null && (await sha256Of(sourceDb)) !== sourceHash) {
     throw new AdoptRefusal(`Die Daten im alten Ordner haben sich beim Kopieren geändert. Bitte beenden Sie das alte Mietfuchs und versuchen Sie es dann noch einmal. ${ADOPT_UNCHANGED}`)
   }
+  checkCancel()
   const at = new Date().toISOString()
+  adoptProgress = { ...adoptProgress, phase: 'switch' }
   onSwitch()
-  const notes = await applyBackup({ dbText: null, files, designFiles, database: null, origin: folder }, stagedDatabase, 'archive', 'Daten aus dem bisherigen Mietfuchs übernommen')
+  // Über einen eigenen Bestand gelten die Zustimmungen von jetzt: Hier sind die neueren
+  const notes = await applyBackup({ dbText: null, files, designFiles, database: null, origin: folder }, stagedDatabase, mode === 'first' ? 'archive' : 'now',
+    mode === 'again' ? 'Neueren Stand aus dem bisherigen Mietfuchs übernommen' : 'Daten aus dem bisherigen Mietfuchs übernommen')
   // Gleich nach dem Umschalten: Endet das Fenster vor dem Vermerk, holt der nächste Start ihn nach (Durchsicht D1)
   try {
-    writeDecision(DATA_DIR, { version: 1, decision: 'moved', at, from: folder })
+    writeDecision(DATA_DIR, { version: 1, decision: 'moved', at, from: folder, ...(fingerprint ? { source: { kind, fingerprint } } : {}) })
   } catch (err) {
     console.error(`Die Entscheidung zum Umzug ließ sich nicht festhalten: ${messageOf(err)}`)
   }
@@ -3530,7 +3701,7 @@ async function adoptFolder(folder: string, staging: string, stagedDatabase: stri
   }
   // Schlüssel externer KI-Dienste gehören nicht ins Backup, wohl aber zum Umzug
   const secrets = path.join(folder, 'secrets.json')
-  if (fs.existsSync(secrets) && !fs.existsSync(path.join(DATA_DIR, 'secrets.json'))) {
+  if (mode === 'first' && fs.existsSync(secrets) && !fs.existsSync(path.join(DATA_DIR, 'secrets.json'))) {
     try {
       fs.copyFileSync(secrets, path.join(DATA_DIR, 'secrets.json'))
     } catch (err) {
@@ -3542,7 +3713,8 @@ async function adoptFolder(folder: string, staging: string, stagedDatabase: stri
   } catch (err) {
     notes.push(`Im alten Ordner ließ sich kein Vermerk ablegen (${messageOf(err)}). Arbeiten Sie bitte nicht mehr mit dem alten Mietfuchs, sonst fehlen Änderungen hier.`)
   }
-  const locations = relocationLocationsFile()
+  // Aus dem Store nicht: Windows lenkte das Schreiben unter AppData in den Paketordner um, die Programmdatei sähe es nie
+  const locations = RELOCATION_FROM_STORE ? null : relocationLocationsFile()
   if (locations) recordDataLocation(locations, { dataDir: DATA_DIR, exe: process.execPath, appVersion: APP_VERSION, lastSeen: at })
   return { ok: true, notes, counts: { properties: now.properties, tenancies: now.tenancies, costItems: now.costItems, receipts: receipts.length } }
 }
@@ -4443,7 +4615,7 @@ if (!MOVED_AWAY && hasStock(DATA_DIR) && shouldRecord({ packaged: !!globalThis.B
 
 // Vermerk nachholen (#517, Durchsicht D1): Steht im Datenordner ein Umzug, dessen alter Ordner noch keinen Vermerk hat
 // (das Fenster endete zwischen Umschalten und Vermerk), wird er jetzt geschrieben.
-if (RUNTIME === 'desktop' && !MOVED_AWAY) {
+if ((RUNTIME === 'desktop' || RUNTIME === 'store') && !MOVED_AWAY) {
   const decided = readDecision(DATA_DIR)
   if (decided?.decision === 'moved' && decided.from && hasStock(decided.from) && !readMovedMarker(decided.from)) {
     try {

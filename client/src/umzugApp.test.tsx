@@ -29,7 +29,7 @@ afterEach(() => {
 
 test('Umzug angeboten: auch nach einem Klick in die Seitenleiste bleibt der Bildschirm', async () => {
   render(<App />)
-  await screen.findByRole('heading', { level: 1, name: 'Ihre bisherigen Daten übernehmen' }, { timeout: 5000 })
+  await screen.findByRole('heading', { level: 1, name: 'Willkommen bei Mietfuchs' }, { timeout: 5000 })
   fireEvent.click(screen.getByRole('button', { name: /Stammdaten/ }))
-  expect(await screen.findByRole('heading', { level: 1, name: 'Ihre bisherigen Daten übernehmen' })).toBeTruthy()
+  expect(await screen.findByRole('heading', { level: 1, name: 'Willkommen bei Mietfuchs' })).toBeTruthy()
 })
