@@ -145,6 +145,9 @@ test('Umstieg unter Windows: Store und Installer aus festen Adressen, die Schrit
   render(<DesktopHint status={status({ desktopOffer: 'windows', ...foreign })} onDismissed={vi.fn()} />)
   const card = screen.getByRole('region', { name: 'Mietfuchs gibt es jetzt als eigenes Programm' })
   expect(card.textContent).toMatch(/Ihre Daten übernimmt es beim ersten Start/)
+  // Ohne Satz zum Drucken: zu viel für die Karte (Wunsch des Nutzers).
+  expect(card.textContent).toMatch(/^Mietfuchs gibt es jetzt als eigenes ProgrammMit eigenem Fenster statt Browser-Tab\. Ihre Daten/)
+  expect(card.textContent).not.toMatch(/gedruckt|Briefpapier|Seitenzahl/)
   const store = screen.getByRole('link', { name: 'Aus dem Microsoft Store laden' })
   expect(store.getAttribute('href')).toBe(STORE_URL)
   expect(store.className).toBe('btn')

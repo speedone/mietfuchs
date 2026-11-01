@@ -117,8 +117,7 @@ export function DesktopHint({ status, onDismissed }: { status: UpdateStatus; onD
       <div className="update-consent-body">
         <h2 id="desktop-hint-title">Mietfuchs gibt es jetzt als eigenes Programm</h2>
         <p>
-          Mit eigenem Fenster statt Browser-Tab, gedruckt wird immer mit Briefpapier und Seitenzahl. Ihre Daten übernimmt
-          es beim ersten Start.
+          Mit eigenem Fenster statt Browser-Tab. Ihre Daten übernimmt es beim ersten Start.
           {offer === 'windows' && ' Aus dem Microsoft Store kommen Updates von selbst, und Windows warnt beim Start nicht.'}
         </p>
         <div className="row">
