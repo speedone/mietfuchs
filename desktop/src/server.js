@@ -73,14 +73,16 @@ export async function whoIsOn(port, get = (url) => fetch(url, { signal: AbortSig
   }
 }
 
-// Auf allen Adressen, wie der Server mit Zugriff aus dem Heimnetz: Windows ließe sonst eine zweite Bindung an 0.0.0.0
-// neben einer an 127.0.0.1 zu, und der Port gälte als frei, obwohl er es nicht ist.
+// Nur auf 127.0.0.1: Eine Bindung an alle Netzwerkkarten ließe die Windows-Firewall beim ersten Start fragen, ob
+// Mietfuchs ins Netz darf, auf einem echten Rechner so beobachtet. Ein Programm, das den Port auf allen Adressen hält,
+// fällt schon vorher auf: `whoIsOn` erreicht es über 127.0.0.1. Bindet der Server mit Zugriff aus dem Heimnetz doch
+// auf einen belegten Port, scheitert sein Start mit einer Meldung.
 /** @param {number} port @returns {Promise<boolean>} */
 export function canListen(port) {
   return new Promise((resolve) => {
     const probe = net.createServer()
     probe.once('error', () => resolve(false))
-    probe.listen(port, () => probe.close(() => resolve(true)))
+    probe.listen(port, '127.0.0.1', () => probe.close(() => resolve(true)))
   })
 }
 
@@ -89,7 +91,7 @@ export function freePort() {
   return new Promise((resolve, reject) => {
     const probe = net.createServer()
     probe.once('error', reject)
-    probe.listen(0, () => {
+    probe.listen(0, '127.0.0.1', () => {
       const address = probe.address()
       const port = typeof address === 'object' && address ? address.port : 0
       probe.close(() => resolve(port))

@@ -2,6 +2,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import http from 'node:http'
+import fs from 'node:fs'
 import { DEFAULT_PORT, canListen, dataDirIn, freePort, lanUrls, linkTarget, networkState, serverCommand, serverEnv, startUrlIn, whoIsOn } from '../src/server.js'
 
 test('Programmdatei: Windows in resources\\server, Mac neben dem Fenster, beim Entwickeln der Quellcode', () => {
@@ -101,4 +102,15 @@ test('Heimnetz: Stand für die Oberfläche aus Einstellung, Port und Netzwerkkar
   assert.deepEqual(networkState({}, 17517, interfaces), { enabled: false, port: 17517, addresses: ['http://192.168.178.23:17517'] })
   // Nur ein echtes true schaltet ein (fenster.json ist von Hand änderbar)
   assert.equal(networkState(/** @type {any} */ ({ network: 'ja' }), 17517, interfaces).enabled, false)
+})
+
+// Gefunden auf einem echten Windows-Rechner: Eine Probe auf allen Netzwerkkarten (listen ohne Adresse) ließ die
+// Windows-Firewall beim ersten Start fragen, ob Mietfuchs ins Netz darf. Das Fenster bindet nur 127.0.0.1; ins Netz
+// geht allein der Server, und nur mit dem Schalter „Zugriff aus dem Heimnetz“.
+test('Fenster: jede Probe bindet nur 127.0.0.1 (sonst fragt die Windows-Firewall)', () => {
+  for (const file of ['../src/server.js', '../src/main.js']) {
+    const source = fs.readFileSync(new URL(file, import.meta.url), 'utf8')
+    const calls = source.match(/\.listen\([^)]*\)/g) ?? []
+    for (const call of calls) assert.match(call, /'127\.0\.0\.1'/, `${file}: ${call}`)
+  }
 })
