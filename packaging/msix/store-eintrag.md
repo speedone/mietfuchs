@@ -3,9 +3,11 @@
 Texte für den Store-Eintrag (#500). Die erste Einreichung ging von Hand; seitdem schreibt
 [scripts/store-submit.mjs](../../scripts/store-submit.mjs) bei jedem Release Beschreibung, Funktionen und
 Suchbegriffe aus dieser Datei in den Store, dazu die Bildschirmfotos aus `docs/screenshots`. **Geändert
-wird hier, nicht im Partner Center**, sonst überschreibt das nächste Release die Änderung. Das Format der
-drei Abschnitte liest das Skript: fette Überschrift, in der Beschreibung Aufzählungen mit „• “ (so
-zeigt sie der Store), unter „Funktionen“ je Zeile ein Punkt mit „- “. Die Texte siezen, wie die Oberfläche.
+wird hier, nicht im Partner Center**, sonst überschreibt das nächste Release die Änderung. Dort auch keine
+Einreichung beginnen: Einen von Hand begonnenen Entwurf darf die API nicht löschen, er blockiert das nächste
+Release. Das Format der drei Abschnitte liest das Skript: fette Überschrift, in der Beschreibung
+Aufzählungen mit „• “ (so zeigt sie der Store), unter „Funktionen“ je Zeile ein Punkt mit „- “. Die Texte
+siezen, wie die Oberfläche.
 
 ## Preise und Verfügbarkeit
 

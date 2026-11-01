@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { buildSubmission, commitOutcome, LANGUAGE, parseListing, releaseNotes, SCREENSHOTS } from '../../scripts/store-submit.mjs'
+import { buildSubmission, commitOutcome, draftHint, LANGUAGE, parseListing, releaseNotes, SCREENSHOTS } from '../../scripts/store-submit.mjs'
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const md = fs.readFileSync(path.join(root, 'packaging', 'msix', 'store-eintrag.md'), 'utf8')
@@ -144,4 +144,12 @@ test('Status nach dem Abschicken: nur die Schritte der Zertifizierung gelten als
     assert.equal(commitOutcome({ status }), 'failed', status)
   }
   assert.equal(commitOutcome({ status: 'PreProcessing', statusDetails: { errors: [{ code: 'X' }] } }), 'failed')
+})
+
+// Beim Nachreichen von 0.14.0: Einen Entwurf, der im Partner Center von Hand begonnen wurde, darf die
+// API nicht löschen. Die Meldung sagt dann, was zu tun ist, statt nur die Antwort der API zu zeigen.
+test('Entwurf von Hand: Hinweis, ihn im Partner Center zu löschen', () => {
+  const api = 'DELETE /applications/9PMHZ0ZJPZDZ/submissions/1: HTTP 400 {"code":"InvalidOperation","message":"Ingestion API can only update, delete, and commit submissions that are created through the API. Please delete the current in-progress submission and create one using the API"}'
+  assert.match(draftHint(api) ?? '', /Löschen Sie ihn im Partner Center.*starten Sie store\.yml.*neu/s)
+  assert.equal(draftHint('DELETE …: HTTP 409 {"code":"Conflict"}'), null)
 })

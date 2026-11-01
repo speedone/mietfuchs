@@ -147,6 +147,15 @@ const describeDetails = (details) =>
     .flatMap((k) => (details?.[k] ?? []).map((/** @type {any} */ e) => `${k === 'errors' ? 'Fehler' : 'Warnung'} ${e.code}: ${e.details ?? ''}`))
     .join('; ')
 
+// Einen Entwurf, den jemand im Partner Center begonnen hat (etwa mit „Aktualisieren“), darf die API
+// weder ändern noch löschen; er blockiert jede Einreichung, bis er dort gelöscht ist.
+/** @param {string} message */
+export function draftHint(message) {
+  return /created through the API/.test(message)
+    ? 'Im Partner Center liegt ein Entwurf, der dort von Hand begonnen wurde. Die API darf ihn nicht löschen. Löschen Sie ihn im Partner Center (Mietfuchs → Einreichungen) und starten Sie store.yml mit der Nummer des Release-Laufs neu. Texte des Eintrags gehören in packaging/msix/store-eintrag.md.'
+    : null
+}
+
 /** @param {string} url @param {RequestInit & { token: string }} init */
 async function api(url, { token, ...init }) {
   const res = await fetch(url.startsWith('http') ? url : `${API}${url}`, {
@@ -232,7 +241,10 @@ async function main() {
     // Ein Entwurf von Hand im Partner Center geht dabei verloren; Texte gehören in store-eintrag.md
     const draft = await api(`/applications/${APP_ID}/submissions/${pending}`, { token })
     console.log(`Offenen Entwurf ${pending} (${draft.status}) löschen`)
-    await api(`/applications/${APP_ID}/submissions/${pending}`, { token, method: 'DELETE' })
+    await api(`/applications/${APP_ID}/submissions/${pending}`, { token, method: 'DELETE' }).catch((err) => {
+      const hint = draftHint(String(err?.message))
+      throw hint ? new Error(`${hint}\n${err.message}`) : err
+    })
   }
   const created = await api(`/applications/${APP_ID}/submissions`, { token, method: 'POST' })
   console.log(`Einreichung ${created.id} angelegt`)

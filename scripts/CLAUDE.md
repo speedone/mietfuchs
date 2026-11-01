@@ -171,7 +171,9 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   und Suchbegriffe aus [../packaging/msix/store-eintrag.md](../packaging/msix/store-eintrag.md), „Neuigkeiten in
   dieser Version“ (Version und Link aufs Release) und „nach der Zertifizierung sofort veröffentlichen“. Alles
   andere bleibt, wie es im Partner Center steht, auch Felder, die das Skript nicht kennt. **Texte des Eintrags
-  ändert man deshalb in store-eintrag.md**, eine Änderung im Partner Center überschreibt das nächste Release.
+  ändert man deshalb in store-eintrag.md**, eine Änderung im Partner Center überschreibt das nächste Release. Im
+  Partner Center auch keine Einreichung beginnen („Aktualisieren“): Einen solchen Entwurf darf die API nicht
+  löschen, er blockiert die nächste Einreichung, bis er dort von Hand gelöscht ist (so beim Nachreichen von 0.14.0).
   Nicht die Store-CLI (`msstore publish`): Die lädt keine Bilder hoch und legt unter Linux die Zugangsdaten im
   Schlüsselbund ab, den ein Runner nicht hat; daran scheiterte v0.14.0. `--dry-run <Ordner>` liest nur und
   schreibt die umgebaute Einreichung und das ZIP dorthin.
