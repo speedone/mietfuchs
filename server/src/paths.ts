@@ -32,8 +32,9 @@ export const STORE_PACKAGE_NAME = 'speedone.Mietfuchs'
 export function storeLocation(execPath: string = process.execPath, platform: NodeJS.Platform = process.platform): boolean {
   if (platform !== 'win32') return false
   const parts = path.win32.dirname(execPath).split(/[\\/]/).map((part) => part.toLowerCase())
-  const packageDir = parts.at(-1) ?? ''
-  return parts.at(-2) === 'windowsapps' && packageDir.startsWith(`${STORE_PACKAGE_NAME.toLowerCase()}_`)
+  // Mit dem Programmfenster (#517) liegt die Programmdatei tiefer im Paket (resources\server), deshalb jeder Ordner
+  // direkt unter „WindowsApps“, nicht nur der letzte.
+  return parts.some((part, i) => i > 0 && parts[i - 1] === 'windowsapps' && part.startsWith(`${STORE_PACKAGE_NAME.toLowerCase()}_`))
 }
 
 // Lässt sich in dem Ordner schreiben? Gibt es ihn noch nicht, zählt der übergeordnete.

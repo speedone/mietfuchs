@@ -1,0 +1,22 @@
+// Typprüfung des Programmfensters (#517), aufgerufen über `npm run typecheck` mit dem Compiler des Servers. Wie die
+// Skripte in scripts/ bleibt der Code JavaScript und wird mit `checkJs` geprüft; die Typen von Electron liefert das
+// Paket electron selbst (desktop/node_modules).
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM"],
+    "module": "NodeNext",
+    "moduleResolution": "nodenext",
+    "strict": true,
+    "noImplicitAny": false,
+    "noEmit": true,
+    "allowJs": true,
+    "checkJs": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "typeRoots": ["../server/node_modules/@types"],
+    "types": ["node"]
+  },
+  "include": ["src/*.js", "src/*.cjs", "test/*.js"]
+}

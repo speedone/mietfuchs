@@ -322,7 +322,9 @@ export async function startServerIn(dataDir: string, env: NodeJS.ProcessEnv = {}
       // damit einen Tab auf einem Zufallsport auf. Siehe die Regel in CLAUDE.md.
       CI: 'true',
     },
-    stdio: ['ignore', 'pipe', 'pipe'],
+    // Die Standardeingabe offen wie im Programmfenster (#517): Dort heißt ihr Ende „Fenster weg, beenden“, und mit
+    // 'ignore' endete ein Server in der Betriebsart desktop sofort. Alle anderen lesen sie nicht.
+    stdio: ['pipe', 'pipe', 'pipe'],
   })
   const stop = () => {
     child.kill()

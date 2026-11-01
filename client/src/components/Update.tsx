@@ -257,6 +257,13 @@ function Download({ guide, status }: { guide: Extract<UpdateGuide, { kind: 'down
           <li>Mietfuchs wie gewohnt starten. Ihre Daten bleiben, wo sie sind.</li>
         </ol>
       )}
+      {guide.system === 'desktop' && (
+        <ol className="update-steps">
+          <li>Auf der Release-Seite das Programm für Ihr System laden: unter Windows den Installer (<code>.exe</code>), auf dem Mac das Abbild (<code>.dmg</code>) für Apple Silicon oder Intel.</li>
+          {quitStep}
+          <li>Installieren wie beim ersten Mal. Das ersetzt die bisherige Fassung, Ihre Daten bleiben, wo sie sind.</li>
+        </ol>
+      )}
       {guide.system === null && (
         <p>
           Auf der Release-Seite die Datei für Ihr System wählen. Danach wie beim ersten Mal

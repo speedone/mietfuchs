@@ -16,6 +16,19 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - **Microsoft Store:** Der Store-Eintrag zeigt die Website mietfuchs-app.de; Website, Datenschutzrichtlinie und
   Supportkontakt gehen jetzt bei jedem Release mit, und die Beschreibung sagt zusätzlich, dass Mietfuchs ohne
   Gewähr bereitgestellt wird.
+- **Eigenes Programmfenster für Windows und macOS, erste Probe** ([#517](https://github.com/speedone/mietfuchs/issues/517)):
+  Mietfuchs in einem eigenen Fenster statt im Browser, mit Symbol in Taskleiste und Dock. Fenster zu heißt Mietfuchs
+  zu, gedruckt wird mit Briefpapier und „Seite x von y“ auch auf dem Mac. Noch nicht in den Downloads; der Bau läuft
+  zunächst zur Probe.
+- **`NKA_HOST`** legt fest, auf welcher Adresse Mietfuchs lauscht, etwa `127.0.0.1` für nur diesen Rechner.
+
+### Geändert
+
+- **Mietfuchs antwortet nur noch unter seiner IP-Adresse, `localhost` und Namen im Heimnetz** (etwa `raspberrypi`,
+  `nas.local`, `pi.fritz.box`), und Änderungen nimmt es nur von seiner eigenen Seite an. Das schützt davor, dass eine
+  fremde Webseite im Browser Mietfuchs erreicht oder darin speichert. Wer Mietfuchs unter einem anderen Namen aufruft,
+  trägt ihn in `NKA_ALLOWED_HOSTS` ein. Im Docker-Image und beim Start aus dem Quellcode bleibt alles wie bisher,
+  solange `NKA_ALLOWED_HOSTS` nicht gesetzt ist.
 
 ## [0.14.1] – 2026-11-01
 

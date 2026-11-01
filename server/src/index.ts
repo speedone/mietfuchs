@@ -3,6 +3,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import multer from 'multer'
 import path from 'node:path'
 import fs from 'node:fs'
+import net from 'node:net'
 import os from 'node:os'
 import http from 'node:http'
 import { spawn } from 'node:child_process'
@@ -87,7 +88,8 @@ import {
 } from './db/backup.ts'
 import { findingsText, validateDb } from './legacy/validate.ts'
 import { createUpdateChecker, mayAskGitHub, UPDATE_URL } from './update.ts'
-import { APP_VERSION, RUNTIME, STANDALONE } from './version.ts'
+import { APP_VERSION, IN_WINDOW, RUNTIME, STANDALONE } from './version.ts'
+import { checkRequest, guardPolicy } from './requestGuard.ts'
 import { hasStock, locationsFile, recordDataLocation, shouldRecord } from './dataLocations.ts'
 import { describeFile, describeFolder, hashFile, mimeTypeOf, uploadedAtOf } from './uploads.ts'
 import { acceptIban, IbanRefusal } from './iban.ts'
@@ -109,6 +111,19 @@ import { forgetUpload, placeUpload, recordIfMissing, recordUpload, rowOf, upload
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
+
+// Host und Origin prüfen (#517), vor allem anderen, auch vor dem Lesen des Rumpfs; die Gründe stehen in
+// requestGuard.ts. Ohne NKA_ALLOWED_HOSTS in Docker und npm aus.
+const GUARD = guardPolicy(RUNTIME, process.env)
+app.use((req, res, next) => {
+  const header = (name: string): string | undefined => {
+    const value = req.headers[name]
+    return Array.isArray(value) ? value[0] : value
+  }
+  const reason = checkRequest({ method: req.method, host: header('host'), origin: header('origin'), secFetchSite: header('sec-fetch-site') }, GUARD)
+  if (reason) return void res.status(403).type('text/plain; charset=utf-8').send(reason)
+  next()
+})
 app.use(express.json())
 
 // Die laufende Anfrage, für das Änderungsjournal (#318): `writeData` nimmt daraus Route und Satz
@@ -3565,7 +3580,25 @@ app.post('/api/quit', (req, res) => {
   res.json({ ok: true })
   // Erst antworten, dann beenden: Sonst sähe der Browser einen Verbindungsabbruch statt der
   // Bestätigung.
-  //
+  res.on('finish', shutDown)
+})
+
+// Beenden nach leergelaufener Schlange, aus der Oberfläche und, im Programmfenster, wenn das Fenster weg ist.
+let shuttingDown = false
+function shutDown(): void {
+  if (shuttingDown) return
+  shuttingDown = true
+  // Mitten im Start (Migration, Sicherung, Umstieg) erst zu Ende starten: Schließt jemand das Fenster in dieser Zeit,
+  // bräche der Server sonst den Umstieg ab, und der nächste Start begänne von vorn (Durchsicht M2). Anfragen gibt es
+  // vorher keine, nur das Ende der Standardeingabe kommt so früh.
+  if (!startupDone) {
+    void startup.then(drainAndExit)
+    return
+  }
+  drainAndExit()
+}
+
+function drainAndExit(): void {
   // **Vorher läuft die Schlange leer.** Die frühere Begründung („offene Schreibvorgänge gibt es
   // nicht, store.ts schreibt jede Änderung sofort") trägt nicht mehr, seit über die Datenbank
   // geschrieben wird: Ein Schreibvorgang kann eingereiht sein oder gerade laufen, und
@@ -3573,7 +3606,7 @@ app.post('/api/quit', (req, res) => {
   // nicht verloren, denn die Antwort kommt erst nach dem Festschreiben, aber die betroffene
   // Anfrage stürbe ohne Antwort. Das Leerlaufen kostet im Regelfall nichts, weil beim Klick auf
   // „Beenden“ nichts in der Schlange steht.
-  res.on('finish', () => {
+  {
     let schonBeendet = false
     const beenden = () => {
       if (schonBeendet) return
@@ -3596,8 +3629,9 @@ app.post('/api/quit', (req, res) => {
     }, QUIT_DRAIN_MS)
     frist.unref()
     database.write(async () => undefined).then(beenden, beenden)
-  })
-})
+  }
+}
+
 
 // Fehler an der API immer als lesbare JSON-Meldung, nie als HTML-Fehlerseite von Express
 app.use('/api', (err: unknown, req: Request, res: Response, next: NextFunction) => {
@@ -3697,6 +3731,14 @@ function openBrowser(url: string): void {
 // sind für das Frontend gedacht und würden hier mit Vite kollidieren.
 const PORT = Number(process.env.NKA_PORT || 3001)
 
+// Auf welcher Adresse der Server lauscht. Ohne Angabe auf allen (Zugriff aus dem Heimnetz, Docker). Das
+// Programmfenster (#517) setzt 127.0.0.1, außer der Zugriff aus dem Heimnetz ist eingeschaltet; dann fragt unter
+// Windows auch keine Firewall.
+const HOST = process.env.NKA_HOST?.trim() || undefined
+const hostProblem = HOST === undefined || net.isIP(HOST) !== 0
+  ? null
+  : `NKA_HOST „${HOST}“ ist keine IP-Adresse. Erlaubt sind etwa 127.0.0.1 (nur dieser Rechner) oder 0.0.0.0 (alle Netzwerkkarten).`
+
 // Ein Wert, der keine Portnummer ist, war für node:net der Pfad eines Unix-Sockets (unter
 // Windows einer Named Pipe): Der Server lief dann scheinbar, war aber über HTTP unter keiner
 // Adresse erreichbar, und `address()` lieferte den Pfad statt eines Objekts mit Port. Die
@@ -3707,7 +3749,7 @@ const portProblem = Number.isInteger(PORT) && PORT >= 0 && PORT <= 65535
 
 // Eine falsch gesetzte Variable für den KI-Anbieter oder den Schlüssel (siehe ai/settings.ts und
 // secrets.ts) fiele sonst erst bei der ersten Auswertung auf
-const startProblem = AI_ENV.error ?? checkKeyEnvironment() ?? portProblem ?? TEST_TODAY.error
+const startProblem = AI_ENV.error ?? checkKeyEnvironment() ?? portProblem ?? hostProblem ?? TEST_TODAY.error
 if (startProblem) {
   console.error(startProblem)
   process.exit(1)
@@ -3807,6 +3849,16 @@ let startupDone = false
 let finishStartup: () => void = () => {}
 const startup = new Promise<void>((resolve) => { finishStartup = resolve })
 
+// Im Programmfenster (#517) hält das Fenster die Standardeingabe offen. Endet sie, ist das Fenster weg, auch nach
+// einem Absturz oder beim Abmelden unter Windows, wo es kein SIGTERM gibt und das Fenster nur hart beenden könnte.
+// Ohne diese Regel liefe der Server als Waise weiter und hielte Port und Datenbank. Erst hier, nach `startup`, auf das
+// shutDown wartet.
+if (IN_WINDOW) {
+  process.stdin.on('end', shutDown)
+  process.stdin.on('error', shutDown)
+  process.stdin.resume()
+}
+
 const server = http.createServer((req, res) => {
   if (startupDone) return app(req, res)
   if ((req.url ?? '').split('?')[0] === '/healthz') {
@@ -3866,7 +3918,7 @@ async function refuseStart(err: NodeJS.ErrnoException): Promise<never> {
     // Oberfläche nach vorn (#45).
     if (STANDALONE && await mietfuchsAlreadyOn(running)) {
       console.log(`Mietfuchs läuft bereits auf ${running}. Die Oberfläche wird geöffnet.`)
-      if (!process.env.CI) openBrowser(running)
+      if (!process.env.CI && !IN_WINDOW) openBrowser(running)
       process.exit(0)
     }
     const message = `Port ${PORT} ist bereits belegt. Dort antwortet ein anderes Programm. Mit NKA_PORT lässt sich ein anderer Port setzen.`
@@ -3877,13 +3929,13 @@ async function refuseStart(err: NodeJS.ErrnoException): Promise<never> {
     notifyDesktop(`Start fehlgeschlagen: ${err.message}`)
   }
   // Fenster kurz offen lassen, damit man die Meldung liest
-  if (STANDALONE) await new Promise((resolve) => setTimeout(resolve, 10000))
+  if (STANDALONE && !IN_WINDOW) await new Promise((resolve) => setTimeout(resolve, 10000))
   process.exit(1)
 }
 
 const listenProblem = await new Promise<NodeJS.ErrnoException | null>((resolve) => {
   server.once('error', resolve)
-  server.listen(PORT, () => {
+  server.listen(PORT, HOST, () => {
     server.off('error', resolve)
     resolve(null)
   })
@@ -4027,7 +4079,7 @@ setInterval(() => void checkPriorVersion(true), PRIOR_CHECK_INTERVAL_MS).unref()
   } else if (changeover.state === 'stale') {
     console.log(`Hinweis: ${changeover.message}`)
   }
-  if (STANDALONE) {
+  if (STANDALONE && !IN_WINDOW) {
     // Aus einem Linux-Paket startet Mietfuchs ohne Konsolenfenster (Terminal=false), beendet
     // wird dann über die Oberfläche. Beim Doppelklick auf die Programmdatei gibt es das Fenster
     // weiterhin, und dort ist sein Schließen der gewohnte Weg.

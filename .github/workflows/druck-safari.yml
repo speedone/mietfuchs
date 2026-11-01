@@ -35,6 +35,8 @@ jobs:
       - run: npm install
       - run: npm run build
       - run: npx playwright install chromium
+      # Das Programmfenster (#517) als dritter Druckweg; Electron lädt seine Datei nicht beim Installieren
+      - run: npx --prefix desktop install-electron
       - name: Fassungen von macOS, Safari und Swift
         run: |
           {
@@ -47,7 +49,7 @@ jobs:
       - name: Drucken und prüfen
         run: |
           code=0
-          node scripts/safari-print-check.mjs --out "$RUNNER_TEMP/druck-safari" --safari-bin "$RUNNER_TEMP/safari-print" || code=$?
+          node scripts/safari-print-check.mjs --out "$RUNNER_TEMP/druck-safari" --safari-bin "$RUNNER_TEMP/safari-print" --engines safari,chromium,electron || code=$?
           # Exit 1 gilt nur als Befund, wenn der Bericht da ist und mindestens einen nennt. Node endet auch bei einer
           # nicht abgefangenen Ausnahme mit 1; ohne diese Probe würde ein kaputter Lauf still grün.
           anzahl=0

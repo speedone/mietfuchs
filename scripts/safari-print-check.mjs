@@ -16,6 +16,7 @@
 //
 //   node scripts/safari-print-check.mjs --out <ordner>                 (macOS: Safari und Chromium)
 //   node scripts/safari-print-check.mjs --out <ordner> --engines chromium   (jedes System, nur der Vergleich)
+//   node scripts/safari-print-check.mjs --out <ordner> --engines chromium,electron   (dazu das Programmfenster, #517)
 //   node scripts/safari-print-check.mjs --out <ordner> --evaluate      (nur Auswertung vorhandener PDFs)
 //   --cases a,b   nur diese Fälle;   --safari-bin <datei>   fertig übersetztes Swift-Programm
 //   --safari-margins l,r,t,b   Ränder der Seiteneinstellung in Punkt (Vorgabe: die von NSPrintInfo, 72/72/90/90)
@@ -44,9 +45,15 @@ const option = (name) => {
   return i >= 0 ? argv[i + 1] : undefined
 }
 const out = path.resolve(option('--out') ?? path.join(root, 'safari-print-out'))
+// `electron`: das Programmfenster (#517) aus desktop/, über Playwright gestartet und auf den Server dieser Prüfung
+// gerichtet (MIETFUCHS_SERVER_URL), gedruckt mit printToPDF und Hintergründen wie sein Menüpunkt „Drucken“. Braucht
+// `npm --prefix desktop install` und die Electron-Datei (`npx --prefix desktop install-electron`), unter Linux einen
+// Bildschirm (xvfb-run).
+const ENGINES = ['safari', 'chromium', 'electron']
+const ENGINE_NAMES = /** @type {Record<string, string>} */ ({ safari: 'Safari', chromium: 'Chromium', electron: 'Programmfenster' })
 const engines = (option('--engines') ?? (process.platform === 'darwin' ? 'safari,chromium' : 'chromium')).split(',')
 function checkArguments() {
-  for (const e of engines) if (e !== 'safari' && e !== 'chromium') throw new Error(`Unbekannte Engine: ${e}`)
+  for (const e of engines) if (!ENGINES.includes(e)) throw new Error(`Unbekannte Engine: ${e}`)
   if (engines.includes('safari') && process.platform !== 'darwin') throw new Error('Safari gibt es nur unter macOS.')
   }
 
@@ -403,6 +410,49 @@ function runSafari(bin, { url, preludeFile, driverFile, args, file, log }) {
   })
 }
 
+// ---------- Programmfenster (#517) ----------
+/** @typedef {{ app: import('playwright').ElectronApplication }} Desktop */
+
+/** @param {string} base @returns {Promise<Desktop>} */
+async function startDesktop(base) {
+  const { _electron } = await stock.loadPlaywright()
+  const electronDir = path.join(root, 'desktop', 'node_modules', 'electron')
+  if (!fs.existsSync(electronDir)) throw new Error('Das Programmfenster fehlt: `npm --prefix desktop install` ausführen.')
+  const { default: executablePath } = await import(pathToFileURL(path.join(electronDir, 'index.js')).href)
+  const app = await _electron.launch({
+    executablePath,
+    args: [path.join(root, 'desktop'), '--lang=de-DE'],
+    env: { ...process.env, MIETFUCHS_SERVER_URL: base, CI: '1', LANG: 'de_DE.UTF-8' },
+  })
+  const win = await app.firstWindow()
+  await win.waitForURL(`${base}/**`)
+  return { app }
+}
+
+// Je Fall ein eigenes Fenster, wie ein Beleg es öffnet (window.open, also mit Preload und den Regeln des Fensters):
+// Ein Vorspiel lässt sich in Playwright nicht wieder entfernen, im selben Fenster liefen sonst die aller Fälle davor
+// mit. Darin wie im Browser bedienen, dann drucken wie der Menüpunkt, mit Hintergründen.
+/** @param {Desktop} desktop @param {{ base: string, preludeSource: string, args: any, file: string }} job */
+async function printInDesktop(desktop, { base, preludeSource, args, file }) {
+  const main = await desktop.app.firstWindow()
+  const opened = desktop.app.waitForEvent('window')
+  await main.evaluate("window.open('/', '_blank')")
+  const page = await opened
+  await page.addInitScript(preludeSource)
+  /** @type {string[]} */
+  const pageErrors = []
+  page.on('pageerror', (e) => pageErrors.push(`Fehler: ${e.message}`))
+  page.on('console', (m) => { if (m.type() === 'error') pageErrors.push(`console.error: ${m.text()}`) })
+  await page.goto(base)
+  await page.waitForLoadState('networkidle')
+  const result = JSON.parse(await page.evaluate(drivePage, args))
+  const win = await desktop.app.browserWindow(page)
+  const pdf = await win.evaluate(async (w) => (await w.webContents.printToPDF({ pageSize: 'A4', printBackground: true, preferCSSPageSize: true, margins: { top: 0, bottom: 0, left: 0, right: 0 } })).toString('base64'))
+  fs.writeFileSync(file, Buffer.from(pdf, 'base64'))
+  await page.close()
+  return { result, pageErrors }
+}
+
 // ---------- Ablauf ----------
 async function produce() {
   fs.mkdirSync(out, { recursive: true })
@@ -453,6 +503,7 @@ async function produce() {
     fs.mkdirSync(scratch, { recursive: true })
     const driverFile = path.join(scratch, 'driver.js')
     fs.writeFileSync(driverFile, String(drivePage))
+    const desktop = engines.includes('electron') ? await startDesktop(server.base) : null
 
     for (const c of cases) {
       // Zustand je Fall; die Fälle danach erwarten die Vorgabe zurück
@@ -477,6 +528,8 @@ async function produce() {
           await page.pdf({ path: file, preferCSSPageSize: true, printBackground: false })
           await page.close()
           meta.cases[c.name][engine] = { result, pageErrors, ms: Date.now() - t0 }
+        } else if (engine === 'electron') {
+          meta.cases[c.name][engine] = { ...(await printInDesktop(/** @type {Desktop} */ (desktop), { base: server.base, preludeSource, args, file })), ms: Date.now() - t0 }
         } else {
           const preludeFile = path.join(scratch, `${c.name}-prelude.js`)
           fs.writeFileSync(preludeFile, preludeSource)
@@ -490,6 +543,7 @@ async function produce() {
       if (c.setup === 'paper' || c.setup === 'logo') await design({ logo: 'remove', paper: 'remove', paperNextFile: 'keep', paperNext: 'none', margins })
     }
     await context.close()
+    await desktop?.app.close()
     await renderPngs(browser, fs.readdirSync(out).filter((f) => f.endsWith('.pdf')).sort())
   } finally {
     meta.finished = new Date().toISOString()
@@ -510,25 +564,27 @@ async function evaluate() {
   for (const c of cases) {
     const tenants = c.mode === 'drawer' ? tenantsAll.filter((t) => t.name === c.tenant) : tenantsAll
     const read = {}
-    for (const engine of ['chromium', 'safari']) {
+    for (const engine of ENGINES) {
       const file = path.join(out, `${c.name}-${engine}.pdf`)
       if (fs.existsSync(file)) read[engine] = await readPdf(file)
     }
     const cells = []
-    for (const engine of ['safari', 'chromium']) {
+    for (const engine of ENGINES) {
       const pages = read[engine]
       if (!pages) { cells.push('–'); continue }
       const result = meta.cases[c.name]?.[engine]?.result
-      const { findings, expected } = checkPdf(c, pages, { tenants, engine, result, referencePages: engine === 'safari' && read.chromium ? read.chromium.length : null, reference: engine === 'safari' ? read.chromium ?? null : null })
-      for (const e of expected) accepted.push(`- **${c.name}** (${engine === 'safari' ? 'Safari' : 'Chromium'}): ${e}`)
+      // Safari und das Programmfenster gegen Chromium: dieselbe Seitenzahl, beim Fenster sogar dieselbe Engine
+      const compared = engine !== 'chromium' && read.chromium
+      const { findings, expected } = checkPdf(c, pages, { tenants, engine, result, referencePages: compared ? read.chromium.length : null, reference: engine === 'safari' ? read.chromium ?? null : null })
+      for (const e of expected) accepted.push(`- **${c.name}** (${ENGINE_NAMES[engine]}): ${e}`)
       for (const e of meta.cases[c.name]?.[engine]?.pageErrors ?? []) findings.push(`Meldung der Seite: ${e.slice(0, 200)}`)
       if (c.banner && !meta.cases[c.name]?.[engine]?.result?.banner) findings.push('Hinweis „Sicherung vor dem Update angelegt“ stand nicht auf der Seite, der Fall prüft so nichts')
       cells.push(String(pages.length))
-      for (const f of findings) lines.push(`- **${c.name}** (${engine === 'safari' ? 'Safari' : 'Chromium'}): ${f}`)
+      for (const f of findings) lines.push(`- **${c.name}** (${ENGINE_NAMES[engine]}): ${f}`)
       count += findings.length
     }
     const shown = lines.filter((l) => l.startsWith(`- **${c.name}**`)).length
-    rows.push(`| ${c.name} | ${c.title} | ${cells[0]} | ${cells[1]} | ${shown} |`)
+    rows.push(`| ${c.name} | ${c.title} | ${cells.join(' | ')} | ${shown} |`)
   }
   const safariInfo = Object.values(meta.cases).map((v) => v.safari).find((v) => v)
   const report = [
@@ -536,8 +592,8 @@ async function evaluate() {
     '',
     `Engines: ${meta.engines.join(', ')}${safariInfo ? ` · ${safariInfo.os} · Ränder von NSPrintInfo (pt): links ${safariInfo.printInfo.leftMargin}, rechts ${safariInfo.printInfo.rightMargin}, oben ${safariInfo.printInfo.topMargin}, unten ${safariInfo.printInfo.bottomMargin}` : ''}`,
     '',
-    '| Fall | Was | Seiten Safari | Seiten Chromium | Befunde |',
-    '| --- | --- | ---: | ---: | ---: |',
+    '| Fall | Was | Seiten Safari | Seiten Chromium | Seiten Programmfenster | Befunde |',
+    '| --- | --- | ---: | ---: | ---: | ---: |',
     ...rows,
     '',
     count ? `## ${count} Befund(e)` : '## Keine Befunde',

@@ -49,6 +49,10 @@ jobs:
           cache-dependency-path: '**/package-lock.json'
       # npm install (nicht ci): postinstall installiert Server + Client mit.
       - run: npm install
+      # Das Programmfenster (#517) installiert npm install nicht mit; die Typprüfung verlangt es in der CI
+      - name: Programmfenster installieren
+        if: steps.scope.outputs.docs != 'true'
+        run: npm --prefix desktop ci
       - name: Typen prüfen
         if: steps.scope.outputs.docs != 'true'
         run: npm run typecheck

@@ -94,6 +94,9 @@ export function chooseDataDir({
   if (env.NKA_DATA_DIR) return path.resolve(env.NKA_DATA_DIR)
   if (!packaged) return path.join(moduleDir, '..', 'data')
   if (storeLocation(execPath, platform)) return storeDataHome(env, home)
+  // Im Programmfenster (#517) nie neben der Programmdatei: Die liegt im Installationsordner, den ein Update ersetzt
+  // und das Deinstallieren löscht. Unter Windows derselbe Ordner wie aus dem Store, sonst der übliche des Systems.
+  if (env.NKA_DESKTOP === '1') return platform === 'win32' ? storeDataHome(env, home) : userDataHome(env, platform, home)
   if (systemLocation(execPath, platform)) return userDataHome(env, platform, home)
   const beside = path.join(path.dirname(execPath), 'data')
   return canWrite(beside) ? beside : userDataHome(env, platform, home)

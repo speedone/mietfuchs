@@ -13,7 +13,7 @@ import { storeLocation, systemLocation } from './paths.ts'
 
 export const APP_VERSION: string = pkg.version
 
-export type Runtime = 'binary' | 'package' | 'store' | 'docker' | 'npm'
+export type Runtime = 'binary' | 'package' | 'store' | 'desktop' | 'docker' | 'npm'
 
 type RuntimeInput = {
   bun?: boolean
@@ -24,7 +24,8 @@ type RuntimeInput = {
 
 // 'binary' in der Programmdatei (Bun), 'package' bei derselben Datei aus einem
 // Installationspaket (#25: sie liegt dann an einem Ort, der dem System gehört), 'store' aus dem
-// Microsoft Store (#500), 'docker' im Container (das Dockerfile setzt NKA_RUNTIME), sonst 'npm'.
+// Microsoft Store (#500), 'desktop' im eigenen Programmfenster unter Windows und macOS (#517, das Fenster setzt
+// NKA_DESKTOP; aus dem Store bleibt es 'store'), 'docker' im Container (das Dockerfile setzt NKA_RUNTIME), sonst 'npm'.
 // Bestimmt, wie der Update-Hinweis das Aktualisieren erklärt: Datei austauschen, Paket neu
 // installieren, Container ziehen oder neu bauen. Aus dem Store fragt Mietfuchs gar nicht erst
 // nach, dort aktualisiert der Store.
@@ -39,9 +40,11 @@ export function detectRuntime({
 }: RuntimeInput = {}): Runtime {
   if (bun) {
     if (storeLocation(execPath, platform)) return 'store'
+    if (env.NKA_DESKTOP === '1') return 'desktop'
     return systemLocation(execPath, platform) ? 'package' : 'binary'
   }
   if (env.NKA_RUNTIME === 'docker') return 'docker'
+  if (env.NKA_RUNTIME === 'desktop') return 'desktop'
   return env.NKA_RUNTIME === 'binary' ? 'binary' : 'npm'
 }
 
@@ -50,4 +53,8 @@ export const RUNTIME: Runtime = detectRuntime()
 // Von einem Menschen gestartet und für sich selbst verantwortlich: Nur dann öffnet Mietfuchs
 // den Browser, bietet das Beenden aus der Oberfläche an und behandelt einen belegten Port als
 // „läuft schon“. Im Container und im npm-Betrieb übernimmt das die Umgebung.
-export const STANDALONE: boolean = RUNTIME === 'binary' || RUNTIME === 'package' || RUNTIME === 'store'
+export const STANDALONE: boolean = RUNTIME === 'binary' || RUNTIME === 'package' || RUNTIME === 'store' || RUNTIME === 'desktop'
+
+// Im eigenen Programmfenster (#517), auch aus dem Store: Das Fenster zeigt die Oberfläche, ein Browser öffnet sich
+// nicht, und das Fenster beendet den Server.
+export const IN_WINDOW: boolean = process.env.NKA_DESKTOP === '1' || RUNTIME === 'desktop'

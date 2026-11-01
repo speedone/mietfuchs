@@ -14,7 +14,7 @@ updates:
     commit-message:
       prefix: ci
 
-  # npm-Pakete in allen drei Ordnern (#23). Kleine Updates kommen gebündelt, Hauptversionen
+  # npm-Pakete in allen vier Ordnern (#23). Kleine Updates kommen gebündelt, Hauptversionen
   # einzeln, weil sie oft Anpassungen brauchen und sich so gezielt prüfen lassen.
   # Sicherheitsupdates kommen unabhängig davon sofort.
   - package-ecosystem: npm
@@ -22,6 +22,8 @@ updates:
       - /
       - /server
       - /client
+      # Programmfenster (#517): Electron bringt Chromium mit, dessen Sicherheitsupdates sollen schnell ankommen
+      - /desktop
     schedule:
       interval: monthly
     groups:

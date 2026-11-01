@@ -23,13 +23,14 @@ export const RELEASES_URL = 'https://github.com/speedone/mietfuchs/releases/late
 // Container und im npm-Betrieb beendet die Umgebung den Dienst, und ein Neustart käme dort von
 // selbst. Die Betriebsart meldet der Server mit dem Update-Stand.
 // Aus dem Microsoft Store (#500) läuft Mietfuchs ebenfalls ohne Konsolenfenster.
-export const canQuit = (st: UpdateStatus | null): boolean => st?.mode === 'binary' || st?.mode === 'package' || st?.mode === 'store'
+// Im Programmfenster (#517) schließt das Beenden auch das Fenster.
+export const canQuit = (st: UpdateStatus | null): boolean => st?.mode === 'binary' || st?.mode === 'package' || st?.mode === 'store' || st?.mode === 'desktop'
 
 // Das System ergibt sich aus der Datei, die der Server passend zum Rechner ausgesucht hat
 // (server/src/update.ts). Ohne passende Datei zeigt der Link auf die Release-Seite. `package`
 // steht für eine Installation aus einem Linux-Paket: Dort wird nicht die Datei getauscht,
 // sondern das Paket neu installiert.
-export type System = 'windows' | 'macos' | 'linux' | 'package' | null
+export type System = 'windows' | 'macos' | 'linux' | 'package' | 'desktop' | null
 
 export type UpdateGuide =
   | { kind: 'download'; href: string; system: System; newTab: boolean }
@@ -55,6 +56,8 @@ export function updateGuide(st: UpdateStatus): UpdateGuide {
   // des Nutzers. Deshalb führt der Weg über die Release-Seite, und installiert wird mit dem
   // Befehl, den er schon beim ersten Mal genommen hat.
   if (st.mode === 'package') return { kind: 'download', href: st.releaseUrl ?? RELEASES_URL, system: 'package', newTab: true }
+  // Das Programmfenster (#517) wird neu installiert, der Installer ersetzt die bisherige Fassung.
+  if (st.mode === 'desktop') return { kind: 'download', href: st.releaseUrl ?? RELEASES_URL, system: 'desktop', newTab: true }
   if (st.mode === 'docker') return { kind: 'command', lines: ['docker compose pull', 'docker compose up -d'] }
   return { kind: 'command', lines: ['git pull', 'npm install', 'npm run build'] }
 }
