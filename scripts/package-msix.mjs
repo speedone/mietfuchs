@@ -1,7 +1,7 @@
 // Baut aus dem Programmfenster (#517) das Paket für den Microsoft Store (#500): je Architektur ein .msix,
 // zusammen ein .msixbundle, das das Partner Center so annimmt. Hinein kommt der Ordner, den electron-builder beim
 // Bau des Installers je Architektur entpackt ablegt (dist-desktop/win-unpacked, win-arm64-unpacked; siehe
-// package-desktop.mjs): das Fenster Mietfuchs.exe und darin unter resources\mietfuchs der Server aus dem Quellcode,
+// package-desktop.mjs): das Fenster Mietfuchs.exe und darin unter resources\mietfuchs der Server als ein Bündel,
 // den das Fenster mit Electrons eigenem Node als utilityProcess startet. Den Store erkennt der Server an NKA_STORE vom
 // Fenster (`process.windowsStore`) oder am Paketordner (storeLocation in server/src/paths.ts).
 // Signiert wird nicht: Das übernimmt der Store bei der Zertifizierung. Läuft nur unter Windows, weil makeappx zum

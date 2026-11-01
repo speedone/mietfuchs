@@ -5,8 +5,8 @@ name: Release-Binaries
 # PRs, die Server, Oberfläche, Programmfenster oder Build ändern, und von Hand.
 #
 # Daneben entstehen das Programmfenster (#517: Installer für Windows, .dmg für macOS) und das
-# Store-Paket, das seit #517 das Fenster enthält. Im Fenster läuft der Server aus dem Quellcode mit
-# Electrons eigenem Node, ohne Programmdatei.
+# Store-Paket, das seit #517 das Fenster enthält. Im Fenster läuft der Server als eine gebündelte
+# Datei mit Electrons eigenem Node, ohne Programmdatei.
 #
 # Bun kompiliert alle Ziele von einem einzigen Linux-Runner aus. Ob eine Datei auf ihrem
 # System wirklich startet, zeigt aber erst ein Rechner mit diesem System: Genau so ein Fehler
@@ -542,9 +542,9 @@ jobs:
 
   # Das eigene Programmfenster (#517): unter Windows ein Installer für x64 und ARM64 zusammen
   # (NSIS, für den Benutzer, ohne Adminrechte), auf dem Mac je ein .dmg, ad hoc signiert
-  # (scripts/package-desktop.mjs). Eine Programmdatei des Servers ist nicht darin: Er läuft aus dem
-  # Quellcode mit Electrons eigenem Node als utilityProcess, unter resources/mietfuchs samt
-  # Produktionsabhängigkeiten und dem Frontend, das dieser Job selbst baut. Daneben die entpackten
+  # (scripts/package-desktop.mjs). Eine Programmdatei des Servers ist nicht darin: Er läuft als ein
+  # Bündel (server.mjs, mit rolldown aus Vite) mit Electrons eigenem Node als utilityProcess, unter
+  # resources/mietfuchs samt dem Frontend (eine Datei), das dieser Job selbst baut. Daneben die entpackten
   # Windows-Ordner, aus denen „Store-Paket bauen und prüfen“ das Store-Paket packt.
   #
   # Bis PR 2 von #517 stand das in einem eigenen Workflow (desktop.yml). Er ist hier aufgegangen:
@@ -557,8 +557,8 @@ jobs:
   # wie die Programmdateien im Job „Prüfen auf …“.
   fenster-bauen:
     name: Programmfenster bauen (${{ matrix.name }})
-    # Hängt an keiner Programmdatei: Der Server läuft im Fenster aus dem Quellcode mit Electrons eigenem Node
-    # (utilityProcess), package-desktop.mjs legt ihn samt Produktionsabhängigkeiten und Frontend daneben. So beginnt
+    # Hängt an keiner Programmdatei: Der Server läuft im Fenster als Bündel mit Electrons eigenem Node
+    # (utilityProcess), package-desktop.mjs bündelt ihn samt Migrationen und legt das Frontend als eine Datei daneben. So beginnt
     # der Bau sofort und wartet nicht auf Bun und das Signieren.
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -582,11 +582,14 @@ jobs:
       - name: Version aus dem Tag übernehmen
         if: github.ref_type == 'tag'
         run: node scripts/set-version.mjs
-      # Das Frontend, das der Server im Fenster aus client/dist ausliefert
+      # Das Frontend, das der Server im Fenster aus client/dist ausliefert; client/node_modules bringt
+      # mit Vite auch den Bündler (rolldown) für den Server mit
       - name: Frontend bauen
         run: |
           npm --prefix client ci
           npm --prefix client run build
+      # Was ins Bündel des Servers kommt; die Entwicklungswerkzeuge braucht es dafür nicht
+      - run: npm --prefix server ci --omit=dev --ignore-scripts
       - run: npm --prefix desktop ci
       # Die Tests des Fensters auch auf dem System, für das es gebaut wird (Pfade, Ports)
       - run: npm --prefix desktop test
@@ -656,6 +659,17 @@ jobs:
         run: |
           $setup = Get-ChildItem paket\Mietfuchs-Setup-*.exe | Select-Object -First 1
           "Installer: $($setup.Name), $([math]::Round($setup.Length / 1MB, 1)) MB" | Tee-Object -Append groessen.txt
+          # Der Echtzeitschutz von Windows Defender prüft beim Installieren jede neue Datei einzeln und ist auf
+          # echten Rechnern an. Auf dem Runner einschalten, wenn er aus ist, und den Stand belegen. Nur messen:
+          # Ausnahmen werden keine eingetragen.
+          try {
+            $vorher = (Get-MpComputerStatus -ErrorAction Stop).RealTimeProtectionEnabled
+            Set-MpPreference -DisableRealtimeMonitoring $false -ErrorAction Stop
+            $mp = Get-MpComputerStatus -ErrorAction Stop
+            "Echtzeitschutz: vorher $vorher, zur Installation $($mp.RealTimeProtectionEnabled) (Antivirus $($mp.AntivirusEnabled), Modus $($mp.AMRunningMode))" | Tee-Object -Append groessen.txt
+          } catch {
+            "Echtzeitschutz nicht einschaltbar: $($_.Exception.Message)" | Tee-Object -Append groessen.txt
+          }
           # Still installieren, für den Benutzer, ohne Adminrechte; die Dauer kommt in die Zusammenfassung
           $dauer = Measure-Command { Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait }
           "Installation: $([math]::Round($dauer.TotalSeconds, 1)) s" | Tee-Object -Append groessen.txt
@@ -664,6 +678,8 @@ jobs:
           $exe = Join-Path $dir 'Mietfuchs.exe'
           if (-not (Test-Path $exe)) { Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Depth 1 | Out-Host; throw "$exe nach der Installation nicht gefunden" }
           "Installiert: $dir, $([math]::Round((Get-ChildItem $dir -Recurse | Measure-Object Length -Sum).Sum / 1MB, 1)) MB" | Tee-Object -Append groessen.txt
+          # Die Zahl der Dateien bestimmt, wie lange der Echtzeitschutz beim Installieren prüft
+          "Dateien: $((Get-ChildItem $dir -Recurse -File).Count) installiert, davon $((Get-ChildItem (Join-Path $dir 'resources\mietfuchs') -Recurse -File).Count) unter resources\mietfuchs" | Tee-Object -Append groessen.txt
           # Startet der Installer das Programm danach, belegte es den Port der Prüfung: bis zu 20
           # Sekunden darauf warten und es dann beenden; der Server ist ein Prozess des Fensters (Mietfuchs.exe)
           for ($i = 0; $i -lt 20; $i++) {
@@ -685,12 +701,14 @@ jobs:
           hdiutil detach "$RUNNER_TEMP/abbild"
           app="$RUNNER_TEMP/Programme/Mietfuchs.app"
           echo "Installiert: $(du -sm "$app" | cut -f1) MB" | tee -a groessen.txt
+          echo "Dateien: $(find "$app" -type f | wc -l | tr -d ' ') installiert, davon $(find "$app/Contents/Resources/mietfuchs" -type f | wc -l | tr -d ' ') unter Contents/Resources/mietfuchs" | tee -a groessen.txt
           # Ad hoc signiert; ohne gültige Signatur startet auf Apple Silicon nichts. Der Server liegt als
-          # Quellcode unter Contents/Resources/mietfuchs und ist von der Signatur der App mit erfasst.
+          # Bündel unter Contents/Resources/mietfuchs und ist von der Signatur der App mit erfasst.
           codesign --verify --deep --strict --verbose=2 "$app"
           codesign -dv "$app" 2>&1 | grep -E 'Signature|Identifier'
-          test -f "$app/Contents/Resources/mietfuchs/server/src/index.ts"
-          test -f "$app/Contents/Resources/mietfuchs/server/node_modules/express/package.json"
+          test -f "$app/Contents/Resources/mietfuchs/server/server.mjs"
+          test -f "$app/Contents/Resources/mietfuchs/server/THIRD-PARTY-LICENSES.txt"
+          test -f "$app/Contents/Resources/mietfuchs/client/dist.pack"
           echo "APP=$app/Contents/MacOS/Mietfuchs" >> "$GITHUB_ENV"
       - name: Starten und prüfen
         run: node scripts/desktop-check.mjs --app "${{ env.APP }}" --out fenster-pruefung
@@ -863,7 +881,7 @@ jobs:
 
   # Das Paket für den Microsoft Store (#500): aus dem Programmfenster (#517) je Architektur ein
   # .msix, zusammen ein .msixbundle (scripts/package-msix.mjs). Hinein kommt der entpackte Ordner
-  # des Fensters aus „Programmfenster bauen (Windows)“, darin der Server aus dem Quellcode unter
+  # des Fensters aus „Programmfenster bauen (Windows)“, darin der Server als Bündel unter
   # resources\mietfuchs, den das Fenster als utilityProcess startet. Unsigniert, das übernimmt der Store. Geprüft wird eine
   # Kopie, die ein Wegwerf-Zertifikat mit demselben Herausgeber signiert: installieren, starten,
   # Prüfskript, Beenden über die Oberfläche, deinstallieren. Dabei zählt vor allem der Datenordner:
@@ -940,7 +958,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'Prüfung des Store-Pakets fehlgeschlagen' }
 
             # Fenster und Server laufen aus dem Paket: beide sind Mietfuchs.exe oben im Paket, der Server als
-            # utilityProcess mit dem Quellcode unter resources\mietfuchs
+            # utilityProcess mit dem Bündel unter resources\mietfuchs
             $fenster = Join-Path $app.InstallLocation 'Mietfuchs.exe'
             $laufend = Get-CimInstance Win32_Process -Filter "Name = 'Mietfuchs.exe'" | Select-Object ProcessId, ExecutablePath, CommandLine
             $laufend | Format-Table ProcessId, ExecutablePath -AutoSize | Out-Host

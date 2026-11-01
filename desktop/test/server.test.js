@@ -6,19 +6,19 @@ import fs from 'node:fs'
 import { DEFAULT_PORT, SERVER_FOLDER, canListen, dataDirIn, freePort, lanUrls, linkTarget, networkState, serverEnv, serverModule, startUrlIn, whoIsOn } from '../src/server.js'
 
 // Geänderte Erwartung: Bisher lief ausgeliefert die Programmdatei des Servers (Bun) unter resources\server bzw. in
-// Contents/MacOS. Heute läuft der Server aus dem Quellcode mit Electrons eigenem Node als utilityProcess; ausgeliefert
-// liegt er unter resources/mietfuchs in der Anordnung des Repos, beim Entwickeln im Repo selbst.
-test('Server: ausgeliefert unter resources/mietfuchs, beim Entwickeln aus dem Repo, nach der genannten Plattform', () => {
+// Contents/MacOS, danach der Quellcode unter resources/mietfuchs/server/src. Heute läuft ausgeliefert das Bündel
+// resources/mietfuchs/server/server.mjs (scripts/package-desktop.mjs), beim Entwickeln der Quellcode im Repo.
+test('Server: ausgeliefert das Bündel unter resources/mietfuchs, beim Entwickeln die Quellen im Repo, nach der genannten Plattform', () => {
   assert.deepEqual(
     serverModule({ packaged: true, platform: 'win32', resourcesPath: 'C:\\Users\\Anna\\AppData\\Local\\Programs\\mietfuchs\\resources', repoRoot: '' }),
     {
-      modulePath: 'C:\\Users\\Anna\\AppData\\Local\\Programs\\mietfuchs\\resources\\mietfuchs\\server\\src\\index.ts',
+      modulePath: 'C:\\Users\\Anna\\AppData\\Local\\Programs\\mietfuchs\\resources\\mietfuchs\\server\\server.mjs',
       cwd: 'C:\\Users\\Anna\\AppData\\Local\\Programs\\mietfuchs\\resources\\mietfuchs\\server',
     },
   )
   assert.deepEqual(
     serverModule({ packaged: true, platform: 'darwin', resourcesPath: '/Applications/Mietfuchs.app/Contents/Resources', repoRoot: '' }),
-    { modulePath: '/Applications/Mietfuchs.app/Contents/Resources/mietfuchs/server/src/index.ts', cwd: '/Applications/Mietfuchs.app/Contents/Resources/mietfuchs/server' },
+    { modulePath: '/Applications/Mietfuchs.app/Contents/Resources/mietfuchs/server/server.mjs', cwd: '/Applications/Mietfuchs.app/Contents/Resources/mietfuchs/server' },
   )
   assert.deepEqual(
     serverModule({ packaged: false, platform: 'linux', resourcesPath: '/irgendwo/electron/resources', repoRoot: '/repo' }),

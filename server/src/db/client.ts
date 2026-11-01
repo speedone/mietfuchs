@@ -55,6 +55,7 @@ import { drizzle } from 'drizzle-orm/sqlite-proxy'
 import type { SqliteRemoteDatabase } from 'drizzle-orm/sqlite-proxy'
 import * as schema from './schema.ts'
 import { DATA_STEPS, type DataStep } from './dataSteps/index.ts'
+import { IN_BUNDLE } from '../bundle.ts'
 
 export type Database = SqliteRemoteDatabase<typeof schema>
 
@@ -285,7 +286,7 @@ function readJournal(file: string): JournalEntry[] {
 
 // Die Migrationen von der Platte lesen, wie sie im npm-Betrieb und im Docker-Image vorliegen.
 // Maßgeblich für die Reihenfolge ist das Journal und nicht die Sortierung der Dateinamen.
-function migrationsFromDisk(): Migration[] {
+export function migrationsFromDisk(): Migration[] {
   const journalFile = path.join(migrationsDir, 'meta', '_journal.json')
   if (!fs.existsSync(journalFile)) {
     throw new Error(
@@ -310,9 +311,10 @@ function migrationsFromDisk(): Migration[] {
 // und sie steht deshalb ebenfalls hier. In der Programmdatei gibt es kein Dateisystem mit
 // Projektdateien, dort kommen sie aus dem eingebetteten Modul (siehe
 // scripts/embed-migrations.mjs). Dass beide Wege dasselbe ergeben, hält ein Test in
-// server/test/migrations.test.ts fest.
+// server/test/migrations.test.ts fest. Im Bündel des Programmfensters (IN_BUNDLE) steht dort, was
+// `migrationsFromDisk` beim Bündeln las (scripts/package-desktop.mjs).
 export async function loadMigrations(): Promise<Migration[]> {
-  if (globalThis.Bun) {
+  if (globalThis.Bun || IN_BUNDLE) {
     const { migrations } = await import('./embedded-migrations.js')
     return migrations
   }

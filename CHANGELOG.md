@@ -32,6 +32,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Der Server läuft im Fenster jetzt mit dem Node, das das Fenster ohnehin mitbringt, statt als eigene Programmdatei.
   Der Download ist für Windows 70 MB kleiner (237 statt 307 MB), für den Mac 30 bis 50 MB, installiert sind es 70 bis
   100 MB weniger. Neben dem Fenster gibt es keine zweite ausführbare Datei mehr, die der Virenscanner prüfen muss.
+- **Programmfenster: startet und installiert schneller** ([#517](https://github.com/speedone/mietfuchs/issues/517)):
+  Der Server liegt im Fenster als eine gebündelte Datei, daneben nur das Frontend als eine Datei und die Lizenzen,
+  statt über 2000 einzelner Dateien. Der Virenscanner prüft beim Installieren so viel weniger Dateien, und der Server
+  muss beim Start nicht mehr Hunderte Quelldateien einzeln laden.
 - **Programmfenster: Zugriff aus dem Heimnetz** ([#517](https://github.com/speedone/mietfuchs/issues/517)): In den
   Einstellungen lässt sich erlauben, Mietfuchs auch auf dem Handy oder einem anderen Rechner im selben WLAN zu öffnen;
   die Karte nennt dann die Adressen dafür. Ohne dieses Häkchen ist Mietfuchs im Fenster nur auf dem eigenen Rechner

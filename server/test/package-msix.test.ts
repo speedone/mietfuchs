@@ -84,8 +84,8 @@ test('peInfo: Architektur und Subsystem aus dem Kopf einer Programmdatei', () =>
 
 // Der Ordner, den electron-builder je Architektur entpackt neben den Installer legt. Geänderte Erwartung: Darin lag
 // bisher die Programmdatei des Servers (resources\\server\\mietfuchs.exe), geprüft auf Architektur und Konsolenfenster.
-// Heute läuft der Server aus dem Quellcode im Fenster selbst (utilityProcess); geprüft wird deshalb das Fenster am
-// PE-Kopf und der Server-Ordner auf Vollständigkeit. Ein Konsolenfenster kann der Server nicht mehr öffnen, er ist
+// Heute läuft der Server als Bündel im Fenster selbst (utilityProcess); geprüft wird deshalb das Fenster am PE-Kopf
+// und der Server-Ordner auf Vollständigkeit. Ein Konsolenfenster kann der Server nicht mehr öffnen, er ist
 // Mietfuchs.exe, und das ist eine GUI-Datei.
 function windowFolder(arch: number, subsystem: number, server: boolean) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-msix-'))
@@ -94,7 +94,7 @@ function windowFolder(arch: number, subsystem: number, server: boolean) {
     const serverDir = path.join(dir, ...SERVER_DIR.split('\\'))
     for (const file of REQUIRED_SERVER_FILES) {
       fs.mkdirSync(path.join(serverDir, path.dirname(file)), { recursive: true })
-      fs.writeFileSync(path.join(serverDir, file), file === 'package.json' ? '{"type":"module"}' : '')
+      fs.writeFileSync(path.join(serverDir, file), '')
     }
   }
   return dir
@@ -114,7 +114,7 @@ test('Store-Paket: ein vollständiger Ordner geht durch', (t) => {
 
 test('Store-Paket: fehlender Server, falsche Architektur oder Konsolenfenster brechen ab', (t) => {
   const cases: [string, ReturnType<typeof windowFolder>, RegExp][] = [
-    ['ohne Server', windowFolder(ARM64, GUI, false), /index\.ts fehlt/],
+    ['ohne Server', windowFolder(ARM64, GUI, false), /server\.mjs fehlt/],
     ['Fenster für die falsche Architektur', windowFolder(X64, GUI, true), /Mietfuchs\.exe ist für x64 gebaut, nicht für arm64/],
     ['Fenster mit Konsolenfenster', windowFolder(ARM64, CONSOLE, true), /Konsolenfenster/],
   ]
