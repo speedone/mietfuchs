@@ -908,9 +908,11 @@ export const paidOnTenDayHint = (form: Pick<ItemForm, 'paidOn' | 'category'>): b
 // Die Angaben der Kostenposition, die ein eigenes Feld haben, alle auf einmal (#346, Schritt 3, Durchsicht S1):
 // Beschreibung, Betrag (leer oder keine Zahl), Lohnanteil (dieselbe Regel wie in shared/costItem.ts) und Ziel.
 // `participants`: die Warum-Frage unter einer abgewählten Wohnung (#258).
-export type CostField = 'description' | 'amount' | 'labor35a' | 'target' | 'participants'
+export type CostField = 'category' | 'description' | 'amount' | 'labor35a' | 'target' | 'participants'
 export function costFieldProblems(form: { description: string; amount: string; labor35a: string; category: string }, target: { text: string; short: string } | null): Problem<CostField>[] {
   const problems: Problem<CostField>[] = []
+  // Leer nur, wenn ein Beleg keine Kostenart nannte (#490 PR 3): Die Auswahl zeigt dann die leere Wahl.
+  if (form.category === '') problems.push({ field: 'category', short: 'Kostenart fehlt', text: 'Kostenart: Wählen Sie, wofür die Rechnung ist, etwa „Müllabfuhr“.' })
   if (!form.description.trim()) problems.push({ field: 'description', short: 'Beschreibung fehlt', text: 'Beschreibung: Geben Sie an, wofür die Rechnung ist, etwa „Grundsteuer 2025“.' })
   const amount = form.amount.trim() ? parseEuro(form.amount) : null
   if (!form.amount.trim()) problems.push({ field: 'amount', short: 'Betrag fehlt', text: 'Betrag: Geben Sie den Rechnungsbetrag ein, etwa 480,00 (eine Gutschrift mit Minus).' })

@@ -256,6 +256,9 @@ export function carryOverForm(row: CarryRow): ItemForm {
     operatingPowerBasis: '',
     operatingPowerGeneralId: '',
     operatingPowerReported: null,
+    // Die Verteilung nach § 82b EStDV gilt je Aufwand (#262, E-9); eine Übernahme ist ein neuer, sonst würde sie still
+    // mitverteilt (Integrationsdurchsicht von #490 PR 3, M2). Das Ende der Verteilungen steht am Objekt, nicht hier.
+    spreadYears: '',
   }
 }
 

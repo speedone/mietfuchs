@@ -134,6 +134,13 @@ export async function placeAssessment(db: Database, id: string, change: { year?:
   return 'ok'
 }
 
+// Das Rechnungsdatum des Belegs, am Beleg korrigiert (Kostenformular, #490 PR 3, Durchsicht K3): Die Auswertung desselben
+// Belegs übernimmt es, auch wenn schon Zeilen gebucht sind. Gebuchte Positionen tragen ihr Jahr der Zahlung selbst; das
+// Datum gilt für die Zeilen, die noch offen sind, und es gibt nur eine Wahrheit über das Datum des Belegs.
+export async function followInvoiceDate(db: Database, id: string, invoiceDate: string | null): Promise<void> {
+  await db.update(assessments).set({ invoiceDate }).where(eq(assessments.id, id))
+}
+
 // Je Beleg mit Auswertung: die Positionen, an denen gebuchte Zeilen hängen, und ob noch eine Zeile
 // offen ist. Belege ohne Auswertung fehlen in der Liste; für sie gilt weiter `invoice_file`.
 export async function uploadLinks(db: Executor): Promise<Map<string, UploadLinks>> {

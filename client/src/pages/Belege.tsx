@@ -18,6 +18,7 @@ import type { TenantFolderPlan } from '../tenantFolder'
 import PageHeader from '../components/PageHeader'
 import { EvaluationQueueProvider, useEvaluationQueueStore } from '../evaluationQueue'
 import BelegeEingang from './BelegeEingang'
+import type { ReceiptStart } from '../receiptForm'
 import BelegeOrdner, { type FolderMeta } from './BelegeOrdner'
 
 type Props = {
@@ -29,6 +30,8 @@ type Props = {
   onOpenItem?: (item: CostItem) => void
   onOpenAiSettings?: () => void
   onOpenMeters?: () => void
+  // Von Hand erfassen (#490 PR 3): ein Beleg ohne Position ins Kostenformular (App.tsx `openNewCostItem`)
+  onNewCostItem?: (upload: ReceiptStart) => void
   // Die offene Ansicht; ohne Angabe (Tests) hält die Seite sie selbst und beginnt mit dem Eingang
   view?: BelegeView
   onViewChange?: (view: BelegeView) => void
@@ -52,7 +55,7 @@ export default function Belege(props: Props) {
   return shared ? <BelegePage {...props} /> : <EvaluationQueueProvider><BelegePage {...props} /></EvaluationQueueProvider>
 }
 
-function BelegePage({ units, settings, onNavigate, onOpenItem, onOpenAiSettings, onOpenMeters, view, onViewChange, focusFile, onOpenReceipt, onFocusDone, renderThumb, makeTenantFolder }: Props) {
+function BelegePage({ units, settings, onNavigate, onOpenItem, onOpenAiSettings, onOpenMeters, onNewCostItem, view, onViewChange, focusFile, onOpenReceipt, onFocusDone, renderThumb, makeTenantFolder }: Props) {
   const stock = useReceiptStock()
   const [own, setOwn] = useState<BelegeView>(view ?? 'eingang')
   useEffect(() => { if (view) setOwn(view) }, [view])
@@ -156,7 +159,7 @@ function BelegePage({ units, settings, onNavigate, onOpenItem, onOpenAiSettings,
       </div>
       <div role="tabpanel" id="belege-eingang" aria-labelledby="belege-tab-eingang" data-view="eingang" hidden={shown !== 'eingang'} tabIndex={0}>
         <BelegeEingang stock={stock} units={units} settings={settings} onNavigate={onNavigate} onOpenItem={onOpenItem}
-          onOpenAiSettings={onOpenAiSettings} onOpenMeters={onOpenMeters} onCount={setCount} renderThumb={renderThumb}
+          onOpenAiSettings={onOpenAiSettings} onOpenMeters={onOpenMeters} onNewCostItem={onNewCostItem} onCount={setCount} renderThumb={renderThumb}
           focusFile={focus?.view === 'eingang' ? focus.file : null} onFocusDone={focusDone} />
       </div>
       <div role="tabpanel" id="belege-ordner" aria-labelledby="belege-tab-ordner" data-view="ordner" hidden={shown !== 'ordner'} tabIndex={0}>

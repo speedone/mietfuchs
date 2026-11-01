@@ -100,6 +100,13 @@ import { KeptReceipt } from '../components/KeptReceipt'
 import { TakenOff } from '../components/TakenOff'
 import { useRetryFocus } from '../retryFocus'
 import Card from '../components/Card'
+import { ReceiptPreview } from '../components/ReceiptParts'
+import { renderThumbnail } from '../pdfPreview'
+import { receiptText } from '../pdfIntake'
+import { invoiceDateFromText } from '../invoiceDateText'
+import { adoptPrevious, receiptItemForm, vendorPrevious, type ReceiptStart } from '../receiptForm'
+import { receiptName } from '../receipts'
+import { compareName } from '../../../shared/compareName.ts'
 
 // `tenancies` für die Einzelbeträge je Mietverhältnis (#94); ohne sie gibt es dort nur keine Felder.
 // `onOpenReceipt`, `onOpenAiSettings`: Auswege eines gespeicherten, nicht ausgewerteten Belegs (#487)
@@ -107,6 +114,17 @@ type Props = {
   units: Unit[]; settings: Settings | null; tenancies?: Tenancy[]; onOpenReceipt?: (file: string) => void; onOpenAiSettings?: () => void
   // Bei einem Zählerfoto, dessen Ablesen gescheitert ist: die Seite Zähler (Ablesung von Hand)
   onOpenMeters?: () => void
+  // Von Hand erfassen aus dem Beleg (#490 PR 3): `receiptStart` öffnet das Formular „Neue Kostenposition“ mit dem Beleg,
+  // sobald Positionen und Zähler da sind, und meldet es mit `onReceiptStartDone`. `onNewCostItem` führt einen Beleg der
+  // eigenen Ablage dorthin (App.tsx wechselt bei Bedarf Objekt und Zeitraum); ohne (Tests) öffnet die Seite selbst.
+  receiptStart?: ReceiptStart | null
+  onReceiptStartDone?: () => void
+  onNewCostItem?: (upload: ReceiptStart) => void
+  // Nach dem Anlegen aus dem Beleg: zurück in den Eingang der Seite Belege
+  onOpenInbox?: () => void
+  // Für Tests: Vorschaubild und Textschicht ohne pdf.js
+  renderThumb?: typeof renderThumbnail
+  readReceiptText?: (file: string, mimeType: string) => Promise<string>
 } & FocusProps
 
 // Maßeinheit der Summe der Anteile, für die Vorlagenliste (#141)
@@ -118,7 +136,7 @@ const TARGET_INVALID = 'Ziel: Das gespeicherte Ziel passt nicht dazu, wie die An
 const TARGET_SHORT = 'Ziel neu wählen'
 
 
-export default function Kosten({ units, settings, tenancies = [], focus, onFocusDone, onOpenReceipt, onOpenAiSettings, onOpenMeters }: Props) {
+export default function Kosten({ units, settings, tenancies = [], focus, onFocusDone, onOpenReceipt, onOpenAiSettings, onOpenMeters, receiptStart, onReceiptStartDone, onNewCostItem, onOpenInbox, renderThumb = renderThumbnail, readReceiptText = receiptText }: Props) {
   // Wohin die Belege zur Auswertung gehen (siehe aiForm.ts)
   const ai = aiSummary(settings)
   // Der gewählte Abrechnungszeitraum (#208). `year` ist das Kalenderjahr, in dem er beginnt: Belege
@@ -199,21 +217,58 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   // Pflicht und vorbelegt, wenn sie über zwei Jahre reicht, sonst kein Feld. Vorbelegt mit dem Jahr
   // des Rechnungsdatums des angehängten Belegs, wenn die Ablage der Belege eines kennt, sonst mit dem Jahr
   // des Endes der Heizperiode; dieselbe Regel wie Belegbuchung und Server (`paymentYear`).
-  const [invoiceDates, setInvoiceDates] = useState<Map<string, string>>(new Map())
+  // Die Ablage der Belege: Rechnungsdatum, Name und Art je Beleg, auch für Vorschau und Datumsvorschlag (#490 PR 3).
+  const [uploads, setUploads] = useState<UploadEntry[] | null>(null)
+  const loadUploads = () => api<UploadEntry[]>('/api/uploads').then((list) => {
+    const next = Array.isArray(list) ? list : []
+    setUploads(next)
+    return next
+  }, () => { setUploads((u) => u ?? []); return [] as UploadEntry[] })
+  useEffect(() => { void loadUploads() }, [propertyId])
+  const uploadOf = (file: string | undefined): UploadEntry | undefined => (file ? uploads?.find((u) => u.file === file) : undefined)
+  const invoiceDates = useMemo(() => new Map((uploads ?? []).flatMap((u) => (u.invoiceDate ? [[u.file, u.invoiceDate] as const] : []))), [uploads])
+  // Das Rechnungsdatum des angehängten Belegs im Formular (#490 PR 3). Es gehört zum Beleg, nicht zur Position, und
+  // wird mit „Anlegen“/„Speichern“ am Beleg gespeichert. `suggested`: gelesen aus der Textschicht der PDF, ohne KI
+  // (#487, 3B), gelb markiert, bis jemand es ändert oder bestätigt; nur ein Datum, nie ein Betrag, und nur beim Anlegen
+  // (Durchsicht S3). `touched`: von Hand gesetzt, auch geleert; ein später ankommender Vorschlag überschreibt es nicht.
+  const [dateDraft, setDateDraft] = useState<{ file: string; value: string; stored: string; suggested: boolean; touched: boolean } | null>(null)
+  const formKey = form ? form.id ?? 'neu' : null
+  const formFile = form?.invoiceFile
+  const uploadsReady = uploads !== null
   useEffect(() => {
-    api<UploadEntry[]>('/api/uploads')
-      .then((list) => setInvoiceDates(new Map((Array.isArray(list) ? list : []).flatMap((u) => (u.invoiceDate ? [[u.file, u.invoiceDate] as const] : [])))))
-      .catch(() => setInvoiceDates(new Map()))
-  }, [propertyId])
+    if (!formKey || !formFile || !uploadsReady) { setDateDraft(null); return }
+    const u = uploads?.find((x) => x.file === formFile)
+    const stored = u?.invoiceDate ?? ''
+    setDateDraft({ file: formFile, value: stored, stored, suggested: false, touched: false })
+    if (stored || formKey !== 'neu') return
+    let alive = true
+    readReceiptText(formFile, u?.mimeType ?? '').then((text) => {
+      const date = alive ? invoiceDateFromText(text) : null
+      if (date) setDateDraft((d) => (d && d.file === formFile && d.value === '' && !d.touched ? { ...d, value: date, suggested: true } : d))
+    }, () => { /* ohne lesbaren Text kein Vorschlag */ })
+    return () => { alive = false }
+  // Nur beim Öffnen und bei einem anderen Beleg, nicht bei jeder neu geladenen Ablage
+  }, [formKey, formFile, uploadsReady])
+  // Das Datum, nach dem sich das Jahr der Zahlung richtet (Durchsicht M1): ein bestätigtes oder gespeichertes, nie ein
+  // ungeprüfter Vorschlag aus dem Text; absichtlich geleert gilt keins (K4).
+  const draftOfForm = form?.invoiceFile && dateDraft?.file === form.invoiceFile ? dateDraft : null
+  const formInvoiceDate = draftOfForm
+    ? (draftOfForm.suggested ? draftOfForm.stored : draftOfForm.value) || undefined
+    : form?.invoiceFile ? invoiceDates.get(form.invoiceFile) : undefined
   // #478 (Durchsicht, Befund 5): mit dem gespeicherten Jahr, damit es sichtbar bleibt und in der Auswahl steht.
   const heatTax = heatingOption && form
-    ? heatingTaxYear(heatingOption, form.taxYear, form.invoiceFile ? invoiceDates.get(form.invoiceFile) : undefined, form.id ? items.find((i) => i.id === form.id)?.taxYear ?? null : null)
+    ? heatingTaxYear(heatingOption, form.taxYear, formInvoiceDate, form.id ? items.find((i) => i.id === form.id)?.taxYear ?? null : null)
     : null
-  // Vorbelegt wird nur, solange kein gültiges Jahr dasteht: Ein vom Vermieter gewähltes Jahr bleibt,
-  // auch wenn das Rechnungsdatum später ein anderes nahelegt.
+  // Vorbelegt wird, solange kein gültiges Jahr dasteht. Ein vom Vermieter gewähltes Jahr bleibt, auch wenn das
+  // Rechnungsdatum später ein anderes nahelegt; ein nur vorbelegtes (`autoTaxYear`, Durchsicht M1) folgt dem Datum.
+  const [autoTaxYear, setAutoTaxYear] = useState<string | null>(null)
+  useEffect(() => { setAutoTaxYear(null) }, [formKey])
   useEffect(() => {
-    if (form && heatTax?.show && !heatTax.valid && form.taxYear !== heatTax.fallback) setForm({ ...form, taxYear: heatTax.fallback })
-  }, [form, heatTax?.show, heatTax?.valid, heatTax?.fallback])
+    if (!form || !heatTax?.show || form.taxYear === heatTax.fallback) return
+    if (heatTax.valid && form.taxYear !== autoTaxYear) return
+    setForm({ ...form, taxYear: heatTax.fallback })
+    setAutoTaxYear(heatTax.fallback)
+  }, [form, heatTax?.show, heatTax?.valid, heatTax?.fallback, autoTaxYear])
 
   // Ein gespeicherter Teil einer aufgeteilten Rechnung (#454): Sein Betrag gilt nur für die Tage seines Zeitraums. Gefragt
   // wird am gespeicherten Stand, denn eine neue Rechnung über zwei Zeiträume trägt im Formular noch den ganzen Betrag.
@@ -245,8 +300,10 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const load = () => api<CostItem[]>(withProperty('/api/costItems', propertyId)).then(setItems)
+  // Ob die Positionen dieses Objekts da sind: Erst dann schlägt das Formular aus dem Beleg den gemerkten Schlüssel vor.
+  const [itemsLoaded, setItemsLoaded] = useState(false)
   useEffect(() => {
-    load().catch(() => setError('Server nicht erreichbar — läuft `npm run dev`?'))
+    load().then(() => { if (propertyId) setItemsLoaded(true) }).catch(() => { setItemsFailed(true); setError('Server nicht erreichbar — läuft `npm run dev`?') })
     api<Meter[]>(withProperty('/api/meters', propertyId)).then((m) => { setMeters(m); setMeterData('ok') }, () => setMeterData('failed'))
     // Neu laden, wenn das Objekt wechselt (#92).
   }, [propertyId])
@@ -263,6 +320,60 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   }, [param, propertyId])
   // „Hier beheben →“ aus der Abrechnung (#142): die betroffene Position zum Bearbeiten öffnen.
   useFocusTarget(focus, 'costItem', items, (i) => i.id, (i) => { setError(''); setForm(itemToForm(i)) }, onFocusDone)
+
+  // Von Hand erfassen aus dem Beleg (#490 PR 3, #487 Teil 2): das Formular „Neue Kostenposition“ mit dem Beleg und der
+  // Kostenart aus seinem Namen. Gewartet wird auf Positionen, Zähler und Ablage, sonst fehlte der gemerkte Schlüssel.
+  // `fromReceipt`: der Beleg, aus dem das offene Formular stammt; nach dem Anlegen sagt die Seite, dass er gebucht ist.
+  const [fromReceipt, setFromReceipt] = useState<string | null>(null)
+  const [bookedNote, setBookedNote] = useState<{ text: string; itemId: string | null } | null>(null)
+  // Die Kostenart aus dem Dateinamen ist ein Vorschlag (Durchsicht S2): gelb, solange sie dasteht
+  const [categoryHint, setCategoryHint] = useState<string | null>(null)
+  const openFromReceipt = (u: ReceiptStart) => {
+    setError('')
+    setBookedNote(null)
+    const next = receiptItemForm(u, units, meters, keyCtx)
+    setForm(next)
+    setFromReceipt(u.file)
+    setCategoryHint(next.category || null)
+  }
+  const [itemsFailed, setItemsFailed] = useState(false)
+  const startDone = useRef<ReceiptStart | null>(null)
+  useEffect(() => {
+    if (!receiptStart || startDone.current === receiptStart) return
+    // Ohne Objekt oder ohne Positionen kein Formular, aber ein Satz (Durchsicht K2), statt still nichts zu öffnen
+    if (!propertyId || itemsFailed) {
+      startDone.current = receiptStart
+      setError(`Das Formular zum Beleg „${receiptName(receiptStart)}“ ließ sich nicht öffnen: ${propertyId ? 'Die Kosten dieses Objekts sind nicht geladen. Laden Sie die Seite neu.' : 'Legen Sie zuerst ein Objekt an.'}`)
+      onReceiptStartDone?.()
+      return
+    }
+    if (!itemsLoaded || meterData === 'loading' || uploads === null) return
+    startDone.current = receiptStart
+    // Die Ablage kennt den Beleg vielleicht noch nicht (eben hochgeladen); dann zählt, was der Sprung mitbringt.
+    if (!uploads.some((u) => u.file === receiptStart.file)) setUploads((list) => [...(list ?? []), { ...receiptStart, size: 0, mtime: '', uploadedAt: '', sha256: '', kind: 'receipt', bookedItemIds: [], bookedCents: {}, assessment: null }])
+    openFromReceipt(receiptStart)
+    onReceiptStartDone?.()
+  })
+  // „Von Hand erfassen“ an einem gespeicherten, nicht ausgewerteten Beleg der eigenen Ablage: Objekt und Jahr fragt die
+  // Ablage, denn der Beleg kann einem anderen Objekt gehören (derselbe Beleg schon einmal hochgeladen). App.tsx führt ihn
+  // dorthin; ohne (Tests) öffnet die Seite das Formular selbst.
+  async function manualFromReceipt(file: string, fileName: string) {
+    const list = await loadUploads()
+    const u: ReceiptStart = list.find((x) => x.file === file) ?? { file, originalName: fileName, mimeType: '', propertyId: propertyId ?? null, year, invoiceDate: null }
+    if (onNewCostItem) onNewCostItem(u)
+    else openFromReceipt(u)
+  }
+  // Ein anderes Formular nimmt die Bestätigung weg; geschlossen, stammt kein Formular mehr aus dem Beleg
+  useEffect(() => { if (form) setBookedNote(null); else { setFromReceipt(null); setCategoryHint(null) } }, [form])
+  // Nach dem Anlegen aus dem Beleg: der Fokus auf „Zum Eingang“, sonst auf die neue Position
+  const bookedRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!bookedNote) return
+    const box = bookedRef.current
+    const target = box?.querySelector<HTMLElement>('button')
+      ?? [...document.querySelectorAll<HTMLElement>('tr[data-item]')].find((el) => el.dataset.item === bookedNote.itemId) ?? box
+    target?.focus()
+  }, [bookedNote])
 
   // Verbrauchsschlüssel ist nur sinnvoll, wenn Wohnungszähler existieren
   const unitMeterTypes = useMemo(() => costMeterTypes(meters), [meters])
@@ -418,6 +529,20 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   const formOpen = form !== null
   useEffect(() => setWhyChosen([]), [formOpen, form?.id, form?.key, form?.category])
 
+  // Rechnungssteller des Vorjahres (#487, 2A): Vorschläge zum Tippen und, bei einem Treffer, die Vorlage zum Übernehmen.
+  // Nur beim Anlegen; wer eine Position bearbeitet, meint ihre Angaben.
+  const newForm = !!form && !form.id
+  const previousRows = useMemo(() => (newForm ? carryOverRows(items, at, period, { rules: view.rules, plants }, { units, tenancies }) : []),
+    [newForm, items, at, period, view.rules, plants, units, tenancies])
+  const previousVendors = useMemo(() => [...new Set(previousRows.map((r) => r.source.vendor?.trim() ?? '').filter(Boolean))].sort(compareName), [previousRows])
+  const vendorRows = form && newForm ? vendorPrevious(previousRows, form.vendor, form) : []
+  const categorySuggested = !!form && !!fromReceipt && categoryHint !== null && form.category === categoryHint
+  function adoptRow(r: CarryRow) {
+    if (!form) return
+    setForm(adoptPrevious(form, r))
+    if (r.heating) { setHeatingPlantId(r.heating.plantId); setHeatingPeriod(r.heating.period) }
+  }
+
   async function saveItem() {
     if (!form) return
     // Alles, was hier schiefgeht, gehört zum offenen Fenster und steht in seiner Sammelmeldung.
@@ -542,6 +667,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
           return
         }
         const desc = form.description.trim()
+        await afterSaved(form, editing, null)
         setForm(null)
         await load()
         toast(`„${desc}“ auf ${parts.length} Abrechnungszeiträume aufgeteilt.`)
@@ -568,10 +694,13 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
       }
     }
     // Lehnt der Server ab (#146), bleibt der Dialog offen und zeigt seinen Satz.
+    const created: { item: unknown } = { item: null }
     try {
-      const done = await sendConfirmed((b) => editing
-        ? api(`/api/costItems/${form.id}`, { method: 'PUT', body: b })
-        : api(withProperty('/api/costItems', propertyId), { method: 'POST', body: b }), body)
+      const done = await sendConfirmed(async (b) => {
+        created.item = await (editing
+          ? api(`/api/costItems/${form.id}`, { method: 'PUT', body: b })
+          : api(withProperty('/api/costItems', propertyId), { method: 'POST', body: b }))
+      }, body)
       if (!done) return
     } catch (e) {
       setError(errorText(e))
@@ -579,9 +708,33 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     }
     const desc = form.description.trim()
     if (!editing && formCarryId) removeCarried(new Set([formCarryId]))
+    const createdId = typeof created.item === 'object' && created.item !== null && 'id' in created.item && typeof created.item.id === 'string' ? created.item.id : null
+    const noted = await afterSaved(form, editing, createdId)
     setForm(null)
     await load()
-    toast(editing ? `„${desc}“ gespeichert.` : `„${desc}“ angelegt.`)
+    // Aus dem Beleg angelegt, sagt es die Bestätigung oben (Durchsicht K6)
+    if (!noted) toast(editing ? `„${desc}“ gespeichert.` : `„${desc}“ angelegt.`)
+  }
+
+  // Nach dem Speichern einer Position mit Beleg (#490 PR 3): das Rechnungsdatum am Beleg, wenn es sich geändert hat (ein
+  // Vorschlag aus dem Beleg, der stehen blieb, ebenso). Eine neue Position nimmt den Beleg aus der Warteschlange
+  // („Gespeichert, nicht ausgewertet“ ist erledigt); aus dem Beleg geöffnet, sagt die Seite danach, dass er gebucht ist.
+  async function afterSaved(saved: ItemForm, editing: boolean, createdId: string | null): Promise<boolean> {
+    const file = saved.invoiceFile
+    if (file && dateDraft?.file === file && dateDraft.value !== dateDraft.stored && !(editing && dateDraft.suggested)) {
+      try {
+        await api(`/api/uploads/${encodeURIComponent(file)}`, { method: 'PUT', body: JSON.stringify({ invoiceDate: dateDraft.value || null }) })
+        void loadUploads()
+      } catch (e) {
+        toast(`Das Rechnungsdatum wurde nicht am Beleg gespeichert: ${errorText(e)}`, 'error')
+      }
+    }
+    if (!editing && file) forgetFile(file)
+    if (!editing && file && fromReceipt === file) {
+      setBookedNote({ text: `„${saved.description.trim()}“ ist angelegt, der Beleg „${receiptName(uploadOf(file) ?? { file, originalName: '' })}“ hängt daran.`, itemId: createdId })
+      return true
+    }
+    return false
   }
 
   async function deleteItem(i: CostItem) {
@@ -609,7 +762,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   // als Auswertung gespeichert und wird mit „Auswertung prüfen“ gebucht; eine Auswertung läuft weiter, wenn man die
   // Seite verlässt. Was hier hochgeladen wird, gilt als Rechnung (`docType`): Der Server fragt das Modell nicht nach
   // der Belegart, wie vorher mit /api/extract; Zählerfotos erkennt der Eingang (Entscheidung zu Regel 4).
-  const { queue: all, patchEntry, addFiles, remove, cancel, retry, takeOff, sweep } = useEvaluationQueue()
+  const { queue: all, patchEntry, addFiles, remove, cancel, retry, takeOff, sweep, forgetFile } = useEvaluationQueue()
   const [skipped, setSkipped] = useState(false)
   // Wer die Seite verlässt, sieht Erledigtes beim nächsten Mal nicht wieder (übernommen, abgebrochen, abgelegt).
   useEffect(() => () => sweep(), [sweep])
@@ -675,6 +828,13 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
         actions={<button className="btn" onClick={() => { setError(''); setForm(newItemForm(units, meters, keyCtx)) }}>+ Kostenposition anlegen</button>}
       />
       {error && <NoticeBox level="error" action={error} />}
+      {/* Nach dem Anlegen aus dem Beleg (#490 PR 3): Erfolg, kein Hinweis; weiter im Eingang, wenn man von dort kam */}
+      {bookedNote && (
+        <div ref={bookedRef} className="ok no-print flex flex-wrap items-center gap-2" role="status" tabIndex={-1}>
+          <span>✓ {bookedNote.text}</span>
+          {onOpenInbox && <button type="button" className="btn small secondary" onClick={onOpenInbox}>Zum Eingang</button>}
+        </div>
+      )}
       {closedAt && (
         <NoticeBox level="warning" action={<>
           Die Abrechnung {label} ist abgeschlossen (am {fmtDate(closedAt.slice(0, 10))}). Änderungen an den Kosten
@@ -879,7 +1039,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
               </div>
               {entry.status === 'fehler' && <NoticeBox level="error" action={entry.error} />}
               {entry.status === 'gespeichert' && entry.failure && (
-                <KeptReceipt failure={entry.failure} onManual={entry.failure.meterPhoto ? (onOpenMeters && (() => onOpenMeters())) : onOpenReceipt}
+                <KeptReceipt failure={entry.failure} onManual={entry.failure.meterPhoto ? (onOpenMeters && (() => onOpenMeters())) : (file) => void manualFromReceipt(file, entry.fileName)}
                   onRetry={() => { focusAfterRetry(entry.id); retry(entry.id) }} onOpenSettings={onOpenAiSettings} />
               )}
               {reading && (
@@ -922,7 +1082,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                 </tr>
               )}
               {g.items.map((i) => (
-                <tr key={i.id}>
+                <tr key={i.id} data-item={i.id} tabIndex={-1}>
                   <td data-label="Kostenart">
                     {i.category}
                     {isNotAllocable(i.category) && <span className="badge gray badge-next">Vermieter</span>}
@@ -1009,23 +1169,31 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
           key={form.id ?? 'neu'}
           open
           title={form.id ? 'Kostenposition bearbeiten' : 'Neue Kostenposition'}
-          subtitle={form.id ? form.description : undefined}
+          subtitle={form.id ? form.description : fromReceipt ? `aus dem Beleg ${receiptName(uploadOf(fromReceipt) ?? { file: fromReceipt, originalName: '' })}` : undefined}
           onClose={() => { formErrors.clear(); setForm(null) }}
           onSubmit={() => void saving.run(saveItem)}
           busy={saving.busy}
-          // Heizanlage und Heizperiode bearbeitet das Fenster neben dem Formular (Durchsicht M3)
-          value={{ form, heatingPlantId, heatingPeriod }}
+          // Heizanlage und Heizperiode bearbeitet das Fenster neben dem Formular (Durchsicht M3), das Rechnungsdatum des
+          // Belegs ebenso (#490 PR 3)
+          value={{ form, heatingPlantId, heatingPeriod, invoiceDate: dateDraft?.value ?? '' }}
           errors={formErrors}
           actions={<button className="btn" disabled={saving.busy} onClick={() => void saving.run(saveItem)}>{form.id ? 'Speichern' : 'Anlegen'}</button>}
         >
+          {/* Der Beleg oben (#490 PR 3): Wer von Hand erfasst, liest ab, was er einträgt */}
+          {form.invoiceFile && (
+            <ReceiptPreview upload={uploadOf(form.invoiceFile) ?? { file: form.invoiceFile, mimeType: /\.pdf$/i.test(form.invoiceFile) ? 'application/pdf' : 'image/*', originalName: '' }} render={renderThumb} />
+          )}
           {categoryNotice(form.category, year, property?.cableBuiltBeforeDec2021 ?? null) && <NoticeBox level="warning" action={categoryNotice(form.category, year, property?.cableBuiltBeforeDec2021 ?? null)} />}
           <div className="row">
-            <label className="field">
-              Kostenart
-              <select value={form.category} onChange={(e) => setForm(keepSpread(keepPaidOnYear(form, withCategory(form, e.target.value, units, meters, keyCtx), period)))}>
+            {/* Leer nur aus einem Beleg, dessen Name keine Kostenart nennt: Die Auswahl zeigt das ehrlich, statt still die
+                erste Kostenart (angezeigt = gespeichert) */}
+            <Field label={<>Kostenart{categorySuggested && <> <span className="badge amber">Vorschlag aus dem Dateinamen</span></>}</>}
+              required={form.category === ''} {...formErrors.field('category')}>
+              <select value={form.category} className={categorySuggested ? 'bg-amber-soft border-signal-amber' : undefined} onChange={(e) => setForm(keepSpread(keepPaidOnYear(form, withCategory(form, e.target.value, units, meters, keyCtx), period)))}>
+                {form.category === '' && <option value="">— bitte wählen —</option>}
                 {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
               </select>
-            </label>
+            </Field>
             {form.category === HEATING_CATEGORY && plantChoices.length > 0 && (
               <label className="field">
                 Heizanlage
@@ -1052,8 +1220,28 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
               <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="z. B. Grundsteuer 2025" />
             </Field>
             <Field label="Rechnungssteller">
-              <input value={form.vendor} onChange={(e) => setForm({ ...form, vendor: e.target.value })} />
+              <input value={form.vendor} list={previousVendors.length > 0 ? 'kosten-vorjahr-lieferanten' : undefined} onChange={(e) => setForm({ ...form, vendor: e.target.value })} />
             </Field>
+            {previousVendors.length > 0 && (
+              <datalist id="kosten-vorjahr-lieferanten">{previousVendors.map((v) => <option key={v} value={v} />)}</datalist>
+            )}
+            {/* Derselbe Rechnungssteller im Vorjahr (#487, 2A): Kostenart, Beschreibung und Schlüssel übernehmbar, nie der Betrag */}
+            {/* Der Live-Bereich steht immer da (Durchsicht K5), leer unsichtbar ohne Lücke; nur sein Inhalt kommt und geht */}
+            <div className={vendorRows.length > 0 ? 'basis-full stack tight' : 'sr-only'} aria-live="polite" data-vendor-hint>
+            {vendorRows.length > 0 && (
+              <>
+                {vendorRows.map((r) => (
+                  <div key={r.source.id} className="flex flex-wrap items-center gap-2">
+                    <span>Im Vorjahr: „{r.source.description}“, {r.source.category}, {fmtEuro(r.source.amountCents)}.</span>
+                    <button type="button" className="btn small secondary" onClick={() => adoptRow(r)}>
+                      Übernehmen<span className="sr-only"> („{r.source.description}“ aus dem Vorjahr)</span>
+                    </button>
+                  </div>
+                ))}
+                <small className="muted">Übernimmt Kostenart, Beschreibung und Umlageschlüssel, nicht den Betrag.</small>
+              </>
+            )}
+            </div>
             {/* #139: Eine Gutschrift senkt die Kosten des Jahres und wird verteilt wie eine Rechnung. */}
             <Field label="Betrag €" required hint="Eine Gutschrift mit Minus eintragen, z. B. -54,00." {...formErrors.field('amount')}>
               <input value={form.amount} inputMode="decimal" onChange={(e) => setForm({ ...form, amount: e.target.value })} placeholder="z. B. 480,00" />
@@ -1317,6 +1505,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             <div className="field-group">
               <div className="field-group-label">Beleg (Rechnungskopie)</div>
               {form.invoiceFile ? (
+                <>
                 <div className="row center">
                   <a href={`/uploads/${form.invoiceFile}`} target="_blank" rel="noreferrer">
                     📎 {form.invoiceFile.replace(/^\d+_/, '')}
@@ -1325,6 +1514,28 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                     Zuordnung entfernen
                   </button>
                 </div>
+                {/* Das Rechnungsdatum gehört zum Beleg (#490 PR 3); ohne KI ein Vorschlag aus dem Text der PDF (#487, 3B) */}
+                {dateDraft?.file === form.invoiceFile && (
+                  <>
+                  <Field label={<>Rechnungsdatum{dateDraft.suggested && <> <span className="badge amber">Vorschlag aus dem Beleg</span></>}</>}
+                    hint={[
+                      dateDraft.suggested ? 'Aus dem Text des Belegs gelesen. Stimmt es, lassen Sie es stehen oder bestätigen Sie es.' : '',
+                      // Durchsicht K7: Wer das Datum korrigiert, soll wissen, dass es das Jahr der Zahlung mitnimmt
+                      heatTax?.show ? 'Bestimmt das Jahr der Zahlung unter „Weitere Angaben“, solange Sie dort keines wählen.' : '',
+                    ].filter(Boolean).join(' ') || undefined}>
+                    <input type="date" value={dateDraft.value} className={dateDraft.suggested ? 'bg-amber-soft border-signal-amber' : undefined}
+                      onChange={(e) => setDateDraft({ ...dateDraft, value: e.target.value, suggested: false, touched: true })} />
+                  </Field>
+                  {dateDraft.suggested && (
+                    <div>
+                      <button type="button" className="btn small secondary" onClick={() => setDateDraft({ ...dateDraft, suggested: false, touched: true })}>
+                        Bestätigen<span className="sr-only"> (Rechnungsdatum)</span>
+                      </button>
+                    </div>
+                  )}
+                  </>
+                )}
+                </>
               ) : (
                 <>
                   {/* Sichtprüfung E26: ein eigener Knopf statt des Dateifelds des Browsers („Choose File“) */}

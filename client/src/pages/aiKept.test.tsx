@@ -4,7 +4,7 @@
 // versuchen“ (ohne neue Kopie) und, wo die Einstellungen helfen, „KI-Einstellungen öffnen“. Der Satz des Servers
 // steht unter „Mehr dazu“. Ein Fehler ohne gespeicherten Beleg bleibt rot.
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { Unit } from '../types'
 import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
@@ -76,9 +76,16 @@ async function expectKept(onOpenReceipt: ReturnType<typeof vi.fn>, inbox = false
 
   fireEvent.click(screen.getByRole('button', { name: 'Von Hand erfassen' }))
   if (inbox) {
-    // Im Eingang führt es zu Objekt, Jahr und Zuordnen an derselben Karte (ins Kostenformular erst mit #490 PR 3)
+    // Im Eingang ohne den Weg der App (Seite allein) zu Objekt, Jahr und Zuordnen an derselben Karte
     expect(document.activeElement?.closest('.receipt-inbox-controls')).not.toBeNull()
-  } else expect(onOpenReceipt).toHaveBeenCalledWith('srv-foto.jpg')
+  } else {
+    // Auf der Seite Kosten öffnet es das Kostenformular mit dem Beleg, ohne Seitenwechsel (#490 PR 3)
+    const drawer = await screen.findByRole('dialog', { name: 'Neue Kostenposition' })
+    expect(drawer.querySelector('[data-receipt-preview]')?.getAttribute('href')).toBe('/uploads/srv-foto.jpg')
+    expect(onOpenReceipt).not.toHaveBeenCalled()
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Abbrechen' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Neue Kostenposition' })).toBeNull())
+  }
 
   // Erneut versuchen: nur der Name des Belegs geht hin, keine neue Datei
   answer = () => ({ error: 'Der Dienst lehnt den Schlüssel ab.', file: 'srv-foto.jpg', reason: 'key', kept: true })

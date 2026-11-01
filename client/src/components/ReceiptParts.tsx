@@ -1,7 +1,7 @@
 // Bausteine der Seite „Belege“ (#490), die Eingang und Ordner teilen: das Vorschaubild, die Karte eines Belegs, die
 // Auswahl „Zuordnen“ mit Entwurf, Objekt und Jahr eines Belegs ohne Position, „Betrag prüfen“ nach dem Zuordnen und
 // das Hervorheben nach einem Sprung. Die Entscheidungslogik steht in receipts.ts und belegeView.ts.
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { flushSync } from 'react-dom'
 import type { CostItem, Property, Settlement, UploadInfo } from '../types'
 import { api, errorText, fmtDate, fmtEuro } from '../api'
@@ -34,8 +34,9 @@ export const THUMB_LOOKAHEAD = '400px 0px'
 // Warteschlange (höchstens zwei zugleich, previewQueue.ts); wer vorbeiscrollt, bevor es dran ist, zieht
 // die Anfrage zurück. Ohne IntersectionObserver (alter Browser) wird gleich angefragt, ebenfalls über die
 // Warteschlange.
-export function Thumb({ upload, render }: { upload: UploadInfo; render: typeof renderThumbnail }) {
-  const ref = useRef<HTMLAnchorElement>(null)
+// Das Bild zu einem Beleg, sobald es in die Nähe des sichtbaren Bereichs kommt (siehe oben); `failed`, wenn es sich
+// nicht rendern ließ.
+function useThumbSrc(upload: Pick<UploadInfo, 'file' | 'mimeType'>, render: typeof renderThumbnail, ref: RefObject<HTMLElement | null>) {
   const [src, setSrc] = useState<string | null>(null)
   const [failed, setFailed] = useState(false)
   useEffect(() => {
@@ -53,10 +54,32 @@ export function Thumb({ upload, render }: { upload: UploadInfo; render: typeof r
     }, { rootMargin: THUMB_LOOKAHEAD })
     observer.observe(el)
     return () => { observer.disconnect(); preview.dispose() }
-  }, [upload.file, upload.mimeType, render])
+  }, [upload.file, upload.mimeType, render, ref])
+  return { src, failed }
+}
+
+export function Thumb({ upload, render }: { upload: UploadInfo; render: typeof renderThumbnail }) {
+  const ref = useRef<HTMLAnchorElement>(null)
+  const { src, failed } = useThumbSrc(upload, render, ref)
   return (
     <a ref={ref} className="receipt-thumb" href={`/uploads/${encodeURIComponent(upload.file)}`} target="_blank" rel="noreferrer" aria-label={`${receiptName(upload)} öffnen`}>
       {src ? <img src={src} alt="" loading="lazy" /> : <span aria-hidden="true">{failed ? '📄' : '…'}</span>}
+    </a>
+  )
+}
+
+// Der Beleg oben im Kostenformular (#490 PR 3): Vorschaubild und Name, ein Link „Beleg in neuem Tab öffnen“. Bild und
+// Text sind ein Link, damit es keinen zweiten mit demselben Ziel gibt.
+export function ReceiptPreview({ upload, render }: { upload: Pick<UploadInfo, 'file' | 'mimeType' | 'originalName'>; render: typeof renderThumbnail }) {
+  const ref = useRef<HTMLAnchorElement>(null)
+  const { src, failed } = useThumbSrc(upload, render, ref)
+  return (
+    <a ref={ref} className="flex items-center gap-3 min-w-0" href={`/uploads/${encodeURIComponent(upload.file)}`} target="_blank" rel="noreferrer" data-receipt-preview>
+      <span className="receipt-thumb">{src ? <img src={src} alt="" /> : <span aria-hidden="true">{failed ? '📄' : '…'}</span>}</span>
+      <span className="min-w-0 break-words">
+        <span className="block font-strong">{receiptName(upload)}</span>
+        <span className="block">Beleg in neuem Tab öffnen</span>
+      </span>
     </a>
   )
 }
