@@ -1,9 +1,10 @@
 # Store-Eintrag im Partner Center
 
 Texte für den Store-Eintrag (#500). Die erste Einreichung ging von Hand; seitdem schreibt
-[scripts/store-submit.mjs](../../scripts/store-submit.mjs) bei jedem Release Beschreibung, Funktionen und
-Suchbegriffe aus dieser Datei in den Store, dazu die Bildschirmfotos aus `docs/screenshots`. **Geändert
-wird hier, nicht im Partner Center**, sonst überschreibt das nächste Release die Änderung. Dort auch keine
+[scripts/store-submit.mjs](../../scripts/store-submit.mjs) bei jedem Release Beschreibung, Funktionen,
+Suchbegriffe sowie Website, Datenschutzrichtlinie und Supportkontakt aus dieser Datei in den Store, dazu
+die Bildschirmfotos aus `docs/screenshots`. **Geändert wird hier, nicht im Partner Center**, sonst
+überschreibt das nächste Release die Änderung. Dort auch keine
 Einreichung beginnen: Einen von Hand begonnenen Entwurf darf die API nicht löschen, er blockiert das nächste
 Release. Das Format der drei Abschnitte liest das Skript: fette Überschrift, in der Beschreibung
 Aufzählungen mit „• “ (so zeigt sie der Store), unter „Funktionen“ je Zeile ein Punkt mit „- “. Die Texte
@@ -65,6 +66,7 @@ Was Mietfuchs abdeckt:
 
 Mietfuchs ist freie Software (AGPL-3.0) und kostenlos. Es unterstützt Sie bei der Abrechnung, ersetzt aber
 keine Rechts- oder Steuerberatung; prüfen Sie die Ergebnisse, bevor Sie eine Abrechnung versenden.
+Mietfuchs wird ohne Gewähr bereitgestellt, soweit das Gesetz es zulässt. Mehr unter mietfuchs-app.de.
 
 Sie nutzen bisher die heruntergeladene Programmdatei? Laden Sie dort unter Einstellungen ein Backup
 herunter und spielen Sie es in der App aus dem Store unter Einstellungen wieder ein.
