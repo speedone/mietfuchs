@@ -690,6 +690,7 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "$app"
           codesign -dv "$app" 2>&1 | grep -E 'Signature|Identifier'
           test -f "$app/Contents/Resources/mietfuchs/server/src/index.ts"
+          test -f "$app/Contents/Resources/mietfuchs/server/node_modules/express/package.json"
           echo "APP=$app/Contents/MacOS/Mietfuchs" >> "$GITHUB_ENV"
       - name: Starten und prüfen
         run: node scripts/desktop-check.mjs --app "${{ env.APP }}" --out fenster-pruefung

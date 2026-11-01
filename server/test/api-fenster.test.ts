@@ -9,6 +9,7 @@ import fs from 'node:fs'
 import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { UpdateStatus } from '../../shared/types.ts'
 import { startServerIn, startServerRaw, waitForExit } from '../testing/api.ts'
 
@@ -123,6 +124,33 @@ test('Fenster: Ende der Standardeingabe beendet den Server nicht', async () => {
       start.child.kill()
       await waitForExit(start.child)
     }
+    fs.rmSync(dataDir, { recursive: true, force: true })
+  }
+})
+
+// Das echte Fenster unter Node nachgestellt (server/testing/fakeUtilityProcess.ts): utilityProcess mit NKA_DESKTOP.
+const fakeUtility = `--import=${pathToFileURL(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'testing', 'fakeUtilityProcess.ts')).href}`
+
+test('Fenster im utilityProcess: Betriebsart desktop aus NKA_DESKTOP, ohne Testgriff', async () => {
+  const s = await startServerIn(freshDir(), { NODE_OPTIONS: fakeUtility, NKA_DESKTOP: '1', NKA_HOST: '127.0.0.1' })
+  try {
+    assert.equal((await s.api<UpdateStatus>('/api/update')).mode, 'desktop')
+  } finally {
+    s.stop()
+  }
+})
+
+// Durchsicht M2, mit der Nachricht statt der Standardeingabe: Schließt jemand das Fenster mitten im Start, schickt es
+// „quit“; der Server startet zu Ende (Migration, Sicherung, Umstieg) und beendet sich erst dann, mit 0.
+test('Fenster im utilityProcess: „quit“ mitten im Start beendet erst nach dem Start', async () => {
+  const dataDir = freshDir()
+  const start = startServerRaw(dataDir, { NODE_OPTIONS: fakeUtility, NKA_PORT: '0', NKA_DESKTOP: '1', NKA_HOST: '127.0.0.1', NKA_TEST_START_DELAY_MS: '1500' }, { stdin: 'pipe' })
+  try {
+    start.child.stdin?.write('quit\n')
+    assert.equal(await waitForExit(start.child), 0)
+    assert.match(start.out(), /läuft auf/, 'der Start lief zu Ende')
+  } finally {
+    if (start.child.exitCode === null) start.child.kill()
     fs.rmSync(dataDir, { recursive: true, force: true })
   }
 })

@@ -376,16 +376,17 @@ export const waitForExit = (child: ChildProcess, timeoutMs = 15000): Promise<num
 
 // Startet den Server, ohne auf die Startmeldung zu warten, und sammelt seine Ausgabe. Für die
 // Fälle, in denen der Start gerade nicht gelingen soll.
-export function startServerRaw(dataDir: string, env: NodeJS.ProcessEnv = {}) {
+// `stdin: 'pipe'` für Tests, die dem Server etwas zuschicken (fakeUtilityProcess.ts: „quit“ des Fensters).
+export function startServerRaw(dataDir: string, env: NodeJS.ProcessEnv = {}, { stdin = 'ignore' }: { stdin?: 'ignore' | 'pipe' } = {}) {
   const child = spawn(process.execPath, ['src/index.ts'], {
     cwd: serverRoot,
     // CI hinter `...env`, wie in startServerIn: Kein Aufrufer kann es versehentlich abschalten.
     env: { ...process.env, NKA_UPDATE_URL: 'http://127.0.0.1:9/kein-internet-im-test', NKA_DATA_DIR: dataDir, ...env, CI: 'true' },
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: [stdin, 'pipe', 'pipe'],
   })
   let output = ''
-  child.stdout.on('data', (c: Buffer) => { output += c })
-  child.stderr.on('data', (c: Buffer) => { output += c })
+  child.stdout?.on('data', (c: Buffer) => { output += c })
+  child.stderr?.on('data', (c: Buffer) => { output += c })
   return { child, out: () => output }
 }
 

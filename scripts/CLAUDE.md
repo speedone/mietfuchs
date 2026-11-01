@@ -170,7 +170,8 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   Waise, die Port und Datenbank hält, geprüft unter Windows und macOS (desktop-check.mjs, Schritt 5, auch über die PID).
   Die Standardeingabe eines utilityProcess ist immer leer und endet sofort; an ihr hängt nichts mehr. Beenden aus dem
   Fenster erst über `/api/quit` (die Schreibschlange läuft leer), ohne Adresse die Nachricht `quit` über `parentPort`,
-  nach acht Sekunden hart. Electrons eigener Ordner heißt `mietfuchs-fenster`, damit er sich auf dem Mac nie mit dem Datenordner
+  nach acht Sekunden hart, während des Starts erst nach zehn Minuten (eine Migration soll zu Ende laufen). Servertests
+  stellen den utilityProcess mit [fakeUtilityProcess.ts](../server/testing/fakeUtilityProcess.ts) nach (`--import`). Electrons eigener Ordner heißt `mietfuchs-fenster`, damit er sich auf dem Mac nie mit dem Datenordner
   mischt; dort liegen `fenster.json` (gemerkter Port, Zugriff aus dem Heimnetz) und das Protokoll des Servers.
 - **Port 17517** fest, damit Adresse und damit Entwürfe im Browser-Speicher gleich bleiben; antwortet dort ein
   anderes Programm, nimmt das Fenster einen freien und merkt ihn sich. Die Programmdatei ohne Fenster bleibt bei 3001.

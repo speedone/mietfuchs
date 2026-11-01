@@ -33,6 +33,10 @@ const OUTPUT_LIMIT = 64 * 1024
 // Wie lange das Beenden auf den Server wartet, bevor es ihn hart beendet. Der Server selbst wartet höchstens fünf
 // Sekunden auf einen laufenden Schreibvorgang (QUIT_DRAIN_MS in server/src/index.ts).
 const QUIT_TIMEOUT_MS = 8000
+// Ohne Adresse läuft der Start noch, vielleicht eine Migration über einen großen Bestand; der Server beendet sich erst
+// danach (Durchsicht M2). Hart beendet wird er dann erst nach zehn Minuten, sonst bräche gerade das ab, was die Regel
+// schützt. Das Fenster ist dann schon zu, nur der Prozess wartet.
+const START_QUIT_TIMEOUT_MS = 10 * 60_000
 
 /** @typedef {{ port?: number, network?: boolean }} WindowSettings */
 
@@ -183,9 +187,10 @@ async function stopServer() {
   if (!child || exited.has(child)) return
   retired.add(child)
   const gone = new Promise((resolve) => child.once('exit', resolve))
+  const started = origin !== null
   if (origin) await fetch(`${origin}/api/quit`, { method: 'POST', signal: AbortSignal.timeout(3000) }).catch(() => {})
   else child.postMessage('quit')
-  const timeout = new Promise((resolve) => setTimeout(() => resolve('timeout'), QUIT_TIMEOUT_MS))
+  const timeout = new Promise((resolve) => setTimeout(() => resolve('timeout'), started ? QUIT_TIMEOUT_MS : START_QUIT_TIMEOUT_MS))
   if ((await Promise.race([gone, timeout])) !== 'timeout') return
   child.kill()
   // Beim Neustart muss der Port frei sein, bevor der nächste Server ihn bindet
