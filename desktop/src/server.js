@@ -18,9 +18,11 @@ export const DEFAULT_PORT = 17517
  * @returns {{ command: string, args: string[] }}
  */
 export function serverCommand({ packaged, platform, resourcesPath, execPath, repoRoot }) {
-  if (!packaged) return { command: process.env.MIETFUCHS_NODE || 'node', args: [path.join(repoRoot, 'server', 'src', 'index.ts')] }
-  if (platform === 'win32') return { command: path.win32.join(resourcesPath, 'server', 'mietfuchs.exe'), args: [] }
-  return { command: path.posix.join(path.posix.dirname(execPath), 'mietfuchs-server'), args: [] }
+  // Nach der genannten Plattform rechnen, nicht nach der des laufenden Rechners (CLAUDE.md, Konventionen)
+  const p = platform === 'win32' ? path.win32 : path.posix
+  if (!packaged) return { command: process.env.MIETFUCHS_NODE || 'node', args: [p.join(repoRoot, 'server', 'src', 'index.ts')] }
+  if (platform === 'win32') return { command: p.join(resourcesPath, 'server', 'mietfuchs.exe'), args: [] }
+  return { command: p.join(p.dirname(execPath), 'mietfuchs-server'), args: [] }
 }
 
 /**
