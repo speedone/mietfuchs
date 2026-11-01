@@ -6,6 +6,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Behoben
+
+- **Programmfenster unter Windows:** Beim ersten Start fragte die Windows-Firewall, ob Mietfuchs ins Netz darf, obwohl
+  es nur auf diesem Rechner lauscht. Ins Netz geht Mietfuchs nur mit dem Schalter „Zugriff aus dem Heimnetz“.
+
 ### Hinzugefügt
 
 - **Website:** Mietfuchs hat eine eigene Website, [mietfuchs-app.de](https://mietfuchs-app.de), mit Download für jedes
