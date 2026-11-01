@@ -45,17 +45,26 @@ test('Startzeile und Datenordner aus der Ausgabe des Servers', () => {
 test('Port: frei, Mietfuchs oder ein anderes Programm', async () => {
   const port = await freePort()
   assert.equal(await whoIsOn(port), 'free')
+  // Ein anderes Programm auf allen Adressen: Windows und macOS ließen 127.0.0.1 daneben noch binden, die Probe allein
+  // hielte den Port also für frei. Entscheidend ist die Anfrage über 127.0.0.1, die es vorher erreicht.
   const other = http.createServer((req, res) => res.end('nicht Mietfuchs'))
   await new Promise((resolve) => other.listen(0, () => resolve(undefined)))
   const address = other.address()
   const busy = typeof address === 'object' && address ? address.port : 0
+  // Und eins nur auf 127.0.0.1, dort sagt auch die Probe „belegt“
+  const local = http.createServer((req, res) => res.end('nicht Mietfuchs'))
+  await new Promise((resolve) => local.listen(0, '127.0.0.1', () => resolve(undefined)))
+  const localAddress = local.address()
+  const localBusy = typeof localAddress === 'object' && localAddress ? localAddress.port : 0
   try {
-    assert.equal(await canListen(busy), false)
     assert.equal(await whoIsOn(busy), 'other')
+    assert.equal(await canListen(localBusy), false)
+    assert.equal(await whoIsOn(localBusy), 'other')
     const mietfuchs = async () => new Response(JSON.stringify({ app: 'mietfuchs', status: 'ok' }))
     assert.equal(await whoIsOn(busy, mietfuchs), 'mietfuchs')
   } finally {
     other.close()
+    local.close()
   }
 })
 
