@@ -256,6 +256,24 @@ FunctionEnd
   ; Nach dem Entfernen der Dateien und Verknüpfungen, vor den Registry-Einträgen. electron-builder legt diesen Haken
   ; nur für Dateizuordnungen an (fileAssociations), die das Fenster nicht hat; käme eine dazu, bräche der Bau laut ab.
   !macro unregisterFileAssociations
+    ; RMDir /r der Vorlage übergeht eine Datei, die gerade jemand offen hält, still: Gleich nach einer Installation
+    ; liest oft noch ein Dienst die neue Mietfuchs.exe (in der CI blieb sie so liegen). Einige Male nachfassen.
+    !ifndef MF_CHECK_TEMPLATE
+      StrCpy $R1 0
+      ${DoWhile} ${FileExists} "$INSTDIR\*.*"
+        ${If} $R1 >= 10
+          !insertmacro mfLog "[entfernen] $INSTDIR ließ sich nicht vollständig entfernen"
+          ${Break}
+        ${EndIf}
+        IntOp $R1 $R1 + 1
+        Sleep 1000
+        RMDir /r $INSTDIR
+      ${Loop}
+      ${If} $R1 > 0
+      ${AndIfNot} ${FileExists} "$INSTDIR\*.*"
+        !insertmacro mfLog "[entfernen] $INSTDIR nach $R1 weiteren Versuchen entfernt"
+      ${EndIf}
+    !endif
     !insertmacro mfLog "[ende] Dateien und Verknüpfungen entfernt"
   !macroend
 !endif

@@ -60,8 +60,9 @@ $etl = Join-Path $Out 'defender.etl'
 $wprRunning = $false
 try {
   # Das Defender-Modul liegt bei Windows PowerShell; pwsh listet es nicht unbedingt
-  $roots = @("$env:SystemRoot\System32\WindowsPowerShell\v1.0\Modules\Defender", "$env:ProgramFiles\Windows Defender")
-  $roots += @(Get-Module -ListAvailable Defender | ForEach-Object { Split-Path $_.Path })
+  # New-MpPerformanceRecording steht im Modul ConfigDefenderPerformance, das Profil liegt daneben
+  $roots = @("$env:SystemRoot\System32\WindowsPowerShell\v1.0\Modules\ConfigDefenderPerformance", "$env:SystemRoot\System32\WindowsPowerShell\v1.0\Modules\Defender", "$env:ProgramFiles\Windows Defender")
+  $roots += @(Get-Module -ListAvailable ConfigDefenderPerformance, Defender -SkipEditionCheck -ErrorAction SilentlyContinue | ForEach-Object { Split-Path $_.Path })
   $roots = @($roots | Where-Object { $_ -and (Test-Path $_) })
   $wprp = $roots | ForEach-Object { Get-ChildItem $_ -Filter *.wprp -Recurse -ErrorAction SilentlyContinue } | Select-Object -First 1
   if (-not $wprp) { throw "kein .wprp in $($roots -join ', ')" }
@@ -155,11 +156,12 @@ function Invoke-Measured([string] $kind, [int] $run, [string] $file, [string[]] 
   $t0 = Get-Date
   $p = Start-Process -FilePath $file -ArgumentList $arguments -Wait -PassThru
   $t1 = Get-Date
-  # Das Deinstallationsprogramm kopiert sich nach %TEMP% und läuft von dort; auf sein Ende warten
+  # Das Deinstallationsprogramm kopiert sich nach %TEMP%\~nsu*.tmp\Un_A.exe, startet sich von dort und endet sofort;
+  # auf die Kopie warten
   if ($kind -eq 'Deinstallation') {
-    for ($i = 0; $i -lt 240 -and (Test-Path $exe); $i++) { Start-Sleep -Milliseconds 500 }
-    $last = (Read-InstallerLog | Where-Object { $_.Mark -eq 'ende' } | Select-Object -Last 1).Time
-    if ($last -and $last -gt $t1) { $t1 = $last }
+    Start-Sleep -Milliseconds 200
+    for ($i = 0; $i -lt 600 -and (Get-Process Un_A -ErrorAction SilentlyContinue); $i++) { Start-Sleep -Milliseconds 100 }
+    $t1 = Get-Date
   }
   Start-Sleep -Milliseconds 300
   $events = $watch.Drain() | ForEach-Object {
@@ -181,7 +183,7 @@ function Invoke-Measured([string] $kind, [int] $run, [string] $file, [string[]] 
     $end = MarkTime $entries 'Installation' 'ende'
     # NSIS übernimmt beim Schreiben die Zeitstempel aus dem Bau; echt sind die Anlage der Kopien und der Ordner 7z-out
     $unpack = FileTimes $entries 'Ausgepackt'
-    $copy = FileTimes $entries 'Kopie des Installers'
+    $copyEvents = @($events | Where-Object { $_.Path -match '\\mietfuchs-updater\\installer\.exe' -and $_.Kind -ne 'D' })
     $pkgEvents = @($events | Where-Object { $_.Path -match '\\ns[^\\]*\.tmp\\app-' })
     $unPruef = Seconds (MarkTime $entries 'Deinstallation' 'pruefung-beginn') (MarkTime $entries 'Deinstallation' 'pruefung-ende')
     $row['Bis Start'] = Seconds $t0 $start
@@ -191,7 +193,8 @@ function Invoke-Measured([string] $kind, [int] $run, [string] $file, [string[]] 
     if ($pkgEvents.Count) { $row['Paket nach $PLUGINSDIR'] = Seconds $old $unpack[0] }
     $row['Auspacken nach 7z-out'] = Seconds $unpack[0] $unpack[1]
     $row['Kopieren nach $INSTDIR'] = Seconds $unpack[1] $ext
-    $row['Kopie des Installers u. a.'] = Seconds $copy[0] $end
+    $row['Danach bis Ende'] = Seconds $ext $end
+    if ($copyEvents.Count) { $row['davon Kopie des Installers'] = Seconds $copyEvents[0].Time $copyEvents[-1].Time }
     $row['Ende bis Prozessende'] = Seconds $end $t1
   } else {
     $cb = MarkTime $entries 'Deinstallation' 'pruefung-beginn'
@@ -204,11 +207,20 @@ function Invoke-Measured([string] $kind, [int] $run, [string] $file, [string[]] 
     $row['Entfernen'] = Seconds $rm $end
   }
   if (@($events | Where-Object Kind -eq 'E').Count) { $row['Beobachter'] = 'Überlauf' }
+  $leftover = $kind -eq 'Deinstallation' -and (Test-Path $dir)
+  if ($leftover) {
+    Get-ChildItem $dir -Recurse | ForEach-Object { Write-Host "  übrig: $($_.FullName)" }
+    $row['Übrig'] = @(Get-ChildItem $dir -Recurse -File).Count
+  }
   $rows.Add([pscustomobject]$row)
   Write-Host ("{0}: {1} s (Code {2})" -f $name, $row.Gesamt, $p.ExitCode)
   if ($p.ExitCode -ne 0) { throw "${name} endete mit Code $($p.ExitCode)" }
   if ($kind -ne 'Deinstallation' -and -not (Test-Path $exe)) { throw "${name}: $exe fehlt" }
-  if ($kind -eq 'Deinstallation' -and (Test-Path $exe)) { throw "${name}: $exe noch da" }
+  if ($leftover) {
+    # Die Vorlage übergeht eine gerade geöffnete Datei still; dort ist das ein Befund, kein Abbruch der Messung
+    if ($Variante -ne 'vorlage') { throw "${name}: $dir noch da" }
+    Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
+  }
 }
 
 if (Test-Path $uninst) { Start-Process $uninst -ArgumentList '/S' -Wait }
