@@ -131,6 +131,9 @@ const ROUTES = [
   ['Verbrauch', `/api/consumption/${Y}?property=${P}`],
   ['Mietkonto', `/api/rentledger/${Y}?property=${P}`],
   ['Steuer', `/api/taxreport/${Y}?property=${P}`],
+  // Gesamtsicht über alle Objekte (#96): rechnet je Aufruf jedes Objekt durch
+  ['Steuer alle Objekte', `/api/tax/overview?year=${Y}`],
+  ['Heizkostenabrechnungen', `/api/heating-settlements?property=${P}`],
   ['Kostenliste', `/api/costItems?property=${P}`],
   ['Zähler', `/api/meters?property=${P}`],
   ['Ablesungen', `/api/readings?property=${P}`],
