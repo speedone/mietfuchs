@@ -863,7 +863,7 @@ export type UpdateStatus = {
   enabled: boolean // nur mit Zustimmung
   current: string
   // 'package': aus einem Linux-Paket installiert, 'store': aus dem Microsoft Store (#500)
-  mode: 'binary' | 'package' | 'store' | 'docker' | 'npm'
+  mode: 'binary' | 'package' | 'store' | 'desktop' | 'docker' | 'npm'
   latest: string | null
   available: boolean
   releaseUrl: string | null

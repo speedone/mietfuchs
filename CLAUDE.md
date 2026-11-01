@@ -38,6 +38,7 @@ npm run package    # baut eigenständige Binaries nach dist-bin/ (braucht Bun)
 npm run package:linux # baut daraus .deb/.rpm/Arch-Pakete (braucht nFPM oder Docker)
 npm run screenshots # Bildschirmfotos fürs README nach docs/screenshots (braucht Playwright-Chromium)
 npm run browser-check # Browserlauf: jede Seite in Chromium, Firefox, WebKit mit axe (braucht die drei Browser)
+npm run desktop    # Programmfenster (#517) mit dem Server aus dem Quellcode (vorher npm --prefix desktop install)
 
 npm --prefix server test -- --test-name-pattern "Flächenschlüssel"   # einzelner Servertest
 npm --prefix client test -- costForm                                  # einzelner Clienttest
@@ -168,7 +169,7 @@ Wurzel trägt `"type": "module"`, sonst gälte der Ordner als CommonJS.
 Claude Code lädt eine `CLAUDE.md` in einem Unterordner, sobald dort Dateien gelesen werden;
 `docs/heizung.md` muss man selbst öffnen.
 
-- [scripts/CLAUDE.md](scripts/CLAUDE.md): Bildschirmfotos, Browserlauf, Programmdateien,
+- [scripts/CLAUDE.md](scripts/CLAUDE.md): Bildschirmfotos, Browserlauf, Programmdateien, Programmfenster,
   Linux-Pakete, Startmenü, Docker-Image, Node-Versionen, Release-Automatik, Artefakt-Tests,
   Praxislauf des Umstiegs, Prüfumfang je Anlass.
 - [server/src/db/CLAUDE.md](server/src/db/CLAUDE.md): Datenbank (Treiber, Schlange, Migrationen,

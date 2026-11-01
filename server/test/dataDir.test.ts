@@ -175,3 +175,28 @@ test('Store-Paket wird am eigenen Paketordner erkannt, nicht am Ordnernamen alle
   // Andere Systeme kennen keine Store-Pakete
   assert.equal(storeLocation('/WindowsApps/speedone.Mietfuchs_0.14.0.0_x64__x/mietfuchs', 'linux'), false)
 })
+
+// Programmfenster (#517): Die Programmdatei liegt im Installationsordner des Fensters, unter Windows ohne Adminrechte
+// in AppData\Local\Programs, wo sie schreiben dürfte. Die Daten gehören trotzdem nicht dorthin, denn ein Update ersetzt
+// den Ordner und das Deinstallieren löscht ihn. Unter Windows derselbe Ordner wie aus dem Store, auf dem Mac der Ort
+// eines Programms im Benutzerordner.
+test('im Programmfenster liegen die Daten im Benutzerordner, nie im Installationsordner', () => {
+  const env = { USERPROFILE: 'C:\\Users\\Erika', LOCALAPPDATA: 'C:\\Users\\Erika\\AppData\\Local', NKA_DESKTOP: '1' }
+  const exe = 'C:\\Users\\Erika\\AppData\\Local\\Programs\\Mietfuchs\\resources\\server\\mietfuchs.exe'
+  assert.equal(chooseDataDir(args({ platform: 'win32', env, execPath: exe, canWrite: () => true })), 'C:\\Users\\Erika\\Mietfuchs')
+  assert.equal(
+    chooseDataDir(args({ platform: 'darwin', env: { NKA_DESKTOP: '1' }, execPath: '/Applications/Mietfuchs.app/Contents/MacOS/mietfuchs-server', home: () => '/Users/erika', canWrite: () => true })),
+    '/Users/erika/Library/Application Support/Mietfuchs',
+  )
+  // NKA_DATA_DIR geht weiter vor (Tests, Proben)
+  assert.equal(chooseDataDir(args({ platform: 'win32', env: { ...env, NKA_DATA_DIR: 'C:\\Probe' }, execPath: exe })), path.resolve('C:\\Probe'))
+})
+
+test('Store-Paket mit Programmfenster: die Programmdatei liegt tiefer im Paketordner', () => {
+  const exe = 'C:\\Program Files\\WindowsApps\\speedone.Mietfuchs_1.15.0.0_x64__bzganrceka4qp\\resources\\server\\mietfuchs.exe'
+  assert.equal(storeLocation(exe, 'win32'), true)
+  assert.equal(chooseDataDir(args({ platform: 'win32', env: { USERPROFILE: 'C:\\Users\\Erika', NKA_DESKTOP: '1' }, execPath: exe })), 'C:\\Users\\Erika\\Mietfuchs')
+  // Ein Ordner „WindowsApps“ irgendwo und darin kein Paket von Mietfuchs zählt weiter nicht
+  assert.equal(storeLocation('C:\\Users\\Erika\\WindowsApps\\resources\\server\\mietfuchs.exe', 'win32'), false)
+  assert.equal(storeLocation('C:\\Users\\Erika\\Downloads\\speedone.Mietfuchs_0.14.0.0_x64__b\\resources\\mietfuchs.exe', 'win32'), false)
+})

@@ -172,6 +172,15 @@ das Paket genauso: `mietfuchs` im Terminal starten und die Oberfläche von einem
 unter `http://<ip-des-rechners>:3001` aufrufen. Dass sich dort kein Browser öffnet, ist normal;
 Mietfuchs sagt es in der Ausgabe.
 
+Mietfuchs antwortet dabei unter seiner IP-Adresse, unter `localhost` und unter Namen im Heimnetz
+(ohne Punkt wie `raspberrypi`, oder mit Endungen wie `.local`, `.lan`, `.fritz.box`, `.home.arpa`,
+`.ts.net`). Unter einem anderen Namen, etwa hinter einem Reverse-Proxy mit eigener Domain, trägst
+du ihn in `NKA_ALLOWED_HOSTS` ein (mehrere mit Komma, `.example.org` für alle Namen darunter, `*`
+schaltet die Prüfung ab). Das schützt davor, dass eine fremde Webseite in deinem Browser Mietfuchs
+über einen eigenen Namen erreicht oder darin etwas ändert. Im Docker-Image ist die Prüfung aus,
+solange `NKA_ALLOWED_HOSTS` nicht gesetzt ist. `NKA_HOST` legt fest, auf welcher Adresse
+Mietfuchs lauscht, etwa `127.0.0.1` für nur diesen Rechner; ohne Angabe auf allen.
+
 Aus einem Paket installiert, liegen die Daten in **`~/.local/share/mietfuchs`** statt neben der
 Programmdatei; in `/usr/bin` darf niemand schreiben. Backup = diesen Ordner kopieren. Wer die
 Archiv-Fassung schon nutzt, behält seinen Ordner `data/` neben der Programmdatei. Beim Umstieg

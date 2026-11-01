@@ -10,13 +10,14 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
 const script = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'scripts', 'set-version.mjs')
-const FOLDERS = ['.', 'server', 'client']
+// desktop/: das Programmfenster (#517), dessen Installer die Version im Namen trägt
+const FOLDERS = ['.', 'server', 'client', 'desktop']
 
 type Manifest = { name: string, version: string, private?: boolean }
 type Lock = { name: string, version: string, lockfileVersion: number, packages: Record<string, { version?: string }> }
 
-// Ein Repo im Kleinen: drei package.json und drei package-lock.json mit derselben Version
-function fakeRepo(versions: [string, string, string] = ['0.9.0', '0.9.0', '0.9.0']): string {
+// Ein Repo im Kleinen: vier package.json und vier package-lock.json mit derselben Version
+function fakeRepo(versions: [string, string, string, string] = ['0.9.0', '0.9.0', '0.9.0', '0.9.0']): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-version-'))
   FOLDERS.forEach((dir, i) => {
     fs.mkdirSync(path.join(root, dir), { recursive: true })
@@ -33,7 +34,7 @@ const run = (root: string, ...args: string[]) =>
 
 const read = <T>(root: string, dir: string, file: string): T => JSON.parse(fs.readFileSync(path.join(root, dir, file), 'utf8'))
 
-test('set-version: ein Release-Kandidat trägt seine Nummer in alle drei Pakete ein', () => {
+test('set-version: ein Release-Kandidat trägt seine Nummer in alle vier Pakete ein', () => {
   const root = fakeRepo()
   const result = run(root, 'v0.9.0-rc.2')
   assert.equal(result.status, 0, result.stderr)
@@ -74,7 +75,7 @@ test('set-version: eine andere Basis im Tag bricht ab und ändert nichts', () =>
 })
 
 test('set-version: verschieden versionierte Pakete brechen ab', () => {
-  const root = fakeRepo(['0.9.0', '0.8.0', '0.9.0'])
+  const root = fakeRepo(['0.9.0', '0.8.0', '0.9.0', '0.9.0'])
   const result = run(root, 'v0.9.0-rc.2')
   assert.notEqual(result.status, 0)
   assert.match(result.stderr, /verschiedene Versionen/)

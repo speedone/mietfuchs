@@ -89,6 +89,12 @@ describe('Anleitung je Betriebsart', () => {
     })
   })
 
+  test('Programmfenster (#517): neu installieren über die Release-Seite', () => {
+    expect(updateGuide(status({ mode: 'desktop', downloadUrl: null }))).toEqual({
+      kind: 'download', href: 'https://github.com/speedone/mietfuchs/releases/tag/v0.5.0', system: 'desktop', newTab: true,
+    })
+  })
+
   test('Docker: Befehle zum Aktualisieren des Containers, einzeln statt mit &&', () => {
     // && kennt die Windows PowerShell 5.1 nicht. Einzelne Zeilen gehen in jeder Shell.
     expect(updateGuide(status({ mode: 'docker', downloadUrl: null }))).toEqual({
@@ -112,6 +118,7 @@ describe('Beenden aus der Oberfläche (#45)', () => {
     expect(canQuit(status({ mode: 'package' }))).toBe(true)
     // Aus dem Microsoft Store startet Mietfuchs ebenfalls ohne Konsolenfenster (#500)
     expect(canQuit(status({ mode: 'store' }))).toBe(true)
+    expect(canQuit(status({ mode: 'desktop' }))).toBe(true)
   })
 
   test('nicht im Container und nicht aus dem Quellcode', () => {

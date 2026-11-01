@@ -25,7 +25,8 @@ import { fileURLToPath } from 'node:url'
 // die .ts-Datei unmittelbar aus; sie importiert nur Typen.
 import { parseVersion } from '../server/src/update.ts'
 
-const FOLDERS = ['.', 'server', 'client']
+// desktop/: das Programmfenster (#517)
+const FOLDERS = ['.', 'server', 'client', 'desktop']
 
 /** @returns {never} */
 function fail(message) {

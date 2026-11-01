@@ -141,6 +141,39 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   Hauptversionen die Changelogs gegen unsere Nutzung prüfen (Express 5: `listen`-Callback auch bei
   Fehlern, `res.sendFile` braucht `root` bei Punkt-Ordnern).
 
+## Programmfenster (#517)
+
+- **Electron nur als Fenster** ([../desktop/](../desktop/), eigenes Paket mit eigenem Lockfile; `npm install` installiert es
+  **nicht** mit, das Docker-Image kennt den Ordner nicht, sondern `npm --prefix desktop install`. Ohne Installation
+  überspringt `npm run typecheck` das Fenster mit Hinweis, in der CI ist das ein Fehler): Die Programmdatei des Servers läuft unverändert als Kindprozess, das Fenster zeigt `http://127.0.0.1:17517`.
+  [main.js](../desktop/src/main.js) setzt zusammen, was [server.js](../desktop/src/server.js) ohne Electron prüfbar
+  hält (Datei, Umgebung, Port, Startzeile, Links; desktop/test). Code bleibt JavaScript, geprüft mit `checkJs` über
+  `npm run typecheck` ([typecheck-desktop.mjs](typecheck-desktop.mjs)); die Tests in desktop/test brauchen keine
+  Installation und laufen mit `npm test`. Electron lädt seine Datei nicht beim Installieren (seit 42), sondern beim ersten
+  `npm run desktop` bzw. mit `npx --prefix desktop install-electron`; npm 11 führt Installskripte nur mit Freigabe in
+  `allowScripts` aus (desktop/.npmrc, electron-winstaller bleibt aus).
+- **Server im Fenster** (Betriebsart `desktop`, `NKA_DESKTOP=1` vom Fenster, aus dem Store bleibt es `store`): lauscht
+  nur auf 127.0.0.1 (`NKA_HOST`), öffnet keinen Browser, Daten im Benutzerordner (Windows `%USERPROFILE%\Mietfuchs`
+  wie der Store, macOS `~/Library/Application Support/Mietfuchs`), nie im Installationsordner. **Endet die
+  Standardeingabe, beendet er sich**: So bleibt nach einem Absturz des Fensters oder beim Abmelden unter Windows (kein
+  SIGTERM) keine Waise, die Port und Datenbank hält. Beenden aus dem Fenster erst über `/api/quit`, nach acht
+  Sekunden hart. Electrons eigener Ordner heißt `mietfuchs-fenster`, damit er sich auf dem Mac nie mit dem Datenordner
+  mischt; dort liegen `fenster.json` (gemerkter Port) und das Protokoll des Servers.
+- **Port 17517** fest, damit Adresse und damit Entwürfe im Browser-Speicher gleich bleiben; antwortet dort ein
+  anderes Programm, nimmt das Fenster einen freien und merkt ihn sich. Die Programmdatei ohne Fenster bleibt bei 3001.
+- **Sicherheit**: Sandbox, `contextIsolation`, kein Node in der Seite; die Brücke ([preload.cjs](../desktop/src/preload.cjs))
+  kennt nur das Drucken. Navigation und neue Fenster bleiben auf der eigenen Adresse, http, https und mailto gehen ans
+  Standardprogramm, alles andere nirgendwohin, Berechtigungen werden abgelehnt. Fuses in desktop/package.json (`build`).
+- **Drucken**: `window.print()` druckt in Electron ohne Hintergründe; das Preload leitet es auf `webContents.print`
+  mit `printBackground` um. Geprüft mit [safari-print-check.mjs](safari-print-check.mjs) `--engines chromium,electron`
+  (unter Linux mit `xvfb-run`): dieselben Fälle im Fenster, Seitenzahl gleich Chromium.
+- **Bau** ([package-desktop.mjs](package-desktop.mjs), electron-builder): Windows ein Installer für x64 und ARM64
+  zusammen (NSIS für den Benutzer, ohne Adminrechte; `latest.yml` des Updaters kennt keine Architektur), die
+  Programmdatei ohne Konsolenfenster aus `dist-bin/store`. macOS je ein .dmg, ad hoc signiert (`identity: "-"`,
+  ohne Notarisierung), die Programmdatei in `Contents/MacOS`. Probe in [desktop.yml](../.github/workflows/desktop.yml):
+  bauen, installieren wie ein Nutzer, [desktop-check.mjs](desktop-check.mjs) (Start, smoke-test, zweiter Start,
+  Beenden, Absturz des Fensters), Größen und Startzeit in der Zusammenfassung.
+
 ## Microsoft Store
 
 - **MSIX** (#500, [package-msix.mjs](package-msix.mjs), Manifest

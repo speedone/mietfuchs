@@ -1,0 +1,96 @@
+{
+  "name": "mietfuchs",
+  "version": "0.14.1",
+  "private": true,
+  "type": "module",
+  "description": "Mietfuchs: eigenes Programmfenster unter Windows und macOS",
+  "author": "speedone",
+  "license": "AGPL-3.0-only",
+  "homepage": "https://mietfuchs-app.de",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "45.2.1",
+    "electron-builder": "26.18.0"
+  },
+  "allowScripts": {
+    "electron-winstaller": false
+  },
+  "build": {
+    "appId": "de.speedone.mietfuchs",
+    "productName": "Mietfuchs",
+    "copyright": "© 2026 speedone",
+    "directories": {
+      "output": "../dist-desktop",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**",
+      "package.json"
+    ],
+    "asar": true,
+    "electronFuses": {
+      "runAsNode": false,
+      "enableCookieEncryption": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true,
+      "grantFileProtocolExtraPrivileges": false
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "extraResources": [
+        {
+          "from": "../dist-bin/desktop/win-${arch}/mietfuchs.exe",
+          "to": "server/mietfuchs.exe"
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "buildUniversalInstaller": true,
+      "artifactName": "Mietfuchs-Setup-${version}.${ext}",
+      "shortcutName": "Mietfuchs",
+      "deleteAppDataOnUninstall": false
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "category": "public.app-category.finance",
+      "identity": "-",
+      "hardenedRuntime": false,
+      "notarize": false,
+      "artifactName": "Mietfuchs-${version}-${arch}.${ext}",
+      "extraFiles": [
+        {
+          "from": "../dist-bin/desktop/mac-${arch}/mietfuchs-server",
+          "to": "MacOS/mietfuchs-server"
+        }
+      ]
+    },
+    "dmg": {
+      "title": "Mietfuchs ${version}"
+    }
+  }
+}
