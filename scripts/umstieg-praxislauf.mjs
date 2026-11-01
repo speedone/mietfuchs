@@ -832,6 +832,48 @@ fall(17, 'Backup mit eigener Heizperiode und getrennter Heizkostenabrechnung (#2
   })
 })
 
+fall(18, 'Datenbank von 0.13 mit aufgeteilten Rechnungen, Update auf Quellen (#455)', async () => {
+  // Der Weg jedes Nutzers von 0.13 auf 0.14: Die Datenbank steht auf 0076, und der Datenschritt zu 0077 gibt den Teilen
+  // einer aufgeteilten Rechnung ihre Quelle. Die Zeilen stehen roh da, wie 0.13.1 sie schrieb (Werte wie in
+  // data-step-quellrechnung.test.ts): eine Versicherung über Juli bis Juni, in 0.13.1 aufgeteilt in zwei Teile, und
+  // eine zweimal erfasste Müllrechnung ohne Leistungszeitraum. Nur die Teile bekommen eine Quelle, keine Zahl bewegt sich.
+  const { applyMigrations, connect, loadMigrations } = await import('../server/src/db/client.ts')
+  const { databaseFile } = await import('../server/src/db/open.ts')
+  const dataDir = tempDir()
+  const connection = await connect(databaseFile(dataDir))
+  const migrations = await loadMigrations()
+  const bis = migrations.findIndex((m) => m.tag === '0077_quellrechnung')
+  if (bis < 0) return fail('Schritt 0077_quellrechnung fehlt')
+  applyMigrations(connection, migrations.slice(0, bis))
+  const wert = (v) => (typeof v === 'number' ? String(v) : `'${String(v).split("'").join("''")}'`)
+  const zeile = (tabelle, z) => connection.exec(`INSERT INTO ${tabelle} (${Object.keys(z).map((k) => `"${k}"`).join(', ')}) VALUES (${Object.values(z).map(wert).join(', ')})`)
+  for (const id of ['u1', 'u2']) zeile('units', { id, property_id: 'objekt-1', name: id, area_m2: 50, participates: 1 })
+  const versicherung = { property_id: 'objekt-1', category: 'Sach- und Haftpflichtversicherung', key: 'area', service_from: '2024-07-01', service_to: '2025-06-30', participants_limited: 0 }
+  zeile('cost_items', { ...versicherung, id: 'vs-1', period: '2024-01', description: 'Versicherung (anteilig 01.07.–31.12.2024)', amount_cents: 60493 })
+  zeile('cost_items', { ...versicherung, id: 'vs-2', period: '2025-01', description: 'Versicherung (anteilig 01.01.–30.06.2025)', amount_cents: 59507 })
+  for (const id of ['muell-1', 'muell-2']) {
+    zeile('cost_items', { id, property_id: 'objekt-1', period: '2025-01', category: 'Müllbeseitigung', description: 'Müll 2025', amount_cents: 30000, key: 'area', participants_limited: 0 })
+  }
+  connection.close()
+
+  await withServer(dataDir, async ({ base }) => {
+    const kosten = await holen(base, '/api/costItems')
+    const quelle = (id) => kosten.find((c) => c.id === id)?.sourceId ?? null
+    gleich([quelle('vs-1'), quelle('vs-2')], ['vs-1', 'vs-1'], 'Update: beide Teile der Versicherung tragen eine Quelle')
+    gleich([quelle('muell-1'), quelle('muell-2')], [null, null], 'Update: die zweimal erfasste Rechnung bleibt zwei Rechnungen')
+    gleich(kosten.map((c) => [c.id, c.period, c.amountCents]).sort(), [
+      ['muell-1', '2025-01', 30000], ['muell-2', '2025-01', 30000], ['vs-1', '2024-01', 60493], ['vs-2', '2025-01', 59507],
+    ], 'Update: jede Position steht mit Zeitraum und Betrag wie vorher da')
+    const summe = async (zeitraum) => (await holen(base, `/api/settlement/${zeitraum}`)).totalCostsCents
+    gleich([await summe('2024-01'), await summe('2025-01')], [60493, 119507], 'Update: die Abrechnungen rechnen dieselben Kosten')
+  })
+  dateienImOrdner(dataDir, 'Update', { 'mietfuchs.sqlite.vor-0077_quellrechnung': true })
+  await withServer(dataDir, async ({ base }) => {
+    const kosten = await holen(base, '/api/costItems')
+    gleich(kosten.filter((c) => c.sourceId).map((c) => c.id).sort(), ['vs-1', 'vs-2'], 'zweiter Start: die Quelle bleibt, keine kommt hinzu')
+  })
+})
+
 // ---------- Lauf ----------
 
 // **Eine leere Auswahl ist ein Abbruch und kein stiller Erfolg.** Ohne diese Zeilen meldete

@@ -203,7 +203,8 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   mit und ohne Datenbank; ein Fall einzeln mit `--nur 6`). **Fall 7** (Archive von vor der Datenbank,
   auf die [MIGRATION.md](../MIGRATION.md) verweist) startet bewusst in einem **anderen Haus**
   (`bestandAnderesHaus`), sonst blieben die Zusicherungen grün, auch wenn nichts übernommen wurde.
-  Nicht in der CI, sondern von Hand vor jedem Release. Eine unbekannte Fallnummer bricht ab.
+  **Fall 18** legt rohe Zeilen auf den Stand 0076 und prüft den Datenschritt 0077 (Quellen, #455) über
+  echte Starts; er wird rot, wenn der Schritt in `DATA_STEPS` fehlt. Nicht in der CI, sondern von Hand vor jedem Release. Eine unbekannte Fallnummer bricht ab.
   `--slow-ai 320` lässt das Ollama über fünf Minuten schweigen; das läuft im vollen Umfang auf den
   Programmdateien (Linux x64, Windows x64, Apple Silicon) und gegen Node.
 - **Prüfumfang je Anlass** (#52), entschieden im Job „Prüfumfang festlegen“ in release.yml: **Ein PR
