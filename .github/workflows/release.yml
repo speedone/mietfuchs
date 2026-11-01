@@ -1105,8 +1105,12 @@ jobs:
             if (-not $fund) { throw "Der Ordner aus der Ortsdatei fehlt: $($funde | ConvertTo-Json -Compress -Depth 4)" }
             $ergebnis = Invoke-RestMethod -Method Post -Uri "$url/api/relocation/adopt" -ContentType 'application/json' -Body (@{ dataDir = $altDaten } | ConvertTo-Json)
             "Umzug in die Store-Fassung: $($ergebnis.counts | ConvertTo-Json -Compress)" | Tee-Object -Append $env:GITHUB_STEP_SUMMARY
-            $mieter = Invoke-RestMethod -Uri "$url/api/tenancies"
-            if (@($mieter).Count -lt 1) { throw 'Nach dem Umzug fehlen die Mietverhältnisse' }
+            # Mehrere Objekte: Mietverhältnisse je Objekt zählen (ohne ?property= antwortet die Route mit 400)
+            $anzahl = 0
+            foreach ($objekt in @(Invoke-RestMethod -Uri "$url/api/properties")) {
+              $anzahl += @(Invoke-RestMethod -Uri "$url/api/tenancies?property=$($objekt.id)").Count
+            }
+            if ($anzahl -lt 1 -or $anzahl -ne $ergebnis.counts.tenancies) { throw "Nach dem Umzug fehlen Mietverhältnisse ($anzahl von $($ergebnis.counts.tenancies))" }
             if (-not (Test-Path (Join-Path $altDaten 'umgezogen.json'))) { throw 'Kein Vermerk im alten Ordner' }
             if ((Get-Content -Raw $ortsdatei) -ne $ortsdateiVorher) { throw 'Die Store-App hat die Ortsdatei geändert' }
             Invoke-RestMethod -Method Post -Uri "$url/api/quit" | Out-Null
