@@ -16,7 +16,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - **Microsoft Store:** Der Store-Eintrag zeigt die Website mietfuchs-app.de; Website, Datenschutzrichtlinie und
   Supportkontakt gehen jetzt bei jedem Release mit, und die Beschreibung sagt zusätzlich, dass Mietfuchs ohne
   Gewähr bereitgestellt wird.
-- **Eigenes Programmfenster für Windows und macOS, erste Probe** ([#517](https://github.com/speedone/mietfuchs/issues/517)):
+- **Eigenes Programmfenster für Windows und macOS** ([#517](https://github.com/speedone/mietfuchs/issues/517)):
   Mietfuchs in einem eigenen Fenster statt im Browser, mit Symbol in Taskleiste und Dock. Fenster zu heißt Mietfuchs
   zu, gedruckt wird mit Briefpapier und „Seite x von y“ auch auf dem Mac. Noch nicht in den Downloads; der Bau läuft
   zunächst zur Probe.
@@ -24,6 +24,15 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Einstellungen lässt sich erlauben, Mietfuchs auch auf dem Handy oder einem anderen Rechner im selben WLAN zu öffnen;
   die Karte nennt dann die Adressen dafür. Ohne dieses Häkchen ist Mietfuchs im Fenster nur auf dem eigenen Rechner
   erreichbar. Mietfuchs hat kein Passwort, deshalb gilt die Erlaubnis für jeden im Heimnetz.
+  zu, gedruckt wird mit Briefpapier und „Seite x von y“ auch auf dem Mac. Zum Herunterladen als
+  `Mietfuchs-Setup-<Version>.exe` für Windows (x64 und ARM64, Installation ohne Adminrechte) und als
+  `Mietfuchs-<Version>-apple-silicon.dmg` bzw. `-intel.dmg` für den Mac. Die bisherigen Programmdateien bleiben
+  vorerst zum Herunterladen; wer schon damit arbeitet, bleibt bis zum Umzug der Daten in einem der nächsten Releases
+  dabei, denn das Fenster legt seine Daten im Benutzerordner an.
+- **Microsoft Store: Mietfuchs öffnet sich im eigenen Fenster** ([#517](https://github.com/speedone/mietfuchs/issues/517))
+  statt im Browser. Die Daten bleiben, wo sie sind (`%USERPROFILE%\Mietfuchs`). Die Adresse ist jetzt
+  `http://127.0.0.1:17517` statt `localhost:3001`; wer Mietfuchs zusätzlich im Browser aufruft, nimmt die neue
+  Adresse (Menü „Im Browser öffnen“).
 - **`NKA_HOST`** legt fest, auf welcher Adresse Mietfuchs lauscht, etwa `127.0.0.1` für nur diesen Rechner.
 
 ### Geändert

@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Manifest des MSIX-Pakets für den Microsoft Store (#500). Vorlage: scripts/package-msix.mjs
-     setzt Version, Architektur und Programmdatei ein. Identität aus dem Partner Center
+     setzt Version, Architektur und Programmdatei ein. Gestartet wird das Programmfenster (#517,
+     Mietfuchs.exe), das den Server aus resources\server\mietfuchs.exe startet. Identität aus dem Partner Center
      (Produktverwaltung, Produktidentität); ändert sie sich dort, hier nachziehen und
      STORE_PACKAGE_NAME in server/src/paths.ts mit.
 
@@ -46,8 +47,9 @@
         Square44x44Logo="Assets\Square44x44Logo.png" />
       <Extensions>
         <!-- Startet Mietfuchs auch als „mietfuchs“ aus der Eingabeaufforderung. Die Prüfung im
-             Release-Lauf braucht das: Nur so erbt das Programm Umgebungsvariablen wie CI und
-             NKA_UPDATE_URL; der Start über das Startmenü reicht keine weiter. -->
+             Release-Lauf braucht das: Nur so erbt das Fenster Umgebungsvariablen wie CI und
+             NKA_UPDATE_URL und reicht sie an den Server weiter; der Start über das Startmenü
+             reicht keine weiter. Der Alias heißt wie früher die Programmdatei des Pakets. -->
         <uap3:Extension Category="windows.appExecutionAlias" Executable="{{EXE}}" EntryPoint="Windows.FullTrustApplication">
           <uap3:AppExecutionAlias>
             <desktop:ExecutionAlias Alias="mietfuchs.exe" />
