@@ -198,8 +198,8 @@ describe('Lexikon', () => {
     expect(ids).toEqual(expected)
     expect(ids).toContain('granny')
     expect(ids.length).toBeGreaterThan(1)
-    const unused = (Object.keys(GLOSSARY) as (keyof typeof GLOSSARY)[]).find((id) => !Object.values(GUIDES).some((g) => (g.terms as readonly string[]).includes(id))) ?? expect.fail('jeder Begriff kommt in einer Anleitung vor')
-    expect(guidesWithTerm(unused)).toEqual([])
+    // Ohne Anleitung, die ihn nennt, keine (Durchsicht S4: nicht an den heutigen Daten festgemacht)
+    expect(guidesWithTerm('ownShare', [])).toEqual([])
   })
 
   test('verwandte Begriffe: dasselbe Thema, ohne den Begriff selbst, höchstens acht, gemeinsame Anleitungen zuerst', () => {

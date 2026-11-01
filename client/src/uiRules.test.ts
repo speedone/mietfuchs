@@ -1292,7 +1292,7 @@ test('S34: was unten angeheftet ist, hält seine Höhe im scroll-padding frei', 
 })
 
 // Das Lexikon der Hilfe (#488, Teil 3): schmal steht Liste oder Begriff (`data-pane`), breit beide nebeneinander.
-test('Lexikon: schmal blendet tw.css Liste oder Begriff aus, breit zwei Spalten ohne „← Alle Begriffe“', () => {
+test('Lexikon: schmal blendet tw.css Liste oder Begriff aus, breit zwei Spalten ohne „← Zur Liste“', () => {
   const css = twCss
   const block = css.slice(css.indexOf('@utility lexicon-layout'), css.indexOf('@utility', css.indexOf('@utility lexicon-layout') + 1))
   expect(block).toMatch(/@container \(min-width: 44rem\)/)
@@ -1300,4 +1300,34 @@ test('Lexikon: schmal blendet tw.css Liste oder Begriff aus, breit zwei Spalten 
   expect(block).toMatch(/\.lexicon-back \{\s*display: none/)
   expect(block).toMatch(/\[data-pane="term"\][^{]*lexicon-list[^{]*\{\s*display: none/)
   expect(block).toMatch(/\[data-pane="list"\][^{]*lexicon-term[^{]*\{\s*display: none/)
+})
+
+// Durchsicht von #488 Teil 3, M1: Schmal (am Handy) steht die Liste im Fluss der Seite. Eine Höhenbegrenzung außerhalb
+// der breiten Container-Regel ließ die Einträge aus ihrer Karte laufen, der letzte lag unter der unteren Leiste.
+// Jede Höhenbegrenzung und jedes eigene Rollen der Liste steht deshalb in `@container (min-width: 44rem)`.
+const declarationsWithContext = (block: string): { prop: string; context: string[] }[] => {
+  const out: { prop: string; context: string[] }[] = []
+  const stack: string[] = []
+  let buf = ''
+  for (const ch of block.replace(/\/\*[\s\S]*?\*\//g, '')) {
+    if (ch === '{') { stack.push(buf.trim()); buf = '' }
+    else if (ch === '}') { stack.pop(); buf = '' }
+    else if (ch === ';') {
+      const prop = buf.trim().split(':')[0]?.trim() ?? ''
+      if (prop) out.push({ prop, context: [...stack] })
+      buf = ''
+    } else buf += ch
+  }
+  return out
+}
+test('Lexikon: die Liste begrenzt ihre Höhe und rollt nur in der breiten Ansicht', () => {
+  // Probe des Prüfers
+  const probe = declarationsWithContext('@utility x { a: 1; @container (min-width: 44rem) { max-height: 2px; @media screen { max-height: 3px; } } @media screen { max-height: 4px; } }')
+  expect(probe.filter((d) => d.prop === 'max-height').map((d) => d.context.some((c) => c === '@container (min-width: 44rem)'))).toEqual([true, true, false])
+  const start = twCss.indexOf('@utility lexicon-list')
+  expect(start).toBeGreaterThan(0)
+  const block = twCss.slice(start, twCss.indexOf('@utility', start + 1))
+  const limited = declarationsWithContext(block).filter((d) => /^(max-height|height|overflow(-y)?|position|top)$/.test(d.prop))
+  expect(limited.length).toBeGreaterThan(0)
+  expect(limited.filter((d) => !d.context.includes('@container (min-width: 44rem)')).map((d) => `${d.prop} in ${d.context.join(' > ')}`)).toEqual([])
 })

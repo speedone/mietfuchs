@@ -588,6 +588,28 @@ async function checkCombination(browser, base, combo, AxeBuilder, navLabels) {
       await settle(page)
       checkedPages++
       await measure('lexikon')
+      // Durchsicht von Teil 3, M1: Am Handy steht die Liste im Fluss der Seite. Ganz heruntergerollt liegt der letzte
+      // Eintrag in seiner Karte und über der unteren Leiste (vorher lief die Liste aus der Karte, er lag unter der Leiste).
+      if (view === 'mobile') {
+        const problem = await page.evaluate(() => {
+          const doc = /** @type {any} */ (globalThis).document
+          const list = doc.querySelector('main .lexicon-list')
+          const items = list ? [...list.querySelectorAll('button[data-lexicon-term]')] : []
+          const last = items.at(-1)
+          if (!list || !last) return 'Die Liste der Begriffe fehlt'
+          // So weit rollen, wie es geht (der Seite rollt je nach Ansicht ein anderes Element); was dann nicht über der
+          // Leiste steht, erreicht niemand
+          last.scrollIntoView({ block: 'end', behavior: 'instant' })
+          const e = last.getBoundingClientRect()
+          const l = list.getBoundingClientRect()
+          const bar = doc.querySelector('nav[aria-label="Schnellzugriff"]')?.getBoundingClientRect()
+          if (e.bottom > l.bottom + 1) return `Der letzte Eintrag „${last.textContent}“ ragt aus der Liste (unten ${Math.round(e.bottom)} px, Liste bis ${Math.round(l.bottom)} px)`
+          if (bar && e.bottom > bar.top + 1) return `Der letzte Eintrag „${last.textContent}“ liegt heruntergerollt unter der unteren Leiste (unten ${Math.round(e.bottom)} px, Leiste ab ${Math.round(bar.top)} px)`
+          return null
+        })
+        if (problem) add('lexikon', 'Erreichbar', problem)
+        await page.evaluate(() => /** @type {any} */ (globalThis).scrollTo(0, 0))
+      }
       current = 'lexikon-begriff'
       await page.getByRole('list', { name: 'Begriffe' }).getByRole('button', { name: 'Einheit ohne Anschluss' }).click()
       await page.getByRole('heading', { name: 'Einheit ohne Anschluss', level: 2 }).waitFor({ timeout: 5000 })

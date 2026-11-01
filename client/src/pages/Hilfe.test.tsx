@@ -12,7 +12,19 @@ import { GLOSSARY, TERM_TOPICS } from '../../../shared/glossary.ts'
 import { TERM_TOPIC_LABELS } from '../helpView'
 import { pageLabel } from '../nav'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+  delete (HTMLElement.prototype as Partial<HTMLElement>).checkVisibility
+})
+
+// Breit oder schmal entscheidet tw.css über eine Container-Abfrage, die jsdom nicht kennt. Die Seite fragt deshalb das
+// Element selbst (`checkVisibility`); der Test legt fest, was sichtbar ist.
+const visibleWhen = (test: (el: HTMLElement) => boolean) => {
+  HTMLElement.prototype.checkVisibility = function (this: HTMLElement) { return test(this) }
+}
+const wide = () => visibleWhen(() => true)
+const narrow = () => visibleWhen((el) => !(el.closest('.lexicon-layout')?.getAttribute('data-pane') === 'term' && el.closest('.lexicon-list')))
 
 const searchBox = () => screen.getByRole('combobox', { name: /Suchen in Anleitungen und Begriffen/ }) as HTMLInputElement
 const type = (value: string) => fireEvent.change(searchBox(), { target: { value } })
@@ -337,17 +349,17 @@ test('„Kommt vor in“ öffnet die Anleitung; „Zurück“ führt wieder zum 
 
 // Schmal (am Handy) zeigt die Ansicht entweder die Liste oder den Begriff; tw.css blendet nach `data-pane` aus
 // (geprüft in uiRules.test.ts).
-test('schmale Ansicht: erst die Liste, dann der Begriff mit „← Alle Begriffe“ zurück auf seinen Eintrag', async () => {
+test('schmale Ansicht: erst die Liste, dann der Begriff mit „← Zur Liste“ zurück auf seinen Eintrag', async () => {
   render(<Hilfe onFollow={() => {}} />)
   fireEvent.click(screen.getByRole('button', { name: /^Alle von A bis Z/ }))
   await screen.findByRole('heading', { name: 'Lexikon', level: 1 })
   const layout = document.querySelector('.lexicon-layout') ?? expect.fail('Lexikon fehlt')
   expect(layout.getAttribute('data-pane')).toBe('list')
-  expect(screen.queryByRole('button', { name: '← Alle Begriffe' })).toBeNull()
+  expect(screen.queryByRole('button', { name: '← Zur Liste' })).toBeNull()
   fireEvent.click(within(termList()).getByRole('button', { name: GLOSSARY.vacancy.title }))
   await waitFor(() => expect(focusedTerm()).toBe('vacancy'))
   expect(layout.getAttribute('data-pane')).toBe('term')
-  fireEvent.click(screen.getByRole('button', { name: '← Alle Begriffe' }))
+  fireEvent.click(screen.getByRole('button', { name: '← Zur Liste' }))
   expect(layout.getAttribute('data-pane')).toBe('list')
   await waitFor(() => expect(document.activeElement).toBe(within(termList()).getByRole('button', { name: GLOSSARY.vacancy.title })))
   // Der Eintrag ist nicht mehr als gewählt markiert
@@ -462,4 +474,96 @@ test('„Zurück“ nach dem Sprung aus einer Anleitung führt in diese Anleitun
   await waitFor(() => expect(document.activeElement).toBe(heading))
   fireEvent.click(within(screen.getByRole('navigation', { name: 'Pfad' })).getByRole('button', { name: 'Hilfe & Begriffe' }))
   await waitFor(() => expect(document.activeElement).toBe(tile(GUIDES.granny.title)))
+})
+
+// Durchsicht von #488 Teil 3, M2: Breit bleibt der Fokus nach der Wahl in der Liste auf dem Eintrag; Shift+Tab aus dem
+// Begriff führte sonst auf den letzten der Liste. Der Begriff rechts wird über eine Statusmeldung angesagt.
+test('breit: nach der Wahl in der Liste bleibt der Fokus auf dem Eintrag, eine Statusmeldung nennt den Begriff', async () => {
+  wide()
+  render(<Hilfe onFollow={() => {}} />)
+  fireEvent.click(screen.getByRole('button', { name: /^Alle von A bis Z/ }))
+  await screen.findByRole('heading', { name: 'Lexikon', level: 1 })
+  const entry = within(termList()).getByRole('button', { name: GLOSSARY.mea.title })
+  entry.focus()
+  fireEvent.click(entry)
+  await screen.findByRole('heading', { name: GLOSSARY.mea.title, level: 2 })
+  await new Promise((r) => setTimeout(r, 0))
+  expect(document.activeElement).toBe(entry)
+  expect(entry.getAttribute('aria-current')).toBe('true')
+  expect(screen.getByRole('status').textContent).toBe(`Rechts angezeigt: ${GLOSSARY.mea.title}`)
+  // Ein verwandter Begriff und ein Sprung von außen setzen den Fokus weiter auf die Überschrift
+  const related = within(screen.getByRole('region', { name: 'Verwandte Begriffe' })).getAllByRole('button')[0] ?? expect.fail('kein verwandter Begriff')
+  fireEvent.click(related)
+  await waitFor(() => expect(document.activeElement?.tagName).toBe('H2'))
+})
+
+test('schmal: nach der Wahl in der Liste geht der Fokus auf die Überschrift des Begriffs, ohne Statusmeldung', async () => {
+  narrow()
+  render(<Hilfe onFollow={() => {}} />)
+  fireEvent.click(screen.getByRole('button', { name: /^Alle von A bis Z/ }))
+  await screen.findByRole('heading', { name: 'Lexikon', level: 1 })
+  fireEvent.click(within(termList()).getByRole('button', { name: GLOSSARY.mea.title }))
+  await waitFor(() => expect(focusedTerm()).toBe('mea'))
+  expect(screen.getByRole('status').textContent).toBe('')
+})
+
+// Die Liste ist ein Halt der Tabulatortaste: Tab führt vom gewählten Eintrag in den Begriff, Pfeiltasten bewegen in ihr.
+test('die Liste: ein Halt der Tabulatortaste auf dem gewählten Eintrag, Pfeiltasten, Pos1 und Ende bewegen den Fokus', async () => {
+  wide()
+  render(<Hilfe onFollow={() => {}} />)
+  fireEvent.click(screen.getByRole('button', { name: /^Alle von A bis Z/ }))
+  await screen.findByRole('heading', { name: 'Lexikon', level: 1 })
+  const buttons = () => within(termList()).getAllByRole('button')
+  const tabbable = () => buttons().filter((b) => b.tabIndex === 0)
+  // Ohne Wahl der erste
+  expect(tabbable()).toEqual([buttons()[0]])
+  const entry = within(termList()).getByRole('button', { name: GLOSSARY.mea.title })
+  fireEvent.click(entry)
+  await screen.findByRole('heading', { name: GLOSSARY.mea.title, level: 2 })
+  expect(tabbable()).toEqual([entry])
+  entry.focus()
+  const i = buttons().indexOf(entry)
+  fireEvent.keyDown(entry, { key: 'ArrowDown' })
+  expect(document.activeElement).toBe(buttons()[i + 1])
+  fireEvent.keyDown(document.activeElement ?? entry, { key: 'ArrowUp' })
+  fireEvent.keyDown(document.activeElement ?? entry, { key: 'ArrowUp' })
+  expect(document.activeElement).toBe(buttons()[i - 1])
+  fireEvent.keyDown(document.activeElement ?? entry, { key: 'End' })
+  expect(document.activeElement).toBe(buttons().at(-1))
+  fireEvent.keyDown(document.activeElement ?? entry, { key: 'Home' })
+  expect(document.activeElement).toBe(buttons()[0])
+  // Bewegen wählt nicht
+  expect(entry.getAttribute('aria-current')).toBe('true')
+})
+
+// Durchsicht S2: Wird die Ansicht schmal (Zoom 200 %), während der Fokus in der Liste steht, verschwindet die Liste.
+// Der Fokus geht dann auf die Überschrift des Begriffs statt auf body.
+test('wird die Ansicht schmal, während der Fokus in der Liste steht, geht er auf die Überschrift des Begriffs', async () => {
+  const observers: (() => void)[] = []
+  vi.stubGlobal('ResizeObserver', class { constructor(cb: () => void) { observers.push(cb) } observe() {} disconnect() {} unobserve() {} })
+  wide()
+  render(<Hilfe onFollow={() => {}} />)
+  fireEvent.click(screen.getByRole('button', { name: /^Alle von A bis Z/ }))
+  await screen.findByRole('heading', { name: 'Lexikon', level: 1 })
+  const entry = within(termList()).getByRole('button', { name: GLOSSARY.mea.title })
+  entry.focus()
+  fireEvent.click(entry)
+  await screen.findByRole('heading', { name: GLOSSARY.mea.title, level: 2 })
+  await new Promise((r) => setTimeout(r, 0))
+  expect(document.activeElement).toBe(entry)
+  narrow()
+  expect(observers.length).toBeGreaterThan(0)
+  for (const cb of observers) cb()
+  expect(focusedTerm()).toBe('mea')
+})
+
+// Durchsicht S5: Begann der Weg nicht auf der Startansicht (die Anleitung kam über „Zurück zur Anleitung“ aus der Leiste
+// des Fadens), führt der Pfad des Lexikons auf die Suche.
+test('Pfad aus dem Lexikon, wenn der Weg in einer Anleitung begann: Fokus auf die Suche', async () => {
+  render(<Hilfe onFollow={() => {}} openGuide={{ id: 'granny', step: 0, seq: 1 }} />)
+  const guide = await waitFor(() => document.getElementById('anleitung-granny') ?? expect.fail('Anleitung fehlt'))
+  fireEvent.click(within(within(guide).getByRole('region', { name: 'Begriffe' })).getByRole('button', { name: GLOSSARY.granny.title }))
+  await waitFor(() => expect(focusedTerm()).toBe('granny'))
+  fireEvent.click(within(screen.getByRole('navigation', { name: 'Pfad' })).getByRole('button', { name: 'Hilfe & Begriffe' }))
+  await waitFor(() => expect(document.activeElement).toBe(searchBox()))
 })

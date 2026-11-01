@@ -582,10 +582,13 @@
     max-height: calc(100dvh - 2 * var(--space-4));
     overflow-y: auto;
     overscroll-behavior: contain;
-  }
-  @media screen and (max-width: 899px) {
-    top: calc(var(--head-h) + env(safe-area-inset-top) + var(--space-2));
-    max-height: calc(100dvh - var(--head-h) - var(--bar-h) - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 2 * var(--space-4));
+    /* Unter 900 px Fensterbreite liegt oben der angeheftete Kopf (S24); nur hier, breit, angeheftet. Schmal steht die
+       Liste ohne Höhenbegrenzung im Fluss der Seite (Durchsicht von Teil 3, M1: sonst lief sie aus ihrer Karte, der
+       letzte Eintrag lag unter der unteren Leiste; Wächter in uiRules.test.ts). */
+    @media screen and (max-width: 899px) {
+      top: calc(var(--head-h) + env(safe-area-inset-top) + var(--space-2));
+      max-height: calc(100dvh - var(--head-h) - var(--bar-h) - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 2 * var(--space-4));
+    }
   }
   /* Ruhige Einträge wie in der Inhaltsleiste der Anleitung; der gewählte trägt die Markierung der Suche. Den
      Fokusring gibt index.css jedem Knopf. */

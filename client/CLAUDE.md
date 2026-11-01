@@ -31,7 +31,10 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   Kontraste nach. Gestaltung „Mittelweg“ (Werte in
   [docs/superpowers/specs/2026-10-18-oberflaeche-gesamtkonzept-design.md](../docs/superpowers/specs/2026-10-18-oberflaeche-gesamtkonzept-design.md)):
   zinc-Flächen, weiße Karten, Indigo nur für Primärknopf, Links, Fortschritt, Fokus, aktiven
-  Menüpunkt und Objekt-Marke. Knöpfe: `.btn`, `.btn.secondary`, `.btn.ghost`, `.btn.danger`.
+  Menüpunkt und Objekt-Marke. Ausnahme nach freigegebenem Entwurf (#488): in „Hilfe & Begriffe“ die Kennzeile des
+  Themas über einem Begriff, die Kästen „Trifft das auf Sie zu?“ und „Brauche ich das?“ (Akzent getönt) und der gewählte
+  Themenfilter; dort trägt die Farbe die Gliederung, die der Nutzer so gesehen und gewollt hat.
+  Knöpfe: `.btn`, `.btn.secondary`, `.btn.ghost`, `.btn.danger`.
 - **Wächter in [src/uiRules.test.ts](src/uiRules.test.ts)** (sie fragen Tailwind selbst): S17 keine
   beliebigen Werte (`p-[13px]`), keine Standardpalette, keine Hex-/rgba-Werte außerhalb `:root`; S20
   keine Klasse in index.css mit Tailwind-Namen, Zahl der Regelzeilen von index.css darf nur sinken.
@@ -362,10 +365,16 @@ Chromium und Firefox schaltete die feste Breite die Skalierung des Druckdialogs 
   `h1` „Lexikon“, Themenfilter als Umschaltknöpfe (`aria-pressed`, „Alle“ vorne, je mit Zahl), darunter ab 44rem
   Inhaltsbreite zwei Spalten (`lexicon-layout`/`lexicon-list` in tw.css): links die Liste (Knöpfe, gewählter mit
   `aria-current`, Anfangsbuchstaben nur fürs Auge), breit angeheftet und für sich rollend; rechts der Begriff als
-  `article` mit `h2#begriff-{id}` (Ziel des Fokus bei jedem Wechsel), Beispiel und „Brauche ich das?“, Rechtsgrundlage,
+  `article` mit `h2#begriff-{id}`, Beispiel und „Brauche ich das?“, Rechtsgrundlage,
   „Kommt vor in“ (`guidesWithTerm`) und „Verwandte Begriffe“ (`relatedTerms`: selbes Thema, höchstens acht, gemeinsame
-  Anleitungen zuerst). Schmaler eins von beiden (`data-pane`, `lexiconPane`), über dem Begriff „← Alle Begriffe“ zurück
-  auf seinen Eintrag. Ein Thema wählen hebt die Wahl des Begriffs auf (`chooseTopic`); Thema und Begriff wechseln ohne
+  Anleitungen zuerst). Schmaler eins von beiden (`data-pane`, `lexiconPane`), über dem Begriff „← Zur Liste“ zurück
+  auf seinen Eintrag; Höhenbegrenzung und eigenes Rollen der Liste nur in der breiten Container-Regel (Wächter in
+  uiRules, Browserlauf-Gang „lexikon“). **Fokus**: Die Liste ist ein Halt der Tabulatortaste (Pfeiltasten, Pos1, Ende
+  bewegen). Breit bleibt er nach der Wahl auf dem Eintrag, eine `status`-Meldung sagt „Rechts angezeigt: {Begriff}“ (eine
+  Live-Region um den ganzen Begriff läse Beispiel und Rechtsgrundlage mit vor); ob breit, fragt die Seite das Element
+  (`checkVisibility`), denn die Container-Abfrage sieht nur CSS. Schmal, bei „Verwandte Begriffe“ und bei Sprüngen von
+  außen geht er auf das `h2`. Wird die Ansicht schmal, während er in der Liste steht (Zoom), holt ein `ResizeObserver`
+  ihn auf das `h2`. Ein Thema wählen hebt die Wahl des Begriffs auf (`chooseTopic`); Thema und Begriff wechseln ohne
   Schritt im `trail`. Jeder Sprung von außen (`focusTerm`, Suchtreffer, Begriff einer Anleitung) öffnet unter „Alle“
   (`jumpToTerm`): Er kommt nicht über ein Thema, das Thema nennt die Kennzeile, die Nachbarn „Verwandte Begriffe“. **Faden** ([GuideThread.tsx](src/components/GuideThread.tsx)):
   „Zu {Seite} →“ meldet `onFollow(anleitung, schritt)`, die App springt über `navigate` mit dem Faden als drittem

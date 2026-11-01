@@ -232,7 +232,7 @@ export function chooseTerm(state: LexiconState, id: TermId): LexiconState {
   return { topic: state.topic === null || GLOSSARY[id].topic === state.topic ? state.topic : null, term: id }
 }
 
-// Schmale Ansicht (am Handy): ohne gewählten Begriff die Liste, mit Begriff nur er und „← Alle Begriffe“.
+// Schmale Ansicht (am Handy): ohne gewählten Begriff die Liste, mit Begriff nur er und „← Zur Liste“.
 export function lexiconPane(term: TermId | null): 'list' | 'term' {
   return term === null ? 'list' : 'term'
 }

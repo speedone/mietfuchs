@@ -68,8 +68,13 @@ export default function Hilfe({ onFollow, focusTerm, onFocusTermDone, openGuide:
   const openGuide = (id: GuideId, origin: string) => open({ kind: 'guide', id }, origin, focusHeading)
   const openLexicon = (topic: TermTopic | null, origin: string) => open({ kind: 'lexicon', topic, term: null }, origin, focusHeading)
   const openTerm = (id: TermId, origin: string) => open({ kind: 'lexicon', ...jumpToTerm(id) }, origin, () => focusTermHeading(id))
-  // Innerhalb des Lexikons wechseln Thema und Begriff ohne neuen Schritt auf dem Weg zurück.
-  const lexicon = (next: LexiconState, then: () => void) => show({ kind: 'lexicon', ...next }, then)
+  // Innerhalb des Lexikons wechseln Thema und Begriff ohne neuen Schritt auf dem Weg zurück. `announce` sagt breit den
+  // Begriff an, der rechts erscheint, während der Fokus in der Liste bleibt (Durchsicht von Teil 3, M2).
+  const [announce, setAnnounce] = useState('')
+  const lexicon = (next: LexiconState, then: () => void) => {
+    setAnnounce('')
+    show({ kind: 'lexicon', ...next }, then)
+  }
   const back = () => {
     const last = trail.at(-1) ?? { view: { kind: 'home' } as View, key: SEARCH }
     setTrail((t) => t.slice(0, -1))
@@ -200,6 +205,15 @@ export default function Hilfe({ onFollow, focusTerm, onFocusTermDone, openGuide:
         <LexiconView
           state={state}
           onTopic={(topic) => lexicon(chooseTopic(topic), () => {})}
+          announce={announce}
+          onPick={(id) => lexicon(chooseTerm(state, id), () => {
+            // Breit bleibt die Liste stehen und der Fokus auf dem Eintrag (sonst führte Shift+Tab aus dem Begriff auf den
+            // letzten der Liste statt auf den gewählten); die Statusmeldung sagt den Begriff an. Schmal verschwindet die
+            // Liste, der Fokus geht auf die Überschrift des Begriffs.
+            const entry = listEntry(id)
+            if (entry && isShown(entry)) setAnnounce(`Rechts angezeigt: ${GLOSSARY[id].title}`)
+            else focusTermHeading(id)
+          })}
           onTerm={(id) => lexicon(chooseTerm(state, id), () => focusTermHeading(id))}
           onList={() => {
             const was = state.term
@@ -352,16 +366,24 @@ function focusTermHeading(id: TermId) {
   heading.focus({ preventScroll: true })
 }
 
-// Zurück in die Liste (am Handy „← Alle Begriffe“): Fokus auf den Eintrag des Begriffs, von dem man kam.
+const listEntry = (id: TermId) => document.querySelector<HTMLElement>(`[data-lexicon-term="${id}"]`)
+
+// Ob ein Element zu sehen ist. Breit oder schmal entscheidet tw.css über eine Container-Abfrage; die Seite fragt deshalb
+// das Element (ohne `checkVisibility`, etwa in älterem Safari, über seine Rechtecke).
+function isShown(el: HTMLElement): boolean {
+  return typeof el.checkVisibility === 'function' ? el.checkVisibility() : el.getClientRects().length > 0
+}
+
+// Zurück in die Liste (am Handy „← Zur Liste“): Fokus auf den Eintrag des Begriffs, von dem man kam.
 function focusListEntry(id: TermId) {
-  const entry = document.querySelector<HTMLElement>(`[data-lexicon-term="${id}"]`)
+  const entry = listEntry(id)
   entry?.scrollIntoView?.({ block: 'center' })
   entry?.focus({ preventScroll: true })
 }
 
 // Den Eintrag in der für sich rollenden Liste (breit) sichtbar machen, ohne die Seite zu rollen.
 function scrollListTo(id: TermId) {
-  const entry = document.querySelector<HTMLElement>(`[data-lexicon-term="${id}"]`)
+  const entry = listEntry(id)
   const list = entry?.closest<HTMLElement>('.lexicon-list')
   if (!entry || !list || list.scrollHeight <= list.clientHeight) return
   const e = entry.getBoundingClientRect()
@@ -372,16 +394,51 @@ function scrollListTo(id: TermId) {
 // Das Lexikon (#488, Teil 3), Aufbau nach dem freigegebenen Vorschlag: oben der Themenfilter (Umschaltknöpfe mit Zahl),
 // darunter links die Liste mit Anfangsbuchstaben als Trennern, rechts der gewählte Begriff. Schmal steht nur eins von
 // beiden (`data-pane`, tw.css). Entscheidungen (Filter, Reihenfolge, „Kommt vor in“, verwandte Begriffe) in helpView.ts.
-function LexiconView({ state, onTopic, onTerm, onList, onOpenGuide }: {
+function LexiconView({ state, announce, onTopic, onPick, onTerm, onList, onOpenGuide }: {
   state: LexiconState
+  announce: string
   onTopic: (topic: TermTopic | null) => void
+  onPick: (id: TermId) => void
   onTerm: (id: TermId) => void
   onList: () => void
   onOpenGuide: (id: GuideId) => void
 }) {
   const entries = useMemo(() => lexiconEntries(state.topic), [state.topic])
+  // Die Liste ist ein Halt der Tabulatortaste (der zuletzt fokussierte Eintrag, sonst der gewählte, sonst der erste);
+  // die Pfeiltasten, Pos1 und Ende bewegen in ihr. So führt Tab vom Eintrag in den Begriff und Shift+Tab zurück auf ihn.
+  const [roving, setRoving] = useState<TermId | null>(null)
+  const stop = entries.some((e) => e.id === roving) ? roving : entries.some((e) => e.id === state.term) ? state.term : entries[0]?.id
+  const onListKey = (e: ReactKeyboardEvent<HTMLUListElement>) => {
+    const buttons = [...e.currentTarget.querySelectorAll<HTMLButtonElement>('button[data-lexicon-term]')]
+    const at = buttons.indexOf(document.activeElement as HTMLButtonElement)
+    const to = e.key === 'ArrowDown' ? at + 1 : e.key === 'ArrowUp' ? at - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? buttons.length - 1 : null
+    if (to === null || at < 0) return
+    e.preventDefault()
+    buttons[Math.max(0, Math.min(buttons.length - 1, to))]?.focus()
+  }
+  // Wird die Ansicht schmal (Zoom 200 %), während der Fokus in der Liste steht, verschwindet die Liste mit ihm. Dann
+  // geht der Fokus auf die Überschrift des Begriffs statt auf body (Durchsicht von Teil 3, S2). Gemerkt wird der
+  // letzte Eintrag mit Fokus, denn mancher Browser setzt den Fokus beim Ausblenden selbst auf body.
+  const listRef = useRef<HTMLDivElement>(null)
+  const lastInList = useRef<HTMLElement | null>(null)
+  const term = useRef(state.term)
+  term.current = state.term
+  useEffect(() => {
+    const list = listRef.current
+    if (!list || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => {
+      const was = lastInList.current
+      const now = document.activeElement
+      if (!was || !term.current || isShown(was) || (now !== was && now !== document.body && now !== null)) return
+      lastInList.current = null
+      document.getElementById(`begriff-${term.current}`)?.focus({ preventScroll: true })
+    })
+    observer.observe(list)
+    return () => observer.disconnect()
+  }, [])
   return (
     <div className="@container">
+      <p role="status" className="sr-only">{announce}</p>
       <div role="group" aria-label="Thema" className="no-print flex flex-wrap gap-2 mb-5">
         {lexiconFilters().map((f) => (
           <button
@@ -396,14 +453,19 @@ function LexiconView({ state, onTopic, onTerm, onList, onOpenGuide }: {
         ))}
       </div>
       <div className="lexicon-layout" data-pane={lexiconPane(state.term)}>
-        <div className="lexicon-list">
+        <div
+          ref={listRef}
+          className="lexicon-list"
+          onFocus={(e) => { lastInList.current = e.target }}
+          onBlur={(e) => { if (e.relatedTarget instanceof Node && !e.currentTarget.contains(e.relatedTarget)) lastInList.current = null }}
+        >
           {/* role="list": Safari nimmt einer Liste ohne Aufzählungszeichen sonst die Rolle. Die Buchstaben trennen nur
               fürs Auge; Vorleser hören eine Liste der Begriffe. */}
-          <ul role="list" aria-label="Begriffe" className="list-none m-0 p-0 py-1">
+          <ul role="list" aria-label="Begriffe" className="list-none m-0 p-0 py-1" onKeyDown={onListKey}>
             {entries.map((e) => (
               <li key={e.id}>
                 {e.letter && <span aria-hidden="true" className="block px-3 pt-2 pb-1 text-xs font-bold text-muted bg-hover">{e.letter}</span>}
-                <button type="button" data-lexicon-term={e.id} aria-current={state.term === e.id ? 'true' : undefined} onClick={() => onTerm(e.id)}>{e.title}</button>
+                <button type="button" data-lexicon-term={e.id} tabIndex={stop === e.id ? 0 : -1} aria-current={state.term === e.id ? 'true' : undefined} onFocus={() => setRoving(e.id)} onClick={() => onPick(e.id)}>{e.title}</button>
               </li>
             ))}
           </ul>
@@ -426,7 +488,7 @@ function TermDetail({ id, onTerm, onList, onOpenGuide }: { id: TermId; onTerm: (
   const related = relatedTerms(id)
   return (
     <article aria-labelledby={`begriff-${id}`} className="@container flex flex-col gap-5 bg-card border border-line rounded-l p-5 shadow-1 wrap-anywhere">
-      <button type="button" className="lexicon-back btn secondary small self-start no-print" onClick={onList}>← Alle Begriffe</button>
+      <button type="button" className="lexicon-back btn secondary small self-start no-print" onClick={onList}>← Zur Liste</button>
       <div>
         <p className="m-0 mb-1 text-xs font-bold uppercase tracking-wide text-accent-strong">{TERM_TOPIC_LABELS[t.topic]}</p>
         <h2 id={`begriff-${id}`} tabIndex={-1} className="m-0 text-xl">{t.title}</h2>
