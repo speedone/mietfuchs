@@ -36,7 +36,10 @@ test('Store-Eintrag: Website, Datenschutzrichtlinie und Supportkontakt aus den E
   assert.equal(websiteUrl, 'https://mietfuchs-app.de')
   assert.equal(privacyPolicy, 'https://github.com/speedone/mietfuchs/blob/main/docs/datenschutz.md')
   assert.equal(supportContact, 'https://github.com/speedone/mietfuchs/issues')
-  assert.throws(() => parseListing(md.replace('- Website: ', '- Webseite: ')), /Website/)
+  for (const label of ['Website', 'Datenschutzrichtlinie', 'Supportkontakt']) {
+    assert.throws(() => parseListing(md.replace(`- ${label}: `, `- ${label}x: `)), new RegExp(label), `${label} fehlt`)
+  }
+  assert.throws(() => parseListing(md.replace('- Website: https://', '- Website: http://')), /Website/, 'nur https')
 })
 
 test('Store-Eintrag: Hinweis auf fehlende Beratung und Gewähr in der Beschreibung', () => {
