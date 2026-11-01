@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CostItem, HeatingPlant, NoticeSubject, Settings, Tenancy, Unit } from './types'
 import { api } from './api'
 import { PeriodProvider, usePeriod, useSwitchTo } from './period'
@@ -21,6 +21,7 @@ import Zaehler from './pages/Zaehler'
 import Belege from './pages/Belege'
 import Abrechnung from './pages/Abrechnung'
 import Hilfe from './pages/Hilfe'
+import { keepIfEqual, type HelpStock } from './helpSuggestions'
 import Verlauf from './pages/Verlauf'
 import Steuer from './pages/Steuer'
 import Einstellungen from './pages/Einstellungen'
@@ -175,7 +176,7 @@ function Shell() {
   const [settings, setSettings] = useState<Settings | null>(null)
   const { choice, cycle } = useTheme()
   // Der gewählte Abrechnungszeitraum (#208); die Seiten werden bei seinem Wechsel neu aufgestellt.
-  const { key: periodKeyNow, label: periodLabelNow, year: periodYear } = usePeriod()
+  const { key: periodKeyNow, label: periodLabelNow, year: periodYear, period: periodNow, calendar: periodCalendar } = usePeriod()
   // Unter 900 px Kopf, Menüblatt und untere Leiste statt der Seitenleiste (#346, Schritt 9)
   const mobile = useMediaQuery(MOBILE_QUERY)
   const { properties, property, previousId, focusNoticeFor, setFocusNoticeFor, reload: reloadProperties, hasOpenForm } = useProperty()
@@ -345,18 +346,37 @@ function Shell() {
   // Die Seite Heizkosten erscheint erst mit einer Heizanlage (Heizung PR 6, Entwurf 11.4). Neu
   // gefragt wird bei jedem Seitenwechsel, so erscheint sie, sobald die Anlage in den Stammdaten
   // angelegt ist.
-  const [hasHeatingPlant, setHasHeatingPlant] = useState(false)
+  // Die Liste selbst braucht „Passend zu Ihrem Bestand“ in der Hilfe (#488, Teil 4).
+  const [heatingPlants, setHeatingPlants] = useState<HeatingPlant[]>([])
+  // Für welches Objekt die Liste geladen ist, wie `unitsFor`: Nach einem Objektwechsel stünden die Vorschläge der Hilfe
+  // sonst kurz ohne Heizung da und sprängen, sobald die Anlagen kommen (Integrationsdurchsicht von #488).
+  const [plantsFor, setPlantsFor] = useState<string | null>(null)
+  const hasHeatingPlant = heatingPlants.length > 0
   useEffect(() => {
     if (!propertyId) {
-      setHasHeatingPlant(false)
+      setHeatingPlants((prev) => keepIfEqual(prev, []))
+      setPlantsFor(null)
       return
     }
     let current = true
+    const loaded = (list: HeatingPlant[]) => {
+      if (!current) return
+      setHeatingPlants((prev) => keepIfEqual(prev, list))
+      setPlantsFor(propertyId)
+    }
     api<HeatingPlant[]>(withProperty('/api/heating-plants', propertyId))
-      .then((list) => { if (current) setHasHeatingPlant(list.length > 0) })
-      .catch(() => { if (current) setHasHeatingPlant(false) })
+      .then(loaded)
+      .catch(() => loaded([]))
     return () => { current = false }
   }, [propertyId, tab])
+
+  // Der Bestand für „Passend zu Ihrem Bestand“: das gewählte Objekt mit seinen Wohnungen, Mietverhältnissen und
+  // Heizanlagen im gewählten Zeitraum. Solange Wohnungen oder Anlagen eines anderen Objekts geladen sind, keiner; und
+  // nur auf der Hilfe, sonst braucht ihn niemand.
+  const helpStock = useMemo<HelpStock | null>(() => (tab === 'hilfe' && property && unitsFor === property.id && plantsFor === property.id ? {
+    properties, property, units, tenancies, plants: heatingPlants,
+    period: { from: periodNow.from, to: periodNow.to, label: periodLabelNow, calendar: periodCalendar },
+  } : null), [tab, properties, property, unitsFor, plantsFor, units, tenancies, heatingPlants, periodNow, periodLabelNow, periodCalendar])
 
   const contextLine = [property ? propertyName(property) : null, periodLabelNow].filter(Boolean).join(' · ')
 
@@ -480,7 +500,7 @@ function Shell() {
         {tab === 'heizkosten' && <Heizkosten units={units} tenancies={tenancies} onTenanciesChanged={reload} onOpenReceipt={openReceipt} onOpenAiSettings={openAiSettings} />}
         {tab === 'steuer' && <Steuer settings={settings} onNavigate={(t) => void navigate(t, null)} />}
         {tab === 'hilfe' && <Hilfe onFollow={(g, step) => void followStep(g, step, true)} focusTerm={helpTerm} onFocusTermDone={() => setHelpTerm(null)}
-          openGuide={helpGuide} onOpenGuideDone={() => setHelpGuide(null)} />}
+          openGuide={helpGuide} onOpenGuideDone={() => setHelpGuide(null)} stock={helpStock} />}
         {tab === 'verlauf' && <Verlauf />}
         {tab === 'einstellungen' && settings && (
           <Einstellungen settings={settings} reload={reload} update={update} onNavigate={(t) => void navigate(t)} />

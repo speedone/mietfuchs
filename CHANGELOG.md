@@ -13,6 +13,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   (AGPL-3.0, ohne Gewähr) und Links zu Lizenz und Quellcode. Derselbe Hinweis steht in der Beschreibung im Microsoft
   Store.
 
+- **Passend zu Ihrem Bestand** in „Hilfe & Begriffe“: Über den Anleitungen stehen bis zu drei, die zu Ihren Daten
+  passen, jede mit dem Grund, etwa „Weil 2025 ein Mieterwechsel erfasst ist“ oder „Weil eine Gas-Zentralheizung
+  eingetragen ist“. Mietfuchs leitet sie aus Art und Wohnungen des gewählten Objekts, der Heizung, Mieterwechsel und
+  Leerstand, Pauschalen und dem Abrechnungszeitraum ab; passt keine, entfällt der Abschnitt
+  ([#488](https://github.com/speedone/mietfuchs/issues/488)).
 ### Geändert
 
 - Das Lexikon in „Hilfe & Begriffe“ steht in zwei Spalten: links die Begriffe von A bis Z mit Filter nach Thema, rechts
