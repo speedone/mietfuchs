@@ -11,9 +11,12 @@ name: Microsoft Store
 # Bindestrich, die ans Release angehängt haben. Die Variable MSSTORE_EINREICHEN zählt dabei nicht, der
 # Start ist ja gewollt. Ein Paket, das älter ist als das im Store, lehnt das Partner Center ab.
 #
-# Windows mit Absicht: msstore legt die Zugangsdaten im Schlüsselbund des Systems ab, und den gibt es
-# auf einem Linux-Runner nicht („Testing configuration… Ops, something doesn't seem to be right!“, mit
-# --verbose: libsecret fehlt). Microsofts eigenes Beispiel läuft ebenfalls auf windows-latest.
+# Eingereicht wird mit scripts/store-submit.mjs über die Submission-API des Partner Centers, nicht mit
+# der Store-CLI: Die lädt nur Pakete hoch, Bildschirmfotos gehören aber ins selbe ZIP, und unter Linux
+# legt sie die Zugangsdaten im Schlüsselbund ab, den ein Runner nicht hat (daran scheiterte v0.14.0).
+# Mit dem Paket gehen Beschreibung, Funktionen und Suchbegriffe aus packaging/msix/store-eintrag.md,
+# die Bildschirmfotos aus docs/screenshots und „Neuigkeiten in dieser Version“ in den Store, jeweils
+# im Stand des Tags. Nach der Zertifizierung veröffentlicht der Store von selbst.
 #
 # Zugang über die Microsoft-Entra-Anwendung „mietfuchs-github“ (Rolle Manager im Partner Center); ihr
 # Secret läuft ab und muss dann in MSSTORE_CLIENT_SECRET erneuert werden.
@@ -21,8 +24,6 @@ on:
   workflow_call:
     secrets:
       MSSTORE_TENANT_ID:
-        required: true
-      MSSTORE_SELLER_ID:
         required: true
       MSSTORE_CLIENT_ID:
         required: true
@@ -41,13 +42,10 @@ permissions:
 jobs:
   einreichen:
     name: Im Microsoft Store einreichen
-    runs-on: windows-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       actions: read
-    defaults:
-      run:
-        shell: bash
     steps:
       - name: Lauf prüfen
         if: inputs.run_id != ''
@@ -64,6 +62,11 @@ jobs:
           attached=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?per_page=100" --jq '.jobs[] | select(.name == "Ans Release anhängen") | .conclusion')
           [ "$attached" = success ] || { echo "::error::Lauf $RUN_ID hat nichts ans Release angehängt ($attached)"; exit 1; }
           echo "TAG=$tag" >> "$GITHUB_ENV"
+      # Texte und Bildschirmfotos im Stand des Tags; beim Aufruf aus release.yml ist das der Commit des Laufs. Vor dem Paket,
+      # denn checkout räumt den Arbeitsordner auf.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG || github.sha }}
       - uses: actions/download-artifact@v8
         if: inputs.run_id == ''
         with:
@@ -76,42 +79,16 @@ jobs:
           path: store
           run-id: ${{ inputs.run_id }}
           github-token: ${{ github.token }}
-      - uses: microsoft/setup-msstore-cli@v1.4
-      - name: Anmelden
-        env:
-          TENANT_ID: ${{ secrets.MSSTORE_TENANT_ID }}
-          SELLER_ID: ${{ secrets.MSSTORE_SELLER_ID }}
-          CLIENT_ID: ${{ secrets.MSSTORE_CLIENT_ID }}
-          CLIENT_SECRET: ${{ secrets.MSSTORE_CLIENT_SECRET }}
-        run: msstore reconfigure --tenantId "$TENANT_ID" --sellerId "$SELLER_ID" --clientId "$CLIENT_ID" --clientSecret "$CLIENT_SECRET"
-      # Die Store-ID aus dem Partner Center (Produktidentität). `publish` legt die Einreichung als Kopie
-      # der zuletzt veröffentlichten an, übernimmt Eintrag und Bilder und tauscht nur das Paket; einen
-      # offenen Entwurf löscht es vorher. Kopiert wird auch die Art der Veröffentlichung, und die stand
-      # bei der ersten Einreichung (von Hand) auf „Manual“. Deshalb erst ohne Abschicken hochladen, dann
-      # „Immediate“ setzen (nach der Zertifizierung von selbst veröffentlichen), dann abschicken.
-      # `submission update` ersetzt die ganze Einreichung, also wird die vollständige geholt und nur
-      # diese Felder geändert. Die Statuszeilen gehen nach stderr, das JSON nach stdout; sed hält
-      # trotzdem nur das JSON, falls eine Fassung der CLI anders schreibt. Die Schreibweise der Felder
-      # (camelCase der API, PascalCase der CLI) bleibt offen, deshalb der Vergleich ohne Großschreibung.
-      #
-      # „Neuigkeiten in dieser Version“ (releaseNotes) käme sonst ebenfalls aus der letzten Einreichung
-      # und nennte eine ältere Version: Version und Link aufs Release, die Liste der Änderungen steht dort.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
       - name: Einreichen
         env:
-          APP_ID: 9PMHZ0ZJPZDZ
+          MSSTORE_TENANT_ID: ${{ secrets.MSSTORE_TENANT_ID }}
+          MSSTORE_CLIENT_ID: ${{ secrets.MSSTORE_CLIENT_ID }}
+          MSSTORE_CLIENT_SECRET: ${{ secrets.MSSTORE_CLIENT_SECRET }}
         run: |
-          TAG="${TAG:-$GITHUB_REF_NAME}"
-          notes="Mietfuchs ${TAG#v}. Was neu ist und was beim Update zu beachten ist, steht unter https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG"
-          msstore publish store/*.msixbundle -id "$APP_ID" --noCommit
-          msstore submission get "$APP_ID" > submission.out
-          sed -n '/^{/,$p' submission.out \
-            | jq --arg notes "$notes" '
-                with_entries(if (.key | ascii_downcase) == "targetpublishmode" then .value = "Immediate" else . end)
-                | walk(if type == "object" then with_entries(if (.key | ascii_downcase) == "releasenotes" then .value = $notes else . end) else . end)' \
-            > submission.json
-          jq -e 'to_entries | any((.key | ascii_downcase) == "targetpublishmode" and .value == "Immediate")' submission.json > /dev/null \
-            || { echo "::error::Art der Veröffentlichung nicht in der Einreichung gefunden"; exit 1; }
-          jq -e --arg notes "$notes" '[.. | objects | to_entries[] | select((.key | ascii_downcase) == "releasenotes") | .value == $notes] | length > 0 and all' submission.json > /dev/null \
-            || { echo "::error::Neuigkeiten nicht in der Einreichung gefunden"; exit 1; }
-          msstore submission update "$APP_ID" submission.json
-          msstore submission publish "$APP_ID"
+          shopt -s nullglob
+          bundles=(store/*.msixbundle)
+          [ ${#bundles[@]} -eq 1 ] || { echo "::error::Erwartet genau ein .msixbundle, gefunden: ${#bundles[@]}"; exit 1; }
+          node scripts/store-submit.mjs --bundle "${bundles[0]}" --tag "${TAG:-$GITHUB_REF_NAME}"

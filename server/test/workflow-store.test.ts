@@ -9,10 +9,20 @@ import { fileURLToPath } from 'node:url'
 const workflows = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../.github/workflows')
 const read = (name: string) => fs.readFileSync(path.join(workflows, name), 'utf8')
 
-// Die Einreichung scheiterte bei v0.14.0 auf ubuntu-24.04: msstore legt die Zugangsdaten im
-// Schlüsselbund ab, und den hat ein Linux-Runner nicht.
-test('Store: die Einreichung läuft auf Windows', () => {
-  assert.match(read('store.yml'), /runs-on: windows-latest/)
+// Die Einreichung scheiterte bei v0.14.0 an der Store-CLI: Sie legt unter Linux die Zugangsdaten im
+// Schlüsselbund ab, den ein Runner nicht hat. Eingereicht wird deshalb mit dem eigenen Skript.
+test('Store: eingereicht wird mit scripts/store-submit.mjs, nicht mit der Store-CLI', () => {
+  const yml = read('store.yml')
+  assert.match(yml, /node scripts\/store-submit\.mjs --bundle /)
+  assert.doesNotMatch(yml, /setup-msstore-cli|msstore /)
+})
+
+// checkout räumt den Arbeitsordner auf; käme es nach dem Download, wäre das Paket weg
+test('Store: erst auschecken, dann das Paket laden', () => {
+  const yml = read('store.yml')
+  const checkout = yml.indexOf('uses: actions/checkout@')
+  const download = yml.indexOf('uses: actions/download-artifact@')
+  assert.ok(checkout > 0 && download > 0 && checkout < download)
 })
 
 // Durchsicht (M1): Beim Start von Hand gibt es das Artefakt auch in einem Tag-Lauf, dessen Prüfungen
@@ -32,29 +42,4 @@ test('Store: ein PR an store.yml startet release.yml', () => {
   const yml = read('release.yml')
   const paths = yml.slice(yml.indexOf('    paths:'), yml.indexOf('  workflow_dispatch:'))
   assert.match(paths, /- \.github\/workflows\/store\.yml/)
-})
-
-// Partner Center legt eine neue Einreichung als Kopie der zuletzt veröffentlichten an und übernimmt
-// deren Art der Veröffentlichung; die erste (von Hand) stand auf „Manual“. „Automatisch nach der
-// Zertifizierung“ im offenen Entwurf zu setzen hilft nicht, `msstore publish` löscht den Entwurf.
-// Deshalb setzt der Workflow die Art selbst, bevor er abschickt.
-test('Store: die Einreichung wird nach der Zertifizierung von selbst veröffentlicht', () => {
-  const yml = read('store.yml')
-  assert.match(yml, /msstore publish [^\n]*--noCommit/)
-  assert.match(yml, /"Immediate"/)
-  assert.match(yml, /msstore submission update /)
-  assert.match(yml, /msstore submission publish /)
-  assert.ok(
-    yml.indexOf('msstore submission update ') < yml.indexOf('msstore submission publish '),
-    'erst die Art setzen, dann abschicken',
-  )
-})
-
-// „Neuigkeiten in dieser Version“ kopierte der Store sonst von der letzten Einreichung, also stünde
-// dort der Text einer älteren Version. Der Workflow setzt Version und Link aufs Release.
-test('Store: die Neuigkeiten nennen die Version und verlinken das Release', () => {
-  const yml = read('store.yml')
-  assert.match(yml, /releasenotes/)
-  assert.match(yml, /releases\/tag\/\$TAG/)
-  assert.match(yml, /echo "TAG=\$tag" >> "\$GITHUB_ENV"/)
 })
