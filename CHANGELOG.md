@@ -28,6 +28,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   `Mietfuchs-<Version>-apple-silicon.dmg` bzw. `-intel.dmg` für den Mac. Die bisherigen Programmdateien bleiben
   vorerst zum Herunterladen; wer schon damit arbeitet, bleibt bis zum Umzug der Daten in einem der nächsten Releases
   dabei, denn das Fenster legt seine Daten im Benutzerordner an.
+- **Programmfenster: kleiner und schneller installiert** ([#517](https://github.com/speedone/mietfuchs/issues/517)):
+  Der Server läuft im Fenster jetzt mit dem Node, das das Fenster ohnehin mitbringt, statt als eigene Programmdatei.
+  Das spart rund 100 MB je Architektur, und neben dem Fenster gibt es keine zweite ausführbare Datei mehr, die der
+  Virenscanner prüfen muss.
 - **Programmfenster: Zugriff aus dem Heimnetz** ([#517](https://github.com/speedone/mietfuchs/issues/517)): In den
   Einstellungen lässt sich erlauben, Mietfuchs auch auf dem Handy oder einem anderen Rechner im selben WLAN zu öffnen;
   die Karte nennt dann die Adressen dafür. Ohne dieses Häkchen ist Mietfuchs im Fenster nur auf dem eigenen Rechner

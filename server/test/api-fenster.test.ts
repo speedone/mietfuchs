@@ -1,6 +1,8 @@
 // Betrieb im eigenen Programmfenster (#517) und die Prüfung von Host und Origin gegen den echten Server. Das Fenster
-// startet die Programmdatei mit NKA_DESKTOP=1 und NKA_HOST=127.0.0.1 und hält ihre Standardeingabe offen; hier
-// nachgestellt mit NKA_RUNTIME=desktop. Die Regeln selbst prüft requestGuard.test.ts.
+// startet den Server als utilityProcess von Electron mit NKA_DESKTOP=1 und NKA_HOST=127.0.0.1; hier unter Node
+// nachgestellt mit NKA_RUNTIME=desktop. Dass der Server mit dem Fenster endet, auch nach einem Absturz, besorgt
+// Electron selbst; das prüft scripts/desktop-check.mjs (Schritt 5) auf Windows und macOS. Die Regeln für Host und
+// Origin prüft requestGuard.test.ts.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -29,7 +31,7 @@ function send(base: string, { method = 'GET', urlPath = '/api/settings', headers
 const someLanAddress = (): string | null =>
   Object.values(os.networkInterfaces()).flat().find((i) => i && i.family === 'IPv4' && !i.internal)?.address ?? null
 
-test('Fenster: Betriebsart desktop, lauscht nur auf 127.0.0.1 und endet, wenn die Standardeingabe endet', async () => {
+test('Fenster: Betriebsart desktop, lauscht nur auf 127.0.0.1', async () => {
   const s = await startServerIn(freshDir(), { NKA_RUNTIME: 'desktop', NKA_HOST: '127.0.0.1' })
   try {
     const status = await s.api<UpdateStatus>('/api/update')
@@ -39,9 +41,6 @@ test('Fenster: Betriebsart desktop, lauscht nur auf 127.0.0.1 und endet, wenn di
       const port = new URL(s.base).port
       await assert.rejects(send(`http://${lan}:${port}`), /ECONNREFUSED|EHOSTUNREACH|ETIMEDOUT/)
     }
-    // Das Fenster ist weg (Absturz, Abmelden): Der Server darf nicht als Waise weiterlaufen
-    s.child.stdin.end()
-    assert.equal(await waitForExit(s.child), 0)
   } finally {
     s.stop()
   }
@@ -105,17 +104,25 @@ test('Prüfung: im npm-Betrieb aus (Docker ebenso), mit NKA_ALLOWED_HOSTS an', a
   }
 })
 
-// Durchsicht M2: Endet die Standardeingabe mitten im Start (Fenster während der Migration geschlossen), läuft der
-// Start erst zu Ende, dann endet der Server. Sonst bräche er Migration oder Sicherung ab. startServerRaw gibt keine
-// Standardeingabe, sie endet also sofort.
-test('Fenster: Ende der Standardeingabe mitten im Start beendet erst nach dem Start', async () => {
+// Geänderte Erwartung: Bisher beendete sich der Server im Fenster, sobald seine Standardeingabe endete, und ein Ende
+// mitten im Start wartete den Start ab (Durchsicht M2). Ein utilityProcess von Electron hat keine Standardeingabe, sie
+// endet sofort; mit der alten Regel endete der Server im Fenster gleich nach dem Start. Das Ende mit dem Fenster
+// übernimmt Electron, das Beenden ohne Adresse die Nachricht „quit“ über `process.parentPort` (shutDown wartet dabei
+// weiter den Start ab). startServerRaw gibt keine Standardeingabe, sie endet also sofort.
+test('Fenster: Ende der Standardeingabe beendet den Server nicht', async () => {
   const dataDir = freshDir()
-  const start = startServerRaw(dataDir, { NKA_PORT: '0', NKA_RUNTIME: 'desktop', NKA_HOST: '127.0.0.1', NKA_TEST_START_DELAY_MS: '1500' })
+  const start = startServerRaw(dataDir, { NKA_PORT: '0', NKA_RUNTIME: 'desktop', NKA_HOST: '127.0.0.1' })
   try {
-    assert.equal(await waitForExit(start.child), 0)
+    const deadline = Date.now() + 30_000
+    while (!/läuft auf/.test(start.out()) && start.child.exitCode === null && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 100))
     assert.match(start.out(), /läuft auf/, 'der Start lief zu Ende')
+    await new Promise((resolve) => setTimeout(resolve, 1500))
+    assert.equal(start.child.exitCode, null, 'läuft nach dem Ende der Standardeingabe weiter')
   } finally {
-    start.child.kill()
+    if (start.child.exitCode === null) {
+      start.child.kill()
+      await waitForExit(start.child)
+    }
     fs.rmSync(dataDir, { recursive: true, force: true })
   }
 })

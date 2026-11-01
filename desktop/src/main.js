@@ -1,18 +1,19 @@
-// Das eigene Programmfenster von Mietfuchs unter Windows und macOS (#517). Electron ist hier nur das Fenster: Die
-// Programmdatei läuft unverändert als Kindprozess, lauscht auf 127.0.0.1, und das Fenster zeigt ihre Oberfläche.
-// Server, Oberfläche und Datenbank wissen davon nur, dass sie keinen Browser öffnen und mit dem Fenster enden
-// (Betriebsart desktop, server/src/version.ts).
+// Das eigene Programmfenster von Mietfuchs unter Windows und macOS (#517). Electron ist hier nur das Fenster: Der
+// Server läuft aus dem Quellcode mit Electrons eigenem Node als utilityProcess (so empfiehlt es Electron für
+// Hintergrundprozesse mit Node), lauscht auf 127.0.0.1, und das Fenster zeigt seine Oberfläche. Server, Oberfläche und
+// Datenbank wissen davon nur, dass sie keinen Browser öffnen und mit dem Fenster enden (Betriebsart desktop,
+// server/src/version.ts). Eine eigene Programmdatei für den Server gibt es im Fenster nicht: eine ausführbare Datei
+// weniger, die Virenscanner prüfen und die signiert wird, und rund 100 MB weniger je Architektur.
 //
 // Sicherheit nach der Checkliste von Electron: Die Seite läuft ohne Node in der Sandbox, die Brücke (preload.cjs)
 // kennt nur das Drucken und den Zugriff aus dem Heimnetz, Navigation und neue Fenster bleiben auf der eigenen Adresse, fremde Links öffnet der
 // Standardbrowser, Berechtigungen (Kamera, Standort …) werden abgelehnt.
-import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { BrowserWindow, Menu, app, dialog, ipcMain, session, shell } from 'electron'
-import { DEFAULT_PORT, dataDirIn, freePort, linkTarget, networkState, serverCommand, serverEnv, startUrlIn, whoIsOn } from './server.js'
+import { BrowserWindow, Menu, app, dialog, ipcMain, session, shell, utilityProcess } from 'electron'
+import { DEFAULT_PORT, SERVICE_NAME, dataDirIn, freePort, linkTarget, networkState, serverEnv, serverModule, startUrlIn, whoIsOn } from './server.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const startedAt = Date.now()
@@ -53,8 +54,11 @@ function writeSettings(settings) {
   fs.writeFileSync(settingsFile(), `${JSON.stringify(settings, null, 2)}\n`)
 }
 
-/** @type {import('node:child_process').ChildProcessWithoutNullStreams | null} */
+/** @type {Electron.UtilityProcess | null} */
 let server = null
+// Beendete Server; ein utilityProcess kennt kein `exitCode`
+/** @type {WeakSet<Electron.UtilityProcess>} */
+const exited = new WeakSet()
 let serverOutput = ''
 /** @type {string | null} */
 let origin = null
@@ -63,7 +67,7 @@ let mainWindow = null
 let quitting = false
 // Server, die das Fenster absichtlich beendet (Beenden, Neustart für den Zugriff aus dem Heimnetz): Ihr Ende ist kein
 // Absturz, also weder die Meldung „unerwartet beendet“ noch das Ende des Fensters.
-/** @type {WeakSet<import('node:child_process').ChildProcess>} */
+/** @type {WeakSet<Electron.UtilityProcess>} */
 const retired = new WeakSet()
 // Ein laufender Neustart; ein zweiter wartet, bis er fertig ist (Doppelklick, zweites Fenster eines Belegs).
 /** @type {Promise<unknown>} */
@@ -107,31 +111,31 @@ async function choosePort(settings) {
  */
 async function startServer(settings, fixedPort) {
   const port = fixedPort ?? await choosePort(settings)
-  const { command, args } = serverCommand({
-    packaged: app.isPackaged,
-    platform: process.platform,
-    resourcesPath: process.resourcesPath,
-    execPath: process.execPath,
-    repoRoot: path.resolve(here, '..', '..'),
-  })
+  const repoRoot = path.resolve(here, '..', '..')
+  const { modulePath, cwd } = serverModule({ packaged: app.isPackaged, platform: process.platform, resourcesPath: process.resourcesPath, repoRoot })
   const log = openLog()
-  // Die Standardeingabe bleibt offen: Endet sie, weil das Fenster weg ist (Absturz, Abmelden unter Windows), beendet
-  // sich der Server selbst (server/src/index.ts). `windowsHide`, damit kein Konsolenfenster aufblitzt.
-  const child = spawn(command, args, {
-    env: serverEnv(process.env, { port, network: settings.network === true, packaged: app.isPackaged }),
-    stdio: ['pipe', 'pipe', 'pipe'],
-    windowsHide: true,
+  log.write(`Fenster: Electron ${process.versions.electron}, Node ${process.versions.node}, Store ${process.windowsStore === true ? 'ja' : 'nein'}, Server ${modulePath}\n`)
+  // Mit dem Hauptprozess endet auch der utilityProcess, nach einem Absturz des Fensters ebenso wie beim Abmelden unter
+  // Windows; es bleibt keine Waise, die Port und Datenbank hält (scripts/desktop-check.mjs, Schritt 5). Seine
+  // Standardeingabe ist immer leer, Ausgabe und Fehler gehen über Pipes ins Protokoll. Ein Konsolenfenster gibt es
+  // nicht, der utilityProcess ist Electron selbst.
+  const child = utilityProcess.fork(modulePath, [], {
+    cwd,
+    env: serverEnv(process.env, { port, network: settings.network === true, packaged: app.isPackaged, windowsStore: process.windowsStore === true, repoRoot }),
+    stdio: 'pipe',
+    serviceName: SERVICE_NAME,
   })
   server = child
   serverOutput = ''
-  child.stdout.setEncoding('utf8')
-  child.stderr.setEncoding('utf8')
+  // Als Text, mit Umlauten auch über die Grenze zweier Blöcke hinweg („läuft auf“ in der Startzeile)
+  child.stdout?.setEncoding('utf8')
+  child.stderr?.setEncoding('utf8')
   const collect = (/** @type {string} */ text) => {
     serverOutput = (serverOutput + text).slice(-OUTPUT_LIMIT)
     log.write(text)
   }
-  child.stdout.on('data', collect)
-  child.stderr.on('data', collect)
+  child.stdout?.on('data', collect)
+  child.stderr?.on('data', collect)
   let ready = false
   const slow = setTimeout(() => {
     void mainWindow?.loadURL(page('<p>Mietfuchs richtet Ihre Daten ein. Bei vielen Belegen dauert das einige Minuten.</p>'))
@@ -141,6 +145,7 @@ async function startServer(settings, fixedPort) {
     // (Durchsicht K6). Vor dem Start scheitert der Start, danach geht das Fenster mit, aus der Oberfläche beendet
     // (Code 0) ohne Meldung.
     child.once('exit', (code) => {
+      exited.add(child)
       clearTimeout(slow)
       // Nach einem Neustart läuft schon der nächste; den nicht vergessen
       if (server === child) server = null
@@ -151,19 +156,19 @@ async function startServer(settings, fixedPort) {
       }
       app.quit()
     })
-    child.once('error', (err) => {
-      clearTimeout(slow)
-      reject(err)
+    // Ein Fehler, nach dem V8 nicht weiterkann; `exit` folgt trotzdem und entscheidet
+    child.once('error', (type, location) => {
+      log.write(`Der Server ist abgestürzt: ${type} in ${location}\n`)
     })
     const onData = () => {
       const url = startUrlIn(serverOutput)
       if (!url) return
       ready = true
       clearTimeout(slow)
-      child.stdout.off('data', onData)
+      child.stdout?.off('data', onData)
       resolve(url)
     }
-    child.stdout.on('data', onData)
+    child.stdout?.on('data', onData)
   })
 }
 
@@ -171,19 +176,20 @@ async function startServer(settings, fixedPort) {
 const lastLines = (text) => text.trim().split('\n').slice(-12).join('\n')
 
 // Erst über die Oberfläche beenden, damit der Server seine Schreibvorgänge abschließt; unter Windows kennt ein
-// Kindprozess kein SIGTERM, `kill()` beendete ihn sofort.
+// Kindprozess kein SIGTERM, `kill()` beendete ihn sofort. Ohne Adresse (Fenster während des Starts geschlossen) die
+// Nachricht „quit“ über `process.parentPort`; der Server startet dann zu Ende und beendet sich (server/src/index.ts).
 async function stopServer() {
   const child = server
-  if (!child || child.exitCode !== null) return
+  if (!child || exited.has(child)) return
   retired.add(child)
-  const exited = new Promise((resolve) => child.once('exit', resolve))
+  const gone = new Promise((resolve) => child.once('exit', resolve))
   if (origin) await fetch(`${origin}/api/quit`, { method: 'POST', signal: AbortSignal.timeout(3000) }).catch(() => {})
-  else child.stdin.end()
+  else child.postMessage('quit')
   const timeout = new Promise((resolve) => setTimeout(() => resolve('timeout'), QUIT_TIMEOUT_MS))
-  if ((await Promise.race([exited, timeout])) !== 'timeout') return
+  if ((await Promise.race([gone, timeout])) !== 'timeout') return
   child.kill()
   // Beim Neustart muss der Port frei sein, bevor der nächste Server ihn bindet
-  await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 2000))])
+  await Promise.race([gone, new Promise((resolve) => setTimeout(resolve, 2000))])
 }
 
 // Zugriff aus dem Heimnetz: Der Server lauscht dann auf allen Netzwerkkarten statt nur auf 127.0.0.1. Ändern heißt
@@ -345,10 +351,15 @@ async function selfTest(win) {
   const out = process.env.MIETFUCHS_SELFTEST_OUT
   if (!out || !process.env.CI) return
   fs.mkdirSync(out, { recursive: true })
-  const memory = app.getAppMetrics().reduce((sum, m) => sum + m.memory.workingSetSize, 0)
+  // Der Server ist ein Prozess des Fensters und steht mit in den Metriken; getrennt gezählt, damit der Speicher des
+  // Fensters mit dem früherer Läufe vergleichbar bleibt
+  const metrics = app.getAppMetrics()
+  const isServer = (/** @type {Electron.ProcessMetric} */ m) => m.serviceName === SERVICE_NAME || m.name === SERVICE_NAME
+  const memory = metrics.filter((m) => !isServer(m)).reduce((sum, m) => sum + m.memory.workingSetSize, 0)
+  const serverMemory = metrics.filter(isServer).reduce((sum, m) => sum + m.memory.workingSetSize, 0)
   const pdf = await win.webContents.printToPDF({ pageSize: 'A4', printBackground: true, preferCSSPageSize: true })
   fs.writeFileSync(path.join(out, 'fenster.pdf'), pdf)
-  fs.writeFileSync(path.join(out, 'fenster.json'), `${JSON.stringify({ origin, startMs: Date.now() - startedAt, electronMemoryKiB: memory, electron: process.versions.electron, chrome: process.versions.chrome }, null, 2)}\n`)
+  fs.writeFileSync(path.join(out, 'fenster.json'), `${JSON.stringify({ origin, startMs: Date.now() - startedAt, electronMemoryKiB: memory, serverMemoryKiB: serverMemory, serverPid: server?.pid ?? null, electron: process.versions.electron, chrome: process.versions.chrome }, null, 2)}\n`)
 }
 
 async function start() {

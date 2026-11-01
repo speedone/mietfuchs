@@ -6,7 +6,8 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { ARCHITECTURES, PACKAGE_EXE, SERVER_EXE, checkWindowFolder, fillManifest, msixVersion, peInfo } from '../../scripts/package-msix.mjs'
+import { ARCHITECTURES, PACKAGE_EXE, SERVER_DIR, checkWindowFolder, fillManifest, msixVersion, peInfo } from '../../scripts/package-msix.mjs'
+import { REQUIRED_SERVER_FILES } from '../../scripts/package-desktop.mjs'
 import { STORE_PACKAGE_NAME } from '../src/paths.ts'
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -81,36 +82,41 @@ test('peInfo: Architektur und Subsystem aus dem Kopf einer Programmdatei', () =>
   assert.throws(() => peInfo(Buffer.from('#!/bin/sh\n')), /keine Windows-Programmdatei/)
 })
 
-// Der Ordner, den electron-builder je Architektur entpackt neben den Installer legt
-function windowFolder(arch: number, server: { arch: number, subsystem: number } | null) {
+// Der Ordner, den electron-builder je Architektur entpackt neben den Installer legt. Geänderte Erwartung: Darin lag
+// bisher die Programmdatei des Servers (resources\\server\\mietfuchs.exe), geprüft auf Architektur und Konsolenfenster.
+// Heute läuft der Server aus dem Quellcode im Fenster selbst (utilityProcess); geprüft wird deshalb das Fenster am
+// PE-Kopf und der Server-Ordner auf Vollständigkeit. Ein Konsolenfenster kann der Server nicht mehr öffnen, er ist
+// Mietfuchs.exe, und das ist eine GUI-Datei.
+function windowFolder(arch: number, subsystem: number, server: boolean) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-msix-'))
-  fs.writeFileSync(path.join(dir, PACKAGE_EXE), fakePe(arch, GUI))
+  fs.writeFileSync(path.join(dir, PACKAGE_EXE), fakePe(arch, subsystem))
   if (server) {
-    fs.mkdirSync(path.join(dir, 'resources', 'server'), { recursive: true })
-    fs.writeFileSync(path.join(dir, ...SERVER_EXE.split('\\')), fakePe(server.arch, server.subsystem))
+    const serverDir = path.join(dir, ...SERVER_DIR.split('\\'))
+    for (const file of REQUIRED_SERVER_FILES) {
+      fs.mkdirSync(path.join(serverDir, path.dirname(file)), { recursive: true })
+      fs.writeFileSync(path.join(serverDir, file), file === 'package.json' ? '{"type":"module"}' : '')
+    }
   }
   return dir
 }
 
 test('Store-Paket: je Architektur der entpackte Ordner des Programmfensters', () => {
   assert.deepEqual(ARCHITECTURES, [{ arch: 'x64', dir: 'win-unpacked' }, { arch: 'arm64', dir: 'win-arm64-unpacked' }])
-  // Dort sucht das Fenster den Server (serverCommand in desktop/src/server.js) und erkennt der Server den Store
-  assert.equal(SERVER_EXE, 'resources\\server\\mietfuchs.exe')
+  // Dort sucht das Fenster den Server (serverModule und SERVER_FOLDER in desktop/src/server.js)
+  assert.equal(SERVER_DIR, 'resources\\mietfuchs')
 })
 
 test('Store-Paket: ein vollständiger Ordner geht durch', (t) => {
-  const dir = windowFolder(ARM64, { arch: ARM64, subsystem: GUI })
+  const dir = windowFolder(ARM64, GUI, true)
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
   assert.doesNotThrow(() => checkWindowFolder(dir, 'arm64'))
 })
 
 test('Store-Paket: fehlender Server, falsche Architektur oder Konsolenfenster brechen ab', (t) => {
   const cases: [string, ReturnType<typeof windowFolder>, RegExp][] = [
-    ['ohne Server', windowFolder(ARM64, null), /mietfuchs\.exe fehlt/],
-    ['Fenster für die falsche Architektur', windowFolder(X64, { arch: ARM64, subsystem: GUI }), /Mietfuchs\.exe ist für x64 gebaut, nicht für arm64/],
-    ['Server für die falsche Architektur', windowFolder(ARM64, { arch: X64, subsystem: GUI }), /mietfuchs\.exe ist für x64 gebaut, nicht für arm64/],
-    // Die Datei mit Konsolenfenster (die vom Release) stellte neben das Fenster ein schwarzes
-    ['Server mit Konsolenfenster', windowFolder(ARM64, { arch: ARM64, subsystem: CONSOLE }), /Konsolenfenster/],
+    ['ohne Server', windowFolder(ARM64, GUI, false), /index\.ts fehlt/],
+    ['Fenster für die falsche Architektur', windowFolder(X64, GUI, true), /Mietfuchs\.exe ist für x64 gebaut, nicht für arm64/],
+    ['Fenster mit Konsolenfenster', windowFolder(ARM64, CONSOLE, true), /Konsolenfenster/],
   ]
   for (const [what, dir, error] of cases) {
     t.after(() => fs.rmSync(dir, { recursive: true, force: true }))

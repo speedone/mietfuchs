@@ -33,6 +33,15 @@
       "package.json"
     ],
     "asar": true,
+    "extraResources": [
+      {
+        "from": "../dist-desktop-server",
+        "to": "mietfuchs",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
     "electronFuses": {
       "runAsNode": false,
       "enableCookieEncryption": false,
@@ -50,12 +59,6 @@
             "x64",
             "arm64"
           ]
-        }
-      ],
-      "extraResources": [
-        {
-          "from": "../dist-bin/desktop/win-${arch}/mietfuchs.exe",
-          "to": "server/mietfuchs.exe"
         }
       ]
     },
@@ -81,13 +84,7 @@
       "identity": "-",
       "hardenedRuntime": false,
       "notarize": false,
-      "artifactName": "Mietfuchs-${version}-${arch}.${ext}",
-      "extraFiles": [
-        {
-          "from": "../dist-bin/desktop/mac-${arch}/mietfuchs-server",
-          "to": "MacOS/mietfuchs-server"
-        }
-      ]
+      "artifactName": "Mietfuchs-${version}-${arch}.${ext}"
     },
     "dmg": {
       "title": "Mietfuchs ${version}"

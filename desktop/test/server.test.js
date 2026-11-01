@@ -1,38 +1,62 @@
-// Der Server im Programmfenster (#517), ohne Electron geprüft: Datei, Umgebung, Port, Startzeile und Links.
+// Der Server im Programmfenster (#517), ohne Electron geprüft: Modul, Umgebung, Port, Startzeile und Links.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import http from 'node:http'
 import fs from 'node:fs'
-import { DEFAULT_PORT, canListen, dataDirIn, freePort, lanUrls, linkTarget, networkState, serverCommand, serverEnv, startUrlIn, whoIsOn } from '../src/server.js'
+import { DEFAULT_PORT, SERVER_FOLDER, canListen, dataDirIn, freePort, lanUrls, linkTarget, networkState, serverEnv, serverModule, startUrlIn, whoIsOn } from '../src/server.js'
 
-test('Programmdatei: Windows in resources\\server, Mac neben dem Fenster, beim Entwickeln der Quellcode', () => {
+// Geänderte Erwartung: Bisher lief ausgeliefert die Programmdatei des Servers (Bun) unter resources\server bzw. in
+// Contents/MacOS. Heute läuft der Server aus dem Quellcode mit Electrons eigenem Node als utilityProcess; ausgeliefert
+// liegt er unter resources/mietfuchs in der Anordnung des Repos, beim Entwickeln im Repo selbst.
+test('Server: ausgeliefert unter resources/mietfuchs, beim Entwickeln aus dem Repo, nach der genannten Plattform', () => {
   assert.deepEqual(
-    serverCommand({ packaged: true, platform: 'win32', resourcesPath: 'C:\\Users\\Anna\\AppData\\Local\\Programs\\Mietfuchs\\resources', execPath: 'C:\\Users\\Anna\\AppData\\Local\\Programs\\Mietfuchs\\Mietfuchs.exe', repoRoot: '' }),
-    { command: 'C:\\Users\\Anna\\AppData\\Local\\Programs\\Mietfuchs\\resources\\server\\mietfuchs.exe', args: [] },
+    serverModule({ packaged: true, platform: 'win32', resourcesPath: 'C:\\Users\\Anna\\AppData\\Local\\Programs\\mietfuchs\\resources', repoRoot: '' }),
+    {
+      modulePath: 'C:\\Users\\Anna\\AppData\\Local\\Programs\\mietfuchs\\resources\\mietfuchs\\server\\src\\index.ts',
+      cwd: 'C:\\Users\\Anna\\AppData\\Local\\Programs\\mietfuchs\\resources\\mietfuchs\\server',
+    },
   )
   assert.deepEqual(
-    serverCommand({ packaged: true, platform: 'darwin', resourcesPath: '/Applications/Mietfuchs.app/Contents/Resources', execPath: '/Applications/Mietfuchs.app/Contents/MacOS/Mietfuchs', repoRoot: '' }),
-    { command: '/Applications/Mietfuchs.app/Contents/MacOS/mietfuchs-server', args: [] },
+    serverModule({ packaged: true, platform: 'darwin', resourcesPath: '/Applications/Mietfuchs.app/Contents/Resources', repoRoot: '' }),
+    { modulePath: '/Applications/Mietfuchs.app/Contents/Resources/mietfuchs/server/src/index.ts', cwd: '/Applications/Mietfuchs.app/Contents/Resources/mietfuchs/server' },
   )
-  const dev = serverCommand({ packaged: false, platform: 'linux', resourcesPath: '', execPath: '', repoRoot: '/repo' })
-  assert.deepEqual(dev.args, ['/repo/server/src/index.ts'])
+  assert.deepEqual(
+    serverModule({ packaged: false, platform: 'linux', resourcesPath: '/irgendwo/electron/resources', repoRoot: '/repo' }),
+    { modulePath: '/repo/server/src/index.ts', cwd: '/repo/server' },
+  )
+  assert.equal(SERVER_FOLDER, 'mietfuchs')
 })
 
-test('Umgebung: Betriebsart, Port, nur 127.0.0.1 ohne Heimnetz, Prüfangaben des Fensters gehen weiter', () => {
-  const base = { CI: '1', NKA_DATA_DIR: '/tmp/probe', NKA_UPDATE_URL: 'http://127.0.0.1:9', ELECTRON_RUN_AS_NODE: '1' }
-  const env = serverEnv(base, { port: DEFAULT_PORT, network: false, packaged: true })
+test('Umgebung: Fenster, Port, nur 127.0.0.1 ohne Heimnetz, Prüfangaben des Fensters gehen weiter', () => {
+  const base = { CI: '1', NKA_DATA_DIR: '/tmp/probe', NKA_UPDATE_URL: 'http://127.0.0.1:9', ELECTRON_RUN_AS_NODE: '1', NKA_RUNTIME: 'docker' }
+  const env = serverEnv(base, { port: DEFAULT_PORT, network: false, packaged: true, windowsStore: false, repoRoot: '/repo' })
   assert.equal(env.NKA_DESKTOP, '1')
+  assert.equal(env.NKA_STORE, undefined)
   assert.equal(env.NKA_PORT, '17517')
   assert.equal(env.NKA_HOST, '127.0.0.1')
   assert.equal(env.CI, '1')
   assert.equal(env.NKA_DATA_DIR, '/tmp/probe')
   assert.equal(env.NKA_UPDATE_URL, 'http://127.0.0.1:9')
   assert.equal(env.ELECTRON_RUN_AS_NODE, undefined)
-  assert.equal(env.NKA_RUNTIME, undefined, 'die Programmdatei erkennt sich selbst')
-  assert.equal(serverEnv(base, { port: 4000, network: true, packaged: true }).NKA_HOST, '0.0.0.0')
-  assert.equal(serverEnv(base, { port: 4000, network: false, packaged: false }).NKA_RUNTIME, 'desktop')
+  // Geänderte Erwartung: Den Testgriff NKA_RUNTIME setzt das Fenster beim Entwickeln nicht mehr, und einen geerbten
+  // nimmt es heraus. Der Server erkennt das Fenster am utilityProcess mit NKA_DESKTOP, ausgeliefert wie beim Entwickeln.
+  assert.equal(env.NKA_RUNTIME, undefined)
+  assert.equal(serverEnv(base, { port: 4000, network: true, packaged: true, windowsStore: false, repoRoot: '/repo' }).NKA_HOST, '0.0.0.0')
+  // Aus dem Store sagt es das Fenster dem Server ausdrücklich (process.windowsStore)
+  assert.equal(serverEnv(base, { port: 4000, network: false, packaged: true, windowsStore: true, repoRoot: '/repo' }).NKA_STORE, '1')
   // Die Umgebung des Fensters selbst bleibt unverändert
   assert.equal(base.ELECTRON_RUN_AS_NODE, '1')
+})
+
+// Beim Entwickeln nie der echte Bestand im Benutzerordner: Wie `npm run dev` arbeitet das Fenster dann mit
+// server/data, außer eine Prüfung gibt NKA_DATA_DIR vor. Ausgeliefert wählt der Server selbst (chooseDataDir).
+test('Umgebung: beim Entwickeln server/data, ausgeliefert entscheidet der Server', () => {
+  const dev = serverEnv({}, { port: 4000, network: false, packaged: false, windowsStore: false, repoRoot: '/repo' })
+  assert.equal(dev.NKA_DATA_DIR, '/repo/server/data')
+  assert.equal(dev.NKA_DESKTOP, '1')
+  const probe = serverEnv({ NKA_DATA_DIR: '/tmp/probe' }, { port: 4000, network: false, packaged: false, windowsStore: false, repoRoot: '/repo' })
+  assert.equal(probe.NKA_DATA_DIR, '/tmp/probe')
+  assert.equal(serverEnv({}, { port: 4000, network: false, packaged: true, windowsStore: false, repoRoot: '/repo' }).NKA_DATA_DIR, undefined)
 })
 
 test('Startzeile und Datenordner aus der Ausgabe des Servers', () => {

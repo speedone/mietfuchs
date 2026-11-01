@@ -145,26 +145,41 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
 
 - **Electron nur als Fenster** ([../desktop/](../desktop/), eigenes Paket mit eigenem Lockfile; `npm install` installiert es
   **nicht** mit, das Docker-Image kennt den Ordner nicht, sondern `npm --prefix desktop install`. Ohne Installation
-  überspringt `npm run typecheck` das Fenster mit Hinweis, in der CI ist das ein Fehler): Die Programmdatei des Servers läuft unverändert als Kindprozess, das Fenster zeigt `http://127.0.0.1:17517`.
-  [main.js](../desktop/src/main.js) setzt zusammen, was [server.js](../desktop/src/server.js) ohne Electron prüfbar
-  hält (Datei, Umgebung, Port, Startzeile, Links; desktop/test). Code bleibt JavaScript, geprüft mit `checkJs` über
+  überspringt `npm run typecheck` das Fenster mit Hinweis, in der CI ist das ein Fehler): Der Server läuft aus dem
+  Quellcode mit **Electrons eigenem Node als `utilityProcess`** (`serviceName` `Mietfuchs-Server`, Ausgabe über Pipes
+  ins Protokoll), das Fenster zeigt `http://127.0.0.1:17517`. Keine Programmdatei des Servers und kein Bündelschritt:
+  Node streift die Typen ab wie bei `npm start`, `node:sqlite` ist dabei (Electron 45.2 bringt Node 24.22). Ausgeliefert
+  liegt er unter `resources/mietfuchs` in der Anordnung des Repos (`server/src`, Migrationen samt Journal, beide
+  package.json, `server/node_modules` nur mit Produktionsabhängigkeiten, `shared/`, `client/dist`, oben eine
+  package.json mit `"type": "module"`), so stimmen seine relativen Pfade; beim Entwickeln derselbe Weg aus dem Repo,
+  mit `NKA_DATA_DIR` auf server/data. [main.js](../desktop/src/main.js) setzt zusammen, was
+  [server.js](../desktop/src/server.js) ohne Electron prüfbar hält (Modul, Umgebung, Port, Startzeile, Links;
+  desktop/test). Code bleibt JavaScript, geprüft mit `checkJs` über
   `npm run typecheck` ([typecheck-desktop.mjs](typecheck-desktop.mjs)); die Tests in desktop/test brauchen keine
   Installation und laufen mit `npm test`. Electron lädt seine Datei nicht beim Installieren (seit 42), sondern beim ersten
   `npm run desktop` bzw. mit `npx --prefix desktop install-electron`; npm 11 führt Installskripte nur mit Freigabe in
   `allowScripts` aus (desktop/.npmrc, electron-winstaller bleibt aus).
-- **Server im Fenster** (Betriebsart `desktop`, `NKA_DESKTOP=1` vom Fenster, aus dem Store bleibt es `store`): lauscht
+- **Server im Fenster** (Betriebsart `desktop`, aus dem Store `store`): Das Fenster setzt `NKA_DESKTOP=1`, aus dem Store
+  zusätzlich `NKA_STORE=1` (`process.windowsStore`). Der Server glaubt das nur im utilityProcess (`process.parentPort`,
+  `inWindow` in server/src/version.ts), sonst hielten sich Dev-Server oder Container mit geerbter Angabe für das Fenster;
+  den Store erkennt er zur Sicherheit auch am Paketordner. Das Protokoll nennt in der ersten Zeile, was das Fenster
+  sah (Electron, Node, Store ja/nein). Er lauscht
   nur auf 127.0.0.1 (`NKA_HOST`), außer mit Zugriff aus dem Heimnetz (unten), öffnet keinen Browser, Daten im Benutzerordner (Windows `%USERPROFILE%\Mietfuchs`
-  wie der Store, macOS `~/Library/Application Support/Mietfuchs`), nie im Installationsordner. **Endet die
-  Standardeingabe, beendet er sich**: So bleibt nach einem Absturz des Fensters oder beim Abmelden unter Windows (kein
-  SIGTERM) keine Waise, die Port und Datenbank hält. Beenden aus dem Fenster erst über `/api/quit`, nach acht
-  Sekunden hart. Electrons eigener Ordner heißt `mietfuchs-fenster`, damit er sich auf dem Mac nie mit dem Datenordner
+  wie der Store, macOS `~/Library/Application Support/Mietfuchs`), nie im Installationsordner (`chooseDataDir` entscheidet das vor `packaged`, das an Bun hängt). **Mit dem Fenster
+  endet der utilityProcess**, auch nach einem Absturz oder beim Abmelden unter Windows (kein SIGTERM); es bleibt keine
+  Waise, die Port und Datenbank hält, geprüft unter Windows und macOS (desktop-check.mjs, Schritt 5, auch über die PID).
+  Die Standardeingabe eines utilityProcess ist immer leer und endet sofort; an ihr hängt nichts mehr. Beenden aus dem
+  Fenster erst über `/api/quit` (die Schreibschlange läuft leer), ohne Adresse die Nachricht `quit` über `parentPort`,
+  nach acht Sekunden hart. Electrons eigener Ordner heißt `mietfuchs-fenster`, damit er sich auf dem Mac nie mit dem Datenordner
   mischt; dort liegen `fenster.json` (gemerkter Port, Zugriff aus dem Heimnetz) und das Protokoll des Servers.
 - **Port 17517** fest, damit Adresse und damit Entwürfe im Browser-Speicher gleich bleiben; antwortet dort ein
   anderes Programm, nimmt das Fenster einen freien und merkt ihn sich. Die Programmdatei ohne Fenster bleibt bei 3001.
 - **Sicherheit**: Sandbox, `contextIsolation`, kein Node in der Seite; die Brücke ([preload.cjs](../desktop/src/preload.cjs))
   kennt nur das Drucken und den Zugriff aus dem Heimnetz; beides nimmt der Hauptprozess nur von der eigenen Seite an
   (`linkTarget(event.senderFrame.url, origin) === 'window'`). Navigation und neue Fenster bleiben auf der eigenen Adresse, http, https und mailto gehen ans
-  Standardprogramm, alles andere nirgendwohin, Berechtigungen werden abgelehnt. Fuses in desktop/package.json (`build`).
+  Standardprogramm, alles andere nirgendwohin, Berechtigungen werden abgelehnt. Fuses in desktop/package.json (`build`):
+  `runAsNode`, `NODE_OPTIONS` und Inspect aus, Asar-Integrität und `onlyLoadAppFromAsar` an; der utilityProcess läuft
+  damit, obwohl sein Modul außerhalb der asar liegt (geprüft im gepackten Bau: Die Fuses betreffen das Laden der App, nicht `fork`).
 - **Zugriff aus dem Heimnetz**: Karte in den Einstellungen ([NetworkCard.tsx](../client/src/components/NetworkCard.tsx),
   Logik in [desktopNetwork.ts](../client/src/desktopNetwork.ts)), nur wenn `window.mietfuchsDesktop.network` da ist,
   also nie im Browser oder auf dem Handy; der Typ der Brücke steht in client/src/desktop.d.ts. Die Brücke hat `get()`
@@ -173,28 +188,32 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   `NKA_HOST=0.0.0.0` bzw. `127.0.0.1` und **demselben Port**, damit Origin und Browser-Speicher bleiben; danach lädt
   das Fenster die Seite neu. Ein absichtlich beendeter Server steht in `retired` und löst weder „unerwartet beendet“
   noch `app.quit` aus. Scheitert der Start mit der neuen Adresse, gilt wieder die alte. Beim ersten Einschalten fragt
-  unter Windows die Firewall nach der Programmdatei des Servers; die Karte sagt das. Das Häkchen ist ein Entwurf (#309).
+  unter Windows die Firewall nach Mietfuchs.exe (der Server ist ein Prozess des Fensters); die Karte sagt das. Das Häkchen ist ein Entwurf (#309).
 - **Drucken**: `window.print()` druckt in Electron ohne Hintergründe; das Preload leitet es auf `webContents.print`
   mit `printBackground` um. Geprüft mit [safari-print-check.mjs](safari-print-check.mjs) `--engines chromium,electron`
   (unter Linux mit `xvfb-run`): dieselben Fälle im Fenster, Seitenzahl gleich Chromium.
-- **Bau** ([package-desktop.mjs](package-desktop.mjs), electron-builder): Windows ein Installer für x64 und ARM64
+- **Bau** ([package-desktop.mjs](package-desktop.mjs), electron-builder): Vorher `npm run build` (client/dist). Das Skript
+  legt den Server-Ordner unter `dist-desktop-server/` an (`stagedPath` wählt die Dateien, ohne Tests, Doku, eingebettete
+  Dateien der Programmdatei und die Schnappschüsse von drizzle-kit; `npm ci --omit=dev --ignore-scripts` in der Kopie,
+  danach fallen Typdeklarationen und Source-Maps aus node_modules, `prunable`; `checkServerFolder` prüft das Ergebnis),
+  `extraResources` nimmt ihn als `resources/mietfuchs` mit, für jede Architektur derselbe (keine nativen Module).
+  `node scripts/package-desktop.mjs server` legt nur den Ordner an. Windows ein Installer für x64 und ARM64
   zusammen (`Mietfuchs-Setup-<Version>.exe`, NSIS für den Benutzer, ohne Adminrechte; `latest.yml` des Updaters kennt
-  keine Architektur), die Programmdatei ohne Konsolenfenster aus `dist-bin/store`. Daneben legt electron-builder je
+  keine Architektur). Daneben legt electron-builder je
   Architektur den entpackten Ordner ab (`dist-desktop/win-unpacked`, `win-arm64-unpacked`), den Inhalt des
-  Store-Pakets. macOS je ein .dmg, ad hoc signiert (`identity: "-"`, ohne Notarisierung), die Programmdatei in
-  `Contents/MacOS`; electron-builder nennt die Architektur arm64 und x64, das Skript benennt danach um in
+  Store-Pakets. macOS je ein .dmg, ad hoc signiert (`identity: "-"`, ohne Notarisierung), der Server
+  in `Contents/Resources/mietfuchs`; electron-builder nennt die Architektur arm64 und x64, das Skript benennt danach um in
   `Mietfuchs-<Version>-apple-silicon.dmg` und `-intel.dmg` (`userFileName`, wie die Zips der Programmdateien).
   **Kein Web-Installer** (`nsis-web`, lädt nur das Paket der eigenen Architektur): In electron-builder 26.18 wählt er
   ARM64 nur, wenn es auch ein 32-Bit-Paket gibt (`installApplicationFiles` in
   app-builder-lib/templates/nsis/include/installer.nsh und `downloadApplicationFiles` in webPackage.nsh, Zweig
-  ohne `APP_32_NAME`); mit x64 und ARM64 bekäme ein ARM-Rechner das x64-Paket, und eine 32-Bit-Programmdatei des
-  Servers baut Bun nicht. Der gemeinsame Installer wählt richtig (`identify_package` in extractAppPackage.nsh).
+  ohne `APP_32_NAME`); mit x64 und ARM64 bekäme ein ARM-Rechner das x64-Paket. Der gemeinsame Installer wählt richtig (`identify_package` in extractAppPackage.nsh).
 - **Im Release-Lauf** ([release.yml](../.github/workflows/release.yml), Jobs „Programmfenster bauen“ und
-  „Programmfenster prüfen auf …“, in jedem Prüfumfang): gebaut aus denselben Programmdateien wie die übrigen Ziele
-  (Windows aus dem Artefakt `mietfuchs-store-programme`, macOS aus den neu signierten Zips in `mietfuchs-binaries`),
-  installiert wie ein Nutzer und geprüft mit [desktop-check.mjs](desktop-check.mjs) (Start, smoke-test, zweiter
-  Start, Beenden, Absturz des Fensters) auf Windows x64 und ARM64, macOS Apple Silicon und Intel; Größen und
-  Startzeit in der Zusammenfassung. **Kein eigener Workflow mehr**: Das frühere desktop.yml ist in release.yml
+  „Programmfenster prüfen auf …“, in jedem Prüfumfang): Der Bau hängt an keinem Bun-Artefakt und beginnt sofort; er
+  baut das Frontend selbst. Installiert wie ein Nutzer und geprüft mit [desktop-check.mjs](desktop-check.mjs) (Start,
+  smoke-test, zweiter Start, Beenden, Absturz des Fensters, jeweils auch über die PID des Servers) auf Windows x64 und
+  ARM64, macOS Apple Silicon und Intel; Größen, Dauer der Installation, Startzeit und Speicher von Fenster und Server
+  in der Zusammenfassung. **Kein eigener Workflow mehr**: Das frühere desktop.yml ist in release.yml
   aufgegangen, weil ein PR dort so lange läuft wie desktop.yml allein (rund sechs Minuten), weil eine Änderung am
   Fenster jetzt auch das Store-Paket ändert, das nur release.yml prüft, und damit Bau und Prüfung an einer Stelle
   stehen. Deshalb steht `desktop/**` in der Pfadliste von release.yml.
@@ -206,10 +225,10 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   je Architektur ein `.msix`, zusammen ein `.msixbundle`, unsigniert (der Store signiert). Nur unter Windows
   (makeappx aus dem Windows SDK). **Eingepackt wird das Programmfenster** (#517): der entpackte Ordner aus
   package-desktop.mjs (`dist-desktop/win-unpacked`, `win-arm64-unpacked`), `Executable` im Manifest ist
-  `Mietfuchs.exe`, der Befehlsalias heißt weiter `mietfuchs.exe` und zeigt darauf. Der Server liegt darin unter
-  `resources\server\mietfuchs.exe` (dort erkennt `storeLocation` den Store), gebaut von package-binaries.mjs mit
-  `--windows-hide-console` (geht als einzige Windows-Angabe von Bun auch beim Bau unter Linux). Vor dem Packen
-  prüft `checkWindowFolder` beide Dateien am PE-Kopf: Architektur des Pakets und kein Konsolenfenster. Identität aus dem Partner Center (`speedone.Mietfuchs`, Store-ID
+  `Mietfuchs.exe`, der Befehlsalias heißt weiter `mietfuchs.exe` und zeigt darauf. Der Server liegt darin als Quellcode
+  unter `resources\mietfuchs` und läuft als utilityProcess von Mietfuchs.exe; eine eigene ausführbare Datei, die ein
+  Konsolenfenster öffnen könnte, gibt es nicht mehr. Vor dem Packen prüft `checkWindowFolder` Mietfuchs.exe am PE-Kopf
+  (Architektur des Pakets, kein Konsolenfenster) und den Server-Ordner mit `checkServerFolder`. Identität aus dem Partner Center (`speedone.Mietfuchs`, Store-ID
   `9PMHZ0ZJPZDZ`); `STORE_PACKAGE_NAME` in server/src/paths.ts muss dazu passen.
 - **Version**: vier Teile, der erste nicht 0, der vierte immer 0, und der Store nimmt nur höhere an. Deshalb
   `msixVersion`: Hauptversion plus 1 (0.14.2 wird 1.14.2.0), für immer festgelegt.
@@ -218,7 +237,7 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   AppData: Dorthin schreibende Store-Apps lenkt Windows in einen Paketordner um und löscht ihn beim Deinstallieren.
   Abschalten ginge nur mit `unvirtualizedResources`, das Microsoft für Spiele vorsieht; außerhalb von AppData lenkt
   Windows nichts um. Nicht „Dokumente“, weil OneDrive den Ordner oft abgleicht.
-- **Im Fenster bleibt die Betriebsart `store`** (der Ort zählt vor `NKA_DESKTOP`): Port 17517 wie das Fenster
+- **Im Fenster ist die Betriebsart `store`** (`NKA_STORE` aus `process.windowsStore`, zur Sicherheit auch der Ort): Port 17517 wie das Fenster
   ohne Store, Daten in `%USERPROFILE%\Mietfuchs`. Electrons eigener Ordner (`%LOCALAPPDATA%\mietfuchs-fenster`,
   gemerkter Port, Zugriff aus dem Heimnetz, Protokoll des Servers) liegt dagegen unter AppData und landet umgelenkt in
   `%LOCALAPPDATA%\Packages\speedone.Mietfuchs_…\LocalCache\Local`; das ist gewollt, beim Deinstallieren geht
@@ -227,7 +246,8 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   Wegwerf-Zertifikat desselben Herausgebers, installiert sie, startet über den Befehlsalias `mietfuchs.exe` (nur so
   erbt das Fenster `CI` und `NKA_UPDATE_URL` und reicht sie über `serverEnv` an den Server weiter, der Start übers
   Startmenü reicht nichts weiter), Prüfskript auf Port 17517 mit `--mode store`, Fenster und Server laufen aus dem
-  Paket, Beenden über `/api/quit` (das Fenster geht mit dem Server), deinstallieren; die Datenbank muss danach noch
+  Paket (der Server als utilityProcess von Mietfuchs.exe, erkannt an `node.mojom.NodeService` in der Befehlszeile),
+  Beenden über `/api/quit` (das Fenster geht mit dem Server), deinstallieren; die Datenbank muss danach noch
   in `%USERPROFILE%\Mietfuchs` liegen. Scheitert etwas, steht das Protokoll des Servers im Log.
 - **Einreichen** ([store.yml](../.github/workflows/store.yml), von release.yml aufgerufen): beim Tag ohne Bindestrich,
   nach dem Anhängen ans Release, nur mit der Repository-Variable `MSSTORE_EINREICHEN = an`.

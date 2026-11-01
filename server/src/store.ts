@@ -6,6 +6,7 @@ import type { CostItem, CostKey, LegalBasis, Meter, MeterType, Payment, Reading,
 import type { ComputedSettlement } from './calc.ts'
 import { migrateLegacy } from './legacy/migrate.ts'
 import { storeLocation, systemLocation, writable } from './paths.ts'
+import { PARENT_PORT } from './version.ts'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PACKAGED = !!globalThis.Bun
@@ -73,6 +74,7 @@ type ChooseDataDirOptions = {
   home?: () => string
   platform?: NodeJS.Platform
   canWrite?: (dir: string) => boolean
+  window?: boolean
 }
 
 // Wo die Daten liegen. Im Dev-/npm-Betrieb server/data. In der gepackten Programmdatei liegt
@@ -90,13 +92,17 @@ export function chooseDataDir({
   home = homeDir,
   platform = process.platform,
   canWrite = writable,
+  // Das echte Fenster, nicht der Testgriff NKA_RUNTIME=desktop (siehe inWindow in version.ts)
+  window = PARENT_PORT !== null && env.NKA_DESKTOP === '1',
 }: ChooseDataDirOptions = {}): string {
   if (env.NKA_DATA_DIR) return path.resolve(env.NKA_DATA_DIR)
+  // Im Programmfenster (#517) nie neben dem Server: Der liegt im Installationsordner des Fensters, den ein Update
+  // ersetzt und das Deinstallieren löscht. Unter Windows derselbe Ordner wie aus dem Store, sonst der übliche des
+  // Systems. Vor `packaged`, denn im Fenster läuft der Server aus dem Quellcode unter Electrons Node, nicht als
+  // Programmdatei. Beim Entwickeln setzt das Fenster NKA_DATA_DIR auf server/data (serverEnv in desktop/src/server.js).
+  if (window) return platform === 'win32' ? storeDataHome(env, home) : userDataHome(env, platform, home)
   if (!packaged) return path.join(moduleDir, '..', 'data')
   if (storeLocation(execPath, platform)) return storeDataHome(env, home)
-  // Im Programmfenster (#517) nie neben der Programmdatei: Die liegt im Installationsordner, den ein Update ersetzt
-  // und das Deinstallieren löscht. Unter Windows derselbe Ordner wie aus dem Store, sonst der übliche des Systems.
-  if (env.NKA_DESKTOP === '1') return platform === 'win32' ? storeDataHome(env, home) : userDataHome(env, platform, home)
   if (systemLocation(execPath, platform)) return userDataHome(env, platform, home)
   const beside = path.join(path.dirname(execPath), 'data')
   return canWrite(beside) ? beside : userDataHome(env, platform, home)

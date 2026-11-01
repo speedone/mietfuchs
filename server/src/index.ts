@@ -88,7 +88,7 @@ import {
 } from './db/backup.ts'
 import { findingsText, validateDb } from './legacy/validate.ts'
 import { createUpdateChecker, mayAskGitHub, UPDATE_URL } from './update.ts'
-import { APP_VERSION, IN_WINDOW, RUNTIME, STANDALONE } from './version.ts'
+import { APP_VERSION, IN_WINDOW, PARENT_PORT, RUNTIME, STANDALONE } from './version.ts'
 import { checkRequest, guardPolicy } from './requestGuard.ts'
 import { hasStock, locationsFile, recordDataLocation, shouldRecord } from './dataLocations.ts'
 import { describeFile, describeFolder, hashFile, mimeTypeOf, uploadedAtOf } from './uploads.ts'
@@ -3583,14 +3583,14 @@ app.post('/api/quit', (req, res) => {
   res.on('finish', shutDown)
 })
 
-// Beenden nach leergelaufener Schlange, aus der Oberfläche und, im Programmfenster, wenn das Fenster weg ist.
+// Beenden nach leergelaufener Schlange, aus der Oberfläche und, im Programmfenster, auf Zuruf des Fensters.
 let shuttingDown = false
 function shutDown(): void {
   if (shuttingDown) return
   shuttingDown = true
   // Mitten im Start (Migration, Sicherung, Umstieg) erst zu Ende starten: Schließt jemand das Fenster in dieser Zeit,
   // bräche der Server sonst den Umstieg ab, und der nächste Start begänne von vorn (Durchsicht M2). Anfragen gibt es
-  // vorher keine, nur das Ende der Standardeingabe kommt so früh.
+  // vorher keine, nur die Nachricht „quit“ des Fensters kommt so früh.
   if (!startupDone) {
     void startup.then(drainAndExit)
     return
@@ -3849,14 +3849,16 @@ let startupDone = false
 let finishStartup: () => void = () => {}
 const startup = new Promise<void>((resolve) => { finishStartup = resolve })
 
-// Im Programmfenster (#517) hält das Fenster die Standardeingabe offen. Endet sie, ist das Fenster weg, auch nach
-// einem Absturz oder beim Abmelden unter Windows, wo es kein SIGTERM gibt und das Fenster nur hart beenden könnte.
-// Ohne diese Regel liefe der Server als Waise weiter und hielte Port und Datenbank. Erst hier, nach `startup`, auf das
-// shutDown wartet.
-if (IN_WINDOW) {
-  process.stdin.on('end', shutDown)
-  process.stdin.on('error', shutDown)
-  process.stdin.resume()
+// Im Programmfenster (#517) läuft der Server als utilityProcess von Electron. Dessen Standardeingabe ist immer leer und
+// endet sofort, an ihr hängt deshalb nichts mehr. Ist das Fenster weg, auch nach einem Absturz oder beim Abmelden
+// unter Windows, beendet Electron den utilityProcess mit dem Hauptprozess; es bleibt keine Waise, die Port und
+// Datenbank hält (geprüft in scripts/desktop-check.mjs, Schritt 5). Beendet das Fenster den Server, bevor es seine
+// Adresse kennt (Fenster während des Starts geschlossen), schickt es „quit“; shutDown wartet dann den Start ab. Erst
+// hier, nach `startup`.
+if (IN_WINDOW && PARENT_PORT) {
+  PARENT_PORT.on('message', (event) => {
+    if (event.data === 'quit') shutDown()
+  })
 }
 
 const server = http.createServer((req, res) => {

@@ -14,3 +14,4 @@ dist-bin/
 # Ist-Ergebnisse des Prüfkatalogs (GOLDEN=diff npm --prefix server test)
 expected.actual.json
 dist-desktop/
+dist-desktop-server/

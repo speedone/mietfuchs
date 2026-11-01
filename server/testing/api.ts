@@ -322,8 +322,8 @@ export async function startServerIn(dataDir: string, env: NodeJS.ProcessEnv = {}
       // damit einen Tab auf einem Zufallsport auf. Siehe die Regel in CLAUDE.md.
       CI: 'true',
     },
-    // Die Standardeingabe offen wie im Programmfenster (#517): Dort heißt ihr Ende „Fenster weg, beenden“, und mit
-    // 'ignore' endete ein Server in der Betriebsart desktop sofort. Alle anderen lesen sie nicht.
+    // Die Standardeingabe offen. Seit der Server im Programmfenster (#517) als utilityProcess läuft, hängt an ihr
+    // nichts mehr (api-fenster.test.ts prüft, dass ihr Ende ihn nicht beendet); der Server liest sie nicht.
     stdio: ['pipe', 'pipe', 'pipe'],
   })
   const stop = () => {
