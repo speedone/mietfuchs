@@ -550,7 +550,7 @@
 
 /* Das Lexikon (pages/Hilfe.tsx, #488 Teil 3): ab 44rem Breite des Inhalts links die Liste der Begriffe, die beim Rollen
    stehen bleibt und selbst rollt, rechts der gewählte Begriff. Schmaler (am Handy) eins von beiden: ohne gewählten
-   Begriff die Liste, mit Begriff nur er und darüber „← Alle Begriffe“ (`data-pane`, lexiconPane in helpView.ts). Wie
+   Begriff die Liste, mit Begriff nur er und darüber „← Zur Liste“ (`data-pane`, lexiconPane in helpView.ts). Wie
    bei der Anleitung zählt die Breite des Inhalts (`@container` um die Ansicht), nicht die des Fensters. */
 @utility lexicon-layout {
   display: grid;
@@ -605,6 +605,10 @@
     font-size: var(--text-m);
     line-height: 1.35;
     text-align: left;
+    /* Lange Begriffe („Emissionsberichterstattungsverordnung …“) brechen um statt über den Rand zu laufen
+       (Integrationsdurchsicht von #488; Wächter in uiRules.test.ts, Gang „lexikon“ im Browserlauf). */
+    overflow-wrap: anywhere;
+    hyphens: auto;
     cursor: pointer;
   }
   & button:hover {

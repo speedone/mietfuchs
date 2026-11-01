@@ -1320,6 +1320,16 @@ const declarationsWithContext = (block: string): { prop: string; context: string
   }
   return out
 }
+// Integrationsdurchsicht von #488: „Emissionsberichterstattungsverordnung (EBeV 2030)“ wurde breit abgeschnitten, die
+// Liste rollte waagerecht. Lange Wörter brechen deshalb um (mit Silbentrennung, `lang="de"` ist gesetzt).
+test('Lexikon: lange Begriffe in der Liste brechen um statt abgeschnitten zu werden', () => {
+  const start = twCss.indexOf('@utility lexicon-list')
+  const block = twCss.slice(start, twCss.indexOf('@utility', start + 1))
+  const button = block.slice(block.indexOf('& button {'), block.indexOf('}', block.indexOf('& button {')))
+  expect(button).toMatch(/overflow-wrap: anywhere/)
+  expect(button).toMatch(/hyphens: auto/)
+})
+
 test('Lexikon: die Liste begrenzt ihre Höhe und rollt nur in der breiten Ansicht', () => {
   // Probe des Prüfers
   const probe = declarationsWithContext('@utility x { a: 1; @container (min-width: 44rem) { max-height: 2px; @media screen { max-height: 3px; } } @media screen { max-height: 4px; } }')

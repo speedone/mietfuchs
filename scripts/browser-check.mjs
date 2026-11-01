@@ -588,6 +588,13 @@ async function checkCombination(browser, base, combo, AxeBuilder, navLabels) {
       await settle(page)
       checkedPages++
       await measure('lexikon')
+      // Integrationsdurchsicht von #488: Ein langer Begriff lief breit über den Rand der Liste und wurde abgeschnitten;
+      // die Seite stand dabei nicht über, deshalb sah die Messung der Seite es nicht.
+      const wide = await page.evaluate(() => {
+        const list = /** @type {any} */ (globalThis).document.querySelector('main .lexicon-list')
+        return list && list.scrollWidth > list.clientWidth + 1 ? `Die Liste der Begriffe rollt waagerecht (${list.scrollWidth} px Inhalt in ${list.clientWidth} px), ein Eintrag wird abgeschnitten` : null
+      })
+      if (wide) add('lexikon', 'Abgeschnitten', wide)
       // Durchsicht von Teil 3, M1: Am Handy steht die Liste im Fluss der Seite. Ganz heruntergerollt liegt der letzte
       // Eintrag in seiner Karte und über der unteren Leiste (vorher lief die Liste aus der Karte, er lag unter der Leiste).
       if (view === 'mobile') {
