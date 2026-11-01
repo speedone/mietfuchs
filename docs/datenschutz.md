@@ -24,6 +24,12 @@ Versionsnummer und Zeitpunkt des letzten Starts. So kann eine spätere Fassung I
 Umzug anbieten. Die Datei verlässt Ihren Rechner nicht. Sie bleibt liegen, wenn Sie den Datenordner
 löschen; löschen Sie sie dann mit.
 
+Das Programmfenster sucht beim ersten Start ohne Daten nach Ihren bisherigen Daten: zuerst an den Orten
+aus dieser Datei, sonst in Downloads, Schreibtisch und Dokumente nach einem Ordner `data` neben einer
+Mietfuchs-Programmdatei. Von einem Fund liest es Ort, Datum der letzten Änderung und die Zahl der Objekte
+und Mietverhältnisse; nichts davon verlässt Ihren Rechner. macOS fragt dafür beim ersten Mal je Ordner nach. Übernommen wird erst nach Ihrem Klick, und zwar als Kopie: Der alte Ordner bleibt liegen und
+bekommt nur einen Vermerk (`umgezogen.json` und `UMGEZOGEN.txt`) mit dem neuen Ort.
+
 Beim Deinstallieren der App oder eines Pakets bleibt dieser Ordner erhalten. Löschen Sie ihn selbst,
 wenn Sie die Daten nicht mehr brauchen.
 

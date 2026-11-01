@@ -11,7 +11,8 @@ import type { DatabaseState } from './types'
 
 // Nur der eine Eintrag, den die Oberfläche daraus braucht. Der Rest des Berichts ist für den
 // Betrieb gedacht (Container-Orchestratoren) und geht sie nichts an.
-export type HealthReport = { version?: string, database?: DatabaseState }
+// `moved` (#517): Der Datenordner ist ins Programmfenster umgezogen und nur noch zum Ansehen (Vermerk umgezogen.json).
+export type HealthReport = { version?: string, database?: DatabaseState, moved?: { movedTo: string, at: string, message: string } }
 
 // Der Datenordner, in dem die Datenbankdatei liegt (aus `database.file` in /healthz). Der Pfad kommt vom Server und
 // kann Windows- oder POSIX-Schreibweise tragen; ohne Ordnerteil gibt es nichts zu nennen.

@@ -107,7 +107,7 @@ type Handle = {
   close: () => void
 }
 
-async function openNode(file: string): Promise<Handle> {
+async function openNode(file: string, readOnly: boolean): Promise<Handle> {
   const { DatabaseSync } = await import('node:sqlite')
   // `enableForeignKeyConstraints: false` sieht verkehrt herum aus und ist es nicht. `node:sqlite`
   // schaltet die Fremdschlüsselprüfung von sich aus ein, `bun:sqlite` nicht. Bliebe die
@@ -116,7 +116,7 @@ async function openNode(file: string): Promise<Handle> {
   // Bun-Programmdatei wären alle Verweise des Schemas stillschweigend Zierde. So hängt die
   // Zusicherung auf beiden Laufzeiten an derselben sichtbaren Zeile, und ein Test, der den Wert
   // des Pragmas liest, schützt sie wirklich.
-  const handle = new DatabaseSync(file, { enableForeignKeyConstraints: false })
+  const handle = new DatabaseSync(file, { enableForeignKeyConstraints: false, readOnly })
   return {
     rows: (sql, params) => {
       const stmt = handle.prepare(sql)
@@ -134,9 +134,9 @@ async function openNode(file: string): Promise<Handle> {
   }
 }
 
-async function openBun(file: string): Promise<Handle> {
+async function openBun(file: string, readOnly: boolean): Promise<Handle> {
   const { Database } = await import('bun:sqlite')
-  const handle = new Database(file)
+  const handle = readOnly ? new Database(file, { readonly: true }) : new Database(file)
   return {
     // Bun hat dafür `values()`, das Zeilen von sich aus als Wertelisten liefert.
     rows: (sql, params) => handle.query(sql).values(...params),
@@ -163,8 +163,10 @@ export type Connection = {
 // Hier steht bewusst nur das Nötigste. Wo die Datei liegt, was beim Start geprüft wird, was
 // passiert, wenn sie fehlt oder von einer neueren Version stammt, und wann die Migrationen
 // laufen: Das ist Aufgabe 3 und gehört nicht in den Transport.
-export async function connect(file: string): Promise<Connection> {
-  const handle = globalThis.Bun ? await openBun(file) : await openNode(file)
+// `readOnly` (#517, Umzug): Die Datenbank einer früheren Fassung wird nur gelesen, um sie zu beschreiben. So ändert
+// auch eine dort unterbrochene Transaktion nichts am Original; zum Schreiben geöffnet rollte SQLite sie darin zurück.
+export async function connect(file: string, { readOnly = false }: { readOnly?: boolean } = {}): Promise<Connection> {
+  const handle = globalThis.Bun ? await openBun(file, readOnly) : await openNode(file, readOnly)
 
   // Fremdschlüssel gelten je Verbindung und müssen ausdrücklich eingeschaltet sein; SQLite
   // selbst liefert sie aus Rücksicht auf alte Datenbestände abgeschaltet aus, und `bun:sqlite`

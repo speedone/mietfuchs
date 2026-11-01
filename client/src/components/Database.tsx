@@ -51,12 +51,23 @@ export default function DatabaseNotice() {
   // Nach einem Update (#154). Neben einem gelungenen Umstieg steht er nie: Der Umstieg schreibt
   // in eine neue Datei, und der Server nennt dann keine Sicherung.
   const update = updateHint(database, report?.version, updateDismissed)
-  if (!hint && !update) return null
+  // Umgezogen (#517): auf jeder Seite und ohne „Verstanden“, denn jede Änderung wird hier abgelehnt
+  const moved = report?.moved ?? null
+  if (!hint && !update && !moved) return null
 
   // Beide Hinweise nur am Bildschirm: Gedruckt stand „Sicherung vor dem Update angelegt“ als eigene Seite vor der
   // Abrechnung (Druck, #415).
   return (
     <>
+      {moved && (
+        <section className="card db-notice db-notice-problem no-print" role="status">
+          <span className="db-notice-icon" aria-hidden="true">📦</span>
+          <div className="db-notice-body">
+            <h2>Nur noch zum Ansehen</h2>
+            <p>{moved.message}</p>
+          </div>
+        </section>
+      )}
       {hint && (
         <section className={`card db-notice no-print${hint.kind === 'failed' ? ' db-notice-problem' : ''}`} role="status">
           <span className="db-notice-icon" aria-hidden="true">{hint.kind === 'failed' ? '⚠️' : hint.kind === 'stale' ? 'ℹ️' : '🗄️'}</span>

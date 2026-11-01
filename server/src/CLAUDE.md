@@ -14,6 +14,58 @@ neben der Datei) bzw. der Ordner von Electron (macOS) sein kann. Das spätere Pr
 liest sie für den Umzug der Daten. **Nie mit `CI`**, nie unter Node (auch nicht mit `NKA_RUNTIME=binary`), nie aus
 dem Store; ein Fehler wird nur gemeldet. In docs/datenschutz.md genannt.
 
+## Umzug ins Programmfenster (#517)
+
+[relocation.ts](relocation.ts) (Fundorte, Suche, Beschreibung, Vermerk, Entscheidung, Vergleich; ohne Server), Routen und
+Ablauf in index.ts („Umzug ins Programmfenster“), Bildschirm client/src/pages/Umzug.tsx.
+
+- **Wann**: nur `RUNTIME === 'desktop'` (nicht `store`), nur unter Windows und macOS (unter Linux nur nachgestellt mit
+  `NKA_RUNTIME=desktop`), Datenbank ohne Bestand (`carriesStock`), keine `db.json` im Datenordner, kein `umzug.json`
+  (Entscheidung: `moved` oder `fresh`), kein Vermerk. `GET /api/relocation` sagt nur `{ offered }` (schnell, beim Start
+  der Oberfläche), `GET /api/relocation/candidates` die Funde. Die Oberfläche fragt nur mit der Brücke des Fensters
+  (`inWindow`); im Browser, am Handy, in Docker erscheint nichts. Alle Routen nur von 127.0.0.1 (`fromThisComputer`).
+- **Fundorte**: zuerst die Einträge der Ortsdatei mit Bestand, ohne Vermerk, ohne den eigenen Ordner
+  (`rememberedFolders`), dazu unter Windows der Ausweichort `%LOCALAPPDATA%\Mietfuchs` der Programmdatei
+  (`fixedPlaces`; auf dem Mac ist der Ausweichort der Ordner des Fensters selbst). Sonst die Suche
+  (`searchProgramFolders`) in Downloads, Desktop, Documents, unter Windows auch `OneDrive\Desktop|Documents|Dokumente`:
+  `data` mit Bestand neben `mietfuchs*.exe` bzw. `mietfuchs-macos-*`, höchstens drei Ebenen, vier Sekunden, 20.000
+  Einträge, folgt keinem Verweis (`Dirent` meldet Symlink und Verzeichnisverbindung nicht als Ordner), ohne versteckte
+  Ordner, `node_modules`, `AppData`, `Library`. Unvollständig heißt `complete: false`, die Oberfläche sagt es.
+- **Beschreibung** (`describeCandidate`): zuletzt geändert (jüngere der beiden Dateien), Objekte und Mietverhältnisse;
+  die Datenbank wird dafür **nur lesend** geöffnet (`connect(file, { readOnly: true })`), keine Dateizeit ändert sich.
+  Was übernommen wird, entscheidet `stockKind` wie ein Start an Ort und Stelle: Datenbank mit Bestand vor db.json
+  (`stale`, #89), sonst db.json.
+- **Altes Mietfuchs noch offen** (`oldInstance`): `/healthz` auf Port 3001 nennt ab 0.8 `database.file`, davor nichts
+  (dann gilt es als zu jedem Fund gehörig, `runningFor`); vor 0.4 gab es kein `/healthz`, dann erkennt `earlyMietfuchs`
+  es an `/api/settings`. `POST /api/relocation/adopt` lehnt dann mit 409 und `running` ab. `POST
+  /api/relocation/quit-old` ruft `/api/quit` der alten Fassung (ab 0.7) und wartet bis zehn Sekunden; davor sagt der
+  Bildschirm, ihr Fenster zu schließen.
+- **Übernehmen heißt kopieren** (`adoptFolder`), mit der Sperre des Wiederherstellens (`restoreRunning`): Belege und
+  Briefpapier mit Dateizeit in `restore-<id>/`, die Datenbank (samt `-journal`) nach `mietfuchs.sqlite.restore-<id>`
+  und per SHA-256 gegen das Original geprüft; eine db.json wird in der Kopie mit `runChangeover` umgestiegen (dieselbe
+  Regression), das Original heißt weiter `db.json`. Dann `archiveDatabaseProblem(…, 'move')` (migriert die Kopie), dann
+  **der Vergleich** (`copyMismatch`: Mietverhältnisse, Kostenpositionen, jeder Beleg mit Größe), erst dann
+  `applyBackup` wie beim Wiederherstellen und danach derselbe Vergleich gegen den Bestand. Jeder Abbruch davor ist eine
+  400 mit „Ihre bisherigen Daten im alten Ordner sind unverändert“, der neue Ordner bleibt leer, Reste gehen weg.
+  **Zustimmungen kommen mit** (`ConsentRule` `archive`, siehe db/CLAUDE.md), ebenso `secrets.json`, wenn es im neuen
+  Ordner keine gibt.
+- **Danach**: Vermerk im alten Ordner (`umgezogen.json` mit `movedTo`, `at`, `appVersion`, daneben `UMGEZOGEN.txt`, beide
+  über Zwischendatei; scheitert er, sagt es ein Hinweis), `umzug.json` im neuen, der neue Ort in der Ortsdatei.
+- **Vermerk** (`MOVED_AWAY` beim Start, sonst je Anfrage gelesen): Jede Anfrage außer GET, `/api/quit` und `/api/update/check` bekommt 423 mit
+  `movedAwayMessage`; `/healthz` nennt `moved`, die Oberfläche zeigt „Nur noch zum Ansehen“ (Database.tsx). Geöffnet wird
+  eine **Kopie** in `mietfuchs-umgezogen-*` im Ordner für Zwischendateien (`movedView`; Datenbank, Journal, db.json), damit
+  im alten Ordner nichts migriert oder umgestiegen wird; kein Aufräumen, keine Vorversion, kein Hinweis nach dem Update,
+  kein Eintrag in der Ortsdatei. Alte Fassungen kennen den Vermerk nicht (bekannt und hingenommen).
+- **Aus der Durchsicht vor dem PR**: Mit liegengebliebenem `-journal` liest `lookIntoDatabase` eine Kopie (nur lesend
+  ginge es nicht, und mit db.json daneben hätte der Umzug still die db.json genommen). Belege als Verweis zählen mit
+  ihrem Ziel und werden als Datei kopiert. Belege, die schon im neuen Ordner lagen, stören den Vergleich nicht. Kurz vor
+  dem Umschalten wird noch einmal nach dem alten Mietfuchs gefragt und die Prüfsumme des Originals verglichen.
+  `umzug.json` entsteht gleich nach dem Umschalten; fehlt danach der Vermerk (Fenster beendet), holt der nächste Start
+  ihn nach. Der Vermerk sperrt je Anfrage, nicht nur ab dem Start. `data` unter dem eigenen Datenordner (Programmdatei
+  im Ordner „Mietfuchs“) lässt sich übernehmen. Solange der Umzug angeboten ist, steht der Bildschirm auf jeder Seite.
+- Geprüft in relocation.test.ts, api-umzug.test.ts, client/src/pages/Umzug.test.tsx, mit echten alten Fassungen in
+  scripts/fenster-umzug-praxislauf.mjs und auf Windows und macOS in desktop-check.mjs (Schritt 6).
+
 ## Objekte (#92)
 
 Eine Installation verwaltet mehrere Objekte (`properties`); **ein Objekt ist zugleich die
@@ -566,6 +618,9 @@ Nur für Tests, ein Nutzer setzt sie nie:
   Prozess bei 1, also nur auf einem leeren, einmal gestarteten Datenordner; die Konsole nennt ihn beim Start. Unter
   `seq` gewinnt bei Gleichstand immer der zuerst angelegte Datensatz, im Betrieb ein zufälliger.
 - `NKA_TEST_START_DELAY_MS`, `NKA_TEST_FREE_BYTES`: siehe scripts/CLAUDE.md bzw. db/CLAUDE.md.
+- **`NKA_TEST_HOME`**, **`NKA_TEST_LOCATIONS_FILE`**, **`NKA_TEST_OLD_PORT`** (Umzug, #517): Heimatordner für Suche und
+  Ortsdatei, die Ortsdatei selbst und der Port der alten Fassung (sonst 3001). **Mit `CI` und ohne `NKA_TEST_HOME` wird
+  weder gesucht noch die Ortsdatei gelesen** (`relocationHome`), damit kein Test den echten Benutzerordner liest.
 
 ## Berechnungs-Engine
 

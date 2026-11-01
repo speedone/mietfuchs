@@ -293,3 +293,15 @@ function fileOnDisk(file, platform) {
   const archive = parts.findIndex((part) => /\.asar$/i.test(part))
   return archive < 0 ? file : parts.slice(0, archive + 1).join(platform === 'win32' ? '\\' : '/')
 }
+
+/**
+ * Das Ergebnis des Ordner-Dialogs für „Ordner der alten Programmdatei wählen …“ (Umzug der Daten, #517): der gewählte
+ * Ordner oder `null`. Die Seite bekommt nur den Pfad; ob dort Daten liegen, prüft der Server.
+ * @param {{ canceled: boolean, filePaths: string[] }} result aus `dialog.showOpenDialog`
+ * @returns {string | null}
+ */
+export function chosenFolder(result) {
+  if (result.canceled) return null
+  const [first] = result.filePaths
+  return typeof first === 'string' && first ? first : null
+}

@@ -103,10 +103,12 @@ export function originText(raw: unknown): string {
 // Sicherung aus dem Datenordner (#318: wöchentlich, vor dem Update, vor dem Einspielen; `priorVersion`). Als Parameter und nicht als Textersetzung beim
 // Aufrufer, damit eine neue Meldung nicht still „Archiv“ zu einer Vorversion sagt (Durchsicht S3);
 // ein Wächter in prior-versions.test.ts liest dafür den Rumpf unten.
-export type DatabaseSource = 'archive' | 'priorVersion'
-const SOURCE_WORDS: Record<DatabaseSource, { inThis: string, this: string, another: string }> = {
-  archive: { inThis: 'in diesem Archiv', this: 'dieses Backup', another: 'ein anderes Backup' },
-  priorVersion: { inThis: 'in dieser Sicherung', this: 'diese Sicherung', another: 'eine andere Sicherung' },
+// Beim Umzug ins Programmfenster (#517, `move`) ist es die Kopie des alten Datenordners.
+export type DatabaseSource = 'archive' | 'priorVersion' | 'move'
+const SOURCE_WORDS: Record<DatabaseSource, { inThis: string, another: string, newer: string }> = {
+  archive: { inThis: 'in diesem Archiv', another: 'ein anderes Backup', newer: 'Bitte spielen Sie dieses Backup mit der neueren Fassung von Mietfuchs ein.' },
+  priorVersion: { inThis: 'in dieser Sicherung', another: 'eine andere Sicherung', newer: 'Bitte spielen Sie diese Sicherung mit der neueren Fassung von Mietfuchs ein.' },
+  move: { inThis: 'im alten Datenordner', another: 'ein Backup aus dem alten Mietfuchs', newer: 'Bitte aktualisieren Sie zuerst dieses Mietfuchs und übernehmen Sie die Daten danach.' },
 }
 
 export async function archiveDatabaseProblem(file: string, source: DatabaseSource = 'archive'): Promise<string | null> {
@@ -138,8 +140,7 @@ export async function archiveDatabaseProblem(file: string, source: DatabaseSourc
         `Die Datenbank ${w.inThis} stammt aus einer neueren Mietfuchs-Version. Sie enthält ` +
         `${fremd.count === 1 ? 'eine Änderung' : `${fremd.count} Änderungen`} am Aufbau, die diese ` +
         `Version (${APP_VERSION}) nicht kennt, die jüngste vom ${germanDate(fremd.newestMillis)}. ` +
-        `Deshalb wurde nichts übernommen; Ihre bisherigen Daten sind unverändert. Bitte spielen ` +
-        `Sie ${w.this} mit der neueren Fassung von Mietfuchs ein.`
+        `Deshalb wurde nichts übernommen; Ihre bisherigen Daten sind unverändert. ${w.newer}`
       )
     }
 

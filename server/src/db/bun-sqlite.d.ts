@@ -20,7 +20,8 @@ declare module 'bun:sqlite' {
     run(...params: Binding[]): Changes
   }
   export class Database {
-    constructor(filename?: string)
+    // `readonly` für den Blick in die Datenbank einer früheren Fassung (#517, Umzug)
+    constructor(filename?: string, options?: { readonly?: boolean })
     // `query` merkt sich die vorbereitete Anweisung je SQL-Text, `prepare` nicht. Weil Drizzle
     // uns denselben SQL-Text immer wieder reicht, ist `query` hier das Richtige.
     query(sql: string): Statement
