@@ -348,26 +348,35 @@ function Shell() {
   // angelegt ist.
   // Die Liste selbst braucht „Passend zu Ihrem Bestand“ in der Hilfe (#488, Teil 4).
   const [heatingPlants, setHeatingPlants] = useState<HeatingPlant[]>([])
+  // Für welches Objekt die Liste geladen ist, wie `unitsFor`: Nach einem Objektwechsel stünden die Vorschläge der Hilfe
+  // sonst kurz ohne Heizung da und sprängen, sobald die Anlagen kommen (Integrationsdurchsicht von #488).
+  const [plantsFor, setPlantsFor] = useState<string | null>(null)
   const hasHeatingPlant = heatingPlants.length > 0
   useEffect(() => {
     if (!propertyId) {
       setHeatingPlants((prev) => keepIfEqual(prev, []))
+      setPlantsFor(null)
       return
     }
     let current = true
+    const loaded = (list: HeatingPlant[]) => {
+      if (!current) return
+      setHeatingPlants((prev) => keepIfEqual(prev, list))
+      setPlantsFor(propertyId)
+    }
     api<HeatingPlant[]>(withProperty('/api/heating-plants', propertyId))
-      .then((list) => { if (current) setHeatingPlants((prev) => keepIfEqual(prev, list)) })
-      .catch(() => { if (current) setHeatingPlants((prev) => keepIfEqual(prev, [])) })
+      .then(loaded)
+      .catch(() => loaded([]))
     return () => { current = false }
   }, [propertyId, tab])
 
   // Der Bestand für „Passend zu Ihrem Bestand“: das gewählte Objekt mit seinen Wohnungen, Mietverhältnissen und
-  // Heizanlagen im gewählten Zeitraum. Solange die Wohnungen eines anderen Objekts geladen sind, keiner; und nur auf
-  // der Hilfe, sonst braucht ihn niemand.
-  const helpStock = useMemo<HelpStock | null>(() => (tab === 'hilfe' && property && unitsFor === property.id ? {
+  // Heizanlagen im gewählten Zeitraum. Solange Wohnungen oder Anlagen eines anderen Objekts geladen sind, keiner; und
+  // nur auf der Hilfe, sonst braucht ihn niemand.
+  const helpStock = useMemo<HelpStock | null>(() => (tab === 'hilfe' && property && unitsFor === property.id && plantsFor === property.id ? {
     properties, property, units, tenancies, plants: heatingPlants,
     period: { from: periodNow.from, to: periodNow.to, label: periodLabelNow, calendar: periodCalendar },
-  } : null), [tab, properties, property, unitsFor, units, tenancies, heatingPlants, periodNow, periodLabelNow, periodCalendar])
+  } : null), [tab, properties, property, unitsFor, plantsFor, units, tenancies, heatingPlants, periodNow, periodLabelNow, periodCalendar])
 
   const contextLine = [property ? propertyName(property) : null, periodLabelNow].filter(Boolean).join(' · ')
 

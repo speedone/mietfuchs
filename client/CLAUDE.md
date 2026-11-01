@@ -32,8 +32,8 @@ darüber). Die Assets kopiert `vite-plugin-static-copy` nach `dist/pdfjs/`.
   [docs/superpowers/specs/2026-10-18-oberflaeche-gesamtkonzept-design.md](../docs/superpowers/specs/2026-10-18-oberflaeche-gesamtkonzept-design.md)):
   zinc-Flächen, weiße Karten, Indigo nur für Primärknopf, Links, Fortschritt, Fokus, aktiven
   Menüpunkt und Objekt-Marke. Ausnahme nach freigegebenem Entwurf (#488): in „Hilfe & Begriffe“ die Kennzeile des
-  Themas über einem Begriff, die Kästen „Trifft das auf Sie zu?“ und „Brauche ich das?“ (Akzent getönt) und der gewählte
-  Themenfilter; dort trägt die Farbe die Gliederung, die der Nutzer so gesehen und gewollt hat.
+  Themas über einem Begriff, die Kästen „Trifft das auf Sie zu?“ und „Brauche ich das?“ (Akzent getönt), der gewählte
+  Themenfilter und der Grund über einer Kachel in „Passend zu Ihrem Bestand“; dort trägt die Farbe die Gliederung, die der Nutzer so gesehen und gewollt hat.
   Knöpfe: `.btn`, `.btn.secondary`, `.btn.ghost`, `.btn.danger`.
 - **Wächter in [src/uiRules.test.ts](src/uiRules.test.ts)** (sie fragen Tailwind selbst): S17 keine
   beliebigen Werte (`p-[13px]`), keine Standardpalette, keine Hex-/rgba-Werte außerhalb `:root`; S20
