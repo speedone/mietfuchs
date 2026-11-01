@@ -5,4 +5,4 @@ export function peInfo(head: Buffer): { machine: string, subsystem: string }
 export function checkWindowFolder(dir: string, arch: string): void
 export const ARCHITECTURES: { arch: string, dir: string }[]
 export const PACKAGE_EXE: string
-export const SERVER_DIR: string
+export const APP_ARCHIVE: string

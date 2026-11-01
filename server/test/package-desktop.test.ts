@@ -9,7 +9,8 @@ import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { DatabaseSync } from 'node:sqlite'
 import { migrationsFromDisk } from '../src/db/client.ts'
-import { REQUIRED_SERVER_FILES, bundleServer, checkServerFolder, packClient, rewriteImportMeta, userFileName } from '../../scripts/package-desktop.mjs'
+import { ARCHIVE_FOLDER, REQUIRED_SERVER_FILES, asarFiles, bundleServer, checkServerArchive, checkServerFolder, packClient, rewriteImportMeta, userFileName } from '../../scripts/package-desktop.mjs'
+import { writeAsar } from '../testing/asar.ts'
 
 test('Programmfenster: .dmg heißen nach Apple Silicon und Intel', () => {
   assert.equal(userFileName('Mietfuchs-0.15.0-arm64.dmg'), 'Mietfuchs-0.15.0-apple-silicon.dmg')
@@ -26,7 +27,7 @@ test('Programmfenster: der Windows-Installer und alles andere behält seinen Nam
   }
 })
 
-// Der Server im Fenster (#517) liegt als drei Dateien unter resources/mietfuchs: das Bündel, die Lizenzen der
+// Der Server im Fenster (#517) liegt als drei Dateien unter mietfuchs/ in der app.asar: das Bündel, die Lizenzen der
 // gebündelten Abhängigkeiten und das Frontend als eine Datei. Geänderte Erwartung: Bis zum Bündelschritt lagen dort
 // der Quellcode, shared/, die Migrationen, beide package.json, node_modules und client/dist, Tausende Dateien, die der
 // Echtzeitschutz unter Windows beim Installieren einzeln prüft.
@@ -46,6 +47,32 @@ test('Programmfenster: ein unvollständiger oder überzähliger Server-Ordner br
   fs.mkdirSync(path.join(dir, 'server', 'node_modules', 'express'), { recursive: true })
   fs.writeFileSync(path.join(dir, 'server', 'node_modules', 'express', 'package.json'), '{}')
   assert.throws(() => checkServerFolder(dir), /mehr als vorgesehen: server\/node_modules\/express\/package\.json/)
+})
+
+// Seit dem Fund auf einem Rechner mit HP Wolf Security (das offene Bündel als Schadcode blockiert) liegt der Server in
+// der app.asar des Fensters, unter mietfuchs/. Geprüft wird nach dem Bau das Archiv selbst: genau die drei Dateien,
+// keine davon entpackt daneben (das wäre wieder eine offene Datei), jede mit Prüfsummen für die Integrität.
+test('Programmfenster: der Server in der app.asar, vollständig, gepackt und mit Prüfsummen', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-asar-'))
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  const asar = (name: string, extra: Record<string, { content?: string, unpacked?: boolean, integrity?: boolean }> = {}, without?: string) => {
+    const file = path.join(dir, `${name}.asar`)
+    const entries: Record<string, { content?: string, unpacked?: boolean, integrity?: boolean }> = { 'package.json': { content: '{}' }, 'src/main.js': { content: '' } }
+    for (const rel of REQUIRED_SERVER_FILES) if (rel !== without) entries[`${ARCHIVE_FOLDER}/${rel}`] = { content: rel }
+    writeAsar(file, { ...entries, ...extra })
+    return file
+  }
+  assert.equal(ARCHIVE_FOLDER, 'mietfuchs')
+  const good = asar('gut')
+  assert.deepEqual(asarFiles(good).map((f) => f.path).sort(), ['mietfuchs/client/dist.pack', 'mietfuchs/server/THIRD-PARTY-LICENSES.txt', 'mietfuchs/server/server.mjs', 'package.json', 'src/main.js'])
+  assert.doesNotThrow(() => checkServerArchive(good))
+  assert.throws(() => checkServerArchive(asar('ohne', {}, 'client/dist.pack')), /mietfuchs\/client\/dist\.pack fehlt in .*ohne\.asar/)
+  assert.throws(() => checkServerArchive(asar('mehr', { 'mietfuchs/server/node_modules/x.js': {} })), /mehr als vorgesehen: mietfuchs\/server\/node_modules\/x\.js/)
+  assert.throws(() => checkServerArchive(asar('entpackt', { 'mietfuchs/server/server.mjs': { unpacked: true } })), /mietfuchs\/server\/server\.mjs liegt entpackt neben/)
+  assert.throws(() => checkServerArchive(asar('ohne-pruefsumme', { 'mietfuchs/client/dist.pack': { integrity: false } })), /mietfuchs\/client\/dist\.pack ohne Prüfsummen/)
+  fs.writeFileSync(path.join(dir, 'kaputt.asar'), 'kein Archiv')
+  assert.throws(() => checkServerArchive(path.join(dir, 'kaputt.asar')), /kein asar-Archiv/)
+  assert.throws(() => checkServerArchive(path.join(dir, 'fehlt.asar')), /fehlt\.asar fehlt/)
 })
 
 // Im Bündel zeigt `import.meta.url` auf die eine Datei. Der Server rechnet von dort aus zu client/dist, server/drizzle
@@ -99,7 +126,8 @@ test('Programmfenster: das Bündel startet ohne Quellen und Migrationen daneben,
 
   const dataDir = path.join(tmp, 'daten')
   const child = spawn(process.execPath, [file], {
-    cwd: path.join(stage, 'server'),
+    // Wie im Fenster: Der Arbeitsordner ist nicht der des Bündels (dort resources, außerhalb der app.asar)
+    cwd: tmp,
     env: { ...process.env, NKA_RUNTIME: '', NKA_PORT: '0', NKA_DATA_DIR: dataDir, NKA_UPDATE_URL: 'http://127.0.0.1:9', CI: 'true' },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
@@ -140,11 +168,16 @@ test('Programmfenster: das Bündel startet ohne Quellen und Migrationen daneben,
   assert.doesNotMatch(await api.text(), /Bündelprobe/)
 })
 
-// Durchsicht: Der macOS-Job prüft das installierte Fenster mit `test -f …/Resources/mietfuchs/<Datei>`. Jede so
-// geprüfte Datei muss zum Server-Ordner gehören, sonst scheitert der Job an einer Datei, die es nicht mehr gibt.
-test('Programmfenster: release.yml prüft im installierten Fenster nur Dateien des Server-Ordners', () => {
+// Durchsicht: Der macOS-Job prüfte das installierte Fenster mit `test -f …/Resources/mietfuchs/<Datei>`. Geänderte
+// Erwartung: Der Server liegt in der app.asar; geprüft wird sie auf beiden Systemen mit `checkServerArchive`, dazu, dass
+// kein offener Server-Ordner mehr daliegt. Eine Prüfung einzelner Dateien unter Resources/mietfuchs scheiterte jetzt.
+test('Programmfenster: release.yml prüft im installierten Fenster die app.asar und keinen offenen Server-Ordner', () => {
   const workflow = fs.readFileSync(path.join(import.meta.dirname, '..', '..', '.github', 'workflows', 'release.yml'), 'utf8')
-  const checked = [...workflow.matchAll(/test -f "\$app\/Contents\/Resources\/mietfuchs\/([^"]+)"/g)].map((m) => m[1])
-  assert.ok(checked.length > 0, 'release.yml prüft keine Datei des Server-Ordners mehr')
-  for (const file of checked) assert.ok(REQUIRED_SERVER_FILES.includes(file ?? ''), `release.yml prüft ${file}, das nicht zum Server-Ordner gehört`)
+  const archiveChecks = [...workflow.matchAll(/m\.checkServerArchive\(process\.argv\[1\]\)\)" (.+)$/gm)].map((m) => m[1])
+  assert.equal(archiveChecks.length, 2, 'release.yml prüft die app.asar nicht unter Windows und macOS')
+  assert.ok(archiveChecks.some((arg) => arg.includes("Join-Path $resources 'app.asar'")), 'Windows')
+  assert.ok(archiveChecks.some((arg) => arg.includes('"$app/Contents/Resources/app.asar"')), 'macOS')
+  assert.match(workflow, /test ! -e "\$app\/Contents\/Resources\/mietfuchs"/)
+  assert.match(workflow, /if \(Test-Path \(Join-Path \$resources 'mietfuchs'\)\) \{ throw/)
+  assert.doesNotMatch(workflow, /test -f "\$app\/Contents\/Resources\/mietfuchs\//)
 })
