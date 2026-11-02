@@ -12,7 +12,7 @@ import { pipeline } from 'node:stream/promises'
 import { fileURLToPath } from 'node:url'
 import yazl from 'yazl'
 import { openZip, ZipRefusal, type ZipItem, type ZipLimits, type ZipReader } from './zipRead.ts'
-import { cleanRestoreLeftovers, diskFullMessage, freeBytes, moveIntoPlace, restoreSpaceNeeded, restoreUploadPath } from './restoreFiles.ts'
+import { cleanRestoreLeftovers, diskFullMessage, exchangeName, freeBytes, moveIntoPlace, restoreSpaceNeeded, restoreUploadPath, stagedCopyName } from './restoreFiles.ts'
 import type { AiFailure, AiSettings, AiSlotName, AiStatus, AssessmentView, Extraction, Settings, UploadEntry, UploadLinks } from '../../shared/types.ts'
 import { detectedYear, linesFromExtraction } from './assessment.ts'
 import { bookingResponse, parseDecisions } from './bookingPlan.ts'
@@ -90,10 +90,12 @@ import {
 import { findingsText, validateDb } from './legacy/validate.ts'
 import { createUpdateChecker, mayAskGitHub, UPDATE_URL } from './update.ts'
 import { APP_VERSION, IN_WINDOW, PARENT_PORT, RUNTIME, STANDALONE } from './version.ts'
+import { ciSet } from './ci.ts'
+import { DEFAULT_PORTS, findTwin, removeRunFile, twinMessage, writeRunFile, type Self } from './instanceGuard.ts'
 import { checkRequest, guardPolicy } from './requestGuard.ts'
 import { hasStock, locationsFile, recordDataLocation, shouldRecord } from './dataLocations.ts'
 import {
-  ADOPT_UNCHANGED, classifyChoice, copyErrorText, copyMismatch, describeCandidate, earlyMietfuchs, searchDirsFromEnv, stockFingerprint, fixedPlaces, folderFromChoice, liveDataDir, movedAwayMessage, movedDate, originalCounts, readDecision,
+  ADOPT_UNCHANGED, classifyChoice, copyErrorText, copyMismatch, describeCandidate, earlyMietfuchs, searchDirsFromEnv, markStock, stockChanged, memoByStamp, copyAndHash, writePending, readPending, clearPending, switchedOver, type StockMark, fixedPlaces, folderFromChoice, liveDataDir, movedAwayMessage, movedDate, originalCounts, readDecision,
   readMovedMarker, relocationHome, rememberedFolders, runningFor, samePath, searchProgramFolders, searchRoots, stockKind,
   writeDecision, writeMovedMarker, type CandidateInfo, type FileSize, type MovedMarker,
 } from './relocation.ts'
@@ -111,7 +113,7 @@ import { previewSnapshot, snapshotToken, type SnapshotPreview } from './db/snaps
 import { releaseStepsOf } from './db/releaseSteps.ts'
 import { count, sql } from 'drizzle-orm'
 import { reconcileFiles, trashKeep } from './db/fileRefs.ts'
-import { cleanTrash, moveToTrash } from './trash.ts'
+import { cleanTrash, FILE_STORES, moveToTrash, trashDir } from './trash.ts'
 import { DRY_RUN_ROUTES, routeSentence } from './journalRoutes.ts'
 import { IN_BUNDLE } from './bundle.ts'
 import { openClientPack } from './clientPack.ts'
@@ -122,6 +124,8 @@ const app = express()
 // Liegt im eigenen Datenordner ein Vermerk (#517), ist er ins Programmfenster umgezogen: Diese Fassung zeigt ihn nur noch
 // an, Schreibrouten antworten mit 423 (siehe „Umzug ins Programmfenster“ unten).
 const MOVED_AWAY: MovedMarker | null = readMovedMarker(DATA_DIR)
+// Umgezogen, beim Start oder seither (ein anderes Fenster hat die Daten übernommen, während diese Fassung läuft)
+const movedNow = (): boolean => (MOVED_AWAY ?? readMovedMarker(DATA_DIR)) !== null
 
 // Host und Origin prüfen (#517), vor allem anderen, auch vor dem Lesen des Rumpfs; die Gründe stehen in
 // requestGuard.ts. Ohne NKA_ALLOWED_HOSTS in Docker und npm aus.
@@ -2558,7 +2562,8 @@ app.get('/api/backup', async (req, res) => {
     // Der Schnappschuss entsteht, **bevor** die erste Zeile des Archivs gesendet wird: Scheitert
     // er, gibt es noch eine Fehlermeldung statt eines abgebrochenen Downloads. Weggeräumt wird
     // die Zwischendatei erst, wenn das Archiv gesendet ist, denn yazl liest sie erst dann.
-    const temp = path.join(DATA_DIR, `${ARCHIVE_DB_NAME}.${newId()}.backup`)
+    // Im umgezogenen Ordner neben der geöffneten Kopie, nicht im alten Ordner (Durchsicht Daten K7)
+    const temp = path.join(OPEN_DIR, `${ARCHIVE_DB_NAME}.${newId()}.backup`)
     try {
       await writeDatabaseSnapshot(database, temp)
       // Der Verlauf nur auf ausdrücklichen Wunsch (db/backup.ts, `stripJournal`).
@@ -2831,8 +2836,11 @@ async function readBackupEntries(zip: ZipReader, staging: string): Promise<ReadB
 // sondern den von jetzt aus dem alten Ordner, und der neue hat noch keine.
 type ConsentRule = 'now' | 'archive'
 
-async function restoreDatabase(staged: string | null, barrier: 'restore' | 'priorVersion', consentRule: ConsentRule = 'now', barrierText?: string): Promise<string[]> {
+async function restoreDatabase(prepared: string | null, barrier: 'restore' | 'priorVersion', consentRule: ConsentRule = 'now', barrierText?: string): Promise<string[]> {
   const target = databaseFile(DATA_DIR)
+  // Ab hier heißt die geprüfte Kopie `restore-<id>`: Scheitert der Austausch, kann sie die einzige Kopie der neuen Daten
+  // sein, und das Aufräumen beim Start lässt sie liegen (restoreFiles.ts, Durchsicht Daten K2)
+  const staged = prepared ? exchangeName(prepared) : null
 
   // **Erst aus der Nahtstelle nehmen, dann leerlaufen lassen, dann schließen.** Die Reihenfolge
   // ist die ganze Zusage. Ab dem `null` bekommt jede neue Anfrage ihre 503 statt einer
@@ -2986,6 +2994,8 @@ async function markBarrier(barrier: JournalBarrier, at = new Date(), description
 // Eine Schlange wäre hier falsch: Wer zweimal klickt, will nicht zwei Wiederherstellungen
 // nacheinander, sondern eine. Die zweite Anfrage bekommt deshalb eine Absage und keine Warteschlange.
 let restoreRunning = false
+// Beim Beenden beginnt kein neues Wiederherstellen und keine Übernahme mehr (Durchsicht Daten K2)
+const SHUTTING_DOWN = 'Mietfuchs wird gerade beendet. Bitte starten Sie es neu und versuchen Sie es dann noch einmal.'
 
 // **Vor dem Hochladen**: Läuft schon eine Wiederherstellung, oder ist die Anfrage größer als der
 // freie Platz, wird abgelehnt, bevor multer bis zu 20 GB auf die Platte schreibt. Der Rumpf wird
@@ -2996,6 +3006,7 @@ function restoreGate(req: Request, res: Response, next: NextFunction): void {
     res.set('Connection', 'close')
     res.status(status).json({ error })
   }
+  if (shuttingDown) return refuse(503, SHUTTING_DOWN)
   if (restoreRunning) return refuse(409, 'Es läuft gerade eine Wiederherstellung. Bitte warten Sie, bis sie fertig ist.')
   const length = Number(req.headers['content-length'])
   const free = freeBytes(DATA_DIR)
@@ -3017,6 +3028,7 @@ app.post('/api/restore', restoreGate, restoreUpload.single('file'), async (req, 
   // ausgepacktes Backup.
   const staging = path.join(DATA_DIR, `restore-${newId()}`)
   try {
+    if (shuttingDown) return res.status(503).json({ error: SHUTTING_DOWN })
     if (restoreRunning) {
       return res.status(409).json({
         error: 'Es läuft gerade eine Wiederherstellung. Bitte warten Sie, bis sie fertig ist.',
@@ -3098,7 +3110,7 @@ async function stageArchiveDatabase(backup: ReadBackup): Promise<{ staged: strin
   // die erste gerade geprüft hat. Zwei Klicks sind nichts Ausgefallenes, die Oberfläche sperrt
   // das Dateifeld während des Vorgangs nicht.
   const archiveDatabase = ausDerDatei ? null : backup.database
-  const staged = archiveDatabase ? `${databaseFile(DATA_DIR)}.restore-${newId()}` : null
+  const staged = archiveDatabase ? stagedCopyName(databaseFile(DATA_DIR), newId()) : null
   if (staged && archiveDatabase) {
     try {
       fs.rmSync(staged, { force: true })
@@ -3395,6 +3407,7 @@ app.post('/api/relocation/restore-backup', async (req, res) => {
   const file = typeof req.body?.file === 'string' ? req.body.file : ''
   const choice = file && path.isAbsolute(file) ? classifyChoice(path.resolve(file), process.platform) : null
   if (!choice || !('backup' in choice)) return res.status(400).json({ error: 'Das ist kein Backup.' })
+  if (shuttingDown) return res.status(503).json({ error: SHUTTING_DOWN })
   if (restoreRunning) return res.status(409).json({ error: 'Es läuft gerade eine Übernahme oder Wiederherstellung. Bitte warten Sie, bis sie fertig ist.' })
   restoreRunning = true
   const staging = path.join(DATA_DIR, `restore-${newId()}`)
@@ -3461,7 +3474,7 @@ app.post('/api/relocation/newer/dismiss', async (req, res) => {
   if (!fromThisComputer(req)) return res.status(403).json({ error: NOT_HERE })
   const newer = await newerInOldFolder()
   const decided = readDecision(DATA_DIR)
-  if (newer && decided?.source) writeDecision(DATA_DIR, { ...decided, source: { ...decided.source, fingerprint: newer.fingerprint } })
+  if (newer && decided?.source) writeDecision(DATA_DIR, { ...decided, source: newer.mark })
   res.json({ ok: true })
 })
 
@@ -3470,6 +3483,9 @@ type AdoptProgress = { phase: 'idle' | 'copy' | 'check' | 'switch', files: numbe
 let adoptProgress: AdoptProgress = { phase: 'idle', files: 0, totalFiles: 0, bytes: 0, totalBytes: 0 }
 let adoptCancel = false
 const COPY_DELAY_MS = Number(process.env.NKA_TEST_COPY_DELAY_MS) || 0
+// Testgriffe für den Abbruch beim Umschalten (Durchsicht Daten K2, K3): eine Pause gleich nach dem Umschalten, und
+// NKA_TEST_EXIT_BEFORE_SWITCH bzw. NKA_TEST_EXIT_AFTER_SWITCH beenden den Prozess davor bzw. danach
+const SWITCH_DELAY_MS = Number(process.env.NKA_TEST_SWITCH_DELAY_MS) || 0
 
 app.get('/api/relocation/progress', (req, res) => {
   res.json(adoptProgress)
@@ -3493,11 +3509,12 @@ function checkCancel(): void {
 // neueren Stand nach dem Umzug noch einmal
 type AdoptMode = 'first' | 'replace' | 'again'
 async function runAdopt(res: Response, folder: string, mode: AdoptMode): Promise<void> {
+  if (shuttingDown) return void res.status(503).json({ error: SHUTTING_DOWN })
   if (restoreRunning) return void res.status(409).json({ error: 'Es läuft gerade eine Übernahme oder Wiederherstellung. Bitte warten Sie, bis sie fertig ist.' })
   restoreRunning = true
   adoptCancel = false
   const staging = path.join(DATA_DIR, `restore-${newId()}`)
-  const stagedDatabase = `${databaseFile(DATA_DIR)}.restore-${newId()}`
+  const stagedDatabase = stagedCopyName(databaseFile(DATA_DIR), newId())
   let switched = false
   try {
     const result = await adoptFolder(folder, staging, stagedDatabase, () => { switched = true }, mode)
@@ -3520,15 +3537,18 @@ async function runAdopt(res: Response, folder: string, mode: AdoptMode): Promise
 
 // Wurde im alten Ordner nach dem Umzug noch etwas geändert? Verglichen wird der Fingerabdruck des Inhalts
 // (stockFingerprint), nicht die Dateizeit; ein Start der alten Fassung allein ändert ihn nicht.
-async function newerInOldFolder(): Promise<{ from: string, modifiedAt: string | null, fingerprint: string } | null> {
+// Nur neu gerechnet, wenn sich Dateizeit oder Größe im alten Ordner geändert haben (memoByStamp, Durchsicht Daten K6)
+const changedSince = memoByStamp((dir, mark) => stockChanged(dir, mark))
+async function newerInOldFolder(): Promise<{ from: string, modifiedAt: string | null, mark: StockMark } | null> {
   if (!RELOCATION_RUNTIME || MOVED_AWAY) return null
   const decided = readDecision(DATA_DIR)
   if (decided?.decision !== 'moved' || !decided.from || !decided.source || !hasStock(decided.from)) return null
+  // Liegt dort inzwischen eine andere Art Bestand (die alte Fassung ist aus der db.json umgestiegen), ist es neuer
   const kind = await stockKind(decided.from)
   if (!kind) return null
-  const fingerprint = await stockFingerprint(decided.from, kind)
-  if (!fingerprint || fingerprint === decided.source.fingerprint) return null
-  return { from: decided.from, modifiedAt: (await describeCandidate(decided.from)).modifiedAt, fingerprint }
+  const mark = kind === decided.source.kind ? await changedSince(decided.from, decided.source) : await markStock(decided.from, kind)
+  if (!mark) return null
+  return { from: decided.from, modifiedAt: (await describeCandidate(decided.from)).modifiedAt, mark }
 }
 
 // Die Belege (oder das Briefpapier) eines Ordners: nur Dateien direkt darin, wie im Backup.
@@ -3599,14 +3619,18 @@ async function adoptFolder(folder: string, staging: string, stagedDatabase: stri
     throw new AdoptRefusal(`Auf dem Datenträger ist nicht genug Platz: Die Daten brauchen samt Sicherungen ${Math.ceil(needed / 1024 ** 2)} MB, frei sind ${Math.floor(free / 1024 ** 2)} MB. ${ADOPT_UNCHANGED}`)
   }
 
-  // Der Fingerabdruck des Originals, um später Änderungen im alten Mietfuchs zu erkennen (Ergänzung 2)
-  const fingerprint = await stockFingerprint(folder, kind)
+  // Der Stand des Originals, um später Änderungen im alten Mietfuchs zu erkennen (Ergänzung 2, Durchsicht Daten K5)
+  const mark = await markStock(folder, kind)
+  // Der Papierkorb zieht mit (Durchsicht Daten K9): Das Journal kommt mit der Datenbank, und ein Rücksprung im neuen
+  // Mietfuchs holt einen gelöschten Beleg aus dem Papierkorb zurück. Vorversionen und Sicherungen vor Updates bleiben im
+  // alten Ordner (eine Rückkehr auf sie gehört zu ihm); die Antwort sagt es.
+  const trashed = FILE_STORES.flatMap((store) => filesIn(trashDir(folder, store)).map((f) => ({ store, ...f })))
 
   // Kopieren, das Original nur lesen. Fortschritt je Datei, Abbrechen zwischen zwei Dateien (Ergänzung 4).
   const sourceSize = fs.statSync(sourceDb).size
   adoptProgress = {
-    phase: 'copy', files: 0, totalFiles: receipts.length + designs.length + 1, bytes: 0,
-    totalBytes: [...receipts, ...designs].reduce((sum, f) => sum + f.size, 0) + sourceSize,
+    phase: 'copy', files: 0, totalFiles: receipts.length + designs.length + trashed.length + 1, bytes: 0,
+    totalBytes: [...receipts, ...designs, ...trashed].reduce((sum, f) => sum + f.size, 0) + sourceSize,
   }
   const copied = async (bytes: number) => {
     adoptProgress = { ...adoptProgress, files: adoptProgress.files + 1, bytes: adoptProgress.bytes + bytes }
@@ -3640,6 +3664,12 @@ async function adoptFolder(folder: string, staging: string, stagedDatabase: stri
     }
     designFiles.push({ fileName: name, staged })
   }
+  const trashFiles: { store: (typeof FILE_STORES)[number], fileName: string, staged: string }[] = []
+  for (const [i, { store, name }] of trashed.entries()) {
+    const staged = path.join(staging, `papierkorb-${i}`)
+    await copied(copyWithTime(path.join(trashDir(folder, store), name), staged))
+    trashFiles.push({ store, fileName: name, staged })
+  }
   let sourceHash: string | null = null
   if (kind === 'database') {
     fs.copyFileSync(sourceDb, stagedDatabase)
@@ -3653,8 +3683,8 @@ async function adoptFolder(folder: string, staging: string, stagedDatabase: stri
     // Die alte db.json in der Kopie umsteigen, mit derselben Regression wie beim Start (db/changeover.ts)
     const jsonDir = path.join(staging, 'umstieg')
     fs.mkdirSync(jsonDir)
-    copyWithTime(sourceDb, path.join(jsonDir, 'db.json'))
-    sourceHash = await sha256Of(sourceDb)
+    // Der Hash der Kopie, nicht des Originals nach dem Kopieren (Durchsicht Daten K4)
+    sourceHash = await copyAndHash(sourceDb, path.join(jsonDir, 'db.json'), (a, b) => void copyWithTime(a, b))
     const opened = await openDatabase({ dataDir: jsonDir })
     const result = await runChangeover({ dataDir: jsonDir, opened, reopen: () => openDatabase({ dataDir: jsonDir }) })
     result.database?.close()
@@ -3682,14 +3712,27 @@ async function adoptFolder(folder: string, staging: string, stagedDatabase: stri
   }
   checkCancel()
   const at = new Date().toISOString()
+  // Vor dem Umschalten festhalten, was übernommen wird; endet das Fenster danach, holt der nächste Start Entscheidung und
+  // Vermerk nach (Durchsicht Daten K3)
+  writePending(DATA_DIR, { version: 1, at, from: folder, staged: path.basename(stagedDatabase), ...(mark ? { source: mark } : {}) })
+  if (process.env.NKA_TEST_EXIT_BEFORE_SWITCH === '1') process.exit(9)
   adoptProgress = { ...adoptProgress, phase: 'switch' }
   onSwitch()
+  if (SWITCH_DELAY_MS > 0) await new Promise((resolve) => setTimeout(resolve, SWITCH_DELAY_MS))
+  // Der Papierkorb vor dem Einspielen: Danach gleicht reconcileAfterRestore Belege und Papierkorb mit dem Bestand ab
+  for (const store of new Set(trashFiles.map((f) => f.store))) fs.mkdirSync(trashDir(DATA_DIR, store), { recursive: true })
+  for (const { store, fileName, staged } of trashFiles) {
+    const target = path.join(trashDir(DATA_DIR, store), fileName)
+    if (!fs.existsSync(target)) await moveIntoPlace(staged, target)
+  }
   // Über einen eigenen Bestand gelten die Zustimmungen von jetzt: Hier sind die neueren
   const notes = await applyBackup({ dbText: null, files, designFiles, database: null, origin: folder }, stagedDatabase, mode === 'first' ? 'archive' : 'now',
     mode === 'again' ? 'Neueren Stand aus dem bisherigen Mietfuchs übernommen' : 'Daten aus dem bisherigen Mietfuchs übernommen')
+  if (process.env.NKA_TEST_EXIT_AFTER_SWITCH === '1') process.exit(9)
   // Gleich nach dem Umschalten: Endet das Fenster vor dem Vermerk, holt der nächste Start ihn nach (Durchsicht D1)
   try {
-    writeDecision(DATA_DIR, { version: 1, decision: 'moved', at, from: folder, ...(fingerprint ? { source: { kind, fingerprint } } : {}) })
+    writeDecision(DATA_DIR, { version: 1, decision: 'moved', at, from: folder, ...(mark ? { source: mark } : {}) })
+    clearPending(DATA_DIR)
   } catch (err) {
     console.error(`Die Entscheidung zum Umzug ließ sich nicht festhalten: ${messageOf(err)}`)
   }
@@ -3706,6 +3749,9 @@ async function adoptFolder(folder: string, staging: string, stagedDatabase: stri
   const after = copyMismatch({ counts, files: receipts }, { counts: now ?? { tenancies: -1, costItems: -1 }, files: filesIn(UPLOAD_DIR).filter((f) => names.has(f.name)) })
   if (!now || after) {
     return { ok: false, notes, error: `Die Daten wurden kopiert, aber im neuen Mietfuchs ist nicht alles angekommen. ${after ?? notes.join(' ')} Ihre bisherigen Daten im alten Ordner sind unverändert. Arbeiten Sie bitte vorerst dort weiter und melden Sie den Fehler.` }
+  }
+  if (fs.existsSync(path.join(folder, PRIOR_DIR)) || fs.readdirSync(folder).some((n) => n.startsWith('mietfuchs.sqlite.vor-'))) {
+    notes.push(`Die automatischen Vorversionen und die Sicherungen vor Updates bleiben im bisherigen Ordner (${folder}); hier legt Mietfuchs ab jetzt eigene an.`)
   }
   if (skippedDesigns.length > 0) {
     notes.push(`${skippedDesigns.map((n) => `„${n}“`).join(', ')} ließ sich nicht als Logo oder Briefpapier lesen und blieb im alten Ordner; wählen Sie es in den Einstellungen bitte neu.`)
@@ -3739,6 +3785,9 @@ async function adoptFolder(folder: string, staging: string, stagedDatabase: stri
 // Wiederherstellens und ohne Datenbank, die den Bestand trägt, wird nichts angelegt: Eine
 // Vorversion einer leeren Datenbank eines gescheiterten Umstiegs wäre keine.
 async function checkPriorVersion(pruneToo = false): Promise<void> {
+  // Ist der Ordner inzwischen umgezogen (Vermerk zur Laufzeit, Durchsicht Daten K8), ruht alles, was im alten Ordner
+  // schreibt: Journal, Papierkorb, Sicherungen, Vorversion
+  if (movedNow()) return
   // Das Journal räumt im selben Takt auf (12 Monate, #318); beim Start nicht, das hat open.ts eben getan.
   // Systemarbeit, also ohne Gruppe, und ein Fehler steht nur auf der Konsole.
   try {
@@ -3959,6 +4008,7 @@ app.post('/api/prior-versions/:name/restore', async (req, res) => {
   const found = await snapshotOf(req, res)
   if (!found) return
   const source = snapshotFile(DATA_DIR, found)
+  if (shuttingDown) return res.status(503).json({ error: SHUTTING_DOWN })
   if (restoreRunning) return res.status(409).json({ error: 'Es läuft gerade eine Wiederherstellung. Bitte warten Sie, bis sie fertig ist.' })
   const blocked = revertBlocked()
   if (bodyObject(req).token !== await snapshotToken(DATA_DIR, found, stockDatabase()) || blocked.length > 0) {
@@ -3968,7 +4018,7 @@ app.post('/api/prior-versions/:name/restore', async (req, res) => {
     })
   }
   restoreRunning = true
-  const staged = `${databaseFile(DATA_DIR)}.restore-${newId()}`
+  const staged = stagedCopyName(databaseFile(DATA_DIR), newId())
   try {
     try {
       fs.copyFileSync(source, staged)
@@ -4123,7 +4173,9 @@ app.post('/api/update/check', async (req, res) => {
 // kaputter Container HTTP 200. Bewusst nicht unter /api: Das ist eine Schnittstelle für den
 // Betrieb, nicht für die Oberfläche.
 app.get('/healthz', (req, res) => {
-  const report = healthReport({ dataDir: DATA_DIR, version: APP_VERSION, database: databaseState() })
+  // `dataDir`: Daran erkennt ein Mietfuchs auf einem anderen Port, ob es denselben Ordner nimmt (instanceGuard.ts)
+  // Ein umgezogener Ordner wird nur gelesen, auch keine Schreibprobe (Durchsicht Daten K7)
+  const report = { ...healthReport({ dataDir: DATA_DIR, version: APP_VERSION, database: databaseState(), readOnly: movedNow() }), dataDir: DATA_DIR }
   // Umgezogen (#517): Die Oberfläche sagt es oben auf jeder Seite (Database.tsx)
   res.status(report.status === 'ok' ? 200 : 503).json(MOVED_AWAY ? { ...report, moved: { movedTo: MOVED_AWAY.movedTo, at: MOVED_AWAY.at, message: movedAwayMessage(MOVED_AWAY) } } : report)
 })
@@ -4155,7 +4207,8 @@ const QUIT_DRAIN_MS = 5000
 
 app.post('/api/quit', (req, res) => {
   if (!STANDALONE) return res.status(404).json({ error: 'Beenden geht nur bei der Programmdatei. Hier beendet die Umgebung den Dienst.' })
-  res.json({ ok: true })
+  // `busy`: Es läuft ein Wiederherstellen oder eine Übernahme, auf die das Beenden wartet; das Fenster wartet dann länger
+  res.json(restoreRunning ? { ok: true, busy: true } : { ok: true })
   // Erst antworten, dann beenden: Sonst sähe der Browser einen Verbindungsabbruch statt der
   // Bestätigung.
   res.on('finish', shutDown)
@@ -4176,7 +4229,28 @@ function shutDown(): void {
   drainAndExit()
 }
 
+// Wie lange das Beenden auf ein laufendes Wiederherstellen oder eine Übernahme wartet (Durchsicht Daten K2). Bricht man
+// beide mittendrin ab, liegen die Belege schon im neuen Ordner und die Datenbank noch nicht, oder Entscheidung und
+// Vermerk fehlen; das holt der nächste Start zwar nach, aber ein fertiger Vorgang ist besser. Zwei Minuten reichen für
+// einen großen Bestand beim Umschalten (das Kopieren davor lässt sich ohnehin abbrechen). Das Fenster wartet so lange,
+// weil /api/quit `busy` meldet (desktop/src/main.js).
+const QUIT_RESTORE_WAIT_MS = 120_000
+
+async function waitForRestore(): Promise<void> {
+  if (!restoreRunning) return
+  console.log('Mietfuchs beendet sich, sobald das laufende Wiederherstellen oder die Übernahme fertig ist.')
+  // Eine Übernahme, die noch kopiert, bricht ab; das Kopieren ist ohne Folgen und der Ordner bleibt leer
+  adoptCancel = true
+  const deadline = Date.now() + QUIT_RESTORE_WAIT_MS
+  while (restoreRunning && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 100))
+  if (restoreRunning) console.error(`Das Wiederherstellen lief nach ${QUIT_RESTORE_WAIT_MS / 1000} Sekunden noch. Mietfuchs schließt trotzdem.`)
+}
+
 function drainAndExit(): void {
+  void waitForRestore().then(drainQueueAndExit)
+}
+
+function drainQueueAndExit(): void {
   // **Vorher läuft die Schlange leer.** Die frühere Begründung („offene Schreibvorgänge gibt es
   // nicht, store.ts schreibt jede Änderung sofort") trägt nicht mehr, seit über die Datenbank
   // geschrieben wird: Ein Schreibvorgang kann eingereiht sein oder gerade laufen, und
@@ -4471,6 +4545,8 @@ function movedView(dataDir: string): string {
 // `status: 'starting'`: Ein zweiter Start erkennt daran Mietfuchs (`app: 'mietfuchs'`), auch wenn
 // der erste gerade einen langen Umstieg rechnet, und ein Container gilt so lange als nicht bereit.
 let startupDone = false
+// Wann dieser Start seinen Port gebunden hat, für den Vergleich zweier gleichzeitiger Starts (instanceGuard.ts)
+let boundAt = 0
 let finishStartup: () => void = () => {}
 const startup = new Promise<void>((resolve) => { finishStartup = resolve })
 
@@ -4490,7 +4566,9 @@ const server = http.createServer((req, res) => {
   if (startupDone) return app(req, res)
   if ((req.url ?? '').split('?')[0] === '/healthz') {
     res.writeHead(503, { 'content-type': 'application/json; charset=utf-8', 'retry-after': '1' })
-    res.end(JSON.stringify({ app: 'mietfuchs', status: 'starting', version: APP_VERSION }))
+    // Datenordner, Prozess und Zeitpunkt des Bindens: Daran erkennt ein zweiter Start auf einem anderen Port, ob er
+    // demselben Ordner weichen muss (instanceGuard.ts, Durchsicht M2)
+    res.end(JSON.stringify({ app: 'mietfuchs', status: 'starting', version: APP_VERSION, dataDir: DATA_DIR, pid: process.pid, boundAt, ...(MOVED_AWAY ? { moved: true } : {}) }))
     return
   }
   void startup.then(() => app(req, res))
@@ -4526,7 +4604,7 @@ async function mietfuchsAlreadyOn(url: string): Promise<boolean> {
 // Ohne Konsolenfenster (Startmenü unter Linux) läuft eine Fehlermeldung ins Leere. Dann
 // wenigstens eine Meldung des Systems, sofern es notify-send gibt.
 function notifyDesktop(message: string): void {
-  if (!STANDALONE || process.platform !== 'linux' || process.env.CI) return
+  if (!STANDALONE || process.platform !== 'linux' || ciSet(process.env)) return
   try {
     const child = spawn('notify-send', ['--app-name=Mietfuchs', 'Mietfuchs', message], { detached: true, stdio: 'ignore' })
     child.on('error', () => {}) // ohne notify-send bleibt es bei der Ausgabe auf der Konsole
@@ -4545,7 +4623,7 @@ async function refuseStart(err: NodeJS.ErrnoException): Promise<never> {
     // Oberfläche nach vorn (#45).
     if (STANDALONE && await mietfuchsAlreadyOn(running)) {
       console.log(`Mietfuchs läuft bereits auf ${running}. Die Oberfläche wird geöffnet.`)
-      if (!process.env.CI && !IN_WINDOW) openBrowser(running)
+      if (!ciSet(process.env) && !IN_WINDOW) openBrowser(running)
       process.exit(0)
     }
     const message = `Port ${PORT} ist bereits belegt. Dort antwortet ein anderes Programm. Mit NKA_PORT lässt sich ein anderer Port setzen.`
@@ -4563,6 +4641,7 @@ async function refuseStart(err: NodeJS.ErrnoException): Promise<never> {
 const listenProblem = await new Promise<NodeJS.ErrnoException | null>((resolve) => {
   server.once('error', resolve)
   server.listen(PORT, HOST, () => {
+    boundAt = performance.timeOrigin + performance.now()
     server.off('error', resolve)
     resolve(null)
   })
@@ -4571,10 +4650,83 @@ if (listenProblem) await refuseStart(listenProblem)
 // Ein späterer Fehler des Servers endet wie bisher.
 server.on('error', (err: NodeJS.ErrnoException) => void refuseStart(err))
 
+// ---------- Zwei Mietfuchs auf demselben Datenordner (#517, Durchsicht M2) ----------
+//
+// Der Port sperrt nur gegen einen zweiten Start auf demselben Port. Das Fenster (17517) und die Programmdatei oder der
+// Store bis 0.14 (3001) können denselben Ordner nehmen; die Gründe und die Regeln stehen in instanceGuard.ts. Gefragt wird
+// nach dem Binden (sonst ließen sich zwei gleichzeitige Starts nicht ordnen) und vor dem Öffnen der Datenbank.
+//
+// **Nur bei der Programmdatei, aus einem Paket, im Fenster und im Store** (STANDALONE): Dort startet ein Mensch per
+// Klick, und zwei Fassungen auf einem Rechner sind der Fall, um den es geht. Im Container sieht die Frage über 127.0.0.1
+// nur den eigenen Container, ein zweiter Container auf demselben Volume bliebe ohnehin unerkannt; im npm-Betrieb
+// (Entwicklung, eigener Dienst) startet eine Dienstverwaltung genau einen Server. Beide nennen ihren Ordner aber in
+// /healthz, so erkennt ein Fenster beim Entwickeln einen npm-Server auf server/data. Ein umgezogener Ordner liest nur und
+// wird nicht gefragt (instanceGuard.ts zählt ihn auch bei anderen nicht).
+//
+// Testgriff NKA_TEST_TWIN_PORTS: die Standardports als JSON-Liste, damit kein Test ein Mietfuchs des Entwicklers fragt.
+function twinPorts(): readonly number[] {
+  const given = process.env.NKA_TEST_TWIN_PORTS
+  if (!given) return DEFAULT_PORTS
+  try {
+    const parsed: unknown = JSON.parse(given)
+    return Array.isArray(parsed) ? parsed.filter((p): p is number => Number.isInteger(p)) : DEFAULT_PORTS
+  } catch {
+    return DEFAULT_PORTS
+  }
+}
+if (STANDALONE && !MOVED_AWAY) {
+  const address = server.address()
+  const self: Self = { dataDir: DATA_DIR, port: typeof address === 'object' && address ? address.port : PORT, pid: process.pid, boundAt }
+  let twin = null
+  try {
+    twin = await findTwin(self, { platform: process.platform, ports: twinPorts() })
+  } catch (err) {
+    // Nie den Start eines einzelnen Mietfuchs verhindern: Ein Fehler der Frage zählt als frei
+    console.error(`Ob schon ein Mietfuchs auf diesem Datenordner läuft, ließ sich nicht prüfen: ${messageOf(err)}`)
+  }
+  if (twin) {
+    const message = twinMessage(twin, DATA_DIR)
+    if (IN_WINDOW) {
+      // Das Fenster zeigt die Meldung (desktop/src/server.js, `twinIn`); die Datenbank ist nicht angefasst
+      console.error(message)
+      process.exit(1)
+    }
+    // Die Programmdatei öffnet die laufende Oberfläche, wie beim belegten Port (#45)
+    console.log(`${message} Die Oberfläche wird geöffnet.`)
+    notifyDesktop(message)
+    if (!ciSet(process.env)) openBrowser(twin.url)
+    process.exit(0)
+  }
+  if (writeRunFile(DATA_DIR, { version: 1, port: self.port, pid: process.pid, startedAt: new Date().toISOString(), appVersion: APP_VERSION })) {
+    process.on('exit', () => removeRunFile(DATA_DIR, process.pid))
+    // Ohne Handler beendete ein Signal den Prozess, ohne dass `exit` liefe
+    for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP'] as const) {
+      if (process.listenerCount(signal) === 0) process.once(signal, () => process.exit(signal === 'SIGINT' ? 130 : 143))
+    }
+  }
+}
+
 // Reste eines Wiederherstellens, das ein Absturz unterbrochen hat. Erst hier, nach dem Binden:
 // Läuft schon ein Mietfuchs auf diesem Port, ist dieser Start oben ausgestiegen und räumt nichts
 // weg, was jener gerade auspackt.
 // Ein umgezogener Ordner (#517) wird nur gelesen: kein Aufräumen, kein Umstieg, keine Sicherung, kein Ort vermerkt.
+// Ein Umzug, der beim Umschalten endete (Durchsicht Daten K3), vor dem Aufräumen: Ob umgeschaltet wurde, zeigt die
+// geprüfte Kopie, die das Aufräumen wegnähme. Umgeschaltet: Entscheidung jetzt, den Vermerk holt der Block weiter unten
+// nach. Nicht umgeschaltet: Es gilt, was vorher galt.
+if ((RUNTIME === 'desktop' || RUNTIME === 'store') && !MOVED_AWAY) {
+  const pending = readPending(DATA_DIR)
+  if (pending) {
+    try {
+      if (switchedOver(DATA_DIR, pending)) {
+        writeDecision(DATA_DIR, { version: 1, decision: 'moved', at: pending.at, from: pending.from, ...(pending.source ? { source: pending.source } : {}) })
+        console.log(`Der Umzug aus ${pending.from} wurde beim letzten Mal beim Umschalten unterbrochen; er ist jetzt vermerkt.`)
+      }
+      clearPending(DATA_DIR)
+    } catch (err) {
+      console.error(`Der unterbrochene Umzug ließ sich nicht vermerken: ${messageOf(err)}`)
+    }
+  }
+}
 if (!MOVED_AWAY) cleanRestoreLeftovers(DATA_DIR)
 
 // Testgriff: hält den Start nach dem Binden und vor dem Öffnen der Datenbank fest, damit ein
@@ -4682,7 +4834,8 @@ if (!MOVED_AWAY) {
     for (const note of await reconcileAfterRestore()) console.log(note)
   }
   await checkPriorVersion()
-  setInterval(() => void checkPriorVersion(true), PRIOR_CHECK_INTERVAL_MS).unref()
+  // Testgriff NKA_TEST_PRIOR_INTERVAL_MS: ein kurzer Takt für den Test der Hintergrundarbeit
+  setInterval(() => void checkPriorVersion(true), Number(process.env.NKA_TEST_PRIOR_INTERVAL_MS) || PRIOR_CHECK_INTERVAL_MS).unref()
 }
 
 // Jetzt erst gilt der Start als gelungen: Meldung, Browser und die Anfragen, die gewartet haben.
@@ -4735,7 +4888,7 @@ if (!MOVED_AWAY) {
       : 'Fenster offen lassen, solange Mietfuchs läuft. Zum Beenden dieses Fenster schließen.')
     // In der CI (GitHub setzt CI=true) prüft ein Skript die Programmdatei; ein Browserfenster
     // auf dem Runner nützt dort niemandem.
-    if (!process.env.CI) openBrowser(url)
+    if (!ciSet(process.env)) openBrowser(url)
   }
 }
 startupDone = true

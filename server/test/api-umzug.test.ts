@@ -504,10 +504,13 @@ test('Ergänzung: Änderungen im alten Mietfuchs nach dem Umzug werden erkannt u
   try {
     assert.equal((await post(s.base, '/api/relocation/adopt', { dataDir: old.data })).status, 200)
     assert.deepEqual(await s.api<{ offered: boolean, newer?: unknown }>('/api/relocation'), { offered: false })
-    // Eine alte Fassung, die den Vermerk nicht kennt, ändert etwas
+    // Eine alte Fassung, die den Vermerk nicht kennt, ändert etwas. Geänderte Erwartung (Durchsicht Daten K5): Wie jede
+    // Änderung eines Nutzers legt sie eine Gruppe im Journal an; eine Migration allein gilt nicht mehr als neuerer Stand
     const { DatabaseSync } = await import('node:sqlite')
+    const group = "INSERT INTO change_groups (at, method, route, description, schema_steps) VALUES ('2026-11-02T10:00:00.000Z', 'PUT', '/api/tenancies', 'geändert', 1)"
     const db = new DatabaseSync(path.join(old.data, 'mietfuchs.sqlite'))
     db.exec("UPDATE tenancies SET tenant_name = 'Schmidt-Lange' WHERE tenant_name = 'Schmidt'")
+    db.exec(group)
     db.close()
     const offer = await s.api<{ offered: boolean, newer?: { from: string, modifiedAt: string } }>('/api/relocation')
     assert.equal(offer.newer?.from, old.data)
@@ -521,6 +524,7 @@ test('Ergänzung: Änderungen im alten Mietfuchs nach dem Umzug werden erkannt u
     // Abwinken: danach kein Hinweis mehr für diesen Stand
     const db2 = new DatabaseSync(path.join(old.data, 'mietfuchs.sqlite'))
     db2.exec("UPDATE tenancies SET tenant_name = 'Müller-Neu' WHERE tenant_name = 'Müller'")
+    db2.exec(group)
     db2.close()
     assert.ok((await s.api<{ newer?: unknown }>('/api/relocation')).newer)
     assert.equal((await post(s.base, '/api/relocation/newer/dismiss')).status, 200)

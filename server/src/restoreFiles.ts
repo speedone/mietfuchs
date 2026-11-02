@@ -63,8 +63,28 @@ export function restoreUploadPath(dataDir: string, name: string | undefined): st
 // (`mietfuchs.sqlite.<id>.backup` samt `-journal`, `-wal`, `-shm`, GET /api/backup; Integrationsdurchsicht 0.13.0): Beim Start läuft auch kein Backup.
 // Und die Kopie der Vorschau einer Sicherung (`mietfuchs.sqlite.vorschau-<id>`, #318).
 //
+// Und die Kopie, an der ein Wiederherstellen oder eine Übernahme prüft, bevor umgeschaltet wird
+// (`mietfuchs.sqlite.kopie-<id>` samt `-journal`, das SQLite beim Migrieren der Kopie anlegt; Durchsicht Daten K2): Ein
+// Abbruch in dieser Zeit (Fenster beendet) ließ sie bisher als `restore-<id>` liegen, bis zur doppelten Größe der
+// Datenbank je Abbruch. Erst unmittelbar vor dem Austausch bekommt sie den Namen `restore-<id>` (`exchangeName`).
+//
 // **Nicht** dazu gehört `mietfuchs.sqlite.restore-<id>`: Scheitert der Austausch der Datenbank,
 // kann sie die einzige Kopie der wiederhergestellten Daten sein (siehe runRestore).
+const STAGED_COPY = /^mietfuchs\.sqlite\.kopie-[0-9a-f]{16}(?:-journal|-wal|-shm)?$/
+
+// Der Name der geprüften Kopie, bis umgeschaltet wird; `id` aus `newId` (16 Hexziffern).
+export const stagedCopyName = (databaseFile: string, id: string): string => `${databaseFile}.kopie-${id}`
+
+// Unmittelbar vor dem Austausch: Ab jetzt kann die Kopie die einzige der neuen Daten sein und heißt deshalb
+// `restore-<id>`, wie es die Meldung nach einem gescheiterten Austausch nennt (restoreFailedNote in index.ts). Ein
+// Name anderer Gestalt bleibt, wie er ist.
+export function exchangeName(staged: string): string {
+  const target = staged.replace(/\.kopie-([0-9a-f]{16})$/, '.restore-$1')
+  if (target === staged) return staged
+  fs.renameSync(staged, target)
+  return target
+}
+
 export function cleanRestoreLeftovers(dataDir: string): void {
   let entries: fs.Dirent[]
   try {
@@ -81,7 +101,8 @@ export function cleanRestoreLeftovers(dataDir: string): void {
     const snapshot = e.isFile() && /^mietfuchs\.sqlite\.[0-9a-f]{16}\.backup(?:-journal|-wal|-shm)?$/.test(e.name)
     // Die Kopie, an der die Vorschau zum Einspielen einer Sicherung prüft (#318, db/snapshotPreview.ts).
     const preview = e.isFile() && /^mietfuchs\.sqlite\.vorschau-[0-9a-f]{16}(?:-journal|-wal|-shm)?$/.test(e.name)
-    if (!upload && !staging && !snapshot && !preview) continue
+    const copy = e.isFile() && STAGED_COPY.test(e.name)
+    if (!upload && !staging && !snapshot && !preview && !copy) continue
     try {
       fs.rmSync(path.join(dataDir, e.name), { recursive: true, force: true })
     } catch { /* dann beim nächsten Start */ }

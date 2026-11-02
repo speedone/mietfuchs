@@ -97,8 +97,10 @@ Daten: C:\Users\Beispiel\AppData\Local\Mietfuchs
 ```
 
 Sehen Sie kein Fenster mit Text, weil Sie Mietfuchs über das Startmenü geöffnet haben, dann
-rufen Sie im Browser `http://127.0.0.1:3001/healthz` auf. Dort steht unter `database` bei `file`
-der vollständige Pfad zur Datenbank; der Ordner darüber ist Ihr Datenordner.
+rufen Sie im Browser `http://127.0.0.1:3001/healthz` auf, beim Programm mit eigenem Fenster (ab 0.15)
+`http://127.0.0.1:17517/healthz`. Dort steht unter `database` bei `file` der vollständige Pfad zur
+Datenbank; der Ordner darüber ist Ihr Datenordner. Im Programm mit eigenem Fenster geht es einfacher:
+Menü *Mietfuchs* → *Datenordner zeigen*.
 
 Falls Sie doch selbst suchen wollen, hängt der Ort davon ab, wie Sie Mietfuchs starten:
 

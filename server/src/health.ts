@@ -43,6 +43,16 @@ function checkUploads(dataDir: string): Check {
   }
 }
 
+function checkUploadsReadable(dataDir: string): Check {
+  const uploads = path.join(dataDir, 'uploads')
+  try {
+    if (fs.existsSync(uploads)) fs.readdirSync(uploads)
+    return { ok: true, detail: 'uploads lesbar (nur zum Ansehen)' }
+  } catch (err) {
+    return { ok: false, detail: `uploads nicht lesbar: ${err instanceof Error ? err.message : String(err)}` }
+  }
+}
+
 // Was beim Start mit der Datenbank geschehen ist (#55). Der Bericht nennt es aus zwei Gründen.
 // Erstens sehen es die Prüfläufe von außen: Sie laufen auf jeder Programmdatei und in den
 // Containern von 22 Distributionen, und nur dort zeigt sich, ob das eingebaute SQLite überall
@@ -105,7 +115,9 @@ function checkDatabase(database: DatabaseState): Check {
   return { ok: false, detail: `${database.detail}, aber der Umstieg der Daten ist nicht gelungen` }
 }
 
-export function healthReport({ dataDir, version, database }: { dataDir: string, version: string, database?: DatabaseState }) {
+// `readOnly`: ein umgezogener Ordner (#517), der nur noch gelesen wird. Dort keine Schreibprobe, nur ob sich die Belege
+// lesen lassen (Durchsicht Daten K7).
+export function healthReport({ dataDir, version, database, readOnly = false }: { dataDir: string, version: string, database?: DatabaseState, readOnly?: boolean }) {
   // **Die Datenbank zählt jetzt mit**, und das ist die angekündigte Umkehrung. Solange die
   // fachlichen Daten in der db.json lagen, arbeitete Mietfuchs ohne die Datenbank weiter, und
   // ein Fehler dort durfte keinen Container in eine Neustart-Schleife schicken. Seit die Routen
@@ -129,7 +141,7 @@ export function healthReport({ dataDir, version, database }: { dataDir: string, 
     data: traegtDenBestand
       ? { ok: true, detail: 'die Datenbank trägt den Bestand' }
       : checkData(dataDir),
-    uploads: checkUploads(dataDir),
+    uploads: readOnly ? checkUploadsReadable(dataDir) : checkUploads(dataDir),
     ...(database ? { database: checkDatabase(database) } : {}),
   }
   const status = Object.values(checks).every((c) => c.ok) ? 'ok' : 'error'
