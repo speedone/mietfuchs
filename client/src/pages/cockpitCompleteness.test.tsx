@@ -71,7 +71,7 @@ test('Kostenart des Vorjahres fehlt im Jahr: Plausibilität fragt nach der Rechn
   stub('mfh', [item('g0', YEAR - 1, 'Grundsteuer'), item('w0', YEAR - 1, 'Wasser/Abwasser'), item('g', YEAR, 'Grundsteuer')])
   page()
   const row = await screen.findByText('Plausibilität zum Vorjahr', { selector: '.check-title' }, SLOW)
-  expect(row.closest('.check-row')?.textContent).toContain(`In ${YEAR - 1} erfasst, jetzt noch nicht: Wasser/Abwasser — fehlt noch eine Rechnung?`)
+  expect(row.closest('.check-row')?.textContent).toContain(`In ${YEAR - 1} erfasst, jetzt noch nicht: Wasser/Abwasser - fehlt noch eine Rechnung?`)
 })
 
 // Durchsicht zu #409, Befund 1: Eine Kostenart fällt auch zu Recht weg (Kabel nach dem Ende des

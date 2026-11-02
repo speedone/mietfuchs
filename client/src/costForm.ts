@@ -1,6 +1,6 @@
 // Entscheidungslogik des Kostenposition-Formulars, bewusst getrennt von der Darstellung:
 // Auswahllisten, Validierung und der Rumpf, der an die API geht. Diese Stelle bestimmt, was
-// tatsächlich gespeichert wird — sie ist in client/src/costForm.test.ts geprüft.
+// tatsächlich gespeichert wird - sie ist in client/src/costForm.test.ts geprüft.
 import type { BillingPeriod, CostItem, CostKey, SpreadYears, ExternalMeasure, HeatingEnergy, HeatingPart, HeatingTarget, HotWater, Meter, MeterType, PeriodKey, SplitPreviewPart, Tenancy, Unit } from './types'
 import { CATEGORIES, KEY_LABELS, defaultKeyFor, isNotAllocable } from './types'
 import { PARTICIPANT_KEYS as SHARED_PARTICIPANT_KEYS, allocationOf, comparablePrevious, previousAllocation, sameAllocation, type Allocation } from '../../shared/allocation.ts'
@@ -216,7 +216,7 @@ export function externalHint(form: ItemForm, units: Unit[], part: PartShare = nu
   const days = part && 'days' in part ? ` · ${part.days} von ${part.of} Tagen des Leistungszeitraums${others ? `, ${others}` : ''}` : others ? ` · ${others}` : ''
   const text = `Rechnerischer Anteil: ${fmtPct(own)} von ${fmtPct(total)} ${MEASURE_LABELS[form.externalMeasure]}${days} = ${fmtCentsInput(expected)} €`
   if (amount === null || !isMismatch(expected, amount)) return text
-  return `${text} — weicht um ${fmtCentsInput(Math.abs(expected - amount))} € vom Betrag ab. Bitte die Angaben aus der Gemeinschaftsabrechnung prüfen; verteilt wird der eingetragene Betrag.`
+  return `${text} - weicht um ${fmtCentsInput(Math.abs(expected - amount))} € vom Betrag ab. Bitte die Angaben aus der Gemeinschaftsabrechnung prüfen; verteilt wird der eingetragene Betrag.`
 }
 
 // Weicht der rechnerische Anteil vom eingetragenen Betrag ab (#144)? Dann markiert das Formular
@@ -297,22 +297,22 @@ export function amountsSumText(form: ItemForm, units: Unit[], tenancies?: Tenanc
   const own = sumOf(visibleSelfAmounts(form, units))
   const sum = tenants + own
   // Laienprobe B24: Ohne Betrag oder ohne eingetragene Beträge ist nichts „vollständig verteilt“.
-  if (form.amount.trim() === '' || parseEuro(form.amount) === null) return sum > 0 ? `Summe ${fmtCentsInput(sum)} € — bitte oben den Rechnungsbetrag eintragen` : 'Noch keine Beträge eingetragen.'
+  if (form.amount.trim() === '' || parseEuro(form.amount) === null) return sum > 0 ? `Summe ${fmtCentsInput(sum)} € - bitte oben den Rechnungsbetrag eintragen` : 'Noch keine Beträge eingetragen.'
   if (sum === 0) return 'Noch keine Beträge eingetragen.'
-  if (sum > amount) return `${fmtCentsInput(sum)} € — mehr als der Rechnungsbetrag ist nicht möglich`
+  if (sum > amount) return `${fmtCentsInput(sum)} € - mehr als der Rechnungsbetrag ist nicht möglich`
   const ownText = own > 0 ? `, davon ${fmtCentsInput(own)} € Ihre eigene Wohnung` : ''
   // Gerundet wird bei Einzelbeträgen nichts (#142); ein Rest entsteht, wenn für einen Zeitraum
   // kein Mieter einen Betrag hat, etwa bei Leerstand.
-  if (sum === amount) return `Summe ${fmtCentsInput(sum)} €${ownText} — der Rechnungsbetrag ist vollständig verteilt`
-  return `Summe ${fmtCentsInput(sum)} €${ownText} — den Rest von ${fmtCentsInput(amount - sum)} € trägt der Vermieter (etwa für Leerstand)`
+  if (sum === amount) return `Summe ${fmtCentsInput(sum)} €${ownText} - der Rechnungsbetrag ist vollständig verteilt`
+  return `Summe ${fmtCentsInput(sum)} €${ownText} - den Rest von ${fmtCentsInput(amount - sum)} € trägt der Vermieter (etwa für Leerstand)`
 }
 
-// Wohnungen der Abrechnungseinheit — nur sie können einen vereinbarten Anteil tragen
+// Wohnungen der Abrechnungseinheit - nur sie können einen vereinbarten Anteil tragen
 export const basisUnitsOf = (units: Unit[]) => units.filter(inBasis)
 
 // Auswahllisten. Beide halten dieselbe Regel ein: der gespeicherte Wert steht immer in der
 // Liste. Fehlt er, zeigt ein Select im Browser den ersten Eintrag an, während der State
-// unverändert bleibt — gespeichert würde dann etwas anderes als das, was zu sehen ist.
+// unverändert bleibt - gespeichert würde dann etwas anderes als das, was zu sehen ist.
 // Die Auswahl „Teil der Heizkosten“ (Nachprüfung von #237): alle Werte des Modells und „ohne Angabe“.
 // Wie bei den übrigen Auswahlfeldern steht der gespeicherte Wert immer in der Liste, damit der Browser
 // zeigt, was gespeichert ist.
@@ -334,7 +334,7 @@ export function costMeterTypes(meters: readonly Pick<Meter, 'type' | 'unitId'>[]
   return [...new Set(meters.filter((m) => m.unitId && m.type !== 'hkv').map((m) => m.type))]
 }
 
-// Schlüssel wechseln (#142). Beim Verbrauchsschlüssel stand der Zählertyp auf „— wählen —“, auch
+// Schlüssel wechseln (#142). Beim Verbrauchsschlüssel stand der Zählertyp auf „Bitte wählen“, auch
 // wenn es nur einen gab. Dann wird er jetzt vorgewählt, und zwar im Zustand und nicht nur in der
 // Anzeige, sodass gespeichert wird, was zu sehen ist; er steht ja in der Auswahl. Bei mehreren
 // Typen wählt weiter der Mensch, und eine schon getroffene Wahl bleibt.
@@ -445,7 +445,7 @@ export function keyListText(item: Pick<CostItem, 'category' | 'key' | 'directUni
   const nameOf = (id: string) => units.find((u) => u.id === id)?.name ?? '?'
   const direct = taxUnitOf(item)
   const ids = direct ? [direct] : showsTaxUnitField(item.category) && item.key === 'area' && item.participantUnitIds ? item.participantUnitIds : []
-  return ids.length > 0 ? `— trägt der Vermieter · betrifft ${ids.map(nameOf).join(', ')}` : '— trägt der Vermieter'
+  return ids.length > 0 ? `- trägt der Vermieter · betrifft ${ids.map(nameOf).join(', ')}` : '- trägt der Vermieter'
 }
 
 // Nicht umlagefähig, aber für die Steuer einer Einheit zugeordnet (#163): Regel und Begründung
@@ -537,10 +537,10 @@ export function customSharesSum(form: ItemForm, units: Unit[]): number {
 // Hinweistext unter den Prozentfeldern: macht den Vermieter-Rest schon bei der Eingabe sichtbar
 export function customSharesSumText(form: ItemForm, units: Unit[]): string {
   const sum = customSharesSum(form, units)
-  if (sum > 100.0001) return `${fmtPct(sum)} % — mehr als 100 % sind nicht möglich`
+  if (sum > 100.0001) return `${fmtPct(sum)} % - mehr als 100 % sind nicht möglich`
   const rest = 100 - sum
   return rest > 0.0001
-    ? `${fmtPct(sum)} % — die restlichen ${fmtPct(rest)} % trägt der Vermieter`
+    ? `${fmtPct(sum)} % - die restlichen ${fmtPct(rest)} % trägt der Vermieter`
     : `${fmtPct(sum)} %`
 }
 

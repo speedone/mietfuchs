@@ -7,7 +7,7 @@
 //
 // **Warum beides.** Solange es zwei Wege in die Berechnung gibt, muss jeder von ihnen an der
 // Handrechnung gemessen werden, und zwar an derselben. Verglichen die beiden Wege nur
-// miteinander, ginge ein Fehler durch, der beide gleich verschöbe — und genau das kann
+// miteinander, ginge ein Fehler durch, der beide gleich verschöbe - und genau das kann
 // passieren, weil beide dasselbe `calc.ts` benutzen. Gegen `expected.json` gemessen ist die
 // Aussage stärker: Aus der Datenbank kommt das, was ein Mensch auf Papier hergeleitet hat.
 //
@@ -34,7 +34,7 @@ import { actualOfSnapshot, loadFixtures } from '../testing/fixtures.ts'
 
 const fixtures = loadFixtures()
 
-assert.ok(fixtures.length > 0, 'keine Fixtures gefunden — der Gleichstand wäre wirkungslos')
+assert.ok(fixtures.length > 0, 'keine Fixtures gefunden - der Gleichstand wäre wirkungslos')
 
 for (const fx of fixtures) {
   test(`Gleichstand ${fx.name}: durch die Datenbank dieselbe Abrechnung`, async () => {

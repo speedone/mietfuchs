@@ -94,7 +94,7 @@ export default function Einstellungen({ settings, reload, update, onNavigate, on
         setRestoring(false)
         return
       }
-      setRestoreMsg('Backup wiederhergestellt — die Seite wird neu geladen …')
+      setRestoreMsg('Backup wiederhergestellt - die Seite wird neu geladen …')
       setTimeout(() => window.location.reload(), 1200)
     } catch (e) {
       setRestoreMsg(`Fehler: ${String((e as Error).message)}`)

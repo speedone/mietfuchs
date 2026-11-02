@@ -3864,7 +3864,7 @@ Im Formular hinter dem Feld „davon §35a-Lohn €“:
 
 ```tsx
             <details open={!!(form.serviceFrom || form.serviceTo || form.taxYear || form.heatingFuel || showsTaxYear(period, needsTaxYear))}>
-              <summary>Weitere Angaben — Leistungszeitraum{showsTaxYear(period, needsTaxYear) ? ', Jahr der Zahlung' : ''}{form.category === HEATING_CATEGORY ? ', Brennstoff/Energie' : ''} (optional)</summary>
+              <summary>Weitere Angaben - Leistungszeitraum{showsTaxYear(period, needsTaxYear) ? ', Jahr der Zahlung' : ''}{form.category === HEATING_CATEGORY ? ', Brennstoff/Energie' : ''} (optional)</summary>
               <CostPeriodFields form={form} onChange={setForm} showTaxYear={showsTaxYear(period, needsTaxYear)} years={taxYearOptions(year)} />
             </details>
 ```
@@ -4508,7 +4508,7 @@ Funktion, die `a` (die Auswertung) und einen dieser Kontexte bekommt, als erste 
 | `categoryDeviationPct(ctx.items, line.category, calendarContext(a.year), …)` | `categoryDeviationPct(ctx.items, line.category, periodContext(ctx.rules, target), …)` |
 | `costItemBody(lineDraft(fields, { vendor, invoiceFile: a.file }, ctx.units), ctx.units, calendarPeriod(a.year))` | `costItemBody(lineDraft(fields, { vendor, invoiceFile: a.file, taxYear: bookingTaxYear(target, a) }, ctx.units), ctx.units, target.key)` |
 | `scorePosition({ …, targetYear: a.year, existingItems: pool, … })` | zusätzlich `targetPeriod: target.key` |
-| `describeAssessment`: `const requestedYear = …; const otherYear = …` und `reasons.push(\`Beleg aus ${a.year}, gewählt war ${requestedYear} — …\`)` | siehe unten |
+| `describeAssessment`: `const requestedYear = …; const otherYear = …` und `reasons.push(\`Beleg aus ${a.year}, gewählt war ${requestedYear} - …\`)` | siehe unten |
 
 ```ts
   // Der gewählte Zeitraum und der, in den gebucht wird (#208). Weichen sie ab, steht die Ampel auf
@@ -4518,7 +4518,7 @@ Funktion, die `a` (die Auswertung) und einen dieser Kontexte bekommt, als erste 
 ```
 
 ```ts
-    reasons.push(`Beleg aus ${a.year}, gewählt war ${requested ? periodLabel(requested) : ''} — gebucht wird in ${periodLabel(target)}; sonst das Jahr der Buchung ändern`)
+    reasons.push(`Beleg aus ${a.year}, gewählt war ${requested ? periodLabel(requested) : ''} - gebucht wird in ${periodLabel(target)}; sonst das Jahr der Buchung ändern`)
 ```
 
 und im Ergebnis von `describeAssessment` `targetPeriod: target.key, targetLabel: periodLabel(target),`.

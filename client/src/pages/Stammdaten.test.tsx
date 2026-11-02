@@ -139,7 +139,7 @@ test('Wohnungen: die Miteigentumsanteile stehen in der Liste, sobald eine Wohnun
   await screen.findByText('EG', undefined, SLOW)
   expect(screen.getByRole('columnheader', { name: /MEA/ })).toBeTruthy()
   expect(rowOf('EG').getByText('124')).toBeTruthy()
-  expect(rowOf('OG').getByText('—')).toBeTruthy()
+  expect(rowOf('OG').getByText('-')).toBeTruthy()
 })
 
 test('Wohnungen: ohne Miteigentumsanteile und außerhalb einer Eigentumswohnung keine Spalte dafür', async () => {
@@ -580,7 +580,7 @@ test('IBAN: wechselt der Dialog zu einem anderen Mietverhältnis, beginnt das Fe
 test('IBAN: ist die gespeicherte ungültig, sind die „Weiteren Angaben“ aufgeklappt, sonst nicht', async () => {
   page([tenancy('t1', 'Müller', { iban: 'de00 1111' }), tenancy('t2', 'Schmidt', { unitId: 'u2', iban: 'DE89370400440532013000' })])
   const details = () => {
-    const el = screen.getByText(/^Weitere Angaben — Nebenkosten-Modell/).closest('details')
+    const el = screen.getByText(/^Weitere Angaben - Nebenkosten-Modell/).closest('details')
     if (!el) throw new Error('kein details')
     return el
   }

@@ -13,13 +13,13 @@ describe('Abweichung eines abgeschlossenen Jahres (#56)', () => {
 
   test('zugunsten des Mieters: Korrektur möglich, und die Richtung steht dabei', () => {
     const v = deviationView(cmp({ deviations: [{ tenancyId: 't', tenantName: 'Meier', unitName: 'EG', frozenBalanceCents: 6667, currentBalanceCents: 8000, differenceCents: 1333, direction: 'tenant' }] }))
-    expect(v?.lines[0]?.text).toMatch(/Meier \(EG\): abgeschlossen Guthaben 66,67\s€, heute Guthaben 80,00\s€ — 13,33\s€ zugunsten des Mieters/)
+    expect(v?.lines[0]?.text).toMatch(/Meier \(EG\): abgeschlossen Guthaben 66,67\s€, heute Guthaben 80,00\s€ - 13,33\s€ zugunsten des Mieters/)
     expect(v?.lines[0]?.text).toMatch(/Korrektur/)
   })
 
   test('zugunsten des Vermieters: je nach Frist noch möglich oder in der Regel ausgeschlossen', () => {
     const d = { tenancyId: 't', tenantName: 'Meier', unitName: 'EG', frozenBalanceCents: -1000, currentBalanceCents: -2500, differenceCents: -1500, direction: 'landlord' as const }
-    expect(deviationView(cmp({ deviations: [d] }))?.lines[0]?.text).toMatch(/Nachzahlung 10,00\s€, heute Nachzahlung 25,00\s€ — 15,00\s€ zugunsten des Vermieters.*zulasten des Mieters \(Nachforderung oder geringeres Guthaben\).*bis zum 31\.12\.2026/)
+    expect(deviationView(cmp({ deviations: [d] }))?.lines[0]?.text).toMatch(/Nachzahlung 10,00\s€, heute Nachzahlung 25,00\s€ - 15,00\s€ zugunsten des Vermieters.*zulasten des Mieters \(Nachforderung oder geringeres Guthaben\).*bis zum 31\.12\.2026/)
     expect(deviationView(cmp({ deviations: [d], deadlinePassed: true }))?.lines[0]?.text).toMatch(/Frist ist abgelaufen.*in der Regel ausgeschlossen/)
   })
 

@@ -16,7 +16,7 @@ const tenancy = (over: Pick<SnapshotTenancy, 'id' | 'unitId' | 'tenantName' | 's
 const grundsteuer: SnapshotCostItem = { id: 'gs', period: calendarPeriod(2025), category: 'Grundsteuer', description: 'Grundsteuer 2025', amountCents: 120000, key: 'area' }
 
 // Das Beispiel aus dem Issue: zwei Wohnungen zu je 50 m², 1.200 € Grundsteuer nach Fläche.
-// Wohnung A: Xaver bis 30.09.2025, Yvonne ab 01.09.2025 — 30 Tage doppelt belegt.
+// Wohnung A: Xaver bis 30.09.2025, Yvonne ab 01.09.2025 - 30 Tage doppelt belegt.
 const source = (tenancies: SnapshotTenancy[], costItems: SnapshotCostItem[] = [grundsteuer]): SnapshotSource => ({
   units: [
     { id: 'A', name: 'Wohnung A', areaM2: 50, participates: true },

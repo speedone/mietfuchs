@@ -66,7 +66,7 @@ export function completenessQuestion(label: string, kind: PropertyKind | undefin
 }
 
 export function closeMessage(label: string, kind: PropertyKind | undefined, heating = false): string {
-  return `${completenessQuestion(label, kind, heating)} Der aktuelle Berechnungsstand wird eingefroren — spätere Änderungen an Kosten `
+  return `${completenessQuestion(label, kind, heating)} Der aktuelle Berechnungsstand wird eingefroren - spätere Änderungen an Kosten `
     + 'oder Stammdaten ändern diese Abrechnung nicht mehr. Sie lässt sich jederzeit wieder öffnen.'
 }
 

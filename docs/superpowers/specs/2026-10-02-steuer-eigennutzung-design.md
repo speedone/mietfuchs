@@ -36,7 +36,7 @@ Zufallsbestände hält das fest.
 
 ## Entscheidungen
 
-### F1: Umlagefähige Kosten — Eigenanteil aus der Abrechnung
+### F1: Umlagefähige Kosten - Eigenanteil aus der Abrechnung
 
 **Entscheidung:** Für umlagefähige Kostenarten ist der private Anteil der Eigenanteil, den die
 Nebenkostenabrechnung desselben Jahres für diese Position ausweist (`landlordParts` mit dem Grund
@@ -87,7 +87,7 @@ gehören Zubehörräume, z. B. Keller, Dachböden, Schuppen und Garagen“ (Anle
 Hinweis zur Aufteilung sagt das. Eine eigene Eigenschaft „Wohnraum / Nutzraum“ an der Einheit wäre
 eine Erweiterung mit Migration und gehört nicht hierher.
 
-### F4: § 35a — nur erwähnen
+### F4: § 35a - nur erwähnen
 
 Der Lohnanteil bleibt, wie er ist (`labor35aCents`). Die Ermäßigung gibt es nur, soweit die
 Aufwendungen keine Werbungskosten sind und den eigenen Haushalt betreffen (§ 35a Abs. 4 und 5
@@ -95,7 +95,7 @@ EStG); ob und wie der Anteil der eigenen Wohnung in die eigene Erklärung gehör
 Mietfuchs nicht. Trägt eine Position mit Lohnanteil einen privaten Teil, nennt ein Hinweis das
 (`mixedUseLabor35a`); das Lexikon (`ownShare`) sagt es schon.
 
-### F5: Wechsel der Nutzung im Jahr — Hinweis statt Staffel
+### F5: Wechsel der Nutzung im Jahr - Hinweis statt Staffel
 
 Die Nutzung einer Einheit hat keine Zeitachse. Hatte eine selbstgenutzte Einheit im Jahr ein
 Mietverhältnis, sagt ein Hinweis (`mixedUseChangedInYear`), dass der Flächenanteil der

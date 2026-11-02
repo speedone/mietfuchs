@@ -1,7 +1,7 @@
 {
-  "name": "Mietfuchs — Nebenkostenabrechnung",
+  "name": "Mietfuchs - Nebenkostenabrechnung",
   "short_name": "Mietfuchs",
-  "description": "Mietfuchs — lokales Tool für die Nebenkostenabrechnung privater Vermieter. Ohne Cloud und ohne Konto.",
+  "description": "Mietfuchs - lokales Tool für die Nebenkostenabrechnung privater Vermieter. Ohne Cloud und ohne Konto.",
   "lang": "de",
   "start_url": "/",
   "display": "standalone",

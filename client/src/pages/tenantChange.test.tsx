@@ -100,7 +100,7 @@ test('Mieterwechsel: eine einzige Anfrage, und die Ablehnung bleibt im Assistent
   expect(sent).toHaveLength(1)
 })
 
-test('Mieterwechsel: gespeichert, aber die Ansicht lädt nicht neu — Hinweis statt Verlust, kein zweiter Wechsel', async () => {
+test('Mieterwechsel: gespeichert, aber die Ansicht lädt nicht neu - Hinweis statt Verlust, kein zweiter Wechsel', async () => {
   changeStatus = 200
   await runWizard(async () => { throw new Error('Netzwerk weg') })
   await waitFor(() => expect(screen.getByText(/Der Mieterwechsel ist gespeichert; die Ansicht ließ sich nicht neu laden/)).toBeTruthy(), SLOW)

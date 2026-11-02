@@ -1,7 +1,7 @@
-# F09 — Schaltjahr, unterjähriger Einzug und Leerstand
+# F09 - Schaltjahr, unterjähriger Einzug und Leerstand
 
 **Geprüfte Regel:** Im Schaltjahr hat das Jahr 366 Tage, und der Tagesanteil rechnet gegen
-diese 366 — nicht gegen 365. Die Monate vor dem Einzug sind **Leerstand**: Sie werden keinem
+diese 366 - nicht gegen 365. Die Monate vor dem Einzug sind **Leerstand**: Sie werden keinem
 Mieter zugeordnet, sondern bleiben beim Vermieter. Der Betrag verschwindet nicht und wird
 auch nicht auf die verbleibenden Mieter umverteilt.
 
@@ -38,7 +38,7 @@ t2 = 100.000 ct × 40/100 × 275/366 = 30.054,6448 ct
                             Summe  = 90.054,6448 ct
 ```
 
-Die Rohanteile schöpfen den Betrag **nicht** aus — es fehlen 9.945,36 ct, nämlich der
+Die Rohanteile schöpfen den Betrag **nicht** aus - es fehlen 9.945,36 ct, nämlich der
 Leerstandsanteil. Er ist eine eigene Zeile der Restverteilung (#202), neben den Mietern:
 
 ```
@@ -56,7 +56,7 @@ Kontrolle: 60.000 + 30.055 + 9.945 = 100.000 ✓
 Gegenprobe zum Schaltjahrfehler: Mit 365 statt 366 Tagen ergäbe sich für t2
 40.000 × 275/365 = 30.136,99 → 30.137 ct, also 82 ct zu viel zulasten des Mieters.
 
-Vorauszahlungen — bei t2 zählen nur die Monate, in denen das Mietverhältnis am Monatsersten
+Vorauszahlungen - bei t2 zählen nur die Monate, in denen das Mietverhältnis am Monatsersten
 bestand:
 
 ```

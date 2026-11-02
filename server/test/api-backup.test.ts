@@ -548,7 +548,7 @@ function entryData(zip: AdmZip, name: string): Buffer {
   return entry.getData()
 }
 
-// Die Wohnungen, wie sie in der Datenbank stehen — unabhängig von den Routen gelesen, die
+// Die Wohnungen, wie sie in der Datenbank stehen - unabhängig von den Routen gelesen, die
 // heute noch aus der db.json antworten.
 async function unitsInDatabase(dataDir: string): Promise<string[]> {
   const connection = await connect(path.join(dataDir, 'mietfuchs.sqlite'))
@@ -794,7 +794,7 @@ test('Backup: ein Archiv ohne Datenbank baut sie aus der db.json neu auf', async
   await withFilledDatabase(async (s, unit) => {
     // Ein Archiv, wie es eine ältere Version gepackt hat: nur die db.json, keine Datenbank und
     // keine Herkunftsangabe. Es wird hier von Hand gebaut, denn ein heutiges Backup führt genau
-    // das nicht mehr — und dieser Test steht gerade für die Archive, die bei den Nutzern schon
+    // das nicht mehr - und dieser Test steht gerade für die Archive, die bei den Nutzern schon
     // liegen.
     const alt = archive({}, {
       settings: {},

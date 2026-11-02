@@ -122,7 +122,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
 
   const tenancyName = (id: string) => {
     const t = tenancies.find((x) => x.id === id)
-    return t ? t.tenantName : '—'
+    return t ? t.tenantName : '-'
   }
 
   // Zahlungen des Jahres, neueste zuerst
@@ -136,7 +136,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
       <PageHeader
         context="calendar"
         title="Mietkonto"
-        subtitle="Welche Monate sind bezahlt? Soll (Bruttomiete) gegen tatsächliche Eingänge — pro Mietverhältnis."
+        subtitle="Welche Monate sind bezahlt? Soll (Bruttomiete) gegen tatsächliche Eingänge - pro Mietverhältnis."
         actions={
           <button
             className="btn"
@@ -215,8 +215,8 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
             </label>
             <Field label="Mietverhältnis" required {...formErrors.field('tenancyId')}>
               <select value={form.tenancyId} onChange={(e) => setForm({ ...form, tenancyId: e.target.value })}>
-                <option value="">— wählen —</option>
-                {paymentTenancyOptions(form.kind, ledger, tenancies, (id) => units.find((u) => u.id === id)?.name ?? '—', form.tenancyId).map((o) => (
+                <option value="">Bitte wählen</option>
+                {paymentTenancyOptions(form.kind, ledger, tenancies, (id) => units.find((u) => u.id === id)?.name ?? '-', form.tenancyId).map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
               </select>
@@ -291,7 +291,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
 
             {noRent ? (
               <NoticeBox level="warning">
-                Keine Kaltmiete hinterlegt — unter <em>Stammdaten → Mietverhältnis bearbeiten</em> die Kaltmiete-Staffel
+                Keine Kaltmiete hinterlegt - unter <em>Stammdaten → Mietverhältnis bearbeiten</em> die Kaltmiete-Staffel
                 eintragen, dann erscheint hier das Soll. (Reine NK-Vorauszahlungen zählen ebenfalls ins Soll.)
               </NoticeBox>
             ) : (
@@ -313,7 +313,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
                     const content = (
                       <>
                         <span className="m">{MONTHS[mo.month - 1]}</span>
-                        <span className="a">{mo.sollCents === 0 ? '—' : fmtEuro(mo.sollCents)}</span>
+                        <span className="a">{mo.sollCents === 0 ? '-' : fmtEuro(mo.sollCents)}</span>
                         {partial && mo.sollCents !== 0 && <span className="m">{partial}</span>}
                         {notRecorded && mo.sollCents !== 0 && <span className="m">nicht erfasst</span>}
                         {later && <span className="m">{later}</span>}

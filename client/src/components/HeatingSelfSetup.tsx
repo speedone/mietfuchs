@@ -72,7 +72,7 @@ export default function HeatingSelfSetup({ plant, units = [], period, periodLabe
       </p>
       <Field label="Bereitet diese Heizung auch das Warmwasser?" required {...errors.field('hotWater')}>
         <select value={form.hotWater} onChange={(e) => setForm({ ...form, hotWater: e.target.value as HotWater | '', items: form.items.map((x) => ({ ...x, heatingTarget: '' })) })}>
-          {form.hotWater === '' && <option value="">— bitte wählen —</option>}
+          {form.hotWater === '' && <option value="">Bitte wählen</option>}
           {HOT_WATER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
       </Field>
@@ -85,7 +85,7 @@ export default function HeatingSelfSetup({ plant, units = [], period, periodLabe
         <>
           <Field label={<>{INSULATION_QUESTION} (<Term id="forcedConsumptionShare">Pflichtanteil</Term>)</>} required {...errors.field('insulation')}>
             <select value={form.insulation} onChange={(e) => setForm({ ...form, insulation: e.target.value as InsulationRule | '' })}>
-              <option value="">— bitte wählen —</option>
+              <option value="">Bitte wählen</option>
               {INSULATION_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </Field>
@@ -152,13 +152,13 @@ export default function HeatingSelfSetup({ plant, units = [], period, periodLabe
                 <span className="grow">„{row.description}“ · {fmtEuro(row.amountCents)}</span>
                 <Field label={<>Teil für „{row.description}“</>} required {...errors.field(`part:${row.id}`)}>
                   <select value={row.heatingPart} onChange={(e) => set({ heatingPart: e.target.value as HeatingPart | '', heatingTarget: '' })}>
-                    <option value="">— bitte wählen —</option>
+                    <option value="">Bitte wählen</option>
                     {PART_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
                 </Field>
                 <Field label={<>Ziel für „{row.description}“</>} required {...errors.field(`target:${row.id}`)}>
                   <select value={targets.some((o) => o.value === row.heatingTarget) ? row.heatingTarget : ''} onChange={(e) => set({ heatingTarget: e.target.value as HeatingTarget | '' })}>
-                    <option value="">— bitte wählen —</option>
+                    <option value="">Bitte wählen</option>
                     {targets.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
                 </Field>

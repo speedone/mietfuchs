@@ -1,7 +1,7 @@
 // Modellempfehlungen (#33). Wer nicht weiß, welches Modell passt, findet in den Einstellungen
 // eine kurze Liste mit Größe, Bildverständnis und Messwerten aus dem KI-Prüflauf. Fest
 // eingebaute Empfehlungen veralten, deshalb liegt dieselbe Liste als `ki-modelle.json` im Repo
-// und wird nachgeladen — aber nur mit derselben Zustimmung wie beim Update-Hinweis
+// und wird nachgeladen - aber nur mit derselben Zustimmung wie beim Update-Hinweis
 // (`settings.updateCheck === 'on'`) und höchstens einmal am Tag. Ohne Zustimmung, ohne Netz
 // oder bei einer unbrauchbaren Datei gilt die mitgelieferte Kopie.
 //

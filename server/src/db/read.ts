@@ -36,7 +36,7 @@ import {
 // `unknown`: Es ist ein Archivstück, das wortgleich erhalten bleiben soll, und ein Typ darüber
 // wäre eine Behauptung über etwas, das eine frühere Version geschrieben hat. Die Berechnung
 // liest daraus nur den Eigenanteil und die Vorauszahlungen, und die holt `frozenSettlementOf`
-// aus snapshot.ts heraus — dieselbe Funktion wie auf dem Weg über die Datei.
+// aus snapshot.ts heraus - dieselbe Funktion wie auf dem Weg über die Datei.
 export type StoredClosedSettlement = {
   id: string
   propertyId: string
@@ -664,7 +664,7 @@ export async function readSettings(db: Executor): Promise<MigratedSettings> {
     ollamaUrl: row.ollamaUrl,
     ollamaModel: row.ollamaModel,
     // Diese vier gibt es nur, wenn ein Wert dasteht. Ein Feld mit dem Wert `undefined` wäre
-    // etwas anderes als ein fehlendes Feld, sobald jemand zwei Stände vergleicht — und genau
+    // etwas anderes als ein fehlendes Feld, sobald jemand zwei Stände vergleicht - und genau
     // das tut der Umstieg.
     ...(row.printAdjustSuggestion == null ? {} : { printAdjustSuggestion: row.printAdjustSuggestion }),
     ...(row.printAttachments == null ? {} : { printAttachments: row.printAttachments }),

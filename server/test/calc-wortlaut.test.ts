@@ -36,7 +36,7 @@ test('Helfer: Aufzählung mit „und“, Anzahl mit Ein- und Mehrzahl, Beschrift
   assert.equal(countOf(3, 'Position', 'Positionen'), '3 Positionen')
   assert.equal(meterTypeLabel('kaltwasser'), 'Kaltwasser')
   assert.equal(meterTypeLabel('unbekannt'), 'unbekannt')
-  assert.equal(meterTypeLabel(null), '—')
+  assert.equal(meterTypeLabel(null), '-')
 })
 
 test('Fehlende Wohnfläche: eine Einheit in der Einzahl, zwei mit „und“', () => {
@@ -45,13 +45,13 @@ test('Fehlende Wohnfläche: eine Einheit in der Einzahl, zwei mit „und“', ()
     tenancies: [tenancy('t1', 'EG'), tenancy('t2', 'G')],
     costItems: [item('Grundsteuer', 'area')],
   })
-  assert.equal(textOf(one, 'basis.unit-no-area'), 'Für die Einheit G ist keine Wohnfläche hinterlegt — der Flächenschlüssel verteilt ihren Anteil auf die übrigen Wohnungen.')
+  assert.equal(textOf(one, 'basis.unit-no-area'), 'Für die Einheit G ist keine Wohnfläche hinterlegt - der Flächenschlüssel verteilt ihren Anteil auf die übrigen Wohnungen.')
   const two = settle({
     units: [unit('EG', { areaM2: 80 }), unit('OG', { areaM2: 0 }), unit('DG', { areaM2: 0 })],
     tenancies: [tenancy('t1', 'EG'), tenancy('t2', 'OG'), tenancy('t3', 'DG')],
     costItems: [item('Grundsteuer', 'area')],
   })
-  assert.equal(textOf(two, 'basis.unit-no-area'), 'Für die Einheiten OG und DG ist keine Wohnfläche hinterlegt — der Flächenschlüssel verteilt ihren Anteil auf die übrigen Wohnungen.')
+  assert.equal(textOf(two, 'basis.unit-no-area'), 'Für die Einheiten OG und DG ist keine Wohnfläche hinterlegt - der Flächenschlüssel verteilt ihren Anteil auf die übrigen Wohnungen.')
 })
 
 test('Selbstgenutzte Wohnung ohne Fläche oder Personen: Einzahl statt „selbstgenutzte(n) Wohnung(en)“', () => {
@@ -60,14 +60,14 @@ test('Selbstgenutzte Wohnung ohne Fläche oder Personen: Einzahl statt „selbst
     tenancies: [tenancy('t1', 'EG')],
     costItems: [item('Grundsteuer', 'area'), item('Müll', 'persons')],
   })
-  assert.equal(textOf(s, 'basis.self-no-area'), 'Für die selbstgenutzte Wohnung OG ist keine Wohnfläche hinterlegt — der Flächenschlüssel verteilt nur auf die Mieter.')
-  assert.equal(textOf(s, 'basis.self-no-persons'), 'Für die selbstgenutzte Wohnung OG ist keine Personenzahl hinterlegt — der Personenschlüssel verteilt nur auf die Mieter.')
+  assert.equal(textOf(s, 'basis.self-no-area'), 'Für die selbstgenutzte Wohnung OG ist keine Wohnfläche hinterlegt - der Flächenschlüssel verteilt nur auf die Mieter.')
+  assert.equal(textOf(s, 'basis.self-no-persons'), 'Für die selbstgenutzte Wohnung OG ist keine Personenzahl hinterlegt - der Personenschlüssel verteilt nur auf die Mieter.')
   const two = settle({
     units: [unit('EG', { areaM2: 80 }), unit('OG', { areaM2: 0, participates: false, selfUsed: true }), unit('DG', { areaM2: 0, participates: false, selfUsed: true })],
     tenancies: [tenancy('t1', 'EG')],
     costItems: [item('Grundsteuer', 'area')],
   })
-  assert.equal(textOf(two, 'basis.self-no-area'), 'Für die selbstgenutzten Wohnungen OG und DG ist keine Wohnfläche hinterlegt — der Flächenschlüssel verteilt nur auf die Mieter.')
+  assert.equal(textOf(two, 'basis.self-no-area'), 'Für die selbstgenutzten Wohnungen OG und DG ist keine Wohnfläche hinterlegt - der Flächenschlüssel verteilt nur auf die Mieter.')
 })
 
 test('Einheit ohne Fläche: Einheiten und Positionen mit „und“ aufgezählt', () => {
@@ -91,7 +91,7 @@ test('Wohnung ohne Zähler: die Zählerart mit Beschriftung, die Einheiten mit �
     meters: [meter('za', 'A')],
     readings: used('za', 30),
   })
-  assert.match(textOf(s, 'meter.unit-without-meter'), /^„Wasser“: für B und C gibt es keinen abgelesenen Zähler „Kaltwasser“ — /)
+  assert.match(textOf(s, 'meter.unit-without-meter'), /^„Wasser“: für B und C gibt es keinen abgelesenen Zähler „Kaltwasser“ - /)
 })
 
 test('Kein Verbrauch erfasst: die Zählerart mit Beschriftung', () => {
@@ -100,7 +100,7 @@ test('Kein Verbrauch erfasst: die Zählerart mit Beschriftung', () => {
     tenancies: [tenancy('t-a', 'A')],
     costItems: [item('Wasser', 'meter', { category: 'Wasser/Abwasser', meterType: 'kaltwasser' })],
   })
-  assert.equal(textOf(s, 'meter.no-consumption'), '„Wasser“: kein Verbrauch für Zählertyp „Kaltwasser“ erfasst — Betrag geht an den Vermieter.')
+  assert.equal(textOf(s, 'meter.no-consumption'), '„Wasser“: kein Verbrauch für Zählertyp „Kaltwasser“ erfasst - Betrag geht an den Vermieter.')
 })
 
 test('Hinweise der Berechnung schließen kein typografisches Anführungszeichen mit einem geraden', () => {

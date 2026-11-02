@@ -357,7 +357,7 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
           {plant.supply === 'perUnit' && (
             <Field label="Wohnung" required {...formErrors.field('unitId')}>
               <select value={form.unitId} onChange={(e) => set('unitId', e.target.value)}>
-                <option value="">— bitte wählen —</option>
+                <option value="">Bitte wählen</option>
                 {units.filter((u) => !plant.units || plant.units.some((x) => x.unitId === u.id)).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
             </Field>

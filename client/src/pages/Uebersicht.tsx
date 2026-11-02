@@ -11,7 +11,7 @@ import { NoticeBox } from '../components/Notice'
 import Card from '../components/Card'
 
 // Ab dieser Abweichung zum Vorjahr gilt eine Kostenart als auffällig.
-// Mieter dürfen Belege einsehen — größere Sprünge sollte man erklären können.
+// Mieter dürfen Belege einsehen - größere Sprünge sollte man erklären können.
 const NOTABLE_CHANGE_PCT = 25
 
 type Props = { onNavigate: (tab: NavTarget) => void }
@@ -97,7 +97,7 @@ export default function Uebersicht({ onNavigate }: Props) {
 
       {notable.length > 0 && (
         <NoticeBox level="warning" title="Auffällige Abweichung zum Vorjahr"
-          action={`${notable.map((c) => `${c} (${pctText(c)})`).join(', ')} — Belege prüfen, Mieter fragen bei großen Sprüngen erfahrungsgemäß nach.`} />
+          action={`${notable.map((c) => `${c} (${pctText(c)})`).join(', ')} - Belege prüfen, Mieter fragen bei großen Sprüngen erfahrungsgemäß nach.`} />
       )}
 
       {settlement && (
@@ -141,7 +141,7 @@ export default function Uebersicht({ onNavigate }: Props) {
         )}
         {categories.length === 0 ? (
           <div className="empty">
-            Für {label} sind noch keine Kosten erfasst —{' '}
+            Für {label} sind noch keine Kosten erfasst -{' '}
             <a href="#" onClick={(e) => { e.preventDefault(); onNavigate('belege:eingang') }}>jetzt Belege erfassen</a>.
           </div>
         ) : (
@@ -167,8 +167,8 @@ export default function Uebersicht({ onNavigate }: Props) {
                       {hasPrev && <div className="bar prev" style={{ width: `${(p / maxCents) * 100}%` }} title={`${at.previousLabel}: ${fmtEuro(p)}`} />}
                       <div className="bar" style={{ width: `${(k / maxCents) * 100}%` }} title={`${label}: ${fmtEuro(k)}`} />
                     </td>
-                    <td className="num muted">{hasPrev ? (p ? fmtEuro(p) : '—') : '—'}</td>
-                    <td className="num">{k ? fmtEuro(k) : '—'}</td>
+                    <td className="num muted">{hasPrev ? (p ? fmtEuro(p) : '-') : '-'}</td>
+                    <td className="num">{k ? fmtEuro(k) : '-'}</td>
                     <td className="num">
                       {warn ? <span className="badge red">{pctText(c)}</span> : <span className="muted">{hasPrev ? pctText(c) : ''}</span>}
                     </td>
@@ -180,7 +180,7 @@ export default function Uebersicht({ onNavigate }: Props) {
               <tr>
                 <td>Summe</td>
                 <td />
-                <td className="num">{hasPrev ? fmtEuro([...prev.values()].reduce((a, b) => a + b, 0)) : '—'}</td>
+                <td className="num">{hasPrev ? fmtEuro([...prev.values()].reduce((a, b) => a + b, 0)) : '-'}</td>
                 <td className="num">{fmtEuro([...cur.values()].reduce((a, b) => a + b, 0))}</td>
                 <td />
               </tr>

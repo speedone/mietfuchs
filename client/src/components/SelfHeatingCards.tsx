@@ -140,7 +140,7 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
             <label className="field">
               <span>{INSULATION_QUESTION} (<Term id="forcedConsumptionShare">Pflichtanteil</Term>)</span>
               <select value={insulation} disabled={draft.saving} onChange={(e) => edit({ insulation: e.target.value as InsulationRule | '' })}>
-                {insulation === '' && <option value="">— bitte wählen —</option>}
+                {insulation === '' && <option value="">Bitte wählen</option>}
                 {INSULATION_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </label>

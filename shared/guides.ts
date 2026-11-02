@@ -86,8 +86,8 @@ const GUIDE_DATA = {
     applies: 'Sie wohnen selbst im Haus und vermieten eine zweite Wohnung darin, etwa eine Einliegerwohnung. Mietfuchs rechnet dann nur mit Ihrer Mietpartei ab, Ihren eigenen Anteil tragen Sie selbst.',
     steps: [
       { page: 'stammdaten', text: 'Klicken Sie in der Karte „Objekt“ auf „Bearbeiten“, tragen Sie Bezeichnung und Adresse ein und klicken Sie auf „Speichern“.' },
-      { page: 'stammdaten', text: 'Legen Sie mit „+ Wohnung anlegen“ Ihre eigene Wohnung an: Wohnfläche eintragen, bei „Nutzung“ die Auswahl „Eigennutzung — Anteil trägt der Vermieter“ wählen und unter „Personen im eigenen Haushalt“ die Zahl der Bewohner eintragen.' },
-      { page: 'stammdaten', text: 'Legen Sie die Einliegerwohnung ebenso an, mit der Nutzung „vermietet — Anteil trägt der Mieter“, und danach mit „+ Mietverhältnis anlegen“ die Mieterin mit Einzug, Personenzahl, Kaltmiete und Vorauszahlung.' },
+      { page: 'stammdaten', text: 'Legen Sie mit „+ Wohnung anlegen“ Ihre eigene Wohnung an: Wohnfläche eintragen, bei „Nutzung“ die Auswahl „Eigennutzung - Anteil trägt der Vermieter“ wählen und unter „Personen im eigenen Haushalt“ die Zahl der Bewohner eintragen.' },
+      { page: 'stammdaten', text: 'Legen Sie die Einliegerwohnung ebenso an, mit der Nutzung „vermietet - Anteil trägt der Mieter“, und danach mit „+ Mietverhältnis anlegen“ die Mieterin mit Einzug, Personenzahl, Kaltmiete und Vorauszahlung.' },
       { page: 'zaehler', text: 'Hat nur die Einliegerwohnung einen eigenen Wasserzähler, legen Sie mit „+ Zähler anlegen“ zwei Zähler an: den Zähler des Hauses mit der Zuordnung „Haus (Hauptzähler)“ und den Zwischenzähler mit der Zuordnung zur Einliegerwohnung. Für jedes Jahr braucht jeder Zähler zwei Stände: zu Jahresbeginn (31.12. des Vorjahres) und zum Jahresende (31.12.); tragen Sie sie mit „+ Ablesung anlegen“ ein.' },
       { page: 'kosten', text: 'Erfassen Sie die Rechnungen mit „+ Kostenposition anlegen“. Das Wasser verteilen Sie mit dem Umlageschlüssel „nach Verbrauch (Zähler)“ und dem Zählertyp „Kaltwasser“.' },
       { page: 'kosten', text: 'Reparaturen erfassen Sie als „Nicht umlagefähig“. Unter „Betrifft (für die Steuer)“ ordnen Sie eine Reparatur, die nur eine Wohnung betrifft, dieser Wohnung zu; für Dach, Fassade oder Heizung bleibt „das ganze Gebäude (nach Fläche)“ stehen.' },
@@ -120,7 +120,7 @@ const GUIDE_DATA = {
     applies: 'Ihr Haus hat drei oder mehr Wohnungen, die Sie vermieten; vielleicht wohnen Sie selbst in einer davon.',
     steps: [
       { page: 'stammdaten', text: 'Klicken Sie in der Karte „Objekt“ auf „Bearbeiten“ und tragen Sie Bezeichnung, Adresse und die Art „Mehrfamilienhaus“ ein.' },
-      { page: 'stammdaten', text: 'Legen Sie mit „+ Wohnung anlegen“ alle Wohnungen des Hauses an, auch eine selbstgenutzte („Eigennutzung — Anteil trägt der Vermieter“). Eine Einheit, die gesondert abgerechnet wird, etwa ein Laden, stellen Sie auf „nicht beteiligt — bleibt außen vor“.' },
+      { page: 'stammdaten', text: 'Legen Sie mit „+ Wohnung anlegen“ alle Wohnungen des Hauses an, auch eine selbstgenutzte („Eigennutzung - Anteil trägt der Vermieter“). Eine Einheit, die gesondert abgerechnet wird, etwa ein Laden, stellen Sie auf „nicht beteiligt - bleibt außen vor“.' },
       { page: 'stammdaten', text: 'Legen Sie je Mieter mit „+ Mietverhältnis anlegen“ ein Mietverhältnis an. Ändert sich später die Personenzahl oder die Vorauszahlung, ergänzen Sie die Staffel mit „+ Änderung ab Datum …“ oder „+ Erhöhung ab Monat …“, statt ein neues Mietverhältnis anzulegen.' },
       { page: 'zaehler', text: 'Legen Sie die Wohnungszähler mit ihrer Wohnung an und, wenn vorhanden, den Hauszähler als „Haus (Hauptzähler)“. Erfassen Sie für jeden Zähler den Stand zu Jahresbeginn (31.12. des Vorjahres) und zum Jahresende (31.12.) mit „+ Ablesung anlegen“. Mit Wohnungszählern steht bei den Kosten der Schlüssel „nach Verbrauch (Zähler)“ zur Wahl.' },
       { page: 'belege', view: 'eingang', text: 'Legen Sie Rechnungen auf der Seite Belege im Eingang ab, auch mehrere auf einmal. Ist eine KI eingerichtet, zerlegt Mietfuchs jede in Positionen; mit „Nur ablegen, ohne Auswertung“ werden sie nur gespeichert. Gespeicherte Belege stehen unter „Ohne Position“; von dort erfassen Sie jeden mit „Von Hand erfassen“ im Kostenformular, ordnen ihn einer Position zu oder lassen ihn mit „Per KI auswerten“ in Positionen zerlegen.' },
@@ -222,7 +222,7 @@ const GUIDE_DATA = {
     steps: [
       { page: 'stammdaten', text: 'Gehört der Stellplatz zur Wohnung und trägt keine eigenen Nebenkosten, legen Sie ihn nicht als eigene Einheit an. Die Miete dafür steckt in der Kaltmiete der Wohnung, und die „Notiz“ der Wohnung kann ihn nennen.' },
       { page: 'stammdaten', text: 'Soll die Garage an Nebenkosten beteiligt sein, legen Sie sie mit „+ Wohnung anlegen“ als eigene Einheit mit 0 bei „Wohnfläche (m²)“ an und ihr Mietverhältnis mit 0 Personen. Mietet sie ein Wohnungsmieter, ist das ein zweites Mietverhältnis neben dem der Wohnung.' },
-      { page: 'stammdaten', text: 'Hat die Garage keinen Wasseranschluss, entfernen Sie in ihrem Formular unter „Weitere Angaben — Anschlüsse“ das Häkchen bei „Kaltwasser“. Angeboten werden dort nur Zählerarten, die es im Objekt gibt.' },
+      { page: 'stammdaten', text: 'Hat die Garage keinen Wasseranschluss, entfernen Sie in ihrem Formular unter „Weitere Angaben - Anschlüsse“ das Häkchen bei „Kaltwasser“. Angeboten werden dort nur Zählerarten, die es im Objekt gibt.' },
       { page: 'kosten', text: 'Bei Positionen „nach Wohneinheiten“ zählt die Garage als eine Einheit mit. Soll sie dort nichts tragen, wählen Sie unter „Weitere Optionen: nur bestimmte Wohnungen beteiligen“ nur die Wohnungen.' },
       { page: 'stammdaten', text: 'Zahlt der Garagenmieter keine Nebenkosten, wählen Sie an seinem Mietverhältnis unter „Weitere Angaben“ bei den Nebenkosten „in der Miete enthalten (Inklusiv-/Warmmiete)“.' },
       { page: 'stammdaten', text: 'Mehrere Garagen auf einem eigenen Grundstück, etwa einen Garagenhof, legen Sie als eigenes Objekt mit der Art „Sonstiges (z. B. Garagen)“ an; die Art ändert an der Berechnung nichts. Verteilen Sie die Kosten dort nach Wohneinheiten, denn nach Fläche gibt es bei Garagen mit 0 m² keine Verteilbasis.' },
@@ -249,9 +249,9 @@ const GUIDE_DATA = {
     title: 'Pauschale oder Inklusivmiete',
     applies: 'Ihr Mietvertrag sieht für die Nebenkosten keine Vorauszahlung mit Abrechnung vor, sondern einen festen Betrag (Pauschale) oder die Nebenkosten stecken in der Miete (Inklusivmiete), ganz oder nur für die Heizung.',
     steps: [
-      { page: 'stammdaten', text: 'Öffnen Sie das Mietverhältnis und klappen Sie „Weitere Angaben — Nebenkosten-Modell, Kontakt, Kaution, Vertrag (optional)“ auf.' },
+      { page: 'stammdaten', text: 'Öffnen Sie das Mietverhältnis und klappen Sie „Weitere Angaben - Nebenkosten-Modell, Kontakt, Kaution, Vertrag (optional)“ auf.' },
       { page: 'stammdaten', text: 'Wählen Sie bei den Nebenkosten und getrennt bei „Heizung und Warmwasser“ jeweils „Vorauszahlung mit Abrechnung“, „Pauschale (keine Abrechnung)“ oder „in der Miete enthalten (Inklusiv-/Warmmiete)“.' },
-      { page: 'stammdaten', text: 'Bei einer Pauschale tragen Sie den Betrag in die „Pauschale je Monat — Staffel“ ein. Wird ein Teil weiter abgerechnet, etwa die Heizung, gehört dessen Vorauszahlung in die Staffel „NK-Vorauszahlung“.' },
+      { page: 'stammdaten', text: 'Bei einer Pauschale tragen Sie den Betrag in die „Pauschale je Monat - Staffel“ ein. Wird ein Teil weiter abgerechnet, etwa die Heizung, gehört dessen Vorauszahlung in die Staffel „NK-Vorauszahlung“.' },
       { page: 'stammdaten', text: 'Ist alles inklusive, tragen Sie die ganze Miete in die Staffel „Kaltmiete je Monat“ ein und lassen die Vorauszahlung leer.' },
       { page: 'mietkonto', text: 'Die Zahlungen erfassen Sie wie sonst mit „+ Zahlung anlegen“.' },
       { page: 'steuer', text: 'Lesen Sie die Hinweise der Steuerübersicht zu den Zeilen 20 und 24 der Anlage V.' },
@@ -397,7 +397,7 @@ const GUIDE_DATA = {
     steps: [
       { page: 'stammdaten', text: 'Klicken Sie beim laufenden Mietverhältnis auf „Mieterwechsel“. Im Fenster tragen Sie das „Auszugsdatum (letzter Miettag)“ ein, dann die Zählerstände zum Auszug („Zwischenablesung der Zähler“) und zuletzt den neuen Mieter.' },
       { page: 'stammdaten', text: 'Steht die Wohnung danach leer, setzen Sie den Haken „Wohnung bleibt vorerst leer (Leerstand)“. Mit „Speichern“ wird alles auf einmal gespeichert; den neuen Mieter legen Sie später mit „+ Mietverhältnis anlegen“ an.' },
-      { page: 'stammdaten', text: 'Die neue Anschrift des ausgezogenen Mieters tragen Sie an seinem Mietverhältnis ein: ✎ klicken, „Weitere Angaben — Nebenkosten-Modell, Kontakt, Kaution, Vertrag (optional)“ aufklappen und „Abweichende Anschrift (Schriftverkehr)“ ausfüllen. So haben Sie sie beim Versand der Abrechnung zur Hand; auf den Ausdruck kommt sie nicht.' },
+      { page: 'stammdaten', text: 'Die neue Anschrift des ausgezogenen Mieters tragen Sie an seinem Mietverhältnis ein: ✎ klicken, „Weitere Angaben - Nebenkosten-Modell, Kontakt, Kaution, Vertrag (optional)“ aufklappen und „Abweichende Anschrift (Schriftverkehr)“ ausfüllen. So haben Sie sie beim Versand der Abrechnung zur Hand; auf den Ausdruck kommt sie nicht.' },
       { page: 'zaehler', text: 'Eine Zwischenablesung können Sie auch später nachtragen: Ablesungen des Zählers aufklappen, „+ Ablesung anlegen“ klicken, Datum und Stand eintragen und „Anlegen“.' },
       { page: 'mietkonto', text: 'Prüfen Sie im Mietkonto, ob die Vorauszahlungen bis zum Auszug eingegangen sind.' },
       { page: 'abrechnung', text: 'Jedes Mietverhältnis bekommt seine eigene Abrechnung. Hat ein Mieter anders gezahlt als angesetzt, auch im Auszugs- oder Einzugsmonat, tragen Sie den gezahlten Betrag mit „✎ anpassen“ ein.' },

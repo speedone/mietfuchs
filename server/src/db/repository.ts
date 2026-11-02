@@ -9,7 +9,7 @@
 // **1. `PUT` verschmilzt, es ersetzt nicht.** Das ist an der Oberfläche abgelesen und nicht
 // angenommen: Stammdaten.tsx schickt beim Auszug nur `{ end: … }`, Abrechnung.tsx beim Ändern
 // der gezahlten Vorauszahlungen nur `{ prepaymentOverrides: … }`. Würde die Zeile ersetzt, wären
-// danach Name, IBAN, Kaution und alle drei Staffeln weg — ein stiller Datenverlust bei einer
+// danach Name, IBAN, Kaution und alle drei Staffeln weg - ein stiller Datenverlust bei einer
 // ganz gewöhnlichen Eingabe. Genau so verhält sich auch die heutige Route über die db.json
 // (`Object.assign(item, body, { id })`), und dabei bleibt es.
 //

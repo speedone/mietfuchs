@@ -62,7 +62,7 @@ const form = (patch: Partial<ItemForm> = {}): ItemForm => ({
 })
 
 // Der Kern von Issue #6: Ein Select zeigt den ersten Eintrag an, wenn sein Wert nicht in der
-// Optionsliste steht — der State bleibt dabei unverändert. Gespeichert wird dann etwas
+// Optionsliste steht - der State bleibt dabei unverändert. Gespeichert wird dann etwas
 // anderes als das, was der Nutzer sieht. Diese Invariante schließt das für beide Selects aus.
 describe('Auswahllisten enthalten immer den gewählten Wert', () => {
   const ALL_TYPES: (MeterType | '')[] = ['', 'kaltwasser', 'strom', 'waerme', 'sonstig']
@@ -71,7 +71,7 @@ describe('Auswahllisten enthalten immer den gewählten Wert', () => {
   test('Zählertyp: jeder Formularwert steht in der angebotenen Liste', () => {
     for (const available of AVAILABLE) {
       for (const chosen of ALL_TYPES) {
-        // '' entspricht der Option „— wählen —", die das Formular immer anbietet
+        // '' entspricht der Option „Bitte wählen", die das Formular immer anbietet
         const options: (MeterType | '')[] = ['', ...meterTypeOptions(available, chosen)]
         expect(options, `vorhanden=${available} gewählt=${chosen}`).toContain(chosen)
       }
@@ -213,15 +213,15 @@ describe('Vereinbarte Prozentanteile', () => {
 
   test('der Hinweistext nennt den Rest, den der Vermieter trägt', () => {
     expect(customSharesSumText(form({ customShares: { u1: '40', u2: '40' } }), UNITS))
-      .toBe('80 % — die restlichen 20 % trägt der Vermieter')
+      .toBe('80 % - die restlichen 20 % trägt der Vermieter')
     expect(customSharesSumText(form({ customShares: { u1: '50', u2: '50' } }), UNITS)).toBe('100 %')
     expect(customSharesSumText(form({ customShares: { u1: '80', u2: '80' } }), UNITS))
-      .toBe('160 % — mehr als 100 % sind nicht möglich')
+      .toBe('160 % - mehr als 100 % sind nicht möglich')
   })
 })
 
 describe('Felder eines nicht gewählten Schlüssels werden zurückgesetzt', () => {
-  // undefined würde die generische PUT-Route überspringen — der alte Wert bliebe stehen.
+  // undefined würde die generische PUT-Route überspringen - der alte Wert bliebe stehen.
   test('Wechsel von Verbrauch auf Fläche löscht den Zählertyp', () => {
     const r = buildCostItemBody(form({ key: 'area', meterType: 'kaltwasser' }), UNITS, 2025)
     const body = (r as { body: Record<string, unknown> }).body
@@ -534,13 +534,13 @@ describe('Kleinigkeiten aus der Browser-Abnahme (#142)', () => {
 
   test('Einzelbeträge: „den Rest trägt der Vermieter“, und ohne Rest steht kein Rest da', () => {
     expect(amountsSumText(form({ key: 'amounts', amount: '800,00', tenancyAmounts: { t1: '300,00', t2: '400,00' } }), UNITS))
-      .toBe('Summe 700,00 € — den Rest von 100,00 € trägt der Vermieter (etwa für Leerstand)')
+      .toBe('Summe 700,00 € - den Rest von 100,00 € trägt der Vermieter (etwa für Leerstand)')
     expect(amountsSumText(form({ key: 'amounts', amount: '700,00', tenancyAmounts: { t1: '300,00', t2: '400,00' } }), UNITS))
-      .toBe('Summe 700,00 € — der Rechnungsbetrag ist vollständig verteilt')
+      .toBe('Summe 700,00 € - der Rechnungsbetrag ist vollständig verteilt')
     // Laienprobe B24: leer heißt nicht „vollständig verteilt“.
     expect(amountsSumText(form({ key: 'amounts', amount: '', tenancyAmounts: {} }), UNITS)).toBe('Noch keine Beträge eingetragen.')
     expect(amountsSumText(form({ key: 'amounts', amount: '500,00', tenancyAmounts: {} }), UNITS)).toBe('Noch keine Beträge eingetragen.')
-    expect(amountsSumText(form({ key: 'amounts', amount: '', tenancyAmounts: { t1: '300,00' } }), UNITS)).toBe('Summe 300,00 € — bitte oben den Rechnungsbetrag eintragen')
+    expect(amountsSumText(form({ key: 'amounts', amount: '', tenancyAmounts: { t1: '300,00' } }), UNITS)).toBe('Summe 300,00 € - bitte oben den Rechnungsbetrag eintragen')
   })
 
   test('Nicht umlagefähig: kein Schlüssel im Formular, in der Liste „trägt der Vermieter“', () => {
@@ -548,7 +548,7 @@ describe('Kleinigkeiten aus der Browser-Abnahme (#142)', () => {
     expect(showsKeyFields('Zuführung Erhaltungsrücklage')).toBe(false)
     expect(showsKeyFields('Grundsteuer')).toBe(true)
     const base = { id: 'c', propertyId: 'p', year: 2025, description: 'X', amountCents: 100 } as const
-    expect(keyListText({ ...base, category: 'Nicht umlagefähig', key: 'persons' })).toBe('— trägt der Vermieter')
+    expect(keyListText({ ...base, category: 'Nicht umlagefähig', key: 'persons' })).toBe('- trägt der Vermieter')
     expect(keyListText({ ...base, category: 'Grundsteuer', key: 'persons' })).toBe('nach Personenzahl')
   })
 
@@ -582,8 +582,8 @@ describe('Kleinigkeiten aus der Browser-Abnahme (#142)', () => {
     expect(buildCostItemBody(g, UNITS, 2025)).toMatchObject({ body: { key: 'area', directUnitId: null } })
     // In der Liste steht, wen die Position betrifft.
     const base = { id: 'c', propertyId: 'p', year: 2025, description: 'X', amountCents: 100 } as const
-    expect(keyListText({ ...base, category: 'Nicht umlagefähig', key: 'direct', directUnitId: 'u1' }, UNITS)).toBe('— trägt der Vermieter · betrifft U1')
-    expect(keyListText({ ...base, category: 'Nicht umlagefähig', key: 'area' }, UNITS)).toBe('— trägt der Vermieter')
+    expect(keyListText({ ...base, category: 'Nicht umlagefähig', key: 'direct', directUnitId: 'u1' }, UNITS)).toBe('- trägt der Vermieter · betrifft U1')
+    expect(keyListText({ ...base, category: 'Nicht umlagefähig', key: 'area' }, UNITS)).toBe('- trägt der Vermieter')
   })
 
   test('Nicht umlagefähig: nur bestimmte Einheiten betroffen, etwa das Dach des Hinterhauses (#163, Durchsicht)', () => {
@@ -603,7 +603,7 @@ describe('Kleinigkeiten aus der Browser-Abnahme (#142)', () => {
     // Gespeicherte Teilnehmer kommen als „bestimmte Einheiten“ zurück, und die Liste nennt sie.
     const stored = { id: 'c', propertyId: 'p', period: calendarPeriod(2025), description: 'Dach', amountCents: 300000, category: 'Nicht umlagefähig', key: 'area', participantUnitIds: ['u2'] } as const
     expect(taxScopeOf(itemToForm({ ...stored, participantUnitIds: ['u2'] }))).toBe(TAX_SCOPE_SOME)
-    expect(keyListText({ ...stored, participantUnitIds: ['u2'] }, UNITS)).toBe('— trägt der Vermieter · betrifft U2')
+    expect(keyListText({ ...stored, participantUnitIds: ['u2'] }, UNITS)).toBe('- trägt der Vermieter · betrifft U2')
     // Wer von einer umlagefähigen Kostenart wechselt, nimmt keine alten Teilnehmer mit.
     const vorher = form({ category: 'Grundsteuer', key: 'area', participants: ['u1'] })
     expect(withCategory(vorher, 'Nicht umlagefähig', UNITS, [])).toMatchObject({ key: 'area', participants: null, directUnitId: '' })

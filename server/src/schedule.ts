@@ -47,7 +47,7 @@ export function lastPerFrom<T extends { from: string }>(entries: T[]): T[] {
 // ohnehin ab Einzug gilt, darf ihr Stichtag auf den Einzugstag vorgezogen werden: An der
 // Rechnung ändert das nichts, denn calc.ts liest ihn dort gar nicht. Danach unterscheidet sich
 // der erste Eintrag von seinem Nachfolger, und für alle übrigen gilt wieder „es gilt der
-// letzte" — eine Stufe, die am selben Tag endet, an dem sie beginnt, zählt null Tage, ihr
+// letzte" - eine Stufe, die am selben Tag endet, an dem sie beginnt, zählt null Tage, ihr
 // Wegfall bewegt also nichts.
 //
 // Wiederholt wird das, solange es nötig ist: Bei drei Einträgen zum selben Stichtag rückt der

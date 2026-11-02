@@ -619,7 +619,7 @@ async function main() {
   // Oberfläche darf dann auch keine nennen (#154).
   assert(health.body.database.migrated === null, 'keine Sicherung genannt (frische Datenbank)', health.body.database.migrated)
   // Der Umstieg der vorhandenen Daten (#55) läuft bei jedem Start. Der Datenordner ist leer,
-  // es gibt also keine db.json und nichts zu übernehmen — und genau das muss dastehen. Ein
+  // es gibt also keine db.json und nichts zu übernehmen - und genau das muss dastehen. Ein
   // „failed“ hier hieße, dass der Umstieg auf diesem System schon am leeren Ordner scheitert.
   // Den gelungenen Umstieg prüft diese Datei nicht: Dafür müsste die Instanz mit einer
   // vorhandenen db.json neu starten, und gestartet wird sie außerhalb (siehe Bericht zu #55).

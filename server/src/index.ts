@@ -321,7 +321,7 @@ const AI_ENV = aiFromEnv()
 // schreibt. Was den Zwischenspeicher ungültig machen kann, ist deshalb aufzählbar, und jede
 // dieser Stellen frischt ihn auf: der Start, `PUT /api/settings`, die beiden Bestätigungsrouten,
 // das Wiederherstellen eines Backups und der Umstieg. Käme je ein zweiter Schreiber dazu, wäre
-// dieser Zwischenspeicher das Erste, was fällt — und dann gehört er auch weg.
+// dieser Zwischenspeicher das Erste, was fällt - und dann gehört er auch weg.
 //
 // Aufgefrischt wird **aus der Datenbank** und nicht aus dem, was hineingeschrieben wurde: Was
 // die Spalten nicht aufnehmen, fehlt danach, und die Oberfläche soll denselben Stand sehen wie
@@ -1150,7 +1150,7 @@ app.put('/api/properties/:id/period', async (req, res) => {
 
 // ---------- Abrechnung ----------
 
-// Liefert die abgeschlossene (eingefrorene) Abrechnung, falls vorhanden — sonst live berechnet.
+// Liefert die abgeschlossene (eingefrorene) Abrechnung, falls vorhanden - sonst live berechnet.
 app.get('/api/settlement/:period', async (req, res) => {
   const { closed, stock, property, period } = await readData(async (db) => {
     const property = await propertyOf(db, req)
@@ -1160,7 +1160,7 @@ app.get('/api/settlement/:period', async (req, res) => {
   // Zeitraum und Frist (#208) stehen in jeder Antwort, auch bei einer vorher abgeschlossenen
   // Abrechnung, die sie noch nicht kennt: Die Oberfläche rechnet die Frist nicht mehr selbst.
   const frame = { period: settlementPeriod(period), deadline: settlementDeadline(period) }
-  // Vor dieser Version eingefrorene Snapshots kennen selfUsedShareCents noch nicht — mit 0
+  // Vor dieser Version eingefrorene Snapshots kennen selfUsedShareCents noch nicht - mit 0
   // vorbelegen, damit die Antwort immer der Form in types.ts entspricht. Genau deshalb ist das
   // Feld in StoredSettlement (store.ts) optional.
   // Der eingefrorene Stand ist `unknown`: Er stammt womöglich aus einer früheren Version, und
@@ -1546,7 +1546,7 @@ const isDateOnly = (value: unknown): value is string => {
 // Das Versanddatum aus dem Rumpf, geprüft: `null` heißt „noch nicht versendet“ (so schickt es
 // die Oberfläche für ein leeres Feld), `false` heißt „keine gültige Angabe“ und führt zu 400.
 // An diesem Datum hängt die Frist aus §556 BGB, und die Oberfläche vergleicht es als
-// Zeichenkette mit dem 31.12. des Folgejahrs — ein beliebiger Wert aus `req.body` (`any`, siehe
+// Zeichenkette mit dem 31.12. des Folgejahrs - ein beliebiger Wert aus `req.body` (`any`, siehe
 // bodyObject) dürfte hier also nie durchgereicht werden.
 const SENT_AT_INVALID = 'Das Versanddatum muss ein Datum als JJJJ-MM-TT sein oder fehlen.'
 const sentAtOf = (req: Request): string | null | false => {
@@ -2381,7 +2381,7 @@ app.put('/api/uploads/:file', async (req, res) => {
   res.json(info)
 })
 
-// Beleg löschen — nur wenn keine Kostenposition mehr darauf verweist.
+// Beleg löschen - nur wenn keine Kostenposition mehr darauf verweist.
 //
 // **Gefragt wird die Datenbank und nicht die db.json.** Die Frage nach der Verknüpfung ist die
 // einzige Sicherung, die zwischen einem Klick im Belegordner und einer gelöschten Rechnung
@@ -2602,7 +2602,7 @@ app.get('/api/backup', async (req, res) => {
     // Zwischendatei, und die zweite löschte, was die erste gerade packen will; heraus käme ein
     // Archiv ohne Datenbank oder ein Serverfehler, und zwei Klicks auf denselben Knopf sind
     // nichts Ausgefallenes. Dass es heute auch mit festem Namen gutginge, hängt allein daran,
-    // in welcher Reihenfolge Node die Fortsetzungen abarbeitet — das sagt weder unsere Schlange
+    // in welcher Reihenfolge Node die Fortsetzungen abarbeitet - das sagt weder unsere Schlange
     // zu noch der Treiber darunter.
     //
     // Aufgeräumt wird im `finally`. Stirbt der Prozess mitten im Schnappschuss, bleibt eine
@@ -2871,7 +2871,7 @@ async function readBackupEntries(zip: ZipReader, staging: string): Promise<ReadB
 // darüber hinaus wissen muss; die Liste ist im Regelfall leer.
 //
 // **Der Server hält die Datei die ganze Laufzeit offen**, und unter Windows lässt sie sich dann
-// nicht ersetzen. Der Weg ist deshalb schließen, ersetzen, neu öffnen, migrieren — dieselbe
+// nicht ersetzen. Der Weg ist deshalb schließen, ersetzen, neu öffnen, migrieren - dieselbe
 // Reihenfolge wie beim Umstieg und aus demselben Grund.
 //
 // Zwei Fälle, und der zweite ist der, dessentwegen diese Aufgabe vorgezogen wurde:
@@ -2911,7 +2911,7 @@ async function restoreDatabase(prepared: string | null, barrier: 'restore' | 'pr
     offen.close()
   }
 
-  // Die bisherige Datenbank beiseite, wie `db.json.vor-restore` daneben — und nur, wenn es
+  // Die bisherige Datenbank beiseite, wie `db.json.vor-restore` daneben - und nur, wenn es
   // eine gab. Sie wandert und bleibt nicht liegen: Der Umstieg unten muss sie leer vorfinden,
   // sonst greift seine Regel „steht schon etwas darin, passiert nichts“, und genau die soll
   // hier nicht weich werden.
@@ -2975,7 +2975,7 @@ async function restoreDatabase(prepared: string | null, barrier: 'restore' | 'pr
     return [...consentRule === 'now' ? await keepConsent(consent) : [], ...await reconcileAfterRestore()]
   }
 
-  // Fall 2: neu aufbauen. Scheitert er, ist nichts verloren — die wiederhergestellte db.json
+  // Fall 2: neu aufbauen. Scheitert er, ist nichts verloren - die wiederhergestellte db.json
   // liegt da, und beim nächsten Start wird es erneut versucht. Die Datenrouten bleiben bis
   // dahin gesperrt, weil eine leere Datenbank auszugeben schlimmer wäre (siehe health.ts).
   const rebuilt = await runChangeover({
@@ -3155,7 +3155,7 @@ async function stageArchiveDatabase(backup: ReadBackup): Promise<{ staged: strin
   // gelöscht worden wäre, obwohl sein lebender Bestand einwandfrei ist.
   const ausDerDatei = backup.dbText !== null
 
-  // Die Datenbank aus dem Archiv wird geprüft, **bevor** irgendetwas ersetzt ist — dieselbe
+  // Die Datenbank aus dem Archiv wird geprüft, **bevor** irgendetwas ersetzt ist - dieselbe
   // Bauart wie bei der db.json darüber (#59) und aus demselben Grund. Über den Umweg Backup
   // käme ein neueres Schema sonst herein, und die Prüfung beim Start käme zu spät, weil die
   // Datei dann schon an ihrem Platz läge.
@@ -4290,7 +4290,7 @@ app.post('/api/update/check', async (req, res) => {
 // ---------- Betriebszustand ----------
 // Für Healthchecks von Docker & Co.: 200 nur, wenn der Datenbestand lesbar und der
 // Belegordner beschreibbar ist, sonst 503. Muss VOR dem Frontend-Catch-All stehen, der jeden
-// Pfad außer /api und /uploads mit der index.html beantwortet — sonst meldete auch ein
+// Pfad außer /api und /uploads mit der index.html beantwortet - sonst meldete auch ein
 // kaputter Container HTTP 200. Bewusst nicht unter /api: Das ist eine Schnittstelle für den
 // Betrieb, nicht für die Oberfläche.
 app.get('/healthz', (req, res) => {
@@ -4494,7 +4494,7 @@ if (PACKAGED) {
   }
 }
 
-// Standard-Browser mit der App öffnen (nur in der gepackten Binary — im Dev stört das).
+// Standard-Browser mit der App öffnen (nur in der gepackten Binary - im Dev stört das).
 function openBrowser(url: string): void {
   const [cmd, args]: [string, string[]] =
     process.platform === 'win32'
@@ -4507,16 +4507,16 @@ function openBrowser(url: string): void {
     // bekäme sonst bei jedem Start ein eigenes, das kurz aufblitzt.
     const child = spawn(cmd, args, { detached: true, stdio: 'ignore', windowsHide: true })
     // Fehlt das Programm, wirft spawn nicht, sondern meldet 'error' asynchron auf dem
-    // Kindprozess — der try/catch greift dann nicht mehr. Ohne Zuhörer wird daraus ein
+    // Kindprozess - der try/catch greift dann nicht mehr. Ohne Zuhörer wird daraus ein
     // unbehandelter Fehler, der den Server beendet, obwohl er schon lauscht. Auf einem
     // Linux-Server ohne xdg-open (headless, Container, SSH) war die Binary damit nicht
     // startbar.
     child.on('error', () => {
-      console.log(`Kein Browser gestartet (${cmd} nicht verfügbar) — bitte ${url} von Hand öffnen.`)
+      console.log(`Kein Browser gestartet (${cmd} nicht verfügbar) - bitte ${url} von Hand öffnen.`)
     })
     child.unref()
   } catch {
-    /* egal — die URL steht in der Meldung darüber */
+    /* egal - die URL steht in der Meldung darüber */
   }
 }
 

@@ -464,7 +464,7 @@ export function costItemBody(d: CostItemDraft, units: readonly Unit[], year: num
     }
     const sum = Object.values(customShares).reduce((a, p) => a + p, 0)
     if (sum <= 0) return { error: 'Bitte mindestens einen Anteil größer 0 % angeben.' }
-    if (sum > 100.0001) return { error: `Die Anteile ergeben ${pct(sum)} % — mehr als 100 % sind nicht möglich.` }
+    if (sum > 100.0001) return { error: `Die Anteile ergeben ${pct(sum)} % - mehr als 100 % sind nicht möglich.` }
   }
 
   // Teilnehmer: alle angehakt heißt null, damit auch künftig angelegte Wohnungen dazugehören.
@@ -567,9 +567,9 @@ export function scorePosition(ctx: PositionCtx): { level: TrafficLight; reasons:
 
   if (ctx.amountCents === 0) s.bump('rot', 'Betrag fehlt oder ist 0')
   // Eine Gutschrift (#139) wird übernommen, aber nie ungesehen: Sie senkt die Kosten des Jahres.
-  if (ctx.amountCents < 0) s.bump('gelb', 'Gutschrift — senkt die Kosten des Jahres')
-  if (isNotAllocable(ctx.category)) s.bump('rot', 'nicht umlagefähig — trägt der Vermieter')
-  if (ctx.category === 'Sonstige Betriebskosten') s.bump('rot', 'Kategorie unklar — bitte zuordnen')
+  if (ctx.amountCents < 0) s.bump('gelb', 'Gutschrift - senkt die Kosten des Jahres')
+  if (isNotAllocable(ctx.category)) s.bump('rot', 'nicht umlagefähig - trägt der Vermieter')
+  if (ctx.category === 'Sonstige Betriebskosten') s.bump('rot', 'Kategorie unklar - bitte zuordnen')
   if (ctx.detectedYear == null) s.bump('rot', 'Rechnungsjahr nicht erkannt')
 
   const vendor = ctx.vendor.trim().toLowerCase()
@@ -578,14 +578,14 @@ export function scorePosition(ctx: PositionCtx): { level: TrafficLight; reasons:
     const dupe = ctx.existingItems.some(
       (it) => it.year === year && it.amountCents === ctx.amountCents && (it.vendor ?? '').trim().toLowerCase() === vendor,
     )
-    if (dupe) s.bump('rot', 'mögliche Dublette — gleicher Betrag, Steller und Jahr existiert bereits')
+    if (dupe) s.bump('rot', 'mögliche Dublette - gleicher Betrag, Steller und Jahr existiert bereits')
   }
 
   // Schon eine Position, die dieselbe Rechnung sein könnte, etwa aus dem Vorjahr übernommen
   // (shared/duplicates.ts)? Nie grün: verknüpfen oder bewusst als neue Position anlegen.
   const candidates = sameCostCandidates(ctx.existingItems, { category: ctx.category, description: ctx.description ?? '', vendor: ctx.vendor, year })
   if (candidates.length > 0) {
-    s.bump('gelb', `schon erfasst: ${candidates.map(candidateText).join(', ')} — verknüpfen oder bewusst als neue Position anlegen`)
+    s.bump('gelb', `schon erfasst: ${candidates.map(candidateText).join(', ')} - verknüpfen oder bewusst als neue Position anlegen`)
   }
 
   if (ctx.matchedByDesc) s.bump('gelb', 'Kategorie nur über die Beschreibung erraten')
@@ -1955,7 +1955,7 @@ function suggestLine(line: StoredAssessmentLine, a: StoredAssessment, others: re
   }
   if (ctx.twinOf !== null) {
     level = 'rot'
-    reasons.push(`gleicher Inhalt wie „${ctx.twinOf}“ — dieser Beleg ist schon gebucht`)
+    reasons.push(`gleicher Inhalt wie „${ctx.twinOf}“ - dieser Beleg ist schon gebucht`)
   }
   return {
     fields,
@@ -2568,7 +2568,7 @@ EOF
 
 ---
 
-### Task 4: Routen — Auswertung speichern, abrufen, planen, buchen
+### Task 4: Routen - Auswertung speichern, abrufen, planen, buchen
 
 **Files:**
 - Modify: `shared/types.ts` (`ExtractResult`, `IntakeResult`), `server/src/index.ts` (KI-Routen, neue Routen, Fehlerbehandlung), `client/src/pages/Kosten.tsx` (Objekt und Jahr an die KI), `client/src/pages/Schnellerfassung.tsx` (Objekt und Jahr immer mit)
@@ -3804,7 +3804,7 @@ test('Position ohne Betrag: Feld leer, rot, nicht vorab angehakt; nicht umlagef�
   const row = unlesbar.closest('tr')
   expect(row?.querySelector('.ampel.rot')).toBeTruthy()
   expect((within(row ?? document.body).getByRole('textbox', { name: 'Betrag €' }) as HTMLInputElement).value).toBe('')
-  expect(screen.getByText('— trägt der Vermieter')).toBeTruthy()
+  expect(screen.getByText('- trägt der Vermieter')).toBeTruthy()
 })
 
 test('„Alle grünen übernehmen“: dieselbe Kostenart aus zwei Belegen wird nicht still zweimal angelegt', async () => {
@@ -4212,8 +4212,8 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
                   <td>{line.description}</td>
                   <td>{line.category}</td>
                   <td />
-                  <td className="num">{line.amountCents === null ? '—' : fmtEuro(line.amountCents)}</td>
-                  <td className="num">{line.labor35aCents === null ? '—' : fmtEuro(line.labor35aCents)}</td>
+                  <td className="num">{line.amountCents === null ? '-' : fmtEuro(line.amountCents)}</td>
+                  <td className="num">{line.labor35aCents === null ? '-' : fmtEuro(line.labor35aCents)}</td>
                 </tr>
               )
             }
@@ -4225,7 +4225,7 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
                   <td>
                     <select aria-label={`Was geschieht mit „${line.description}“?`} value={row.action}
                       onChange={(e) => { if (isAction(e.target.value)) patch(line.idx, { action: e.target.value }) }}>
-                      <option value="">— offen lassen —</option>
+                      <option value="">Offen lassen</option>
                       <option value="create">Neu anlegen</option>
                       {linkChoices(line, row).map((c) => (
                         <option key={c.id} value={`link:${c.id}`}>Mit „{c.description}“ ({fmtEuro(c.amountCents)}{c.invoiceFile ? '' : ', ohne Beleg'}) verknüpfen</option>
@@ -4242,7 +4242,7 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
                   </td>
                   <td><AiKeyCell position={row} units={units} onChange={(p) => patch(line.idx, p)} /></td>
                   <td className="num"><input aria-label="Betrag €" value={row.amount} onChange={(e) => patch(line.idx, { amount: e.target.value })} style={{ width: 100, textAlign: 'right' }} /></td>
-                  <td className="num"><input aria-label="§35a €" value={row.labor35a} onChange={(e) => patch(line.idx, { labor35a: e.target.value })} style={{ width: 90, textAlign: 'right' }} placeholder="—" /></td>
+                  <td className="num"><input aria-label="§35a €" value={row.labor35a} onChange={(e) => patch(line.idx, { labor35a: e.target.value })} style={{ width: 90, textAlign: 'right' }} placeholder="-" /></td>
                 </tr>
               </Fragment>
             )
@@ -4423,7 +4423,7 @@ In `loadData` in das `Promise.all` aufnehmen:
           <div className="row" style={{ alignItems: 'center' }}>
             <strong>🧾 {v.vendor || v.originalName}</strong>
             {v.open
-              ? <span className="badge green">{v.lines.filter((l) => l.state === 'open').length} offen — bitte prüfen</span>
+              ? <span className="badge green">{v.lines.filter((l) => l.state === 'open').length} offen - bitte prüfen</span>
               : <span className="badge green">✓ übernommen</span>}
             {v.detectedYear !== null && v.detectedYear !== year && <span className="badge gray">Jahr {v.detectedYear}</span>}
           </div>
@@ -4465,7 +4465,7 @@ In `loadData` in das `Promise.all` aufnehmen:
 ```
 
 4. In der Darstellung die Badge `{entry.positions.length} Position(en) erkannt` durch
-   `{entry.assessment?.lines.length ?? 0} Position(en) erkannt — bitte prüfen` ersetzen und den
+   `{entry.assessment?.lines.length ?? 0} Position(en) erkannt - bitte prüfen` ersetzen und den
    Block `{entry.status === 'fertig' && ( <> … </> )}` durch:
 
 ```tsx
@@ -4841,7 +4841,7 @@ EOF
 
 ---
 
-### Task 8: Abnahme — die vier Fälle über die Routen, praktische Prüfung im Browser
+### Task 8: Abnahme - die vier Fälle über die Routen, praktische Prüfung im Browser
 
 **Files:**
 - Modify: `server/test/api.test.ts` (zwei Rechnungen, ein Test)

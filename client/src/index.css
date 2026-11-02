@@ -791,7 +791,7 @@ td.reading-panel { background: var(--bg); }
   body.print-one .card.statement { display: none; }
   body.print-one .card.statement.print-target { display: block; }
   .print-only { display: block; }
-  /* tfoot wiederholt sich sonst auf jeder Seite mehrseitiger Tabellen —
+  /* tfoot wiederholt sich sonst auf jeder Seite mehrseitiger Tabellen -
      als row-group rendert er genau einmal am Tabellenende. */
   tfoot { display: table-row-group; }
   tfoot tr, tr.subtotal { break-inside: avoid; page-break-inside: avoid; }

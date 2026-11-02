@@ -314,7 +314,7 @@ function suggestLine(line: StoredAssessmentLine, a: StoredAssessment, others: re
   const reasons = [...score.reasons]
   if (otherYear) {
     if (level === 'gruen') level = 'gelb'
-    reasons.push(`Beleg aus ${a.year}, gewählt war ${requested ? periodLabel(requested) : requestedYear} — gebucht wird in ${periodLabel(target)}; sonst das Jahr der Buchung ändern`)
+    reasons.push(`Beleg aus ${a.year}, gewählt war ${requested ? periodLabel(requested) : requestedYear} - gebucht wird in ${periodLabel(target)}; sonst das Jahr der Buchung ändern`)
   }
   const held = holderReasons(holders, (f) => ctx.twinNames.get(f) ?? f)
   if (held.length > 0) {
@@ -331,7 +331,7 @@ function suggestLine(line: StoredAssessmentLine, a: StoredAssessment, others: re
   }
   if (ctx.twinOf !== null) {
     level = 'rot'
-    reasons.push(`gleicher Inhalt wie „${ctx.twinOf}“ — dieser Beleg ist schon gebucht`)
+    reasons.push(`gleicher Inhalt wie „${ctx.twinOf}“ - dieser Beleg ist schon gebucht`)
   }
   return {
     fields,

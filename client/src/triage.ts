@@ -38,7 +38,7 @@ export function scoreReading(ctx: ReadingCtx): ScoredReading {
 
   if (ctx.value == null) s.bump('rot', 'Zählerstand nicht erkannt')
   if (!matchedMeterId) {
-    s.bump('rot', ctx.meterNumber ? `Zählernummer ${ctx.meterNumber} keinem Zähler zugeordnet` : 'kein Zähler erkannt — bitte zuordnen')
+    s.bump('rot', ctx.meterNumber ? `Zählernummer ${ctx.meterNumber} keinem Zähler zugeordnet` : 'kein Zähler erkannt - bitte zuordnen')
   }
 
   let replacementGuess = false
@@ -48,7 +48,7 @@ export function scoreReading(ctx: ReadingCtx): ScoredReading {
     const prior = own[own.length - 1]
     if (prior) {
       if (ctx.value < prior.value) {
-        s.bump('rot', `Stand ${ctx.value} < letzter Stand ${prior.value} — Zählerwechsel?`)
+        s.bump('rot', `Stand ${ctx.value} < letzter Stand ${prior.value} - Zählerwechsel?`)
         replacementGuess = true
         suggestedOldEndValue = prior.value
       } else if (own.length >= 2) {
@@ -61,7 +61,7 @@ export function scoreReading(ctx: ReadingCtx): ScoredReading {
     }
   }
 
-  if (!ctx.hasDate) s.bump('gelb', 'Ablesedatum unsicher — bitte prüfen')
+  if (!ctx.hasDate) s.bump('gelb', 'Ablesedatum unsicher - bitte prüfen')
 
   const { level, reasons } = s.result()
   return { level, reasons, replacementGuess, suggestedOldEndValue }

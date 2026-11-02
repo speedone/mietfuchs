@@ -8,9 +8,9 @@ import type { Allocation } from './allocation.ts'
 import type { IncomeLineAmounts } from './taxIncomeLines.ts'
 
 // Beteiligung einer Wohnung an der Kostenverteilung:
-//   'vermietet'  → participates: true — Anteil trägt der Mieter
-//   'eigen'      → selfUsed: true — zählt in die Verteilbasis, Anteil trägt der Vermieter
-//   'ausgenommen'→ beides false — gehört nicht zur Abrechnungseinheit, bleibt außen vor
+//   'vermietet'  → participates: true - Anteil trägt der Mieter
+//   'eigen'      → selfUsed: true - zählt in die Verteilbasis, Anteil trägt der Vermieter
+//   'ausgenommen'→ beides false - gehört nicht zur Abrechnungseinheit, bleibt außen vor
 export type UnitUsage = 'vermietet' | 'eigen' | 'ausgenommen'
 
 // Ein Nutzungswechsel (#259): ab `from` ('JJJJ-MM-TT') gilt `usage`. Die erste Stufe der Staffel ist
@@ -84,11 +84,11 @@ export type Unit = {
   name: string
   areaM2: number
   participates: boolean
-  // Selbstgenutzt: kein Mietverhältnis, aber Teil der Verteilbasis — der Anteil fällt dem
+  // Selbstgenutzt: kein Mietverhältnis, aber Teil der Verteilbasis - der Anteil fällt dem
   // Vermieter zu (Eigenanteil). Kosten für das ganze Haus dürfen nur anteilig auf die
   // Mieter umgelegt werden; siehe UnitUsage.
   selfUsed?: boolean
-  selfPersons?: number // Personen im eigenen Haushalt — nur für den Personenschlüssel
+  selfPersons?: number // Personen im eigenen Haushalt - nur für den Personenschlüssel
   // Miteigentumsanteile (#94), für den Schlüssel „laut Gemeinschaftsabrechnung“ bei einer
   // vermieteten Eigentumswohnung.
   mea?: number
@@ -119,11 +119,11 @@ export type LocalRentEntry = {
 }
 
 export type PrepaymentEntry = {
-  from: string // 'YYYY-MM' — ab diesem Monat gilt der Betrag
+  from: string // 'YYYY-MM' - ab diesem Monat gilt der Betrag
   monthlyCents: number
 }
 
-// Kaltmiete-Staffel — gleiche „ab Monat gilt Betrag“-Mechanik wie die Vorauszahlung.
+// Kaltmiete-Staffel - gleiche „ab Monat gilt Betrag“-Mechanik wie die Vorauszahlung.
 // Bruttomiete = Kaltmiete + NK-Vorauszahlung des jeweiligen Monats.
 export type RentEntry = {
   from: string // 'YYYY-MM'
@@ -131,7 +131,7 @@ export type RentEntry = {
 }
 
 export type PersonEntry = {
-  from: string // 'YYYY-MM-DD' — ab diesem Tag gilt die Personenzahl
+  from: string // 'YYYY-MM-DD' - ab diesem Tag gilt die Personenzahl
   persons: number
 }
 
@@ -182,14 +182,14 @@ export type Tenancy = {
   // für einige Monate (D2). Je Anlage und Heizperiode höchstens eine.
   heatingPrepaymentOverrides?: HeatingPrepaymentOverride[]
   baseRents: RentEntry[] // Kaltmiete-Staffel (leer = nicht erfasst)
-  // Erweiterte Stammdaten (optional, ohne Einfluss auf die Berechnung) — Kontakt, Kaution, Vertrag
+  // Erweiterte Stammdaten (optional, ohne Einfluss auf die Berechnung) - Kontakt, Kaution, Vertrag
   email?: string
   phone?: string
   correspondenceAddress?: string // abweichende Anschrift für Schriftverkehr (z. B. nach Auszug)
   // Die Anrede im Anschreiben (#415, Teil 2), etwa „Sehr geehrte Frau Becker“; ohne Angabe „Guten Tag {Name},“.
   letterSalutation?: string
   iban?: string // Mieter-IBAN (für Lastschrift/Guthaben-Rückzahlung)
-  contractDate?: string // 'YYYY-MM-DD' — Datum des Mietvertrags
+  contractDate?: string // 'YYYY-MM-DD' - Datum des Mietvertrags
   // Tag, an dem dem Mieter die Umstände nach § 5d CO2KostAufG in Textform mitgeteilt wurden (Heizung PR 18,
   // Abweichung 3 des Plans). Je Mieter, denn die Information ist „dem Mieter“ geschuldet (§ 5d Abs. 4 Satz 1, 3).
   halfSplitNoticeOn?: string
@@ -884,7 +884,7 @@ export type SettlementRow = {
   description: string
   totalCents: number
   // Umlageschlüssel der Position. `keyLabel` daneben ist seine Beschriftung für die Abrechnung.
-  // Die Zeilen des Vermieteranteils führen den Schlüssel nicht mit, dort wird nichts verteilt —
+  // Die Zeilen des Vermieteranteils führen den Schlüssel nicht mit, dort wird nichts verteilt -
   // deshalb optional.
   key?: CostKey
   keyLabel: string

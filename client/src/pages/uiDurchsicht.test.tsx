@@ -113,7 +113,7 @@ test('Kosten: die Karte zur KI-Auswertung nennt kein Modell', async () => {
   if (!(card instanceof HTMLElement)) return expect.fail('Keine Karte zur KI-Auswertung')
   expect(card.textContent).not.toContain('qwen3.5:4b')
   // „auf diesem Rechner“ stimmt nicht für ein Ollama im Heimnetz (Durchsicht des Zweigs, Befund 2); den Ort nennt das Etikett
-  expect(card.textContent).toContain('hochladen — die KI schlägt Kostenpositionen vor')
+  expect(card.textContent).toContain('hochladen - die KI schlägt Kostenpositionen vor')
 })
 
 test('Belege: der Text der Ablage sagt „Mietfuchs“ und nennt kein Modell', async () => {

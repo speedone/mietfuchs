@@ -1,8 +1,8 @@
-# F02 — Personenschlüssel mit unterjähriger Änderung
+# F02 - Personenschlüssel mit unterjähriger Änderung
 
 **Geprüfte Regel:** Der Personenschlüssel rechnet **personentagesgenau**, nicht mit der
 Personenzahl am Jahresende. Eine Änderung mitten im Jahr (hier: Geburt zum 01.07.2025) wirkt
-nur für den Rest des Jahres. Die Personen-Staffel (`personHistory`) ist die Wahrheit — die
+nur für den Rest des Jahres. Die Personen-Staffel (`personHistory`) ist die Wahrheit - die
 angezeigte `persons` ist nur der Stand am Periodenende.
 
 **Grundlage:** Umlage nach Personen, taggenau über die Personen-Staffel. Zeiträume haben
@@ -15,7 +15,7 @@ inklusive Grenzen, kein Tag wird doppelt oder gar nicht gezählt.
 | u1 | 80 m² | t1, ganzjährig | 2, **ab 01.07.2025: 3** | 50,00 €/Monat |
 | u2 | 80 m² | t2, ganzjährig | 2 | 30,00 €/Monat |
 
-Beide Wohnungen sind gleich groß — die Fläche kann das Ergebnis also nicht beeinflussen.
+Beide Wohnungen sind gleich groß - die Fläche kann das Ergebnis also nicht beeinflussen.
 Eine Kostenposition: Wasser/Abwasser 2025, **1.000,00 €**, Schlüssel `persons`.
 
 ## Handrechnung
@@ -28,7 +28,7 @@ Personentage t1, zwei Stufen mit inklusiven Grenzen:
                                   t1 gesamt = 914
 ```
 
-Die Stufe endet am **30.06.**, die nächste beginnt am **01.07.** — kein doppelter, kein
+Die Stufe endet am **30.06.**, die nächste beginnt am **01.07.** - kein doppelter, kein
 fehlender Tag. Kontrolle: 181 + 184 = 365.
 
 ```

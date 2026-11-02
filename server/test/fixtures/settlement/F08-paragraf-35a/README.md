@@ -1,7 +1,7 @@
-# F08 — §35a-Lohnanteil folgt dem Kostenanteil
+# F08 - §35a-Lohnanteil folgt dem Kostenanteil
 
 **Geprüfte Regel:** Der nach § 35a EStG begünstigte Lohnanteil einer Position wird **im
-selben Verhältnis** aufgeteilt wie die Position selbst — nicht nach einem eigenen Schlüssel
+selben Verhältnis** aufgeteilt wie die Position selbst - nicht nach einem eigenen Schlüssel
 und nicht gleichmäßig. Wer einen Cent mehr an Kosten trägt, bescheinigt auch einen etwas
 höheren Lohnanteil.
 
@@ -15,7 +15,7 @@ Eine Kostenposition: Hausmeisterservice **1.000,00 €**, Schlüssel `units`, da
 
 ## Handrechnung
 
-**Kostenverteilung** — wie in F04 ein unteilbarer Betrag:
+**Kostenverteilung** - wie in F04 ein unteilbarer Betrag:
 
 ```
 Rohanteil je Einheit = 100.000 ct / 3 = 33.333,33… ct
@@ -42,7 +42,7 @@ Mieter, abgerundet 69.999 ct, der Restcent bei Gleichstand nach Kennung an t1. D
 700,00 € gehen genau auf.
 
 Gegenprobe zur falschen Rechnung: Eine Gleichverteilung des Lohnanteils ergäbe 23.333,33 →
-23.333 je Mieter und damit in Summe 69.999 ct — ein Cent des begünstigten Betrags ginge
+23.333 je Mieter und damit in Summe 69.999 ct - ein Cent des begünstigten Betrags ginge
 verloren.
 
 **Salden** bei 30,00 € Vorauszahlung monatlich (= 360,00 € im Jahr):
@@ -53,5 +53,5 @@ t2 = 36.000 − 33.333 = +2.667 ct
 t3 = 36.000 − 33.333 = +2.667 ct
 ```
 
-Vorschlag neue Vorauszahlung: 33.334 / 12 = 27,78 € bzw. 33.333 / 12 = 27,78 € — beide auf
+Vorschlag neue Vorauszahlung: 33.334 / 12 = 27,78 € bzw. 33.333 / 12 = 27,78 € - beide auf
 volle Euro 28,00 €.

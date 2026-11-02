@@ -4087,11 +4087,11 @@ In der Schleife über die Positionen vor dem Zweig `} else if (item.key === 'dir
       if (!sp) {
         forced = 'noBasis'
         warn('heating.target-invalid',
-          `„${item.description}“: Die Position wird nach der Heizkostenverordnung verteilt, gehört aber in ${label} zu keiner Heizanlage mit eigener Heizkostenabrechnung — Betrag geht an den Vermieter. Wählen Sie im Kostenformular die Heizanlage oder einen anderen Schlüssel.`,
+          `„${item.description}“: Die Position wird nach der Heizkostenverordnung verteilt, gehört aber in ${label} zu keiner Heizanlage mit eigener Heizkostenabrechnung - Betrag geht an den Vermieter. Wählen Sie im Kostenformular die Heizanlage oder einen anderen Schlüssel.`,
           itemSubject(item))
       } else if (problem !== null || target === null) {
         forced = 'noBasis'
-        warn('heating.target-invalid', `„${item.description}“: ${problem ?? 'Das Ziel fehlt'} — Betrag geht an den Vermieter.`, itemSubject(item))
+        warn('heating.target-invalid', `„${item.description}“: ${problem ?? 'Das Ziel fehlt'} - Betrag geht an den Vermieter.`, itemSubject(item))
       } else if (sp.weights === null) {
         // Die Anlage ist nicht verteilbar; der Fehler steht einmal je Anlage (Plan oben).
         forced = 'noBasis'

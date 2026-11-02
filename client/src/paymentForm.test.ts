@@ -6,7 +6,7 @@ const tenancies = [
   { id: 't1', tenantName: 'Müller', unitId: 'u1' },
   { id: 't0', tenantName: 'Schmidt', unitId: 'u1' }, // ausgezogen, keine Zeile im Jahr
 ]
-const unitName = (id: string) => (id === 'u1' ? 'EG' : '—')
+const unitName = (id: string) => (id === 'u1' ? 'EG' : '-')
 
 describe('Zahlung erfassen: die Art (#280)', () => {
   test('Voreinstellung ist Miete, und jede Art steht in der Auswahl', () => {

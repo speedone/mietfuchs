@@ -16,7 +16,7 @@ export function compareText(a: string, b: string): number {
 
 // Verteilt totalCents exakt auf die gegebenen (float) Rohanteile (Hare/largest remainder).
 // `keys` enthält je Rohanteil eine stabile Kennung (die ID des Mietverhältnisses). Sie
-// entscheidet, wer bei gleichem Nachkommaanteil den Rest-Cent bekommt — sonst hinge das an
+// entscheidet, wer bei gleichem Nachkommaanteil den Rest-Cent bekommt - sonst hinge das an
 // der Reihenfolge in der Datei, und dieselben Daten könnten anders abgerechnet werden.
 export function largestRemainder(totalCents: number, raws: number[], keys: string[]): number[] {
   if (raws.length === 0) return []

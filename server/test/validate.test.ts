@@ -628,6 +628,6 @@ test('Geraderücken: fehlende Anzeigefelder bewegen keine Zahl, ändern aber das
   // Der benannte Unterschied: Das Mietkonto setzt für eine Wohnung ohne Namen einen Strich ein.
   // Nach dem Übernehmen steht dort der leere Name. Beide sagen dasselbe, nämlich dass kein Name
   // erfasst ist, und kein Betrag ändert sich dadurch.
-  assert.equal(ledgerRow(vorher.ledger, 't2').unitName, '—')
+  assert.equal(ledgerRow(vorher.ledger, 't2').unitName, '-')
   assert.equal(ledgerRow(nachher.ledger, 't2').unitName, '')
 })

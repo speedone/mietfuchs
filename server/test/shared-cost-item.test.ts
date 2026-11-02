@@ -96,5 +96,5 @@ test('Gutschrift schon erfasst: der Hinweis rät nicht zum Verknüpfen', () => {
   assert.doesNotMatch(hint, /verknüpfen/)
   assert.match(hint, /dieselbe Gutschrift/)
   const rechnung = scorePosition({ category: 'Müllabfuhr', description: 'Restmüll', amountCents: 70000, labor35aCents: 0, matchedByDesc: false, vendor: 'Stadt', detectedYear: 2025, targetYear: 2025, existingItems: [{ ...vorhanden, id: 'r', description: 'Restmüll', amountCents: 70000 }] })
-  assert.ok(rechnung.reasons.some((r) => /schon erfasst: .* — verknüpfen oder bewusst als neue Position anlegen/.test(r)), 'eine Rechnungszeile behält den Rat')
+  assert.ok(rechnung.reasons.some((r) => /schon erfasst: .* - verknüpfen oder bewusst als neue Position anlegen/.test(r)), 'eine Rechnungszeile behält den Rat')
 })

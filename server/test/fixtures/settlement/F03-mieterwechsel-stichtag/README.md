@@ -1,8 +1,8 @@
-# F03 — Mieterwechsel zum Stichtag
+# F03 - Mieterwechsel zum Stichtag
 
 **Geprüfte Regel:** Endet ein Mietverhältnis am 30.06. und beginnt das nächste am 01.07.,
 darf **kein Tag doppelt und kein Tag gar nicht** abgerechnet werden. Beide Zeiträume zusammen
-ergeben exakt das Jahr, und beide Anteile zusammen exakt den Kostenbetrag — der Vermieter
+ergeben exakt das Jahr, und beide Anteile zusammen exakt den Kostenbetrag - der Vermieter
 trägt nichts, obwohl die Wohnung den Mieter gewechselt hat.
 
 **Grundlage:** Zeiträume mit inklusiven Grenzen, Tagesanteil bei Teiljahren (Auszug 30.06.,
@@ -10,7 +10,7 @@ Einzug 01.07.).
 
 ## Ausgangslage
 
-Eine einzige Wohnung, 100 m², ganzjährig vermietet — aber an zwei Mieter nacheinander:
+Eine einzige Wohnung, 100 m², ganzjährig vermietet - aber an zwei Mieter nacheinander:
 
 | Mietverhältnis | Zeitraum 2025 | Personen | Vorauszahlung |
 |---|---|---|---|
@@ -29,7 +29,7 @@ tb: 01.07.–31.12.2025 = 31+31+30+31+30+31 = 184 Tage
                                    Summe = 365 = daysInYear(2025)   ✓
 ```
 
-Rohanteile — die Fläche ist für beide dieselbe (100 von 100 m²), es entscheidet allein der
+Rohanteile - die Fläche ist für beide dieselbe (100 von 100 m²), es entscheidet allein der
 Tagesanteil:
 
 ```
@@ -49,7 +49,7 @@ Nachkommaanteile: ta = 0,8493  tb = 0,1506  →  ta erhält das Cent
 ta = 59.507 ct = 595,07 €       tb = 60.493 ct = 604,93 €       Vermieter = 0
 ```
 
-Vorauszahlungen — gezählt werden die Monate, in denen das Mietverhältnis **am Monatsersten**
+Vorauszahlungen - gezählt werden die Monate, in denen das Mietverhältnis **am Monatsersten**
 besteht:
 
 ```
@@ -65,7 +65,7 @@ tb = 72.000 − 60.493 = +11.507 ct → 115,07 € Guthaben
 ```
 
 Vorschlag neue Vorauszahlung, **bis #134** (ein Zwölftel des Teiljahresanteils auf volle
-Euro) — beide landen bei 50,00 €, also beim halben Monatsbetrag der Wohnung:
+Euro) - beide landen bei 50,00 €, also beim halben Monatsbetrag der Wohnung:
 
 ```
 ta = 59.507 / 12 = 4.958,9 ct → 49,59 € → 50,00 €

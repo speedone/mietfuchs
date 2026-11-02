@@ -92,6 +92,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Geändert
 
+- **Bindestrich statt Geviertstrich.** In Texten, Hinweisen, Fenstertitel und Abrechnung steht als Gedankenstrich
+  jetzt ein Bindestrich („Mietfuchs - Nebenkosten im Griff“), Auswahlfelder zeigen „Bitte wählen“.
 - **Microsoft Store: Mietfuchs öffnet sich im eigenen Fenster** ([#517](https://github.com/speedone/mietfuchs/issues/517))
   statt im Browser, wie das neue Programm oben. Die Daten bleiben, wo sie sind (`%USERPROFILE%\Mietfuchs`). Die
   Adresse ist jetzt `http://127.0.0.1:17517` statt `localhost:3001`; wer Mietfuchs zusätzlich im Browser aufruft,
@@ -1060,7 +1062,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   wie „§35a-Lohn“ bleiben. Die Verteilbasis nach Verbrauch nennt die Einheit der Zähler („30 von 120 m³
   (gemessen)“), und die Stände eines Zählers stehen mit gleich vielen Nachkommastellen da („316,0“ neben
   „332,7“) (Befund N4 aus [#341](https://github.com/speedone/mietfuchs/issues/341)).
-- Stammdaten: Bei einer Pauschale stand in der Spalte „Vorauszahlung je Monat“ nur „—“; jetzt steht dort
+- Stammdaten: Bei einer Pauschale stand in der Spalte „Vorauszahlung je Monat“ nur „-“; jetzt steht dort
   „Pauschale:“ mit dem Betrag (Befund N15 aus [#341](https://github.com/speedone/mietfuchs/issues/341)).
 - Mietkonto: In der Zahlungstabelle stehen Datum, Name und Betrag auf einer Linie mit der Auswahl „Art“,
   und der Satz über den Monatskacheln erklärt die Farben (Befund N6 aus
@@ -2527,7 +2529,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Ablesungen, Zahlungen und Angaben an Kostenpositionen; direkt zugeordnete Rechnungen bleiben.
   ([#142](https://github.com/speedone/mietfuchs/issues/142))
 - **Kostenposition: weniger Missverständliches.** „Nicht umlagefähig“ und „Zuführung
-  Erhaltungsrücklage“ zeigen keine Schlüsselauswahl mehr, die Liste sagt „— trägt der Vermieter“;
+  Erhaltungsrücklage“ zeigen keine Schlüsselauswahl mehr, die Liste sagt „- trägt der Vermieter“;
   gerechnet wird unverändert; auch das Cockpit verlangt für sie keine Ablesungen und prüft ihretwegen
   nicht die Verteilbasis. „Summe in der Anlage“ heißt je Maßstab „Summe der
   Miteigentumsanteile in der Anlage (z. B. 1.000 MEA)“, „Summe der Wohnflächen …“ oder „Zahl der
@@ -2539,7 +2541,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Heizkosten (§ 2 HeizkostenV) und in der Anlage V daraus folgt; Stammdaten und Zählerformular
   verweisen darauf. ([#142](https://github.com/speedone/mietfuchs/issues/142))
 - **Anschlüsse einer Einheit, positiv gefragt.** Statt „Kein Anschluss für“ fragt das
-  Wohnungsformular unter „Weitere Angaben — Anschlüsse“, welche Anschlüsse die Einheit hat;
+  Wohnungsformular unter „Weitere Angaben - Anschlüsse“, welche Anschlüsse die Einheit hat;
   angehakt heißt angeschlossen. Angeboten werden nur Zählerarten, die es im Objekt gibt, und eine
   Ausnahme steht in der Zusammenfassung und in der Wohnungsliste („ohne Wasseranschluss“).
   Gespeichert wird wie bisher nur die Ausnahme, bestehende Angaben gelten unverändert.
@@ -3288,8 +3290,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
-- **Linux-Programmdatei startet auch ohne grafische Oberfläche.** Fehlte `xdg-open` — auf
-  einem Server, in einem Container oder bei Anmeldung per SSH —, beendete sich die
+- **Linux-Programmdatei startet auch ohne grafische Oberfläche.** Fehlte `xdg-open` - auf
+  einem Server, in einem Container oder bei Anmeldung per SSH -, beendete sich die
   Programmdatei direkt nach dem Start, obwohl der Server schon lief. Jetzt erscheint ein
   Hinweis, die Adresse von Hand im Browser zu öffnen, und Mietfuchs läuft weiter. Beitrag von
   [@thorstenhornung1](https://github.com/thorstenhornung1) in
@@ -3317,13 +3319,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   oder *nicht beteiligt*. Selbstgenutzte Wohnungen zählen in die Verteilbasis von Wohnfläche,
   Wohneinheiten und Personenzahl; ihr Anteil erscheint im Vermieteranteil. Hintergrund:
   Betriebskosten aus einer Rechnung über das ganze Haus dürfen nur anteilig auf die Mieter
-  umgelegt werden — der auf eine selbstgenutzte Wohnung entfallende Teil bleibt beim Vermieter,
+  umgelegt werden - der auf eine selbstgenutzte Wohnung entfallende Teil bleibt beim Vermieter,
   genauso wie der Anteil leerstehender Wohnungen. Für den Personenschlüssel lässt sich die
   Personenzahl des eigenen Haushalts hinterlegen.
   ([#3](https://github.com/speedone/mietfuchs/issues/3))
 - **Umlageschlüssel „nach vereinbarten Anteilen (%)".** Feste Prozentanteile je Wohnung, wie
   sie im Mietvertrag vereinbart sein können (§556a Abs. 1 BGB). Die Anteile gelten absolut:
-  Was unter 100 % fehlt, trägt der Vermieter — so lässt sich ein vereinbarter Eigenanteil
+  Was unter 100 % fehlt, trägt der Vermieter - so lässt sich ein vereinbarter Eigenanteil
   abbilden. Bei einem Mieterwechsel wird der Anteil tagesanteilig geteilt.
   ([#5](https://github.com/speedone/mietfuchs/issues/5))
 - **Eigenanteil als Betrag.** Abrechnung und Steuerübersicht weisen aus, welcher Teil des
@@ -3331,7 +3333,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   privat veranlasst und damit nicht als Werbungskosten abziehbar; die Aufteilung nimmt die
   Übersicht weiterhin nicht automatisch vor.
 - **Prüfzeile „Verteilbasis" im Cockpit.** Weist auf Wohnungen hin, die als *nicht beteiligt*
-  geführt werden, obwohl sie eine Wohnfläche haben — in diesem Fall tragen die Mieter deren
+  geführt werden, obwohl sie eine Wohnfläche haben - in diesem Fall tragen die Mieter deren
   Anteil mit.
 - **Fertiges Docker-Image.** Das Image wird für `linux/amd64` und `linux/arm64` nach
   `ghcr.io/speedone/mietfuchs` veröffentlicht. Damit lässt sich Mietfuchs per `docker run`
@@ -3357,7 +3359,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Das Feld verlangt nun eine ausdrückliche Auswahl.
   ([#6](https://github.com/speedone/mietfuchs/issues/6))
 - **Verteilbasis bei nicht vermieteten Wohnungen.** Wohnungen ohne Beteiligung fielen
-  vollständig aus der Basis von Wohnfläche, Wohneinheiten und Personenzahl — die Mieter trugen
+  vollständig aus der Basis von Wohnfläche, Wohneinheiten und Personenzahl - die Mieter trugen
   dadurch den gesamten Rechnungsbetrag. Die neue Nutzungsart *selbstgenutzt* behebt das, sobald
   sie gesetzt ist (siehe *Hinweise zur Aktualisierung*). Beim Verbrauchsschlüssel war das schon
   vorher richtig, weil ein eigener Zähler die Basis mitbildet.
@@ -3370,7 +3372,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   nicht mehr verteilt (sie hätten auch den §35a-Anteil über den Rechnungsbetrag getrieben),
   eine negative Personenzahl der eigenen Wohnung kann die Verteilbasis nicht mehr verkleinern,
   und widersprüchliche Kennzeichen an einer Wohnung (vermietet *und* selbstgenutzt) gelten als
-  vermietet. Verweise auf gelöschte Wohnungen — bei Direktzuordnung wie bei Prozentanteilen —
+  vermietet. Verweise auf gelöschte Wohnungen - bei Direktzuordnung wie bei Prozentanteilen -
   und fehlende Angaben an der selbstgenutzten Wohnung (Fläche, Personenzahl) erzeugen jetzt
   eine Warnung in der Abrechnung, statt stillschweigend die Mieter zu belasten.
 - **Steuerübersicht folgt abgeschlossenen Abrechnungen.** Der ausgewiesene Eigenanteil stammt
@@ -3388,13 +3390,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   darauf hin. Abgeschlossene (eingefrorene) Abrechnungen bleiben in jedem Fall unberührt.
 - Kostenpositionen, die vor diesem Update mit Verbrauchsumlage gespeichert wurden, können noch
   den falschen Zählertyp „Kaltwasser" tragen. Die Auswahl zeigt den gespeicherten Typ jetzt
-  korrekt an — betroffene Positionen einmal öffnen, den richtigen Typ wählen und speichern.
+  korrekt an - betroffene Positionen einmal öffnen, den richtigen Typ wählen und speichern.
 
 ## [0.2.1] – 2026-07-07
 
 ### Behoben
 
-- Die gepackte Binary öffnet den Browser auf `127.0.0.1` statt `localhost` — unter Windows
+- Die gepackte Binary öffnet den Browser auf `127.0.0.1` statt `localhost` - unter Windows
   führte die Namensauflösung sonst gelegentlich auf eine IPv6-Adresse, auf der der Server
   nicht lauschte.
 

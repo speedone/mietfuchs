@@ -7,7 +7,7 @@ import type { DatabaseState } from '../types'
 //
 // Den Umstieg in die Datenbank macht der Server beim Start; hier steht nur, was der Nutzer
 // davon merkt. Gelingt er, ist es ein Satz und ein Knopf. Scheitert er, steht dieselbe Stelle
-// für die Erklärung — dann arbeitet Mietfuchs unverändert mit der bisherigen Datei weiter, und
+// für die Erklärung - dann arbeitet Mietfuchs unverändert mit der bisherigen Datei weiter, und
 // genau das muss dabeistehen, damit niemand seine Daten für verloren hält.
 //
 // Gefragt wird einmal beim Öffnen. Der Umstieg läuft beim Start des Servers, danach ändert sich

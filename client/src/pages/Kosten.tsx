@@ -318,7 +318,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   // Ob die Positionen dieses Objekts da sind: Erst dann schlägt das Formular aus dem Beleg den gemerkten Schlüssel vor.
   const [itemsLoaded, setItemsLoaded] = useState(false)
   useEffect(() => {
-    load().then(() => { if (propertyId) setItemsLoaded(true) }).catch(() => { setItemsFailed(true); setError('Server nicht erreichbar — läuft `npm run dev`?') })
+    load().then(() => { if (propertyId) setItemsLoaded(true) }).catch(() => { setItemsFailed(true); setError('Server nicht erreichbar - läuft `npm run dev`?') })
     api<Meter[]>(withProperty('/api/meters', propertyId)).then((m) => { setMeters(m); setMeterData('ok') }, () => setMeterData('failed'))
     // Neu laden, wenn das Objekt wechselt (#92).
   }, [propertyId])
@@ -402,7 +402,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
 
   // Verbrauchsschlüssel ist nur sinnvoll, wenn Wohnungszähler existieren
   const unitMeterTypes = useMemo(() => costMeterTypes(meters), [meters])
-  // Wohnungen der Abrechnungseinheit — nur sie können einen vereinbarten Anteil tragen
+  // Wohnungen der Abrechnungseinheit - nur sie können einen vereinbarten Anteil tragen
   const basisUnits = useMemo(() => basisUnitsOf(units), [units])
   // Live-Summe der Anteile, damit der Vermieter-Rest schon bei der Eingabe sichtbar ist
   const sumText = form ? customSharesSumText(form, units) : ''
@@ -446,7 +446,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   }
   const totalCents = yearItems.reduce((a, i) => a + i.amountCents, 0)
 
-  // Nach Beleg (Rechnung) gruppiert — alle Positionen eines Belegs stehen zusammen, mit
+  // Nach Beleg (Rechnung) gruppiert - alle Positionen eines Belegs stehen zusammen, mit
   // Zwischensumme = Belegsumme. So lassen sich die einzelnen Beträge und die Summe direkt
   // mit der Rechnung abgleichen (z. B. Wasser, Abwasser, Kanal- und Niederschlagsbeitrag
   // eines Versorgers). Manuell erfasste Positionen ohne Beleg stehen einzeln am Ende.
@@ -858,7 +858,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     <>
       <PageHeader
         title="Kosten"
-        subtitle="Alle Rechnungen des Abrechnungsjahres erfassen — manuell oder per KI-Belegauswertung."
+        subtitle="Alle Rechnungen des Abrechnungsjahres erfassen - manuell oder per KI-Belegauswertung."
         actions={<button ref={newItemButton} className="btn" onClick={() => { setError(''); setForm(newItemForm(units, meters, keyCtx)) }}>+ Kostenposition anlegen</button>}
       />
       {error && <NoticeBox level="error" action={error} />}
@@ -929,13 +929,13 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                   <td className="num">
                     {r.inline && (
                       <input aria-label={`Betrag ${label} für ${r.description}`} value={r.amount} onChange={(e) => updateCarry(i, withCarryAmount(r, e.target.value, alreadyCarried(filedItems, r, at)))}
-                        placeholder="—" inputMode="decimal" className="input-num" />
+                        placeholder="-" inputMode="decimal" className="input-num" />
                     )}
                     {r.checked && !r.amount.trim() && <div><span className="badge red">Betrag fehlt</span></div>}
                     <div className="muted">{at.previousLabel}: {fmtEuro(r.source.amountCents)}</div>
                   </td>
                   <td className="num">
-                    {r.inline && <input aria-label={`§35a-Lohn ${label} für ${r.description}`} value={r.labor35a} onChange={(e) => updateCarry(i, { labor35a: e.target.value })} placeholder="—" inputMode="decimal" className="input-num" />}
+                    {r.inline && <input aria-label={`§35a-Lohn ${label} für ${r.description}`} value={r.labor35a} onChange={(e) => updateCarry(i, { labor35a: e.target.value })} placeholder="-" inputMode="decimal" className="input-num" />}
                   </td>
                   {/* Reicht der Zeitraum über zwei Kalenderjahre, ist das Jahr der Zahlung Pflicht (#208, Durchsicht von #226, I2). */}
                   {spansTwoYears(period) && (
@@ -1006,7 +1006,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
 
       <Card title={<>🤖 Beleg per KI auswerten <span className="badge gray">{ai.where}</span></>} className="no-print">
         <p className="muted">
-          PDF oder Foto der Rechnung hochladen — die KI schlägt Kostenpositionen vor, Sie prüfen und übernehmen sie. Zählerfotos nimmt der Eingang auf der Seite Belege. {ai.notice ?? 'Es verlässt nichts Ihren Rechner.'}
+          PDF oder Foto der Rechnung hochladen - die KI schlägt Kostenpositionen vor, Sie prüfen und übernehmen sie. Zählerfotos nimmt der Eingang auf der Seite Belege. {ai.notice ?? 'Es verlässt nichts Ihren Rechner.'}
         </p>
         <div
           className={`dropzone ${dragOver ? 'over' : ''}`}
@@ -1015,7 +1015,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
           onDragLeave={() => setDragOver(false)}
           onDrop={(e) => { e.preventDefault(); setDragOver(false); setSkipped(addFiles(e.dataTransfer.files, target) > 0) }}
         >
-          <strong>Belege hierher ziehen</strong> oder klicken zum Auswählen — auch mehrere auf einmal.
+          <strong>Belege hierher ziehen</strong> oder klicken zum Auswählen - auch mehrere auf einmal.
           <div className="muted">Sie werden nacheinander verarbeitet (PDF oder Foto).</div>
           <input
             ref={fileInputRef}
@@ -1054,7 +1054,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                 )}
                 {entry.status === 'fertig' && (meter
                   ? <span className="badge green">Zählerstand erkannt</span>
-                  : <span className={assessment ? openBadgeClass(assessment) : 'badge amber'}>{countOf(assessment?.lines.length ?? 0, 'Position', 'Positionen')} erkannt — bitte prüfen</span>)}
+                  : <span className={assessment ? openBadgeClass(assessment) : 'badge amber'}>{countOf(assessment?.lines.length ?? 0, 'Position', 'Positionen')} erkannt - bitte prüfen</span>)}
                 {entry.status === 'übernommen' && <span className="badge green">✓ übernommen</span>}
                 {entry.status === 'fehler' && <span className="badge red">Fehler</span>}
                 {entry.status === 'gespeichert' && <span className="badge amber">gespeichert</span>}
@@ -1137,12 +1137,12 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                     )}
                     {notAgreedText(i.notAgreedTenancyIds, tenancies) && <div className="muted">{notAgreedText(i.notAgreedTenancyIds, tenancies)}</div>}
                     {i.key === 'direct' && <div className="muted">{units.find((u) => u.id === i.directUnitId)?.name}</div>}
-                    {i.key === 'meter' && <div className="muted">{i.meterType ? METER_TYPE_LABELS[i.meterType] : '— kein Zählertyp'}</div>}
+                    {i.key === 'meter' && <div className="muted">{i.meterType ? METER_TYPE_LABELS[i.meterType] : '- kein Zählertyp'}</div>}
                     {i.key === 'custom' && (
                       <div className="muted">
                         {Object.entries(i.customShares ?? {})
                           .map(([unitId, pct]) => `${units.find((u) => u.id === unitId)?.name ?? '?'}: ${pct.toLocaleString('de-DE', { maximumFractionDigits: 2 })} %`)
-                          .join(' · ') || '— keine Anteile'}
+                          .join(' · ') || '- keine Anteile'}
                       </div>
                     )}
                     </>}
@@ -1171,7 +1171,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
               ))}
               {g.invoiceFile && g.items.length > 1 && (
                 <tr className="subtotal">
-                  <td colSpan={3}>Summe Beleg — {g.label}</td>
+                  <td colSpan={3}>Summe Beleg - {g.label}</td>
                   <td className="num">{fmtEuro(g.items.reduce((a, i) => a + i.amountCents, 0))}</td>
                   <td className="no-print" />
                 </tr>
@@ -1224,7 +1224,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             <Field label={<>Kostenart{categorySuggested && <> <span className="badge amber">Vorschlag aus dem Dateinamen</span></>}</>}
               required={form.category === ''} {...formErrors.field('category')}>
               <select value={form.category} className={categorySuggested ? 'bg-amber-soft border-signal-amber' : undefined} onChange={(e) => setForm(keepSpread(keepPaidOnYear(form, withCategory(form, e.target.value, units, meters, keyCtx), period)))}>
-                {form.category === '' && <option value="">— bitte wählen —</option>}
+                {form.category === '' && <option value="">Bitte wählen</option>}
                 {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
               </select>
             </Field>
@@ -1294,7 +1294,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             {/* Betriebsstrom (Heizung PR 15): sichtbar ohne Aufklappen, wer ihn braucht. */}
             <OperatingPowerFields form={form} items={items} periodKey={key} plantEnergy={plantOfForm ? billingEnergy(plantOfForm) : undefined} service={serviceReceivesOperatingPower(plants, period)} onChange={setForm} />
             <details className="extra-details" open={!!(selfPlant || form.serviceFrom || form.serviceTo || form.taxYear || form.paidOn || form.heatingPart !== '' || showTaxYear || form.spreadYears !== '' || droppedSpreadText(storedItem, form))}>
-              <summary>Weitere Angaben — Leistungszeitraum{showTaxYear ? ', Jahr der Zahlung' : ''}{showsPaidOn(form) ? ', Bezahlt am' : ''}{showsSpread(form) ? ', Verteilung' : ''}{form.category === HEATING_CATEGORY ? ', Brennstoff/Energie' : ''} (optional)</summary>
+              <summary>Weitere Angaben - Leistungszeitraum{showTaxYear ? ', Jahr der Zahlung' : ''}{showsPaidOn(form) ? ', Bezahlt am' : ''}{showsSpread(form) ? ', Verteilung' : ''}{form.category === HEATING_CATEGORY ? ', Brennstoff/Energie' : ''} (optional)</summary>
               <CostPeriodFields form={form} onChange={setForm} showTaxYear={showTaxYear} years={heatTax?.show ? heatTax.years : taxYearOptions(periodSpan, storedTaxYear, form.taxYear !== '' ? Number(form.taxYear) : null)} emptyLabel={heatTax ? (heatTax.show && heatingOption && heatingOption.startYear === heatingOption.endYear ? `wie Heizperiode (${heatingOption.startYear})` : undefined) : spansTwoYears(period) ? undefined : `wie Abrechnungsjahr (${year})`} billTaxYear={deductionTaxYear(form, items)} paidOnChanges={livePaidOnChanges} droppedPaidOn={droppedPaidOnText(form, period)} />
               {/* #262 PR 3 (E-9): Verteilung nach § 82b EStDV neben „Bezahlt am“, nur wo der Server sie annimmt. */}
               {showsSpread(form) && <SpreadField form={form} period={period} restYear={property?.spreadRestYear ?? null} problem={spreadProblem} onChange={setForm} />}
@@ -1362,7 +1362,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                   : '„nur Heizung“: Beim Mieterwechsel teilen sich diese Kosten nach Gradtagen statt nach Tagen (§ 9b Abs. 2 HeizkostenV), wenn die Heizanlage so eingestellt ist.'}
               >
                 <select value={targetChoices.some((o) => o.value === form.heatingTarget) ? form.heatingTarget : ''} onChange={(e) => setForm({ ...form, heatingTarget: targetChoices.find((o) => o.value === e.target.value)?.value ?? '' })}>
-                  {selfPlant && (targetChoices.length !== 1 || targetInvalid) && <option value="">— bitte wählen —</option>}
+                  {selfPlant && (targetChoices.length !== 1 || targetInvalid) && <option value="">Bitte wählen</option>}
                   {targetChoices.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </Field>
@@ -1377,7 +1377,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
               <label className="field">
                 Zählertyp
                 <select value={form.meterType} onChange={(e) => setForm({ ...form, meterType: e.target.value as MeterType | '' })}>
-                  <option value="">— wählen —</option>
+                  <option value="">Bitte wählen</option>
                   {meterTypeOptions(unitMeterTypes, form.meterType).map((t) => (
                     <option key={t} value={t}>{METER_TYPE_LABELS[t]}</option>
                   ))}
@@ -1394,7 +1394,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                 <div className="row">
                   {basisUnits.map((u) => (
                     <label key={u.id} className="field">
-                      {/* Name und Kennzeichen in einer Zeile — .field ist eine Flex-Spalte,
+                      {/* Name und Kennzeichen in einer Zeile - .field ist eine Flex-Spalte,
                           ein direktes Kind würde sich sonst über die ganze Breite ziehen. */}
                       <span className="label-line">
                         {u.name}
@@ -1456,7 +1456,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                   <div className="row">
                     {tenanciesForAmounts(tenancies, units, period, form.participants).map((t) => (
                       <label key={t.id} className="field">
-                        {t.tenantName} ({units.find((u) => u.id === t.unitId)?.name ?? '—'})
+                        {t.tenantName} ({units.find((u) => u.id === t.unitId)?.name ?? '-'})
                         <input
                           value={form.tenancyAmounts[t.id] ?? ''}
                           onChange={(e) => setForm({ ...form, tenancyAmounts: { ...form.tenancyAmounts, [t.id]: e.target.value } })}
@@ -1528,7 +1528,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
               <label className="field">
                 Wohnung
                 <select value={form.directUnitId} onChange={(e) => setForm({ ...form, directUnitId: e.target.value })}>
-                  <option value="">— wählen —</option>
+                  <option value="">Bitte wählen</option>
                   {units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
                 </select>
               </label>
@@ -1584,9 +1584,9 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                     <label className="field">
                       oder vorhandenen Beleg zuordnen
                       <select value="" onChange={(e) => { if (e.target.value) setForm({ ...form, invoiceFile: e.target.value }) }}>
-                        <option value="">— wählen —</option>
+                        <option value="">Bitte wählen</option>
                         {knownFiles.map(([f, label]) => (
-                          <option key={f} value={f}>{label} — {f.replace(/^\d+_/, '')}</option>
+                          <option key={f} value={f}>{label} - {f.replace(/^\d+_/, '')}</option>
                         ))}
                       </select>
                     </label>

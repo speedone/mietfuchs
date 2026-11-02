@@ -1,7 +1,7 @@
-# F07 — Vorauszahlungs-Staffel und Jahres-Korrektur
+# F07 - Vorauszahlungs-Staffel und Jahres-Korrektur
 
 **Geprüfte Regel:** Die geschuldete Vorauszahlung ergibt sich Monat für Monat aus der Staffel
-(„ab diesem Monat gilt dieser Betrag“) — nicht aus dem zuletzt vereinbarten Betrag mal zwölf.
+(„ab diesem Monat gilt dieser Betrag“) - nicht aus dem zuletzt vereinbarten Betrag mal zwölf.
 Wo aber ein **tatsächlich gezahlter** Jahresbetrag hinterlegt ist, hat dieser Vorrang: In der
 Abrechnung ist rechtlich das anzusetzen, was geleistet wurde, nicht was geschuldet war.
 
@@ -20,7 +20,7 @@ bewusst symmetrisch, damit allein die Vorauszahlungsseite das Ergebnis untersche
 
 ## Handrechnung
 
-**t1 — Staffel, monatsweise ausgewertet.** Maßgeblich ist der Betrag, der am jeweiligen
+**t1 - Staffel, monatsweise ausgewertet.** Maßgeblich ist der Betrag, der am jeweiligen
 Monatsersten gilt:
 
 ```
@@ -33,7 +33,7 @@ Die naive Rechnung „letzter Betrag × 12“ ergäbe 1.440,00 €, die ebenso n
 × 12“ ergäbe 1.200,00 €. Beide wären falsch; die Differenz von 120,00 € bzw. 240,00 € landete
 unbemerkt im Saldo des Mieters.
 
-**t2 — Korrektur schlägt Staffel.** Die Staffel ergäbe 12 × 100,00 € = 1.200,00 €, tatsächlich
+**t2 - Korrektur schlägt Staffel.** Die Staffel ergäbe 12 × 100,00 € = 1.200,00 €, tatsächlich
 gezahlt wurden aber 1.150,00 € (eine Monatszahlung blieb teilweise aus). Der hinterlegte
 Jahreswert gilt:
 
@@ -53,7 +53,7 @@ t1 = 132.000 − 100.000 = +32.000 ct → 320,00 € Guthaben
 t2 = 115.000 − 100.000 = +15.000 ct → 150,00 € Guthaben
 ```
 
-Vorschlag neue Vorauszahlung — für beide identisch, weil er sich allein aus dem Kostenanteil
+Vorschlag neue Vorauszahlung - für beide identisch, weil er sich allein aus dem Kostenanteil
 ergibt und nicht aus dem bisher Gezahlten:
 
 ```

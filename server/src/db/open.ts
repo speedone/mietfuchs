@@ -68,7 +68,7 @@ export const databaseFile = (dataDir: string): string => path.join(dataDir, DB_F
 export type Lane = {
   // Der einzige Weg zu einem Schreibvorgang.
   write: <T>(work: () => Promise<T>) => Promise<T>
-  // Lesen reiht sich ein wie Schreiben — **außer innerhalb eines laufenden Vorgangs**, denn dort
+  // Lesen reiht sich ein wie Schreiben - **außer innerhalb eines laufenden Vorgangs**, denn dort
   // ist es schon in der richtigen Spur. Es erneut einzureihen hieße, auf sich selbst zu warten,
   // und es abzulehnen nähme dem Repository die Möglichkeit, vor dem Schreiben nachzusehen.
   read: <T>(work: () => Promise<T>) => Promise<T>

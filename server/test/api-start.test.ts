@@ -34,7 +34,7 @@ before(async () => {
 after(() => srv?.stop())
 
 test('Healthcheck: /healthz antwortet als JSON mit Status ok', async () => {
-  // Antwortete hier die index.html, stünde die Route hinter dem Frontend-Catch-All — dann
+  // Antwortete hier die index.html, stünde die Route hinter dem Frontend-Catch-All - dann
   // meldete ein kaputter Container HTTP 200.
   const report = await srv.api<HealthReport>('/healthz')
   assert.equal(report.status, 'ok')
@@ -676,7 +676,7 @@ test('Vor dieser Version eingefrorene Abrechnung liefert einen Eigenanteil von 0
 //
 // An diesem Datum hängt die Frist aus §556 BGB, und die Oberfläche vergleicht es als
 // Zeichenkette mit dem 31.12. des Folgejahrs. Ein beliebiger Wert aus dem Rumpf der Anfrage
-// darf dort deshalb nie ankommen — er bliebe dauerhaft in der db.json stehen.
+// darf dort deshalb nie ankommen - er bliebe dauerhaft in der db.json stehen.
 
 // Der eingefrorene Stand eines Jahres, so wie er auf der Platte steht. Gelesen wird die
 // gespeicherte Fassung und nicht die Sicht des Schnappschusses: Geprüft wird hier `sentAt`,
@@ -690,7 +690,7 @@ const NO_DATES: unknown[] = [
   42, true, { tag: 1 }, ['2041-03-14'], 'morgen', '14.03.2041', '2041-03-14T10:00:00Z', '2041-02-30', '2041-13-01',
 ]
 
-// Eine Anfrage, die scheitern soll — s.api wirft sonst schon am Status.
+// Eine Anfrage, die scheitern soll - s.api wirft sonst schon am Status.
 const closeRequest = (method: string, year: number, body: unknown): Promise<Response> =>
   fetch(`${srv.base}/api/settlement/${year}/close`, {
     method,
@@ -974,7 +974,7 @@ test('Jeder Serverstart einer Prüfung setzt CI', () => {
   // Der Server öffnet beim Start den Standard-Browser, sobald `STANDALONE` gilt, also in der
   // Betriebsart `binary` oder `package` (siehe version.ts). Genau die stellt ein Test weiter
   // oben mit `NKA_RUNTIME: 'binary'` nach, und weil `startServerIn` kein `CI` setzte, ging bei
-  // jedem vollen Lauf ein Tab auf — auf einem Zufallsport, denn `NKA_PORT` ist dort `'0'`.
+  // jedem vollen Lauf ein Tab auf - auf einem Zufallsport, denn `NKA_PORT` ist dort `'0'`.
   //
   // **Geprüft wird der Quelltext, und das ist hier das richtige Mittel.** Am Verhalten ließe es
   // sich nur messen, indem der Test einen Browser öffnet, und das ist genau das, was er

@@ -16,7 +16,7 @@ const standard = (over: Parameters<typeof rentTenancy>[0] = {}) => rentTenancy({
   ...over,
 })
 // Kurzform eines Teils zum Vergleichen.
-const short = (s: AllocationSlice): string => `${s.paymentId} ${s.paidOn} ${s.month ?? '—'} ${s.component} ${s.cents}`
+const short = (s: AllocationSlice): string => `${s.paymentId} ${s.paidOn} ${s.month ?? '-'} ${s.component} ${s.cents}`
 const sumOf = (slices: readonly AllocationSlice[], component: RentComponent, pick: (s: AllocationSlice) => boolean = () => true): number =>
   slices.filter((s) => s.component === component && pick(s)).reduce((a, s) => a + s.cents, 0)
 // Die Deckung eines Monats, ausdrücklich gesucht statt mit `?.` behauptet.
@@ -111,7 +111,7 @@ test('Tilgung: eine Überzahlung geht in den nächsten Monat (A vor B), nach End
     'p 2025-01-03 2025-02 baseRent 10000',
   ])
   const ended = allocateRentPayments(standard({ end: '2025-01-31' }), [rentPayment('p', '2025-01-03', 110000)])
-  assert.deepEqual(ended.map(short).slice(2), ['p 2025-01-03 — unallocated 30000'])
+  assert.deepEqual(ended.map(short).slice(2), ['p 2025-01-03 - unallocated 30000'])
 })
 
 test('Tilgung: Dauerauftrag am 28.12. für Januar steht im Januar des Folgejahres, gezahlt im Dezember', () => {
@@ -149,12 +149,12 @@ test('Tilgung: eine Rücklastschrift nimmt die zuletzt vorgenommene Zuordnung zu
 
 test('Tilgung: die Rückzahlung einer Überzahlung nimmt zuerst den Teil ohne Forderung bzw. den künftigen Monat zurück', () => {
   const ended = allocateRentPayments(standard({ end: '2025-01-31' }), [rentPayment('p', '2025-01-03', 100000), rentPayment('r', '2025-02-10', -20000)])
-  assert.deepEqual(ended.filter((s) => s.paymentId === 'r').map(short), ['r 2025-02-10 — unallocated -20000'])
+  assert.deepEqual(ended.filter((s) => s.paymentId === 'r').map(short), ['r 2025-02-10 - unallocated -20000'])
   const open = allocateRentPayments(standard(), [rentPayment('p', '2025-01-03', 110000), rentPayment('r', '2025-01-10', -30000)])
   assert.deepEqual(open.filter((s) => s.paymentId === 'r').map(short), ['r 2025-01-10 2025-02 baseRent -10000', 'r 2025-01-10 2025-02 prepayment -20000'])
   // Ist nichts zurückzunehmen, bleibt ein negativer Teil ohne Forderung.
   const nothing = allocateRentPayments(standard(), [rentPayment('r', '2025-01-10', -5000)])
-  assert.deepEqual(nothing.map(short), ['r 2025-01-10 — unallocated -5000'])
+  assert.deepEqual(nothing.map(short), ['r 2025-01-10 - unallocated -5000'])
 })
 
 test('Tilgung: im angebrochenen Monat gilt das Soll nach Tagen (rateInMonth, #311)', () => {
@@ -190,7 +190,7 @@ test('Tilgung: zwei Zahlungen am selben Tag nach Kennung (compareText), unabhän
 test('Tilgung: endet die Staffel bei 0 im offenen Mietverhältnis, ist der Rest ohne Forderung (Grenze 120 Monate, keine Schleife)', () => {
   const t = rentTenancy({ baseRents: [{ from: '2025-01', monthlyCents: 60000 }, { from: '2025-03', monthlyCents: 0 }] })
   const slices = allocateRentPayments(t, [rentPayment('p', '2025-01-03', 500000)])
-  assert.deepEqual(slices.map(short), ['p 2025-01-03 2025-01 baseRent 60000', 'p 2025-01-03 2025-02 baseRent 60000', 'p 2025-01-03 — unallocated 380000'])
+  assert.deepEqual(slices.map(short), ['p 2025-01-03 2025-01 baseRent 60000', 'p 2025-01-03 2025-02 baseRent 60000', 'p 2025-01-03 - unallocated 380000'])
   // Ohne Ende reicht eine Vorauszahlung höchstens 120 Monate nach dem Monat der Zahlung.
   const far = allocateRentPayments(standard(), [rentPayment('p', '2025-01-03', 80000 * 130)])
   const lastFar = far.filter((s) => s.month !== null).at(-1)

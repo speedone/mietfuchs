@@ -21,13 +21,13 @@ const npm = isWin ? 'npm.cmd' : 'npm'
 const bun = isWin ? 'bun.cmd' : 'bun'
 const run = (cmd, args, opts = {}) =>
   execFileSync(cmd, args, { stdio: 'inherit', cwd: root, ...opts })
-// npm/bun sind unter Windows .cmd-Wrapper — die brauchen seit Node 20 shell:true.
+// npm/bun sind unter Windows .cmd-Wrapper - die brauchen seit Node 20 shell:true.
 // Direkte .exe-Aufrufe (node) dürfen das NICHT (shell:true zerlegt Pfade mit Leerzeichen).
 const runShell = (cmd, args, opts = {}) => run(cmd, args, { shell: isWin, ...opts })
 
 // Ausgabename + Bun-Target je Plattform. `archive` bestimmt die Release-Verpackung:
 // Rohe Binaries verlieren beim HTTP-Download ihr Ausführungs-Bit (HTTP kennt keine
-// Dateirechte) — Zip/Tarball konservieren es. Zip für macOS (entpackt der Finder per
+// Dateirechte) - Zip/Tarball konservieren es. Zip für macOS (entpackt der Finder per
 // Doppelklick), tar.gz für Linux; die Windows-.exe braucht kein Exec-Bit und bleibt roh.
 // Die Namen der x64-Dateien bleiben unverändert: Der Update-Hinweis älterer Versionen sucht
 // seine Datei darunter (server/src/update.ts). ARM-Dateien bekommen den Zusatz „-arm64“.
@@ -71,7 +71,7 @@ const outDir = path.join(root, 'dist-bin')
 fs.mkdirSync(path.join(outDir, 'store'), { recursive: true })
 
 // Binary in dist-bin/ archivieren (Zip bzw. tar.gz, jeweils ohne Pfadanteile).
-// Fehlt das Tool selbst (zip gibt es z. B. auf Windows-Entwicklerrechnern nicht), nur warnen —
+// Fehlt das Tool selbst (zip gibt es z. B. auf Windows-Entwicklerrechnern nicht), nur warnen -
 // das rohe Binary liegt trotzdem in dist-bin. Der Release-Runner (Linux) hat beide Tools.
 // Scheitert das vorhandene Tool dagegen (kein Platz, defektes Ziel), muss der Build abbrechen:
 // ein stillschweigend fehlendes Archiv fiele sonst erst beim Release-Upload auf.
@@ -86,7 +86,7 @@ const archive = (kind, out) => {
     }
   } catch (err) {
     if (/** @type {NodeJS.ErrnoException} */ (err).code !== 'ENOENT') throw err
-    console.warn(`   ! ${kind} nicht gefunden — ${out} bleibt unverpackt`)
+    console.warn(`   ! ${kind} nicht gefunden - ${out} bleibt unverpackt`)
   }
 }
 
@@ -104,6 +104,6 @@ for (const [name, { target, out, archive: kind }] of Object.entries(selected)) {
   if (kind) archive(kind, out)
 }
 
-// Listet Binaries und Archive — ans Release gehen nur die Archive und die .exe (siehe release.yml).
+// Listet Binaries und Archive - ans Release gehen nur die Archive und die .exe (siehe release.yml).
 console.log(`\n✓ Fertig. Ergebnisse liegen in ${outDir}:`)
 for (const f of fs.readdirSync(outDir)) console.log('   •', f)

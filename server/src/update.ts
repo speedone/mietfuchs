@@ -77,7 +77,7 @@ type GithubRelease = {
   html_url?: string
   // Die Liste der Release-Dateien bleibt `unknown`, obwohl wir sie lesen: Ob überhaupt eine
   // Liste ankommt, prüft assetFor. Als Liste zugesichert ergäbe etwas anderes einen TypeError,
-  // und describeError bildet jeden TypeError auf „GitHub ist nicht erreichbar“ ab — eine
+  // und describeError bildet jeden TypeError auf „GitHub ist nicht erreichbar“ ab - eine
   // Meldung, die den Nutzer an die falsche Stelle schickt, obwohl GitHub geantwortet hat.
   assets?: unknown
 }
@@ -85,7 +85,7 @@ type GithubRelease = {
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null
 
 // GitHub liefert hier fremde Daten von außen. Statt sie ungeprüft als GithubRelease zu
-// behandeln, wird nur sichergestellt, dass es überhaupt ein Objekt ist — die einzelnen Felder
+// behandeln, wird nur sichergestellt, dass es überhaupt ein Objekt ist - die einzelnen Felder
 // bleiben optional und werden dort geprüft, wo sie gebraucht werden (parseVersion, trusted).
 function asRelease(body: unknown): GithubRelease {
   if (!isObject(body)) throw new Error('Die Antwort von GitHub ist kein Objekt.')
@@ -170,7 +170,7 @@ type CreateUpdateCheckerOptions = {
 
 // `consent` kommt aus settings.updateCheck, also ungeprüft aus der db.json: Wer die Datei von
 // Hand bearbeitet, kann dort alles hineinschreiben. Deshalb `unknown` statt eines Typs, der
-// schon Zustimmung nahelegt — geprüft wird unten genau auf 'on', alles andere heißt nein.
+// schon Zustimmung nahelegt - geprüft wird unten genau auf 'on', alles andere heißt nein.
 type CheckOptions = { consent?: unknown, force?: boolean }
 
 // Darf Mietfuchs bei GitHub nachfragen (Versionen und Modellliste, ai/recommendations.ts)? Nur mit
