@@ -135,7 +135,7 @@ export function DesktopHint({ status, onDismissed }: { status: UpdateStatus; onD
           {offer === 'windows'
             ? <li>Das neue Mietfuchs starten, etwa aus dem Startmenü.</li>
             : <li>Mietfuchs aus „Programme“ starten. Blockiert macOS den ersten Start, geben Sie es frei wie beim ersten Mal (<a href={README} target="_blank" rel="noreferrer">README</a>).</li>}
-          <li>Fragt das neue Mietfuchs nach Ihren bisherigen Daten, „Daten übernehmen“ bestätigen. Es kopiert sie, das bisherige zeigt sie danach nur noch zum Lesen.</li>
+          <li>Fragt das neue Mietfuchs nach Ihren bisherigen Daten, „Daten übernehmen“ bestätigen. Es kopiert sie, das bisherige zeigt sie danach nur noch zum Ansehen.</li>
         </ol>
         <p className="muted">
           Mit dem Handy oder einem zweiten Rechner? Den Zugriff aus dem Heimnetz schalten Sie im neuen Mietfuchs in den

@@ -165,6 +165,8 @@ test('Umstieg unter Windows: Store und Installer aus festen Adressen, die Schrit
   expect(steps[1]).toMatch(/„Mietfuchs beenden“/)
   expect(steps[2]).toMatch(/Startmenü/)
   expect(steps[3]).toMatch(/„Daten übernehmen“/)
+  // Wie die umgezogene Fassung es selbst sagt (database.ts): nur noch zum Ansehen.
+  expect(steps[3]).toMatch(/nur noch zum Ansehen/)
   expect(card.textContent).toMatch(/Zugriff aus dem Heimnetz/)
   expect(card.textContent).toMatch(/Adresse ändert sich/)
   expect(card.textContent).not.toMatch(/\.dmg/)

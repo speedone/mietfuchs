@@ -152,6 +152,9 @@ type CreateUpdateCheckerOptions = {
   mode: UpdateStatus['mode']
   platform?: string
   arch?: string
+  // Liegt im Datenordner der Vermerk des Umzugs (#517, relocation.ts)? Je Anfrage gefragt, denn das Fenster kann die
+  // Daten umziehen, während diese Fassung läuft.
+  movedAway?: () => boolean
   now?: () => number
   ttlMs?: number
   errorPauseMs?: number
@@ -193,6 +196,7 @@ export function createUpdateChecker({
   mode,
   platform = process.platform,
   arch = process.arch,
+  movedAway = () => false,
   now = Date.now,
   ttlMs = ONE_DAY,
   errorPauseMs = ONE_HOUR,
@@ -268,7 +272,14 @@ export function createUpdateChecker({
     }
   }
 
-  async function check({ consent, force = false }: CheckOptions = {}): Promise<UpdateStatus> {
+  // Der Hinweis auf das Programmfenster gilt je Anfrage neu: Nach dem Umzug zeigt diese Fassung die Daten nur noch zum
+  // Ansehen und lehnte auch „Später“ ab, die Karte entfällt dort.
+  async function check(options: CheckOptions = {}): Promise<UpdateStatus> {
+    const result = await checkRelease(options)
+    return { ...result, desktopOffer: movedAway() ? null : desktopOfferFor(mode, platform) }
+  }
+
+  async function checkRelease({ consent, force = false }: CheckOptions = {}): Promise<UpdateStatus> {
     if (!mayAskGitHub(mode, consent)) return emptyResult(false)
     if (pending) return pending
     if (backoff && (now() < backoff.blockedUntil || (!force && now() < backoff.until))) return backoff.result

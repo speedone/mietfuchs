@@ -219,6 +219,19 @@ test('Umstieg (#517): der Stand nennt ihn ohne Zustimmung und ohne eine Anfrage 
   assert.equal(requests.length, before)
 })
 
+test('Umstieg (#517): ist der Datenordner schon umgezogen (Vermerk), bietet die Programmdatei ihn nicht mehr an', async () => {
+  // Die umgezogene Fassung öffnet nur noch zum Ansehen und lehnt jedes Speichern ab (423), auch „Später“.
+  let moved = false
+  const checker = makeChecker({ platform: 'win32', movedAway: () => moved })
+  assert.equal((await checker.check({})).desktopOffer, 'windows')
+  moved = true // zieht das Fenster um, während diese Fassung läuft, gilt es ab der nächsten Anfrage
+  assert.equal((await checker.check({})).desktopOffer, null)
+  respond = serve(releaseWith('v0.5.0'))
+  const found = await makeChecker({ platform: 'darwin', movedAway: () => true }).check({ consent: 'on' })
+  assert.equal(found.available, true)
+  assert.equal(found.desktopOffer, null)
+})
+
 test('Umstieg (#517): mit Zustimmung steht er auch neben der gefundenen Version und nach einem Fehler', async () => {
   respond = serve(releaseWith('v0.5.0'))
   const found = await makeChecker().check({ consent: 'on' })
