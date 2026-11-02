@@ -58,7 +58,8 @@ Ablauf in index.ts („Umzug ins Programmfenster“), Bildschirm client/src/page
   (`relocationOffered`): ohne Bestand (`carriesStock`, keine `db.json`) und ohne `umzug.json` (Entscheidung `moved` oder
   `fresh`); die Oberfläche zeigt dann je nach Fund die Frage oder den Willkommensbildschirm (client/CLAUDE.md).
   `GET /api/relocation` sagt `{ offered }` (schnell), `GET /api/relocation/candidates` die Funde samt `ownStock` (eine
-  Minute gemerkt, ob die alte Fassung läuft, wird jedes Mal neu gefragt). **Von Hand** (Einstellungen) gehen Funde,
+  Minute gemerkt, mit `?fresh=1` neu gesucht wie bei „Erneut suchen“; ob die alte Fassung läuft, wird jedes Mal neu
+  gefragt; `store` für den Weg zur neuesten Version). **Von Hand** (Einstellungen) gehen Funde,
   Ordnerwahl, Übernahme und Backup auch mit eigenem Bestand, dann nur mit `replace: true` (sonst 409 mit `replace`); der
   Stand von jetzt wird als `vor-restore` gesichert, die Zustimmungen von jetzt gelten (`AdoptMode` `replace`). Alle
   Routen nur von diesem Rechner: eine Vorschaltung vor `/api/relocation/*` (außer der schnellen Frage und dem
@@ -90,7 +91,11 @@ Ablauf in index.ts („Umzug ins Programmfenster“), Bildschirm client/src/page
   `data` mit Bestand neben `mietfuchs*.exe` bzw. `mietfuchs-macos-*`, höchstens drei Ebenen, vier Sekunden, 20.000
   Einträge, folgt keinem Verweis (`Dirent` meldet Symlink und Verzeichnisverbindung nicht als Ordner), ohne versteckte
   Ordner, `node_modules`, `AppData`, `Library`. Unvollständig heißt `complete: false`, die Oberfläche sagt es.
-- **Beschreibung** (`describeCandidate`): zuletzt geändert (jüngere der beiden Dateien), Objekte und Mietverhältnisse;
+- **Beschreibung** (`describeCandidate`): zuletzt geändert (jüngere der beiden Dateien), Objekte (Zahl und Namen) und
+  Mietverhältnisse, der Ort in Worten (`placeOf`: Ordner der Programmdatei und der nächste bekannte Ort darüber),
+  `problem` (`damaged`: lässt sich nicht lesen, `newer`: Schritte, die diese Fassung nicht kennt) und die Zahl der
+  Vorversionen; beides sagt die Karte vor dem Klick (Praxistest J, I). Eine beschädigte Datei öffnet auch das alte
+  Mietfuchs nicht, die Absage rät deshalb zu einem Backup und nennt die Vorversionen (`damagedStockText`);
   die Datenbank wird dafür **nur lesend** geöffnet (`connect(file, { readOnly: true })`), keine Dateizeit ändert sich.
   Was übernommen wird, entscheidet `stockKind` wie ein Start an Ort und Stelle: Datenbank mit Bestand vor db.json
   (`stale`, #89), sonst db.json.
@@ -121,7 +126,7 @@ Ablauf in index.ts („Umzug ins Programmfenster“), Bildschirm client/src/page
   Windows liegen sie oft in einem OneDrive-Ordner wie „OneDrive - Firma“.
 - **Großer Bestand**: Platz vorher (`restoreSpaceNeeded`, Meldung mit MB), Fortschritt je Datei in
   `GET /api/relocation/progress` (`copy`, `check`, `switch`), `POST /api/relocation/cancel` bis vor dem Umschalten;
-  abgebrochen heißt 400 und beide Ordner wie vorher.
+  abgebrochen heißt 400 mit `cancelled: true` (die Oberfläche zeigt es neutral) und beide Ordner wie vorher.
 - **Später im alten Mietfuchs geändert** (zwei Bestände vermeiden; alte Fassungen kennen den Vermerk nicht): `umzug.json`
   hält `source` (`StockMark` aus `markStock`): mit Journal die höchste je vergebene Kennung einer Gruppe (`journal`,
   aus `sqlite_sequence`) samt Zeit dieser Gruppe (`journalAt`); geändert heißt jede andere Kennung, auch eine kleinere
@@ -131,7 +136,7 @@ Ablauf in index.ts („Umzug ins Programmfenster“), Bildschirm client/src/page
   und Tabellen dazu und Datenschritte schreiben um, ohne Gruppe im Journal; das ist kein neuerer Stand. Jede Änderung
   eines Nutzers legt eine Gruppe an. Die Dateizeit zählt nicht, schon ein Start schreibt eine Probe in die Datei; sie
   entscheidet nur, ob neu gerechnet wird (`memoByStamp` über Zeit und Größe von Datenbank, `-journal`, db.json, K6).
-  `GET /api/relocation` nennt dann `newer`; die Oberfläche zeigt einen Hinweis (NewerStock.tsx) mit „Neueren Stand
+  `GET /api/relocation` nennt dann `newer` (mit `place` und `running`); die Oberfläche zeigt einen Hinweis (NewerStock.tsx) mit „Neueren Stand
   übernehmen …“ (Rückfrage, `POST /api/relocation/readopt`: derselbe Weg, Stand von jetzt als `vor-restore`, Zustimmungen
   von jetzt) und „Nicht übernehmen“ (`/api/relocation/newer/dismiss` merkt sich den Fingerabdruck). Nie von selbst.
 - **Aus der Durchsicht vor dem PR**: Mit liegengebliebenem `-journal` liest `lookIntoDatabase` eine Kopie (nur lesend

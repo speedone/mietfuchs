@@ -79,7 +79,8 @@ export function updateHint(database: DatabaseState | null | undefined, version: 
   return {
     dismissKey,
     message:
-      `${updated} Vorher wurde eine Sicherung Ihrer Daten angelegt (${migrated.backup} im Datenordner). ` +
+      // Ohne Dateinamen (Praxistest N-01): Die Sicherung steht im Verlauf als „Vor dem Update auf Version …“
+      `${updated} Vorher wurde eine Sicherung Ihrer Daten angelegt; Sie finden sie unter Verlauf. ` +
       'Wie Sie zur vorigen Version zurückkommen, steht in der Anleitung.',
     guideUrl: MIGRATION_GUIDE_URL,
   }

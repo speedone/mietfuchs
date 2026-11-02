@@ -6,6 +6,8 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { UIProvider } from '../components/feedback'
 import type { RelocationCandidate, RelocationCandidates } from '../relocation'
 import Umzug from './Umzug'
+import { MOBILE_QUERY } from '../components/MobileNav'
+import { RELEASES_URL } from '../update'
 
 vi.setConfig({ testTimeout: 20000 })
 afterEach(() => {
@@ -17,6 +19,7 @@ const FOUND: RelocationCandidate = {
   id: '3f2c8a50-0000-4000-8000-000000000001',
   dataDir: 'C:\\Users\\Anna\\Downloads\\mietfuchs\\data', kind: 'database', modifiedAt: '2026-10-12T09:30:00.000Z',
   properties: 1, tenancies: 5, running: false, source: 'search', appVersion: null,
+  names: ['Haus am Weg'], problem: null, priorVersions: 0, place: { folder: 'mietfuchs', within: 'Downloads' },
 }
 
 type Call = { url: string, method: string, body: unknown }
@@ -59,11 +62,12 @@ test('Fund: Ort, zuletzt geändert, Bestand; „Daten übernehmen“ kopiert und
   // Mit der Kennung des Fundes, nie mit dem Pfad (K11)
   expect(calls.find((c) => c.url === '/api/relocation/adopt')?.body).toEqual({ id: FOUND.id })
   // Durchsicht D11: was mit dem alten Mietfuchs zu tun ist
-  expect(screen.getByText(/Starten Sie das alte Mietfuchs nicht mehr/)).toBeTruthy()
+  expect(screen.getByText(/Öffnen Sie die alte Programmdatei nicht mehr/)).toBeTruthy()
   // Ergänzung 3: Wer vom Handy zugriff, findet den Weg dorthin
   expect(screen.getByText(/Zugriff aus dem Heimnetz/).textContent).toMatch(/Handy.*Einstellungen.*neue Adresse/)
   fireEvent.click(screen.getByRole('button', { name: 'Weiter' }))
-  expect(reloadPage).toHaveBeenCalled()
+  // Praxistest B-04: Der Anlass reist über das Neuladen, danach die Bestätigung im richtigen Jahr
+  expect(reloadPage).toHaveBeenCalledWith('moved')
 })
 
 test('Altes Mietfuchs noch offen: erst beenden, dann übernehmen', async () => {
@@ -125,7 +129,7 @@ test('Nichts gefunden: genau ein empfohlener Weg, das Backup', async () => {
   expect(screen.queryByRole('button', { name: 'Ordner der alten Programmdatei wählen …' })).toBeNull()
   const input = within(card).getByLabelText('Backup einspielen') as HTMLInputElement
   fireEvent.change(input, { target: { files: [new File(['zip'], 'mietfuchs-backup.zip', { type: 'application/zip' })] } })
-  await vi.waitFor(() => expect(reloadPage).toHaveBeenCalled())
+  await vi.waitFor(() => expect(reloadPage).toHaveBeenCalledWith('backup'))
   expect(calls.find((c) => c.url === '/api/restore')?.method).toBe('POST')
 })
 
@@ -251,4 +255,152 @@ test('Anleitung: derselbe Knopf wie in den Einstellungen aller Fassungen', async
   expect(card.textContent).toContain('klicken Sie in den Einstellungen auf Backup herunterladen (ZIP)')
   const settings = (await import('./Einstellungen.tsx?raw')).default
   expect(settings).toContain('⬇ Backup herunterladen (ZIP)')
+})
+
+// ---------- Praxistest vor 0.15.0 ----------
+
+const cardOf = async (name: string) => (await screen.findByRole('heading', { name })).closest('section') as HTMLElement
+
+test('Praxistest B-01: Ort in Worten mit Objektnamen, der volle Pfad nur unter „Genauer Ort“', async () => {
+  fakeServer({ 'GET /api/relocation/candidates': () => ({ json: offer([FOUND]) }) })
+  renderScreen()
+  const card = await cardOf('Gefundene Daten')
+  expect(within(card).getByText('Ordner „mietfuchs“ in Downloads')).toBeTruthy()
+  expect(within(card).getByText('Haus am Weg')).toBeTruthy()
+  const details = card.querySelector('details') as HTMLDetailsElement
+  expect(details.querySelector('summary')?.textContent).toBe('Genauer Ort')
+  expect(details.textContent).toContain(FOUND.dataDir)
+  expect(screen.getByText('Mietfuchs kopiert sie in das neue Programm; im alten Ordner bleibt alles, wie es ist.')).toBeTruthy()
+})
+
+test('Praxistest B-03, Punkt 6: Erfolgsseite „Ihre Daten sind umgezogen“, ohne langen Pfad, laienverständlich', async () => {
+  fakeServer({
+    'GET /api/relocation/candidates': () => ({ json: offer([FOUND]) }),
+    'POST /api/relocation/adopt': () => ({ json: { ok: true, notes: ['Ältere Sicherungen bleiben im alten Ordner. Behalten Sie diesen Ordner deshalb noch eine Weile; löschen können Sie die alte Programmdatei und ihre Verknüpfung.'], counts: { properties: 1, tenancies: 2, costItems: 2, receipts: 2 } } }),
+  })
+  renderScreen()
+  fireEvent.click(await screen.findByRole('button', { name: 'Daten übernehmen' }))
+  expect(await screen.findByRole('heading', { level: 1, name: 'Ihre Daten sind umgezogen' })).toBeTruthy()
+  expect(screen.getByText(/Ältere Sicherungen bleiben im alten Ordner\./)).toBeTruthy()
+  expect(screen.getByText(/Öffnen Sie die alte Programmdatei nicht mehr\./)).toBeTruthy()
+  expect(screen.getByText(/Schalten Sie dazu in den Einstellungen „Zugriff aus dem Heimnetz“ ein\./)).toBeTruthy()
+  expect(document.body.textContent).not.toContain(FOUND.dataDir)
+})
+
+test('Praxistest D: mehrere Funde, der neueste oben hervorgehoben, ältere zurückhaltend', async () => {
+  const older = { ...FOUND, id: 'alt', dataDir: 'C:\\Users\\Anna\\Desktop\\mietfuchs-0.9.0\\data', modifiedAt: '2025-03-14T10:00:00.000Z', place: { folder: 'mietfuchs-0.9.0', within: 'Schreibtisch' as const } }
+  fakeServer({ 'GET /api/relocation/candidates': () => ({ json: offer([older, FOUND]) }) })
+  renderScreen()
+  const newest = await cardOf('Neuester Stand')
+  const old = await cardOf('Älterer Stand')
+  expect(screen.getByText('Meist ist der neueste Stand der richtige.')).toBeTruthy()
+  // Der neueste steht zuerst
+  expect(newest.compareDocumentPosition(old) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(within(newest).getByText('Zuletzt geändert am 12. Oktober 2026')).toBeTruthy()
+  expect(within(newest).getByRole('button', { name: 'Daten übernehmen' }).className).toBe('btn')
+  expect(within(old).getByRole('button', { name: 'Diesen älteren Stand übernehmen' }).className).toContain('secondary')
+  expect(newest.className).toContain('border-accent')
+})
+
+test('Praxistest J: beschädigter Fund, gesperrt, Rat zum Backup statt ins alte Mietfuchs', async () => {
+  fakeServer({ 'GET /api/relocation/candidates': () => ({ json: offer([{ ...FOUND, properties: null, tenancies: null, problem: 'damaged', priorVersions: 2 }]) }) })
+  renderScreen()
+  const card = await cardOf('Gefundene Daten')
+  expect(within(card).getByText('Beschädigt, lässt sich nicht lesen')).toBeTruthy()
+  expect(card.textContent).toMatch(/An der Datei wurde nichts verändert\./)
+  expect(card.textContent).toMatch(/2 automatische Vorversionen/)
+  expect(card.textContent).not.toMatch(/Öffnen Sie das alte Mietfuchs/)
+  const adopt = within(card).getByRole('button', { name: 'Daten übernehmen' }) as HTMLButtonElement
+  expect(adopt.disabled).toBe(true)
+  expect(adopt.getAttribute('aria-describedby')).toBeTruthy()
+  fireEvent.click(within(card).getByRole('button', { name: 'Backup einspielen …' }))
+  expect(await screen.findByRole('heading', { name: 'Mit einem Backup übernehmen' })).toBeTruthy()
+})
+
+test('Praxistest I: Fund aus einer neueren Version, vorab gesagt, mit festem Weg zur neuesten Version', async () => {
+  fakeServer({ 'GET /api/relocation/candidates': () => ({ json: offer([{ ...FOUND, problem: 'newer' }]) }) })
+  renderScreen()
+  const card = await cardOf('Gefundene Daten')
+  expect(within(card).getByText('Aus einer neueren Mietfuchs-Version')).toBeTruthy()
+  expect(card.textContent).not.toMatch(/Aufbau/)
+  expect((within(card).getByRole('button', { name: 'Daten übernehmen' }) as HTMLButtonElement).disabled).toBe(true)
+  expect(within(card).getByRole('link', { name: 'Neueste Version herunterladen' }).getAttribute('href')).toBe(RELEASES_URL)
+})
+
+test('Praxistest G: falscher Ordner, die Absage passt zum Knopf, die zweite Absage ist solange weg; erneut suchen sagt, was geschah', async () => {
+  const calls = fakeServer({
+    'GET /api/relocation/candidates': () => ({ json: offer([]) }),
+    'GET /api/relocation/candidates?fresh=1': () => ({ json: offer([]) }),
+    'POST /api/relocation/inspect': () => ({ status: 404, json: { error: 'In diesem Ordner liegen keine Mietfuchs-Daten. Wählen Sie den Ordner, in dem Ihre alte Mietfuchs-Programmdatei liegt.' } }),
+  })
+  renderScreen({ chooseFolder: async () => 'C:\\Users\\Anna\\Downloads' })
+  fireEvent.click(await screen.findByRole('button', { name: 'Ja, Daten übernehmen' }))
+  expect(await screen.findByText(/keine Daten Ihres bisherigen Mietfuchs gefunden/)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Ordner der alten Programmdatei wählen …' }))
+  expect(await screen.findByText(/Wählen Sie den Ordner, in dem Ihre alte Mietfuchs-Programmdatei liegt\./)).toBeTruthy()
+  expect(screen.queryByText(/keine Daten Ihres bisherigen Mietfuchs gefunden/)).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Erneut suchen' }))
+  expect(await screen.findByText('Mietfuchs hat eben noch einmal gesucht und wieder keine Daten gefunden.')).toBeTruthy()
+  expect(calls.some((c) => c.url === '/api/relocation/candidates?fresh=1')).toBe(true)
+})
+
+test('Praxistest K-05: Abbrechen ist kein Fehler; beim Kopieren der Hinweis, Mietfuchs nicht zu schließen', async () => {
+  let release: (r: Response) => void = () => {}
+  vi.stubGlobal('fetch', async (url: string) => {
+    const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+    if (url === '/api/relocation/candidates') return json(offer([FOUND]))
+    if (url === '/api/relocation/progress') return json({ phase: 'copy', files: 1, totalFiles: 3, bytes: 1, totalBytes: 3 })
+    if (url === '/api/relocation/cancel') {
+      release(json({ error: 'Die Übernahme wurde abgebrochen. Es wurde nichts übernommen.', cancelled: true }, 400))
+      return json({ ok: true })
+    }
+    if (url === '/api/relocation/adopt') return new Promise<Response>((resolve) => { release = resolve })
+    return json({}, 404)
+  })
+  renderScreen()
+  fireEvent.click(await screen.findByRole('button', { name: 'Daten übernehmen' }))
+  expect(await screen.findByText(/Bitte schließen Sie Mietfuchs währenddessen nicht\. Ihre Daten im alten Ordner bleiben unberührt\./)).toBeTruthy()
+  fireEvent.click(await screen.findByRole('button', { name: 'Abbrechen' }, { timeout: 5000 }))
+  expect(await screen.findByText('Abgebrochen. Es wurde nichts übernommen; im alten Ordner ist alles unverändert.')).toBeTruthy()
+  expect(screen.queryByText('Fehler')).toBeNull()
+  expect(document.querySelector('.notice-error')).toBeNull()
+})
+
+test('Praxistest C: nach „Altes Mietfuchs beenden“ eine kurze Bestätigung', async () => {
+  let running = true
+  fakeServer({
+    'GET /api/relocation/candidates': () => ({ json: offer([{ ...FOUND, running }]) }),
+    'POST /api/relocation/quit-old': () => {
+      running = false
+      return { json: { stopped: true } }
+    },
+  })
+  renderScreen()
+  fireEvent.click(await screen.findByRole('button', { name: 'Altes Mietfuchs beenden' }))
+  expect(await screen.findByText('Das alte Mietfuchs ist beendet. Sie können die Daten jetzt übernehmen.')).toBeTruthy()
+})
+
+test('Praxistest E-02-390: am Handy kein „hierher ziehen“', async () => {
+  vi.stubGlobal('matchMedia', (query: string) => ({ matches: query === MOBILE_QUERY, addEventListener: () => {}, removeEventListener: () => {} }))
+  fakeServer({ 'GET /api/relocation/candidates': () => ({ json: offer([]) }) })
+  renderScreen()
+  fireEvent.click(await screen.findByRole('button', { name: 'Ja, Daten übernehmen' }))
+  const card = await cardOf('Mit einem Backup übernehmen')
+  expect(card.textContent).not.toMatch(/ziehen/i)
+  expect(within(card).getByLabelText('Backup einspielen')).toBeTruthy()
+})
+
+// Durchsicht vor dem PR: Scheitert die Suche beim ersten Start, fehlte jeder Ausweg; die Navigation ist im
+// Einrichtungsmodus ausgeblendet, und „Zurück“ führte nirgendwohin. Neu beginnen muss immer gehen.
+test('Suche scheitert beim ersten Start: Neu beginnen bleibt möglich', async () => {
+  const calls = fakeServer({
+    'GET /api/relocation/candidates': () => ({ status: 500, json: { error: 'Die Suche ist fehlgeschlagen.' } }),
+    'POST /api/relocation/decline': () => ({ json: { ok: true } }),
+  })
+  const { onFresh } = renderScreen()
+  expect(await screen.findByText('Die Suche ist fehlgeschlagen.')).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Zurück' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Nein, neu beginnen' }))
+  await vi.waitFor(() => expect(onFresh).toHaveBeenCalled())
+  expect(calls.some((c) => c.url === '/api/relocation/decline' && c.method === 'POST')).toBe(true)
 })

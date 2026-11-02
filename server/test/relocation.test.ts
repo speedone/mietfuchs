@@ -14,7 +14,7 @@ import {
   classifyChoice, copyErrorText, copyMismatch, describeCandidate, earlyMietfuchs, fixedPlaces, folderFromChoice, liveDataDir, movedNoteText, programFilePattern,
   readDecision, readMovedMarker, relocationHome, searchDirsFromEnv, stockFingerprint, rememberedFolders, runningFor, samePath, searchProgramFolders,
   searchRoots, stockKind, writeDecision, writeMovedMarker, type MovedMarker,
-  copyAndHash, markStock, memoByStamp, stockChanged, type StockMark,
+  copyAndHash, markStock, memoByStamp, stockChanged, type StockMark, placeOf,
 } from '../src/relocation.ts'
 
 const tempDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-umzug-'))
@@ -217,7 +217,10 @@ test('Fund beschreiben: zuletzt geändert, Objekte und Mietverhältnisse, ohne d
     fs.utimesSync(file, stamp, stamp)
     const before = fs.readFileSync(file)
     const info = await describeCandidate(filled)
-    assert.deepEqual(info, { dataDir: filled, kind: 'database', modifiedAt: stamp.toISOString(), properties: 1, tenancies: 3 })
+    assert.deepEqual(info, {
+      dataDir: filled, kind: 'database', modifiedAt: stamp.toISOString(), properties: 1, tenancies: 3,
+      names: ['Haus'], problem: null, priorVersions: 0, place: { folder: 'gefuellt', within: null },
+    })
     assert.ok(fs.readFileSync(file).equals(before), 'die Datei ist unverändert')
     assert.equal(fs.statSync(file).mtime.toISOString(), stamp.toISOString())
 
@@ -227,6 +230,8 @@ test('Fund beschreiben: zuletzt geändert, Objekte und Mietverhältnisse, ohne d
     assert.equal(jsonInfo.kind, 'json')
     assert.equal(jsonInfo.properties, 1)
     assert.equal(jsonInfo.tenancies, 2)
+    assert.deepEqual(jsonInfo.names, ['Haus'])
+    assert.equal(jsonInfo.problem, null)
 
     // Unlesbar: Ort und Zeit, aber keine Zahlen
     const broken = path.join(dir, 'kaputt')
@@ -235,6 +240,30 @@ test('Fund beschreiben: zuletzt geändert, Objekte und Mietverhältnisse, ohne d
     assert.equal(brokenInfo.tenancies, null)
     assert.equal(brokenInfo.properties, null)
     assert.ok(brokenInfo.modifiedAt)
+    // Praxistest J: schon vorab als beschädigt erkannt, samt den Vorversionen im alten Ordner
+    assert.equal(brokenInfo.problem, 'damaged')
+    assert.equal(brokenInfo.priorVersions, 0)
+    touch(path.join(broken, 'vorversionen', 'vorversion-2026-10-01-120000.sqlite'))
+    touch(path.join(broken, 'vorversionen', 'vorversion-2026-10-08-120000.sqlite'))
+    assert.equal((await describeCandidate(broken)).priorVersions, 2)
+    const brokenJson = path.join(dir, 'json-kaputt')
+    touch(path.join(brokenJson, 'db.json'), '{ kein json')
+    assert.equal((await describeCandidate(brokenJson)).problem, 'damaged')
+
+    // Praxistest I: aus einer neueren Version, schon vorab erkannt, ohne die Datei zu ändern
+    const newer = made(path.join(dir, 'neuer'))
+    ;(await openDatabaseWithStock(newer, straightenForDatabase(someDb(1)))).close()
+    {
+      const { DatabaseSync } = await import('node:sqlite')
+      const db = new DatabaseSync(path.join(newer, 'mietfuchs.sqlite'))
+      db.exec("INSERT INTO __drizzle_migrations (hash, created_at) VALUES ('aus-der-zukunft', 99999999999999)")
+      db.close()
+    }
+    const newerBefore = fs.readFileSync(path.join(newer, 'mietfuchs.sqlite'))
+    const newerInfo = await describeCandidate(newer)
+    assert.equal(newerInfo.problem, 'newer')
+    assert.equal(newerInfo.tenancies, 1)
+    assert.ok(fs.readFileSync(path.join(newer, 'mietfuchs.sqlite')).equals(newerBefore))
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
   }
@@ -572,4 +601,18 @@ test('Wächter: Workflows und Prüfskripte übernehmen mit der Kennung eines Fun
     .filter((line) => /relocation\/(adopt|restore-backup)/.test(line) && /\b(dataDir|file)\b\s*[:=]/.test(line))
     .map((line) => `${path.relative(root, file)}: ${line.trim()}`))
   assert.deepEqual(offending, [])
+})
+
+// Praxistest B-01, D, M: Ein Fund heißt „Ordner „mietfuchs-0.14.1“ in Downloads“ statt eines langen Pfads
+test('Ort in Worten: der Ordner der Programmdatei und der bekannte Ort darüber', () => {
+  assert.deepEqual(placeOf('C:\\Users\\Anna\\Downloads\\mietfuchs-0.14.1\\data', 'win32'), { folder: 'mietfuchs-0.14.1', within: 'Downloads' })
+  assert.deepEqual(placeOf('C:\\Users\\Anna\\OneDrive - Firma\\Desktop\\Mietfuchs\\data', 'win32'), { folder: 'Mietfuchs', within: 'Schreibtisch' })
+  assert.deepEqual(placeOf('C:\\Users\\Anna\\OneDrive\\Vermietung\\mietfuchs\\DATA', 'win32'), { folder: 'mietfuchs', within: 'OneDrive' })
+  assert.deepEqual(placeOf('C:\\Users\\Anna\\AppData\\Local\\Mietfuchs', 'win32'), { folder: 'Mietfuchs', within: null })
+  assert.deepEqual(placeOf('E:\\mietfuchs\\data', 'win32'), { folder: 'mietfuchs', within: null })
+  assert.deepEqual(placeOf('/Users/anna/Documents/Haus/mietfuchs-0.9.0/data', 'darwin'), { folder: 'mietfuchs-0.9.0', within: 'Dokumente' })
+  assert.deepEqual(placeOf('/Users/anna/Desktop/mietfuchs/data', 'darwin'), { folder: 'mietfuchs', within: 'Schreibtisch' })
+  // Unter Linux zählt die Schreibweise genau
+  assert.deepEqual(placeOf('/home/anna/downloads/mietfuchs/data', 'linux'), { folder: 'mietfuchs', within: null })
+  assert.deepEqual(placeOf('/home/anna/Downloads/mietfuchs/data', 'linux'), { folder: 'mietfuchs', within: 'Downloads' })
 })

@@ -95,7 +95,7 @@ import { DEFAULT_PORTS, findTwin, removeRunFile, RUN_FILE, twinMessage, writeRun
 import { checkRequest, guardPolicy } from './requestGuard.ts'
 import { hasStock, locationsFile, recordDataLocation, shouldRecord } from './dataLocations.ts'
 import {
-  ADOPT_UNCHANGED, classifyChoice, copyErrorText, copyMismatch, describeCandidate, earlyMietfuchs, searchDirsFromEnv, markStock, stockChanged, memoByStamp, copyAndHash, writePending, readPending, clearPending, switchedOver, type StockMark, fixedPlaces, folderFromChoice, liveDataDir, movedAwayMessage, movedDate, originalCounts, readDecision,
+  ADOPT_UNCHANGED, classifyChoice, damagedStockText, placeOf, copyErrorText, copyMismatch, describeCandidate, earlyMietfuchs, searchDirsFromEnv, markStock, stockChanged, memoByStamp, copyAndHash, writePending, readPending, clearPending, switchedOver, type StockMark, fixedPlaces, folderFromChoice, liveDataDir, movedAwayMessage, movedDate, originalCounts, readDecision,
   readMovedMarker, relocationHome, rememberedFolders, runningFor, samePath, searchProgramFolders, searchRoots, stockKind,
   writeDecision, writeMovedMarker, type CandidateInfo, type FileSize, type MovedMarker,
 } from './relocation.ts'
@@ -2952,7 +2952,7 @@ async function restoreDatabase(prepared: string | null, barrier: 'restore' | 'pr
   migrationNotice = null
 
   try {
-    database = await openDatabase({ dataDir: DATA_DIR })
+    database = await openDatabase({ dataDir: DATA_DIR, fromStore: RELOCATION_FROM_STORE })
     const freshAfterRestore = freshBackupOf(database)
     if (freshAfterRestore) noteBackup(freshAfterRestore)
     openProblem = null
@@ -3391,12 +3391,18 @@ app.get('/api/relocation', async (req, res) => {
   const offered = await relocationOffered()
   // Nach dem Umzug: im alten Mietfuchs noch etwas geändert? (Ergänzung 2)
   const newer = offered ? null : await newerInOldFolder()
-  res.json(newer ? { offered, newer: { from: newer.from, modifiedAt: newer.modifiedAt } } : { offered })
+  // Mit Ort in Worten und ob das alte Mietfuchs noch läuft (Praxistest M: dann „Altes Mietfuchs beenden“ im Hinweis)
+  res.json(newer ? {
+    offered,
+    newer: { from: newer.from, modifiedAt: newer.modifiedAt, place: placeOf(newer.from, process.platform), running: runningFor(newer.from, await oldInstance(), process.platform) },
+  } : { offered })
 })
 
 app.get('/api/relocation/candidates', async (req, res) => {
   if (!relocationAvailable()) return res.json({ offered: false })
-  res.json({ offered: await relocationOffered(), ownStock: await hasOwnStock(), ...await findCandidates() })
+  // `fresh`: „Erneut suchen“ sucht wirklich neu statt der eine Minute gemerkten Funde (Praxistest G); `store` für den Weg
+  // zur neuesten Version, wenn ein Fund aus einer neueren stammt (Praxistest I)
+  res.json({ offered: await relocationOffered(), ownStock: await hasOwnStock(), store: RELOCATION_FROM_STORE, ...await findCandidates(req.query.fresh === '1') })
 })
 
 async function searchCandidates(): Promise<{ candidates: RelocationCandidate[], searched: boolean, complete: boolean }> {
@@ -3463,7 +3469,8 @@ app.post('/api/relocation/inspect', async (req, res) => {
   if (choice && 'backup' in choice) return res.json({ backup: { id: placeId(choice.backup, 'backup'), name: path.basename(choice.backup) } })
   const dataDir = choice?.dataDir ?? null
   if (!dataDir || samePath(dataDir, DATA_DIR, process.platform)) {
-    return res.status(404).json({ error: 'Dort hat Mietfuchs keine Daten gefunden. Wählen Sie die bisherige Programmdatei, den Ordner, in dem sie liegt (darin liegt ein Ordner „data“), oder ein Backup.' })
+    // Passend zum Knopf „Ordner der alten Programmdatei wählen …“ (Praxistest G)
+    return res.status(404).json({ error: 'In diesem Ordner liegen keine Mietfuchs-Daten. Wählen Sie den Ordner, in dem Ihre alte Mietfuchs-Programmdatei liegt.' })
   }
   const marker = readMovedMarker(dataDir)
   if (marker) return res.status(409).json({ error: `Die Daten in diesem Ordner sind schon umgezogen (am ${movedDate(marker.at)} nach ${marker.movedTo}).` })
@@ -3613,8 +3620,9 @@ async function runAdopt(res: Response, folder: string, mode: AdoptMode): Promise
     reply = { status: result.ok ? 200 : 500, body: result }
   } catch (err) {
     const full = diskFullMessage(err)
+    // Ein Abbruch ist kein Fehler; die Oberfläche zeigt ihn neutral (Praxistest K-05)
     reply = err instanceof AdoptRefusal
-      ? { status: 400, body: { error: err.message } }
+      ? { status: 400, body: { error: err.message, ...(err.message === ADOPT_CANCELLED ? { cancelled: true } : {}) } }
       : { status: 500, body: { error: switched
           ? `Beim Übernehmen ist ein Fehler aufgetreten: ${full ?? messageOf(err)}. Ihre bisherigen Daten im alten Ordner sind unverändert. Arbeiten Sie bitte vorerst dort weiter und melden Sie den Fehler.`
           : copyErrorText(err) } }
@@ -3709,8 +3717,8 @@ async function adoptFolder(folder: string, staging: string, stagedDatabase: stri
   if (!kind) throw new AdoptRefusal(`In diesem Ordner liegen keine Daten, die sich übernehmen lassen. ${ADOPT_UNCHANGED}`)
   const counts = await originalCounts(folder, kind)
   if (!counts) {
-    throw new AdoptRefusal(`Die ${kind === 'json' ? 'Datei db.json' : 'Datenbank'} im alten Ordner lässt sich nicht lesen. ${ADOPT_UNCHANGED} ` +
-      'Öffnen Sie das alte Mietfuchs und laden Sie in den Einstellungen ein Backup herunter; das können Sie hier einspielen.')
+    // Praxistest J: Das alte Mietfuchs öffnet eine beschädigte Datei ebenso wenig; ein Backup von dort gibt es dann nicht
+    throw new AdoptRefusal(damagedStockText(kind, (await describeCandidate(folder)).priorVersions))
   }
   const receipts = filesIn(path.join(folder, 'uploads'))
   const designs = filesIn(designDir(folder), isDesignFileName)
@@ -3868,7 +3876,8 @@ async function adoptFolder(folder: string, staging: string, stagedDatabase: stri
     return { ok: false, notes, error: `Die Daten wurden kopiert, aber im neuen Mietfuchs ist nicht alles angekommen. ${after ?? notes.join(' ')} Ihre bisherigen Daten im alten Ordner sind unverändert. Arbeiten Sie bitte vorerst dort weiter und melden Sie den Fehler.` }
   }
   if (fs.existsSync(path.join(folder, PRIOR_DIR)) || fs.readdirSync(folder).some((n) => n.startsWith('mietfuchs.sqlite.vor-'))) {
-    notes.push(`Die automatischen Vorversionen und die Sicherungen vor Updates bleiben im bisherigen Ordner (${folder}); hier legt Mietfuchs ab jetzt eigene an.`)
+    // Ohne Pfad und ohne Fachwort (Praxistest B-03): Der Ort steht schon im Vermerk im alten Ordner
+    notes.push('Ältere Sicherungen bleiben im alten Ordner. Behalten Sie diesen Ordner deshalb noch eine Weile; löschen können Sie die alte Programmdatei und ihre Verknüpfung.')
   }
   if (skippedDesigns.length > 0) {
     notes.push(`${skippedDesigns.map((n) => `„${n}“`).join(', ')} ließ sich nicht als Logo oder Briefpapier lesen und blieb im alten Ordner; wählen Sie es in den Einstellungen bitte neu.`)
@@ -4876,7 +4885,7 @@ if (startDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, startDe
 // geändert wird hier ohnehin nichts (423).
 const OPEN_DIR = MOVED_AWAY ? movedView(DATA_DIR) : DATA_DIR
 try {
-  database = await openDatabase({ dataDir: OPEN_DIR })
+  database = await openDatabase({ dataDir: OPEN_DIR, fromStore: RELOCATION_FROM_STORE })
 } catch (err) {
   openProblem = messageOf(err)
 }
