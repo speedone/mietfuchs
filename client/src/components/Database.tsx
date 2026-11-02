@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { api, ApiError } from '../api'
+import { api, ApiError, errorText } from '../api'
 import { MOBILE_QUERY, useMediaQuery } from './MobileNav'
 import { databaseHint, DISMISS_KEY, UPDATE_DISMISS_KEY, updateHint, type HealthReport } from '../database'
 import type { DatabaseState } from '../types'
@@ -36,12 +36,61 @@ function remember(key: string, value: string): void {
   }
 }
 
-export default function DatabaseNotice({ onClosed, quit }: {
+// Ein Backup einspielen, wenn sich die Datenbank nicht öffnen lässt (Durchsicht vor 0.15.0, Daten 6): Ohne Datenbank
+// laden die Einstellungen nicht, und die Meldung rät genau dazu. Die Datei, die sich nicht öffnen ließ, legt der Server
+// vorher als mietfuchs.sqlite.vor-restore beiseite (restoreDatabase in server/src/index.ts); verloren geht nichts.
+function ClosedRestore({ reloadPage }: { reloadPage: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState('')
+  async function restore(file: File) {
+    setBusy(true)
+    setMessage('')
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const answer = await api<{ notes?: string[] }>('/api/restore', { method: 'POST', body: fd })
+      const notes = answer?.notes ?? []
+      if (notes.length > 0) {
+        setMessage(`Backup eingespielt. ${notes.join(' ')}`)
+        setBusy(false)
+        return
+      }
+      reloadPage()
+    } catch (e) {
+      setMessage(`Das Backup ließ sich nicht einspielen: ${errorText(e)}`)
+      setBusy(false)
+    }
+  }
+  return (
+    <>
+      <p className="mt-3">
+        Haben Sie ein Backup (eine ZIP-Datei)? Dann können Sie es hier einspielen. Die Datei, die sich gerade nicht öffnen
+        lässt, bleibt daneben erhalten.
+      </p>
+      <div className="row mt-2">
+        <label className="btn secondary">
+          Backup einspielen …
+          <input
+            type="file"
+            accept=".zip,application/zip"
+            className="sr-only"
+            disabled={busy}
+            onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void restore(f) }}
+          />
+        </label>
+      </div>
+      {message && <p className="mt-2" role="alert">{message}</p>}
+    </>
+  )
+}
+
+export default function DatabaseNotice({ onClosed, quit, reloadPage = () => window.location.reload() }: {
   // Ob die Datenbank geschlossen ist (Praxistest O): Dann blendet App.tsx die Seite aus, deren Fehlerkasten sonst
   // denselben Grund ein zweites Mal rot zeigte
   onClosed?: (closed: boolean) => void
   // „Mietfuchs beenden“, wo es das gibt (App.tsx, `canQuit`); steht im Hinweis, wenn die Datenbank geschlossen ist
   quit?: ReactNode
+  reloadPage?: () => void
 } = {}) {
   const [report, setReport] = useState<HealthReport | null>(null)
   // Am Handy steht „Verstanden“ unter dem Text statt daneben (Praxistest N-01-390)
@@ -107,6 +156,7 @@ export default function DatabaseNotice({ onClosed, quit }: {
             <h2>{hint.kind === 'closed' ? 'Mietfuchs kann Ihre Daten gerade nicht öffnen' : hint.kind === 'done' ? 'Ihre Daten sind umgezogen' : hint.kind === 'stale' ? 'Im Datenordner liegt noch eine alte Datei' : 'Der Umstieg der Daten ist nicht gelungen'}</h2>
             <p>{hint.message}</p>
             {hint.notes.map((note) => <p key={note} className="muted">{note}</p>)}
+            {closed && <ClosedRestore reloadPage={reloadPage} />}
             {closed && quit && <div className="row mt-3">{quit}</div>}
             {mobile && hintButton && <div className="row mt-3">{hintButton}</div>}
           </div>

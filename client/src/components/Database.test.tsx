@@ -213,3 +213,30 @@ test('am Handy steht „Verstanden“ unter dem Text', async () => {
   await screen.findByText(/Sie finden sie unter Verlauf/)
   expect(screen.getByRole('button', { name: 'Verstanden' }).closest('.db-notice-body')).toBeTruthy()
 })
+
+// Durchsicht vor 0.15.0 (Daten, 6): Ohne Datenbank laden die Einstellungen nicht, und die Meldung rät zum Backup. Der
+// Weg dorthin steht deshalb im Hinweis selbst. Die Datei, die sich nicht öffnen ließ, legt der Server beim Einspielen
+// als mietfuchs.sqlite.vor-restore beiseite (restoreDatabase), es geht also nichts verloren.
+test('ohne Datenbank: ein Backup lässt sich direkt im Hinweis einspielen', async () => {
+  const posted: { url: string, body: unknown }[] = []
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (init?.method === 'POST') {
+      posted.push({ url: String(url), body: init.body })
+      return new Response('{"notes":[]}', { status: 200, headers: { 'content-type': 'application/json' } })
+    }
+    return new Response(JSON.stringify({
+      status: 'error',
+      database: { open: false, file: 'C:\\x\\mietfuchs.sqlite', migrations: 0, detail: 'Die Datenbank ist beschädigt.', changeover: { state: 'none', message: '', notes: [] }, migrated: null },
+    }), { status: 503, headers: { 'content-type': 'application/json' } })
+  })
+  const reloadPage = vi.fn()
+  render(<DatabaseNotice reloadPage={reloadPage} />)
+  await screen.findByText('Die Datenbank ist beschädigt.')
+  const box = screen.getByRole('heading', { name: 'Mietfuchs kann Ihre Daten gerade nicht öffnen' }).closest('section') as HTMLElement
+  expect(box.textContent).toMatch(/bleibt daneben erhalten/)
+  const input = screen.getByLabelText('Backup einspielen …') as HTMLInputElement
+  fireEvent.change(input, { target: { files: [new File(['zip'], 'mietfuchs-backup.zip', { type: 'application/zip' })] } })
+  await waitFor(() => expect(reloadPage).toHaveBeenCalled())
+  expect(posted.map((p) => p.url)).toEqual(['/api/restore'])
+  expect(posted[0]?.body).toBeInstanceOf(FormData)
+})
