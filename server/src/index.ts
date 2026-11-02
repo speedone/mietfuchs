@@ -2860,7 +2860,9 @@ async function restoreDatabase(prepared: string | null, barrier: 'restore' | 'pr
   const target = databaseFile(DATA_DIR)
   // Ab hier heißt die geprüfte Kopie `restore-<id>`: Scheitert der Austausch, kann sie die einzige Kopie der neuen Daten
   // sein, und das Aufräumen beim Start lässt sie liegen (restoreFiles.ts, Durchsicht Daten K2)
-  const staged = prepared ? exchangeName(prepared) : null
+  const staged = prepared ? await exchangeName(prepared) : null
+  // Testgriff für den gescheiterten Austausch (Durchsicht vor dem PR, Daten M3): nichts ist getauscht
+  if (process.env.NKA_TEST_FAIL_EXCHANGE === '1') throw new Error('Austausch für den Test gescheitert')
 
   // **Erst aus der Nahtstelle nehmen, dann leerlaufen lassen, dann schließen.** Die Reihenfolge
   // ist die ganze Zusage. Ab dem `null` bekommt jede neue Anfrage ihre 503 statt einer
@@ -3768,24 +3770,28 @@ async function adoptFolder(folder: string, staging: string, stagedDatabase: stri
   const at = new Date().toISOString()
   // Vor dem Umschalten festhalten, was übernommen wird; endet das Fenster danach, holt der nächste Start Entscheidung und
   // Vermerk nach (Durchsicht Daten K3)
-  writePending(DATA_DIR, { version: 1, at, from: folder, staged: path.basename(stagedDatabase), ...(mark ? { source: mark } : {}) })
+  const pending = { version: 1 as const, at, from: folder, staged: path.basename(stagedDatabase), ...(mark ? { source: mark } : {}) }
+  writePending(DATA_DIR, pending)
   if (process.env.NKA_TEST_EXIT_BEFORE_SWITCH === '1') process.exit(9)
   adoptProgress = { ...adoptProgress, phase: 'switch' }
   onSwitch()
-  if (SWITCH_DELAY_MS > 0) await new Promise((resolve) => setTimeout(resolve, SWITCH_DELAY_MS))
   // Der Papierkorb vor dem Einspielen: Danach gleicht reconcileAfterRestore Belege und Papierkorb mit dem Bestand ab
   for (const store of new Set(trashFiles.map((f) => f.store))) fs.mkdirSync(trashDir(DATA_DIR, store), { recursive: true })
   for (const { store, fileName, staged } of trashFiles) {
     const target = path.join(trashDir(DATA_DIR, store), fileName)
     if (!fs.existsSync(target)) await moveIntoPlace(staged, target)
   }
+  if (SWITCH_DELAY_MS > 0) await new Promise((resolve) => setTimeout(resolve, SWITCH_DELAY_MS))
   // Über einen eigenen Bestand gelten die Zustimmungen von jetzt: Hier sind die neueren
   const notes = await applyBackup({ dbText: null, files, designFiles, database: null, origin: folder }, stagedDatabase, mode === 'first' ? 'archive' : 'now',
     mode === 'again' ? 'Neueren Stand aus dem bisherigen Mietfuchs übernommen' : 'Daten aus dem bisherigen Mietfuchs übernommen')
   if (process.env.NKA_TEST_EXIT_AFTER_SWITCH === '1') process.exit(9)
   // Gleich nach dem Umschalten: Endet das Fenster vor dem Vermerk, holt der nächste Start ihn nach (Durchsicht D1)
+  // Nur wenn wirklich umgeschaltet ist (Durchsicht vor dem PR, Daten M3): applyBackup fängt einen gescheiterten Austausch ab
+  // und wirft nicht. Ohne Umschalten keine Entscheidung, sonst setzte der nächste Start den Vermerk in den alten Ordner,
+  // in dem weitergearbeitet werden soll.
   try {
-    writeDecision(DATA_DIR, { version: 1, decision: 'moved', at, from: folder, ...(mark ? { source: mark } : {}) })
+    if (switchedOver(DATA_DIR, pending)) writeDecision(DATA_DIR, { version: 1, decision: 'moved', at, from: folder, ...(mark ? { source: mark } : {}) })
     clearPending(DATA_DIR)
   } catch (err) {
     console.error(`Die Entscheidung zum Umzug ließ sich nicht festhalten: ${messageOf(err)}`)
@@ -3873,6 +3879,9 @@ async function checkPriorVersion(pruneToo = false): Promise<void> {
 // braucht kein Rücksprung. Nur mit einer Datenbank, die den Bestand trägt (sonst wüsste niemand, was noch genannt
 // ist). Wirft nie.
 async function emptyTrash(): Promise<void> {
+  // Nicht während eines Wiederherstellens oder einer Übernahme: Der übernommene Papierkorb liegt dann schon da, die
+  // Datenbank, die ihn nennt, noch nicht (Durchsicht vor dem PR, Daten K1)
+  if (restoreRunning) return
   try {
     if (!database || databaseUnavailable(databaseState()) !== null) return
     const keep = await database.read((db) => trashKeep(db))
@@ -4754,8 +4763,10 @@ if (STANDALONE && !MOVED_AWAY) {
   if (writeRunFile(DATA_DIR, { version: 1, port: self.port, pid: process.pid, startedAt: new Date().toISOString(), appVersion: APP_VERSION })) {
     process.on('exit', () => removeRunFile(DATA_DIR, process.pid))
     // Ohne Handler beendete ein Signal den Prozess, ohne dass `exit` liefe
+    // Geordnet über shutDown wie /api/quit (Durchsicht vor dem PR, K4): Schlange leerlaufen, laufendes Wiederherstellen
+    // abwarten, dann `exit`
     for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP'] as const) {
-      if (process.listenerCount(signal) === 0) process.once(signal, () => process.exit(signal === 'SIGINT' ? 130 : 143))
+      if (process.listenerCount(signal) === 0) process.once(signal, shutDown)
     }
   }
 }
@@ -4769,6 +4780,8 @@ if (STANDALONE && !MOVED_AWAY) {
 // nach. Nicht umgeschaltet: Es gilt, was vorher galt.
 if ((RUNTIME === 'desktop' || RUNTIME === 'store') && !MOVED_AWAY) {
   const pending = readPending(DATA_DIR)
+  // Eine unlesbare Datei bliebe sonst für immer liegen (Durchsicht vor dem PR, K7); entschieden wird dann nichts
+  if (!pending) clearPending(DATA_DIR)
   if (pending) {
     try {
       if (switchedOver(DATA_DIR, pending)) {

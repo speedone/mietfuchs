@@ -78,10 +78,27 @@ export const stagedCopyName = (databaseFile: string, id: string): string => `${d
 // Unmittelbar vor dem Austausch: Ab jetzt kann die Kopie die einzige der neuen Daten sein und heißt deshalb
 // `restore-<id>`, wie es die Meldung nach einem gescheiterten Austausch nennt (restoreFailedNote in index.ts). Ein
 // Name anderer Gestalt bleibt, wie er ist.
-export function exchangeName(staged: string): string {
+//
+// **Mit Wiederholungen und zur Not als Kopie** (Durchsicht vor dem PR, Daten M2): Unter Windows hält ein Virenscanner die
+// eben migrierte Kopie gern einen Augenblick fest. Wirft es hier, ist noch nichts getauscht, aber Belege und db.json
+// lägen schon an ihrem Platz. Gelesen werden kann die Kopie auch dann.
+export async function exchangeName(staged: string, ops: MoveOps = {}): Promise<string> {
   const target = staged.replace(/\.kopie-([0-9a-f]{16})$/, '.restore-$1')
   if (target === staged) return staged
-  fs.renameSync(staged, target)
+  const rename = ops.rename ?? fs.renameSync
+  const pauseMs = ops.pauseMs ?? 100
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      rename(staged, target)
+      return target
+    } catch {
+      if (attempt < 5) await pause(pauseMs)
+    }
+  }
+  fs.copyFileSync(staged, target)
+  try {
+    (ops.remove ?? ((file: string) => fs.rmSync(file, { force: true })))(staged)
+  } catch { /* die Kopie unter altem Namen räumt der nächste Start weg */ }
   return target
 }
 
@@ -101,7 +118,8 @@ export function cleanRestoreLeftovers(dataDir: string): void {
     const snapshot = e.isFile() && /^mietfuchs\.sqlite\.[0-9a-f]{16}\.backup(?:-journal|-wal|-shm)?$/.test(e.name)
     // Die Kopie, an der die Vorschau zum Einspielen einer Sicherung prüft (#318, db/snapshotPreview.ts).
     const preview = e.isFile() && /^mietfuchs\.sqlite\.vorschau-[0-9a-f]{16}(?:-journal|-wal|-shm)?$/.test(e.name)
-    const copy = e.isFile() && STAGED_COPY.test(e.name)
+    // Dazu die Zwischendatei der Lauf-Datei nach einem Absturz zwischen Schreiben und Umbenennen (instanceGuard.ts)
+    const copy = e.isFile() && (STAGED_COPY.test(e.name) || /^mietfuchs\.laeuft\.json\.\d+\.tmp$/.test(e.name))
     if (!upload && !staging && !snapshot && !preview && !copy) continue
     try {
       fs.rmSync(path.join(dataDir, e.name), { recursive: true, force: true })
