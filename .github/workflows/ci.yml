@@ -29,15 +29,16 @@ jobs:
         with:
           # Für den Vergleich mit dem Ziel des PR (Schritt „Umfang“) die ganze Geschichte
           fetch-depth: 0
-      # Ein PR, der nur Markdown ändert (Changelog, CLAUDE.md, Doku), braucht keinen Build: Es laufen nur die
-      # Server-Tests, denn einige lesen Changelog und READMEs (calibration.test.ts, migrations.test.ts, die
-      # Golden-Tests). Die Prüfung bleibt Pflicht und heißt gleich, damit die Regel „main schützen“ greift.
-      # Ein Push auf main prüft immer alles.
+      # Ein PR, der nur Markdown ändert (Changelog, CLAUDE.md, Doku), braucht keinen Build und nicht die ganze Suite:
+      # Es laufen nur die Tests, die Markdown lesen (DOC_TESTS: Geviertstriche, Anrede, Sätze in Changelog und
+      # CLAUDE.md, Store-Eintrag), in rund zwei Minuten statt zwanzig. Wer einen Test ergänzt, der eine .md-Datei liest,
+      # trägt ihn dort ein (Test „CI: …“ in workflow-store.test.ts). Die Prüfung bleibt Pflicht und heißt gleich, damit
+      # die Regel „main schützen“ greift. Ein Push auf main prüft immer alles.
       - name: Umfang
         id: scope
         run: |
           if [ "${{ github.event_name }}" = pull_request ] && ! git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -qv '\.md$'; then
-            echo "Nur Markdown geändert: nur die Server-Tests."
+            echo "Nur Markdown geändert: nur die Tests, die Markdown lesen."
             echo "docs=true" >> "$GITHUB_OUTPUT"
           fi
       - uses: actions/setup-node@v7
@@ -49,6 +50,10 @@ jobs:
           cache-dependency-path: '**/package-lock.json'
       # npm install (nicht ci): postinstall installiert Server + Client mit.
       - run: npm install
+        if: steps.scope.outputs.docs != 'true'
+      - name: Server installieren (nur Markdown geändert)
+        if: steps.scope.outputs.docs == 'true'
+        run: npm --prefix server ci --ignore-scripts
       # Das Programmfenster (#517) installiert npm install nicht mit; die Typprüfung verlangt es in der CI
       - name: Programmfenster installieren
         if: steps.scope.outputs.docs != 'true'
@@ -59,9 +64,12 @@ jobs:
       # Tests der Berechnungs-Engine (node:test) und der Oberfläche (vitest)
       - run: npm test
         if: steps.scope.outputs.docs != 'true'
-      - name: Server-Tests (nur Markdown geändert)
+      - name: Doku-Tests (nur Markdown geändert)
         if: steps.scope.outputs.docs == 'true'
-        run: npm run test:server
+        working-directory: server
+        env:
+          DOC_TESTS: test/geviertstrich.test.ts test/anrede.test.ts test/calibration.test.ts test/store-submit.test.ts
+        run: node --test $DOC_TESTS
       # Typecheck (tsc --noEmit) + Vite-Build
       - run: npm run build
         if: steps.scope.outputs.docs != 'true'
