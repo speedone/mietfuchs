@@ -143,6 +143,9 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
 
 ## Programmfenster (#517)
 
+- **Mindestversionen:** macOS 13 (Ventura) laut README von Electron 45 („macOS (Ventura and up)“); Electron 44 hat
+  macOS 12 verlassen. Wer Electron anhebt, prüft das dort und zieht README und Release-Notes nach. Auf älteren Macs
+  bleibt die Bun-Programmdatei.
 - **Electron nur als Fenster** ([../desktop/](../desktop/), eigenes Paket mit eigenem Lockfile; `npm install` installiert es
   **nicht** mit, das Docker-Image kennt den Ordner nicht, sondern `npm --prefix desktop install`. Ohne Installation
   überspringt `npm run typecheck` das Fenster mit Hinweis, in der CI ist das ein Fehler): Der Server läuft mit
@@ -156,7 +159,7 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   daraus statt von der Platte. Aus den Quellen (rund 470 Dateien, Typen abstreifen) kostete der Start ein bis drei
   Sekunden mehr, und die Tausende Dateien aus Quellen und node_modules prüft der Echtzeitschutz unter Windows beim
   Installieren einzeln. **Warum in der asar** (Fund auf einem echten Rechner): Offen unter `resources/mietfuchs`
-  stufte die Malware-Prävention von HP Wolf Security (KI-Erkennung) `server.mjs` als Schadcode ein und blockierte es,
+  stufte die Malware-Prävention eines Virenschutzprogramms mit KI-Erkennung `server.mjs` als Schadcode ein und blockierte es,
   der Start scheiterte mit `EPERM`. Electron empfiehlt beides: „we heavily recommend that you bundle all your code into
   one single file“ ([Performance, 7. Bundle your code](https://www.electronjs.org/docs/latest/tutorial/performance)),
   und die asar „to improve the performance of reading files on platforms like Windows“
