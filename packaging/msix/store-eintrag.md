@@ -32,11 +32,14 @@ Standort. Ergibt „ab 3“ (USK 0).
 
 ## Einreichungsoptionen: Begründung für runFullTrust
 
-> Mietfuchs is a desktop application (Win32, packaged with the MSIX packaging tool) that runs a
-> local web server on 127.0.0.1 and shows its user interface in the user's browser. It needs
-> runFullTrust to run as a regular desktop process, to bind a local port and to store the user's
-> data in %USERPROFILE%\Mietfuchs. It does not install drivers or services and does not modify
-> other applications.
+> Mietfuchs is a desktop application (Win32, built with Electron, packaged as MSIX) that shows its
+> user interface in its own application window; no browser is needed. Inside the app, a helper
+> process of Mietfuchs.exe runs a local server on 127.0.0.1 that the window displays. Only if the
+> user enables "access from the home network" in the settings is it reachable from other devices
+> in the local network. It needs runFullTrust to run as a regular desktop process with this helper
+> process, to bind a local port and to store the user's data in %USERPROFILE%\Mietfuchs, outside
+> the package, so the data survives uninstalling. It does not install drivers or services and
+> does not modify other applications.
 
 ## Beschreibung (Deutsch)
 
@@ -51,7 +54,8 @@ Sie erfassen Wohnungen, Mieter und Vorauszahlungen, legen Rechnungen als Beleg a
 Zählerstände ein. Am Jahresende rechnet Mietfuchs jede Kostenart nach dem passenden Schlüssel um und
 druckt für jeden Mieter eine fertige Abrechnung mit Anschreiben.
 
-Mietfuchs läuft vollständig auf Ihrem Rechner. Es gibt kein Konto, keine Anmeldung und keine Cloud;
+Mietfuchs läuft vollständig auf Ihrem Rechner, in einem eigenen Programmfenster, ohne Browser. Es gibt
+kein Konto, keine Anmeldung und keine Cloud;
 Ihre Daten liegen im Ordner Mietfuchs in Ihrem Benutzerordner und bleiben auch bei einer Deinstallation
 erhalten.
 
@@ -68,8 +72,9 @@ Mietfuchs ist freie Software (AGPL-3.0) und kostenlos. Es unterstützt Sie bei d
 keine Rechts- oder Steuerberatung; prüfen Sie die Ergebnisse, bevor Sie eine Abrechnung versenden.
 Mietfuchs wird ohne Gewähr bereitgestellt, soweit das Gesetz es zulässt. Mehr unter mietfuchs-app.de.
 
-Sie nutzen bisher die heruntergeladene Programmdatei? Laden Sie dort unter Einstellungen ein Backup
-herunter und spielen Sie es in der App aus dem Store unter Einstellungen wieder ein.
+Sie nutzen bisher die heruntergeladene Programmdatei? Beim ersten Start sucht Mietfuchs Ihre bisherigen
+Daten und übernimmt sie mit einem Klick auf „Daten übernehmen“ als Kopie; Ihr bisheriger Ordner bleibt
+erhalten. Findet es sie nicht, wählen Sie den Ordner der alten Programmdatei oder spielen ein Backup ein.
 
 **Funktionen** (je eine Zeile)
 
@@ -79,6 +84,7 @@ herunter und spielen Sie es in der App aus dem Store unter Einstellungen wieder 
 - Mietkonto, Fristen und Hinweise
 - Übersicht für die Anlage V
 - Läuft lokal, ohne Konto und ohne Cloud
+- Eigenes Programmfenster, kein Browser nötig
 
 **Suchbegriffe**: Nebenkostenabrechnung, Betriebskostenabrechnung, Nebenkosten, Vermieter,
 Heizkostenabrechnung, Mieter, Anlage V

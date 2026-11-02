@@ -35,8 +35,10 @@ bitte in Schritte teilen, die sich einzeln prüfen und zusammenführen lassen.
 1. Fork anlegen, Branch von `main`, **eine Sache pro Pull Request**.
 2. Bezug zum Issue mit `Refs #N` in der PR-Beschreibung oder Commit-Nachricht - nicht mit
    `Fixes #N`: Issues werden erst geschlossen, wenn die Änderung in einem Release erscheint.
-3. `npm test` und `npm run build` müssen grün sein; die CI prüft beides.
-4. Ein Eintrag im [CHANGELOG.md](CHANGELOG.md) unter „Unveröffentlicht".
+3. Vor jedem Commit `npm run typecheck`: Der Server läuft ohne Build-Schritt, einen Typfehler
+   merkt sonst niemand, und einen Linter gibt es nicht. `npm test` und `npm run build` müssen
+   ebenfalls grün sein; die CI prüft alle drei.
+4. Ein Eintrag im [CHANGELOG.md](CHANGELOG.md) unter „Unveröffentlicht“.
 5. Sprache: Bezeichner im Code sind englisch, also Variablen, Funktionen, Typen, Datei- und
    Ordnernamen, Umgebungsvariablen und API-Routen, auch für Fachliches (`computeSettlement`).
    Deutsch sind Kommentare, Oberflächentexte, Fehlermeldungen, Testnamen, Commit-Nachrichten
@@ -46,6 +48,22 @@ bitte in Schritte teilen, die sich einzeln prüfen und zusammenführen lassen.
    [CLAUDE.md](CLAUDE.md).
 
 Beitragende werden im Changelog und in den Release-Notes genannt.
+
+## Das Programmfenster (`desktop/`)
+
+Das Programm für Windows und macOS (Electron) ist ein eigenes Paket in `desktop/` mit eigenem
+Lockfile; `npm install` im Wurzelordner installiert es nicht mit. Wer daran arbeitet:
+
+```powershell
+npm --prefix desktop install   # einmalig
+npm run build                  # die Oberfläche, die das Fenster zeigt
+npm run desktop                # Fenster mit dem Server aus dem Quellcode, Daten in server/data
+```
+
+Der Code dort bleibt JavaScript und wird von `npm run typecheck` mitgeprüft; ohne
+`npm --prefix desktop install` überspringt der Lauf das Fenster mit einem Hinweis, in der CI ist das
+ein Fehler. Die Tests in `desktop/test` laufen mit `npm test` und brauchen keine Installation.
+Bau, Installer und Updates beschreibt [scripts/CLAUDE.md](scripts/CLAUDE.md) unter „Programmfenster“.
 
 ## Änderungen an der Berechnung
 

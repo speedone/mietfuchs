@@ -144,8 +144,9 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
 ## Programmfenster (#517)
 
 - **Mindestversionen:** macOS 13 (Ventura) laut README von Electron 45 („macOS (Ventura and up)“); Electron 44 hat
-  macOS 12 verlassen. Wer Electron anhebt, prüft das dort und zieht README und Release-Notes nach. Auf älteren Macs
-  bleibt die Bun-Programmdatei.
+  macOS 12 verlassen. Wer Electron anhebt, prüft das dort und zieht README und Release-Notes nach. Die
+  Bun-Programmdatei ist für ältere Macs kein Ausweg: Bun verlangt ebenfalls macOS 13 („Bun requires macOS 13.0 or later“,
+  docs/installation.mdx im Bun-Repo).
 - **Electron nur als Fenster** ([../desktop/](../desktop/), eigenes Paket mit eigenem Lockfile; `npm install` installiert es
   **nicht** mit, das Docker-Image kennt den Ordner nicht, sondern `npm --prefix desktop install`. Ohne Installation
   überspringt `npm run typecheck` das Fenster mit Hinweis, in der CI ist das ein Fehler): Der Server läuft mit
@@ -473,8 +474,8 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   macOS als Zip, Linux als tar.gz (Ausführungsbit), Windows roh. **Die Namen der x64-Dateien bleiben
   fest**, der Update-Hinweis älterer Versionen sucht sie. Dazu das Programmfenster (#517):
   `Mietfuchs-Setup-<Version>.exe`, `Mietfuchs-<Version>-apple-silicon.dmg` und `-intel.dmg`. Die
-  Programmdateien für Windows und macOS bleiben daneben: für Macs vor macOS 13, die das Fenster nicht mehr
-  starten, und für alle, die ohne Installation arbeiten. Die Daten neben einer Programmdatei holt das
+  Programmdateien für Windows und macOS bleiben daneben als Brücke (geplant bis 0.17, #517) für alle, die
+  ohne Installation arbeiten; Macs vor macOS 13 starten auch sie nicht (Bun verlangt macOS 13). Die Daten neben einer Programmdatei holt das
   Fenster beim ersten Start selbst (Umzug, server/src/CLAUDE.md); laufen beide auf demselben Ordner,
   startet das zweite nicht (Lauf-Datei, server/src/CLAUDE.md, „Zwei Mietfuchs auf demselben Datenordner“).
 - **Bei jeder Nebenversion kommt ein Eintrag in `RELEASE_STEPS`** ([server/src/db/releaseSteps.ts](../server/src/db/releaseSteps.ts),
