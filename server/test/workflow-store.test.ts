@@ -53,3 +53,46 @@ test('Store: ausgecheckt wird der Stand des Workflows, nicht der Tag des nachger
   const step = yml.slice(start, yml.indexOf('\n      - ', start))
   assert.doesNotMatch(step, /ref:/)
 })
+
+// Prüfsummen und Herkunftsnachweis am Release: SHA256SUMS.txt muss genau die Dateien nennen, die angehängt werden,
+// sonst fehlt für eine Datei die Prüfsumme und mit ihr der Herkunftsnachweis (der liest dieselbe Liste).
+const publishJob = () => {
+  const yml = read('release.yml')
+  const start = yml.indexOf('\n  veroeffentlichen:')
+  if (start < 0) return assert.fail('Job „veroeffentlichen“ fehlt in release.yml')
+  return yml.slice(start, yml.indexOf('\n  # ', start + 1))
+}
+const stepOf = (job: string, marker: string) => {
+  const at = job.indexOf(marker)
+  if (at < 0) return assert.fail(`${marker} fehlt im Job „veroeffentlichen“`)
+  const begin = job.lastIndexOf('\n      - ', at)
+  const end = job.indexOf('\n      - ', at)
+  return job.slice(begin, end < 0 ? undefined : end)
+}
+const patterns = (block: string) => [...block.matchAll(/^\s+((?:dist-bin|dist-desktop)\/\S+)$/gm)].map((m) => m[1]).sort()
+
+test('Release: SHA256SUMS.txt nennt jede angehängte Datei', () => {
+  const job = publishJob()
+  const sums = stepOf(job, '- name: Prüfsummen bilden')
+  const uploads = [...job.matchAll(/uses: softprops\/action-gh-release@[\s\S]*?files: ?(\|[\s\S]*?\n {10}\w|\S+)/g)]
+    .flatMap((m) => [...(m[1] ?? '').matchAll(/(?:dist-bin|dist-desktop)\/\S+/g)].map((f) => f[0]))
+    .sort()
+  assert.ok(uploads.length >= 11, `angehängte Dateien nicht gefunden: ${uploads.join(', ')}`)
+  assert.deepEqual(patterns(sums), uploads)
+  // Nur mit ausdrücklichem `shell: bash` setzt GitHub pipefail; sonst bliebe ein nicht passendes Muster unbemerkt, weil
+  // sed am Ende der Pipe gelingt, und SHA256SUMS.txt wäre unvollständig
+  assert.match(sums, /\n\s+shell: bash\n/)
+  assert.match(job, /files: \|\n\s+pruefsummen\/SHA256SUMS\.txt\n/, 'SHA256SUMS.txt selbst geht mit ans Release')
+})
+
+test('Release: Prüfsummen nach dem Signieren, Herkunftsnachweis über dieselbe Liste', () => {
+  const job = publishJob()
+  const sign = job.indexOf('scripts/sign-update-manifest.mjs')
+  const sums = job.indexOf('- name: Prüfsummen bilden')
+  const attest = job.indexOf('uses: actions/attest@')
+  assert.ok(sign > 0 && sums > sign, 'latest.yml ändert sich beim Signieren, die Prüfsumme muss danach entstehen')
+  assert.ok(attest > sums)
+  assert.match(stepOf(job, 'uses: actions/attest@'), /subject-checksums: pruefsummen\/SHA256SUMS\.txt/)
+  assert.match(job, /id-token: write/)
+  assert.match(job, /attestations: write/)
+})
