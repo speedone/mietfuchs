@@ -728,7 +728,7 @@ jobs:
             echo "## Automatisches Update auf ${{ matrix.name }}"
             echo '```'
             node -e "const r=require('./update-pruefung/bericht.json'); console.log(JSON.stringify({v1:r.v1,v2:r.v2,jetzt:r['Jetzt-download'],spaeter:r['Später-download'],anfragen:r.requests.length,fehler:r.failures},null,2))" 2>/dev/null || echo 'kein Bericht'
-            grep -h "Full:\|To download\|differential" update-pruefung/updater*.log 2>/dev/null | head -20 || true
+            grep -h "Full:\|To download\|differential" update-pruefung/*updater*.log 2>/dev/null | head -20 || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
       - if: always()
@@ -1055,7 +1055,6 @@ jobs:
             dist-bin/*.pkg.tar.zst
             dist-desktop/Mietfuchs-Setup-*.exe
             dist-desktop/Mietfuchs-Setup-*.exe.blockmap
-            dist-desktop/latest.yml
             dist-desktop/Mietfuchs-*-apple-silicon.dmg
             dist-desktop/Mietfuchs-*-intel.dmg
           fail_on_unmatched_files: true
@@ -1073,6 +1072,13 @@ jobs:
           #
           # Das Docker-Image braucht nichts dergleichen: `docker/metadata-action` mit
           # `latest=auto` vergibt `latest` bei einer Vorabversion von sich aus nicht.
+          prerelease: ${{ contains(github.ref_name, '-') }}
+      # latest.yml zuletzt (#517, Durchsicht K5): Erst damit sehen die Fenster unter Windows die neue Version, und dann
+      # liegen Installer und .blockmap schon am Release. Derselbe Tag, softprops hängt an.
+      - uses: softprops/action-gh-release@v3
+        with:
+          files: dist-desktop/latest.yml
+          fail_on_unmatched_files: true
           prerelease: ${{ contains(github.ref_name, '-') }}
 
   # Das Paket für den Microsoft Store (#500): aus dem Programmfenster (#517) je Architektur ein

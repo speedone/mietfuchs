@@ -276,7 +276,8 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
     app-builder-lib/out/publish/PublishManager.js schreibt die Update-Infos außerhalb von `if (this.isPublish)`;
     `createBlockmap` in NsisTarget.js, weil `differentialPackage` an ist). Ohne Quelle entstand nur die .blockmap
     (geprüft mit `--prepackaged` und dem wine-Ersatz oben). „Programmfenster bauen (Windows)“ prüft beide und lädt
-    sie hoch, „Ans Release anhängen“ hängt sie an. `latest.yml` kennt keine Architektur; der eine Installer für x64
+    sie hoch, „Ans Release anhängen“ hängt sie an, `latest.yml` in einem eigenen Schritt zuletzt (erst dann sehen die
+    Fenster die neue Version, und Installer und .blockmap liegen schon da). `latest.yml` kennt keine Architektur; der eine Installer für x64
     und ARM64 passt dazu.
   - **Keine Signatur**: `win.verifyUpdateCodeSignature: false`, also kein `publisherName` in app-update.yml, und ohne
     ihn prüft NsisUpdater nicht (`verifySignature` in electron-updater/out/NsisUpdater.js). Ein Zertifikat für
@@ -290,14 +291,20 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
     `'on'` zählt. Geprüft wird beim Start, danach höchstens einmal am Tag (Takt eine Stunde), nach einem Fehler nach
     einer Stunde, „Jetzt prüfen“ höchstens einmal pro Minute; das gerade gesetzte Häkchen löst eine Prüfung aus, wenn
     heute noch keine lief. `allowPrerelease` und `allowDowngrade` aus, auch wenn die installierte Fassung eine
-    Vorabversion ist (electron-updater setzt `allowPrerelease` sonst danach), `disableWebInstaller` an.
+    Vorabversion ist (electron-updater setzt `allowPrerelease` sonst danach), `disableWebInstaller` an. **Keine
+    Kennung der Installation**: electron-updater legt sonst `userData/.updaterId` an und schickt sie als
+    `x-user-staging-id` bei jeder Prüfung mit; das Fenster setzt sie auf Nullen (`NO_INSTALLATION_ID`), weil das
+    Häkchen zusagt, dass GitHub nur IP-Adresse und Version sieht.
   - **Installieren**: `autoInstallOnAppQuit` bleibt aus. electron-updater hängt seinen Haken ans `quit`-Ereignis nur,
     wenn der Schalter beim Ende des Downloads an ist (`addQuitHandler` in BaseUpdater.js), und er käme nach
     `before-quit`, ohne Gewähr, dass der Server dann beendet ist. Stattdessen: **„Beim nächsten Start“** merkt die
     Wahl, `before-quit` beendet erst den Server und ruft dann `installOnQuit` (still, ohne anschließenden Start); ohne
     Wahl bleibt die Datei im Zwischenspeicher, und der Hinweis kommt beim nächsten Start ohne neuen Download wieder.
     **„Jetzt neu starten“** beendet den Server über `/api/quit`, dann `install(true, true)` (still, `--force-run`),
-    dann `app.quit`; lässt sich der Installer nicht starten, startet der Server wieder. Der Installer prüft wie immer
+    dann `app.quit`. Vorher prüft es, dass die geladene Datei noch da ist; danach wartet es 1,5 Sekunden auf ein
+    `error` (electron-updater startet den Installer asynchron); scheitert der Start, startet der Server wieder.
+    „Jetzt neu starten“ läuft in derselben Reihe (`restarting`) wie der Neustart für den Heimnetz-Schalter, auf die
+    `before-quit` wartet. Der Installer prüft wie immer
     auf ein laufendes Mietfuchs (`customCheckAppRunning`); der Server ist dann schon beendet. Die Sicherung vor dem
     Migrieren legt der Server beim ersten Start der neuen Version an (`backupBeforeMigrating`), wie bei jedem
     Update. Vom Installer gestartet, läuft Mietfuchs über die Verknüpfung im Startmenü (`ExecShellAsUser` in

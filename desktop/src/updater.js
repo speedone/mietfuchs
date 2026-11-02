@@ -22,6 +22,13 @@ export const ERROR_PAUSE_MS = ONE_HOUR
 export const FORCE_PAUSE_MS = ONE_MINUTE
 // Wie oft das Fenster nachsieht, ob ein Tag um ist
 export const TICK_MS = ONE_HOUR
+// Wie lange „Jetzt neu starten“ nach dem Start des Installers auf einen Fehler wartet: electron-updater startet ihn
+// asynchron und meldet ein Scheitern (Datei weg, Start verweigert) erst danach als Ereignis `error` (NsisUpdater.doInstall)
+export const INSTALL_GRACE_MS = 1500
+// Statt der Kennung, die electron-updater sonst je Installation anlegt (userData/.updaterId) und als
+// `x-user-staging-id` mitschickt (AppUpdater.getUpdateInfoAndProvider): GitHub soll nur IP-Adresse und Version sehen,
+// wie es das Häkchen zusagt (Durchsicht M2). Gestaffelte Freigaben nutzt Mietfuchs nicht.
+export const NO_INSTALLATION_ID = '00000000-0000-0000-0000-000000000000'
 
 /** @typedef {{ kind: 'github' } | { kind: 'feed', url: string } | { kind: 'off', reason: 'store' | 'mac' | 'platform' | 'dev' }} UpdaterSource */
 
@@ -144,7 +151,7 @@ export function shouldOfferMove({ platform, packaged, inApplications, declined, 
 
 /**
  * Die Teile von electron-updater, die die Steuerung braucht (NsisUpdater; in den Tests nachgestellt).
- * @typedef {import('node:events').EventEmitter & { autoDownload: boolean, disableWebInstaller: boolean, autoInstallOnAppQuit: boolean, allowPrerelease: boolean, allowDowngrade: boolean, checkForUpdates: () => Promise<unknown>, install: (isSilent?: boolean, isForceRunAfter?: boolean) => boolean }} Updater
+ * @typedef {import('node:events').EventEmitter & { autoDownload: boolean, disableWebInstaller: boolean, autoInstallOnAppQuit: boolean, allowPrerelease: boolean, allowDowngrade: boolean, requestHeaders?: Record<string, string> | null, checkForUpdates: () => Promise<unknown>, install: (isSilent?: boolean, isForceRunAfter?: boolean) => boolean }} Updater
  */
 
 /**
@@ -155,9 +162,10 @@ export function shouldOfferMove({ platform, packaged, inApplications, declined, 
  * Ob der Server dann schon beendet ist, hinge an der Reihenfolge zweier Ereignisse. Den Schalter erst nach der Wahl
  * zu setzen geht nicht, denn electron-updater hängt seinen Haken nur an, wenn er beim Ende des Herunterladens schon an
  * ist. Deshalb installiert `installOnQuit` selbst, aufgerufen in `before-quit` nach dem Beenden des Servers.
- * @param {{ updater: Updater, source: UpdaterSource['kind'], current: string, readConsent: () => Promise<unknown>, stopServer: () => Promise<void>, resumeServer: () => Promise<void>, quit: () => void, now?: () => number, onState?: (state: UpdaterState) => void, log?: (line: string) => void }} deps
+ * `installerExists` sagt, ob die geladene Datei noch da ist (ein Virenschutz kann sie entfernt haben).
+ * @param {{ updater: Updater, source: UpdaterSource['kind'], current: string, readConsent: () => Promise<unknown>, stopServer: () => Promise<void>, resumeServer: () => Promise<void>, quit: () => void, installerExists?: () => boolean, installGraceMs?: number, now?: () => number, onState?: (state: UpdaterState) => void, log?: (line: string) => void }} deps
  */
-export function createUpdaterController({ updater, source, current, readConsent, stopServer, resumeServer, quit, now = Date.now, onState = () => {}, log = () => {} }) {
+export function createUpdaterController({ updater, source, current, readConsent, stopServer, resumeServer, quit, installerExists = () => true, installGraceMs = INSTALL_GRACE_MS, now = Date.now, onState = () => {}, log = () => {} }) {
   let state = initialUpdaterState(source, current)
   /** @type {number | null} */
   let lastCheckAt = null
@@ -169,6 +177,7 @@ export function createUpdaterController({ updater, source, current, readConsent,
   updater.autoInstallOnAppQuit = false
   updater.allowPrerelease = false
   updater.allowDowngrade = false
+  updater.requestHeaders = { ...(updater.requestHeaders ?? {}), 'x-user-staging-id': NO_INSTALLATION_ID }
 
   /** @param {UpdaterEvent} event */
   const apply = (event) => {
@@ -187,6 +196,9 @@ export function createUpdaterController({ updater, source, current, readConsent,
     log(`Update: ${err instanceof Error ? err.stack ?? err.message : String(err)}`)
     apply({ type: 'error', message: describeUpdaterError(err) })
   })
+
+  // Der Anfangsstand gleich an die Oberfläche (Durchsicht S1): Sie fragt womöglich, bevor es die Steuerung gibt
+  onState(state)
 
   /** @param {{ force?: boolean }} [options] */
   async function check({ force = false } = {}) {
@@ -222,10 +234,19 @@ export function createUpdaterController({ updater, source, current, readConsent,
     async restartNow() {
       if (state.phase !== 'ready') throw new Error('Es liegt keine neue Version bereit.')
       if (restarting) return
+      if (!installerExists()) throw new Error('Die geladene neue Version ist nicht mehr da, vielleicht hat ein Virenschutz sie entfernt. Mietfuchs lädt sie beim nächsten Start neu.')
       restarting = true
       await stopServer()
       log(`Update: Version ${state.version} wird jetzt installiert`)
-      if (!updater.install(true, true)) {
+      // install() startet den Installer asynchron; ein Scheitern kommt danach als `error` (Durchsicht S4)
+      /** @type {unknown} */
+      let failure = null
+      const onError = (/** @type {unknown} */ err) => { failure = err ?? new Error('unbekannt') }
+      updater.on('error', onError)
+      const started = updater.install(true, true)
+      if (started) await new Promise((resolve) => setTimeout(resolve, installGraceMs))
+      updater.off('error', onError)
+      if (!started || failure) {
         restarting = false
         await resumeServer()
         throw new Error('Der Installer der neuen Version ließ sich nicht starten. Mietfuchs läuft weiter wie bisher.')

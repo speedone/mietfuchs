@@ -167,3 +167,11 @@ test('Mac im Fenster (Stand `off`): Anleitung mit dem passenden Abbild statt aut
     serverStatus.downloadUrl = null
   }
 })
+
+// Durchsicht K4: Antwortet die Brücke nicht, gilt der Server, statt dass dauerhaft niemand einen Hinweis zeigt
+test('Durchsicht K4: Brücke antwortet nicht, dann gilt der Server', async () => {
+  const bridge = fakeBridge(updaterState())
+  bridge.get = async () => { throw new Error('Nicht erlaubt.') }
+  const { result } = renderHook(() => useDesktopUpdater('on'))
+  await waitFor(() => expect(result.current.owner).toBe('server'))
+})
