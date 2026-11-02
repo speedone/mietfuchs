@@ -325,9 +325,10 @@ export const BARRIER_SENTENCES: Readonly<Record<JournalBarrier, string>> = {
   changeover: 'Daten aus der db.json übernommen (Umstieg)',
 }
 
-export async function addBarrier(db: Executor, barrier: JournalBarrier, schemaSteps: number, now: Date): Promise<void> {
+// `description`: ein eigener Satz für dieselbe Art, etwa den Umzug ins Programmfenster (#517), der wie ein Backup eingespielt wird
+export async function addBarrier(db: Executor, barrier: JournalBarrier, schemaSteps: number, now: Date, description: string = BARRIER_SENTENCES[barrier]): Promise<void> {
   await db.insert(changeGroups).values({
-    at: now.toISOString(), method: 'POST', route: '', description: BARRIER_SENTENCES[barrier], subjectTable: null, schemaSteps, barrier,
+    at: now.toISOString(), method: 'POST', route: '', description, subjectTable: null, schemaSteps, barrier,
   })
 }
 

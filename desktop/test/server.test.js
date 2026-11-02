@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import http from 'node:http'
 import fs from 'node:fs'
-import { DEFAULT_PORT, SERVER_FOLDER, blockedFileIn, canListen, findBlockedFile, programFiles, startFailure, dataDirIn, freePort, lanUrls, linkTarget, networkState, serverEnv, serverModule, startUrlIn, whoIsOn } from '../src/server.js'
+import { DEFAULT_PORT, SERVER_FOLDER, blockedFileIn, canListen, findBlockedFile, programFiles, startFailure, dataDirIn, freePort, lanUrls, linkTarget, networkState, serverEnv, serverModule, startUrlIn, whoIsOn, chosenFolder, folderDialogProperties } from '../src/server.js'
 
 // Geänderte Erwartung: Bisher lief ausgeliefert die Programmdatei des Servers (Bun) unter resources\server bzw. in
 // Contents/MacOS, danach der Quellcode unter resources/mietfuchs/server/src, dann das Bündel offen unter
@@ -233,4 +233,40 @@ test('Meldung: gesiezt, mit der Datei auf der Platte, die technische Meldung dar
   // Eine sehr lange Zeile (Electron druckt bei manchen Fehlern seinen eigenen Quelltext) wird gekürzt
   const long = startFailure({ found: null, technical: `kurz\n${'x'.repeat(5000)}`, logDir: '/p', platform: 'linux' })
   assert.ok(long.message.length < 600, `${long.message.length} Zeichen`)
+})
+
+// Umzug der Daten (#517): „Ordner der alten Programmdatei wählen …“ öffnet den Ordner-Dialog des Systems. Die Seite
+// bekommt nur einen Pfad oder nichts, nie das ganze Ergebnis des Dialogs.
+test('Ordner wählen: ein gewählter Ordner oder nichts', () => {
+  assert.equal(chosenFolder({ canceled: false, filePaths: ['C:\\Users\\Anna\\Downloads\\mietfuchs'] }), 'C:\\Users\\Anna\\Downloads\\mietfuchs')
+  assert.equal(chosenFolder({ canceled: true, filePaths: ['/x'] }), null)
+  assert.equal(chosenFolder({ canceled: false, filePaths: [] }), null)
+  assert.equal(chosenFolder({ canceled: false, filePaths: [''] }), null)
+})
+
+// Durchsicht D10 zum Umzug (#517): Die Suche liest auf dem Mac Downloads, Schreibtisch und Dokumente; macOS fragt
+// dafür je Ordner nach. Ohne eigenen Satz stünde dort nur, dass „Mietfuchs“ zugreifen möchte, ohne Grund.
+test('macOS: ein Satz für die Rückfrage je Ordner, den die Suche liest', () => {
+  const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+  const info = pkg.build?.mac?.extendInfo ?? {}
+  for (const key of ['NSDownloadsFolderUsageDescription', 'NSDesktopFolderUsageDescription', 'NSDocumentsFolderUsageDescription']) {
+    assert.match(String(info[key] ?? ''), /bisherigen Daten/, key)
+  }
+})
+
+// Ergänzung zum Umzug (#517): Die echten Orte von Schreibtisch, Dokumente und Downloads (unter Windows oft im
+// OneDrive-Ordner) nennt das Fenster dem Server, als JSON-Liste.
+test('Umgebung: Suchorte des Umzugs aus dem Fenster, sonst keine Angabe', () => {
+  const base = { port: 17517, network: false, packaged: true, windowsStore: false, repoRoot: '', platform: /** @type {NodeJS.Platform} */ ('win32') }
+  const dirs = ['C:\\Users\\Anna\\OneDrive - Firma\\Schreibtisch', 'C:\\Users\\Anna\\Downloads']
+  assert.deepEqual(JSON.parse(String(serverEnv({}, { ...base, searchDirs: dirs }).NKA_SEARCH_DIRS)), dirs)
+  assert.equal(serverEnv({ NKA_SEARCH_DIRS: '["/geerbt"]' }, base).NKA_SEARCH_DIRS, undefined)
+})
+
+// Ergänzung zum Umzug (#517): Gewählt werden darf auch eine Datei (Programmdatei, mietfuchs.sqlite, db.json, Backup).
+// Unter Windows zeigt ein Dialog nur Ordner oder nur Dateien; dort deshalb Dateien, alle Dateien erlaubt. Auf dem Mac
+// beides.
+test('Ordner wählen: auf dem Mac Ordner und Dateien, unter Windows Dateien', () => {
+  assert.deepEqual(folderDialogProperties('darwin'), ['openDirectory', 'openFile'])
+  assert.deepEqual(folderDialogProperties('win32'), ['openFile'])
 })

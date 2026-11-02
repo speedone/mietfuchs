@@ -81,6 +81,11 @@
       ],
       "category": "public.app-category.finance",
       "identity": "-",
+    "extendInfo": {
+      "NSDownloadsFolderUsageDescription": "Mietfuchs sucht hier nach Ihren bisherigen Daten neben der alten Programmdatei, um sie zu übernehmen. Nichts davon verlässt Ihren Rechner.",
+      "NSDesktopFolderUsageDescription": "Mietfuchs sucht hier nach Ihren bisherigen Daten neben der alten Programmdatei, um sie zu übernehmen. Nichts davon verlässt Ihren Rechner.",
+      "NSDocumentsFolderUsageDescription": "Mietfuchs sucht hier nach Ihren bisherigen Daten neben der alten Programmdatei, um sie zu übernehmen. Nichts davon verlässt Ihren Rechner."
+    },
       "hardenedRuntime": false,
       "notarize": false,
       "artifactName": "Mietfuchs-${version}-${arch}.${ext}"

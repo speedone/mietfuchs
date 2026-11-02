@@ -204,7 +204,7 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
 - **Port 17517** fest, damit Adresse und damit Entwürfe im Browser-Speicher gleich bleiben; antwortet dort ein
   anderes Programm, nimmt das Fenster einen freien und merkt ihn sich. Die Programmdatei ohne Fenster bleibt bei 3001.
 - **Sicherheit**: Sandbox, `contextIsolation`, kein Node in der Seite; die Brücke ([preload.cjs](../desktop/src/preload.cjs))
-  kennt nur das Drucken und den Zugriff aus dem Heimnetz; beides nimmt der Hauptprozess nur von der eigenen Seite an
+  kennt nur das Drucken, den Zugriff aus dem Heimnetz und den Ordner-Dialog des Umzugs; alles nimmt der Hauptprozess nur von der eigenen Seite an
   (`linkTarget(event.senderFrame.url, origin) === 'window'`). Navigation und neue Fenster bleiben auf der eigenen Adresse, http, https und mailto gehen ans
   Standardprogramm, alles andere nirgendwohin, Berechtigungen werden abgelehnt. Fuses in desktop/package.json (`build`):
   `runAsNode`, `NODE_OPTIONS` und Inspect aus, Asar-Integrität und `onlyLoadAppFromAsar` an; sein Modul lädt der
@@ -272,6 +272,12 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   `D:\` ausgenommen, der Cloud-Schutz ist aus (MAPSReporting 0), auf windows-2025 auch der Echtzeitschutz (lässt
   sich nicht einschalten). Was das Prüfen der Dateien kostet, zeigt nur das Protokoll vom Rechner eines Nutzers. Der
   Vergleich mit der Prüfung der Vorlage steht in PR #537.
+- **Umzug der Daten** (server/src/CLAUDE.md, „Umzug ins Programmfenster“): Die Brücke kennt dafür `chooseFolder`
+  (Ordner-Dialog, Absenderprüfung wie Drucken und Netzwerk, `chosenFolder` in server.js gibt nur den Pfad weiter).
+  desktop-check.mjs prüft ihn in Schritt 6 unter Windows und macOS: der Bestand aus Schritt 1 in `Downloads/…/data`
+  neben einer Datei `mietfuchs-win.exe` bzw. `mietfuchs-macos-apple-silicon` unter `NKA_TEST_HOME`, das Fenster mit
+  leerem Datenordner findet und übernimmt ihn. Mit echten alten Fassungen läuft
+  [fenster-umzug-praxislauf.mjs](fenster-umzug-praxislauf.mjs) (unten).
 - **Im Release-Lauf** ([release.yml](../.github/workflows/release.yml), Jobs „Programmfenster bauen“ und
   „Programmfenster prüfen auf …“, in jedem Prüfumfang): Der Bau hängt an keinem Bun-Artefakt und beginnt sofort; er
   baut das Frontend selbst. Installiert wie ein Nutzer und geprüft mit [desktop-check.mjs](desktop-check.mjs) (Start,
@@ -336,6 +342,17 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   `MSSTORE_TENANT_ID`, `MSSTORE_CLIENT_ID`, `MSSTORE_CLIENT_SECRET` (`MSSTORE_SELLER_ID` braucht nur die CLI); das
   Secret läuft ab und wird dann im Partner Center neu erzeugt.
 
+- **Umzug der Daten auch im Store** (#517): Die Store-App bietet „Ihre bisherigen Daten übernehmen“ wie das Fenster an.
+  Anders als dort **liest sie die Ortsdatei nur** (`%LOCALAPPDATA%\mietfuchs-standorte\standorte.json`; Lesen fällt bei
+  MSIX auf den echten Ort durch) und vermerkt den neuen Ort nicht: Unter AppData lenkte Windows das Schreiben einer
+  Store-App in ihren Paketordner um, die Programmdatei sähe es nie. Geschrieben wird nur in den Datenordner
+  `%USERPROFILE%\Mietfuchs` (nicht umgelenkt) und der Vermerk in den alten Ordner. Liegt der alte Ordner selbst unter
+  AppData (Ausweichort `%LOCALAPPDATA%\Mietfuchs` der Programmdatei), landete der Vermerk umgelenkt im Paket; dieser Fall
+  ist bekannt und hingenommen. Geprüft in „Store-Paket bauen und prüfen“: Nach der ersten Prüfung wird der Bestand zum
+  Ordner einer alten Programmdatei unter `Downloads\mietfuchs-alt`, die Ortsdatei nennt ihn, die Store-App (mit
+  `NKA_TEST_HOME` auf dem Benutzerordner des Runners) übernimmt; danach Daten in `%USERPROFILE%\Mietfuchs`, Vermerk im
+  alten Ordner, Ortsdatei unverändert. Nachgestellt in api-umzug.test.ts mit `NKA_TEST_STORE=1`.
+
 ## Release
 
 - [release.yml](../.github/workflows/release.yml) baut beim `v*`-Tag alle Ziele und hängt sie an:
@@ -377,6 +394,20 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   echte Starts; er wird rot, wenn der Schritt in `DATA_STEPS` fehlt. Nicht in der CI, sondern von Hand vor jedem Release. Eine unbekannte Fallnummer bricht ab.
   `--slow-ai 320` lässt das Ollama über fünf Minuten schweigen; das läuft im vollen Umfang auf den
   Programmdateien (Linux x64, Windows x64, Apple Silicon) und gegen Node.
+- **[fenster-umzug-praxislauf.mjs](fenster-umzug-praxislauf.mjs)** (#517): lädt die Linux-Programmdateien 0.3.1 und
+  0.7.1 (db.json), 0.9.0, 0.12.0 und 0.14.1 von den Releases (höchstens 150 MB, drei Minuten je Datei, drei Versuche,
+  zwischengespeichert in `--cache`, nie ins Repo, beim Laufen fest verknüpft statt kopiert), startet jede wie draußen
+  aus `Downloads/mietfuchs-<Fassung>/` mit `data/` daneben (HOME im Wegwerf-Ordner, CI, ohne Anzeige), legt den Bestand
+  über ihre API an (Backup mit db.json und zwei Belegen, dann eine Zahlung; bis 0.3 legt erst ein Speichern die db.json
+  an) und holt Abrechnung 2024, Zahlen und Backup. Dann übernimmt der Server von heute als nachgestelltes Fenster den
+  Ordner (Suche, laufende alte Fassung erkennen und beenden, vor 0.7 statt dessen ihr Fenster schließen, übernehmen) und prüft: Abrechnung
+  centgenau wie in der alten Fassung **und** wie der Server von heute an Ort und Stelle auf einer Kopie, Zahlen, Belege
+  mit Inhalt, Vermerk, alter Ordner sonst byteweise und mit Dateizeit gleich, danach nur lesend. Dann legt die alte
+  Fassung, die den Vermerk nicht kennt, noch eine Zahlung an; das Fenster meldet `newer` und übernimmt den neueren Stand
+  erst auf Wunsch. Ebenso über das Backup.
+  Beide Mietverhältnisse laufen das ganze Jahr, weil Mietfuchs Leerstand seit 0.3 anders rechnet. Job „Umzug ins
+  Programmfenster mit alten Fassungen“ in release.yml im vollen Umfang; `--nur 0.3.1` für eine Fassung, `--out` für den
+  Bericht. Nur unter Linux.
 - **Prüfumfang je Anlass** (#52), entschieden im Job „Prüfumfang festlegen“ in release.yml: **Ein PR
   ohne Label** prüft Tests und Build ([ci.yml](../.github/workflows/ci.yml)), Bauen und Signieren,
   die sechs Programmdateien ohne lange KI-Antwort, `centos:7` und `ubuntu:26.04`, das `.deb` auf

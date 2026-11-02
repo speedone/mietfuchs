@@ -191,7 +191,11 @@ beim Start, denn wer auf sie wartet, hält den Server für fertig.
   `setAsideName` lesen aus ihr den Zeitpunkt der Sicherung. **Zustimmungen** (`CONSENT_COLUMNS`) bringt ein
   eingespielter Stand nie mit, ob Backup oder Sicherung (`consentNow`/`keepConsent` in `restoreDatabase`, Regel aus
   #439, Durchsicht von PR #442, M3): Jede Zeile trägt danach die Zustimmung von vorher, eine neu entstandene keine; auf
-  einem neuen Rechner oder ohne lesbare Datenbank gilt also keine. Die Rückfrage vor dem Wiederherstellen sagt es. Geprüft werden auch Verweise über Objekte, Zeiträume und Heizanlagen
+  einem neuen Rechner oder ohne lesbare Datenbank gilt also keine. Die Rückfrage vor dem Wiederherstellen sagt es.
+  **Einzige Ausnahme ist der Umzug ins Programmfenster** (#517, `ConsentRule` `archive` an `applyBackup` und
+  `restoreDatabase`): Er bringt keinen früheren Stand zurück, sondern den von jetzt aus dem alten Ordner in einen neuen
+  ohne Bestand, und dort gäbe es sonst keine. Das Wiederherstellen ist zweigeteilt (`stageArchiveDatabase` prüft und
+  legt ab, `applyBackup` tauscht aus), damit der Umzug dazwischen die Kopie mit dem Original vergleicht. Geprüft werden auch Verweise über Objekte, Zeiträume und Heizanlagen
   (`crossPropertyViolations`, `orphanPeriodKeys`, `heatingPlantViolations`).
 - **ZIP schreiben** mit yazl als Strom, Namen als UTF-8 mit Kennzeichen (ein Test liest das Backup mit
   adm-zip zurück, wie ältere Versionen). Das Backup packt alles (Bit 3 bei gespeicherten Einträgen
