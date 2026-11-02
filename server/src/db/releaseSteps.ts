@@ -17,6 +17,7 @@ export const RELEASE_STEPS: readonly { version: string, steps: number }[] = [
   { version: '0.12.0', steps: 63 },
   { version: '0.13.0', steps: 77 },
   { version: '0.14.0', steps: 84 },
+  { version: '0.15.0', steps: 85 },
 ]
 
 const parts = (version: string): number[] => version.split(/[.-]/).slice(0, 3).map((p) => Number.parseInt(p, 10) || 0)
