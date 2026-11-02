@@ -591,6 +591,40 @@ test('Ergänzung: Fortschritt beim Kopieren, Abbrechen lässt beide Ordner, wie 
   }
 })
 
+// Praxistest vor 0.15.0 (Szenario K): Ohne den Testgriff NKA_TEST_COPY_DELAY_MS kopierte die Schleife mit
+// fs.copyFileSync und gab den Server bis zum Ende nicht frei. Fortschritt und „Abbrechen“ kamen erst an, wenn alles
+// kopiert war; auf einem langsamen Datenträger stand das Fenster minutenlang ohne Zahl und ohne Ausweg.
+test('Praxistest K: Fortschritt und Abbrechen auch ohne Testgriff, der Server bleibt beim Kopieren ansprechbar', async () => {
+  const old = await oldFolder()
+  const page = Buffer.alloc(200 * 1024, 7)
+  for (let i = 0; i < 600; i++) fs.writeFileSync(path.join(old.data, 'uploads', `beleg-${i}.pdf`), Buffer.concat([PDF, page]))
+  const before = fingerprint(old.data)
+  const s = await startServerIn(tempDir(), desktopEnv(old.home))
+  try {
+    const adopting = adopt(s.base, old.data)
+    let between: { files: number, totalFiles: number } | null = null
+    // Nach Zeit begrenzt, nicht nach Anzahl: Vor der Kopie liest der Server die 600 Belege ein, und auf einer langsamen
+    // Maschine (Windows mit Virenscanner) dauert das länger als 2000 sofort beantwortete Abfragen (Durchsicht)
+    const deadline = Date.now() + 30_000
+    while (!between && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 2))
+      const p = await s.api<{ phase: string, files: number, totalFiles: number }>('/api/relocation/progress')
+      // Mitten in den Belegen, nicht erst bei der Datenbank am Ende (deren Prüfsumme gab den Server schon vorher frei)
+      if (p.phase === 'copy' && p.files >= 10 && p.files < p.totalFiles / 2) between = p
+    }
+    assert.ok(between, 'kein Zwischenstand während der Kopie: der Server war bis zum Ende blockiert')
+    assert.equal((await post(s.base, '/api/relocation/cancel')).status, 200)
+    const result = await adopting
+    assert.equal(result.status, 400, JSON.stringify(result.body))
+    assert.match(String(result.body.error), /abgebrochen/)
+    assert.deepEqual(fs.readdirSync(path.join(s.dataDir, 'uploads')), [])
+    assert.deepEqual(fingerprint(old.data), before)
+  } finally {
+    s.stop()
+    fs.rmSync(old.home, { recursive: true, force: true })
+  }
+})
+
 // Ergänzung: Auch die Store-Fassung bietet den Umzug an (wer von der Programmdatei in den Store wechselt, stünde sonst
 // ohne Daten da). Sie liest die Ortsdatei, schreibt sie aber nicht: Unter AppData lenkt Windows das Schreiben einer
 // Store-App in ihren Paketordner um, die Programmdatei sähe es nie. Nachgestellt mit NKA_TEST_STORE=1 (eine

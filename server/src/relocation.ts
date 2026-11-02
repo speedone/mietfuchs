@@ -607,8 +607,8 @@ export function memoByStamp<T>(compute: (dataDir: string, mark: StockMark) => Pr
 // Eine Datei kopieren und den Hash **der Kopie** ergeben (Durchsicht Daten K4): Der Hash des Originals nach dem Kopieren
 // gehörte zu einer Datei, die sich dazwischen geändert haben kann, und der spätere Vergleich mit dem Original fände dann
 // keinen Unterschied, obwohl die Kopie veraltet ist.
-export async function copyAndHash(from: string, to: string, copy: (from: string, to: string) => void = (a, b) => fs.copyFileSync(a, b)): Promise<string> {
-  copy(from, to)
+export async function copyAndHash(from: string, to: string, copy: (from: string, to: string) => unknown = (a, b) => fs.promises.copyFile(a, b)): Promise<string> {
+  await copy(from, to)
   const hash = crypto.createHash('sha256')
   for await (const chunk of fs.createReadStream(to)) hash.update(chunk as Buffer)
   return hash.digest('hex')
