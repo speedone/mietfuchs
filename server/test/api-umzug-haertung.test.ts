@@ -49,11 +49,20 @@ async function post(base: string, urlPath: string, body: unknown = {}): Promise<
   return { status: res.status, body: await res.json() as Record<string, unknown> }
 }
 
+// Übernehmen wie die Oberfläche (K11 der Durchsicht Sicherheit): erst den Ort über /inspect bekannt machen, dann mit
+// seiner Kennung
+async function adopt(base: string, dataDir: string): Promise<{ status: number, body: Record<string, unknown> }> {
+  const known = await post(base, '/api/relocation/inspect', { folder: dataDir })
+  const id = (known.body.candidate as { id?: string } | undefined)?.id
+  if (!id) return known
+  return post(base, '/api/relocation/adopt', { id })
+}
+
 test('Durchsicht K2: Beenden während des Umschaltens wartet, bis die Übernahme fertig ist', async () => {
   const old = await oldFolder()
   const s = await startServerIn(tempDir(), desktopEnv(old.home, { NKA_TEST_SWITCH_DELAY_MS: '1500' }))
   try {
-    const adopting = post(s.base, '/api/relocation/adopt', { dataDir: old.data })
+    const adopting = adopt(s.base, old.data)
     for (let i = 0; i < 200; i++) {
       if ((await s.api<{ phase: string }>('/api/relocation/progress')).phase === 'switch') break
       await new Promise((resolve) => setTimeout(resolve, 25))
@@ -75,7 +84,7 @@ test('Durchsicht K2: Beenden während des Kopierens bricht ab, beide Ordner blei
   const old = await oldFolder(6)
   const s = await startServerIn(tempDir(), desktopEnv(old.home, { NKA_TEST_COPY_DELAY_MS: '300' }))
   try {
-    const adopting = post(s.base, '/api/relocation/adopt', { dataDir: old.data })
+    const adopting = adopt(s.base, old.data)
     for (let i = 0; i < 100; i++) {
       if ((await s.api<{ files: number }>('/api/relocation/progress')).files >= 1) break
       await new Promise((resolve) => setTimeout(resolve, 50))
@@ -115,7 +124,7 @@ test('Durchsicht K3: endet das Fenster nach dem Umschalten, holt der nächste St
   const dataDir = tempDir()
   const first = await startServerIn(dataDir, desktopEnv(old.home, { NKA_TEST_EXIT_AFTER_SWITCH: '1' }))
   try {
-    await post(first.base, '/api/relocation/adopt', { dataDir: old.data }).catch(() => null)
+    await adopt(first.base, old.data).catch(() => null)
     await waitForExit(first.child, 20000)
     assert.equal(fs.existsSync(path.join(dataDir, 'umzug.json')), false, 'abgebrochen vor der Entscheidung')
     assert.equal(fs.existsSync(path.join(old.data, 'umgezogen.json')), false, 'abgebrochen vor dem Vermerk')
@@ -142,7 +151,7 @@ test('Durchsicht K3: endet es vor dem Umschalten, bleibt alles, wie es war, und 
   const dataDir = tempDir()
   const first = await startServerIn(dataDir, desktopEnv(old.home, { NKA_TEST_EXIT_BEFORE_SWITCH: '1' }))
   try {
-    await post(first.base, '/api/relocation/adopt', { dataDir: old.data }).catch(() => null)
+    await adopt(first.base, old.data).catch(() => null)
     await waitForExit(first.child, 20000)
   } finally {
     first.child.kill()
@@ -167,7 +176,7 @@ test('Durchsicht K9: der Papierkorb zieht mit, damit ein Rücksprung im neuen Mi
   fs.writeFileSync(path.join(old.data, 'vorversionen', 'mietfuchs-2026-10-01.sqlite'), 'Vorversion')
   const s = await startServerIn(tempDir(), desktopEnv(old.home))
   try {
-    const adopted = await post(s.base, '/api/relocation/adopt', { dataDir: old.data })
+    const adopted = await adopt(s.base, old.data)
     assert.equal(adopted.status, 200, JSON.stringify(adopted.body))
     assert.ok(fs.existsSync(path.join(old.data, 'papierkorb', 'uploads', 'geloescht.pdf')), 'kopiert, nicht verschoben')
     // Ob er auf Dauer bleibt, entscheidet wie immer das Aufräumen mit dem Journal; mitgekommen ist er
