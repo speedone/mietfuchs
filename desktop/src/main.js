@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url'
 import { BrowserWindow, Menu, app, dialog, ipcMain, session, shell, utilityProcess } from 'electron'
 import { TICK_MS, UPDATE_REPO, createUpdaterController, initialUpdaterState, shouldOfferMove, updaterSource } from './updater.js'
 import { loopbackUrl, testGripsAllowed } from './testGrips.js'
-import { DEFAULT_PORT, SERVICE_NAME, blockedFileIn, childWebPreferences, rememberDataDir, frameTarget, findBlockedFile, freePort, isAppPage, isReceipt, linkTarget, navigationTarget, networkState, programFiles, serverEnv, serverModule, startFailure, startUrlIn, trustedSender, whoIsOn, chosenFolder, folderDialogProperties } from './server.js'
+import { DEFAULT_PORT, SERVICE_NAME, blockedFileIn, childWebPreferences, quitDecision, rememberDataDir, frameTarget, findBlockedFile, freePort, isAppPage, isReceipt, linkTarget, navigationTarget, networkState, programFiles, serverEnv, serverModule, startFailure, startUrlIn, trustedSender, whoIsOn, chosenFolder, folderDialogProperties } from './server.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const startedAt = Date.now()
@@ -77,6 +77,8 @@ let origin = null
 /** @type {BrowserWindow | null} */
 let mainWindow = null
 let quitting = false
+// Gesetzt unmittelbar vor app.exit am Ende des Beendens (quitDecision)
+let exiting = false
 // Server, die das Fenster absichtlich beendet (Beenden, Neustart für den Zugriff aus dem Heimnetz): Ihr Ende ist kein
 // Absturz, also weder die Meldung „unerwartet beendet“ noch das Ende des Fensters.
 /** @type {WeakSet<Electron.UtilityProcess>} */
@@ -671,10 +673,13 @@ if (!app.requestSingleInstanceLock()) {
     mainWindow.focus()
   })
   app.on('before-quit', (event) => {
-    windowLog(`before-quit${quitting ? ' (schon beim Beenden)' : ''}`)
-    if (quitting) return
-    quitting = true
+    const decision = quitDecision({ quitting, exiting })
+    windowLog(`before-quit: ${decision}`)
+    if (decision === 'allow') return
+    // Auch ein zweites app.quit (Fenster `closed` und `window-all-closed`) hält an, bis der Server beendet ist
     event.preventDefault()
+    if (decision === 'wait') return
+    quitting = true
     // Erst einen laufenden Neustart abwarten (er startet nach `quitting` keinen Server mehr), dann den Server beenden.
     // Danach, mit „Beim nächsten Start“, den Installer der neuen Version still und ohne anschließenden Start; er läuft
     // weiter, wenn das Fenster zu ist (updater.js, installOnQuit).
@@ -686,6 +691,7 @@ if (!app.requestSingleInstanceLock()) {
       }
     }).finally(() => {
       windowLog('app.exit(0)')
+      exiting = true
       app.exit(0)
     })
   })

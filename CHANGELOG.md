@@ -31,6 +31,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
     Datei offen, versucht es das Deinstallationsprogramm noch einige Male, statt den Programmordner halb gelöscht liegen zu lassen.
     Wie lange jeder Schritt dauert, steht in `%TEMP%\mietfuchs-installation.log`. Ein noch offenes Mietfuchs schließt der
     Installer erst sanft und wartet bis 15 Sekunden, damit es seine Daten zu Ende schreibt; erst dann beendet er es hart.
+    Auch beim Schließen des Fensters wartet Mietfuchs jetzt wirklich, bis der Server fertig geschrieben hat; bisher
+    endete er dabei mitunter mittendrin.
   - Ein beliebig gesetztes `CI` in der Umgebung (manche Entwicklungsumgebungen setzen es dauerhaft, unter Windows auch als
     `CI=false`) schaltet im Programm nichts mehr ab und keine Prüfhilfe ein, etwa den Umzug der Daten oder die Quelle
     der Updates. Auch bei der Programmdatei zählt `CI` nur noch mit `1` oder `true`.

@@ -456,3 +456,17 @@ export function chosenFolder(result) {
 export function folderDialogProperties(platform) {
   return platform === 'darwin' ? ['openDirectory', 'openFile'] : ['openFile']
 }
+
+/**
+ * Was ein `before-quit` tut (#549, gefunden mit dem Protokoll des Fensters): `begin` beginnt das Beenden (Server über
+ * /api/quit, dann app.exit), `wait` hält ein weiteres app.quit auf, solange das läuft, `allow` lässt Electron beenden.
+ * Das Schließen des Fensters ruft app.quit zweimal (`closed` und `window-all-closed`); ließ der zweite Aufruf das
+ * Beenden durch, endete der Hauptprozess und mit ihm der Server mitten im Leerlaufen seiner Schlange, und die Lauf-Datei
+ * blieb liegen.
+ * @param {{ quitting: boolean, exiting: boolean }} state
+ * @returns {'begin' | 'wait' | 'allow'}
+ */
+export function quitDecision({ quitting, exiting }) {
+  if (exiting) return 'allow'
+  return quitting ? 'wait' : 'begin'
+}

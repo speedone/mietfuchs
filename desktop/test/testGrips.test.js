@@ -3,7 +3,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { loopbackUrl, testGripsAllowed } from '../src/testGrips.js'
-import { DEFAULT_PORT, serverEnv, startFailure, twinIn, rememberDataDir } from '../src/server.js'
+import { DEFAULT_PORT, quitDecision, serverEnv, startFailure, twinIn, rememberDataDir } from '../src/server.js'
 import { shouldOfferMove, updaterSource } from '../src/updater.js'
 
 test('Testgriffe: nur mit CI (1 oder true) und MIETFUCHS_TESTGRIFFE=1', () => {
@@ -74,4 +74,13 @@ test('Datenordner zeigen: einmal beim Start gemerkt, nicht aus dem rollenden Puf
   // Später schreibt jemand „Daten: …“ in die Ausgabe (etwa eine Meldung) oder der Puffer hat die Zeile verloren
   assert.equal(rememberDataDir(dir, 'Daten: /woanders\n'), '/home/a/Mietfuchs')
   assert.equal(rememberDataDir(dir, ''), '/home/a/Mietfuchs')
+})
+
+// Gefunden mit dem Protokoll des Fensters in der CI an #549: Das Schließen des Fensters ruft app.quit zweimal (`closed`
+// und `window-all-closed`). Der zweite before-quit ließ das Beenden durch, während der erste noch auf den Server
+// wartete; Electron beendete dann den Hauptprozess und mit ihm den Server mitten im Leerlaufen seiner Schlange.
+test('Beenden: ein zweites before-quit während des Beendens wartet, statt Electron beenden zu lassen', () => {
+  assert.equal(quitDecision({ quitting: false, exiting: false }), 'begin')
+  assert.equal(quitDecision({ quitting: true, exiting: false }), 'wait')
+  assert.equal(quitDecision({ quitting: true, exiting: true }), 'allow')
 })

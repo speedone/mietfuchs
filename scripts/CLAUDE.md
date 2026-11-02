@@ -200,8 +200,12 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
   endet der utilityProcess**, auch nach einem Absturz oder beim Abmelden unter Windows (kein SIGTERM); es bleibt keine
   Waise, die Port und Datenbank hält, geprüft unter Windows und macOS (desktop-check.mjs, Schritt 5, auch über die PID).
   Die Standardeingabe eines utilityProcess ist immer leer und endet sofort; an ihr hängt nichts mehr. Beenden aus dem
-  Fenster erst über `/api/quit` (die Schreibschlange läuft leer), ohne Adresse die Nachricht `quit` über `parentPort`,
-  nach acht Sekunden hart, während des Starts erst nach zehn Minuten (eine Migration soll zu Ende laufen). Servertests
+  Fenster erst über `/api/quit` (die Schreibschlange läuft leer), ohne Adresse die Nachricht `quit` über `parentPort`.
+  **Jedes weitere `before-quit` während des Beendens wird aufgehalten** (`quitDecision` in server.js, erst `app.exit`
+  beendet): Das Schließen des Fensters ruft `app.quit` zweimal (`closed`, `window-all-closed`), und der zweite ließ
+  Electron bisher sofort enden, mit ihm den Server mitten im Leerlaufen (gefunden an #549 mit `fenster.log` in
+  `mietfuchs-fenster\protokoll`, das Schließen, before-quit, `/api/quit` und das Ende des Servers mit Zeit festhält). Hart beendet
+  wird nach acht Sekunden, während des Starts erst nach zehn Minuten (eine Migration soll zu Ende laufen). Servertests
   stellen den utilityProcess mit [fakeUtilityProcess.ts](../server/testing/fakeUtilityProcess.ts) nach (`--import`). Electrons eigener Ordner heißt `mietfuchs-fenster`, damit er sich auf dem Mac nie mit dem Datenordner
   mischt; dort liegen `fenster.json` (gemerkter Port, Zugriff aus dem Heimnetz) und das Protokoll des Servers.
 - **Testgriffe im ausgelieferten Fenster nur mit zwei Schranken** ([testGrips.js](../desktop/src/testGrips.js),
