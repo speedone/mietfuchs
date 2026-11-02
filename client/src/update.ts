@@ -43,10 +43,12 @@ export function desktopLinks(offer: 'windows' | 'macos', current: string): Deskt
     const href = `https://github.com/speedone/mietfuchs/releases/tag/v${current}`
     return [{ label: offer === 'windows' ? 'Installer herunterladen' : 'Neues Mietfuchs herunterladen', href, primary: true }]
   }
+  // Der Installer zuerst: Bis zur Zertifizierung (einige Tage nach dem Release) liefert der Store noch die Fassung ohne
+  // Übernahme der Daten. Aus dem Store kommen Updates ohne Rückfrage.
   if (offer === 'windows') {
     return [
-      { label: 'Aus dem Microsoft Store laden', href: STORE_URL, primary: true },
-      { label: 'Installer herunterladen', href: RELEASES_URL, primary: false },
+      { label: 'Installer herunterladen', href: RELEASES_URL, primary: true },
+      { label: 'Oder aus dem Microsoft Store, mit automatischen Updates', href: STORE_URL, primary: false },
     ]
   }
   return [{ label: 'Neues Mietfuchs herunterladen', href: RELEASES_URL, primary: true }]
@@ -64,7 +66,7 @@ export const canQuit = (st: UpdateStatus | null): boolean => st?.mode === 'binar
 // (server/src/update.ts). Ohne passende Datei zeigt der Link auf die Release-Seite. `package`
 // steht für eine Installation aus einem Linux-Paket: Dort wird nicht die Datei getauscht,
 // sondern das Paket neu installiert.
-export type System = 'windows' | 'macos' | 'linux' | 'package' | 'desktop' | null
+export type System = 'windows' | 'macos' | 'linux' | 'package' | 'desktop' | 'desktop-mac' | null
 
 export type UpdateGuide =
   | { kind: 'download'; href: string; system: System; newTab: boolean }
@@ -90,8 +92,13 @@ export function updateGuide(st: UpdateStatus): UpdateGuide {
   // des Nutzers. Deshalb führt der Weg über die Release-Seite, und installiert wird mit dem
   // Befehl, den er schon beim ersten Mal genommen hat.
   if (st.mode === 'package') return { kind: 'download', href: st.releaseUrl ?? RELEASES_URL, system: 'package', newTab: true }
-  // Das Programmfenster (#517) wird neu installiert, der Installer ersetzt die bisherige Fassung.
-  if (st.mode === 'desktop') return { kind: 'download', href: st.releaseUrl ?? RELEASES_URL, system: 'desktop', newTab: true }
+  // Das Programmfenster (#517) wird neu installiert. Auf dem Mac nennt der Server das passende Abbild (kein
+  // automatisches Update ohne bezahlte Signatur); unter Windows aktualisiert sich das Fenster selbst, die Anleitung
+  // über die Release-Seite bleibt für den Fall, dass es das nicht kann.
+  if (st.mode === 'desktop') {
+    if (st.downloadUrl?.endsWith('.dmg')) return { kind: 'download', href: st.downloadUrl, system: 'desktop-mac', newTab: false }
+    return { kind: 'download', href: st.releaseUrl ?? RELEASES_URL, system: 'desktop', newTab: true }
+  }
   if (st.mode === 'docker') return { kind: 'command', lines: ['docker compose pull', 'docker compose up -d'] }
   return { kind: 'command', lines: ['git pull', 'npm install', 'npm run build'] }
 }

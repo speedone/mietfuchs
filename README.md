@@ -163,6 +163,9 @@ Das neue Programm braucht **macOS 13 (Ventura) oder neuer**, so verlangt es Elec
    Seit macOS 15 geht das nur noch so; der frühere Weg mit Ctrl-Klick → *Öffnen* klappt dort
    nicht mehr. Wer das Terminal mag, nimmt stattdessen
    `xattr -dr com.apple.quarantine /Applications/Mietfuchs.app`.
+
+   Startest du Mietfuchs direkt aus dem Abbild oder aus Downloads, bietet es einmal an, sich nach
+   *Programme* zu verschieben.
 4. Sucht Mietfuchs beim ersten Start deine bisherigen Daten, fragt macOS, ob es auf Downloads,
    Schreibtisch und Dokumente zugreifen darf. Erlaube es; die Daten verlassen deinen Mac nicht.
 
@@ -171,8 +174,8 @@ im Menü *Mietfuchs → Datenordner zeigen* öffnet ihn der Finder.
 
 **Updates:** Auf dem Mac aktualisiert sich Mietfuchs nicht von selbst, das ginge nur mit einer
 kostenpflichtigen Signatur. Erlaubst du die Update-Prüfung, sagt Mietfuchs Bescheid, wenn es eine
-neue Version gibt. Dann Mietfuchs beenden, das neue Abbild laden, Mietfuchs wieder auf
-*Programme* ziehen und *Ersetzen* wählen. Den ersten Start gibst du wie oben noch einmal frei.
+neue Version gibt, und führt direkt zum passenden Abbild. Dann Mietfuchs beenden, das neue Abbild
+laden, Mietfuchs wieder auf *Programme* ziehen und *Ersetzen* wählen. Den ersten Start gibst du wie oben noch einmal frei.
 Deine Daten bleiben, wo sie sind.
 
 ### Umzug von der bisherigen Programmdatei

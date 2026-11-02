@@ -6,13 +6,14 @@
 // weniger, die Virenscanner prüfen und die signiert wird, und rund 100 MB weniger je Architektur.
 //
 // Sicherheit nach der Checkliste von Electron: Die Seite läuft ohne Node in der Sandbox, die Brücke (preload.cjs)
-// kennt nur das Drucken, den Zugriff aus dem Heimnetz und die Wahl des alten Ordners beim Umzug, Navigation und neue Fenster bleiben auf der eigenen Adresse, fremde Links öffnet der
+// kennt nur das Drucken, den Zugriff aus dem Heimnetz, die Wahl des alten Ordners beim Umzug und die automatischen Updates, Navigation und neue Fenster bleiben auf der eigenen Adresse, fremde Links öffnet der
 // Standardbrowser, Berechtigungen (Kamera, Standort …) werden abgelehnt.
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { BrowserWindow, Menu, app, dialog, ipcMain, session, shell, utilityProcess } from 'electron'
+import { TICK_MS, UPDATE_REPO, createUpdaterController, initialUpdaterState, shouldOfferMove, updaterSource } from './updater.js'
 import { DEFAULT_PORT, SERVICE_NAME, blockedFileIn, dataDirIn, findBlockedFile, freePort, linkTarget, networkState, programFiles, serverEnv, serverModule, startFailure, startUrlIn, whoIsOn, chosenFolder, folderDialogProperties } from './server.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -38,7 +39,7 @@ const QUIT_TIMEOUT_MS = 8000
 // schützt. Das Fenster ist dann schon zu, nur der Prozess wartet.
 const START_QUIT_TIMEOUT_MS = 10 * 60_000
 
-/** @typedef {{ port?: number, network?: boolean }} WindowSettings */
+/** @typedef {{ port?: number, network?: boolean, moveDeclined?: boolean }} WindowSettings */
 
 const settingsFile = () => path.join(app.getPath('userData'), 'fenster.json')
 
@@ -76,14 +77,22 @@ const retired = new WeakSet()
 // Ein laufender Neustart; ein zweiter wartet, bis er fertig ist (Doppelklick, zweites Fenster eines Belegs).
 /** @type {Promise<unknown>} */
 let restarting = Promise.resolve()
+// Automatische Updates (updater.js), nur im installierten Fenster unter Windows
+/** @type {ReturnType<typeof createUpdaterController> | null} */
+let updates = null
+// Erfüllt, sobald feststeht, ob es Updates gibt (Durchsicht S1): Die Seite fragt beim Laden womöglich früher
+/** @type {() => void} */
+let updaterSettled = () => {}
+const updaterReady = new Promise((resolve) => { updaterSettled = () => resolve(null) })
 
 // Die Ausgabe des Servers in eine Datei, damit sich ein gescheiterter Start erklären lässt; die vorige bleibt daneben.
-function openLog() {
+// Ebenso das Protokoll der Updates (updater.log).
+function openLog(name = 'server') {
   const dir = path.join(app.getPath('userData'), 'protokoll')
   fs.mkdirSync(dir, { recursive: true })
-  const file = path.join(dir, 'server.log')
+  const file = path.join(dir, `${name}.log`)
   try {
-    fs.renameSync(file, path.join(dir, 'server.vorher.log'))
+    fs.renameSync(file, path.join(dir, `${name}.vorher.log`))
   } catch {
     // beim ersten Start gibt es noch keins
   }
@@ -422,6 +431,38 @@ async function start() {
     restarting = next.catch(() => {})
     return next
   })
+  // Automatische Updates (updater.js), ebenso nur für die eigene Seite: Eine fremde könnte sonst Mietfuchs neu starten.
+  // Ohne Updater (Mac, Store, beim Entwickeln) ist der Stand `off`, und die Oberfläche zeigt den bisherigen Hinweis.
+  const updaterState = () => updates?.state() ?? initialUpdaterState('off', app.getVersion())
+  ipcMain.handle('mietfuchs:updater-get', async (event) => {
+    if (!fromOwnPage(event)) throw new Error('Nicht erlaubt.')
+    await Promise.race([updaterReady, new Promise((resolve) => setTimeout(resolve, 15_000))])
+    return updaterState()
+  })
+  // „Jetzt prüfen“ und das gerade gesetzte Häkchen; geprüft wird nur mit Zustimmung, die das Fenster selbst liest
+  ipcMain.handle('mietfuchs:updater-check', async (event, force) => {
+    if (!fromOwnPage(event)) throw new Error('Nicht erlaubt.')
+    return updates ? updates.check({ force: force === true }) : updaterState()
+  })
+  ipcMain.handle('mietfuchs:updater-later', (event) => {
+    if (!fromOwnPage(event)) throw new Error('Nicht erlaubt.')
+    return updates ? updates.later() : updaterState()
+  })
+  ipcMain.handle('mietfuchs:updater-restart', async (event) => {
+    if (!fromOwnPage(event)) throw new Error('Nicht erlaubt.')
+    const controller = updates
+    if (!controller) throw new Error('Mietfuchs aktualisiert sich hier nicht selbst.')
+    // In dieselbe Reihe wie der Neustart für den Heimnetz-Schalter: before-quit wartet darauf, ein Beenden mittendrin
+    // lässt den Server also erst leerlaufen (Durchsicht S3)
+    const next = restarting.then(() => controller.restartNow())
+    restarting = next.catch(() => {})
+    await next
+    return updaterState()
+  })
+
+  // Mac: einmal anbieten, Mietfuchs nach „Programme“ zu verschieben, vor dem Start des Servers (das Verschieben startet
+  // Mietfuchs neu)
+  if (offerMoveToApplications()) return
 
   mainWindow = createWindow()
   await mainWindow.loadURL(page('<p>Mietfuchs startet …</p>'))
@@ -444,8 +485,126 @@ async function start() {
   }
   const win = mainWindow
   if (!win) return
+  // Vor dem Laden der Seite, damit sie den Stand gleich bekommt (Durchsicht S1)
+  void setupUpdater().catch((err) => console.error(`Updates: ${err}`)).finally(updaterSettled)
   await win.loadURL(origin)
   void selfTest(win).catch((err) => console.error(`Selbstprüfung: ${err}`))
+}
+
+// ---------- Automatische Updates (#517, updater.js) ----------
+//
+// electron-updater (fest gepinnt in desktop/package.json) mit den Releases von speedone/mietfuchs, nur im installierten
+// Fenster unter Windows (`updaterSource`). Geladen wird es erst hier, auf dem Mac und im Store nie.
+//
+// **Keine Prüfung der Signatur** (`verifyUpdateCodeSignature: false` in desktop/package.json, `build.win`): Mietfuchs
+// hat kein Zertifikat für Windows, eine Prüfung gegen einen Herausgeber gäbe es nicht. electron-builder schreibt
+// deshalb keinen `publisherName` in app-update.yml, und ohne ihn prüft NsisUpdater nicht (verifySignature in
+// electron-updater/out/NsisUpdater.js). Die SHA-512 aus latest.yml prüft electron-updater trotzdem, beim vollen wie
+// beim Teil-Download und bei einer schon geladenen Datei (DigestTransform in builder-util-runtime/out/httpExecutor.js,
+// DifferentialDownloader.js, DownloadedUpdateHelper.validateDownloadedPath). Sie stammt aus demselben Release wie der
+// Installer und schützt vor beschädigten oder abgebrochenen Downloads, nicht vor einem fremden Release; das schützt
+// nur HTTPS zu GitHub und das Konto, das veröffentlicht.
+async function setupUpdater() {
+  const source = updaterSource({ platform: process.platform, packaged: app.isPackaged, windowsStore: process.windowsStore === true, env: process.env })
+  if (source.kind === 'off' || updates) return
+  const { NsisUpdater } = (await import('electron-updater')).default
+  const log = openLog('updater')
+  const line = (/** @type {string} */ text) => log.write(`${new Date().toISOString()} ${text}\n`)
+  const updater = new NsisUpdater()
+  updater.logger = { info: (m) => line(String(m)), warn: (m) => line(`Warnung: ${m}`), error: (m) => line(`Fehler: ${m}`), debug: (m) => line(String(m)) }
+  // Nur in Prüfungen (CI) läuft der Updater auch ungepackt, etwa für Bildschirmfotos des Hinweises unter Linux; dann
+  // fehlt app-update.yml mit dem Ordner für die Downloads
+  if (!app.isPackaged) {
+    const config = path.join(app.getPath('userData'), 'dev-app-update.yml')
+    fs.writeFileSync(config, 'provider: generic\nupdaterCacheDirName: mietfuchs-updater-entwicklung\n')
+    updater.forceDevUpdateConfig = true
+    updater.updateConfigPath = config
+  }
+  // Erst danach die Quelle: `updateConfigPath` setzt sie zurück (AppUpdater.js). Der lokale Server der Probe kennt
+  // keine Antworten mit mehreren Bereichen; GitHub bleibt bei der Voreinstellung.
+  updater.setFeedURL(source.kind === 'feed' ? { provider: 'generic', url: source.url, useMultipleRangeRequest: false } : { ...UPDATE_REPO })
+  line(`Updates aus ${source.kind === 'feed' ? source.url : `github.com/${UPDATE_REPO.owner}/${UPDATE_REPO.repo}`}, installiert ist ${app.getVersion()}`)
+  /** @type {number | null} */
+  let port = null
+  updates = createUpdaterController({
+    updater: /** @type {any} */ (updater),
+    source: source.kind,
+    current: app.getVersion(),
+    // Die Zustimmung steht in den Einstellungen des Servers (das Häkchen „Beim Öffnen nach neuen Versionen schauen“)
+    readConsent: async () => {
+      if (!origin) return undefined
+      const res = await fetch(`${origin}/api/settings`, { signal: AbortSignal.timeout(5000) })
+      return res.ok ? /** @type {any} */ (await res.json())?.updateCheck : undefined
+    },
+    // Das Ende des Servers ist kein Absturz (stopServer setzt `retired`); `quitting` bleibt, wie es ist, damit
+    // before-quit danach wie immer erst den Server abwartet (Durchsicht S3)
+    stopServer: async () => {
+      port = origin ? Number(new URL(origin).port) : null
+      await stopServer()
+    },
+    resumeServer: async () => {
+      if (quitting) return
+      origin = new URL(await startServer(readSettings(), port ?? undefined)).origin
+      if (mainWindow) await mainWindow.loadURL(origin)
+    },
+    quit: () => app.quit(),
+    installerExists: () => {
+      const file = /** @type {any} */ (updater).installerPath
+      return typeof file === 'string' && fs.existsSync(file)
+    },
+    onState: (state) => {
+      line(`Stand: ${JSON.stringify(state)}`)
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (origin && linkTarget(win.webContents.getURL(), origin) === 'window') win.webContents.send('mietfuchs:updater-state', state)
+      }
+    },
+    log: line,
+  })
+  await updates.tick()
+  setInterval(() => void updates?.tick(), TICK_MS)
+}
+
+// Mac: Läuft Mietfuchs nicht aus „Programme“, einmal fragen, ob es dorthin soll (updater.js, shouldOfferMove). Gibt
+// true zurück, wenn Mietfuchs verschoben wird und neu startet.
+function offerMoveToApplications() {
+  const settings = readSettings()
+  const offer = shouldOfferMove({
+    platform: process.platform,
+    packaged: app.isPackaged,
+    inApplications: process.platform === 'darwin' && app.isInApplicationsFolder(),
+    declined: settings.moveDeclined === true,
+    ci: Boolean(process.env.CI),
+  })
+  if (!offer) return false
+  const answer = dialog.showMessageBoxSync({
+    type: 'question',
+    title: 'Mietfuchs',
+    message: 'Mietfuchs in den Ordner „Programme“ verschieben?',
+    detail: 'Mietfuchs läuft gerade nicht aus dem Ordner „Programme“. Dort lässt es sich wie jedes Programm starten, und eine neue Version ersetzt es an derselben Stelle. Ihre Daten bleiben, wo sie sind.',
+    buttons: ['Verschieben', 'Nicht verschieben'],
+    defaultId: 0,
+    cancelId: 1,
+  })
+  if (answer !== 0) {
+    writeSettings({ ...settings, moveDeclined: true })
+    return false
+  }
+  try {
+    return app.moveToApplicationsFolder({
+      conflictHandler: (type) => type !== 'exists' || dialog.showMessageBoxSync({
+        type: 'question',
+        title: 'Mietfuchs',
+        message: 'Im Ordner „Programme“ liegt schon ein Mietfuchs. Durch dieses ersetzen?',
+        detail: 'Das bisherige kommt in den Papierkorb. Ihre Daten bleiben, wo sie sind.',
+        buttons: ['Ersetzen', 'Abbrechen'],
+        defaultId: 0,
+        cancelId: 1,
+      }) === 0,
+    })
+  } catch (err) {
+    dialog.showErrorBox('Mietfuchs ließ sich nicht verschieben', `${err instanceof Error ? err.message : String(err)}\n\nSie können Mietfuchs auch selbst in den Ordner „Programme“ ziehen.`)
+    return false
+  }
 }
 
 if (!app.requestSingleInstanceLock()) {
@@ -461,8 +620,16 @@ if (!app.requestSingleInstanceLock()) {
     if (quitting) return
     quitting = true
     event.preventDefault()
-    // Erst einen laufenden Neustart abwarten (er startet nach `quitting` keinen Server mehr), dann den Server beenden
-    void restarting.then(() => stopServer()).finally(() => app.exit(0))
+    // Erst einen laufenden Neustart abwarten (er startet nach `quitting` keinen Server mehr), dann den Server beenden.
+    // Danach, mit „Beim nächsten Start“, den Installer der neuen Version still und ohne anschließenden Start; er läuft
+    // weiter, wenn das Fenster zu ist (updater.js, installOnQuit).
+    void restarting.then(() => stopServer()).then(() => {
+      try {
+        updates?.installOnQuit()
+      } catch (err) {
+        console.error(`Update beim Beenden: ${err}`)
+      }
+    }).finally(() => app.exit(0))
   })
   // Fenster zu heißt Mietfuchs zu, auch auf dem Mac
   app.on('window-all-closed', () => app.quit())

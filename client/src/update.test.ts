@@ -69,10 +69,12 @@ describe('Umstieg auf das Programmfenster (#517)', () => {
     expect(desktopHintVisible(status({ desktopOffer: 'windows', current: '0.4.1' }), dismissed)).toBe(true)
   })
 
-  test('Links aus festen Adressen: unter Windows Store und Installer, auf dem Mac das Abbild', () => {
+  // Geänderte Erwartung: Der Installer zuerst, der Store als zweite Wahl. Bis zur Zertifizierung (einige Tage) liefert
+  // der Store noch die Fassung ohne Übernahme der Daten.
+  test('Links aus festen Adressen: unter Windows Installer und Store, auf dem Mac das Abbild', () => {
     expect(desktopLinks('windows', '0.15.0')).toEqual([
-      { label: 'Aus dem Microsoft Store laden', href: STORE_URL, primary: true },
-      { label: 'Installer herunterladen', href: RELEASES_URL, primary: false },
+      { label: 'Installer herunterladen', href: RELEASES_URL, primary: true },
+      { label: 'Oder aus dem Microsoft Store, mit automatischen Updates', href: STORE_URL, primary: false },
     ])
     expect(desktopLinks('macos', '0.15.0')).toEqual([{ label: 'Neues Mietfuchs herunterladen', href: RELEASES_URL, primary: true }])
     expect(RELEASES_URL).toBe('https://github.com/speedone/mietfuchs/releases/latest')
@@ -137,6 +139,13 @@ describe('Anleitung je Betriebsart', () => {
   test('Programmfenster (#517): neu installieren über die Release-Seite', () => {
     expect(updateGuide(status({ mode: 'desktop', downloadUrl: null }))).toEqual({
       kind: 'download', href: 'https://github.com/speedone/mietfuchs/releases/tag/v0.5.0', system: 'desktop', newTab: true,
+    })
+  })
+
+  test('Programmfenster auf dem Mac (#517): das passende Abbild direkt, Anleitung für den Mac', () => {
+    const dmg = 'https://github.com/speedone/mietfuchs/releases/download/v0.5.0/Mietfuchs-0.5.0-apple-silicon.dmg'
+    expect(updateGuide(status({ mode: 'desktop', downloadUrl: dmg }))).toEqual({
+      kind: 'download', href: dmg, system: 'desktop-mac', newTab: false,
     })
   })
 

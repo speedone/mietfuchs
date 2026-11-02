@@ -103,11 +103,18 @@ const ASSET_NAMES: Record<string, string> = {
   'linux-arm64': 'mietfuchs-linux-arm64.tar.gz',
 }
 
+// Das Abbild des Programmfensters für den Mac (#517), benannt wie in scripts/package-desktop.mjs (`userFileName`). Es
+// trägt die Version im Namen, deshalb keine feste Liste wie oben.
+export function desktopDmgName(version: string, arch: string): string | null {
+  if (arch === 'arm64') return `Mietfuchs-${version}-apple-silicon.dmg`
+  if (arch === 'x64') return `Mietfuchs-${version}-intel.dmg`
+  return null
+}
+
 // `assets` kommt ungeprüft aus der Antwort. Was keine Liste von Objekten ist, zählt als „keine
 // Datei dabei": Dann führt der Hinweis auf die Release-Seite, genau wie bei einem System, für
 // das es keine eigene Datei gibt. Die Version steht ja in derselben Antwort und bleibt gültig.
-export function assetFor(assets: unknown, platform: string, arch: string): GithubReleaseAsset | null {
-  const name = ASSET_NAMES[`${platform}-${arch}`]
+export function assetFor(assets: unknown, platform: string, arch: string, name: string | undefined = ASSET_NAMES[`${platform}-${arch}`]): GithubReleaseAsset | null {
   if (!name || !Array.isArray(assets)) return null
   const found: unknown = assets.find((a: unknown) => isObject(a) && a.name === name)
   if (!isObject(found)) return null
@@ -252,6 +259,12 @@ export function createUpdateChecker({
     result.releaseUrl = trusted(release.html_url)
     if (mode === 'binary') {
       result.downloadUrl = trusted(assetFor(release.assets, platform, arch)?.browser_download_url) ?? result.releaseUrl
+    }
+    // Das Programmfenster auf dem Mac aktualisiert sich nicht selbst (Squirrel.Mac verlangt eine bezahlte
+    // Developer-ID-Signatur): Der Hinweis führt auf das passende Abbild. Unter Windows lädt das Fenster selbst
+    // (desktop/src/updater.js), dort bleibt es bei der Release-Seite.
+    if (mode === 'desktop' && platform === 'darwin') {
+      result.downloadUrl = trusted(assetFor(release.assets, platform, arch, desktopDmgName(latest, arch) ?? undefined)?.browser_download_url) ?? result.releaseUrl
     }
   }
 

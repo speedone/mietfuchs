@@ -8,6 +8,8 @@ import { UIProvider, useConfirm, useToast } from './components/feedback'
 import { NewPropertyProvider, useOpenNewProperty } from './components/NewPropertyDrawer'
 import FoxLogo from './components/Logo'
 import { UpdateHint, useUpdateStatus } from './components/Update'
+import { UpdaterReadyHint } from './components/DesktopUpdater'
+import { serverHintAllowed } from './desktopUpdater'
 import DatabaseNotice from './components/Database'
 import PropertyNotice from './components/PropertyNotice'
 import { emptyPropertyNotice, propertyName } from './propertyView'
@@ -439,7 +441,9 @@ function Shell() {
 
       {/* Oben statt im Fuß: Der Fuß liegt auf kleinen Bildschirmen und langen Seiten
           außer Sicht. */}
-      {!close && update.status && hintVisible(update.status, settings) && (
+      {/* Im Programmfenster unter Windows der Hinweis des Fensters (#517), sonst der des Servers; nie beide */}
+      {!close && update.updater?.owner === 'window' && <UpdaterReadyHint updates={update.updater} />}
+      {!close && serverHintAllowed(update.updater?.owner ?? 'server', update.updater?.state ?? null) && update.status && hintVisible(update.status, settings) && (
         <UpdateHint status={update.status} onDismissed={reload} onShowGuide={() => void navigate('einstellungen')} />
       )}
 
