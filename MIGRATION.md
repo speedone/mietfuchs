@@ -27,7 +27,7 @@ Ordner `data` neben sich, das neue Programm hat sie in Ihrem Benutzerordner (Win
 das neue Programm selbst**, auch das aus dem Microsoft Store:
 
 1. Installieren Sie das neue Programm, wie im
-   [README](README.md#installation-unter-windows-und-macos) beschrieben.
+   [Installation](docs/installation.md#installation-unter-windows-und-macos) beschrieben.
 2. Beenden Sie das alte Mietfuchs, mit *Mietfuchs beenden* unten in der Seitenleiste oder indem Sie
    sein Konsolenfenster (auf dem Mac das Terminal) schließen. Läuft es noch, bietet das neue
    *Altes Mietfuchs beenden* an.

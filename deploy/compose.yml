@@ -1,0 +1,22 @@
+# Mietfuchs mit Docker Compose, nur das Programm. Erklärung: docs/docker.md
+#
+# Start:          docker compose up -d                        App: http://<rechner>:3001
+# Aktualisieren:  docker compose pull && docker compose up -d
+# Stopp:          docker compose down        (das Volume mit den Daten bleibt erhalten)
+#
+# Mietfuchs hat kein Login. Den Port 3001 nie ins Internet freigeben (keine Portweiterleitung im Router).
+services:
+  mietfuchs:
+    image: ghcr.io/speedone/mietfuchs:latest
+    ports:
+      - "3001:3001"
+    volumes:
+      # Datenbank, Belege und Briefpapier; überleben Updates des Containers
+      - mietfuchs-data:/app/server/data
+    restart: unless-stopped
+    # Macht den Rechner selbst unter host.docker.internal erreichbar, etwa für Ollama auf dem Host
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  mietfuchs-data:

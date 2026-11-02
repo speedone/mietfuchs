@@ -1203,8 +1203,8 @@ jobs:
           # `latest=auto` vergibt `latest` bei einer Vorabversion von sich aus nicht.
           prerelease: ${{ contains(github.ref_name, '-') }}
       # Herkunftsnachweis: belegt mit einer Sigstore-Signatur, dass jede Datei aus SHA256SUMS.txt in diesem Workflow aus
-      # diesem Repo gebaut wurde. Prüfen mit `gh attestation verify <Datei> -R speedone/mietfuchs` (README, „Download
-      # prüfen“). Vor dem Veröffentlichen: Scheitert er, bleibt das Release ein Entwurf, die Einreichung im Store
+      # diesem Repo gebaut wurde. Prüfen mit `gh attestation verify <Datei> -R speedone/mietfuchs` (docs/installation.md,
+      # „Download prüfen“). Vor dem Veröffentlichen: Scheitert er, bleibt das Release ein Entwurf, die Einreichung im Store
       # (needs: veroeffentlichen) unterbleibt, und „Re-run failed jobs“ ersetzt die Dateien am Entwurf und holt alles nach.
       # Nach dem Veröffentlichen nimmt GitHub keinen Upload mehr an; „Re-run all jobs“ scheitert dann am Anhängen. Bewusst ohne continue-on-error: Ein Release ohne Nachweis soll nicht erscheinen.
       - uses: actions/attest@v4

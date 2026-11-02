@@ -1,0 +1,40 @@
+# Mietfuchs hinter Caddy: HTTPS im Heimnetz mit einem eigenen Zertifikat von Caddy. Erklärung: docs/docker.md
+#
+# Neben diese Datei gehört die Datei Caddyfile aus demselben Ordner; dort den Namen oder die IP-Adresse
+# eintragen, unter der du Mietfuchs aufrufst.
+#
+# Start:          docker compose -f compose.caddy.yml up -d     App: https://<name oder IP aus dem Caddyfile>
+# Aktualisieren:  docker compose -f compose.caddy.yml pull && docker compose -f compose.caddy.yml up -d
+# Stammzertifikat für deine Geräte holen:
+#                 docker compose -f compose.caddy.yml cp caddy:/data/caddy/pki/authorities/local/root.crt .
+#
+# Mietfuchs selbst hat keinen veröffentlichten Port, erreichbar ist es nur über Caddy. Mietfuchs hat kein
+# Login: Ports 80 und 443 nie ins Internet freigeben. Ein Passwort davor setzt basic_auth im Caddyfile.
+services:
+  mietfuchs:
+    image: ghcr.io/speedone/mietfuchs:latest
+    volumes:
+      - mietfuchs-data:/app/server/data
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  caddy:
+    image: caddy:2
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Hier liegen das Stammzertifikat und die Schlüssel; ohne Volume gäbe es nach jedem Update ein neues
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - mietfuchs
+    restart: unless-stopped
+
+volumes:
+  mietfuchs-data:
+  caddy-data:
+  caddy-config:

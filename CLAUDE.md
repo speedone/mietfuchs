@@ -167,7 +167,9 @@ Wurzel trägt `"type": "module"`, sonst gälte der Ordner als CommonJS.
 ## Wo was steht
 
 Claude Code lädt eine `CLAUDE.md` in einem Unterordner, sobald dort Dateien gelesen werden;
-`docs/heizung.md` muss man selbst öffnen.
+`docs/heizung.md` muss man selbst öffnen. Die Nutzerdoku (Installation, Docker, KI-Belegauswertung,
+Funktionsweise, Daten & Backup, Entwickeln) steht in `docs/*.md`, das README ist die Kurzfassung davon;
+seine Sprungmarken verlinken App und Release-Notes, sie bleiben beim Umbau erhalten.
 
 - [scripts/CLAUDE.md](scripts/CLAUDE.md): Bildschirmfotos, Browserlauf, Programmdateien, Programmfenster,
   Linux-Pakete, Startmenü, Docker-Image, Node-Versionen, Release-Automatik, Artefakt-Tests,
@@ -194,8 +196,8 @@ Claude Code lädt eine `CLAUDE.md` in einem Unterordner, sobald dort Dateien gel
   Kommentare, Oberflächentexte, Fehlermeldungen, Testnamen, Commit-Nachrichten und gespeicherte
   Fachwerte (`'vermietet'`, `'kaltwasser'`, die Kostenarten). Seitenkomponenten heißen wie die
   Seite (`Kosten.tsx`).
-- **Nutzertexte siezen; README und Entwicklerdoku duzen** (#142): Oberfläche, Lexikon, Meldungen
-  des Servers, Konsole, Startmenü und MIGRATION.md siezen; Prompts an das Modell ausgenommen.
+- **Nutzertexte siezen; README, docs/ und Entwicklerdoku duzen** (#142): Oberfläche, Lexikon, Meldungen
+  des Servers, Konsole, Startmenü, MIGRATION.md und docs/datenschutz.md siezen; Prompts an das Modell ausgenommen.
   Wächter: [anrede.test.ts](server/test/anrede.test.ts).
 - **Geld immer in Cent als Integer.** Eingabe über `parseEuro` (deutsche und technische
   Schreibweise), Ausgabe über `fmtEuro`.

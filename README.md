@@ -1,21 +1,37 @@
-# 🦊 Mietfuchs
+<p align="center">
+  <img src="client/public/icon-192.png" width="96" height="96" alt="Mietfuchs-Logo">
+</p>
 
-**Die kostenlose Nebenkostenabrechnung für private Vermieter, komplett auf dem eigenen Rechner.
-Keine Cloud, kein Konto, keine Abogebühren.**
+<h1 align="center">Mietfuchs</h1>
 
-[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
-[![Download](https://img.shields.io/github/v/release/speedone/mietfuchs?label=Download&logo=github)](https://github.com/speedone/mietfuchs/releases/latest)
-![Node ≥ 24.15](https://img.shields.io/badge/Node-%E2%89%A5%2024.15-339933?logo=node.js&logoColor=white)
-![100% lokal & offline](https://img.shields.io/badge/100%25-lokal%20%26%20offline-2563eb)
-![Docker ready](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)
-[![Website](https://img.shields.io/badge/Website-mietfuchs--app.de-4f46e5)](https://mietfuchs-app.de)
+<p align="center">
+  <b>Die kostenlose Nebenkostenabrechnung für private Vermieter, komplett auf dem eigenen Rechner.<br>
+  Keine Cloud, kein Konto, keine Abogebühren.</b>
+</p>
 
-Mietfuchs nimmt dir die jährliche Betriebskostenabrechnung ab: Kosten und Belege erfassen
-(optional per lokaler KI-Auswertung), Zählerstände pflegen, und am Jahresende eine fertige,
-centgenau verteilte Abrechnung je Mieter ausdrucken, inklusive Mietkonto und Steuer-Übersicht
-für die Anlage V. Ob ein Mehrfamilienhaus, mehrere Häuser, eine vermietete Eigentumswohnung oder
-das eigene Haus mit Einliegerwohnung: Alle Daten liegen in einer lokalen Datenbank bei dir,
-ohne Cloud und ohne Konto.
+<p align="center">
+  <a href="https://mietfuchs-app.de">Website</a> ·
+  <a href="https://mietfuchs-app.de/herunterladen">Herunterladen</a> ·
+  <a href="https://apps.microsoft.com/detail/9PMHZ0ZJPZDZ">Microsoft Store</a> ·
+  <a href="docs/">Dokumentation</a>
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg" alt="License: AGPL-3.0"></a>
+  <a href="https://github.com/speedone/mietfuchs/releases/latest"><img src="https://img.shields.io/github/v/release/speedone/mietfuchs?label=Download&logo=github" alt="Download"></a>
+  <img src="https://img.shields.io/badge/Node-%E2%89%A5%2024.15-339933?logo=node.js&logoColor=white" alt="Node ≥ 24.15">
+  <img src="https://img.shields.io/badge/100%25-lokal%20%26%20offline-2563eb" alt="100% lokal & offline">
+  <img src="https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white" alt="Docker ready">
+</p>
+
+Mietfuchs nimmt dir die jährliche **Nebenkostenabrechnung** (Betriebskostenabrechnung) ab: Kosten
+und Belege erfassen (optional per lokaler KI-Auswertung), Zählerstände pflegen, die
+**Heizkostenabrechnung** nach der Heizkostenverordnung erstellen oder die eines Messdienstes
+übernehmen, und am Jahresende eine fertige, centgenau verteilte Abrechnung je Mieter ausdrucken,
+inklusive Mietkonto und Steuer-Übersicht für die **Anlage V**. Gemacht für **private Vermieter**:
+ob ein Mehrfamilienhaus, mehrere Häuser, eine vermietete Eigentumswohnung oder das eigene Haus mit
+Einliegerwohnung. Alle Daten liegen **lokal** in einer Datenbank bei dir, **ohne Cloud und ohne
+Konto**.
 
 Mehr auf der Website **[mietfuchs-app.de](https://mietfuchs-app.de)**: Funktionen, Download für jedes
 System und Ratgeber zur Nebenkostenabrechnung (Frist, Vorlage, umlagefähige Kosten, Heizkosten, Steuer).
@@ -23,844 +39,185 @@ System und Ratgeber zur Nebenkostenabrechnung (Frist, Vorlage, umlagefähige Kos
 <p align="center">
   <a href="https://apps.microsoft.com/detail/9PMHZ0ZJPZDZ?referrer=appbadge&mode=direct"><img src="https://get.microsoft.com/images/de%20dark.svg" width="240" alt="Mietfuchs im Microsoft Store herunterladen"></a>
 </p>
-<p align="center"><b>Unter Windows am einfachsten aus dem Microsoft Store:</b> ein Klick zum Installieren,<br>
-Updates kommen von selbst. Für macOS siehe <a href="#installation-unter-windows-und-macos">Installation unter Windows und macOS</a>,
-für Linux <a href="#bisherige-programmdatei-ohne-installation">Programmdatei und Pakete</a>.</p>
-
-### Highlights
-
-- 🔒 **100 % lokal:** keine Cloud, kein Tracking, kein externer Dienst (außer der Update-Prüfung, wenn du sie erlaubst); Backup = Ordner kopieren
-- 🏘️ **Mehrere Objekte** in einer Installation: Häuser und Eigentumswohnungen, jedes rechnet für sich
-- 🧮 **Centgenaue Verteilung** nach Wohnfläche, Personenzahl, Wohneinheiten, Verbrauch, direkt, vereinbarten Anteilen, laut Hausgeldabrechnung oder mit Einzelbeträgen
-- 🔥 **Heizung und Warmwasser:** eigene Heizkostenabrechnung nach der Heizkostenverordnung mit Wärme- und Warmwasserzählern oder Heizkostenverteilern, die fertige Abrechnung eines Messdienstes übernehmen, CO₂-Kosten nach dem CO2KostAufG zwischen Mieter und Vermieter aufteilen; dazu Brennstoffvorrat, mehrere Heizanlagen, Etagenheizungen, Kesseltausch und eine eigene Heizperiode
-- 📅 **Abrechnungszeitraum wählbar:** Kalenderjahr oder etwa Mai bis April, mit Vorschau beim Wechsel
-- 📄 **Fertige Abrechnung** je Mieter mit Saldo, §35a-Bescheinigung und Fristen-Hinweis (§556/§560 BGB); der Rechenweg jeder Zeile lässt sich aufklappen
-- 💡 **Hinweise statt Rätselraten:** Mietfuchs erklärt, was auffällt (z. B. Rückstand, fehlender Endstand beim Zählerwechsel, Heizkostenverordnung), wo es eine gibt mit Rechtsgrundlage, und mit einem Lexikon der Fachbegriffe
-- 💶 **Mietkonto:** Soll/Ist je Monat, fällige Rückstände auf einen Blick
-- 🧾 **Steuer-Übersicht (Anlage V):** Einnahmen nach Zufluss, Werbungskosten und Überschuss aufs Jahr; wohnst du selbst im Haus, ist jede Position in abziehbar und privat aufgeteilt
-- 📥 **Belege an einem Ort:** im Eingang den ganzen Stapel ablegen, Rechnungen und Zählerfotos gemischt, prüfen und übernehmen; im Ordner je Objekt, Jahr und Kostenart, mit Suche über alle Jahre, Belegabdeckung („85 % der Kosten belegt“), einer Belegmappe für Mieter als PDF und allen Belegen für die Steuer als ZIP
-- 🔁 **Kosten aus dem Vorjahr übernehmen:** Positionen samt Umlageschlüssel übernehmen und nur den neuen Betrag eintragen; den Schlüssel merkt sich Mietfuchs je Kostenart
-- 🧷 **Eine Rechnung landet genau einmal in den Kosten:** jede Zeile eines ausgewerteten Belegs wird neu angelegt, mit einer vorhandenen Position verknüpft oder verworfen, und die Vorschau zeigt vor dem Buchen, was geschieht
-- 🤖 **Optionale KI-Belegauswertung** mit [Ollama](https://ollama.com) auf dem eigenen Rechner oder einem Dienst deiner Wahl
-- 🧭 **Anleitungen je Vermietungsart:** vom Haus mit Einliegerwohnung über die vermietete Eigentumswohnung bis zum Mieterwechsel mit Leerstand, je mit Schritten, Beispiel und Rechtslage
-- 🪟 **Eigenes Programm für Windows und macOS** mit eigenem Fenster, aus dem Microsoft Store, per Installer oder als `.dmg`; unter Linux, auf dem Raspberry Pi und in Docker läuft Mietfuchs im Browser
-- 🐳 **In Minuten startklar:** `npm run dev` oder `docker compose up`
-
-## Screenshots
-
-> Alle Abbildungen zeigen frei erfundene Beispieldaten (ein Mehrfamilienhaus „Lindenweg 12,
-> 12345 Musterstadt“ mit selbstgenutzter Dachwohnung und Garage, dazu eine vermietete
-> Eigentumswohnung), ohne echte Personen, Adressen oder Kontodaten. Die Bilder entstehen mit
-> `npm run screenshots` neu.
 
 ![Cockpit: der Stand der Abrechnung auf einen Blick](docs/screenshots/cockpit.png)
 
-| Abrechnung je Mieter, mit Rechenweg | Mietkonto (Soll/Ist je Monat) |
+| Abrechnung je Mieter, mit Rechenweg | Steuer-Übersicht (Anlage V) mit Eigennutzung |
 | --- | --- |
-| [![Abrechnung](docs/screenshots/abrechnung.png)](docs/screenshots/abrechnung.png) | [![Mietkonto](docs/screenshots/mietkonto.png)](docs/screenshots/mietkonto.png) |
+| [![Abrechnung](docs/screenshots/abrechnung.png)](docs/screenshots/abrechnung.png) | [![Steuer / Anlage V](docs/screenshots/steuer.png)](docs/screenshots/steuer.png) |
 
-| Belege: der Ordner | Auswertung prüfen im Eingang: verknüpfen statt doppelt erfassen |
-| --- | --- |
-| [![Belege: Ordner](docs/screenshots/belegordner.png)](docs/screenshots/belegordner.png) | [![Auswertung prüfen](docs/screenshots/auswertung-pruefen.png)](docs/screenshots/auswertung-pruefen.png) |
+<sub>Alle Abbildungen zeigen frei erfundene Beispieldaten. Weitere Ansichten (Mietkonto, Belege, Kosten, Zähler …)
+unter [Funktionsweise](docs/funktionsweise.md#ansichten).</sub>
 
-| Kosten | Kostenvergleich |
-| --- | --- |
-| [![Kosten](docs/screenshots/kosten.png)](docs/screenshots/kosten.png) | [![Kostenvergleich](docs/screenshots/kostenvergleich.png)](docs/screenshots/kostenvergleich.png) |
+## Funktionen
 
-| Steuer-Übersicht (Anlage V) mit Eigennutzung | Zähler & Stände |
-| --- | --- |
-| [![Steuer / Anlage V](docs/screenshots/steuer.png)](docs/screenshots/steuer.png) | [![Zähler](docs/screenshots/zaehler.png)](docs/screenshots/zaehler.png) |
+**Objekte und Mietverhältnisse**
 
-<sub>Weitere Ansichten: [Stammdaten](docs/screenshots/stammdaten.png), [Hilfe mit Anleitungen je Vermietungsart](docs/screenshots/hilfe.png).</sub>
+- 🏘️ **Mehrere Objekte** in einer Installation: Häuser und Eigentumswohnungen, jedes rechnet für sich
+- 🏠 **Selbstgenutzte Wohnung, Garage, Stellplatz:** zählen in die Verteilbasis, der Anteil der selbstgenutzten bleibt beim Vermieter
+- 📈 **Staffeln** für Personenzahl, Vorauszahlung, Kaltmiete und Pauschale: kein neues Mietverhältnis bei Geburt, Auszug oder Erhöhung
+- 🧾 **Nebenkostenmodell je Mietverhältnis:** Abrechnung, Pauschale oder Inklusivmiete, getrennt für kalte Betriebskosten und Heizung
+- 📅 **Abrechnungszeitraum wählbar:** Kalenderjahr oder etwa Mai bis April, mit Vorschau beim Wechsel
+- 📡 **Baujahr der Kabel- oder Antennenanlage** am Objekt, denn davon hängt ab, ob ihre Kosten nach 2024 noch umlagefähig sind
+- 🗃️ **Erweiterte Stammdaten** (Kontakt, Kaution, Vertragsdatum, Zimmer/Etage) optional je Mieter und Wohnung
 
-## Installation unter Windows und macOS
+**Kosten und Verteilung**
 
-Seit Version 0.15 ist Mietfuchs unter Windows und macOS ein eigenes Programm mit eigenem Fenster,
-wie jedes andere auch: Symbol in Taskleiste bzw. Dock, Fenster schließen beendet Mietfuchs, und
-die Abrechnung druckt überall gleich, mit Briefpapier und „Seite x von y“. Einen Browser brauchst
-du dafür nicht.
+- 🧮 **Centgenaue Verteilung** nach Wohnfläche, Personenzahl, Wohneinheiten, Verbrauch, direkt, vereinbarten Anteilen, laut Hausgeldabrechnung oder mit Einzelbeträgen
+- ✂️ **Eine Rechnung, mehrere Positionen** mit eigenem Umlageschlüssel; die Verteilbasis lässt sich je Position eingrenzen (z. B. Aufzug nur für die oberen Etagen)
+- 🔁 **Kosten aus dem Vorjahr übernehmen:** Positionen samt Umlageschlüssel übernehmen, nur den neuen Betrag eintragen; den Schlüssel merkt sich Mietfuchs je Kostenart
+- 🛠️ **§35a-Lohnanteil, Gutschriften, Erhaltungsrücklage** und Reparaturen, die sich für die Steuer einer Einheit zuordnen lassen
+- 📆 **Leerstand und Zeiträume:** Leerstand trägt der Vermieter, eine Rechnung über zwei Zeiträume teilt Mietfuchs nach Tagen auf
+- 📏 **Zähler** mit Jahres- und Zwischenablesung beim Mieterwechsel, Zählerwechsel, Plausibilitäts- und Eichfrist-Warnung
+
+**Heizung und Warmwasser**
+
+- 🔥 **Eigene Heizkostenabrechnung** nach §§ 7 bis 9 HeizkostenV mit Wärme- und Warmwasserzählern oder Heizkostenverteilern
+- 📋 **Abrechnung eines Messdienstes übernehmen,** auf Wunsch per KI ausgelesen
+- 🌍 **CO₂-Kosten** nach dem Stufenmodell des CO2KostAufG zwischen Mieter und Vermieter aufteilen
+- 🛢️ **Brennstoffvorrat, mehrere Heizanlagen, Etagenheizungen, Kesseltausch** und eine eigene Heizperiode; Betriebsstrom aus dem Allgemeinstrom herausrechnen
+- ⚖️ **Kürzungsrecht im Blick:** Hinweis nach § 12 HeizkostenV bei Verteilung ohne Verbrauchsanteil und bei Geräten, die aus der Ferne ablesbar sein müssen
+
+**Abrechnung, Mietkonto, Steuer**
+
+- 📄 **Fertige Abrechnung** je Mieter mit Saldo, Zahlungsaufforderung, §35a-Bescheinigung und Vorschlag zur Vorauszahlungsanpassung (§560 BGB); Druck oder PDF
+- 🔍 **Rechenweg** jeder Zeile aufklappbar; eine versendete Abrechnung wird abgeschlossen und eingefroren, spätere Abweichungen zeigt Mietfuchs je Mieter
+- ⏰ **Fristen im Blick:** Erinnerung an die 12-Monats-Abrechnungsfrist (§556 BGB)
+- 💶 **Mietkonto:** Soll/Ist je Monat, fällige Rückstände auf einen Blick, Ein- und Auszug im Lauf eines Monats nach Kalendertagen
+- 🧾 **Steuer-Übersicht (Anlage V):** Einnahmen nach Zufluss, Werbungskosten und Überschuss aufs Jahr; wohnst du selbst im Haus, ist jede Position in abziehbar und privat aufgeteilt
+
+**Belege**
+
+- 📥 **Eingang:** den ganzen Stapel ablegen, Rechnungen und Zählerfotos gemischt, prüfen und übernehmen
+- 🗂️ **Ordner** je Objekt, Jahr und Kostenart, mit Suche über alle Jahre und Belegabdeckung („85 % der Kosten belegt“); denselben Beleg erkennt Mietfuchs am Inhalt
+- 📦 **Belegmappe für Mieter** als PDF (Belegeinsicht nach § 556 Abs. 4 BGB) und alle Belege für die Steuer als ZIP
+- 🧷 **Eine Rechnung landet genau einmal in den Kosten:** jede Zeile neu anlegen, verknüpfen oder verwerfen, mit Vorschau vor dem Buchen
+- 🤖 **Optionale [KI-Belegauswertung](#ki-belegauswertung)** mit [Ollama](https://ollama.com) auf dem eigenen Rechner oder einem Dienst deiner Wahl
+
+**Hilfe und Betrieb**
+
+- 💡 **Hinweise statt Rätselraten:** Mietfuchs erklärt, was auffällt, wo es eine gibt mit Rechtsgrundlage, und mit einem Lexikon der Fachbegriffe
+- 🧭 **Anleitungen je Vermietungsart:** vom Haus mit Einliegerwohnung über die vermietete Eigentumswohnung bis zum Mieterwechsel mit Leerstand
+- 🔒 **100 % lokal:** keine Cloud, kein Tracking, kein externer Dienst (außer der Update-Prüfung, wenn du sie erlaubst)
+- 🪟 **Eigenes Programm für Windows und macOS** mit eigenem Fenster; unter Linux, auf dem Raspberry Pi und in Docker im Browser
+- 🐳 **In Minuten startklar:** `npm run dev` oder `docker compose up`
+
+Alles im Einzelnen, samt Umlageschlüsseln: **[Funktionsweise](docs/funktionsweise.md)**.
+
+<a id="installation-unter-windows-und-macos"></a>
+
+## Herunterladen
 
 | Dein Rechner | Was du lädst |
 | --- | --- |
-| Windows 10 oder 11 (auch ARM, z. B. Snapdragon) | [Microsoft Store](#windows-aus-dem-microsoft-store-empfohlen) (empfohlen) oder der [Installer](#windows-mit-dem-installer) `Mietfuchs-Setup-<Version>.exe` |
+| Windows 10 oder 11 (auch ARM, z. B. Snapdragon) | [Microsoft Store](#windows-aus-dem-microsoft-store-empfohlen) (empfohlen) |
+| Windows 10 oder 11 ohne Store | [Installer](#windows-mit-dem-installer) `Mietfuchs-Setup-<Version>.exe` |
 | Mac mit Apple-Chip (M1 und neuer) | [`Mietfuchs-<Version>-apple-silicon.dmg`](#macos) |
 | Mac mit Intel-Prozessor | [`Mietfuchs-<Version>-intel.dmg`](#macos) |
-| Linux, Raspberry Pi, Server ohne Bildschirm | [Programmdatei oder Paket](#bisherige-programmdatei-ohne-installation), [Docker](#mit-docker) |
+| Linux, Raspberry Pi | [Programmdatei oder Paket](#linux-und-programmdatei-ohne-installation) |
+| Server ohne Bildschirm | [Docker](#mit-docker) |
 
-Installer und Abbilder für den Mac liegen auf der
-**[Release-Seite](https://github.com/speedone/mietfuchs/releases/latest)** unter *Assets*.
-Welchen Mac du hast, steht im Apple-Menü unter *Über diesen Mac*: „Chip Apple M…“ oder
-„Prozessor … Intel …“.
-
-Hast du Mietfuchs schon als einzelne Programmdatei (`mietfuchs-win.exe` oder
-`mietfuchs-macos-…`) benutzt, übernimmt das neue Programm deine Daten beim ersten Start, siehe
-[Umzug von der bisherigen Programmdatei](#umzug-von-der-bisherigen-programmdatei).
+Installer, Abbilder für den Mac und Programmdateien liegen auf der
+**[Release-Seite](https://github.com/speedone/mietfuchs/releases/latest)** unter *Assets*. Alle Wege
+Schritt für Schritt: **[Installation](docs/installation.md)**.
 
 ### Windows: aus dem Microsoft Store (empfohlen)
 
-[![Mietfuchs im Microsoft Store herunterladen](https://get.microsoft.com/images/de%20dark.svg)](https://apps.microsoft.com/detail/9PMHZ0ZJPZDZ?referrer=appbadge&mode=direct)
-
-Unter Windows 10 (1809) und 11 ist der Microsoft Store der bequemste Weg, für Intel/AMD wie
-für ARM-Rechner (z. B. Snapdragon), dort in einer eigenen ARM-Fassung:
-
-- **Keine Sicherheitswarnung:** Microsoft prüft und signiert das Paket, der Hinweis „Der
-  Computer wurde durch Windows geschützt“ entfällt.
-- **Updates kommen von selbst:** Der Store installiert jede neue Version im Hintergrund, sobald
-  Mietfuchs beendet ist (solange es läuft, ersetzt Windows es nicht). Sofort geht es im Store unter
-  *Bibliothek* mit *Updates abrufen*. Eine neue Version erscheint im Store erst, wenn Microsoft
-  sie geprüft hat, meist einige Tage nach dem Release hier. Zeigt der Store also noch eine Version
-  vor 0.15, nimm bis dahin den Installer (dann aber nur ihn, siehe unten) oder arbeite mit der bisherigen
-  Programmdatei weiter.
-- **Wie jedes andere Programm:** Eintrag im Startmenü, eigenes Fenster, Start auch über
-  `mietfuchs` in der Eingabeaufforderung. Fenster schließen beendet Mietfuchs.
-- **Deine Daten liegen in `%USERPROFILE%\Mietfuchs`** (z. B. `C:\Users\Name\Mietfuchs`) und
-  bleiben auch beim Deinstallieren erhalten. Backup = diesen Ordner kopieren.
+Unter Windows 10 (1809) und 11 ist der [Microsoft Store](https://apps.microsoft.com/detail/9PMHZ0ZJPZDZ?referrer=appbadge&mode=direct)
+der bequemste Weg, für Intel/AMD wie für ARM-Rechner. Microsoft prüft und signiert das Paket, der
+Hinweis „Der Computer wurde durch Windows geschützt“ entfällt. Updates kommen von selbst, sobald
+Mietfuchs beendet ist. Deine Daten liegen in `%USERPROFILE%\Mietfuchs` und bleiben auch beim
+Deinstallieren erhalten. [Mehr dazu](docs/installation.md#windows-aus-dem-microsoft-store-empfohlen)
 
 ### Windows: mit dem Installer
 
-Ohne Store geht es mit dem Installer, einer Datei für Intel/AMD und ARM:
-
-1. Auf der [Release-Seite](https://github.com/speedone/mietfuchs/releases/latest) unter *Assets*
-   `Mietfuchs-Setup-<Version>.exe` laden.
-   Hält dein Browser die Datei zurück, weil sie selten heruntergeladen wird, wähle in seiner
-   Download-Liste, dass du sie behalten willst.
-2. Die Datei per Doppelklick starten. Beim ersten Mal warnt Windows, weil die Datei nicht
-   kostenpflichtig signiert ist: „Der Computer wurde durch Windows geschützt“ → *Weitere
-   Informationen* → *Trotzdem ausführen*.
-3. Der Installer fragt nichts weiter und braucht keine Administratorrechte. Er installiert
-   Mietfuchs für dich, legt Einträge im Startmenü und auf dem Desktop an und startet es.
-
-Deine Daten liegen wie bei der Store-Fassung in `%USERPROFILE%\Mietfuchs`. Nimm deshalb nur eine
-der beiden Fassungen, Store oder Installer. Hast du beide installiert (etwa weil der Store noch eine
-Version vor 0.15 zeigte), starte immer nur eine: Läuft die andere schon, startet Mietfuchs nicht und
-sagt „Mietfuchs läuft bereits mit denselben Daten …“; beende dann zuerst die andere. Willst du
-später zum Store wechseln, deinstalliere vorher die Fassung aus dem Installer; der Datenordner
-bleibt dabei liegen.
-
-**Updates:** Erlaubst du in den Einstellungen unter „Über Mietfuchs“ die Update-Prüfung, lädt
-Mietfuchs eine neue Version selbst von GitHub (GitHub sieht dabei deine IP-Adresse und die
-Versionsnummer). Ist sie geladen, meldet Mietfuchs „Version … ist bereit“, und du wählst *Beim
-nächsten Start* oder *Jetzt neu starten*; ungefragt startet es nie neu. Vor dem Update sichert
-Mietfuchs die Datenbank wie bei jedem Update. Ohne Update-Prüfung lädst du den neuen Installer
-von der Release-Seite und startest ihn, er ersetzt die alte Version, deine Daten bleiben.
-
-Ein Update lädt Mietfuchs nur, wenn dessen Beschreibung (`latest.yml` im Release) mit dem Schlüssel
-von Mietfuchs unterschrieben ist (Ed25519); der passende Prüfschlüssel steckt im Programm. Fehlt die
-Unterschrift oder passt sie nicht, lädt es nichts, und „Über Mietfuchs“ sagt, warum. Die Prüfsumme
-der geladenen Datei prüft es danach zusätzlich. Damit bei einem Update nur die geänderten Teile
-kommen, legt der Installer eine Kopie von sich unter `%LOCALAPPDATA%\mietfuchs-updater` ab (rund
-230 MB); das Deinstallieren entfernt sie.
-
-Deinstallieren geht wie bei jedem Programm unter *Einstellungen → Apps*. Der Datenordner bleibt
-dabei liegen.
+Ohne Store lädst du `Mietfuchs-Setup-<Version>.exe` von der
+[Release-Seite](https://github.com/speedone/mietfuchs/releases/latest), eine Datei für Intel/AMD und
+ARM. Beim ersten Start warnt Windows (SmartScreen), weil die Datei nicht kostenpflichtig signiert
+ist: „Der Computer wurde durch Windows geschützt“ → *Weitere Informationen* → *Trotzdem ausführen*.
+Der Installer braucht keine Administratorrechte. Nimm nur eine der beiden Fassungen, Store oder
+Installer, denn beide nutzen denselben Datenordner. [Mehr dazu](docs/installation.md#windows-mit-dem-installer)
 
 ### macOS
 
-Das neue Programm braucht **macOS 13 (Ventura) oder neuer**, so verlangt es Electron, auf dem es aufbaut. Die
-[bisherige Programmdatei](#herunterladen--starten-ohne-installation) ist kein Ausweg für ältere Macs: Sie ist mit
-Bun gebaut, und Bun läuft ebenfalls erst ab macOS 13. Auf einem älteren Mac lässt du Mietfuchs deshalb auf
-einem anderen Gerät laufen und öffnest es im Browser des Macs, siehe
-[Zugriff vom Handy oder einem zweiten Rechner](#zugriff-vom-handy-oder-einem-zweiten-rechner).
-
-1. Auf der [Release-Seite](https://github.com/speedone/mietfuchs/releases/latest) unter *Assets*
-   das Abbild für deinen Mac laden: `Mietfuchs-<Version>-apple-silicon.dmg` für Apple M1 und
-   neuer, `Mietfuchs-<Version>-intel.dmg` für einen Mac mit Intel-Prozessor.
-2. Das Abbild per Doppelklick öffnen und **Mietfuchs** auf den Ordner **Programme** ziehen.
-3. Mietfuchs aus *Programme* starten. Beim ersten Mal blockiert macOS den Start, weil Mietfuchs
-   nicht kostenpflichtig bei Apple signiert ist. So gibst du es einmalig frei:
-   - Den Dialog mit *Fertig* schließen.
-   - *Systemeinstellungen → Datenschutz & Sicherheit* öffnen, nach unten scrollen und bei der
-     Meldung zu Mietfuchs auf *Dennoch öffnen* klicken, mit deinem Passwort bestätigen.
-   - Fragt macOS danach noch einmal nach, auch dort *Dennoch öffnen* wählen.
-
-   Seit macOS 15 geht das nur noch so; der frühere Weg mit Ctrl-Klick → *Öffnen* klappt dort
-   nicht mehr. Wer das Terminal mag, nimmt stattdessen
-   `xattr -dr com.apple.quarantine /Applications/Mietfuchs.app`.
-
-   Startest du Mietfuchs direkt aus dem Abbild oder aus Downloads, bietet es einmal an, sich nach
-   *Programme* zu verschieben.
-4. Sucht Mietfuchs beim ersten Start deine bisherigen Daten, fragt macOS, ob es auf Downloads,
-   Schreibtisch und Dokumente zugreifen darf. Erlaube es; die Daten verlassen deinen Mac nicht.
-
-Deine Daten liegen in `~/Library/Application Support/Mietfuchs`. Backup = diesen Ordner kopieren;
-im Menü *Mietfuchs → Datenordner zeigen* öffnet ihn der Finder.
-
-**Updates:** Auf dem Mac aktualisiert sich Mietfuchs nicht von selbst, das ginge nur mit einer
-kostenpflichtigen Signatur. Erlaubst du die Update-Prüfung, sagt Mietfuchs Bescheid, wenn es eine
-neue Version gibt, und führt direkt zum passenden Abbild. Dann Mietfuchs beenden, das neue Abbild
-laden, Mietfuchs wieder auf *Programme* ziehen und *Ersetzen* wählen. Den ersten Start gibst du wie oben noch einmal frei.
-Deine Daten bleiben, wo sie sind.
-
-### Umzug von der bisherigen Programmdatei
-
-Bis Version 0.14 lief Mietfuchs unter Windows und macOS im Browser, als einzelne Programmdatei
-oder aus dem Microsoft Store. Die Daten der Programmdatei liegen im Ordner `data/` neben der
-Datei. Das neue Programm holt sie von selbst, auch das aus dem Microsoft Store:
-
-1. Das neue Programm installieren, wie oben beschrieben.
-2. Das alte Mietfuchs beenden, mit *Mietfuchs beenden* unten in der Seitenleiste oder indem du
-   sein Konsolenfenster (auf dem Mac das Terminal) schließt. Vergisst du es, bietet das neue
-   *Altes Mietfuchs beenden* an.
-3. Das neue Mietfuchs starten. Findet es deine Daten, zeigt es „Wir haben Ihre bisherigen
-   Mietfuchs-Daten gefunden“ mit Ort und letzter Änderung. Auf **Daten übernehmen** klicken.
-
-Gesucht wird dort, wo die Programmdatei zuletzt lief (ab Version 0.14.1 merkt sie sich den Ort),
-unter Windows auch in `%LOCALAPPDATA%\Mietfuchs` (dorthin legte die Programmdatei ihre Daten, wenn sie
-neben sich nicht schreiben durfte), sonst in Downloads, Schreibtisch und Dokumente (auch in OneDrive). Findet Mietfuchs nichts, fragt es „Haben Sie
-Mietfuchs schon einmal benutzt?“. Mit *Ja, Daten übernehmen* geht es auf einem von zwei Wegen
-weiter:
-
-- *Ordner der alten Programmdatei wählen …*, wenn du weißt, wo sie liegt.
-- Über ein Backup: das alte Mietfuchs noch einmal starten, unter *Einstellungen* auf
-  **Backup herunterladen (ZIP)** klicken (mit Haken bei „Verlauf der Änderungen mitsichern“,
-  wenn du den Verlauf mitnehmen willst), dann im neuen auf **Backup einspielen** und die
-  ZIP-Datei wählen. Schlüssel für einen KI-Dienst trägst du danach neu ein, und das alte
-  Mietfuchs startest du nicht mehr, sonst entstehen zwei Bestände.
-
-Übernommen wird als **Kopie**: Datenbank, Belege und Briefpapier. Mietfuchs vergleicht die Kopie
-mit dem Original und schaltet erst dann um. Dein alter Ordner bleibt unverändert liegen. Beim Weg
-über den Ordner zeigt die alte Programmdatei ihn danach nur noch zum Ansehen, damit es keine zwei
-Bestände gibt. Später
-geht die Übernahme jederzeit in den Einstellungen unter „Daten aus bisherigem Mietfuchs
-übernehmen …“. Ändert jemand nach dem Umzug noch etwas im alten Mietfuchs, sagt das neue es dir
-und bietet an, den neueren Stand zu übernehmen.
-
-Automatische Vorversionen (`vorversionen/`) und die Sicherungen vor Updates
-(`mietfuchs.sqlite.vor-…`) bleiben im alten Ordner; das neue Programm legt ab dann eigene an. Der
-Papierkorb gelöschter Belege zieht mit, damit „Rückgängig“ im Verlauf weiter wirkt.
-
-Lag deine alte Mac-Programmdatei im Ordner *Programme*, nutzt das neue Programm ihre Daten in
-`~/Library/Application Support/Mietfuchs` direkt, ohne Umzug; starte die alte danach nicht mehr.
-Startest du das neue, solange die alte läuft, startet es nicht, sondern sagt, dass Mietfuchs schon
-mit denselben Daten läuft. Umgekehrt öffnet eine Programmdatei ab 0.15 dann das laufende im
-Browser; ältere Programmdateien prüfen das nicht.
-
-Läuft alles im neuen Programm, kannst du die alte Programmdatei löschen. Den alten Ordner `data/`
-hebst du am besten noch eine Weile als Sicherung auf.
-
-### Zugriff vom Handy oder einem zweiten Rechner
-
-Das neue Programm ist zunächst nur auf diesem Rechner erreichbar (Port 17517), deshalb fragt auch
-keine Firewall. Willst du Mietfuchs auf dem Handy, Tablet oder einem zweiten Rechner im selben
-WLAN öffnen:
-
-1. In den Einstellungen unter „Zugriff aus dem Heimnetz“ das Häkchen setzen und speichern.
-   Mietfuchs startet dabei kurz neu.
-2. Fragt Windows danach, ob Mietfuchs ins Netz darf, lass nur **Private Netzwerke** zu, nicht
-   öffentliche. Kommt das Handy dann nicht durch, führt Windows dein WLAN vermutlich als
-   öffentliches Netz: unter *Einstellungen → Netzwerk und Internet → WLAN →* dein Netz den
-   *Netzwerkprofiltyp* auf *Privates Netzwerk* stellen.
-3. Die Karte nennt die Adresse fürs Handy, etwa `http://192.168.178.23:17517`.
-
-Die Adresse ist eine andere als bei der bisherigen Programmdatei und der Store-Fassung bis 0.14
-(dort Port 3001); ein Lesezeichen auf dem Handy legst du also neu an. Mietfuchs hat kein Passwort: Solange der Zugriff
-erlaubt ist, kann jeder in deinem Heimnetz deine Daten öffnen und ändern. Erlaube ihn nur in
-einem Netz, dem du vertraust.
-
-### Download prüfen (für Fortgeschrittene)
-
-Unter Windows bekommst du Mietfuchs am einfachsten und ohne Prüfen über den Microsoft Store. Lädst du von der
-[Release-Seite](https://github.com/speedone/mietfuchs/releases/latest), kannst du nachsehen, ob die
-Datei vollständig und unverändert angekommen ist und wirklich aus diesem Repo stammt:
-
-**Prüfsumme.** Jedes Release hat eine Datei `SHA256SUMS.txt` mit der SHA-256-Prüfsumme jeder Datei;
-GitHub zeigt sie außerdem bei jeder hochgeladenen Datei unter *Assets* an
-(nicht bei den automatischen Einträgen „Source code“). Berechne die Prüfsumme deines Downloads
-und vergleiche sie mit dem Eintrag:
-
-```powershell
-# Windows (PowerShell)
-Get-FileHash "$env:USERPROFILE\Downloads\Mietfuchs-Setup-0.15.0.exe"
-```
-
-```bash
-# macOS
-shasum -a 256 ~/Downloads/Mietfuchs-0.15.0-apple-silicon.dmg
-# Linux: alle geladenen Dateien im Ordner auf einmal
-sha256sum -c SHA256SUMS.txt --ignore-missing
-```
-
-**Herkunftsnachweis.** Die Prüfsumme zeigt nur, dass die Datei so ankam, wie sie am Release liegt.
-Dass sie auch in der Release-Automatik dieses Repos gebaut wurde, belegt ein signierter Nachweis
-(Artifact Attestation), den du mit der [GitHub-CLI](https://cli.github.com/) prüfst (vorher einmal
-`gh auth login`):
-
-```bash
-gh attestation verify Mietfuchs-Setup-0.15.0.exe -R speedone/mietfuchs
-```
-
-Die Prüfsummen gibt es ab Version 0.15.0, den Herkunftsnachweis ab 0.15.1. Updates unter Windows (Installer) prüft das Programmfenster selbst:
-Es lädt nur eine Update-Beschreibung, die mit dem Schlüssel von Mietfuchs signiert ist.
+Das Programm braucht **macOS 13 (Ventura) oder neuer**: das Abbild für deinen Mac laden, öffnen und
+**Mietfuchs** auf den Ordner **Programme** ziehen. Beim ersten Start blockiert macOS es, weil
+Mietfuchs nicht kostenpflichtig bei Apple signiert ist: den Dialog mit *Fertig* schließen und unter
+*Systemeinstellungen → Datenschutz & Sicherheit* bei der Meldung zu Mietfuchs auf *Dennoch öffnen*
+klicken. Welchen Mac du hast, steht im Apple-Menü unter *Über diesen Mac*.
+[Mehr dazu](docs/installation.md#macos), auch zu Updates und älteren Macs.
 
 <a id="herunterladen--starten-ohne-installation"></a>
 
-## Bisherige Programmdatei (ohne Installation)
+### Linux und Programmdatei ohne Installation
 
-Die einzelne Programmdatei gibt es weiter. Unter Linux und auf dem Raspberry Pi ist sie neben dem
-[Installationspaket](#linux-installationspaket-mit-startmenü-eintrag) der übliche Weg. Unter
-Windows und macOS ist das [neue Programm](#installation-unter-windows-und-macos) einfacher; wer
-dort die Programmdatei startet, sieht im Cockpit einen Hinweis zum Umstieg. Unter Windows und
-macOS ist das neue Programm der empfohlene Weg; die Programmdatei gibt es dort vorerst weiter. Sie braucht **keine
-Installation und kein Node** und öffnet Mietfuchs im Browser. Ein Klick lädt immer die neueste
-Fassung:
+Unter Linux und auf dem Raspberry Pi nimmst du die einzelne Programmdatei
+[`mietfuchs-linux.tar.gz`](https://github.com/speedone/mietfuchs/releases/latest/download/mietfuchs-linux.tar.gz)
+(ARM: [`mietfuchs-linux-arm64.tar.gz`](https://github.com/speedone/mietfuchs/releases/latest/download/mietfuchs-linux-arm64.tar.gz)):
+entpacken, starten, Mietfuchs öffnet sich im Browser, ohne Installation und ohne Node. Wer lieber
+installiert, nimmt das Paket für Debian/Ubuntu, Fedora/openSUSE oder Arch, mit Eintrag im
+Startmenü. Die Programmdatei gibt es auch für Windows und macOS weiter; dort ist das Programm oben
+der empfohlene Weg.
+[Alle Dateien, Pakete und die Freigabe beim ersten Start](docs/installation.md#bisherige-programmdatei-ohne-installation)
 
-[![Windows herunterladen](https://img.shields.io/badge/Windows-herunterladen-0078D4?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/speedone/mietfuchs/releases/latest/download/mietfuchs-win.exe)
-[![macOS herunterladen](https://img.shields.io/badge/macOS-herunterladen-111111?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/speedone/mietfuchs/releases/latest/download/mietfuchs-macos-apple-silicon.zip)
-[![Linux herunterladen](https://img.shields.io/badge/Linux-herunterladen-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://github.com/speedone/mietfuchs/releases/latest/download/mietfuchs-linux.tar.gz)
+### Mit Docker
 
-Der macOS-Knopf gilt für Macs mit Apple-Chip (M1 und neuer). Für einen älteren Mac mit
-Intel-Prozessor, für ARM-Rechner wie den Raspberry Pi oder für ein Linux-Installationspaket
-steht alles in den beiden Tabellen. Jeder Dateiname führt direkt zur neuesten Fassung:
-
-| System | Datei |
-| --- | --- |
-| Windows | [`mietfuchs-win.exe`](https://github.com/speedone/mietfuchs/releases/latest/download/mietfuchs-win.exe) |
-| Windows auf ARM (z. B. Snapdragon) | [`mietfuchs-win-arm64.exe`](https://github.com/speedone/mietfuchs/releases/latest/download/mietfuchs-win-arm64.exe) |
-| macOS (Apple Silicon, M1–M4) | [`mietfuchs-macos-apple-silicon.zip`](https://github.com/speedone/mietfuchs/releases/latest/download/mietfuchs-macos-apple-silicon.zip) |
-| macOS (Intel) | [`mietfuchs-macos-intel.zip`](https://github.com/speedone/mietfuchs/releases/latest/download/mietfuchs-macos-intel.zip) |
-| Linux | [`mietfuchs-linux.tar.gz`](https://github.com/speedone/mietfuchs/releases/latest/download/mietfuchs-linux.tar.gz) |
-| Linux auf ARM (z. B. Raspberry Pi 4/5 mit 64-Bit-System) | [`mietfuchs-linux-arm64.tar.gz`](https://github.com/speedone/mietfuchs/releases/latest/download/mietfuchs-linux-arm64.tar.gz) |
-
-Voraussetzungen: Windows 10 (1809) oder neuer, macOS 13 oder neuer (wie beim neuen Programm; das
-verlangt Bun, mit dem die Datei gebaut ist), Linux mit glibc 2.17 oder neuer. Das sind praktisch
-alle gängigen Distributionen; vor jedem Release startet jede Datei testweise auf ihrem System und Linux zusätzlich auf Debian, Ubuntu, Fedora, AlmaLinux, Rocky,
-openSUSE, Arch und CentOS 7. Für Alpine und andere musl-Systeme gibt es das Docker-Image.
-
-Archiv entpacken (unter macOS genügt ein Doppelklick), dann die Programmdatei per
-**Doppelklick** starten; es öffnet sich automatisch dein Browser mit Mietfuchs.
-Daneben öffnet sich ein Konsolenfenster mit Text (unter Windows schwarz, auf dem Mac das
-Terminal). Lass es offen, solange du arbeitest; zum Beenden einfach schließen oder in Mietfuchs
-unten in der Seitenleiste auf *Mietfuchs beenden* klicken.
-
-Beim ersten Start meldet sich das Betriebssystem, weil die Datei nicht kostenpflichtig
-signiert ist:
-
-- **Windows:** „Der Computer wurde durch Windows geschützt" → *Weitere Informationen* →
-  *Trotzdem ausführen*. Ohne diese Warnung geht es über den
-  [Microsoft Store](#windows-aus-dem-microsoft-store-empfohlen).
-- **macOS:** der erste Start wird blockiert: Dialog schließen, dann in
-  *Systemeinstellungen → Datenschutz & Sicherheit* unten bei der Mietfuchs-Meldung auf
-  *Dennoch öffnen* klicken und den Start wiederholen. Das gilt genauso für das
-  [neue Programm](#macos). Bis macOS 14 geht stattdessen Rechtsklick auf die Datei → *Öffnen* →
-  im Dialog nochmals *Öffnen*. Wer das Terminal mag, nimmt im Ordner der Programmdatei den
-  Einzeiler `xattr -d com.apple.quarantine mietfuchs-macos-*` (für das neue Programm steht der
-  passende Befehl [dort](#macos)).
-- **Linux:** im Terminal: `tar -xzf mietfuchs-linux.tar.gz && ./mietfuchs-linux`
-  (das Archiv erhält die Ausführungsrechte, `chmod` ist nicht nötig).
-
-Deine Daten liegen im Ordner **`data/` direkt neben der Programmdatei** (`mietfuchs.sqlite` +
-Belege). Backup = diesen Ordner kopieren. Wechselst du unter Windows oder macOS zum neuen
-Programm, nimmt es diesen Ordner mit, siehe
-[Umzug von der bisherigen Programmdatei](#umzug-von-der-bisherigen-programmdatei). Kommst du von einer älteren Version und hast nur noch
-ein Backup-Archiv oder eine lose `db.json`, steht der Weg dafür in
-[MIGRATION.md](MIGRATION.md). Die optionale [KI-Belegauswertung](#ki-belegauswertung)
-braucht zusätzlich ein separat installiertes [Ollama](https://ollama.com) oder den Zugang zu
-einem KI-Dienst. Ohne beides funktioniert die Abrechnung trotzdem vollständig.
-
-### Linux: Installationspaket mit Startmenü-Eintrag
-
-Wer Mietfuchs lieber wie jedes andere Programm installiert, nimmt statt des Archivs das Paket
-seiner Distribution. Es legt Mietfuchs nach `/usr/bin` und trägt ihn ins Startmenü ein, mit
-Symbol und der Kategorie „Büro“.
-
-| Distribution | Datei | Installieren |
-| --- | --- | --- |
-| Debian, Ubuntu, Mint | `mietfuchs_*_amd64.deb` | `sudo apt install ./mietfuchs_*_amd64.deb` |
-| Fedora, RHEL, AlmaLinux, Rocky | `mietfuchs-*.x86_64.rpm` | `sudo dnf install ./mietfuchs-*.x86_64.rpm` |
-| openSUSE | `mietfuchs-*.x86_64.rpm` | `sudo zypper install ./mietfuchs-*.x86_64.rpm` |
-| Arch, Manjaro, EndeavourOS | `mietfuchs-*-x86_64.pkg.tar.zst` | `sudo pacman -U mietfuchs-*-x86_64.pkg.tar.zst` |
-
-Für ARM-Rechner (Raspberry Pi 4/5 mit 64-Bit-System) heißen die Dateien `arm64` statt `amd64`
-und `aarch64` statt `x86_64`.
-
-Ein Klick im Startmenü startet Mietfuchs und öffnet den Browser; ein Konsolenfenster gibt es
-dabei nicht. Zum Beenden dient der Knopf **„Mietfuchs beenden"** unten in der Seitenleiste. Ein
-zweiter Klick im Menü holt einfach die laufende Oberfläche nach vorn.
-
-Ohne grafische Oberfläche, etwa auf einem Server oder einem Raspberry Pi per SSH, funktioniert
-das Paket genauso: `mietfuchs` im Terminal starten und die Oberfläche von einem anderen Rechner
-unter `http://<ip-des-rechners>:3001` aufrufen. Dass sich dort kein Browser öffnet, ist normal;
-Mietfuchs sagt es in der Ausgabe.
-
-Mietfuchs antwortet dabei unter seiner IP-Adresse, unter `localhost` und unter Namen im Heimnetz
-(ohne Punkt wie `raspberrypi`, oder mit Endungen wie `.local`, `.lan`, `.fritz.box`, `.home.arpa`,
-`.ts.net`). Unter einem anderen Namen, etwa hinter einem Reverse-Proxy mit eigener Domain, trägst
-du ihn in `NKA_ALLOWED_HOSTS` ein (mehrere mit Komma, `.example.org` für alle Namen darunter, `*`
-schaltet die Prüfung ab). Das schützt davor, dass eine fremde Webseite in deinem Browser Mietfuchs
-über einen eigenen Namen erreicht oder darin etwas ändert. Im Docker-Image ist die Prüfung aus,
-solange `NKA_ALLOWED_HOSTS` nicht gesetzt ist. `NKA_HOST` legt fest, auf welcher Adresse
-Mietfuchs lauscht, etwa `127.0.0.1` für nur diesen Rechner; ohne Angabe auf allen.
-
-Aus einem Paket installiert, liegen die Daten in **`~/.local/share/mietfuchs`** statt neben der
-Programmdatei; in `/usr/bin` darf niemand schreiben. Backup = diesen Ordner kopieren. Wer die
-Archiv-Fassung schon nutzt, behält seinen Ordner `data/` neben der Programmdatei. Beim Umstieg
-vom Archiv auf das Paket den alten Ordner also einmal mitnehmen:
+Ein Image für `linux/amd64` und `linux/arm64` liefert App und API auf Port 3001; die Daten liegen
+im Volume `mietfuchs-data` und überleben Updates des Containers. Fertige Compose-Dateien (nur
+Mietfuchs, mit HTTPS über Caddy, mit Ollama) liegen in [deploy/](deploy), erklärt unter
+[Docker](docs/docker.md).
 
 ```bash
-mkdir -p ~/.local/share/mietfuchs && cp -r data/. ~/.local/share/mietfuchs/
+docker run -d -p 3001:3001 -v mietfuchs-data:/app/server/data --name mietfuchs ghcr.io/speedone/mietfuchs:latest
 ```
 
-Wo die Daten liegen, sagt Mietfuchs beim Start selbst: Die zweite Zeile der Ausgabe im
-Terminal nennt den Ordner.
+### Umzug von der bisherigen Programmdatei
 
-Ein Update holt sich das Paket nicht von selbst: Neue Fassung von der Releases-Seite laden und
-denselben Befehl noch einmal ausführen, er ersetzt die installierte Fassung. Der Update-Hinweis
-in Mietfuchs sagt Bescheid, wenn es eine neue Fassung gibt, sofern du die Prüfung erlaubst.
+Hast du Mietfuchs schon als einzelne Programmdatei (`mietfuchs-win.exe` oder `mietfuchs-macos-…`)
+benutzt, übernimmt das neue Programm deine Daten beim ersten Start als Kopie: altes Mietfuchs
+beenden, neues starten, **Daten übernehmen**. Einzelheiten und der Weg über ein Backup:
+[Umzug von der bisherigen Programmdatei](docs/installation.md#umzug-von-der-bisherigen-programmdatei).
 
-## Aus dem Quellcode starten (für Entwickler)
+### Zugriff vom Handy oder einem zweiten Rechner
 
-Dafür braucht es **Node 24.15 oder neuer**. Server und Oberfläche sind in TypeScript
-geschrieben, und der Server wird nicht gebaut: Node führt die Dateien unmittelbar aus und
-streift die Typen dabei ab. Das gilt erst ab dieser Version als stabil. Wer Mietfuchs als
-Programm für Windows und macOS, als Programmdatei, als Linux-Paket oder im Docker-Image nutzt,
-braucht kein Node, dort ist die Laufzeit schon dabei.
+Das Programm ist zunächst nur auf diesem Rechner erreichbar. Für Handy, Tablet oder einen zweiten
+Rechner im selben WLAN setzt du in den Einstellungen unter „Zugriff aus dem Heimnetz“ das Häkchen;
+dann muss der PC laufen. Soll Mietfuchs jederzeit erreichbar sein, läuft es auf einem Gerät, das
+immer an ist ([Docker](docs/docker.md) auf NAS oder Heimserver, Linux-Paket auf dem Raspberry Pi).
+Mietfuchs hat kein Passwort: Erlaube den Zugriff nur in einem Netz, dem du vertraust, und stelle es
+nie per Portfreigabe ins Internet.
+[Mehr dazu](docs/installation.md#zugriff-vom-handy-oder-einem-zweiten-rechner)
 
-```powershell
-npm install        # einmalig: installiert Server + Client
-npm run dev        # startet Server (Port 3001) und Oberfläche (http://localhost:5173)
-```
+### Download prüfen (für Fortgeschrittene)
 
-Tests der Berechnungs-Engine: `npm test`. Typen prüfen: `npm run typecheck`.
-Die Bildschirmfotos oben erzeugt `npm run screenshots` neu (einmalig vorher
-`npx playwright install chromium`).
-
-Das Programmfenster für Windows und macOS (Electron) liegt in `desktop/`, einem eigenen Paket, das
-`npm install` nicht mitinstalliert:
-
-```powershell
-npm --prefix desktop install   # einmalig
-npm run build                  # die Oberfläche, die das Fenster zeigt (client/dist)
-npm run desktop                # Fenster mit dem Server aus dem Quellcode, Daten in server/data
-```
-
-Electron lädt seine Programmdatei beim ersten `npm run desktop`.
-
-Eigenständige Binaries selbst bauen (benötigt [Bun](https://bun.com)): `npm run package` →
-legt die Dateien für alle Plattformen in `dist-bin/` ab.
-
-## Funktionsweise
-
-1. **Stammdaten**: Objekte (ab dem zweiten erscheint ein Umschalter), je Objekt alle
-   Wohnungen (auch die selbstgenutzte; sie zählt in die Verteilbasis und ihr Anteil bleibt beim
-   Vermieter) und die Mietverhältnisse. Eine Garage oder ein Stellplatz bekommt 0 m² und wird an
-   0 Personen vermietet. Personenzahl, Vorauszahlung, Kaltmiete und Pauschale werden als
-   **Staffel** geführt („ab X gilt Y“): Geburt, Auszug einzelner Personen oder
-   Vorauszahlungs-Erhöhungen brauchen kein neues Mietverhältnis. Je Mietverhältnis lässt sich das
-   **Nebenkostenmodell** wählen: Abrechnung, Pauschale oder Inklusivmiete, getrennt für kalte
-   Betriebskosten und Heizung. Am Objekt steht auch das Baujahr der Kabel- oder Antennenanlage,
-   denn davon hängt ab, ob ihre Kosten nach 2024 noch umlagefähig sind, und der
-   **Abrechnungszeitraum** (Kalenderjahr oder etwa Mai bis April). Unter **Heizung** gibst du an,
-   womit geheizt wird, wer den Vertrag hat und wer abrechnet: ein Messdienst, du selbst oder
-   niemand, weil jede Wohnung ihre eigene Heizung hat. Daraus richtet Mietfuchs die Seite
-   **Heizkosten** ein.
-2. **Kosten**: Rechnungen pro Abrechnungsjahr erfassen, manuell oder per
-   KI-Belegauswertung. Eine Rechnung kann in mehrere Positionen mit unterschiedlichen
-   Umlageschlüsseln zerlegt werden (z. B. Wasserrechnung: Grundgebühr + Verbrauch).
-   Optional pro Position: **Lohnanteil nach §35a EStG** (wird dem Mieter bescheinigt). Eine
-   Gutschrift wird mit Minus eingetragen. Die Zuführung zur Erhaltungsrücklage einer
-   Eigentümergemeinschaft hat eine eigene Kostenart, weil sie steuerlich erst bei Verwendung zählt.
-   „Aus dem Vorjahr übernehmen“ legt die Positionen des Vorjahres mit Kostenart, Beschreibung,
-   Rechnungssteller und Umlageschlüssel neu an; du trägst je Zeile nur den neuen Betrag ein.
-   Eine neue Position bekommt den Schlüssel, den dieselbe Kostenart im Vorjahr hatte, und weicht
-   sie davon ab, weisen Formular und Abrechnung darauf hin. Eine Reparatur („Nicht umlagefähig“)
-   lässt sich für die Steuer einer Einheit zuordnen.
-3. **Belege**: eine Seite mit zwei Ansichten. Im **Eingang** legst du neue Belege ab, auch den
-   ganzen Stapel mit Rechnungen und Zählerfotos gemischt. Mit KI wertet Mietfuchs jeden aus (die
-   Auswertung läuft weiter, wenn du die Seite wechselst), ohne KI oder mit „Nur ablegen“ speichert er
-   sie nur. Darunter steht, was zu prüfen ist, und unter „Ohne Position“ jeder gespeicherte Beleg,
-   den du einer Position zuordnest oder per KI auswerten lässt. Der **Ordner** zeigt alle Belege je
-   Objekt und Jahr, mit einem Register je Kostenart, Vorschaubild, Betrag und den Positionen, an
-   denen ein Beleg hängt; seine Suche durchsucht alle Objekte und Jahre. Die **Belegabdeckung**
-   zeigt, welcher Anteil der Kosten belegt ist, und an jeder Position ohne Beleg lässt sich einer
-   nachreichen. Denselben Beleg erkennt Mietfuchs am Inhalt, auch unter anderem Namen. Zum
-   Jahresende packt der Ordner die **Belegmappe für
-   Mieter** (eine PDF mit Deckblatt „Position → Beleg, Seite“ für die Belegeinsicht nach § 556
-   Abs. 4 BGB; Belege mit Daten anderer Mieter nur auf ausdrückliche Wahl) und die **Belege für die
-   Steuer** (ein ZIP nach den Gruppen der Anlage V, mit einer Übersicht als CSV).
-4. **Zähler**: Zähler (Haupt- und Wohnungszähler, auch Wärme- und Warmwasserzähler und
-   Heizkostenverteiler) mit Ablesungen: Jahresablesung, Zwischenablesung beim Mieterwechsel
-   (exakte Aufteilung), Zählerwechsel (Endstand alt + Startstand neu) mit Plausibilitätswarnung
-   bei negativem Verbrauch. Mietfuchs warnt vor abgelaufener Eichfrist und nennt bei Geräten, die
-   aus der Ferne ablesbar sein müssen, die Kürzung nach der Heizkostenverordnung.
-5. **Heizkosten** (sobald eine Heizanlage angelegt ist): Rechnungen des Versorgers als Lieferungen,
-   bei Öl, Flüssiggas, Pellets, Holz und Kohle mit Vorrat; die eigene Heizkostenabrechnung nach
-   §§ 7 bis 9 HeizkostenV (Grund- und Verbrauchskosten, Warmwasseranteil gemessen oder nach
-   Formel, Mieterwechsel nach Gradtagen, Schätzung nach § 9a) oder die Übernahme der fertigen
-   Abrechnung eines Messdienstes, auf Wunsch per KI ausgelesen; die **CO₂-Kosten** nach dem
-   Stufenmodell des CO2KostAufG, entweder laut Messdienst oder selbst aus den Lieferungen
-   berechnet, samt Ausdruck der Angaben für den Messdienst und Erstattung an Mieter, die selbst
-   heizen. Der Betriebsstrom der Heizung lässt sich aus dem Allgemeinstrom herausrechnen.
-6. **Abrechnung**: Pro Mieter die fertige Abrechnung mit Kostenaufstellung, Umlageschlüssel,
-   Vorauszahlungen, Saldo, Zahlungsaufforderung (Vermieter, IBAN und Frist aus den Einstellungen
-   oder abweichend am Objekt),
-   §35a-Bescheinigung und Vorschlag zur Vorauszahlungsanpassung (§560 BGB). Dazu eine
-   Erinnerung an die 12-Monats-Abrechnungsfrist (§556 BGB). Über „Drucken / PDF" speichern.
-   Eine versendete Abrechnung wird **abgeschlossen** und damit eingefroren; ändert sich danach
-   etwas, zeigt Mietfuchs die Abweichung je Mieter, und frühere Abschlüsse bleiben im Verlauf.
-7. **Mietkonto**: Welche Monate sind bezahlt? Die Kaltmiete wird (wie die Vorauszahlung) als
-   Staffel geführt; **Soll = Bruttomiete = Kaltmiete + NK-Vorauszahlung**. Erfasste
-   Zahlungseingänge füllen die Monate der Reihe nach, ein Monatsraster zeigt *bezahlt /
-   teilweise / offen*, im laufenden Jahr *noch nicht fällig* für den laufenden und die kommenden Monate, dazu
-   Brutto/Netto-Aufschlüsselung und fällige Rückstände je Mieter. Zeigt das Mietkonto einen
-   Rückstand, weist die Abrechnung darauf hin, denn maßgeblich ist, was tatsächlich gezahlt wurde.
-   Beginnt oder endet ein Mietverhältnis im Lauf eines Monats, setzen Mietkonto und Abrechnung
-   Miete und Vorauszahlung dieses Monats nach Kalendertagen an (Einzug am 15.03. bei 150 €
-   Vorauszahlung: 17 von 31 Tagen, 82,26 €); das ist eine Auslegung, ein Hinweis nennt den Betrag,
-   und weicht das Gezahlte ab, trägst du es in der Abrechnung mit „✎ anpassen“ ein.
-8. **Steuer (Anlage V)**: Jahresübersicht der Einkünfte aus Vermietung je Objekt: Einnahmen
-   nach dem Zuflussprinzip (das vereinbarte Soll lässt sich zum Abgleich einblenden),
-   Werbungskosten nach Anlage-V-Gruppen sowie der Überschuss. Wohnst du selbst im Haus, ist die
-   Hauptzahl die abziehbaren Werbungskosten, und jede Position steht mit Gesamtbetrag, privatem
-   und abziehbarem Teil da: Was einer Einheit direkt zugeordnet ist, gehört ganz zu ihr, Kosten
-   des ganzen Gebäudes werden nach Wohn- und Nutzfläche aufgeteilt, bei umlagefähigen Kosten
-   gilt der Eigenanteil aus der Nebenkostenabrechnung. Der Rechenweg je Position lässt sich
-   aufklappen, und der Ausdruck taugt als gesonderte Aufstellung für das Finanzamt. Hinweise
-   nennen, was nicht gerechnet wird (etwa AfA und Schuldzinsen). Bei Inklusivmiete und Pauschale
-   gibt es Hinweise zu den Zeilen 24 und 20. Druckbar als PDF. Erweiterte Stammdaten (Kontakt,
-   Kaution, Vertragsdatum, Zimmer/Etage) lassen sich optional je Mieter und Wohnung hinterlegen.
-
-Wie du deine Lage anlegst, steht in Mietfuchs unter **Hilfe & Begriffe**: Anleitungen für das Haus
-mit Einliegerwohnung, das Mehrfamilienhaus, die vermietete Eigentumswohnung mit
-Hausgeldabrechnung, mehrere Objekte, Garage oder Stellplatz, Pauschale oder Inklusivmiete, die
-fertige Abrechnung eines Messdienstes, CO₂-Kosten aufteilen, Heizkosten selbst abrechnen,
-Brennstoff mit Tank oder Lager, Kesseltausch und mehrere Heizungen, den Abrechnungszeitraum Mai
-bis April und den Mieterwechsel mit Leerstand. Jede nennt, ob sie auf
-dich zutrifft, die Schritte mit einem Knopf zur passenden Seite, ein nachgerechnetes Beispiel, die
-Rechtslage und was Mietfuchs noch nicht kann. Dazu kommt ein Lexikon der Fachbegriffe.
-
-### Umlageschlüssel
-
-- **Wohnfläche** (gesetzlicher Standard nach §556a BGB)
-- **Personenzahl** (personentagesgenau, inkl. Personen-Staffel)
-- **Wohneinheiten**
-- **Verbrauch (Zähler):** Anteil = Verbrauch der Wohnung ÷ Summe aller Wohnungszähler;
-  nur wählbar, wenn Wohnungszähler existieren. Fehlt einer Wohnung der Zähler (etwa der
-  selbstgenutzten neben einer Einliegerwohnung mit Zwischenzähler), wird der Hauptzähler zur
-  Basis; den Rest einer vermieteten Wohnung ohne Zähler trägt dann der Vermieter, mit Warnung.
-  Eine Einheit ohne Anschluss (etwa die Garage ohne Wasser) gilt nicht als Wohnung ohne Zähler.
-- **Direktzuordnung** an eine Wohnung
-- **Vereinbarte Anteile** in Prozent je Wohnung
-- **Laut Gemeinschaftsabrechnung:** bei der Eigentumswohnung den eigenen Anteil aus der
-  Hausgeldabrechnung übernehmen, nach Miteigentumsanteilen, Fläche oder je Einheit
-- **Einzelbeträge** je Mietverhältnis, etwa aus der fertigen Abrechnung eines Messdienstes
-
-Je Position lässt sich die Verteilbasis auf bestimmte Wohnungen eingrenzen (z. B. Aufzug nur für
-die oberen Etagen). Korrekturen der tatsächlich gezahlten Vorauszahlungen (z. B. ausgefallene
-Zahlung) direkt in der Abrechnung über „✎ anpassen".
-
-Zeiträume ohne Mieter (Leerstand), der Anteil selbstgenutzter Wohnungen und von Mietverhältnissen
-mit Pauschale oder Inklusivmiete sowie Positionen „Nicht umlagefähig" trägt der Vermieter. Alle
-Beträge werden intern in Cent gerechnet und centgenau verteilt (Hare-Verfahren).
-
-Eine Kostenposition gehört zu dem Abrechnungszeitraum, dem sie beim Erfassen zugeordnet wird;
-eine Rechnung über zwei Zeiträume teilt Mietfuchs nach Tagen auf (Heizkosten ausgenommen). Für
-Heizung und Warmwasser gibt es eigene Wege (siehe **Heizkosten** oben): die eigene
-Heizkostenabrechnung nach der Heizkostenverordnung, die Übernahme einer fertigen
-Messdienstabrechnung als Einzelbeträge und die Aufteilung der CO₂-Kosten. Werden Heizkosten ohne
-Verbrauchsanteil verteilt, nennt ein Hinweis das Kürzungsrecht des Mieters nach § 12
-HeizkostenV. Was Mietfuchs bei der Heizung nicht rechnet, sagt es an Ort und Stelle, etwa die
-Vorerfassung nach Nutzergruppen oder eine getrennte Heizkostenabrechnung nach einem
-Kesseltausch.
+Ab Version 0.15.0 hat jedes Release eine Datei `SHA256SUMS.txt` und einen signierten
+Herkunftsnachweis (Artifact Attestation). Wie du beides prüfst:
+[Download prüfen](docs/installation.md#download-prüfen-für-fortgeschrittene).
 
 ## KI-Belegauswertung
 
-Optional. Mietfuchs kann hochgeladene Belege von einem KI-Modell lesen lassen. Das Modell
-schlägt Positionen, Beträge und Kostenarten vor, übernommen wird erst, was du geprüft hast.
-Ohne KI funktioniert Mietfuchs vollständig.
+Optional. Mietfuchs kann hochgeladene Belege von einem KI-Modell lesen lassen, auf dem eigenen
+Rechner mit [Ollama](https://ollama.com) (die Belege verlassen den Rechner nicht) oder über einen
+Dienst im Internet, an den Mietfuchs erst schickt, wenn du das einmal bestätigt hast. Übernommen
+wird nur, was du geprüft hast; ohne KI funktioniert Mietfuchs vollständig. Einrichten, Anbieter,
+Datenschutz und Modellempfehlungen: [KI-Belegauswertung](docs/ki-belegauswertung.md).
 
-Die Auswertung wird gespeichert und bleibt nach dem Neuladen erhalten; offene Auswertungen stehen
-im Eingang der Seite Belege unter „Zu prüfen“, mit dem Beleg daneben. Je
-Zeile entscheidest du: neu anlegen, mit einer vorhandenen Position verknüpfen (etwa der aus dem
-Vorjahr übernommenen mit geschätztem Betrag) oder verwerfen. Eine Ampel markiert, was schon
-erfasst sein könnte, die Vorschau zeigt, was mit jeder Position geschieht, und „Buchen“ tut genau
-das. Doppelt klicken oder neu laden bucht nichts zweimal.
+## Daten & Datenschutz
 
-Zwei Wege stehen zur Wahl:
+Mietfuchs läuft vollständig auf deinem Rechner: keine Cloud, kein Konto, kein Tracking; nach außen
+geht nur die Update-Prüfung, wenn du sie erlaubst, und ein KI-Dienst, wenn du einen einrichtest.
+Alles liegt in einem Datenordner (Datenbank `mietfuchs.sqlite`, Belege, Briefpapier), im Programm
+für Windows in `%USERPROFILE%\Mietfuchs`, auf dem Mac in `~/Library/Application Support/Mietfuchs`;
+die übrigen Orte und das Wiederherstellen stehen unter [Daten & Backup](docs/daten-backup.md), die
+Datenschutzerklärung in [docs/datenschutz.md](docs/datenschutz.md). **Backup = diesen Ordner
+kopieren**, oder in den Einstellungen auf *Backup herunterladen (ZIP)* klicken.
 
-- **Auf dem eigenen Rechner** mit [Ollama](https://ollama.com) oder LM Studio. Die Belege
-  verlassen den Rechner nicht. Ohne Grafikkarte dauert eine Auswertung Minuten.
-- **Über einen Dienst im Internet** wie OpenAI, IONOS oder Mistral. Das dauert Sekunden statt
-  Minuten und kostet Bruchteile eines Cents je Beleg, dafür verlassen die Belege das Haus.
-  Mietfuchs schickt erst dorthin, wenn du das in den Einstellungen einmal bestätigt hast.
+## Mitmachen
 
-### Einrichten mit Ollama
-
-1. **Ollama installieren** von [ollama.com/download](https://ollama.com/download) (Windows,
-   macOS, Linux). Danach läuft Ollama im Hintergrund.
-2. **In Mietfuchs einrichten:** *Einstellungen*, Karte „KI-Belegauswertung“. Voreingestellt ist
-   „Ollama auf diesem Rechner“. Mietfuchs findet Ollama unter `http://localhost:11434` selbst
-   und listet die installierten Modelle auf, jeweils mit Größe und ob sie Bilder verstehen.
-   Antwortet Ollama unter einer anderen üblichen Adresse, schlägt Mietfuchs sie zur Übernahme
-   vor.
-3. **Ein Modell laden:** Unter „Empfehlungen“ stehen einige Modelle mit Größe und den
-   Messwerten des Prüflaufs. Ein Klick auf „Laden“ holt das Modell über Ollama, mit Fortschritt
-   und Abbrechen; ein abgebrochener Download geht später dort weiter, wo er aufgehört hat.
-   Lieber im Terminal? Dann `ollama pull qwen3.5:4b` (voreingestellt, 3,4 GB). Den passenden
-   Befehl zeigt Mietfuchs auch an.
-4. **Ausprobieren:** unter *Kosten* oder im Eingang der Seite *Belege* einen Beleg in die Fläche
-   ziehen, oder dort bei einem Beleg unter „Ohne Position“ „Per KI auswerten“ wählen.
-
-PDFs mit Textebene liest jedes Sprachmodell. Gescannte PDFs und Fotos brauchen ein Modell,
-das Bilder versteht. Bei Scans schickt der Browser die ersten vier Seiten als Bilder mit. Ein
-Modell ohne Bildverständnis bekommt keine Bilder, Mietfuchs meldet das stattdessen.
-
-### Einen Dienst im Internet nutzen
-
-In den Einstellungen bei „Anbieter“ eine Vorlage wählen. Sie belegt nur die Adresse vor,
-ändern lässt sich alles:
-
-| Vorlage | Läuft wo | Schlüssel nötig |
-| --- | --- | --- |
-| Ollama auf diesem Rechner (Standard) | hier | nein |
-| Ollama auf einem anderen Rechner | im Heimnetz oder bei dir im Internet | je nach Aufbau |
-| LM Studio | hier | nein |
-| Ollama Cloud | USA und andere | ja |
-| OpenAI | USA (EU nur nach Freischaltung) | ja |
-| IONOS AI Model Hub | Deutschland | ja |
-| Mistral | EU | ja |
-| Eigener OpenAI-kompatibler Dienst | wie du es einrichtest | je nach Dienst |
-
-Dann den Schlüssel eintragen („Schlüssel bekommen …“ führt zur passenden Seite des Anbieters),
-ein Modell wählen und speichern. Zeigt die Adresse aus dem Haus, erscheint zuletzt die Frage
-nach der Bestätigung. Erst danach schickt Mietfuchs Belege dorthin.
-
-**Datenschutz.** In Belegen stehen personenbezogene Daten, etwa Namen und Adressen von
-Mietern. Wer sie einem Dienst gibt, braucht dafür in der Regel einen Vertrag zur
-Auftragsverarbeitung mit dem Anbieter. Die folgenden Angaben stammen aus der Dokumentation der
-Anbieter, Stand September 2026, und können sich ändern:
-
-| Anbieter | Verarbeitung | Training mit den Daten | Aufbewahrung | Vertrag |
-| --- | --- | --- | --- | --- |
-| [OpenAI](https://openai.com/policies/data-processing-addendum/) | USA, EU nach Freischaltung | nein | bis 30 Tage zur Missbrauchsprüfung | online |
-| [IONOS](https://docs.ionos.com/cloud/ai/ai-model-hub/governance-and-compliance/data-handling) | nur Deutschland | nein | keine Protokolle | gilt ohne Unterschrift |
-| [Mistral](https://legal.mistral.ai/terms/data-processing-addendum/) | EU | im kostenlosen Tarif ja, abschaltbar | 30 Tage | online |
-| [Ollama Cloud](https://ollama.com/privacy) | vorwiegend USA | nein | keine Protokolle | keiner veröffentlicht |
-
-**Kosten.** Gemessen mit `gpt-5.4-nano` bei OpenAI an den erfundenen Belegen des Prüflaufs:
-13 Auswertungen als Text, Scan und Foto kosteten zusammen etwa 1,6 Cent, also gut 0,1 Cent je
-Beleg. Größere Modelle kosten ein Vielfaches, bleiben aber für ein Mietshaus im Cent-Bereich.
-
-**Schlüssel.** Sie liegen in `data/secrets.json` neben der Datenbank, unter Linux und macOS nur
-für den eigenen Benutzer lesbar, und sind **nicht im Backup**. Nach einer Wiederherstellung auf
-einem anderen Rechner trägt man sie dort neu ein. Mietfuchs gibt einen Schlüssel nie an den
-Browser zurück und filtert ihn aus Fehlermeldungen.
-
-### Welches Modell?
-
-Voreingestellt ist `qwen3.5:4b` auf dem eigenen Rechner. Dieselben Empfehlungen stehen in den
-Einstellungen; mit eingeschalteter Update-Prüfung holt Mietfuchs höchstens einmal am Tag die
-aktuelle Liste aus dem Repo ([ki-modelle.json](ki-modelle.json)), sonst gilt die mitgelieferte.
-Die Übersicht zeigt, wie gut einige
-Modelle frei erfundene Beispielbelege gelesen haben und wie lange sie im Schnitt brauchten.
-Gemessen hat das der [KI-Prüflauf](.github/workflows/ai-eval.yml) auf einem Rechner ohne
-Grafikkarte mit 4 Prozessorkernen und 16 GB Arbeitsspeicher, Stand September 2026. Ein üblicher
-Laptop ist meist etwas schneller.
-
-| Modell | Arbeitsspeicher | PDF mit Textebene | Scan | Handyfoto |
-| --- | --- | --- | --- | --- |
-| `qwen3.5:4b` (voreingestellt) | 3,6 GB | 93 %, 2 Min. | 75 %, 6 Min. | 56 %, 4,5 Min. |
-| `gemma4:12b` | 9,2 GB | 95 %, 5,5 Min. | 83 %, 6,5 Min. | 92 %, 5 Min. |
-| `minicpm-v4.5:8b` | 7,8 GB | 86 %, 2 Min. | 64 %, 6,5 Min. | 61 %, 5 Min. |
-| `gpt-5.4-nano` (OpenAI, Dienst) | – | 95 %, 4 Sek. | 86 %, 5 Sek. | 79 %, 13 Sek. |
-
-Die Prozentzahl ist der Anteil richtig gelesener Angaben: Summe, Aussteller, Beträge,
-Kostenarten und §35a-Anteil. Wer vor allem Fotos und Scans auswertet und genug
-Arbeitsspeicher hat, nimmt `gemma4:12b`. Kleinere Modelle lasen die Belege in der Messung
-deutlich schlechter. Mit Grafikkarte kommen auch größere Modelle in Frage, etwa
-`qwen3.6:35b` (23 GB). Ein anderes Modell wählst du in den Einstellungen, auch eines, das
-nicht in dieser Liste steht.
-
-### Wie lange dauert das?
-
-Auf einem Rechner ohne Grafikkarte rechnet das Modell auf dem Prozessor. Ein PDF mit Textebene
-braucht dann meist unter einer Minute, ein gescannter Beleg einige Minuten. Mit Grafikkarte
-oder auf einem Mac mit Apple-Chip geht es deutlich schneller, bei einem Dienst im Internet
-dauert ein Beleg wenige Sekunden. Die Seiten eines Scans schickt Mietfuchs mit 1200 Bildpunkten
-an der langen Kante: Der KI-Prüflauf hat gezeigt, dass mehr die Trefferquote nicht verbessert,
-aber jede Auswertung verlängert. Wer ein Modell mit anderem Bedarf nutzt, ändert den Wert unter
-*Einstellungen → KI → Erweitert* oder mit `NKA_AI_IMAGE_EDGE`; daneben steht, welchem dpi-Wert
-er bei A4 entspricht. Während der Auswertung zeigt Mietfuchs, was das Modell
-gerade tut und wie lange es schon läuft. Abbrechen stoppt auch das Modell.
-
-### Ollama und Docker
-
-Läuft Ollama auf dem Rechner, auf dem auch Docker läuft, ist es aus dem Container unter
-`http://host.docker.internal:11434` erreichbar. Mietfuchs schlägt diese Adresse in den
-Einstellungen selbst vor.
-
-Mit der [`docker-compose.yml`](docker-compose.yml) aus dem Repo läuft Ollama auch als eigener
-Container mit:
-
-```bash
-docker compose --profile ki up -d        # startet Mietfuchs und Ollama, lädt das Modell einmalig
-docker compose logs -f ollama-pull       # Fortschritt des Downloads
-```
-
-Danach in den Einstellungen die gefundene Adresse `http://ollama:11434` übernehmen. Ein
-weiteres Modell lädt `docker compose exec ollama ollama pull NAME`, den passenden Befehl zeigt
-Mietfuchs auch selbst an. Der Container rechnet auf dem Prozessor. Für eine NVIDIA-Grafikkarte
-beschreibt die [Ollama-Dokumentation zu Docker](https://github.com/ollama/ollama/blob/main/docs/docker.mdx),
-was nötig ist. Docker Desktop auf dem Mac hat keinen Zugriff auf die Grafik des Apple-Chips,
-dort ist die Ollama-App die bessere Wahl.
-
-### Für Fortgeschrittene
-
-Unter *Einstellungen* klappt „Erweitert“ weitere Möglichkeiten auf: ein **eigener Anbieter für
-Fotos und Scans** (so liest etwa ein Dienst im Internet die Bilder, während Belege mit
-Textebene auf dem eigenen Rechner bleiben), Zeitlimit, Kontextgröße, Länge der Antwort, die
-Stufe der strukturierten Ausgabe, der Denkaufwand und zusätzliche Hinweise an das Modell.
-
-Dasselbe lässt sich über Umgebungsvariablen festlegen, etwa in einer `.env`-Datei neben der
-`docker-compose.yml`. Gesetzte Werte gelten vor den gespeicherten, das Feld in den Einstellungen
-ist dann gesperrt, und gespeichert werden sie nicht:
-
-| Variable | Wirkung |
-| --- | --- |
-| `NKA_AI_PROVIDER` | Art der Schnittstelle: `ollama` oder `openai` (alle OpenAI-kompatiblen Dienste). |
-| `NKA_AI_URL` | Adresse des Dienstes. |
-| `NKA_AI_MODEL` | Modell. |
-| `NKA_AI_API_KEY` | Schlüssel des Dienstes. |
-| `NKA_AI_API_KEY_FILE` | Pfad einer Datei mit dem Schlüssel, etwa eines Docker-Secrets unter `/run/secrets/`. Nicht zusammen mit `NKA_AI_API_KEY`. Gilt für den Standard-Anbieter; den Schlüssel für einen eigenen Bilder-Anbieter trägt man in der Oberfläche ein. |
-| `NKA_AI_TIMEOUT` | Zeitlimit je Auswertungsschritt in Sekunden, Standard 1200 für das Auslesen. |
-| `NKA_AI_MAX_TOKENS` | Höchstlänge der Antwort in Token, Standard 16384 (nur OpenAI-kompatible Dienste). |
-| `NKA_AI_IMAGE_EDGE` | Lange Kante der Seitenbilder eines Scans in Bildpunkten, Standard 1200 (etwa 103 dpi bei A4). Erlaubt sind 600 bis 2600. |
-| `NKA_OLLAMA_URL` | Adresse von Ollama, gilt weiter, solange Ollama der Anbieter ist. |
-| `NKA_OLLAMA_MODEL` | Modell für Ollama. Im Compose-Profil lädt `ollama-pull` dieses Modell. |
-| `NKA_OLLAMA_NUM_CTX` | Kontextgröße in Token, Standard 16384. Kleiner spart Arbeitsspeicher, zu klein schneidet lange Belege ab. |
-
-Ein falscher Wert verhindert den Start und wird beim Start genannt, statt später als
-unverständlicher Fehler bei der ersten Auswertung aufzutauchen.
-
-Mit Docker-Secrets sieht das so aus:
-
-```yaml
-services:
-  mietfuchs:
-    environment:
-      NKA_AI_PROVIDER: openai
-      NKA_AI_URL: https://openai.inference.de-txl.ionos.com/v1
-      NKA_AI_MODEL: Qwen/Qwen3.5-9B
-      NKA_AI_API_KEY_FILE: /run/secrets/ki_schluessel
-    secrets: [ki_schluessel]
-secrets:
-  ki_schluessel:
-    file: ./ki-schluessel.txt
-```
-
-## Daten & Backup
-
-Alles liegt in einem Datenordner (`mietfuchs.sqlite`, hochgeladene Belege in `uploads/`, Logo
-und Briefpapier für den Druck in `briefpapier/`; Angaben zu den Belegen und gespeicherte
-KI-Auswertungen stehen in der Datenbank und kommen mit ins Backup).
-Der Verlauf der Änderungen (Seite „Verlauf“) kommt nur mit, wenn du beim Backup „Verlauf der
-Änderungen mitsichern“ anhakst: Er enthält bis zu zwölf Monate lang auch gelöschte Angaben
-früherer Mieter.
-
-Wo der Datenordner liegt, hängt davon ab, wie du Mietfuchs nutzt:
-
-- **Programm für Windows** (Store oder Installer): `%USERPROFILE%\Mietfuchs`, z. B.
-  `C:\Users\Name\Mietfuchs`, außerhalb des Programms, damit er eine Deinstallation übersteht.
-- **Programm für macOS**: `~/Library/Application Support/Mietfuchs`.
-- **Bisherige Programmdatei**: **neben der Datei**. Liegt sie an einem Ort, an dem sie nicht
-  schreiben darf (etwa `Program Files` oder `/Applications`), unter Windows in
-  `%LOCALAPPDATA%\Mietfuchs`, unter macOS in `~/Library/Application Support/Mietfuchs`.
-- **Linux-Paket**: `~/.local/share/mietfuchs`.
-- **Aus dem Quellcode**: `server/data/`.
-
-Im Programm für Windows und macOS öffnet das Menü *Mietfuchs → Datenordner zeigen* den Ordner.
-Backup = diesen Ordner kopieren. `NKA_DATA_DIR` legt ihn frei fest.
-
-Daneben legt das Programm für Windows und macOS einen eigenen kleinen Ordner `mietfuchs-fenster` an
-(unter Windows in `%LOCALAPPDATA%`, bei der Store-Fassung von Windows in deren Paketordner umgelenkt,
-auf dem Mac in `~/Library/Application Support`): gemerkter Port,
-der Schalter für den Zugriff aus dem Heimnetz und Protokolle. Deine Abrechnungsdaten stehen dort nicht,
-fürs Backup brauchst du ihn nicht.
-
-Bis einschließlich Version 0.7.1 lag alles in einer Datei `db.json`. Kommst du von dort, ziehen
-deine Daten beim ersten Start von selbst in
-`mietfuchs.sqlite` um. Die bisherige Datei heißt danach `db.json.abgeloest` und bleibt als
-Rückweg liegen, daneben ein Protokoll. **Sie ist der Stand zum Zeitpunkt des Umzugs und kein
-mitlaufendes Abbild**: Was du danach erfasst, steht nur noch in der Datenbank. Der Weg zurück ist
-also deine Sicherung, nicht diese Datei. Am Backup ändert sich nichts, es ist weiterhin dieser
-Ordner; das Backup über die Oberfläche nimmt die Datenbank mit, und beim Wiederherstellen kommt
-sie mit zurück.
-
-**Vor jedem Update der Datenbank legt Mietfuchs selbst eine Sicherung an**
-(`mietfuchs.sqlite.vor-…` im Datenordner) und sagt es nach dem Start in der Oberfläche. Wie du
-damit zur vorigen Version zurückkommst, steht in [MIGRATION.md](MIGRATION.md#zurück-zu-einer-älteren-version).
-
-**Wiederherstellen erwartet das Backup-Archiv**, also die ZIP-Datei, und keine einzelne Datei.
-Alte Archive ohne Datenbank gehen weiterhin: Mietfuchs baut sie dann aus den wiederhergestellten
-Daten neu auf. Wer nur noch eine lose `db.json` von früher hat, packt sie in ein ZIP und stellt
-dieses wieder her. Warum das der verlässlichere Weg ist als das Hineinlegen in den Datenordner,
-und wo dieser Ordner liegt, steht in [MIGRATION.md](MIGRATION.md).
-
-## Produktivbetrieb ohne Dev-Server
-
-```powershell
-npm run build      # baut das Frontend nach client/dist
-npm start          # Server liefert App + API auf http://localhost:3001
-```
-
-## Mit Docker
-
-Voraussetzung: [Docker](https://docs.docker.com/get-docker/) installiert (Docker Desktop unter
-Windows/macOS, Docker Engine unter Linux). Ein einziges Image liefert App + API auf Port 3001;
-die Daten (`mietfuchs.sqlite` + Belege) liegen im benannten Volume `mietfuchs-data` und überleben
-Updates des Containers.
-
-### Fertiges Image (ohne Clone)
-
-Das Image liegt in der GitHub Container Registry für `linux/amd64` und `linux/arm64`
-(Apple Silicon, Raspberry Pi):
-
-```bash
-docker run -d -p 3001:3001 -v mietfuchs-data:/app/server/data \
-  --name mietfuchs ghcr.io/speedone/mietfuchs:latest
-# App: http://localhost:3001
-```
-
-Als Compose-Datei; sie reicht allein, das Repo braucht man dafür nicht:
-
-```yaml
-services:
-  mietfuchs:
-    image: ghcr.io/speedone/mietfuchs:latest
-    ports: ["3001:3001"]
-    volumes: ["mietfuchs-data:/app/server/data"]
-    restart: unless-stopped
-    extra_hosts: ["host.docker.internal:host-gateway"]  # für Ollama auf dem Host
-volumes:
-  mietfuchs-data:
-```
-
-Aktualisieren: `docker compose pull && docker compose up -d`. Mit `docker run` gestartet:
-`docker pull ghcr.io/speedone/mietfuchs:latest`, dann `docker rm -f mietfuchs` und den
-`docker run`-Befehl von oben erneut ausführen. Die Daten im Volume bleiben dabei erhalten.
-Statt `latest` lässt sich auch eine feste Version festhalten, z. B.
-`ghcr.io/speedone/mietfuchs:0.3.0`.
-
-### Selbst bauen (aus dem Clone)
-
-Mit **Docker Compose** (Konfiguration in [`docker-compose.yml`](docker-compose.yml)):
-
-```bash
-docker compose up -d        # Image bauen + Container starten (im Hintergrund)
-# App: http://localhost:3001
-docker compose down         # stoppen, das Volume mit den Daten bleibt erhalten
-```
-
-Aktualisieren: `git pull && docker compose up -d --build`.
-
-Ohne Compose geht es auch direkt:
-
-```bash
-docker build -t mietfuchs .
-docker run -d -p 3001:3001 -v mietfuchs-data:/app/server/data --name mietfuchs mietfuchs
-```
-
-Für die optionale KI-Belegauswertung siehe [KI-Belegauswertung](#ki-belegauswertung),
-dort auch das Compose-Profil `ki`, das Ollama als eigenen Container mitstartet.
+Fehlerkorrekturen, Tests, fachliche Verbesserungen und neue Funktionen sind willkommen, gern direkt
+als Pull Request. Ablauf und Maßstab stehen in [CONTRIBUTING.md](CONTRIBUTING.md), wie du Mietfuchs
+aus dem Quellcode startest in [Entwickeln](docs/entwickeln.md), Sicherheitslücken meldest du wie in
+[SECURITY.md](SECURITY.md) beschrieben. **Keine echten Mieterdaten in Issues posten.**
 
 ## Lizenz & Haftung
 
