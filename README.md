@@ -146,6 +146,9 @@ dabei liegen.
 
 ### macOS
 
+Das neue Programm braucht **macOS 13 (Ventura) oder neuer**, so verlangt es Electron, auf dem es aufbaut. Auf einem
+älteren Mac nimmst du weiter die [bisherige Programmdatei](#herunterladen--starten-ohne-installation).
+
 1. Auf der [Release-Seite](https://github.com/speedone/mietfuchs/releases/latest) unter *Assets*
    das Abbild für deinen Mac laden: `Mietfuchs-<Version>-apple-silicon.dmg` für Apple M1 und
    neuer, `Mietfuchs-<Version>-intel.dmg` für einen Mac mit Intel-Prozessor.
