@@ -7,7 +7,7 @@ import fs from 'node:fs'
 import net from 'node:net'
 import os from 'node:os'
 import http from 'node:http'
-import { spawn } from 'node:child_process'
+import { createRequire } from 'node:module'
 import { pipeline } from 'node:stream/promises'
 import { fileURLToPath } from 'node:url'
 import yazl from 'yazl'
@@ -4506,8 +4506,22 @@ if (PACKAGED) {
   }
 }
 
+// child_process erst beim Aufruf laden, nie oben: Ein Bündel, das gleich zu Beginn child_process importiert und dann
+// losgelöste Prozesse startet (`detached`, `stdio: 'ignore'`, `windowsHide`), hält die Heuristik mehrerer Virenscanner
+// für einen Loader (v0.15.1: GT:JS.PolinRider bei Bitdefender und sieben Scannern mit dessen Engine, HP Wolf Security
+// legte server.mjs aus der app.asar in Quarantäne). Ohne den Import oben ist das Bündel bei VirusTotal sauber.
+// Gebraucht wird es nur für Browser und Desktop-Meldung der Programmdatei; im Bündel des Fensters fällt es ganz weg.
+const loadModule = createRequire(import.meta.url)
+function spawnDetached(cmd: string, args: string[], options: import('node:child_process').SpawnOptions) {
+  const { spawn } = loadModule('node:child_process') as typeof import('node:child_process')
+  return spawn(cmd, args, options)
+}
+
 // Standard-Browser mit der App öffnen (nur in der gepackten Binary - im Dev stört das).
 function openBrowser(url: string): void {
+  // Im Bündel des Programmfensters nie gebraucht (das Fenster öffnet sich selbst, „Im Browser öffnen“ im Menü geht über
+  // Electrons shell.openExternal). Mit IN_BUNDLE = true entfernt der Bündler den Rest samt child_process.
+  if (IN_BUNDLE) return
   const [cmd, args]: [string, string[]] =
     process.platform === 'win32'
       ? ['cmd', ['/c', 'start', '""', url]]
@@ -4517,7 +4531,7 @@ function openBrowser(url: string): void {
   try {
     // windowsHide (#500): Die Store-Fassung hat kein Konsolenfenster, ein Kindprozess cmd.exe
     // bekäme sonst bei jedem Start ein eigenes, das kurz aufblitzt.
-    const child = spawn(cmd, args, { detached: true, stdio: 'ignore', windowsHide: true })
+    const child = spawnDetached(cmd, args, { detached: true, stdio: 'ignore', windowsHide: true })
     // Fehlt das Programm, wirft spawn nicht, sondern meldet 'error' asynchron auf dem
     // Kindprozess - der try/catch greift dann nicht mehr. Ohne Zuhörer wird daraus ein
     // unbehandelter Fehler, der den Server beendet, obwohl er schon lauscht. Auf einem
@@ -4740,9 +4754,10 @@ async function mietfuchsAlreadyOn(url: string): Promise<boolean> {
 // Ohne Konsolenfenster (Startmenü unter Linux) läuft eine Fehlermeldung ins Leere. Dann
 // wenigstens eine Meldung des Systems, sofern es notify-send gibt.
 function notifyDesktop(message: string): void {
+  if (IN_BUNDLE) return // nur für die Programmdatei unter Linux, siehe openBrowser
   if (!STANDALONE || process.platform !== 'linux' || ciSet(process.env)) return
   try {
-    const child = spawn('notify-send', ['--app-name=Mietfuchs', 'Mietfuchs', message], { detached: true, stdio: 'ignore' })
+    const child = spawnDetached('notify-send', ['--app-name=Mietfuchs', 'Mietfuchs', message], { detached: true, stdio: 'ignore' })
     child.on('error', () => {}) // ohne notify-send bleibt es bei der Ausgabe auf der Konsole
     child.unref()
   } catch {

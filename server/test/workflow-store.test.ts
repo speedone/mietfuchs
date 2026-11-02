@@ -149,3 +149,25 @@ test('CI: Doku-PRs führen jeden Test aus, der Markdown liest', () => {
   for (const f of readsMarkdown) assert.ok(docTests.includes(`test/${f}`), `${f} liest Markdown und fehlt in DOC_TESTS (ci.yml)`)
   for (const f of docTests) assert.ok(fs.existsSync(path.join(dir, '..', f)), `${f} aus DOC_TESTS gibt es nicht`)
 })
+
+// v0.15.1 hielten acht Scanner den Server des Fensters für Schadsoftware. Geprüft wird vor dem Anhängen, mit dem Secret,
+// und über den Server selbst, den Installer und beide Abbilder für den Mac.
+test('Release: VirusTotal prüft vor dem Anhängen', () => {
+  const job = publishJob()
+  const step = stepOf(job, '- name: Bei VirusTotal prüfen')
+  assert.ok(job.indexOf('- name: Bei VirusTotal prüfen') < job.indexOf('uses: softprops/action-gh-release@'), 'vor dem Upload')
+  assert.match(step, /VT_API_KEY: \$\{\{ secrets\.VT_API_KEY \}\}/)
+  for (const f of ['dist-server/server/server.mjs', 'dist-desktop/Mietfuchs-Setup-*.exe', 'dist-desktop/Mietfuchs-*-apple-silicon.dmg', 'dist-desktop/Mietfuchs-*-intel.dmg']) assert.ok(step.includes(f), f)
+  assert.match(job, /name: fenster-server-win\n\s+path: dist-server/)
+})
+
+// Nachscan (virustotal.yml): nur über die Prüfsummen aus SHA256SUMS.txt, ohne eine Programmdatei herunterzuladen, denn
+// jeder Download zählte auf der Website mit
+test('VirusTotal: der wöchentliche Nachscan lädt keine Programmdatei', () => {
+  const yml = read('virustotal.yml')
+  assert.match(yml, /schedule:/)
+  assert.match(yml, /--pattern SHA256SUMS\.txt/)
+  assert.doesNotMatch(yml.replace(/--pattern SHA256SUMS\.txt/g, ''), /--pattern|gh release download[^\n]*\.(exe|dmg)/)
+  assert.match(yml, /virustotal-check\.mjs --hash/)
+  assert.match(yml, /VT_API_KEY: \$\{\{ secrets\.VT_API_KEY \}\}/)
+})

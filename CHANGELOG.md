@@ -6,6 +6,19 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+## [0.15.2] – 2026-11-02
+
+### Behoben
+
+- **Virenschutz hielt das Programm für Windows und macOS für Schadsoftware**: Bitdefender, mehrere Virenscanner mit
+  dessen Engine und HP Wolf Security meldeten die Datei `server.mjs` in `app.asar` als „JS.PolinRider“; HP Wolf Security
+  legte sie in Quarantäne, und Mietfuchs startete dann nicht. Das war eine Fehlerkennung: Die Datei enthielt keinen
+  fremden Code, nur ein Muster, das die Erkennung mit Schadsoftware verwechselte. Es ist entfernt, bei VirusTotal meldet
+  kein Scanner mehr etwas, und jedes Release wird jetzt vor dem Veröffentlichen dort geprüft. **Startet Mietfuchs nach
+  einer Meldung des Virenschutzes nicht mehr**, laden Sie den Installer 0.15.2 und installieren Sie ihn darüber; Ihre
+  Daten bleiben erhalten. Die bisherige Programmdatei war nicht betroffen; der Microsoft Store liefert nach seiner
+  Prüfung gleich 0.15.2 aus.
+
 ## [0.15.1] – 2026-11-02
 
 ### Behoben
@@ -3440,7 +3453,8 @@ Verteilung nach Wohnfläche, Personenzahl, Wohneinheiten, Verbrauch oder Direktz
 druckfertige Abrechnung je Mieter, Mietkonto, Steuerübersicht für die Anlage V, optionale
 KI-Belegauswertung gegen eine lokale Ollama-Instanz, Backup und Wiederherstellung.
 
-[Unveröffentlicht]: https://github.com/speedone/mietfuchs/compare/v0.15.1...HEAD
+[Unveröffentlicht]: https://github.com/speedone/mietfuchs/compare/v0.15.2...HEAD
+[0.15.2]: https://github.com/speedone/mietfuchs/compare/v0.15.1...v0.15.2
 [0.15.1]: https://github.com/speedone/mietfuchs/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/speedone/mietfuchs/compare/v0.14.1...v0.15.0
 [0.14.1]: https://github.com/speedone/mietfuchs/compare/v0.14.0...v0.14.1

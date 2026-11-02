@@ -9,7 +9,7 @@ import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { DatabaseSync } from 'node:sqlite'
 import { migrationsFromDisk } from '../src/db/client.ts'
-import { ARCHIVE_FOLDER, REQUIRED_SERVER_FILES, asarFiles, bundleServer, checkServerArchive, checkServerFolder, packClient, rewriteImportMeta, userFileName } from '../../scripts/package-desktop.mjs'
+import { ARCHIVE_FOLDER, REQUIRED_SERVER_FILES, asarFiles, bundleServer, checkServerArchive, checkServerFolder, loaderLikeImports, packClient, rewriteImportMeta, userFileName } from '../../scripts/package-desktop.mjs'
 import { writeAsar } from '../testing/asar.ts'
 
 test('Programmfenster: .dmg heißen nach Apple Silicon und Intel', () => {
@@ -180,4 +180,15 @@ test('Programmfenster: release.yml prüft im installierten Fenster die app.asar 
   assert.match(workflow, /test ! -e "\$app\/Contents\/Resources\/mietfuchs"/)
   assert.match(workflow, /if \(Test-Path \(Join-Path \$resources 'mietfuchs'\)\) \{ throw/)
   assert.doesNotMatch(workflow, /test -f "\$app\/Contents\/Resources\/mietfuchs\//)
+})
+
+// v0.15.1: server.mjs importierte child_process gleich oben, und mehrere Virenscanner hielten das Bündel für einen
+// Loader (GT:JS.PolinRider). Im Fenster wird es nie gebraucht; der Bau bricht ab, wenn es wieder hineinkäme.
+test('Bündel des Servers: kein child_process', () => {
+  assert.deepEqual(loaderLikeImports('import { spawn } from "node:child_process";\nimport fs from "node:fs";\n'), ['child_process'])
+  assert.deepEqual(loaderLikeImports('const { spawn } = loadModule("node:child_process");\n'), ['child_process'])
+  assert.deepEqual(loaderLikeImports('import fs from "node:fs";\nvar x = 1;\n'), [])
+  const index = fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), '../src/index.ts'), 'utf8')
+  assert.doesNotMatch(index, /^import [^\n]*from 'node:child_process'/m, 'server/src/index.ts lädt child_process erst beim Aufruf (spawnDetached)')
+  for (const fn of ['openBrowser', 'notifyDesktop']) assert.match(index, new RegExp(`function ${fn}\\([^)]*\\): void \\{\\n(\\s*//.*\\n)*\\s*if \\(IN_BUNDLE\\) return`), `${fn} kehrt im Bündel sofort zurück`)
 })
