@@ -186,6 +186,13 @@ export const mayAskGitHub = (mode: UpdateStatus['mode'], consent: unknown): bool
 // gibt es kein Fenster; wer im Fenster oder aus dem Store arbeitet, ist schon umgestiegen, und Container und npm laufen
 // ohne. Die Plattform kommt herein (Projektregel), der Stand steht ohne Zustimmung in /api/update, denn er braucht
 // keine Anfrage bei GitHub: Die Oberfläche bildet die Links aus festen Adressen.
+// Für eine Anfrage von einem anderen Gerät als dem Rechner mit Mietfuchs (Handy, Tablet, zweiter Rechner im Heimnetz):
+// Datei und Umstiegshinweis gelten für den Rechner, der Knopf lüde sie aber auf dieses Gerät. Die Oberfläche sagt dann,
+// dass es eine neue Version gibt und dass am Rechner aktualisiert wird.
+export function forOtherDevice(status: UpdateStatus): UpdateStatus {
+  return { ...status, downloadUrl: null, desktopOffer: null, otherDevice: true }
+}
+
 export function desktopOfferFor(mode: UpdateStatus['mode'], platform: string): UpdateStatus['desktopOffer'] {
   if (mode !== 'binary' && mode !== 'package') return null
   if (platform === 'win32') return 'windows'

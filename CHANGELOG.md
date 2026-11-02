@@ -108,6 +108,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- **Update-Hinweis auf Handy, Tablet und zweitem Rechner ohne falschen Download.** Öffnen Sie Mietfuchs über das
+  Heimnetz auf einem anderen Gerät, nannte der Hinweis die Datei des Rechners, auf dem Mietfuchs läuft, und der Knopf
+  lud sie aufs Handy. Dort steht jetzt nur, dass es eine neue Version gibt und dass sie am Rechner installiert wird;
+  der Hinweis auf das neue Programm erscheint nur noch am Rechner selbst.
 - **Belege laufen abgeschottet von der Oberfläche** ([#517](https://github.com/speedone/mietfuchs/issues/517)).
   Mietfuchs liefert Belege so aus, dass der Browser darin kein Programm ausführt, und nimmt SVG-, HTML- und
   XML-Dateien nicht mehr als Beleg an; Belege sind PDFs und Bilder. Eine solche Datei, die schon im Belegordner liegt

@@ -71,6 +71,8 @@ export type System = 'windows' | 'macos' | 'linux' | 'package' | 'desktop' | 'de
 export type UpdateGuide =
   | { kind: 'download'; href: string; system: System; newTab: boolean }
   | { kind: 'command'; lines: string[] }
+  // Auf einem anderen Gerät als dem Rechner mit Mietfuchs (`otherDevice` vom Server): kein Download, der gehört an den Rechner
+  | { kind: 'elsewhere' }
 
 function systemOf(link: string): System {
   if (link.endsWith('.exe')) return 'windows'
@@ -83,6 +85,8 @@ function systemOf(link: string): System {
 // gezogen, eine Installation aus dem Quellcode neu gebaut. Befehle stehen einzeln, weil die
 // Windows PowerShell 5.1 kein && kennt.
 export function updateGuide(st: UpdateStatus): UpdateGuide {
+  // Befehle (Docker, Quellcode) bleiben: Sie laufen ohnehin auf dem Server, oft von einem anderen Gerät aus
+  if (st.otherDevice && (st.mode === 'binary' || st.mode === 'package' || st.mode === 'desktop')) return { kind: 'elsewhere' }
   if (st.mode === 'binary') {
     const href = st.downloadUrl ?? st.releaseUrl ?? RELEASES_URL
     const system = systemOf(href)

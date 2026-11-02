@@ -220,3 +220,17 @@ describe('Microsoft Store (#500)', () => {
     expect(updatedByStore(null)).toBe(false)
   })
 })
+
+describe('Auf einem anderen Gerät', () => {
+  // Der Server vermerkt es (`otherDevice`) und lässt Download und Umstiegshinweis weg
+  test('kein Download, sondern der Weg an den Rechner', () => {
+    for (const mode of ['binary', 'package', 'desktop'] as const) {
+      expect(updateGuide(status({ mode, downloadUrl: null, otherDevice: true }))).toEqual({ kind: 'elsewhere' })
+    }
+  })
+
+  test('Befehle bleiben: Sie laufen ohnehin auf dem Server, oft von einem anderen Gerät aus', () => {
+    expect(updateGuide(status({ mode: 'docker', downloadUrl: null, otherDevice: true }))).toMatchObject({ kind: 'command' })
+    expect(updateGuide(status({ mode: 'npm', downloadUrl: null, otherDevice: true }))).toMatchObject({ kind: 'command' })
+  })
+})
