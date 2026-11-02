@@ -40,6 +40,14 @@
       }
     ],
     "asar": true,
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "speedone",
+        "repo": "mietfuchs",
+        "releaseType": "release"
+      }
+    ],
     "electronFuses": {
       "runAsNode": false,
       "enableCookieEncryption": false,
@@ -58,7 +66,8 @@
             "arm64"
           ]
         }
-      ]
+      ],
+      "verifyUpdateCodeSignature": false
     },
     "nsis": {
       "oneClick": true,
@@ -81,11 +90,11 @@
       ],
       "category": "public.app-category.finance",
       "identity": "-",
-    "extendInfo": {
-      "NSDownloadsFolderUsageDescription": "Mietfuchs sucht hier nach Ihren bisherigen Daten neben der alten Programmdatei, um sie zu übernehmen. Nichts davon verlässt Ihren Rechner.",
-      "NSDesktopFolderUsageDescription": "Mietfuchs sucht hier nach Ihren bisherigen Daten neben der alten Programmdatei, um sie zu übernehmen. Nichts davon verlässt Ihren Rechner.",
-      "NSDocumentsFolderUsageDescription": "Mietfuchs sucht hier nach Ihren bisherigen Daten neben der alten Programmdatei, um sie zu übernehmen. Nichts davon verlässt Ihren Rechner."
-    },
+      "extendInfo": {
+        "NSDownloadsFolderUsageDescription": "Mietfuchs sucht hier nach Ihren bisherigen Daten neben der alten Programmdatei, um sie zu übernehmen. Nichts davon verlässt Ihren Rechner.",
+        "NSDesktopFolderUsageDescription": "Mietfuchs sucht hier nach Ihren bisherigen Daten neben der alten Programmdatei, um sie zu übernehmen. Nichts davon verlässt Ihren Rechner.",
+        "NSDocumentsFolderUsageDescription": "Mietfuchs sucht hier nach Ihren bisherigen Daten neben der alten Programmdatei, um sie zu übernehmen. Nichts davon verlässt Ihren Rechner."
+      },
       "hardenedRuntime": false,
       "notarize": false,
       "artifactName": "Mietfuchs-${version}-${arch}.${ext}"
@@ -93,5 +102,8 @@
     "dmg": {
       "title": "Mietfuchs ${version}"
     }
+  },
+  "dependencies": {
+    "electron-updater": "6.8.11"
   }
 }

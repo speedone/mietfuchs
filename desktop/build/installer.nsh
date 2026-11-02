@@ -12,8 +12,6 @@
 !include x64.nsh
 
 !define MF_LOG "$TEMP\mietfuchs-installation.log"
-; Ordner dieser Datei, für Dateien, die ein Haken erst beim Einfügen einbindet
-!define MF_DIR "${__FILEDIR__}"
 
 ; Funktionen gibt es je Durchlauf nur einmal: im Deinstallationsprogramm mit dem Vorsatz un., sonst ohne. Eine
 ; Funktion, die im Durchlauf niemand aufruft, wäre eine Warnung und bräche den Bau ab (warningsAsErrors).
@@ -196,19 +194,13 @@ FunctionEnd
     ${Else}
       !insertmacro mfLog "[alte-fassung] Vorige Fassung entfernt (falls vorhanden)"
     ${EndIf}
-    !insertmacro mfSkipInstallerCopy
   !macroend
 
-  ; Keine Kopie des Installers nach %LOCALAPPDATA%\mietfuchs-updater\installer.exe. installApplicationFiles (Vorlage
-  ; include/installer.nsh) kopiert nach dem Auspacken den ganzen Installer dorthin (rund 230 MB, eine neue .exe, die
-  ; der Echtzeitschutz vollständig prüft), als Grundlage für Teil-Downloads von electron-updater. Das Fenster hat
-  ; keinen electron-updater, und das Deinstallationsprogramm räumt die Kopie nie weg. Deshalb fasst
-  ; installer-copyfile.nsh copyFile neu. Das geht nur zwischen dem Einbinden von installUtil.nsh (dort steht copyFile)
-  ; und dem Einfügen von installApplicationFiles; dieser Haken liegt dazwischen. Ein Makro kann kein Makro
-  ; definieren, deshalb die eigene Datei.
-  !macro mfSkipInstallerCopy
-    !include "${MF_DIR}\installer-copyfile.nsh"
-  !macroend
+  ; Die Kopie des Installers nach %LOCALAPPDATA%\mietfuchs-updater\installer.exe (installApplicationFiles in der Vorlage
+  ; include/installer.nsh) bleibt: Sie ist die Grundlage der Teil-Downloads von electron-updater (#517). Mit der
+  ; .blockmap des installierten und der des neuen Installers lädt das Fenster nur die geänderten Blöcke
+  ; (differentialDownloadInstaller in electron-updater/out/AppUpdater.js, `oldFile` ist genau diese Datei); ohne sie
+  ; lädt es jedes Mal den ganzen Installer. Das Deinstallationsprogramm räumt sie weg (customUnInstall).
 
   ; Nach dem Auspacken (extractEmbeddedAppPackage: Paket nach $PLUGINSDIR schreiben, mit 7-Zip nach
   ; $PLUGINSDIR\7z-out auspacken, nach $INSTDIR kopieren). electron-builder legt diese Haken selbst nur für
@@ -241,8 +233,8 @@ FunctionEnd
   ; Abschnitt der Deinstallation, vor dem Entfernen der Dateien
   !macro customUnInstall
     !insertmacro mfLog "[entfernen] Entfernen der Dateien beginnt"
-    ; Die Kopie des Installers, die Fassungen bis 0.14 dort hinterlassen haben (siehe mfSkipInstallerCopy); beim
-    ; Aktualisieren räumt sie der neue Installer weg
+    ; Die Kopie des Installers für die Teil-Downloads der Updates (siehe customUnInstallCheck); beim Aktualisieren
+    ; schreibt sie der neue Installer selbst neu
     ${IfNot} ${isUpdated}
       Delete "$LOCALAPPDATA\${APP_INSTALLER_STORE_FILE}"
       RMDir "$LOCALAPPDATA\mietfuchs-updater"

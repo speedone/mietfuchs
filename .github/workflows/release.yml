@@ -595,13 +595,26 @@ jobs:
       - run: npm --prefix desktop test
       - name: Programmfenster bauen
         run: node scripts/package-desktop.mjs ${{ matrix.ziel }}
+      # Unter Windows mit latest.yml und .blockmap für die automatischen Updates (#517): electron-builder legt beide
+      # auch mit `--publish never` an, weil desktop/package.json eine Quelle nennt (`build.publish`)
       - uses: actions/upload-artifact@v7
         with:
           name: fenster-${{ matrix.ziel }}
           path: |
             dist-desktop/*.exe
+            dist-desktop/*.exe.blockmap
+            dist-desktop/latest.yml
             dist-desktop/*.dmg
           if-no-files-found: error
+      - name: Dateien für die automatischen Updates (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          test -f dist-desktop/latest.yml
+          ls dist-desktop/Mietfuchs-Setup-*.exe.blockmap
+          grep -q "url: Mietfuchs-Setup-$(node -p "require('./desktop/package.json').version").exe" dist-desktop/latest.yml
+          grep -q '^sha512: ' dist-desktop/latest.yml
+          cat dist-desktop/latest.yml
       - name: Größen in die Zusammenfassung
         shell: bash
         run: |
@@ -624,6 +637,106 @@ jobs:
             dist-desktop/win-arm64-unpacked
           if-no-files-found: error
           retention-days: 7
+
+  # Die zweite Fassung für die echte Update-Probe (#517): höhere Version und ein Migrationsschritt ohne Wirkung mehr
+  # (scripts/updater-probe.mjs), sonst derselbe Bau wie „Programmfenster bauen (Windows)“. Läuft daneben, damit der
+  # Bau, an dem alle anderen Prüfungen hängen, nicht länger dauert. Wird nie veröffentlicht.
+  fenster-bauen-v2:
+    name: Programmfenster bauen (Windows, zweite Fassung für die Update-Probe)
+    runs-on: windows-2025
+    outputs:
+      version: ${{ steps.probe.outputs.version }}
+      schritt: ${{ steps.probe.outputs.schritt }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            desktop/package-lock.json
+            client/package-lock.json
+            server/package-lock.json
+      - name: Version aus dem Tag übernehmen
+        if: github.ref_type == 'tag'
+        run: node scripts/set-version.mjs
+      - name: Höhere Version und ein Migrationsschritt mehr
+        id: probe
+        shell: bash
+        run: node scripts/updater-probe.mjs | tee -a "$GITHUB_OUTPUT"
+      - name: Frontend bauen
+        run: |
+          npm --prefix client ci
+          npm --prefix client run build
+      - run: npm --prefix server ci --omit=dev --ignore-scripts
+      - run: npm --prefix desktop ci
+      - name: Programmfenster bauen
+        run: node scripts/package-desktop.mjs win
+      - uses: actions/upload-artifact@v7
+        with:
+          name: fenster-win-v2
+          path: |
+            dist-desktop/Mietfuchs-Setup-*.exe
+            dist-desktop/Mietfuchs-Setup-*.exe.blockmap
+            dist-desktop/latest.yml
+          if-no-files-found: error
+          retention-days: 3
+
+  # Echtes Update unter Windows (#517, scripts/updater-check.mjs): die gebaute Fassung installieren, die zweite über
+  # einen lokalen HTTP-Server anbieten, ohne Zustimmung keine Anfrage, dann „Jetzt neu starten“ und „Beim nächsten
+  # Start“ über die Oberfläche; danach läuft die zweite Fassung mit allen Daten und der Sicherung vor dem Migrieren.
+  updater-pruefen:
+    name: Automatisches Update prüfen auf ${{ matrix.name }}
+    needs: [fenster-bauen, fenster-bauen-v2]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: Windows x64, runner: windows-2025 }
+          - { name: Windows ARM64, runner: windows-11-arm }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Version aus dem Tag übernehmen
+        if: github.ref_type == 'tag'
+        run: node scripts/set-version.mjs
+      - uses: actions/download-artifact@v8
+        with:
+          name: fenster-win
+          path: paket
+      - uses: actions/download-artifact@v8
+        with:
+          name: fenster-win-v2
+          path: quelle
+      # Die .blockmap der installierten Fassung gehört neben die neue: electron-updater lädt beide für den Teil-Download
+      - name: Prüfen
+        shell: pwsh
+        run: |
+          Copy-Item paket\Mietfuchs-Setup-*.exe.blockmap quelle\
+          $setup = Get-ChildItem paket\Mietfuchs-Setup-*.exe | Select-Object -First 1
+          node scripts/updater-check.mjs --setup $setup.FullName --feed quelle --version "${{ needs.fenster-bauen-v2.outputs.version }}" --step "${{ needs.fenster-bauen-v2.outputs.schritt }}" --out update-pruefung
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Bericht in die Zusammenfassung
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Automatisches Update auf ${{ matrix.name }}"
+            echo '```'
+            node -e "const r=require('./update-pruefung/bericht.json'); console.log(JSON.stringify({v1:r.v1,v2:r.v2,jetzt:r['Jetzt-download'],spaeter:r['Später-download'],anfragen:r.requests.length,fehler:r.failures},null,2))" 2>/dev/null || echo 'kein Bericht'
+            grep -h "Full:\|To download\|differential" update-pruefung/updater*.log 2>/dev/null | head -20 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: update-pruefung-${{ matrix.runner }}
+          path: update-pruefung
+          retention-days: 14
 
   # Installieren wie ein Nutzer und von außen prüfen (scripts/desktop-check.mjs: Start, smoke-test,
   # zweiter Start, Beenden aus der Oberfläche, Absturz des Fensters). Größen, Startzeit und Speicher
@@ -912,7 +1025,7 @@ jobs:
   # entscheidet PR 4 mit Anleitung und Release-Notes.
   veroeffentlichen:
     name: Ans Release anhängen
-    needs: [pruefen, distributionen, pakete, slow-ai-answer, browserlauf, browserlauf-ausnahmen, fenster-pruefen, fenster-umzug]
+    needs: [pruefen, distributionen, pakete, slow-ai-answer, browserlauf, browserlauf-ausnahmen, fenster-pruefen, fenster-umzug, updater-pruefen]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-24.04
     permissions:
@@ -941,6 +1054,8 @@ jobs:
             dist-bin/*.rpm
             dist-bin/*.pkg.tar.zst
             dist-desktop/Mietfuchs-Setup-*.exe
+            dist-desktop/Mietfuchs-Setup-*.exe.blockmap
+            dist-desktop/latest.yml
             dist-desktop/Mietfuchs-*-apple-silicon.dmg
             dist-desktop/Mietfuchs-*-intel.dmg
           fail_on_unmatched_files: true

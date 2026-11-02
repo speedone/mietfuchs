@@ -17,6 +17,8 @@ export type DesktopBridge = {
   network?: NetworkBridge
   // Umzug der Daten (#517, relocation.ts): der Ordner-Dialog des Systems, ergibt den gewählten Ordner oder null
   chooseFolder?: () => Promise<string | null>
+  // Automatische Updates unter Windows (#517, desktopUpdater.ts)
+  updater?: import('./desktopUpdater').UpdaterBridge
 }
 
 // Die Brücke, wenn das Fenster sie kennt. Ein Fenster vor dieser Fassung kannte nur das Drucken.

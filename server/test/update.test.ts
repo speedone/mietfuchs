@@ -548,3 +548,20 @@ test('Keine Antwort: die Abfrage gibt nach der Wartezeit auf', async () => {
   assert.equal(s.available, false)
   assert.equal(typeof s.error, 'string')
 })
+
+// Programmfenster auf dem Mac (#517): kein automatisches Update (Squirrel.Mac verlangt eine bezahlte Signatur), der
+// Hinweis führt auf das passende Abbild, benannt wie package-desktop.mjs es nennt. Ohne passendes Abbild die
+// Release-Seite; unter Windows aktualisiert das Fenster selbst, dort ebenso die Release-Seite.
+test('Programmfenster auf dem Mac: das .dmg für Apple Silicon oder Intel, sonst die Release-Seite', async () => {
+  const dmg = (name: string) => ({ name, browser_download_url: `https://github.com/speedone/mietfuchs/releases/download/v0.5.0/${name}` })
+  respond = serve(releaseWith('v0.5.0', { assets: [...realResponse.assets, dmg('Mietfuchs-0.5.0-apple-silicon.dmg'), dmg('Mietfuchs-0.5.0-intel.dmg')] }))
+  const silicon = await makeChecker({ mode: 'desktop', platform: 'darwin', arch: 'arm64' }).check({ consent: 'on' })
+  assert.equal(silicon.downloadUrl, 'https://github.com/speedone/mietfuchs/releases/download/v0.5.0/Mietfuchs-0.5.0-apple-silicon.dmg')
+  const intel = await makeChecker({ mode: 'desktop', platform: 'darwin', arch: 'x64' }).check({ consent: 'on' })
+  assert.equal(intel.downloadUrl, 'https://github.com/speedone/mietfuchs/releases/download/v0.5.0/Mietfuchs-0.5.0-intel.dmg')
+  const windows = await makeChecker({ mode: 'desktop', platform: 'win32', arch: 'x64' }).check({ consent: 'on' })
+  assert.equal(windows.downloadUrl, null)
+  respond = serve(releaseWith('v0.5.0'))
+  const missing = await makeChecker({ mode: 'desktop', platform: 'darwin', arch: 'arm64' }).check({ consent: 'on' })
+  assert.equal(missing.downloadUrl, 'https://github.com/speedone/mietfuchs/releases/tag/v0.5.0')
+})
