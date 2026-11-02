@@ -57,7 +57,8 @@ const page = (s: Settings, st: UpdateStatus | null) => render(
 test('Programmdatei unter Windows: der Hinweis steht im Cockpit, auch ohne Zustimmung zur Update-Prüfung', async () => {
   page(settings(), status())
   expect(await screen.findByRole('heading', { name: TITLE }, SLOW)).toBeTruthy()
-  expect(screen.getByRole('link', { name: 'Aus dem Microsoft Store laden' })).toBeTruthy()
+  expect(screen.getByRole('link', { name: 'Installer herunterladen' })).toBeTruthy()
+  expect(screen.getByRole('link', { name: 'Oder aus dem Microsoft Store, mit automatischen Updates' })).toBeTruthy()
 })
 
 test('Ohne Angebot, nach „Später“ für diese Version und vor dem Stand des Servers kein Hinweis', async () => {

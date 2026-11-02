@@ -43,10 +43,12 @@ export function desktopLinks(offer: 'windows' | 'macos', current: string): Deskt
     const href = `https://github.com/speedone/mietfuchs/releases/tag/v${current}`
     return [{ label: offer === 'windows' ? 'Installer herunterladen' : 'Neues Mietfuchs herunterladen', href, primary: true }]
   }
+  // Der Installer zuerst: Bis zur Zertifizierung (einige Tage nach dem Release) liefert der Store noch die Fassung ohne
+  // Übernahme der Daten. Aus dem Store kommen Updates ohne Rückfrage.
   if (offer === 'windows') {
     return [
-      { label: 'Aus dem Microsoft Store laden', href: STORE_URL, primary: true },
-      { label: 'Installer herunterladen', href: RELEASES_URL, primary: false },
+      { label: 'Installer herunterladen', href: RELEASES_URL, primary: true },
+      { label: 'Oder aus dem Microsoft Store, mit automatischen Updates', href: STORE_URL, primary: false },
     ]
   }
   return [{ label: 'Neues Mietfuchs herunterladen', href: RELEASES_URL, primary: true }]

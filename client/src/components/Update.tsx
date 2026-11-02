@@ -15,6 +15,8 @@ import { UpdaterStatus, useDesktopUpdater, type DesktopUpdates } from './Desktop
 // lokal und liefert ohne Zustimmung nur die installierte Version.
 
 const README = 'https://github.com/speedone/mietfuchs#herunterladen--starten-ohne-installation'
+// Der Abschnitt „macOS“ unter „Installation unter Windows und macOS“ (Freigabe beim ersten Start)
+const README_MACOS = 'https://github.com/speedone/mietfuchs#macos'
 
 const saveSettings = (patch: Partial<Settings>) =>
   api('/api/settings', { method: 'PUT', body: JSON.stringify(patch) })
@@ -133,13 +135,13 @@ export function DesktopHint({ status, onDismissed }: { status: UpdateStatus; onD
         </div>
         <ol className="update-steps mt-4">
           {offer === 'windows'
-            ? <li>Mietfuchs aus dem Microsoft Store installieren, oder den Installer <code>Mietfuchs-Setup-….exe</code> von der Release-Seite laden und starten.</li>
+            ? <li>Den Installer <code>Mietfuchs-Setup-….exe</code> von der Release-Seite laden und starten, oder Mietfuchs aus dem Microsoft Store installieren.</li>
             // In einem span: Den letzten Code eines Schritts setzt .update-steps als Befehlszeile darunter (Linux).
             : <li><span>Auf der Release-Seite das Abbild für Ihren Mac laden, <code>…-apple-silicon.dmg</code> für Apple M1 und neuer oder <code>…-intel.dmg</code> für Intel. Öffnen und Mietfuchs in „Programme“ ziehen.</span></li>}
           <li>Dieses Mietfuchs beenden, mit „Mietfuchs beenden“ in der Seitenleiste.</li>
           {offer === 'windows'
             ? <li>Das neue Mietfuchs starten, etwa aus dem Startmenü.</li>
-            : <li>Mietfuchs aus „Programme“ starten. Blockiert macOS den ersten Start, geben Sie es frei wie beim ersten Mal (<a href={README} target="_blank" rel="noreferrer">README</a>).</li>}
+            : <li>Mietfuchs aus „Programme“ starten. Blockiert macOS den ersten Start, geben Sie es frei wie beim ersten Mal (<a href={README_MACOS} target="_blank" rel="noreferrer">README</a>).</li>}
           <li>Fragt das neue Mietfuchs nach Ihren bisherigen Daten, „Daten übernehmen“ bestätigen. Es kopiert sie, das bisherige zeigt sie danach nur noch zum Ansehen.</li>
         </ol>
         <p className="muted">
@@ -346,7 +348,7 @@ function Download({ guide, status }: { guide: Extract<UpdateGuide, { kind: 'down
           <li>Das Abbild <code>{fileName}</code> mit dem Knopf oben herunterladen und mit einem Doppelklick öffnen.</li>
           {quitStep}
           <li>Mietfuchs aus dem Abbild in den Ordner „Programme“ ziehen und „Ersetzen“ wählen. Ihre Daten bleiben, wo sie sind.</li>
-          <li>Mietfuchs starten. Meldet sich macOS wie beim ersten Mal, geben Sie es wie damals frei; wie, steht im <a href={README} target="_blank" rel="noreferrer">README</a>.</li>
+          <li>Mietfuchs starten. Meldet sich macOS wie beim ersten Mal, geben Sie es wie damals frei; wie, steht im <a href={README_MACOS} target="_blank" rel="noreferrer">README</a>.</li>
         </ol>
       )}
       {guide.system === null && (

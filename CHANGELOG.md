@@ -27,47 +27,21 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
     Meldung beim Start das, nennt die Datei und rät, sie dort freizugeben oder Mietfuchs neu zu installieren.
   - Der Installer prüft mit einem kurzen Blick in die Prozessliste, ob Mietfuchs noch läuft, statt mehrmals
     PowerShell zu starten; das kostete mit dem Virenschutz von Windows jedes Mal Sekunden. Installieren,
-    Aktualisieren und Deinstallieren gehen so deutlich schneller. Er legt keine 230 MB große Kopie von sich selbst
-    unter `%LOCALAPPDATA%\mietfuchs-updater` ab, und hält Windows gleich nach dem Installieren noch eine Datei offen,
-    versucht es das Deinstallationsprogramm noch einige Male, statt den Programmordner halb gelöscht liegen zu lassen.
+    Aktualisieren und Deinstallieren gehen so deutlich schneller. Hält Windows gleich nach dem Installieren noch eine
+    Datei offen, versucht es das Deinstallationsprogramm noch einige Male, statt den Programmordner halb gelöscht liegen zu lassen.
     Wie lange jeder Schritt dauert, steht in `%TEMP%\mietfuchs-installation.log`.
+- **Automatische Updates unter Windows** ([#517](https://github.com/speedone/mietfuchs/issues/517)): Mit dem Häkchen
+  „Beim Öffnen nach neuen Versionen schauen“ lädt das Programm aus dem Installer eine neue Version im Hintergrund von
+  GitHub und meldet dann „Version x ist bereit“. „Jetzt neu starten“ beendet Mietfuchs sauber, installiert und startet
+  die neue Version; „Beim nächsten Start“ installiert, wenn Sie Mietfuchs beenden. Ungefragt startet Mietfuchs nie
+  neu, und ohne das Häkchen fragt es nicht bei GitHub nach; dann lädt man den neuen Installer selbst von der
+  Release-Seite. Vor dem Umstellen der Datenbank legt Mietfuchs wie bei jedem Update eine Sicherung an. Vorabversionen
+  bietet es nie an. Damit nur die geänderten Teile geladen werden, legt der Installer eine Kopie von sich unter
+  `%LOCALAPPDATA%\mietfuchs-updater` ab; das Deinstallieren entfernt sie. Aus dem Microsoft Store aktualisiert der
+  Store. Auf dem Mac führt der Update-Hinweis direkt auf das passende Abbild für Apple Silicon oder Intel, und läuft
+  Mietfuchs nicht aus dem Ordner „Programme“, bietet es beim ersten Start einmal an, sich dorthin zu verschieben.
 - **Umzug der Daten ins neue Programm** ([#517](https://github.com/speedone/mietfuchs/issues/517)): Beim ersten Start
   des Programms unter Windows oder macOS (auch aus dem Microsoft Store) ohne Daten fragt Mietfuchs genau einmal.
-### Behoben
-
-- **Programmfenster: Virenschutz blockierte den Server** ([#517](https://github.com/speedone/mietfuchs/issues/517)):
-  Auf einem Rechner mit HP Wolf Security hielt die Malware-Prävention die Datei des Servers für Schadcode, und
-  Mietfuchs zeigte beim Start nur einen Stacktrace. Der Server liegt jetzt im Programmarchiv des Fensters, dessen
-  Echtheit Mietfuchs beim Lesen prüft, statt als offene Skriptdatei im Installationsordner. Sperrt ein Virenschutz
-  trotzdem eine Datei von Mietfuchs oder entfernt sie, sagt die Meldung das, nennt die Datei und rät, sie dort
-  freizugeben oder Mietfuchs neu zu installieren.
-- **Programmfenster unter Windows: Installieren, Aktualisieren und Deinstallieren gehen schneller**
-  ([#517](https://github.com/speedone/mietfuchs/issues/517)): Vor dem Installieren und beim Deinstallieren prüft
-  Mietfuchs, ob es noch läuft. Dafür startete der Installer bis zu dreimal PowerShell, beim Aktualisieren zusammen mit
-  dem alten Deinstallationsprogramm bis zu sechsmal, und das kostet mit dem Virenschutz von Windows jedes Mal
-  Sekunden. Jetzt genügt ein kurzer Blick in die Prozessliste. Hält Windows gleich nach dem Installieren noch eine Datei offen, versucht es das Deinstallationsprogramm noch
-  einige Male, statt den Programmordner halb gelöscht liegen zu lassen.
-  Installer und Deinstallationsprogramm schreiben, wie lange jeder Schritt dauert, nach
-  `%TEMP%\mietfuchs-installation.log`.
-- **Programmfenster unter Windows:** Beim ersten Start fragte die Windows-Firewall, ob Mietfuchs ins Netz darf, obwohl
-  es nur auf diesem Rechner lauscht. Ins Netz geht Mietfuchs nur mit dem Schalter „Zugriff aus dem Heimnetz“.
-
-### Hinzugefügt
-
-- **Programmfenster unter Windows: automatische Updates** ([#517](https://github.com/speedone/mietfuchs/issues/517)):
-  Mit dem Häkchen „Beim Öffnen nach neuen Versionen schauen“ lädt Mietfuchs eine neue Version im Hintergrund von
-  GitHub und meldet dann „Version x ist bereit“. „Jetzt neu starten“ beendet Mietfuchs sauber, installiert und startet
-  die neue Version; „Beim nächsten Start“ installiert, wenn Sie Mietfuchs beenden. Ungefragt startet Mietfuchs nie neu,
-  und ohne das Häkchen fragt es nicht bei GitHub nach. Wie bei jedem Update legt Mietfuchs vor dem Umstellen der
-  Datenbank eine Sicherung an. Vorabversionen bietet es nie an. Damit nur die geänderten Teile geladen werden, legt
-  der Installer wieder eine Kopie von sich unter `%LOCALAPPDATA%\mietfuchs-updater` ab; das Deinstallieren entfernt
-  sie. Aus dem Microsoft Store aktualisiert weiter der Store.
-- **Programmfenster auf dem Mac:** Der Update-Hinweis führt direkt auf das passende Abbild für Apple Silicon oder
-  Intel, mit Anleitung. Automatisch aktualisieren kann Mietfuchs auf dem Mac nicht, das verlangte eine bezahlte
-  Signatur von Apple. Läuft Mietfuchs nicht aus dem Ordner „Programme“, bietet es beim ersten Start einmal an, sich
-  dorthin zu verschieben.
-- **Umzug der Daten ins Programmfenster** ([#517](https://github.com/speedone/mietfuchs/issues/517)): Beim ersten Start
-  des Programmfensters unter Windows oder macOS (auch aus dem Microsoft Store) ohne Daten fragt Mietfuchs genau einmal.
   Findet es Daten der bisherigen Programmdatei (über den gemerkten Ort oder in Downloads, Schreibtisch und Dokumente,
   auch in OneDrive), nennt es Ort, letzte Änderung und Zahl der Objekte und Mietverhältnisse und bietet „Daten
   übernehmen“ an; sonst fragt es „Haben Sie Mietfuchs schon einmal benutzt?“ und führt bei „Ja“ zum Backup aus dem

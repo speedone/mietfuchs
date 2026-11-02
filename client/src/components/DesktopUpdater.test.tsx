@@ -162,6 +162,7 @@ test('Mac im Fenster (Stand `off`): Anleitung mit dem passenden Abbild statt aut
     const link = await screen.findByRole('link', { name: 'Version 0.15.0 herunterladen' })
     expect(link.getAttribute('href')).toBe(dmg)
     expect(screen.getByText(/in den Ordner „Programme“ ziehen und „Ersetzen“ wählen/)).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'README' }).getAttribute('href')).toBe('https://github.com/speedone/mietfuchs#macos')
     expect(screen.queryByRole('button', { name: 'Jetzt neu starten' })).toBeNull()
   } finally {
     serverStatus.downloadUrl = null
