@@ -717,8 +717,11 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
         {own && placingOpen && <ul id={`einordnen-${v.id}`} className="receipt-list">{renderInbox(own, v)}</ul>}
         <div className={shown ? 'flex flex-col xl:flex-row-reverse xl:items-start gap-4' : undefined}>
           {shown && (
+            // Ein Bild abgeschottet (#517). Ein PDF nicht: In einem Rahmen mit `sandbox` zeigen die Betrachter von Chromium,
+            // dem Programmfenster und Firefox nichts an (nachgemessen). Ein PDF führt kein Skript mit Zugriff auf die
+            // Seite aus und schickt keine Formulare ab (nachgemessen, server/src/uploads.ts).
             <iframe id={`beleg-${v.id}`} className="w-full xl:w-96 h-112 shrink-0 border border-line bg-card"
-              src={`/uploads/${encodeURIComponent(v.file)}`} title={`Beleg ${v.originalName}`} />
+              src={`/uploads/${encodeURIComponent(v.file)}`} title={`Beleg ${v.originalName}`} sandbox={/\.pdf$/i.test(v.file) ? undefined : ''} />
           )}
           <div className="min-w-0 flex-1">
             <AssessmentReview assessment={v} units={units} keyContext={keyCtx(v)}

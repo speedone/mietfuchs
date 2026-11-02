@@ -97,7 +97,7 @@ import {
   readMovedMarker, relocationHome, rememberedFolders, runningFor, samePath, searchProgramFolders, searchRoots, stockKind,
   writeDecision, writeMovedMarker, type CandidateInfo, type FileSize, type MovedMarker,
 } from './relocation.ts'
-import { describeFile, describeFolder, hashFile, mimeTypeOf, uploadedAtOf } from './uploads.ts'
+import { SCRIPT_REFUSAL, carriesScript, describeFile, describeFolder, hashFile, mimeTypeOf, servedTypeOf, uploadedAtOf } from './uploads.ts'
 import { acceptIban, IbanRefusal } from './iban.ts'
 import { IBAN_LABELS } from '../../shared/iban.ts'
 import { exportFilename, frozenExportable, settlementExportCsv, settlementExportJson, type ExportableSettlement } from './settlementExport.ts'
@@ -122,6 +122,19 @@ const app = express()
 // Liegt im eigenen Datenordner ein Vermerk (#517), ist er ins Programmfenster umgezogen: Diese Fassung zeigt ihn nur noch
 // an, Schreibrouten antworten mit 423 (siehe „Umzug ins Programmfenster“ unten).
 const MOVED_AWAY: MovedMarker | null = readMovedMarker(DATA_DIR)
+
+// Content-Security-Policy der Oberfläche (#517, Durchsicht): nur Skripte vom eigenen Ursprung (der Build von Vite hat
+// kein Skript in der index.html), WebAssembly für die Dekoder von pdf.js (JBIG2, JPEG 2000), keine Plugins, keine
+// fremde Basis-Adresse und nicht in fremden Rahmen. Bilder, Stile und Verbindungen bleiben frei: Vorschaubilder kommen
+// als data:-Adressen, React setzt Stile am Element. Sie gilt für jede Antwort außer unter /uploads (Belege haben
+// `sandbox`), auch für /api: Dort schadet sie JSON nicht, und /API/… (Express unterscheidet Groß und Klein nicht, die
+// Auslieferung der Seite unten schon) bekäme sonst die index.html ohne sie (Durchsicht). Beim Entwickeln liefert Vite
+// die Seite, ohne diesen Header. Gesetzt vor allem anderen, damit jede Route und jede Ablehnung ihn trägt.
+const APP_CSP = "script-src 'self' 'wasm-unsafe-eval'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'"
+app.use((req, res, next) => {
+  if (!/^\/uploads(\/|$)/i.test(req.path)) res.setHeader('Content-Security-Policy', APP_CSP)
+  next()
+})
 
 // Host und Origin prüfen (#517), vor allem anderen, auch vor dem Lesen des Rumpfs; die Gründe stehen in
 // requestGuard.ts. Ohne NKA_ALLOWED_HOSTS in Docker und npm aus.
@@ -214,6 +227,13 @@ const upload = multer({
     _removeFile: (req, file, cb) => storageFor(file)._removeFile(req, file, cb),
   },
   limits: { fileSize: UPLOAD_MAX_BYTES },
+  // Kein Beleg, der Skript tragen kann (#517, uploads.ts). Abgelehnt wird, bevor etwas auf die Platte kommt. Seitenbilder
+  // (Feld `pages`) bleiben im Arbeitsspeicher und werden nie ausgeliefert; was kein Bild ist, übergeht die Auswertung
+  // wie bisher (api-ki-beleg.test.ts).
+  fileFilter: (req, file, cb) => {
+    if (file.fieldname !== 'pages' && carriesScript(file.originalname, file.mimetype)) cb(new RouteProblem(400, SCRIPT_REFUSAL))
+    else cb(null, true)
+  },
   // Browser schicken Dateinamen als UTF-8. Mit dem Standard latin1 zerfiel „Müll.pdf“ zu
   // „M__ll.pdf“, weil jedes Byte des Umlauts einzeln ersetzt wurde.
   defParamCharset: 'utf8',
@@ -1688,7 +1708,19 @@ app.get('/api/tax/overview', async (req, res) => {
 })
 
 // ---------- Belege & KI-Auswertung ----------
-app.use('/uploads', express.static(UPLOAD_DIR))
+// Ohne Skript und mit eigenem Ursprung (#517, Begründung in uploads.ts). Die beiden Header setzt die erste Funktion für
+// jede Antwort unter /uploads, auch für ein 404; den Typ legt `setHeaders` vor `send` fest, das einen gesetzten nicht
+// überschreibt. Express vergleicht den Pfad ohne Rücksicht auf Groß und Klein, /UPLOADS/… läuft also hier durch.
+app.use('/uploads', (req, res, next) => {
+  res.set({ 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': 'sandbox' })
+  next()
+}, express.static(UPLOAD_DIR, {
+  setHeaders: (res, file) => {
+    const type = servedTypeOf(file)
+    res.setHeader('Content-Type', type ?? 'application/octet-stream')
+    if (!type) res.setHeader('Content-Disposition', 'attachment')
+  },
+}))
 
 // ---------- Angaben zu Belegen (#170) ----------
 //

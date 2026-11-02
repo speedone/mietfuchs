@@ -14,7 +14,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { BrowserWindow, Menu, app, dialog, ipcMain, session, shell, utilityProcess } from 'electron'
 import { TICK_MS, UPDATE_REPO, createUpdaterController, initialUpdaterState, shouldOfferMove, updaterSource } from './updater.js'
-import { DEFAULT_PORT, SERVICE_NAME, blockedFileIn, dataDirIn, findBlockedFile, freePort, linkTarget, networkState, programFiles, serverEnv, serverModule, startFailure, startUrlIn, whoIsOn, chosenFolder, folderDialogProperties } from './server.js'
+import { DEFAULT_PORT, SERVICE_NAME, blockedFileIn, childWebPreferences, dataDirIn, frameTarget, findBlockedFile, freePort, isAppPage, isReceipt, linkTarget, navigationTarget, networkState, programFiles, serverEnv, serverModule, startFailure, startUrlIn, trustedSender, whoIsOn, chosenFolder, folderDialogProperties } from './server.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const startedAt = Date.now()
@@ -302,31 +302,48 @@ function createWindow() {
   return win
 }
 
-// Was die Seite öffnen darf (siehe linkTarget). Belege öffnen in einem eigenen Fenster mit denselben Regeln.
-/** @param {BrowserWindow} win */
-function guard(win) {
+// Was die Seite öffnen darf (siehe linkTarget). Belege öffnen in einem eigenen Fenster mit denselben Regeln, aber ohne
+// Preload und damit ohne Brücke (#517, childWebPreferences), auch wenn ein Link oder eine Weiterleitung sie in ein
+// Fenster mit Brücke laden wollte (navigationTarget).
+/**
+ * @param {BrowserWindow} win
+ * @param {boolean} [bridge] hat das Fenster das Preload? Nur ein Belegfenster nicht.
+ */
+function guard(win, bridge = true) {
   const contents = win.webContents
   contents.setWindowOpenHandler(({ url }) => {
     if (!origin) return { action: 'deny' }
     const where = linkTarget(url, origin)
     if (where === 'external') void shell.openExternal(url)
     if (where !== 'window') return { action: 'deny' }
-    return { action: 'allow', overrideBrowserWindowOptions: { width: 1000, height: 800, webPreferences: { preload: path.join(here, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false } } }
+    return { action: 'allow', overrideBrowserWindowOptions: { width: 1000, height: 800, webPreferences: childWebPreferences(url, origin, path.join(here, 'preload.cjs'), bridge) } }
   })
-  contents.on('did-create-window', (child) => guard(child))
+  contents.on('did-create-window', (child, details) => guard(child, bridge && !(origin && isReceipt(details.url, origin))))
   const onNavigate = (/** @type {Electron.Event} */ event, /** @type {string} */ url) => {
     if (url.startsWith('data:') && !origin) return // die Seite „Mietfuchs startet …“
-    if (origin && linkTarget(url, origin) === 'window') return
+    const where = navigationTarget(url, origin, bridge)
+    if (where === 'stay') return
     event.preventDefault()
-    if (origin && linkTarget(url, origin) === 'external') void shell.openExternal(url)
+    if (where === 'external') void shell.openExternal(url)
+    if (where === 'receipt') openReceiptWindow(url)
   }
   contents.on('will-navigate', onNavigate)
   contents.on('will-redirect', onNavigate)
-  // Auch eingebettete Rahmen (Belegvorschau) bleiben auf der eigenen Adresse (Durchsicht K9)
+  // Auch eingebettete Rahmen (Belegvorschau) bleiben auf der eigenen Adresse (Durchsicht K9), nur der PDF-Betrachter
+  // darf dazu (#517, frameTarget)
   contents.on('will-frame-navigate', (event) => {
     if (event.isMainFrame) return
-    if (!origin || linkTarget(event.url, origin) !== 'window') event.preventDefault()
+    if (!frameTarget(event.url, origin)) event.preventDefault()
   })
+}
+
+// Ein Beleg, den ein Link ins Fenster mit Brücke laden wollte, in einem eigenen Fenster ohne Preload (#517)
+/** @param {string} url */
+function openReceiptWindow(url) {
+  if (!origin) return
+  const child = new BrowserWindow({ width: 1000, height: 800, webPreferences: childWebPreferences(url, origin, path.join(here, 'preload.cjs')) })
+  guard(child, false)
+  void child.loadURL(url)
 }
 
 function buildMenu() {
@@ -405,9 +422,9 @@ async function start() {
   buildMenu()
   session.defaultSession.setPermissionRequestHandler((_contents, permission, callback) => callback(permission === 'clipboard-sanitized-write'))
   session.defaultSession.setPermissionCheckHandler((_contents, permission) => permission === 'clipboard-sanitized-write')
-  // Nur die eigene Seite darf drucken lassen (Durchsicht K9)
+  // Nur die eigene Seite darf drucken lassen (Durchsicht K9), und zwar ihr Hauptrahmen, nie ein Beleg (#517, trustedSender)
   /** @param {Electron.IpcMainInvokeEvent} event */
-  const fromOwnPage = (event) => Boolean(origin && event.senderFrame && linkTarget(event.senderFrame.url, origin) === 'window')
+  const fromOwnPage = (event) => trustedSender(event.senderFrame, origin) && event.senderFrame === event.sender.mainFrame
   ipcMain.handle('mietfuchs:print', (event) => {
     if (fromOwnPage(event)) printPage(event.sender)
   })
@@ -555,7 +572,7 @@ async function setupUpdater() {
     onState: (state) => {
       line(`Stand: ${JSON.stringify(state)}`)
       for (const win of BrowserWindow.getAllWindows()) {
-        if (origin && linkTarget(win.webContents.getURL(), origin) === 'window') win.webContents.send('mietfuchs:updater-state', state)
+        if (origin && isAppPage(win.webContents.getURL(), origin)) win.webContents.send('mietfuchs:updater-state', state)
       }
     },
     log: line,
