@@ -359,7 +359,11 @@ export default function Umzug({ manual = false, onFresh, onClose, reloadPage = r
             )}
             {manual
               ? <button type="button" className="btn ghost small" disabled={busy} onClick={onClose}>Zurück</button>
-              : candidates.length === 0 && <button type="button" className="btn ghost small" disabled={busy} onClick={() => { clearMessages(); setImportWays(false) }}>Zurück</button>}
+              : candidates.length === 0 && (list
+                ? <button type="button" className="btn ghost small" disabled={busy} onClick={() => { clearMessages(); setImportWays(false) }}>Zurück</button>
+                // Suche gescheitert (Durchsicht): Ohne Liste gibt es keine Frage, zu der „Zurück“ führte, und die Navigation
+                // ist beim ersten Start ausgeblendet. Neu beginnen muss immer gehen.
+                : <button type="button" className="btn secondary small" disabled={busy} onClick={() => void startFresh(false)}>Nein, neu beginnen</button>)}
           </div>
         </>
       )}

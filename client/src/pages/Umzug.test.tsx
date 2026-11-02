@@ -389,3 +389,18 @@ test('Praxistest E-02-390: am Handy kein „hierher ziehen“', async () => {
   expect(card.textContent).not.toMatch(/ziehen/i)
   expect(within(card).getByLabelText('Backup einspielen')).toBeTruthy()
 })
+
+// Durchsicht vor dem PR: Scheitert die Suche beim ersten Start, fehlte jeder Ausweg; die Navigation ist im
+// Einrichtungsmodus ausgeblendet, und „Zurück“ führte nirgendwohin. Neu beginnen muss immer gehen.
+test('Suche scheitert beim ersten Start: Neu beginnen bleibt möglich', async () => {
+  const calls = fakeServer({
+    'GET /api/relocation/candidates': () => ({ status: 500, json: { error: 'Die Suche ist fehlgeschlagen.' } }),
+    'POST /api/relocation/decline': () => ({ json: { ok: true } }),
+  })
+  const { onFresh } = renderScreen()
+  expect(await screen.findByText('Die Suche ist fehlgeschlagen.')).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Zurück' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Nein, neu beginnen' }))
+  await vi.waitFor(() => expect(onFresh).toHaveBeenCalled())
+  expect(calls.some((c) => c.url === '/api/relocation/decline' && c.method === 'POST')).toBe(true)
+})
