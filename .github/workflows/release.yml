@@ -1109,6 +1109,10 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      # Herkunftsnachweis (Attestation) der angehängten Dateien: id-token für das Sigstore-Zertifikat, attestations zum
+      # Ablegen beim Repo
+      id-token: write
+      attestations: write
     steps:
       # Vor den Artefakten: checkout räumt den Arbeitsordner
       - uses: actions/checkout@v7
@@ -1137,9 +1141,35 @@ jobs:
         env:
           MIETFUCHS_UPDATE_SIGNING_KEY: ${{ secrets.MIETFUCHS_UPDATE_SIGNING_KEY }}
         run: node scripts/sign-update-manifest.mjs --dir dist-desktop
+      # Prüfsummen aller Dateien, die ans Release gehen, als SHA256SUMS.txt (nach dem Signieren, denn das ändert
+      # latest.yml). Dieselben Muster wie beim Anhängen darunter (Test „Release: SHA256SUMS.txt nennt jede angehängte
+      # Datei“ in workflow-store.test.ts); passt eines nicht, bleibt es als Text stehen, sha256sum scheitert, und wegen
+      # `shell: bash` (bash -eo pipefail) scheitert der Schritt mit, obwohl sed am Ende der Pipe gelingt.
+      - name: Prüfsummen bilden
+        shell: bash
+        run: |
+          mkdir -p pruefsummen
+          files=(
+            dist-bin/*.zip
+            dist-bin/*.tar.gz
+            dist-bin/*.exe
+            dist-bin/*.deb
+            dist-bin/*.rpm
+            dist-bin/*.pkg.tar.zst
+            dist-desktop/Mietfuchs-Setup-*.exe
+            dist-desktop/Mietfuchs-Setup-*.exe.blockmap
+            dist-desktop/Mietfuchs-*-apple-silicon.dmg
+            dist-desktop/Mietfuchs-*-intel.dmg
+            dist-desktop/latest.yml
+          )
+          # Nur der Dateiname, wie er am Release steht, damit `sha256sum -c` im Download-Ordner passt
+          sha256sum "${files[@]}" | sed -E 's#^([0-9a-f]{64})  .*/#\1  #' > pruefsummen/SHA256SUMS.txt
+          if [ "$(awk '{print $2}' pruefsummen/SHA256SUMS.txt | sort | uniq -d)" != "" ]; then echo "Zwei Dateien mit demselben Namen"; exit 1; fi
+          cat pruefsummen/SHA256SUMS.txt
       - uses: softprops/action-gh-release@v3
         with:
           files: |
+            pruefsummen/SHA256SUMS.txt
             dist-bin/*.zip
             dist-bin/*.tar.gz
             dist-bin/*.exe
@@ -1173,6 +1203,17 @@ jobs:
           files: dist-desktop/latest.yml
           fail_on_unmatched_files: true
           prerelease: ${{ contains(github.ref_name, '-') }}
+      # Herkunftsnachweis: belegt mit einer Sigstore-Signatur, dass jede Datei aus SHA256SUMS.txt in diesem Workflow aus
+      # diesem Repo gebaut wurde. Prüfen mit `gh attestation verify <Datei> -R speedone/mietfuchs` (README, „Download
+      # prüfen“). Zuletzt, damit ein Fehler hier kein halbes Release hinterlässt. Scheitert er, ist der Job rot und die
+      # Einreichung im Store (needs: veroeffentlichen) unterbleibt; ein erneuter Lauf des Jobs hängt dieselben Dateien
+      # wieder an, holt den Nachweis nach und gibt den Store frei. Bewusst ohne continue-on-error: Ein Release ohne
+      # Nachweis soll auffallen.
+      - uses: actions/attest@v4
+        with:
+          subject-checksums: pruefsummen/SHA256SUMS.txt
+          # Ein Speichereintrag gilt nur für Pakete in einer Registry
+          create-storage-record: false
 
   # Das Paket für den Microsoft Store (#500): aus dem Programmfenster (#517) je Architektur ein
   # .msix, zusammen ein .msixbundle (scripts/package-msix.mjs). Hinein kommt der entpackte Ordner

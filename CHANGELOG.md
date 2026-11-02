@@ -10,6 +10,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Hinzugefügt
 
+- **Download prüfen**: Jedes Release hat eine Datei `SHA256SUMS.txt` mit der Prüfsumme jeder Datei und einen
+  signierten Herkunftsnachweis, dass die Dateien in der Release-Automatik dieses Repos gebaut wurden (prüfbar mit
+  `gh attestation verify <Datei> -R speedone/mietfuchs`). Anleitung im README unter „Download prüfen“.
 - **Eigenes Programm für Windows und macOS** ([#517](https://github.com/speedone/mietfuchs/issues/517)): Mietfuchs
   öffnet sich in einem eigenen Fenster statt im Browser, mit Symbol in Taskleiste und Dock. Fenster zu heißt Mietfuchs
   zu, gedruckt wird mit Briefpapier und „Seite x von y“ auch auf dem Mac. Zum Herunterladen als
