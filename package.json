@@ -42,7 +42,7 @@
   "devDependencies": {
     "@axe-core/playwright": "^4.14.0",
     "concurrently": "^10.0.6",
-    "date-holidays": "^3.37.0",
+    "date-holidays": "^3.38.0",
     "playwright": "^1.64.1"
   }
 }
