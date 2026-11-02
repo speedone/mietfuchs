@@ -17,7 +17,8 @@ const TEXT = /\.(ts|tsx|js|mjs|cjs|css|html|md|json|yml|yaml|txt)$/
 // Erzeugt oder eingefroren: die Migrationen und der eingefrorene Eingang des Umstiegs hängen an Prüfsummen
 // (server/drizzle, legacy-schema.test.ts für schema.ts, write.ts, migrate.ts), die übrigen entstehen beim Bauen
 const SKIP = /(^|\/)(node_modules|dist|drizzle)(\/|$)|package-lock\.json$|embedded-migrations\.js$|^server\/src\/legacy\/(schema|write|migrate)\.ts$/
-const ALLOWED = ['WIN_ANSI_EXTRA', ".not.toContain('—')", '.not.toMatch(/—/)']
+// Zeichentabellen der Windows-Kodierung (tenantFolder.ts, scripts/demo-stock.mjs): dort ist das Zeichen ein Datenwert
+const ALLOWED = ['WIN_ANSI_EXTRA', 'const WIN_ANSI = {', ".not.toContain('—')", '.not.toMatch(/—/)']
 
 function files(entry: string): string[] {
   const full = path.join(ROOT, entry)
@@ -36,4 +37,18 @@ test('Keine Geviertstriche in Oberfläche, Meldungen, Code und Doku', () => {
     })
   }
   assert.deepEqual(found, [], `Geviertstrich gefunden; bitte Bindestrich, Doppelpunkt, Komma oder Klammer:\n${found.join('\n')}`)
+})
+
+// Gefunden in der Integrationsdurchsicht: Der Austausch hatte in scripts/demo-stock.mjs aus `'—': 0x97` ein `'-': 0x97`
+// gemacht, und jeder Bindestrich der Demo-Belege wurde als Geviertstrich kodiert. Ein Bindestrich gehört in keine
+// Zeichentabelle, er ist ASCII.
+test('Kein Bindestrich als Schlüssel einer Zeichentabelle', () => {
+  const found: string[] = []
+  for (const file of DIRS.flatMap(files)) {
+    if (!/\.(ts|tsx|js|mjs|cjs)$/.test(file) || file === 'server/test/geviertstrich.test.ts') continue
+    fs.readFileSync(path.join(ROOT, file), 'utf8').split('\n').forEach((line, i) => {
+      if (/['"]-['"]\s*:\s*0x[0-9a-f]+/i.test(line)) found.push(`${file}:${i + 1}`)
+    })
+  }
+  assert.deepEqual(found, [])
 })
