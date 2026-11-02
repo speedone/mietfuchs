@@ -257,6 +257,41 @@ Die Adresse ist eine andere als bei der bisherigen Programmdatei und der Store-F
 erlaubt ist, kann jeder in deinem Heimnetz deine Daten öffnen und ändern. Erlaube ihn nur in
 einem Netz, dem du vertraust.
 
+### Download prüfen (für Fortgeschrittene)
+
+Unter Windows bekommst du Mietfuchs am einfachsten und ohne Prüfen über den Microsoft Store. Lädst du von der
+[Release-Seite](https://github.com/speedone/mietfuchs/releases/latest), kannst du nachsehen, ob die
+Datei vollständig und unverändert angekommen ist und wirklich aus diesem Repo stammt:
+
+**Prüfsumme.** Jedes Release hat eine Datei `SHA256SUMS.txt` mit der SHA-256-Prüfsumme jeder Datei;
+GitHub zeigt sie außerdem bei jeder hochgeladenen Datei unter *Assets* an
+(nicht bei den automatischen Einträgen „Source code“). Berechne die Prüfsumme deines Downloads
+und vergleiche sie mit dem Eintrag:
+
+```powershell
+# Windows (PowerShell)
+Get-FileHash "$env:USERPROFILE\Downloads\Mietfuchs-Setup-0.15.0.exe"
+```
+
+```bash
+# macOS
+shasum -a 256 ~/Downloads/Mietfuchs-0.15.0-apple-silicon.dmg
+# Linux: alle geladenen Dateien im Ordner auf einmal
+sha256sum -c SHA256SUMS.txt --ignore-missing
+```
+
+**Herkunftsnachweis.** Die Prüfsumme zeigt nur, dass die Datei so ankam, wie sie am Release liegt.
+Dass sie auch in der Release-Automatik dieses Repos gebaut wurde, belegt ein signierter Nachweis
+(Artifact Attestation), den du mit der [GitHub-CLI](https://cli.github.com/) prüfst (vorher einmal
+`gh auth login`):
+
+```bash
+gh attestation verify Mietfuchs-Setup-0.15.0.exe -R speedone/mietfuchs
+```
+
+Beides gibt es ab Version 0.15.0. Updates unter Windows (Installer) prüft das Programmfenster selbst:
+Es lädt nur eine Update-Beschreibung, die mit dem Schlüssel von Mietfuchs signiert ist.
+
 <a id="herunterladen--starten-ohne-installation"></a>
 
 ## Bisherige Programmdatei (ohne Installation)
