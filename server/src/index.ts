@@ -3604,15 +3604,20 @@ async function runAdopt(res: Response, folder: string, mode: AdoptMode): Promise
   const staging = path.join(DATA_DIR, `restore-${newId()}`)
   const stagedDatabase = stagedCopyName(databaseFile(DATA_DIR), newId())
   let switched = false
+  // Geantwortet wird erst nach dem Aufräumen unten: Sonst sah der Aufrufer die Antwort, während die Zwischenablage noch
+  // dalag (das Löschen wiederholt bei ENOTEMPTY bis zu fünfmal), und ein sofortiger Blick in den Ordner fand sie noch
+  // (api-umzug.test.ts, „scheitert etwas …“, in der CI an #553 gesehen)
+  let reply: { status: number, body: unknown }
   try {
     const result = await adoptFolder(folder, staging, stagedDatabase, () => { switched = true }, mode)
-    res.status(result.ok ? 200 : 500).json(result)
+    reply = { status: result.ok ? 200 : 500, body: result }
   } catch (err) {
-    if (err instanceof AdoptRefusal) return void res.status(400).json({ error: err.message })
     const full = diskFullMessage(err)
-    res.status(500).json({ error: switched
-      ? `Beim Übernehmen ist ein Fehler aufgetreten: ${full ?? messageOf(err)}. Ihre bisherigen Daten im alten Ordner sind unverändert. Arbeiten Sie bitte vorerst dort weiter und melden Sie den Fehler.`
-      : copyErrorText(err) })
+    reply = err instanceof AdoptRefusal
+      ? { status: 400, body: { error: err.message } }
+      : { status: 500, body: { error: switched
+          ? `Beim Übernehmen ist ein Fehler aufgetreten: ${full ?? messageOf(err)}. Ihre bisherigen Daten im alten Ordner sind unverändert. Arbeiten Sie bitte vorerst dort weiter und melden Sie den Fehler.`
+          : copyErrorText(err) } }
   } finally {
     restoreRunning = false
     adoptCancel = false
@@ -3625,8 +3630,14 @@ async function runAdopt(res: Response, folder: string, mode: AdoptMode): Promise
       console.error(`Die Zwischenablage der Übernahme ließ sich nicht entfernen; der nächste Start räumt sie weg: ${messageOf(err)}`)
     }
     // Vor dem Umschalten bleibt die Kopie nicht liegen; danach hat applyBackup sie an ihren Platz bewegt
-    if (!switched) for (const suffix of ['', '-journal']) fs.rmSync(`${stagedDatabase}${suffix}`, { force: true })
+    // Abgefangen, weil die Antwort erst danach geht: Ein Fehler hier ließe die Anfrage sonst ohne Antwort
+    try {
+      if (!switched) for (const suffix of ['', '-journal']) fs.rmSync(`${stagedDatabase}${suffix}`, { force: true })
+    } catch (err) {
+      console.error(`Die Kopie der Datenbank aus der Übernahme ließ sich nicht entfernen; der nächste Start räumt sie weg: ${messageOf(err)}`)
+    }
   }
+  res.status(reply.status).json(reply.body)
 }
 
 // Wurde im alten Ordner nach dem Umzug noch etwas geändert? Verglichen wird der Fingerabdruck des Inhalts
