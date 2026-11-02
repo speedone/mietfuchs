@@ -202,7 +202,7 @@ function fieldsOf(c: Collector, record: unknown, where: string) {
     // ist der Datensatz verdorben und nicht bloß unvollständig.
     //
     // **Angezeigt werden sie sehr wohl, und eines davon ändert dabei sein Aussehen.** Das
-    // Mietkonto setzt für eine Wohnung ohne Namen einen Strich ein (`?? '—'` in calc.ts, das
+    // Mietkonto setzt für eine Wohnung ohne Namen einen Strich ein (`?? '-'` in calc.ts, das
     // greift bei einem fehlenden Feld). Nach dem Übernehmen steht dort der leere Name, also ein
     // leeres Feld statt des Strichs. Kein Betrag ändert sich dadurch, und beide sagen dasselbe,
     // nämlich dass kein Name erfasst ist.

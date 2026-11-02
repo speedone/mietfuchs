@@ -214,7 +214,7 @@ test('eine offene Auswertung eines anderen Jahres steht als Karte, nicht zugleic
   openViews = answer.kind === 'rechnung' && answer.assessment ? [answer.assessment] : []
   choosePeriod(String(YEAR - 1))
   await waitFor(() => expect((screen.getByLabelText('Abrechnungsjahr') as HTMLSelectElement).value).toBe(String(YEAR - 1)))
-  expect(await screen.findByText(/offen — bitte prüfen/, {}, { timeout: 5000 })).toBeTruthy()
+  expect(await screen.findByText(/offen - bitte prüfen/, {}, { timeout: 5000 })).toBeTruthy()
   expect(elsewhere()).toBeNull()
 })
 
@@ -329,7 +329,7 @@ test('„Als Rechnung auswerten“ an einem erkannten Zählerfoto', async () => 
   expect([pending[1]?.form.get('docType'), pending[1]?.form.get('existingFile'), pending[1]?.form.get('file'), pending[1]?.form.get('propertyId')])
     .toEqual(['rechnung', 'srv-foto.jpg', null, 'objekt-1'])
   pending[1]?.resolve(invoice('srv-foto.jpg'))
-  expect(await screen.findByText(/offen — bitte prüfen/, {}, { timeout: 5000 })).toBeTruthy()
+  expect(await screen.findByText(/offen - bitte prüfen/, {}, { timeout: 5000 })).toBeTruthy()
   expect(screen.queryByText('Zählerstand erkannt')).toBeNull()
 })
 

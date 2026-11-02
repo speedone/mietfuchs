@@ -327,7 +327,7 @@ export async function seed(api, pdf) {
 // Playwright keine PDFs, und der Browserlauf soll mit jeder Engine allein auskommen. Eine Seite A4,
 // Helvetica in WinAnsi; was die Kodierung nicht kennt, wird „?“.
 /** @type {Record<string, number>} */
-const WIN_ANSI = { '€': 0x80, '‚': 0x82, '„': 0x84, '…': 0x85, '‘': 0x91, '’': 0x92, '“': 0x93, '”': 0x94, '–': 0x96, '—': 0x97 }
+const WIN_ANSI = { '€': 0x80, '‚': 0x82, '„': 0x84, '…': 0x85, '‘': 0x91, '’': 0x92, '“': 0x93, '”': 0x94, '–': 0x96, '-': 0x97 }
 /** @param {string} text */
 function pdfString(text) {
   let out = ''

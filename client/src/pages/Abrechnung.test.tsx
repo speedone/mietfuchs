@@ -984,13 +984,13 @@ function stubReceipts(uploads: 'fail' | UploadEntry[] | Promise<UploadEntry[]>, 
 test('Belegkopien: ein nur über eine gebuchte Zeile verknüpfter Beleg liegt bei (#470)', async () => {
   stubReceipts([BESCHEID])
   showWithSettings({ ...SETTINGS, printAttachments: true }, async () => {})
-  expect(await screen.findByText('Anlage beim Druck: Stadtkasse — Grundsteuer', {}, SLOW)).toBeTruthy()
+  expect(await screen.findByText('Anlage beim Druck: Stadtkasse - Grundsteuer', {}, SLOW)).toBeTruthy()
 })
 
 test('Belegkopien: scheitert die Liste der Belege, bleibt der Beleg der Position, ohne Fehler (#470)', async () => {
   stubReceipts('fail', { ...GRUNDSTEUER, invoiceFile: '1_eigen.pdf' })
   showWithSettings({ ...SETTINGS, printAttachments: true }, async () => {})
-  expect(await screen.findByText('Anlage beim Druck: Stadtkasse — Grundsteuer', {}, SLOW)).toBeTruthy()
+  expect(await screen.findByText('Anlage beim Druck: Stadtkasse - Grundsteuer', {}, SLOW)).toBeTruthy()
   expect(screen.getByRole('button', { name: /Drucken \/ PDF/ })).toBeTruthy()
   expect(screen.queryByText(/Liste kaputt/)).toBeNull()
 })
@@ -1006,5 +1006,5 @@ test('Belegkopien: Drucken wartet auf die Liste der gebuchten Belege (#470)', as
   expect(knopf.disabled).toBe(true)
   expect(within(await printDrawer()).getByText('Belegkopien werden noch vorbereitet …')).toBeTruthy()
   release([BESCHEID])
-  expect(await screen.findByText('Anlage beim Druck: Stadtkasse — Grundsteuer', {}, SLOW)).toBeTruthy()
+  expect(await screen.findByText('Anlage beim Druck: Stadtkasse - Grundsteuer', {}, SLOW)).toBeTruthy()
 })

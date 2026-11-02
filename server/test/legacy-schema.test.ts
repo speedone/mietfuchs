@@ -34,7 +34,7 @@ const CR = String.fromCharCode(13)
 const normalizedLineEndings = (text: string): string => text.split(CR).join('')
 
 // Die Tabellen der eingefrorenen Kopie, aus ihr selbst abgelesen. Eine Liste von Hand vergisst
-// der nächste, der eine Tabelle hinzufügt — und dann bewacht der Test genau sie nicht.
+// der nächste, der eine Tabelle hinzufügt - und dann bewacht der Test genau sie nicht.
 function frozenTables(): Map<string, string[]> {
   const tabellen = new Map<string, string[]>()
   for (const wert of Object.values(v0)) {
@@ -105,7 +105,7 @@ test('Der eingefrorene Eingang ist unverändert', () => {
   // beide Durchsichten dieses Zweiges haben sie benannt. Benennt jemand einen Wert im lebenden
   // Modell um, bricht die Übersetzung im Eingang. Der schnellste Griff wäre, den Wert hier mit
   // aufzunehmen, der zweitschnellste eine Umschreibung beim Geraderücken. Danach stünde die Regel
-  // wieder an zwei Stellen, und nur die in der Migration wäre geschützt — also genau der Zustand,
+  // wieder an zwei Stellen, und nur die in der Migration wäre geschützt - also genau der Zustand,
   // den dieser Umbau beenden sollte.
   //
   // Dieselbe Technik wie bei den Migrationen: Was sich nicht ändern darf, hängt an seiner
@@ -154,14 +154,14 @@ test('Der Umstieg liest die Umstiegsdatei mit dem eingefrorenen Leser', () => {
   // **Der Wächter über die Stelle, an der die Aufteilung sonst still zerbräche.** In der
   // Umstiegsdatei steht beim Nachrechnen nur Migration 0000. Läse der Umstieg sie mit
   // `db/read.ts`, erzeugte Drizzle die Spaltenliste aus dem heutigen Schema, und die erste
-  // Migration, die eine Spalte hinzufügt, ließe ihn mit `no such column` scheitern — nicht als
+  // Migration, die eine Spalte hinzufügt, ließe ihn mit `no such column` scheitern - nicht als
   // geordneten Abbruch, sondern als „Unerwarteter Fehler". Weil ein gescheiterter Umstieg die
   // Datenrouten sperrt, stünde danach jeder Nutzer mit einer alten db.json vor einem Programm
   // ohne Daten.
   //
   // Geprüft wird der Quelltext, und das ist kein Notbehelf: Solange der Ausgangsstand und der
   // neueste derselbe sind, lässt sich der Unterschied nicht messen. Ein Test mit einer
-  // zusätzlichen Migration bleibt grün, auch wenn der falsche Leser dort steht — nachgemessen.
+  // zusätzlichen Migration bleibt grün, auch wenn der falsche Leser dort steht - nachgemessen.
   const datei = path.join(import.meta.dirname, '..', 'src', 'db', 'changeover.ts')
   const inhalt = fs.readFileSync(datei, 'utf8')
   assert.match(
@@ -178,7 +178,7 @@ test('Der Umstieg liest die Umstiegsdatei mit dem eingefrorenen Leser', () => {
 
 test('Der eingefrorene Wortschatz ist der von damals', () => {
   // Die Listen stehen in der Kopie bewusst **ohne** Bindung an die Domänentypen. Damit kann
-  // niemand sie versehentlich mitziehen, wenn er `shared/types.ts` ändert — und genau dieses
+  // niemand sie versehentlich mitziehen, wenn er `shared/types.ts` ändert - und genau dieses
   // Mitziehen wäre das Gegenteil von eingefroren. Dass sie den Stand von damals führen, steht
   // deshalb hier als Zahl und nicht als Verweis auf eine andere Liste.
   assert.deepEqual([...v0.COST_KEYS], ['area', 'persons', 'units', 'direct', 'meter', 'custom'])

@@ -292,7 +292,7 @@ test('Belegte Tage: Überlappung, Verschachtelung, nahtloser Wechsel und ein Tag
   const y = ['2025-01-01', '2025-12-31'] as const
   assert.equal(occupiedDays([], ...y), 0)
   assert.equal(occupiedDays([t('2020-01-01', null)], ...y), 365)
-  // Überlappung: bis 30.06. und ab 15.06. — jeder Tag nur einmal
+  // Überlappung: bis 30.06. und ab 15.06. - jeder Tag nur einmal
   assert.equal(occupiedDays([t('2020-01-01', '2025-06-30'), t('2025-06-15', null)], ...y), 365)
   // Verschachtelt: ein kurzes Mietverhältnis innerhalb eines langen
   assert.equal(occupiedDays([t('2025-03-01', '2025-08-31'), t('2025-04-01', '2025-04-30')], ...y), 184)

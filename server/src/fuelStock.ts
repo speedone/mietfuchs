@@ -6,7 +6,7 @@
 // verbrauchten Brennstoffs. Beides ergibt die Bestandsrechnung: Anfangsbestand + Lieferungen −
 // Endbestand. Die Kosten einer Lieferung sind ihr ganzer Rechnungsbetrag samt Lieferkosten.
 //
-// **Bewertung** — eine Bewertungsregel, denn die HeizkostenV regelt die Bewertung des Restbestands
+// **Bewertung** - eine Bewertungsregel, denn die HeizkostenV regelt die Bewertung des Restbestands
 // nicht: „Bei einem Brennstoffrest am Ende der Abrechnungsperiode ist, wenn im Öltank mehrere
 // Liefermengen miteinander vermischt sind, rechnerisch davon auszugehen, dass als erste Menge das älteste
 // Öl verbraucht wurde“ (Kinne/Schach/Bieber-Kinne, BGB § 556 Rn. 121, zitiert nach Haufe, FAQ

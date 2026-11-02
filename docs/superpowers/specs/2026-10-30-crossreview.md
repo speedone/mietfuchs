@@ -51,8 +51,8 @@ Abflusses“), CHANGELOG (union-Merge). #281 ändert zusätzlich `ledgerRows`/`r
 `prepayment.arrears`, Mietkonto-Seite. Nur ein linearer Stapel hält das beherrschbar (Abschnitt 5).
 
 **X5. Zeilennummern an zwei Orten.** #312 erweitert `settlementLine` (taxView.ts) um Zeile 25, #96 legt
-`anlageVLines` (client/src/anlageV.ts) für Kopf und Werbungskosten an, #262 nennt „keine Zeilennummern, nicht geprüft“
-— obwohl #96 die Zeilen 57–72 am Vordruck 2025 belegt hat (selbst nachgelesen, siehe Tabelle). Drei Entwürfe, drei
+`anlageVLines` (client/src/anlageV.ts) für Kopf und Werbungskosten an, #262 nennt „keine Zeilennummern, nicht geprüft“,
+obwohl #96 die Zeilen 57–72 am Vordruck 2025 belegt hat (selbst nachgelesen, siehe Tabelle). Drei Entwürfe, drei
 Haltungen. **Fix**: `anlageVLines(year)` wird die eine Tabelle mit Fundstelle je Jahr; sie bekommt einen Block
 `income` (13/14, 15, 18, 19, 20, 21, 22, 23, 24, 25 mit Kennzahlen) und `settlementLine(year)` wird ein dünner Leser
 darauf (Name bleibt, damit nichts umbenannt wird; #96 A5 ist damit erfüllt). #262 liest `maintenance.spread`
@@ -100,7 +100,7 @@ umgestellt und verteilt = unverteilt über alle Jahre (I1 von #96 × I-1 von #26
 ### Trägt der Entwurf #281? (Auftrag des Leads)
 
 Grundsätzlich ja: reine Funktion, fortlaufendes Konto ab Beginn, `designatedMonth` als einzige gespeicherte Angabe,
-Rechnung nach BGH VIII ZR 84/17 Rn. 57 (siehe Tabelle) — genau der Vorschlag in #281. Der Schnappschuss führt alle
+Rechnung nach BGH VIII ZR 84/17 Rn. 57 (siehe Tabelle) - genau der Vorschlag in #281. Der Schnappschuss führt alle
 Mietverhältnisse und Zahlungen des Objekts (snapshot.ts, „wie immer vollständig“), das fortlaufende Konto ist also ohne
 neue Datenquelle möglich. Was geändert werden muss:
 
@@ -134,7 +134,7 @@ neue Datenquelle möglich. Was geändert werden muss:
    einen nicht mehr geschuldeten Betrag (#281 nennt Mahnung als Folgenutzer). Mindestens Hinweis im Mietkonto, wenn
    offene A-Teile eines abgeschlossenen und versandten Zeitraums bestehen; der Saldo der Abrechnung ist dann die
    Forderung. In #281 als Entscheidung aufnehmen, in #312 bleibt es eine bekannte Grenze.
-7. **Klein**: Die Art einer Zahlung speichert noch beim Anklicken (Ausnahme in saveOnChange.test.ts) — mit #281 als
+7. **Klein**: Die Art einer Zahlung speichert noch beim Anklicken (Ausnahme in saveOnChange.test.ts) - mit #281 als
    Entwurf, wie im Kommentar zu #281 zugesagt; das Feld `designatedMonth` gleich als `MonthField` im selben Entwurf.
 
 ### Weitere Befunde #312
@@ -152,13 +152,13 @@ neue Datenquelle möglich. Was geändert werden muss:
   nennt bei 25 nur die verrechnete Kaution). Aber: Ein im Jahr Y gezahlter Rückstand an **Vorauszahlungen** eines
   bereits abgerechneten Vorjahres ist wirtschaftlich Teil der Abrechnung (Zeile 21), nicht Miete. Mit Punkt 6 oben
   zusammen in „Mehr dazu“ nennen; keine Rechnungsänderung.
-- **Klein (E9)**: `possibleDeposit` „Betrag = `depositCents` und ≠ Monats-Soll“ — gut. Zusätzlich nur, wenn die Zahlung
+- **Klein (E9)**: `possibleDeposit` „Betrag = `depositCents` und ≠ Monats-Soll“ - gut. Zusätzlich nur, wenn die Zahlung
   keinen Rückstand tilgt (sonst falscher Verdacht bei Mieter, der mit Kautionsbetrag gleich zwei Monate nachzahlt).
 - **Klein (Oberfläche)**: Spalte „vereinbart“ für Zeile 25 und 21 „–“ ist richtig; für Laien ein Satz unter der
   Tabelle, warum Ist und Soll nur in der Summe vergleichbar sind. Option „Zeile“ nur mit bekanntem Vordruck: gut.
-- **Klein**: `byUnit.areaM2` ist die Fläche der Einheit; Zeile 13/14 fragt die Wohnfläche „der Wohneinheit“ — bei
+- **Klein**: `byUnit.areaM2` ist die Fläche der Einheit; Zeile 13/14 fragt die Wohnfläche „der Wohneinheit“ - bei
   angebrochenem Jahr/Mieterwechsel trotzdem eine Zeile je Einheit, nicht je Mietverhältnis: so steht es da, gut.
-- **Golden**: `incomeFingerprint` nimmt `received` unbedingt heraus; `taxAmounts` nutzt dieselbe Funktion — passt.
+- **Golden**: `incomeFingerprint` nimmt `received` unbedingt heraus; `taxAmounts` nutzt dieselbe Funktion - passt.
   Kein anderer Entwurf fügt `income` ein Feld hinzu (#96 sagt es ausdrücklich). `tax-golden.json` bleibt.
 
 ---
@@ -173,7 +173,7 @@ die Aufwendungen in die Zeilen 33 bis 84 **in voller Höhe** ein. Hinsichtlich d
 Werbungskosten nutzen Sie bitte **ausschließlich die Zeilen 87 und 88**.“ Die Raten in 57–72 sind also ungekürzt (nur um
 den privaten Anteil gemindert, über „abzugsfähiger Anteil (in %)“); gekürzt wird in Zeile 87/88 **mit der Quote des
 Jahres, in dem die Rate abgezogen wird**, weil 87/88 die Summe der Werbungskosten dieses Jahres kürzt. Der Entwurf
-verteilt D nach der Kürzung mit der Quote von Y0 und lässt die Folgejahre ungekürzt — bei wechselnder Quote (Mieterwechsel,
+verteilt D nach der Kürzung mit der Quote von Y0 und lässt die Folgejahre ungekürzt - bei wechselnder Quote (Mieterwechsel,
 Mieterhöhung) eine andere Zahl als nach dem Vordruck. **Fix**: D = Betrag − privat (ohne `gratuitousCents`); verteilt
 wird D; jede Rate (auch die abgeleitete Zeile im Folgejahr) wird im Jahr ihres Abzugs wie jede Position mit der Quote
 dieses Jahres gekürzt (`cheapRentOf`, Gewicht nach Fläche). I-1 dann: Σ Jahre `deductibleCents + gratuitousCents`
@@ -195,7 +195,7 @@ gleich ohne Verteilung; Σ `gratuitousCents` allein nicht mehr. Die Auslegung im
   draußen), U-4 (Abs. 2 im Release, PR 4). Abschnitt „Echte Entscheidungen“ in „Entschieden“ umschreiben.
 - **V6. Abs. 2 „Schenkung“ ist Auslegung.** § 82b Abs. 2 nennt Veräußerung, Einlage ins Betriebsvermögen, Ende der
   Einkunftserzielung; Tod ist durch BFH IX R 31/19 gleichgestellt (bestätigt). Die unentgeltliche Übertragung zu
-  Lebzeiten folgt aus „nicht mehr zur Einkunftserzielung genutzt“ beim Schenker — vertretbar, aber als **Auslegung**
+  Lebzeiten folgt aus „nicht mehr zur Einkunftserzielung genutzt“ beim Schenker - vertretbar, aber als **Auslegung**
   kennzeichnen. IX R 22/17 betrifft den **Nießbraucher** (Rest nicht auf den Eigentümer übertragbar): „Rechtsnachfolge“
   allgemein ist zu weit formuliert.
 - **V7. Feld am Objekt verständlich benennen**: statt „Rest abziehen im Jahr“ etwa „Verkauft, verschenkt, vererbt oder
@@ -218,11 +218,11 @@ gleich ohne Verteilung; Σ `gratuitousCents` allein nicht mehr. Die Auslegung im
 
 - **R-A. A3 hängt an X1** (`requireTaxYear`). Ohne #478 lehnt der Server das übertragene Jahr im Kalenderzeitraum ab.
 - **R-B. `allowsPaidOn` = false für beide Rücklagen-Kostenarten** wirkt auch in `costItemBody` (shared/costItem.ts:184:
-  `paidOn: allowsPaidOn(...) ? … : null`) — dort wird das Datum **still** geleert, bevor der Server es sieht. A3 will
+  `paidOn: allowsPaidOn(...) ? … : null`) - dort wird das Datum **still** geleert, bevor der Server es sieht. A3 will
   „nicht still geleert“. **Fix**: Der Übertrag Datum → `taxYear` (A3, Formular) läuft vor `costItemBody`, mit Test,
   dass beim Umstellen auf Entnahme `taxYear` gesetzt ist, wenn das Datumsjahr abweicht. Und eine bestehende Zuführung
   mit Datum (über die API gesetzt): Das Formular blendet `paidOn` für die Zuführung schon heute aus und schickt
-  `null` — das nächste Speichern leert also still. Das ist für die Zuführung unschädlich (keine Werbungskosten), verschiebt
+  `null` - das nächste Speichern leert also still. Das ist für die Zuführung unschädlich (keine Werbungskosten), verschiebt
   aber `reserveContributionCents` zwischen Jahren; im Entwurf so sagen statt „verlangt, es zu entfernen“ (das sähe der
   Nutzer nie, weil das Feld fehlt).
 
@@ -242,16 +242,16 @@ gleich ohne Verteilung; Σ `gratuitousCents` allein nicht mehr. Die Auslegung im
   das der Eigentümer nicht hat. Ergänzen: „steht in der Hausgeldabrechnung dieses Jahres (Entnahmen aus der
   Erhaltungsrücklage); ohne Angabe gilt das Jahr der Abrechnung“. Das ist zugleich die Vorgabe (R4).
 - **R-H. Prompt-Änderung** (extract.ts): Label `ai-eval` steht im Plan, gut. Die neue Kostenart auch in
-  `meterTypeOptions`/`costKeyOptions`-gespeiste Selects? Kostenarten kommen aus `CATEGORIES` — jsdom-Test „angezeigter
+  `meterTypeOptions`/`costKeyOptions`-gespeiste Selects? Kostenarten kommen aus `CATEGORIES` - jsdom-Test „angezeigter
   Wert = gespeicherter“ für die neue Kostenart ist im Plan (Schritt 5): gut.
 
 ### Klein
 
-- B2 Migration: Spalten und Bedingungen in zwei Schritten — steht so da. `relative` als INTEGER mit CHECK (0/1/NULL).
-- B2 Aktenzeichen ≤ 40 Zeichen; `fileNumberDigits` als Anzeige — gut, Grundsteuer-Aktenzeichen haben je Land
+- B2 Migration: Spalten und Bedingungen in zwei Schritten - steht so da. `relative` als INTEGER mit CHECK (0/1/NULL).
+- B2 Aktenzeichen ≤ 40 Zeichen; `fileNumberDigits` als Anzeige - gut, Grundsteuer-Aktenzeichen haben je Land
   verschiedene Formate.
 - A2 `unstatedCount` (calc.ts:1744) zählt heute die Zuführung als „ohne Datum“, obwohl das Formular kein Datum anbietet;
-  mit `allowsPaidOn` = false fällt sie heraus — eine kleine, gewollte Änderung einer angezeigten Zahl, im CHANGELOG
+  mit `allowsPaidOn` = false fällt sie heraus - eine kleine, gewollte Änderung einer angezeigten Zahl, im CHANGELOG
   nicht nötig, im PR nennen.
 - R4 zitiert BGH V ZR 96/24 (11.04.2025) zur Abrechnungsspitze; nicht unabhängig geprüft (für die Rechnung ohne
   Bedeutung, nur Begründung).
@@ -284,7 +284,7 @@ gleich ohne Verteilung; Σ `gratuitousCents` allein nicht mehr. Die Auslegung im
 | § 82b Abs. 1 (2–5 Jahre, überwiegend Wohnzwecke, Garagen), Abs. 2 (Veräußerung, Betriebsvermögen, keine Einkunftserzielung), Abs. 3 (Miteigentümer) (#262) | **bestätigt**, Wortlaut | gesetze-im-internet.de/estdv_1955/__82b.html |
 | BFH IX R 31/19 (10.11.2020): Rest im Todesjahr beim Erblasser, R 21.1 Abs. 6 EStR überholt (#262) | **bestätigt** | haufe.de, ey.com, pwc-Blog |
 | BFH IX R 22/17 (13.03.2018): kein Übergang auf Rechtsnachfolger (#262) | **bestätigt für den Nießbrauch** (Eigentümer kann vom Nießbraucher getragenen Rest nach dessen Tod nicht abziehen); als allgemeine Regel „Rechtsnachfolge“ zu weit | rewis.io, urteile-gesetze.de |
-| Schenkung beendet die Verteilung (#262 E-7) | **Auslegung** (nicht im Wortlaut) | — |
+| Schenkung beendet die Verteilung (#262 E-7) | **Auslegung** (nicht im Wortlaut) | - |
 | Verteilung des Betrags nach Kürzung bei verbilligter Vermietung (#262 E-3) | **widerlegt** durch die Anleitung: volle Höhe in 33–84, Kürzung nur in 87/88 (V1) | Anleitung Anlage V 2024, S. 7 (selbst gelesen) |
 | BFH IX R 19/24 (14.01.2025): Zuführung keine WK, erst bei Verausgabung (#96 R1, #262) | **bestätigt** (BStBl II 2025, 291; Vorinstanz FG Nürnberg 1 K 866/23); Datum in einer Quelle 13.01., amtlich 14.01. | otto-schmidt.de, deubner, gesetze.co |
 | Anleitung 2024: Rücklagenbeiträge erst bei Ausgabe für Erhaltung abziehbar, Verweis auf 55–72 (#96 R1/R6) | **bestätigt** | Anleitung 2024 (selbst gelesen) |
@@ -295,14 +295,14 @@ gleich ohne Verteilung; Σ `gratuitousCents` allein nicht mehr. Die Auslegung im
 | Z. 57–60 zu verteilende (57 Gesamtaufwand / davon im Jahr, 58 direkt, 59 verhältnismäßig mit %, 60 Summe Kz. 38); Z. 61–72 Anteile aus 2021–2024 je drei Zeilen (Kz. 39–42) | **bestätigt**; Struktur genauer als „[61, 72]“ (X5) | Vordruck 2025 |
 | Z. 76–78 „ohne Erhaltungsrücklage“ | **bestätigt** | Vordruck 2025, Anleitung 2024 |
 | Anleitung 2024 zu Z. 20: Umlagen „immer in voller Höhe“, laufend vereinnahmt (#312 Zeile 20) | **bestätigt** | Anleitung 2024 |
-| H 21.1 EStH (BFH 26.10.1977, kein Nachholen eines Jahresanteils) (#262) | nicht unabhängig geprüft | — |
-| BGH V ZR 96/24 (11.04.2025) Rücklagenentnahmen nicht in Abrechnungsspitze (#96 R4) | nicht unabhängig geprüft (nur Begründung) | — |
+| H 21.1 EStH (BFH 26.10.1977, kein Nachholen eines Jahresanteils) (#262) | nicht unabhängig geprüft | - |
+| BGH V ZR 96/24 (11.04.2025) Rücklagenentnahmen nicht in Abrechnungsspitze (#96 R4) | nicht unabhängig geprüft (nur Begründung) | - |
 
 ---
 
 ## 7. Grundsatz „Voreinstellung = bisheriges Verhalten“
 
-- **#312**: hält, wenn `received` aus `incomeFingerprint` fällt (geplant) — Summe und Überschuss unverändert.
+- **#312**: hält, wenn `received` aus `incomeFingerprint` fällt (geplant) - Summe und Überschuss unverändert.
 - **#262**: hält ohne Wahl (`deferredCents` 0, keine abgeleiteten Zeilen, `items`-Tupel unverändert). Mit V1 ändert sich
   nur der Fall mit Wahl.
 - **#96**: hält (neue Gruppe nur sortiert, nicht gehasht; `costModels` nicht gehasht). Einzige sichtbare Änderung ohne

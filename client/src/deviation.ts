@@ -59,13 +59,13 @@ export function deviationView(cmp: SettlementComparison | undefined): DeviationV
       const head = `${who}: abgeschlossen ${saldo(d.frozenBalanceCents)}, heute ${saldo(d.currentBalanceCents)}`
       const amount = fmtEuro(Math.abs(d.differenceCents))
       if (d.direction === 'tenant') {
-        return { id: d.tenancyId, text: `${head} — ${amount} zugunsten des Mieters. Eine Korrektur zu seinen Gunsten ist möglich und in der Regel geboten.` }
+        return { id: d.tenancyId, text: `${head} - ${amount} zugunsten des Mieters. Eine Korrektur zu seinen Gunsten ist möglich und in der Regel geboten.` }
       }
       return {
         id: d.tenancyId,
         text: cmp.deadlinePassed
-          ? `${head} — ${amount} zugunsten des Vermieters. Die Frist ist abgelaufen (${fmtDate(cmp.deadline)}); eine Korrektur zulasten des Mieters (Nachforderung oder geringeres Guthaben) ist in der Regel ausgeschlossen (§ 556 Abs. 3 BGB).`
-          : `${head} — ${amount} zugunsten des Vermieters. Eine korrigierte Abrechnung zulasten des Mieters (Nachforderung oder geringeres Guthaben) ist bis zum ${fmtDate(cmp.deadline)} noch möglich, wenn sie ihm bis dahin zugeht.`,
+          ? `${head} - ${amount} zugunsten des Vermieters. Die Frist ist abgelaufen (${fmtDate(cmp.deadline)}); eine Korrektur zulasten des Mieters (Nachforderung oder geringeres Guthaben) ist in der Regel ausgeschlossen (§ 556 Abs. 3 BGB).`
+          : `${head} - ${amount} zugunsten des Vermieters. Eine korrigierte Abrechnung zulasten des Mieters (Nachforderung oder geringeres Guthaben) ist bis zum ${fmtDate(cmp.deadline)} noch möglich, wenn sie ihm bis dahin zugeht.`,
       }
     }), ...valueLines],
   }

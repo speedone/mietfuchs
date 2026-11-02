@@ -9,35 +9,35 @@
  },
  {
   "code": "amounts.exceed",
-  "text": "„Heizung laut Messdienst“: die Einzelbeträge ergeben zusammen 3.600,00 € und übersteigen den Rechnungsbetrag 3.000,00 € — es wird nichts verteilt, der Betrag geht an den Vermieter."
+  "text": "„Heizung laut Messdienst“: die Einzelbeträge ergeben zusammen 3.600,00 € und übersteigen den Rechnungsbetrag 3.000,00 € - es wird nichts verteilt, der Betrag geht an den Vermieter."
  },
  {
   "code": "amounts.forfeited",
-  "text": "„Probe“: 2 Einzelbeträge über 15,00 € gehören zu keinem Mietverhältnis dieses Jahres in der Abrechnungseinheit und entfallen — dieser Teil geht an den Vermieter."
+  "text": "„Probe“: 2 Einzelbeträge über 15,00 € gehören zu keinem Mietverhältnis dieses Jahres in der Abrechnungseinheit und entfallen - dieser Teil geht an den Vermieter."
  },
  {
   "code": "amounts.missing",
-  "text": "„Heizung und Warmwasser laut Messdienst“: für tb (b) ist kein Einzelbetrag eingetragen — bitte prüfen, sonst tragen sie diese Position nicht."
+  "text": "„Heizung und Warmwasser laut Messdienst“: für tb (b) ist kein Einzelbetrag eingetragen - bitte prüfen, sonst tragen sie diese Position nicht."
  },
  {
   "code": "amounts.self-forfeited",
-  "text": "„Heizung laut Messdienst“: ein Eigenbetrag ist für Hauptwohnung eingetragen, die an dieser Position nicht teilnimmt — er zählt nicht als Eigenanteil und bleibt beim Vermieter. Nehmen Sie die Wohnung als Teilnehmerin auf, wenn die Position sie betrifft."
+  "text": "„Heizung laut Messdienst“: ein Eigenbetrag ist für Hauptwohnung eingetragen, die an dieser Position nicht teilnimmt - er zählt nicht als Eigenanteil und bleibt beim Vermieter. Nehmen Sie die Wohnung als Teilnehmerin auf, wenn die Position sie betrifft."
  },
  {
   "code": "amounts.self-hidden",
-  "text": "„Heizung laut Messdienst“: der Anteil der selbstgenutzten Wohnung Hauptwohnung ist bei Einzelbeträgen nicht eingetragen — er steckt im Vermieteranteil, und die Steuerübersicht nennt den privaten Anteil entsprechend zu niedrig."
+  "text": "„Heizung laut Messdienst“: der Anteil der selbstgenutzten Wohnung Hauptwohnung ist bei Einzelbeträgen nicht eingetragen - er steckt im Vermieteranteil, und die Steuerübersicht nennt den privaten Anteil entsprechend zu niedrig."
  },
  {
   "code": "basis.self-no-area",
-  "text": "Für die selbstgenutzte Wohnung EG (Eigennutzung) ist keine Wohnfläche hinterlegt — der Flächenschlüssel verteilt nur auf die Mieter."
+  "text": "Für die selbstgenutzte Wohnung EG (Eigennutzung) ist keine Wohnfläche hinterlegt - der Flächenschlüssel verteilt nur auf die Mieter."
  },
  {
   "code": "basis.self-no-persons",
-  "text": "Für die selbstgenutzte Wohnung EG (Eigennutzung) ist keine Personenzahl hinterlegt — der Personenschlüssel verteilt nur auf die Mieter."
+  "text": "Für die selbstgenutzte Wohnung EG (Eigennutzung) ist keine Personenzahl hinterlegt - der Personenschlüssel verteilt nur auf die Mieter."
  },
  {
   "code": "basis.tenancy-no-persons",
-  "text": "Für Familie B (OG rechts) ist keine Personenzahl hinterlegt — der Personenschlüssel verteilt deren Anteil auf die übrigen Wohnungen."
+  "text": "Für Familie B (OG rechts) ist keine Personenzahl hinterlegt - der Personenschlüssel verteilt deren Anteil auf die übrigen Wohnungen."
  },
  {
   "code": "basis.tenancy-zero",
@@ -45,7 +45,7 @@
  },
  {
   "code": "basis.unit-no-area",
-  "text": "Für die Einheiten OG links und OG rechts ist keine Wohnfläche hinterlegt — der Flächenschlüssel verteilt ihren Anteil auf die übrigen Wohnungen."
+  "text": "Für die Einheiten OG links und OG rechts ist keine Wohnfläche hinterlegt - der Flächenschlüssel verteilt ihren Anteil auf die übrigen Wohnungen."
  },
  {
   "code": "basis.unit-zero",
@@ -217,27 +217,27 @@
  },
  {
   "code": "custom.forfeited",
-  "text": "„Vereinbart“: der vereinbarte Anteil für EG (Eigennutzung) entfällt — die Wohnung gehört nicht zur Abrechnungseinheit. Dieser Teil geht an den Vermieter."
+  "text": "„Vereinbart“: der vereinbarte Anteil für EG (Eigennutzung) entfällt - die Wohnung gehört nicht zur Abrechnungseinheit. Dieser Teil geht an den Vermieter."
  },
  {
   "code": "custom.none",
-  "text": "„Ohne Anteile“: keine vereinbarten Anteile hinterlegt — Betrag geht an den Vermieter."
+  "text": "„Ohne Anteile“: keine vereinbarten Anteile hinterlegt - Betrag geht an den Vermieter."
  },
  {
   "code": "custom.over-100",
-  "text": "„prozent“: die vereinbarten Anteile ergeben 120 % — über 100 % wird nicht verteilt, der Betrag geht an den Vermieter."
+  "text": "„prozent“: die vereinbarten Anteile ergeben 120 % - über 100 % wird nicht verteilt, der Betrag geht an den Vermieter."
  },
  {
   "code": "direct.unit-gone",
-  "text": "„Gas: Anteil 2024/2025 aus der Rechnung 15.03.2025–14.03.2026 (Rechnung des nächsten Zeitraums)“: die direkt zugeordnete Wohnung gibt es nicht mehr — Betrag geht an den Vermieter."
+  "text": "„Gas: Anteil 2024/2025 aus der Rechnung 15.03.2025–14.03.2026 (Rechnung des nächsten Zeitraums)“: die direkt zugeordnete Wohnung gibt es nicht mehr - Betrag geht an den Vermieter."
  },
  {
   "code": "external.amount-mismatch",
-  "text": "„Hausmeister“: der Betrag 204,96 € passt nicht zum rechnerischen Anteil 512,40 € (85,4 von 1.000 MEA aus 6.000,00 €) — bitte die Angaben aus der Gemeinschaftsabrechnung prüfen. Verteilt wird der eingetragene Betrag."
+  "text": "„Hausmeister“: der Betrag 204,96 € passt nicht zum rechnerischen Anteil 512,40 € (85,4 von 1.000 MEA aus 6.000,00 €) - bitte die Angaben aus der Gemeinschaftsabrechnung prüfen. Verteilt wird der eingetragene Betrag."
  },
  {
   "code": "external.value-missing",
-  "text": "„P1“: für Leer und Klein sind keine Miteigentumsanteile hinterlegt — ihr Anteil verteilt sich auf die übrigen Wohnungen."
+  "text": "„P1“: für Leer und Klein sind keine Miteigentumsanteile hinterlegt - ihr Anteil verteilt sich auf die übrigen Wohnungen."
  },
  {
   "code": "fuel.before-2023",
@@ -529,11 +529,11 @@
  },
  {
   "code": "heating.target-invalid",
-  "text": "„Erdgas“: Bereitet die Anlage auch das Warmwasser, gehört der Brennstoff zu beidem und wird nach dem Warmwasseranteil aufgeteilt (§ 9 Abs. 1 HeizkostenV) — Betrag geht an den Vermieter."
+  "text": "„Erdgas“: Bereitet die Anlage auch das Warmwasser, gehört der Brennstoff zu beidem und wird nach dem Warmwasseranteil aufgeteilt (§ 9 Abs. 1 HeizkostenV) - Betrag geht an den Vermieter."
  },
  {
   "code": "item.no-basis",
-  "text": "„Hausgeld“: die Angaben aus der Abrechnung der Gemeinschaft fehlen (Maßstab, Summe in der Anlage, Gesamtkosten) — Betrag geht an den Vermieter."
+  "text": "„Hausgeld“: die Angaben aus der Abrechnung der Gemeinschaft fehlen (Maßstab, Summe in der Anlage, Gesamtkosten) - Betrag geht an den Vermieter."
  },
  {
   "code": "key.changed-from-previous-year",
@@ -541,7 +541,7 @@
  },
  {
   "code": "labor35a.invalid",
-  "text": "„an einer Gutschrift“: der §35a-Lohnanteil muss zwischen 0 und dem Rechnungsbetrag liegen — es wird kein Lohnanteil bescheinigt."
+  "text": "„an einer Gutschrift“: der §35a-Lohnanteil muss zwischen 0 und dem Rechnungsbetrag liegen - es wird kein Lohnanteil bescheinigt."
  },
  {
   "code": "law.value-overridden",
@@ -557,19 +557,19 @@
  },
  {
   "code": "meter.main-partial",
-  "text": "„Wasser“: der Hauptzähler deckt 2025 nur 288 von 365 Tagen ab — bitte Ablesungen zum 31.12.2024 und zum Jahresende (31.12.2025) nachtragen. Bis dahin wird nach den Wohnungszählern verteilt."
+  "text": "„Wasser“: der Hauptzähler deckt 2025 nur 288 von 365 Tagen ab - bitte Ablesungen zum 31.12.2024 und zum Jahresende (31.12.2025) nachtragen. Bis dahin wird nach den Wohnungszählern verteilt."
  },
  {
   "code": "meter.negative",
-  "text": "Negativer Verbrauch zwischen dem 31.12.2024 und dem 30.06.2025 (-947) — Ablesung prüfen oder Zählerwechsel markieren."
+  "text": "Negativer Verbrauch zwischen dem 31.12.2024 und dem 30.06.2025 (-947) - Ablesung prüfen oder Zählerwechsel markieren."
  },
  {
   "code": "meter.no-consumption",
-  "text": "„Wasser 2025 (anteilig 01.01.–30.04.2025)“: kein Verbrauch für Zählertyp „Kaltwasser“ erfasst — Betrag geht an den Vermieter."
+  "text": "„Wasser 2025 (anteilig 01.01.–30.04.2025)“: kein Verbrauch für Zählertyp „Kaltwasser“ erfasst - Betrag geht an den Vermieter."
  },
  {
   "code": "meter.replacement-without-end",
-  "text": "Zählerwechsel am 30.06.2025 ohne Endstand des alten Geräts — der Verbrauch bis zum Wechsel lässt sich nicht bestimmen und wird nicht verteilt. Bitte den Endstand nachtragen."
+  "text": "Zählerwechsel am 30.06.2025 ohne Endstand des alten Geräts - der Verbrauch bis zum Wechsel lässt sich nicht bestimmen und wird nicht verteilt. Bitte den Endstand nachtragen."
  },
  {
   "code": "meter.same-day",
@@ -577,15 +577,15 @@
  },
  {
   "code": "meter.sub-exceeds-main",
-  "text": "„Wasser“: die Wohnungszähler zeigen zusammen 152, mehr als der Hauptzähler (108) — bitte die Ablesungen prüfen. Verteilt wird nach den Wohnungszählern."
+  "text": "„Wasser“: die Wohnungszähler zeigen zusammen 152, mehr als der Hauptzähler (108) - bitte die Ablesungen prüfen. Verteilt wird nach den Wohnungszählern."
  },
  {
   "code": "meter.unit-partial",
-  "text": "„Wasser“: der Zähler von el (184 von 365 Tagen) deckt nicht die ganze Zeit ab, in der dort gewohnt wurde — der Verbrauch der Lücke steckt im Rest des Hauptzählers, der deshalb beim Vermieter bleibt und nicht als Eigenanteil gilt. Bitte die fehlenden Ablesungen nachtragen."
+  "text": "„Wasser“: der Zähler von el (184 von 365 Tagen) deckt nicht die ganze Zeit ab, in der dort gewohnt wurde - der Verbrauch der Lücke steckt im Rest des Hauptzählers, der deshalb beim Vermieter bleibt und nicht als Eigenanteil gilt. Bitte die fehlenden Ablesungen nachtragen."
  },
  {
   "code": "meter.unit-without-meter",
-  "text": "„Wasser“: für W0, W1, W2 und W3 gibt es keinen abgelesenen Zähler „Kaltwasser“ — der Rest des Hauptzählers geht an den Vermieter, weil sich nicht bestimmen lässt, wie viel davon auf sie entfällt. Einen Eigenanteil weist Mietfuchs für diesen Rest deshalb nicht aus. Hat eine dieser Einheiten keinen eigenen Anschluss (etwa eine Garage), entfernen Sie in den Stammdaten der Einheit unter „Weitere Angaben — Anschlüsse“ das Häkchen dieser Zählerart."
+  "text": "„Wasser“: für W0, W1, W2 und W3 gibt es keinen abgelesenen Zähler „Kaltwasser“ - der Rest des Hauptzählers geht an den Vermieter, weil sich nicht bestimmen lässt, wie viel davon auf sie entfällt. Einen Eigenanteil weist Mietfuchs für diesen Rest deshalb nicht aus. Hat eine dieser Einheiten keinen eigenen Anschluss (etwa eine Garage), entfernen Sie in den Stammdaten der Einheit unter „Weitere Angaben - Anschlüsse“ das Häkchen dieser Zählerart."
  },
  {
   "code": "model.prepayment-unsettled",

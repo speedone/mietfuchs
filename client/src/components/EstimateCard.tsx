@@ -155,7 +155,7 @@ export default function EstimateCard({ plant, view, self, onChanged }: {
           {form.method === 'comparableUnit' && open.comparable.length > 0 && (
             <label className="field">Vergleichbare Wohnung
               <select value={form.comparableUnitId} onChange={(ev) => setForm(chooseMethod(form, open, 'comparableUnit', ev.target.value))}>
-                <option value="">— bitte wählen —</option>
+                <option value="">Bitte wählen</option>
                 {open.comparable.map((c) => <option key={c.unitId} value={c.unitId}>{c.unitName} ({num(c.perM2)} {unitOf(open)} je {open.part === 'heat' ? (pot?.basisUnit ?? 'm²') : 'm²'})</option>)}
               </select>
             </label>
@@ -167,7 +167,7 @@ export default function EstimateCard({ plant, view, self, onChanged }: {
           {askUnit(open) && (
             <label className="field">Einheit der Schätzung
               <select value={form.valueUnit ?? ''} onChange={(ev) => setForm({ ...form, valueUnit: ev.target.value as '' | 'kWh' | 'Einheiten' })}>
-                <option value="">— bitte wählen —</option>
+                <option value="">Bitte wählen</option>
                 <option value="Einheiten">Einheiten</option>
                 <option value="kWh">kWh</option>
               </select>

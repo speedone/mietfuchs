@@ -2045,7 +2045,7 @@ index 3a71de9..081ee67 100644
 +        detail: `${andList(heatingWithout.map((c) => `„${c.description}“`))} ${heatingWithout.length === 1 ? 'wird' : 'werden'} nicht nach Verbrauch verteilt. Die Heizkostenverordnung verlangt das (§ 7 Abs. 1, § 8 Abs. 1 HeizkostenV); sonst darf der Mieter seinen Anteil um ${valueAt(hkvCutNotByConsumption, LAW_AS_OF)} % kürzen. Nötig sind Ablesungen der Wärmezähler oder die Abrechnung des Messdienstes.` })
      } else if (meterTypes.size === 0) {
        list.push({ title: 'Zählerstände', level: 'leer',
-         detail: 'Keine verbrauchsabhängige Umlage — Ablesungen nicht erforderlich.' })
+         detail: 'Keine verbrauchsabhängige Umlage - Ablesungen nicht erforderlich.' })
 diff --git a/shared/glossary.ts b/shared/glossary.ts
 index 901e697..aae50b6 100644
 --- a/shared/glossary.ts
@@ -2486,8 +2486,8 @@ index e82c31d..4c89955 100644
        // Nur auf einer Seite: nichts nachgerechnet, also auch kein Urteil über die Richtung.
        if (d.direction === 'added') return { id: d.tenancyId, text: `${who}: kam nach dem Abschluss hinzu, heute ${saldo(d.currentBalanceCents)}.` }
 @@ -43,6 +56,6 @@ export function deviationView(cmp: SettlementComparison | undefined): DeviationV
-           ? `${head} — ${amount} zugunsten des Vermieters. Die Frist ist abgelaufen (${fmtDate(cmp.deadline)}); eine Korrektur zulasten des Mieters (Nachforderung oder geringeres Guthaben) ist in der Regel ausgeschlossen (§ 556 Abs. 3 BGB).`
-           : `${head} — ${amount} zugunsten des Vermieters. Eine korrigierte Abrechnung zulasten des Mieters (Nachforderung oder geringeres Guthaben) ist bis zum ${fmtDate(cmp.deadline)} noch möglich, wenn sie ihm bis dahin zugeht.`,
+           ? `${head} - ${amount} zugunsten des Vermieters. Die Frist ist abgelaufen (${fmtDate(cmp.deadline)}); eine Korrektur zulasten des Mieters (Nachforderung oder geringeres Guthaben) ist in der Regel ausgeschlossen (§ 556 Abs. 3 BGB).`
+           : `${head} - ${amount} zugunsten des Vermieters. Eine korrigierte Abrechnung zulasten des Mieters (Nachforderung oder geringeres Guthaben) ist bis zum ${fmtDate(cmp.deadline)} noch möglich, wenn sie ihm bis dahin zugeht.`,
        }
 -    }),
 +    }), ...valueLines],

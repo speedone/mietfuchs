@@ -195,7 +195,7 @@ export function occupiedDays(tenancies: { start: string, end: string | null }[],
 // Einstellung der Laufzeit und ist deshalb hier nirgends erlaubt; ein Test in calc.test.ts hält
 // das fest, weil es sich auf einem einzelnen Rechner nicht messen lässt.
 //
-// Abgeschafft wird die Locale damit aber nicht, sondern festgenagelt — genau wie beim
+// Abgeschafft wird die Locale damit aber nicht, sondern festgenagelt - genau wie beim
 // Formatieren von Zahlen weiter unten, das ausdrücklich `'de-DE'` verlangt. Welche der beiden
 // Funktionen gilt, entscheidet, wofür die Reihenfolge da ist.
 
@@ -204,7 +204,7 @@ export function occupiedDays(tenancies: { start: string, end: string | null }[],
 
 // **Steht die Reihenfolge in einer Liste, die ein Mensch liest**, gilt deutsche Sortierung, und
 // zwar fest eingestellt. Zeichenweise verglichen landete „Älter“ hinter „Zaun“, weil das Ä einen
-// höheren Zeichenwert hat als das Z — richtig wäre das nie, und einem Vermieter mit Umlauten im
+// höheren Zeichenwert hat als das Z - richtig wäre das nie, und einem Vermieter mit Umlauten im
 // Haus fiele es sofort auf. Die Sprache steht fest in shared/compareName.ts (seit #490 PR 3 dort, weil die Oberfläche
 // dieselbe Reihenfolge braucht) und kommt nicht aus der Umgebung.
 export { compareName }
@@ -676,7 +676,7 @@ export function meterSegments(readings: SnapshotReading[]): { segments: MeterSeg
     // Vorgänger fehlt nichts, es gibt keinen Zeitraum, über den das alte Gerät gelaufen wäre.
     if (r1.replacement && r1.oldEndValue == null) {
       warn('meter.replacement-without-end',
-        `Zählerwechsel am ${fmtDay(r1.date)} ohne Endstand des alten Geräts — der Verbrauch bis zum ` +
+        `Zählerwechsel am ${fmtDay(r1.date)} ohne Endstand des alten Geräts - der Verbrauch bis zum ` +
           'Wechsel lässt sich nicht bestimmen und wird nicht verteilt. Bitte den Endstand nachtragen.',
         meterSubject(r1),
       )
@@ -708,8 +708,8 @@ export function meterSegments(readings: SnapshotReading[]): { segments: MeterSeg
     // der `oldEndValue`. Sie greift hier aus zwei Gründen trotzdem nicht.
     //
     // Erstens bräuchte sie eine Ausnahme, nämlich dass die Wechsel-Ablesung immer gewinnt. Sonst
-    // löschte eine zufällige Eingabereihenfolge — erst der Wechsel, dann eine gewöhnliche
-    // Ablesung desselben Tages — den `oldEndValue` und mit ihm den ganzen Zählerwechsel. Das wäre
+    // löschte eine zufällige Eingabereihenfolge - erst der Wechsel, dann eine gewöhnliche
+    // Ablesung desselben Tages - den `oldEndValue` und mit ihm den ganzen Zählerwechsel. Das wäre
     // eine neue Regel, und neue Regeln über Geld werden nicht nebenbei eingeführt.
     //
     // Zweitens, und das wiegt schwerer: Eine Doppelablesung liegt am wahrscheinlichsten auf einer
@@ -734,7 +734,7 @@ export function meterSegments(readings: SnapshotReading[]): { segments: MeterSeg
     }
 
     if (delta < 0) {
-      warn('meter.negative', `Negativer Verbrauch zwischen dem ${fmtDay(r0.date)} und dem ${fmtDay(r1.date)} (${fmtMeter(delta)}) — Ablesung prüfen oder Zählerwechsel markieren.`, meterSubject(r1))
+      warn('meter.negative', `Negativer Verbrauch zwischen dem ${fmtDay(r0.date)} und dem ${fmtDay(r1.date)} (${fmtMeter(delta)}) - Ablesung prüfen oder Zählerwechsel markieren.`, meterSubject(r1))
     }
     segments.push({ from: r0.date, to: r1.date, delta, days })
   }
@@ -752,7 +752,7 @@ export function meterSegments(readings: SnapshotReading[]): { segments: MeterSeg
 }
 
 // Verbrauch im Zeitraum [from, to] (inklusive Tage). Segmente werden tagesanteilig
-// interpoliert — liegt eine Ablesung genau auf der Zeitraumgrenze (z. B. Zwischenablesung
+// interpoliert - liegt eine Ablesung genau auf der Zeitraumgrenze (z. B. Zwischenablesung
 // beim Mieterwechsel), ist die Aufteilung exakt.
 export function consumptionInPeriod(readings: SnapshotReading[], from: string, to: string): number {
   const { segments } = meterSegments(readings)
@@ -1224,7 +1224,7 @@ export function ledgerRows(
       return {
         tenancyId: t.id,
         tenantName: t.tenantName,
-        unitName: unitById.get(t.unitId)?.name ?? '—',
+        unitName: unitById.get(t.unitId)?.name ?? '-',
         months: rowMonths,
         sollYearCents,
         baseRentYearCents: rowMonths.reduce((a, mo) => a + mo.baseRentCents, 0),
@@ -1273,7 +1273,7 @@ export function rentLedger(snapshot: Snapshot, options: LedgerOptions = {}): Ren
       return [{
         tenancyId: t.id,
         tenantName: t.tenantName,
-        unitName: unitById.get(t.unitId)?.name ?? '—',
+        unitName: unitById.get(t.unitId)?.name ?? '-',
         settlementYearCents: own.reduce((a, p) => a + p.amountCents, 0),
       }]
     })
@@ -1294,7 +1294,7 @@ export function rentLedger(snapshot: Snapshot, options: LedgerOptions = {}): Ren
       return [{
         tenancyId: t.id,
         tenantName: t.tenantName,
-        unitName: unitById.get(t.unitId)?.name ?? '—',
+        unitName: unitById.get(t.unitId)?.name ?? '-',
         end,
         openCents: account.arrearsCents,
         notDemandableCents: account.notDemandableCents,
@@ -1620,7 +1620,7 @@ function receivedIncome({ snapshot, year, inclusive, shortDays }: ReceivedInput)
     const relative = overlaps
       ? relativeForHousing(t, yFrom, yTo)
       : relativeForHousing(t, t.start, t.end ?? (compareText(yTo, t.start) >= 0 ? yTo : t.start))
-    out.byTenancy.push({ tenancyId: t.id, unitId: t.unitId, tenantName: t.tenantName, unitName: unitById.get(t.unitId)?.name ?? '—', start: t.start, end: t.end, relative, ...row })
+    out.byTenancy.push({ tenancyId: t.id, unitId: t.unitId, tenantName: t.tenantName, unitName: unitById.get(t.unitId)?.name ?? '-', start: t.start, end: t.end, relative, ...row })
   }
   // Eine Mietzahlung an ein Mietverhältnis, das der Schnappschuss nicht führt, gibt es nach `snapshotFor` nicht; geschähe
   // es doch, zählt sie ohne Forderung, damit die Summe `paidCents` bleibt. Sie steht in keiner Zeile je Mietverhältnis.
@@ -1826,7 +1826,7 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
   // ihr eingefrorener Stand**, genau wie beim Eigenanteil weiter unten. Die Zahl steht in der
   // Oberfläche als die, die auf der Abrechnung steht; ist sie abgeschlossen, steht dort der
   // eingefrorene Stand, und zwar beim Mieter im Briefkasten. Der lebende nennte eine Zahl, die
-  // auf keinem zugestellten Papier steht — genau der Widerspruch, gegen den #70 antritt.
+  // auf keinem zugestellten Papier steht - genau der Widerspruch, gegen den #70 antritt.
   //
   // Dass sie von `prepaymentSollCents` abweicht, ist gewollt und hat zwei Gründe. Die Abrechnung
   // nimmt die Jahreskorrektur, wenn sie erfasst ist: Anzusetzen sind die Vorauszahlungen, die der
@@ -2179,8 +2179,8 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
   //
   // **Gefragt wird dreiwertig**, wie überall sonst (`UnitUsage` in shared/types.ts): vermietet,
   // selbstgenutzt, außerhalb der Abrechnungseinheit. Vorher stand hier `!u.participates`, und
-  // damit schlug eine ausdrücklich ausgenommene Wohnung — etwa eine getrennt abgerechnete
-  // Gewerbeeinheit — als Eigennutzung durch. Der Vermieter bekam die Aufforderung, den
+  // damit schlug eine ausdrücklich ausgenommene Wohnung - etwa eine getrennt abgerechnete
+  // Gewerbeeinheit - als Eigennutzung durch. Der Vermieter bekam die Aufforderung, den
   // selbstgenutzten Anteil herauszurechnen, obwohl er gar nichts selbst nutzt. Die Regel ist
   // dieselbe wie bei `selfUnits` in computeSettlement, und sie steht bewusst nicht zweimal
   // ausformuliert da.
@@ -2230,7 +2230,7 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
   const excludedExists = allUnits.some((u) => yearUsage.outside(u))
   // Auf selbstgenutzte Wohnungen entfallender Teil der Kosten, aus der Verteilung des Jahres
   // übernommen: privat veranlasst und damit nicht als Werbungskosten abziehbar. Die
-  // Werbungskosten oben bleiben ungekürzt — die Aufteilung nimmt diese Übersicht nicht vor.
+  // Werbungskosten oben bleiben ungekürzt - die Aufteilung nimmt diese Übersicht nicht vor.
   // Ist die Abrechnung abgeschlossen, gilt ihr eingefrorener Stand (wie in
   // GET /api/settlement/:year), sonst widersprächen Übersicht und versendete Abrechnung.
   // Ohne Zeitraum gleich dem Kalenderjahr (#208): die Summe der Eigenanteile laut Abrechnung je
@@ -3330,7 +3330,7 @@ type ConsumptionByTypeEntry = {
 }
 
 // Das tatsächliche Ergebnis von computeSettlement: wie Settlement aus shared/types.ts, aber ohne
-// `closed` — das ergänzt erst die Route GET /api/settlement/:year.
+// `closed` - das ergänzt erst die Route GET /api/settlement/:year.
 // Frisch gerechnet sind die Felder immer da, die am `Settlement` für alte eingefrorene
 // Abrechnungen optional sind.
 export type ComputedSettlement = Omit<Settlement, 'closed' | 'notSettled' | 'notices' | 'legalBasis' | 'garageLikeUnitIds'> & {
@@ -3621,7 +3621,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Selbstgenutzte Wohnungen (`selfUsed`) haben kein Mietverhältnis, bilden aber die
   // Verteilbasis mit: Kosten einer Rechnung über das ganze Haus dürfen nur anteilig auf die
   // Mieter umgelegt werden, der auf die selbstgenutzte Wohnung entfallende Teil bleibt beim
-  // Vermieter (Eigenanteil) — wie bei Leerstand. Wohnungen ohne beide Kennzeichen gehören
+  // Vermieter (Eigenanteil) - wie bei Leerstand. Wohnungen ohne beide Kennzeichen gehören
   // nicht zur Abrechnungseinheit und bleiben ganz außen vor.
   // `participates` hat Vorrang: eine vermietete Wohnung ist nie Eigennutzung, auch wenn ein
   // von Hand bearbeiteter Datenbestand beide Kennzeichen trägt (siehe usageOf in types.ts).
@@ -3634,13 +3634,13 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Die Tage der Eigennutzung einer Einheit aus `selfUnits`; ohne Wechsel der ganze Zeitraum.
   const selfDaysOf = (u: { id: string }): number => (usageIn(u).phased ? usageIn(u).self : diy)
   // Werte aus der Datei defensiv behandeln: negative oder unsinnige Personenzahlen dürfen die
-  // Verteilbasis nicht verkleinern — das würde die Mieteranteile über 100 % treiben.
+  // Verteilbasis nicht verkleinern - das würde die Mieteranteile über 100 % treiben.
   const selfPersonsOf = (u: SnapshotUnit) => Math.max(0, Number(u.selfPersons) || 0)
 
   // Mietverhältnisse mit Überlappung im Jahr, bewusst mit flatMap statt map().filter(): Erst so
   // prüft der Übersetzer mit, dass jedes übriggebliebene Mietverhältnis wirklich eine Wohnung
   // hat. Weder eine Zusicherung `as TenancyWithUnit[]` noch ein Prädikat
-  // `(t): t is TenancyWithUnit` täte das — beide sind bloße Behauptungen über die Bedingung.
+  // `(t): t is TenancyWithUnit` täte das - beide sind bloße Behauptungen über die Bedingung.
   // Fiele das `unit` später aus ihr heraus, übersetzte das weiterhin, und die Engine stürzte
   // ab, sobald eine gelöschte Wohnung ein Mietverhältnis hinterlässt (`t.unit` unten).
   const tenancies: TenancyWithUnit[] = snapshot.tenancies.flatMap((t) => {
@@ -5230,7 +5230,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   let selfUsedShareCents = 0
 
   // Fehlende Angaben an der selbstgenutzten Wohnung heben ihren Eigenanteil beim jeweiligen
-  // Schlüssel stillschweigend auf — dann verteilt er allein auf die Mieter. Deshalb warnen,
+  // Schlüssel stillschweigend auf - dann verteilt er allein auf die Mieter. Deshalb warnen,
   // sobald ein betroffener Schlüssel im Jahr überhaupt vorkommt.
   const usesKey = (key: CostKey) => items.some((c) => c.key === key && !isNotAllocable(c.category))
   // Nimmt die Wohnung an einer Position dieses Schlüssels teil (#105)? Die Warnungen unten nennen
@@ -5238,23 +5238,23 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // in keiner Verteilung.
   const inKeyBasis = (unitId: string, key: CostKey) =>
     items.some((c) => c.key === key && !isNotAllocable(c.category) && (!c.participantUnitIds || c.participantUnitIds.includes(unitId)))
-  // Fehlt die Basis ganz, geht jede Position des Schlüssels an den Vermieter — das meldet die
+  // Fehlt die Basis ganz, geht jede Position des Schlüssels an den Vermieter - das meldet die
   // Position selbst. Die Meldungen je Wohnung wären dann widersprüchlich („verteilt nur auf
   // die Mieter", obwohl nichts verteilt wird) und entfallen. Ohne Mietverhältnis im Jahr
-  // fehlen Personentage regulär (Leerstand) — das ist kein Datenmangel.
+  // fehlen Personentage regulär (Leerstand) - das ist kein Datenmangel.
   const areaBasisMissing = !(basisArea > 0)
   const personsBasisMissing = !(occupantPersonDays > 0) && partTenancies.length > 0
   const selfNoPersons = selfUnits.filter((u) => selfPersonsOf(u) === 0 && inKeyBasis(u.id, 'persons'))
   if (selfNoPersons.length > 0 && usesKey('persons') && !personsBasisMissing) {
     warn('basis.self-no-persons',
-      `Für die ${plural(selfNoPersons.length, 'selbstgenutzte Wohnung', 'selbstgenutzten Wohnungen')} ${andList(selfNoPersons.map((u) => u.name))} ist keine Personenzahl hinterlegt — der Personenschlüssel verteilt nur auf die Mieter.`,
+      `Für die ${plural(selfNoPersons.length, 'selbstgenutzte Wohnung', 'selbstgenutzten Wohnungen')} ${andList(selfNoPersons.map((u) => u.name))} ist keine Personenzahl hinterlegt - der Personenschlüssel verteilt nur auf die Mieter.`,
       unitSubject(selfNoPersons),
     )
   }
   const selfNoArea = selfUnits.filter((u) => !(u.areaM2 > 0) && inKeyBasis(u.id, 'area'))
   if (selfNoArea.length > 0 && usesKey('area') && !areaBasisMissing) {
     warn('basis.self-no-area',
-      `Für die ${plural(selfNoArea.length, 'selbstgenutzte Wohnung', 'selbstgenutzten Wohnungen')} ${andList(selfNoArea.map((u) => u.name))} ist keine Wohnfläche hinterlegt — der Flächenschlüssel verteilt nur auf die Mieter.`,
+      `Für die ${plural(selfNoArea.length, 'selbstgenutzte Wohnung', 'selbstgenutzten Wohnungen')} ${andList(selfNoArea.map((u) => u.name))} ist keine Wohnfläche hinterlegt - der Flächenschlüssel verteilt nur auf die Mieter.`,
       unitSubject(selfNoArea),
     )
   }
@@ -5280,7 +5280,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const zero = partNoArea.filter((u) => isGarageLike(u))
     if (forgotten.length > 0) {
       warn('basis.unit-no-area',
-        `Für die ${plural(forgotten.length, 'Einheit', 'Einheiten')} ${andList(forgotten.map((u) => u.name))} ist keine Wohnfläche hinterlegt — der Flächenschlüssel verteilt ihren Anteil auf die übrigen Wohnungen.`,
+        `Für die ${plural(forgotten.length, 'Einheit', 'Einheiten')} ${andList(forgotten.map((u) => u.name))} ist keine Wohnfläche hinterlegt - der Flächenschlüssel verteilt ihren Anteil auf die übrigen Wohnungen.`,
         unitSubject(forgotten),
       )
     }
@@ -5298,7 +5298,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const zero = partNoPersons.filter((t) => !(t.unit.areaM2 > 0))
     if (forgotten.length > 0) {
       warn('basis.tenancy-no-persons',
-        `Für ${andList(forgotten.map((t) => `${t.tenantName} (${t.unit.name})`))} ist keine Personenzahl hinterlegt — der Personenschlüssel verteilt deren Anteil auf die übrigen Wohnungen.`,
+        `Für ${andList(forgotten.map((t) => `${t.tenantName} (${t.unit.name})`))} ist keine Personenzahl hinterlegt - der Personenschlüssel verteilt deren Anteil auf die übrigen Wohnungen.`,
         tenancySubject(forgotten),
       )
     }
@@ -5598,7 +5598,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Rohanteile (float, in Cent) pro Mietverhältnis bestimmen.
     // Nicht umlagefähige Kosten gehen immer vollständig an den Vermieter.
     const targets: Target[] = []
-    // Anteil, der auf selbstgenutzte Wohnungen entfällt (Teil des Vermieteranteils) — für
+    // Anteil, der auf selbstgenutzte Wohnungen entfällt (Teil des Vermieteranteils) - für
     // die Steuerübersicht separat ausgewiesen, weil er privat und damit nicht abziehbar ist.
     let selfRaw = 0
     // Für die Zerlegung des Vermieteranteils (#142): Geht die Position ganz an den Vermieter, steht
@@ -5614,7 +5614,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     let co2ShareRaw: number | null = null
     const noBasis = (reason: string) => {
       forced = 'noBasis'
-      warn('item.no-basis', `„${item.description}“: ${reason} — Betrag geht an den Vermieter.`, itemSubject(item))
+      warn('item.no-basis', `„${item.description}“: ${reason} - Betrag geht an den Vermieter.`, itemSubject(item))
     }
     // Tage im Rechenweg, nur bei einem Teiljahr.
     // „Nur Heizung“ bei freien Schlüsseln (Heizung PR 10, Entwurf 5.3 `change_split`, A2, B7): Beim
@@ -5774,7 +5774,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           // bewusst keine; bei Miteigentumsanteilen bleibt jede fehlende Angabe eine Lücke.
           const missing = b.basisUnits.filter((u) => valueOf(u) === 0 && !(eb.measure === 'area' && isGarageLike(u)))
           if (missing.length > 0) {
-            warn('external.value-missing', `„${item.description}“: für ${andList(missing.map((u) => u.name))} ${eb.measure === 'mea' ? 'sind keine Miteigentumsanteile' : 'ist keine Wohnfläche'} hinterlegt — ihr Anteil verteilt sich auf die übrigen Wohnungen.`, unitSubject(missing))
+            warn('external.value-missing', `„${item.description}“: für ${andList(missing.map((u) => u.name))} ${eb.measure === 'mea' ? 'sind keine Miteigentumsanteile' : 'ist keine Wohnfläche'} hinterlegt - ihr Anteil verteilt sich auf die übrigen Wohnungen.`, unitSubject(missing))
           }
           // Ein Tippfehler in der Gesamtsumme soll auffallen, aber keine Zahl verschieben:
           // Gezahlt ist der eingetragene Betrag, und der wird verteilt.
@@ -5791,7 +5791,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           if (Math.abs(expected - measured) > 100) {
             const days = share ? `, davon ${share.days} von ${share.of} Tagen des Leistungszeitraums` : ''
             const together = measured !== item.amountCents ? ' mit den übrigen Teilen dieser Rechnung im Zeitraum' : ''
-            warn('external.amount-mismatch', `„${item.description}“: der Betrag ${fmtCents(measured)}${together} passt nicht zum rechnerischen Anteil ${fmtCents(expected)} (${fmtNum(own)} von ${fmtNum(eb.total)} ${MEASURE_LABELS[eb.measure]} aus ${fmtCents(eb.totalCents)}${days}) — bitte die Angaben aus der Gemeinschaftsabrechnung prüfen. Verteilt wird der eingetragene Betrag.`, itemSubject(item))
+            warn('external.amount-mismatch', `„${item.description}“: der Betrag ${fmtCents(measured)}${together} passt nicht zum rechnerischen Anteil ${fmtCents(expected)} (${fmtNum(own)} von ${fmtNum(eb.total)} ${MEASURE_LABELS[eb.measure]} aus ${fmtCents(eb.totalCents)}${days}) - bitte die Angaben aus der Gemeinschaftsabrechnung prüfen. Verteilt wird der eingetragene Betrag.`, itemSubject(item))
           }
           // „Kosten der Gemeinschaft“ und nicht „Gesamtkosten der Anlage“ (#144): Die Spalte
           // Gesamtkosten zeigt hier den Anteil des Vermieters, und zweimal „Gesamtkosten“ mit zwei
@@ -5838,18 +5838,18 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         // Bis 0.13.0 teilte Mietfuchs Einzelbeträge nach Tagen und ließ die Beträge je Mieter ungekürzt in jedem Teil
         // (#454); seither nie (`splitBlocker`). Ein solcher Teil sagt, was zu tun ist.
         const part = partShare(item, { from: yFrom, to: yTo }) ? ' Die Rechnung ist nach Tagen auf mehrere Abrechnungszeiträume aufgeteilt, die Einzelbeträge aber nicht: Tragen Sie in jedem Teil die Einzelbeträge ein, die auf diesen Zeitraum entfallen.' : ''
-        warn('amounts.exceed', `„${item.description}“: die Einzelbeträge ergeben zusammen ${fmtCents(sum)} und übersteigen den Rechnungsbetrag ${fmtCents(item.amountCents)} — es wird nichts verteilt, der Betrag geht an den Vermieter.${part}`, itemSubject(item))
+        warn('amounts.exceed', `„${item.description}“: die Einzelbeträge ergeben zusammen ${fmtCents(sum)} und übersteigen den Rechnungsbetrag ${fmtCents(item.amountCents)} - es wird nichts verteilt, der Betrag geht an den Vermieter.${part}`, itemSubject(item))
       } else {
         const inYear = new Map(b.partTenancies.map((t) => [t.id, t]))
         const forfeited = Object.entries(given).filter(([id, c]) => c > 0 && !inYear.has(id))
         if (forfeited.length > 0) {
           const betrag = forfeited.reduce((a, [, c]) => a + c, 0)
-          warn('amounts.forfeited', `„${item.description}“: ${forfeited.length === 1 ? 'ein Einzelbetrag' : `${forfeited.length} Einzelbeträge`} über ${fmtCents(betrag)} gehör${forfeited.length === 1 ? 't' : 'en'} zu keinem Mietverhältnis dieses Jahres in der Abrechnungseinheit und entfall${forfeited.length === 1 ? 't' : 'en'} — dieser Teil geht an den Vermieter.`, itemSubject(item))
+          warn('amounts.forfeited', `„${item.description}“: ${forfeited.length === 1 ? 'ein Einzelbetrag' : `${forfeited.length} Einzelbeträge`} über ${fmtCents(betrag)} gehör${forfeited.length === 1 ? 't' : 'en'} zu keinem Mietverhältnis dieses Jahres in der Abrechnungseinheit und entfall${forfeited.length === 1 ? 't' : 'en'} - dieser Teil geht an den Vermieter.`, itemSubject(item))
         }
         // Nur wer die Position wirklich trägt; bei Pauschale fehlt nichts (Befund der Durchsicht).
         const without = b.partTenancies.filter((t) => !Object.hasOwn(given, t.id) && bookable(t))
         if (without.length > 0) {
-          warn('amounts.missing', `„${item.description}“: für ${andList(without.map((t) => `${t.tenantName} (${t.unit.name})`))} ist kein Einzelbetrag eingetragen — bitte prüfen, sonst tragen sie diese Position nicht.`, itemSubject(item))
+          warn('amounts.missing', `„${item.description}“: für ${andList(without.map((t) => `${t.tenantName} (${t.unit.name})`))} ist kein Einzelbetrag eingetragen - bitte prüfen, sonst tragen sie diese Position nicht.`, itemSubject(item))
         }
         // Beträge selbstgenutzter Wohnungen (#104) sind ihr Eigenanteil. Fehlt einer, steckt er im
         // Rest beim Vermieter und fehlt im privaten, nicht abziehbaren Teil der Steuerübersicht;
@@ -5861,10 +5861,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         const selfNotSelfUsed = selfForfeited.filter(([id]) => !selfUnits.some((u) => u.id === id))
         const nameOf = (id: string) => unitById.get(id)?.name ?? 'eine gelöschte Wohnung'
         if (selfNotSelfUsed.length > 0) {
-          warn('amounts.self-forfeited', `„${item.description}“: ein Eigenbetrag ist für ${andList(selfNotSelfUsed.map(([id]) => nameOf(id)))} eingetragen, die in diesem Jahr nicht selbstgenutzt ist — er zählt nicht als Eigenanteil und bleibt beim Vermieter.`, itemSubject(item))
+          warn('amounts.self-forfeited', `„${item.description}“: ein Eigenbetrag ist für ${andList(selfNotSelfUsed.map(([id]) => nameOf(id)))} eingetragen, die in diesem Jahr nicht selbstgenutzt ist - er zählt nicht als Eigenanteil und bleibt beim Vermieter.`, itemSubject(item))
         }
         if (selfOutsideParticipants.length > 0) {
-          warn('amounts.self-forfeited', `„${item.description}“: ein Eigenbetrag ist für ${andList(selfOutsideParticipants.map(([id]) => nameOf(id)))} eingetragen, die an dieser Position nicht teilnimmt — er zählt nicht als Eigenanteil und bleibt beim Vermieter. Nehmen Sie die Wohnung als Teilnehmerin auf, wenn die Position sie betrifft.`, itemSubject(item))
+          warn('amounts.self-forfeited', `„${item.description}“: ein Eigenbetrag ist für ${andList(selfOutsideParticipants.map(([id]) => nameOf(id)))} eingetragen, die an dieser Position nicht teilnimmt - er zählt nicht als Eigenanteil und bleibt beim Vermieter. Nehmen Sie die Wohnung als Teilnehmerin auf, wenn die Position sie betrifft.`, itemSubject(item))
         }
         selfRaw = selfSum
         // Vorwegabzug beim Messdienst (Heizung PR 6, #209, Entwurf 7.4): In der Position, in der L
@@ -5876,7 +5876,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         }
         const selfWithout = b.selfUnits.filter((u) => !Object.hasOwn(selfGiven, u.id))
         if (selfWithout.length > 0) {
-          warn('amounts.self-hidden', `„${item.description}“: der Anteil der ${plural(selfWithout.length, 'selbstgenutzten Wohnung', 'selbstgenutzten Wohnungen')} ${andList(selfWithout.map((u) => u.name))} ist bei Einzelbeträgen nicht eingetragen — er steckt im Vermieteranteil, und die Steuerübersicht nennt den privaten Anteil entsprechend zu niedrig.`, itemSubject(item))
+          warn('amounts.self-hidden', `„${item.description}“: der Anteil der ${plural(selfWithout.length, 'selbstgenutzten Wohnung', 'selbstgenutzten Wohnungen')} ${andList(selfWithout.map((u) => u.name))} ist bei Einzelbeträgen nicht eingetragen - er steckt im Vermieteranteil, und die Steuerübersicht nennt den privaten Anteil entsprechend zu niedrig.`, itemSubject(item))
         }
         for (const t of b.partTenancies) {
           const c = given[t.id]
@@ -5886,28 +5886,28 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       }
     } else if (item.key === 'custom') {
       // Vereinbarter Schlüssel (§556a Abs. 1 Satz 1 BGB): feste Prozentanteile je Wohnung.
-      // Die Anteile gelten absolut — summieren sie unter 100 %, bleibt der Rest beim
+      // Die Anteile gelten absolut - summieren sie unter 100 %, bleibt der Rest beim
       // Vermieter. Bei Mieterwechsel wird der Anteil tagesanteilig geteilt.
       const pctOf = (unitId: string) => Number(item.customShares?.[unitId]) || 0
       const pctSum = basisUnits.reduce((a, u) => a + Math.max(0, pctOf(u.id)), 0)
       // Was davon in den Tagen in der Abrechnungseinheit verteilt wird (#259); ohne Wechsel genau `pctSum`.
       const pctSumIn = basisUnits.reduce((a, u) => a + Math.max(0, pctOf(u.id)) * (degreeTable && fullDegree > 0 && usageIn(u).phased ? 1 - itemOutsideShare(u) : inShare(u)), 0)
-      // Anteile für Wohnungen außerhalb der Abrechnungseinheit verfallen — gelöscht oder
+      // Anteile für Wohnungen außerhalb der Abrechnungseinheit verfallen - gelöscht oder
       // auf „nicht beteiligt“ gestellt. Sonst würde der Betrag unbemerkt kleiner verteilt,
       // als vereinbart ist.
       const forfeited = Object.keys(item.customShares ?? {})
         .filter((id) => pctOf(id) > 0 && !basisUnits.some((u) => u.id === id))
         .map((id) => unitById.get(id)?.name ?? 'gelöschte Wohnung')
       if (forfeited.length > 0) {
-        warn('custom.forfeited', `„${item.description}“: der vereinbarte Anteil für ${andList(forfeited)} entfällt — die Wohnung gehört nicht zur Abrechnungseinheit. Dieser Teil geht an den Vermieter.`, itemSubject(item))
+        warn('custom.forfeited', `„${item.description}“: der vereinbarte Anteil für ${andList(forfeited)} entfällt - die Wohnung gehört nicht zur Abrechnungseinheit. Dieser Teil geht an den Vermieter.`, itemSubject(item))
       }
       if (pctSum <= 0) {
         forced = 'noBasis'
-        warn('custom.none', `„${item.description}“: keine vereinbarten Anteile hinterlegt — Betrag geht an den Vermieter.`, itemSubject(item))
+        warn('custom.none', `„${item.description}“: keine vereinbarten Anteile hinterlegt - Betrag geht an den Vermieter.`, itemSubject(item))
       } else if (pctSum > 100.0001) {
         // Nicht verteilen: mehr als die Rechnung hergibt wäre auch beim §35a-Anteil zu hoch.
         forced = 'noBasis'
-        warn('custom.over-100', `„${item.description}“: die vereinbarten Anteile ergeben ${fmtNum(Math.round(pctSum * 100) / 100)} % — über 100 % wird nicht verteilt, der Betrag geht an den Vermieter.`, itemSubject(item))
+        warn('custom.over-100', `„${item.description}“: die vereinbarten Anteile ergeben ${fmtNum(Math.round(pctSum * 100) / 100)} % - über 100 % wird nicht verteilt, der Betrag geht an den Vermieter.`, itemSubject(item))
       } else {
         for (const t of costTenancies) {
           const pct = pctOf(t.unitId)
@@ -5942,9 +5942,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         warn('meter.units-mixed', unitsMixedText(`„${item.description}“`, data.unitProblem.meters, 'Der Betrag geht an den Vermieter.'), unitProblemSubject(data.unitProblem.meters))
       } else if (!data || data.basis <= 0) {
         forced = 'noBasis'
-        warn('meter.no-consumption', `„${item.description}“: kein Verbrauch für Zählertyp „${meterTypeLabel(item.meterType)}“ erfasst — Betrag geht an den Vermieter.`, itemSubject(item))
+        warn('meter.no-consumption', `„${item.description}“: kein Verbrauch für Zählertyp „${meterTypeLabel(item.meterType)}“ erfasst - Betrag geht an den Vermieter.`, itemSubject(item))
       } else {
-        const type = item.meterType ?? '—'
+        const type = item.meterType ?? '-'
         // Für die Zerlegung des Vermieteranteils (#142): Verbrauch der Zähler von Wohnungen
         // außerhalb der Abrechnungseinheit, und beim Hauptzähler, was keine Wohnung misst.
         const inBasis = new Set(b.basisUnits.map((u) => u.id))
@@ -5957,16 +5957,16 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           const vorher = new Date(toUTC(yFrom) - MS_DAY).toISOString().slice(0, 10)
           const kalender = calendarYearPeriod(year)
           const ende = yFrom === kalender.from && yTo === kalender.to ? 'zum Jahresende' : 'zum Ende des Zeitraums'
-          warn('meter.main-partial', `„${item.description}“: der Hauptzähler deckt ${label} nur ${data.mainPartial.days} von ${diy} Tagen ab — bitte Ablesungen zum ${fmtDay(vorher)} und ${ende} (${fmtDay(yTo)}) nachtragen. Bis dahin wird nach den Wohnungszählern verteilt.`, { kind: 'meter', id: data.mainPartial.meterId })
+          warn('meter.main-partial', `„${item.description}“: der Hauptzähler deckt ${label} nur ${data.mainPartial.days} von ${diy} Tagen ab - bitte Ablesungen zum ${fmtDay(vorher)} und ${ende} (${fmtDay(yTo)}) nachtragen. Bis dahin wird nach den Wohnungszählern verteilt.`, { kind: 'meter', id: data.mainPartial.meterId })
         }
         if (data.mainBelowUnits) {
-          warn('meter.sub-exceeds-main', `„${item.description}“: die Wohnungszähler zeigen zusammen ${fmtMeter(data.mainBelowUnits.units)}, mehr als der Hauptzähler (${fmtMeter(data.mainBelowUnits.main)}) — bitte die Ablesungen prüfen. Verteilt wird nach den Wohnungszählern.`, itemSubject(item))
+          warn('meter.sub-exceeds-main', `„${item.description}“: die Wohnungszähler zeigen zusammen ${fmtMeter(data.mainBelowUnits.units)}, mehr als der Hauptzähler (${fmtMeter(data.mainBelowUnits.main)}) - bitte die Ablesungen prüfen. Verteilt wird nach den Wohnungszählern.`, itemSubject(item))
         }
         if (data.mainGap) {
           warn('meter.main-gap', `„${item.description}“: die Wohnungszähler erfassen zusammen nur ${fmtMeter(data.mainGap.units)} von ${fmtMeter(data.mainGap.main)} des Hauptzählers. Gehört der Rest zu einer Wohnung, die nicht angelegt ist (etwa Ihrer eigenen), legen Sie sie unter Stammdaten an; dann gilt für sie der Rest des Hauptzählers. Verteilt wird nach den Wohnungszählern.`, itemSubject(item))
         }
         if (data.main !== null && data.partial.length > 0) {
-          warn('meter.unit-partial', `„${item.description}“: der Zähler von ${andList(data.partial.map((p) => `${p.unit.name} (${p.covered} von ${p.needed} Tagen)`))} deckt nicht die ganze Zeit ab, in der dort gewohnt wurde — der Verbrauch der Lücke steckt im Rest des Hauptzählers, der deshalb beim Vermieter bleibt und nicht als Eigenanteil gilt. Bitte die fehlenden Ablesungen nachtragen.`, unitSubject(data.partial.map((p) => p.unit)))
+          warn('meter.unit-partial', `„${item.description}“: der Zähler von ${andList(data.partial.map((p) => `${p.unit.name} (${p.covered} von ${p.needed} Tagen)`))} deckt nicht die ganze Zeit ab, in der dort gewohnt wurde - der Verbrauch der Lücke steckt im Rest des Hauptzählers, der deshalb beim Vermieter bleibt und nicht als Eigenanteil gilt. Bitte die fehlenden Ablesungen nachtragen.`, unitSubject(data.partial.map((p) => p.unit)))
         }
         // Fehlt der Zähler nur bei selbstgenutzten Wohnungen, gibt es nichts zu melden; bleibt der
         // Rest wegen einer Lücke trotzdem beim Vermieter, sagt das die Meldung davor.
@@ -5975,7 +5975,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           const names = andList(data.unmetered.map((u) => u.name))
           // Eine Garage oder ein Stellplatz hat oft keinen Anschluss; dann nennt die Meldung den
           // Ausweg, die Kennzeichnung an der Einheit (#117).
-          const noConnection = ' Hat eine dieser Einheiten keinen eigenen Anschluss (etwa eine Garage), entfernen Sie in den Stammdaten der Einheit unter „Weitere Angaben — Anschlüsse“ das Häkchen dieser Zählerart.'
+          const noConnection = ' Hat eine dieser Einheiten keinen eigenen Anschluss (etwa eine Garage), entfernen Sie in den Stammdaten der Einheit unter „Weitere Angaben - Anschlüsse“ das Häkchen dieser Zählerart.'
           const text = data.main !== null
             ? data.mainSelfByDays
               ? `der Rest des Hauptzählers gilt für die Tage als Eigenanteil, an denen alle Einheiten ohne Zähler selbstgenutzt sind, für die übrigen Tage geht er an den Vermieter; Mietfuchs teilt ihn nach Tagen, nimmt also gleichmäßigen Verbrauch an (eine Auslegung). Ein Zwischenzähler macht das genau.${noConnection}`
@@ -5985,7 +5985,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
               : data.limited
                 ? `ihr Verbrauch lässt sich nicht bestimmen und wird von den übrigen teilnehmenden Wohnungen mitgetragen. Bitte die Teilnehmer der Position prüfen.${noConnection}`
                 : `ihr Verbrauch lässt sich nicht bestimmen und wird von den übrigen Wohnungen mitgetragen. Mit einem Hauptzähler (Zähler ohne Wohnung) gilt für sie der Rest des Hauptzählers.${noConnection}`
-          warn('meter.unit-without-meter', `„${item.description}“: für ${names} gibt es keinen abgelesenen Zähler „${meterTypeLabel(type)}“ — ${text}`, unitSubject(data.unmetered))
+          warn('meter.unit-without-meter', `„${item.description}“: für ${names} gibt es keinen abgelesenen Zähler „${meterTypeLabel(type)}“ - ${text}`, unitSubject(data.unmetered))
         }
         selfRaw = item.amountCents * (data.selfConsumption / data.basis)
         for (const t of b.partTenancies) {
@@ -6012,11 +6012,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       if (!sp) {
         forced = 'noBasis'
         warn('heating.target-invalid',
-          `„${item.description}“: Die Position wird nach der Heizkostenverordnung verteilt, gehört aber in ${label} zu keiner Heizanlage mit eigener Heizkostenabrechnung — Betrag geht an den Vermieter. Wählen Sie im Kostenformular die Heizanlage oder einen anderen Schlüssel.`,
+          `„${item.description}“: Die Position wird nach der Heizkostenverordnung verteilt, gehört aber in ${label} zu keiner Heizanlage mit eigener Heizkostenabrechnung - Betrag geht an den Vermieter. Wählen Sie im Kostenformular die Heizanlage oder einen anderen Schlüssel.`,
           itemSubject(item))
       } else if (problem !== null || target === null) {
         forced = 'noBasis'
-        warn('heating.target-invalid', `„${item.description}“: ${problem ?? 'Das Ziel fehlt'} — Betrag geht an den Vermieter.`, itemSubject(item))
+        warn('heating.target-invalid', `„${item.description}“: ${problem ?? 'Das Ziel fehlt'} - Betrag geht an den Vermieter.`, itemSubject(item))
       } else if (sp.weights === null) {
         // Die Anlage ist nicht verteilbar; der Fehler steht einmal je Anlage (Plan oben).
         forced = 'noBasis'
@@ -6051,7 +6051,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const target = unitById.get(item.directUnitId as string)
       if (!target) {
         forced = 'noBasis'
-        warn('direct.unit-gone', `„${item.description}“: die direkt zugeordnete Wohnung gibt es nicht mehr — Betrag geht an den Vermieter.`, itemSubject(item))
+        warn('direct.unit-gone', `„${item.description}“: die direkt zugeordnete Wohnung gibt es nicht mehr - Betrag geht an den Vermieter.`, itemSubject(item))
       } else if (!target.participates && !target.selfUsed) {
         // Leerstand und Eigennutzung sind reguläre Fälle; eine Wohnung außerhalb der
         // Abrechnungseinheit ist dagegen ein Datenfehler.
@@ -6181,7 +6181,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     let laborCents: number[] = recipients.map(() => 0)
     let laborExact: number[] = recipients.map(() => 0)
     if (labor === null) {
-      warn('labor35a.invalid', `„${item.description}“: der §35a-Lohnanteil muss zwischen 0 und dem Rechnungsbetrag liegen — es wird kein Lohnanteil bescheinigt.`, itemSubject(item))
+      warn('labor35a.invalid', `„${item.description}“: der §35a-Lohnanteil muss zwischen 0 und dem Rechnungsbetrag liegen - es wird kein Lohnanteil bescheinigt.`, itemSubject(item))
     } else if (labor > 0) {
       const d = distributeLaborCents(labor, item.amountCents, recipients, cents)
       laborCents = d.cents

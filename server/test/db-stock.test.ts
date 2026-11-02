@@ -120,7 +120,7 @@ function fullDb(): Db {
         // **Mit Statements, und das ist kein Beiwerk.** Aus dem eingefrorenen Stand liest die
         // Steuerübersicht neben dem Eigenanteil die Vorauszahlungen der zugestellten Abrechnung
         // (#70). Stand hier eine leere Liste, lieferten beide Wege 0, und ein Leser, der immer 0
-        // liefert, wäre grün durchgekommen — nachgemessen. Eine nach dem Umstieg abgeschlossene
+        // liefert, wäre grün durchgekommen - nachgemessen. Eine nach dem Umstieg abgeschlossene
         // Abrechnung steht nur in der Datenbank, die Regression sieht sie also nie.
         settlement: {
           year: 2023, daysInYear: 365,
@@ -226,7 +226,7 @@ test('Rundreise: der eingefrorene Berechnungsstand kommt wortgleich zurück', as
     // **Der Auszug daraus, und zwar an Zahlen, die nicht null sind.** Aus dem Archivstück liest
     // die Steuerübersicht den Eigenanteil und die Vorauszahlungen der zugestellten Abrechnung
     // (#70). Solange die Statements der Vorlage leer waren, lieferte jeder Leser 0, auch einer,
-    // der gar nichts täte — nachgemessen: Ein Leser, der fest `{ cents: 0, overridden: false }`
+    // der gar nichts täte - nachgemessen: Ein Leser, der fest `{ cents: 0, overridden: false }`
     // zurückgab, kam grün durch. Genau dieser Weg ist der Produktivweg, denn eine nach dem
     // Umstieg abgeschlossene Abrechnung steht nur in der Datenbank.
     assert.equal(stock.closedSettlements[0].selfUsedShareCents, 400)
@@ -261,7 +261,7 @@ test('Rundreise: die Einstellungen samt KI-Plätzen kommen zurück', async () =>
 test('Rundreise: die Reihenfolge der Datei bleibt erhalten', async () => {
   // Zwei Ablesungen mit demselben Datum: Die Berechnung sortiert nach Datum und lässt bei
   // Gleichstand die Reihenfolge der Datei stehen. Der Verbrauch hängt daran, welcher der beiden
-  // Stände der spätere ist — käme die Datenbank sie anders zurück, wanderte Geld.
+  // Stände der spätere ist - käme die Datenbank sie anders zurück, wanderte Geld.
   await withDatabase(async (opened) => {
     const file = fullDb()
     file.readings = [

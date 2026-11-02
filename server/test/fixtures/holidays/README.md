@@ -32,10 +32,10 @@ Der Zeitraum beginnt 1995; früher rechnet Mietfuchs keine Feiertage (`FIRST_YEA
 
 Je Variante eine Liste von Schlüsseln:
 
-- `MM-TT` — fester Tag, etwa `10-03` für den Tag der Deutschen Einheit
-- `O±n` — `n` Tage nach dem Ostersonntag, etwa `O-2` Karfreitag, `O+60` Fronleichnam. Die
+- `MM-TT` - fester Tag, etwa `10-03` für den Tag der Deutschen Einheit
+- `O±n` - `n` Tage nach dem Ostersonntag, etwa `O-2` Karfreitag, `O+60` Fronleichnam. Die
   Osterdaten stehen unter `ostern` (nach `dateutil.easter`).
-- `@…` — gilt nur in diesen Jahren, etwa `03-08@2019-2100` (Frauentag in Berlin seit 2019)
+- `@…` - gilt nur in diesen Jahren, etwa `03-08@2019-2100` (Frauentag in Berlin seit 2019)
   oder `10-31@2017` (Reformationstag 2017 einmalig in allen Ländern)
 
 Ein Schlüssel ohne `@` gilt in jedem Jahr. Die Schreibweise ist verlustfrei: `generate.py`

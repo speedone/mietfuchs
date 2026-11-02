@@ -7,7 +7,7 @@
 # Danach in Mietfuchs unter Einstellungen die gefundene Adresse http://ollama:11434 übernehmen.
 #
 # Ohne Clone des Repos geht es auch mit dem fertigen Image aus der GitHub Container
-# Registry — siehe Abschnitt „Mit Docker" in der README. Dann `build` weglassen und
+# Registry - siehe Abschnitt „Mit Docker" in der README. Dann `build` weglassen und
 # `image: ghcr.io/speedone/mietfuchs:latest` setzen.
 services:
   mietfuchs:
@@ -17,7 +17,7 @@ services:
     ports:
       - "3001:3001"
     volumes:
-      # Persistente Daten (mietfuchs.sqlite + hochgeladene Belege) — überleben Container-Updates.
+      # Persistente Daten (mietfuchs.sqlite + hochgeladene Belege) - überleben Container-Updates.
       - mietfuchs-data:/app/server/data
     environment:
       # Optional, etwa in einer .env-Datei neben dieser Datei: Adresse und Modell für die
@@ -26,7 +26,7 @@ services:
       NKA_OLLAMA_MODEL: ${NKA_OLLAMA_MODEL:-}
     restart: unless-stopped
     # Macht den Host unter „host.docker.internal" erreichbar (für eine Ollama-Instanz auf dem
-    # Host) — unter Docker Desktop ohnehin vorhanden, unter Linux per host-gateway nachgerüstet.
+    # Host) - unter Docker Desktop ohnehin vorhanden, unter Linux per host-gateway nachgerüstet.
     extra_hosts:
       - "host.docker.internal:host-gateway"
 

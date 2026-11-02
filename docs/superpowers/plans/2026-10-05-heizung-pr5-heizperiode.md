@@ -5212,7 +5212,7 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
               <label className="field grow">
                 Rechnen Sie die Heizkosten getrennt ab, mit eigener Heizkostenvorauszahlung?
                 <select value={form.separate} onChange={(e) => setForm({ ...form, separate: e.target.value as SeparateChoice })}>
-                  <option value="">— bitte wählen —</option>
+                  <option value="">Bitte wählen</option>
                   {SEPARATE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </label>
@@ -5827,7 +5827,7 @@ und im Rumpf `heatingPrepayments: heating,` neben `flatRates`. Im Formular direk
 ```tsx
               {tenForm.heatingPrepayments.length > 0 && (
                 <>
-                  <div className="field-group-label">davon Heizvorauszahlung je Monat — Staffel</div>
+                  <div className="field-group-label">davon Heizvorauszahlung je Monat - Staffel</div>
                   <p className="muted">Die Heizkosten rechnen Sie getrennt ab. Ändert sich die Vorauszahlung, tragen Sie die neue Heizvorauszahlung ab demselben Monat hier ein.</p>
                   {tenForm.heatingPrepayments.map((p, i) => (
                     <div key={i} className="row">

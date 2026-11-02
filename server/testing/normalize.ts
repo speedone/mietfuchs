@@ -1,6 +1,6 @@
 // Stabile Projektion der Berechnungsergebnisse für den Golden-Master-Vergleich.
 //
-// Zweck: Zwei Ergebnisse sind fachlich gleich, auch wenn Objektreihenfolgen abweichen —
+// Zweck: Zwei Ergebnisse sind fachlich gleich, auch wenn Objektreihenfolgen abweichen -
 // aber sie sind fachlich verschieden, sobald sich ein Cent, ein Tag oder eine Warnung ändert.
 // Deshalb wird hier explizit sortiert (Reihenfolgen in der Datei haben keine Bedeutung) und
 // alles verworfen, was reine Anzeige ist.
@@ -9,9 +9,9 @@
 // §35a, Verbrauch, Rundung und Warnungen.
 //
 // Bewusst NICHT im Vergleich:
-//   basisText, keyLabel   — aus fmtNum()/toLocaleString erzeugte Anzeigestrings; ihr Inhalt
+//   basisText, keyLabel   - aus fmtNum()/toLocaleString erzeugte Anzeigestrings; ihr Inhalt
 //                           steckt strukturiert in days/personDays/key
-//   tenantName, unitName, category, description — unveränderte Durchreichung aus der Eingabe
+//   tenantName, unitName, category, description - unveränderte Durchreichung aus der Eingabe
 //
 // Bewusst IM Vergleich: warnings im Wortlaut. Eine geänderte Warnung ist eine sichtbare
 // fachliche Änderung und soll auffallen.

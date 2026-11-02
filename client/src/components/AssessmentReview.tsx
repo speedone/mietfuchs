@@ -228,8 +228,8 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
                     )}
                   </td>
                   <td className="num">
-                    {line.amountCents === null ? '—' : fmtEuro(line.amountCents)}
-                    <div className="muted">{line.labor35aCents === null ? '—' : fmtEuro(line.labor35aCents)}</div>
+                    {line.amountCents === null ? '-' : fmtEuro(line.amountCents)}
+                    <div className="muted">{line.labor35aCents === null ? '-' : fmtEuro(line.labor35aCents)}</div>
                   </td>
                 </tr></tbody>
               )
@@ -252,7 +252,7 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
                           nicht; anlegen oder verknüpfen lässt sie sich weiterhin. */}
                       {line.state === 'dismissed'
                         ? <option value="dismiss">✗ verworfen</option>
-                        : <option value="">— offen lassen —</option>}
+                        : <option value="">Offen lassen</option>}
                       <option value="create">Neu anlegen</option>
                       {linkChoices(line, row).map((c) => (
                         <option key={c.id} value={`link:${c.id}`}>Mit „{c.description}“ ({fmtEuro(c.amountCents)}{c.invoiceFile ? '' : ', ohne Beleg'}) verknüpfen</option>
@@ -271,7 +271,7 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
                     </select>
                   </td>
                   <td data-label="Umlageschlüssel"><AiKeyCell position={row} units={units} onChange={(p) => patch(line.idx, p)} /></td>
-                  <td className="num" data-label="§35a-Lohn €"><input aria-label="§35a-Lohn €" value={row.labor35a} onChange={(e) => patch(line.idx, { labor35a: e.target.value })} className="input-num" placeholder="—" /></td>
+                  <td className="num" data-label="§35a-Lohn €"><input aria-label="§35a-Lohn €" value={row.labor35a} onChange={(e) => patch(line.idx, { labor35a: e.target.value })} className="input-num" placeholder="-" /></td>
                 </tr>
               </tbody>
             )

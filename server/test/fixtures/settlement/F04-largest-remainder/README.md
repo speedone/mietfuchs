@@ -1,7 +1,7 @@
-# F04 — Largest Remainder: 100,00 € auf drei gleiche Einheiten
+# F04 - Largest Remainder: 100,00 € auf drei gleiche Einheiten
 
 **Geprüfte Regel:** Ein Betrag, der sich nicht glatt teilen lässt, wird **vollständig**
-verteilt — die Summe der Anteile ist exakt der Ausgangsbetrag, nicht ein Cent weniger. Und:
+verteilt - die Summe der Anteile ist exakt der Ausgangsbetrag, nicht ein Cent weniger. Und:
 Bei gleichem Nachkommaanteil muss der Tie-Break **deterministisch** sein.
 
 **Grundlage:** Restverfahren nach dem größten Rest; bei Gleichstand entscheidet die ID des
@@ -10,7 +10,7 @@ Mietverhältnisses (seit v0.3.1, #9).
 ## Das Beispiel
 
 100,00 € auf drei gleiche Einheiten ergeben 33,34 + 33,33 + 33,33 = 100,00 €. Wer den Rest-Cent
-bekommt, ist fachlich beliebig — aber dieselben Daten müssen immer dasselbe Ergebnis liefern.
+bekommt, ist fachlich beliebig - aber dieselben Daten müssen immer dasselbe Ergebnis liefern.
 
 ## Ausgangslage
 
@@ -26,7 +26,7 @@ Rest                 = 10.000 − 9.999 = 1 ct
 ```
 
 Das eine verbleibende Cent geht an den größten Nachkommaanteil. Hier sind **alle drei
-Nachkommaanteile identisch** (0,3333…) — genau der Fall, in dem der Tie-Break entscheidet. Er wird
+Nachkommaanteile identisch** (0,3333…) - genau der Fall, in dem der Tie-Break entscheidet. Er wird
 zugunsten des ersten Mietverhältnisses in fachlich stabiler Sortierung entschieden, also `t1`:
 
 ```
@@ -52,5 +52,5 @@ t2 = 12.000 − 3.333 = +8.667 ct
 t3 = 12.000 − 3.333 = +8.667 ct
 ```
 
-Vorschlag neue Vorauszahlung: 3.334 / 12 = 2,78 € bzw. 3.333 / 12 = 2,78 € — beide auf volle
+Vorschlag neue Vorauszahlung: 3.334 / 12 = 2,78 € bzw. 3.333 / 12 = 2,78 € - beide auf volle
 Euro gerundet 3,00 €.

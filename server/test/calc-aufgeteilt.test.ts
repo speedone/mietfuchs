@@ -42,7 +42,7 @@ test('#454: der Teil einer Rechnung „laut Gemeinschaftsabrechnung“ passt zum
 test('#454: ein Teil mit wirklich falschem Betrag meldet weiter, mit dem gekürzten Anteil und den Tagen', () => {
   const s = settleIn(ISSUE, '2025-07', etw(5000))
   const n = s.notices.find((x) => x.code === 'external.amount-mismatch') ?? assert.fail('kein Hinweis')
-  assert.equal(n.text, '„Hausmeisterkosten (anteilig 01.07.–31.12.2025)“: der Betrag 50,00 € passt nicht zum rechnerischen Anteil 85,98 € (50 von 1.000 MEA aus 2.000,00 €, davon 184 von 214 Tagen des Leistungszeitraums) — bitte die Angaben aus der Gemeinschaftsabrechnung prüfen. Verteilt wird der eingetragene Betrag.')
+  assert.equal(n.text, '„Hausmeisterkosten (anteilig 01.07.–31.12.2025)“: der Betrag 50,00 € passt nicht zum rechnerischen Anteil 85,98 € (50 von 1.000 MEA aus 2.000,00 €, davon 184 von 214 Tagen des Leistungszeitraums) - bitte die Angaben aus der Gemeinschaftsabrechnung prüfen. Verteilt wird der eingetragene Betrag.')
   assert.match(JSON.stringify(s.statements), /angesetzt laut Hausgeldabrechnung/)
 })
 

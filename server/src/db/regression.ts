@@ -3,7 +3,7 @@
 // Gefragt wird das Einzige, worauf es ankommt: **Kommt aus der Datenbank dieselbe Abrechnung
 // heraus wie bisher aus der Datei?** Gerechnet werden dafür beide Bestände, Jahr für Jahr, mit
 // allen vier Rechnungen, und verglichen wird Zahl für Zahl. Weicht ein einziger Cent ab, wird
-// nicht aktiviert — ein Umstieg, der stillschweigend eine Abrechnung ändert, ist der teuerste
+// nicht aktiviert - ein Umstieg, der stillschweigend eine Abrechnung ändert, ist der teuerste
 // Fehler, den dieses Vorhaben haben kann.
 //
 // ---------- Was verglichen wird und was nicht ----------
@@ -53,7 +53,7 @@ const MAX_YEARS = 200
 // **Ohne diese Grenze nähme ein einziges krummes Datum der Prüfung ihre Mitte.** `yearOfDate`
 // liest die ersten vier Zeichen als Zahl, aus „12“ wird also das Jahr 12. Der Bereich 12 bis
 // heute überspannt mehr als MAX_YEARS, und der Rückfall darauf, nur die genannten Jahre zu
-// prüfen, ließe ausgerechnet die Jahre dazwischen aus — die, für die die Berechnung am meisten
+// prüfen, ließe ausgerechnet die Jahre dazwischen aus - die, für die die Berechnung am meisten
 // herleitet und für die der Kommentar an `yearsToCheck` begründet, warum sie dazugehören. Der
 // Validator fängt ein leeres Datum ab, ein nicht leeres unsinniges nicht.
 //
@@ -127,7 +127,7 @@ export function yearsToCheck(db: Db, currentYear: number): number[] {
 // **Er steht hier ausdrücklich und nicht versteckt im Geraderücken.** Was der Vergleich
 // hinnimmt, muss man an einer Stelle lesen können; sonst wäre die Zusage „centgenau“ eine mit
 // unbekannten Ausnahmen. Der Eintrag selbst kommt aus derselben Funktion, die auch beim
-// Übernehmen entscheidet — zwei Fassungen davon ließen die Regression genau dort blind werden,
+// Übernehmen entscheidet - zwei Fassungen davon ließen die Regression genau dort blind werden,
 // wo sie am meisten zu tun hat.
 export function standToCompare(file: Db): Db {
   const copy = structuredClone(file)

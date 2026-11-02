@@ -18,7 +18,7 @@ import { connect } from '../src/db/client.ts'
 import { openDatabaseWithStock } from '../testing/database.ts'
 import { tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
 
-// Wohnung EG: Müller bis 30.09.2025, Schmidt ab 01.09.2025 — 30 Tage zugleich.
+// Wohnung EG: Müller bis 30.09.2025, Schmidt ab 01.09.2025 - 30 Tage zugleich.
 const overlappingDb = (): Db => ({
   settings: {
     houseName: 'Haus', address: 'Weg 1', landlordName: 'Vermieter', iban: '', paymentDeadlineDays: 30,

@@ -17,7 +17,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const OUT = path.join(__dirname, '..', '..', 'client', 'public')
 fs.mkdirSync(OUT, { recursive: true })
 
-// Fuchskopf „Mietfuchs" — identische Geometrie wie client/src/components/Logo.tsx (0..64-Raster).
+// Fuchskopf „Mietfuchs" - identische Geometrie wie client/src/components/Logo.tsx (0..64-Raster).
 const FOX = [
   { fill: '#ef6f2e', pts: [[32, 13], [40, 17], [58, 9], [46, 35], [32, 53], [18, 35], [6, 9], [24, 17]] }, // Kopf
   { fill: '#d4541c', pts: [[9, 12], [24, 17], [18, 27]] }, // Ohr links innen

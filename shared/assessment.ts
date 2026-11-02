@@ -49,9 +49,9 @@ export function scorePosition(ctx: PositionCtx): { level: TrafficLight; reasons:
 
   if (ctx.amountCents === 0) s.bump('rot', 'Betrag fehlt oder ist 0')
   // Eine Gutschrift (#139) wird übernommen, aber nie ungesehen: Sie senkt die Kosten des Jahres.
-  if (ctx.amountCents < 0) s.bump('gelb', 'Gutschrift — senkt die Kosten des Jahres')
-  if (isNotAllocable(ctx.category)) s.bump('rot', 'nicht umlagefähig — trägt der Vermieter')
-  if (ctx.category === 'Sonstige Betriebskosten') s.bump('rot', 'Kategorie unklar — bitte zuordnen')
+  if (ctx.amountCents < 0) s.bump('gelb', 'Gutschrift - senkt die Kosten des Jahres')
+  if (isNotAllocable(ctx.category)) s.bump('rot', 'nicht umlagefähig - trägt der Vermieter')
+  if (ctx.category === 'Sonstige Betriebskosten') s.bump('rot', 'Kategorie unklar - bitte zuordnen')
   if (ctx.detectedYear == null) s.bump('rot', 'Rechnungsjahr nicht erkannt')
 
   const vendor = ctx.vendor.trim().toLowerCase()
@@ -61,7 +61,7 @@ export function scorePosition(ctx: PositionCtx): { level: TrafficLight; reasons:
     const dupe = ctx.existingItems.some(
       (it) => it.period === period && it.amountCents === ctx.amountCents && (it.vendor ?? '').trim().toLowerCase() === vendor,
     )
-    if (dupe) s.bump('rot', 'mögliche Dublette — gleicher Betrag, Steller und Jahr existiert bereits')
+    if (dupe) s.bump('rot', 'mögliche Dublette - gleicher Betrag, Steller und Jahr existiert bereits')
   }
 
   // Schon eine Position, die dieselbe Rechnung sein könnte, etwa aus dem Vorjahr übernommen
@@ -71,8 +71,8 @@ export function scorePosition(ctx: PositionCtx): { level: TrafficLight; reasons:
   // wird mit dem Betrag: Eine Gutschrift ist nie dieselbe wie eine Rechnung (rc.1).
   if (candidates.length > 0) {
     s.bump('gelb', ctx.amountCents < 0
-      ? `schon erfasst: ${candidates.map(candidateText).join(', ')} — ist es dieselbe Gutschrift, nicht noch einmal anlegen`
-      : `schon erfasst: ${candidates.map(candidateText).join(', ')} — verknüpfen oder bewusst als neue Position anlegen`)
+      ? `schon erfasst: ${candidates.map(candidateText).join(', ')} - ist es dieselbe Gutschrift, nicht noch einmal anlegen`
+      : `schon erfasst: ${candidates.map(candidateText).join(', ')} - verknüpfen oder bewusst als neue Position anlegen`)
   }
 
   if (ctx.matchedByDesc) s.bump('gelb', 'Kategorie nur über die Beschreibung erraten')

@@ -262,7 +262,7 @@ export function overlapQuestion(
 // Vorauszahlung nach dem Aufteilen aus wie eine gesunkene.
 export function prepaymentColumn(t: Pick<Tenancy, 'prepayments' | 'heatingPrepayments' | 'flatRates'>): { label: string | null; amount: string }[] {
   const heating = t.heatingPrepayments ?? []
-  // Die Pauschale steht dabei (N15 aus #341): Sie wird nie abgerechnet, aber monatlich gezahlt, und ohne sie stand „—“
+  // Die Pauschale steht dabei (N15 aus #341): Sie wird nie abgerechnet, aber monatlich gezahlt, und ohne sie stand „-“
   const flat = t.flatRates ?? []
   const withFrom = t.prepayments.length > 1 || heating.length > 1
   const month = (from: string) => `${from.slice(5, 7)}/${from.slice(0, 4)}`

@@ -270,11 +270,11 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
     const linked = invoiceFiles.includes(f) ? itemsOfFile(f, costItems, bookedFiles) : []
     const vendor = linked.find((c) => c.vendor)?.vendor
     const cats = [...new Set(linked.map((c) => c.category))].join(', ')
-    if (vendor && cats) return `${vendor} — ${cats}`
+    if (vendor && cats) return `${vendor} - ${cats}`
     return vendor || cats || invoiceLabel(f)
   }
 
-  // Belegseiten vorab rendern, sobald der Andruck aktiviert ist — der Druckdialog
+  // Belegseiten vorab rendern, sobald der Andruck aktiviert ist - der Druckdialog
   // wartet nicht auf asynchrones Rendering.
   useEffect(() => {
     if (!printAttachments) return
@@ -611,7 +611,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
               // Belege, die in dieser Abrechnung tatsächlich vorkommen (für die Anlage)
               const stFiles = printAttachments ? statementInvoiceFiles(st.rows, costItems, bookedFiles) : []
               const attachmentsReady = stFiles.every((f) => attachmentPages[f])
-              // Positionen nach Kostenart gruppieren — mit Zwischensumme, sobald eine
+              // Positionen nach Kostenart gruppieren - mit Zwischensumme, sobald eine
               // Kostenart mehrere Positionen hat (erleichtert den Abgleich mit dem Bescheid).
               const groups: { category: string; rows: SettlementRow[] }[] = []
               for (const r of st.rows) {
@@ -729,7 +729,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
   return (
     <>
       <div className="no-print">
-        <PageHeader title="Abrechnung" subtitle={'Die fertige Nebenkostenabrechnung pro Mieter — als PDF speichern über „Drucken“.'} />
+        <PageHeader title="Abrechnung" subtitle={'Die fertige Nebenkostenabrechnung pro Mieter - als PDF speichern über „Drucken“.'} />
       </div>
       {error && <NoticeBox level="error" action={error} />}
       {/* Teil 2b: Mit Briefpapier ohne Seitenrand, das Papier der Folgeseiten einmal für alle Druckseiten. */}
@@ -771,7 +771,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                 <>
                   <span className="badge green">abgeschlossen</span>{' '}
                   <span className="muted">
-                    am {fmtDate(data.closed!.closedAt.slice(0, 10))} eingefroren — Änderungen an Kosten/Stammdaten wirken sich nicht mehr aus.
+                    am {fmtDate(data.closed!.closedAt.slice(0, 10))} eingefroren - Änderungen an Kosten/Stammdaten wirken sich nicht mehr aus.
                   </span>
                 </>
               ) : (
@@ -786,7 +786,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
             <div className="flex flex-wrap items-center gap-2">
               {isClosed ? (
                 <>
-                  <label className="field" title="Datum, an dem die Abrechnung an die Mieter ging — maßgeblich für die §556-Frist">
+                  <label className="field" title="Datum, an dem die Abrechnung an die Mieter ging - maßgeblich für die §556-Frist">
                     versendet am
                     <input
                       type="date"
@@ -1281,7 +1281,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                         <tbody>
                           {st.rows.filter((r) => (r.labor35aCents ?? 0) > 0).map((r, i) => (
                             <tr key={i}>
-                              <td>{r.category} — {r.description}</td>
+                              <td>{r.category} - {r.description}</td>
                               <td className="num">{fmtEuro(r.labor35aCents!)}</td>
                             </tr>
                           ))}
@@ -1357,7 +1357,7 @@ export default function Abrechnung({ settings, units, tenancies, reload, onNavig
                           Anlage {idx + 1} zur Nebenkostenabrechnung {data?.period.label ?? label}: {fileLabel(f)}
                         </div>
                         {(attachmentPages[f] ?? []).map((src, i) => (
-                          <img key={i} src={src} alt={`${fileLabel(f)} — Seite ${i + 1}`} />
+                          <img key={i} src={src} alt={`${fileLabel(f)} - Seite ${i + 1}`} />
                         ))}
                       </div>
                     ))}

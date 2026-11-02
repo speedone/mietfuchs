@@ -699,7 +699,7 @@ export default function BelegeEingang({ stock, units, settings, onNavigate, onOp
         <div className="row center">
           <strong>🧾 {v.vendor || v.originalName}</strong>
           {v.open
-            ? <span className={openBadgeClass(v)}>{v.lines.filter((l) => l.state === 'open').length} offen — bitte prüfen</span>
+            ? <span className={openBadgeClass(v)}>{v.lines.filter((l) => l.state === 'open').length} offen - bitte prüfen</span>
             : <span className="badge green">✓ übernommen</span>}
           {/* Das Jahr, in das gebucht wird (nach einer Änderung von Hand nicht mehr das des Belegs) */}
           {(v.targetPeriod ?? calendarPeriod(v.year)) !== key && <span className="badge gray">{calendar ? `Jahr ${v.year}` : v.targetLabel ?? `Jahr ${v.year}`}</span>}

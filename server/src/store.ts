@@ -79,7 +79,7 @@ type ChooseDataDirOptions = {
 
 // Wo die Daten liegen. Im Dev-/npm-Betrieb server/data. In der gepackten Programmdatei liegt
 // der Code in einem virtuellen, schreibgeschützten Dateisystem, die Daten also daneben, in den
-// echten Ordner neben der Datei — so bleiben Daten und Programm zusammen, und ein Backup ist
+// echten Ordner neben der Datei - so bleiben Daten und Programm zusammen, und ein Backup ist
 // ein kopierter Ordner. Aus einem Installationspaket (#25) liegt die Programmdatei dagegen in
 // /usr/bin, wo niemand schreiben darf; dann gehören die Daten in den Benutzerordner.
 // `NKA_DATA_DIR` verlegt den Ordner (absoluter Pfad). Gedacht für Tests gegen einen
@@ -200,7 +200,7 @@ export function getDb(): Db {
 }
 
 export function save(): void {
-  // Atomar schreiben: erst Temp-Datei, dann ersetzen — schützt vor halben Dateien bei Absturz
+  // Atomar schreiben: erst Temp-Datei, dann ersetzen - schützt vor halben Dateien bei Absturz
   const tmp = DB_FILE + '.tmp'
   fs.writeFileSync(tmp, JSON.stringify(getDb(), null, 2), 'utf8')
   fs.renameSync(tmp, DB_FILE)

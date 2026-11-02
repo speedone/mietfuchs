@@ -36,7 +36,7 @@ export const serverRoot = path.resolve(path.dirname(fileURLToPath(import.meta.ur
 // ---------- Was über die Routen zurückkommt ----------
 //
 // Eine Antwort ist JSON aus einem anderen Prozess: `res.json()` liefert deshalb `unknown`, und
-// kein Typ kann prüfen, was wirklich ankommt — das tun die Zusicherungen. Der Aufruf nennt
+// kein Typ kann prüfen, was wirklich ankommt - das tun die Zusicherungen. Der Aufruf nennt
 // aber, was die Route zusagt, und wo das ein Typ aus shared/types.ts ist, prüft der Übersetzer
 // mit, dass Route und Datenmodell zusammenpassen. Die eine Behauptung dieser Datei steckt
 // deshalb hier, an einer Stelle und benannt, statt verstreut in jedem Test.
@@ -210,7 +210,7 @@ export type OpenAiBody = {
 }
 export type OpenAiRequest = { url: string | undefined, method: string | undefined, body: OpenAiBody, raw: string, headers: http.IncomingHttpHeaders }
 
-// Die erste Nachricht einer Anfrage — ohne sie hätte der Dienst nichts zu tun gehabt.
+// Die erste Nachricht einer Anfrage - ohne sie hätte der Dienst nichts zu tun gehabt.
 export const messageOf = <T>(messages: T[] | undefined): T => {
   const first = messages?.[0]
   if (!first) assert.fail('die Anfrage hat keine Nachricht mitgebracht')
@@ -763,7 +763,7 @@ export function archive(entries: Record<string, string | Buffer> = {}, db: unkno
 // gespeichert wird, steht in der Datenbank; ein unbekanntes Feld kommt nicht an (#60); und ohne
 // Datenbank gibt es keine Daten, also auch keine Antwort, die so tut, als gäbe es welche.
 
-// Die Wohnungen, wie sie in der Datenbank stehen — an den Routen vorbei gelesen. Nur so lässt
+// Die Wohnungen, wie sie in der Datenbank stehen - an den Routen vorbei gelesen. Nur so lässt
 // sich unterscheiden, ob eine Route wirklich dort geschrieben hat oder nur in der db.json.
 export async function unitRowsInDatabase(dataDir: string): Promise<string[]> {
   const connection = await besideServer(dataDir)

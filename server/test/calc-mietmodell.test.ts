@@ -36,7 +36,7 @@ test('Pauschale: keine Abrechnung, der Anteil bleibt in der Basis und geht an de
   assert.deepEqual(s.notSettled, [{ tenancyId: 't-a', tenantName: 't-a', unitName: 'a', costModel: 'flatRate', heatingModel: 'settlement' }])
 })
 
-test('Gemischt: kalt pauschal, Heizung abgerechnet — die Abrechnung enthält nur die Heizung', () => {
+test('Gemischt: kalt pauschal, Heizung abgerechnet - die Abrechnung enthält nur die Heizung', () => {
   const s = settle({
     units: [unit('a')],
     // 50 € Heizvorauszahlung und 80 € Pauschale je Monat, in zwei Staffeln.

@@ -18,7 +18,7 @@ type Props = {
 
 export default function AiKeyCell({ position: p, units, onChange }: Props) {
   // Nicht umlagefähig (#142): verteilt wird nie, also kein Schlüssel.
-  if (isNotAllocable(p.category)) return <span className="muted">— trägt der Vermieter</span>
+  if (isNotAllocable(p.category)) return <span className="muted">- trägt der Vermieter</span>
   const a = p.allocation && p.allocation.key === p.key ? p.allocation : null
   const names = (ids: string[]) => ids.map((id) => units.find((u) => u.id === id)?.name ?? '?').join(', ')
   return (
