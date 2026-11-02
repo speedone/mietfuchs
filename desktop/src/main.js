@@ -13,7 +13,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { BrowserWindow, Menu, app, dialog, ipcMain, session, shell, utilityProcess } from 'electron'
-import { TICK_MS, UPDATE_REPO, createUpdaterController, initialUpdaterState, shouldOfferMove, updaterSource } from './updater.js'
+import { TICK_MS, UPDATE_REPO, createUpdaterController, initialUpdaterState, shouldOfferMove, trustedUpdateKeys, updaterSource } from './updater.js'
 import { loopbackUrl, testGripsAllowed } from './testGrips.js'
 import { DEFAULT_PORT, SERVICE_NAME, blockedFileIn, childWebPreferences, quitDecision, rememberDataDir, frameTarget, findBlockedFile, freePort, isAppPage, isReceipt, linkTarget, navigationTarget, networkState, programFiles, serverEnv, serverModule, startFailure, startUrlIn, trustedSender, whoIsOn, chosenFolder, folderDialogProperties } from './server.js'
 
@@ -558,8 +558,9 @@ async function start() {
 // electron-updater/out/NsisUpdater.js). Die SHA-512 aus latest.yml prüft electron-updater trotzdem, beim vollen wie
 // beim Teil-Download und bei einer schon geladenen Datei (DigestTransform in builder-util-runtime/out/httpExecutor.js,
 // DifferentialDownloader.js, DownloadedUpdateHelper.validateDownloadedPath). Sie stammt aus demselben Release wie der
-// Installer und schützt vor beschädigten oder abgebrochenen Downloads, nicht vor einem fremden Release; das schützt
-// nur HTTPS zu GitHub und das Konto, das veröffentlicht.
+// Installer und schützt vor beschädigten oder abgebrochenen Downloads, nicht vor einem fremden Release. Davor schützt
+// die eigene Ed25519-Signatur von latest.yml (#551, updateManifest.js): Geladen wird erst, wenn ein Schlüssel aus dem
+// Programm sie bestätigt, und die SHA-512, gegen die electron-updater danach prüft, gehört zu dem, was sie deckt.
 async function setupUpdater() {
   const source = updaterSource({ platform: process.platform, packaged: app.isPackaged, windowsStore: process.windowsStore === true, env: process.env })
   if (source.kind === 'off' || updates) return
@@ -586,6 +587,8 @@ async function setupUpdater() {
     updater: /** @type {any} */ (updater),
     source: source.kind,
     current: app.getVersion(),
+    // Geladen wird nur mit gültiger Signatur von latest.yml (#551, updateManifest.js)
+    trustedKeys: trustedUpdateKeys({ source: source.kind, env: process.env }),
     // Die Zustimmung steht in den Einstellungen des Servers (das Häkchen „Beim Öffnen nach neuen Versionen schauen“)
     readConsent: async () => {
       if (!origin) return undefined

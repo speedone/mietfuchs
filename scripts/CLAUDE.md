@@ -309,8 +309,24 @@ Jeder Server, den ein Skript für eine Prüfung startet, bekommt `NKA_DATA_DIR`,
     (`DigestTransform` in builder-util-runtime/out/httpExecutor.js, `executeDownload` reicht `sha512` weiter), beim
     Teil-Download (`DigestTransform` in differentialDownloader/DifferentialDownloader.js) und bei einer schon
     geladenen Datei (`validateDownloadedPath` in DownloadedUpdateHelper.js). Sie kommt aus demselben Release wie der
-    Installer: Sie fängt beschädigte und abgebrochene Downloads ab, nicht ein fremdes Release; das hält nur HTTPS zu
-    GitHub und das Konto, das veröffentlicht.
+    Installer: Sie fängt beschädigte und abgebrochene Downloads ab, nicht ein fremdes Release.
+  - **Signatur von latest.yml (#551)**: Davor schützt eine eigene Ed25519-Signatur der Beschreibung im Format EBUM1 von
+    electron-builder 27 (`updateManifest`/`updateManifestPublicKey`, dort bislang nur Vorabversion), nachgebaut in
+    desktop/src/updateManifest.js (Prüfteil aus builder-util-runtime 10.0.0-alpha.13, MIT; fester Prüfvektor aus dem
+    Original in desktop/test/updateManifest.test.js). Gedeckt sind Version und je Datei `url`, `sha512`, `size`; die
+    SHA-512 der Datei prüft electron-updater danach wie oben. Das Fenster setzt `autoDownload` aus, prüft die
+    Beschreibung, die electron-updater unverändert mit `update-available` weiterreicht, und lädt erst dann mit
+    `downloadUpdate()`; `ready` wird nur die so geprüfte Version (`createUpdaterController`). Vertraut werden die
+    Schlüssel in `UPDATE_MANIFEST_PUBLIC_KEYS`: der erste signiert jedes Release (Secret `MIETFUCHS_UPDATE_SIGNING_KEY`,
+    nur im Job „Ans Release anhängen“), der zweite liegt nur beim Herausgeber und springt ein, wenn der erste verloren
+    oder bekannt geworden ist. **Die Liste nie leeren oder ohne ein mit einem bisherigen Schlüssel signiertes Release
+    ersetzen**, sonst nehmen Installationen kein Update mehr an. scripts/sign-update-manifest.mjs signiert nur, was
+    gebaut wurde (Name, Größe und SHA-512 jeder Datei nachgerechnet), nur mit einem Schlüssel aus dem Programm, liest
+    latest.yml mit dem js-yaml aus desktop/ (dieselbe Fassung wie electron-updater) und hängt `signatures:` an. Die
+    Update-Probe signiert ihre zweite Fassung mit einem Wegwerf-Schlüssel (`--ephemeral`), den das Fenster als
+    `MIETFUCHS_UPDATE_TESTKEY` nur mit der lokalen Quelle annimmt (`trustedUpdateKeys`), und prüft vorher, dass eine
+    unsignierte latest.yml abgelehnt wird, ohne dass der Installer angefragt wird. Beim Wechsel auf electron-builder 27:
+    `updateManifest` beim Bau und `updateManifestPublicKey` mit denselben Schlüsseln, dann fallen Nachbau und Skript weg.
   - **Zustimmung**: Das Fenster liest vor jeder Prüfung `updateCheck` aus `GET /api/settings` über 127.0.0.1; nur
     `'on'` zählt. Geprüft wird beim Start, danach höchstens einmal am Tag (Takt eine Stunde), nach einem Fehler nach
     einer Stunde, „Jetzt prüfen“ höchstens einmal pro Minute; das gerade gesetzte Häkchen löst eine Prüfung aus, wenn

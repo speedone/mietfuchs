@@ -9,7 +9,10 @@
 // - Vorabversionen bekommt niemand, auch nicht, wer selbst eine Vorabversion installiert hat.
 // - Nie ungefragt neu starten: „Jetzt neu starten“ beendet erst den Server, dann installiert der Installer still und
 //   startet Mietfuchs wieder. „Beim nächsten Start“ installiert beim Beenden, nach dem Ende des Servers.
+// - Geladen wird erst, wenn die Beschreibung (latest.yml) mit einem Schlüssel aus dem Programm signiert ist (#551,
+//   updateManifest.js); installiert wird nur die Version, deren Beschreibung so geprüft ist.
 import { loopbackUrl, testGripsAllowed } from './testGrips.js'
+import { UPDATE_MANIFEST_PUBLIC_KEYS, parsePublicKey, verifyManifestSignatures } from './updateManifest.js'
 
 export const UPDATE_REPO = Object.freeze({ provider: 'github', owner: 'speedone', repo: 'mietfuchs', releaseType: 'release' })
 
@@ -42,8 +45,8 @@ export const NO_INSTALLATION_ID = '00000000-0000-0000-0000-000000000000'
  * Bau mit höherer Version über einen lokalen HTTP-Server). Nur mit beiden Schranken der Testgriffe (testGrips.js) und nur
  * auf 127.0.0.1 oder ::1: Im ausgelieferten
  * Betrieb ließe eine untergeschobene Variable (Verknüpfung, Startskript, Benutzerumgebung) sonst die Updates von einem
- * fremden Server laden, und die SHA-512, die electron-updater prüft, käme von demselben Server. Eine Signatur, die das
- * abfinge, gibt es ohne bezahltes Zertifikat nicht (main.js, `verifyUpdateCodeSignature`). Wie MIETFUCHS_SERVER_URL in
+ * fremden Server laden, und die SHA-512, die electron-updater prüft, käme von demselben Server. Seit #551 fängt das
+ * zusätzlich die Signatur von latest.yml ab (updateManifest.js, `trustedUpdateKeys`). Wie MIETFUCHS_SERVER_URL in
  * main.js (Durchsicht K8).
  * @param {{ platform: NodeJS.Platform, packaged: boolean, windowsStore: boolean, env: NodeJS.ProcessEnv }} where
  * @returns {UpdaterSource}
@@ -56,6 +59,26 @@ export function updaterSource({ platform, packaged, windowsStore, env }) {
   if (platform !== 'win32') return { kind: 'off', reason: 'platform' }
   if (!packaged) return { kind: 'off', reason: 'dev' }
   return { kind: 'github' }
+}
+
+/**
+ * Die Schlüssel, denen das Fenster eine signierte latest.yml glaubt (#551, updateManifest.js). Dazu kommt
+ * `MIETFUCHS_UPDATE_TESTKEY` nur mit der lokalen Testquelle (`feed`, also beide Schranken der Testgriffe und 127.0.0.1):
+ * Damit signiert die echte Update-Probe in release.yml ihre zweite Fassung. Bei GitHub als Quelle gelten allein die
+ * Schlüssel im Programm; sonst ließe eine untergeschobene Variable jedes Release zu. Kein Ed25519-Schlüssel: nichts dazu.
+ * @param {{ source: UpdaterSource['kind'], env: NodeJS.ProcessEnv }} input
+ * @returns {string[]}
+ */
+export function trustedUpdateKeys({ source, env }) {
+  const keys = [...UPDATE_MANIFEST_PUBLIC_KEYS]
+  const probe = env.MIETFUCHS_UPDATE_TESTKEY
+  if (source !== 'feed' || !testGripsAllowed(env) || !probe) return keys
+  try {
+    parsePublicKey(probe)
+    return [...keys, probe]
+  } catch {
+    return keys
+  }
 }
 
 /**
@@ -142,7 +165,7 @@ export function shouldOfferMove({ platform, packaged, inApplications, declined, 
 
 /**
  * Die Teile von electron-updater, die die Steuerung braucht (NsisUpdater; in den Tests nachgestellt).
- * @typedef {import('node:events').EventEmitter & { autoDownload: boolean, disableWebInstaller: boolean, autoInstallOnAppQuit: boolean, allowPrerelease: boolean, allowDowngrade: boolean, requestHeaders?: Record<string, string> | null, checkForUpdates: () => Promise<unknown>, install: (isSilent?: boolean, isForceRunAfter?: boolean) => boolean }} Updater
+ * @typedef {import('node:events').EventEmitter & { autoDownload: boolean, disableWebInstaller: boolean, autoInstallOnAppQuit: boolean, allowPrerelease: boolean, allowDowngrade: boolean, requestHeaders?: Record<string, string> | null, checkForUpdates: () => Promise<unknown>, downloadUpdate: () => Promise<unknown>, install: (isSilent?: boolean, isForceRunAfter?: boolean) => boolean }} Updater
  */
 
 /**
@@ -154,15 +177,24 @@ export function shouldOfferMove({ platform, packaged, inApplications, declined, 
  * zu setzen geht nicht, denn electron-updater hängt seinen Haken nur an, wenn er beim Ende des Herunterladens schon an
  * ist. Deshalb installiert `installOnQuit` selbst, aufgerufen in `before-quit` nach dem Beenden des Servers.
  * `installerExists` sagt, ob die geladene Datei noch da ist (ein Virenschutz kann sie entfernt haben).
- * @param {{ updater: Updater, source: UpdaterSource['kind'], current: string, readConsent: () => Promise<unknown>, stopServer: () => Promise<void>, resumeServer: () => Promise<void>, quit: () => void, installerExists?: () => boolean, installGraceMs?: number, now?: () => number, onState?: (state: UpdaterState) => void, log?: (line: string) => void }} deps
+ *
+ * **Signatur (#551)**: `autoDownload` bleibt aus. electron-updater reicht die Beschreibung aus latest.yml unverändert mit
+ * `update-available` weiter (AppUpdater.doCheckForUpdates); erst wenn einer der `trustedKeys` ihre Signatur bestätigt,
+ * lädt die Steuerung mit `downloadUpdate()`, der Schnittstelle für genau diesen Fall. Die Prüfsumme der geladenen
+ * (oder schon zwischengespeicherten) Datei vergleicht electron-updater danach mit eben dieser Beschreibung. `ready` wird
+ * nur die so geprüfte Version; meldet electron-updater eine andere als geladen, wird sie nicht installiert.
+ * @param {{ updater: Updater, source: UpdaterSource['kind'], current: string, trustedKeys: readonly string[], readConsent: () => Promise<unknown>, stopServer: () => Promise<void>, resumeServer: () => Promise<void>, quit: () => void, installerExists?: () => boolean, installGraceMs?: number, now?: () => number, onState?: (state: UpdaterState) => void, log?: (line: string) => void }} deps
  */
-export function createUpdaterController({ updater, source, current, readConsent, stopServer, resumeServer, quit, installerExists = () => true, installGraceMs = INSTALL_GRACE_MS, now = Date.now, onState = () => {}, log = () => {} }) {
+export function createUpdaterController({ updater, source, current, trustedKeys, readConsent, stopServer, resumeServer, quit, installerExists = () => true, installGraceMs = INSTALL_GRACE_MS, now = Date.now, onState = () => {}, log = () => {} }) {
   let state = initialUpdaterState(source, current)
   /** @type {number | null} */
   let lastCheckAt = null
   let restarting = false
+  // Die Version, deren Beschreibung geprüft ist; nur sie darf `ready` werden
+  /** @type {string | null} */
+  let verified = null
 
-  updater.autoDownload = true
+  updater.autoDownload = false
   // Es gibt nur den vollständigen Installer, keinen Web-Installer (scripts/CLAUDE.md, „Kein Web-Installer“)
   updater.disableWebInstaller = true
   updater.autoInstallOnAppQuit = false
@@ -180,9 +212,37 @@ export function createUpdaterController({ updater, source, current, readConsent,
   const versionOf = (/** @type {unknown} */ info) => String(/** @type {{ version?: unknown }} */ (info ?? {}).version ?? '')
   updater.on('checking-for-update', () => apply({ type: 'checking', at: new Date(now()).toISOString() }))
   updater.on('update-not-available', () => apply({ type: 'none' }))
-  updater.on('update-available', (info) => apply({ type: 'available', version: versionOf(info) }))
+  updater.on('update-available', (info) => {
+    const version = versionOf(info)
+    // Schlüssel aus dem Programm sind geprüft (updateManifest.test.js); wirft es doch, gilt die Beschreibung als ungeprüft
+    let result
+    try {
+      result = verifyManifestSignatures(/** @type {any} */ (info ?? {}), trustedKeys)
+    } catch (err) {
+      result = { ok: false, reason: err instanceof Error ? err.message : String(err) }
+    }
+    if (!result.ok) {
+      verified = null
+      log(`Update: Version ${version} nicht geladen, die Signatur von latest.yml gilt nicht${result.reason ? ` (${result.reason})` : ''}`)
+      apply({ type: 'error', message: `Die neue Version ${version} trägt keine gültige Unterschrift von Mietfuchs und wird deshalb nicht geladen. Bitte laden Sie Mietfuchs bei Bedarf selbst von der Release-Seite.` })
+      return
+    }
+    verified = version
+    log(`Update: Signatur von latest.yml für ${version} bestätigt (Schlüssel ${result.keyId})`)
+    apply({ type: 'available', version })
+    // Fehler kommen auch als Ereignis `error` und landen dort im Stand
+    updater.downloadUpdate().catch(() => {})
+  })
   updater.on('download-progress', (p) => apply({ type: 'progress', percent: Number(/** @type {{ percent?: unknown }} */ (p ?? {}).percent) || 0 }))
-  updater.on('update-downloaded', (info) => apply({ type: 'downloaded', version: versionOf(info) }))
+  updater.on('update-downloaded', (info) => {
+    const version = versionOf(info)
+    if (verified === null || version !== verified) {
+      log(`Update: geladene Version ${version} ist nicht die geprüfte (${verified ?? 'keine'}), wird nicht installiert`)
+      apply({ type: 'error', message: `Die geladene Version ${version} ist nicht geprüft und wird nicht installiert.` })
+      return
+    }
+    apply({ type: 'downloaded', version })
+  })
   updater.on('error', (err) => {
     log(`Update: ${err instanceof Error ? err.stack ?? err.message : String(err)}`)
     apply({ type: 'error', message: describeUpdaterError(err) })

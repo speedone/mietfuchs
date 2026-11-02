@@ -721,13 +721,21 @@ jobs:
         with:
           name: fenster-win-v2
           path: quelle
+      # js-yaml in der Fassung, mit der electron-updater latest.yml liest (scripts/sign-update-manifest.mjs)
+      - run: npm --prefix desktop ci --omit=dev --ignore-scripts
+      # Wie beim Release signiert (#551), aber mit einem Wegwerf-Schlüssel: Das Fenster nimmt ihn nur über die lokale
+      # Quelle an (trustedUpdateKeys in desktop/src/updater.js), der echte Schlüssel bleibt im Job „Ans Release anhängen“
+      - name: latest.yml der zweiten Fassung signieren
+        id: signatur
+        shell: bash
+        run: node scripts/sign-update-manifest.mjs --dir quelle --ephemeral | tee -a "$GITHUB_OUTPUT"
       # Die .blockmap der installierten Fassung gehört neben die neue: electron-updater lädt beide für den Teil-Download
       - name: Prüfen
         shell: pwsh
         run: |
           Copy-Item paket\Mietfuchs-Setup-*.exe.blockmap quelle\
           $setup = Get-ChildItem paket\Mietfuchs-Setup-*.exe | Select-Object -First 1
-          node scripts/updater-check.mjs --setup $setup.FullName --feed quelle --version "${{ needs.fenster-bauen-v2.outputs.version }}" --step "${{ needs.fenster-bauen-v2.outputs.schritt }}" --out update-pruefung
+          node scripts/updater-check.mjs --setup $setup.FullName --feed quelle --version "${{ needs.fenster-bauen-v2.outputs.version }}" --step "${{ needs.fenster-bauen-v2.outputs.schritt }}" --testkey "${{ steps.signatur.outputs.testkey }}" --out update-pruefung
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Bericht in die Zusammenfassung
         if: always()
@@ -1102,6 +1110,11 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Vor den Artefakten: checkout räumt den Arbeitsordner
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
       - uses: actions/download-artifact@v8
         with:
           name: mietfuchs-binaries
@@ -1115,6 +1128,15 @@ jobs:
         with:
           name: fenster-mac
           path: dist-desktop
+      # Die Update-Beschreibung signieren (#551, scripts/sign-update-manifest.mjs), bevor irgendetwas ans Release geht: Ohne
+      # gültige Signatur lädt kein Programmfenster das Update. Fehlt das Secret oder gehört der Schlüssel zu keinem im
+      # Programm (desktop/src/updateManifest.js), scheitert der Schritt, und es entsteht kein halbes Release. Das Secret
+      # gibt es nur hier, nicht im Bau und nicht an Pull Requests.
+      - run: npm --prefix desktop ci --omit=dev --ignore-scripts
+      - name: Update-Beschreibung signieren
+        env:
+          MIETFUCHS_UPDATE_SIGNING_KEY: ${{ secrets.MIETFUCHS_UPDATE_SIGNING_KEY }}
+        run: node scripts/sign-update-manifest.mjs --dir dist-desktop
       - uses: softprops/action-gh-release@v3
         with:
           files: |
