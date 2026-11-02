@@ -207,7 +207,10 @@ beim Start, denn wer auf sie wartet, hält den Server für fertig.
   Ausgepackt wird nach `restore-<id>/` im Datenordner, die Belege wandern erst nach vollständiger
   Prüfung. Platzbedarf in restoreFiles.ts (`NKA_TEST_FREE_BYTES` für Tests). Reste
   (`restore-upload-<id>.zip`, `restore-<16 Hex>/`, dazu der Schnappschuss eines abgebrochenen Backups
-  `mietfuchs.sqlite.<16 Hex>.backup` samt `-journal`, `-wal`, `-shm`) räumt der Start weg, nie Ordner des Nutzers. Eine vorhandene
+  `mietfuchs.sqlite.<16 Hex>.backup` samt `-journal`, `-wal`, `-shm`, und die geprüfte Kopie vor dem Umschalten
+  `mietfuchs.sqlite.kopie-<16 Hex>` samt Beidateien) räumt der Start weg, nie Ordner des Nutzers. **Die Kopie heißt erst
+  unmittelbar vor dem Austausch `mietfuchs.sqlite.restore-<id>`** (`exchangeName` am Anfang von `restoreDatabase`,
+  Durchsicht Daten K2): Ab dann kann sie die einzige Kopie der neuen Daten sein, und unter diesem Namen bleibt sie liegen. Eine vorhandene
   `db.json.vor-restore` wird beim nächsten Einspielen wie die der Datenbank mit Datum beiseitegelegt (`setAsideName`).
   Der Kontoauszugsleser (`server/src/bank/read.ts`) liest noch mit adm-zip und eigenen Grenzen.
 - Wiederherstellen setzt **keinen vorhandenen Stand voraus** (siehe server/src/CLAUDE.md, API).
@@ -241,7 +244,7 @@ Wohnung kaskadiert auf alles darunter) half bisher nichts von selbst. Deshalb le
   Rettungsfall, und `restoreDatabase` kommt ohne offene Datenbank aus. Weiter: nur ein Name nach dem Muster seiner Art
   (`parseSnapshotName`, prüft auch `path.basename`), sonst 400, fehlt die Datei 404; dann nur mit der Marke der
   Vorschau, sonst 409 mit neuer Vorschau. Dann derselbe Weg wie eine Datenbank aus dem
-  Backup: Kopie nach `mietfuchs.sqlite.restore-<id>`, `archiveDatabaseProblem(…, 'priorVersion')`
+  Backup: Kopie nach `mietfuchs.sqlite.kopie-<id>`, `archiveDatabaseProblem(…, 'priorVersion')`
   (die Meldungen sagen dann „Sicherung“ statt „Archiv“; ein Wächter liest den Rumpf; Integrität,
   `unknownSteps`, Migrationskette nachholen, Verweise), `restoreDatabase` (bisherige als
   `mietfuchs.sqlite.vor-restore`, Hinweis nach dem Update weg, Schranke `priorVersion`, Zustimmungen angleichen),

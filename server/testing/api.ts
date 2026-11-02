@@ -313,6 +313,8 @@ export async function startServerIn(dataDir: string, env: NodeJS.ProcessEnv = {}
       NKA_AI_API_KEY_FILE: '',
       NKA_AI_MAX_TOKENS: '',
       NKA_RUNTIME: '',
+      // Keine Frage nach einem Mietfuchs des Entwicklers auf 3001 oder 17517 (instanceGuard.ts); wer sie prüft, setzt Ports
+      NKA_TEST_TWIN_PORTS: '[]',
       ...env,
       NKA_PORT: '0',
       NKA_DATA_DIR: dataDir,
@@ -381,7 +383,7 @@ export function startServerRaw(dataDir: string, env: NodeJS.ProcessEnv = {}, { s
   const child = spawn(process.execPath, ['src/index.ts'], {
     cwd: serverRoot,
     // CI hinter `...env`, wie in startServerIn: Kein Aufrufer kann es versehentlich abschalten.
-    env: { ...process.env, NKA_UPDATE_URL: 'http://127.0.0.1:9/kein-internet-im-test', NKA_DATA_DIR: dataDir, ...env, CI: 'true' },
+    env: { ...process.env, NKA_UPDATE_URL: 'http://127.0.0.1:9/kein-internet-im-test', NKA_DATA_DIR: dataDir, NKA_TEST_TWIN_PORTS: '[]', ...env, CI: 'true' },
     stdio: [stdin, 'pipe', 'pipe'],
   })
   let output = ''
