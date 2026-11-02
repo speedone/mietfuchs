@@ -30,3 +30,10 @@ Release. Ältere Versionen und Vorabversionen (`-rc`) werden nicht nachgebessert
 
 Das Programm für Windows und macOS prüft beim Lesen die Echtheit seines Programmarchivs (`app.asar`,
 ASAR-Integrität von Electron) und beendet sich bei einer Abweichung.
+
+## Download prüfen
+
+Ab Version 0.15.0 hat jedes Release eine Datei `SHA256SUMS.txt` mit der SHA-256-Prüfsumme jeder Datei
+und einen signierten Herkunftsnachweis (Artifact Attestation), dass die Dateien in der Release-Automatik
+dieses Repos gebaut wurden. Wie du beides prüfst, steht im README unter
+[Download prüfen](README.md#download-prüfen-für-fortgeschrittene).
