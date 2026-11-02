@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { CostItem, HeatingPlant, HeatingSettlementInfo, Meter, Notice, NoticeSubject, PeriodKey, Settings, Settlement, Tenancy, Unit, UpdateStatus, UploadEntry } from '../types'
+import type { CostItem, HeatingPlant, HeatingSettlementInfo, Meter, Notice, PeriodKey, Settings, Settlement, Tenancy, Unit, UpdateStatus, UploadEntry } from '../types'
 import type { NavTarget } from '../nav'
 import { cockpitHeatingRows } from '../heatingSettlementView'
 import { heatingRowTarget, itemsOfSettlement } from '../costPeriods'
@@ -26,6 +26,8 @@ import { ibanHintTitle, invalidIbans } from '../ibanCheck'
 import { addressCheckDetail, addressFindings } from '../landlord'
 import { NoticeBox } from '../components/Notice'
 import Card from '../components/Card'
+import { isSubject, type JumpTarget } from '../focus'
+import { CHECKS_TARGET, NEW_COST_ITEM_TARGET, SENT_AT_TARGET, TENANCIES_TARGET, soleSubject, unitsTarget } from '../jumpTargets'
 
 type Props = {
   units: Unit[]
@@ -37,8 +39,9 @@ type Props = {
   // Im Fenster unter Windows lädt Mietfuchs neue Versionen auch herunter (K8); das sagt die Frage dann
   updateDownloads?: boolean
   reload: () => Promise<void>
-  // `focus` öffnet auf der Zielseite den betroffenen Eintrag (#142), etwa ein Mietverhältnis.
-  onNavigate: (tab: NavTarget, focus?: NoticeSubject) => void
+  // `focus` öffnet auf der Zielseite den betroffenen Eintrag (#142), etwa ein Mietverhältnis, seit #554 auch ein
+  // Formular oder eine Karte (jumpTargets.ts).
+  onNavigate: (tab: NavTarget, focus?: JumpTarget) => void
 }
 
 // Verbrauchsangaben des Servers (gleiche Form wie auf der Zähler-Seite)
@@ -47,7 +50,7 @@ type Consumption = { meterId: string; consumption: number; readingCount: number;
 type Level = 'gruen' | 'gelb' | 'rot' | 'leer'
 
 // Eine Zeile der Bereitschafts-Checkliste. `leer` = für dieses Haus nicht nötig (zählt nicht zum
-// Fortschritt). `tab` verlinkt zur Stelle, an der man das Offene erledigt.
+// Fortschritt). `tab` verlinkt zur Seite, `focus` zur Stelle darauf, an der man das Offene erledigt (#554).
 type Check = {
   title: string
   detail: string
@@ -55,6 +58,7 @@ type Check = {
   lines?: string[]
   level: Level
   tab?: NavTarget
+  focus?: JumpTarget
   cta?: string
   // Statt nur zur Seite zu wechseln (E45: erst in den Zeitraum der Heizkostenabrechnung)
   go?: () => void
@@ -158,11 +162,11 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
     const ohneAbrechnung = settlement.notSettled ?? []
     const mietverhaeltnisse = settlement.statements.length + ohneAbrechnung.length
     if (mietverhaeltnisse === 0) {
-      list.push({ title: 'Mietverhältnisse & Flächen', level: 'rot', tab: 'stammdaten', cta: 'Stammdaten prüfen',
+      list.push({ title: 'Mietverhältnisse & Flächen', level: 'rot', tab: 'stammdaten', focus: TENANCIES_TARGET, cta: 'Stammdaten prüfen',
         detail: `Keine Mietverhältnisse im ${calendar ? 'Jahr' : 'Zeitraum'} ${label} — ohne sie lässt sich nichts verteilen.` })
     } else if (noArea.length > 0) {
       // Bei einer leeren Einheit eine Frage statt eines Befehls (Endprüfung rc.4, missingAreaCheck).
-      list.push({ title: 'Mietverhältnisse & Flächen', level: 'gelb', tab: 'stammdaten', ...missingAreaCheck(noArea, tenancies, period, yearItems) })
+      list.push({ title: 'Mietverhältnisse & Flächen', level: 'gelb', tab: 'stammdaten', focus: unitsTarget(noArea.map((u) => u.id)), ...missingAreaCheck(noArea, tenancies, period, yearItems) })
     } else {
       list.push({ title: 'Mietverhältnisse & Flächen', level: 'gruen',
         detail: tenanciesDetail(mietverhaeltnisse, ohneAbrechnung.length, participating.length, zeroArea.map((u) => u.name), zeroArea.filter((u) => countsByUnits(yearItems, u.id)).map((u) => u.name)) })
@@ -196,7 +200,7 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
     const heatingWithout = yearItems.filter((c) => heatingIds.has(c.id))
     if (meterTypes.size === 0 && heatingWithout.length > 0) {
       // #140: Heizung ohne Verbrauchsschlüssel. Ablesungen wären nötig, nicht entbehrlich.
-      list.push({ title: 'Zählerstände', level: 'gelb', tab: 'kosten', cta: 'Heizkosten prüfen',
+      list.push({ title: 'Zählerstände', level: 'gelb', tab: 'kosten', focus: soleSubject('costItem', heatingWithout.map((c) => c.id)), cta: 'Heizkosten prüfen',
         detail: `${andList(heatingWithout.map((c) => `„${c.description}“`))} ${heatingWithout.length === 1 ? 'wird' : 'werden'} nicht nach Verbrauch verteilt. Die Heizkostenverordnung verlangt das (§ 7 Abs. 1, § 8 Abs. 1 HeizkostenV); sonst darf der Mieter seinen Anteil um ${valueAt(hkvCutNotByConsumption, LAW_AS_OF)} % kürzen. Nötig sind Ablesungen der Wärmezähler oder die Abrechnung des Messdienstes.` })
     } else if (meterTypes.size === 0) {
       list.push({ title: 'Zählerstände', level: 'leer',
@@ -204,7 +208,7 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
     } else {
       const { relevant, incomplete } = meterReadiness(meters, consumption, meterTypes)
       if (incomplete.length > 0) {
-        list.push({ title: 'Zählerstände', level: 'rot', tab: 'zaehler', cta: 'Stände erfassen',
+        list.push({ title: 'Zählerstände', level: 'rot', tab: 'zaehler', focus: soleSubject('meter', incomplete.map((m) => m.id)), cta: 'Stände erfassen',
           detail: `Anfang/Ende fehlt oder unplausibel bei: ${andList(incomplete.map((m) => m.name))}` })
       } else {
         list.push({ title: 'Zählerstände', level: 'gruen',
@@ -215,7 +219,7 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
     // „Zählerstände“ bleibt unberührt (Prüfung des Plans, M1).
     const overdue = overdueMeters(meters, consumption)
     if (overdue.length > 0) {
-      list.push({ title: 'Eichfrist', level: 'gelb', tab: 'zaehler', cta: 'Zähler prüfen', detail: calibrationDetail(overdue) })
+      list.push({ title: 'Eichfrist', level: 'gelb', tab: 'zaehler', focus: soleSubject('meter', overdue.map((m) => m.id)), cta: 'Zähler prüfen', detail: calibrationDetail(overdue) })
     }
 
     // 4. Verteilbasis: ausgenommene Wohnungen mit Wohnfläche sind fast immer ein Versehen.
@@ -235,12 +239,12 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
     const meaMissing = units.filter((u) => meaIds.has(u.id) && usageOf(u) !== 'ausgenommen' && !(u.mea && u.mea > 0))
     const excluded = units.filter((u) => usageOf(u) === 'ausgenommen' && u.areaM2 > 0)
     if (excluded.length > 0 && basisKeys) {
-      list.push({ title: 'Verteilbasis', level: 'gelb', tab: 'stammdaten', cta: 'Nutzung prüfen',
+      list.push({ title: 'Verteilbasis', level: 'gelb', tab: 'stammdaten', focus: unitsTarget(excluded.map((u) => u.id)), cta: 'Nutzung prüfen',
         detail: `Nicht beteiligt und damit ganz außen vor: ${andList(excluded.map((u) => u.name))} — die Mieter tragen deren Anteil mit. Selbst bewohnte Wohnungen bitte auf „Eigennutzung“ stellen.` })
     } else if (meaMissing.length > 0) {
       // Ohne Miteigentumsanteile verteilt der Schlüssel der Gemeinschaft nicht (#105).
       const ohne = meaMissing
-      list.push({ title: 'Verteilbasis', level: 'gelb', tab: 'stammdaten', cta: 'Anteile eintragen',
+      list.push({ title: 'Verteilbasis', level: 'gelb', tab: 'stammdaten', focus: unitsTarget(ohne.map((u) => u.id)), cta: 'Anteile eintragen',
         detail: `Für ${andList(ohne.map((u) => u.name))} fehlen die Miteigentumsanteile, die die Gemeinschaftsabrechnung braucht.` })
     } else if (units.some((u) => usageOf(u) === 'eigen')) {
       const selfUsedUnits = units.filter((u) => usageOf(u) === 'eigen')
@@ -264,6 +268,7 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
         ...(notable.list.length > 0 ? [`Auffällige Abweichung: ${txt} — Beleg prüfen, Mieter ggf. erklären.`] : []),
       ]
       list.push({ title: 'Plausibilität zum Vorjahr', level: 'gelb', tab: notable.missing.length > 0 ? 'kosten' : 'uebersicht',
+        ...(notable.missing.length > 0 ? { focus: NEW_COST_ITEM_TARGET } : {}),
         cta: notable.missing.length > 0 ? 'Kosten erfassen' : 'Vergleich ansehen', detail: parts.join(' '),
         ...(notable.list.length === 0 ? { hint: true as const } : {}) })
     } else {
@@ -273,7 +278,7 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
     // 6. Hinweise der Berechnung (z. B. negativer Verbrauch)
     if (settlement.warnings.length > 0) {
       const lines = attentionLines(settlement)
-      list.push({ title: 'Hinweise der Berechnung', level: attentionLevel(settlement), tab: 'abrechnung', cta: 'Abrechnung ansehen',
+      list.push({ title: 'Hinweise der Berechnung', level: attentionLevel(settlement), tab: 'abrechnung', focus: CHECKS_TARGET, cta: 'Abrechnung ansehen',
         detail: lines.length > 0 ? '' : attentionDetail(settlement), lines })
     }
 
@@ -288,7 +293,7 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
       const allFormer = addresses.every((a) => a.check === 'former')
       list.push({
         title: 'Anschrift für den Versand', level: 'gelb', detail: addressCheckDetail(addresses),
-        tab: allFormer ? 'stammdaten' : 'abrechnung', cta: allFormer ? 'Anschrift eintragen' : 'Zur Abrechnung',
+        tab: allFormer ? 'stammdaten' : 'abrechnung', focus: allFormer ? TENANCIES_TARGET : CHECKS_TARGET, cta: allFormer ? 'Anschrift eintragen' : 'Zur Abrechnung',
         ...(only ? { go: () => onNavigate('stammdaten', { kind: 'tenancy', id: only.tenancyId }) } : {}),
       })
     }
@@ -308,7 +313,7 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
       const deadlineText = daysLeft >= 0
         ? `Frist am ${fmtDate(settlement.deadline)} (noch ${daysLeft} Tage).`
         : `Frist am ${fmtDate(settlement.deadline)} abgelaufen.`
-      list.push({ title: 'Abgeschlossen & versendet', level: daysLeft < 0 ? 'rot' : 'gelb', tab: 'abrechnung', cta: 'Versanddatum eintragen',
+      list.push({ title: 'Abgeschlossen & versendet', level: daysLeft < 0 ? 'rot' : 'gelb', tab: 'abrechnung', focus: SENT_AT_TARGET, cta: 'Versanddatum eintragen',
         detail: `Abgeschlossen, aber Versanddatum fehlt — für die §556-Frist nachtragen. ${deadlineText}` })
     } else {
       const deadlineText = daysLeft >= 0
@@ -385,7 +390,7 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
 
       {fresh ? (
         <div className="card">
-          <EmptyState action={{ label: start.label, onClick: () => onNavigate(start.tab) }}>
+          <EmptyState action={{ label: start.label, onClick: () => onNavigate(start.tab, start.focus ?? undefined) }}>
             Noch nichts für {label} erfasst.
           </EmptyState>
         </div>
@@ -406,10 +411,10 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
                   <div
                     key={i}
                     className={`check-row ${c.level}${clickable ? ' clickable' : ''}`}
-                    onClick={clickable ? () => (c.go ? c.go() : onNavigate(c.tab!)) : undefined}
+                    onClick={clickable ? () => (c.go ? c.go() : onNavigate(c.tab!, c.focus)) : undefined}
                     role={clickable ? 'button' : undefined}
                     tabIndex={clickable ? 0 : undefined}
-                    onKeyDown={clickable ? (e) => { if (e.key === 'Enter') (c.go ? c.go() : onNavigate(c.tab!)) } : undefined}
+                    onKeyDown={clickable ? (e) => { if (e.key === 'Enter') (c.go ? c.go() : onNavigate(c.tab!, c.focus)) } : undefined}
                   >
                     <span className={`ampel ${c.level === 'leer' ? '' : c.level}`} style={c.level === 'leer' ? { background: 'var(--line)' } : undefined} />
                     <div className="grow">
@@ -425,7 +430,7 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
 
             <div className="row">
               {next ? (
-                <button className="btn" onClick={() => (next.go ? next.go() : onNavigate(next.tab!))}>→ Nächster Schritt: {next.cta}</button>
+                <button className="btn" onClick={() => (next.go ? next.go() : onNavigate(next.tab!, next.focus))}>→ Nächster Schritt: {next.cta}</button>
               ) : (
                 <button className="btn" onClick={() => onNavigate('abrechnung')}>✓ Zur Abrechnung — abschließen & versenden</button>
               )}
@@ -491,9 +496,9 @@ export default function Cockpit({ units, tenancies, settings, updateStatus, upda
           <div>Prüfziffer, Länge oder Länderkennung passen nicht. Bitte vergleichen Sie sie mit dem Kontoauszug oder dem Mietvertrag; geändert wird nichts, bis Sie es tun.</div>
           <ul className="iban-hint-list">
             {ibanFindings.map((f) => (
-              <li key={f.focus?.id ?? f.where}>
+              <li key={isSubject(f.focus) ? f.focus.id : f.where}>
                 {f.where}: {f.problem}{' '}
-                <button type="button" className="btn secondary notice-action" onClick={() => onNavigate(f.tab, f.focus ?? undefined)}>{f.label}</button>
+                <button type="button" className="btn secondary notice-action" onClick={() => onNavigate(f.tab, f.focus)}>{f.label}</button>
               </li>
             ))}
           </ul>

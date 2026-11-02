@@ -1,5 +1,7 @@
 import { Fragment, useCallback, useEffect, useId, useRef, useState } from 'react'
 import { startPrint, type PrintJob } from '../printJob'
+import type { JumpTarget } from '../focus'
+import { TAX_HEADER_TARGET } from '../jumpTargets'
 import type { Settings, TaxExpenseItem, TaxOverview, TaxReport } from '../types'
 import { api, fmtArea, fmtDate, fmtEuro } from '../api'
 import { localToday } from '../periodForm'
@@ -25,8 +27,9 @@ import type { NoticeTab } from '../notices'
 import { DEFERRED_COLUMN_NOTE, deferredCellText, deferredParts, deferredSumText, isSpreadItem, showsDeferred, spreadBlock, spreadCarriedText, spreadConditionsText, spreadIgnoredText, spreadItemText, spreadNothingDeductibleText, SPREAD_BLOCK_READING, SPREAD_CARRIED_MORE, spreadRestBeforeStartText, spreadRestText, SPREAD_REST_MORE, spreadUsageChangedText } from '../taxSpread'
 import { formerYearsText, incomeMore, incomeTable, lateDecemberText, OLD_LEASE_MORE, oldLeaseForwardText, possibleDepositText, TURN_OF_YEAR_MORE, turnOfYearLines, unallocatedText, unitRows } from '../taxIncome'
 
-// `onNavigate`: der Sprung in die Stammdaten bei einer nicht eingetragenen Kopfangabe (#96 PR 2).
-type Props = { settings: Settings | null; onNavigate?: (tab: NoticeTab) => void }
+// `onNavigate`: der Sprung in die Stammdaten bei einer nicht eingetragenen Kopfangabe (#96 PR 2), dort zu den
+// Steuerangaben des Objekts (#554).
+type Props = { settings: Settings | null; onNavigate?: (tab: NoticeTab, focus?: JumpTarget) => void }
 
 export default function Steuer({ settings, onNavigate }: Props) {
   // Die Steuer rechnet im Kalenderjahr (#208, Entwurf 3.10).
@@ -171,7 +174,7 @@ export default function Steuer({ settings, onNavigate }: Props) {
                     <td className="num">
                       {r.value ?? <>
                         <span className="muted">nicht eingetragen</span>
-                        {onNavigate && <> <button className="btn small ghost no-print" onClick={() => onNavigate('stammdaten')}>Hier eintragen → Stammdaten</button></>}
+                        {onNavigate && <> <button className="btn small ghost no-print" onClick={() => onNavigate('stammdaten', TAX_HEADER_TARGET)}>Hier eintragen → Stammdaten</button></>}
                       </>}
                     </td>
                   </tr>

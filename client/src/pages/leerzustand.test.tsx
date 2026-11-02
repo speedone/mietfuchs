@@ -39,15 +39,16 @@ afterEach(() => {
 
 const wrap = (node: ReactNode) => render(<PeriodProvider><PropertyProvider><UIProvider>{node}</UIProvider></PropertyProvider></PeriodProvider>)
 
-for (const [lage, units, tenancies, button] of [
-  ['ohne Wohnung', [], [], 'Wohnung anlegen'],
-  ['mit Wohnung, ohne Mietverhältnis', [UNIT], [], 'Mietverhältnis anlegen'],
+for (const [lage, units, tenancies, button, what] of [
+  ['ohne Wohnung', [], [], 'Wohnung anlegen', 'unit'],
+  ['mit Wohnung, ohne Mietverhältnis', [UNIT], [], 'Mietverhältnis anlegen', 'tenancy'],
 ] as const) {
   test(`Cockpit ${lage}: der erste Schritt mit Knopf, kein Entwurf und keine Frist`, async () => {
     const navigate = vi.fn()
     wrap(<Cockpit units={[...units]} tenancies={[...tenancies] as Tenancy[]} settings={null} updateStatus={null} reload={async () => {}} onNavigate={navigate} />)
     fireEvent.click(await screen.findByRole('button', { name: button }, SLOW))
-    expect(navigate).toHaveBeenCalledWith('stammdaten')
+    // Der Knopf öffnet in den Stammdaten das Formular (#554), nicht nur die Seite.
+    expect(navigate).toHaveBeenCalledWith('stammdaten', { kind: 'new', what })
     expect(document.querySelector('[data-empty-state]')).toBeTruthy()
     expect(screen.queryByText('Entwurf')).toBeNull()
     expect(screen.queryByText(/Frist in \d+ Tagen/)).toBeNull()
@@ -59,7 +60,7 @@ for (const [lage, units, tenancies, button] of [
     const navigate = vi.fn()
     wrap(<Abrechnung settings={null} units={[...units]} tenancies={[...tenancies] as Tenancy[]} reload={async () => {}} onNavigate={navigate} />)
     fireEvent.click(await screen.findByRole('button', { name: button }, SLOW))
-    expect(navigate).toHaveBeenCalledWith('stammdaten')
+    expect(navigate).toHaveBeenCalledWith('stammdaten', { kind: 'new', what })
     expect(screen.queryByText(/bitte Stammdaten prüfen/)).toBeNull()
     expect(screen.queryByText('Entwurf')).toBeNull()
     expect(screen.queryByRole('button', { name: /abschließen/ })).toBeNull()

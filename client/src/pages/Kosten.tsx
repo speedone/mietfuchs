@@ -95,7 +95,7 @@ import { candidateText } from '../triage'
 import { countOf } from '../../../shared/wording.ts'
 import { openBadgeClass } from '../assessment'
 import { SKIPPED_FILES } from '../belegeView'
-import { useFocusTarget, type FocusProps } from '../focus'
+import { focusOpener, useFocusTarget, useNewTarget, type FocusProps } from '../focus'
 import { NoticeBox } from '../components/Notice'
 import { KeptReceipt } from '../components/KeptReceipt'
 import { TakenOff } from '../components/TakenOff'
@@ -334,7 +334,17 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     return () => { alive = false }
   }, [param, propertyId])
   // „Hier beheben →“ aus der Abrechnung (#142): die betroffene Position zum Bearbeiten öffnen.
-  useFocusTarget(focus, 'costItem', items, (i) => i.id, (i) => { setError(''); setForm(itemToForm(i)) }, onFocusDone)
+  // Vorher der Fokus auf das ✎ der Position bzw. „+ Kostenposition anlegen“, damit er beim Schließen dorthin
+  // zurückkehrt (Durchsicht zu #554).
+  useFocusTarget(focus, 'costItem', items, (i) => i.id, (i) => {
+    focusOpener([...document.querySelectorAll<HTMLElement>('tr[data-item]')].find((r) => r.dataset.item === i.id)?.querySelector<HTMLElement>('[aria-label="Kostenposition bearbeiten"]'))
+    setError('')
+    setForm(itemToForm(i))
+  }, onFocusDone)
+  const newItemButton = useRef<HTMLButtonElement>(null)
+  // „Kosten erfassen“ aus dem Cockpit (#554): das Formular „Neue Kostenposition“ wie „+ Kostenposition anlegen“, sobald
+  // Positionen und Zähler da sind (sonst fehlte der gemerkte Schlüssel, wie beim Formular aus dem Beleg).
+  useNewTarget(focus, 'costItem', itemsLoaded && meterData !== 'loading', () => { focusOpener(newItemButton.current); setError(''); setForm(newItemForm(units, meters, keyCtx)) }, onFocusDone)
 
   // Von Hand erfassen aus dem Beleg (#490 PR 3, #487 Teil 2): das Formular „Neue Kostenposition“ mit dem Beleg und der
   // Kostenart aus seinem Namen. Gewartet wird auf Positionen, Zähler und Ablage, sonst fehlte der gemerkte Schlüssel.
@@ -849,7 +859,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
       <PageHeader
         title="Kosten"
         subtitle="Alle Rechnungen des Abrechnungsjahres erfassen — manuell oder per KI-Belegauswertung."
-        actions={<button className="btn" onClick={() => { setError(''); setForm(newItemForm(units, meters, keyCtx)) }}>+ Kostenposition anlegen</button>}
+        actions={<button ref={newItemButton} className="btn" onClick={() => { setError(''); setForm(newItemForm(units, meters, keyCtx)) }}>+ Kostenposition anlegen</button>}
       />
       {error && <NoticeBox level="error" action={error} />}
       {/* Nach dem Anlegen aus dem Beleg (#490 PR 3): Erfolg, kein Hinweis; weiter im Eingang, wenn man von dort kam */}

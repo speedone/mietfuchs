@@ -4,7 +4,8 @@
 // Zuordnung, Objekt und Jahr eines Belegs, „Betrag prüfen“, geänderte Zeilen einer Auswertung noch das Jahr der Buchung
 // (Regel 2). Welche Ansicht offen ist, hält App.tsx (gemerkt je Sitzung, belegeView.ts).
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
-import type { CostItem, NoticeSubject, Settings, Unit } from '../types'
+import type { JumpTarget } from '../focus'
+import type { CostItem, Settings, Unit } from '../types'
 import { BELEGE_VIEWS, type BelegeView, type NavTarget } from '../nav'
 import { receiptCards, receiptName } from '../receipts'
 import { periodKeyOfYear, placeOf } from '../belegeView'
@@ -25,7 +26,7 @@ type Props = {
   units: Unit[]
   settings: Settings | null
   // Mit Ziel: die Position auf der Seite öffnen, etwa zum Pflegen im Formular
-  onNavigate: (tab: NavTarget, focus?: NoticeSubject) => void
+  onNavigate: (tab: NavTarget, focus?: JumpTarget) => void
   // Eine Position im Formular der Seite Kosten öffnen, auch in einem anderen Objekt (App.tsx schaltet dann um)
   onOpenItem?: (item: CostItem) => void
   onOpenAiSettings?: () => void

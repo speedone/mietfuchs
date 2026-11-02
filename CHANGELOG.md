@@ -105,6 +105,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   fremde Webseite im Browser Mietfuchs erreicht oder darin speichert. Wer Mietfuchs unter einem anderen Namen aufruft,
   trägt ihn in `NKA_ALLOWED_HOSTS` ein. Im Docker-Image und beim Start aus dem Quellcode bleibt alles wie bisher,
   solange `NKA_ALLOWED_HOSTS` nicht gesetzt ist.
+- **Knöpfe führen an die Stelle, nicht nur auf die Seite** ([#554](https://github.com/speedone/mietfuchs/issues/554)):
+  „Wohnung anlegen“, „Mietverhältnis anlegen“ und „Kosten erfassen“ öffnen auf der Zielseite gleich das Formular, mit
+  dem Cursor im ersten Feld. „Prüfen“ und „Beheben“ in der Checkliste des Cockpits und in Hinweisen holen die
+  betroffene Karte ins Bild und heben sie hervor (etwa „Zu prüfen“ in der Abrechnung, die Wohnungen in den Stammdaten,
+  die KI-Belegauswertung in den Einstellungen); betrifft es nur eine Wohnung, einen Zähler oder eine Position, öffnet
+  sich dieser Eintrag. „Hier eintragen → Stammdaten“ in der Steuerübersicht öffnet das Objekt bei „Für die Steuer
+  (Anlage V)“, ein fehlender Absender oder eine falsche IBAN des Objekts bei „Abweichender Vermieter oder
+  Bankverbindung“.
 
 ### Behoben
 

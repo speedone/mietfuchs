@@ -26,13 +26,13 @@ test('jede ungültige wird mit Ort und Sprung genannt', () => {
     'Mietverhältnis „Schmidt“',
   ])
   expect(befunde.map((b) => [b.tab, b.focus])).toEqual([
-    ['einstellungen', null],
+    ['einstellungen', { kind: 'section', section: 'landlord' }],
     ['stammdaten', { kind: 'tenancy', id: 't2' }],
   ])
   expect(befunde[0]?.problem).toMatch(/DE hat 22 Zeichen/)
   expect(befunde[1]?.problem).toMatch(/„XX“/)
   const objekt = invalidIbans({ iban: OK }, { name: 'Gartenweg 3', iban: 'DE00370400440532013000' }, [], YEAR)
-  expect(objekt.map((b) => [b.where, b.tab])).toEqual([['Objekt „Gartenweg 3“, abweichende Bankverbindung', 'stammdaten']])
+  expect(objekt.map((b) => [b.where, b.tab, b.focus])).toEqual([['Objekt „Gartenweg 3“, abweichende Bankverbindung', 'stammdaten', { kind: 'property', part: 'landlord' }]])
   expect(objekt[0]?.problem).toMatch(/Prüfziffer/)
 })
 
@@ -50,7 +50,7 @@ test('Mietverhältnisse, die vor dem Vorjahr endeten, werden nicht mehr genannt'
     mv('jahr', 'Im Jahr ausgezogen', 'DE00', '2025-06-30'),
     mv('offen', 'Wohnt noch', 'DE00'),
   ], YEAR)
-  expect(befunde.map((b) => b.focus?.id)).toEqual(['vorjahr', 'jahr', 'offen'])
+  expect(befunde.map((b) => (b.focus && 'id' in b.focus ? b.focus.id : undefined))).toEqual(['vorjahr', 'jahr', 'offen'])
 })
 
 test('Überschrift in Einzahl und Mehrzahl', () => {

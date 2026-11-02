@@ -6,7 +6,8 @@
 // Der Eingang zeigt alles Offene des gewählten Objekts und Jahres samt Belegen ohne Zuordnung; was anderswo offen ist,
 // nennt je eine Zeile mit dem Sprung dorthin.
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import type { AiStatus, AssessmentView, CostItem, LineDecision, NoticeSubject, Reading, Settings, Unit, UploadInfo, Meter } from '../types'
+import type { JumpTarget } from '../focus'
+import type { AiStatus, AssessmentView, CostItem, LineDecision, Reading, Settings, Unit, UploadInfo, Meter } from '../types'
 import { calendarPeriod, periodContext, periodOfKey, rulesOf, startYearOf } from '../../../shared/period.ts'
 import { api, errorText, fmtEuro } from '../api'
 import { aiSummary } from '../aiForm'
@@ -42,7 +43,7 @@ type Props = {
   units: Unit[]
   settings: Settings | null
   // Mit Ziel: die Position auf der Seite öffnen, etwa zum Pflegen im Formular
-  onNavigate: (tab: NavTarget, focus?: NoticeSubject) => void
+  onNavigate: (tab: NavTarget, focus?: JumpTarget) => void
   // Eine Position im Formular der Seite Kosten öffnen („Betrag prüfen“), auch in einem anderen Objekt
   onOpenItem?: (item: CostItem) => void
   // Fehler mit Ausweg (#487): die KI-Einstellungen öffnen; bei einem Zählerfoto, dessen Ablesen gescheitert ist, die

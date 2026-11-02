@@ -4,7 +4,8 @@
 import { afterEach, assert, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { PeriodProvider } from '../period'
-import type { CostItem, Notice, NoticeSubject, Settings, Settlement, Statement, Tenancy, UploadEntry } from '../types'
+import type { CostItem, Notice, Settings, Settlement, Statement, Tenancy, UploadEntry } from '../types'
+import type { JumpTarget } from '../focus'
 import type { NoticeTab } from '../notices'
 import { PropertyProvider } from '../property'
 import { UIProvider } from '../components/feedback'
@@ -250,7 +251,7 @@ function stubClose(bodies: unknown[]) {
     return before(url, init)
   })
 }
-const showWithNav = (onNavigate: (tab: NoticeTab, focus?: NoticeSubject) => void) => render(
+const showWithNav = (onNavigate: (tab: NoticeTab, focus?: JumpTarget) => void) => render(
   <PeriodProvider>
     <PropertyProvider>
       <UIProvider><Abrechnung settings={null} units={[]} tenancies={TENANCIES} reload={async () => {}} onNavigate={onNavigate} /></UIProvider>

@@ -7,10 +7,11 @@ const unit: Unit = { id: 'u1', propertyId: 'o', name: 'EG', areaM2: 80, particip
 const tenancy: Tenancy = { id: 't1', unitId: 'u1', tenantName: 'A', persons: 1, personHistory: [], start: '2020-01-01', end: '2020-12-31', prepayments: [], prepaymentOverrides: {}, baseRents: [] }
 
 test('erst die Wohnung, dann das Mietverhältnis, dann die Belege', () => {
-  expect(startStep([], [], '2025', true)).toMatchObject({ label: 'Wohnung anlegen', tab: 'stammdaten' })
-  expect(startStep([unit], [], '2025', true)).toMatchObject({ label: 'Mietverhältnis anlegen', tab: 'stammdaten' })
+  // Ein „Anlegen“ öffnet auf der Zielseite das Formular (#554); die Belege haben keine Stelle außer der Seite.
+  expect(startStep([], [], '2025', true)).toMatchObject({ label: 'Wohnung anlegen', tab: 'stammdaten', focus: { kind: 'new', what: 'unit' } })
+  expect(startStep([unit], [], '2025', true)).toMatchObject({ label: 'Mietverhältnis anlegen', tab: 'stammdaten', focus: { kind: 'new', what: 'tenancy' } })
   const late = startStep([unit], [tenancy], '05/2025–04/2026', false)
-  expect(late).toMatchObject({ label: 'Belege erfassen', tab: 'belege:eingang' })
+  expect(late).toMatchObject({ label: 'Belege erfassen', tab: 'belege:eingang', focus: null })
   expect(late.text).toMatch(/den Zeitraum 05\/2025–04\/2026/)
 })
 

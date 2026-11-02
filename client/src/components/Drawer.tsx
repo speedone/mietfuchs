@@ -139,7 +139,18 @@ export default function Drawer({ open, title, subtitle, onClose, value, changedF
     // und, falls der Inhalt erst nachlädt, nach 60 ms noch einmal, aber nur, wenn er inzwischen nicht
     // woanders hingesetzt wurde (#346, Schritt 9).
     const auto = document.activeElement
-    const focusFirst = () => bodyRef.current?.querySelector<HTMLElement>('input, select, textarea')?.focus()
+    // Ein Teil mit `data-autofocus` geht vor (#554): Ein Sprung zu den Steuerangaben des Objekts beginnt dort, und das
+    // Feld rollt in die Mitte des Körpers; sonst stand es bei 1280 px ganz unten über dem Fuß (Durchsicht). jsdom kennt
+    // scrollIntoView nicht.
+    const focusFirst = () => {
+      const jumped = bodyRef.current?.querySelector<HTMLElement>('[data-autofocus] input, [data-autofocus] select, [data-autofocus] textarea')
+      if (!jumped) {
+        bodyRef.current?.querySelector<HTMLElement>('input, select, textarea')?.focus()
+        return
+      }
+      jumped.focus({ preventScroll: true })
+      if (typeof jumped.scrollIntoView === 'function') jumped.scrollIntoView({ block: 'center' })
+    }
     focusFirst()
     const t = setTimeout(() => {
       const now = document.activeElement

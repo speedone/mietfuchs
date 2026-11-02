@@ -17,7 +17,7 @@
 // nicht vermeiden: Ein Test, der nur prüft, ob irgendetwas gerendert wurde, prüft nichts. Wer
 // einen Satz umformuliert, zieht den Ausdruck hier mit.
 
-import { afterEach, expect, test, vi } from 'vitest'
+import { afterEach, assert, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { Property, PropertyKind, TaxExpenseItem, TaxOverview, TaxOverviewSums, TaxReceived, TaxReceivedTenancy, TaxReport } from '../types'
 import { TAX_HINTS, type Basis, type TaxHint } from '../taxView'
@@ -168,7 +168,7 @@ let requests: string[] = []
 const OBJEKT = (id: string, name: string, kind: PropertyKind = 'mfh', over: Partial<Property> = {}): Property =>
   ({ id, name, kind, address: '', landlordName: null, iban: null, paymentDeadlineDays: null, ...over })
 
-const zeige = async (report: TaxReport, basis: Basis = 'ist', kind?: PropertyKind, over: Partial<Property> = {}, overview?: TaxOverview) => {
+const zeige = async (report: TaxReport, basis: Basis = 'ist', kind?: PropertyKind, over: Partial<Property> = {}, overview?: TaxOverview, onNavigate?: Parameters<typeof Steuer>[0]['onNavigate']) => {
   // Die Objekte sind meist gleichgültig: ohne Objekt gilt auf dem Server das einzige (#92). Nur
   // die Art des Objekts entscheidet über den Satz zum Hausgeld (#143), die Kopfangaben über den Kopf der Anlage V und den
   // Hinweis zu anschaffungsnahen Herstellungskosten (#96 PR 2). Mit `overview` gibt es ein zweites Objekt, und die Seite
@@ -185,7 +185,7 @@ const zeige = async (report: TaxReport, basis: Basis = 'ist', kind?: PropertyKin
   render(
     <PeriodProvider>
       <PropertyProvider>
-        <Steuer settings={null} />
+        <Steuer settings={null} onNavigate={onNavigate} />
       </PropertyProvider>
     </PeriodProvider>,
   )
@@ -789,6 +789,14 @@ test('Kopf der Anlage V: Aktenzeichen ohne Sonderzeichen, Eigentumsübergang, Fe
   // Die Nummer nur, solange der Vordruck des Jahres gelesen ist (JAHR folgt der Uhr, siehe oben).
   if (anlageVLines(JAHR)?.header?.use === 10) expect(screen.getByText('Zeile 10, Kennzahl 62')).toBeTruthy()
   else expect(screen.queryByText(/Kennzahl 62/)).toBeNull()
+})
+
+// #554: „Hier eintragen → Stammdaten“ öffnet dort das Objekt mit dem Teil „Für die Steuer“, nicht nur die Seite.
+test('Kopf der Anlage V: „Hier eintragen“ führt zu den Steuerangaben des Objekts', async () => {
+  const navigate = vi.fn()
+  await zeige(REPORT(), 'ist', 'mfh', {}, undefined, navigate)
+  fireEvent.click((await screen.findAllByRole('button', { name: 'Hier eintragen → Stammdaten' }))[0] ?? assert.fail('Knopf fehlt'))
+  expect(navigate).toHaveBeenCalledWith('stammdaten', { kind: 'property', part: 'tax' })
 })
 
 // ---------- #262 PR 3: Verteilung nach § 82b EStDV ----------
