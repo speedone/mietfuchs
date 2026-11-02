@@ -25,7 +25,8 @@ export function dataFolder(file: string | null | undefined): string | null {
 export type DatabaseHint = {
   // 'done' ist eine gute Nachricht in einem Satz, 'failed' eine Erklärung, 'stale' eine
   // Feststellung mit einer Handlungsanweisung (#89), die nicht nach einem Fehler aussehen darf.
-  kind: 'done' | 'failed' | 'stale'
+  // 'closed': Die Datenbank ließ sich nicht öffnen; der Grund vom Server, ohne „Verstanden“, denn solange geht nichts.
+  kind: 'done' | 'failed' | 'stale' | 'closed'
   message: string
   notes: string[]
 }
@@ -39,6 +40,8 @@ export const DISMISS_KEY = 'nka-umstieg-gelesen'
 // der Normalfall bei jedem Start nach dem ersten.
 export function databaseHint(database: DatabaseState | null | undefined, dismissed: string | null): DatabaseHint | null {
   if (!database) return null
+  // Ohne Konsole (Store, Startmenü, Programmfenster) die einzige Stelle, an der der Grund zu lesen ist
+  if (!database.open) return { kind: 'closed', message: database.detail, notes: [] }
   const { state, message, notes } = database.changeover
   if (state === 'none' || !message) return null
   if (dismissed === message) return null

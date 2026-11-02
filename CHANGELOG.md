@@ -114,6 +114,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   (etwa aus einem Backup), lädt der Browser nur noch herunter. Im eigenen Programmfenster öffnet ein Beleg in einem
   Fenster ohne Zugriff auf Drucken, Heimnetz und Updates. Die Oberfläche selbst führt nur noch Skripte von Mietfuchs
   aus.
+- **Lässt sich die Datenbank nicht öffnen, steht der Grund jetzt in Mietfuchs selbst.** Bisher hieß es nur „keine
+  Verbindung zu seiner Datenbank“ mit dem Verweis auf die Meldung beim Start und das Cockpit, wo der Grund aber nicht
+  stand; ohne Konsole (Store, Startmenü, Programmfenster) blieb er unsichtbar. Jetzt nennt jede Fehlermeldung ihn, etwa
+  dass die Datenbank schon von einer neueren Mietfuchs-Version stammt, und oben auf jeder Seite steht er ebenfalls.
+- **„Mietfuchs beenden“ fehlte, wenn sich die Datenbank nicht öffnen ließ.** Aus dem Store und als Programmdatei ging
+  Mietfuchs dann nur noch über den Task-Manager zu beenden. Der Knopf steht jetzt auch in diesem Fall in der
+  Seitenleiste.
 
 ## [0.14.1] – 2026-11-01
 

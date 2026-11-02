@@ -583,7 +583,7 @@ td.actions { white-space: nowrap; text-align: right; }
    Seitenleiste: Dort wäre er auf kleinen Bildschirmen ausgeblendet. */
 .db-notice { display: flex; gap: var(--space-4); align-items: flex-start; border-color: var(--brand-border); }
 .db-notice-icon { flex-shrink: 0; font-size: 22px; line-height: 1.2; }
-.db-notice-body { flex: 1; }
+.db-notice-body { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .db-notice h2 { margin-bottom: 6px; }
 .db-notice p { margin: 0; max-width: 72ch; }
 .db-notice p.muted { margin-top: var(--space-2); }

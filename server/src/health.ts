@@ -68,10 +68,14 @@ export type { DatabaseState }
 // die Datenrouten in index.ts. Deshalb steht sie hier einmal und liefert gleich den Grund mit,
 // denn der Nutzer soll im Browser lesen, was los ist, und nicht nur ein „geht gerade nicht“.
 
+// **Der Grund steht in der Meldung selbst** (`database.detail`, etwa „stammt aus einer neueren Mietfuchs-Version“) und
+// nicht nur auf der Konsole: Die sieht niemand, der Mietfuchs aus dem Store, dem Startmenü oder dem Programmfenster
+// startet. Zuvor verwies der Satz auf „die Meldung beim Start und das Cockpit“, und beide zeigten ihn dort nicht.
 export const NO_DATABASE =
   'Mietfuchs hat keine Verbindung zu seiner Datenbank, deshalb lässt sich gerade nichts lesen ' +
-  'oder speichern. Woran es liegt, steht in der Meldung beim Start und im Cockpit. An Ihren ' +
-  'Daten ist nichts verändert.'
+  'oder speichern. An Ihren Daten ist nichts verändert.'
+
+export const noDatabase = (detail: string): string => `${NO_DATABASE} Der Grund: ${detail}`
 
 // **Der gescheiterte Umstieg sperrt, statt eine leere Datenbank auszugeben.** Das ist die
 // Umkehrung der Regel, die galt, solange die Routen aus der db.json lasen: Damals war
@@ -97,7 +101,7 @@ export const CHANGEOVER_NOT_TAKEN =
 
 // Der Grund, oder `null`, wenn die Datenbank den Bestand trägt.
 export function databaseUnavailable(database: DatabaseState): string | null {
-  if (!database.open) return NO_DATABASE
+  if (!database.open) return noDatabase(database.detail)
   if (database.changeover.state === 'failed') return CHANGEOVER_PENDING
   if (database.changeover.state === 'stale' && database.changeover.pending) return CHANGEOVER_NOT_TAKEN
   return null

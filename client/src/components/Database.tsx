@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api } from '../api'
+import { api, ApiError } from '../api'
 import { databaseHint, DISMISS_KEY, UPDATE_DISMISS_KEY, updateHint, type HealthReport } from '../database'
 import type { DatabaseState } from '../types'
 
@@ -43,7 +43,10 @@ export default function DatabaseNotice() {
   useEffect(() => {
     api<HealthReport>('/healthz')
       .then((r) => setReport(r))
-      .catch(() => {})
+      // Ohne Datenbank antwortet der Bericht mit 503 (für Container), trägt aber den Grund; gerade dann wird er gebraucht
+      .catch((err: unknown) => {
+        if (err instanceof ApiError && err.status === 503) setReport(err.data as HealthReport)
+      })
   }, [])
 
   const database: DatabaseState | null = report?.database ?? null
@@ -69,17 +72,17 @@ export default function DatabaseNotice() {
         </section>
       )}
       {hint && (
-        <section className={`card db-notice no-print${hint.kind === 'failed' ? ' db-notice-problem' : ''}`} role="status">
-          <span className="db-notice-icon" aria-hidden="true">{hint.kind === 'failed' ? '⚠️' : hint.kind === 'stale' ? 'ℹ️' : '🗄️'}</span>
+        <section className={`card db-notice no-print${hint.kind === 'failed' || hint.kind === 'closed' ? ' db-notice-problem' : ''}`} role="status">
+          <span className="db-notice-icon" aria-hidden="true">{hint.kind === 'failed' || hint.kind === 'closed' ? '⚠️' : hint.kind === 'stale' ? 'ℹ️' : '🗄️'}</span>
           <div className="db-notice-body">
-            <h2>{hint.kind === 'done' ? 'Ihre Daten sind umgezogen' : hint.kind === 'stale' ? 'Im Datenordner liegt noch eine alte Datei' : 'Der Umstieg der Daten ist nicht gelungen'}</h2>
+            <h2>{hint.kind === 'closed' ? 'Mietfuchs kann Ihre Daten gerade nicht öffnen' : hint.kind === 'done' ? 'Ihre Daten sind umgezogen' : hint.kind === 'stale' ? 'Im Datenordner liegt noch eine alte Datei' : 'Der Umstieg der Daten ist nicht gelungen'}</h2>
             <p>{hint.message}</p>
             {hint.notes.map((note) => <p key={note} className="muted">{note}</p>)}
           </div>
-          <button className="btn" onClick={() => {
+          {hint.kind !== 'closed' && <button className="btn" onClick={() => {
             remember(DISMISS_KEY, hint.message)
             setDismissed(hint.message)
-          }}>Verstanden</button>
+          }}>Verstanden</button>}
         </section>
       )}
       {update && (

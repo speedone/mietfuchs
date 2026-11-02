@@ -80,18 +80,20 @@ test('Einwilligung: scheitert das Speichern, sagt Mietfuchs es und fragt weiter'
 
 // ---------- Stand vom Server ----------
 
-test('Status wird erst nach dem Laden der Einstellungen geholt und nach einer Antwort neu', async () => {
+test('Status wird schon vor den Einstellungen geholt, nach dem Laden und nach einer Antwort neu', async () => {
+  // Schon vorher, weil an der Betriebsart „Mietfuchs beenden“ hängt, auch wenn die Datenbank zu ist (UpdateStatus.test.tsx)
   const { result, rerender } = renderHook(({ s }) => useUpdateStatus(s), {
     initialProps: { s: null as Settings | null },
   })
-  expect(requests).toHaveLength(0)
+  await waitFor(() => expect(result.current.status).not.toBeNull())
+  expect(requests.filter((a) => a.url === '/api/update')).toHaveLength(1)
 
   rerender({ s: settings() })
-  await waitFor(() => expect(result.current.status).not.toBeNull())
+  await waitFor(() => expect(requests.filter((a) => a.url === '/api/update')).toHaveLength(2))
 
   // Nach der Zustimmung muss der Hinweis ohne Neuladen der Seite erscheinen können.
   rerender({ s: settings({ updateCheck: 'on' }) })
-  await waitFor(() => expect(requests.filter((a) => a.url === '/api/update')).toHaveLength(2))
+  await waitFor(() => expect(requests.filter((a) => a.url === '/api/update')).toHaveLength(3))
 })
 
 test('Eine langsame ältere Antwort überschreibt keine neuere', async () => {
